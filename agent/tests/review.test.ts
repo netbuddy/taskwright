@@ -167,7 +167,7 @@ test("同一个任务目录同一时刻只跑一批评审", () => {
 
 // ───────────── 界面发起的评审：异步返回、三种事件 ─────────────
 
-function commandHarness(dir: string, complete: (user: string) => Promise<string>) {
+function commandRig(dir: string, complete: (user: string) => Promise<string>) {
   const commands = new Map<string, any>();
   const messages: any[] = [];
   registerUserCommands({ registerCommand: (name: string, spec: any) => commands.set(name, spec), sendMessage: (m: any) => messages.push(m), sendUserMessage() {} } as any);
@@ -193,7 +193,7 @@ test("界面发起的评审：核对通过立即回报，评审在后台跑，�
   const dir = withTwoItems(reviewWorkspace());
   let open: () => void = () => {};
   const gate = new Promise<void>((resolve) => (open = resolve));
-  const { run, status, messages } = commandHarness(dir, async (user) => {
+  const { run, status, messages } = commandRig(dir, async (user) => {
     await gate;      // 回报之前评审者一个都没评完
     return JSON.stringify({ 发现: user.includes("UC-001") ? [finding("D-R1")] : [] });
   });
@@ -224,7 +224,7 @@ test("界面发起的评审：核对通过立即回报，评审在后台跑，�
 
 test("界面发起的评审：任务已完成、点名的条目修订号过期、没有待评审的条目都被拒", async () => {
   const dir = withTwoItems(reviewWorkspace());
-  const { run, status } = commandHarness(dir, async () => JSON.stringify({ 发现: [] }));
+  const { run, status } = commandRig(dir, async () => JSON.stringify({ 发现: [] }));
   await run({ op_id: "ui-op-s", kind: "request_review", targets: [{ item_id: "UC-001", base_revision: 7 }] });
   const stale = JSON.parse(status[USER_RESULT_KEY].at(-1)!);
   assert.equal(stale.ok, false);

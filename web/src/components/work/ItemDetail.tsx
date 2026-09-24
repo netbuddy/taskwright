@@ -228,7 +228,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           <button type="button" className="btn sm" onClick={() => setCompare(true)} data-testid="compare-open">和修订 {previousNo} 比对</button></div>
       ))}
       {review.state === "failed" && (
-        <div className="banner-line gap" data-testid="review-banner"><b>评审不通过</b>：评审者按写作规矩核对，指出 {review.problems} 处问题，标在下面对应的字段旁。你可以让助手照发现改，改完再评审一次。</div>
+        <div className="banner-line gap" data-testid="review-banner"><span><b>评审不通过：</b>评审者按写作规矩核对，指出 {review.problems} 处问题，标在下面对应的字段旁。你可以让助手照发现改，改完再评审一次。</span></div>
       )}
       {supplements.length > 0 && !editing && (
         <div className="banner-line amber" data-testid="supplement-banner">
