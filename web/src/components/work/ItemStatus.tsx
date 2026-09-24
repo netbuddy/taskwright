@@ -30,11 +30,13 @@ export function ItemStatus({ task, item, just, pending }: { task: Task; item: It
   const review = reviewState(item);
   const unread = isUnread(item);
   const rCls = review.state === "passed" ? "ok" : review.state === "failed" ? "bad" : "wait";
-  const rTxt = review.state === "passed" ? "评审通过" : review.state === "failed" ? `评审不通过 ${review.findings} 处` : "待评审";
+  // 评审通过时可选规则给的建议条数写在括号里；不通过时写必选规则的问题处数。
+  const rTxt = review.state === "passed" ? (review.advice ? `评审通过（${review.advice} 条建议）` : "评审通过")
+    : review.state === "failed" ? `评审不通过 ${review.problems} 处` : "待评审";
   return (
     <>
       <span className="st2" title="评审由评审者做；你打开看过就算确认，两件事互不挡着">
-        <span className={`nd ${rCls}`}><span className="dot" />{rTxt}</span>
+        <span className={`nd ${rCls}`} data-testid={`review-${item.item_id}`}><span className="dot" />{rTxt}</span>
         <span className={`nd ${unread ? "wait unread" : "ok"}`} data-testid={`read-${item.item_id}`}><span className="dot" />{unread ? "未读" : `已读 · 修订 ${lastViewedRevision(item)}`}</span>
       </span>
       {hasExecutorSupplement(item) && <span className="chip warn">有助手补充的内容</span>}

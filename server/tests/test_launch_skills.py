@@ -109,6 +109,21 @@ class PlatformSkillFileTest(unittest.TestCase):
         self.assertIn("不得为了通过而删掉引用、来源或关联条目", body)
         self.assertIn("删掉信息换取通过是错误做法", body)
 
+    def test_平台skill有评审一节_评审由用户发起_工具只在用户要求时用(self):
+        body = frontmatter((PLATFORM_DIR / "SKILL.md").read_text(encoding="utf-8"))[1]
+        self.assertIn("## 六、评审", body)
+        for words in ("评审由用户在界面上发起，你不要主动评审", "用户在对话里要求评审时，才调用请求评审（request_review）",
+                      "问题类发现照建议改", "建议类发现告诉用户，由用户定", "不得为通过评审删掉内容或来源"):
+            self.assertIn(words, body)
+
+    def test_执行者工具白名单是八个_含请求评审_扩展里登记了它(self):
+        tools = launch.load_profile("dev")["tools"]
+        self.assertEqual(len(tools), 8, tools)
+        self.assertIn("request_review", tools)
+        extension = (launch.REPO_ROOT / "agent" / "src" / "extension.ts").read_text(encoding="utf-8")
+        self.assertIn("registerRequestReview(pi);", extension)
+        self.assertNotIn("开发期开关", launch.load_profile("dev"), "评审门禁做出来之后开发期开关退役")
+
     def test_两层skill都写明问题条目只引用已有编号的条目(self):
         for path in [PLATFORM_DIR / "SKILL.md", *TASK_SKILLS]:
             body = frontmatter(path.read_text(encoding="utf-8"))[1]

@@ -19,8 +19,6 @@
    或者执行者不可用。另有一条保险：用户 agent 连续两次被叫到都没有回应，也停；
 5. 记录写进 <sim-root>/sim-<序号>/，结束后调用 judge.py 出判定报告。record.json 里自动记下代码仓的提交号与未提交的
    改动文件（「代码版本」），以及执行者实际登记的工具清单（「执行者工具清单」），判定报告与批处理汇总都列出这两项。
-6. 评审工具做出来之前，默认设环境变量 TASKWRIGHT_DEV_REVIEW_AS_MET=1（「完成任务」把「每个条目评审通过」暂视为满足），
-   在起后端之前设好，执行者的 pi 从后端继承它；用 --review-as-met 0 可以关掉。开关的值记进 record.json。
 两个 pi 进程都由会话类启动，标准输入就是 RPC 的命令通道，结束时关掉。Langfuse 环境标签是 sim-<序号>，两边相同。
 """
 
@@ -44,8 +42,6 @@ from sim import judge
 from sim.launch_user import load_persona, user_agent_session
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-#: 「完成任务」读的开发期开关（agent/src/lib/complete_task.ts 的 REVIEW_SWITCH_ENV）。
-REVIEW_SWITCH_ENV = "TASKWRIGHT_DEV_REVIEW_AS_MET"
 FIRST_WAKE = "开始，先把你想做的事告诉助手"
 NEXT_WAKE = "执行者停下了，看一下界面再回应"
 DEFAULT_GOAL = "基准画像下执行者能否完成整理并问清隐藏事实"
@@ -189,13 +185,13 @@ def batch_summary(root: Path, sims: list[Path], errors: dict[str, str], persona_
     lines = [f"# 批处理汇总：{first} 到 {last}", "",
              f"用户画像 {persona_name}，一共 {len(sims)} 次。每次的完整记录在各自的目录里：判定报告.md（含每轮双方原话）、"
              "record.json、执行者事件流.txt、库副本/、user_agent_system_prompt.md；两边的 Langfuse 记录按与目录同名的环境标签筛选。", "",
-             "| 演练 | 代码提交号 | 执行者工具清单 | 评审视为满足 | 停止原因 | 轮数 | 演练是否有效 | 第二层通过几项 | 隐藏事实问出几条 | 用户主动补充 | 被拒次数 | 执行者读材料次数 |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| 演练 | 代码提交号 | 执行者工具清单 | 停止原因 | 轮数 | 演练是否有效 | 第二层通过几项 | 隐藏事实问出几条 | 用户主动补充 | 被拒次数 | 执行者读材料次数 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
     details = []
     for sim in sims:
         path = sim / "判定摘要.json"
         if not path.is_file():
-            lines.append(f"| {sim.name} | | | | 出错：{errors.get(sim.name, '没有判定摘要')} | | | | | | | |")
+            lines.append(f"| {sim.name} | | | 出错：{errors.get(sim.name, '没有判定摘要')} | | | | | | | |")
             continue
         s = json.loads(path.read_text(encoding="utf-8"))
         second = s["第二层"]
@@ -209,7 +205,7 @@ def batch_summary(root: Path, sims: list[Path], errors: dict[str, str], persona_
             state += f"（第 {s['作废起始轮']} 轮起作废）"
         extra = "、".join(f"第 {v['轮']} 轮" for v in s.get("用户主动补充") or []) or "没有"
         lines.append(f"| {sim.name} | {commit or '没有记'} | {'、'.join(record.get('执行者工具清单') or []) or '没有记'} | "
-                     f"{record.get('评审视为满足') or '没有记'} | {s['停止原因']} | {s['轮数']} | {state} | "
+                     f"{s['停止原因']} | {s['轮数']} | {state} | "
                      f"{sum(second.values())}／{len(second)} | {sum(1 for h in hidden if h['问出来了'])}／{len(hidden)} | {extra} | "
                      f"{s['被工具拒绝次数']} | {'、'.join(f'{k} 读了 {v} 次' for k, v in read.items()) or '没有材料'} |")
         details += ["", f"## {sim.name}", "", f"- 记录目录：{sim}", f"- 停止原因：{s['停止原因']}；轮数：{s['轮数']}",
@@ -236,8 +232,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-rounds", type=int, default=12)
     parser.add_argument("--goal", default=DEFAULT_GOAL)
     parser.add_argument("--repeat", type=int, default=1, help="同一画像接连跑几次（编号连续），大于 1 时结束后写批处理汇总")
-    parser.add_argument("--review-as-met", choices=("0", "1"), default="1",
-                        help="评审工具做出来之前，「完成任务」是否把评审条件视为满足（环境变量 TASKWRIGHT_DEV_REVIEW_AS_MET），缺省 1")
     args = parser.parse_args(argv)
 
     if not args.materials_dir:
@@ -272,10 +266,8 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
     shutil.copy2(persona_path, sim / "用户画像.json")
     (sim / "materials").mkdir()
     os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = tag
-    os.environ[REVIEW_SWITCH_ENV] = getattr(args, "review_as_met", "1")   # 起后端之前设好，执行者的 pi 从后端继承
     record = {"演练": tag, "演练目标": args.goal, "用户画像": persona_path.name, "Langfuse 环境标签": tag,
               "开始": time.strftime("%Y-%m-%dT%H:%M:%S"), "代码版本": code_version(), "执行者工具清单": None,
-              "评审视为满足": os.environ[REVIEW_SWITCH_ENV],
               "轮": [], "停止原因": None}
     print(f"演练 {tag}，用户画像 {persona_path.name}，记录在 {sim}", flush=True)
 

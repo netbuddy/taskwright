@@ -5,7 +5,7 @@
  * 本模块不依赖 pi，单元测试可以直接调用。
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { CONDITION_NAMES } from "./conditions.ts";
 
@@ -28,6 +28,32 @@ export interface CollectionDef {
   name: string;
   prefix: string;
   fields: FieldDef[];
+  /** 这个集合的评审规矩；没写时为 null，评审只按字段声明。 */
+  reviewRules: ReviewRulesSpec | null;
+}
+
+/** 规则的两种级别：必选规则违反了即不合规；可选规则只给建议。 */
+export const RULE_REQUIRED = "必选";
+export const RULE_OPTIONAL = "可选";
+export const RULE_LEVELS = [RULE_REQUIRED, RULE_OPTIONAL] as const;
+
+/** 规则文件里的一条规则。 */
+export interface ReviewRule {
+  编号: string;
+  级别: (typeof RULE_LEVELS)[number];
+  条文: string;
+  反例: string;
+  正例: string;
+}
+
+/**
+ * 任务定义里一个集合的「评审规矩」：规则文件（相对任务目录的路径）、关闭的可选规则、升为必选的可选规则。
+ * 关闭与升为必选只能指可选规则；本版本界面上还没有开关，默认都为空。
+ */
+export interface ReviewRulesSpec {
+  file: string;
+  off: string[];
+  promote: string[];
 }
 
 /** 「把问题条目标为先不管」写进状态字段的取值。 */
@@ -87,8 +113,11 @@ function isNonEmptyString(value: unknown): value is string {
 /**
  * 核对一份已经解析出来的任务定义。通过就返回结构化对象，不通过就抛 DefinitionError，
  * 里面逐条写明哪一处缺了什么、应当怎样写。
+ *
+ * 给了 baseDir（任务目录）时，另外核对各集合「评审规矩」指向的规则文件：文件存在、能解析、编号唯一、级别合法，
+ * 关闭与升为必选的编号存在且都是可选规则。库里的任务定义快照再读时不给 baseDir，只核对形状。
  */
-export function validateDefinition(raw: unknown, path = "（未给出路径）"): TaskDefinition {
+export function validateDefinition(raw: unknown, path = "（未给出路径）", options: { baseDir?: string } = {}): TaskDefinition {
   const reasons: string[] = [];
   if (!isObject(raw)) {
     throw new DefinitionError(path, ["整份文件应当是一个 JSON 对象，现在不是。"]);
@@ -135,8 +164,9 @@ export function validateDefinition(raw: unknown, path = "（未给出路径）")
         if (isNonEmptyString(name)) seenNames.add(name);
         if (isNonEmptyString(prefix)) seenPrefixes.add(prefix);
         const fields = validateFields(entry["字段"], label, reasons);
+        const reviewRules = "评审规矩" in entry ? validateReviewSpec(entry["评审规矩"], label, reasons, options.baseDir) : null;
         if (isNonEmptyString(name) && isNonEmptyString(prefix)) {
-          collections.push({ name, prefix, fields });
+          collections.push({ name, prefix, fields, reviewRules });
         }
       });
     }
@@ -228,6 +258,100 @@ export function validateDefinition(raw: unknown, path = "（未给出路径）")
   };
 }
 
+/** 核对一个集合的「评审规矩」一项；给了 baseDir 时连同它指向的规则文件一起核对。形状不对时返回 null。 */
+function validateReviewSpec(raw: unknown, label: string, reasons: string[], baseDir?: string): ReviewRulesSpec | null {
+  const where = `${label}的「评审规矩」`;
+  if (!isObject(raw)) {
+    reasons.push(`${where}应当是一个对象，例如 {"规则文件": "docs/review-rules/use-case.json"}。`);
+    return null;
+  }
+  const file = raw["规则文件"];
+  if (!isNonEmptyString(file)) {
+    reasons.push(`${where}缺少「规则文件」，它应当是规则文件相对任务目录的路径。`);
+    return null;
+  }
+  if (isAbsolute(file) || file.split(/[\\/]/).includes("..")) {
+    reasons.push(`${where}的规则文件「${file}」应当是相对任务目录的路径，不能是绝对路径，也不能用「..」跳出任务目录。`);
+    return null;
+  }
+  const list = (key: string): string[] | null => {
+    if (!(key in raw)) return [];
+    const value = raw[key];
+    if (!Array.isArray(value) || !value.every(isNonEmptyString)) {
+      reasons.push(`${where}的「${key}」应当是可选规则编号的列表，例如 ["UC-R9"]；不需要时不写或写空列表。`);
+      return null;
+    }
+    return value as string[];
+  };
+  const off = list("关闭");
+  const promote = list("升为必选");
+  if (off === null || promote === null) return null;
+  const both = off.filter((id) => promote.includes(id));
+  if (both.length) reasons.push(`${where}里 ${both.join("、")} 既写在「关闭」里又写在「升为必选」里，只能选一边。`);
+  if (baseDir !== undefined) {
+    const rules = readRuleFile(resolve(baseDir, file), `${where}指向的规则文件「${file}」`, reasons);
+    if (rules) {
+      for (const [key, ids] of [["关闭", off], ["升为必选", promote]] as const) {
+        for (const id of ids) {
+          const rule = rules.find((one) => one.编号 === id);
+          if (!rule) reasons.push(`${where}的「${key}」里写了 ${id}，规则文件「${file}」里没有这条规则。`);
+          else if (rule.级别 !== RULE_OPTIONAL) reasons.push(`${where}的「${key}」里写了 ${id}，它是必选规则；只有可选规则能${key === "关闭" ? "关闭" : "升为必选"}。`);
+        }
+      }
+    }
+  }
+  return { file, off, promote };
+}
+
+/** 读一份规则文件并核对：能解析、是不为空的列表、每条的编号唯一、级别合法、条文反例正例都是文字。不对时把原因加进 reasons，返回 null。 */
+export function readRuleFile(fullPath: string, what: string, reasons: string[]): ReviewRule[] | null {
+  if (!existsSync(fullPath)) {
+    reasons.push(`${what}在任务目录里读不到。`);
+    return null;
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(fullPath, "utf-8"));
+  } catch (error) {
+    reasons.push(`${what}不是合法的 JSON：${(error as Error).message}。`);
+    return null;
+  }
+  if (!Array.isArray(raw) || raw.length === 0) {
+    reasons.push(`${what}应当是一个不为空的列表，每项是一条规则 { "编号", "级别", "条文", "反例", "正例" }。`);
+    return null;
+  }
+  const before = reasons.length;
+  const seen = new Set<string>();
+  raw.forEach((one, index) => {
+    const at = `${what}的第 ${index + 1} 条规则`;
+    if (!isObject(one)) { reasons.push(`${at}应当是一个对象。`); return; }
+    const id = one["编号"];
+    if (!isNonEmptyString(id)) reasons.push(`${at}缺少「编号」。`);
+    else if (seen.has(id)) reasons.push(`${what}里编号 ${id} 重复出现，编号必须各不相同。`);
+    else seen.add(id);
+    if (!(RULE_LEVELS as readonly unknown[]).includes(one["级别"])) {
+      reasons.push(`${at}的「级别」写的是「${String(one["级别"])}」，只能是「${RULE_REQUIRED}」或「${RULE_OPTIONAL}」。`);
+    }
+    for (const key of ["条文", "反例", "正例"]) {
+      if (!isNonEmptyString(one[key])) reasons.push(`${at}缺少「${key}」，它应当是一段不为空的文字。`);
+    }
+  });
+  return reasons.length === before ? (raw as ReviewRule[]) : null;
+}
+
+/**
+ * 按任务定义里的选用情况，给出一个集合实际要评的规则：去掉关闭的，把升为必选的改成必选。
+ * 规则文件读不到或形状不对时抛 Error，文字写明原因。
+ */
+export function effectiveRules(baseDir: string, spec: ReviewRulesSpec): ReviewRule[] {
+  const reasons: string[] = [];
+  const rules = readRuleFile(resolve(baseDir, spec.file), `规则文件「${spec.file}」`, reasons);
+  if (!rules) throw new Error(reasons.join("；"));
+  return rules
+    .filter((rule) => !spec.off.includes(rule.编号))
+    .map((rule) => (spec.promote.includes(rule.编号) ? { ...rule, 级别: RULE_REQUIRED } : rule));
+}
+
 function validateFields(raw: unknown, label: string, reasons: string[]): FieldDef[] {
   const fields: FieldDef[] = [];
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -298,5 +422,5 @@ export function loadDefinition(
   } catch (error) {
     throw new DefinitionError(relativePath, [`文件不是合法的 JSON：${(error as Error).message}。`]);
   }
-  return { definition: validateDefinition(raw, relativePath), text, relativePath };
+  return { definition: validateDefinition(raw, relativePath, { baseDir: workspaceDir }), text, relativePath };
 }

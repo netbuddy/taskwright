@@ -18,6 +18,9 @@
  * 没改的字段来源沿用条目上一次修订时的来源；加入第四种来源之前建的库不认这一种，那样的库沿用旧做法。
  * 追加进会话的通知正文带上改后的字段值，执行者不必另去查（同节第 4 条）。
  *
+ * 评审（request_review）也是一种界面操作，但它不写修订、要调模型、要跑很久：这里只做 checkReviewRequest 那一步核对，
+ * 评审本身由 hooks/user_commands.ts 经 lib/review_ui.ts 在后台跑。
+ *
  * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_revision、undo_conflict、
  * task_closed、no_task、rejected、bad_request）和给人看的一句中文，data 里放细节。本模块不依赖 pi。
  */
@@ -87,6 +90,42 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function actorWord(actor: string): string {
   return actor === ACTOR_USER ? "user" : actor === ACTOR_EXECUTOR || actor === LEGACY_ACTOR_MODEL ? "executor" : actor;
+}
+
+/** 用户在界面上发起评审的操作种类。它不在 USER_OP_KINDS 里：不写修订、不经 runUserOperation。 */
+export const REVIEW_OP_KIND = "request_review";
+
+/**
+ * request_review 的核对：操作编号、任务在不在、是不是进行中、targets 的形状。targets 为空列表时返回 null（评全部待评审的条目），
+ * 否则返回点名的条目与各自的修订号（base_revision）。条目在不在、所在集合要不要评审、修订号对不对，由 prepareReviews 核对。
+ */
+export function checkReviewRequest(ctx: Ctx, request: UserOpRequest): { item_id: string; revision_no: number }[] | null {
+  const opId = typeof request.op_id === "string" ? request.op_id : "";
+  if (!opId.startsWith("ui-")) throw new UserOpError("bad_request", "操作编号 op_id 应当由后端生成，以 ui- 开头。");
+  const raw = request.targets ?? [];
+  if (!Array.isArray(raw)) throw new UserOpError("bad_request", "request_review 的 targets 应当是一个列表；空列表表示评审全部待评审的条目。");
+  const targets = raw.map((one) => {
+    const base = isObject(one) ? one.base_revision : undefined;
+    if (!isObject(one) || typeof one.item_id !== "string" || !Number.isInteger(base)) {
+      throw new UserOpError("bad_request", "targets 的每一项要写 { \"item_id\": 条目编号, \"base_revision\": 整数 }。");
+    }
+    return { item_id: one.item_id, revision_no: base as number };
+  });
+  if (new Set(targets.map((t) => t.item_id)).size !== targets.length) throw new UserOpError("bad_request", "targets 里有重复的条目。");
+  try {
+    withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
+      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+      if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+      if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
+        throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
+      }
+      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再评审。`, { status: task.status });
+    });
+  } catch (error) {
+    if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+    throw error;
+  }
+  return targets.length ? targets : null;
 }
 
 /** 执行一次直接操作。成功返回结果，拒绝抛 UserOpError。 */

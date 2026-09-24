@@ -154,3 +154,18 @@
 
 /* 完成前还有未读：卡片下面一行提示，可点筛出未读的条目。 */
 .app .sw-unread-hint { margin-top: .5rem; font-size: .881rem; color: var(--amber); display: flex; align-items: center; gap: .5rem; }
+
+/* 评审门禁：条目区顶部的进度行、筛选「评审通过」、字段旁的问题（红）与建议（琥珀）、条文展开 */
+.app .sw-review-prog { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; padding: .3rem .7rem; font-size: 0.889rem;
+  background: var(--card); border-bottom: 1px solid var(--line); flex: none; }
+.app .sw-bar { display: inline-block; width: 10rem; height: .4rem; background: var(--line); border-radius: .2rem; overflow: hidden; }
+.app .sw-bar i { display: block; height: 100%; background: var(--ai); transition: width .3s; }
+.app .filt.okf { color: var(--ok); border-color: var(--ok-line); }
+.app .filt.okf.on { background: var(--ok); color: #fff; border-color: var(--ok); }
+.app .finding { display: block; margin: .25rem 0 0;  padding: .15rem .4rem; line-height: 1.5; white-space: normal; }
+.app .finding.advice { color: var(--amber); background: var(--amber-bg); }
+.app .finding .fix-how { display: block; color: #555; }
+.app .finding .clause { text-decoration: underline dotted; cursor: pointer; color: var(--blue, #2563eb); }
+.app .finding .clause-body { display: block; margin-top: .2rem; color: #444; background: var(--card); border: 1px solid var(--gap-line); padding: .15rem .4rem; border-radius: .3rem; }
+.app .finding.advice .clause-body { border-color: var(--amber-line); }
+.app .finding .aibtn.sm { font-size: 0.813rem; padding: 0 .4rem; margin-left: .4rem; }

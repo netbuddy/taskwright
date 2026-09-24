@@ -109,7 +109,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     try {
       const r = await api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, ...req });
       // 标为已读不改内容，不显示「正在保存」；都已读过时后端什么都不写、没有库事件，挂着的话会一直等不到。
-      if (req.kind !== "mark_viewed") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
+      // 评审也不改内容，进度与结果另有 review_progress、review_finished 两种事件，同样不登记。
+      if (req.kind !== "mark_viewed" && req.kind !== "request_review") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
       return null;
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
@@ -129,6 +130,9 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     void api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, kind: "mark_viewed", targets: [target], notify_executor: false })
       .catch(() => undefined);
   };
+  /** 发起评审：targets 为空＝全部待评审的条目。后端核对通过就回应，被拒时弹出原因。 */
+  const review = (targets: { item_id: string; base_revision: number }[], label: string) =>
+    void submit({ kind: "request_review", targets, notify_executor: false }, label).then((e) => { if (e) message.error(errorText(e)); });
   const undo = (revision: number) =>
     void submit({ kind: "undo", targets: [{ revision_no: revision }], notify_executor: false }, `撤销修订 ${revision}`).then((e) => { if (e) message.error(errorText(e)); });
 
@@ -274,7 +278,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty}
-                  unreadRequest={unreadRequest} />
+                  unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill} />
               ) : <div className="pane-items" />}
               <div className="pane-doc">
                 <SidePanel side={side} onSide={setSide} onCollapse={() => toggleDoc(true)} onExpand={() => toggleDoc(false)}

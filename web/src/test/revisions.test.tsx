@@ -441,7 +441,7 @@ describe("已读即确认", () => {
     expect(screen.getByTestId("read-UC-001")).toHaveTextContent("未读");
     expect(screen.getByTestId("read-UC-002")).toHaveTextContent("已读 · 修订 2");
     expect(screen.getByTestId("unread-bar")).toHaveTextContent("还有 1 条未读");
-    expect(screen.getByTestId("progress")).toHaveTextContent("3 个条目，1 条未读");
+    expect(screen.getByTestId("progress")).toHaveTextContent("3 个条目 · 待评审 2 · 评审不通过 0 · 1 条未读");
     fireEvent.click(within(screen.getByTestId("unread-bar")).getByText("筛出来看"));
     expect(screen.queryByTestId("item-UC-002")).toBeNull();
     expect(screen.queryByTestId("unread-bar")).toBeNull();
@@ -464,7 +464,7 @@ describe("已读即确认", () => {
     expect(unreadItems(t).map((i) => i.item_id)).toEqual(["UC-001"]);
     render(<Wrap><ItemsPanel task={t} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected={null} onSelect={noop}
       submit={vi.fn(async () => null)} onGenerateDoc={noop} /></Wrap>);
-    expect(screen.getByTestId("progress")).toHaveTextContent("2 个条目，1 条未读；问题 1 条未解决");
+    expect(screen.getByTestId("progress")).toHaveTextContent("2 个条目 · 待评审 0 · 评审不通过 0 · 1 条未读；问题 1 条未解决");
     fireEvent.click(screen.getByText(OLD));
     expect(screen.getByTestId("item-TBD-001")).toBeInTheDocument();
     expect(screen.getByTestId("keep-TBD-001")).toHaveTextContent("先不管，保留");

@@ -361,7 +361,6 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
              f"- 代码版本：提交 {(record.get('代码版本') or {}).get('提交号') or '没有记'}"
              + (f"，另有未提交的改动 {len((record.get('代码版本') or {}).get('未提交的改动') or [])} 个文件" if (record.get('代码版本') or {}).get('未提交的改动') else ""),
              f"- 执行者实际的工具清单：{'、'.join(record.get('执行者工具清单') or []) or '没有记'}",
-             f"- 评审视为满足（TASKWRIGHT_DEV_REVIEW_AS_MET）：{record.get('评审视为满足') if record.get('评审视为满足') is not None else '没有记'}",
              f"- Langfuse 环境标签：{record.get('Langfuse 环境标签')}", f"- 停止原因：{facts.get('停止原因')}；轮数：{facts.get('轮数')}",
              f"- {state['说明']}", "",
              "## 第一层：用户 agent 有没有按画像演（代码能查的两项）", ""]
@@ -400,7 +399,7 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     summary = {"演练": record["演练"], "用户画像": record.get("用户画像"), "有效": valid, "有效性": state["有效性"],
                "作废起始轮": state["作废起始轮"], "用户主动补充": [{"轮": d["轮"], "事实": d["事实"]} for d in volunteered],
-               "评审视为满足": record.get("评审视为满足"), "停止原因": facts.get("停止原因"),
+               "停止原因": facts.get("停止原因"),
                "轮数": facts.get("轮数"), "第一层": {c["项"]: c["通过"] for c in first}, "第二层": {c["项"]: c["通过"] for c in second},
                "隐藏事实": [{"写进了条目": f["写进了条目"], "问出来了": f["问出来了"], "主动说出的轮次": f["用户 agent 主动说出的轮次"],
                              "说出的轮次": f["用户 agent 说出的轮次"], "情形": f["情形"], "在作废轮次里": f["在作废轮次里"]}

@@ -94,9 +94,10 @@ CREATE TABLE IF NOT EXISTS model_call (
 `;
 
 /**
- * 评审发现表：评审者对一条评审给出的逐条发现——字段、列表型字段的第几项、问题、建议。
+ * 评审发现表：评审者对一条评审给出的逐条发现——依据的规则编号与级别、字段、列表型字段的第几项、问题、建议。
  * 评审表只有结论与理由一列文字，发现要能按字段标到界面上，所以单独成表，一条发现一行。
  * 与 model_call 一样用 IF NOT EXISTS：之前建的库第一次被写入一侧打开时补上，只加表、不改已有的表。
+ * rule_id 与 level 两列是后来加的，已有这张表的库在 ensureSchema 里用 ALTER TABLE 补上（见 REVIEW_FINDING_ADDED_COLUMNS）。
  */
 export const REVIEW_FINDING_SQL = `
 CREATE TABLE IF NOT EXISTS review_finding (
@@ -107,6 +108,8 @@ CREATE TABLE IF NOT EXISTS review_finding (
   item_index   INTEGER,              -- 列表型字段的第几项，从 0 起；指整个字段时为空
   problem      TEXT NOT NULL,        -- 问题
   suggestion   TEXT,                 -- 建议，可空
+  rule_id      TEXT,                 -- 依据的规则编号，例如 UC-R3；没有规则文件的集合为空
+  level        TEXT,                 -- 那条规则这次的级别：必选或可选；必选规则的发现叫问题，可选规则的发现叫建议
   PRIMARY KEY (review_id, ordinal)
 );
 `;
@@ -246,6 +249,11 @@ export function ensureSchema(db: DatabaseSync): void {
   db.exec(MODEL_CALL_SQL);
   // 评审发现表是早期版本加的，做法同上。
   db.exec(REVIEW_FINDING_SQL);
+  // 评审发现表的规则编号与级别两列是后来加的：缺哪列就加哪列，只加列、不动已有的数据。
+  const findingColumns = (db.prepare("PRAGMA table_info(review_finding)").all() as { name: string }[]).map((row) => row.name);
+  for (const [name, type] of REVIEW_FINDING_ADDED_COLUMNS) {
+    if (!findingColumns.includes(name)) db.exec(`ALTER TABLE review_finding ADD COLUMN ${name} ${type}`);
+  }
   // 这两张刚在上面补过，不按开头读到的表名清单判它们缺不缺。
   const missing = TABLE_NAMES.filter((name) => !ADDED_TABLES.includes(name) && !tables.includes(name));
   if (missing.length > 0) {
@@ -289,6 +297,9 @@ export function hasVersionColumns(db: DatabaseSync): boolean {
 
 /** 来源记到字段一级时给来源表加的几列。库里的来源表缺这几列，说明是最早格式的库。 */
 export const SOURCE_LEVEL_COLUMNS = ["support_no", "field", "field_index"] as const;
+
+/** 评审发现表后来加的两列与它们的类型。已有这张表、缺这两列的库（0.1 建的库，这张表还是空的）打开时补上。 */
+export const REVIEW_FINDING_ADDED_COLUMNS = [["rule_id", "TEXT"], ["level", "TEXT"]] as const;
 
 /** 任务名与领域标签加进任务表时加的两列。缺这两列说明是更早建的库。 */
 export const TASK_TABLE_COLUMNS = ["task_name", "domain_tag"] as const;
