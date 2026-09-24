@@ -341,13 +341,13 @@ body.tp-on .notice{display:none}
 .tp .rrow .rtag.click{color:var(--judge);border-color:#E7CFA8;background:var(--judge-t);margin:0 0 0 8px}
 .tp .rrow .rtag.bad{color:var(--bad);border-color:#F0C6C1;background:var(--bad-t);margin:0 0 0 8px}
 .tp .rrow .rwhy{display:block;font:12px/1.5 var(--sans);color:var(--ink3);margin-top:1px}
-/* 应答摘要与关键动作：未展开时也看得出助手这次做了什么 */
-.tp .rrow .rsum{display:block;font:13px/1.55 var(--sans);color:var(--ink2);margin-top:3px}
-.tp .rrow .rsum .who{color:var(--exec);font-weight:600;margin-right:4px}
-.tp .rrow .rsum.silent{color:var(--ink3);font-style:italic}
-.tp .rrow .rsum .acts{font-size:12px;color:var(--ink3);margin-left:8px;white-space:nowrap}
-.tp .rrow .rsum .acts b{color:var(--exec);font-weight:600}
-.tp .rrow .rsum .acts b.bad{color:var(--bad)}
+/* 助手应答一列：应答摘要，第二行小字是关键动作；未展开时也看得出助手这次做了什么 */
+.tp .rrow .rreply{font:13.5px/1.55 var(--sans);color:var(--ink2);min-width:0;overflow-wrap:anywhere}
+.tp .rrow.rhead .rreply{font:12px var(--sans);color:var(--ink3)}
+.tp .rrow .rreply .silent{color:var(--ink3);font-style:italic}
+.tp .rrow .rreply .acts{display:block;font-size:12px;color:var(--ink3);margin-top:2px}
+.tp .rrow .rreply .acts b{color:var(--exec);font-weight:600}
+.tp .rrow .rreply .acts b.bad{color:var(--bad)}
 .tp .rrow.other{background:#FAFBFF;cursor:pointer}
 .tp .rrow.other:hover{background:var(--human-t)}
 .tp .rrow.other .rsay{font:13.5px/1.55 var(--sans);color:var(--ink2)}

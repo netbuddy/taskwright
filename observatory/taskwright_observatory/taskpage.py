@@ -869,9 +869,10 @@ def error_count_suffix(role: str, turns: list[dict]) -> str:
 KEY_ACTION_TOOLS = ("save_revision", "save_version", "create_task", "complete_task")
 #: 页头与运行一行的「保存修订」按这个工具被接受的调用计数。
 SAVE_TOOL = "save_revision"
-#: 应答摘要与用户那句话各取前多少个字。
-REPLY_BRIEF_CHARS = 80
+#: 应答摘要、用户那句话、扩展消息各取前多少个字。
+REPLY_BRIEF_CHARS = 60
 PROMPT_BRIEF_CHARS = 60
+EXT_BRIEF_CHARS = 80
 #: 界面点击投进来的那句话与它触发的那次运行，开始时刻之差（运行减点击，单位秒）落在这个范围里就算对上。
 CLICK_WINDOW = (-1.0, 5.0)
 #: 扩展写进会话的自定义消息按类型分成几种行；没有登记的类型叫「扩展消息」。
@@ -957,7 +958,7 @@ def ext_row(message: dict, kind: str, session_id: str) -> dict:
     brief = re.sub(r"^【[^】]*】", "", brief)
     return {"种类": kind, "编号": f"ext-{message.get('条目编号', '')}", "类型": message.get("类型", ""),
             "时刻": clock(message.get("时刻秒")), "时刻秒": message.get("时刻秒"),
-            "原文": text, "摘要": head_chars(brief, REPLY_BRIEF_CHARS), "说明": EXT_NOTE[kind],
+            "原文": text, "摘要": head_chars(brief, EXT_BRIEF_CHARS), "说明": EXT_NOTE[kind],
             "条目编号": message.get("条目编号", ""), "会话编号": session_id}
 
 

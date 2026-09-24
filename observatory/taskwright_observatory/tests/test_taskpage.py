@@ -336,10 +336,10 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(rows[0]["由界面点击触发"], "用户选了「采纳」。")
         self.assertIn("对不上", rows[1]["说明"])
 
-    def test_应答摘要取前80个字_没说话如实写(self):
+    def test_应答摘要取前60个字_没说话如实写(self):
         long = "甲" * 100
         row = taskpage.run_row(self.timed(1, 1.0, "问" * 70, long, [turn(1, [], text=long, stop="stop")]))
-        self.assertEqual(row["应答摘要"], "甲" * 80 + "…")
+        self.assertEqual(row["应答摘要"], "甲" * 60 + "…")
         self.assertEqual(row["用户的话摘要"], "问" * 60 + "…")
         silent = taskpage.run_row(self.timed(1, 1.0, "请整理。", "", [turn(1, [call("save_revision", rejected=True)])]))
         self.assertFalse(silent["有没有对用户说话"])

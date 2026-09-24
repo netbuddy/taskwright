@@ -103,8 +103,8 @@ function renderWords() {
 
     <h4>观测台自己的呈现用语，pi 里没有这几个说法</h4>
     <dl>
-      <dt>应答摘要</dt><dd>运行一行下面那行小字的前半：助手这次运行里最后对用户说的话的前 80 个字；没有对用户说话就写「没有对用户说话」。</dd>
-      <dt>关键动作</dt><dd>那行小字的后半：保存修订、完成任务之类会改动任务或交付物的调用各几次，以及被拒几次。</dd>
+      <dt>应答摘要</dt><dd>「助手应答」一列的第一行：助手这次运行里最后对用户说的话的前 60 个字；没有对用户说话就写「没有对用户说话」。</dd>
+      <dt>关键动作</dt><dd>「助手应答」一列第二行的小字：保存修订、完成任务之类会改动任务或交付物的调用各几次，以及被拒几次。</dd>
       <dt>用户操作</dt><dd>用户在网页上直接做的操作（改字段、删条目、撤销修订、把条目标成看过），不经过助手，所以不是一次运行；扩展把它记进会话，这里按时刻单独占一行。</dd>
       <dt>任务现状</dt><dd>扩展在会话开始或续接时写进会话的一段任务状况，不是用户打的字，也单独占一行。</dd>
       <dt>由界面点击触发</dt><dd>用户在助手回复的卡片上点了一个选项，网页替用户把选项投成一句话，这句话触发了这次运行。</dd>
@@ -562,6 +562,7 @@ function guideHTML(g) {
 /* ───── 按运行排的流程表 ───── */
 // 序号与用户说的话固定显示；下面这几列用户可以隐藏，选择记在浏览器本地（取不到本地存储时全部显示）。
 const 可选列 = [
+  {键: "应答", 名: "助手应答", 头: "助手应答", 宽: "minmax(0,1fr)", 类: "rreply", 值: (r) => 应答HTML(r)},
   {键: "开始", 名: "开始时刻", 头: "开始", 宽: "5.4em", 类: "rt", 值: (r) => esc(r.时刻)},
   {键: "轮", 名: "轮数", 头: "轮", 宽: "3em", 类: "rn", 值: (r) => r.轮数},
   {键: "工具调用", 名: "工具调用次数", 头: "工具调用", 宽: "4.6em", 类: "rn", 值: (r) => r.工具调用次数},
@@ -582,15 +583,19 @@ const 运行表 = () => (cur.流程 || []).flatMap((seg) => seg.行).filter((x) 
 const 运行 = (no) => 运行表().find((x) => x.运行序号 === no);
 
 function 表头HTML() {
-  return `<div class="rrow rhead"><span class="rno">序号</span><span class="rsay">用户说的话（前 60 个字）；下面一行是助手的应答摘要与关键动作</span>${
+  return `<div class="rrow rhead"><span class="rno">序号</span><span class="rsay">用户说的话（前 60 个字）</span>${
     可见列().map((c) => `<span class="${c.类}">${esc(c.头)}</span>`).join("")}</div>`;
 }
 
-function 运行行HTML(r) {
-  const 摘要 = r.有没有对用户说话
-    ? `<span class="who">助手：</span>${esc(r.应答摘要)}` : "没有对用户说话";
+// 「助手应答」一列：第一行是这次运行最后一次成功送达的回复的前 60 个字，第二行小字是关键动作。
+function 应答HTML(r) {
+  const 摘要 = r.有没有对用户说话 ? esc(r.应答摘要) : `<span class="silent">没有对用户说话</span>`;
   const 动作 = r.关键动作.length
     ? `<span class="acts">${r.关键动作.map((x) => `<b class="${/^被拒/.test(x) ? "bad" : ""}">${esc(x)}</b>`).join("、")}</span>` : "";
+  return 摘要 + 动作;
+}
+
+function 运行行HTML(r) {
   const 格 = 可见列().map((c) => {
     const v = c.值(r);
     if (c.强调) return `<span class="${c.类} ${v ? c.强调 : "zero"}">${v || "—"}</span>`;
@@ -600,8 +605,7 @@ function 运行行HTML(r) {
     <span class="rno"><i class="chev"></i>${r.运行序号}</span>
     <span class="rsay">${esc(r.用户的话摘要 || "（归档里没有这次运行的提示原文）")}${
       r.由界面点击触发 ? `<span class="rtag click" title="${esc(r.由界面点击触发)}">由界面点击触发</span>` : ""}${
-      r.被中止 ? `<span class="rtag bad">被中止</span>` : ""}
-      <span class="rsum${r.有没有对用户说话 ? "" : " silent"}">${摘要}${动作}</span></span>${格}</button>`;
+      r.被中止 ? `<span class="rtag bad">被中止</span>` : ""}</span>${格}</button>`;
 }
 
 function 运行展开HTML(r) {
@@ -645,13 +649,16 @@ function 其他行HTML(x) {
       ["类型", `<code>${esc(x.类型)}</code>`],
       ["会话条目编号", `<code>${esc(x.条目编号 || "未知")}</code>`],
       ["时刻", esc(x.时刻 || "未知")]], 链接: ""});
+  // 助手应答一列留空，开始时刻照写，其余几列合成一格写一句说明。
   const 列 = 可见列();
-  const 有开始 = 列.some((c) => c.键 === "开始");
-  const 其余 = 列.length - (有开始 ? 1 : 0);
+  const 前面 = [];
+  if (列.some((c) => c.键 === "应答")) 前面.push(`<span></span>`);
+  if (列.some((c) => c.键 === "开始")) 前面.push(`<span class="rt">${esc(x.时刻)}</span>`);
+  const 其余 = 列.length - 前面.length;
   return `<div class="rrow other" data-k="${键}" id="${x.条目编号 ? `msg-${esc(x.条目编号)}` : esc(x.编号)}">
     <span class="rno">—</span>
     <span class="rsay"><span class="rtag ${x.种类 === "用户操作" ? "edit" : "ext"}">${esc(x.种类)}</span>${esc(x.摘要)}<span class="rwhy">${esc(x.说明)}</span></span>
-    ${有开始 ? `<span class="rt">${esc(x.时刻)}</span>` : ""}${其余 > 0 ? `<span class="rspan" style="grid-column:${有开始 ? 4 : 3} / -1">不是一次运行，没有轮与工具调用</span>` : ""}</div>`;
+    ${前面.join("")}${其余 > 0 ? `<span class="rspan" style="grid-column:${3 + 前面.length} / -1">不是一次运行，没有轮与工具调用</span>` : ""}</div>`;
 }
 
 function renderFlow() {
