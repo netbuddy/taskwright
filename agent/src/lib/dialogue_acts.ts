@@ -349,7 +349,7 @@ function writeSynthesized(db: DatabaseSync, taskId: string, sessionId: string, r
 }
 
 function payloadOf(row: ActRow) {
-  return { act_id: row.act_id, function: row.function, targets: load(row.targets), responds_to: row.responds_to, summary: row.summary };
+  return { act_id: row.act_id, function: row.function, targets: load(row.targets), responds_to: row.responds_to, confidence: row.confidence, summary: row.summary };
 }
 
 // ───────────── 门禁 ─────────────

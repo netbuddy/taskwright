@@ -12,6 +12,8 @@
 · 工作编号：写成「w-{那句用户的话的会话条目编号}」。刷新时从会话文件算，并把这次工作里的回复的 work_id 补成同一个；
   实时推送时执行者看护在那句话并入会话之后也改用这个编号（executor.py），所以刷新前后同一次工作的编号一致。
   修订日志按它把修订归到工作，前端据此在回复底部写「产生了修订 N」。
+· 理解为：执行者对触发这次工作的那句话写下的理解（agent 侧记在任务库的 USER_INTENT_RECORDED 事件与对话行为表里），
+  拼成一行「理解为：……」，放在摘要的 understanding 一项里，前端显示在「助手做了 N 步」之前。见 understanding_lines。
 """
 
 from __future__ import annotations
@@ -22,6 +24,11 @@ from pathlib import Path
 from taskwright_server.service import clock
 
 REPLY_TOOL = "reply"
+#: 这一轮只记了 USER_INTENT_INVALID、还没有一份有效理解时，「理解为」那一行的说法。
+INTENT_INVALID_TEXT = "助手的理解没有按格式写，正在重写"
+#: 把握的三档，按从低到高排；「理解为」那一行取各条里最低的一档，高时不括注。
+CONFIDENCE_ORDER = ("low", "medium", "high")
+CONFIDENCE_NOTE = {"low": "（把握低）", "medium": "（把握中）", "high": ""}
 OP_WORDS = {"add": "新增", "update": "修改", "delete": "删除", "restore": "恢复"}
 SAVE_REJECTED_HEAD = "这次「保存修订」什么都没有写入"
 SAVE_REJECTED_TAIL = "\n请把这些地方改正之后"
@@ -147,6 +154,59 @@ def stages(calls: list[dict], definition: dict) -> list[dict]:
         out.append({"text": text, "count": 1, "names": [], "_key": key})
         last_key = key
     return [{"text": s["text"], "count": s["count"], **({"reasons": s["reasons"]} if s.get("reasons") else {})} for s in out]
+
+
+def understanding_text(acts: list[dict]) -> str | None:
+    """一份理解写成一行：各条用户行为的摘要按记录顺序用「；」连起来，把握取最低的一档，中或低时括注。"""
+    summaries = [str(a.get("summary") or "").strip() for a in acts if str(a.get("summary") or "").strip()]
+    if not summaries:
+        return None
+    levels = [a.get("confidence") for a in acts if a.get("confidence") in CONFIDENCE_ORDER]
+    lowest = min(levels, key=CONFIDENCE_ORDER.index) if levels else "high"
+    return "理解为：" + "；".join(summaries) + CONFIDENCE_NOTE[lowest]
+
+
+def understanding_lines(task_dir: Path | None, session_id: str) -> dict[str, str | None]:
+    """这条会话里每句用户的话（按会话条目编号）对应的「理解为」那一行。
+
+    从任务库的事件表读：这句话有 USER_INTENT_RECORDED 时拼理解（事件内容里的各条行为，缺把握时到对话行为表里按编号查）；
+    那条事件是界面合成的（origin 为 ui，点卡片、「这几条都看过了」「先不管」之后替用户发的话）时这句话不显示这一行，值为 None；
+    只有 USER_INTENT_INVALID 时写 INTENT_INVALID_TEXT。没有库、没有这两种事件的旧库，返回空字典。只读，不改任何东西。
+    """
+    if task_dir is None:
+        return {}
+    from taskwright_server.service import library
+    conn = library.open_ro(Path(task_dir))
+    if conn is None:
+        return {}
+    out: dict[str, str | None] = {}
+    try:
+        rows = conn.execute("SELECT name, payload FROM event WHERE session_id = ? AND name IN ('USER_INTENT_RECORDED', 'USER_INTENT_INVALID') "
+                            "ORDER BY seq", (session_id,)).fetchall()
+        has_acts = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dialogue_act'").fetchone() is not None
+        for name, payload in rows:
+            data = library._json(payload) or {}
+            entry = data.get("user_entry")
+            if not entry:
+                continue
+            if name == "USER_INTENT_INVALID":
+                out.setdefault(entry, INTENT_INVALID_TEXT)
+                continue
+            if data.get("origin") == "ui":
+                out[entry] = None
+                continue
+            acts = [dict(a) for a in data.get("acts") or [] if isinstance(a, dict)]
+            for act in acts:
+                if act.get("confidence") is None and has_acts and act.get("act_id"):
+                    found = conn.execute("SELECT confidence FROM dialogue_act WHERE session_id = ? AND act_id = ?",
+                                         (session_id, act["act_id"])).fetchone()
+                    act["confidence"] = found[0] if found else None
+            out[entry] = understanding_text(acts)
+    except Exception:       # 读不出来只是少这一行，不影响摘要
+        return out
+    finally:
+        conn.close()
+    return out
 
 
 def _is_fallback(entry: dict, fallback_text: str, text_of) -> bool:

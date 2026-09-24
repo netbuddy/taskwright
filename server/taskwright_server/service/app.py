@@ -228,7 +228,7 @@ class Service:
         if session:
             info = next((s for s in t.executor.list_sessions() if s["session_id"] == session), None)
             work = t.executor.current_work(session)
-            messages = conversation.messages(t.executor.entries(session), session, t.definition())
+            messages = conversation.messages(t.executor.entries(session), session, t.definition(), t.dir)
             if work is not None:
                 # 正在进行的这次工作还没有结束：它的过程由 current_work 的步骤行显示，从会话文件算出的半截摘要不放进对话。
                 # 实时与刷新后的工作编号一致（都是「w-触发它的那句话的会话条目编号」），所以按编号认。
@@ -505,7 +505,7 @@ def make_handler(service: Service):
             session = self.session_param()
             if not session:
                 raise ApiError("bad_request", "要带 session 参数。")
-            all_messages = conversation.messages(t.executor.entries(session), session, t.definition())
+            all_messages = conversation.messages(t.executor.entries(session), session, t.definition(), t.dir)
             limit = int(self.query.get("limit") or 100)
             self.send_json(200, {"ok": True, **conversation.page(all_messages, self.query.get("before"), limit)})
 

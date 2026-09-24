@@ -245,6 +245,9 @@ export interface WorkSummary {
   step_count: number;
   /** reasons：保存修订被拒的那一步的全部原因，一个操作一条；多于一条时这一行可以点开逐条看。 */
   stages?: { text: string; count?: number; reasons?: string[] }[];
+  /** 「理解为：……」：执行者对触发这次工作的那句话的理解；理解没按格式写时是「助手的理解没有按格式写，正在重写」；
+   *  界面点击替用户发的那句话没有这一行，为空。 */
+  understanding?: string | null;
 }
 
 export type ConversationMessage = UserMessage | AssistantReply | UiActionNoted | SystemNote | WorkSummary;

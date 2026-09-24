@@ -71,16 +71,18 @@ def display_text(raw: str) -> str:
     return raw[len(SLASH_PREFIX):] if raw.startswith(SLASH_PREFIX + "/") else raw
 
 
-def messages(entries: list[dict], session_id: str, definition: dict | None = None) -> list[dict]:
-    """当前分支上的对话记录，按先后排。每次工作的过程摘要插在这次工作的回复之前，回复的 work_id 补上（见 work_summary.py）。"""
+def messages(entries: list[dict], session_id: str, definition: dict | None = None, task_dir: Path | None = None) -> list[dict]:
+    """当前分支上的对话记录，按先后排。每次工作的过程摘要插在这次工作的回复之前，回复的 work_id 补上（见 work_summary.py）。
+    给了任务目录时，摘要另带 understanding（「理解为」那一行，从任务库读）。"""
     path = branch(entries)
     out = _messages(path, session_id)
-    return with_work_summaries(out, path, session_id, definition or {})
+    return with_work_summaries(out, path, session_id, definition or {}, task_dir)
 
 
-def with_work_summaries(out: list[dict], path: list[dict], session_id: str, definition: dict) -> list[dict]:
+def with_work_summaries(out: list[dict], path: list[dict], session_id: str, definition: dict, task_dir: Path | None = None) -> list[dict]:
     """把从会话条目算出的过程摘要插进对话记录：放在这次工作第一条回复之前；这次工作没有回复时，放在下一句用户的话之前。"""
     from taskwright_server.service import work_summary
+    understandings = work_summary.understanding_lines(task_dir, session_id)
     for work in work_summary.works_from_entries(path, definition, FALLBACK_TEXT, text_of):
         replies = set(work["reply_ids"])
         for m in out:
@@ -88,7 +90,7 @@ def with_work_summaries(out: list[dict], path: list[dict], session_id: str, defi
                 m["work_id"] = work["work_id"]
         summary = {"type": "work_summary", "session_id": session_id, "message_id": f"summary-{work['user_message_id']}",
                    "work_id": work["work_id"], "at": work["at"], "seconds": work["seconds"], "step_count": work["step_count"],
-                   "stages": work["stages"]}
+                   "stages": work["stages"], "understanding": understandings.get(work["user_message_id"])}
         ids = [m.get("message_id") for m in out]
         first_reply = next((i for i, m in enumerate(out) if m["type"] == "assistant_reply" and m["message_id"] in replies), None)
         if first_reply is None:
