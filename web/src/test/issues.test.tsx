@@ -9,6 +9,7 @@ import { issueAnswerText, issueRefs, issuesOf, unresolvedIssuesOf, BUSY_TEXT } f
 import { ItemsPanel } from "../components/work/ItemsPanel";
 import { ItemIssues } from "../components/work/ItemIssues";
 import { HOLD_TEXT } from "../components/work/ReplyCard";
+import { TURN_TEXT } from "../components/work/Conversation";
 
 const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
@@ -145,24 +146,53 @@ describe("条目详情顶部「挂在这条上的问题」", () => {
       { kind: "keep_pending", targets: [{ item_id: "TBD-010", base_revision: 1 }], notify_executor: false }, expect.any(String)));
   });
 
-  it("助手工作中两个按钮都灰化并说明原因；有未保存的编辑时「回答」灰化；任务已结束时输入框也不能用", () => {
-    render(<Panel writesOff />);
+  it("助手工作中：「先不管」灰化；「回答」空着照常能预填，写了字要发送时才灰化并说明原因", () => {
+    const onSend = vi.fn();
+    const onAnswer = vi.fn();
+    render(<Panel writesOff onSend={onSend} onAnswer={onAnswer} />);
     fireEvent.click(screen.getByTestId("item-UC-003"));
-    expect(screen.getByTestId("issue-answer-TBD-002")).toBeDisabled();
-    expect(screen.getByTestId("issue-answer-TBD-002")).toHaveAttribute("title", BUSY_TEXT);
     expect(screen.getByTestId("issue-keep-TBD-002")).toBeDisabled();
     expect(screen.getByTestId("issue-keep-TBD-002")).toHaveAttribute("title", BUSY_TEXT);
+    const answer = screen.getByTestId("issue-answer-TBD-002");
+    expect(answer).toBeEnabled();
+    fireEvent.click(answer);
+    expect(onAnswer).toHaveBeenCalledWith(expect.objectContaining({ item_id: "TBD-002" }));
+    fireEvent.change(screen.getByTestId("issue-input-TBD-002"), { target: { value: "封顶 50 元" } });
+    expect(answer).toBeDisabled();
+    expect(answer).toHaveAttribute("title", TURN_TEXT);
+    fireEvent.click(answer);
+    expect(onSend).not.toHaveBeenCalled();
+  });
 
+  it("有未保存的条目编辑时，「回答」写了字才灰化；任务已结束时输入框与按钮都不能用", () => {
     const t = task();
     const { unmount } = render(<Wrap><ItemIssues task={t} itemId="UC-005" readOnly={false} hold pendingItems={new Set()} submit={vi.fn() as never} /></Wrap>);
-    expect(screen.getAllByTestId("issue-answer-TBD-002").at(-1)).toBeDisabled();
-    expect(screen.getAllByTestId("issue-answer-TBD-002").at(-1)).toHaveAttribute("title", HOLD_TEXT);
-    expect(screen.getAllByTestId("issue-keep-TBD-002").at(-1)).toBeEnabled();
+    expect(screen.getByTestId("issue-answer-TBD-002")).toBeEnabled();
+    fireEvent.change(screen.getByTestId("issue-input-TBD-002"), { target: { value: "只发一次" } });
+    expect(screen.getByTestId("issue-answer-TBD-002")).toBeDisabled();
+    expect(screen.getByTestId("issue-answer-TBD-002")).toHaveAttribute("title", HOLD_TEXT);
+    expect(screen.getByTestId("issue-keep-TBD-002")).toBeEnabled();
     unmount();
 
     render(<Wrap><ItemIssues task={task({ status: "已完成" })} itemId="UC-005" readOnly pendingItems={new Set()} submit={vi.fn() as never} /></Wrap>);
-    expect(screen.getAllByTestId("issue-input-TBD-002").at(-1)).toBeDisabled();
-    expect(screen.getAllByTestId("issue-keep-TBD-002").at(-1)).toHaveAttribute("title", "任务已结束，不能再改。");
+    expect(screen.getByTestId("issue-input-TBD-002")).toBeDisabled();
+    expect(screen.getByTestId("issue-answer-TBD-002")).toBeDisabled();
+    expect(screen.getByTestId("issue-answer-TBD-002")).toHaveAttribute("title", "任务已结束，不能再改。");
+    expect(screen.getByTestId("issue-keep-TBD-002")).toHaveAttribute("title", "任务已结束，不能再改。");
+  });
+
+  it("处理结果按字段名「处理结果」认，与字段在「状态」之前还是之后无关；其余文本字段按定义顺序显示在未解决的卡片上", () => {
+    const t = task();
+    const issues = t.definition.collections[1];
+    // 把字段顺序打乱：处理结果放到状态之前，另加一个排在状态之后的文本字段
+    issues.fields = [issues.fields[0], issues.fields[1], issues.fields[4], issues.fields[3], issues.fields[2],
+      { name: "备注", type: "文本", required: false, values: null }, issues.fields[5]];
+    t.items = t.items.map((i) => (i.item_id === "TBD-002" ? { ...i, fields: { ...i.fields, 备注: "材料第 3 节提到过罚款。" } } : i));
+    render(<Wrap><ItemIssues task={t} itemId="UC-003" readOnly={false} pendingItems={new Set()} submit={vi.fn() as never} /></Wrap>);
+    const open = screen.getByTestId("issue-card-TBD-002");
+    const lines = [...open.querySelectorAll(".sug")].map((e) => e.textContent);
+    expect(lines).toEqual(["助手建议的处理：向图书馆确认逾期费用是否封顶。", "助手备注：材料第 3 节提到过罚款。"]);
+    expect(screen.getByTestId("issue-outcome-TBD-001")).toHaveTextContent("处理结果：罚款在服务台缴纳（修订 9）");
   });
 });
 
