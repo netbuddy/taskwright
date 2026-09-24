@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taskwright/user_intent.schema.json",
+  "title": "执行者对用户这句话的理解",
+  "description": "用户每说一句话，执行者这一轮的第一段输出就是一份符合本 schema 的 JSON，用 ```json 围栏包住，写明它把这句话读成了哪几项对话行为。本文件是唯一的来源：平台 skill 里的说明与示例由 scripts/render-intent-schema.mjs 从它生成，「回复」工具的五种主行为也取自这里的 $defs.executor_function。",
+  "type": "object",
+  "required": ["acts"],
+  "additionalProperties": false,
+  "properties": {
+    "acts": {
+      "type": "array",
+      "minItems": 1,
+      "description": "用户这句话里的对话行为，一项一个，按用户说的先后排。",
+      "items": {
+        "type": "object",
+        "required": ["function", "confidence", "summary"],
+        "additionalProperties": false,
+        "properties": {
+          "function": { "$ref": "#/$defs/user_function" },
+          "targets": {
+            "type": "array",
+            "description": "这项行为针对的条目与位置，可以不写。条目必须是这个任务里有的条目。",
+            "items": {
+              "type": "object",
+              "required": ["item_id"],
+              "additionalProperties": false,
+              "properties": {
+                "item_id": { "type": "string", "description": "条目编号，例如 X-003。" },
+                "field": { "type": "string", "description": "字段名，只针对某个字段时写。" },
+                "index": { "type": "integer", "minimum": 0, "description": "列表型字段里的第几项，从 0 起。" }
+              }
+            }
+          },
+          "responds_to": {
+            "type": "string",
+            "description": "这项行为回应的是你之前哪一条对话行为的编号（例如 r12-1，写在「回复」的返回里）。用户在回应你等着回应的那一条时必须写；那一条必须是这条会话里有的、还没有被回应过的。"
+          },
+          "confidence": { "$ref": "#/$defs/confidence" },
+          "summary": { "type": "string", "maxLength": 120, "description": "一句话写这项行为针对的对象与内容，不写动作动词（这项行为是什么已经由 function 表达）：写「X-001、X-002 的当前修订」，不写「确认 X-001、X-002 当前内容」。" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "user_function": {
+      "description": "用户这项对话行为的功能。x-names 是每个取值的中文名，界面与过程摘要的「理解为」一行按「中文名（英文码）」显示。",
+      "enum": ["inform", "request", "affirm", "deny", "correct", "req_alts", "other", "clarify", "question"],
+      "x-names": {
+        "inform": "告知",
+        "request": "请求",
+        "affirm": "同意",
+        "deny": "否定",
+        "correct": "纠正",
+        "req_alts": "要求换一个",
+        "other": "无关",
+        "clarify": "要澄清",
+        "question": "询问"
+      },
+      "x-usage": {
+        "inform": "用户告诉你一件事实、一个取值或一个决定，例如「每人最多借五本」「续借的事先不管」；在卡片上选了一个选项也是告知。",
+        "request": "用户要你做一件事，例如「把材料整理成条目」「删掉 X-004」。",
+        "affirm": "用户接受你请确认、建议或提议的内容，例如「前两条可以」「就按你说的办」。",
+        "deny": "用户不接受，但没有给出改成什么，例如「不对」「不要这样」。",
+        "correct": "用户指出哪里错了并给出正确的内容，例如「借阅期限写错了，应该是三十天」。",
+        "req_alts": "用户要你换一个方案或换一个说法，例如「换个写法」「还有别的办法吗」。",
+        "other": "与这个任务无关的话，例如寒暄、问你是谁。",
+        "clarify": "用户没听懂你上一句话，要你把它解释清楚，例如「你说的办理前提是什么意思」。只用于你刚说过的话；用户问的是材料、条目或任务的情况时，用 question。",
+        "question": "用户向你要信息、要解释或要现状，例如「材料里写了保留几天吗」「为什么这样拆」「现在还差什么」。"
+      }
+    },
+    "executor_function": {
+      "description": "执行者「回复」的末位主行为，五种都期待用户回应；每条告知另记一条 inform，不期待回应。",
+      "enum": ["ask", "confirm", "suggest", "choose", "propose"],
+      "x-names": {
+        "ask": "提问",
+        "confirm": "请确认",
+        "suggest": "给建议值",
+        "choose": "请选择",
+        "propose": "提议"
+      }
+    },
+    "confidence": {
+      "description": "你对这项理解有多大把握。",
+      "enum": ["high", "medium", "low"],
+      "x-names": { "high": "有把握", "medium": "把握中等", "low": "没把握" },
+      "x-usage": {
+        "high": "用户说得明白，只有这一种读法。",
+        "medium": "大概是这个意思，但还有别的读法；在回复里用请选择求证，把几种读法写成选项。",
+        "low": "猜的；先别据此改条目，在回复里问清楚。"
+      }
+    }
+  },
+  "examples": [
+    {
+      "context": "你上一轮的回复记了两条：r12-1 请确认 X-001、X-002、X-003，r12-2 请选择 X-007（逾期的读者能不能续借）。用户说：「前两条可以，第三条借阅期限写错了，应该是三十天。续借的事先不管。」",
+      "value": {
+        "acts": [
+          { "function": "affirm", "responds_to": "r12-1", "targets": [{ "item_id": "X-001" }, { "item_id": "X-002" }], "confidence": "high", "summary": "X-001、X-002 的当前修订" },
+          { "function": "correct", "responds_to": "r12-1", "targets": [{ "item_id": "X-003", "field": "借阅期限" }], "confidence": "high", "summary": "X-003 的借阅期限改为三十天" },
+          { "function": "inform", "responds_to": "r12-2", "targets": [{ "item_id": "X-007" }], "confidence": "medium", "summary": "X-007 先不管" }
+        ]
+      }
+    },
+    {
+      "context": "用户问：「预约图书那条，预约的书到馆后保留几天，材料里写了吗？」",
+      "value": {
+        "acts": [
+          { "function": "question", "targets": [{ "item_id": "X-004" }], "confidence": "high", "summary": "材料里有没有写预约的书保留几天" }
+        ]
+      }
+    }
+  ]
+}

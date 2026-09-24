@@ -57,7 +57,8 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual((answer["text"], answer["via_reply_tool"]), ("存好了。", True))
             self.assertTrue(answer["message_id"])
             changed = stream.wait(lambda e: e["event"] == "deliverable_changed")
-            self.assertEqual((changed["id"], changed["data"]["actor"], changed["data"]["op_id"]), (2, "executor", None))
+            # 2 号事件是执行者对这句话的理解（USER_INTENT_RECORDED），不转发给界面；修订是 3 号。
+            self.assertEqual((changed["id"], changed["data"]["actor"], changed["data"]["op_id"]), (3, "executor", None))
             self.assertEqual(changed["data"]["operations"][0]["fields"]["用例名称"], "提交退货申请")
             self.assertIsNotNone(changed["data"]["completion"])
             ended = stream.wait(lambda e: e["event"] == "work_ended")["data"]
@@ -74,7 +75,7 @@ class ServiceTests(unittest.TestCase):
             rebuilt = snap["conversation"]["messages"][2]
             self.assertEqual((rebuilt["step_count"], [x["text"] for x in rebuilt["stages"]]), (2, [x["text"] for x in summary["stages"]]))
             self.assertEqual(snap["conversation"]["messages"][3]["work_id"], rebuilt["work_id"])
-            self.assertEqual(snap["seq"], 2)
+            self.assertEqual(snap["seq"], 3, "1 号建任务，2 号执行者对那句话的理解，3 号修订")
             # 实时推送的工作编号与刷新后从会话文件算出的一致：都是「w-触发它的那句话的会话条目编号」。
             self.assertEqual((answer["work_id"], ended["work_id"]), (rebuilt["work_id"], f"w-{user['message_id']}"))
             # 修订日志：修订 1 归到这次工作，触发它的是那句话。
@@ -208,13 +209,13 @@ class ServiceTests(unittest.TestCase):
             stream.close()
             rig.call("POST", f"/tasks/{tid}/actions?session={sid}", {
                 "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_revision": 1}], "fields": {"用例名称": "断线时改的"}})
-            # 断线前最后收到的库事件是 1 号（创建任务之后没有收到任何库事件的也算），重连补发 2、3、4 号：
-            # 2 号是执行者的修订，3 号是断线时改字段产生的修订，4 号是随它自动登记的确认。
+            # 断线前最后收到的库事件是 1 号（创建任务之后没有收到任何库事件的也算），重连补发 3、4、5 号：
+            # 2 号是执行者对那句话的理解（不转发给界面），3 号是执行者的修订，4 号是断线时改字段产生的修订，5 号是随它自动登记的确认。
             again = rig.stream(tid, last_event_id=1)
-            seqs = [again.wait(lambda e: e.get("id") == n)["id"] for n in (2, 3, 4)]
-            self.assertEqual(seqs, [2, 3, 4])
+            seqs = [again.wait(lambda e: e.get("id") == n)["id"] for n in (3, 4, 5)]
+            self.assertEqual(seqs, [3, 4, 5])
             time.sleep(0.5)
-            self.assertEqual([e["id"] for e in again.events if "id" in e], [2, 3, 4], "补发的每一条只发一次")
+            self.assertEqual([e["id"] for e in again.events if "id" in e], [3, 4, 5], "补发的每一条只发一次")
             import taskwright_server.service.hub as hub_module
             saved, hub_module.REPLAY_WINDOW = hub_module.REPLAY_WINDOW, 1
             try:

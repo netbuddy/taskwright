@@ -16,6 +16,7 @@
 import { existsSync, statSync, unlinkSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath, inImmediateTransaction } from "./db.ts";
+import { ensureDialogueSchema } from "./dialogue_schema.ts";
 
 /**
  * 忙等待超时（busy timeout）：遇到别的连接占着锁时，最多等这么多毫秒再放弃。
@@ -40,10 +41,11 @@ export const TABLE_NAMES = [
   "model_call",
   "review_finding",
   "review_waiver",
+  "dialogue_act",
 ] as const;
 
 /** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver"];
+export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act"];
 
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
@@ -159,6 +161,7 @@ CREATE TABLE revision (
   event_seq    INTEGER NOT NULL,       -- 记下这次修订的那条事件的序号
   created_at   TEXT NOT NULL,          -- 时刻（本地时间）
   summary      TEXT NOT NULL,          -- 这次改动了哪些条目的摘要（JSON 列表，每项是操作种类、条目编号、所属集合）
+  intent_act_id TEXT,                  -- 这次修订因用户哪一项对话行为而做（dialogue_act 的编号）；用户直接操作与对不上的为空
   PRIMARY KEY (task_id, revision_no)
 );
 
@@ -195,6 +198,7 @@ CREATE TABLE item_source (
   field        TEXT,                   -- 这一处支持的字段名；为空表示这条来源支持整个条目
   field_index  INTEGER,                -- 列表型字段里的第几项，从 0 起；为空表示支持整个字段
   event_seq    INTEGER NOT NULL,       -- 记下这次修订的那条事件的序号
+  normalized_value TEXT,               -- 种类为用户的话、写入的值与原话不同时，写入的值；摘录仍是逐字的原话
   PRIMARY KEY (task_id, item_id, revision_no, position, support_no)
 );
 
@@ -270,6 +274,7 @@ export function ensureSchema(db: DatabaseSync): void {
   }
   if (tables.length === 0) {
     db.exec(SCHEMA_SQL);
+    ensureDialogueSchema(db);
     return;
   }
   // 模型调用表是后来加的：只加表、不动已有的表，旧库在这里补上（见 MODEL_CALL_SQL 的说明）。
@@ -288,6 +293,8 @@ export function ensureSchema(db: DatabaseSync): void {
   }
   // 评审豁免表是后来加的。
   db.exec(REVIEW_WAIVER_SQL);
+  // 对话行为表与对话理解加的两列是后来加的：只加表、只加列，做法同上（见 dialogue_schema.ts）。
+  ensureDialogueSchema(db);
   // 这两张刚在上面补过，不按开头读到的表名清单判它们缺不缺。
   const missing = TABLE_NAMES.filter((name) => !ADDED_TABLES.includes(name) && !tables.includes(name));
   if (missing.length > 0) {

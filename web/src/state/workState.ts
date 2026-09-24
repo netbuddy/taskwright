@@ -464,13 +464,17 @@ function applyProcess(state: WorkState, name: string, data: unknown): WorkState 
       return applyStep(state, data as Step);
     case "work_ended": {
       const d = data as WorkEnded;
+      const steps = state.currentWork?.work_id === d.work_id ? state.currentWork.steps : [];
+      // 「理解为」那一行实时推送时是键以 -intent 结尾的步骤，拼摘要时单独放进 understanding，不算做了的一步。
+      const understanding = steps.find((s) => isUnderstandingStep(s));
       const summary: ConversationMessage = {
         type: "work_summary",
         work_id: d.work_id,
         at: d.at,
         seconds: d.seconds,
         step_count: d.step_count,
-        stages: (state.currentWork?.work_id === d.work_id ? state.currentWork.steps : []).map((s) => ({ text: s.text })),
+        stages: steps.filter((s) => !isUnderstandingStep(s)).map((s) => ({ text: s.text })),
+        understanding: understanding ? understanding.text : null,
       };
       // 过程摘要放在这次工作的回复之前：回复一般先于 work_ended 到达。后端算好的摘要（work_summary）先到了就不再拼。
       if (state.messages.some((m) => m.type === "work_summary" && (m as WorkSummary).work_id === d.work_id)) return { ...state, currentWork: null };
@@ -531,6 +535,11 @@ function applyUserMessage(state: WorkState, data: UserMessage): WorkState {
     return { ...state, messages, outgoing };
   }
   return { ...appendMessage(state, message), outgoing };
+}
+
+/** 执行者对这句话的理解那一行（「理解为：……」）：后端推送时步骤键以 -intent 结尾。 */
+export function isUnderstandingStep(step: Step): boolean {
+  return String(step.step_key).endsWith("-intent");
 }
 
 function applyStep(state: WorkState, step: Step): WorkState {

@@ -133,10 +133,14 @@ class RpcWithFakeModelTests(unittest.TestCase):
         self.assertEqual([(s["item_id"], s["revision_no"], s["kind"], s["locator"]) for s in sources],
                          [("NFR-001", 1, "文档原文", "inputs/材料.md"), ("UC-001", 1, "文档原文", "inputs/材料.md")])
         self.assertEqual([(r["revision_no"], r["call_id"]) for r in revisions], [(1, "call-save-1")])
-        self.assertEqual([(e["name"], e["call_id"], e["actor"]) for e in events],
+        # 对话理解另记一条 USER_INTENT_RECORDED（执行者这一轮第一段写的理解），它不是交付物的改动，单独核对。
+        dialogue = ("USER_INTENT_RECORDED", "USER_INTENT_INVALID", "EXECUTOR_ACTS_RECORDED")
+        self.assertEqual([(e["name"], e["call_id"], e["actor"]) for e in events if e["name"] not in dialogue],
                          [("TASK_CREATED", TASK_OP_ID, "user"), ("REVISION_SAVED", "call-save-1", "executor")])
-        self.assertEqual(revisions[0]["event_seq"], 2)
-        self.assertTrue(all(i["event_seq"] == 2 for i in items))
+        self.assertEqual([e["name"] for e in events if e["name"] in dialogue], ["USER_INTENT_RECORDED"])
+        saved = next(e["seq"] for e in events if e["name"] == "REVISION_SAVED")
+        self.assertEqual(revisions[0]["event_seq"], saved)
+        self.assertTrue(all(i["event_seq"] == saved for i in items))
         failed = [c for c in checks if not c["通过"]]
         self.assertEqual(failed, [], f"check_db 有不通过的项：{failed}")
 
@@ -220,7 +224,7 @@ class RpcWithFakeModelTests(unittest.TestCase):
         self.assertEqual(failed, [], f"check_db 有不通过的项：{failed}")
 
     def test_闲聊不写库(self):
-        """任务已经存在；闲聊之后事件表没有新行，除了「回复」没有任何工具执行。"""
+        """任务已经存在；闲聊之后交付物没有写，事件表只多了一行执行者对这句话的理解，除了「回复」没有任何工具执行。"""
         script = [reply("今天确实降温了，出门记得多穿一件。")]
         with Rig(script) as rig:
             before = rig.rows("SELECT seq FROM event ORDER BY seq")
@@ -231,7 +235,8 @@ class RpcWithFakeModelTests(unittest.TestCase):
         self.assertEqual([(r["工具"], r["被拒"]) for r in tool_results(events)], [("reply", False)])
         self.assertEqual(len(requests), 1)
         self.assertEqual(before, [{"seq": 1}])
-        self.assertEqual(after, [{"seq": 1, "name": "TASK_CREATED", "actor": "user"}])
+        self.assertEqual(after, [{"seq": 1, "name": "TASK_CREATED", "actor": "user"},
+                                 {"seq": 2, "name": "USER_INTENT_RECORDED", "actor": "executor"}])
 
     def test_打开会话时追加任务现状消息_续接只追加变化(self):
         """新会话：用户第一句话之前会话里有一条任务现状消息，第一次模型请求带着它。

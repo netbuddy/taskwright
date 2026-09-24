@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { databasePath } from "./db.ts";
+import { EXECUTOR_FUNCTIONS, INTENT_GATE_TEXT } from "./intent_schema.ts";
 import { type TurnCall, isBlank, isObject, lastAssistantTurn, requireAlone } from "./speak.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
@@ -31,8 +32,9 @@ export { type TurnCall, lastAssistantTurn };
 /** 工具名。同一轮的调用列表里按它认出自己。 */
 export const REPLY_TOOL_NAME = "reply";
 
-/** 末位主行为的五种。 */
-export const ACT_KINDS = ["ask", "confirm", "suggest", "choose", "propose"] as const;
+/** 末位主行为的五种：取自理解格式的 schema（agent/prompts/schemas/user_intent.schema.json 的 $defs.executor_function），
+ *  与对话行为表里执行者侧的功能是同一份清单。 */
+export const ACT_KINDS = EXECUTOR_FUNCTIONS as readonly ("ask" | "confirm" | "suggest" | "choose" | "propose")[];
 export type ActKind = (typeof ACT_KINDS)[number];
 
 /** 提议的预览里，每一项对条目的影响。 */
@@ -367,7 +369,8 @@ type BranchEntry = { type: string; message?: { role?: string; toolName?: string;
 /**
  * 从会话当前分支的末尾往回数：这一次运行里「回复」已经连续被拒了几次。
  * 遇到一次成功的「回复」、或者一条用户消息就停；兜底扩展追加的那句固定文字不算用户消息，因为兜底之后的续跑
- * 仍属于同一次运行。别的工具调用与扩展写入的自定义消息不打断连续。
+ * 仍属于同一次运行。别的工具调用与扩展写入的自定义消息不打断连续。因为这一轮还没有写理解而被拒的那几次不算：
+ * 那不是回复的形式不对（见 lib/dialogue_acts.ts 的门禁）。
  */
 export function consecutiveReplyRejections(branch: BranchEntry[]): number {
   let count = 0;
@@ -377,6 +380,7 @@ export function consecutiveReplyRejections(branch: BranchEntry[]): number {
     const { role } = entry.message;
     if (role === "toolResult" && entry.message.toolName === REPLY_TOOL_NAME) {
       if (entry.message.isError !== true) break;
+      if (textOfContent(entry.message.content).includes(INTENT_GATE_TEXT)) continue;
       count += 1;
     } else if (role === "user") {
       const content = entry.message.content;
@@ -387,6 +391,12 @@ export function consecutiveReplyRejections(branch: BranchEntry[]): number {
     }
   }
   return count;
+}
+
+function textOfContent(content: unknown): string {
+  return typeof content === "string"
+    ? content
+    : (Array.isArray(content) ? content : []).map((part: any) => (part?.type === "text" ? part.text : "")).join("");
 }
 
 /**

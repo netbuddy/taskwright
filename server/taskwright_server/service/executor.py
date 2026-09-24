@@ -502,6 +502,7 @@ class Executor:
                     if message_id and not self.work["announced"]:
                         self.work["work_id"] = f"w-{message_id}"
                 self.work["last_user_id"] = message_id
+                self.work["understanding"] = None
                 self.work["replied_since_user"] = False
                 self.work["last_text"] = None
                 self._announce_work(sid)
@@ -527,6 +528,7 @@ class Executor:
                 self.last_click = {"id": hit.get("id") if hit else None, "details": message.get("details") or {}}
             return
         if role == "assistant" and self.work is not None:
+            self._understanding_step(sid)
             text = conversation.text_of(message.get("content")).strip()
             calls = [p for p in (message.get("content") or []) if isinstance(p, dict) and p.get("type") == "toolCall"]
             if message.get("stopReason") == "error":
@@ -534,6 +536,26 @@ class Executor:
             if text and not calls:
                 self.work["last_text"] = text
                 self.work["last_text_entry"] = None
+
+    def _understanding_step(self, sid: str | None) -> None:
+        """助手消息落进会话时，把执行者对这句话的理解推成这次工作的第一行步骤「理解为：……」。
+
+        pi 先让扩展处理完 message_end（agent 侧此时已把理解或无效记录写进任务库），再往标准输出发这条事件，所以这里读得到。
+        只写了无效理解时这一行写「助手的理解没有按格式写，正在重写」，之后写对了用同一个键换掉；界面合成的那句话不显示。"""
+        work = self.work
+        user_id = work.get("last_user_id") or work.get("triggered_by")
+        if not user_id:
+            return
+        lines = work_summary.understanding_lines(self.task_dir, sid) if sid else {}
+        if user_id not in lines or lines[user_id] is None or lines[user_id] == work.get("understanding"):
+            return
+        text = lines[user_id]
+        work["understanding"] = text
+        key = f"{work['work_id']}-intent"
+        step = {"session_id": sid, "work_id": work["work_id"], "step_key": key, "text": text,
+                "in_progress": text == work_summary.INTENT_INVALID_TEXT, "failed": False}
+        work["steps"] = {key: step, **{k: v for k, v in work["steps"].items() if k != key}}
+        self.hub.emit("step", step)
 
     @staticmethod
     def _user_entry(entries: list[dict], raw: str) -> dict | None:
@@ -555,8 +577,9 @@ class Executor:
                       if w["user_message_id"] == user_id), None)
         if found is None:
             return
+        understanding = work_summary.understanding_lines(self.task_dir, sid).get(user_id) if sid else None
         self.hub.emit("work_summary", {"session_id": sid, "work_id": work["work_id"], "at": found["at"], "seconds": found["seconds"],
-                                       "step_count": found["step_count"], "stages": found["stages"]})
+                                       "step_count": found["step_count"], "stages": found["stages"], "understanding": understanding})
 
     def _fetch_all_entries(self, pi: PiSession) -> list[dict]:
         return list((pi.request("get_entries") or {}).get("entries") or [])

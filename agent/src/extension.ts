@@ -28,6 +28,7 @@ import { registerGetItem } from "./tools/get_item.ts";
 import { registerGetTaskStatus } from "./tools/get_task_status.ts";
 import { registerCompleteTask } from "./tools/complete_task.ts";
 import { registerRequestReview } from "./tools/request_review.ts";
+import { registerIntentRecord } from "./hooks/intent_record.ts";
 
 export default function (pi: ExtensionAPI) {
   registerSaveRevision(withTuiRenderers(pi));
@@ -41,4 +42,6 @@ export default function (pi: ExtensionAPI) {
   registerReplyFallback(pi);
   registerUserCommands(pi);
   registerBoardCommand(pi);
+  // 对话理解：助手消息落进会话时解析它第一段写的理解，记进对话行为表（hooks/intent_record.ts）。
+  registerIntentRecord(pi);
 }

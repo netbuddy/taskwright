@@ -1,0 +1,33 @@
+/**
+ * 记下执行者对用户每句话的理解：挂在助手消息落进会话的事件（message_end，role 为 assistant）上，
+ * 调用 lib/dialogue_acts.ts 的 recordFromAssistantMessage。
+ *
+ * pi 先等扩展处理完 message_end、再把这条助手消息写进会话、再执行它里面的工具调用（pi 0.85 的 agent-session 与
+ * agent-core 都等待事件处理函数），所以写表在工具执行之前完成：同一条消息里「先写理解、后调用保存修订」时，
+ * 保存修订的门禁读得到这份理解。处理时这条助手消息还不在会话分支上，分支的末尾是它之前的那些条目。
+ *
+ * 这是扩展点代码里唯一写库的地方（其余扩展点代码不写任务数据）：它写的是对话行为表与两种事件，
+ * 不碰交付物。出错时不让运行失败，只经状态栏报一行原因（键名 taskwright-intent-error）；
+ * 那时这一轮没有理解记录，三个工具的门禁会拒绝，执行者重写即可。
+ */
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { recordFromAssistantMessage } from "../lib/dialogue_acts.ts";
+
+/** 要求这一轮先有理解的三个工具。 */
+export const GATED_TOOLS = ["save_revision", "complete_task", "reply"] as const;
+
+/** 报错用的状态栏键名。 */
+export const INTENT_ERROR_KEY = "taskwright-intent-error";
+
+export function registerIntentRecord(pi: ExtensionAPI): void {
+  pi.on("message_end", async (event, ctx) => {
+    const message = (event as { message?: { role?: string; content?: unknown; stopReason?: string } }).message;
+    if (message?.role !== "assistant") return;
+    try {
+      recordFromAssistantMessage(ctx.cwd, ctx.sessionManager.getSessionId(), ctx.sessionManager.getBranch() as never, message, GATED_TOOLS);
+    } catch (error) {
+      ctx.ui.setStatus(INTENT_ERROR_KEY, `这一轮的理解没有记下：${(error as Error).message}`);
+    }
+  });
+}

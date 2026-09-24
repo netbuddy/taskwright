@@ -23,7 +23,7 @@ export function registerGetTaskStatus(pi: ExtensionAPI): void {
     promptSnippet: "查询任务进行到哪一步、完成条件还缺什么（只读）",
     parameters: Type.Object({}),
     async execute(_toolCallId: string, _params: unknown, _signal, _onUpdate, ctx: ExtensionContext) {
-      const outcome = getTaskStatus(ctx.cwd);
+      const outcome = getTaskStatus(ctx.cwd, ctx.sessionManager.getSessionId());
       return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
     },
   });

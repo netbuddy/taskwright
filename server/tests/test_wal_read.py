@@ -45,7 +45,8 @@ class WalReadTest(unittest.TestCase):
         before = revision_count(self.db)
         writer = sqlite3.connect(self.db, isolation_level=None)
         writer.execute("PRAGMA wal_autocheckpoint = 0")   # 不让改动合并回库文件，只留在 -wal 里
-        writer.execute("INSERT INTO revision SELECT task_id, revision_no + 100, session_id, call_id, event_seq, "
+        writer.execute("INSERT INTO revision (task_id, revision_no, session_id, call_id, event_seq, created_at, summary) "
+                       "SELECT task_id, revision_no + 100, session_id, call_id, event_seq, "
                        "created_at, summary FROM revision LIMIT 1")
         try:
             self.assertTrue(Path(f"{self.db}-wal").exists())

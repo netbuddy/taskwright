@@ -6,13 +6,18 @@
  * 不合格时核对函数抛出异常，pi 把异常文字交还模型重写（被拒的结果不带结束标记，pi 一定会再开一轮）。
  *
  * 参数的形状这里只做最宽的声明，逐项的核对都在核对函数里做，好让不对的地方得到逐条的中文说明，
- * 而不是 pi 的一句英文的参数校验失败。回复不写库，也不记事件，所以 details 里的 event_seq 为空。
+ * 而不是 pi 的一句英文的参数校验失败。
+ *
+ * 对话理解：执行之前先核对这一轮有没有有效的理解（lib/dialogue_acts.ts 的 requireUnderstanding），没有就拒绝；
+ * 合格送达之后把告知与末位主行为记进对话行为表（recordReplyActs），编号写进返回的文字与 details.acts，
+ * details.event_seq 是那条 EXECUTOR_ACTS_RECORDED 事件的序号（没有要记的行为、或者还没有任务库时为空）。
  */
 
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup } from "../lib/reply.ts";
 import { spoken } from "../lib/speak.ts";
+import { recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = REPLY_TOOL_NAME;
@@ -87,7 +92,8 @@ export function registerReply(pi: ExtensionAPI): void {
     name: TOOL_NAME,
     label: "回复",
     description:
-      "把你要对用户说的话发给用户。你对用户说的每一句话都要经这个工具发出，不要直接输出正文。" +
+      "把你要对用户说的话发给用户。你对用户说的每一句话都要经这个工具发出，不要直接输出正文" +
+      "（每轮第一段那份 ```json 理解不是正文，照平台 skill「先写理解」一节写）。" +
       "这个工具是你本次回应的最后一步：要单独调用它，不要与其他工具在同一轮里一起调用，也不要连着调用两次；" +
       "调用之后不要再输出任何正文。一次回复由零到多条告知、至多一个末位主行为（提问、请确认、给建议值、请选择、提议之一）" +
       "与一段成文的话组成。它只核对形式与条目是否存在，不评判内容；形式不对时它会逐条告诉你哪里不对，请照着改好再调用。",
@@ -100,6 +106,7 @@ export function registerReply(pi: ExtensionAPI): void {
     async execute(toolCallId: string, params: unknown, _signal, _onUpdate, ctx: ExtensionContext) {
       const branch = ctx.sessionManager.getBranch() as Parameters<typeof lastAssistantTurn>[0];
       const turn = lastAssistantTurn(branch);
+      requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch as never, "回复", TOOL_NAME);
       const lookup = openRevisionLookup(ctx.cwd);
       let decision;
       try {
@@ -113,13 +120,16 @@ export function registerReply(pi: ExtensionAPI): void {
       } finally {
         lookup.close();
       }
+      const messageId = turn.calls.some((call) => call.id === toolCallId) ? turn.entryId : null;
+      const recorded = recordReplyActs(ctx.cwd, ctx.sessionManager.getSessionId(), branch as never, decision.reply, messageId, toolCallId);
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。
-      return spoken("回复已送达", {
+      return spoken(recorded?.text ? `回复已送达。${recorded.text}` : "回复已送达", {
         delivered: true,
         reply: decision.reply,
         degraded: decision.degraded,
-        message_id: turn.calls.some((call) => call.id === toolCallId) ? turn.entryId : null,
-        event_seq: null,
+        message_id: messageId,
+        event_seq: recorded?.eventSeq ?? null,
+        acts: recorded?.acts ?? [],
       });
     },
   });

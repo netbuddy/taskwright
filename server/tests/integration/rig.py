@@ -72,7 +72,7 @@ def put_material(task_dir: Path, text: str, name: str = "材料.md") -> Path:
 
 class Rig:
     def __init__(self, script, extra_extensions: tuple[str, ...] = (), label: str = "it", create_task: bool = True,
-                 material: str | None = None):
+                 material: str | None = None, auto_intent: bool = True):
         self.script = script
         self.extra_extensions = extra_extensions
         self.label = label
@@ -87,7 +87,9 @@ class Rig:
         if material is not None:
             # 「文档原文」的摘录要逐字出自出处所指的材料文件：用到这种来源的测试把材料正文交进来。
             put_material(self.workspace, material)
-        self.fake = FakeModel(script, self.root / "fake_requests.jsonl")
+        # auto_intent：用户说话之后第一个只有工具调用的回答，由假端点在前面补一段理解（见 fake_model/server.py）；
+        # 测「没写理解被拒」的测试传 False。
+        self.fake = FakeModel(script, self.root / "fake_requests.jsonl", auto_intent=auto_intent)
         self.session: PiSession | None = None
 
     # ───────────── 启停 ─────────────

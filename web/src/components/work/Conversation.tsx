@@ -260,6 +260,11 @@ export function WorkSummaryLine({ summary }: { summary: WorkSummary }) {
   const head = `助手做了 ${summary.step_count} 步，用了 ${formatSeconds(summary.seconds)}`;
   return (
     <>
+      {summary.understanding && (
+        <div className="proc" data-testid="work-summary-understanding">
+          <div className="pline"><span className="ptxt">{summary.understanding}</span></div>
+        </div>
+      )}
       <div className="proc-fold" role="button" onClick={() => setOpen(!open)} data-testid="work-summary">
         {head} {open ? "▾ 收起" : "▸ 展开看做了什么"}
       </div>
