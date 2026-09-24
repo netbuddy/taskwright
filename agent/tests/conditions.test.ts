@@ -50,11 +50,11 @@ test("评审表与判读表为空时，有条目的集合在两个条件上都�
     checkCompletion(db, "TASK-001", { 用例: ["至少一个条目", "每个条目评审通过", "每个条目用户确认"] }),
   );
   assert.deepEqual(results.map((r) => r.satisfied), [true, false, false]);
-  assert.match(results[1].unmet[0].reason, /UC-001 在当前所在的修订 1 还没有评审通过的记录/);
+  assert.match(results[1].unmet[0].reason, /UC-001 在当前所在的修订 1 还没评审/);
   // 说明只讲事实，不带集合名：集合名由调用方（看板的分组标题、工具的拒绝理由）自己带。
   assert.deepEqual(results.map((r) => r.summary), [
     "现在有 1 个条目。",
-    "有 1 个条目在当前所在的修订还没有评审通过的记录。",
+    "UC-001 还没评审。",
     "有 1 个条目用户还没看过这个条目（未读）。",
   ]);
   assert.ok(results.every((r) => !r.summary.includes("用例") && r.unmet.every((u) => !u.reason.includes("集合"))));

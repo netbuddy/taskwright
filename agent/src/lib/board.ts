@@ -18,7 +18,6 @@
 import { existsSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { checkCompletion, currentItems } from "./conditions.ts";
-import { REVIEW_CONDITION, reviewSwitchOn } from "./complete_task.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, hasVersionColumns } from "./schema.ts";
@@ -142,11 +141,9 @@ export function completionLines(db: DatabaseSync, task: TaskRow, definition: Tas
   const mark = { met: "[已满足]", unmet: "[还差]", empty: "[暂无条目]" } as const;
   for (const one of results) {
     const unmet = one.unmet.map((u) => u.item).filter((item): item is string => item !== null);
-    const list = unmet.length > 0 && unmet.length <= LIST_UNMET_AT_MOST ? `它们是：${unmet.join("、")}。` : "";
+    // 评审一条的说明句已经分两类列出了条目编号，不再重复列。
+    const list = unmet.length > 0 && unmet.length <= LIST_UNMET_AT_MOST && one.condition !== "每个条目评审通过" ? `它们是：${unmet.join("、")}。` : "";
     lines.push(`  ${mark[one.state ?? (one.satisfied ? "met" : "unmet")]} ${one.collection}：${one.condition}。${one.summary}${list}`);
-  }
-  if (reviewSwitchOn() && results.some((one) => one.state === "unmet" && one.condition === REVIEW_CONDITION)) {
-    lines.push(`  开发期开关打开了：评审工具还没有，「完成任务」会把「${REVIEW_CONDITION}」这一条暂时视为满足；其余条件都满足时就可以调用完成任务。`);
   }
   return lines;
 }

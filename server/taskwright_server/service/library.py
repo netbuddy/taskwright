@@ -53,12 +53,56 @@ def title_of(fields: dict | None, collection: dict | None) -> str:
     return str(value or "")
 
 
-def definition_view(definition: dict) -> dict:
-    """任务定义里前端要的那部分（docs/api.md §4.1 的 definition）：集合名、前缀、字段名、类型、是否必填、枚举取值。"""
+REVIEW_CONDITION = "每个条目评审通过"
+RULE_REQUIRED = "必选"
+
+
+def review_specs(definition_text: str | None) -> dict[str, dict]:
+    """任务定义原文里各集合的「评审规矩」：集合名 → {"规则文件", "关闭", "升为必选"}。没写的集合不在里面。
+    观测台共用的 parse_definition 不取这一项，所以这里从原文里读。"""
+    raw = _json(definition_text) if definition_text else None
+    deliverable = raw.get("交付物") if isinstance(raw, dict) and isinstance(raw.get("交付物"), dict) else {}
+    out = {}
+    for entry in deliverable.get("条目集合") or []:
+        spec = entry.get("评审规矩") if isinstance(entry, dict) else None
+        if isinstance(spec, dict) and isinstance(spec.get("规则文件"), str):
+            out[entry.get("名称", "")] = spec
+    return out
+
+
+def effective_rules(task_dir: Path | None, spec: dict | None) -> list[dict] | None:
+    """一个集合实际要评的规则（与 agent 的 effectiveRules 同一个算法：去掉关闭的，把升为必选的改成必选），
+    写成接口的形状 {id, level, text, counter_example, example}。没写评审规矩或规则文件读不出来时为 None。"""
+    if not spec or task_dir is None:
+        return None
+    try:
+        rules = json.loads((Path(task_dir) / spec["规则文件"]).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(rules, list):
+        return None
+    off, promote = set(spec.get("关闭") or []), set(spec.get("升为必选") or [])
+    return [{"id": r.get("编号"), "level": RULE_REQUIRED if r.get("编号") in promote else r.get("级别"), "text": r.get("条文"),
+             "counter_example": r.get("反例"), "example": r.get("正例")}
+            for r in rules if isinstance(r, dict) and r.get("编号") not in off]
+
+
+def definition_view(definition: dict, definition_text: str | None = None, task_dir: Path | None = None) -> dict:
+    """任务定义里前端要的那部分（docs/api.md §4.1 的 definition）：集合名、前缀、字段名、类型、是否必填、枚举取值；
+    集合要不要评审（完成条件里有「每个条目评审通过」），以及它的评审规则清单（关闭与升为必选之后的，给界面展开条文用）。"""
+    specs = review_specs(definition_text)
     return {"collections": [{
         "name": c["名称"], "prefix": c["编号前缀"],
         "fields": [{"name": f["名"], "type": f["类型"], "required": bool(f["必填"]), "values": f.get("取值")} for f in c["字段"]],
+        "needs_review": REVIEW_CONDITION in (definition.get("完成条件") or {}).get(c["名称"], []),
+        "review_rules": effective_rules(task_dir, specs.get(c["名称"])),
     } for c in definition["集合"]]}
+
+
+def finding_view(one: dict) -> dict:
+    """事件 payload 里的一条发现，写成接口的形状（与整份数据里 reviews[].findings 相同）。"""
+    return {"rule_id": one.get("rule_id"), "level": one.get("level"), "field": one.get("field"), "index": one.get("index"),
+            "problem": one.get("problem"), "suggestion": one.get("suggestion")}
 
 
 def source_view(one: dict) -> dict:
@@ -149,12 +193,28 @@ def read_all(conn: sqlite3.Connection, after_seq: int | None = None) -> dict:
                            for x in conn.execute("SELECT seq, actor, at, call_id FROM event")},
             "reviews": [dict(x) for x in conn.execute(
                 "SELECT item_id, revision_no, verdict, reason, created_at, review_id FROM review WHERE task_id = ? ORDER BY review_id", (tid,))],
+            "findings": read_findings(conn, tid),
             "confirmations": [dict(x) for x in conn.execute(
                 "SELECT j.item_id, j.revision_no, j.attitude, g.created_at, g.basis, g.call_id, j.judgement_id "
                 "FROM judgement_item j JOIN judgement g ON g.judgement_id = j.judgement_id WHERE j.task_id = ? "
                 "ORDER BY j.judgement_id", (tid,))],
         }
     return data
+
+
+def read_findings(conn: sqlite3.Connection, task_id: str) -> dict[int, list[dict]]:
+    """评审发现：评审编号 → 逐条发现（接口的形状）。0.1 建的库、还没被写入一侧打开过的，发现表没有规则编号与级别两列，读作空。"""
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "review_finding" not in tables:
+        return {}
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(review_finding)")}
+    extra = ", rule_id, level" if {"rule_id", "level"} <= columns else ", NULL AS rule_id, NULL AS level"
+    out: dict[int, list[dict]] = {}
+    for row in conn.execute(f"SELECT review_id, field, item_index, problem, suggestion{extra} FROM review_finding "
+                            "WHERE task_id = ? ORDER BY review_id, ordinal", (task_id,)):
+        out.setdefault(row["review_id"], []).append({"rule_id": row["rule_id"], "level": row["level"], "field": row["field"],
+                                                     "index": row["item_index"], "problem": row["problem"], "suggestion": row["suggestion"]})
+    return out
 
 
 # ───────────────────────── 拼装 ─────────────────────────
@@ -184,9 +244,9 @@ class Library:
         return [source_view(s) for s in self.data["sources"].get((item_id, revision_no), [])] if revision_no else []
 
     def reviews_of(self, item_id: str, revision_no: int | None = None) -> list[dict]:
-        # findings：评审发现的逐条列表，要等评审工具提供之后的写法；现在库里只有一段理由，先给空列表。
+        findings = self.data.get("findings") or {}
         return [{"revision_no": r["revision_no"], "verdict": r["verdict"], "reason": r["reason"],
-                 "findings": [], "at": clock.from_local_text(r["created_at"])}
+                 "findings": findings.get(r["review_id"], []), "at": clock.from_local_text(r["created_at"])}
                 for r in self.data["reviews"] if r["item_id"] == item_id and (revision_no is None or r["revision_no"] == revision_no)]
 
     def confirmations_of(self, item_id: str, revision_no: int | None = None) -> list[dict]:
@@ -279,7 +339,7 @@ class Library:
             "status": task["status"],
             "started_at": clock.from_local_text(task["started_at"]),
             "ended_at": clock.from_local_text(task["ended_at"]),
-            "definition": definition_view(self.definition),
+            "definition": definition_view(self.definition, task.get("definition_text"), self.data.get("task_dir")),
             "completion": None,
             "items": items,
             "latest_revision": self.latest_revision(),
@@ -330,6 +390,23 @@ class Library:
         if e["name"] == "ITEM_VIEWED":
             return "item_viewed", {**base, "items": payload.get("items") or [],
                                    "op_id": e["call_id"] if actor == ACTOR_USER else None, "completion": None}
+        op_id = e["call_id"] if actor == ACTOR_USER else None
+        if e["name"] == "REVIEW_RECORDED":
+            return "review_recorded", {**base, "item_id": payload.get("item_id"), "revision_no": payload.get("revision_no"),
+                                       "verdict": payload.get("verdict"), "reason": payload.get("reason"),
+                                       "findings": [finding_view(f) for f in payload.get("findings") or []],
+                                       "op_id": op_id, "completion": None}
+        if e["name"] == "REVIEW_UNFINISHED":
+            return "review_unfinished", {**base, "item_id": payload.get("item_id"), "revision_no": payload.get("revision_no"),
+                                         "reason": payload.get("reason"), "op_id": op_id, "completion": None}
+        if e["name"] == "REVIEW_PROGRESS":
+            return "review_progress", {**base, "op_id": payload.get("op_id"), "done": payload.get("done"), "total": payload.get("total"),
+                                       "current": payload.get("current") or [], "item_id": payload.get("item_id"), "completion": None}
+        if e["name"] == "REVIEW_FINISHED":
+            return "review_finished", {**base, "op_id": payload.get("op_id"), "total": payload.get("total"),
+                                       "passed": payload.get("passed"), "failed": payload.get("failed"),
+                                       "unfinished": payload.get("unfinished"), "results": payload.get("results") or [],
+                                       "error": payload.get("error"), "completion": None}
         if e["name"] == "CONFIRMATION_RECORDED":
             return "confirmation_recorded", {**base, "items": payload.get("items") or [], "basis": payload.get("basis") or "ui_click",
                                              "op_id": e["call_id"] if actor == ACTOR_USER else None, "completion": None}
@@ -365,6 +442,7 @@ def task_snapshot(task_dir: Path) -> tuple[int, dict | None]:
         conn.close()
     if data["task"] is None:
         return data["seq"], None
+    data["task_dir"] = task_dir
     lib = Library(data)
     view = lib.task_view()
     view["completion"] = completion(task_dir, lib.task_id, lib.definition, lib.totals())

@@ -72,6 +72,78 @@ class ServiceUnitTest(unittest.TestCase):
         done = events[1][1]
         self.assertEqual((done["status_before"], done["status_after"], done["actor"]), ("进行中", "已完成", "executor"))
 
+    def test_评审的四种事件拼成库事件_发现带规则编号与级别_整份数据里也有(self):
+        # 在夹具库的副本上补一次界面发起的评审：两条进度、一条评审记录（带两条发现）、一条评审未完成、一条结束。只测拼装。
+        import json
+        import sqlite3
+        ws = Path(self.tmp.name) / "ws-reviewed"
+        shutil.copytree(self.ws, ws)
+        conn = sqlite3.connect(ws / "task.sqlite")
+        task_id = conn.execute("SELECT task_id FROM task").fetchone()[0]
+        findings = [{"rule_id": "D-R1", "level": "必选", "field": "步骤", "index": 1, "problem": "没有主语", "suggestion": "写明谁做"},
+                    {"rule_id": "D-R2", "level": "可选", "field": "名称", "index": None, "problem": "举了例子", "suggestion": None}]
+        rows = [(5, "REVIEW_PROGRESS", {"op_id": "ui-op-r", "done": 0, "total": 1, "current": ["UC-001"], "item_id": None}),
+                (6, "REVIEW_RECORDED", {"item_id": "UC-001", "revision_no": 2, "verdict": "不合规", "reason": "问题 1 处，建议 1 条。", "findings": findings}),
+                (7, "REVIEW_UNFINISHED", {"item_id": "UC-001", "revision_no": 2, "reason": "超过 60 秒没有评完"}),
+                (8, "REVIEW_PROGRESS", {"op_id": "ui-op-r", "done": 1, "total": 1, "current": [], "item_id": "UC-001"}),
+                (9, "REVIEW_FINISHED", {"op_id": "ui-op-r", "total": 1, "passed": 0, "failed": 1, "unfinished": 0,
+                                        "results": [{"item_id": "UC-001", "revision_no": 2, "status": "不合规"}], "error": None})]
+        for seq, name, payload in rows:
+            conn.execute("INSERT INTO event (seq, task_id, session_id, call_id, name, payload, actor, at) VALUES (?, ?, 's', 'ui-op-r', ?, ?, 'user', '2026-09-24 10:00:00')",
+                         (seq, task_id, name, json.dumps(payload, ensure_ascii=False)))
+        review_id = conn.execute("INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at) "
+                                 "VALUES (?, 'UC-001', 2, '不合规', '问题 1 处，建议 1 条。', 'x', 'x', 'ui-op-r', 6, '2026-09-24 10:00:00')", (task_id,)).lastrowid
+        for i, f in enumerate(findings):
+            conn.execute("INSERT INTO review_finding (review_id, task_id, ordinal, field, item_index, problem, suggestion, rule_id, level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         (review_id, task_id, i + 1, f["field"], f["index"], f["problem"], f["suggestion"], f["rule_id"], f["level"]))
+        conn.commit()
+        conn.close()
+        events, _ = library.library_events(ws, 4)
+        self.assertEqual([n for n, _ in events], ["review_progress", "review_recorded", "review_unfinished", "review_progress", "review_finished"])
+        progress, recorded, unfinished, _, finished = [d for _, d in events]
+        self.assertEqual((progress["op_id"], progress["done"], progress["total"], progress["current"]), ("ui-op-r", 0, 1, ["UC-001"]))
+        self.assertEqual((recorded["verdict"], recorded["op_id"], recorded["findings"]), ("不合规", "ui-op-r", findings))
+        self.assertEqual(unfinished["reason"], "超过 60 秒没有评完")
+        self.assertEqual((finished["passed"], finished["failed"], finished["unfinished"]), (0, 1, 0))
+        self.assertIsNotNone(finished["completion"], "完成条件附在这一批的最后一条上")
+        _, task = library.task_snapshot(ws)
+        item = next(i for i in task["items"] if i["item_id"] == "UC-001")
+        self.assertEqual(item["reviews"][0]["findings"], findings)
+
+    def test_任务定义视图带上各集合要不要评审与生效的规则清单(self):
+        import json
+        ws = Path(self.tmp.name) / "ws-rules"
+        (ws / "docs" / "review-rules").mkdir(parents=True)
+        (ws / "docs" / "review-rules" / "demo.json").write_text(json.dumps([
+            {"编号": "D-R1", "级别": "必选", "条文": "甲", "反例": "乙", "正例": "丙"},
+            {"编号": "D-R2", "级别": "可选", "条文": "丁", "反例": "戊", "正例": "己"},
+            {"编号": "D-R3", "级别": "可选", "条文": "庚", "反例": "辛", "正例": "壬"}], ensure_ascii=False), encoding="utf-8")
+        raw = {"交付物": {"条目集合": [{"名称": "用例", "评审规矩": {"规则文件": "docs/review-rules/demo.json", "关闭": ["D-R3"], "升为必选": ["D-R2"]}},
+                                     {"名称": "问题"}]}}
+        parsed = {"集合": [{"名称": "用例", "编号前缀": "UC", "字段": []}, {"名称": "问题", "编号前缀": "TBD", "字段": []}],
+                  "完成条件": {"用例": ["每个条目评审通过"], "问题": ["没有状态为未解决的条目"]}}
+        view = library.definition_view(parsed, json.dumps(raw, ensure_ascii=False), ws)
+        uc, tbd = view["collections"]
+        self.assertTrue(uc["needs_review"])
+        self.assertEqual([(r["id"], r["level"]) for r in uc["review_rules"]], [("D-R1", "必选"), ("D-R2", "必选")])
+        self.assertEqual(uc["review_rules"][0], {"id": "D-R1", "level": "必选", "text": "甲", "counter_example": "乙", "example": "丙"})
+        self.assertEqual((tbd["needs_review"], tbd["review_rules"]), (False, None))
+
+    def test_旧库的评审发现表没有规则编号两列时读作空(self):
+        import sqlite3
+        ws = Path(self.tmp.name) / "ws-old-findings"
+        shutil.copytree(self.ws, ws)
+        conn = sqlite3.connect(ws / "task.sqlite")
+        conn.execute("DROP TABLE review_finding")
+        conn.execute("CREATE TABLE review_finding (review_id INTEGER NOT NULL, task_id TEXT NOT NULL, ordinal INTEGER NOT NULL, field TEXT NOT NULL, "
+                     "item_index INTEGER, problem TEXT NOT NULL, suggestion TEXT, PRIMARY KEY (review_id, ordinal))")
+        conn.execute("INSERT INTO review_finding VALUES (1, 't', 1, '步骤', NULL, '没有主语', NULL)")
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        found = library.read_findings(conn, "t")
+        conn.close()
+        self.assertEqual(found, {1: [{"rule_id": None, "level": None, "field": "步骤", "index": None, "problem": "没有主语", "suggestion": None}]})
+
     def test_整份数据的序号与各表同一时刻_删掉的条目不在里面(self):
         seq, task = library.task_snapshot(self.ws)
         self.assertEqual(seq, 4)
@@ -391,6 +463,14 @@ class PureUnitTest(unittest.TestCase):
                                             "第 1 个编号 \"UC-006\" 指向的条目在这个任务里不存在。")
         self.assertEqual(len(stages[1]["reasons"]), 1)
         self.assertEqual(stages[2], {"text": "保存修订被拒，助手正在照原因改", "count": 1}, "不是保存修订自己的拒绝正文时照旧写固定的一句")
+
+    def test_过程摘要_请求评审写评审了几个条目几个不合规(self):
+        from taskwright_server.service import work_summary
+        details = {"results": [{"item_id": "UC-001", "status": "合规"}, {"item_id": "UC-002", "status": "不合规"},
+                               {"item_id": "UC-003", "status": "评审未完成"}]}
+        self.assertEqual(work_summary.step_text("request_review", {}, True, False, details, {}), "评审了 3 个条目，1 个不合规")
+        self.assertEqual(work_summary.step_text("request_review", {}, False, False, None, {}), "正在请评审者评审")
+        self.assertEqual(work_summary.step_text("request_review", {}, True, True, None, {}), "请评审者评审没有做成")
 
 
 if __name__ == "__main__":

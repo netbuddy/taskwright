@@ -4,8 +4,8 @@
 1. 登记用户确认工具已经退役：执行者调用它，pi 回「工具不存在」，库里不多任何确认标记；
 2. 用户打开条目详情（正式的 /tw-user 命令，kind 为 mark_viewed）就在条目当前修订上记为已读，事件是 ITEM_VIEWED；
    同一条目同一修订再打开一次不再写；
-3. 完成任务在还有未读条目时被拒，拒绝文字写「还有 N 条你从没看过：……」；用户打开看过之后（评审一条由开发期开关视为满足）
-   任务变为已完成。
+3. 完成任务在还有未读、待评审的条目时被拒，拒绝文字写「还有 N 条你从没看过：……」与「……还没评审」；
+   用户打开看过、在界面上发起评审（假端点替评审者回「没有发现」）之后，任务变为已完成。
 
 断言只看事实：事件流、状态栏回传与 task.sqlite 里的行。
 """
@@ -13,10 +13,9 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
+import time
 import unittest
-from unittest import mock
 
 from tests.integration.rig import Rig, call, tool_results
 
@@ -44,6 +43,28 @@ def open_detail(rig: Rig, op_id: str, item_id: str, revision: int, count: int) -
     command = {"op_id": op_id, "kind": "mark_viewed", "targets": [{"item_id": item_id, "base_revision": revision}]}
     rig.session.request("prompt", message="/tw-user " + json.dumps(command, ensure_ascii=False))
     return json.loads(rig.wait_status("taskwright-user-result", count)[-1])
+
+
+#: 假端点替评审者回答的规则：请求里带评审者的系统提示就回一个没有发现的结果，不占执行者的 sequence。
+REVIEWER_PASSES = {"when": {"any_contains": "你是评审者"}, "reply": {"text": json.dumps({"发现": []}, ensure_ascii=False)}}
+
+
+def request_review(rig: Rig, op_id: str, count: int, targets=None) -> dict:
+    """用户在界面上点「评审」：后端发的正是这条 /tw-user 命令。返回状态栏回传的结果（核对通过就回，不等评审跑完）。"""
+    command = {"op_id": op_id, "kind": "request_review", "targets": targets or []}
+    rig.session.request("prompt", message="/tw-user " + json.dumps(command, ensure_ascii=False))
+    return json.loads(rig.wait_status("taskwright-user-result", count)[-1])
+
+
+def wait_review_finished(rig: Rig, op_id: str, timeout: float = 20.0) -> dict:
+    """等这批评审记下 REVIEW_FINISHED，返回它的 payload。"""
+    end = time.time() + timeout
+    while time.time() < end:
+        rows = rig.rows("SELECT payload FROM event WHERE name = 'REVIEW_FINISHED' AND call_id = ?", op_id)
+        if rows:
+            return json.loads(rows[0]["payload"])
+        time.sleep(0.05)
+    raise TimeoutError(f"等了 {timeout:.0f} 秒，评审 {op_id} 还没有记下 REVIEW_FINISHED。")
 
 
 @unittest.skipUnless(shutil.which("pi") and shutil.which("node"), NEEDS)
@@ -91,38 +112,41 @@ class ConfirmAndCompleteTests(unittest.TestCase):
         self.assertEqual(customs, [], "打开详情写已读不往会话里追加说明")
         self.assertEqual(after, before, "写已读不引出模型请求")
 
-    def test_还有未读时完成被拒_看过之后任务变为已完成(self):
-        script = [
+    def test_还有未读与待评审时完成被拒_看过并评审之后任务变为已完成(self):
+        script = {"rules": [REVIEWER_PASSES], "sequence": [
             save_two(),
             {"tool_calls": [call("complete_task", {}, "call-complete-early")]},
-            {"tool_calls": [reply_call("还有两条你没看过，打开看一眼就行。", "call-ask")]},
+            {"tool_calls": [reply_call("还有两条你没看过，也还没评审。", "call-ask")]},
             {"tool_calls": [call("complete_task", {}, "call-complete")]},
             {"tool_calls": [reply_call("任务已经完成。", "call-done")]},
-        ]
-        with mock.patch.dict(os.environ, {"TASKWRIGHT_DEV_REVIEW_AS_MET": "1"}):
-            with Rig(script, material=SOURCE["excerpt"]) as rig:
-                first = rig.say("把材料整理成需求规格说明，整理完就结束任务。")
-                status_between = rig.rows("SELECT status FROM task")[0]["status"]
-                open_detail(rig, "ui-op-a", "UC-001", 1, 1)
-                open_detail(rig, "ui-op-b", "UC-002", 1, 2)
-                second = rig.say("都看过了，完成吧。")
-                task = rig.rows("SELECT status, ended_at FROM task")[0]
-                completed = rig.rows("SELECT * FROM event WHERE name = 'TASK_COMPLETED'")
+        ]}
+        with Rig(script, material=SOURCE["excerpt"]) as rig:
+            first = rig.say("把材料整理成需求规格说明，整理完就结束任务。")
+            status_between = rig.rows("SELECT status FROM task")[0]["status"]
+            open_detail(rig, "ui-op-a", "UC-001", 1, 1)
+            open_detail(rig, "ui-op-b", "UC-002", 1, 2)
+            accepted = request_review(rig, "ui-op-review", 3)
+            finished = wait_review_finished(rig, "ui-op-review")
+            second = rig.say("都看过了，完成吧。")
+            task = rig.rows("SELECT status, ended_at FROM task")[0]
+            completed = rig.rows("SELECT * FROM event WHERE name = 'TASK_COMPLETED'")
 
         early = {r["调用编号"]: r for r in tool_results(first)}["call-complete-early"]
         self.assertTrue(early["被拒"])
         self.assertIn("还有 2 条你从没看过：UC-001「借书」、UC-002「还书」。", early["文字"])
+        self.assertIn("UC-001、UC-002 还没评审。", early["文字"])
         self.assertEqual(status_between, "进行中")
+
+        self.assertTrue(accepted["ok"], accepted)
+        self.assertEqual(accepted["results"], [{"item_id": "UC-001", "revision_no": 1}, {"item_id": "UC-002", "revision_no": 1}])
+        self.assertEqual((finished["total"], finished["passed"], finished["failed"], finished["unfinished"]), (2, 2, 0, 0))
 
         done = {r["调用编号"]: r for r in tool_results(second)}["call-complete"]
         self.assertFalse(done["被拒"], done["文字"])
-        self.assertIn("开发期开关", done["文字"])
         self.assertEqual(task["status"], "已完成")
         self.assertIsNotNone(task["ended_at"])
         payload = json.loads(completed[0]["payload"])
-        self.assertEqual((payload["status_before"], payload["status_after"]), ("进行中", "已完成"))
-        # 另两个集合没有条目，评审一条本来就满足，只有功能用例这一条是开关视为满足的。
-        self.assertEqual(payload["waived"], ["「功能用例」每个条目评审通过"])
+        self.assertEqual(payload, {"status_before": "进行中", "status_after": "已完成"})
 
 
 if __name__ == "__main__":

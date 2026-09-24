@@ -100,6 +100,14 @@ def step_text(tool: str, args: dict, done: bool, failed: bool, details: dict | N
         return "查看任务状态没有成" if failed else ("查看了任务状态" if done else "正在查看任务状态")
     if tool == "complete_task":
         return "完成任务被拒，完成条件还没满足" if failed else ("把任务标为已完成" if done else "正在完成任务")
+    if tool == "request_review":
+        if failed:
+            return "请评审者评审没有做成"
+        if not done:
+            return "正在请评审者评审"
+        results = (details or {}).get("results") or []
+        bad = sum(1 for r in results if r.get("status") == "不合规")
+        return f"评审了 {len(results)} 个条目，{bad} 个不合规"
     if tool == REPLY_TOOL:
         return "回复的形式不对，助手正在改" if failed else ("说完了" if done else "正在组织回复")
     return f"调用 {tool} 失败" if failed else (f"调用了 {tool}" if done else f"正在调用 {tool}")

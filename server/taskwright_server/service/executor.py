@@ -26,7 +26,9 @@ from taskwright_server.service.errors import ApiError
 LABEL = "service"
 USER_RESULT_KEY = "taskwright-user-result"
 UI_RESULT_KEY = "taskwright-ui-result"
-WRITE_TOOLS = {"save_revision", "create_task", "complete_task"}
+#: 界面发起的评审在后台跑，每记一条事件经这个状态栏键提示一次（agent/src/hooks/user_commands.ts 的 REVIEW_STATUS_KEY）。
+REVIEW_STATUS_KEY = "taskwright-review"
+WRITE_TOOLS = {"save_revision", "create_task", "complete_task", "request_review"}
 REPLY_TOOL = "reply"
 ACTION_TIMEOUT = 10.0
 #: 用户消息的 message_end 到达时，这条消息可能还没写进会话记录（卡片点击那句话由扩展排到运行里，写入更晚）。
@@ -255,7 +257,9 @@ class Executor:
         return False
 
     def action(self, session_id: str | None, body: dict) -> str:
-        """用户的直接操作：经扩展命令 /tw-user 写库；返回操作编号，拒绝时抛 ApiError。"""
+        """用户的直接操作：经扩展命令 /tw-user 写库；返回操作编号，拒绝时抛 ApiError。
+        评审（request_review）也走这里：扩展命令核对通过、记下第一条进度事件就回报，评审在 pi 进程里接着跑，
+        进度与结果作为库事件经 SSE 推给前端（docs/api.md 的 review_progress、review_finished）。"""
         self.require(session_id, start=False)
         # 单一写入者规则管的是交付物内容。打开详情写已读（mark_viewed 且不通知执行者）不改内容，是唯一的例外：
         # 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
@@ -408,6 +412,10 @@ class Executor:
             return
         if kind == "界面请求" and event.get("method") == "setStatus":
             key = event.get("status_key")
+            if key == REVIEW_STATUS_KEY:
+                # 界面发起的评审记了新的进度、评审或结束事件：去查库转发，不等每 2 秒一次的兜底轮询。
+                self.hub.trigger()
+                return
             if key in (USER_RESULT_KEY, UI_RESULT_KEY):
                 try:
                     result = json.loads(event.get("status_text") or "{}")

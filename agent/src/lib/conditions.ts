@@ -90,21 +90,37 @@ function noUnresolved(db: DatabaseSync, taskId: string, collection: string): Con
   };
 }
 
+/** 一组条目编号的说法：不多于 listAtMost 个时逐个列出，多了只写个数。 */
+function idsPhrase(ids: string[], listAtMost = 6): string {
+  return ids.length <= listAtMost ? ids.join("、") : `${ids.length} 个条目`;
+}
+
+/**
+ * 每个条目评审通过：条目当前所在的修订上有一条合规记录。没通过的分两类写：还没评审（当前修订上没有任何评审记录）、
+ * 评审不合规（当前修订上有记录、没有一条合规），例如「UC-004、UC-005 还没评审；UC-006 评审不合规。」
+ */
 function everyReviewed(db: DatabaseSync, taskId: string, collection: string): ConditionResult {
-  const passed = db.prepare(
-    "SELECT 1 FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ? AND verdict = '合规' LIMIT 1",
-  );
-  const unmet = currentItems(db, taskId, collection)
-    .filter((row) => passed.get(taskId, row.item_id, row.revision_no) === undefined)
-    .map((row) => ({ item: row.item_id, reason: `条目 ${row.item_id} 在当前所在的修订 ${row.revision_no} 还没有评审通过的记录。` }));
+  const verdicts = db.prepare("SELECT verdict FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ?");
+  const pending: string[] = [];
+  const failed: string[] = [];
+  const unmet: ConditionResult["unmet"] = [];
+  for (const row of currentItems(db, taskId, collection)) {
+    const list = (verdicts.all(taskId, row.item_id, row.revision_no) as { verdict: string }[]).map((r) => r.verdict);
+    if (list.includes("合规")) continue;
+    if (list.length === 0) {
+      pending.push(row.item_id);
+      unmet.push({ item: row.item_id, reason: `条目 ${row.item_id} 在当前所在的修订 ${row.revision_no} 还没评审。` });
+    } else {
+      failed.push(row.item_id);
+      unmet.push({ item: row.item_id, reason: `条目 ${row.item_id} 在当前所在的修订 ${row.revision_no} 评审不合规。` });
+    }
+  }
+  const parts = [...(pending.length ? [`${idsPhrase(pending)} 还没评审`] : []), ...(failed.length ? [`${idsPhrase(failed)} 评审不合规`] : [])];
   return {
     condition: "每个条目评审通过",
     collection,
     satisfied: unmet.length === 0,
-    summary:
-      unmet.length === 0
-        ? `每个条目在当前所在的修订都有评审通过的记录。`
-        : `有 ${unmet.length} 个条目在当前所在的修订还没有评审通过的记录。`,
+    summary: unmet.length === 0 ? `每个条目在当前所在的修订都有评审通过的记录。` : `${parts.join("；")}。`,
     unmet,
   };
 }
