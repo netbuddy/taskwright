@@ -108,13 +108,13 @@ test("保留写法：只能保留评审不合规的；完成条件把它算作�
   await review(dir, null, { "UC-001": FAIL });
   assert.throws(() => ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-002", base_revision: 1 }], fields: { reason: "x" } }), /没有评审不合规的记录/);
   const kept = ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { reason: "材料原话如此", source: "panel" } });
-  assert.match(kept.note, /用户保留了 UC-001（修订 1）现在的写法，理由：「材料原话如此」/);
+  assert.match(kept.note, /用户保留了 UC-001（修订 1）现在的写法，理由：「材料原话如此」。这条按用户的决定算通过；条目再改动，评审要重做。/);
   assert.deepEqual(query(dir, "SELECT item_id, revision_no, reason, source, revoked_at FROM review_waiver").map((r) => [r.item_id, r.revision_no, r.reason, r.source, r.revoked_at]),
     [["UC-001", 1, "材料原话如此", "panel", null]]);
   assert.throws(() => ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: {} }), /已经保留过了/);
   const status = getTaskStatus(dir).text;
-  assert.match(status, /每个条目都评审通过，或由你保留了写法（UC-001 评审不合规但你保留了）/);
-  assert.match(status, /用户保留了写法的条目（计入通过，不用改）：UC-001（修订 1，理由：材料原话如此）/);
+  assert.match(status, /每个条目都评审通过，或由你保留了写法（UC-001 评审不合规但你保留了，按你的决定算通过）/);
+  assert.match(status, /用户保留了写法的条目（这些按用户的决定算通过，不用改；条目再改动，评审要重做）：UC-001（修订 1，理由：材料原话如此）/);
 
   ui(dir, { kind: "unwaive_review", targets: [{ item_id: "UC-001", base_revision: 1 }] });
   assert.match(getTaskStatus(dir).text, /UC-001 评审不合规。/);

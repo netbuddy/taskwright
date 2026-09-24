@@ -193,6 +193,6 @@ export function reviewFindingLines(db: DatabaseSync, taskId: string, definition:
     }
   }
   const lines = out.length ? ["评审不通过、还没处理的条目与发现（问题要改；建议告诉用户，由用户定）：", ...out] : ["评审不通过、还没处理的条目：没有。"];
-  if (kept.length) lines.push(`评审不通过、用户保留了写法的条目（计入通过，不用改）：${kept.join("、")}。`);
+  if (kept.length) lines.push(`评审不通过、用户保留了写法的条目（这些按用户的决定算通过，不用改；条目再改动，评审要重做）：${kept.join("、")}。`);
   return lines;
 }

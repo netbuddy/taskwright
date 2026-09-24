@@ -610,7 +610,7 @@ function waiveReview(ctx: Ctx, opId: string, targets: Target[], rawFields: unkno
   return {
     op_id: opId, kind: "waive_review", event_seqs: [seq], results: items, revision_no: null,
     note: `界面操作（不是用户打的字）：用户保留了 ${itemsPhrase(items)}现在的写法${reason ? `，理由：「${reason}」` : "，没有写理由"}。` +
-      "这些条目评审不合规，但完成条件把它们算作通过；条目再改出新修订，保留就不再作数。",
+      "这条按用户的决定算通过；条目再改动，评审要重做。",
     notify_text: null, undoable: false,
   };
 }

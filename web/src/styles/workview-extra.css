@@ -206,7 +206,7 @@
 .app .sw-switch.lock { background: var(--line2); cursor: not-allowed; opacity: .7; }
 .app .chip.bad { color: var(--gap); border-color: var(--gap-line); background: var(--gap-bg); }
 .app .banner-line.kept { background: var(--amber-bg); border: 1px solid var(--amber-line); color: #7a4a06; }
-.app .finding .st { display: block; text-align: right; font-size: .813rem; }
+.app .finding .st { margin-right: .4rem; }
 .app .finding .st.open { color: var(--gap); }
 .app .finding .keep-link { color: var(--blue); cursor: pointer; margin-left: .4rem; }
 .app .detail [data-f].sw-hit-field .v { outline: .15rem solid var(--ai); outline-offset: .1rem; }

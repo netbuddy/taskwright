@@ -82,25 +82,33 @@ describe("评审页签", () => {
     expect(card).toHaveTextContent("由你发起 · 4 条");
     expect(card).toHaveTextContent("问题 3 处 · 建议 1 条");
     const con = within(card).getByTestId("batch-3-item-CON-002");
-    expect(within(con).getAllByTestId("rv-status")[0]).toHaveTextContent("已在修订 8 改");
-    expect(within(card).getByTestId("batch-3-item-UC-003")).toHaveTextContent("已保留：材料原话如此");
-    expect(within(card).getByTestId("batch-3-item-UC-004")).toHaveTextContent("未处理");
+    expect(within(con).getAllByTestId("finding-status")[0]).toHaveTextContent("已在修订 8 改");
+    expect(within(con).getAllByTestId("finding-problem")[0]).toHaveTextContent("第 3 次评审指出");
+    expect(within(within(card).getByTestId("batch-3-item-UC-003")).getByTestId("finding-status")).toHaveTextContent("已保留 · 理由：材料原话如此");
+    expect(within(within(card).getByTestId("batch-3-item-UC-004")).getByTestId("finding-status")).toHaveTextContent("未处理");
     expect(within(card).getByTestId("batch-3-passed")).toHaveTextContent("UC-001 1 条合规（其中 1 条有建议）");
     expect(screen.getByTestId("batch-2")).toHaveClass("old");
     expect(screen.getByTestId("batch-2")).toHaveTextContent("由助手发起（你在对话里要求）");
     expect(within(screen.getByTestId("batch-2")).queryByTestId("batch-2-passed")).toBeNull();   // 早先的折起
   });
 
-  it("只看未处理：已改、已保留的条目不列；「保留 X 现在的写法」只出现在未处理的条目旁，带理由发 waive_review", async () => {
+  it("只看未处理：已改、已保留的条目不列；「保留这种写法」「让助手照这条改」只在未处理的发现第二行，已保留的给「撤销保留」", async () => {
     const { submit, onPrefill } = panel(task([CON2, UC3, UC4, UC1]));
-    expect(screen.queryByTestId("keep-CON-002")).toBeNull();
-    expect(screen.queryByTestId("keep-UC-003")).toBeNull();
-    fireEvent.change(screen.getByTestId("keep-reason-UC-004"), { target: { value: "材料原话" } });
-    fireEvent.click(screen.getByTestId("keep-UC-004"));
+    const con = screen.getByTestId("batch-3-item-CON-002");
+    const uc3 = screen.getByTestId("batch-3-item-UC-003");
+    const uc4 = screen.getByTestId("batch-3-item-UC-004");
+    expect(within(con).queryByTestId("keep-finding")).toBeNull();
+    expect(within(uc3).queryByTestId("keep-finding")).toBeNull();
+    fireEvent.click(within(uc4).getByTestId("keep-finding"));
+    fireEvent.change(within(uc4).getByTestId("keep-finding-reason"), { target: { value: "材料原话" } });
+    fireEvent.click(within(uc4).getByTestId("keep-finding-ok"));
     await waitFor(() => expect(submit).toHaveBeenCalledWith({ kind: "waive_review", targets: [{ item_id: "UC-004", base_revision: 6 }],
       fields: { reason: "材料原话", source: "panel" }, notify_executor: false }, "保留 UC-004 现在的写法"));
-    fireEvent.click(screen.getByTestId("fix-UC-004"));
-    expect(onPrefill).toHaveBeenCalledWith("请按第 3 次评审的发现改 UC-004：第 2 步没有主语。");
+    fireEvent.click(within(uc4).getByTestId("fix-finding"));
+    expect(onPrefill).toHaveBeenCalledWith("请按评审发现改 UC-004 的基本流程第 2 项：第 2 步没有主语。");
+    fireEvent.click(within(uc3).getByTestId("unwaive-finding"));
+    await waitFor(() => expect(submit).toHaveBeenLastCalledWith({ kind: "unwaive_review", targets: [{ item_id: "UC-003", base_revision: 15 }], notify_executor: false },
+      "撤销对 UC-003 的保留"));
     fireEvent.click(screen.getByTestId("review-only-open"));
     expect(screen.queryByTestId("batch-3-item-CON-002")).toBeNull();
     expect(screen.queryByTestId("batch-3-item-UC-003")).toBeNull();
@@ -109,7 +117,7 @@ describe("评审页签", () => {
 
   it("点规则编号展开条文；点发现打开条目并指到字段", () => {
     const { onOpenFinding } = panel(task([UC4]));
-    fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByTestId("rv-clause-UC-R7"));
+    fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByTestId("clause-UC-R7"));
     expect(screen.getByTestId("batch-3-item-UC-004")).toHaveTextContent("UC-R7（必选） 每一步写明谁做了什么。");
     fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByText(/第 2 步没有主语/));
     expect(onOpenFinding).toHaveBeenCalledWith("UC-004", "基本流程");
@@ -160,7 +168,8 @@ describe("条目详情", () => {
     const submit = vi.fn(async () => null);
     const onReview = vi.fn();
     render(<Wrap><ItemDetail task={t} item={UC4} def={t.definition.collections[0]} readOnly={false} pending={false} submit={submit} onReview={onReview} /></Wrap>);
-    expect(screen.getByTestId("finding-status")).toHaveTextContent("未处理 · 第 3 次评审");
+    expect(screen.getByTestId("finding-problem")).toHaveTextContent("第 3 次评审指出");
+    expect(screen.getByTestId("finding-status")).toHaveTextContent(/^未处理$/);
     fireEvent.click(screen.getByTestId("keep-finding"));
     fireEvent.change(screen.getByTestId("keep-finding-reason"), { target: { value: "先照抄" } });
     fireEvent.click(screen.getByTestId("keep-finding-ok"));
@@ -173,26 +182,28 @@ describe("条目详情", () => {
     expect(onReview).toHaveBeenCalledWith(true);
   });
 
-  it("保留之后横幅改为琥珀色，写理由，「撤销保留」发 unwaive_review", async () => {
+  it("全部问题都已保留时不显示横幅；理由与「撤销保留」只在发现行第二行；徽标写「评审不通过 N 处 · 已保留」", async () => {
     const t = task([UC3]);
     const submit = vi.fn(async () => null);
     render(<Wrap><ItemDetail task={t} item={UC3} def={t.definition.collections[0]} readOnly={false} pending={false} submit={submit} /></Wrap>);
-    expect(screen.getByTestId("kept-banner")).toHaveTextContent("你保留了现在的写法（修订 15）：材料原话如此");
     expect(screen.queryByTestId("review-banner")).toBeNull();
-    fireEvent.click(screen.getByTestId("unwaive"));
+    expect(screen.queryByTestId("kept-banner")).toBeNull();
+    expect(screen.getByTestId("review-UC-003")).toHaveTextContent("评审不通过 1 处 · 已保留");
+    expect(screen.getByTestId("finding-fate")).toHaveTextContent("已保留 · 理由：材料原话如此");
+    fireEvent.click(screen.getByTestId("unwaive-finding"));
     await waitFor(() => expect(submit).toHaveBeenCalledWith({ kind: "unwaive_review", targets: [{ item_id: "UC-003", base_revision: 15 }], notify_executor: false },
       "撤销对 UC-003 的保留"));
   });
 });
 
 describe("完成条件与对话区", () => {
-  it("完成条件评审一条三类分开写，保留的注明计入通过", () => {
+  it("完成条件评审一条三类分开写，保留的注明按你的决定算通过", () => {
     const completion: Completion = { all_met: false, unmet_count: 1, conditions: [
       { collection: "功能用例", name: "每个条目评审通过", met: false, state: "unmet", done: 2, total: 4, missing: ["UC-004", "UC-005"], note: "" }] };
     const UC5 = item({ item_id: "UC-005" });
     const t = task([UC1, UC3, UC4, UC5]);
     render(<CompletionPanel completion={completion} items={t.items} task={t} onReview={vi.fn()} onOpen={vi.fn()} />);
-    expect(screen.getByTestId("cond-review")).toHaveTextContent("还差 2 条，UC-005 待评审；UC-004 评审不通过；UC-003 评审不通过但你保留了，计入通过。");
+    expect(screen.getByTestId("cond-review")).toHaveTextContent("还差 2 条，UC-005 待评审；UC-004 评审不通过；UC-003 评审不通过但你保留了（这条按你的决定算通过；条目再改动，评审要重做）。");
   });
 
   it("评审结束在对话区只写一句结论，「看评审页签」切过去", () => {

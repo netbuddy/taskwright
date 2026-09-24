@@ -1,6 +1,6 @@
 // 完成条件：按集合分组，每条写条件名、三种状态之一（已满足、还差、暂无条目）与接口给的说明；还差的条目逐个列出（最多 6 个）。
 // 给了条目（items）时，「每个条目评审通过」还差的那一条按条目现算，分三组写：待评审的、评审不通过的、评审不通过但你保留了的
-// （第三组计入通过，只是提示）；给了 task 时只认当前规则指纹下的评审记录；
+// （第三组按用户的决定算通过，只是提示）；给了 task 时只认当前规则指纹下的评审记录；
 // 再给了 onReview、onOpen 时（工作视图里），旁边有「评审这 N 条」（评待评审的那几条）与「打开 X」（打开评审不通过的条目）。
 // 任务页没有事件流、看不到评审进度，只给条目、不给这两个按钮。
 
@@ -49,7 +49,7 @@ export function CompletionPanel({ completion, status, items, task, onReview, onO
                   <div data-testid="cond-review">
                     <b style={{ fontWeight: 500 }}>{c.name}</b>：还差 {review.pending.length + review.failed.length} 条，
                     {[review.pending.length ? `${ids(review.pending)} 待评审` : "", review.failed.length ? `${ids(review.failed)} 评审不通过` : "",
-                      review.kept.length ? `${ids(review.kept)} 评审不通过但你保留了，计入通过` : ""].filter(Boolean).join("；")}。
+                      review.kept.length ? `${ids(review.kept)} 评审不通过但你保留了（这条按你的决定算通过；条目再改动，评审要重做）` : ""].filter(Boolean).join("；")}。
                     {onReview && review.pending.length > 0 && (
                       <button type="button" className="btn sm" style={{ marginLeft: "0.429rem" }} disabled={!!reviewOff} title={reviewOff}
                         onClick={() => onReview(review.pending)} data-testid="cond-review-these">评审这 {review.pending.length} 条</button>

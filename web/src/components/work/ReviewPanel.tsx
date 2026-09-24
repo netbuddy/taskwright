@@ -2,8 +2,8 @@
 //   · 顶部一行：「N 次评审 · 未处理的问题 M 处」、「只看未处理」、「评审 N 条待评审的条目」；规则改了之后提示「规则改了，N 条需要重评」。
 //   · 每次评审一张卡片，最新的在上：「第 N 次评审」、时刻、由谁发起、条数、合规与不合规、问题与建议各几。
 //     最新一张默认展开，早先的变淡、折起，点标题展开。展开后逐条目列结果：不合规的条目逐条列发现（红点问题、琥珀点建议、
-//     规则编号可展开条文、右侧状态「未处理」「已在修订 N 改」「已保留：理由」），条目还在那次修订、发现还没处理时，
-//     就近放「保留 X 现在的写法」（理由可空）与「让助手照发现改」；合规的条目折成一行，点开看它们的建议。
+//     每条发现与条目详情里同一个两行布局（FindingLine）：第一行是发现本身与「第 N 次评审指出」，第二行是去向（未处理／已在修订 N 改／
+//     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看它们的建议。
 //     点条目编号或一条发现，打开条目详情并高亮那个字段。
 //   · 底部规则区：按集合列规则。必选的开关锁住；可选的可以关掉，或点标签在「可选」与「升为必选」之间切换。改动只影响之后的评审。
 // 保留、改规则都是用户的界面操作（waive_review、set_review_rules），界面上的变化等库事件到了才发生。
@@ -13,9 +13,11 @@ import type { ActionRequest, Finding, Item, Review, ReviewBatch, ReviewRule, Tas
 import type { ApiError } from "../../api/client";
 import type { ReviewRun } from "../../state/workState";
 import {
-  findingStatus, findingStatusText, isProblem, needsRereview, needsReview, openProblems, pendingReview, reviewOffReason, writeOffReason,
+  findingStatus, isProblem, needsRereview, needsReview, openProblems, pendingReview, reviewOffReason, writeOffReason,
 } from "../../model/items";
 import { formatTime } from "../../model/format";
+import { FindingLine } from "./FindingLine";
+import { fixText } from "./ItemDetail";
 
 type Submit = (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string) => Promise<ApiError | null>;
 
@@ -111,7 +113,7 @@ function BatchCard({ task, batch, latest, onlyOpen, readOnly, writesOff, submit,
                   <span className="lid ref" role="button" onClick={() => onOpenFinding(item!.item_id, null)}>{item!.item_id}</span>
                   <span className="chip okc">合规</span><span className="muted">修订 {review!.revision_no}</span>
                   {(review!.findings ?? []).map((f, i) => (
-                    <FindingRow key={i} task={task} item={item!} finding={f} status={null} onOpen={() => onOpenFinding(item!.item_id, f.field)} />
+                    <FindingLine key={i} finding={f} rule={ruleFor(task, item!, f)} batchNo={batch.no} onOpen={() => onOpenFinding(item!.item_id, f.field)} />
                   ))}
                 </div>
               ))}
@@ -128,59 +130,38 @@ function FailedItem({ task, item, review, batch, onlyOpen, readOnly, writesOff, 
   task: Task; item: Item; review: Review; batch: ReviewBatch; onlyOpen: boolean; readOnly: boolean; writesOff: boolean;
   submit: Submit; onOpenFinding: (itemId: string, field: string | null) => void; onPrefill: (text: string) => void;
 }) {
-  const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const status = findingStatus(item, review);
   const findings = review.findings ?? [];
-  const actionable = status.kind === "open" && review.revision_no === item.revision_no;
-  const off = writeOffReason(task, { readOnly, writesOff });
-  const keep = async () => {
+  const current = review.revision_no === item.revision_no;
+  const off = !!writeOffReason(task, { readOnly, writesOff });
+  const act = async (kind: "waive_review" | "unwaive_review", reason?: string) => {
     setError(null);
-    const e = await submit({ kind: "waive_review", targets: [{ item_id: item.item_id, base_revision: item.revision_no }],
-      fields: { reason: reason.trim(), source: "panel" }, notify_executor: false }, `保留 ${item.item_id} 现在的写法`);
+    const e = await submit({ kind, targets: [{ item_id: item.item_id, base_revision: item.revision_no }],
+      ...(kind === "waive_review" ? { fields: { reason: (reason ?? "").trim(), source: "panel" } } : {}), notify_executor: false },
+      kind === "waive_review" ? `保留 ${item.item_id} 现在的写法` : `撤销对 ${item.item_id} 的保留`);
     if (e) setError(e.message);
-    else setReason("");
   };
   return (
     <div className="sw-rv-item" data-testid={`batch-${batch.no}-item-${item.item_id}`}>
       <span className="lid ref" role="button" onClick={() => onOpenFinding(item.item_id, null)}>{item.item_id}</span>
       <span className="chip bad">不合规</span><span className="muted">修订 {review.revision_no}</span>
       {findings.filter((f) => !onlyOpen || isProblem(f)).map((f, i) => (
-        <FindingRow key={i} task={task} item={item} finding={f} status={findingStatusText(status)} onOpen={() => onOpenFinding(item.item_id, f.field)} />
+        <FindingLine key={i} finding={f} rule={ruleFor(task, item, f)} batchNo={batch.no} status={status}
+          onOpen={() => onOpenFinding(item.item_id, f.field)}
+          onFix={status.kind === "open" && current ? (x) => onPrefill(fixText(item.item_id, x)) : undefined} fixOff={readOnly}
+          onKeep={isProblem(f) && status.kind === "open" && current && !off ? (reason) => void act("waive_review", reason) : undefined}
+          onUnwaive={isProblem(f) && status.kind === "kept" && current ? () => void act("unwaive_review") : undefined} unwaiveOff={off} />
       ))}
-      {actionable && (
-        <div className="sw-rv-act">
-          <input className="reason" placeholder="保留的理由（可以不写）" value={reason} onChange={(e) => setReason(e.target.value)} disabled={!!off}
-            data-testid={`keep-reason-${item.item_id}`} />
-          <button type="button" className="btn sm" disabled={!!off} title={off} onClick={() => void keep()} data-testid={`keep-${item.item_id}`}>
-            保留 {item.item_id} 现在的写法</button>
-          <button type="button" className="btn sm" disabled={readOnly} data-testid={`fix-${item.item_id}`}
-            onClick={() => onPrefill(`请按第 ${batch.no} 次评审的发现改 ${item.item_id}：${findings.filter(isProblem).map((f) => f.problem).join("；")}`)}>
-            让助手照发现改</button>
-          {error && <span className="err-inline">{error}</span>}
-        </div>
-      )}
+      {error && <span className="err-inline">{error}</span>}
     </div>
   );
 }
 
-function FindingRow({ task, item, finding, status, onOpen }: { task: Task; item: Item; finding: Finding; status: string | null; onOpen: () => void }) {
-  const [clause, setClause] = useState(false);
-  const rule = task.definition.collections.find((c) => c.name === item.collection)?.all_rules?.find((r) => r.id === finding.rule_id)
-    ?? task.definition.collections.find((c) => c.name === item.collection)?.review_rules?.find((r) => r.id === finding.rule_id);
-  const problem = isProblem(finding);
-  const cls = status === null ? "" : status === "未处理" ? " open" : status.startsWith("已保留") ? " kept" : " fixed";
-  return (
-    <div className="sw-rv-f" data-testid={problem ? "rv-problem" : "rv-advice"}>
-      <i className={`dot ${problem ? "p" : "a"}`} />
-      <span className="t">
-        <span role="button" onClick={onOpen}>{finding.index != null ? `${finding.field}第 ${finding.index + 1} 项：` : `${finding.field}：`}{finding.problem}</span>
-        {finding.rule_id && <> 违反 <span className="clause" role="button" onClick={() => setClause(!clause)} data-testid={`rv-clause-${finding.rule_id}`}>{finding.rule_id}</span></>}
-        {clause && <span className="clause-body">{rule ? `${rule.id}（${rule.level}）　${rule.text}` : `${finding.rule_id}　这条规则的条文这次没有读到。`}</span>}
-      </span>
-      {status !== null && <span className={`st${cls}`} data-testid="rv-status">{status}</span>}
-    </div>
-  );
+/** 发现引用的那条规则：先在全部规则里找，找不到再在生效的规则里找。 */
+function ruleFor(task: Task, item: Item, finding: Finding): ReviewRule | undefined {
+  const c = task.definition.collections.find((one) => one.name === item.collection);
+  return c?.all_rules?.find((r) => r.id === finding.rule_id) ?? c?.review_rules?.find((r) => r.id === finding.rule_id);
 }
 
 /** 规则区：按集合列规则与开关。 */

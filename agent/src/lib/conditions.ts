@@ -138,7 +138,7 @@ function everyReviewed(db: DatabaseSync, taskId: string, collection: string, ctx
     collection,
     satisfied: unmet.length === 0,
     summary: unmet.length === 0
-      ? (kept.length ? `每个条目都评审通过，或由你保留了写法（${idsPhrase(kept)} 评审不合规但你保留了）。` : `每个条目在当前所在的修订都有评审通过的记录。`)
+      ? (kept.length ? `每个条目都评审通过，或由你保留了写法（${idsPhrase(kept)} 评审不合规但你保留了，按你的决定算通过）。` : `每个条目在当前所在的修订都有评审通过的记录。`)
       : `${parts.join("；")}。`,
     unmet,
   };
