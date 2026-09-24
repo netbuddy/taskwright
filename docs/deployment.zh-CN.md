@@ -117,7 +117,6 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 | `TASKWRIGHT_WEB_PORT` | web 开发服务器 | 端口（默认 5680）。 |
 | `TASKWRIGHT_API_TARGET` | web 开发服务器 | `/api` 代理转发的目标地址（默认：5681 端口上的模拟服务器）。 |
 | `TASKWRIGHT_TASKS_DIR`、`TASKWRIGHT_API_PORT` | `scripts/dev.sh` | 任务目录的根路径与 API 端口。 |
-| `TASKWRIGHT_DEV_REVIEW_AS_MET` | agent | 设为 `1` 时，在评审者尚未就绪期间把「每个条目评审通过」这条条件当作已满足处理。默认关闭。 |
 | `TASKWRIGHT_LANGFUSE_PLUGIN` | server | 可选的 Langfuse 插件所在的位置（见第 7 节）。 |
 | `TASKWRIGHT_LANGFUSE_ENV_FILE` | server、observatory | 保存 Langfuse 地址与密钥的文件。 |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse 项目编号，用于生成直达链接。 |

@@ -115,7 +115,6 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 | `TASKWRIGHT_WEB_PORT` | web dev server | Port (default 5680). |
 | `TASKWRIGHT_API_TARGET` | web dev server | Where `/api` is proxied (default: the mock server on 5681). |
 | `TASKWRIGHT_TASKS_DIR`, `TASKWRIGHT_API_PORT` | `scripts/dev.sh` | Task directory root and API port. |
-| `TASKWRIGHT_DEV_REVIEW_AS_MET` | agent | Set to `1` to treat "every item passed review" as met while the reviewer is not yet available. Off by default. |
 | `TASKWRIGHT_LANGFUSE_PLUGIN` | server | Location of the optional Langfuse plugin (see section 7). |
 | `TASKWRIGHT_LANGFUSE_ENV_FILE` | server, observatory | File holding the Langfuse address and keys. |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse project id, for deep links. |

@@ -20,13 +20,13 @@ It takes about 40 minutes, part of which is waiting for the assistant.
 ## Before you start
 
 - Taskwright is installed and pi can reach a model: follow [deployment](../deployment.md) up to section 3. `pi auth check --model <your model>` should print `ready`.
-- In the repository root, activate the virtual environment and start the backend and web interface **with the development switch**, then open `http://localhost:5680`:
+- In the repository root, activate the virtual environment and start the backend and web interface, then open `http://localhost:5680`:
 
   ```bash
-  TASKWRIGHT_DEV_REVIEW_AS_MET=1 scripts/dev.sh
+  scripts/dev.sh
   ```
 
-  One completion condition is "every item passed review", which needs a reviewer, and the reviewer is not available yet (see [capabilities](../capabilities.md), section 3). Without the switch that condition can never be met and the task cannot be completed. The switch treats it as met, and the completion record says so.
+  One completion condition is "every item passed review". You start reviews from the items area (see [capabilities](../capabilities.md), section 1.9); the screenshots of this tutorial were taken before the review buttons existed and do not show them yet.
 
 The screenshots come from a real run with the default model. **In your run the assistant's wording, the number and ids of the items and the revision numbers will differ**, but the steps and buttons are the same. The interface texts are in Chinese; the tutorial gives the English meaning next to each button name. Our task is called 图书馆借阅（教程） ("library lending (tutorial)"); yours can be called anything.
 

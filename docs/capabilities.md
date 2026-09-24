@@ -14,6 +14,7 @@ Only parts 1 and 2 describe things the code does now. How to install and run it 
 
 - The **user** is a person in the web interface or a terminal (or the simulated user in `sim/`).
 - The **assistant** (technically the executor) is the agent running inside pi. It reads the materials, writes items, asks questions and replies.
+- The **reviewer** checks items against numbered review rules (section 1.9). It is a model call without tools, made by the system; it cannot change items.
 
 Whether the user accepts an item is not judged by a model: opening an item's details counts as having read it, and reading it counts as confirming it (section 1.4).
 
@@ -27,7 +28,7 @@ Whether the user accepts an item is not judged by a model: opening an item's det
 
 ### 1.3 The assistant's tools
 
-The startup profile (`server/taskwright_server/profiles/dev.json`) allows exactly seven tools. pi's other built-in tools (such as `bash`, `edit` and `write`) are not loaded, so the assistant cannot run commands or change files; it can change the deliverable only through `save_revision`.
+The startup profile (`server/taskwright_server/profiles/dev.json`) allows exactly eight tools. pi's other built-in tools (such as `bash`, `edit` and `write`) are not loaded, so the assistant cannot run commands or change files; it can change the deliverable only through `save_revision`.
 
 | Tool | What it does | What it checks, and when it refuses |
 |---|---|---|
@@ -37,6 +38,7 @@ The startup profile (`server/taskwright_server/profiles/dev.json`) allows exactl
 | `reply` | Sends what the assistant says to the user. A reply has zero or more informs (plain facts), at most one final act (ask, confirm, suggest, choose or propose) and a written text. | Must be called alone, as the last step of a turn. Checks the form: required parts present, one of the five act kinds, at least two distinct options for `choose`, a value and at least one basis for `suggest`, valid `preview` entries for `propose`. Ask, confirm, suggest and propose must name the items they concern with their **current** revision numbers (checked against the database), unless they are marked `scope: "general"`. After three rejections in a row it asks for plain text only; after the fifth it lets a plain-text reply through, marked as degraded. It writes nothing to the database. |
 | `get_item` | Shows one item: every field, every source, its current revision, the revisions in which it changed, review and confirmation state; on request, the item as it was at an earlier revision. | Read-only; refuses an unknown item or a revision the task does not have yet. |
 | `get_task_status` | Shows each collection's items, each completion condition and whether it holds (with the items that fail it), issue items, the **unread list** (items the user has never read, with their titles), and the latest revision. | Read-only; the same checks as the deliverable board. |
+| `request_review` | Asks the reviewer to review items at their current revisions; without `items` it reviews every item waiting for review. Used only when the user asks for a review in the conversation; reviews are normally started from the interface (section 1.9). | Refuses an item that does not exist, is deleted, is not at the given revision, or is in a collection that is not reviewed, and refuses while another review is running. The result lists each item as compliant or not compliant (N problems, M pieces of advice), with every finding and its rule number. |
 | `complete_task` | Marks the task as completed. | Runs the same condition checks as `get_task_status`; if any condition fails it refuses. Unread items are named in one sentence the assistant can pass on as is, 还有 N 条你从没看过：…… ("there are still N items you have never read: …"); other missing conditions are listed after it. After completion every write tool refuses and the task is read-only. |
 
 ### 1.4 What the user can do directly
@@ -51,12 +53,13 @@ These operations in the web interface do not go through the model. They run insi
 | Withdraw a confirmation | Records that you no longer accept that revision of the items. The web interface no longer offers this button; only the interface endpoint remains. Read is per item, so a withdrawn item still counts as read. | A revision is no longer the item's current one. |
 | Undo a revision | Saves a new revision that puts every item the chosen revision touched back the way it was (a deleted item is restored, an added item is deleted). Nothing is erased. The web interface works out from the revision log which revisions cannot be undone, greys out their undo button and says why. | Any of those items changed again, or was deleted, after that revision. |
 | Keep pending | Sets the status of an issue item to "kept by the user's decision" in a new revision, and records the issue as confirmed by you at that revision. | The item's collection has no status field with that value. |
+| Request a review | Starts a review of every item waiting for review (评审 N 条待评审的条目, "review N items waiting for review"), of one item (评审这条, "review this item") or of the items listed in the completion panel (评审这 N 条). The request returns at once and the review runs in the background; see section 1.9. It creates no revision. | Another review is still running, there is nothing to review, or a named item is not at its current revision. |
 
 **Reading counts as confirming.** There is no confirm button. Opening an item's details records a confirmation mark with the basis "read" on the item's current revision; the item's status changes from 未读 ("unread") to 已读 · 修订 N ("read · revision N", where N is the last revision you read). Only opening the details counts; seeing the item in the list does not, and nothing measures how long you look. Read is per item and one-way: once read, an item stays read even if the assistant changes it later; what it changed since you looked is pointed out by the "just changed" tag and the amber field frames in the details, and does not block completion. Opening the item again records another read mark at the revision you see, so a generated document can say truthfully which revision you last read. You do not need to say "OK" in the conversation: the assistant does not record confirmations from what you say.
 
 **Your own edits count as confirmed.** Content you wrote yourself is content you accept: when editing fields or keeping an issue pending succeeds, the item is recorded as confirmed at the new revision in the same transaction as the revision, with the basis "interface edit". Deleting an item and undoing a revision do not confirm anything. The bottom right of an item's detail only shows its status; there is no button to withdraw a read.
 
-All operations are refused once the task is completed or abandoned, and while the assistant is working, with one exception: opening an item's details still marks it as read while the assistant works, because that does not change the deliverable. After each operation the assistant sees a note in the conversation that says exactly what changed, which revision it produced and the new field values, for example 用户改了 UC-002 的「基本流程」，产生修订 5，UC-002 现在是修订 5。 ("the user changed UC-002's basic flow, producing revision 5; UC-002 is now at revision 5").
+All operations are refused once the task is completed or abandoned, and while the assistant is working (including requesting a review), with one exception: opening an item's details still marks it as read while the assistant works, because that does not change the deliverable. After each operation the assistant sees a note in the conversation that says exactly what changed, which revision it produced and the new field values, for example 用户改了 UC-002 的「基本流程」，产生修订 5，UC-002 现在是修订 5。 ("the user changed UC-002's basic flow, producing revision 5; UC-002 is now at revision 5").
 
 Buttons on the assistant's cards (choose an option, "fill in from common sense", "another one", and so on) are sent to the assistant as your message, together with a note of which card and option you clicked.
 
@@ -79,7 +82,7 @@ In a generated document these two locators are written so that a reader can foll
 
 ### 1.6 Completion conditions
 
-The task definition lists, for each collection, which conditions must hold. The code knows four condition names: at least one item; no item with status "unresolved"; every item passed review; every item confirmed by the user. Each is a factual check of the database, never a judgement of content: "passed review" means there is a passing review of the item at its current revision, and "confirmed" means the item has an acceptance mark of any basis (read, interface edit, or an older basis) on any of its revisions, that is, the user has read it and it is not unread. Reviews are marks on "item plus revision" and do not move when the item changes later, so a changed item needs a new review; confirmation marks are stored on "item plus revision" too, but the gate only asks whether the item was ever read, so a change does not make it unread again. When a generated document shows an item at a revision newer than the one the user last read, its confirmation reads 用户最后看过修订 N，之后由助手改为修订 M ("the user last read revision N; the assistant has since changed it to revision M"). An empty collection counts as satisfied for the "every item …" conditions but is not reported as met. The same checks drive the deliverable board, `get_task_status` and `complete_task`.
+The task definition lists, for each collection, which conditions must hold. The code knows four condition names: at least one item; no item with status "unresolved"; every item passed review; every item confirmed by the user. Each is a factual check of the database, never a judgement of content: "passed review" means there is a compliant review of the item at its current revision (when it fails, the explanation lists the items not reviewed yet and the items that failed separately), and "confirmed" means the item has an acceptance mark of any basis (read, interface edit, or an older basis) on any of its revisions, that is, the user has read it and it is not unread. Reviews are marks on "item plus revision" and do not move when the item changes later, so a changed item needs a new review; confirmation marks are stored on "item plus revision" too, but the gate only asks whether the item was ever read, so a change does not make it unread again. When a generated document shows an item at a revision newer than the one the user last read, its confirmation reads 用户最后看过修订 N，之后由助手改为修订 M ("the user last read revision N; the assistant has since changed it to revision M"). An empty collection counts as satisfied for the "every item …" conditions but is not reported as met. The same checks drive the deliverable board, `get_task_status` and `complete_task`.
 
 ### 1.7 Documents
 
@@ -90,6 +93,16 @@ Generating a document renders the whole deliverable as of one revision, the late
 - Every change is a new revision; nothing is overwritten or erased. An item's content at any revision can still be read, a deleted item keeps its earlier content, and undo adds a new revision instead of removing one.
 - Every write (a tool call or a direct operation) records exactly one event, in the same database transaction as the change itself. Either both are written or neither is. The one exception is editing fields or keeping an issue pending, which records two events in that same transaction: the revision, and the confirmation that goes with it. Marking as read records an `ITEM_VIEWED` event, or none at all when every item was already read.
 - Every event carries the session, the tool call and who made the change (assistant or user).
+
+### 1.9 Review
+
+A reviewer checks items against the task type's review rules. Each reviewed collection names a rule file in its task definition (`docs/review-rules/use-case.json` and `ears.json` in the bundled task type); every rule has a number (for example UC-R7), a level, the rule text, a counter-example and an example. **Required** rules decide the verdict; **optional** rules only give advice. The task definition may switch optional rules off (`关闭`) or make them required (`升为必选`); the interface for this is not available yet. The issues collection is not reviewed.
+
+- **Who starts a review.** You do, from the interface. The assistant does not review on its own; it calls `request_review` only when you ask for a review in the conversation.
+- **How it runs.** Each item is reviewed by one model call without tools and without the conversation, at most four at a time and at most 60 seconds per item, with one retry. The reviewer must cite a rule number from the list for every finding; output that cites an unknown number, or a problem without a suggested fix, is rejected and retried. A review that does not finish (timeout, failed call, two rejected outputs, or the item changed meanwhile) records no verdict.
+- **Verdict.** The code, not the model, computes it: any finding under a required rule makes the item **not compliant**; findings under optional rules are advice. Suggestions name what to change and in which direction; they never contain rewritten text.
+- **In the interface.** The items area shows how many items wait for review and how many failed, with a progress bar while a review runs (评审中 3/12) and a one-line result afterwards. In an item's details, problems are shown in red and advice in amber next to their fields; clicking the rule number (违反 UC-R9) shows the rule text, and 让助手照这条改 ("let the assistant fix this") prefills a request to the assistant. The item's badge reads 评审通过 (passed), 评审通过（N 条建议） (passed, with N pieces of advice), 评审不通过 N 处 (failed, N problems) or 待评审 (waiting for review).
+- **When the item changes.** A review is a mark on "item plus revision"; after a new revision the item waits for review again.
 
 ## 2 Task type: software requirements specification
 
@@ -112,6 +125,8 @@ Two rule documents in `docs/domain-knowledge/` describe how to write items. The 
 
 - **Use cases** (`use-case-writing.md`): one use case is one actor's goal; the nine parts of a use case (name, id, purpose, actors, preconditions, postconditions, constraint rules, basic flow, extension flows) and how to write each; what is not allowed (interface details, functions not in the material, deciding unclear points, examples inside rules, unverifiable words).
 - **Non-functional requirements and constraints** (`ears-writing.md`): the difference between the two; the six EARS (Easy Approach to Requirements Syntax) sentence patterns: ubiquitous, event-driven, state-driven, optional feature, unwanted behaviour, and complex; and the rules each statement must meet (one thing per statement, a clear subject, verifiable, no vague words, no examples, no implementation unless it is itself a constraint, numbers kept exactly as in the material).
+
+The numbered rule lists in both documents are generated from the rule files in `docs/review-rules/` (`node scripts/render-rules.mjs`), so the rules the assistant reads and the rules the reviewer checks are the same text.
 
 ### 2.3 How the assistant works
 
@@ -146,7 +161,8 @@ From the task skill:
 
 The following are **not** available in the current version.
 
-- **Reviewer (compliance review).** A reviewer that checks each item against the domain rules is planned. The default startup profile does not enable a review tool, so no item can pass review, and the "every item passed review" condition cannot be met. For trial runs, the environment variable `TASKWRIGHT_DEV_REVIEW_AS_MET=1` treats that condition as met; the completion record states that the switch was used.
+- **Keeping a wording that failed review.** You cannot yet mark a failed item as accepted with a reason; the item must be changed and reviewed again.
+- **Switching review rules in the interface**, and reviewing several items together (duplicates, conflicts).
 - **Word (.docx) documents.** Documents are generated as Markdown only.
 - **A list of generated documents.** The Document tab of the web interface only offers to generate a document; generated documents are not stored or listed.
 - **A stop button in the web interface.** The assistant can be interrupted only through the `stop` control request of the HTTP API ([api.md](api.md), section 5.5).

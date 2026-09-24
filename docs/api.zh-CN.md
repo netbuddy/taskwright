@@ -53,7 +53,10 @@ data: {
 | 事件 | 发生时机 | `data` |
 |---|---|---|
 | `task_changed` | 任务被创建、完成或放弃时 | `seq`、`at`、`task_id`、`task_name`、`status_before`、`status_after`、`actor`、`completion` |
-| `review_recorded` | 评审者（reviewer）给出一次判定时（待评审者上线后才会出现） | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`verdict`、`findings`、`completion` |
+| `review_recorded` | 评审者（reviewer）评完一个条目时；`verdict` 为 `合规` 或 `不合规`，由代码按发现所依据规则的级别算出 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`verdict`、`reason`、`findings`（每条有 `rule_id`、`level`（`必选` 或 `可选`）、`field`、`index`（从 0 起，指整个字段时为 null）、`problem`、`suggestion`）、`op_id`（用户在界面上发起的评审才有）、`completion` |
+| `review_unfinished` | 一个条目的评审没有完成（超时、调用失败、两次输出不合格、评审期间条目被改），不记合规与否 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`reason`、`op_id`、`completion` |
+| `review_progress` | 界面发起的一批评审（`request_review`）开始时（`done` 为 0），以及每评完一个条目时 | `seq`、`at`、`task_id`、`op_id`、`done`、`total`、`current`（此刻正在评的条目）、`item_id`（刚评完的条目，开始时为 null）、`completion` |
+| `review_finished` | 这批评审全部结束时 | `seq`、`at`、`task_id`、`op_id`、`total`、`passed`、`failed`、`unfinished`、`results`（`item_id`、`revision_no`、`status`）、`error`（中途出了意外时写原因，否则为 null）、`completion` |
 | `item_viewed` | 用户打开了条目详情，或在请确认卡片上点了「这几条都看过了」；条目在那次修订上记为已读 | `seq`、`at`、`task_id`、`items`（`item_id`、`revision_no`）、`op_id`、`completion` |
 | `confirmation_recorded` | 已读以外的确认标记：用户改了条目或把问题条目标为先不管（`basis` 为 `ui_edit`，随修订一起写），或撤回了确认（`basis` 为 `ui_click`，`accepted` 为假） | `seq`、`at`、`task_id`、`items`（`item_id`、`revision_no`、`accepted`）、`basis`、`op_id`、`completion` |
 | `resync`（无 id） | 需要重放的事件太多 | `{"reason": "gap_too_large"}` |
@@ -89,16 +92,23 @@ data: {
   "task": { "task_id": "…", "task_name": "…", "task_type": "srs-authoring", "domain_tag": null, "status": "进行中",
             "started_at": "…", "ended_at": null,
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
-                            "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ] }, … ] },
+                            "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],
+                            "needs_review": true,
+                            "review_rules": [ { "id": "UC-R1", "level": "必选", "text": "…", "counter_example": "…", "example": "…" }, … ] }, … ] },
             "completion": { … 见第 4.2 节 … },
             "items": [ { "item_id": "UC-001", "collection": "功能用例", "title": "…", "revision_no": 5, "revision_by": "user",
                          "revision_at": "…", "revisions": [2, 5], "fields": { … }, "sources": [ … ],
-                         "reviews": [], "confirmations": [ { "revision_no": 5, "accepted": true, "at": "…", "basis": "viewed" } ],
+                         "reviews": [ { "revision_no": 5, "verdict": "不合规", "reason": "…", "at": "…",
+                                        "findings": [ { "rule_id": "UC-R7", "level": "必选", "field": "基本流程", "index": 1,
+                                                        "problem": "…", "suggestion": "…" } ] } ],
+                         "confirmations": [ { "revision_no": 5, "accepted": true, "at": "…", "basis": "viewed" } ],
                          "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed" } ] },
   "materials": [ { "path": "inputs/requirements.md", "bytes": 1234, "modified_at": "…" } ],
   "conversation": { "messages": [ … 最近的 100 条，每条都带 "type" … ], "has_earlier": false, "earliest_id": "…" },
   "current_work": null }
 ```
+
+`needs_review` 表示完成条件是否要求这个集合「每个条目评审通过」；`review_rules` 是这个集合实际要评的规则清单（任务定义里关闭或升为必选之后的），没有写评审规矩的集合为 null。依据 `必选` 规则的发现是「问题」，有一条条目就不合规；依据 `可选` 规则的发现是「建议」，不影响结论。
 
 确认标记（confirmation mark）。确认是挂在「条目加修订」上的标记，条目之后再被改动时它不随之移动。它的 `basis`（依据）有三种：`viewed`（已读：用户打开了条目详情，或在请确认卡片上点了「这几条都看过了」）、`ui_edit`（用户改了条目或把它标为先不管，改出来的内容算作已确认）、`ui_click`（撤回确认，`accepted` 为假；较早的库里还有在界面上点的确认）；较早的库里还可能有 `user_words`，那是早期版本由执行者按用户的话登记的确认。条目的 `viewed` 为真，表示它当前所在修订上最近一条标记是接受（任一依据），这时 `confirmation_basis` 写明依据；`viewed` 为假的条目就是**未读**。完成条件「每个条目用户确认」在集合里没有未读条目时满足。
 
@@ -189,7 +199,7 @@ data: {
 `POST …/actions?session={session_id}`：
 
 ```
-{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo",
+{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review",
   "targets": [ { "item_id": "UC-002", "base_revision": 3 } ],  // 打开这个条目时它所在的修订号；undo 时用 "revision_no"
   "fields": { "基本流程": ["…", "…"] },                          // 仅 edit_fields：给出完整的新值
   "notify_executor": false }
@@ -202,8 +212,9 @@ data: {
 3. `mark_viewed` 把每个目标在 `base_revision` 上记为已读。它是幂等的：条目在那次修订上最近一条标记已经是接受的就跳过，全部跳过时什么都不写、也不发事件。不带 `notify_executor` 时（界面在用户打开条目详情时这样发）不往会话里追加任何东西；带上时（请确认卡片上的「这几条都看过了」）追加一条界面操作说明，并发出第 7 节的固定句式。评审未通过的条目仍然可以记为已读。
 4. `unconfirm` 撤回每个目标在 `base_revision` 上的确认：记一条 `accepted` 为假的标记，条目回到未读。
 5. `edit_fields` 与 `keep_pending` 在产生修订的同一个事务里，为这次修订同时记一条确认标记（依据 `ui_edit`）。
-6. 对已关闭的任务，任何操作都返回 `task_closed`。
-7. 智能体工作期间，任何操作都返回 `session_busy`，`data.reason` 为 `working`；不带 `notify_executor` 的 `mark_viewed` 除外。
+6. `request_review` 请评审者评审每个目标在 `base_revision` 上的内容；`targets` 为空列表时评全部待评审的条目（所在集合要求评审、当前所在的修订还没有评审记录的条目）。核对通过就立即响应，评审在后台进行，每个条目各发一条 `review_progress`，以及 `review_recorded` 或 `review_unfinished`，全部结束时发 `review_finished`，都带同一个 `op_id`。上一批评审还在进行、没有要评的条目、目标所在集合不要求评审、目标不在它当前所在的修订时拒绝（`rejected`）。评审结束后往会话里追加一条写着评审结果的界面操作说明，不引出智能体的运行。客户端对它不显示「正在保存」。
+7. 对已关闭的任务，任何操作都返回 `task_closed`。
+8. 智能体工作期间，任何操作都返回 `session_busy`，`data.reason` 为 `working`；不带 `notify_executor` 的 `mark_viewed` 除外。
 
 ## 7 发送给智能体的固定句式
 

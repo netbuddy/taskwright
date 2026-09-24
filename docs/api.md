@@ -51,7 +51,10 @@ Source kinds: `文档原文` (verbatim document excerpt), `用户的话` (the us
 | Event | When | `data` |
 |---|---|---|
 | `task_changed` | task created, completed or abandoned | `seq`, `at`, `task_id`, `task_name`, `status_before`, `status_after`, `actor`, `completion` |
-| `review_recorded` | a reviewer's verdict (once the reviewer ships) | `seq`, `at`, `task_id`, `item_id`, `revision_no`, `verdict`, `findings`, `completion` |
+| `review_recorded` | the reviewer reviewed one item; `verdict` is `合规` (compliant) or `不合规` (not compliant), computed from the rule levels of the findings | `seq`, `at`, `task_id`, `item_id`, `revision_no`, `verdict`, `reason`, `findings` (each `rule_id`, `level` `必选` or `可选`, `field`, `index` from 0 or null, `problem`, `suggestion`), `op_id` (set when the user started the review), `completion` |
+| `review_unfinished` | a review of one item did not finish (timeout, failed call, two invalid outputs, or the item changed meanwhile); no verdict is recorded | `seq`, `at`, `task_id`, `item_id`, `revision_no`, `reason`, `op_id`, `completion` |
+| `review_progress` | a review started from the interface (`request_review`) began (`done` 0) or finished one more item | `seq`, `at`, `task_id`, `op_id`, `done`, `total`, `current` (items being reviewed now), `item_id` (the item just finished, null at the start), `completion` |
+| `review_finished` | that review is over | `seq`, `at`, `task_id`, `op_id`, `total`, `passed`, `failed`, `unfinished`, `results` (`item_id`, `revision_no`, `status`), `error` (null unless the review stopped unexpectedly), `completion` |
 | `item_viewed` | the user opened an item's details, or clicked "I've read these" on a confirm card; the item is now read as of that revision | `seq`, `at`, `task_id`, `items` (`item_id`, `revision_no`), `op_id`, `completion` |
 | `confirmation_recorded` | a confirmation mark other than "read": the user edited an item or marked an issue item as keep-pending (`basis` `ui_edit`, written together with the revision), or withdrew a confirmation (`basis` `ui_click`, `accepted` false) | `seq`, `at`, `task_id`, `items` (`item_id`, `revision_no`, `accepted`), `basis`, `op_id`, `completion` |
 | `resync` (no id) | too many events to replay | `{"reason": "gap_too_large"}` |
@@ -87,16 +90,23 @@ All carry `session_id`.
   "task": { "task_id": "…", "task_name": "…", "task_type": "srs-authoring", "domain_tag": null, "status": "进行中",
             "started_at": "…", "ended_at": null,
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
-                            "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ] }, … ] },
+                            "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],
+                            "needs_review": true,
+                            "review_rules": [ { "id": "UC-R1", "level": "必选", "text": "…", "counter_example": "…", "example": "…" }, … ] }, … ] },
             "completion": { … 4.2 … },
             "items": [ { "item_id": "UC-001", "collection": "功能用例", "title": "…", "revision_no": 5, "revision_by": "user",
                          "revision_at": "…", "revisions": [2, 5], "fields": { … }, "sources": [ … ],
-                         "reviews": [], "confirmations": [ { "revision_no": 5, "accepted": true, "at": "…", "basis": "viewed" } ],
+                         "reviews": [ { "revision_no": 5, "verdict": "不合规", "reason": "…", "at": "…",
+                                        "findings": [ { "rule_id": "UC-R7", "level": "必选", "field": "基本流程", "index": 1,
+                                                        "problem": "…", "suggestion": "…" } ] } ],
+                         "confirmations": [ { "revision_no": 5, "accepted": true, "at": "…", "basis": "viewed" } ],
                          "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed" } ] },
   "materials": [ { "path": "inputs/requirements.md", "bytes": 1234, "modified_at": "…" } ],
   "conversation": { "messages": [ … the latest 100, each with "type" … ], "has_earlier": false, "earliest_id": "…" },
   "current_work": null }
 ```
+
+`needs_review` says whether the completion conditions require "every item passed review" for the collection; `review_rules` is the collection's rule list after rules switched off or made required in the task definition (null for a collection without review rules). A finding under a `必选` (required) rule is a problem and makes the item not compliant; a finding under a `可选` (optional) rule is advice.
 
 Confirmation marks. A confirmation is a mark on "item + revision": it does not move when the item is changed later. Its `basis` is `viewed` (the user opened the item's details, or clicked "I've read these" on a confirm card), `ui_edit` (the user edited the item or marked it keep-pending; the edited content counts as confirmed) or `ui_click` (a withdrawal, `accepted` false; older databases also contain confirmations clicked in the interface); older databases may also contain `user_words`, confirmations recorded by the agent from the user's words in earlier versions. `viewed` on an item is true when the latest mark on its current revision is an acceptance of any basis, and `confirmation_basis` then names that basis; an item whose `viewed` is false is **unread**. The completion condition 「每个条目用户确认」 is met when no item of the collection is unread.
 
@@ -187,7 +197,7 @@ Opening a session (a snapshot with `session`) starts pi for that task or switche
 `POST …/actions?session={session_id}`:
 
 ```
-{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo",
+{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review",
   "targets": [ { "item_id": "UC-002", "base_revision": 3 } ],  // the item's revision when you opened it; for undo: "revision_no"
   "fields": { "基本流程": ["…", "…"] },                          // edit_fields only: complete new values
   "notify_executor": false }
@@ -200,8 +210,9 @@ Response `{ok, client_id, op_id}`; the result arrives as events carrying the sam
 3. `mark_viewed` marks each target as read as of `base_revision`. It is idempotent: an item whose latest mark on that revision is already an acceptance is skipped, and when every target is skipped nothing is written and no event is sent. Without `notify_executor` (the interface sends it when the user opens an item's details) nothing is appended to the session; with it (the "I've read these" card button) an interface-action note and the fixed sentence in section 7 are. Items that failed review can still be marked as read.
 4. `unconfirm` withdraws the confirmation of each target's `base_revision`: it records a mark with `accepted` false, and the item becomes unread again.
 5. `edit_fields` and `keep_pending` also record a confirmation mark (basis `ui_edit`) on the revision they produce, in the same transaction.
-6. On a closed task every operation returns `task_closed`.
-7. While the agent is working every operation returns `session_busy` with `data.reason` `working`, except `mark_viewed` without `notify_executor`.
+6. `request_review` asks the reviewer to review the targets at their `base_revision`; an empty `targets` list means every item waiting for review (in a collection that requires review, with no review at its current revision). The response comes as soon as the request passes its checks; the review runs in the background and reports through `review_progress`, `review_recorded` or `review_unfinished` for each item, and `review_finished`, all carrying the same `op_id`. It is rejected (`rejected`) while another review runs, when there is nothing to review, when a target is in a collection that is not reviewed, or when a target is not at its current revision. When the review is over, an interface-action note with the results is appended to the session; it does not start the agent. Clients should not show "saving" for it.
+7. On a closed task every operation returns `task_closed`.
+8. While the agent is working every operation returns `session_busy` with `data.reason` `working`, except `mark_viewed` without `notify_executor`.
 
 ## 7 Fixed sentences sent to the agent
 
