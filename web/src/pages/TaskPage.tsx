@@ -93,7 +93,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
       <div className="two-col">
         <div>
           <div className="section-title">完成条件</div>
-          <div className="card"><CompletionPanel completion={completion} status={task.status} /></div>
+          <div className="card"><CompletionPanel completion={completion} status={task.status} items={task.items} /></div>
         </div>
         <div>
           <div className="section-title">材料清单</div>

@@ -61,17 +61,33 @@ export interface FieldDef {
   values: string[] | null;
 }
 
+/** 评审规则清单里的一条（关闭与升为必选之后的）：必选规则违反了即评审不通过，可选规则只给建议。 */
+export interface ReviewRule {
+  id: string;
+  level: "必选" | "可选" | string;
+  text: string;
+  counter_example?: string;
+  example?: string;
+}
+
 export interface CollectionDef {
   name: string;
   prefix: string;
   fields: FieldDef[];
+  /** 完成条件里对这个集合要求了「每个条目评审通过」。 */
+  needs_review?: boolean;
+  /** 这个集合的评审规则清单；没写评审规矩的集合为 null（评审只按字段声明）。 */
+  review_rules?: ReviewRule[] | null;
 }
 
 export interface TaskDefinition {
   collections: CollectionDef[];
 }
 
+/** 一条评审发现：依据的规则编号与级别（必选的叫问题，可选的叫建议）、字段、列表型字段的第几项（从 0 起）、问题、改法。 */
 export interface Finding {
+  rule_id?: string | null;
+  level?: "必选" | "可选" | string | null;
   field: string;
   index: number | null;
   problem: string;
@@ -320,7 +336,51 @@ export interface ReviewRecorded {
   item_id: string;
   revision_no: number;
   verdict: string;
+  reason?: string;
   findings: Finding[];
+  /** 用户在界面上发起的评审是那次操作的编号，执行者经工具发起的为 null。 */
+  op_id?: string | null;
+  completion: Completion | null;
+}
+
+/** 评审没有完成（超时、调用失败、输出两次不合格、评审期间条目被改）：不记合规与否。 */
+export interface ReviewUnfinished {
+  seq: number;
+  at: string;
+  task_id: string;
+  item_id: string;
+  revision_no: number;
+  reason: string;
+  op_id?: string | null;
+  completion: Completion | null;
+}
+
+/** 界面发起的评审的进度：开始时一条（done 为 0），每评完一条一条。current 是此刻正在评的条目。 */
+export interface ReviewProgress {
+  seq: number;
+  at: string;
+  task_id: string;
+  op_id: string;
+  done: number;
+  total: number;
+  current: string[];
+  /** 刚评完的条目；开始时那条为 null。 */
+  item_id: string | null;
+  completion: Completion | null;
+}
+
+/** 界面发起的评审全部评完：合规、不合规、评审未完成各几条。 */
+export interface ReviewFinished {
+  seq: number;
+  at: string;
+  task_id: string;
+  op_id: string;
+  total: number;
+  passed: number;
+  failed: number;
+  unfinished: number;
+  results: { item_id: string; revision_no: number; status: string }[];
+  error: string | null;
   completion: Completion | null;
 }
 
@@ -350,10 +410,15 @@ export type LibraryEvent =
   | { event: "deliverable_changed"; data: DeliverableChanged }
   | { event: "task_changed"; data: TaskChanged }
   | { event: "review_recorded"; data: ReviewRecorded }
+  | { event: "review_unfinished"; data: ReviewUnfinished }
+  | { event: "review_progress"; data: ReviewProgress }
+  | { event: "review_finished"; data: ReviewFinished }
   | { event: "confirmation_recorded"; data: ConfirmationRecorded }
   | { event: "item_viewed"; data: ItemViewed };
 
-export const LIBRARY_EVENTS = ["deliverable_changed", "task_changed", "review_recorded", "confirmation_recorded", "item_viewed"] as const;
+export const LIBRARY_EVENTS = [
+  "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
+] as const;
 
 export interface WorkStarted {
   session_id: string;
@@ -475,7 +540,8 @@ export interface MessageRequest {
   card?: { reply_message_id: string; kind: ActKind; choice: string };
 }
 
-export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo";
+/** request_review：请评审者评审；targets 为空列表时评全部待评审的条目。后端核对通过就回应，评审在后台跑。 */
+export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review";
 
 export interface ActionRequest {
   client_id: string;

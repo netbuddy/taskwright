@@ -22,6 +22,8 @@ import type {
   Material,
   MaterialAdded,
   Problem,
+  ReviewFinished,
+  ReviewProgress,
   ReviewRecorded,
   SessionInfo,
   Snapshot,
@@ -49,6 +51,19 @@ export interface OutgoingMessage {
   state: "sending" | "sent" | "failed";
   error?: string;
   queued?: boolean;
+}
+
+/**
+ * 界面发起的一批评审：进度来自 review_progress，全部评完时 review_finished 填上 finished。
+ * 不在整份数据里：刷新页面之后，下一条进度事件到了才重新显示。
+ */
+export interface ReviewRun {
+  op_id: string;
+  done: number;
+  total: number;
+  /** 此刻正在评的条目。 */
+  current: string[];
+  finished: { passed: number; failed: number; unfinished: number; error: string | null } | null;
 }
 
 export interface WorkState {
@@ -85,6 +100,8 @@ export interface WorkState {
   focusMaterial: string | null;
   /** 任务最新的修订号：整份数据里带一次，之后每条 deliverable_changed 更新。修订日志跟着它重读。 */
   latestRevision: number;
+  /** 最近一批界面发起的评审；没有时为 null。 */
+  review: ReviewRun | null;
 }
 
 export function initialWorkState(sessionId: string): WorkState {
@@ -109,6 +126,7 @@ export function initialWorkState(sessionId: string): WorkState {
     seenOps: [],
     focusMaterial: null,
     latestRevision: 0,
+    review: null,
   };
 }
 
@@ -221,6 +239,23 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
     case "review_recorded":
       next = applyReviewRecorded(next, event.data as unknown as ReviewRecorded);
       break;
+    case "review_unfinished":
+      next = withCompletionOnly(next, (event.data as { completion?: Completion | null }).completion);
+      break;
+    case "review_progress": {
+      const data = event.data as unknown as ReviewProgress;
+      next = { ...withCompletionOnly(next, data.completion),
+        review: { op_id: data.op_id, done: data.done, total: data.total, current: data.current ?? [], finished: null } };
+      break;
+    }
+    case "review_finished": {
+      const data = event.data as unknown as ReviewFinished;
+      next = { ...withCompletionOnly(next, data.completion), review: {
+        op_id: data.op_id, done: data.total, total: data.total, current: [],
+        finished: { passed: data.passed, failed: data.failed, unfinished: data.unfinished, error: data.error ?? null },
+      } };
+      break;
+    }
     case "confirmation_recorded":
       next = applyConfirmationRecorded(next, event.data as unknown as ConfirmationRecorded);
       break;
@@ -237,6 +272,11 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
 function withCompletion(task: Task, completion: Completion | null | undefined): Task {
   // 约定：算不出来时库事件里是 null，前端就显示「完成条件这次没有算出来」，所以照样覆盖。
   return completion === undefined ? task : { ...task, completion };
+}
+
+/** 只带完成条件的库事件：有就换上。 */
+function withCompletionOnly(state: WorkState, completion: Completion | null | undefined): WorkState {
+  return state.task ? { ...state, task: withCompletion(state.task, completion) } : state;
 }
 
 function staleOf(item: Item): boolean {

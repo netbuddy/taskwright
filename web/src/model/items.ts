@@ -1,17 +1,58 @@
 // 条目的几样由数据算出的状态，界面上的标签与筛选都用它们，不写死任何集合名或字段名。
 
-import type { Completion, CompletionCondition, FieldDef, FieldValue, Item, Review, Task } from "../api/types";
+import type { Completion, CompletionCondition, FieldDef, FieldValue, Finding, Item, Review, ReviewRule, Task } from "../api/types";
 
-export type ReviewState = { state: "pending" } | { state: "passed" } | { state: "failed"; findings: number };
+/** 评审状态：待评审、通过（advice 是可选规则给的建议条数）、不通过（problems 是必选规则的问题处数）。 */
+export type ReviewState = { state: "pending" } | { state: "passed"; advice: number } | { state: "failed"; problems: number; advice: number };
 export type ConfirmState = "pending" | "confirmed" | "stale" | "rejected";
 
 /** 条目当前所在的修订上的评审状态：取针对这次修订的最近一条评审记录；没写修订号的评审按当前所在的修订算。 */
 export function reviewState(item: Item): ReviewState {
-  const mine = item.reviews.filter((r: Review) => r.revision_no === undefined || r.revision_no === item.revision_no);
-  const last = mine[mine.length - 1];
+  const last = currentReview(item);
   if (!last) return { state: "pending" };
-  if (last.verdict === "合规") return { state: "passed" };
-  return { state: "failed", findings: last.findings?.length ?? 0 };
+  const findings = last.findings ?? [];
+  const problems = findings.filter(isProblem).length;
+  if (last.verdict === "合规") return { state: "passed", advice: findings.length - problems };
+  // 早期的评审记录没有级别：不合规的每条发现都算问题。
+  return { state: "failed", problems: findings.some((f) => f.level) ? problems : findings.length, advice: findings.some((f) => f.level) ? findings.length - problems : 0 };
+}
+
+/** 条目当前所在的修订上最近一条评审记录；没有时为 undefined。 */
+export function currentReview(item: Item): Review | undefined {
+  return item.reviews.filter((r: Review) => r.revision_no === undefined || r.revision_no === item.revision_no).pop();
+}
+
+/** 必选规则的发现叫「问题」，可选规则的叫「建议」。没有级别的早期发现按问题算。 */
+export function isProblem(f: Finding): boolean {
+  return f.level !== "可选";
+}
+
+/**
+ * 这个集合要不要评审：接口给了 needs_review 就用它；旧后端没给时看完成条件里有没有「每个条目评审通过」，
+ * 完成条件也还没算出来时按「不是问题条目一类」估计。
+ */
+export function needsReview(task: Task, collection: string): boolean {
+  const def = task.definition.collections.find((c) => c.name === collection);
+  if (def?.needs_review !== undefined) return def.needs_review;
+  const conditions = task.completion?.conditions;
+  if (conditions && conditions.length > 0) return conditions.some((c) => c.collection === collection && c.name === REVIEW_CONDITION);
+  return keepPendingField(task, collection) === null;
+}
+
+/** 待评审：要评审的集合里、当前所在的修订还没有任何评审记录的条目，按条目区的顺序。「评审 N 条待评审的条目」的 N 就是它的条数。 */
+export function pendingReview(task: Task): Item[] {
+  return task.items.filter((i) => needsReview(task, i.collection) && reviewState(i).state === "pending");
+}
+
+/** 评审不通过：要评审的集合里、当前所在的修订上最近一条评审是不合规的条目。 */
+export function failedReview(task: Task): Item[] {
+  return task.items.filter((i) => needsReview(task, i.collection) && reviewState(i).state === "failed");
+}
+
+/** 某个集合里编号为 ruleId 的那条规则；找不到时为 undefined。 */
+export function ruleOf(task: Task, collection: string, ruleId: string | null | undefined): ReviewRule | undefined {
+  if (!ruleId) return undefined;
+  return task.definition.collections.find((c) => c.name === collection)?.review_rules?.find((r) => r.id === ruleId);
 }
 
 /**
@@ -97,12 +138,26 @@ export function writeOffReason(task: Task | null, o: { readOnly?: boolean; write
   return undefined;
 }
 
-export type ItemFilter = "all" | "review_pending" | "review_failed" | "unread" | "read" | "supplement";
+/**
+ * 评审按钮灰化时悬停说明的原因，按先后取第一条：任务已结束、助手不可用、助手工作中、上一批还在评、没有要评的条目。
+ * 都不是时返回 undefined（按钮可用）。
+ */
+export function reviewOffReason(task: Task | null, o: { readOnly?: boolean; writesOff?: boolean; running?: boolean; count: number }): string | undefined {
+  if (task && task.status !== "进行中") return `任务已${task.status === "已放弃" ? "放弃" : "结束"}，不能再评审。`;
+  if (o.readOnly) return "助手现在不可用，暂时不能评审。";
+  if (o.writesOff) return "助手正在工作，结束之后才能发起评审。";
+  if (o.running) return "上一批评审还在进行，评完之后再发起。";
+  if (o.count === 0) return "没有待评审的条目。";
+  return undefined;
+}
+
+export type ItemFilter = "all" | "review_pending" | "review_failed" | "review_passed" | "unread" | "read" | "supplement";
 
 export const FILTERS: { key: ItemFilter; label: string }[] = [
   { key: "all", label: "全部" },
   { key: "review_pending", label: "待评审" },
   { key: "review_failed", label: "评审不通过" },
+  { key: "review_passed", label: "评审通过" },
   { key: "unread", label: "未读" },
   { key: "read", label: "已读" },
   { key: "supplement", label: "有助手补充的内容" },
@@ -116,6 +171,8 @@ export function matchesFilter(item: Item, filter: ItemFilter): boolean {
       return reviewState(item).state === "pending";
     case "review_failed":
       return reviewState(item).state === "failed";
+    case "review_passed":
+      return reviewState(item).state === "passed";
     case "unread":
       return isUnread(item);
     case "read":
