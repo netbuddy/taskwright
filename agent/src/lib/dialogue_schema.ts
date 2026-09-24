@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS dialogue_act (
   act_id            TEXT NOT NULL,     -- 对话行为的编号：运行号-序号，例如 r13-2；同一会话里唯一
   run_id            TEXT NOT NULL,     -- 运行号：这条会话当前分支上第几句用户的话，例如 r13
   speaker           TEXT NOT NULL CHECK (speaker IN ('user', 'executor')),  -- 谁的行为
-  function          TEXT NOT NULL,     -- 功能：用户侧八种，执行者侧告知 inform 与五种主行为，取值见 agent/prompts/schemas/user_intent.schema.json
+  function          TEXT NOT NULL,     -- 功能：用户侧九种，执行者侧告知 inform 与五种主行为，取值见 agent/prompts/schemas/user_intent.schema.json
   targets           TEXT NOT NULL,     -- 针对的条目与位置（JSON 列表，每项是 item_id，可带 field、index），可以是空列表
   responds_to       TEXT,              -- 回应的是哪一条对话行为的编号；没有为空
   expects_response  INTEGER NOT NULL CHECK (expects_response IN (0, 1)),  -- 是否期待回应：执行者的五种主行为为 1，告知与用户的行为为 0

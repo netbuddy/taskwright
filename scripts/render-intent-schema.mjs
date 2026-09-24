@@ -29,6 +29,9 @@ function exampleJson(value) {
   return `{"acts": [\n${acts.join(",\n")}\n]}`;
 }
 
+/** How many, in Chinese numerals, for the few counts the generated text states. */
+const COUNT = ["零", "一", "两", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二"];
+
 /** A schema description written inside parentheses: without its closing full stop. */
 const bare = (text) => text.replace(/。$/, "");
 
@@ -48,11 +51,11 @@ export function renderSchema(schema) {
   lines.push(`- \`responds_to\`：${act.properties.responds_to.description}`);
   lines.push(`- \`summary\`：${act.properties.summary.description}不超过 ${act.properties.summary.maxLength} 个字。`);
   lines.push("");
-  lines.push(`\`function\` 八种，按用户这项行为的用意选一种：`);
+  lines.push(`\`function\` ${COUNT[user.enum.length]}种，按用户这项行为的用意选一种：`);
   lines.push("");
   for (const key of user.enum) lines.push(`- \`${key}\`（${user["x-names"][key]}）：${user["x-usage"][key]}`);
   lines.push("");
-  lines.push(`\`confidence\` 三档：`);
+  lines.push(`\`confidence\` ${COUNT[confidence.enum.length]}档：`);
   lines.push("");
   for (const key of confidence.enum) lines.push(`- \`${key}\`（${confidence["x-names"][key]}）：${confidence["x-usage"][key]}`);
   for (const example of schema.examples ?? []) {

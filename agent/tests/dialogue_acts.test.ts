@@ -103,6 +103,17 @@ test("schema 核对：合格的理解没有问题；缺项、多项、枚举不�
   }
 });
 
+test("用户向助手要信息记 question（询问）：schema 收这一种，clarify 只留给没听懂助手上一句话", () => {
+  const ask = { function: "question", targets: [{ item_id: "X-004" }], confidence: "high", summary: "问材料里有没有写预约的书保留几天" };
+  assert.deepEqual(schemaErrors({ acts: [ask] }), []);
+  assert.ok(INTENT_SCHEMA.$defs.user_function.enum.includes("question"));
+  assert.equal(INTENT_SCHEMA.$defs.user_function["x-names"].question, "询问");
+  assert.match(INTENT_SCHEMA.$defs.user_function["x-usage"].clarify, /没听懂你上一句话/);
+  assert.ok(INTENT_SCHEMA.examples.some((one: any) => one.value.acts.some((act: any) => act.function === "question")));
+  // 执行者侧的 ask 仍然不能写在用户侧。
+  assert.match(schemaErrors({ acts: [{ ...ask, function: "ask" }] }).join(" | "), /function 写的是 "ask"，只能是 .*clarify、question 之一/);
+});
+
 test("取理解：```json 围栏、没写语言的围栏、整段就是 JSON 都认；没有围栏、JSON 写坏各给原因", () => {
   assert.deepEqual(extractUnderstanding('```json\n{"acts": []}\n```'), { ok: true, value: { acts: [] } });
   assert.deepEqual(extractUnderstanding('```\n{"acts": []}\n```'), { ok: true, value: { acts: [] } });
