@@ -54,6 +54,10 @@ Source kinds: `文档原文` (verbatim document excerpt), `用户的话` (the us
 | `review_recorded` | the reviewer reviewed one item; `verdict` is `合规` (compliant) or `不合规` (not compliant), computed from the rule levels of the findings | `seq`, `at`, `task_id`, `item_id`, `revision_no`, `verdict`, `reason`, `findings` (each `rule_id`, `level` `必选` or `可选`, `field`, `index` from 0 or null, `problem`, `suggestion`), `op_id` (set when the user started the review), `completion` |
 | `review_unfinished` | a review of one item did not finish (timeout, failed call, two invalid outputs, or the item changed meanwhile); no verdict is recorded | `seq`, `at`, `task_id`, `item_id`, `revision_no`, `reason`, `op_id`, `completion` |
 | `review_progress` | a review started from the interface (`request_review`) began (`done` 0) or finished one more item | `seq`, `at`, `task_id`, `op_id`, `done`, `total`, `current` (items being reviewed now), `item_id` (the item just finished, null at the start), `completion` |
+| `review_batch` | a review (batch) ended, whether started by the user or by the agent's tool; `no` is its number ("review N") | `seq`, `at`, `task_id`, `no`, `batch_id`, `started_by` (`user` or `executor`), `scope` (`pending` or `named`), `items` (`item_id`, `revision_no`), `forced` (items reviewed again on request), `total`, `passed`, `failed`, `unfinished`, `problems`, `advice`, `completion` |
+| `review_waived` | the user kept the current wording of items that failed review | `seq`, `at`, `task_id`, `items` (`item_id`, `revision_no`), `reason` (may be null), `source` (`detail` or `panel`), `op_id`, `completion` |
+| `review_unwaived` | the user withdrew a kept wording | `seq`, `at`, `task_id`, `items`, `op_id`, `completion` |
+| `review_rules_changed` | the user switched review rules of a collection | `seq`, `at`, `task_id`, `collection`, `off`, `promote`, `op_id`, and the collection's new `review_rules`, `all_rules`, `rule_switches`, `rules_hash`, `completion` |
 | `review_finished` | that review is over | `seq`, `at`, `task_id`, `op_id`, `total`, `passed`, `failed`, `unfinished`, `results` (`item_id`, `revision_no`, `status`), `error` (null unless the review stopped unexpectedly), `completion` |
 | `item_viewed` | the user opened an item's details, or clicked "I've read these" on a confirm card; the item is now read as of that revision | `seq`, `at`, `task_id`, `items` (`item_id`, `revision_no`), `op_id`, `completion` |
 | `confirmation_recorded` | a confirmation mark other than "read": the user edited an item or marked an issue item as keep-pending (`basis` `ui_edit`, written together with the revision), or withdrew a confirmation (`basis` `ui_click`, `accepted` false) | `seq`, `at`, `task_id`, `items` (`item_id`, `revision_no`, `accepted`), `basis`, `op_id`, `completion` |
@@ -69,7 +73,7 @@ All carry `session_id`.
 | `step` | a tool call starts, and a corrected line when the turn ends | `work_id`, `step_key`, `text`, `in_progress`, `failed` |
 | `user_message` | pi accepted a user message | `message_id` (the session entry id; may be empty in the rare case the entry cannot be found in time), `client_id`, `at`, `text`, `origin` (`typed`, `card_choice`, `ui_request`), `card`, `queued` |
 | `assistant_reply` | the agent replied | `message_id`, `at`, `work_id`, `via_reply_tool`, `informs`, `act`, `text`, `degraded` (see 5.3) |
-| `ui_action_noted` | a direct operation completed | `message_id`, `at`, `text`, `event_seq`, `op_id`, `revision_no`, `undoable` |
+| `ui_action_noted` | a direct operation completed | `message_id`, `at`, `text`, `event_seq`, `op_id`, `revision_no`, `undoable`, `kind` (the operation kind), `review` (for the note at the end of a review: `total`, `passed`, `failed`, `unfinished`, `problems`, `advice`) |
 | `material_added` | a material was uploaded | `at`, `path`, `bytes`, `modified_at` |
 | `work_summary` | after a unit of work | `work_id`, `at`, `seconds`, `step_count`, `stages` (each with `text`) |
 | `work_ended` | the agent settled | `work_id`, `at`, `seconds`, `step_count`, `outcome` (`replied`, `no_reply`, `stopped_by_user`, `failed`) |
@@ -92,21 +96,25 @@ All carry `session_id`.
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
                             "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],
                             "needs_review": true,
-                            "review_rules": [ { "id": "UC-R1", "level": "必选", "text": "…", "counter_example": "…", "example": "…" }, … ] }, … ] },
+                            "review_rules": [ { "id": "UC-R1", "level": "必选", "text": "…", "counter_example": "…", "example": "…" }, … ],
+                            "all_rules": [ { "id": "UC-R13", "level": "可选", "text": "…", "state": "off" }, … ],
+                            "rule_switches": { "off": ["UC-R13"], "promote": [] }, "rules_hash": "…" }, … ] },
             "completion": { … 4.2 … },
             "items": [ { "item_id": "UC-001", "collection": "功能用例", "title": "…", "revision_no": 5, "revision_by": "user",
                          "revision_at": "…", "revisions": [2, 5], "fields": { … }, "sources": [ … ],
-                         "reviews": [ { "revision_no": 5, "verdict": "不合规", "reason": "…", "at": "…",
+                         "reviews": [ { "revision_no": 5, "verdict": "不合规", "reason": "…", "at": "…", "batch_id": "ui-op-…", "rules_hash": "…", "forced": false,
                                         "findings": [ { "rule_id": "UC-R7", "level": "必选", "field": "基本流程", "index": 1,
                                                         "problem": "…", "suggestion": "…" } ] } ],
                          "confirmations": [ { "revision_no": 5, "accepted": true, "at": "…", "basis": "viewed" } ],
-                         "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed" } ] },
+                         "waivers": [ { "revision_no": 5, "reason": "…", "source": "panel", "at": "…", "revoked": false } ],
+                         "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed" } ],
+            "review_batches": [ { "no": 1, "batch_id": "ui-op-…", "at": "…", "started_by": "user", "scope": "pending", "total": 16, "passed": 12, "failed": 4, … } ] },
   "materials": [ { "path": "inputs/requirements.md", "bytes": 1234, "modified_at": "…" } ],
   "conversation": { "messages": [ … the latest 100, each with "type" … ], "has_earlier": false, "earliest_id": "…" },
   "current_work": null }
 ```
 
-`needs_review` says whether the completion conditions require "every item passed review" for the collection; `review_rules` is the collection's rule list after rules switched off or made required in the task definition (null for a collection without review rules). A finding under a `必选` (required) rule is a problem and makes the item not compliant; a finding under a `可选` (optional) rule is advice.
+`needs_review` says whether the completion conditions require "every item passed review" for the collection; `review_rules` is the collection's rule list after rules switched off or made required in the task definition (null for a collection without review rules). A finding under a `必选` (required) rule is a problem and makes the item not compliant; a finding under a `可选` (optional) rule is advice. `all_rules` lists every rule of the rule file with its `state` in this task: `required`, `optional`, `off` or `promoted`. `rules_hash` is the rule fingerprint, a hash of the rule file and the task's switches; a review counts only while its `rules_hash` equals the collection's (reviews without one, from older versions, always count), so switching rules sends every item of the collection back to waiting for review. `waivers` are the user's kept wordings; one on the item's current revision that is not `revoked` makes the item count as passed.
 
 Confirmation marks. A confirmation is a mark on "item + revision": it does not move when the item is changed later. Its `basis` is `viewed` (the user opened the item's details, or clicked "I've read these" on a confirm card), `ui_edit` (the user edited the item or marked it keep-pending; the edited content counts as confirmed) or `ui_click` (a withdrawal, `accepted` false; older databases also contain confirmations clicked in the interface); older databases may also contain `user_words`, confirmations recorded by the agent from the user's words in earlier versions. `viewed` on an item is true when the latest mark on its current revision is an acceptance of any basis, and `confirmation_basis` then names that basis; an item whose `viewed` is false is **unread**. The completion condition 「每个条目用户确认」 is met when no item of the collection is unread.
 
@@ -197,10 +205,11 @@ Opening a session (a snapshot with `session`) starts pi for that task or switche
 `POST …/actions?session={session_id}`:
 
 ```
-{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review",
+{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review" | "waive_review" | "unwaive_review" | "set_review_rules",
   "targets": [ { "item_id": "UC-002", "base_revision": 3 } ],  // the item's revision when you opened it; for undo: "revision_no"
   "fields": { "基本流程": ["…", "…"] },                          // edit_fields only: complete new values
-  "notify_executor": false }
+  "notify_executor": false,
+  "force": false }                                               // request_review only
 ```
 
 Response `{ok, client_id, op_id}`; the result arrives as events carrying the same `op_id`. Rules:
@@ -210,9 +219,11 @@ Response `{ok, client_id, op_id}`; the result arrives as events carrying the sam
 3. `mark_viewed` marks each target as read as of `base_revision`. It is idempotent: an item whose latest mark on that revision is already an acceptance is skipped, and when every target is skipped nothing is written and no event is sent. Without `notify_executor` (the interface sends it when the user opens an item's details) nothing is appended to the session; with it (the "I've read these" card button) an interface-action note and the fixed sentence in section 7 are. Items that failed review can still be marked as read.
 4. `unconfirm` withdraws the confirmation of each target's `base_revision`: it records a mark with `accepted` false, and the item becomes unread again.
 5. `edit_fields` and `keep_pending` also record a confirmation mark (basis `ui_edit`) on the revision they produce, in the same transaction.
-6. `request_review` asks the reviewer to review the targets at their `base_revision`; an empty `targets` list means every item waiting for review (in a collection that requires review, with no review at its current revision). The response comes as soon as the request passes its checks; the review runs in the background and reports through `review_progress`, `review_recorded` or `review_unfinished` for each item, and `review_finished`, all carrying the same `op_id`. It is rejected (`rejected`) while another review runs, when there is nothing to review, when a target is in a collection that is not reviewed, or when a target is not at its current revision. When the review is over, an interface-action note with the results is appended to the session; it does not start the agent. Clients should not show "saving" for it.
-7. On a closed task every operation returns `task_closed`.
-8. While the agent is working every operation returns `session_busy` with `data.reason` `working`, except `mark_viewed` without `notify_executor`.
+6. `request_review` asks the reviewer to review the targets at their `base_revision`; an empty `targets` list means every item waiting for review (in a collection that requires review, with no review at its current revision). The response comes as soon as the request passes its checks; the review runs in the background and reports through `review_progress`, `review_recorded` or `review_unfinished` for each item, and `review_finished`, all carrying the same `op_id`. "Waiting for review" means the item's current revision has no review under the collection's current `rules_hash`. A named target that already has one is rejected with 这条在当前修订上已经评过（第 N 次评审），内容和规则都没变 ("already reviewed at this revision (review N); neither content nor rules changed") unless the request carries `"force": true`; the review made then is recorded with `forced`. It is also rejected (`rejected`) while another review runs, when there is nothing to review, when a target is in a collection that is not reviewed, or when a target is not at its current revision. Each review ends with a `review_batch` event. When a review started here is over, an interface-action note is appended to the session with one sentence of counts (`kind` `request_review`, `review` with the counts); the findings are not in it, and the agent reads them with `get_task_status`. It does not start the agent. Clients should not show "saving" for it.
+7. `waive_review` keeps the current wording of each target that failed review at its `base_revision` under the current rules; `fields` may carry `reason` and `source` (`detail` or `panel`). The item then counts as passed by the user's decision until it changes. `unwaive_review` withdraws it. Both are rejected when there is nothing to keep or withdraw. Only the user can do either; the agent has no such tool.
+8. `set_review_rules` sets which optional rules of a collection are switched off or made required: `targets` is empty and `fields` is `{ "collection": …, "off": [rule ids], "promote": [rule ids] }`. It updates the task definition copy in the task directory and in the database, and is rejected for required rules, unknown rule ids, a collection without review rules, or no change. Existing reviews are kept; the rule fingerprint changes, so the collection's items wait for review again.
+9. On a closed task every operation returns `task_closed`.
+10. While the agent is working every operation returns `session_busy` with `data.reason` `working`, except `mark_viewed` without `notify_executor`.
 
 ## 7 Fixed sentences sent to the agent
 
