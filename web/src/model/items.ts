@@ -220,3 +220,46 @@ export function summaryOf(task: Task, item: Item): string {
   const f = def?.fields.slice(1).find((x) => x.type === "文本" && !isEmptyValue(item.fields[x.name]));
   return f ? String(item.fields[f.name]) : "";
 }
+
+/**
+ * 问题跟着条目走：问题条目一类的集合（见 keepPendingField）里，「条目引用」类型的字段（需求规格里是「关联条目」）
+ * 列着这个问题牵涉的条目。下面几个函数由此派生，不另存关系，也不写死集合名或字段名。
+ */
+export const RESOLVED_VALUE = "已解决";
+
+/** 一个问题条目牵涉的条目编号：它所有「条目引用」字段里的编号，去重、按出现先后。 */
+export function issueRefs(task: Task, issue: Item): string[] {
+  const def = task.definition.collections.find((c) => c.name === issue.collection);
+  const ids = (def?.fields ?? []).filter((f) => f.type === "条目引用")
+    .flatMap((f) => { const v = issue.fields[f.name]; return Array.isArray(v) ? v.map(String) : v ? [String(v)] : []; });
+  return [...new Set(ids)];
+}
+
+/** 问题条目的状态取值；不是问题条目一类时为 null。 */
+export function issueStatus(task: Task, issue: Item): string | null {
+  const f = keepPendingField(task, issue.collection);
+  return f ? String(issue.fields[f.name] ?? "") : null;
+}
+
+/** 问题还没了结：状态既不是「已解决」也不是「用户决定保留」。 */
+export function isOpenIssue(task: Task, issue: Item): boolean {
+  const s = issueStatus(task, issue);
+  return s !== null && s !== RESOLVED_VALUE && s !== KEEP_PENDING_VALUE;
+}
+
+/** 牵涉某个条目的全部问题条目，按编号排序（编号里的数字按数值比，TBD-010 排在 TBD-009 之后）。 */
+export function issuesOf(task: Task, itemId: string): Item[] {
+  return task.items
+    .filter((i) => keepPendingField(task, i.collection) && i.item_id !== itemId && issueRefs(task, i).includes(itemId))
+    .sort((a, b) => a.item_id.localeCompare(b.item_id, undefined, { numeric: true }));
+}
+
+/** 牵涉某个条目、还没了结的问题条目；列表行上「问题 N」的 N 就是它的个数。 */
+export function unresolvedIssuesOf(task: Task, itemId: string): Item[] {
+  return issuesOf(task, itemId).filter((i) => isOpenIssue(task, i));
+}
+
+/** 用户在问题卡片上写了回答、点「回答」时发给助手的那句话。 */
+export function issueAnswerText(issueId: string, answer: string): string {
+  return `回答 ${issueId}：${answer.trim()}`;
+}

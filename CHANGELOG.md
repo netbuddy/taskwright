@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Open questions follow the items they concern: list rows show how many unresolved questions point at an item, the item detail lists those questions with an answer box and a keep-pending button, and following a question's link to an item offers a way back to the question list.
+
 ## [0.1.0-alpha] - Unreleased
 
 First public release.

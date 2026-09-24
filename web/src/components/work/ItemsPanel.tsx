@@ -8,18 +8,21 @@
 // 先不管全部灰化；「回答这个问题」「让助手来改这一条」只往对话区输入框预填文字、不写库，照常可用。
 // 在右侧「修订」页签选中一次修订（hit）时，它碰到的条目高亮，集合页签上标出各有几个，筛选行加一个可点掉的提示。
 // 宽屏时列表每行在标题后多一列「一句摘要」，显隐由样式里的容器查询按条目区宽度决定（阈值 40rem）。
+// 问题跟着条目走（ItemIssues.tsx）：列表行带「问题 N」，详情顶部列出挂在这条上的问题；从问题卡片上的「牵涉 UC-003」跳来时
+// 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
 import { useEffect, useMemo, useState } from "react";
 import type { Item, Task } from "../../api/types";
 import { BUSY_TEXT, conditionState, FILTERS, isEmptyValue, isUnread, keepPendingField, matchesFilter, needsReading, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
 import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
+import { FromIssueCrumb, IssueBadge, ItemIssues } from "./ItemIssues";
 
 export { BUSY_TEXT };
 
 export function ItemsPanel({
   task, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
-  onAskAssistant, onAnswer, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, unreadRequest = 0,
+  onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, unreadRequest = 0,
 }: {
   task: Task;
   /** 任务已结束或助手不可用：一切写入都不能做。 */
@@ -40,6 +43,8 @@ export function ItemsPanel({
   onAskAssistant?: (itemId: string) => void;
   /** 问题条目卡片上的「回答这个问题」：预填对话区输入框。 */
   onAnswer?: (item: Item) => void;
+  /** 条目详情里问题卡片上的「回答」：把一句话直接发到对话区。 */
+  onSend?: (text: string) => void;
   /** 在「修订」页签里选中的那次修订与它碰到的条目。 */
   hit?: { revision: number; items: string[] } | null;
   onClearHit?: () => void;
@@ -58,6 +63,11 @@ export function ItemsPanel({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [showProgress, setShowProgress] = useState(false);
   const [flash, setFlash] = useState<string[]>([]);
+  /** 从哪个问题跳到当前条目的；详情顶部据此给「回到问题列表」，那张问题卡片排第一并高亮。 */
+  const [fromIssue, setFromIssue] = useState<{ issueId: string; itemId: string } | null>(null);
+  /** 回到问题列表后要滚到并闪一下的问题卡片；n 每次加一。 */
+  const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(null);
+  const [dirty, setDirty] = useState(false);
   const activeTab = selectedItem?.collection ?? tab;
   const hitIds = hit?.items ?? [];
   const off = readOnly || writesOff;
@@ -70,6 +80,15 @@ export function ItemsPanel({
     if (item) { setTab(item.collection); if (!matchesFilter(item, filter)) setFilter("all"); }
     document.querySelector(".app .items-body")?.scrollTo({ top: 0 });
   }, [selected]);
+  // 换到别的条目或回到列表：不再是从问题跳来的。
+  useEffect(() => { if (fromIssue && selected !== fromIssue.itemId) setFromIssue(null); }, [selected]);
+  useEffect(() => {
+    if (!scrollTo) return;
+    document.querySelector(`.app [data-testid="item-${scrollTo.id}"]`)?.scrollIntoView?.({ block: "center" });
+    setFlash([scrollTo.id]);
+    const t = setTimeout(() => setFlash([]), 2400);
+    return () => clearTimeout(t);
+  }, [scrollTo]);
   // 卡片上点了「还有 N 条未读 · 筛出来看」。
   useEffect(() => { if (unreadRequest > 0) { setFilter("unread"); onSelect(null); } }, [unreadRequest]);
   // 库事件改过的条目闪一下。
@@ -91,6 +110,20 @@ export function ItemsPanel({
   const checkedItems = items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
   const hitsIn = (collection: string) => task.items.filter((i) => i.collection === collection && hitIds.includes(i.item_id)).length;
+
+  /** 打开一个条目；从问题卡片上跳来时带上来源。 */
+  const openItem = (itemId: string, o: { fromIssue?: string } = {}) => {
+    setFromIssue(o.fromIssue ? { issueId: o.fromIssue, itemId } : null);
+    onSelect(itemId);
+  };
+  /** 「回到问题列表」：切回问题所在的页签，滚到那张问题卡片。 */
+  const backToIssue = (issueId: string) => {
+    const issue = task.items.find((i) => i.item_id === issueId);
+    setFromIssue(null);
+    if (issue) { setTab(issue.collection); if (!matchesFilter(issue, filter)) setFilter("all"); }
+    onSelect(null);
+    setScrollTo((s) => ({ id: issueId, n: (s?.n ?? 0) + 1 }));
+  };
 
   const markMany = async (list: Item[]) => {
     const e = await submit({ kind: "mark_viewed", targets: list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), notify_executor: false },
@@ -156,7 +189,10 @@ export function ItemsPanel({
             onPrev={pos > 0 ? () => onSelect(items[pos - 1].item_id) : null}
             onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
             onLocate={onLocate} onOpenItem={onSelect} onAskAssistant={onAskAssistant}
-            view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={onDirty} />
+            view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
+            crumb={fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
+            top={<ItemIssues task={task} itemId={selectedItem.item_id} readOnly={readOnly} writesOff={writesOff} hold={dirty} pendingItems={pendingItems}
+              submit={submit} onSend={onSend} onPrefill={onAnswer} fromIssue={fromIssue?.issueId ?? null} />} />
         ) : items.length === 0 ? (
           <div className="empty">这个筛选下没有条目。换一个筛选试试。</div>
         ) : statusField && def ? (
@@ -164,7 +200,7 @@ export function ItemsPanel({
             {items.map((item) => (
               <PendingCard key={item.item_id} task={task} item={item} readOnly={readOnly} writesOff={writesOff} flash={flash.includes(item.item_id)}
                 hit={hitIds.includes(item.item_id)} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)}
-                onOpen={() => onSelect(item.item_id)} onOpenItem={onSelect}
+                onOpen={() => onSelect(item.item_id)} onOpenItem={(id) => openItem(id, { fromIssue: item.item_id })}
                 onKeep={() => void submit({ kind: "keep_pending", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], notify_executor: false }, `把 ${item.item_id} 标为先不管`)}
                 onAnswer={() => onAnswer?.(item)} />
             ))}
@@ -183,6 +219,7 @@ export function ItemsPanel({
                     <span className="lname" title={item.title}>{item.title}</span>
                     <span className="lsum" title={summary}>{summary}</span>
                     <ItemStatus task={task} item={item} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)} />
+                    <IssueBadge task={task} itemId={item.item_id} />
                   </div>
                 </div>
               );
