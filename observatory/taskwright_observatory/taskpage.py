@@ -1623,10 +1623,13 @@ def page_for_session(index, session_id: str) -> dict:
 
 
 def sessions_of_task(index, task_key: str) -> list[str]:
-    """一个任务涉及哪几条会话：会话里的工具调用编号在这个任务的库里对得上，就算涉及。按开始时刻排。"""
+    """一个任务涉及哪几条会话（对法见 api.tasks_of_session），按开始时刻排。
+
+    一次也没有运行过的会话不算：它只在会话列表里挂上任务，任务页不收，也不为它单独成段。
+    """
     ids = []
     for session in index.sessions:
-        if session["启动失败"]:
+        if session["启动失败"] or not session.get("运行次数"):
             continue
         if any(t["任务的键"] == task_key for t in index.tasks_of_session(session)):
             ids.append(session["会话编号"])
@@ -1645,7 +1648,7 @@ def page_for_task(index, task_key: str) -> dict:
     page["同任务目录里没有写过这个任务的会话"] = [
         {"会话编号": s["会话编号"], "会话名": s.get("会话名", ""), "归档名": "、".join(s["归档名"])}
         for s in index.sessions
-        if not s["启动失败"] and s["会话编号"] not in ids
+        if not s["启动失败"] and s.get("运行次数") and s["会话编号"] not in ids
         and index.workspace_of_session(s).get("任务目录") == workspace]
     return page
 

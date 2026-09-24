@@ -697,11 +697,24 @@ class CurrentFormatTests(unittest.TestCase):
     def test_新库表的任务页头标出材料目录是任务定义登记的(self):
         self.assertTrue(self.page["页头"]["材料目录是任务定义登记的"])
 
-    def test_任务列表与任务页的范围(self):
+    def test_任务列表与任务页的范围_没有运行过的会话不进任务页(self):
         rows = {r["任务的键"]: r for r in taskpage.task_list(self.index)}
         self.assertEqual(len(rows[self.key]["涉及会话"]), 1)
         self.assertEqual(self.page["范围"], "任务")
         self.assertEqual(self.page["页头"]["任务编号"], "TASK-001")
+        # 同一个任务目录里再放一条一次也没有运行过的会话：会话列表里它挂上这个任务，任务页不收它，也不为它成段。
+        real = self.index.sessions[0]
+        empty = dict(real, 会话编号="没有运行过的会话", 运行=[], 运行次数=0, 轮数=0, 工具调用次数=0, 被拒次数=0)
+        self.index.sessions.append(empty)
+        try:
+            self.assertEqual([t["任务的键"] for t in self.index.tasks_of_session(empty)], [self.key])
+            self.assertEqual(taskpage.sessions_of_task(self.index, self.key), [real["会话编号"]])
+            page = taskpage.page_for_task(self.index, self.key)
+            self.assertEqual(page["页头"]["会话数"], 1)
+            self.assertEqual([seg["会话编号"] for seg in page["流程"]], [real["会话编号"]])
+            self.assertEqual(page["同任务目录里没有写过这个任务的会话"], [])
+        finally:
+            self.index.sessions.remove(empty)
 
 
 class DiffTests(unittest.TestCase):
