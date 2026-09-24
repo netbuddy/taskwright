@@ -1,0 +1,9 @@
+{
+  "name": "taskwright-agent",
+  "private": true,
+  "description": "任务型智能体在 pi 进程里的工具与扩展点。没有任何依赖；这份文件只是声明本目录的 TypeScript 按 ES 模块解析，并给出跑单元测试的命令。",
+  "type": "module",
+  "scripts": {
+    "test": "node --test 'tests/*.test.ts'"
+  }
+}

@@ -1,0 +1,35 @@
+{"id": "插话验证-1", "type": "response", "command": "get_state", "success": true, "data": {"sessionFile": "/tmp/观测台夹具/pi-sessions/插话验证/会话.jsonl", "sessionId": "01a0be00-0000-7000-8000-000000000004"}}
+{"type": "response", "command": "prompt", "success": true}
+{"type": "agent_start"}
+{"type": "extension_ui_request", "id": "夹具-轮-0", "method": "setStatus", "statusKey": "taskwright-turn", "statusText": "{\"turnIndex\": 0, \"timestamp\": 1767225600000, \"langfuseTraceId\": \"3c4d5e6f70819283a4b5c6d7e8f90123\"}"}
+{"type": "turn_start"}
+{"type": "message_start", "message": {"role": "user", "content": [{"type": "text", "text": "把术语记成：利益相关方。"}], "timestamp": 1767225600000}}
+{"type": "message_end", "message": {"role": "user", "content": [{"type": "text", "text": "把术语记成：利益相关方。"}], "timestamp": 1767225600000}}
+{"type": "message_start", "message": {"role": "assistant", "content": [], "stopReason": "pending"}}
+{"type": "message_end", "message": {"role": "assistant", "content": [{"type": "toolCall", "id": "插话前的调用", "name": "save_version", "arguments": {"field": "术语", "content": "利益相关方"}}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "toolUse", "timestamp": 1767225600000, "responseId": "夹具响应编号五"}}
+{"type": "tool_execution_start", "toolCallId": "插话前的调用", "toolName": "save_version", "args": {"field": "术语"}}
+{"type": "tool_execution_end", "toolCallId": "插话前的调用", "toolName": "save_version", "result": {"content": [{"type": "text", "text": "已把「术语」存为第 1 版。"}]}, "isError": false}
+{"type": "message_start", "message": {"role": "toolResult", "toolCallId": "插话前的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「术语」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}}
+{"type": "message_end", "message": {"role": "toolResult", "toolCallId": "插话前的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「术语」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}}
+{"type": "response", "command": "steer", "success": true}
+{"type": "queue_update", "steering": ["顺便把修改意见也记成：要点明范围。"], "followUp": []}
+{"type": "turn_end", "message": {"role": "assistant", "content": [{"type": "toolCall", "id": "插话前的调用", "name": "save_version", "arguments": {"field": "术语", "content": "利益相关方"}}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "toolUse", "timestamp": 1767225600000, "responseId": "夹具响应编号五"}, "toolResults": [{"role": "toolResult", "toolCallId": "插话前的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「术语」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}]}
+{"type": "extension_ui_request", "id": "夹具-轮-1", "method": "setStatus", "statusKey": "taskwright-turn", "statusText": "{\"turnIndex\": 1, \"timestamp\": 1767225600000, \"langfuseTraceId\": \"3c4d5e6f70819283a4b5c6d7e8f90123\"}"}
+{"type": "turn_start"}
+{"type": "message_start", "message": {"role": "user", "content": [{"type": "text", "text": "顺便把修改意见也记成：要点明范围。"}], "timestamp": 1767225600900}}
+{"type": "message_end", "message": {"role": "user", "content": [{"type": "text", "text": "顺便把修改意见也记成：要点明范围。"}], "timestamp": 1767225600900}}
+{"type": "queue_update", "steering": [], "followUp": []}
+{"type": "message_start", "message": {"role": "assistant", "content": [], "stopReason": "pending"}}
+{"type": "message_end", "message": {"role": "assistant", "content": [{"type": "toolCall", "id": "插话后的调用", "name": "save_version", "arguments": {"field": "修改意见", "content": "要点明范围"}}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "toolUse", "timestamp": 1767225600000, "responseId": "夹具响应编号六"}}
+{"type": "tool_execution_start", "toolCallId": "插话后的调用", "toolName": "save_version", "args": {"field": "修改意见"}}
+{"type": "tool_execution_end", "toolCallId": "插话后的调用", "toolName": "save_version", "result": {"content": [{"type": "text", "text": "已把「修改意见」存为第 1 版。"}]}, "isError": false}
+{"type": "message_start", "message": {"role": "toolResult", "toolCallId": "插话后的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「修改意见」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}}
+{"type": "message_end", "message": {"role": "toolResult", "toolCallId": "插话后的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「修改意见」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}}
+{"type": "turn_end", "message": {"role": "assistant", "content": [{"type": "toolCall", "id": "插话后的调用", "name": "save_version", "arguments": {"field": "修改意见", "content": "要点明范围"}}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "toolUse", "timestamp": 1767225600000, "responseId": "夹具响应编号六"}, "toolResults": [{"role": "toolResult", "toolCallId": "插话后的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「修改意见」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}]}
+{"type": "extension_ui_request", "id": "夹具-轮-2", "method": "setStatus", "statusKey": "taskwright-turn", "statusText": "{\"turnIndex\": 2, \"timestamp\": 1767225600000, \"langfuseTraceId\": \"3c4d5e6f70819283a4b5c6d7e8f90123\"}"}
+{"type": "turn_start"}
+{"type": "message_start", "message": {"role": "assistant", "content": [], "stopReason": "pending"}}
+{"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "两个字段都记好了。"}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "stop", "timestamp": 1767225600000, "responseId": "夹具响应编号七"}}
+{"type": "turn_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "两个字段都记好了。"}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "stop", "timestamp": 1767225600000, "responseId": "夹具响应编号七"}, "toolResults": []}
+{"type": "agent_end"}
+{"type": "agent_settled"}

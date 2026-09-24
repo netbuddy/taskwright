@@ -1,0 +1,14 @@
+{
+  "name": "taskwright",
+  "private": true,
+  "version": "0.1.0-alpha",
+  "description": "Taskwright: a task-oriented agent that turns a task definition into a reviewed, source-traced deliverable through conversation.",
+  "license": "AGPL-3.0-only",
+  "workspaces": ["agent", "web", "sim"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "scripts/test-all.sh",
+    "check": "scripts/check-public.sh",
+    "dev": "scripts/dev.sh"
+  }
+}

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskwright-server"
+version = "0.1.0a0"
+description = "Taskwright backend: starts and supervises the agent process, serves the HTTP/SSE API, and provides the terminal client and a fake model endpoint for tests."
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.12"
+dependencies = ["taskwright-observatory"]   # reads task databases through its read-only modules; otherwise standard library only
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+taskwright-server = "taskwright_server.service.__main__:main"
+taskwright-create-task = "taskwright_server.create_task:main"
+taskwright-chat = "taskwright_server.chat:main"
+taskwright-tui = "taskwright_server.tui:main"
+
+[tool.setuptools.packages.find]
+include = ["taskwright_server*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.md", "*.mts", "*.html", "*.css", "*.js"]

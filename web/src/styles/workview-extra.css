@@ -1,0 +1,92 @@
+/* 工作视图里原型没有、前端补的样式。颜色只用 :root 里的变量。 */
+
+/* 原型的全局清零，只在工作视图里生效（原型是整页清零，这里收窄到 .app 之内）。 */
+.wv-page { width: 100%; height: 100vh; padding: .5rem 1.2%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.app, .app * { margin: 0; padding: 0; }
+.app button { font-family: inherit; color: inherit; }
+.app a { color: inherit; text-decoration: none; }
+.app .topbar a.tname:hover { text-decoration: underline; }
+
+/* 停用的按钮与输入框（原型是静态页，没有这一态） */
+.app .btn:disabled, .app .btn.disabled { opacity: .45; cursor: not-allowed; }
+.app .aibtn:disabled { opacity: .45; cursor: not-allowed; }
+.app .quickreply input:disabled { background: #f0f0f0; cursor: not-allowed; }
+.app .send.off, .app .qr-send.off { opacity: .45; pointer-events: none; }
+.app .inbox textarea:disabled { cursor: not-allowed; }
+
+/* 对话区：回复里的 Markdown，排队与发送中的话，断线与问题提示 */
+.app .m.ai h1, .app .m.ai h2, .app .m.ai h3, .app .m.ai h4 { font-size: .84rem; margin: .2rem 0 .3rem; }
+.app .m.ai ol { margin: .1rem 0 .35rem 1.2rem; }
+.app .m.ai code { font-family: ui-monospace, Menlo, monospace; font-size: .74rem; background: var(--sel); border-radius: .25rem; padding: 0 .25rem; }
+.app .m.ai .informs { margin-bottom: .35rem; }
+.app .m.ai .degraded { font-size: .7rem; color: var(--mut); margin-bottom: .2rem; }
+.app .m.user.sending { opacity: .6; }
+.app .m.user .from-ui.bad { color: var(--gap); }
+.app .problem { background: var(--amber-bg); border: 1px solid var(--amber-line); border-radius: .5rem; padding: .3rem .55rem;
+  font-size: .74rem; color: #7a4a06; display: flex; gap: .4rem; align-items: center; margin: .35rem .8rem 0; }
+.app .problem .x { margin-left: auto; cursor: pointer; }
+.app .earlier { font-size: .7rem; color: var(--blue); cursor: pointer; text-decoration: underline; align-self: center; }
+.app .act .ctx { display: flex; align-items: baseline; gap: .3rem; flex-wrap: wrap; margin-bottom: .15rem; cursor: pointer; }
+.app .act .ctx:hover .ctxname { text-decoration: underline; }
+.app .act .ctx .ver { color: var(--mut); font-size: .7rem; }
+.app .act .ctxx { margin: 0 0 .15rem 0; font-size: .74rem; color: #555; }
+.app .act .opts { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; }
+
+/* 改动块：同一次工作里助手改了哪些条目 */
+.app .chg { border: 1px solid var(--line2); border-left: 3px solid var(--ink); background: var(--card); border-radius: .6rem;
+  padding: .45rem .6rem; font-size: .76rem; }
+.app .chg .tt { font-size: .66rem; font-weight: 700; letter-spacing: .06em; color: var(--mut); margin-bottom: .3rem; }
+.app .chg .crow { padding: .25rem 0; border-top: 1px dotted var(--line2); }
+.app .chg .crow:first-of-type { border-top: 0; }
+.app .chg .ch { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; }
+.app .chg .opk { font-size: .64rem; border-radius: .35rem; padding: 0 .35rem; flex: none; }
+.app .chg .opk.add { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-line); }
+.app .chg .opk.edit { color: #4a4a4a; background: var(--dark3); border: 1px solid var(--line2); }
+.app .chg .opk.drop { color: var(--gap); background: var(--gap-bg); border: 1px solid var(--gap-line); }
+.app .chg .ctitle { font-weight: 600; }
+.app .chg .cver { color: var(--mut); font-size: .7rem; }
+.app .chg .cdetail { color: #555; font-size: .72rem; margin-top: .1rem; }
+.app .chg .cdetail b { font-weight: 500; color: var(--ink); }
+.app .chg .look { margin-left: auto; font-size: .68rem; color: var(--blue); text-decoration: underline; cursor: pointer; flex: none; }
+
+/* 条目区：刚改过的条目短时高亮与「第 N 版 · 刚改」标签（第 27 节第 2 条） */
+.app .chip.just { color: var(--ink); border-color: var(--ink); background: var(--card); font-weight: 600; }
+.app .lrow.flash, .app .tbd.flash { animation: justflash 2.4s ease-out; }
+@keyframes justflash { 0% { background: #fff4c2; } 100% { background: transparent; } }
+.app .lrow .result { flex-basis: 100%; padding-left: 3.4rem; font-size: .7rem; color: var(--mut); font-weight: 400; }
+.app .lrow .saving { color: var(--amber); }
+.app .tbd.sel { border-color: var(--ink); }
+
+/* 详情：值格下方的来源小标签（四种各有配色），右下角固定的确认按钮 */
+.app .srcs { display: flex; gap: .25rem; flex-wrap: wrap; margin-top: .2rem; }
+.app .srctag { font-size: .64rem; border-radius: .4rem; padding: 0 .4rem; display: inline-block; white-space: nowrap; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; border: 1px solid; }
+.app .srctag.quote { color: var(--blue); border-color: var(--blue-line); background: var(--blue-bg); cursor: pointer; }
+.app .srctag.quote:hover { background: #dbe6fb; }
+.app .srctag.added { color: var(--amber); border-color: var(--amber-line); background: var(--amber-bg); font-weight: 600; }
+.app .srctag.said { color: var(--teal); border-color: var(--teal-line); background: var(--teal-bg); }
+.app .srctag.edited { color: var(--ink); border-color: var(--line2); background: var(--dark3); }
+.app .detail { position: relative; min-height: 100%; display: flex; flex-direction: column; }
+.app .dfoot.sticky { position: sticky; bottom: 0; background: var(--card); padding: .5rem 0 .2rem; border-top: 1px solid var(--line);
+  margin-top: auto; z-index: 2; }
+.app .fld .v .enumv { display: inline-block; }
+.app .fld .v .refs { display: flex; gap: .25rem; flex-wrap: wrap; }
+.app .fld .v.editing { border-color: var(--ink); }
+.app .fld .v textarea.ed { margin-bottom: .2rem; }
+.app .listed { display: flex; gap: .3rem; align-items: flex-start; margin-bottom: .2rem; }
+.app .listed .sn { color: var(--mut); font-size: .72rem; min-width: 1.1rem; padding-top: .15rem; }
+.app .detail .err { background: var(--gap-bg); border: 1px solid var(--gap-line); color: #8c1c1c; border-radius: .5rem; padding: .3rem .6rem;
+  font-size: .75rem; margin-bottom: .5rem; }
+.app .detail .err .x { float: right; cursor: pointer; }
+.app .srcbox .quote.said { color: #17534d; }
+.app .confirms { font-size: .74rem; color: #555; }
+.app .confirms div { margin-bottom: .15rem; }
+
+/* 文档区：来源标签点过来时高亮对应原文；框选之后的三个动作 */
+.app .paper { white-space: pre-wrap; }
+.app mark.hit { background: #cfe0ff; outline: 2px solid var(--ink); outline-offset: 1px; border-radius: .2rem; color: inherit; }
+.app .doc-h select { font-family: inherit; font-size: .78rem; border: 1px solid var(--line2); border-radius: .4rem; background: var(--card); max-width: 14rem; }
+.app .selbar .aibtn { font-size: .7rem; }
+.app .selbar .selq { max-width: 12rem; }
+.app .askbox { flex-basis: 100%; display: flex; gap: .3rem; }
+.app .askbox input { flex: 1; border: 1px solid var(--amber-line); border-radius: 1rem; padding: .15rem .6rem; font-size: .74rem; font-family: inherit; min-width: 0; }

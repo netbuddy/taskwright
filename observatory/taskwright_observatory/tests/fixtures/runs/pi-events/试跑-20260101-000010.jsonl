@@ -1,0 +1,15 @@
+{"id": "试跑-1", "type": "response", "command": "get_state", "success": true, "data": {"model": {"id": "夹具模型"}, "sessionFile": "/tmp/观测台夹具/pi-sessions/试跑/2026-01-01T00-00-00-000Z_01a0be00-0000-7000-8000-000000000001.jsonl", "sessionId": "01a0be00-0000-7000-8000-000000000001", "messageCount": 0}}
+{"id": "试跑-2", "type": "response", "command": "prompt", "success": true}
+{"type": "agent_start"}
+{"type": "message_start", "message": {"role": "user", "content": [{"type": "text", "text": "存错地方了，把乙接在释义草稿后面。"}], "timestamp": 1767225620000}}
+{"type": "message_end", "message": {"role": "user", "content": [{"type": "text", "text": "存错地方了，把乙接在释义草稿后面。"}], "timestamp": 1767225620000}}
+{"type": "extension_ui_request", "id": "夹具-轮-0", "method": "setStatus", "statusKey": "taskwright-turn", "statusText": "{\"turnIndex\": 0, \"timestamp\": 1767225620000, \"langfuseTraceId\": \"0f1e2d3c4b5a69788796a5b4c3d2e1f0\"}"}
+{"type": "turn_start"}
+{"type": "tool_execution_start", "toolCallId": "调用三", "toolName": "save_version", "args": {"field": "释义草稿"}}
+{"type": "tool_execution_end", "toolCallId": "调用三", "toolName": "save_version", "result": {"content": [{"type": "text", "text": "已把「释义草稿」存为第 2 版。"}], "details": {"field": "释义草稿", "version": 2, "event_seq": 9, "saved": true}}, "isError": false}
+{"type": "turn_end", "message": {"role": "assistant", "content": [{"type": "toolCall", "id": "调用三", "name": "save_version", "arguments": {"field": "释义草稿", "content": "甲。乙。"}}], "model": "夹具模型", "usage": {"totalTokens": 100, "input": 60, "output": 40}, "stopReason": "toolUse", "timestamp": 1767225620000}}
+{"type": "extension_ui_request", "id": "夹具-轮-1", "method": "setStatus", "statusKey": "taskwright-turn", "statusText": "{\"turnIndex\": 1, \"timestamp\": 1767225621000, \"langfuseTraceId\": \"0f1e2d3c4b5a69788796a5b4c3d2e1f0\"}"}
+{"type": "turn_start"}
+{"type": "turn_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "已经改成第 2 版了。"}], "model": "夹具模型", "usage": {"totalTokens": 100, "input": 60, "output": 40}, "stopReason": "stop", "timestamp": 1767225622000}}
+{"type": "agent_end", "messages": []}
+{"type": "agent_settled"}

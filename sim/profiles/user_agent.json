@@ -1,0 +1,43 @@
+{
+  "说明": "用户 agent 的启动配置。形状与 server/taskwright_server/profiles/dev.json 相同，由 server/taskwright_server/launch.py 组装命令行；系统提示由 sim/launch_user.py 按用户画像拼好后另给。",
+  "executable": "pi",
+  "mode": "rpc",
+  "model": "openai-codex/gpt-6-luna",
+  "thinking": "medium",
+  "模型说明": "用户 agent 与执行者用同一个模型 gpt-6-luna，思考档位 medium；观察到说话风格趋同再换。",
+  "tools": ["look", "respond"],
+  "flags": {
+    "no_extensions": true,
+    "no_skills": true,
+    "approve": true,
+    "offline": false
+  },
+  "extensions": [
+    {
+      "name": "用户 agent 的两个工具",
+      "说明": "只登记「看界面」与「回应」，路径相对代码仓根目录。",
+      "source": "repo",
+      "path": "sim/extension.ts"
+    },
+    {
+      "name": "Langfuse 观测插件",
+      "source": "env",
+      "env": "TASKWRIGHT_LANGFUSE_PLUGIN",
+      "entry": "src/index.ts",
+      "required": false
+    }
+  ],
+  "system_prompt_file": "sim/prompts/user_agent_system_prompt.md",
+  "env_passthrough": [
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+    "LANGFUSE_BASE_URL",
+    "LANGFUSE_TRACING_ENVIRONMENT",
+    "TASKWRIGHT_SIM_BACKEND",
+    "TASKWRIGHT_SIM_TASK",
+    "TASKWRIGHT_SIM_SESSION"
+  ],
+  "langfuse": {
+    "environment": "sim"
+  }
+}

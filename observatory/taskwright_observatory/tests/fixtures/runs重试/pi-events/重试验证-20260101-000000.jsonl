@@ -1,0 +1,30 @@
+{"id": "重试验证-1", "type": "response", "command": "get_state", "success": true, "data": {"sessionFile": "/tmp/观测台夹具/pi-sessions/重试验证/会话.jsonl", "sessionId": "01a0be00-0000-7000-8000-000000000003"}}
+{"type": "response", "command": "prompt", "success": true}
+{"type": "agent_start"}
+{"type": "extension_ui_request", "id": "夹具-轮-0", "method": "setStatus", "statusKey": "taskwright-turn", "statusText": "{\"turnIndex\": 0, \"timestamp\": 1767225600000, \"langfuseTraceId\": \"2b3c4d5e6f70819283a4b5c6d7e8f901\"}"}
+{"type": "turn_start"}
+{"type": "message_start", "message": {"role": "user", "content": [{"type": "text", "text": "把修改意见记成：要点明范围。"}], "timestamp": 1767225600000}}
+{"type": "message_end", "message": {"role": "user", "content": [{"type": "text", "text": "把修改意见记成：要点明范围。"}], "timestamp": 1767225600000}}
+{"type": "message_start", "message": {"role": "assistant", "content": [], "stopReason": "pending"}}
+{"type": "message_end", "message": {"role": "assistant", "content": [], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "error", "timestamp": 1767225600000, "responseId": "", "errorMessage": "模型服务回了 503，没有拿到回复"}}
+{"type": "turn_end", "message": {"role": "assistant", "content": [], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "error", "timestamp": 1767225600000, "responseId": "", "errorMessage": "模型服务回了 503，没有拿到回复"}, "toolResults": []}
+{"type": "agent_end"}
+{"type": "auto_retry_start", "attempt": 1, "maxAttempts": 3, "delayMs": 2000, "errorMessage": "模型服务回了 503，没有拿到回复"}
+{"type": "agent_start"}
+{"type": "extension_ui_request", "id": "夹具-轮-0", "method": "setStatus", "statusKey": "taskwright-turn", "statusText": "{\"turnIndex\": 0, \"timestamp\": 1767225600000, \"langfuseTraceId\": \"2b3c4d5e6f70819283a4b5c6d7e8f901\"}"}
+{"type": "turn_start"}
+{"type": "message_start", "message": {"role": "assistant", "content": [], "stopReason": "pending"}}
+{"type": "message_end", "message": {"role": "assistant", "content": [{"type": "toolCall", "id": "重试后的调用", "name": "save_version", "arguments": {"field": "修改意见", "content": "要点明范围"}}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "toolUse", "timestamp": 1767225600000, "responseId": "夹具响应编号三"}}
+{"type": "auto_retry_end", "success": true, "attempt": 1}
+{"type": "tool_execution_start", "toolCallId": "重试后的调用", "toolName": "save_version", "args": {"field": "修改意见"}}
+{"type": "tool_execution_end", "toolCallId": "重试后的调用", "toolName": "save_version", "result": {"content": [{"type": "text", "text": "已把「修改意见」存为第 1 版。"}]}, "isError": false}
+{"type": "message_start", "message": {"role": "toolResult", "toolCallId": "重试后的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「修改意见」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}}
+{"type": "message_end", "message": {"role": "toolResult", "toolCallId": "重试后的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「修改意见」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}}
+{"type": "turn_end", "message": {"role": "assistant", "content": [{"type": "toolCall", "id": "重试后的调用", "name": "save_version", "arguments": {"field": "修改意见", "content": "要点明范围"}}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "toolUse", "timestamp": 1767225600000, "responseId": "夹具响应编号三"}, "toolResults": [{"role": "toolResult", "toolCallId": "重试后的调用", "toolName": "save_version", "content": [{"type": "text", "text": "已把「修改意见」存为第 1 版。"}], "isError": false, "timestamp": 1767225600000}]}
+{"type": "extension_ui_request", "id": "夹具-轮-1", "method": "setStatus", "statusKey": "taskwright-turn", "statusText": "{\"turnIndex\": 1, \"timestamp\": 1767225600000, \"langfuseTraceId\": \"2b3c4d5e6f70819283a4b5c6d7e8f901\"}"}
+{"type": "turn_start"}
+{"type": "message_start", "message": {"role": "assistant", "content": [], "stopReason": "pending"}}
+{"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "已把修改意见存好了。"}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "stop", "timestamp": 1767225600000, "responseId": "夹具响应编号四"}}
+{"type": "turn_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "已把修改意见存好了。"}], "model": "夹具模型", "provider": "夹具供应方", "api": "夹具接口", "usage": {"input": 40, "output": 20, "cacheRead": 0, "totalTokens": 60}, "stopReason": "stop", "timestamp": 1767225600000, "responseId": "夹具响应编号四"}, "toolResults": []}
+{"type": "agent_end"}
+{"type": "agent_settled"}

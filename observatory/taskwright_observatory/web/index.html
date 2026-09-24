@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>任务型智能体观测台</title>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="taskpage.css">
+</head>
+<body>
+<header class="top">
+  <div class="toprow">
+    <h1>任务型智能体观测台</h1>
+    <span class="muted" style="font-size:13px">以会话为单位组织；任务是从会话里对出来的</span>
+    <span class="spacer"></span>
+    <a class="lf" id="lfTop" href="#" target="_blank" rel="noopener" hidden>到 Langfuse 看原始记录</a>
+  </div>
+  <nav class="tabs" id="tabs"></nav>
+</header>
+<p class="notice" id="notice">正在读数据。</p>
+<div class="crumb" id="crumb"></div>
+<main><div id="view"></div></main>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

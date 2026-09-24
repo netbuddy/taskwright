@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskwright-observatory"
+version = "0.1.0a0"
+description = "Taskwright observatory: a read-only local web app that shows what the agent did, plus the read-only task-database modules (reader, viewer, invariant checks) the other components share."
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.12"
+dependencies = []          # standard library only
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+taskwright-observatory = "taskwright_observatory.__main__:main"
+taskwright-dbshow = "taskwright_observatory.dbshow:main"
+taskwright-check-db = "taskwright_observatory.check_db:main"
+
+[tool.setuptools.packages.find]
+include = ["taskwright_observatory*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.md", "*.html", "*.css", "*.js", "*.jsonl"]

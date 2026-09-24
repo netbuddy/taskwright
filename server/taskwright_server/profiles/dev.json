@@ -1,0 +1,55 @@
+{
+  "说明": "开发用启动配置。pi 的全部启动参数都收在这里，代码里不另外写死任何一项。",
+  "executable": "pi",
+  "mode": "rpc",
+  "model": "openai-codex/gpt-6-luna",
+  "thinking": "medium",
+  "模型说明": "pi 的模型名，写法是「服务商/模型」。换模型就改这一项，或者复制一份启动配置改好之后用 --profile 选它；思考档位写在 thinking 一项。",
+  "tools": [
+    "read",
+    "ls",
+    "save_revision",
+    "reply",
+    "get_item",
+    "get_task_status",
+    "record_confirmation",
+    "complete_task"
+  ],
+  "开发期开关": "环境变量 TASKWRIGHT_DEV_REVIEW_AS_MET 设为 1 时，「完成任务」把「每个条目评审通过」这条完成条件暂时视为满足（评审工具尚未提供，没有它这一条永远满足不了）。默认不设，即关；演练时在启动后端之前设好，后端启动 pi 时原样传给它。「完成任务」的返回与事件里会写明哪一条是开关让它通过的。",
+  "flags": {
+    "no_extensions": true,
+    "no_skills": true,
+    "approve": true,
+    "offline": false
+  },
+  "workspace_skills_dir": ".pi/skills",
+  "任务目录技能说明": "flags 里关掉了 pi 的技能自动发现（免得本机全局目录里的技能混进来），所以任务目录里这个目录下的技能要用 --skill 显式加载。路径相对任务目录根目录；任务目录里没有这个目录就不加。",
+  "extensions": [
+    {
+      "name": "任务数据工具",
+      "说明": "本代码仓自己的扩展，注册「创建任务」与「保存修订」两个写入工具，并挂一个只读小扩展。它跟着代码走，路径相对代码仓根目录。",
+      "source": "repo",
+      "path": "agent/src/extension.ts"
+    },
+    {
+      "name": "Langfuse 观测插件",
+      "说明": "官方的 pi 观测插件，按提交号锁定的一份源码。它不跟着代码走，位置由环境变量给。",
+      "source": "env",
+      "env": "TASKWRIGHT_LANGFUSE_PLUGIN",
+      "entry": "src/index.ts",
+      "required": false
+    }
+  ],
+  "system_prompt_file": "server/taskwright_server/prompts/executor_system_prompt.md",
+  "系统提示说明": "执行者的系统提示，用 --system-prompt 整体替换 pi 自带的系统提示。文件路径相对代码仓根目录，这份文字是执行者行为的一部分，改动要连同测试一起评估。",
+  "env_passthrough": [
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+    "LANGFUSE_BASE_URL",
+    "LANGFUSE_TRACING_ENVIRONMENT",
+    "PI_LANGFUSE_DEBUG"
+  ],
+  "langfuse": {
+    "environment": "development"
+  }
+}

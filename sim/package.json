@@ -1,0 +1,7 @@
+{
+  "name": "taskwright-sim",
+  "private": true,
+  "description": "用户 agent（模拟用户）：两个工具的扩展、驾驭程序与判定。没有任何依赖；这份文件只声明 TypeScript 按 ES 模块解析，并给出跑单元测试的命令。",
+  "type": "module",
+  "scripts": { "test": "node --test 'tests/*.test.ts'" }
+}

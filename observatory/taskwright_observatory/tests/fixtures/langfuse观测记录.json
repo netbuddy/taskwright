@@ -1,0 +1,74 @@
+{
+ "data": [
+  {
+   "id": "aaaa1111bbbb2222",
+   "type": "GENERATION",
+   "name": "LLM Call",
+   "metadata": {
+    "assistant_index": 0,
+    "input_source": "context"
+   },
+   "input": [
+    {
+     "role": "system",
+     "content": "（夹具里的系统提示，内容不重要，数消息时不算它）"
+    },
+    {
+     "role": "user",
+     "content": "把释义草稿记成：甲。"
+    }
+   ]
+  },
+  {
+   "id": "cccc3333dddd4444",
+   "type": "TOOL",
+   "name": "Tool: save_version",
+   "metadata": {
+    "tool_id": "调用一"
+   },
+   "input": {
+    "field": "释义草稿",
+    "content": "甲。"
+   }
+  },
+  {
+   "id": "eeee5555ffff6666",
+   "type": "GENERATION",
+   "name": "LLM Call",
+   "metadata": {
+    "assistant_index": 1,
+    "input_source": "delta"
+   },
+   "input": [
+    {
+     "role": "system",
+     "content": "（夹具里的系统提示，内容不重要，数消息时不算它）"
+    },
+    {
+     "role": "user",
+     "content": "把释义草稿记成：甲。"
+    },
+    {
+     "role": "assistant",
+     "content": "提出 1 个工具调用"
+    },
+    {
+     "role": "toolResult",
+     "content": "已把「释义草稿」存为第 1 版。"
+    }
+   ]
+  },
+  {
+   "id": "7777888899990000",
+   "type": "SPAN",
+   "name": "Conversational Turn",
+   "metadata": {}
+  }
+ ],
+ "meta": {
+  "page": 1,
+  "limit": 100,
+  "totalItems": 4,
+  "totalPages": 1
+ }
+}

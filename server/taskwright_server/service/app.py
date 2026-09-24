@@ -1,0 +1,504 @@
+"""任务服务的路由与各接口（见 docs/api.md）。只用标准库的 http.server。
+
+用法见 __main__.py。所有路径以 /api/v1 开头；错误一律是 docs/api.md「错误」一节的形状。
+"""
+
+from __future__ import annotations
+
+import datetime as _dt
+import email.parser
+import email.policy
+import json
+import re
+import uuid
+import threading
+import traceback
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+from taskwright_server import create_task as create_task_module
+from taskwright_server import new_workspace
+from taskwright_observatory import taskdb
+from taskwright_server.service import clock, conversation, library, render
+from taskwright_server.service.errors import ApiError
+from taskwright_server.service.executor import Executor
+from taskwright_server.service.hub import Hub
+
+SLASH_PREFIX = "用户说："
+MAX_UPLOAD = 5 * 1024 * 1024
+UPLOAD_TYPES = (".md", ".txt")
+
+
+def rewrite_slash(text: str) -> str:
+    """用户打的字首字符是斜杠时，前面加「用户说：」，免得被 pi 当作扩展命令吞掉（docs/api.md §5.1）。"""
+    return SLASH_PREFIX + text if text.startswith("/") else text
+
+
+def with_attachments(text: str, paths: list[str]) -> str:
+    return f"{text}\n（我上传了材料：{'、'.join(paths)}）" if paths else text
+
+
+def card_annotation(body: dict, entries: list[dict] | None = None) -> dict:
+    """卡片点击的标注。两种写法都认：annotation {reply_message_id, option_key, option_text}；
+    前端骨架的 card {reply_message_id, kind, choice}，choice 是选项的 key 或「不对」「采纳」之类的按钮字。
+
+    card 写法里没有选项的文字：按 reply_message_id 在会话条目里找到那条回复，从它「回复」工具参数的 act.options
+    里按键查回文字；查不到（「不对」「采纳」这类按钮，或那条回复不在条目里）就用 choice 本身。"""
+    if isinstance(body.get("annotation"), dict):
+        return body["annotation"]
+    card = body.get("card") if isinstance(body.get("card"), dict) else {}
+    choice = card.get("choice")
+    text = reply_option_text(entries or [], card.get("reply_message_id"), choice)
+    return {"reply_message_id": card.get("reply_message_id"), "option_key": choice,
+            "option_text": text if text is not None else choice, "card_kind": card.get("kind")}
+
+
+def reply_option_text(entries: list[dict], reply_id: str | None, key: str | None) -> str | None:
+    """那条回复的卡片上，键为 key 的选项的文字；找不到返回 None。"""
+    if not reply_id or key is None:
+        return None
+    for e in entries:
+        if e.get("id") != reply_id or e.get("type") != "message":
+            continue
+        for part in (e.get("message") or {}).get("content") or []:
+            if isinstance(part, dict) and part.get("type") == "toolCall" and part.get("name") == "reply":
+                act = (part.get("arguments") or {}).get("act") or {}
+                for option in act.get("options") or []:
+                    if isinstance(option, dict) and option.get("key") == key:
+                        return option.get("text")
+    return None
+
+
+def task_types() -> list[dict]:
+    """任务类型：task-types/ 下的每个目录，显示名取它的任务定义里的「任务名」。"""
+    out = []
+    for name in new_workspace.available_templates():
+        path = new_workspace.FIXTURE_DIR / name / "docs" / "task-definitions" / f"{name}.json"
+        try:
+            label = json.loads(path.read_text(encoding="utf-8")).get("任务名")
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(label, str) and label:      # 旧形状的模板（例如 term-clarification）没有新格式的任务定义，不列
+            out.append({"task_type": name, "name": label})
+    return out
+
+
+def new_task_id() -> str:
+    return f"TASK-{_dt.date.today():%Y%m%d}-{uuid.uuid4().hex[:4].upper()}"
+
+
+class Task:
+    """一个任务目录连同它的事件分发与执行者看护。"""
+
+    def __init__(self, task_id: str, task_dir: Path, service: "Service"):
+        self.task_id = task_id
+        self.dir = task_dir
+        self.executor: Executor | None = None
+        self.hub = Hub(task_dir, is_running=lambda: bool(self.executor and self.executor.running()))
+        self.executor = Executor(task_id, task_dir, service.runs_dir, service.profile, self.hub)
+
+    def row(self) -> dict | None:
+        conn = library.open_ro(self.dir)
+        if conn is None:
+            return None
+        try:
+            row = conn.execute("SELECT * FROM task LIMIT 1").fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def definition(self) -> dict:
+        row = self.row()
+        return taskdb.parse_definition(row["definition_text"]) if row else {}
+
+    def require_open(self) -> None:
+        row = self.row()
+        if row is None:
+            raise ApiError("no_task", "这个任务目录里没有任务记录。")
+        if row["status"] != "进行中":
+            raise ApiError("task_closed", f"任务已经{row['status']}，只能查看。", {"status": row["status"]})
+
+
+class Service:
+    def __init__(self, tasks_dir: Path, runs_dir: Path, profile: dict):
+        self.tasks_dir = Path(tasks_dir)
+        self.runs_dir = Path(runs_dir)
+        self.profile = profile
+        self.tasks: dict[str, Task] = {}
+        self.lock = threading.Lock()
+        self.tasks_dir.mkdir(parents=True, exist_ok=True)
+
+    def scan(self) -> None:
+        for d in sorted(self.tasks_dir.iterdir()):
+            if not (d / taskdb.DB_NAME).is_file():
+                continue
+            conn = library.open_ro(d)
+            try:
+                row = conn.execute("SELECT task_id FROM task LIMIT 1").fetchone() if conn else None
+            except Exception:
+                row = None
+            finally:
+                if conn is not None:
+                    conn.close()
+            if row and row[0] not in self.tasks:
+                self.tasks[row[0]] = Task(row[0], d, self)
+
+    def task(self, task_id: str) -> Task:
+        with self.lock:
+            if task_id not in self.tasks:
+                self.scan()
+            if task_id not in self.tasks:
+                raise ApiError("not_found", f"没有任务 {task_id}。")
+            return self.tasks[task_id]
+
+    def close(self) -> None:
+        for t in self.tasks.values():
+            print(f"任务 {t.task_id} 的事件分发统计：{t.hub.stats}", flush=True)
+            t.hub.close()
+            if t.executor:
+                t.executor.close()
+
+    # ───────────── 任务与会话 ─────────────
+
+    def list_tasks(self) -> list[dict]:
+        with self.lock:
+            self.scan()
+            tasks = list(self.tasks.values())
+        out = []
+        for t in tasks:
+            seq, view = library.task_snapshot(t.dir)
+            if view is None:
+                continue
+            sessions = t.executor.list_sessions()
+            actives = [s["last_active_at"] for s in sessions if s.get("last_active_at")] + [view["started_at"]]
+            comp = view.get("completion")
+            out.append({"task_id": view["task_id"], "task_name": view["task_name"], "task_type": view["task_type"],
+                        "domain_tag": view["domain_tag"], "status": view["status"], "item_count": len(view["items"]),
+                        "completion_met": sum(c["met"] for c in comp["conditions"]) if comp else None,
+                        "completion_total": len(comp["conditions"]) if comp else None,
+                        "completion_unmet": comp["unmet_count"] if comp else None,
+                        "last_active_at": max(a for a in actives if a), "session_count": len(sessions)})
+        return out
+
+    def create(self, body: dict) -> dict:
+        task_type = body.get("task_type") or create_task_module.DEFAULT_TYPE
+        if task_type not in new_workspace.available_templates():
+            raise ApiError("bad_request", f"没有「{task_type}」这种任务类型。", {"available": new_workspace.available_templates()})
+        name = (body.get("task_name") or "").strip() or None
+        tag = (body.get("domain_tag") or "").strip() or None
+        task_id = new_task_id()
+        try:
+            result = create_task_module.create_task(self.tasks_dir / task_id, task_type, name, tag, task_id=task_id)
+        except create_task_module.CreateTaskError as error:
+            raise ApiError("rejected", "任务没有创建成功。", {"reasons": [str(error)]})
+        with self.lock:
+            self.scan()
+        return {"ok": True, "task_id": result["task_id"]}
+
+    def task_page(self, t: Task) -> dict:
+        seq, view = library.task_snapshot(t.dir)
+        if view is None:
+            raise ApiError("no_task", "这个任务目录里没有任务记录。")
+        return {**view, "materials": library.materials(t.dir, t.definition()), "sessions": t.executor.list_sessions()}
+
+    def snapshot(self, t: Task, session: str | None) -> dict:
+        if session:
+            t.executor.open_session(session)
+        seq, view = library.task_snapshot(t.dir)
+        info = None
+        conv = None
+        work = None
+        if session:
+            info = next((s for s in t.executor.list_sessions() if s["session_id"] == session), None)
+            conv = conversation.page(conversation.messages(t.executor.entries(session), session, t.definition()))
+            work = t.executor.current_work(session)
+        return {"seq": seq, "generated_at": clock.now(), "executor": t.executor.view(),
+                "session": {k: info[k] for k in ("session_id", "name", "started_at", "last_active_at")} if info else None,
+                "task": view, "materials": library.materials(t.dir, t.definition()),
+                "conversation": conv, "current_work": work}
+
+    # ───────────── 材料 ─────────────
+
+    def material_path(self, t: Task, rel: str) -> Path:
+        folder = t.definition().get("材料目录") or taskdb.DEFAULT_MATERIALS_DIR
+        base = (t.dir / folder).resolve()
+        target = (t.dir / rel).resolve()
+        if not rel or not str(target).startswith(str(base) + "/"):
+            raise ApiError("bad_request", f"路径 {rel} 不在材料目录 {folder} 里。")
+        return target
+
+    def upload(self, t: Task, filename: str, data: bytes, session: str | None = None) -> dict:
+        if not filename or "/" in filename or "\\" in filename or filename in (".", ".."):
+            raise ApiError("bad_request", "文件名里不能带路径分隔符。")
+        if not filename.lower().endswith(UPLOAD_TYPES):
+            raise ApiError("unsupported_type", "只接受 .md 与 .txt 两种文本文件。")
+        if len(data) > MAX_UPLOAD:
+            raise ApiError("too_large", "单个文件不能超过 5 MB。")
+        folder_rel = t.definition().get("材料目录") or taskdb.DEFAULT_MATERIALS_DIR
+        folder = t.dir / folder_rel
+        folder.mkdir(parents=True, exist_ok=True)
+        stem, dot, ext = filename.rpartition(".")
+        target, n = folder / filename, 1
+        while target.exists():
+            n += 1
+            target = folder / f"{stem}-{n}.{ext}"
+        target.write_bytes(data)
+        path = f"{folder_rel}{target.name}"
+        # 材料清单只在整份数据里读一次；上传之后推一条过程类事件，工作视图与任务页据此更新清单、显示正文。
+        # 材料属于任务，session_id 只说明是从哪条会话上传的（可空），订阅了别的会话的页面也收得到。
+        t.hub.emit("material_added", {"session_id": session, "at": clock.now(), "path": path,
+                                      "bytes": target.stat().st_size, "modified_at": clock.from_epoch(target.stat().st_mtime)})
+        return {"ok": True, "path": path}
+
+
+def parse_multipart(content_type: str, body: bytes) -> tuple[str, bytes]:
+    """取出 multipart 请求里的第一个文件：返回（文件名, 内容）。"""
+    message = email.parser.BytesParser(policy=email.policy.HTTP).parsebytes(
+        b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + body)
+    for part in message.iter_parts():
+        name = part.get_filename()
+        if name:
+            return name, part.get_payload(decode=True) or b""
+    raise ApiError("bad_request", "请求里没有文件。")
+
+
+ROUTES = [
+    ("GET", r"/api/v1/tasks", "list_tasks"),
+    ("GET", r"/api/v1/task-types", "list_task_types"),
+    ("POST", r"/api/v1/tasks", "create_task"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)", "get_task"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/sessions", "list_sessions"),
+    ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/sessions", "new_session"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/events", "events"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/snapshot", "snapshot"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/items/(?P<item>[^/]+)/versions", "versions"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/materials/content", "material"),
+    ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/materials", "upload"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/conversation", "conversation"),
+    ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/messages", "messages"),
+    ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/actions", "actions"),
+    ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/control", "control"),
+    ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/documents/(?P<mode>preview|download)", "documents"),
+]
+
+
+def make_handler(service: Service):
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *args) -> None:
+            pass
+
+        # ── 小工具 ──
+
+        def send_json(self, status: int, body: dict) -> None:
+            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def body_json(self) -> dict:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not length:
+                return {}
+            try:
+                value = json.loads(self.rfile.read(length) or b"{}")
+            except json.JSONDecodeError:
+                raise ApiError("bad_request", "请求体不是合法的 JSON。")
+            if not isinstance(value, dict):
+                raise ApiError("bad_request", "请求体应当是一个 JSON 对象。")
+            return value
+
+        def dispatch(self, method: str) -> None:
+            url = urlparse(self.path)
+            self.query = {k: v[-1] for k, v in parse_qs(url.query).items()}
+            path = unquote(url.path).rstrip("/") or "/"
+            try:
+                for m, pattern, name in ROUTES:
+                    match = re.fullmatch(pattern, path)
+                    if m == method and match:
+                        getattr(self, name)(**match.groupdict())
+                        return
+                raise ApiError("not_found", f"没有这个接口：{method} {path}")
+            except ApiError as error:
+                self.send_json(error.status, error.body())
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception as error:
+                traceback.print_exc()
+                self.send_json(500, {"ok": False, "error": {"code": "internal", "message": "后端出错了。", "data": {"detail": str(error)}}})
+
+        def do_GET(self):
+            self.dispatch("GET")
+
+        def do_POST(self):
+            self.dispatch("POST")
+
+        def session_param(self, body: dict | None = None) -> str | None:
+            return self.query.get("session") or (body or {}).get("session_id") or None
+
+        # ── 任务与会话 ──
+
+        def list_tasks(self):
+            self.send_json(200, {"ok": True, "tasks": service.list_tasks()})
+
+        def list_task_types(self):
+            self.send_json(200, {"ok": True, "task_types": task_types()})
+
+        def create_task(self):
+            self.send_json(200, service.create(self.body_json()))
+
+        def get_task(self, task):
+            self.send_json(200, {"ok": True, **service.task_page(service.task(task))})
+
+        def list_sessions(self, task):
+            self.send_json(200, {"ok": True, "sessions": service.task(task).executor.list_sessions()})
+
+        def new_session(self, task):
+            t = service.task(task)
+            self.send_json(200, {"ok": True, "session_id": t.executor.new_session()})
+
+        def snapshot(self, task):
+            t = service.task(task)
+            self.send_json(200, {"ok": True, **service.snapshot(t, self.session_param())})
+
+        def versions(self, task, item):
+            rows = library.item_versions(service.task(task).dir, item)
+            if rows is None:
+                raise ApiError("not_found", f"没有条目 {item}。")
+            self.send_json(200, {"ok": True, "item_id": item, "versions": rows})
+
+        def material(self, task):
+            t = service.task(task)
+            rel = self.query.get("path") or ""
+            target = service.material_path(t, rel)
+            if not target.is_file():
+                raise ApiError("not_found", f"没有材料 {rel}。")
+            self.send_json(200, {"ok": True, "path": rel, "text": target.read_text(encoding="utf-8", errors="replace")})
+
+        def upload(self, task):
+            t = service.task(task)
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_UPLOAD + 64 * 1024:
+                raise ApiError("too_large", "单个文件不能超过 5 MB。")
+            name, data = parse_multipart(self.headers.get("Content-Type") or "", self.rfile.read(length))
+            self.send_json(200, service.upload(t, name, data, self.session_param()))
+
+        def conversation(self, task):
+            t = service.task(task)
+            session = self.session_param()
+            if not session:
+                raise ApiError("bad_request", "要带 session 参数。")
+            all_messages = conversation.messages(t.executor.entries(session), session, t.definition())
+            limit = int(self.query.get("limit") or 100)
+            self.send_json(200, {"ok": True, **conversation.page(all_messages, self.query.get("before"), limit)})
+
+        # ── 说话、操作、停下 ──
+
+        def messages(self, task):
+            t = service.task(task)
+            body = self.body_json()
+            t.require_open()
+            text = (body.get("text") or "").strip()
+            if not text:
+                raise ApiError("bad_request", "text 不能是空的。")
+            attachments = body.get("attachments") or []
+            for rel in attachments:
+                if not service.material_path(t, rel).is_file():
+                    raise ApiError("bad_request", f"附件 {rel} 不在材料目录里。")
+            session = self.session_param(body)
+            client_id = body.get("client_id")
+            if body.get("origin") == "card_choice":
+                queued = t.executor.card_click(session, text, client_id, card_annotation(body, t.executor.entries(session) if session else []))
+            else:
+                sent = with_attachments(rewrite_slash(text), attachments)
+                queued = t.executor.say(session, sent, client_id, original=text)
+            self.send_json(200, {"ok": True, "client_id": client_id, "queued": queued})
+
+        def actions(self, task):
+            t = service.task(task)
+            body = self.body_json()
+            t.require_open()
+            op_id = t.executor.action(self.session_param(body), body)
+            self.send_json(200, {"ok": True, "client_id": body.get("client_id"), "op_id": op_id})
+
+        def control(self, task):
+            t = service.task(task)
+            body = self.body_json()
+            if body.get("action") != "stop":
+                raise ApiError("bad_request", "action 现在只能是 stop。")
+            self.send_json(200, {"ok": True, "cleared": t.executor.stop(self.session_param(body))})
+
+        def documents(self, task, mode):
+            t = service.task(task)
+            body = self.body_json()
+            if (body.get("format") or "markdown") != "markdown":
+                raise ApiError("bad_request", "现在只支持 markdown。")
+            conn = library.open_ro(t.dir)
+            try:
+                data = library.read_all(conn)
+            finally:
+                conn.close()
+            text = render.render(t.dir, library.Library(data), body.get("selection") or [])
+            if mode == "preview":
+                self.send_json(200, {"ok": True, "text": text})
+                return
+            raw = text.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{t.task_id}.md"')
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        # ── 事件流 ──
+
+        def events(self, task):
+            t = service.task(task)
+            raw = self.headers.get("Last-Event-ID") or self.query.get("last_event_id")
+            last = int(raw) if raw and raw.isdigit() else None
+            sub, replay = t.hub.subscribe(self.session_param(), last)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("X-Accel-Buffering", "no")
+                self.end_headers()
+                self.wfile.write(b": connected\n\n")
+                self.wfile.flush()
+                for item in replay:
+                    self.write_event(sub, *item)
+                while True:
+                    try:
+                        item = sub.queue.get(timeout=15)
+                    except Exception:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                        continue
+                    self.write_event(sub, *item)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                t.hub.unsubscribe(sub)
+                self.close_connection = True
+
+        def write_event(self, sub, name: str, seq: int | None, data: dict) -> None:
+            if seq is not None:
+                if seq <= sub.last_seq:
+                    return        # 补发与实时推送重叠的那几条只发一次
+                sub.last_seq = seq
+            lines = f"event: {name}\n" + (f"id: {seq}\n" if seq is not None else "") + \
+                "data: " + json.dumps(data, ensure_ascii=False) + "\n\n"
+            self.wfile.write(lines.encode("utf-8"))
+            self.wfile.flush()
+
+    return Handler
+
+
+def serve(service: Service, host: str, port: int) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer((host, port), make_handler(service))
+    server.daemon_threads = True
+    return server
