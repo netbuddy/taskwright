@@ -21,7 +21,7 @@ export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, working = false, revisionsOfReply, onRevisionTag,
+  hold = false, working = false, revisionsOfReply, onRevisionTag, onShowReviews,
 }: {
   messages: ConversationMessage[];
   currentWork: CurrentWork | null;
@@ -37,6 +37,8 @@ export function Conversation({
   hasEarlier: boolean;
   onLoadEarlier: () => void;
   revisionOf: (note: UiActionNoted) => number | null;
+  /** 评审结束那一行的「看评审页签」：右侧栏切到评审页签。 */
+  onShowReviews?: () => void;
   attachments: string[];
   /** 输入框的内容由页面持有时传进来（「让助手改这一条」要预填它）；不传就由这里自己持有。 */
   draft?: string;
@@ -76,7 +78,8 @@ export function Conversation({
             disabled={disabled} hold={hold} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
-            revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply) : []} onRevisionTag={onRevisionTag} />
+            revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply) : []} onRevisionTag={onRevisionTag}
+            onShowReviews={onShowReviews} />
         ))}
         {outgoing.map((m) => (
           <div key={m.client_id} className={`m user${m.state === "sending" ? " sending" : ""}`}>
@@ -145,7 +148,7 @@ export function answeredText(messages: ConversationMessage[], index: number): st
   return null;
 }
 
-function MessageView({ message, task, handlers, disabled, hold, working, answered, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag }: {
+function MessageView({ message, task, handlers, disabled, hold, working, answered, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -154,6 +157,7 @@ function MessageView({ message, task, handlers, disabled, hold, working, answere
   working: boolean;
   revisions: number[];
   onRevisionTag?: (revisions: number[]) => void;
+  onShowReviews?: () => void;
   answered: string | null;
   onUndo: (revisionNo: number) => void;
   onOpenItem: (itemId: string) => void;
@@ -203,6 +207,16 @@ function MessageView({ message, task, handlers, disabled, hold, working, answere
     }
     case "ui_action_noted": {
       const m = message as UiActionNoted;
+      if (m.kind === "request_review" && m.review) {
+        // 评审结束：只写一句结论，逐条发现在评审页签里看。
+        const r = m.review;
+        return (
+          <div className="selfnote" data-testid="review-done">
+            评审完成：{r.passed} 条合规、{r.failed} 条不合规（问题 {r.problems} 处、建议 {r.advice} 条）{r.unfinished ? `，${r.unfinished} 条没有评完` : ""}。
+            {onShowReviews && <span className="undo" role="button" onClick={onShowReviews} data-testid="show-reviews">看评审页签 ›</span>}
+          </div>
+        );
+      }
       const revision = m.undoable ? revisionOf(m) : null;
       return (
         <div className="selfnote" data-testid="ui-action">

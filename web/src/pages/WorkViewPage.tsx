@@ -18,12 +18,13 @@ import { ItemsPanel } from "../components/work/ItemsPanel";
 import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
+import { ReviewPanel } from "../components/work/ReviewPanel";
 import { DocumentModal } from "../components/DocumentModal";
 import { errorText } from "../components/work/errors";
 import { formatTime } from "../model/format";
 import { FONT_TIERS, narrowViewport, readFontTier, saveFontTier, type FontTier } from "../model/fontScale";
 import { justChangedItems, marksByItem, revisionsOfReply, touchedItems } from "../model/revisions";
-import { viewTarget } from "../model/items";
+import { openProblems, viewTarget } from "../model/items";
 import { go, href } from "../router";
 
 /** 「让助手改这一条」与「回答这个问题」预填的话。 */
@@ -105,7 +106,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     }
   };
 
-  const submit = async (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string): Promise<ApiError | null> => {
+  const submit = async (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor" | "force">, label: string): Promise<ApiError | null> => {
     try {
       const r = await api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, ...req });
       // 标为已读不改内容，不显示「正在保存」；都已读过时后端什么都不写、没有库事件，挂着的话会一直等不到。
@@ -131,8 +132,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       .catch(() => undefined);
   };
   /** 发起评审：targets 为空＝全部待评审的条目。后端核对通过就回应，被拒时弹出原因。 */
-  const review = (targets: { item_id: string; base_revision: number }[], label: string) =>
-    void submit({ kind: "request_review", targets, notify_executor: false }, label).then((e) => { if (e) message.error(errorText(e)); });
+  const review = (targets: { item_id: string; base_revision: number }[], label: string, force?: boolean) =>
+    void submit({ kind: "request_review", targets, notify_executor: false, ...(force ? { force: true } : {}) }, label).then((e) => { if (e) message.error(errorText(e)); });
   const undo = (revision: number) =>
     void submit({ kind: "undo", targets: [{ revision_no: revision }], notify_executor: false }, `撤销修订 ${revision}`).then((e) => { if (e) message.error(errorText(e)); });
 
@@ -183,6 +184,20 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     setLocate((l) => ({ excerpt, locator, nonce: (l?.nonce ?? 0) + 1 }));
   };
   /** 回复底部「产生了修订 N」：右侧栏展开并切到修订页签，选中其中最新的一次，滚到那里。 */
+  /** 评审页签里点一条发现：打开条目详情，滚到那个字段并高亮一会儿。 */
+  const openFinding = (itemId: string, field: string | null) => {
+    openItem(itemId);
+    if (!field) return;
+    setTimeout(() => {
+      const el = document.querySelector(`.detail [data-f="${CSS.escape(field)}"]`);
+      if (!el) return;
+      el.scrollIntoView({ block: "center" });
+      el.classList.add("sw-hit-field");
+      setTimeout(() => el.classList.remove("sw-hit-field"), 2500);
+    }, 80);
+  };
+  /** 对话区里评审结束那一行的「看评审页签」。 */
+  const showReviews = () => { toggleDoc(false); setSide("review"); };
   const showRevisions = (revisions: number[]) => {
     setDocCollapsed(false);
     setSide("rev");
@@ -256,7 +271,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}
                 disabled={!!disabledReason} disabledReason={disabledReason} handlers={cardHandlers}
                 hold={dirty} working={working}
-                onSend={(t) => void send(t)} onUndo={undo}
+                onSend={(t) => void send(t)} onUndo={undo} onShowReviews={showReviews}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)} onRevisionTag={showRevisions}
@@ -286,7 +301,12 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                   currentItem={selected} disabled={!!disabledReason || working} onOpenItem={openItem} onSend={(t) => void send(t)}
                   log={log} messages={state.messages} selectedRevision={selectedRevision} onSelectRevision={setSelectedRevision} scrollNonce={scrollNonce}
                   onDiff={openDiff} onUndo={undo} onGenerate={(revision) => setDoc({ open: true, revision: revision ?? null })}
-                  writesOff={working} readOnly={readOnly} />
+                  writesOff={working} readOnly={readOnly}
+                  review={task ? (
+                    <ReviewPanel task={task} review={state.review} readOnly={readOnly} writesOff={working} onReview={review} submit={submit}
+                      onOpenFinding={openFinding} onPrefill={prefill} />
+                  ) : undefined}
+                  reviewCount={task ? openProblems(task) : 0} />
               </div>
             </div>
           </div>

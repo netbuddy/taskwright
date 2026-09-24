@@ -22,9 +22,12 @@ import type {
   Material,
   MaterialAdded,
   Problem,
+  ReviewBatchEvent,
   ReviewFinished,
   ReviewProgress,
   ReviewRecorded,
+  ReviewRulesChanged,
+  ReviewWaived,
   SessionInfo,
   Snapshot,
   Step,
@@ -248,6 +251,22 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
         review: { op_id: data.op_id, done: data.done, total: data.total, current: data.current ?? [], finished: null } };
       break;
     }
+    case "review_batch": {
+      const { seq: _seq, task_id: _t, completion, ...batch } = event.data as unknown as ReviewBatchEvent;
+      next = withCompletionOnly(next, completion);
+      if (next.task) {
+        const others = (next.task.review_batches ?? []).filter((b) => b.batch_id !== batch.batch_id);
+        next = { ...next, task: { ...next.task, review_batches: [...others, batch].sort((a, b) => a.no - b.no) } };
+      }
+      break;
+    }
+    case "review_waived":
+    case "review_unwaived":
+      next = applyWaiver(next, event.data as unknown as ReviewWaived, event.event === "review_waived");
+      break;
+    case "review_rules_changed":
+      next = applyRulesChanged(next, event.data as unknown as ReviewRulesChanged);
+      break;
     case "review_finished": {
       const data = event.data as unknown as ReviewFinished;
       next = { ...withCompletionOnly(next, data.completion), review: {
@@ -272,6 +291,36 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
 function withCompletion(task: Task, completion: Completion | null | undefined): Task {
   // 约定：算不出来时库事件里是 null，前端就显示「完成条件这次没有算出来」，所以照样覆盖。
   return completion === undefined ? task : { ...task, completion };
+}
+
+/** 保留或撤销保留：给涉及的条目加一条保留记录，或把那次修订上生效的保留标为已撤销。 */
+function applyWaiver(state: WorkState, data: ReviewWaived, waived: boolean): WorkState {
+  state = clearOp(state, data.op_id);
+  if (!state.task) return state;
+  const byId = new Map(data.items.map((i) => [i.item_id, i.revision_no]));
+  const items = state.task.items.map((item) => {
+    const revision = byId.get(item.item_id);
+    if (revision === undefined) return item;
+    const waivers = item.waivers ?? [];
+    return waived
+      ? { ...item, waivers: [...waivers, { revision_no: revision, reason: data.reason ?? null, source: data.source ?? undefined, at: data.at, revoked: false }] }
+      : { ...item, waivers: waivers.map((w) => (w.revision_no === revision && !w.revoked ? { ...w, revoked: true } : w)) };
+  });
+  return { ...state, task: withCompletion({ ...state.task, items }, data.completion), recentlyChanged: [...byId.keys()] };
+}
+
+/** 改了一个集合的评审规则开关：换上这个集合评审部分的新样子（生效的规则、全部规则、开关、规则指纹）。 */
+function applyRulesChanged(state: WorkState, data: ReviewRulesChanged): WorkState {
+  state = clearOp(state, data.op_id);
+  if (!state.task) return state;
+  const collections = state.task.definition.collections.map((c) => c.name !== data.collection ? c : {
+    ...c,
+    review_rules: data.review_rules ?? c.review_rules,
+    all_rules: data.all_rules ?? c.all_rules,
+    rule_switches: data.rule_switches ?? { off: data.off, promote: data.promote },
+    rules_hash: data.rules_hash ?? null,
+  });
+  return { ...state, task: withCompletion({ ...state.task, definition: { ...state.task.definition, collections } }, data.completion) };
 }
 
 /** 只带完成条件的库事件：有就换上。 */
@@ -360,7 +409,8 @@ function applyReviewRecorded(state: WorkState, data: ReviewRecorded): WorkState 
   if (!state.task) return state;
   const items = state.task.items.map((item) =>
     item.item_id === data.item_id
-      ? { ...item, reviews: [...item.reviews, { revision_no: data.revision_no, verdict: data.verdict, findings: data.findings, at: data.at }] }
+      ? { ...item, reviews: [...item.reviews, { revision_no: data.revision_no, verdict: data.verdict, findings: data.findings, at: data.at,
+          batch_id: data.batch_id ?? null, rules_hash: data.rules_hash ?? null, forced: !!data.forced }] }
       : item,
   );
   return { ...state, task: withCompletion({ ...state.task, items }, data.completion), recentlyChanged: [data.item_id] };

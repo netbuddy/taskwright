@@ -14,11 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every finding cites a rule number. Findings under required rules are problems and fail the item; findings under optional rules are advice and do not. The verdict is computed from the rule levels, not taken from the reviewer's output.
 - Findings are shown next to their fields in two colours, with the rule text on demand and a button that prefills a request to the assistant.
 - The `request_review` tool is enabled for the assistant, for use only when the user asks for a review in the conversation.
+- A Review tab in the side panel lists every review ("review N") with its counts, the findings of each item and whether each finding was fixed in a later revision, kept, or is still open.
+- Keeping a wording that failed review, with an optional reason (`waive_review`, `unwaive_review`); a kept item counts as passed until it changes.
+- Per-task rule switches: optional rules can be switched off or made required (`set_review_rules`). Each review records the rule fingerprint, and items go back to waiting for review when the rules change.
+- The reviewer sees the full materials when they are short (up to 20,000 characters), otherwise the paragraphs its sources quote. Reviewer calls ask for temperature 0.
+- Events `review_batch`, `review_waived`, `review_unwaived`, `review_rules_changed`.
 
 ### Changed
 
-- "Every item passed review" is reported in two groups: items not reviewed yet and items that failed.
-- `review_finding` gains `rule_id` and `level`; databases created by 0.1 get the columns when first opened for writing.
+- Reviewing an item whose content and rules have not changed since its last review needs an explicit "review again".
+- When a review ends, the conversation shows one sentence with the counts; the findings are in the Review tab and in the task status.
+- EARS-R2 and EARS-R3 state that a named system is a valid subject and that counting words such as "books" or "days" are units.
+- "Every item passed review" is reported in three groups: items not reviewed yet, items that failed, and items that failed but whose wording you kept.
+- `review_finding` gains `rule_id` and `level`, and `review` gains `batch_id`, `rules_hash`, `reviewer_version` and `forced`; older databases get the columns (and the new `review_waiver` table) when first opened for writing.
 
 ### Removed
 

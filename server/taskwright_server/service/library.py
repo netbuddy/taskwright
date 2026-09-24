@@ -493,7 +493,8 @@ class Library:
             return "review_recorded", {**base, "item_id": payload.get("item_id"), "revision_no": payload.get("revision_no"),
                                        "verdict": payload.get("verdict"), "reason": payload.get("reason"),
                                        "findings": [finding_view(f) for f in payload.get("findings") or []],
-                                       "op_id": op_id, "completion": None}
+                                       "batch_id": payload.get("batch_id"), "rules_hash": payload.get("rules_hash"),
+                                       "forced": bool(payload.get("forced")), "op_id": op_id, "completion": None}
         if e["name"] == "REVIEW_UNFINISHED":
             return "review_unfinished", {**base, "item_id": payload.get("item_id"), "revision_no": payload.get("revision_no"),
                                          "reason": payload.get("reason"), "op_id": op_id, "completion": None}

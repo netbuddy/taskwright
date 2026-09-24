@@ -93,7 +93,7 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, w
   };
   const failedReview = (act.items ?? []).filter((ref) => {
     const item = task?.items.find((i) => i.item_id === ref.item_id);
-    return item && reviewState(item).state === "failed";
+    return item && reviewState(item, task ?? undefined).state === "failed";
   });
   const off = disabled || !!chosen || hold || writesOff;
   const offTitle = hold ? HOLD_TEXT : undefined;

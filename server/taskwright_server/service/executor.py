@@ -268,7 +268,7 @@ class Executor:
             with self.lock:
                 self._turn_check("action")
         op_id = new_id("ui-op-")
-        command = {k: body.get(k) for k in ("kind", "task_id", "targets", "fields", "notify_executor") if k in body}
+        command = {k: body.get(k) for k in ("kind", "task_id", "targets", "fields", "notify_executor", "force") if k in body}
         command["op_id"] = op_id
         if command.get("notify_executor"):
             self.pending_origin["我已经看过了："] = "ui_request"

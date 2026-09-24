@@ -21,13 +21,16 @@
 // 评审：右上角「评审这条」发 request_review（只带这个条目）。条目当前所在的修订上有评审记录时，每条发现标在它的字段旁：
 // 问题（必选规则）红色、建议（可选规则）琥珀色，末尾「违反 UC-R9」点一下展开那条规则的条文（规则清单取自任务定义），
 // 旁边「让助手照这条改」往对话区输入框预填一句话，不写库。标题字段有发现时也照常列出这一行。
+// 每条发现右侧写处理状态与出自第几次评审（「未处理 · 第 3 次评审」）；「保留这种写法」就在发现旁（理由可空，与评审页签同一个操作）。
+// 保留之后横幅改为琥珀色「你保留了现在的写法（修订 N）：理由」，旁边「撤销保留」。条目在当前修订、当前规则下已经评过时，
+// 「评审这条」灰化并说明，旁边小字「仍要重评」，确认之后带 force 再评一次。
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Popconfirm, Select } from "antd";
 import { api, ApiError } from "../../api/client";
 import type { ActionRequest, CollectionDef, FieldDef, FieldValue, Fields, Finding, Item, ItemRevision, ReviewRule, Source, Task } from "../../api/types";
 import { alignSteps } from "../../model/diff";
-import { BUSY_TEXT, currentReview, isEmptyValue, isListField, isProblem, keepPendingField, KEEP_PENDING_VALUE, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
+import { BUSY_TEXT, batchNo, currentReview, findingStatus, findingStatusText, isEmptyValue, isListField, isProblem, keepPendingField, KEEP_PENDING_VALUE, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
 import { baselineRevision, confirmedRevision } from "../../model/revisions";
 import { formatTime } from "../../model/format";
 import { errorText } from "./errors";
@@ -75,7 +78,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   latestRevision?: number;
   onDirty?: (dirty: boolean) => void;
   /** 「评审这条」。 */
-  onReview?: () => void;
+  onReview?: (force?: boolean) => void;
   /** 评审按钮灰化的原因；可用时为 undefined。 */
   reviewOff?: string;
   /** 「让助手照这条改」：预填对话区输入框。 */
@@ -128,7 +131,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
     else after?.();
   };
   const target = [{ item_id: item.item_id, base_revision: item.revision_no }];
-  const review = reviewState(item);
+  const review = reviewState(item, task);
   const keepField = keepPendingField(task, item.collection);
   const shownNo = viewRevision ?? item.revision_no;
   const shown = viewRevision != null ? revisions?.find((v) => v.revision_no === viewRevision) ?? null : null;
@@ -148,7 +151,16 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   const beforeFields = old ? previous : showMarks ? baseFields : compare ? previous : null;
   const supplements = sources.filter((s) => s.kind === "执行者补充");
   // 当前所在的修订上最近一条评审的发现（通过时也可能有建议）；看旧修订时不标。
-  const findings = old ? [] : currentReview(item)?.findings ?? [];
+  const current = old ? undefined : currentReview(item, task);
+  const findings = current?.findings ?? [];
+  const currentNo = batchNo(task, current?.batch_id);
+  const status = current ? findingStatus(item, current) : null;
+  const statusText = status ? `${findingStatusText(status)}${currentNo ? ` · 第 ${currentNo} 次评审` : ""}` : null;
+  /** 在当前修订、当前规则下已经评过：「评审这条」灰化，只能「仍要重评」。 */
+  const reviewedNow = !!currentReview(item, task);
+  const keepable = !!current && current.verdict !== "合规" && status?.kind === "open";
+  const keep = (reason: string) => void run({ kind: "waive_review", targets: [{ item_id: item.item_id, base_revision: item.revision_no }],
+    fields: { reason: reason.trim(), source: "detail" }, notify_executor: false }, `保留 ${item.item_id} 现在的写法`);
   const writeOff = readOnly || writesOff || pending;
   const offTitle = writeOffReason(task, { readOnly, writesOff, pending });
   const editOffTitle = writeOffReason(task, { readOnly, writesOff, pending, old });
@@ -180,7 +192,16 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
         <ItemStatus task={task} item={item} just={just} pending={pending} />
         <span className="pager">
           {!keepField && onReview && needsReview(task, item.collection) && (
-            <button type="button" className="btn sm" disabled={!!reviewOff} title={reviewOff} onClick={onReview} data-testid="review-one">评审这条</button>
+            <>
+              <button type="button" className="btn sm" disabled={!!reviewOff || reviewedNow}
+                title={reviewOff ?? (reviewedNow ? `这条在当前修订上已经评过${currentNo ? `（第 ${currentNo} 次评审）` : ""}，内容和规则都没变。` : undefined)}
+                onClick={() => onReview()} data-testid="review-one">评审这条</button>
+              {reviewedNow && !reviewOff && (
+                <Popconfirm title="再评一次会产生新的记录，最新一次为准。" okText="再评一次" cancelText="取消" onConfirm={() => onReview(true)}>
+                  <span className="rerun" role="button" data-testid="review-again">仍要重评</span>
+                </Popconfirm>
+              )}
+            </>
           )}
           {!keepField && onAskAssistant && (
             <button type="button" className="aibtn" disabled={readOnly} onClick={() => onAskAssistant(item.item_id)} data-testid="ask-assistant">让助手来改这一条</button>
@@ -227,8 +248,16 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
         <div className="banner-line">现在的内容是修订 {item.revision_no} 写的。
           <button type="button" className="btn sm" onClick={() => setCompare(true)} data-testid="compare-open">和修订 {previousNo} 比对</button></div>
       ))}
-      {review.state === "failed" && (
-        <div className="banner-line gap" data-testid="review-banner"><span><b>评审不通过：</b>评审者按写作规矩核对，指出 {review.problems} 处问题，标在下面对应的字段旁。你可以让助手照发现改，改完再评审一次。</span></div>
+      {review.state === "failed" && review.kept && (
+        <div className="banner-line kept" data-testid="kept-banner">
+          <span><b>你保留了现在的写法（修订 {item.revision_no}）</b>{review.kept.reason ? `：${review.kept.reason}` : "，没有写理由"}。评审不通过，但计入通过；条目再改出新修订，保留就不再作数。</span>
+          <button type="button" className="btn sm" disabled={writeOff} title={offTitle} data-testid="unwaive"
+            onClick={() => void run({ kind: "unwaive_review", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], notify_executor: false },
+              `撤销对 ${item.item_id} 的保留`)}>撤销保留</button>
+        </div>
+      )}
+      {review.state === "failed" && !review.kept && (
+        <div className="banner-line gap" data-testid="review-banner"><span><b>评审不通过：</b>评审者按写作规矩核对，指出 {review.problems} 处问题，标在下面对应的字段旁。你可以让助手照发现改，也可以保留现在的写法。</span></div>
       )}
       {supplements.length > 0 && !editing && (
         <div className="banner-line amber" data-testid="supplement-banner">
@@ -264,6 +293,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
                 marked={showMarks && markedSet.has(f.name)} sources={sourcesForFields(sources, f.name)}
                 findings={own} ruleOf={(id) => ruleOf(task, item.collection, id)}
                 onFix={onPrefill ? (x) => onPrefill(fixText(item.item_id, x)) : undefined} fixOff={readOnly}
+                statusText={statusText} onKeep={keepable && !writeOff ? keep : undefined}
                 onLocate={onLocate} onOpenItem={onOpenItem} />
             );
           })}
@@ -351,7 +381,7 @@ export function SourceTag({ source, onLocate }: { source: Source; onLocate?: (ex
   return <span className="srctag edited" title={source.excerpt}>{source.kind}</span>;
 }
 
-function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix, fixOff, onLocate, onOpenItem }: {
+function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix, fixOff, statusText = null, onKeep, onLocate, onOpenItem }: {
   def: FieldDef;
   value: FieldValue;
   /** 用来画线比较的那次修订里的值；undefined 表示不画线。 */
@@ -366,6 +396,10 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
   /** 「让助手照这条改」。 */
   onFix?: (finding: Finding) => void;
   fixOff?: boolean;
+  /** 发现的处理状态，例如「未处理 · 第 3 次评审」。 */
+  statusText?: string | null;
+  /** 「保留这种写法」；不能保留时不给。 */
+  onKeep?: (reason: string) => void;
   onLocate?: (excerpt: string, locator: string) => void;
   onOpenItem?: (itemId: string) => void;
 }) {
@@ -408,7 +442,8 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
       <div className="k">{def.name}{def.required && <> <span style={{ color: "var(--gap)" }}>*</span></>}</div>
       <div className="v">
         {body}
-        {findings.map((f, i) => <FindingLine key={i} finding={f} rule={ruleOf(f.rule_id)} onFix={onFix} fixOff={fixOff} />)}
+        {findings.map((f, i) => <FindingLine key={i} finding={f} rule={ruleOf(f.rule_id)} onFix={onFix} fixOff={fixOff} statusText={statusText}
+          onKeep={isProblem(f) ? onKeep : undefined} />)}
         {sources.length > 0 && <div className="srcs">{sources.map((s, i) => <SourceTag key={i} source={s} onLocate={onLocate} />)}</div>}
       </div>
     </div>
@@ -416,17 +451,30 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
 }
 
 /** 一条评审发现：问题红色、建议琥珀色；「违反 UC-R9」点一下展开条文；「让助手照这条改」预填输入框。 */
-function FindingLine({ finding, rule, onFix, fixOff }: { finding: Finding; rule?: ReviewRule; onFix?: (f: Finding) => void; fixOff?: boolean }) {
+function FindingLine({ finding, rule, onFix, fixOff, statusText = null, onKeep }: {
+  finding: Finding; rule?: ReviewRule; onFix?: (f: Finding) => void; fixOff?: boolean; statusText?: string | null; onKeep?: (reason: string) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [keeping, setKeeping] = useState(false);
+  const [reason, setReason] = useState("");
   const problem = isProblem(finding);
   return (
     <span className={`finding${problem ? "" : " advice"}`} data-testid={problem ? "finding-problem" : "finding-advice"}>
+      {statusText && <span className={`st${statusText.startsWith("未处理") ? " open" : ""}`} data-testid="finding-status">{statusText}</span>}
       <b>{problem ? "问题：" : "建议："}</b>{finding.index != null ? `第 ${finding.index + 1} 项：` : ""}{finding.problem}
       {finding.suggestion && <span className="fix-how">改法：{finding.suggestion}</span>}
       {finding.rule_id && (
         <> 违反 <span className="clause" role="button" onClick={() => setOpen(!open)} data-testid={`clause-${finding.rule_id}`}>{finding.rule_id}</span></>
       )}
       {onFix && <button type="button" className="aibtn sm" disabled={fixOff} onClick={() => onFix(finding)} data-testid="fix-finding">让助手照这条改</button>}
+      {onKeep && !keeping && <span className="keep-link" role="button" onClick={() => setKeeping(true)} data-testid="keep-finding">保留这种写法</span>}
+      {onKeep && keeping && (
+        <span className="keep-box">
+          <input className="reason" placeholder="保留的理由（可以不写）" value={reason} onChange={(e) => setReason(e.target.value)} data-testid="keep-finding-reason" />
+          <button type="button" className="btn sm" onClick={() => { onKeep(reason); setKeeping(false); }} data-testid="keep-finding-ok">保留现在的写法</button>
+          <button type="button" className="btn sm" onClick={() => setKeeping(false)}>取消</button>
+        </span>
+      )}
       {open && (
         <span className="clause-body" data-testid="clause-body">
           {rule ? `${rule.id}（${rule.level}）　${rule.text}` : `${finding.rule_id}　这条规则的条文这次没有读到。`}

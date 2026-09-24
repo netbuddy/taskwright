@@ -169,3 +169,46 @@
 .app .finding .clause-body { display: block; margin-top: .2rem; color: #444; background: var(--card); border: 1px solid var(--gap-line); padding: .15rem .4rem; border-radius: .3rem; }
 .app .finding.advice .clause-body { border-color: var(--amber-line); }
 .app .finding .aibtn.sm { font-size: 0.813rem; padding: 0 .4rem; margin-left: .4rem; }
+
+/* 评审页签：批次卡片、发现行（红点问题、琥珀点建议、右侧状态）、就近的保留与改法、规则区的开关 */
+.app .sw-stab .cnt.bad { background: var(--gap); color: #fff; border-radius: .6rem; padding: 0 .35rem; margin-left: .25rem; font-size: .75rem; }
+.app .sw-review { flex: 1; min-height: 0; overflow: auto; padding: .5rem .6rem .8rem; background: var(--dark); display: flex; flex-direction: column; gap: .45rem; font-size: .889rem; }
+.app .sw-rv-top { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.app .sw-rv-top .spacer { flex: 1; }
+.app .sw-rcard { background: var(--card); border: 1px solid var(--line); border-radius: .45rem; padding: .45rem .6rem; }
+.app .sw-rcard.old { opacity: .8; }
+.app .sw-rcard .h { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; cursor: pointer; }
+.app .sw-rcard .b { margin-top: .35rem; display: flex; flex-direction: column; gap: .35rem; }
+.app .sw-rv-item { border-top: 1px dashed var(--line); padding-top: .35rem; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.app .sw-rv-item .lid { font-family: var(--mono, monospace); color: var(--blue); cursor: pointer; }
+.app .sw-rv-f { display: flex; gap: .4rem; align-items: flex-start; width: 100%; padding-left: .3rem; }
+.app .sw-rv-f .t { flex: 1; min-width: 0; }
+.app .sw-rv-f .t [role="button"] { cursor: pointer; }
+.app .dot { width: .45rem; height: .45rem; border-radius: 50%; margin-top: .45rem; flex: none; display: inline-block; }
+.app .dot.p { background: var(--gap); }
+.app .dot.a { background: var(--amber); }
+.app .sw-rv-f .st { white-space: nowrap; font-size: .833rem; }
+.app .sw-rv-f .st.open { color: var(--gap); }
+.app .sw-rv-f .st.fixed { color: var(--ok); }
+.app .sw-rv-f .st.kept { color: var(--amber); }
+.app .sw-rv-f .clause, .app .finding .clause { text-decoration: underline dotted; cursor: pointer; color: var(--blue, #2563eb); }
+.app .sw-rv-f .clause-body { display: block; margin-top: .2rem; color: #444; background: var(--card); border: 1px solid var(--line2); padding: .15rem .4rem; border-radius: .3rem; }
+.app .sw-rv-act { display: flex; flex-wrap: wrap; gap: .35rem; width: 100%; padding-left: .3rem; }
+.app .sw-rv-act .reason, .app .finding .reason { border: 1px solid var(--line2); border-radius: .3rem; padding: .05rem .45rem; font: inherit; font-size: .833rem; min-width: 12rem; }
+.app .err-inline { color: var(--gap); font-size: .833rem; }
+.app .sw-rules { border-top: 1px solid var(--line2); padding-top: .45rem; display: flex; flex-direction: column; gap: .25rem; }
+.app .sw-rule { display: grid; grid-template-columns: 2.2rem 4.4rem 1fr auto; align-items: center; gap: .35rem; }
+.app .sw-rule .rid { font-family: var(--mono, monospace); font-size: .833rem; }
+.app .sw-switch { width: 1.9rem; height: 1rem; border-radius: .5rem; background: var(--line2); position: relative; cursor: pointer; display: inline-block; }
+.app .sw-switch i { position: absolute; top: .1rem; left: .1rem; width: .8rem; height: .8rem; border-radius: 50%; background: #fff; transition: left .15s; }
+.app .sw-switch.on { background: var(--ok); }
+.app .sw-switch.on i { left: 1rem; }
+.app .sw-switch.lock { background: var(--line2); cursor: not-allowed; opacity: .7; }
+.app .chip.bad { color: var(--gap); border-color: var(--gap-line); background: var(--gap-bg); }
+.app .banner-line.kept { background: var(--amber-bg); border: 1px solid var(--amber-line); color: #7a4a06; }
+.app .finding .st { float: right; margin-left: .5rem; }
+.app .finding .st.open { color: var(--gap); }
+.app .finding .keep-link { color: var(--blue); cursor: pointer; margin-left: .4rem; }
+.app .detail [data-f].sw-hit-field .v { outline: .15rem solid var(--ai); outline-offset: .1rem; }
+.app .rerun { font-size: .813rem; color: var(--blue); cursor: pointer; margin-left: .2rem; align-self: center; }
+.app .finding .keep-box { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .2rem; }

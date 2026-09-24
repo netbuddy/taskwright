@@ -27,7 +27,7 @@ export function ItemStatus({ task, item, just, pending }: { task: Task; item: It
       </>
     );
   }
-  const review = reviewState(item);
+  const review = reviewState(item, task);
   const unread = isUnread(item);
   const rCls = review.state === "passed" ? "ok" : review.state === "failed" ? "bad" : "wait";
   // 评审通过时可选规则给的建议条数写在括号里；不通过时写必选规则的问题处数。

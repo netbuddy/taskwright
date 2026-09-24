@@ -78,6 +78,12 @@ export interface CollectionDef {
   needs_review?: boolean;
   /** 这个集合的评审规则清单；没写评审规矩的集合为 null（评审只按字段声明）。 */
   review_rules?: ReviewRule[] | null;
+  /** 规则文件里的全部规则，连同这个任务的开关状态；给评审页签的规则区用。 */
+  all_rules?: (ReviewRule & { state: "required" | "optional" | "off" | "promoted" | string })[] | null;
+  /** 这个任务对这个集合的规则开关。 */
+  rule_switches?: { off: string[]; promote: string[] } | null;
+  /** 规则指纹：规则文件内容加开关算出；为空时不按指纹区分评审记录。 */
+  rules_hash?: string | null;
 }
 
 export interface TaskDefinition {
@@ -100,6 +106,38 @@ export interface Review {
   verdict: "合规" | "不合规" | string;
   findings?: Finding[];
   at?: string;
+  /** 所属的那一次评审（批次）编号；早期记录为空。 */
+  batch_id?: string | null;
+  /** 评审时的规则指纹；早期记录为空。 */
+  rules_hash?: string | null;
+  /** 内容与规则都没变、用户仍要求重评的那一次。 */
+  forced?: boolean;
+}
+
+/** 用户保留了评审不合规的写法（评审豁免）。条目改出新修订后不再作数；撤销后 revoked 为真。 */
+export interface Waiver {
+  revision_no: number;
+  reason: string | null;
+  source?: "detail" | "panel" | string;
+  at?: string;
+  revoked?: boolean;
+}
+
+/** 一次评审（批次）：第几次、谁发起、范围与计数。 */
+export interface ReviewBatch {
+  no: number;
+  batch_id: string;
+  at: string;
+  started_by: "user" | "executor" | string;
+  scope: "pending" | "named" | string | null;
+  items: { item_id: string; revision_no: number }[];
+  forced?: string[];
+  total: number;
+  passed: number;
+  failed: number;
+  unfinished: number;
+  problems: number;
+  advice: number;
 }
 
 /**
@@ -130,6 +168,8 @@ export interface Item {
   fields: Fields;
   sources: Source[];
   reviews: Review[];
+  /** 保留记录（含已撤销的）；旧后端没有这一项。 */
+  waivers?: Waiver[];
   confirmations: Confirmation[];
   confirmation_stale: boolean;
   /** 当前修订上最近一条确认标记是接受（任一依据）；为假就是未读。前端按 confirmations 现算，这两项只作对照。 */
@@ -151,6 +191,8 @@ export interface Task {
   items: Item[];
   /** 任务最新的修订号；还没有修订时是 0。 */
   latest_revision?: number;
+  /** 评审批次，按先后；旧后端没有这一项。 */
+  review_batches?: ReviewBatch[];
 }
 
 export interface Material {
@@ -240,6 +282,9 @@ export interface UiActionNoted {
   /** 与后端对齐后新增：撤销要用的修订序号；确认、撤回确认不产生修订，为 null。 */
   revision_no?: number | null;
   op_id?: string | null;
+  /** 界面操作的种类；评审结束的那条是 request_review，另带 review 计数。 */
+  kind?: string | null;
+  review?: { total: number; passed: number; failed: number; unfinished: number; problems: number; advice: number } | null;
 }
 
 export interface SystemNote {
@@ -340,6 +385,9 @@ export interface ReviewRecorded {
   findings: Finding[];
   /** 用户在界面上发起的评审是那次操作的编号，执行者经工具发起的为 null。 */
   op_id?: string | null;
+  batch_id?: string | null;
+  rules_hash?: string | null;
+  forced?: boolean;
   completion: Completion | null;
 }
 
@@ -366,6 +414,37 @@ export interface ReviewProgress {
   current: string[];
   /** 刚评完的条目；开始时那条为 null。 */
   item_id: string | null;
+  completion: Completion | null;
+}
+
+/** 一次评审（批次）结束时的摘要。 */
+export type ReviewBatchEvent = ReviewBatch & { seq: number; task_id: string; completion: Completion | null };
+
+/** 用户保留或撤销保留：每项是条目与那次修订。 */
+export interface ReviewWaived {
+  seq: number;
+  at: string;
+  task_id: string;
+  items: { item_id: string; revision_no: number }[];
+  reason?: string | null;
+  source?: string | null;
+  op_id?: string | null;
+  completion: Completion | null;
+}
+
+/** 用户改了一个集合的评审规则开关：带这个集合评审部分的新样子。 */
+export interface ReviewRulesChanged {
+  seq: number;
+  at: string;
+  task_id: string;
+  collection: string;
+  off: string[];
+  promote: string[];
+  op_id?: string | null;
+  review_rules?: ReviewRule[] | null;
+  all_rules?: CollectionDef["all_rules"];
+  rule_switches?: CollectionDef["rule_switches"];
+  rules_hash?: string | null;
   completion: Completion | null;
 }
 
@@ -413,11 +492,16 @@ export type LibraryEvent =
   | { event: "review_unfinished"; data: ReviewUnfinished }
   | { event: "review_progress"; data: ReviewProgress }
   | { event: "review_finished"; data: ReviewFinished }
+  | { event: "review_batch"; data: ReviewBatchEvent }
+  | { event: "review_waived"; data: ReviewWaived }
+  | { event: "review_unwaived"; data: ReviewWaived }
+  | { event: "review_rules_changed"; data: ReviewRulesChanged }
   | { event: "confirmation_recorded"; data: ConfirmationRecorded }
   | { event: "item_viewed"; data: ItemViewed };
 
 export const LIBRARY_EVENTS = [
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed",
 ] as const;
 
 export interface WorkStarted {
@@ -541,7 +625,8 @@ export interface MessageRequest {
 }
 
 /** request_review：请评审者评审；targets 为空列表时评全部待评审的条目。后端核对通过就回应，评审在后台跑。 */
-export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review";
+export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review"
+  | "waive_review" | "unwaive_review" | "set_review_rules";
 
 export interface ActionRequest {
   client_id: string;
@@ -551,6 +636,8 @@ export interface ActionRequest {
   targets: { item_id?: string; base_revision?: number; revision_no?: number }[];
   fields?: Fields;
   notify_executor: boolean;
+  /** request_review：点名的条目在当前修订、当前规则下已经评过也再评一次（「仍要重评」）。 */
+  force?: boolean;
 }
 
 // ───────────── 8 错误 ─────────────
