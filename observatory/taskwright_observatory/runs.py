@@ -233,7 +233,12 @@ def read_session_file(path: Path) -> dict:
     header = next((r for r in records if r.get("type") == "session"), {})
     messages = []
     customs = []
+    name = ""
     for record in records:
+        # 用户在产品网页里给会话起的名字记在 session_info 条目里，可以改好几次，取最后一次（与产品后端的取法相同）。
+        if record.get("type") == "session_info" and record.get("name"):
+            name = str(record["name"])
+            continue
         if record.get("type") == "custom_message":
             # 扩展写进会话的自定义消息（例如打开会话时的任务现状消息）。交给模型时是用户角色，但不是人打的字。
             customs.append({
@@ -258,6 +263,7 @@ def read_session_file(path: Path) -> dict:
         "会话编号": str(header.get("id") or ""),
         "会话文件": path.name,
         "会话文件路径": shorten_home(str(path)),
+        "会话名": name,
         "归档名": path.parent.name,
         "开始时刻": epoch_from_iso(header.get("timestamp")),
         # pi 在会话文件头上记的当前工作目录，也就是这条会话所在的任务目录。
@@ -809,6 +815,9 @@ def build_sessions(archive_dir: Path) -> list[dict]:
             "是否重启过": len(own) > 1,
             "启动": [{k: v for k, v in l.items() if k != "事件"} for l in own],
             "会话文件": session_file["会话文件路径"] if session_file else "",
+            "会话名": session_file["会话名"] if session_file else "",
+            # 归档目录自己的名字。按任务分目录存归档时它就是任务目录名，会话文件缺失时拿它对任务（见 api.py）。
+            "归档目录名": Path(archive_dir).name,
             "会话文件条目数": len(session_file["消息"]) if session_file else None,
             "扩展写入的消息": session_file.get("自定义消息", []) if session_file else [],
             "工作目录": session_file["工作目录"] if session_file else "",
@@ -839,6 +848,8 @@ def build_sessions(archive_dir: Path) -> list[dict]:
             "是否重启过": False,
             "启动": [{k: v for k, v in launch.items() if k != "事件"}],
             "会话文件": "",
+            "会话名": "",
+            "归档目录名": Path(archive_dir).name,
             "会话文件条目数": None,
             "工作目录": "",
             "开始时刻": launch["启动时刻"],

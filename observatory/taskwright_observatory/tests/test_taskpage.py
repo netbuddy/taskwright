@@ -1,18 +1,20 @@
 """任务页（taskpage.py）、比对函数（diffs.py）与启动补记的单元测试。
 
-测这些事：阶段的判定与合并（以轮为单位、并行调用、没有工具调用的轮、用户的阶段）；归类声明的读取与缺省；
-需要注意的每一条判据；页头概括句与流程末端；知识的使用的四种归类；跨会话任务的拼接；旧库表的转换与
+测这些事：按轮归类的判定与合并（本页已不再输出，判定函数留待后端改写时清理，用例照旧保留）；归类声明的读取与缺省；
+按运行排的流程（每次运行一行的计数、应答摘要与关键动作，用户操作与任务现状按时刻插行，界面点击挂到它触发的运行上）；
+需要注意的每一条判据；页头统计句、概括句与流程末端；知识的使用的四种归类；跨会话任务按会话分段；旧库表的转换与
 对不上时的提示；自动重试与中途插话；新库表的看板（完成条件经 agent 的核对函数核对）；文字与列表比对；
 后端在启动时补记的知识仓库摘要值与上下文文件。
 
-阶段判定用手写的、与读取接口同形状的轮；其余用 fixtures/ 下的中性夹具，新库表的库由 agent 里真实的核心函数
+判定与流程用手写的、与读取接口同形状的轮；其余用 fixtures/ 下的中性夹具，新库表的库由 agent 里真实的核心函数
 写出（要用 node，本机没有 node 时那几条跳过）。
 
 有几样不在这里测，它们在前端（web/js/taskpage.js），这个仓库的测试只用 Python 标准库，没有跑 JavaScript 的
 测试环境，所以靠浏览器里的走查核对，结论写在结果文件里：按字段类型画一个值；时间条上「真实宽度不到最小可见宽度
-就拉宽并打斜纹」；窄带在各种展开状态下的对齐。
+就拉宽并打斜纹」；运行表的列可以隐藏、选择记在浏览器本地。
 
-跑法：在代码仓目录下运行 `python3 -m unittest taskwright_observatory.tests.test_taskpage`。
+跑法：在代码仓的 observatory 目录下、PYTHONPATH 含 server 目录时（新库表那几条要用 server/tests 里的造库函数）运行
+`python3 -m unittest taskwright_observatory.tests.test_taskpage`；scripts/test-all.sh 已经这样设好。
 """
 
 from __future__ import annotations
@@ -72,12 +74,21 @@ def stages_of(runs, decl=DECL):
     return taskpage.build_stages(runs, decl, RULES, None, WS, "")
 
 
+def rows_of(runs):
+    """手写的运行照页面装配那样变成流程里的运行行。"""
+    return [taskpage.run_row(r) for r in runs]
+
+
+def alerts_of(runs, closed=None, decl=DECL):
+    return taskpage.build_alerts(rows_of(runs), decl, closed)
+
+
 class StageTests(unittest.TestCase):
-    """阶段的判定与合并。"""
+    """按轮归类的判定与合并。本页已不再输出这一层，判定函数留待后端改写时清理，用例照旧保留。"""
 
     def test_一轮只属于一个阶段_按第一个工具调用判(self):
         """并行的两个调用落在同一轮里，这一轮按第一个调用判，第二个不另起阶段，只把它的阶段名接在「，同时」后面。"""
-        stages, _, _ = stages_of([run(1, [
+        stages = stages_of([run(1, [
             turn(1, [call("read", f"{WS}/.pi/skills/demo/SKILL.md"), call("ls", "inputs")]),
             turn(2, [], text="好了。", stop="stop")])])
         names = [s["名称"] for s in stages]
@@ -88,7 +99,7 @@ class StageTests(unittest.TestCase):
         self.assertIn("inputs", stages[1]["一句话"])
 
     def test_并行调用的阶段名_几种用顿号_被拒的与同种的不接(self):
-        stages, _, _ = stages_of([run(1, [
+        stages = stages_of([run(1, [
             turn(1, [call("read", "inputs/材料.md"), call("read", "inputs/材料二.md"),
                      call("read", "docs/domain-knowledge/规矩.md"), call("ls", "docs"),
                      call("read", "inputs/没有.md", rejected=True)]),
@@ -98,7 +109,7 @@ class StageTests(unittest.TestCase):
         self.assertEqual(len(stages[1]["轮"]), 2)                            # 合并照旧按第一个调用判
 
     def test_连着的同类轮合并_不同类就分开(self):
-        stages, _, _ = stages_of([run(1, [
+        stages = stages_of([run(1, [
             turn(1, [call("read", "docs/domain-knowledge/规矩.md")]),
             turn(2, [call("read", "inputs/材料.md")]),
             turn(3, [call("read", "inputs/材料二.md")]),
@@ -111,19 +122,19 @@ class StageTests(unittest.TestCase):
         self.assertEqual(stages[3]["条目"], ["UC-001"])
 
     def test_没有工具调用的轮_说了话与没说话(self):
-        stages, _, _ = stages_of([run(1, [turn(1, [], text="", stop="stop")])])
+        stages = stages_of([run(1, [turn(1, [], text="", stop="stop")])])
         self.assertEqual(stages[1]["名称"], "没有说话也没有调用工具")
-        stages, _, _ = stages_of([run(1, [turn(1, [], text="你好。", stop="stop")])])
+        stages = stages_of([run(1, [turn(1, [], text="你好。", stop="stop")])])
         self.assertEqual(stages[1]["名称"], "对用户说话")
 
     def test_用户说的话是用户的阶段(self):
-        stages, _, _ = stages_of([run(1, [turn(1, [], text="好。", stop="stop")], prompt="你好")])
+        stages = stages_of([run(1, [turn(1, [], text="好。", stop="stop")], prompt="你好")])
         self.assertEqual((stages[0]["参与者"], stages[0]["类型"], stages[0]["全文"]), ("用户", "用户发话", "你好"))
         self.assertEqual(stages[1]["触发"]["编号"], stages[0]["编号"])
         self.assertTrue(stages[1]["触发"]["紧挨着吗"])
 
     def test_被拒的轮判成调用失败_名字取自工具(self):
-        stages, _, _ = stages_of([run(1, [turn(i, [call("read", f"inputs/{i}.md", rejected=True)])
+        stages = stages_of([run(1, [turn(i, [call("read", f"inputs/{i}.md", rejected=True)])
                                           for i in range(1, 4)])])
         failed = stages[1]
         self.assertEqual((failed["名称"], failed["类型"], failed["结果"]), ("read被拒", "异常", "失败"))
@@ -131,7 +142,7 @@ class StageTests(unittest.TestCase):
         self.assertIn("文件不存在（3 次）", failed["一句话"])
 
     def test_路径归不上类与工具没有登记(self):
-        stages, _, _ = stages_of([run(1, [turn(1, [call("read", "README.md")]),
+        stages = stages_of([run(1, [turn(1, [call("read", "README.md")]),
                                           turn(2, [call("bash")])])])
         self.assertEqual([s["名称"] for s in stages[1:]], ["读文件", "用了工具 bash"])
 
@@ -177,7 +188,7 @@ class AlertTests(unittest.TestCase):
     """需要注意：只列由事实直接得出的异常。"""
 
     def texts(self, runs):
-        return [n["文字"] for n in stages_of(runs)[1]]
+        return [n["文字"] for n in alerts_of(runs)]
 
     def test_没有异常时一条都没有(self):
         self.assertEqual(self.texts([run(1, [turn(1, [call("save_revision", written=True)]),
@@ -220,9 +231,17 @@ class AlertTests(unittest.TestCase):
         texts = self.texts([run(1, [turn(1, [again]), turn(2, [], text="错了。", stop="stop")])])
         self.assertTrue(any("仍然被拒绝" in t for t in texts))
 
-    def test_每一条都指向一个阶段(self):
-        _, notes, _ = stages_of([run(1, [turn(1, [call("save_revision", written=True)])])])
-        self.assertTrue(all(n["去哪"].startswith("stage-") for n in notes))
+    def test_每一条都指向一次运行里的一轮(self):
+        notes = alerts_of([run(1, [turn(1, [call("save_revision", written=True)])])])
+        self.assertTrue(notes)
+        self.assertTrue(all(n["去哪"] == "turn-1-1" for n in notes))
+
+    def test_被拒的说法落在运行上_不提阶段(self):
+        fixed = call("save_revision", rejected=True,
+                     改正={"运行序号": 2, "轮号": 0, "改正成功": True, "有没有再试": True})
+        notes = alerts_of([run(3, [turn(1, [fixed]), turn(2, [], text="错了。", stop="stop")])])
+        self.assertEqual(notes[0]["文字"], "第 3 次运行里有 1 次调用被工具拒绝了，后来在第 2 次运行的第 1 轮改对了。")
+        self.assertEqual(notes[0]["去哪"], "turn-3-1")
 
 
 class HeadAndTailTests(unittest.TestCase):
@@ -231,17 +250,37 @@ class HeadAndTailTests(unittest.TestCase):
     HEAD = {"会话数": 1, "终态": "正常结束"}
 
     def test_概括句按模板拼(self):
-        stages, _, _ = stages_of([run(1, [turn(1, [call("save_revision", written=True)]),
-                                          turn(2, [], text="好了。", stop="stop")])])
+        rows = rows_of([run(1, [turn(1, [call("save_revision", written=True)]),
+                                turn(2, [], text="好了。", stop="stop")], prompt="请整理材料。")])
         board = {"格式": "新格式", "总条目数": 3,
                  "集合": [{"名称": "用例", "现有条目数": 2}, {"名称": "约束", "现有条目数": 1}],
                  "完成条件": [{"满足": True}, {"满足": False}]}
-        text = taskpage.summary_sentence(self.HEAD, board, stages, "任务")
+        text = taskpage.summary_sentence(self.HEAD, board, rows, "任务")
         self.assertEqual(text, "这份交付物现在有 3 个条目（用例 2 个、约束 1 个）；要完成任务还差 1 项；"
-                               "助手走过 2 个阶段；最后一个阶段是「对用户说话」；这条会话的终态是「正常结束」。")
-        self.assertIn("所在的任务目录里还没有任务记录", taskpage.summary_sentence(self.HEAD, None, stages, "会话"))
+                               "助手一共运行了 1 次，最后一次运行由用户的「请整理材料。」触发；这条会话的终态是「正常结束」。")
+        self.assertIn("所在的任务目录里还没有任务记录", taskpage.summary_sentence(self.HEAD, None, rows, "会话"))
+        self.assertIn("助手一次也没有运行过", taskpage.summary_sentence(self.HEAD, None, [], "会话"))
         board["完成条件"][0]["满足"] = None
-        self.assertIn("这一次核对不了", taskpage.summary_sentence(self.HEAD, board, stages, "任务"))
+        self.assertIn("这一次核对不了", taskpage.summary_sentence(self.HEAD, board, rows, "任务"))
+
+    def test_页头统计句与保存修订次数(self):
+        rows = rows_of([run(1, [turn(1, [call("save_revision", written=True), call("save_revision", rejected=True)]),
+                                turn(2, [call("save_revision", written=True)]),
+                                turn(3, [], text="好了。", stop="stop")])])
+        details = [{"运行次数": 1, "轮数": 3, "工具调用次数": 3, "被拒次数": 1, "开始时刻": "", "结束时刻": "",
+                    "所在任务目录": {}, "启动": []}]
+        head = taskpage.build_head(details, None, rows, [], {})
+        self.assertEqual(head["保存修订次数"], 2)                     # 被拒的那一次不算
+        self.assertEqual(head["统计句"], "1 次运行、3 轮、3 次工具调用、2 次保存修订，其中 1 次调用被工具拒绝")
+        details[0]["被拒次数"] = 0
+        self.assertTrue(taskpage.build_head(details, None, rows, [], {})["统计句"].endswith("，没有调用被工具拒绝"))
+
+    def test_跨会话时起止取有值的那一条(self):
+        """后一条会话一次也没有运行过、没有结束时刻时，页头的结束时刻取前一条会话的。"""
+        details = [{"运行次数": 1, "开始时刻": "2026-01-01 00:00:00", "结束时刻": "2026-01-01 00:10:00", "启动": []},
+                   {"运行次数": 0, "开始时刻": "2026-01-01 01:00:00", "结束时刻": "", "启动": []}]
+        head = taskpage.build_head(details, None, [], [], {})
+        self.assertEqual((head["开始时刻"], head["结束时刻"]), ("2026-01-01 00:00:00", "2026-01-01 00:10:00"))
 
     def test_末端如实照搬最后一句话_不替它判断(self):
         tail = taskpage.tail_state([run(1, [turn(1, [], text="请确认发票红冲能不能退？", stop="stop")])])
@@ -250,6 +289,62 @@ class HeadAndTailTests(unittest.TestCase):
         tail = taskpage.tail_state([run(1, [turn(1, [call("save_revision", written=True)])], said="")])
         self.assertFalse(tail["有没有说话"])
         self.assertIn("没有对用户说过任何话", tail["引子"])
+
+
+class FlowTests(unittest.TestCase):
+    """按运行排的流程：一次运行一行，扩展写进会话的消息按时刻插行，界面点击挂到它触发的那次运行上。"""
+
+    @staticmethod
+    def timed(number, at, prompt, said, turns):
+        one = run(number, turns, prompt=prompt, said=said)
+        one["提示"]["时刻"] = at
+        one["会话序号"] = 1
+        return one
+
+    @staticmethod
+    def ext(kind, at, text, entry):
+        return {"类型": kind, "时刻秒": at, "文字": text, "条目编号": entry}
+
+    def flow(self, runs, messages):
+        detail = {"会话编号": "s1", "会话名": "整理需求", "开始时刻": "", "扩展写入的消息": messages}
+        return taskpage.build_flow([detail], runs)
+
+    def test_一次运行一行_用户操作与任务现状按时刻插进去(self):
+        runs = [self.timed(1, 100.0, "请整理材料。", "整理好了。", [turn(1, [call("save_revision", written=True)]),
+                                                                   turn(2, [], text="整理好了。", stop="stop")]),
+                self.timed(2, 300.0, "改一下 UC-001。", "改好了。", [turn(1, [], text="改好了。", stop="stop")])]
+        messages = [self.ext("taskwright-task-status", 50.0, "【开头的说明】任务「演示」的状况。", "e0"),
+                    self.ext("taskwright-user-edit", 200.0, "界面操作（不是用户打的字）：用户改了 UC-001 的「名称」。", "e1")]
+        seg = self.flow(runs, messages)[0]
+        self.assertEqual(seg["会话名"], "整理需求")
+        self.assertEqual([r["种类"] for r in seg["行"]], ["任务现状", "运行", "用户操作", "运行"])
+        edit = seg["行"][2]
+        self.assertEqual(edit["摘要"], "用户改了 UC-001 的「名称」。")
+        self.assertEqual(edit["编号"], "ext-e1")
+        self.assertEqual(seg["行"][0]["摘要"], "任务「演示」的状况。")
+        first = seg["行"][1]
+        self.assertEqual((first["轮数"], first["工具调用次数"], first["保存修订次数"], first["被拒次数"]), (2, 1, 1, 0))
+        self.assertEqual(first["关键动作"], ["save_revision 1 次"])      # 手写的调用没有中文名，照原名写
+        self.assertEqual(first["应答摘要"], "整理好了。")
+
+    def test_界面点击挂到它触发的那次运行上_对不上的单独一行(self):
+        runs = [self.timed(1, 100.0, "我采纳这个建议。", "好的。", [turn(1, [], text="好的。", stop="stop")])]
+        messages = [self.ext("taskwright-ui-click", 99.6, "界面点击（不是用户打的字）：用户选了「采纳」。", "c1"),
+                    self.ext("taskwright-ui-click", 500.0, "界面点击（不是用户打的字）：用户选了「不知道」。", "c2")]
+        rows = self.flow(runs, messages)[0]["行"]
+        self.assertEqual([r["种类"] for r in rows], ["运行", "界面点击"])
+        self.assertEqual(rows[0]["由界面点击触发"], "用户选了「采纳」。")
+        self.assertIn("对不上", rows[1]["说明"])
+
+    def test_应答摘要取前80个字_没说话如实写(self):
+        long = "甲" * 100
+        row = taskpage.run_row(self.timed(1, 1.0, "问" * 70, long, [turn(1, [], text=long, stop="stop")]))
+        self.assertEqual(row["应答摘要"], "甲" * 80 + "…")
+        self.assertEqual(row["用户的话摘要"], "问" * 60 + "…")
+        silent = taskpage.run_row(self.timed(1, 1.0, "请整理。", "", [turn(1, [call("save_revision", rejected=True)])]))
+        self.assertFalse(silent["有没有对用户说话"])
+        self.assertEqual(silent["应答摘要"], "")
+        self.assertEqual(silent["关键动作"], ["被拒 1 次"])
 
 
 class KnowledgeTests(unittest.TestCase):
@@ -269,14 +364,17 @@ class KnowledgeTests(unittest.TestCase):
                              {"名字": "other", "文件": str(root / ".pi/skills/other/SKILL.md")}]},
                          "上下文文件": {"照 pi 的发现规则在磁盘上查到的": [], "为什么取不到": "RPC 没有这项。",
                                         "命令行关掉了上下文文件吗": False}}]
-            stages, _, _ = taskpage.build_stages([run(1, [
+            rows = rows_of([run(1, [
                 turn(1, [call("read", str(root / ".pi/skills/demo/SKILL.md"),
                               相对路径=".pi/skills/demo/SKILL.md")]),
                 turn(2, [call("create_task", 参数={"definition_path": "docs/task-definitions/demo.json"})]),
-                turn(3, [], text="好了。", stop="stop")])], DECL, RULES, None, str(root), "")
-            k = taskpage.build_knowledge(str(root), stages, DECL, taskpage.launch_facts(launches), RULES)
+                turn(3, [], text="好了。", stop="stop")])])
+            k = taskpage.build_knowledge(str(root), rows, DECL, taskpage.launch_facts(launches), RULES)
             uses = {r["文件"]: r["用法"] for r in k["文件"]}
             self.assertEqual(uses[".pi/skills/demo/SKILL.md"], taskpage.USE_READ)
+            read = next(r for r in k["文件"] if r["文件"] == ".pi/skills/demo/SKILL.md")
+            self.assertEqual(read["运行序号"], 1)                             # 点一行跳到读它的那次运行
+            self.assertIn("在第 1 次运行里读过它 1 次", read["一句话"])
             self.assertEqual(uses["docs/task-definitions/demo.json"], taskpage.USE_TOOL)
             self.assertEqual(uses[".pi/skills/other/SKILL.md"], taskpage.USE_PROMPT)
             self.assertEqual(uses["docs/templates/demo.md"], taskpage.USE_NONE)
@@ -300,10 +398,10 @@ class KnowledgeTests(unittest.TestCase):
                          "已加载的 skill": {"取得到吗": True, "skill": [{"名字": "p", "文件": str(platform / "SKILL.md")}]}}]
             facts = taskpage.launch_facts(launches)
             self.assertEqual(facts["平台 skill"], {str(platform / "SKILL.md"): "agent/prompts/skills/p/SKILL.md"})
-            stages, _, _ = taskpage.build_stages([run(1, [
+            rows = rows_of([run(1, [
                 turn(1, [call("read", str(platform / "SKILL.md"), 相对路径=str(platform / "SKILL.md"))]),
-                turn(2, [], text="好了。", stop="stop")])], DECL, RULES, None, str(root), "")
-            k = taskpage.build_knowledge(str(root), stages, DECL, facts, RULES)
+                turn(2, [], text="好了。", stop="stop")])])
+            k = taskpage.build_knowledge(str(root), rows, DECL, facts, RULES)
             row = next(r for r in k["文件"] if r["种类"] == "平台执行方法（skill）")
             self.assertEqual(row["文件"], "代码仓里的 agent/prompts/skills/p/SKILL.md")
             self.assertEqual(row["用法"], taskpage.USE_READ)
@@ -367,7 +465,7 @@ class LaunchNoteTests(unittest.TestCase):
 class StitchTests(unittest.TestCase):
     """跨会话的任务：各条会话的运行按时间接起来，运行序号在这一页里连续编。"""
 
-    def test_两条会话接起来(self):
+    def test_两条会话按会话分段_运行序号连续编(self):
         def detail(name, runs_):
             return {"会话编号": name, "归档名": name, "运行": runs_, "启动": [{}], "运行次数": len(runs_),
                     "轮数": 1, "工具调用次数": 0, "被拒次数": 0, "pi 进程启动次数": 1, "终态": "正常结束",
@@ -385,12 +483,12 @@ class StitchTests(unittest.TestCase):
             task_workspace = {}
         page = taskpage.assemble(NoTasks(), [detail("甲", [raw_run(1, "第一句"), raw_run(2, "第二句")]),
                                              detail("乙", [raw_run(1, "第三句")])], "任务", "甲", None)
-        users = [s for s in page["阶段"] if s["参与者"] == "用户"]
-        self.assertEqual([s["运行序号"] for s in users], [1, 2, 3])
-        self.assertEqual(len({s["编号"] for s in page["阶段"]}), len(page["阶段"]))
-        executors = [s for s in page["阶段"] if s["参与者"] == "助手"]
-        self.assertIn("第 2 条会话", executors[2]["启动说明"])      # 启动节点挂在执行者那条线上
-        self.assertEqual([s["启动说明"] for s in users], ["", "", ""])
+        self.assertEqual([(seg["会话编号"], seg["运行次数"]) for seg in page["流程"]], [("甲", 2), ("乙", 1)])
+        rows = taskpage.run_rows(page["流程"])
+        self.assertEqual([r["运行序号"] for r in rows], [1, 2, 3])
+        self.assertEqual([r["用户的话"] for r in rows], ["第一句", "第二句", "第三句"])
+        self.assertEqual(len({r["编号"] for r in rows}), 3)
+        self.assertIn("第 2 条会话", rows[2]["启动说明"])
         self.assertEqual(page["页头"]["会话数"], 2)
         self.assertEqual(page["页头"]["运行次数"], 3)
 
@@ -409,12 +507,10 @@ class LegacyFixtureTests(unittest.TestCase):
     def tearDownClass(cls):
         cls._temp.cleanup()
 
-    def test_写入阶段叫写任务字段_改动带版本(self):
+    def test_旧库表的改动带版本(self):
         page = taskpage.page_for_session(self.index, SESSION_ID)
-        writes = [s for s in page["阶段"] if s["角色"] == "写入"]
-        self.assertTrue(writes)
-        self.assertTrue(all(s["名称"] == "写任务字段" for s in writes))
-        blocks = [b for s in writes for t in s["轮"] for c in t["调用"] for b in c["改动"]]
+        blocks = [b for r in taskpage.run_rows(page["流程"]) for t in r["轮"] for c in t["调用"] for b in c["改动"]]
+        self.assertTrue(blocks)
         self.assertTrue(all(b["旧库表"] for b in blocks))
         self.assertEqual(blocks[0]["操作"][0]["版本"], [None, 1])
         self.assertEqual(blocks[-1]["操作"][0]["版本"], [1, 2])
@@ -422,7 +518,6 @@ class LegacyFixtureTests(unittest.TestCase):
         self.assertEqual([p["标记"] for p in edit["段"]], ["同", "增"])
         self.assertEqual(page["看板"]["格式"], "旧格式")
         self.assertIn("默认归类声明", page["页头"]["声明说明"])
-        self.assertTrue(all(s["一句话"].startswith("助手保存了") for s in writes))
         self.assertFalse(page["页头"]["材料目录是任务定义登记的"])
 
     def test_调用编号在修订清单里对不上时如实写(self):
@@ -430,14 +525,14 @@ class LegacyFixtureTests(unittest.TestCase):
         legacy = self.index.task_detail(page["任务的键"])
         broken = copy.deepcopy(legacy)
         broken["修订"] = []
-        stages = copy.deepcopy(page["阶段"])
-        for s in stages:
-            for t in s["轮"]:
+        rows = copy.deepcopy(taskpage.run_rows(page["流程"]))
+        for r in rows:
+            for t in r["轮"]:
                 for c in t["调用"]:
                     for b in c["改动"]:
                         b.pop("对不上", None)
-        taskpage.fill_old_versions(stages, broken)
-        notes = [b.get("对不上") for s in stages for t in s["轮"] for c in t["调用"] for b in c["改动"]]
+        taskpage.fill_old_versions(rows, broken)
+        notes = [b.get("对不上") for r in rows for t in r["轮"] for c in t["调用"] for b in c["改动"]]
         self.assertTrue(notes and all("找不到对应的修订记录" in n for n in notes))
 
     def test_写入工具接受了可是库里没有事件(self):
@@ -489,22 +584,22 @@ class RetryAndSteerTests(unittest.TestCase):
             return taskpage.page_for_session(index, index.sessions[0]["会话编号"])
 
     def test_自动重试标在重试那一轮(self):
-        turns = [t for s in self.page("runs重试")["阶段"] for t in s["轮"]]
+        turns = [t for r in taskpage.run_rows(self.page("runs重试")["流程"]) for t in r["轮"]]
         notes = [bool(t["自动重试说明"]) for t in turns]
         self.assertEqual(notes, [False, True, False])
         self.assertIn("turnIndex 是 0", turns[1]["自动重试说明"])
-        # 出错的那一轮没有说话也没有调用工具，那一句话写出出错的说明。
-        first = next(s for s in self.page("runs重试")["阶段"] if s["参与者"] == "助手")
-        self.assertIn("出错", first["一句话"])
+        # 出错的那一轮没有说话也没有调用工具，这一轮写出出错的说明。
+        self.assertTrue(turns[0]["出错说明"])
 
     def test_插话落在它进来的那一轮_运行不断开(self):
         page = self.page("runs插话")
-        turns = [t for s in page["阶段"] for t in s["轮"]]
+        rows = taskpage.run_rows(page["流程"])
+        turns = [t for r in rows for t in r["轮"]]
         self.assertEqual([len(t["插话"]) for t in turns], [0, 1, 0])
         steer = turns[1]["插话"][0]
         self.assertEqual(steer["种类"], "插话（steer）")
         self.assertEqual(steer["原文"], "顺便把修改意见也记成：要点明范围。")
-        self.assertEqual(len([s for s in page["阶段"] if s["参与者"] == "用户"]), 1)
+        self.assertEqual(len(rows), 1)
 
 
 def build_current_workspace(root: Path) -> Path:
@@ -551,7 +646,7 @@ class CurrentFormatTests(unittest.TestCase):
         self.assertEqual([v["标签"] for v in rows["UC-001"]["全部版本"]], ["修订 1", "修订 2"])
 
     def test_修改的操作带改前改后与比对_标题取自条目(self):
-        blocks = [b for s in self.page["阶段"] for t in s["轮"] for c in t["调用"] for b in c["改动"]]
+        blocks = [b for r in taskpage.run_rows(self.page["流程"]) for t in r["轮"] for c in t["调用"] for b in c["改动"]]
         self.assertEqual(blocks[0]["类别"], "任务的变化")
         second = next(b for b in blocks if b.get("修订序号") == 2)
         edit = next(op for op in second["操作"] if op["条目编号"] == "UC-001")
@@ -565,7 +660,7 @@ class CurrentFormatTests(unittest.TestCase):
         self.assertEqual(refs["改后"], ["UC-001"])
 
     def test_被拒的调用没有改动_也不算对不上(self):
-        calls = [c for s in self.page["阶段"] for t in s["轮"] for c in t["调用"]]
+        calls = [c for r in taskpage.run_rows(self.page["流程"]) for t in r["轮"] for c in t["调用"]]
         rejected = next(c for c in calls if c["编号"] == "call-rej")
         self.assertTrue(rejected["被拒"])
         self.assertEqual((rejected["改动"], rejected["对不上"]), ([], ""))
@@ -574,12 +669,30 @@ class CurrentFormatTests(unittest.TestCase):
         uses = {r["文件"]: r["用法"] for r in self.page["知识仓库"]["文件"]}
         self.assertEqual(uses.get("docs/task-definitions/demo.json"), taskpage.USE_TOOL)
 
-    def test_写交付物的标题句只给个数(self):
-        writes = [s for s in self.page["阶段"] if s["角色"] == "写入"]
-        self.assertTrue(writes)
-        for stage in writes:
-            self.assertRegex(stage["一句话"], r"^助手保存了 \d+ 次：")
-            self.assertNotIn("UC-", stage["一句话"])                          # 条目编号只在小步里
+    def test_运行行的保存修订次数与关键动作(self):
+        rows = taskpage.run_rows(self.page["流程"])
+        for r in rows:
+            calls = [c for t in r["轮"] for c in t["调用"]]
+            saved = sum(1 for c in calls if c["工具"] == "save_revision" and c["有没有执行结果"] and not c["被拒"])
+            self.assertEqual(r["保存修订次数"], saved)
+            self.assertEqual(r["被拒次数"], sum(1 for c in calls if c["被拒"]))
+            if saved:
+                self.assertIn(f"保存修订 {saved} 次", r["关键动作"])
+            if r["被拒次数"]:
+                self.assertIn(f"被拒 {r['被拒次数']} 次", r["关键动作"])
+        self.assertTrue(any(r["保存修订次数"] for r in rows))
+        self.assertEqual(self.page["页头"]["保存修订次数"], sum(r["保存修订次数"] for r in rows))
+
+    def test_页面数据里没有阶段这个字段(self):
+        def keys(value):
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    yield k
+                    yield from keys(v)
+            elif isinstance(value, list):
+                for v in value:
+                    yield from keys(v)
+        self.assertEqual([k for k in keys(self.page) if "阶段" in k], [])
 
     def test_新库表的任务页头标出材料目录是任务定义登记的(self):
         self.assertTrue(self.page["页头"]["材料目录是任务定义登记的"])

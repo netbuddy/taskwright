@@ -58,7 +58,7 @@ export async function renderHealth() {
     `${scope === "all" ? " selected" : ""}>全部会话</option>` +
     options.filter((one) => one["会话编号"]).map((one) =>
       `<option value="${esc(one["会话编号"])}"${scope === one["会话编号"] ? " selected" : ""}>` +
-      `只看归档名「${esc(one["名字"])}」${esc(one["开始时刻"])} 这一次` +
+      `只看会话「${esc(one["名字"])}」${esc(one["开始时刻"])} 这一次` +
       `${one["启动失败"] ? "（pi 没有启动起来）" : ""}` +
       `</option>`).join("") + `</select>`;
 

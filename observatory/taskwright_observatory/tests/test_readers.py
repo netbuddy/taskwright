@@ -13,7 +13,8 @@
 另有一份 `fixtures/runs并行/`，专门覆盖两种真实归档里还没有出现过的情形：同一轮里两次工具调用
 在时间上重叠（并行执行），以及同一轮里因为自动重试出现两次模型请求。它同样是造出来的中性数据。
 
-测这些事：会话与任务的对应、修订的投影、被拒与改正的分组、重启的识别、运行与轮的划界、
+测这些事：会话与任务的对应、会话名的取法与会话列表的找会话字段、启动时传 runs 上一级目录的展开与任务目录的默认值、
+修订的投影、被拒与改正的分组、重启的识别、运行与轮的划界、
 提示来源的识别、轮号的取用规则、第二级链接的对应规则、时间条各段的起止取自收到时刻、
 缺收到时刻索引时不画时间条、并行的工具调用在一轮里怎么归组、「带的消息」两个来源怎么取用。
 
@@ -28,12 +29,14 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 from taskwright_observatory import runs as runs_module
+from taskwright_observatory.__main__ import default_workspaces_dir, expand_archive_dirs
 from taskwright_observatory.api import Index
 from taskwright_observatory.langfuse import LangfuseLinks, count_input_messages
 
@@ -296,6 +299,60 @@ class ReaderTests(unittest.TestCase):
         for one in self.session["运行"]:
             self.assertEqual(len(one["用户消息"]), 1)
             self.assertTrue(one["用户消息"][0]["这条是不是触发这次运行的那条"])
+
+
+class FindSessionTests(unittest.TestCase):
+    """找会话：会话名取自会话文件里最后一条 session_info，会话列表每行带任务名与会话名；
+    启动时传 runs 这一层，下面每个含 pi-events 的子目录都收进来。"""
+
+    def setUp(self):
+        self._temp = tempfile.TemporaryDirectory()
+        self.root = Path(self._temp.name)
+
+    def tearDown(self):
+        self._temp.cleanup()
+
+    def test_会话名取最后一次起的名字_列表行带任务名与会话名(self):
+        archive = self.root / "runs" / "任务目录"
+        shutil.copytree(FIXTURE_RUNS, archive)
+        session_file = next((archive / "pi-sessions").glob("*/*.jsonl"))
+        with session_file.open("a", encoding="utf-8") as out:
+            for name in ("先起的名字", "后改的名字"):
+                out.write(json.dumps({"type": "session_info", "id": name, "parentId": None,
+                                      "timestamp": "2026-01-01T00:01:00.000Z", "name": name}, ensure_ascii=False) + "\n")
+        workspaces = self.root / "tasks"
+        workspaces.mkdir()
+        build_workspace(workspaces)
+        index = Index(archive, workspaces)
+        row = next(r for r in index.session_list()["会话"] if r["会话编号"] == SESSION_ID)
+        self.assertEqual(row["会话名"], "后改的名字")
+        self.assertEqual((row["任务编号"], row["任务名"]), (TASK_ID, "术语澄清"))
+        self.assertEqual(row["任务怎么对上的"], "调用编号")
+        self.assertIsInstance(row["开始秒"], float)
+        self.assertEqual(index.session_detail(SESSION_ID)["会话名"], "后改的名字")
+
+    def test_没有起名字时会话名为空(self):
+        index = Index(FIXTURE_RUNS, self.root)
+        self.assertEqual(index.session_detail(SESSION_ID)["会话名"], "")
+        self.assertEqual(index.session_options()[0]["名字"], "未命名会话")
+
+    def test_传runs这一层时收进每个含pi_events的子目录(self):
+        runs = self.root / "runs"
+        for name in ("TASK-B", "TASK-A"):
+            (runs / name / "pi-events").mkdir(parents=True)
+        (runs / "杂项").mkdir()                                          # 没有 pi-events 的子目录不收
+        (self.root / "tasks").mkdir()
+        found = expand_archive_dirs([runs])
+        self.assertEqual([d.name for d in found], ["TASK-A", "TASK-B"])
+        self.assertEqual(default_workspaces_dir(runs, found[0]), self.root / "tasks")
+        # 直接给一个归档目录：照旧取它的上一级。
+        self.assertEqual(expand_archive_dirs([runs / "TASK-A"]), [runs / "TASK-A"])
+        self.assertEqual(default_workspaces_dir(runs / "TASK-A", runs / "TASK-A"), runs)
+        # runs 旁边没有 tasks/ 时，也取第一个归档目录的上一级。
+        shutil.rmtree(self.root / "tasks")
+        self.assertEqual(default_workspaces_dir(runs, found[0]), runs)
+        # 两个都给、有重复的，只收一次。
+        self.assertEqual(len(expand_archive_dirs([runs, runs / "TASK-A"])), 2)
 
 
 class TimelineTests(unittest.TestCase):
