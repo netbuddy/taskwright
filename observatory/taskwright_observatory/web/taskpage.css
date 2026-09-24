@@ -341,7 +341,7 @@ body.tp-on .notice{display:none}
 .tp .rrow .rtag.click{color:var(--judge);border-color:#E7CFA8;background:var(--judge-t);margin:0 0 0 8px}
 .tp .rrow .rtag.bad{color:var(--bad);border-color:#F0C6C1;background:var(--bad-t);margin:0 0 0 8px}
 .tp .rrow .rwhy{display:block;font:12px/1.5 var(--sans);color:var(--ink3);margin-top:1px}
-/* 助手应答一列：应答摘要，第二行小字是关键动作；未展开时也看得出助手这次做了什么 */
+/* 助手应答一列：完整的应答，第二行小字是关键动作；未展开时也看得出助手这次做了什么 */
 .tp .rrow .rreply{font:13.5px/1.55 var(--sans);color:var(--ink2);min-width:0;overflow-wrap:anywhere}
 .tp .rrow.rhead .rreply{font:12px var(--sans);color:var(--ink3)}
 .tp .rrow .rreply .silent{color:var(--ink3);font-style:italic}
@@ -358,6 +358,15 @@ body.tp-on .notice{display:none}
 .tp .rbody .guidebox{margin-top:10px}
 .tp .rrow.sel{box-shadow:inset 3px 0 0 var(--exec)}
 .tp .turnblk.flash{background:var(--human-t);box-shadow:0 0 0 6px var(--human-t);border-radius:6px}
+/* 用户的话与助手应答给完整的话：保留换行，长了在格子里折行；列宽拖得比页面还宽时，表格在自己的框里左右滚动，不撑宽整页 */
+.tp .rrow .full{white-space:pre-wrap;overflow-wrap:anywhere}
+.tp .runs{overflow-x:auto}
+/* 拖动列宽：表头每一格右边缘有一条看不见的把手，鼠标移上去变成左右箭头 */
+.tp .rrow.rhead>span{position:relative}
+.tp .rrow .grip{position:absolute;top:-6px;bottom:-6px;right:-8px;width:9px;cursor:col-resize;z-index:3;border-right:2px solid transparent}
+.tp .rrow .grip:hover{border-right-color:var(--exec)}
+body.tp-resizing{cursor:col-resize;user-select:none}
+.tp .colpick .menu .reset{margin-top:6px;font-size:12px;color:var(--human);border-bottom:1px dashed var(--human)}
 /* 显示哪些列 */
 .tp .flowbar .colpick{margin-left:auto}
 .tp .flowbar .zoom{margin-left:0}

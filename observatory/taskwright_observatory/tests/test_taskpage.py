@@ -1,7 +1,7 @@
 """任务页（taskpage.py）、比对函数（diffs.py）与启动补记的单元测试。
 
 测这些事：按轮归类的判定与合并（本页已不再输出，判定函数留待后端改写时清理，用例照旧保留）；归类声明的读取与缺省；
-按运行排的流程（每次运行一行的计数、应答摘要与关键动作，用户操作与任务现状按时刻插行，界面点击挂到它触发的运行上）；
+按运行排的流程（每次运行一行的计数、完整的用户的话与助手应答、关键动作，用户操作与任务现状按时刻插行，界面点击挂到它触发的运行上）；
 需要注意的每一条判据；页头统计句、概括句与流程末端；知识的使用的四种归类；跨会话任务按会话分段；旧库表的转换与
 对不上时的提示；自动重试与中途插话；新库表的看板（完成条件经 agent 的核对函数核对）；文字与列表比对；
 后端在启动时补记的知识仓库摘要值与上下文文件。
@@ -325,7 +325,7 @@ class FlowTests(unittest.TestCase):
         first = seg["行"][1]
         self.assertEqual((first["轮数"], first["工具调用次数"], first["保存修订次数"], first["被拒次数"]), (2, 1, 1, 0))
         self.assertEqual(first["关键动作"], ["save_revision 1 次"])      # 手写的调用没有中文名，照原名写
-        self.assertEqual(first["应答摘要"], "整理好了。")
+        self.assertEqual(first["助手应答"], "整理好了。")
 
     def test_界面点击挂到它触发的那次运行上_对不上的单独一行(self):
         runs = [self.timed(1, 100.0, "我采纳这个建议。", "好的。", [turn(1, [], text="好的。", stop="stop")])]
@@ -336,14 +336,15 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(rows[0]["由界面点击触发"], "用户选了「采纳」。")
         self.assertIn("对不上", rows[1]["说明"])
 
-    def test_应答摘要取前60个字_没说话如实写(self):
-        long = "甲" * 100
+    def test_用户的话与助手应答给完整的话_没说话如实写(self):
+        long = "甲" * 100 + "\n第二段。"
         row = taskpage.run_row(self.timed(1, 1.0, "问" * 70, long, [turn(1, [], text=long, stop="stop")]))
-        self.assertEqual(row["应答摘要"], "甲" * 60 + "…")
-        self.assertEqual(row["用户的话摘要"], "问" * 60 + "…")
+        self.assertEqual(row["助手应答"], long)                             # 不截断，换行照留
+        self.assertEqual(row["用户的话"], "问" * 70)
+        self.assertNotIn("用户的话摘要", row)
         silent = taskpage.run_row(self.timed(1, 1.0, "请整理。", "", [turn(1, [call("save_revision", rejected=True)])]))
         self.assertFalse(silent["有没有对用户说话"])
-        self.assertEqual(silent["应答摘要"], "")
+        self.assertEqual(silent["助手应答"], "")
         self.assertEqual(silent["关键动作"], ["被拒 1 次"])
 
 

@@ -1,9 +1,9 @@
 // 任务页与会话详情页共用的组件：按运行排的流程表，右边是交付物看板与知识的使用。
 //
-// 流程的单位是运行（pi 的 agent run）：用户的一句话加上助手为它做的全部轮。每次运行一行，未展开时也写出助手的
-// 应答摘要与关键动作；点开一行看这次运行的各轮，每轮再点开看模型请求与工具调用（机器细节）。用户在网页上的直接操作
+// 流程的单位是运行（pi 的 agent run）：用户的一句话加上助手为它做的全部轮。每次运行一行，未展开时也写出完整的
+// 用户的话、助手应答与关键动作（列可隐藏、列宽可拖动）；点开一行看这次运行的各轮，每轮再点开看模型请求与工具调用（机器细节）。用户在网页上的直接操作
 // 与扩展写进会话的任务现状按时刻各占一行；跨会话的任务按会话分段。数字、摘要与需要注意都由后端 taskpage.py 算好，
-// 这里只按数据画。「需要注意」「交付物看板」「知识的使用」「应答摘要」「关键动作」「模型交互」「工具执行」「出口」
+// 这里只按数据画。「需要注意」「交付物看板」「知识的使用」「助手应答」「关键动作」「模型交互」「工具执行」「出口」
 // 「变化」都是观测台自己的呈现用语，不是 pi 的概念，见概念对照页。
 
 import { esc } from "./util.js";
@@ -103,7 +103,7 @@ function renderWords() {
 
     <h4>观测台自己的呈现用语，pi 里没有这几个说法</h4>
     <dl>
-      <dt>应答摘要</dt><dd>「助手应答」一列的第一行：助手这次运行里最后对用户说的话的前 60 个字；没有对用户说话就写「没有对用户说话」。</dd>
+      <dt>助手应答</dt><dd>「助手应答」一列的第一行：助手这次运行里最后对用户说的话，完整不截断；没有对用户说话就写「没有对用户说话」。表头上的列边界可以用鼠标左右拖动，把这一列拉宽看。</dd>
       <dt>关键动作</dt><dd>「助手应答」一列第二行的小字：保存修订、完成任务之类会改动任务或交付物的调用各几次，以及被拒几次。</dd>
       <dt>用户操作</dt><dd>用户在网页上直接做的操作（改字段、删条目、撤销修订、把条目标成看过），不经过助手，所以不是一次运行；扩展把它记进会话，这里按时刻单独占一行。</dd>
       <dt>任务现状</dt><dd>扩展在会话开始或续接时写进会话的一段任务状况，不是用户打的字，也单独占一行。</dd>
@@ -578,18 +578,28 @@ function 写隐藏列(set) {
   try { localStorage.setItem(列存储键, JSON.stringify([...set])); } catch (e) { /* 存不下就只在这一页生效 */ }
 }
 const 可见列 = () => { const 藏 = 读隐藏列(); return 可选列.filter((c) => !藏.has(c.键)); };
-const 列宽 = () => ["3.6em", "minmax(0,1fr)", ...可见列().map((c) => c.宽)].join(" ");
+// 每一列的宽度可以用鼠标拖动表头上的列边界改，拖过的列按像素记在浏览器本地；没拖过的用默认宽度。
+const 宽存储键 = "taskwright-observatory.run-columns.widths";
+const 固定列 = [{键: "序号", 宽: "3.6em"}, {键: "用户的话", 宽: "minmax(0,1fr)"}];
+function 读列宽() {
+  try { return JSON.parse(localStorage.getItem(宽存储键) || "{}") || {}; } catch (e) { return {}; }
+}
+function 写列宽(宽) {
+  try { localStorage.setItem(宽存储键, JSON.stringify(宽)); } catch (e) { /* 存不下就只在这一页生效 */ }
+}
+const 列宽 = (宽 = 读列宽()) => [...固定列, ...可见列()].map((c) => 宽[c.键] ? `${宽[c.键]}px` : c.宽).join(" ");
+const 拖边 = (键) => `<i class="grip" data-grip="${键}" title="左右拖动改这一列的宽窄，双击恢复默认宽度"></i>`;
 const 运行表 = () => (cur.流程 || []).flatMap((seg) => seg.行).filter((x) => x.种类 === "运行");
 const 运行 = (no) => 运行表().find((x) => x.运行序号 === no);
 
 function 表头HTML() {
-  return `<div class="rrow rhead"><span class="rno">序号</span><span class="rsay">用户说的话（前 60 个字）</span>${
-    可见列().map((c) => `<span class="${c.类}">${esc(c.头)}</span>`).join("")}</div>`;
+  return `<div class="rrow rhead"><span class="rno">序号${拖边("序号")}</span><span class="rsay">用户说的话${拖边("用户的话")}</span>${
+    可见列().map((c) => `<span class="${c.类}">${esc(c.头)}${拖边(c.键)}</span>`).join("")}</div>`;
 }
 
-// 「助手应答」一列：第一行是这次运行最后一次成功送达的回复的前 60 个字，第二行小字是关键动作。
+// 「助手应答」一列：第一行是这次运行最后一次成功送达的回复，完整不截断；第二行小字是关键动作。
 function 应答HTML(r) {
-  const 摘要 = r.有没有对用户说话 ? esc(r.应答摘要) : `<span class="silent">没有对用户说话</span>`;
+  const 摘要 = r.有没有对用户说话 ? `<span class="full">${esc(r.助手应答)}</span>` : `<span class="silent">没有对用户说话</span>`;
   const 动作 = r.关键动作.length
     ? `<span class="acts">${r.关键动作.map((x) => `<b class="${/^被拒/.test(x) ? "bad" : ""}">${esc(x)}</b>`).join("、")}</span>` : "";
   return 摘要 + 动作;
@@ -603,7 +613,7 @@ function 运行行HTML(r) {
   }).join("");
   return `<button type="button" class="rrow" id="${esc(r.编号)}" data-run="${r.运行序号}" aria-expanded="false">
     <span class="rno"><i class="chev"></i>${r.运行序号}</span>
-    <span class="rsay">${esc(r.用户的话摘要 || "（归档里没有这次运行的提示原文）")}${
+    <span class="rsay"><span class="full">${esc(r.用户的话 || "（归档里没有这次运行的提示原文）")}</span>${
       r.由界面点击触发 ? `<span class="rtag click" title="${esc(r.由界面点击触发)}">由界面点击触发</span>` : ""}${
       r.被中止 ? `<span class="rtag bad">被中止</span>` : ""}</span>${格}</button>`;
 }
@@ -695,7 +705,13 @@ function 列设置() {
   const 藏 = 读隐藏列();
   menu.innerHTML = `<p class="fixed">序号与用户说的话总是显示。</p>` +
     可选列.map((c) => `<label><input type="checkbox" data-col="${c.键}"${藏.has(c.键) ? "" : " checked"}> ${esc(c.名)}</label>`).join("") +
-    `<p class="note">选了哪几列只记在这台电脑的浏览器里。</p>`;
+    `<p class="note">选了哪几列只记在这台电脑的浏览器里。表头上的列边界可以用鼠标左右拖动改宽窄，双击边界恢复默认。</p>` +
+    `<button type="button" class="reset" data-resetwidths="1">所有列恢复默认宽度</button>`;
+  menu.onclick = (e) => {
+    if (!e.target.closest("[data-resetwidths]")) return;
+    写列宽({});
+    $("#tp-flow").style.setProperty("--cols", 列宽({})); 布局();
+  };
   menu.onchange = (e) => {
     const box = e.target.closest("[data-col]"); if (!box) return;
     const set = 读隐藏列();
@@ -723,6 +739,30 @@ function wireFlow() {
       const r = 运行(+b.dataset.run);
       if (r) 高亮条目(r.条目 || []);
       布局();
+    };
+  });
+  flow.querySelectorAll("[data-grip]").forEach((g) => {
+    g.onmousedown = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const 起 = e.clientX, 原 = g.parentElement.getBoundingClientRect().width, 宽 = 读列宽();
+      const move = (ev) => {
+        宽[g.dataset.grip] = Math.max(32, Math.round(原 + ev.clientX - 起));
+        flow.style.setProperty("--cols", 列宽(宽));
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        document.body.classList.remove("tp-resizing");
+        写列宽(宽); 布局();
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+      document.body.classList.add("tp-resizing");
+    };
+    g.ondblclick = (e) => {
+      e.stopPropagation();
+      const 宽 = 读列宽(); delete 宽[g.dataset.grip]; 写列宽(宽);
+      flow.style.setProperty("--cols", 列宽(宽)); 布局();
     };
   });
   flow.querySelectorAll("[data-lv3]").forEach((b) => {

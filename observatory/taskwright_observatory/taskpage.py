@@ -2,9 +2,9 @@
 
 流程的单位是运行（pi 的 agent run）：用户的一句话，加上助手为这句话做的全部轮（agent_start 到 agent_settled）。
 每次运行一行，写明用户那句话、开始时刻、轮数、工具调用次数、保存修订次数、被拒次数、耗时，以及助手这次运行最后
-对用户说的话（应答摘要）与它做的关键动作；点开一行看这次运行的各轮，每轮再点开看模型请求与工具调用的原始记录。
+对用户说的话（助手应答，完整不截断）与它做的关键动作；点开一行看这次运行的各轮，每轮再点开看模型请求与工具调用的原始记录。
 用户在网页上直接改交付物（不经过助手，不产生运行）与扩展写进会话的任务现状，按时刻各占一行。跨会话的任务
-按会话分段。「需要注意」「交付物看板」「知识的使用」「知识仓库」「应答摘要」「关键动作」都是观测台自己的呈现用语，
+按会话分段。「需要注意」「交付物看板」「知识的使用」「知识仓库」「助手应答」「关键动作」都是观测台自己的呈现用语，
 不是 pi 的概念，登记在概念对照页。
 
 下面「零」到「四」节里还留着按轮归类的判定函数（classify_turn、build_stages 等，读同目录下的 stage_rules.json）：
@@ -869,9 +869,7 @@ def error_count_suffix(role: str, turns: list[dict]) -> str:
 KEY_ACTION_TOOLS = ("save_revision", "save_version", "create_task", "complete_task")
 #: 页头与运行一行的「保存修订」按这个工具被接受的调用计数。
 SAVE_TOOL = "save_revision"
-#: 应答摘要、用户那句话、扩展消息各取前多少个字。
-REPLY_BRIEF_CHARS = 60
-PROMPT_BRIEF_CHARS = 60
+#: 扩展消息那两种行的摘要取前多少个字。运行一行的用户那句话与助手应答都给完整的话，不截断。
 EXT_BRIEF_CHARS = 80
 #: 界面点击投进来的那句话与它触发的那次运行，开始时刻之差（运行减点击，单位秒）落在这个范围里就算对上。
 CLICK_WINDOW = (-1.0, 5.0)
@@ -928,7 +926,7 @@ def run_row(run: dict) -> dict:
     bar = run.get("时间条") or {}
     return {
         "种类": "运行", "编号": f"run-{no}", "运行序号": no, "会话序号": run.get("会话序号", 1),
-        "用户的话": prompt.get("原文", ""), "用户的话摘要": head_chars(prompt.get("原文"), PROMPT_BRIEF_CHARS),
+        "用户的话": prompt.get("原文", ""),
         "时刻": clock(prompt.get("时刻")), "时刻秒": prompt.get("时刻"),
         "消息来源": prompt.get("投递方式", "未知"), "消息来源的依据": prompt.get("投递方式的依据", ""),
         "条目编号": prompt.get("用户消息条目编号", ""),
@@ -939,7 +937,7 @@ def run_row(run: dict) -> dict:
         "模型耗时秒": round(sum(r.get("耗时秒") or 0 for t in run["轮"] for r in t["请求"]), 1),
         "工具耗时秒": round(sum(c["耗时秒"] or 0 for c in calls), 3),
         "有没有对用户说话": bool(said),
-        "应答摘要": head_chars(plain(said), REPLY_BRIEF_CHARS) if said else "",
+        "助手应答": said,
         "应答从哪来": run.get("助手最后说的话从哪来", ""),
         "关键动作": key_actions(calls),
         "由界面点击触发": "",
