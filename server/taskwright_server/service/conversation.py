@@ -131,7 +131,8 @@ def _messages(path: list[dict], session_id: str) -> list[dict]:
                 out.append({"type": "ui_action_noted", "session_id": session_id, "message_id": e["id"], "at": at,
                             "text": text_of(e.get("content")), "event_seq": seqs[0] if seqs else None,
                             "undoable": bool(details.get("undoable")), "op_id": details.get("op_id"),
-                                                  "revision_no": details.get("revision_no")})
+                                                  "revision_no": details.get("revision_no"),
+                            "kind": details.get("kind"), "review": details.get("review")})
                 last_confirm = e if details.get("kind") in NOTIFY_KINDS else None
             elif ctype == TASK_STATUS:
                 out.append({"type": "system_note", "session_id": session_id, "message_id": e["id"], "at": at,

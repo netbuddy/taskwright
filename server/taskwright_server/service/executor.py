@@ -268,7 +268,7 @@ class Executor:
             with self.lock:
                 self._turn_check("action")
         op_id = new_id("ui-op-")
-        command = {k: body.get(k) for k in ("kind", "task_id", "targets", "fields", "notify_executor") if k in body}
+        command = {k: body.get(k) for k in ("kind", "task_id", "targets", "fields", "notify_executor", "force") if k in body}
         command["op_id"] = op_id
         if command.get("notify_executor"):
             self.pending_origin["我已经看过了："] = "ui_request"
@@ -518,7 +518,9 @@ class Executor:
                 self.hub.emit("ui_action_noted", {"session_id": sid, "message_id": hit.get("id") if hit else None, "at": clock.now(),
                                                   "text": conversation.text_of(message.get("content")), "event_seq": seqs[0] if seqs else None,
                                                   "undoable": bool(details.get("undoable")), "op_id": details.get("op_id"),
-                                                  "revision_no": details.get("revision_no")})
+                                                  "revision_no": details.get("revision_no"),
+                                                  # 界面操作的种类；评审结束的那条另带几项计数，界面据此写一句结论并链到评审页签。
+                                                  "kind": details.get("kind"), "review": details.get("review")})
             elif ctype == conversation.UI_CLICK:
                 entries = self._fetch_new_entries(pi)
                 hit = next((e for e in reversed(entries) if e.get("type") == "custom_message" and e.get("customType") == ctype), None)

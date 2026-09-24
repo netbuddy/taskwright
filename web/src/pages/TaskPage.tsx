@@ -70,7 +70,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
       <div className="board">
         {task.definition.collections.map((coll) => {
           const items = task.items.filter((i) => i.collection === coll.name);
-          const reviewed = items.filter((i) => reviewState(i).state === "passed").length;
+          const reviewed = items.filter((i) => reviewState(i, task).state === "passed").length;
           const confirmed = items.filter((i) => !isUnread(i)).length;
           const latest = items.reduce((m, i) => Math.max(m, i.revision_no), 0);
           return (
@@ -93,7 +93,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
       <div className="two-col">
         <div>
           <div className="section-title">完成条件</div>
-          <div className="card"><CompletionPanel completion={completion} status={task.status} items={task.items} /></div>
+          <div className="card"><CompletionPanel completion={completion} status={task.status} items={task.items} task={task} /></div>
         </div>
         <div>
           <div className="section-title">材料清单</div>

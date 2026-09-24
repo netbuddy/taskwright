@@ -14,7 +14,8 @@
  * 例外是评审（kind 为 request_review）：核对通过、记下第一条进度事件就立即回报成功（results 是这批要评的条目），
  * 评审在后台接着跑（lib/review_ui.ts），不等它跑完，免得撞上后端等界面操作结果的 10 秒上限。每记一条进度事件，
  * 经状态栏键 taskwright-review 提示后端去查库转发；全部评完后往会话里追加一条 taskwright-user-edit 自定义消息，
- * 正文是评审结果（每条结论与发现），执行者据此知道评审发现了什么，不另外发话引出一次运行。
+ * 正文只有一句结论（几条合规、几条不合规，问题与建议各几条），details.review 带这几个数；逐条发现执行者经「查询任务状态」取，
+ * 界面上看评审页签。不另外发话引出一次运行。request 带 force 为真时，点名的条目内容与规则都没变也再评一次。
  * 状态栏是给后端读的，交互模式下只显示成底部一行截短的 JSON；所以交互模式里被拒时另外用 notify 把完整的拒绝原因
  * 发给人看（rejectionText），RPC 模式不发，后端照旧只读状态栏。
  *
@@ -31,6 +32,7 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { REVIEW_OP_KIND, UserOpError, checkReviewRequest, runUserOperation } from "../lib/user_ops.ts";
 import { ReviewError } from "../lib/review.ts";
 import { piComplete, startReview } from "../lib/review_ui.ts";
+import { batchCounts } from "../lib/review_run.ts";
 
 export const USER_COMMAND = "tw-user";
 export const UI_COMMAND = "tw-ui";
@@ -159,7 +161,8 @@ function startUiReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, request: 
   try {
     const requested = checkReviewRequest({ workspaceDir: ctx.cwd, sessionId }, request);
     const { model, complete } = piComplete(ctx, opId ?? "");
-    started = startReview({ workspaceDir: ctx.cwd, sessionId, callId: opId ?? "" }, requested, { model, complete, onRecorded: (seq) => nudge({ event_seq: seq }) });
+    started = startReview({ workspaceDir: ctx.cwd, sessionId, callId: opId ?? "" }, requested,
+      { model, complete, force: request.force === true, onRecorded: (seq) => nudge({ event_seq: seq }) });
   } catch (error) {
     if (error instanceof UserOpError) report({ ok: false, error: { code: error.code, message: error.message, data: error.data } });
     else if (error instanceof ReviewError) report({ ok: false, error: { code: "rejected", message: error.message, data: { reasons: [error.message] } } });
@@ -168,12 +171,18 @@ function startUiReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, request: 
   }
   report({ ok: true, event_seqs: [started.event_seq], results: started.items, revision_no: null });
   started.finished.then(({ outcome, event_seq, error }) => {
-    const text = outcome ? outcome.text : (error ?? "评审没有做完。");
+    const counts = outcome ? batchCounts(outcome.details.results) : null;
+    const text = counts
+      ? `评审完成：${counts.passed} 条合规、${counts.failed} 条不合规（问题 ${counts.problems} 处、建议 ${counts.advice} 条）` +
+        `${counts.unfinished ? `，${counts.unfinished} 条没有评完` : ""}。`
+      : (error ?? "评审没有做完。");
+    // 会话里只追加一句结论；逐条发现不在这里，执行者要用时经「查询任务状态」去查，界面上看评审页签。
     pi.sendMessage({
       customType: USER_EDIT_CUSTOM_TYPE,
-      content: `界面操作（不是用户打的字）：用户在界面上发起了评审。${text}`,
+      content: `界面操作（不是用户打的字）：用户在界面上发起的评审结束了。${text}各条发现可以用查询任务状态查看。`,
       display: true,
-      details: { op_id: opId, kind: REVIEW_OP_KIND, event_seqs: event_seq >= 0 ? [event_seq] : [], results: started.items, revision_no: null, undoable: false },
+      details: { op_id: opId, kind: REVIEW_OP_KIND, event_seqs: event_seq >= 0 ? [event_seq] : [], results: started.items, revision_no: null, undoable: false,
+        review: counts },
     });
     nudge({ finished: true, event_seq });
     if (ctx.mode === "tui") ctx.ui.notify(text, error ? "error" : "info");

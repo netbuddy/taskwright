@@ -4,6 +4,7 @@
  *
  * 调模型的那一步由调用方传进来（complete），工具与界面操作里用 pi 的 ctx.modelRegistry.complete，单元测试里用假的，
  * 所以本模块不依赖 pi。每评完一条调一次 onItemDone（界面发起的评审据此写进度事件）。
+ * 每一批结束时记一条 REVIEW_BATCH 摘要事件（批次编号、发起方、范围、各类计数），评审页签直接用它。
  * 返回给调用方的文字写明每条的结论（「合规」或「不合规（问题 N 处，建议 M 条）」）与逐条发现，发现带规则编号。
  */
 
@@ -13,13 +14,17 @@ import {
   prepareReviews, type PreparedReviews, type RequestedItem, writeReview, writeUnfinished,
 } from "./review.ts";
 import { RULE_REQUIRED } from "./definition.ts";
+import { ACTOR_EXECUTOR, ACTOR_USER, emit } from "./db.ts";
+import { withTaskDatabase } from "./schema.ts";
+import { EVENT_REVIEW_BATCH } from "./review_state.ts";
 
 export const MAX_PARALLEL = 4;
 export const ITEM_TIMEOUT_MS = 60_000;
 export const ATTEMPTS = 2;
 
 /** 一次模型调用的结果。出错时抛异常（超时由 signal 触发）。 */
-export interface Completion { text: string; inputTokens: number | null; outputTokens: number | null }
+/** temperature 是这次调用实际传给模型服务的温度；没传时为 null。它随提示一起记进 model_call。 */
+export interface Completion { text: string; inputTokens: number | null; outputTokens: number | null; temperature?: number | null; temperatureNote?: string }
 export type Complete = (system: string, user: string, signal: AbortSignal, attempt: number, item: PreparedReview) => Promise<Completion>;
 
 export interface ItemOutcome extends RequestedItem {
@@ -29,7 +34,7 @@ export interface ItemOutcome extends RequestedItem {
   review_id: number | null;
 }
 
-export interface RunOutcome { text: string; details: { results: ItemOutcome[] } }
+export interface RunOutcome { text: string; details: { results: ItemOutcome[]; batch_seq: number | null } }
 
 export interface RunOptions {
   complete: Complete;
@@ -60,7 +65,10 @@ async function reviewOne(call: CallContext, taskId: string, item: PreparedReview
       if (signal.aborted) break;
       continue;
     }
-    const record: ModelCallRecord = { prompt, output: reply.text, outcome: "采用", model: opts.model, durationMs: Date.now() - started,
+    const sent = reply.temperature === undefined ? prompt
+      : JSON.stringify({ systemPrompt: item.system, messages: [{ role: "user", content: item.user }], temperature: reply.temperature,
+        ...(reply.temperatureNote ? { temperature_note: reply.temperatureNote } : {}) });
+    const record: ModelCallRecord = { prompt: sent, output: reply.text, outcome: "采用", model: opts.model, durationMs: Date.now() - started,
       inputTokens: reply.inputTokens, outputTokens: reply.outputTokens };
     let result;
     try {
@@ -114,12 +122,45 @@ export async function runPrepared(call: CallContext, prepared: PreparedReviews, 
     }
   };
   await Promise.all(Array.from({ length: Math.min(opts.parallel ?? MAX_PARALLEL, prepared.items.length) }, worker));
-  return { text: summaryText(results), details: { results } };
+  const batchSeq = recordBatch(call, prepared, results);
+  return { text: summaryText(results), details: { results, batch_seq: batchSeq } };
+}
+
+/** 一批评审的计数：合规、不合规、未完成各几条，问题几处、建议几条。 */
+export function batchCounts(results: ItemOutcome[]) {
+  const findings = results.flatMap((r) => r.findings);
+  const problems = findings.filter((f) => f.level === RULE_REQUIRED).length;
+  return {
+    total: results.length,
+    passed: results.filter((r) => r.status === "合规").length,
+    failed: results.filter((r) => r.status === "不合规").length,
+    unfinished: results.filter((r) => r.status === "评审未完成").length,
+    problems,
+    advice: findings.length - problems,
+  };
+}
+
+/** 记这一批的摘要事件 REVIEW_BATCH，调用编号就是批次编号。返回事件序号；写不进去时（例如库被删了）为 null。 */
+function recordBatch(call: CallContext, prepared: PreparedReviews, results: ItemOutcome[]): number | null {
+  const actor = call.actor ?? ACTOR_EXECUTOR;
+  try {
+    return withTaskDatabase(call.workspaceDir, { createIfMissing: false }, (db) => emit(db, {
+      taskId: prepared.taskId, sessionId: call.sessionId, callId: call.callId, name: EVENT_REVIEW_BATCH, actor,
+      payload: {
+        batch_id: call.callId, started_by: actor === ACTOR_USER ? "user" : "executor",
+        scope: prepared.scope, items: prepared.items.map((i) => ({ item_id: i.item_id, revision_no: i.revision_no })),
+        forced: prepared.items.filter((i) => i.forced).map((i) => i.item_id),
+        ...batchCounts(results),
+      },
+    }));
+  } catch {
+    return null;
+  }
 }
 
 /** 整个流程：核对、分批并行评审、写库、拼给调用方的文字。核对不通过时抛 ReviewError，什么都不评。 */
-export async function runReviews(call: CallContext, requested: RequestedItem[] | null, opts: RunOptions): Promise<RunOutcome> {
-  return runPrepared(call, prepareReviews(call.workspaceDir, requested), opts);
+export async function runReviews(call: CallContext, requested: RequestedItem[] | null, opts: RunOptions & { force?: boolean }): Promise<RunOutcome> {
+  return runPrepared(call, prepareReviews(call.workspaceDir, requested, { force: opts.force }), opts);
 }
 
 /** 一条结果的结论说法：「合规」「合规（建议 M 条）」「不合规（问题 N 处，建议 M 条）」。 */

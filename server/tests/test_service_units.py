@@ -144,6 +144,66 @@ class ServiceUnitTest(unittest.TestCase):
         conn.close()
         self.assertEqual(found, {1: [{"rule_id": None, "level": None, "field": "步骤", "index": None, "problem": "没有主语", "suggestion": None}]})
 
+    def test_评审批次_保留_规则开关三类事件与整份数据_导出写用户保留(self):
+        # 在夹具库的副本上补：一次评审（UC-001 修订 2 不合规）、批次摘要、一次保留、一次规则开关。只测拼装与导出。
+        import json
+        import sqlite3
+        ws = Path(self.tmp.name) / "ws-lifecycle"
+        shutil.copytree(self.ws, ws)
+        subprocess_node_write(ws)       # 让写入一侧打开一次，补上新列与新表
+        conn = sqlite3.connect(ws / "task.sqlite")
+        task_id = conn.execute("SELECT task_id FROM task").fetchone()[0]
+        batch = {"batch_id": "ui-op-b", "started_by": "user", "scope": "pending", "items": [{"item_id": "UC-001", "revision_no": 2}],
+                 "forced": [], "total": 1, "passed": 0, "failed": 1, "unfinished": 0, "problems": 1, "advice": 0}
+        rows = [(5, "REVIEW_RECORDED", "ui-op-b", {"item_id": "UC-001", "revision_no": 2, "verdict": "不合规", "reason": "r", "findings": []}),
+                (6, "REVIEW_BATCH", "ui-op-b", batch),
+                (7, "REVIEW_WAIVED", "ui-op-w", {"items": [{"item_id": "UC-001", "revision_no": 2}], "reason": "材料原话如此", "source": "panel"}),
+                (8, "REVIEW_RULES_CHANGED", "ui-op-s", {"collection": "用例", "off": ["D-R2"], "promote": [], "before": {"off": [], "promote": []}})]
+        for seq, name, call, payload in rows:
+            conn.execute("INSERT INTO event (seq, task_id, session_id, call_id, name, payload, actor, at) VALUES (?, ?, 's', ?, ?, ?, 'user', '2026-09-24 10:00:00')",
+                         (seq, task_id, call, name, json.dumps(payload, ensure_ascii=False)))
+        conn.execute("INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at, batch_id, rules_hash, forced) "
+                     "VALUES (?, 'UC-001', 2, '不合规', 'r', 'x', 'x', 'ui-op-b', 5, '2026-09-24 10:00:00', 'ui-op-b', 'abc', 0)", (task_id,))
+        conn.execute("INSERT INTO review_waiver (task_id, item_id, revision_no, reason, source, op_id, event_seq, created_at) "
+                     "VALUES (?, 'UC-001', 2, '材料原话如此', 'panel', 'ui-op-w', 7, '2026-09-24 10:01:00')", (task_id,))
+        conn.commit()
+        conn.close()
+        events, _ = library.library_events(ws, 4)
+        self.assertEqual([n for n, _ in events], ["review_recorded", "review_batch", "review_waived", "review_rules_changed"])
+        b = events[1][1]
+        self.assertEqual((b["no"], b["batch_id"], b["started_by"], b["total"], b["failed"], b["problems"]), (1, "ui-op-b", "user", 1, 1, 1))
+        self.assertEqual((events[2][1]["reason"], events[2][1]["source"], events[2][1]["op_id"]), ("材料原话如此", "panel", "ui-op-w"))
+        self.assertEqual((events[3][1]["collection"], events[3][1]["off"]), ("用例", ["D-R2"]))
+        _, task = library.task_snapshot(ws)
+        uc1 = next(i for i in task["items"] if i["item_id"] == "UC-001")
+        self.assertEqual(uc1["reviews"][0]["batch_id"], "ui-op-b")
+        self.assertEqual(uc1["waivers"], [{"revision_no": 2, "reason": "材料原话如此", "source": "panel", "at": uc1["waivers"][0]["at"], "revoked": False}])
+        self.assertEqual([b["no"] for b in task["review_batches"]], [1])
+        conn = library.open_ro(ws)
+        try:
+            lib = library.Library(library.read_all(conn))
+        finally:
+            conn.close()
+        self.assertEqual(render.review_state(lib, "UC-001", 2), "评审不通过，用户保留（理由：材料原话如此）")
+
+    def test_规则指纹与agent同一个算法_全部规则带开关状态(self):
+        import json
+        import subprocess
+        spec_off, spec_promote = ["D-R2"], ["D-R3"]
+        text = json.dumps([{"编号": "D-R1", "级别": "必选", "条文": "甲", "反例": "乙", "正例": "丙"}], ensure_ascii=False)
+        script = ("import('" + str(library.REPO_ROOT / "agent" / "src" / "lib" / "review_state.ts") + "').then((m) => "
+                  "process.stdout.write(m.rulesHashText(process.argv[1], { off: JSON.parse(process.argv[2]), promote: JSON.parse(process.argv[3]) })))")
+        out = subprocess.run(["node", "--input-type=module", "-e", script, text, json.dumps(spec_off), json.dumps(spec_promote)],
+                             capture_output=True, text=True, check=True).stdout
+        self.assertEqual(library.rules_hash_text(text, spec_off, spec_promote), out)
+        ws = Path(self.tmp.name) / "ws-all-rules"
+        (ws / "docs").mkdir(parents=True)
+        (ws / "docs" / "r.json").write_text(json.dumps([
+            {"编号": "A", "级别": "必选", "条文": "", "反例": "", "正例": ""}, {"编号": "B", "级别": "可选", "条文": "", "反例": "", "正例": ""},
+            {"编号": "C", "级别": "可选", "条文": "", "反例": "", "正例": ""}, {"编号": "D", "级别": "可选", "条文": "", "反例": "", "正例": ""}]), encoding="utf-8")
+        states = [r["state"] for r in library.all_rules(ws, {"规则文件": "docs/r.json", "关闭": ["B"], "升为必选": ["C"]})]
+        self.assertEqual(states, ["required", "off", "promoted", "optional"])
+
     def test_整份数据的序号与各表同一时刻_删掉的条目不在里面(self):
         seq, task = library.task_snapshot(self.ws)
         self.assertEqual(seq, 4)
@@ -602,3 +662,11 @@ class LiveWorkIdTest(unittest.TestCase):
         ex, hub = self.make(appear_after=999, cursor="n-1")
         self.assertIsNone([d for n, d in hub.events if n == "user_message"][0]["message_id"])
         self.assertTrue(ex.work["work_id"].startswith("work-"))
+
+
+def subprocess_node_write(ws: Path) -> None:
+    """用 agent 的写入一侧打开一次任务库（空事务），让旧库补上后来加的列与表。"""
+    import subprocess
+    schema = library.REPO_ROOT / "agent" / "src" / "lib" / "schema.ts"
+    script = f"import('{schema}').then((m) => m.withTaskDatabase(process.argv[1], {{ createIfMissing: false }}, () => undefined))"
+    subprocess.run(["node", "--input-type=module", "-e", script, str(ws)], check=True)

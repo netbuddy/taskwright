@@ -12,7 +12,7 @@ function tables(dir: string): string[] {
   return query<{ name: string }>(dir, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map((r) => r.name);
 }
 
-test("库文件不存在时建齐十一张表", () => {
+test("库文件不存在时建齐十二张表", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, () => null);
   assert.deepEqual(tables(dir), [...TABLE_NAMES].sort());

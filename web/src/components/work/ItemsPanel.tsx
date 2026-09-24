@@ -23,7 +23,7 @@ import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
-export type ReviewAction = (targets: { item_id: string; base_revision: number }[], label: string) => void;
+export type ReviewAction = (targets: { item_id: string; base_revision: number }[], label: string, force?: boolean) => void;
 
 export { BUSY_TEXT };
 
@@ -85,7 +85,7 @@ export function ItemsPanel({
   useEffect(() => {
     if (!selected) return;
     const item = task.items.find((i) => i.item_id === selected);
-    if (item) { setTab(item.collection); if (!matchesFilter(item, filter)) setFilter("all"); }
+    if (item) { setTab(item.collection); if (!matchesFilter(item, filter, task)) setFilter("all"); }
     document.querySelector(".app .items-body")?.scrollTo({ top: 0 });
   }, [selected]);
   // 卡片上点了「还有 N 条未读 · 筛出来看」。
@@ -107,7 +107,7 @@ export function ItemsPanel({
 
   const def = collections.find((c) => c.name === activeTab);
   const statusField = keepPendingField(task, activeTab);
-  const items = useMemo(() => task.items.filter((i) => i.collection === activeTab && matchesFilter(i, filter)), [task.items, activeTab, filter]);
+  const items = useMemo(() => task.items.filter((i) => i.collection === activeTab && matchesFilter(i, filter, task)), [task, activeTab, filter]);
   const unread = unreadItems(task);
   const unresolved = task.items.filter((i) => {
     const f = keepPendingField(task, i.collection);
@@ -120,7 +120,8 @@ export function ItemsPanel({
   const failed = failedReview(task);
   const reviewing = !!review && !review.finished;
   const reviewOff = reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: toReview.length });
-  const reviewItems = (list: Item[], label: string) => onReview?.(list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), label);
+  const reviewItems = (list: Item[], label: string, force?: boolean) =>
+    onReview?.(list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), label, force);
 
   const markMany = async (list: Item[]) => {
     const e = await submit({ kind: "mark_viewed", targets: list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), notify_executor: false },
@@ -176,7 +177,7 @@ export function ItemsPanel({
       </div>
       <div className={`prog-detail${showProgress ? " show" : ""}`}>
         <div>这份交付物什么时候算做完，由下面这几条决定：</div>
-        {showProgress && <CompletionPanel completion={task.completion} status={task.status} items={task.items}
+        {showProgress && <CompletionPanel completion={task.completion} status={task.status} items={task.items} task={task}
           reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
           onReview={onReview ? (list) => reviewItems(list, `评审 ${list.map((i) => i.item_id).join("、")}`) : undefined}
           onOpen={(id) => { setShowProgress(false); onSelect(id); }} />}
@@ -198,7 +199,7 @@ export function ItemsPanel({
         {selectedItem && def ? (
           <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} writesOff={writesOff} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
             reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
-            onReview={onReview ? () => reviewItems([selectedItem], `评审 ${selectedItem.item_id}`) : undefined} onPrefill={onPrefill}
+            onReview={onReview ? (force) => reviewItems([selectedItem], `评审 ${selectedItem.item_id}`, force) : undefined} onPrefill={onPrefill}
             marked={marks[selectedItem.item_id] ?? []} just={just.has(selectedItem.item_id)} onBack={() => onSelect(null)}
             onPrev={pos > 0 ? () => onSelect(items[pos - 1].item_id) : null}
             onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}

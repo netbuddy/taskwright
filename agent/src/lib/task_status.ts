@@ -75,7 +75,7 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const materials = listMaterials(workspaceDir, definition.materialsDir);
     const fresh = !facts.hasUserMessage && !facts.hasStatusMessage;
-    if (fresh || facts.lastMessageAt === null) return statusNow(db, task, definition, materials);
+    if (fresh || facts.lastMessageAt === null) return statusNow(db, task, definition, materials, workspaceDir);
     return changesSince(db, task, facts.lastMessageAt, sessionId, materials);
   } finally {
     db.close();
@@ -126,14 +126,14 @@ function clock(): string {
 }
 
 /** 任务现状。 */
-function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, materials: { dir: string; files: MaterialFile[] }): TaskStatusMessage {
+function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, materials: { dir: string; files: MaterialFile[] }, workspaceDir: string): TaskStatusMessage {
   const name = task.task_name ?? definition.taskName;
   const counts = definition.collections.map((collection) => ({
     collection: collection.name,
     count: currentItems(db, task.task_id, collection.name).length,
   }));
   const total = counts.reduce((sum, one) => sum + one.count, 0);
-  const results = checkCompletion(db, task.task_id, definition.completion);
+  const results = checkCompletion(db, task.task_id, definition.completion, { workspaceDir });
   const met = results.filter((one) => one.state === "met").length;
   const unmetCount = results.filter((one) => one.state === "unmet").length;
   // 未解决的问题条目：带「状态」枚举、取值里有「未解决」的集合里，当前内容状态为未解决的条目。

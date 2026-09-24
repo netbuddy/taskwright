@@ -25,8 +25,8 @@ import { databasePath, inImmediateTransaction } from "./db.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十一张表的名字，按建表的先后排。model_call 是早期版本加的、review_finding 是早期版本加的，旧库在 ensureSchema 里补上，
- *  所以缺这两张不算「表不全」。 */
+/** 十二张表的名字，按建表的先后排。model_call、review_finding、review_waiver 是后来加的，旧库在 ensureSchema 里补上，
+ *  所以缺这三张不算「表不全」。 */
 export const TABLE_NAMES = [
   "task",
   "revision",
@@ -39,10 +39,11 @@ export const TABLE_NAMES = [
   "event",
   "model_call",
   "review_finding",
+  "review_waiver",
 ] as const;
 
 /** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding"];
+export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver"];
 
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
@@ -111,6 +112,27 @@ CREATE TABLE IF NOT EXISTS review_finding (
   rule_id      TEXT,                 -- 依据的规则编号，例如 UC-R3；没有规则文件的集合为空
   level        TEXT,                 -- 那条规则这次的级别：必选或可选；必选规则的发现叫问题，可选规则的发现叫建议
   PRIMARY KEY (review_id, ordinal)
+);
+`;
+
+/**
+ * 评审豁免表：用户保留了一个评审不合规的条目在某次修订上的写法，一次保留一行。只有用户能写（界面操作 waive_review）。
+ * 撤销保留（unwaive_review）不删行，只填 revoked_at 与 revoked_op_id。条目改出新修订之后，旧修订上的保留自然不再作数。
+ * 后来加的表，与 model_call 一样用 IF NOT EXISTS，旧库第一次被写入一侧打开时补上。
+ */
+export const REVIEW_WAIVER_SQL = `
+CREATE TABLE IF NOT EXISTS review_waiver (
+  waiver_id      INTEGER PRIMARY KEY,  -- 保留记录的编号
+  task_id        TEXT NOT NULL,        -- 所属任务的任务编号
+  item_id        TEXT NOT NULL,        -- 条目编号
+  revision_no    INTEGER NOT NULL,     -- 保留的是条目在哪次修订下的写法
+  reason         TEXT,                 -- 理由，可空
+  source         TEXT NOT NULL,        -- 在哪里点的：detail（条目详情）或 panel（评审页签）
+  op_id          TEXT NOT NULL,        -- 那次界面操作的编号（ui- 开头）
+  event_seq      INTEGER NOT NULL,     -- 记下这次保留的那条事件的序号
+  created_at     TEXT NOT NULL,        -- 时刻（本地时间）
+  revoked_at     TEXT,                 -- 撤销保留的时刻；没撤销为空
+  revoked_op_id  TEXT                  -- 撤销保留的那次界面操作的编号
 );
 `;
 
@@ -185,9 +207,13 @@ CREATE TABLE review (
   reason              TEXT NOT NULL,        -- 理由
   rules_digest        TEXT NOT NULL,        -- 所依据的规矩文档的摘要值
   reviewer_session_id TEXT NOT NULL,        -- 评审者那条 pi 会话的会话编号
-  call_id             TEXT NOT NULL,        -- 「请求评审」那次工具调用的 pi 调用编号
+  call_id             TEXT NOT NULL,        -- 发起这次评审的调用编号：界面发起时是操作编号（ui- 开头），助手经工具发起时是 pi 的工具调用编号
   event_seq           INTEGER NOT NULL,     -- 记下这条评审的那条事件的序号
-  created_at          TEXT NOT NULL         -- 时刻（本地时间）
+  created_at          TEXT NOT NULL,        -- 时刻（本地时间）
+  batch_id            TEXT,                 -- 所属的那一次评审（批次）的编号，与 call_id 相同；早期版本的记录为空
+  rules_hash          TEXT,                 -- 规则指纹：这个集合的规则文件内容加任务级开关（关闭、升为必选）算出的哈希；没有规则文件的集合与早期记录为空
+  reviewer_version    TEXT,                 -- 评审者提示词文件的哈希
+  forced              INTEGER NOT NULL DEFAULT 0  -- 1：内容与规则都没变、用户仍要求重评的那一次
 );
 
 CREATE TABLE judgement (           -- 确认标记：用户看过或认可了哪几个条目，一次界面操作一行（表名是早期版本起的）
@@ -220,7 +246,8 @@ CREATE TABLE event (
   at          TEXT NOT NULL            -- 时刻（本地时间）
 );
 ${MODEL_CALL_SQL}
-${REVIEW_FINDING_SQL}`;
+${REVIEW_FINDING_SQL}
+${REVIEW_WAIVER_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
 export class NoDatabaseYet extends Error {}
@@ -254,6 +281,13 @@ export function ensureSchema(db: DatabaseSync): void {
   for (const [name, type] of REVIEW_FINDING_ADDED_COLUMNS) {
     if (!findingColumns.includes(name)) db.exec(`ALTER TABLE review_finding ADD COLUMN ${name} ${type}`);
   }
+  // 评审表的批次、规则指纹、评审者版本、重评四列是后来加的，做法同上。
+  const reviewColumns = (db.prepare("PRAGMA table_info(review)").all() as { name: string }[]).map((row) => row.name);
+  for (const [name, type] of REVIEW_ADDED_COLUMNS) {
+    if (reviewColumns.length > 0 && !reviewColumns.includes(name)) db.exec(`ALTER TABLE review ADD COLUMN ${name} ${type}`);
+  }
+  // 评审豁免表是后来加的。
+  db.exec(REVIEW_WAIVER_SQL);
   // 这两张刚在上面补过，不按开头读到的表名清单判它们缺不缺。
   const missing = TABLE_NAMES.filter((name) => !ADDED_TABLES.includes(name) && !tables.includes(name));
   if (missing.length > 0) {
@@ -300,6 +334,9 @@ export const SOURCE_LEVEL_COLUMNS = ["support_no", "field", "field_index"] as co
 
 /** 评审发现表后来加的两列与它们的类型。已有这张表、缺这两列的库（0.1 建的库，这张表还是空的）打开时补上。 */
 export const REVIEW_FINDING_ADDED_COLUMNS = [["rule_id", "TEXT"], ["level", "TEXT"]] as const;
+
+/** 评审表后来加的四列。已有评审表、缺这几列的库（0.1 与更早的 0.2 开发版建的库）打开时补上。 */
+export const REVIEW_ADDED_COLUMNS = [["batch_id", "TEXT"], ["rules_hash", "TEXT"], ["reviewer_version", "TEXT"], ["forced", "INTEGER NOT NULL DEFAULT 0"]] as const;
 
 /** 任务名与领域标签加进任务表时加的两列。缺这两列说明是更早建的库。 */
 export const TASK_TABLE_COLUMNS = ["task_name", "domain_tag"] as const;

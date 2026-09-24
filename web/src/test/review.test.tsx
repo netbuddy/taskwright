@@ -130,16 +130,17 @@ describe("徽标与条目详情", () => {
     const t = task([FAILED]);
     render(<Wrap><ItemDetail task={t} item={FAILED} def={t.definition.collections[0]} readOnly={false} pending={false}
       submit={vi.fn(async () => null)} onPrefill={onPrefill} onReview={onReview} /></Wrap>);
-    expect(screen.getByTestId("review-banner")).toHaveTextContent("评审不通过：评审者按写作规矩核对，指出 1 处问题，标在下面对应的字段旁。");
-    expect(screen.getByTestId("finding-problem")).toHaveTextContent("问题：第 2 项：第 2 步没有主语。改法：写明是系统核对。 违反 UC-R7");
+    expect(screen.getByTestId("review-banner")).toHaveTextContent("评审不通过：1 处问题未处理，标在下面对应的字段旁。");
+    expect(screen.getByTestId("finding-problem")).toHaveTextContent("问题：第 2 项：第 2 步没有主语。 改法：写明是系统核对。 违反 UC-R7");
+    expect(screen.getAllByTestId("finding-fate")[0]).toHaveTextContent(/^未处理让助手照这条改保留这种写法$/);   // 第二行：去向在前，链接在后
     expect(screen.getByTestId("finding-advice")).toHaveClass("advice");
     expect(screen.queryByTestId("clause-body")).toBeNull();
     fireEvent.click(screen.getByTestId("clause-UC-R7"));
     expect(screen.getByTestId("clause-body")).toHaveTextContent(/^UC-R7（必选）\s+基本流程每一步写明谁做了什么/);
     fireEvent.click(screen.getAllByTestId("fix-finding")[0]);
     expect(onPrefill).toHaveBeenCalledWith("请按评审发现改 UC-003 的基本流程第 2 项：第 2 步没有主语。");
-    fireEvent.click(screen.getByTestId("review-one"));
-    expect(onReview).toHaveBeenCalled();
+    expect(screen.getByTestId("review-one")).toBeDisabled();   // 当前修订上已经评过：只能「仍要重评」
+    expect(onReview).not.toHaveBeenCalled();
     expect(screen.getByTestId("review-records")).toHaveTextContent("评审记录：修订 3 · 不合规 1 处");
   });
 

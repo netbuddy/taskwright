@@ -21,13 +21,23 @@
  * 评审（request_review）也是一种界面操作，但它不写修订、要调模型、要跑很久：这里只做 checkReviewRequest 那一步核对，
  * 评审本身由 hooks/user_commands.ts 经 lib/review_ui.ts 在后台跑。
  *
+ * 评审的另外三种界面操作只有用户能做，执行者没有对应的工具：
+ * - 保留写法（waive_review）：条目当前所在的修订在当前规则下评审不合规，用户保留现在的写法（理由可空），写 review_waiver 一行，
+ *   记 REVIEW_WAIVED；完成条件把它算作通过。条目改出新修订之后，旧修订上的保留不再作数。
+ * - 撤销保留（unwaive_review）：给那一行填上撤销时刻，记 REVIEW_UNWAIVED。
+ * - 改评审规则（set_review_rules）：改一个集合「评审规矩」里的「关闭」「升为必选」两项，同时改任务目录里的任务定义副本与库里的快照，
+ *   记 REVIEW_RULES_CHANGED。必选规则不能关（与任务定义校验同一套核对）。规则指纹随之变化，这个集合的条目都回到待评审；已有评审记录不动。
+ *
  * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_revision、undo_conflict、
  * task_closed、no_task、rejected、bad_request）和给人看的一句中文，data 里放细节。本模块不依赖 pi。
  */
 
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
-import { KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
+import { DefinitionError, KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
+import { activeWaiver, currentRulesHash, currentReviews, reviewSpecOf } from "./review_state.ts";
 import { type Source, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { NoDatabaseYet, SOURCE_USER_EDIT, TASK_ACTIVE, acceptsUserEditSource, withTaskDatabase } from "./schema.ts";
 
@@ -36,7 +46,10 @@ export const USER_EDIT_EXCERPT_LIMIT = 200;
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
 export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
-export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "unconfirm", "keep_pending", "undo"] as const;
+export const EVENT_REVIEW_WAIVED = "REVIEW_WAIVED";
+export const EVENT_REVIEW_UNWAIVED = "REVIEW_UNWAIVED";
+export const EVENT_REVIEW_RULES_CHANGED = "REVIEW_RULES_CHANGED";
+export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "unconfirm", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
 export { KEEP_PENDING_STATUS };
@@ -136,6 +149,7 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
   if (!(USER_OP_KINDS as readonly string[]).includes(String(request.kind))) {
     throw new UserOpError("bad_request", `操作种类 kind 写的是 ${JSON.stringify(request.kind)}，只能是 ${USER_OP_KINDS.join("、")} 之一。`);
   }
+  if (kind === "set_review_rules") return setReviewRules(ctx, opId, request);
   if (!Array.isArray(request.targets) || request.targets.length === 0) {
     throw new UserOpError("bad_request", "targets 应当是一个不为空的列表。");
   }
@@ -145,6 +159,8 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
   if (kind === "mark_viewed") return markViewed(ctx, opId, state.targets!, request.notify_executor === true);
   if (kind === "unconfirm") return unconfirm(ctx, opId, state.targets!);
   if (kind === "undo") return undo(ctx, opId, state.revisionNo!);
+  if (kind === "waive_review") return waiveReview(ctx, opId, state.targets!, request.fields);
+  if (kind === "unwaive_review") return unwaiveReview(ctx, opId, state.targets!);
 
   const targets = state.targets!;
   let operations: Record<string, unknown>[];
@@ -555,4 +571,116 @@ function undo(ctx: Ctx, opId: string, revisionNo: number): UserOpResult {
 /** 通知里不列空字段。 */
 function dropEmptyFields(fields: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => !isEmptyValue(value)));
+}
+
+// ───────────── 评审：保留写法、撤销保留、改评审规则 ─────────────
+
+function taskRow(db: DatabaseSync): { task_id: string; definition_path: string; definition_text: string } {
+  return db.prepare("SELECT task_id, definition_path, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+    { task_id: string; definition_path: string; definition_text: string };
+}
+
+function itemsPhrase(items: { item_id: string; revision_no: number }[]): string {
+  return items.map((t) => `${t.item_id}（修订 ${t.revision_no}）`).join("、");
+}
+
+/** 保留写法：每个目标在 base_revision 上、当前规则下评审不合规，而且还没有生效的保留，才写。 */
+function waiveReview(ctx: Ctx, opId: string, targets: Target[], rawFields: unknown): UserOpResult {
+  const fields = isObject(rawFields) ? rawFields : {};
+  const reason = typeof fields.reason === "string" && fields.reason.trim() ? fields.reason.trim() : null;
+  const source = fields.source === "panel" ? "panel" : "detail";
+  const items = targets.map((t) => ({ item_id: t.item_id, revision_no: t.base_revision }));
+  const seq = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
+    const task = taskRow(db);
+    const problems: string[] = [];
+    for (const one of items) {
+      const collection = (db.prepare("SELECT collection FROM item WHERE task_id = ? AND item_id = ?").get(task.task_id, one.item_id) as { collection: string }).collection;
+      const verdicts = currentReviews(db, task.task_id, one.item_id, one.revision_no, currentRulesHash(db, ctx.workspaceDir, collection)).map((r) => r.verdict);
+      if (!verdicts.length || verdicts.includes("合规")) problems.push(`${one.item_id} 在修订 ${one.revision_no} 上没有评审不合规的记录，不用保留`);
+      else if (activeWaiver(db, task.task_id, one.item_id, one.revision_no)) problems.push(`${one.item_id} 在修订 ${one.revision_no} 上已经保留过了`);
+    }
+    if (problems.length) throw new UserOpError("rejected", `没有保留，因为：${problems.join("；")}。`, { reasons: problems });
+    const at = wallClockText();
+    const eventSeq = emit(db, { taskId: task.task_id, sessionId: ctx.sessionId, callId: opId, name: EVENT_REVIEW_WAIVED, actor: ACTOR_USER,
+      payload: { items, reason, source } });
+    const insert = db.prepare("INSERT INTO review_waiver (task_id, item_id, revision_no, reason, source, op_id, event_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    for (const one of items) insert.run(task.task_id, one.item_id, one.revision_no, reason, source, opId, eventSeq, at);
+    return eventSeq;
+  });
+  return {
+    op_id: opId, kind: "waive_review", event_seqs: [seq], results: items, revision_no: null,
+    note: `界面操作（不是用户打的字）：用户保留了 ${itemsPhrase(items)}现在的写法${reason ? `，理由：「${reason}」` : "，没有写理由"}。` +
+      "这条按用户的决定算通过；条目再改动，评审要重做。",
+    notify_text: null, undoable: false,
+  };
+}
+
+/** 撤销保留：每个目标在 base_revision 上要有一条生效的保留。 */
+function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult {
+  const items = targets.map((t) => ({ item_id: t.item_id, revision_no: t.base_revision }));
+  const seq = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
+    const task = taskRow(db);
+    const found = items.map((one) => ({ one, waiver: activeWaiver(db, task.task_id, one.item_id, one.revision_no) }));
+    const missing = found.filter((f) => !f.waiver).map((f) => `${f.one.item_id} 在修订 ${f.one.revision_no} 上没有生效的保留`);
+    if (missing.length) throw new UserOpError("rejected", `没有撤销，因为：${missing.join("；")}。`, { reasons: missing });
+    const eventSeq = emit(db, { taskId: task.task_id, sessionId: ctx.sessionId, callId: opId, name: EVENT_REVIEW_UNWAIVED, actor: ACTOR_USER, payload: { items } });
+    const update = db.prepare("UPDATE review_waiver SET revoked_at = ?, revoked_op_id = ? WHERE waiver_id = ?");
+    for (const f of found) update.run(wallClockText(), opId, f.waiver!.waiver_id);
+    return eventSeq;
+  });
+  return {
+    op_id: opId, kind: "unwaive_review", event_seqs: [seq], results: items, revision_no: null,
+    note: `界面操作（不是用户打的字）：用户撤销了对 ${itemsPhrase(items)} 的保留，这些条目重新算作评审不通过。`,
+    notify_text: null, undoable: false,
+  };
+}
+
+/** 改一个集合的评审规则开关：fields 写 { collection, off, promote }，off 与 promote 是可选规则编号的列表。 */
+function setReviewRules(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
+  const fields = isObject(request.fields) ? request.fields : {};
+  const collection = typeof fields.collection === "string" ? fields.collection : "";
+  const list = (value: unknown) => (Array.isArray(value) && value.every((v) => typeof v === "string") ? [...new Set(value as string[])] : null);
+  const off = list(fields.off ?? []);
+  const promote = list(fields.promote ?? []);
+  if (!collection || off === null || promote === null) {
+    throw new UserOpError("bad_request", "set_review_rules 要带 fields：{ \"collection\": 集合名, \"off\": [规则编号…], \"promote\": [规则编号…] }。");
+  }
+  try {
+    const outcome = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
+      const task = db.prepare("SELECT task_id, status, definition_path, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+        { task_id: string; status: string; definition_path: string; definition_text: string } | undefined;
+      if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再改评审规则。`, { status: task.status });
+      const before = reviewSpecOf(task.definition_text, collection);
+      if (!before) throw new UserOpError("rejected", `集合「${collection}」没有评审规则，没有可以开关的规则。`, { reasons: [`集合「${collection}」没有评审规则`] });
+      const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+      if (same(before.off, off) && same(before.promote, promote)) throw new UserOpError("rejected", "规则开关和现在一样，没有改动。");
+      const raw = JSON.parse(task.definition_text) as Record<string, any>;
+      const entry = (raw["交付物"]["条目集合"] as Record<string, any>[]).find((one) => one["名称"] === collection)!;
+      entry["评审规矩"] = { ...entry["评审规矩"], 关闭: off, 升为必选: promote };
+      try {
+        validateDefinition(raw, task.definition_path, { baseDir: ctx.workspaceDir });
+      } catch (error) {
+        if (error instanceof DefinitionError) throw new UserOpError("rejected", `没有改，因为：${error.reasons.join("；")}`, { reasons: error.reasons });
+        throw error;
+      }
+      const text = JSON.stringify(raw, null, 2) + "\n";
+      db.prepare("UPDATE task SET definition_text = ? WHERE task_id = ?").run(text, task.task_id);
+      const seq = emit(db, { taskId: task.task_id, sessionId: ctx.sessionId, callId: opId, name: EVENT_REVIEW_RULES_CHANGED, actor: ACTOR_USER,
+        payload: { collection, off, promote, before: { off: before.off, promote: before.promote }, rules_hash: currentRulesHash(db, ctx.workspaceDir, collection) } });
+      // 任务目录里的任务定义副本与库里的快照保持一致；写文件放在事务的最后，写不成整个操作回退。
+      writeFileSync(join(ctx.workspaceDir, task.definition_path), text, "utf-8");
+      return { seq, before };
+    });
+    const words = [off.length ? `关闭 ${off.join("、")}` : "", promote.length ? `升为必选 ${promote.join("、")}` : ""].filter(Boolean).join("；");
+    return {
+      op_id: opId, kind: "set_review_rules", event_seqs: [outcome.seq], results: [], revision_no: null,
+      note: `界面操作（不是用户打的字）：用户改了集合「${collection}」的评审规则，现在${words || "没有关闭或升为必选的规则"}。` +
+        "之后的评审按新规则；规则改了，这个集合的条目都要重新评审，已有的评审记录不变。",
+      notify_text: null, undoable: false,
+    };
+  } catch (error) {
+    if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+    throw error;
+  }
 }

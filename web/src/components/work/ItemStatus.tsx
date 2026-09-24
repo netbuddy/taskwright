@@ -27,12 +27,14 @@ export function ItemStatus({ task, item, just, pending }: { task: Task; item: It
       </>
     );
   }
-  const review = reviewState(item);
+  const review = reviewState(item, task);
   const unread = isUnread(item);
   const rCls = review.state === "passed" ? "ok" : review.state === "failed" ? "bad" : "wait";
-  // 评审通过时可选规则给的建议条数写在括号里；不通过时写必选规则的问题处数。
+  // 评审通过时可选规则给的建议条数写在括号里；不通过时写必选规则的问题处数，保留了的注明：全部保留写「· 已保留」，部分写「· M 处已保留」。
+  // 保留现在是按「条目加修订」记的，一次保留覆盖这个条目当时的全部问题，所以眼下只会出现全部保留。
+  const kept = review.state === "failed" && review.kept ? review.problems : 0;
   const rTxt = review.state === "passed" ? (review.advice ? `评审通过（${review.advice} 条建议）` : "评审通过")
-    : review.state === "failed" ? `评审不通过 ${review.problems} 处` : "待评审";
+    : review.state === "failed" ? `评审不通过 ${review.problems} 处${kept === 0 ? "" : kept >= review.problems ? " · 已保留" : ` · ${kept} 处已保留`}` : "待评审";
   return (
     <>
       <span className="st2" title="评审由评审者做；你打开看过就算确认，两件事互不挡着">

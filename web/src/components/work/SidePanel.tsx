@@ -5,21 +5,22 @@
 //     正文每行一个碰到的条目（操作、编号与标题、改了哪些字段、查看差异），底部「撤销这次修订」「按此修订生成文档」。
 //     点卡片选中它，条目区高亮它碰到的条目；再点一次取消。助手工作中照常可看，撤销灰化；
 //     碰到的条目之后又改过或已删掉的修订撤销不了（undoBlocked），按钮预先灰化并说明原因。
+//   · 评审：工作视图给了 review（评审页签的内容，ReviewPanel）时才有这个页签，角标是未处理的问题数。
 // 收起后只剩一条竖排的把手，点它展开。
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import type { ConversationMessage, Material, RevisionLogEntry, Item } from "../../api/types";
 import { BUSY_TEXT } from "../../model/items";
 import { hhmm, triggerText, UNDO_BLOCKED_TEXT, undoBlocked } from "../../model/revisions";
 import { MaterialPane, type LocateRequest } from "./MaterialPane";
 
-export type SideTab = "material" | "doc" | "rev";
+export type SideTab = "material" | "doc" | "rev" | "review";
 
 const OP: Record<string, [string, string]> = { add: ["add", "新增"], update: ["edit", "修改"], restore: ["add", "恢复"], delete: ["drop", "删除"] };
 
 export function SidePanel({
   side, onSide, onCollapse, onExpand, taskId, materials, focusPath, items, locate, currentItem, disabled, onOpenItem, onSend,
-  log, messages, selectedRevision, onSelectRevision, scrollNonce, onDiff, onUndo, onGenerate, writesOff, readOnly,
+  log, messages, selectedRevision, onSelectRevision, scrollNonce, onDiff, onUndo, onGenerate, writesOff, readOnly, review, reviewCount = 0,
 }: {
   side: SideTab;
   onSide: (side: SideTab) => void;
@@ -46,15 +47,20 @@ export function SidePanel({
   onGenerate: (revision?: number) => void;
   writesOff: boolean;
   readOnly: boolean;
+  /** 评审页签的内容；不给就没有这个页签。 */
+  review?: ReactNode;
+  /** 评审页签的角标：未处理的问题数。 */
+  reviewCount?: number;
 }) {
   const tabs: [SideTab, string, number | null][] = [["material", "材料", null], ["doc", "文档", null], ["rev", "修订", log.length || null]];
+  if (review) tabs.push(["review", "评审", reviewCount || null]);
   return (
     <>
       <div className="doc-h">
         <span className="sw-stabs" role="tablist">
           {tabs.map(([key, label, count]) => (
             <span key={key} className={`sw-stab${side === key ? " on" : ""}`} role="tab" onClick={() => onSide(key)} data-testid={`side-tab-${key}`}>
-              {label}{count != null && <span className="cnt">{count}</span>}
+              {label}{count != null && <span className={`cnt${key === "review" ? " bad" : ""}`}>{count}</span>}
             </span>
           ))}
         </span>
@@ -72,13 +78,14 @@ export function SidePanel({
             <button type="button" className="btn sm" onClick={() => onGenerate()}>生成文档</button>
           </div>
         )}
+        {side === "review" && review}
         {side === "rev" && (
           <RevisionLogView log={log} messages={messages} selected={selectedRevision} onSelect={onSelectRevision} scrollNonce={scrollNonce}
             onDiff={onDiff} onUndo={onUndo} onGenerate={onGenerate} writesOff={writesOff} readOnly={readOnly} liveItems={items} />
         )}
       </div>
       <div className="handle" role="button" title="展开右侧栏" onClick={onExpand} data-testid="doc-handle">
-        <span className="harrow">◂</span><span>材料 · 文档 · 修订</span>
+        <span className="harrow">◂</span><span>材料 · 文档 · 修订{review ? " · 评审" : ""}</span>
       </div>
     </>
   );

@@ -23,6 +23,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { load } from "./db.ts";
 import { titleOf } from "./tool_render.ts";
+import { activeWaiver, currentRulesHash, currentReviews } from "./review_state.ts";
 
 /** 一项条件的三种状态：已满足、还差、暂无条目（集合为空，这一条无从谈起）。 */
 export type ConditionState = "met" | "unmet" | "empty";
@@ -40,8 +41,14 @@ export interface ConditionResult {
   unmet: { item: string | null; reason: string }[];
 }
 
+/**
+ * 核对时可以多给的上下文。workspaceDir（任务目录）用来算规则指纹：给了，评审一条只认当前规则下的评审记录；
+ * 没给（例如只拿到库的调用方），不按指纹区分。
+ */
+export interface CheckContext { workspaceDir?: string }
+
 /** 核对函数的签名：给库、任务编号与集合名，返回核对结果。 */
-export type ConditionCheck = (db: DatabaseSync, taskId: string, collection: string) => ConditionResult;
+export type ConditionCheck = (db: DatabaseSync, taskId: string, collection: string, ctx?: CheckContext) => ConditionResult;
 
 interface CurrentItem {
   item_id: string;
@@ -96,18 +103,24 @@ function idsPhrase(ids: string[], listAtMost = 6): string {
 }
 
 /**
- * 每个条目评审通过：条目当前所在的修订上有一条合规记录。没通过的分两类写：还没评审（当前修订上没有任何评审记录）、
- * 评审不合规（当前修订上有记录、没有一条合规），例如「UC-004、UC-005 还没评审；UC-006 评审不合规。」
+ * 每个条目评审通过：条目当前所在的修订上，有一条当前规则下的合规记录，或者有一条生效的保留（用户保留了评审不合规的写法）。
+ * 说明句分三类写：还没评审（当前修订在当前规则下没有评审记录）、评审不合规、评审不合规但你保留了（第三类计入满足，只是提示），
+ * 例如「UC-004、UC-005 还没评审；UC-006 评审不合规；UC-003 评审不合规但你保留了。」条目改出新修订之后，旧修订上的保留不再作数。
  */
-function everyReviewed(db: DatabaseSync, taskId: string, collection: string): ConditionResult {
-  const verdicts = db.prepare("SELECT verdict FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ?");
+function everyReviewed(db: DatabaseSync, taskId: string, collection: string, ctx: CheckContext = {}): ConditionResult {
+  const current = currentRulesHash(db, ctx.workspaceDir, collection);
   const pending: string[] = [];
   const failed: string[] = [];
+  const kept: string[] = [];
   const unmet: ConditionResult["unmet"] = [];
   for (const row of currentItems(db, taskId, collection)) {
-    const list = (verdicts.all(taskId, row.item_id, row.revision_no) as { verdict: string }[]).map((r) => r.verdict);
-    if (list.includes("合规")) continue;
-    if (list.length === 0) {
+    const verdicts = currentReviews(db, taskId, row.item_id, row.revision_no, current).map((r) => r.verdict);
+    if (verdicts.includes("合规")) continue;
+    if (activeWaiver(db, taskId, row.item_id, row.revision_no)) {
+      kept.push(row.item_id);
+      continue;
+    }
+    if (verdicts.length === 0) {
       pending.push(row.item_id);
       unmet.push({ item: row.item_id, reason: `条目 ${row.item_id} 在当前所在的修订 ${row.revision_no} 还没评审。` });
     } else {
@@ -115,12 +128,18 @@ function everyReviewed(db: DatabaseSync, taskId: string, collection: string): Co
       unmet.push({ item: row.item_id, reason: `条目 ${row.item_id} 在当前所在的修订 ${row.revision_no} 评审不合规。` });
     }
   }
-  const parts = [...(pending.length ? [`${idsPhrase(pending)} 还没评审`] : []), ...(failed.length ? [`${idsPhrase(failed)} 评审不合规`] : [])];
+  const parts = [
+    ...(pending.length ? [`${idsPhrase(pending)} 还没评审`] : []),
+    ...(failed.length ? [`${idsPhrase(failed)} 评审不合规`] : []),
+    ...(kept.length ? [`${idsPhrase(kept)} 评审不合规但你保留了`] : []),
+  ];
   return {
     condition: "每个条目评审通过",
     collection,
     satisfied: unmet.length === 0,
-    summary: unmet.length === 0 ? `每个条目在当前所在的修订都有评审通过的记录。` : `${parts.join("；")}。`,
+    summary: unmet.length === 0
+      ? (kept.length ? `每个条目都评审通过，或由你保留了写法（${idsPhrase(kept)} 评审不合规但你保留了，按你的决定算通过）。` : `每个条目在当前所在的修订都有评审通过的记录。`)
+      : `${parts.join("；")}。`,
     unmet,
   };
 }
@@ -199,12 +218,13 @@ export function checkCompletion(
   db: DatabaseSync,
   taskId: string,
   completion: Record<string, string[]>,
+  ctx: CheckContext = {},
 ): ConditionResult[] {
   const results: ConditionResult[] = [];
   for (const [collection, names] of Object.entries(completion)) {
     const empty = currentItems(db, taskId, collection).length === 0;
     for (const name of names) {
-      const result = CONDITIONS[name](db, taskId, collection);
+      const result = CONDITIONS[name](db, taskId, collection, ctx);
       if (empty && name !== "至少一个条目") {
         results.push({ ...result, satisfied: true, state: "empty", summary: EMPTY_SUMMARY, unmet: [] });
       } else {
