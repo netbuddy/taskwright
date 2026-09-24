@@ -27,7 +27,7 @@ def test_reply_uses_shared_formatter(capsys):
     printer.handle({"type": "tool_execution_start", "toolCallId": "c1", "args": reply})
     printer.handle(_end("reply", False, "回复已送达", {"delivered": True, "reply": reply}))
     assert capsys.readouterr().out.splitlines() == [
-        "执行者（经回复工具）：", "  告知：", "    · 我新增了 UC-001。",
+        "助手（经回复工具）：", "  告知：", "    · 我新增了 UC-001。",
         "  【请确认】请确认 UC-001（修订 1）。", "      条目 UC-001（修订 1）", "  成文的话：", "    请确认。",
     ]
 

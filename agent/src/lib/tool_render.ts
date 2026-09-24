@@ -30,7 +30,7 @@ export const ACT_TITLES: Record<string, string> = {
 export const EFFECT_TITLES: Record<string, string> = { remove: "删掉", add: "新增", change: "改动" };
 
 /** 「回复」工具块的标题行。 */
-export const REPLY_HEADING = "执行者（经回复工具）：";
+export const REPLY_HEADING = "助手（经回复工具）：";
 
 /** 「保存修订」工具块的标题行。 */
 export const SAVE_HEADING = "保存修订";

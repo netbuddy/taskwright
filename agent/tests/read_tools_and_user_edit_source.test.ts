@@ -176,7 +176,7 @@ test("执行者不能填「用户直接修改」", () => {
   const dir = fixture();
   assert.throws(
     () => saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "x", 步骤: ["y"] }, sources: [{ kind: "用户直接修改", locator: "ui-op-1", excerpt: "x" }] }] }),
-    /「用户直接修改」，这一种由系统在用户直接改字段时写，你不能填/,
+    /种类写成了「用户直接修改」，这一种只由系统在用户直接改字段时写/,
   );
 });
 
@@ -229,7 +229,7 @@ test("旧写法 base_version 不再被接受：界面直接操作与保存修订
   );
   assert.throws(
     () => saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 名称: "用口令登录" } } as any] }),
-    /缺少 base_revision/,
+    /没写它看到的是哪次修订/,
   );
   assert.equal(count(dir, "event"), before);
 });
