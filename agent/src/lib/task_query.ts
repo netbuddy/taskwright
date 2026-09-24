@@ -4,6 +4,9 @@
  * 取数与排版用 board.ts 里与交付物看板（/tw-board）同一组函数，所以工具的输出与看板一致；完成条件用
  * conditions.ts 里与「完成任务」门禁同一组函数。库以只读方式打开，不写任何东西，也不记事件。
  * 查不到时抛异常，异常文字用中文写明原因，由 pi 交还模型。本模块不依赖 pi，单元测试可以直接调用。
+ *
+ * 对话理解：调用方给了会话编号时，两个工具的返回末尾另加三个派生事实（还在等回应的执行者行为、连续追问、改口，
+ * 见 lib/dialogue_acts.ts 的 dialogueFacts），查看条目只算这个条目的；details.dialogue 是同一份结构化内容。
  */
 
 import { existsSync, statSync } from "node:fs";
@@ -14,6 +17,8 @@ import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, hasVersionColumns } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
+import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
+import { hasColumn } from "./dialogue_schema.ts";
 
 /** 工具的返回：给模型的一段文字，给读取一侧的结构化内容。 */
 export interface QueryOutcome {
@@ -43,7 +48,7 @@ function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRo
  * 「查看条目」：某个条目的全部字段、来源、评审与确认状态，以及它改动过的修订号列表。
  * 缺省看最新内容；给了 revision_no 时看条目截至那次修订的内容（修订号不大于它的最近一次改动）。
  */
-export function getItem(workspaceDir: string, params: { item_id?: unknown; revision_no?: unknown }): QueryOutcome {
+export function getItem(workspaceDir: string, params: { item_id?: unknown; revision_no?: unknown }, sessionId?: string): QueryOutcome {
   const itemId = typeof params.item_id === "string" ? params.item_id.trim().toUpperCase() : "";
   if (!itemId) throw new Error("item_id 要写条目编号，例如 UC-001。");
   const wanted = params.revision_no;
@@ -73,12 +78,16 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     const fields = load(row.fields) as Record<string, unknown>;
     const sources = (db
       .prepare(
-        "SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no",
+        `SELECT position, kind, locator, excerpt, field, field_index, ${hasColumn(db, "item_source", "normalized_value") ? "normalized_value" : "NULL AS normalized_value"} ` +
+          "FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no",
       )
-      .all(task.task_id, itemId, shown) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[])
-      .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[] }[]>((list, one) => {
+      .all(task.task_id, itemId, shown) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null }[])
+      .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[]; normalized_value?: string }[]>((list, one) => {
         let source = list[one.position - 1];
-        if (!source) list[one.position - 1] = source = { kind: one.kind, locator: one.locator, excerpt: one.excerpt, supports: [] };
+        if (!source) {
+          list[one.position - 1] = source = { kind: one.kind, locator: one.locator, excerpt: one.excerpt, supports: [] };
+          if (one.normalized_value !== null) source.normalized_value = one.normalized_value;
+        }
         if (one.field !== null) source.supports.push(one.field_index === null ? { field: one.field } : { field: one.field, index: one.field_index });
         return list;
       }, []);
@@ -90,6 +99,9 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
         : `这是旧内容；${itemId} 现在是修订 ${current}，要修改时先看最新内容，base_revision 写 ${current}。`,
       `这份内容各字段的原值（JSON）：${JSON.stringify(fields)}`,
     );
+    const dialogue = sessionId ? dialogueFacts(db, task.task_id, sessionId, itemId) : null;
+    const factLines = dialogue ? dialogueFactLines(dialogue) : [];
+    if (factLines.length > 0) lines.push("", ...factLines);
     return {
       text: lines.join("\n"),
       details: {
@@ -103,13 +115,14 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
         sources,
         review: reviewState(db, task.task_id, itemId, shown),
         confirm: confirmState(db, task.task_id, itemId, shown),
+        dialogue,
       },
     };
   });
 }
 
 /** 「查询任务状态」：各集合的条目、完成条件逐项、未解决的问题条目、未读清单、最近一次修订与事件序号。 */
-export function getTaskStatus(workspaceDir: string): QueryOutcome {
+export function getTaskStatus(workspaceDir: string, sessionId?: string): QueryOutcome {
   return withTask(workspaceDir, (db, task, definition) => {
     const name = task.task_name ?? definition.taskName;
     const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}），状态是${task.status}。`, ""];
@@ -147,6 +160,9 @@ export function getTaskStatus(workspaceDir: string): QueryOutcome {
       lastEventLine(db),
     );
     const last = db.prepare("SELECT MAX(seq) AS seq FROM event").get() as { seq: number | null };
+    const dialogue = sessionId ? dialogueFacts(db, task.task_id, sessionId) : null;
+    const factLines = dialogue ? dialogueFactLines(dialogue) : [];
+    if (factLines.length > 0) lines.push("", ...factLines);
     return {
       text: lines.join("\n"),
       details: {
@@ -158,6 +174,7 @@ export function getTaskStatus(workspaceDir: string): QueryOutcome {
         unread: unread.map((one) => ({ item_id: one.item_id, title: one.title, revision_no: one.revision_no })),
         last_revision_no: revision?.revision_no ?? null,
         last_event_seq: last.seq,
+        dialogue,
       },
     };
   });

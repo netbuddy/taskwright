@@ -13,6 +13,12 @@
  * 逐字包含这段摘录的那一条，填「会话编号#会话条目编号」；找不到就拒绝。模型看不到会话条目编号，
  * 所以不让它填；这一步同时是一条逐字核对。
  *
+ * 种类为「用户的话」的来源可以另带 normalized_value：写进字段的值与原话不同时（原话「应该是三十天吧」，写入「30 天」），
+ * 写入的值记在这里，存进来源表的同名列。工具只核对摘录逐字，不核对改写是否合理。
+ *
+ * 对话理解：调用方给了 intentEntry（这一轮是由哪句用户的话引出的）时，从对话行为表里取与这次操作的条目相同的那项用户行为，
+ * 编号写进修订表的 intent_act_id 与事件内容（取法见 lib/dialogue_acts.ts 的 revisionIntent）。
+ *
  * 种类为「文档原文」的来源（执行者交来的），摘录必须逐字是出处所指材料文件里连续的一段（换行按 \n 归一后比），
  * 否则界面上点来源找不到原文；跳句拼接、改字、出处不是文件的，都拒绝。用户在界面上撤销时交回的旧来源不再核对。
  *
@@ -38,6 +44,7 @@ import {
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
 import { EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { revisionIntent } from "./dialogue_acts.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
 export interface Support {
@@ -51,6 +58,8 @@ export interface Source {
   locator: string;
   excerpt: string;
   supports: Support[];
+  /** 只有种类为「用户的话」时可能有：写入字段的值与原话不同时，写入的值。 */
+  normalized_value?: string;
 }
 
 /** 「用户的话」的出处写法：会话编号与会话条目编号之间用 # 隔开。读取一侧按同一写法拆开。 */
@@ -90,6 +99,7 @@ interface SourceRow {
   excerpt: string;
   field: string | null;
   field_index: number | null;
+  normalized_value: string | null;
 }
 
 /** 发起方写成给模型看的中文。 */
@@ -211,7 +221,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const sourcesOf = (itemId: string, revisionNo: number): Source[] => {
     const rows = db
       .prepare(
-        "SELECT position, kind, locator, excerpt, field, field_index FROM item_source " +
+        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value FROM item_source " +
           "WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no",
       )
       .all(taskId, itemId, revisionNo) as unknown as SourceRow[];
@@ -220,6 +230,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       let source = byPosition.get(row.position);
       if (!source) {
         source = { kind: row.kind, locator: row.locator, excerpt: row.excerpt, supports: [] };
+        if (row.normalized_value !== null) source.normalized_value = row.normalized_value;
         byPosition.set(row.position, source);
       }
       if (row.field !== null) {
@@ -586,6 +597,20 @@ function checkSources(
       ok = false;
       return;
     }
+    let normalized: string | undefined;
+    if (one.normalized_value !== undefined && one.normalized_value !== null) {
+      if (!userWords) {
+        errors.push(`${where}写了 normalized_value；它只用于种类为「用户的话」的来源，别的种类不写`);
+        ok = false;
+        return;
+      }
+      if (typeof one.normalized_value !== "string" || one.normalized_value.trim() === "") {
+        errors.push(`${where}的 normalized_value 应当是一段不为空的文字（写进字段的值），与原话相同就不写`);
+        ok = false;
+        return;
+      }
+      normalized = one.normalized_value;
+    }
     const supports = checkSupportShape(one.supports, where, errors);
     if (supports === null) {
       ok = false;
@@ -642,7 +667,7 @@ function checkSources(
         notes?.push(`${where}的摘录按空行拆成了 ${parts.length} 条来源`);
       }
     }
-    for (const excerpt of excerpts) kept.push({ kind: one.kind as string, locator, excerpt, supports });
+    for (const excerpt of excerpts) kept.push({ kind: one.kind as string, locator, excerpt, supports, ...(normalized ? { normalized_value: normalized } : {}) });
   });
   return ok ? kept : null;
 }
@@ -766,6 +791,7 @@ function write(
   });
 
   const at = wallClockText();
+  const intentActId = call.intentEntry ? revisionIntent(db, taskId, call.sessionId, call.intentEntry, outcomes.map((one) => one.item)) : null;
   const seq = emit(db, {
     taskId,
     sessionId: call.sessionId,
@@ -774,6 +800,7 @@ function write(
     payload: {
       revision_no: revisionNo,
       ...(typeof params.undo_of_revision === "number" ? { undo_of_revision: params.undo_of_revision } : {}),
+      ...(intentActId ? { intent_act_id: intentActId } : {}),
       operations: outcomes.map(({ op, item, collection, from_revision, to_revision }) => ({
         op,
         item,
@@ -786,7 +813,7 @@ function write(
   });
 
   db.prepare(
-    "INSERT INTO revision (task_id, revision_no, session_id, call_id, event_seq, created_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO revision (task_id, revision_no, session_id, call_id, event_seq, created_at, summary, intent_act_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     taskId,
     revisionNo,
@@ -795,6 +822,7 @@ function write(
     seq,
     at,
     dump(outcomes.map(({ op, item, collection }) => ({ op, item, collection }))),
+    intentActId,
   );
   const insertItem = db.prepare(
     "INSERT INTO item (task_id, item_id, collection, serial, added_in_revision, deleted_in_revision, event_seq, deleted_event_seq) " +
@@ -804,8 +832,8 @@ function write(
     "INSERT INTO item_version (task_id, item_id, revision_no, fields, event_seq) VALUES (?, ?, ?, ?, ?)",
   );
   const insertSource = db.prepare(
-    "INSERT INTO item_source (task_id, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO item_source (task_id, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const markDeleted = db.prepare(
     "UPDATE item SET deleted_in_revision = ?, deleted_event_seq = ? WHERE task_id = ? AND item_id = ?",
@@ -831,7 +859,7 @@ function write(
       rows.forEach((support, supportIndex) => {
         insertSource.run(
           taskId, outcome.item, revisionNo, position + 1, supportIndex + 1,
-          source.kind, source.locator, source.excerpt, support?.field ?? null, support?.index ?? null, seq,
+          source.kind, source.locator, source.excerpt, support?.field ?? null, support?.index ?? null, seq, source.normalized_value ?? null,
         );
       });
     });
@@ -856,6 +884,7 @@ function write(
       event_seq: seq,
       undo_of_revision: typeof params.undo_of_revision === "number" ? params.undo_of_revision : null,
       saved: true,
+      intent_act_id: intentActId,
       operations: outcomes.map(({ op, item, collection, from_revision, to_revision }) => ({ op, item, collection, from_revision, to_revision })),
     },
   };

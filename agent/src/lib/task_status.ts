@@ -15,6 +15,9 @@
  * 执行者不看这张清单就不知道有材料可读。续接时交付物没有变化、但材料目录里有
  * 上次之后新放进来的文件，也写一条，只列材料。
  *
+ * 对话理解：这条会话里还有在等回应的执行者行为（你问过、用户还没回应的，见 lib/dialogue_acts.ts）时，消息末尾另列一行，
+ * details.open_acts 是同一份清单。新会话里还没有对话行为，这一行只在续接时出现。
+ *
  * 数字全部由库算出：条目数查条目表，完成条件用 conditions.ts 里与「完成任务」门禁同一组函数。
  * 本模块只读库（只读方式打开），不写任何东西，不依赖 pi，单元测试可以直接调用。
  */
@@ -26,6 +29,8 @@ import { checkCompletion, completionBrief, currentItems } from "./conditions.ts"
 import { ACTOR_USER, databasePath, load, wallClockText } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
+import { FUNCTION_NAMES } from "./intent_schema.ts";
+import { unansweredActs } from "./dialogue_acts.ts";
 
 /** 这条自定义消息的类型名。后端、观测台与会话文件里都认这个名字。 */
 export const TASK_STATUS_CUSTOM_TYPE = "taskwright-task-status";
@@ -75,11 +80,27 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const materials = listMaterials(workspaceDir, definition.materialsDir);
     const fresh = !facts.hasUserMessage && !facts.hasStatusMessage;
-    if (fresh || facts.lastMessageAt === null) return statusNow(db, task, definition, materials);
-    return changesSince(db, task, facts.lastMessageAt, sessionId, materials);
+    const message = fresh || facts.lastMessageAt === null
+      ? statusNow(db, task, definition, materials)
+      : changesSince(db, task, facts.lastMessageAt, sessionId, materials);
+    return withOpenActs(db, task.task_id, sessionId, message);
   } finally {
     db.close();
   }
+}
+
+/** 在消息末尾列出这条会话里还在等回应的执行者行为；没有就原样返回。 */
+function withOpenActs(db: DatabaseSync, taskId: string, sessionId: string, message: TaskStatusMessage | null): TaskStatusMessage | null {
+  if (!message) return message;
+  const open = unansweredActs(db, taskId, sessionId);
+  if (open.length === 0) return message;
+  const list = open.map((one) => `${one.act_id} ${FUNCTION_NAMES[one.function] ?? one.function}「${one.summary}」`).join("；");
+  return {
+    ...message,
+    text: `${message.text}
+还在等回应的执行者行为 ${open.length} 条（你问过、用户还没有回应的）：${list}。`,
+    details: { ...message.details, open_acts: open.map((one) => ({ act_id: one.act_id, function: one.function, summary: one.summary })) },
+  };
 }
 
 export interface MaterialFile {

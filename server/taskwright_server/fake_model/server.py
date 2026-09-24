@@ -34,6 +34,11 @@ from pathlib import Path
 #: 脚本用完之后的兜底回答。
 DEFAULT_REPLY = {"text": "好的。"}
 
+#: 自动补的理解：auto_intent 为真时，用户说话之后的第一个回答要是只有工具调用、没有文字，就在前面补上这一段。
+#: 执行者每轮第一段要先写一份理解（agent/prompts/schemas/user_intent.schema.json），保存修订、完成任务、回复在没有理解时拒绝；
+#: 早先写好的脚本只写了工具调用，补上这一段它们照旧能跑。要测「没写理解被拒」的测试把 auto_intent 关掉。
+AUTO_INTENT_TEXT = '```json\n{"acts": [{"function": "request", "confidence": "high", "summary": "照用户说的做"}]}\n```'
+
 #: 假端点对外报的模型名。pi 那一侧的 models.json 里写的模型编号要与它一致，见 agent_config.py。
 MODEL_ID = "fake-model"
 
@@ -77,8 +82,9 @@ class FakeModel:
         fake.stop()
     """
 
-    def __init__(self, script=None, log_path: Path | str | None = None, host: str = "127.0.0.1"):
+    def __init__(self, script=None, log_path: Path | str | None = None, host: str = "127.0.0.1", auto_intent: bool = False):
         self.host = host
+        self.auto_intent = auto_intent
         self.log_path = Path(log_path) if log_path else None
         self._lock = threading.Lock()
         self._server: ThreadingHTTPServer | None = None
@@ -196,6 +202,7 @@ class FakeModel:
             self.request_count += 1
             request_no = self.request_count
         reply, why = self._pick(request_no, body)
+        reply = self._with_intent(reply, body)
         self._record({"序号": request_no, "时刻": round(time.time(), 3), "请求体": body,
                       "回答": reply, "按哪一条给的": why})
         if reply.get("delay"):
@@ -223,6 +230,15 @@ class FakeModel:
                 "id": f"chatcmpl-fake-{request_no}", "object": "chat.completion", "created": int(time.time()),
                 "model": MODEL_ID, "choices": [{"index": 0, "message": message, "finish_reason": finish}],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+
+    def _with_intent(self, reply: dict, body: dict) -> dict:
+        """auto_intent 为真、这个请求的最后一条消息是用户的角色、回答只有工具调用没有文字时，在前面补一段理解。"""
+        messages = body.get("messages") or []
+        last = messages[-1] if messages else {}
+        # 兜底那句提醒之后也补：那一轮要是还没有理解，扩展就记下这一份；已经有了，扩展不再记，多写的一段无害。
+        if not self.auto_intent or last.get("role") != "user" or not reply.get("tool_calls") or reply.get("text"):
+            return reply
+        return {**reply, "text": AUTO_INTENT_TEXT}
 
     @staticmethod
     def _send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict, close: bool = False) -> None:

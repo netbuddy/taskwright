@@ -12,6 +12,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { UserMessage } from "../lib/create_task.ts";
 import { ACTOR_EXECUTOR } from "../lib/db.ts";
 import { saveRevision } from "../lib/save_revision.ts";
+import { currentRun, requireUnderstanding } from "../lib/dialogue_acts.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = "save_revision";
@@ -35,6 +36,13 @@ const source = Type.Object(
       }),
     ),
     excerpt: Type.String({ description: "摘录的原文。用户的话要逐字照抄用户说过的一段原话。" }),
+    normalized_value: Type.Optional(
+      Type.String({
+        description:
+          "只用于种类为「用户的话」的来源：你写进字段的值与用户原话不同时（例如原话是「应该是三十天吧」，写入的是「30 天」），" +
+          "在这里写写入的值。摘录仍要逐字照抄原话。写入的值与原话相同就不写。",
+      }),
+    ),
     supports: Type.Optional(
       Type.Array(support, {
         description:
@@ -112,6 +120,9 @@ export function registerSaveRevision(pi: ExtensionAPI): void {
     parameters,
     executionMode: "sequential",
     async execute(toolCallId: string, params: { operations: unknown }, _signal, _onUpdate, ctx: ExtensionContext) {
+      // 对话理解：这一轮没有有效的理解就拒绝；修订记下是因用户哪一项对话行为而做（intentEntry）。
+      const branch = ctx.sessionManager.getBranch() as never;
+      requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch, "保存修订", TOOL_NAME);
       const outcome = saveRevision(
         {
           workspaceDir: ctx.cwd,
@@ -119,6 +130,7 @@ export function registerSaveRevision(pi: ExtensionAPI): void {
           callId: toolCallId,
           actor: ACTOR_EXECUTOR,
           userMessages: userMessagesOnBranch(ctx),
+          intentEntry: currentRun(branch)?.userEntryId ?? null,
         },
         params,
       );

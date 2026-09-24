@@ -21,6 +21,11 @@ export interface UserMessage {
 }
 
 export interface CallContext {
+  /**
+   * 对话理解：这一轮是由会话里哪一句用户的话（会话条目编号）引出的。「保存修订」据此从对话行为表里取与这次操作的条目
+   * 相同的那项用户行为，编号写进修订表的 intent_act_id；不给就不写。只由「保存修订」工具的登记处填。
+   */
+  intentEntry?: string | null;
   /** 任务目录，也就是 pi 的当前工作目录。 */
   workspaceDir: string;
   /** pi 的会话编号。 */

@@ -9,6 +9,7 @@
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { REVIEW_SWITCH_ENV, completeTask, reviewSwitchOn } from "../lib/complete_task.ts";
+import { requireUnderstanding } from "../lib/dialogue_acts.ts";
 
 export const TOOL_NAME = "complete_task";
 
@@ -26,6 +27,8 @@ export function registerCompleteTask(pi: ExtensionAPI): void {
     parameters: Type.Object({}, { additionalProperties: true }),
     executionMode: "sequential",
     async execute(toolCallId: string, _params: unknown, _signal, _onUpdate, ctx: ExtensionContext) {
+      // 对话理解：这一轮没有有效的理解就拒绝（lib/dialogue_acts.ts）。
+      requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), ctx.sessionManager.getBranch() as never, "完成任务", TOOL_NAME);
       const outcome = completeTask({
         workspaceDir: ctx.cwd,
         sessionId: ctx.sessionManager.getSessionId(),

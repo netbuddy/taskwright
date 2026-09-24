@@ -28,7 +28,7 @@ export function registerGetItem(pi: ExtensionAPI): void {
     promptSnippet: "查看一个条目的全部字段、来源与当前所在的修订号（只读）",
     parameters,
     async execute(_toolCallId: string, params: { item_id?: unknown; revision_no?: unknown }, _signal, _onUpdate, ctx: ExtensionContext) {
-      const outcome = getItem(ctx.cwd, params);
+      const outcome = getItem(ctx.cwd, params, ctx.sessionManager.getSessionId());
       return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
     },
   });

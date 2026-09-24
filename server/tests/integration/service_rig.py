@@ -83,9 +83,10 @@ class EventStream:
 
 
 class ServiceRig:
-    def __init__(self, script):
+    def __init__(self, script, auto_intent: bool = True):
         self.root = Path(tempfile.mkdtemp(prefix="taskwright-svc-"))
-        self.fake = FakeModel(script, self.root / "fake_requests.jsonl")
+        # 用户说话之后第一个只有工具调用的回答，由假端点在前面补一段理解（见 fake_model/server.py）。
+        self.fake = FakeModel(script, self.root / "fake_requests.jsonl", auto_intent=auto_intent)
         self.streams: list[EventStream] = []
 
     def __enter__(self) -> "ServiceRig":
