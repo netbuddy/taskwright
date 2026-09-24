@@ -8,7 +8,7 @@
 .app .sw-iss-card.hi { border-color: var(--amber); box-shadow: 0 0 0 .12rem var(--amber-line); }
 .app .sw-iss-card .head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .app .sw-iss-card .id { font-family: ui-monospace, Menlo, monospace; font-size: 0.889rem; color: var(--amber); }
-.app .sw-iss-card .res { margin-left: auto; font-size: 0.881rem; color: var(--mut); }
+.app .sw-iss-card .res { margin-top: .2rem; font-size: 0.881rem; color: var(--mut); }
 .app .sw-iss-card .body { margin: .25rem 0 0; font-size: 0.943rem; }
 .app .sw-iss-card .sug { font-size: 0.881rem; color: #555; background: var(--card); border: 1px solid var(--amber-line); border-radius: .3rem; padding: .15rem .45rem; margin-top: .3rem; }
 .app .sw-iss-card .ans { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-top: .4rem; }

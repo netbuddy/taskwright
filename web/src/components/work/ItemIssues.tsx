@@ -119,14 +119,14 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
         <span className="id">{issue.item_id}</span>
         {kinds.map((f) => <span key={f.name} className="chip">{String(issue.fields[f.name])}</span>)}
         {status && <span className={`chip ${open ? "warn" : status === RESOLVED_VALUE ? "okc" : ""}`}>{status}</span>}
-        {!open && (
-          <span className="res" data-testid={`issue-outcome-${issue.item_id}`}>
-            {outcomes.length > 0 ? `${outcomes.map((f) => `${f.name}：${String(issue.fields[f.name])}`).join("；")}（修订 ${issue.revision_no}）`
-              : `在修订 ${issue.revision_no} 标为${status}`}
-          </span>
-        )}
       </div>
       <div className="body">{matter}</div>
+      {!open && (
+        <div className="res" data-testid={`issue-outcome-${issue.item_id}`}>
+          {outcomes.length > 0 ? `${outcomes.map((f) => `${f.name}：${String(issue.fields[f.name])}`).join("；")}（修订 ${issue.revision_no}）`
+            : `在修订 ${issue.revision_no} 标为${status}`}
+        </div>
+      )}
       {open && suggestions.map((f) => <div className="sug" key={f.name}>助手{f.name}：{String(issue.fields[f.name])}</div>)}
       {open && (
         <div className="ans">

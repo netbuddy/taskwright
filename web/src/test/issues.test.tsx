@@ -112,6 +112,8 @@ describe("条目详情顶部「挂在这条上的问题」", () => {
     const done = screen.getByTestId("issue-card-TBD-001");
     expect(done).toHaveClass("closed");
     expect(screen.getByTestId("issue-outcome-TBD-001")).toHaveTextContent("处理结果：罚款在服务台缴纳（修订 9）");
+    // 已了结的卡片：事项在上，处理结果在下
+    expect(done.textContent!.indexOf("罚款怎么缴，材料没说。")).toBeLessThan(done.textContent!.indexOf("处理结果：罚款在服务台缴纳"));
     expect(screen.getByTestId("issue-outcome-TBD-003")).toHaveTextContent("在修订 12 标为用户决定保留");
     expect(within(done).queryByTestId("issue-input-TBD-001")).toBeNull();
     // 详情标题行上也有徽标
