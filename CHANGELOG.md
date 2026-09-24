@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - The development switch `TASKWRIGHT_DEV_REVIEW_AS_MET`, and the stop after three failed reviews of the same revision.
+- Open questions follow the items they concern: list rows show how many unresolved questions point at an item, the item detail lists those questions with an answer box and a keep-pending button, and following a question's link to an item offers a way back to the question list.
 
 ## [0.1.0-alpha] - Unreleased
 

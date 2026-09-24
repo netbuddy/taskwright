@@ -1,0 +1,22 @@
+/* 问题跟着条目走（components/work/ItemIssues.tsx）：列表行与详情标题行上的「问题 N」徽标、详情顶部「挂在这条上的问题」一区、
+ * 从问题跳来时的「回到问题列表」一行。配色只用 styles.css 里的变量。 */
+.app .sw-issn { flex: none; }
+.app .sw-iss { margin: .15rem 0 .6rem; }
+.app .sw-iss-h { font-size: 0.881rem; color: var(--mut); margin-bottom: .3rem; }
+.app .sw-iss-card { border: 1px solid var(--amber-line); background: var(--amber-bg); border-radius: .5rem; padding: .45rem .7rem; margin-bottom: .45rem; }
+.app .sw-iss-card.closed { opacity: .72; }
+.app .sw-iss-card.hi { border-color: var(--amber); box-shadow: 0 0 0 .12rem var(--amber-line); }
+.app .sw-iss-card .head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.app .sw-iss-card .id { font-family: ui-monospace, Menlo, monospace; font-size: 0.889rem; color: var(--amber); }
+.app .sw-iss-card .res { margin-top: .2rem; font-size: 0.881rem; color: var(--mut); }
+.app .sw-iss-card .body { margin: .25rem 0 0; font-size: 0.943rem; }
+.app .sw-iss-card .sug { font-size: 0.881rem; color: #555; background: var(--card); border: 1px solid var(--amber-line); border-radius: .3rem; padding: .15rem .45rem; margin-top: .3rem; }
+.app .sw-iss-card .ans { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-top: .4rem; }
+.app .sw-iss-card .ans input { flex: 0 1 24rem; min-width: 10rem; border: 1px solid var(--line2); border-radius: .3rem; padding: .15rem .5rem;
+  font-size: 0.905rem; font-family: inherit; background: var(--card); }
+.app .sw-iss-card .ans input:disabled { background: var(--dark); cursor: not-allowed; }
+.app .sw-iss-card .ans .btn:disabled { opacity: .45; cursor: not-allowed; }
+.app .sw-iss-more { font-size: 0.881rem; color: var(--blue); cursor: pointer; margin: 0 0 .45rem .1rem; display: inline-block; }
+.app .sw-iss-crumb { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin-bottom: .35rem; }
+.app .sw-iss-crumb .crumb { margin-bottom: 0; }
+.app .sw-iss-crumb .note { font-size: 0.881rem; color: var(--mut); }

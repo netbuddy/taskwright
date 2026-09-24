@@ -37,6 +37,7 @@ import { formatTime } from "../../model/format";
 import { errorText } from "./errors";
 import { ItemStatus } from "./ItemStatus";
 import { FindingLine } from "./FindingLine";
+import { IssueBadge } from "./ItemIssues";
 
 /** 从修订页签的「查看差异」来的请求：打开这个条目并停在那次修订。nonce 每点一次加一。 */
 export interface ViewRequest {
@@ -54,7 +55,7 @@ function contentAt(revisions: ItemRevision[] | null, n: number | null): ItemRevi
 }
 
 export function ItemDetail({ task, item, def, readOnly, writesOff = false, pending, submit, marked = [], onBack, onPrev, onNext, onLocate, onOpenItem,
-  onAskAssistant, view = null, latestRevision = 0, onDirty, just = false, onReview, reviewOff, onPrefill }: {
+  onAskAssistant, view = null, latestRevision = 0, onDirty, just = false, onReview, reviewOff, onPrefill, top = null, crumb = null }: {
   task: Task;
   item: Item;
   def: CollectionDef;
@@ -85,6 +86,10 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   reviewOff?: string;
   /** 「让助手照这条改」：预填对话区输入框。 */
   onPrefill?: (text: string) => void;
+  /** 标题行之下、字段之上的一块（「挂在这条上的问题」，见 ItemIssues）。 */
+  top?: ReactNode;
+  /** 顶部那一行换成这个（从问题跳来时的「回到问题列表」）；不给时是「回到列表」。 */
+  crumb?: ReactNode;
 }) {
   // 边框与比较基准（见文件头）：条目当前所在的修订还没看过时一直跟着最新的算（修订日志可能比条目事件晚到），
   // 这次修订记为看过之后就停在那之前的样子；条目换了或改到新修订，重新开始跟。
@@ -188,11 +193,12 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
 
   return (
     <div className="detail" data-testid="item-detail">
-      {onBack && <span className="crumb" role="button" onClick={onBack}>‹ 回到列表</span>}
+      {crumb ?? (onBack && <span className="crumb" role="button" onClick={onBack}>‹ 回到列表</span>)}
       <div className="dh">
         <span className="id">{item.item_id}</span>
         <b className="title" role="heading" aria-level={3}>{item.title}</b>
         <ItemStatus task={task} item={item} just={just} pending={pending} />
+        <IssueBadge task={task} itemId={item.item_id} />
         <span className="pager">
           {!keepField && onReview && needsReview(task, item.collection) && (
             <>
@@ -226,6 +232,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           {onNext !== undefined && <button type="button" className="btn sm" style={onNext ? undefined : { opacity: .4 }} onClick={() => onNext?.()}>下一条 ›</button>}
         </span>
       </div>
+      {top}
 
       {error && (
         <div className="err" data-testid="action-error">

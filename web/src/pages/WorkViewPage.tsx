@@ -291,7 +291,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
               {task ? (
                 <ItemsPanel task={task} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
-                  onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer}
+                  onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => void send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill} />
               ) : <div className="pane-items" />}
