@@ -29,7 +29,7 @@ export function demoDefinition(): Record<string, unknown> {
           ],
         },
         {
-          名称: "待定事项",
+          名称: "问题",
           编号前缀: "TBD",
           字段: [
             { 名: "事项", 类型: "文本", 必填: true },
@@ -42,18 +42,37 @@ export function demoDefinition(): Record<string, unknown> {
     },
     完成条件: {
       用例: ["至少一个条目", "每个条目评审通过", "每个条目用户确认"],
-      待定事项: ["没有状态为未解决的条目"],
+      问题: ["没有状态为未解决的条目"],
     },
     执行方法: ".pi/skills/demo/SKILL.md",
     领域规矩: ["docs/domain-knowledge/demo.md"],
   };
 }
 
-/** 建一个临时任务目录，写好任务定义文件，返回任务目录。 */
-export function makeWorkspace(definition: unknown = demoDefinition()): string {
+/**
+ * 夹具里的材料全文。种类为「文档原文」的来源，摘录必须逐字出自出处所指的材料文件，
+ * 所以测试里用到的文档原文摘录都要在这里出现。
+ */
+export const MATERIAL_TEXT = [
+  "# 登录与退款",
+  "",
+  "用户可以登录。登录总要输入口令。用口令登录，叫用口令登录也行。",
+  "",
+  "退款须在七天内处理完毕。退款要在三天内到账，也有人写退款要在三天之内到账。",
+  "",
+  "系统要支持并发访问，最多 48个工作小时 内答复。",
+  "",
+].join("\n");
+
+/** 建一个临时任务目录，写好任务定义文件与一份材料（inputs/材料.md，material 为假时不放），返回任务目录。 */
+export function makeWorkspace(definition: unknown = demoDefinition(), { material = true } = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "taskwright-agent-test-"));
   mkdirSync(join(dir, "docs/task-definitions"), { recursive: true });
   writeFileSync(join(dir, DEFINITION_PATH), JSON.stringify(definition, null, 2), "utf-8");
+  if (material) {
+    mkdirSync(join(dir, "inputs"), { recursive: true });
+    writeFileSync(join(dir, "inputs/材料.md"), MATERIAL_TEXT, "utf-8");
+  }
   return dir;
 }
 

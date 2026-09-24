@@ -1,16 +1,16 @@
 /**
  * 「请求评审」的核心逻辑：
  * 执行者保存条目之后调用；每个条目装配一次评审者调用（一次不带工具的模型调用，干净上下文），结论与发现由这里的代码写进库。
- * 执行者自己写不了评审记录。做法照「登记用户确认」（record_confirmation.ts）：
- *   1. prepareReviews：只读核对并装配每个条目的提示——该集合的规矩文档全文、字段声明、条目当前版本的全部字段与来源；
+ * 执行者自己写不了评审记录。分三步，模型调用夹在中间、不在事务里（事务里不能 await）：
+ *   1. prepareReviews：只读核对并装配每个条目的提示——该集合的规矩文档全文、字段声明、条目当前所在修订下的全部字段与来源；
  *   2. 调用方调模型，parseReview 解析与核对输出（结论只有两种、发现指到声明过的字段与存在的项）；
- *   3. writeReview：在立即事务里再核对一次版本，写评审、评审发现、模型调用、事件。
+ *   3. writeReview：在立即事务里再核对一次修订号，写评审、评审发现、模型调用、事件。
  * 评审没有完成（超时、调用失败、两次输出都不合格、评审期间条目被改）时 writeUnfinished 只记模型调用与一条
  * REVIEW_UNFINISHED 事件，不写合规与否。
  *
- * 规矩文档从哪里来：任务定义里每个集合可以写一项「评审规矩」（相对任务目录的路径）；没写的集合（例如待定事项）
- * 只按字段声明评。不评哪些：不带参数时，只评完成条件里要求「每个条目评审通过」的那些集合里、当前版本还没有合规记录的条目。
- * 连续三次不合规即停：某条目当前版本已有 3 条不合规记录时不再评，交还前三次的发现，由执行者原样转给用户（第 31 节第 3 条）。
+ * 规矩文档从哪里来：任务定义里每个集合可以写一项「评审规矩」（相对任务目录的路径）；没写的集合（例如问题条目所在的集合）
+ * 只按字段声明评。不评哪些：不带参数时，只评完成条件里要求「每个条目评审通过」的那些集合里、当前所在的修订还没有合规记录的条目。
+ * 连续三次不合规即停：某条目在当前所在的修订已有 3 条不合规记录时不再评，交还前三次的发现，由执行者原样转给用户（第 31 节第 3 条）。
  *
  * 本模块不依赖 pi，单元测试可以直接调用。
  */
@@ -22,19 +22,19 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, databasePath, emit, load, wallClockText } from "./db.ts";
 import { withTaskDatabase } from "./schema.ts";
-import { extractJson, type ModelCallRecord } from "./record_confirmation.ts";
+import { extractJson, type ModelCallRecord } from "./model_call.ts";
 
 export const REVIEW_PROMPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "prompts", "review.md");
 export const EVENT_REVIEW_RECORDED = "REVIEW_RECORDED";
 export const EVENT_REVIEW_UNFINISHED = "REVIEW_UNFINISHED";
 /** 完成条件里要求评审的那个条件名，不带参数时按它挑集合。 */
 export const REVIEW_CONDITION = "每个条目评审通过";
-/** 同一条目当前版本不合规到这么多次就不再评。 */
+/** 同一条目在同一次修订下不合规到这么多次就不再评。 */
 export const MAX_FAILED_REVIEWS = 3;
 
 export class ReviewError extends Error {}
 
-export interface RequestedItem { item_id: string; version_no: number }
+export interface RequestedItem { item_id: string; revision_no: number }
 export interface FieldDecl { 名: string; 类型: string; 必填?: boolean; 取值?: string[] }
 export interface Finding { field: string; index: number | null; problem: string; suggestion: string | null }
 
@@ -57,25 +57,25 @@ export interface ReviewResult { verdict: "合规" | "不合规"; reason: string;
 
 export interface CallContext { workspaceDir: string; sessionId: string; callId: string }
 
-/** 核对参数：items 可以不写（评全部还没有合规记录的）；写了就是不为空的列表，每项有编号与从 1 起的整数版本号。 */
+/** 核对参数：items 可以不写（评全部还没有合规记录的）；写了就是不为空的列表，每项有编号与从 1 起的整数修订号。 */
 export function checkReviewParams(params: unknown): RequestedItem[] | null {
   const items = (params as { items?: unknown })?.items;
   if (items === undefined || items === null) return null;
   if (!Array.isArray(items) || items.length === 0) {
-    throw new ReviewError("items 要么不写（评全部还没有评审通过的条目），要么写一个不为空的列表，每项是 { item_id, version_no }。什么都没有评。");
+    throw new ReviewError("items 要么不写（评全部还没有评审通过的条目），要么写一个不为空的列表，每项是 { item_id, revision_no }。什么都没有评。");
   }
   const seen = new Set<string>();
   return items.map((raw, index) => {
-    const one = raw as { item_id?: unknown; version_no?: unknown };
+    const one = raw as { item_id?: unknown; revision_no?: unknown };
     if (typeof one?.item_id !== "string" || !one.item_id.trim()) {
       throw new ReviewError(`items 的第 ${index + 1} 项要写 item_id（条目编号，例如 UC-001）。什么都没有评。`);
     }
-    if (!Number.isInteger(one.version_no) || (one.version_no as number) < 1) {
-      throw new ReviewError(`items 的第 ${index + 1} 项（${one.item_id}）要写 version_no，一个从 1 起的整数。什么都没有评。`);
+    if (!Number.isInteger(one.revision_no) || (one.revision_no as number) < 1) {
+      throw new ReviewError(`items 的第 ${index + 1} 项（${one.item_id}）要写 revision_no，一个从 1 起的整数。什么都没有评。`);
     }
     if (seen.has(one.item_id)) throw new ReviewError(`items 里 ${one.item_id} 写了两次。什么都没有评。`);
     seen.add(one.item_id);
-    return { item_id: one.item_id, version_no: one.version_no as number };
+    return { item_id: one.item_id, revision_no: one.revision_no as number };
   });
 }
 
@@ -88,7 +88,7 @@ function findingsOf(db: DatabaseSync, reviewId: number): Finding[] {
 }
 
 /**
- * 第 1 步：只读核对并装配提示。拒绝：库或任务不存在、任务不是进行中；点名的条目不存在、已删除、版本不是当前版本；
+ * 第 1 步：只读核对并装配提示。拒绝：库或任务不存在、任务不是进行中；点名的条目不存在、已删除、修订号不是条目当前所在的修订；
  * 集合声明的规矩文档读不到；一个要评的也没有。已经连续三次不合规的条目不算错，放进 blocked 交还。
  */
 export function prepareReviews(workspaceDir: string, requested: RequestedItem[] | null): PreparedReviews {
@@ -105,9 +105,9 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
     const collections = (definition["交付物"]?.["条目集合"] ?? []) as { 名称: string; 字段: FieldDecl[]; 评审规矩?: string }[];
     const completion = (definition["完成条件"] ?? {}) as Record<string, string[]>;
     const current = (itemId: string) => db.prepare(
-      "SELECT v.version_no, v.fields, i.collection, i.deleted_in_revision FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
-        "WHERE i.task_id = ? AND i.item_id = ? ORDER BY v.version_no DESC LIMIT 1",
-    ).get(task.task_id, itemId) as { version_no: number; fields: string; collection: string; deleted_in_revision: number | null } | undefined;
+      "SELECT v.revision_no, v.fields, i.collection, i.deleted_in_revision FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
+        "WHERE i.task_id = ? AND i.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
+    ).get(task.task_id, itemId) as { revision_no: number; fields: string; collection: string; deleted_in_revision: number | null } | undefined;
 
     let wanted: RequestedItem[];
     const problems: string[] = [];
@@ -117,25 +117,25 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         const row = current(want.item_id);
         if (!row) { problems.push(`库里没有条目 ${want.item_id}`); continue; }
         if (row.deleted_in_revision !== null) { problems.push(`条目 ${want.item_id} 已经删除了`); continue; }
-        if (row.version_no !== want.version_no) { problems.push(`条目 ${want.item_id} 现在是第 ${row.version_no} 版，你写的是第 ${want.version_no} 版；只能评当前版本`); continue; }
+        if (row.revision_no !== want.revision_no) { problems.push(`条目 ${want.item_id} 现在是修订 ${row.revision_no}，你写的是修订 ${want.revision_no}；只能评条目当前所在的修订`); continue; }
         wanted.push(want);
       }
       if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
     } else {
       const reviewed = new Set(Object.entries(completion).filter(([, list]) => list.includes(REVIEW_CONDITION)).map(([name]) => name));
       wanted = (db.prepare(
-        "SELECT i.item_id, MAX(v.version_no) AS version_no FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
+        "SELECT i.item_id, MAX(v.revision_no) AS revision_no FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
           "WHERE i.task_id = ? AND i.deleted_in_revision IS NULL AND i.collection IN (SELECT value FROM json_each(?)) GROUP BY i.item_id ORDER BY i.item_id",
       ).all(task.task_id, JSON.stringify([...reviewed])) as unknown as RequestedItem[])
-        .filter((w) => !db.prepare("SELECT 1 FROM review WHERE task_id = ? AND item_id = ? AND version_no = ? AND verdict = '合规'").get(task.task_id, w.item_id, w.version_no))
-        .map((w) => ({ item_id: w.item_id, version_no: Number(w.version_no) }));
+        .filter((w) => !db.prepare("SELECT 1 FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ? AND verdict = '合规'").get(task.task_id, w.item_id, w.revision_no))
+        .map((w) => ({ item_id: w.item_id, revision_no: Number(w.revision_no) }));
     }
 
     const items: PreparedReview[] = [];
     const blocked: BlockedItem[] = [];
     for (const want of wanted) {
-      const failed = db.prepare("SELECT review_id, reason FROM review WHERE task_id = ? AND item_id = ? AND version_no = ? AND verdict = '不合规' ORDER BY review_id")
-        .all(task.task_id, want.item_id, want.version_no) as { review_id: number; reason: string }[];
+      const failed = db.prepare("SELECT review_id, reason FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ? AND verdict = '不合规' ORDER BY review_id")
+        .all(task.task_id, want.item_id, want.revision_no) as { review_id: number; reason: string }[];
       if (failed.length >= MAX_FAILED_REVIEWS) {
         blocked.push({ ...want, rounds: failed.map((f) => ({ reason: f.reason, findings: findingsOf(db, f.review_id) })) });
         continue;
@@ -151,8 +151,8 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         rulesText = readFileSync(full, "utf-8");
       }
       const fields = (load(row.fields) as Record<string, unknown>) ?? {};
-      const sources = db.prepare("SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND version_no = ? ORDER BY position, support_no")
-        .all(task.task_id, want.item_id, want.version_no) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
+      const sources = db.prepare("SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no")
+        .all(task.task_id, want.item_id, want.revision_no) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
       items.push({
         ...want, collection: row.collection, fields, decls, rulesPath,
         rulesDigest: digest(rulesText + "\n" + JSON.stringify(decls)),
@@ -160,7 +160,7 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       });
     }
     if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
-    if (!items.length && !blocked.length) throw new ReviewError("没有需要评审的条目：要评审的集合里，每个条目的当前版本都已经有评审通过的记录了。");
+    if (!items.length && !blocked.length) throw new ReviewError("没有需要评审的条目：要评审的集合里，每个条目在当前所在的修订都已经有评审通过的记录了。");
     return { taskId: task.task_id, items, blocked };
   } finally {
     db.close();
@@ -173,7 +173,7 @@ function valueLines(value: unknown): string {
   return `    ${text.trim() ? text : "（空）"}`;
 }
 
-/** 装配评审者的用户消息：规矩文档全文、字段声明、条目这一版的字段与来源。 */
+/** 装配评审者的用户消息：规矩文档全文、字段声明、条目在这次修订下的字段与来源。 */
 function assembleUser(want: RequestedItem, collection: string, fields: Record<string, unknown>, decls: FieldDecl[],
   rulesPath: string | null, rulesText: string,
   sources: { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[]): string {
@@ -189,13 +189,13 @@ function assembleUser(want: RequestedItem, collection: string, fields: Record<st
     `【字段声明】集合「${collection}」的字段：`,
     ...decls.map((d) => `- ${d.名}：${d.类型}${d.必填 ? "，必填" : "，可以不填"}${d.取值 ? `，取值只能是${d.取值.map((v) => `「${v}」`).join("、")}之一` : ""}${d.类型 === "文本列表" || d.类型 === "条目引用" ? "（列表型字段）" : ""}`),
     "",
-    `【要评审的条目】${want.item_id} 第 ${want.version_no} 版，各字段：`,
+    `【要评审的条目】${want.item_id}，修订 ${want.revision_no}，各字段：`,
     ...decls.map((d) => `- ${d.名}：\n${valueLines(fields[d.名])}`),
     "",
     "【来源】",
     ...([...byPosition.values()].map((s, i) => `${i + 1}. ${s.kind}${s.kind === "文档原文" ? `（${s.locator}）` : ""}：「${s.excerpt}」` +
       `，支持${s.supports.length ? s.supports.join("、") : "整个条目"}`)),
-    ...(byPosition.size ? [] : ["（这一版没有来源）"]),
+    ...(byPosition.size ? [] : ["（这份内容没有来源）"]),
   ].join("\n");
 }
 
@@ -205,7 +205,7 @@ export function parseReview(text: string, item: PreparedReview): ReviewResult {
   try {
     raw = extractJson(text) as Record<string, unknown>;
   } catch (error) {
-    throw new ReviewError(String((error as Error).message).replace("判读者", "评审者"));
+    throw new ReviewError(String((error as Error).message).replace("模型", "评审者"));
   }
   const problems: string[] = [];
   const verdict = raw?.结论;
@@ -252,30 +252,30 @@ function insertModelCalls(db: DatabaseSync, taskId: string, toolCallId: string, 
 export interface WrittenReview { review_id: number; event_seq: number; failed_so_far: number }
 
 /**
- * 第 3 步：写一条评审。评审期间条目可能被改，事务里再核对一次版本；不是当前版本就改记「评审未完成」。
+ * 第 3 步：写一条评审。评审期间条目可能被改，事务里再核对一次修订号；不是条目当前所在的修订就改记「评审未完成」。
  * 事件 REVIEW_RECORDED 带结论与发现，发起方是执行者（是它调的工具）。
  */
 export function writeReview(call: CallContext, taskId: string, item: PreparedReview, result: ReviewResult, calls: ModelCallRecord[]): WrittenReview | { changed: number } {
   return withTaskDatabase(call.workspaceDir, { createIfMissing: false }, (db) => {
-    const now = (db.prepare("SELECT MAX(version_no) AS n FROM item_version WHERE task_id = ? AND item_id = ?").get(taskId, item.item_id) as { n: number }).n;
-    if (now !== item.version_no) {
+    const now = (db.prepare("SELECT MAX(revision_no) AS n FROM item_version WHERE task_id = ? AND item_id = ?").get(taskId, item.item_id) as { n: number }).n;
+    if (now !== item.revision_no) {
       unfinishedIn(db, call, taskId, item, calls.map((c) => ({ ...c, outcome: c.outcome === "采用" ? "输出不合格" : c.outcome })),
-        `评审期间条目被改到了第 ${now} 版`);
+        `评审期间条目被改到了修订 ${now}`);
       return { changed: now };
     }
     const seq = emit(db, {
       taskId, sessionId: call.sessionId, callId: call.callId, name: EVENT_REVIEW_RECORDED, actor: ACTOR_EXECUTOR,
-      payload: { item_id: item.item_id, version_no: item.version_no, verdict: result.verdict, reason: result.reason, findings: result.findings },
+      payload: { item_id: item.item_id, revision_no: item.revision_no, verdict: result.verdict, reason: result.reason, findings: result.findings },
     });
     const reviewId = Number(db.prepare(
-      "INSERT INTO review (task_id, item_id, version_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    ).run(taskId, item.item_id, item.version_no, result.verdict, result.reason, item.rulesDigest, `review-${call.callId}-${item.item_id}`,
+      "INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(taskId, item.item_id, item.revision_no, result.verdict, result.reason, item.rulesDigest, `review-${call.callId}-${item.item_id}`,
       call.callId, seq, wallClockText()).lastInsertRowid);
     const insert = db.prepare("INSERT INTO review_finding (review_id, task_id, ordinal, field, item_index, problem, suggestion) VALUES (?, ?, ?, ?, ?, ?, ?)");
     result.findings.forEach((f, i) => insert.run(reviewId, taskId, i + 1, f.field, f.index, f.problem, f.suggestion));
     insertModelCalls(db, taskId, call.callId, calls, reviewId);
-    const failed = (db.prepare("SELECT COUNT(*) AS n FROM review WHERE task_id = ? AND item_id = ? AND version_no = ? AND verdict = '不合规'")
-      .get(taskId, item.item_id, item.version_no) as { n: number }).n;
+    const failed = (db.prepare("SELECT COUNT(*) AS n FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ? AND verdict = '不合规'")
+      .get(taskId, item.item_id, item.revision_no) as { n: number }).n;
     return { review_id: reviewId, event_seq: seq, failed_so_far: Number(failed) };
   });
 }
@@ -283,7 +283,7 @@ export function writeReview(call: CallContext, taskId: string, item: PreparedRev
 function unfinishedIn(db: DatabaseSync, call: CallContext, taskId: string, item: PreparedReview, calls: ModelCallRecord[], reason: string): number {
   const seq = emit(db, {
     taskId, sessionId: call.sessionId, callId: call.callId, name: EVENT_REVIEW_UNFINISHED, actor: ACTOR_EXECUTOR,
-    payload: { item_id: item.item_id, version_no: item.version_no, reason },
+    payload: { item_id: item.item_id, revision_no: item.revision_no, reason },
   });
   insertModelCalls(db, taskId, call.callId, calls, null);
   return seq;

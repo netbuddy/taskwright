@@ -124,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         "任务": task,
         "会话目录": str(session_dir),
         "续接的会话文件": str(session_file) if session_file else "",
-        "知识仓库摘要": launch.knowledge_snapshot(workspace),
+        "知识仓库摘要": launch.knowledge_snapshot(workspace, profile),
         "开始时刻": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     # 命令行里的系统提示全文太长，启动记录里只留它来自哪个文件。

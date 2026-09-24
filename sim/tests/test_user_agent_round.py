@@ -1,7 +1,8 @@
 """用户 agent 一轮：假模型端点驱动用户 agent 的 pi，两个工具经 HTTP 打一个按接口字段做的假后端。
 
-假模型的脚本：第一次请求调 look，第二次调 respond（说一句话）；第二轮：look、look(UC-001)、respond(点确认)。
-断言假后端收到的请求：带会话编号的整份数据读取、messages 的话、actions 的确认（带 notify_executor 与 targets）。
+假模型的脚本：第一次请求调 look，第二次调 respond（说一句话）；第二轮：look、look(UC-001)、respond(点「这几条都看过了」)。
+断言假后端收到的请求：带会话编号的整份数据读取、messages 的话、细看条目时写已读的 actions（不带通知），
+以及点「这几条都看过了」的 actions（mark_viewed，带 notify_executor 与 targets）。
 本机没有 pi 或 node 时跳过。
 """
 
@@ -26,12 +27,12 @@ PERSONA = {"名字": "测试用户", "人设": "说话很短。", "目标": "拿
 SNAPSHOT = {
     "ok": True, "seq": 2, "executor": {"state": "idle", "text": "", "active_session": "S1"}, "current_work": None,
     "task": {"definition": {"collections": [{"name": "功能用例", "fields": [{"name": "用例名称"}, {"name": "基本流程"}]}]},
-             "items": [{"item_id": "UC-001", "collection": "功能用例", "title": "提交退货", "version_no": 1,
+             "items": [{"item_id": "UC-001", "collection": "功能用例", "title": "提交退货", "revision_no": 1,
                         "fields": {"用例名称": "提交退货", "基本流程": ["填表", "提交"]}, "confirmations": []}]},
     "conversation": {"messages": [
         {"type": "system_note", "message_id": "s1", "text": "任务现状：还没有条目。"},
         {"type": "assistant_reply", "message_id": "a1", "text": "整理好了一个用例。", "informs": [],
-         "act": {"kind": "confirm", "text": "请确认 UC-001", "items": [{"item_id": "UC-001", "version_no": 1}]}}]},
+         "act": {"kind": "confirm", "text": "请确认 UC-001", "items": [{"item_id": "UC-001", "revision_no": 1}]}}]},
 }
 
 
@@ -74,7 +75,7 @@ def call(name, args):
 
 @unittest.skipUnless(shutil.which("pi") and shutil.which("node"), "本机找不到 pi 或 node")
 class UserAgentRoundTest(unittest.TestCase):
-    def test_看界面再回应_说话走messages_点确认走actions(self):
+    def test_看界面再回应_说话走messages_细看条目记已读_点看过了走actions(self):
         root = Path(tempfile.mkdtemp(prefix="taskwright-sim-it-"))
         backend = FakeBackend()
         fake = FakeModel([
@@ -82,7 +83,7 @@ class UserAgentRoundTest(unittest.TestCase):
             {"tool_calls": [call("respond", {"text": "先把审批写清楚"})]},
             {"tool_calls": [call("look", {})]},
             {"tool_calls": [call("look", {"item_id": "UC-001"})]},
-            {"tool_calls": [call("respond", {"click": "确认"})]},
+            {"tool_calls": [call("respond", {"click": "这几条都看过了"})]},
         ], root / "fake.jsonl")
         fake.start()
         saved = dict(os.environ)
@@ -111,7 +112,7 @@ class UserAgentRoundTest(unittest.TestCase):
                          [("look", False), ("respond", False), ("look", False), ("look", False), ("respond", False)])
         seen = "".join(p.get("text", "") for p in ends[0]["result"]["content"])
         self.assertIn("系统说明：任务现状：还没有条目。", seen)
-        self.assertIn("可以点：确认／不对", seen)
+        self.assertIn("可以点：这几条都看过了／不对", seen)
         self.assertIn("功能用例 1 个：UC-001「提交退货」", seen)
         detail = "".join(p.get("text", "") for p in ends[3]["result"]["content"])
         self.assertIn("基本流程：1. 填表；2. 提交", detail)
@@ -119,9 +120,13 @@ class UserAgentRoundTest(unittest.TestCase):
         self.assertEqual(posts[0]["path"], "/api/v1/tasks/TASK-X/messages")
         self.assertEqual(posts[0]["query"]["session"], ["S1"])
         self.assertEqual(posts[0]["body"]["text"], "先把审批写清楚")
+        # 细看 UC-001 等于打开它的详情：写已读，不通知执行者。
         self.assertEqual(posts[1]["path"], "/api/v1/tasks/TASK-X/actions")
-        self.assertEqual({k: posts[1]["body"][k] for k in ("kind", "notify_executor", "targets")},
-                         {"kind": "confirm", "notify_executor": True, "targets": [{"item_id": "UC-001", "base_version": 1}]})
+        self.assertEqual({k: posts[1]["body"].get(k) for k in ("kind", "notify_executor", "targets")},
+                         {"kind": "mark_viewed", "notify_executor": None, "targets": [{"item_id": "UC-001", "base_revision": 1}]})
+        self.assertEqual(posts[2]["path"], "/api/v1/tasks/TASK-X/actions")
+        self.assertEqual({k: posts[2]["body"][k] for k in ("kind", "notify_executor", "targets")},
+                         {"kind": "mark_viewed", "notify_executor": True, "targets": [{"item_id": "UC-001", "base_revision": 1}]})
         gets = [r for r in backend.requests if r["method"] == "GET"]
         self.assertTrue(all(r["path"] == "/api/v1/tasks/TASK-X/snapshot" and r["query"]["session"] == ["S1"] for r in gets))
         # respond 合格即结束用户 agent 的这一次运行：每次运行里模型请求的次数就是工具调用的次数。

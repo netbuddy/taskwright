@@ -14,7 +14,8 @@ export function Shell({ currentTaskId, children }: { currentTaskId?: string; chi
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    api.listTasks().then((list) => setTasks(sortByActivity(list))).catch(() => setTasks([]));
+    // 侧栏只列打得开的任务；旧格式任务只在任务列表页里标明不支持。
+    api.listTasks().then((list) => setTasks(sortByActivity(list.filter((t) => t.supported !== false)))).catch(() => setTasks([]));
   }, [currentTaskId]);
   useEffect(() => {
     if (currentTaskId) api.listSessions(currentTaskId).then(setSessions).catch(() => setSessions([]));

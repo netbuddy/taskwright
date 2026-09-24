@@ -8,11 +8,11 @@
 
 import { existsSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { completionLines, confirmState, itemDetailLines, lastEventLine, reviewState, type TaskRow } from "./board.ts";
-import { checkCompletion, currentItems } from "./conditions.ts";
+import { completionLines, confirmState, itemDetailLines, itemRevisions, lastEventLine, latestRevision, reviewState, type TaskRow } from "./board.ts";
+import { checkCompletion, currentItems, unreadItems, unreadList } from "./conditions.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
-import { BUSY_TIMEOUT_MS } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, hasVersionColumns } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 
 /** 工具的返回：给模型的一段文字，给读取一侧的结构化内容。 */
@@ -32,19 +32,23 @@ function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRo
       | TaskRow
       | undefined;
     if (!task) throw new Error("库里还没有任务记录，没有东西可以查。");
+    if (hasVersionColumns(db)) throw new Error(OLD_VERSION_FORMAT_TEXT);
     return body(db, task, validateDefinition(JSON.parse(task.definition_text)));
   } finally {
     db.close();
   }
 }
 
-/** 「查看条目」：某个条目某一版（缺省是当前版本）的全部字段、来源、评审与确认状态。 */
-export function getItem(workspaceDir: string, params: { item_id?: unknown; version_no?: unknown }): QueryOutcome {
+/**
+ * 「查看条目」：某个条目的全部字段、来源、评审与确认状态，以及它改动过的修订号列表。
+ * 缺省看最新内容；给了 revision_no 时看条目截至那次修订的内容（修订号不大于它的最近一次改动）。
+ */
+export function getItem(workspaceDir: string, params: { item_id?: unknown; revision_no?: unknown }): QueryOutcome {
   const itemId = typeof params.item_id === "string" ? params.item_id.trim().toUpperCase() : "";
   if (!itemId) throw new Error("item_id 要写条目编号，例如 UC-001。");
-  const wanted = params.version_no;
+  const wanted = params.revision_no;
   if (wanted !== undefined && wanted !== null && !(typeof wanted === "number" && Number.isInteger(wanted) && wanted >= 1)) {
-    throw new Error(`version_no 应当是从 1 起的整数，或者不写（看当前版本），现在写的是 ${JSON.stringify(wanted)}。`);
+    throw new Error(`revision_no 应当是从 1 起的整数，或者不写（看最新内容），现在写的是 ${JSON.stringify(wanted)}。`);
   }
   return withTask(workspaceDir, (db, task, definition) => {
     const item = db
@@ -56,32 +60,35 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; versi
       }[]).map((row) => row.item_id);
       throw new Error(`这个任务里没有条目 ${itemId}。现有的条目是：${alive.length ? alive.join("、") : "（一个都没有）"}。`);
     }
-    if (item.deleted_in_revision !== null) throw new Error(`条目 ${itemId} 已在第 ${item.deleted_in_revision} 次修订删除，不在交付物里了。`);
-    const current = (db.prepare("SELECT MAX(version_no) AS v FROM item_version WHERE task_id = ? AND item_id = ?").get(task.task_id, itemId) as { v: number }).v;
-    const versionNo = typeof wanted === "number" ? wanted : current;
+    if (item.deleted_in_revision !== null) throw new Error(`条目 ${itemId} 已在修订 ${item.deleted_in_revision} 删除，不在交付物里了。`);
+    const revisions = itemRevisions(db, task.task_id, itemId);
+    const current = revisions[revisions.length - 1];
+    const newest = latestRevision(db, task.task_id);
+    if (typeof wanted === "number" && wanted > newest) throw new Error(`这个任务还没有修订 ${wanted}，最新是修订 ${newest}。`);
+    const shown = typeof wanted === "number" ? [...revisions].reverse().find((n) => n <= wanted) : current;
+    if (shown === undefined) throw new Error(`修订 ${wanted} 时还没有条目 ${itemId}；它在这些修订里改动过：${revisions.map((n) => `修订 ${n}`).join("、")}。`);
     const row = db
-      .prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND version_no = ?")
-      .get(task.task_id, itemId, versionNo) as { fields: string } | undefined;
-    if (!row) throw new Error(`条目 ${itemId} 没有第 ${versionNo} 版，它有第 1 到第 ${current} 版。`);
+      .prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no = ?")
+      .get(task.task_id, itemId, shown) as { fields: string };
     const fields = load(row.fields) as Record<string, unknown>;
     const sources = (db
       .prepare(
-        "SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND version_no = ? ORDER BY position, support_no",
+        "SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no",
       )
-      .all(task.task_id, itemId, versionNo) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[])
+      .all(task.task_id, itemId, shown) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[])
       .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[] }[]>((list, one) => {
         let source = list[one.position - 1];
         if (!source) list[one.position - 1] = source = { kind: one.kind, locator: one.locator, excerpt: one.excerpt, supports: [] };
         if (one.field !== null) source.supports.push(one.field_index === null ? { field: one.field } : { field: one.field, index: one.field_index });
         return list;
       }, []);
-    const lines = itemDetailLines(db, task, definition, itemId, versionNo);
+    const lines = itemDetailLines(db, task, definition, itemId, typeof wanted === "number" ? wanted : undefined);
     lines.push(
       "",
-      versionNo === current
-        ? `要修改或删除这个条目时，base_version 写 ${current}。修改时 fields 只写要改的字段，列表型字段要写改后的完整列表。`
-        : `这是旧版本；当前版本是第 ${current} 版，要修改时先看当前版本，base_version 写 ${current}。`,
-      `这一版各字段的原值（JSON）：${JSON.stringify(fields)}`,
+      shown === current
+        ? `${itemId} 现在是修订 ${current}。要修改或删除这个条目时，base_revision 写 ${current}。修改时 fields 只写要改的字段，列表型字段要写改后的完整列表。`
+        : `这是旧内容；${itemId} 现在是修订 ${current}，要修改时先看最新内容，base_revision 写 ${current}。`,
+      `这份内容各字段的原值（JSON）：${JSON.stringify(fields)}`,
     );
     return {
       text: lines.join("\n"),
@@ -89,46 +96,54 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; versi
         task_id: task.task_id,
         item_id: itemId,
         collection: item.collection,
-        version_no: versionNo,
-        current_version: current,
+        revision_no: shown,
+        current_revision: current,
+        revisions,
         fields,
         sources,
-        review: reviewState(db, task.task_id, itemId, versionNo),
-        confirm: confirmState(db, task.task_id, itemId, versionNo),
+        review: reviewState(db, task.task_id, itemId, shown),
+        confirm: confirmState(db, task.task_id, itemId, shown),
       },
     };
   });
 }
 
-/** 「查询任务状态」：各集合的条目、完成条件逐项、未解决的待定事项、最近一次修订与事件序号。 */
+/** 「查询任务状态」：各集合的条目、完成条件逐项、未解决的问题条目、未读清单、最近一次修订与事件序号。 */
 export function getTaskStatus(workspaceDir: string): QueryOutcome {
   return withTask(workspaceDir, (db, task, definition) => {
     const name = task.task_name ?? definition.taskName;
     const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}），状态是${task.status}。`, ""];
     const counts: Record<string, string[]> = {};
-    const unresolved: { item_id: string; version_no: number; title: string }[] = [];
+    const unresolved: { item_id: string; revision_no: number; title: string }[] = [];
     for (const collection of definition.collections) {
       const rows = currentItems(db, task.task_id, collection.name);
       counts[collection.name] = rows.map((row) => row.item_id);
-      lines.push(`${collection.name} ${rows.length} 个${rows.length ? `：${rows.map((row) => `${row.item_id}（第 ${row.version_no} 版）`).join("、")}` : ""}。`);
+      lines.push(`${collection.name} ${rows.length} 个${rows.length ? `：${rows.map((row) => `${row.item_id}（修订 ${row.revision_no}）`).join("、")}` : ""}。`);
       const status = collection.fields.find((field) => field.name === "状态");
       if (!status || !(status.values ?? []).includes("未解决")) continue;
       for (const row of rows) {
         const fields = load(row.fields) as Record<string, unknown>;
-        if (fields["状态"] === "未解决") unresolved.push({ item_id: row.item_id, version_no: row.version_no, title: titleOf(fields, collection.fields[0]?.name) });
+        if (fields["状态"] === "未解决") unresolved.push({ item_id: row.item_id, revision_no: row.revision_no, title: titleOf(fields, collection.fields[0]?.name) });
       }
     }
     lines.push("", ...completionLines(db, task, definition), "");
     lines.push(
       unresolved.length === 0
-        ? "未解决的待定事项：没有。"
-        : `未解决的待定事项 ${unresolved.length} 条：\n${unresolved.map((one) => `  ${one.item_id}（第 ${one.version_no} 版）：${one.title}`).join("\n")}`,
+        ? "未解决的问题条目：没有。"
+        : `未解决的问题条目 ${unresolved.length} 条：\n${unresolved.map((one) => `  ${one.item_id}（修订 ${one.revision_no}）：${one.title}`).join("\n")}`,
+    );
+    const unread = unreadItems(db, task.task_id, definition.completion,
+      (name) => definition.collections.find((c) => c.name === name)?.fields[0]?.name);
+    lines.push(
+      unread.length === 0
+        ? "未读的条目：没有，每个条目用户都看过。"
+        : `未读的条目 ${unread.length} 条（用户从没打开看过它们；问用户要不要完成任务之前，先告诉用户还有几条没看）：${unreadList(unread)}。`,
     );
     const revision = db.prepare("SELECT revision_no, event_seq FROM revision WHERE task_id = ? ORDER BY revision_no DESC LIMIT 1").get(task.task_id) as
       | { revision_no: number; event_seq: number }
       | undefined;
     lines.push(
-      revision ? `最近一次修订是第 ${revision.revision_no} 次（事件序号 ${revision.event_seq}）。` : "交付物还没有任何修订。",
+      revision ? `最近一次修订是修订 ${revision.revision_no}（事件序号 ${revision.event_seq}）。` : "交付物还没有任何修订。",
       lastEventLine(db),
     );
     const last = db.prepare("SELECT MAX(seq) AS seq FROM event").get() as { seq: number | null };
@@ -140,6 +155,7 @@ export function getTaskStatus(workspaceDir: string): QueryOutcome {
         items: counts,
         conditions: checkCompletion(db, task.task_id, definition.completion),
         unresolved,
+        unread: unread.map((one) => ({ item_id: one.item_id, title: one.title, revision_no: one.revision_no })),
         last_revision_no: revision?.revision_no ?? null,
         last_event_seq: last.seq,
       },

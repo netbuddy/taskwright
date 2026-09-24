@@ -1,21 +1,36 @@
 // 条目区，照设计原型：顶上一行集合页签与「生成文档」，下面一行筛选与进度（点开是完成条件），
-// 确认失效的集中提示与批量确认条，然后是列表；点一行，列表换成这个条目的详情（带「回到列表」）。
-// 待定事项一类的集合（有取值「用户决定保留」的枚举字段）铺成一张张卡片，未解决的带「回答这个问题」「先不管，保留」。
-// 最近一次工作改过的条目短时高亮并带「第 N 版 · 刚改」。集合名、字段名一律取自任务定义。
+// 「还有 N 条未读」的提示与勾选后的批量标为已读，然后是列表；点一行，列表换成这个条目的详情（带「回到列表」）。
+// 打开详情就记为已读（由页面在打开时发 mark_viewed），已读就算确认；未读的行像邮件一样加粗。
+// 问题条目一类的集合（有取值「用户决定保留」的枚举字段）铺成一张张卡片，未解决的带「回答这个问题」「先不管，保留」。
+// 自上次确认以来助手改过的条目带「修订 N · 刚改」；库事件刚改过的条目短时闪一下。集合名、字段名一律取自任务定义。
+//
+// 单一写入者：执行者工作中（writesOff），顶部一条横幅，改字段、保存、删除、批量标为已读、撤回、
+// 先不管全部灰化；「回答这个问题」「让助手来改这一条」只往对话区输入框预填文字、不写库，照常可用。
+// 在右侧「修订」页签选中一次修订（hit）时，它碰到的条目高亮，集合页签上标出各有几个，筛选行加一个可点掉的提示。
+// 宽屏时列表每行在标题后多一列「一句摘要」，显隐由样式里的容器查询按条目区宽度决定（阈值 40rem）。
 
 import { useEffect, useMemo, useState } from "react";
 import type { Item, Task } from "../../api/types";
-import { conditionState, confirmState, FILTERS, isEmptyValue, keepPendingField, matchesFilter, type ItemFilter } from "../../model/items";
-import { ItemDetail, type SubmitAction } from "./ItemDetail";
+import { BUSY_TEXT, conditionState, FILTERS, isEmptyValue, isUnread, keepPendingField, matchesFilter, needsReading, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
+import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
-import { StaleDiff } from "./StaleDiff";
 
-export function ItemsPanel({ task, readOnly, recentlyChanged, justChanged = {}, pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate, onAskAssistant, onAnswer }: {
+export { BUSY_TEXT };
+
+export function ItemsPanel({
+  task, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
+  onAskAssistant, onAnswer, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, unreadRequest = 0,
+}: {
   task: Task;
+  /** 任务已结束或助手不可用：一切写入都不能做。 */
   readOnly: boolean;
+  /** 执行者正在工作：写入按钮灰化，预填输入框的两个按钮照常可用。 */
+  writesOff?: boolean;
   recentlyChanged: string[];
-  /** 最近一次工作改过的条目 → 改后的版本号。 */
-  justChanged?: Record<string, number>;
+  /** 字段修订标识：条目编号 → 自上次确认以来助手改过的字段（model/revisions.ts 的 marksByItem）。 */
+  marks?: Record<string, string[]>;
+  /** 带「刚改」标签的条目：执行者最近一次运行改过的（model/revisions.ts 的 justChangedItems）。 */
+  just?: Set<string>;
   pendingItems: Set<string>;
   selected: string | null;
   onSelect: (itemId: string | null) => void;
@@ -23,8 +38,18 @@ export function ItemsPanel({ task, readOnly, recentlyChanged, justChanged = {}, 
   onGenerateDoc: () => void;
   onLocate?: (excerpt: string, locator: string) => void;
   onAskAssistant?: (itemId: string) => void;
-  /** 待定事项卡片上的「回答这个问题」：预填对话区输入框。 */
+  /** 问题条目卡片上的「回答这个问题」：预填对话区输入框。 */
   onAnswer?: (item: Item) => void;
+  /** 在「修订」页签里选中的那次修订与它碰到的条目。 */
+  hit?: { revision: number; items: string[] } | null;
+  onClearHit?: () => void;
+  /** 从修订页签的「查看差异」来的：打开这个条目并停在那次修订。 */
+  view?: ViewRequest | null;
+  latestRevision?: number;
+  /** 有没有未保存的条目编辑（编辑框打开且内容与打开时不同）。 */
+  onDirty?: (dirty: boolean) => void;
+  /** 卡片上点「筛出来看」时加一：筛选切到「未读」、回到列表。 */
+  unreadRequest?: number;
 }) {
   const collections = task.definition.collections;
   const selectedItem = task.items.find((i) => i.item_id === selected);
@@ -34,14 +59,19 @@ export function ItemsPanel({ task, readOnly, recentlyChanged, justChanged = {}, 
   const [showProgress, setShowProgress] = useState(false);
   const [flash, setFlash] = useState<string[]>([]);
   const activeTab = selectedItem?.collection ?? tab;
+  const hitIds = hit?.items ?? [];
+  const off = readOnly || writesOff;
+  const offTitle = writeOffReason(task, { readOnly, writesOff });
 
-  // 从卡片、改动块点来的条目：切到它所在的集合、不让筛选挡住它。
+  // 从卡片、修订页签点来的条目：切到它所在的集合、不让筛选挡住它。
   useEffect(() => {
     if (!selected) return;
     const item = task.items.find((i) => i.item_id === selected);
     if (item) { setTab(item.collection); if (!matchesFilter(item, filter)) setFilter("all"); }
     document.querySelector(".app .items-body")?.scrollTo({ top: 0 });
   }, [selected]);
+  // 卡片上点了「还有 N 条未读 · 筛出来看」。
+  useEffect(() => { if (unreadRequest > 0) { setFilter("unread"); onSelect(null); } }, [unreadRequest]);
   // 库事件改过的条目闪一下。
   useEffect(() => {
     if (!recentlyChanged.length) return;
@@ -53,29 +83,30 @@ export function ItemsPanel({ task, readOnly, recentlyChanged, justChanged = {}, 
   const def = collections.find((c) => c.name === activeTab);
   const statusField = keepPendingField(task, activeTab);
   const items = useMemo(() => task.items.filter((i) => i.collection === activeTab && matchesFilter(i, filter)), [task.items, activeTab, filter]);
-  const stale = task.items.filter((i) => confirmState(i) === "stale");
-  const confirmedCount = task.items.filter((i) => confirmState(i) === "confirmed").length;
+  const unread = unreadItems(task);
   const unresolved = task.items.filter((i) => {
     const f = keepPendingField(task, i.collection);
     return f && i.fields[f.name] === (f.values ?? [])[0];
   }).length;
   const checkedItems = items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
+  const hitsIn = (collection: string) => task.items.filter((i) => i.collection === collection && hitIds.includes(i.item_id)).length;
 
-  const confirmMany = async (list: Item[]) => {
-    const e = await submit({ kind: "confirm", targets: list.map((i) => ({ item_id: i.item_id, base_version: i.version_no })), notify_executor: false },
-      `确认 ${list.map((i) => i.item_id).join("、")}`);
+  const markMany = async (list: Item[]) => {
+    const e = await submit({ kind: "mark_viewed", targets: list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), notify_executor: false },
+      `把 ${list.map((i) => i.item_id).join("、")} 标为已读`);
     if (!e) setChecked(new Set());
   };
-  const waiting = statusField ? [] : items.filter((i) => confirmState(i) !== "confirmed");
 
   return (
     <div className="pane-items" data-testid="items-panel">
+      {writesOff && <div className="sw-busy-banner" data-testid="busy-banner"><span className="spin" />{BUSY_TEXT}</div>}
       <div className="itabs">
         {collections.map((c) => (
           <span key={c.name} className={`itab${c.name === activeTab ? " on" : ""}`} role="tab"
             onClick={() => { setTab(c.name); onSelect(null); }}>
             {c.name}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
+            {hit && hitsIn(c.name) > 0 && <span className="sw-hitn" title={`修订 ${hit.revision} 碰到这个页签里 ${hitsIn(c.name)} 个条目`} data-testid={`hit-count-${c.name}`}>{hitsIn(c.name)}</span>}
           </span>
         ))}
         <span className="spacer" />
@@ -83,11 +114,14 @@ export function ItemsPanel({ task, readOnly, recentlyChanged, justChanged = {}, 
       </div>
       <div className="filters">
         {FILTERS.map((f) => (
-          <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "stale" ? " warn" : ""}`}
+          <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : ""}`}
             role="button" onClick={() => { setFilter(f.key); onSelect(null); }}>{f.label}</span>
         ))}
+        {hit && hitIds.length > 0 && (
+          <span className="sw-hitnote" role="button" title="点一下取消高亮" onClick={onClearHit} data-testid="hit-note">修订 {hit.revision} 碰到的条目 ✕</span>
+        )}
         <span className="prog" role="button" onClick={() => setShowProgress(!showProgress)} data-testid="progress">
-          {task.items.length} 个条目，{confirmedCount} 个已确认；待定事项 {unresolved} 条未解决 {showProgress ? "▴" : "▾"}
+          {task.items.length} 个条目，{unread.length} 条未读；问题 {unresolved} 条未解决 {showProgress ? "▴" : "▾"}
         </span>
       </div>
       <div className={`prog-detail${showProgress ? " show" : ""}`}>
@@ -102,61 +136,57 @@ export function ItemsPanel({ task, readOnly, recentlyChanged, justChanged = {}, 
           </>
         ) : <div>完成条件这次没有算出来。</div>}
       </div>
-      {stale.length > 0 && filter !== "stale" && (
-        <div className="alertbar">
-          有 {stale.length} 个条目在你确认之后又被改过，需要你重新确认。
-          <button type="button" className="btn sm" onClick={() => { setFilter("stale"); onSelect(null); }}>看看是哪几个</button>
+      {unread.length > 0 && filter !== "unread" && (
+        <div className="alertbar" data-testid="unread-bar">
+          还有 {unread.length} 条未读 ·
+          <button type="button" className="btn sm" onClick={() => { setFilter("unread"); onSelect(null); }}>筛出来看</button>
         </div>
       )}
       {!selectedItem && !readOnly && !statusField && (checkedItems.length > 0 ? (
         <div className="bulkbar">
           已勾选 {checkedItems.length} 个条目。
-          <button type="button" className="btn sm pri" onClick={() => void confirmMany(checkedItems)} data-testid="bulk-confirm">确认选中的这几个</button>
+          <button type="button" className="btn sm pri" disabled={writesOff} title={offTitle} onClick={() => void markMany(checkedItems)} data-testid="bulk-viewed">把选中的这几条标为已读</button>
           <button type="button" className="btn sm" onClick={() => setChecked(new Set())}>取消勾选</button>
-        </div>
-      ) : (filter === "confirm_pending" || filter === "stale") && waiting.length > 0 ? (
-        <div className="bulkbar">
-          这一页有 {waiting.length} 个条目等你确认。
-          <button type="button" className="btn sm" onClick={() => void confirmMany(waiting)}>这一页都没问题，全部确认</button>
         </div>
       ) : null)}
       <div className="items-body">
         {selectedItem && def ? (
-          <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
-            justVersion={justChanged[selectedItem.item_id]} onBack={() => onSelect(null)}
+          <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} writesOff={writesOff} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
+            marked={marks[selectedItem.item_id] ?? []} just={just.has(selectedItem.item_id)} onBack={() => onSelect(null)}
             onPrev={pos > 0 ? () => onSelect(items[pos - 1].item_id) : null}
             onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
-            onLocate={onLocate} onOpenItem={onSelect} onAskAssistant={onAskAssistant} />
+            onLocate={onLocate} onOpenItem={onSelect} onAskAssistant={onAskAssistant}
+            view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={onDirty} />
         ) : items.length === 0 ? (
           <div className="empty">这个筛选下没有条目。换一个筛选试试。</div>
         ) : statusField && def ? (
           <div className="list">
             {items.map((item) => (
-              <PendingCard key={item.item_id} task={task} item={item} readOnly={readOnly} flash={flash.includes(item.item_id)}
-                justVersion={justChanged[item.item_id]} pending={pendingItems.has(item.item_id)} onOpen={() => onSelect(item.item_id)} onOpenItem={onSelect}
-                onKeep={() => void submit({ kind: "keep_pending", targets: [{ item_id: item.item_id, base_version: item.version_no }], notify_executor: false }, `把 ${item.item_id} 标为先不管`)}
+              <PendingCard key={item.item_id} task={task} item={item} readOnly={readOnly} writesOff={writesOff} flash={flash.includes(item.item_id)}
+                hit={hitIds.includes(item.item_id)} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)}
+                onOpen={() => onSelect(item.item_id)} onOpenItem={onSelect}
+                onKeep={() => void submit({ kind: "keep_pending", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], notify_executor: false }, `把 ${item.item_id} 标为先不管`)}
                 onAnswer={() => onAnswer?.(item)} />
             ))}
           </div>
         ) : (
           <div className="list">
-            {items.map((item) => (
-              <div key={item.item_id}>
-                <div className={`lrow${checked.has(item.item_id) ? " sel" : ""}${flash.includes(item.item_id) ? " flash" : ""}`}
-                  onClick={() => onSelect(item.item_id)} data-testid={`item-${item.item_id}`}>
-                  <input type="checkbox" checked={checked.has(item.item_id)} disabled={readOnly} onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => setChecked((s) => { const n = new Set(s); if (e.target.checked) n.add(item.item_id); else n.delete(item.item_id); return n; })} />
-                  <span className="lid">{item.item_id}</span>
-                  <span className="lname">{item.title}</span>
-                  <ItemStatus task={task} item={item} justVersion={justChanged[item.item_id]} pending={pendingItems.has(item.item_id)} />
+            {items.map((item) => {
+              const summary = summaryOf(task, item);
+              return (
+                <div key={item.item_id}>
+                  <div className={`lrow${checked.has(item.item_id) ? " sel" : ""}${flash.includes(item.item_id) ? " flash" : ""}${hitIds.includes(item.item_id) ? " sw-hit" : ""}${needsReading(task, item.collection) && isUnread(item) ? " unread" : ""}`}
+                    onClick={() => onSelect(item.item_id)} data-testid={`item-${item.item_id}`}>
+                    <input type="checkbox" checked={checked.has(item.item_id)} disabled={off} onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setChecked((s) => { const n = new Set(s); if (e.target.checked) n.add(item.item_id); else n.delete(item.item_id); return n; })} />
+                    <span className="lid">{item.item_id}</span>
+                    <span className="lname" title={item.title}>{item.title}</span>
+                    <span className="lsum" title={summary}>{summary}</span>
+                    <ItemStatus task={task} item={item} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)} />
+                  </div>
                 </div>
-                {filter === "stale" && def && (
-                  <StaleDiff taskId={task.task_id} item={item} def={def} disabled={readOnly || pendingItems.has(item.item_id)}
-                    onReconfirm={() => void submit({ kind: "confirm", targets: [{ item_id: item.item_id, base_version: item.version_no }], notify_executor: false }, `重新确认 ${item.item_id}`)}
-                    onOpen={() => onSelect(item.item_id)} />
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -164,9 +194,9 @@ export function ItemsPanel({ task, readOnly, recentlyChanged, justChanged = {}, 
   );
 }
 
-/** 待定事项卡片（原型的「待定清单」）：编号、枚举字段与状态、牵涉的条目、事项正文、其余文本字段；未解决的带两个动作。 */
-function PendingCard({ task, item, readOnly, flash, justVersion, pending, onOpen, onOpenItem, onKeep, onAnswer }: {
-  task: Task; item: Item; readOnly: boolean; flash: boolean; justVersion?: number; pending: boolean;
+/** 问题条目卡片：编号、枚举字段与状态、牵涉的条目、事项正文、其余文本字段；未解决的带两个动作。 */
+function PendingCard({ task, item, readOnly, writesOff, flash, hit, just, pending, onOpen, onOpenItem, onKeep, onAnswer }: {
+  task: Task; item: Item; readOnly: boolean; writesOff: boolean; flash: boolean; hit: boolean; just: boolean; pending: boolean;
   onOpen: () => void; onOpenItem: (id: string) => void; onKeep: () => void; onAnswer: () => void;
 }) {
   const def = task.definition.collections.find((c) => c.name === item.collection)!;
@@ -176,20 +206,22 @@ function PendingCard({ task, item, readOnly, flash, justVersion, pending, onOpen
   const refs = def.fields.filter((f) => f.type === "条目引用").flatMap((f) => (Array.isArray(item.fields[f.name]) ? (item.fields[f.name] as string[]) : []));
   const texts = def.fields.filter((f) => f.type === "文本" && f.name !== first && !isEmptyValue(item.fields[f.name]));
   return (
-    <div className={`tbd${flash ? " flash" : ""}`} data-testid={`item-${item.item_id}`}>
+    <div className={`tbd${flash ? " flash" : ""}${hit ? " sw-hit" : ""}`} data-testid={`item-${item.item_id}`}>
       <div className="th">
         <span className="tid">{item.item_id}</span>
-        <ItemStatus task={task} item={item} justVersion={justVersion} pending={pending} />
-        {refs.length > 0 && <span style={{ fontSize: ".72rem", color: "var(--mut)" }}>牵涉 {refs.map((r) => <span key={r} className="ref" role="button" onClick={() => onOpenItem(r)}>{r}</span>)}</span>}
+        <ItemStatus task={task} item={item} just={just} pending={pending} />
+        {refs.length > 0 && <span style={{ fontSize: "0.889rem", color: "var(--mut)" }}>牵涉 {refs.map((r) => <span key={r} className="ref" role="button" onClick={() => onOpenItem(r)}>{r}</span>)}</span>}
         <button type="button" className="btn sm" style={{ marginLeft: "auto" }} onClick={onOpen}>看详情</button>
       </div>
       <div className="item-text">{first ? String(item.fields[first] ?? item.title) : item.title}</div>
       {texts.map((f) => <div className="sug" key={f.name}><b>{f.name}：</b>{String(item.fields[f.name])}</div>)}
       {open && (
         <div className="tfoot">
+          {/* 「回答这个问题」只往对话区输入框里预填一句话、不写库，执行者工作中也可用；「先不管，保留」是写入，工作中灰化 */}
           <button type="button" className="aibtn" disabled={readOnly} onClick={onAnswer} data-testid={`answer-${item.item_id}`}>回答这个问题</button>
           <span className="aihint">回答要发给助手，它改完要等一会儿</span>
-          <button type="button" className="btn sm" disabled={readOnly || pending} onClick={onKeep}>先不管，保留</button>
+          <button type="button" className="btn sm" disabled={readOnly || writesOff || pending} title={writeOffReason(task, { readOnly, writesOff, pending })} onClick={onKeep}
+            data-testid={`keep-${item.item_id}`}>先不管，保留</button>
         </div>
       )}
     </div>

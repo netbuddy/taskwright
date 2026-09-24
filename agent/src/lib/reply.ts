@@ -7,8 +7,8 @@
  * 这里只做形式与事实核对，不做任何语义判断，也没有关键词清单：
  *   1. 同一轮里有别的工具调用时拒绝（回复必须单独调用，才能让 pi 在这一轮之后结束本次运行）；
  *   2. 各项该有的有、不该有的没有，类型对得上；
- *   3. 提问、请确认、给建议值、提议四种主行为必须在 items 里点名关联的条目与版本，点名的条目在库里真实存在、
- *      版本是它的当前版本（读库核对，不判断内容）；与任何条目都无关的提问、建议、提议写 scope: "general"，
+ *   3. 提问、请确认、给建议值、提议四种主行为必须在 items 里点名关联的条目与修订号，点名的条目在库里真实存在、
+ *      修订号是它当前所在的修订（读库核对，不判断内容）；与任何条目都无关的提问、建议、提议写 scope: "general"，
  *      这时 items 可以不写。
  * 不合格时抛出异常，异常文字用中文写明缺什么、多了什么，由 pi 交还模型重写。
  *
@@ -73,7 +73,8 @@ const KIND_NAME: Record<ActKind, string> = {
 
 export interface ItemRef {
   item_id: string;
-  version_no: number;
+  /** 条目当前所在的修订号。 */
+  revision_no: number;
 }
 
 export interface ReplyAct {
@@ -93,18 +94,18 @@ export interface Reply {
   text: string;
 }
 
-/** 某个条目某一版在库里的情况。 */
-export type VersionFact = "有这一版" | "不是当前版本" | "没有这个条目" | "条目已删除" | "没有这一版" | "还没有库";
+/** 某个条目在某次修订下在库里的情况。 */
+export type RevisionFact = "是当前所在的修订" | "不是当前所在的修订" | "没有这个条目" | "条目已删除" | "这次修订没有改动它" | "还没有库";
 
 export interface ReplyFacts {
   /** 这次调用的编号。 */
   toolCallId: string;
   /** 这一轮助手消息里的全部工具调用，由工具的执行函数从会话当前分支读出。 */
   callsThisTurn: TurnCall[];
-  /** 查某个条目某一版在库里的情况。 */
-  versionFact: (itemId: string, versionNo: number) => VersionFact;
-  /** 查某个条目的当前版本号，拒绝理由里用；不给就不写当前是第几版。 */
-  currentVersionOf?: (itemId: string) => number | null;
+  /** 查某个条目在某次修订下在库里的情况。 */
+  revisionFact: (itemId: string, revisionNo: number) => RevisionFact;
+  /** 查某个条目当前所在的修订号，拒绝理由里用；不给就不写它现在是哪次修订。 */
+  currentRevisionOf?: (itemId: string) => number | null;
   /** 这一次运行里「回复」在这次调用之前已经连续被拒了几次，不给按 0 算。 */
   priorRejections?: number;
 }
@@ -276,18 +277,18 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
 
 /** 必须点名条目却没有点名时的拒绝理由。 */
 function missingItemsText(kind: ActKind): string {
-  if (kind === "confirm") return "请确认（confirm）要写 act.items，点名要确认的是哪几个条目的哪一版，每项是 { item_id, version_no }";
+  if (kind === "confirm") return "请确认（confirm）要写 act.items，点名要确认的是哪几个条目，每项是 { item_id, revision_no }，revision_no 写条目当前所在的修订";
   const what = kind === "ask" ? "提问" : kind === "suggest" ? "建议" : "提议";
   return (
-    `${what}要写明${kind === "ask" ? "问" : "说"}的是哪个条目或待定事项：在 act.items 里点名，每项是 { item_id, version_no }，` +
-    `版本号写它的当前版本；与条目无关的${kind === "ask" ? "问题" : what}请写 scope: "general"`
+    `${what}要写明${kind === "ask" ? "问" : "说"}的是哪个条目或问题条目：在 act.items 里点名，每项是 { item_id, revision_no }，` +
+    `revision_no 写它当前所在的修订；与条目无关的${kind === "ask" ? "问题" : what}请写 scope: "general"`
   );
 }
 
 function checkItems(items: unknown, kind: ActKind, required: boolean, facts: ReplyFacts, errors: string[]): void {
   const name = KIND_NAME[kind];
   if (!Array.isArray(items) || (required && items.length === 0)) {
-    errors.push(required ? missingItemsText(kind) : `${name}的 act.items 写了就应当是一个列表，每项是 { item_id, version_no }`);
+    errors.push(required ? missingItemsText(kind) : `${name}的 act.items 写了就应当是一个列表，每项是 { item_id, revision_no }`);
     return;
   }
   items.forEach((one, index) => {
@@ -296,26 +297,24 @@ function checkItems(items: unknown, kind: ActKind, required: boolean, facts: Rep
       errors.push(`${where}要写 item_id（条目编号，例如 UC-001）`);
       return;
     }
-    const version = one.version_no;
-    const hasVersion = version !== undefined && version !== null;
-    if (!hasVersion) {
-      if (required) errors.push(`${where}（${one.item_id}）缺少 version_no；要写明是它的哪一版，写当前版本`);
+    const revision = one.revision_no;
+    if (revision === undefined || revision === null) {
+      if (required) errors.push(`${where}（${one.item_id}）缺少 revision_no；写这个条目当前所在的修订号`);
       return;
     }
-    if (!Number.isInteger(version) || (version as number) < 1) {
-      errors.push(`${where}（${one.item_id}）的 version_no 应当是一个从 1 起的整数，现在写的是 ${JSON.stringify(version)}`);
+    if (!Number.isInteger(revision) || (revision as number) < 1) {
+      errors.push(`${where}（${one.item_id}）的 revision_no 应当是一个从 1 起的整数，现在写的是 ${JSON.stringify(revision)}`);
       return;
     }
     if (!required) return;
-    const fact = facts.versionFact(one.item_id as string, version as number);
+    const fact = facts.revisionFact(one.item_id as string, revision as number);
     if (fact === "还没有库") errors.push("这个任务目录还没有任务数据库，库里没有任何条目，没有东西可以点名");
     else if (fact === "没有这个条目") errors.push(`${where}：库里没有条目 ${one.item_id}`);
     else if (fact === "条目已删除") errors.push(`${where}：条目 ${one.item_id} 已经删除了，不能再点名它`);
-    else if (fact === "没有这一版") errors.push(`${where}：条目 ${one.item_id} 没有第 ${version} 版`);
-    else if (fact === "不是当前版本") {
-      const current = facts.currentVersionOf?.(one.item_id as string);
+    else if (fact === "这次修订没有改动它" || fact === "不是当前所在的修订") {
+      const current = facts.currentRevisionOf?.(one.item_id as string);
       errors.push(
-        `${where}：第 ${version} 版不是条目 ${one.item_id} 的当前版本${current ? `，它现在是第 ${current} 版` : ""}；只能点名当前版本`,
+        `${where}：条目 ${one.item_id} 现在不是修订 ${revision}${current ? `，它现在是修订 ${current}` : ""}；只能点名条目当前所在的修订`,
       );
     }
   });
@@ -391,30 +390,30 @@ export function consecutiveReplyRejections(branch: BranchEntry[]): number {
 }
 
 /**
- * 按库里的事实回答「某个条目某一版在不在」。库以只读方式打开，查完就关。
+ * 按库里的事实回答「某个条目在某次修订下有没有内容、是不是它当前所在的修订」。库以只读方式打开，查完就关。
  * 返回一个查询函数，同一次核对里的几次查询共用一个连接。
  */
-export function openVersionLookup(workspaceDir: string): {
-  versionFact: ReplyFacts["versionFact"];
-  currentVersionOf: (itemId: string) => number | null;
+export function openRevisionLookup(workspaceDir: string): {
+  revisionFact: ReplyFacts["revisionFact"];
+  currentRevisionOf: (itemId: string) => number | null;
   close: () => void;
 } {
   const path = databasePath(workspaceDir);
-  if (!existsSync(path)) return { versionFact: () => "还没有库", currentVersionOf: () => null, close: () => {} };
+  if (!existsSync(path)) return { revisionFact: () => "还没有库", currentRevisionOf: () => null, close: () => {} };
   const db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
   const itemRow = db.prepare("SELECT deleted_in_revision FROM item WHERE item_id = ?");
-  const versionRow = db.prepare("SELECT 1 FROM item_version WHERE item_id = ? AND version_no = ?");
-  const latestRow = db.prepare("SELECT MAX(version_no) AS v FROM item_version WHERE item_id = ?");
-  const currentVersionOf = (itemId: string) => ((latestRow.get(itemId) as { v: number | null } | undefined)?.v ?? null);
+  const revisionRow = db.prepare("SELECT 1 FROM item_version WHERE item_id = ? AND revision_no = ?");
+  const latestRow = db.prepare("SELECT MAX(revision_no) AS v FROM item_version WHERE item_id = ?");
+  const currentRevisionOf = (itemId: string) => ((latestRow.get(itemId) as { v: number | null } | undefined)?.v ?? null);
   return {
-    versionFact(itemId, versionNo) {
+    revisionFact(itemId, revisionNo) {
       const item = itemRow.get(itemId) as { deleted_in_revision: number | null } | undefined;
       if (!item) return "没有这个条目";
       if (item.deleted_in_revision !== null) return "条目已删除";
-      if (!versionRow.get(itemId, versionNo)) return "没有这一版";
-      return currentVersionOf(itemId) === versionNo ? "有这一版" : "不是当前版本";
+      if (!revisionRow.get(itemId, revisionNo)) return "这次修订没有改动它";
+      return currentRevisionOf(itemId) === revisionNo ? "是当前所在的修订" : "不是当前所在的修订";
     },
-    currentVersionOf,
+    currentRevisionOf,
     close: () => db.close(),
   };
 }

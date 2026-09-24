@@ -11,7 +11,7 @@ This version is meant for a single machine or a trusted local network. There is 
 | Node.js | 24 or newer (uses the built-in `node:sqlite`) | agent, web build, simulator tools |
 | Python | 3.12 or newer | server, observatory, simulator driver |
 | pi coding agent | `@earendil-works/pi-coding-agent` 0.85.1 | runs the executor and the simulated user |
-| A model reachable from pi | any provider pi supports (see section 3) | the executor and the confirmation reader |
+| A model reachable from pi | any provider pi supports (see section 3) | the executor |
 
 Running Taskwright needs only the Python standard library. Running the tests needs pytest, which comes with the `[test]` extra of the `observatory` and `server` packages.
 
@@ -30,7 +30,7 @@ The task service, `scripts/dev.sh`, the terminal client, the TUI and the observa
 
 ## 3 Connecting a model
 
-Taskwright does not talk to a model itself. pi does, and the executor and the confirmation reader both use the model pi was started with. The model is set in the startup profile `server/taskwright_server/profiles/dev.json`:
+Taskwright does not talk to a model itself. pi does, and the executor uses the model pi was started with. The model is set in the startup profile `server/taskwright_server/profiles/dev.json`:
 
 ```json
 "model": "openai-codex/gpt-6-luna",

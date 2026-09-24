@@ -113,12 +113,12 @@ class RpcWithFakeModelTests(unittest.TestCase):
                                  "call-save-1")]},
             reply("两个条目都存好了。"),
         ]
-        with Rig(script) as rig:
+        with Rig(script, material=SOURCE["excerpt"]) as rig:
             results = [r for r in tool_results(rig.say("把材料整理成需求规格说明。")) if r["工具"] != "reply"]
             items = rig.rows("SELECT item_id, collection, added_in_revision, deleted_in_revision, event_seq FROM item "
                              "ORDER BY item_id")
-            versions = rig.rows("SELECT item_id, version_no, revision_no, fields FROM item_version ORDER BY item_id")
-            sources = rig.rows("SELECT item_id, version_no, kind, locator, excerpt FROM item_source ORDER BY item_id")
+            contents = rig.rows("SELECT item_id, revision_no, fields FROM item_version ORDER BY item_id")
+            sources = rig.rows("SELECT item_id, revision_no, kind, locator, excerpt FROM item_source ORDER BY item_id")
             revisions = rig.rows("SELECT revision_no, call_id, event_seq FROM revision")
             events = rig.rows("SELECT seq, name, call_id, actor FROM event ORDER BY seq")
             checks = check_db.check(rig.workspace)
@@ -127,10 +127,10 @@ class RpcWithFakeModelTests(unittest.TestCase):
         self.assertEqual([(i["item_id"], i["collection"], i["added_in_revision"], i["deleted_in_revision"])
                           for i in items],
                          [("NFR-001", "非功能需求", 1, None), ("UC-001", "功能用例", 1, None)])
-        self.assertEqual([(v["item_id"], v["version_no"], v["revision_no"]) for v in versions],
-                         [("NFR-001", 1, 1), ("UC-001", 1, 1)])
-        self.assertEqual(json.loads(versions[1]["fields"])["用例名称"], "提交退货申请")
-        self.assertEqual([(s["item_id"], s["version_no"], s["kind"], s["locator"]) for s in sources],
+        self.assertEqual([(v["item_id"], v["revision_no"]) for v in contents],
+                         [("NFR-001", 1), ("UC-001", 1)])
+        self.assertEqual(json.loads(contents[1]["fields"])["用例名称"], "提交退货申请")
+        self.assertEqual([(s["item_id"], s["revision_no"], s["kind"], s["locator"]) for s in sources],
                          [("NFR-001", 1, "文档原文", "inputs/材料.md"), ("UC-001", 1, "文档原文", "inputs/材料.md")])
         self.assertEqual([(r["revision_no"], r["call_id"]) for r in revisions], [(1, "call-save-1")])
         self.assertEqual([(e["name"], e["call_id"], e["actor"]) for e in events],
@@ -147,7 +147,7 @@ class RpcWithFakeModelTests(unittest.TestCase):
             {"tool_calls": [call("save_revision", {"operations": [add("功能用例", USE_CASE)]}, "call-save-good")]},
             reply("补上基本流程之后存好了。"),
         ]
-        with Rig(script) as rig:
+        with Rig(script, material=SOURCE["excerpt"]) as rig:
             results = [r for r in tool_results(rig.say("把材料整理成需求规格说明。")) if r["工具"] != "reply"]
             revisions = rig.rows("SELECT revision_no, call_id FROM revision")
             items = rig.rows("SELECT item_id FROM item")
@@ -172,17 +172,19 @@ class RpcWithFakeModelTests(unittest.TestCase):
             {"tool_calls": [call("save_revision", {"operations": [add("功能用例", USE_CASE)]}, "call-save-1")]},
             reply("存好了一个用例。"),
         ]
-        with Rig(script) as rig:
+        with Rig(script, material=SOURCE["excerpt"]) as rig:
             rig.say("把材料整理成需求规格说明。")
             before = len(rig.requests())
-            command = {"op_id": "ui-op-1", "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_version": 1}],
+            command = {"op_id": "ui-op-1", "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_revision": 1}],
                        "fields": {"用例名称": "买家提交退货申请"}}
             rig.session.request("prompt", message="/tw-user " + json.dumps(command, ensure_ascii=False))
             result = json.loads(rig.wait_status("taskwright-user-result", 1)[-1])
-            versions = rig.rows("SELECT version_no, revision_no, fields, event_seq FROM item_version "
-                                "WHERE item_id = 'UC-001' ORDER BY version_no")
+            contents = rig.rows("SELECT revision_no, fields, event_seq FROM item_version "
+                                "WHERE item_id = 'UC-001' ORDER BY revision_no")
             revisions = rig.rows("SELECT revision_no, call_id FROM revision ORDER BY revision_no")
-            last_event = rig.rows("SELECT seq, name, call_id, actor FROM event ORDER BY seq DESC LIMIT 1")[0]
+            saved_event, confirmed_event = rig.rows("SELECT seq, name, call_id, actor, payload FROM event ORDER BY seq DESC LIMIT 2")[::-1]
+            judged = rig.rows("SELECT j.basis, ji.item_id, ji.revision_no, ji.attitude FROM judgement_item ji "
+                              "JOIN judgement j ON j.judgement_id = ji.judgement_id")
             customs = [e for e in rig.session_entries()
                        if e.get("type") == "custom_message" and e.get("customType") == "taskwright-user-edit"]
             after = len(rig.requests())
@@ -190,17 +192,25 @@ class RpcWithFakeModelTests(unittest.TestCase):
             checks = check_db.check(rig.workspace)
 
         self.assertTrue(result["ok"], result)
-        self.assertEqual([(v["version_no"], v["revision_no"]) for v in versions], [(1, 1), (2, 2)])
-        self.assertEqual(json.loads(versions[1]["fields"])["用例名称"], "买家提交退货申请")
+        self.assertEqual([v["revision_no"] for v in contents], [1, 2])
+        self.assertEqual(json.loads(contents[1]["fields"])["用例名称"], "买家提交退货申请")
         self.assertEqual(revisions[-1], {"revision_no": 2, "call_id": "ui-op-1"})
-        self.assertEqual((last_event["name"], last_event["call_id"], last_event["actor"]),
+        self.assertEqual((saved_event["name"], saved_event["call_id"], saved_event["actor"]),
                          ("REVISION_SAVED", "ui-op-1", "user"))
-        self.assertEqual(versions[1]["event_seq"], last_event["seq"])
+        self.assertEqual(contents[1]["event_seq"], saved_event["seq"])
+        # 改字段随修订在同一个事务里自动登记确认：紧跟一条确认事件（依据 ui_edit），明细是改出来的修订 2、接受。
+        self.assertEqual((confirmed_event["seq"], confirmed_event["name"], confirmed_event["call_id"], confirmed_event["actor"]),
+                         (saved_event["seq"] + 1, "CONFIRMATION_RECORDED", "ui-op-1", "user"))
+        self.assertEqual(json.loads(confirmed_event["payload"]),
+                         {"items": [{"item_id": "UC-001", "revision_no": 2, "accepted": True}], "basis": "ui_edit"})
+        self.assertEqual([(json.loads(j["basis"])[0]["依据"], j["item_id"], j["revision_no"], j["attitude"]) for j in judged],
+                         [("界面修改", "UC-001", 2, "接受")])
+        self.assertEqual(result["event_seqs"], [saved_event["seq"], confirmed_event["seq"]])
         # 会话里多了一条自定义消息，文字里有操作编号。
         self.assertEqual(len(customs), 1)
         content = customs[0].get("content")
         text = content if isinstance(content, str) else "".join(p.get("text", "") for p in content)
-        self.assertIn("用户把 UC-001 的「用例名称」改成了第 2 版", text)
+        self.assertIn("用户改了 UC-001 的「用例名称」，产生修订 2，UC-001 现在是修订 2", text)
         self.assertEqual(customs[0]["details"]["op_id"], "ui-op-1")
         # 不经模型：命令前后假端点没有多收到请求，第一次运行结束之后也没有再出现 agent_start。
         self.assertEqual(after, before)
@@ -242,7 +252,7 @@ class RpcWithFakeModelTests(unittest.TestCase):
             rig.say("我回来了。")
             after_quiet = customs_of(rig.session_entries(), TASK_STATUS)
             # 用户在界面上直接改了 UC-001（正式的 /tw-user 命令），然后再续接一次。
-            command = {"op_id": "ui-op-9", "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_version": 1}],
+            command = {"op_id": "ui-op-9", "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_revision": 1}],
                        "fields": {"用例名称": "买家提交退货申请"}}
             rig.session.request("prompt", message="/tw-user " + json.dumps(command, ensure_ascii=False))
             rig.wait_status("taskwright-user-result", 1)

@@ -22,7 +22,11 @@ UI_CLICK = "taskwright-ui-click"
 USER_EDIT = "taskwright-user-edit"
 TASK_STATUS = "taskwright-task-status"
 REPLY_TOOL = "reply"
-NOTIFY_PREFIX = "我已经在界面上确认了："
+#: 卡片上点「这几条都看过了」之后，扩展按固定模板替用户发给执行者的那句话的开头（agent/src/lib/user_ops.ts 的 VIEWED_NOTICE_PREFIX）。
+#: 早期版本的会话里是界面确认之后那句「我已经在界面上确认了：」，读旧会话时照样认。
+NOTIFY_PREFIXES = ("我已经看过了：", "我已经在界面上确认了：")
+#: 会带那句话的直接操作种类：现在是 mark_viewed，早期版本是 confirm。
+NOTIFY_KINDS = ("mark_viewed", "confirm")
 
 #: 「回复」工具的兜底扩展（agent/src/hooks/reply_fallback.ts 的 FALLBACK_TEXT）追加的那句固定文字。它在会话里是一条
 #: 普通的用户消息，但不是用户说的：按固定文字认出，显示成系统说明。两边的文字要一起改。
@@ -125,10 +129,10 @@ def _messages(path: list[dict], session_id: str) -> list[dict]:
             elif ctype == USER_EDIT:
                 seqs = details.get("event_seqs") or []
                 out.append({"type": "ui_action_noted", "session_id": session_id, "message_id": e["id"], "at": at,
-                            "text": text_of(e.get("content")), "event_seq": seqs[-1] if seqs else None,
+                            "text": text_of(e.get("content")), "event_seq": seqs[0] if seqs else None,
                             "undoable": bool(details.get("undoable")), "op_id": details.get("op_id"),
                                                   "revision_no": details.get("revision_no")})
-                last_confirm = e if details.get("kind") == "confirm" else None
+                last_confirm = e if details.get("kind") in NOTIFY_KINDS else None
             elif ctype == TASK_STATUS:
                 out.append({"type": "system_note", "session_id": session_id, "message_id": e["id"], "at": at,
                             "text": text_of(e.get("content"))})
@@ -152,7 +156,7 @@ def _messages(path: list[dict], session_id: str) -> list[dict]:
                 origin = "card_choice"
                 annotation = {"reply_message_id": click_details.get("reply_entry"), "option_key": click_details.get("option_key"),
                               "option_text": click_details.get("option_text"), "click_message_id": pending_click["id"]}
-            elif last_confirm is not None and raw.startswith(NOTIFY_PREFIX):
+            elif last_confirm is not None and raw.startswith(NOTIFY_PREFIXES):
                 origin = "ui_request"
             pending_click = None
             last_confirm = None

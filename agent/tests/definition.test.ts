@@ -22,7 +22,7 @@ test("合格的任务定义通过，返回结构化对象", () => {
   assert.equal(definition.taskName, "演示任务");
   assert.deepEqual(definition.collections.map((c) => c.prefix), ["UC", "TBD"]);
   assert.deepEqual(definition.collections[1].fields[1].values, ["未解决", "已解决"]);
-  assert.deepEqual(definition.completion["待定事项"], ["没有状态为未解决的条目"]);
+  assert.deepEqual(definition.completion["问题"], ["没有状态为未解决的条目"]);
 });
 
 test("缺少必有的键时逐条说明", () => {

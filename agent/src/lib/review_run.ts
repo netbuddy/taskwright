@@ -6,7 +6,7 @@
  * 所以本模块不依赖 pi。返回给执行者的文字写明每条的结论与发现原文。
  */
 
-import type { ModelCallRecord } from "./record_confirmation.ts";
+import type { ModelCallRecord } from "./model_call.ts";
 import {
   type BlockedItem, type CallContext, type Finding, MAX_FAILED_REVIEWS, type PreparedReview, ReviewError, findingText, parseReview,
   prepareReviews, type RequestedItem, writeReview, writeUnfinished,
@@ -25,7 +25,7 @@ export interface ItemOutcome extends RequestedItem {
   reason: string;
   findings: Finding[];
   review_id: number | null;
-  /** 这一版到这次为止的不合规次数（评审未完成时为空）。 */
+  /** 条目在这次修订下到这次为止的不合规次数（评审未完成时为空）。 */
   failed_so_far: number | null;
 }
 
@@ -70,14 +70,14 @@ async function reviewOne(call: CallContext, taskId: string, item: PreparedReview
     calls.push(record);
     const written = writeReview(call, taskId, item, result, calls);
     if ("changed" in written) {
-      return { item_id: item.item_id, version_no: item.version_no, status: "评审未完成", reason: `评审期间条目被改到了第 ${written.changed} 版`,
+      return { item_id: item.item_id, revision_no: item.revision_no, status: "评审未完成", reason: `评审期间条目被改到了修订 ${written.changed}`,
         findings: [], review_id: null, failed_so_far: null };
     }
-    return { item_id: item.item_id, version_no: item.version_no, status: result.verdict, reason: result.reason, findings: result.findings,
+    return { item_id: item.item_id, revision_no: item.revision_no, status: result.verdict, reason: result.reason, findings: result.findings,
       review_id: written.review_id, failed_so_far: written.failed_so_far };
   }
   writeUnfinished(call, taskId, item, calls, problem);
-  return { item_id: item.item_id, version_no: item.version_no, status: "评审未完成", reason: problem, findings: [], review_id: null, failed_so_far: null };
+  return { item_id: item.item_id, revision_no: item.revision_no, status: "评审未完成", reason: problem, findings: [], review_id: null, failed_so_far: null };
 }
 
 /** 模型调用不理会中止时，也在中止那一刻放弃等待。 */
@@ -111,10 +111,10 @@ function summaryText(results: ItemOutcome[], blocked: BlockedItem[]): string {
   const counts = (s: ItemOutcome["status"]) => results.filter((r) => r.status === s).length;
   lines.push(`评审了 ${results.length} 个条目：合规 ${counts("合规")} 个，不合规 ${counts("不合规")} 个，评审未完成 ${counts("评审未完成")} 个。`);
   for (const r of results) {
-    if (r.status === "合规") lines.push(`${r.item_id} 第 ${r.version_no} 版：合规。${r.reason}`);
-    else if (r.status === "评审未完成") lines.push(`${r.item_id} 第 ${r.version_no} 版：评审未完成（${r.reason}），没有记下合规与否，可以稍后再请求评审。`);
+    if (r.status === "合规") lines.push(`${r.item_id}（修订 ${r.revision_no}）：合规。${r.reason}`);
+    else if (r.status === "评审未完成") lines.push(`${r.item_id}（修订 ${r.revision_no}）：评审未完成（${r.reason}），没有记下合规与否，可以稍后再请求评审。`);
     else {
-      lines.push(`${r.item_id} 第 ${r.version_no} 版：不合规，${r.findings.length} 处（这一版第 ${r.failed_so_far} 次不合规）。${r.reason}`);
+      lines.push(`${r.item_id}（修订 ${r.revision_no}）：不合规，${r.findings.length} 处（在这次修订下第 ${r.failed_so_far} 次不合规）。${r.reason}`);
       r.findings.forEach((f, i) => lines.push(`  ${i + 1}. ${findingText(f)}`));
       if ((r.failed_so_far ?? 0) >= MAX_FAILED_REVIEWS) {
         lines.push(`  这条已连续三次不合规，不再评审。请把三次的发现原样转给用户，用「请选择」问他：按发现修改、保留现在的写法，还是先不管。`);
@@ -122,7 +122,7 @@ function summaryText(results: ItemOutcome[], blocked: BlockedItem[]): string {
     }
   }
   for (const b of blocked) {
-    lines.push(`${b.item_id} 第 ${b.version_no} 版：这条已连续三次不合规，请把三次发现转给用户决定，这次没有再评。前三次的发现：`);
+    lines.push(`${b.item_id}（修订 ${b.revision_no}）：这条已连续三次不合规，请把三次发现转给用户决定，这次没有再评。前三次的发现：`);
     b.rounds.forEach((round, i) => {
       lines.push(`  第 ${i + 1} 次：${round.reason}`);
       round.findings.forEach((f, j) => lines.push(`    ${j + 1}. ${findingText(f)}`));

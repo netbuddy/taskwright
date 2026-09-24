@@ -7,59 +7,46 @@
 .app a { color: inherit; text-decoration: none; }
 .app .topbar a.tname:hover { text-decoration: underline; }
 
-/* 停用的按钮与输入框（原型是静态页，没有这一态） */
-.app .btn:disabled, .app .btn.disabled { opacity: .45; cursor: not-allowed; }
+/* 暂时不能用的外观：写入按钮、发送按钮、卡片按钮同一档浅灰实心；
+ * 实心黑的主按钮若只调半透明看不出禁用，所以不用 opacity。取自原型 v5 模板的 .sw- 一节。 */
+.app .btn:disabled, .app .btn.disabled { opacity: 1; background: #f0f0f0; border-color: #dcdcdc; color: #b0b0b0; cursor: not-allowed; }
+.app .btn.pri:disabled { background: #c8c8c8; border-color: #c8c8c8; color: #fff; }
 .app .aibtn:disabled { opacity: .45; cursor: not-allowed; }
 .app .quickreply input:disabled { background: #f0f0f0; cursor: not-allowed; }
-.app .send.off, .app .qr-send.off { opacity: .45; pointer-events: none; }
+.app .send.off, .app .qr-send.off { opacity: 1; background: #c8c8c8; pointer-events: none; }
 .app .inbox textarea:disabled { cursor: not-allowed; }
+.app .lrow input[type=checkbox]:disabled { cursor: not-allowed; }
+.app .selfnote .undo.off { opacity: .45; pointer-events: none; }
 
 /* 对话区：回复里的 Markdown，排队与发送中的话，断线与问题提示 */
-.app .m.ai h1, .app .m.ai h2, .app .m.ai h3, .app .m.ai h4 { font-size: .84rem; margin: .2rem 0 .3rem; }
+.app .m.ai h1, .app .m.ai h2, .app .m.ai h3, .app .m.ai h4 { font-size: 0.936rem; margin: .2rem 0 .3rem; }
 .app .m.ai ol { margin: .1rem 0 .35rem 1.2rem; }
-.app .m.ai code { font-family: ui-monospace, Menlo, monospace; font-size: .74rem; background: var(--sel); border-radius: .25rem; padding: 0 .25rem; }
+.app .m.ai code { font-family: ui-monospace, Menlo, monospace; font-size: 0.897rem; background: var(--sel); border-radius: .25rem; padding: 0 .25rem; }
 .app .m.ai .informs { margin-bottom: .35rem; }
-.app .m.ai .degraded { font-size: .7rem; color: var(--mut); margin-bottom: .2rem; }
+.app .m.ai .degraded { font-size: 0.881rem; color: var(--mut); margin-bottom: .2rem; }
 .app .m.user.sending { opacity: .6; }
 .app .m.user .from-ui.bad { color: var(--gap); }
 .app .problem { background: var(--amber-bg); border: 1px solid var(--amber-line); border-radius: .5rem; padding: .3rem .55rem;
-  font-size: .74rem; color: #7a4a06; display: flex; gap: .4rem; align-items: center; margin: .35rem .8rem 0; }
+  font-size: 0.897rem; color: #7a4a06; display: flex; gap: .4rem; align-items: center; margin: .35rem .8rem 0; }
 .app .problem .x { margin-left: auto; cursor: pointer; }
-.app .earlier { font-size: .7rem; color: var(--blue); cursor: pointer; text-decoration: underline; align-self: center; }
+.app .earlier { font-size: 0.881rem; color: var(--blue); cursor: pointer; text-decoration: underline; align-self: center; }
 .app .act .ctx { display: flex; align-items: baseline; gap: .3rem; flex-wrap: wrap; margin-bottom: .15rem; cursor: pointer; }
 .app .act .ctx:hover .ctxname { text-decoration: underline; }
-.app .act .ctx .ver { color: var(--mut); font-size: .7rem; }
-.app .act .ctxx { margin: 0 0 .15rem 0; font-size: .74rem; color: #555; }
+.app .act .ctx .ver { color: var(--mut); font-size: 0.881rem; }
+.app .act .ctxx { margin: 0 0 .15rem 0; font-size: 0.897rem; color: #555; }
 .app .act .opts { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; }
 
-/* 改动块：同一次工作里助手改了哪些条目 */
-.app .chg { border: 1px solid var(--line2); border-left: 3px solid var(--ink); background: var(--card); border-radius: .6rem;
-  padding: .45rem .6rem; font-size: .76rem; }
-.app .chg .tt { font-size: .66rem; font-weight: 700; letter-spacing: .06em; color: var(--mut); margin-bottom: .3rem; }
-.app .chg .crow { padding: .25rem 0; border-top: 1px dotted var(--line2); }
-.app .chg .crow:first-of-type { border-top: 0; }
-.app .chg .ch { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; }
-.app .chg .opk { font-size: .64rem; border-radius: .35rem; padding: 0 .35rem; flex: none; }
-.app .chg .opk.add { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-line); }
-.app .chg .opk.edit { color: #4a4a4a; background: var(--dark3); border: 1px solid var(--line2); }
-.app .chg .opk.drop { color: var(--gap); background: var(--gap-bg); border: 1px solid var(--gap-line); }
-.app .chg .ctitle { font-weight: 600; }
-.app .chg .cver { color: var(--mut); font-size: .7rem; }
-.app .chg .cdetail { color: #555; font-size: .72rem; margin-top: .1rem; }
-.app .chg .cdetail b { font-weight: 500; color: var(--ink); }
-.app .chg .look { margin-left: auto; font-size: .68rem; color: var(--blue); text-decoration: underline; cursor: pointer; flex: none; }
-
-/* 条目区：刚改过的条目短时高亮与「第 N 版 · 刚改」标签（第 27 节第 2 条） */
+/* 条目区：刚改过的条目短时高亮与「修订 N · 刚改」标签（第 27 节第 2 条） */
 .app .chip.just { color: var(--ink); border-color: var(--ink); background: var(--card); font-weight: 600; }
 .app .lrow.flash, .app .tbd.flash { animation: justflash 2.4s ease-out; }
 @keyframes justflash { 0% { background: #fff4c2; } 100% { background: transparent; } }
-.app .lrow .result { flex-basis: 100%; padding-left: 3.4rem; font-size: .7rem; color: var(--mut); font-weight: 400; }
+.app .lrow .result { flex-basis: 100%; padding-left: 3.4rem; font-size: 0.881rem; color: var(--mut); font-weight: 400; }
 .app .lrow .saving { color: var(--amber); }
 .app .tbd.sel { border-color: var(--ink); }
 
 /* 详情：值格下方的来源小标签（四种各有配色），右下角固定的确认按钮 */
 .app .srcs { display: flex; gap: .25rem; flex-wrap: wrap; margin-top: .2rem; }
-.app .srctag { font-size: .64rem; border-radius: .4rem; padding: 0 .4rem; display: inline-block; white-space: nowrap; max-width: 100%;
+.app .srctag { font-size: 0.857rem; border-radius: .4rem; padding: 0 .4rem; display: inline-block; white-space: nowrap; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; border: 1px solid; }
 .app .srctag.quote { color: var(--blue); border-color: var(--blue-line); background: var(--blue-bg); cursor: pointer; }
 .app .srctag.quote:hover { background: #dbe6fb; }
@@ -74,19 +61,96 @@
 .app .fld .v.editing { border-color: var(--ink); }
 .app .fld .v textarea.ed { margin-bottom: .2rem; }
 .app .listed { display: flex; gap: .3rem; align-items: flex-start; margin-bottom: .2rem; }
-.app .listed .sn { color: var(--mut); font-size: .72rem; min-width: 1.1rem; padding-top: .15rem; }
+.app .listed .sn { color: var(--mut); font-size: 0.889rem; min-width: 1.1rem; padding-top: .15rem; }
 .app .detail .err { background: var(--gap-bg); border: 1px solid var(--gap-line); color: #8c1c1c; border-radius: .5rem; padding: .3rem .6rem;
-  font-size: .75rem; margin-bottom: .5rem; }
+  font-size: 0.901rem; margin-bottom: .5rem; }
 .app .detail .err .x { float: right; cursor: pointer; }
 .app .srcbox .quote.said { color: #17534d; }
-.app .confirms { font-size: .74rem; color: #555; }
+.app .confirms { font-size: 0.897rem; color: #555; }
 .app .confirms div { margin-bottom: .15rem; }
 
 /* 文档区：来源标签点过来时高亮对应原文；框选之后的三个动作 */
 .app .paper { white-space: pre-wrap; }
-.app mark.hit { background: #cfe0ff; outline: 2px solid var(--ink); outline-offset: 1px; border-radius: .2rem; color: inherit; }
-.app .doc-h select { font-family: inherit; font-size: .78rem; border: 1px solid var(--line2); border-radius: .4rem; background: var(--card); max-width: 14rem; }
-.app .selbar .aibtn { font-size: .7rem; }
+.app mark.hit { background: #cfe0ff; outline: 0.143rem solid var(--ink); outline-offset: 0.071rem; border-radius: .2rem; color: inherit; }
+.app .doc-h select { font-family: inherit; font-size: 0.913rem; border: 1px solid var(--line2); border-radius: .4rem; background: var(--card); max-width: 14rem; }
+.app .selbar .aibtn { font-size: 0.881rem; }
 .app .selbar .selq { max-width: 12rem; }
 .app .askbox { flex-basis: 100%; display: flex; gap: .3rem; }
-.app .askbox input { flex: 1; border: 1px solid var(--amber-line); border-radius: 1rem; padding: .15rem .6rem; font-size: .74rem; font-family: inherit; min-width: 0; }
+.app .askbox input { flex: 1; border: 1px solid var(--amber-line); border-radius: 1rem; padding: .15rem .6rem; font-size: 0.897rem; font-family: inherit; min-width: 0; }
+
+/* ───── 单一写入者、修订页签、字段修订标识、字号与宽度─────
+ * 取自原型 v5 模板里以 .sw- 开头的那一节，类名保持一致，便于与原型逐条对照。 */
+/* 执行者工作中：条目区顶部的横幅。尺寸与 .alertbar 相同，颜色用「助手要花时间做的事」那一套 */
+.app .sw-busy-banner { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; padding: .32rem .7rem; font-size: 0.901rem;
+  background: var(--ai-bg); border-bottom: 1px solid var(--ai-line); color: var(--ai); flex: none; font-weight: 600; }
+.app .sw-busy-banner .spin { width: .5rem; height: .5rem; border-radius: 50%; background: var(--ai); animation: breathe 1.2s ease-in-out infinite; flex: none; }
+/* 右侧栏三个页签「材料 · 文档 · 修订」；页签行取代原来文档区的标题行，材料的文件名挪到页签下面一行 */
+.app .sw-stabs { display: flex; align-items: flex-end; gap: .1rem; flex: 1; min-width: 0; }
+.app .sw-stab { padding: .2rem .7rem .25rem; border-bottom: .143rem solid transparent; color: #666; cursor: pointer; font-size: 0.929rem; white-space: nowrap; }
+.app .sw-stab.on { color: var(--ink); border-bottom-color: var(--ink); font-weight: 700; }
+.app .sw-stab .cnt { margin-left: .3rem; font-size: 0.857rem; color: var(--mut); font-weight: 400; }
+.app .sw-subh { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; padding: .35rem .8rem; border-bottom: 1px solid var(--line);
+  background: var(--card); font-size: 0.901rem; flex: none; }
+.app .sw-subh select { font-family: inherit; font-size: 0.901rem; border: 1px solid var(--line2); border-radius: .4rem; background: var(--card); max-width: 14rem; }
+.app.doc-closed .sw-side { display: none; }
+.app .sw-side { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.app .sw-side .doc-wrap { flex: 1; min-height: 0; }
+/* 修订日志：最新在上，每次修订一张紧凑卡片 */
+.app .sw-revlog { flex: 1; min-height: 0; overflow: auto; padding: .5rem .6rem .8rem; background: var(--dark); display: flex; flex-direction: column; gap: .45rem; }
+.app .sw-revlog .lead { font-size: 0.873rem; color: var(--mut); padding: 0 .2rem; }
+.app .sw-rev { background: var(--card); border: 1px solid var(--line2); border-radius: .55rem; padding: .45rem .6rem .5rem; cursor: pointer; }
+.app .sw-rev:hover { border-color: #bdbdbd; }
+.app .sw-rev.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); background: #fffdf3; }
+.app .sw-rev .rh { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; font-size: 0.929rem; }
+.app .sw-rev .rh b { font-size: 0.972rem; }
+.app .sw-rev .rh .who { font-size: 0.857rem; border-radius: .35rem; padding: 0 .35rem; border: 1px solid var(--ai-line); background: var(--ai-bg); color: var(--ai); }
+.app .sw-rev .rh .who.user { border-color: var(--teal-line); background: var(--teal-bg); color: var(--teal); }
+.app .sw-rev .rh .t { color: var(--mut); font-size: 0.873rem; }
+.app .sw-rev .why { font-size: 0.889rem; color: #555; margin: .15rem 0 .25rem; }
+.app .sw-rev .row { display: flex; align-items: baseline; gap: .35rem; flex-wrap: nowrap; padding: .18rem .3rem; border-top: 1px dotted var(--line2); border-radius: .3rem; font-size: 0.901rem; }
+.app .sw-rev .row:hover { background: var(--sel); }
+.app .sw-rev .opk { font-size: 0.857rem; border-radius: .35rem; padding: 0 .35rem; flex: none; }
+.app .sw-rev .opk.add { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-line); }
+.app .sw-rev .opk.edit { color: #4a4a4a; background: var(--dark3); border: 1px solid var(--line2); }
+.app .sw-rev .opk.drop { color: var(--gap); background: var(--gap-bg); border: 1px solid var(--gap-line); }
+.app .sw-rev .rt { font-weight: 600; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .sw-rev .rf { color: #666; font-size: 0.873rem; white-space: nowrap; flex: none; }
+.app .sw-rev .opk, .app .sw-rev .ref { white-space: nowrap; }
+.app .sw-rev .look { margin-left: auto; font-size: 0.873rem; color: var(--blue); text-decoration: underline; flex: none; cursor: pointer; }
+.app .sw-rev .rfoot { display: flex; gap: .35rem; margin-top: .35rem; flex-wrap: wrap; align-items: center; }
+/* 字段级修订标识（方案第 2A 节第 6 条）：自上次确认的修订以来助手改过的字段，整块加琥珀色左边线与浅底，不加文字；确认后消失 */
+.app .fld.sw-revmark .v { border-color: var(--amber-line); border-left: .22rem solid var(--amber); background: var(--amber-bg); }
+.app .sw-docempty { padding: 1rem .9rem; color: var(--mut); font-size: 0.929rem; line-height: 1.7; }
+.app .sw-docempty .btn { margin-top: .5rem; }
+/* 执行者回复气泡底部的修订指针：回复的元数据，字号与颜色同「助手做了 N 步」那一行 */
+.app .sw-revtag { display: inline-block; margin-top: .4rem; font-size: 0.857rem; color: #8a8a8a; border: 1px solid var(--line2); border-radius: .35rem;
+  padding: 0 .4rem; cursor: pointer; background: var(--dark); }
+.app .sw-revtag:hover { color: var(--ink); border-color: #bdbdbd; }
+/* 选中某次修订时，条目区高亮它碰到的条目；集合页签上标出这个页签里被碰到几个 */
+.app .lrow.sw-hit, .app .tbd.sw-hit { background: #fff4c2; box-shadow: inset .2rem 0 0 #d9a400; }
+.app .itab .sw-hitn { margin-left: .25rem; font-size: 0.857rem; background: #fff4c2; border: 1px solid #e6c64a; color: #6b5200; border-radius: .6rem; padding: 0 .3rem; }
+.app .sw-hitnote { font-size: 0.873rem; background: #fff4c2; border: 1px solid #e6c64a; color: #6b5200; border-radius: .4rem; padding: 0 .4rem; cursor: pointer; white-space: nowrap; }
+/* 按钮为什么不能用：执行者工作中写在详情底部，有未保存编辑时写在卡片里 */
+.app .sw-why { font-size: 0.881rem; color: var(--ai); align-self: center; font-weight: 600; }
+.app .sw-holdhint { font-size: 0.881rem; color: #7a4a06; background: var(--amber-bg); border: 1px solid var(--amber-line); border-radius: .4rem; padding: .1rem .45rem; margin-top: .35rem; }
+/* 宽度只用 flex 份数、百分比或 rem：条目列表铺满条目区，不再限宽 */
+.app .list { max-width: none; }
+/* 一句摘要列：显隐看条目区的宽度相对根字号（容器查询，阈值 40rem），按列可用宽度省略号截断 */
+.app .items-body { container-type: inline-size; container-name: items; }
+.app .lrow .lsum { display: none; flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mut); }
+@container items (min-width: 40rem) {
+  .app .lrow .lname { flex: 0 1 auto; max-width: 32%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app .lrow .lsum { display: block; }
+}
+/* 顶栏的字号三档，放在会话菜单旁边 */
+.app .sw-fs { margin-left: auto; display: flex; align-items: center; gap: .25rem; font-size: 0.857rem; color: var(--mut); }
+.app .sw-fs a { border: 1px solid var(--line2); border-radius: .4rem; padding: 0 .45rem; cursor: pointer; background: var(--card); color: #333; }
+.app .sw-fs a.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.app .topbar .sw-fs + .smenu-btn { margin-left: .5rem; }
+
+/* 未读：用户还没看过这个条目现在的样子（打开详情就记为已读）。像邮件一样加粗编号与标题。 */
+.app .lrow.unread .lid, .app .lrow.unread .lname { font-weight: 700; color: var(--ink); }
+.app .nd.unread { font-weight: 700; }
+
+/* 完成前还有未读：卡片下面一行提示，可点筛出未读的条目。 */
+.app .sw-unread-hint { margin-top: .5rem; font-size: .881rem; color: var(--amber); display: flex; align-items: center; gap: .5rem; }

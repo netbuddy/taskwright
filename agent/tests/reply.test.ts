@@ -1,27 +1,27 @@
 /**
  * 「回复」的核对函数：五种主行为各一个合格样例，每条核对规则各一个被拒样例，
- * 以及「请确认」引用不存在的条目、已删除的条目或不存在的版本时被拒。
+ * 以及「请确认」引用不存在的条目、已删除的条目或条目不在的修订时被拒。
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { checkReply, consecutiveReplyRejections, decideReply, lastAssistantTurn, openVersionLookup, type ReplyFacts } from "../src/lib/reply.ts";
+import { checkReply, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup, type ReplyFacts } from "../src/lib/reply.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
 import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
 
 /** 只有自己一个调用、库里什么都没有时的事实。 */
-function alone(versionFact: ReplyFacts["versionFact"] = () => "还没有库"): ReplyFacts {
-  return { toolCallId: "call-reply", callsThisTurn: [{ id: "call-reply", name: "reply" }], versionFact };
+function alone(revisionFact: ReplyFacts["revisionFact"] = () => "还没有库"): ReplyFacts {
+  return { toolCallId: "call-reply", callsThisTurn: [{ id: "call-reply", name: "reply" }], revisionFact };
 }
 
-/** 按一张表回答条目与版本的事实：UC-001 有第 1、2 版，当前是第 2 版；TBD-001 只有第 1 版；UC-002 已删除。 */
-const table: ReplyFacts["versionFact"] = (itemId, versionNo) => {
+/** 按一张表回答条目与修订的事实：UC-001 在修订 1、2 改动过，当前在修订 2；TBD-001 只在修订 1；UC-002 已删除。 */
+const table: ReplyFacts["revisionFact"] = (itemId, revisionNo) => {
   if (itemId === "UC-002") return "条目已删除";
-  if (itemId === "TBD-001") return versionNo === 1 ? "有这一版" : "没有这一版";
+  if (itemId === "TBD-001") return revisionNo === 1 ? "是当前所在的修订" : "这次修订没有改动它";
   if (itemId !== "UC-001") return "没有这个条目";
-  return versionNo === 2 ? "有这一版" : versionNo === 1 ? "不是当前版本" : "没有这一版";
+  return revisionNo === 2 ? "是当前所在的修订" : revisionNo === 1 ? "不是当前所在的修订" : "这次修订没有改动它";
 };
 
 function rejected(params: unknown, facts: ReplyFacts, pattern: RegExp): void {
@@ -41,8 +41,8 @@ test("没有主行为：只有告知与成文的话", () => {
   assert.deepEqual(reply, { informs: ["我记下了两条约束。"], act: null, text: "我记下了两条约束。" });
 });
 
-test("提问 ask 合格：点名关联的待定事项与它的当前版本", () => {
-  const act = { kind: "ask", text: "退款由谁审批？", items: [{ item_id: "TBD-001", version_no: 1 }] };
+test("提问 ask 合格：点名关联的问题与它当前所在的修订", () => {
+  const act = { kind: "ask", text: "退款由谁审批？", items: [{ item_id: "TBD-001", revision_no: 1 }] };
   const reply = checkReply({ informs: [], act, text: "材料里没写审批人。退款由谁审批？" }, alone(table));
   assert.deepEqual(reply.act, act);
 });
@@ -52,19 +52,19 @@ test("提问 ask 合格：与条目无关的问题写 scope: general，不写 it
   assert.deepEqual(checkReply({ informs: [], act, text: "今天先整理到哪里为止？" }, alone()).act, act);
 });
 
-test("请确认 confirm 合格：点名的条目与版本都在库里", () => {
+test("请确认 confirm 合格：点名的条目与修订号都在库里", () => {
   const params = {
     informs: ["UC-001 已经按你的意思改好了。"],
-    act: { kind: "confirm", text: "请确认 UC-001 的第 2 版。", items: [{ item_id: "UC-001", version_no: 2 }] },
-    text: "UC-001 已经改好了，请确认第 2 版。",
+    act: { kind: "confirm", text: "请确认 UC-001（修订 2）。", items: [{ item_id: "UC-001", revision_no: 2 }] },
+    text: "UC-001 已经改好了，请确认。",
   };
-  assert.deepEqual(checkReply(params, alone(table)).act?.items, [{ item_id: "UC-001", version_no: 2 }]);
+  assert.deepEqual(checkReply(params, alone(table)).act?.items, [{ item_id: "UC-001", revision_no: 2 }]);
 });
 
 test("给建议值 suggest 合格：带值与依据", () => {
   const params = {
     informs: [],
-    act: { kind: "suggest", text: "处理时限建议写成七天。", value: "七天", basis: BASIS, items: [{ item_id: "UC-001", version_no: 2 }] },
+    act: { kind: "suggest", text: "处理时限建议写成七天。", value: "七天", basis: BASIS, items: [{ item_id: "UC-001", revision_no: 2 }] },
     text: "处理时限我建议写成七天，材料里是这样写的。",
   };
   const reply = checkReply(params, alone(table));
@@ -85,7 +85,7 @@ test("提议 propose 合格：带预览", () => {
   const params = {
     informs: [],
     act: {
-      kind: "propose", text: "把两条重复的用例合成一条。", items: [{ item_id: "UC-001", version_no: 2 }],
+      kind: "propose", text: "把两条重复的用例合成一条。", items: [{ item_id: "UC-001", revision_no: 2 }],
       preview: [{ effect: "remove", text: "删掉 UC-001" }, { effect: "change", text: "改写 UC-003" }],
     },
     text: "UC-001 与 UC-003 说的是一件事，我提议合成一条。",
@@ -104,7 +104,7 @@ test("同一轮里有别的工具调用时拒绝，并列出那些调用", () =>
   const facts: ReplyFacts = {
     toolCallId: "call-reply",
     callsThisTurn: [{ id: "call-save", name: "save_revision" }, { id: "call-reply", name: "reply" }],
-    versionFact: table,
+    revisionFact: table,
   };
   rejected({ informs: [], act: null, text: "好了。" }, facts, /回复必须单独调用，不能与其他工具同一轮.*save_revision/);
 });
@@ -127,7 +127,7 @@ test("顶层多了一项时拒绝", () => {
 test("键名写坏了（带引号与冒号）时，拒绝理由点明像是 JSON 写坏了", () => {
   // 取自本地模型试跑里的真实参数：items 很长之后，text 的键名被写成了「text': 」。
   rejected(
-    { informs: [], act: { kind: "confirm", items: [{ item_id: "UC-001", version_no: 1 }], "text': ": ", " }, text: "请确认。" },
+    { informs: [], act: { kind: "confirm", items: [{ item_id: "UC-001", revision_no: 1 }], "text': ": ", " }, text: "请确认。" },
     alone(table),
     /act 里有一个键名写成了「text': 」[^。]*像是 JSON 写坏了[\s\S]*act\.text 是空的/,
   );
@@ -151,19 +151,19 @@ test("请确认没有写 items 时拒绝", () => {
   rejected({ informs: [], act: { kind: "confirm", text: "请确认。" }, text: "请确认。" }, alone(table), /请确认（confirm）要写 act\.items/);
 });
 
-test("请确认的条目没有写版本号时拒绝", () => {
+test("请确认的条目没有写修订号时拒绝", () => {
   rejected(
     { informs: [], act: { kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001" }] }, text: "请确认。" },
     alone(table),
-    /UC-001）缺少 version_no/,
+    /UC-001）缺少 revision_no/,
   );
 });
 
-test("版本号不是正整数时拒绝", () => {
+test("修订号不是正整数时拒绝", () => {
   rejected(
-    { informs: [], act: { kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", version_no: 0 }] }, text: "请确认。" },
+    { informs: [], act: { kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", revision_no: 0 }] }, text: "请确认。" },
     alone(table),
-    /version_no 应当是一个从 1 起的整数/,
+    /revision_no 应当是一个从 1 起的整数/,
   );
 });
 
@@ -227,29 +227,29 @@ test("某条告知是空白时拒绝", () => {
 
 // ───────────── 请确认引用库里的条目 ─────────────
 
-test("请确认引用不存在的条目、已删除的条目或不存在的版本时被拒", () => {
+test("请确认引用不存在的条目、已删除的条目或条目不在的修订时被拒", () => {
   const act = (items: unknown) => ({ informs: [], act: { kind: "confirm", text: "请确认。", items }, text: "请确认。" });
-  rejected(act([{ item_id: "UC-009", version_no: 1 }]), alone(table), /库里没有条目 UC-009/);
-  rejected(act([{ item_id: "UC-002", version_no: 1 }]), alone(table), /UC-002 已经删除了/);
-  rejected(act([{ item_id: "UC-001", version_no: 3 }]), alone(table), /UC-001 没有第 3 版/);
-  rejected(act([{ item_id: "UC-001", version_no: 1 }]), alone(), /还没有任务数据库/);
+  rejected(act([{ item_id: "UC-009", revision_no: 1 }]), alone(table), /库里没有条目 UC-009/);
+  rejected(act([{ item_id: "UC-002", revision_no: 1 }]), alone(table), /UC-002 已经删除了/);
+  rejected(act([{ item_id: "UC-001", revision_no: 3 }]), alone(table), /条目 UC-001 现在不是修订 3/);
+  rejected(act([{ item_id: "UC-001", revision_no: 1 }]), alone(), /还没有任务数据库/);
 });
 
-test("按真实的库核对：保存过的条目与版本查得到，没有的查不到", () => {
+test("按真实的库核对：条目在保存过的修订里查得到，没有改动它的修订查不到", () => {
   const dir = makeWorkspace();
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   saveRevision({ ...callIn(dir), userMessages: [] }, {
     operations: [{ op: "add", collection: "用例", fields: { 名称: "买家申请退款", 步骤: ["提交申请"] }, sources: [SOURCE] }],
   });
-  const lookup = openVersionLookup(dir);
+  const lookup = openRevisionLookup(dir);
   try {
-    assert.equal(lookup.versionFact("UC-001", 1), "有这一版");
-    assert.equal(lookup.versionFact("UC-001", 2), "没有这一版");
-    assert.equal(lookup.versionFact("UC-404", 1), "没有这个条目");
+    assert.equal(lookup.revisionFact("UC-001", 1), "是当前所在的修订");
+    assert.equal(lookup.revisionFact("UC-001", 2), "这次修订没有改动它");
+    assert.equal(lookup.revisionFact("UC-404", 1), "没有这个条目");
   } finally {
     lookup.close();
   }
-  assert.equal(openVersionLookup(makeWorkspace()).versionFact("UC-001", 1), "还没有库");
+  assert.equal(openRevisionLookup(makeWorkspace()).revisionFact("UC-001", 1), "还没有库");
 });
 
 // ───────────── 从会话当前分支读这一轮 ─────────────
@@ -276,23 +276,23 @@ test("从会话分支找到最后一条助手消息与它的全部工具调用",
 
 test("提问、给建议值、提议不点名条目又没写 scope: general 时拒绝，理由说明怎样改", () => {
   rejected({ informs: [], act: { kind: "ask", text: "退款由谁审批？" }, text: "退款由谁审批？" }, alone(table),
-    /提问要写明问的是哪个条目或待定事项.*与条目无关的问题请写 scope: "general"/);
-  rejected({ informs: [], act: { kind: "ask", text: "问。", items: [] }, text: "问。" }, alone(table), /提问要写明问的是哪个条目或待定事项/);
+    /提问要写明问的是哪个条目或问题条目.*与条目无关的问题请写 scope: "general"/);
+  rejected({ informs: [], act: { kind: "ask", text: "问。", items: [] }, text: "问。" }, alone(table), /提问要写明问的是哪个条目或问题条目/);
   rejected({ informs: [], act: { kind: "suggest", text: "建议七天。", value: "七天", basis: BASIS }, text: "建议七天。" }, alone(table),
-    /建议要写明说的是哪个条目或待定事项/);
-  rejected({ informs: [], act: { kind: "propose", text: "合成一条。" }, text: "合成一条。" }, alone(table), /提议要写明说的是哪个条目或待定事项/);
+    /建议要写明说的是哪个条目或问题条目/);
+  rejected({ informs: [], act: { kind: "propose", text: "合成一条。" }, text: "合成一条。" }, alone(table), /提议要写明说的是哪个条目或问题条目/);
 });
 
-test("提问点名的条目要在库里、要写版本、版本要是当前版本", () => {
+test("提问点名的条目要在库里、要写修订号、修订号要是条目当前所在的修订", () => {
   const ask = (items: unknown) => ({ informs: [], act: { kind: "ask", text: "问。", items }, text: "问。" });
-  rejected(ask([{ item_id: "TBD-009", version_no: 1 }]), alone(table), /库里没有条目 TBD-009/);
-  rejected(ask([{ item_id: "TBD-001" }]), alone(table), /TBD-001）缺少 version_no/);
-  rejected(ask([{ item_id: "UC-001", version_no: 1 }]), alone(table), /第 1 版不是条目 UC-001 的当前版本/);
+  rejected(ask([{ item_id: "TBD-009", revision_no: 1 }]), alone(table), /库里没有条目 TBD-009/);
+  rejected(ask([{ item_id: "TBD-001" }]), alone(table), /TBD-001）缺少 revision_no/);
+  rejected(ask([{ item_id: "UC-001", revision_no: 1 }]), alone(table), /条目 UC-001 现在不是修订 1/);
 });
 
 test("scope 只能写 general；写了 general 就不能再点名条目；请确认不认 scope", () => {
   rejected({ informs: [], act: { kind: "ask", text: "问。", scope: "all" }, text: "问。" }, alone(table), /act\.scope 写的是 "all"/);
-  rejected({ informs: [], act: { kind: "ask", text: "问。", scope: "general", items: [{ item_id: "TBD-001", version_no: 1 }] }, text: "问。" },
+  rejected({ informs: [], act: { kind: "ask", text: "问。", scope: "general", items: [{ item_id: "TBD-001", revision_no: 1 }] }, text: "问。" },
     alone(table), /二者只能选一个/);
   rejected({ informs: [], act: { kind: "confirm", text: "请确认。", scope: "general" }, text: "请确认。" }, alone(table),
     /请确认（confirm）不写 act\.scope/);
@@ -303,26 +303,26 @@ test("请选择不点名条目也合格；点名了只核对形状", () => {
   assert.equal(checkReply({ informs: [], act, text: "问一件事。" }, alone()).act?.kind, "choose");
 });
 
-// ───────────── 请确认只允许当前版本 ─────────────
+// ───────────── 请确认只允许条目当前所在的修订 ─────────────
 
-test("请确认的版本不是当前版本时拒绝，并写明当前是第几版", () => {
-  const facts = { ...alone(table), currentVersionOf: () => 2 };
-  rejected({ informs: [], act: { kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", version_no: 1 }] }, text: "请确认。" }, facts,
-    /第 1 版不是条目 UC-001 的当前版本，它现在是第 2 版；只能点名当前版本/);
+test("请确认的修订号不是条目当前所在的修订时拒绝，并写明它现在在哪次修订", () => {
+  const facts = { ...alone(table), currentRevisionOf: () => 2 };
+  rejected({ informs: [], act: { kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", revision_no: 1 }] }, text: "请确认。" }, facts,
+    /条目 UC-001 现在不是修订 1，它现在是修订 2；只能点名条目当前所在的修订/);
 });
 
-test("按真实的库核对当前版本：改过之后旧版本查出来是「不是当前版本」", () => {
+test("按真实的库核对：改过之后旧修订查出来是「不是当前所在的修订」", () => {
   const dir = makeWorkspace();
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   saveRevision({ ...callIn(dir), userMessages: [] }, {
     operations: [{ op: "add", collection: "用例", fields: { 名称: "买家申请退款", 步骤: ["提交申请"] }, sources: [SOURCE] }],
   });
-  saveRevision({ ...callIn(dir), userMessages: [] }, { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 名称: "申请退款" } }] });
-  const lookup = openVersionLookup(dir);
+  saveRevision({ ...callIn(dir), userMessages: [] }, { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "申请退款" } }] });
+  const lookup = openRevisionLookup(dir);
   try {
-    assert.equal(lookup.versionFact("UC-001", 1), "不是当前版本");
-    assert.equal(lookup.versionFact("UC-001", 2), "有这一版");
-    assert.equal(lookup.currentVersionOf("UC-001"), 2);
+    assert.equal(lookup.revisionFact("UC-001", 1), "不是当前所在的修订");
+    assert.equal(lookup.revisionFact("UC-001", 2), "是当前所在的修订");
+    assert.equal(lookup.currentRevisionOf("UC-001"), 2);
   } finally {
     lookup.close();
   }

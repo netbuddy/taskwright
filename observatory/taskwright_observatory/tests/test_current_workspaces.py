@@ -46,7 +46,7 @@ def make_index() -> Index:
     index.workspaces = [{"任务目录": w} for w in ("ws-a", "ws-b", "ws-c", "ws-l")]
     index.events_by_call = {"dup": [event("ws-a", "TASK-001", "dup"), event("ws-b", "TASK-001", "dup")],
                             "legacy-call": [event("ws-l", "old", "legacy-call", name="SLOT_WRITTEN")]}
-    index.model_calls_by_call = {"dup": [{"任务目录": "ws-a", "角色": "确认判读者"}, {"任务目录": "ws-b", "角色": "确认判读者"}]}
+    index.model_calls_by_call = {"dup": [{"任务目录": "ws-a", "角色": "评审者"}, {"任务目录": "ws-b", "角色": "评审者"}]}
     index.revision_by_call = {("ws-a", "dup"): {"修订序号": 1}}
     return index
 
@@ -70,7 +70,7 @@ class AttachTests(unittest.TestCase):
         self.assertEqual(found[0]["本会话写下的修订"], [1])
         changes = index.changes_of_call({"调用编号": "dup", "工具": "save_revision", "是否被拒": False}, "ws-a")
         self.assertEqual([c["种类"] for c in changes], ["交付物的变化", "工具里的模型调用"])
-        self.assertEqual([c["角色"] for c in changes[1]["调用"]], ["确认判读者"])
+        self.assertEqual([c["角色"] for c in changes[1]["调用"]], ["评审者"])
 
     def test_没有任务记录的任务目录如实说(self):
         index = make_index()
@@ -86,7 +86,7 @@ class AttachTests(unittest.TestCase):
     def test_谁建的任务按创建记录的编号如实说(self):
         index = make_index()
         self.assertIn("用户在界面上创建", index.who_created_note(session("ws-a")))
-        self.assertIn("执行者调用「创建任务」工具创建", index.who_created_note(session("ws-b")))
+        self.assertIn("助手调用「创建任务」工具创建", index.who_created_note(session("ws-b")))
 
 
 # ───────────── 二、「回复」算对用户说话 ─────────────

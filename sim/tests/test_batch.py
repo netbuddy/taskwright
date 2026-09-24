@@ -35,7 +35,7 @@ class BatchSummaryTest(unittest.TestCase):
         self.assertIn("| sim-005 | | | | 出错：RuntimeError：后端没起来 |", text)
         self.assertIn(f"- 记录目录：{ok}", text)
         self.assertIn("  - 不通过：隐藏事实被问出来：红冲＋线下＋客服。没有一个条目里关键词组全部出现", text)
-        self.assertIn("「执行者补充」全部版本累计 3 条", text)
+        self.assertIn("「执行者补充」全部修订累计 3 条", text)
 
 
     def test_部分有效写明从第几轮起作废_用户主动补充列轮次(self):

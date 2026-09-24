@@ -1,5 +1,5 @@
 /**
- * 「查询任务状态」工具（get_task_status）：各集合的条目、完成条件逐项满足情况、未解决的待定事项、
+ * 「查询任务状态」工具（get_task_status）：各集合的条目、完成条件逐项满足情况、未解决的问题条目、
  * 最近一次修订序号与事件序号。只读，输出与交付物看板（/tw-board）同源。
  *
  * 本文件只声明参数、调用 lib/task_query.ts 的 getTaskStatus、把结果转成 pi 要的返回形状。
@@ -17,8 +17,9 @@ export function registerGetTaskStatus(pi: ExtensionAPI): void {
     name: TOOL_NAME,
     label: "查询任务状态",
     description:
-      "查询任务现在的状态：每个集合有哪些条目、完成条件逐项满足没有（没满足的是哪几个条目）、还有哪些未解决的待定事项、" +
-      "最近一次修订是第几次。想知道任务进行到哪一步、还缺什么时用它，不要凭记忆。只读，不改任何东西。",
+      "查询任务现在的状态：每个集合有哪些条目、完成条件逐项满足没有（没满足的是哪几个条目）、还有哪些未解决的问题条目、" +
+      "哪些条目用户还没看过（未读清单）、最近一次修订的修订号。想知道任务进行到哪一步、还缺什么时用它，不要凭记忆；" +
+      "问用户要不要完成任务之前先用它看未读清单。只读，不改任何东西。",
     promptSnippet: "查询任务进行到哪一步、完成条件还缺什么（只读）",
     parameters: Type.Object({}),
     async execute(_toolCallId: string, _params: unknown, _signal, _onUpdate, ctx: ExtensionContext) {

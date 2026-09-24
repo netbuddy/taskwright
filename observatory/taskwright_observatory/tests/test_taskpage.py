@@ -238,14 +238,14 @@ class HeadAndTailTests(unittest.TestCase):
                  "完成条件": [{"满足": True}, {"满足": False}]}
         text = taskpage.summary_sentence(self.HEAD, board, stages, "任务")
         self.assertEqual(text, "这份交付物现在有 3 个条目（用例 2 个、约束 1 个）；要完成任务还差 1 项；"
-                               "执行者走过 2 个阶段；最后一个阶段是「对用户说话」；这条会话的终态是「正常结束」。")
+                               "助手走过 2 个阶段；最后一个阶段是「对用户说话」；这条会话的终态是「正常结束」。")
         self.assertIn("所在的任务目录里还没有任务记录", taskpage.summary_sentence(self.HEAD, None, stages, "会话"))
         board["完成条件"][0]["满足"] = None
         self.assertIn("这一次核对不了", taskpage.summary_sentence(self.HEAD, board, stages, "任务"))
 
     def test_末端如实照搬最后一句话_不替它判断(self):
         tail = taskpage.tail_state([run(1, [turn(1, [], text="请确认发票红冲能不能退？", stop="stop")])])
-        self.assertEqual(tail["引子"], "执行者这次运行已经结束，它最后对用户说的话是：")
+        self.assertEqual(tail["引子"], "助手这次运行已经结束，它最后对用户说的话是：")
         self.assertEqual(tail["原文"], "请确认发票红冲能不能退？")
         tail = taskpage.tail_state([run(1, [turn(1, [call("save_revision", written=True)])], said="")])
         self.assertFalse(tail["有没有说话"])
@@ -284,6 +284,41 @@ class KnowledgeTests(unittest.TestCase):
             self.assertEqual(len(digests["docs/templates/demo.md"]), 16)
             self.assertIn("get_commands", k["skill"])
             self.assertIn("取不到", k["上下文文件"])
+
+    def test_平台skill单列并显示代码仓里的路径(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "ws"
+            (root / "docs").mkdir(parents=True)
+            (root / "docs" / "a.md").write_text("a", encoding="utf-8")
+            platform = Path(folder) / "repo" / "agent" / "prompts" / "skills" / "p"
+            platform.mkdir(parents=True)
+            (platform / "SKILL.md").write_text("平台", encoding="utf-8")
+            snapshot = launch.knowledge_snapshot(root)
+            snapshot["文件"].append({"路径": str(platform / "SKILL.md"), "字节数": 6, "摘要值": "abcdabcdabcdabcd",
+                                   "来自": "平台 skill", "代码仓里的路径": "agent/prompts/skills/p/SKILL.md"})
+            launches = [{"知识仓库摘要": snapshot,
+                         "已加载的 skill": {"取得到吗": True, "skill": [{"名字": "p", "文件": str(platform / "SKILL.md")}]}}]
+            facts = taskpage.launch_facts(launches)
+            self.assertEqual(facts["平台 skill"], {str(platform / "SKILL.md"): "agent/prompts/skills/p/SKILL.md"})
+            stages, _, _ = taskpage.build_stages([run(1, [
+                turn(1, [call("read", str(platform / "SKILL.md"), 相对路径=str(platform / "SKILL.md"))]),
+                turn(2, [], text="好了。", stop="stop")])], DECL, RULES, None, str(root), "")
+            k = taskpage.build_knowledge(str(root), stages, DECL, facts, RULES)
+            row = next(r for r in k["文件"] if r["种类"] == "平台执行方法（skill）")
+            self.assertEqual(row["文件"], "代码仓里的 agent/prompts/skills/p/SKILL.md")
+            self.assertEqual(row["用法"], taskpage.USE_READ)
+            self.assertEqual(row["摘要值"], "abcdabcdabcdabcd")
+            self.assertIn("代码仓里的 agent/prompts/skills/p/SKILL.md", k["skill"])
+            self.assertIn("1 份是代码仓里的平台 skill", k["概括"])
+
+    def test_补记里家目录缩写成波浪号时平台skill也能对上(self):
+        home = str(Path.home())
+        full = home + "/repo/agent/prompts/skills/p/SKILL.md"
+        launches = [{"知识仓库摘要": {"文件": [{"路径": "~/repo/agent/prompts/skills/p/SKILL.md", "摘要值": "1234123412341234",
+                                                "来自": "平台 skill", "代码仓里的路径": "agent/prompts/skills/p/SKILL.md"}]}}]
+        facts = taskpage.launch_facts(launches)
+        self.assertEqual(facts["平台 skill"], {full: "agent/prompts/skills/p/SKILL.md"})
+        self.assertEqual(facts["摘要"][full], [(1, "1234123412341234")])
 
     def test_旧归档没有补记时如实写(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -353,7 +388,7 @@ class StitchTests(unittest.TestCase):
         users = [s for s in page["阶段"] if s["参与者"] == "用户"]
         self.assertEqual([s["运行序号"] for s in users], [1, 2, 3])
         self.assertEqual(len({s["编号"] for s in page["阶段"]}), len(page["阶段"]))
-        executors = [s for s in page["阶段"] if s["参与者"] == "执行者"]
+        executors = [s for s in page["阶段"] if s["参与者"] == "助手"]
         self.assertIn("第 2 条会话", executors[2]["启动说明"])      # 启动节点挂在执行者那条线上
         self.assertEqual([s["启动说明"] for s in users], ["", "", ""])
         self.assertEqual(page["页头"]["会话数"], 2)
@@ -387,7 +422,7 @@ class LegacyFixtureTests(unittest.TestCase):
         self.assertEqual([p["标记"] for p in edit["段"]], ["同", "增"])
         self.assertEqual(page["看板"]["格式"], "旧格式")
         self.assertIn("默认归类声明", page["页头"]["声明说明"])
-        self.assertTrue(all(s["一句话"].startswith("执行者保存了") for s in writes))
+        self.assertTrue(all(s["一句话"].startswith("助手保存了") for s in writes))
         self.assertFalse(page["页头"]["材料目录是任务定义登记的"])
 
     def test_调用编号在修订清单里对不上时如实写(self):
@@ -432,17 +467,17 @@ class WriteLineTests(unittest.TestCase):
                  saved(op("修改", "功能用例", "UC-001"), op("删除", "功能用例", "UC-002")),
                  call("save_revision")]
         self.assertEqual(taskpage.write_line(calls),
-                         "执行者保存了 4 次：新增功能用例 2 个、非功能需求 1 个、待定事项 1 个；"
+                         "助手保存了 4 次：新增功能用例 2 个、非功能需求 1 个、待定事项 1 个；"
                          "修改功能用例 1 个；删除功能用例 1 个；其中 1 次没有在库里写下改动。")
 
     def test_旧库表按字段计数(self):
         calls = [saved(op("新增", "任务的字段", "术语"), old=True),
                  saved(op("修改", "任务的字段", "术语"), op("新增", "任务的字段", "定义"), old=True)]
-        self.assertEqual(taskpage.write_line(calls), "执行者保存了 2 次：第一次写下 2 个字段；改写 1 个字段。")
+        self.assertEqual(taskpage.write_line(calls), "助手保存了 2 次：第一次写下 2 个字段；改写 1 个字段。")
 
     def test_什么都没写下(self):
         self.assertEqual(taskpage.write_line([call("save_revision")]),
-                         "执行者调用了 1 次保存，库里没有留下任何改动。")
+                         "助手调用了 1 次保存，库里没有留下任何改动。")
 
 
 class RetryAndSteerTests(unittest.TestCase):
@@ -459,7 +494,7 @@ class RetryAndSteerTests(unittest.TestCase):
         self.assertEqual(notes, [False, True, False])
         self.assertIn("turnIndex 是 0", turns[1]["自动重试说明"])
         # 出错的那一轮没有说话也没有调用工具，那一句话写出出错的说明。
-        first = next(s for s in self.page("runs重试")["阶段"] if s["参与者"] == "执行者")
+        first = next(s for s in self.page("runs重试")["阶段"] if s["参与者"] == "助手")
         self.assertIn("出错", first["一句话"])
 
     def test_插话落在它进来的那一轮_运行不断开(self):
@@ -511,6 +546,9 @@ class CurrentFormatTests(unittest.TestCase):
         self.assertEqual(rows["UC-001"]["标题"], "买家申请退款")
         self.assertEqual((rows["UC-001"]["评审格"], rows["UC-001"]["确认格"]), ("", ""))
         self.assertEqual(rows["UC-001"]["评审"], "还没有这类记录")
+        # 修订统一：条目只显示修订号（UC-001 在修订 1 新增、修订 2 改过），没有条目版本号。
+        self.assertEqual(rows["UC-001"]["所在"], "修订 2")
+        self.assertEqual([v["标签"] for v in rows["UC-001"]["全部版本"]], ["修订 1", "修订 2"])
 
     def test_修改的操作带改前改后与比对_标题取自条目(self):
         blocks = [b for s in self.page["阶段"] for t in s["轮"] for c in t["调用"] for b in c["改动"]]
@@ -518,6 +556,7 @@ class CurrentFormatTests(unittest.TestCase):
         second = next(b for b in blocks if b.get("修订序号") == 2)
         edit = next(op for op in second["操作"] if op["条目编号"] == "UC-001")
         self.assertEqual(edit["动作"], "修改")
+        self.assertEqual(edit["版本变化"], "修订 1 → 修订 2")
         self.assertEqual(edit["条目标题"], "买家申请退款")
         self.assertEqual(edit["变更"][0]["字段"], "名称")
         self.assertIn({"标记": "增", "文": "买家"}, edit["变更"][0]["段"])
@@ -539,7 +578,7 @@ class CurrentFormatTests(unittest.TestCase):
         writes = [s for s in self.page["阶段"] if s["角色"] == "写入"]
         self.assertTrue(writes)
         for stage in writes:
-            self.assertRegex(stage["一句话"], r"^执行者保存了 \d+ 次：")
+            self.assertRegex(stage["一句话"], r"^助手保存了 \d+ 次：")
             self.assertNotIn("UC-", stage["一句话"])                          # 条目编号只在小步里
 
     def test_新库表的任务页头标出材料目录是任务定义登记的(self):

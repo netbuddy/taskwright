@@ -3,13 +3,13 @@
  * 以及把「回应」的参数翻成对后端的一次请求。纯函数，不依赖 pi，也不发请求，单元测试直接调用。
  *
  * 看到什么：执行者新说的话（回复的告知、主行为、成文正文，以及可以点的按钮）、
- * 条目区现状（各集合条目数、每个条目的编号与标题；给编号时看这个条目的字段）。不给完成条件、材料原文、版本历史。
+ * 条目区现状（各集合条目数、每个条目的编号与标题；给编号时看这个条目的字段）。不给完成条件、材料原文、条目改动过的修订。
  */
 
 export interface Act {
   kind: "ask" | "confirm" | "suggest" | "choose" | "propose";
   text: string;
-  items?: { item_id: string; version_no: number }[];
+  items?: { item_id: string; revision_no: number }[];
   options?: { key: string; text: string }[];
   value?: string;
   basis?: { kind: string; locator: string; excerpt: string }[];
@@ -34,7 +34,7 @@ export function cardOf(m: Message | null | undefined): Act | null {
   return m && !m.degraded ? m.act ?? null : null;
 }
 
-/** 界面上「标为先不管」要写的那个枚举取值；前端按它认出待定事项一类的集合（web 的 keepPendingField）。 */
+/** 界面上「标为先不管」要写的那个枚举取值；前端按它认出问题条目一类的集合（web 的 keepPendingField）。 */
 export const KEEP_PENDING_VALUE = "用户决定保留";
 export const DONT_KNOW = "我不知道，你按常识补";
 
@@ -64,13 +64,16 @@ function keepButtons(act: Act, task: TaskView | null | undefined): Map<string, s
  */
 export function buttonsOf(act: Act | null | undefined, task?: TaskView | null): string[] {
   if (!act) return [];
-  if (act.kind === "confirm") return ["确认", "不对"];
+  if (act.kind === "confirm") return [SEEN, "不对"];
   if (act.kind === "choose") return (act.options ?? []).map((o) => o.key);
   if (act.kind === "suggest") return ["采纳", "换一个"];
   if (act.kind === "propose") return ["就这样做", "不要"];
   if (act.kind === "ask" && act.scope !== "general" && act.items?.length) return [...keepButtons(act, task).keys(), DONT_KNOW];
   return [];
 }
+
+/** 「请确认」卡片上的按钮：点一次把卡片点名的条目标为已读（已读就算确认）。 */
+export const SEEN = "这几条都看过了";
 
 const KIND_WORD: Record<string, string> = { ask: "提问", confirm: "请确认", suggest: "建议", choose: "请选择", propose: "提议" };
 const EFFECT_WORD: Record<string, string> = { remove: "去掉", add: "加上", change: "改动" };
@@ -84,7 +87,7 @@ export function renderReply(m: Message, task?: TaskView | null): string {
   lines.push(`助手说：${m.text ?? ""}`);
   if (act) {
     lines.push(`【卡片：${KIND_WORD[act.kind] ?? act.kind}】${act.text}`);
-    if (act.items?.length) lines.push(`涉及的条目：${act.items.map((i) => `${i.item_id} 第 ${i.version_no} 版`).join("、")}`);
+    if (act.items?.length) lines.push(`涉及的条目：${act.items.map((i) => `${i.item_id}（修订 ${i.revision_no}）`).join("、")}`);
     if (act.kind === "choose") for (const o of act.options ?? []) lines.push(`选项 ${o.key}：${o.text}`);
     if (act.kind === "suggest") {
       lines.push(`建议的值：${act.value ?? ""}`);
@@ -112,9 +115,12 @@ export interface Item {
   item_id: string;
   collection: string;
   title: string;
-  version_no: number;
+  /** 条目当前所在的修订号。 */
+  revision_no: number;
   fields: Record<string, unknown>;
-  confirmations?: { version_no: number; accepted: boolean }[];
+  confirmations?: { revision_no: number; accepted: boolean }[];
+  /** 当前修订上有没有接受的确认标记（已读、界面修改等）；没有就是未读。 */
+  viewed?: boolean;
 }
 
 export interface TaskView {
@@ -135,15 +141,15 @@ export function renderItems(task: TaskView | null, itemId?: string): string {
     const item = task.items.find((i) => i.item_id === itemId);
     if (!item) return `条目区里没有 ${itemId}。`;
     const declared = task.definition.collections.find((c) => c.name === item.collection)?.fields.map((f) => f.name) ?? Object.keys(item.fields);
-    const confirmed = (item.confirmations ?? []).filter((c) => c.version_no === item.version_no);
-    const mark = confirmed.length ? (confirmed[confirmed.length - 1].accepted ? "（你已确认这一版）" : "（你撤回过对这一版的确认）") : "";
-    return [`${item.item_id}「${item.title}」，集合「${item.collection}」，第 ${item.version_no} 版${mark}：`,
+    // 打开一个条目看它现在的内容就算看过（已读），「看界面」带条目编号时工具会替你记下。
+    const mark = "（你正在看它现在的内容，看过就算确认）";
+    return [`${item.item_id}「${item.title}」，集合「${item.collection}」，修订 ${item.revision_no}${mark}：`,
       ...declared.map((name) => `  ${name}：${valueText(item.fields[name])}`)].join("\n");
   }
   const lines = ["条目区："];
   for (const c of task.definition.collections) {
     const items = task.items.filter((i) => i.collection === c.name);
-    lines.push(`  ${c.name} ${items.length} 个${items.length ? "：" + items.map((i) => `${i.item_id}「${i.title}」`).join("、") : ""}`);
+    lines.push(`  ${c.name} ${items.length} 个${items.length ? "：" + items.map((i) => `${i.item_id}「${i.title}」${i.viewed === false ? "（未读）" : ""}`).join("、") : ""}`);
   }
   return lines.join("\n");
 }
@@ -166,7 +172,7 @@ export type Plan =
 const CLICK_TEXT: Record<string, string> = { 不对: "这个不对。", 采纳: "我采纳这个建议。", 换一个: "请换一个建议。", 就这样做: "就这样做。", 不要: "不要这样做。" };
 
 /**
- * 按接口约定（docs/api.md「卡片上的按钮」）把一次回应翻成请求：「确认」走 actions（带 notify_executor），其余按钮走 messages 带 card，
+ * 按接口约定（docs/api.md「卡片上的按钮」）把一次回应翻成请求：「这几条都看过了」走 actions 的 mark_viewed（带 notify_executor），其余按钮走 messages 带 card，
  * 话用第 7 节的模板；说话走 messages。形式不对时抛异常，写明哪里不对。
  */
 export function planRespond(params: RespondParams, lastReply: Message | null, clientId: string, task?: TaskView | null): Plan {
@@ -186,15 +192,15 @@ export function planRespond(params: RespondParams, lastReply: Message | null, cl
   }
   if (errors.length) throw new Error(`这次回应的形式不对，没有发出去：${errors.join("；")}。`);
   if (click && act) {
-    if (click === "确认") {
-      return { kind: "action", body: { client_id: clientId, kind: "confirm", notify_executor: true,
-        targets: (act.items ?? []).map((i) => ({ item_id: i.item_id, base_version: i.version_no })) } };
+    if (click === SEEN) {
+      return { kind: "action", body: { client_id: clientId, kind: "mark_viewed", notify_executor: true,
+        targets: (act.items ?? []).map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })) } };
     }
     const keep = keepButtons(act, task).get(click);
     if (keep) {
-      // 与前端一致：直接操作 keep_pending，带通知；版本取卡片上写的，没写就取条目区的当前版本。
-      const base = act.items?.find((i) => i.item_id === keep)?.version_no ?? task?.items.find((i) => i.item_id === keep)?.version_no;
-      return { kind: "action", body: { client_id: clientId, kind: "keep_pending", notify_executor: true, targets: [{ item_id: keep, base_version: base }] } };
+      // 与前端一致：直接操作 keep_pending，带通知；修订号取卡片上写的，没写就取条目区里它当前所在的修订。
+      const base = act.items?.find((i) => i.item_id === keep)?.revision_no ?? task?.items.find((i) => i.item_id === keep)?.revision_no;
+      return { kind: "action", body: { client_id: clientId, kind: "keep_pending", notify_executor: true, targets: [{ item_id: keep, base_revision: base }] } };
     }
     if (click === DONT_KNOW) {
       const ids = (act.items ?? []).map((i) => i.item_id).join("、");

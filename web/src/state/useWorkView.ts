@@ -1,15 +1,18 @@
 // 工作视图的数据来源：先连事件流，连上之后再读一次整份数据，之后只听事件。
 // 收到 resync 或发现库事件序号有缺口时，状态回到「等整份数据」，这里就再读一次。
 // 断线重连时带上已应用到的库事件序号（Last-Event-ID），由后端从它之后补发。
+// 修订日志（GET …/revisions）不在整份数据里：整份数据到了读一次，之后最新修订号变了、或一次工作结束时再读一次。
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { openEventStream, type StreamStatus } from "../api/events";
 import { initialWorkState, workReducer, type WorkAction, type WorkState } from "./workState";
-import { rebuildBlocks } from "../model/changes";
+import type { RevisionLogEntry } from "../api/types";
 
 export interface WorkView {
   state: WorkState;
+  /** 修订日志，最新在前；还没读到时是空列表。 */
+  log: RevisionLogEntry[];
   dispatch: (action: WorkAction) => void;
   stream: StreamStatus;
   loadError: string | null;
@@ -56,24 +59,23 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
     return close;
   }, [taskId, sessionId, loadSnapshot]);
 
-  // 整份数据到了之后，按各条目的版本历史重建改动块（刷新前的那些修订）。只在快照换了时做一次。
-  const rebuiltFor = useRef<number | null>(null);
+  // 修订日志：最新修订号变了（整份数据到达、有新修订）或一次工作结束（这次工作的修订归到哪句话要等会话记录写全）时重读。
+  // 连着到的几条事件只读一次：稍等一下再读，后到的请求盖掉先到的结果。
+  const [log, setLog] = useState<RevisionLogEntry[]>([]);
+  const working = state.currentWork != null;
   useEffect(() => {
-    const task = state.task;
-    if (state.phase !== "ready" || !task || state.snapshotSeq == null || rebuiltFor.current === state.snapshotSeq) return;
-    rebuiltFor.current = state.snapshotSeq;
-    const messages = state.messages;
-    const wanted = task.items.filter((i) => i.version_count > 0);
-    void Promise.all(wanted.map((i) => api.itemVersions(taskId, i.item_id).then((v) => [i.item_id, v] as const).catch(() => [i.item_id, []] as const)))
-      .then((pairs) => dispatch({ type: "rebuilt_blocks", blocks: rebuildBlocks(task, Object.fromEntries(pairs), messages) }));
-    // 只跟着快照走：之后到达的库事件由 changeBlocks 实时拼。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.phase, state.snapshotSeq]);
+    if (state.phase !== "ready" || !state.task) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      api.revisionLog(taskId).then((r) => { if (live) setLog(r.revisions); }).catch(() => undefined);
+    }, 150);
+    return () => { live = false; clearTimeout(timer); };
+  }, [taskId, state.phase, state.task != null, state.latestRevision, working]);
 
   // resync 或序号缺口让状态回到「等整份数据」时，再读一次。
   useEffect(() => {
     if (state.phase === "waiting_snapshot" && everOpened.current && stream === "open") void loadSnapshot();
   }, [state.phase, stream, loadSnapshot]);
 
-  return { state, dispatch, stream, loadError, reload: loadSnapshot };
+  return { state, log, dispatch, stream, loadError, reload: loadSnapshot };
 }

@@ -3,8 +3,8 @@
 这台机器上没有 sqlite3 命令行程序，所以用这个小工具查库。它只读不写：连接是以只读方式
 打开的，代码里也没有任何写语句。
 
-新格式的库（按条目记版本，由「创建任务」与「保存修订」工具写）按五段打印：任务、各集合的条目
-（当前版本的各字段）、每个条目的版本历史与来源、修订列表、事件列表。旧格式的库（有 slot 表）
+新格式的库（条目按修订号记，由「创建任务」与「保存修订」工具写）按五段打印：任务、各集合的条目
+（最新内容的各字段）、每个条目改动过的修订与来源、修订列表、事件列表。旧格式的库（有 slot 表）
 仍按原来的样子打印。库文件不存在时打印「这个任务目录还没有创建任务」并正常退出。
 
 用法：
@@ -111,7 +111,7 @@ def clip(text: str) -> str:
 
 
 def show_judgements(workspace: Path) -> None:
-    """确认判读与模型调用：每次判读的依据与明细，以及判读者每次模型调用的结果、耗时与用量。
+    """确认标记与模型调用：每条确认标记的依据与明细（已读、界面修改、撤回），以及工具里直接发起的每次模型调用的结果、耗时与用量。
     提示全文与原始输出很长，这里只给长度；要看全文用观测台，或直接查 model_call 表。"""
     conn = taskdb.open_readonly(Path(workspace) / taskdb.DB_NAME)
     try:
@@ -121,18 +121,19 @@ def show_judgements(workspace: Path) -> None:
         calls = [dict(r) for r in conn.execute("SELECT * FROM model_call ORDER BY model_call_id")] if has_calls else []
     finally:
         conn.close()
-    print("\n【确认判读】")
+    print("\n【确认标记】")
     if not judgements:
         print("  还没有任何确认记录。")
     for j in judgements:
-        rows = [f"{d['item_id']} 第 {d['version_no']} 版{d['attitude']}" for d in details if d["judgement_id"] == j["judgement_id"]]
-        print(f"  第 {j['judgement_id']} 次判读，{j['created_at']}，事件序号 {j['event_seq']}，调用编号 {j['call_id']}：{'；'.join(rows)}")
+        rows = [f"{d['item_id']}（修订 {d['revision_no']}）{d['attitude']}" for d in details if d["judgement_id"] == j["judgement_id"]]
+        print(f"  第 {j['judgement_id']} 条，{j['created_at']}，事件序号 {j['event_seq']}，编号 {j['call_id']}：{'；'.join(rows)}")
         print(f"    依据 {clip(j['basis'])}")
     print("\n【模型调用】" + ("" if has_calls else "（这个库建于加模型调用表之前，没有这张表）"))
     if has_calls and not calls:
         print("  还没有任何模型调用。")
     for c in calls:
-        linked = f"判读 {c['judgement_id']}" if c["judgement_id"] is not None else "没有写成判读"
+        linked = (f"确认标记 {c['judgement_id']}" if c["judgement_id"] is not None
+                  else f"评审 {c['review_id']}" if c.get("review_id") is not None else "没有写成记录")
         print(f"  #{c['model_call_id']} {c['role']}，{c['outcome']}（{linked}），{c['model']}，{c['duration_ms']} 毫秒，"
               f"用量 {c['input_tokens']} / {c['output_tokens']}，工具调用 {c['tool_call_id']}，{c['created_at']}；"
               f"提示 {len(c['prompt'])} 字，输出 {len(c['output'])} 字：{clip(c['output'])}")
@@ -150,28 +151,27 @@ def show_current_format(workspace: Path, events_limit: int) -> None:
         print(f"  任务定义文件是 {task['任务定义文件']}；创建它的会话编号是 {session}，"
               f"调用编号是 {task['创建它的调用编号']}，事件序号是 {task['创建的事件序号']}。")
 
-        print("\n【各集合的条目（当前版本）】")
+        print("\n【各集合的条目（最新内容）】")
         for collection in definition["集合"]:
             alive = [i for i in task["条目"] if i["所属集合"] == collection["名称"] and i["在第几次修订删除"] is None]
             gone = [i for i in task["条目"] if i["所属集合"] == collection["名称"] and i["在第几次修订删除"] is not None]
             print(f"  ▸ 集合「{collection['名称']}」：现有 {len(alive)} 个条目"
                   + (f"，另有 {len(gone)} 个已删除" if gone else "") + "。")
             for item in alive:
-                current = item["当前版本"]
-                print(f"    {item['条目编号']}（第 {current['内容版本号']} 版）")
+                current = item["当前内容"]
+                print(f"    {item['条目编号']}（修订 {current['修订号']}）")
                 for field in collection["字段"]:
                     if field["名"] in current["字段"]:
                         print(f"      {field['名']}：{clip(text_of(current['字段'][field['名']], field['类型']))}")
 
-        print("\n【每个条目的版本历史与来源】")
+        print("\n【每个条目改动过的修订与来源】")
         for item in task["条目"]:
-            tail = (f"，在第 {item['在第几次修订删除']} 次修订删除" if item["在第几次修订删除"] is not None else "")
-            print(f"  {item['条目编号']}（集合「{item['所属集合']}」），在第 {item['在第几次修订新增']} 次修订新增{tail}，"
-                  f"一共 {len(item['版本'])} 版。")
-            for version in item["版本"]:
-                print(f"    第 {version['内容版本号']} 版：由第 {version['由第几次修订产生']} 次修订产生，"
-                      f"挂在第 {version['事件序号']} 号事件上，来源 {len(version['来源'])} 条。")
-                for source in version["来源"]:
+            tail = (f"，在修订 {item['在第几次修订删除']} 删除" if item["在第几次修订删除"] is not None else "")
+            print(f"  {item['条目编号']}（集合「{item['所属集合']}」），在修订 {item['在第几次修订新增']} 新增{tail}，"
+                  f"改动过的修订：{'、'.join(str(c['修订号']) for c in item['修订内容'])}。")
+            for content in item["修订内容"]:
+                print(f"    修订 {content['修订号']}：挂在第 {content['事件序号']} 号事件上，来源 {len(content['来源'])} 条。")
+                for source in content["来源"]:
                     print(f"      来源 {source['第几条']}：种类是{source['种类']}，出处是 {source['出处']}，"
                           f"支持{taskdb.support_text(source.get('支持') or [])}，摘录是「{clip(source['摘录'])}」")
 
@@ -180,10 +180,10 @@ def show_current_format(workspace: Path, events_limit: int) -> None:
             print("  还没有任何一次修订。")
         for revision in task["修订"]:
             ops = "；".join(
-                f"{ {'add': '新增', 'update': '修改', 'delete': '删除'}.get(op.get('op'), op.get('op'))} {op.get('item')}"
-                + (f"（第 {op.get('from_version')} 版到第 {op.get('to_version')} 版）" if op.get("op") == "update" else "")
+                f"{ {'add': '新增', 'update': '修改', 'delete': '删除', 'restore': '恢复'}.get(op.get('op'), op.get('op'))} {op.get('item')}"
+                + (f"（修订 {op.get('from_revision')} → 修订 {op.get('to_revision')}）" if op.get("op") in ("update", "restore") else "")
                 for op in revision["操作"])
-            print(f"  第 {revision['修订序号']} 次修订，{revision['时刻']}，事件序号 {revision['事件序号']}，"
+            print(f"  修订 {revision['修订序号']}，{revision['时刻']}，事件序号 {revision['事件序号']}，"
                   f"调用编号 {revision['调用编号']}：{ops}")
 
         show_judgements(workspace)
@@ -213,6 +213,9 @@ def main(argv: list[str] | None = None) -> int:
     if fmt == taskdb.FORMAT_CURRENT:
         show_current_format(workspace, args.events)
         return 0
+    if fmt == taskdb.FORMAT_PRE_REVISION:
+        print(f"{taskdb.PRE_REVISION_TEXT}本工具只看新格式的库。")
+        return 1
     if fmt == taskdb.FORMAT_UNKNOWN:
         print(f"{workspace / DB_NAME} 里的表既不是旧格式也不是新格式，这个工具认不出来。")
         return 1

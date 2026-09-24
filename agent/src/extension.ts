@@ -1,7 +1,7 @@
 /**
  * 扩展入口：只做登记，不含任何逻辑。
  *
- * 这一版登记「保存修订」「登记用户确认」「完成任务」三个写入工具、「查看条目」与「查询任务状态」两个只读工具，以及执行者对用户说话一律要经的「回复」工具，合格时它结束本次运行
+ * 这一版登记「保存修订」「完成任务」两个写入工具、「查看条目」与「查询任务状态」两个只读工具，以及执行者对用户说话一律要经的「回复」工具，合格时它结束本次运行
  * （2026-09-21 起任务由用户在界面上创建，执行者不再有「创建任务」工具，
  * 创建任务走不经 pi 的命令行入口 cli/create_task.mts），挂一个在打开会话时追加任务现状消息的扩展、
  * 一个在执行者没有经「回复」说话就停下时追加一句话要它重说的兜底扩展，
@@ -25,14 +25,12 @@ import { registerBoardCommand } from "./hooks/board_command.ts";
 import { withTuiRenderers } from "./hooks/tui_render.ts";
 import { registerGetItem } from "./tools/get_item.ts";
 import { registerGetTaskStatus } from "./tools/get_task_status.ts";
-import { registerRecordConfirmation } from "./tools/record_confirmation.ts";
 import { registerCompleteTask } from "./tools/complete_task.ts";
 
 export default function (pi: ExtensionAPI) {
   registerSaveRevision(withTuiRenderers(pi));
   registerGetItem(pi);
   registerGetTaskStatus(pi);
-  registerRecordConfirmation(pi);
   registerCompleteTask(pi);
   registerBackendReports(pi);
   registerTaskStatus(pi);

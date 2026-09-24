@@ -11,7 +11,7 @@
 
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openVersionLookup } from "../lib/reply.ts";
+import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup } from "../lib/reply.ts";
 import { spoken } from "../lib/speak.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
@@ -22,7 +22,7 @@ export const TOOL_NAME = REPLY_TOOL_NAME;
 const itemRef = Type.Object(
   {
     item_id: Type.Optional(Type.String({ description: "条目编号，例如 CON-004。必须写。" })),
-    version_no: Type.Optional(Type.Integer({ description: "条目的当前版本号，从 1 起。必须写。" })),
+    revision_no: Type.Optional(Type.Integer({ description: "这个条目当前所在的修订号（「UC-001 现在是修订 N」里的 N）。必须写。" })),
   },
   { additionalProperties: true },
 );
@@ -31,19 +31,19 @@ const act = Type.Object(
   {
     kind: Type.Optional(Type.String({
       description:
-        "末位主行为的种类，只能是五者之一：ask 是提问，confirm 是请用户确认某几个条目的某一版，" +
+        "末位主行为的种类，只能是五者之一：ask 是提问，confirm 是请用户确认某几个条目当前的内容，" +
         "suggest 是给一个建议值，choose 是请用户从几个选项里选一个，propose 是提议下一步怎么做。必须写。",
     })),
     text: Type.Optional(Type.String({ description: "问题、请确认的话、建议或提议的内容，一句完整的话。必须写。" })),
     items: Type.Optional(
       Type.Array(itemRef, {
         description:
-          "关联的条目或待定事项，每项写条目编号与它的当前版本号。提问（ask）、请确认（confirm）、给建议值（suggest）、" +
+          "关联的条目或问题条目，每项写条目编号与它当前所在的修订号。提问（ask）、请确认（confirm）、给建议值（suggest）、" +
           "提议（propose）必须写；提问、给建议值、提议与任何条目都无关时不写它，改写 scope: \"general\"。请选择（choose）可以不写。",
       }),
     ),
     scope: Type.Optional(Type.String({
-      description: "只有提问、给建议值、提议可以写，取值只有 general：表示这一问、这条建议或提议与任何条目都无关，这时 items 不写。",
+      description: "只用于提问（ask）、给建议值（suggest）、提议（propose）三种；请选择（choose）与请确认（confirm）不写 scope。取值只有 general：表示这一问、这条建议或提议与任何条目都无关，这时 items 不写。",
     })),
     options: Type.Optional(
       Type.Array(Type.Object({ key: Type.Optional(Type.String()), text: Type.Optional(Type.String()) }, { additionalProperties: true }), {
@@ -100,14 +100,14 @@ export function registerReply(pi: ExtensionAPI): void {
     async execute(toolCallId: string, params: unknown, _signal, _onUpdate, ctx: ExtensionContext) {
       const branch = ctx.sessionManager.getBranch() as Parameters<typeof lastAssistantTurn>[0];
       const turn = lastAssistantTurn(branch);
-      const lookup = openVersionLookup(ctx.cwd);
+      const lookup = openRevisionLookup(ctx.cwd);
       let decision;
       try {
         decision = decideReply(params, {
           toolCallId,
           callsThisTurn: turn.calls,
-          versionFact: lookup.versionFact,
-          currentVersionOf: lookup.currentVersionOf,
+          revisionFact: lookup.revisionFact,
+          currentRevisionOf: lookup.currentRevisionOf,
           priorRejections: consecutiveReplyRejections(branch),
         });
       } finally {

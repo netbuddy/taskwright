@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from taskwright_server.service import conversation, library, render
-from taskwright_server.service.app import rewrite_slash, with_attachments
+from taskwright_server.service.app import rewrite_slash, with_attachments, words_locator
 from taskwright_server.service.errors import ApiError
 from taskwright_server.service.hub import Hub
 from tests.test_current_format import make_workspace
@@ -35,12 +35,13 @@ class ServiceUnitTest(unittest.TestCase):
         self.assertEqual([(n, d["seq"]) for n, d in events],
                          [("task_changed", 1), ("deliverable_changed", 2), ("deliverable_changed", 3), ("deliverable_changed", 4)])
         first = events[1][1]["operations"][0]
-        self.assertEqual((first["item_id"], first["version_after"], first["fields"]["名称"], first["title"]),
-                         ("UC-001", 1, "申请退款", "申请退款"), "第 2 号事件里的 UC-001 是当时的第 1 版，不是现在的第 2 版")
+        self.assertEqual((first["item_id"], first["revision_after"], first["fields"]["名称"], first["title"]),
+                         ("UC-001", 1, "申请退款", "申请退款"), "第 2 号事件里的 UC-001 是它在修订 1 的内容，不是现在修订 2 的内容")
+        self.assertNotIn("version_after", first, "修订统一之后不再带旧键名")
         self.assertEqual(first["sources"][0]["supports"], [{"field": "名称", "index": None}, {"field": "步骤", "index": 0}])
         deleted = events[3][1]["operations"][0]
-        self.assertEqual((deleted["op"], deleted["item_id"], deleted["version_after"], deleted["fields"], deleted["sources"]),
-                         ("delete", "UC-002", None, None, []))
+        self.assertEqual((deleted["op"], deleted["item_id"], deleted["revision_before"], deleted["revision_after"], deleted["fields"], deleted["sources"]),
+                         ("delete", "UC-002", 2, None, None, []))
         self.assertEqual(deleted["title"], "撤销申请", "删除的条目标题取删除前那一版")
         self.assertEqual(events[1][1]["actor"], "executor")
         self.assertIsNone(events[1][1]["completion"], "完成条件只附在这一批的最后一条上")
@@ -56,7 +57,7 @@ class ServiceUnitTest(unittest.TestCase):
         shutil.copytree(self.ws, ws)
         conn = sqlite3.connect(ws / "task.sqlite")
         task_id = conn.execute("SELECT task_id FROM task").fetchone()[0]
-        rows = [(5, "CONFIRMATION_RECORDED", {"items": [{"item_id": "UC-001", "version_no": 2, "accepted": True}], "basis": "user_words"}),
+        rows = [(5, "CONFIRMATION_RECORDED", {"items": [{"item_id": "UC-001", "revision_no": 2, "accepted": True}], "basis": "user_words"}),
                 (6, "TASK_COMPLETED", {"status_before": "进行中", "status_after": "已完成", "waived": []})]
         for seq, name, payload in rows:
             conn.execute("INSERT INTO event (seq, task_id, session_id, call_id, name, payload, actor, at) VALUES (?, ?, 's', ?, ?, ?, 'executor', '2026-09-21 10:00:00')",
@@ -67,6 +68,7 @@ class ServiceUnitTest(unittest.TestCase):
         events, _ = library.library_events(ws, 4)
         self.assertEqual([n for n, _ in events], ["confirmation_recorded", "task_changed"])
         self.assertEqual((events[0][1]["basis"], events[0][1]["op_id"]), ("user_words", None))
+        self.assertEqual(events[0][1]["items"], [{"item_id": "UC-001", "revision_no": 2, "accepted": True}], "确认事件的条目原样带修订号，不加旧键名")
         done = events[1][1]
         self.assertEqual((done["status_before"], done["status_after"], done["actor"]), ("进行中", "已完成", "executor"))
 
@@ -75,13 +77,37 @@ class ServiceUnitTest(unittest.TestCase):
         self.assertEqual(seq, 4)
         self.assertEqual([i["item_id"] for i in task["items"]], ["UC-001", "TBD-001"])
         uc = task["items"][0]
-        self.assertEqual((uc["version_no"], uc["version_count"], uc["version_by"], uc["reviews"], uc["confirmations"], uc["confirmation_stale"]),
-                         (2, 2, "executor", [], [], False))
+        self.assertEqual((uc["revision_no"], uc["revisions"], uc["revision_by"], uc["reviews"], uc["confirmations"], uc["confirmation_stale"]),
+                         (2, [1, 2], "executor", [], [], False))
+        self.assertFalse({"version_no", "version_by", "version_at", "version_count"} & set(uc), "修订统一之后不再带旧键名")
         self.assertEqual(task["definition"]["collections"][0]["fields"][0], {"name": "名称", "type": "文本", "required": True, "values": None})
         comp = task["completion"]
         self.assertEqual(set(comp), {"all_met", "unmet_count", "brief", "conditions"})
         first = comp["conditions"][0]
         self.assertEqual(set(first), {"collection", "name", "met", "state", "done", "total", "missing", "note"})
+
+    def test_修订日志最新在前_每项列出碰到的条目与改了哪些字段(self):
+        log = library.revision_log(self.ws)
+        self.assertEqual([r["revision_no"] for r in log], [3, 2, 1])
+        self.assertEqual([(op["op"], op["item_id"], op["revision_before"], op["revision_after"]) for op in log[0]["operations"]],
+                         [("delete", "UC-002", 2, None)])
+        self.assertEqual(log[0]["operations"][0]["title"], "撤销申请", "删除的条目标题取删除前的内容")
+        second = {op["item_id"]: op for op in log[1]["operations"]}
+        self.assertEqual((second["UC-001"]["op"], second["UC-001"]["fields_changed"]), ("update", ["名称"]))
+        self.assertEqual((second["UC-002"]["op"], second["UC-002"]["fields_changed"]), ("add", []), "新增不列字段")
+        self.assertEqual((log[2]["by"], log[2]["undo_of_revision"]), ("executor", None))
+        self.assertTrue(log[2]["call_id"] and log[2]["session_id"])
+
+    def test_用户直接操作的修订写成一句操作名(self):
+        from taskwright_server.service.app import user_action_text
+        edit = {"operations": [{"op": "update", "item_id": "UC-002", "fields_changed": ["基本流程", "前置条件"]}], "undo_of_revision": None}
+        self.assertEqual(user_action_text("edit_fields", edit), "你改了 UC-002 的「基本流程」「前置条件」")
+        self.assertEqual(user_action_text("keep_pending", {"operations": [{"op": "update", "item_id": "TBD-003", "fields_changed": ["状态"]}]}),
+                         "你把 TBD-003 标为先不管")
+        self.assertEqual(user_action_text("delete_item", {"operations": [{"op": "delete", "item_id": "UC-004", "fields_changed": []}]}), "你删除了 UC-004")
+        self.assertEqual(user_action_text(None, {"operations": [], "undo_of_revision": 4}), "你撤销了修订 4")
+        self.assertEqual(user_action_text(None, {"operations": [{"op": "update", "item_id": "UC-001", "fields_changed": ["名称"]}]}),
+                         "你改了 UC-001 的「名称」", "会话记录里找不到操作种类时按修订里的操作写")
 
     def test_LastEventID补发与差距太大发resync(self):
         hub = Hub(self.ws)
@@ -100,20 +126,137 @@ class ServiceUnitTest(unittest.TestCase):
         finally:
             hub.close()
 
-    def test_文档渲染如实标注评审与确认状态(self):
+    def test_文档按修订整体导出_如实标注确认与评审(self):
         (self.ws / "docs" / "templates").mkdir(parents=True, exist_ok=True)
         (self.ws / "docs" / "templates" / "demo.md").write_text(
-            "{{#每个 用例}}- {{编号}} {{名称}}［第 {{内容版本号}} 版；{{评审状态}}；{{确认状态}}］步骤：{{步骤}}\n{{/每个}}"
+            "按修订 {{文档修订号}} 生成。\n"
+            "{{#每个 用例}}- {{编号}} {{名称}}［修订 {{修订号}} · {{确认状态}} · {{评审状态}}］步骤：{{步骤}}\n{{/每个}}"
             "{{#没有 待定事项}}没有待定事项。\n{{/没有}}", encoding="utf-8")
         conn = library.open_ro(self.ws)
         try:
             lib = library.Library(library.read_all(conn))
         finally:
             conn.close()
-        text = render.render(self.ws, lib, [{"item_id": "UC-001", "version_no": 1}])
-        self.assertEqual(text, "- UC-001 申请退款［第 1 版；未评审；未经用户确认］步骤：1. 提交申请；2. 系统受理\n没有待定事项。\n")
+        # 缺省是最新修订（修订 3）：UC-002 在修订 3 删了，不在里面；UC-001 的内容来自修订 2。
+        latest = render.render(self.ws, lib)
+        self.assertEqual(latest, "按修订 3 生成。\n- UC-001 买家申请退款［修订 2 · 未确认 · 未评审］步骤：1. 提交申请；2. 系统受理\n")
+        # 修订 1：UC-001 是那时的内容。
+        first = render.render(self.ws, lib, 1)
+        self.assertEqual(first, "按修订 1 生成。\n- UC-001 申请退款［修订 1 · 未确认 · 未评审］步骤：1. 提交申请；2. 系统受理\n")
+        # 修订 2 只列 UC-002：筛掉的条目不出现，待定事项一个都没选中。
+        only = render.render(self.ws, lib, 2, ["UC-002"])
+        self.assertIn("- UC-002 撤销申请［修订 2 · 未确认 · 未评审］", only)
+        self.assertNotIn("UC-001", only)
+        self.assertIn("没有待定事项。", only)
+        with self.assertRaises(ApiError) as too_new:
+            render.render(self.ws, lib, 9)
+        self.assertIn("还没有修订 9，最新是修订 3", too_new.exception.message)
+        with self.assertRaises(ApiError) as gone:
+            render.render(self.ws, lib, 3, ["UC-002"])
+        self.assertIn("修订 3 时交付物里没有这些条目：UC-002", gone.exception.message)
+
+    def test_文档导出_用户看过旧修订之后助手又改过_确认状态如实写最后看过的修订(self):
+        (self.ws / "docs" / "templates").mkdir(parents=True, exist_ok=True)
+        (self.ws / "docs" / "templates" / "demo.md").write_text(
+            "{{#每个 用例}}- {{编号}}［修订 {{修订号}} · {{确认状态}}］\n{{/每个}}", encoding="utf-8")
+        conn = library.open_ro(self.ws)
+        try:
+            data = library.read_all(conn)
+        finally:
+            conn.close()
+        # 用户在修订 1 打开看过 UC-001；助手在修订 2 改了它（夹具里 call-r2 是执行者的调用）。
+        data["confirmations"].append({"item_id": "UC-001", "revision_no": 1, "attitude": "接受", "created_at": "2026-09-23T10:00:00.000",
+                                      "basis": '[{"依据": "已读"}]', "call_id": "ui-op-9", "judgement_id": 99})
+        lib = library.Library(data)
+        self.assertEqual(render.render(self.ws, lib), "- UC-001［修订 2 · 用户最后看过修订 1，之后由助手改为修订 2］\n")
+        # 导出修订 1 时，看过的正是这次修订，照旧写依据。
+        self.assertEqual(render.render(self.ws, lib, 1), "- UC-001［修订 1 · 已确认（已读）］\n")
+        # 整份数据里，看过旧修订的条目仍算已读（不因后来的修订翻回未读），依据取最后一次接受的。
+        uc = next(i for i in lib.task_view()["items"] if i["item_id"] == "UC-001")
+        self.assertEqual((uc["viewed"], uc["confirmation_basis"], uc["confirmation_stale"]), (True, "viewed", True))
+
+    def test_文档请求的写法(self):
+        self.assertEqual(render.document_request({}), (None, None))
+        self.assertEqual(render.document_request({"revision_no": 2, "items": ["UC-001"]}), (2, ["UC-001"]))
+        # 旧前端的 selection 已不再认：按没写条目筛选处理，也就是那次修订时的全部条目。
+        self.assertEqual(render.document_request({"selection": [{"item_id": "UC-001", "version_no": 1}]}), (None, None))
         with self.assertRaises(ApiError):
-            render.render(self.ws, lib, [{"item_id": "UC-001", "version_no": 9}])
+            render.document_request({"revision_no": 0})
+
+
+class WordsLocatorTest(unittest.TestCase):
+    """文档里「用户的话」的出处：库里是「会话编号#消息编号」，印进文档的是读者看得懂的说法。"""
+
+    def fake_task(self, name):
+        def msg(eid, parent, role, text):
+            return {"type": "message", "id": eid, "parentId": parent, "timestamp": "2026-09-22T10:00:00Z",
+                    "message": {"role": role, "content": [{"type": "text", "text": text}]}}
+        entries = [{"type": "session", "id": "S1", "timestamp": "2026-09-22T10:00:00Z"},
+                   msg("u1", None, "user", "请整理材料"), msg("a1", "u1", "assistant", "好的"),
+                   msg("u2", "a1", "user", "罚款在服务台缴纳"), msg("a2", "u2", "assistant", "记下了")]
+
+        class Executor:
+            def entries(self, session_id):
+                return entries if session_id == "S1" else []
+
+            def list_sessions(self):
+                return [{"session_id": "S1", "name": name}]
+
+        class Task:
+            executor = Executor()
+
+            def definition(self):
+                return {}
+        return Task()
+
+    def test_换算成会话名称与用户的第几句话(self):
+        locate = words_locator(self.fake_task("整理需求"))
+        self.assertEqual(locate("S1#u2"), "会话「整理需求」里用户的第 2 句话")
+        self.assertEqual(words_locator(self.fake_task(None))("S1#u1"), "对话里用户的第 1 句话")
+        self.assertIsNone(locate("S1#不存在"))
+        self.assertIsNone(locate("S9#u1"))
+        self.assertIsNone(locate("没有井号"))
+
+    def test_渲染不把内部编号印进文档(self):
+        class Lib:
+            def sources_of(self, item_id, version_no):
+                return [{"kind": "用户的话", "locator": "S1#u2", "excerpt": "罚款在服务台缴纳"},
+                        {"kind": "文档原文", "locator": "inputs/a.md", "excerpt": "原文"}]
+        self.assertEqual(render.sources_text(Lib(), "UC-001", 1, words_locator(self.fake_task("整理需求"))),
+                         "用户的话，出处 会话「整理需求」里用户的第 2 句话（「罚款在服务台缴纳」）；文档原文，出处 inputs/a.md（「原文」）")
+        self.assertEqual(render.sources_text(Lib(), "UC-001", 1),
+                         "用户的话，出处 对话里用户说的话（「罚款在服务台缴纳」）；文档原文，出处 inputs/a.md（「原文」）")
+
+
+class EditLocatorTest(unittest.TestCase):
+    """文档里「用户直接修改」的出处：库里是界面操作编号，印进文档的是「用户在界面上的第 N 次修改（时刻）」。"""
+
+    class Lib:
+        def __init__(self):
+            edit = lambda op, seq: {"种类": "用户直接修改", "出处": op, "摘录": "新值", "事件序号": seq}
+            self.data = {
+                "sources": {("UC-001", 2): [edit("ui-op-b", 7)], ("UC-001", 3): [edit("ui-op-b", 7), edit("ui-op-c", 9)],
+                            ("UC-002", 2): [edit("ui-op-a", 5)],
+                            ("UC-002", 1): [{"种类": "文档原文", "出处": "inputs/a.md", "摘录": "原文", "事件序号": 2}]},
+                "event_meta": {5: {"at": "2026-09-22T17:55:20.939"}, 7: {"at": "2026-09-22T18:01:02.000"}, 9: {"at": ""}},
+            }
+
+        def sources_of(self, item_id, version_no):
+            from taskwright_server.service.library import source_view
+            return [source_view(one) for one in self.data["sources"].get((item_id, version_no), [])]
+
+    def test_按写入先后编号并带上时刻(self):
+        locate = render.edit_locator(self.Lib())
+        self.assertEqual(locate("ui-op-a"), "用户在界面上的第 1 次修改（2026-09-22 17:55）")
+        self.assertEqual(locate("ui-op-b"), "用户在界面上的第 2 次修改（2026-09-22 18:01）", "沿用到后一版的同一个来源不重复计数")
+        self.assertEqual(locate("ui-op-c"), "用户在界面上的第 3 次修改", "没有时刻就不写括号")
+        self.assertIsNone(locate("ui-op-zzz"))
+
+    def test_渲染不把操作编号印进文档(self):
+        lib = self.Lib()
+        self.assertEqual(render.sources_text(lib, "UC-002", 2, None, render.edit_locator(lib)),
+                         "用户直接修改，出处 用户在界面上的第 1 次修改（2026-09-22 17:55）（「新值」）")
+        self.assertEqual(render.sources_text(lib, "UC-002", 2), "用户直接修改，出处 用户在界面上的修改（「新值」）")
 
 
 class PureUnitTest(unittest.TestCase):
@@ -139,9 +282,9 @@ class PureUnitTest(unittest.TestCase):
         self.assertEqual(card_annotation({"annotation": {"reply_message_id": "a1", "option_key": "a"}})["option_key"], "a")
 
     def test_错误形状与状态码(self):
-        error = ApiError("session_busy", "执行者正在另一条会话里工作。", {"active_session": "s1"})
+        error = ApiError("session_busy", "助手正在另一条会话里工作。", {"active_session": "s1"})
         self.assertEqual(error.status, 409)
-        self.assertEqual(error.body(), {"ok": False, "error": {"code": "session_busy", "message": "执行者正在另一条会话里工作。",
+        self.assertEqual(error.body(), {"ok": False, "error": {"code": "session_busy", "message": "助手正在另一条会话里工作。",
                                                                "data": {"active_session": "s1"}}})
         self.assertEqual([ApiError(c, "").status for c in ("bad_request", "rejected", "executor_starting", "too_large", "unsupported_type")],
                          [400, 422, 503, 413, 415])
@@ -212,9 +355,42 @@ class PureUnitTest(unittest.TestCase):
         self.assertEqual((first["work_id"], first["step_count"], first["seconds"]), ("w-u1", 5, 12.0))
         self.assertEqual([s["text"] for s in first["stages"]],
                          ["读了材料《甲.md》、《乙.md》", "保存修订被拒，助手正在照原因改",
-                          "写好并保存了第 1 次修订：新增功能用例 1 个（UC-001）", "组织并发出了回复"])
+                          "写好并保存了修订 1：新增功能用例 1 个（UC-001）", "组织并发出了回复"])
         self.assertEqual(out[2]["work_id"], "w-u1", "回复的 work_id 补成这次工作的编号，前端据此放改动块")
         self.assertEqual((out[4]["work_id"], out[4]["step_count"], out[4]["stages"][0]["text"]), ("w-u2", 1, "看了目录"))
+        self.assertNotIn("reasons", first["stages"][1], "结果正文里取不到原因时照旧写固定的一句，不带 reasons")
+
+    def test_过程摘要_保存修订被拒附上原因_多于一条时写还有几条(self):
+        def msg(i, parent, role, content):
+            return {"type": "message", "id": i, "parentId": parent, "timestamp": "2026-09-22T01:00:00.000Z", "message": {"role": role, "content": content}}
+        def rejected(i, parent, cid, text):
+            return {"type": "message", "id": i, "parentId": parent, "timestamp": "2026-09-22T01:00:01.000Z",
+                    "message": {"role": "toolResult", "toolCallId": cid, "isError": True, "details": {}, "content": [{"type": "text", "text": text}]}}
+        two = ("这次「保存修订」什么都没有写入，因为有 2 个操作不对：\n"
+               "- 操作 1（新增，集合「功能用例」）：第 1 条来源的摘录「借书」在 inputs/甲.md 里找不到。\n"
+               "- 操作 2（修改，条目 UC-001）：这个条目已经被用户改到修订 3。\n  它现在的内容：……\n"
+               "请把这些地方改正之后，把整批操作重新提交一次。")
+        one = ("这次「保存修订」什么都没有写入，因为有 1 个操作不对：\n"
+               "- 操作 1（新增，集合「问题」）：字段「关联条目」是条目引用类型，第 1 个编号 \"UC-006\" 指向的条目在这个任务里不存在。\n"
+               "请把这些地方改正之后，把整批操作重新提交一次。")
+        entries = [
+            {"type": "session", "id": "h"},
+            msg("u1", None, "user", "整理材料"),
+            msg("a1", "u1", "assistant", [{"type": "toolCall", "id": "c1", "name": "save_revision", "arguments": {}}]),
+            rejected("r1", "a1", "c1", two),
+            msg("a2", "r1", "assistant", [{"type": "toolCall", "id": "c2", "name": "save_revision", "arguments": {}}]),
+            rejected("r2", "a2", "c2", one),
+            msg("a3", "r2", "assistant", [{"type": "toolCall", "id": "c3", "name": "save_revision", "arguments": {}}]),
+            rejected("r3", "a3", "c3", "Validation failed for tool \"save_revision\""),
+        ]
+        stages = conversation.messages(entries, "S", {})[1]["stages"]
+        self.assertEqual(stages[0]["text"], "保存修订被拒，助手正在照原因改：操作 1（新增，集合「功能用例」）：第 1 条来源的摘录「借书」在 inputs/甲.md 里找不到。（还有 1 条）")
+        self.assertEqual(stages[0]["reasons"], ["操作 1（新增，集合「功能用例」）：第 1 条来源的摘录「借书」在 inputs/甲.md 里找不到。",
+                                                "操作 2（修改，条目 UC-001）：这个条目已经被用户改到修订 3。\n  它现在的内容：……"])
+        self.assertEqual(stages[1]["text"], "保存修订被拒，助手正在照原因改：操作 1（新增，集合「问题」）：字段「关联条目」是条目引用类型，"
+                                            "第 1 个编号 \"UC-006\" 指向的条目在这个任务里不存在。")
+        self.assertEqual(len(stages[1]["reasons"]), 1)
+        self.assertEqual(stages[2], {"text": "保存修订被拒，助手正在照原因改", "count": 1}, "不是保存修订自己的拒绝正文时照旧写固定的一句")
 
 
 if __name__ == "__main__":
@@ -249,3 +425,100 @@ class MaterialsUnitTest(unittest.TestCase):
                 self.assertEqual((listing["task_name"], listing["sessions"]), ("材料测试", []))
             finally:
                 service.close()
+
+
+class OldFormatListTest(unittest.TestCase):
+    def test_修订统一之前建的任务照样列出_标明不支持且打不开(self):
+        import sqlite3
+        from taskwright_server.service.app import Service
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            old = root / "tasks" / "TASK-OLD"
+            old.mkdir(parents=True)
+            conn = sqlite3.connect(old / "task.sqlite")
+            conn.execute("CREATE TABLE task (task_id TEXT)")
+            conn.execute("INSERT INTO task VALUES ('TASK-OLD')")
+            conn.execute("CREATE TABLE item_version (task_id TEXT, item_id TEXT, version_no INTEGER, revision_no INTEGER)")
+            conn.commit()
+            conn.close()
+            service = Service(root / "tasks", root / "runs", {})
+            rows = service.list_tasks()
+            self.assertEqual([(r["task_id"], r["status"], r["supported"]) for r in rows], [("TASK-OLD", "旧格式", False)])
+            self.assertEqual(rows[0]["note"], library.OLD_FORMAT_TEXT)
+            with self.assertRaises(ApiError) as missing:
+                service.task("TASK-OLD")
+            self.assertEqual(missing.exception.code, "not_found")
+
+
+class LiveWorkIdTest(unittest.TestCase):
+    """用户消息的 message_end 到达时，按「上次取到的位置之后」找不到这条消息的会话条目有两种情形：前一条界面操作说明
+    取条目时已把它一并取走（游标越过了它），或它还没写进会话记录（卡片点击、界面操作之后的那句话写入更晚）。执行者看护
+    要到全部条目里、上一次认过的用户消息之后去找，必要时隔一会儿重取，把实时工作编号定成「w-条目编号」，与刷新后
+    从会话文件算出的一致；不认回更早说过的同一句话。"""
+
+    def make(self, appear_after: int, cursor: str):
+        from taskwright_server.service import executor as executor_module
+
+        class Hub:
+            def __init__(self):
+                self.events = []
+
+            def emit(self, name, data):
+                self.events.append((name, data))
+
+            def trigger(self):
+                pass
+
+        old = {"type": "message", "id": "u-old", "message": {"role": "user", "content": [{"type": "text", "text": "好"}]}}
+        note = {"type": "custom_message", "id": "n-1", "customType": "taskwright-user-edit"}
+        new = {"type": "message", "id": "u-new", "message": {"role": "user", "content": [{"type": "text", "text": "好"}]}}
+
+        class Pi:
+            calls = 0
+
+            def request(self, command, **kwargs):
+                if command != "get_entries":
+                    return {}
+                Pi.calls += 1
+                entries = [old, note, new] if Pi.calls > appear_after else [old, note]
+                since = kwargs.get("since")           # 与 pi 一样：带 since 时只给这个编号之后的条目
+                if since:
+                    ids = [e["id"] for e in entries]
+                    entries = entries[ids.index(since) + 1:] if since in ids else []
+                return {"entries": entries}
+
+            def get_state(self):
+                return {"sessionName": "已有名字"}
+
+        hub = Hub()
+        ex = executor_module.Executor("T", Path("/nonexistent"), Path("/nonexistent"), {}, hub)
+        ex.active_session = "S"
+        ex.named.add("S")
+        ex.cursor = cursor
+        ex.last_user_entry = "u-old"   # 上一次认过的那句话，文字恰好相同
+        saved = executor_module.ENTRY_RETRY_DELAY
+        executor_module.ENTRY_RETRY_DELAY = 0
+        self.addCleanup(setattr, executor_module, "ENTRY_RETRY_DELAY", saved)
+        pi = Pi()
+        ex._handle(pi, {"type": "agent_start"})
+        ex._handle(pi, {"type": "message_end", "message": {"role": "user", "content": [{"type": "text", "text": "好"}]}})
+        return ex, hub
+
+    def check(self, ex, hub):
+        said = [d for n, d in hub.events if n == "user_message"][0]
+        self.assertEqual(said["message_id"], "u-new", "不认回更早说过的同一句话 u-old")
+        self.assertEqual(ex.work["work_id"], "w-u-new")
+        self.assertEqual([d for n, d in hub.events if n == "work_started"][0]["work_id"], "w-u-new")
+
+    def test_游标已越过这句话时到全部条目里找(self):
+        ex, hub = self.make(appear_after=0, cursor="u-new")
+        self.check(ex, hub)
+
+    def test_这句话晚写进会话时重取几次(self):
+        ex, hub = self.make(appear_after=4, cursor="n-1")
+        self.check(ex, hub)
+
+    def test_一直找不到时不卡住_工作编号保持原样(self):
+        ex, hub = self.make(appear_after=999, cursor="n-1")
+        self.assertIsNone([d for n, d in hub.events if n == "user_message"][0]["message_id"])
+        self.assertTrue(ex.work["work_id"].startswith("work-"))

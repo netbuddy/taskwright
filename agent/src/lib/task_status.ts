@@ -4,7 +4,7 @@
  * 一库一任务之后，用户从不选任务；执行者打开会话时靠这条消息知道任务现在的样子：
  *
  * - 新会话（会话里还没有任何用户消息，也还没有写过现状消息）：写任务现状——任务名与类型、交付物
- *   按集合各有几个条目、完成条件满足几项未满足几项、未解决的待定事项几条。
+ *   按集合各有几个条目、完成条件满足几项未满足几项、未解决的问题条目几条。
  * - 续接旧会话：写「上次这条会话结束之后」交付物发生的变化，没有变化返回 null（不追加）。
  *   「上次结束」取这条会话当前分支上最后一条消息（消息或自定义消息，不算模型切换之类的设置条目）的时刻，
  *   换算成本机时间之后与事件表的时刻文字比较；事件表记的是同一台机器的本地时间，写法相同，可以直接比大小。
@@ -136,7 +136,7 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
   const results = checkCompletion(db, task.task_id, definition.completion);
   const met = results.filter((one) => one.state === "met").length;
   const unmetCount = results.filter((one) => one.state === "unmet").length;
-  // 未解决的待定事项：带「状态」枚举、取值里有「未解决」的集合里，当前版本状态为未解决的条目。
+  // 未解决的问题条目：带「状态」枚举、取值里有「未解决」的集合里，当前内容状态为未解决的条目。
   let unresolved = 0;
   for (const collection of definition.collections) {
     const status = collection.fields.find((field) => field.name === "状态");
@@ -151,7 +151,7 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
       ? "交付物还没有任何条目。"
       : `交付物现有 ${total} 个条目：${counts.map((one) => `${one.collection} ${one.count} 个`).join("、")}。`,
     completionBrief(results),
-    `未解决的待定事项有 ${unresolved} 条。`,
+    `未解决的问题条目有 ${unresolved} 条。`,
     materialsSentence(materials),
   ];
   return {
@@ -189,7 +189,7 @@ function changesSince(
     .all(task.task_id, cutoff) as unknown as EventRow[];
   if (events.length === 0) return newMaterials.length ? materialsOnly(task, cutoff, sessionId, materials, newMaterials) : null;
 
-  // 按条目合并这段时间里的全部操作：先新增的算新增；只改过的记最早的改前版本与最后的改后版本；
+  // 按条目合并这段时间里的全部操作：先新增的算新增；只改过的记最早的改前修订号与最后的改后修订号；
   // 新增之后又删掉的不提；原有条目被删的算删除。
   const added = new Map<string, string>();
   const updated = new Map<string, { from: number; to: number }>();
@@ -200,14 +200,14 @@ function changesSince(
     if (event.name !== "REVISION_SAVED") continue;
     if (event.actor === ACTOR_USER) byUser += 1;
     else byExecutorElsewhere += 1;
-    const payload = load(event.payload) as { operations?: { op: string; item: string; from_version: number | null; to_version: number | null }[] };
+    const payload = load(event.payload) as { operations?: { op: string; item: string; from_revision: number | null; to_revision: number | null }[] };
     for (const op of payload.operations ?? []) {
       if (op.op === "add") {
         added.set(op.item, op.item);
       } else if (op.op === "update") {
         if (added.has(op.item)) continue;
         const seen = updated.get(op.item);
-        updated.set(op.item, { from: seen ? seen.from : op.from_version ?? 0, to: op.to_version ?? 0 });
+        updated.set(op.item, { from: seen ? seen.from : op.from_revision ?? 0, to: op.to_revision ?? 0 });
       } else if (op.op === "delete") {
         if (added.has(op.item)) {
           added.delete(op.item);
@@ -215,7 +215,7 @@ function changesSince(
         }
         const seen = updated.get(op.item);
         updated.delete(op.item);
-        deleted.set(op.item, seen ? seen.from : op.from_version ?? 0);
+        deleted.set(op.item, seen ? seen.from : op.from_revision ?? 0);
       }
     }
   }
@@ -223,7 +223,7 @@ function changesSince(
   if (added.size > 0) pieces.push(`新增 ${added.size} 个条目（${[...added.keys()].join("、")}）`);
   if (updated.size > 0) {
     pieces.push(
-      `修改 ${updated.size} 个（${[...updated.entries()].map(([item, v]) => `${item} 第 ${v.from} 版到第 ${v.to} 版`).join("、")}）`,
+      `修改 ${updated.size} 个（${[...updated.entries()].map(([item, v]) => `${item} 修订 ${v.from} → 修订 ${v.to}`).join("、")}）`,
     );
   }
   if (deleted.size > 0) pieces.push(`删除 ${deleted.size} 个（${[...deleted.keys()].join("、")}）`);
@@ -245,7 +245,7 @@ function changesSince(
       since: cutoff,
       session_id: sessionId,
       added: [...added.keys()],
-      updated: [...updated.entries()].map(([item, v]) => ({ item, from_version: v.from, to_version: v.to })),
+      updated: [...updated.entries()].map(([item, v]) => ({ item, from_revision: v.from, to_revision: v.to })),
       deleted: [...deleted.keys()],
       event_seqs: events.map((one) => one.seq),
       materials: materialsDetails(materials),

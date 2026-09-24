@@ -11,14 +11,14 @@ import { saveRevision } from "../src/lib/save_revision.ts";
 import { replyBodyLines, replyLines, replyRejectedLines, saveRejectedLines, savedLines, titlesForOperations } from "../src/lib/tool_render.ts";
 import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
 
-const alone = { toolCallId: "c1", callsThisTurn: [{ id: "c1", name: "reply" }], versionFact: () => "有这一版" as const };
+const alone = { toolCallId: "c1", callsThisTurn: [{ id: "c1", name: "reply" }], revisionFact: () => "是当前所在的修订" as const };
 
-test("回复：告知在前、请确认卡片列出条目与版本、成文的话在最后", () => {
+test("回复：告知在前、请确认卡片列出条目与修订号、成文的话在最后", () => {
   const reply = checkReply(
     {
       informs: ["我新增了 UC-001。", "来源都取自材料。"],
-      act: { kind: "confirm", text: "请确认 UC-001 第 1 版。", items: [{ item_id: "UC-001", version_no: 1 }] },
-      text: "UC-001 已经存好。\n请确认它的第 1 版。",
+      act: { kind: "confirm", text: "请确认 UC-001（修订 1）。", items: [{ item_id: "UC-001", revision_no: 1 }] },
+      text: "UC-001 已经存好。\n请确认它的内容。",
     },
     alone,
   );
@@ -27,11 +27,11 @@ test("回复：告知在前、请确认卡片列出条目与版本、成文的�
     "  告知：",
     "    · 我新增了 UC-001。",
     "    · 来源都取自材料。",
-    "  【请确认】请确认 UC-001 第 1 版。",
-    "      条目 UC-001 第 1 版",
+    "  【请确认】请确认 UC-001（修订 1）。",
+    "      条目 UC-001（修订 1）",
     "  成文的话：",
     "    UC-001 已经存好。",
-    "    请确认它的第 1 版。",
+    "    请确认它的内容。",
   ]);
 });
 
@@ -57,12 +57,12 @@ test("回复：给建议值带建议值与依据，请选择列出选项，提�
   );
   assert.deepEqual(replyBodyLines(choose).slice(0, 3), ["  【请选择】先整理哪块？", "      a. 借书", "      b. 还书"]);
   const propose = checkReply(
-    { informs: [], act: { kind: "propose", text: "把 UC-001 拆成两条。", items: [{ item_id: "UC-001", version_no: 1 }], preview: [{ effect: "remove", text: "UC-001" }, { effect: "add", text: "两条新用例" }] }, text: "提议如上。" },
+    { informs: [], act: { kind: "propose", text: "把 UC-001 拆成两条。", items: [{ item_id: "UC-001", revision_no: 1 }], preview: [{ effect: "remove", text: "UC-001" }, { effect: "add", text: "两条新用例" }] }, text: "提议如上。" },
     alone,
   );
-  assert.deepEqual(replyBodyLines(propose).slice(0, 4), ["  【提议】把 UC-001 拆成两条。", "      条目 UC-001 第 1 版", "      删掉：UC-001", "      新增：两条新用例"]);
-  const ask = checkReply({ informs: [], act: { kind: "ask", text: "发票红冲的订单怎么办？", items: [{ item_id: "TBD-001", version_no: 1 }] }, text: "想问一件事。" }, alone);
-  assert.deepEqual(replyBodyLines(ask), ["  【提问】发票红冲的订单怎么办？", "      条目 TBD-001 第 1 版", "  成文的话：", "    想问一件事。"]);
+  assert.deepEqual(replyBodyLines(propose).slice(0, 4), ["  【提议】把 UC-001 拆成两条。", "      条目 UC-001（修订 1）", "      删掉：UC-001", "      新增：两条新用例"]);
+  const ask = checkReply({ informs: [], act: { kind: "ask", text: "发票红冲的订单怎么办？", items: [{ item_id: "TBD-001", revision_no: 1 }] }, text: "想问一件事。" }, alone);
+  assert.deepEqual(replyBodyLines(ask), ["  【提问】发票红冲的订单怎么办？", "      条目 TBD-001（修订 1）", "  成文的话：", "    想问一件事。"]);
 });
 
 test("回复被拒：说明没有送达，拒绝原因逐行照录", () => {
@@ -85,7 +85,7 @@ function taskDir() {
   return dir;
 }
 
-test("保存修订：新增、修改、删除各一行，带编号、标题与改前改后版本", () => {
+test("保存修订：新增、修改、删除各一行，带编号、标题与改前改后所在的修订", () => {
   const dir = taskDir();
   const first = saveRevision(callIn(dir), {
     operations: [
@@ -94,23 +94,23 @@ test("保存修订：新增、修改、删除各一行，带编号、标题与�
     ],
   });
   assert.deepEqual(savedLines(first.details, titlesForOperations(dir, (first.details as any).operations)), [
-    "  已保存为任务 TASK-001 的第 1 次修订，一共 2 个操作（事件序号 2）：",
-    "    新增 UC-001「登录」（集合「用例」），第 1 版",
-    "    新增 UC-002「注销」（集合「用例」），第 1 版",
+    "  已保存为任务 TASK-001 的修订 1，一共 2 个操作（事件序号 2）：",
+    "    新增 UC-001「登录」（集合「用例」）",
+    "    新增 UC-002「注销」（集合「用例」）",
   ]);
   const second = saveRevision(callIn(dir), {
     operations: [
-      { op: "update", item: "UC-001", base_version: 1, fields: { 名称: "用口令登录" } },
-      { op: "delete", item: "UC-002", base_version: 1 },
+      { op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "用口令登录" } },
+      { op: "delete", item: "UC-002", base_revision: 1 },
     ],
   });
   assert.deepEqual(savedLines(second.details, titlesForOperations(dir, (second.details as any).operations)), [
-    "  已保存为任务 TASK-001 的第 2 次修订，一共 2 个操作（事件序号 3）：",
-    "    修改 UC-001「用口令登录」，第 1 版 → 第 2 版",
-    "    删除 UC-002「注销」（删除前是第 1 版）",
+    "  已保存为任务 TASK-001 的修订 2，一共 2 个操作（事件序号 3）：",
+    "    修改 UC-001「用口令登录」，修订 1 → 修订 2",
+    "    删除 UC-002「注销」（删除前在修订 1）",
   ]);
   // 取不到标题时只写编号。
-  assert.equal(savedLines(second.details)[1], "    修改 UC-001，第 1 版 → 第 2 版");
+  assert.equal(savedLines(second.details)[1], "    修改 UC-001，修订 1 → 修订 2");
 });
 
 test("保存修订被拒：说明什么都没有写入，拒绝原因逐行照录", () => {
@@ -118,11 +118,11 @@ test("保存修订被拒：说明什么都没有写入，拒绝原因逐行照�
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面"] }, sources: [SOURCE] }] });
   let reason = "";
   try {
-    saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_version: 3, fields: { 名称: "x" } }] });
+    saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 3, fields: { 名称: "x" } }] });
   } catch (error) {
     reason = (error as Error).message;
   }
-  assert.match(reason, /第 1 版/);
+  assert.match(reason, /条目 UC-001 现在是修订 1，你写的修订 3 不是它当前所在的修订/);
   const lines = saveRejectedLines(reason);
   assert.equal(lines[0], "  保存修订被拒绝，什么都没有写入。拒绝的原因是：");
   assert.deepEqual(lines.slice(1), reason.split("\n").map((line) => `    ${line}`));

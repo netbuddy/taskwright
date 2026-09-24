@@ -11,12 +11,12 @@ Taskwright is a general task-oriented agent. You give it a **task definition**; 
 ## What it does
 
 - It works from a task definition: which item collections make up the deliverable, which fields each item has, what counts as complete, and where the method and the domain rules are written. A different task definition is a different kind of task.
-- It produces items in conversation, and every version of every item carries its sources: a verbatim excerpt from a material, the user's own words, a marked "added by the agent" note, or the user's own direct edit.
-- The user can edit, confirm or undo items directly in the interface; every change is a new version in an append-only history, and each write is recorded with its event in one transaction.
+- It produces items in conversation, and the content of every item at every revision carries its sources: a verbatim excerpt from a material, the user's own words, a marked "added by the agent" note, or the user's own direct edit.
+- Opening an item in the interface counts as reading and confirming it; an item stays read once opened, and later changes are marked separately; the user can also edit or undo items directly. Every save, by the agent or the user, is a numbered revision in an append-only history, and each write is recorded with its event in one transaction. Only one side writes at a time: while the agent works, the user's writes wait; while the user has an unsaved edit, the agent is not started.
 - Completion is checked by code against the task definition's conditions, and the deliverable is rendered into a document from a template; neither step goes through a model.
 - Everything can be reviewed afterwards: every run, turn, tool call and rejection is recorded.
 
-The bundled task type, *software requirements specification*, adds four item collections, the rules for use cases and EARS sentences, and the executor's way of working. The full list of what the current version can and cannot do is in [docs/capabilities.md](docs/capabilities.md).
+The bundled task type, *software requirements specification*, adds four item collections, the rules for use cases and EARS sentences, and the assistant's way of working. The full list of what the current version can and cannot do is in [docs/capabilities.md](docs/capabilities.md).
 
 ## Components
 
@@ -45,7 +45,7 @@ web/           browser interface
 sim/           simulated user, run driver, judge, example persona
 task-types/    srs-authoring: task definition, skill, domain rules, document template
 examples/      library-lending: example material and a scripted run
-docs/          capabilities, deployment, user guide, API reference, architecture
+docs/          capabilities, deployment, user guide, tutorial, API reference, architecture
 scripts/       check-public.sh, dev.sh, test-all.sh
 ```
 
@@ -56,6 +56,8 @@ For people who use Taskwright:
 - [Capabilities](docs/capabilities.md): what the current version can do, and what it cannot do yet
 - [Deployment](docs/deployment.md): dependencies, connecting a model, starting the services, troubleshooting
 - [User guide](docs/user-guide.md): the web workflow, the example, other ways to work, the observatory
+- [Tutorial](docs/tutorials/srs-authoring.md): write a requirements specification step by step, with screenshots
+- [Changelog](CHANGELOG.md) and [Roadmap](ROADMAP.md): what each release contains, and what is planned next
 
 For integrators and contributors:
 

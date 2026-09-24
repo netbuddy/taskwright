@@ -36,7 +36,7 @@ class ServiceTests(unittest.TestCase):
 
     def test_服务_打开会话收到系统说明_说话收到带编号的用户消息与回复(self):
         with ServiceRig([save_uc(), reply("存好了。")]) as rig:
-            tid = rig.new_task()
+            tid = rig.new_task(material=SOURCE["excerpt"])
             stream = rig.stream(tid)
             status, body = rig.call("POST", f"/tasks/{tid}/sessions")
             self.assertEqual(status, 200)
@@ -66,7 +66,7 @@ class ServiceTests(unittest.TestCase):
             summary = stream.wait(lambda e: e["event"] == "work_summary")["data"]
             self.assertEqual((summary["work_id"], summary["step_count"]), (ended["work_id"], 2))
             self.assertEqual([x["text"] for x in summary["stages"]],
-                             ["写好并保存了第 1 次修订：新增功能用例 1 个（UC-001）", "组织并发出了回复"])
+                             ["写好并保存了修订 1：新增功能用例 1 个（UC-001）", "组织并发出了回复"])
             # 刷新：整份数据里的对话与事件流一致，斜杠改写过的话照原样显示；过程摘要从会话文件重算，插在回复之前。
             _, snap = rig.call("GET", f"/tasks/{tid}/snapshot?session={sid}")
             texts = [(m["type"], m.get("text")) for m in snap["conversation"]["messages"]]
@@ -75,76 +75,146 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual((rebuilt["step_count"], [x["text"] for x in rebuilt["stages"]]), (2, [x["text"] for x in summary["stages"]]))
             self.assertEqual(snap["conversation"]["messages"][3]["work_id"], rebuilt["work_id"])
             self.assertEqual(snap["seq"], 2)
+            # 实时推送的工作编号与刷新后从会话文件算出的一致：都是「w-触发它的那句话的会话条目编号」。
+            self.assertEqual((answer["work_id"], ended["work_id"]), (rebuilt["work_id"], f"w-{user['message_id']}"))
+            # 修订日志：修订 1 归到这次工作，触发它的是那句话。
+            status, log = rig.call("GET", f"/tasks/{tid}/revisions")
+            self.assertEqual((status, log["latest_revision"], len(log["revisions"])), (200, 1, 1))
+            one = log["revisions"][0]
+            self.assertEqual((one["revision_no"], one["by"], one["work_id"]), (1, "executor", answer["work_id"]))
+            self.assertEqual((one["trigger"]["kind"], one["trigger"]["text"], one["trigger"]["message_id"]), ("typed", "/整理一下", user["message_id"]))
+            self.assertEqual([(op["op"], op["item_id"], op["revision_after"], op["fields_changed"]) for op in one["operations"]],
+                             [("add", "UC-001", 1, [])])
 
-    def test_服务_直接操作先收到库事件_版本过期返回stale_version_预览标注未确认(self):
+    def test_服务_直接操作先收到库事件_修订号过期返回stale_revision_按修订导出文档(self):
         with ServiceRig([save_uc(), reply("存好了。")]) as rig:
-            tid = rig.new_task()
+            tid = rig.new_task(material=SOURCE["excerpt"])
             stream = rig.stream(tid)
             sid = rig.call("POST", f"/tasks/{tid}/sessions")[1]["session_id"]
             rig.call("POST", f"/tasks/{tid}/messages?session={sid}", {"text": "整理一下", "client_id": "c-1"})
             stream.wait(lambda e: e["event"] == "work_ended")
             status, ok = rig.call("POST", f"/tasks/{tid}/actions?session={sid}", {
-                "client_id": "a-1", "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_version": 1}],
+                "client_id": "a-1", "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_revision": 1}],
                 "fields": {"用例名称": "买家提交退货申请"}})
             self.assertEqual(status, 200)
             self.assertEqual(set(ok), {"ok", "client_id", "op_id"})
             changed = stream.wait(lambda e: e["event"] == "deliverable_changed" and e["data"]["actor"] == "user")["data"]
             self.assertEqual(changed["op_id"], ok["op_id"])
-            self.assertEqual(changed["operations"][0]["version_after"], 2)
+            self.assertEqual((changed["revision_no"], changed["operations"][0]["revision_before"], changed["operations"][0]["revision_after"]), (2, 1, 2))
             noted = stream.wait(lambda e: e["event"] == "ui_action_noted")["data"]
             self.assertEqual(noted["op_id"], ok["op_id"])
+            self.assertIn("产生修订 2，UC-001 现在是修订 2", noted["text"])
+            self.assertIn("这次修改同时算作用户看过并认可了 UC-001（修订 2）", noted["text"])
+            self.assertEqual(noted["event_seq"], changed["seq"], "界面操作说明指向这次操作的修订事件")
+            # 改字段随修订自动登记为用户已确认：紧跟一条依据为 ui_edit 的确认事件；整份数据里条目算已确认。
+            auto = stream.wait(lambda e: e["event"] == "confirmation_recorded" and e["data"]["basis"] == "ui_edit")["data"]
+            self.assertEqual((auto["op_id"], auto["items"]), (ok["op_id"], [{"item_id": "UC-001", "revision_no": 2, "accepted": True}]))
+            status, snap = rig.call("GET", f"/tasks/{tid}/snapshot")
+            uc = next(i for i in snap["task"]["items"] if i["item_id"] == "UC-001")
+            self.assertEqual([(c["revision_no"], c["accepted"], c["basis"]) for c in uc["confirmations"]], [(2, True, "ui_edit")])
+            self.assertEqual((uc["viewed"], uc["confirmation_basis"]), (True, "ui_edit"))
+            # 修订日志里用户的修订写操作名，没有工作编号。
+            status, log = rig.call("GET", f"/tasks/{tid}/revisions")
+            mine = log["revisions"][0]
+            self.assertEqual((mine["revision_no"], mine["by"], mine["work_id"], mine["op_id"]), (2, "user", None, ok["op_id"]))
+            self.assertEqual((mine["trigger"]["kind"], mine["trigger"]["action"], mine["trigger"]["text"]),
+                             ("user_action", "edit_fields", "你改了 UC-001 的「用例名称」"))
+            self.assertEqual(mine["operations"][0]["fields_changed"], ["用例名称"])
+            # 两个页面同时编辑的安全网：拿着过期的修订号保存，被拒并写明条目现在所在的修订。
             status, stale = rig.call("POST", f"/tasks/{tid}/actions?session={sid}", {
-                "client_id": "a-2", "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_version": 1}], "fields": {"用例名称": "晚了"}})
-            self.assertEqual((status, stale["error"]["code"]), (409, "stale_version"))
-            self.assertEqual(stale["error"]["data"]["items"][0]["current_version"], 2)
-            status, confirm = rig.call("POST", f"/tasks/{tid}/actions?session={sid}", {
-                "client_id": "a-3", "kind": "confirm", "targets": [{"item_id": "UC-001", "base_version": 2}]})
+                "client_id": "a-2", "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_revision": 1}], "fields": {"用例名称": "晚了"}})
+            self.assertEqual((status, stale["error"]["code"]), (409, "stale_revision"))
+            self.assertEqual(stale["error"]["data"]["items"][0]["current_revision"], 2)
+            # 撤回确认：记一条不接受；已读是条目级、单向的，看过的条目撤回后仍算看过（依据取最后一次接受的）。
+            # 再打开详情写已读，推 item_viewed，整份数据里依据是 viewed。
+            status, _ = rig.call("POST", f"/tasks/{tid}/actions?session={sid}", {
+                "client_id": "a-3", "kind": "unconfirm", "targets": [{"item_id": "UC-001", "base_revision": 2}]})
             self.assertEqual(status, 200)
-            recorded = stream.wait(lambda e: e["event"] == "confirmation_recorded")["data"]
-            self.assertEqual(recorded["items"], [{"item_id": "UC-001", "version_no": 2, "accepted": True}])
-            status, preview = rig.call("POST", f"/tasks/{tid}/documents/preview",
-                                       {"selection": [{"item_id": "UC-001", "version_no": 1}, {"item_id": "UC-001", "version_no": 2}]})
+            recorded = stream.wait(lambda e: e["event"] == "confirmation_recorded" and e["data"]["basis"] == "ui_click")["data"]
+            self.assertEqual(recorded["items"], [{"item_id": "UC-001", "revision_no": 2, "accepted": False}])
+            uc = next(i for i in rig.call("GET", f"/tasks/{tid}/snapshot")[1]["task"]["items"] if i["item_id"] == "UC-001")
+            self.assertEqual((uc["viewed"], uc["confirmation_basis"]), (True, "ui_edit"))
+            status, seen = rig.call("POST", f"/tasks/{tid}/actions?session={sid}", {
+                "client_id": "a-4", "kind": "mark_viewed", "targets": [{"item_id": "UC-001", "base_revision": 2}]})
             self.assertEqual(status, 200)
-            self.assertIn("［第 1 版；未评审；未经用户确认］", preview["text"])
-            self.assertIn("［第 2 版；未评审；用户已确认］", preview["text"])
+            viewed = stream.wait(lambda e: e["event"] == "item_viewed")["data"]
+            self.assertEqual((viewed["op_id"], viewed["items"]), (seen["op_id"], [{"item_id": "UC-001", "revision_no": 2}]))
+            self.assertIsNotNone(viewed["completion"])
+            uc = next(i for i in rig.call("GET", f"/tasks/{tid}/snapshot")[1]["task"]["items"] if i["item_id"] == "UC-001")
+            self.assertEqual((uc["viewed"], uc["confirmation_basis"]), (True, "viewed"))
+            # 界面上的「确认」已经退役，confirm 不再是直接操作的种类。
+            status, retired = rig.call("POST", f"/tasks/{tid}/actions?session={sid}", {
+                "client_id": "a-5", "kind": "confirm", "targets": [{"item_id": "UC-001", "base_revision": 2}]})
+            self.assertEqual((status, retired["error"]["code"]), (400, "bad_request"))
+            status, page = rig.call("GET", f"/tasks/{tid}/items/UC-001/revisions")
+            self.assertEqual([r["revision_no"] for r in page["revisions"]], [1, 2])
+            status, gone = rig.call("GET", f"/tasks/{tid}/items/UC-001/versions")
+            self.assertEqual(status, 404, "旧路径 /versions 已删")
+            status, first = rig.call("POST", f"/tasks/{tid}/documents/preview", {"revision_no": 1})
+            self.assertEqual(status, 200)
+            self.assertIn("按交付物的修订 1 生成", first["text"])
+            self.assertIn("［修订 1 · 未确认 · 未评审］", first["text"])
+            status, latest = rig.call("POST", f"/tasks/{tid}/documents/preview", {})
+            self.assertIn("按交付物的修订 2 生成", latest["text"])
+            self.assertIn("买家提交退货申请 ［修订 2 · 已确认（已读） · 未评审］", latest["text"])
+            status, bad = rig.call("POST", f"/tasks/{tid}/documents/preview", {"revision_no": 9})
+            self.assertEqual((status, bad["error"]["code"]), (400, "bad_request"))
 
-    def test_服务_执行者运行中另一条会话返回session_busy(self):
-        with ServiceRig([reply("慢慢说完。", delay=4), reply("好。")]) as rig:
-            tid = rig.new_task()
+    def test_服务_执行者运行中说话与直接操作一律返回session_busy(self):
+        # 先存一个用例，再慢慢回复：回复之前的这几秒里执行者一直在工作，条目 UC-001 已经在库里。
+        with ServiceRig([save_uc(), reply("慢慢说完。", delay=4), reply("好。")]) as rig:
+            tid = rig.new_task(material=SOURCE["excerpt"])
             stream = rig.stream(tid)
             first = rig.call("POST", f"/tasks/{tid}/sessions")[1]["session_id"]
             rig.call("POST", f"/tasks/{tid}/messages?session={first}", {"text": "说一句", "client_id": "c-1"})
             stream.wait(lambda e: e["event"] == "work_started")
+            stream.wait(lambda e: e["event"] == "deliverable_changed")
             # 执行者在第一条会话里工作：新建会话、对「另一条会话」说话都被拒。
             status, busy = rig.call("POST", f"/tasks/{tid}/sessions")
             self.assertEqual((status, busy["error"]["code"]), (409, "session_busy"))
             self.assertEqual(busy["error"]["data"]["active_session"], first)
             status, busy = rig.call("POST", f"/tasks/{tid}/messages?session=01a0c000-0000-7000-8000-000000000000", {"text": "插一句"})
             self.assertEqual((status, busy["error"]["code"]), (409, "session_busy"))
-            # 同一条会话里说话照常排在后面。
-            status, queued = rig.call("POST", f"/tasks/{tid}/messages?session={first}", {"text": "再说一句", "client_id": "c-2"})
-            self.assertEqual((status, queued["queued"]), (200, True))
-            waiting = stream.wait(lambda e: e["event"] == "user_message" and e["data"]["client_id"] == "c-2")["data"]
-            self.assertEqual((waiting["queued"], waiting["message_id"]), (True, None))
-            merged = stream.wait(lambda e: e["event"] == "user_message" and e["data"]["client_id"] == "c-2" and not e["data"]["queued"], 30)
+            # 执行者工作中直接操作也被拒（单一写入者由后端保证），库里没有多出修订。
+            status, busy = rig.call("POST", f"/tasks/{tid}/actions?session={first}", {
+                "client_id": "a-busy", "kind": "undo", "targets": [{"revision_no": 1}]})
+            self.assertEqual((status, busy["error"]["code"], busy["error"]["data"]["reason"]), (409, "session_busy", "working"))
+            self.assertIn("结束后你可以继续修改", busy["error"]["message"])
+            # 唯一的例外：打开详情写已读不改交付物内容，执行者工作中照写。卡片上点「这几条都看过了」要通知执行者，照旧被拒。
+            status, seen = rig.call("POST", f"/tasks/{tid}/actions?session={first}", {
+                "client_id": "a-seen", "kind": "mark_viewed", "targets": [{"item_id": "UC-001", "base_revision": 1}]})
+            self.assertEqual(status, 200, seen)
+            status, busy = rig.call("POST", f"/tasks/{tid}/actions?session={first}", {
+                "client_id": "a-card", "kind": "mark_viewed", "targets": [{"item_id": "UC-001", "base_revision": 1}], "notify_executor": True})
+            self.assertEqual((status, busy["error"]["code"]), (409, "session_busy"))
+            # 同一条会话里说话也被拒：一句话对应一次运行，不排队（对话严格轮替）。
+            status, busy = rig.call("POST", f"/tasks/{tid}/messages?session={first}", {"text": "再说一句", "client_id": "c-2"})
+            self.assertEqual((status, busy["error"]["code"], busy["error"]["data"]["reason"]), (409, "session_busy", "working"))
+            # 这一轮做完之后同一句话就能发出去，发出的回应里没有排队。
+            stream.wait(lambda e: e["event"] == "work_ended")
+            status, sent = rig.call("POST", f"/tasks/{tid}/messages?session={first}", {"text": "再说一句", "client_id": "c-2"})
+            self.assertEqual((status, sent["queued"]), (200, False))
+            merged = stream.wait(lambda e: e["event"] == "user_message" and e["data"]["client_id"] == "c-2", 30)
             self.assertTrue(merged["data"]["message_id"])
+            self.assertFalse(merged["data"]["queued"])
 
     def test_服务_断线用LastEventID重连补到缺的事件_差距太大发resync(self):
         with ServiceRig([save_uc(), reply("存好了。")]) as rig:
-            tid = rig.new_task()
+            tid = rig.new_task(material=SOURCE["excerpt"])
             stream = rig.stream(tid)
             sid = rig.call("POST", f"/tasks/{tid}/sessions")[1]["session_id"]
             rig.call("POST", f"/tasks/{tid}/messages?session={sid}", {"text": "整理一下"})
             stream.wait(lambda e: e["event"] == "work_ended")
             stream.close()
             rig.call("POST", f"/tasks/{tid}/actions?session={sid}", {
-                "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_version": 1}], "fields": {"用例名称": "断线时改的"}})
-            # 断线前最后收到的库事件是 1 号（创建任务之后没有收到任何库事件的也算），重连补发 2、3 号。
+                "kind": "edit_fields", "targets": [{"item_id": "UC-001", "base_revision": 1}], "fields": {"用例名称": "断线时改的"}})
+            # 断线前最后收到的库事件是 1 号（创建任务之后没有收到任何库事件的也算），重连补发 2、3、4 号：
+            # 2 号是执行者的修订，3 号是断线时改字段产生的修订，4 号是随它自动登记的确认。
             again = rig.stream(tid, last_event_id=1)
-            seqs = [again.wait(lambda e: e.get("id") == n)["id"] for n in (2, 3)]
-            self.assertEqual(seqs, [2, 3])
+            seqs = [again.wait(lambda e: e.get("id") == n)["id"] for n in (2, 3, 4)]
+            self.assertEqual(seqs, [2, 3, 4])
             time.sleep(0.5)
-            self.assertEqual([e["id"] for e in again.events if "id" in e], [2, 3], "补发的每一条只发一次")
+            self.assertEqual([e["id"] for e in again.events if "id" in e], [2, 3, 4], "补发的每一条只发一次")
             import taskwright_server.service.hub as hub_module
             saved, hub_module.REPLAY_WINDOW = hub_module.REPLAY_WINDOW, 1
             try:
@@ -156,10 +226,10 @@ class ServiceTests(unittest.TestCase):
     def test_服务_卡片点击用card写法_选项文字按回复里的选项查回(self):
         # 请选择要挂在条目上，所以先存一个用例，再就它出一张请选择卡片。
         choose = {"tool_calls": [call("reply", {"informs": [], "text": "逾期的读者能不能续借？", "act": {
-            "kind": "choose", "text": "逾期的读者能不能续借？", "items": [{"item_id": "UC-001", "version_no": 1}],
+            "kind": "choose", "text": "逾期的读者能不能续借？", "items": [{"item_id": "UC-001", "revision_no": 1}],
             "options": [{"key": "allow", "text": "允许续借"}, {"key": "deny", "text": "不允许续借"}]}})]}
         with ServiceRig([save_uc(), choose, reply("记下了。")]) as rig:
-            tid = rig.new_task()
+            tid = rig.new_task(material=SOURCE["excerpt"])
             stream = rig.stream(tid)
             sid = rig.call("POST", f"/tasks/{tid}/sessions")[1]["session_id"]
             rig.call("POST", f"/tasks/{tid}/messages?session={sid}", {"text": "问我吧", "client_id": "c-1"})

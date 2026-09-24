@@ -94,6 +94,21 @@ def resolve_extension(entry: dict) -> Path | None:
     raise LaunchError(f"扩展「{name}」的 source 只能写 repo 或 env，现在写的是 {source!r}。")
 
 
+def platform_skill_dir(profile: dict) -> Path | None:
+    """平台 skill 所在的目录：执行者在 Taskwright 里怎样工作，所有任务类型共用。
+
+    配置里的路径相对代码仓根目录，与「跟着代码走」的扩展同一写法。配置没写这一项返回 None；
+    写了但目录里没有 SKILL.md 就报错，免得执行者在少了平台 skill 的情况下照常跑起来。
+    """
+    rel = profile.get("platform_skill")
+    if not rel:
+        return None
+    path = REPO_ROOT / rel
+    if not (path / "SKILL.md").is_file():
+        raise LaunchError(f"配置里写的平台 skill 应当在代码仓的 {rel}/SKILL.md，但那里没有这个文件。")
+    return path
+
+
 def runs_dir() -> Path:
     """运行目录。没设环境变量时用当前目录下的 runs 子目录。"""
     raw = os.environ.get(ENV_RUNS_DIR, "").strip()
@@ -164,7 +179,12 @@ def build_command(profile: dict, workspace: Path, session_dir: Path,
     thinking = profile.get("thinking")
     if thinking:
         argv += ["--thinking", thinking]
-    # 技能自动发现关掉之后，任务目录里的技能要显式加载；目录不在就不加，pi 也就不会报「路径不存在」。
+    # 技能自动发现关掉之后，技能要显式加载。先传平台 skill，再传任务目录里的技能：
+    # 两个 --skill 的先后决定 pi 的 skill 清单里的顺序，平台 skill 排在前面。
+    platform = platform_skill_dir(profile)
+    if platform is not None:
+        argv += ["--skill", str(platform)]
+    # 任务目录里的技能目录不在就不加，pi 也就不会报「路径不存在」。
     skills_dir = profile.get("workspace_skills_dir")
     if skills_dir and (Path(workspace) / skills_dir).is_dir():
         argv += ["--skill", str((Path(workspace) / skills_dir).resolve())]
@@ -197,7 +217,17 @@ def startup_record(profile: dict, argv: list[str]) -> dict:
         "工具白名单": list(profile.get("tools") or []),
         "模型": profile.get("model", ""),
         "环境标签": (profile.get("langfuse") or {}).get("environment", ""),
+        "平台 skill": platform_skill_record(profile),
     }
+
+
+def platform_skill_record(profile: dict) -> dict:
+    """平台 skill 在代码仓里的位置与每份文件的摘要值。配置没写这一项时如实写没有。"""
+    path = platform_skill_dir(profile)
+    if path is None:
+        return {"有没有": False, "说明": "启动配置里没有写 platform_skill，这次没有加载平台 skill。"}
+    return {"有没有": True, "代码仓里的路径": profile["platform_skill"], "目录": str(path),
+            "文件": _digest_files(path, path)}
 
 
 def redact(argv: list[str]) -> str:
@@ -228,35 +258,52 @@ def observability_settings(profile: dict) -> dict[str, str]:
 # ───────────── 启动那一刻的知识仓库与上下文文件 ─────────────
 
 #: 知识仓库在任务目录里的位置：执行方法（skill）与各类文档。只记这两处下面每份文件的路径与摘要值。
+#: 平台 skill 不在任务目录里，另由 knowledge_snapshot 的 profile 参数带进来，见那里。
 KNOWLEDGE_DIRS = (".pi/skills", "docs")
 
 #: pi 在一个目录里找上下文文件时依次试的文件名，与 pi 的 resource-loader 里写的一样，找到第一个就停。
 CONTEXT_FILE_NAMES = ("AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD")
 
 
-def knowledge_snapshot(workspace: Path) -> dict:
-    """启动那一刻任务目录知识仓库里每份文件的路径、字节数与内容摘要值（SHA-256 的前 16 位）。
+def _digest_files(base: Path, relative_to: Path) -> list[dict]:
+    """base 下每份文件的路径（相对 relative_to）、字节数与摘要值。"""
+    files = []
+    for path in sorted(base.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError as error:
+            files.append({"路径": str(path.relative_to(relative_to)), "字节数": None, "摘要值": "",
+                          "说明": f"读不出来：{error}"})
+            continue
+        files.append({"路径": str(path.relative_to(relative_to)), "字节数": len(data),
+                      "摘要值": hashlib.sha256(data).hexdigest()[:16]})
+    return files
+
+
+def knowledge_snapshot(workspace: Path, profile: dict | None = None) -> dict:
+    """启动那一刻知识仓库里每份文件的路径、字节数与内容摘要值（SHA-256 的前 16 位）。
 
     只记摘要值，不记内容：观测台据此说出这一次用的是哪一版知识，前后两次启动之间哪份文件变过。
+    任务目录里的文件路径相对任务目录。给了 profile 且配置了平台 skill 时，平台 skill 的文件也记进来：
+    它在代码仓里、不在任务目录里，路径写 pi 看到的绝对路径（执行者 read 它时用的也是这个路径，
+    观测台按同一个路径把「读过」与「摘要值」对上），另带「来自」与「代码仓里的路径」两项。
     """
     root = Path(workspace)
     files = []
     for sub in KNOWLEDGE_DIRS:
         base = root / sub
-        if not base.is_dir():
-            continue
-        for path in sorted(base.rglob("*")):
-            if not path.is_file():
-                continue
-            try:
-                data = path.read_bytes()
-            except OSError as error:
-                files.append({"路径": str(path.relative_to(root)), "字节数": None, "摘要值": "",
-                              "说明": f"读不出来：{error}"})
-                continue
-            files.append({"路径": str(path.relative_to(root)), "字节数": len(data),
-                          "摘要值": hashlib.sha256(data).hexdigest()[:16]})
-    return {"摘要算法": "SHA-256 取前 16 位十六进制", "位置": list(KNOWLEDGE_DIRS), "文件": files}
+        if base.is_dir():
+            files.extend(_digest_files(base, root))
+    where = list(KNOWLEDGE_DIRS)
+    platform = platform_skill_dir(profile) if profile else None
+    if platform is not None:
+        for one in _digest_files(platform, platform):
+            files.append({**one, "路径": str(platform / one["路径"]), "来自": "平台 skill",
+                          "代码仓里的路径": f"{profile['platform_skill']}/{one['路径']}"})
+        where.append(f"代码仓的 {profile['platform_skill']}（平台 skill）")
+    return {"摘要算法": "SHA-256 取前 16 位十六进制", "位置": where, "文件": files}
 
 
 def context_file_candidates(argv: list[str], workspace: Path, env: dict[str, str]) -> dict:

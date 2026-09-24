@@ -1,4 +1,4 @@
-"""新格式（按条目记版本）任务数据库的读取一侧测试：taskdb、dbshow、check_db 与观测台。
+"""新格式（条目按修订号记）任务数据库的读取一侧测试：taskdb、dbshow、check_db 与观测台。
 
 夹具库由 agent 里真实的核心函数写出（tests/build_current_db.mts，用 node 运行），
 所以这里读的就是工具真正写出来的库。本机没有 node 时这些测试跳过。
@@ -83,20 +83,20 @@ class CurrentFormatTest(unittest.TestCase):
         self.assertEqual([r["修订序号"] for r in task["修订"]], [1, 2, 3])
         items = {i["条目编号"]: i for i in task["条目"]}
         self.assertEqual(sorted(items), ["TBD-001", "UC-001", "UC-002"])
-        self.assertEqual(items["UC-001"]["当前版本"]["字段"]["名称"], "买家申请退款")
-        self.assertEqual(len(items["UC-001"]["版本"]), 2)
-        self.assertEqual(items["UC-001"]["版本"][1]["来源"][0]["种类"], "文档原文")   # 沿用上一版来源
+        self.assertEqual(items["UC-001"]["当前内容"]["字段"]["名称"], "买家申请退款")
+        self.assertEqual([c["修订号"] for c in items["UC-001"]["修订内容"]], [1, 2])
+        self.assertEqual(items["UC-001"]["修订内容"][1]["来源"][0]["种类"], "文档原文")   # 沿用修订 1 时的来源
         # 修改时给了来源只替换改到的字段上的来源：支持整个条目的文档原文沿用，用户的话接在后面。
-        self.assertEqual([one["种类"] for one in items["TBD-001"]["当前版本"]["来源"]], ["文档原文", "用户的话"])
+        self.assertEqual([one["种类"] for one in items["TBD-001"]["当前内容"]["来源"]], ["文档原文", "用户的话"])
         self.assertEqual(items["UC-002"]["在第几次修订删除"], 3)
 
     def test_snapshot_at(self):
         [task] = taskdb.read_workspace(self.workspace)["任务"]
-        at1 = {one["条目编号"]: one["版本"]["内容版本号"] for one in taskdb.snapshot_at(task, 1)}
-        at2 = {one["条目编号"]: one["版本"]["内容版本号"] for one in taskdb.snapshot_at(task, 2)}
+        at1 = {one["条目编号"]: one["内容"]["修订号"] for one in taskdb.snapshot_at(task, 1)}
+        at2 = {one["条目编号"]: one["内容"]["修订号"] for one in taskdb.snapshot_at(task, 2)}
         at3 = {one["条目编号"] for one in taskdb.snapshot_at(task, 3)}
         self.assertEqual(at1, {"UC-001": 1, "TBD-001": 1})
-        self.assertEqual(at2, {"UC-001": 2, "TBD-001": 2, "UC-002": 1})
+        self.assertEqual(at2, {"UC-001": 2, "TBD-001": 2, "UC-002": 2})
         self.assertEqual(at3, {"UC-001", "TBD-001"})
 
     def test_check_db_passes_and_catches_broken_rows(self):
@@ -104,14 +104,14 @@ class CurrentFormatTest(unittest.TestCase):
         broken = self.root / "ws-broken"
         shutil.copytree(self.workspace, broken)
         conn = sqlite3.connect(broken / "task.sqlite")
-        conn.execute("UPDATE item_version SET event_seq = 99 WHERE item_id = 'UC-001' AND version_no = 2")
+        conn.execute("UPDATE item_version SET event_seq = 99 WHERE item_id = 'UC-001' AND revision_no = 2")
         conn.execute("DELETE FROM event WHERE seq = 2")
         conn.commit()
         conn.close()
         failed = {one["名目"]: one["不通过的行"] for one in check_db.check(broken) if not one["通过"]}
         self.assertIn("每一处写入都找得到同一个调用编号或操作编号的事件", failed)
         self.assertIn("事件序号连续", failed)
-        self.assertTrue(any("UC-001 第 2 版" in line for line in failed["每一处写入都找得到同一个调用编号或操作编号的事件"]))
+        self.assertTrue(any("条目 UC-001 在修订 2 下的内容" in line for line in failed["每一处写入都找得到同一个调用编号或操作编号的事件"]))
         shutil.rmtree(broken)
 
     def test_check_db_actor_and_operation_id(self):
@@ -133,11 +133,11 @@ class CurrentFormatTest(unittest.TestCase):
         """来源按条合回，所支持的字段在「支持」里；用户的话的出处拆得出会话编号与条目编号。"""
         task = taskdb.read_workspace(self.workspace)["任务"][0]
         items = {i["条目编号"]: i for i in task["条目"]}
-        first = items["UC-001"]["版本"][0]["来源"]
+        first = items["UC-001"]["修订内容"][0]["来源"]
         self.assertEqual(len(first), 1, "一条来源支持两处，库里两行，读出来仍是一条")
         self.assertEqual(first[0]["支持"], [{"字段": "名称", "第几项": None}, {"字段": "步骤", "第几项": 0}])
         self.assertEqual(taskdb.support_text(first[0]["支持"]), "「名称」、「步骤」第 1 项")
-        words = items["TBD-001"]["当前版本"]["来源"][1]
+        words = items["TBD-001"]["当前内容"]["来源"][1]
         self.assertEqual(words["种类"], "用户的话")
         self.assertEqual(words["出处"], "session-fixture#entry-9")
         self.assertEqual(words["对话出处"], {"会话编号": "session-fixture", "条目编号": "entry-9"})
@@ -152,11 +152,13 @@ class CurrentFormatTest(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(dbshow.main([str(self.workspace)]), 0)
         text = out.getvalue()
-        for heading in ("【任务】", "【各集合的条目（当前版本）】", "【每个条目的版本历史与来源】", "【修订列表】", "【事件列表】"):
+        for heading in ("【任务】", "【各集合的条目（最新内容）】", "【每个条目改动过的修订与来源】", "【修订列表】", "【事件列表】"):
             self.assertIn(heading, text)
         self.assertIn("支持「名称」、「步骤」第 1 项", text)
         self.assertIn("出处是 session-fixture#entry-9，支持「状态」", text)
-        self.assertIn("UC-002（集合「用例」），在第 2 次修订新增，在第 3 次修订删除", text)
+        self.assertIn("UC-002（集合「用例」），在修订 2 新增，在修订 3 删除", text)
+        self.assertIn("修改 UC-001（修订 1 → 修订 2）", text)
+        self.assertNotIn("版本", text.split("【事件列表】")[0])
         self.assertIn("关联条目：UC-001", text)
 
     def test_projection_describes_changes_by_field_type(self):
@@ -164,7 +166,7 @@ class CurrentFormatTest(unittest.TestCase):
         projection = project_current_format(task)
         second = projection["修订"][1]["变化"]
         update_uc = next(c for c in second if c["条目编号"] == "UC-001")
-        self.assertEqual((update_uc["改前版本"], update_uc["改后版本"]), (1, 2))
+        self.assertEqual((update_uc["改前所在修订"], update_uc["改后所在修订"]), (1, 2))
         self.assertEqual([f["名"] for f in update_uc["字段"]], ["名称"])        # 只列变了的字段
         self.assertEqual(update_uc["字段"][0]["改前"], "申请退款")
         self.assertFalse(update_uc["来源变了吗"])

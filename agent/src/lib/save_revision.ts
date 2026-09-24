@@ -3,17 +3,25 @@
  * 一次新修订。
  *
  * 这里的核对全部是事实与形式核对：集合与字段是否存在、值的类型是否对得上、必填字段是否为空、
- * 来源三项是否齐全、来源所支持的字段是否存在、被改被删的条目是否存在、改前版本号是否还是当前版本。
+ * 来源三项是否齐全、来源所支持的字段是否存在、被改被删的条目是否存在、改前修订号是否还是这个条目当前所在的修订。
+ *
+ * 条目没有单独的版本号：条目在某一时刻的内容由「条目编号加修订号」标识，条目改动过的那些修订号天然不连续
+ * （UC-001 在修订 4、修订 9 改过）。条目「当前所在的修订」指它最近一次被新增、修改或恢复的那次修订。
  * 代码不判断内容好坏，没有任何关键词清单；用例写得好不好、EARS 句式对不对，由评审者对照规矩文档判断。
  *
  * 种类为「用户的话」的来源，出处由本函数代填：在调用方交来的当前会话分支的用户消息里，从最近往前找
  * 逐字包含这段摘录的那一条，填「会话编号#会话条目编号」；找不到就拒绝。模型看不到会话条目编号，
  * 所以不让它填；这一步同时是一条逐字核对。
  *
+ * 种类为「文档原文」的来源（执行者交来的），摘录必须逐字是出处所指材料文件里连续的一段（换行按 \n 归一后比），
+ * 否则界面上点来源找不到原文；跳句拼接、改字、出处不是文件的，都拒绝。用户在界面上撤销时交回的旧来源不再核对。
+ *
  * 写库、记事件、各项核对同在一个立即事务里；任何一个操作不通过，整次调用全部不写入，
  * 拒绝的文字逐条列出哪个操作的哪一处不对。本模块不依赖 pi。
  */
 
+import { readFileSync } from "node:fs";
+import { basename, isAbsolute, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
 import {
@@ -23,11 +31,13 @@ import {
   FIELD_ITEM_REF,
   FIELD_TEXT,
   FIELD_TEXT_LIST,
+  PROBLEM_RESULT_FIELD,
   type TaskDefinition,
+  keepPendingField,
   validateDefinition,
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
-import { EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
 export interface Support {
@@ -55,7 +65,7 @@ export interface Operation {
   item?: unknown;
   fields?: unknown;
   sources?: unknown;
-  base_version?: unknown;
+  base_revision?: unknown;
 }
 
 type Fields = Record<string, unknown>;
@@ -68,7 +78,7 @@ interface ItemRow {
 }
 
 interface VersionRow {
-  version_no: number;
+  revision_no: number;
   fields: string;
   actor: string;
 }
@@ -91,16 +101,16 @@ function actorText(actor: string): string {
 
 /** 核对通过之后，一个操作要写进库里的样子。 */
 type Planned =
-  | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[] }
-  | { op: "update"; itemId: string; collection: string; fromVersion: number; fields: Fields; sources: Source[] }
-  | { op: "delete"; itemId: string; collection: string; fromVersion: number }
-  | { op: "restore"; itemId: string; collection: string; fromVersion: number; fields: Fields; sources: Source[] };
+  | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[]; notes?: string[] }
+  | { op: "update"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes?: string[] }
+  | { op: "delete"; itemId: string; collection: string; fromRevision: number }
+  | { op: "restore"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[] };
 
 const OP_NAMES: Record<string, string> = { add: "新增", update: "修改", delete: "删除", restore: "恢复" };
 
 /**
  * 「保存修订」的参数。operations 是模型或扩展命令交来的操作列表；undo_of_revision 只由用户在界面上的
- * 「撤销」经扩展命令填，写进事件内容，说明这次修订是在撤销第几次修订。
+ * 「撤销」经扩展命令填，写进事件内容，说明这次修订是在撤销哪次修订。
  * 操作种类 restore（把删掉的条目恢复成删除前的样子）同样只给撤销用：发起方不是用户时拒绝。
  */
 export interface SaveRevisionParams {
@@ -133,10 +143,22 @@ function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** 执行一次「保存修订」。拒绝一律用抛异常的方式，抛出的文字原样交给模型。 */
-export function saveRevision(call: CallContext, params: SaveRevisionParams): ToolOutcome {
+/**
+ * 执行一次「保存修订」。拒绝一律用抛异常的方式，抛出的文字原样交给模型。
+ * afterWrite 只给界面直接操作用：修订写好之后、事务提交之前在同一个事务里调用它，用来随修订一起写确认标记；
+ * 它抛异常时整次保存连同修订一起回滚。工具调用不传它。
+ */
+export function saveRevision(
+  call: CallContext,
+  params: SaveRevisionParams,
+  afterWrite?: (db: DatabaseSync, outcome: ToolOutcome) => void,
+): ToolOutcome {
   try {
-    return withTaskDatabase(call.workspaceDir, { createIfMissing: false }, (db) => save(db, call, params));
+    return withTaskDatabase(call.workspaceDir, { createIfMissing: false }, (db) => {
+      const outcome = save(db, call, params);
+      afterWrite?.(db, outcome);
+      return outcome;
+    });
   } catch (error) {
     if (error instanceof NoDatabaseYet) {
       throw new Error(
@@ -178,21 +200,21 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     .all(taskId) as unknown as ItemRow[]) {
     items.set(row.item_id, row);
   }
-  // 当前版本连同产生它的那条事件的发起方一起取，版本号对不上时好告诉模型是谁改的。
+  // 条目当前所在的修订连同产生它的那条事件的发起方一起取，修订号对不上时好告诉模型是谁改的。
   const latestVersion = (itemId: string): VersionRow =>
     db
       .prepare(
-        "SELECT v.version_no, v.fields, e.actor FROM item_version v JOIN event e ON e.seq = v.event_seq " +
-          "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.version_no DESC LIMIT 1",
+        "SELECT v.revision_no, v.fields, e.actor FROM item_version v JOIN event e ON e.seq = v.event_seq " +
+          "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
       )
       .get(taskId, itemId) as unknown as VersionRow;
-  const sourcesOf = (itemId: string, versionNo: number): Source[] => {
+  const sourcesOf = (itemId: string, revisionNo: number): Source[] => {
     const rows = db
       .prepare(
         "SELECT position, kind, locator, excerpt, field, field_index FROM item_source " +
-          "WHERE task_id = ? AND item_id = ? AND version_no = ? ORDER BY position, support_no",
+          "WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no",
       )
-      .all(taskId, itemId, versionNo) as unknown as SourceRow[];
+      .all(taskId, itemId, revisionNo) as unknown as SourceRow[];
     const byPosition = new Map<number, Source>();
     for (const row of rows) {
       let source = byPosition.get(row.position);
@@ -207,6 +229,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     return [...byPosition.values()];
   };
   const userMessages = call.userMessages ?? [];
+  const materialText = materialReader(call.workspaceDir, definition.materialsDir);
 
   // 这次调用里要删掉的条目，以及被修改或删除过的条目。先扫一遍，
   // 好让「条目引用」的核对知道哪些条目在这次调用之后就不在了。
@@ -239,7 +262,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (typeof itemId !== "string" || itemId.trim() === "") return "应当写一个条目编号";
       const row = items.get(itemId);
       if (!row) return "指向的条目在这个任务里不存在";
-      if (row.deleted_in_revision !== null) return `指向的条目已在第 ${row.deleted_in_revision} 次修订删除`;
+      if (row.deleted_in_revision !== null) return `指向的条目已在修订 ${row.deleted_in_revision} 删除`;
       if (deletedHere.has(itemId)) return "指向的条目在这次调用里被删除";
       return null;
     };
@@ -265,15 +288,16 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
           }
         }
       }
-      if (raw.base_version !== undefined) errors.push("新增时不要写 base_version，新条目还没有版本");
-      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor);
+      if (raw.base_revision !== undefined) errors.push("新增时不要写 base_revision，新条目还没有所在的修订");
+      const notes: string[] = [];
+      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes);
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (errors.length > 0) {
         problems.push(`${label}：${errors.join("；")}。`);
         return;
       }
-      planned.push({ op: "add", collection, fields, sources: sources! });
+      planned.push({ op: "add", collection, fields, sources: sources!, notes });
       return;
     }
 
@@ -297,7 +321,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       return;
     }
     if (op !== "restore" && row.deleted_in_revision !== null) {
-      problems.push(`${label}：这个条目已在第 ${row.deleted_in_revision} 次修订删除，不能再${OP_NAMES[op]}。`);
+      problems.push(`${label}：这个条目已在修订 ${row.deleted_in_revision} 删除，不能再${OP_NAMES[op]}。`);
       return;
     }
     if (touched.has(itemId)) {
@@ -307,29 +331,31 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     touched.set(itemId, number);
     const current = latestVersion(itemId);
 
-    // 改前版本号：模型必须写出它所见的版本号，与库里的当前版本不符就拒绝，免得按旧内容盖掉别人的修改。
-    const base = raw.base_version;
+    // 改前修订号：模型必须写出它所见的这个条目所在的修订号，与库里的不符就拒绝，免得按旧内容盖掉别人的修改。
+    const base = raw.base_revision;
     if (base === undefined || base === null) {
       problems.push(
-        `${label}：缺少 base_version。修改与删除时要写你所见的这个条目的版本号（整数），` +
-          "它写在「保存修订」的返回与界面操作的通知里（「这是它的第 N 版」「从第 N 版变成第 M 版」）。",
+        `${label}：缺少 base_revision。修改与删除时要写你所见的这个条目当前所在的修订号（整数），` +
+          "它写在「保存修订」的返回与界面操作的通知里（「UC-001 现在是修订 N」）。",
       );
       return;
     }
     if (typeof base !== "number" || !Number.isInteger(base) || base < 1) {
-      problems.push(`${label}：base_version 应当是一个从 1 起的整数，现在写的是 ${JSON.stringify(base)}。`);
+      problems.push(`${label}：base_revision 应当是一个从 1 起的整数，现在写的是 ${JSON.stringify(base)}。`);
       return;
     }
-    if (base !== current.version_no) {
+    if (base !== current.revision_no) {
       problems.push(
-        `${label}：条目 ${itemId} 已经被${actorText(current.actor)}改到第 ${current.version_no} 版（你看到的是第 ${base} 版），` +
-          `请先读最新内容再改。它现在第 ${current.version_no} 版的内容是：${current.fields}`,
+        (base < current.revision_no
+          ? `${label}：条目 ${itemId} 已经被${actorText(current.actor)}改到修订 ${current.revision_no}（你看到的是修订 ${base}），`
+          : `${label}：条目 ${itemId} 现在是修订 ${current.revision_no}，你写的修订 ${base} 不是它当前所在的修订，`) +
+          `请先读最新内容再改。它在修订 ${current.revision_no} 的内容是：${current.fields}`,
       );
       return;
     }
 
     if (op === "delete") {
-      planned.push({ op: "delete", itemId, collection: row.collection, fromVersion: current.version_no });
+      planned.push({ op: "delete", itemId, collection: row.collection, fromRevision: current.revision_no });
       return;
     }
 
@@ -340,6 +366,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       errors.push("fields 应当是一个对象，只写要改的字段");
     } else if (isObject(raw.fields)) {
       checkFields(collection, raw.fields, checkRef, errors);
+      if (call.actor !== ACTOR_USER) checkProblemUpdate(collection, before, raw.fields, errors);
       merged = dropEmpty({ ...before, ...raw.fields });
       for (const field of collection.fields) {
         if (field.required && field.name in raw.fields && isEmptyValue(raw.fields[field.name])) {
@@ -347,18 +374,19 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         }
       }
     }
-    const previousSources = sourcesOf(itemId, current.version_no);
+    const previousSources = sourcesOf(itemId, current.revision_no);
     const inherited = raw.sources === undefined;
-    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor);
+    const notes: string[] = [];
+    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes);
     if (sources && !inherited && call.actor !== ACTOR_USER && isObject(raw.fields) && Object.keys(raw.fields).length > 0) {
       // 执行者修改时给了新来源：只替换这次改到的字段上的来源，其余字段的来源沿用。
-      // 上一版的来源里，支持改到的字段的那几处去掉，去掉之后什么都不支持的整条去掉，支持整个条目的保留；
+      // 条目当前的来源里，支持改到的字段的那几处去掉，去掉之后什么都不支持的整条去掉，支持整个条目的保留；
       // 「用户直接修改」执行者填不了，按同一条规则沿用。只给 sources、不改任何字段时，仍是整体替换（重新标注来源）。
       sources = [...carriedSources(previousSources, new Set(Object.keys(raw.fields)), sources), ...sources];
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
-      errors.push(`改完之后的内容与来源都与当前的第 ${current.version_no} 版一样，这个操作没有改动任何东西；不需要改就去掉这个操作`);
+      errors.push(`改完之后的内容与来源都与这个条目在修订 ${current.revision_no} 的一样，这个操作没有改动任何东西；不需要改就去掉这个操作`);
     }
     if (errors.length > 0) {
       problems.push(`${label}：${errors.join("；")}。`);
@@ -368,9 +396,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       op: op === "restore" ? "restore" : "update",
       itemId,
       collection: row.collection,
-      fromVersion: current.version_no,
+      fromRevision: current.revision_no,
       fields: merged,
       sources: sources!,
+      ...(op === "restore" ? {} : { notes }),
     });
   });
 
@@ -386,7 +415,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
 }
 
 /**
- * 修改时沿用上一版的哪些来源：支持 changed 里的字段的那几处去掉；去掉之后什么都不支持的整条去掉；
+ * 修改时沿用条目当前的哪些来源：支持 changed 里的字段的那几处去掉；去掉之后什么都不支持的整条去掉；
  * 本来就支持整个条目的保留；与这次新给的某条来源一模一样的不重复保留。
  */
 export function carriedSources(previous: Source[], changed: Set<string>, given: Source[]): Source[] {
@@ -399,6 +428,27 @@ export function carriedSources(previous: Source[], changed: Set<string>, given: 
     kept.push(one);
   }
   return kept;
+}
+
+/**
+ * 问题条目（集合里有取值含「用户决定保留」的状态字段，见 keepPendingField）写下之后，执行者修改它时
+ * 只能改状态与处理结果：用户的回答要写进它牵涉的条目，而不是写回问题本身。值没有变的字段不算改。
+ * 新增不受限；用户在界面上的操作（先不管、撤销）不经这里核对。
+ */
+function checkProblemUpdate(collection: CollectionDef, before: Fields, fields: Fields, errors: string[]): void {
+  const status = keepPendingField(collection);
+  if (!status) return;
+  const changed = Object.keys(fields).filter((name) => {
+    if (name === status.name || name === PROBLEM_RESULT_FIELD) return false;
+    if (!collection.fields.some((one) => one.name === name)) return false;   // 没有这个字段，checkFields 已经说过
+    const value = fields[name];
+    return !(isEmptyValue(value) ? isEmptyValue(before[name]) : sameJson(value, before[name]));
+  });
+  if (changed.length === 0) return;
+  errors.push(
+    `这次改了${changed.map((name) => `「${name}」`).join("、")}。问题条目写下后只能改${status.name}与${PROBLEM_RESULT_FIELD}；` +
+      "用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决",
+  );
 }
 
 /** 核对一组字段：字段名都在集合的声明里，值的类型对得上。 */
@@ -450,9 +500,44 @@ function checkFields(
 }
 
 /**
+ * 按出处读材料文件的全文（换行归一为 \n），读不到返回 null。出处按任务目录下的相对路径找，
+ * 找不到再到材料目录里按文件名找；同一次保存里读过的不再读。
+ */
+function materialReader(workspaceDir: string, materialsDir: string): (locator: string) => string | null {
+  const cache = new Map<string, string | null>();
+  const read = (path: string): string | null => {
+    try {
+      return readFileSync(path, "utf-8").replace(/\r\n/g, "\n");
+    } catch {
+      return null;
+    }
+  };
+  return (locator) => {
+    if (!cache.has(locator)) {
+      const direct = isAbsolute(locator) ? locator : join(workspaceDir, locator);
+      cache.set(locator, read(direct) ?? read(join(workspaceDir, materialsDir, basename(locator))));
+    }
+    return cache.get(locator)!;
+  };
+}
+
+/** 摘录超过这么多个字时，拒绝的文字里只引前这么多个字。 */
+const EXCERPT_QUOTE_LIMIT = 30;
+
+/** 拒绝文字里引摘录：换行写成空格，免得一句话断成几行；长的只引前 30 字。 */
+function quoteOf(excerpt: string): string {
+  const flat = excerpt.replace(/\s*\n\s*/g, " ");
+  return flat.length > EXCERPT_QUOTE_LIMIT ? `${flat.slice(0, EXCERPT_QUOTE_LIMIT)}…` : flat;
+}
+
+/**
  * 核对来源列表：至少一条，每条三项齐全、种类是三者之一，supports 的形状对。通过就返回整理好的列表。
  * 种类为「用户的话」的来源，出处在这里代填（见文件开头的说明）；supports 所指的字段是否存在、
  * 序号是否在范围内，要等字段合并完才知道，另由 checkSupports 核对。
+ *
+ * 种类为「文档原文」的来源，摘录可以用空行（一个或多个只含空白的行）隔开几段，各段是材料里不相邻的几处：
+ * 整段原样找得到的照旧存成一条；找不到时按空行拆开，每段去掉首尾空白后各自到材料里逐字查找；全部找到时，这一条来源在原来的位置展开成几条，
+ * 种类、出处、supports 相同，摘录各为一段，notes 里记一句拆成了几条；有一段找不到就拒绝，写明是第几段。
  */
 function checkSources(
   raw: unknown,
@@ -461,6 +546,8 @@ function checkSources(
   sessionId: string,
   userMessages: UserMessage[],
   actor?: string,
+  materialText?: (locator: string) => string | null,
+  notes?: string[],
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push("缺少 sources，至少要有一条来源");
@@ -509,7 +596,7 @@ function checkSources(
       userWords && actor === ACTOR_USER && typeof one.locator === "string" && one.locator.includes("#");
     if (userWords && !keepLocator) {
       // 从最近往前找逐字包含这段摘录的用户消息；模型写的 locator 不用，一律由这里代填。
-      // 例外：用户在界面上撤销时，扩展命令把旧版本的来源原样交回来，出处早已是「会话编号#条目编号」，照旧保留。
+      // 例外：用户在界面上撤销时，扩展命令把旧修订下的来源原样交回来，出处早已是「会话编号#条目编号」，照旧保留。
       const excerpt = one.excerpt as string;
       const hit = [...userMessages].reverse().find((message) => message.text.includes(excerpt));
       if (!hit) {
@@ -519,7 +606,43 @@ function checkSources(
       }
       locator = userWordsLocator(sessionId, hit.entryId);
     }
-    kept.push({ kind: one.kind as string, locator, excerpt: one.excerpt as string, supports });
+    let excerpts = [one.excerpt as string];
+    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText) {
+      const excerpt = (one.excerpt as string).replace(/\r\n/g, "\n").trim();
+      const text = materialText(locator);
+      if (text === null) {
+        errors.push(
+          `${where}是「${SOURCE_DOCUMENT}」，出处 ${locator} 不是任务目录里能读到的材料文件；出处要写材料文件的路径，例如 inputs/材料.md`,
+        );
+        ok = false;
+        return;
+      }
+      const parts = excerpt.split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part !== "");
+      // 整段原样就能在材料里找到的（例如连着的两个自然段）照旧存成一条，只有整段找不到时才按空行拆开逐段找。
+      if (parts.length <= 1 || text.includes(excerpt)) {
+        if (!text.includes(excerpt)) {
+          errors.push(
+            `${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到，摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；` +
+              "引用不相邻的原文请用空行分开或写成几条来源",
+          );
+          ok = false;
+          return;
+        }
+      } else {
+        const missed = parts.findIndex((part) => !text.includes(part));
+        if (missed >= 0) {
+          errors.push(
+            `${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${basename(locator)} 里找不到；` +
+              "摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源",
+          );
+          ok = false;
+          return;
+        }
+        excerpts = parts;
+        notes?.push(`${where}的摘录按空行拆成了 ${parts.length} 条来源`);
+      }
+    }
+    for (const excerpt of excerpts) kept.push({ kind: one.kind as string, locator, excerpt, supports });
   });
   return ok ? kept : null;
 }
@@ -555,8 +678,8 @@ function checkSupportShape(raw: unknown, where: string, errors: string[]): Suppo
 }
 
 /**
- * 核对来源所支持的字段：字段必须是这个集合声明的、在这一版里不是空的；index 只能用在列表型字段
- * （文本列表、条目引用）上，并且小于这个字段这一版的项数。inherited 为真表示这些来源是从上一版沿用的，
+ * 核对来源所支持的字段：字段必须是这个集合声明的、在改后的内容里不是空的；index 只能用在列表型字段
+ * （文本列表、条目引用）上，并且小于这个字段改后的项数。inherited 为真表示这些来源是从条目当前的来源沿用的，
  * 字段改短之后它们可能指到不存在的项，这时要求模型重新给出来源。
  */
 function checkSupports(
@@ -568,7 +691,7 @@ function checkSupports(
 ): void {
   const declared = new Map<string, FieldDef>(collection.fields.map((one) => [one.name, one]));
   sources.forEach((source, position) => {
-    const where = `${inherited ? "沿用上一版的" : ""}第 ${position + 1} 条来源`;
+    const where = `${inherited ? "沿用下来的" : ""}第 ${position + 1} 条来源`;
     const tail = inherited ? "；请在这个操作里重新给出 sources" : "";
     for (const support of source.supports) {
       const field = declared.get(support.field);
@@ -581,7 +704,7 @@ function checkSupports(
       }
       const value = fields[support.field];
       if (isEmptyValue(value)) {
-        errors.push(`${where}说它支持字段「${support.field}」，这个字段在这一版里是空的${tail}`);
+        errors.push(`${where}说它支持字段「${support.field}」，这个字段在改后的内容里是空的${tail}`);
         continue;
       }
       if (support.index === undefined) continue;
@@ -592,7 +715,7 @@ function checkSupports(
       const length = Array.isArray(value) ? value.length : 0;
       if (support.index >= length) {
         errors.push(
-          `${where}指到字段「${support.field}」的第 ${support.index} 项（从 0 起），这个字段这一版只有 ${length} 项，` +
+          `${where}指到字段「${support.field}」的第 ${support.index} 项（从 0 起），这个字段改后只有 ${length} 项，` +
             `index 最大是 ${length - 1}${tail}`,
         );
       }
@@ -629,17 +752,17 @@ function write(
         item: `${one.collection.prefix}-${String(serial).padStart(3, "0")}`,
         serial,
         collection: one.collection.name,
-        from_version: null as number | null,
-        to_version: 1 as number | null,
+        from_revision: null as number | null,
+        to_revision: revisionNo as number | null,
       };
     }
     if (one.op === "update") {
-      return { op: "update" as const, item: one.itemId, serial: 0, collection: one.collection, from_version: one.fromVersion, to_version: one.fromVersion + 1 };
+      return { op: "update" as const, item: one.itemId, serial: 0, collection: one.collection, from_revision: one.fromRevision, to_revision: revisionNo as number | null };
     }
     if (one.op === "restore") {
-      return { op: "restore" as const, item: one.itemId, serial: 0, collection: one.collection, from_version: one.fromVersion, to_version: one.fromVersion + 1 };
+      return { op: "restore" as const, item: one.itemId, serial: 0, collection: one.collection, from_revision: one.fromRevision, to_revision: revisionNo as number | null };
     }
-    return { op: "delete" as const, item: one.itemId, serial: 0, collection: one.collection, from_version: one.fromVersion, to_version: null };
+    return { op: "delete" as const, item: one.itemId, serial: 0, collection: one.collection, from_revision: one.fromRevision, to_revision: null };
   });
 
   const at = wallClockText();
@@ -651,12 +774,12 @@ function write(
     payload: {
       revision_no: revisionNo,
       ...(typeof params.undo_of_revision === "number" ? { undo_of_revision: params.undo_of_revision } : {}),
-      operations: outcomes.map(({ op, item, collection, from_version, to_version }) => ({
+      operations: outcomes.map(({ op, item, collection, from_revision, to_revision }) => ({
         op,
         item,
         collection,
-        from_version,
-        to_version,
+        from_revision,
+        to_revision,
       })),
     },
     actor: call.actor ?? ACTOR_EXECUTOR,
@@ -678,10 +801,10 @@ function write(
       "VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)",
   );
   const insertVersion = db.prepare(
-    "INSERT INTO item_version (task_id, item_id, version_no, revision_no, fields, event_seq) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO item_version (task_id, item_id, revision_no, fields, event_seq) VALUES (?, ?, ?, ?, ?)",
   );
   const insertSource = db.prepare(
-    "INSERT INTO item_source (task_id, item_id, version_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq) " +
+    "INSERT INTO item_source (task_id, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq) " +
       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const markDeleted = db.prepare(
@@ -701,34 +824,39 @@ function write(
       insertItem.run(taskId, outcome.item, outcome.collection, outcome.serial, revisionNo, seq);
     }
     if (one.op === "restore") markRestored.run(taskId, outcome.item);
-    insertVersion.run(taskId, outcome.item, outcome.to_version, revisionNo, dump(one.fields), seq);
+    insertVersion.run(taskId, outcome.item, revisionNo, dump(one.fields), seq);
     // 一条来源支持几处就展开成几行；支持整个条目时只写一行，字段与序号为空。
     one.sources.forEach((source, position) => {
       const rows: Array<Support | null> = source.supports.length > 0 ? source.supports : [null];
       rows.forEach((support, supportIndex) => {
         insertSource.run(
-          taskId, outcome.item, outcome.to_version, position + 1, supportIndex + 1,
+          taskId, outcome.item, revisionNo, position + 1, supportIndex + 1,
           source.kind, source.locator, source.excerpt, support?.field ?? null, support?.index ?? null, seq,
         );
       });
     });
   });
 
+  const splitNote = (index: number) => {
+    const one = planned[index];
+    const notes = one.op === "add" || one.op === "update" ? one.notes ?? [] : [];
+    return notes.length > 0 ? `${notes.join("；")}。` : "";
+  };
   const lines = outcomes.map((one, index) => {
-    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），这是它的第 1 版。`;
-    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}，从第 ${one.from_version} 版变成第 ${one.to_version} 版。`;
-    if (one.op === "restore") return `${index + 1}. 恢复了条目 ${one.item}，恢复成删除前的样子，这是它的第 ${one.to_version} 版。`;
-    return `${index + 1}. 删除了条目 ${one.item}（删除前是第 ${one.from_version} 版）。`;
+    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），${one.item} 现在是修订 ${revisionNo}。${splitNote(index)}`;
+    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}（改前在修订 ${one.from_revision}），${one.item} 现在是修订 ${revisionNo}。${splitNote(index)}`;
+    if (one.op === "restore") return `${index + 1}. 恢复了条目 ${one.item}，恢复成删除前的样子，${one.item} 现在是修订 ${revisionNo}。`;
+    return `${index + 1}. 删除了条目 ${one.item}（删除前在修订 ${one.from_revision}）。`;
   });
   return {
-    text: `已保存为任务 ${taskId} 的第 ${revisionNo} 次修订，一共 ${outcomes.length} 个操作：\n${lines.join("\n")}`,
+    text: `已保存为任务 ${taskId} 的修订 ${revisionNo}，一共 ${outcomes.length} 个操作：\n${lines.join("\n")}`,
     details: {
       task_id: taskId,
       revision_no: revisionNo,
       event_seq: seq,
       undo_of_revision: typeof params.undo_of_revision === "number" ? params.undo_of_revision : null,
       saved: true,
-      operations: outcomes.map(({ op, item, collection, from_version, to_version }) => ({ op, item, collection, from_version, to_version })),
+      operations: outcomes.map(({ op, item, collection, from_revision, to_revision }) => ({ op, item, collection, from_revision, to_revision })),
     },
   };
 }

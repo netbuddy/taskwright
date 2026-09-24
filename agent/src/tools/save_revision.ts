@@ -51,11 +51,11 @@ const operation = Type.Object(
     op: Type.String({ description: "操作的种类：add 是新增一个条目，update 是修改一个条目，delete 是删除一个条目。" }),
     collection: Type.Optional(Type.String({ description: "新增时写条目所属的集合名，例如「功能用例」。修改与删除时不写。" })),
     item: Type.Optional(Type.String({ description: "修改与删除时写条目编号，例如 UC-001。新增时不写，编号由工具生成。" })),
-    base_version: Type.Optional(
+    base_revision: Type.Optional(
       Type.Integer({
         description:
-          "修改与删除时必须写：你所见的这个条目的版本号（「这是它的第 N 版」「从第 N 版变成第 M 版」里的那个数）。" +
-          "与库里的当前版本不符时整批拒绝，说明是谁改到了第几版。新增时不写。",
+          "修改与删除时必须写：你所见的这个条目当前所在的修订号（返回与通知里「UC-001 现在是修订 N」的那个 N）。" +
+          "与库里的不符时整批拒绝，说明是谁把它改到了哪次修订。新增时不写。",
       }),
     ),
     fields: Type.Optional(
@@ -68,7 +68,7 @@ const operation = Type.Object(
     ),
     sources: Type.Optional(
       Type.Array(source, {
-        description: "这个条目这一版的来源，至少一条。新增时必须给；修改时省略就沿用上一版的全部来源；给了就只替换这次改到的字段上的来源，没改的字段的来源沿用（只给 sources、不改字段时整体替换）。",
+        description: "这个条目的来源，至少一条。新增时必须给；修改时省略就沿用它当前的全部来源；给了就只替换这次改到的字段上的来源，没改的字段的来源沿用（只给 sources、不改字段时整体替换）。",
       }),
     ),
   },
@@ -105,7 +105,7 @@ export function registerSaveRevision(pi: ExtensionAPI): void {
     description:
       "把交付物的一批改动存成一次新修订。改动的单位是条目：新增一个条目、修改某个条目的某几个字段、删除一个条目；" +
       "一次调用可以带多个操作，整批只产生一次修订。条目编号由工具生成。每个新增的条目至少带一条来源。" +
-      "修改与删除时要写 base_version（你所见的版本号）。" +
+      "修改与删除时要写 base_revision（你所见的这个条目当前所在的修订号）。" +
       "它只核对集合、字段、类型、必填与来源是否齐全，不评判内容好坏，也不代表任务完成。" +
       "有任何一个操作不对，整批都不写入，它会逐条告诉你哪个操作的哪一处不对。",
     promptSnippet: "把交付物的一批按条目的改动存成一次新修订",

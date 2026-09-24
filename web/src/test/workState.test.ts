@@ -5,6 +5,7 @@ import type { Snapshot, Task } from "../api/types";
 import { initialWorkState, workReducer, type WorkState } from "../state/workState";
 import { parseSseChunk } from "../api/events";
 import { alignSteps } from "../model/diff";
+import { isUnread } from "../model/items";
 
 const SESSION = "s-1";
 
@@ -16,7 +17,7 @@ function task(): Task {
       { name: "名称", type: "文本", required: true, values: null },
       { name: "步骤", type: "文本列表", required: true, values: null }] }] },
     completion: null,
-    items: [{ item_id: "UC-001", collection: "用例", title: "登录", version_no: 1, version_by: "executor", version_at: "", version_count: 1,
+    items: [{ item_id: "UC-001", collection: "用例", title: "登录", revision_no: 1, revision_by: "executor", revision_at: "", revisions: [1],
               fields: { 名称: "登录", 步骤: ["输入账号"] }, sources: [], reviews: [], confirmations: [], confirmation_stale: false }],
   };
 }
@@ -29,10 +30,11 @@ function snapshot(seq: number): Snapshot {
   };
 }
 
-const changed = (seq: number, version: number, name = `名称第${version}版`) => ({
+/** 第 seq 号库事件：修订 revision，把 UC-001 从修订 revision-1 改到修订 revision。 */
+const changed = (seq: number, revision: number, name = `名称修订${revision}`) => ({
   type: "sse" as const, event: "deliverable_changed",
-  data: { seq, at: "", task_id: "TASK-001", revision_no: seq, actor: "user", op_id: `ui-op-${seq}`, undo_of_revision: null, completion: null,
-          operations: [{ op: "update", collection: "用例", item_id: "UC-001", title: name, version_before: version - 1, version_after: version,
+  data: { seq, at: "", task_id: "TASK-001", revision_no: revision, actor: "user", op_id: `ui-op-${seq}`, undo_of_revision: null, completion: null,
+          operations: [{ op: "update", collection: "用例", item_id: "UC-001", title: name, revision_before: revision - 1, revision_after: revision,
                          fields: { 名称: name, 步骤: ["输入账号"] }, sources: [] }] },
 });
 
@@ -46,16 +48,18 @@ describe("事件应用规则", () => {
     expect(s.buffered).toHaveLength(2);
     s = run(s, { type: "snapshot", snapshot: snapshot(5) }); // 快照已含第 5 号
     expect(s.seq).toBe(6);
-    expect(s.task!.items[0].version_no).toBe(3);
-    expect(s.task!.items[0].title).toBe("名称第3版");
+    expect(s.task!.items[0].revision_no).toBe(3);
+    expect(s.task!.items[0].revisions).toEqual([1, 3]);
+    expect(s.task!.items[0].title).toBe("名称修订3");
+    expect(s.latestRevision).toBe(3);
   });
 
   it("同一个序号的库事件只应用一次", () => {
     let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) }, changed(5, 2));
-    const once = s.task!.items[0].version_count;
+    const once = s.task!.items[0].revisions;
     s = run(s, changed(5, 2), changed(4, 9));
-    expect(s.task!.items[0].version_count).toBe(once);
-    expect(s.task!.items[0].version_no).toBe(2);
+    expect(s.task!.items[0].revisions).toEqual(once);
+    expect(s.task!.items[0].revision_no).toBe(2);
     expect(s.seq).toBe(5);
   });
 
@@ -72,7 +76,7 @@ describe("事件应用规则", () => {
   it("库事件序号出现缺口时回到等整份数据，不在缺一段的数据上接着改", () => {
     const s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) }, changed(7, 2));
     expect(s.phase).toBe("waiting_snapshot");
-    expect(s.task!.items[0].version_no).toBe(1);
+    expect(s.task!.items[0].revision_no).toBe(1);
   });
 
   it("直接操作的库事件到达时消去对应的「正在保存」，并记下序号与修订序号的对应", () => {
@@ -81,7 +85,22 @@ describe("事件应用规则", () => {
     expect(Object.keys(s.pendingOps)).toEqual(["ui-op-5"]);
     s = run(s, changed(5, 2));
     expect(s.pendingOps).toEqual({});
-    expect(s.revisionBySeq[5]).toBe(5);
+    expect(s.revisionBySeq[5]).toBe(2);
+  });
+
+  it("重新读取整份数据时「正在保存」一律清掉：后端写完库才回应，重读到的数据已经包含那次操作", () => {
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) },
+      { type: "op_pending", op_id: "ui-op-5", label: "修改", items: ["UC-001"] });
+    expect(Object.keys(s.pendingOps)).toEqual(["ui-op-5"]);
+    s = run(s, { type: "resync" }, { type: "snapshot", snapshot: snapshot(6) });
+    expect(s.pendingOps).toEqual({});
+  });
+
+  it("整份数据里还没有任务时，库事件照样按操作编号消去「正在保存」", () => {
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: { ...snapshot(4), task: null } },
+      { type: "op_pending", op_id: "ui-op-5", label: "修改", items: ["UC-001"] });
+    s = run(s, changed(5, 2));
+    expect(s.pendingOps).toEqual({});
   });
 
   it("直接操作的库事件比响应先到时，响应到了也不再挂上「正在保存」", () => {
@@ -90,19 +109,39 @@ describe("事件应用规则", () => {
     expect(s.pendingOps).toEqual({});
   });
 
-  it("确认之后条目又改了，确认已失效；再确认当前版本就不再失效", () => {
+  it("确认之后条目又改了，确认已失效；再确认条目当前所在的修订就不再失效", () => {
     let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) },
-      { type: "sse", event: "confirmation_recorded", data: { seq: 5, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", version_no: 1, accepted: true }], basis: "ui_click", completion: null } });
+      { type: "sse", event: "confirmation_recorded", data: { seq: 5, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", revision_no: 1, accepted: true }], basis: "ui_click", completion: null } });
     expect(s.task!.items[0].confirmation_stale).toBe(false);
     s = run(s, changed(6, 2));
     expect(s.task!.items[0].confirmation_stale).toBe(true);
-    s = run(s, { type: "sse", event: "confirmation_recorded", data: { seq: 7, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", version_no: 2, accepted: true }], basis: "ui_click", completion: null } });
+    s = run(s, { type: "sse", event: "confirmation_recorded", data: { seq: 7, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", revision_no: 2, accepted: true }], basis: "ui_click", completion: null } });
     expect(s.task!.items[0].confirmation_stale).toBe(false);
+  });
+
+  it("用户改字段：修订事件之后紧跟一条依据为 ui_edit 的确认事件，条目当即算已确认、没有失效", () => {
+    const s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) }, changed(5, 2),
+      { type: "sse", event: "confirmation_recorded", data: { seq: 6, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", revision_no: 2, accepted: true }], basis: "ui_edit", op_id: "ui-op-5", completion: null } });
+    const item = s.task!.items[0];
+    expect(item.revision_no).toBe(2);
+    expect(item.confirmations.map((c) => [c.revision_no, c.accepted, c.basis])).toEqual([[2, true, "ui_edit"]]);
+    expect(item.confirmation_stale).toBe(false);
+  });
+
+  it("打开详情记为已读：item_viewed 事件在条目上加一条接受的确认（依据 viewed）；条目被改后记为看过之后又改过，仍是已读", () => {
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) },
+      { type: "sse", event: "item_viewed", data: { seq: 5, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", revision_no: 1 }], op_id: "ui-op-9", completion: null } });
+    expect(s.seq).toBe(5);
+    expect(s.task!.items[0].confirmations.map((c) => [c.revision_no, c.accepted, c.basis])).toEqual([[1, true, "viewed"]]);
+    expect(s.task!.items[0].confirmation_stale).toBe(false);
+    s = run(s, changed(6, 2));
+    expect(s.task!.items[0].confirmation_stale).toBe(true);
+    expect(isUnread(s.task!.items[0])).toBe(false);
   });
 
   it("对话里的确认记下依据是用户的话；任务完成的事件把任务状态改成已完成", () => {
     const s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) },
-      { type: "sse", event: "confirmation_recorded", data: { seq: 5, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", version_no: 1, accepted: true }], basis: "user_words", op_id: null, completion: null } },
+      { type: "sse", event: "confirmation_recorded", data: { seq: 5, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", revision_no: 1, accepted: true }], basis: "user_words", op_id: null, completion: null } },
       { type: "sse", event: "task_changed", data: { seq: 6, at: "", task_id: "TASK-001", task_name: "演示任务", status_before: "进行中", status_after: "已完成", actor: "executor", completion: null } });
     expect(s.task!.items[0].confirmations.map((c) => c.basis)).toEqual(["user_words"]);
     expect(s.task!.status).toBe("已完成");
@@ -112,7 +151,7 @@ describe("事件应用规则", () => {
     const s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) }, {
       type: "sse", event: "deliverable_changed",
       data: { seq: 5, at: "", task_id: "TASK-001", revision_no: 3, actor: "user", op_id: null, undo_of_revision: null, completion: null,
-              operations: [{ op: "delete", collection: "用例", item_id: "UC-001", title: "登录", version_before: 1, version_after: null, fields: null, sources: [] }] },
+              operations: [{ op: "delete", collection: "用例", item_id: "UC-001", title: "登录", revision_before: 1, revision_after: null, fields: null, sources: [] }] },
     });
     expect(s.task!.items).toHaveLength(0);
   });

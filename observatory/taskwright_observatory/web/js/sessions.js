@@ -26,7 +26,7 @@ function taskTags(row) {
   }
   return row["提取出的任务"].map((task) =>
     `<span class="chip domain">领域：${esc(task["任务类型"])} · ${esc(task["状态"])} · ` +
-    `任务目录 ${esc(task["任务目录"])} · 已修订到第 ${task["修订总数"]} 次</span>`).join(" ");
+    `任务目录 ${esc(task["任务目录"])} · 已到修订 ${task["修订总数"]}</span>`).join(" ");
 }
 
 function rowHtml(row) {

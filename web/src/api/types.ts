@@ -1,4 +1,6 @@
 // 接口约定（docs/api.md）的接口类型，字段名与约定逐字一致。
+// 修订：一次保存（执行者的一次「保存修订」或用户的一次直接操作）产生一次修订，序号在任务内从 1 起连续递增；
+// 条目没有自己的版本号，它在某一时刻的内容由「条目编号加修订号」标识。条目「当前所在的修订」是最近一次新增、修改或恢复它的那次修订。
 // 约定里写「可空」的字段用 `| null`；约定没写、但前端必须容忍缺失的，用可选（`?`）。
 // 前端遇到不认识的字段一律忽略，所以这里只列用得到的。
 
@@ -77,16 +79,25 @@ export interface Finding {
 }
 
 export interface Review {
-  version_no?: number;
+  /** 被评审的是条目在哪次修订下的内容；标记不随后续修订移动。 */
+  revision_no?: number;
   verdict: "合规" | "不合规" | string;
   findings?: Finding[];
   at?: string;
 }
 
+/**
+ * 确认标记的依据。viewed：用户打开详情或在卡片上点「这几条都看过了」（已读）；ui_edit：改字段或标为先不管时随修订自动写；
+ * ui_click：撤回确认（早期版本还有点了确认的）；user_words：早期版本由执行者登记、依据是用户在对话里说的话。
+ */
+export type ConfirmationBasis = "viewed" | "ui_click" | "ui_edit" | "user_words";
+
 export interface Confirmation {
-  version_no: number;
+  /** 用户看过或认可的是条目在哪次修订下的内容；标记不随后续修订移动。 */
+  revision_no: number;
+  /** 接受：看过或认可了；不接受：撤回了确认。 */
   accepted: boolean;
-  basis?: "ui_click" | "user_words" | string;
+  basis?: ConfirmationBasis | string;
   at?: string;
 }
 
@@ -94,15 +105,21 @@ export interface Item {
   item_id: string;
   collection: string;
   title: string;
-  version_no: number;
-  version_by: Actor | string;
-  version_at: string;
-  version_count: number;
+  /** 条目当前所在的修订。 */
+  revision_no: number;
+  revision_by: Actor | string;
+  revision_at: string;
+  /** 它改动过的修订号，从早到晚。 */
+  revisions: number[];
   fields: Fields;
   sources: Source[];
   reviews: Review[];
   confirmations: Confirmation[];
   confirmation_stale: boolean;
+  /** 当前修订上最近一条确认标记是接受（任一依据）；为假就是未读。前端按 confirmations 现算，这两项只作对照。 */
+  viewed?: boolean;
+  /** viewed 为真时那条标记的依据，未读时为空。 */
+  confirmation_basis?: ConfirmationBasis | string | null;
 }
 
 export interface Task {
@@ -116,6 +133,8 @@ export interface Task {
   definition: TaskDefinition;
   completion: Completion | null;
   items: Item[];
+  /** 任务最新的修订号；还没有修订时是 0。 */
+  latest_revision?: number;
 }
 
 export interface Material {
@@ -150,7 +169,8 @@ export type ActKind = "ask" | "confirm" | "suggest" | "choose" | "propose";
 
 export interface ActItemRef {
   item_id: string;
-  version_no?: number;
+  /** 条目当前所在的修订号。 */
+  revision_no?: number;
 }
 
 export interface Act {
@@ -223,7 +243,8 @@ export interface WorkSummary {
   at?: string;
   seconds: number | null;
   step_count: number;
-  stages?: { text: string; count?: number }[];
+  /** reasons：保存修订被拒的那一步的全部原因，一个操作一条；多于一条时这一行可以点开逐条看。 */
+  stages?: { text: string; count?: number; reasons?: string[] }[];
 }
 
 export type ConversationMessage = UserMessage | AssistantReply | UiActionNoted | SystemNote | WorkSummary;
@@ -262,8 +283,9 @@ export interface Operation {
   collection: string;
   item_id: string;
   title: string;
-  version_before: number | null;
-  version_after: number | null;
+  /** 改前条目所在的修订（新增时为空）与改后所在的修订（就是这次修订；删除时为空）。 */
+  revision_before: number | null;
+  revision_after: number | null;
   fields: Fields | null;
   sources: Source[];
 }
@@ -296,7 +318,7 @@ export interface ReviewRecorded {
   at: string;
   task_id: string;
   item_id: string;
-  version_no: number;
+  revision_no: number;
   verdict: string;
   findings: Finding[];
   completion: Completion | null;
@@ -308,8 +330,18 @@ export interface ConfirmationRecorded {
   op_id?: string | null;
   at: string;
   task_id: string;
-  items: { item_id: string; version_no: number; accepted: boolean }[];
-  basis: "ui_click" | "user_words" | string;
+  items: { item_id: string; revision_no: number; accepted: boolean }[];
+  basis: ConfirmationBasis | string;
+  completion: Completion | null;
+}
+
+/** 用户打开条目详情（或在卡片上点「这几条都看过了」）记为已读：每项是条目与它当时所在的修订。 */
+export interface ItemViewed {
+  seq: number;
+  op_id?: string | null;
+  at: string;
+  task_id: string;
+  items: { item_id: string; revision_no: number }[];
   completion: Completion | null;
 }
 
@@ -318,9 +350,10 @@ export type LibraryEvent =
   | { event: "deliverable_changed"; data: DeliverableChanged }
   | { event: "task_changed"; data: TaskChanged }
   | { event: "review_recorded"; data: ReviewRecorded }
-  | { event: "confirmation_recorded"; data: ConfirmationRecorded };
+  | { event: "confirmation_recorded"; data: ConfirmationRecorded }
+  | { event: "item_viewed"; data: ItemViewed };
 
-export const LIBRARY_EVENTS = ["deliverable_changed", "task_changed", "review_recorded", "confirmation_recorded"] as const;
+export const LIBRARY_EVENTS = ["deliverable_changed", "task_changed", "review_recorded", "confirmation_recorded", "item_viewed"] as const;
 
 export interface WorkStarted {
   session_id: string;
@@ -368,6 +401,9 @@ export interface TaskListEntry {
   completion_unmet?: number | null;
   last_active_at: string;
   session_count: number;
+  /** 为假时是修订统一之前建的旧格式任务：列出来但打不开，note 写明原因。 */
+  supported?: boolean;
+  note?: string;
 }
 
 export interface TaskDetail extends Task {
@@ -375,8 +411,8 @@ export interface TaskDetail extends Task {
   sessions: SessionListEntry[];
 }
 
-export interface ItemVersion {
-  version_no: number;
+/** 条目在它改动过的某次修订下的内容（GET …/items/{item_id}/revisions 的一项）。 */
+export interface ItemRevision {
   revision_no: number;
   by: Actor | string;
   at: string;
@@ -384,6 +420,46 @@ export interface ItemVersion {
   sources: Source[];
   reviews: Review[];
   confirmations: Confirmation[];
+}
+
+/** 修订日志（GET …/revisions）的一项：一次修订碰到的一个条目。 */
+export interface RevisionOperation {
+  op: "add" | "update" | "delete" | "restore";
+  item_id: string;
+  collection: string;
+  title: string;
+  revision_before: number | null;
+  revision_after: number | null;
+  /** 改了哪些字段（前后两次修订逐字段比较）；新增、删除、恢复时为空。 */
+  fields_changed: string[];
+}
+
+/** 触发一次修订的事：执行者的修订是触发那次工作的那句话（自己打的、点卡片发出的、界面操作之后发给助手的）；
+ *  用户的修订是那次直接操作；都找不到时 kind 为 none。 */
+export interface RevisionTrigger {
+  kind: "typed" | "card_choice" | "ui_request" | "user_action" | "none" | string;
+  text: string;
+  message_id?: string;
+  action?: ActionKind | null;
+}
+
+export interface RevisionLogEntry {
+  revision_no: number;
+  at: string;
+  by: Actor | string;
+  session_id: string;
+  /** 执行者的修订所在的那次工作；刷新前后同一次工作的编号一致，回复的 work_id 与它对得上。 */
+  work_id: string | null;
+  op_id: string | null;
+  undo_of_revision: number | null;
+  trigger: RevisionTrigger;
+  operations: RevisionOperation[];
+}
+
+export interface RevisionLog {
+  latest_revision: number;
+  /** 最新的在前。 */
+  revisions: RevisionLogEntry[];
 }
 
 // ───────────── 5、6 发出的请求 ─────────────
@@ -399,13 +475,14 @@ export interface MessageRequest {
   card?: { reply_message_id: string; kind: ActKind; choice: string };
 }
 
-export type ActionKind = "edit_fields" | "delete_item" | "confirm" | "unconfirm" | "keep_pending" | "undo";
+export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo";
 
 export interface ActionRequest {
   client_id: string;
   kind: ActionKind;
   task_id: string;
-  targets: { item_id?: string; base_version?: number; revision_no?: number }[];
+  /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。 */
+  targets: { item_id?: string; base_revision?: number; revision_no?: number }[];
   fields?: Fields;
   notify_executor: boolean;
 }
@@ -415,7 +492,8 @@ export interface ActionRequest {
 export type ErrorCode =
   | "bad_request"
   | "rejected"
-  | "stale_version"
+  | "stale_revision"
+  | "old_format"
   | "undo_conflict"
   | "task_closed"
   | "session_busy"

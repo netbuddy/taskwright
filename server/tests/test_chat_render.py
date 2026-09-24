@@ -21,14 +21,14 @@ def _end(tool: str, is_error: bool, text: str, details=None) -> dict:
 
 def test_reply_uses_shared_formatter(capsys):
     reply = {"informs": ["我新增了 UC-001。"],
-             "act": {"kind": "confirm", "text": "请确认 UC-001 第 1 版。", "items": [{"item_id": "UC-001", "version_no": 1}]},
+             "act": {"kind": "confirm", "text": "请确认 UC-001（修订 1）。", "items": [{"item_id": "UC-001", "revision_no": 1}]},
              "text": "请确认。"}
     printer = chat.Printer()
     printer.handle({"type": "tool_execution_start", "toolCallId": "c1", "args": reply})
     printer.handle(_end("reply", False, "回复已送达", {"delivered": True, "reply": reply}))
     assert capsys.readouterr().out.splitlines() == [
         "执行者（经回复工具）：", "  告知：", "    · 我新增了 UC-001。",
-        "  【请确认】请确认 UC-001 第 1 版。", "      条目 UC-001 第 1 版", "  成文的话：", "    请确认。",
+        "  【请确认】请确认 UC-001（修订 1）。", "      条目 UC-001（修订 1）", "  成文的话：", "    请确认。",
     ]
 
 
@@ -44,12 +44,12 @@ def test_rejected_reply_and_save(capsys):
 
 def test_saved_revision_without_workspace_lists_ids(capsys):
     details = {"task_id": "TASK-001", "revision_no": 2, "event_seq": 3, "operations": [
-        {"op": "update", "item": "UC-001", "collection": "用例", "from_version": 1, "to_version": 2},
-        {"op": "delete", "item": "UC-002", "collection": "用例", "from_version": 1, "to_version": None}]}
+        {"op": "update", "item": "UC-001", "collection": "用例", "from_revision": 1, "to_revision": 2},
+        {"op": "delete", "item": "UC-002", "collection": "用例", "from_revision": 1, "to_revision": None}]}
     chat.Printer().handle(_end("save_revision", False, "已保存", details))
     assert capsys.readouterr().out.splitlines() == [
-        "  已保存为任务 TASK-001 的第 2 次修订，一共 2 个操作（事件序号 3）：",
-        "    修改 UC-001，第 1 版 → 第 2 版", "    删除 UC-002（删除前是第 1 版）",
+        "  已保存为任务 TASK-001 的修订 2，一共 2 个操作（事件序号 3）：",
+        "    修改 UC-001，修订 1 → 修订 2", "    删除 UC-002（删除前在修订 1）",
     ]
 
 

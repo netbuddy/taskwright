@@ -10,10 +10,9 @@
 建库时那一批变更不带调用编号（它们是建立任务时把字段都摆成空值），所以不算修订，
 只作为第一次修订之前的底子。
 
-新格式的库表按条目记版本，那种库里修订本来就是一张表，不需要投影；
-`project_current_format` 把它整理成界面要的样子：每次修订里每个操作落到了哪个条目的哪一版、
-改前改后各是什么。库里不另存改前改后的文字，这里按事件里记的改前版本号与改后版本号，
-从条目版本表里取出相邻两版来对比。
+新格式的库表按条目记修订，那种库里修订本来就是一张表，不需要投影；
+`project_current_format` 把它整理成界面要的样子：每次修订里每个操作改了哪个条目、改前改后各是什么。
+库里不另存改前改后的文字，这里按事件里记的改前、改后所在的修订号，从条目内容表里取出那两行来对比。
 """
 
 from __future__ import annotations
@@ -90,21 +89,21 @@ def describe_operation(task: dict, op: dict) -> dict:
     """把修订事件里记的一个操作，整理成「交付物的变化」里的一项。
 
     渲染按字段类型通用：新增的条目按声明的字段逐项列出；修改的条目只列变了的字段，改前改后并排；
-    删除的条目注明在第几次修订删除。不为任何一个集合写专门的规则。
+    删除的条目注明在哪次修订删除。不为任何一个集合写专门的规则。
     """
     items = {i["条目编号"]: i for i in task["条目"]}
-    item = items.get(op.get("item"), {"版本": [], "在第几次修订删除": None})
+    item = items.get(op.get("item"), {"修订内容": [], "在第几次修订删除": None})
     declared = collection_fields(task).get(op.get("collection"), [])
-    before = taskdb.version_of(item, op.get("from_version"))
-    after = taskdb.version_of(item, op.get("to_version"))
+    before = taskdb.content_at(item, op.get("from_revision"))
+    after = taskdb.content_at(item, op.get("to_revision"))
     kind = op.get("op")
     shown = {
         "操作": kind,
         "操作的中文名": {"add": "新增", "update": "修改", "delete": "删除", "restore": "恢复"}.get(kind, str(kind)),
         "条目编号": op.get("item"),
         "所属集合": op.get("collection"),
-        "改前版本": op.get("from_version"),
-        "改后版本": op.get("to_version"),
+        "改前所在修订": op.get("from_revision"),
+        "改后所在修订": op.get("to_revision"),
         "字段": [],
         "来源": [],
         "来源变了吗": False,

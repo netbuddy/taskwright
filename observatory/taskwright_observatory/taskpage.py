@@ -59,10 +59,10 @@ def render_reply_lines(call: dict) -> list[str] | None:
         _RENDERED[key] = lines
     return lines
 
-#: 页面上两个固定的参与者。评审者、确认判读者以后由数据带进来，界面按数据画。
+#: 页面上两个固定的参与者。评审者以后由数据带进来，界面按数据画。
 PARTICIPANTS = [
     {"名": "用户", "角色": "人，这条会话的提问者"},
-    {"名": "执行者", "角色": "agent，一条 pi 会话"},
+    {"名": "助手", "角色": "agent，一条 pi 会话"},
 ]
 
 #: 知识仓库里的文件按路径归成几种，只为分组显示；任务定义里登记了的路径优先按登记的来。
@@ -71,7 +71,7 @@ KIND_BY_PREFIX = [(".pi/skills/", "执行方法（skill）"), ("docs/domain-know
                   ("docs/execution-plans/", "执行计划")]
 
 #: 知识的使用的四种归类。
-USE_READ = "执行者按需读过"
+USE_READ = "助手按需读过"
 USE_TOOL = "工具读过"
 USE_PROMPT = "启动时放进了系统提示"
 USE_NONE = "这次没有用到"
@@ -301,7 +301,7 @@ def normalize_new(change: dict, task: dict | None) -> dict:
         sets = change.get("集合") or []
         return {
             "类别": "任务的变化", "修订序号": None,
-            "标题句": (f"执行者创建了任务 {change.get('任务编号', '')}，任务名是「{change.get('任务名', '')}」，"
+            "标题句": (f"助手创建了任务 {change.get('任务编号', '')}，任务名是「{change.get('任务名', '')}」，"
                        f"交付物分成 {len(sets)} 个条目集合：{'、'.join(sets)}。"),
             "标签": [change.get("任务编号")] if change.get("任务编号") else [],
             "操作": [], "事件": [],
@@ -316,9 +316,9 @@ def normalize_new(change: dict, task: dict | None) -> dict:
         coll = one.get("所属集合") or (items.get(one.get("条目编号")) or {}).get("所属集合") or "条目"
         fields_declared = declared.get(coll, [])
         item = items.get(one.get("条目编号")) or {}
-        after = taskdb.version_of(item, one.get("改后版本")) if item else None
-        before = taskdb.version_of(item, one.get("改前版本")) if item else None
-        last = (item.get("版本") or [None])[-1]
+        after = taskdb.content_at(item, one.get("改后所在修订")) if item else None
+        before = taskdb.content_at(item, one.get("改前所在修订")) if item else None
+        last = (item.get("修订内容") or [None])[-1]
         title = title_of((after or before or last or {}).get("字段"), fields_declared)
         fields, changed = [], []
         for f in one.get("字段") or []:
@@ -328,7 +328,10 @@ def normalize_new(change: dict, task: dict | None) -> dict:
                 fields.append({"名": f["名"], "类型": f.get("类型") or "文本", "值": f.get("值")})
         ops.append({
             "动作": action, "集合": coll, "条目编号": one.get("条目编号"), "条目标题": title,
-            "版本": [one.get("改前版本"), one.get("改后版本")],
+            # 新格式只有修订号，没有条目版本号；显示用的文字直接给出，页面照着显示。
+            "版本": [None, None],
+            "版本变化": (f"修订 {one.get('改前所在修订')} → 修订 {one.get('改后所在修订')}" if action in ("修改", "恢复")
+                         and one.get("改前所在修订") is not None else ""),
             "字段": fields, "变更": changed,
             "来源": [source_view(s) for s in (one.get("来源") or [])],
             "来源变了吗": bool(one.get("来源变了吗")),
@@ -337,7 +340,7 @@ def normalize_new(change: dict, task: dict | None) -> dict:
     rev = change.get("修订序号")
     return {
         "类别": "交付物的变化", "修订序号": rev, "旧库表": False,
-        "标题句": (f"交付物形成第 {rev} 次修订：" if rev is not None else "交付物有改动：") + group_sentence(ops),
+        "标题句": (f"交付物形成修订 {rev}：" if rev is not None else "交付物有改动：") + group_sentence(ops),
         "标签": [o["条目编号"] for o in ops if o["条目编号"]],
         "操作": ops, "事件": [], "任务": None,
     }
@@ -375,7 +378,8 @@ def excerpt_of(basis, item_id: str) -> str:
 
 
 def normalize_record(change: dict) -> dict:
-    """「登记用户确认」与「完成任务」写下的记录：一句标题加几行「名目：内容」。"""
+    """确认标记与「完成任务」写下的记录：一句标题加几行「名目：内容」。确认标记由用户在界面上的操作写下（已读、界面修改、撤回），
+    早期版本的库里还有由模型读用户原话登记的。"""
     if change.get("种类") == "任务的完成":
         return {"类别": "任务的完成", "修订序号": None, "标题句": change.get("说明", ""),
                 "标签": [change.get("任务编号")] if change.get("任务编号") else [],
@@ -385,20 +389,20 @@ def normalize_record(change: dict) -> dict:
     accepted = [r for r in rows if r.get("态度") == "接受"]
     records = []
     for r in rows:
-        item, no = r.get("条目编号") or r.get("item_id"), r.get("内容版本号") or r.get("version_no")
+        item, no = r.get("条目编号") or r.get("item_id"), r.get("修订号") or r.get("revision_no")
         attitude = r.get("态度") or "接受"
         quote = excerpt_of(change.get("依据"), item)
-        records.append([f"{item} 第 {no} 版", attitude + (f"，依据是用户说的{quote}" if quote else "")])
+        records.append([f"{item}（修订 {no}）", attitude + (f"，依据是用户说的{quote}" if quote else "")])
     number = change.get("判读序号")
-    head = (f"登记了第 {number} 次确认判读" if number is not None else "登记了一次确认") + \
-           f"（依据：{change.get('依据种类', '')}）：{len(accepted)} 个条目判为接受，{len(rows) - len(accepted)} 个判为不接受。"
+    head = (f"写下了第 {number} 条确认标记" if number is not None else "写下了一条确认标记") + \
+           f"（依据：{change.get('依据种类', '')}）：{len(accepted)} 个条目算作确认，{len(rows) - len(accepted)} 个撤回了确认。"
     return {"类别": "确认记录", "修订序号": None, "标题句": head,
             "标签": [r[0].split(" ")[0] for r in records], "记录": [["说明", change.get("说明", "")], *records],
             "操作": [], "事件": [], "任务": None}
 
 
 def model_calls_of(call: dict) -> list[dict]:
-    """这次工具调用在工具里直接发起的模型调用（判读者），原样交给页面，提示与输出在抽屉里看全文。"""
+    """这次工具调用在工具里直接发起的模型调用（评审者；早期版本的库里还有登记确认时的调用），原样交给页面，提示与输出在抽屉里看全文。"""
     return [one for c in call.get("带来的变化") or [] if c.get("种类") == "工具里的模型调用" for one in c.get("调用") or []]
 
 
@@ -430,7 +434,7 @@ def changes_of(call: dict, index) -> list[dict]:
         rev = (call.get("产生的修订") or {}).get("修订序号")
         if rev is not None:
             block["修订序号"] = rev
-            block["标题句"] = f"任务的数据形成第 {rev} 次修订：" + block["标题句"]
+            block["标题句"] = f"任务的数据形成修订 {rev}：" + block["标题句"]
         block["事件"] = [event_shape(e) for e in events]
         return [block]
     return []
@@ -582,7 +586,7 @@ def turn_shape(turn: dict, run: dict, index, rules: dict, workspace_abs: str, ru
                 "谁": "用户", "原文": message.get("文字", ""), "条目编号": message.get("条目编号", ""),
                 "时刻": clock(message.get("收到时刻") or message.get("时刻")),
                 "种类": steer_kind(message.get("文字", ""), run),
-                "说明": ("这句话是在执行者这次运行还没有结束时投进来的。pi 把它排进消息列表，"
+                "说明": ("这句话是在助手这次运行还没有结束时投进来的。pi 把它排进消息列表，"
                          "在这一轮开始时交给模型看；这次运行没有因此断成两段。"),
             })
     return shaped
@@ -621,7 +625,7 @@ def mixed_line(calls: list[dict], decl: dict) -> str:
             label = members[0].get("中文名") or what
             result = "；".join(shorten(c["结果全文"], 50) for c in members)
             parts.append(f"调用了「{label}」（{'、'.join(names)}），得到的是：{result}")
-    return "执行者" + "；同一个阶段里还".join(parts) + "。"
+    return "助手" + "；同一个阶段里还".join(parts) + "。"
 
 
 def one_line(role: str, turns: list[dict], decl: dict | None = None) -> str:
@@ -633,24 +637,24 @@ def one_line(role: str, turns: list[dict], decl: dict | None = None) -> str:
         if len(kinds) > 1:
             return mixed_line(calls, decl)
     if role == "执行方法":
-        return f"执行者读了执行方法文件 {'、'.join(names)} 的正文。"
+        return f"助手读了执行方法文件 {'、'.join(names)} 的正文。"
     if role == "列目录":
         seen = "；".join(shorten(c["结果全文"], 60) for c in calls)
-        return f"执行者列了目录 {calls[0]['参数摘要'] or '（任务目录根目录）'} 里的文件，看到的是：{seen}。"
+        return f"助手列了目录 {calls[0]['参数摘要'] or '（任务目录根目录）'} 里的文件，看到的是：{seen}。"
     if role == "材料目录":
-        return f"执行者读了材料文件 {'、'.join(names)} 的全文。"
+        return f"助手读了材料文件 {'、'.join(names)} 的全文。"
     if role == "领域规矩":
-        return f"执行者读了归类声明里登记的 {len(calls)} 份领域规矩文档：{'、'.join(names)}。"
+        return f"助手读了归类声明里登记的 {len(calls)} 份领域规矩文档：{'、'.join(names)}。"
     if role == "文档模板":
-        return f"执行者读了文档模板 {'、'.join(names)}。"
+        return f"助手读了文档模板 {'、'.join(names)}。"
     if role == "归不上类":
-        return f"执行者读了 {'、'.join(names)}，这几个路径在归类声明里归不上类。"
+        return f"助手读了 {'、'.join(names)}，这几个路径在归类声明里归不上类。"
     if role == "建任务":
         for c in calls:
             for b in c["改动"]:
                 if b["类别"] == "任务的变化":
                     return b["标题句"]
-        return f"执行者调用了「{calls[0].get('中文名') or calls[0]['工具']}」这个工具，库里没有留下任务。"
+        return f"助手调用了「{calls[0].get('中文名') or calls[0]['工具']}」这个工具，库里没有留下任务。"
     if role == "写入":
         return write_line(calls)
     if role == "说话":
@@ -664,7 +668,7 @@ def one_line(role: str, turns: list[dict], decl: dict | None = None) -> str:
             return (f"这里连着 {len(errored)} 次模型请求都出错了，模型既没有说话，也没有调用工具；"
                     "每一次的出错说明逐条列在下面。")
         return "这一轮模型既没有对用户说话，也没有调用任何工具。"
-    return f"执行者调用了 {calls[0]['工具']}，一共 {len(calls)} 次。"
+    return f"助手调用了 {calls[0]['工具']}，一共 {len(calls)} 次。"
 
 
 #: 旧格式的库只有「任务的字段」一种东西，动作的读法与新格式不同。
@@ -676,7 +680,7 @@ def write_line(calls: list[dict]) -> str:
     条目的编号与标题留给展开后的小步。同一个条目在这一阶段里被同一种动作动了几次，只算一个。"""
     ops = [o for c in calls for b in c["改动"] if b["类别"] == "交付物的变化" for o in b["操作"]]
     if not ops:
-        return f"执行者调用了 {len(calls)} 次保存，库里没有留下任何改动。"
+        return f"助手调用了 {len(calls)} 次保存，库里没有留下任何改动。"
     old = any(b.get("旧库表") for c in calls for b in c["改动"])
     tally: dict[str, dict[str, set]] = {}
     for i, o in enumerate(ops):
@@ -693,7 +697,7 @@ def write_line(calls: list[dict]) -> str:
             parts.append(action + "、".join(f"{coll} {len(codes)} 个" for coll, codes in tally[action].items()))
     empty = sum(1 for c in calls if not c["改动"])
     tail = f"；其中 {empty} 次没有在库里写下改动" if empty else ""
-    return f"执行者保存了 {len(calls)} 次：" + "；".join(parts) + tail + "。"
+    return f"助手保存了 {len(calls)} 次：" + "；".join(parts) + tail + "。"
 
 
 def fail_line(turns: list[dict]) -> str:
@@ -707,10 +711,10 @@ def fail_line(turns: list[dict]) -> str:
     detail = "；".join(f"{k}（{v} 次）" for k, v in reasons.items())
     tool = calls[0].get("中文名") or calls[0]["工具"]
     if len(calls) == 1:
-        return f"执行者调用「{tool}」这个工具，被工具拒绝了。拒绝的原因是：{detail}"
+        return f"助手调用「{tool}」这个工具，被工具拒绝了。拒绝的原因是：{detail}"
     tools = {c["工具"] for c in calls}
     between = "这中间它没有再调用别的工具。" if len(tools) == 1 else ""
-    return f"执行者连着 {len(calls)} 次调用都被工具拒绝了，原因是：{detail}{between}"
+    return f"助手连着 {len(calls)} 次调用都被工具拒绝了，原因是：{detail}{between}"
 
 
 def sub_steps(role: str, turns: list[dict]) -> list[dict]:
@@ -750,10 +754,10 @@ def boot_text(launch_count: int, session_no: int, session_changed: bool, knowled
         text = (f"这里开始这个任务的第 {session_no} 条会话：后端新启动了一个 pi 进程，开了一条新的会话"
                 "（后端的概念：一次 pi 进程启动）。")
     elif launch_count == 1:
-        text = ("这一项之前，后端把执行者的 pi 进程启动了第 1 次（后端的概念：一次 pi 进程启动）。"
-                "这是执行者这条线上的一个节点，不是所有参与者的分界。")
+        text = ("这一项之前，后端把助手的 pi 进程启动了第 1 次（后端的概念：一次 pi 进程启动）。"
+                "这是助手这条线上的一个节点，不是所有参与者的分界。")
     else:
-        text = ("在这之前，执行者的 pi 进程重启过一次，后端用原来的会话文件接回了同一条会话"
+        text = ("在这之前，助手的 pi 进程重启过一次，后端用原来的会话文件接回了同一条会话"
                 "（后端的概念：一次 pi 进程启动）。")
     return text + knowledge_change
 
@@ -798,7 +802,7 @@ def build_stages(runs: list[dict], decl: dict, rules: dict, index, workspace_abs
                 "消息来源的依据": prompt.get("投递方式的依据", ""),
                 "条目编号": prompt.get("用户消息条目编号", ""),
                 "时间条": None, "改正线索": None, "消息": [],
-                "说明": "这一句话触发了执行者的一次运行（agent run）。这个阶段属于用户，不属于执行者。",
+                "说明": "这一句话触发了助手的一次运行（agent run）。这个阶段属于用户，不属于助手。",
             })
         turns = run["轮"]
         for i, t in enumerate(turns):
@@ -841,7 +845,7 @@ def build_stages(runs: list[dict], decl: dict, rules: dict, index, workspace_abs
                     {"能不能画": False, "原因": bar.get("画不出的原因")
                      or "这几轮的开头或收尾在收到时刻索引里查不到，画不出时间条。"})
             stages.append({
-                "参与者": "执行者",
+                "参与者": "助手",
                 "类型": "异常" if failed and len(calls) >= 3 else kind,
                 "角色": role,
                 "名称": (f"{calls[0].get('中文名') or calls[0]['工具']}被拒" if failed else kind)
@@ -881,7 +885,7 @@ def build_stages(runs: list[dict], decl: dict, rules: dict, index, workspace_abs
                     best_stage = stage_of_turn(stages, run_no, t["序数"])
         if len(best) >= limit_streak:
             notes.append({"轻重": "重", "去哪": best_stage,
-                          "文字": f"第 {run_no} 次运行里，执行者连着 {len(best)} 次调用工具，一次也没有在库里写下任何东西，"
+                          "文字": f"第 {run_no} 次运行里，助手连着 {len(best)} 次调用工具，一次也没有在库里写下任何东西，"
                                   f"这中间也没有对用户说过话。判据写在归类声明里：连着 {limit_streak} 次就算异常。"})
         if turns and not any((t["正文"] or "").strip() for t in turns):
             notes.append({"轻重": "重", "去哪": stage_of_turn(stages, run_no, turns[-1]["序数"]),
@@ -1001,18 +1005,21 @@ def build_board_new(index, key: str, workspace_abs: str) -> dict:
         declared = coll["字段"]
         rows = []
         for item in coll["条目"]:
-            cur = item["当前版本"] or {"字段": {}, "内容版本号": None, "来源": []}
+            cur = item["当前内容"] or {"字段": {}, "修订号": None, "来源": []}
             versions = []
-            for v in item["版本"]:
+            for v in item["修订内容"]:
                 versions.append({
-                    "版本号": v["内容版本号"], "由第几次修订产生": v.get("由第几次修订产生"),
+                    # 「版本号」只作页签的键；新格式里它就是修订号。显示用「标签」与「来历」。
+                    "版本号": v["修订号"], "由第几次修订产生": v["修订号"],
+                    "标签": f"修订 {v['修订号']}", "来历": f"条目在修订 {v['修订号']} 时的内容",
                     "字段": [{"名": f["名"], "类型": f["类型"], "值": v["字段"].get(f["名"])} for f in declared],
                     "来源": [source_view(s) for s in (v.get("来源") or [])],
                     **cells_of(v),
                 })
             rows.append({
                 "编号": item["条目编号"], "标题": title_of(cur["字段"], declared) or "（第一个字段是空的）",
-                "版本": cur["内容版本号"], "来源条数": len(cur.get("来源") or []),
+                "版本": cur["修订号"], "所在": f"修订 {cur['修订号']}" if cur["修订号"] is not None else "",
+                "来源条数": len(cur.get("来源") or []),
                 "状态字段": cur["字段"].get("状态") or "",
                 "已删除": item["在第几次修订删除"] is not None,
                 "在第几次修订删除": item["在第几次修订删除"],
@@ -1106,7 +1113,9 @@ def fill_old_versions(stages: list[dict], task_detail: dict) -> None:
 
 # ───────────────────────── 六、知识的使用 ─────────────────────────
 
-def kind_of(rel: str, decl: dict) -> str:
+def kind_of(rel: str, decl: dict, platform: dict | None = None) -> str:
+    if platform and rel in platform:
+        return "平台执行方法（skill）"
     groups = decl["路径归类"]
     if rel in groups["执行方法"]:
         return "执行方法（skill）"
@@ -1124,14 +1133,19 @@ def launch_facts(launches: list[dict]) -> dict:
     """几次启动各自补记的知识仓库摘要、上下文文件与已加载的 skill。"""
     snapshots = [(i, l.get("知识仓库摘要")) for i, l in enumerate(launches)]
     recorded = [(i, s) for i, s in snapshots if s]
+    # 平台 skill 的路径是绝对路径，读归档时家目录被缩写成了 ~；展开回来，才能与 read 调用里的路径对上。
+    key = lambda f: os.path.expanduser(f["路径"]) if f.get("来自") == "平台 skill" else f["路径"]
     digests: dict[str, list[tuple[int, str]]] = {}
+    platform: dict[str, str] = {}
     for i, snap in recorded:
         for f in snap.get("文件") or []:
-            digests.setdefault(f["路径"], []).append((i + 1, f.get("摘要值") or ""))
+            digests.setdefault(key(f), []).append((i + 1, f.get("摘要值") or ""))
+            if f.get("来自") == "平台 skill":
+                platform[key(f)] = f.get("代码仓里的路径") or f["路径"]
     skills_note = next((l.get("已加载的 skill") for l in launches if l.get("已加载的 skill")), None)
     context_note = next((l.get("上下文文件") for l in launches if l.get("上下文文件")), None)
     return {"有没有摘要": bool(recorded), "摘要": digests, "几次启动": len(launches),
-            "记下摘要的启动": [i + 1 for i, _ in recorded], "skill": skills_note, "上下文文件": context_note,
+            "记下摘要的启动": [i + 1 for i, _ in recorded], "skill": skills_note, "平台 skill": platform, "上下文文件": context_note,
             "第一份摘要": recorded[0][1] if recorded else None}
 
 
@@ -1189,8 +1203,10 @@ def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: d
                     if arg:
                         name = call.get("中文名") or call["工具"]
                         read_by_tool[relative_to_workspace(arg, workspace_abs)] = (
-                            f"「{name}」这个工具在执行时自己读了它，执行者没有用 read 读过它。")
+                            f"「{name}」这个工具在执行时自己读了它，助手没有用 read 读过它。")
 
+    platform = facts.get("平台 skill") or {}
+    shown = lambda rel: f"代码仓里的 {platform[rel]}" if rel in platform else rel
     skill_files: dict[str, str] = {}
     skills_note = facts["skill"]
     if skills_note and skills_note.get("取得到吗"):
@@ -1213,15 +1229,15 @@ def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: d
                        if in_prompt else "")
         if rel in read_by_agent:
             got = read_by_agent[rel]
-            use, line, stage = USE_READ, (f"执行者在「{'、'.join(got['阶段'])}」这个阶段读过它 {got['次数']} 次"
+            use, line, stage = USE_READ, (f"助手在「{'、'.join(got['阶段'])}」这个阶段读过它 {got['次数']} 次"
                                           f"（{'、'.join(got['轮'])}）。" + prompt_line), got["阶段"][0]
         elif rel in read_by_tool:
             use, line, stage = USE_TOOL, read_by_tool[rel] + prompt_line, ""
         elif in_prompt:
-            use, line, stage = USE_PROMPT, prompt_line + "执行者这一次没有用 read 读过它的正文。", ""
+            use, line, stage = USE_PROMPT, prompt_line + "助手这一次没有用 read 读过它的正文。", ""
         else:
             use, line, stage = USE_NONE, "这一次从头到尾没有任何人读过它。", ""
-        rows.append({"文件": rel, "种类": kind_of(rel, decl), "用法": use, "一句话": line, "阶段": stage,
+        rows.append({"文件": shown(rel), "种类": kind_of(rel, decl, platform), "用法": use, "一句话": line, "阶段": stage,
                      "摘要值": digest, "变过吗": len(values) > 1})
     for rel in context_files:
         if rel not in files:
@@ -1235,7 +1251,7 @@ def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: d
     elif not skills_note.get("取得到吗"):
         skill_line = f"pi 这次实际加载了哪些 skill：取不到。原因是：{skills_note.get('为什么取不到', '未知')}"
     else:
-        names = [f"{s.get('名字')}（{relative_to_workspace(s.get('文件'), workspace_abs)}）"
+        names = [f"{s.get('名字')}（{shown(relative_to_workspace(s.get('文件'), workspace_abs))}）"
                  for s in skills_note.get("skill") or []]
         skill_line = (f"pi 这次实际加载的 skill 有 {len(names)} 个：{'、'.join(names) or '一个都没有'}。"
                       f"这是后端启动时经 RPC 的 get_commands 问 pi 得到的。")
@@ -1249,7 +1265,7 @@ def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: d
                            if not context_note.get("命令行关掉了上下文文件吗") else
                            "启动命令带了 --no-context-files，pi 不加载任何上下文文件。"))
     return {
-        "概括": (f"这个任务目录的知识仓库里有 {len(files)} 份文件：执行者这次用 read 读了其中 {counts[USE_READ]} 份，"
+        "概括": (f"知识仓库里有 {len(files)} 份文件{f'（其中 {len(platform)} 份是代码仓里的平台 skill）' if platform else ''}：助手这次用 read 读了其中 {counts[USE_READ]} 份，"
                  f"工具自己读了 {counts[USE_TOOL]} 份，启动时只放进了系统提示、没有被读过正文的有 {counts[USE_PROMPT]} 份，"
                  f"还有 {counts[USE_NONE]} 份这一次没有用到。"),
         "文件": rows, "来源说明": source_note, "skill": skill_line, "上下文文件": context_line,
@@ -1312,7 +1328,7 @@ def summary_sentence(head: dict, board: dict | None, stages: list[dict], scope: 
         parts.append("这个任务的库是旧格式，没有可以逐条核对的完成条件")
     else:
         parts.append("这条会话所在的任务目录里还没有任务记录，所以没有交付物可看，完成条件也无从核对")
-    parts.append(f"执行者走过 {len([s for s in stages if s['参与者'] == '执行者'])} 个阶段")
+    parts.append(f"助手走过 {len([s for s in stages if s['参与者'] == '助手'])} 个阶段")
     if stages:
         parts.append(f"最后一个阶段是「{stages[-1]['名称']}」")
     parts.append(f"{'这条会话' if head['会话数'] == 1 else '这几条会话'}的终态是「{head['终态']}」")
@@ -1334,15 +1350,15 @@ def task_closed_at(task: dict | None) -> float | None:
 def tail_state(runs: list[dict]) -> dict:
     """流程末端：如实写执行者最后说了什么，不替它判断在等什么。"""
     if not runs:
-        return {"有没有说话": False, "引子": "这条会话里执行者一次也没有运行过。", "原文": "", "补充": ""}
+        return {"有没有说话": False, "引子": "这条会话里助手一次也没有运行过。", "原文": "", "补充": ""}
     last = runs[-1]
     said = (last.get("助手最后说的话") or "").strip()
     aborted = "这次运行是被中止的。" if last.get("被中止") else ""
     if said:
         how = "（经「回复」工具说的）" if last.get("助手最后说的话从哪来") == "回复工具" else ""
-        return {"有没有说话": True, "引子": aborted + f"执行者这次运行已经结束，它最后对用户说的话{how}是：", "原文": said,
+        return {"有没有说话": True, "引子": aborted + f"助手这次运行已经结束，它最后对用户说的话{how}是：", "原文": said,
                 "补充": "它这段话里有没有提问题、提的是什么，现在只能靠人读这段正文；观测台不替它判断它在等什么。"}
-    return {"有没有说话": False, "引子": aborted + "这次运行结束前，执行者没有对用户说过任何话。", "原文": "",
+    return {"有没有说话": False, "引子": aborted + "这次运行结束前，助手没有对用户说过任何话。", "原文": "",
             "补充": "归档里没有留下结束的原因，观测台只如实说它结束了，不判断是谁把它停的。"}
 
 
@@ -1396,6 +1412,11 @@ def assemble(index, details: list[dict], scope: str, key: str, task_key: str | N
                          "会话编号": detail.get("会话编号", ""), "轮": turns, "启动说明": boot})
         offset += len(detail.get("运行") or [])
 
+    # 平台 skill 在代码仓里、不在任务目录里，任务定义也不登记它；它的文件按启动补记算作执行方法，
+    # 执行者读它的那一轮归入「了解方法」。
+    for path in launch_facts(launches_all)["平台 skill"]:
+        if path.endswith("SKILL.md") and path not in decl["路径归类"]["执行方法"]:
+            decl["路径归类"]["执行方法"].append(path)
     stages, notes, guides = build_stages(runs, decl, rules, index, workspace_abs, "", task_closed_at(task))
     board = None
     if task and task.get("格式") == taskdb.FORMAT_CURRENT:

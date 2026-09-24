@@ -4,8 +4,13 @@
  * 任务定义的「完成条件」一节按集合写条件名；观测台的完成条件清单、执行者的查询工具、「完成任务」
  * 工具的门禁三处都读同一份定义、调用这里同一组函数。函数只查库里的事实，不评判内容好坏。
  *
- * 「评审通过」「用户确认」不单独存成条目的状态字段，每次用查询得出：评审表里有一条针对条目当前版本、
- * 结论为合规的记录，就是评审通过；判读明细表里有一条针对条目当前版本、态度为接受的记录，就是用户确认。
+ * 「评审通过」「用户确认」不单独存成条目的状态字段，每次用查询得出：评审表里有一条针对条目当前所在修订、
+ * 结论为合规的记录，就是评审通过；确认标记表（judgement_item）里这个条目在任何一次修订上有过一条接受的标记，
+ * 就是用户确认——依据可以是已读（用户打开过详情）、界面修改（用户亲手改的）或早期版本的其他依据，任一种都算。
+ * 从来没有这样一条标记的条目叫「未读」：用户从没看过这个条目。已读是条目级、单向的：看过一次就一直是已读，
+ * 执行者后来又改出新修订也不翻回未读（「改过、用户还没看」只在界面上提示，不挡完成）。
+ * 评审是挂在「条目加修订」上的标记，条目在后来的修订里又被改过，旧的评审就不再作数；确认标记在库里同样
+ * 挂在「条目加修订」上（导出文档时据此如实写用户最后看过哪次修订），但门禁只问有没有看过。
  *
  * 每项结果有三种状态：已满足（met）、还差（unmet）、暂无条目（empty）。集合里一个条目都没有时，
  * 「每个条目……」「没有……的条目」这类条件无从谈起，记为暂无条目；它在门禁上仍算满足（satisfied 为真），
@@ -17,6 +22,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { load } from "./db.ts";
+import { titleOf } from "./tool_render.ts";
 
 /** 一项条件的三种状态：已满足、还差、暂无条目（集合为空，这一条无从谈起）。 */
 export type ConditionState = "met" | "unmet" | "empty";
@@ -39,18 +45,19 @@ export type ConditionCheck = (db: DatabaseSync, taskId: string, collection: stri
 
 interface CurrentItem {
   item_id: string;
-  version_no: number;
+  /** 条目当前所在的修订：它最近一次被新增、修改或恢复的那次修订。 */
+  revision_no: number;
   fields: string;
 }
 
-/** 某个集合里现在还在的每个条目，连同它的当前版本（最新一版）。 */
+/** 某个集合里现在还在的每个条目，连同它在当前所在修订下的内容。 */
 export function currentItems(db: DatabaseSync, taskId: string, collection: string): CurrentItem[] {
   return db
     .prepare(
-      "SELECT i.item_id, v.version_no, v.fields FROM item i " +
+      "SELECT i.item_id, v.revision_no, v.fields FROM item i " +
         "JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
         "WHERE i.task_id = ? AND i.collection = ? AND i.deleted_in_revision IS NULL " +
-        "AND v.version_no = (SELECT MAX(version_no) FROM item_version w " +
+        "AND v.revision_no = (SELECT MAX(revision_no) FROM item_version w " +
         "WHERE w.task_id = i.task_id AND w.item_id = i.item_id) ORDER BY i.serial",
     )
     .all(taskId, collection) as unknown as CurrentItem[];
@@ -70,7 +77,7 @@ function atLeastOne(db: DatabaseSync, taskId: string, collection: string): Condi
 function noUnresolved(db: DatabaseSync, taskId: string, collection: string): ConditionResult {
   const unmet = currentItems(db, taskId, collection)
     .filter((row) => (load(row.fields) as Record<string, unknown>)["状态"] === "未解决")
-    .map((row) => ({ item: row.item_id, reason: `条目 ${row.item_id} 第 ${row.version_no} 版的状态是「未解决」。` }));
+    .map((row) => ({ item: row.item_id, reason: `条目 ${row.item_id}（修订 ${row.revision_no}）的状态是「未解决」。` }));
   return {
     condition: "没有状态为未解决的条目",
     collection,
@@ -85,42 +92,77 @@ function noUnresolved(db: DatabaseSync, taskId: string, collection: string): Con
 
 function everyReviewed(db: DatabaseSync, taskId: string, collection: string): ConditionResult {
   const passed = db.prepare(
-    "SELECT 1 FROM review WHERE task_id = ? AND item_id = ? AND version_no = ? AND verdict = '合规' LIMIT 1",
+    "SELECT 1 FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ? AND verdict = '合规' LIMIT 1",
   );
   const unmet = currentItems(db, taskId, collection)
-    .filter((row) => passed.get(taskId, row.item_id, row.version_no) === undefined)
-    .map((row) => ({ item: row.item_id, reason: `条目 ${row.item_id} 的当前版本第 ${row.version_no} 版还没有评审通过的记录。` }));
+    .filter((row) => passed.get(taskId, row.item_id, row.revision_no) === undefined)
+    .map((row) => ({ item: row.item_id, reason: `条目 ${row.item_id} 在当前所在的修订 ${row.revision_no} 还没有评审通过的记录。` }));
   return {
     condition: "每个条目评审通过",
     collection,
     satisfied: unmet.length === 0,
     summary:
       unmet.length === 0
-        ? `每个条目的当前版本都有评审通过的记录。`
-        : `有 ${unmet.length} 个条目的当前版本还没有评审通过的记录。`,
+        ? `每个条目在当前所在的修订都有评审通过的记录。`
+        : `有 ${unmet.length} 个条目在当前所在的修订还没有评审通过的记录。`,
     unmet,
   };
 }
 
+/** 条目有没有被用户看过：在任何一次修订上有过一条接受的确认标记。 */
+export function everViewedStatement(db: DatabaseSync) {
+  return db.prepare("SELECT 1 FROM judgement_item WHERE task_id = ? AND item_id = ? AND attitude = '接受' LIMIT 1");
+}
+
 function everyConfirmed(db: DatabaseSync, taskId: string, collection: string): ConditionResult {
-  // 看这一版最近的一条态度记录：用户确认之后又在界面上撤回确认（记一条「不接受」），就不再算确认。
-  const latest = db.prepare(
-    "SELECT attitude FROM judgement_item WHERE task_id = ? AND item_id = ? AND version_no = ? " +
-      "ORDER BY judgement_id DESC LIMIT 1",
-  );
+  // 条目级、单向：在任何一次修订上有过接受的标记就算看过，之后再改也不翻回未读。
+  const viewed = everViewedStatement(db);
   const unmet = currentItems(db, taskId, collection)
-    .filter((row) => (latest.get(taskId, row.item_id, row.version_no) as { attitude?: string } | undefined)?.attitude !== "接受")
-    .map((row) => ({ item: row.item_id, reason: `条目 ${row.item_id} 的当前版本第 ${row.version_no} 版还没有用户接受的记录。` }));
+    .filter((row) => viewed.get(taskId, row.item_id) === undefined)
+    .map((row) => ({ item: row.item_id, reason: `条目 ${row.item_id} 用户还没看过这个条目（未读）。` }));
   return {
     condition: "每个条目用户确认",
     collection,
     satisfied: unmet.length === 0,
     summary:
       unmet.length === 0
-        ? `每个条目的当前版本都有用户接受的记录。`
-        : `有 ${unmet.length} 个条目的当前版本还没有用户接受的记录。`,
+        ? `每个条目用户都看过，没有未读的条目。`
+        : `有 ${unmet.length} 个条目用户还没看过这个条目（未读）。`,
     unmet,
   };
+}
+
+/** 「每个条目用户确认」这个条件名。未读清单只看完成条件里要求它的那些集合。 */
+export const CONFIRM_CONDITION = "每个条目用户确认";
+
+/** 一个未读条目：用户从没看过这个条目。 */
+export interface UnreadItem {
+  item_id: string;
+  collection: string;
+  revision_no: number;
+  title: string;
+}
+
+/**
+ * 未读清单：完成条件里要求「每个条目用户确认」的集合里，从来没有过接受标记的条目，按集合与流水号排。
+ * 查询任务状态、完成任务的拒绝文字与后端的整份数据都用它（后端按同一规则在 Python 里算）。
+ */
+export function unreadItems(db: DatabaseSync, taskId: string, completion: Record<string, string[]>, titleField: (collection: string) => string | undefined): UnreadItem[] {
+  const out: UnreadItem[] = [];
+  for (const [collection, names] of Object.entries(completion)) {
+    if (!names.includes(CONFIRM_CONDITION)) continue;
+    const unmet = new Set(everyConfirmed(db, taskId, collection).unmet.map((u) => u.item));
+    for (const row of currentItems(db, taskId, collection)) {
+      if (!unmet.has(row.item_id)) continue;
+      out.push({ item_id: row.item_id, collection, revision_no: row.revision_no, title: titleOf(load(row.fields) as Record<string, unknown>, titleField(collection)) });
+    }
+  }
+  return out;
+}
+
+/** 未读清单的一句话写法：「UC-001「借阅图书」、UC-002「归还图书」」。 */
+export function unreadList(items: UnreadItem[]): string {
+  return items.map((one) => `${one.item_id}${one.title ? `「${one.title}」` : ""}`).join("、");
 }
 
 /** 条件名到核对函数的登记表。任务定义里只能用这里登记过的条件名。 */

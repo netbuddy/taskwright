@@ -73,7 +73,6 @@
 .tp .p-用户{--c:var(--human);--t:var(--human-t)}
 .tp .p-执行者{--c:var(--exec);--t:var(--exec-t)}
 .tp .p-评审者{--c:var(--review);--t:var(--review-t)}
-.tp .p-确认判读者{--c:var(--judge);--t:var(--judge-t)}
 .tp .p-模拟用户{--c:var(--sim);--t:var(--sim-t)}
 .tp .区{--band:80px;position:relative}
 .tp .bandhead{position:sticky;top:0;z-index:12;display:grid;grid-template-columns:56px var(--band) minmax(0,1fr);gap:0 10px;background:var(--paper);padding:5px 0 4px;border-bottom:1px solid var(--line)}

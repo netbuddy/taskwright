@@ -18,7 +18,7 @@ from pathlib import Path
 
 from taskwright_server.fake_model import ENV_AGENT_DIR, FakeModel, write_agent_dir
 from taskwright_server.service.app import Service, serve
-from tests.integration.rig import DROPPED_ENV, profile_for_tests
+from tests.integration.rig import DROPPED_ENV, profile_for_tests, put_material
 
 
 class EventStream:
@@ -130,7 +130,10 @@ class ServiceRig:
         self.streams.append(s)
         return s
 
-    def new_task(self) -> str:
+    def new_task(self, material: str | None = None) -> str:
+        """建一个任务；给了 material 就在它的材料目录里放一份 inputs/材料.md（「文档原文」的摘录要逐字出自材料）。"""
         status, body = self.call("POST", "/tasks", {"task_type": "srs-authoring", "task_name": "测试任务", "domain_tag": "售后"})
         assert status == 200, body
+        if material is not None:
+            put_material(self.service.task(body["task_id"]).dir, material)
         return body["task_id"]

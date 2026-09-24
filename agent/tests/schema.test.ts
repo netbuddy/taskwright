@@ -38,7 +38,18 @@ test("建表语句里每一列都带着中文注释存进了库里", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, () => null);
   const sql = query<{ sql: string }>(dir, "SELECT sql FROM sqlite_master WHERE name = 'item_version'")[0].sql;
-  assert.match(sql, /内容版本号/);
+  assert.match(sql, /条目在某次修订下的内容/);
+  assert.match(sql, /PRIMARY KEY \(task_id, item_id, revision_no\)/);
+  assert.doesNotMatch(sql, /version_no/);
+});
+
+test("修订统一之前的库（条目内容表还有 version_no 列）被拒绝，说明是旧格式、本版本不支持", () => {
+  const dir = makeWorkspace();
+  withTaskDatabase(dir, { createIfMissing: true }, () => null);
+  const db = new DatabaseSync(databasePath(dir));
+  db.exec("ALTER TABLE item_version ADD COLUMN version_no INTEGER");
+  db.close();
+  assert.throws(() => withTaskDatabase(dir, { createIfMissing: false }, () => null), /旧格式.*本版本不支持.*请新建一个任务/);
 });
 
 test("来源表带字段一级的列：支持的第几处、字段名、列表里的第几项", () => {
@@ -47,14 +58,14 @@ test("来源表带字段一级的列：支持的第几处、字段名、列表�
   const columns = query<{ name: string }>(dir, "PRAGMA table_info(item_source)").map((r) => r.name);
   for (const name of ["support_no", "field", "field_index"]) assert.ok(columns.includes(name), `缺 ${name} 列`);
   const sql = query<{ sql: string }>(dir, "SELECT sql FROM sqlite_master WHERE name = 'item_source'")[0].sql;
-  assert.match(sql, /PRIMARY KEY \(task_id, item_id, version_no, position, support_no\)/);
+  assert.match(sql, /PRIMARY KEY \(task_id, item_id, revision_no, position, support_no\)/);
 });
 
 test("最早格式的库（来源表没有字段一级的列）被拒绝并说明换一个新的任务目录", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, () => null);
   const db = new DatabaseSync(databasePath(dir));
-  db.exec("DROP TABLE item_source; CREATE TABLE item_source (task_id TEXT, item_id TEXT, version_no INTEGER, position INTEGER, kind TEXT, locator TEXT, excerpt TEXT, event_seq INTEGER)");
+  db.exec("DROP TABLE item_source; CREATE TABLE item_source (task_id TEXT, item_id TEXT, revision_no INTEGER, position INTEGER, kind TEXT, locator TEXT, excerpt TEXT, event_seq INTEGER)");
   db.close();
   assert.throws(() => withTaskDatabase(dir, { createIfMissing: true }, () => null), /最早的格式.*support_no、field、field_index.*请换一个新的任务目录/);
 });

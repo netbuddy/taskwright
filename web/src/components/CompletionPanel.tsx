@@ -11,10 +11,10 @@ export function CompletionPanel({ completion, status }: { completion: Completion
   const WORD = { met: "已经满足。", unmet: "还差。", empty: "这个集合现在没有条目，暂不需要核对。" } as const;
   return (
     <div>
-      <div className="small" style={{ marginBottom: 4 }}>
+      <div className="small" style={{ marginBottom: "0.286rem" }}>
         {completionHeadline(completion)}{status === "已完成"
           ? (completion.all_met ? "任务已经标为已完成。" : "任务已经标为已完成：评审工具还没有，完成时开发期开关把「评审通过」几条当作已满足，所以这里仍显示没有满足。")
-          : completion.all_met ? "" : "都满足之后，执行者才能把这个任务标记为已完成。"}
+          : completion.all_met ? "" : "都满足之后，助手才能把这个任务标记为已完成。"}
       </div>
       {groupConditions(completion).map(([collection, conditions]) => (
         <div key={collection}>

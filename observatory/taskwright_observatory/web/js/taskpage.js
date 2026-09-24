@@ -16,9 +16,8 @@ let observer = null;
 
 const 人物 = {
   用户:      {形: "h", 字: "用", 名: "用户",       色: "#3148C8", 底: "#EEF1FD"},
-  执行者:    {形: "a", 字: "执", 名: "执行者",     色: "#0F766E", 底: "#E7F4F2"},
+  助手:    {形: "a", 字: "执", 名: "助手",     色: "#0F766E", 底: "#E7F4F2"},
   评审者:    {形: "a", 字: "评", 名: "评审者",     色: "#7C4DBC", 底: "#F3EEFB"},
-  确认判读者: {形: "a", 字: "判", 名: "确认判读者", 色: "#A8651B", 底: "#FBF2E6"},
   模拟用户:  {形: "h", 字: "模", 名: "模拟用户",   色: "#B83A6B", 底: "#FBEBF1"},
 };
 const 头像 = (名) => `<span class="av ${人物[名].形}">${人物[名].字}</span>`;
@@ -37,7 +36,7 @@ const 登记 = (o) => (库.push(o), 库.length - 1);
 function 扩展消息HTML(list) {
   if (!list.length) return "";
   // 「.say」自带保留换行的样式，所以模板里不留换行与缩进，免得显示成空行。
-  return `<div class="extmsgs">${list.map((m) => `<div class="say human" id="msg-${esc(m.条目编号)}" data-arrow="扩展>执行者">` +
+  return `<div class="extmsgs">${list.map((m) => `<div class="say human" id="msg-${esc(m.条目编号)}" data-arrow="扩展>助手">` +
     `<div class="saylab">用户消息（pi 的自定义消息 ${esc(m.类型)}）　来源：扩展，不是人打的字　${esc(m.时刻 || "")}</div>` +
     `${esc(m.文字)}<span class="src">会话 <code>${esc(m.会话编号)}</code> 的条目 <code>${esc(m.条目编号)}</code></span></div>`).join("")}</div>`;
 }
@@ -78,7 +77,7 @@ function renderHead() {
     另一页 ? `去${另一页}` : "",
     `任务目录是 <b>${esc(h.任务目录 || "未知")}</b>，库的格式是 <b>${esc(h.库的格式 || "未知")}</b>`,
     h.材料文件.length ? `材料文件是 <b>${h.材料文件.map(esc).join("、")}</b>`
-      : (h.材料目录是任务定义登记的 ? `执行者没有读到材料目录 <b>${esc(h.材料目录)}</b> 里的任何一份文件` : ""),
+      : (h.材料目录是任务定义登记的 ? `助手没有读到材料目录 <b>${esc(h.材料目录)}</b> 里的任何一份文件` : ""),
     `从 <b>${esc(h.开始时刻)}</b> 到 <b>${esc(h.结束时刻 || "未知")}</b>`,
     `跨了 <b>${h.会话数} 条会话（session）、${h.运行次数} 次运行（agent run）、${h.轮数} 轮（turn）、${h.工具调用次数} 次工具调用</b>，其中 <b>${h.被拒次数} 次被工具拒绝</b>`,
     `后端把 pi 进程启动了 <b>${h["pi 进程启动次数"]} 次</b>`,
@@ -123,8 +122,8 @@ function renderWords() {
       <dt>需要注意</dt><dd>只列由事实直接得出的异常，没有异常时整块不显示。</dd>
       <dt>交付物看板</dt><dd>指右边那一栏，摆的是这个任务到现在产出了什么。</dd>
       <dt>知识的使用</dt><dd>指右边那一栏的第二个页签，摆的是知识仓库里的每份文件这一次各自用到没有、怎么用到的。</dd>
-      <dt>知识仓库</dt><dd>任务目录里给执行者读的那些文件：执行方法（skill）所在的 .pi/skills/，与各类文档所在的 docs/。</dd>
-      <dt>参与者</dt><dd>在这条会话里说话或者做事的一方，例如用户、执行者。</dd>
+      <dt>知识仓库</dt><dd>任务目录里给助手读的那些文件：执行方法（skill）所在的 .pi/skills/，与各类文档所在的 docs/。</dd>
+      <dt>参与者</dt><dd>在这条会话里说话或者做事的一方，例如用户、助手。</dd>
       <dt>窄带</dt><dd>流程区左边那条窄带：每条竖线是一个参与者的生命线；加粗的一段是他正在做事，横线是一条消息。</dd>
       <dt>生命线</dt><dd>窄带里的一条竖线，代表一个参与者从头到尾的存在。</dd>
       <dt>激活</dt><dd>生命线上加粗的那一段，表示这个参与者在这段时间里正在做事。</dd>
@@ -147,7 +146,7 @@ function renderWords() {
       <dt>工具调用（tool call）</dt><dd>模型在应答里提出、由 pi 去执行的一次调用。</dd>
       <dt>插话（steer）</dt><dd>一次运行还没有结束时又投进来的一句话，pi 把它排在下一轮给模型看，这次运行不会因此中断。</dd>
       <dt>自动重试（auto retry）</dt><dd>模型请求出错时 pi 自己再请求一次，这会让 pi 重新开始一段低层运行，它给的轮号 turnIndex 从 0 重新编。</dd>
-      <dt>skill</dt><dd>pi 启动时加载的一份执行方法说明。启动时只把它的名字与描述放进系统提示，正文要执行者自己用 read 去读。</dd>
+      <dt>skill</dt><dd>pi 启动时加载的一份执行方法说明。启动时只把它的名字与描述放进系统提示，正文要助手自己用 read 去读。</dd>
       <dt>上下文文件（context file）</dt><dd>AGENTS.md 一类的文件，pi 启动时把它们整份放进系统提示。</dd>
     </dl>
     <p>「模型应答」在 pi 里没有单独的名字。观测台用这四个字指同一次应答里的四样东西：助手消息的内容、停止原因、词元用量、响应编号。</p>
@@ -174,7 +173,7 @@ function renderWords() {
     <pre class="code">${esc(JSON.stringify(cur.声明, null, 2))}</pre>
 
     <h4>页头那句概括是怎么拼出来的</h4>
-    <p>它是一句按固定模板拼出来的话，不是人写的结论。模板是：交付物现有多少条目 → 完成条件满足了几条 → 执行者走过几个阶段 → 最后一个阶段是什么 → 这条会话的终态。换一份数据它自己会变。</p>
+    <p>它是一句按固定模板拼出来的话，不是人写的结论。模板是：交付物现有多少条目 → 完成条件满足了几条 → 助手走过几个阶段 → 最后一个阶段是什么 → 这条会话的终态。换一份数据它自己会变。</p>
 
     <h4>耗时为什么拆成两项</h4>
     <p>一轮只属于一个阶段，所以这一轮里模型在想的时间与工具在跑的时间，都记在这个阶段上。「模型在想」是这几轮里模型交互的耗时，「工具在跑」是工具调用本身的耗时。两项加起来一般小于页头的总耗时，差额是等待用户与进程空转的时间。</p>
@@ -183,7 +182,7 @@ function renderWords() {
     <p>${esc((lf.状态 || {}).说明 || "没有读到 Langfuse 的配置状态。")}</p>
 
     <h4>有哪些东西这一页观测不到</h4>
-    <p>模型在两次工具调用之间想了什么——例如它是怎样把材料分拣成功能用例、非功能需求、约束、待定事项这几类的——不产生任何工具调用，所以不会成为一个阶段，只存在于那一轮应答的正文里（在「全部细节」这一档里看）。这一页只显示有事实依据的阶段，不编造中间步骤，也不替执行者解释它为什么这样做。</p>
+    <p>模型在两次工具调用之间想了什么——例如它是怎样把材料分拣成功能用例、非功能需求、约束、问题这几类的——不产生任何工具调用，所以不会成为一个阶段，只存在于那一轮应答的正文里（在「全部细节」这一档里看）。这一页只显示有事实依据的阶段，不编造中间步骤，也不替助手解释它为什么这样做。</p>
   </div></details>`;
 }
 
@@ -258,7 +257,9 @@ function 画变更(v) {
 function 画操作(op, key, 收起) {
   const kind = op.动作 === "新增" ? "add" : op.动作 === "删除" ? "drop" : "edit";
   const v = op.版本 || [null, null];
-  const ver = op.动作 === "修改" && v[0] != null ? `第 ${v[0]} 版改成第 ${v[1]} 版`
+  // 新格式由后端给出「修订 a → 修订 b」；旧格式（按字段记版本）照旧拼「第 N 版」。
+  const ver = op.版本变化 != null ? op.版本变化
+    : op.动作 === "修改" && v[0] != null ? `第 ${v[0]} 版改成第 ${v[1]} 版`
     : op.动作 === "新增" && v[1] != null ? `这是它的第 ${v[1]} 版` : "";
   let 体;
   if (op.动作 === "新增") 体 = 画字段表(op.字段 || [], key, true);
@@ -319,7 +320,7 @@ function 改动块(b, key, 调用编号) {
   }
   const 键 = 登记({标题: "交付物的一次修订", 概念: [["业务领域的概念", "修订"]],
     这是什么: "这是业务领域里的一件事：工具把数据写进去以后，交付物存下了新的一次修订。它不是 pi 的概念。",
-    字段: [["修订序号", b.修订序号 != null ? `第 ${b.修订序号} 次修订` : "这次改动没有形成修订"],
+    字段: [["修订序号", b.修订序号 != null ? `修订 ${b.修订序号}` : "这次改动没有形成修订"],
       ["改动", esc(b.标题句)],
       ["由哪次调用写下", `<code>${esc(调用编号)}</code>`],
       ["写下的事实", (b.事件 || []).map((e) => `${esc(e.事件名)}（第 ${e.事件序号} 条，发起方 ${esc(e.发起方 || "—")}）`).join("；") || "接口没有单独给出事件序号。"]],
@@ -404,20 +405,20 @@ function 工具执行(c, t, key, ci) {
     字段: [["写下的事实", 事件文 || (c.对不上 ? esc(c.对不上) : "这次调用没有在库里写下任何记录。")],
       ["发起方", (c.事件 || []).map((e) => esc(e.发起方 || "—")).join("、") || "没有写下记录，也就没有发起方。"],
       ["改动的内容", c.改动.map((b) => esc(b.标题句)).join("<br>") || "这次调用没有改动交付物，也没有留下其他记录。"],
-      ["形成的修订", c.修订序号 != null ? `第 ${c.修订序号} 次修订` : "这次调用没有形成修订。"]],
+      ["形成的修订", c.修订序号 != null ? `修订 ${c.修订序号}` : "这次调用没有形成修订。"]],
     链接: ""});
   const 上面画过 = c.改动.length && !c.被拒;
   const 跳 = `<button class="jump" style="color:var(--human);text-decoration:underline" data-jump="chg-${esc(key)}-${ci}">跳到对话层里那一块看改动</button>`;
   const 变化块 = c.对不上 ? `<div class="none" style="color:var(--bad)">${esc(c.对不上)}</div>`
     : 上面画过 ? (t.调用.length === 1 ? `<div>${跳}</div>` : `<div class="none">这次调用带来的改动显示在这一轮的对话层里。${跳}</div>`)
       : `<div class="none">这次调用没有改动交付物，也没有留下其他记录。</div>`;
-  const 判读块 = (c.模型调用 || []).map((m, mi) => {
+  const 模型调用块 = (c.模型调用 || []).map((m, mi) => {
     let 提示 = m.提示;
     try { const p = JSON.parse(m.提示); 提示 = `【系统提示】\n${p.systemPrompt}\n\n【用户消息】\n${(p.messages || []).map((x) => x.content).join("\n")}`; } catch (e) { /* 原样显示 */ }
     const 键 = 登记({
       标题: `工具里的一次模型调用：${m.角色}`, 概念: [["业务领域的概念", m.角色]],
       这是什么: "这是工具在执行时自己发起的一次模型调用，不经过 pi 的运行循环，所以 Langfuse 里看不到它；提示全文与原始输出记在库里的 model_call 表。",
-      字段: [["角色", esc(m.角色)], ["结果", esc(m.结果) + (m.判读序号 != null ? `（写成了第 ${m.判读序号} 次判读）` : "")],
+      字段: [["角色", esc(m.角色)], ["结果", esc(m.结果) + (m.判读序号 != null ? `（写成了第 ${m.判读序号} 条确认标记）` : "")],
         ["模型", esc(m.模型)], ["耗时", `${m.耗时毫秒} 毫秒`], ["用量", `输入 ${m.输入用量 ?? "没记"}，输出 ${m.输出用量 ?? "没记"}`],
         ["时刻", esc(m.时刻)],
         ["提示", `<pre style="white-space:pre-wrap">${esc(提示)}</pre>`],
@@ -433,7 +434,7 @@ function 工具执行(c, t, key, ci) {
       <span class="sub">${esc(c.参数摘要)}</span></div></div>
     <div class="blk${坏}" data-k="${结果键}"><div class="k">结果</div><div>${c.被拒 ? '<span class="pill no">被拒绝</span>' : c.有没有执行结果 ? '<span class="pill ok">已接受</span>' : "归档里没有这次调用的执行结果"}
       <div style="margin-top:5px;white-space:pre-wrap">${esc(c.结果全文)}</div>${拒因}</div></div>
-    ${判读块}
+    ${模型调用块}
     <div class="blk${坏}" data-k="${库键}"><div class="k">变化</div><div><div class="chg-h">${变化标题(c)}</div>${变化块}</div></div>`;
 }
 function 一轮机器层(t, key) {
@@ -523,8 +524,8 @@ function 插话HTML(x) {
       ["种类", esc(x.种类)],
       ["会话条目编号", `<code>${esc(x.条目编号 || "未知")}</code>`],
       ["收到时刻", esc(x.时刻 || "未知")]], 链接: ""});
-  return `<div class="steer" data-arrow="用户>执行者" data-k="${键}"${x.条目编号 ? ` id="msg-${esc(x.条目编号)}"` : ""}>
-    <div class="w">用户 → 执行者　这次运行进行到一半时说的，pi 的概念叫${esc(x.种类)}</div>
+  return `<div class="steer" data-arrow="用户>助手" data-k="${键}"${x.条目编号 ? ` id="msg-${esc(x.条目编号)}"` : ""}>
+    <div class="w">用户 → 助手　这次运行进行到一半时说的，pi 的概念叫${esc(x.种类)}</div>
     <div class="x">${esc(x.原文)}</div><div class="n">${esc(x.说明)}</div></div>`;
 }
 function lv2HTML(s) {
@@ -538,7 +539,7 @@ function lv2HTML(s) {
         ["会话条目编号", `<code>${esc(s.条目编号 || "未知")}</code>`],
         ["时刻", esc(s.时刻)]], 链接: ""});
     return `<div class="lv2" hidden><div class="saylab">用户这一句话的全文</div>
-      <div class="say human" data-k="${键}" data-arrow="用户>执行者"${s.条目编号 ? ` id="msg-${esc(s.条目编号)}"` : ""}>${esc(s.全文)}
+      <div class="say human" data-k="${键}" data-arrow="用户>助手"${s.条目编号 ? ` id="msg-${esc(s.条目编号)}"` : ""}>${esc(s.全文)}
         <span class="src">来源：${esc(s.消息来源 || "未知")}　会话条目 <code>${esc(s.条目编号 || "未知")}</code></span></div></div>`;
   }
   const 触发 = (s.触发 && !s.触发.紧挨着吗)
@@ -561,11 +562,11 @@ function lv2HTML(s) {
           <div class="res">${c.被拒 ? "这次调用被工具拒绝了。" : ""}${esc(c.结果摘要)}</div>
           ${c.对不上 ? `<div class="res" style="color:var(--bad)">${esc(c.对不上)}</div>` : ""}</div></div>`).join("");
       const 消息 = (t.正文 || "").trim() ? (() => {
-        const 谁 = s.参与者, 听 = s.听 || (谁 === "执行者" ? "用户" : "执行者");
+        const 谁 = s.参与者, 听 = s.听 || (谁 === "助手" ? "用户" : "助手");
         const r = t.回复;
         const 键 = 登记(r ? {
           标题: `${谁}经「回复」工具说的话`, 概念: [["pi 的概念", "工具调用（tool call）"], ["业务领域的概念", "回复"]],
-          这是什么: `这是第 ${t.运行序号} 次运行第 ${t.序数} 轮里执行者调用「回复」工具说的话。执行者对用户说的每一句话都经这个工具发出；下面排好的几行与终端界面、终端客户端显示的是同一份（agent 的排版函数）。`,
+          这是什么: `这是第 ${t.运行序号} 次运行第 ${t.序数} 轮里助手调用「回复」工具说的话。助手对用户说的每一句话都经这个工具发出；下面排好的几行与终端界面、终端客户端显示的是同一份（agent 的排版函数）。`,
           字段: [["排好的样子", r.排版 ? `<pre style="white-space:pre-wrap">${esc(r.排版.join("\n"))}</pre>` : "调不动 agent 的排版函数（本机要有 node），只显示成文的话。"],
             ["成文的话", `<div style="white-space:pre-wrap">${esc(r.成文的话)}</div>`],
             ["是不是降级放行", r.降级放行 ? esc(r.降级放行说明) : "不是，按结构发出的。"],
@@ -631,7 +632,7 @@ function stageHTML(s, idx, maxDur, 列) {
     s.嵌套.阶段.map((x, i) => stageHTML(x, 1000 + i, maxDur, 列)).join("")}</div>` : "";
   return `<article class="stage p-${esc(s.参与者)}${坏}" id="${esc(s.编号)}" data-who="${esc(s.参与者)}"
       data-idx="${idx}" data-name="${esc(s.名称)}" data-life="${s.类型 === "用户发话" ? "说话" : "阶段"}"
-      ${s.类型 === "用户发话" ? 'data-arrow="用户>执行者"' : ""} style="--x:${道位(列, s.参与者)}px">
+      ${s.类型 === "用户发话" ? 'data-arrow="用户>助手"' : ""} style="--x:${道位(列, s.参与者)}px">
     <div class="t">${esc(s.时刻)}</div>
     <div class="sp">${头像(s.参与者)}</div>
     <div class="c">
@@ -658,12 +659,12 @@ function subLI(x) {
     x.耗时秒 != null ? ` <span style="color:var(--ink3);font-family:var(--mono);font-size:11px">${x.耗时秒} 秒</span>` : ""}</li>`;
 }
 function guideHTML(g) {
-  return `<details class="guidebox"><summary>执行者在动手写交付物之前读过的指导：一共 ${g.length} 份</summary><div class="in">
+  return `<details class="guidebox"><summary>助手在动手写交付物之前读过的指导：一共 ${g.length} 份</summary><div class="in">
    <table><tbody>${g.map((x) => `<tr><td style="white-space:nowrap;color:var(--ink3)">${esc(x.种类)}</td>
      <td style="font-family:var(--mono);font-size:11.5px">${esc(x.文件)}</td>
      <td style="white-space:nowrap;color:var(--ink3)">第 ${x.运行序号} 次运行 ${esc(x.时刻)} 读的</td>
      <td style="color:var(--ink3)">内容摘要值：${esc(x.摘要值)}</td></tr>`).join("")}</tbody></table>
-   <p style="margin:8px 0 0;color:var(--ink2)">这一块只摆出执行者当时读过哪些指导，不替它解释为什么这样做。
+   <p style="margin:8px 0 0;color:var(--ink2)">这一块只摆出助手当时读过哪些指导，不替它解释为什么这样做。
    <button style="color:var(--human);border-bottom:1px dashed var(--human)" data-openskill="1">把执行方法的原文打开看</button></p>
   </div></details>`;
 }
@@ -798,7 +799,7 @@ function setHTML(s) {
    ${s.条目.map((it) => `<div class="item${it.已删除 ? " gone" : ""}" data-code="${esc(it.编号)}">
      <span class="code">${esc(it.编号)}</span>
      <span class="ttl" title="${esc(it.标题)}">${esc(it.标题)}</span>
-     <span class="meta" title="${it.已删除 ? `在第 ${it.在第几次修订删除} 次修订里删掉了` : ""}">${it.已删除 ? "已删除" : `第 ${it.版本} 版`}</span>
+     <span class="meta" title="${it.已删除 ? `在修订 ${it.在第几次修订删除} 删掉了` : ""}">${it.已删除 ? "已删除" : (it.所在 || `第 ${it.版本} 版`)}</span>
      <span class="meta">${it.来源条数} 条来源${it.状态字段 ? "｜" + esc(it.状态字段) : ""}</span>
      <i class="cell ${esc(it.评审格 || "")}" title="${esc(it.评审)}"></i><i class="cell ${esc(it.确认格 || "")}" title="${esc(it.确认)}"></i>
    </div>`).join("")}</div>`;
@@ -810,7 +811,7 @@ function renderKnow() {
   if (!k) { pane.innerHTML = `<div class="empty">没有读到这个任务目录的知识仓库。</div>`; return; }
   const groups = {};
   k.文件.forEach((f) => { (groups[f.种类] = groups[f.种类] || []).push(f); });
-  const 类 = (u) => u === "执行者按需读过" ? "read" : u === "工具读过" ? "tool" : u === "启动时放进了系统提示" ? "prompt" : "cold";
+  const 类 = (u) => u === "助手按需读过" ? "read" : u === "工具读过" ? "tool" : u === "启动时放进了系统提示" ? "prompt" : "cold";
   pane.innerHTML = `
     <p class="bsum">${esc(k.概括)}</p>
     <p class="knote">${esc(k.skill)}</p>
@@ -823,7 +824,7 @@ function renderKnow() {
           <div class="d">内容摘要值：<span class="mono">${esc(r.摘要值)}</span>${r.变过吗 ? "（几次启动之间变过）" : ""}</div></div>
         <span class="use ${类(r.用法)}">${esc(r.用法)}</span>
       </div>`).join("")}</div>`).join("")}
-    <p class="knote">这一栏按事实分四种：「执行者按需读过」是执行者自己调用 read 读的；「工具读过」是某个工具在运行时自己打开的，执行者并没有读到它的内容；「启动时放进了系统提示」是 pi 启动时放进去的（skill 只放名字与描述，上下文文件整份放）；「这次没有用到」是从头到尾没有任何人打开过。点一行跳到读它的那个阶段。</p>`;
+    <p class="knote">这一栏按事实分四种：「助手按需读过」是助手自己调用 read 读的；「工具读过」是某个工具在运行时自己打开的，助手并没有读到它的内容；「启动时放进了系统提示」是 pi 启动时放进去的（skill 只放名字与描述，上下文文件整份放）；「这次没有用到」是从头到尾没有任何人打开过。点一行跳到读它的那个阶段。</p>`;
   pane.querySelectorAll(".krow").forEach((el) => {
     el.onclick = () => {
       pane.querySelectorAll(".krow").forEach((x) => x.classList.remove("sel")); el.classList.add("sel");
@@ -889,17 +890,18 @@ function 打开条目(code, 想看的版本) {
   }
   const 版本 = got.条目.全部版本;
   const 选 = 想看的版本 != null ? 版本.find((v) => v.版本号 === 想看的版本) : 版本[版本.length - 1];
-  const 由 = 选.由第几次修订产生 != null ? `由第 ${选.由第几次修订产生} 次修订产生` : "这是这个条目建库时的初值，不是任何一次修订产生的";
+  const 由 = 选.来历 ? 选.来历 : 选.由第几次修订产生 != null ? `由修订 ${选.由第几次修订产生} 产生` : "这是这个条目建库时的初值，不是任何一次修订产生的";
+  const 名 = (v) => v.标签 || `第 ${v.版本号} 版`;
   开抽屉(`条目 ${code}`, `
-    <p class="hint">这个条目属于集合「${esc(got.集合)}」，现在一共有 ${版本.length} 版${got.条目.已删除 ? `，已在第 ${got.条目.在第几次修订删除} 次修订删掉` : ""}。下面默认显示最新的那一版，可以切到别的版本。</p>
+    <p class="hint">这个条目属于集合「${esc(got.集合)}」，${选.标签 ? `它改动过的修订一共 ${版本.length} 次` : `现在一共有 ${版本.length} 版`}${got.条目.已删除 ? `，已在修订 ${got.条目.在第几次修订删除} 删掉` : ""}。下面默认显示最新的内容，可以切到别的${选.标签 ? "修订" : "版本"}。</p>
     <div class="vtabs">${版本.map((v) => `<button data-ver="${v.版本号}" data-code="${esc(code)}"
-      aria-pressed="${v === 选 ? "true" : "false"}">第 ${v.版本号} 版</button>`).join("")}</div>
-    <p class="vmeta">第 ${选.版本号} 版：${由}${选.写入者 ? `，写入者是${esc(选.写入者)}` : ""}。
+      aria-pressed="${v === 选 ? "true" : "false"}">${esc(名(v))}</button>`).join("")}</div>
+    <p class="vmeta">${esc(名(选))}：${由}${选.写入者 ? `，写入者是${esc(选.写入者)}` : ""}。
       评审：${esc(选.评审 || "还没有这类记录")}。用户确认：${esc(选.确认 || "还没有这类记录")}。</p>
     ${got.条目.说明 ? `<p class="vmeta">这个字段的说明：${esc(got.条目.说明)}</p>` : ""}
     <div class="ftable">${选.字段.map((f) => `<div class="frow"><div class="fn">${esc(f.名)}</div><div>${画值(f)}</div></div>`).join("")}</div>
-    ${(选.来源 || []).length ? `<h4 style="font:600 13px var(--sans);margin:14px 0 4px">这一版的来源一共 ${选.来源.length} 条</h4>${
-      选.来源.map((s) => 来源HTML(s, 6, 12.5)).join("")}` : `<p class="none">这一版没有登记来源。</p>`}`);
+    ${(选.来源 || []).length ? `<h4 style="font:600 13px var(--sans);margin:14px 0 4px">${esc(名(选))}的来源一共 ${选.来源.length} 条</h4>${
+      选.来源.map((s) => 来源HTML(s, 6, 12.5)).join("")}` : `<p class="none">${esc(名(选))}没有登记来源。</p>`}`);
 }
 
 /* ───── 抽屉 ───── */
@@ -968,7 +970,7 @@ function onClick(e) {
     e.stopPropagation();
     开抽屉("执行方法的原文",
       `<h3>执行方法的原文</h3>
-       <p class="hint">这是观测台从任务目录的 ${esc(cur.执行方法.路径)} 现在读进来的全文，不一定是执行者当时读到的那一版；当时那一版的摘要值写在上面的表里。</p>
+       <p class="hint">这是观测台从任务目录的 ${esc(cur.执行方法.路径)} 现在读进来的全文，不一定是助手当时读到的那一版；当时那一版的摘要值写在上面的表里。</p>
        <pre class="skill">${esc(cur.执行方法.原文)}</pre>`);
     return;
   }
@@ -1000,7 +1002,7 @@ function 看得见(el) {
 function 布局() {
   if (!host || !host.isConnected) return;
   host.querySelectorAll(".区").forEach((区) => {
-    const 列 = 区.列 || ["用户", "执行者"];
+    const 列 = 区.列 || ["用户", "助手"];
     const 流 = 区.querySelector(".stream"), 标 = 区.querySelector(".marks");
     if (!流 || !标) return;
     const 基 = 流.getBoundingClientRect();
@@ -1132,7 +1134,7 @@ export function renderTaskPage(view, page) {
   renderHead(); renderWords(); renderAlerts(); renderPeople();
   $("#tp-flowcount").textContent = `一共 ${cur.阶段.length} 个阶段`;
   $("#tp-zoom").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.z === zoom)));
-  画区($("#tp-flow"), cur.阶段, ["用户", "执行者"], "");
+  画区($("#tp-flow"), cur.阶段, ["用户", "助手"], "");
   // 参与者筛选挪进窄带列头的右半边（原来那里的一句窄带说明挪进了流程区末尾的名词说明），省出一行高度。
   $("#tp-flow .bandhead .hint").appendChild($("#tp-people"));
   $("#tp-now").innerHTML = nowHTML(cur.末端);

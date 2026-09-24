@@ -1,11 +1,12 @@
 /**
  * 「看界面」工具（look）：用户 agent 看一眼工作视图。等执行者停下来再返回两部分文字：
  * 执行者新说的话（上一次看之后出现的）与条目区现状；参数里给条目编号时，条目区只看这个条目的字段。
+ * 给条目编号等于在界面上打开这个条目的详情：与前端一致，打开就记为已读（直接操作 mark_viewed，不通知执行者）。
  */
 
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { snapshotWhenIdle, state } from "../lib/backend.ts";
+import { call, snapshotWhenIdle, state, taskPath } from "../lib/backend.ts";
 import { type Message, renderItems, renderMessages } from "../lib/screen.ts";
 
 export const LOOK_TOOL = "look";
@@ -34,6 +35,12 @@ export function registerLook(pi: ExtensionAPI): void {
       if (!idle) parts.push(`（助手还在做事，已经等了 ${Math.round(waited / 1000)} 秒。）`);
       parts.push(params.item_id ? "" : renderMessages(fresh, snapshot.task));
       parts.push(renderItems(snapshot.task, params.item_id || undefined));
+      const opened = params.item_id ? snapshot.task?.items?.find((i: { item_id: string }) => i.item_id === params.item_id) : null;
+      if (opened) {
+        state.counter += 1;
+        await call("POST", taskPath("/actions"), { client_id: `sim-${state.counter}`, kind: "mark_viewed",
+          targets: [{ item_id: opened.item_id, base_revision: opened.revision_no }] });
+      }
       const text = parts.filter(Boolean).join("\n\n");
       return {
         content: [{ type: "text" as const, text }],

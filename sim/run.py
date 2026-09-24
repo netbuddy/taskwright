@@ -219,7 +219,7 @@ def batch_summary(root: Path, sims: list[Path], errors: dict[str, str], persona_
         details.append("- 第二层：")
         for name, ok in second.items():
             details.append(f"  - {'通过' if ok else '不通过'}：{name}。{s.get('第二层说明', {}).get(name, '')}")
-        details.append(f"- 来源种类（当前版本）：{s.get('来源种类')}；「执行者补充」全部版本累计 {s.get('执行者补充累计')} 条")
+        details.append(f"- 来源种类（最新内容）：{s.get('来源种类')}；「执行者补充」全部修订累计 {s.get('执行者补充累计')} 条")
     path = root / f"批处理汇总_{first}到{last}.md"
     path.write_text("\n".join(lines + details) + "\n", encoding="utf-8")
     return path

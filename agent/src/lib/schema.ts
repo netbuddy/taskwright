@@ -4,8 +4,9 @@
  * 为什么建库放在写入工具里、不放在后端或事件钩子里：建库也是写库，写库的入口只能是工具；
  * 事件钩子里出错 pi 只记一行日志就放行，工具的执行函数里出错会当场变成工具的拒绝并带着原因。
  *
- * 库里只存每个条目的每一版内容；「第 N 次修订时整份交付物的样子」不另存，读的时候推出来
- * （每个条目在第 N 次修订时的最新一版，去掉那时已删除的条目）。
+ * 条目没有单独的版本号：条目在某一时刻的内容由「条目编号加修订号」标识。库里只存每个条目在它被改动过的
+ * 那些修订下的内容；「修订 N 时整份交付物的样子」不另存，读的时候推出来（每个条目在修订号不大于 N 的
+ * 最近一行，去掉那时已删除的条目）。
  *
  * 每一条写入类的行都带 event_seq 一列，指向产生它的那条事件；事件里有 pi 的调用编号，
  * 所以任何一行都能经这一列回到模型的那一次工具调用。task 与 revision 两张表另外直接带调用编号，
@@ -60,15 +61,17 @@ export const SOURCE_KINDS = ["文档原文", "用户的话", "执行者补充", 
 /** 执行者可以填的三种。 */
 export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", "执行者补充"] as const;
 export const SOURCE_USER_WORDS = "用户的话";
+export const SOURCE_DOCUMENT = "文档原文";
 
 /**
  * 建表语句全文。每一列后面的双短横线注释会随建表语句一起存进库里（sqlite_master 的 sql 列），
  * 用库的人不看代码也能读到每一列是什么意思。
  */
 /**
- * 模型调用表：确认判读者与将来的评审者，每直接调一次模型记一行——提示全文、原始输出、
- * 模型名、耗时与用量。这是过程留痕，不是领域事实，所以不进事件表；与 judgement／review 一对一，
- * 输出不合格、没有写成判读的那一次也记，关联编号为空。
+ * 模型调用表：工具里直接调一次模型（现在只有评审者）每调一次记一行——提示全文、原始输出、
+ * 模型名、耗时与用量。这是过程留痕，不是领域事实，所以不进事件表；与 review 一对一，
+ * 输出不合格、没有写成评审的那一次也记，关联编号为空。role 与 judgement_id 两列是早期版本留下的：
+ * 那时还有一种由模型判读用户的话来登记确认的做法，已经退役，旧库里可能还有那种行；新写的行 role 一律是评审者、judgement_id 为空。
  * 用 IF NOT EXISTS：之前建的库没有这张表，第一次被写入一侧打开时补上（只加表，不改已有的表，不算迁移）。
  */
 export const MODEL_CALL_SQL = `
@@ -76,7 +79,7 @@ CREATE TABLE IF NOT EXISTS model_call (
   model_call_id  INTEGER PRIMARY KEY,  -- 模型调用的编号
   task_id        TEXT NOT NULL,        -- 所属任务的任务编号
   role           TEXT NOT NULL CHECK (role IN ('判读者', '评审者')),  -- 谁的调用
-  judgement_id   INTEGER,              -- 关联的判读编号；输出不合格、没有写成判读时为空
+  judgement_id   INTEGER,              -- 早期版本留下的列，新写的行为空
   review_id      INTEGER,              -- 关联的评审编号（评审者调用时填）
   tool_call_id   TEXT NOT NULL,        -- 发起这次模型调用的那次工具调用的 pi 调用编号
   prompt         TEXT NOT NULL,        -- 提示全文（JSON：系统提示与消息）
@@ -146,36 +149,35 @@ CREATE TABLE item (
   PRIMARY KEY (task_id, item_id)
 );
 
-CREATE TABLE item_version (
+CREATE TABLE item_version (         -- 条目在某次修订下的内容：条目只在它被新增、修改或恢复的那些修订下有一行
   task_id      TEXT NOT NULL,          -- 所属任务的任务编号
   item_id      TEXT NOT NULL,          -- 条目编号
-  version_no   INTEGER NOT NULL,       -- 这个条目的内容版本号，从 1 起
-  revision_no  INTEGER NOT NULL,       -- 由第几次修订产生
-  fields       TEXT NOT NULL,          -- 这一版各字段的内容（JSON 对象，键是任务定义里声明的字段名）
-  event_seq    INTEGER NOT NULL,       -- 记下这一版的那条事件的序号
-  PRIMARY KEY (task_id, item_id, version_no)
+  revision_no  INTEGER NOT NULL,       -- 产生这份内容的修订号；条目编号加修订号唯一确定条目在那一刻的内容
+  fields       TEXT NOT NULL,          -- 各字段的内容（JSON 对象，键是任务定义里声明的字段名）
+  event_seq    INTEGER NOT NULL,       -- 记下这次修订的那条事件的序号
+  PRIMARY KEY (task_id, item_id, revision_no)
 );
 
 CREATE TABLE item_source (
   task_id      TEXT NOT NULL,          -- 所属任务的任务编号
   item_id      TEXT NOT NULL,          -- 条目编号
-  version_no   INTEGER NOT NULL,       -- 条目的内容版本号
-  position     INTEGER NOT NULL,       -- 这一版的第几条来源，从 1 起
+  revision_no  INTEGER NOT NULL,       -- 条目在哪次修订下的来源
+  position     INTEGER NOT NULL,       -- 这次修订下这个条目的第几条来源，从 1 起
   support_no   INTEGER NOT NULL,       -- 这条来源支持的第几处，从 1 起；一条来源支持几处字段就展开成几行，支持整个条目时只有一行
   kind         TEXT NOT NULL CHECK (kind IN ('文档原文', '用户的话', '执行者补充', '用户直接修改')),  -- 来源的种类；「用户直接修改」只由系统写
   locator      TEXT NOT NULL,          -- 出处：文档原文写文件路径；用户的话写「会话编号#会话条目编号」，由工具代填；执行者补充照模型写的存；用户直接修改写操作编号
   excerpt      TEXT NOT NULL,          -- 摘录的原文
   field        TEXT,                   -- 这一处支持的字段名；为空表示这条来源支持整个条目
   field_index  INTEGER,                -- 列表型字段里的第几项，从 0 起；为空表示支持整个字段
-  event_seq    INTEGER NOT NULL,       -- 记下这一版的那条事件的序号
-  PRIMARY KEY (task_id, item_id, version_no, position, support_no)
+  event_seq    INTEGER NOT NULL,       -- 记下这次修订的那条事件的序号
+  PRIMARY KEY (task_id, item_id, revision_no, position, support_no)
 );
 
 CREATE TABLE review (
   review_id           INTEGER PRIMARY KEY,  -- 评审记录的编号
   task_id             TEXT NOT NULL,        -- 所属任务的任务编号
   item_id             TEXT NOT NULL,        -- 被评审的条目编号
-  version_no          INTEGER NOT NULL,     -- 被评审的内容版本号
+  revision_no         INTEGER NOT NULL,     -- 被评审的是条目在哪次修订下的内容；标记不随后续修订移动
   verdict             TEXT NOT NULL CHECK (verdict IN ('合规', '不合规')),  -- 评审结论
   reason              TEXT NOT NULL,        -- 理由
   rules_digest        TEXT NOT NULL,        -- 所依据的规矩文档的摘要值
@@ -185,22 +187,22 @@ CREATE TABLE review (
   created_at          TEXT NOT NULL         -- 时刻（本地时间）
 );
 
-CREATE TABLE judgement (
-  judgement_id  INTEGER PRIMARY KEY,   -- 判读的编号
+CREATE TABLE judgement (           -- 确认标记：用户看过或认可了哪几个条目，一次界面操作一行（表名是早期版本起的）
+  judgement_id  INTEGER PRIMARY KEY,   -- 标记的编号
   task_id       TEXT NOT NULL,         -- 所属任务的任务编号
-  basis         TEXT NOT NULL,         -- 所依据的用户消息（JSON 列表，每项是会话条目编号与原文摘录）
-  call_id       TEXT NOT NULL,         -- 「登记用户确认」那次工具调用的 pi 调用编号
-  event_seq     INTEGER NOT NULL,      -- 记下这次判读的那条事件的序号
+  basis         TEXT NOT NULL,         -- 依据（JSON 列表，每项写「依据」：已读、界面修改或界面点击，另写「操作编号」；早期版本的库里还有依据为用户的话的）
+  call_id       TEXT NOT NULL,         -- 写下这次标记的那次界面操作的编号（ui- 开头）
+  event_seq     INTEGER NOT NULL,      -- 记下这次标记的那条事件的序号
   created_at    TEXT NOT NULL          -- 时刻（本地时间）
 );
 
-CREATE TABLE judgement_item (
-  judgement_id  INTEGER NOT NULL,      -- 所属判读的编号
+CREATE TABLE judgement_item (      -- 确认标记里的每个条目
+  judgement_id  INTEGER NOT NULL,      -- 所属标记的编号
   task_id       TEXT NOT NULL,         -- 所属任务的任务编号
   item_id       TEXT NOT NULL,         -- 条目编号
-  version_no    INTEGER NOT NULL,      -- 条目的内容版本号
-  attitude      TEXT NOT NULL CHECK (attitude IN ('接受', '不接受')),  -- 用户对这一版的态度
-  event_seq     INTEGER NOT NULL,      -- 记下这次判读的那条事件的序号
+  revision_no   INTEGER NOT NULL,      -- 用户看过或认可的是条目在哪次修订下的内容；标记不随后续修订移动
+  attitude      TEXT NOT NULL CHECK (attitude IN ('接受', '不接受')),  -- 接受：看过或认可了；不接受：撤回了确认，条目回到未读
+  event_seq     INTEGER NOT NULL,      -- 记下这次标记的那条事件的序号
   PRIMARY KEY (judgement_id, item_id)
 );
 
@@ -261,6 +263,10 @@ export function ensureSchema(db: DatabaseSync): void {
         "库表改动不做迁移，所以没有写入。请换一个新的任务目录。",
     );
   }
+  // 修订统一之前建的库：条目内容表以内容版本号为主键。库表改动不做迁移，这样的库一律拒绝。
+  if (hasVersionColumns(db)) {
+    throw new Error(OLD_VERSION_FORMAT_TEXT);
+  }
   const taskColumns = (db.prepare("PRAGMA table_info(task)").all() as { name: string }[]).map((row) => row.name);
   const missingTaskColumns = TASK_TABLE_COLUMNS.filter((name) => !taskColumns.includes(name));
   if (missingTaskColumns.length > 0) {
@@ -269,6 +275,16 @@ export function ensureSchema(db: DatabaseSync): void {
         "库表改动不做迁移，所以没有写入。请新建一个任务。",
     );
   }
+}
+
+/** 修订统一之前的库给出的拒绝文字。后端与观测台遇到这种库时说的是同一件事。 */
+export const OLD_VERSION_FORMAT_TEXT =
+  "这个任务是旧格式：条目还按内容版本号记（修订统一之前建的），本版本不支持，库表改动不做迁移，所以没有写入。请新建一个任务。";
+
+/** 库里的条目内容表还有没有 version_no 列（修订统一之前的格式）。 */
+export function hasVersionColumns(db: DatabaseSync): boolean {
+  const columns = (db.prepare("PRAGMA table_info(item_version)").all() as { name: string }[]).map((row) => row.name);
+  return columns.includes("version_no");
 }
 
 /** 来源记到字段一级时给来源表加的几列。库里的来源表缺这几列，说明是最早格式的库。 */
@@ -338,7 +354,7 @@ export function useWriteAheadLog(db: DatabaseSync): void {
 
 /**
  * 这个库的来源表认不认「用户直接修改」。加入第四种来源之前建的库，来源表的种类检查只有三种，写这一种会被 SQLite 拒绝；
- * 库表改动不做迁移，这样的库在用户直接改字段时沿用旧做法（来源沿用上一版），由调用方据此判断。
+ * 库表改动不做迁移，这样的库在用户直接改字段时沿用旧做法（来源沿用条目当前的来源），由调用方据此判断。
  */
 export function acceptsUserEditSource(db: DatabaseSync): boolean {
   const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'item_source'").get() as { sql?: string } | undefined;

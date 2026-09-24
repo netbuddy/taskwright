@@ -1,5 +1,5 @@
 /**
- * 字段级来源一批：改前版本号与发起方、来源记到字段一级、「用户的话」的出处由工具代填、返回值带事件序号。
+ * 字段级来源一批：改前修订号与发起方、来源记到字段一级、「用户的话」的出处由工具代填、返回值带事件序号。
  * 直接测 lib/ 里的核心函数，不经 pi，也不经模型。
  */
 
@@ -32,9 +32,9 @@ function rejection(fn: () => unknown): string {
   assert.fail("应当被拒绝");
 }
 
-// ---- 2.1 改前版本号与发起方 ----
+// ---- 2.1 改前修订号与发起方 ----
 
-test("修改与删除缺 base_version 时整批拒绝，说明缺什么", () => {
+test("修改与删除缺 base_revision 时整批拒绝，说明缺什么", () => {
   const dir = workspaceWithTask();
   saveRevision(callIn(dir), { operations: [addUseCase()] });
   const message = rejection(() =>
@@ -45,35 +45,35 @@ test("修改与删除缺 base_version 时整批拒绝，说明缺什么", () => 
       ],
     }),
   );
-  assert.match(message, /操作 1（修改，条目 UC-001）：缺少 base_version。修改与删除时要写你所见的这个条目的版本号/);
+  assert.match(message, /操作 1（修改，条目 UC-001）：缺少 base_revision。修改与删除时要写你所见的这个条目当前所在的修订号/);
   assert.equal(count(dir, "revision"), 1, "整批都不写入");
   const del = rejection(() => saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-001" }] }));
-  assert.match(del, /操作 1（删除，条目 UC-001）：缺少 base_version/);
-  const bad = rejection(() => saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-001", base_version: "1" }] }));
-  assert.match(bad, /base_version 应当是一个从 1 起的整数，现在写的是 "1"/);
-  const onAdd = rejection(() => saveRevision(callIn(dir), { operations: [{ ...addUseCase("甲"), base_version: 1 }] }));
-  assert.match(onAdd, /新增时不要写 base_version/);
+  assert.match(del, /操作 1（删除，条目 UC-001）：缺少 base_revision/);
+  const bad = rejection(() => saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-001", base_revision: "1" }] }));
+  assert.match(bad, /base_revision 应当是一个从 1 起的整数，现在写的是 "1"/);
+  const onAdd = rejection(() => saveRevision(callIn(dir), { operations: [{ ...addUseCase("甲"), base_revision: 1 }] }));
+  assert.match(onAdd, /新增时不要写 base_revision/);
 });
 
-test("base_version 不是当前版本时整批拒绝，写明被谁改到第几版并附上当前内容", () => {
+test("base_revision 不是条目当前所在的修订时整批拒绝，写明被谁改到哪次修订并附上当前内容", () => {
   const dir = workspaceWithTask();
   saveRevision(callIn(dir), { operations: [addUseCase()] });
-  // 用户在界面上把 UC-001 改到第 2 版（扩展命令代用户写入，编号是后端生成的操作编号）。
+  // 用户在界面上把 UC-001 改到修订 2（扩展命令代用户写入，编号是后端生成的操作编号）。
   saveRevision(
     { workspaceDir: dir, sessionId: "session-test", callId: "ui-op-13", actor: ACTOR_USER },
-    { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 备注: "用户在界面上补的" } }] },
+    { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "用户在界面上补的" } }] },
   );
   const before = count(dir, "item_version");
   const message = rejection(() =>
-    saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 名称: "执行者按旧版改" } }] }),
+    saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "执行者按旧版改" } }] }),
   );
-  assert.match(message, /条目 UC-001 已经被用户改到第 2 版（你看到的是第 1 版），请先读最新内容再改。/);
-  assert.match(message, /它现在第 2 版的内容是：\{"名称":"登录",.*"备注":"用户在界面上补的"\}/);
+  assert.match(message, /条目 UC-001 已经被用户改到修订 2（你看到的是修订 1），请先读最新内容再改。/);
+  assert.match(message, /它在修订 2 的内容是：\{"名称":"登录",.*"备注":"用户在界面上补的"\}/);
   assert.equal(count(dir, "item_version"), before);
   // 执行者自己改过的，说「被执行者改到」。
-  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_version: 2, fields: { 名称: "看过最新再改" } }] });
-  const second = rejection(() => saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-001", base_version: 2 }] }));
-  assert.match(second, /已经被执行者改到第 3 版（你看到的是第 2 版）/);
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 2, fields: { 名称: "看过最新再改" } }] });
+  const second = rejection(() => saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-001", base_revision: 2 }] }));
+  assert.match(second, /已经被执行者改到修订 3（你看到的是修订 2）/);
 });
 
 test("发起方写进事件表；用户的直接操作的调用编号是操作编号", () => {
@@ -81,7 +81,7 @@ test("发起方写进事件表；用户的直接操作的调用编号是操作�
   saveRevision(callIn(dir), { operations: [addUseCase()] });
   saveRevision(
     { workspaceDir: dir, sessionId: "session-test", callId: "ui-op-7", actor: ACTOR_USER },
-    { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 备注: "界面上改的" } }] },
+    { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "界面上改的" } }] },
   );
   const events = query<any>(dir, "SELECT seq, call_id, actor FROM event ORDER BY seq");
   assert.deepEqual(events.map((e) => e.actor), ["executor", "executor", "user"]);
@@ -99,7 +99,7 @@ test("supports 展开成来源表的多行；不写或写空列表表示支持�
       addUseCase("登录", [
         { ...SOURCE, supports: [{ field: "名称" }, { field: "步骤", index: 2 }] },
         { kind: "执行者补充", locator: "执行者补充", excerpt: "按常识补的第一步", supports: [{ field: "步骤", index: 0 }] },
-        { ...SOURCE, excerpt: "整个条目", supports: [] },
+        { ...SOURCE, excerpt: "登录总要输入口令。", supports: [] },
       ]),
     ],
   });
@@ -129,23 +129,23 @@ test("supports 的核对：字段要存在、不能是空的；index 只用于�
   assert.match(message, /有 6 个操作不对/);
   assert.match(message, /操作 1.*第 1 条来源说它支持字段「颜色」，集合「用例」没有这个字段/);
   assert.match(message, /操作 2.*给字段「名称」写了 index，这个字段是文本类型，只有列表型的字段才能指到其中一项/);
-  assert.match(message, /操作 3.*指到字段「步骤」的第 3 项（从 0 起），这个字段这一版只有 3 项，index 最大是 2/);
-  assert.match(message, /操作 4.*支持字段「备注」，这个字段在这一版里是空的/);
+  assert.match(message, /操作 3.*指到字段「步骤」的第 3 项（从 0 起），这个字段改后只有 3 项，index 最大是 2/);
+  assert.match(message, /操作 4.*支持字段「备注」，这个字段在改后的内容里是空的/);
   assert.match(message, /操作 5.*index 应当是从 0 起的整数，现在写的是 -1/);
   assert.match(message, /操作 6.*supports 应当是一个列表/);
   assert.equal(count(dir, "revision"), 0);
 });
 
-test("沿用上一版的来源时，字段改短让它指到不存在的项，要求重新给出来源", () => {
+test("沿用条目当前的来源时，字段改短让它指到不存在的项，要求重新给出来源", () => {
   const dir = workspaceWithTask();
   saveRevision(callIn(dir), { operations: [addUseCase("登录", [{ ...SOURCE, supports: [{ field: "步骤", index: 2 }] }])] });
   const message = rejection(() =>
-    saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 步骤: ["一步到位"] } }] }),
+    saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 步骤: ["一步到位"] } }] }),
   );
-  assert.match(message, /沿用上一版的第 1 条来源指到字段「步骤」的第 2 项.*请在这个操作里重新给出 sources/);
-  // 沿用的来源仍然有效时照常沿用，supports 一起带到新一版。
-  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 名称: "用口令登录" } }] });
-  const rows = query<any>(dir, "SELECT field, field_index FROM item_source WHERE version_no = 2");
+  assert.match(message, /沿用下来的第 1 条来源指到字段「步骤」的第 2 项.*请在这个操作里重新给出 sources/);
+  // 沿用的来源仍然有效时照常沿用，supports 一起带到新的修订。
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "用口令登录" } }] });
+  const rows = query<any>(dir, "SELECT field, field_index FROM item_source WHERE revision_no = 2");
   assert.deepEqual(rows.map((r) => [r.field, r.field_index]), [["步骤", 2]]);
 });
 

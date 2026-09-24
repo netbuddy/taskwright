@@ -30,6 +30,19 @@ export interface CollectionDef {
   fields: FieldDef[];
 }
 
+/** 「把问题条目标为先不管」写进状态字段的取值。 */
+export const KEEP_PENDING_STATUS = "用户决定保留";
+/** 问题条目在状态之外唯一还能由执行者改的字段：写明问题最后怎样了结。 */
+export const PROBLEM_RESULT_FIELD = "处理结果";
+
+/**
+ * 问题条目的集合靠状态字段了结：有一个枚举字段的取值里含「用户决定保留」，就返回这个字段，
+ * 否则返回 null。界面上认问题条目用的是同一个判据。
+ */
+export function keepPendingField(collection: CollectionDef): FieldDef | null {
+  return collection.fields.find((f) => f.type === FIELD_ENUM && (f.values ?? []).includes(KEEP_PENDING_STATUS)) ?? null;
+}
+
 export interface TaskDefinition {
   taskName: string;
   deliverableName: string;

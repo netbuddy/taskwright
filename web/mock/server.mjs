@@ -172,19 +172,19 @@ function statusNote(st) {
   const met = c ? c.conditions.filter((x) => x.met).length : "?";
   const total = c ? c.conditions.length : "?";
   const pending = t.items.filter((i) => i.fields["状态"] === "未解决").length;
-  return `这是新会话。任务「${t.task_name}」${t.status}，交付物现有 ${t.items.length} 个条目（${counts}），完成条件满足 ${met} 项、共 ${total} 项，还有 ${pending} 条待定事项未解决。`;
+  return `这是新会话。任务「${t.task_name}」${t.status}，交付物现有 ${t.items.length} 个条目（${counts}），完成条件满足 ${met} 项、共 ${total} 项，还有 ${pending} 条问题条目未解决。`;
 }
 
 // ───────────── 按固定脚本回话 ─────────────
 
 function scriptedReply(st, text, count) {
   const item = st.task.items[count % Math.max(st.task.items.length, 1)];
-  // 待定事项一类的条目：所在集合有一个枚举字段，取值里有「用户决定保留」。假服务的提问挂在它上面。
+  // 问题条目：所在集合有一个枚举字段，取值里有「用户决定保留」。假服务的提问挂在它上面。
   const pendingCollections = st.task.definition.collections
     .filter((c) => c.fields.some((f) => f.type === "枚举" && (f.values || []).includes("用户决定保留"))).map((c) => c.name);
   const pendingItem = st.task.items.find((i) => pendingCollections.includes(i.collection) && i.fields["状态"] !== "用户决定保留");
   const kinds = ["ask", "confirm", "suggest", "choose", "propose"];
-  // 第一轮先演示挂在待定事项上的提问。
+  // 第一轮先演示挂在问题条目上的提问。
   const kind = kinds[(count - 1 + kinds.length) % kinds.length];
   const head = `（假服务按固定脚本回话，不是真的助手。）收到你说的「${text.slice(0, 40)}」。`;
   // 与「回复」工具的核对一致：提问、建议、提议、请确认都挂当前版本的条目；与条目无关的提问写 scope。
@@ -207,7 +207,7 @@ function scriptedReply(st, text, count) {
 
 /**
  * 假服务演示「执行者改了条目」（改动块、刚改过标记要用）：用户在卡片上选了一项或同意了提议之后，
- * 把第一条未解决的待定事项改成已解决并写上处理结果，再给第一个集合的第一个条目的第一个列表字段加一步。
+ * 把第一条未解决的问题条目改成已解决并写上处理结果，再给第一个集合的第一个条目的第一个列表字段加一步。
  * 集合名、字段名都按任务定义找，不写死。
  */
 function executorRevision(st, sessionId, userText) {

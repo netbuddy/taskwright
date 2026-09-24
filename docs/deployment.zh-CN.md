@@ -13,7 +13,7 @@
 | Node.js | 24 或更新（使用内置的 `node:sqlite`） | agent、web 构建、simulator 工具 |
 | Python | 3.12 或更新 | server、observatory、simulator 的驱动程序 |
 | pi coding agent | `@earendil-works/pi-coding-agent` 0.85.1 | 运行执行者与模拟用户 |
-| pi 能连到的一个模型 | pi 支持的任意服务商（见第 3 节） | 供执行者与确认判读者使用 |
+| pi 能连到的一个模型 | pi 支持的任意服务商（见第 3 节） | 供执行者使用 |
 
 运行 Taskwright 只需要 Python 标准库。跑测试需要 pytest，它随 `observatory` 与 `server` 两个包的 `[test]` 附加项（extra）一起安装。
 
@@ -32,7 +32,7 @@ make install
 
 ## 3 模型接入
 
-Taskwright 自己不直接调用模型，调用模型的是 pi；执行者与确认判读者用的都是 pi 启动时指定的那个模型。模型写在启动配置文件（startup profile）`server/taskwright_server/profiles/dev.json` 里：
+Taskwright 自己不直接调用模型，调用模型的是 pi；执行者用的是 pi 启动时指定的那个模型。模型写在启动配置文件（startup profile）`server/taskwright_server/profiles/dev.json` 里：
 
 ```json
 "model": "openai-codex/gpt-6-luna",

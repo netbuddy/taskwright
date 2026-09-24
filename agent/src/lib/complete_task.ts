@@ -10,7 +10,7 @@
  */
 
 import { ACTOR_EXECUTOR, emit, wallClockText } from "./db.ts";
-import { checkCompletion, type ConditionResult } from "./conditions.ts";
+import { CONFIRM_CONDITION, checkCompletion, type ConditionResult, unreadItems, unreadList } from "./conditions.ts";
 import { NoDatabaseYet, TASK_ACTIVE, TASK_DONE, withTaskDatabase } from "./schema.ts";
 import { validateDefinition } from "./definition.ts";
 
@@ -57,10 +57,16 @@ export function completeTask(call: CompleteCall): CompleteOutcome {
       const waived = results.filter((r) => !r.satisfied && call.treatReviewAsMet && r.condition === REVIEW_CONDITION);
       const unmet = results.filter((r) => !r.satisfied && !waived.includes(r));
       if (unmet.length) {
+        // 未读的条目单独成一句，执行者可以原样转告用户；其余没满足的条件逐条列出。
+        const unread = unreadItems(db, task.task_id, definition.completion,
+          (name) => definition.collections.find((c) => c.name === name)?.fields[0]?.name);
+        const others = unmet.filter((r) => r.condition !== CONFIRM_CONDITION);
         throw new Error(
-          `完成条件还有 ${unmet.length} 条没有满足，任务没有标为已完成：\n` +
-            unmet.map((r, i) => `${i + 1}. ${describe(r)}`).join("\n") +
-            "\n请把缺的告诉用户，补齐之后再调用「完成任务」。",
+          "任务没有标为已完成。\n" +
+            (unread.length ? `还有 ${unread.length} 条你从没看过：${unreadList(unread)}。\n` : "") +
+            (others.length ? `另有 ${others.length} 条完成条件没有满足：\n${others.map((r, i) => `${i + 1}. ${describe(r)}`).join("\n")}\n` : "") +
+            (unread.length ? "请把上面「还有 N 条你从没看过」那句原样告诉用户，请用户打开这几条看一眼；" : "请把缺的告诉用户；") +
+            "补齐之后再调用「完成任务」。",
         );
       }
       const at = wallClockText();

@@ -3,8 +3,12 @@
 `dbshow`、`check_db` 与观测台都经这里读新格式的库，读法只有这一份。本模块只读不写：连接以只读方式
 打开，代码里没有任何写语句；它也不做核对、不评判内容，只把库里的事实原样摆出来。
 
-新旧格式怎样分：库里有 `slot` 表就是旧格式（更早的、按字段记版本的那一版），有 `item` 表就是
-新格式；一张表都没有，或者库文件根本不存在，都说明这个任务目录还没有创建任务。
+新旧格式怎样分：库里有 `slot` 表就是旧格式（更早的、按字段记版本的那一版）；有 `item` 表、条目内容表
+还按内容版本号记（有 version_no 列）的，是修订统一之前的格式，本版本不支持；有 `item` 表、条目内容按修订号记的
+是新格式。一张表都没有，或者库文件根本不存在，都说明这个任务目录还没有创建任务。
+
+新格式里条目没有单独的版本号：条目在某一时刻的内容由「条目编号加修订号」标识，条目只在它被新增、修改或恢复
+的那些修订下有一行。读出来的每个条目带「修订内容」列表，每项是条目在一次修订下的内容，键「修订号」。
 """
 
 from __future__ import annotations
@@ -19,6 +23,10 @@ FORMAT_MISSING = "还没有库"
 FORMAT_EMPTY = "空库"
 FORMAT_LEGACY = "旧格式"
 FORMAT_CURRENT = "新格式"
+FORMAT_PRE_REVISION = "修订统一之前的格式"
+
+#: 修订统一之前的库，读取一侧统一这样说。
+PRE_REVISION_TEXT = "这个任务是旧格式（修订统一之前建的，条目还按内容版本号记），本版本不支持。"
 FORMAT_UNKNOWN = "认不出的格式"
 
 #: 任务定义里不写「材料目录」时用的值，与 agent/src/lib/definition.ts 里的 DEFAULT_MATERIALS_DIR 是同一个。
@@ -60,12 +68,16 @@ def table_names(conn: sqlite3.Connection) -> set[str]:
     return {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
 
-def format_of_tables(tables: set[str]) -> str:
+def format_of_tables(tables: set[str], item_version_columns: set[str] | None = None) -> str:
     if "slot" in tables:
         return FORMAT_LEGACY
     if "item" in tables:
-        return FORMAT_CURRENT
+        return FORMAT_PRE_REVISION if "version_no" in (item_version_columns or set()) else FORMAT_CURRENT
     return FORMAT_EMPTY if not tables else FORMAT_UNKNOWN
+
+
+def item_version_columns(conn: sqlite3.Connection) -> set[str]:
+    return {row[1] for row in conn.execute("PRAGMA table_info(item_version)")}
 
 
 def format_of_workspace(workspace: Path) -> str:
@@ -75,7 +87,7 @@ def format_of_workspace(workspace: Path) -> str:
         return FORMAT_MISSING
     conn = open_readonly(path)
     try:
-        return format_of_tables(table_names(conn))
+        return format_of_tables(table_names(conn), item_version_columns(conn))
     finally:
         conn.close()
 
@@ -132,38 +144,37 @@ def materials_dir(raw: dict) -> str:
 
 
 def read_tasks(conn: sqlite3.Connection) -> list[dict]:
-    """把新格式库里的每个任务连同它的条目、条目版本、来源、修订与事件都取出来。"""
+    """把新格式库里的每个任务连同它的条目、条目在各次修订下的内容、来源、修订与事件都取出来。"""
     tasks = []
     for task in conn.execute("SELECT * FROM task ORDER BY started_at, task_id"):
         task_id = task["task_id"]
         definition = parse_definition(task["definition_text"])
         sources = read_sources(conn, task_id)
-        versions: dict[str, list[dict]] = {}
+        contents: dict[str, list[dict]] = {}
         for row in conn.execute(
-                "SELECT * FROM item_version WHERE task_id = ? ORDER BY item_id, version_no", (task_id,)):
-            versions.setdefault(row["item_id"], []).append({
-                "内容版本号": row["version_no"],
-                "由第几次修订产生": row["revision_no"],
+                "SELECT * FROM item_version WHERE task_id = ? ORDER BY item_id, revision_no", (task_id,)):
+            contents.setdefault(row["item_id"], []).append({
+                "修订号": row["revision_no"],
                 "字段": _json(row["fields"]) or {},
-                "来源": sources.get((row["item_id"], row["version_no"]), []),
+                "来源": sources.get((row["item_id"], row["revision_no"]), []),
                 "事件序号": row["event_seq"],
             })
-        reviews = _item_records(conn, "SELECT item_id, version_no, verdict, reason, created_at FROM review "
+        reviews = _item_records(conn, "SELECT item_id, revision_no, verdict, reason, created_at FROM review "
                                       "WHERE task_id = ? ORDER BY review_id", task_id, "review")
-        confirms = _item_records(conn, "SELECT j.item_id, j.version_no, j.attitude, g.created_at "
+        confirms = _item_records(conn, "SELECT j.item_id, j.revision_no, j.attitude, g.created_at "
                                        "FROM judgement_item j JOIN judgement g ON g.judgement_id = j.judgement_id "
                                        "WHERE j.task_id = ? ORDER BY j.judgement_id", task_id, "judgement_item")
-        for item_id, history in versions.items():
-            for version in history:
-                key = (item_id, version["内容版本号"])
-                version["评审记录"] = [{"结论": r["verdict"], "理由": r["reason"], "时刻": r["created_at"]}
+        for item_id, history in contents.items():
+            for content in history:
+                key = (item_id, content["修订号"])
+                content["评审记录"] = [{"结论": r["verdict"], "理由": r["reason"], "时刻": r["created_at"]}
                                        for r in reviews.get(key, [])]
-                version["确认记录"] = [{"态度": r["attitude"], "时刻": r["created_at"]}
+                content["确认记录"] = [{"态度": r["attitude"], "时刻": r["created_at"]}
                                        for r in confirms.get(key, [])]
         order = {c["名称"]: i for i, c in enumerate(definition["集合"])}
         items = []
         for row in conn.execute("SELECT * FROM item WHERE task_id = ?", (task_id,)):
-            history = versions.get(row["item_id"], [])
+            history = contents.get(row["item_id"], [])
             items.append({
                 "条目编号": row["item_id"],
                 "所属集合": row["collection"],
@@ -172,8 +183,8 @@ def read_tasks(conn: sqlite3.Connection) -> list[dict]:
                 "在第几次修订删除": row["deleted_in_revision"],
                 "新增的事件序号": row["event_seq"],
                 "删除的事件序号": row["deleted_event_seq"],
-                "版本": history,
-                "当前版本": history[-1] if history else None,
+                "修订内容": history,
+                "当前内容": history[-1] if history else None,
             })
         items.sort(key=lambda one: (order.get(one["所属集合"], len(order)), one["流水号"]))
         events = [{
@@ -226,14 +237,15 @@ def read_tasks(conn: sqlite3.Connection) -> list[dict]:
 
 
 def read_judgements(conn: sqlite3.Connection, task_id: str) -> list[dict]:
-    """每次确认判读连同逐条明细。界面点击的确认也在里面，依据写的是「界面点击」。"""
+    """每条确认标记连同逐条明细。依据有三种：打开详情或卡片上点「这几条都看过了」写「已读」，改字段或标为先不管时随修订自动写的是「界面修改」，
+    撤回确认写「界面点击」；早期版本的库里还有由模型读用户原话登记的。"""
     if "judgement" not in table_names(conn):
         return []
     details: dict[int, list[dict]] = {}
     if "judgement_item" in table_names(conn):
         for row in conn.execute("SELECT * FROM judgement_item WHERE task_id = ? ORDER BY item_id", (task_id,)):
             details.setdefault(row["judgement_id"], []).append(
-                {"条目编号": row["item_id"], "内容版本号": row["version_no"], "态度": row["attitude"]})
+                {"条目编号": row["item_id"], "修订号": row["revision_no"], "态度": row["attitude"]})
     return [{
         "判读序号": row["judgement_id"],
         "调用编号": row["call_id"],
@@ -245,7 +257,7 @@ def read_judgements(conn: sqlite3.Connection, task_id: str) -> list[dict]:
 
 
 def read_model_calls(conn: sqlite3.Connection, task_id: str) -> list[dict]:
-    """工具里直接发起的模型调用（判读者、评审者）。加这张表之前建的库没有它，给空的。"""
+    """工具里直接发起的模型调用（评审者；早期版本的库里还有登记确认时的调用）。加这张表之前建的库没有它，给空的。"""
     if "model_call" not in table_names(conn):
         return []
     return [{
@@ -277,7 +289,7 @@ def split_user_words_locator(locator: str) -> tuple[str, str] | None:
 
 
 def read_sources(conn: sqlite3.Connection, task_id: str) -> dict[tuple[str, int], list[dict]]:
-    """按（条目编号, 内容版本号）取每一版的来源。
+    """按（条目编号, 修订号）取条目在每次修订下的来源。
 
     库里一条来源支持几处字段就展开成几行（support_no 从 1 起），这里按「第几条」合回一条，
     所支持的字段放进「支持」列表：每项是字段名与列表里的第几项（从 0 起，为空表示整个字段）；
@@ -285,10 +297,10 @@ def read_sources(conn: sqlite3.Connection, task_id: str) -> dict[tuple[str, int]
     """
     columns = {row[1] for row in conn.execute("PRAGMA table_info(item_source)")}
     field_level = {"support_no", "field", "field_index"} <= columns
-    order = "item_id, version_no, position" + (", support_no" if field_level else "")
+    order = "item_id, revision_no, position" + (", support_no" if field_level else "")
     grouped: dict[tuple[str, int], list[dict]] = {}
     for row in conn.execute(f"SELECT * FROM item_source WHERE task_id = ? ORDER BY {order}", (task_id,)):
-        key = (row["item_id"], row["version_no"])
+        key = (row["item_id"], row["revision_no"])
         bucket = grouped.setdefault(key, [])
         if not bucket or bucket[-1]["第几条"] != row["position"]:
             one = {"种类": row["kind"], "出处": row["locator"], "摘录": row["excerpt"],
@@ -314,12 +326,12 @@ def support_text(supports: list[dict]) -> str:
 
 
 def _item_records(conn: sqlite3.Connection, sql: str, task_id: str, table: str) -> dict:
-    """按（条目编号, 内容版本号）分组取评审或确认的记录。那张表不在库里时给空的。"""
+    """按（条目编号, 修订号）分组取评审或确认的记录。那张表不在库里时给空的。"""
     if table not in table_names(conn):
         return {}
     grouped: dict[tuple[str, int], list] = {}
     for row in conn.execute(sql, (task_id,)):
-        grouped.setdefault((row["item_id"], row["version_no"]), []).append(row)
+        grouped.setdefault((row["item_id"], row["revision_no"]), []).append(row)
     return grouped
 
 
@@ -337,20 +349,20 @@ def read_workspace(workspace: Path) -> dict:
     return result
 
 
-def version_of(item: dict, version_no: int | None) -> dict | None:
-    """取条目的某一版。版本号为空或者找不到就返回 None。"""
-    if version_no is None:
+def content_at(item: dict, revision_no: int | None) -> dict | None:
+    """取条目在修订 revision_no 下的内容（那次修订改动过它才有）。修订号为空或者找不到就返回 None。"""
+    if revision_no is None:
         return None
-    for one in item["版本"]:
-        if one["内容版本号"] == version_no:
+    for one in item["修订内容"]:
+        if one["修订号"] == revision_no:
             return one
     return None
 
 
 def snapshot_at(task: dict, revision_no: int) -> list[dict]:
-    """推出第 N 次修订时整份交付物的样子：每个条目在那时的最新一版，去掉那时已删除的条目。
+    """推出修订 N 时整份交付物的样子：每个条目在修订号不大于 N 的最近一次改动，去掉那时已删除的条目。
 
-    库里不存整份快照，要看就这样现推。返回的每一项是（条目编号、所属集合、那时的那一版）。
+    库里不存整份快照，要看就这样现推。返回的每一项是（条目编号、所属集合、那时的内容）。
     """
     shown = []
     for item in task["条目"]:
@@ -359,7 +371,7 @@ def snapshot_at(task: dict, revision_no: int) -> list[dict]:
         deleted = item["在第几次修订删除"]
         if deleted is not None and deleted <= revision_no:
             continue
-        versions = [v for v in item["版本"] if v["由第几次修订产生"] <= revision_no]
-        if versions:
-            shown.append({"条目编号": item["条目编号"], "所属集合": item["所属集合"], "版本": versions[-1]})
+        upto = [v for v in item["修订内容"] if v["修订号"] <= revision_no]
+        if upto:
+            shown.append({"条目编号": item["条目编号"], "所属集合": item["所属集合"], "内容": upto[-1]})
     return shown

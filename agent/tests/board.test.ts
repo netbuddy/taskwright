@@ -22,26 +22,26 @@ function fixture(): string {
       { op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面", "输入口令"] }, sources: [{ ...SOURCE, supports: [{ field: "步骤", index: 1 }] }] },
       { op: "add", collection: "用例", fields: { 名称: "注销", 步骤: ["点注销"] }, sources: [SOURCE] },
       { op: "add", collection: "用例", fields: { 名称: "改口令", 步骤: ["输入旧口令"] }, sources: [SOURCE] },
-      { op: "add", collection: "待定事项", fields: { 事项: "口令长度？", 状态: "未解决" }, sources: [SOURCE] },
+      { op: "add", collection: "问题", fields: { 事项: "口令长度？", 状态: "未解决" }, sources: [SOURCE] },
     ],
   });
-  runUserOperation({ workspaceDir: dir, sessionId: "s" }, { op_id: "ui-op-b1", kind: "confirm", targets: [{ item_id: "UC-002", base_version: 1 }] });
+  runUserOperation({ workspaceDir: dir, sessionId: "s" }, { op_id: "ui-op-b1", kind: "mark_viewed", targets: [{ item_id: "UC-002", base_revision: 1 }] });
   saveRevision(callIn(dir), {
     operations: [
-      { op: "update", item: "UC-001", base_version: 1, fields: { 备注: "只支持口令" } },
-      { op: "delete", item: "UC-003", base_version: 1 },
+      { op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "只支持口令" } },
+      { op: "delete", item: "UC-003", base_revision: 1 },
     ],
   });
   const db = new DatabaseSync(databasePath(dir));
   db.prepare(
-    "INSERT INTO review (task_id, item_id, version_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at) " +
+    "INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at) " +
       "VALUES ('TASK-001', 'UC-002', 1, '合规', '齐全', 'x', 'r', 'c', 4, '2026-09-21T10:00:00.000')",
   ).run();
   db.close();
   return dir;
 }
 
-test("整个看板：条目的编号、标题、版本、评审与确认，已删除的条目，完成条件逐项，事件表最后的序号", () => {
+test("整个看板：条目的编号、标题、所在的修订、评审与确认，已删除的条目，完成条件逐项，事件表最后的序号", () => {
   const dir = fixture();
   const lines = boardLines(dir);
   const at = lines.pop()!;
@@ -50,28 +50,28 @@ test("整个看板：条目的编号、标题、版本、评审与确认，已�
     "任务 TASK-001「看板夹具」（类型：演示任务），状态是进行中。",
     "",
     "用例（现有 2 个）",
-    "  UC-001　登录　第 2 版　评审：还没有评审记录　确认：还没有确认记录",
-    "  UC-002　注销　第 1 版　评审：评审通过　确认：用户已确认",
-    "  已删除：UC-003（第 2 次修订删除）",
+    "  UC-001　登录　修订 2　评审：还没有评审记录　确认：未读（用户从没看过）",
+    "  UC-002　注销　修订 1　评审：评审通过　确认：已确认，用户打开看过（已读）",
+    "  已删除：UC-003（修订 2 删除）",
     "",
-    "待定事项（现有 1 个）",
-    "  TBD-001　口令长度？　第 1 版　评审：还没有评审记录　确认：还没有确认记录　状态：未解决",
+    "问题（现有 1 个）",
+    "  TBD-001　口令长度？　修订 1　评审：还没有评审记录　确认：未读（用户从没看过）　状态：未解决",
     "",
     "要完成任务，还差 3 项：",
     "  [已满足] 用例：至少一个条目。现在有 2 个条目。",
-    "  [还差] 用例：每个条目评审通过。有 1 个条目的当前版本还没有评审通过的记录。它们是：UC-001。",
-    "  [还差] 用例：每个条目用户确认。有 1 个条目的当前版本还没有用户接受的记录。它们是：UC-001。",
-    "  [还差] 待定事项：没有状态为未解决的条目。还有 1 个状态为未解决的条目。它们是：TBD-001。",
+    "  [还差] 用例：每个条目评审通过。有 1 个条目在当前所在的修订还没有评审通过的记录。它们是：UC-001。",
+    "  [还差] 用例：每个条目用户确认。有 1 个条目用户还没看过这个条目（未读）。它们是：UC-001。",
+    "  [还差] 问题：没有状态为未解决的条目。还有 1 个状态为未解决的条目。它们是：TBD-001。",
     "",
   ]);
 });
 
-test("条目详情：全部字段、来源支持的字段与第几项、版本历史；可以看旧版本", () => {
+test("条目详情：全部字段、来源支持的字段与第几项、改动过的修订；可以看截至某次修订的内容", () => {
   const dir = fixture();
   assert.deepEqual(itemLines(dir, "UC-001"), [
-    "条目 UC-001（集合「用例」），第 2 版，是当前版本。",
-    "  评审：还没有评审记录　确认：还没有确认记录",
-    "  版本历史：第 1 版由第 1 次修订产生（发起方 executor）；第 2 版由第 2 次修订产生（发起方 executor）。",
+    "条目 UC-001（集合「用例」），修订 2，是最新内容。",
+    "  评审：还没有评审记录　确认：未读（用户从没看过）",
+    "  改动过的修订：修订 1（发起方 executor）、修订 2（发起方 executor）。",
     "",
     "字段：",
     "  名称（文本）：登录",
@@ -85,23 +85,26 @@ test("条目详情：全部字段、来源支持的字段与第几项、版本�
     "     摘录：「用户可以登录。」",
     "     支持：「步骤」第 2 项",
   ]);
-  assert.equal(itemLines(dir, "UC-001", 1)[0], "条目 UC-001（集合「用例」），第 1 版，当前版本是第 2 版。");
+  assert.equal(itemLines(dir, "UC-001", 1)[0], "条目 UC-001（集合「用例」），修订 1，最新内容在修订 2。");
   assert.equal(itemLines(dir, "UC-001", 1)[9], "  备注（文本）：（没有填）");
-  assert.equal(itemLines(dir, "UC-003")[0], "条目 UC-003（集合「用例」），第 1 版，是当前版本；这个条目已在第 2 次修订删除。");
+  assert.equal(itemLines(dir, "UC-003")[0], "条目 UC-003（集合「用例」），修订 1，是最新内容；这个条目已在修订 2 删除。");
   assert.deepEqual(itemLines(dir, "UC-009"), ["没有条目 UC-009。条目编号要写全，例如 UC-001。"]);
-  assert.deepEqual(itemLines(dir, "UC-001", 5), ["条目 UC-001 没有第 5 版，它有第 1 到第 2 版。"]);
+  assert.deepEqual(itemLines(dir, "UC-001", 5), ["这个任务还没有修订 5，最新是修订 2。"]);
 });
 
-test("确认过的旧版本在条目改过之后标为确认已失效", () => {
+test("已读是条目级、单向的：条目在后来的修订里改过之后仍是已读，看板写明用户最后看过哪次修订，门禁不再挡它", () => {
   const dir = fixture();
-  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-002", base_version: 1, fields: { 备注: "改一下" } }] });
-  assert.ok(boardLines(dir).includes("  UC-002　注销　第 2 版　评审：还没有评审记录　确认：还没有确认记录（第 1 版确认过，之后改过）"));
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-002", base_revision: 1, fields: { 备注: "改一下" } }] });
+  const lines = boardLines(dir);
+  assert.ok(lines.includes("  UC-002　注销　修订 3　评审：还没有评审记录　确认：已读（用户最后看过修订 1，之后又改过）"));
+  assert.ok(lines.includes("  [还差] 用例：每个条目用户确认。有 1 个条目用户还没看过这个条目（未读）。它们是：UC-001。"));
 });
 
 test("参数解析与没有库时的说明；看板不改库", () => {
   assert.deepEqual(parseBoardArgs(""), {});
-  assert.deepEqual(parseBoardArgs("uc-001"), { itemId: "UC-001", versionNo: undefined });
-  assert.deepEqual(parseBoardArgs("UC-001 第2版"), { itemId: "UC-001", versionNo: 2 });
+  assert.deepEqual(parseBoardArgs("uc-001"), { itemId: "UC-001", revisionNo: undefined });
+  assert.deepEqual(parseBoardArgs("UC-001 修订2"), { itemId: "UC-001", revisionNo: 2 });
+  assert.deepEqual(parseBoardArgs("UC-001 2"), { itemId: "UC-001", revisionNo: 2 });
   assert.equal(parseBoardArgs("UC-001 x"), null);
   assert.match(boardCommandLines(makeWorkspace(), "")[0], /还没有任务数据库/);
   const dir = fixture();

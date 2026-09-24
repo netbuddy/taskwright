@@ -9,28 +9,28 @@ import { ACTOR_USER } from "../src/lib/db.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { listMaterials, taskStatusMessage } from "../src/lib/task_status.ts";
 import { sessionFacts } from "../src/hooks/task_status.ts";
-import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
+import { DEFINITION_PATH, MATERIAL_TEXT, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
 
 const addUseCase = (name: string) => ({ op: "add", collection: "用例", fields: { 名称: name, 步骤: ["一步"] }, sources: [SOURCE] });
-const addTbd = (text: string) => ({ op: "add", collection: "待定事项", fields: { 事项: text, 状态: "未解决" }, sources: [SOURCE] });
+const addTbd = (text: string) => ({ op: "add", collection: "问题", fields: { 事项: text, 状态: "未解决" }, sources: [SOURCE] });
 const FRESH = { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null };
 
 test("没有库、库里没有任务时不写", () => {
   assert.equal(taskStatusMessage(makeWorkspace(), FRESH, "s"), null);
 });
 
-test("新会话写任务现状：任务名与类型、按集合的条目数、完成条件满足几项、未解决的待定事项几条", () => {
+test("新会话写任务现状：任务名与类型、按集合的条目数、完成条件满足几项、未解决的问题条目几条", () => {
   const dir = makeWorkspace();
   createTask({ ...callIn(dir), sessionId: "", callId: "ui-op-1", actor: ACTOR_USER }, { definition_path: DEFINITION_PATH, task_name: "登录模块" });
   const empty = taskStatusMessage(dir, FRESH, "s")!;
   assert.equal(empty.kind, "现状");
-  assert.match(empty.text, /^【执行者开始这条会话时（\d\d:\d\d:\d\d）的任务状况：由扩展写入，不是用户打的字】任务「登录模块」（类型：演示任务），任务编号 TASK-001，状态是进行中。交付物还没有任何条目。要完成任务，还差 1 项：用例至少要有一个条目。未解决的待定事项有 0 条。/);
+  assert.match(empty.text, /^【执行者开始这条会话时（\d\d:\d\d:\d\d）的任务状况：由扩展写入，不是用户打的字】任务「登录模块」（类型：演示任务），任务编号 TASK-001，状态是进行中。交付物还没有任何条目。要完成任务，还差 1 项：用例至少要有一个条目。未解决的问题条目有 0 条。/);
   saveRevision(callIn(dir), { operations: [addUseCase("登录"), addUseCase("注销"), addTbd("口令长度？")] });
   const message = taskStatusMessage(dir, FRESH, "s")!;
-  assert.match(message.text, /交付物现有 3 个条目：用例 2 个、待定事项 1 个。/);
-  // 演示定义的完成条件：用例三项（至少一个条目满足，评审与确认不满足），待定事项一项（有未解决的，不满足）。
-  assert.match(message.text, /要完成任务，还差 3 项：用例每个条目评审通过（还差 UC-001、UC-002）；用例每个条目用户确认（还差 UC-001、UC-002）；待定事项没有状态为未解决的条目（还差 TBD-001）。未解决的待定事项有 1 条。/);
-  assert.deepEqual(message.details.items, { 用例: 2, 待定事项: 1 });
+  assert.match(message.text, /交付物现有 3 个条目：用例 2 个、问题 1 个。/);
+  // 演示定义的完成条件：用例三项（至少一个条目满足，评审与确认不满足），问题一项（有未解决的，不满足）。
+  assert.match(message.text, /要完成任务，还差 3 项：用例每个条目评审通过（还差 UC-001、UC-002）；用例每个条目用户确认（还差 UC-001、UC-002）；问题没有状态为未解决的条目（还差 TBD-001）。未解决的问题条目有 1 条。/);
+  assert.deepEqual(message.details.items, { 用例: 2, 问题: 1 });
 });
 
 test("续接：上次之后的新增、修改、删除按条目合并，写明来自几次修订、谁做的；没有变化返回 null", () => {
@@ -43,25 +43,25 @@ test("续接：上次之后的新增、修改、删除按条目合并，写明�
   const later = Date.now();
   while (Date.now() <= last + 2) { /* 等过这条会话最后一刻，让之后的事件时刻一定更晚 */ }
   saveRevision({ ...callIn(dir), callId: "ui-op-2", actor: ACTOR_USER },
-    { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 名称: "用口令登录" } }] });
+    { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "用口令登录" } }] });
   saveRevision(callIn(dir, "other-session"), {
     operations: [
-      { op: "update", item: "UC-001", base_version: 2, fields: { 名称: "用口令或短信登录" } },
-      { op: "delete", item: "UC-003", base_version: 1 },
+      { op: "update", item: "UC-001", base_revision: 2, fields: { 名称: "用口令或短信登录" } },
+      { op: "delete", item: "UC-003", base_revision: 1 },
       addUseCase("修改口令"),
     ],
   });
-  saveRevision(callIn(dir, "other-session"), { operations: [addTbd("临时"), { op: "delete", item: "UC-004", base_version: 1 }] });
-  saveRevision(callIn(dir, "other-session"), { operations: [{ op: "delete", item: "TBD-001", base_version: 1 }] });
+  saveRevision(callIn(dir, "other-session"), { operations: [addTbd("临时"), { op: "delete", item: "UC-004", base_revision: 3 }] });
+  saveRevision(callIn(dir, "other-session"), { operations: [{ op: "delete", item: "TBD-001", base_revision: 4 }] });
   const message = taskStatusMessage(dir, facts, "s")!;
   assert.ok(later > 0);
   assert.equal(message.kind, "变化");
   assert.equal(
     message.text.replace(/（\d\d:\d\d:\d\d）/, "（时刻）"),
     "【执行者续接这条会话时（时刻）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】" +
-      "修改 1 个（UC-001 第 1 版到第 3 版）；删除 1 个（UC-003）。" +
+      "修改 1 个（UC-001 修订 1 → 修订 3）；删除 1 个（UC-003）。" +
       "这些改动来自 4 次修订：用户在界面上直接做的 1 次，执行者在别的会话里做的 3 次。" +
-      "材料目录 inputs/ 里现在没有文件。",
+      `材料目录 inputs/ 里有 1 个文件：inputs/材料.md（${Buffer.byteLength(MATERIAL_TEXT)} 字节）。`,
   );
   assert.deepEqual(message.details.added, []);
 });
@@ -79,7 +79,7 @@ test("会话事实：有没有用户消息、有没有写过现状消息、最�
 });
 
 test("新会话的现状列出材料目录里的文件名与大小，不列隐藏文件与子目录；没有文件也明说", () => {
-  const dir = makeWorkspace();
+  const dir = makeWorkspace(undefined, { material: false });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   assert.match(taskStatusMessage(dir, FRESH, "s")!.text, /材料目录 inputs\/ 里现在没有文件。$/);
   mkdirSync(join(dir, "inputs/旧稿"), { recursive: true });
@@ -95,7 +95,7 @@ test("新会话的现状列出材料目录里的文件名与大小，不列隐�
 });
 
 test("续接：交付物没有变化但有上次之后新放进来的材料时，只写材料；旧材料不算新", () => {
-  const dir = makeWorkspace();
+  const dir = makeWorkspace(undefined, { material: false });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   mkdirSync(join(dir, "inputs"));
   writeFileSync(join(dir, "inputs/旧材料.md"), "旧", "utf-8");

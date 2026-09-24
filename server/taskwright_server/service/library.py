@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 
 from taskwright_observatory import taskdb
+from taskwright_server.service.errors import ApiError
 from taskwright_server.service import clock
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -116,8 +117,18 @@ class Reader:
         return int(self.conn.execute("SELECT COALESCE(MAX(seq), 0) FROM event").fetchone()[0])
 
 
+def is_pre_revision(conn: sqlite3.Connection) -> bool:
+    """修订统一之前建的库：条目内容表还有 version_no 列。本版本不支持这种库，库表改动不做迁移。"""
+    return "version_no" in {row[1] for row in conn.execute("PRAGMA table_info(item_version)")}
+
+
+OLD_FORMAT_TEXT = "这个任务是旧格式（修订统一之前建的，条目还按内容版本号记），本版本不支持。请新建一个任务。"
+
+
 def read_all(conn: sqlite3.Connection, after_seq: int | None = None) -> dict:
-    """一个读事务里把任务、事件（after_seq 之后的，或全部）、条目、版本、来源、评审、确认都取出来。"""
+    """一个读事务里把任务、事件（after_seq 之后的，或全部）、条目、条目在各次修订下的内容、来源、评审、确认都取出来。"""
+    if is_pre_revision(conn):
+        raise ApiError("old_format", OLD_FORMAT_TEXT)
     with Reader(conn) as r:
         task = r.task()
         seq = r.max_seq()
@@ -131,14 +142,15 @@ def read_all(conn: sqlite3.Connection, after_seq: int | None = None) -> dict:
             "seq": seq,
             "events": events,
             "items": [dict(x) for x in conn.execute("SELECT * FROM item WHERE task_id = ?", (tid,))],
-            "versions": [dict(x) for x in conn.execute("SELECT * FROM item_version WHERE task_id = ? ORDER BY item_id, version_no", (tid,))],
+            "contents": [dict(x) for x in conn.execute("SELECT * FROM item_version WHERE task_id = ? ORDER BY item_id, revision_no", (tid,))],
+            "revisions": [x[0] for x in conn.execute("SELECT revision_no FROM revision WHERE task_id = ? ORDER BY revision_no", (tid,))],
             "sources": taskdb.read_sources(conn, tid),
             "event_meta": {x["seq"]: {"actor": x["actor"], "at": x["at"], "call_id": x["call_id"]}
                            for x in conn.execute("SELECT seq, actor, at, call_id FROM event")},
             "reviews": [dict(x) for x in conn.execute(
-                "SELECT item_id, version_no, verdict, reason, created_at, review_id FROM review WHERE task_id = ? ORDER BY review_id", (tid,))],
+                "SELECT item_id, revision_no, verdict, reason, created_at, review_id FROM review WHERE task_id = ? ORDER BY review_id", (tid,))],
             "confirmations": [dict(x) for x in conn.execute(
-                "SELECT j.item_id, j.version_no, j.attitude, g.created_at, g.basis, g.call_id, j.judgement_id "
+                "SELECT j.item_id, j.revision_no, j.attitude, g.created_at, g.basis, g.call_id, j.judgement_id "
                 "FROM judgement_item j JOIN judgement g ON g.judgement_id = j.judgement_id WHERE j.task_id = ? "
                 "ORDER BY j.judgement_id", (tid,))],
         }
@@ -155,40 +167,68 @@ class Library:
         task = data["task"]
         self.definition = taskdb.parse_definition(task["definition_text"])
         self.collections = {c["名称"]: c for c in self.definition["集合"]}
-        self.versions: dict[tuple[str, int], dict] = {(v["item_id"], v["version_no"]): v for v in data["versions"]}
+        # 条目在某次修订下的内容：键是（条目编号, 修订号）。条目只在它被新增、修改或恢复的那些修订下有一行。
+        self.contents: dict[tuple[str, int], dict] = {(v["item_id"], v["revision_no"]): v for v in data["contents"]}
         self.items = {i["item_id"]: i for i in data["items"]}
 
     @property
     def task_id(self) -> str:
         return self.data["task"]["task_id"]
 
-    def fields_of(self, item_id: str, version_no: int | None) -> dict | None:
-        v = self.versions.get((item_id, version_no)) if version_no is not None else None
+    def fields_of(self, item_id: str, revision_no: int | None) -> dict | None:
+        """条目在修订 revision_no 下的内容（那次修订改动过它时才有）。"""
+        v = self.contents.get((item_id, revision_no)) if revision_no is not None else None
         return _json(v["fields"]) if v else None
 
-    def sources_of(self, item_id: str, version_no: int | None) -> list[dict]:
-        return [source_view(s) for s in self.data["sources"].get((item_id, version_no), [])] if version_no else []
+    def sources_of(self, item_id: str, revision_no: int | None) -> list[dict]:
+        return [source_view(s) for s in self.data["sources"].get((item_id, revision_no), [])] if revision_no else []
 
-    def reviews_of(self, item_id: str, version_no: int | None = None) -> list[dict]:
+    def reviews_of(self, item_id: str, revision_no: int | None = None) -> list[dict]:
         # findings：评审发现的逐条列表，要等评审工具提供之后的写法；现在库里只有一段理由，先给空列表。
-        return [{"version_no": r["version_no"], "verdict": r["verdict"], "reason": r["reason"], "findings": [],
-                 "at": clock.from_local_text(r["created_at"])}
-                for r in self.data["reviews"] if r["item_id"] == item_id and (version_no is None or r["version_no"] == version_no)]
+        return [{"revision_no": r["revision_no"], "verdict": r["verdict"], "reason": r["reason"],
+                 "findings": [], "at": clock.from_local_text(r["created_at"])}
+                for r in self.data["reviews"] if r["item_id"] == item_id and (revision_no is None or r["revision_no"] == revision_no)]
 
-    def confirmations_of(self, item_id: str, version_no: int | None = None) -> list[dict]:
+    def confirmations_of(self, item_id: str, revision_no: int | None = None) -> list[dict]:
         out = []
         for c in self.data["confirmations"]:
-            if c["item_id"] != item_id or (version_no is not None and c["version_no"] != version_no):
+            if c["item_id"] != item_id or (revision_no is not None and c["revision_no"] != revision_no):
                 continue
             basis = _json(c["basis"]) or []
-            ui = any(isinstance(b, dict) and b.get("依据") == "界面点击" for b in basis)
-            out.append({"version_no": c["version_no"], "accepted": c["attitude"] == "接受", "at": clock.from_local_text(c["created_at"]),
-                        "basis": "ui_click" if ui else "user_words"})
+            # 确认标记的依据：已读（打开详情或卡片上点「这几条都看过了」）、界面修改（改字段、标为先不管时随修订自动写）、
+            # 界面点击（撤回确认，早期版本还有点了确认的）；都不是的是早期版本由执行者登记的「用户的话」。
+            said = {b.get("依据") for b in basis if isinstance(b, dict)}
+            kind = ("viewed" if "已读" in said else "ui_click" if "界面点击" in said else "ui_edit" if "界面修改" in said
+                    else "user_words")
+            out.append({"revision_no": c["revision_no"], "accepted": c["attitude"] == "接受",
+                        "at": clock.from_local_text(c["created_at"]), "basis": kind})
         return out
 
-    def current_version(self, item_id: str) -> int | None:
-        numbers = [no for (iid, no) in self.versions if iid == item_id]
-        return max(numbers) if numbers else None
+    def item_revisions(self, item_id: str) -> list[int]:
+        """条目改动过的修订号，从早到晚。"""
+        return sorted(no for (iid, no) in self.contents if iid == item_id)
+
+    def current_revision(self, item_id: str) -> int | None:
+        """条目当前所在的修订：它最近一次被新增、修改或恢复的那次修订。"""
+        numbers = self.item_revisions(item_id)
+        return numbers[-1] if numbers else None
+
+    def latest_revision(self) -> int:
+        """任务最新的修订号；还没有修订时是 0。"""
+        return max(self.data.get("revisions") or [0])
+
+    def alive_at(self, revision_no: int) -> list[tuple[str, int]]:
+        """修订 revision_no 时交付物里有哪些条目，以及每个条目那时的内容来自哪次修订：（条目编号, 内容所在的修订号）。"""
+        out = []
+        for i in self.items.values():
+            if i["added_in_revision"] > revision_no:
+                continue
+            if i["deleted_in_revision"] is not None and i["deleted_in_revision"] <= revision_no:
+                continue
+            upto = [no for no in self.item_revisions(i["item_id"]) if no <= revision_no]
+            if upto:
+                out.append((i["item_id"], upto[-1]))
+        return out
 
     def totals(self) -> dict[str, int]:
         out = {name: 0 for name in self.collections}
@@ -206,23 +246,30 @@ class Library:
         for i in sorted(self.items.values(), key=lambda x: (order.get(x["collection"], 99), x["serial"])):
             if i["deleted_in_revision"] is not None:
                 continue
-            no = self.current_version(i["item_id"])
-            v = self.versions[(i["item_id"], no)]
+            no = self.current_revision(i["item_id"])
+            v = self.contents[(i["item_id"], no)]
             meta = self.data["event_meta"].get(v["event_seq"], {})
             fields = _json(v["fields"]) or {}
             confirmations = self.confirmations_of(i["item_id"])
             accepted = [c for c in confirmations if c["accepted"]]
-            latest_for_current = [c for c in confirmations if c["version_no"] == no]
+            latest_for_current = [c for c in confirmations if c["revision_no"] == no]
+            current_ok = bool(latest_for_current and latest_for_current[-1]["accepted"])
+            by, at = actor_word(meta.get("actor", "")), clock.from_local_text(meta.get("at"))
+            revisions = self.item_revisions(i["item_id"])
             items.append({
                 "item_id": i["item_id"], "collection": i["collection"],
                 "title": title_of(fields, self.collections.get(i["collection"])),
-                "version_no": no, "version_by": actor_word(meta.get("actor", "")), "version_at": clock.from_local_text(meta.get("at")),
-                "version_count": sum(1 for (iid, _) in self.versions if iid == i["item_id"]),
+                "revision_no": no, "revision_by": by, "revision_at": at, "revisions": revisions,
                 "fields": fields, "sources": self.sources_of(i["item_id"], no),
                 "reviews": self.reviews_of(i["item_id"]),
                 "confirmations": confirmations,
-                # 确认过的版本不是当前版本：有过接受记录，但当前版本最近一条态度不是接受。
-                "confirmation_stale": bool(accepted) and not (latest_for_current and latest_for_current[-1]["accepted"]),
+                # 确认是挂在「条目加修订」上的标记：有过接受记录，但条目当前所在的修订上最近一条态度不是接受，就是确认已失效。
+                "confirmation_stale": bool(accepted) and not current_ok,
+                # 已读是条目级、单向的：在任何一次修订上有过接受的标记（任一依据）就不算未读，之后再改也不翻回未读。
+                # 依据写在 confirmation_basis 里：当前修订上接受了取它的依据，否则取最后一次接受的依据；未读时为空。
+                "viewed": bool(accepted),
+                "confirmation_basis": (latest_for_current[-1]["basis"] if current_ok
+                                       else accepted[-1]["basis"] if accepted else None),
             })
         return {
             "task_id": task["task_id"],
@@ -235,15 +282,17 @@ class Library:
             "definition": definition_view(self.definition),
             "completion": None,
             "items": items,
+            "latest_revision": self.latest_revision(),
         }
 
-    def versions_view(self, item_id: str) -> list[dict]:
+    def revisions_view(self, item_id: str) -> list[dict]:
+        """条目在它改动过的每次修订下的内容，从早到晚（docs/api.md 4.3 的条目修订列表）。"""
         out = []
-        for (iid, no), v in sorted(self.versions.items()):
+        for (iid, no), v in sorted(self.contents.items()):
             if iid != item_id:
                 continue
             meta = self.data["event_meta"].get(v["event_seq"], {})
-            out.append({"version_no": no, "revision_no": v["revision_no"], "by": actor_word(meta.get("actor", "")),
+            out.append({"revision_no": no, "by": actor_word(meta.get("actor", "")),
                         "at": clock.from_local_text(meta.get("at")), "fields": _json(v["fields"]) or {},
                         "sources": self.sources_of(iid, no), "reviews": self.reviews_of(iid, no),
                         "confirmations": self.confirmations_of(iid, no)})
@@ -252,19 +301,19 @@ class Library:
     # ── 库事件（docs/api.md §3.1） ──
 
     def event_payload(self, e: dict) -> tuple[str, dict] | None:
-        """一行事件拼成（事件名, data）；不认识的事件名返回 None。字段与来源取「当时那一版」。"""
+        """一行事件拼成（事件名, data）；不认识的事件名返回 None。字段与来源取条目在那次修订下的内容。"""
         payload = _json(e["payload"]) or {}
         base = {"seq": e["seq"], "at": clock.from_local_text(e["at"]), "task_id": e["task_id"]}
         actor = actor_word(e["actor"])
         if e["name"] == "REVISION_SAVED":
             ops = []
             for op in payload.get("operations") or []:
-                item, after, before = op.get("item"), op.get("to_version"), op.get("from_version")
+                item, after, before = op.get("item"), op.get("to_revision"), op.get("from_revision")
                 fields = self.fields_of(item, after)
                 coll = self.collections.get(op.get("collection"))
                 ops.append({"op": op.get("op"), "collection": op.get("collection"), "item_id": item,
                             "title": title_of(fields if fields is not None else self.fields_of(item, before), coll),
-                            "version_before": before, "version_after": after,
+                            "revision_before": before, "revision_after": after,
                             "fields": fields, "sources": self.sources_of(item, after)})
             return "deliverable_changed", {**base, "revision_no": payload.get("revision_no"), "actor": actor,
                                            "op_id": e["call_id"] if actor == ACTOR_USER else None,
@@ -278,6 +327,9 @@ class Library:
             return "task_changed", {**base, "task_name": task.get("task_name") or self.definition["任务名"],
                                     "status_before": payload.get("status_before") or "进行中",
                                     "status_after": payload.get("status_after") or "已完成", "actor": actor, "completion": None}
+        if e["name"] == "ITEM_VIEWED":
+            return "item_viewed", {**base, "items": payload.get("items") or [],
+                                   "op_id": e["call_id"] if actor == ACTOR_USER else None, "completion": None}
         if e["name"] == "CONFIRMATION_RECORDED":
             return "confirmation_recorded", {**base, "items": payload.get("items") or [], "basis": payload.get("basis") or "ui_click",
                                              "op_id": e["call_id"] if actor == ACTOR_USER else None, "completion": None}
@@ -319,7 +371,7 @@ def task_snapshot(task_dir: Path) -> tuple[int, dict | None]:
     return data["seq"], view
 
 
-def item_versions(task_dir: Path, item_id: str) -> list[dict] | None:
+def item_revisions(task_dir: Path, item_id: str) -> list[dict] | None:
     conn = open_ro(task_dir)
     if conn is None:
         return None
@@ -330,7 +382,53 @@ def item_versions(task_dir: Path, item_id: str) -> list[dict] | None:
     if data["task"] is None:
         return None
     lib = Library(data)
-    return lib.versions_view(item_id) if item_id in lib.items else None
+    return lib.revisions_view(item_id) if item_id in lib.items else None
+
+
+def changed_fields(before: dict | None, after: dict | None, collection: dict | None) -> list[str]:
+    """前后两次修订逐字段比较，列出值不同的字段名，按任务定义里的字段顺序。新增、删除时（有一边为空）不列。"""
+    if before is None or after is None or not collection:
+        return []
+    def same(a, b):
+        return json.dumps(a, ensure_ascii=False, sort_keys=True) == json.dumps(b, ensure_ascii=False, sort_keys=True)
+    return [f["名"] for f in collection.get("字段") or [] if not same(before.get(f["名"]), after.get(f["名"]))]
+
+
+def revision_log(task_dir: Path) -> list[dict] | None:
+    """修订日志（docs/api.md 4.3）：每次修订一项，最新的在前。每项写这次修订的时刻、发起方、产生它的会话与调用编号，
+    以及碰到的条目：操作、编号、标题、所属集合、改前改后所在的修订、改了哪些字段（前后两次修订逐字段比较）。
+    触发它的事与工作编号要读会话记录，由调用方补（app.py 的 Service.revision_log）。任务还没有创建时返回 None。"""
+    conn = open_ro(task_dir)
+    if conn is None:
+        return None
+    try:
+        data = read_all(conn)
+        if data["task"] is None:
+            return None
+        with Reader(conn):
+            rows = [dict(x) for x in conn.execute("SELECT * FROM revision WHERE task_id = ? ORDER BY revision_no",
+                                                  (data["task"]["task_id"],))]
+            events = {x["seq"]: dict(x) for x in conn.execute("SELECT * FROM event WHERE name = 'REVISION_SAVED'")}
+    finally:
+        conn.close()
+    lib = Library(data)
+    out = []
+    for row in reversed(rows):
+        event = events.get(row["event_seq"]) or {}
+        payload = _json(event.get("payload")) or {}
+        ops = []
+        for op in payload.get("operations") or []:
+            item, before_no, after_no = op.get("item"), op.get("from_revision"), op.get("to_revision")
+            before, after = lib.fields_of(item, before_no), lib.fields_of(item, after_no)
+            coll = lib.collections.get(op.get("collection"))
+            ops.append({"op": op.get("op"), "item_id": item, "collection": op.get("collection"),
+                        "title": title_of(after if after is not None else before, coll),
+                        "revision_before": before_no, "revision_after": after_no,
+                        "fields_changed": changed_fields(before, after, coll) if op.get("op") == "update" else []})
+        out.append({"revision_no": row["revision_no"], "at": clock.from_local_text(event.get("at") or row["created_at"]),
+                    "by": actor_word(event.get("actor", "")), "session_id": row["session_id"], "call_id": row["call_id"],
+                    "undo_of_revision": payload.get("undo_of_revision"), "operations": ops})
+    return out
 
 
 def materials(task_dir: Path, definition: dict | None) -> list[dict]:

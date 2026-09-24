@@ -28,8 +28,8 @@ function fakeCtx(dir: string, mode: string) {
 function staleEdit(dir: string) {
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面"] }, sources: [SOURCE] }] });
-  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_version: 1, fields: { 名称: "登录系统" } }] });
-  return JSON.stringify({ op_id: "ui-tui-4", kind: "confirm", targets: [{ item_id: "UC-001", base_version: 1 }] });
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "登录系统" } }] });
+  return JSON.stringify({ op_id: "ui-tui-4", kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] });
 }
 
 test("交互模式下被拒：状态栏照旧回传 JSON，另经 notify 发出不截短的完整原因", async () => {
@@ -39,10 +39,10 @@ test("交互模式下被拒：状态栏照旧回传 JSON，另经 notify 发出�
   await userCommandHandler()(args, ctx);
   const reported = JSON.parse(status[USER_RESULT_KEY]);
   assert.equal(reported.ok, false);
-  assert.equal(reported.error.code, "stale_version");
+  assert.equal(reported.error.code, "stale_revision");
   assert.equal(notes.length, 1);
   assert.equal(notes[0].type, "error");
-  assert.ok(notes[0].message.startsWith("/tw-user 没有执行（stale_version）："), notes[0].message);
+  assert.ok(notes[0].message.startsWith("/tw-user 没有执行（stale_revision）："), notes[0].message);
   assert.ok(notes[0].message.includes(reported.error.message), "notify 里要有状态栏里那段完整的说明");
 });
 

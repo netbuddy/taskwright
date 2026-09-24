@@ -218,16 +218,20 @@ class Index:
                     "变化": [describe_operation(new_task, op) for op in content.get("operations") or []],
                     "事件序号": event["事件序号"],
                 })
-            elif event["事件名"] == "CONFIRMATION_RECORDED":
+            elif event["事件名"] in ("CONFIRMATION_RECORDED", "ITEM_VIEWED"):
                 judgement = next((j for j in task["新库"].get("判读", []) if j["事件序号"] == event["事件序号"]), None)
-                by_words = content.get("basis") == "user_words"
+                basis_kind = content.get("basis")
+                accepted = all(one.get("accepted", True) for one in content.get("items") or [])
                 changes.append({
                     "种类": "确认的登记",
                     "任务的键": key,
                     "任务编号": event["任务标识"],
-                    "说明": ("确认判读者读了用户原话，判定如下；依据是摘出的原话。" if by_words
-                             else "用户在界面上点了「确认」，没有经过判读者。"),
-                    "依据种类": "对话里的话" if by_words else "界面点击",
+                    "说明": ("用户打开条目详情看过了（或在卡片上点了「这几条都看过了」），记为已读，已读就算确认。" if basis_kind == "viewed"
+                             else "用户在界面上改了这个条目，改出来的内容随修订自动算作确认。" if basis_kind == "ui_edit"
+                             else "早期版本由模型读用户原话登记的确认，依据是摘出的原话。" if basis_kind == "user_words"
+                             else "用户在界面上点了确认。" if accepted
+                             else "用户在界面上撤回了确认；已读是条目级、单向的，看过的条目仍算看过。"),
+                    "依据种类": {"viewed": "已读", "user_words": "对话里的话", "ui_edit": "界面修改"}.get(basis_kind, "界面点击"),
                     "判读序号": judgement["判读序号"] if judgement else None,
                     "明细": judgement["明细"] if judgement else content.get("items", []),
                     "依据": judgement["依据"] if judgement else None,
@@ -394,7 +398,7 @@ class Index:
                     })
                     if mark:
                         milestones.append({
-                            "名目": "形成第 %d 次修订" % mark["修订序号"],
+                            "名目": "形成修订 %d" % mark["修订序号"],
                             "任务标识": mark["任务标识"],
                             "任务的键": mark["任务的键"],
                             "修订序号": mark["修订序号"],
@@ -532,15 +536,15 @@ class Index:
         formats = {self.tasks.get(t["任务的键"], {}).get("格式") for t in found}
         if taskdb.FORMAT_LEGACY in formats:
             return ("库里这个任务的头几条事件，发起方写的是「驱动程序」、来源写的是 "
-                    "tod.task.start，也就是任务由测试夹具用旧命令预先建好，不是执行者立项的。")
+                    "tod.task.start，也就是任务由测试夹具用旧命令预先建好，不是助手立项的。")
         for t in found:
             new = self.tasks.get(t["任务的键"], {}).get("新库") or {}
             call_id = new.get("创建它的调用编号") or ""
             if call_id.startswith("ui-"):
                 return (f"任务由用户在界面上创建（后端经创建任务的命令行入口写下任务记录，发起方是用户，"
-                        f"操作编号 {call_id}），执行者没有创建任务的工具。")
+                        f"操作编号 {call_id}），助手没有创建任务的工具。")
             if new:
-                return "任务由执行者调用「创建任务」工具创建（早期的做法），库也是那一次调用建的。"
+                return "任务由助手调用「创建任务」工具创建（早期的做法），库也是那一次调用建的。"
         return ""
 
     @staticmethod
@@ -614,7 +618,7 @@ class Index:
             },
             "评审与交付": {
                 "有没有": False,
-                "说明": "这一版还没有评审、确认判读与交付这三类记录：产品代码里还没有做这三件事，"
+                "说明": "这一版还没有评审与交付这两类记录：产品代码里还没有做这两件事，"
                         "库里也就没有对应的事件，所以这里不画徽标。",
             },
             "Langfuse 链接": self.langfuse_session_url(
@@ -622,7 +626,7 @@ class Index:
         }
 
     def current_task_detail(self, key: str) -> dict:
-        """新格式任务的交付物页：按集合列出条目的当前内容、每个条目的版本历史与来源、修订列表。"""
+        """新格式任务的交付物页：按集合列出条目的当前内容、每个条目改动过的修订与来源、修订列表。"""
         task = self.tasks[key]["新库"]
         projection = self.projections[key]
         revisions = []
@@ -661,8 +665,7 @@ class Index:
             "修订": revisions,
             "修订次数": projection["修订次数"],
             "涉及会话": sessions,
-            "评审与确认": "这一版还没有「请求评审」与「登记用户确认」两个工具，库里的评审表与判读表都是空的，"
-                          "所以这里不显示评审与确认的状态。",
+            "评审与确认": "这一版还没有「请求评审」工具，库里的评审表是空的；确认标记（已读、界面修改、撤回）在看板的「用户已确认」一栏里看。",
             "Langfuse 链接": self.langfuse_session_url(sessions[0]) if sessions else "",
         }
 

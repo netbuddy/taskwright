@@ -1,8 +1,8 @@
 # User guide
 
-This guide is for using Taskwright once it is running (see [deployment.md](deployment.md) for installation and model setup). It walks through one task in the web interface, from creating it to generating the document, then covers the example script, the other ways to work, and the observatory. It uses the bundled task type, *software requirements specification*, and the example material in `examples/library-lending/`.
+This guide is for using Taskwright once it is running (see [deployment.md](deployment.md) for installation and model setup). It walks through one task in the web interface, from creating it to generating the document, then covers the example script, the other ways to work, and the observatory. It uses the bundled task type, *software requirements specification*, and the example material in `examples/library-lending/`. If you would rather follow one task step by step with screenshots first, start with the [tutorial](tutorials/srs-authoring.md).
 
-Start the backend and the web interface with `scripts/dev.sh` (see [deployment.md](deployment.md)) and open `http://localhost:5680`.
+Start the backend and the web interface with `scripts/dev.sh` (see [deployment.md](deployment.md)) and open `http://localhost:5680`. To be able to complete a task, start with `TASKWRIGHT_DEV_REVIEW_AS_MET=1 scripts/dev.sh`: the "every item passed review" condition needs a reviewer that is not available yet, and this development switch treats it as met (see [capabilities](capabilities.md), section 3).
 
 ## 1 Create a task
 
@@ -16,40 +16,59 @@ A task can have several sessions (conversations); all of them work on the same d
 
 ## 2 Talk with the assistant
 
-The work view has three areas: the conversation, the items area (the deliverable, grouped by collection), and the document area (materials and generated documents).
+The work view has three columns: the conversation, the items area (the deliverable, grouped by collection), and the side panel with three tabs: **Materials** (材料, the uploaded texts), **Document** (文档, generating documents) and **Revisions** (修订, the revision log, see section 3). **Collapse** (收起) folds the side panel into a narrow strip; on narrow windows it starts folded. **Font size** (字号 小 中 大) in the top bar makes all text smaller or larger; text also scales with the window width, and the choice is kept in the browser.
 
 Tell the assistant what you want, for example *"请读 inputs 里的材料，整理成需求规格说明。"* It reads the materials, writes items, and replies. Each reply lists what it just did, then says what it needs from you. When it needs you to do something, the reply ends with a card:
 
 | Card | What it asks | Your options |
 |---|---|---|
-| Question | an open question | type your answer; if the question is about items, **Keep pending** (先不管这条, open issues only) or **I don't know, fill in from common sense** (我不知道，你按常识补) |
+| Question | an open question | type your answer; if the question is about items, **Keep pending** (先不管这条, only for items in the issues collection, 问题) or **I don't know, fill in from common sense** (我不知道，你按常识补) |
 | Choose | pick one of several answers | click an option, or type your own |
-| Confirm | accept these item versions | **Confirm** (确认), or **Not right** (不对, optionally with what is wrong) |
+| Confirm | a clear answer about these items as they are now (used only when the assistant really needs one) | **I've read these** (这几条都看过了), which marks the items as read, or **Not right** (不对, optionally with what is wrong). Each item line shows its current revision and whether you have read it, for example 修订 9（已读）("read"), 修订 9（未读）("unread"), or 修订 9（已读 · 你看过修订 4，之后又改过）("read · you read revision 4, changed since") when you read an earlier revision. |
 | Suggestion | a proposed value with its basis | **Adopt** (采纳) or **Another one** (换一个) |
 | Proposal | a plan, with what it would add, change or remove | **Do it** (就这样做) or **Don't** (不要) |
 
-You can always type instead of clicking. If the options don't include what you know, say it in your own words.
+You can always type instead of clicking; you do not have to answer the card first. If the options don't include what you know, say it in your own words.
 
-While the assistant works you can keep typing; your messages are delivered together when it finishes. The web interface has no stop button yet. To interrupt the assistant, send the `stop` control request of the HTTP API ([api.md](api.md), section 5.5): it clears the queued messages and interrupts the assistant, and what it already saved stays.
+After changing items the assistant only tells you what it changed; it does not ask you to confirm. You confirm an item by reading it: opening its details counts (see section 3). Before asking whether to complete the task, the assistant tells you how many items you have never read. When nothing but unread items stands in the way of completing, a live card also shows 还有 N 条未读 ("N items still unread") with **Show them** (筛出来看), which filters the list to the unread items.
+
+**One at a time.** Only one party changes the deliverable at any moment:
+
+- **While the assistant works**, a banner at the top of the items area says 助手正在工作，结束后你可以继续修改 ("the assistant is working; you can continue editing when it is done"). Every write button on the items (edit, save, delete, mark as read, keep pending, undo) is greyed out, and hovering over a greyed-out button tells you why, and the send button is greyed out too: one message starts one piece of work, and the next message waits until it is done. You can still type; your draft stays in the input box. **Let the assistant change this one** (让助手来改这一条) and **Answer this question** (回答这个问题) stay available, because they only prefill the input box. The HTTP API refuses messages and direct operations sent during this time with `session_busy`. Opening an item's details still marks it as read, because that does not change the deliverable.
+- **While you have unsaved changes** in an item's editor (the editor is open and its content differs from when you opened it), the send button and the buttons on cards are greyed out, with the hint 先保存或取消正在编辑的条目 ("save or cancel the item you are editing first"). Save or cancel, and they come back.
+
+The web interface has no stop button yet. To interrupt the assistant, send the `stop` control request of the HTTP API ([api.md](api.md), section 5.5); what it already saved stays.
+
+When a piece of work produced revisions, a small tag at the bottom of the reply says so, for example 产生了修订 8、9 ("produced revisions 8, 9"). Click it to open those revisions in the Revisions tab.
 
 ## 3 Work with the items
 
-Each item shows its version, whether it passed review, and whether you confirmed this version. Click an item in the list to see every field and where each part came from:
+Every save of the deliverable is a **revision**, numbered from 1 within the task: each save by the assistant and each direct operation of yours (edit, delete, keep pending, undo) creates exactly one. Items have no version numbers of their own; an item "is at revision N" when N is the last revision that added, changed or restored it. Marking as read does not create a revision.
 
-- **Document excerpt** (材料原文): a verbatim quote from a material, with the file it came from;
+Each item shows whether it passed review and whether you have read it: an item you have never opened shows 未读 ("unread", in bold like an unread e-mail), and one you have opened shows 已读 · 修订 N ("read · revision N", where N is the last revision you read). It also shows 修订 N once it has changed more than once. Click an item in the list to see every field and where each part came from. **Opening the details marks the item as read, and reading counts as confirming**; there is no confirm button. Only opening the details counts; seeing an item in the list does not. Read is per item: once you have read an item it stays read, even if the assistant changes it later. The four kinds of source tag are:
+
+- **Document excerpt** (材料原文): a verbatim quote from a material, with the file it came from; click it to see the sentence highlighted in the Materials tab (an excerpt made of several passages is highlighted passage by passage, scrolled to the first one); when none of it can be found in the material, the top of the Materials tab says 没有在材料里找到这段原文 ("this passage was not found in the material") for two seconds;
 - **Your words** (用户的话): something you said in the conversation;
-- **Added by the assistant** (执行者补充): something it inferred or filled in, with its reason;
+- **Added by the assistant** (助手补充): something it inferred or filled in, with its reason;
 - **Your direct edit** (用户直接修改): a field you changed yourself.
 
-You can act on the item directly with the buttons under it: **Edit** (修改) opens the fields for editing, and **Save as version N** (保存为第 N 版) saves them; **Delete** (删除) removes the item; **Confirm this version** (确认这一版) confirms it, and the button then reads **You confirmed · Withdraw** (你已确认 · 撤回); **Undo this revision** (撤销这次修订) takes back the latest revision. **‹ Back to list** (‹ 回到列表) returns to the list. Every change creates a new version; nothing is overwritten. If an item changed after you last looked at it (the assistant or another page changed it), your save is refused and you see the latest version to redo the change against.
+The drop-down at the top right of an item lists the revisions in which it changed; choose one to see the item as it was then, with the differences from its previous change marked. If the list of revisions could not be loaded, the drop-down says 修订列表没读到，再打开一次试试 ("the revision list did not load; open the item again"); go back to the list and open the item again.
 
-Editing an item makes your earlier confirmation of it stale; confirm the new version again. After each change the assistant tells you which items it changed and asks you to confirm the new versions.
+**What the assistant changed since you last confirmed.** Fields the assistant changed since the revision you last confirmed (or since the item was added, if you never confirmed it) are framed with an amber left border, and the note at the top says 与你上次确认的修订 K 相比，改了这几处 ("compared with revision K, which you last confirmed, these places changed"): struck-through text is how revision K put it, underlined text is how it reads now. Changes accumulate across several revisions. Fields you changed yourself are not framed. Because opening the details marks the item as read, the frames are fixed when you open it: they stay while the details are open and are gone the next time you open the item. The frames and 刚改 only point out what the assistant changed; they do not affect whether the item is read and do not block completion. Items changed by the assistant's most recent piece of work are marked 修订 N · 刚改 ("revision N · just changed") in the list.
+
+You can act on the item directly with the buttons under it: **Edit** (修改) opens the fields for editing and **Save** (保存) saves them as a new revision; **Delete** (删除) removes the item; **Keep pending** (先不管，保留) sets an issue item's status to kept by your decision. The bottom right of the item only shows its status; reading cannot be withdrawn. An issue item cannot be edited directly once it is written: its details only offer **Keep pending** and **Delete**. To answer it, tell the assistant in the conversation; it changes the items the issue concerns and then asks you whether the issue is settled. Saving your own edit, or keeping an issue pending, also counts as confirming that item. Tick several items in the list and click **Mark these as read** (把选中的这几条标为已读) to mark them together. **‹ Back to list** (‹ 回到列表) returns to the list. Every change creates a new revision; nothing is overwritten.
+
+If the same item is open in two browser tabs and one of them saves first, the other tab's save is refused with 这条已被改到修订 N，请重新打开 ("this item has been changed to revision N; please reopen it"). Nothing is merged; reopen the item and make your change again.
+
+When the assistant changes an item you had read, the item stays read; the list marks it 修订 N · 刚改 ("revision N · just changed") and its details show the changed fields, and it is up to you whether to look again. The line 还有 N 条未读 · 筛出来看 ("N items unread · show them") above the list, and the **Unread** (未读) filter, list the items you have never opened.
+
+**The Revisions tab** (修订) lists every revision of the task, newest first. Each card shows 修订 N · time · 助手 (the assistant) or · 你在界面上改的 (changed by you in the interface), what triggered it (which of your messages it answered, which card you clicked, or which direct operation you made), and one line per item it touched: added, changed, deleted or restored, and which fields changed, with **Show changes** (查看差异). Click a card to highlight the items it touched in the items area; the collection tabs show how many, and 修订 N 碰到的条目 ✕ in the filter line clears it. **Undo this revision** (撤销这次修订) creates a new revision that puts every item of that revision back the way it was (a deleted item comes back, an added one is deleted). If one of those items has changed again since (or has been deleted), the revision cannot be undone: the button is greyed out beforehand, and hovering over it says 这次修订碰到的条目之后又改过，不能撤销；要改请直接改条目 ("an item this revision touched has changed since, so it cannot be undone; edit the item directly instead"). **Generate a document from this revision** (按此修订生成文档) opens the document dialog for that revision. The tab stays readable while the assistant works; only undo is greyed out.
 
 ## 4 Finish and generate the document
 
-The summary line above the item list (for example 12 个条目，1 个已确认；待定事项 3 条未解决 ▾, meaning "12 items, 1 confirmed; 3 open issues unresolved") opens the completion conditions, and the task page lists them too. For the bundled task type, every collection must meet its conditions (for example, every use case confirmed, and no open issue left unresolved). The assistant completes the task only when all conditions hold; after that the task is read-only.
+The summary line above the item list (for example 12 个条目，3 条未读；问题 3 条未解决 ▾, meaning "12 items, 3 unread; 3 issues unresolved") opens the completion conditions, and the task page lists them too. For the bundled task type, every collection must meet its conditions (for example, no use case you have never read, and no issue item left unresolved). The assistant first tells you which items you have never read; when all conditions hold, it asks you on a Choose card whether to complete now; it completes the task only after you agree, and after that the task is read-only.
 
-Choose **Generate document** (生成文档), at the top of the items area or on the task page. In the dialog, tick the items and pick the version of each to include; the preview on the right follows your choice, and **Download Markdown** (下载 Markdown) saves the file. Versions that were not reviewed or not confirmed are included and marked as such. The document is rendered from the task type's template; no model rewrites it.
+Choose **Generate document** (生成文档) at the top of the items area, in the Document tab, on the task page, or on a card in the Revisions tab. In the dialog, choose one revision (the latest by default) and tick the items to include; the list shows the items that were in the deliverable at that revision. The whole document is rendered as of that revision, and the preview on the right follows your choice. **Download Markdown** (下载 Markdown) saves the file. The document starts with the revision it was generated from, and each item is marked with the revision its content comes from and whether it was confirmed and reviewed in that revision (a confirmation says on what basis: 已读 read, 用户修改 your own edit, or 明确确认 an explicit confirmation from an older version); unconfirmed and unreviewed items are included and marked as such, except that issue items are listed with their kind and status only. The document is rendered from the template in the task directory; no model rewrites it. You can generate it at any time, also after the task is completed. The [tutorial](tutorials/srs-authoring.md#act-6-take-the-document-and-look-back-at-what-the-agent-did) shows documents generated from the latest and from an earlier revision.
 
 ## 5 Try the example
 
@@ -98,13 +117,13 @@ The observatory's pages are in Chinese too; the table gives the tab names in par
 | Page | What it shows |
 |---|---|
 | Sessions (会话列表) | one row per session: start and end, runs, turns, model requests, tool calls, rejected calls, outcome; each row links to its session details (进入会话详情) and its task page (进入任务页) |
-| Tasks (任务) → task page | the task's history as stages; open a stage for the conversation and every change to the deliverable, open a turn for each tool call with its arguments, result and duration. The deliverable board shows each item's version, sources, review and confirmation, and which completion conditions are still missing. |
+| Tasks (任务) → task page | the task's history as stages; open a stage for the conversation and every change to the deliverable, open a turn for each tool call with its arguments, result and duration. The deliverable board shows each item's current revision, sources, review and confirmation, and which completion conditions are still missing; click an item to see it in every revision in which it changed. |
 | Session details | the same view for a single session |
 | System health (系统健康) | checks on the machinery: were the configured tools loaded, do the database rows match their events, were rejected calls later corrected |
 | Concepts (概念对照) | what every term on the pages means |
 
 A rejected tool call is marked where it happened; open the turn to read the reason the tool returned. With Langfuse configured, runs and tool calls also link to their Langfuse traces.
 
-In a terminal, `python3 -m taskwright_observatory.dbshow tasks/<task id>` prints the task, its items with every version and source, the revisions and the latest events; `python3 -m taskwright_observatory.check_db tasks/<task id>` checks that the database rows and events agree.
+In a terminal, `python3 -m taskwright_observatory.dbshow tasks/<task id>` prints the task, its items with the revisions in which each changed and their sources, the revisions and the latest events; `python3 -m taskwright_observatory.check_db tasks/<task id>` checks that the database rows and events agree.
 
 [中文版](user-guide.zh-CN.md)

@@ -4,10 +4,16 @@
 
 The task service speaks HTTP and Server-Sent Events (SSE). All paths start with `/api/v1`. Times are ISO 8601 strings with a time zone. Section numbers below are stable; code comments refer to them as `docs/api.md §N`.
 
+**Revisions.** Every save — one `save_revision` call by the agent, or one direct operation by the user — produces one revision of the deliverable, numbered from 1 within the task. Items have no version numbers of their own: an item's content at a point in time is identified by its item id plus a revision number, and the revisions in which an item changed are naturally not consecutive (UC-001 may have changed in revisions 4 and 9). An item's *current revision* is the last revision that added, changed or restored it. Confirmations and reviews are marks on "item + revision"; they do not move when the item changes later.
+
+**One writer at a time.** A message from the user starts one run of the agent. While it runs, the service refuses further messages and direct operations with `session_busy` (`data.reason` is `working`); nothing is queued. Clients should disable sending and writing while `executor.state` is `working`.
+
+**Work ids.** A unit of work is identified by `w-` followed by the session entry id of the user message that started it. Live events (`work_started`, `step`, `assistant_reply`, `work_summary`, `work_ended`) and the conversation read after a reload use the same id, and the revision log (4.3) names the work each revision of the agent belongs to.
+
 ## 1 How a client should use it
 
 1. **On page load: open the event stream first, then read a snapshot.** Buffer database events that arrive before the snapshot; when the snapshot arrives, drop buffered events whose sequence number is not greater than the snapshot's `seq`, and apply the rest in order. Conversation and progress events are shown as they arrive.
-2. **After that, only listen.** The only other reads are on demand: an item's versions, a material's text, earlier conversation, and document generation.
+2. **After that, only listen.** The only other reads are on demand: an item's revisions, a material's text, earlier conversation, and document generation.
 3. **Screen changes come only from events.** A request's response says only "accepted" (with an operation id) or "rejected" (with the reason). A database event may arrive before the response; match it by `op_id`. A rejected request produces no event.
 4. **Recovery.** On reconnect the browser sends the last received database event id (`Last-Event-ID`); the server replays what came after it. If more than 500 events are missing, the server sends `resync` and the client starts again from step 1. Apply each sequence number once.
 
@@ -29,8 +35,8 @@ data: {
   "undo_of_revision": null,            // set when this revision undoes another
   "operations": [
     { "op": "add", "collection": "功能用例", "item_id": "UC-005", "title": "…",
-      "version_before": null, "version_after": 1,
-      "fields": { … all fields of that version … },
+      "revision_before": null, "revision_after": 7,   // the item's revision before and after; before is null for an add, after is null for a delete
+      "fields": { … all fields as of this revision … },
       "sources": [ { "kind": "文档原文", "locator": "inputs/requirements.md", "excerpt": "…",
                      "supports": [ { "field": "基本流程", "index": 0 } ] } ] },   // empty supports = the whole item
     { "op": "update", … }, { "op": "delete", "fields": null, "sources": [], … },
@@ -45,8 +51,9 @@ Source kinds: `文档原文` (verbatim document excerpt), `用户的话` (the us
 | Event | When | `data` |
 |---|---|---|
 | `task_changed` | task created, completed or abandoned | `seq`, `at`, `task_id`, `task_name`, `status_before`, `status_after`, `actor`, `completion` |
-| `review_recorded` | a reviewer's verdict (once the reviewer ships) | `seq`, `at`, `task_id`, `item_id`, `version_no`, `verdict`, `findings`, `completion` |
-| `confirmation_recorded` | the user confirmed or withdrew a confirmation | `seq`, `at`, `task_id`, `items` (`item_id`, `version_no`, `accepted`), `basis` (`ui_click` or `user_words`), `op_id`, `completion` |
+| `review_recorded` | a reviewer's verdict (once the reviewer ships) | `seq`, `at`, `task_id`, `item_id`, `revision_no`, `verdict`, `findings`, `completion` |
+| `item_viewed` | the user opened an item's details, or clicked "I've read these" on a confirm card; the item is now read as of that revision | `seq`, `at`, `task_id`, `items` (`item_id`, `revision_no`), `op_id`, `completion` |
+| `confirmation_recorded` | a confirmation mark other than "read": the user edited an item or marked an issue item as keep-pending (`basis` `ui_edit`, written together with the revision), or withdrew a confirmation (`basis` `ui_click`, `accepted` false) | `seq`, `at`, `task_id`, `items` (`item_id`, `revision_no`, `accepted`), `basis`, `op_id`, `completion` |
 | `resync` (no id) | too many events to replay | `{"reason": "gap_too_large"}` |
 
 ### 3.2 Conversation and progress events (not numbered, not replayed)
@@ -57,7 +64,7 @@ All carry `session_id`.
 |---|---|---|
 | `work_started` | the agent starts working | `work_id`, `at`, `triggered_by` (message id) |
 | `step` | a tool call starts, and a corrected line when the turn ends | `work_id`, `step_key`, `text`, `in_progress`, `failed` |
-| `user_message` | pi accepted a user message | `message_id` (empty while queued, sent again once merged), `client_id`, `at`, `text`, `origin` (`typed`, `card_choice`, `ui_request`), `card`, `queued` |
+| `user_message` | pi accepted a user message | `message_id` (the session entry id; may be empty in the rare case the entry cannot be found in time), `client_id`, `at`, `text`, `origin` (`typed`, `card_choice`, `ui_request`), `card`, `queued` |
 | `assistant_reply` | the agent replied | `message_id`, `at`, `work_id`, `via_reply_tool`, `informs`, `act`, `text`, `degraded` (see 5.3) |
 | `ui_action_noted` | a direct operation completed | `message_id`, `at`, `text`, `event_seq`, `op_id`, `revision_no`, `undoable` |
 | `material_added` | a material was uploaded | `at`, `path`, `bytes`, `modified_at` |
@@ -82,14 +89,16 @@ All carry `session_id`.
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
                             "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ] }, … ] },
             "completion": { … 4.2 … },
-            "items": [ { "item_id": "UC-001", "collection": "功能用例", "title": "…", "version_no": 2, "version_by": "user",
-                         "version_at": "…", "version_count": 2, "fields": { … }, "sources": [ … ],
-                         "reviews": [], "confirmations": [ { "version_no": 2, "accepted": true, "at": "…", "basis": "ui_click" } ],
-                         "confirmation_stale": false } ] },
+            "items": [ { "item_id": "UC-001", "collection": "功能用例", "title": "…", "revision_no": 5, "revision_by": "user",
+                         "revision_at": "…", "revisions": [2, 5], "fields": { … }, "sources": [ … ],
+                         "reviews": [], "confirmations": [ { "revision_no": 5, "accepted": true, "at": "…", "basis": "viewed" } ],
+                         "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed" } ] },
   "materials": [ { "path": "inputs/requirements.md", "bytes": 1234, "modified_at": "…" } ],
   "conversation": { "messages": [ … the latest 100, each with "type" … ], "has_earlier": false, "earliest_id": "…" },
   "current_work": null }
 ```
+
+Confirmation marks. A confirmation is a mark on "item + revision": it does not move when the item is changed later. Its `basis` is `viewed` (the user opened the item's details, or clicked "I've read these" on a confirm card), `ui_edit` (the user edited the item or marked it keep-pending; the edited content counts as confirmed) or `ui_click` (a withdrawal, `accepted` false; older databases also contain confirmations clicked in the interface); older databases may also contain `user_words`, confirmations recorded by the agent from the user's words in earlier versions. `viewed` on an item is true when the latest mark on its current revision is an acceptance of any basis, and `confirmation_basis` then names that basis; an item whose `viewed` is false is **unread**. The completion condition 「每个条目用户确认」 is met when no item of the collection is unread.
 
 When a task is completed or abandoned, `task` is still returned, messages and direct operations return `task_closed`, and documents can still be generated. Clients must take collection names, field names and enumeration values from `definition`, never hard-code them.
 
@@ -108,15 +117,16 @@ Each condition has one of three states. `met`: the collection has items and all 
 | Endpoint | Purpose | Returns |
 |---|---|---|
 | `GET /api/v1/task-types` | task types for "new task" | `{ok, task_types: [{task_type, name}]}` |
-| `GET /api/v1/tasks` | task list | `{ok, tasks: [{task_id, task_name, task_type, domain_tag, status, item_count, completion_met, completion_total, completion_unmet, last_active_at, session_count}]}` (show `completion_unmet`, "still missing N") |
+| `GET /api/v1/tasks` | task list | `{ok, tasks: [{task_id, task_name, task_type, domain_tag, status, item_count, completion_met, completion_total, completion_unmet, last_active_at, session_count, supported}]}` (show `completion_unmet`, "still missing N"). A task created before revisions replaced item versions is listed with `supported: false`, `status` 旧格式 ("old format") and a `note`; it cannot be opened. |
 | `POST /api/v1/tasks` `{task_type, task_name, domain_tag}` | create a task | `{ok, task_id}`; upload materials afterwards |
 | `GET /api/v1/tasks/{task_id}` | task page (also for closed tasks) | the task, plus `materials` and `sessions` |
 | `GET …/sessions` | sessions | `{ok, sessions: [{session_id, name, started_at, last_active_at, message_count, active}]}` |
 | `POST …/sessions` | new session | `{ok, session_id}`; `session_busy` while the agent works in another session |
-| `GET …/items/{item_id}/versions` | all versions of an item | `{ok, versions: [{version_no, revision_no, by, at, fields, sources, reviews, confirmations}]}` |
+| `GET …/items/{item_id}/revisions` | the item's content in each revision that changed it | `{ok, item_id, revisions: [{revision_no, by, at, fields, sources, reviews, confirmations}]}` |
+| `GET …/revisions` | the revision log | `{ok, latest_revision, revisions: [{revision_no, at, by, session_id, work_id, op_id, undo_of_revision, trigger, operations}]}`, newest first. `work_id` is the agent's unit of work (empty for the user's revisions); `op_id` is the user's direct operation. `trigger` says what caused the revision: `{kind: "typed" \| "card_choice" \| "ui_request", text, message_id}` for the message that started the agent's work, `{kind: "user_action", action, text}` for a direct operation (`text` such as 你把 TBD-003 标为先不管, "you kept TBD-003 pending"), or `{kind: "none"}`. Each operation has `op`, `item_id`, `collection`, `title`, `revision_before`, `revision_after` and `fields_changed` (field names that differ from the item's previous revision; empty for add, delete and restore). |
 | `GET …/materials/content?path=…` | a material's text | `{ok, path, text}`; the path must stay inside the materials directory |
 | `GET …/conversation?session=…&before={message_id}&limit=100` | earlier conversation | same shape as `conversation` in 4.1 |
-| `POST …/documents/preview` and `…/download` `{"selection": [{item_id, version_no}], "format": "markdown"}` | render a document | preview: `{ok, text}`; download: the file. Versions without review or confirmation are rendered and marked as such. |
+| `POST …/documents/preview` and `…/download` `{"revision_no": N, "items": [ids], "format": "markdown"}` | render the whole deliverable as of one revision (default: the latest), optionally only the listed items | preview: `{ok, text}`; download: the file. The document says which revision it was generated from, and marks each item with the revision its content comes from and whether it was confirmed and reviewed in that revision; a confirmation is written with its basis: read (已读), user edit (用户修改) or explicit confirmation (明确确认). A revision number beyond the latest, or an item not in the deliverable at that revision, returns `bad_request`. |
 
 ## 5 Conversation
 
@@ -124,7 +134,7 @@ The conversation lives in pi's session file; the database does not store it.
 
 ### 5.1 The user says something
 
-`POST …/messages?session={session_id}` with `{"text": "…", "client_id": "…", "attachments": ["inputs/…"], "origin": "typed", "card": null}`. Response `{ok, client_id, queued}`. The matching `user_message` event carries the same `client_id`. While the agent works, the message is queued and delivered when the current work ends; queued messages are delivered together. Text starting with `/` is prefixed with `用户说：` before it reaches pi, so it is never taken as a command.
+`POST …/messages?session={session_id}` with `{"text": "…", "client_id": "…", "attachments": ["inputs/…"], "origin": "typed", "card": null}`. Response `{ok, client_id, queued}`; `queued` is always `false`. The matching `user_message` event carries the same `client_id`. While the agent works, the message is refused with `session_busy` and `data.reason` `working`; send it again when the work has ended. Text starting with `/` is prefixed with `用户说：` before it reaches pi, so it is never taken as a command.
 
 **Materials.** `POST …/materials` (multipart, one file): `.md` or `.txt`, at most 5 MB, stored in the task's materials directory (a number is appended to duplicate names; names with path separators are rejected). Returns `{ok, path}`.
 
@@ -139,7 +149,7 @@ Only accepted calls of the agent's `reply` tool become `assistant_reply` events 
 "act": null | {
   "kind": "ask" | "confirm" | "suggest" | "choose" | "propose",
   "text": "…",
-  "items": [ { "item_id": "TBD-001", "version_no": 1 } ],   // required for confirm, ask, suggest, propose; current versions only
+  "items": [ { "item_id": "TBD-001", "revision_no": 3 } ],  // required for confirm, ask, suggest, propose; each item's current revision only
   "scope": "general",                                       // ask/suggest/propose only: not about any item (then no items)
   "options": [ { "key": "a", "text": "…" } ],               // choose only
   "value": "…", "basis": [ { "kind": "文档原文", "locator": "…", "excerpt": "…" } ],   // suggest only
@@ -156,17 +166,17 @@ A button whose result must be written to the database goes through `/actions` (s
 
 | Card | Button | Goes to |
 |---|---|---|
-| confirm | Confirm | `/actions`, kind `confirm`, targets from the card's items, `notify_executor: true` |
+| confirm | I've read these | `/actions`, kind `mark_viewed`, targets from the card's items, `notify_executor: true` |
 | confirm | Not right | `/messages` |
 | choose | an option | `/messages` |
 | suggest | Adopt / Another one | `/messages` |
 | propose | Do it / Don't | `/messages` |
-| ask (on an open issue) | Keep pending | `/actions`, kind `keep_pending`, `notify_executor: true` |
+| ask (on an issue item) | Keep pending | `/actions`, kind `keep_pending`, `notify_executor: true` |
 | ask (on items) | I don't know, fill in from common sense | `/messages` |
 
 ### 5.5 While the agent is working
 
-New messages are queued (see 5.1). `POST …/control?session=…` with `{"action": "stop"}` clears the queue (the cleared messages are returned so the user can resend them) and aborts; writes already saved stay. When the model service is unavailable, pi retries and the server sends `problem` with code `model_unavailable`.
+New messages and direct operations are refused with `session_busy` (see 5.1); the one exception is `mark_viewed` without `notify_executor` (opening an item's details), which does not change the deliverable and is accepted while the agent works. `POST …/control?session=…` with `{"action": "stop"}` aborts the work; writes already saved stay. When the model service is unavailable, pi retries and the server sends `problem` with code `model_unavailable`.
 
 ### 5.6 Who starts the agent
 
@@ -177,18 +187,21 @@ Opening a session (a snapshot with `session`) starts pi for that task or switche
 `POST …/actions?session={session_id}`:
 
 ```
-{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "confirm" | "unconfirm" | "keep_pending" | "undo",
-  "targets": [ { "item_id": "UC-002", "base_version": 1 } ],   // for undo: "revision_no"
+{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo",
+  "targets": [ { "item_id": "UC-002", "base_revision": 3 } ],  // the item's revision when you opened it; for undo: "revision_no"
   "fields": { "基本流程": ["…", "…"] },                          // edit_fields only: complete new values
   "notify_executor": false }
 ```
 
 Response `{ok, client_id, op_id}`; the result arrives as events carrying the same `op_id`. Rules:
 
-1. Every `base_version` must be the item's current version, otherwise the whole batch is rejected with `stale_version` listing each stale item, its current version and who changed it.
-2. `undo` restores every item of that revision to its previous state (an add is undone by a delete, a delete by a restore) and records `undo_of_revision`; if an item was changed again afterwards, the undo is rejected with `undo_conflict`.
-3. Items that failed review can still be confirmed.
-4. On a closed task every operation returns `task_closed`.
+1. Every `base_revision` must be the item's current revision, otherwise the whole batch is rejected with `stale_revision` listing each stale item, its current revision and who changed it.
+2. `undo` of revision N produces a new revision M that puts every item of N back to its previous state (an add is undone by a delete, a delete by a restore) and records `undo_of_revision`; if an item was changed again afterwards, the undo is rejected with `undo_conflict`.
+3. `mark_viewed` marks each target as read as of `base_revision`. It is idempotent: an item whose latest mark on that revision is already an acceptance is skipped, and when every target is skipped nothing is written and no event is sent. Without `notify_executor` (the interface sends it when the user opens an item's details) nothing is appended to the session; with it (the "I've read these" card button) an interface-action note and the fixed sentence in section 7 are. Items that failed review can still be marked as read.
+4. `unconfirm` withdraws the confirmation of each target's `base_revision`: it records a mark with `accepted` false, and the item becomes unread again.
+5. `edit_fields` and `keep_pending` also record a confirmation mark (basis `ui_edit`) on the revision they produce, in the same transaction.
+6. On a closed task every operation returns `task_closed`.
+7. While the agent is working every operation returns `session_busy` with `data.reason` `working`, except `mark_viewed` without `notify_executor`.
 
 ## 7 Fixed sentences sent to the agent
 
@@ -200,11 +213,11 @@ Response `{ok, client_id, op_id}`; the result arrives as events carrying the sam
 | "Not right" on a confirm card | `这个不对。` (or the user's own words) |
 | adopt / another suggestion | `我采纳这个建议。` / `请换一个建议。` |
 | accept / decline a proposal | `就这样做。` / `不要这样做。` |
-| after a confirmation (`notify_executor`) | `我已经在界面上确认了：{item version, …}。请接着往下做。` |
+| after "I've read these" on a confirm card (`notify_executor`) | `我已经看过了：{item（修订 N）, …}。请接着往下做。` |
 | after "Keep pending" | `我先不管 {item id}，请接着往下做。` |
 | "I don't know" on an ask card | `关于 {item ids}，我不知道，你按常识补上并标明是你补的。` |
 
-Direct operations also append a message to the session marked as an interface action, for example `界面操作（不是用户打的字）：用户把 UC-002 的「基本流程」改成了第 2 版。`
+Direct operations also append a message to the session marked as an interface action, for example `界面操作（不是用户打的字）：用户改了 UC-002 的「基本流程」，产生修订 5，UC-002 现在是修订 5。`
 
 ## 8 Errors
 
@@ -215,10 +228,11 @@ Shape: `{ "ok": false, "error": { "code": "…", "message": "…", "data": { …
 | `bad_request` | 400 | malformed request, or a path outside the materials directory |
 | `not_found` | 404 | task, session, item, material or endpoint does not exist |
 | `rejected` | 422 | validation failed; `data.reasons` lists every reason |
-| `stale_version` | 409 | version check failed; `data.items` = `[{item_id, version_no, by}]` |
+| `stale_revision` | 409 | revision check failed; `data.items` = `[{item_id, base_revision, current_revision, changed_by}]` |
+| `old_format` | 409 | a task created before revisions replaced item versions; not supported by this version (the task list shows such tasks with `supported: false`) |
 | `undo_conflict` | 409 | the item changed again after the revision being undone |
 | `task_closed` | 409 | the task is completed or abandoned |
-| `session_busy` | 409 | the agent is working in another session (`data.active_session`) |
+| `session_busy` | 409 | the agent is working: in another session (`data.active_session`), or in this one when a message or direct operation arrives (`data.reason` is `working`) |
 | `executor_starting` | 503 | pi is starting |
 | `executor_unavailable` | 503 | pi failed to start or exited (`data.detail`) |
 | `busy_timeout` | 503 | waited too long for the database write lock |

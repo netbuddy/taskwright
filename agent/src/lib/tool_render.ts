@@ -56,8 +56,8 @@ export function replyBodyLines(reply: Dict): string[] {
     const kind = asText(act.kind);
     lines.push(`  【${ACT_TITLES[kind] ?? kind}】${asText(act.text)}`);
     for (const item of asList(act.items)) {
-      const version = item?.version_no;
-      lines.push(`      条目 ${asText(item?.item_id)}` + (version !== undefined && version !== null ? ` 第 ${version} 版` : ""));
+      const revision = item?.revision_no;
+      lines.push(`      条目 ${asText(item?.item_id)}` + (revision !== undefined && revision !== null ? `（修订 ${revision}）` : ""));
     }
     if (kind === "suggest") {
       lines.push(`      建议值：${asText(act.value)}`);
@@ -100,32 +100,34 @@ export interface SavedOperation {
   op: string;
   item: string;
   collection?: string;
-  from_version: number | null;
-  to_version: number | null;
+  /** 改前条目所在的修订；新增时为空。 */
+  from_revision: number | null;
+  /** 改后条目所在的修订，即这次修订；删除时为空。 */
+  to_revision: number | null;
 }
 
 /**
- * 一次合格的保存修订排成的几行：第几次修订，然后每个操作一行，写明新增、修改、删除还是恢复了哪个条目，
- * 条目的编号与标题，改前改后的版本。titles 给每个条目的标题（键是条目编号），取不到的条目只写编号。
+ * 一次合格的保存修订排成的几行：修订号，然后每个操作一行，写明新增、修改、删除还是恢复了哪个条目，
+ * 条目的编号与标题，改前条目在哪次修订。titles 给每个条目的标题（键是条目编号），取不到的条目只写编号。
  */
 export function savedLines(details: Dict, titles: Record<string, string> = {}): string[] {
   const operations = asList(details.operations) as SavedOperation[];
-  const undo = typeof details.undo_of_revision === "number" ? `，这是撤销第 ${details.undo_of_revision} 次修订` : "";
+  const undo = typeof details.undo_of_revision === "number" ? `，这是撤销修订 ${details.undo_of_revision}` : "";
   const lines = [
-    `  已保存为任务 ${asText(details.task_id)} 的第 ${asText(details.revision_no)} 次修订${undo}，` +
+    `  已保存为任务 ${asText(details.task_id)} 的修订 ${asText(details.revision_no)}${undo}，` +
       `一共 ${operations.length} 个操作（事件序号 ${asText(details.event_seq)}）：`,
   ];
   for (const one of operations) {
     const title = titles[one.item] ? `「${titles[one.item]}」` : "";
     const name = `${one.item}${title}`;
     if (one.op === "add") {
-      lines.push(`    新增 ${name}（集合「${asText(one.collection)}」），第 1 版`);
+      lines.push(`    新增 ${name}（集合「${asText(one.collection)}」）`);
     } else if (one.op === "update") {
-      lines.push(`    修改 ${name}，第 ${one.from_version} 版 → 第 ${one.to_version} 版`);
+      lines.push(`    修改 ${name}，修订 ${one.from_revision} → 修订 ${one.to_revision}`);
     } else if (one.op === "restore") {
-      lines.push(`    恢复 ${name}，恢复成删除前的样子，第 ${one.from_version} 版 → 第 ${one.to_version} 版`);
+      lines.push(`    恢复 ${name}，恢复成删除前的样子，修订 ${one.from_revision} → 修订 ${one.to_revision}`);
     } else if (one.op === "delete") {
-      lines.push(`    删除 ${name}（删除前是第 ${one.from_version} 版）`);
+      lines.push(`    删除 ${name}（删除前在修订 ${one.from_revision}）`);
     } else {
       lines.push(`    ${one.op} ${name}`);
     }
@@ -144,7 +146,7 @@ function reasonLines(reason: string): string[] {
 }
 
 /**
- * 读库取一次保存修订涉及的每个条目的标题：新增与修改取改后那一版，删除取删除前那一版。
+ * 读库取一次保存修订涉及的每个条目的标题：新增与修改取改后的内容，删除取删除前的内容。
  * 库以只读方式打开；库不在、条目不在都不报错，只是取不到标题。
  */
 export function titlesForOperations(workspaceDir: string, operations: SavedOperation[]): Record<string, string> {
@@ -161,12 +163,12 @@ export function titlesForOperations(workspaceDir: string, operations: SavedOpera
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const first = new Map(definition.collections.map((c) => [c.name, c.fields[0]?.name]));
     const itemRow = db.prepare("SELECT collection FROM item WHERE task_id = ? AND item_id = ?");
-    const versionRow = db.prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND version_no = ?");
+    const contentRow = db.prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no = ?");
     for (const one of operations) {
-      const version = one.op === "delete" ? one.from_version : one.to_version;
-      if (version === null || version === undefined) continue;
+      const revision = one.op === "delete" ? one.from_revision : one.to_revision;
+      if (revision === null || revision === undefined) continue;
       const item = itemRow.get(task.task_id, one.item) as { collection: string } | undefined;
-      const row = versionRow.get(task.task_id, one.item, version) as { fields: string } | undefined;
+      const row = contentRow.get(task.task_id, one.item, revision) as { fields: string } | undefined;
       if (!item || !row) continue;
       const title = titleOf(load(row.fields) as Dict, first.get(item.collection));
       if (title) titles[one.item] = title;

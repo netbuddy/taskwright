@@ -129,7 +129,7 @@ class PiSession:
         self._events = queue.Queue()
         self._responses = {}
         self._stderr = []
-        knowledge = launch.knowledge_snapshot(self.workspace)
+        knowledge = launch.knowledge_snapshot(self.workspace, self.profile)
         self.process = subprocess.Popen(
             self.command, cwd=str(self.workspace), env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -144,7 +144,7 @@ class PiSession:
         self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
         self._stderr_thread.start()
         self._note("知识仓库摘要", **knowledge,
-                   说明="启动 pi 之前那一刻，任务目录知识仓库里每份文件的路径与内容摘要值；只记摘要值，不记内容。")
+                   说明="启动 pi 之前那一刻，任务目录知识仓库与平台 skill 里每份文件的路径与内容摘要值；只记摘要值，不记内容。")
         self._note("上下文文件", **launch.context_file_candidates(self.command, self.workspace, env))
         self._note_loaded_skills()
 

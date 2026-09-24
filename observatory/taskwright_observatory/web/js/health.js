@@ -70,7 +70,7 @@ export async function renderHealth() {
     `<section class="panel"><h2>范围</h2><div class="filters">` +
       `<span class="muted">看哪些会话：</span>${chooser}` +
       `<span class="muted">现在看的是：${esc(data["范围"])}</span></div>` +
-      `<p class="muted" style="margin:6px 0 0">这一页核对的是托着执行者跑起来的这一套系统本身是不是正常工作，` +
+      `<p class="muted" style="margin:6px 0 0">这一页核对的是托着助手跑起来的这一套系统本身是不是正常工作，` +
       `与任务内容无关。这一层包括启动 pi、装扩展、转话、归档、` +
       `看护的那些代码。</p>` +
       `<p class="src">当前范围里：会话 ${counts["会话数"]} 条，` +

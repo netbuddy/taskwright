@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from taskwright_server import create_task as create_task_module
 from taskwright_server import new_workspace
 from taskwright_observatory import taskdb
-from taskwright_server.service import clock, conversation, library, render
+from taskwright_server.service import clock, conversation, library, render, work_summary
 from taskwright_server.service.errors import ApiError
 from taskwright_server.service.executor import Executor
 from taskwright_server.service.hub import Hub
@@ -126,6 +126,7 @@ class Service:
         self.runs_dir = Path(runs_dir)
         self.profile = profile
         self.tasks: dict[str, Task] = {}
+        self.skipped: set[str] = set()
         self.lock = threading.Lock()
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
 
@@ -135,7 +136,14 @@ class Service:
                 continue
             conn = library.open_ro(d)
             try:
-                row = conn.execute("SELECT task_id FROM task LIMIT 1").fetchone() if conn else None
+                if conn is not None and library.is_pre_revision(conn):
+                    # 修订统一之前建的任务：本版本不支持，不列出来（库表改动不做迁移）。
+                    if d.name not in self.skipped:
+                        self.skipped.add(d.name)
+                        print(f"跳过任务目录 {d.name}：{library.OLD_FORMAT_TEXT}", flush=True)
+                    row = None
+                else:
+                    row = conn.execute("SELECT task_id FROM task LIMIT 1").fetchone() if conn else None
             except Exception:
                 row = None
             finally:
@@ -165,6 +173,7 @@ class Service:
         with self.lock:
             self.scan()
             tasks = list(self.tasks.values())
+            skipped = set(self.skipped)
         out = []
         for t in tasks:
             seq, view = library.task_snapshot(t.dir)
@@ -178,7 +187,14 @@ class Service:
                         "completion_met": sum(c["met"] for c in comp["conditions"]) if comp else None,
                         "completion_total": len(comp["conditions"]) if comp else None,
                         "completion_unmet": comp["unmet_count"] if comp else None,
-                        "last_active_at": max(a for a in actives if a), "session_count": len(sessions)})
+                        "last_active_at": max(a for a in actives if a), "session_count": len(sessions), "supported": True})
+        # 修订统一之前建的任务：本版本打不开，照样列出来并标明不支持，免得用户以为任务丢了。
+        for name in sorted(skipped):
+            folder = self.tasks_dir / name
+            out.append({"task_id": name, "task_name": name, "task_type": None, "domain_tag": None, "status": "旧格式",
+                        "item_count": None, "completion_met": None, "completion_total": None, "completion_unmet": None,
+                        "last_active_at": clock.from_epoch(folder.stat().st_mtime) if folder.exists() else None, "session_count": None,
+                        "supported": False, "note": library.OLD_FORMAT_TEXT})
         return out
 
     def create(self, body: dict) -> dict:
@@ -211,12 +227,62 @@ class Service:
         work = None
         if session:
             info = next((s for s in t.executor.list_sessions() if s["session_id"] == session), None)
-            conv = conversation.page(conversation.messages(t.executor.entries(session), session, t.definition()))
             work = t.executor.current_work(session)
+            messages = conversation.messages(t.executor.entries(session), session, t.definition())
+            if work is not None:
+                # 正在进行的这次工作还没有结束：它的过程由 current_work 的步骤行显示，从会话文件算出的半截摘要不放进对话。
+                # 实时与刷新后的工作编号一致（都是「w-触发它的那句话的会话条目编号」），所以按编号认。
+                messages = [m for m in messages if not (m["type"] == "work_summary" and m.get("work_id") == work["work_id"])]
+            conv = conversation.page(messages)
         return {"seq": seq, "generated_at": clock.now(), "executor": t.executor.view(),
                 "session": {k: info[k] for k in ("session_id", "name", "started_at", "last_active_at")} if info else None,
                 "task": view, "materials": library.materials(t.dir, t.definition()),
                 "conversation": conv, "current_work": work}
+
+    # ───────────── 修订日志 ─────────────
+
+    def revision_log(self, t: Task) -> dict:
+        """修订日志（docs/api.md 4.3）：库里的每次修订，补上会话记录里的两样——执行者的修订属于哪次工作（work_id，
+        按保存修订那次工具调用的调用编号在会话里找）与触发这次工作的那句话；用户直接操作的修订写操作名。
+        只是把库与会话记录里已有的事实拼在一起，不做判断。会话记录读不出来时这两样留空。"""
+        rows = library.revision_log(t.dir)
+        if rows is None:
+            raise ApiError("no_task", "这个任务目录里没有任务记录。")
+        definition = t.definition()
+        works: dict[str, dict] = {}       # 调用编号 → 所在的那次工作
+        spoken: dict[str, dict] = {}      # 用户的话的会话条目编号 → 那条对话记录
+        actions: dict[str, dict] = {}     # 操作编号 → 界面操作的记录（种类、说明）
+        for session_id in sorted({r["session_id"] for r in rows if r["session_id"]}):
+            try:
+                entries = t.executor.entries(session_id)
+            except Exception:       # 会话记录读不出来：只是少了触发它的事，日志照给
+                continue
+            path = conversation.branch(entries)
+            for work in work_summary.works_from_entries(path, definition, conversation.FALLBACK_TEXT, conversation.text_of):
+                for call_id in work["call_ids"]:
+                    works[call_id] = work
+            for m in conversation.messages(entries, session_id, definition):
+                if m["type"] == "user_message" and m.get("message_id"):
+                    spoken[m["message_id"]] = m
+            for e in path:
+                details = e.get("details") or {}
+                if e.get("type") == "custom_message" and e.get("customType") == conversation.USER_EDIT and details.get("op_id"):
+                    actions[details["op_id"]] = details
+        out = []
+        for r in rows:
+            work = works.get(r["call_id"]) if r["by"] == "executor" else None
+            said = spoken.get(work["user_message_id"]) if work else None
+            if r["by"] == "user":
+                trigger = {"kind": "user_action", "action": (actions.get(r["call_id"]) or {}).get("kind"),
+                           "text": user_action_text((actions.get(r["call_id"]) or {}).get("kind"), r)}
+            elif said is not None:
+                trigger = {"kind": said.get("origin") or "typed", "text": said.get("text") or "", "message_id": said["message_id"]}
+            else:
+                trigger = {"kind": "none", "text": ""}
+            out.append({"revision_no": r["revision_no"], "at": r["at"], "by": r["by"], "session_id": r["session_id"],
+                        "work_id": work["work_id"] if work else None, "op_id": r["call_id"] if r["by"] == "user" else None,
+                        "undo_of_revision": r["undo_of_revision"], "trigger": trigger, "operations": r["operations"]})
+        return {"latest_revision": max((r["revision_no"] for r in rows), default=0), "revisions": out}
 
     # ───────────── 材料 ─────────────
 
@@ -252,6 +318,49 @@ class Service:
         return {"ok": True, "path": path}
 
 
+def user_action_text(kind: str | None, revision: dict) -> str:
+    """用户直接操作产生的修订，写成「你……」一句操作名（修订日志卡片的副标题）。种类读不到时按修订里的操作写。"""
+    ops = revision["operations"]
+    ids = "、".join(op["item_id"] for op in ops)
+    if kind == "undo" or revision.get("undo_of_revision"):
+        return f"你撤销了修订 {revision.get('undo_of_revision')}"
+    if kind == "delete_item" or (kind is None and ops and all(op["op"] == "delete" for op in ops)):
+        return f"你删除了 {ids}"
+    if kind == "keep_pending":
+        return f"你把 {ids} 标为先不管"
+    if kind == "edit_fields" or (kind is None and ops and all(op["op"] == "update" for op in ops)):
+        fields = "".join(f"「{f}」" for op in ops for f in op["fields_changed"])
+        return f"你改了 {ids} 的{fields}" if fields else f"你改了 {ids}"
+    return "你在界面上直接修改"
+
+
+def words_locator(t):
+    """生成文档时把「用户的话」的出处「会话编号#消息编号」换成读者看得懂的说法：会话「名称」里用户的第 N 句话。
+    按会话记录现算，每个会话只读一次；会话记录找不到或消息不在当前分支上时返回 None，由渲染写通用说法。"""
+    cache: dict[str, tuple[str | None, dict[str, int]]] = {}
+
+    def locate(locator: str) -> str | None:
+        session_id, _, message_id = locator.partition("#")
+        if not session_id or not message_id:
+            return None
+        if session_id not in cache:
+            try:
+                msgs = conversation.messages(t.executor.entries(session_id), session_id, t.definition())
+                names = {row["session_id"]: row.get("name") for row in t.executor.list_sessions()}
+            except Exception:  # 会话记录读不出来：不影响生成文档，只是出处写通用说法
+                cache[session_id] = (None, {})
+            else:
+                users = [m["message_id"] for m in msgs if m.get("type") == "user_message"]
+                cache[session_id] = (names.get(session_id), {mid: n for n, mid in enumerate(users, 1)})
+        name, order = cache[session_id]
+        n = order.get(message_id)
+        if n is None:
+            return None
+        return f"会话「{name}」里用户的第 {n} 句话" if name else f"对话里用户的第 {n} 句话"
+
+    return locate
+
+
 def parse_multipart(content_type: str, body: bytes) -> tuple[str, bytes]:
     """取出 multipart 请求里的第一个文件：返回（文件名, 内容）。"""
     message = email.parser.BytesParser(policy=email.policy.HTTP).parsebytes(
@@ -272,7 +381,8 @@ ROUTES = [
     ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/sessions", "new_session"),
     ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/events", "events"),
     ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/snapshot", "snapshot"),
-    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/items/(?P<item>[^/]+)/versions", "versions"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/items/(?P<item>[^/]+)/revisions", "revisions"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/revisions", "revision_log"),
     ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/materials/content", "material"),
     ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/materials", "upload"),
     ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/conversation", "conversation"),
@@ -365,11 +475,14 @@ def make_handler(service: Service):
             t = service.task(task)
             self.send_json(200, {"ok": True, **service.snapshot(t, self.session_param())})
 
-        def versions(self, task, item):
-            rows = library.item_versions(service.task(task).dir, item)
+        def revisions(self, task, item):
+            rows = library.item_revisions(service.task(task).dir, item)
             if rows is None:
                 raise ApiError("not_found", f"没有条目 {item}。")
-            self.send_json(200, {"ok": True, "item_id": item, "versions": rows})
+            self.send_json(200, {"ok": True, "item_id": item, "revisions": rows})
+
+        def revision_log(self, task):
+            self.send_json(200, {"ok": True, **service.revision_log(service.task(task))})
 
         def material(self, task):
             t = service.task(task)
@@ -442,7 +555,8 @@ def make_handler(service: Service):
                 data = library.read_all(conn)
             finally:
                 conn.close()
-            text = render.render(t.dir, library.Library(data), body.get("selection") or [])
+            revision_no, items = render.document_request(body)
+            text = render.render(t.dir, library.Library(data), revision_no, items, words_locator(t))
             if mode == "preview":
                 self.send_json(200, {"ok": True, "text": text})
                 return

@@ -26,9 +26,9 @@ saveRevision({ workspaceDir: dir, sessionId: "s", callId: "ui-op-1", actor: "use
     { kind: "执行者补充", locator: "执行者补充", excerpt: "按常识补了出示借书证这一步" }] },
   { op: "add", collection: "约束", fields: { 类别: "时限", 句式类型: "普遍型", 需求语句: "寒暑假期间借出的图书，借期应当顺延到开学后第一周的周五。" },
     sources: [{ kind: "用户的话", locator: "s#e1", excerpt: "寒暑假借的书顺延到开学第一周周五" }] },
-  { op: "add", collection: "待定与范围外事项", fields: { 事项: "遗失的图书怎样处理", 种类: "待澄清", 状态: "未解决" },
+  { op: "add", collection: "问题", fields: { 事项: "遗失的图书怎样处理", 种类: "待澄清", 状态: "未解决" },
     sources: [src("读者还书时，逾期的每本每天罚款一角。")] },
-  { op: "add", collection: "待定与范围外事项", fields: { 事项: "智能推荐的范围不明确", 种类: "待澄清", 状态: "未解决" },
+  { op: "add", collection: "问题", fields: { 事项: "智能推荐的范围不明确", 种类: "待澄清", 状态: "未解决" },
     sources: [src("系统还要能智能推荐图书。")] },
 ] });
 """
@@ -54,7 +54,7 @@ def build(root: Path, first_words: str, looked: list, second_words: str = "寒�
                    "执行者": ASK_HOURS if executor_first is None else executor_first},
                   {"轮": 2, "用户 agent": {"looks": [None, *looked], "respond": {"sent": {"text": second_words}, "route": "message"}}},
                   {"轮": 3, "用户 agent": {"looks": [None, *looked], "respond": {
-                      "sent": {"kind": "confirm", "targets": [{"item_id": "UC-001", "base_version": 1}]}, "route": "action", "done": True}}},
+                      "sent": {"kind": "mark_viewed", "targets": [{"item_id": "UC-001", "base_revision": 1}]}, "route": "action", "done": True}}},
               ]}
     (sim / "record.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
     return sim
@@ -90,7 +90,7 @@ class JudgeTest(unittest.TestCase):
         self.assertIn("\"条目\": \"UC-001\"", report)
 
     def test_关键词组要在同一条目里全部出现_只出现一个不算(self):
-        # 库里「遗失」只出现在一条待定事项里，「两倍」「加工费」都没有：第二条隐藏事实不算问出。
+        # 库里「遗失」只出现在一条问题条目里，「两倍」「加工费」都没有：第二条隐藏事实不算问出。
         with tempfile.TemporaryDirectory() as tmp:
             sim = build(Path(tmp), "帮我整理借还书系统", ["UC-001"])
             judge.judge(sim)
@@ -116,7 +116,7 @@ class JudgeTest(unittest.TestCase):
 
     def test_执行者请确认的条目里写到了这件事_用户借此说出_不算主动(self):
         confirm_con = {"replies": [{"text": "请确认下面这条。", "act": {"kind": "confirm", "text": "请确认",
-                                                                   "items": [{"item_id": "CON-001", "version_no": 1}]}}]}
+                                                                   "items": [{"item_id": "CON-001", "revision_no": 1}]}}]}
         with tempfile.TemporaryDirectory() as tmp:
             sim = build(Path(tmp), "帮我整理借还书系统", ["UC-001"], executor_first=confirm_con)
             judge.judge(sim)

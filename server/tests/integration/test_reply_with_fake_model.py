@@ -2,7 +2,7 @@
 
 测的是四件事：合格的回复之后 pi 不再请求模型；同一轮混入别的工具调用时回复被拒、模型单独重发后通过；
 模型直接输出正文时兜底扩展追加一句话、模型第二次经回复说话；连续兜底两次仍不合格就不再追加。
-另外核对「请确认」按真实的库核对条目与版本。断言只看事实：事件流、会话文件、假端点记下的请求体。
+另外核对「请确认」按真实的库核对条目与修订号。断言只看事实：事件流、会话文件、假端点记下的请求体。
 """
 
 from __future__ import annotations
@@ -119,26 +119,26 @@ class ReplyWithFakeModelTests(unittest.TestCase):
         self.assertEqual([s["已兜底次数"] for s in statuses], [1, 2, 2])
         self.assertIn("不再追加", statuses[-1]["结果"])
 
-    def test_请确认按库核对条目与版本(self):
-        confirm = lambda item, version: {"kind": "confirm", "text": f"请确认 {item} 的第 {version} 版。",
-                                         "items": [{"item_id": item, "version_no": version}]}
+    def test_请确认按库核对条目与修订号(self):
+        confirm = lambda item, revision: {"kind": "confirm", "text": f"请确认 {item}（修订 {revision}）。",
+                                          "items": [{"item_id": item, "revision_no": revision}]}
         script = [
             {"tool_calls": [call("save_revision", {"operations": [
                 {"op": "add", "collection": "功能用例", "fields": USE_CASE, "sources": [SOURCE]}]}, "call-save")]},
             {"tool_calls": [reply_call("请确认。", confirm("UC-001", 2), call_id="call-bad-version")]},
             {"tool_calls": [reply_call("请确认。", confirm("UC-009", 1), call_id="call-bad-item")]},
-            {"tool_calls": [reply_call("我存了一个用例，请确认第 1 版。", confirm("UC-001", 1), call_id="call-good")]},
+            {"tool_calls": [reply_call("我存了一个用例，请确认。", confirm("UC-001", 1), call_id="call-good")]},
         ]
-        with Rig(script) as rig:
+        with Rig(script, material=SOURCE["excerpt"]) as rig:
             events = rig.say("把材料整理成需求规格说明。")
 
         results = {r["调用编号"]: r for r in tool_results(events)}
         self.assertFalse(results["call-save"]["被拒"])
-        self.assertIn("条目 UC-001 没有第 2 版", results["call-bad-version"]["文字"])
+        self.assertIn("条目 UC-001 现在不是修订 2", results["call-bad-version"]["文字"])
         self.assertIn("库里没有条目 UC-009", results["call-bad-item"]["文字"])
         self.assertFalse(results["call-good"]["被拒"])
         self.assertEqual(tool_end(events, "call-good")["result"]["details"]["reply"]["act"]["items"],
-                         [{"item_id": "UC-001", "version_no": 1}])
+                         [{"item_id": "UC-001", "revision_no": 1}])
 
 
 if __name__ == "__main__":

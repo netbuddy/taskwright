@@ -10,7 +10,7 @@
   针对它问；用户借机说出来。这不算用户 agent 演错，也不算问出，单独列出；
 - 泄底：执行者上一轮摆出的东西里根本没有这件事，用户 agent 自己说了出来。这是用户 agent 演错。
 
-第一层只做代码能查的两项：泄底（查全部轮次）；点「确认」之前没有在同一轮里用「看界面」看过该条目的详情（没看内容就接受）。
+第一层只做代码能查的两项：泄底（查全部轮次）；点「这几条都看过了」（早期版本是「确认」）之前没有在同一轮里用「看界面」看过该条目的详情（没看内容就接受）。
 第一层按轮作废：出错的最早一轮是第 1 轮，整场无效；是之后的第 k 轮，第 1 到 k−1 轮有效、第 k 轮起作废，
 标「部分有效」。作废轮次里才说出的隐藏事实不算问出。第二层其余各项按演练结束时的库判定，部分有效时照样列出，但注明含作废
 轮次之后的改动、只作参考。评判者查的两项（说了画像与材料都没有的事实、违背人设）不在这里。
@@ -75,18 +75,18 @@ def groups_hit(groups: list[list[str]], text: str) -> list[str] | None:
     return hits
 
 
-def version_text(db_dir: Path | None, item_id: str, version_no: int | None) -> str:
-    """库里某条目某一版的字段全文；没有库或查不到时为空。"""
-    if db_dir is None or not (Path(db_dir) / taskdb.DB_NAME).is_file() or version_no is None:
+def revision_text(db_dir: Path | None, item_id: str, revision_no: int | None) -> str:
+    """库里某条目在某次修订下的字段全文；没有库或查不到时为空。"""
+    if db_dir is None or not (Path(db_dir) / taskdb.DB_NAME).is_file() or revision_no is None:
         return ""
     import sqlite3
     with sqlite3.connect(Path(db_dir) / taskdb.DB_NAME) as db:
-        row = db.execute("SELECT fields FROM item_version WHERE item_id = ? AND version_no = ?", (item_id, version_no)).fetchone()
+        row = db.execute("SELECT fields FROM item_version WHERE item_id = ? AND revision_no = ?", (item_id, revision_no)).fetchone()
     return row[0] if row else ""
 
 
 def executor_asked(turn: dict, db_dir: Path | None = None) -> str:
-    """执行者在这一轮里针对性地问用户的东西：主行为的文字、选项、建议值、提议的预览，以及主行为点名的条目那一版的内容。
+    """执行者在这一轮里针对性地问用户的东西：主行为的文字、选项、建议值、提议的预览，以及主行为点名的条目在那次修订下的内容。
     回复正文与告知不算——那是它说给用户听的，不是在问（例如应用户要求把全部条目贴出来）。"""
     parts = []
     for r in (turn.get("执行者") or {}).get("replies") or []:
@@ -95,19 +95,19 @@ def executor_asked(turn: dict, db_dir: Path | None = None) -> str:
             continue
         parts += [act.get("text") or "", str(act.get("value") or ""), *(o.get("text") or "" for o in act.get("options") or [])]
         parts += [p.get("text") or "" for p in act.get("preview") or []]
-        parts += [version_text(db_dir, i.get("item_id"), i.get("version_no")) for i in act.get("items") or []]
+        parts += [revision_text(db_dir, i.get("item_id"), i.get("revision_no")) for i in act.get("items") or []]
     return "\n".join(parts)
 
 
 def executor_said(turn: dict, db_dir: Path | None = None) -> str:
-    """执行者在这一轮里向用户摆出来的全部文字：回复正文、告知、主行为的文字与选项，以及主行为点名的条目那一版的内容
+    """执行者在这一轮里向用户摆出来的全部文字：回复正文、告知、主行为的文字与选项，以及主行为点名的条目在那次修订下的内容
     （执行者请用户确认或回答某个条目，等于把这个条目的内容摆在用户面前问他，条目里写到的事就算问到了）。"""
     parts = []
     for r in (turn.get("执行者") or {}).get("replies") or []:
         parts += [r.get("text") or "", *(r.get("informs") or [])]
         act = r.get("act") or {}
         parts += [act.get("text") or "", *(o.get("text") or "" for o in act.get("options") or [])]
-        parts += [version_text(db_dir, i.get("item_id"), i.get("version_no")) for i in act.get("items") or []]
+        parts += [revision_text(db_dir, i.get("item_id"), i.get("revision_no")) for i in act.get("items") or []]
     return "\n".join(parts)
 
 
@@ -157,6 +157,10 @@ def validity(first: list[dict]) -> dict:
 
 # ───────────────────────── 第一层 ─────────────────────────
 
+#: 卡片上表示看过了的那一下点击：现在走 mark_viewed，早期版本的演练记录里是 confirm。
+SEEN_KINDS = ("mark_viewed", "confirm")
+
+
 def layer1(data: dict) -> list[dict]:
     persona, record = data["persona"], data["record"]
     utterances = user_utterances(record)
@@ -167,14 +171,14 @@ def layer1(data: dict) -> list[dict]:
                    "细节": leaked})
     unseen = []
     for u in utterances:
-        if u["kind"] != "confirm":
+        if u["kind"] not in SEEN_KINDS:
             continue
         looked = {x for x in u["looks"] if x}
         for target in u["targets"] or []:
             if target["item_id"] not in looked:
                 unseen.append({"轮": u["轮"], "条目": target["item_id"], "这一轮看过的条目": sorted(looked)})
-    checks.append({"项": "点「确认」之前在同一轮里看过该条目的详情", "通过": not unseen,
-                   "说明": f"一共点了 {sum(1 for u in utterances if u['kind'] == 'confirm')} 次「确认」。", "细节": unseen})
+    checks.append({"项": "点「这几条都看过了」之前在同一轮里看过该条目的详情", "通过": not unseen,
+                   "说明": f"一共点了 {sum(1 for u in utterances if u['kind'] in SEEN_KINDS)} 次「这几条都看过了」。", "细节": unseen})
     return checks
 
 
@@ -187,22 +191,22 @@ def item_text(version: dict) -> str:
 def criterion(rule: dict, items: list[dict], sources: list[dict]) -> tuple[bool, str]:
     kind = rule.get("类型")
     if kind == "关键词组都出现在集合里":
-        text = "".join(item_text(i["当前版本"]) for i in items if i["所属集合"] == rule["集合"])
+        text = "".join(item_text(i["当前内容"]) for i in items if i["所属集合"] == rule["集合"])
         missing = [group for group in rule["关键词组"] if not any(k in text for k in group)]
         return not missing, ("三组关键词都找到了" if not missing else f"集合「{rule['集合']}」里找不到：" + "；".join("／".join(g) for g in missing))
     if kind == "某种来源的条数大于零":
         count = sum(1 for s in sources if s["种类"] == rule["来源种类"])
-        return count > 0, f"当前版本里种类为「{rule['来源种类']}」的来源有 {count} 条"
+        return count > 0, f"最新内容里种类为「{rule['来源种类']}」的来源有 {count} 条"
     if kind == "关键词不在集合标题里而在另一集合里":
         titles = [i["条目编号"] for i in items if i["所属集合"] == rule["不在标题"] and rule["关键词"] in item_title(i)]
-        elsewhere = [i["条目编号"] for i in items if i["所属集合"] == rule["要在集合"] and rule["关键词"] in item_text(i["当前版本"])]
+        elsewhere = [i["条目编号"] for i in items if i["所属集合"] == rule["要在集合"] and rule["关键词"] in item_text(i["当前内容"])]
         return (not titles and bool(elsewhere),
                 f"「{rule['关键词']}」出现在{rule['不在标题']}标题里的：{titles or '没有'}；出现在{rule['要在集合']}里的：{elsewhere or '没有'}")
     return False, f"不认识的判据类型「{kind}」"
 
 
 def item_title(item: dict) -> str:
-    fields = item["当前版本"]["字段"]
+    fields = item["当前内容"]["字段"]
     first = next(iter(fields.values()), "") if fields else ""
     return first if isinstance(first, str) else json.dumps(first, ensure_ascii=False)
 
@@ -244,10 +248,10 @@ def executor_user_messages(sim: Path) -> list[str]:
 
 
 def all_version_sources(db_dir: Path, kind: str) -> int:
-    """全部版本里某种来源的条数（同一版同一位置的来源按一条算，不按支持的字段展开）。"""
+    """条目在全部修订下某种来源的条数（同一条目同一修订同一位置的来源按一条算，不按支持的字段展开）。"""
     import sqlite3
     with sqlite3.connect(db_dir / taskdb.DB_NAME) as db:
-        return db.execute("SELECT COUNT(*) FROM (SELECT DISTINCT item_id, version_no, position FROM item_source WHERE kind = ?)",
+        return db.execute("SELECT COUNT(*) FROM (SELECT DISTINCT item_id, revision_no, position FROM item_source WHERE kind = ?)",
                           (kind,)).fetchone()[0]
 
 
@@ -282,13 +286,13 @@ def layer2(data: dict) -> tuple[list[dict], dict]:
     for i in items:
         coll = next(c for c in definition["集合"] if c["名称"] == i["所属集合"])
         for f in coll["字段"]:
-            value = i["当前版本"]["字段"].get(f["名"])
+            value = i["当前内容"]["字段"].get(f["名"])
             if f["必填"] and (value in (None, "", []) or (isinstance(value, str) and not value.strip())):
                 missing.append(f"{i['条目编号']} 的「{f['名']}」")
-    checks.append({"项": "必填字段齐", "通过": not missing, "说明": "；".join(missing) or "当前版本的必填字段全部有值。"})
+    checks.append({"项": "必填字段齐", "通过": not missing, "说明": "；".join(missing) or "最新内容的必填字段全部有值。"})
     material = "\n".join(data["materials"].values())
     said = [u["text"] or "" for u in user_utterances(record)] + executor_user_messages(sim)
-    sources = [dict(s, 条目=i["条目编号"]) for i in items for s in i["当前版本"]["来源"]]
+    sources = [dict(s, 条目=i["条目编号"]) for i in items for s in i["当前内容"]["来源"]]
     bad_sources = []
     for s in sources:
         if s["种类"] == "文档原文" and _norm(s["摘录"]) not in _norm(material):
@@ -299,13 +303,13 @@ def layer2(data: dict) -> tuple[list[dict], dict]:
     facts["来源种类"] = kinds
     facts["执行者补充累计"] = all_version_sources(db_dir, "执行者补充")
     facts["执行者读材料"] = materials_read(sim, sorted(data["materials"]))
-    checks.append({"项": "来源逐字", "通过": not bad_sources, "说明": f"当前版本的来源 {len(sources)} 条：{kinds}。", "细节": bad_sources})
+    checks.append({"项": "来源逐字", "通过": not bad_sources, "说明": f"最新内容的来源 {len(sources)} 条：{kinds}。", "细节": bad_sources})
     facts["隐藏事实"] = []
     said_by = {x["事实"]: x for x in disclosures(persona, record, db_dir)}
     cutoff = data.get("作废起始轮")
     for fact in persona.get("隐藏事实") or []:
         groups = keyword_groups(fact)
-        found = [(i["条目编号"], h) for i in items if (h := groups_hit(groups, item_text(i["当前版本"]))) is not None]
+        found = [(i["条目编号"], h) for i in items if (h := groups_hit(groups, item_text(i["当前内容"]))) is not None]
         told = said_by.get(fact["事实"])
         void = bool(told and cutoff and told["轮"] >= cutoff)
         asked = bool(found) and (told is None or told["情形"] == QUESTIONED) and not void
@@ -373,8 +377,8 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
     for c in second:
         lines.append(f"- {'通过' if c['通过'] else '不通过'}：{c['项']}。{c['说明']}" + (f" 细节：{json.dumps(c['细节'], ensure_ascii=False)}" if c.get("细节") else ""))
     lines += ["", "## 其他事实", "",
-              f"- 各集合条目数：{facts.get('条目数')}", f"- 来源种类（当前版本）：{facts.get('来源种类')}",
-              f"- 「执行者补充」来源：当前版本 {(facts.get('来源种类') or {}).get('执行者补充')} 条，全部版本累计 {facts.get('执行者补充累计')} 条",
+              f"- 各集合条目数：{facts.get('条目数')}", f"- 来源种类（最新内容）：{facts.get('来源种类')}",
+              f"- 「执行者补充」来源：最新内容 {(facts.get('来源种类') or {}).get('执行者补充')} 条，全部修订累计 {facts.get('执行者补充累计')} 条",
               f"- 执行者用 read 读材料的次数：{facts.get('执行者读材料')}",
               f"- 完成条件：{facts.get('完成条件')}（只说明离完成还差几项，不代表交付质量）",
               f"- 执行者被工具拒绝 {len(facts.get('被工具拒绝') or [])} 次：" + ("；".join(f"{r['工具']}：{r['原因']}" for r in facts.get("被工具拒绝") or []) or "没有"),
@@ -383,7 +387,7 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
         user = turn.get("用户 agent") or {}
         respond = user.get("respond") or {}
         sent = respond.get("sent") or {}
-        clicked = {"confirm": "确认", "keep_pending": "先不管"}.get(sent.get("kind"))
+        clicked = {"mark_viewed": "这几条都看过了", "confirm": "确认", "keep_pending": "先不管"}.get(sent.get("kind"))
         said = sent.get("text") or (f"点了「{clicked}」：{sent.get('targets')}" if clicked else "（没有发话）")
         flag = "；表示目标达成" if respond.get("done") else f"；放弃：{respond.get('reason')}" if respond.get("give_up") else ""
         lines.append(f"### 第 {turn['轮']} 轮")

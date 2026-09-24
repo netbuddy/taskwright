@@ -62,8 +62,17 @@ def profile_for_tests(extra_extensions: tuple[str, ...] = ()) -> dict:
     return profile
 
 
+def put_material(task_dir: Path, text: str, name: str = "材料.md") -> Path:
+    """在任务目录的材料目录（inputs/）里放一份材料。"""
+    target = Path(task_dir) / "inputs" / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    return target
+
+
 class Rig:
-    def __init__(self, script, extra_extensions: tuple[str, ...] = (), label: str = "it", create_task: bool = True):
+    def __init__(self, script, extra_extensions: tuple[str, ...] = (), label: str = "it", create_task: bool = True,
+                 material: str | None = None):
         self.script = script
         self.extra_extensions = extra_extensions
         self.label = label
@@ -75,6 +84,9 @@ class Rig:
         else:
             self.task = None
             self.workspace = new_workspace.create(self.root / "ws", START_FILES)
+        if material is not None:
+            # 「文档原文」的摘录要逐字出自出处所指的材料文件：用到这种来源的测试把材料正文交进来。
+            put_material(self.workspace, material)
         self.fake = FakeModel(script, self.root / "fake_requests.jsonl")
         self.session: PiSession | None = None
 

@@ -3,6 +3,10 @@
 
 同一任务同一时刻只有一条活动会话（pi 进程一次只接一条会话）：执行者在会话 A 里工作时，对会话 B 的请求
 返回 session_busy；空闲时切换会话即让 pi 接上另一条会话文件（RPC 的 switch_session）。
+
+对话严格轮替与单一写入者：用户的一句话或一次直接操作是一个动作，执行者的一次运行是一个动作，同一时刻只进行一个。
+执行者工作中收到说话、卡片点击或直接操作，一律返回 session_busy（data.reason 为 working），不交给 pi 排队
+（不用 prompt 的 followUp），所以 pi 的排队与插话在这里用不上；前端这时本就灰化了发送与写入按钮，这里是后端的保证。
 """
 
 from __future__ import annotations
@@ -22,9 +26,13 @@ from taskwright_server.service.errors import ApiError
 LABEL = "service"
 USER_RESULT_KEY = "taskwright-user-result"
 UI_RESULT_KEY = "taskwright-ui-result"
-WRITE_TOOLS = {"save_revision", "create_task", "record_confirmation", "complete_task"}
+WRITE_TOOLS = {"save_revision", "create_task", "complete_task"}
 REPLY_TOOL = "reply"
 ACTION_TIMEOUT = 10.0
+#: 用户消息的 message_end 到达时，这条消息可能还没写进会话记录（卡片点击那句话由扩展排到运行里，写入更晚）。
+#: 查不到它的条目编号就隔一会儿再取一次，最多取这么多次；每次间隔 ENTRY_RETRY_DELAY 秒，合计约半秒。
+ENTRY_RETRIES = 10
+ENTRY_RETRY_DELAY = 0.05
 STATE_TEXT = {
     "not_started": "助手还没有启动。",
     "starting": "助手正在启动。",
@@ -67,6 +75,7 @@ class Executor:
         self.pending_origin: dict[str, str] = {}   # 发给 pi 的原文 → origin（ui_request 之类）
         self.named: set[str] = set()
         self.last_click: dict | None = None
+        self.last_user_entry: str | None = None   # 上一次认出条目编号的那条用户消息
         self._pump: threading.Thread | None = None
 
     # ───────────── 会话文件 ─────────────
@@ -179,7 +188,7 @@ class Executor:
 
     def _busy_check(self, session_id: str | None) -> None:
         if self.state == "working" and self.active_session != session_id:
-            raise ApiError("session_busy", "执行者正在另一条会话里工作，做完才能在这里继续。", {"active_session": self.active_session})
+            raise ApiError("session_busy", "助手正在另一条会话里工作，做完才能在这里继续。", {"active_session": self.active_session})
 
     def require(self, session_id: str | None, start: bool) -> None:
         """说话与界面操作之前：会话要是活动的那条；start 为真时 pi 不在就按需启动（说话），否则失败（界面操作）。"""
@@ -208,27 +217,27 @@ class Executor:
 
     # ───────────── 说话、卡片点击、界面操作、停下 ─────────────
 
+    def _turn_check(self, what: str = "say") -> None:
+        """执行者正在工作时不接下一句话，也不接直接操作（docs/api.md §5.1、§6）。在会话锁里调用。"""
+        if self.state == "working":
+            text = ("助手正在工作，这一轮做完之后才能发下一句。你可以先把话打好。" if what == "say"
+                    else "助手正在工作，结束后你可以继续修改。")
+            raise ApiError("session_busy", text, {"active_session": self.active_session, "reason": "working"})
+
     def say(self, session_id: str | None, text: str, client_id: str | None, original: str | None = None) -> bool:
-        """把用户的一句话交给 pi。返回这句话是不是排在了后面（执行者正在工作）。
+        """把用户的一句话交给 pi。执行者正在工作时返回 session_busy（对话严格轮替），所以返回值恒为 False（没有排队）。
         text 是发给 pi 的文字；它与用户原来打的字不同时（斜杠改写、附上材料路径），两者都记进归档的后端补记。"""
         self.require(session_id, start=True)
         with self.lock:
-            queued = self.state == "working"
+            self._turn_check()
             if original is not None and original != text:
                 self.pi._note("提示改写", 原文=original, 改写后=text, 依据="docs/api.md §5.1：斜杠开头加「用户说：」；附件按第 7 节模板附上路径")
             self.pending_clients.append((text, client_id))
             try:
-                if queued:
-                    self.pi.request("prompt", message=text, streamingBehavior="followUp")
-                else:
-                    self.pi.request("prompt", message=text)
+                self.pi.request("prompt", message=text)
             except (PiExited, RuntimeError) as error:
                 raise ApiError("executor_unavailable", "助手现在不可用。", {"detail": str(error)})
-        if queued:
-            self.hub.emit("user_message", {"session_id": self.active_session, "message_id": None, "at": clock.now(),
-                                           "text": conversation.display_text(text), "origin": "typed", "annotation": None,
-                                           "queued": True, "client_id": client_id})
-        return queued
+        return False
 
     def card_click(self, session_id: str | None, text: str, client_id: str | None, annotation: dict) -> bool:
         """卡片上需要执行者再出力的点击：经扩展命令 /tw-ui 先追加标注、再发模板句。"""
@@ -237,22 +246,28 @@ class Executor:
         command = {"op_id": op_id, "reply_entry": annotation.get("reply_message_id"), "option_key": annotation.get("option_key"),
                    "option_text": annotation.get("option_text"), "text": text}
         with self.lock:
-            queued = self.state == "working"
+            self._turn_check()
             self.pending_clients.append((text, client_id))
         result = self._command("/tw-ui", command, op_id)
         if not result.get("ok"):
             error = result.get("error") or {}
             raise ApiError(error.get("code", "bad_request"), error.get("message", "卡片点击没有转交成功。"), error.get("data") or {})
-        return queued
+        return False
 
     def action(self, session_id: str | None, body: dict) -> str:
         """用户的直接操作：经扩展命令 /tw-user 写库；返回操作编号，拒绝时抛 ApiError。"""
         self.require(session_id, start=False)
+        # 单一写入者规则管的是交付物内容。打开详情写已读（mark_viewed 且不通知执行者）不改内容，是唯一的例外：
+        # 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
+        viewing = body.get("kind") == "mark_viewed" and not body.get("notify_executor")
+        if not viewing:
+            with self.lock:
+                self._turn_check("action")
         op_id = new_id("ui-op-")
         command = {k: body.get(k) for k in ("kind", "task_id", "targets", "fields", "notify_executor") if k in body}
         command["op_id"] = op_id
         if command.get("notify_executor"):
-            self.pending_origin["我已经在界面上确认了："] = "ui_request"
+            self.pending_origin["我已经看过了："] = "ui_request"
             self.pending_origin[KEEP_PENDING_NOTICE_PREFIX] = "ui_request"
         result = self._command("/tw-user", command, op_id)
         if not result.get("ok"):
@@ -285,7 +300,7 @@ class Executor:
             if not self.running():
                 return []
             if session_id and session_id != self.active_session:
-                raise ApiError("session_busy", "执行者正在另一条会话里工作。", {"active_session": self.active_session})
+                raise ApiError("session_busy", "助手正在另一条会话里工作。", {"active_session": self.active_session})
             cleared = self.pi.request("clear_queue") or {}
             if self.work is not None:
                 self.work["stopped"] = True
@@ -428,9 +443,26 @@ class Executor:
         if role == "user":
             raw = conversation.text_of(message.get("content"))
             entries = self._fetch_new_entries(pi)
-            hit = next((e for e in reversed(entries) if e.get("type") == "message"
-                        and (e.get("message") or {}).get("role") == "user"
-                        and conversation.text_of((e.get("message") or {}).get("content")) == raw), None)
+            hit = self._user_entry(entries, raw)
+            # 按「上次取到的位置之后」没找到时，到全部条目里找：前一条界面操作的说明取条目时可能已经把这句话一并取走、
+            # 游标越过了它；这句话也可能还没写进会话记录（卡片点击、界面操作之后的那句话由扩展排进运行，写入更晚），
+            # 那就隔一会儿再取，最多约半秒。只在上一次认过的那条用户消息之后找，免得认回更早说过的同一句话；
+            # 实在找不到就用不上确定的工作编号（刷新后仍能从会话文件重算）。
+            for attempt in range(ENTRY_RETRIES + 1 if hit is None else 0):
+                if attempt:
+                    time.sleep(ENTRY_RETRY_DELAY)
+                try:
+                    everything = self._fetch_all_entries(pi)
+                except (PiExited, RuntimeError, TimeoutError):
+                    break
+                ids = [e.get("id") for e in everything]
+                start = ids.index(self.last_user_entry) + 1 if self.last_user_entry in ids else 0
+                hit = self._user_entry(everything[start:], raw)
+                if hit is not None:
+                    entries = everything
+                    break
+            if hit is not None:
+                self.last_user_entry = hit.get("id")
             click = next((e for e in reversed(entries) if e.get("type") == "custom_message" and e.get("customType") == conversation.UI_CLICK
                           and (e.get("details") or {}).get("text") == raw), None)
             if click is None and self.last_click and (self.last_click.get("details") or {}).get("text") == raw:
@@ -457,6 +489,10 @@ class Executor:
             if self.work is not None:
                 if self.work["triggered_by"] is None:
                     self.work["triggered_by"] = message_id
+                    # 工作编号改用触发它的那句话的会话条目编号，与刷新后从会话文件算出的编号一致（work_summary.py）。
+                    # 这一轮的工作还没有推出去（work_started 在这之后才发）时才改，推出去之后编号不再变。
+                    if message_id and not self.work["announced"]:
+                        self.work["work_id"] = f"w-{message_id}"
                 self.work["last_user_id"] = message_id
                 self.work["replied_since_user"] = False
                 self.work["last_text"] = None
@@ -472,7 +508,7 @@ class Executor:
                 details = message.get("details") or {}
                 seqs = details.get("event_seqs") or []
                 self.hub.emit("ui_action_noted", {"session_id": sid, "message_id": hit.get("id") if hit else None, "at": clock.now(),
-                                                  "text": conversation.text_of(message.get("content")), "event_seq": seqs[-1] if seqs else None,
+                                                  "text": conversation.text_of(message.get("content")), "event_seq": seqs[0] if seqs else None,
                                                   "undoable": bool(details.get("undoable")), "op_id": details.get("op_id"),
                                                   "revision_no": details.get("revision_no")})
             elif ctype == conversation.UI_CLICK:
@@ -488,6 +524,12 @@ class Executor:
             if text and not calls:
                 self.work["last_text"] = text
                 self.work["last_text_entry"] = None
+
+    @staticmethod
+    def _user_entry(entries: list[dict], raw: str) -> dict | None:
+        """会话条目里文字与 raw 相同的最后一条用户消息。"""
+        return next((e for e in reversed(entries) if e.get("type") == "message" and (e.get("message") or {}).get("role") == "user"
+                     and conversation.text_of((e.get("message") or {}).get("content")) == raw), None)
 
     def _emit_summary(self, pi: PiSession, sid: str | None, work: dict) -> None:
         """工作结束时推一条过程摘要：从会话条目里切出这次工作（从触发它的那句用户的话起），
@@ -555,6 +597,9 @@ class Executor:
         failed = bool(event.get("isError"))
         result = event.get("result") or {}
         details = result.get("details") or {}
+        if failed and tool == "save_revision":
+            # 保存修订被拒时原因只在结果正文里，先拆出来，实时的 step 行与过程摘要同一个写法。
+            details = {**details, "reasons": work_summary.rejection_reasons(details, work_summary.result_text(result))}
         if work is not None:
             for t in work["turn_tools"]:
                 if t["id"] == event.get("toolCallId"):

@@ -12,7 +12,6 @@
     "reply",
     "get_item",
     "get_task_status",
-    "record_confirmation",
     "complete_task"
   ],
   "开发期开关": "环境变量 TASKWRIGHT_DEV_REVIEW_AS_MET 设为 1 时，「完成任务」把「每个条目评审通过」这条完成条件暂时视为满足（评审工具尚未提供，没有它这一条永远满足不了）。默认不设，即关；演练时在启动后端之前设好，后端启动 pi 时原样传给它。「完成任务」的返回与事件里会写明哪一条是开关让它通过的。",
@@ -22,6 +21,8 @@
     "approve": true,
     "offline": false
   },
+  "platform_skill": "agent/prompts/skills/taskwright-executor",
+  "平台技能说明": "执行者在 Taskwright 里怎样工作的平台 skill，所有任务类型共用。它跟着代码走，路径相对代码仓根目录，不复制进任务目录；启动时在任务目录的技能之前用 --skill 加载，所以在 skill 清单里排在前面。",
   "workspace_skills_dir": ".pi/skills",
   "任务目录技能说明": "flags 里关掉了 pi 的技能自动发现（免得本机全局目录里的技能混进来），所以任务目录里这个目录下的技能要用 --skill 显式加载。路径相对任务目录根目录；任务目录里没有这个目录就不加。",
   "extensions": [

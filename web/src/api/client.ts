@@ -5,7 +5,8 @@
 import type {
   ActionRequest,
   ApiErrorBody,
-  ItemVersion,
+  ItemRevision,
+  RevisionLog,
   TaskType,
   MessageRequest,
   SessionListEntry,
@@ -91,9 +92,9 @@ export const api = {
     request<Snapshot>("GET", `${task(taskId)}/snapshot?session=${encodeURIComponent(sessionId)}`),
 
   // 4.3 按需读取
-  itemVersions: (taskId: string, itemId: string) =>
-    request<ItemVersion[] | { versions: ItemVersion[] }>("GET", `${task(taskId)}/items/${encodeURIComponent(itemId)}/versions`)
-      .then((r) => (Array.isArray(r) ? r : r.versions)),
+  itemRevisions: (taskId: string, itemId: string) =>
+    request<{ revisions: ItemRevision[] }>("GET", `${task(taskId)}/items/${encodeURIComponent(itemId)}/revisions`).then((r) => r.revisions),
+  revisionLog: (taskId: string) => request<RevisionLog>("GET", `${task(taskId)}/revisions`),
   materialContent: (taskId: string, path: string) =>
     request<{ path: string; text: string }>("GET", `${task(taskId)}/materials/content?path=${encodeURIComponent(path)}`),
   earlierConversation: (taskId: string, sessionId: string, before: string) =>
@@ -101,13 +102,14 @@ export const api = {
       "GET",
       `${task(taskId)}/conversation?session=${encodeURIComponent(sessionId)}&before=${encodeURIComponent(before)}&limit=100`,
     ),
-  previewDocument: (taskId: string, selection: { item_id: string; version_no: number }[]) =>
-    request<{ text: string }>("POST", `${task(taskId)}/documents/preview`, { selection, format: "markdown" }),
-  downloadDocument: async (taskId: string, selection: { item_id: string; version_no: number }[]) => {
+  // 生成文档：按一次修订整体导出（revision_no 不写就是最新），items 不写就是那次修订时的全部条目。
+  previewDocument: (taskId: string, pick: DocumentPick) =>
+    request<{ text: string }>("POST", `${task(taskId)}/documents/preview`, { ...pick, format: "markdown" }),
+  downloadDocument: async (taskId: string, pick: DocumentPick) => {
     const response = await fetch(`${BASE}${task(taskId)}/documents/download`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selection, format: "markdown" }),
+      body: JSON.stringify({ ...pick, format: "markdown" }),
     });
     if (!response.ok) throw new ApiError("bad_response", `下载没有成功（HTTP ${response.status}）。`, response.status);
     return response.blob();
@@ -138,6 +140,11 @@ function unwrapList(r: TaskListEntry[] | { tasks: TaskListEntry[] }): TaskListEn
 
 function unwrapSessions(r: SessionListEntry[] | { sessions: SessionListEntry[] }): SessionListEntry[] {
   return Array.isArray(r) ? r : r.sessions;
+}
+
+export interface DocumentPick {
+  revision_no?: number;
+  items?: string[];
 }
 
 /** 前端生成的临时编号（client_id）。 */

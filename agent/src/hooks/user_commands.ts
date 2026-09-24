@@ -6,8 +6,8 @@
  * 开头的字，后端会在前面加「用户说：」再发，所以也不会被当成命令。
  *
  * /tw-user <JSON>：参数形状见 docs/api.md 的「直接操作」一节，另加后端生成的 op_id。调用 lib/user_ops.ts，写完往会话里
- * 追加一条自定义消息（customType 为 taskwright-user-edit，正文用固定句式），notify_executor 为真的确认之后再用
- * sendUserMessage 发固定模板的那句话。结果经状态栏键 taskwright-user-result 回传：
+ * 追加一条自定义消息（customType 为 taskwright-user-edit，正文用固定句式；打开详情写已读时正文为空，不追加），
+ * notify_executor 为真的标为已读之后再用 sendUserMessage 发固定模板的那句话。结果经状态栏键 taskwright-user-result 回传：
  *   成功 {"op_id", "ok": true, "event_seqs", "results", "revision_no"}；
  *   拒绝 {"op_id", "ok": false, "error": {"code", "message", "data"}}。
  * 状态栏是给后端读的，交互模式下只显示成底部一行截短的 JSON；所以交互模式里被拒时另外用 notify 把完整的拒绝原因
@@ -66,7 +66,7 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       }
       try {
         const result = runUserOperation({ workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId() }, request);
-        pi.sendMessage(
+        if (result.note) pi.sendMessage(
           {
             customType: USER_EDIT_CUSTOM_TYPE,
             content: result.note,

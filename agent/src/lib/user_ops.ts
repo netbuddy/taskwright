@@ -1,22 +1,30 @@
 /**
- * 用户在界面上的直接操作：改字段、删条目、确认、撤回确认、把待定事项标为先不管、撤销一次修订。
+ * 用户在界面上的直接操作：改字段、删条目、标为已读、撤回确认、把问题条目标为先不管、撤销一次修订。
  *
  * 这些操作不经模型：后端经 RPC 发扩展命令 /tw-user，命令的处理函数（hooks/user_commands.ts）调用这里。
- * 写库一律走与工具相同的核心函数：改字段、删条目、标为先不管、撤销都经 saveRevision（发起方 user）；
- * 确认与撤回确认现在还没有「登记用户确认」工具时的做法，这里直接写 judgement 与 judgement_item，
- * 判读依据记「界面点击」、没有判读者，同时记一条 CONFIRMATION_RECORDED 事件。
+ * 写库一律走与工具相同的核心函数：改字段、删条目、标为先不管、撤销都经 saveRevision（发起方 user）。
+ *
+ * 确认标记记在 judgement（一次标记）与 judgement_item（每个条目在哪次修订上、接受与否）两张表里，
+ * judgement.basis 写这次标记的依据。依据有三种，都由这里写：
+ * - 已读（viewed）：用户打开条目详情，或在卡片上点「这几条都看过了」（mark_viewed），记一条 ITEM_VIEWED 事件。
+ *   幂等：条目在这次修订上最近一条标记已经是接受时不再写。
+ * - 界面修改（ui_edit）：改字段与「标为先不管」成功时，用户亲手改出来的内容就是用户认可的内容，在保存修订的同一个事务里
+ *   为每个被改的条目在这次修订上自动写一条接受的标记，记一条 CONFIRMATION_RECORDED 事件。删除与撤销修订不自动写。
+ * - 界面点击（ui_click）：撤回（unconfirm）写一条不接受的标记，记一条 CONFIRMATION_RECORDED 事件。已读是条目级、单向的，
+ *   看过的条目撤回之后仍算看过（见 conditions.ts）。
+ * 旧库里还可能有依据为「用户的话」的标记，那是早期版本由执行者登记的，读取一侧照旧认。
  *
  * 改字段与「标为先不管」改到的字段，来源换成一条「用户直接修改」（出处是操作编号，摘录是新值的前 200 字），
- * 没改的字段来源沿用上一版；加入第四种来源之前建的库不认这一种，那样的库沿用旧做法。
+ * 没改的字段来源沿用条目上一次修订时的来源；加入第四种来源之前建的库不认这一种，那样的库沿用旧做法。
  * 追加进会话的通知正文带上改后的字段值，执行者不必另去查（同节第 4 条）。
  *
- * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_version、undo_conflict、
+ * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_revision、undo_conflict、
  * task_closed、no_task、rejected、bad_request）和给人看的一句中文，data 里放细节。本模块不依赖 pi。
  */
 
 import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
-import { validateDefinition } from "./definition.ts";
+import { KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
 import { type Source, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { NoDatabaseYet, SOURCE_USER_EDIT, TASK_ACTIVE, acceptsUserEditSource, withTaskDatabase } from "./schema.ts";
 
@@ -24,11 +32,11 @@ import { NoDatabaseYet, SOURCE_USER_EDIT, TASK_ACTIVE, acceptsUserEditSource, wi
 export const USER_EDIT_EXCERPT_LIMIT = 200;
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
-export const USER_OP_KINDS = ["edit_fields", "delete_item", "confirm", "unconfirm", "keep_pending", "undo"] as const;
+export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
+export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "unconfirm", "keep_pending", "undo"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
-/** 「把待定事项标为先不管」写进状态字段的取值。 */
-export const KEEP_PENDING_STATUS = "用户决定保留";
+export { KEEP_PENDING_STATUS };
 
 export interface UserOpRequest {
   op_id?: unknown;
@@ -43,11 +51,11 @@ export interface UserOpResult {
   op_id: string;
   kind: UserOpKind;
   event_seqs: number[];
-  results: { item_id: string; version_no: number | null }[];
+  results: { item_id: string; revision_no: number | null }[];
   revision_no: number | null;
-  /** 追加进会话的自定义消息的正文。 */
+  /** 追加进会话的自定义消息的正文；为空文字时不追加（打开详情写已读不告诉执行者）。 */
   note: string;
-  /** notify_executor 为真的确认操作之后发给执行者的那句话（固定模板），其余为 null。 */
+  /** notify_executor 为真的标为已读之后发给执行者的那句话（固定模板），其余为 null。 */
   notify_text: string | null;
   undoable: boolean;
 }
@@ -69,7 +77,8 @@ interface Ctx {
 
 interface Target {
   item_id: string;
-  base_version: number;
+  /** 用户打开这个条目时它所在的修订号。 */
+  base_revision: number;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -92,14 +101,15 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
     throw new UserOpError("bad_request", "targets 应当是一个不为空的列表。");
   }
 
-  // 先在一个事务里读出任务与条目的现状，做任务状态与版本的核对；确认与撤回确认在同一个事务里直接写。
+  // 先在一个事务里读出任务与条目的现状，做任务状态与修订号的核对；标为已读与撤回确认在同一个事务里直接写。
   const state = inspect(ctx, request, kind);
-  if (kind === "confirm" || kind === "unconfirm") return confirm(ctx, opId, kind, state.targets!, request.notify_executor === true);
+  if (kind === "mark_viewed") return markViewed(ctx, opId, state.targets!, request.notify_executor === true);
+  if (kind === "unconfirm") return unconfirm(ctx, opId, state.targets!);
   if (kind === "undo") return undo(ctx, opId, state.revisionNo!);
 
   const targets = state.targets!;
   let operations: Record<string, unknown>[];
-  let note: (details: { revision_no: number; operations: { item: string; from_version: number | null; to_version: number | null }[] }) => string;
+  let note: (details: { revision_no: number; operations: RevisionOp[] }) => string;
   if (kind === "edit_fields") {
     if (targets.length !== 1) throw new UserOpError("bad_request", "edit_fields 一次只改一个条目，targets 里只能有一项。");
     if (!isObject(request.fields) || Object.keys(request.fields).length === 0) {
@@ -108,34 +118,41 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
     const names = Object.keys(request.fields);
     const fields = request.fields;
     operations = [withUserEditSources(
-      { op: "update", item: targets[0].item_id, base_version: targets[0].base_version, fields },
+      { op: "update", item: targets[0].item_id, base_revision: targets[0].base_revision, fields },
       state, opId, fields,
     )];
     note = (d) =>
-      `界面操作（不是用户打的字）：用户把 ${targets[0].item_id} 的${names.map((n) => `「${n}」`).join("、")}改成了第 ${d.operations[0].to_version} 版。` +
-      `改后的内容是：\n${describeFields(fields)}`;
+      `界面操作（不是用户打的字）：用户改了 ${targets[0].item_id} 的${names.map((n) => `「${n}」`).join("、")}，产生修订 ${d.revision_no}，${targets[0].item_id} 现在是修订 ${d.revision_no}。` +
+      `${confirmedText(d.operations)}改后的内容是：\n${describeFields(fields)}`;
   } else if (kind === "delete_item") {
-    operations = targets.map((t) => ({ op: "delete", item: t.item_id, base_version: t.base_version }));
+    operations = targets.map((t) => ({ op: "delete", item: t.item_id, base_revision: t.base_revision }));
     note = (d) =>
-      `界面操作（不是用户打的字）：用户删除了 ${d.operations.map((o) => `${o.item}（删除前是第 ${o.from_version} 版）`).join("、")}。` +
+      `界面操作（不是用户打的字）：用户删除了 ${d.operations.map((o) => `${o.item}（删除前在修订 ${o.from_revision}）`).join("、")}，产生修订 ${d.revision_no}。` +
       "这些条目已删除，不再算在交付物里。";
   } else {
     operations = targets.map((t) =>
-      withUserEditSources({ op: "update", item: t.item_id, base_version: t.base_version, fields: { 状态: KEEP_PENDING_STATUS } }, state, opId, {
+      withUserEditSources({ op: "update", item: t.item_id, base_revision: t.base_revision, fields: { 状态: KEEP_PENDING_STATUS } }, state, opId, {
         状态: KEEP_PENDING_STATUS,
       }),
     );
     note = (d) =>
       `界面操作（不是用户打的字）：用户把 ${d.operations.map((o) => `${o.item}`).join("、")} 标为先不管（状态改为「${KEEP_PENDING_STATUS}」），` +
-      `现在是${d.operations.map((o) => `${o.item} 第 ${o.to_version} 版`).join("、")}。`;
+      `产生修订 ${d.revision_no}，${d.operations.map((o) => o.item).join("、")} 现在是修订 ${d.revision_no}。` + confirmedText(d.operations);
   }
-  const outcome = save(ctx, opId, { operations });
-  const details = outcome.details as { revision_no: number; event_seq: number; operations: { item: string; from_version: number | null; to_version: number | null }[] };
+  // 改字段与标为先不管：随修订在同一个事务里把改出来的内容登记为用户已确认；删除不登记。
+  const confirmation: { seq: number | null } = { seq: null };
+  const autoConfirm = kind === "delete_item" ? undefined : (db: DatabaseSync, written: { details: Record<string, unknown> }) => {
+    const d = written.details as { revision_no: number; operations: RevisionOp[] };
+    const items = d.operations.filter((o) => o.to_revision !== null).map((o) => ({ item_id: o.item, revision_no: o.to_revision as number }));
+    confirmation.seq = recordMark(db, ctx, opId, items, true, "ui_edit");
+  };
+  const outcome = save(ctx, opId, { operations }, autoConfirm);
+  const details = outcome.details as { revision_no: number; event_seq: number; operations: RevisionOp[] };
   return {
     op_id: opId,
     kind,
-    event_seqs: [details.event_seq],
-    results: details.operations.map((o) => ({ item_id: o.item, version_no: o.to_version })),
+    event_seqs: confirmation.seq === null ? [details.event_seq] : [details.event_seq, confirmation.seq],
+    results: details.operations.map((o) => ({ item_id: o.item, revision_no: o.to_revision })),
     revision_no: details.revision_no,
     note: note(details),
     notify_text: null,
@@ -143,13 +160,23 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
   };
 }
 
-/** 调 saveRevision，把它的拒绝翻成 UserOpError。版本核对已经在 inspect 里做过，这里再遇到就是同一时刻被改了。 */
-function save(ctx: Ctx, opId: string, params: { operations: unknown; undo_of_revision?: number }) {
+/** 改字段与标为先不管的通知里那句：用户亲手改出来的内容，同时算作用户看过并认可了。 */
+function confirmedText(operations: RevisionOp[]): string {
+  return `这次修改同时算作用户看过并认可了 ${operations.map((o) => `${o.item}（修订 ${o.to_revision}）`).join("、")}。`;
+}
+
+/** 调 saveRevision，把它的拒绝翻成 UserOpError。修订号核对已经在 inspect 里做过，这里再遇到就是同一时刻被改了。 */
+function save(
+  ctx: Ctx,
+  opId: string,
+  params: { operations: unknown; undo_of_revision?: number },
+  afterWrite?: (db: DatabaseSync, outcome: { details: Record<string, unknown> }) => void,
+) {
   try {
-    return saveRevision({ workspaceDir: ctx.workspaceDir, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, params);
+    return saveRevision({ workspaceDir: ctx.workspaceDir, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, params, afterWrite);
   } catch (error) {
     const text = (error as Error).message;
-    if (text.includes("已经被") && text.includes("改到第")) throw new UserOpError("stale_version", "条目刚被改过，请看最新内容后再改。", { detail: text });
+    if (text.includes("已经被") && text.includes("改到修订")) throw new UserOpError("stale_revision", "条目刚被改过，请看最新内容后再改。", { detail: text });
     const reasons = text.split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2));
     // message 直接写出第一条原因，前端只显示 message 时用户也知道哪里不对；全部原因在 data.reasons。
     const message = reasons.length ? `这次修改没有通过核对：${reasons[0]}${reasons.length > 1 ? `（另有 ${reasons.length - 1} 处）` : ""}` : text;
@@ -160,17 +187,17 @@ function save(ctx: Ctx, opId: string, params: { operations: unknown; undo_of_rev
 interface Inspected {
   targets?: Target[];
   revisionNo?: number;
-  /** 改字段与标为先不管时：每个目标条目当前版本的来源。 */
+  /** 改字段与标为先不管时：每个目标条目在当前所在修订下的来源。 */
   sources?: Map<string, Source[]>;
   /** 这个库的来源表认不认「用户直接修改」。 */
   userEditOk?: boolean;
 }
 
-/** 从库里读某个条目某一版的来源，按条目来源的形状整理（一条来源支持的几处合回一条）。 */
-function readSources(db: DatabaseSync, taskId: string, itemId: string, versionNo: number): Source[] {
+/** 从库里读某个条目在某次修订下的来源，按条目来源的形状整理（一条来源支持的几处合回一条）。 */
+function readSources(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): Source[] {
   const rows = db
-    .prepare("SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND version_no = ? ORDER BY position, support_no")
-    .all(taskId, itemId, versionNo) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
+    .prepare("SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no")
+    .all(taskId, itemId, revisionNo) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
   const byPosition = new Map<number, Source>();
   for (const row of rows) {
     let source = byPosition.get(row.position);
@@ -187,9 +214,9 @@ function valueText(value: unknown): string {
 }
 
 /**
- * 给一个直接改字段的操作配上来源：上一版的来源里，支持改到的字段的那几处去掉（去掉之后什么都不支持的来源整条去掉，
+ * 给一个直接改字段的操作配上来源：条目上一次修订时的来源里，支持改到的字段的那几处去掉（去掉之后什么都不支持的来源整条去掉，
  * 本来就支持整个条目的来源保留）；每个改到、而且新值不为空的字段各加一条「用户直接修改」。
- * 库不认这一种时不写 sources，沿用上一版的来源（旧做法）。
+ * 库不认这一种时不写 sources，沿用上一次修订时的来源（旧做法）。
  */
 function withUserEditSources(operation: Record<string, unknown>, state: Inspected, opId: string, changed: Record<string, unknown>) {
   if (!state.userEditOk) return operation;
@@ -225,7 +252,7 @@ export function describeFields(fields: Record<string, unknown>): string {
     .join("\n");
 }
 
-/** 核对任务状态、目标形状与版本，返回整理好的目标。 */
+/** 核对任务状态、目标形状与修订号，返回整理好的目标。 */
 function inspect(ctx: Ctx, request: UserOpRequest, kind: UserOpKind): Inspected {
   try {
     return withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
@@ -247,10 +274,11 @@ function inspect(ctx: Ctx, request: UserOpRequest, kind: UserOpKind): Inspected 
       }
       const targets: Target[] = [];
       for (const one of raw) {
-        if (!isObject(one) || typeof one.item_id !== "string" || !Number.isInteger(one.base_version)) {
-          throw new UserOpError("bad_request", "targets 的每一项要写 { \"item_id\": 条目编号, \"base_version\": 整数 }。");
+        const base = isObject(one) ? one.base_revision : undefined;
+        if (!isObject(one) || typeof one.item_id !== "string" || !Number.isInteger(base)) {
+          throw new UserOpError("bad_request", "targets 的每一项要写 { \"item_id\": 条目编号, \"base_revision\": 整数 }。");
         }
-        targets.push({ item_id: one.item_id, base_version: one.base_version as number });
+        targets.push({ item_id: one.item_id, base_revision: base as number });
       }
       if (new Set(targets.map((t) => t.item_id)).size !== targets.length) {
         throw new UserOpError("bad_request", "targets 里有重复的条目。");
@@ -276,25 +304,23 @@ function inspect(ctx: Ctx, request: UserOpRequest, kind: UserOpKind): Inspected 
         }
         const current = db
           .prepare(
-            "SELECT v.version_no, e.actor FROM item_version v JOIN event e ON e.seq = v.event_seq " +
-              "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.version_no DESC LIMIT 1",
+            "SELECT v.revision_no, e.actor FROM item_version v JOIN event e ON e.seq = v.event_seq " +
+              "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
           )
-          .get(task.task_id, target.item_id) as { version_no: number; actor: string };
-        if (current.version_no !== target.base_version) {
-          // version_no 与 by 是 current_version 与 changed_by 的另一种写法，照前端骨架读的键名一并给出。
-          const by = actorWord(current.actor);
-          stale.push({ item_id: target.item_id, base_version: target.base_version, current_version: current.version_no, changed_by: by,
-            version_no: current.version_no, by });
+          .get(task.task_id, target.item_id) as { revision_no: number; actor: string };
+        if (current.revision_no !== target.base_revision) {
+          stale.push({ item_id: target.item_id, base_revision: target.base_revision, current_revision: current.revision_no,
+            changed_by: actorWord(current.actor) });
         }
       }
       if (missing.length > 0) {
         throw new UserOpError("rejected", `条目 ${missing.join("、")} 不存在或已经删除。`, { reasons: missing.map((id) => `条目 ${id} 不存在或已经删除`) });
       }
       if (stale.length > 0) {
-        throw new UserOpError("stale_version", "这个条目刚被改过（可能是助手，也可能是另一个页面），请看最新内容后再改。", { items: stale });
+        throw new UserOpError("stale_revision", "这个条目刚被改过（可能是助手，也可能是另一个页面），请看最新内容后再改。", { items: stale });
       }
       if (kind === "edit_fields" || kind === "keep_pending") {
-        const sources = new Map(targets.map((t) => [t.item_id, readSources(db, task.task_id, t.item_id, t.base_version)]));
+        const sources = new Map(targets.map((t) => [t.item_id, readSources(db, task.task_id, t.item_id, t.base_revision)]));
         return { targets, sources, userEditOk: acceptsUserEditSource(db) };
       }
       return { targets };
@@ -305,41 +331,92 @@ function inspect(ctx: Ctx, request: UserOpRequest, kind: UserOpKind): Inspected 
   }
 }
 
-/** 确认与撤回确认：写一次判读（依据是界面点击）与每个条目的态度，记一条事件。 */
-function confirm(ctx: Ctx, opId: string, kind: "confirm" | "unconfirm", targets: Target[], notify: boolean): UserOpResult {
-  const accepted = kind === "confirm";
-  const seq = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db: DatabaseSync) => {
-    const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
-    const at = wallClockText();
-    const eventSeq = emit(db, {
-      taskId: task.task_id,
-      sessionId: ctx.sessionId,
-      callId: opId,
-      name: EVENT_CONFIRMATION_RECORDED,
-      payload: { items: targets.map((t) => ({ item_id: t.item_id, version_no: t.base_version, accepted })), basis: "ui_click" },
-      actor: ACTOR_USER,
-    });
-    const judgement = db
-      .prepare("INSERT INTO judgement (task_id, basis, call_id, event_seq, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run(task.task_id, dump([{ 依据: "界面点击", 操作编号: opId, 判读者: null }]), opId, eventSeq, at);
-    const judgementId = Number(judgement.lastInsertRowid);
-    const insert = db.prepare(
-      "INSERT INTO judgement_item (judgement_id, task_id, item_id, version_no, attitude, event_seq) VALUES (?, ?, ?, ?, ?, ?)",
-    );
-    for (const t of targets) insert.run(judgementId, task.task_id, t.item_id, t.base_version, accepted ? "接受" : "不接受", eventSeq);
-    return eventSeq;
+/** 确认标记的依据：写进 judgement.basis 的中文名，与事件 payload 里的英文名一一对应。 */
+export const CONFIRMATION_BASIS = { viewed: "已读", ui_edit: "界面修改", ui_click: "界面点击" } as const;
+export type ConfirmationBasis = keyof typeof CONFIRMATION_BASIS;
+
+/**
+ * 在调用方的事务里写一次确认标记：judgement 一行、每个条目在给定修订上的态度各一行，记一条事件
+ * （已读记 ITEM_VIEWED，其余记 CONFIRMATION_RECORDED）。返回事件序号。
+ */
+function recordMark(
+  db: DatabaseSync,
+  ctx: Ctx,
+  opId: string,
+  items: { item_id: string; revision_no: number }[],
+  accepted: boolean,
+  basis: ConfirmationBasis,
+): number {
+  const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
+  const at = wallClockText();
+  const eventSeq = emit(db, {
+    taskId: task.task_id,
+    sessionId: ctx.sessionId,
+    callId: opId,
+    name: basis === "viewed" ? EVENT_ITEM_VIEWED : EVENT_CONFIRMATION_RECORDED,
+    payload: basis === "viewed"
+      ? { items: items.map((t) => ({ item_id: t.item_id, revision_no: t.revision_no })), basis }
+      : { items: items.map((t) => ({ item_id: t.item_id, revision_no: t.revision_no, accepted })), basis },
+    actor: ACTOR_USER,
   });
-  const list = targets.map((t) => `${t.item_id} 第 ${t.base_version} 版`).join("、");
+  const judgement = db
+    .prepare("INSERT INTO judgement (task_id, basis, call_id, event_seq, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(task.task_id, dump([{ 依据: CONFIRMATION_BASIS[basis], 操作编号: opId }]), opId, eventSeq, at);
+  const judgementId = Number(judgement.lastInsertRowid);
+  const insert = db.prepare(
+    "INSERT INTO judgement_item (judgement_id, task_id, item_id, revision_no, attitude, event_seq) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  for (const t of items) insert.run(judgementId, task.task_id, t.item_id, t.revision_no, accepted ? "接受" : "不接受", eventSeq);
+  return eventSeq;
+}
+
+/** 条目在这次修订上最近一条标记是不是接受（任一依据）。 */
+function acceptedAt(db: DatabaseSync, itemId: string, revisionNo: number): boolean {
+  const row = db
+    .prepare("SELECT attitude FROM judgement_item WHERE item_id = ? AND revision_no = ? ORDER BY judgement_id DESC LIMIT 1")
+    .get(itemId, revisionNo) as { attitude?: string } | undefined;
+  return row?.attitude === "接受";
+}
+
+/**
+ * 标为已读：条目在给定修订上最近一条标记已经是接受的跳过（幂等），其余写一次已读标记。都跳过时什么都不写、不记事件。
+ * notify_executor 为真（卡片上点「这几条都看过了」）时追加一条界面操作说明，并按固定模板告诉执行者；
+ * 为假（打开详情）时不往会话里追加任何东西。
+ */
+function markViewed(ctx: Ctx, opId: string, targets: Target[], notify: boolean): UserOpResult {
+  const items = targets.map((t) => ({ item_id: t.item_id, revision_no: t.base_revision }));
+  const seq = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db: DatabaseSync) => {
+    const fresh = items.filter((t) => !acceptedAt(db, t.item_id, t.revision_no));
+    return fresh.length === 0 ? null : recordMark(db, ctx, opId, fresh, true, "viewed");
+  });
+  const list = items.map((t) => `${t.item_id}（修订 ${t.revision_no}）`);
   return {
     op_id: opId,
-    kind,
-    event_seqs: [seq],
-    results: targets.map((t) => ({ item_id: t.item_id, version_no: t.base_version })),
+    kind: "mark_viewed",
+    event_seqs: seq === null ? [] : [seq],
+    results: items,
     revision_no: null,
-    note: accepted
-      ? `界面操作（不是用户打的字）：用户在界面上确认了 ${list}。`
-      : `界面操作（不是用户打的字）：用户在界面上撤回了对 ${list}的确认。`,
-    notify_text: accepted && notify ? `我已经在界面上确认了：${targets.map((t) => `${t.item_id} 第 ${t.base_version} 版`).join("，")}。请接着往下做。` : null,
+    note: notify ? `界面操作（不是用户打的字）：用户在卡片上表示看过了 ${list.join("、")}，已记为已读。` : "",
+    notify_text: notify ? `${VIEWED_NOTICE_PREFIX}${list.join("，")}。请接着往下做。` : null,
+    undoable: false,
+  };
+}
+
+/** 卡片上点「这几条都看过了」之后发给执行者的那句话的开头。后端（service/conversation.py）按它认出这句不是用户打的字。 */
+export const VIEWED_NOTICE_PREFIX = "我已经看过了：";
+
+/** 撤回确认：写一条不接受的标记（依据是界面点击），记一条事件。 */
+function unconfirm(ctx: Ctx, opId: string, targets: Target[]): UserOpResult {
+  const items = targets.map((t) => ({ item_id: t.item_id, revision_no: t.base_revision }));
+  const seq = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db: DatabaseSync) => recordMark(db, ctx, opId, items, false, "ui_click"));
+  return {
+    op_id: opId,
+    kind: "unconfirm",
+    event_seqs: [seq],
+    results: items,
+    revision_no: null,
+    note: `界面操作（不是用户打的字）：用户在界面上撤回了对 ${items.map((t) => `${t.item_id}（修订 ${t.revision_no}）`).join("、")}的确认。`,
+    notify_text: null,
     undoable: false,
   };
 }
@@ -347,26 +424,29 @@ function confirm(ctx: Ctx, opId: string, kind: "confirm" | "unconfirm", targets:
 interface RevisionOp {
   op: string;
   item: string;
-  from_version: number | null;
-  to_version: number | null;
+  /** 改前条目所在的修订；新增时为空。 */
+  from_revision: number | null;
+  /** 改后条目所在的修订，即这次修订；删除时为空。 */
+  to_revision: number | null;
 }
 
-/** 撤销一次修订：对它涉及的每个条目再存一版，内容改回那次改动之前的样子。之后又被改过就拒绝。 */
+/** 撤销一次修订：产生一次新的修订，把它涉及的每个条目改回那次改动之前的样子（如同 git revert）。之后又被改过就拒绝。 */
 function undo(ctx: Ctx, opId: string, revisionNo: number): UserOpResult {
+  const backTo: (number | null)[] = [];
   const plan = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db: DatabaseSync) => {
     const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; definition_text: string };
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const revision = db.prepare("SELECT event_seq FROM revision WHERE task_id = ? AND revision_no = ?").get(task.task_id, revisionNo) as
       | { event_seq: number }
       | undefined;
-    if (!revision) throw new UserOpError("bad_request", `没有第 ${revisionNo} 次修订。`);
+    if (!revision) throw new UserOpError("bad_request", `没有修订 ${revisionNo}。`);
     const payload = load((db.prepare("SELECT payload FROM event WHERE seq = ?").get(revision.event_seq) as { payload: string }).payload) as {
       operations: RevisionOp[];
     };
     const conflicts: Record<string, unknown>[] = [];
     const operations: Record<string, unknown>[] = [];
-    const versionOf = (item: string, no: number) =>
-      db.prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND version_no = ?").get(task.task_id, item, no) as
+    const contentAt = (item: string, no: number) =>
+      db.prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no = ?").get(task.task_id, item, no) as
         | { fields: string }
         | undefined;
     const sourcesOf = (item: string, no: number) => readSources(db, task.task_id, item, no);
@@ -375,49 +455,55 @@ function undo(ctx: Ctx, opId: string, revisionNo: number): UserOpResult {
         collection: string;
         deleted_in_revision: number | null;
       };
-      const latest = (db.prepare("SELECT MAX(version_no) AS v FROM item_version WHERE task_id = ? AND item_id = ?").get(task.task_id, op.item) as { v: number }).v;
+      const latest = (db.prepare("SELECT MAX(revision_no) AS v FROM item_version WHERE task_id = ? AND item_id = ?").get(task.task_id, op.item) as { v: number }).v;
       const declared = definition.collections.find((c) => c.name === item.collection)?.fields ?? [];
       const fullFields = (no: number) => {
-        const old = load(versionOf(op.item, no)!.fields) as Record<string, unknown>;
+        const old = load(contentAt(op.item, no)!.fields) as Record<string, unknown>;
         return Object.fromEntries(declared.map((f) => [f.name, f.name in old ? old[f.name] : f.type === "文本" || f.type === "枚举" ? "" : []]));
       };
       if (op.op === "add" || op.op === "restore") {
-        if (item.deleted_in_revision !== null || latest !== op.to_version) {
+        if (item.deleted_in_revision !== null || latest !== op.to_revision) {
           conflicts.push({ item_id: op.item, reason: `${op.item} 在这次修订之后又被改过或删除了` });
           continue;
         }
-        operations.push({ op: "delete", item: op.item, base_version: latest });
+        operations.push({ op: "delete", item: op.item, base_revision: latest });
+        backTo.push(null);
       } else if (op.op === "update") {
-        if (item.deleted_in_revision !== null || latest !== op.to_version) {
-          conflicts.push({ item_id: op.item, reason: `${op.item} 在这次修订之后又被改过或删除了（现在是第 ${latest} 版）` });
+        if (item.deleted_in_revision !== null || latest !== op.to_revision) {
+          conflicts.push({ item_id: op.item, reason: `${op.item} 在这次修订之后又被改过或删除了（现在是修订 ${latest}）` });
           continue;
         }
-        operations.push({ op: "update", item: op.item, base_version: latest, fields: fullFields(op.from_version!), sources: sourcesOf(op.item, op.from_version!) });
+        operations.push({ op: "update", item: op.item, base_revision: latest, fields: fullFields(op.from_revision!), sources: sourcesOf(op.item, op.from_revision!) });
+        backTo.push(op.from_revision);
       } else if (op.op === "delete") {
-        if (item.deleted_in_revision !== revisionNo || latest !== op.from_version) {
+        if (item.deleted_in_revision !== revisionNo || latest !== op.from_revision) {
           conflicts.push({ item_id: op.item, reason: `${op.item} 在这次修订之后又有了变化` });
           continue;
         }
-        operations.push({ op: "restore", item: op.item, base_version: latest, fields: fullFields(op.from_version!), sources: sourcesOf(op.item, op.from_version!) });
+        operations.push({ op: "restore", item: op.item, base_revision: latest, fields: fullFields(op.from_revision!), sources: sourcesOf(op.item, op.from_revision!) });
+        backTo.push(op.from_revision);
       }
     }
     if (conflicts.length > 0) {
-      throw new UserOpError("undo_conflict", `第 ${revisionNo} 次修订之后，同一个条目又被改过，不能撤销。`, { revision_no: revisionNo, items: conflicts });
+      throw new UserOpError("undo_conflict", `修订 ${revisionNo} 之后，同一个条目又被改过，不能撤销。`, { revision_no: revisionNo, items: conflicts });
     }
     return operations;
   });
   const outcome = save(ctx, opId, { operations: plan, undo_of_revision: revisionNo });
   const details = outcome.details as { revision_no: number; event_seq: number; operations: RevisionOp[] };
+  // 每个条目退回了哪次修订的内容：撤销前在库里读好的改前修订号（update 与 restore 的 fields 取自它）。
+  const undone = new Map((plan as { item: string; op: string }[]).map((one, i) => [one.item, backTo[i]]));
   const words: Record<string, string> = { delete: "删除", update: "改回", restore: "恢复" };
   return {
     op_id: opId,
     kind: "undo",
     event_seqs: [details.event_seq],
-    results: details.operations.map((o) => ({ item_id: o.item, version_no: o.to_version })),
+    results: details.operations.map((o) => ({ item_id: o.item, revision_no: o.to_revision })),
     revision_no: details.revision_no,
     note:
-      `界面操作（不是用户打的字）：用户撤销了第 ${revisionNo} 次修订：` +
-      details.operations.map((o) => `${words[o.op] ?? o.op} ${o.item}${o.to_version ? `（现在是第 ${o.to_version} 版）` : "（已删除）"}`).join("、") + "。" +
+      `界面操作（不是用户打的字）：用户撤销了修订 ${revisionNo}，产生修订 ${details.revision_no}：` +
+      details.operations.map((o) => o.op === "delete" ? `删除 ${o.item}（这是修订 ${revisionNo} 新增的）`
+        : `${words[o.op] ?? o.op} ${o.item}（${o.item} 退回修订 ${undone.get(o.item)} 的内容，现在是修订 ${o.to_revision}）`).join("、") + "。" +
       plan
         .filter((one) => one.fields !== undefined)
         .map((one) => `\n${one.item} 现在的内容是：\n${describeFields(dropEmptyFields(one.fields as Record<string, unknown>))}`)

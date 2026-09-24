@@ -1,8 +1,8 @@
 """读任务目录里的任务数据库 `task.sqlite`。一律以只读方式打开，绝不写。
 
-库有新旧两种格式，靠「库里有没有 `slot` 表」分辨。新格式（按条目记版本）由 `taskwright_observatory.taskdb`
+库有新旧两种格式，靠「库里有没有 `slot` 表」分辨。新格式（条目按修订号记）由 `taskwright_observatory.taskdb`
 读，本模块把它包成与旧格式同样的外壳（任务标识、任务类型、状态、事件），好让会话与任务的对应、
-调用编号的索引两种格式共用一套；新格式特有的条目、版本、来源原样放在「新库」一项里。
+调用编号的索引两种格式共用一套；新格式特有的条目、条目在各次修订下的内容、来源原样放在「新库」一项里。
 库文件不存在的任务目录也列出来，标明「这个任务目录还没有创建任务」。
 
 旧格式的库是这样几张表：`task` 是任务本身，`slot` 是每个字段的当前值与版本号，
@@ -195,6 +195,8 @@ def scan_workspaces(workspaces_dir: Path) -> list[dict]:
                 entry["任务"] = read_task_db(path / "task.sqlite")
                 for task in entry["任务"]:
                     task["格式"] = taskdb.FORMAT_LEGACY
+            elif fmt == taskdb.FORMAT_PRE_REVISION:
+                entry["说明"] = taskdb.PRE_REVISION_TEXT
             else:
                 entry["说明"] = "这个任务目录的库里的表既不是旧格式也不是新格式，观测台认不出来。"
         except sqlite3.Error as error:
@@ -205,9 +207,9 @@ def scan_workspaces(workspaces_dir: Path) -> list[dict]:
 
 
 def model_calls_by_tool_call(workspaces: list[dict]) -> dict[str, list[dict]]:
-    """建一张「工具调用编号 → 这次工具调用里直接发起的模型调用」的表（确认判读者）。
+    """建一张「工具调用编号 → 这次工具调用里直接发起的模型调用」的表。
 
-    被拒绝的「登记用户确认」没有写事件，但它发起过的模型调用照样记在库里，所以单独建这张表，不走事件。
+    被拒绝的工具调用没有写事件，但它发起过的模型调用照样记在库里，所以单独建这张表，不走事件。
     """
     index: dict[str, list[dict]] = {}
     for workspace in workspaces:

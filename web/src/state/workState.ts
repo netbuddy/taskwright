@@ -18,6 +18,7 @@ import type {
   DeliverableChanged,
   ExecutorState,
   Item,
+  ItemViewed,
   Material,
   MaterialAdded,
   Problem,
@@ -35,7 +36,6 @@ import type {
   WorkSummary,
 } from "../api/types";
 import { LIBRARY_EVENTS } from "../api/types";
-import { addToBlocks, titleFrom, type ChangeBlock, type ChangeEntry } from "../model/changes";
 
 export interface BufferedLibraryEvent {
   event: (typeof LIBRARY_EVENTS)[number];
@@ -83,12 +83,8 @@ export interface WorkState {
   seenOps: string[];
   /** 最近一次新加进来的材料路径：文档区据此选中它并显示正文。 */
   focusMaterial: string | null;
-  /** 改动块：整份数据之后实时到达的、执行者的修订拼成的块。整份数据到达时清空。 */
-  changeBlocks: ChangeBlock[];
-  /** 刷新后按条目版本历史重建的改动块（整份数据之前的修订），由 useWorkView 读完版本历史后放进来。 */
-  rebuiltBlocks: ChangeBlock[];
-  /** 最近一次整份数据的序号；换了快照，改动块就要重建。 */
-  snapshotSeq: number | null;
+  /** 任务最新的修订号：整份数据里带一次，之后每条 deliverable_changed 更新。修订日志跟着它重读。 */
+  latestRevision: number;
 }
 
 export function initialWorkState(sessionId: string): WorkState {
@@ -112,9 +108,7 @@ export function initialWorkState(sessionId: string): WorkState {
     revisionBySeq: {},
     seenOps: [],
     focusMaterial: null,
-    changeBlocks: [],
-    rebuiltBlocks: [],
-    snapshotSeq: null,
+    latestRevision: 0,
   };
 }
 
@@ -127,8 +121,7 @@ export type WorkAction =
   | { type: "op_pending"; op_id: string; label: string; items: string[] }
   | { type: "op_done"; op_id: string }
   | { type: "earlier"; messages: ConversationMessage[]; hasEarlier: boolean; earliestId: string | null }
-  | { type: "dismiss_problem"; index: number }
-  | { type: "rebuilt_blocks"; blocks: ChangeBlock[] };
+  | { type: "dismiss_problem"; index: number };
 
 const isLibraryEvent = (name: string): name is BufferedLibraryEvent["event"] =>
   (LIBRARY_EVENTS as readonly string[]).includes(name);
@@ -165,8 +158,6 @@ export function workReducer(state: WorkState, action: WorkAction): WorkState {
       };
     case "dismiss_problem":
       return { ...state, problems: state.problems.filter((_, i) => i !== action.index) };
-    case "rebuilt_blocks":
-      return { ...state, rebuiltBlocks: action.blocks };
   }
 }
 
@@ -184,10 +175,12 @@ function applySnapshot(state: WorkState, snapshot: Snapshot): WorkState {
     earliestId: snapshot.conversation?.earliest_id ?? null,
     currentWork: snapshot.current_work,
     buffered: [],
-    changeBlocks: [],
-    snapshotSeq: snapshot.seq,
+    latestRevision: snapshot.task?.latest_revision ?? state.latestRevision,
     // 快照里已经有的话，本地的「发送中」那条就不要了（按文字对上；client_id 快照里没有）。
     outgoing: state.outgoing.filter((m) => m.state === "failed"),
+    // 后端写完库才回应直接操作，重读到的整份数据必然已包含已回应的那些操作：「正在保存」一律清掉，
+    // 免得漏收的库事件让某个条目的按钮一直灰着。
+    pendingOps: {},
   };
   const pending = [...state.buffered].sort((a, b) => a.data.seq - b.data.seq);
   for (const event of pending) {
@@ -231,6 +224,12 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
     case "confirmation_recorded":
       next = applyConfirmationRecorded(next, event.data as unknown as ConfirmationRecorded);
       break;
+    case "item_viewed": {
+      // 已读就是一条接受的确认标记，依据是 viewed；与撤回、界面修改走同一套应用。
+      const data = event.data as unknown as ItemViewed;
+      next = applyConfirmationRecorded(next, { ...data, basis: "viewed", items: data.items.map((i) => ({ ...i, accepted: true })) });
+      break;
+    }
   }
   return next;
 }
@@ -242,25 +241,25 @@ function withCompletion(task: Task, completion: Completion | null | undefined): 
 
 function staleOf(item: Item): boolean {
   const accepted = [...item.confirmations].reverse().find((c) => c.accepted);
-  return !!accepted && accepted.version_no !== item.version_no;
+  return !!accepted && accepted.revision_no !== item.revision_no;
+}
+
+/** 按 op_id 消去「正在保存」。要在一切提前返回之前做：没消掉的话，那个条目的写入按钮会一直灰着。 */
+function clearOp(state: WorkState, opId: string | null | undefined): WorkState {
+  if (!opId || !(opId in state.pendingOps)) return state;
+  const rest = { ...state.pendingOps };
+  delete rest[opId];
+  return { ...state, pendingOps: rest };
 }
 
 function applyDeliverableChanged(state: WorkState, data: DeliverableChanged): WorkState {
+  state = clearOp(state, data.op_id);
   if (!state.task) return state;
   let items = [...state.task.items];
   const changed: string[] = [];
-  const entries: ChangeEntry[] = [];
   for (const op of data.operations ?? []) {
     changed.push(op.item_id);
     const index = items.findIndex((i) => i.item_id === op.item_id);
-    // 改动块要的改前：应用这条事件之前界面上这个条目的样子。
-    const prior = index >= 0 ? items[index] : null;
-    entries.push({
-      item_id: op.item_id, collection: op.collection ?? prior?.collection ?? "",
-      title: op.title ?? (op.fields ? titleFrom(state.task, op.collection, op.fields) : null) ?? prior?.title ?? op.item_id,
-      op: op.op, version_before: op.version_before ?? prior?.version_no ?? null, version_after: op.version_after,
-      before: op.op === "add" ? null : prior?.fields ?? null, after: op.op === "delete" ? null : op.fields ?? null,
-    });
     if (op.op === "delete") {
       if (index >= 0) items.splice(index, 1);
       continue;
@@ -272,10 +271,10 @@ function applyDeliverableChanged(state: WorkState, data: DeliverableChanged): Wo
             item_id: op.item_id,
             collection: op.collection,
             title: op.title,
-            version_no: 0,
-            version_by: data.actor,
-            version_at: data.at,
-            version_count: 0,
+            revision_no: 0,
+            revision_by: data.actor,
+            revision_at: data.at,
+            revisions: [],
             fields: {},
             sources: [],
             reviews: [],
@@ -286,10 +285,10 @@ function applyDeliverableChanged(state: WorkState, data: DeliverableChanged): Wo
       ...base,
       collection: op.collection ?? base.collection,
       title: op.title ?? base.title,
-      version_no: op.version_after ?? base.version_no,
-      version_by: data.actor,
-      version_at: data.at,
-      version_count: Math.max(base.version_count + 1, op.version_after ?? 0),
+      revision_no: op.revision_after ?? base.revision_no,
+      revision_by: data.actor,
+      revision_at: data.at,
+      revisions: op.revision_after != null && !base.revisions.includes(op.revision_after) ? [...base.revisions, op.revision_after] : base.revisions,
       fields: op.fields ?? base.fields,
       sources: op.sources ?? base.sources,
     };
@@ -297,18 +296,13 @@ function applyDeliverableChanged(state: WorkState, data: DeliverableChanged): Wo
     if (index >= 0) items[index] = updated;
     else items = [...items, updated];
   }
-  const pendingOps = { ...state.pendingOps };
-  if (data.op_id) delete pendingOps[data.op_id];
-  // restore（撤销一次删除）在上面的循环里按「条目重新出现」处理：列表里没有就加回去，字段取事件里恢复后的那一版。
-  // 执行者的修订进改动块，按正在进行的工作归块；用户直接操作的修订已有 ui_action_noted，不进。
-  const changeBlocks = data.actor === "user" ? state.changeBlocks
-    : state.currentWork ? addToBlocks(state.changeBlocks, `work-${state.currentWork.work_id}`, state.currentWork.work_id, data.revision_no, data.at, entries)
-    : addToBlocks(state.changeBlocks, `rev-${data.revision_no}`, null, data.revision_no, data.at, entries);
+  const pendingOps = state.pendingOps;
+  // restore（撤销一次删除）在上面的循环里按「条目重新出现」处理：列表里没有就加回去，字段取事件里恢复后的内容。
   return {
     ...state,
     task: withCompletion({ ...state.task, items }, data.completion),
     pendingOps,
-    changeBlocks,
+    latestRevision: Math.max(state.latestRevision, data.revision_no ?? 0),
     recentlyChanged: changed,
     revisionBySeq: data.revision_no != null ? { ...state.revisionBySeq, [data.seq]: data.revision_no } : state.revisionBySeq,
   };
@@ -326,13 +320,14 @@ function applyReviewRecorded(state: WorkState, data: ReviewRecorded): WorkState 
   if (!state.task) return state;
   const items = state.task.items.map((item) =>
     item.item_id === data.item_id
-      ? { ...item, reviews: [...item.reviews, { version_no: data.version_no, verdict: data.verdict, findings: data.findings, at: data.at }] }
+      ? { ...item, reviews: [...item.reviews, { revision_no: data.revision_no, verdict: data.verdict, findings: data.findings, at: data.at }] }
       : item,
   );
   return { ...state, task: withCompletion({ ...state.task, items }, data.completion), recentlyChanged: [data.item_id] };
 }
 
 function applyConfirmationRecorded(state: WorkState, data: ConfirmationRecorded): WorkState {
+  state = clearOp(state, data.op_id);
   if (!state.task) return state;
   const byId = new Map(data.items.map((i) => [i.item_id, i]));
   const items = state.task.items.map((item) => {
@@ -340,7 +335,7 @@ function applyConfirmationRecorded(state: WorkState, data: ConfirmationRecorded)
     if (!hit) return item;
     const updated = {
       ...item,
-      confirmations: [...item.confirmations, { version_no: hit.version_no, accepted: hit.accepted, basis: data.basis, at: data.at }],
+      confirmations: [...item.confirmations, { revision_no: hit.revision_no, accepted: hit.accepted, basis: data.basis, at: data.at }],
     };
     return { ...updated, confirmation_stale: staleOf(updated) };
   });
