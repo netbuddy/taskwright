@@ -1,10 +1,10 @@
 """观测台适配当前任务目录与工具的现实：任务按任务目录挂接、查调用编号不跨库、「回复」算对用户说话、
 连着出错每次各有说明、被拒发生在任务结束之后不算异常。
 
-挂接与查找直接在读取层的索引对象上造一份最小的数据来测；阶段与判据用与读取接口同形状的手写数据
+挂接与查找直接在读取层的索引对象上造一份最小的数据来测；按轮归类与判据用与读取接口同形状的手写数据
 （造法与 test_taskpage.py 相同）。「回复」的排版要调 agent 的命令行入口，本机没有 node 时那一条跳过。
 
-跑法：在代码仓目录下运行 `python3 -m unittest taskwright_observatory.tests.test_current_workspaces`。
+跑法：在代码仓的 observatory 目录下运行 `python3 -m unittest taskwright_observatory.tests.test_current_workspaces`。
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from taskwright_observatory import runs as runs_module
 from taskwright_observatory import taskpage
 from taskwright_observatory.api import Index
 from taskwright_observatory.labels import load_tool_names
-from taskwright_observatory.tests.test_taskpage import DECL, RULES, WS, call, run, stages_of, turn
+from taskwright_observatory.tests.test_taskpage import RULES, WS, alerts_of, call, run, stages_of, turn
 
 
 # ───────────── 一、挂接与查找 ─────────────
@@ -43,7 +43,8 @@ def make_index() -> Index:
                    "ws-l/old": {"格式": taskdb.FORMAT_LEGACY, "任务标识": "old", "任务类型": "旧任务", "状态": "进行中"}}
     index.task_workspace = {"ws-a/TASK-001": "ws-a", "ws-b/TASK-001": "ws-b", "ws-l/old": "ws-l"}
     index.projections = {k: {"修订次数": 1, "修订": []} for k in index.tasks}
-    index.workspaces = [{"任务目录": w} for w in ("ws-a", "ws-b", "ws-c", "ws-l")]
+    index.workspaces = [{"任务目录": w, "任务目录路径": f"/任意/上级/{w}"} for w in ("ws-a", "ws-b", "ws-c", "ws-l")]
+    index.workspace_names = {w["任务目录"] for w in index.workspaces}
     index.events_by_call = {"dup": [event("ws-a", "TASK-001", "dup"), event("ws-b", "TASK-001", "dup")],
                             "legacy-call": [event("ws-l", "old", "legacy-call", name="SLOT_WRITTEN")]}
     index.model_calls_by_call = {"dup": [{"任务目录": "ws-a", "角色": "评审者"}, {"任务目录": "ws-b", "角色": "评审者"}]}
@@ -82,6 +83,20 @@ class AttachTests(unittest.TestCase):
         index = make_index()
         self.assertEqual([t["任务的键"] for t in index.tasks_of_session(session("ws-l", ["legacy-call"]))], ["ws-l/old"])
         self.assertEqual(index.tasks_of_session(session("ws-c", ["legacy-call"])), [])
+
+    def test_会话文件缺失时按归档目录名对上(self):
+        index = make_index()
+        lost = {"会话编号": "s-lost", "工作目录": "", "会话文件": "", "归档目录名": "ws-a", "启动失败": False, "运行": []}
+        found = index.tasks_of_session(lost)
+        self.assertEqual([(t["任务的键"], t["怎么对上的"]) for t in found], [("ws-a/TASK-001", "按归档目录名对上")])
+        place = index.workspace_of_session(lost)
+        self.assertEqual((place["任务目录"], place["怎么对上的"]), ("ws-a", "按归档目录名对上"))
+        self.assertIn("按归档目录名对上", place["说明"])
+        # 会话文件在（只是没记工作目录）、归档目录名对不上、pi 没有启动起来的，都不走这条路。
+        self.assertEqual(index.tasks_of_session(dict(lost, 会话文件="~/x.jsonl")), [])
+        self.assertEqual(index.tasks_of_session(dict(lost, 归档目录名="runs")), [])
+        self.assertIn("归档目录名也对不上", index.unmatched_calls_note(dict(lost, 归档目录名="runs")))
+        self.assertEqual(index.workspace_name_of(dict(lost, 启动失败=True)), "")
 
     def test_谁建的任务按创建记录的编号如实说(self):
         index = make_index()
@@ -127,10 +142,10 @@ class ReplyTests(unittest.TestCase):
         if shutil.which("node"):
             self.assertEqual(t["回复"]["排版"][:3], ["执行者（经回复工具）：", "  告知：", "    · 我存好了 UC-001。"])
             self.assertIn("  【请确认】请确认 UC-001 第 1 版。", t["回复"]["排版"])
-        stages, notes, _ = stages_of([run(1, [t])])
+        stages = stages_of([run(1, [t])])
         self.assertEqual([s["名称"] for s in stages], ["用户发话", "对用户说话"])
         self.assertEqual(stages[1]["全文"], "UC-001 存好了，请确认第 1 版。")
-        self.assertFalse(any("没有对用户说过" in n["文字"] for n in notes))
+        self.assertFalse(any("没有对用户说过" in n["文字"] for n in alerts_of([run(1, [t])])))
 
     def test_被拒的回复是调用失败并写出原因(self):
         t = self.shaped(raw_call("reply", True, "这次回复的形式不对，没有送达。\n1. 缺少 text。"))
@@ -139,9 +154,9 @@ class ReplyTests(unittest.TestCase):
         self.assertIn("缺少 text", t["调用"][0]["回复"]["被拒原因"])
         if shutil.which("node"):
             self.assertEqual(t["调用"][0]["回复"]["排版"][0], "  回复被拒绝，没有送达。拒绝的原因是：")
-        stages, notes, _ = stages_of([run(1, [t])])
+        stages = stages_of([run(1, [t])])
         self.assertEqual(stages[1]["名称"], "回复被拒")
-        self.assertTrue(any("没有对用户说过" in n["文字"] for n in notes))
+        self.assertTrue(any("没有对用户说过" in n["文字"] for n in alerts_of([run(1, [t])])))
 
     def test_降级放行的回复标明(self):
         details = {"delivered": True, "degraded": True, "reply": {"informs": [], "act": None, "text": "纯文字。"}}
@@ -166,7 +181,7 @@ class ReplyTests(unittest.TestCase):
     def test_连着调用工具的计数不把回复算进去(self):
         t = self.shaped(raw_call("reply", False, "回复已送达", {"reply": REPLY}))
         reads = [turn(i, [call("read", f"inputs/材料{i}.md")]) for i in range(1, 8)]
-        _, notes, _ = stages_of([run(1, reads + [dict(t, 序数=8)] + [turn(9, [call("read", "inputs/再读.md")])])])
+        notes = alerts_of([run(1, reads + [dict(t, 序数=8)] + [turn(9, [call("read", "inputs/再读.md")])])])
         self.assertFalse(any("连着" in n["文字"] for n in notes))
 
 
@@ -179,10 +194,10 @@ def errored_turn(number: int, reason: str) -> dict:
 
 
 class ErrorTests(unittest.TestCase):
-    """第 (1) 条：每次失败各有说明，阶段标题按次数写。"""
+    """第 (1) 条：每次失败各有说明，按轮归类的标题按次数写。"""
 
     def test_连着两次出错_标题带次数_每次一条说明(self):
-        stages, _, _ = stages_of([run(1, [errored_turn(1, "500 第一次"), errored_turn(2, "500 第二次"),
+        stages = stages_of([run(1, [errored_turn(1, "500 第一次"), errored_turn(2, "500 第二次"),
                                           turn(3, [], text="好了。", stop="stop")])])
         self.assertEqual(stages[1]["名称"], "没有说话也没有调用工具（模型请求出错 2 次）")
         self.assertIn("连着 2 次模型请求都出错了", stages[1]["一句话"])
@@ -190,7 +205,7 @@ class ErrorTests(unittest.TestCase):
                          ["第 1 次出错，在第 1 轮：500 第一次", "第 2 次出错，在第 2 轮：500 第二次"])
 
     def test_只出错一次_标题写一次(self):
-        stages, _, _ = stages_of([run(1, [errored_turn(1, "500"), turn(2, [], text="好了。", stop="stop")])])
+        stages = stages_of([run(1, [errored_turn(1, "500"), turn(2, [], text="好了。", stop="stop")])])
         self.assertEqual(stages[1]["名称"], "没有说话也没有调用工具（模型请求出错 1 次）")
         self.assertIn("出错的说明是：500", stages[1]["一句话"])
 
@@ -220,7 +235,7 @@ class ClosedTaskTests(unittest.TestCase):
 
     def test_结束之后被拒_记轻的说明(self):
         closed = dt.datetime(2026, 9, 21, 12, 0, 0).timestamp()
-        _, notes, _ = taskpage.build_stages(self.rejected_at(closed + 60), DECL, RULES, None, WS, "", closed)
+        notes = alerts_of(self.rejected_at(closed + 60), closed)
         text = [n for n in notes if "被工具拒绝" in n["文字"]]
         self.assertEqual(len(text), 1)
         self.assertEqual(text[0]["轻重"], "轻")
@@ -228,9 +243,9 @@ class ClosedTaskTests(unittest.TestCase):
 
     def test_结束之前被拒_照旧算重的异常(self):
         closed = dt.datetime(2026, 9, 21, 12, 0, 0).timestamp()
-        _, notes, _ = taskpage.build_stages(self.rejected_at(closed - 60), DECL, RULES, None, WS, "", closed)
+        notes = alerts_of(self.rejected_at(closed - 60), closed)
         self.assertTrue(any(n["轻重"] == "重" and "再也没有调用过同一个工具" in n["文字"] for n in notes))
-        _, notes, _ = taskpage.build_stages(self.rejected_at(closed + 60), DECL, RULES, None, WS, "", None)
+        notes = alerts_of(self.rejected_at(closed + 60), None)
         self.assertTrue(any(n["轻重"] == "重" and "再也没有调用过同一个工具" in n["文字"] for n in notes))
 
     def test_任务结束时刻取自库里的本地时间(self):

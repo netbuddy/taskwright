@@ -92,7 +92,7 @@ def loading_items(sessions: list[dict]) -> list[dict]:
              ("pi 的标准错误里没有加载失败的行，但有 " + str(len(crashed)) +
               " 次启动的退出码不是 0，要查。" if crashed else
               "pi 的标准错误里没有「Failed to load extension」这样的行，退出码也都是 0，"
-              "所以没有扩展在加载阶段出事。")),
+              "所以没有扩展在加载时出事。")),
             "后端补记文件里「标准错误」与「退出」两类条目",
         ))
 

@@ -1,5 +1,5 @@
-// 页面二：会话详情。与任务页用同一个组件（taskpage.js），按会话取数据：一条会话里发生的事画成
-// 「阶段 → 对话 → 机器」三层，右边是交付物看板与知识的使用。会话所在的任务目录里还没有任务记录时照样能看，
+// 页面二：会话详情。与任务页用同一个组件（taskpage.js），按会话取数据：一条会话里发生的事按运行排成一张表，
+// 点开一行看各轮与机器细节，右边是交付物看板与知识的使用。会话所在的任务目录里还没有任务记录时照样能看，
 // 看板处如实写明。任务与会话按任务目录挂接（一库一任务）。
 //
 // 本文件只管入口：pi 进程没有启动起来的那一次没有流程可画，照旧给一页说明失败的原因。
@@ -31,6 +31,11 @@ function focusMessage(anchor) {
   if (!target) return;
   for (let node = target; node; node = node.parentElement) {
     if (node.hasAttribute && node.hasAttribute("hidden")) node.removeAttribute("hidden");
+    // 流程表里一次运行的展开区被打开时，它上面那一行也标成展开的样子。
+    if (node.classList && node.classList.contains("rbody") && node.previousElementSibling) {
+      node.previousElementSibling.classList.add("open");
+      node.previousElementSibling.setAttribute("aria-expanded", "true");
+    }
   }
   target.classList.add("focus-msg");
   setTimeout(() => target.scrollIntoView({block: "center"}), 50);
@@ -40,7 +45,7 @@ export async function renderSession(sessionId, anchor) {
   const view = freshView();
   view.innerHTML = `<section class="panel"><p class="muted">正在读这条会话。</p></section>`;
   const detail = await api.session(sessionId);
-  setCrumb(`<a href="#/sessions">会话列表</a> › 归档名「${esc(detail["归档名"])}」的会话详情`);
+  setCrumb(`<a href="#/sessions">会话列表</a> › 会话「${esc(detail["会话名"] || "未命名会话")}」的会话详情`);
   setLangfuse(detail["Langfuse 链接"], "到 Langfuse 看这条会话");
   if (detail["启动失败"]) {
     view.innerHTML = failedPage(detail);

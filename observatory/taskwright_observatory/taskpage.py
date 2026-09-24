@@ -1,13 +1,15 @@
-"""任务页：把一个任务（或一条会话）画成「阶段 → 对话 → 机器」三层的同一条流程，外加交付物看板与知识的使用。
+"""任务页：把一个任务（或一条会话）按运行排成一张流程表，外加交付物看板与知识的使用。
 
-三层是同一条流程的三个放大级别，关联的依据是一条链子：一个阶段是连着的、判定相同的几轮；每一轮属于某一次
-运行（pi 的 agent run）；每一次运行由用户的一句话触发。「阶段」「需要注意」「交付物看板」「知识的使用」
-「知识仓库」都是观测台自己的呈现用语，不是 pi 的概念，登记在概念对照页。
+流程的单位是运行（pi 的 agent run）：用户的一句话，加上助手为这句话做的全部轮（agent_start 到 agent_settled）。
+每次运行一行，写明用户那句话、开始时刻、轮数、工具调用次数、保存修订次数、被拒次数、耗时，以及助手这次运行最后
+对用户说的话（助手应答，完整不截断）与它做的关键动作；点开一行看这次运行的各轮，每轮再点开看模型请求与工具调用的原始记录。
+用户在网页上直接改交付物（不经过助手，不产生运行）与扩展写进会话的任务现状，按时刻各占一行。跨会话的任务
+按会话分段。「需要注意」「交付物看板」「知识的使用」「知识仓库」「助手应答」「关键动作」都是观测台自己的呈现用语，
+不是 pi 的概念，登记在概念对照页。
 
-阶段怎么判：一轮只属于一个阶段，按这一轮的第一个工具调用判定；没有工具调用的轮，按「对用户说话」或
-「没有说话也没有调用工具」判；连着的、判定相同的几轮合并成一个阶段；用户说的话是用户的阶段。判定只看事实
-（工具名、路径落在哪一类、成功与否），不看内容。路径归类读任务定义，工具对应的阶段名与异常判据的阈值读
-同目录下的 stage_rules.json，代码里不写死任何一个工具名、集合名与字段名。
+下面「零」到「四」节里还留着按轮归类的判定函数（classify_turn、build_stages 等，读同目录下的 stage_rules.json）：
+路径归类仍用来认材料文件、执行方法与领域规矩（页头的材料文件、指导、知识的使用），整轮的归类本页已经不再输出，
+那几个函数留待后端改写时一并清理。
 
 本模块只读：输入是读取接口已经拼好的会话详情与任务详情，另外只读三样东西——任务目录里的任务定义文件与执行方法
 文件（给页面显示原文）、任务目录的文件清单（归档没有记下知识仓库摘要时退而列出现有文件）、任务数据库
@@ -58,12 +60,6 @@ def render_reply_lines(call: dict) -> list[str] | None:
     if key[0]:
         _RENDERED[key] = lines
     return lines
-
-#: 页面上两个固定的参与者。评审者以后由数据带进来，界面按数据画。
-PARTICIPANTS = [
-    {"名": "用户", "角色": "人，这条会话的提问者"},
-    {"名": "助手", "角色": "agent，一条 pi 会话"},
-]
 
 #: 知识仓库里的文件按路径归成几种，只为分组显示；任务定义里登记了的路径优先按登记的来。
 KIND_BY_PREFIX = [(".pi/skills/", "执行方法（skill）"), ("docs/domain-knowledge/", "领域规矩文档"),
@@ -160,8 +156,7 @@ def declaration(rules: dict, source: dict | None, who: str, where_from: dict) ->
 
 def declaration_for(index, task_key: str | None, workspace_abs: str, rules: dict) -> tuple[dict, str]:
     """按任务取归类声明，返回（声明, 页头要注明的一句话）。"""
-    defaults_note = ("工具对应的阶段名、路径归类对应的阶段名与异常判据的阈值，是观测台自己带的默认值，"
-                     "放在观测台的 stage_rules.json 里，登记在概念对照页。")
+    defaults_note = ("异常判据的阈值等其余几项是观测台自己带的默认值，放在观测台的 stage_rules.json 里。")
     task = index.tasks.get(task_key) if task_key else None
     if task and task.get("格式") == taskdb.FORMAT_CURRENT:
         definition = task["新库"]["任务定义"]
@@ -175,11 +170,11 @@ def declaration_for(index, task_key: str | None, workspace_abs: str, rules: dict
         return decl, ""
     if task:
         path = task.get("任务定义文件") or "（任务里没有登记任务定义文件）"
-        why = (f"这个任务的库是旧格式。它的任务定义文件 {path} 里登记的是槽位、阶段列表与交付物说明，"
+        why = (f"这个任务的库是旧格式。它的任务定义文件 {path} 里登记的是槽位、做法的分步列表与交付物说明，"
                "没有执行方法、领域规矩与材料目录，按不出路径归类，所以这一次用的是观测台自己带的默认声明。")
         decl = declaration(rules, None, "观测台自己带的默认声明", {"全部": why})
         return decl, (f"这个任务的库是旧格式：任务定义文件 {path} 里没有登记执行方法路径与材料目录，"
-                      "下面的阶段名是按观测台自己带的默认归类声明判的。")
+                      "材料文件、执行方法与领域规矩是按观测台自己带的默认归类声明认的。")
     folder = Path(workspace_abs) / "docs" / "task-definitions" if workspace_abs else None
     found = sorted(folder.glob("*.json")) if folder and folder.is_dir() else []
     if len(found) == 1:
@@ -193,12 +188,13 @@ def declaration_for(index, task_key: str | None, workspace_abs: str, rules: dict
                                {"执行方法、领域规矩、文档模板、材料目录":
                                 f"这条会话所在的任务目录里还没有任务记录，这几项是按任务目录里唯一的一份任务定义 {rel} 猜的。",
                                 "其余几项": defaults_note})
-            return decl, ("这条会话所在的任务目录里还没有任务记录，判不出用的是哪一份归类声明；下面的阶段名是按任务目录里唯一一份任务定义"
-                          f"（{found[0].name}）猜的。")
+            return decl, ("这条会话所在的任务目录里还没有任务记录，判不出用的是哪一份归类声明；材料文件、执行方法与领域规矩"
+                          f"是按任务目录里唯一一份任务定义（{found[0].name}）猜的。")
     why = ("这条会话所在的任务目录里还没有任务记录，任务目录里的任务定义也不止一份或者一份都没有，"
            "判不出用的是哪一份，所以用观测台自己带的默认声明。")
     decl = declaration(rules, None, "观测台自己带的默认声明", {"全部": why})
-    return decl, "这条会话所在的任务目录里还没有任务记录，判不出用的是哪一份归类声明；下面的阶段名是按观测台自己带的默认声明判的。"
+    return decl, ("这条会话所在的任务目录里还没有任务记录，判不出用的是哪一份归类声明；"
+                  "材料文件、执行方法与领域规矩是按观测台自己带的默认声明认的。")
 
 
 def strip_dot_slash(path: str) -> str:
@@ -777,15 +773,9 @@ def parallel_suffix(main: str, turns: list[dict], decl: dict, rules: dict, works
 
 
 def build_stages(runs: list[dict], decl: dict, rules: dict, index, workspace_abs: str,
-                 key_prefix: str, task_closed_at: float | None = None) -> tuple[list[dict], list[dict], list[dict]]:
-    """runs 是按时间排好的（会话序号, 运行）列表里的运行，已经带上全局的运行序号与启动说明。
-
-    task_closed_at 是任务结束（完成或放弃）的时刻，没有结束为 None。被拒发生在它之后时，「之后没有再调用同一个工具」
-    是合乎规矩的（已结束的任务本来就不能再写），不算异常。
-    """
-    stages, notes, guides = [], [], []
-    limit_streak = decl["异常判据"]["连着多少次工具调用都没有产生写入也没有对用户说话就算异常"]
-    limit_turns = decl["异常判据"]["一次运行走多少轮算异常"]
+                 key_prefix: str) -> list[dict]:
+    """按轮归类（本页已经不再输出，留待后端改写时清理）。runs 是按时间排好的运行，已经带上全局的运行序号与启动说明。"""
+    stages = []
 
     for run in runs:
         run_no = run["运行序号"]
@@ -827,12 +817,6 @@ def build_stages(runs: list[dict], decl: dict, rules: dict, index, workspace_abs
                 for b in c["改动"]:
                     touched.extend(x for x in b["标签"] if x not in touched)
             failed = role == "失败"
-            for c in calls:
-                if c["工具"] in decl["按路径归类来判的工具"] and not c["被拒"]:
-                    kind_of_path = path_class(c["相对路径"], decl)
-                    if kind_of_path in ("执行方法", "领域规矩"):
-                        guides.append({"种类": kind_of_path, "文件": c["相对路径"],
-                                       "时刻": clock(c["起止"][0]), "运行序号": run_no})
             fix = next((c["改正"] for c in calls if c["被拒"] and c["改正"] and c["改正"].get("有没有再试")
                         and c["改正"].get("改正成功")), None)
             bar = run.get("时间条") or {}
@@ -868,62 +852,7 @@ def build_stages(runs: list[dict], decl: dict, rules: dict, index, workspace_abs
                          if len(turns_here) > 1 else ""),
             })
 
-        # ── 需要注意：只列由事实直接得出的异常 ──
-        streak: list[dict] = []
-        best: list[dict] = []
-        best_stage = ""
-        for t in turns:
-            if (t["正文"] or "").strip():
-                streak = []
-            for c in t["调用"]:
-                if c["有没有写入"] or (c.get("回复") and not c["回复"]["被拒"]):
-                    streak = []
-                    continue
-                streak.append(c)
-                if len(streak) > len(best):
-                    best = list(streak)
-                    best_stage = stage_of_turn(stages, run_no, t["序数"])
-        if len(best) >= limit_streak:
-            notes.append({"轻重": "重", "去哪": best_stage,
-                          "文字": f"第 {run_no} 次运行里，助手连着 {len(best)} 次调用工具，一次也没有在库里写下任何东西，"
-                                  f"这中间也没有对用户说过话。判据写在归类声明里：连着 {limit_streak} 次就算异常。"})
-        if turns and not any((t["正文"] or "").strip() for t in turns):
-            notes.append({"轻重": "重", "去哪": stage_of_turn(stages, run_no, turns[-1]["序数"]),
-                          "文字": f"第 {run_no} 次运行一直到结束都没有对用户说过一句话，"
-                                  f"用户看不到它做了什么，也不知道它为什么停下来。"})
-        if len(turns) > limit_turns:
-            notes.append({"轻重": "轻", "去哪": stage_of_turn(stages, run_no, turns[0]["序数"]),
-                          "文字": f"第 {run_no} 次运行走了 {len(turns)} 轮（turn），"
-                                  f"超过了归类声明里写的 {limit_turns} 轮。"})
-        for t in turns:
-            for r in t["请求"]:
-                if r["停止原因"] == "length":
-                    notes.append({"轻重": "重", "去哪": stage_of_turn(stages, run_no, t["序数"]),
-                                  "文字": f"第 {run_no} 次运行第 {t['序数']} 轮的模型输出被长度上限截断了。"})
-    for stage in stages:
-        if not stage["被拒次数"]:
-            continue
-        rejected = [c for t in stage["轮"] for c in t["调用"] if c["被拒"]]
-        last = rejected[-1]
-        fix = last.get("改正") or {}
-        if fix.get("有没有再试") and fix.get("改正成功"):
-            notes.append({"轻重": "轻", "去哪": stage["编号"],
-                          "文字": f"「{stage['名称']}」这个阶段里有 {len(rejected)} 次调用被工具拒绝了，"
-                                  f"后来在第 {fix['运行序号']} 次运行的第 {fix['轮号'] + 1} 轮改对了。"})
-        elif fix.get("有没有再试"):
-            notes.append({"轻重": "重", "去哪": stage["编号"],
-                          "文字": f"「{stage['名称']}」这个阶段里有 {len(rejected)} 次调用被工具拒绝了，"
-                                  f"最后一次之后再调用同一个工具仍然被拒绝。"})
-        elif task_closed_at is not None and (last["起止"][0] or 0) >= task_closed_at:
-            notes.append({"轻重": "轻", "去哪": stage["编号"],
-                          "文字": f"「{stage['名称']}」这个阶段里有 {len(rejected)} 次调用被工具拒绝了；"
-                                  f"最后一次被拒时任务已经结束（{clock(task_closed_at)}），"
-                                  f"已结束的任务不能再写，之后没有再调用同一个工具是合乎规矩的。"})
-        else:
-            notes.append({"轻重": "重", "去哪": stage["编号"],
-                          "文字": f"「{stage['名称']}」这个阶段里有 {len(rejected)} 次调用被工具拒绝了，"
-                                  f"最后一次被拒之后，这条会话里再也没有调用过同一个工具。"})
-    return stages, notes, guides
+    return stages
 
 
 def error_count_suffix(role: str, turns: list[dict]) -> str:
@@ -934,11 +863,217 @@ def error_count_suffix(role: str, turns: list[dict]) -> str:
     return f"（模型请求出错 {count} 次）" if count else ""
 
 
-def stage_of_turn(stages: list[dict], run_no: int, turn_no: int) -> str:
-    for stage in stages:
-        if stage["运行序号"] == run_no and any(t["序数"] == turn_no for t in stage["轮"]):
-            return stage["编号"]
-    return ""
+# ───────────────────────── 四之一、按运行排的流程 ─────────────────────────
+
+#: 运行一行的「关键动作」只数这几个会改动任务或交付物的工具被接受的调用，按工具的中文名计次；被拒的另计一项。
+KEY_ACTION_TOOLS = ("save_revision", "save_version", "create_task", "complete_task")
+#: 页头与运行一行的「保存修订」按这个工具被接受的调用计数。
+SAVE_TOOL = "save_revision"
+#: 扩展消息那两种行的摘要取前多少个字。运行一行的用户那句话与助手应答都给完整的话，不截断。
+EXT_BRIEF_CHARS = 80
+#: 界面点击投进来的那句话与它触发的那次运行，开始时刻之差（运行减点击，单位秒）落在这个范围里就算对上。
+CLICK_WINDOW = (-1.0, 5.0)
+#: 扩展写进会话的自定义消息按类型分成几种行；没有登记的类型叫「扩展消息」。
+EXT_KIND = {"taskwright-user-edit": "用户操作", "taskwright-task-status": "任务现状", "taskwright-ui-click": "界面点击"}
+EXT_NOTE = {
+    "用户操作": "用户在网页上直接做的操作（改交付物，或把条目标成看过），没有经过助手，所以不是一次运行；扩展把这件事记进了会话，助手下一次运行时会看到。",
+    "任务现状": "扩展在会话开始（或续接）时写进会话的任务现状，不是用户打的字，也不是一次运行；助手下一次运行时会看到。",
+    "界面点击": "用户在回复卡片上点了一个选项。这里对不上由它触发的那次运行，所以单独列一行。",
+    "扩展消息": "扩展写进会话的一条自定义消息，不是用户打的字，也不是一次运行。",
+}
+
+
+def head_chars(text, limit: int) -> str:
+    """取前 limit 个字，超出时在后面加省略号。空白先压成一个空格。"""
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def accepted(call: dict) -> bool:
+    """工具接受了这次调用：有执行结果，而且不是被拒。"""
+    return call["有没有执行结果"] and not call["被拒"]
+
+
+def key_actions(calls: list[dict]) -> list[str]:
+    """这次运行做的关键动作，例如「保存修订 2 次」「被拒 1 次」。没有就是空列表。"""
+    counts: dict[str, int] = {}
+    for c in calls:
+        if c["工具"] in KEY_ACTION_TOOLS and accepted(c):
+            name = c.get("中文名") or c["工具"]
+            counts[name] = counts.get(name, 0) + 1
+    out = [f"{name} {n} 次" for name, n in counts.items()]
+    rejected = sum(1 for c in calls if c["被拒"])
+    if rejected:
+        out.append(f"被拒 {rejected} 次")
+    return out
+
+
+def run_row(run: dict) -> dict:
+    """一次运行给页面的一行。run 的各轮已经过 turn_shape。"""
+    no = run["运行序号"]
+    prompt = run.get("提示") or {}
+    calls = [c for t in run["轮"] for c in t["调用"]]
+    said = (run.get("助手最后说的话") or "").strip()
+    touched: list[str] = []
+    for c in calls:
+        for b in c["改动"]:
+            touched.extend(x for x in b["标签"] if x not in touched)
+    for i, t in enumerate(run["轮"]):
+        t["下一轮序数"] = run["轮"][i + 1]["序数"] if i + 1 < len(run["轮"]) else None
+        t["运行序号"] = no
+    fix = next((c["改正"] for c in calls if c["被拒"] and c["改正"] and c["改正"].get("有没有再试")
+                and c["改正"].get("改正成功")), None)
+    bar = run.get("时间条") or {}
+    return {
+        "种类": "运行", "编号": f"run-{no}", "运行序号": no, "会话序号": run.get("会话序号", 1),
+        "用户的话": prompt.get("原文", ""),
+        "时刻": clock(prompt.get("时刻")), "时刻秒": prompt.get("时刻"),
+        "消息来源": prompt.get("投递方式", "未知"), "消息来源的依据": prompt.get("投递方式的依据", ""),
+        "条目编号": prompt.get("用户消息条目编号", ""),
+        "轮数": len(run["轮"]), "工具调用次数": len(calls),
+        "保存修订次数": sum(1 for c in calls if c["工具"] == SAVE_TOOL and accepted(c)),
+        "被拒次数": sum(1 for c in calls if c["被拒"]),
+        "耗时秒": run.get("耗时秒"),
+        "模型耗时秒": round(sum(r.get("耗时秒") or 0 for t in run["轮"] for r in t["请求"]), 1),
+        "工具耗时秒": round(sum(c["耗时秒"] or 0 for c in calls), 3),
+        "有没有对用户说话": bool(said),
+        "助手应答": said,
+        "应答从哪来": run.get("助手最后说的话从哪来", ""),
+        "关键动作": key_actions(calls),
+        "由界面点击触发": "",
+        "条目": touched, "轮": run["轮"], "启动说明": run.get("启动说明", ""),
+        "时间条": ({"能不能画": True, "起": bar["起"], "止": bar["止"]} if bar.get("能不能画") else
+                   {"能不能画": False, "原因": bar.get("画不出的原因") or "这次运行画不出时间条。"}),
+        "改正线索": fix, "被中止": bool(run.get("被中止")),
+        "没有正常收尾": bool(run.get("这次运行没有正常收尾")),
+    }
+
+
+def ext_row(message: dict, kind: str, session_id: str) -> dict:
+    """扩展写进会话的一条自定义消息给页面的一行。"""
+    text = message.get("文字", "")
+    brief = re.sub(r"^(界面操作|界面点击)（不是用户打的字）：", "", text)
+    brief = re.sub(r"^【[^】]*】", "", brief)
+    return {"种类": kind, "编号": f"ext-{message.get('条目编号', '')}", "类型": message.get("类型", ""),
+            "时刻": clock(message.get("时刻秒")), "时刻秒": message.get("时刻秒"),
+            "原文": text, "摘要": head_chars(brief, EXT_BRIEF_CHARS), "说明": EXT_NOTE[kind],
+            "条目编号": message.get("条目编号", ""), "会话编号": session_id}
+
+
+def build_flow(details: list[dict], runs: list[dict]) -> list[dict]:
+    """按会话分段的流程：每段是一条会话，段里的运行与扩展消息按时刻排。
+
+    界面点击不单独成行，挂到它触发的那次运行上（开始时刻落在 CLICK_WINDOW 里、还没有挂过点击的第一次运行）；
+    对不上的照实单独列一行。时刻缺失的扩展消息排在这一段末尾。
+    """
+    segments = []
+    for session_no, detail in enumerate(details, 1):
+        rows = [run_row(r) for r in runs if r.get("会话序号", 1) == session_no]
+        others = []
+        for m in sorted(detail.get("扩展写入的消息") or [], key=lambda x: x.get("时刻秒") or float("inf")):
+            kind = EXT_KIND.get(m.get("类型"), "扩展消息")
+            if kind == "界面点击" and m.get("时刻秒") is not None:
+                hit = next((r for r in rows if not r["由界面点击触发"] and r["时刻秒"] is not None
+                            and CLICK_WINDOW[0] <= r["时刻秒"] - m["时刻秒"] <= CLICK_WINDOW[1]), None)
+                if hit:
+                    hit["由界面点击触发"] = re.sub(r"^界面点击（不是用户打的字）：", "", m.get("文字", ""))
+                    continue
+            others.append(ext_row(m, kind, detail.get("会话编号", "")))
+        merged = []
+        for row in rows:
+            if row["时刻秒"] is not None:
+                while others and others[0]["时刻秒"] is not None and others[0]["时刻秒"] < row["时刻秒"]:
+                    merged.append(others.pop(0))
+            merged.append(row)
+        merged.extend(others)
+        segments.append({"会话序号": session_no, "会话编号": detail.get("会话编号", ""),
+                         "会话名": detail.get("会话名", ""), "归档名": detail.get("归档名", ""),
+                         "开始时刻": detail.get("开始时刻", ""), "运行次数": len(rows),
+                         "Langfuse 链接": detail.get("Langfuse 链接", ""), "行": merged})
+    return segments
+
+
+def run_rows(flow: list[dict]) -> list[dict]:
+    return [r for seg in flow for r in seg["行"] if r["种类"] == "运行"]
+
+
+def build_alerts(rows: list[dict], decl: dict, task_closed_at: float | None = None) -> list[dict]:
+    """需要注意：只列由事实直接得出的异常，每一条指向一次运行里的某一轮（去哪＝那一轮的锚点）。
+
+    task_closed_at 是任务结束（完成或放弃）的时刻，没有结束为 None。被拒发生在它之后时，「之后没有再调用同一个工具」
+    是合乎规矩的（已结束的任务本来就不能再写），只记一条轻的说明。
+    """
+    notes = []
+    limit_streak = decl["异常判据"]["连着多少次工具调用都没有产生写入也没有对用户说话就算异常"]
+    limit_turns = decl["异常判据"]["一次运行走多少轮算异常"]
+    anchor = lambda no, turn_no: f"turn-{no}-{turn_no}"
+    for row in rows:
+        no, turns = row["运行序号"], row["轮"]
+        streak: list[dict] = []
+        best: list[dict] = []
+        best_turn = None
+        for t in turns:
+            if (t["正文"] or "").strip():
+                streak = []
+            for c in t["调用"]:
+                if c["有没有写入"] or (c.get("回复") and not c["回复"]["被拒"]):
+                    streak = []
+                    continue
+                streak.append(c)
+                if len(streak) > len(best):
+                    best, best_turn = list(streak), t["序数"]
+        if len(best) >= limit_streak:
+            notes.append({"轻重": "重", "去哪": anchor(no, best_turn),
+                          "文字": f"第 {no} 次运行里，助手连着 {len(best)} 次调用工具，一次也没有在库里写下任何东西，"
+                                  f"这中间也没有对用户说过话。判据写在归类声明里：连着 {limit_streak} 次就算异常。"})
+        if turns and not any((t["正文"] or "").strip() for t in turns):
+            notes.append({"轻重": "重", "去哪": anchor(no, turns[-1]["序数"]),
+                          "文字": f"第 {no} 次运行一直到结束都没有对用户说过一句话，"
+                                  f"用户看不到它做了什么，也不知道它为什么停下来。"})
+        if len(turns) > limit_turns:
+            notes.append({"轻重": "轻", "去哪": anchor(no, turns[0]["序数"]),
+                          "文字": f"第 {no} 次运行走了 {len(turns)} 轮（turn），"
+                                  f"超过了归类声明里写的 {limit_turns} 轮。"})
+        for t in turns:
+            for r in t["请求"]:
+                if r["停止原因"] == "length":
+                    notes.append({"轻重": "重", "去哪": anchor(no, t["序数"]),
+                                  "文字": f"第 {no} 次运行第 {t['序数']} 轮的模型输出被长度上限截断了。"})
+        rejected = [(t, c) for t in turns for c in t["调用"] if c["被拒"]]
+        if not rejected:
+            continue
+        last_turn, last = rejected[-1]
+        fix = last.get("改正") or {}
+        where = anchor(no, last_turn["序数"])
+        head = f"第 {no} 次运行里有 {len(rejected)} 次调用被工具拒绝了"
+        if fix.get("有没有再试") and fix.get("改正成功"):
+            notes.append({"轻重": "轻", "去哪": where,
+                          "文字": f"{head}，后来在第 {fix['运行序号']} 次运行的第 {fix['轮号'] + 1} 轮改对了。"})
+        elif fix.get("有没有再试"):
+            notes.append({"轻重": "重", "去哪": where,
+                          "文字": f"{head}，最后一次之后再调用同一个工具仍然被拒绝。"})
+        elif task_closed_at is not None and (last["起止"][0] or 0) >= task_closed_at:
+            notes.append({"轻重": "轻", "去哪": where,
+                          "文字": f"{head}；最后一次被拒时任务已经结束（{clock(task_closed_at)}），"
+                                  f"已结束的任务不能再写，之后没有再调用同一个工具是合乎规矩的。"})
+        else:
+            notes.append({"轻重": "重", "去哪": where,
+                          "文字": f"{head}，最后一次被拒之后，这条会话里再也没有调用过同一个工具。"})
+    return notes
+
+
+def build_guides(rows: list[dict], decl: dict) -> list[dict]:
+    """助手读过的指导：成功读过的执行方法与领域规矩文件，按读的先后列出。"""
+    guides = []
+    for row in rows:
+        for t in row["轮"]:
+            for c in t["调用"]:
+                if c["工具"] in decl["按路径归类来判的工具"] and not c["被拒"]:
+                    kind = path_class(c["相对路径"], decl)
+                    if kind in ("执行方法", "领域规矩"):
+                        guides.append({"种类": kind, "文件": c["相对路径"],
+                                       "时刻": clock(c["起止"][0]), "运行序号": row["运行序号"]})
+    return guides
 
 
 # ───────────────────────── 五、交付物看板 ─────────────────────────
@@ -1092,11 +1227,12 @@ def build_board_old(task_detail: dict) -> dict:
     }
 
 
-def fill_old_versions(stages: list[dict], task_detail: dict) -> None:
-    """旧格式的库只记下「某个字段被改写」，版本号在任务的修订清单里，按调用编号对上。对不上就如实写。"""
+def fill_old_versions(rows: list[dict], task_detail: dict) -> None:
+    """旧格式的库只记下「某个字段被改写」，版本号在任务的修订清单里，按调用编号对上。对不上就如实写。
+    rows 是带「轮」的一串运行。"""
     by_call = {rev.get("调用编号"): rev for rev in task_detail.get("修订") or []}
-    for stage in stages:
-        for t in stage["轮"]:
+    for row in rows:
+        for t in row["轮"]:
             for c in t["调用"]:
                 for b in c["改动"]:
                     if not b.get("旧库表"):
@@ -1167,7 +1303,8 @@ def knowledge_changes_between(launches: list[dict]) -> dict[int, str]:
     return out
 
 
-def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: dict, rules: dict) -> dict | None:
+def build_knowledge(workspace_abs: str, rows: list[dict], decl: dict, facts: dict, rules: dict) -> dict | None:
+    """rows 是带「运行序号」与「轮」的一串运行。"""
     root = Path(workspace_abs) if workspace_abs else None
     if facts["有没有摘要"]:
         files = sorted(facts["摘要"].keys())
@@ -1187,17 +1324,17 @@ def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: d
     read_by_agent: dict[str, dict] = {}
     read_by_tool: dict[str, str] = {}
     tool_reads = rules.get("会自己读文件的工具") or {}
-    for stage in stages:
-        for turn in stage["轮"]:
+    for row in rows:
+        for turn in row["轮"]:
             for call in turn["调用"]:
                 if call["被拒"]:
                     continue
                 if call["工具"] in decl["按路径归类来判的工具"]:
-                    got = read_by_agent.setdefault(call["相对路径"], {"次数": 0, "阶段": [], "轮": []})
+                    got = read_by_agent.setdefault(call["相对路径"], {"次数": 0, "运行": [], "轮": []})
                     got["次数"] += 1
-                    got["轮"].append(f"第 {stage['运行序号']} 次运行第 {turn['序数']} 轮")
-                    if stage["名称"] not in got["阶段"]:
-                        got["阶段"].append(stage["名称"])
+                    got["轮"].append(f"第 {row['运行序号']} 次运行第 {turn['序数']} 轮")
+                    if row["运行序号"] not in got["运行"]:
+                        got["运行"].append(row["运行序号"])
                 elif call["工具"] in tool_reads:
                     arg = (call["参数"] or {}).get(tool_reads[call["工具"]]) if isinstance(call["参数"], dict) else None
                     if arg:
@@ -1218,7 +1355,7 @@ def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: d
         context_files = [relative_to_workspace(p, workspace_abs) for p in
                          context_note.get("照 pi 的发现规则在磁盘上查到的") or []]
 
-    rows = []
+    out = []
     for rel in files:
         history = facts["摘要"].get(rel) or []
         values = sorted({d for _, d in history if d})
@@ -1229,22 +1366,23 @@ def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: d
                        if in_prompt else "")
         if rel in read_by_agent:
             got = read_by_agent[rel]
-            use, line, stage = USE_READ, (f"助手在「{'、'.join(got['阶段'])}」这个阶段读过它 {got['次数']} 次"
-                                          f"（{'、'.join(got['轮'])}）。" + prompt_line), got["阶段"][0]
+            runs_text = "、".join(str(n) for n in got["运行"])
+            use, line, first_run = USE_READ, (f"助手在第 {runs_text} 次运行里读过它 {got['次数']} 次"
+                                              f"（{'、'.join(got['轮'])}）。" + prompt_line), got["运行"][0]
         elif rel in read_by_tool:
-            use, line, stage = USE_TOOL, read_by_tool[rel] + prompt_line, ""
+            use, line, first_run = USE_TOOL, read_by_tool[rel] + prompt_line, None
         elif in_prompt:
-            use, line, stage = USE_PROMPT, prompt_line + "助手这一次没有用 read 读过它的正文。", ""
+            use, line, first_run = USE_PROMPT, prompt_line + "助手这一次没有用 read 读过它的正文。", None
         else:
-            use, line, stage = USE_NONE, "这一次从头到尾没有任何人读过它。", ""
-        rows.append({"文件": shown(rel), "种类": kind_of(rel, decl, platform), "用法": use, "一句话": line, "阶段": stage,
-                     "摘要值": digest, "变过吗": len(values) > 1})
+            use, line, first_run = USE_NONE, "这一次从头到尾没有任何人读过它。", None
+        out.append({"文件": shown(rel), "种类": kind_of(rel, decl, platform), "用法": use, "一句话": line,
+                    "运行序号": first_run, "摘要值": digest, "变过吗": len(values) > 1})
     for rel in context_files:
         if rel not in files:
-            rows.insert(0, {"文件": rel, "种类": "上下文文件", "用法": USE_PROMPT,
-                            "一句话": "按 pi 的发现规则，pi 启动时会把这份文件整份放进系统提示（后端推算，不是 pi 报告的）。",
-                            "阶段": "", "摘要值": NOT_RECORDED, "变过吗": False})
-    counts = {k: sum(1 for r in rows if r["用法"] == k) for k in (USE_READ, USE_TOOL, USE_PROMPT, USE_NONE)}
+            out.insert(0, {"文件": rel, "种类": "上下文文件", "用法": USE_PROMPT,
+                           "一句话": "按 pi 的发现规则，pi 启动时会把这份文件整份放进系统提示（后端推算，不是 pi 报告的）。",
+                           "运行序号": None, "摘要值": NOT_RECORDED, "变过吗": False})
+    counts = {k: sum(1 for r in out if r["用法"] == k) for k in (USE_READ, USE_TOOL, USE_PROMPT, USE_NONE)}
 
     if skills_note is None:
         skill_line = f"pi 这次实际加载了哪些 skill：{NOT_RECORDED}。"
@@ -1268,13 +1406,14 @@ def build_knowledge(workspace_abs: str, stages: list[dict], decl: dict, facts: d
         "概括": (f"知识仓库里有 {len(files)} 份文件{f'（其中 {len(platform)} 份是代码仓里的平台 skill）' if platform else ''}：助手这次用 read 读了其中 {counts[USE_READ]} 份，"
                  f"工具自己读了 {counts[USE_TOOL]} 份，启动时只放进了系统提示、没有被读过正文的有 {counts[USE_PROMPT]} 份，"
                  f"还有 {counts[USE_NONE]} 份这一次没有用到。"),
-        "文件": rows, "来源说明": source_note, "skill": skill_line, "上下文文件": context_line,
+        "文件": out, "来源说明": source_note, "skill": skill_line, "上下文文件": context_line,
     }
 
 
 # ───────────────────────── 七、页头、概括句、末端 ─────────────────────────
 
-def build_head(details: list[dict], board: dict | None, stages: list[dict], runs: list[dict], extra: dict) -> dict:
+def build_head(details: list[dict], board: dict | None, rows: list[dict], runs: list[dict], extra: dict) -> dict:
+    """页头。rows 是流程里的运行行（带模型耗时、工具耗时与保存修订次数），runs 是带时间条的原始运行。"""
     starts, ends = [], []
     for run in runs:
         for turn in run["轮"]:
@@ -1288,8 +1427,12 @@ def build_head(details: list[dict], board: dict | None, stages: list[dict], runs
         if bar.get("止"):
             ends.append(float(bar["止"]))
     spent = (max(ends) - min(starts)) if (starts and ends) else None
-    model_seconds = sum(s["模型耗时秒"] or 0 for s in stages)
-    tool_seconds = sum(s["工具耗时秒"] or 0 for s in stages)
+    model_seconds = sum(r["模型耗时秒"] or 0 for r in rows)
+    tool_seconds = sum(r["工具耗时秒"] or 0 for r in rows)
+    counts = {"运行次数": sum(d.get("运行次数", 0) for d in details), "轮数": sum(d.get("轮数", 0) for d in details),
+              "工具调用次数": sum(d.get("工具调用次数", 0) for d in details),
+              "保存修订次数": sum(r["保存修订次数"] for r in rows),
+              "被拒次数": sum(d.get("被拒次数", 0) for d in details)}
     first = details[0]
     launch_model = next((l["后端补记启动"].get("模型") for d in details for l in d.get("启动") or []
                          if l.get("后端补记启动") and l["后端补记启动"].get("模型")), "") or "未知"
@@ -1298,12 +1441,13 @@ def build_head(details: list[dict], board: dict | None, stages: list[dict], runs
         "交付物名称": (board or {}).get("交付物名称", ""), "状态": (board or {}).get("状态", ""),
         "任务目录": (first.get("所在任务目录") or {}).get("任务目录", ""),
         "库的格式": (first.get("所在任务目录") or {}).get("库的格式", ""),
-        "开始时刻": first.get("开始时刻", ""), "结束时刻": details[-1].get("结束时刻", ""),
-        "会话数": len(details),
-        "运行次数": sum(d.get("运行次数", 0) for d in details),
-        "轮数": sum(d.get("轮数", 0) for d in details),
-        "工具调用次数": sum(d.get("工具调用次数", 0) for d in details),
-        "被拒次数": sum(d.get("被拒次数", 0) for d in details),
+        # 跨会话时取第一个有开始时刻的与最后一个有结束时刻的：一次也没有运行过的会话没有结束时刻。
+        "开始时刻": next((d["开始时刻"] for d in details if d.get("开始时刻")), ""),
+        "结束时刻": next((d["结束时刻"] for d in reversed(details) if d.get("结束时刻")), ""),
+        "会话数": len(details), **counts,
+        "统计句": (f"{counts['运行次数']} 次运行、{counts['轮数']} 轮、{counts['工具调用次数']} 次工具调用、"
+                   f"{counts['保存修订次数']} 次保存修订"
+                   + (f"，其中 {counts['被拒次数']} 次调用被工具拒绝" if counts["被拒次数"] else "，没有调用被工具拒绝")),
         "pi 进程启动次数": sum(d.get("pi 进程启动次数", 1) for d in details),
         "总耗时秒": round(spent, 1) if spent is not None else None,
         "模型在想的秒数": round(model_seconds, 1), "工具在跑的秒数": round(tool_seconds, 2),
@@ -1313,7 +1457,8 @@ def build_head(details: list[dict], board: dict | None, stages: list[dict], runs
     }
 
 
-def summary_sentence(head: dict, board: dict | None, stages: list[dict], scope: str) -> str:
+def summary_sentence(head: dict, board: dict | None, rows: list[dict], scope: str) -> str:
+    """页头概括句，按固定模板拼。rows 是流程里的运行行。"""
     parts = []
     if board and board["格式"] == "新格式":
         counts = "、".join(f"{s['名称']} {s['现有条目数']} 个" for s in board["集合"])
@@ -1328,9 +1473,12 @@ def summary_sentence(head: dict, board: dict | None, stages: list[dict], scope: 
         parts.append("这个任务的库是旧格式，没有可以逐条核对的完成条件")
     else:
         parts.append("这条会话所在的任务目录里还没有任务记录，所以没有交付物可看，完成条件也无从核对")
-    parts.append(f"助手走过 {len([s for s in stages if s['参与者'] == '助手'])} 个阶段")
-    if stages:
-        parts.append(f"最后一个阶段是「{stages[-1]['名称']}」")
+    if rows:
+        last = rows[-1]["用户的话"]
+        parts.append(f"助手一共运行了 {len(rows)} 次，最后一次运行由用户的「{head_chars(last, 30)}」触发"
+                     if last else f"助手一共运行了 {len(rows)} 次")
+    else:
+        parts.append("助手一次也没有运行过")
     parts.append(f"{'这条会话' if head['会话数'] == 1 else '这几条会话'}的终态是「{head['终态']}」")
     return "；".join(parts) + "。"
 
@@ -1412,43 +1560,48 @@ def assemble(index, details: list[dict], scope: str, key: str, task_key: str | N
                          "会话编号": detail.get("会话编号", ""), "轮": turns, "启动说明": boot})
         offset += len(detail.get("运行") or [])
 
-    # 平台 skill 在代码仓里、不在任务目录里，任务定义也不登记它；它的文件按启动补记算作执行方法，
-    # 执行者读它的那一轮归入「了解方法」。
+    # 平台 skill 在代码仓里、不在任务目录里，任务定义也不登记它；它的文件按启动补记算作执行方法。
     for path in launch_facts(launches_all)["平台 skill"]:
         if path.endswith("SKILL.md") and path not in decl["路径归类"]["执行方法"]:
             decl["路径归类"]["执行方法"].append(path)
-    stages, notes, guides = build_stages(runs, decl, rules, index, workspace_abs, "", task_closed_at(task))
+    flow = build_flow(details, runs)
+    rows = run_rows(flow)
+    notes = build_alerts(rows, decl, task_closed_at(task))
+    guides = build_guides(rows, decl)
     board = None
     if task and task.get("格式") == taskdb.FORMAT_CURRENT:
         board = build_board_new(index, task_key, workspace_abs)
     elif task:
         legacy = index.task_detail(task_key)
         board = build_board_old(legacy)
-        fill_old_versions(stages, legacy)
+        fill_old_versions(rows, legacy)
 
     facts = launch_facts(launches_all)
     for g in guides:
         g["摘要值"] = ((facts["摘要"].get(g["文件"]) or [(None, "")])[0][1] or NOT_RECORDED)
-    head = build_head(details, board, stages, runs, {"声明说明": decl_note})
+    head = build_head(details, board, rows, runs, {"声明说明": decl_note})
     materials_prefix = (decl["路径归类"]["材料目录"] or [""])[0].rstrip("/")
-    head["材料文件"] = sorted({basename(c["相对路径"]) for s in stages for t in s["轮"] for c in t["调用"]
+    head["材料文件"] = sorted({basename(c["相对路径"]) for r in rows for t in r["轮"] for c in t["调用"]
                                if c["工具"] in decl["按路径归类来判的工具"] and not c["被拒"]
                                and path_class(c["相对路径"], decl) == "材料目录"})
     head["材料目录"] = materials_prefix + "/"
     # 只有新库表的任务才有任务定义登记的材料目录；旧库表的任务与没有创建任务的会话用的是默认或猜的声明，
     # 「没有读到材料目录里的文件」这句话对它们不成立，页头整句不显示。
     head["材料目录是任务定义登记的"] = bool(task and task.get("格式") == taskdb.FORMAT_CURRENT)
-    sessions = [{"会话编号": d.get("会话编号", ""), "归档名": d.get("归档名", ""), "开始时刻": d.get("开始时刻", ""),
+    sessions = [{"会话编号": d.get("会话编号", ""), "会话名": d.get("会话名", ""), "归档名": d.get("归档名", ""),
+                 "开始时刻": d.get("开始时刻", ""),
                  "Langfuse 链接": d.get("Langfuse 链接", "")} for d in details]
     langfuse_state = first.get("Langfuse 状态") or {}
     second_level = [(r.get("第二级链接") or {}) for r in runs]
     return {
         "范围": scope, "键": key, "任务的键": task_key or "",
-        "页头": head, "需要注意": notes, "阶段": stages, "看板": board, "指导": guides,
-        "知识仓库": build_knowledge(workspace_abs, stages, decl, facts, rules),
-        "声明": decl, "任务在不在": bool(board),
-        "概括": summary_sentence(head, board, stages, scope), "末端": tail_state(runs),
-        "参与者": PARTICIPANTS, "执行方法": skill_text(workspace_abs, decl),
+        "页头": head, "需要注意": notes, "流程": flow, "看板": board, "指导": guides,
+        "知识仓库": build_knowledge(workspace_abs, rows, decl, facts, rules),
+        # 页面只要路径归类这一部分（认材料文件、执行方法与领域规矩），整份声明里其余几项是按轮归类用的。
+        "归类声明": {k: decl[k] for k in ("这份声明是给谁用的", "路径归类", "每一项是从哪里来的")},
+        "任务在不在": bool(board),
+        "概括": summary_sentence(head, board, rows, scope), "末端": tail_state(runs),
+        "执行方法": skill_text(workspace_abs, decl),
         "会话": sessions,
         "Langfuse": {"会话链接": first.get("Langfuse 链接", ""), "状态": langfuse_state,
                      "第二级链接取到了吗": all(s.get("取到了吗") for s in second_level) if second_level else False,
@@ -1456,21 +1609,11 @@ def assemble(index, details: list[dict], scope: str, key: str, task_key: str | N
     }
 
 
-def extension_messages(details: list[dict]) -> list[dict]:
-    """会话文件里扩展写入的自定义消息（例如任务现状消息），按会话先后列出，页面显示成来源为扩展的用户消息。"""
-    out = []
-    for detail in details:
-        for m in detail.get("扩展写入的消息") or []:
-            out.append({**m, "会话编号": detail.get("会话编号", "")})
-    return out
-
-
 def page_for_session(index, session_id: str) -> dict:
     detail = index.session_detail(session_id)
     found = detail.get("提取出的任务") or []
     task_key = found[0]["任务的键"] if found else None
     page = assemble(index, [detail], "会话", session_id, task_key)
-    page["扩展写入的消息"] = extension_messages([detail])
     if len(found) > 1:
         page["页头"]["声明说明"] = (page["页头"].get("声明说明") or "") + (
             f"这条会话写过 {len(found)} 个任务，看板显示的是第一个（{found[0]['任务的键']}）。")
@@ -1478,10 +1621,13 @@ def page_for_session(index, session_id: str) -> dict:
 
 
 def sessions_of_task(index, task_key: str) -> list[str]:
-    """一个任务涉及哪几条会话：会话里的工具调用编号在这个任务的库里对得上，就算涉及。按开始时刻排。"""
+    """一个任务涉及哪几条会话（对法见 api.tasks_of_session），按开始时刻排。
+
+    一次也没有运行过的会话不算：它只在会话列表里挂上任务，任务页不收，也不为它单独成段。
+    """
     ids = []
     for session in index.sessions:
-        if session["启动失败"]:
+        if session["启动失败"] or not session.get("运行次数"):
             continue
         if any(t["任务的键"] == task_key for t in index.tasks_of_session(session)):
             ids.append(session["会话编号"])
@@ -1496,12 +1642,11 @@ def page_for_task(index, task_key: str) -> dict:
         raise LookupError(task_key)
     details = [index.session_detail(i) for i in ids]
     page = assemble(index, details, "任务", task_key, task_key)
-    page["扩展写入的消息"] = extension_messages(details)
     workspace = index.task_workspace.get(task_key, "")
     page["同任务目录里没有写过这个任务的会话"] = [
-        {"会话编号": s["会话编号"], "归档名": "、".join(s["归档名"])}
+        {"会话编号": s["会话编号"], "会话名": s.get("会话名", ""), "归档名": "、".join(s["归档名"])}
         for s in index.sessions
-        if not s["启动失败"] and s["会话编号"] not in ids
+        if not s["启动失败"] and s.get("运行次数") and s["会话编号"] not in ids
         and index.workspace_of_session(s).get("任务目录") == workspace]
     return page
 

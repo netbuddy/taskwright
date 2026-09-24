@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from taskwright_observatory import taskdb
@@ -52,6 +53,7 @@ class Index:
         self.sessions = sorted((s for d in self.archive_dirs for s in runs.build_sessions(d)),
                                key=lambda s: (s["开始时刻"] or 0.0))
         self.workspaces = workspaces_module.scan_workspaces(self.workspaces_dir)
+        self.workspace_names = {w["任务目录"] for w in self.workspaces}
         self.events_by_call = workspaces_module.index_by_call_id(self.workspaces)
         self.model_calls_by_call = workspaces_module.model_calls_by_tool_call(self.workspaces)
 
@@ -104,11 +106,21 @@ class Index:
 
     # ───────────── 会话与任务的对应 ─────────────
 
-    @staticmethod
-    def workspace_name_of(session: dict) -> str:
-        """这条会话在哪个任务目录里跑：会话文件头上记的工作目录的目录名。没有记就是空串。"""
+    def workspace_name_of(self, session: dict) -> str:
+        """这条会话在哪个任务目录里跑：会话文件头上记的工作目录的目录名。
+
+        会话文件缺失时没有工作目录可取，退而拿归档目录名对任务目录名（见 by_archive_dir_name）；两样都对不上是空串。
+        """
         cwd = session.get("工作目录") or ""
-        return Path(cwd).name if cwd else ""
+        return Path(cwd).name if cwd else self.by_archive_dir_name(session)
+
+    def by_archive_dir_name(self, session: dict) -> str:
+        """会话文件缺失时的后备：归档按任务分目录存放（runs/<任务目录名>/pi-events/…），归档目录名与某个任务目录同名，
+        就算这条会话在那个任务目录里跑。会话文件在、或者 pi 没有启动起来的，不走这条路。对不上返回空串。"""
+        if session.get("启动失败") or session.get("会话文件"):
+            return ""
+        name = session.get("归档目录名") or ""
+        return name if name in self.workspace_names else ""
 
     def events_of_call(self, workspace: str, call_id: str) -> list[dict]:
         """这次调用在库里写下的事件，只在这条会话所在的任务目录里找，不跨库。
@@ -134,12 +146,14 @@ class Index:
         仍按这条会话的工具调用编号在这个任务目录的库里写下的事件来对。
         """
         ws = self.workspace_name_of(session)
+        how = "按归档目录名对上" if ws and not session.get("工作目录") else "会话所在的任务目录"
         found: dict[str, dict] = {}
         for key, name in self.task_workspace.items():
             if name == ws and self.tasks[key].get("格式") == taskdb.FORMAT_CURRENT:
                 task = self.tasks[key]
                 found[key] = {"任务的键": key, "任务标识": task["任务标识"], "任务类型": task["任务类型"],
-                              "任务目录": ws, "本会话写下的修订": [], "怎么对上的": "会话所在的任务目录"}
+                              "任务名": (task.get("新库") or {}).get("任务名") or task["任务类型"],
+                              "任务目录": ws, "本会话写下的修订": [], "怎么对上的": how}
         for one in session["运行"]:
             for turn in one["轮"]:
                 for call in turn["工具调用"]:
@@ -149,9 +163,10 @@ class Index:
                             "任务的键": key,
                             "任务标识": event["任务标识"],
                             "任务类型": event["任务类型"],
+                            "任务名": event["任务类型"],
                             "任务目录": event["任务目录"],
                             "本会话写下的修订": [],
-                            "怎么对上的": "调用编号",
+                            "怎么对上的": "调用编号" + ("（任务目录按归档目录名对上）" if how == "按归档目录名对上" else ""),
                         })
                         mark = self.revision_by_call.get((ws, call["调用编号"]))
                         if mark and mark["修订序号"] not in entry["本会话写下的修订"]:
@@ -171,6 +186,9 @@ class Index:
         （现在任务由用户在界面上创建；更早的库由执行者调用「创建任务」工具建）。
         """
         cwd = session.get("工作目录") or ""
+        by_name = "" if cwd else self.by_archive_dir_name(session)
+        if by_name:
+            cwd = os.path.expanduser(next(w["任务目录路径"] for w in self.workspaces if w["任务目录"] == by_name))
         if not cwd:
             return {"任务目录": "", "任务目录路径": "", "库的格式": "", "说明": "会话文件里没有记工作目录，所以说不出它在哪个任务目录。"}
         path = Path(cwd)
@@ -180,7 +198,10 @@ class Index:
             note = "这个任务目录现在已经不在了。"
         elif fmt in (taskdb.FORMAT_MISSING, taskdb.FORMAT_EMPTY):
             note = taskdb.NO_TASK_YET + "：这个任务目录里没有任务数据库，还没有任务记录。"
+        if by_name:
+            note = ("这条会话的会话文件不在归档里，取不到工作目录；归档目录名与任务目录同名，所以按归档目录名对上。" + note)
         return {"任务目录": path.name, "任务目录路径": shorten_home(cwd), "库的格式": fmt, "说明": note,
+                "怎么对上的": "按归档目录名对上" if by_name else "会话文件里记的工作目录",
                 "交付物页的键": f"{path.name}/" if fmt in (taskdb.FORMAT_MISSING, taskdb.FORMAT_EMPTY) else ""}
 
     def changes_of_call(self, call: dict, workspace: str) -> list[dict]:
@@ -275,6 +296,9 @@ class Index:
             return ""
         ws = self.workspace_name_of(session)
         if not ws:
+            if not session.get("会话文件"):
+                return ("这条会话的会话文件不在归档里，取不到工作目录；归档目录名也对不上任何一个任务目录，"
+                        "所以说不出它在哪个任务目录里跑，对不上任务。")
             return "会话文件里没有记工作目录，说不出它在哪个任务目录里跑，所以对不上任务。"
         if ws not in {w["任务目录"] for w in self.workspaces}:
             return f"这条会话的任务目录 {ws} 不在当前扫到的目录里，所以对不上任务。"
@@ -282,10 +306,18 @@ class Index:
 
     # ───────────── 各个读取接口 ─────────────
 
+    def archive_dirs_text(self) -> str:
+        """归档目录给人读的写法。好几个归档目录都在同一个目录下面时（例如 --runs ./runs 收进来的），只写一次上一级。"""
+        parents = {d.parent for d in self.archive_dirs}
+        if len(self.archive_dirs) > 1 and len(parents) == 1:
+            return (f"{shorten_home(str(next(iter(parents))))} 下面的 {len(self.archive_dirs)} 个归档目录"
+                    f"（{'、'.join(d.name for d in self.archive_dirs)}）")
+        return "、".join(str(d) for d in self.archive_dirs)
+
     def overview(self) -> dict:
         real = [s for s in self.sessions if not s["启动失败"]]
         return {
-            "归档目录": "、".join(str(d) for d in self.archive_dirs),
+            "归档目录": self.archive_dirs_text(),
             "任务目录所在目录": str(self.workspaces_dir),
             "会话数": len(real),
             "启动失败次数": len(self.sessions) - len(real),
@@ -298,12 +330,20 @@ class Index:
         }
 
     def session_list(self) -> dict:
+        """会话列表。每行带任务名与会话名，页面按它们找会话；任务名取自对上的第一个任务。"""
         rows = []
         for session in self.sessions:
+            tasks = self.tasks_of_session(session)
             rows.append({
                 "会话编号": session["会话编号"],
+                "会话名": session.get("会话名", ""),
+                "任务名": tasks[0]["任务名"] if tasks else "",
+                "任务编号": tasks[0]["任务标识"] if tasks else "",
+                "任务怎么对上的": tasks[0]["怎么对上的"] if tasks else "",
                 "归档名": "、".join(session["归档名"]),
                 "开始时刻": local_time(session["开始时刻"]),
+                # 给页面排序用的原始秒数，显示仍用上面那一项。
+                "开始秒": session["开始时刻"] or 0,
                 "结束时刻": local_clock(session["结束时刻"]),
                 "运行次数": session["运行次数"],
                 "轮数": session["轮数"],
@@ -316,7 +356,7 @@ class Index:
                 "启动失败": session["启动失败"],
                 "启动失败原因": session.get("启动失败原因", ""),
                 "归档文件": [l["归档文件"] for l in session["启动"]],
-                "提取出的任务": self.tasks_of_session(session),
+                "提取出的任务": tasks,
                 "任务对不上的说明": self.unmatched_calls_note(session),
                 "所在任务目录": self.workspace_of_session(session),
                 "Langfuse 链接": self.langfuse_session_url(session["会话编号"]),
@@ -477,6 +517,7 @@ class Index:
             })
         return {
             "会话编号": session["会话编号"],
+            "会话名": session.get("会话名", ""),
             "归档名": "、".join(session["归档名"]),
             "开始时刻": local_time(session["开始时刻"]),
             "结束时刻": local_time(session["结束时刻"]),
@@ -492,7 +533,8 @@ class Index:
             "启动失败原因": session.get("启动失败原因", ""),
             "会话文件": session["会话文件"],
             "会话文件条目数": session["会话文件条目数"],
-            "扩展写入的消息": [{**m, "时刻": local_time(m["时刻"])} for m in session.get("扩展写入的消息", [])],
+            "扩展写入的消息": [{**m, "时刻": local_time(m["时刻"]), "时刻秒": m["时刻"]}
+                               for m in session.get("扩展写入的消息", [])],
             "启动": [{
                 "归档文件": l["归档文件"],
                 "启动时刻": local_time(l["启动时刻"]),
@@ -613,7 +655,7 @@ class Index:
             "完成条件": {
                 "有没有": False,
                 "说明": "任务定义里还没有完成条件这一项，所以这里列不出清单。"
-                        "任务定义里现在有的是阶段列表与交付物说明，它们说的是怎么做与做出什么，"
+                        "任务定义里现在有的是做法的分步列表与交付物说明，它们说的是怎么做与做出什么，"
                         "不是「做到什么程度算做完」。",
             },
             "评审与交付": {
@@ -701,7 +743,7 @@ class Index:
                           f"含没有启动起来的那几次）")
         else:
             chosen = [self._session_or_404(scope)]
-            scope_text = f"当前会话（{chosen[0]['归档名'][0]}）"
+            scope_text = f"当前会话（{chosen[0].get('会话名') or '未命名会话'}）"
         # 不变式核对只看这些会话真的写过的任务目录。这个目录下没有会话碰过的那些旧任务目录不在范围内，
         # 免得把与这次运行无关的库也列一遍。
         touched = self.touched_workspaces(chosen)
@@ -723,7 +765,7 @@ class Index:
     def session_options(self) -> list[dict]:
         """给健康页的范围选择器用。同一个归档名可能跑过好几次，所以标签上带开始时刻。"""
         return [{"会话编号": s["会话编号"] or s.get("归档文件", ""),
-                 "名字": "、".join(s["归档名"]),
+                 "名字": s.get("会话名") or "未命名会话",
                  "开始时刻": local_time(s["开始时刻"]),
                  "启动失败": s["启动失败"]} for s in self.sessions]
 

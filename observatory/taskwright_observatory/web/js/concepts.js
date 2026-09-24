@@ -51,11 +51,8 @@ export async function renderConcepts() {
       `<p class="muted" style="margin:0 0 8px">这些词说的是任务页与会话详情页怎么画，` +
       `不对应 pi、领域或后端的任何一样东西。列在这里，是为了让人知道它们不是新事实。</p>` +
       smallTable(data["呈现用语"], ["名字", "它是什么", "它不是什么", "画的依据"]) + `</section>` +
-    `<section class="panel"><h2>四之一、阶段的判定规则</h2>` +
-      `<p class="muted" style="margin:0 0 8px">${esc(data["归类声明说明"])}</p>` +
-      smallTable(data["阶段的判定规则"], ["情形", "判成什么阶段", "依据"]) +
-      `<h3 style="margin-top:12px">观测台自己带的默认值（stage_rules.json）</h3>` +
-      smallTable(data["归类声明的默认值"], ["项", "默认值"]) + `</section>` +
+    `<section class="panel"><h2>四之一、材料、执行方法与领域规矩怎么认</h2>` +
+      `<p class="muted" style="margin:0">${esc(data["归类声明说明"])}</p></section>` +
     `<section class="panel"><h2>五、Langfuse 的用词怎么对应</h2>` +
       `<p class="muted" style="margin:0 0 8px">观测台不采用 Langfuse 的叫法，` +
       `只在这里说明它的词对应 pi 的哪个概念，好让人过去数得对。</p>` +

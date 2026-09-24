@@ -79,7 +79,22 @@ ul.list li:first-child{border-top:none}
 .sessrow:hover{background:var(--accent-bg)}
 @media (max-width:1150px){.sessrow{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .sessrow .entries{display:flex;flex-direction:column;gap:3px;margin-top:6px;font-size:13px}
-.stitle{font-weight:600}
+.stitle{font-weight:600;display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline;font-size:15px}
+.stitle .dot{color:var(--muted);font-weight:normal}
+.stitle .tname.none,.stitle .sname2.none{color:var(--muted);font-weight:normal;font-style:italic}
+.stitle .sname2{font-weight:500}
+.stitle .stime{font-weight:normal;color:var(--ink2);font-size:13px}
+mark{background:var(--hi);color:inherit;padding:0 1px;border-radius:2px}
+/* 会话列表的搜索框与按任务分组 */
+.filters input[type=search]{font:inherit;padding:5px 10px;border:1px solid var(--line);border-radius:6px;width:30em;max-width:100%;background:var(--panel)}
+.filters input[type=search]:focus{outline:2px solid var(--accent-bg);border-color:var(--accent)}
+.filters .sep{width:1px;height:18px;background:var(--line)}
+#scount{margin:0 0 4px}
+details.sgroup{border:1px solid var(--line);border-radius:8px;margin:10px 0;padding:0 12px}
+details.sgroup>summary{cursor:pointer;padding:8px 0;display:flex;gap:12px;align-items:baseline}
+details.sgroup>summary b{font-size:15px}
+details.sgroup[open]>summary{border-bottom:1px solid var(--line)}
+details.sgroup .sessrow:first-of-type{border-top:none}
 pre.args{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--soft);
   border-radius:6px;padding:6px 8px;font-size:12.5px}
 .diffline{display:inline;padding:1px 2px}
