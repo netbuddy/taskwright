@@ -23,7 +23,8 @@ export const ITEM_TIMEOUT_MS = 60_000;
 export const ATTEMPTS = 2;
 
 /** 一次模型调用的结果。出错时抛异常（超时由 signal 触发）。 */
-export interface Completion { text: string; inputTokens: number | null; outputTokens: number | null }
+/** temperature 是这次调用实际传给模型服务的温度；没传时为 null。它随提示一起记进 model_call。 */
+export interface Completion { text: string; inputTokens: number | null; outputTokens: number | null; temperature?: number | null; temperatureNote?: string }
 export type Complete = (system: string, user: string, signal: AbortSignal, attempt: number, item: PreparedReview) => Promise<Completion>;
 
 export interface ItemOutcome extends RequestedItem {
@@ -64,7 +65,10 @@ async function reviewOne(call: CallContext, taskId: string, item: PreparedReview
       if (signal.aborted) break;
       continue;
     }
-    const record: ModelCallRecord = { prompt, output: reply.text, outcome: "采用", model: opts.model, durationMs: Date.now() - started,
+    const sent = reply.temperature === undefined ? prompt
+      : JSON.stringify({ systemPrompt: item.system, messages: [{ role: "user", content: item.user }], temperature: reply.temperature,
+        ...(reply.temperatureNote ? { temperature_note: reply.temperatureNote } : {}) });
+    const record: ModelCallRecord = { prompt: sent, output: reply.text, outcome: "采用", model: opts.model, durationMs: Date.now() - started,
       inputTokens: reply.inputTokens, outputTokens: reply.outputTokens };
     let result;
     try {

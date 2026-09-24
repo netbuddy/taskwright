@@ -111,8 +111,8 @@ export function startReview(call: CallContext, requested: RequestedItem[] | null
   return { items, event_seq: seq, finished };
 }
 
-/** 所用模型不接受温度参数时记在这里，之后对它不再传温度。 */
-const noTemperature = new Set<string>();
+/** 所用模型不接受温度参数时记在这里（值是模型服务当时的报错），之后对它不再传温度。 */
+const noTemperature = new Map<string, string>();
 
 /**
  * 用 pi 的模型注册表调一次评审者：不带工具、干净上下文，模型是启动配置里的那一个。界面操作与工具共用。
@@ -129,10 +129,12 @@ export function piComplete(ctx: Pick<ExtensionContext, "model" | "modelRegistry"
         systemPrompt: system,
         messages: [{ role: "user" as const, timestamp: Date.now(), content: [{ type: "text" as const, text: user }] }],
       }, { sessionId: `review-${callId}-${item.item_id}-${attempt}`, signal: itemSignal, ...(withTemperature ? { temperature: 0 } : {}) });
-      let response = await call(!noTemperature.has(key));
+      let withTemperature = !noTemperature.has(key);
+      let response = await call(withTemperature);
       let r = response as { stopReason?: string; errorMessage?: string; usage?: { input?: number; output?: number } };
-      if (r.stopReason === "error" && !noTemperature.has(key) && /temperature/i.test(r.errorMessage ?? "")) {
-        noTemperature.add(key);
+      if (r.stopReason === "error" && withTemperature && /temperature/i.test(r.errorMessage ?? "")) {
+        noTemperature.set(key, (r.errorMessage ?? "").slice(0, 300));
+        withTemperature = false;
         response = await call(false);
         r = response as typeof r;
       }
@@ -141,6 +143,8 @@ export function piComplete(ctx: Pick<ExtensionContext, "model" | "modelRegistry"
         text: response.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join(""),
         inputTokens: r.usage?.input ?? null,
         outputTokens: r.usage?.output ?? null,
+        temperature: withTemperature ? 0 : null,
+        ...(withTemperature ? {} : { temperatureNote: `模型服务不接受温度参数，没有传：${noTemperature.get(key) ?? ""}` }),
       };
     },
   };

@@ -182,12 +182,12 @@
 .app .sw-rv-item { border-top: 1px dashed var(--line); padding-top: .35rem; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 .app .sw-rv-item .lid { font-family: var(--mono, monospace); color: var(--blue); cursor: pointer; }
 .app .sw-rv-f { display: flex; gap: .4rem; align-items: flex-start; width: 100%; padding-left: .3rem; }
-.app .sw-rv-f .t { flex: 1; min-width: 0; }
+.app .sw-rv-f .t { flex: 1 1 60%; min-width: 0; }
 .app .sw-rv-f .t [role="button"] { cursor: pointer; }
 .app .dot { width: .45rem; height: .45rem; border-radius: 50%; margin-top: .45rem; flex: none; display: inline-block; }
 .app .dot.p { background: var(--gap); }
 .app .dot.a { background: var(--amber); }
-.app .sw-rv-f .st { white-space: nowrap; font-size: .833rem; }
+.app .sw-rv-f .st { flex: 0 1 auto; max-width: 40%; font-size: .833rem; text-align: right; }
 .app .sw-rv-f .st.open { color: var(--gap); }
 .app .sw-rv-f .st.fixed { color: var(--ok); }
 .app .sw-rv-f .st.kept { color: var(--amber); }
@@ -206,9 +206,9 @@
 .app .sw-switch.lock { background: var(--line2); cursor: not-allowed; opacity: .7; }
 .app .chip.bad { color: var(--gap); border-color: var(--gap-line); background: var(--gap-bg); }
 .app .banner-line.kept { background: var(--amber-bg); border: 1px solid var(--amber-line); color: #7a4a06; }
-.app .finding .st { float: right; margin-left: .5rem; }
+.app .finding .st { display: block; text-align: right; font-size: .813rem; }
 .app .finding .st.open { color: var(--gap); }
 .app .finding .keep-link { color: var(--blue); cursor: pointer; margin-left: .4rem; }
 .app .detail [data-f].sw-hit-field .v { outline: .15rem solid var(--ai); outline-offset: .1rem; }
-.app .rerun { font-size: .813rem; color: var(--blue); cursor: pointer; margin-left: .2rem; align-self: center; }
+.app .rerun { font-size: .813rem; color: var(--blue); cursor: pointer; margin-left: .2rem; align-self: center; white-space: nowrap; }
 .app .finding .keep-box { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .2rem; }
