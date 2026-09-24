@@ -104,7 +104,7 @@ test("schema 核对：合格的理解没有问题；缺项、多项、枚举不�
 });
 
 test("用户向助手要信息记 question（询问）：schema 收这一种，clarify 只留给没听懂助手上一句话", () => {
-  const ask = { function: "question", targets: [{ item_id: "X-004" }], confidence: "high", summary: "问材料里有没有写预约的书保留几天" };
+  const ask = { function: "question", targets: [{ item_id: "X-004" }], confidence: "high", summary: "材料里有没有写预约的书保留几天" };
   assert.deepEqual(schemaErrors({ acts: [ask] }), []);
   assert.ok(INTENT_SCHEMA.$defs.user_function.enum.includes("question"));
   assert.equal(INTENT_SCHEMA.$defs.user_function["x-names"].question, "询问");

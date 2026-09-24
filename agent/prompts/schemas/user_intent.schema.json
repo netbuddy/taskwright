@@ -36,7 +36,7 @@
             "description": "这项行为回应的是你之前哪一条对话行为的编号（例如 r12-1，写在「回复」的返回里）。用户在回应你等着回应的那一条时必须写；那一条必须是这条会话里有的、还没有被回应过的。"
           },
           "confidence": { "$ref": "#/$defs/confidence" },
-          "summary": { "type": "string", "maxLength": 120, "description": "一句话写这项行为的内容。" }
+          "summary": { "type": "string", "maxLength": 120, "description": "一句话写这项行为针对的对象与内容，不写动作动词（这项行为是什么已经由 function 表达）：写「X-001、X-002 的当前修订」，不写「确认 X-001、X-002 当前内容」。" }
         }
       }
     }
@@ -95,8 +95,8 @@
       "context": "你上一轮的回复记了两条：r12-1 请确认 X-001、X-002、X-003，r12-2 请选择 X-007（逾期的读者能不能续借）。用户说：「前两条可以，第三条借阅期限写错了，应该是三十天。续借的事先不管。」",
       "value": {
         "acts": [
-          { "function": "affirm", "responds_to": "r12-1", "targets": [{ "item_id": "X-001" }, { "item_id": "X-002" }], "confidence": "high", "summary": "接受 X-001、X-002 的当前修订" },
-          { "function": "correct", "responds_to": "r12-1", "targets": [{ "item_id": "X-003", "field": "借阅期限" }], "confidence": "high", "summary": "借阅期限改为三十天" },
+          { "function": "affirm", "responds_to": "r12-1", "targets": [{ "item_id": "X-001" }, { "item_id": "X-002" }], "confidence": "high", "summary": "X-001、X-002 的当前修订" },
+          { "function": "correct", "responds_to": "r12-1", "targets": [{ "item_id": "X-003", "field": "借阅期限" }], "confidence": "high", "summary": "X-003 的借阅期限改为三十天" },
           { "function": "inform", "responds_to": "r12-2", "targets": [{ "item_id": "X-007" }], "confidence": "medium", "summary": "X-007 先不管" }
         ]
       }
@@ -105,7 +105,7 @@
       "context": "用户问：「预约图书那条，预约的书到馆后保留几天，材料里写了吗？」",
       "value": {
         "acts": [
-          { "function": "question", "targets": [{ "item_id": "X-004" }], "confidence": "high", "summary": "问材料里有没有写预约的书保留几天" }
+          { "function": "question", "targets": [{ "item_id": "X-004" }], "confidence": "high", "summary": "材料里有没有写预约的书保留几天" }
         ]
       }
     }
