@@ -566,11 +566,11 @@ describe("过程摘要：保存修订被拒附上原因", () => {
 describe("过程摘要：理解为", () => {
   it("摘要不展开也显示「理解为」一行，用现有的过程行样式；工作结束时理解那一步单独取出，不算进做了的步骤", () => {
     const summary = { type: "work_summary", message_id: "summary-u1", work_id: "w-u1", at: "", seconds: 8, step_count: 2,
-      understanding: "理解为：同意 UC-001、UC-002；纠正 UC-003 的参与者；TBD-002 先不管（把握中）",
+      understanding: "理解为：同意（affirm）UC-001、UC-002 的当前修订；纠正（correct）UC-003 参与者改为借还台管理员；告知（inform）寒暑假借期先不管（把握中）",
       stages: [{ text: "写好并保存了修订 6：修改功能用例 1 个（UC-003）", count: 1 }, { text: "组织并发出了回复", count: 1 }] } as unknown as WorkSummary;
     render(<Wrap><WorkSummaryLine summary={summary} /></Wrap>);
     const line = screen.getByTestId("work-summary-understanding");
-    expect(line).toHaveTextContent("理解为：同意 UC-001、UC-002；纠正 UC-003 的参与者；TBD-002 先不管（把握中）");
+    expect(line).toHaveTextContent("理解为：同意（affirm）UC-001、UC-002 的当前修订；纠正（correct）UC-003 参与者改为借还台管理员；告知（inform）寒暑假借期先不管（把握中）");
     expect(line.querySelector(".pline .ptxt")).not.toBeNull();
     expect(screen.getByTestId("work-summary")).toHaveTextContent("助手做了 2 步");
     cleanup();
@@ -582,12 +582,12 @@ describe("过程摘要：理解为", () => {
     for (const step of [
       { step_key: "w-u1-intent", text: "助手的理解没有按格式写，正在重写", in_progress: true },
       { step_key: "w-u1-0", text: "写好并保存了修订 6", in_progress: false },
-      { step_key: "w-u1-intent", text: "理解为：整理材料", in_progress: false },
+      { step_key: "w-u1-intent", text: "理解为：请求（request）整理材料", in_progress: false },
     ]) state = workReducer(state, { type: "sse", event: "step", data: { session_id: SESSION, work_id: "w-u1", failed: false, ...step } } as never);
-    expect(state.currentWork!.steps.map((s) => s.text)).toEqual(["理解为：整理材料", "写好并保存了修订 6"]);
+    expect(state.currentWork!.steps.map((s) => s.text)).toEqual(["理解为：请求（request）整理材料", "写好并保存了修订 6"]);
     state = workReducer(state, { type: "sse", event: "work_ended", data: { session_id: SESSION, work_id: "w-u1", at: "", seconds: 3, step_count: 1, outcome: "replied" } } as never);
     const ended = state.messages.find((m) => m.type === "work_summary") as WorkSummary;
-    expect(ended.understanding).toBe("理解为：整理材料");
+    expect(ended.understanding).toBe("理解为：请求（request）整理材料");
     expect(ended.stages!.map((s) => s.text)).toEqual(["写好并保存了修订 6"]);
   });
 });

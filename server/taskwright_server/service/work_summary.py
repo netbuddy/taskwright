@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import functools
+import json
 import re
 from pathlib import Path
 
@@ -156,9 +158,31 @@ def stages(calls: list[dict], definition: dict) -> list[dict]:
     return [{"text": s["text"], "count": s["count"], **({"reasons": s["reasons"]} if s.get("reasons") else {})} for s in out]
 
 
+#: 理解格式的 schema：用户行为各功能的中文名只写在这里（$defs.user_function 的 x-names），这里不另抄一份。
+INTENT_SCHEMA_PATH = Path(__file__).resolve().parents[3] / "agent" / "prompts" / "schemas" / "user_intent.schema.json"
+
+
+@functools.cache
+def function_names() -> dict[str, str]:
+    """用户行为各功能的中文名，键是英文码，取自理解格式的 schema。读不到时为空，这一行只写摘要。"""
+    try:
+        schema = json.loads(INTENT_SCHEMA_PATH.read_text(encoding="utf-8"))
+        return dict(schema["$defs"]["user_function"]["x-names"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+def act_text(act: dict) -> str:
+    """一条用户行为在「理解为」一行里的写法：「中文名（英文码）摘要」，例如「同意（affirm）UC-001、UC-002 的当前修订」。"""
+    summary = str(act.get("summary") or "").strip()
+    code = act.get("function")
+    name = function_names().get(code) if code else None
+    return f"{name}（{code}）{summary}" if name else summary
+
+
 def understanding_text(acts: list[dict]) -> str | None:
-    """一份理解写成一行：各条用户行为的摘要按记录顺序用「；」连起来，把握取最低的一档，中或低时括注。"""
-    summaries = [str(a.get("summary") or "").strip() for a in acts if str(a.get("summary") or "").strip()]
+    """一份理解写成一行：各条用户行为按记录顺序写成「中文名（英文码）摘要」，用「；」连起来，把握取最低的一档，中或低时括注。"""
+    summaries = [act_text(a) for a in acts if str(a.get("summary") or "").strip()]
     if not summaries:
         return None
     levels = [a.get("confidence") for a in acts if a.get("confidence") in CONFIDENCE_ORDER]

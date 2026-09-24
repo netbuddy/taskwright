@@ -43,7 +43,7 @@
   },
   "$defs": {
     "user_function": {
-      "description": "用户这项对话行为的功能。",
+      "description": "用户这项对话行为的功能。x-names 是每个取值的中文名，界面与过程摘要的「理解为」一行按「中文名（英文码）」显示。",
       "enum": ["inform", "request", "affirm", "deny", "correct", "req_alts", "other", "clarify", "question"],
       "x-names": {
         "inform": "告知",
@@ -52,7 +52,7 @@
         "deny": "否定",
         "correct": "纠正",
         "req_alts": "要求换一个",
-        "other": "与任务无关",
+        "other": "无关",
         "clarify": "要澄清",
         "question": "询问"
       },
