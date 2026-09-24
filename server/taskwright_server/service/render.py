@@ -9,7 +9,8 @@
 - 每个条目里：{{编号}}、{{修订号}}（它的内容来自修订 K）、{{评审状态}}、{{确认状态}}、{{来源}}，以及任意字段名 {{字段名}}；
 - 模板任何地方：{{文档修订号}}（这份文档按修订 N 生成）。
 
-没有评审通过或没有确认标记的条目不拦，如实写进「评审状态」「确认状态」两处（「未评审」「未确认」）。
+没有评审通过或没有确认标记的条目不拦，如实写进「评审状态」「确认状态」两处（「未评审」「未确认」）；
+评审不通过而用户保留了写法的，评审状态写「评审不通过，用户保留（理由：……）」，没写理由时不带括号。
 评审与确认是挂在「条目加修订」上的标记，这里看的是条目在修订 K 上有没有。
 文本列表逐项编号、用分号连起来；条目引用用顿号连起来；空字段写「（空）」。
 「用户的话」的出处在库里是「会话编号#消息编号」，文档里换成读者看得懂的说法（「会话「名称」里用户的第 N 句话」），
@@ -43,11 +44,16 @@ def value_text(value, field_type: str) -> str:
 
 
 def review_state(lib: Library, item_id: str, revision_no: int) -> str:
-    """条目在修订 revision_no 上的评审标记：评审通过、评审不通过、未评审。"""
+    """条目在修订 revision_no 上的评审标记：评审通过、评审不通过、评审不通过但用户保留了写法（带理由）、未评审。"""
     reviews = lib.reviews_of(item_id, revision_no)
     if not reviews:
         return "未评审"
-    return "评审通过" if reviews[-1]["verdict"] == "合规" else "评审不通过"
+    if reviews[-1]["verdict"] == "合规":
+        return "评审通过"
+    kept = lib.active_waiver(item_id, revision_no) if hasattr(lib, "active_waiver") else None
+    if kept:
+        return f"评审不通过，用户保留（理由：{kept['reason']}）" if kept.get("reason") else "评审不通过，用户保留"
+    return "评审不通过"
 
 
 #: 确认标记的依据在文档里的写法：已读、用户修改，其余（早期版本的界面点击与对话里的表态）都是用户明确确认的。

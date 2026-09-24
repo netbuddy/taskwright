@@ -11,6 +11,14 @@
  * 评审没有完成（超时、调用失败、两次输出都不合格、评审期间条目被改）时 writeUnfinished 只记模型调用与一条
  * REVIEW_UNFINISHED 事件，不写合规与否。
  *
+ * 规则指纹与重评：每条评审记录带规则指纹（lib/review_state.ts）、评审者提示词的哈希与所属批次（发起它的调用编号）。
+ * 「待评审」是条目当前所在的修订在当前规则下还没有评审记录；不点名时只评这些。点名的条目在当前规则下已经评过、
+ * 内容与规则都没变时，只有带 force（用户在界面上点了「仍要重评」）才再评，这一次记 forced；否则整批拒绝并说明是第几次评审评过的。
+ * 每一批评审结束时记一条 REVIEW_BATCH 摘要事件（review_run.ts）。
+ *
+ * 材料：任务材料总长（全部材料文件的字符数）不超过 MATERIAL_FULL_LIMIT 时，评审者拿到材料全文；超过时只拿到这个条目的
+ * 文档原文来源所在的自然段，并写明看到的不是材料全文。
+ *
  * 规则从哪里来：任务定义里每个集合可以写一项「评审规矩」，指向一份规则文件（相对任务目录），可以关闭某些可选规则、
  * 把某些可选规则升为必选（definition.ts 的 effectiveRules）。没写的集合（旧任务目录）只按字段声明评，
  * 这时清单里只有一条内置规则 FIELD_RULE。不评哪些：不点名时，只评完成条件里要求「每个条目评审通过」的那些集合里、
@@ -28,6 +36,11 @@ import { ACTOR_EXECUTOR, databasePath, emit, wallClockText } from "./db.ts";
 import { withTaskDatabase } from "./schema.ts";
 import { extractJson, type ModelCallRecord } from "./model_call.ts";
 import { RULE_REQUIRED, type ReviewRule, effectiveRules, validateDefinition } from "./definition.ts";
+import { batchNumber, currentReviews, rulesHash } from "./review_state.ts";
+import { listMaterials } from "./task_status.ts";
+
+/** 材料全文给评审者的上限：全部材料文件的字符数不超过它时给全文。 */
+export const MATERIAL_FULL_LIMIT = 20000;
 
 export const REVIEW_PROMPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts", "review.md");
 export const EVENT_REVIEW_RECORDED = "REVIEW_RECORDED";
@@ -58,11 +71,24 @@ export interface PreparedReview extends RequestedItem {
   rules: ReviewRule[];
   rulesPath: string | null;
   rulesDigest: string;
+  /** 这个集合现在的规则指纹；没写评审规矩的集合为空。 */
+  rulesHash: string | null;
+  /** 在当前规则下已经评过、内容没变，用户仍要求重评。 */
+  forced: boolean;
+  /** 评审者提示词文件的哈希。 */
+  reviewerVersion: string;
   system: string;
   user: string;
 }
 
-export interface PreparedReviews { taskId: string; items: PreparedReview[] }
+export interface PreparedReviews {
+  taskId: string;
+  items: PreparedReview[];
+  /** 这批评审的范围：pending 是全部待评审的条目，named 是点名的条目。 */
+  scope: "pending" | "named";
+  /** 评审者提示词文件的哈希，记进每条评审。 */
+  reviewerVersion: string;
+}
 
 export interface ReviewResult { verdict: "合规" | "不合规"; reason: string; findings: Finding[] }
 
@@ -98,9 +124,9 @@ const digest = (text: string) => createHash("sha256").update(text).digest("hex")
 
 /**
  * 第 1 步：只读核对并装配提示。拒绝：库或任务不存在、任务不是进行中；点名的条目不存在、已删除、所在集合不要求评审、
- * 修订号不是条目当前所在的修订；集合的规则文件读不出来；一个要评的也没有。
+ * 修订号不是条目当前所在的修订；点名的条目在当前规则下已经评过而没有带 force；集合的规则文件读不出来；一个要评的也没有。
  */
-export function prepareReviews(workspaceDir: string, requested: RequestedItem[] | null): PreparedReviews {
+export function prepareReviews(workspaceDir: string, requested: RequestedItem[] | null, options: { force?: boolean } = {}): PreparedReviews {
   const path = databasePath(workspaceDir);
   if (!existsSync(path)) throw new ReviewError("这个任务目录还没有任务数据库，没有条目可以评审。");
   const system = readFileSync(REVIEW_PROMPT_PATH, "utf-8");
@@ -117,6 +143,15 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         "WHERE i.task_id = ? AND i.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
     ).get(task.task_id, itemId) as { revision_no: number; fields: string; collection: string; deleted_in_revision: number | null } | undefined;
 
+    const hashOf = new Map<string, string | null>();
+    const hash = (collection: string) => {
+      if (!hashOf.has(collection)) {
+        const spec = definition.collections.find((c) => c.name === collection)?.reviewRules;
+        hashOf.set(collection, spec ? rulesHash(workspaceDir, spec) : null);
+      }
+      return hashOf.get(collection)!;
+    };
+    const forced = new Set<string>();
     let wanted: RequestedItem[];
     const problems: string[] = [];
     if (requested) {
@@ -127,12 +162,20 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         if (row.deleted_in_revision !== null) { problems.push(`条目 ${want.item_id} 已经删除了`); continue; }
         if (!reviewed.has(row.collection)) { problems.push(`条目 ${want.item_id} 所在的集合「${row.collection}」不要求评审`); continue; }
         if (row.revision_no !== want.revision_no) { problems.push(`条目 ${want.item_id} 现在是修订 ${row.revision_no}，你写的是修订 ${want.revision_no}；只能评条目当前所在的修订`); continue; }
+        const done = currentReviews(db, task.task_id, want.item_id, want.revision_no, hash(row.collection));
+        if (done.length && !options.force) {
+          const no = batchNumber(db, task.task_id, done[done.length - 1].batch_id);
+          problems.push(`${want.item_id} 在当前修订上已经评过${no ? `（第 ${no} 次评审）` : ""}，内容和规则都没变`);
+          continue;
+        }
+        if (done.length) forced.add(want.item_id);
         wanted.push(want);
       }
       if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
     } else {
-      wanted = pendingItems(db, task.task_id, [...reviewed]);
+      wanted = pendingItems(db, task.task_id, [...reviewed], hash);
     }
+    const materials = materialsFor(workspaceDir, definition.materialsDir);
 
     const items: PreparedReview[] = [];
     const rulesOf = new Map<string, ReviewRule[]>();
@@ -156,28 +199,47 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       items.push({
         ...want, collection: row.collection, fields, decls, rules, rulesPath: decl?.reviewRules?.file ?? null,
         rulesDigest: digest(JSON.stringify(rules) + "\n" + JSON.stringify(decls)),
-        system, user: assembleUser(want, row.collection, fields, decls, rules, sources),
+        rulesHash: hash(row.collection), forced: forced.has(want.item_id), reviewerVersion: digest(system),
+        system, user: assembleUser(want, row.collection, fields, decls, rules, sources, materials),
       });
     }
     if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
-    if (!items.length) throw new ReviewError("没有需要评审的条目：要评审的集合里，每个条目在当前所在的修订都已经有评审记录了。");
-    return { taskId: task.task_id, items };
+    if (!items.length) throw new ReviewError("没有需要评审的条目：要评审的集合里，每个条目在当前所在的修订、当前规则下都已经有评审记录了。");
+    return { taskId: task.task_id, items, scope: requested ? "named" : "pending", reviewerVersion: digest(system) };
   } finally {
     db.close();
   }
 }
 
 /**
- * 待评审的条目：给定集合里还在的条目中，当前所在的修订还没有任何评审记录的，按编号排。
- * 界面上「评审 N 条待评审的条目」的 N、不点名的评审都按它。
+ * 待评审的条目：给定集合里还在的条目中，当前所在的修订在当前规则下还没有评审记录的，按集合与流水号排。
+ * 界面上「评审 N 条待评审的条目」的 N、不点名的评审都按它。hashOf 给出每个集合现在的规则指纹（为空时不按指纹区分）。
  */
-export function pendingItems(db: DatabaseSync, taskId: string, collections: string[]): RequestedItem[] {
+export function pendingItems(db: DatabaseSync, taskId: string, collections: string[], hashOf: (collection: string) => string | null = () => null): RequestedItem[] {
   return (db.prepare(
-    "SELECT i.item_id, MAX(v.revision_no) AS revision_no FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
+    "SELECT i.item_id, i.collection, MAX(v.revision_no) AS revision_no FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
       "WHERE i.task_id = ? AND i.deleted_in_revision IS NULL AND i.collection IN (SELECT value FROM json_each(?)) GROUP BY i.item_id ORDER BY i.collection, i.serial",
-  ).all(taskId, JSON.stringify(collections)) as unknown as RequestedItem[])
-    .filter((w) => !db.prepare("SELECT 1 FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ?").get(taskId, w.item_id, w.revision_no))
+  ).all(taskId, JSON.stringify(collections)) as unknown as (RequestedItem & { collection: string })[])
+    .filter((w) => currentReviews(db, taskId, w.item_id, Number(w.revision_no), hashOf(w.collection)).length === 0)
     .map((w) => ({ item_id: w.item_id, revision_no: Number(w.revision_no) }));
+}
+
+/** 给评审者的材料：全文（总长不超过上限时），或只按条目取段落（超过时，由 assembleUser 按来源去取）。 */
+interface Materials { full: boolean; files: { path: string; text: string }[] }
+
+function materialsFor(workspaceDir: string, materialsDir: string): Materials {
+  const files = listMaterials(workspaceDir, materialsDir).files
+    .filter((f) => /\.(md|txt)$/i.test(f.path))
+    .map((f) => ({ path: f.path, text: readFileSync(join(workspaceDir, f.path), "utf-8") }));
+  const total = files.reduce((sum, f) => sum + [...f.text].length, 0);
+  return { full: total <= MATERIAL_FULL_LIMIT, files };
+}
+
+/** 材料按空行分成自然段；含有摘录（摘录里用空行隔开的每一段都算）的自然段。 */
+export function paragraphsWith(text: string, excerpt: string): string[] {
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const pieces = excerpt.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  return paragraphs.filter((p) => pieces.some((piece) => p.includes(piece)));
 }
 
 function valueLines(value: unknown): string {
@@ -193,7 +255,8 @@ export function ruleText(rule: ReviewRule): string {
 
 /** 装配评审者的用户消息：规则清单、字段声明、条目在这次修订下的字段与来源。 */
 function assembleUser(want: RequestedItem, collection: string, fields: Record<string, unknown>, decls: FieldDecl[], rules: ReviewRule[],
-  sources: { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[]): string {
+  sources: { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[],
+  materials: Materials = { full: true, files: [] }): string {
   const byPosition = new Map<number, { kind: string; locator: string; excerpt: string; supports: string[] }>();
   for (const s of sources) {
     const one = byPosition.get(s.position) ?? { kind: s.kind, locator: s.locator, excerpt: s.excerpt, supports: [] };
@@ -214,7 +277,30 @@ function assembleUser(want: RequestedItem, collection: string, fields: Record<st
     ...([...byPosition.values()].map((s, i) => `${i + 1}. ${s.kind}${s.kind === "文档原文" ? `（${s.locator}）` : ""}：「${s.excerpt}」` +
       `，支持${s.supports.length ? s.supports.join("、") : "整个条目"}`)),
     ...(byPosition.size ? [] : ["（这份内容没有来源）"]),
+    "",
+    ...materialLines(materials, sources),
   ].join("\n");
+}
+
+/** 【材料全文】一节，或材料太长时【材料摘段】一节。 */
+function materialLines(materials: Materials, sources: { kind: string; locator: string; excerpt: string }[]): string[] {
+  if (!materials.files.length) return ["【材料】这个任务的材料目录里没有材料文件。"];
+  if (materials.full) {
+    return ["【材料全文】这个任务的全部材料：", ...materials.files.flatMap((f) => [`--- ${f.path} ---`, f.text.trimEnd()])];
+  }
+  const picked = new Map<string, string[]>();
+  for (const s of sources) {
+    if (s.kind !== "文档原文") continue;
+    const file = materials.files.find((f) => f.path === s.locator);
+    if (!file) continue;
+    const list = picked.get(file.path) ?? [];
+    for (const p of paragraphsWith(file.text, s.excerpt)) if (!list.includes(p)) list.push(p);
+    picked.set(file.path, list);
+  }
+  const lines = ["【材料摘段】材料太长，你看到的不是材料全文，只是这个条目的来源所引的段落："];
+  for (const [path, list] of picked) lines.push(`--- ${path} ---`, ...list);
+  if (!picked.size) lines.push("（这个条目没有引用材料原文。）");
+  return lines;
 }
 
 /** 由发现算出结论：有任一必选规则的发现即不合规，否则合规。 */
@@ -294,12 +380,14 @@ export function writeReview(call: CallContext, taskId: string, item: PreparedRev
     }
     const seq = emit(db, {
       taskId, sessionId: call.sessionId, callId: call.callId, name: EVENT_REVIEW_RECORDED, actor: call.actor ?? ACTOR_EXECUTOR,
-      payload: { item_id: item.item_id, revision_no: item.revision_no, verdict: result.verdict, reason: result.reason, findings: result.findings },
+      payload: { item_id: item.item_id, revision_no: item.revision_no, verdict: result.verdict, reason: result.reason, findings: result.findings,
+        batch_id: call.callId, rules_hash: item.rulesHash, forced: item.forced },
     });
     const reviewId = Number(db.prepare(
-      "INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at, " +
+        "batch_id, rules_hash, reviewer_version, forced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(taskId, item.item_id, item.revision_no, result.verdict, result.reason, item.rulesDigest, `review-${call.callId}-${item.item_id}`,
-      call.callId, seq, wallClockText()).lastInsertRowid);
+      call.callId, seq, wallClockText(), call.callId, item.rulesHash, item.reviewerVersion, item.forced ? 1 : 0).lastInsertRowid);
     const insert = db.prepare(
       "INSERT INTO review_finding (review_id, task_id, ordinal, field, item_index, problem, suggestion, rule_id, level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );

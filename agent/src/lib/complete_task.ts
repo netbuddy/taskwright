@@ -38,7 +38,7 @@ export function completeTask(call: CompleteCall): CompleteOutcome {
       if (!task) throw new Error("库里还没有任务，没有可以完成的任务。");
       if (task.status !== TASK_ACTIVE) throw new Error(`这个任务的状态是「${task.status}」，不能再完成一次。`);
       const definition = validateDefinition(JSON.parse(task.definition_text));
-      const results = checkCompletion(db, task.task_id, definition.completion);
+      const results = checkCompletion(db, task.task_id, definition.completion, { workspaceDir: call.workspaceDir });
       const unmet = results.filter((r) => !r.satisfied);
       if (unmet.length) {
         // 未读的条目单独成一句，执行者可以原样转告用户；其余没满足的条件逐条列出。

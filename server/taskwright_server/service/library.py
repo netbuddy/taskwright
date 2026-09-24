@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sqlite3
@@ -87,16 +88,73 @@ def effective_rules(task_dir: Path | None, spec: dict | None) -> list[dict] | No
             for r in rules if isinstance(r, dict) and r.get("编号") not in off]
 
 
+def rules_hash_text(file_text: str, off: list[str], promote: list[str]) -> str:
+    """规则指纹：与 agent/src/lib/review_state.ts 的 rulesHashText 逐字同一个算法。"""
+    text = f"{file_text}\n--\n关闭:{','.join(off)}\n升为必选:{','.join(promote)}"
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def rules_hash(task_dir: Path | None, spec: dict | None) -> str | None:
+    """一个集合现在的规则指纹；没写评审规矩、没给任务目录或规则文件读不到时为 None（这时不按指纹区分评审记录）。"""
+    if not spec or task_dir is None:
+        return None
+    try:
+        text = (Path(task_dir) / spec["规则文件"]).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return rules_hash_text(text, list(spec.get("关闭") or []), list(spec.get("升为必选") or []))
+
+
+def all_rules(task_dir: Path | None, spec: dict | None) -> list[dict] | None:
+    """规则文件里的全部规则，连同这个任务的开关状态 state：required（必选，不能关）、optional、off（已关闭）、promoted（升为必选）。
+    给评审页签的规则区用。"""
+    if not spec or task_dir is None:
+        return None
+    try:
+        rules = json.loads((Path(task_dir) / spec["规则文件"]).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    off, promote = set(spec.get("关闭") or []), set(spec.get("升为必选") or [])
+    out = []
+    for r in rules if isinstance(rules, list) else []:
+        if not isinstance(r, dict):
+            continue
+        rid = r.get("编号")
+        state = ("required" if r.get("级别") == RULE_REQUIRED else "off" if rid in off else "promoted" if rid in promote else "optional")
+        out.append({"id": rid, "level": r.get("级别"), "text": r.get("条文"), "counter_example": r.get("反例"), "example": r.get("正例"),
+                    "state": state})
+    return out
+
+
+def collection_review_view(definition: dict, name: str, definition_text: str | None, task_dir: Path | None) -> dict:
+    """一个集合的评审部分：要不要评审、生效的规则清单、全部规则与开关、规则指纹。"""
+    spec = review_specs(definition_text).get(name)
+    return {
+        "needs_review": REVIEW_CONDITION in (definition.get("完成条件") or {}).get(name, []),
+        "review_rules": effective_rules(task_dir, spec),
+        "all_rules": all_rules(task_dir, spec),
+        "rule_switches": {"off": list(spec.get("关闭") or []), "promote": list(spec.get("升为必选") or [])} if spec else None,
+        "rules_hash": rules_hash(task_dir, spec),
+    }
+
+
 def definition_view(definition: dict, definition_text: str | None = None, task_dir: Path | None = None) -> dict:
     """任务定义里前端要的那部分（docs/api.md §4.1 的 definition）：集合名、前缀、字段名、类型、是否必填、枚举取值；
-    集合要不要评审（完成条件里有「每个条目评审通过」），以及它的评审规则清单（关闭与升为必选之后的，给界面展开条文用）。"""
-    specs = review_specs(definition_text)
+    以及每个集合的评审部分（collection_review_view）。"""
     return {"collections": [{
         "name": c["名称"], "prefix": c["编号前缀"],
         "fields": [{"name": f["名"], "type": f["类型"], "required": bool(f["必填"]), "values": f.get("取值")} for f in c["字段"]],
-        "needs_review": REVIEW_CONDITION in (definition.get("完成条件") or {}).get(c["名称"], []),
-        "review_rules": effective_rules(task_dir, specs.get(c["名称"])),
+        **collection_review_view(definition, c["名称"], definition_text, task_dir),
     } for c in definition["集合"]]}
+
+
+def batch_view(no: int, row: dict) -> dict:
+    """一次评审（批次）：第几次、批次编号、时刻、谁发起、范围与计数。row 是 REVIEW_BATCH 事件那一行。"""
+    p = _json(row["payload"]) or {}
+    return {"no": no, "batch_id": p.get("batch_id") or row["call_id"], "at": clock.from_local_text(row["at"]),
+            "started_by": p.get("started_by") or actor_word(row["actor"]), "scope": p.get("scope"),
+            "items": p.get("items") or [], "forced": p.get("forced") or [],
+            **{k: p.get(k, 0) for k in ("total", "passed", "failed", "unfinished", "problems", "advice")}}
 
 
 def finding_view(one: dict) -> dict:
@@ -191,15 +249,37 @@ def read_all(conn: sqlite3.Connection, after_seq: int | None = None) -> dict:
             "sources": taskdb.read_sources(conn, tid),
             "event_meta": {x["seq"]: {"actor": x["actor"], "at": x["at"], "call_id": x["call_id"]}
                            for x in conn.execute("SELECT seq, actor, at, call_id FROM event")},
-            "reviews": [dict(x) for x in conn.execute(
-                "SELECT item_id, revision_no, verdict, reason, created_at, review_id FROM review WHERE task_id = ? ORDER BY review_id", (tid,))],
+            "reviews": read_reviews(conn, tid),
             "findings": read_findings(conn, tid),
+            "waivers": read_waivers(conn, tid),
+            "batches": [dict(x) for x in conn.execute(
+                "SELECT seq, at, actor, call_id, payload FROM event WHERE task_id = ? AND name = 'REVIEW_BATCH' ORDER BY seq", (tid,))],
             "confirmations": [dict(x) for x in conn.execute(
                 "SELECT j.item_id, j.revision_no, j.attitude, g.created_at, g.basis, g.call_id, j.judgement_id "
                 "FROM judgement_item j JOIN judgement g ON g.judgement_id = j.judgement_id WHERE j.task_id = ? "
                 "ORDER BY j.judgement_id", (tid,))],
         }
     return data
+
+
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def read_reviews(conn: sqlite3.Connection, task_id: str) -> list[dict]:
+    """评审记录；早期的库没有批次、指纹、重评几列，读作空。"""
+    extra = (", batch_id, rules_hash, forced" if {"batch_id", "rules_hash", "forced"} <= _columns(conn, "review")
+             else ", NULL AS batch_id, NULL AS rules_hash, 0 AS forced")
+    return [dict(x) for x in conn.execute(
+        f"SELECT item_id, revision_no, verdict, reason, created_at, review_id{extra} FROM review WHERE task_id = ? ORDER BY review_id", (task_id,))]
+
+
+def read_waivers(conn: sqlite3.Connection, task_id: str) -> list[dict]:
+    """评审豁免（用户保留的写法），含已撤销的；早期的库没有这张表，读作空。"""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'review_waiver'").fetchone():
+        return []
+    return [dict(x) for x in conn.execute(
+        "SELECT item_id, revision_no, reason, source, created_at, revoked_at FROM review_waiver WHERE task_id = ? ORDER BY waiver_id", (task_id,))]
 
 
 def read_findings(conn: sqlite3.Connection, task_id: str) -> dict[int, list[dict]]:
@@ -246,8 +326,24 @@ class Library:
     def reviews_of(self, item_id: str, revision_no: int | None = None) -> list[dict]:
         findings = self.data.get("findings") or {}
         return [{"revision_no": r["revision_no"], "verdict": r["verdict"], "reason": r["reason"],
-                 "findings": findings.get(r["review_id"], []), "at": clock.from_local_text(r["created_at"])}
+                 "findings": findings.get(r["review_id"], []), "at": clock.from_local_text(r["created_at"]),
+                 "batch_id": r.get("batch_id"), "rules_hash": r.get("rules_hash"), "forced": bool(r.get("forced"))}
                 for r in self.data["reviews"] if r["item_id"] == item_id and (revision_no is None or r["revision_no"] == revision_no)]
+
+    def waivers_of(self, item_id: str) -> list[dict]:
+        """条目的保留记录（含已撤销的），按先后。"""
+        return [{"revision_no": w["revision_no"], "reason": w["reason"], "source": w["source"], "at": clock.from_local_text(w["created_at"]),
+                 "revoked": w["revoked_at"] is not None}
+                for w in self.data.get("waivers") or [] if w["item_id"] == item_id]
+
+    def active_waiver(self, item_id: str, revision_no: int) -> dict | None:
+        """条目在某次修订上生效的保留（没撤销的最近一条）。"""
+        live = [w for w in self.waivers_of(item_id) if w["revision_no"] == revision_no and not w["revoked"]]
+        return live[-1] if live else None
+
+    def batches_view(self) -> list[dict]:
+        """评审批次：每次评审一项，按先后，第几次评审即 no。数据来自 REVIEW_BATCH 事件。"""
+        return [batch_view(n, b) for n, b in enumerate(self.data.get("batches") or [], start=1)]
 
     def confirmations_of(self, item_id: str, revision_no: int | None = None) -> list[dict]:
         out = []
@@ -322,6 +418,7 @@ class Library:
                 "revision_no": no, "revision_by": by, "revision_at": at, "revisions": revisions,
                 "fields": fields, "sources": self.sources_of(i["item_id"], no),
                 "reviews": self.reviews_of(i["item_id"]),
+                "waivers": self.waivers_of(i["item_id"]),
                 "confirmations": confirmations,
                 # 确认是挂在「条目加修订」上的标记：有过接受记录，但条目当前所在的修订上最近一条态度不是接受，就是确认已失效。
                 "confirmation_stale": bool(accepted) and not current_ok,
@@ -343,6 +440,7 @@ class Library:
             "completion": None,
             "items": items,
             "latest_revision": self.latest_revision(),
+            "review_batches": self.batches_view(),
         }
 
     def revisions_view(self, item_id: str) -> list[dict]:
@@ -407,6 +505,21 @@ class Library:
                                        "passed": payload.get("passed"), "failed": payload.get("failed"),
                                        "unfinished": payload.get("unfinished"), "results": payload.get("results") or [],
                                        "error": payload.get("error"), "completion": None}
+        if e["name"] == "REVIEW_BATCH":
+            earlier = [b for b in self.data.get("batches") or [] if b["seq"] < e["seq"]]
+            return "review_batch", {**base, **batch_view(len(earlier) + 1, {"seq": e["seq"], "at": e["at"], "actor": e["actor"],
+                                                                            "call_id": e["call_id"], "payload": e["payload"]}),
+                                    "completion": None}
+        if e["name"] in ("REVIEW_WAIVED", "REVIEW_UNWAIVED"):
+            return ("review_waived" if e["name"] == "REVIEW_WAIVED" else "review_unwaived"), {
+                **base, "items": payload.get("items") or [], "reason": payload.get("reason"), "source": payload.get("source"),
+                "op_id": op_id, "completion": None}
+        if e["name"] == "REVIEW_RULES_CHANGED":
+            name = payload.get("collection")
+            return "review_rules_changed", {**base, "collection": name, "off": payload.get("off") or [], "promote": payload.get("promote") or [],
+                                            "op_id": op_id, "completion": None,
+                                            **collection_review_view(self.definition, name, self.data["task"].get("definition_text"),
+                                                                     self.data.get("task_dir"))}
         if e["name"] == "CONFIRMATION_RECORDED":
             return "confirmation_recorded", {**base, "items": payload.get("items") or [], "basis": payload.get("basis") or "ui_click",
                                              "op_id": e["call_id"] if actor == ACTOR_USER else None, "completion": None}
@@ -424,6 +537,7 @@ def library_events(task_dir: Path, after_seq: int) -> tuple[list[tuple[str, dict
         conn.close()
     if data["task"] is None or not data["events"]:
         return [], data["seq"]
+    data["task_dir"] = task_dir
     lib = Library(data)
     out = [p for p in (lib.event_payload(e) for e in data["events"]) if p is not None]
     if out:

@@ -3,7 +3,7 @@
 测两件事：
 1. 执行者调用请求评审工具（用户在对话里要求评审时）：工具已经登记，评审者拿到的是带编号的规则清单，
    发现引用必选规则时结论是不合规，库里的发现带规则编号与级别，工具结果写「不合规（问题 1 处，建议 0 条）」；
-2. 用户在界面上发起评审：/tw-user 立即回报，评完之后会话里追加一条界面操作通知，正文是评审结果。
+2. 用户在界面上发起评审：/tw-user 立即回报，评完之后会话里追加一条界面操作通知，正文是一句结论（逐条发现经查询任务状态取）。
 
 断言只看事实：事件流、状态栏回传、会话文件与 task.sqlite 里的行。
 """
@@ -66,8 +66,8 @@ class ReviewGateTests(unittest.TestCase):
         self.assertEqual([json.loads(p["payload"])["done"] for p in progress], [0, 1, 2])
         self.assertEqual(len(notes), 1)
         text = notes[0]["content"] if isinstance(notes[0]["content"], str) else "".join(p.get("text", "") for p in notes[0]["content"])
-        self.assertTrue(text.startswith("界面操作（不是用户打的字）：用户在界面上发起了评审。评审了 2 个条目：合规 0 个，不合规 2 个"), text)
-        self.assertIn("【问题 UC-R7】", text)
+        self.assertEqual(text, "界面操作（不是用户打的字）：用户在界面上发起的评审结束了。评审完成：0 条合规、2 条不合规（问题 2 处、建议 0 条）。"
+                               "各条发现可以用查询任务状态查看。")
 
 
 if __name__ == "__main__":

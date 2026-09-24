@@ -18,6 +18,7 @@
 import { existsSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { checkCompletion, currentItems } from "./conditions.ts";
+import { activeWaiver } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, hasVersionColumns } from "./schema.ts";
@@ -68,7 +69,7 @@ export function reviewState(db: DatabaseSync, taskId: string, itemId: string, re
     .prepare("SELECT verdict FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ?")
     .all(taskId, itemId, revisionNo) as { verdict: string }[];
   if (rows.some((row) => row.verdict === "合规")) return "评审通过";
-  if (rows.length > 0) return "评审没有通过";
+  if (rows.length > 0) return activeWaiver(db, taskId, itemId, revisionNo) ? "评审没有通过，用户保留了写法" : "评审没有通过";
   return "还没有评审记录";
 }
 
@@ -128,14 +129,14 @@ export function boardLines(workspaceDir: string): string[] {
         lines.push(`  已删除：${deleted.map((d) => `${d.item_id}（修订 ${d.deleted_in_revision} 删除）`).join("、")}`);
       }
     }
-    lines.push("", ...completionLines(db, task, definition), "", lastEventLine(db));
+    lines.push("", ...completionLines(db, task, definition, workspaceDir), "", lastEventLine(db));
     return lines;
   });
 }
 
 /** 完成条件逐项情况（已满足、还差、暂无条目），用 conditions.ts 里与「完成任务」门禁同一组函数。看板与「查询任务状态」共用。 */
-export function completionLines(db: DatabaseSync, task: TaskRow, definition: TaskDefinition): string[] {
-  const results = checkCompletion(db, task.task_id, definition.completion);
+export function completionLines(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, workspaceDir?: string): string[] {
+  const results = checkCompletion(db, task.task_id, definition.completion, { workspaceDir });
   const unmetCount = results.filter((one) => one.state === "unmet").length;
   const lines = [unmetCount === 0 ? "完成条件都已满足，可以完成任务：" : `要完成任务，还差 ${unmetCount} 项：`];
   const mark = { met: "[已满足]", unmet: "[还差]", empty: "[暂无条目]" } as const;

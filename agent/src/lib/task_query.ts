@@ -10,6 +10,8 @@ import { existsSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { completionLines, confirmState, itemDetailLines, itemRevisions, lastEventLine, latestRevision, reviewState, type TaskRow } from "./board.ts";
 import { checkCompletion, currentItems, unreadItems, unreadList } from "./conditions.ts";
+import { REVIEW_CONDITION, findingText } from "./review.ts";
+import { activeWaiver, batchNumber, currentRulesHash, currentReviews } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, hasVersionColumns } from "./schema.ts";
@@ -126,7 +128,8 @@ export function getTaskStatus(workspaceDir: string): QueryOutcome {
         if (fields["状态"] === "未解决") unresolved.push({ item_id: row.item_id, revision_no: row.revision_no, title: titleOf(fields, collection.fields[0]?.name) });
       }
     }
-    lines.push("", ...completionLines(db, task, definition), "");
+    lines.push("", ...completionLines(db, task, definition, workspaceDir), "");
+    lines.push(...reviewFindingLines(db, task.task_id, definition, workspaceDir), "");
     lines.push(
       unresolved.length === 0
         ? "未解决的问题条目：没有。"
@@ -153,7 +156,7 @@ export function getTaskStatus(workspaceDir: string): QueryOutcome {
         task_id: task.task_id,
         status: task.status,
         items: counts,
-        conditions: checkCompletion(db, task.task_id, definition.completion),
+        conditions: checkCompletion(db, task.task_id, definition.completion, { workspaceDir }),
         unresolved,
         unread: unread.map((one) => ({ item_id: one.item_id, title: one.title, revision_no: one.revision_no })),
         last_revision_no: revision?.revision_no ?? null,
@@ -161,4 +164,35 @@ export function getTaskStatus(workspaceDir: string): QueryOutcome {
       },
     };
   });
+}
+
+/**
+ * 评审发现：要评审的集合里，条目当前所在的修订上、当前规则下最近一次评审不合规的，逐条列出发现（带规则编号，写明是第几次评审）；
+ * 用户保留了写法的只列一行。界面上评审结束时会话里只追加一句结论，执行者要照发现改时从这里取。
+ */
+export function reviewFindingLines(db: DatabaseSync, taskId: string, definition: TaskDefinition, workspaceDir: string): string[] {
+  const out: string[] = [];
+  const kept: string[] = [];
+  for (const [collection, names] of Object.entries(definition.completion)) {
+    if (!names.includes(REVIEW_CONDITION)) continue;
+    const hash = currentRulesHash(db, workspaceDir, collection);
+    for (const row of currentItems(db, taskId, collection)) {
+      const reviews = currentReviews(db, taskId, row.item_id, row.revision_no, hash);
+      const last = reviews[reviews.length - 1];
+      if (!last || last.verdict !== "不合规" || reviews.some((r) => r.verdict === "合规")) continue;
+      const waiver = activeWaiver(db, taskId, row.item_id, row.revision_no);
+      if (waiver) {
+        kept.push(`${row.item_id}（修订 ${row.revision_no}${waiver.reason ? `，理由：${waiver.reason}` : ""}）`);
+        continue;
+      }
+      const no = batchNumber(db, taskId, last.batch_id);
+      const findings = (db.prepare("SELECT field, item_index, problem, suggestion, rule_id, level FROM review_finding WHERE review_id = ? ORDER BY ordinal").all(last.review_id) as
+        { field: string; item_index: number | null; problem: string; suggestion: string | null; rule_id: string | null; level: string | null }[])
+        .map((f) => ({ field: f.field, index: f.item_index, problem: f.problem, suggestion: f.suggestion, rule_id: f.rule_id, level: f.level }));
+      out.push(`  ${row.item_id}（修订 ${row.revision_no}${no ? `，第 ${no} 次评审` : ""}）：`, ...findings.map((f, i) => `    ${i + 1}. ${findingText(f)}`));
+    }
+  }
+  const lines = out.length ? ["评审不通过、还没处理的条目与发现（问题要改；建议告诉用户，由用户定）：", ...out] : ["评审不通过、还没处理的条目：没有。"];
+  if (kept.length) lines.push(`评审不通过、用户保留了写法的条目（计入通过，不用改）：${kept.join("、")}。`);
+  return lines;
 }

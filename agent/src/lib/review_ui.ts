@@ -61,11 +61,11 @@ function finishedPayload(opId: string, total: number, results: ItemOutcome[], er
  * call.callId 是操作编号；事件的发起方一律是用户。
  */
 export function startReview(call: CallContext, requested: RequestedItem[] | null,
-  opts: Omit<RunOptions, "onItemStart" | "onItemDone"> & { onRecorded?: (seq: number) => void }): StartedReview {
+  opts: Omit<RunOptions, "onItemStart" | "onItemDone"> & { onRecorded?: (seq: number) => void; force?: boolean }): StartedReview {
   const release = reviewSlot(call.workspaceDir, call.callId);
   let prepared;
   try {
-    prepared = prepareReviews(call.workspaceDir, requested);
+    prepared = prepareReviews(call.workspaceDir, requested, { force: opts.force });
   } catch (error) {
     release();
     throw error;
@@ -111,18 +111,31 @@ export function startReview(call: CallContext, requested: RequestedItem[] | null
   return { items, event_seq: seq, finished };
 }
 
-/** 用 pi 的模型注册表调一次评审者：不带工具、干净上下文，模型是启动配置里的那一个。界面操作与工具共用。 */
+/** 所用模型不接受温度参数时记在这里，之后对它不再传温度。 */
+const noTemperature = new Set<string>();
+
+/**
+ * 用 pi 的模型注册表调一次评审者：不带工具、干净上下文，模型是启动配置里的那一个。界面操作与工具共用。
+ * 为了同一条目同样内容评两次结果尽量一致，温度设为 0；模型服务因为温度参数报错时，去掉温度再调一次，并记住这个模型不支持。
+ */
 export function piComplete(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, callId: string): { model: string; complete: Complete } {
   const model = ctx.model;
   if (!model) throw new ReviewError("现在没有可用的模型，评审者无法评审，什么都没有评。");
   return {
     model: `${model.provider}/${model.id}`,
     complete: async (system, user, itemSignal, attempt, item) => {
-      const response = await ctx.modelRegistry.complete(model, {
+      const key = `${model.provider}/${model.id}`;
+      const call = (withTemperature: boolean) => ctx.modelRegistry.complete(model, {
         systemPrompt: system,
         messages: [{ role: "user" as const, timestamp: Date.now(), content: [{ type: "text" as const, text: user }] }],
-      }, { sessionId: `review-${callId}-${item.item_id}-${attempt}`, signal: itemSignal });
-      const r = response as { stopReason?: string; errorMessage?: string; usage?: { input?: number; output?: number } };
+      }, { sessionId: `review-${callId}-${item.item_id}-${attempt}`, signal: itemSignal, ...(withTemperature ? { temperature: 0 } : {}) });
+      let response = await call(!noTemperature.has(key));
+      let r = response as { stopReason?: string; errorMessage?: string; usage?: { input?: number; output?: number } };
+      if (r.stopReason === "error" && !noTemperature.has(key) && /temperature/i.test(r.errorMessage ?? "")) {
+        noTemperature.add(key);
+        response = await call(false);
+        r = response as typeof r;
+      }
       if (r.stopReason === "error" || r.stopReason === "aborted") throw new Error(r.errorMessage ?? "模型服务报错");
       return {
         text: response.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join(""),

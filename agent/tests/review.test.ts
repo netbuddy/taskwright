@@ -206,7 +206,7 @@ test("界面发起的评审：核对通过立即回报，评审在后台跑，�
   open();
   for (let i = 0; i < 200 && !query(dir, "SELECT 1 FROM event WHERE name = 'REVIEW_FINISHED'").length; i++) await new Promise((r) => setTimeout(r, 10));
   const events = query<{ name: string; actor: string; call_id: string; payload: string }>(dir, "SELECT name, actor, call_id, payload FROM event WHERE name LIKE 'REVIEW_%' ORDER BY seq");
-  assert.deepEqual(events.map((e) => e.name).filter((n) => n !== "REVIEW_RECORDED"), ["REVIEW_PROGRESS", "REVIEW_PROGRESS", "REVIEW_PROGRESS", "REVIEW_FINISHED"]);
+  assert.deepEqual(events.map((e) => e.name).filter((n) => n !== "REVIEW_RECORDED"), ["REVIEW_PROGRESS", "REVIEW_PROGRESS", "REVIEW_PROGRESS", "REVIEW_BATCH", "REVIEW_FINISHED"]);
   assert.equal(events.filter((e) => e.name === "REVIEW_RECORDED").length, 2);
   assert.ok(events.every((e) => e.actor === "user" && e.call_id === "ui-op-r1"));
   const progress = events.filter((e) => e.name === "REVIEW_PROGRESS").map((e) => JSON.parse(e.payload));
@@ -217,8 +217,8 @@ test("界面发起的评审：核对通过立即回报，评审在后台跑，�
   for (let i = 0; i < 100 && !messages.length; i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(messages.length, 1);
   assert.equal(messages[0].customType, USER_EDIT_CUSTOM_TYPE);
-  assert.match(messages[0].content, /^界面操作（不是用户打的字）：用户在界面上发起了评审。评审了 2 个条目：合规 1 个，不合规 1 个/);
-  assert.match(messages[0].content, /【问题 D-R1】/);
+  assert.equal(messages[0].content, "界面操作（不是用户打的字）：用户在界面上发起的评审结束了。评审完成：1 条合规、1 条不合规（问题 1 处、建议 0 条）。各条发现可以用查询任务状态查看。");
+  assert.deepEqual(messages[0].details.review, { total: 2, passed: 1, failed: 1, unfinished: 0, problems: 1, advice: 0 });
   assert.ok((status[REVIEW_STATUS_KEY] ?? []).length >= 3, "每记一条进度或结束事件都提示一次后端");
 });
 
