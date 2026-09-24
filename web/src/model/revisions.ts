@@ -121,10 +121,12 @@ export function aliveAt(log: RevisionLogEntry[], revision: number): Map<string, 
 /**
  * 修订卡片的副标题：触发这次修订的事。执行者的修订写它回应的那句话（能在当前会话里数出是第几句时写「你的第 k 句话」），
  * 点卡片发出的、界面操作之后发给助手的各有说法；用户的修订写操作名（后端给的「你把 TBD-003 标为先不管」之类）。
+ * 执行者的修订对得上触发它的那项用户行为（修订日志的 intent）时，改写「因为你说：<功能的中文名>：<摘要>」。
  */
 export function triggerText(entry: RevisionLogEntry, messages: ConversationMessage[]): string {
   const t = entry.trigger;
   if (entry.by === "user") return t.text || "你在界面上直接修改";
+  if (entry.intent) return `因为你说：${entry.intent.function_name}：${entry.intent.summary}`;
   if (t.kind === "card_choice") return `回应你点的卡片：${t.text}`;
   if (t.kind === "ui_request") return `回应你在界面上的操作：${t.text}`;
   if (t.kind === "typed" || t.text) {

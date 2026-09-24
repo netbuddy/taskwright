@@ -281,7 +281,8 @@ class Service:
                 trigger = {"kind": "none", "text": ""}
             out.append({"revision_no": r["revision_no"], "at": r["at"], "by": r["by"], "session_id": r["session_id"],
                         "work_id": work["work_id"] if work else None, "op_id": r["call_id"] if r["by"] == "user" else None,
-                        "undo_of_revision": r["undo_of_revision"], "trigger": trigger, "operations": r["operations"]})
+                        "undo_of_revision": r["undo_of_revision"], "trigger": trigger, "operations": r["operations"],
+                        "intent": r.get("intent")})
         return {"latest_revision": max((r["revision_no"] for r in rows), default=0), "revisions": out}
 
     # ───────────── 材料 ─────────────

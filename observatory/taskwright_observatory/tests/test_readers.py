@@ -491,5 +491,69 @@ class TimelineTests(unittest.TestCase):
         self.assertIsNone(detail["运行"][0]["轮"][0]["模型请求"][0]["带的消息"]["取自 Langfuse 的"])
 
 
+
+# ───────────── 对话行为层的读取（dialogue.py） ─────────────
+
+@unittest.skipIf(shutil.which("node") is None, "本机没有 node，写不出夹具库")
+class DialogueReaderTests(unittest.TestCase):
+    """从任务库只读地读对话行为：按运行对上的三种办法、执行者行为的回应状态、无效理解的次数、三个派生事实。
+    夹具是 agent 写出的新库表夹具库，再补写一段对话行为（见 dialogue_fixture.py）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from taskwright_observatory.tests.dialogue_fixture import ARCHIVE_SESSION, TASK_ID, add_dialogue
+        from tests.test_current_format import make_workspace
+        cls._temp = tempfile.TemporaryDirectory()
+        cls.workspace = make_workspace(Path(cls._temp.name), "任务目录新库表", with_db=True)
+        add_dialogue(cls.workspace)
+        cls.conn = sqlite3.connect(f"file:{cls.workspace / 'task.sqlite'}?mode=ro", uri=True)
+        cls.session_id, cls.task_id = ARCHIVE_SESSION, TASK_ID
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
+        cls._temp.cleanup()
+
+    def test_按用户消息条目编号_回复调用编号_会话里第几次运行三种办法对上运行号(self):
+        from taskwright_observatory import dialogue
+        session = dialogue.read_session(self.conn, self.task_id, self.session_id)
+        self.assertEqual(dialogue.run_layer(session, "u-2", [])["运行号"], "r2")
+        self.assertEqual(dialogue.run_layer(session, "", ["call-reply-3"])["运行号"], "r3")
+        self.assertEqual(dialogue.run_layer(session, "", [], ordinal=1)["运行号"], "r1")
+        self.assertIsNone(dialogue.run_layer(session, "", [], ordinal=9))
+
+    def test_用户行为与助手行为的列_回应状态_无效理解次数(self):
+        from taskwright_observatory import dialogue
+        session = dialogue.read_session(self.conn, self.task_id, self.session_id)
+        first = dialogue.run_layer(session, "", [], ordinal=1)
+        self.assertEqual(first["理解没按格式写次数"], 1)
+        self.assertEqual([(a["编号"], a["功能"], a["状态"], a["回应它的"]) for a in first["助手行为"]],
+                         [("r1-2", "告知（inform）", "不等回应", ""), ("r1-3", "请确认（confirm）", "已回应", "r2-1")])
+        second = dialogue.run_layer(session, "u-2", [])
+        self.assertEqual([(a["编号"], a["功能"], a["针对"], a["回应"], a["把握"]) for a in second["用户行为"]],
+                         [("r2-1", "纠正（correct）", "UC-001 的名称", "r1-3", "把握高"),
+                          ("r2-2", "询问（question）", "", "", "把握中")])
+        self.assertEqual(second["助手行为"][0]["状态"], "等回应")
+        self.assertEqual(second["理解没按格式写次数"], 0)
+
+    def test_三个派生事实与agent侧同一口径(self):
+        from taskwright_observatory import dialogue
+        facts = dialogue.facts(self.conn, self.task_id, self.session_id)
+        self.assertEqual([w["编号"] for w in facts["等回应"]], ["r2-3", "r3-1"])
+        self.assertEqual(facts["连续追问"], [{"条目": "TBD-001", "连续运行次数": 2, "行为": ["r2-3", "r3-1"]}])
+        self.assertEqual(facts["改口"], [{"条目": "UC-001", "字段": "名称", "次数": 2,
+                                          "历次": [{"修订号": 2, "值": "买家申请退款"}, {"修订号": 4, "值": "买家发起退款"}]}])
+
+    def test_功能中文名取自理解格式的schema_没有对话行为表的库什么都不给(self):
+        from taskwright_observatory import dialogue
+        schema = json.loads(dialogue.INTENT_SCHEMA_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(dialogue.function_names()["user"], schema["$defs"]["user_function"]["x-names"])
+        self.assertEqual(dialogue.function_label("question", "user"), "询问（question）")
+        empty = sqlite3.connect(":memory:")
+        self.assertFalse(dialogue.has_dialogue(empty))
+        self.assertEqual(dialogue.facts(empty, "T", "S"), {"等回应": [], "连续追问": [], "改口": []})
+        self.assertIsNone(dialogue.page_facts(empty, "T", ["S"]))
+
+
 if __name__ == "__main__":
     unittest.main()
