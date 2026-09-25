@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Word materials: `.docx` files can be uploaded (up to 5 MB). The service writes a paragraph-numbered text beside each one (`<name>.docx.txt`) for the assistant; sources quoting a Word file name the paragraph (`inputs/a.docx#p37`), and `save_revision` checks the excerpt against that paragraph, or against it and at most five following paragraphs.
+- The material pane shows Word files page by page in their original layout, with headers and footers; each Word source is labelled with its page, section and position on the page, derived from the paragraph number. Clicking a source highlights the quote, marks a quote that runs over several paragraphs, or says where it was not found.
+- `GET …/materials/raw` returns a material file as uploaded.
+
 - Review gate: each reviewed collection names a rule file (`docs/review-rules/*.json`) with numbered rules marked required or optional; the domain-knowledge documents quote the rules through generated regions (`scripts/render-rules.mjs`).
 - The user starts a review from the interface ("Review N items waiting for review", "Review this item", "Review these N" in the completion panel). The review runs in the background and reports progress through two new events, `review_progress` and `review_finished`.
 - Every finding cites a rule number. Findings under required rules are problems and fail the item; findings under optional rules are advice and do not. The verdict is computed from the rule levels, not taken from the reviewer's output.
