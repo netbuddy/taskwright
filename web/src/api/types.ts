@@ -9,7 +9,7 @@
 export type Actor = "executor" | "user";
 export type TaskStatus = "进行中" | "已完成" | "已放弃";
 /** 来源的四种种类。「用户直接修改」由系统在用户直接改字段时写，出处是操作编号（ui-op-…）。 */
-export type SourceKind = "文档原文" | "用户的话" | "执行者补充" | "用户直接修改";
+export type SourceKind = "文档原文" | "用户的话" | "执行者补充" | "领域说明" | "用户直接修改";
 
 /** 一条来源支持哪一处：某个字段，列表型字段还可以指到第几项。supports 为空数组＝支持整个条目。 */
 export interface SourceSupport {
@@ -50,6 +50,16 @@ export interface Completion {
   /** 一句话概括，与执行者看到的说法相同。 */
   brief?: string;
   conditions: CompletionCondition[];
+  /** 完成条件之外的提示，不是门禁。kind 为 unlinked_domain_notes：还没有和任何条目关联的领域说明。 */
+  hints?: CompletionHint[];
+}
+
+export interface CompletionHint {
+  kind: "unlinked_domain_notes";
+  collection: string;
+  items: string[];
+  /** 一句完整的话，例如「有 2 条领域说明还没有和任何条目关联：DN-003、DN-004。」 */
+  summary: string;
 }
 
 // ───────────── 4.1 整份数据 ─────────────
@@ -76,6 +86,10 @@ export interface CollectionDef {
   fields: FieldDef[];
   /** 完成条件里对这个集合要求了「每个条目评审通过」。 */
   needs_review?: boolean;
+  /** 显示方式（任务定义的「界面」一项）：side_tab 在右侧栏另开页签，group_field 按这个字段分组并在条目行上写成小标签，
+   *  leading_groups 这几组按给定顺序排最前、其余按每组第一个条目的编号排，note 是写在这个集合页签下的一句白话。
+   *  没写时为 null，照旧显示。 */
+  display?: { side_tab: boolean; group_field: string | null; leading_groups: string[]; note?: string | null } | null;
   /** 这个集合的评审规则清单；没写评审规矩的集合为 null（评审只按字段声明）。 */
   review_rules?: ReviewRule[] | null;
   /** 规则文件里的全部规则，连同这个任务的开关状态；给评审页签的规则区用。 */

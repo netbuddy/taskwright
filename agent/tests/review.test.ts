@@ -92,11 +92,11 @@ test("评审规矩写对了能读出来；没有这个键的旧任务定义照�
   assert.equal(loadDefinition(makeWorkspace(), DEFINITION_PATH).definition.collections[0].reviewRules, null);
 });
 
-test("真实的任务类型：三个集合的规则文件都能读，问题集合不评审", () => {
+test("真实的任务类型：三个集合的规则文件都能读，问题集合与领域说明集合不评审", () => {
   const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
   const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
   assert.deepEqual(definition.collections.map((c) => c.reviewRules?.file ?? null),
-    ["docs/review-rules/use-case.json", "docs/review-rules/ears.json", "docs/review-rules/ears.json", null]);
+    ["docs/review-rules/use-case.json", "docs/review-rules/ears.json", "docs/review-rules/ears.json", null, null]);
   const count = (file: string) => (JSON.parse(readFileSync(join(typeDir, file), "utf-8")) as unknown[]).length;
   assert.equal(count("docs/review-rules/use-case.json"), 14);
   assert.equal(count("docs/review-rules/ears.json"), 9);

@@ -23,6 +23,7 @@ import { BUSY_TEXT, FILTERS, failedReview, isEmptyValue, isUnread, keepPendingFi
 import { CompletionPanel } from "../CompletionPanel";
 import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
+import { unlinkedIds } from "../../model/domainNotes";
 import { FromIssueCrumb, IssueBadge, ItemIssues } from "./ItemIssues";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
@@ -255,6 +256,7 @@ export function ItemsPanel({
           </div>
         ) : (
           <div className="list">
+            {def?.display?.note && <CollectionLead name={def.name} note={def.display.note} unlinked={unlinkedIds(task, def.name)} />}
             {items.map((item) => {
               const summary = summaryOf(task, item);
               return (
@@ -266,7 +268,7 @@ export function ItemsPanel({
                     <span className="lid">{item.item_id}</span>
                     <span className="lname" title={item.title}>{item.title}</span>
                     <span className="lsum" title={summary}>{summary}</span>
-                    <ItemStatus task={task} item={item} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)} />
+                    <ItemStatus task={task} item={item} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)} row />
                     <IssueBadge task={task} itemId={item.item_id} />
                   </div>
                 </div>
@@ -275,6 +277,16 @@ export function ItemsPanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** 任务定义「界面」里写了说明的集合：页签下先写一句白话说明它是什么，再写有几条还没和任何条目关联。 */
+export function CollectionLead({ name, note, unlinked }: { name: string; note: string; unlinked: string[] }) {
+  return (
+    <div className="dn-lead" data-testid="collection-lead">
+      <b>{name}：{note}</b>
+      {unlinked.length > 0 && <> 有 {unlinked.length} 条还没有和任何条目关联（{unlinked.join("、")}）。</>}
     </div>
   );
 }

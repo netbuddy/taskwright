@@ -6,6 +6,11 @@
 模板的写法（见起始文件 docs/templates/srs.md）：
 - {{#每个 集合名}} … {{/每个}}：对这个集合里被选中的每个条目，把中间那段各渲染一遍；
 - {{#没有 集合名}} … {{/没有}}：这个集合一个都没选中时才输出中间那段；
+- 按字段值筛选：集合名后面可以跟一个或几个用空格隔开的条件，「字段=值」只要这个字段等于值的条目，「字段!=值」只要不等于的，
+  几个条件同时成立才算，例如 {{#每个 领域说明 类别=术语}} 与 {{#没有 领域说明 类别!=术语}}；列表型字段按「含有这一项」比；
+- 按字段归组：{{#按 字段 归组 集合名 条件…}} … {{/按}}，条件的写法同上、可以不写。按这个字段的值把条目分组，
+  每组把中间那段渲染一遍：{{组名}} 是这一组的值（空值写「（未填）」），{{#组内每个}} … {{/组内每个}} 对组里每个条目各渲染一遍，
+  里面的写法与「每个」相同。组的先后按每组第一个条目的编号，组内按编号排；一个条目都没有时整段不输出；
 - 每个条目里：{{编号}}、{{修订号}}（它的内容来自修订 K）、{{评审状态}}、{{确认状态}}、{{来源}}，以及任意字段名 {{字段名}}；
 - 模板任何地方：{{文档修订号}}（这份文档按修订 N 生成）。
 
@@ -30,6 +35,8 @@ from taskwright_server.service.errors import ApiError
 from taskwright_server.service.library import Library, actor_word
 
 EACH = re.compile(r"\{\{#每个 (.+?)\}\}\n?(.*?)\{\{/每个\}\}\n?", re.S)
+GROUP = re.compile(r"\{\{#按 (\S+) 归组 (.+?)\}\}\n?(.*?)\{\{/按\}\}\n?", re.S)
+IN_GROUP = re.compile(r"\{\{#组内每个\}\}\n?(.*?)\{\{/组内每个\}\}\n?", re.S)
 NONE = re.compile(r"\{\{#没有 (.+?)\}\}\n?(.*?)\{\{/没有\}\}\n?", re.S)
 FIELD = re.compile(r"\{\{(.+?)\}\}")
 
@@ -80,6 +87,10 @@ def confirm_state(lib: Library, item_id: str, revision_no: int) -> str:
 
 USER_WORDS = "用户的话"
 USER_EDIT = "用户直接修改"
+#: 种类为「领域说明」的来源，出处是那条领域说明的条目编号，文档里写成「领域说明 DN-002（「摘录」）」。
+DOMAIN_NOTE = "领域说明"
+#: 按字段归组时空值那一组的组名。
+EMPTY_GROUP = "（未填）"
 EXECUTOR_SUPPLEMENT = "执行者补充"
 #: 来源种类在文档里的写法：库里的存储值「执行者补充」对读者写成「助手补充」，其余照存储值。
 KIND_WORDS = {EXECUTOR_SUPPLEMENT: "助手补充"}
@@ -111,6 +122,9 @@ def sources_text(lib: Library, item_id: str, revision_no: int, words_locator: Ca
                  edits_locator: Callable[[str], str | None] | None = None) -> str:
     parts = []
     for s in lib.sources_of(item_id, revision_no):
+        if s["kind"] == DOMAIN_NOTE:
+            parts.append(f"{DOMAIN_NOTE} {s['locator']}（「{s['excerpt']}」）")
+            continue
         if s["kind"] == USER_WORDS:
             readable = words_locator(s["locator"]) if words_locator and s["locator"] else None
             where = f"，出处 {readable or '对话里用户说的话'}"
@@ -123,6 +137,28 @@ def sources_text(lib: Library, item_id: str, revision_no: int, words_locator: Ca
             where = f"，出处 {locator}" if locator and s["kind"] != EXECUTOR_SUPPLEMENT else ""
         parts.append(f"{KIND_WORDS.get(s['kind'], s['kind'])}{where}（「{s['excerpt']}」）")
     return "；".join(parts) or "（没有登记来源）"
+
+
+def parse_selector(text: str) -> tuple[str, list[tuple[str, bool, str]]]:
+    """「集合名 字段=值 字段!=值」→（集合名, [(字段, 是否要相等, 值)]）。值里不能有空格。"""
+    head, *rest = text.split()
+    conditions = []
+    for one in rest:
+        negate = "!=" in one
+        field, _, value = one.partition("!=" if negate else "=")
+        if not field or not _:
+            raise ApiError("bad_request", f"文档模板里的筛选条件「{one}」写得不对，要写成「字段=值」或「字段!=值」。")
+        conditions.append((field, not negate, value))
+    return head, conditions
+
+
+def matches(fields: dict, conditions: list[tuple[str, bool, str]]) -> bool:
+    for field, equal, value in conditions:
+        got = fields.get(field)
+        hit = value in [str(v) for v in got] if isinstance(got, list) else str(got if got is not None else "") == value
+        if hit != equal:
+            return False
+    return True
 
 
 def document_request(body: dict) -> tuple[int | None, list[str] | None]:
@@ -162,12 +198,16 @@ def render(task_dir: Path, lib: Library, revision_no: int | None = None, items: 
     for rows in chosen.values():
         rows.sort(key=lambda x: lib.items[x[0]]["serial"])
 
-    def each(match: re.Match) -> str:
-        collection, body = match.group(1).strip(), match.group(2)
+    def selected(selector: str) -> tuple[str, list[tuple[str, int, dict]]]:
+        """按「集合名 条件…」取出被选中、又满足条件的条目：（集合名, [(条目编号, 修订 K, 字段)]），按编号排。"""
+        collection, conditions = parse_selector(selector)
+        rows = [(item_id, no, lib.fields_of(item_id, no) or {}) for item_id, no in chosen.get(collection, [])]
+        return collection, [row for row in rows if matches(row[2], conditions)]
+
+    def render_items(collection: str, rows: list[tuple[str, int, dict]], body: str) -> str:
         types = {f["名"]: f["类型"] for f in (lib.collections.get(collection) or {}).get("字段", [])}
         out = []
-        for item_id, no in chosen.get(collection, []):
-            fields = lib.fields_of(item_id, no) or {}
+        for item_id, no, fields in rows:
             # 「内容版本号」是旧模板里的写法，按修订号填（任务目录里拷去的旧模板照样能用）。
             special = {"编号": item_id, "修订号": str(no), "内容版本号": str(no), "评审状态": review_state(lib, item_id, no),
                        "确认状态": confirm_state(lib, item_id, no), "来源": sources_text(lib, item_id, no, words_locator, edits)}
@@ -178,7 +218,25 @@ def render(task_dir: Path, lib: Library, revision_no: int | None = None, items: 
             out.append(FIELD.sub(fill, body))
         return "".join(out)
 
-    def none(match: re.Match) -> str:
-        return match.group(2) if not chosen.get(match.group(1).strip()) else ""
+    def each(match: re.Match) -> str:
+        collection, rows = selected(match.group(1))
+        return render_items(collection, rows, match.group(2))
 
-    return NONE.sub(none, EACH.sub(each, template)).replace("{{文档修订号}}", str(doc_revision))
+    def group(match: re.Match) -> str:
+        field, body = match.group(1).strip(), match.group(3)
+        collection, rows = selected(match.group(2))
+        groups: dict[str, list[tuple[str, int, dict]]] = {}
+        for row in rows:
+            value = row[2].get(field)
+            key = "、".join(str(v) for v in value) if isinstance(value, list) else str(value or "").strip()
+            groups.setdefault(key or EMPTY_GROUP, []).append(row)
+        out = []
+        for name, members in groups.items():
+            part = IN_GROUP.sub(lambda m: render_items(collection, members, m.group(1)), body)
+            out.append(part.replace("{{组名}}", name))
+        return "".join(out)
+
+    def none(match: re.Match) -> str:
+        return match.group(2) if not selected(match.group(1))[1] else ""
+
+    return NONE.sub(none, EACH.sub(each, GROUP.sub(group, template))).replace("{{文档修订号}}", str(doc_revision))

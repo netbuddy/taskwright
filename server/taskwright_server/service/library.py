@@ -138,12 +138,21 @@ def collection_review_view(definition: dict, name: str, definition_text: str | N
     }
 
 
+def display_view(raw: dict | None) -> dict | None:
+    """集合的「界面」一项换成接口的写法：side_tab（右侧栏页签）、group_field（分组字段）、leading_groups（靠前的组）、note（说明）。"""
+    if not raw:
+        return None
+    return {"side_tab": raw.get("右侧栏页签") is True, "group_field": raw.get("分组字段") or None,
+            "leading_groups": [str(one) for one in raw.get("靠前的组") or []], "note": raw.get("说明") or None}
+
+
 def definition_view(definition: dict, definition_text: str | None = None, task_dir: Path | None = None) -> dict:
     """任务定义里前端要的那部分（docs/api.md §4.1 的 definition）：集合名、前缀、字段名、类型、是否必填、枚举取值；
-    以及每个集合的评审部分（collection_review_view）。"""
+    每个集合的显示方式（任务定义的「界面」一项，只影响显示，没写时为 null）；以及每个集合的评审部分（collection_review_view）。"""
     return {"collections": [{
         "name": c["名称"], "prefix": c["编号前缀"],
         "fields": [{"name": f["名"], "type": f["类型"], "required": bool(f["必填"]), "values": f.get("取值")} for f in c["字段"]],
+        "display": display_view(c.get("界面")),
         **collection_review_view(definition, c["名称"], definition_text, task_dir),
     } for c in definition["集合"]]}
 
@@ -193,8 +202,10 @@ def completion(task_dir: Path, task_id: str, definition: dict, totals: dict[str,
         conditions.append({"collection": r["collection"], "name": r["condition"], "met": bool(r["satisfied"]),
                            "state": r.get("state") or ("met" if r["satisfied"] else "unmet"),
                            "done": total - len(missing), "total": total, "missing": missing, "note": r.get("summary", "")})
+    # hints：完成条件之外的提示，不是门禁（例如还没有和任何条目关联的领域说明），每项 {kind, collection, items, summary}。
+    hints = [h for h in out.get("hints") or [] if isinstance(h, dict)]
     return {"all_met": all(c["met"] for c in conditions), "unmet_count": sum(c["state"] == "unmet" for c in conditions),
-            "brief": out.get("brief", ""), "conditions": conditions}
+            "brief": out.get("brief", ""), "conditions": conditions, "hints": hints}
 
 
 # ───────────────────────── 读库（都在调用方开好的读事务里） ─────────────────────────

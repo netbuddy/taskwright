@@ -1,6 +1,7 @@
 // 条目详情：照设计原型画成一张表——左列字段名（必填带星），右列带边框的值格；列表型字段每步一行、行首是序号；
-// 每个值格下方是支持这个字段的来源小标签（材料文件名、执行者补充、用户的话、用户直接修改四种各有配色），
-// 点材料标签，文档区滚到并高亮那句原文。顶部一行：编号、标题、评审与已读状态、修订下拉、上一条与下一条；
+// 每个值格下方是支持这个字段的来源小标签（材料文件名、执行者补充、用户的话、领域说明、用户直接修改五种各有配色），
+// 点材料标签，文档区滚到并高亮那句原文；点领域说明标签（「领域说明 DN-003」），打开那条领域说明。
+// 任务定义「界面」一项写了的集合（例如领域说明）：关联条目旁写上标题，来源之后另列「被哪些条目引用」。顶部一行：编号、标题、评审与已读状态、修订下拉、上一条与下一条；
 // 有助手补充时顶部一条琥珀色横幅；底部「来源」一节按种类列小标签加摘录。
 // 没有「确认」按钮：用户打开详情就记为已读（页面在打开时发 mark_viewed），已读就算确认。用户在这里改字段或标为先不管，
 // 后端随修订自动写一条确认标记。已读是条目级、单向的，没有撤回按钮。
@@ -38,6 +39,7 @@ import { baselineRevision, confirmedRevision } from "../../model/revisions";
 import { formatTime } from "../../model/format";
 import { errorText } from "./errors";
 import { ItemStatus } from "./ItemStatus";
+import { citationsOf, displayOf, liveOwnRefs, SOURCE_DOMAIN_NOTE } from "../../model/domainNotes";
 import { FindingLine } from "./FindingLine";
 import { IssueBadge } from "./ItemIssues";
 
@@ -141,6 +143,9 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   };
   const target = [{ item_id: item.item_id, base_revision: item.revision_no }];
   const review = reviewState(item, task);
+  // 任务定义「界面」一项写了的集合（例如领域说明）：详情里另列「被哪些条目引用」，关联条目旁写上标题。
+  const display = displayOf(task, item.collection);
+  const titleOf = (id: string) => task.items.find((i) => i.item_id === id)?.title ?? "";
   const keepField = keepPendingField(task, item.collection);
   const shownNo = viewRevision ?? item.revision_no;
   const shown = viewRevision != null ? revisions?.find((v) => v.revision_no === viewRevision) ?? null : null;
@@ -301,13 +306,14 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
                 onFix={onPrefill ? (x) => onPrefill(fixText(item.item_id, x)) : undefined} fixOff={readOnly}
                 status={status} batchNo={currentNo} onKeep={keepable && !writeOff ? keep : undefined}
                 onUnwaive={status?.kind === "kept" && current?.revision_no === item.revision_no ? unwaive : undefined} unwaiveOff={writeOff}
-                onLocate={onLocate} onOpenItem={onOpenItem} />
+                onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} refTitles={!!display} />
             );
           })}
 
           <div className="sec-h">来源</div>
-          {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} />)}
+          {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} />)}
           {sources.length === 0 && <div className="srcbox"><div className="fields">这次修订没有记下任何来源。</div></div>}
+          {display && <CitedBy task={task} item={item} onOpenItem={onOpenItem} />}
 
           {item.reviews.length > 0 && (
             <div className="muted small" style={{ marginTop: "0.571rem" }} data-testid="review-records">
@@ -390,9 +396,17 @@ function useSourcePlace(source: Source): { label: string; tablePos: string } {
   return { label: [name, ...whereOf(entry.table, loc.paragraph, source.excerpt)].join(" · "), tablePos: entry.tablePos?.get(loc.paragraph) ?? "" };
 }
 
-/** 值格下方的一个来源小标签。 */
-export function SourceTag({ source, onLocate }: { source: Source; onLocate?: (excerpt: string, locator: string) => void }) {
+/** 值格下方的一个来源小标签。种类为「领域说明」的写成「领域说明 DN-003」，点一下打开那条领域说明。 */
+export function SourceTag({ source, onLocate, onOpenItem, titleOf }: {
+  source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
+}) {
   const place = useSourcePlace(source);
+  if (source.kind === SOURCE_DOMAIN_NOTE) {
+    const title = titleOf?.(source.locator);
+    return <span className="srctag note" role="button" data-testid={`note-source-${source.locator}`}
+      title={`${SOURCE_DOMAIN_NOTE} ${source.locator}${title ? `「${title}」` : ""}：${source.excerpt}（点一下，打开这条${SOURCE_DOMAIN_NOTE}）`}
+      onClick={() => onOpenItem?.(source.locator)}>{SOURCE_DOMAIN_NOTE} {source.locator}</span>;
+  }
   if (source.kind === "文档原文") {
     return <span className="srctag quote" title={`材料原文：「${source.excerpt}」${place.tablePos ? `（${place.tablePos}）` : ""}。点一下，材料区滚到这里。`} role="button"
       onClick={() => onLocate?.(source.excerpt, source.locator)}>❝ {place.label}</span>;
@@ -404,7 +418,7 @@ export function SourceTag({ source, onLocate }: { source: Source; onLocate?: (ex
 }
 
 function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix, fixOff, status = null, batchNo: no = null, onKeep, onUnwaive, unwaiveOff,
-  onLocate, onOpenItem }: {
+  onLocate, onOpenItem, titleOf, refTitles = false }: {
   def: FieldDef;
   value: FieldValue;
   /** 用来画线比较的那次修订里的值；undefined 表示不画线。 */
@@ -429,6 +443,9 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
   unwaiveOff?: boolean;
   onLocate?: (excerpt: string, locator: string) => void;
   onOpenItem?: (itemId: string) => void;
+  titleOf?: (itemId: string) => string;
+  /** 条目引用的编号旁写上那个条目的标题。 */
+  refTitles?: boolean;
 }) {
   const changed = before !== undefined && JSON.stringify(before ?? null) !== JSON.stringify(value ?? null);
   let body: ReactNode;
@@ -438,7 +455,12 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
       <span className={`tagflag${def.required ? " req" : ""}`}>{def.required ? "必填 · 未填" : "没有内容"}</span>
     </>;
   } else if (def.type === "条目引用") {
-    body = <span className="refs">{(Array.isArray(value) ? value : [value]).map((id) => <span key={String(id)} className="ref" role="button" onClick={() => onOpenItem?.(String(id))}>{id}</span>)}</span>;
+    body = <span className="refs">{(Array.isArray(value) ? value : [value]).map((id) => (
+      <span key={String(id)}>
+        <span className="ref" role="button" onClick={() => onOpenItem?.(String(id))}>{id}</span>
+        {refTitles && titleOf?.(String(id)) && <span className="muted"> {titleOf(String(id))}</span>}
+      </span>
+    ))}</span>;
   } else if (def.type === "枚举") {
     body = <>{changed && before && <span className="diff-old">{String(before)}</span>}<span className={`chip on enumv${changed ? " diff-new" : ""}`}>{String(value)}</span></>;
   } else if (isListField(def)) {
@@ -471,16 +493,19 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
         {body}
         {findings.map((f, i) => <FindingLine key={i} finding={f} rule={ruleOf(f.rule_id)} onFix={onFix} fixOff={fixOff} status={status} batchNo={no}
           onKeep={isProblem(f) ? onKeep : undefined} onUnwaive={isProblem(f) ? onUnwaive : undefined} unwaiveOff={unwaiveOff} />)}
-        {sources.length > 0 && <div className="srcs">{sources.map((s, i) => <SourceTag key={i} source={s} onLocate={onLocate} />)}</div>}
+        {sources.length > 0 && <div className="srcs">{sources.map((s, i) => <SourceTag key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} />)}</div>}
       </div>
     </div>
   );
 }
 
-function SourceBox({ source, onLocate }: { source: Source; onLocate?: (excerpt: string, locator: string) => void }) {
+function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
+  source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
+}) {
   const place = useSourcePlace(source);
   const kinds: Record<string, [string, string]> = {
     文档原文: ["src", "材料原文"], 执行者补充: ["warn", "助手补充"], 用户的话: ["teal", "用户的话"], 用户直接修改: ["on", "用户直接修改"],
+    [SOURCE_DOMAIN_NOTE]: ["note", SOURCE_DOMAIN_NOTE],
   };
   const [cls, name] = kinds[source.kind] ?? ["on", source.kind];
   const supports = source.supports ?? [];
@@ -491,14 +516,43 @@ function SourceBox({ source, onLocate }: { source: Source; onLocate?: (excerpt: 
         {source.kind === "文档原文" && (
           <span className="evi" role="button" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{place.label}{place.tablePos ? `，${place.tablePos}` : ""}（点一下看原文）</span>
         )}
+        {source.kind === SOURCE_DOMAIN_NOTE && (
+          <> <span className="ref" role="button" onClick={() => onOpenItem?.(source.locator)}>{source.locator}</span> {titleOf?.(source.locator)}</>
+        )}
       </div>
-      <div className={`quote${source.kind === "用户的话" ? " said" : ""}`}>{source.kind === "文档原文" || source.kind === "用户的话" ? `「${source.excerpt}」` : source.excerpt}</div>
+      <div className={`quote${source.kind === "用户的话" ? " said" : ""}`}>{source.kind === "文档原文" || source.kind === "用户的话" || source.kind === SOURCE_DOMAIN_NOTE ? `「${source.excerpt}」` : source.excerpt}</div>
       <div className="fields">
         {supports.length
           ? <>支持这几处：<b>{supports.map((x) => (x.index != null ? `${x.field}第 ${x.index + 1} 条` : x.field)).join("、")}</b></>
           : "没有指明它支持哪个字段，算作支持整个条目"}
       </div>
     </div>
+  );
+}
+
+/**
+ * 「被哪些条目引用」：别的条目把这一条写成来源（附支持的字段与引用的那句），或者在条目引用字段里写了它。
+ * 都没有时写一句说明；它自己关联了还在的条目时注明不算「没有和任何条目关联」。
+ */
+function CitedBy({ task, item, onOpenItem }: { task: Task; item: Item; onOpenItem?: (itemId: string) => void }) {
+  const cited = citationsOf(task, item.item_id);
+  const own = liveOwnRefs(task, item);
+  return (
+    <>
+      <div className="sec-h">被哪些条目引用</div>
+      {cited.length === 0 ? (
+        <div className="citedby-empty" data-testid="cited-by-none">
+          还没有别的条目把它写成来源，也没有别的条目在关联条目里写它。
+          {own.length > 0 ? `它自己关联了 ${own.join("、")}，所以不算「没有和任何条目关联」。` : "它现在没有和任何条目关联。"}
+        </div>
+      ) : cited.map((c, i) => (
+        <div className="citedby" key={i} data-testid={`cited-by-${c.item.item_id}`}>
+          <span className="ref" role="button" onClick={() => onOpenItem?.(c.item.item_id)}>{c.item.item_id}</span> {c.item.title} · {c.where} · 修订 {c.item.revision_no}
+          <span className="how">{c.how === "source" ? "把它写成了来源" : "在关联条目里写了它"}</span>
+          {c.excerpt && <div className="q">「{c.excerpt}」</div>}
+        </div>
+      ))}
+    </>
   );
 }
 

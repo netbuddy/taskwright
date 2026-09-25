@@ -11,6 +11,8 @@
   --gap:#b91c1c; --gap-bg:#fbeeee; --gap-line:#e5b6b6; --sel:#f0f0f0;
   /* 助手要花时间做的事，统一用这一种颜色 */
   --ai:#4f46e5; --ai-bg:#eff0fd; --ai-line:#c6c9f4;
+  /* 可被引作来源的解释性条目（领域说明）：石板灰，与材料蓝、用户的话青绿、助手补充琥珀、助手做事靛蓝都不相混 */
+  --note:#475569; --note-bg:#eef2f6; --note-line:#c5ced9;
   --w-rail:clamp(2.6rem,3vw,3.2rem); --w-chat:clamp(18rem,24%,26rem); --w-handle:2rem;
 }
 
@@ -67,6 +69,8 @@ body {
 .cond .tick { width: 1rem; flex: none; }
 .cond.met .tick { color: var(--ok); }
 .cond.empty { color: var(--mut); }
+/* 完成条件之外的提示（不挡完成任务），例如还没有和任何条目关联的领域说明 */
+.cond.hint, .cond.hint .tick { color: var(--amber); }
 .cond .missing { color: var(--mut); font-family: ui-monospace, Menlo, monospace; font-size: 0.929rem; }
 .doc-text { white-space: pre-wrap; font-size: 0.986rem; line-height: 1.8; }
 .busy-note { background: var(--amber-bg); border: 1px solid var(--amber-line); color: var(--amber); border-radius: 0.571rem; padding: 0.429rem 0.714rem; font-size: 0.957rem; margin-bottom: 0.571rem; }

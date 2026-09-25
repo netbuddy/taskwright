@@ -3,6 +3,7 @@
 // （第三组按用户的决定算通过，只是提示）；给了 task 时只认当前规则指纹下的评审记录；
 // 再给了 onReview、onOpen 时（工作视图里），旁边有「评审这 N 条」（评待评审的那几条）与「打开 X」（打开评审不通过的条目）。
 // 任务页没有事件流、看不到评审进度，只给条目、不给这两个按钮。
+// 完成条件之外的提示（completion.hints，不挡完成任务，例如还没有和任何条目关联的领域说明）写在它所属集合那一组的末尾，琥珀色。
 
 import type { Completion, CompletionCondition, Item, Task, TaskStatus } from "../api/types";
 import { completionHeadline, conditionState, groupConditions, REVIEW_CONDITION, reviewState } from "../model/items";
@@ -71,6 +72,12 @@ export function CompletionPanel({ completion, status, items, task, onReview, onO
             </div>
             );
           })}
+          {(completion.hints ?? []).filter((h) => h.collection === collection).map((h) => (
+            <div key={h.kind} className="cond hint" data-testid="cond-hint">
+              <span className="tick">ⓘ</span>
+              <div><b style={{ fontWeight: 500 }}>提示</b>：{h.summary}这一条不挡完成任务，只是告诉你哪些还没用上。</div>
+            </div>
+          ))}
         </div>
       ))}
     </div>

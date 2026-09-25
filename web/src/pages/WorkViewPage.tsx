@@ -306,7 +306,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                     <ReviewPanel task={task} review={state.review} readOnly={readOnly} writesOff={working} onReview={review} submit={submit}
                       onOpenFinding={openFinding} onPrefill={prefill} />
                   ) : undefined}
-                  reviewCount={task ? openProblems(task) : 0} />
+                  reviewCount={task ? openProblems(task) : 0} task={task ?? undefined} />
               </div>
             </div>
           </div>

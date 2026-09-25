@@ -24,6 +24,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { load } from "./db.ts";
 import { titleOf } from "./tool_render.ts";
 import { activeWaiver, currentRulesHash, currentReviews } from "./review_state.ts";
+import { SOURCE_DOMAIN_NOTE } from "./schema.ts";
 
 /** 一项条件的三种状态：已满足、还差、暂无条目（集合为空，这一条无从谈起）。 */
 export type ConditionState = "met" | "unmet" | "empty";
@@ -260,4 +261,81 @@ export function completionBrief(results: ConditionResult[], listAtMost = 6): str
     ? `${emptyCollections.join("、")}现在没有条目，这几个集合的条件暂不需要核对。`
     : "";
   return head + tail;
+}
+
+// ───────────── 提示（不是门禁） ─────────────
+
+/**
+ * 完成条件之外的提示：由事实算出来给人看，不挡完成任务。现在只有一种 unlinked_domain_notes：
+ * 「领域说明」集合里还没有和任何条目关联的说明。
+ */
+export interface CompletionHint {
+  kind: "unlinked_domain_notes";
+  collection: string;
+  /** 涉及的条目编号，按流水号排。 */
+  items: string[];
+  /** 一句完整的中文，例如「有 2 条领域说明还没有和任何条目关联：DN-003、DN-004。」 */
+  summary: string;
+}
+
+/** 任务定义快照里每个集合的条目引用字段名；读不出来时为空。 */
+function itemRefFields(db: DatabaseSync, taskId: string): Map<string, string[]> {
+  const row = db.prepare("SELECT definition_text FROM task WHERE task_id = ?").get(taskId) as { definition_text: string } | undefined;
+  const out = new Map<string, string[]>();
+  try {
+    const raw = JSON.parse(row?.definition_text ?? "{}");
+    for (const one of raw?.交付物?.条目集合 ?? []) {
+      out.set(String(one.名称), (one.字段 ?? []).filter((f: any) => f?.类型 === "条目引用").map((f: any) => String(f.名)));
+    }
+  } catch {
+    // 快照读不出来：只按来源表算。
+  }
+  return out;
+}
+
+/**
+ * 还没有和任何条目关联的领域说明。一条领域说明只要有下面任一种联系就算关联了，只看还没删除的条目、只看它们的当前修订：
+ * （a）别的条目的来源里有种类为「领域说明」、出处是它的；（b）别的条目的条目引用字段（例如问题的「关联条目」）写了它；
+ * （c）它自己的条目引用字段指向了一个还没删除的别的条目。联系是哪一边写的只是哪一边有字段的产物，所以三种都算。
+ * 任务没有「领域说明」集合、或者这个集合没有条目时返回空列表。
+ */
+export function unlinkedDomainNotes(db: DatabaseSync, taskId: string): string[] {
+  const notes = currentItems(db, taskId, SOURCE_DOMAIN_NOTE);
+  if (notes.length === 0) return [];
+  const refFields = itemRefFields(db, taskId);
+  const alive = db.prepare(
+    "SELECT i.item_id, i.collection, v.revision_no, v.fields FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
+      "WHERE i.task_id = ? AND i.deleted_in_revision IS NULL AND v.revision_no = (SELECT MAX(revision_no) FROM item_version w " +
+      "WHERE w.task_id = i.task_id AND w.item_id = i.item_id)",
+  ).all(taskId) as { item_id: string; collection: string; revision_no: number; fields: string }[];
+  const aliveIds = new Set(alive.map((row) => row.item_id));
+  const refsOf = (row: { collection: string; fields: string }): string[] => {
+    const fields = load(row.fields) as Record<string, unknown>;
+    return (refFields.get(row.collection) ?? []).flatMap((name) => (Array.isArray(fields[name]) ? fields[name] as unknown[] : [])).map(String);
+  };
+  const cited = db.prepare(
+    "SELECT DISTINCT s.item_id, s.locator FROM item_source s WHERE s.task_id = ? AND s.kind = ? AND s.revision_no = (SELECT MAX(revision_no) " +
+      "FROM item_version w WHERE w.task_id = s.task_id AND w.item_id = s.item_id)",
+  ).all(taskId, SOURCE_DOMAIN_NOTE) as { item_id: string; locator: string }[];
+  const linked = new Set<string>();
+  for (const one of cited) if (aliveIds.has(one.item_id) && one.item_id !== one.locator) linked.add(one.locator);
+  for (const row of alive) {
+    const refs = refsOf(row).filter((id) => id !== row.item_id);
+    for (const id of refs) linked.add(id);
+    if (row.collection === SOURCE_DOMAIN_NOTE && refs.some((id) => aliveIds.has(id))) linked.add(row.item_id);
+  }
+  return notes.map((row) => row.item_id).filter((id) => !linked.has(id));
+}
+
+/** 完成条件面板另列的提示。完成条件里有「领域说明」集合时才算未关联的领域说明。 */
+export function completionHints(db: DatabaseSync, taskId: string, completion: Record<string, string[]>): CompletionHint[] {
+  if (!(SOURCE_DOMAIN_NOTE in completion)) return [];
+  const items = unlinkedDomainNotes(db, taskId);
+  if (items.length === 0) return [];
+  return [{
+    kind: "unlinked_domain_notes",
+    collection: SOURCE_DOMAIN_NOTE,
+    items,
+    summary: `有 ${items.length} 条领域说明还没有和任何条目关联：${idsPhrase(items)}。`,
+  }];
 }

@@ -274,7 +274,7 @@ function assembleUser(want: RequestedItem, collection: string, fields: Record<st
     ...decls.map((d) => `- ${d.名}：\n${valueLines(fields[d.名])}`),
     "",
     "【来源】",
-    ...([...byPosition.values()].map((s, i) => `${i + 1}. ${s.kind}${s.kind === "文档原文" ? `（${s.locator}）` : ""}：「${s.excerpt}」` +
+    ...([...byPosition.values()].map((s, i) => `${i + 1}. ${s.kind}${s.kind === "文档原文" || s.kind === "领域说明" ? `（${s.locator}）` : ""}：「${s.excerpt}」` +
       `，支持${s.supports.length ? s.supports.join("、") : "整个条目"}`)),
     ...(byPosition.size ? [] : ["（这份内容没有来源）"]),
     "",

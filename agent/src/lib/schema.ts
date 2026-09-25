@@ -57,13 +57,16 @@ export const TASK_DONE = "已完成";
 export const TASK_ABANDONED = "已放弃";
 
 /**
- * 来源的四种种类。前三种由执行者在「保存修订」里填；第四种「用户直接修改」只由系统写：用户在界面上直接改了
- * 某个字段时，扩展命令给改到的字段写一条这种来源，出处是那次操作的编号。
+ * 来源的五种种类。「文档原文」「用户的话」「执行者补充」「领域说明」由执行者在「保存修订」里填；
+ * 「用户直接修改」只由系统写：用户在界面上直接改了某个字段时，扩展命令给改到的字段写一条这种来源，出处是那次操作的编号。
+ * 「领域说明」指向这个任务「领域说明」集合里的一个条目：出处写它的条目编号（例如 DN-002），摘录写引用的那句；
+ * 种类名与集合名相同，保存修订核对出处是那个集合里还在的条目。
  */
 export const SOURCE_USER_EDIT = "用户直接修改";
-export const SOURCE_KINDS = ["文档原文", "用户的话", "执行者补充", SOURCE_USER_EDIT] as const;
-/** 执行者可以填的三种。 */
-export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", "执行者补充"] as const;
+export const SOURCE_DOMAIN_NOTE = "领域说明";
+export const SOURCE_KINDS = ["文档原文", "用户的话", "执行者补充", SOURCE_DOMAIN_NOTE, SOURCE_USER_EDIT] as const;
+/** 执行者可以填的四种。 */
+export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", "执行者补充", SOURCE_DOMAIN_NOTE] as const;
 export const SOURCE_USER_WORDS = "用户的话";
 export const SOURCE_DOCUMENT = "文档原文";
 
@@ -193,8 +196,8 @@ CREATE TABLE item_source (
   revision_no  INTEGER NOT NULL,       -- 条目在哪次修订下的来源
   position     INTEGER NOT NULL,       -- 这次修订下这个条目的第几条来源，从 1 起
   support_no   INTEGER NOT NULL,       -- 这条来源支持的第几处，从 1 起；一条来源支持几处字段就展开成几行，支持整个条目时只有一行
-  kind         TEXT NOT NULL CHECK (kind IN ('文档原文', '用户的话', '执行者补充', '用户直接修改')),  -- 来源的种类；「用户直接修改」只由系统写
-  locator      TEXT NOT NULL,          -- 出处：文档原文写文件路径；用户的话写「会话编号#会话条目编号」，由工具代填；执行者补充照模型写的存；用户直接修改写操作编号
+  kind         TEXT NOT NULL CHECK (kind IN ('文档原文', '用户的话', '执行者补充', '领域说明', '用户直接修改')),  -- 来源的种类；「用户直接修改」只由系统写
+  locator      TEXT NOT NULL,          -- 出处：文档原文写文件路径；用户的话写「会话编号#会话条目编号」，由工具代填；执行者补充照模型写的存；领域说明写那条领域说明的条目编号；用户直接修改写操作编号
   excerpt      TEXT NOT NULL,          -- 摘录的原文
   field        TEXT,                   -- 这一处支持的字段名；为空表示这条来源支持整个条目
   field_index  INTEGER,                -- 列表型字段里的第几项，从 0 起；为空表示支持整个字段

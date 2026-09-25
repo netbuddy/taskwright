@@ -12,7 +12,7 @@
 import { existsSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { completionLines, confirmState, itemDetailLines, itemRevisions, lastEventLine, latestRevision, reviewState, type TaskRow } from "./board.ts";
-import { checkCompletion, currentItems, unreadItems, unreadList } from "./conditions.ts";
+import { checkCompletion, completionHints, currentItems, unreadItems, unreadList } from "./conditions.ts";
 import { REVIEW_CONDITION, findingText } from "./review.ts";
 import { activeWaiver, batchNumber, currentRulesHash, currentReviews } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
@@ -155,6 +155,9 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string): QueryOu
         ? "未读的条目：没有，每个条目用户都看过。"
         : `未读的条目 ${unread.length} 条（用户从没打开看过它们；问用户要不要完成任务之前，先告诉用户还有几条没看）：${unreadList(unread)}。`,
     );
+    // 完成条件之外的提示，不挡完成任务，例如还没有和任何条目关联的领域说明。
+    const hints = completionHints(db, task.task_id, definition.completion);
+    for (const hint of hints) lines.push(`提示（不挡完成任务）：${hint.summary}`);
     const revision = db.prepare("SELECT revision_no, event_seq FROM revision WHERE task_id = ? ORDER BY revision_no DESC LIMIT 1").get(task.task_id) as
       | { revision_no: number; event_seq: number }
       | undefined;
@@ -175,6 +178,7 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string): QueryOu
         conditions: checkCompletion(db, task.task_id, definition.completion, { workspaceDir }),
         unresolved,
         unread: unread.map((one) => ({ item_id: one.item_id, title: one.title, revision_no: one.revision_no })),
+        hints,
         last_revision_no: revision?.revision_no ?? null,
         last_event_seq: last.seq,
         dialogue,
