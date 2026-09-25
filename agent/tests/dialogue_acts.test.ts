@@ -579,6 +579,8 @@ test("唯一来源：回复的五种主行为取自 schema；平台 skill 的生
   // HTML 注释会让按 Markdown 渲染的查看器吞掉后面的内容，生成区的标记用普通文字行；第八节不再要求写在第一段。
   assert.doesNotMatch(text, /<!--/);
   assert.doesNotMatch(text, /第一段/);
+  // 一句话只写一份理解，不要在后面的消息里重复写。
+  assert.match(text, /一句话只写一份理解，写完直接调用工具，不要在后面的消息里重复写；调用保存修订之前先确认这一轮已经写过理解。/);
   // 平台 skill 里的格式说明与识别用的 schema 是同一个文件。
   assert.equal(REGISTERED_OUTPUTS[0].schema, INTENT_SCHEMA);
   assert.equal(renderDocument(text), text, "SKILL.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");

@@ -541,7 +541,7 @@ class Executor:
         """助手消息落进会话时，把执行者对这句话的理解推成这次工作的第一行步骤「理解为：……」。
 
         pi 先让扩展处理完 message_end（agent 侧此时已把理解或无效记录写进任务库），再往标准输出发这条事件，所以这里读得到。
-        只写了无效理解时这一行写「助手的理解没有按格式写，正在重写」，之后写对了用同一个键换掉；界面合成的那句话不显示。"""
+        还没有合格的理解时这一行按事件写一句（见 work_summary.understanding_lines），之后写对了用同一个键换掉；界面合成的那句话不显示。"""
         work = self.work
         user_id = work.get("last_user_id") or work.get("triggered_by")
         if not user_id:
@@ -553,7 +553,7 @@ class Executor:
         work["understanding"] = text
         key = f"{work['work_id']}-intent"
         step = {"session_id": sid, "work_id": work["work_id"], "step_key": key, "text": text,
-                "in_progress": text == work_summary.INTENT_INVALID_TEXT, "failed": False}
+                "in_progress": text in work_summary.INTENT_IN_PROGRESS_TEXTS, "failed": False}
         work["steps"] = {key: step, **{k: v for k, v in work["steps"].items() if k != key}}
         self.hub.emit("step", step)
 
