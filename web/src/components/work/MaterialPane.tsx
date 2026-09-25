@@ -92,10 +92,27 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   const segments = useMemo(() => (text == null ? [] : segment(text, cites, hit)), [text, cites, hit]);
   const citedItems = new Set(segments.flatMap((s) => s.items ?? []));
 
+  // 取消选中时收起底部的动作条：在纸面里点一下（选区为空）或在纸面与动作条之外按下鼠标，都算取消；
+  // 正在「就这段提问」而且输入框里已经写了字时不收，免得打断输入。
+  const keepAsking = useRef(false);
+  keepAsking.current = asking && question.trim() !== "";
+  const selbar = useRef<HTMLDivElement>(null);
+  const dropSelection = () => { if (!keepAsking.current) { setSelection(""); setAsking(false); } };
+  useEffect(() => {
+    if (!selection) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (target && (paper.current?.contains(target) || selbar.current?.contains(target))) return;
+      dropSelection();
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [selection]);
   const onMouseUp = () => {
     const sel = window.getSelection();
     const t = sel ? String(sel).trim() : "";
     if (t.length > 1 && sel?.anchorNode && paper.current?.contains(sel.anchorNode)) { setSelection(t); setAsking(false); }
+    else if (selection) dropSelection();
   };
   const act = (kind: "create" | "attach" | "ask") => {
     if (!path || !selection || !onSend) return;
@@ -143,7 +160,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
           )}
         </div>
         {selection && onSend && (
-          <div className="selbar" data-testid="selbar">
+          <div className="selbar" ref={selbar} data-testid="selbar">
             <span>你选中了一段原文：</span><span className="selq">「{selection}」</span>
             <button type="button" className="aibtn" disabled={disabled} onClick={() => act("create")}>据此新建条目</button>
             <button type="button" className="aibtn" disabled={disabled || !currentItem} title={currentItem ? `补到 ${currentItem}` : "先在条目区打开一个条目"} onClick={() => act("attach")}>
