@@ -13,6 +13,7 @@ STATUS = {
     "task_closed": 409,
     "no_task": 409,
     "session_busy": 409,
+    "task_occupied": 409,
     "executor_starting": 503,
     "executor_unavailable": 503,
     "busy_timeout": 503,

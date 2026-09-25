@@ -113,7 +113,7 @@ export function Conversation({
             <span className={`send${sendOff ? " off" : ""}`} role="button" aria-label="发送" title={sendTitle} onClick={send} data-testid="send">↑</span>
           </div>
         </div>
-        <input ref={fileInput} type="file" accept=".md,.txt" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); e.target.value = ""; }} />
+        <input ref={fileInput} type="file" accept=".md,.txt,.docx" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); e.target.value = ""; }} />
       </div>
     </>
   );

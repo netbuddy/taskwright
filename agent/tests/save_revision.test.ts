@@ -168,17 +168,17 @@ test("每一类核对不通过时整体不写入，原因逐条列出", () => {
   assert.deepEqual(snapshot(dir), before, "被拒绝的调用不应写入任何一行");
   assert.match(message, /什么都没有写入，因为有 11 个操作不对/);
   assert.doesNotMatch(message, /操作 1（/);
-  assert.match(message, /操作 2（新增，集合「不存在的集合」）：没有名叫「不存在的集合」的集合。可用的集合是：「用例」、「问题」/);
-  assert.match(message, /操作 3（.*）：集合「用例」没有字段「颜色」.*必填字段「步骤」没有填/);
-  assert.match(message, /操作 4（.*）：字段「步骤」是文本列表类型.*必填字段「名称」没有填或者是空的/);
-  assert.match(message, /操作 5（.*）：缺少 sources/);
-  assert.match(message, /操作 6（.*）：第 1 条来源的 kind 写的是 "传闻".*缺少 locator（出处）、excerpt（摘录的原文）/);
-  assert.match(message, /操作 7（.*）：字段「状态」是枚举类型，写的是 "搁置".*字段「关联条目」是条目引用类型，第 1 个编号 "UC-002" 指向的条目已在修订 2 删除/);
-  assert.match(message, /操作 8（修改，条目 UC-099）：这个任务里没有条目 UC-099。现有的条目是：UC-001/);
-  assert.match(message, /操作 9（修改，条目 UC-002）：这个条目已在修订 2 删除/);
-  assert.match(message, /操作 10（修改，条目 UC-001）：必填字段「步骤」改完之后是空的/);
+  assert.match(message, /操作 2（新增，集合「不存在的集合」）：没有名叫「不存在的集合」的集合。\n  怎么办：可用的集合是：「用例」、「问题」/);
+  assert.match(message, /操作 3（.*）：新增到「用例」的条目：集合「用例」没有字段「颜色」.*必填字段「步骤」没有填/);
+  assert.match(message, /操作 4（.*）：新增到「用例」的条目：字段「步骤」是文本列表类型.*必填字段「名称」没有填或者是空的/);
+  assert.match(message, /操作 5（.*）：新增到「用例」的条目：缺少 sources/);
+  assert.match(message, /操作 6（.*）：新增到「.*」的条目：第 1 条来源的 kind 写的是 "传闻".*缺少 locator（出处）、excerpt（摘录的原文）/);
+  assert.match(message, /操作 7（.*）：新增到「问题」的条目：字段「状态」是枚举类型，写的是 "搁置".*字段「关联条目」是条目引用类型，第 1 个编号 "UC-002" 指向的条目已在修订 2 删除/);
+  assert.match(message, /操作 8（修改，条目 UC-099）：这个任务里没有条目 UC-099。\n  怎么办：现有的条目是：UC-001/);
+  assert.match(message, /操作 9（修改，条目 UC-002）：助手想修改 UC-002，但它已在修订 2 删除/);
+  assert.match(message, /操作 10（修改，条目 UC-001）：UC-001：必填字段「步骤」改完之后是空的/);
   assert.match(message, /操作 11（删除，条目 UC-099）/);
-  assert.match(message, /操作 12：op 写的是 "frobnicate"/);
+  assert.match(message, /操作 12：操作 12 的种类写成了 "frobnicate"。\n  怎么办：op 只能是/);
 });
 
 test("同一次调用里对同一个条目的第二个操作被拒；改完与原来一样的修改被拒", () => {
@@ -192,7 +192,7 @@ test("同一次调用里对同一个条目的第二个操作被拒；改完与�
           { op: "delete", item: "UC-001", base_revision: 1 },
         ],
       }),
-    /操作 1 已经处理了这个条目/,
+    /同一次保存里 UC-001 出现了两次（操作 1 已经处理了它）/,
   );
   assert.throws(
     () => saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "登录" } }] }),
@@ -232,11 +232,17 @@ test("同批引用：排在前面的新增操作产生的条目可以引用，�
 
 test("同批引用：引用排在后面才新增的条目被拒，写明它是第几个操作、请排到前面；引用自己也被拒；整批不写入", () => {
   const dir = workspaceWithTask();
+  // 拒绝原因分两层：事实写它排在第几个操作之后，怎么办写请把它排到前面。
   assert.throws(
     () => saveRevision(callIn(dir), { operations: [addProblem(["UC-001"]), addUseCase("甲")] }),
-    /操作 1（新增，集合「问题」）：字段「关联条目」是条目引用类型，第 1 个编号 "UC-001" 指向的条目 UC-001 在这一批里排在第 2 个操作才新增，在这个操作之后；请把新增 UC-001 的操作排到前面/,
+    (error: any) => {
+      assert.match(error.message, /操作 1（新增，集合「问题」）：.*第 1 个编号 "UC-001" 指向的条目 UC-001 在这一批里排在第 2 个操作才新增，在这个操作之后。\n  怎么办：请把新增 UC-001 的操作排到前面。/);
+      assert.equal(error.reasons[0].guidance, "请把新增 UC-001 的操作排到前面");
+      return true;
+    },
   );
-  assert.throws(() => saveRevision(callIn(dir), { operations: [addProblem(["TBD-001"])] }), /指向的就是这个操作自己要新增的条目，不能引用自己/);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [addProblem(["TBD-001"])] }),
+    /指向的就是这个操作自己要新增的条目。\n  怎么办：一个条目不能引用自己。/);
   assert.equal(count(dir, "revision"), 0);
 });
 
@@ -343,7 +349,7 @@ test("文档原文的摘录不用空行隔开就跳句拼接、改了字或出�
     return "";
   })();
   assert.match(message, /什么都没有写入，因为有 3 个操作不对/);
-  assert.match(message, /第 1 条来源的摘录「用户可以登录。退款须在七天内处理完毕。」在 材料\.md 里找不到，摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源/);
+  assert.match(message, /第 1 条来源的摘录「用户可以登录。退款须在七天内处理完毕。」在 材料\.md 里找不到。\n  怎么办：摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源/);
   assert.match(message, /第 1 条来源的摘录「用户可以登陆。」在 材料\.md 里找不到/);
   assert.match(message, /出处 inputs\/没有这份\.md 不是任务目录里能读到的材料文件/);
   assert.deepEqual(snapshot(dir), before);
@@ -389,7 +395,7 @@ test("摘录用空行隔开的几段里有一段找不到：整批拒绝，写�
   assert.throws(
     () => saveRevision(callIn(dir), { operations: [{ ...addUseCase(), sources: [{ ...SOURCE, excerpt: "用户可以登录。\n\n退款须在五天内处理完毕。" }] }] }),
     (error: Error) => error.message.includes(
-      "第 1 条来源的第 2 段摘录「退款须在五天内处理完毕。」在 材料.md 里找不到；摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源"),
+      "第 1 条来源的第 2 段摘录「退款须在五天内处理完毕。」在 材料.md 里找不到。\n  怎么办：摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写；摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源"),
   );
   assert.deepEqual(snapshot(dir), before);
 });
@@ -438,12 +444,12 @@ test("问题条目写下后执行者只能改状态与处理结果：改事项�
       operations: [{ op: "update", item: "TBD-001", base_revision: 2, fields: { 建议的处理: "口令至少 8 位", 事项: "口令多长？", 状态: "未解决" } }],
     }),
     (error: Error) =>
-      error.message.includes("操作 1（修改，条目 TBD-001）：这次改了「建议的处理」。问题条目写下后只能改状态与处理结果；" +
-        "用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决"),
+      error.message.includes("操作 1（修改，条目 TBD-001）：助手想改 TBD-001 的「建议的处理」，但问题条目写下后只能改状态与处理结果。\n" +
+        "  怎么办：用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决"),
   );
   assert.throws(
     () => saveRevision(callIn(dir), { operations: [{ op: "update", item: "TBD-001", base_revision: 2, fields: { 关联条目: [] } }] }),
-    /这次改了「关联条目」/,
+    /助手想改 TBD-001 的「关联条目」/,
   );
   assert.deepEqual(snapshot(dir), before);
 });

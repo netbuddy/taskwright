@@ -130,7 +130,8 @@ class Executor:
 
     def _start(self, session_file: Path | None) -> None:
         self.set_state("starting")
-        pi = PiSession(self.profile, self.task_dir, self.runs_dir, LABEL)
+        # 任务目录都在本服务的 --tasks 目录下；把它作为任务根目录传给 pi，扩展写库前核对任务库在它之下。
+        pi = PiSession(self.profile, self.task_dir, self.runs_dir, LABEL, tasks_root=Path(self.task_dir).resolve().parent)
         try:
             pi.start(session_file=session_file)
             state = pi.get_state()
@@ -169,7 +170,7 @@ class Executor:
                 self._start(path)
                 return
             self._busy_check(session_id)
-            self.pi.request("switch_session", sessionPath=str(path))
+            self.pi.switch_session(path)
             self._adopt(self.pi.get_state())
             self.cursor = None
             self.set_state("idle")
@@ -632,7 +633,7 @@ class Executor:
         details = result.get("details") or {}
         if failed and tool == "save_revision":
             # 保存修订被拒时原因只在结果正文里，先拆出来，实时的 step 行与过程摘要同一个写法。
-            details = {**details, "reasons": work_summary.rejection_reasons(details, work_summary.result_text(result))}
+            details = {**details, "reasons": work_summary.rejection_parts(details, work_summary.result_text(result))}
         if work is not None:
             for t in work["turn_tools"]:
                 if t["id"] == event.get("toolCallId"):

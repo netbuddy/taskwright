@@ -13,7 +13,8 @@
  * 因为设计里把它列为这两张表的主要列。
  */
 
-import { existsSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, realpathSync, statSync, unlinkSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath, inImmediateTransaction } from "./db.ts";
 import { ensureDialogueSchema } from "./dialogue_schema.ts";
@@ -349,8 +350,40 @@ export const REVIEW_ADDED_COLUMNS = [["batch_id", "TEXT"], ["rules_hash", "TEXT"
 export const TASK_TABLE_COLUMNS = ["task_name", "domain_tag"] as const;
 
 /**
+ * 本服务的任务根目录：后端启动 pi 时经这个环境变量传进来（--tasks 那个目录）。写库之前核对任务库在它之下，
+ * 免得复制来的会话把写入打回别处的库。
+ */
+export const TASKS_ROOT_ENV = "TASKWRIGHT_TASKS_ROOT";
+
+/** 任务库不在本服务的任务根目录之下时抛的错。 */
+export class OutsideTasksRoot extends Error {}
+
+let warnedNoRoot = false;
+
+/**
+ * 写库前核对：任务库的真实路径（解开符号链接）必须在任务根目录之下，否则抛 OutsideTasksRoot，什么都不写。
+ * 没有传任务根目录时（例如直接跑命令行入口、单元测试）不核对，只在标准错误上记一条警告（每个进程一次）。
+ */
+export function checkUnderTasksRoot(workspaceDir: string): void {
+  const root = process.env[TASKS_ROOT_ENV];
+  if (!root) {
+    if (!warnedNoRoot) {
+      warnedNoRoot = true;
+      process.stderr.write(`提醒：没有设 ${TASKS_ROOT_ENV}，写任务库之前不核对它是不是在本服务的任务目录之下。\n`);
+    }
+    return;
+  }
+  const real = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
+  const rootReal = real(root);
+  const dirReal = real(workspaceDir);
+  if (!dirReal.startsWith(rootReal + sep)) {
+    throw new OutsideTasksRoot(`任务库 ${databasePath(dirReal)} 不在本服务的任务目录 ${rootReal} 之下，拒绝写入。`);
+  }
+}
+
+/**
  * 打开任务目录的库并确保它已建好，然后把 body 放进同一个立即事务里执行。这是每个写入工具的执行函数
- * 第一步要调用的函数。
+ * 第一步要调用的函数，也是扩展里唯一以可写方式打开任务库的地方：打开之前先经 checkUnderTasksRoot 核对路径。
  *
  * createIfMissing 为假时，库文件不存在就直接抛 NoDatabaseYet，不建文件（例如「保存修订」：
  * 没有库就不可能有进行中的任务，不该为了拒绝而留下一个空库）。
@@ -362,6 +395,7 @@ export function withTaskDatabase<T>(
   options: { createIfMissing: boolean },
   body: (db: DatabaseSync) => T,
 ): T {
+  checkUnderTasksRoot(workspaceDir);
   const path = databasePath(workspaceDir);
   const existed = existsSync(path) && statSync(path).size > 0;
   if (!existed && !options.createIfMissing) {

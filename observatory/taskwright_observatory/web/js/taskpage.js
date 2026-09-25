@@ -22,6 +22,23 @@ const secs = (s) => s == null ? "未知" : (s >= 60 ? Math.floor(s / 60) + " 分
 const 库 = [];
 const 登记 = (o) => (库.push(o), 库.length - 1);
 
+/* ───── 机器细节里的长内容：只显示前几行，全文在抽屉里看 ───── */
+// 工具结果、工具参数、模型应答的正文、工具里模型调用的系统提示、逐条消息与原始输出，一律按这一个行数折叠。
+const 折叠行数 = 12;
+const 全文库 = [];
+// 按换行数行；单行过长在格子里自动换行，不算多行。不足或等于折叠行数的照常全显示。
+function 折叠HTML(文, 抽屉标题, 类 = "") {
+  const 全文 = String(文 ?? "").replace(/\n+$/, "");
+  const 行 = 全文.split("\n");
+  if (行.length <= 折叠行数) return `<div class="longtext ${类}">${esc(全文)}</div>`;
+  const i = 全文库.push({标题: 抽屉标题, 文: 全文, 行数: 行.length}) - 1;
+  return `<div class="longtext ${类}">${esc(行.slice(0, 折叠行数).join("\n"))}</div>
+    <button type="button" class="seefull" data-full="${i}">共 ${行.length} 行 · 看全文</button>`;
+}
+const 位置 = (t) => `第 ${t.运行序号} 次运行 · 第 ${t.序数} 轮`;
+// 抽屉标题里的工具名，后面直接接「的」「里的」：有中文名写成「工具「读取」（read）」，没有就写成「工具 read 」。
+const 工具名 = (c) => c.中文名 && c.中文名 !== c.工具 ? `工具「${c.中文名}」（${c.工具}）` : `工具 ${c.工具} `;
+
 /* ───── 比对结果的画法：分段由后端算好，这里只上色 ───── */
 // 一条来源：种类、出处、支持哪几处、摘录。「用户的话」的出处是「会话编号#会话条目编号」，
 // 链到那条会话并定位到那条用户消息（会话页地址的第三段是 msg-<会话条目编号>）。
@@ -157,7 +174,7 @@ function renderWords() {
     <p>一次运行（agent run）是 pi 从收到用户的一句话到安顿下来的一整段处理，从 agent_start 开始，到 agent_settled 结束。
     「轮」是这次运行里 pi 请求模型的次数；「工具调用」是模型在这些轮里提出、由 pi 执行的调用次数；「保存修订」是其中「保存修订」（save_revision）被工具接受的次数，每一次都让交付物形成一次新的修订；「被拒」是被工具拒绝的调用次数；「耗时」是这次运行从开始到结束的真实时间，含模型在想、工具在跑与等待。
     除序号与用户说的话以外，这几列都可以在「显示哪些列」里隐藏，选择只记在这台电脑的浏览器里。</p>
-    <p>点开一行看这次运行的各轮：每轮一块，写明助手读了什么、写了什么、说了什么；再点「看这一轮的机器细节」看那一轮的模型交互与工具执行。上方三档开关一次把所有行收起、展开，或者连机器细节一起展开。</p>
+    <p>点开一行看这次运行的各轮：每轮一块，写明助手读了什么、写了什么、说了什么；再点「看这一轮的机器细节」看那一轮的模型交互与工具执行。机器细节里的长内容（工具的参数与结果、模型应答的正文、工具里模型调用的系统提示、逐条消息与原始输出）默认只显示前 ${折叠行数} 行，末尾写着「共 N 行 · 看全文」，点它在右侧抽屉里看全文；每一次模型请求与每一次工具调用的标题行右侧直接有到 Langfuse 的链接。上方三档开关一次把所有行收起、展开，或者连机器细节一起展开。</p>
 
     <h4>观测台自己的呈现用语，pi 里没有这几个说法</h4>
     <dl>
@@ -364,6 +381,27 @@ function 改动块(b, key, 调用编号) {
 }
 
 /* ───── 机器层：一轮的完整画法 ───── */
+// 每一块（模型请求、工具调用）标题行右侧的 Langfuse 链接：有直达这一段的第二级链接就给它；只有第一级就给这次运行的运行记录，
+// 做不出第二级的原因在这一轮开头说一次（见「只到第一级」）；都没有就不画。
+function 标题链接(链接, 第一级) {
+  if (链接) return `<a class="lfhead" href="${esc(链接)}" target="_blank" rel="noopener" title="直达 Langfuse 里的这一段">在 Langfuse 里打开</a>`;
+  if (第一级) return `<a class="lfhead" href="${esc(第一级)}" target="_blank" rel="noopener"
+    title="只到第一级：直达这次运行的运行记录，到了那里再找这一段">在 Langfuse 里打开这一次运行的运行记录</a>`;
+  return "";
+}
+function 只到第一级(t) {
+  const 块 = [...t.请求, ...t.调用];
+  if (!t.运行记录链接 || !块.some((x) => !x.链接)) return "";
+  const lf = cur.Langfuse || {};
+  const why = (lf.状态 || {}).有没有配密钥 === false ? (lf.状态 || {}).说明 : (lf.第二级链接的说明 || (lf.状态 || {}).说明 || "");
+  return `<p class="lfwhy">这一轮有的块标题行上的 Langfuse 链接只给到第一级：直达这次运行的那条运行记录，到了那里再找那一段。直达那一段的第二级链接做不出来，原因是：${esc(why)}</p>`;
+}
+// 工具里模型调用的一条消息：内容可能是一段文字，也可能是若干段内容块。
+function 消息正文(c) {
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) return c.map((x) => typeof x === "string" ? x : x && x.type === "text" ? x.text : JSON.stringify(x, null, 2)).join("\n");
+  return JSON.stringify(c, null, 2) ?? "";
+}
 function 模型交互(q, t, qi, key) {
   const two = q.带的消息 || {};
   const 消息数 = two["观测台数出来的"] != null ? two["观测台数出来的"] : "若干";
@@ -394,10 +432,12 @@ function 模型交互(q, t, qi, key) {
       ["响应编号", `<code>${esc(q.响应编号)}</code>`],
       ["用时", `${秒(q.耗时秒)}。${esc(q.耗时是怎么算的 || "")}`],
     ], 链接: q.链接 || "", 第一级: t.运行记录链接 || ""});
+  const 应答标题 = `${位置(t)} · ${t.请求.length > 1 ? `第 ${qi + 1} 次模型请求的应答正文` : "模型应答的正文"}`;
+  const 正文折叠 = (t.正文 || "").trim() ? 折叠HTML(t.正文, 应答标题) : `<div>模型这一次没有说话。</div>`;
   return `<div class="blk" id="blk-${esc(key)}-req${qi}" data-k="${请求键}"><div class="k">请求</div>
-      <div>pi 把当前的消息列表发给 ${esc(q.模型)}，这次带了 ${消息数} 条消息。${q.是不是自动重试 ? "这是一次自动重试。" : ""}${承接}</div></div>
+      <div><div class="bhead"><span>pi 把当前的消息列表发给 ${esc(q.模型)}，这次带了 ${消息数} 条消息。${q.是不是自动重试 ? "这是一次自动重试。" : ""}</span>${标题链接(q.链接, t.运行记录链接)}</div>${承接}</div></div>
     <div class="join">模型回来了下面这条应答</div>
-    <div class="blk${q.停止原因 === "error" ? " bad" : ""}" data-k="${应答键}"><div class="k">应答</div><div><div style="white-space:pre-wrap">${正文}</div>
+    <div class="blk${q.停止原因 === "error" ? " bad" : ""}" data-k="${应答键}"><div class="k">应答</div><div>${正文折叠}
       <div style="margin-top:4px">${t.调用.length ? `模型提出了 ${t.调用.length} 个工具调用。` : "模型这一次没有提出工具调用。"}</div>
       <span class="sub">停止原因 ${esc(q.停止原因)}；词元合计 ${q.词元.totalTokens}；用了 ${秒(q.耗时秒)}。${q.出错说明 ? "出错的说明是：" + esc(q.出错说明) : ""}</span></div></div>`;
 }
@@ -441,8 +481,12 @@ function 工具执行(c, t, key, ci) {
     : 上面画过 ? (t.调用.length === 1 ? `<div>${跳}</div>` : `<div class="none">这次调用带来的改动显示在这一轮的对话层里。${跳}</div>`)
       : `<div class="none">这次调用没有改动交付物，也没有留下其他记录。</div>`;
   const 模型调用块 = (c.模型调用 || []).map((m, mi) => {
-    let 提示 = m.提示;
-    try { const p = JSON.parse(m.提示); 提示 = `【系统提示】\n${p.systemPrompt}\n\n【用户消息】\n${(p.messages || []).map((x) => x.content).join("\n")}`; } catch (e) { /* 原样显示 */ }
+    let 提示 = m.提示, 拆开 = null;
+    try {
+      const p = JSON.parse(m.提示);
+      拆开 = {系统提示: String(p.systemPrompt ?? ""), 消息: (p.messages || []).map((x) => ({角色: x.role || "未知", 内容: 消息正文(x.content)}))};
+      提示 = `【系统提示】\n${拆开.系统提示}\n\n【用户消息】\n${拆开.消息.map((x) => x.内容).join("\n")}`;
+    } catch (e) { /* 原样显示 */ }
     const 键 = 登记({
       标题: `工具里的一次模型调用：${m.角色}`, 概念: [["业务领域的概念", m.角色]],
       这是什么: "这是工具在执行时自己发起的一次模型调用，不经过 pi 的运行循环，所以 Langfuse 里看不到它；提示全文与原始输出记在库里的 model_call 表。",
@@ -453,15 +497,27 @@ function 工具执行(c, t, key, ci) {
         ["输出", `<pre style="white-space:pre-wrap">${esc(m.输出 || "（没有输出）")}</pre>`]],
       链接: ""});
     const 坏判 = m.结果 === "采用" ? "" : " bad";
+    const 前缀 = `${位置(t)} · ${工具名(c)}里的第 ${mi + 1} 次模型调用（${m.角色}）`;
+    const 段 = (名, 文, 标题) => `<div class="lpart"><div class="lname">${esc(名)}</div>${折叠HTML(文, 标题, "mono")}</div>`;
+    const 各段 = (拆开
+      ? [段("系统提示", 拆开.系统提示, `${前缀}的系统提示`),
+         ...拆开.消息.map((x, xi) => 段(`第 ${xi + 1} 条消息（${x.角色}）`, x.内容, `${前缀}的第 ${xi + 1} 条消息（${x.角色}）`))]
+      : [段("提示原文", 提示, `${前缀}的提示原文`)]).join("")
+      + 段("原始输出", m.输出 || "（没有输出）", `${前缀}的原始输出`);
     return `<div class="blk${坏判}" id="blk-${esc(key)}-tool${ci}-mc${mi}" data-k="${键}"><div class="k">${esc(m.角色)}</div>
-      <div>工具里第 ${mi + 1} 次模型调用：${esc(m.结果)}　<span class="sub">${esc(m.模型)}，${m.耗时毫秒} 毫秒；点开看提示与输出全文。</span></div></div>`;
+      <div><div class="bhead"><span>工具里第 ${mi + 1} 次模型调用：${esc(m.结果)}</span>
+        <span class="dbloc" title="工具自己发起的模型调用不经过 pi 的运行循环，Langfuse 里没有它">库里 model_call 表第 ${esc(m.模型调用序号 ?? "？")} 条</span></div>
+      <span class="sub">${esc(m.模型)}，${m.耗时毫秒} 毫秒。</span>${各段}</div></div>`;
   }).join("");
   const 拒因 = c.被拒 ? `<div class="sub" style="color:var(--bad)">上面这段就是工具拒绝这次调用时给出的原话。</div>` : "";
+  const 第几个 = t.调用.length > 1 ? `（这一轮的第 ${ci + 1} 个调用）` : "";
+  const 参数文 = JSON.stringify(c.参数, null, 2) ?? "";
   return `<div class="blk${坏}" id="blk-${esc(key)}-tool${ci}" data-k="${调用键}"><div class="k">调用</div>
-      <div>${esc(c.中文名 || c.工具)}（${esc(c.工具)}）　<code>${esc(String(c.编号).slice(0, 8))}</code>
-      <span class="sub">${esc(c.参数摘要)}</span></div></div>
+      <div><div class="bhead"><span>${esc(c.中文名 || c.工具)}（${esc(c.工具)}）　<code>${esc(String(c.编号).slice(0, 8))}</code></span>${标题链接(c.链接, t.运行记录链接)}</div>
+      <span class="sub">${esc(c.参数摘要)}</span>
+      <div class="lpart"><div class="lname">参数</div>${折叠HTML(参数文, `${位置(t)} · ${工具名(c)}的参数${第几个}`, "mono")}</div></div></div>
     <div class="blk${坏}" data-k="${结果键}"><div class="k">结果</div><div>${c.被拒 ? '<span class="pill no">被拒绝</span>' : c.有没有执行结果 ? '<span class="pill ok">已接受</span>' : "归档里没有这次调用的执行结果"}
-      <div style="margin-top:5px;white-space:pre-wrap">${esc(c.结果全文)}</div>${拒因}</div></div>
+      ${(c.结果全文 || "").length ? 折叠HTML(c.结果全文, `${位置(t)} · ${工具名(c)}的结果${第几个}`, "result") : ""}${拒因}</div></div>
     ${模型调用块}
     <div class="blk${坏}" data-k="${库键}"><div class="k">变化</div><div><div class="chg-h">${变化标题(c)}</div>${变化块}</div></div>`;
 }
@@ -487,6 +543,7 @@ function 一轮机器层(t, key) {
       ${t.轮号 != null ? `<span class="mono small">pi 的轮号 turnIndex＝${t.轮号}</span>` : ""}
       <span class="tag pi">轮（turn）</span>
       <span class="r">这一轮用了 ${Number(t.耗时秒 || 0).toFixed(2)} 秒，${esc(t.时刻)} 起${行号}</span></header>
+    ${只到第一级(t)}
     <div class="msec"><div class="name"><b>模型交互</b>pi 与模型一问一答</div>
       <div>${t.请求.map((q, qi) => 模型交互(q, t, qi, key)).join("")}</div></div>
     <div class="msec"><div class="name"><b>工具执行</b>pi 执行模型提出的调用</div>
@@ -585,7 +642,7 @@ function 轮HTML(t, key) {
         ["出自哪一轮", `第 ${t.运行序号} 次运行的第 ${t.序数} 轮`]], 链接: ""});
     // 卡片只放告知与向用户要的回应：成文的话已经在上面的气泡里，标题行也不重复。
     const 成文处 = r && r.排版 ? r.排版.findIndex((l) => /^\s*成文的话：/.test(l)) : -1;
-    const 卡片行 = r && r.排版 ? (成文处 < 0 ? r.排版 : r.排版.slice(0, 成文处)).filter((l) => !/^执行者（经回复工具）/.test(l)) : [];
+    const 卡片行 = r && r.排版 ? (成文处 < 0 ? r.排版 : r.排版.slice(0, 成文处)).filter((l) => !/^(?:助手|执行者)（经回复工具）/.test(l)) : [];
     const 卡片 = r && (r.告知.length || r.主行为) && 卡片行.length
       ? `<pre class="replycard" style="white-space:pre-wrap;margin:4px 0 0">${esc(卡片行.join("\n"))}</pre>` : "";
     // 告知点名的条目：卡片下方一排条目按钮，点开是条目抽屉。旧会话里的告知是纯文字，没有点名条目。
@@ -698,7 +755,9 @@ function 运行展开HTML(r) {
         : "这次运行一轮也没有走。";
   const 改正 = r.改正线索
     ? `<p class="fixline"><button class="jump" data-jump="turn-${r.改正线索.运行序号}-${r.改正线索.轮号 + 1}">这次运行里被拒的调用，后来在第 ${r.改正线索.运行序号} 次运行的第 ${r.改正线索.轮号 + 1} 轮改对了。</button></p>` : "";
+  const 运行记录 = (r.轮.find((t) => t.运行记录链接) || {}).运行记录链接;
   return `<div class="rbody" data-body="${r.运行序号}" hidden>
+    ${运行记录 ? `<p class="lfrun"><a href="${esc(运行记录)}" target="_blank" rel="noopener">在 Langfuse 里打开这一次运行的运行记录</a></p>` : ""}
     ${r.启动说明 ? `<p class="boot">${esc(r.启动说明)}</p>` : ""}
     <div class="saylab">用户这一句话的全文（这一句话触发了这次运行）</div>
     <div class="say human p-用户" data-k="${键}"${r.条目编号 ? ` id="msg-${esc(r.条目编号)}"` : ""}>${esc(r.用户的话)}<span class="src">来源：${esc(r.消息来源 || "未知")}　会话条目 <code>${esc(r.条目编号 || "未知")}</code>　${esc(r.时刻)}${
@@ -1025,7 +1084,8 @@ function 打开条目(code, 想看的版本) {
 }
 
 /* ───── 抽屉 ───── */
-function 开抽屉(title, html) {
+function 开抽屉(title, html, 宽 = false) {
+  $("#tp-drawer").classList.toggle("wide", 宽);
   $("#tp-dbody").innerHTML = html;
   $("#tp-drawer").classList.add("on"); $("#tp-drawer").setAttribute("aria-hidden", "false");
   $("#tp-scrim").classList.add("on");
@@ -1045,6 +1105,12 @@ function 链接说明(o) {
       <small>这里只给到第一级：直达这次运行的那条运行记录，到了那里再找这一段。直达这一段的第二级链接做不出来，原因是：${esc(why)}</small>`;
   }
   return `<span style="color:var(--ink3)">这一段没有 Langfuse 链接：它是业务领域里的记录，不在 Langfuse 里；或者这一次没有给 Langfuse 的服务地址与项目标识。</span>`;
+}
+function 看全文(i) {
+  const o = 全文库[i]; if (!o) return;
+  开抽屉(o.标题, `<h3>${esc(o.标题)}</h3>
+    <p class="hint">一共 ${o.行数} 行，页面上只显示了前 ${折叠行数} 行，下面是全文。</p>
+    <pre class="fulltext">${esc(o.文)}</pre>`, true);
 }
 function 显示细节(键) {
   const o = 库[键]; if (!o) return;
@@ -1098,6 +1164,9 @@ function onClick(e) {
     f.textContent = box.classList.contains("all") ? "收起" : "全文比较长，点开看完";
     return;
   }
+  const full = e.target.closest("[data-full]");
+  if (full) { e.stopPropagation(); 看全文(Number(full.dataset.full)); return; }
+  if (e.target.closest("a.lfhead")) { e.stopPropagation(); return; }   // 让浏览器照常打开链接，不再弹出这一块的检视
   const ver = e.target.closest(".vtabs button");
   if (ver) { e.stopPropagation(); 打开条目(ver.dataset.code, +ver.dataset.ver); return; }
   const ref = e.target.closest(".ref");
@@ -1199,7 +1268,7 @@ export function renderTaskPage(view, page) {
   // 这一页自己的「名词说明」里已经讲了数据的来源，顶上那条全站提示在这两页上收起来，把第一屏让给流程。
   document.body.classList.add("tp-on");
   window.addEventListener("hashchange", () => document.body.classList.remove("tp-on"), {once: true});
-  库.length = 0;
+  库.length = 0; 全文库.length = 0;
   view.innerHTML = `<div class="tp">${SKELETON}</div>`;
   host = view.querySelector(".tp");
   renderHead(); renderWords(); renderAlerts();

@@ -23,7 +23,7 @@ test("回复：告知在前、请确认卡片列出条目与修订号、成文�
     alone,
   );
   assert.deepEqual(replyLines(reply), [
-    "执行者（经回复工具）：",
+    "助手（经回复工具）：",
     "  告知：",
     "    · 我新增了 UC-001。",
     "    · 来源都取自材料。",
@@ -135,7 +135,7 @@ test("保存修订被拒：说明什么都没有写入，拒绝原因逐行照�
   } catch (error) {
     reason = (error as Error).message;
   }
-  assert.match(reason, /条目 UC-001 现在是修订 1，你写的修订 3 不是它当前所在的修订/);
+  assert.match(reason, /UC-001 现在是修订 1，助手写的修订 3 不是它当前所在的修订/);
   const lines = saveRejectedLines(reason);
   assert.equal(lines[0], "  保存修订被拒绝，什么都没有写入。拒绝的原因是：");
   assert.deepEqual(lines.slice(1), reason.split("\n").map((line) => `    ${line}`));

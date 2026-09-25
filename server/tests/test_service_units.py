@@ -398,6 +398,8 @@ class PureUnitTest(unittest.TestCase):
         self.assertEqual(conversation.display_text("用户说：/tw-user {}"), "/tw-user {}")
         self.assertEqual(conversation.display_text("用户说：你好"), "用户说：你好", "只有斜杠改写过的才去掉前缀")
         self.assertEqual(with_attachments("看看", ["inputs/a.md", "inputs/b.md"]), "看看\n（我上传了材料：inputs/a.md、inputs/b.md）")
+        self.assertEqual(with_attachments("看看", ["inputs/a.docx"]),
+                         "看看\n（我上传了材料：inputs/a.docx；其中 Word 文件请读同名的 .txt（inputs/a.docx.txt），引用时出处写 Word 文件加段落号）")
 
     def test_任务类型与卡片标注的两种写法(self):
         from taskwright_server.service.app import card_annotation, task_types
@@ -516,13 +518,30 @@ class PureUnitTest(unittest.TestCase):
             rejected("r3", "a3", "c3", "Validation failed for tool \"save_revision\""),
         ]
         stages = conversation.messages(entries, "S", {})[1]["stages"]
-        self.assertEqual(stages[0]["text"], "保存修订被拒，助手正在照原因改：操作 1（新增，集合「功能用例」）：第 1 条来源的摘录「借书」在 inputs/甲.md 里找不到。（还有 1 条）")
-        self.assertEqual(stages[0]["reasons"], ["操作 1（新增，集合「功能用例」）：第 1 条来源的摘录「借书」在 inputs/甲.md 里找不到。",
-                                                "操作 2（修改，条目 UC-001）：这个条目已经被用户改到修订 3。\n  它现在的内容：……"])
-        self.assertEqual(stages[1]["text"], "保存修订被拒，助手正在照原因改：操作 1（新增，集合「问题」）：字段「关联条目」是条目引用类型，"
+        # 早先版本的正文（没有「怎么办」一行）：去掉「操作 N（……）：」标签，第一行当作事实。
+        self.assertEqual(stages[0]["text"], "保存修订被拒：第 1 条来源的摘录「借书」在 inputs/甲.md 里找不到。（还有 1 条）")
+        self.assertEqual(stages[0]["reasons"], ["第 1 条来源的摘录「借书」在 inputs/甲.md 里找不到。", "这个条目已经被用户改到修订 3。"])
+        self.assertEqual(stages[1]["text"], "保存修订被拒：字段「关联条目」是条目引用类型，"
                                             "第 1 个编号 \"UC-006\" 指向的条目在这个任务里不存在。")
         self.assertEqual(len(stages[1]["reasons"]), 1)
         self.assertEqual(stages[2], {"text": "保存修订被拒，助手正在照原因改", "count": 1}, "不是保存修订自己的拒绝正文时照旧写固定的一句")
+
+    def test_过程摘要_拒绝原因分两层_摘要与展开只用事实(self):
+        from taskwright_server.service import work_summary
+        text = ("这次「保存修订」什么都没有写入，因为有 2 个操作不对：\n"
+                "- 操作 1（修改，条目 TBD-001）：助手想改 TBD-001 的「种类」，但问题条目写下后只能改状态与处理结果。\n"
+                "  怎么办：用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决。\n"
+                "- 操作 2（修改，条目 UC-001）：UC-001 已经被用户改到修订 3，助手看到的还是修订 2。\n"
+                "  怎么办：请先读最新内容再改。它在修订 3 的内容是：{\"名称\":\"借书\"}。\n"
+                "请把这些地方改正之后，把整批操作重新提交一次。")
+        parts = work_summary.rejection_parts({}, text)
+        self.assertEqual(parts[0], {"fact": "助手想改 TBD-001 的「种类」，但问题条目写下后只能改状态与处理结果。",
+                                    "guidance": "用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决。"})
+        self.assertEqual(work_summary.step_text("save_revision", {}, True, True, {"reasons": parts}, {}),
+                         "保存修订被拒：助手想改 TBD-001 的「种类」，但问题条目写下后只能改状态与处理结果。（还有 1 条）")
+        self.assertEqual(work_summary.rejection_reasons({}, text),
+                         ["助手想改 TBD-001 的「种类」，但问题条目写下后只能改状态与处理结果。", "UC-001 已经被用户改到修订 3，助手看到的还是修订 2。"])
+        self.assertTrue(all("怎么办" not in one and "关联条目里列的" not in one for one in work_summary.rejection_reasons({}, text)))
 
     def test_过程摘要_请求评审写评审了几个条目几个不合规(self):
         from taskwright_server.service import work_summary

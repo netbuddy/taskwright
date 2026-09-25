@@ -378,6 +378,39 @@ describe("框选原文与高亮联动、「让助手改这一条」", () => {
     spy.mockRestore();
   });
 
+  it("取消选中（在纸面外按下鼠标，或在纸面里点一下）时收起动作条；正在就这段提问且已写了字时不收", async () => {
+    const spy = vi.spyOn(api, "materialContent").mockResolvedValue({ path: "inputs/a.md", text: "第一句话。买家七天内可以退货。" });
+    const materials = [{ path: "inputs/a.md", bytes: 1, modified_at: "" }];
+    render(<Wrap><MaterialPane taskId="TASK-001" materials={materials} items={[]} onSend={vi.fn()} /></Wrap>);
+    const paper = await screen.findByTestId("paper");
+    const selected = { toString: () => "第一句话", anchorNode: paper.firstChild, removeAllRanges: () => {} } as unknown as Selection;
+    const empty = { toString: () => "", anchorNode: null, removeAllRanges: () => {} } as unknown as Selection;
+    const sel = vi.spyOn(window, "getSelection").mockReturnValue(selected);
+    fireEvent.mouseUp(paper);
+    expect(await screen.findByTestId("selbar")).toBeInTheDocument();
+    // 在动作条里按下鼠标不收
+    fireEvent.mouseDown(screen.getByText("据此新建条目"));
+    expect(screen.getByTestId("selbar")).toBeInTheDocument();
+    // 在纸面外按下鼠标：收起
+    fireEvent.mouseDown(document.body);
+    await waitFor(() => expect(screen.queryByTestId("selbar")).toBeNull());
+    // 再选中，然后在纸面里点一下（选区为空）：收起
+    fireEvent.mouseUp(paper);
+    expect(await screen.findByTestId("selbar")).toBeInTheDocument();
+    sel.mockReturnValue(empty);
+    fireEvent.mouseUp(paper);
+    await waitFor(() => expect(screen.queryByTestId("selbar")).toBeNull());
+    // 正在提问、输入框里有字：在纸面外按下鼠标也不收
+    sel.mockReturnValue(selected);
+    fireEvent.mouseUp(paper);
+    fireEvent.click(await screen.findByText("就这段提问"));
+    fireEvent.change(screen.getByTestId("selection-question"), { target: { value: "七天从哪天算？" } });
+    fireEvent.mouseDown(document.body);
+    expect(screen.getByTestId("selbar")).toBeInTheDocument();
+    sel.mockRestore();
+    spy.mockRestore();
+  });
+
   it("摘录把不相邻的几句用空行拼在一起时逐段高亮并滚到第一段；某段漏了字时退到前 12 个字；被引用的底线用同一套找法", async () => {
     const text = "第一段：买家在收货后七天内可以申请退货，超过七天不受理。\n\n中间一段无关的话。\n\n第三段：卖家在两个工作日内审核退货申请。";
     const spy = vi.spyOn(api, "materialContent").mockResolvedValue({ path: "inputs/a.md", text });

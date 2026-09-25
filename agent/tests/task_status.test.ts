@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { ACTOR_USER } from "../src/lib/db.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { listMaterials, taskStatusMessage } from "../src/lib/task_status.ts";
+import { listMaterials, materialsSentence, taskStatusMessage } from "../src/lib/task_status.ts";
 import { sessionFacts } from "../src/hooks/task_status.ts";
 import { DEFINITION_PATH, MATERIAL_TEXT, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
 
@@ -112,4 +112,17 @@ test("续接：交付物没有变化但有上次之后新放进来的材料时�
   );
   assert.deepEqual(message.details.new_materials, ["inputs/新材料.md"]);
   assert.deepEqual(listMaterials(dir, "inputs/").files.map((f) => f.path), ["inputs/新材料.md", "inputs/旧材料.md"]);
+});
+
+test("材料清单里有 Word 文件与它的文本投影时，另加一句：读投影，出处写 Word 文件加段落号", () => {
+  const files = [
+    { path: "inputs/需求.docx", bytes: 2048, modifiedAt: 0 },
+    { path: "inputs/需求.docx.txt", bytes: 100, modifiedAt: 0 },
+    { path: "inputs/补充.md", bytes: 3, modifiedAt: 0 },
+  ];
+  assert.equal(materialsSentence({ dir: "inputs/", files }),
+    "材料目录 inputs/ 里有 3 个文件：inputs/需求.docx（2.0 KB）、inputs/需求.docx.txt（100 字节）、inputs/补充.md（3 字节）。" +
+    "其中 inputs/需求.docx 是 Word 文件，请读由它生成的同名 .txt（每行一段，行首是段落号）；引用它作来源时，出处写 Word 文件加段落号，例如 inputs/需求.docx#p12。");
+  // 没有投影的 .docx 不加这一句
+  assert.doesNotMatch(materialsSentence({ dir: "inputs/", files: files.slice(0, 1) }), /Word 文件/);
 });

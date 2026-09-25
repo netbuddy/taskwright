@@ -498,7 +498,7 @@ test("规范化修订：用户的话带 normalized_value，存进来源表，摘
   assert.throws(() => saveRevision({ ...callIn(dir), userMessages }, {
     operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "注销" },
       sources: [{ kind: "用户的话", excerpt: "注销登录吧呀", normalized_value: "注销", supports: [{ field: "名称" }] }] }],
-  }), /这句话在对话里没有找到/);
+  }), /在对话里没有找到/);
 });
 
 // ───────────── 三个派生事实 ─────────────

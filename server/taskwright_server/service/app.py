@@ -20,14 +20,17 @@ from urllib.parse import parse_qs, unquote, urlparse
 from taskwright_server import create_task as create_task_module
 from taskwright_server import new_workspace
 from taskwright_observatory import taskdb
-from taskwright_server.service import clock, conversation, library, render, work_summary
+from taskwright_server.service import clock, conversation, docx_text, library, occupancy, render, work_summary
 from taskwright_server.service.errors import ApiError
 from taskwright_server.service.executor import Executor
 from taskwright_server.service.hub import Hub
 
 SLASH_PREFIX = "用户说："
 MAX_UPLOAD = 5 * 1024 * 1024
-UPLOAD_TYPES = (".md", ".txt")
+UPLOAD_TYPES = (".md", ".txt", ".docx")
+# 材料原样取回（GET …/materials/raw）时按扩展名给的内容类型；不在表里的给 application/octet-stream。
+RAW_TYPES = {".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8",
+             ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 
 
 def rewrite_slash(text: str) -> str:
@@ -36,7 +39,12 @@ def rewrite_slash(text: str) -> str:
 
 
 def with_attachments(text: str, paths: list[str]) -> str:
-    return f"{text}\n（我上传了材料：{'、'.join(paths)}）" if paths else text
+    """用户附了材料时在话后面补一句路径；Word 材料另说一句读哪份文本、出处怎么写。"""
+    if not paths:
+        return text
+    words = [p for p in paths if p.lower().endswith(".docx")]
+    note = f"其中 Word 文件请读同名的 .txt（{'、'.join(p + '.txt' for p in words)}），引用时出处写 Word 文件加段落号" if words else ""
+    return f"{text}\n（我上传了材料：{'、'.join(paths)}{'；' + note if note else ''}）"
 
 
 def card_annotation(body: dict, entries: list[dict] | None = None) -> dict:
@@ -121,11 +129,17 @@ class Task:
 
 
 class Service:
-    def __init__(self, tasks_dir: Path, runs_dir: Path, profile: dict):
+    """任务服务。它接手 --tasks 目录下的每个任务时写一份占用标记（service.lock，见 occupancy.py），退出时删掉；
+    正被别的活着的服务占用的任务不接手：列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。"""
+
+    def __init__(self, tasks_dir: Path, runs_dir: Path, profile: dict, port: int | None = None):
         self.tasks_dir = Path(tasks_dir)
         self.runs_dir = Path(runs_dir)
         self.profile = profile
+        self.port = port
         self.tasks: dict[str, Task] = {}
+        #: 正被别的服务占用、本服务没有接手的任务：任务编号 → {"lock": 那份占用标记, "dir": 任务目录}。
+        self.occupied: dict[str, dict] = {}
         self.skipped: set[str] = set()
         self.lock = threading.Lock()
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
@@ -150,12 +164,24 @@ class Service:
                 if conn is not None:
                     conn.close()
             if row and row[0] not in self.tasks:
+                taken = occupancy.claim(d, self.port)
+                if taken is not None:
+                    if row[0] not in self.occupied:
+                        print(f"任务 {row[0]}（目录 {d.name}）正被端口 {taken.get('port')} 的服务（主机 {taken.get('host')}，进程 {taken.get('pid')}）占用，"
+                              "本服务不接手它。", flush=True)
+                    self.occupied[row[0]] = {"lock": taken, "dir": d}
+                    continue
+                self.occupied.pop(row[0], None)
                 self.tasks[row[0]] = Task(row[0], d, self)
 
     def task(self, task_id: str) -> Task:
         with self.lock:
             if task_id not in self.tasks:
                 self.scan()
+            if task_id in self.occupied:
+                lock = self.occupied[task_id]["lock"]
+                raise ApiError("task_occupied", occupancy.occupied_text(lock),
+                               {"port": lock.get("port"), "pid": lock.get("pid"), "host": lock.get("host")})
             if task_id not in self.tasks:
                 raise ApiError("not_found", f"没有任务 {task_id}。")
             return self.tasks[task_id]
@@ -166,6 +192,7 @@ class Service:
             t.hub.close()
             if t.executor:
                 t.executor.close()
+            occupancy.release(t.dir)
 
     # ───────────── 任务与会话 ─────────────
 
@@ -174,6 +201,7 @@ class Service:
             self.scan()
             tasks = list(self.tasks.values())
             skipped = set(self.skipped)
+            occupied = dict(self.occupied)
         out = []
         for t in tasks:
             seq, view = library.task_snapshot(t.dir)
@@ -188,6 +216,24 @@ class Service:
                         "completion_total": len(comp["conditions"]) if comp else None,
                         "completion_unmet": comp["unmet_count"] if comp else None,
                         "last_active_at": max(a for a in actives if a), "session_count": len(sessions), "supported": True})
+        # 正被别的服务占用的任务：照样列出来，写明被哪个服务占用，打不开。
+        for task_id, info in sorted(occupied.items()):
+            lock = info["lock"]
+            name = task_id
+            conn = library.open_ro(info["dir"])
+            try:
+                got = conn.execute("SELECT task_name FROM task LIMIT 1").fetchone() if conn else None
+                name = (got[0] if got and got[0] else task_id)
+            except Exception:
+                pass
+            finally:
+                if conn is not None:
+                    conn.close()
+            out.append({"task_id": task_id, "task_name": name, "task_type": None, "domain_tag": None, "status": "占用中",
+                        "item_count": None, "completion_met": None, "completion_total": None, "completion_unmet": None,
+                        "last_active_at": None, "session_count": None, "supported": False,
+                        "occupied": {"port": lock.get("port"), "pid": lock.get("pid"), "host": lock.get("host")},
+                        "note": occupancy.occupied_text(lock)})
         # 修订统一之前建的任务：本版本打不开，照样列出来并标明不支持，免得用户以为任务丢了。
         for name in sorted(skipped):
             folder = self.tasks_dir / name
@@ -299,7 +345,15 @@ class Service:
         if not filename or "/" in filename or "\\" in filename or filename in (".", ".."):
             raise ApiError("bad_request", "文件名里不能带路径分隔符。")
         if not filename.lower().endswith(UPLOAD_TYPES):
-            raise ApiError("unsupported_type", "只接受 .md 与 .txt 两种文本文件。")
+            raise ApiError("unsupported_type", "只接受 .md、.txt 与 .docx（Word）三种文件。")
+        if docx_text.is_projection(filename):
+            raise ApiError("bad_request", "以 .docx.txt 结尾的文件名留给由 Word 材料生成的文本用，请改个名字再上传。")
+        is_docx = filename.lower().endswith(".docx")
+        if is_docx:
+            try:
+                docx_text.projection_text(data, filename)
+            except ValueError as e:
+                raise ApiError("unsupported_type", f"{e}，请用 Word 另存为 .docx 后再上传。")
         if len(data) > MAX_UPLOAD:
             raise ApiError("too_large", "单个文件不能超过 5 MB。")
         folder_rel = t.definition().get("材料目录") or taskdb.DEFAULT_MATERIALS_DIR
@@ -312,6 +366,9 @@ class Service:
             target = folder / f"{stem}-{n}.{ext}"
         target.write_bytes(data)
         path = f"{folder_rel}{target.name}"
+        if is_docx:
+            # Word 材料另生成一份文本投影，执行者读它，保存修订时核对摘录也对着它；它不单独发 material_added。
+            docx_text.write_projection(target, path)
         # 材料清单只在整份数据里读一次；上传之后推一条过程类事件，工作视图与任务页据此更新清单、显示正文。
         # 材料属于任务，session_id 只说明是从哪条会话上传的（可空），订阅了别的会话的页面也收得到。
         t.hub.emit("material_added", {"session_id": session, "at": clock.now(), "path": path,
@@ -385,6 +442,7 @@ ROUTES = [
     ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/items/(?P<item>[^/]+)/revisions", "revisions"),
     ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/revisions", "revision_log"),
     ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/materials/content", "material"),
+    ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/materials/raw", "material_raw"),
     ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/materials", "upload"),
     ("GET", r"/api/v1/tasks/(?P<task>[^/]+)/conversation", "conversation"),
     ("POST", r"/api/v1/tasks/(?P<task>[^/]+)/messages", "messages"),
@@ -491,7 +549,26 @@ def make_handler(service: Service):
             target = service.material_path(t, rel)
             if not target.is_file():
                 raise ApiError("not_found", f"没有材料 {rel}。")
-            self.send_json(200, {"ok": True, "path": rel, "text": target.read_text(encoding="utf-8", errors="replace")})
+            if target.suffix.lower() == ".docx":
+                projection = docx_text.projection_path(target)
+                text = projection.read_text(encoding="utf-8") if projection.is_file() else docx_text.projection_text(target.read_bytes(), rel)
+            else:
+                text = target.read_text(encoding="utf-8", errors="replace")
+            self.send_json(200, {"ok": True, "path": rel, "text": text})
+
+        def material_raw(self, task):
+            """材料文件的原始字节，内容类型按扩展名给；材料区用它按原版式显示 Word 材料。路径限制与 content 端点相同。"""
+            t = service.task(task)
+            rel = self.query.get("path") or ""
+            target = service.material_path(t, rel)
+            if not target.is_file():
+                raise ApiError("not_found", f"没有材料 {rel}。")
+            raw = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", RAW_TYPES.get(target.suffix.lower(), "application/octet-stream"))
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
 
         def upload(self, task):
             t = service.task(task)

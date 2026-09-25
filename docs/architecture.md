@@ -53,6 +53,18 @@
 | `judgement_item` | which items, each at one revision, one mark accepted (read or confirmed) or rejected (withdrawn). |
 | `event` | one thing that happened, with the pi session id, tool-call id and actor (executor or user). Every write adds exactly one. |
 | `model_call` | one model call made by a judge: prompt, raw output, model, duration, usage. A process record, not a domain fact. |
+| `dialogue_act` | one dialogue act of the user or the assistant in a session (for example request, correct, question; the assistant's inform, ask, confirm), numbered rN-M where rN is which user message of the session it belongs to. |
+
+**How the assistant's understanding of each user message is recorded.** For every user message the assistant writes an understanding: a JSON object in its text output, in the format of `agent/prompts/schemas/user_intent.schema.json` (the platform skill's description of the format is generated from the same file). The extension scans every text part of every assistant message of the turn, takes out the JSON fragments (fenced or bare) and matches each against the registered schemas (`agent/src/lib/registered_outputs.ts`; today only the understanding is registered). Four events record the outcome:
+
+| Event | Written when | A failure? |
+|---|---|---|
+| `USER_INTENT_RECORDED` | a fragment matches the schema and passes the fact check (the act it answers exists and is still unanswered; the items it names exist); its acts go into `dialogue_act` | no |
+| `USER_INTENT_INVALID` | a fragment matches the schema but fails the fact check | no; the assistant rewrites it |
+| `USER_INTENT_MISSING` | the turn has ended (pi's `agent_settled`: after automatic retries and queued continuations) and the user message still has no valid understanding | yes, the only failure |
+| `STRUCTURED_OUTPUT_UNMATCHED` | a message holds fragments that match no registered schema or cannot be parsed (for example tool arguments leaked into the text); lists each fragment with its errors | no, a diagnostic |
+
+Save revision, complete task and reply refuse to run while the turn has no valid understanding. The sentence the interface sends for a card click or a "viewed" or "leave it for now" action is recorded from the action itself; the assistant writes no understanding for it.
 
 The database uses SQLite in WAL mode with a 5-second busy timeout: reads never block writes, and writes queue.
 

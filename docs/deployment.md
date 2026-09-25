@@ -115,6 +115,7 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 | `TASKWRIGHT_WEB_PORT` | web dev server | Port (default 5680). |
 | `TASKWRIGHT_API_TARGET` | web dev server | Where `/api` is proxied (default: the mock server on 5681). |
 | `TASKWRIGHT_TASKS_DIR`, `TASKWRIGHT_API_PORT` | `scripts/dev.sh` | Task directory root and API port. |
+| `TASKWRIGHT_TASKS_ROOT` | agent | Set by the service when it starts pi: the task root. Writes to a task database outside it are refused. Not set when the agent code runs on its own (command-line tools, tests); then it is not checked. |
 | `TASKWRIGHT_LANGFUSE_PLUGIN` | server | Location of the optional Langfuse plugin (see section 7). |
 | `TASKWRIGHT_LANGFUSE_ENV_FILE` | server, observatory | File holding the Langfuse address and keys. |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse project id, for deep links. |
@@ -151,6 +152,10 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 ```
 
 After a checkpoint, `task.sqlite` alone is complete. The conversation itself is not in the database; it lives in pi's session files under `<runs>/<task id>/pi-sessions/`, so back those up too if you want to keep the conversations.
+
+**One service per task.** A running service writes `service.lock` (its port, process id, start time and host name) into every task directory it serves and removes it when it stops. Another service that finds a lock naming a live process on the same host (or any lock from another host) does not serve that task: it lists it as 占用中 ("in use") with the port of the service that has it, and refuses to open it. A lock whose process is gone is left over from a crash and is replaced, with a line in the log. To look at a lock: `cat <task dir>/service.lock`.
+
+**Copying or moving task data.** Every path inside a task directory is relative, so a task directory can be moved or copied. pi's session files record the task directory they were started in; when a service resumes such a session and the recorded directory is not its own task directory, it rewrites that first line to its own directory (keeping the original file next to it as `….cwd-<time>.bak`) and logs 会话文件记的工作目录是 X，已按本服务的任务目录 Y 续接. The service also passes its task root to pi (`TASKWRIGHT_TASKS_ROOT`), and every write refuses a task database outside it. A copied service therefore never writes into the original task data. Stop the original service before starting one on a copy, or the copy is listed as in use.
 
 ## 9 Common problems
 
