@@ -74,6 +74,25 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
 
 const task = (taskId: string) => `/tasks/${encodeURIComponent(taskId)}`;
 
+/** 材料文件的原始字节（GET …/materials/raw）：Word 材料要在浏览器里按原版式渲染。出错时按接口约定的错误体折成 ApiError。 */
+async function rawBytes(path: string, timeoutMs = 30_000): Promise<ArrayBuffer> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(BASE + path, { signal: controller.signal });
+    if (response.ok) return await response.arrayBuffer();
+  } catch (error) {
+    if ((error as Error).name === "AbortError") throw new ApiError("timeout", "等了太久没有得到回应。", 0);
+    throw new ApiError("network", "连不上服务，请检查后端是否在运行。", 0);
+  } finally {
+    clearTimeout(timer);
+  }
+  let body: Partial<ApiErrorBody> | null = null;
+  try { body = await response.json(); } catch { body = null; }
+  throw new ApiError(body?.error?.code ?? "bad_response", body?.error?.message ?? `请求没有成功（HTTP ${response.status}）。`, response.status);
+}
+
 export const api = {
   // 任务类型（与后端对齐后新增的接口 GET /api/v1/task-types）
   taskTypes: () => request<{ task_types: TaskType[] }>("GET", "/task-types").then((r) => r.task_types),
@@ -97,6 +116,7 @@ export const api = {
   revisionLog: (taskId: string) => request<RevisionLog>("GET", `${task(taskId)}/revisions`),
   materialContent: (taskId: string, path: string) =>
     request<{ path: string; text: string }>("GET", `${task(taskId)}/materials/content?path=${encodeURIComponent(path)}`),
+  materialRaw: (taskId: string, path: string) => rawBytes(`${task(taskId)}/materials/raw?path=${encodeURIComponent(path)}`),
   earlierConversation: (taskId: string, sessionId: string, before: string) =>
     request<Snapshot["conversation"]>(
       "GET",
