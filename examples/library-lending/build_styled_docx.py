@@ -10,7 +10,12 @@ python-docx builds what it can; the rest is written as WordprocessingML directly
 document.xml back and writes the checklist (requirements-styled.样式清单.md) with a numbered list of every w:p and
 w:tc, so the checklist always matches the file.
 
-Usage (python-docx and Pillow installed):
+Word writes a w:lastRenderedPageBreak where each page started the last time it laid the document out; python-docx
+cannot lay out pages, so the script borrows LibreOffice for that: it converts the saved file to PDF, reads the text of
+each page with pdftotext, finds where each page's body text starts in document.xml and writes the marker there. These
+two tools are only needed to build the sample.
+
+Usage (python-docx and Pillow installed; soffice, pdftotext and pdfimages on PATH):
 
     python3 examples/library-lending/build_styled_docx.py
 """
@@ -20,7 +25,9 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import io
+import re
 import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -478,7 +485,8 @@ def build() -> None:
     log(h.text, "三级标题（多级编号 3.1.1）", "doc.add_heading(level=3)")
     p = doc.add_paragraph("逾期的每本每天罚款一角，罚款最多不超过这本书的定价。")
     r = p.add_run("罚款怎样缴纳待定。")
-    doc.add_comment(r, text="缴纳方式需要和财务处确认：服务台现金、校园卡扣款还是线上支付。", author=AUTHOR, initials="SL")
+    comment = doc.add_comment(r, text="缴纳方式需要和财务处确认：服务台现金、校园卡扣款还是线上支付。", author=AUTHOR, initials="SL")
+    comment._element.set(qn("w:date"), WHEN)  # python-docx stamps the current time; a fixed date keeps rebuilds identical
     log(p.text, "批注一条（挂在「罚款怎样缴纳待定。」上）；含糊表述「待定」", "doc.add_comment(run, text, author, initials)，python-docx 写 comments.xml")
     h = doc.add_heading("损坏与丢失", level=3)
     log(h.text, "三级标题（编号 3.1.2）", "doc.add_heading(level=3)")
@@ -573,6 +581,142 @@ def _del(text: str):
     return e
 
 
+# ───────────── page markers, laid out by LibreOffice ─────────────
+
+PIC = "{http://schemas.openxmlformats.org/drawingml/2006/picture}pic"
+
+
+def countable(body) -> list:
+    """正文里要数的段落，与 scripts/docx_paragraphs.mjs 同一条规则：w:body 里的 w:p，含表格与嵌套表，不含文本框里的。"""
+    return [p for p in body.iter(q("w:p")) if not any(a.tag == q("w:txbxContent") for a in p.iterancestors())]
+
+
+def has_picture(p) -> bool:
+    return any(not any(a.tag == q("w:txbxContent") for a in g.iterancestors()) for g in p.iter(PIC))
+
+
+def squeeze(s: str) -> str:
+    return re.sub(r"\s+", "", s)
+
+
+def pdf_pages(docx: Path, tmp: Path) -> tuple[list[str], list[int]]:
+    """LibreOffice 排出来的每一页的文字（pdftotext -layout），以及每张图片在第几页（pdfimages -list，按页内先后）。"""
+    subprocess.run(["soffice", "--headless", "--convert-to", "pdf", "--outdir", str(tmp), str(docx)], check=True, capture_output=True)
+    pdf = tmp / (docx.stem + ".pdf")
+    text = subprocess.run(["pdftotext", "-layout", str(pdf), "-"], check=True, capture_output=True, text=True).stdout
+    listing = subprocess.run(["pdfimages", "-list", str(pdf)], check=True, capture_output=True, text=True).stdout
+    images = [int(cols[0]) for cols in (line.split() for line in listing.splitlines()[2:]) if len(cols) > 2 and cols[2] == "image"]
+    return text.split("\f")[:-1], images
+
+
+def split_run_at(t, offset: int):
+    """把 w:t 所在的 w:r 在这个 w:t 的第 offset 个字符前拆成两个，返回后一个；offset 为 0 且前面没有别的内容时不拆。"""
+    r = t.getparent()
+    before = [c for c in r if c.tag != q("w:rPr")]
+    before = before[:before.index(t)]
+    if offset == 0 and not before:
+        return r
+    head = copy.deepcopy(r)
+    head_t = [c for c in head if c.tag != q("w:rPr")][len(before)]
+    for c in list(head_t.itersiblings()):
+        head.remove(c)
+    head_t.text = t.text[:offset]
+    for c in before:
+        r.remove(c)
+    t.text = t.text[offset:]
+    for x in (head_t, t):
+        x.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    r.addprevious(head)
+    return r
+
+
+def add_page_markers() -> list[tuple[int, int, str]]:
+    """在每一页的正文起点写 <w:lastRenderedPageBreak/>（单独一个 w:r，放在起点那个 w:r 前面），第 1 页不写。
+
+    起点这样找：把要数的段落的 w:t 去掉空白接成一串，记下每个字属于哪个 w:t；每一页取页眉之后第一行左边那一块文字，
+    去掉空白后在这一串里从上一页的起点往后找（跳过开头最多 6 个字，那是编号或脚注号，不在 w:t 里）。
+    起点在段首、而它前面紧挨着只有图片没有字的段落、那张图又被排在这一页时，起点前移到图片那一段。
+    只有页眉页脚、脚注尾注而没有正文的页（LibreOffice 把尾注单独排成最后一页）不写，并打印出来；其余找不到的页报错退出。
+    返回 [(页号, 段落序号, 开头文字)]。
+    """
+    with zipfile.ZipFile(OUT) as z:
+        entries = [(i, z.read(i.filename)) for i in z.infolist()]
+    parts = {i.filename: data for i, data in entries}
+    doc = etree.fromstring(parts["word/document.xml"])
+    body = doc.find(q("w:body"))
+    paras = countable(body)
+    chars = []  # (段落下标, w:t, 字符在 w:t 里的位置)
+    for k, p in enumerate(paras):
+        for t in own_texts(p):
+            chars += [(k, t, i) for i, ch in enumerate(t.text or "") if not ch.isspace()]
+    stream = "".join(t.text[i] for _, t, i in chars)
+    first_char = {}
+    for n, (k, _, _) in enumerate(chars):
+        first_char.setdefault(k, n)
+
+    def texts(pattern: str) -> list[str]:
+        return [squeeze(text_of(p)) for name, data in parts.items() if re.fullmatch(pattern, name)
+                for p in etree.fromstring(data).iter(q("w:p")) if text_of(p)]
+    # 页眉页脚里的页码域在 PDF 里是真页码，比较时数字当通配；注释正文可能折成几行，每行是注释正文的一截，行首可能带注释号
+    furniture = [re.sub(r"\d+", r"\\d+", re.escape(s)) for s in texts(r"word/(header|footer)\d*\.xml")]
+    notes = texts(r"word/(footnotes|endnotes)\.xml")
+
+    def is_furniture(line: str) -> bool:
+        s = squeeze(line)
+        bare = re.sub(r"^[\divx*†]{1,3}", "", s)
+        return any(re.fullmatch(f, s) for f in furniture) or (len(bare) >= 4 and any(bare in n for n in notes))
+
+    pictures = [k for k, p in enumerate(paras) if has_picture(p)]
+    with tempfile.TemporaryDirectory() as tmp:
+        pages, image_pages = pdf_pages(OUT, Path(tmp))
+    if len(image_pages) != len(pictures):
+        raise SystemExit(f"page markers: PDF has {len(image_pages)} images, the body has {len(pictures)} pictures")
+    picture_page = dict(zip(pictures, image_pages))
+
+    found, cursor = [], 0
+    for page_no, page in enumerate(pages[1:], start=2):
+        lines = [ln for ln in page.splitlines() if ln.strip() and not is_furniture(ln)]
+        if not lines:
+            print(f"  page {page_no}: only header, footer or notes, no marker")
+            continue
+        # 先只用第一行左边那一块找；太短（如「1 概述」）再接上第二、三行的
+        chunks = [squeeze(re.split(r"\s{2,}", ln.strip())[0]) for ln in lines[:3]]
+        at = -1
+        for head in ("".join(chunks[:n]) for n in range(1, len(chunks) + 1)):
+            for skip in range(0, 7):
+                probe = head[skip:skip + 10]
+                if len(probe) < 4:
+                    break
+                at = stream.find(probe, cursor + 1)
+                if at >= 0:
+                    break
+            if at >= 0:
+                break
+        if at < 0:
+            raise SystemExit(f"page markers: cannot find the start of page {page_no} ({chunks[0][:12]}) in document.xml")
+        k, t, offset = chars[at]
+        if first_char[k] == at:  # 这一页从段首开始
+            while k > 0 and not text_of(paras[k - 1]) and picture_page.get(k - 1) == page_no:
+                k -= 1
+            target = next(r for r in paras[k].iter(q("w:r")) if not any(a.tag == q("w:txbxContent") for a in r.iterancestors()))
+        else:  # 这一页从一段的中间开始
+            target = split_run_at(t, offset)
+        marker = el("w:r")
+        marker.append(el("w:lastRenderedPageBreak"))
+        target.addprevious(marker)
+        found.append((page_no, k + 1, text_of(paras[k])[:12] or "（图片）"))
+        cursor = at
+
+    parts["word/document.xml"] = etree.tostring(doc, xml_declaration=True, encoding="UTF-8", standalone=True)
+    with zipfile.ZipFile(OUT, "w") as z:
+        for info, _ in entries:
+            info.date_time = (2026, 9, 1, 9, 0, 0)  # python-docx stamps the current time; a fixed one keeps rebuilds identical
+            z.writestr(info, parts[info.filename])
+    records.append(("各页起点", "（分页标记）", f"分页标记 w:lastRenderedPageBreak，第 2 到 {found[-1][0]} 页的正文起点各一个",
+                    "生成之后借 LibreOffice 排版、pdftotext 按页取字，回填进 document.xml（见第四节）"))
+    return found
+
+
 # ───────────── read back and write the checklist ─────────────
 
 def q(tag: str) -> str:
@@ -663,6 +807,8 @@ def write_checklist() -> dict:
                 extra.append("本段带第一节的 w:sectPr")
             if deleted_of(e):
                 extra.append(f"另有删除的字「{deleted_of(e)}」在 w:delText 里")
+            if e.find(f".//{q('w:lastRenderedPageBreak')}") is not None:
+                extra.append("本段有分页标记 w:lastRenderedPageBreak（新的一页从这里开始）")
             if e.find(f".//{q('w:instrText')}") is not None:
                 extra.append("含域：" + "".join(t.text for t in e.iter(q("w:instrText"))).strip())
         rows.append((i, kind, where_of(e, body), (first[:18] + ("…" if len(first) > 18 else "")) or "（空）", "；".join(extra)))
@@ -677,6 +823,7 @@ def write_checklist() -> dict:
         "图片（pic:pic）": pics,
         "其中行内图片（wp:inline）": len(doc.findall(f".//{q('wp:inline')}")),
         "节（w:sectPr）": len(doc.findall(f".//{q('w:sectPr')}")),
+        "分页标记（w:lastRenderedPageBreak）": len(doc.findall(f".//{q('w:lastRenderedPageBreak')}")),
         "文本框里的段落（wps 一份）": len(doc.findall(f".//{q('wps:txbx')}//{q('w:p')}")),
         "文本框里的段落（VML 后备一份）": len(doc.findall(f".//{q('v:textbox')}//{q('w:p')}")),
     }
@@ -707,6 +854,10 @@ def write_checklist() -> dict:
             "- **页眉、页脚不在 document.xml 里**，分别在 `word/header1.xml`、`word/footer1.xml`；第二节沿用第一节的页眉页脚（链接到前一节），没有自己的部件。",
             "- **批注正文不在 document.xml 里**，在 `word/comments.xml`；正文里只有 `w:commentRangeStart`、`w:commentRangeEnd` 与 `w:commentReference`。",
             "- **修订标记**：插入的字（`w:ins` 里的 `w:t`）算在所在段落里；删除的字在 `w:delText` 里，不是 `w:t`，上面的表只取 `w:t`，删除的字另在「说明」列写出。",
+            "- **分页标记 `w:lastRenderedPageBreak` 不是生成时写的，是事后回填的。** Word 保存时在每一页正文开始的地方写一个这样的标记，"
+            "浏览器里的渲染器靠它分页；python-docx 不会排版，写不出它。脚本在生成之后把文件交给 LibreOffice 转成 PDF，用 pdftotext 按页取文字，"
+            "在 document.xml 里找到第 2 页起每一页正文的第一个字，在它所在的 `w:r` 前面插一个只含这个标记的 `w:r`（这一页开头是一张没有文字的图片时，标记写在图片那一段）；页眉页脚、脚注尾注的文字不参与查找，"
+            "找不到就报错退出。LibreOffice 把尾注单独排成最后一页，那一页没有正文，不写标记，所以标记比 LibreOffice 的页数少一个。",
             "- **第一节的 `w:sectPr` 挂在第一节最后一段的 `w:pPr` 里**，那一段仍是一个普通段落；第二节（也是最后一节）的 `w:sectPr` 是 `w:body` 的最后一个子元素，不在任何段落里。",
             "", "其他部件里的段落：", "", "| 部件 | 段落数 | 开头文字 |", "|---|---|---|"]
     for name, root in sorted(others.items()):
@@ -718,7 +869,10 @@ def write_checklist() -> dict:
 
 if __name__ == "__main__":
     build()
+    marked = add_page_markers()
     counts = write_checklist()
     print(f"wrote {OUT.name} and {CHECKLIST.name}")
+    for page_no, n, first in marked:
+        print(f"  page {page_no} starts at paragraph {n}: {first}")
     for k, v in counts.items():
         print(f"  {k}: {v}")

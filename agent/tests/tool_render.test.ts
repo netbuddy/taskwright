@@ -35,6 +35,19 @@ test("回复：告知在前、请确认卡片列出条目与修订号、成文�
   ]);
 });
 
+test("回复：告知点名了条目时在那一行后面写上条目编号；旧写法的纯文字告知照旧", () => {
+  const reply = checkReply(
+    {
+      informs: [{ text: "材料写明预约的书保留 3 天。", items: [{ item_id: "UC-004", revision_no: 2 }, { item_id: "TBD-001", revision_no: 1 }] }, "我没有改动任何条目。"],
+      act: null,
+      text: "有，材料写明预约的书保留 3 天。",
+    },
+    alone,
+  );
+  assert.deepEqual(replyBodyLines(reply).slice(0, 3), ["  告知：", "    · 材料写明预约的书保留 3 天。（UC-004、TBD-001）", "    · 我没有改动任何条目。"]);
+  assert.deepEqual(replyBodyLines({ informs: ["旧会话里的一句告知。"], act: null, text: "好。" })[1], "    · 旧会话里的一句告知。");
+});
+
 test("回复：给建议值带建议值与依据，请选择列出选项，提议带预览，提问列出关联条目", () => {
   const suggest = checkReply(
     {

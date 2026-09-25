@@ -11,6 +11,7 @@ import { DocumentModal } from "../components/DocumentModal";
 import { CompletionPanel } from "../components/CompletionPanel";
 import { completionHeadline, isUnread, needsReview, reviewState } from "../model/items";
 import { formatBytes, formatTime } from "../model/format";
+import { isProjection } from "../model/docx";
 import { go, href } from "../router";
 import { statusTag } from "./TaskListPage";
 
@@ -102,17 +103,22 @@ export function TaskPage({ taskId }: { taskId: string }) {
         <div>
           <div className="section-title">材料清单</div>
           <div className="card">
-            <div className="small" style={{ marginBottom: "0.571rem" }}>这个任务现在有 {task.materials.length} 份材料。助手读的就是这几份文件。</div>
+            <div className="small" style={{ marginBottom: "0.571rem" }}>
+              这个任务现在有 {task.materials.filter((m) => !isProjection(m.path, task.materials.map((x) => x.path))).length} 份材料。助手读的就是这几份文件；Word 文件由系统另生成一份文本给助手读。
+            </div>
             {task.materials.map((m) => (
               <div key={m.path} style={{ display: "flex", alignItems: "center", gap: "0.571rem", padding: "0.286rem 0" }}>
-                <span style={{ flex: 1 }}>{m.path.split("/").pop()}</span>
+                <span style={{ flex: 1 }}>
+                  {m.path.split("/").pop()}
+                  {isProjection(m.path, task.materials.map((x) => x.path)) && <span className="muted small">（由 {m.path.split("/").pop()!.slice(0, -4)} 生成，供助手阅读）</span>}
+                </span>
                 <span className="muted small">{formatBytes(m.bytes)} · {formatTime(m.modified_at)}</span>
                 <Button size="small" onClick={() => api.materialContent(taskId, m.path).then(setMaterial)}>查看原文</Button>
               </div>
             ))}
             {!closed && (
               <Upload.Dragger
-                accept=".md,.txt"
+                accept=".md,.txt,.docx"
                 showUploadList={false}
                 style={{ marginTop: "0.714rem" }}
                 customRequest={async ({ file, onSuccess, onError }) => {
@@ -127,7 +133,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
                   }
                 }}
               >
-                <span className="muted small">把文件拖到这里，或者点这里选择文件（只收 .md 与 .txt，单个不超过 5 MB）。新传的材料下一次会话开始时助手就能看到。</span>
+                <span className="muted small">把文件拖到这里，或者点这里选择文件（只收 .md、.txt 与 Word 的 .docx，单个不超过 5 MB）。新传的材料下一次会话开始时助手就能看到。</span>
               </Upload.Dragger>
             )}
           </div>

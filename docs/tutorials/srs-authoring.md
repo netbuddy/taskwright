@@ -410,7 +410,7 @@ The observatory is read-only; it never changes the task.
 
 ### Step 32: The eight tools, one by one
 
-The assistant has exactly eight tools. It cannot run commands or change files; the only way it can change the deliverable is to save a revision. On the task page, click 全部细节 (all details): each tool call has three lines, the call (with its arguments), the result (marked 已接受, accepted, or 被拒绝, refused) and the change it made to the deliverable.
+The assistant has exactly eight tools. It cannot run commands or change files; the only way it can change the deliverable is to save a revision. On the task page, click 全部细节 (all details): each tool call has three lines, the call (with its arguments), the result (marked 已接受, accepted, or 被拒绝, refused) and the change it made to the deliverable. Long contents such as arguments and results show their first 12 lines, followed by 共 N 行 · 看全文 (N lines · see the full text), which opens the full text in the side panel; the title line of every model request and every tool call has 在 Langfuse 里打开 (open in Langfuse), a direct link to that step in Langfuse.
 
 List directory (`ls`) and read (`read`): in step 4 it lists `inputs/` and reads the whole material, after reading the method description, the task definition and the writing rules:
 
@@ -420,7 +420,7 @@ Save revision (`save_revision`): one call carries a batch of operations; the res
 
 ![save_revision](images/srs-authoring/49-tool-save-revision.png)
 
-Reply (`reply`): carries the informs, the final act and the text; the result says the reply was delivered, and nothing is changed:
+Reply (`reply`): carries the informs, an act asking for your response (only when it waits for one) and the text; the result says the reply was delivered, and nothing is changed:
 
 ![reply](images/srs-authoring/50-tool-reply.png)
 
@@ -472,7 +472,7 @@ The eight tools:
 | read (`read`) | Reads a file: material, task definition, writing rules. | 4 |
 | list directory (`ls`) | Lists a directory such as `inputs/`. | 4 |
 | save revision (`save_revision`) | Saves a batch of item operations as one revision; an update or delete must give the item's current revision, and if any operation is wrong nothing is written. | 4, 9, 11, 18, 20, 21 |
-| reply (`reply`) | Sends what it says to you: informs, at most one final act, and text. | every reply |
+| reply (`reply`) | Sends what it says to you: informs, an act asking for your response when it waits for one, and text. | every reply |
 | view item (`get_item`) | Shows one item's fields, sources, current revision and state. | 25, and before it changes an item |
 | get task status (`get_task_status`) | Shows each collection's items, each completion condition and the issue items. | 26, 27 |
 | record confirmation (`record_confirmation`) | After the confirmation reader has read your words, records which items you accepted. | 24 |

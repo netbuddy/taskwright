@@ -1,6 +1,6 @@
 /**
  * 对话理解：理解格式的核对、按登记的 schema 从助手消息里认出并记下理解、一轮结束时没有理解记失败、三个工具的门禁、回复记执行者的行为、
- * 保存修订记理解编号与规范化值、三个派生事实，以及 schema 是唯一来源（主行为枚举、平台 skill 的生成区）。
+ * 保存修订记理解编号与规范化值、三个派生事实，以及 schema 是唯一来源（向用户要的回应的枚举、平台 skill 的生成区）；平台 skill 回复一节的判据。
  */
 
 import assert from "node:assert/strict";
@@ -440,6 +440,15 @@ test("回复记执行者的行为：每条告知一条 inform 不期待回应，
   const rows = acts(dir).filter((r) => r.speaker === "executor");
   assert.ok(rows.every((r) => r.origin === "reply" && r.source_entry === "reply-msg" && r.event_seq === out.eventSeq));
   assert.equal(events(dir, "EXECUTOR_ACTS_RECORDED")[0].call_id, "call-reply");
+  // 告知点名条目时，这条 inform 的 targets 取它点名的条目，仍不期待回应；旧写法的纯文字告知 targets 为空。
+  const withItems = recordReplyActs(dir, SESSION, branch, {
+    informs: [{ text: "材料写明保留 3 天，已写在 UC-001 里。", items: [{ item_id: "UC-001" }] }, "我没有改动任何条目。"],
+    act: null,
+  }, "reply-msg-2", "call-reply-2")!;
+  assert.deepEqual(withItems.acts.map((a) => [a.function, a.expects_response]), [["inform", false], ["inform", false]]);
+  assert.doesNotMatch(withItems.text, /responds_to/);
+  const informRows = acts(dir).filter((r) => r.source_entry === "reply-msg-2");
+  assert.deepEqual(informRows.map((r) => JSON.parse(r.targets)), [[{ item_id: "UC-001" }], []]);
   // 纯文字回复没有要记的行为；没有库时什么都不记。
   assert.deepEqual(recordReplyActs(dir, SESSION, branch, { informs: [], act: null }, "m", "c")!.acts, []);
   assert.equal(recordReplyActs(makeWorkspace(), SESSION, branch, { informs: ["x"], act: null }, "m", "c"), null);
@@ -585,4 +594,18 @@ test("唯一来源：回复的五种主行为取自 schema；平台 skill 的生
   assert.equal(REGISTERED_OUTPUTS[0].schema, INTENT_SCHEMA);
   assert.equal(renderDocument(text), text, "SKILL.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");
   for (const fn of INTENT_SCHEMA.$defs.user_function.enum) assert.match(text, new RegExp("`" + fn + "`"));
+});
+
+test("平台 skill 第五节：向用户要回应的判据、三个正例一个反例、告知点名条目；同批引用的编号规矩", () => {
+  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "skills", "taskwright-executor", "SKILL.md"), "utf-8");
+  assert.match(text, /向用户要的回应，只在你等用户的一个具体回应、没有它下一步做不了或不该做时才填；它的文字是要用户回应的那句话，不是你的答案。/);
+  assert.match(text, /正例一：用户问「材料里写了保留几天吗」，材料没写。你先答「材料没写」，再提问「你希望保留几天？」。/);
+  assert.match(text, /正例二：用户问「现在还差什么」。你答完还差哪几项，再请选择「现在完成」还是「还要再改」。/);
+  assert.match(text, /正例三：用户问某个条目的内容，你回答时按常识补了一处并保存了，再请确认「请打开 X-004 看一眼」。/);
+  assert.match(text, /反例：用户问「材料里写了保留几天吗」，材料写了。你答「有，保留 3 天」，这时 `act` 写 `null`/);
+  assert.match(text, /向用户要回应时要在 `items` 里点名条目；只是说到某个条目，用告知的 `items`。/);
+  assert.match(text, /也可以写同一批里排在前面的新增操作将要拿到的编号/);
+  // 旧的说法都不要再出现：模型会把「末位主行为」读成回复必须有的一部分。
+  assert.doesNotMatch(text, /主行为/);
+  assert.doesNotMatch(text, /同一批里新增的条目还没有编号/);
 });

@@ -20,6 +20,7 @@
 文本列表逐项编号、用分号连起来；条目引用用顿号连起来；空字段写「（空）」。
 「用户的话」的出处在库里是「会话编号#消息编号」，文档里换成读者看得懂的说法（「会话「名称」里用户的第 N 句话」），
 由调用方按会话记录算好传进来（words_locator）；算不出来时写「对话里用户说的话」，不把内部编号印进文档。
+Word 材料（.docx）的出处在库里是「文件路径#p段落号」，文档里只写文件路径，读者凭摘录在 Word 里查找。
 「用户直接修改」的出处在库里是界面操作编号（ui-op-…），文档里换成「用户在界面上的第 N 次修改（时刻）」：
 N 按库里所有「用户直接修改」来源的操作编号、以写入它们的事件先后排序；算不出来时写「用户在界面上的修改」。
 """
@@ -131,7 +132,9 @@ def sources_text(lib: Library, item_id: str, revision_no: int, words_locator: Ca
             readable = edits_locator(s["locator"]) if edits_locator and s["locator"] else None
             where = f"，出处 {readable or '用户在界面上的修改'}"
         else:
-            where = f"，出处 {s['locator']}" if s["locator"] and s["kind"] != EXECUTOR_SUPPLEMENT else ""
+            # Word 材料的出处在库里带段落号（inputs/x.docx#p37），段落号对读者没有用，文档里只写文件名。
+            locator = re.sub(r"(\.docx)#p\d+$", r"\1", s["locator"] or "", flags=re.I)
+            where = f"，出处 {locator}" if locator and s["kind"] != EXECUTOR_SUPPLEMENT else ""
         parts.append(f"{KIND_WORDS.get(s['kind'], s['kind'])}{where}（「{s['excerpt']}」）")
     return "；".join(parts) or "（没有登记来源）"
 

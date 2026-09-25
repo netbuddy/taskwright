@@ -212,6 +212,8 @@
 .app .detail [data-f].sw-hit-field .v { outline: .15rem solid var(--ai); outline-offset: .1rem; }
 .app .rerun { font-size: .813rem; color: var(--blue); cursor: pointer; margin-left: .2rem; align-self: center; white-space: nowrap; }
 .app .finding .keep-box { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .2rem; }
+/* 回复里告知点名的条目：没有卡片时在正文下方列一行 */
+.app .m.ai .mentioned { margin-top: .35rem; font-size: 0.857rem; color: #8a8a8a; }
 
 /* 领域说明一类的集合（任务定义「界面」一项）：条目行上的分组小标签与修订、来源数；页签下的一句白话；
    种类为「领域说明」的来源标签与来源框；详情里「被哪些条目引用」；右侧栏的分组清单。 */

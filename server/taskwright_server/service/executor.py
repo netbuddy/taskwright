@@ -647,7 +647,8 @@ class Executor:
                 work["replied_since_user"] = True
             self.hub.emit("assistant_reply", {"session_id": sid, "message_id": details.get("message_id"), "at": clock.now(),
                                               "work_id": work["work_id"] if work else None, "via_reply_tool": True,
-                                              "informs": reply.get("informs") or [], "act": reply.get("act"), "text": reply.get("text") or "",
+                                              "informs": conversation.normalize_informs(reply.get("informs")), "act": reply.get("act"),
+                                              "text": reply.get("text") or "",
                                               # 连续被拒到上限后放行的纯文字回复，前端照普通文字显示并加一行说明。
                                               "degraded": bool(details.get("degraded"))})
 

@@ -27,11 +27,13 @@
 // 顶部横幅只在还有未处理的问题时显示一行「评审不通过：N 处问题未处理……」；保留的理由与「撤销保留」只在发现行第二行。条目在当前修订、当前规则下已经评过时，
 // 「评审这条」灰化并说明，旁边小字「仍要重评」，确认之后带 force 再评一次。
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Popconfirm, Select } from "antd";
 import { api, ApiError } from "../../api/client";
 import type { ActionRequest, CollectionDef, FieldDef, FieldValue, Fields, Finding, Item, ItemRevision, ReviewRule, Source, Task } from "../../api/types";
 import { alignSteps } from "../../model/diff";
+import { docxLocator, whereOf } from "../../model/docx";
+import { TaskIdContext, useDocx } from "../../state/docxStore";
 import { BUSY_TEXT, batchNo, currentReview, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, keepPendingField, KEEP_PENDING_VALUE, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
 import { baselineRevision, confirmedRevision } from "../../model/revisions";
 import { formatTime } from "../../model/format";
@@ -197,6 +199,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   };
 
   return (
+    <TaskIdContext.Provider value={task.task_id}>
     <div className="detail" data-testid="item-detail">
       {crumb ?? (onBack && <span className="crumb" role="button" onClick={onBack}>‹ 回到列表</span>)}
       <div className="dh">
@@ -346,6 +349,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
         </div>
       )}
     </div>
+    </TaskIdContext.Provider>
   );
 }
 
@@ -379,10 +383,24 @@ function sourcesForFields(sources: Source[], field: string): Source[] {
 
 const fileName = (locator: string) => locator.split("/").pop() || locator;
 
+/**
+ * 「文档原文」来源给人看的出处：文本材料是文件名；Word 材料是「x.docx · 第 3 页 · 3.1.1 逾期罚款 · 页下」，
+ * 三段由库里存的段落号派生（model/docx.ts），派生表还没算出来时只写文件名。tablePos 是表格里的段落的位置（「表 3 第 2 行第 2 列」）。
+ */
+function useSourcePlace(source: Source): { label: string; tablePos: string } {
+  const taskId = useContext(TaskIdContext);
+  const loc = source.kind === "文档原文" ? docxLocator(source.locator) : null;
+  const entry = useDocx(taskId, loc?.path ?? null);
+  const name = fileName(loc?.path ?? source.locator);
+  if (!loc?.paragraph || !entry?.table) return { label: name, tablePos: "" };
+  return { label: [name, ...whereOf(entry.table, loc.paragraph, source.excerpt)].join(" · "), tablePos: entry.tablePos?.get(loc.paragraph) ?? "" };
+}
+
 /** 值格下方的一个来源小标签。种类为「领域说明」的写成「领域说明 DN-003」，点一下打开那条领域说明。 */
 export function SourceTag({ source, onLocate, onOpenItem, titleOf }: {
   source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
 }) {
+  const place = useSourcePlace(source);
   if (source.kind === SOURCE_DOMAIN_NOTE) {
     const title = titleOf?.(source.locator);
     return <span className="srctag note" role="button" data-testid={`note-source-${source.locator}`}
@@ -390,8 +408,8 @@ export function SourceTag({ source, onLocate, onOpenItem, titleOf }: {
       onClick={() => onOpenItem?.(source.locator)}>{SOURCE_DOMAIN_NOTE} {source.locator}</span>;
   }
   if (source.kind === "文档原文") {
-    return <span className="srctag quote" title={`材料原文：${source.excerpt}（点一下，文档区滚到这句）`} role="button"
-      onClick={() => onLocate?.(source.excerpt, source.locator)}>❝ {fileName(source.locator)}</span>;
+    return <span className="srctag quote" title={`材料原文：「${source.excerpt}」${place.tablePos ? `（${place.tablePos}）` : ""}。点一下，材料区滚到这里。`} role="button"
+      onClick={() => onLocate?.(source.excerpt, source.locator)}>❝ {place.label}</span>;
   }
   if (source.kind === "执行者补充") return <span className="srctag added" title={source.excerpt}>助手补充</span>;
   if (source.kind === "用户的话") return <span className="srctag said" title={source.excerpt}>用户的话</span>;
@@ -484,6 +502,7 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
 function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
   source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
 }) {
+  const place = useSourcePlace(source);
   const kinds: Record<string, [string, string]> = {
     文档原文: ["src", "材料原文"], 执行者补充: ["warn", "助手补充"], 用户的话: ["teal", "用户的话"], 用户直接修改: ["on", "用户直接修改"],
     [SOURCE_DOMAIN_NOTE]: ["note", SOURCE_DOMAIN_NOTE],
@@ -495,7 +514,7 @@ function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
       <div className="sh">
         <span className={`chip ${cls}`}>{name}</span>
         {source.kind === "文档原文" && (
-          <span className="evi" role="button" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{fileName(source.locator)}（点一下看原文）</span>
+          <span className="evi" role="button" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{place.label}{place.tablePos ? `，${place.tablePos}` : ""}（点一下看原文）</span>
         )}
         {source.kind === SOURCE_DOMAIN_NOTE && (
           <> <span className="ref" role="button" onClick={() => onOpenItem?.(source.locator)}>{source.locator}</span> {titleOf?.(source.locator)}</>

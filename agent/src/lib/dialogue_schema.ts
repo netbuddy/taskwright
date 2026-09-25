@@ -12,7 +12,7 @@ import type { DatabaseSync } from "node:sqlite";
  *
  * 用户的行为有两个来处：执行者每轮在文字输出里写的理解（origin 为 understanding），以及界面点击、「这几条都看过了」
  * 「先不管」之后系统替用户发的那句固定的话（origin 为 ui，由扩展按界面操作的事实直接写，执行者不写理解）。
- * 执行者的行为由「回复」工具写（origin 为 reply）：每条告知一行 inform，末位主行为一行。
+ * 执行者的行为由「回复」工具写（origin 为 reply）：每条告知一行 inform，向用户要的回应一行。
  * 编号是「运行号-序号」，运行号是这条会话当前分支上第几句用户的话（r1 起），序号在一次运行里从 1 起，
  * 用户与执行者共用一个序号。「期待已满足」不存，现算：有用户行为的 responds_to 指向它就算满足。
  */
@@ -23,10 +23,10 @@ CREATE TABLE IF NOT EXISTS dialogue_act (
   act_id            TEXT NOT NULL,     -- 对话行为的编号：运行号-序号，例如 r13-2；同一会话里唯一
   run_id            TEXT NOT NULL,     -- 运行号：这条会话当前分支上第几句用户的话，例如 r13
   speaker           TEXT NOT NULL CHECK (speaker IN ('user', 'executor')),  -- 谁的行为
-  function          TEXT NOT NULL,     -- 功能：用户侧九种，执行者侧告知 inform 与五种主行为，取值见 agent/prompts/schemas/user_intent.schema.json
+  function          TEXT NOT NULL,     -- 功能：用户侧九种，执行者侧告知 inform 与五种要的回应，取值见 agent/prompts/schemas/user_intent.schema.json
   targets           TEXT NOT NULL,     -- 针对的条目与位置（JSON 列表，每项是 item_id，可带 field、index），可以是空列表
   responds_to       TEXT,              -- 回应的是哪一条对话行为的编号；没有为空
-  expects_response  INTEGER NOT NULL CHECK (expects_response IN (0, 1)),  -- 是否期待回应：执行者的五种主行为为 1，告知与用户的行为为 0
+  expects_response  INTEGER NOT NULL CHECK (expects_response IN (0, 1)),  -- 是否期待回应：执行者的五种要的回应为 1，告知与用户的行为为 0
   confidence        TEXT CHECK (confidence IN ('high', 'medium', 'low')),  -- 用户侧由执行者填的把握；执行者侧为空
   summary           TEXT NOT NULL,     -- 一句话内容摘要
   source_entry      TEXT,              -- 会话条目编号：用户侧是那句用户的话，执行者侧是调用「回复」的那条助手消息

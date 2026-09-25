@@ -33,6 +33,19 @@ NOTIFY_KINDS = ("mark_viewed", "confirm")
 FALLBACK_TEXT = "请用 reply 工具把要对用户说的话发出来"
 
 
+def normalize_informs(informs) -> list[dict]:
+    """回复里的告知一律整理成 {"text": …, "items": […]}（没有点名条目时不带 items）交给前端。
+    旧的会话记录里一条告知是一句纯文字，新的是带 items 的对象；两种都认，认不出的丢掉。"""
+    out = []
+    for one in informs or []:
+        if isinstance(one, str):
+            out.append({"text": one})
+        elif isinstance(one, dict) and isinstance(one.get("text"), str):
+            items = [i for i in (one.get("items") or []) if isinstance(i, dict) and i.get("item_id")]
+            out.append({"text": one["text"], **({"items": items} if items else {})})
+    return out
+
+
 def fallback_note_text(raw: str) -> str:
     return f"助手这次没有用回复工具说话，系统自动提醒了它一句：「{raw}」。这句不是你说的。"
 
@@ -180,7 +193,7 @@ def _messages(path: list[dict], session_id: str) -> list[dict]:
                     reply = details.get("reply") or {}
                     args = {"informs": [], "act": None, "text": reply.get("text") or args.get("text") or ""}
                 out.append({"type": "assistant_reply", "session_id": session_id, "message_id": e["id"], "at": at,
-                            "work_id": None, "via_reply_tool": True, "informs": args.get("informs") or [],
+                            "work_id": None, "via_reply_tool": True, "informs": normalize_informs(args.get("informs")),
                             "act": args.get("act"), "text": args.get("text") or "",
                             "degraded": bool(details.get("degraded"))})
                 segment_replied = True

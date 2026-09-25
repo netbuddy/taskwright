@@ -12,6 +12,8 @@ const target = process.env.TASKWRIGHT_API_TARGET || "http://127.0.0.1:5681";
 
 export default defineConfig({
   plugins: [react()],
+  // Word 文件当作静态资源：测试里以 ?inline 引入样本 .docx。
+  assetsInclude: ["**/*.docx"],
   server: {
     host: "0.0.0.0",
     port,

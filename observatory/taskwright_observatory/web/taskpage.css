@@ -418,3 +418,27 @@ body.tp-resizing{cursor:col-resize;user-select:none}
 .tp .act .st.none{color:var(--ink3);background:var(--panel)}
 .tp .act .asum{font-size:13px;color:var(--ink);margin-top:1px}
 .tp .dlg-empty{font-size:12.5px;color:var(--ink3);padding:2px 0}
+/* 机器细节里的长内容：只显示前几行（taskpage.js 的折叠行数），全文在抽屉里看 */
+.tp .longtext{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:5px}
+.tp .longtext.mono{font:11.8px/1.6 var(--mono);color:var(--ink2);background:var(--paper);border-radius:6px;padding:6px 9px;margin-top:2px}
+.tp .seefull{display:block;margin-top:3px;font-size:11.8px;color:var(--ink3);border-bottom:1px dashed var(--line)}
+.tp .seefull:hover{color:var(--human);border-bottom-color:var(--human)}
+.tp .lpart{margin-top:6px}
+.tp .lname{font-size:11.8px;color:var(--ink3)}
+/* 每一块的标题行：左边写这一块是什么，右边是 Langfuse 链接（工具里的模型调用写它在库里的位置） */
+.tp .bhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px}
+.tp .bhead>span:first-child{flex:1 1 auto;min-width:0}
+.tp .bhead .lfhead,.tp .bhead .dbloc{margin-left:auto;font-size:12px;white-space:nowrap}
+.tp .bhead .lfhead{color:var(--human);text-decoration:underline}
+.tp .bhead .dbloc{color:var(--ink3)}
+.tp .lfwhy{font-size:12px;color:var(--ink3);margin:0 0 6px;line-height:1.55}
+.tp .lfrun{margin:0 0 6px;font-size:12.5px}
+.tp .lfrun a{color:var(--human);text-decoration:underline}
+/* 看全文用宽一些的抽屉 */
+.tp .drawer.wide{width:min(780px,94vw)}
+.tp .drawer pre.fulltext{font:12px/1.65 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4}
+/* 运行展开区里的块与卡片一律铺满运行表的内容宽度（与「对话行为」块同宽），不再各有各的最大宽度；长内容在框内换行 */
+.tp .rbody .boot,.tp .rbody .guidebox,.tp .rbody .steer,.tp .rbody .retrynote,.tp .rbody .didrow,.tp .rbody .say,
+.tp .rbody .noteline,.tp .rbody .chgblock,.tp .rbody .lv3,.tp .rbody .tl,.tp .rbody .reply,.tp .rbody .replycard{max-width:none}
+/* 回复里告知点名的条目 */
+.tp .mentioned{margin:4px 0 0;font-size:12.2px;color:var(--ink3)}

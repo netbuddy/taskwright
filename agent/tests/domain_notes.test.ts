@@ -104,6 +104,16 @@ test("来源种类「领域说明」：出处不存在、不是领域说明、�
   assert.equal(query(dir, "SELECT 1 FROM item_source WHERE kind = '领域说明'").length, 0);
 });
 
+test("来源种类「领域说明」：同一批里才新增的领域说明不能引作来源（条目引用字段可以），拒绝原因写明先保存", () => {
+  const dir = workspace();
+  // DN-003 是这一批第 1 个操作新增的；第 2 个操作的来源指向它。
+  assert.throws(() => saveRevision(callIn(dir), { operations: [note("借阅"), cite("DN-003")] }),
+    /出处 DN-003 指向的领域说明在这一批里才新增，还没有保存，摘录无从核对[\s\S]*先新增它，保存之后再引用/);
+  // 同一批里的条目引用字段照样可以指向排在前面新增的领域说明。
+  saveRevision(callIn(dir), { operations: [note("借阅"),
+    { op: "add", collection: "问题", fields: { 事项: "借阅期限", 状态: "未解决", 关联条目: ["DN-003"] }, sources: [SOURCE] }] });
+});
+
 test("来源种类「领域说明」：任务定义里没有这个集合时拒绝", () => {
   const dir = workspace(demoDefinition() as Record<string, any>);
   assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-001")] }), /出处 DN-001 这个任务没有「领域说明」集合/);

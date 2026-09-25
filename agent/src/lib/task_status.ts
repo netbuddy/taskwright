@@ -130,10 +130,18 @@ function sizeText(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** 材料清单那一句。 */
+/**
+ * 材料清单那一句。Word 材料（.docx）旁边有上传时生成的文本投影（同名加 .txt），清单里照样列出，
+ * 另加一句：Word 材料读投影，引用时出处写 Word 文件加段落号。
+ */
 export function materialsSentence(materials: { dir: string; files: MaterialFile[] }): string {
   if (materials.files.length === 0) return `材料目录 ${materials.dir} 里现在没有文件。`;
-  return `材料目录 ${materials.dir} 里有 ${materials.files.length} 个文件：${materials.files.map((f) => `${f.path}（${sizeText(f.bytes)}）`).join("、")}。`;
+  const paths = new Set(materials.files.map((f) => f.path));
+  const words = materials.files.filter((f) => /\.docx$/i.test(f.path) && paths.has(`${f.path}.txt`)).map((f) => f.path);
+  const note = words.length
+    ? `其中 ${words.join("、")} 是 Word 文件，请读由它生成的同名 .txt（每行一段，行首是段落号）；引用它作来源时，出处写 Word 文件加段落号，例如 ${words[0]}#p12。`
+    : "";
+  return `材料目录 ${materials.dir} 里有 ${materials.files.length} 个文件：${materials.files.map((f) => `${f.path}（${sizeText(f.bytes)}）`).join("、")}。${note}`;
 }
 
 const materialsDetails = (materials: { dir: string; files: MaterialFile[] }) => ({

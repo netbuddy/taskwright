@@ -399,6 +399,8 @@ class PureUnitTest(unittest.TestCase):
         self.assertEqual(conversation.display_text("用户说：/tw-user {}"), "/tw-user {}")
         self.assertEqual(conversation.display_text("用户说：你好"), "用户说：你好", "只有斜杠改写过的才去掉前缀")
         self.assertEqual(with_attachments("看看", ["inputs/a.md", "inputs/b.md"]), "看看\n（我上传了材料：inputs/a.md、inputs/b.md）")
+        self.assertEqual(with_attachments("看看", ["inputs/a.docx"]),
+                         "看看\n（我上传了材料：inputs/a.docx；其中 Word 文件请读同名的 .txt（inputs/a.docx.txt），引用时出处写 Word 文件加段落号）")
 
     def test_任务类型与卡片标注的两种写法(self):
         from taskwright_server.service.app import card_annotation, task_types
@@ -688,3 +690,26 @@ def subprocess_node_write(ws: Path) -> None:
     schema = library.REPO_ROOT / "agent" / "src" / "lib" / "schema.ts"
     script = f"import('{schema}').then((m) => m.withTaskDatabase(process.argv[1], {{ createIfMissing: false }}, () => undefined))"
     subprocess.run(["node", "--input-type=module", "-e", script, str(ws)], check=True)
+
+
+class InformShapeTests(unittest.TestCase):
+    """回复里的告知交给前端时一律是 {"text", "items"?}：旧会话里的纯文字告知与新的带条目告知都认。"""
+
+    def test_纯文字与带条目的告知都整理成对象_认不出的丢掉(self):
+        self.assertEqual(conversation.normalize_informs([
+            "旧的一句", {"text": "说到 UC-004", "items": [{"item_id": "UC-004", "revision_no": 2}]}, {"text": "没有条目", "items": []}, 3, {"items": []},
+        ]), [{"text": "旧的一句"}, {"text": "说到 UC-004", "items": [{"item_id": "UC-004", "revision_no": 2}]}, {"text": "没有条目"}])
+        self.assertEqual(conversation.normalize_informs(None), [])
+
+    def test_从会话还原的回复_告知带条目(self):
+        ts = "2026-09-25T01:00:00.000Z"
+        informs = [{"text": "材料写明保留 3 天。", "items": [{"item_id": "UC-004", "revision_no": 2}]}, "我没有改动条目。"]
+        entries = [
+            {"type": "session", "id": "h"},
+            {"type": "message", "id": "u1", "parentId": None, "timestamp": ts, "message": {"role": "user", "content": [{"type": "text", "text": "用户说：保留几天？"}]}},
+            {"type": "message", "id": "a1", "parentId": "u1", "timestamp": ts, "message": {"role": "assistant", "content": [
+                {"type": "toolCall", "id": "c1", "name": "reply", "arguments": {"informs": informs, "act": None, "text": "有，保留 3 天。"}}]}},
+            {"type": "message", "id": "r1", "parentId": "a1", "timestamp": ts, "message": {"role": "toolResult", "toolCallId": "c1", "isError": False}},
+        ]
+        reply = [m for m in conversation.messages(entries, "S") if m["type"] == "assistant_reply"][0]
+        self.assertEqual(reply["informs"], [{"text": "材料写明保留 3 天。", "items": [{"item_id": "UC-004", "revision_no": 2}]}, {"text": "我没有改动条目。"}])

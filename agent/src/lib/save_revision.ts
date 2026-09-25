@@ -21,6 +21,7 @@
  *
  * 种类为「文档原文」的来源（执行者交来的），摘录必须逐字是出处所指材料文件里连续的一段（换行按 \n 归一后比），
  * 否则界面上点来源找不到原文；跳句拼接、改字、出处不是文件的，都拒绝。用户在界面上撤销时交回的旧来源不再核对。
+ * 出处是 Word 材料（.docx）时要写段落号（inputs/x.docx#p37），摘录对着它的文本投影 x.docx.txt 里那一段核对，规则见 lib/docx_source.ts。
  *
  * 写库、记事件、各项核对同在一个立即事务里；任何一个操作不通过，整次调用全部不写入，
  * 拒绝的文字逐条列出哪个操作的哪一处不对。本模块不依赖 pi。
@@ -43,6 +44,7 @@ import {
   validateDefinition,
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
+import { DOCX_LOCATOR, findParagraph, placeExcerpt, projectionParagraphs } from "./docx_source.ts";
 import { EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
 
@@ -291,6 +293,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const noteRef = (locator: string): string | null => {
     if (!definition.collections.some((one) => one.name === SOURCE_DOMAIN_NOTE)) return `这个任务没有「${SOURCE_DOMAIN_NOTE}」集合`;
     const row = items.get(locator);
+    // 条目引用字段可以指向同一批里排在前面新增的条目（见下面的 addedAt），领域说明来源不行：摘录要对着那条说明已经保存的文字逐字核对。
+    if (!row && addedAt.has(locator)) return "指向的领域说明在这一批里才新增，还没有保存，摘录无从核对";
     if (!row || row.collection !== SOURCE_DOMAIN_NOTE) return `不是这个任务里「${SOURCE_DOMAIN_NOTE}」集合的条目编号`;
     if (row.deleted_in_revision !== null) return `指向的领域说明已在修订 ${row.deleted_in_revision} 删除`;
     if (deletedHere.has(locator)) return "指向的领域说明在这次调用里被删除";
@@ -307,6 +311,24 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       return [];
     });
   };
+
+  // 这一批里新增的条目会拿到的编号：与 write 里分配编号的规矩相同（集合历史上的最大流水号加一，按操作顺序依次取）。
+  // 排在前面的新增操作产生的条目，后面的操作可以引用；引用排在后面才新增的条目仍拒绝。
+  const addedAt = new Map<string, number>();
+  {
+    const serialOf = new Map<string, number>();
+    for (const row of items.values()) {
+      if (row.serial > (serialOf.get(row.collection) ?? 0)) serialOf.set(row.collection, row.serial);
+    }
+    operations.forEach((one, index) => {
+      if (!isObject(one) || one.op !== "add") return;
+      const collection = definition.collections.find((c) => c.name === one.collection);
+      if (!collection) return;
+      const serial = (serialOf.get(collection.name) ?? 0) + 1;
+      serialOf.set(collection.name, serial);
+      addedAt.set(`${collection.prefix}-${String(serial).padStart(3, "0")}`, index + 1);
+    });
+  }
 
   const problems: RejectReason[] = [];
   const planned: Planned[] = [];
@@ -330,7 +352,14 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     const checkRef = (itemId: unknown): string | null => {
       if (typeof itemId !== "string" || itemId.trim() === "") return "应当写一个条目编号";
       const row = items.get(itemId);
-      if (!row) return "指向的条目在这个任务里不存在";
+      if (!row) {
+        const at = addedAt.get(itemId);
+        if (at === undefined) return "指向的条目在这个任务里不存在";
+        if (at < number) return null;
+        return at === number
+          ? withGuide("指向的就是这个操作自己要新增的条目", "一个条目不能引用自己")
+          : withGuide(`指向的条目 ${itemId} 在这一批里排在第 ${at} 个操作才新增，在这个操作之后`, `请把新增 ${itemId} 的操作排到前面`);
+      }
       if (row.deleted_in_revision !== null) return `指向的条目已在修订 ${row.deleted_in_revision} 删除`;
       if (deletedHere.has(itemId)) return "指向的条目在这次调用里被删除";
       return null;
@@ -579,6 +608,9 @@ function materialReader(workspaceDir: string, materialsDir: string): (locator: s
   };
 }
 
+/** 摘录在材料里找不到时，拒绝文字「怎么办」一层的第一句（模型常自行补句号或改写，被拒后又干脆删掉引用）。 */
+const EXACT_EXCERPT = "摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写";
+
 /** 摘录超过这么多个字时，拒绝的文字里只引前这么多个字。 */
 const EXCERPT_QUOTE_LIMIT = 30;
 
@@ -702,8 +734,22 @@ function checkSources(
       }
       locator = userWordsLocator(sessionId, hit.entryId);
     }
-    let excerpts = [one.excerpt as string];
-    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText) {
+    let pieces = [{ locator, excerpt: one.excerpt as string }];
+    const docx = DOCX_LOCATOR.exec(locator);
+    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.docx\.txt$/i.test(locator)) {
+      errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的文本，不是材料本身`,
+        `出处写 Word 文件加段落号，例如 ${locator.replace(/\.txt$/i, "")}#p12`));
+      ok = false;
+      return;
+    }
+    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && docx) {
+      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors, notes);
+      if (found === null) {
+        ok = false;
+        return;
+      }
+      pieces = found;
+    } else if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText) {
       const excerpt = (one.excerpt as string).replace(/\r\n/g, "\n").trim();
       const text = materialText(locator);
       if (text === null) {
@@ -716,7 +762,7 @@ function checkSources(
       if (parts.length <= 1 || text.includes(excerpt)) {
         if (!text.includes(excerpt)) {
           errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到`,
-            "摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源"));
+            `${EXACT_EXCERPT}；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));
           ok = false;
           return;
         }
@@ -724,17 +770,75 @@ function checkSources(
         const missed = parts.findIndex((part) => !text.includes(part));
         if (missed >= 0) {
           errors.push(withGuide(`${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${basename(locator)} 里找不到`,
-            "摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源"));
+            `${EXACT_EXCERPT}；摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源`));
           ok = false;
           return;
         }
-        excerpts = parts;
+        pieces = parts.map((part) => ({ locator, excerpt: part }));
         notes?.push(`${where}的摘录按空行拆成了 ${parts.length} 条来源`);
       }
     }
-    for (const excerpt of excerpts) kept.push({ kind: one.kind as string, locator, excerpt, supports, ...(normalized ? { normalized_value: normalized } : {}) });
+    for (const piece of pieces) kept.push({ kind: one.kind as string, locator: piece.locator, excerpt: piece.excerpt, supports, ...(normalized ? { normalized_value: normalized } : {}) });
   });
   return ok ? kept : null;
+}
+
+/**
+ * 核对一条出处是 Word 材料的来源：出处要带段落号，摘录要在那一段里（或从那一段起跨到后面几段）。
+ * 摘录用空行隔开几段、整段又找不到时照文本材料的办法拆开：第一段要在出处写的那一段里，其余各段在哪一段找到就记哪一段的段落号。
+ * 通过时返回拆好的（出处, 摘录）列表，不通过时把原因记进 errors 并返回 null。
+ */
+function checkDocxSource(
+  path: string,
+  n: number | null,
+  raw: string,
+  where: string,
+  materialText: (locator: string) => string | null,
+  errors: string[],
+  notes?: string[],
+): { locator: string; excerpt: string }[] | null {
+  const name = basename(path);
+  if (n === null) {
+    errors.push(withGuide(`${where}的出处 ${path} 没有写段落号`, `Word 材料的出处要写段落号，例如 ${path}#p12；段落号见 ${name}.txt 每行开头的「第 N 段」`));
+    return null;
+  }
+  const projection = materialText(`${path}.txt`);
+  if (projection === null) {
+    errors.push(withGuide(`${where}的出处 ${path} 不是任务目录里能读到的 Word 材料（找不到由它生成的 ${name}.txt）`,
+      "出处要写材料目录里的 Word 文件加段落号，例如 inputs/材料.docx#p12"));
+    return null;
+  }
+  const paragraphs = projectionParagraphs(projection);
+  if (n < 1 || n > paragraphs.length) {
+    errors.push(withGuide(`${where}的出处写的是第 ${n} 段，${name} 一共只有 ${paragraphs.length} 段`, `段落号见 ${name}.txt 每行开头的「第 N 段」`));
+    return null;
+  }
+  const excerpt = raw.replace(/\r\n/g, "\n").trim();
+  if (placeExcerpt(paragraphs, n, excerpt).kind !== "miss") return [{ locator: `${path}#p${n}`, excerpt: raw }];
+  const notFound = (quoted: string, part: string, label: string) => {
+    const elsewhere = findParagraph(paragraphs, part, n);
+    errors.push(withGuide(`${where}的${label}摘录「${quoteOf(quoted)}」在 ${name} 第 ${n} 段里找不到${elsewhere ? `，它在第 ${elsewhere} 段` : ""}`,
+      elsewhere ? `出处改写成 ${path}#p${elsewhere}`
+        : `${EXACT_EXCERPT}；摘录必须逐字抄自那一段里的文字（不带行首的方括号），不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));
+  };
+  const parts = excerpt.split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part !== "");
+  if (parts.length <= 1) {
+    notFound(excerpt, excerpt, "");
+    return null;
+  }
+  if (placeExcerpt(paragraphs, n, parts[0]).kind === "miss") {
+    notFound(parts[0], parts[0], "第 1 段");
+    return null;
+  }
+  const located = parts.map((part, i) => (i === 0 ? n : findParagraph(paragraphs, part, n)));
+  const missed = located.findIndex((at) => at === null);
+  if (missed >= 0) {
+    errors.push(withGuide(`${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${name} 里找不到`,
+      `${EXACT_EXCERPT}；摘录必须逐字抄自材料里的文字（不带行首的方括号），引用不相邻的原文请用空行分开或写成几条来源`));
+    return null;
+  }
+  notes?.push(`${where}的摘录按空行拆成了 ${parts.length} 条来源`);
+  return parts.map((part, i) => ({ locator: `${path}#p${located[i]}`, excerpt: part }));
 }
 
 /** 核对一条来源的 supports 的形状：省略或空列表表示支持整个条目；每一项有 field，可以有从 0 起的整数 index。 */
