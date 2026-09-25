@@ -8,7 +8,8 @@
 · 用时：从那句用户的话到这次工作最后一个条目的时刻。
 · 阶段：每个工具调用写成一句（与实时 step 行同一套写法，见 step_text），相邻的同类调用合成一句，
   例如连着读了三份材料写成「读了材料《a》、《b》、《c》」。被拒的调用单独成一句，不与成功的合并。
-  保存修订被拒时，这一句带上第一条原因，阶段另有 reasons 列出全部原因（见 rejection_reasons）。
+  保存修订被拒时，这一句写「保存修订被拒：」加第一条原因的事实，阶段另有 reasons 列出全部原因的事实（见 rejection_reasons）。
+  拒绝原因分两层：事实（改了什么、为什么不行，面向人）与指引（接下来该怎么做，只给助手）；摘要与展开都只用事实。
 · 工作编号：写成「w-{那句用户的话的会话条目编号}」。刷新时从会话文件算，并把这次工作里的回复的 work_id 补成同一个；
   实时推送时执行者看护在那句话并入会话之后也改用这个编号（executor.py），所以刷新前后同一次工作的编号一致。
   修订日志按它把修订归到工作，前端据此在回复底部写「产生了修订 N」。
@@ -36,22 +37,41 @@ SAVE_REJECTED_HEAD = "这次「保存修订」什么都没有写入"
 SAVE_REJECTED_TAIL = "\n请把这些地方改正之后"
 
 
-def rejection_reasons(details: dict | None, text: str) -> list[str]:
-    """保存修订被拒时逐条的原因，一个操作一条。
+#: 拒绝正文里每个操作那一行开头的标签，例如「操作 1（修改，条目 TBD-001）：」；事实不带它。
+OP_LABEL = re.compile(r"^操作 \d+(?:（[^）]*）)?：")
+#: 指引那一行的开头（agent/src/lib/save_revision.ts 的 GUIDANCE_PREFIX）。
+GUIDANCE_PREFIX = "怎么办："
+
+
+def rejection_parts(details: dict | None, text: str) -> list[dict]:
+    """保存修订被拒时逐条的原因，一个操作一条，每条 {fact, guidance}。
 
     保存修订拒绝时是抛出错误，pi 给的工具结果里 details 是空的，原因只在结果正文里：
-    开头一句「这次「保存修订」什么都没有写入，因为有 N 个操作不对：」，下面每个操作一行以「- 」开头，
-    最后一句「请把这些地方改正之后……」。details 里已经带了 reasons 的（实时推送时 executor 先算好）直接用。
-    不是这种正文（例如 pi 自己的参数校验失败、任务已结束）时返回空列表，摘要照旧写固定的一句。
+    开头一句「这次「保存修订」什么都没有写入，因为有 N 个操作不对：」，下面每个操作一段：
+    「- 操作 N（……）：事实」，下一行「  怎么办：指引」（没有指引的只有第一行），最后一句「请把这些地方改正之后……」。
+    事实去掉「操作 N（……）：」这个标签；早先版本的正文没有指引一行，整行（去掉标签）当作事实。
+    details 里已经带了 reasons 的（实时推送时 executor 先算好）直接用。不是这种正文时返回空列表。
     """
     given = (details or {}).get("reasons")
     if isinstance(given, list) and given:
-        return [str(one) for one in given]
+        return [one if isinstance(one, dict) else {"fact": str(one), "guidance": ""} for one in given]
     if not text.startswith(SAVE_REJECTED_HEAD):
         return []
     body = text.split("\n", 1)[1] if "\n" in text else ""
     body = body.split(SAVE_REJECTED_TAIL, 1)[0]
-    return [one.strip() for one in re.split(r"(?:^|\n)- ", body) if one.strip()]
+    out = []
+    for block in re.split(r"(?:^|\n)- ", body):
+        if not block.strip():
+            continue
+        lines = block.split("\n")
+        guidance = next((line.strip()[len(GUIDANCE_PREFIX):] for line in lines[1:] if line.strip().startswith(GUIDANCE_PREFIX)), "")
+        out.append({"fact": OP_LABEL.sub("", lines[0].strip()), "guidance": guidance})
+    return out
+
+
+def rejection_reasons(details: dict | None, text: str) -> list[str]:
+    """保存修订被拒时逐条原因的事实（给人看的那一层），一个操作一条。"""
+    return [one["fact"] for one in rejection_parts(details, text)]
 
 
 def result_text(result: dict) -> str:
@@ -90,10 +110,9 @@ def step_text(tool: str, args: dict, done: bool, failed: bool, details: dict | N
             reasons = rejection_reasons(details, "")
             if not reasons:
                 return "保存修订被拒，助手正在照原因改"
-            # 原因里可能跟着条目现在的全部内容（修订号过期时），摘要这一句只取第一行。
             first = reasons[0].split("\n", 1)[0]
             more = f"（还有 {len(reasons) - 1} 条）" if len(reasons) > 1 else ""
-            return f"保存修订被拒，助手正在照原因改：{first}{more}"
+            return f"保存修订被拒：{first}{more}"
         if not done:
             return "正在保存修订"
         ops = (details or {}).get("operations") or []
@@ -292,7 +311,7 @@ def works_from_entries(path_entries: list[dict], definition: dict, fallback_text
             current["call_ids"].append(part.get("id"))
             details = result.get("details") or {}
             if failed and part.get("name") == "save_revision":
-                details = {**details, "reasons": rejection_reasons(details, result_text(result))}
+                details = {**details, "reasons": rejection_parts(details, result_text(result))}
             current["calls"].append({"tool": part.get("name") or "", "args": part.get("arguments") or {}, "failed": failed,
                                      "details": details})
             if part.get("name") == REPLY_TOOL and result and not failed:

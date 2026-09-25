@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from taskwright_server import create_task as create_task_module
 from taskwright_server import new_workspace
 from taskwright_observatory import taskdb
-from taskwright_server.service import clock, conversation, library, render, work_summary
+from taskwright_server.service import clock, conversation, library, occupancy, render, work_summary
 from taskwright_server.service.errors import ApiError
 from taskwright_server.service.executor import Executor
 from taskwright_server.service.hub import Hub
@@ -121,11 +121,17 @@ class Task:
 
 
 class Service:
-    def __init__(self, tasks_dir: Path, runs_dir: Path, profile: dict):
+    """任务服务。它接手 --tasks 目录下的每个任务时写一份占用标记（service.lock，见 occupancy.py），退出时删掉；
+    正被别的活着的服务占用的任务不接手：列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。"""
+
+    def __init__(self, tasks_dir: Path, runs_dir: Path, profile: dict, port: int | None = None):
         self.tasks_dir = Path(tasks_dir)
         self.runs_dir = Path(runs_dir)
         self.profile = profile
+        self.port = port
         self.tasks: dict[str, Task] = {}
+        #: 正被别的服务占用、本服务没有接手的任务：任务编号 → {"lock": 那份占用标记, "dir": 任务目录}。
+        self.occupied: dict[str, dict] = {}
         self.skipped: set[str] = set()
         self.lock = threading.Lock()
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
@@ -150,12 +156,24 @@ class Service:
                 if conn is not None:
                     conn.close()
             if row and row[0] not in self.tasks:
+                taken = occupancy.claim(d, self.port)
+                if taken is not None:
+                    if row[0] not in self.occupied:
+                        print(f"任务 {row[0]}（目录 {d.name}）正被端口 {taken.get('port')} 的服务（主机 {taken.get('host')}，进程 {taken.get('pid')}）占用，"
+                              "本服务不接手它。", flush=True)
+                    self.occupied[row[0]] = {"lock": taken, "dir": d}
+                    continue
+                self.occupied.pop(row[0], None)
                 self.tasks[row[0]] = Task(row[0], d, self)
 
     def task(self, task_id: str) -> Task:
         with self.lock:
             if task_id not in self.tasks:
                 self.scan()
+            if task_id in self.occupied:
+                lock = self.occupied[task_id]["lock"]
+                raise ApiError("task_occupied", occupancy.occupied_text(lock),
+                               {"port": lock.get("port"), "pid": lock.get("pid"), "host": lock.get("host")})
             if task_id not in self.tasks:
                 raise ApiError("not_found", f"没有任务 {task_id}。")
             return self.tasks[task_id]
@@ -166,6 +184,7 @@ class Service:
             t.hub.close()
             if t.executor:
                 t.executor.close()
+            occupancy.release(t.dir)
 
     # ───────────── 任务与会话 ─────────────
 
@@ -174,6 +193,7 @@ class Service:
             self.scan()
             tasks = list(self.tasks.values())
             skipped = set(self.skipped)
+            occupied = dict(self.occupied)
         out = []
         for t in tasks:
             seq, view = library.task_snapshot(t.dir)
@@ -188,6 +208,24 @@ class Service:
                         "completion_total": len(comp["conditions"]) if comp else None,
                         "completion_unmet": comp["unmet_count"] if comp else None,
                         "last_active_at": max(a for a in actives if a), "session_count": len(sessions), "supported": True})
+        # 正被别的服务占用的任务：照样列出来，写明被哪个服务占用，打不开。
+        for task_id, info in sorted(occupied.items()):
+            lock = info["lock"]
+            name = task_id
+            conn = library.open_ro(info["dir"])
+            try:
+                got = conn.execute("SELECT task_name FROM task LIMIT 1").fetchone() if conn else None
+                name = (got[0] if got and got[0] else task_id)
+            except Exception:
+                pass
+            finally:
+                if conn is not None:
+                    conn.close()
+            out.append({"task_id": task_id, "task_name": name, "task_type": None, "domain_tag": None, "status": "占用中",
+                        "item_count": None, "completion_met": None, "completion_total": None, "completion_unmet": None,
+                        "last_active_at": None, "session_count": None, "supported": False,
+                        "occupied": {"port": lock.get("port"), "pid": lock.get("pid"), "host": lock.get("host")},
+                        "note": occupancy.occupied_text(lock)})
         # 修订统一之前建的任务：本版本打不开，照样列出来并标明不支持，免得用户以为任务丢了。
         for name in sorted(skipped):
             folder = self.tasks_dir / name

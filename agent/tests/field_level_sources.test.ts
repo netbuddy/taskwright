@@ -45,12 +45,12 @@ test("修改与删除缺 base_revision 时整批拒绝，说明缺什么", () =>
       ],
     }),
   );
-  assert.match(message, /操作 1（修改，条目 UC-001）：缺少 base_revision。修改与删除时要写你所见的这个条目当前所在的修订号/);
+  assert.match(message, /操作 1（修改，条目 UC-001）：助手修改 UC-001 时没写它看到的是哪次修订。\n  怎么办：修改与删除时要写 base_revision，也就是你所见的这个条目当前所在的修订号/);
   assert.equal(count(dir, "revision"), 1, "整批都不写入");
   const del = rejection(() => saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-001" }] }));
-  assert.match(del, /操作 1（删除，条目 UC-001）：缺少 base_revision/);
+  assert.match(del, /操作 1（删除，条目 UC-001）：助手删除 UC-001 时没写它看到的是哪次修订/);
   const bad = rejection(() => saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-001", base_revision: "1" }] }));
-  assert.match(bad, /base_revision 应当是一个从 1 起的整数，现在写的是 "1"/);
+  assert.match(bad, /助手删除 UC-001 时写的修订号 "1" 不对。\n  怎么办：base_revision 应当是一个从 1 起的整数/);
   const onAdd = rejection(() => saveRevision(callIn(dir), { operations: [{ ...addUseCase("甲"), base_revision: 1 }] }));
   assert.match(onAdd, /新增时不要写 base_revision/);
 });
@@ -67,13 +67,13 @@ test("base_revision 不是条目当前所在的修订时整批拒绝，写明被
   const message = rejection(() =>
     saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "执行者按旧版改" } }] }),
   );
-  assert.match(message, /条目 UC-001 已经被用户改到修订 2（你看到的是修订 1），请先读最新内容再改。/);
+  assert.match(message, /UC-001 已经被用户改到修订 2，助手看到的还是修订 1。\n  怎么办：请先读最新内容再改。/);
   assert.match(message, /它在修订 2 的内容是：\{"名称":"登录",.*"备注":"用户在界面上补的"\}/);
   assert.equal(count(dir, "item_version"), before);
   // 执行者自己改过的，说「被执行者改到」。
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 2, fields: { 名称: "看过最新再改" } }] });
   const second = rejection(() => saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-001", base_revision: 2 }] }));
-  assert.match(second, /已经被执行者改到修订 3（你看到的是修订 2）/);
+  assert.match(second, /UC-001 已经被助手改到修订 3，助手看到的还是修订 2/);
 });
 
 test("发起方写进事件表；用户的直接操作的调用编号是操作编号", () => {
@@ -174,11 +174,11 @@ test("用户的话：对话里找不到这句话就拒绝；不给会话时当�
       { operations: [addUseCase("退款", [{ kind: "用户的话", excerpt: "退款要在三天之内到账" }])] },
     ),
   );
-  assert.match(message, /第 1 条来源是「用户的话」，这句话在对话里没有找到，请逐字摘录用户说过的原话（「退款要在三天之内到账」）/);
+  assert.match(message, /第 1 条来源引用的用户的话「退款要在三天之内到账」在对话里没有找到。\n  怎么办：请逐字摘录用户说过的原话/);
   const none = rejection(() =>
     saveRevision(callIn(dir), { operations: [addUseCase("退款", [{ kind: "用户的话", excerpt: "随便" }])] }),
   );
-  assert.match(none, /这句话在对话里没有找到/);
+  assert.match(none, /在对话里没有找到/);
   assert.equal(count(dir, "revision"), 0);
 });
 

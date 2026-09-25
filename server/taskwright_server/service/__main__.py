@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--profile", default="dev")
     args = parser.parse_args(argv)
-    service = Service(Path(args.tasks).expanduser(), Path(args.runs).expanduser(), launch.load_profile(args.profile))
+    service = Service(Path(args.tasks).expanduser(), Path(args.runs).expanduser(), launch.load_profile(args.profile), port=args.port)
     server = serve(service, args.host, args.port)
     print(f"任务服务在 http://{args.host}:{args.port}/api/v1/tasks ，任务目录 {args.tasks}，归档 {args.runs}", flush=True)
     def stop(*_):

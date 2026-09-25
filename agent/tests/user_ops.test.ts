@@ -235,7 +235,7 @@ test("task_closed、no_task、bad_request、rejected", () => {
   const bad = refused(() => op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 步骤: "不是列表" } }));
   assert.equal(bad.code, "rejected");
   assert.match((bad.data.reasons as string[])[0], /字段「步骤」是文本列表类型/);
-  assert.match(bad.message, /^这次修改没有通过核对：操作 1（修改，条目 UC-001）：字段「步骤」是文本列表类型/);
+  assert.match(bad.message, /^这次修改没有通过核对：UC-001：字段「步骤」是文本列表类型/);
   const db = new DatabaseSync(databasePath(dir));
   db.exec("UPDATE task SET status = '已完成'");
   db.close();
@@ -246,6 +246,6 @@ test("restore 只给用户的撤销用：执行者用它被拒", () => {
   const dir = taskWithItems();
   saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-002", base_revision: 1 }] });
   assert.throws(() => saveRevision(callIn(dir), { operations: [{ op: "restore", item: "UC-002", base_revision: 1, fields: { 名称: "注销", 步骤: ["点注销"] }, sources: [SOURCE] }] }),
-    /restore（恢复删掉的条目）只给用户在界面上的撤销用/);
+    /助手用了恢复操作（restore），它只给用户在界面上的撤销用/);
   assert.ok(demoDefinition());
 });
