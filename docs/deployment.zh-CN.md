@@ -117,6 +117,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 | `TASKWRIGHT_WEB_PORT` | web 开发服务器 | 端口（默认 5680）。 |
 | `TASKWRIGHT_API_TARGET` | web 开发服务器 | `/api` 代理转发的目标地址（默认：5681 端口上的模拟服务器）。 |
 | `TASKWRIGHT_TASKS_DIR`、`TASKWRIGHT_API_PORT` | `scripts/dev.sh` | 任务目录的根路径与 API 端口。 |
+| `TASKWRIGHT_TASKS_ROOT` | agent | 服务启动 pi 时设：任务根目录。不在它之下的任务库拒绝写入。单独跑 agent 代码时（命令行工具、测试）不设，也就不核对。 |
 | `TASKWRIGHT_LANGFUSE_PLUGIN` | server | 可选的 Langfuse 插件所在的位置（见第 7 节）。 |
 | `TASKWRIGHT_LANGFUSE_ENV_FILE` | server、observatory | 保存 Langfuse 地址与密钥的文件。 |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse 项目编号，用于生成直达链接。 |
@@ -153,6 +154,10 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 ```
 
 做完检查点之后，单独一个 `task.sqlite` 文件就是完整的。对话本身不在数据库里，而在 `<runs>/<task id>/pi-sessions/` 下 pi 的会话文件里；想保留对话，这些文件也要备份。
+
+**一个任务只由一个服务服务。** 在跑的服务往它服务的每个任务目录里写一份 `service.lock`（端口、进程号、启动时刻、主机名），停下时删掉。另一个服务看到同一台主机上一个活着的进程写的标记（或者别的主机写的任何标记），就不接手这个任务：列表里写「占用中」和占着它的服务的端口，打开它的请求一律拒绝。进程已经不在了的标记是崩溃留下的，接手时覆盖，并在日志里写一行。看一份标记：`cat <任务目录>/service.lock`。
+
+**复制或搬动任务数据。** 任务目录里的路径都是相对的，任务目录可以搬家或复制。pi 的会话文件记着它当初是在哪个任务目录里开始的；服务续接这样的会话时，如果记着的目录不是自己的任务目录，就把会话文件第一行改写为自己的任务目录（原文件原样留在旁边，名为「….cwd-时刻.bak」），日志里写「会话文件记的工作目录是 X，已按本服务的任务目录 Y 续接」。服务还把自己的任务根目录传给 pi（`TASKWRIGHT_TASKS_ROOT`），不在它之下的任务库一律拒绝写入。所以复制出来的服务不会写回原来的任务数据。在副本上起服务之前先停掉原来的服务，否则副本会显示为占用中。
 
 ## 9 常见故障
 

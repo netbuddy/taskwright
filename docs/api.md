@@ -135,7 +135,7 @@ Each condition has one of three states. `met`: the collection has items and all 
 | Endpoint | Purpose | Returns |
 |---|---|---|
 | `GET /api/v1/task-types` | task types for "new task" | `{ok, task_types: [{task_type, name}]}` |
-| `GET /api/v1/tasks` | task list | `{ok, tasks: [{task_id, task_name, task_type, domain_tag, status, item_count, completion_met, completion_total, completion_unmet, last_active_at, session_count, supported}]}` (show `completion_unmet`, "still missing N"). A task created before revisions replaced item versions is listed with `supported: false`, `status` 旧格式 ("old format") and a `note`; it cannot be opened. |
+| `GET /api/v1/tasks` | task list | `{ok, tasks: [{task_id, task_name, task_type, domain_tag, status, item_count, completion_met, completion_total, completion_unmet, last_active_at, session_count, supported}]}` (show `completion_unmet`, "still missing N"). A task created before revisions replaced item versions is listed with `supported: false`, `status` 旧格式 ("old format") and a `note`; it cannot be opened. A task in use by another running service is listed with `supported: false`, `status` 占用中 ("in use"), `occupied` (`port`, `pid`, `host`) and a `note`; every request for it returns `task_occupied`. |
 | `POST /api/v1/tasks` `{task_type, task_name, domain_tag}` | create a task | `{ok, task_id}`; upload materials afterwards |
 | `GET /api/v1/tasks/{task_id}` | task page (also for closed tasks) | the task, plus `materials` and `sessions` |
 | `GET …/sessions` | sessions | `{ok, sessions: [{session_id, name, started_at, last_active_at, message_count, active}]}` |
@@ -255,6 +255,7 @@ Shape: `{ "ok": false, "error": { "code": "…", "message": "…", "data": { …
 | `undo_conflict` | 409 | the item changed again after the revision being undone |
 | `task_closed` | 409 | the task is completed or abandoned |
 | `session_busy` | 409 | the agent is working: in another session (`data.active_session`), or in this one when a message or direct operation arrives (`data.reason` is `working`) |
+| `task_occupied` | 409 | another running service serves this task (its `service.lock` names a live process); `data` has its `port`, `pid` and `host` |
 | `executor_starting` | 503 | pi is starting |
 | `executor_unavailable` | 503 | pi failed to start or exited (`data.detail`) |
 | `busy_timeout` | 503 | waited too long for the database write lock |
