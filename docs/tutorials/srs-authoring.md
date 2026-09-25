@@ -410,7 +410,7 @@ The observatory is read-only; it never changes the task.
 
 ### Step 32: The eight tools, one by one
 
-The assistant has exactly eight tools. It cannot run commands or change files; the only way it can change the deliverable is to save a revision. On the task page, click 全部细节 (all details): each tool call has three lines, the call (with its arguments), the result (marked 已接受, accepted, or 被拒绝, refused) and the change it made to the deliverable.
+The assistant has exactly eight tools. It cannot run commands or change files; the only way it can change the deliverable is to save a revision. On the task page, click 全部细节 (all details): each tool call has three lines, the call (with its arguments), the result (marked 已接受, accepted, or 被拒绝, refused) and the change it made to the deliverable. Long contents such as arguments and results show their first 12 lines, followed by 共 N 行 · 看全文 (N lines · see the full text), which opens the full text in the side panel; the title line of every model request and every tool call has 在 Langfuse 里打开 (open in Langfuse), a direct link to that step in Langfuse.
 
 List directory (`ls`) and read (`read`): in step 4 it lists `inputs/` and reads the whole material, after reading the method description, the task definition and the writing rules:
 
