@@ -539,7 +539,8 @@ def steer_kind(text: str, run: dict) -> str:
 
 
 def is_understanding(text: str) -> bool:
-    """这段助手文字是不是助手写的理解：```json 围栏开头，或者整段是一个带 acts 的 JSON 对象。只看形式。"""
+    """这段助手文字是不是助手写的理解：```json 围栏开头，或者整段是一个带 acts 的 JSON 对象。只看形式，只用来给原文加标题；
+    理解是不是记下了、合不合格，以任务库为准（dialogue.py），不看这里。"""
     body = text.strip()
     return body.startswith("```json") or (body.startswith("{") and '"acts"' in body)
 
@@ -559,7 +560,7 @@ def turn_shape(turn: dict, run: dict, index, rules: dict, workspace_abs: str, ru
         "插话": [],
         "自动重试说明": "",
         "正文从哪来": "模型正文" if (turn.get("助手文字") or "").strip() else "",
-        # 每轮第一段是助手写的理解（```json 围栏里的对话行为）时，页面把这段原文标成「助手写的理解（原文）」。
+        # 这一轮的文字以助手写的理解（一段对话行为的 JSON）开头时，页面把这段原文标成「助手写的理解（原文）」。
         "正文是理解": is_understanding(turn.get("助手文字") or ""),
         "出错说明": [r["出错说明"] or "归档里没有写出错的原因" for r in (turn.get("模型请求") or [])
                      if r.get("停止原因") == "error"],

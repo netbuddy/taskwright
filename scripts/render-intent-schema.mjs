@@ -2,11 +2,12 @@
 // Renders the understanding format (agent/prompts/schemas/user_intent.schema.json) into the platform skill, so the
 // schema the extension checks and the format the executor reads are one text.
 //
-// A generated region is a pair of HTML comments in a Markdown file:
-//   <!-- 理解格式生成区 开始：agent/prompts/schemas/user_intent.schema.json -->
+// A generated region is a pair of plain text lines in a Markdown file (not HTML comments: Markdown viewers that
+// render the skill, such as Langfuse and the observatory, swallowed everything after an HTML comment):
+//   （理解格式说明开始，由 agent/prompts/schemas/user_intent.schema.json 生成，不要手改）
 //   ...generated text, do not edit by hand...
-//   <!-- 理解格式生成区 结束 -->
-// The path after the colon is relative to the repository root.
+//   （理解格式说明结束）
+// The path in the first line is relative to the repository root.
 //
 // Usage:
 //   node scripts/render-intent-schema.mjs           rewrite the generated region of every file listed in DOCUMENTS
@@ -17,8 +18,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BEGIN = /<!-- 理解格式生成区 开始：(\S+) -->\n/;
-const END = "<!-- 理解格式生成区 结束 -->";
+const BEGIN = /（理解格式说明开始，由 (\S+) 生成，不要手改）\n/;
+const END = "（理解格式说明结束）";
 
 /** The documents that carry a generated region. */
 export const DOCUMENTS = ["agent/prompts/skills/taskwright-executor/SKILL.md"];
@@ -42,7 +43,7 @@ export function renderSchema(schema) {
   const user = schema.$defs.user_function;
   const confidence = schema.$defs.confidence;
   const lines = [];
-  lines.push("格式（由 schema 生成，不要手改）：");
+  lines.push("格式：");
   lines.push("");
   lines.push(`- 最外层是一个对象，只有 \`acts\` 一项：${schema.properties.acts.description}至少一项。`);
   lines.push(`- 每一项必须写 ${act.required.map((k) => `\`${k}\``).join("、")}，可以写 \`targets\` 与 \`responds_to\`，别的键不写。`);
@@ -60,7 +61,7 @@ export function renderSchema(schema) {
   for (const key of confidence.enum) lines.push(`- \`${key}\`（${confidence["x-names"][key]}）：${confidence["x-usage"][key]}`);
   for (const example of schema.examples ?? []) {
     lines.push("");
-    lines.push(`例子。${example.context}你这一轮的第一段输出：`);
+    lines.push(`例子。${example.context}你这一轮写的理解：`);
     lines.push("");
     lines.push("```json");
     lines.push(exampleJson(example.value));
@@ -80,7 +81,7 @@ export function renderDocument(text) {
     const end = rest.indexOf(END, start);
     if (end < 0) throw new Error(`the generated region for ${match[1]} has no end marker`);
     const schema = JSON.parse(readFileSync(join(ROOT, match[1]), "utf-8"));
-    out += rest.slice(0, start) + renderSchema(schema);
+    out += rest.slice(0, start) + "\n" + renderSchema(schema) + "\n";
     rest = rest.slice(end);
   }
 }

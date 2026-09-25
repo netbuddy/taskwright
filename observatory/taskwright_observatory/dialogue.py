@@ -3,8 +3,11 @@
 数据的来处都在任务库里（agent 侧写的，本模块只读）：
 
 · dialogue_act 表：每一项对话行为一行，编号是「运行号-序号」（例如 r13-2），运行号是这条会话当前分支上第几句用户的话。
-· event 表里的三种事件：USER_INTENT_RECORDED（记下一份理解或界面合成的用户行为，内容里有 user_entry，即那句用户的话的
-  会话条目编号）、USER_INTENT_INVALID（这一轮理解没按格式写，内容里有 user_entry 与原因）、EXECUTOR_ACTS_RECORDED
+· event 表里的几种事件：USER_INTENT_RECORDED（记下一份理解或界面合成的用户行为，内容里有 user_entry，即那句用户的话的
+  会话条目编号）、USER_INTENT_INVALID（一份符合格式、但事实核对没通过的理解，内容里有 user_entry 与原因）、
+  USER_INTENT_MISSING（这一轮结束时这句话仍没有合格的理解，唯一算失败的情形，内容里有 user_entry 与本轮各片段最近的错误）、
+  STRUCTURED_OUTPUT_UNMATCHED（助手文字里没匹配上任何一种登记格式的 JSON 片段，或解析不了的片段，只是诊断，
+  内容里有 user_entry 与逐个片段）、EXECUTOR_ACTS_RECORDED
   （「回复」记下的助手行为，调用编号是那次「回复」工具调用的 pi 调用编号）。观测台的一次运行按这两样对上：
   它的用户消息条目编号对 user_entry，它里面的「回复」调用编号对 EXECUTOR_ACTS_RECORDED 的调用编号；两样都对不上时
   （例如会话文件不在归档里、拿不到条目编号），按它是这条会话里的第几次运行对运行号（第 N 次运行就是 rN：运行号数的是
@@ -30,7 +33,14 @@ INTENT_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "agent" / "prompts" /
 
 RECORDED = "USER_INTENT_RECORDED"
 INVALID = "USER_INTENT_INVALID"
+MISSING = "USER_INTENT_MISSING"
+UNMATCHED = "STRUCTURED_OUTPUT_UNMATCHED"
 EXECUTOR_RECORDED = "EXECUTOR_ACTS_RECORDED"
+
+#: 诊断行里每个片段显示前多少字。
+FRAGMENT_SHOWN = 200
+#: 片段的性质写成的中文。
+FRAGMENT_NATURE = {"unmatched": "没有匹配上任何一种格式", "unparseable": "解析不了"}
 
 #: 把握三档的中文说法。
 CONFIDENCE_WORDS = {"high": "把握高", "medium": "把握中", "low": "把握低"}
@@ -88,7 +98,7 @@ def target_text(targets: list[dict]) -> str:
 def read_session(conn: sqlite3.Connection, task_id: str, session_id: str) -> dict:
     """一条会话的对话行为与三种事件。没有对话行为表的旧库返回空的结构（「有没有」为假）。"""
     if not has_dialogue(conn):
-        return {"有没有": False, "行为": [], "理解事件": [], "无效": [], "回复事件": []}
+        return {"有没有": False, "行为": [], "理解事件": [], "无效": [], "失败": [], "未匹配": [], "回复事件": []}
     columns = ("act_id", "run_id", "speaker", "function", "targets", "responds_to", "expects_response",
                "confidence", "summary", "source_entry", "origin", "event_seq")
     rows = conn.execute(f"SELECT {', '.join(columns)} FROM dialogue_act WHERE task_id = ? AND session_id = ? ORDER BY rowid",
@@ -98,19 +108,33 @@ def read_session(conn: sqlite3.Connection, task_id: str, session_id: str) -> dic
         act = dict(zip(columns, row))
         act["targets"] = _json(act["targets"]) or []
         acts.append(act)
-    events = conn.execute("SELECT seq, name, call_id, payload FROM event WHERE task_id = ? AND session_id = ? AND name IN (?, ?, ?) ORDER BY seq",
-                          (task_id, session_id, RECORDED, INVALID, EXECUTOR_RECORDED)).fetchall()
+    names = (RECORDED, INVALID, MISSING, UNMATCHED, EXECUTOR_RECORDED)
+    events = conn.execute(f"SELECT seq, name, call_id, payload FROM event WHERE task_id = ? AND session_id = ? "
+                          f"AND name IN ({', '.join('?' * len(names))}) ORDER BY seq", (task_id, session_id, *names)).fetchall()
     shaped = [{"序号": s, "事件名": n, "调用编号": c, "内容": _json(p) or {}} for s, n, c, p in events]
     return {"有没有": True, "行为": acts,
             "理解事件": [e for e in shaped if e["事件名"] == RECORDED],
             "无效": [e for e in shaped if e["事件名"] == INVALID],
+            "失败": [e for e in shaped if e["事件名"] == MISSING],
+            "未匹配": [e for e in shaped if e["事件名"] == UNMATCHED],
             "回复事件": [e for e in shaped if e["事件名"] == EXECUTOR_RECORDED]}
 
 
+def fragment_row(fragment: dict) -> dict:
+    """一个没匹配上的片段写成诊断行：性质、前 FRAGMENT_SHOWN 字、校验错误（按登记格式分列）或解析错误。"""
+    nature = fragment.get("nature") or ""
+    errors = fragment.get("errors") or {}
+    lines = ([f"对 {name}：" + "；".join(found) for name, found in errors.items() if found] if nature == "unmatched"
+             else [fragment.get("parse_error") or ""])
+    return {"性质": FRAGMENT_NATURE.get(nature, nature), "前200字": (fragment.get("text") or "")[:FRAGMENT_SHOWN],
+            "离得最近的格式": fragment.get("nearest") or "", "错误": [x for x in lines if x]}
+
+
 def run_layer(session: dict, user_entry: str, reply_call_ids: list[str], ordinal: int | None = None) -> dict | None:
-    """一次运行的对话行为层：用户行为（左列）、助手行为（右列）与理解没按格式写的次数。
+    """一次运行的对话行为层：用户行为（左列）、助手行为（右列）、这一轮是否没有合格的理解（失败，一轮至多一次），
+    以及只作诊断的两样：没匹配上的 JSON 片段、符合格式但事实核对没通过的理解。
     ordinal 是这次运行在它那条会话里是第几次运行，前两种办法都对不上时用它。
-    这次运行在库里一项对话行为也没有、也没有无效记录时返回 None。"""
+    这次运行在库里一项对话行为也没有、也没有失败与诊断记录时返回 None。"""
     if not session.get("有没有"):
         return None
     acts = session["行为"]
@@ -118,15 +142,19 @@ def run_layer(session: dict, user_entry: str, reply_call_ids: list[str], ordinal
     if run_id is None:
         hit = next((e for e in session["回复事件"] if e["调用编号"] in reply_call_ids), None)
         run_id = (hit or {}).get("内容", {}).get("run_id")
+    notes = session["无效"] + session["失败"] + session["未匹配"]
     if run_id is None and ordinal is not None:
         guess = f"r{ordinal}"
-        if any(a["run_id"] == guess for a in acts) or any(e["内容"].get("run_id") == guess for e in session["无效"]):
+        if any(a["run_id"] == guess for a in acts) or any(e["内容"].get("run_id") == guess for e in notes):
             run_id = guess
     if not user_entry and run_id:
         user_entry = next((a["source_entry"] for a in acts if a["speaker"] == "user" and a["run_id"] == run_id), "") or next(
-            (e["内容"].get("user_entry") for e in session["无效"] if e["内容"].get("run_id") == run_id), "")
-    invalid = [e["内容"].get("reason", "") for e in session["无效"] if user_entry and e["内容"].get("user_entry") == user_entry]
-    if run_id is None and not invalid:
+            (e["内容"].get("user_entry") for e in notes if e["内容"].get("run_id") == run_id), "")
+    mine = lambda kind: [e["内容"] for e in session[kind] if user_entry and e["内容"].get("user_entry") == user_entry]
+    invalid = [x.get("reason", "") for x in mine("无效")]
+    missing = mine("失败")
+    fragments = [fragment_row(f) for x in mine("未匹配") for f in x.get("fragments") or []]
+    if run_id is None and not (invalid or missing or fragments):
         return None
     answered: dict[str, str] = {}
     for a in acts:
@@ -148,8 +176,9 @@ def run_layer(session: dict, user_entry: str, reply_call_ids: list[str], ordinal
                          "期待回应": bool(a["expects_response"]), "状态": state, "回应它的": by or "",
                          "针对": target_text(a["targets"]), "摘要": a["summary"]})
     origin = "界面点击合成" if any(u["来处"] == "界面点击合成" for u in user) else ("助手写的理解" if user else "")
-    return {"运行号": run_id or "", "用户行为": user, "助手行为": executor,
-            "理解没按格式写次数": len(invalid), "理解没按格式写的原因": invalid, "用户行为的来处": origin}
+    return {"运行号": run_id or "", "用户行为": user, "助手行为": executor, "用户行为的来处": origin,
+            "没有合格的理解": bool(missing), "失败时最近的错误": (missing[0].get("nearest") or []) if missing else [],
+            "未匹配片段": fragments, "事实核对没通过": invalid}
 
 
 #: 连续追问到几次才列进页头。与 agent 侧给执行者的文字同一个口径：只列连着 2 次及以上没得到回应的条目。

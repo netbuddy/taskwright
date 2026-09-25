@@ -42,6 +42,6 @@ export default function (pi: ExtensionAPI) {
   registerReplyFallback(pi);
   registerUserCommands(pi);
   registerBoardCommand(pi);
-  // 对话理解：助手消息落进会话时解析它第一段写的理解，记进对话行为表（hooks/intent_record.ts）。
+  // 对话理解：助手消息落进会话时按登记的 schema 认出它写的理解，记进对话行为表；一轮结束时没有理解记失败（hooks/intent_record.ts）。
   registerIntentRecord(pi);
 }

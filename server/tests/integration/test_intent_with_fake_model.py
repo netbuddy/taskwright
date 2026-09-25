@@ -1,7 +1,8 @@
 """对话理解的集成测试：假模型端点、真实的 pi 进程加载 agent 扩展，关掉假端点的自动补理解（auto_intent=False），
-由脚本自己写执行者这一轮的第一段理解。
+由脚本自己写执行者这一轮的理解。
 
-三件事：一轮里先写理解、再调用工具的完整路径；理解写错被拒之后重写；卡片点击合成的那句话不需要理解。
+几件事：一轮里先写理解、再调用工具的完整路径；理解写错被拒之后重写；先调工具、理解写在后面也认；
+一轮结束时没有合格的理解记一条失败；卡片点击合成的那句话不需要理解。
 本机没有 pi 或 node 时整组跳过。单跑：python3 -m pytest server/tests/integration -q -k 理解
 """
 
@@ -75,6 +76,8 @@ class IntentWithFakeModelTests(unittest.TestCase):
         with Rig(script, material=SOURCE["excerpt"], auto_intent=False) as rig:
             events = rig.say("把材料整理成用例。")
             invalid = rig.rows("SELECT payload FROM event WHERE name = 'USER_INTENT_INVALID'")
+            unmatched = rig.rows("SELECT payload FROM event WHERE name = 'STRUCTURED_OUTPUT_UNMATCHED'")
+            missing = rig.rows("SELECT payload FROM event WHERE name = 'USER_INTENT_MISSING'")
             acts = rig.rows("SELECT act_id, function FROM dialogue_act WHERE speaker = 'user'")
             revisions = rig.rows("SELECT revision_no, call_id, intent_act_id FROM revision")
 
@@ -84,8 +87,13 @@ class IntentWithFakeModelTests(unittest.TestCase):
         self.assertIn('function 写的是 "agree"', results["call-save-1"]["文字"], "拒绝理由附上解析失败的原因")
         self.assertFalse(results["call-save-2"]["被拒"])
         self.assertFalse(results["call-reply"]["被拒"])
-        self.assertEqual(len(invalid), 1)
-        self.assertIn('function 写的是 "agree"', json.loads(invalid[0]["payload"])["reason"])
+        # schema 不对的那一份不是无效记录，是没匹配上的片段（诊断，不算失败）；重写之后这一轮有了理解，不记失败。
+        self.assertEqual(invalid, [])
+        self.assertEqual(len(unmatched), 1)
+        fragment = json.loads(unmatched[0]["payload"])["fragments"][0]
+        self.assertEqual(fragment["nature"], "unmatched")
+        self.assertIn('function 写的是 "agree"', " ".join(fragment["errors"]["user_intent"]))
+        self.assertEqual(missing, [])
         self.assertEqual(acts, [{"act_id": "r1-1", "function": "request"}])
         self.assertEqual(revisions, [{"revision_no": 1, "call_id": "call-save-2", "intent_act_id": "r1-1"}])
 
@@ -102,6 +110,38 @@ class IntentWithFakeModelTests(unittest.TestCase):
         self.assertTrue(results["call-reply-1"]["被拒"])
         self.assertIn(GATE, results["call-reply-1"]["文字"])
         self.assertFalse(results["call-reply-2"]["被拒"])
+
+    def test_理解_第一步先读文件_理解写在后面的消息里_不记失败(self):
+        script = [
+            {"tool_calls": [call("get_task_status", {}, "call-status")]},
+            {"text": "看过任务状态了。\n" + json.dumps({"acts": [REQUEST]}, ensure_ascii=False), "tool_calls": [save_uc("call-save")]},
+            {"tool_calls": [reply("存好了。", "call-reply")]},
+        ]
+        with Rig(script, material=SOURCE["excerpt"], auto_intent=False) as rig:
+            events = rig.say("把材料整理成用例。")
+            names = [r["name"] for r in rig.rows("SELECT name FROM event ORDER BY seq")]
+        results = {r["调用编号"]: r for r in tool_results(events)}
+        self.assertFalse(results["call-save"]["被拒"])
+        self.assertFalse(results["call-reply"]["被拒"])
+        # 第一步只调工具、没写理解，不记任何对话事件；「回复」只有成文的话，没有告知与主行为，不记执行者行为。
+        self.assertEqual(names, ["TASK_CREATED", "USER_INTENT_RECORDED", "REVISION_SAVED"])
+
+    def test_理解_一轮结束时没有合格的理解_记一条失败(self):
+        script = [
+            {"text": '{"path": "inputs/材料.md"}', "tool_calls": [call("get_task_status", {}, "call-status")]},
+            {"text": "好的。"},
+            {"text": "好的。"},
+            {"text": "好的。"},
+        ]
+        with Rig(script, auto_intent=False) as rig:
+            rig.say("你好。")
+            missing = rig.rows("SELECT payload FROM event WHERE name = 'USER_INTENT_MISSING'")
+            unmatched = rig.rows("SELECT payload FROM event WHERE name = 'STRUCTURED_OUTPUT_UNMATCHED'")
+        self.assertEqual(len(missing), 1, "兜底续跑两次之后才算这一轮结束，只记一次")
+        payload = json.loads(missing[0]["payload"])
+        self.assertEqual(payload["reason"], "这一轮结束时没有合格的理解")
+        self.assertIn("缺少 acts", payload["nearest"][0])
+        self.assertEqual(len(unmatched), 1)
 
     def test_理解_卡片点击合成的话不需要理解_按点击记一条告知回应那张卡片(self):
         choose = {"tool_calls": [call("reply", {"informs": [], "text": "逾期的读者能不能续借？", "act": {
