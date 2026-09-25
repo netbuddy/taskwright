@@ -608,6 +608,16 @@ export interface RevisionLogEntry {
   undo_of_revision: number | null;
   trigger: RevisionTrigger;
   operations: RevisionOperation[];
+  /** 触发这次修订的那项用户行为（修订表的 intent_act_id 对上对话行为表的一行）；对不上时为空。 */
+  intent?: RevisionIntent | null;
+}
+
+/** 一项用户行为：编号（运行号-序号）、功能码与中文名（取自理解格式的 schema）、摘要。 */
+export interface RevisionIntent {
+  act_id: string;
+  function: string;
+  function_name: string;
+  summary: string;
 }
 
 export interface RevisionLog {

@@ -82,11 +82,57 @@ function renderHead() {
       ${范围 ? `<span class="badge">${esc(范围)}</span>` : ""}
     </div>
     <p class="statline">${esc(h.统计句)}。</p>
+    ${对话事实HTML(h.对话, h.会话数)}
     <p class="facts">${facts.filter(Boolean).join("；")}。</p>
     <p class="lede">${esc(cur.概括)}</p>
     ${h.声明说明 ? `<p class="declnote">${esc(h.声明说明)}</p>` : ""}
     ${同区}
   </div>`;
+}
+
+/* ───── 对话行为层（数据由 taskpage.py 从任务库的对话行为表读好，见 dialogue.py） ───── */
+// 页头「对话」一行：还在等回应的助手行为、连续追问（连着 2 次及以上没得到回应的条目）、改口。库里没有对话行为表时不画。
+function 对话事实HTML(f, 会话数) {
+  if (!f) return "";
+  const 哪条 = (x) => (会话数 > 1 ? `第 ${x.会话序号} 条会话的` : "");
+  const 值 = (v) => (Array.isArray(v) ? v.join("、") : String(v ?? "（空）"));
+  const 等 = f.等回应, 追 = f.连续追问, 改 = f.改口;
+  return `<p class="dlgfacts" title="从任务库的对话行为表算出，口径与助手侧「查询任务状态」返回的三个事实相同">
+    <span class="lab">对话</span>等回应的助手行为 <span class="n ${等.length ? "wait" : "zero"}">${等.length}</span> 条${
+      等.length ? "（" + 等.map((w) => `${哪条(w)}<b>${esc(w.编号)}</b> ${esc(w.功能)}${w.针对 ? "，针对 " + esc(w.针对) : ""}`).join("；") + "）" : ""}
+    <span class="sep">|</span>连续追问 ${追.length ? 追.map((x) => `${哪条(x)}<b>${esc(x.条目)}</b> 连着 ${x.连续运行次数} 次运行没得到回应（${esc(x.行为.join("、"))}）`).join("；") : "没有"}
+    <span class="sep">|</span>改口 ${改.length ? 改.map((x) => `${哪条(x)}<b>${esc(x.条目)} 的${esc(x.字段)}</b> 按用户的意思改了 ${x.次数} 次（${
+      x.历次.map((v) => `修订 ${v.修订号}：${esc(值(v.值))}`).join(" → ")}）`).join("；") : "没有"}</p>`;
+}
+
+// 运行行上的小标签：运行号（会话内），以及这次运行里理解没按格式写的次数。
+function 对话标签HTML(r) {
+  const L = r.对话行为;
+  if (!L) return "";
+  return (L.运行号 ? `<span class="rtag rid" title="运行号是这条会话里第几句用户的话，与左边按任务数的运行序号不是同一个数">运行号 ${esc(L.运行号)}</span>` : "")
+    + (L.理解没按格式写次数 ? `<span class="rtag bad">理解没按格式写 ${L.理解没按格式写次数} 次</span>` : "");
+}
+
+// 运行展开后的对话行为块：左列用户行为，右列助手行为。
+function 对话行为HTML(r) {
+  const L = r.对话行为;
+  if (!L) return "";
+  const 用户 = L.用户行为.map((a) => `<div class="act"><div class="top"><span class="aid">${esc(a.编号)}</span><span class="fn">${esc(a.功能)}</span>
+      <span class="meta">${[a.针对 ? "针对 " + esc(a.针对) : "", a.回应 ? "回应 " + esc(a.回应) : "", esc(a.把握)].filter(Boolean).join(" · ")}</span></div>
+      <div class="asum">${esc(a.摘要)}</div></div>`).join("") || `<div class="dlg-empty">这一轮没有记下用户行为。</div>`;
+  const 助手 = L.助手行为.map((a) => {
+    const 状态 = a.状态 === "已回应" ? `<span class="st ok">已回应（${esc(a.回应它的)}）</span>`
+      : a.状态 === "等回应" ? `<span class="st wait">等回应</span>` : `<span class="st none">不等回应</span>`;
+    return `<div class="act"><div class="top"><span class="aid">${esc(a.编号)}</span><span class="fn">${esc(a.功能)}</span>${状态}
+      ${a.针对 ? `<span class="meta">针对 ${esc(a.针对)}</span>` : ""}</div><div class="asum">${esc(a.摘要)}</div></div>`;
+  }).join("") || `<div class="dlg-empty">这一轮助手没有经「回复」记下行为。</div>`;
+  const 没按格式 = L.理解没按格式写次数
+    ? `<div class="dlg-bad">这一轮助手的理解没按格式写 ${L.理解没按格式写次数} 次，写入工具因此拒绝，助手重写之后才记下。原因：${L.理解没按格式写的原因.map(esc).join("；")}</div>` : "";
+  return `<div class="dlg">
+    <div class="dlg-h"><span class="t">对话行为</span><span>运行号 ${esc(L.运行号 || "未知")}</span><span class="note">运行号是这条会话里第几句用户的话，与左边按任务数的运行序号 ${r.运行序号} 不是同一个数</span></div>
+    ${没按格式}
+    <div class="dlg-cols"><div class="dlg-col p-用户"><div class="dlg-ch">用户行为（${esc(L.用户行为的来处 || "没有记下")}）</div>${用户}</div>
+    <div class="dlg-col p-执行者"><div class="dlg-ch">助手行为（「回复」记下的告知与主行为）</div>${助手}</div></div></div>`;
 }
 
 /* ───── 这一页上的名词、一行运行里的几个数、观测不到什么 ───── */
@@ -521,7 +567,7 @@ function 轮HTML(t, key) {
         ["是不是降级放行", r.降级放行 ? esc(r.降级放行说明) : "不是，按结构发出的。"],
         ["会话条目编号", r.会话条目编号 ? `<code>${esc(r.会话条目编号)}</code>` : "工具没有报出来"],
         ["出自哪一轮", `第 ${t.运行序号} 次运行的第 ${t.序数} 轮`]], 链接: ""} : {
-      标题: "助手发出的一条消息", 概念: [["pi 的概念", "助手消息（assistant message）"]],
+      标题: t.正文是理解 ? "助手写的理解（原文）" : "助手发出的一条消息", 概念: [["pi 的概念", "助手消息（assistant message）"]],
       这是什么: `这是第 ${t.运行序号} 次运行第 ${t.序数} 轮的模型应答里的正文，pi 把它追加进消息列表，也发给了用户。`,
       字段: [["正文", `<div style="white-space:pre-wrap">${esc(t.正文)}</div>`],
         ["出自哪一轮", `第 ${t.运行序号} 次运行的第 ${t.序数} 轮`]], 链接: ""});
@@ -531,7 +577,7 @@ function 轮HTML(t, key) {
     const 卡片 = r && (r.告知.length || r.主行为) && 卡片行.length
       ? `<pre class="replycard" style="white-space:pre-wrap;margin:4px 0 0">${esc(卡片行.join("\n"))}</pre>` : "";
     const 降级 = r && r.降级放行 ? `<div class="sub" style="color:var(--bad)">${esc(r.降级放行说明)}</div>` : "";
-    return `<div class="saylab">助手在这一轮${r ? "经「回复」工具说的话" : "发出的一条消息"}</div>
+    return `<div class="saylab">${r ? "助手在这一轮经「回复」工具说的话" : t.正文是理解 ? "助手写的理解（原文）" : "助手在这一轮发出的一条消息"}</div>
       <div class="say" data-k="${键}">${esc(t.正文)}</div>${卡片}${降级}
       <button class="from jump" data-jump="lv3-${esc(key)}">出自第 ${t.序数} 轮的${r ? "「回复」工具调用" : "模型应答"}</button>`;
   })() : "";
@@ -615,7 +661,7 @@ function 运行行HTML(r) {
     <span class="rno"><i class="chev"></i>${r.运行序号}</span>
     <span class="rsay"><span class="full">${esc(r.用户的话 || "（归档里没有这次运行的提示原文）")}</span>${
       r.由界面点击触发 ? `<span class="rtag click" title="${esc(r.由界面点击触发)}">由界面点击触发</span>` : ""}${
-      r.被中止 ? `<span class="rtag bad">被中止</span>` : ""}</span>${格}</button>`;
+      r.被中止 ? `<span class="rtag bad">被中止</span>` : ""}${对话标签HTML(r)}</span>${格}</button>`;
 }
 
 function 运行展开HTML(r) {
@@ -642,6 +688,7 @@ function 运行展开HTML(r) {
     <div class="saylab">用户这一句话的全文（这一句话触发了这次运行）</div>
     <div class="say human p-用户" data-k="${键}"${r.条目编号 ? ` id="msg-${esc(r.条目编号)}"` : ""}>${esc(r.用户的话)}<span class="src">来源：${esc(r.消息来源 || "未知")}　会话条目 <code>${esc(r.条目编号 || "未知")}</code>　${esc(r.时刻)}${
       r.由界面点击触发 ? `　由界面点击触发：${esc(r.由界面点击触发)}` : ""}</span></div>
+    ${对话行为HTML(r)}
     ${首个写入 === r && (cur.指导 || []).length ? guideHTML(cur.指导) : ""}
     <div class="tlwrap" hidden>${时间条(r, key0)}</div>
     <div class="rturns-h">这次运行一共 ${r.轮数} 轮。每轮一块：助手读了什么、写了什么、说了什么；点「看这一轮的机器细节」展开模型请求与工具调用的原始记录。</div>

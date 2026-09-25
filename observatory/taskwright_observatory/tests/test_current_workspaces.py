@@ -255,5 +255,23 @@ class ClosedTaskTests(unittest.TestCase):
                          dt.datetime(2026, 9, 21, 12, 0, 0).timestamp())
 
 
+
+# ───────────── 对话行为层只挂在有对话行为表的新库表任务上 ─────────────
+
+class DialogueAttachTests(unittest.TestCase):
+    def flow(self):
+        return [{"会话编号": "s-1", "行": [{"种类": "运行", "条目编号": "u-1", "轮": []}]}]
+
+    def test_旧格式的任务与没有任务时不挂对话行为(self):
+        flow = self.flow()
+        self.assertIsNone(taskpage.attach_dialogue(flow, "/任意/任务目录", None))
+        self.assertIsNone(taskpage.attach_dialogue(flow, "/任意/任务目录", {"格式": taskdb.FORMAT_LEGACY, "任务标识": "old"}))
+        self.assertNotIn("对话行为", flow[0]["行"][0])
+
+    def test_任务目录里没有库时不挂(self):
+        flow = self.flow()
+        self.assertIsNone(taskpage.attach_dialogue(flow, "/不存在的任务目录", {"格式": taskdb.FORMAT_CURRENT, "任务标识": "T"}))
+
+
 if __name__ == "__main__":
     unittest.main()

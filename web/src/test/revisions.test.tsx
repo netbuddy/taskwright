@@ -362,6 +362,21 @@ describe("右侧栏「修订」页签", () => {
       .toBe("回应你在界面上的操作：我已经在界面上确认了：UC-001。请接着往下做。");
     expect(triggerText({ ...base, trigger: { kind: "none", text: "" } }, [])).toBe("助手自己开始的工作");
   });
+
+  it("因为你说：修订对得上触发它的那项用户行为时，卡片副标题写功能的中文名与摘要", () => {
+    const intent = { act_id: "r4-2", function: "correct", function_name: "纠正", summary: "UC-003 的参与者改为借还台管理员" };
+    side({ log: [{ ...LOG[0], intent }, ...LOG.slice(1)] });
+    const card = screen.getByTestId("rev-4");
+    expect(card).toHaveTextContent("因为你说：纠正：UC-003 的参与者改为借还台管理员");
+    expect(card).not.toHaveTextContent("回应你说的话");
+  });
+
+  it("对不上时（用户直接修改、旧任务没有理解记录）沿用原来的写法", () => {
+    side({ log: [{ ...LOG[0], intent: null }, { ...LOG[1], intent: null }, LOG[2]] });
+    expect(screen.getByTestId("rev-4")).toHaveTextContent("回应你说的话：寒暑假借期统一为 60 天。");
+    expect(screen.getByTestId("rev-2")).toHaveTextContent("你改了 UC-002 的「名称」");
+    expect(screen.getByTestId("rev-1")).toHaveTextContent("回应你的第 1 句话：整理一下这份材料");
+  });
 });
 
 describe("修订页签「查看差异」打开条目详情", () => {
