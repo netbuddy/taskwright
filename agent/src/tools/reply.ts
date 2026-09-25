@@ -98,6 +98,7 @@ const parameters = Type.Object({
   act: Type.Optional(Type.Union([Type.Null(), act], {
     description:
       "向用户要的回应。只在你等用户回应时填：没有它你下一步做不了或不该做。回答用户的问题、汇报你做了什么，都不填，写 null。" +
+      "回答了问题之后，如果还缺信息要问、要用户做决定、或你补了内容要用户看，照样填。" +
       "填的话，text 写要用户回应的那句话，不是你的答案。必须写这一项，不填时写 null。",
   })),
   text: Type.Optional(Type.String({
