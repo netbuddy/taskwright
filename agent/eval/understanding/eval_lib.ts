@@ -2,7 +2,7 @@
  * 对话理解评测：提示怎样拼、模型的输出怎样认、怎样判分。跑分入口是同目录的 run.ts；本模块不调模型、不读写文件以外的东西，
  * 单元测试直接调用（agent/tests/understanding_eval.test.ts）。
  *
- * 一例（cases.jsonl 的一行）：用户这句话，当时的上下文（任务里有哪些条目、助手上一次回复记下的等回应行为、上一轮对话），
+ * 标注口径见同目录的 labeling.md。一例（cases.jsonl 的一行）：用户这句话，当时的上下文（任务里有哪些条目、助手上一次回复记下的等回应行为、上一轮对话），
  * 人工标注的期望理解。期望理解按 agent/prompts/schemas/user_intent.schema.json 的结构写（function、targets、responds_to、summary），
  * 每项另写 keywords（摘要里应当出现的对象关键词，一个关键词可以用「|」写几种说法），纠正另写 change（改为、追加、删去）。
  *
