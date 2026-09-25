@@ -24,7 +24,7 @@ Whether the user accepts an item is not judged by a model: opening an item's det
 - A task can have several **sessions** (conversations). All sessions of a task work on the same deliverable. Only one session is active at a time: while the assistant works in one session, messages to another return `session_busy`.
 - **One writer at a time.** At any moment either the user or the assistant changes the deliverable, never both. One message from the user starts one run of the assistant; while it runs, further messages and direct operations are refused with `session_busy` (there is no queue), and the web interface greys out sending and every write button. While the user has an unsaved edit open in the web interface, sending and the buttons on cards are greyed out instead. If two browser tabs edit the same item, the second save is refused with `stale_revision`; nothing is merged.
 - The conversation is kept in pi's session files, not in the task database. When a session opens, the assistant receives a status message that lists the materials and how many items each collection has.
-- Materials are plain-text `.md` or `.txt` files of up to 5 MB each; more can be uploaded at any time.
+- Materials are plain-text `.md` or `.txt` files or Word `.docx` files of up to 5 MB each; more can be uploaded at any time. For a `.docx` a paragraph-numbered text is generated beside it; the assistant reads that text and cites the Word file by paragraph number.
 
 ### 1.3 The assistant's tools
 
@@ -76,7 +76,7 @@ The content of an item at each revision carries at least one source, and each so
 
 | Kind | Written by | Locator | Excerpt |
 |---|---|---|---|
-| Document excerpt | assistant | path of the material | a verbatim quote from the material |
+| Document excerpt | assistant | path of the material; for a Word file the path plus the paragraph number, such as `inputs/a.docx#p37` | a verbatim quote from the material (for a Word file, from that paragraph, or starting in it and running into at most five following paragraphs) |
 | User's words | assistant; locator filled by the tool | the session and message where the user said it | a verbatim quote, checked against the conversation |
 | Added by the assistant (stored as 执行者补充) | assistant | 执行者补充 | why it was added or inferred |
 | Direct user edit | the system only | the id of the interface operation | the start of the new value |
