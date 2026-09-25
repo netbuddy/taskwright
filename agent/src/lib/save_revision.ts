@@ -296,6 +296,17 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (deletedHere.has(locator)) return "指向的领域说明在这次调用里被删除";
     return null;
   };
+  // 同一种来源的摘录：要逐字出现在那条领域说明当前修订的某个文本字段里（标题、内容之类，按任务定义的字段类型取）。
+  const noteText = (locator: string): string[] => {
+    const collection = definition.collections.find((one) => one.name === SOURCE_DOMAIN_NOTE);
+    const fields = JSON.parse(latestVersion(locator).fields) as Record<string, unknown>;
+    return (collection?.fields ?? []).flatMap((field) => {
+      const value = fields[field.name];
+      if (field.type === FIELD_TEXT && typeof value === "string") return [value];
+      if (field.type === FIELD_TEXT_LIST && Array.isArray(value)) return value.filter((one): one is string => typeof one === "string");
+      return [];
+    });
+  };
 
   const problems: RejectReason[] = [];
   const planned: Planned[] = [];
@@ -346,7 +357,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       }
       if (raw.base_revision !== undefined) errors.push("新增时不要写 base_revision，新条目还没有所在的修订");
       const notes: string[] = [];
-      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes, noteRef);
+      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes, noteRef, noteText);
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (errors.length > 0) {
@@ -430,7 +441,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     const previousSources = sourcesOf(itemId, current.revision_no);
     const inherited = raw.sources === undefined;
     const notes: string[] = [];
-    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes, noteRef);
+    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes, noteRef, noteText);
     if (sources && !inherited && call.actor !== ACTOR_USER && isObject(raw.fields) && Object.keys(raw.fields).length > 0) {
       // 执行者修改时给了新来源：只替换这次改到的字段上的来源，其余字段的来源沿用。
       // 条目当前的来源里，支持改到的字段的那几处去掉，去掉之后什么都不支持的整条去掉，支持整个条目的保留；
@@ -582,8 +593,9 @@ function quoteOf(excerpt: string): string {
  * 种类为「用户的话」的来源，出处在这里代填（见文件开头的说明）；supports 所指的字段是否存在、
  * 序号是否在范围内，要等字段合并完才知道，另由 checkSupports 核对。
  *
- * 种类为「领域说明」的来源，出处去掉首尾空白后由 noteRef 核对是「领域说明」集合里还在的条目（用户在界面上的操作不核对，
- * 撤销时原样交回旧来源）；摘录不核对，写引用的那句。
+ * 种类为「领域说明」的来源，出处去掉首尾空白后由 noteRef 核对是「领域说明」集合里还在的条目，摘录（去掉首尾空白）要逐字
+ * 出现在那条领域说明当前修订的某个文本字段里（noteText 给出这些文字），与「文档原文」同一个规矩；用户在界面上的操作不核对，
+ * 撤销时原样交回旧来源。
  *
  * 种类为「文档原文」的来源，摘录可以用空行（一个或多个只含空白的行）隔开几段，各段是材料里不相邻的几处：
  * 整段原样找得到的照旧存成一条；找不到时按空行拆开，每段去掉首尾空白后各自到材料里逐字查找；全部找到时，这一条来源在原来的位置展开成几条，
@@ -599,6 +611,7 @@ function checkSources(
   materialText?: (locator: string) => string | null,
   notes?: string[],
   noteRef?: (locator: string) => string | null,
+  noteText?: (locator: string) => string[],
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push("缺少 sources，至少要有一条来源");
@@ -664,6 +677,13 @@ function checkSources(
       if (reason) {
         errors.push(withGuide(`${where}的种类是「${SOURCE_DOMAIN_NOTE}」，出处 ${locator} ${reason}`,
           `出处写一条还在的领域说明的条目编号，例如 DN-001；要引用的说明还没有记下，先新增它，保存之后再引用`));
+        ok = false;
+        return;
+      }
+      const excerpt = (one.excerpt as string).trim();
+      if (noteText && !noteText(locator).some((text) => text.includes(excerpt))) {
+        errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在 ${locator} 的当前修订里找不到`,
+          `摘录必须逐字一致，包括标点，抄自这条领域说明的标题或内容里连续的一段`));
         ok = false;
         return;
       }

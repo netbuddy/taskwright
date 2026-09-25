@@ -36,7 +36,7 @@ function definitionWithNotes(): Record<string, any> {
 
 const note = (标题: string, 类别 = "术语", 关联条目?: string[]) => ({
   op: "add", collection: "领域说明",
-  fields: { 标题, 内容: `${标题}的解释`, 类别, ...(关联条目 ? { 关联条目 } : {}) },
+  fields: { 标题, 内容: `${标题}是登录时输入的一串字符，区分大小写。`, 类别, ...(关联条目 ? { 关联条目 } : {}) },
   sources: [{ kind: "执行者补充", locator: "执行者补充", excerpt: `${标题}是这个意思` }],
 });
 
@@ -54,9 +54,9 @@ function workspace(def: Record<string, any> = definitionWithNotes()): string {
   return dir;
 }
 
-const cite = (locator: string, base = 1, item = "UC-001") => ({
+const cite = (locator: string, base = 1, item = "UC-001", excerpt = "登录时输入的一串字符") => ({
   op: "update", item, base_revision: base, fields: { 名称: `登录（${locator}）` },
-  sources: [{ kind: "领域说明", locator, excerpt: "口令是这个意思", supports: [{ field: "名称" }] }],
+  sources: [{ kind: "领域说明", locator, excerpt, supports: [{ field: "名称" }] }],
 });
 
 test("真实的任务类型：有「领域说明」集合（DN，四个字段，不评审），完成条件是每个条目用户确认", () => {
@@ -75,7 +75,20 @@ test("来源种类「领域说明」：出处是还在的领域说明时保存�
   const out = saveRevision(callIn(dir), { operations: [{ ...cite(" DN-001 ") }] });
   const row = query<any>(dir, "SELECT kind, locator, excerpt, field FROM item_source WHERE item_id = 'UC-001' AND revision_no = ?", out.details.revision_no)
     .find((one) => one.kind === "领域说明");
-  assert.deepEqual({ ...row }, { kind: "领域说明", locator: "DN-001", excerpt: "口令是这个意思", field: "名称" });
+  assert.deepEqual({ ...row }, { kind: "领域说明", locator: "DN-001", excerpt: "登录时输入的一串字符", field: "名称" });
+});
+
+test("来源种类「领域说明」：摘录要逐字出现在那条说明当前修订的标题或内容里，标点不同也拒绝", () => {
+  const dir = workspace();
+  // 标题里的一段也认。
+  saveRevision(callIn(dir), { operations: [cite("DN-001", 1, "UC-001", "口令")] });
+  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-001", 3, "UC-001", "登录时输入的一串字符,区分大小写")] }),
+    /这次「保存修订」什么都没有写入[\s\S]*第 1 条来源的摘录「登录时输入的一串字符,区分大小写」在 DN-001 的当前修订里找不到[\s\S]*摘录必须逐字一致，包括标点/);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-002", 3, "UC-001", "口令是登录时输入的一串字符")] }),
+    /在 DN-002 的当前修订里找不到/);
+  // 领域说明改了内容之后，按改后的内容核对。
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "DN-002", base_revision: 2, fields: { 内容: "坐在服务台办理借还的人" } }] });
+  saveRevision(callIn(dir), { operations: [cite("DN-002", 3, "UC-001", "坐在服务台办理借还的人")] });
 });
 
 test("来源种类「领域说明」：出处不存在、不是领域说明、已删除、在这次调用里删除时整批拒绝，按现有格式写原因", () => {
@@ -146,4 +159,6 @@ test("平台 skill 与任务 skill 写了领域说明的做法：记下并说出
   assert.match(task, /材料里的术语定义段落也整理成领域说明，类别写「术语」/);
   assert.match(task, /约束那一条把领域说明写成来源.*领域说明那一条把约束写进「关联条目」，两边都写/);
   assert.match(task, /「一批最多写 4 个条目」同样适用于领域说明/);
+  assert.match(task, /例如用户说「我们说的续借是在借期内延长，逾期后办的不叫续借」[\s\S]*分三次保存/);
+  assert.match(platform, /excerpt 逐字照抄那条说明的标题或内容里你引用的那一段，包括标点/);
 });

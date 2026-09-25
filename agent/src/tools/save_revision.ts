@@ -35,7 +35,7 @@ const source = Type.Object(
         description: "出处：文档原文写文件路径；执行者补充写「执行者补充」；领域说明写那条领域说明的条目编号，例如 DN-002。种类是「用户的话」时不要写，工具会在对话里找到那句话并代填。",
       }),
     ),
-    excerpt: Type.String({ description: "摘录的原文。用户的话要逐字照抄用户说过的一段原话。" }),
+    excerpt: Type.String({ description: "摘录的原文。用户的话要逐字照抄用户说过的一段原话；领域说明要逐字照抄那条说明的标题或内容里的一段，包括标点。" }),
     normalized_value: Type.Optional(
       Type.String({
         description:
