@@ -1,0 +1,22 @@
+/* 材料区里的 Word 材料（components/work/DocxPaper.tsx）：按页显示，每页一张白纸，页与页之间留间隔；宽度随材料区，页高随内容。
+   docx-preview 自己的样式按页面尺寸写死了宽高与页边距，这里改成随材料区；比材料区宽的表格出横向滚动条，图片按比例缩小。 */
+.app .docx-hint { font-size: 0.857rem; color: var(--mut); padding: .25rem .8rem 0; flex: none; }
+.app .docx-paper .docx-wrapper { background: transparent; padding: 0; display: block; }
+.app .docx-paper section.docx {
+  width: auto !important; min-height: 0 !important; padding: 0 7% !important; margin: 0 0 .9rem;
+  border: 1px solid var(--line2); border-radius: .25rem; box-shadow: 0 1px 3px rgba(0, 0, 0, .06); background: var(--card);
+  overflow: visible; position: relative;
+}
+.app .docx-paper section.docx > header { margin: 0 !important; min-height: 0 !important; padding: .7rem 0 .5rem; color: #777; font-size: .92em; }
+.app .docx-paper section.docx > footer { margin: 0 !important; min-height: 0 !important; padding: .6rem 0 .7rem; color: #777; font-size: .92em; }
+.app .docx-paper section.docx > article { padding: .2rem 0 .4rem; }
+.app .docx-paper section.docx > ol { font-size: .9em; border-top: 1px solid #ccc; margin: .4rem 0 0; padding: .3rem 0 0 1.4rem; }
+.app .docx-paper .tw-tablewrap { overflow-x: auto; max-width: 100%; }
+.app .docx-paper section.docx div:has(> img) { max-width: 100%; height: auto !important; }
+.app .docx-paper section.docx div > img { max-width: 100%; height: auto !important; }
+.app .docx-paper article p { scroll-margin: 5rem; }
+.app .docx-paper .tw-textbox { float: right; clear: right; margin: .2rem 0 .4rem .9rem; padding: .35rem .6rem; border: 1px solid; border-radius: .2rem; max-width: 45%; }
+.app .docx-paper .tw-textbox p { margin: 0 0 .15rem; }
+/* 跨段的引用：这几段整段淡黄底 */
+.app .docx-paper p.hitpara { background: #fff4c2; box-shadow: -.35rem 0 0 #d9a400; border-radius: .2rem; }
+.app .doc-b:has(> .docx-paper) { background: var(--paper); }
