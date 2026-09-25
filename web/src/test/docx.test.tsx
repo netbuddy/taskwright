@@ -173,6 +173,23 @@ describe("材料区的四种定位结果", () => {
   });
 });
 
+describe("同一句被几个条目引用", () => {
+  it("只画一层底线，悬停提示列出全部条目", async () => {
+    vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
+    vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: projection() });
+    const cite = (id: string) => ({
+      item_id: id, collection: "约束", title: id, revision_no: 1, revision_by: "executor", revision_at: "", revisions: [1], fields: {},
+      sources: [{ kind: "文档原文", locator: `${PATH}#p13`, excerpt: "借期（含续借延长的部分）届满之日的次日起仍未归还。" }],
+      reviews: [], confirmations: [], confirmation_stale: false,
+    }) as unknown as Item;
+    render(<MaterialPane taskId="TASK-D" materials={[{ path: PATH, bytes: 1, modified_at: "" }]} items={[cite("CON-001"), cite("UC-002")]} locate={null} />);
+    await waitFor(() => expect(document.querySelectorAll(".cited").length).toBeGreaterThan(0), SLOW);
+    expect(document.querySelectorAll(".cited .cited").length).toBe(0);
+    expect(document.querySelector(".cited")!.getAttribute("title")).toBe("被 CON-001、UC-002 引用");
+    expect(screen.getByText("被 2 个条目引用过")).toBeInTheDocument();
+  });
+});
+
 describe("条目区的来源标签", () => {
   it("写成「文件名 · 第几页 · 章节 · 页上中下」；悬停提示带表格位置；没算出来之前只写文件名", async () => {
     vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);

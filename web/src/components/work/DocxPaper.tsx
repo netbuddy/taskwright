@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { Item } from "../../api/types";
-import { docxLocator, placeExcerpt, polish, renderDocx, tableOf, whereOf, wrapChars, type DocxTable, type RenderedDocx } from "../../model/docx";
+import { charsOf, docxLocator, placeExcerpt, polish, renderDocx, tableOf, whereOf, wrapChars, type DocxTable, type RenderedDocx } from "../../model/docx";
 import { useDocx } from "../../state/docxStore";
 import type { LocateRequest } from "./MaterialPane";
 
@@ -75,9 +75,18 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
       if (place.kind === "miss") continue;
       cited.add(c.itemId);
       if (place.kind !== "in") continue;
+      // 几个条目引用同一句时只画一层底线，悬停提示里列出全部条目，点一下打开第一个。
+      const first = charsOf(view.r.paras[c.n])[place.start]?.node.parentElement?.closest<HTMLElement>(".cited");
+      if (first && made.includes(first)) {
+        const ids = (first.dataset.items ?? "").split("、");
+        if (!ids.includes(c.itemId)) first.dataset.items = [...ids, c.itemId].join("、");
+        first.title = `被 ${first.dataset.items} 引用`;
+        continue;
+      }
       made.push(...wrapChars(view.r.paras[c.n], place.start, place.end, () => {
         const s = document.createElement("span");
         s.className = "cited";
+        s.dataset.items = c.itemId;
         s.title = `被 ${c.itemId} 引用`;
         s.onclick = () => onOpenItem?.(c.itemId);
         return s;
