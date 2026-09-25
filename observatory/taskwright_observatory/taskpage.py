@@ -26,7 +26,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from taskwright_observatory import taskdb
+from taskwright_observatory import dialogue, taskdb
 from taskwright_observatory.diffs import diff_list, diff_text
 
 HERE = Path(__file__).resolve().parent
@@ -538,6 +538,12 @@ def steer_kind(text: str, run: dict) -> str:
     return "插话（steer）"
 
 
+def is_understanding(text: str) -> bool:
+    """这段助手文字是不是助手写的理解：```json 围栏开头，或者整段是一个带 acts 的 JSON 对象。只看形式。"""
+    body = text.strip()
+    return body.startswith("```json") or (body.startswith("{") and '"acts"' in body)
+
+
 def turn_shape(turn: dict, run: dict, index, rules: dict, workspace_abs: str, run_offset: int) -> dict:
     shaped = {
         "序数": turn["给人读的序数"], "轮号": turn.get("pi 给的轮号"),
@@ -553,6 +559,8 @@ def turn_shape(turn: dict, run: dict, index, rules: dict, workspace_abs: str, ru
         "插话": [],
         "自动重试说明": "",
         "正文从哪来": "模型正文" if (turn.get("助手文字") or "").strip() else "",
+        # 每轮第一段是助手写的理解（```json 围栏里的对话行为）时，页面把这段原文标成「助手写的理解（原文）」。
+        "正文是理解": is_understanding(turn.get("助手文字") or ""),
         "出错说明": [r["出错说明"] or "归档里没有写出错的原因" for r in (turn.get("模型请求") or [])
                      if r.get("停止原因") == "error"],
     }
@@ -1566,6 +1574,7 @@ def assemble(index, details: list[dict], scope: str, key: str, task_key: str | N
             decl["路径归类"]["执行方法"].append(path)
     flow = build_flow(details, runs)
     rows = run_rows(flow)
+    dialogue_facts = attach_dialogue(flow, workspace_abs, task)
     notes = build_alerts(rows, decl, task_closed_at(task))
     guides = build_guides(rows, decl)
     board = None
@@ -1579,7 +1588,7 @@ def assemble(index, details: list[dict], scope: str, key: str, task_key: str | N
     facts = launch_facts(launches_all)
     for g in guides:
         g["摘要值"] = ((facts["摘要"].get(g["文件"]) or [(None, "")])[0][1] or NOT_RECORDED)
-    head = build_head(details, board, rows, runs, {"声明说明": decl_note})
+    head = build_head(details, board, rows, runs, {"声明说明": decl_note, "对话": dialogue_facts})
     materials_prefix = (decl["路径归类"]["材料目录"] or [""])[0].rstrip("/")
     head["材料文件"] = sorted({basename(c["相对路径"]) for r in rows for t in r["轮"] for c in t["调用"]
                                if c["工具"] in decl["按路径归类来判的工具"] and not c["被拒"]
@@ -1607,6 +1616,33 @@ def assemble(index, details: list[dict], scope: str, key: str, task_key: str | N
                      "第二级链接取到了吗": all(s.get("取到了吗") for s in second_level) if second_level else False,
                      "第二级链接的说明": next((s.get("说明") for s in second_level if s.get("说明")), "")},
     }
+
+
+def attach_dialogue(flow: list[dict], workspace_abs: str, task: dict | None) -> dict | None:
+    """给流程里的每次运行挂上对话行为层（行的「对话行为」一项），返回页头的三个派生事实。
+    数据只读地取自任务库的对话行为表（见 dialogue.py）；旧库、没有任务、库里没有这张表时什么都不挂，返回 None。"""
+    if not task or task.get("格式") != taskdb.FORMAT_CURRENT or not workspace_abs:
+        return None
+    path = Path(workspace_abs) / taskdb.DB_NAME
+    if not path.is_file():
+        return None
+    conn = taskdb.open_readonly(path)
+    try:
+        if not dialogue.has_dialogue(conn):
+            return None
+        task_id = task.get("任务标识") or ""
+        for seg in flow:
+            session = dialogue.read_session(conn, task_id, seg["会话编号"])
+            ordinal = 0
+            for row in seg["行"]:
+                if row["种类"] != "运行":
+                    continue
+                ordinal += 1
+                replies = [c["编号"] for t in row["轮"] for c in t["调用"] if c["工具"] == "reply"]
+                row["对话行为"] = dialogue.run_layer(session, row.get("条目编号") or "", replies, ordinal)
+        return dialogue.page_facts(conn, task_id, [seg["会话编号"] for seg in flow])
+    finally:
+        conn.close()
 
 
 def page_for_session(index, session_id: str) -> dict:

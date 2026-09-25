@@ -590,6 +590,8 @@ def changed_fields(before: dict | None, after: dict | None, collection: dict | N
 def revision_log(task_dir: Path) -> list[dict] | None:
     """修订日志（docs/api.md 4.3）：每次修订一项，最新的在前。每项写这次修订的时刻、发起方、产生它的会话与调用编号，
     以及碰到的条目：操作、编号、标题、所属集合、改前改后所在的修订、改了哪些字段（前后两次修订逐字段比较）。
+    修订表的 intent_act_id 对得上对话行为表里的一项用户行为时，另带 intent（编号、功能码、功能的中文名、摘要），
+    修订卡片据此写「因为你说：……」；对不上（用户直接修改、旧库没有这两样）时为空。
     触发它的事与工作编号要读会话记录，由调用方补（app.py 的 Service.revision_log）。任务还没有创建时返回 None。"""
     conn = open_ro(task_dir)
     if conn is None:
@@ -602,6 +604,7 @@ def revision_log(task_dir: Path) -> list[dict] | None:
             rows = [dict(x) for x in conn.execute("SELECT * FROM revision WHERE task_id = ? ORDER BY revision_no",
                                                   (data["task"]["task_id"],))]
             events = {x["seq"]: dict(x) for x in conn.execute("SELECT * FROM event WHERE name = 'REVISION_SAVED'")}
+            intents = intent_acts(conn, data["task"]["task_id"], rows)
     finally:
         conn.close()
     lib = Library(data)
@@ -620,7 +623,25 @@ def revision_log(task_dir: Path) -> list[dict] | None:
                         "fields_changed": changed_fields(before, after, coll) if op.get("op") == "update" else []})
         out.append({"revision_no": row["revision_no"], "at": clock.from_local_text(event.get("at") or row["created_at"]),
                     "by": actor_word(event.get("actor", "")), "session_id": row["session_id"], "call_id": row["call_id"],
-                    "undo_of_revision": payload.get("undo_of_revision"), "operations": ops})
+                    "undo_of_revision": payload.get("undo_of_revision"), "operations": ops,
+                    "intent": intents.get((row["session_id"], row.get("intent_act_id")))})
+    return out
+
+
+def intent_acts(conn, task_id: str, rows: list[dict]) -> dict[tuple[str, str], dict]:
+    """修订表里被 intent_act_id 引用的那几项用户行为，键是（会话编号, 行为编号）。库里没有对话行为表时为空。"""
+    wanted = {(r["session_id"], r.get("intent_act_id")) for r in rows if r.get("intent_act_id")}
+    if not wanted or conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dialogue_act'").fetchone() is None:
+        return {}
+    from taskwright_server.service.work_summary import function_names
+    names = function_names()
+    out = {}
+    for session_id, act_id in wanted:
+        row = conn.execute("SELECT function, summary FROM dialogue_act WHERE task_id = ? AND session_id = ? AND act_id = ? AND speaker = 'user'",
+                           (task_id, session_id, act_id)).fetchone()
+        if row is not None:
+            out[(session_id, act_id)] = {"act_id": act_id, "function": row[0], "function_name": names.get(row[0], row[0]),
+                                         "summary": row[1]}
     return out
 
 

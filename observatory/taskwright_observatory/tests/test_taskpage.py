@@ -750,5 +750,49 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(diff_list([], []), [])
 
 
+
+@unittest.skipIf(shutil.which("node") is None, "本机没有 node，写不出夹具库")
+class DialogueLayerPageTests(unittest.TestCase):
+    """任务页的对话行为层：运行行挂上对话行为、页头三个派生事实、理解原文的标签、概念对照页的四条。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from taskwright_observatory.tests.dialogue_fixture import add_dialogue
+        cls._temp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._temp.name)
+        add_dialogue(build_current_workspace(cls.root))
+        cls.index = Index(FIXTURE_DIR / "runs新库表", cls.root)
+        cls.page = taskpage.page_for_task(cls.index, "任务目录新库表/TASK-001")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._temp.cleanup()
+
+    def test_每次运行挂上它的对话行为_按会话里第几次运行对上(self):
+        rows = taskpage.run_rows(self.page["流程"])
+        self.assertEqual([r["对话行为"]["运行号"] for r in rows], ["r1", "r2"])
+        self.assertEqual(rows[0]["对话行为"]["理解没按格式写次数"], 1)
+        self.assertEqual([a["编号"] for a in rows[1]["对话行为"]["用户行为"]], ["r2-1", "r2-2"])
+
+    def test_页头的三个派生事实_连续追问只列两次及以上(self):
+        facts = self.page["页头"]["对话"]
+        self.assertEqual([w["编号"] for w in facts["等回应"]], ["r2-3", "r3-1"])
+        self.assertEqual([(x["条目"], x["连续运行次数"], x["会话序号"]) for x in facts["连续追问"]], [("TBD-001", 2, 1)])
+        self.assertEqual([(x["条目"], x["字段"], x["次数"]) for x in facts["改口"]], [("UC-001", "名称", 2)])
+
+    def test_理解原文按形式认出(self):
+        self.assertTrue(taskpage.is_understanding('```json\n{"acts": []}\n```'))
+        self.assertTrue(taskpage.is_understanding('{"acts": [{"function": "request"}]}'))
+        self.assertFalse(taskpage.is_understanding("好的，我这就整理。"))
+
+    def test_概念对照页有对话理解的四条_功能名取自schema(self):
+        from taskwright_observatory import concepts
+        names = [c["名字"] for c in concepts.build()["领域概念"]]
+        for one in ("对话行为", "用户功能九种", "执行者功能", "运行号（会话内）与运行序号（任务级）"):
+            self.assertIn(one, names)
+        nine = next(c for c in concepts.build()["领域概念"] if c["名字"] == "用户功能九种")
+        self.assertIn("询问（question）", nine["它是什么"])
+
+
 if __name__ == "__main__":
     unittest.main()
