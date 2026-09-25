@@ -48,7 +48,7 @@ data: {
 }
 ```
 
-来源（source）的种类：`文档原文`（材料里的逐字引用）、`用户的话`（用户在对话里说的话）、`执行者补充`（由智能体（agent）添加，并附上理由）、`用户直接修改`（在界面里的一次直接编辑；由系统写入，locator 是操作编号）。集合（collection）名与字段名由任务定义（task definition）给出。
+来源（source）的种类：`文档原文`（材料里的逐字引用）、`用户的话`（用户在对话里说的话）、`执行者补充`（由智能体（agent）添加，并附上理由）、`领域说明`（同一个任务里的一条领域说明；locator 是它的条目编号，例如 `DN-002`，excerpt 是所依据的那一句）、`用户直接修改`（在界面里的一次直接编辑；由系统写入，locator 是操作编号）。集合（collection）名与字段名由任务定义（task definition）给出。
 
 | 事件 | 发生时机 | `data` |
 |---|---|---|
@@ -97,6 +97,7 @@ data: {
             "started_at": "…", "ended_at": null,
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
                             "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],
+                            "display": null,
                             "needs_review": true,
                             "review_rules": [ { "id": "UC-R1", "level": "必选", "text": "…", "counter_example": "…", "example": "…" }, … ],
                             "all_rules": [ { "id": "UC-R13", "level": "可选", "text": "…", "state": "off" }, … ],
@@ -116,7 +117,7 @@ data: {
   "current_work": null }
 ```
 
-`needs_review` 表示完成条件是否要求这个集合「每个条目评审通过」；`review_rules` 是这个集合实际要评的规则清单（任务定义里关闭或升为必选之后的），没有写评审规矩的集合为 null。依据 `必选` 规则的发现是「问题」，有一条条目就不合规；依据 `可选` 规则的发现是「建议」，不影响结论。`all_rules` 列出规则文件里的全部规则与它在这个任务里的状态 `state`：`required`（必选）、`optional`（可选）、`off`（已关闭）、`promoted`（升为必选）。`rules_hash` 是规则指纹，由规则文件与这个任务的开关算出；评审记录只有 `rules_hash` 与集合的相同时才算数（早期版本的记录没有指纹，照旧算数），所以改了规则开关，这个集合的条目都回到待评审。`waivers` 是用户保留的写法；条目当前所在修订上一条没撤销（`revoked` 为假）的保留，让条目按用户的决定算通过。
+`display` 是任务定义里这个集合可选的显示方式（没写时为 null）：`side_tab`、`group_field`、`leading_groups` 与 `note`，只影响显示。`needs_review` 表示完成条件是否要求这个集合「每个条目评审通过」；`review_rules` 是这个集合实际要评的规则清单（任务定义里关闭或升为必选之后的），没有写评审规矩的集合为 null。依据 `必选` 规则的发现是「问题」，有一条条目就不合规；依据 `可选` 规则的发现是「建议」，不影响结论。`all_rules` 列出规则文件里的全部规则与它在这个任务里的状态 `state`：`required`（必选）、`optional`（可选）、`off`（已关闭）、`promoted`（升为必选）。`rules_hash` 是规则指纹，由规则文件与这个任务的开关算出；评审记录只有 `rules_hash` 与集合的相同时才算数（早期版本的记录没有指纹，照旧算数），所以改了规则开关，这个集合的条目都回到待评审。`waivers` 是用户保留的写法；条目当前所在修订上一条没撤销（`revoked` 为假）的保留，让条目按用户的决定算通过。
 
 确认标记（confirmation mark）。确认是挂在「条目加修订」上的标记，条目之后再被改动时它不随之移动。它的 `basis`（依据）有三种：`viewed`（已读：用户打开了条目详情，或在请确认卡片上点了「这几条都看过了」）、`ui_edit`（用户改了条目或把它标为先不管，改出来的内容算作已确认）、`ui_click`（撤回确认，`accepted` 为假；较早的库里还有在界面上点的确认）；较早的库里还可能有 `user_words`，那是早期版本由执行者按用户的话登记的确认。条目的 `viewed` 为真，表示它当前所在修订上最近一条标记是接受（任一依据），这时 `confirmation_basis` 写明依据；`viewed` 为假的条目就是**未读**。完成条件「每个条目用户确认」在集合里没有未读条目时满足。
 
@@ -127,8 +128,12 @@ data: {
 ```
 "completion": { "all_met": false, "unmet_count": 2, "brief": "要完成任务，还差 2 项：……", "conditions": [
   { "collection": "功能用例", "name": "每个条目评审通过", "met": false, "state": "unmet", "done": 0, "total": 7,
-    "missing": ["UC-001", …], "note": "…" } ] }
+    "missing": ["UC-001", …], "note": "…" } ],
+  "hints": [ { "kind": "unlinked_domain_notes", "collection": "领域说明", "items": ["DN-001"],
+    "summary": "有 1 条领域说明还没有和任何条目关联：DN-001。" } ] }
 ```
+
+`hints`（提示）列出显示在完成条件旁边、但不挡完成任务的事实；没有时是空列表。目前只有一种 `unlinked_domain_notes`：没有还在的条目把它写成来源、也没有还在的条目在条目引用字段里写它、它自己的条目引用字段也没有指向还在的条目的领域说明。
 
 每条完成条件处于三种状态之一。`met`：该集合有条目，且全部满足条件。`unmet`：有条目不满足，或者「至少一条」这类条件一条也没找到。`empty`：该集合没有条目，因此「每个条目都要满足」这类条件无从检查。`empty` 在判断任务是否可以完成时仍算满足（`met` 仍为 `true`，所以可选集合可以保持空），但绝不能把它当作进度展示：应当汇报还有多少条条件处于 `unmet`（`unmet_count`），而不是有多少条已满足。`brief` 是智能体自己看到的那句一句话摘要；到处都应沿用这句话或同样的措辞。
 

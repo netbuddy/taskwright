@@ -47,7 +47,7 @@
 | `revision` | one batch of changes (one save-revision call or one direct operation). |
 | `item` | an item's identity: its id (for example `UC-001`), collection, and the revisions that added or deleted it. |
 | `item_version` | an item's fields at one revision; an item has a row only for the revisions that added, changed or restored it. |
-| `item_source` | one place a source supports in an item at one revision: kind (document excerpt, user's words, added by the agent, direct user edit), locator, verbatim excerpt, field and list index. |
+| `item_source` | one place a source supports in an item at one revision: kind (document excerpt, user's words, added by the agent, domain note, direct user edit), locator, verbatim excerpt, field and list index. |
 | `review` | a reviewer's verdict on an item at one revision; its findings, each with the rule number and level, are in `review_finding`. |
 | `judgement` | one confirmation mark (the table keeps its early name): its basis, read (the user opened the item), interface edit, or interface click (a withdrawal); older databases may also hold marks recorded from the user's words. |
 | `judgement_item` | which items, each at one revision, one mark accepted (read or confirmed) or rejected (withdrawn). |

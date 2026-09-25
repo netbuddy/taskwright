@@ -46,7 +46,7 @@ data: {
 }
 ```
 
-Source kinds: `文档原文` (verbatim document excerpt), `用户的话` (the user's words), `执行者补充` (added by the agent, with its reason), `用户直接修改` (a direct edit in the interface; written by the system, locator is the operation id). Collection and field names come from the task definition.
+Source kinds: `文档原文` (verbatim document excerpt), `用户的话` (the user's words), `执行者补充` (added by the agent, with its reason), `领域说明` (a domain note of the same task; locator is its item id such as `DN-002`, excerpt is the sentence relied on), `用户直接修改` (a direct edit in the interface; written by the system, locator is the operation id). Collection and field names come from the task definition.
 
 | Event | When | `data` |
 |---|---|---|
@@ -95,6 +95,7 @@ All carry `session_id`.
             "started_at": "…", "ended_at": null,
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
                             "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],
+                            "display": null,
                             "needs_review": true,
                             "review_rules": [ { "id": "UC-R1", "level": "必选", "text": "…", "counter_example": "…", "example": "…" }, … ],
                             "all_rules": [ { "id": "UC-R13", "level": "可选", "text": "…", "state": "off" }, … ],
@@ -114,7 +115,7 @@ All carry `session_id`.
   "current_work": null }
 ```
 
-`needs_review` says whether the completion conditions require "every item passed review" for the collection; `review_rules` is the collection's rule list after rules switched off or made required in the task definition (null for a collection without review rules). A finding under a `必选` (required) rule is a problem and makes the item not compliant; a finding under a `可选` (optional) rule is advice. `all_rules` lists every rule of the rule file with its `state` in this task: `required`, `optional`, `off` or `promoted`. `rules_hash` is the rule fingerprint, a hash of the rule file and the task's switches; a review counts only while its `rules_hash` equals the collection's (reviews without one, from older versions, always count), so switching rules sends every item of the collection back to waiting for review. `waivers` are the user's kept wordings; one on the item's current revision that is not `revoked` makes the item count as passed.
+`display` is the collection's optional display settings from the task definition (null when not given): `side_tab`, `group_field`, `leading_groups` and `note`; they only change how the collection is shown. `needs_review` says whether the completion conditions require "every item passed review" for the collection; `review_rules` is the collection's rule list after rules switched off or made required in the task definition (null for a collection without review rules). A finding under a `必选` (required) rule is a problem and makes the item not compliant; a finding under a `可选` (optional) rule is advice. `all_rules` lists every rule of the rule file with its `state` in this task: `required`, `optional`, `off` or `promoted`. `rules_hash` is the rule fingerprint, a hash of the rule file and the task's switches; a review counts only while its `rules_hash` equals the collection's (reviews without one, from older versions, always count), so switching rules sends every item of the collection back to waiting for review. `waivers` are the user's kept wordings; one on the item's current revision that is not `revoked` makes the item count as passed.
 
 Confirmation marks. A confirmation is a mark on "item + revision": it does not move when the item is changed later. Its `basis` is `viewed` (the user opened the item's details, or clicked "I've read these" on a confirm card), `ui_edit` (the user edited the item or marked it keep-pending; the edited content counts as confirmed) or `ui_click` (a withdrawal, `accepted` false; older databases also contain confirmations clicked in the interface); older databases may also contain `user_words`, confirmations recorded by the agent from the user's words in earlier versions. `viewed` on an item is true when the latest mark on its current revision is an acceptance of any basis, and `confirmation_basis` then names that basis; an item whose `viewed` is false is **unread**. The completion condition 「每个条目用户确认」 is met when no item of the collection is unread.
 
@@ -125,8 +126,12 @@ When a task is completed or abandoned, `task` is still returned, messages and di
 ```
 "completion": { "all_met": false, "unmet_count": 2, "brief": "要完成任务，还差 2 项：……", "conditions": [
   { "collection": "功能用例", "name": "每个条目评审通过", "met": false, "state": "unmet", "done": 0, "total": 7,
-    "missing": ["UC-001", …], "note": "…" } ] }
+    "missing": ["UC-001", …], "note": "…" } ],
+  "hints": [ { "kind": "unlinked_domain_notes", "collection": "领域说明", "items": ["DN-001"],
+    "summary": "有 1 条领域说明还没有和任何条目关联：DN-001。" } ] }
 ```
+
+`hints` lists facts that are shown next to the conditions but never block completion; it is an empty list when there are none. The only kind so far is `unlinked_domain_notes`: domain notes that no live item cites as a source or lists in an item-reference field, and whose own item-reference field points at no live item.
 
 Each condition has one of three states. `met`: the collection has items and all of them meet the condition. `unmet`: some item does not, or "at least one item" finds none. `empty`: the collection has no items, so a condition over "every item" has nothing to check. `empty` still counts as met for completing the task (`met` stays `true`, so optional collections may stay empty), but it must not be shown as progress: report how many conditions are still `unmet` (`unmet_count`), not how many are met. `brief` is the one-sentence summary the agent itself sees; use it, or the same wording, everywhere.
 
