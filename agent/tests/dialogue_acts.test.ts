@@ -609,3 +609,23 @@ test("平台 skill 第五节：向用户要回应的判据、三个正例一个�
   assert.doesNotMatch(text, /主行为/);
   assert.doesNotMatch(text, /同一批里新增的条目还没有编号/);
 });
+
+test("功能说明写明三条判据（告知与纠正、请求与纠正、询问与无关）与同意的范围；第八节写明复合回答怎么数，各配例子", () => {
+  const usage = INTENT_SCHEMA.$defs.user_function["x-usage"];
+  assert.match(usage.inform, /回答你问的、还没定下来的事，也是告知，即使这个取值要写进条目/);
+  assert.match(usage.inform, /指出了现有内容错，才是纠正/);
+  assert.match(usage.correct, /用户指出现有内容错了（写错了、不对、漏了、多了），并给出正确的内容/);
+  assert.match(usage.correct, /话里没有指出错，只是要你改成什么、加上或删掉什么，是请求/);
+  assert.match(usage.request, /这类话只要没有指出现有内容错了，都是请求/);
+  assert.match(usage.question, /问的是材料、条目或任务的情况/);
+  assert.match(usage.question, /问你自身的（你是谁、用什么模型）是 other，不是询问/);
+  assert.match(usage.other, /问你用的是什么模型/);
+  assert.match(usage.clarify, /判据是那个说法出自你刚才的回复/);
+  assert.match(usage.affirm, /用户回答你的请选择（选了其中一项）或者说自己看过了，是告知，不是同意/);
+  assert.equal(INTENT_SCHEMA.properties.acts.description, "用户这句话里的对话行为，按用户说的先后排，一件事一项。");
+  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "skills", "taskwright-executor", "SKILL.md"), "utf-8");
+  assert.match(text, /怎么数：按用户话里的分句或分号逐段看，每一段有一个独立的用意就是一项/);
+  assert.match(text, /三段话三项的例子：用户说「每人最多借五本；逾期罚款的事先不管；毕业生什么时候注销借书证，材料里写了吗？」，写告知、告知、询问三项。/);
+  assert.match(text, /两段话其实是一项的例子：用户说「续借的事我想好了：每本最多续借一次」，前一段只是引出后一段，写一项告知。/);
+  assert.match(text, /说完一件事接着提要求或提问，要求与提问各算一项，不要并进前一项。/);
+});

@@ -20,3 +20,5 @@ web/mock/runtime/
 # understanding evaluation reports: only the baseline is kept in the repository
 agent/eval/understanding/reports/*
 !agent/eval/understanding/reports/baseline-v1.md
+!agent/eval/understanding/reports/before-skill-v2.md
+!agent/eval/understanding/reports/after-skill-v2.md
