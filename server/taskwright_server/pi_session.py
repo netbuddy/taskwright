@@ -62,6 +62,44 @@ SYSTEM_NOTE_EVENT = "system_note"
 TASK_STATUS_REPORT_KEY = "taskwright-task-status"
 
 
+#: 本服务的任务根目录，传给 pi 里的扩展：扩展写库前核对任务库在它之下（agent/src/lib/schema.ts 的 TASKS_ROOT_ENV）。
+TASKS_ROOT_ENV = "TASKWRIGHT_TASKS_ROOT"
+
+
+def rebase_session_cwd(session_file: Path, workspace: Path) -> tuple[str, Path] | None:
+    """续接之前核对会话文件第一行记的工作目录。
+
+    pi 续接会话（启动时带 --session，或 RPC 的 switch_session）时按会话文件第一行（type 为 session 的那一行）的 cwd
+    设工作目录，扩展就往那个目录的库里写；RPC 与命令行都不能改这个目录（pi 只在进程内的接口里有 cwdOverride）。
+    所以复制来的会话文件会把写入打回原来的任务目录，任务目录搬了家之后 pi 还会因为那个目录不在而起不来。
+    这里在续接前把第一行的 cwd 改写为本服务的任务目录；改写之前把原文件原样备份成「原名.cwd-时刻.bak」（不是 .jsonl，
+    不会被当成会话列出来）。会话文件以路径认，另存一份副本续接会把一条会话拆成两个文件，所以改写原文件、保留备份。
+    一致、读不出或第一行不是会话头时什么都不做，返回 None；改写了返回（原来记的目录, 备份文件）。
+    """
+    try:
+        text = session_file.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    first, sep, rest = text.partition("\n")
+    try:
+        header = json.loads(first)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(header, dict) or header.get("type") != "session" or not isinstance(header.get("cwd"), str):
+        return None
+    target = str(Path(workspace).resolve())
+    old = header["cwd"]
+    if old == target:
+        return None
+    backup = session_file.with_name(f"{session_file.name}.cwd-{time.strftime('%Y%m%d-%H%M%S')}.bak")
+    backup.write_text(text, encoding="utf-8")
+    header["cwd"] = target
+    temp = session_file.with_name(session_file.name + ".tmp")
+    temp.write_text(json.dumps(header, ensure_ascii=False) + sep + rest, encoding="utf-8")
+    temp.replace(session_file)
+    return old, backup
+
+
 class PiExited(Exception):
     """pi 进程没了。附上它的标准错误原文，好让用户直接看到出了什么事。"""
 
@@ -75,8 +113,10 @@ class PiExited(Exception):
 class PiSession:
     """一个 pi 子进程加它的一条会话。"""
 
-    def __init__(self, profile: dict, workspace: Path, runs_dir: Path, label: str = "session"):
+    def __init__(self, profile: dict, workspace: Path, runs_dir: Path, label: str = "session", tasks_root: Path | None = None):
         self.profile = profile
+        #: 本服务的任务根目录；给了就经环境变量传给 pi 里的扩展，扩展写库前核对（见 TASKS_ROOT_ENV）。
+        self.tasks_root = Path(tasks_root).resolve() if tasks_root is not None else None
         self.workspace = Path(workspace).resolve()
         self.runs_dir = Path(runs_dir).resolve()
         self.label = label
@@ -116,7 +156,10 @@ class PiSession:
         session_dir.mkdir(parents=True, exist_ok=True)
         events_dir = self.runs_dir / "pi-events"
         events_dir.mkdir(parents=True, exist_ok=True)
+        rebased = rebase_session_cwd(Path(session_file), self.workspace) if session_file is not None else None
         self.command, env = launch.build_command(self.profile, self.workspace, session_dir, session_file)
+        if self.tasks_root is not None:
+            env[TASKS_ROOT_ENV] = str(self.tasks_root)
         self._exit_noted = False
         self._archive_path = events_dir / f"{self.label}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
         self._archive = self._archive_path.open("a", encoding="utf-8")
@@ -135,6 +178,8 @@ class PiSession:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1,
         )
+        if rebased is not None:
+            self._note_rebased(Path(session_file), *rebased)
         self._note("启动", **launch.startup_record(self.profile, self.command),
                    任务目录=str(self.workspace),
                    接回的会话文件=str(session_file) if session_file else "",
@@ -192,6 +237,20 @@ class PiSession:
             self._times.close()
             self._times = None
         self.process = None
+
+    def _note_rebased(self, session_file: Path, old: str, backup: Path) -> None:
+        """续接前改写了会话文件记的工作目录：后端日志打一行，归档补记里记一条。"""
+        text = f"会话文件记的工作目录是 {old}，已按本服务的任务目录 {self.workspace} 续接。"
+        print(f"{session_file.name}：{text}", flush=True)
+        self._note("续接工作目录", 会话文件=session_file.name, 会话文件记的工作目录=old, 按本服务的任务目录续接=str(self.workspace),
+                   原文件备份=backup.name, 说明=text)
+
+    def switch_session(self, session_file: Path) -> dict | None:
+        """让在跑的 pi 接上另一条会话文件（RPC 的 switch_session）；续接前同样核对并改写会话文件记的工作目录。"""
+        rebased = rebase_session_cwd(Path(session_file), self.workspace)
+        if rebased is not None:
+            self._note_rebased(Path(session_file), *rebased)
+        return self.request("switch_session", sessionPath=str(session_file))
 
     def restart(self, resume: bool = True) -> Path | None:
         """重启 pi。resume 为真时接回原来那条会话，返回接回的会话文件路径。

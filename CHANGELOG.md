@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The reviewer sees the full materials when they are short (up to 20,000 characters), otherwise the paragraphs its sources quote. Reviewer calls ask for temperature 0.
 - Events `review_batch`, `review_waived`, `review_unwaived`, `review_rules_changed`.
 
+- One service per task: a running service marks each task it serves with `service.lock` (port, process id, start time, host) and removes it on exit. Another service lists such a task as in use and refuses it (`task_occupied`); a lock left by a process that is gone is replaced.
+- The service passes its task root to pi (`TASKWRIGHT_TASKS_ROOT`), and every write refuses a task database outside it.
+
 ### Changed
 
 - Reviewing an item whose content and rules have not changed since its last review needs an explicit "review again".
@@ -27,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - EARS-R2 and EARS-R3 state that a named system is a valid subject and that counting words such as "books" or "days" are units.
 - "Every item passed review" is reported in three groups: items not reviewed yet, items that failed, and items that failed but whose wording you kept.
 - `review_finding` gains `rule_id` and `level`, and `review` gains `batch_id`, `rules_hash`, `reviewer_version` and `forced`; older databases get the columns (and the new `review_waiver` table) when first opened for writing.
+
+- Resuming a session whose file records another task directory (a copied or moved task) rewrites that record to the service's own task directory, keeping the original file as a backup, so writes never go back to the original task data.
+- `save_revision` rejections have two layers: the fact (what was tried and why it is not allowed) and the guidance for the assistant. Work summaries show only the fact, for example "保存修订被拒：助手想改 TBD-001 的「种类」，但问题条目写下后只能改状态与处理结果。"
+- The reply heading says 助手 (assistant) instead of 执行者.
 
 ### Removed
 

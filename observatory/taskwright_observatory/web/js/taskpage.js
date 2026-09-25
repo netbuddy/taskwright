@@ -527,7 +527,7 @@ function 轮HTML(t, key) {
         ["出自哪一轮", `第 ${t.运行序号} 次运行的第 ${t.序数} 轮`]], 链接: ""});
     // 卡片只放告知与主行为：成文的话已经在上面的气泡里，标题行也不重复。
     const 成文处 = r && r.排版 ? r.排版.findIndex((l) => /^\s*成文的话：/.test(l)) : -1;
-    const 卡片行 = r && r.排版 ? (成文处 < 0 ? r.排版 : r.排版.slice(0, 成文处)).filter((l) => !/^执行者（经回复工具）/.test(l)) : [];
+    const 卡片行 = r && r.排版 ? (成文处 < 0 ? r.排版 : r.排版.slice(0, 成文处)).filter((l) => !/^(?:助手|执行者)（经回复工具）/.test(l)) : [];
     const 卡片 = r && (r.告知.length || r.主行为) && 卡片行.length
       ? `<pre class="replycard" style="white-space:pre-wrap;margin:4px 0 0">${esc(卡片行.join("\n"))}</pre>` : "";
     const 降级 = r && r.降级放行 ? `<div class="sub" style="color:var(--bad)">${esc(r.降级放行说明)}</div>` : "";

@@ -140,7 +140,7 @@ class ReplyTests(unittest.TestCase):
         self.assertEqual(t["回复"]["会话条目编号"], "e1")
         self.assertFalse(t["回复"]["降级放行"])
         if shutil.which("node"):
-            self.assertEqual(t["回复"]["排版"][:3], ["执行者（经回复工具）：", "  告知：", "    · 我存好了 UC-001。"])
+            self.assertEqual(t["回复"]["排版"][:3], ["助手（经回复工具）：", "  告知：", "    · 我存好了 UC-001。"])
             self.assertIn("  【请确认】请确认 UC-001 第 1 版。", t["回复"]["排版"])
         stages = stages_of([run(1, [t])])
         self.assertEqual([s["名称"] for s in stages], ["用户发话", "对用户说话"])

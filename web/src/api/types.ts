@@ -553,9 +553,11 @@ export interface TaskListEntry {
   completion_unmet?: number | null;
   last_active_at: string;
   session_count: number;
-  /** 为假时是修订统一之前建的旧格式任务：列出来但打不开，note 写明原因。 */
+  /** 为假时列出来但打不开，note 写明原因：修订统一之前建的旧格式任务，或者正被别的服务占用（这时有 occupied）。 */
   supported?: boolean;
   note?: string;
+  /** 正被别的服务占用：那个服务的端口、进程号、主机名。 */
+  occupied?: { port: number | null; pid: number | null; host: string | null } | null;
 }
 
 export interface TaskDetail extends Task {

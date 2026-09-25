@@ -102,10 +102,10 @@ interface SourceRow {
   normalized_value: string | null;
 }
 
-/** 发起方写成给模型看的中文。 */
+/** 发起方写成中文。拒绝原因的事实一层也给人看，所以执行者写作「助手」。 */
 function actorText(actor: string): string {
   if (actor === ACTOR_USER) return "用户";
-  if (actor === ACTOR_EXECUTOR || actor === LEGACY_ACTOR_MODEL) return "执行者";
+  if (actor === ACTOR_EXECUTOR || actor === LEGACY_ACTOR_MODEL) return "助手";
   return `「${actor}」`;
 }
 
@@ -117,6 +117,44 @@ type Planned =
   | { op: "restore"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[] };
 
 const OP_NAMES: Record<string, string> = { add: "新增", update: "修改", delete: "删除", restore: "恢复" };
+
+/**
+ * 拒绝原因分两层：事实（改了什么、为什么不行，一句话，面向人）与指引（接下来该怎么做，只给助手）。
+ * 核对函数往 errors 里推的一条文字可以用 withGuide 把两层拼在一起，组装时再拆开。
+ * 给模型的正文每个操作两行：「- 操作 N（……）：事实」与「  怎么办：指引」；后端的过程摘要只取事实（work_summary.py）。
+ */
+export interface RejectReason { label: string; fact: string; guidance: string }
+const GUIDE = "\u0000";
+export const GUIDANCE_PREFIX = "怎么办：";
+function withGuide(fact: string, guidance: string): string {
+  return `${fact}${GUIDE}${guidance}`;
+}
+/** 一个操作的若干条错误拼成一条原因：事实用「；」接起来，指引也是。subject 是事实里没点到条目时补在前面的主语。 */
+function reasonOf(label: string, subject: string, errors: string[]): RejectReason {
+  const facts: string[] = [];
+  const guides: string[] = [];
+  for (const one of errors) {
+    const [fact, guide] = one.split(GUIDE);
+    facts.push(fact);
+    if (guide) guides.push(guide);
+  }
+  const fact = facts.join("；");
+  return { label, fact: fact.includes(subject) ? fact : `${subject}：${fact}`, guidance: guides.join("；") };
+}
+/** 拒绝的正文：给模型看，两层都在。 */
+export function rejectionText(reasons: RejectReason[]): string {
+  return `这次「保存修订」什么都没有写入，因为有 ${reasons.length} 个操作不对：\n` +
+    reasons.map((r) => `- ${r.label}：${r.fact}。${r.guidance ? `\n  ${GUIDANCE_PREFIX}${r.guidance}。` : ""}`).join("\n") +
+    "\n请把这些地方改正之后，把整批操作重新提交一次。";
+}
+/** 保存修订被拒时抛的错：正文是 rejectionText，reasons 带结构化的两层。 */
+export class SaveRejected extends Error {
+  reasons: RejectReason[];
+  constructor(reasons: RejectReason[]) {
+    super(rejectionText(reasons));
+    this.reasons = reasons;
+  }
+}
 
 /**
  * 「保存修订」的参数。operations 是模型或扩展命令交来的操作列表；undo_of_revision 只由用户在界面上的
@@ -250,23 +288,23 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   }
   const touched = new Map<string, number>();
 
-  const problems: string[] = [];
+  const problems: RejectReason[] = [];
   const planned: Planned[] = [];
 
   operations.forEach((raw, index) => {
     const number = index + 1;
     const errors: string[] = [];
     if (!isObject(raw)) {
-      problems.push(`操作 ${number}：它应当是一个对象，现在不是。`);
+      problems.push({ label: `操作 ${number}`, fact: `操作 ${number}：它应当是一个对象，现在不是`, guidance: "" });
       return;
     }
     const op = raw.op;
     if (op === "restore" && call.actor !== ACTOR_USER) {
-      problems.push(`操作 ${number}：restore（恢复删掉的条目）只给用户在界面上的撤销用，这里不能用；要改条目请用 update。`);
+      problems.push({ label: `操作 ${number}`, fact: "助手用了恢复操作（restore），它只给用户在界面上的撤销用", guidance: "要改条目请用 update" });
       return;
     }
     if (op !== "add" && op !== "update" && op !== "delete" && op !== "restore") {
-      problems.push(`操作 ${number}：op 写的是 ${JSON.stringify(op)}，只能是 "add"（新增）、"update"（修改）、"delete"（删除）之一。`);
+      problems.push({ label: `操作 ${number}`, fact: `操作 ${number} 的种类写成了 ${JSON.stringify(op)}`, guidance: `op 只能是 "add"（新增）、"update"（修改）、"delete"（删除）之一` });
       return;
     }
     const checkRef = (itemId: unknown): string | null => {
@@ -282,10 +320,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       const collection = definition.collections.find((one) => one.name === raw.collection);
       const label = `操作 ${number}（新增，集合「${String(raw.collection)}」）`;
       if (!collection) {
-        problems.push(
-          `${label}：没有名叫「${String(raw.collection)}」的集合。可用的集合是：` +
-            `${definition.collections.map((one) => `「${one.name}」`).join("、")}。`,
-        );
+        problems.push({ label, fact: `没有名叫「${String(raw.collection)}」的集合`,
+          guidance: `可用的集合是：${definition.collections.map((one) => `「${one.name}」`).join("、")}` });
         return;
       }
       if (raw.item !== undefined) errors.push("新增时不要写 item，条目编号由工具生成");
@@ -305,7 +341,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (errors.length > 0) {
-        problems.push(`${label}：${errors.join("；")}。`);
+        problems.push(reasonOf(label, `新增到「${collection.name}」的条目`, errors));
         return;
       }
       planned.push({ op: "add", collection, fields, sources: sources!, notes });
@@ -316,27 +352,25 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     const itemId = raw.item;
     const label = `操作 ${number}（${OP_NAMES[op]}，条目 ${String(itemId)}）`;
     if (typeof itemId !== "string" || itemId.trim() === "") {
-      problems.push(`${label}：item 应当写要${OP_NAMES[op]}的条目编号，例如 UC-001。`);
+      problems.push({ label, fact: `助手要${OP_NAMES[op]}条目，但没写是哪个条目`, guidance: `item 应当写要${OP_NAMES[op]}的条目编号，例如 UC-001` });
       return;
     }
     const row = items.get(itemId);
     if (!row) {
       const alive = [...items.values()].filter((one) => one.deleted_in_revision === null).map((one) => one.item_id);
-      problems.push(
-        `${label}：这个任务里没有条目 ${itemId}。现有的条目是：${alive.length ? alive.join("、") : "（一个都没有）"}。`,
-      );
+      problems.push({ label, fact: `这个任务里没有条目 ${itemId}`, guidance: `现有的条目是：${alive.length ? alive.join("、") : "（一个都没有）"}` });
       return;
     }
     if (op === "restore" && row.deleted_in_revision === null) {
-      problems.push(`${label}：这个条目没有被删除，不需要恢复。`);
+      problems.push({ label, fact: `${itemId} 没有被删除，不需要恢复`, guidance: "" });
       return;
     }
     if (op !== "restore" && row.deleted_in_revision !== null) {
-      problems.push(`${label}：这个条目已在修订 ${row.deleted_in_revision} 删除，不能再${OP_NAMES[op]}。`);
+      problems.push({ label, fact: `助手想${OP_NAMES[op]} ${itemId}，但它已在修订 ${row.deleted_in_revision} 删除`, guidance: "" });
       return;
     }
     if (touched.has(itemId)) {
-      problems.push(`${label}：同一次调用里操作 ${touched.get(itemId)} 已经处理了这个条目，一个条目在一次调用里只能有一个操作。`);
+      problems.push({ label, fact: `同一次保存里 ${itemId} 出现了两次（操作 ${touched.get(itemId)} 已经处理了它）`, guidance: "一个条目在一次调用里只能有一个操作" });
       return;
     }
     touched.set(itemId, number);
@@ -345,23 +379,22 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     // 改前修订号：模型必须写出它所见的这个条目所在的修订号，与库里的不符就拒绝，免得按旧内容盖掉别人的修改。
     const base = raw.base_revision;
     if (base === undefined || base === null) {
-      problems.push(
-        `${label}：缺少 base_revision。修改与删除时要写你所见的这个条目当前所在的修订号（整数），` +
-          "它写在「保存修订」的返回与界面操作的通知里（「UC-001 现在是修订 N」）。",
-      );
+      problems.push({ label, fact: `助手${OP_NAMES[op]} ${itemId} 时没写它看到的是哪次修订`,
+        guidance: "修改与删除时要写 base_revision，也就是你所见的这个条目当前所在的修订号（整数），它写在「保存修订」的返回与界面操作的通知里（「UC-001 现在是修订 N」）" });
       return;
     }
     if (typeof base !== "number" || !Number.isInteger(base) || base < 1) {
-      problems.push(`${label}：base_revision 应当是一个从 1 起的整数，现在写的是 ${JSON.stringify(base)}。`);
+      problems.push({ label, fact: `助手${OP_NAMES[op]} ${itemId} 时写的修订号 ${JSON.stringify(base)} 不对`, guidance: "base_revision 应当是一个从 1 起的整数" });
       return;
     }
     if (base !== current.revision_no) {
-      problems.push(
-        (base < current.revision_no
-          ? `${label}：条目 ${itemId} 已经被${actorText(current.actor)}改到修订 ${current.revision_no}（你看到的是修订 ${base}），`
-          : `${label}：条目 ${itemId} 现在是修订 ${current.revision_no}，你写的修订 ${base} 不是它当前所在的修订，`) +
-          `请先读最新内容再改。它在修订 ${current.revision_no} 的内容是：${current.fields}`,
-      );
+      problems.push({
+        label,
+        fact: base < current.revision_no
+          ? `${itemId} 已经被${actorText(current.actor)}改到修订 ${current.revision_no}，助手看到的还是修订 ${base}`
+          : `${itemId} 现在是修订 ${current.revision_no}，助手写的修订 ${base} 不是它当前所在的修订`,
+        guidance: `请先读最新内容再改。它在修订 ${current.revision_no} 的内容是：${current.fields}`,
+      });
       return;
     }
 
@@ -377,7 +410,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       errors.push("fields 应当是一个对象，只写要改的字段");
     } else if (isObject(raw.fields)) {
       checkFields(collection, raw.fields, checkRef, errors);
-      if (call.actor !== ACTOR_USER) checkProblemUpdate(collection, before, raw.fields, errors);
+      if (call.actor !== ACTOR_USER) checkProblemUpdate(collection, itemId, before, raw.fields, errors);
       merged = dropEmpty({ ...before, ...raw.fields });
       for (const field of collection.fields) {
         if (field.required && field.name in raw.fields && isEmptyValue(raw.fields[field.name])) {
@@ -397,10 +430,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
-      errors.push(`改完之后的内容与来源都与这个条目在修订 ${current.revision_no} 的一样，这个操作没有改动任何东西；不需要改就去掉这个操作`);
+      errors.push(withGuide(`助手对 ${itemId} 的修改与它在修订 ${current.revision_no} 的内容和来源完全一样，没有改动任何东西`, "不需要改就去掉这个操作"));
     }
     if (errors.length > 0) {
-      problems.push(`${label}：${errors.join("；")}。`);
+      problems.push(reasonOf(label, itemId, errors));
       return;
     }
     planned.push({
@@ -414,13 +447,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     });
   });
 
-  if (problems.length > 0) {
-    throw new Error(
-      `这次「保存修订」什么都没有写入，因为有 ${problems.length} 个操作不对：\n` +
-        problems.map((one) => `- ${one}`).join("\n") +
-        "\n请把这些地方改正之后，把整批操作重新提交一次。",
-    );
-  }
+  if (problems.length > 0) throw new SaveRejected(problems);
 
   return write(db, call, taskId, definition, planned, params);
 }
@@ -446,7 +473,7 @@ export function carriedSources(previous: Source[], changed: Set<string>, given: 
  * 只能改状态与处理结果：用户的回答要写进它牵涉的条目，而不是写回问题本身。值没有变的字段不算改。
  * 新增不受限；用户在界面上的操作（先不管、撤销）不经这里核对。
  */
-function checkProblemUpdate(collection: CollectionDef, before: Fields, fields: Fields, errors: string[]): void {
+function checkProblemUpdate(collection: CollectionDef, itemId: string, before: Fields, fields: Fields, errors: string[]): void {
   const status = keepPendingField(collection);
   if (!status) return;
   const changed = Object.keys(fields).filter((name) => {
@@ -456,10 +483,10 @@ function checkProblemUpdate(collection: CollectionDef, before: Fields, fields: F
     return !(isEmptyValue(value) ? isEmptyValue(before[name]) : sameJson(value, before[name]));
   });
   if (changed.length === 0) return;
-  errors.push(
-    `这次改了${changed.map((name) => `「${name}」`).join("、")}。问题条目写下后只能改${status.name}与${PROBLEM_RESULT_FIELD}；` +
-      "用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决",
-  );
+  errors.push(withGuide(
+    `助手想改 ${itemId} 的${changed.map((name) => `「${name}」`).join("、")}，但问题条目写下后只能改${status.name}与${PROBLEM_RESULT_FIELD}`,
+    "用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决",
+  ));
 }
 
 /** 核对一组字段：字段名都在集合的声明里，值的类型对得上。 */
@@ -581,7 +608,8 @@ function checkSources(
     // 「用户直接修改」只由用户在界面上的直接操作经扩展命令写，执行者只能填前三种。
     const allowed: readonly string[] = actor === ACTOR_USER ? SOURCE_KINDS : EXECUTOR_SOURCE_KINDS;
     if (one.kind === SOURCE_USER_EDIT && actor !== ACTOR_USER) {
-      errors.push(`${where}的 kind 写的是「${SOURCE_USER_EDIT}」，这一种由系统在用户直接改字段时写，你不能填；只能是${EXECUTOR_SOURCE_KINDS.map((kind) => `「${kind}」`).join("、")}之一`);
+      errors.push(withGuide(`${where}的种类写成了「${SOURCE_USER_EDIT}」，这一种只由系统在用户直接改字段时写`,
+        `kind 只能是${EXECUTOR_SOURCE_KINDS.map((kind) => `「${kind}」`).join("、")}之一`));
       ok = false;
     } else if (typeof one.kind !== "string" || !allowed.includes(one.kind)) {
       errors.push(
@@ -625,7 +653,7 @@ function checkSources(
       const excerpt = one.excerpt as string;
       const hit = [...userMessages].reverse().find((message) => message.text.includes(excerpt));
       if (!hit) {
-        errors.push(`${where}是「用户的话」，这句话在对话里没有找到，请逐字摘录用户说过的原话（「${excerpt}」）`);
+        errors.push(withGuide(`${where}引用的用户的话「${excerpt}」在对话里没有找到`, "请逐字摘录用户说过的原话"));
         ok = false;
         return;
       }
@@ -636,9 +664,7 @@ function checkSources(
       const excerpt = (one.excerpt as string).replace(/\r\n/g, "\n").trim();
       const text = materialText(locator);
       if (text === null) {
-        errors.push(
-          `${where}是「${SOURCE_DOCUMENT}」，出处 ${locator} 不是任务目录里能读到的材料文件；出处要写材料文件的路径，例如 inputs/材料.md`,
-        );
+        errors.push(withGuide(`${where}的出处 ${locator} 不是任务目录里能读到的材料文件`, "出处要写材料文件的路径，例如 inputs/材料.md"));
         ok = false;
         return;
       }
@@ -646,20 +672,16 @@ function checkSources(
       // 整段原样就能在材料里找到的（例如连着的两个自然段）照旧存成一条，只有整段找不到时才按空行拆开逐段找。
       if (parts.length <= 1 || text.includes(excerpt)) {
         if (!text.includes(excerpt)) {
-          errors.push(
-            `${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到，摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；` +
-              "引用不相邻的原文请用空行分开或写成几条来源",
-          );
+          errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到`,
+            "摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源"));
           ok = false;
           return;
         }
       } else {
         const missed = parts.findIndex((part) => !text.includes(part));
         if (missed >= 0) {
-          errors.push(
-            `${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${basename(locator)} 里找不到；` +
-              "摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源",
-          );
+          errors.push(withGuide(`${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${basename(locator)} 里找不到`,
+            "摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源"));
           ok = false;
           return;
         }
@@ -729,7 +751,8 @@ function checkSupports(
       }
       const value = fields[support.field];
       if (isEmptyValue(value)) {
-        errors.push(`${where}说它支持字段「${support.field}」，这个字段在改后的内容里是空的${tail}`);
+        errors.push(withGuide(`${where}说它支持字段「${support.field}」，这个字段在改后的内容里是空的`,
+          inherited ? "请在这个操作里重新给出 sources" : "不要让来源指到空字段"));
         continue;
       }
       if (support.index === undefined) continue;

@@ -38,7 +38,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
 import { DefinitionError, KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
 import { activeWaiver, currentRulesHash, currentReviews, reviewSpecOf } from "./review_state.ts";
-import { type Source, isEmptyValue, saveRevision } from "./save_revision.ts";
+import { SaveRejected, type Source, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { NoDatabaseYet, SOURCE_USER_EDIT, TASK_ACTIVE, acceptsUserEditSource, withTaskDatabase } from "./schema.ts";
 
 /** 「用户直接修改」来源的摘录最多取新值的前这么多个字。 */
@@ -232,7 +232,9 @@ function save(
   } catch (error) {
     const text = (error as Error).message;
     if (text.includes("已经被") && text.includes("改到修订")) throw new UserOpError("stale_revision", "条目刚被改过，请看最新内容后再改。", { detail: text });
-    const reasons = text.split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2));
+    // 保存修订被拒时带着分层的原因：给用户看的只取事实，指引是给助手的。
+    const reasons = error instanceof SaveRejected ? error.reasons.map((r) => r.fact)
+      : text.split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2));
     // message 直接写出第一条原因，前端只显示 message 时用户也知道哪里不对；全部原因在 data.reasons。
     const message = reasons.length ? `这次修改没有通过核对：${reasons[0]}${reasons.length > 1 ? `（另有 ${reasons.length - 1} 处）` : ""}` : text;
     throw new UserOpError("rejected", message, { reasons: reasons.length ? reasons : [text] });
