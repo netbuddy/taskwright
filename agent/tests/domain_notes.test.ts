@@ -157,8 +157,9 @@ test("平台 skill 与任务 skill 写了领域说明的做法：记下并说出
   const task = readFileSync(resolve(import.meta.dirname, "../../task-types/srs-authoring/.pi/skills/srs-authoring/SKILL.md"), "utf-8");
   assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、领域说明/);
   assert.match(task, /材料里的术语定义段落也整理成领域说明，类别写「术语」/);
-  assert.match(task, /约束那一条把领域说明写成来源.*领域说明那一条把约束写进「关联条目」，两边都写/);
+  assert.match(task, /领域说明只写解释那一半；规则那一半按上面第 2 条的分拣走/);
+  assert.match(platform, /领域说明只写解释那一半，规则那一半按任务 skill 的分拣放到该放的地方/);
   assert.match(task, /「一批最多写 4 个条目」同样适用于领域说明/);
-  assert.match(task, /例如用户说「我们说的续借是在借期内延长，逾期后办的不叫续借」[\s\S]*分三次保存/);
+  assert.match(task, /例如用户说「我们说的预约保留期[\s\S]*内容只写到「书到馆后替预约的读者留着的那几天」为止[\s\S]*在「约束规则」里加一项「过了保留期还没来取，预约就自动取消」/);
   assert.match(platform, /excerpt 逐字照抄那条说明的标题或内容里你引用的那一段，包括标点/);
 });
