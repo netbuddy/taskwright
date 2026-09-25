@@ -133,7 +133,7 @@ class RpcWithFakeModelTests(unittest.TestCase):
         self.assertEqual([(s["item_id"], s["revision_no"], s["kind"], s["locator"]) for s in sources],
                          [("NFR-001", 1, "文档原文", "inputs/材料.md"), ("UC-001", 1, "文档原文", "inputs/材料.md")])
         self.assertEqual([(r["revision_no"], r["call_id"]) for r in revisions], [(1, "call-save-1")])
-        # 对话理解另记一条 USER_INTENT_RECORDED（执行者这一轮第一段写的理解），它不是交付物的改动，单独核对。
+        # 对话理解另记一条 USER_INTENT_RECORDED（执行者这一轮写的理解），它不是交付物的改动，单独核对。
         dialogue = ("USER_INTENT_RECORDED", "USER_INTENT_INVALID", "EXECUTOR_ACTS_RECORDED")
         self.assertEqual([(e["name"], e["call_id"], e["actor"]) for e in events if e["name"] not in dialogue],
                          [("TASK_CREATED", TASK_OP_ID, "user"), ("REVISION_SAVED", "call-save-1", "executor")])

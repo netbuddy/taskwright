@@ -496,7 +496,7 @@ class TimelineTests(unittest.TestCase):
 
 @unittest.skipIf(shutil.which("node") is None, "本机没有 node，写不出夹具库")
 class DialogueReaderTests(unittest.TestCase):
-    """从任务库只读地读对话行为：按运行对上的三种办法、执行者行为的回应状态、无效理解的次数、三个派生事实。
+    """从任务库只读地读对话行为：按运行对上的三种办法、执行者行为的回应状态、按轮的失败与诊断、三个派生事实。
     夹具是 agent 写出的新库表夹具库，再补写一段对话行为（见 dialogue_fixture.py）。"""
 
     @classmethod
@@ -522,11 +522,17 @@ class DialogueReaderTests(unittest.TestCase):
         self.assertEqual(dialogue.run_layer(session, "", [], ordinal=1)["运行号"], "r1")
         self.assertIsNone(dialogue.run_layer(session, "", [], ordinal=9))
 
-    def test_用户行为与助手行为的列_回应状态_无效理解次数(self):
+    def test_用户行为与助手行为的列_回应状态_按轮的失败与诊断(self):
         from taskwright_observatory import dialogue
         session = dialogue.read_session(self.conn, self.task_id, self.session_id)
         first = dialogue.run_layer(session, "", [], ordinal=1)
-        self.assertEqual(first["理解没按格式写次数"], 1)
+        # r1 有没匹配上的片段，但写出了合格的理解：不算失败，片段列为诊断。
+        self.assertFalse(first["没有合格的理解"])
+        self.assertEqual([(f["性质"], f["离得最近的格式"]) for f in first["未匹配片段"]],
+                         [("没有匹配上任何一种格式", "user_intent"), ("解析不了", "")])
+        self.assertEqual(first["未匹配片段"][0]["错误"], ["对 user_intent：缺少 acts；多了「path」这一项，只能有 acts"])
+        self.assertEqual(first["未匹配片段"][1]["错误"], ["JSON 解析不了（Unexpected end of JSON input）"])
+        self.assertTrue(first["未匹配片段"][0]["前200字"].startswith('{"path":'))
         self.assertEqual([(a["编号"], a["功能"], a["状态"], a["回应它的"]) for a in first["助手行为"]],
                          [("r1-2", "告知（inform）", "不等回应", ""), ("r1-3", "请确认（confirm）", "已回应", "r2-1")])
         second = dialogue.run_layer(session, "u-2", [])
@@ -534,7 +540,13 @@ class DialogueReaderTests(unittest.TestCase):
                          [("r2-1", "纠正（correct）", "UC-001 的名称", "r1-3", "把握高"),
                           ("r2-2", "询问（question）", "", "", "把握中")])
         self.assertEqual(second["助手行为"][0]["状态"], "等回应")
-        self.assertEqual(second["理解没按格式写次数"], 0)
+        self.assertFalse(second["没有合格的理解"])
+        self.assertEqual(second["未匹配片段"], [])
+        self.assertEqual(second["事实核对没通过"], ["acts[0].targets 里的 UC-009 在这个任务里没有"])
+        # r3 这一轮结束时没有合格的理解：失败，一轮一次，附最近的错误。
+        third = dialogue.run_layer(session, "", ["call-reply-3"])
+        self.assertTrue(third["没有合格的理解"])
+        self.assertIn('function 写的是 "agree"', third["失败时最近的错误"][0])
 
     def test_三个派生事实与agent侧同一口径(self):
         from taskwright_observatory import dialogue

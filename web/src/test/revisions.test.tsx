@@ -595,7 +595,7 @@ describe("过程摘要：理解为", () => {
     const SESSION = "S";
     let state = workReducer(initialWorkState(SESSION), { type: "sse", event: "work_started", data: { session_id: SESSION, work_id: "w-u1", at: "", triggered_by: "u1" } } as never);
     for (const step of [
-      { step_key: "w-u1-intent", text: "助手的理解没有按格式写，正在重写", in_progress: true },
+      { step_key: "w-u1-intent", text: "助手的理解里有对不上的地方，正在重写", in_progress: true },
       { step_key: "w-u1-0", text: "写好并保存了修订 6", in_progress: false },
       { step_key: "w-u1-intent", text: "理解为：请求（request）整理材料", in_progress: false },
     ]) state = workReducer(state, { type: "sse", event: "step", data: { session_id: SESSION, work_id: "w-u1", failed: false, ...step } } as never);

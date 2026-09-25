@@ -1,10 +1,13 @@
 /**
  * 对话行为留痕：执行者对用户每句话的理解、执行者回复里的对话行为，以及由此现算的三个事实。
  *
- * 做法（一句话）：用户每说一句话，执行者这一轮的第一段输出是一份按 agent/prompts/schemas/user_intent.schema.json
- * 写的 JSON（用 ```json 围栏包住），写明它把这句话读成了哪几项对话行为；扩展在助手消息落进会话时解析它，
- * 形式合格就写进对话行为表并记事件 USER_INTENT_RECORDED，不合格就只记事件 USER_INTENT_INVALID 带原因。
- * 保存修订、完成任务、回复三个工具执行时，这一轮（自用户最近一句话起）没有有效的理解就拒绝。
+ * 做法（一句话）：用户每说一句话，执行者在这一轮的文字输出里写一份按 agent/prompts/schemas/user_intent.schema.json
+ * 写的 JSON，写明它把这句话读成了哪几项对话行为。理解是登记的结构化输出之一（本模块的 USER_INTENT_OUTPUT，
+ * 登记表见 lib/registered_outputs.ts）：扩展在每条助手消息落进会话时扫它的全部文字段，按 schema 认出理解
+ * （识别的做法见 lib/structured_outputs.ts），事实核对也过了就写进对话行为表并记事件 USER_INTENT_RECORDED，
+ * 事实核对不过记事件 USER_INTENT_INVALID 带原因。这一轮结束时（pi 的 agent_settled）这句话仍没有合格的理解，
+ * 记事件 USER_INTENT_MISSING，这是唯一算失败的情形。
+ * 保存修订、完成任务、回复三个工具执行时，这一轮（自用户最近一句话起）没有合格的理解就拒绝。
  * 「回复」合格时把它的告知与末位主行为也写进对话行为表，编号返回给执行者，用户下一句话的 responds_to 才有所指。
  *
  * 本模块只核对形式与事实（枚举、必填、responds_to 指向的行为存在且还没有被回应、targets 里的条目存在），
@@ -19,37 +22,24 @@ import { DatabaseSync } from "node:sqlite";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { ACTOR_EXECUTOR, ACTOR_USER, databasePath, dump, emit, load, wallClockText } from "./db.ts";
 import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
-import { FUNCTION_NAMES, INTENT_GATE_TEXT, SUMMARY_LIMIT, schemaErrors } from "./intent_schema.ts";
+import { FUNCTION_NAMES, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
+import {
+  type ScanOutcome,
+  type StructuredOutput,
+  type Turn,
+  nearestProblems,
+  recordOutputs,
+  recordTurnEnd,
+  turnDiagnoses,
+} from "./structured_outputs.ts";
 
 /** 事件名。 */
 export const EVENT_USER_INTENT_RECORDED = "USER_INTENT_RECORDED";
 export const EVENT_USER_INTENT_INVALID = "USER_INTENT_INVALID";
+/** 这一轮结束时这句用户的话仍没有合格的理解。唯一算失败的情形。 */
+export const EVENT_USER_INTENT_MISSING = "USER_INTENT_MISSING";
 export const EVENT_EXECUTOR_ACTS_RECORDED = "EXECUTOR_ACTS_RECORDED";
-
-// ───────────── 从助手消息里取理解 ─────────────
-
-/** 一条消息的第一段不为空的文字；没有为 null。思考（thinking）与工具调用不算。 */
-export function firstText(content: unknown): string | null {
-  if (typeof content === "string") return content.trim() === "" ? null : content;
-  for (const part of Array.isArray(content) ? content : []) {
-    if (part?.type === "text" && typeof part.text === "string" && part.text.trim() !== "") return part.text;
-  }
-  return null;
-}
-
-/** 取第一段文字里的理解：```json 围栏里的 JSON；没有围栏时，整段就是一个 JSON 对象也认。 */
-export function extractUnderstanding(text: string | null): { ok: true; value: unknown } | { ok: false; reason: string; attempted: boolean } {
-  if (text === null) return { ok: false, reason: "这一轮第一段输出不是文字，没有写理解", attempted: false };
-  const fenced = /```(?:json)?[ \t]*\r?\n([\s\S]*?)```/i.exec(text);
-  const body = fenced ? fenced[1] : text.trim().startsWith("{") ? text.trim() : null;
-  if (body === null) return { ok: false, reason: "这一轮第一段文字里没有用 ```json 围栏包住的理解", attempted: false };
-  try {
-    return { ok: true, value: JSON.parse(body) };
-  } catch (error) {
-    return { ok: false, reason: `围栏里的 JSON 解析不了（${(error as Error).message}）`, attempted: true };
-  }
-}
 
 // ───────────── 会话分支：这一轮是哪句话引出的 ─────────────
 
@@ -94,13 +84,12 @@ export function textOf(content: unknown): string {
 }
 
 /**
- * 从会话当前分支读出这一次运行。运行号是分支上第几句用户的话；「回复」兜底追加的那句固定文字不算，
- * 因为兜底之后的续跑仍属于同一次运行。分支上没有用户的话时返回 null。
+ * 会话当前分支上的每一次运行，按先后排。运行号是分支上第几句用户的话；「回复」兜底追加的那句固定文字不算，
+ * 因为兜底之后的续跑仍属于同一次运行。
  */
-export function currentRun(branch: Entry[]): RunInfo | null {
-  let run: RunInfo | null = null;
+export function branchRuns(branch: Entry[]): RunInfo[] {
+  const runs: RunInfo[] = [];
   let lastCustom: Entry | null = null;
-  let runNo = 0;
   for (const entry of branch) {
     if (entry.type === "custom_message") {
       lastCustom = entry;
@@ -111,14 +100,19 @@ export function currentRun(branch: Entry[]): RunInfo | null {
     if (role === "user") {
       const text = textOf(entry.message.content);
       if (text.trim() === FALLBACK_TEXT) continue;
-      runNo += 1;
-      run = { runNo, runId: `r${runNo}`, userEntryId: entry.id, userText: text, synthesized: synthesizedBy(lastCustom, text), assistantCount: 0 };
+      const runNo = runs.length + 1;
+      runs.push({ runNo, runId: `r${runNo}`, userEntryId: entry.id, userText: text, synthesized: synthesizedBy(lastCustom, text), assistantCount: 0 });
       lastCustom = null;
-    } else if (role === "assistant" && run) {
-      run.assistantCount += 1;
+    } else if (role === "assistant" && runs.length > 0) {
+      runs[runs.length - 1].assistantCount += 1;
     }
   }
-  return run;
+  return runs;
+}
+
+/** 这一次运行：由会话当前分支上最近一句用户的话引出。分支上没有用户的话时返回 null。 */
+export function currentRun(branch: Entry[]): RunInfo | null {
+  return branchRuns(branch).at(-1) ?? null;
 }
 
 /** 这句用户的话是不是系统按界面操作合成的：紧挨在它前面的那条自定义消息说明了是哪种操作。 */
@@ -203,12 +197,11 @@ function answeredBy(db: DatabaseSync, taskId: string, sessionId: string, actId: 
 }
 
 /**
- * 核对一份理解：先按 schema 核对形式，再核对两样事实——responds_to 指向这条会话里有的执行者行为、
- * 那一条期待回应时还没有被回应过；targets 里的条目在这个任务里有（删掉的条目也算有）。
+ * 核对一份已经符合 schema 的理解里的两样事实：responds_to 指向这条会话里有的执行者行为、
+ * 那一条期待回应时还没有被回应过；targets 里的条目在这个任务里有（删掉的条目也算有）。返回逐条的问题。
  */
-export function checkUnderstanding(db: DatabaseSync, taskId: string, sessionId: string, value: unknown): { acts: UserAct[] } | { errors: string[] } {
-  const errors = schemaErrors(value);
-  if (errors.length > 0) return { errors };
+export function understandingFactErrors(db: DatabaseSync, taskId: string, sessionId: string, value: unknown): string[] {
+  const errors: string[] = [];
   const acts = (value as { acts: UserAct[] }).acts;
   const itemExists = db.prepare("SELECT 1 FROM item WHERE task_id = ? AND item_id = ?");
   const actRow = db.prepare("SELECT speaker, expects_response FROM dialogue_act WHERE task_id = ? AND session_id = ? AND act_id = ?");
@@ -227,52 +220,39 @@ export function checkUnderstanding(db: DatabaseSync, taskId: string, sessionId: 
       if (!itemExists.get(taskId, target.item_id)) errors.push(`${where}.targets 里的 ${target.item_id} 在这个任务里没有；targets 只写已有的条目，说的不是某个条目时不写 targets`);
     }
   });
-  return errors.length > 0 ? { errors } : { acts };
+  return errors;
 }
 
-/** 扩展解析一条助手消息之后的结果。 */
+/**
+ * 登记的结构化输出之一：执行者对用户这句话的理解。schema 就是发给执行者的那一份（平台 skill 里的说明由它生成）；
+ * 每句用户的话都必须有一份，这一轮结束时没有就记 USER_INTENT_MISSING。
+ */
+export const USER_INTENT_OUTPUT: StructuredOutput = {
+  name: "user_intent",
+  schemaFile: INTENT_SCHEMA_FILE,
+  schema: INTENT_SCHEMA,
+  invalidEvent: EVENT_USER_INTENT_INVALID,
+  alreadyRecorded: (db, turn) => hasUserActs(db, turn.taskId, turn.sessionId, turn.userEntryId),
+  checkFacts: (db, turn, value) => understandingFactErrors(db, turn.taskId, turn.sessionId, value),
+  record: (db, turn, value) => writeUnderstanding(db, turn, (value as { acts: UserAct[] }).acts),
+  recordInvalid: (db, turn, written, errors) => writeInvalid(db, turn, errors.join("；"), written),
+  requiredEachTurn: { recordMissing: (db, turn, nearest) => writeMissing(db, turn, nearest) },
+};
+
+/** 扩展处理一条助手消息之后的结果。synthesized 是这一轮界面操作合成的那句话按事实记下的用户行为。 */
 export type RecordOutcome =
-  | { kind: "recorded"; actIds: string[]; eventSeq: number }
-  | { kind: "invalid"; reason: string; eventSeq: number }
+  | ({ kind: "scanned"; synthesized?: { actIds: string[]; eventSeq: number } } & ScanOutcome)
   | { kind: "skipped"; why: string };
 
-/**
- * 助手消息落进会话时调用（挂在 message_end 上）：这一轮还没有用户的对话行为时，
- * 用户的话是界面操作合成的就按操作的事实直接写；否则取这条助手消息的第一段文字解析理解，合格写表，不合格记 USER_INTENT_INVALID。
- * 已经有了就什么都不做（每句用户的话只记一份理解）。
- *
- * 不合格时只在下面几种情形记事件，免得一条运行里的每条助手消息都记一次：这是这一轮的第一条助手消息、
- * 这条消息里写了围栏或 JSON（写了但写错了）、这条消息调用了要求理解的工具（保存修订、完成任务、回复）。
- */
-export function recordFromAssistantMessage(
-  workspaceDir: string,
-  sessionId: string,
-  branch: Entry[],
-  message: { content?: unknown; stopReason?: string },
-  gatedTools: readonly string[],
-): RecordOutcome {
-  if (message.stopReason === "error" || message.stopReason === "aborted") return { kind: "skipped", why: "这条助手消息出错或被中止" };
-  const run = currentRun(branch);
-  if (!run) return { kind: "skipped", why: "会话里还没有用户的话" };
+/** 打开任务库，找到这一轮，交给 body；没有任务库、库里没有任务时返回 skipped。 */
+function inTurn<T>(workspaceDir: string, sessionId: string, run: RunInfo, body: (db: DatabaseSync, turn: Turn) => T): T | { kind: "skipped"; why: string } {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return { kind: "skipped", why: "还没有任务库" };
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const taskId = taskIdOf(db);
-      if (!taskId) return { kind: "skipped", why: "库里还没有任务" } as RecordOutcome;
-      if (hasUserActs(db, taskId, sessionId, run.userEntryId)) return { kind: "skipped", why: "这一轮已经有理解了" } as RecordOutcome;
-      if (run.synthesized) return writeSynthesized(db, taskId, sessionId, run);
-      const text = firstText(message.content);
-      const extracted = extractUnderstanding(text);
-      const calls = (Array.isArray(message.content) ? message.content : []).filter((part: any) => part?.type === "toolCall").map((part: any) => String(part.name));
-      const worthNoting = run.assistantCount === 0 || calls.some((name) => gatedTools.includes(name));
-      if (!extracted.ok) {
-        if (!worthNoting && !extracted.attempted) return { kind: "skipped", why: extracted.reason } as RecordOutcome;
-        return writeInvalid(db, taskId, sessionId, run, extracted.reason, text);
-      }
-      const checked = checkUnderstanding(db, taskId, sessionId, extracted.value);
-      if ("errors" in checked) return writeInvalid(db, taskId, sessionId, run, checked.errors.join("；"), text);
-      return writeUnderstanding(db, taskId, sessionId, run, checked.acts);
+      if (!taskId) return { kind: "skipped", why: "库里还没有任务" } as const;
+      return body(db, { taskId, sessionId, runId: run.runId, userEntryId: run.userEntryId });
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return { kind: "skipped", why: "还没有任务库" };
@@ -280,11 +260,61 @@ export function recordFromAssistantMessage(
   }
 }
 
-function writeUnderstanding(db: DatabaseSync, taskId: string, sessionId: string, run: RunInfo, acts: UserAct[]): RecordOutcome {
-  const serial = nextSerial(db, taskId, sessionId, run.runId);
+/**
+ * 助手消息落进会话时调用（挂在 message_end 上）。这一轮的用户的话是界面操作合成的、还没有记下时，先按操作的事实直接写；
+ * 然后扫这条消息的全部文字段，按登记表 outputs 认出结构化输出并记下，未匹配与无法解析的片段记一条诊断
+ * （见 lib/structured_outputs.ts 的 recordOutputs）。出错或被中止的消息不扫。
+ */
+export function recordFromAssistantMessage(
+  workspaceDir: string,
+  sessionId: string,
+  branch: Entry[],
+  message: { content?: unknown; stopReason?: string },
+  outputs: readonly StructuredOutput[],
+): RecordOutcome {
+  if (message.stopReason === "error" || message.stopReason === "aborted") return { kind: "skipped", why: "这条助手消息出错或被中止" };
+  const run = currentRun(branch);
+  if (!run) return { kind: "skipped", why: "会话里还没有用户的话" };
+  return inTurn(workspaceDir, sessionId, run, (db, turn): RecordOutcome => {
+    const synthesized = run.synthesized && !hasUserActs(db, turn.taskId, sessionId, run.userEntryId)
+      ? writeSynthesized(db, turn.taskId, sessionId, run) : undefined;
+    return { kind: "scanned", ...(synthesized ? { synthesized } : {}), ...recordOutputs(db, turn, message.content, outputs) };
+  });
+}
+
+/**
+ * 一次运行安顿下来时调用（挂在 pi 的 agent_settled 上）：userEntryIds 是这段处理里出现过的用户的话（会话条目编号），
+ * 连同分支上最近一句，逐句检查每句都必须有的那几种输出。界面操作合成的那句话还没有记下时按操作的事实补记；
+ * 其余仍没有合格的一份的，由那一种记失败（理解是 USER_INTENT_MISSING）。返回每句话记了失败的输出名。
+ */
+export function recordAtSettle(
+  workspaceDir: string,
+  sessionId: string,
+  branch: Entry[],
+  userEntryIds: Iterable<string>,
+  outputs: readonly StructuredOutput[],
+): { userEntryId: string; missing: string[] }[] {
+  const runs = branchRuns(branch);
+  const wanted = new Set(userEntryIds);
+  const last = runs.at(-1);
+  if (last) wanted.add(last.userEntryId);
+  const out: { userEntryId: string; missing: string[] }[] = [];
+  for (const run of runs.filter((one) => wanted.has(one.userEntryId))) {
+    const result = inTurn(workspaceDir, sessionId, run, (db, turn) => {
+      if (run.synthesized && !hasUserActs(db, turn.taskId, sessionId, run.userEntryId)) writeSynthesized(db, turn.taskId, sessionId, run);
+      return recordTurnEnd(db, turn, outputs);
+    });
+    if (Array.isArray(result)) out.push({ userEntryId: run.userEntryId, missing: result });
+  }
+  return out;
+}
+
+function writeUnderstanding(db: DatabaseSync, turn: Turn, acts: UserAct[]): number {
+  const { taskId, sessionId, runId, userEntryId } = turn;
+  const serial = nextSerial(db, taskId, sessionId, runId);
   const rows: ActRow[] = acts.map((act, index) => ({
-    act_id: `${run.runId}-${serial + index}`,
-    run_id: run.runId,
+    act_id: `${runId}-${serial + index}`,
+    run_id: runId,
     speaker: "user",
     function: act.function,
     targets: dump(act.targets ?? []),
@@ -292,24 +322,35 @@ function writeUnderstanding(db: DatabaseSync, taskId: string, sessionId: string,
     expects_response: 0,
     confidence: act.confidence,
     summary: act.summary.trim(),
-    source_entry: run.userEntryId,
+    source_entry: userEntryId,
     origin: "understanding",
   }));
   const seq = emit(db, {
-    taskId, sessionId, callId: `intent-${run.userEntryId}`, name: EVENT_USER_INTENT_RECORDED, actor: ACTOR_EXECUTOR,
-    payload: { run_id: run.runId, user_entry: run.userEntryId, origin: "understanding", acts: rows.map(payloadOf) },
+    taskId, sessionId, callId: `intent-${userEntryId}`, name: EVENT_USER_INTENT_RECORDED, actor: ACTOR_EXECUTOR,
+    payload: { run_id: runId, user_entry: userEntryId, origin: "understanding", acts: rows.map(payloadOf) },
   });
   const at = wallClockText();
   for (const row of rows) insertAct(db, taskId, sessionId, row, seq, at);
-  return { kind: "recorded", actIds: rows.map((row) => row.act_id), eventSeq: seq };
+  return seq;
 }
 
-function writeInvalid(db: DatabaseSync, taskId: string, sessionId: string, run: RunInfo, reason: string, text: string | null): RecordOutcome {
-  const seq = emit(db, {
-    taskId, sessionId, callId: `intent-${run.userEntryId}`, name: EVENT_USER_INTENT_INVALID, actor: ACTOR_EXECUTOR,
-    payload: { run_id: run.runId, user_entry: run.userEntryId, reason, written: text === null ? null : [...text].slice(0, 400).join("") },
+/** 一份符合 schema、但事实核对不过的理解。 */
+function writeInvalid(db: DatabaseSync, turn: Turn, reason: string, written: string): number {
+  return emit(db, {
+    taskId: turn.taskId, sessionId: turn.sessionId, callId: `intent-${turn.userEntryId}`, name: EVENT_USER_INTENT_INVALID, actor: ACTOR_EXECUTOR,
+    payload: { run_id: turn.runId, user_entry: turn.userEntryId, reason, written: [...written].slice(0, 400).join("") },
   });
-  return { kind: "invalid", reason, eventSeq: seq };
+}
+
+/** 失败事件的原因。 */
+export const MISSING_REASON = "这一轮结束时没有合格的理解";
+
+/** 这一轮结束时仍没有合格的理解。nearest 是本轮各片段离理解格式最近的问题（没有片段时为空）。 */
+function writeMissing(db: DatabaseSync, turn: Turn, nearest: string[]): number {
+  return emit(db, {
+    taskId: turn.taskId, sessionId: turn.sessionId, callId: `intent-${turn.userEntryId}`, name: EVENT_USER_INTENT_MISSING, actor: ACTOR_EXECUTOR,
+    payload: { run_id: turn.runId, user_entry: turn.userEntryId, reason: MISSING_REASON, nearest },
+  });
 }
 
 /**
@@ -317,7 +358,7 @@ function writeInvalid(db: DatabaseSync, taskId: string, sessionId: string, run: 
  * 卡片上选了一个选项是告知（inform），回应那张卡片的主行为；「这几条都看过了」是同意（affirm），
  * 「先不管」是告知，二者回应这条会话里最近一条还在等回应、针对这几个条目的执行者行为（没有就不写 responds_to）。
  */
-function writeSynthesized(db: DatabaseSync, taskId: string, sessionId: string, run: RunInfo): RecordOutcome {
+function writeSynthesized(db: DatabaseSync, taskId: string, sessionId: string, run: RunInfo): { actIds: string[]; eventSeq: number } {
   const synth = run.synthesized!;
   const open = unansweredActs(db, taskId, sessionId);
   let respondsTo: string | null = null;
@@ -345,7 +386,7 @@ function writeSynthesized(db: DatabaseSync, taskId: string, sessionId: string, r
     payload: { run_id: run.runId, user_entry: run.userEntryId, origin: "ui", ui_kind: synth.kind, acts: [payloadOf(row)] },
   });
   insertAct(db, taskId, sessionId, row, seq, wallClockText());
-  return { kind: "recorded", actIds: [row.act_id], eventSeq: seq };
+  return { actIds: [row.act_id], eventSeq: seq };
 }
 
 function payloadOf(row: ActRow) {
@@ -355,8 +396,9 @@ function payloadOf(row: ActRow) {
 // ───────────── 门禁 ─────────────
 
 /**
- * 三个工具（保存修订、完成任务、回复）执行时调用：这一轮（自用户最近一句话起）没有有效的理解就抛异常拒绝，
- * 理由附上最近一次解析失败的原因。会话里没有用户的话、或者还没有任务库时不拦（没有要理解的话，也没有地方记）。
+ * 三个工具（保存修订、完成任务、回复）执行时调用：这一轮（自用户最近一句话起）没有合格的理解就抛异常拒绝，
+ * 理由附上本轮各片段离理解格式最近的问题（校验错误、解析错误或事实核对的问题）；没有片段时说这一轮还没有写理解。
+ * 会话里没有用户的话、或者还没有任务库时不拦（没有要理解的话，也没有地方记）。
  */
 export function requireUnderstanding(workspaceDir: string, sessionId: string, branch: Entry[], label: string, toolName: string): void {
   const run = currentRun(branch);
@@ -364,27 +406,32 @@ export function requireUnderstanding(workspaceDir: string, sessionId: string, br
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
-  let reason: string | null = null;
+  let problems: string[] = [];
   try {
     if (!hasDialogueTable(db)) {
-      reason = "库里还没有对话行为表";
+      problems = ["库里还没有对话行为表"];
     } else {
       const taskId = taskIdOf(db);
       if (!taskId || hasUserActs(db, taskId, sessionId, run.userEntryId)) return;
-      const rows = db.prepare("SELECT payload FROM event WHERE name = ? AND session_id = ? ORDER BY seq DESC").all(EVENT_USER_INTENT_INVALID, sessionId) as { payload: string }[];
-      const last = rows.map((row) => load(row.payload) as { user_entry?: string; reason?: string }).find((one) => one.user_entry === run.userEntryId);
-      reason = last?.reason ?? null;
+      problems = nearestProblems(turnDiagnoses(db, sessionId, run.userEntryId, [USER_INTENT_OUTPUT]), USER_INTENT_OUTPUT.name);
     }
   } finally {
     db.close();
   }
+  const shown = problems.slice(-GATE_PROBLEMS_SHOWN);
+  const why = shown.length === 0
+    ? "这一轮还没有写理解"
+    : `这一轮写了 ${problems.length} 个 JSON 片段，都不是合格的理解。` +
+      `${problems.length > shown.length ? `最近 ${shown.length} 个` : "各片段"}的问题：` + shown.map((one, i) => `（${i + 1}）${one}`).join("");
   throw new Error(
-    `${label}没有执行：${INTENT_GATE_TEXT}。这一轮（自用户最近一句话起）还没有一份有效的理解` +
-      `${reason ? `，上一次的问题是：${reason}` : ""}。\n` +
-      "请在下一次回应的第一段只写一个 ```json 围栏，按平台 skill「先写理解」一节的格式写好你对用户这句话的理解，" +
-      `围栏前后不写别的字，写完接着调用 ${toolName}。`,
+    `${label}没有执行：${INTENT_GATE_TEXT}。${why}。\n` +
+      "请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
+      `写完接着调用 ${toolName}。`,
   );
 }
+
+/** 门禁拒绝时最多列几个片段的问题（最近的几个）。 */
+const GATE_PROBLEMS_SHOWN = 3;
 
 // ───────────── 回复工具记执行者的行为 ─────────────
 

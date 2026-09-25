@@ -1,6 +1,7 @@
-"""过程摘要的「理解为」一行：从任务库的 USER_INTENT_RECORDED 与 USER_INTENT_INVALID 事件拼出来。
+"""过程摘要的「理解为」一行：从任务库的 USER_INTENT_RECORDED、USER_INTENT_INVALID、USER_INTENT_MISSING 与
+STRUCTURED_OUTPUT_UNMATCHED 事件拼出来。
 
-三种情形各一例：有理解（摘要按记录顺序用「；」连，把握取最低一档，高时不括注）、只有无效理解、界面合成的那句话；
+几种情形各一例：有理解（摘要按记录顺序用「；」连，把握取最低一档，高时不括注）、还没有理解时的三种说法、界面合成的那句话；
 另有刷新后的对话记录与实时推送的步骤行各一例。库是测试自己建的最小库，只有这里读到的两张表。
 """
 
@@ -38,7 +39,15 @@ def recorded(entry: str, *acts: dict, origin: str = "understanding") -> tuple[st
 
 
 def invalid(entry: str) -> tuple[str, dict]:
-    return "USER_INTENT_INVALID", {"run_id": "r1", "user_entry": entry, "reason": "没有写理解"}
+    return "USER_INTENT_INVALID", {"run_id": "r1", "user_entry": entry, "reason": "acts[0].targets 里的 UC-009 在这个任务里没有"}
+
+
+def missing(entry: str) -> tuple[str, dict]:
+    return "USER_INTENT_MISSING", {"run_id": "r1", "user_entry": entry, "reason": "这一轮结束时没有合格的理解", "nearest": []}
+
+
+def unmatched(entry: str) -> tuple[str, dict]:
+    return "STRUCTURED_OUTPUT_UNMATCHED", {"run_id": "r1", "user_entry": entry, "fragments": [{"nature": "unparseable", "text": "{"}]}
 
 
 class UnderstandingLineTest(unittest.TestCase):
@@ -69,11 +78,22 @@ class UnderstandingLineTest(unittest.TestCase):
         # 事件内容里没有功能（早先的库）时只写摘要。
         self.assertEqual(work_summary.understanding_text([{"summary": "整理材料", "confidence": "high"}]), "理解为：整理材料")
 
-    def test_只记了无效理解时写正在重写_之后写对了就换成理解(self):
-        root = self.dir([invalid("u-1"), invalid("u-2"), recorded("u-2", {"act_id": "r2-1", "function": "other", "summary": "寒暄", "confidence": "high"})])
+    def test_还没有理解时的三种说法_之后写对了就换成理解(self):
+        other = {"act_id": "r2-1", "function": "other", "summary": "寒暄", "confidence": "high"}
+        root = self.dir([
+            invalid("u-1"),
+            unmatched("u-2"), recorded("u-2", other),
+            unmatched("u-3"),
+            unmatched("u-4"), invalid("u-4"), missing("u-4"),
+            # 先有理解、后面又写了没匹配上的片段：仍写理解。
+            recorded("u-5", other), unmatched("u-5"),
+        ])
         lines = work_summary.understanding_lines(root, SESSION)
-        self.assertEqual(lines["u-1"], "助手的理解没有按格式写，正在重写")
+        self.assertEqual(lines["u-1"], "助手的理解里有对不上的地方，正在重写")
         self.assertEqual(lines["u-2"], "理解为：无关（other）寒暄")
+        self.assertEqual(lines["u-3"], "助手的理解正在重写")
+        self.assertEqual(lines["u-4"], "助手这一轮没有写下理解")
+        self.assertEqual(lines["u-5"], "理解为：无关（other）寒暄")
 
     def test_界面合成的那句话不显示这一行_没有库时什么都没有(self):
         root = self.dir([recorded("u-1", {"act_id": "r1-1", "summary": "在卡片上选了「允许」", "confidence": "high"}, origin="ui")])
@@ -116,7 +136,7 @@ class UnderstandingLineTest(unittest.TestCase):
                    "steps": {"w-u-1-0": {"step_key": "w-u-1-0", "text": "读了材料"}}}
         ex._understanding_step(SESSION)
         first = [d for n, d in hub.events if n == "step"][-1]
-        self.assertEqual((first["step_key"], first["text"], first["in_progress"]), ("w-u-1-intent", "助手的理解没有按格式写，正在重写", True))
+        self.assertEqual((first["step_key"], first["text"], first["in_progress"]), ("w-u-1-intent", "助手的理解里有对不上的地方，正在重写", True))
         self.assertEqual(list(ex.work["steps"]), ["w-u-1-intent", "w-u-1-0"])
         conn = sqlite3.connect(library.db_file(root))
         conn.execute("INSERT INTO event VALUES (2, ?, 'USER_INTENT_RECORDED', ?)",

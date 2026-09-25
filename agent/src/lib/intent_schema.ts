@@ -10,6 +10,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** 理解格式的 JSON Schema 文件，仓内相对路径（写进提示与诊断用）。 */
+export const INTENT_SCHEMA_FILE = "agent/prompts/schemas/user_intent.schema.json";
 /** 理解格式的 JSON Schema 文件。平台 skill 里的说明由 scripts/render-intent-schema.mjs 从它生成。 */
 export const INTENT_SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts", "schemas", "user_intent.schema.json");
 
@@ -36,18 +38,24 @@ export const INTENT_GATE_TEXT = "先按 schema 写下你对用户这句话的理
 export const SUMMARY_LIMIT: number = INTENT_SCHEMA.properties.acts.items.properties.summary.maxLength;
 
 /**
- * 按 schema 核对一个值，返回逐条的中文问题。只实现本 schema 用到的那几样：type（object、array、string、integer）、
- * required、properties、additionalProperties 为 false、items、minItems、enum、maxLength、minimum、同文件内的 $ref。
+ * 按 schema 核对一个值，返回逐条的中文问题。不只用于理解：登记的每一种结构化输出都用它按自己的 schema 匹配
+ * （lib/structured_outputs.ts），所以 schema 与 root 由调用方交进来，默认是理解格式。
+ * 只实现 JSON Schema 的一个子集：type（object、array、string、integer、number、boolean、null）、required、properties、
+ * additionalProperties 为 false、items、minItems、enum、const、maxLength、minimum、同文件内的 $ref。
  */
 export function schemaErrors(value: unknown, schema: Json = INTENT_SCHEMA, path = "", root: Json = INTENT_SCHEMA): string[] {
   const errors: string[] = [];
-  const where = path || "整份理解";
+  const where = path || "最外层";
   if (typeof schema.$ref === "string") {
     const target = schema.$ref.replace(/^#\//, "").split("/").reduce((node: Json, key: string) => node?.[key], root);
     return schemaErrors(value, target, path, root);
   }
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) {
     errors.push(`${where} 写的是 ${JSON.stringify(value)}，只能是 ${schema.enum.join("、")} 之一`);
+    return errors;
+  }
+  if ("const" in schema && JSON.stringify(value) !== JSON.stringify(schema.const)) {
+    errors.push(`${where} 写的是 ${JSON.stringify(value)}，只能是 ${JSON.stringify(schema.const)}`);
     return errors;
   }
   switch (schema.type) {
@@ -87,8 +95,16 @@ export function schemaErrors(value: unknown, schema: Json = INTENT_SCHEMA, path 
       else if (value.trim() === "") errors.push(`${where} 是空的`);
       return errors;
     case "integer":
-      if (typeof value !== "number" || !Number.isInteger(value)) errors.push(`${where} 应当是整数`);
-      else if (typeof schema.minimum === "number" && value < schema.minimum) errors.push(`${where} 不能小于 ${schema.minimum}`);
+    case "number":
+      if (typeof value !== "number" || (schema.type === "integer" && !Number.isInteger(value))) {
+        errors.push(`${where} 应当是${schema.type === "integer" ? "整数" : "数"}`);
+      } else if (typeof schema.minimum === "number" && value < schema.minimum) errors.push(`${where} 不能小于 ${schema.minimum}`);
+      return errors;
+    case "boolean":
+      if (typeof value !== "boolean") errors.push(`${where} 应当是 true 或 false`);
+      return errors;
+    case "null":
+      if (value !== null) errors.push(`${where} 应当是 null`);
       return errors;
     default:
       return errors;

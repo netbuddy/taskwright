@@ -35,7 +35,7 @@ from pathlib import Path
 DEFAULT_REPLY = {"text": "好的。"}
 
 #: 自动补的理解：auto_intent 为真时，用户说话之后的第一个回答要是只有工具调用、没有文字，就在前面补上这一段。
-#: 执行者每轮第一段要先写一份理解（agent/prompts/schemas/user_intent.schema.json），保存修订、完成任务、回复在没有理解时拒绝；
+#: 执行者每轮要在文字输出里写一份理解（agent/prompts/schemas/user_intent.schema.json），保存修订、完成任务、回复在没有理解时拒绝；
 #: 早先写好的脚本只写了工具调用，补上这一段它们照旧能跑。要测「没写理解被拒」的测试把 auto_intent 关掉。
 AUTO_INTENT_TEXT = '```json\n{"acts": [{"function": "request", "confidence": "high", "summary": "照用户说的做"}]}\n```'
 

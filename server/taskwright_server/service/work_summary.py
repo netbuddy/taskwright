@@ -27,8 +27,18 @@ from pathlib import Path
 from taskwright_server.service import clock
 
 REPLY_TOOL = "reply"
-#: 这一轮只记了 USER_INTENT_INVALID、还没有一份有效理解时，「理解为」那一行的说法。
-INTENT_INVALID_TEXT = "助手的理解没有按格式写，正在重写"
+#: 这句话还没有合格的理解时，「理解为」那一行的三种说法（agent 侧的三种事件见 agent/src/lib/dialogue_acts.ts）：
+#: 写了符合格式、但事实核对不过的理解（USER_INTENT_INVALID），助手正在重写；
+INTENT_INVALID_TEXT = "助手的理解里有对不上的地方，正在重写"
+#: 这一轮结束时仍没有合格的理解（USER_INTENT_MISSING）；
+INTENT_MISSING_TEXT = "助手这一轮没有写下理解"
+#: 只写了没匹配上理解格式的 JSON 片段（STRUCTURED_OUTPUT_UNMATCHED），这一轮还没结束、仍在等助手写出理解。
+INTENT_PENDING_TEXT = "助手的理解正在重写"
+#: 这一轮还在进行中的两种说法：界面上这一行带进行中的样子。
+INTENT_IN_PROGRESS_TEXTS = (INTENT_INVALID_TEXT, INTENT_PENDING_TEXT)
+#: 几种说法的先后：同一句话有几种事件时取排在前面的；记下了理解就写理解，不看这几种。
+_NO_UNDERSTANDING = {"USER_INTENT_MISSING": INTENT_MISSING_TEXT, "USER_INTENT_INVALID": INTENT_INVALID_TEXT,
+                     "STRUCTURED_OUTPUT_UNMATCHED": INTENT_PENDING_TEXT}
 #: 把握的三档，按从低到高排；「理解为」那一行取各条里最低的一档，高时不括注。
 CONFIDENCE_ORDER = ("low", "medium", "high")
 CONFIDENCE_NOTE = {"low": "（把握低）", "medium": "（把握中）", "high": ""}
@@ -222,7 +232,9 @@ def understanding_lines(task_dir: Path | None, session_id: str) -> dict[str, str
 
     从任务库的事件表读：这句话有 USER_INTENT_RECORDED 时拼理解（事件内容里的各条行为，缺把握时到对话行为表里按编号查）；
     那条事件是界面合成的（origin 为 ui，点卡片、「这几条都看过了」「先不管」之后替用户发的话）时这句话不显示这一行，值为 None；
-    只有 USER_INTENT_INVALID 时写 INTENT_INVALID_TEXT。没有库、没有这两种事件的旧库，返回空字典。只读，不改任何东西。
+    还没有理解时按事件写一句：一轮结束仍没有（USER_INTENT_MISSING）写 INTENT_MISSING_TEXT，事实核对不过（USER_INTENT_INVALID）
+    写 INTENT_INVALID_TEXT，只写了没匹配上的片段（STRUCTURED_OUTPUT_UNMATCHED）写 INTENT_PENDING_TEXT，几种都有时按这个先后取。
+    没有库、没有这几种事件的旧库，返回空字典。只读，不改任何东西。
     """
     if task_dir is None:
         return {}
@@ -232,17 +244,23 @@ def understanding_lines(task_dir: Path | None, session_id: str) -> dict[str, str
         return {}
     out: dict[str, str | None] = {}
     try:
-        rows = conn.execute("SELECT name, payload FROM event WHERE session_id = ? AND name IN ('USER_INTENT_RECORDED', 'USER_INTENT_INVALID') "
-                            "ORDER BY seq", (session_id,)).fetchall()
+        names = ("USER_INTENT_RECORDED", *_NO_UNDERSTANDING)
+        rows = conn.execute(f"SELECT name, payload FROM event WHERE session_id = ? AND name IN ({', '.join('?' * len(names))}) "
+                            "ORDER BY seq", (session_id, *names)).fetchall()
+        rank = list(_NO_UNDERSTANDING.values())
+        understood: set[str] = set()
         has_acts = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dialogue_act'").fetchone() is not None
         for name, payload in rows:
             data = library._json(payload) or {}
             entry = data.get("user_entry")
             if not entry:
                 continue
-            if name == "USER_INTENT_INVALID":
-                out.setdefault(entry, INTENT_INVALID_TEXT)
+            if name in _NO_UNDERSTANDING:
+                text = _NO_UNDERSTANDING[name]
+                if entry not in understood and (entry not in out or rank.index(text) < rank.index(out[entry])):
+                    out[entry] = text
                 continue
+            understood.add(entry)
             if data.get("origin") == "ui":
                 out[entry] = None
                 continue

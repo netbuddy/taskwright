@@ -105,12 +105,23 @@ function 对话事实HTML(f, 会话数) {
       x.历次.map((v) => `修订 ${v.修订号}：${esc(值(v.值))}`).join(" → ")}）`).join("；") : "没有"}</p>`;
 }
 
-// 运行行上的小标签：运行号（会话内），以及这次运行里理解没按格式写的次数。
+// 运行行上的小标签：运行号（会话内），以及这一轮结束时仍没有合格的理解（失败，一轮只标一次）。
 function 对话标签HTML(r) {
   const L = r.对话行为;
   if (!L) return "";
   return (L.运行号 ? `<span class="rtag rid" title="运行号是这条会话里第几句用户的话，与左边按任务数的运行序号不是同一个数">运行号 ${esc(L.运行号)}</span>` : "")
-    + (L.理解没按格式写次数 ? `<span class="rtag bad">理解没按格式写 ${L.理解没按格式写次数} 次</span>` : "");
+    + (L.没有合格的理解 ? `<span class="rtag bad" title="这一轮结束时，助手仍没有为用户这句话写下一份合格的理解">这一轮没有合格的理解</span>` : "");
+}
+
+// 运行展开后的诊断行（灰色，不算失败）：没匹配上的 JSON 片段，与符合格式但事实核对没通过的理解。
+function 对话诊断HTML(L) {
+  const 片段 = L.未匹配片段 || [], 核对 = L.事实核对没通过 || [];
+  const 片段行 = 片段.length ? `<details class="dlg-diag"><summary>写了 ${片段.length} 个没有匹配上的 JSON 片段（只是诊断，不算失败）</summary>${
+    片段.map((f, i) => `<div class="frag"><div class="fh">片段 ${i + 1}：${esc(f.性质)}${f.离得最近的格式 ? `，离得最近的格式是 ${esc(f.离得最近的格式)}` : ""}</div>
+      <pre>${esc(f.前200字)}</pre>${f.错误.map((e) => `<div class="fe">${esc(e)}</div>`).join("")}</div>`).join("")}</details>` : "";
+  const 核对行 = 核对.length ? `<details class="dlg-diag"><summary>写了 ${核对.length} 份符合格式、但事实核对没通过的理解（只是诊断，不算失败）</summary>${
+    核对.map((e) => `<div class="fe">${esc(e)}</div>`).join("")}</details>` : "";
+  return 片段行 + 核对行;
 }
 
 // 运行展开后的对话行为块：左列用户行为，右列助手行为。
@@ -126,11 +137,12 @@ function 对话行为HTML(r) {
     return `<div class="act"><div class="top"><span class="aid">${esc(a.编号)}</span><span class="fn">${esc(a.功能)}</span>${状态}
       ${a.针对 ? `<span class="meta">针对 ${esc(a.针对)}</span>` : ""}</div><div class="asum">${esc(a.摘要)}</div></div>`;
   }).join("") || `<div class="dlg-empty">这一轮助手没有经「回复」记下行为。</div>`;
-  const 没按格式 = L.理解没按格式写次数
-    ? `<div class="dlg-bad">这一轮助手的理解没按格式写 ${L.理解没按格式写次数} 次，写入工具因此拒绝，助手重写之后才记下。原因：${L.理解没按格式写的原因.map(esc).join("；")}</div>` : "";
+  const 没按格式 = L.没有合格的理解
+    ? `<div class="dlg-bad">这一轮没有合格的理解：这一轮结束时，助手仍没有为用户这句话写下一份合格的理解。${
+      L.失败时最近的错误.length ? "本轮各片段最近的错误：" + L.失败时最近的错误.map(esc).join("；") : "这一轮没有写任何 JSON 片段。"}</div>` : "";
   return `<div class="dlg">
     <div class="dlg-h"><span class="t">对话行为</span><span>运行号 ${esc(L.运行号 || "未知")}</span><span class="note">运行号是这条会话里第几句用户的话，与左边按任务数的运行序号 ${r.运行序号} 不是同一个数</span></div>
-    ${没按格式}
+    ${没按格式}${对话诊断HTML(L)}
     <div class="dlg-cols"><div class="dlg-col p-用户"><div class="dlg-ch">用户行为（${esc(L.用户行为的来处 || "没有记下")}）</div>${用户}</div>
     <div class="dlg-col p-执行者"><div class="dlg-ch">助手行为（「回复」记下的告知与主行为）</div>${助手}</div></div></div>`;
 }

@@ -1,10 +1,11 @@
 /**
- * 对话理解：理解格式的核对、从助手消息里解析并记下理解、三个工具的门禁、回复记执行者的行为、
+ * 对话理解：理解格式的核对、按登记的 schema 从助手消息里认出并记下理解、一轮结束时没有理解记失败、三个工具的门禁、回复记执行者的行为、
  * 保存修订记理解编号与规范化值、三个派生事实，以及 schema 是唯一来源（主行为枚举、平台 skill 的生成区）。
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
@@ -16,16 +17,17 @@ import { withTaskDatabase } from "../src/lib/schema.ts";
 import { EXECUTOR_FUNCTIONS, INTENT_SCHEMA, schemaErrors } from "../src/lib/intent_schema.ts";
 import {
   currentRun,
-  extractUnderstanding,
   readDialogueFacts,
+  recordAtSettle,
   recordFromAssistantMessage,
   recordReplyActs,
   requireUnderstanding,
 } from "../src/lib/dialogue_acts.ts";
+import { REGISTERED_OUTPUTS } from "../src/lib/registered_outputs.ts";
+import { type StructuredOutput, extractFragments, readSchema } from "../src/lib/structured_outputs.ts";
 import { getItem, getTaskStatus } from "../src/lib/task_query.ts";
 import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { GATED_TOOLS } from "../src/hooks/intent_record.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
 import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, query } from "./helpers.ts";
@@ -52,14 +54,21 @@ let serial = 0;
 const userEntry = (text: string, id = `u${++serial}`): Entry => ({ id, type: "message", message: { role: "user", content: [{ type: "text", text }] } });
 const assistantEntry = (id = `a${++serial}`): Entry => ({ id, type: "message", message: { role: "assistant", content: [{ type: "text", text: "……" }] } });
 const fenced = (acts: unknown[]) => "```json\n" + JSON.stringify({ acts }) + "\n```";
-const assistantMessage = (text: string | null, calls: string[] = []) => ({
+const assistantMessage = (text: string | null | string[], calls: string[] = []) => ({
   role: "assistant",
   stopReason: calls.length ? "toolUse" : "stop",
-  content: [...(text === null ? [] : [{ type: "text", text }]), ...calls.map((name, i) => ({ type: "toolCall", id: `call-${name}-${i}`, name, arguments: {} }))],
+  content: [
+    ...(text === null ? [] : (Array.isArray(text) ? text : [text]).map((one) => ({ type: "text", text: one }))),
+    ...calls.map((name, i) => ({ type: "toolCall", id: `call-${name}-${i}`, name, arguments: {} })),
+  ],
 });
 
-const record = (dir: string, branch: Entry[], text: string | null, calls: string[] = []) =>
-  recordFromAssistantMessage(dir, SESSION, branch, assistantMessage(text, calls), GATED_TOOLS);
+const record = (dir: string, branch: Entry[], text: string | null | string[], calls: string[] = [], outputs: readonly StructuredOutput[] = REGISTERED_OUTPUTS) =>
+  recordFromAssistantMessage(dir, SESSION, branch, assistantMessage(text, calls), outputs);
+const settle = (dir: string, branch: Entry[], seen: string[] = []) => recordAtSettle(dir, SESSION, branch, seen, REGISTERED_OUTPUTS);
+/** 一次处理的结果里记下了哪几种输出。 */
+const recordedNames = (outcome: ReturnType<typeof record>) => (outcome.kind === "scanned" ? outcome.recorded.map((one) => one.name) : []);
+const payloads = (dir: string, name: string) => events(dir, name).map((one) => JSON.parse(one.payload));
 
 const acts = (dir: string) => query<any>(dir, "SELECT * FROM dialogue_act ORDER BY rowid");
 const events = (dir: string, name: string) => query<any>(dir, "SELECT * FROM event WHERE name = ? ORDER BY seq", name);
@@ -84,7 +93,7 @@ test("schema 核对：合格的理解没有问题；缺项、多项、枚举不�
   assert.deepEqual(schemaErrors({ acts: [AFFIRM] }), []);
   assert.deepEqual(schemaErrors(INTENT_SCHEMA.examples[0].value), []);
   const cases: [unknown, RegExp][] = [
-    [[], /整份理解 应当是一个对象/],
+    [[], /最外层 应当是一个对象/],
     [{}, /缺少 acts/],
     [{ acts: [] }, /acts 至少要有 1 项/],
     [{ acts: [AFFIRM], extra: 1 }, /多了「extra」这一项/],
@@ -114,17 +123,32 @@ test("用户向助手要信息记 question（询问）：schema 收这一种，c
   assert.match(schemaErrors({ acts: [{ ...ask, function: "ask" }] }).join(" | "), /function 写的是 "ask"，只能是 .*clarify、question 之一/);
 });
 
-test("取理解：```json 围栏、没写语言的围栏、整段就是 JSON 都认；没有围栏、JSON 写坏各给原因", () => {
-  assert.deepEqual(extractUnderstanding('```json\n{"acts": []}\n```'), { ok: true, value: { acts: [] } });
-  assert.deepEqual(extractUnderstanding('```\n{"acts": []}\n```'), { ok: true, value: { acts: [] } });
-  assert.deepEqual(extractUnderstanding('{"acts": []}'), { ok: true, value: { acts: [] } });
-  const none = extractUnderstanding("好的，我这就去改。");
-  assert.equal(none.ok, false);
-  assert.match((none as { reason: string }).reason, /没有用 ```json 围栏包住的理解/);
-  const broken = extractUnderstanding('```json\n{"acts": [}\n```');
-  assert.equal(broken.ok, false);
-  assert.match((broken as { reason: string }).reason, /JSON 解析不了/);
-  assert.match((extractUnderstanding(null) as { reason: string }).reason, /不是文字/);
+test("取片段：一段文字里的围栏与裸写的 JSON 都取出来；别的语言的围栏跳过；写坏的与没收尾的记解析错误", () => {
+  const text = [
+    "先说明一下。",
+    "```json\n{\"acts\": []}\n```",
+    "中间一句话，里面有 {名称} 这样的花括号，不算 JSON。",
+    "```\n[1, 2]\n```",
+    "```ts\nconst x = {\"a\": 1};\n```",
+    "裸写的：{\"b\": {\"c\": \"含 } 的字符串\"}} 后面还有字。",
+  ].join("\n");
+  const found = extractFragments(text);
+  assert.deepEqual(found.map((one) => [one.fenced, one.value]), [
+    [true, { acts: [] }],
+    [true, [1, 2]],
+    [false, { b: { c: "含 } 的字符串" } }],
+  ]);
+  // 漏进文字通道的工具参数：解析得了，后面多出的字不算进来。
+  assert.deepEqual(extractFragments('{"path":"/w/.pi/skills/x/SKILL.md"}D').map((one) => one.value), [{ path: "/w/.pi/skills/x/SKILL.md" }]);
+  const broken = extractFragments('```json\n{"acts": [}\n```');
+  assert.match(broken[0].parseError!, /JSON 解析不了/);
+  // 少了收尾的 ]}：配不平，取到末尾，记解析错误。
+  const cut = extractFragments('{"acts": [{"function": "request", "confidence": "high", "summary": "整理"}');
+  assert.equal(cut.length, 1);
+  assert.match(cut[0].parseError!, /JSON 解析不了/);
+  // 没有收尾的围栏取到文字末尾。
+  assert.deepEqual(extractFragments('```json\n{"acts": []}').map((one) => one.value), [{ acts: [] }]);
+  assert.deepEqual(extractFragments("好的，我这就去改。"), []);
 });
 
 test("运行号：分支上第几句用户的话，兜底那句提醒不算；界面点击与界面操作之后那句固定的话认作合成的", () => {
@@ -175,7 +199,7 @@ test("合格的理解写进对话行为表并记 USER_INTENT_RECORDED；编号�
     AFFIRM,
     { function: "correct", targets: [{ item_id: "UC-002", field: "名称" }], confidence: "high", summary: "名称改为注销" },
   ]), ["save_revision"]);
-  assert.equal(outcome.kind, "recorded");
+  assert.deepEqual(recordedNames(outcome), ["user_intent"]);
   const rows = acts(dir);
   assert.deepEqual(rows.map((r) => [r.act_id, r.run_id, r.speaker, r.function, r.origin, r.source_entry, r.expects_response]), [
     ["r1-1", "r1", "user", "affirm", "understanding", "u-1", 0],
@@ -185,29 +209,111 @@ test("合格的理解写进对话行为表并记 USER_INTENT_RECORDED；编号�
   const [event] = events(dir, "USER_INTENT_RECORDED");
   assert.equal(rows[0].event_seq, event.seq);
   assert.equal(JSON.parse(event.payload).user_entry, "u-1");
-  // 同一句话再写一份，不再记。
-  assert.equal(record(dir, branch, fenced([AFFIRM])).kind, "skipped");
+  // 同一句话再写一份，不再记，也不算未匹配。
+  assert.deepEqual(recordedNames(record(dir, branch, fenced([AFFIRM]))), []);
   assert.equal(acts(dir).length, 2);
+  assert.equal(events(dir, "STRUCTURED_OUTPUT_UNMATCHED").length, 0);
 });
 
-test("形式不合格时不写表，记 USER_INTENT_INVALID 带原因；这一轮之后的助手消息没写理解也没调门禁工具时不再记", () => {
+test("扫全部文字段与全部消息：第一条消息只调了 read、理解写在后一条消息的第二段、裸写不带围栏，都认", () => {
   const dir = workspaceWithItems();
   const branch = [userEntry("整理一下", "u-1")];
-  const bad = record(dir, branch, fenced([{ function: "agree", confidence: "high", summary: "x" }]), ["save_revision"]);
-  assert.equal(bad.kind, "invalid");
-  assert.equal(acts(dir).length, 0);
-  const [event] = events(dir, "USER_INTENT_INVALID");
-  assert.match(JSON.parse(event.payload).reason, /function 写的是 "agree"/);
-
+  // 第 1 条助手消息只有 read 调用，没有文字：什么都不记，不算失败。
+  const first = record(dir, branch, null, ["read"]);
+  assert.deepEqual(recordedNames(first), []);
+  assert.equal(query(dir, "SELECT * FROM event WHERE name LIKE 'USER_INTENT_%' OR name = 'STRUCTURED_OUTPUT_UNMATCHED'").length, 0);
   branch.push(assistantEntry());
-  assert.equal(record(dir, branch, null, ["get_item"]).kind, "skipped");
-  assert.equal(events(dir, "USER_INTENT_INVALID").length, 1);
-  // 调了门禁工具却没写理解：记一条。
-  assert.equal(record(dir, branch, null, ["reply"]).kind, "invalid");
-  assert.equal(events(dir, "USER_INTENT_INVALID").length, 2);
-  // 第一条助手消息就没写理解：记一条。
-  const other = workspaceWithItems();
-  assert.equal(record(other, [userEntry("你好")], "你好，我是助手。", ["reply"]).kind, "invalid");
+  const second = record(dir, branch, ["我先读了 skill，下面是理解。", JSON.stringify({ acts: [{ function: "request", confidence: "high", summary: "整理材料" }] })], ["save_revision"]);
+  assert.deepEqual(recordedNames(second), ["user_intent"]);
+  assert.equal(acts(dir)[0].function, "request");
+  assert.deepEqual(settle(dir, branch), [{ userEntryId: "u-1", missing: [] }]);
+  assert.equal(events(dir, "USER_INTENT_MISSING").length, 0);
+});
+
+test("不匹配的片段只记诊断不算失败：漏出的工具参数、schema 不对的理解、写坏的 JSON 各记一条片段，附对理解格式的错误", () => {
+  const dir = workspaceWithItems();
+  const branch = [userEntry("整理一下", "u-1")];
+  const outcome = record(dir, branch, [
+    '{"path":"/w/.pi/skills/taskwright-executor/SKILL.md"}D',
+    fenced([{ function: "agree", confidence: "high", summary: "x" }]),
+    '```json\n{"acts": [{"function": "request"\n```',
+  ], ["read"]);
+  assert.equal(outcome.kind, "scanned");
+  assert.equal(acts(dir).length, 0);
+  assert.equal(events(dir, "USER_INTENT_INVALID").length, 0, "schema 不对不再记无效，只记诊断");
+  const [diag] = payloads(dir, "STRUCTURED_OUTPUT_UNMATCHED");
+  assert.deepEqual(diag.registered, ["user_intent"]);
+  assert.deepEqual(diag.fragments.map((one: any) => one.nature), ["unmatched", "unmatched", "unparseable"]);
+  assert.match(diag.fragments[0].errors.user_intent.join(" | "), /缺少 acts/);
+  assert.equal(diag.fragments[0].nearest, "user_intent");
+  assert.match(diag.fragments[1].errors.user_intent.join(" | "), /function 写的是 "agree"/);
+  assert.match(diag.fragments[2].parse_error, /JSON 解析不了/);
+  // 门禁：拒绝理由列出本轮各片段离理解格式最近的问题。
+  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "保存修订", "save_revision"),
+    /这一轮写了 3 个 JSON 片段，都不是合格的理解。各片段的问题：（1）缺少 acts.*（2）acts\[0\]\.function 写的是 "agree".*（3）JSON 解析不了/s);
+  // 没有文字的消息什么都不记。
+  branch.push(assistantEntry());
+  record(dir, branch, null, ["get_item"]);
+  assert.equal(events(dir, "STRUCTURED_OUTPUT_UNMATCHED").length, 1);
+});
+
+test("一轮结束：没有合格理解记 USER_INTENT_MISSING，附本轮各片段最近的错误；有理解不记；没写过片段时 nearest 为空", () => {
+  const dir = workspaceWithItems();
+  const branch = [userEntry("整理一下", "u-1")];
+  record(dir, branch, fenced([{ function: "agree", confidence: "high", summary: "x" }]), ["save_revision"]);
+  assert.deepEqual(settle(dir, branch), [{ userEntryId: "u-1", missing: ["user_intent"] }]);
+  const [missing] = payloads(dir, "USER_INTENT_MISSING");
+  assert.equal(missing.reason, "这一轮结束时没有合格的理解");
+  assert.equal(missing.user_entry, "u-1");
+  assert.equal(missing.run_id, "r1");
+  assert.match(missing.nearest.join(" | "), /function 写的是 "agree"/);
+
+  // 下一句话：什么 JSON 都没写就结束了。
+  branch.push(assistantEntry(), userEntry("你好", "u-2"));
+  record(dir, branch, "你好。", ["reply"]);
+  settle(dir, branch);
+  const second = payloads(dir, "USER_INTENT_MISSING")[1];
+  assert.equal(second.user_entry, "u-2");
+  assert.deepEqual(second.nearest, []);
+  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "回复", "reply"), /这一轮还没有写理解/);
+
+  // 插话：同一段处理里有两句用户的话，前一句也检查；有理解的那句不记。
+  branch.push(assistantEntry(), userEntry("把材料整理一下", "u-3"));
+  record(dir, branch, fenced([{ function: "request", confidence: "high", summary: "整理" }]));
+  branch.push(assistantEntry(), userEntry("再加一个用例", "u-4"));
+  assert.deepEqual(settle(dir, branch, ["u-3"]), [{ userEntryId: "u-3", missing: [] }, { userEntryId: "u-4", missing: ["user_intent"] }]);
+  assert.equal(events(dir, "USER_INTENT_MISSING").length, 3);
+});
+
+test("通用性：登记表里加一种假 schema，识别器不改代码就能认出它；它不算每轮必需，缺了不记失败", () => {
+  const dir = workspaceWithItems();
+  const schemaPath = join(mkdtempSync(join(tmpdir(), "tw-schema-")), "estimate.schema.json");
+  writeFileSync(schemaPath, JSON.stringify({
+    type: "object", required: ["estimate_hours", "done"], additionalProperties: false,
+    properties: { estimate_hours: { type: "number", minimum: 0 }, done: { type: "boolean" }, kind: { const: "estimate" } },
+  }));
+  const seen: unknown[] = [];
+  const estimate: StructuredOutput = {
+    name: "estimate", schemaFile: "tests/estimate.schema.json", schema: readSchema(schemaPath), invalidEvent: "ESTIMATE_INVALID",
+    alreadyRecorded: () => seen.length > 0,
+    record: (_db, _turn, value) => (seen.push(value), 0),
+    recordInvalid: () => 0,
+  };
+  const outputs = [...REGISTERED_OUTPUTS, estimate];
+  const branch = [userEntry("整理一下，顺便估个工时", "u-1")];
+  const outcome = record(dir, branch, [
+    fenced([{ function: "request", confidence: "high", summary: "整理并估工时" }]),
+    '估计要 {"estimate_hours": 1.5, "done": false}，另一份 {"estimate_hours": -1, "done": "no"}',
+  ], ["save_revision"], outputs);
+  assert.deepEqual(recordedNames(outcome), ["user_intent", "estimate"]);
+  assert.deepEqual(seen, [{ estimate_hours: 1.5, done: false }]);
+  const [diag] = payloads(dir, "STRUCTURED_OUTPUT_UNMATCHED");
+  assert.deepEqual(diag.registered, ["user_intent", "estimate"]);
+  assert.match(diag.fragments[0].errors.estimate.join(" | "), /estimate_hours 不能小于 0.*done 应当是 true 或 false/);
+  assert.equal(diag.fragments[0].nearest, "estimate");
+  assert.match(diag.fragments[0].errors.user_intent.join(" | "), /缺少 acts/);
+  // 假的那一种没写也不记失败：只有每轮必需的那一种才查。
+  assert.deepEqual(recordAtSettle(dir, SESSION, [...branch, userEntry("再说一句", "u-2")], [], outputs), [{ userEntryId: "u-2", missing: ["user_intent"] }]);
 });
 
 test("responds_to 指向不存在的、用户自己的、已经被回应过的行为时被拒；targets 指向没有的条目时被拒", () => {
@@ -216,19 +322,21 @@ test("responds_to 指向不存在的、用户自己的、已经被回应过的�
   assert.equal(askId, "r1-3");
 
   const run2 = [...branch, userEntry("可以", "u-2")];
-  const missing = record(dir, run2, fenced([{ ...AFFIRM, responds_to: "r9-9" }]));
-  assert.match((missing as { reason: string }).reason, /r9-9，这条会话里没有这个编号/);
-  const userAct = record(dir, run2, fenced([{ ...AFFIRM, responds_to: "r1-1" }]));
-  assert.match((userAct as { reason: string }).reason, /那是用户的行为/);
-  const noItem = record(dir, run2, fenced([{ ...AFFIRM, targets: [{ item_id: "UC-009" }] }]));
-  assert.match((noItem as { reason: string }).reason, /UC-009 在这个任务里没有/);
+  const reasonOf = (outcome: ReturnType<typeof record>) => (outcome.kind === "scanned" ? outcome.diagnoses.map((one) => one.fact_errors ?? []).flat().join(" | ") : "");
+  assert.match(reasonOf(record(dir, run2, fenced([{ ...AFFIRM, responds_to: "r9-9" }]))), /r9-9，这条会话里没有这个编号/);
+  assert.match(reasonOf(record(dir, run2, fenced([{ ...AFFIRM, responds_to: "r1-1" }]))), /那是用户的行为/);
+  assert.match(reasonOf(record(dir, run2, fenced([{ ...AFFIRM, targets: [{ item_id: "UC-009" }] }]))), /UC-009 在这个任务里没有/);
+  // 事实核对不过仍记 USER_INTENT_INVALID，一份一条；它们不是未匹配的片段。
+  assert.equal(events(dir, "USER_INTENT_INVALID").length, 3);
+  assert.match(payloads(dir, "USER_INTENT_INVALID")[2].reason, /UC-009 在这个任务里没有/);
+  assert.equal(events(dir, "STRUCTURED_OUTPUT_UNMATCHED").length, 0);
+  assert.throws(() => requireUnderstanding(dir, SESSION, run2, "回复", "reply"), /最近 3 个的问题|各片段的问题：（1）.*r9-9/s);
 
-  assert.equal(record(dir, run2, fenced([{ ...AFFIRM, responds_to: askId }])).kind, "recorded");
+  assert.deepEqual(recordedNames(record(dir, run2, fenced([{ ...AFFIRM, responds_to: askId }]))), ["user_intent"]);
   // 一份理解里两项指向同一条：可以（例子里的同意与纠正都回应 r12-1）。
   // 下一句话再指向已经被回应的那一条：被拒。
   const run3 = [...run2, assistantEntry(), userEntry("还是可以", "u-3")];
-  const again = record(dir, run3, fenced([{ ...AFFIRM, responds_to: askId }]));
-  assert.match((again as { reason: string }).reason, /已经被 r2-1 回应过了/);
+  assert.match(reasonOf(record(dir, run3, fenced([{ ...AFFIRM, responds_to: askId }]))), /已经被 r2-1 回应过了/);
 });
 
 test("复合回答：同意两条、纠正一条、一条先不管，入表三条，前两条回应同一个请确认", () => {
@@ -240,7 +348,7 @@ test("复合回答：同意两条、纠正一条、一条先不管，入表三�
     { function: "correct", responds_to: askId, targets: [{ item_id: "UC-002", field: "名称" }], confidence: "high", summary: "名称改为注销登录" },
     { function: "inform", targets: [{ item_id: "UC-002", field: "备注" }], confidence: "medium", summary: "备注先不管" },
   ]), ["save_revision"]);
-  assert.equal(outcome.kind, "recorded");
+  assert.deepEqual(recordedNames(outcome), ["user_intent"]);
   const rows = acts(dir).filter((r) => r.run_id === "r2");
   assert.deepEqual(rows.map((r) => [r.act_id, r.function, r.responds_to]), [
     ["r2-1", "affirm", askId],
@@ -258,7 +366,7 @@ test("界面点击合成的话：执行者不写理解，按点击直接记一�
     userEntry("我选：允许", "u-2"),
   ];
   const outcome = record(dir, run2, null, ["save_revision"]);
-  assert.equal(outcome.kind, "recorded");
+  assert.equal(outcome.kind === "scanned" && outcome.synthesized?.actIds.length, 1);
   const row = acts(dir).find((r) => r.run_id === "r2")!;
   assert.equal(row.origin, "ui");
   assert.equal(row.function, "inform");
@@ -267,20 +375,33 @@ test("界面点击合成的话：执行者不写理解，按点击直接记一�
   assert.match(row.summary, /选了「允许」/);
   assert.equal(JSON.parse(events(dir, "USER_INTENT_RECORDED").at(-1).payload).origin, "ui");
   assert.equal(events(dir, "USER_INTENT_RECORDED").at(-1).actor, "user");
-  // 门禁放行。
+  // 门禁放行；一轮结束不记失败。
   requireUnderstanding(dir, SESSION, run2, "保存修订", "save_revision");
+  settle(dir, run2);
+  assert.equal(events(dir, "USER_INTENT_MISSING").length, 0);
+  // 界面操作合成的话，这一轮一条助手消息也没有就结束了：安顿时按操作的事实补记，不记失败。
+  const run3: Entry[] = [
+    ...run2, assistantEntry(),
+    { id: "c3", type: "custom_message", customType: "taskwright-user-edit", details: { kind: "mark_viewed", results: [{ item_id: "UC-001", revision_no: 1 }] } },
+    userEntry("我已经看过了：UC-001（修订 1）。请接着往下做。", "u-3"),
+  ];
+  settle(dir, run3);
+  assert.equal(acts(dir).find((r) => r.source_entry === "u-3")?.function, "affirm");
+  assert.equal(events(dir, "USER_INTENT_MISSING").length, 0);
 });
 
 // ───────────── 门禁 ─────────────
 
-test("门禁：这一轮没有有效理解时三个工具的拒绝理由相同，附上次解析失败的原因；有理解放行；没有库、没有用户的话不拦", () => {
+test("门禁：这一轮没有合格理解时三个工具的拒绝理由相同，附本轮各片段最近的错误；有理解放行；没有库、没有用户的话不拦", () => {
   const dir = workspaceWithItems();
   const branch = [userEntry("整理一下", "u-1")];
   assert.throws(() => requireUnderstanding(dir, SESSION, branch, "保存修订", "save_revision"),
-    /保存修订没有执行：先按 schema 写下你对用户这句话的理解。这一轮（自用户最近一句话起）还没有一份有效的理解。/);
+    /^Error: 保存修订没有执行：先按 schema 写下你对用户这句话的理解。这一轮还没有写理解。\n请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，写完接着调用 save_revision。$/);
   record(dir, branch, "我去整理。", ["save_revision"]);
+  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "完成任务", "complete_task"), /这一轮还没有写理解/);
+  record(dir, branch, '{"acts": "整理"}', ["save_revision"]);
   assert.throws(() => requireUnderstanding(dir, SESSION, branch, "完成任务", "complete_task"),
-    /完成任务没有执行：先按 schema.*上一次的问题是：这一轮第一段文字里没有用 ```json 围栏包住的理解/s);
+    /完成任务没有执行：先按 schema.*这一轮写了 1 个 JSON 片段，都不是合格的理解。各片段的问题：（1）acts 应当是一个列表/s);
   branch.push(assistantEntry());
   record(dir, branch, fenced([{ function: "request", confidence: "high", summary: "整理" }]), ["reply"]);
   requireUnderstanding(dir, SESSION, branch, "回复", "reply");
@@ -453,7 +574,15 @@ test("唯一来源：回复的五种主行为取自 schema；平台 skill 的生
   assert.deepEqual([...EXECUTOR_FUNCTIONS], ["ask", "confirm", "suggest", "choose", "propose"]);
   const path = join(import.meta.dirname, "..", "prompts", "skills", "taskwright-executor", "SKILL.md");
   const text = readFileSync(path, "utf-8");
-  assert.match(text, /<!-- 理解格式生成区 开始：agent\/prompts\/schemas\/user_intent.schema.json -->/);
+  assert.match(text, /\n（理解格式说明开始，由 agent\/prompts\/schemas\/user_intent.schema.json 生成，不要手改）\n/);
+  assert.match(text, /\n（理解格式说明结束）\n/);
+  // HTML 注释会让按 Markdown 渲染的查看器吞掉后面的内容，生成区的标记用普通文字行；第八节不再要求写在第一段。
+  assert.doesNotMatch(text, /<!--/);
+  assert.doesNotMatch(text, /第一段/);
+  // 一句话只写一份理解，不要在后面的消息里重复写。
+  assert.match(text, /一句话只写一份理解，写完直接调用工具，不要在后面的消息里重复写；调用保存修订之前先确认这一轮已经写过理解。/);
+  // 平台 skill 里的格式说明与识别用的 schema 是同一个文件。
+  assert.equal(REGISTERED_OUTPUTS[0].schema, INTENT_SCHEMA);
   assert.equal(renderDocument(text), text, "SKILL.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");
   for (const fn of INTENT_SCHEMA.$defs.user_function.enum) assert.match(text, new RegExp("`" + fn + "`"));
 });

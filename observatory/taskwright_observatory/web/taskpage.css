@@ -382,7 +382,7 @@ body.tp-resizing{cursor:col-resize;user-select:none}
   .tp .rbody{padding-left:2.4em}
 }
 
-/* 对话行为层：页头「对话」一行（三个派生事实）、运行行上的运行号与「理解没按格式写」标签、运行展开后的对话行为块。
+/* 对话行为层：页头「对话」一行（三个派生事实）、运行行上的运行号与「这一轮没有合格的理解」标签、运行展开后的对话行为块与灰色诊断行。
    颜色沿用用户蓝（.p-用户）与助手绿（.p-执行者），状态色沿用已有的 ok、judge、bad 三组。 */
 .tp .dlgfacts{margin:4px 0 0;font-size:12.8px;line-height:1.55;color:var(--ink2);border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:5px 12px;max-width:none}
 .tp .dlgfacts .lab{font-weight:600;color:var(--ink);margin-right:6px}
@@ -397,6 +397,12 @@ body.tp-resizing{cursor:col-resize;user-select:none}
 .tp .dlg-h .t{font-weight:600;color:var(--ink)}
 .tp .dlg-h .note{color:var(--ink3)}
 .tp .dlg-bad{margin:6px 12px 0;padding:4px 10px;font-size:12.3px;color:var(--bad);background:var(--bad-t);border:1px solid #F0C6C1;border-radius:6px}
+.tp .dlg-diag{margin:6px 12px 0;font-size:12.3px;color:var(--ink3)}
+.tp .dlg-diag summary{cursor:pointer}
+.tp .dlg-diag .frag{margin:4px 0 6px 1em;padding-left:8px;border-left:2px solid var(--line)}
+.tp .dlg-diag .fh{color:var(--ink2)}
+.tp .dlg-diag pre{margin:2px 0;white-space:pre-wrap;word-break:break-all;font-family:var(--mono);font-size:11.8px;color:var(--ink2);background:var(--panel)}
+.tp .dlg-diag .fe{color:var(--ink3);margin:1px 0 1px 1em}
 .tp .dlg-cols{display:grid;grid-template-columns:1fr 1fr;gap:0}
 .tp .dlg-col{padding:6px 12px 8px}
 .tp .dlg-col+.dlg-col{border-left:1px solid var(--line2)}

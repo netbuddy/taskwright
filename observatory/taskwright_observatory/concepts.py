@@ -308,13 +308,17 @@ def dialogue_concepts() -> list[dict]:
     listed = lambda table: "、".join(f"{name}（{code}）" for code, name in table.items())
     return [
         {"名字": "对话行为", "它是什么": "用户或助手在会话里说的一句话，按用意拆成的一项一项，一项一行。用户那一侧由助手在每一轮的"
-                                         "第一段写成一份理解（一段 JSON），界面点击替用户发的那句话由扩展按点击的事实直接记；"
+                                         "文字输出里写成一份理解（一段按理解格式的 schema 写的 JSON），扩展按 schema 把它从文字里认出来，"
+                                         "一轮结束时仍没有合格的理解记为一次失败（运行行上标「这一轮没有合格的理解」）；"
+                                         "助手文字里没匹配上格式的 JSON 片段只记作诊断，不算失败。界面点击替用户发的那句话由扩展按点击的事实直接记；"
                                          "助手那一侧由「回复」工具记：每条告知一项，末位主行为一项。每项有编号（运行号-序号，例如 r13-2）、"
                                          "功能、针对的条目与字段、回应了哪一项、把握与一句话摘要。",
-         "来源": "task.sqlite 的 dialogue_act 表，与事件表里的 USER_INTENT_RECORDED、USER_INTENT_INVALID、"
-                 "EXECUTOR_ACTS_RECORDED 三种事件（领域概念）",
+         "来源": "task.sqlite 的 dialogue_act 表，与事件表里的 USER_INTENT_RECORDED、USER_INTENT_INVALID（事实核对没通过）、"
+                 "USER_INTENT_MISSING（这一轮没有合格的理解）、STRUCTURED_OUTPUT_UNMATCHED（没匹配上的片段）、"
+                 "EXECUTOR_ACTS_RECORDED 几种事件（领域概念）",
          "与 pi 的关系": "pi 没有这个概念。用户那一侧的理解写在 pi 的一条助手消息的正文里，扩展在这条消息落进会话时解析它；"
-                         "观测台只读库里记下的结果，按用户消息的条目编号与「回复」的调用编号对上运行。"},
+                         "观测台只读库里记下的结果，按用户消息的条目编号与「回复」的调用编号对上运行。"
+                         "「这一轮结束」取 pi 的 agent_settled 事件（自动重试、续跑都做完之后）。"},
         {"名字": "用户功能九种", "它是什么": "一项用户行为的用意，只能是九种之一：" + listed(names["user"]) + "。"
                                          "助手写理解时按用户这句话的用意选一种。",
          "来源": "理解格式的 schema（agent/prompts/schemas/user_intent.schema.json），中文名与英文码都只写在那里",

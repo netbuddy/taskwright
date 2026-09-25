@@ -771,7 +771,9 @@ class DialogueLayerPageTests(unittest.TestCase):
     def test_每次运行挂上它的对话行为_按会话里第几次运行对上(self):
         rows = taskpage.run_rows(self.page["流程"])
         self.assertEqual([r["对话行为"]["运行号"] for r in rows], ["r1", "r2"])
-        self.assertEqual(rows[0]["对话行为"]["理解没按格式写次数"], 1)
+        # 归档里的两次运行都有合格的理解：红标签为零；r1 的两个没匹配上的片段列为灰色诊断。
+        self.assertEqual([r["对话行为"]["没有合格的理解"] for r in rows], [False, False])
+        self.assertEqual(len(rows[0]["对话行为"]["未匹配片段"]), 2)
         self.assertEqual([a["编号"] for a in rows[1]["对话行为"]["用户行为"]], ["r2-1", "r2-2"])
 
     def test_页头的三个派生事实_连续追问只列两次及以上(self):
