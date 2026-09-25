@@ -1,19 +1,21 @@
 /**
  * 「回复」的核心逻辑：核对一次回复的形式，合格时整理出要送达的内容。
  *
- * 执行者对用户说话一律经「回复」工具。一次回复由三部分组成：零到多条告知（informs），至多一个末位主行为
- * （act，提问、请确认、给建议值、请选择、提议五种之一），以及一段成文的话（text）。
+ * 执行者对用户说话一律经「回复」工具。一次回复由三部分组成：零到多条告知（informs，每条一句话，说到某个条目时
+ * 在 items 里点名它），至多一个向用户要的回应（act，提问、请确认、给建议值、请选择、提议五种之一，只在执行者
+ * 等用户的一个具体回应时才有），以及一段成文的话（text）。
  *
  * 这里只做形式与事实核对，不做任何语义判断，也没有关键词清单：
  *   1. 同一轮里有别的工具调用时拒绝（回复必须单独调用，才能让 pi 在这一轮之后结束本次运行）；
  *   2. 各项该有的有、不该有的没有，类型对得上；
- *   3. 提问、请确认、给建议值、提议四种主行为必须在 items 里点名关联的条目与修订号，点名的条目在库里真实存在、
+ *   3. 提问、请确认、给建议值、提议四种要的回应必须在 items 里点名关联的条目与修订号，点名的条目在库里真实存在、
  *      修订号是它当前所在的修订（读库核对，不判断内容）；与任何条目都无关的提问、建议、提议写 scope: "general"，
- *      这时 items 可以不写。
+ *      这时 items 可以不写。告知的 items 可以不写，写了就按同一条规矩核对；
+ *   4. 卡片上的话只是把某条告知再说一遍时拒绝（去掉空白与标点后比对文字，见 echoedAct）。
  * 不合格时抛出异常，异常文字用中文写明缺什么、多了什么，由 pi 交还模型重写。
  *
  * 连续被拒的上限：执行函数从会话当前分支数出这一次运行里「回复」已经连续被拒了几次
- * （consecutiveReplyRejections，不另存状态），交给 decideReply。第 3 次起拒绝理由改为只要成文正文、主行为写 null；
+ * （consecutiveReplyRejections，不另存状态），交给 decideReply。第 3 次起拒绝理由改为只要成文正文、act 写 null；
  * 第 5 次仍不合格时放行一条纯文字回复，标 degraded，可读性优先于结构完整。
  *
  * 回复不写库，也不记事件。本模块不依赖 pi，单元测试可以直接调用。
@@ -32,7 +34,7 @@ export { type TurnCall, lastAssistantTurn };
 /** 工具名。同一轮的调用列表里按它认出自己。 */
 export const REPLY_TOOL_NAME = "reply";
 
-/** 末位主行为的五种：取自理解格式的 schema（agent/prompts/schemas/user_intent.schema.json 的 $defs.executor_function），
+/** 向用户要的回应的五种：取自理解格式的 schema（agent/prompts/schemas/user_intent.schema.json 的 $defs.executor_function），
  *  与对话行为表里执行者侧的功能是同一份清单。 */
 export const ACT_KINDS = EXECUTOR_FUNCTIONS as readonly ("ask" | "confirm" | "suggest" | "choose" | "propose")[];
 export type ActKind = (typeof ACT_KINDS)[number];
@@ -43,7 +45,7 @@ export const PREVIEW_EFFECTS = ["remove", "add", "change"] as const;
 /** 给建议值时依据的种类，与条目来源的种类一致。 */
 export const BASIS_KINDS = ["文档原文", "用户的话", "执行者补充"] as const;
 
-/** 每种主行为除 kind、text、items 之外还允许写哪几项。items 五种都可以写。 */
+/** 每种要的回应除 kind、text、items 之外还允许写哪几项。items 五种都可以写。 */
 const ALLOWED_EXTRA: Record<ActKind, string[]> = {
   ask: ["scope"],
   confirm: [],
@@ -52,7 +54,7 @@ const ALLOWED_EXTRA: Record<ActKind, string[]> = {
   propose: ["preview", "scope"],
 };
 
-/** 必须在 items 里点名关联条目的几种主行为。其中提问、给建议值、提议写 scope: "general" 时可以不点名。 */
+/** 必须在 items 里点名关联条目的几种要的回应。其中提问、给建议值、提议写 scope: "general" 时可以不点名。 */
 const ITEMS_REQUIRED: ActKind[] = ["ask", "confirm", "suggest", "propose"];
 
 /** scope 唯一允许的取值：这一问、这条建议或提议与任何条目都无关。 */
@@ -64,7 +66,7 @@ export const PLAIN_TEXT_FROM = 3;
 /** 连续被拒到第几次仍不合格时，放行一条纯文字回复。 */
 export const DEGRADE_AT = 5;
 
-/** 中文里怎样称呼每种主行为，用在拒绝理由里。 */
+/** 中文里怎样称呼每种要的回应，用在拒绝理由里。 */
 const KIND_NAME: Record<ActKind, string> = {
   ask: "提问（ask）",
   confirm: "请确认（confirm）",
@@ -90,8 +92,20 @@ export interface ReplyAct {
   scope?: typeof SCOPE_GENERAL;
 }
 
+/** 一条告知：一句话，说到某个条目时在 items 里点名它（界面画成链接）。告知不等用户回应。 */
+export interface Inform {
+  text: string;
+  items?: ItemRef[];
+}
+
+/** 告知的文字：旧的会话记录里告知是一句纯文字，新的是 { text, items }。两种都认。 */
+export function informText(one: unknown): string {
+  if (typeof one === "string") return one;
+  return isObject(one) && typeof one.text === "string" ? one.text : "";
+}
+
 export interface Reply {
-  informs: string[];
+  informs: Inform[];
   act: ReplyAct | null;
   text: string;
 }
@@ -136,17 +150,14 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
     }
   }
 
-  // informs
-  let informs: string[] = [];
+  // informs：每条是 { text, items? }；为兼容旧写法，一句纯文字也认，当作没有 items。
+  let informs: Inform[] = [];
   if (!("informs" in params)) {
     errors.push("缺少 informs；没有要告知的事时写空列表 []");
   } else if (!Array.isArray(params.informs)) {
-    errors.push("informs 应当是一个文字列表，每条一句完整的话");
+    errors.push("informs 应当是一个列表，每条是 { text, items }");
   } else {
-    params.informs.forEach((one, index) => {
-      if (isBlank(one)) errors.push(`informs 的第 ${index + 1} 条是空的或者不是文字，每条告知都要是一句完整的话`);
-    });
-    informs = params.informs as string[];
+    informs = params.informs.map((one, index) => checkInform(one, index, facts, errors));
   }
 
   // text
@@ -157,10 +168,11 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
   // act
   let act: ReplyAct | null = null;
   if (!("act" in params)) {
-    errors.push("缺少 act；这一轮没有末位主行为时写 null");
+    errors.push("缺少 act；你不等用户回应时写 null");
   } else if (params.act !== null) {
     act = checkAct(params.act, facts, errors);
   }
+  if (act && errors.length === 0 && echoedAct(act.text, informs)) errors.push(ECHO_TEXT);
 
   if (errors.length > 0) {
     throw new Error(
@@ -169,6 +181,48 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
     );
   }
   return { informs, act, text: params.text as string };
+}
+
+function checkInform(one: unknown, index: number, facts: ReplyFacts, errors: string[]): Inform {
+  const where = `informs 的第 ${index + 1} 条`;
+  if (typeof one === "string") {
+    if (isBlank(one)) errors.push(`${where}是空的，每条告知都要是一句完整的话`);
+    return { text: one };
+  }
+  if (!isObject(one)) {
+    errors.push(`${where}应当是 { text, items }，text 是一句完整的话`);
+    return { text: "" };
+  }
+  for (const key of Object.keys(one)) {
+    if (key !== "text" && key !== "items") errors.push(`${where}里多了「${key}」这一项，告知只有 text 与 items 两项${brokenKeyHint(key)}`);
+  }
+  if (isBlank(one.text)) errors.push(`${where}的 text 是空的或者不是文字，每条告知都要是一句完整的话`);
+  const inform: Inform = { text: typeof one.text === "string" ? one.text : "" };
+  if ("items" in one) {
+    checkItemList(one.items, `${where}的 items`, true, facts, errors);
+    if (Array.isArray(one.items)) inform.items = one.items as ItemRef[];
+  }
+  return inform;
+}
+
+/** 卡片上的话只是把刚说过的话再说一遍时的拒绝理由。 */
+export const ECHO_TEXT =
+  "卡片里写的是你刚说过的话，不是要用户回应的东西；不需要用户回应就把 act 写 null，要回应就把要用户回答的那句话写进 act";
+
+/** 比对文字时去掉空白与标点，只看剩下的字。 */
+function bareText(text: string): string {
+  return text.replace(/[\s\p{P}]/gu, "");
+}
+
+/**
+ * 卡片上的话是不是只把某条告知再说一遍：与某条告知相同，或者被它完整包含。告知是已经说出的事实，
+ * 要用户回应的那句话不该是其中一条。成文的话不比：它本来就要把要用户回应的那句话连进去，整段只有这一句问话也合法。
+ * 不做任何语法判断（陈述式的问法合法）。
+ */
+export function echoedAct(actText: string, informs: Inform[]): boolean {
+  const card = bareText(actText);
+  if (!card) return false;
+  return informs.some((one) => bareText(one.text).includes(card));
 }
 
 function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct | null {
@@ -211,7 +265,10 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   }
   // items：五种都可以写；提问、请确认、给建议值、提议必填（前三种写了 scope: "general" 时除外）
   const required = ITEMS_REQUIRED.includes(k) && !(general && k !== "confirm");
-  if (!general && ("items" in raw || required)) checkItems(raw.items, k, required, facts, errors);
+  if (!general && ("items" in raw || required)) {
+    if (required && (!Array.isArray(raw.items) || raw.items.length === 0)) errors.push(missingItemsText(k));
+    else checkItemList(raw.items, "act.items", required, facts, errors);
+  }
 
   if (k === "choose") {
     const options = raw.options;
@@ -287,14 +344,18 @@ function missingItemsText(kind: ActKind): string {
   );
 }
 
-function checkItems(items: unknown, kind: ActKind, required: boolean, facts: ReplyFacts, errors: string[]): void {
-  const name = KIND_NAME[kind];
-  if (!Array.isArray(items) || (required && items.length === 0)) {
-    errors.push(required ? missingItemsText(kind) : `${name}的 act.items 写了就应当是一个列表，每项是 { item_id, revision_no }`);
+/**
+ * 核对一串条目点名（act.items 或某条告知的 items）。check 为真时每项都要有修订号，并读库核对条目存在、
+ * 修订号是它当前所在的修订；为假时只核对形状（请选择的 items 可以不写修订号，也不读库）。
+ */
+function checkItemList(items: unknown, label: string, check: boolean, facts: ReplyFacts, errors: string[]): void {
+  if (!Array.isArray(items)) {
+    errors.push(`${label}写了就应当是一个列表，每项是 { item_id, revision_no }`);
     return;
   }
+  const required = check;
   items.forEach((one, index) => {
-    const where = `act.items 的第 ${index + 1} 项`;
+    const where = `${label} 的第 ${index + 1} 项`;
     if (!isObject(one) || isBlank(one.item_id)) {
       errors.push(`${where}要写 item_id（条目编号，例如 UC-001）`);
       return;
@@ -330,7 +391,7 @@ export interface ReplyDecision {
 
 /**
  * 按连续被拒的次数决定这次回复怎样处理：合格就送达；不合格时，这是第 3 次起的被拒就改为只要成文正文，
- * 这是第 5 次被拒就放行一条纯文字回复（正文取 text，没有就取告知与主行为的文字），标 degraded。
+ * 这是第 5 次被拒就放行一条纯文字回复（正文取 text，没有就取告知与要的回应的文字），标 degraded。
  * 单独调用的核对（同一轮混入别的工具）不放行：那时 pi 本来也结束不了这一轮。
  */
 export function decideReply(params: unknown, facts: ReplyFacts): ReplyDecision {
@@ -346,7 +407,7 @@ export function decideReply(params: unknown, facts: ReplyFacts): ReplyDecision {
     }
     if (attempt >= PLAIN_TEXT_FROM) {
       throw new Error(
-        `这是这一次回应里「回复」连续第 ${attempt} 次没有送达。请不要再写告知与主行为：只写成文的话 text，` +
+        `这是这一次回应里「回复」连续第 ${attempt} 次没有送达。请不要再写告知与要的回应：只写成文的话 text，` +
           `informs 写 []，act 写 null，单独调用 reply。上一次的问题是：\n${message}`,
       );
     }
@@ -354,12 +415,12 @@ export function decideReply(params: unknown, facts: ReplyFacts): ReplyDecision {
   }
 }
 
-/** 放行纯文字回复时的正文：先取 text，没有就把告知与主行为的文字接起来。 */
+/** 放行纯文字回复时的正文：先取 text，没有就把告知与要的回应的文字接起来。 */
 function plainTextOf(params: unknown): string {
   if (!isObject(params)) return "";
   if (!isBlank(params.text)) return (params.text as string).trim();
   const parts: string[] = [];
-  if (Array.isArray(params.informs)) parts.push(...params.informs.filter((one) => !isBlank(one)).map(String));
+  if (Array.isArray(params.informs)) parts.push(...params.informs.map(informText).filter((one) => !isBlank(one)));
   if (isObject(params.act) && !isBlank(params.act.text)) parts.push(String(params.act.text));
   return parts.join("\n").trim();
 }

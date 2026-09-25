@@ -28,7 +28,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-#: 理解格式的 schema：用户侧九种功能与执行者侧五种主行为的中文名只写在这里。
+#: 理解格式的 schema：用户侧九种功能与执行者侧五种向用户要的回应的中文名只写在这里。
 INTENT_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "agent" / "prompts" / "schemas" / "user_intent.schema.json"
 
 RECORDED = "USER_INTENT_RECORDED"

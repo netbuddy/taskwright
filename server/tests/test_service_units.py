@@ -670,3 +670,26 @@ def subprocess_node_write(ws: Path) -> None:
     schema = library.REPO_ROOT / "agent" / "src" / "lib" / "schema.ts"
     script = f"import('{schema}').then((m) => m.withTaskDatabase(process.argv[1], {{ createIfMissing: false }}, () => undefined))"
     subprocess.run(["node", "--input-type=module", "-e", script, str(ws)], check=True)
+
+
+class InformShapeTests(unittest.TestCase):
+    """回复里的告知交给前端时一律是 {"text", "items"?}：旧会话里的纯文字告知与新的带条目告知都认。"""
+
+    def test_纯文字与带条目的告知都整理成对象_认不出的丢掉(self):
+        self.assertEqual(conversation.normalize_informs([
+            "旧的一句", {"text": "说到 UC-004", "items": [{"item_id": "UC-004", "revision_no": 2}]}, {"text": "没有条目", "items": []}, 3, {"items": []},
+        ]), [{"text": "旧的一句"}, {"text": "说到 UC-004", "items": [{"item_id": "UC-004", "revision_no": 2}]}, {"text": "没有条目"}])
+        self.assertEqual(conversation.normalize_informs(None), [])
+
+    def test_从会话还原的回复_告知带条目(self):
+        ts = "2026-09-25T01:00:00.000Z"
+        informs = [{"text": "材料写明保留 3 天。", "items": [{"item_id": "UC-004", "revision_no": 2}]}, "我没有改动条目。"]
+        entries = [
+            {"type": "session", "id": "h"},
+            {"type": "message", "id": "u1", "parentId": None, "timestamp": ts, "message": {"role": "user", "content": [{"type": "text", "text": "用户说：保留几天？"}]}},
+            {"type": "message", "id": "a1", "parentId": "u1", "timestamp": ts, "message": {"role": "assistant", "content": [
+                {"type": "toolCall", "id": "c1", "name": "reply", "arguments": {"informs": informs, "act": None, "text": "有，保留 3 天。"}}]}},
+            {"type": "message", "id": "r1", "parentId": "a1", "timestamp": ts, "message": {"role": "toolResult", "toolCallId": "c1", "isError": False}},
+        ]
+        reply = [m for m in conversation.messages(entries, "S") if m["type"] == "assistant_reply"][0]
+        self.assertEqual(reply["informs"], [{"text": "材料写明保留 3 天。", "items": [{"item_id": "UC-004", "revision_no": 2}]}, {"text": "我没有改动条目。"}])

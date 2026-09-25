@@ -304,6 +304,49 @@ describe("助手回复的有限 Markdown", () => {
   });
 });
 
+describe("告知点名的条目画成链接，不画卡片", () => {
+  const noop = () => {};
+  const show = (reply: Record<string, unknown>, onOpenItem: (id: string) => void = noop) => render(<Wrap><Conversation
+    messages={[{ type: "assistant_reply", message_id: "r1", at: "", work_id: null, via_reply_tool: true, ...reply } as never]}
+    currentWork={null} outgoing={[]} task={task()} disabled={false} disabledReason={null}
+    handlers={{ onAction: noop, onMessage: noop }} onSend={noop} onUndo={noop} onOpenItem={onOpenItem} onAttach={noop}
+    hasEarlier={false} onLoadEarlier={noop} revisionOf={() => null} attachments={[]} /></Wrap>);
+
+  it("没有 act：正文下方一行「提到的条目」，同一个条目只列一次，点它打开条目；没有卡片", () => {
+    const onOpenItem = vi.fn();
+    show({
+      informs: [
+        { text: "材料写明预约的书保留 3 天。", items: [{ item_id: "UC-001", revision_no: 1 }] },
+        { text: "这条规定也牵涉 UC-001 与 UC-002。", items: [{ item_id: "UC-001", revision_no: 1 }, { item_id: "UC-002", revision_no: 1 }] },
+      ],
+      act: null, text: "有，材料写明预约的书保留 3 天。",
+    }, onOpenItem);
+    expect(screen.getByTestId("mentioned-items")).toHaveTextContent("提到的条目：UC-001、UC-002");
+    expect(screen.getAllByTestId("inform-item-UC-001")).toHaveLength(1);
+    fireEvent.click(screen.getByTestId("inform-item-UC-002"));
+    expect(onOpenItem).toHaveBeenCalledWith("UC-002");
+    expect(document.querySelector(".informs")).toBeNull();
+    expect(document.querySelector("[data-testid^='card-']")).toBeNull();
+  });
+
+  it("有 act：告知逐条列出，点名条目的那条后面跟条目链接；没有「提到的条目」一行", () => {
+    show({
+      informs: [{ text: "材料没写保留几天。", items: [{ item_id: "UC-001", revision_no: 1 }] }, { text: "我没有改动条目。" }],
+      act: { kind: "ask", text: "你希望保留几天？", items: [{ item_id: "UC-001", revision_no: 1 }] }, text: "材料没写保留几天。你希望保留几天？",
+    });
+    const rows = document.querySelectorAll(".informs li");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("材料没写保留几天。 UC-001");
+    expect(rows[1].querySelector(".ref")).toBeNull();
+    expect(screen.queryByTestId("mentioned-items")).toBeNull();
+  });
+
+  it("没有点名条目的告知：照旧，不出「提到的条目」", () => {
+    show({ informs: [{ text: "我记下了。" }], act: null, text: "我记下了。" });
+    expect(screen.queryByTestId("mentioned-items")).toBeNull();
+  });
+});
+
 describe("框选原文与高亮联动、「让助手改这一条」", () => {
   it("原文里被引用的句子画线，点来源标签过来的那句高亮；选中一段后三个动作发出第 7 节的模板句", async () => {
     const spy = vi.spyOn(api, "materialContent").mockResolvedValue({ path: "inputs/a.md", text: "第一句话。买家七天内可以退货。最后一句。" });

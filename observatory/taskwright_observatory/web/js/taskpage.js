@@ -144,7 +144,7 @@ function 对话行为HTML(r) {
     <div class="dlg-h"><span class="t">对话行为</span><span>运行号 ${esc(L.运行号 || "未知")}</span><span class="note">运行号是这条会话里第几句用户的话，与左边按任务数的运行序号 ${r.运行序号} 不是同一个数</span></div>
     ${没按格式}${对话诊断HTML(L)}
     <div class="dlg-cols"><div class="dlg-col p-用户"><div class="dlg-ch">用户行为（${esc(L.用户行为的来处 || "没有记下")}）</div>${用户}</div>
-    <div class="dlg-col p-执行者"><div class="dlg-ch">助手行为（「回复」记下的告知与主行为）</div>${助手}</div></div></div>`;
+    <div class="dlg-col p-执行者"><div class="dlg-ch">助手行为（「回复」记下的告知与向用户要的回应）</div>${助手}</div></div></div>`;
 }
 
 /* ───── 这一页上的名词、一行运行里的几个数、观测不到什么 ───── */
@@ -583,14 +583,17 @@ function 轮HTML(t, key) {
       这是什么: `这是第 ${t.运行序号} 次运行第 ${t.序数} 轮的模型应答里的正文，pi 把它追加进消息列表，也发给了用户。`,
       字段: [["正文", `<div style="white-space:pre-wrap">${esc(t.正文)}</div>`],
         ["出自哪一轮", `第 ${t.运行序号} 次运行的第 ${t.序数} 轮`]], 链接: ""});
-    // 卡片只放告知与主行为：成文的话已经在上面的气泡里，标题行也不重复。
+    // 卡片只放告知与向用户要的回应：成文的话已经在上面的气泡里，标题行也不重复。
     const 成文处 = r && r.排版 ? r.排版.findIndex((l) => /^\s*成文的话：/.test(l)) : -1;
     const 卡片行 = r && r.排版 ? (成文处 < 0 ? r.排版 : r.排版.slice(0, 成文处)).filter((l) => !/^执行者（经回复工具）/.test(l)) : [];
     const 卡片 = r && (r.告知.length || r.主行为) && 卡片行.length
       ? `<pre class="replycard" style="white-space:pre-wrap;margin:4px 0 0">${esc(卡片行.join("\n"))}</pre>` : "";
+    // 告知点名的条目：卡片下方一排条目按钮，点开是条目抽屉。旧会话里的告知是纯文字，没有点名条目。
+    const 点名 = r ? [...new Set(r.告知.flatMap((x) => (x && Array.isArray(x.items) ? x.items : []).map((i) => i && i.item_id).filter(Boolean)))] : [];
+    const 条目按钮 = 点名.length ? `<div class="mentioned">提到的条目：${点名.map((c) => `<button class="ref" data-code="${esc(c)}">${esc(c)}</button>`).join(" ")}</div>` : "";
     const 降级 = r && r.降级放行 ? `<div class="sub" style="color:var(--bad)">${esc(r.降级放行说明)}</div>` : "";
     return `<div class="saylab">${r ? "助手在这一轮经「回复」工具说的话" : t.正文是理解 ? "助手写的理解（原文）" : "助手在这一轮发出的一条消息"}</div>
-      <div class="say" data-k="${键}">${esc(t.正文)}</div>${卡片}${降级}
+      <div class="say" data-k="${键}">${esc(t.正文)}</div>${卡片}${条目按钮}${降级}
       <button class="from jump" data-jump="lv3-${esc(key)}">出自第 ${t.序数} 轮的${r ? "「回复」工具调用" : "模型应答"}</button>`;
   })() : "";
   return `<div class="turnblk" id="turn-${t.运行序号}-${t.序数}">

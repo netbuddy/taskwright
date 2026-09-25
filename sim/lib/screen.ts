@@ -22,7 +22,8 @@ export interface Message {
   type: string;
   message_id: string | null;
   text?: string;
-  informs?: string[];
+  /** 告知：后端交来的是 { text, items }；旧的记录里可能是一句纯文字。 */
+  informs?: (string | { text: string; items?: { item_id: string }[] })[];
   act?: Act | null;
   via_reply_tool?: boolean;
   /** 连续被拒到上限后放行的纯文字回复：界面照普通文字显示，加一行说明，不画卡片（与前端工作视图一致）。 */
@@ -83,8 +84,12 @@ export function renderReply(m: Message, task?: TaskView | null): string {
   const lines: string[] = [];
   if (m.degraded) return [`（界面注明：这条回复没有按结构发出。）`, `助手说：${m.text ?? ""}`].join("\n");
   const act = cardOf(m);
-  if (act) for (const one of m.informs ?? []) lines.push(`助手告诉你：${one}`);
+  // 与网页一致：有卡片时告知逐条列出，点名的条目跟在后面；没有卡片时只有正文，正文下方一行「提到的条目」。
+  const informs = (m.informs ?? []).map((one) => (typeof one === "string" ? { text: one, items: [] } : { text: one.text, items: one.items ?? [] }));
+  const ids = (list: typeof informs) => [...new Set(list.flatMap((one) => one.items.map((i) => i.item_id)))];
+  if (act) for (const one of informs) lines.push(`助手告诉你：${one.text}` + (one.items.length ? `（${ids([one]).join("、")}）` : ""));
   lines.push(`助手说：${m.text ?? ""}`);
+  if (!act && ids(informs).length) lines.push(`提到的条目：${ids(informs).join("、")}`);
   if (act) {
     lines.push(`【卡片：${KIND_WORD[act.kind] ?? act.kind}】${act.text}`);
     if (act.items?.length) lines.push(`涉及的条目：${act.items.map((i) => `${i.item_id}（修订 ${i.revision_no}）`).join("、")}`);

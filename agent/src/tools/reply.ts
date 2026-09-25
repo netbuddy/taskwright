@@ -9,7 +9,7 @@
  * 而不是 pi 的一句英文的参数校验失败。
  *
  * 对话理解：执行之前先核对这一轮有没有有效的理解（lib/dialogue_acts.ts 的 requireUnderstanding），没有就拒绝；
- * 合格送达之后把告知与末位主行为记进对话行为表（recordReplyActs），编号写进返回的文字与 details.acts，
+ * 合格送达之后把告知与向用户要的回应记进对话行为表（recordReplyActs），编号写进返回的文字与 details.acts，
  * details.event_seq 是那条 EXECUTOR_ACTS_RECORDED 事件的序号（没有要记的行为、或者还没有任务库时为空）。
  */
 
@@ -36,10 +36,12 @@ const act = Type.Object(
   {
     kind: Type.Optional(Type.String({
       description:
-        "末位主行为的种类，只能是五者之一：ask 是提问，confirm 是请用户确认某几个条目当前的内容，" +
+        "向用户要的回应是哪一种，只能是五者之一：ask 是提问，confirm 是请用户确认某几个条目当前的内容，" +
         "suggest 是给一个建议值，choose 是请用户从几个选项里选一个，propose 是提议下一步怎么做。必须写。",
     })),
-    text: Type.Optional(Type.String({ description: "问题、请确认的话、建议或提议的内容，一句完整的话。必须写。" })),
+    text: Type.Optional(Type.String({
+      description: "要用户回应的那句话：你的问题、请用户确认的话、建议或提议，一句完整的话，不是你的答案。必须写。",
+    })),
     items: Type.Optional(
       Type.Array(itemRef, {
         description:
@@ -77,14 +79,30 @@ const act = Type.Object(
   { additionalProperties: true },
 );
 
+const inform = Type.Object(
+  {
+    text: Type.Optional(Type.String({ description: "一句完整的话，只写事实（例如你刚保存了什么、材料里写了什么）。必须写。" })),
+    items: Type.Optional(Type.Array(itemRef, {
+      description: "告知里说到某个条目时在这里点名它，每项写条目编号与它当前所在的修订号，界面会画成链接；没说到条目就不写。",
+    })),
+  },
+  { additionalProperties: true },
+);
+
 const parameters = Type.Object({
-  informs: Type.Optional(Type.Array(Type.String(), {
-    description: "零到多条告知，每条一句完整的话，只写事实（例如你刚保存了什么）。必须写；没有要告知的事写空列表。",
+  informs: Type.Optional(Type.Array(Type.Union([inform, Type.String()]), {
+    description:
+      "零到多条告知，每条是 { text, items }。告知里说到某个条目时在 items 里点名它，界面会画成链接；告知不等用户回应。" +
+      "必须写；没有要告知的事写空列表。",
   })),
   act: Type.Optional(Type.Union([Type.Null(), act], {
-    description: "至多一个末位主行为，放在告知之后。必须写；这一轮不需要用户做什么时写 null。",
+    description:
+      "向用户要的回应。只在你等用户回应时填：没有它你下一步做不了或不该做。回答用户的问题、汇报你做了什么，都不填，写 null。" +
+      "填的话，text 写要用户回应的那句话，不是你的答案。必须写这一项，不填时写 null。",
   })),
-  text: Type.Optional(Type.String({ description: "给用户读的成文的话：把告知与主行为连成一段自然的话。必须写，不能是空白。" })),
+  text: Type.Optional(Type.String({
+    description: "给用户读的成文的话：把告知与向用户要的回应（有的话）连成一段自然的话。必须写，不能是空白。",
+  })),
 });
 
 export function registerReply(pi: ExtensionAPI): void {
@@ -95,8 +113,8 @@ export function registerReply(pi: ExtensionAPI): void {
       "把你要对用户说的话发给用户。你对用户说的每一句话都要经这个工具发出，不要直接输出正文" +
       "（你按平台 skill「先写理解」一节在文字里写的那份理解不是正文）。" +
       "这个工具是你本次回应的最后一步：要单独调用它，不要与其他工具在同一轮里一起调用，也不要连着调用两次；" +
-      "调用之后不要再输出任何正文。一次回复由零到多条告知、至多一个末位主行为（提问、请确认、给建议值、请选择、提议之一）" +
-      "与一段成文的话组成。它只核对形式与条目是否存在，不评判内容；形式不对时它会逐条告诉你哪里不对，请照着改好再调用。",
+      "调用之后不要再输出任何正文。一次回复由告知与一段成文的话组成；只有需要用户回应时，再加一个向用户要回应的行为" +
+      "（提问、请确认、给建议值、请选择、提议之一）。它只核对形式与条目是否存在，不评判内容；形式不对时它会逐条告诉你哪里不对，请照着改好再调用。",
     promptSnippet: "把要对用户说的话发给用户，本次回应的最后一步，单独调用",
     promptGuidelines: [
       "对用户说的每一句话都经 reply 发出；reply 要单独调用，不与其他工具同一轮，调用之后不再输出正文。",

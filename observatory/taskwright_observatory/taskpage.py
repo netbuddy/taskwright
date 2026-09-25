@@ -40,7 +40,7 @@ _RENDERED: dict[tuple[str, bool], list[str] | None] = {}
 
 
 def render_reply_lines(call: dict) -> list[str] | None:
-    """把一次「回复」调用排成几行：合格的是告知、主行为、成文的话；被拒的是拒绝原因。调不动时返回 None。"""
+    """把一次「回复」调用排成几行：合格的是告知、向用户要的回应、成文的话；被拒的是拒绝原因。调不动时返回 None。"""
     rejected = call.get("是否被拒") is True
     key = (str(call.get("调用编号") or ""), rejected)
     if key[0] and key in _RENDERED:

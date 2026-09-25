@@ -100,11 +100,11 @@ def executor_asked(turn: dict, db_dir: Path | None = None) -> str:
 
 
 def executor_said(turn: dict, db_dir: Path | None = None) -> str:
-    """执行者在这一轮里向用户摆出来的全部文字：回复正文、告知、主行为的文字与选项，以及主行为点名的条目在那次修订下的内容
+    """执行者在这一轮里向用户摆出来的全部文字：回复正文、告知、向用户要的回应的文字与选项，以及它点名的条目在那次修订下的内容
     （执行者请用户确认或回答某个条目，等于把这个条目的内容摆在用户面前问他，条目里写到的事就算问到了）。"""
     parts = []
     for r in (turn.get("执行者") or {}).get("replies") or []:
-        parts += [r.get("text") or "", *(r.get("informs") or [])]
+        parts += [r.get("text") or "", *((one if isinstance(one, str) else (one or {}).get("text") or "") for one in r.get("informs") or [])]
         act = r.get("act") or {}
         parts += [act.get("text") or "", *(o.get("text") or "" for o in act.get("options") or [])]
         parts += [revision_text(db_dir, i.get("item_id"), i.get("revision_no")) for i in act.get("items") or []]

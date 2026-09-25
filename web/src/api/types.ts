@@ -231,6 +231,12 @@ export interface ActItemRef {
   revision_no?: number;
 }
 
+/** 回复里的一条告知。告知不等用户回应，不画卡片。 */
+export interface Inform {
+  text: string;
+  items?: ActItemRef[];
+}
+
 export interface Act {
   kind: ActKind;
   text: string;
@@ -264,7 +270,8 @@ export interface AssistantReply {
   at: string;
   work_id: string | null;
   via_reply_tool: boolean;
-  informs: string[];
+  /** 告知：一句话，说到某个条目时 items 点名它（画成条目链接）。后端把旧会话里的纯文字告知也整理成这个样子。 */
+  informs: Inform[];
   act: Act | null;
   text: string;
   /** 连续被拒到上限后放行的纯文字回复；为真时照普通文字显示并加一行说明。 */

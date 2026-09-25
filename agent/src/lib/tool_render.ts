@@ -17,7 +17,7 @@ import { databasePath, load } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
 
-/** 末位主行为的五种在屏幕上怎样称呼。 */
+/** 向用户要的回应的五种在屏幕上怎样称呼。 */
 export const ACT_TITLES: Record<string, string> = {
   ask: "提问",
   confirm: "请确认",
@@ -41,7 +41,8 @@ const asList = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 const asText = (value: unknown): string => (value === undefined || value === null ? "" : String(value));
 
 /**
- * 一次合格的回复排成的几行：告知逐条在前，末位主行为按种类排成一张文字卡片，成文的话在最后。
+ * 一次合格的回复排成的几行：告知逐条在前（点名了条目的，在后面写上条目编号），向用户要的回应按种类排成一张文字卡片，
+ * 成文的话在最后。
  * 全部完整显示，不截短。不含标题行，标题行由调用方加（终端界面里它是工具块的第一行）。
  */
 export function replyBodyLines(reply: Dict): string[] {
@@ -49,7 +50,12 @@ export function replyBodyLines(reply: Dict): string[] {
   const informs = asList(reply.informs);
   if (informs.length > 0) {
     lines.push("  告知：");
-    for (const one of informs) lines.push(`    · ${asText(one)}`);
+    // 旧的会话记录里告知是一句纯文字，新的是 { text, items }。
+    for (const one of informs) {
+      const text = typeof one === "string" ? one : asText(one?.text);
+      const ids = typeof one === "string" ? [] : asList(one?.items).map((item) => asText(item?.item_id)).filter(Boolean);
+      lines.push(`    · ${text}` + (ids.length > 0 ? `（${ids.join("、")}）` : ""));
+    }
   }
   const act = reply.act;
   if (act && typeof act === "object") {

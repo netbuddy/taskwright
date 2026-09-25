@@ -124,11 +124,18 @@ class PlatformSkillFileTest(unittest.TestCase):
         self.assertIn("registerRequestReview(pi);", extension)
         self.assertNotIn("开发期开关", launch.load_profile("dev"), "评审门禁做出来之后开发期开关退役")
 
-    def test_两层skill都写明问题条目只引用已有编号的条目(self):
+    def test_同批引用_平台skill写明可以引用排在前面的新增条目_任务skill仍把问题条目放最后一批(self):
+        platform = frontmatter((PLATFORM_DIR / "SKILL.md").read_text(encoding="utf-8"))[1]
+        self.assertIn("问题条目的关联条目只能填已经存在的条目，或者同一批里排在它前面新增的条目", platform)
+        self.assertIn("也可以写同一批里排在前面的新增操作将要拿到的编号", platform)
         for path in [PLATFORM_DIR / "SKILL.md", *TASK_SKILLS]:
             body = frontmatter(path.read_text(encoding="utf-8"))[1]
-            self.assertIn("问题条目的关联条目只能填已经保存、拿到编号的条目", body, str(path.relative_to(launch.REPO_ROOT)))
-            self.assertIn("拿到编号后再在下一批写问题条目", body, str(path.relative_to(launch.REPO_ROOT)))
+            # 保存修订已经认同一批里排在前面的新增条目，这句旧说法与工具行为相反，不能再出现。
+            self.assertNotIn("同一批里新增的条目还没有编号", body, str(path.relative_to(launch.REPO_ROOT)))
+        for path in TASK_SKILLS:
+            body = frontmatter(path.read_text(encoding="utf-8"))[1]
+            self.assertIn("再把问题条目单独放在最后一批保存，不和别的条目放在同一批：每批内容少，出错时好改。", body,
+                          str(path.relative_to(launch.REPO_ROOT)))
 
 
 class TaskSkillGuardTest(unittest.TestCase):
