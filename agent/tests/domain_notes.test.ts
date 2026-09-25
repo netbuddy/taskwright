@@ -11,7 +11,7 @@ import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
-import { loadDefinition } from "../src/lib/definition.ts";
+import { loadDefinition, validateDefinition } from "../src/lib/definition.ts";
 import { checkCompletion, completionHints, unlinkedDomainNotes } from "../src/lib/conditions.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
@@ -162,4 +162,25 @@ test("平台 skill 与任务 skill 写了领域说明的做法：记下并说出
   assert.match(task, /「一批最多写 4 个条目」同样适用于领域说明/);
   assert.match(task, /例如用户说「我们说的预约保留期[\s\S]*内容只写到「书到馆后替预约的读者留着的那几天」为止[\s\S]*在「约束规则」里加一项「过了保留期还没来取，预约就自动取消」/);
   assert.match(platform, /excerpt 逐字照抄那条说明的标题或内容里你引用的那一段，包括标点/);
+});
+
+test("任务定义的「界面」一项：真实任务类型的领域说明写了右侧栏页签、分组字段、靠前的组与说明；写错时逐条报出", () => {
+  const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
+  const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
+  assert.deepEqual(definition.collections.find((c) => c.name === "领域说明")!.display,
+    { note: "材料里或你说明过的背景、术语、角色，供条目引用。", sideTab: true, groupField: "类别", leadingGroups: ["术语"] });
+  assert.equal(definition.collections.find((c) => c.name === "功能用例")!.display, null);
+  const withDisplay = (display: unknown) => {
+    const def = definitionWithNotes();
+    def.交付物.条目集合.at(-1).界面 = display;
+    return def;
+  };
+  assert.deepEqual(validateDefinition(withDisplay({ 分组字段: "类别" })).collections.at(-1)!.display,
+    { note: null, sideTab: false, groupField: "类别", leadingGroups: [] });
+  assert.throws(() => validateDefinition(withDisplay({ 分组字段: "没有这个", 右侧栏页签: "是", 靠前的组: "术语", 颜色: "红", 说明: "" })), (error: Error) => {
+    for (const piece of ["「分组字段」是「没有这个」，这个集合没有这个字段", "「右侧栏页签」应当是 true 或 false", "「靠前的组」应当是文字的列表",
+      "多了「颜色」这一项", "「说明」应当是一段不为空的文字"]) assert.match(error.message, new RegExp(piece));
+    return true;
+  });
+  assert.throws(() => validateDefinition(withDisplay({ 分组字段: "关联条目" })), /「分组字段」「关联条目」应当是文本或枚举字段/);
 });

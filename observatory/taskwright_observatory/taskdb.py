@@ -120,6 +120,8 @@ def parse_definition(text: str) -> dict:
             "编号前缀": entry.get("编号前缀", ""),
             "字段": [{"名": f.get("名", ""), "类型": f.get("类型", ""), "必填": bool(f.get("必填")),
                       "取值": f.get("取值")} for f in entry.get("字段") or [] if isinstance(f, dict)],
+            # 「界面」：只影响显示的可选项（右侧栏页签、分组字段、靠前的组），没写时为空对象。
+            "界面": entry.get("界面") if isinstance(entry.get("界面"), dict) else {},
         })
     return {
         "任务名": raw.get("任务名", ""),

@@ -212,3 +212,25 @@
 .app .detail [data-f].sw-hit-field .v { outline: .15rem solid var(--ai); outline-offset: .1rem; }
 .app .rerun { font-size: .813rem; color: var(--blue); cursor: pointer; margin-left: .2rem; align-self: center; white-space: nowrap; }
 .app .finding .keep-box { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .2rem; }
+
+/* 领域说明一类的集合（任务定义「界面」一项）：条目行上的分组小标签与修订、来源数；页签下的一句白话；
+   种类为「领域说明」的来源标签与来源框；详情里「被哪些条目引用」；右侧栏的分组清单。 */
+.app .srctag.note, .app .chip.note { color: var(--note); border: 1px solid var(--note-line); background: var(--note-bg); cursor: pointer; }
+.app .srctag.note:hover { background: #e2e8f0; }
+.app .cat { font-size: .857rem; color: var(--note); border: 1px solid var(--note-line); background: var(--note-bg); border-radius: .4rem; padding: 0 .4rem; white-space: nowrap; }
+.app .nd.plain { color: var(--mut); }
+.app .dn-lead { margin: .4rem .9rem .2rem; font-size: .93rem; color: var(--mut); }
+.app .dn-lead b { color: var(--ink); font-weight: 500; }
+.app .citedby { border: 1px solid var(--line); border-radius: .6rem; padding: .45rem .7rem; margin: .3rem 0; font-size: .93rem; line-height: 1.6; }
+.app .citedby .how { color: var(--mut); margin-left: .4rem; }
+.app .citedby .q { color: var(--ink); }
+.app .citedby-empty { color: var(--mut); font-size: .93rem; margin: .3rem 0; }
+.app .dn-side { padding: .6rem .9rem; overflow: auto; height: 100%; }
+.app .dn-side .dn-lead { margin: 0 0 .4rem; }
+.app .dn-side .grp { font-weight: 600; margin: .8rem 0 .3rem; color: var(--note); }
+.app .dn-side .ent { border: 1px solid var(--line); border-radius: .6rem; padding: .45rem .7rem; margin: .3rem 0; background: #fff; cursor: pointer; }
+.app .dn-side .ent:hover { border-color: var(--note-line); }
+.app .dn-side .ent .t { font-weight: 600; }
+.app .dn-side .ent .c { color: #333; margin-top: .15rem; }
+.app .dn-side .ent .m { color: var(--mut); font-size: .857rem; margin-top: .15rem; }
+.app .dn-side .ent.unl .m { color: var(--amber); }

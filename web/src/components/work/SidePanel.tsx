@@ -6,21 +6,25 @@
 //     点卡片选中它，条目区高亮它碰到的条目；再点一次取消。助手工作中照常可看，撤销灰化；
 //     碰到的条目之后又改过或已删掉的修订撤销不了（undoBlocked），按钮预先灰化并说明原因。
 //   · 评审：工作视图给了 review（评审页签的内容，ReviewPanel）时才有这个页签，角标是未处理的问题数。
+//   · 任务定义「界面」一项写了「右侧栏页签」的集合（例如领域说明）：在「材料」之后各开一个页签，名字是集合名，
+//     页签键是「coll:集合名」。按分组字段分组（靠前的组在前），每条写编号与标题、内容摘要、与别的条目的联系、修订；
+//     还没有和任何条目关联的，联系那一行用琥珀色。点一条，在条目区打开它。
 // 收起后只剩一条竖排的把手，点它展开。
 
 import { useEffect, type ReactNode } from "react";
-import type { ConversationMessage, Material, RevisionLogEntry, Item } from "../../api/types";
-import { BUSY_TEXT } from "../../model/items";
+import type { ConversationMessage, Material, RevisionLogEntry, Item, Task } from "../../api/types";
+import { BUSY_TEXT, summaryOf } from "../../model/items";
+import { groupItems, linkPhrase } from "../../model/domainNotes";
 import { hhmm, triggerText, UNDO_BLOCKED_TEXT, undoBlocked } from "../../model/revisions";
 import { MaterialPane, type LocateRequest } from "./MaterialPane";
 
-export type SideTab = "material" | "doc" | "rev" | "review";
+export type SideTab = "material" | "doc" | "rev" | "review" | `coll:${string}`;
 
 const OP: Record<string, [string, string]> = { add: ["add", "新增"], update: ["edit", "修改"], restore: ["add", "恢复"], delete: ["drop", "删除"] };
 
 export function SidePanel({
   side, onSide, onCollapse, onExpand, taskId, materials, focusPath, items, locate, currentItem, disabled, onOpenItem, onSend,
-  log, messages, selectedRevision, onSelectRevision, scrollNonce, onDiff, onUndo, onGenerate, writesOff, readOnly, review, reviewCount = 0,
+  log, messages, selectedRevision, onSelectRevision, scrollNonce, onDiff, onUndo, onGenerate, writesOff, readOnly, review, reviewCount = 0, task,
 }: {
   side: SideTab;
   onSide: (side: SideTab) => void;
@@ -51,8 +55,13 @@ export function SidePanel({
   review?: ReactNode;
   /** 评审页签的角标：未处理的问题数。 */
   reviewCount?: number;
+  /** 整份任务；给了才按任务定义开集合页签。 */
+  task?: Task;
 }) {
-  const tabs: [SideTab, string, number | null][] = [["material", "材料", null], ["doc", "文档", null], ["rev", "修订", log.length || null]];
+  const collTabs = (task?.definition.collections ?? []).filter((c) => c.display?.side_tab);
+  const tabs: [SideTab, string, number | null][] = [["material", "材料", null],
+    ...collTabs.map((c): [SideTab, string, number | null] => [`coll:${c.name}`, c.name, task!.items.filter((i) => i.collection === c.name).length]),
+    ["doc", "文档", null], ["rev", "修订", log.length || null]];
   if (review) tabs.push(["review", "评审", reviewCount || null]);
   return (
     <>
@@ -79,15 +88,44 @@ export function SidePanel({
           </div>
         )}
         {side === "review" && review}
+        {side.startsWith("coll:") && task && <CollectionSide task={task} collection={side.slice(5)} currentItem={currentItem} onOpenItem={onOpenItem} />}
         {side === "rev" && (
           <RevisionLogView log={log} messages={messages} selected={selectedRevision} onSelect={onSelectRevision} scrollNonce={scrollNonce}
             onDiff={onDiff} onUndo={onUndo} onGenerate={onGenerate} writesOff={writesOff} readOnly={readOnly} liveItems={items} />
         )}
       </div>
       <div className="handle" role="button" title="展开右侧栏" onClick={onExpand} data-testid="doc-handle">
-        <span className="harrow">◂</span><span>材料 · 文档 · 修订{review ? " · 评审" : ""}</span>
+        <span className="harrow">◂</span><span>{tabs.map(([, label]) => label).join(" · ")}</span>
       </div>
     </>
+  );
+}
+
+/** 右侧栏里一个集合的分组清单（任务定义「界面」一项写了「右侧栏页签」的集合）。 */
+function CollectionSide({ task, collection, currentItem, onOpenItem }: { task: Task; collection: string; currentItem: string | null; onOpenItem: (id: string) => void }) {
+  const def = task.definition.collections.find((c) => c.name === collection);
+  const groups = groupItems(task, collection);
+  return (
+    <div className="dn-side" data-testid={`side-collection-${collection}`}>
+      {def?.display?.note && <div className="dn-lead"><b>{collection}：{def.display.note}</b></div>}
+      {groups.length === 0 && <div className="citedby-empty">这个集合还没有条目。</div>}
+      {groups.map((g) => (
+        <div key={g.name}>
+          <div className="grp">{g.name}</div>
+          {g.items.map((item) => {
+            const link = linkPhrase(task, item);
+            return (
+              <div key={item.item_id} className={`ent${link.unlinked ? " unl" : ""}${currentItem === item.item_id ? " on" : ""}`} role="button"
+                onClick={() => onOpenItem(item.item_id)} data-testid={`side-entry-${item.item_id}`}>
+                <span className="t">{item.item_id} {item.title}</span>
+                <div className="c">{summaryOf(task, item)}</div>
+                <div className="m">{link.text} · 修订 {item.revision_no}</div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
   );
 }
 

@@ -30,6 +30,21 @@ export interface CollectionDef {
   fields: FieldDef[];
   /** 这个集合的评审规矩；没写时为 null，评审只按字段声明。 */
   reviewRules: ReviewRulesSpec | null;
+  /** 这个集合在界面上的显示方式（任务定义的「界面」一项）；只影响显示，没写时为 null。 */
+  display: CollectionDisplay | null;
+}
+
+/**
+ * 任务定义里一个集合的「界面」：右侧栏页签（是否在右侧栏另开一个页签列出这个集合）、分组字段（按哪个字段分组，
+ * 条目行上也把它的值写成小标签）、靠前的组（这几组按给定顺序排在最前，其余按每组第一个条目的编号排）、
+ * 说明（一句白话，界面上这个集合的页签下写着它）。只影响显示。
+ */
+export interface CollectionDisplay {
+  sideTab: boolean;
+  groupField: string | null;
+  leadingGroups: string[];
+  /** 一句白话，界面上首次出现这个集合的地方写在它下面，说明它是什么。 */
+  note: string | null;
 }
 
 /** 规则的两种级别：必选规则违反了即不合规；可选规则只给建议。 */
@@ -165,8 +180,9 @@ export function validateDefinition(raw: unknown, path = "（未给出路径）",
         if (isNonEmptyString(prefix)) seenPrefixes.add(prefix);
         const fields = validateFields(entry["字段"], label, reasons);
         const reviewRules = "评审规矩" in entry ? validateReviewSpec(entry["评审规矩"], label, reasons, options.baseDir) : null;
+        const display = "界面" in entry ? validateDisplay(entry["界面"], label, fields, reasons) : null;
         if (isNonEmptyString(name) && isNonEmptyString(prefix)) {
-          collections.push({ name, prefix, fields, reviewRules });
+          collections.push({ name, prefix, fields, reviewRules, display });
         }
       });
     }
@@ -255,6 +271,35 @@ export function validateDefinition(raw: unknown, path = "（未给出路径）",
     rulePaths,
     materialsDir,
     domainTag,
+  };
+}
+
+/** 核对一个集合的「界面」一项：三个键都可以不写；分组字段要是这个集合里的文本或枚举字段。形状不对时返回 null。 */
+function validateDisplay(raw: unknown, label: string, fields: FieldDef[], reasons: string[]): CollectionDisplay | null {
+  const where = `${label}的「界面」`;
+  if (!isObject(raw)) {
+    reasons.push(`${where}应当是一个对象，可以有「右侧栏页签」「分组字段」「靠前的组」「说明」四项。`);
+    return null;
+  }
+  const known = ["右侧栏页签", "分组字段", "靠前的组", "说明"];
+  for (const key of Object.keys(raw)) if (!known.includes(key)) reasons.push(`${where}多了「${key}」这一项，只能有${known.map((k) => `「${k}」`).join("、")}。`);
+  const sideTab = raw["右侧栏页签"] ?? false;
+  if (typeof sideTab !== "boolean") reasons.push(`${where}的「右侧栏页签」应当是 true 或 false。`);
+  const groupField = raw["分组字段"] ?? null;
+  if (groupField !== null) {
+    const field = fields.find((one) => one.name === groupField);
+    if (!field) reasons.push(`${where}的「分组字段」是「${String(groupField)}」，这个集合没有这个字段。`);
+    else if (field.type !== FIELD_TEXT && field.type !== FIELD_ENUM) reasons.push(`${where}的「分组字段」「${field.name}」应当是文本或枚举字段。`);
+  }
+  const leading = raw["靠前的组"] ?? [];
+  if (!Array.isArray(leading) || !leading.every((one) => typeof one === "string")) reasons.push(`${where}的「靠前的组」应当是文字的列表。`);
+  const note = raw["说明"] ?? null;
+  if (note !== null && !isNonEmptyString(note)) reasons.push(`${where}的「说明」应当是一段不为空的文字。`);
+  return {
+    note: isNonEmptyString(note) ? note : null,
+    sideTab: sideTab === true,
+    groupField: typeof groupField === "string" ? groupField : null,
+    leadingGroups: Array.isArray(leading) ? leading.filter((one): one is string => typeof one === "string") : [],
   };
 }
 

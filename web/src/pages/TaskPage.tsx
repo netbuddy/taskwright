@@ -9,7 +9,7 @@ import type { RevisionLogEntry, TaskDetail } from "../api/types";
 import { Shell } from "../components/Shell";
 import { DocumentModal } from "../components/DocumentModal";
 import { CompletionPanel } from "../components/CompletionPanel";
-import { completionHeadline, isUnread, reviewState } from "../model/items";
+import { completionHeadline, isUnread, needsReview, reviewState } from "../model/items";
 import { formatBytes, formatTime } from "../model/format";
 import { go, href } from "../router";
 import { statusTag } from "./TaskListPage";
@@ -73,17 +73,21 @@ export function TaskPage({ taskId }: { taskId: string }) {
           const reviewed = items.filter((i) => reviewState(i, task).state === "passed").length;
           const confirmed = items.filter((i) => !isUnread(i)).length;
           const latest = items.reduce((m, i) => Math.max(m, i.revision_no), 0);
+          // 不评审的集合（问题、领域说明之类）不写「评审通过 0/N」。
+          const reviewed_ = needsReview(task, coll.name);
           return (
             <div className="card" key={coll.name}>
               <div className="muted small">{coll.name}（编号前缀 {coll.prefix}）</div>
               <div><span className="count">{items.length}</span> 个条目</div>
               <div className="chips">
                 {items.length > 0 && <span className="chip">最后改在修订 {latest}</span>}
-                <span className={`chip ${reviewed === items.length && items.length ? "ok" : "warn"}`}>评审通过 {reviewed}/{items.length}</span>
+                {reviewed_ && <span className={`chip ${reviewed === items.length && items.length ? "ok" : "warn"}`}>评审通过 {reviewed}/{items.length}</span>}
                 <span className={`chip ${confirmed === items.length && items.length ? "ok" : "warn"}`}>已读 {confirmed}/{items.length}</span>
               </div>
               <div className="muted small">
-                {items.length === 0 ? "这个集合还没有条目。" : `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上有评审通过的记录，${confirmed} 个用户已经看过（已读）。`}
+                {items.length === 0 ? "这个集合还没有条目。" : reviewed_
+                  ? `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上有评审通过的记录，${confirmed} 个用户已经看过（已读）。`
+                  : `这 ${items.length} 个条目里，${confirmed} 个用户已经看过（已读）。这个集合不评审。`}
               </div>
             </div>
           );

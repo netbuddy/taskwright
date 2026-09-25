@@ -96,6 +96,15 @@ class DomainNotesDocumentTest(unittest.TestCase):
         self.assertNotIn("DN-001", overview)
         self.assertNotIn("本文档没有总体描述。", overview)
 
+    def test_定义视图带上集合的界面一项_没写的集合为空(self):
+        lib = read_lib(self.ws)
+        view = library.definition_view(lib.definition)["collections"]
+        notes = next(c for c in view if c["name"] == "领域说明")
+        self.assertEqual(notes["display"], {"side_tab": True, "group_field": "类别", "leading_groups": ["术语"],
+                                            "note": "材料里或你说明过的背景、术语、角色，供条目引用。"})
+        self.assertIsNone(next(c for c in view if c["name"] == "功能用例")["display"])
+        self.assertFalse(notes["needs_review"])
+
     def test_领域说明作来源写成编号加摘录(self):
         uc = self.section("3 功能需求")
         self.assertIn("领域说明 DN-001（「读者登录时输入的一串字符」）", uc)
