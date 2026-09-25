@@ -95,7 +95,7 @@ test("出处不带段落号、段落号越界、写成投影文件、摘录不�
   assert.match(message, /第 4 条来源的摘录「名下有逾期未还图书的，不能再借」在 requirements-styled\.docx 第 37 段里找不到，它在第 28 段；/);
   assert.match(message, /第 5 条来源的摘录「逾期的每本每天罚款两角」在 requirements-styled\.docx 第 76 段里找不到。/);
   assert.match(message, /怎么办：Word 材料的出处要写段落号，例如 inputs\/requirements-styled\.docx#p12；段落号见 requirements-styled\.docx\.txt 每行开头的「第 N 段」/);
-  assert.match(message, /出处写 Word 文件加段落号，例如 inputs\/requirements-styled\.docx#p12；出处改写成 inputs\/requirements-styled\.docx#p28；摘录必须逐字抄自那一段里的文字/);
+  assert.match(message, /出处写 Word 文件加段落号，例如 inputs\/requirements-styled\.docx#p12；出处改写成 inputs\/requirements-styled\.docx#p28；摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写；摘录必须逐字抄自那一段里的文字/);
   assert.equal(count(dir, "item_source"), before);
 });
 

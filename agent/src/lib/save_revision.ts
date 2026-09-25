@@ -561,6 +561,9 @@ function materialReader(workspaceDir: string, materialsDir: string): (locator: s
   };
 }
 
+/** 摘录在材料里找不到时，拒绝文字「怎么办」一层的第一句（模型常自行补句号或改写，被拒后又干脆删掉引用）。 */
+const EXACT_EXCERPT = "摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写";
+
 /** 摘录超过这么多个字时，拒绝的文字里只引前这么多个字。 */
 const EXCERPT_QUOTE_LIMIT = 30;
 
@@ -689,7 +692,7 @@ function checkSources(
       if (parts.length <= 1 || text.includes(excerpt)) {
         if (!text.includes(excerpt)) {
           errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到`,
-            "摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源"));
+            `${EXACT_EXCERPT}；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));
           ok = false;
           return;
         }
@@ -697,7 +700,7 @@ function checkSources(
         const missed = parts.findIndex((part) => !text.includes(part));
         if (missed >= 0) {
           errors.push(withGuide(`${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${basename(locator)} 里找不到`,
-            "摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源"));
+            `${EXACT_EXCERPT}；摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源`));
           ok = false;
           return;
         }
@@ -746,7 +749,7 @@ function checkDocxSource(
     const elsewhere = findParagraph(paragraphs, part, n);
     errors.push(withGuide(`${where}的${label}摘录「${quoteOf(quoted)}」在 ${name} 第 ${n} 段里找不到${elsewhere ? `，它在第 ${elsewhere} 段` : ""}`,
       elsewhere ? `出处改写成 ${path}#p${elsewhere}`
-        : "摘录必须逐字抄自那一段里的文字（不带行首的方括号），不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源"));
+        : `${EXACT_EXCERPT}；摘录必须逐字抄自那一段里的文字（不带行首的方括号），不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));
   };
   const parts = excerpt.split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part !== "");
   if (parts.length <= 1) {
@@ -761,7 +764,7 @@ function checkDocxSource(
   const missed = located.findIndex((at) => at === null);
   if (missed >= 0) {
     errors.push(withGuide(`${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${name} 里找不到`,
-      "摘录必须逐字抄自材料里的文字（不带行首的方括号），引用不相邻的原文请用空行分开或写成几条来源"));
+      `${EXACT_EXCERPT}；摘录必须逐字抄自材料里的文字（不带行首的方括号），引用不相邻的原文请用空行分开或写成几条来源`));
     return null;
   }
   notes?.push(`${where}的摘录按空行拆成了 ${parts.length} 条来源`);
