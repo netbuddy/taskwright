@@ -164,7 +164,7 @@ Only accepted calls of the agent's `reply` tool become `assistant_reply` events 
 ### 5.3 Reply shape
 
 ```
-"informs": ["…", "…"],          // facts: what the agent just did or found
+"informs": [ { "text": "…", "items": [ { "item_id": "UC-004", "revision_no": 2 } ] } ],   // facts: what the agent just did or found; items (optional) names the items an inform mentions, each at its current revision
 "act": null | {
   "kind": "ask" | "confirm" | "suggest" | "choose" | "propose",
   "text": "…",
@@ -177,7 +177,7 @@ Only accepted calls of the agent's `reply` tool become `assistant_reply` events 
 "text": "…"                      // the reply as prose
 ```
 
-`degraded: true` marks a plain-text reply let through after repeated rejections; show it as plain text with a one-line note and no card. Replies are rendered as limited Markdown (paragraphs, lists, bold, inline code).
+`act` is present only when the agent waits for a specific response from the user; answering a question or reporting what it did carries `act: null`. Informs never become cards: the items they name are shown as item links (with an act, after that inform; without one, in a single line 提到的条目, "items mentioned", under the text, each item once). Sessions recorded before informs could name items stored them as plain strings; the server always sends them as objects. `degraded: true` marks a plain-text reply let through after repeated rejections; show it as plain text with a one-line note and no card. Replies are rendered as limited Markdown (paragraphs, lists, bold, inline code).
 
 ### 5.4 Card buttons
 
