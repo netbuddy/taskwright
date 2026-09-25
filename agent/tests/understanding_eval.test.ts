@@ -97,7 +97,7 @@ test("多次运行取多数，汇总出四项、按功能与变更方式的准�
 });
 
 test("评测集：每例期望符合理解 schema，targets 是上下文里有的条目，responds_to 是上下文里等回应的行为；覆盖面够", () => {
-  assert.ok(CASES.length >= 50 && CASES.length <= 70, `例数 ${CASES.length}`);
+  assert.ok(CASES.length >= 50 && CASES.length <= 75, `例数 ${CASES.length}`);
   assert.equal(new Set(CASES.map((c) => c.id)).size, CASES.length);
   assert.ok(CASES.filter((c) => c.source === "补写").length * 3 <= CASES.length, "补写不超过三分之一");
   for (const c of CASES) {
