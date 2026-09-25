@@ -290,6 +290,24 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   }
   const touched = new Map<string, number>();
 
+  // 这一批里新增的条目会拿到的编号：与 write 里分配编号的规矩相同（集合历史上的最大流水号加一，按操作顺序依次取）。
+  // 排在前面的新增操作产生的条目，后面的操作可以引用；引用排在后面才新增的条目仍拒绝。
+  const addedAt = new Map<string, number>();
+  {
+    const serialOf = new Map<string, number>();
+    for (const row of items.values()) {
+      if (row.serial > (serialOf.get(row.collection) ?? 0)) serialOf.set(row.collection, row.serial);
+    }
+    operations.forEach((one, index) => {
+      if (!isObject(one) || one.op !== "add") return;
+      const collection = definition.collections.find((c) => c.name === one.collection);
+      if (!collection) return;
+      const serial = (serialOf.get(collection.name) ?? 0) + 1;
+      serialOf.set(collection.name, serial);
+      addedAt.set(`${collection.prefix}-${String(serial).padStart(3, "0")}`, index + 1);
+    });
+  }
+
   const problems: RejectReason[] = [];
   const planned: Planned[] = [];
 
@@ -312,7 +330,14 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     const checkRef = (itemId: unknown): string | null => {
       if (typeof itemId !== "string" || itemId.trim() === "") return "应当写一个条目编号";
       const row = items.get(itemId);
-      if (!row) return "指向的条目在这个任务里不存在";
+      if (!row) {
+        const at = addedAt.get(itemId);
+        if (at === undefined) return "指向的条目在这个任务里不存在";
+        if (at < number) return null;
+        return at === number
+          ? withGuide("指向的就是这个操作自己要新增的条目", "一个条目不能引用自己")
+          : withGuide(`指向的条目 ${itemId} 在这一批里排在第 ${at} 个操作才新增，在这个操作之后`, `请把新增 ${itemId} 的操作排到前面`);
+      }
       if (row.deleted_in_revision !== null) return `指向的条目已在修订 ${row.deleted_in_revision} 删除`;
       if (deletedHere.has(itemId)) return "指向的条目在这次调用里被删除";
       return null;

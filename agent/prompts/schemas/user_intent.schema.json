@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "taskwright/user_intent.schema.json",
   "title": "执行者对用户这句话的理解",
-  "description": "用户每说一句话，执行者在这一轮的文字输出里写一份符合本 schema 的 JSON，写明它把这句话读成了哪几项对话行为；扩展按本 schema 把它从文字里认出来（agent/src/lib/structured_outputs.ts）。本文件是唯一的来源：平台 skill 里的说明与示例由 scripts/render-intent-schema.mjs 从它生成，「回复」工具的五种主行为也取自这里的 $defs.executor_function。",
+  "description": "用户每说一句话，执行者在这一轮的文字输出里写一份符合本 schema 的 JSON，写明它把这句话读成了哪几项对话行为；扩展按本 schema 把它从文字里认出来（agent/src/lib/structured_outputs.ts）。本文件是唯一的来源：平台 skill 里的说明与示例由 scripts/render-intent-schema.mjs 从它生成，「回复」工具里向用户要的回应的五种也取自这里的 $defs.executor_function。",
   "type": "object",
   "required": ["acts"],
   "additionalProperties": false,
@@ -69,7 +69,7 @@
       }
     },
     "executor_function": {
-      "description": "执行者「回复」的末位主行为，五种都期待用户回应；每条告知另记一条 inform，不期待回应。",
+      "description": "执行者「回复」里向用户要的回应，五种都期待用户回应；每条告知另记一条 inform，不期待回应。",
       "enum": ["ask", "confirm", "suggest", "choose", "propose"],
       "x-names": {
         "ask": "提问",

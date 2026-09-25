@@ -68,6 +68,15 @@ test("回应的形式核对：逐条说明哪里不对", () => {
   assert.throws(() => planRespond({ click: "确认", text: "好" }, confirmReply, "c"), /点这个按钮时不要同时写 text/);
 });
 
+test("告知点名的条目：有卡片时跟在那条告知后面；没有卡片时正文下方一行「提到的条目」，同一个条目只列一次", () => {
+  const informs = [{ text: "材料写明保留 3 天。", items: [{ item_id: "UC-004" }] }, { text: "也牵涉 UC-004 与 UC-001。", items: [{ item_id: "UC-004" }, { item_id: "UC-001" }] }];
+  assert.equal(renderReply({ type: "assistant_reply", message_id: "n", text: "有，保留 3 天。", informs, act: null }),
+    "助手说：有，保留 3 天。\n提到的条目：UC-004、UC-001");
+  assert.equal(renderReply({ type: "assistant_reply", message_id: "w", text: "问一件事。", informs: [informs[0], { text: "没点名。" }],
+    act: { kind: "ask", text: "你希望保留几天？", scope: "general" } }).split("\n").slice(0, 2).join("\n"),
+    "助手告诉你：材料写明保留 3 天。（UC-004）\n助手告诉你：没点名。");
+});
+
 test("scope 为 general 的提问不列涉及的条目；degraded 的回复照普通文字显示加一行说明，不画卡片、不能点按钮", () => {
   const general = renderReply({ type: "assistant_reply", message_id: "g", text: "先问个总体的事。", informs: ["存了 1 个用例。"],
     act: { kind: "ask", text: "这次的范围包括售后吗？", scope: "general" } });

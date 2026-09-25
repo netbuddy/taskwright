@@ -9,7 +9,7 @@
 // 有未保存的条目编辑时发送键与卡片按钮灰化，输入框上方提示「先保存或取消正在编辑的条目」。
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { AssistantReply, ConversationMessage, CurrentWork, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
+import type { AssistantReply, ConversationMessage, CurrentWork, Inform, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
@@ -148,6 +148,16 @@ export function answeredText(messages: ConversationMessage[], index: number): st
   return null;
 }
 
+/** 告知里点名的条目编号，按出现的先后，同一个条目只列一次。 */
+function itemIds(informs: Inform[]): string[] {
+  return [...new Set(informs.flatMap((one) => (one.items ?? []).map((ref) => ref.item_id)))];
+}
+
+/** 告知里点名的一个条目：点它在右侧打开这个条目。 */
+function ItemLink({ id, onOpenItem }: { id: string; onOpenItem: (itemId: string) => void }) {
+  return <span className="ref" role="button" title={`打开 ${id}`} onClick={() => onOpenItem(id)} data-testid={`inform-item-${id}`}>{id}</span>;
+}
+
 function MessageView({ message, task, handlers, disabled, hold, working, answered, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
@@ -188,8 +198,21 @@ function MessageView({ message, task, handlers, disabled, hold, working, answere
             </>
           ) : (
             <>
-              {m.informs.length > 0 && m.act && <ul className="informs">{m.informs.map((t, i) => <li key={i}>{renderInline(t)}</li>)}</ul>}
+              {m.informs.length > 0 && m.act && (
+                <ul className="informs">
+                  {m.informs.map((one, i) => (
+                    <li key={i}>{renderInline(one.text)}{itemIds([one]).map((id) => (
+                      <span key={id}> <ItemLink id={id} onOpenItem={onOpenItem} /></span>
+                    ))}</li>
+                  ))}
+                </ul>
+              )}
               <Markdown text={m.text} />
+              {!m.act && itemIds(m.informs).length > 0 && (
+                <div className="mentioned" data-testid="mentioned-items">
+                  提到的条目：{itemIds(m.informs).map((id, i) => <span key={id}>{i > 0 && "、"}<ItemLink id={id} onOpenItem={onOpenItem} /></span>)}
+                </div>
+              )}
             </>
           )}
           {m.act && !m.degraded && (

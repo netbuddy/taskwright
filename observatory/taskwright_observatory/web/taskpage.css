@@ -440,3 +440,5 @@ body.tp-resizing{cursor:col-resize;user-select:none}
 /* 运行展开区里的块与卡片一律铺满运行表的内容宽度（与「对话行为」块同宽），不再各有各的最大宽度；长内容在框内换行 */
 .tp .rbody .boot,.tp .rbody .guidebox,.tp .rbody .steer,.tp .rbody .retrynote,.tp .rbody .didrow,.tp .rbody .say,
 .tp .rbody .noteline,.tp .rbody .chgblock,.tp .rbody .lv3,.tp .rbody .tl,.tp .rbody .reply,.tp .rbody .replycard{max-width:none}
+/* 回复里告知点名的条目 */
+.tp .mentioned{margin:4px 0 0;font-size:12.2px;color:var(--ink3)}

@@ -1,7 +1,7 @@
 /**
  * 理解格式的 JSON Schema：读进来，给出几样取自它的清单，并按它核对一份理解的形式。
  *
- * schema 文件 agent/prompts/schemas/user_intent.schema.json 是唯一的来源：用户侧九种功能、执行者回复的五种末位主行为
+ * schema 文件 agent/prompts/schemas/user_intent.schema.json 是唯一的来源：用户侧九种功能、执行者回复的五种向用户要的回应
  * （lib/reply.ts 的 ACT_KINDS 取自这里）、三档把握、摘要的字数上限，都从它读；平台 skill 里的说明与示例由
  * scripts/render-intent-schema.mjs 从它生成。本模块只读这一个文件，不导入别的模块，免得与 reply.ts 互相导入。
  */
@@ -21,7 +21,7 @@ export const INTENT_SCHEMA: Json = JSON.parse(readFileSync(INTENT_SCHEMA_PATH, "
 
 /** 用户侧九种功能。 */
 export const USER_FUNCTIONS: readonly string[] = INTENT_SCHEMA.$defs.user_function.enum;
-/** 执行者回复的五种末位主行为；lib/reply.ts 的 ACT_KINDS 取的就是它。 */
+/** 执行者回复的五种向用户要的回应；lib/reply.ts 的 ACT_KINDS 取的就是它。 */
 export const EXECUTOR_FUNCTIONS: readonly string[] = INTENT_SCHEMA.$defs.executor_function.enum;
 /** 三档把握。 */
 export const CONFIDENCE_LEVELS: readonly string[] = INTENT_SCHEMA.$defs.confidence.enum;

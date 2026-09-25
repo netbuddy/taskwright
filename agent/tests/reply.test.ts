@@ -1,6 +1,6 @@
 /**
- * 「回复」的核对函数：五种主行为各一个合格样例，每条核对规则各一个被拒样例，
- * 以及「请确认」引用不存在的条目、已删除的条目或条目不在的修订时被拒。
+ * 「回复」的核对函数：五种向用户要的回应各一个合格样例，每条核对规则各一个被拒样例，
+ * 以及「请确认」引用不存在的条目、已删除的条目或条目不在的修订时被拒；告知点名条目的核对；卡片只复述告知时被拒。
  */
 
 import { test } from "node:test";
@@ -36,9 +36,58 @@ const BASIS = [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "�
 
 // ───────────── 合格样例 ─────────────
 
-test("没有主行为：只有告知与成文的话", () => {
+test("不要用户回应：只有告知与成文的话；旧写法的纯文字告知当作没有 items", () => {
   const reply = checkReply({ informs: ["我记下了两条约束。"], act: null, text: "我记下了两条约束。" }, alone());
-  assert.deepEqual(reply, { informs: ["我记下了两条约束。"], act: null, text: "我记下了两条约束。" });
+  assert.deepEqual(reply, { informs: [{ text: "我记下了两条约束。" }], act: null, text: "我记下了两条约束。" });
+});
+
+// ───────────── 告知点名条目 ─────────────
+
+test("告知点名条目：条目与它当前所在的修订都在库里，原样送达", () => {
+  const informs = [{ text: "材料写明预约的书保留 3 天，已写在 UC-001 里。", items: [{ item_id: "UC-001", revision_no: 2 }] }, { text: "我没有改动任何条目。" }];
+  const reply = checkReply({ informs, act: null, text: "有。材料写明预约的书保留 3 天，已写在 UC-001 里。" }, alone(table));
+  assert.deepEqual(reply.informs, informs);
+});
+
+test("告知点名条目：条目不存在、已删除、修订号不是当前的、缺修订号，都按与 act 相同的格式被拒", () => {
+  const one = (items: unknown) => ({ informs: [{ text: "说到一个条目。", items }], act: null, text: "说到一个条目。" });
+  rejected(one([{ item_id: "UC-009", revision_no: 1 }]), alone(table), /informs 的第 1 条的 items 的第 1 项：库里没有条目 UC-009/);
+  rejected(one([{ item_id: "UC-002", revision_no: 1 }]), alone(table), /条目 UC-002 已经删除了/);
+  rejected(one([{ item_id: "UC-001", revision_no: 1 }]), alone(table), /条目 UC-001 现在不是修订 1；只能点名条目当前所在的修订/);
+  rejected(one([{ item_id: "UC-001" }]), alone(table), /（UC-001）缺少 revision_no/);
+  rejected(one("UC-001"), alone(table), /informs 的第 1 条的 items写了就应当是一个列表/);
+});
+
+test("告知的形状不对时逐条说明：空的 text、多出来的键", () => {
+  rejected({ informs: [{ text: " " }], act: null, text: "好。" }, alone(), /informs 的第 1 条的 text 是空的/);
+  rejected({ informs: [{ text: "好。", item: "UC-001" }], act: null, text: "好。" }, alone(), /informs 的第 1 条里多了「item」这一项，告知只有 text 与 items 两项/);
+  rejected({ informs: [3], act: null, text: "好。" }, alone(), /informs 的第 1 条应当是 \{ text, items \}/);
+});
+
+// ───────────── 卡片只复述告知 ─────────────
+
+const ASK_RETAIN = { kind: "ask", text: "有，材料写明预约的书保留 3 天。", items: [{ item_id: "UC-001", revision_no: 2 }] };
+
+test("卡片复述：act.text 与某条告知相同（只差标点与空白）时被拒", () => {
+  rejected({ informs: [{ text: "有 材料写明预约的书保留3天" }], act: ASK_RETAIN, text: "有，材料写明预约的书保留 3 天。" }, alone(table),
+    /卡片里写的是你刚说过的话，不是要用户回应的东西；不需要用户回应就把 act 写 null，要回应就把要用户回答的那句话写进 act/);
+});
+
+test("卡片复述：act.text 被某条告知完整包含时被拒", () => {
+  rejected({ informs: [{ text: "我查了材料：有，材料写明预约的书保留 3 天。已写进 UC-001。" }], act: ASK_RETAIN, text: "有，保留 3 天。" }, alone(table),
+    /卡片里写的是你刚说过的话/);
+});
+
+test("卡片复述的边界：告知与卡片文字部分重叠但不同，照常送达", () => {
+  const act = { kind: "ask", text: "材料没写预约的书保留几天，你希望保留几天？", items: [{ item_id: "UC-001", revision_no: 2 }] };
+  const informs = [{ text: "材料写了预约的书到馆后会通知读者，但没写保留几天。" }];
+  assert.deepEqual(checkReply({ informs, act, text: "材料没写保留几天。你希望保留几天？" }, alone(table)).act, act);
+});
+
+test("卡片复述的边界：成文的话包含卡片上的问题、或整段只有这一句问题，照常送达", () => {
+  const act = { kind: "ask", text: "你希望保留几天？", items: [{ item_id: "UC-001", revision_no: 2 }] };
+  assert.deepEqual(checkReply({ informs: [{ text: "材料没写保留几天。" }], act, text: "材料没写保留几天。你希望保留几天？" }, alone(table)).act, act);
+  assert.deepEqual(checkReply({ informs: [], act, text: "你希望保留几天？" }, alone(table)).act, act);
 });
 
 test("提问 ask 合格：点名关联的问题与它当前所在的修订", () => {
@@ -341,17 +390,17 @@ test("第 1、2 次被拒照常给出逐条的理由", () => {
   }
 });
 
-test("第 3 次起拒绝理由改为只写成文正文、主行为写 null，并附上一次的问题", () => {
+test("第 3 次起拒绝理由改为只写成文正文、act 写 null，并附上一次的问题", () => {
   for (const prior of [2, 3]) {
     assert.throws(() => decideReply(BAD, { ...alone(table), priorRejections: prior }), (error: Error) => {
-      assert.match(error.message, new RegExp(`连续第 ${prior + 1} 次没有送达。请不要再写告知与主行为：只写成文的话 text，informs 写 \\[\\]，act 写 null`));
+      assert.match(error.message, new RegExp(`连续第 ${prior + 1} 次没有送达。请不要再写告知与要的回应：只写成文的话 text，informs 写 \\[\\]，act 写 null`));
       assert.match(error.message, /提问要写明问的是哪个条目/);
       return true;
     });
   }
 });
 
-test("第 5 次仍不合格时放行纯文字回复，标 degraded；正文取 text，没有 text 就取告知与主行为", () => {
+test("第 5 次仍不合格时放行纯文字回复，标 degraded；正文取 text，没有 text 就取告知与要的回应", () => {
   assert.deepEqual(decideReply(BAD, { ...alone(table), priorRejections: 4 }), {
     reply: { informs: [], act: null, text: "退款由谁审批？" },
     degraded: true,

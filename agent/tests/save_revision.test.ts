@@ -220,6 +220,43 @@ test("条目引用指向在这次调用里被删除的条目时被拒；指向�
   assert.equal(count(dir, "revision"), 2);
 });
 
+const addProblem = (refs: string[], name = "问") => ({ op: "add", collection: "问题", fields: { 事项: name, 状态: "未解决", 关联条目: refs }, sources: [SOURCE] });
+
+test("同批引用：排在前面的新增操作产生的条目可以引用，编号按集合流水号推算", () => {
+  const dir = workspaceWithTask();
+  saveRevision(callIn(dir), { operations: [addUseCase("甲"), addUseCase("乙"), addProblem(["UC-001", "UC-002"])] });
+  assert.equal(count(dir, "revision"), 1);
+  const row = query<any>(dir, "SELECT fields FROM item_version WHERE item_id = 'TBD-001'")[0];
+  assert.deepEqual(JSON.parse(row.fields).关联条目, ["UC-001", "UC-002"]);
+});
+
+test("同批引用：引用排在后面才新增的条目被拒，写明它是第几个操作、请排到前面；引用自己也被拒；整批不写入", () => {
+  const dir = workspaceWithTask();
+  // 拒绝原因分两层：事实写它排在第几个操作之后，怎么办写请把它排到前面。
+  assert.throws(
+    () => saveRevision(callIn(dir), { operations: [addProblem(["UC-001"]), addUseCase("甲")] }),
+    (error: any) => {
+      assert.match(error.message, /操作 1（新增，集合「问题」）：.*第 1 个编号 "UC-001" 指向的条目 UC-001 在这一批里排在第 2 个操作才新增，在这个操作之后。\n  怎么办：请把新增 UC-001 的操作排到前面。/);
+      assert.equal(error.reasons[0].guidance, "请把新增 UC-001 的操作排到前面");
+      return true;
+    },
+  );
+  assert.throws(() => saveRevision(callIn(dir), { operations: [addProblem(["TBD-001"])] }),
+    /指向的就是这个操作自己要新增的条目。\n  怎么办：一个条目不能引用自己。/);
+  assert.equal(count(dir, "revision"), 0);
+});
+
+test("跨批引用照旧：上一批的条目可以引用；流水号接着历史最大号（删过的号不复用）推算；没有新增它的编号仍说不存在", () => {
+  const dir = workspaceWithTask();
+  saveRevision(callIn(dir), { operations: [addUseCase("甲"), addUseCase("乙")] });
+  saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-002", base_revision: 1 }] });
+  // 删过的 UC-002 不复用，这一批新增的用例是 UC-003。
+  saveRevision(callIn(dir), { operations: [addUseCase("丙"), addProblem(["UC-001", "UC-003"])] });
+  assert.deepEqual(query<any>(dir, "SELECT item_id FROM item ORDER BY item_id").map((r) => r.item_id), ["TBD-001", "UC-001", "UC-002", "UC-003"]);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [addProblem(["UC-004"])] }), /"UC-004" 指向的条目在这个任务里不存在/);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [addUseCase("丁"), addProblem(["UC-002"])] }), /"UC-002" 指向的条目已在修订 2 删除/);
+});
+
 test("可选字段写空值等于清空，库里不留空键", () => {
   const dir = workspaceWithTask();
   saveRevision(callIn(dir), { operations: [{ ...addUseCase(), fields: { 名称: "甲", 步骤: ["一"], 备注: "有" } }] });

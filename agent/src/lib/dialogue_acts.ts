@@ -8,7 +8,7 @@
  * 事实核对不过记事件 USER_INTENT_INVALID 带原因。这一轮结束时（pi 的 agent_settled）这句话仍没有合格的理解，
  * 记事件 USER_INTENT_MISSING，这是唯一算失败的情形。
  * 保存修订、完成任务、回复三个工具执行时，这一轮（自用户最近一句话起）没有合格的理解就拒绝。
- * 「回复」合格时把它的告知与末位主行为也写进对话行为表，编号返回给执行者，用户下一句话的 responds_to 才有所指。
+ * 「回复」合格时把它的告知与向用户要的回应也写进对话行为表，编号返回给执行者，用户下一句话的 responds_to 才有所指。
  *
  * 本模块只核对形式与事实（枚举、必填、responds_to 指向的行为存在且还没有被回应、targets 里的条目存在），
  * 不判断理解对不对，也不据对话行为做任何决定。三个派生事实（还在等回应的执行者行为、连续追问次数、改口次数）
@@ -355,7 +355,7 @@ function writeMissing(db: DatabaseSync, turn: Turn, nearest: string[]): number {
 
 /**
  * 界面操作合成的那句话：按操作的事实写一条用户行为，执行者不写理解。
- * 卡片上选了一个选项是告知（inform），回应那张卡片的主行为；「这几条都看过了」是同意（affirm），
+ * 卡片上选了一个选项是告知（inform），回应那张卡片上要的回应；「这几条都看过了」是同意（affirm），
  * 「先不管」是告知，二者回应这条会话里最近一条还在等回应、针对这几个条目的执行者行为（没有就不写 responds_to）。
  */
 function writeSynthesized(db: DatabaseSync, taskId: string, sessionId: string, run: RunInfo): { actIds: string[]; eventSeq: number } {
@@ -436,12 +436,13 @@ const GATE_PROBLEMS_SHOWN = 3;
 // ───────────── 回复工具记执行者的行为 ─────────────
 
 export interface ReplyForActs {
-  informs: string[];
+  /** 旧的写法里一条告知是一句纯文字，新的是 { text, items }；两种都认。 */
+  informs: (string | { text: string; items?: { item_id: string }[] })[];
   act: { kind: string; text: string; items?: { item_id: string }[] } | null;
 }
 
 /**
- * 「回复」合格时调用：每条告知记一条 inform（不期待回应），末位主行为记一条对应功能（期待回应），
+ * 「回复」合格时调用：每条告知记一条 inform（不期待回应，targets 取它点名的条目），向用户要的回应记一条对应功能（期待回应），
  * 记一条事件 EXECUTOR_ACTS_RECORDED。返回记下的编号与给执行者看的一句话。没有任务库时什么都不记，返回 null。
  */
 export function recordReplyActs(
@@ -464,7 +465,9 @@ export function recordReplyActs(
       const rows: ActRow[] = [];
       const base = { run_id: runId, speaker: "executor", responds_to: null, confidence: null, source_entry: replyEntryId, origin: "reply" };
       for (const inform of reply.informs) {
-        rows.push({ ...base, act_id: `${runId}-${serial++}`, function: "inform", targets: dump([]), expects_response: 0, summary: clip(inform) });
+        const one = typeof inform === "string" ? { text: inform } : inform;
+        const targets = (one.items ?? []).map((ref) => ({ item_id: ref.item_id }));
+        rows.push({ ...base, act_id: `${runId}-${serial++}`, function: "inform", targets: dump(targets), expects_response: 0, summary: clip(one.text) });
       }
       if (reply.act) {
         const targets = (reply.act.items ?? []).map((one) => ({ item_id: one.item_id }));

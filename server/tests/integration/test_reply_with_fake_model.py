@@ -53,11 +53,12 @@ class ReplyWithFakeModelTests(unittest.TestCase):
         self.assertIs(result.get("terminate"), True)
         details = result["details"]
         self.assertIs(details["delivered"], True)
-        # 回复把告知与主行为记进对话行为表：event_seq 是那条 EXECUTOR_ACTS_RECORDED 事件的序号，编号写在 acts 里。
+        # 回复把告知与向用户要的回应记进对话行为表：event_seq 是那条 EXECUTOR_ACTS_RECORDED 事件的序号，编号写在 acts 里。
         self.assertIsNotNone(details["event_seq"])
         self.assertEqual([(a["act_id"], a["function"], a["expects_response"]) for a in details["acts"]],
                          [("r1-2", "inform", False), ("r1-3", "ask", True)])
-        self.assertEqual(details["reply"], {"informs": ["材料我看过了。"], "act": act, "text": "材料我看过了。退款由谁审批？"})
+        # 告知在送达的回复里整理成 { text, items }；这里模型写的是旧写法的一句纯文字，没有 items。
+        self.assertEqual(details["reply"], {"informs": [{"text": "材料我看过了。"}], "act": act, "text": "材料我看过了。退款由谁审批？"})
         # message_id 就是会话文件里带这次调用的那条助手消息的条目编号。
         holder = next(e for e in entries if e.get("type") == "message" and e["message"].get("role") == "assistant"
                       and any(p.get("id") == "call-reply" for p in e["message"].get("content") or []))
