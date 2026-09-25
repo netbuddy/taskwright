@@ -193,8 +193,10 @@ def completion(task_dir: Path, task_id: str, definition: dict, totals: dict[str,
         conditions.append({"collection": r["collection"], "name": r["condition"], "met": bool(r["satisfied"]),
                            "state": r.get("state") or ("met" if r["satisfied"] else "unmet"),
                            "done": total - len(missing), "total": total, "missing": missing, "note": r.get("summary", "")})
+    # hints：完成条件之外的提示，不是门禁（例如还没有和任何条目关联的领域说明），每项 {kind, collection, items, summary}。
+    hints = [h for h in out.get("hints") or [] if isinstance(h, dict)]
     return {"all_met": all(c["met"] for c in conditions), "unmet_count": sum(c["state"] == "unmet" for c in conditions),
-            "brief": out.get("brief", ""), "conditions": conditions}
+            "brief": out.get("brief", ""), "conditions": conditions, "hints": hints}
 
 
 # ───────────────────────── 读库（都在调用方开好的读事务里） ─────────────────────────

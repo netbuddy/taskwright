@@ -214,7 +214,8 @@ class ServiceUnitTest(unittest.TestCase):
         self.assertFalse({"version_no", "version_by", "version_at", "version_count"} & set(uc), "修订统一之后不再带旧键名")
         self.assertEqual(task["definition"]["collections"][0]["fields"][0], {"name": "名称", "type": "文本", "required": True, "values": None})
         comp = task["completion"]
-        self.assertEqual(set(comp), {"all_met", "unmet_count", "brief", "conditions"})
+        self.assertEqual(set(comp), {"all_met", "unmet_count", "brief", "conditions", "hints"})
+        self.assertEqual(comp["hints"], [], "这个任务没有领域说明集合，没有提示")
         first = comp["conditions"][0]
         self.assertEqual(set(first), {"collection", "name", "met", "state", "done", "total", "missing", "note"})
 

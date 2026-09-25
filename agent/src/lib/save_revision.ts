@@ -43,7 +43,7 @@ import {
   validateDefinition,
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
-import { EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
@@ -287,6 +287,15 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (isObject(one) && one.op === "delete" && typeof one.item === "string") deletedHere.add(one.item);
   }
   const touched = new Map<string, number>();
+  // 种类为「领域说明」的来源：出处要是「领域说明」集合里还在的条目（这次调用之前就有，也没在这次调用里删）。
+  const noteRef = (locator: string): string | null => {
+    if (!definition.collections.some((one) => one.name === SOURCE_DOMAIN_NOTE)) return `这个任务没有「${SOURCE_DOMAIN_NOTE}」集合`;
+    const row = items.get(locator);
+    if (!row || row.collection !== SOURCE_DOMAIN_NOTE) return `不是这个任务里「${SOURCE_DOMAIN_NOTE}」集合的条目编号`;
+    if (row.deleted_in_revision !== null) return `指向的领域说明已在修订 ${row.deleted_in_revision} 删除`;
+    if (deletedHere.has(locator)) return "指向的领域说明在这次调用里被删除";
+    return null;
+  };
 
   const problems: RejectReason[] = [];
   const planned: Planned[] = [];
@@ -337,7 +346,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       }
       if (raw.base_revision !== undefined) errors.push("新增时不要写 base_revision，新条目还没有所在的修订");
       const notes: string[] = [];
-      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes);
+      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes, noteRef);
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (errors.length > 0) {
@@ -421,7 +430,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     const previousSources = sourcesOf(itemId, current.revision_no);
     const inherited = raw.sources === undefined;
     const notes: string[] = [];
-    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes);
+    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes, noteRef);
     if (sources && !inherited && call.actor !== ACTOR_USER && isObject(raw.fields) && Object.keys(raw.fields).length > 0) {
       // 执行者修改时给了新来源：只替换这次改到的字段上的来源，其余字段的来源沿用。
       // 条目当前的来源里，支持改到的字段的那几处去掉，去掉之后什么都不支持的整条去掉，支持整个条目的保留；
@@ -573,6 +582,9 @@ function quoteOf(excerpt: string): string {
  * 种类为「用户的话」的来源，出处在这里代填（见文件开头的说明）；supports 所指的字段是否存在、
  * 序号是否在范围内，要等字段合并完才知道，另由 checkSupports 核对。
  *
+ * 种类为「领域说明」的来源，出处去掉首尾空白后由 noteRef 核对是「领域说明」集合里还在的条目（用户在界面上的操作不核对，
+ * 撤销时原样交回旧来源）；摘录不核对，写引用的那句。
+ *
  * 种类为「文档原文」的来源，摘录可以用空行（一个或多个只含空白的行）隔开几段，各段是材料里不相邻的几处：
  * 整段原样找得到的照旧存成一条；找不到时按空行拆开，每段去掉首尾空白后各自到材料里逐字查找；全部找到时，这一条来源在原来的位置展开成几条，
  * 种类、出处、supports 相同，摘录各为一段，notes 里记一句拆成了几条；有一段找不到就拒绝，写明是第几段。
@@ -586,6 +598,7 @@ function checkSources(
   actor?: string,
   materialText?: (locator: string) => string | null,
   notes?: string[],
+  noteRef?: (locator: string) => string | null,
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push("缺少 sources，至少要有一条来源");
@@ -645,6 +658,16 @@ function checkSources(
       return;
     }
     let locator = one.locator as string;
+    if (one.kind === SOURCE_DOMAIN_NOTE && actor !== ACTOR_USER && noteRef) {
+      locator = locator.trim();
+      const reason = noteRef(locator);
+      if (reason) {
+        errors.push(withGuide(`${where}的种类是「${SOURCE_DOMAIN_NOTE}」，出处 ${locator} ${reason}`,
+          `出处写一条还在的领域说明的条目编号，例如 DN-001；要引用的说明还没有记下，先新增它，保存之后再引用`));
+        ok = false;
+        return;
+      }
+    }
     const keepLocator =
       userWords && actor === ACTOR_USER && typeof one.locator === "string" && one.locator.includes("#");
     if (userWords && !keepLocator) {

@@ -50,6 +50,16 @@ export interface Completion {
   /** 一句话概括，与执行者看到的说法相同。 */
   brief?: string;
   conditions: CompletionCondition[];
+  /** 完成条件之外的提示，不是门禁。kind 为 unlinked_domain_notes：还没有和任何条目关联的领域说明。 */
+  hints?: CompletionHint[];
+}
+
+export interface CompletionHint {
+  kind: "unlinked_domain_notes";
+  collection: string;
+  items: string[];
+  /** 一句完整的话，例如「有 2 条领域说明还没有和任何条目关联：DN-003、DN-004。」 */
+  summary: string;
 }
 
 // ───────────── 4.1 整份数据 ─────────────
