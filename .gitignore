@@ -16,3 +16,7 @@ web/mock/runtime/
 /sim-runs/
 /srs-*.md
 *.tsbuildinfo
+
+# understanding evaluation reports: only the baseline is kept in the repository
+agent/eval/understanding/reports/*
+!agent/eval/understanding/reports/baseline-v1.md
