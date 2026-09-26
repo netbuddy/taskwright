@@ -70,6 +70,8 @@ export class Hub {
   forwarded: number;
   readonly stats = { 轮询次数: 0, 轮询发现新行次数: 0, 提示次数: 0, 推送的库事件数: 0 };
   private timer: NodeJS.Timeout;
+  /** 服务已经收尾：事件流不再等新事件。 */
+  closed = false;
 
   constructor(taskDir: string, isRunning: () => boolean = () => false) {
     this.taskDir = taskDir;
@@ -131,8 +133,15 @@ export class Hub {
     sub.wake();
   }
 
+  /** 服务收尾的第一步：停掉兜底轮询；事件流照旧开着，之后关 pi 时推的执行者状态还送得到。 */
+  stopPolling(): void {
+    clearInterval(this.timer);
+  }
+
+  /** 服务收尾的最后一步：停掉轮询，叫醒各条事件流让它们写完手上的事件、正常结束连接。 */
   close(): void {
     clearInterval(this.timer);
+    this.closed = true;
     for (const sub of [...this.subscribers]) sub.wake();
   }
 }

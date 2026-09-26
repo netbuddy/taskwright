@@ -1,7 +1,8 @@
 /**
  * 任务占用标记：一个后端服务一个任务时，在任务目录里写一份 service.lock，免得两个后端同时服务同一份任务数据。
  *
- * service.lock 是一个 JSON 对象：端口（port）、进程号（pid）、启动时刻（started_at）、主机名（host）。
+ * service.lock 是一个 JSON 对象：端口（port）、进程号（pid）、启动时刻（started_at）、主机名（host）、运行形态（mode，desktop 或 server）。
+ * Python 版写的标记没有 mode 一项；两版读标记都只看端口、进程号与主机名。
  * - 后端第一次接手一个任务（扫描任务目录时）写它，退出时删掉自己写的那些。
  * - 接手前发现已经有标记：同一台主机上、进程号还活着、不是本进程，就是别的服务在用，拒绝接手（claim 返回那份标记）；
  *   另一台主机写的标记判断不了死活，同样当作占用；进程号已经不在了的，是遗留的旧标记，覆盖并在日志里写明。
@@ -66,13 +67,14 @@ function lockText(lock: Lock): string {
 }
 
 /** 接手一个任务：写上本服务的占用标记。任务正被别的服务占用时不写，返回那份标记；接手成功返回 null。 */
-export function claim(taskDir: string, port: number | null): Lock | null {
+export function claim(taskDir: string, port: number | null, mode: string | null = null): Lock | null {
   const existing = readLock(taskDir);
   if (occupiedByOther(existing)) return existing;
   if (existing && !isOurs(existing)) {
     console.log(`任务目录 ${basename(taskDir)} 里有一份遗留的占用标记（端口 ${pyStr(existing.port)}，进程 ${pyStr(existing.pid)} 已经不在了），本服务覆盖它。`);
   }
-  const mine = { port, pid: process.pid, started_at: localStamp(), host: hostname() };
+  const mine: Lock = { port, pid: process.pid, started_at: localStamp(), host: hostname() };
+  if (mode !== null) mine.mode = mode;
   const temp = join(taskDir, `${LOCK_NAME}.${process.pid}.tmp`);
   writeFileSync(temp, lockText(mine), "utf-8");
   renameSync(temp, lockPath(taskDir));

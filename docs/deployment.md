@@ -99,12 +99,15 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 | Service | Command | Default port |
 |---|---|---|
 | Task service (HTTP/SSE API) | `python3 -m taskwright_server.service --tasks <dir> --runs <dir> --port <port> [--profile <name>]` | none, give one |
+| Task service, TypeScript version | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>]` | none, give one |
 | Web interface (development server) | `TASKWRIGHT_API_TARGET=http://127.0.0.1:<api port> npm run dev -w web` | 5680 (`TASKWRIGHT_WEB_PORT`) |
 | Both at once | `scripts/dev.sh` (or `make dev`) | API 8790, web 5680 |
 | Observatory | `python3 -m taskwright_observatory --runs <archive dir> --workspaces <tasks dir>` | 8770 |
 
 - `--tasks` is where task directories are created (one directory per task, named by task id); `--runs` is where each task's raw pi events and session files are archived (`<runs>/<task id>/pi-events/` and `pi-sessions/`).
-- All services bind `0.0.0.0` by default (`--host` changes it).
+- All services bind `0.0.0.0` by default (`--host` changes it). The one exception is the TypeScript task service started with `--mode desktop`, which binds `127.0.0.1` by default.
+- The TypeScript task service takes a run mode, `--mode desktop|server` (default `server`). `server` is for a shared server: it binds `0.0.0.0` by default and has no exit endpoint. `desktop` is for one person on one computer: it binds `127.0.0.1` by default and adds `POST /api/v1/service/exit`, which accepts requests from this machine only. `--host` overrides the default address in both modes. Both modes log the same way: to standard output and to a daily file under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory). See section 9 of the API description for `GET /api/v1/service` and the exit endpoint.
+- If the port given to the TypeScript task service is taken, it tries the following ports, up to 10 in all, and exits with an error when all are taken. The port it actually uses is printed in the log, written to each task's occupancy mark and returned by `GET /api/v1/service`.
 - Stop services with Ctrl+C or by process id; the task service closes each task's pi process on the way out.
 
 ## 5 Environment variables

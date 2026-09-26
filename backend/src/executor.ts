@@ -4,7 +4,9 @@
  *
  * 同一任务同一时刻只有一条活动会话（pi 进程一次只接一条会话文件）：执行者在会话 A 里工作时，对会话 B 的请求返回 session_busy；
  * 空闲时切换会话即让 pi 接上另一条会话文件（RPC 的 switch_session）。
- * 对话严格轮替：执行者工作中收到说话，一律返回 session_busy（data.reason 为 working），不交给 pi 排队。
+ * 对话严格轮替与单一写入者：执行者工作中收到说话、卡片点击或直接操作，一律返回 session_busy（data.reason 为 working），不交给 pi 排队。
+ *
+ * 锁：一把不可重入的异步锁。公开方法取锁，内部方法（startPi、openLocked）不取锁；持锁时不调用会取锁的公开方法，否则会自己等自己。
  */
 
 import { randomUUID } from "node:crypto";
@@ -18,7 +20,7 @@ import type { Hub } from "./hub.ts";
 import type { Profile } from "./launch.ts";
 import { openRo } from "./library.ts";
 import { type PiEvent, PiExited, PiRefused, PiSession, PiTimeout } from "./pi_session.ts";
-import { or, truthy } from "./py.ts";
+import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
 import * as workSummary from "./work_summary.ts";
 
@@ -44,8 +46,22 @@ export function newId(prefix: string): string {
   return prefix + randomUUID().replaceAll("-", "").slice(0, 12);
 }
 
+/** 直接操作与卡片点击经扩展命令转交之后，等结果的时长（毫秒）。 */
+export const ACTION_TIMEOUT = 10_000;
+/** 测试可以改短的设置。 */
+export const executorSettings = { actionTimeout: ACTION_TIMEOUT };
+
 /** 「先不管这条」之后发给执行者的固定模板。前缀用来把这句话认成界面操作之后发的话。 */
 export const KEEP_PENDING_NOTICE_PREFIX = "我先不管 ";
+
+export function keepPendingNotice(itemIds: string): string {
+  return `${KEEP_PENDING_NOTICE_PREFIX}${itemIds}，请接着往下做。`;
+}
+
+/** Python 的 d.get(key, fallback)：键不在时给 fallback，键在而值为 null 时仍是 null。 */
+function get(d: Record<string, any>, key: string, fallback: unknown): any {
+  return Object.hasOwn(d, key) ? d[key] : fallback;
+}
 
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
@@ -255,12 +271,13 @@ export class Executor {
     });
   }
 
-  // ───────────── 说话 ─────────────
+  // ───────────── 说话、卡片点击、界面操作、停下 ─────────────
 
-  private turnCheck(): void {
+  /** 执行者正在工作时不接下一句话，也不接直接操作。在锁里调用。 */
+  private turnCheck(what: "say" | "action" = "say"): void {
     if (this.state === "working") {
-      throw new ApiError("session_busy", "助手正在工作，这一轮做完之后才能发下一句。你可以先把话打好。",
-        { active_session: this.activeSession, reason: "working" });
+      const text = what === "say" ? "助手正在工作，这一轮做完之后才能发下一句。你可以先把话打好。" : "助手正在工作，结束后你可以继续修改。";
+      throw new ApiError("session_busy", text, { active_session: this.activeSession, reason: "working" });
     }
   }
 
@@ -284,6 +301,94 @@ export class Executor {
       }
     });
     return false;
+  }
+
+  /** 卡片上需要执行者再出力的点击：经扩展命令 /tw-ui 先追加标注、再发模板句。 */
+  async cardClick(sessionId: string | null, text: string, clientId: string | null, annotation: Dict): Promise<boolean> {
+    await this.require(sessionId, true);
+    const opId = newId("ui-op-");
+    const command = { op_id: opId, reply_entry: annotation.reply_message_id ?? null, option_key: annotation.option_key ?? null,
+      option_text: annotation.option_text ?? null, text };
+    await this.lock.run(() => {
+      this.turnCheck();
+      this.pendingClients.push([text, clientId]);
+    });
+    const result = await this.command("/tw-ui", command, opId);
+    if (!truthy(result.ok)) {
+      const error = or(result.error, {}) as Dict;
+      throw new ApiError(get(error, "code", "bad_request"), get(error, "message", "卡片点击没有转交成功。"), or(error.data, {}));
+    }
+    return false;
+  }
+
+  /**
+   * 用户的直接操作：经扩展命令 /tw-user 写库；返回操作编号，拒绝时抛 ApiError。
+   * 评审（request_review）也走这里：扩展命令核对通过、记下第一条进度事件就回报，评审在 pi 进程里接着跑，进度与结果作为库事件推给前端。
+   */
+  async action(sessionId: string | null, body: Dict): Promise<string> {
+    await this.require(sessionId, false);
+    // 单一写入者规则管的是交付物内容。打开详情写已读（mark_viewed 且不通知执行者）不改内容，是唯一的例外：
+    // 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
+    const viewing = body.kind === "mark_viewed" && !truthy(body.notify_executor);
+    if (!viewing) await this.lock.run(() => this.turnCheck("action"));
+    const opId = newId("ui-op-");
+    const command: Dict = {};
+    for (const key of ["kind", "task_id", "targets", "fields", "notify_executor", "force"]) if (Object.hasOwn(body, key)) command[key] = body[key];
+    command.op_id = opId;
+    if (truthy(command.notify_executor)) {
+      this.pendingOrigin.set("我已经看过了：", "ui_request");
+      this.pendingOrigin.set(KEEP_PENDING_NOTICE_PREFIX, "ui_request");
+    }
+    const result = await this.command("/tw-user", command, opId);
+    if (!truthy(result.ok)) {
+      const error = or(result.error, {}) as Dict;
+      throw new ApiError(get(error, "code", "rejected"), get(error, "message", "这次操作没有通过。"), or(error.data, {}));
+    }
+    this.hub.trigger();
+    if (command.kind === "keep_pending" && truthy(command.notify_executor)) {
+      // 「先不管这条」之后按固定模板告诉执行者。确认之后的那句由扩展命令发，先不管这一种扩展命令不发，所以在这里发。
+      const ids = ((or(command.targets, []) as Dict[]).filter((t) => truthy(t.item_id)).map((t) => pyStr(t.item_id))).join("、");
+      await this.say(sessionId, keepPendingNotice(ids), null);
+    }
+    return opId;
+  }
+
+  /** 把一条扩展命令交给 pi，等它经状态栏回报结果；10 秒没有结果以 busy_timeout 拒绝。 */
+  private async command(name: string, command: Dict, opId: string): Promise<Dict> {
+    let resolve!: (result: Dict) => void;
+    const answered = new Promise<Dict>((ok) => (resolve = ok));
+    this.waiters.set(opId, { resolve });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await this.lock.run(async () => {
+        if (!this.running()) throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: "pi 没有在跑" });
+        await this.pi!.request("prompt", { message: `${name} ` + pyDumps(command) });
+      });
+      const timeout = new Promise<null>((ok) => (timer = setTimeout(() => ok(null), executorSettings.actionTimeout)));
+      const result = await Promise.race([answered, timeout]);
+      if (result === null) throw new ApiError("busy_timeout", "这次操作没有在 10 秒内得到结果，请稍后看是否已经生效。", { op_id: opId });
+      return or(result, {}) as Dict;
+    } finally {
+      clearTimeout(timer);
+      this.waiters.delete(opId);
+    }
+  }
+
+  /** 让助手停下：先清掉排队的话（还给前端），标记本轮是用户让停的，再中止。返回被清掉的话。 */
+  async stop(sessionId: string | null): Promise<string[]> {
+    const cleared = await this.lock.run(async () => {
+      if (!this.running()) return null;
+      if (sessionId && sessionId !== this.activeSession) {
+        throw new ApiError("session_busy", "助手正在另一条会话里工作。", { active_session: this.activeSession });
+      }
+      const data = or(await this.pi!.request("clear_queue"), {}) as Dict;
+      if (this.work !== null) this.work.stopped = true;
+      await this.pi!.request("abort");
+      return data;
+    });
+    if (cleared === null) return [];
+    const texts = [...(or(cleared.steering, []) as string[]), ...(or(cleared.followUp, []) as string[])];
+    return texts.map((t) => conversation.displayText(t));
   }
 
   // ───────────── 对话记录 ─────────────
