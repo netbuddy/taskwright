@@ -8,8 +8,8 @@ import { api, ApiError } from "../api/client";
 import type { ServiceInfo } from "../api/types";
 import { useToast } from "./Toasts";
 
-/** 部署文档里「配置模型服务」一节。 */
-export const MODEL_SETUP_URL = "https://github.com/netbuddy/taskwright/blob/main/docs/deployment.zh-CN.md#配置模型服务";
+/** 部署文档里「10.4 配置模型服务」一节（GitHub 给标题生成的锚点去掉了小数点）。 */
+export const MODEL_SETUP_URL = "https://github.com/netbuddy/taskwright/blob/main/docs/deployment.zh-CN.md#104-配置模型服务";
 
 interface ServiceState {
   info: ServiceInfo | null;
