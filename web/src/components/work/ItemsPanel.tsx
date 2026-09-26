@@ -13,7 +13,7 @@
 // 后端核对通过就回应，评审在后台跑，review_progress 到了在页签下面显示「评审中 3/12」、进度条与正在评的条目，
 // review_finished 到了显示一行结果，5 秒后收起。进度汇总一行写待评审与评审不通过各几条。点开进度看到的完成条件
 // 与任务页是同一个面板，评审那一条旁边有「评审这 N 条」与「打开 X」。
-// 问题跟着条目走（ItemIssues.tsx）：列表行带「问题 N」，详情顶部列出挂在这条上的问题；从问题卡片上的「牵涉 UC-003」跳来时
+// 问题跟着条目走（ItemIssues.tsx）：列表行的状态徽标里带「问题 N」（ItemStatus.tsx），详情顶部列出挂在这条上的问题；从问题卡片上的「牵涉 UC-003」跳来时
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
 import { useEffect, useMemo, useState } from "react";
@@ -24,7 +24,7 @@ import { CompletionPanel } from "../CompletionPanel";
 import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
 import { unlinkedIds } from "../../model/domainNotes";
-import { FromIssueCrumb, IssueBadge, ItemIssues } from "./ItemIssues";
+import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
 export type ReviewAction = (targets: { item_id: string; base_revision: number }[], label: string, force?: boolean) => void;
@@ -269,7 +269,6 @@ export function ItemsPanel({
                     <span className="lname" title={item.title}>{item.title}</span>
                     <span className="lsum" title={summary}>{summary}</span>
                     <ItemStatus task={task} item={item} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)} row />
-                    <IssueBadge task={task} itemId={item.item_id} />
                   </div>
                 </div>
               );

@@ -389,6 +389,66 @@ export function unresolvedIssuesOf(task: Task, itemId: string): Item[] {
   return issuesOf(task, itemId).filter((i) => isOpenIssue(task, i));
 }
 
+/**
+ * 条目的主状态：「这条现在还缺什么」，一个条目同时有几件事时只取排在最前面的一件，先后是
+ * 评审不通过（有未处理的问题）→ 未读 → 待评审 → 已保留（问题全部按用户决定保留）→ 有牵涉它的未解决问题。
+ * 都没有时 kind 为 null，界面上不挂主状态徽标。评审三种只在要评审的集合出现，未读只在要求用户看过的集合出现。
+ * issues 是牵涉这条、还没解决的问题个数：主状态是前四种之一时，界面另挂一枚「问题 N」。
+ * 问题条目一类的集合（见 keepPendingField）不用这个，只写它自己的状态字段。
+ */
+export type MainStatusKind = "failed" | "unread" | "pending" | "kept" | "issues";
+export interface MainStatus {
+  kind: MainStatusKind | null;
+  /** 评审状态；不评审的集合为 null。 */
+  review: ReviewState | null;
+  /** 未读与否；不要求用户看过的集合为 null。 */
+  unread: boolean | null;
+  issues: number;
+}
+
+export function mainStatus(task: Task, item: Item): MainStatus {
+  const review = needsReview(task, item.collection) ? reviewState(item, task) : null;
+  const unread = needsReading(task, item.collection) ? isUnread(item) : null;
+  const issues = unresolvedIssuesOf(task, item.item_id).length;
+  const kind: MainStatusKind | null = review?.state === "failed" && !review.kept ? "failed"
+    : unread ? "unread"
+    : review?.state === "pending" ? "pending"
+    : review?.state === "failed" ? "kept"
+    : issues > 0 ? "issues"
+    : null;
+  return { kind, review, unread, issues };
+}
+
+/** 主状态徽标上的字。 */
+export function mainStatusText(s: MainStatus): string {
+  const problems = s.review?.state === "failed" ? s.review.problems : 0;
+  switch (s.kind) {
+    case "failed": return `评审不通过 ${problems} 处`;
+    case "unread": return "未读";
+    case "pending": return "待评审";
+    case "kept": return `评审不通过 ${problems} 处 · 已保留`;
+    case "issues": return `问题 ${s.issues} 未解决`;
+    default: return "";
+  }
+}
+
+/** 悬停主徽标看到的全部状态：评审结论、已读到哪次修订、问题数，每件一行。 */
+export function mainStatusDetail(s: MainStatus, item: Item): string {
+  const lines: string[] = [];
+  if (s.review) {
+    const r = s.review;
+    lines.push(r.state === "pending" ? "评审：当前修订还没有评审结论"
+      : r.state === "passed" ? `评审：通过${r.advice ? `，另有 ${r.advice} 条建议` : ""}`
+      : r.kept ? `评审：不通过 ${r.problems} 处，你保留了现在的写法，按你的决定算通过` : `评审：不通过 ${r.problems} 处，还没处理`);
+  }
+  if (s.unread !== null) {
+    const seen = lastViewedRevision(item);
+    lines.push(s.unread ? "未读：你还没打开看过" : `已读：你看过修订 ${seen}${seen !== item.revision_no ? `，之后又改到修订 ${item.revision_no}` : ""}`);
+  }
+  lines.push(s.issues ? `问题：牵涉这条的有 ${s.issues} 个还没解决` : "问题：没有牵涉这条、还没解决的");
+  return lines.join("\n");
+}
+
 /** 用户在问题卡片上写了回答、点「回答」时发给助手的那句话。 */
 export function issueAnswerText(issueId: string, answer: string): string {
   return `回答 ${issueId}：${answer.trim()}`;

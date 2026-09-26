@@ -110,7 +110,7 @@ describe("条目区顶部的评审动作", () => {
 });
 
 describe("徽标与条目详情", () => {
-  it("徽标：评审通过、评审通过（N 条建议）、评审不通过 N 处（只数问题）、待评审", () => {
+  it("主徽标：评审通过又已读的不挂徽标；评审不通过 N 处（只数问题）、待评审各一枚，悬停写评审结论", () => {
     const t = task([]);
     render(<>
       <ItemStatus task={t} item={item({ item_id: "UC-001", reviews: [{ revision_no: 3, verdict: "合规", findings: [] }] })} />
@@ -118,10 +118,12 @@ describe("徽标与条目详情", () => {
       <ItemStatus task={t} item={FAILED} />
       <ItemStatus task={t} item={PENDING_A} />
     </>);
-    expect(screen.getByTestId("review-UC-001")).toHaveTextContent(/^评审通过$/);
-    expect(screen.getByTestId("review-UC-002")).toHaveTextContent("评审通过（1 条建议）");
-    expect(screen.getByTestId("review-UC-003")).toHaveTextContent("评审不通过 1 处");
-    expect(screen.getByTestId("review-UC-004")).toHaveTextContent("待评审");
+    expect(screen.queryByTestId("state-UC-001")).toBeNull();
+    expect(screen.queryByTestId("state-UC-002")).toBeNull();
+    expect(screen.getByTestId("state-UC-003")).toHaveTextContent(/^评审不通过 1 处$/);
+    expect(screen.getByTestId("state-UC-003")).toHaveClass("failed");
+    expect(screen.getByTestId("state-UC-003").title).toContain("评审：不通过 1 处，还没处理");
+    expect(screen.getByTestId("state-UC-004")).toHaveTextContent("待评审");
   });
 
   it("评审不通过：横幅写问题处数；问题红、建议琥珀；点规则编号展开条文；让助手照这条改预填输入框；评审这条只带这个条目", () => {

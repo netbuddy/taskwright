@@ -248,7 +248,7 @@ describe("直接操作被拒时的错误显示", () => {
       readOnly={false} pending={false} submit={vi.fn(async () => null) as never} /></Wrap>);
     expect(screen.queryByTestId("detail-confirm")).toBeNull();
     expect(screen.queryByTestId("detail-unconfirm")).toBeNull();
-    expect(screen.getByTestId("read-UC-001")).toHaveTextContent("已读 · 修订 2");
+    expect(screen.getByTestId("detail-sub")).toHaveTextContent("已读 · 现在是修订 2，由你改的");
     expect(screen.getByTestId("confirmations")).toHaveTextContent("你在界面上改了它，改出来的内容算作你已确认");
   });
 

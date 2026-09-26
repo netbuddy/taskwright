@@ -1,8 +1,9 @@
 // 条目详情：照设计原型画成一张表——左列字段名（必填带星），右列带边框的值格；列表型字段每步一行、行首是序号；
 // 每个值格下方是支持这个字段的来源小标签（材料文件名、执行者补充、用户的话、领域说明、用户直接修改五种各有配色），
 // 点材料标签，文档区滚到并高亮那句原文；点领域说明标签（「领域说明 DN-003」），打开那条领域说明。
-// 任务定义「界面」一项写了的集合（例如领域说明）：关联条目旁写上标题，来源之后另列「被哪些条目引用」。顶部一行：编号、标题、评审与已读状态、修订下拉、上一条与下一条；
-// 有助手补充时顶部一条琥珀色横幅；底部「来源」一节按种类列小标签加摘录。
+// 任务定义「界面」一项写了的集合（例如领域说明）：关联条目旁写上标题，来源之后另列「被哪些条目引用」。顶部一行：编号、标题、
+// 与列表行完全相同的主状态徽标与「问题 N」（ItemStatus.tsx）、修订下拉、上一条与下一条；下面一行灰字写「已读 · 现在是修订 N，由助手写的 · 来源 N 条」，
+// 修订不止一次时末尾带「和修订 N 比对」。有助手补充时一条灰色横幅（讲的是内容，不是状态）；底部「来源」一节按种类列小标签加摘录。
 // 没有「确认」按钮：用户打开详情就记为已读（页面在打开时发 mark_viewed），已读就算确认。用户在这里改字段或标为先不管，
 // 后端随修订自动写一条确认标记。已读是条目级、单向的，没有撤回按钮。
 // 问题条目（见 keepPendingField）写下之后只由用户了结：底部只有「先不管，保留」与「删除」，不能直接修改。
@@ -34,14 +35,13 @@ import type { ActionRequest, CollectionDef, FieldDef, FieldValue, Fields, Findin
 import { alignSteps } from "../../model/diff";
 import { docxLocator, whereOf } from "../../model/docx";
 import { TaskIdContext, useDocx } from "../../state/docxStore";
-import { BUSY_TEXT, batchNo, currentReview, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, keepPendingField, KEEP_PENDING_VALUE, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
+import { BUSY_TEXT, batchNo, currentReview, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
 import { baselineRevision, confirmedRevision } from "../../model/revisions";
 import { formatTime } from "../../model/format";
 import { errorText } from "./errors";
-import { ItemStatus } from "./ItemStatus";
+import { StatusBadges } from "./ItemStatus";
 import { citationsOf, displayOf, liveOwnRefs, SOURCE_DOMAIN_NOTE } from "../../model/domainNotes";
 import { FindingLine } from "./FindingLine";
-import { IssueBadge } from "./ItemIssues";
 
 /** 从修订页签的「查看差异」来的请求：打开这个条目并停在那次修订。nonce 每点一次加一。 */
 export interface ViewRequest {
@@ -205,8 +205,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
       <div className="dh">
         <span className="id">{item.item_id}</span>
         <b className="title" role="heading" aria-level={3}>{item.title}</b>
-        <ItemStatus task={task} item={item} just={just} pending={pending} />
-        <IssueBadge task={task} itemId={item.item_id} />
+        <StatusBadges task={task} item={item} />
         <span className="pager">
           {!keepField && onReview && needsReview(task, item.collection) && (
             <>
@@ -240,6 +239,16 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           {onNext !== undefined && <button type="button" className="btn sm" style={onNext ? undefined : { opacity: .4 }} onClick={() => onNext?.()}>下一条 ›</button>}
         </span>
       </div>
+      <div className="dh-sub" data-testid="detail-sub">
+        {needsReading(task, item.collection) && <>{isUnread(item) ? "未读" : "已读"} · </>}
+        现在是修订 {item.revision_no}，{item.revision_by === "user" ? "由你改的" : "由助手写的"}
+        {just && <b> · 刚改</b>}
+        {" "}· 来源 {item.sources.length} 条
+        {pending && " · 正在保存…"}
+        {!old && !showMarks && previousNo != null && !compare && (
+          <button type="button" className="linkbtn" onClick={() => setCompare(true)} data-testid="compare-open">和修订 {previousNo} 比对</button>
+        )}
+      </div>
       {top}
 
       {error && (
@@ -259,19 +268,16 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           加了框的字段是助手改的，划掉的是修订 {base} 的写法，加底线的是现在的写法。打开就算你看过了，下次再打开框就不再出现。
         </div>
       )}
-      {!old && !showMarks && previousNo != null && (compare ? (
+      {!old && !showMarks && previousNo != null && compare && (
         <div className="banner-line diff" data-testid="compare-banner">正在和修订 {previousNo} 比对：划掉的是原来的写法，加底线的是现在的写法。
           <button type="button" className="btn sm" onClick={() => setCompare(false)}>收起比对</button></div>
-      ) : (
-        <div className="banner-line">现在的内容是修订 {item.revision_no} 写的。
-          <button type="button" className="btn sm" onClick={() => setCompare(true)} data-testid="compare-open">和修订 {previousNo} 比对</button></div>
-      ))}
+      )}
       {/* 评审状态只有两个落点：徽标给结论，发现行给细节。横幅只在还有未处理的问题时提醒一行；都已保留或已改时不显示。 */}
       {review.state === "failed" && !review.kept && (
         <div className="banner-line gap" data-testid="review-banner"><span><b>评审不通过：</b>{review.problems} 处问题未处理，标在下面对应的字段旁。</span></div>
       )}
       {supplements.length > 0 && !editing && (
-        <div className="banner-line amber" data-testid="supplement-banner">
+        <div className="banner-line diff" data-testid="supplement-banner">
           <span><b>助手补充：</b>{supplements.map((s) => s.excerpt).join("；")}　这部分材料里没有，看的时候留意。</span>
         </div>
       )}

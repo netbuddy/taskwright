@@ -81,15 +81,16 @@ describe("领域说明的派生", () => {
 });
 
 describe("不评审的集合不显示评审状态", () => {
-  it("领域说明的行：没有「待评审」，有分组小标签、修订与来源数、已读标记；用例照旧有评审状态", () => {
+  it("领域说明的行：主徽标只可能是未读，分组、修订与来源数是灰色小字；用例的悬停说明照旧有评审状态", () => {
     const t = task();
     render(<Wrap><div className="app"><ItemStatus task={t} item={t.items[4]} row /><ItemStatus task={t} item={t.items[0]} row /></div></Wrap>);
-    expect(screen.queryByTestId("review-DN-003")).toBeNull();
+    expect(screen.getByTestId("state-DN-003").textContent).toBe("未读");
+    expect(screen.getByTestId("state-DN-003").title).not.toContain("评审");
     expect(screen.getByTestId("group-DN-003").textContent).toBe("术语");
+    expect(screen.getByTestId("group-DN-003")).toHaveClass("gm");
     expect(screen.getByText("修订 5")).toBeTruthy();
     expect(screen.getByTestId("source-count-DN-003").textContent).toBe("来源 1");
-    expect(screen.getByTestId("read-DN-003")).toBeTruthy();
-    expect(screen.getByTestId("review-UC-001").textContent).toContain("待评审");
+    expect(screen.getByTestId("state-UC-001").title).toContain("评审：当前修订还没有评审结论");
   });
 });
 
