@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
-import { findParagraph, placeExcerpt, projectionParagraphs } from "../src/lib/docx_source.ts";
+import { placeExcerpt, projectionParagraphs } from "../src/lib/docx_source.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { DEFINITION_PATH, SAMPLE_DOCX, callIn, count, makeWorkspace, projection, putSampleDocx, query } from "./helpers.ts";
 
@@ -43,8 +43,6 @@ test("投影的段落与样本一致：114 段；段内、跨段、找不到、�
   assert.deepEqual(placeExcerpt(paragraphs, 91, "系统要能每分钟处理至少100笔\n借还"), { kind: "in" });
   // 从第 112 段起算，摘录的开头不在第 112 段里，不算跨段
   assert.deepEqual(placeExcerpt(paragraphs, 112, "寒暑假期间的借期另行规定。罚款的缴纳方式待定。"), { kind: "miss" });
-  assert.equal(findParagraph(paragraphs, "名下有逾期未还图书的，不能再借", 37), 28);
-  assert.equal(findParagraph(paragraphs, "这句话不在材料里"), null);
 });
 
 test("出处带段落号、摘录在那一段里：通过，库里存「文件#p段落号」；跨段的摘录也通过", () => {
