@@ -21,7 +21,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { isLegacyProjection, placeExcerpt, projectionParagraphs } from "./docx_source.ts";
 
@@ -370,4 +370,62 @@ export function citationCounts(db: DatabaseSync, taskId: string, list: SegmentLi
 /** 一份文本材料（.md、.txt）被引用的次数：出处（去掉 # 之后的部分）是这份文件的「文档原文」来源条数。 */
 export function fileCitationCount(db: DatabaseSync, taskId: string, rel: string): number {
   return currentDocumentSources(db, taskId).filter((row) => sameMaterial(row.locator.replace(/#.*$/, ""), rel)).length;
+}
+
+/** 一份 Word 材料的分段与引用情况（任务现状消息与「查询任务状态」用）。 */
+export interface WordMaterialFacts {
+  kind: "word";
+  /** Word 文件相对任务目录的路径。 */
+  path: string;
+  projection: string;
+  /** 分段清单文件相对任务目录的路径；0.2 的任务（纯文本投影）没有这个文件，是 null。 */
+  segments_file: string | null;
+  /** 段落总数（含空段落）。 */
+  paragraphs: number;
+  text_paragraphs: number;
+  uncited: number;
+  blocks: (SegmentBlock & { sources: number; uncited: number })[];
+}
+
+/** 一份文本材料（.md、.txt）被引用的次数。 */
+export interface TextMaterialFacts {
+  kind: "text";
+  path: string;
+  cited: number;
+}
+
+export type MaterialFacts = WordMaterialFacts | TextMaterialFacts;
+
+const PROJECTION_OF = /\.docx\.(md|txt)$/i;
+
+/**
+ * 材料目录里每份材料的分段与引用情况，按 paths 的顺序：旁边有投影的 .docx 给分段明细（readSegments，必要时重算清单并写回），
+ * 不是投影的 .md、.txt 给被引用次数；别的文件（投影、分段清单、没有投影的 .docx）不列。paths 是相对任务目录的路径。
+ */
+export function materialFacts(db: DatabaseSync, taskId: string, workspaceDir: string, paths: string[], params: SegmentParams): MaterialFacts[] {
+  const present = new Set(paths);
+  const out: MaterialFacts[] = [];
+  for (const path of paths) {
+    if (/\.docx$/i.test(path)) {
+      const projection = present.has(`${path}.md`) ? `${path}.md` : present.has(`${path}.txt`) ? `${path}.txt` : null;
+      if (!projection) continue;
+      const full = join(workspaceDir, projection);
+      const list = readSegments(full, params, path, projection);
+      if (!list) continue;
+      const counts = citationCounts(db, taskId, list, path, readFileSync(full, "utf-8").replace(/\r\n/g, "\n"));
+      out.push({
+        kind: "word",
+        path,
+        projection,
+        segments_file: projection.endsWith(".md") ? `${path}${SEGMENTS_SUFFIX}` : null,
+        paragraphs: list.paragraphs,
+        text_paragraphs: counts.text_paragraphs,
+        uncited: counts.uncited,
+        blocks: list.blocks.map((b, i) => ({ ...b, sources: counts.blocks[i].sources, uncited: counts.blocks[i].uncited })),
+      });
+    } else if (/\.(md|txt)$/i.test(path) && !PROJECTION_OF.test(path)) {
+      out.push({ kind: "text", path, cited: fileCitationCount(db, taskId, path) });
+    }
+  }
+  return out;
 }

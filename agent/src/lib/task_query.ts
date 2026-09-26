@@ -5,6 +5,9 @@
  * conditions.ts 里与「完成任务」门禁同一组函数。库以只读方式打开，不写任何东西，也不记事件。
  * 查不到时抛异常，异常文字用中文写明原因，由 pi 交还模型。本模块不依赖 pi，单元测试可以直接调用。
  *
+ * 「查询任务状态」另列每份材料的分段与引用情况（lib/segments.ts 的 materialFacts）：Word 材料逐块写标题、起止段落号与行号、
+ * 有文字的段数、引用到这一块的来源条数；文本材料写被引用过几次。
+ *
  * 对话理解：调用方给了会话编号时，两个工具的返回末尾另加三个派生事实（还在等回应的执行者行为、连续追问、改口，
  * 见 lib/dialogue_acts.ts 的 dialogueFacts），查看条目只算这个条目的；details.dialogue 是同一份结构化内容。
  */
@@ -21,6 +24,8 @@ import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, hasVersionColumns } from "./s
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
 import { hasColumn } from "./dialogue_schema.ts";
+import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
+import { listMaterials } from "./task_status.ts";
 
 /** 工具的返回：给模型的一段文字，给读取一侧的结构化内容。 */
 export interface QueryOutcome {
@@ -158,6 +163,10 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string): QueryOu
     // 完成条件之外的提示，不挡完成任务，例如还没有和任何条目关联的领域说明。
     const hints = completionHints(db, task.task_id, definition.completion);
     for (const hint of hints) lines.push(`提示（不挡完成任务）：${hint.summary}`);
+    // 材料的分段与引用情况写在修订与事件序号之前，末行仍与看板相同。
+    const materials = materialFacts(db, task.task_id, workspaceDir,
+      listMaterials(workspaceDir, definition.materialsDir).files.map((f) => f.path), envSegmentParams());
+    if (materials.length) lines.push(...materialLines(materials));
     const revision = db.prepare("SELECT revision_no, event_seq FROM revision WHERE task_id = ? ORDER BY revision_no DESC LIMIT 1").get(task.task_id) as
       | { revision_no: number; event_seq: number }
       | undefined;
@@ -181,10 +190,29 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string): QueryOu
         hints,
         last_revision_no: revision?.revision_no ?? null,
         last_event_seq: last.seq,
+        materials,
         dialogue,
       },
     };
   });
+}
+
+/** 材料的分段与引用情况，给「查询任务状态」的文字用。 */
+export function materialLines(materials: MaterialFacts[]): string[] {
+  const lines = ["材料的分段与引用情况（Word 材料按分段清单逐块列出；行号是投影文件里的行号，read 的 offset 用它）："];
+  for (const f of materials) {
+    if (f.kind === "text") {
+      lines.push(`  ${f.path}：被引用过 ${f.cited} 次。`);
+      continue;
+    }
+    lines.push(`  ${f.path}（读 ${f.projection}）：共 ${f.text_paragraphs} 段有文字、${f.blocks.length} 块，` +
+      (f.uncited === 0 ? "每段都有条目引用。" : `还有 ${f.uncited} 段没有被任何条目引用。`));
+    for (const b of f.blocks) {
+      lines.push(`    第 ${b.index} 块 p${b.first_paragraph}–p${b.last_paragraph}（第 ${b.first_line}–${b.last_line} 行）${b.heading ? `「${b.heading}」` : "（第一个标题之前）"}：` +
+        `${b.paragraphs} 段，被 ${b.sources} 条来源引用${b.uncited ? `，${b.uncited} 段没有引用` : ""}。`);
+    }
+  }
+  return lines;
 }
 
 /**
