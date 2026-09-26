@@ -400,7 +400,7 @@ class PureUnitTest(unittest.TestCase):
         self.assertEqual(conversation.display_text("用户说：你好"), "用户说：你好", "只有斜杠改写过的才去掉前缀")
         self.assertEqual(with_attachments("看看", ["inputs/a.md", "inputs/b.md"]), "看看\n（我上传了材料：inputs/a.md、inputs/b.md）")
         self.assertEqual(with_attachments("看看", ["inputs/a.docx"]),
-                         "看看\n（我上传了材料：inputs/a.docx；其中 Word 文件请读同名的 .txt（inputs/a.docx.txt），引用时出处写 Word 文件加段落号）")
+                         "看看\n（我上传了材料：inputs/a.docx；其中 Word 文件请读同名的 .md 投影（inputs/a.docx.md），引用时出处写 Word 文件加段落号）")
 
     def test_任务类型与卡片标注的两种写法(self):
         from taskwright_server.service.app import card_annotation, task_types

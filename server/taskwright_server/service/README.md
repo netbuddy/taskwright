@@ -26,7 +26,7 @@ python -m taskwright_server.service --tasks <放任务目录的上级目录> --r
 | `POST …/messages?session=` | 用户说一句话；`origin: "card_choice"` 带 `annotation` 时走扩展命令 `/tw-ui`。 |
 | `POST …/actions?session=` | 直接操作，经扩展命令 `/tw-user` 写库，响应只有 `{ok, client_id, op_id}`。 |
 | `POST …/control?session=` | `{"action": "stop"}`：清掉排队的话并中止。 |
-| `POST …/materials` | 上传材料（multipart，只收 `.md`、`.txt`，5 MB 以内）。 |
+| `POST …/materials` | 上传材料（multipart，只收 `.md`、`.txt`、`.docx`，5 MB 以内；`.docx` 旁边经 agent 的 `cli/docx_projection.mts` 生成 Markdown 投影 `x.docx.md`，图片抽到 `x.docx.media/`）。 |
 | `GET …/materials/content?path=`、`…/items/{item_id}/versions`、`…/conversation?session=&before=&limit=` | 按需读取。 |
 | `POST …/documents/preview`、`…/download` | 按任务目录里的模板渲染选中的条目版本。 |
 

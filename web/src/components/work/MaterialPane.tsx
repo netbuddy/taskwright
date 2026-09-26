@@ -6,12 +6,12 @@
 // 选中一段原文后，底部出现三个动作，都要发给助手：据此新建条目、补到当前条目、就这段提问。
 //
 // Word 材料（.docx）按原版式分页显示，交给 DocxPaper；它的来源出处带段落号（inputs/x.docx#p37），按段落定位。
-// 上传 .docx 时后端生成的文本投影（x.docx.txt）是给助手读的，材料下拉框里不单独列出。
+// 上传 .docx 时后端生成的投影（x.docx.md；0.2 的任务里是 x.docx.txt）是给助手读的，材料清单里带 derived_from，材料下拉框里不列出。
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { Item, Material } from "../../api/types";
-import { docxLocator, isProjection } from "../../model/docx";
+import { docxLocator, ownMaterials } from "../../model/docx";
 import { DocxPaper } from "./DocxPaper";
 
 export interface LocateRequest {
@@ -45,7 +45,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   onOpenItem?: (itemId: string) => void;
   onSend?: (text: string) => void;
 }) {
-  const materials = useMemo(() => all.filter((m) => !isProjection(m.path, all.map((x) => x.path))), [all]);
+  const materials = useMemo(() => ownMaterials(all), [all]);
   const [path, setPath] = useState<string | null>(materials[0]?.path ?? null);
   const isDocx = !!path && /\.docx$/i.test(path);
   const [docxNote, setDocxNote] = useState<string | null>(null);

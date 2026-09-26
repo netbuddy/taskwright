@@ -90,7 +90,7 @@ test("Word 材料：出处写段落号，摘录在那一段里送达；写错段
   const ok = checkReply(suggest([{ kind: "文档原文", locator: `${SAMPLE_DOCX}#p76`, excerpt: "逾期的每本每天罚款一角" }]), facts(dir));
   assert.deepEqual(ok.act?.basis, [{ kind: "文档原文", locator: `${SAMPLE_DOCX}#p76`, excerpt: "逾期的每本每天罚款一角" }]);
   const error = rejection(dir, [{ kind: "文档原文", locator: `${SAMPLE_DOCX}#p91`, excerpt: "逾期的每本每天罚款一角" }]);
-  assert.match(error.message, /act\.basis 的第 1 条的摘录「逾期的每本每天罚款一角」在 requirements-styled\.docx 第 91 段里找不到，它在第 76 段。\n   怎么办：出处改写成 inputs\/requirements-styled\.docx#p76。/);
+  assert.match(error.message, /act\.basis 的第 1 条的摘录「逾期的每本每天罚款一角」在 requirements-styled\.docx 第 91 段·表 3 行 2 列 2里找不到，它在第 76 段。\n   怎么办：出处改写成 inputs\/requirements-styled\.docx#p76。/);
 });
 
 test("执行者补充不核对摘录；种类不在四种之内、缺摘录，按保存修订的原话拒绝", () => {
@@ -109,7 +109,7 @@ test("依据被拒时整条回复被拒，拒绝记进 tool_rejection 表，事�
     () => decideReply(params, facts(dir))), /没有送达/);
   const [row] = query<any>(dir, "SELECT * FROM tool_rejection");
   assert.equal(row.tool_name, "reply");
-  assert.match(row.fact, /在 requirements-styled\.docx 第 91 段里找不到，它在第 76 段。$/);
+  assert.match(row.fact, /在 requirements-styled\.docx 第 91 段·表 3 行 2 列 2里找不到，它在第 76 段。$/);
   assert.doesNotMatch(row.fact, /怎么办/);
   assert.match(row.guidance, /1\. 出处改写成 inputs\/requirements-styled\.docx#p76。$/);
 });

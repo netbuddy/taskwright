@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from taskwright_server import create_task as create_task_module
 from taskwright_server import new_workspace
 from taskwright_observatory import taskdb
-from taskwright_server.service import clock, conversation, docx_text, library, occupancy, render, work_summary
+from taskwright_server.service import clock, conversation, docx_projection, library, occupancy, render, work_summary
 from taskwright_server.service.errors import ApiError
 from taskwright_server.service.executor import Executor
 from taskwright_server.service.hub import Hub
@@ -39,11 +39,11 @@ def rewrite_slash(text: str) -> str:
 
 
 def with_attachments(text: str, paths: list[str]) -> str:
-    """用户附了材料时在话后面补一句路径；Word 材料另说一句读哪份文本、出处怎么写。"""
+    """用户附了材料时在话后面补一句路径；Word 材料另说一句读哪份投影、出处怎么写。"""
     if not paths:
         return text
     words = [p for p in paths if p.lower().endswith(".docx")]
-    note = f"其中 Word 文件请读同名的 .txt（{'、'.join(p + '.txt' for p in words)}），引用时出处写 Word 文件加段落号" if words else ""
+    note = f"其中 Word 文件请读同名的 .md 投影（{'、'.join(p + '.md' for p in words)}），引用时出处写 Word 文件加段落号" if words else ""
     return f"{text}\n（我上传了材料：{'、'.join(paths)}{'；' + note if note else ''}）"
 
 
@@ -346,14 +346,9 @@ class Service:
             raise ApiError("bad_request", "文件名里不能带路径分隔符。")
         if not filename.lower().endswith(UPLOAD_TYPES):
             raise ApiError("unsupported_type", "只接受 .md、.txt 与 .docx（Word）三种文件。")
-        if docx_text.is_projection(filename):
-            raise ApiError("bad_request", "以 .docx.txt 结尾的文件名留给由 Word 材料生成的文本用，请改个名字再上传。")
+        if docx_projection.is_reserved(filename):
+            raise ApiError("bad_request", "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 材料生成的投影用，请改个名字再上传。")
         is_docx = filename.lower().endswith(".docx")
-        if is_docx:
-            try:
-                docx_text.projection_text(data, filename)
-            except ValueError as e:
-                raise ApiError("unsupported_type", f"{e}，请用 Word 另存为 .docx 后再上传。")
         if len(data) > MAX_UPLOAD:
             raise ApiError("too_large", "单个文件不能超过 5 MB。")
         folder_rel = t.definition().get("材料目录") or taskdb.DEFAULT_MATERIALS_DIR
@@ -367,8 +362,14 @@ class Service:
         target.write_bytes(data)
         path = f"{folder_rel}{target.name}"
         if is_docx:
-            # Word 材料另生成一份文本投影，执行者读它，保存修订时核对摘录也对着它；它不单独发 material_added。
-            docx_text.write_projection(target, path)
+            # Word 材料另生成一份 Markdown 投影（图片抽到旁边的目录），执行者读它，保存修订时核对摘录也对着它；
+            # 它不单独发 material_added。生成不了（不是合法的 .docx）时连同这份文件一起删掉。
+            try:
+                docx_projection.write_projection(target, path)
+            except ValueError as e:
+                target.unlink(missing_ok=True)
+                docx_projection.remove_projection(target)
+                raise ApiError("unsupported_type", f"{e}，请用 Word 另存为 .docx 后再上传。")
         # 材料清单只在整份数据里读一次；上传之后推一条过程类事件，工作视图与任务页据此更新清单、显示正文。
         # 材料属于任务，session_id 只说明是从哪条会话上传的（可空），订阅了别的会话的页面也收得到。
         t.hub.emit("material_added", {"session_id": session, "at": clock.now(), "path": path,
@@ -550,8 +551,11 @@ def make_handler(service: Service):
             if not target.is_file():
                 raise ApiError("not_found", f"没有材料 {rel}。")
             if target.suffix.lower() == ".docx":
-                projection = docx_text.projection_path(target)
-                text = projection.read_text(encoding="utf-8") if projection.is_file() else docx_text.projection_text(target.read_bytes(), rel)
+                projection = docx_projection.projection_path(target)
+                try:
+                    text = projection.read_text(encoding="utf-8") if projection.is_file() else docx_projection.projection_text(target, rel)
+                except ValueError as e:
+                    raise ApiError("unsupported_type", f"{e}。")
             else:
                 text = target.read_text(encoding="utf-8", errors="replace")
             self.send_json(200, {"ok": True, "path": rel, "text": text})

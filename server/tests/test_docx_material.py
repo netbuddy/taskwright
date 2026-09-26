@@ -1,12 +1,11 @@
-"""Word 材料（.docx）：文本投影与抽取脚本逐行一致；上传时生成投影、坏文件与保留名拒绝；材料原样取回的端点；
-content 端点对 .docx 给投影；命令行建任务复制 .docx 时也生成投影；导出文档里的出处不带段落号。
-夹具是 examples/library-lending/requirements-styled.docx。"""
+"""Word 材料（.docx）：上传时经 agent 的命令行入口生成 Markdown 投影与图片目录、坏文件与保留名拒绝；材料原样取回的端点；
+content 端点对 .docx 给投影（0.2 的 .txt 投影照旧给）；命令行建任务复制 .docx 时也生成投影；导出文档里的出处不带段落号。
+投影本身怎样写的测试在 agent/tests/docx_markdown.test.ts。夹具是 examples/library-lending/requirements-styled.docx。"""
 
 from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 import tempfile
 import threading
 import unittest
@@ -16,7 +15,7 @@ import urllib.request
 from pathlib import Path
 
 from taskwright_server import launch
-from taskwright_server.service import docx_text, render
+from taskwright_server.service import docx_projection, render
 from taskwright_server.service.app import Service, serve
 from taskwright_server.service.errors import ApiError
 
@@ -25,24 +24,35 @@ SAMPLE = ROOT / "examples/library-lending/requirements-styled.docx"
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
+@unittest.skipIf(shutil.which("node") is None, "本机没有 node")
 class ProjectionTest(unittest.TestCase):
-    def test_样本114段_每段一行_表格写位置(self):
-        lines = [ln for ln in docx_text.projection_text(SAMPLE.read_bytes(), "inputs/x.docx").splitlines() if ln.startswith("[")]
-        self.assertEqual(len(lines), 114)
-        self.assertEqual(lines[0], "[第 1 段] 学校图书馆借还书系统需求说明")
-        self.assertEqual(lines[36], "[第 37 段 · 表 1 行 1 列 2] 一次最多（本）")
-        self.assertTrue(lines[90].startswith("[第 91 段 · 表 3 行 2 列 2] 开学第一周是借还高峰，系统要能每分钟处理至少 100 笔借还。"))
-
-    @unittest.skipIf(shutil.which("node") is None, "本机没有 node")
-    def test_与抽取脚本逐行一致(self):
-        node = subprocess.run(["node", str(ROOT / "scripts/docx_paragraphs.mjs"), str(SAMPLE)], check=True, capture_output=True, text=True)
-        expected = [ln.replace("↵", " ") for ln in node.stdout.splitlines()]
-        got = [ln for ln in docx_text.projection_text(SAMPLE.read_bytes(), "inputs/x.docx").splitlines() if ln.startswith("[")]
-        self.assertEqual(got, expected)
+    def test_经命令行入口生成投影_写投影与图片目录(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            docx = Path(tmp) / "x.docx"
+            shutil.copy(SAMPLE, docx)
+            self.assertEqual(docx_projection.write_projection(docx, "inputs/x.docx"), Path(tmp) / "x.docx.md")
+            text = (Path(tmp) / "x.docx.md").read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("<!--\n由 x.docx 生成，供助手阅读。段落总数：114。"))
+            self.assertIn("\n### 3.1.1 [p75] 逾期罚款\n", text)
+            self.assertTrue((Path(tmp) / "x.docx.media/image1.png").is_file())
+            self.assertEqual(docx_projection.projection_text(docx, "inputs/x.docx"), text)
 
     def test_不是docx时抛错(self):
-        with self.assertRaises(ValueError):
-            docx_text.projection_text(b"not a zip", "inputs/x.docx")
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "坏.docx"
+            bad.write_bytes(b"not a zip")
+            with self.assertRaises(ValueError) as caught:
+                docx_projection.write_projection(bad, "inputs/坏.docx")
+            self.assertEqual(str(caught.exception), "不是 Word 文件（.docx），或者文件已损坏")
+
+    def test_找投影_先md后txt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            docx = Path(tmp) / "x.docx"
+            self.assertEqual(docx_projection.projection_path(docx).name, "x.docx.md")
+            (Path(tmp) / "x.docx.txt").write_text("[第 1 段] 旧", encoding="utf-8")
+            self.assertEqual(docx_projection.projection_path(docx).name, "x.docx.txt")
+            (Path(tmp) / "x.docx.md").write_text("[p1] 新", encoding="utf-8")
+            self.assertEqual(docx_projection.projection_path(docx).name, "x.docx.md")
 
 
 @unittest.skipIf(shutil.which("node") is None, "本机没有 node，建不了任务")
@@ -58,23 +68,38 @@ class DocxMaterialServiceTest(unittest.TestCase):
         self.service.close()
         self.tmp.cleanup()
 
-    def test_上传docx_旁边生成投影_清单里两份都在(self):
+    def test_上传docx_旁边生成投影与图片目录_清单里两份都在(self):
         self.assertEqual(self.service.upload(self.t, "需求.docx", SAMPLE.read_bytes()), {"ok": True, "path": "inputs/需求.docx"})
-        projection = self.t.dir / "inputs/需求.docx.txt"
-        self.assertTrue(projection.read_text(encoding="utf-8").startswith("# 由 需求.docx 生成"))
+        projection = self.t.dir / "inputs/需求.docx.md"
+        self.assertTrue(projection.read_text(encoding="utf-8").startswith("<!--\n由 需求.docx 生成"))
         self.assertIn("出处写 inputs/需求.docx#p段落号", projection.read_text(encoding="utf-8"))
-        # 重名加序号时，投影跟着新名字
+        self.assertIn("![图 1](inputs/需求.docx.media/image1.png)", projection.read_text(encoding="utf-8"))
+        self.assertTrue((self.t.dir / "inputs/需求.docx.media/image1.png").is_file())
+        # 重名加序号时，投影与图片目录跟着新名字
         self.assertEqual(self.service.upload(self.t, "需求.docx", SAMPLE.read_bytes())["path"], "inputs/需求-2.docx")
-        self.assertTrue((self.t.dir / "inputs/需求-2.docx.txt").is_file())
+        self.assertIn("![图 1](inputs/需求-2.docx.media/image1.png)", (self.t.dir / "inputs/需求-2.docx.md").read_text(encoding="utf-8"))
+        self.assertTrue((self.t.dir / "inputs/需求-2.docx.media/image2.png").is_file())
+        # 材料清单只列文件，图片目录不列
         paths = [m["path"] for m in self.service.task_page(self.t)["materials"]]
-        self.assertEqual(paths, ["inputs/需求-2.docx", "inputs/需求-2.docx.txt", "inputs/需求.docx", "inputs/需求.docx.txt"])
+        self.assertEqual(paths, ["inputs/需求-2.docx", "inputs/需求-2.docx.md", "inputs/需求.docx", "inputs/需求.docx.md"])
+        # 投影标明派生自哪份 Word 文件，界面据此不列出；原始材料为 None
+        marks = {m["path"]: m["derived_from"] for m in self.service.task_page(self.t)["materials"]}
+        self.assertEqual(marks, {"inputs/需求-2.docx": None, "inputs/需求-2.docx.md": "inputs/需求-2.docx",
+                                 "inputs/需求.docx": None, "inputs/需求.docx.md": "inputs/需求.docx"})
+        # 0.2 的 .txt 投影同样标明；没有对应 .docx 的 .md 是普通材料
+        (self.t.dir / "inputs/需求.docx.txt").write_text("[第 1 段] 旧", encoding="utf-8")
+        (self.t.dir / "inputs/孤儿.docx.md").write_text("x", encoding="utf-8")
+        marks = {m["path"]: m["derived_from"] for m in self.service.task_page(self.t)["materials"]}
+        self.assertEqual((marks["inputs/需求.docx.txt"], marks["inputs/孤儿.docx.md"]), ("inputs/需求.docx", None))
 
     def test_坏的docx与保留名拒绝(self):
-        for name, data, code in (("坏.docx", b"x", "unsupported_type"), ("a.docx.txt", b"x", "bad_request"), ("图.png", b"x", "unsupported_type")):
+        for name, data, code in (("坏.docx", b"x", "unsupported_type"), ("a.docx.txt", b"x", "bad_request"),
+                                 ("a.docx.md", b"x", "bad_request"), ("图.png", b"x", "unsupported_type")):
             with self.assertRaises(ApiError) as caught:
                 self.service.upload(self.t, name, data)
             self.assertEqual(caught.exception.code, code, name)
-        self.assertFalse((self.t.dir / "inputs/坏.docx").exists())
+        # 坏文件连同投影都不留下
+        self.assertEqual(sorted(p.name for p in (self.t.dir / "inputs").iterdir()), [])
 
     def test_原样取回端点_内容类型_路径越界拒绝_content给投影(self):
         self.service.upload(self.t, "需求.docx", SAMPLE.read_bytes())
@@ -96,7 +121,15 @@ class DocxMaterialServiceTest(unittest.TestCase):
                 caught.exception.close()
             with get("content", "inputs/需求.docx") as r:
                 text = json.loads(r.read())["text"]
-            self.assertIn("[第 76 段] 逾期的每本每天罚款一角，罚款最多不超过这本书的定价。罚款怎样缴纳待定。", text)
+            self.assertIn("\n[p76] 逾期的每本每天罚款一角，罚款最多不超过这本书的定价。罚款怎样缴纳待定。\n", text)
+            # 0.2 的任务：只有纯文本投影时照旧给它；投影都没有时现算一份 Markdown 投影（不写文件）
+            (self.t.dir / "inputs/需求.docx.md").rename(self.t.dir / "inputs/需求.docx.txt")
+            with get("content", "inputs/需求.docx") as r:
+                self.assertEqual(json.loads(r.read())["text"], (self.t.dir / "inputs/需求.docx.txt").read_text(encoding="utf-8"))
+            (self.t.dir / "inputs/需求.docx.txt").unlink()
+            with get("content", "inputs/需求.docx") as r:
+                self.assertIn("\n[p76] 逾期的每本每天罚款一角", json.loads(r.read())["text"])
+            self.assertFalse((self.t.dir / "inputs/需求.docx.md").exists())
         finally:
             server.shutdown()
             server.server_close()
@@ -109,7 +142,8 @@ class CreateTaskDocxTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "t"
             create_task(target, materials=[SAMPLE])
-            self.assertTrue((target / "inputs/requirements-styled.docx.txt").is_file())
+            self.assertTrue((target / "inputs/requirements-styled.docx.md").is_file())
+            self.assertTrue((target / "inputs/requirements-styled.docx.media/image1.png").is_file())
 
 
 class ExportLocatorTest(unittest.TestCase):
