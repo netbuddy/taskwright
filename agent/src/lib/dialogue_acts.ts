@@ -24,6 +24,7 @@ import { ACTOR_EXECUTOR, ACTOR_USER, databasePath, dump, emit, load, wallClockTe
 import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
 import { FUNCTION_NAMES, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
+import { ToolRejection } from "./tool_rejection.ts";
 import {
   type ScanOutcome,
   type StructuredOutput,
@@ -423,11 +424,10 @@ export function requireUnderstanding(workspaceDir: string, sessionId: string, br
     ? "这一轮还没有写理解"
     : `这一轮写了 ${problems.length} 个 JSON 片段，都不是合格的理解。` +
       `${problems.length > shown.length ? `最近 ${shown.length} 个` : "各片段"}的问题：` + shown.map((one, i) => `（${i + 1}）${one}`).join("");
-  throw new Error(
-    `${label}没有执行：${INTENT_GATE_TEXT}。${why}。\n` +
-      "请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
-      `写完接着调用 ${toolName}。`,
-  );
+  const fact = `${label}没有执行：${INTENT_GATE_TEXT}。${why}。`;
+  const guidance = "请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
+    `写完接着调用 ${toolName}。`;
+  throw new ToolRejection(`${fact}\n${guidance}`, fact, guidance, "gate");
 }
 
 /** 门禁拒绝时最多列几个片段的问题（最近的几个）。 */

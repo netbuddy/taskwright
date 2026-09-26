@@ -56,6 +56,7 @@ class Index:
         self.workspace_names = {w["任务目录"] for w in self.workspaces}
         self.events_by_call = workspaces_module.index_by_call_id(self.workspaces)
         self.model_calls_by_call = workspaces_module.model_calls_by_tool_call(self.workspaces)
+        self.rejections_by_call = workspaces_module.rejections_by_tool_call(self.workspaces)
 
         # 不同任务目录里的任务可能重名（它们是同一个任务定义的不同实例），所以这里的键是
         # 「任务目录名/任务标识」，不是任务标识本身。界面上的链接用的也是这个合起来的键。
@@ -131,6 +132,12 @@ class Index:
         if not workspace or not call_id:
             return []
         return [e for e in self.events_by_call.get(call_id, []) if e["任务目录"] == workspace]
+
+    def rejections_of_call(self, workspace: str, call_id: str) -> list[dict]:
+        """这次工具调用被拒时库里 tool_rejection 表记下的拒绝记录，同样只在会话所在的任务目录里找。"""
+        if not workspace or not call_id:
+            return []
+        return [c for c in self.rejections_by_call.get(call_id, []) if c.get("任务目录") == workspace]
 
     def model_calls_of_call(self, workspace: str, call_id: str) -> list[dict]:
         """这次工具调用在工具里直接发起的模型调用，同样只在会话所在的任务目录里找。"""
@@ -284,6 +291,14 @@ class Index:
                 "说明": "工具拒绝了这次调用，下面这些操作一个都没有写入。",
                 "想做的操作": operations if isinstance(operations, list) else [],
                 "参数原样": call.get("参数") or {},
+            })
+        # 拒绝记录放在最后：上面「被拒绝的保存修订」只在前面什么变化都没有时才补，不能被它挡住。
+        rejections = self.rejections_of_call(workspace, call["调用编号"])
+        if rejections:
+            changes.append({
+                "种类": "工具的拒绝记录",
+                "说明": "工具拒绝这次调用时在库里的 tool_rejection 表记下的一行：事实层与指引层分开存，被拒的输入只留前 2000 个字符。",
+                "记录": rejections,
             })
         return changes
 

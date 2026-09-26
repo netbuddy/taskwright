@@ -14,6 +14,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ACTOR_USER, emit } from "./db.ts";
 import { withTaskDatabase } from "./schema.ts";
+import { notInputProblem } from "./tool_rejection.ts";
 import { type CallContext, ReviewError, prepareReviews, type RequestedItem } from "./review.ts";
 import { type Complete, type ItemOutcome, MAX_PARALLEL, type RunOptions, type RunOutcome, runPrepared } from "./review_run.ts";
 
@@ -25,7 +26,8 @@ const running = new Map<string, string>();
 
 /** 占用任务目录的评审名额；上一批还没跑完时抛 ReviewError。返回释放名额的函数。 */
 export function reviewSlot(workspaceDir: string, callId: string): () => void {
-  if (running.has(workspaceDir)) throw new ReviewError("上一批评审还没有做完，做完之后再发起评审。");
+  // 名额被占着不是输入的问题，被拒时不记进 tool_rejection 表。
+  if (running.has(workspaceDir)) throw notInputProblem(new ReviewError("上一批评审还没有做完，做完之后再发起评审。"));
   running.set(workspaceDir, callId);
   return () => { if (running.get(workspaceDir) === callId) running.delete(workspaceDir); };
 }
@@ -120,7 +122,7 @@ const noTemperature = new Map<string, string>();
  */
 export function piComplete(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, callId: string): { model: string; complete: Complete } {
   const model = ctx.model;
-  if (!model) throw new ReviewError("现在没有可用的模型，评审者无法评审，什么都没有评。");
+  if (!model) throw notInputProblem(new ReviewError("现在没有可用的模型，评审者无法评审，什么都没有评。"));
   return {
     model: `${model.provider}/${model.id}`,
     complete: async (system, user, itemSignal, attempt, item) => {

@@ -13,6 +13,7 @@ import type { UserMessage } from "../lib/create_task.ts";
 import { ACTOR_EXECUTOR } from "../lib/db.ts";
 import { saveRevision } from "../lib/save_revision.ts";
 import { currentRun, requireUnderstanding } from "../lib/dialogue_acts.ts";
+import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = "save_revision";
@@ -122,19 +123,24 @@ export function registerSaveRevision(pi: ExtensionAPI): void {
     async execute(toolCallId: string, params: { operations: unknown }, _signal, _onUpdate, ctx: ExtensionContext) {
       // 对话理解：这一轮没有有效的理解就拒绝；修订记下是因用户哪一项对话行为而做（intentEntry）。
       const branch = ctx.sessionManager.getBranch() as never;
-      requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch, "保存修订", TOOL_NAME);
-      const outcome = saveRevision(
-        {
-          workspaceDir: ctx.cwd,
-          sessionId: ctx.sessionManager.getSessionId(),
-          callId: toolCallId,
-          actor: ACTOR_EXECUTOR,
-          userMessages: userMessagesOnBranch(ctx),
-          intentEntry: currentRun(branch)?.userEntryId ?? null,
-        },
-        params,
-      );
-      return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
+      const run = currentRun(branch);
+      // 被拒时把拒绝记进 tool_rejection 表（lib/tool_rejection.ts），拒绝文字照样交还模型。
+      const rejection = { workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(), callId: toolCallId, toolName: TOOL_NAME, workId: workIdOf(run?.userEntryId) };
+      return withRejectionRecord(rejection, params, () => {
+        requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch, "保存修订", TOOL_NAME);
+        const outcome = saveRevision(
+          {
+            workspaceDir: ctx.cwd,
+            sessionId: ctx.sessionManager.getSessionId(),
+            callId: toolCallId,
+            actor: ACTOR_EXECUTOR,
+            userMessages: userMessagesOnBranch(ctx),
+            intentEntry: run?.userEntryId ?? null,
+          },
+          params,
+        );
+        return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
+      });
     },
   });
 }

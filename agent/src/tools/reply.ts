@@ -17,7 +17,8 @@ import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup } from "../lib/reply.ts";
 import { spoken } from "../lib/speak.ts";
-import { recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
+import { currentRun, recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
+import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = REPLY_TOOL_NAME;
@@ -125,20 +126,24 @@ export function registerReply(pi: ExtensionAPI): void {
     async execute(toolCallId: string, params: unknown, _signal, _onUpdate, ctx: ExtensionContext) {
       const branch = ctx.sessionManager.getBranch() as Parameters<typeof lastAssistantTurn>[0];
       const turn = lastAssistantTurn(branch);
-      requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch as never, "回复", TOOL_NAME);
-      const lookup = openRevisionLookup(ctx.cwd);
-      let decision;
-      try {
-        decision = decideReply(params, {
-          toolCallId,
-          callsThisTurn: turn.calls,
-          revisionFact: lookup.revisionFact,
-          currentRevisionOf: lookup.currentRevisionOf,
-          priorRejections: consecutiveReplyRejections(branch),
-        });
-      } finally {
-        lookup.close();
-      }
+      // 被拒时把拒绝记进 tool_rejection 表（lib/tool_rejection.ts），拒绝文字照样交还模型。
+      const rejection = { workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(), callId: toolCallId, toolName: TOOL_NAME,
+        workId: workIdOf(currentRun(branch as never)?.userEntryId) };
+      const decision = await withRejectionRecord(rejection, params, () => {
+        requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch as never, "回复", TOOL_NAME);
+        const lookup = openRevisionLookup(ctx.cwd);
+        try {
+          return decideReply(params, {
+            toolCallId,
+            callsThisTurn: turn.calls,
+            revisionFact: lookup.revisionFact,
+            currentRevisionOf: lookup.currentRevisionOf,
+            priorRejections: consecutiveReplyRejections(branch),
+          });
+        } finally {
+          lookup.close();
+        }
+      });
       const messageId = turn.calls.some((call) => call.id === toolCallId) ? turn.entryId : null;
       const recorded = recordReplyActs(ctx.cwd, ctx.sessionManager.getSessionId(), branch as never, decision.reply, messageId, toolCallId);
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。

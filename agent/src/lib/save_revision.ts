@@ -149,12 +149,19 @@ export function rejectionText(reasons: RejectReason[]): string {
     reasons.map((r) => `- ${r.label}：${r.fact}。${r.guidance ? `\n  ${GUIDANCE_PREFIX}${r.guidance}。` : ""}`).join("\n") +
     "\n请把这些地方改正之后，把整批操作重新提交一次。";
 }
-/** 保存修订被拒时抛的错：正文是 rejectionText，reasons 带结构化的两层。 */
+/**
+ * 保存修订被拒时抛的错：正文是 rejectionText，reasons 带结构化的两层。
+ * fact 与 guidance 是逐个操作的两层文字各接成一段（一个操作一行），供拒绝留痕（lib/tool_rejection.ts）分开存。
+ */
 export class SaveRejected extends Error {
   reasons: RejectReason[];
+  fact: string;
+  guidance: string;
   constructor(reasons: RejectReason[]) {
     super(rejectionText(reasons));
     this.reasons = reasons;
+    this.fact = reasons.map((r) => `${r.label}：${r.fact}`).join("\n");
+    this.guidance = reasons.filter((r) => r.guidance).map((r) => `${r.label}：${r.guidance}`).join("\n");
   }
 }
 

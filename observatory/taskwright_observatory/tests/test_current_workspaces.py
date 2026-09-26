@@ -48,6 +48,7 @@ def make_index() -> Index:
     index.events_by_call = {"dup": [event("ws-a", "TASK-001", "dup"), event("ws-b", "TASK-001", "dup")],
                             "legacy-call": [event("ws-l", "old", "legacy-call", name="SLOT_WRITTEN")]}
     index.model_calls_by_call = {"dup": [{"任务目录": "ws-a", "角色": "评审者"}, {"任务目录": "ws-b", "角色": "评审者"}]}
+    index.rejections_by_call = {}
     index.revision_by_call = {("ws-a", "dup"): {"修订序号": 1}}
     return index
 

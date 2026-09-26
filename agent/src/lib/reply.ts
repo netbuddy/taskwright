@@ -18,7 +18,7 @@
  * （consecutiveReplyRejections，不另存状态），交给 decideReply。第 3 次起拒绝理由改为只要成文正文、act 写 null；
  * 第 5 次仍不合格时放行一条纯文字回复，标 degraded，可读性优先于结构完整。
  *
- * 回复不写库，也不记事件。本模块不依赖 pi，单元测试可以直接调用。
+ * 回复不写库，也不记事件（被拒时由工具登记处把拒绝记进 tool_rejection 表，见 lib/tool_rejection.ts）。本模块不依赖 pi，单元测试可以直接调用。
  */
 
 import { existsSync } from "node:fs";
@@ -27,6 +27,7 @@ import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { databasePath } from "./db.ts";
 import { EXECUTOR_FUNCTIONS, INTENT_GATE_TEXT } from "./intent_schema.ts";
 import { type TurnCall, isBlank, isObject, lastAssistantTurn, requireAlone } from "./speak.ts";
+import { ToolRejection } from "./tool_rejection.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
 export { type TurnCall, lastAssistantTurn };
@@ -175,9 +176,11 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
   if (act && errors.length === 0 && echoedAct(act.text, informs)) errors.push(ECHO_TEXT);
 
   if (errors.length > 0) {
-    throw new Error(
-      `这次回复的形式不对，没有送达。请按下面几处改好后重新单独调用 reply：\n` +
-        errors.map((e, i) => `${i + 1}. ${e}。`).join("\n"),
+    const numbered = errors.map((e, i) => `${i + 1}. ${e}。`).join("\n");
+    throw new ToolRejection(
+      `这次回复的形式不对，没有送达。请按下面几处改好后重新单独调用 reply：\n${numbered}`,
+      `这次回复的形式不对，没有送达：\n${numbered}`,
+      "请按这几处改好后重新单独调用 reply",
     );
   }
   return { informs, act, text: params.text as string };
@@ -406,9 +409,11 @@ export function decideReply(params: unknown, facts: ReplyFacts): ReplyDecision {
       if (text) return { reply: { informs: [], act: null, text }, degraded: true };
     }
     if (attempt >= PLAIN_TEXT_FROM) {
-      throw new Error(
+      throw new ToolRejection(
         `这是这一次回应里「回复」连续第 ${attempt} 次没有送达。请不要再写告知与要的回应：只写成文的话 text，` +
           `informs 写 []，act 写 null，单独调用 reply。上一次的问题是：\n${message}`,
+        `「回复」连续第 ${attempt} 次没有送达。${error instanceof ToolRejection ? error.fact : message}`,
+        "不要再写告知与要的回应：只写成文的话 text，informs 写 []，act 写 null，单独调用 reply",
       );
     }
     throw error;

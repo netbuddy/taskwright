@@ -10,6 +10,7 @@ import { ACTOR_EXECUTOR, emit, wallClockText } from "./db.ts";
 import { CONFIRM_CONDITION, checkCompletion, type ConditionResult, unreadItems, unreadList } from "./conditions.ts";
 import { NoDatabaseYet, TASK_ACTIVE, TASK_DONE, withTaskDatabase } from "./schema.ts";
 import { validateDefinition } from "./definition.ts";
+import { ToolRejection } from "./tool_rejection.ts";
 
 export const EVENT_TASK_COMPLETED = "TASK_COMPLETED";
 
@@ -45,13 +46,12 @@ export function completeTask(call: CompleteCall): CompleteOutcome {
         const unread = unreadItems(db, task.task_id, definition.completion,
           (name) => definition.collections.find((c) => c.name === name)?.fields[0]?.name);
         const others = unmet.filter((r) => r.condition !== CONFIRM_CONDITION);
-        throw new Error(
-          "任务没有标为已完成。\n" +
-            (unread.length ? `还有 ${unread.length} 条你从没看过：${unreadList(unread)}。\n` : "") +
-            (others.length ? `另有 ${others.length} 条完成条件没有满足：\n${others.map((r, i) => `${i + 1}. ${describe(r)}`).join("\n")}\n` : "") +
-            (unread.length ? "请把上面「还有 N 条你从没看过」那句原样告诉用户，请用户打开这几条看一眼；" : "请把缺的告诉用户；") +
-            "补齐之后再调用「完成任务」。",
-        );
+        const fact = "任务没有标为已完成。\n" +
+          (unread.length ? `还有 ${unread.length} 条你从没看过：${unreadList(unread)}。\n` : "") +
+          (others.length ? `另有 ${others.length} 条完成条件没有满足：\n${others.map((r, i) => `${i + 1}. ${describe(r)}`).join("\n")}\n` : "");
+        const guidance = (unread.length ? "请把上面「还有 N 条你从没看过」那句原样告诉用户，请用户打开这几条看一眼；" : "请把缺的告诉用户；") +
+          "补齐之后再调用「完成任务」。";
+        throw new ToolRejection(fact + guidance, fact.trimEnd(), guidance);
       }
       const at = wallClockText();
       const seq = emit(db, {

@@ -219,6 +219,16 @@ def model_calls_by_tool_call(workspaces: list[dict]) -> dict[str, list[dict]]:
     return index
 
 
+def rejections_by_tool_call(workspaces: list[dict]) -> dict[str, list[dict]]:
+    """建一张「工具调用编号 → 这次工具调用被拒时记下的拒绝记录」的表。被拒的调用不写事件，所以同样不走事件。"""
+    index: dict[str, list[dict]] = {}
+    for workspace in workspaces:
+        for task in workspace["任务"]:
+            for one in (task.get("新库") or {}).get("拒绝记录", []):
+                index.setdefault(one["工具调用编号"], []).append({**one, "任务目录": workspace["任务目录"]})
+    return index
+
+
 def index_by_call_id(workspaces: list[dict]) -> dict[str, list[dict]]:
     """建一张「调用编号 → 这次调用在库里写下的事件」的表。
 

@@ -402,6 +402,11 @@ def model_calls_of(call: dict) -> list[dict]:
     return [one for c in call.get("带来的变化") or [] if c.get("种类") == "工具里的模型调用" for one in c.get("调用") or []]
 
 
+def rejections_of(call: dict) -> list[dict]:
+    """这次工具调用被拒时库里 tool_rejection 表记下的拒绝记录（事实层、指引层、原因种类），原样交给页面。"""
+    return [one for c in call.get("带来的变化") or [] if c.get("种类") == "工具的拒绝记录" for one in c.get("记录") or []]
+
+
 def event_shape(e: dict) -> dict:
     return {k: e.get(k) for k in ("事件名", "事件序号", "来源", "发起方", "时刻")}
 
@@ -473,6 +478,7 @@ def call_shape(call: dict, index, rules: dict, workspace_abs: str, run_offset: i
         "起止": [call.get("开始收到时刻"), call.get("结束收到时刻")],
         "泳道": call.get("泳道", 1), "链接": call.get("Langfuse 直达链接", ""),
         "改动": written, "有没有写入": bool(written), "对不上": unmatched, "模型调用": model_calls_of(call),
+        "拒绝记录": rejections_of(call),
         "事件": [event_shape(e) for e in (call.get("库里写下的事件") or [])],
         "修订序号": (call.get("产生的修订") or {}).get("修订序号"),
         "改正": ({"运行序号": fix.get("运行序号") + run_offset, "轮号": fix.get("轮号"),
