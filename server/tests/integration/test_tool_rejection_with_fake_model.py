@@ -61,3 +61,22 @@ class ToolRejectionWithFakeModelTests(unittest.TestCase):
         self.assertEqual([(r["tool_name"], r["call_id"], r["reason_kind"]) for r in rows], [("save_revision", "call-no-intent", "gate")])
         self.assertIn("这一轮还没有写理解", rows[0]["fact"])
         self.assertIn("写完接着调用 save_revision", rows[0]["guidance"])
+
+    def test_拒绝入库_给建议值的依据摘录对不上材料_整条回复被拒_改对后送达(self):
+        suggest = lambda excerpt: {"informs": [], "text": "建议如上。", "act": {
+            "kind": "suggest", "text": "退货建议写成买家可以申请。", "value": "买家可以申请退货", "scope": "general",
+            "basis": [{"kind": "文档原文", "locator": "inputs/材料.md", "excerpt": excerpt}]}}
+        script = [
+            {"tool_calls": [call("reply", suggest("买家随时可以申请退货。"), "call-suggest-bad")]},
+            {"tool_calls": [call("reply", suggest("买家可以申请退货。"), "call-suggest-good")]},
+        ]
+        with Rig(script, material=SOURCE["excerpt"]) as rig:
+            events = rig.say("退货怎么写？")
+            rows = rig.rows("SELECT call_id, fact, guidance FROM tool_rejection")
+
+        results = [(r["调用编号"], r["被拒"]) for r in tool_results(events)]
+        self.assertEqual(results, [("call-suggest-bad", True), ("call-suggest-good", False)])
+        self.assertEqual([r["call_id"] for r in rows], ["call-suggest-bad"])
+        self.assertIn("act.basis 的第 1 条的摘录「买家随时可以申请退货。」在 材料.md 里找不到", rows[0]["fact"])
+        self.assertIn("摘录必须与材料原文逐字一致", rows[0]["guidance"])
+

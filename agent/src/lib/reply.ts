@@ -11,7 +11,8 @@
  *   3. 提问、请确认、给建议值、提议四种要的回应必须在 items 里点名关联的条目与修订号，点名的条目在库里真实存在、
  *      修订号是它当前所在的修订（读库核对，不判断内容）；与任何条目都无关的提问、建议、提议写 scope: "general"，
  *      这时 items 可以不写。告知的 items 可以不写，写了就按同一条规矩核对；
- *   4. 卡片上的话只是把某条告知再说一遍时拒绝（去掉空白与标点后比对文字，见 echoedAct）。
+ *   4. 卡片上的话只是把某条告知再说一遍时拒绝（去掉空白与标点后比对文字，见 echoedAct）；
+ *   5. 给建议值的依据按保存修订的来源同一套规则逐字核对（ReplyFacts.checkBasis，即 lib/save_revision.ts 的 checkQuotes）。
  * 不合格时抛出异常，异常文字用中文写明缺什么、多了什么，由 pi 交还模型重写。
  *
  * 连续被拒的上限：执行函数从会话当前分支数出这一次运行里「回复」已经连续被拒了几次
@@ -28,6 +29,8 @@ import { databasePath } from "./db.ts";
 import { EXECUTOR_FUNCTIONS, INTENT_GATE_TEXT } from "./intent_schema.ts";
 import { type TurnCall, isBlank, isObject, lastAssistantTurn, requireAlone } from "./speak.ts";
 import { ToolRejection } from "./tool_rejection.ts";
+import { GUIDANCE_PREFIX, splitGuide } from "./save_revision.ts";
+import { EXECUTOR_SOURCE_KINDS } from "./schema.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
 export { type TurnCall, lastAssistantTurn };
@@ -43,8 +46,8 @@ export type ActKind = (typeof ACT_KINDS)[number];
 /** 提议的预览里，每一项对条目的影响。 */
 export const PREVIEW_EFFECTS = ["remove", "add", "change"] as const;
 
-/** 给建议值时依据的种类，与条目来源的种类一致。 */
-export const BASIS_KINDS = ["文档原文", "用户的话", "执行者补充"] as const;
+/** 给建议值时依据的种类，与执行者能填的条目来源种类是同一份清单。 */
+export const BASIS_KINDS = EXECUTOR_SOURCE_KINDS;
 
 /** 每种要的回应除 kind、text、items 之外还允许写哪几项。items 五种都可以写。 */
 const ALLOWED_EXTRA: Record<ActKind, string[]> = {
@@ -125,6 +128,12 @@ export interface ReplyFacts {
   currentRevisionOf?: (itemId: string) => number | null;
   /** 这一次运行里「回复」在这次调用之前已经连续被拒了几次，不给按 0 算。 */
   priorRejections?: number;
+  /**
+   * 核对给建议值时的依据：与保存修订的来源同一套逐字核对（lib/save_revision.ts 的 checkQuotes），通过时返回核对后的依据，
+   * 不通过时把原因推进 errors 并返回 null。工具的执行函数按任务目录与当前会话分支接好；不给时只核对依据的形状
+   * （种类、出处、摘录齐全），摘录不拿去比对，给直接调用本函数的单元测试用。
+   */
+  checkBasis?: (raw: unknown, errors: string[], whereOf: (index: number) => string) => ReplyAct["basis"] | null;
 }
 
 /** 键名里带引号、冒号或空白时，多半是模型把 JSON 写坏了（例如写成「text': 」）；拒绝理由里点明这一点。 */
@@ -176,11 +185,14 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
   if (act && errors.length === 0 && echoedAct(act.text, informs)) errors.push(ECHO_TEXT);
 
   if (errors.length > 0) {
-    const numbered = errors.map((e, i) => `${i + 1}. ${e}。`).join("\n");
+    // 依据核对的原因带两层（事实与指引，与保存修订同一套文字）：给模型的正文里指引另起一行写「怎么办：」。
+    const layers = errors.map(splitGuide);
+    const numbered = layers.map((one, i) => `${i + 1}. ${one.fact}。${one.guidance ? `\n   ${GUIDANCE_PREFIX}${one.guidance}。` : ""}`).join("\n");
+    const guides = layers.flatMap((one, i) => (one.guidance ? [`${i + 1}. ${one.guidance}。`] : []));
     throw new ToolRejection(
       `这次回复的形式不对，没有送达。请按下面几处改好后重新单独调用 reply：\n${numbered}`,
-      `这次回复的形式不对，没有送达：\n${numbered}`,
-      "请按这几处改好后重新单独调用 reply",
+      `这次回复的形式不对，没有送达：\n${layers.map((one, i) => `${i + 1}. ${one.fact}。`).join("\n")}`,
+      ["请按这几处改好后重新单独调用 reply", ...guides].join("\n"),
     );
   }
   return { informs, act, text: params.text as string };
@@ -290,24 +302,17 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
     }
   }
 
+  // 给建议值的依据：交给 checkBasis 按保存修订的来源同一套规则逐字核对（文档原文、用户的话、领域说明），核对后的依据替换模型写的
+  // （用户的话的出处由工具代填，跨段或用空行分开的摘录拆成几条）。
+  let checkedBasis: ReplyAct["basis"] | null = null;
   if (k === "suggest") {
     if (isBlank(raw.value)) errors.push("给建议值（suggest）要写 act.value，也就是你建议的那个值");
     const basis = raw.basis;
     if (!Array.isArray(basis) || basis.length === 0) {
       errors.push("给建议值（suggest）要写 act.basis，至少一条依据，每条是 { kind, locator, excerpt }");
     } else {
-      basis.forEach((one, index) => {
-        const where = `act.basis 的第 ${index + 1} 条`;
-        if (!isObject(one)) {
-          errors.push(`${where}应当是一个对象，有 kind、locator、excerpt 三项`);
-          return;
-        }
-        if (typeof one.kind !== "string" || !(BASIS_KINDS as readonly string[]).includes(one.kind)) {
-          errors.push(`${where}的 kind 写的是 ${JSON.stringify(one.kind)}，只能是${BASIS_KINDS.map((x) => `「${x}」`).join("、")}之一`);
-        }
-        if (isBlank(one.locator)) errors.push(`${where}缺少 locator（出处：文档原文写文件路径，用户的话写会话条目编号）`);
-        if (isBlank(one.excerpt)) errors.push(`${where}缺少 excerpt（摘录的原文）`);
-      });
+      const whereOf = (index: number) => `act.basis 的第 ${index + 1} 条`;
+      checkedBasis = facts.checkBasis ? facts.checkBasis(basis, errors, whereOf) : basisShape(basis, errors, whereOf);
     }
   }
 
@@ -334,7 +339,25 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   for (const key of ["items", ...ALLOWED_EXTRA[k]] as const) {
     if (key in raw) (act as unknown as Record<string, unknown>)[key] = raw[key];
   }
+  if (checkedBasis) act.basis = checkedBasis;
   return act;
+}
+
+/** 没有接任务目录时（单元测试直接调用 checkReply）只核对依据的形状：种类是执行者能填的来源种类之一、出处与摘录齐全。 */
+function basisShape(basis: unknown[], errors: string[], whereOf: (index: number) => string): null {
+  basis.forEach((one, index) => {
+    const where = whereOf(index);
+    if (!isObject(one)) {
+      errors.push(`${where}应当是一个对象，有 kind、locator、excerpt 三项`);
+      return;
+    }
+    if (typeof one.kind !== "string" || !(BASIS_KINDS as readonly string[]).includes(one.kind)) {
+      errors.push(`${where}的 kind 写的是 ${JSON.stringify(one.kind)}，只能是${BASIS_KINDS.map((x) => `「${x}」`).join("、")}之一`);
+    }
+    if (one.kind !== "用户的话" && isBlank(one.locator)) errors.push(`${where}缺少 locator（出处）`);
+    if (isBlank(one.excerpt)) errors.push(`${where}缺少 excerpt（摘录的原文）`);
+  });
+  return null;
 }
 
 /** 必须点名条目却没有点名时的拒绝理由。 */

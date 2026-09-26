@@ -8,6 +8,8 @@
  * 参数的形状这里只做最宽的声明，逐项的核对都在核对函数里做，好让不对的地方得到逐条的中文说明，
  * 而不是 pi 的一句英文的参数校验失败。
  *
+ * 给建议值（suggest）的依据与「保存修订」的来源同一套逐字核对（lib/save_revision.ts 的 checkQuotes），核对后的依据写进送达的回复。
+ *
  * 对话理解：执行之前先核对这一轮有没有有效的理解（lib/dialogue_acts.ts 的 requireUnderstanding），没有就拒绝；
  * 合格送达之后把告知与向用户要的回应记进对话行为表（recordReplyActs），编号写进返回的文字与 details.acts，
  * details.event_seq 是那条 EXECUTOR_ACTS_RECORDED 事件的序号（没有要记的行为、或者还没有任务库时为空）。
@@ -19,6 +21,8 @@ import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistant
 import { spoken } from "../lib/speak.ts";
 import { currentRun, recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
+import { checkQuotes } from "../lib/save_revision.ts";
+import { userMessagesOnBranch } from "./save_revision.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = REPLY_TOOL_NAME;
@@ -64,8 +68,9 @@ const act = Type.Object(
         Type.Object({ kind: Type.Optional(Type.String()), locator: Type.Optional(Type.String()), excerpt: Type.Optional(Type.String()) }, { additionalProperties: true }),
         {
           description:
-            "只有给建议值（suggest）写，而且必须写：建议的依据，至少一条。kind 是「文档原文」「用户的话」「执行者补充」之一，" +
-            "locator 是出处，excerpt 是摘录的原文。",
+            "只有给建议值（suggest）写，而且必须写：建议的依据，至少一条。kind 是「文档原文」「用户的话」「执行者补充」「领域说明」之一，" +
+            "locator 是出处，excerpt 是摘录的原文。依据与「保存修订」的来源同一个写法、同一套逐字核对：文档原文写材料路径（Word 材料写段落号），" +
+            "用户的话不写 locator（工具在对话里找到那句话并代填），领域说明写那条说明的条目编号。",
         },
       ),
     ),
@@ -139,6 +144,9 @@ export function registerReply(pi: ExtensionAPI): void {
             revisionFact: lookup.revisionFact,
             currentRevisionOf: lookup.currentRevisionOf,
             priorRejections: consecutiveReplyRejections(branch),
+            // 给建议值的依据：与保存修订的来源同一套逐字核对。
+            checkBasis: (raw, errors, whereOf) =>
+              checkQuotes(ctx.cwd, ctx.sessionManager.getSessionId(), userMessagesOnBranch(ctx), raw, errors, whereOf),
           });
         } finally {
           lookup.close();

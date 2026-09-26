@@ -3,11 +3,13 @@
  * 夹具是测试自己写的，与真实任务的起始文件无关。
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath } from "../src/lib/db.ts";
+// 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
+import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
 
 export const DEFINITION_PATH = "docs/task-definitions/demo.json";
 
@@ -100,3 +102,27 @@ export function count(workspaceDir: string, table: string): number {
 
 /** 一条合格的来源。 */
 export const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。" };
+
+/**
+ * Word 材料的样本：examples/library-lending/requirements-styled.docx。投影按 scripts/docx_paragraphs.mjs 的同一条计数规则现生成，
+ * 行的写法与后端上传时生成的投影相同（server 的 service/docx_text.py，两边逐行一致由后端测试核对）。
+ */
+export const SAMPLE = join(import.meta.dirname, "../../examples/library-lending/requirements-styled.docx");
+/** 样本放进任务目录后的出处写法（不带段落号）。 */
+export const SAMPLE_DOCX = "inputs/requirements-styled.docx";
+
+/** 样本的文本投影：每段一行，行首写「第 N 段」。 */
+export function projection(): string {
+  const xml = readZipEntry(readFileSync(SAMPLE), "word/document.xml").toString("utf8");
+  const lines = ["# 由 requirements-styled.docx 生成，供助手阅读。"];
+  for (const p of paragraphsOf(xml) as { n: number; text: string; table?: unknown[] }[]) {
+    lines.push(`[第 ${p.n} 段${p.table ? " · " + tableLabel(p.table) : ""}] ${p.text.replace(/[\r\n]/g, " ")}`);
+  }
+  return lines.join("\n") + "\n";
+}
+
+/** 把样本与它的文本投影放进任务目录的材料目录（任务目录要已经有 inputs/）。 */
+export function putSampleDocx(dir: string): void {
+  copyFileSync(SAMPLE, join(dir, SAMPLE_DOCX));
+  writeFileSync(join(dir, `${SAMPLE_DOCX}.txt`), projection(), "utf-8");
+}

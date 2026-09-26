@@ -1,34 +1,18 @@
 // Word 材料作来源：出处要带段落号，摘录对着文本投影里那一段核对（lib/docx_source.ts 与 save_revision 的 .docx 分支）。
-// 夹具是 examples/library-lending/requirements-styled.docx；投影按 scripts/docx_paragraphs.mjs 的同一条计数规则现生成，
-// 行的写法与后端上传时生成的投影相同（server 的 service/docx_text.py，两边逐行一致由后端测试核对）。
+// 夹具是 examples/library-lending/requirements-styled.docx，连同现生成的投影由 helpers.ts 的 putSampleDocx 放进任务目录。
 
 import assert from "node:assert/strict";
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { test } from "node:test";
-// 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
-import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
 import { createTask } from "../src/lib/create_task.ts";
 import { findParagraph, placeExcerpt, projectionParagraphs } from "../src/lib/docx_source.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, callIn, count, makeWorkspace, query } from "./helpers.ts";
+import { DEFINITION_PATH, SAMPLE_DOCX, callIn, count, makeWorkspace, projection, putSampleDocx, query } from "./helpers.ts";
 
-const SAMPLE = join(import.meta.dirname, "../../examples/library-lending/requirements-styled.docx");
-const DOCX = "inputs/requirements-styled.docx";
-
-function projection(): string {
-  const xml = readZipEntry(readFileSync(SAMPLE), "word/document.xml").toString("utf8");
-  const lines = ["# 由 requirements-styled.docx 生成，供助手阅读。"];
-  for (const p of paragraphsOf(xml) as { n: number; text: string; table?: unknown[] }[]) {
-    lines.push(`[第 ${p.n} 段${p.table ? " · " + tableLabel(p.table) : ""}] ${p.text.replace(/[\r\n]/g, " ")}`);
-  }
-  return lines.join("\n") + "\n";
-}
+const DOCX = SAMPLE_DOCX;
 
 function workspaceWithDocx(): string {
   const dir = makeWorkspace();
-  copyFileSync(SAMPLE, join(dir, DOCX));
-  writeFileSync(join(dir, `${DOCX}.txt`), projection(), "utf-8");
+  putSampleDocx(dir);
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   return dir;
 }

@@ -30,10 +30,10 @@
  * 就不再核对也不再写入，原样交回第一次的结果并注明「之前已经保存过」（savedBefore）；修订表上另有唯一索引兜底（schema.ts）。
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
-import type { DatabaseSync } from "node:sqlite";
-import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
+import { DatabaseSync } from "node:sqlite";
+import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, LEGACY_ACTOR_MODEL, databasePath, dump, emit, load, wallClockText } from "./db.ts";
 import {
   type CollectionDef,
   type FieldDef,
@@ -48,7 +48,7 @@ import {
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
 import { DOCX_LOCATOR, findParagraph, placeExcerpt, projectionParagraphs } from "./docx_source.ts";
-import { EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
@@ -261,20 +261,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     );
   }
 
-  const items = new Map<string, ItemRow>();
-  for (const row of db
-    .prepare("SELECT item_id, collection, serial, deleted_in_revision FROM item WHERE task_id = ?")
-    .all(taskId) as unknown as ItemRow[]) {
-    items.set(row.item_id, row);
-  }
-  // 条目当前所在的修订连同产生它的那条事件的发起方一起取，修订号对不上时好告诉模型是谁改的。
-  const latestVersion = (itemId: string): VersionRow =>
-    db
-      .prepare(
-        "SELECT v.revision_no, v.fields, e.actor FROM item_version v JOIN event e ON e.seq = v.event_seq " +
-          "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
-      )
-      .get(taskId, itemId) as unknown as VersionRow;
+  const items = itemsOf(db, taskId);
+  const latestVersion = latestVersionOf(db, taskId);
   const sourcesOf = (itemId: string, revisionNo: number): Source[] => {
     const rows = db
       .prepare(
@@ -306,32 +294,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (isObject(one) && one.op === "delete" && typeof one.item === "string") deletedHere.add(one.item);
   }
   const touched = new Map<string, number>();
-  // 种类为「领域说明」的来源：出处要是「领域说明」集合里还在的条目（这次调用之前就有，也没在这次调用里删）。
-  const noteRef = (locator: string): string | null => {
-    if (!definition.collections.some((one) => one.name === SOURCE_DOMAIN_NOTE)) return `这个任务没有「${SOURCE_DOMAIN_NOTE}」集合`;
-    const row = items.get(locator);
-    // 条目引用字段可以指向同一批里排在前面新增的条目（见下面的 addedAt），领域说明来源不行：摘录要对着那条说明已经保存的文字逐字核对。
-    if (!row && addedAt.has(locator)) return "指向的领域说明在这一批里才新增，还没有保存，摘录无从核对";
-    if (!row || row.collection !== SOURCE_DOMAIN_NOTE) return `不是这个任务里「${SOURCE_DOMAIN_NOTE}」集合的条目编号`;
-    if (row.deleted_in_revision !== null) return `指向的领域说明已在修订 ${row.deleted_in_revision} 删除`;
-    if (deletedHere.has(locator)) return "指向的领域说明在这次调用里被删除";
-    return null;
-  };
-  // 同一种来源的摘录：要逐字出现在那条领域说明当前修订的某个文本字段里（标题、内容之类，按任务定义的字段类型取）。
-  const noteText = (locator: string): string[] => {
-    const collection = definition.collections.find((one) => one.name === SOURCE_DOMAIN_NOTE);
-    const fields = JSON.parse(latestVersion(locator).fields) as Record<string, unknown>;
-    return (collection?.fields ?? []).flatMap((field) => {
-      const value = fields[field.name];
-      if (field.type === FIELD_TEXT && typeof value === "string") return [value];
-      if (field.type === FIELD_TEXT_LIST && Array.isArray(value)) return value.filter((one): one is string => typeof one === "string");
-      return [];
-    });
-  };
-
   // 这一批里新增的条目会拿到的编号：与 write 里分配编号的规矩相同（集合历史上的最大流水号加一，按操作顺序依次取）。
   // 排在前面的新增操作产生的条目，后面的操作可以引用；引用排在后面才新增的条目仍拒绝。
   const addedAt = new Map<string, number>();
+  const { noteRef, noteText } = domainNoteLookups(definition, items, latestVersion, { deletedHere, addedAt });
   {
     const serialOf = new Map<string, number>();
     for (const row of items.values()) {
@@ -518,6 +484,113 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   return write(db, call, taskId, definition, planned, params);
 }
 
+/** 任务里全部条目（含已删除的），按条目编号查。 */
+function itemsOf(db: DatabaseSync, taskId: string): Map<string, ItemRow> {
+  const items = new Map<string, ItemRow>();
+  for (const row of db
+    .prepare("SELECT item_id, collection, serial, deleted_in_revision FROM item WHERE task_id = ?")
+    .all(taskId) as unknown as ItemRow[]) {
+    items.set(row.item_id, row);
+  }
+  return items;
+}
+
+/** 查条目当前所在的修订：连同产生它的那条事件的发起方一起取，修订号对不上时好告诉模型是谁改的。 */
+function latestVersionOf(db: DatabaseSync, taskId: string): (itemId: string) => VersionRow {
+  const statement = db.prepare(
+    "SELECT v.revision_no, v.fields, e.actor FROM item_version v JOIN event e ON e.seq = v.event_seq " +
+      "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
+  );
+  return (itemId) => statement.get(taskId, itemId) as unknown as VersionRow;
+}
+
+/**
+ * 种类为「领域说明」的来源要用的两个查法。noteRef：出处是不是「领域说明」集合里还在的条目（这次调用之前就有，
+ * 也没在这次调用里删），是就返回 null，不是返回原因。noteText：那条领域说明当前修订的各文本字段（标题、内容之类，
+ * 按任务定义的字段类型取），摘录要逐字出现在其中之一里。batch 是这一批的删除与新增；不是一批操作（例如「回复」核对依据）时给空的。
+ */
+function domainNoteLookups(
+  definition: TaskDefinition,
+  items: Map<string, ItemRow>,
+  latestVersion: (itemId: string) => VersionRow,
+  batch: { deletedHere: Set<string>; addedAt: Map<string, number> },
+): { noteRef: (locator: string) => string | null; noteText: (locator: string) => string[] } {
+  const noteRef = (locator: string): string | null => {
+    if (!definition.collections.some((one) => one.name === SOURCE_DOMAIN_NOTE)) return `这个任务没有「${SOURCE_DOMAIN_NOTE}」集合`;
+    const row = items.get(locator);
+    // 条目引用字段可以指向同一批里排在前面新增的条目（见 save 里的 addedAt），领域说明来源不行：摘录要对着那条说明已经保存的文字逐字核对。
+    if (!row && batch.addedAt.has(locator)) return "指向的领域说明在这一批里才新增，还没有保存，摘录无从核对";
+    if (!row || row.collection !== SOURCE_DOMAIN_NOTE) return `不是这个任务里「${SOURCE_DOMAIN_NOTE}」集合的条目编号`;
+    if (row.deleted_in_revision !== null) return `指向的领域说明已在修订 ${row.deleted_in_revision} 删除`;
+    if (batch.deletedHere.has(locator)) return "指向的领域说明在这次调用里被删除";
+    return null;
+  };
+  const noteText = (locator: string): string[] => {
+    const collection = definition.collections.find((one) => one.name === SOURCE_DOMAIN_NOTE);
+    const fields = JSON.parse(latestVersion(locator).fields) as Record<string, unknown>;
+    return (collection?.fields ?? []).flatMap((field) => {
+      const value = fields[field.name];
+      if (field.type === FIELD_TEXT && typeof value === "string") return [value];
+      if (field.type === FIELD_TEXT_LIST && Array.isArray(value)) return value.filter((one): one is string => typeof one === "string");
+      return [];
+    });
+  };
+  return { noteRef, noteText };
+}
+
+/** 一条引用核对通过之后的样子：种类、出处（「用户的话」由工具代填）、摘录，以及「用户的话」可能带的规范化写入值。 */
+export interface CheckedQuote {
+  kind: string;
+  locator: string;
+  excerpt: string;
+  normalized_value?: string;
+}
+
+/**
+ * 核对执行者在「保存修订」之外交来的一串引用（现在只有「回复」给建议值时的依据 act.basis）：与保存修订的来源同一套核对，
+ * 同一套拒绝文字——文档原文逐字出自材料（.docx 按段落号核对、可跨段，文本材料可用空行分成不相邻的几段），
+ * 用户的话逐字出自当前会话分支上的某句用户消息（出处由这里代填），领域说明逐字出自那条还在的领域说明；执行者补充不核对摘录。
+ * 库只读打开，查完就关。通过时返回核对后的引用（出处代填、跨段或按空行拆开的已拆成几条），不通过时把原因推进 errors 并返回 null。
+ * errors 里的每一条可能带两层（事实与指引），用 splitGuide 拆开。
+ */
+export function checkQuotes(
+  workspaceDir: string,
+  sessionId: string,
+  userMessages: UserMessage[],
+  raw: unknown,
+  errors: string[],
+  whereOf: (index: number) => string,
+): CheckedQuote[] | null {
+  const path = databasePath(workspaceDir);
+  if (!existsSync(path) || statSync(path).size === 0) {
+    errors.push("这个任务目录还没有任务记录，依据无从核对");
+    return null;
+  }
+  const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  try {
+    const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+      { task_id: string; definition_text: string } | undefined;
+    if (!task) {
+      errors.push("这个任务目录还没有任务记录，依据无从核对");
+      return null;
+    }
+    const definition = validateDefinition(JSON.parse(task.definition_text));
+    const items = itemsOf(db, task.task_id);
+    const { noteRef, noteText } = domainNoteLookups(definition, items, latestVersionOf(db, task.task_id), { deletedHere: new Set(), addedAt: new Map() });
+    const checked = checkSources(raw, true, errors, sessionId, userMessages, ACTOR_EXECUTOR, materialReader(workspaceDir, definition.materialsDir),
+      undefined, noteRef, noteText, whereOf);
+    return checked && checked.map(({ kind, locator, excerpt, normalized_value }) => ({ kind, locator, excerpt, ...(normalized_value ? { normalized_value } : {}) }));
+  } finally {
+    db.close();
+  }
+}
+
+/** 把核对函数推进 errors 的一条拆成事实与指引两层；没有指引层时指引是空文字。 */
+export function splitGuide(one: string): { fact: string; guidance: string } {
+  const [fact, guidance] = one.split(GUIDE);
+  return { fact, guidance: guidance ?? "" };
+}
+
 /**
  * 修改时沿用条目当前的哪些来源：支持 changed 里的字段的那几处去掉；去掉之后什么都不支持的整条去掉；
  * 本来就支持整个条目的保留；与这次新给的某条来源一模一样的不重复保留。
@@ -661,6 +734,7 @@ function checkSources(
   notes?: string[],
   noteRef?: (locator: string) => string | null,
   noteText?: (locator: string) => string[],
+  whereOf: (index: number) => string = (index) => `第 ${index + 1} 条来源`,
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push("缺少 sources，至少要有一条来源");
@@ -673,7 +747,7 @@ function checkSources(
   const kept: Source[] = [];
   let ok = true;
   raw.forEach((one, index) => {
-    const where = `第 ${index + 1} 条来源`;
+    const where = whereOf(index);
     if (!isObject(one)) {
       errors.push(`${where}应当是一个对象，有 kind、locator、excerpt 三项`);
       ok = false;
