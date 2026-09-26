@@ -49,6 +49,7 @@
 | `src/paths.ts` | 仓根目录与各资源的位置（只在这一处从自身文件位置推出仓根），以及用户数据目录。 |
 | `fake_model/` | 假模型端点：按脚本回话的 OpenAI 兼容本地服务，给双跑对照与测试用，说明见其中的 README.md。 |
 | `compare/compare.mts` | 双跑对照：对两个后端执行同一串操作，归一化后逐条比较响应。 |
+| `compare/sessions.mts` | 会话场景的双跑对照：两版后端各配一个假模型端点，跑 11 个场景，比较响应、事件流、归档与观测台读出的数据。 |
 | `compare/read_only.mts` | 已有任务的只读对照：不起服务，在进程内调用两版的拼装函数逐项比较。 |
 
 ## 起法
@@ -100,3 +101,14 @@ node backend/compare/read_only.mts --tasks <已有的任务目录> --runs <已�
 ```
 
 它在进程内调用两版的扫描与拼装函数，占用标记的写入换成不写文件的版本，库一律只读打开；输出不做归一化，逐字比较。
+
+会话场景的双跑对照不用事先起栈，脚本自己起全部进程：
+
+```
+TASKWRIGHT_PYTHON=.venv/bin/python node backend/compare/sessions.mts --work <空目录> [--only 场景名,…] [--out 结果.json]
+```
+
+它在 8960 起 Python 版、8961 起 TypeScript 版，各配一个 TypeScript 版假模型端点（8962、8963），都用启动配置 fake；每个场景重起一套，跑完自己停。
+端口可以用 `--ports A,B,A的假端点,B的假端点` 改。11 个场景：chat_opening、confirm_and_complete、fake_model（只对照两版假端点）、intent、isolation、
+reply、review_gate、rpc、save_replay、service、tool_rejection，各自覆盖什么写在脚本里每个场景的 covers 一项。每个场景比四部分：
+HTTP 响应、事件流、三种归档文件加会话文件与假端点的请求记录、观测台读出的数据。归一化与五条比较规则写在脚本开头的说明里。
