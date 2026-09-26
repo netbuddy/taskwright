@@ -705,3 +705,15 @@ export interface ApiErrorBody {
   ok: false;
   error: { code: ErrorCode | string; message: string; data?: Record<string, unknown> };
 }
+
+/** 服务信息（GET /api/v1/service）：运行形态与能力清单，前端按能力显示或隐藏「退出服务」与无模型提示。 */
+export interface ServiceInfo {
+  ok: true;
+  app: string;
+  version: string;
+  mode: "desktop" | "server";
+  pid: number;
+  port: number | null;
+  capabilities: { exit: boolean; model?: boolean };
+  model?: { name: string; reason: string };
+}
