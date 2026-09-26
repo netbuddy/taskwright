@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { request } from "node:http";
 import { hostname } from "node:os";
@@ -17,7 +17,7 @@ import { after, afterEach, before, describe, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
 import { makeServer } from "../src/http.ts";
 import * as occupancy from "../src/occupancy.ts";
-import { ProjectionError, projectionText } from "../src/projection.ts";
+import { ProjectionError, projectionPath, projectionText, writeProjection } from "../src/projection.ts";
 import { Service, taskTypes, userActionText } from "../src/service.ts";
 import { CreateTaskError, createTaskDir, newWorkspace } from "../src/workspace.ts";
 import { ROOT, sqlGet, tempDir } from "./helpers.ts";
@@ -159,7 +159,7 @@ test("上传材料：只收三种文本，重名加序号，超过 5 MB 拒绝�
     const t = service.task(service.create({ task_type: "srs-authoring", task_name: "材料测试" }).task_id);
     assert.deepEqual(service.upload(t, "需求.md", Buffer.from("甲")), { ok: true, path: "inputs/需求.md" });
     assert.equal(service.upload(t, "需求.md", Buffer.from("乙")).path, "inputs/需求-2.md");
-    for (const [name, code] of [["图.png", "unsupported_type"], ["a/b.md", "bad_request"], ["a\\b.md", "bad_request"], ["", "bad_request"], ["x.DOCX.txt", "bad_request"]]) {
+    for (const [name, code] of [["图.png", "unsupported_type"], ["a/b.md", "bad_request"], ["a\\b.md", "bad_request"], ["", "bad_request"], ["x.DOCX.txt", "bad_request"], ["x.docx.MD", "bad_request"]]) {
       assert.equal(codeOf(() => service.upload(t, name, Buffer.from("x"))), code, name);
     }
     assert.equal(codeOf(() => service.upload(t, "大.txt", Buffer.alloc(5 * 1024 * 1024 + 1, 0x78))), "too_large");
@@ -176,35 +176,68 @@ test("上传材料：只收三种文本，重名加序号，超过 5 MB 拒绝�
 });
 
 describe("Word 材料", () => {
-  test("投影：样本 114 段，每段一行，表格写位置；不是 docx 时抛错", async () => {
-    const lines = projectionText(readFileSync(SAMPLE), "inputs/x.docx").split("\n").filter((l) => l.startsWith("["));
-    assert.equal(lines.length, 114);
-    assert.equal(lines[0], "[第 1 段] 学校图书馆借还书系统需求说明");
-    assert.equal(lines[36], "[第 37 段 · 表 1 行 1 列 2] 一次最多（本）");
-    assert.throws(() => projectionText(Buffer.from("not a zip"), "inputs/x.docx"), ProjectionError);
+  test("投影：在同一进程里调用 agent 的投影函数，写投影与图片目录；不是 docx 时抛错；找投影先 .md 后 .txt", () => {
+    const dir = fresh();
+    mkdirSync(dir, { recursive: true });
+    const docx = join(dir, "x.docx");
+    writeFileSync(docx, readFileSync(SAMPLE));
+    assert.equal(writeProjection(docx, "inputs/x.docx"), join(dir, "x.docx.md"));
+    const text = readFileSync(join(dir, "x.docx.md"), "utf-8");
+    assert.ok(text.startsWith("<!--\n由 x.docx 生成，供助手阅读。段落总数：114。"));
+    assert.ok(text.includes("\n### 3.1.1 [p75] 逾期罚款\n"));
+    assert.ok(existsSync(join(dir, "x.docx.media", "image1.png")));
+    assert.equal(projectionText(docx, "inputs/x.docx"), text);
+    const bad = join(dir, "坏.docx");
+    writeFileSync(bad, "not a zip");
+    assert.throws(() => writeProjection(bad, "inputs/坏.docx"), (e: unknown) => e instanceof ProjectionError && e.message === "不是 Word 文件（.docx），或者文件已损坏");
+    const other = join(dir, "y.docx");
+    assert.equal(projectionPath(other), other + ".md");
+    writeFileSync(other + ".txt", "[第 1 段] 旧");
+    assert.equal(projectionPath(other), other + ".txt");
+    writeFileSync(other + ".md", "[p1] 新");
+    assert.equal(projectionPath(other), other + ".md");
   });
 
-  test("上传 docx：旁边生成投影，重名时投影跟着新名字，清单里两份都在；坏文件与保留名拒绝且不落盘", async () => {
+  test("上传 docx：旁边生成投影与图片目录，重名时跟着新名字；材料清单标明派生自哪份 Word 文件", async () => {
     const service = newService();
     try {
       const t = service.task(service.create({ task_type: "srs-authoring", task_name: "Word 材料" }).task_id);
       assert.deepEqual(service.upload(t, "需求.docx", readFileSync(SAMPLE)), { ok: true, path: "inputs/需求.docx" });
-      const projection = readFileSync(join(t.dir, "inputs", "需求.docx.txt"), "utf-8");
-      assert.ok(projection.startsWith("# 由 需求.docx 生成"));
+      const projection = readFileSync(join(t.dir, "inputs", "需求.docx.md"), "utf-8");
+      assert.ok(projection.startsWith("<!--\n由 需求.docx 生成"));
       assert.ok(projection.includes("出处写 inputs/需求.docx#p段落号"));
+      assert.ok(projection.includes("![图 1](inputs/需求.docx.media/image1.png)"));
+      assert.ok(existsSync(join(t.dir, "inputs", "需求.docx.media", "image1.png")));
       assert.equal(service.upload(t, "需求.docx", readFileSync(SAMPLE)).path, "inputs/需求-2.docx");
-      assert.ok(existsSync(join(t.dir, "inputs", "需求-2.docx.txt")));
-      assert.deepEqual(service.taskPage(t).materials.map((m) => m.path), ["inputs/需求-2.docx", "inputs/需求-2.docx.txt", "inputs/需求.docx", "inputs/需求.docx.txt"]);
-      for (const [name, code] of [["坏.docx", "unsupported_type"], ["a.docx.txt", "bad_request"], ["图.png", "unsupported_type"]]) {
-        assert.equal(codeOf(() => service.upload(t, name, Buffer.from("x"))), code, name);
-      }
-      assert.equal(existsSync(join(t.dir, "inputs", "坏.docx")), false);
+      assert.ok(readFileSync(join(t.dir, "inputs", "需求-2.docx.md"), "utf-8").includes("![图 1](inputs/需求-2.docx.media/image1.png)"));
+      assert.ok(existsSync(join(t.dir, "inputs", "需求-2.docx.media", "image2.png")));
+      const listing = () => service.taskPage(t).materials;
+      assert.deepEqual(listing().map((m) => m.path), ["inputs/需求-2.docx", "inputs/需求-2.docx.md", "inputs/需求.docx", "inputs/需求.docx.md"], "图片目录不列");
+      assert.deepEqual(Object.fromEntries(listing().map((m) => [m.path, m.derived_from])), {
+        "inputs/需求-2.docx": null, "inputs/需求-2.docx.md": "inputs/需求-2.docx", "inputs/需求.docx": null, "inputs/需求.docx.md": "inputs/需求.docx" });
+      writeFileSync(join(t.dir, "inputs", "需求.docx.txt"), "[第 1 段] 旧", "utf-8");
+      writeFileSync(join(t.dir, "inputs", "孤儿.docx.md"), "x", "utf-8");
+      const marks = Object.fromEntries(listing().map((m) => [m.path, m.derived_from]));
+      assert.deepEqual([marks["inputs/需求.docx.txt"], marks["inputs/孤儿.docx.md"]], ["inputs/需求.docx", null], "0.2 的 .txt 投影同样标明；没有对应 .docx 的 .md 是普通材料");
     } finally {
       await service.close();
     }
   });
 
-  test("原样取回端点给内容类型与原字节，路径越界拒绝；content 端点对 docx 给投影", async () => {
+  test("坏的 docx 与保留名拒绝；坏文件连同投影都不留下", async () => {
+    const service = newService();
+    try {
+      const t = service.task(service.create({ task_type: "srs-authoring", task_name: "Word 材料" }).task_id);
+      for (const [name, code] of [["坏.docx", "unsupported_type"], ["a.docx.txt", "bad_request"], ["a.docx.md", "bad_request"], ["图.png", "unsupported_type"]]) {
+        assert.equal(codeOf(() => service.upload(t, name, Buffer.from("x"))), code, name);
+      }
+      assert.deepEqual(readdirSync(join(t.dir, "inputs")), []);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test("原样取回端点给内容类型与原字节，路径越界拒绝；content 端点对 docx 给投影，只有 0.2 的 .txt 时给它，都没有时现算不写文件", async () => {
     const service = newService();
     const t = service.task(service.create({ task_type: "srs-authoring", task_name: "取回" }).task_id);
     service.upload(t, "需求.docx", readFileSync(SAMPLE));
@@ -219,6 +252,7 @@ describe("Word 材料", () => {
         res.on("end", () => ok({ status: res.statusCode!, type: String(res.headers["content-type"]), body: Buffer.concat(chunks) }));
       }).on("error", fail).end();
     });
+    const content = async () => JSON.parse((await get("content", "inputs/需求.docx")).body.toString("utf-8")).text as string;
     try {
       const raw = await get("raw", "inputs/需求.docx");
       assert.equal(raw.type, DOCX_TYPE);
@@ -228,8 +262,12 @@ describe("Word 材料", () => {
       for (const [bad, status] of [["inputs/../task.sqlite", 400], ["/etc/passwd", 400], ["", 400], ["inputs/没有.docx", 404]] as const) {
         assert.equal((await get("raw", bad)).status, status, bad);
       }
-      const text = JSON.parse((await get("content", "inputs/需求.docx")).body.toString("utf-8")).text;
-      assert.ok(text.includes("[第 76 段] 逾期的每本每天罚款一角，罚款最多不超过这本书的定价。罚款怎样缴纳待定。"));
+      assert.ok((await content()).includes("\n[p76] 逾期的每本每天罚款一角，罚款最多不超过这本书的定价。罚款怎样缴纳待定。\n"));
+      renameSync(join(t.dir, "inputs", "需求.docx.md"), join(t.dir, "inputs", "需求.docx.txt"));
+      assert.equal(await content(), readFileSync(join(t.dir, "inputs", "需求.docx.txt"), "utf-8"));
+      rmSync(join(t.dir, "inputs", "需求.docx.txt"));
+      assert.ok((await content()).includes("\n[p76] 逾期的每本每天罚款一角"));
+      assert.equal(existsSync(join(t.dir, "inputs", "需求.docx.md")), false);
     } finally {
       server.close();
       await service.close();

@@ -171,11 +171,11 @@ export function rewriteSlash(text: string): string {
   return text.startsWith("/") ? SLASH_PREFIX + text : text;
 }
 
-/** 用户附了材料时在话后面补一句路径；Word 材料另说一句读哪份文本、出处怎么写。 */
+/** 用户附了材料时在话后面补一句路径；Word 材料另说一句读哪份投影、出处怎么写。 */
 export function withAttachments(text: string, paths: string[]): string {
   if (!paths.length) return text;
   const words = paths.filter((p) => p.toLowerCase().endsWith(".docx"));
-  const note = words.length ? `其中 Word 文件请读同名的 .txt（${words.map((p) => p + ".txt").join("、")}），引用时出处写 Word 文件加段落号` : "";
+  const note = words.length ? `其中 Word 文件请读同名的 .md 投影（${words.map((p) => p + ".md").join("、")}），引用时出处写 Word 文件加段落号` : "";
   return `${text}\n（我上传了材料：${paths.join("、")}${note ? "；" + note : ""}）`;
 }
 

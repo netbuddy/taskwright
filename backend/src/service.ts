@@ -5,7 +5,7 @@
  * 列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。修订统一之前建的任务（旧格式）不接手，列表里标明不支持。
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
@@ -16,7 +16,7 @@ import { ApiError } from "./errors.ts";
 import { readTextFile, readTextFileLenient } from "./files.ts";
 import * as library from "./library.ts";
 import * as occupancy from "./occupancy.ts";
-import { ProjectionError, isProjection, projectionPath, projectionText, writeProjection } from "./projection.ts";
+import { ProjectionError, isReserved, projectionPath, projectionText, removeProjection, writeProjection } from "./projection.ts";
 import { or, pyStr, truthy } from "./py.ts";
 import { Executor } from "./executor.ts";
 import { Hub } from "./hub.ts";
@@ -383,16 +383,8 @@ export class Service {
       throw new ApiError("bad_request", "文件名里不能带路径分隔符。");
     }
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", "只接受 .md、.txt 与 .docx（Word）三种文件。");
-    if (isProjection(filename)) throw new ApiError("bad_request", "以 .docx.txt 结尾的文件名留给由 Word 材料生成的文本用，请改个名字再上传。");
+    if (isReserved(filename)) throw new ApiError("bad_request", "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 材料生成的投影用，请改个名字再上传。");
     const isDocx = filename.toLowerCase().endsWith(".docx");
-    if (isDocx) {
-      try {
-        projectionText(data, filename);
-      } catch (error) {
-        if (error instanceof ProjectionError) throw new ApiError("unsupported_type", `${error.message}，请用 Word 另存为 .docx 后再上传。`);
-        throw error;
-      }
-    }
     if (data.length > MAX_UPLOAD) throw new ApiError("too_large", "单个文件不能超过 5 MB。");
     const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const folder = join(t.dir, folderRel);
@@ -408,8 +400,22 @@ export class Service {
     }
     writeFileSync(target, data);
     const path = `${folderRel}${basename(target)}`;
-    // Word 材料另生成一份文本投影，执行者读它，保存修订时核对摘录也对着它；它不单独算一份材料。
-    if (isDocx) writeProjection(target, path);
+    if (isDocx) {
+      // Word 材料另生成一份 Markdown 投影（图片抽到旁边的目录），执行者读它，保存修订时核对摘录也对着它；
+      // 它不单独发 material_added。生成不了（不是合法的 .docx）时连同这份文件一起删掉。
+      try {
+        writeProjection(target, path);
+      } catch (error) {
+        if (!(error instanceof ProjectionError)) throw error;
+        try {
+          unlinkSync(target);
+        } catch {
+          // 已经不在了
+        }
+        removeProjection(target);
+        throw new ApiError("unsupported_type", `${error.message}，请用 Word 另存为 .docx 后再上传。`);
+      }
+    }
     // 材料清单只在整份数据里读一次；上传之后推一条过程类事件，工作视图与任务页据此更新清单。
     // 材料属于任务，session_id 只说明是从哪条会话上传的（可空），订阅了别的会话的页面也收得到。
     const st = statSync(target, { bigint: true });
@@ -417,11 +423,16 @@ export class Service {
     return { ok: true, path };
   }
 
-  /** 材料原文：.docx 给投影（投影文件不在时现算），其余按 UTF-8 读（不合法的字节换成替换字符）。 */
+  /** 材料原文：.docx 给投影（先找 .md 再找旧的 .txt；都不在时现算一份，不写文件），其余按 UTF-8 读（不合法的字节换成替换字符）。 */
   materialText(target: string, rel: string): string {
     if (target.toLowerCase().endsWith(".docx")) {
       const projection = projectionPath(target);
-      return isFile(projection) ? readTextFile(projection) : projectionText(readFileSync(target), rel);
+      try {
+        return isFile(projection) ? readTextFile(projection) : projectionText(target, rel);
+      } catch (error) {
+        if (error instanceof ProjectionError || error instanceof TypeError) throw new ApiError("unsupported_type", `${(error as Error).message}。`);
+        throw error;
+      }
     }
     return readTextFileLenient(target);
   }

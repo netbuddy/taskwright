@@ -729,7 +729,10 @@ function intentActs(db: DatabaseSync, taskId: string, rows: Row[]): Map<string, 
   return out;
 }
 
-/** 材料清单：材料目录里的每个文件，按名字排。 */
+/**
+ * 材料清单：材料目录里的文件（不含子目录，Word 材料的图片目录因此不列），按名字排。由 Word 材料生成的投影（x.docx.md，
+ * 0.2 的任务里是 x.docx.txt）旁边有那份 .docx 时，derived_from 写那份 .docx 的路径，界面据此不单独列出；其余为 null。
+ */
 export function materials(taskDir: string, definition: ParsedDefinition | Record<string, any> | null) {
   const rel = or((definition || {})["材料目录"], DEFAULT_MATERIALS_DIR) as string;
   const folder = join(taskDir, rel);
@@ -740,19 +743,26 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
   } catch {
     return [];
   }
-  const out = [];
+  const files: [string, ReturnType<typeof statSync>][] = [];
   for (const name of names.sort(byCodePoint)) {
-    const path = join(folder, name);
-    let st;
     try {
-      st = statSync(path, { bigint: true });
+      const st = statSync(join(folder, name), { bigint: true });
+      if (st.isFile()) files.push([name, st as any]);
     } catch {
       continue;
     }
-    if (!st.isFile()) continue;
-    out.push({ path: `${rel}${name}`, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs) });
   }
-  return out;
+  const present = new Set(files.map(([name]) => name));
+  const sourceOf = (name: string): string | null => {
+    const dot = name.lastIndexOf(".");
+    if (dot < 0) return null;
+    const stem = name.slice(0, dot);
+    const ext = name.slice(dot + 1).toLowerCase();
+    return (ext === "md" || ext === "txt") && stem.toLowerCase().endsWith(".docx") && present.has(stem) ? `${rel}${stem}` : null;
+  };
+  return files.map(([name, st]: [string, any]) => ({
+    path: `${rel}${name}`, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), derived_from: sourceOf(name),
+  }));
 }
 
 /** 按码位比较两个字符串（与 Python 的字符串排序相同）。 */
