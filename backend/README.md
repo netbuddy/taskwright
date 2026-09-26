@@ -87,6 +87,13 @@ node backend/src/main.mts --tasks <放任务目录的上级目录> --runs <归�
 二者之一即 `capabilities.model` 为 true。只读这两个文件，不起 pi。识别不了的情形：内置服务商的密钥只放在环境变量里，这时判 false，
 原因句里写明。
 
+### 桌面形态下的模型
+
+`--mode desktop` 时，起 pi 之前读 pi 配置目录里 `settings.json` 的 `defaultProvider` 与 `defaultModel`（pi 的 `/model` 命令写的也是这两项），
+两项都有就用「defaultProvider/defaultModel」代替启动配置里的模型；读不到或缺一项时照旧用启动配置里的。桌面包里的启动配置是只读的，
+用户换模型靠的就是这个。模型探测与服务信息里的 `model.name` 按替换后的结果；后端补记的启动记录多写一项「模型来自」。
+`--mode server` 不读这个文件，行为与启动记录都不变。实现在 `launch.ts` 的 `resolveModel`。
+
 ## 测试
 
 ```

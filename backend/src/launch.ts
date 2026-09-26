@@ -25,6 +25,41 @@ export const ENV_RUN_SCRIPT = "TASKWRIGHT_RUN_SCRIPT";
 
 export type Profile = Record<string, any>;
 
+/**
+ * 桌面形态下模型可以由 pi 自己的设置文件指定：服务以 desktop 形态启动时，给启动配置加上这个运行时标记（不写进任何配置文件）。
+ * 带标记时，起 pi 之前读 pi 配置目录里 settings.json 的 defaultProvider 与 defaultModel，两项都有就用它们代替启动配置里的模型。
+ * 桌面包里的启动配置是只读的，用户换模型只能靠这个；服务器形态不带标记，行为不变。
+ */
+export const PI_SETTINGS_MODEL = "pi_settings_model";
+
+/** pi 的配置目录：与 pi 相同，PI_CODING_AGENT_DIR 优先（开头的 ~ 展开成主目录），否则是 ~/.pi/agent。 */
+export function piAgentDir(env: NodeJS.ProcessEnv | Record<string, string> = process.env): string {
+  return expandUser(env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"));
+}
+
+export interface ResolvedModel {
+  /** 交给 pi 的模型「服务商/型号」；启动配置没写又没有被替换时是空串。 */
+  model: string;
+  from: "启动配置" | "pi 设置";
+  /** 模型来自 pi 设置时，那个设置文件的路径。 */
+  settings?: string;
+}
+
+/** 这一次起 pi 用哪个模型（见 PI_SETTINGS_MODEL）。settings.json 读不出、或两项缺一项时，照旧用启动配置里的。 */
+export function resolveModel(profile: Profile, env: NodeJS.ProcessEnv | Record<string, string> = process.env): ResolvedModel {
+  const fromProfile: ResolvedModel = { model: typeof profile.model === "string" ? profile.model : "", from: "启动配置" };
+  if (!profile[PI_SETTINGS_MODEL]) return fromProfile;
+  const settings = join(piAgentDir(env), "settings.json");
+  try {
+    const value = JSON.parse(readFileSync(settings, "utf-8"));
+    const provider = value?.defaultProvider, model = value?.defaultModel;
+    if (typeof provider === "string" && provider && typeof model === "string" && model) return { model: `${provider}/${model}`, from: "pi 设置", settings };
+  } catch {
+    // 没有这个文件或读不出：用启动配置里的
+  }
+  return fromProfile;
+}
+
 /** 启动配置有问题，带一句说明缺什么、怎么补。 */
 export class LaunchError extends Error {}
 
@@ -205,7 +240,8 @@ export function buildCommand(profile: Profile, workspace: string, sessionDir: st
   if (flags.offline) args.push("--offline");
   const tools = profile.tools;
   if (tools && tools.length) args.push("--tools", tools.join(","));
-  if (profile.model) args.push("--model", profile.model);
+  const model = resolveModel(profile).model;
+  if (model) args.push("--model", model);
   if (profile.thinking) args.push("--thinking", profile.thinking);
   // 先传平台 skill，再传任务目录里的技能：两个 --skill 的先后决定 pi 的 skill 清单里的顺序。
   const platform = platformSkillDir(profile);
@@ -232,10 +268,17 @@ export function startupRecord(profile: Profile, argv: string[]) {
     命令行: [...argv],
     扩展: describeExtensions(profile).map(([name, path]) => ({ 名字: name, 解析到的文件: path ?? "", 文件在不在: path !== null })),
     工具白名单: [...(profile.tools || [])],
-    模型: profile.model ?? "",
+    模型: resolveModel(profile).model,
+    // 模型来自哪里只在桌面形态写（服务器形态的启动记录与 Python 版逐字一致）
+    ...(profile[PI_SETTINGS_MODEL] ? { 模型来自: modelSource(profile) } : {}),
     环境标签: (profile.langfuse || {}).environment ?? "",
     "平台 skill": platformSkillRecord(profile),
   };
+}
+
+function modelSource(profile: Profile): string {
+  const resolved = resolveModel(profile);
+  return resolved.from === "pi 设置" ? `pi 设置（${resolved.settings} 的 defaultProvider 与 defaultModel）` : "启动配置";
 }
 
 export function platformSkillRecord(profile: Profile) {
@@ -315,7 +358,7 @@ export function knowledgeSnapshot(workspace: string, profile: Profile | null = n
 /** pi 会放进系统提示的上下文文件：照 pi 的发现规则在磁盘上查一遍（pi 的 RPC 没有查询这一项的命令）。 */
 export function contextFileCandidates(argv: string[], workspace: string, env: Record<string, string>) {
   const disabled = argv.includes("--no-context-files") || argv.includes("-nc");
-  const agentDir = expandUser(env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"));
+  const agentDir = piAgentDir(env);
   const found: string[] = [];
   const ancestors: string[] = [];
   let current = resolve(workspace);

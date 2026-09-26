@@ -20,7 +20,7 @@ import { ProjectionError, isReserved, projectionPath, projectionText, removeProj
 import { or, pyStr, truthy } from "./py.ts";
 import { Executor } from "./executor.ts";
 import { Hub } from "./hub.ts";
-import type { Profile } from "./launch.ts";
+import { PI_SETTINGS_MODEL, type Profile } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
 import { TASK_TYPES_DIR } from "./paths.ts";
@@ -153,7 +153,8 @@ export class Service {
   constructor(tasksDir: string, runsDir: string, profile: Profile, options: ServiceOptions = {}) {
     this.tasksDir = tasksDir;
     this.runsDir = runsDir;
-    this.profile = profile;
+    // 桌面形态：模型可以由 pi 设置文件指定（见 launch.ts 的 PI_SETTINGS_MODEL）。标记只加在内存里的这份启动配置上。
+    this.profile = options.mode === "desktop" ? { ...profile, [PI_SETTINGS_MODEL]: true } : profile;
     this.port = options.port ?? null;
     this.mode = options.mode ?? "server";
     this.claim = options.claim ?? occupancy.claim;
