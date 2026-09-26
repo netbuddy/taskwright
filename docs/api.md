@@ -262,6 +262,7 @@ Shape: `{ "ok": false, "error": { "code": "…", "message": "…", "data": { …
 | `task_closed` | 409 | the task is completed or abandoned |
 | `session_busy` | 409 | the agent is working: in another session (`data.active_session`), or in this one when a message or direct operation arrives (`data.reason` is `working`) |
 | `task_occupied` | 409 | another running service serves this task (its `service.lock` names a live process); `data` has its `port`, `pid` and `host` |
+| `forbidden` | 403 | an endpoint that accepts only requests from this machine got one from elsewhere (so far only `POST /api/v1/service/exit`, see section 9) |
 | `executor_starting` | 503 | pi is starting |
 | `executor_unavailable` | 503 | pi failed to start or exited (`data.detail`) |
 | `busy_timeout` | 503 | waited too long for the database write lock |
@@ -273,5 +274,9 @@ Shape: `{ "ok": false, "error": { "code": "…", "message": "…", "data": { …
 2. Several pages may watch the same task; a save from a second page may be rejected as stale.
 3. Paths carry the version `v1`; fields are only ever added, never change meaning; clients ignore unknown events and fields.
 4. Not in this version: multiple simultaneous users, authentication, streaming reply text.
+5. **Service information and run mode.** These two endpoints need no task. The TypeScript task service (`backend/`) provides them; the Python task service does not.
+   - `GET /api/v1/service` returns `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "capabilities": { "exit": true | false } }`. `port` is the port the service actually listens on. It serves three uses: a packaged launcher checks whether the service on a port is its own; deployment and monitoring use it as a health check; a client shows or hides controls according to `capabilities`.
+   - `POST /api/v1/service/exit` exists only when the service was started with `--mode desktop`; with `--mode server` it returns `not_found`. It accepts requests only from the loopback address (`127.0.0.1` or `::1`; `::ffff:127.0.0.1`, the IPv4 loopback address on an IPv6 socket, counts as loopback) and answers any other source with `forbidden` (403). It first answers `{ "ok": true }`, then shuts down as on SIGTERM: it stops accepting connections, closes each task's pi, removes the occupancy marks it wrote and exits. It is meant only for the 0.3 transitional package, in which the service opens the browser itself and there is no desktop shell; the final desktop version stops the service from its shell, and this endpoint is not promised to stay.
+   - The run mode (`--mode desktop|server`, default `server`) decides the default bind address (`desktop`: `127.0.0.1`, `server`: `0.0.0.0`; `--host` overrides both) and whether the exit endpoint exists. Everything else behaves the same in both modes. The mode is written to the startup log and to each task's occupancy mark (`mode` in `service.lock`).
 
 [中文版](api.zh-CN.md)
