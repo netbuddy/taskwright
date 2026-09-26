@@ -3,6 +3,7 @@
  * 不在各模块里各自拼相对路径。以后打包成单个可执行文件时，只改这一处的算法。
  */
 
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,4 +43,14 @@ export function userDataDir(): string {
 /** 日志目录：服务的日志除了写标准输出，也写一份到这里（双击启动时没有终端）。 */
 export function logDir(): string {
   return join(userDataDir(), "logs");
+}
+
+/** 产品版本号：取仓根 package.json 的 version；读不到时写 unknown。 */
+export function appVersion(): string {
+  try {
+    const version = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf-8")).version;
+    return typeof version === "string" && version ? version : "unknown";
+  } catch {
+    return "unknown";
+  }
 }

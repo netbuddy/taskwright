@@ -1,6 +1,5 @@
 /**
  * 路由与各接口（node:http，无框架）。所有路径以 /api/v1 开头；错误一律是 {"ok": false, "error": {code, message, data}}。
- * 这一版接上的是读取一侧、建任务与上传材料；启动 pi、事件流与转交用户操作的几个接口返回 not_implemented。
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -10,10 +9,11 @@ import { extname } from "node:path";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
 import * as render from "./render.ts";
-import { or } from "./py.ts";
+import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
+import { appVersion } from "./paths.ts";
 import { MAX_UPLOAD, type Service, taskTypes, wordsLocator } from "./service.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
@@ -31,12 +31,16 @@ interface Request {
   headers: IncomingMessage["headers"];
   body: Buffer;
   params: Params;
+  /** 请求来自哪个地址（套接字的对端地址）。 */
+  remote?: string;
 }
 interface Reply {
   status: number;
   headers: Record<string, string>;
   body: Buffer;
   close?: boolean;
+  /** 回答整个发出之后要做的事（退出接口用它在回答之后才收尾）。 */
+  after?: () => void;
 }
 /** 长连接的回答（事件流）：拿到响应对象后自己往里写，连接断了才结束。 */
 export interface Stream {
@@ -157,10 +161,6 @@ export function parseMultipart(contentType: string, body: Buffer): [string, Buff
 
 // ───────────── 各接口 ─────────────
 
-const notImplemented: Handler = () => {
-  throw new ApiError("not_implemented", "这个接口在这一版的后端里还没有接上。");
-};
-
 function sessionParam(req: Request, body: Record<string, any> = {}): string | null {
   return or(req.query.session, null) ?? or(body.session_id, null) ?? null;
 }
@@ -179,6 +179,37 @@ export function withAttachments(text: string, paths: string[]): string {
   return `${text}\n（我上传了材料：${paths.join("、")}${note ? "；" + note : ""}）`;
 }
 
+/**
+ * 卡片点击的标注。两种写法都认：annotation {reply_message_id, option_key, option_text}；
+ * 前端的 card {reply_message_id, kind, choice}，choice 是选项的 key 或「不对」「采纳」之类的按钮字。
+ * card 写法里没有选项的文字：按 reply_message_id 在会话条目里找到那条回复，从它「回复」工具参数的 act.options 里按键查回文字；
+ * 查不到（「不对」「采纳」这类按钮，或那条回复不在条目里）就用 choice 本身。
+ */
+export function cardAnnotation(body: Record<string, any>, entries: Record<string, any>[] = []): Record<string, any> {
+  if (isObject(body.annotation)) return body.annotation;
+  const card: Record<string, any> = isObject(body.card) ? body.card : {};
+  const choice = card.choice ?? null;
+  const text = replyOptionText(entries, card.reply_message_id ?? null, choice);
+  return { reply_message_id: card.reply_message_id ?? null, option_key: choice, option_text: text !== null ? text : choice, card_kind: card.kind ?? null };
+}
+
+/** 那条回复的卡片上，键为 key 的选项的文字；找不到返回 null。 */
+export function replyOptionText(entries: Record<string, any>[], replyId: unknown, key: unknown): unknown {
+  if (!truthy(replyId) || key === null || key === undefined) return null;
+  for (const e of entries) {
+    if (e.id !== replyId || e.type !== "message") continue;
+    for (const part of or((e.message || {}).content, []) as unknown[]) {
+      if (isObject(part) && part.type === "toolCall" && part.name === "reply") {
+        const act = or(or(part.arguments, {}).act, {});
+        for (const option of or(act.options, []) as unknown[]) {
+          if (isObject(option) && option.key === key) return option.text ?? null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /** SSE 的一条事件：库事件带 id 行；补发与实时推送重叠的那几条只发一次。写了返回真。 */
 function writeEvent(res: ServerResponse, sub: Subscriber, name: string, seq: number | null, data: unknown): boolean {
   if (seq !== null) {
@@ -192,7 +223,22 @@ function writeEvent(res: ServerResponse, sub: Subscriber, name: string, seq: num
 /** 事件流的保活间隔（毫秒）。 */
 export const KEEPALIVE_MS = 15_000;
 
+/** 本机回环地址：退出接口只接受从这些地址来的请求（::ffff:127.0.0.1 是 IPv4 回环地址在 IPv6 套接字上的写法）。 */
+export const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+
+/** 服务信息：不需要任务。给打包后的启动程序认出端口上是不是自己、给部署与监控探活、给前端按能力显示按钮。 */
+export function serviceInfo(service: Service) {
+  return { ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port, capabilities: { exit: service.mode === "desktop" } };
+}
+
 const handlers: Record<string, Handler> = {
+  service_info: (service) => json(200, serviceInfo(service)),
+  service_exit: (service, req) => {
+    // 只有桌面形态注册这个接口；服务器形态下与没有这个接口一样。它是过渡包（后端自己开浏览器、没有外壳）专用的。
+    if (service.mode !== "desktop") throw new ApiError("not_found", `没有这个接口：${req.method} ${req.path}`);
+    if (!LOOPBACK.has(req.remote ?? "")) throw new ApiError("forbidden", "退出服务只接受从本机发来的请求。");
+    return { ...json(200, { ok: true }), after: () => service.exitHandler?.() };
+  },
   list_tasks: (service) => json(200, { ok: true, tasks: service.listTasks() }),
   list_task_types: () => json(200, { ok: true, task_types: taskTypes() }),
   create_task: (service, req) => json(200, service.create(bodyJson(req))),
@@ -227,10 +273,26 @@ const handlers: Record<string, Handler> = {
     }
     const session = sessionParam(req, body);
     const clientId = body.client_id ?? null;
-    if (body.origin === "card_choice") throw new ApiError("not_implemented", "卡片点击在这一版的后端里还没有接上。");
-    const sent = withAttachments(rewriteSlash(text), attachments);
-    const queued = await t.executor.say(session, sent, clientId, text);
+    let queued: boolean;
+    if (body.origin === "card_choice") {
+      queued = await t.executor.cardClick(session, text, clientId, cardAnnotation(body, session ? await t.executor.entries(session) : []));
+    } else {
+      queued = await t.executor.say(session, withAttachments(rewriteSlash(text), attachments), clientId, text);
+    }
     return json(200, { ok: true, client_id: clientId, queued });
+  },
+  actions: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    t.requireOpen();
+    const opId = await t.executor.action(sessionParam(req, body), body);
+    return json(200, { ok: true, client_id: body.client_id ?? null, op_id: opId });
+  },
+  control: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    if (body.action !== "stop") throw new ApiError("bad_request", "action 现在只能是 stop。");
+    return json(200, { ok: true, cleared: await t.executor.stop(sessionParam(req, body)) });
   },
   events: (service, req) => {
     const t = service.task(req.params.task);
@@ -248,9 +310,10 @@ const handlers: Record<string, Handler> = {
           res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
           res.write(": connected\n\n");
           for (const [name, seq, data] of replay) writeEvent(res, sub, name, seq, data);
-          while (open) {
+          while (open && !t.hub.closed) {
             const item = await sub.get(KEEPALIVE_MS);
             if (!open) break;
+            if (item === null && t.hub.closed) break;
             if (item === null) res.write(": keepalive\n\n");
             else writeEvent(res, sub, ...item);
           }
@@ -300,9 +363,6 @@ const handlers: Record<string, Handler> = {
       body: Buffer.from(text, "utf-8"),
     };
   },
-  // 下面两个接口（直接操作、让助手停下）这一版还没有接上。
-  actions: notImplemented,
-  control: notImplemented,
 };
 
 function isFile(path: string): boolean {
@@ -315,6 +375,8 @@ function isFile(path: string): boolean {
 
 const T = "(?<task>[^/]+)";
 export const ROUTES: [string, RegExp, string][] = ([
+  ["GET", "/api/v1/service", "service_info"],
+  ["POST", "/api/v1/service/exit", "service_exit"],
   ["GET", "/api/v1/tasks", "list_tasks"],
   ["GET", "/api/v1/task-types", "list_task_types"],
   ["POST", "/api/v1/tasks", "create_task"],
@@ -406,11 +468,12 @@ export function makeServer(service: Service) {
     incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
     incoming.on("end", async () => {
       const body = Buffer.concat(chunks).subarray(0, length);
-      const reply = await dispatch(service, { method, path, query, headers: incoming.headers, body });
+      const reply = await dispatch(service, { method, path, query, headers: incoming.headers, body, remote: incoming.socket.remoteAddress ?? "" });
       if ("stream" in reply) {
         await reply.stream(res).catch(() => res.destroy());
         return;
       }
+      if (reply.after) res.once("finish", reply.after);
       if (!res.destroyed) send(res, reply);
     });
     incoming.on("error", () => res.destroy());

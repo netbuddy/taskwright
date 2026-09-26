@@ -88,10 +88,15 @@ export class Task {
 }
 
 /** 接手任务时写占用标记的函数：缺省是 occupancy.claim；只读对照时换成不写文件的版本。 */
-export type Claim = (taskDir: string, port: number | null) => occupancy.Lock | null;
+export type Claim = (taskDir: string, port: number | null, mode: string | null) => occupancy.Lock | null;
+
+/** 运行形态：desktop 是单机桌面用（缺省只绑本机回环地址、有退出接口），server 是服务器用（缺省绑全部网卡、没有退出接口）。 */
+export const MODES = ["desktop", "server"] as const;
+export type Mode = (typeof MODES)[number];
 
 export interface ServiceOptions {
   port?: number | null;
+  mode?: Mode;
   claim?: Claim;
   release?: (taskDir: string) => void;
   /** 不存在时是否建出任务目录（缺省建）。 */
@@ -133,7 +138,11 @@ export class Service {
   readonly tasksDir: string;
   readonly runsDir: string;
   readonly profile: Profile;
-  readonly port: number | null;
+  /** 实际监听的端口：启动层在监听成功之后填上（命令行给的端口被占时会换到后面的端口）。 */
+  port: number | null;
+  readonly mode: Mode;
+  /** 退出接口收到请求、回答发出之后调它：由启动层给，做与收到 SIGTERM 相同的收尾。 */
+  exitHandler: (() => void) | null = null;
   readonly tasks = new Map<string, Task>();
   /** 正被别的服务占用、本服务没有接手的任务：任务编号 → {lock, dir}。 */
   readonly occupied = new Map<string, { lock: occupancy.Lock; dir: string }>();
@@ -146,6 +155,7 @@ export class Service {
     this.runsDir = runsDir;
     this.profile = profile;
     this.port = options.port ?? null;
+    this.mode = options.mode ?? "server";
     this.claim = options.claim ?? occupancy.claim;
     this.releaseLock = options.release ?? occupancy.release;
     if (options.createTasksDir !== false) mkdirSync(this.tasksDir, { recursive: true });
@@ -174,7 +184,7 @@ export class Service {
         db?.close();
       }
       if (taskId && !this.tasks.has(taskId)) {
-        const taken = this.claim(d, this.port);
+        const taken = this.claim(d, this.port, this.mode);
         if (taken !== null) {
           if (!this.occupied.has(taskId)) {
             console.log(`任务 ${taskId}（目录 ${name}）正被端口 ${pyStr(taken.port)} 的服务（主机 ${pyStr(taken.host)}，进程 ${pyStr(taken.pid)}）占用，本服务不接手它。`);
@@ -200,13 +210,15 @@ export class Service {
     return task;
   }
 
+  /** 收尾：各任务先停轮询、关 pi（「已退出」推到还开着的事件流上）、删占用标记；最后让各条事件流写完后正常结束。 */
   async close(): Promise<void> {
     for (const t of this.tasks.values()) {
       console.log(`任务 ${t.taskId} 的事件分发统计：${JSON.stringify(t.hub.stats)}`);
-      t.hub.close();
+      t.hub.stopPolling();
       await t.executor.close();
       this.releaseLock(t.dir);
     }
+    for (const t of this.tasks.values()) t.hub.close();
   }
 
   // ───────────── 任务与会话 ─────────────
