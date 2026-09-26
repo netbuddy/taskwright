@@ -152,3 +152,57 @@ test("会话列表从会话文件读：编号、名字、开始与最近活动�
     rmSync(runs, { recursive: true, force: true });
   }
 });
+
+// ───────────── 带过程摘要的对话记录：与 Python 版对同一份会话条目的输出逐字一致 ─────────────
+
+import { spawnSync } from "node:child_process";
+import { ROOT } from "./helpers.ts";
+import { messages as fullMessages } from "../src/conversation.ts";
+
+/** 让 Python 版对同一份条目算对话记录（带过程摘要）与切出的工作。 */
+function pythonSide(entries: unknown[], definition: Record<string, unknown>) {
+  const script = "import json, sys\nfrom taskwright_server.service import conversation, work_summary\n" +
+    "data = json.load(sys.stdin)\n" +
+    "path = conversation.branch(data['entries'])\n" +
+    "print(json.dumps({'messages': conversation.messages(data['entries'], 'S', data['definition']),\n" +
+    "  'works': work_summary.works_from_entries(path, data['definition'], conversation.FALLBACK_TEXT, conversation.text_of)}, ensure_ascii=False))";
+  const done = spawnSync(process.env.TASKWRIGHT_PYTHON || "python3", ["-c", script], {
+    input: JSON.stringify({ entries, definition }), encoding: "utf-8",
+    env: { ...process.env, PYTHONPATH: [join(ROOT, "server"), join(ROOT, "observatory")].join(":") },
+  });
+  assert.equal(done.status, 0, done.stderr);
+  return JSON.parse(done.stdout);
+}
+
+test("对话记录与过程摘要：对同一份会话条目，TypeScript 版与 Python 版的输出逐字一致；没有回复的那次工作的摘要放在下一句话之前、只有正文的不算一次工作", () => {
+  const msg = (id: string, parentId: string | null, t: number, role: string, content: unknown) =>
+    ({ type: "message", id, parentId, timestamp: `2026-09-22T01:00:${String(t).padStart(2, "0")}.000Z`, message: { role, content } });
+  const call = (id: string, name: string, args: unknown) => ({ type: "toolCall", id, name, arguments: args });
+  const result = (id: string, parentId: string, t: number, callId: string, isError = false, details: unknown = {}, content: unknown = []) =>
+    ({ type: "message", id, parentId, timestamp: `2026-09-22T01:00:${String(t).padStart(2, "0")}.000Z`, message: { role: "toolResult", toolCallId: callId, isError, details, content } });
+  const entries = [
+    { type: "session", id: "h" },
+    { type: "custom_message", id: "s1", parentId: null, customType: "taskwright-task-status", content: "【任务现状】", timestamp: "2026-09-22T01:00:00.000Z" },
+    msg("u1", "s1", 0, "user", "整理材料"),
+    msg("a1", "u1", 2, "assistant", [call("c1", "read", { path: "/w/inputs/甲.md" }), call("c2", "read", { path: "/w/inputs/乙.md" })]),
+    result("r1", "a1", 3, "c1"), result("r2", "r1", 3, "c2"),
+    msg("a2", "r2", 5, "assistant", [call("c3", "save_revision", {})]),
+    result("r3", "a2", 6, "c3", true, {}, [{ type: "text", text: "这次「保存修订」什么都没有写入，因为有 1 个操作不对：\n- 操作 1（新增）：摘录找不到。\n请把这些地方改正之后再提交。" }]),
+    msg("a3", "r3", 8, "assistant", [call("c4", "save_revision", {})]),
+    result("r4", "a3", 9, "c4", false, { revision_no: 1, operations: [{ op: "add", collection: "功能用例", item: "UC-001" }] }),
+    msg("a4", "r4", 12, "assistant", [call("c5", "reply", { informs: [{ text: "存了", items: [{ item_id: "UC-001", revision_no: 1 }] }], act: null, text: "好了" })]),
+    result("r5", "a4", 12, "c5"),
+    { type: "custom_message", id: "k1", parentId: "r5", customType: "taskwright-ui-click", content: "点击", details: { reply_entry: "a4", option_key: "a", option_text: "甲", text: "我选：甲" }, timestamp: "2026-09-22T01:00:13.000Z" },
+    msg("u2", "k1", 20, "user", "我选：甲"),
+    msg("a5", "u2", 22, "assistant", [call("c6", "ls", { path: "/w/inputs" })]), result("r6", "a5", 23, "c6"),
+    msg("u3", "r6", 30, "user", "用户说：/再看看"),
+    msg("a6", "u3", 31, "assistant", [{ type: "text", text: "直接回答" }]),
+  ];
+  const definition = { 材料目录: "inputs/" };
+  const python = pythonSide(entries, definition);
+  assert.deepEqual(fullMessages(entries, "S", definition), python.messages);
+  assert.deepEqual(worksFromEntries(branch(entries), definition, FALLBACK_TEXT, textOf), python.works);
+  // 第二次工作没有回复，摘要放在下一句话之前；第三句话之后只有正文、没有工具调用也没有经回复工具说话，不算一次工作，不出摘要。
+  assert.deepEqual(python.messages.map((m: any) => m.type), ["system_note", "user_message", "work_summary", "assistant_reply", "user_message", "work_summary",
+    "user_message", "assistant_reply"]);
+});
