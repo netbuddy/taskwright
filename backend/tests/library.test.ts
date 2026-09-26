@@ -102,6 +102,15 @@ test("规则指纹与 agent 同一个算法；全部规则带开关状态", () =
   const dir = join(tmp, "ws-all-rules");
   mkdirSync(join(dir, "docs"), { recursive: true });
   writeFileSync(join(dir, "docs", "r.json"), JSON.stringify(["A", "B", "C", "D"].map((id, n) => ({ 编号: id, 级别: n === 0 ? "必选" : "可选", 条文: "", 反例: "", 正例: "" }))), "utf-8");
+  // 规则文件用 Windows 行尾保存时，指纹照原始内容算，与 agent 侧一致。
+  const crlf = join(tmp, "ws-crlf-rules");
+  mkdirSync(join(crlf, "docs"), { recursive: true });
+  const crlfText = text.replace(/,/g, ",\r\n");
+  writeFileSync(join(crlf, "docs", "r.json"), crlfText, "utf-8");
+  const agentCrlf = spawnSync(process.execPath, ["--input-type=module", "-e",
+    `import('${join(ROOT, "agent", "src", "lib", "review_state.ts")}').then((m) => process.stdout.write(m.rulesHashText(process.argv[1], { off: [], promote: [] })))`, crlfText],
+    { encoding: "utf-8" }).stdout;
+  assert.equal(library.rulesHash(crlf, { 规则文件: "docs/r.json" }), agentCrlf);
   const states = library.allRules(dir, { 规则文件: "docs/r.json", 关闭: ["B"], 升为必选: ["C"] })!.map((r) => r.state);
   assert.deepEqual(states, ["required", "off", "promoted", "optional"]);
 });

@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
@@ -103,12 +103,15 @@ export function rulesHashText(fileText: string, off: unknown[], promote: unknown
   return createHash("sha256").update(text, "utf-8").digest("hex").slice(0, 16);
 }
 
-/** 一个集合现在的规则指纹；没写评审规矩、没给任务目录或规则文件读不到时为 null。 */
+/**
+ * 一个集合现在的规则指纹；没写评审规矩、没给任务目录或规则文件读不到时为 null。
+ * 规则文件按原始内容读（不统一行尾），与 agent 侧 review_state.ts 读法相同，评审者与后端算出的指纹才一致。
+ */
 export function rulesHash(taskDir: string | null, spec: Record<string, any> | undefined): string | null {
   if (!spec || taskDir === null) return null;
   let text: string;
   try {
-    text = readTextFile(join(taskDir, spec["规则文件"]));
+    text = readFileSync(join(taskDir, spec["规则文件"]), "utf-8");
   } catch {
     return null;
   }
