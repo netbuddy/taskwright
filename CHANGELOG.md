@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `release/`: build scripts for a single executable (Node SEA) and a Linux AppImage around a stand-in backend, with a measurement script; the real backend is wired in later.
+
+### Changed
+
+- Word materials are projected to Markdown (`<name>.docx.md`) instead of plain text: heading levels, automatic numbering, tables as Markdown rows, pictures as links to files extracted next to the material, text boxes as quoted lines that cannot be cited. Paragraph anchors `[pN]` and the verbatim source checks are unchanged; older `.docx.txt` projections are still read.
+- Derived files (projections) are no longer listed as materials in the web interface; the task page previews a Word file in its original layout. The materials API marks derived files with `derived_from`.
+- When an excerpt occurs in several paragraphs, the rejection lists the nearest ones with their table positions instead of naming a single paragraph; a text-box excerpt is rejected as such.
+
 ### Changed
 
 - Word materials: the text written beside each uploaded `.docx` for the assistant is now Markdown (`<name>.docx.md`). Headings keep their level (`#` to `######`) and Word's automatic numbering is written in front of them; list items use `-` or `1.`; tables are Markdown tables with one row per Word row, merged cells marked `（同左）` and `（同上）`, and nested tables flattened into the outer cell; pictures are extracted to `<name>.docx.media/` and linked where they appear; text-box text is written as a quote without a paragraph number. Every paragraph keeps its number, written `[pN]` in front of its text, and the counting rule, the source form `inputs/a.docx#pN` and the excerpt check are unchanged. Empty paragraphs are not written but still counted.
