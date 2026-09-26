@@ -102,14 +102,15 @@ test("服务信息的形状；退出接口在 server 形态下与没有这个接
   const go = (service: Service, method: string, path: string, remote: string) => dispatch(service, { method, path, query: {}, headers: {}, body: Buffer.alloc(0), remote }) as Promise<Dict>;
   const server = new Service(join(tmp, "d1"), join(tmp, "d1r"), {}, { port: 8765 });
   const info = JSON.parse((await go(server, "GET", "/api/v1/service", "198.51.100.9")).body.toString());
-  assert.deepEqual(Object.keys(info), ["ok", "app", "version", "mode", "pid", "port", "capabilities"]);
-  assert.deepEqual({ ...info, version: typeof info.version }, { ok: true, app: "taskwright", version: "string", mode: "server", pid: process.pid, port: 8765, capabilities: { exit: false } });
+  assert.deepEqual(Object.keys(info), ["ok", "app", "version", "mode", "pid", "port", "capabilities", "model"]);
+  assert.deepEqual({ ...info, version: typeof info.version, model: typeof info.model }, { ok: true, app: "taskwright", version: "string", mode: "server", pid: process.pid, port: 8765, capabilities: { exit: false, model: false }, model: "object" });
+  assert.deepEqual(info.model, { name: "", reason: "启动配置里没有写模型。" });
   assert.equal(info.version, JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")).version);
   const missing = await go(server, "POST", "/api/v1/service/exit", "127.0.0.1");
   assert.deepEqual([missing.status, JSON.parse(missing.body.toString()).error], [404, { code: "not_found", message: "没有这个接口：POST /api/v1/service/exit", data: {} }]);
 
   const desktop = new Service(join(tmp, "d2"), join(tmp, "d2r"), {}, { port: 8766, mode: "desktop" });
-  assert.deepEqual(JSON.parse((await go(desktop, "GET", "/api/v1/service", "::1")).body.toString()).capabilities, { exit: true });
+  assert.equal(JSON.parse((await go(desktop, "GET", "/api/v1/service", "::1")).body.toString()).capabilities.exit, true);
   let exits = 0;
   desktop.exitHandler = () => void (exits += 1);
   for (const remote of ["192.0.2.5", "198.51.100.1", "::ffff:192.0.2.5", ""]) {
@@ -155,7 +156,7 @@ test("真进程：端口被占时落到后面第一个空闲端口，服务信�
   try {
     assert.ok(port > start && port < start + 10, `落在 ${port}（给的是 ${start}；中间的端口可能正被本机别的程序占着）`);
     const info = (await call("127.0.0.1", port, "GET", "/api/v1/service")).body;
-    assert.deepEqual([info.port, info.mode, info.pid, info.capabilities], [port, "server", child.pid, { exit: false }]);
+    assert.deepEqual([info.port, info.mode, info.pid, info.capabilities.exit], [port, "server", child.pid, false]);
     assert.match(log(), new RegExp(`端口 ${start} 被占用，改用端口 ${port}。`));
     assert.match(log(), /任务服务在 http:\/\/0\.0\.0\.0:\d+\/api\/v1\/tasks ，.*运行形态 server/);
     assert.equal((await call("127.0.0.1", port, "POST", "/api/v1/service/exit")).status, 404);

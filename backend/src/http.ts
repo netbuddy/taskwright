@@ -1,5 +1,6 @@
 /**
  * 路由与各接口（node:http，无框架）。所有路径以 /api/v1 开头；错误一律是 {"ok": false, "error": {code, message, data}}。
+ * 启动时给了网页目录时，不以 /api/ 开头的 GET 请求改由 web.ts 出静态文件。
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -14,7 +15,9 @@ import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
 import { appVersion } from "./paths.ts";
+import { probeModel } from "./model_probe.ts";
 import { MAX_UPLOAD, type Service, taskTypes, wordsLocator } from "./service.ts";
+import { isWebPath, webFile } from "./web.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
 export const RAW_TYPES: Record<string, string> = {
@@ -228,7 +231,12 @@ export const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 /** 服务信息：不需要任务。给打包后的启动程序认出端口上是不是自己、给部署与监控探活、给前端按能力显示按钮。 */
 export function serviceInfo(service: Service) {
-  return { ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port, capabilities: { exit: service.mode === "desktop" } };
+  // 模型探测每次都现查（只读两个小文件）：用户放好配置文件后，刷新页面即可看到结果。
+  const model = probeModel(service.profile);
+  return {
+    ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
+    capabilities: { exit: service.mode === "desktop", model: model.available }, model: { name: model.name, reason: model.reason },
+  };
 }
 
 const handlers: Record<string, Handler> = {
@@ -437,7 +445,13 @@ function send(res: ServerResponse, reply: Reply, head = false): void {
 /** 上传请求体的上限：文件 5 MB 加 multipart 的包装。更大的请求不读，直接以 too_large 拒绝。 */
 const MAX_BODY = MAX_UPLOAD + 64 * 1024;
 
-export function makeServer(service: Service) {
+export interface ServerOptions {
+  /** 网页静态文件所在的目录；null 时不出页面，所有路径都归接口（与没有这个选项时相同）。 */
+  webDir?: string | null;
+}
+
+export function makeServer(service: Service, options: ServerOptions = {}) {
+  const webDir = options.webDir ?? null;
   return createServer((incoming, res) => {
     const method = incoming.method ?? "GET";
     if (method !== "GET" && method !== "POST") {
@@ -449,6 +463,11 @@ export function makeServer(service: Service) {
     const rawPath = (q >= 0 ? raw.slice(0, q) : raw).split("#")[0];
     const query = parseQuery(q >= 0 ? raw.slice(q + 1).split("#")[0] : "");
     const path = unquote(rawPath).replace(/\/+$/, "") || "/";
+    if (webDir !== null && method === "GET" && isWebPath(path)) {
+      send(res, webFile(webDir, path));
+      incoming.resume();
+      return;
+    }
     const length = Number(incoming.headers["content-length"] ?? 0) || 0;
     const upload = /^\/api\/v1\/tasks\/([^/]+)\/materials$/s.exec(path);
     if (method === "POST" && length > MAX_BODY && upload) {
