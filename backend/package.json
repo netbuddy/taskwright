@@ -1,0 +1,10 @@
+{
+  "name": "taskwright-backend",
+  "private": true,
+  "description": "任务服务的 TypeScript 版：给前端的 HTTP 接口。没有任何依赖，由 Node 24 直接运行；这份文件只是声明本目录的 TypeScript 按 ES 模块解析，并给出跑单元测试的命令。",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.mts",
+    "test": "node --test 'tests/*.test.ts'"
+  }
+}
