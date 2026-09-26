@@ -34,9 +34,10 @@ const BODIES: Dict[] = [
   { client_id: "a-5", kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 2 }, { item_id: "UC-002", base_revision: 1 }], notify_executor: true },
   { client_id: "a-6", kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }, { item_id: "TBD-002", base_revision: 1 }], notify_executor: true },
   { client_id: "a-7", kind: "undo", targets: [{ revision_no: 4 }], extra: "不转交" },
-  { client_id: "a-8", kind: "request_review", targets: [{ item_id: "UC-001", revision_no: 2 }], force: true },
-  { client_id: "a-9", kind: "waive", targets: [{ item_id: "NFR-001", revision_no: 1 }], fields: { 理由: "另有规定" } },
-  { client_id: "a-10", kind: "set_review_rules", fields: { rules: { "UC-R7": false } }, session_id: "S1" },
+  { client_id: "a-8", kind: "request_review", targets: [{ item_id: "UC-001", base_revision: 2 }], force: true },
+  { client_id: "a-9", kind: "waive_review", targets: [{ item_id: "NFR-001", base_revision: 1 }], fields: { reason: "另有规定", source: "panel" } },
+  { client_id: "a-10", kind: "unwaive_review", targets: [{ item_id: "NFR-001", base_revision: 1 }] },
+  { client_id: "a-11", kind: "set_review_rules", fields: { collection: "功能用例", off: ["UC-R9"], promote: [] }, session_id: "S1" },
 ];
 const CARDS: [string, Dict][] = [
   ["我选：先做退货流程", { reply_message_id: "a0000002", option_key: "a", option_text: "先做退货流程" }],
