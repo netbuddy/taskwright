@@ -4,8 +4,8 @@
 // Two ways it runs:
 //   1. TASKWRIGHT_RUN_SCRIPT is set: behave like `node <script> <args>`. The backend starts pi this way, because
 //      running the executable itself would start the embedded program again, not pi.
-//   2. Otherwise: make sure the payload (backend, web files, pi, agent) is extracted into the user's cache
-//      directory, then load <payload>/app/main.mjs. Extraction happens once per payload id; a directory is only
+//   2. Otherwise: make sure the payload (launcher, backend, web files, pi, agent, rg and fd) is extracted into the
+//      user's cache directory, then load <payload>/app/main.mjs (the launcher). Extraction happens once per payload id; a directory is only
 //      used after a marker file says it is complete, and it is written under a temporary name first.
 "use strict";
 
@@ -21,11 +21,12 @@ function fail(error) {
   process.exit(70);
 }
 
+// The same cache directory as the launcher's (release/app/main.ts), with payload/ under it.
 function cacheRoot() {
-  if (process.env.TASKWRIGHT_CACHE_DIR) return process.env.TASKWRIGHT_CACHE_DIR;
-  if (process.platform === "win32") return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "taskwright-proto", "payload");
-  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Caches", "taskwright-proto", "payload");
-  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "taskwright-proto", "payload");
+  if (process.env.TASKWRIGHT_CACHE_DIR) return path.join(process.env.TASKWRIGHT_CACHE_DIR, "payload");
+  if (process.platform === "win32") return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Taskwright", "cache", "payload");
+  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Caches", "Taskwright", "payload");
+  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "taskwright", "payload");
 }
 
 // Payload asset layout (written by release/build.mjs): compressed [u32 index length][index JSON][file bytes...];

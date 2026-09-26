@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Taskwright
+Comment=Starts the local task service and opens it in the browser
+Exec=AppRun
+Icon=taskwright
+Terminal=true
+Categories=Development;
