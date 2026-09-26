@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Taskwright (packaging prototype)
+Comment=Starts the local service and opens it in the browser
+Exec=AppRun
+Icon=taskwright-proto
+Terminal=false
+Categories=Development;
