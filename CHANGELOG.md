@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Tool rejections are recorded in a `tool_rejection` table (tool, call id, unit of work, reason kind, fact and guidance, the first 2,000 characters of the input); the observatory shows them under the rejected call.
 - Word materials: `.docx` files can be uploaded (up to 5 MB). The service writes a paragraph-numbered text beside each one (`<name>.docx.txt`) for the assistant; sources quoting a Word file name the paragraph (`inputs/a.docx#p37`), and `save_revision` checks the excerpt against that paragraph, or against it and at most five following paragraphs.
 - The material pane shows Word files page by page in their original layout, with headers and footers; each Word source is labelled with its page, section and position on the page, derived from the paragraph number. Clicking a source highlights the quote, marks a quote that runs over several paragraphs, or says where it was not found.
 - `GET …/materials/raw` returns a material file as uploaded.
@@ -29,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `save_revision` is idempotent per tool-call id: a replayed call writes nothing and returns the first result.
+- The basis of a suggested value is checked verbatim like a `save_revision` source, including Word paragraphs and domain notes.
 - Reviewing an item whose content and rules have not changed since its last review needs an explicit "review again".
 - When a review ends, the conversation shows one sentence with the counts; the findings are in the Review tab and in the task status.
 - EARS-R2 and EARS-R3 state that a named system is a valid subject and that counting words such as "books" or "days" are units.
