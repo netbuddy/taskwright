@@ -315,14 +315,10 @@ export function docxLocator(locator: string): { path: string; paragraph: number 
   return m ? { path: m[1], paragraph: m[2] ? Number(m[2]) : null } : null;
 }
 
-/** 由 Word 材料生成的投影（x.docx.md；0.2 的任务里是 x.docx.txt）：材料清单里不单独显示。 */
-export function isProjection(path: string, all: string[]): boolean {
-  const m = /^(.+\.docx)\.(md|txt)$/i.exec(path);
-  return !!m && all.includes(m[1]);
+/** 用户自己的材料：去掉由别的材料生成的文件（Word 材料的投影 x.docx.md 等，后端在 derived_from 里写明来源）。 */
+export function ownMaterials<T extends { derived_from?: string | null }>(materials: T[]): T[] {
+  return materials.filter((m) => !m.derived_from);
 }
-
-/** 投影文件名对应的 Word 文件名：「x.docx.md」「x.docx.txt」→「x.docx」。 */
-export const projectionOf = (name: string): string => name.replace(/\.(md|txt)$/i, "");
 
 /**
  * 投影里各段的表格位置，写成「表 3 第 2 行第 2 列」（嵌套表只写外层）。

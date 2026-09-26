@@ -48,7 +48,7 @@ import {
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
 import {
-  DOCX_LOCATOR, PROJECTION_SUFFIXES, findParagraph, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
+  DOCX_LOCATOR, PROJECTION_SUFFIXES, findParagraph, inTextBox, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
 } from "./docx_source.ts";
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
@@ -929,6 +929,9 @@ function checkDocxSource(
       const more = elsewhere.length > near.length ? `等 ${elsewhere.length} 处` : "";
       errors.push(withGuide(`${head}；这段文字在${near.map(labelOf).join("、")}${more}都有`,
         "请按上下文确认是哪一段，出处写那一段的段落号"));
+    } else if (inTextBox(projection, part)) {
+      errors.push(withGuide(`${head}；这段文字在文本框里，文本框里的文字不能作出处`,
+        "请改引正文里说到同一件事的段落；正文里没有，就不要把这一处当作来源"));
     } else {
       errors.push(withGuide(head,
         `${EXACT_EXCERPT}；摘录必须逐字抄自那一段的正文（不带段落号、编号与 #、- 这些标记），不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));

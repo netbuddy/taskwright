@@ -82,6 +82,15 @@ class DocxMaterialServiceTest(unittest.TestCase):
         # 材料清单只列文件，图片目录不列
         paths = [m["path"] for m in self.service.task_page(self.t)["materials"]]
         self.assertEqual(paths, ["inputs/需求-2.docx", "inputs/需求-2.docx.md", "inputs/需求.docx", "inputs/需求.docx.md"])
+        # 投影标明派生自哪份 Word 文件，界面据此不列出；原始材料为 None
+        marks = {m["path"]: m["derived_from"] for m in self.service.task_page(self.t)["materials"]}
+        self.assertEqual(marks, {"inputs/需求-2.docx": None, "inputs/需求-2.docx.md": "inputs/需求-2.docx",
+                                 "inputs/需求.docx": None, "inputs/需求.docx.md": "inputs/需求.docx"})
+        # 0.2 的 .txt 投影同样标明；没有对应 .docx 的 .md 是普通材料
+        (self.t.dir / "inputs/需求.docx.txt").write_text("[第 1 段] 旧", encoding="utf-8")
+        (self.t.dir / "inputs/孤儿.docx.md").write_text("x", encoding="utf-8")
+        marks = {m["path"]: m["derived_from"] for m in self.service.task_page(self.t)["materials"]}
+        self.assertEqual((marks["inputs/需求.docx.txt"], marks["inputs/孤儿.docx.md"]), ("inputs/需求.docx", None))
 
     def test_坏的docx与保留名拒绝(self):
         for name, data, code in (("坏.docx", b"x", "unsupported_type"), ("a.docx.txt", b"x", "bad_request"),

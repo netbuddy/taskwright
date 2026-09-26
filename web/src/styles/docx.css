@@ -20,3 +20,7 @@
 /* 跨段的引用：这几段整段淡黄底 */
 .app .docx-paper p.hitpara { background: #fff4c2; box-shadow: -.35rem 0 0 #d9a400; border-radius: .2rem; }
 .app .doc-b:has(> .docx-paper) { background: var(--paper); }
+
+/* 任务页「查看原文」弹窗里的 Word 材料：借用工作视图的 .app 环境（段落边距清零等），去掉外框与阴影，内容区自己滚动。 */
+.app.docx-view { border: 0; border-radius: 0; box-shadow: none; background: none; }
+.app.docx-view .doc-b { max-height: 46rem; overflow-y: auto; padding: .6rem 2% .9rem; }

@@ -7,10 +7,13 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import JSZip from "jszip";
 import { api } from "../api/client";
-import type { Item } from "../api/types";
+import type { Item, TaskDetail } from "../api/types";
+import { App as AntApp, ConfigProvider } from "antd";
+import { fireEvent } from "@testing-library/react";
+import { TaskPage } from "../pages/TaskPage";
 import { MaterialPane } from "../components/work/MaterialPane";
 import { SourceTag } from "../components/work/ItemDetail";
-import { isProjection, polish, projectionOf, renderDocx, tableOf, tablePositions, whereOf, type RenderedDocx } from "../model/docx";
+import { ownMaterials, polish, renderDocx, tableOf, tablePositions, whereOf, type RenderedDocx } from "../model/docx";
 import { resetDocxStore, TaskIdContext } from "../state/docxStore";
 // 仓库脚本 docx_paragraphs.mjs 的抽取函数作标准答案（它的类型声明在同目录的 .d.mts）
 import { paragraphsOf, tableLabel, type Paragraph } from "../../../scripts/docx_paragraphs.mjs";
@@ -126,7 +129,7 @@ describe("派生表：页 · 章节 · 位置", () => {
 });
 
 describe("材料区的四种定位结果", () => {
-  const materials = [{ path: PATH, bytes: 1, modified_at: "" }, { path: `${PATH}.md`, bytes: 1, modified_at: "" }];
+  const materials = [{ path: PATH, bytes: 1, modified_at: "", derived_from: null }, { path: `${PATH}.md`, bytes: 1, modified_at: "", derived_from: PATH }];
   const item = (id: string, locator: string, excerpt: string): Item => ({
     item_id: id, collection: "用例", title: id, revision_no: 1, revision_by: "executor", revision_at: "", revisions: [1],
     fields: {}, sources: [{ kind: "文档原文", locator, excerpt }], reviews: [], confirmations: [], confirmation_stale: false,
@@ -223,10 +226,38 @@ describe("投影：表格位置与材料清单", () => {
     expect(md).toEqual(new Map([...tablePositions(legacyProjection())].filter(([n]) => withText.has(n))));
   });
 
-  it("投影文件（.docx.md，0.2 的 .docx.txt）有对应的 Word 文件时不单独列出", () => {
-    const all = [PATH, `${PATH}.md`, `${PATH}.txt`, "inputs/笔记.md", "inputs/孤儿.docx.md"];
-    expect(all.filter((p) => !isProjection(p, all))).toEqual([PATH, "inputs/笔记.md", "inputs/孤儿.docx.md"]);
-    // 任务页在投影文件后面写「由 x.docx 生成」
-    expect(["需求.docx.md", "需求.docx.txt"].map(projectionOf)).toEqual(["需求.docx", "需求.docx"]);
+  it("材料清单按后端的 derived_from 去掉投影文件", () => {
+    const all = [{ path: PATH, derived_from: null }, { path: `${PATH}.md`, derived_from: PATH }, { path: "inputs/笔记.md" }];
+    expect(ownMaterials(all).map((m) => m.path)).toEqual([PATH, "inputs/笔记.md"]);
+  });
+});
+
+describe("任务页的材料清单", () => {
+  const detail = {
+    task_id: "TASK-D", task_name: "Word 任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    definition: { collections: [] }, items: [], completion: null, sessions: [],
+    materials: [
+      { path: PATH, bytes: 74000, modified_at: "2026-09-25T12:00:00Z", derived_from: null },
+      { path: `${PATH}.md`, bytes: 7000, modified_at: "2026-09-25T12:00:00Z", derived_from: PATH },
+      { path: "inputs/笔记.md", bytes: 3, modified_at: "2026-09-25T12:00:00Z", derived_from: null },
+    ],
+  } as unknown as TaskDetail;
+
+  it("不列投影、份数不算它；Word 的「查看原文」按原版式显示，不显示投影", async () => {
+    vi.spyOn(api, "getTask").mockResolvedValue(detail);
+    vi.spyOn(api, "listTasks").mockResolvedValue([]);
+    vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
+    const content = vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: projection() });
+    render(<ConfigProvider><AntApp><TaskPage taskId="TASK-D" /></AntApp></ConfigProvider>);
+    expect(await screen.findByText("这个任务现在有 2 份材料。助手读的就是这几份文件。")).toBeInTheDocument();
+    const rows = screen.getAllByTestId("material-row");
+    expect(rows.map((r) => r.firstChild!.textContent)).toEqual(["requirements-styled.docx", "笔记.md"]);
+    expect(document.body.textContent).not.toMatch(/供助手阅读|\.docx\.md/);
+    fireEvent.click(rows[0].querySelector("button")!);
+    await waitFor(() => expect(document.querySelector(".docx-view [data-testid=docx-paper] section.docx")).toBeTruthy(), SLOW);
+    expect(document.querySelector(".docx-view")!.textContent).toContain("学校图书馆借还书系统需求说明");
+    // 投影只在后台读来算表格位置，页面上不显示它
+    expect(document.body.textContent).not.toContain("[p1]");
+    expect(content).toHaveBeenCalledTimes(1);
   });
 });

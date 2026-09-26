@@ -131,3 +131,12 @@ test("摘录在材料里有好几处（表格整行错一位）：不替模型�
   assert.doesNotMatch(message, /它在第/);
   assert.equal(count(dir, "item_source"), 0);
 });
+
+test("摘录出自文本框：拒绝，并说明文本框里的文字不能作出处", () => {
+  const dir = workspaceWithDocx();
+  const message = rejection(dir, [docxSource(81, "保留期从图书归还上架时起算，\n按自然日计，节假日不顺延。")]);
+  assert.match(message, /第 1 条来源的摘录「保留期从图书归还上架时起算， 按自然日计，节假日不顺延。」在 requirements-styled\.docx 第 81 段里找不到；这段文字在文本框里，文本框里的文字不能作出处/);
+  assert.match(message, /怎么办：请改引正文里说到同一件事的段落；正文里没有，就不要把这一处当作来源/);
+  // 0.2 的纯文本投影里没有文本框的字：照旧只说找不到
+  assert.doesNotMatch(rejection(workspaceWithDocx(true), [docxSource(81, "保留期从图书归还上架时起算")]), /文本框/);
+});

@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Word materials: the text written beside each uploaded `.docx` for the assistant is now Markdown (`<name>.docx.md`). Headings keep their level (`#` to `######`) and Word's automatic numbering is written in front of them; list items use `-` or `1.`; tables are Markdown tables with one row per Word row, merged cells marked `（同左）` and `（同上）`, and nested tables flattened into the outer cell; pictures are extracted to `<name>.docx.media/` and linked where they appear; text-box text is written as a quote without a paragraph number. Every paragraph keeps its number, written `[pN]` in front of its text, and the counting rule, the source form `inputs/a.docx#pN` and the excerpt check are unchanged. Empty paragraphs are not written but still counted.
 - The projection is written by one TypeScript module (`agent/src/lib/docx_markdown.ts`, command-line entry `agent/src/cli/docx_projection.mts`); the service calls it for uploads and for `create_task --material`. The Python projection module is removed.
+- The material list marks each projection with `derived_from` (the path of its `.docx`); the task page and the material pane leave those entries out and do not count them, and **View** on a Word file on the task page shows the file page by page in its original layout instead of the projection text.
 - Tasks created with 0.2 keep working: when a Word file has only the old `<name>.docx.txt`, the assistant, the excerpt check and the material pane read that file. File names ending in `.docx.md` or `.docx.txt` are reserved.
 
 ### Fixed
 
+- An excerpt taken from a text box in a Word file is refused with a note that text-box text cannot be cited.
 - When an excerpt from a Word file is not in the paragraph named by the source and occurs in several other paragraphs (short table cells such as a single number do), `save_revision` and the reply basis check no longer point to one of them; they list the nearest ones with their table positions and ask the assistant to choose by context. Pointing to a single paragraph led the assistant to save sources that matched word for word but pointed to the wrong place.
 
 ## [0.2.0-alpha] - 2026-09-25

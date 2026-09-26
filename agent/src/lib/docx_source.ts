@@ -85,6 +85,19 @@ export function placeExcerpt(paragraphs: string[], n: number, excerpt: string): 
   return { kind: "miss" };
 }
 
+/** Markdown 投影里文本框的文字（以「>」开头的行，去掉「> （文本框）」或「> 」），各行接在一起；0.2 的纯文本投影里没有文本框，是空文字。 */
+export function textBoxText(text: string): string {
+  if (isLegacyProjection(text)) return "";
+  return text.replace(/<!--[\s\S]*?-->/g, "").split("\n").filter((l) => l.startsWith(">"))
+    .map((l) => l.replace(/^>\s?(（文本框）)?/, "")).join("\n");
+}
+
+/** 摘录是不是出自文本框（去掉空白后是文本框文字的一部分）。 */
+export function inTextBox(text: string, excerpt: string): boolean {
+  const want = squeeze(excerpt);
+  return !!want && squeeze(textBoxText(text)).includes(want);
+}
+
 /** 按上面的规则能找到这段摘录的全部段落（摘录从那一段开始），从小到大。 */
 export function paragraphsWith(paragraphs: string[], excerpt: string): number[] {
   return [...paragraphs.keys()].map((i) => i + 1).filter((n) => placeExcerpt(paragraphs, n, excerpt).kind !== "miss");

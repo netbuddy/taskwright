@@ -12,7 +12,8 @@ import { DocumentModal } from "../components/DocumentModal";
 import { CompletionPanel } from "../components/CompletionPanel";
 import { completionHeadline, isUnread, needsReview, reviewState } from "../model/items";
 import { formatBytes, formatTime } from "../model/format";
-import { isProjection, projectionOf } from "../model/docx";
+import { ownMaterials } from "../model/docx";
+import { DocxPaper } from "../components/work/DocxPaper";
 import { go, href } from "../router";
 import { statusTag } from "./TaskListPage";
 
@@ -24,6 +25,8 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const [log, setLog] = useState<RevisionLogEntry[]>([]);
   useEffect(() => { if (docOpen) api.revisionLog(taskId).then((r) => setLog(r.revisions)).catch(() => setLog([])); }, [docOpen, taskId]);
   const [material, setMaterial] = useState<{ path: string; text: string } | null>(null);
+  // Word 材料的「查看原文」按原版式显示（与工作视图材料区同一个渲染），不显示给助手读的投影。
+  const [wordPath, setWordPath] = useState<string | null>(null);
   const toast = useToast();
 
   const load = () =>
@@ -106,16 +109,13 @@ export function TaskPage({ taskId }: { taskId: string }) {
           <div className="section-title">材料清单</div>
           <div className="card">
             <div className="small" style={{ marginBottom: "0.571rem" }}>
-              这个任务现在有 {task.materials.filter((m) => !isProjection(m.path, task.materials.map((x) => x.path))).length} 份材料。助手读的就是这几份文件；Word 文件由系统另生成一份 Markdown 文本给助手读。
+              这个任务现在有 {ownMaterials(task.materials).length} 份材料。助手读的就是这几份文件。
             </div>
-            {task.materials.map((m) => (
-              <div key={m.path} style={{ display: "flex", alignItems: "center", gap: "0.571rem", padding: "0.286rem 0" }}>
-                <span style={{ flex: 1 }}>
-                  {m.path.split("/").pop()}
-                  {isProjection(m.path, task.materials.map((x) => x.path)) && <span className="muted small">（由 {projectionOf(m.path.split("/").pop()!)} 生成，供助手阅读）</span>}
-                </span>
+            {ownMaterials(task.materials).map((m) => (
+              <div key={m.path} style={{ display: "flex", alignItems: "center", gap: "0.571rem", padding: "0.286rem 0" }} data-testid="material-row">
+                <span style={{ flex: 1 }}>{m.path.split("/").pop()}</span>
                 <span className="muted small">{formatBytes(m.bytes)} · {formatTime(m.modified_at)}</span>
-                <Button size="small" onClick={() => api.materialContent(taskId, m.path).then(setMaterial)}>查看原文</Button>
+                <Button size="small" onClick={() => (/\.docx$/i.test(m.path) ? setWordPath(m.path) : api.materialContent(taskId, m.path).then(setMaterial))}>查看原文</Button>
               </div>
             ))}
             {!closed && (
@@ -157,6 +157,13 @@ export function TaskPage({ taskId }: { taskId: string }) {
       <DocumentModal task={task} log={log} open={docOpen} onClose={() => setDocOpen(false)} />
       <Modal title={material?.path} open={!!material} onCancel={() => setMaterial(null)} footer={null} width="min(54.286rem, 94vw)">
         <pre className="doc-text" style={{ maxHeight: "40rem", overflow: "auto" }}>{material?.text}</pre>
+      </Modal>
+      <Modal title={wordPath} open={!!wordPath} onCancel={() => setWordPath(null)} footer={null} width="min(64rem, 94vw)" destroyOnHidden>
+        {wordPath && (
+          <div className="app docx-view">
+            <div className="doc-b"><DocxPaper taskId={taskId} path={wordPath} items={[]} locate={null} /></div>
+          </div>
+        )}
       </Modal>
     </Shell>
   );
