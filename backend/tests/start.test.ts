@@ -16,6 +16,12 @@ import { exitSignals, startService } from "../src/start.ts";
 import { isWebPath, webFile } from "../src/web.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
+// 本文件有几例在测试进程里直接起服务，服务的日志若写到标准输出，会与测试框架经标准输出回报的结果数据交错，
+// 偶尔让框架读坏（Unable to deserialize cloned data）。所以这里把 console 的输出收进内存，不写标准输出。
+const captured: string[] = [];
+console.log = (...args: unknown[]) => void captured.push(args.map(String).join(" "));
+console.error = console.log;
+
 const MAIN = join(ROOT, "backend", "src", "main.mts");
 const FAKE_PI = join(ROOT, "backend", "tests", "fixtures", "fake_pi.mjs");
 const tmp = tempDir();
