@@ -66,16 +66,28 @@ function attempt(fn: () => unknown) {
   }
 }
 
-function typescriptSide(tasks: string, runs: string) {
+async function attemptAsync(fn: () => Promise<unknown>) {
+  try {
+    return { ok: await fn() };
+  } catch (error: any) {
+    if (typeof error?.body === "function") return { error: error.body() };
+    return { exception: `${error?.name}: ${error?.message}` };
+  }
+}
+
+async function typescriptSide(tasks: string, runs: string) {
   const service = new Service(tasks, runs, {}, { claim: () => null, release: () => {}, createTasksDir: false });
   const out: Record<string, any> = { tasks: attempt(() => service.listTasks()), each: {} };
   for (const [taskId, t] of [...service.tasks].sort((a, b) => library.byCodePoint(a[0], b[0]))) {
     const one: Record<string, any> = {
-      page: attempt(() => service.taskPage(t)), sessions: attempt(() => t.sessions.list()), log: attempt(() => service.revisionLog(t)),
+      page: attempt(() => service.taskPage(t)), sessions: attempt(() => t.executor.listSessions()), log: await attemptAsync(() => service.revisionLog(t)),
     };
     const items = (one.page.ok?.items ?? []) as { item_id: string }[];
     one.items = Object.fromEntries(items.map((i) => [i.item_id, attempt(() => library.itemRevisions(t.dir, i.item_id))]));
-    one.document = attempt(() => render.render(t.dir, library.libraryOf(t.dir), null, null, wordsLocator(t)));
+    one.document = await attemptAsync(async () => {
+      const lib = library.libraryOf(t.dir);
+      return render.render(t.dir, lib, null, null, await wordsLocator(t, lib));
+    });
     out.each[taskId] = one;
   }
   return out;
@@ -116,7 +128,7 @@ if (!values.tasks || !values.runs) {
   process.exit(2);
 }
 const py = pythonSide(values.tasks, values.runs);
-const ts = typescriptSide(values.tasks, values.runs);
+const ts = await typescriptSide(values.tasks, values.runs);
 const sections: [string, unknown, unknown][] = [["任务列表", py.tasks, ts.tasks]];
 for (const taskId of [...new Set([...Object.keys(py.each), ...Object.keys(ts.each)])].sort(library.byCodePoint)) {
   for (const key of ["page", "sessions", "log", "items", "document"]) {

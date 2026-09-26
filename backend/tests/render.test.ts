@@ -11,7 +11,6 @@ import { after, before, describe, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
 import * as library from "../src/library.ts";
 import * as render from "../src/render.ts";
-import { Sessions } from "../src/sessions.ts";
 import { type Task, wordsLocator } from "../src/service.ts";
 import { makeTypedTask, makeWorkspace, tempDir } from "./helpers.ts";
 
@@ -74,35 +73,30 @@ test("文档请求的写法：旧的 selection 不再认，修订号要从 1 起
 // ───────────── 出处的写法 ─────────────
 
 describe("「用户的话」的出处换成会话名称与用户的第几句话", () => {
-  let sessions: string;
-  const fakeTask = (name: string | null) => {
-    const runs = join(sessions, name ?? "无名");
-    const dir = join(runs, "T", "pi-sessions", "service");
-    mkdirSync(dir, { recursive: true });
-    const msg = (id: string, parentId: string | null, role: string, text: string) =>
-      ({ type: "message", id, parentId, timestamp: "2026-09-22T10:00:00Z", message: { role, content: [{ type: "text", text }] } });
-    const lines = [{ type: "session", id: "S1", timestamp: "2026-09-22T10:00:00Z" },
-      msg("u1", null, "user", "请整理材料"), msg("a1", "u1", "assistant", "好的"), msg("u2", "a1", "user", "罚款在服务台缴纳"), msg("a2", "u2", "assistant", "记下了"),
-      ...(name ? [{ type: "session_info", id: "n1", parentId: "a2", timestamp: "2026-09-22T10:00:00Z", name }] : [])];
-    writeFileSync(join(dir, "s1.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n", "utf-8");
-    return { sessions: new Sessions(runs, "T") } as unknown as Task;
-  };
-  before(() => { sessions = join(tmp, "sessions"); });
+  const msg = (id: string, parentId: string | null, role: string, text: string) =>
+    ({ type: "message", id, parentId, timestamp: "2026-09-22T10:00:00Z", message: { role, content: [{ type: "text", text }] } });
+  const entries = [{ type: "session", id: "S1", timestamp: "2026-09-22T10:00:00Z" },
+    msg("u1", null, "user", "请整理材料"), msg("a1", "u1", "assistant", "好的"), msg("u2", "a1", "user", "罚款在服务台缴纳"), msg("a2", "u2", "assistant", "记下了")];
+  const fakeTask = (name: string | null) => ({
+    executor: { entries: async (sid: string) => (sid === "S1" ? entries : []), listSessions: () => [{ session_id: "S1", name }] },
+  }) as unknown as Task;
+  const words = (locator: string) => ({ 种类: "用户的话", 出处: locator, 摘录: "", 第几条: 1, 事件序号: 1, 支持: [] });
+  const lib = { data: { sources: new Map([["UC-001\u00001", [words("S1#u2"), words("S9#u1")]]]) } } as any;
 
-  test("换算成会话名称与用户的第几句话；找不到时为空", () => {
-    const locate = wordsLocator(fakeTask("整理需求"));
+  test("换算成会话名称与用户的第几句话；找不到时为空", async () => {
+    const locate = await wordsLocator(fakeTask("整理需求"), lib);
     assert.equal(locate("S1#u2"), "会话「整理需求」里用户的第 2 句话");
-    assert.equal(wordsLocator(fakeTask(null))("S1#u1"), "对话里用户的第 1 句话");
+    assert.equal((await wordsLocator(fakeTask(null), lib))("S1#u1"), "对话里用户的第 1 句话");
     assert.equal(locate("S1#不存在"), null);
     assert.equal(locate("S9#u1"), null);
     assert.equal(locate("没有井号"), null);
   });
 
-  test("渲染不把内部编号印进文档", () => {
-    const lib = { sourcesOf: () => [{ kind: "用户的话", locator: "S1#u2", excerpt: "罚款在服务台缴纳" }, { kind: "文档原文", locator: "inputs/a.md", excerpt: "原文" }] } as any;
-    assert.equal(render.sourcesText(lib, "UC-001", 1, wordsLocator(fakeTask("整理需求"))),
+  test("渲染不把内部编号印进文档", async () => {
+    const fake = { sourcesOf: () => [{ kind: "用户的话", locator: "S1#u2", excerpt: "罚款在服务台缴纳" }, { kind: "文档原文", locator: "inputs/a.md", excerpt: "原文" }] } as any;
+    assert.equal(render.sourcesText(fake, "UC-001", 1, await wordsLocator(fakeTask("整理需求"), lib)),
       "用户的话，出处 会话「整理需求」里用户的第 2 句话（「罚款在服务台缴纳」）；文档原文，出处 inputs/a.md（「原文」）");
-    assert.equal(render.sourcesText(lib, "UC-001", 1), "用户的话，出处 对话里用户说的话（「罚款在服务台缴纳」）；文档原文，出处 inputs/a.md（「原文」）");
+    assert.equal(render.sourcesText(fake, "UC-001", 1), "用户的话，出处 对话里用户说的话（「罚款在服务台缴纳」）；文档原文，出处 inputs/a.md（「原文」）");
   });
 });
 

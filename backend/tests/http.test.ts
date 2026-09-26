@@ -22,13 +22,13 @@ before(() => {
   tmp = tempDir();
   service = new Service(join(tmp, "tasks"), join(tmp, "runs"), {});
 });
-after(() => {
-  service.close();
+after(async () => {
+  await service.close();
   rmSync(tmp, { recursive: true, force: true });
 });
 
-const go = (method: string, path: string, body = "", query: Record<string, string> = {}) => {
-  const reply = dispatch(service, { method, path, query, headers: {}, body: Buffer.from(body) });
+const go = async (method: string, path: string, body = "", query: Record<string, string> = {}) => {
+  const reply = (await dispatch(service, { method, path, query, headers: {}, body: Buffer.from(body) })) as { status: number; body: Buffer };
   return { status: reply.status, body: JSON.parse(reply.body.toString("utf-8")) };
 };
 
@@ -41,23 +41,33 @@ test("错误形状与状态码", () => {
   assert.equal(STATUS.old_format, 409);
 });
 
-test("路由分派：没有的接口、没有的任务、这一版还没接上的接口、方法不对", () => {
-  assert.deepEqual(go("GET", "/api/v1/nothing").body.error.code, "not_found");
-  assert.equal(go("GET", "/api/v1/nothing").body.error.message, "没有这个接口：GET /api/v1/nothing");
-  assert.deepEqual([go("GET", "/api/v1/tasks/TASK-NONE").status, go("GET", "/api/v1/tasks/TASK-NONE").body.error.message], [404, "没有任务 TASK-NONE。"]);
-  for (const [method, path] of [["GET", "/api/v1/tasks/T/snapshot"], ["GET", "/api/v1/tasks/T/events"], ["POST", "/api/v1/tasks/T/messages"],
-    ["POST", "/api/v1/tasks/T/actions"], ["POST", "/api/v1/tasks/T/control"], ["POST", "/api/v1/tasks/T/sessions"], ["GET", "/api/v1/tasks/T/conversation"]]) {
-    const got = go(method, path);
+test("路由分派：没有的接口、没有的任务、这一版还没接上的接口、方法不对", async () => {
+  assert.deepEqual((await go("GET", "/api/v1/nothing")).body.error.code, "not_found");
+  assert.equal((await go("GET", "/api/v1/nothing")).body.error.message, "没有这个接口：GET /api/v1/nothing");
+  assert.deepEqual([(await go("GET", "/api/v1/tasks/TASK-NONE")).status, (await go("GET", "/api/v1/tasks/TASK-NONE")).body.error.message], [404, "没有任务 TASK-NONE。"]);
+  const { task_id: taskId } = service.create({});
+  for (const [method, path] of [["POST", `/api/v1/tasks/${taskId}/actions`], ["POST", `/api/v1/tasks/${taskId}/control`]]) {
+    const got = await go(method, path);
     assert.deepEqual([got.status, got.body.error.code], [501, "not_implemented"], `${method} ${path}`);
   }
-  assert.equal(go("POST", "/api/v1/task-types").body.error.code, "not_found", "方法对不上也是 not_found");
-  assert.deepEqual(go("GET", "/api/v1/task-types").body.task_types.map((t: any) => t.task_type), ["srs-authoring"]);
+  const card = await go("POST", `/api/v1/tasks/${taskId}/messages`, JSON.stringify({ text: "我选：甲", origin: "card_choice" }));
+  assert.deepEqual([card.status, card.body.error.code], [501, "not_implemented"], "卡片点击这一版还没有接上");
+  const empty = await go("POST", `/api/v1/tasks/${taskId}/messages`, JSON.stringify({ text: "  " }));
+  assert.deepEqual([empty.status, empty.body.error.message], [400, "text 不能是空的。"]);
+  const outside = await go("POST", `/api/v1/tasks/${taskId}/messages`, JSON.stringify({ text: "看看", attachments: ["inputs/没有.md"] }));
+  assert.deepEqual([outside.status, outside.body.error.message], [400, "附件 inputs/没有.md 不在材料目录里。"]);
+  const noSession = await go("GET", `/api/v1/tasks/${taskId}/conversation`);
+  assert.deepEqual([noSession.status, noSession.body.error.message], [400, "要带 session 参数。"]);
+  const unknown = await go("GET", `/api/v1/tasks/${taskId}/snapshot`, "", { session: "没有这条会话" });
+  assert.deepEqual([unknown.status, unknown.body.error.code], [404, "not_found"]);
+  assert.equal((await go("POST", "/api/v1/task-types")).body.error.code, "not_found", "方法对不上也是 not_found");
+  assert.deepEqual((await go("GET", "/api/v1/task-types")).body.task_types.map((t: any) => t.task_type), ["srs-authoring"]);
 });
 
-test("请求体：不是 JSON、不是对象都是 bad_request；空请求体按空对象", () => {
-  assert.equal(go("POST", "/api/v1/tasks", "{").body.error.message, "请求体不是合法的 JSON。");
-  assert.equal(go("POST", "/api/v1/tasks", "[1]").body.error.message, "请求体应当是一个 JSON 对象。");
-  assert.equal(go("POST", "/api/v1/tasks", "").body.ok, true, "空请求体按空对象，建一个缺省类型的任务");
+test("请求体：不是 JSON、不是对象都是 bad_request；空请求体按空对象", async () => {
+  assert.equal((await go("POST", "/api/v1/tasks", "{")).body.error.message, "请求体不是合法的 JSON。");
+  assert.equal((await go("POST", "/api/v1/tasks", "[1]")).body.error.message, "请求体应当是一个 JSON 对象。");
+  assert.equal((await go("POST", "/api/v1/tasks", "")).body.ok, true, "空请求体按空对象，建一个缺省类型的任务");
 });
 
 test("查询串与百分号编码的解码", () => {

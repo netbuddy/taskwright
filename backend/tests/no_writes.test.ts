@@ -21,6 +21,7 @@ const ALLOWED: Record<string, string[]> = {
   "conditions.ts": ["checkCompletion", "completionBrief", "completionHints"],
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   "create_task.ts": ["createTask"],
+  "docx_markdown.ts": ["docxProjection", "PROJECTION_SUFFIX", "MEDIA_SUFFIX"],
 };
 
 function files(dir: string): string[] {

@@ -6,6 +6,8 @@
  * 用法：
  *   node seed_compare_task.mts seed <任务目录> <归档目录>      写修订、界面操作、评审，并写会话文件
  *   node seed_compare_task.mts old-format <任务目录>          建一个修订统一之前格式的库（只有表结构），给「旧格式」一行用
+ *   node seed_compare_task.mts many-events <任务目录> <条目编号> <修订号> <条数>
+ *                                                             用「撤回确认」连记这么多条库事件，给事件流「差距太大发 resync」一步用
  *
  * 任务目录里要先有建好的任务（srs-authoring 类型）与三份材料：inputs/需求说明.md、inputs/会议纪要.txt、inputs/退款规则.docx（及其投影）。
  */
@@ -25,6 +27,13 @@ if (mode === "old-format") {
   db.exec("CREATE TABLE task (task_id TEXT, task_name TEXT, status TEXT, started_at TEXT, definition_text TEXT);" +
     "CREATE TABLE item_version (task_id TEXT, item_id TEXT, version_no INTEGER, fields TEXT);");
   db.close();
+  process.exit(0);
+}
+if (mode === "many-events") {
+  const [, , itemId, revision, count] = process.argv.slice(2);
+  for (let n = 1; n <= Number(count); n++) {
+    runUserOperation({ workspaceDir, sessionId: "" }, { op_id: `ui-op-many-${n}`, kind: "unconfirm", targets: [{ item_id: itemId, base_revision: Number(revision) }] });
+  }
   process.exit(0);
 }
 if (mode !== "seed" || !workspaceDir || !runsDir) {

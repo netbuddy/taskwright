@@ -11,6 +11,9 @@ import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
 import * as render from "./render.ts";
 import { or } from "./py.ts";
+import * as conversation from "./conversation.ts";
+import type { Subscriber } from "./hub.ts";
+import { pyDumps } from "./py.ts";
 import { MAX_UPLOAD, type Service, taskTypes, wordsLocator } from "./service.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
@@ -35,7 +38,11 @@ interface Reply {
   body: Buffer;
   close?: boolean;
 }
-type Handler = (service: Service, req: Request) => Reply;
+/** 长连接的回答（事件流）：拿到响应对象后自己往里写，连接断了才结束。 */
+export interface Stream {
+  stream: (res: ServerResponse) => Promise<void>;
+}
+type Handler = (service: Service, req: Request) => Reply | Stream | Promise<Reply | Stream>;
 
 // ───────────── URL 的解码（与 Python 的 urllib.parse 相同） ─────────────
 
@@ -158,18 +165,108 @@ function sessionParam(req: Request, body: Record<string, any> = {}): string | nu
   return or(req.query.session, null) ?? or(body.session_id, null) ?? null;
 }
 
+/** 用户打的字首字符是斜杠时，前面加「用户说：」，免得被 pi 当作扩展命令吞掉。 */
+export const SLASH_PREFIX = "用户说：";
+export function rewriteSlash(text: string): string {
+  return text.startsWith("/") ? SLASH_PREFIX + text : text;
+}
+
+/** 用户附了材料时在话后面补一句路径；Word 材料另说一句读哪份投影、出处怎么写。 */
+export function withAttachments(text: string, paths: string[]): string {
+  if (!paths.length) return text;
+  const words = paths.filter((p) => p.toLowerCase().endsWith(".docx"));
+  const note = words.length ? `其中 Word 文件请读同名的 .md 投影（${words.map((p) => p + ".md").join("、")}），引用时出处写 Word 文件加段落号` : "";
+  return `${text}\n（我上传了材料：${paths.join("、")}${note ? "；" + note : ""}）`;
+}
+
+/** SSE 的一条事件：库事件带 id 行；补发与实时推送重叠的那几条只发一次。写了返回真。 */
+function writeEvent(res: ServerResponse, sub: Subscriber, name: string, seq: number | null, data: unknown): boolean {
+  if (seq !== null) {
+    if (seq <= sub.lastSeq) return false;
+    sub.lastSeq = seq;
+  }
+  res.write(`event: ${name}\n` + (seq !== null ? `id: ${seq}\n` : "") + "data: " + pyDumps(data) + "\n\n");
+  return true;
+}
+
+/** 事件流的保活间隔（毫秒）。 */
+export const KEEPALIVE_MS = 15_000;
+
 const handlers: Record<string, Handler> = {
   list_tasks: (service) => json(200, { ok: true, tasks: service.listTasks() }),
   list_task_types: () => json(200, { ok: true, task_types: taskTypes() }),
   create_task: (service, req) => json(200, service.create(bodyJson(req))),
   get_task: (service, req) => json(200, { ok: true, ...service.taskPage(service.task(req.params.task)) }),
-  list_sessions: (service, req) => json(200, { ok: true, sessions: service.task(req.params.task).sessions.list() }),
+  list_sessions: (service, req) => json(200, { ok: true, sessions: service.task(req.params.task).executor.listSessions() }),
+  new_session: async (service, req) => {
+    const t = service.task(req.params.task);
+    return json(200, { ok: true, session_id: await t.executor.newSession() });
+  },
+  snapshot: async (service, req) => {
+    const t = service.task(req.params.task);
+    return json(200, { ok: true, ...(await service.snapshot(t, sessionParam(req))) });
+  },
+  conversation: async (service, req) => {
+    const t = service.task(req.params.task);
+    const session = sessionParam(req);
+    if (!session) throw new ApiError("bad_request", "要带 session 参数。");
+    const all = conversation.messages(await t.executor.entries(session), session, t.definition(), t.dir);
+    const raw = req.query.limit || "100";
+    if (!/^\s*[-+]?\d+\s*$/.test(raw)) throw new Error(`invalid literal for int() with base 10: '${raw}'`);
+    return json(200, { ok: true, ...conversation.page(all, req.query.before ?? null, Number(raw)) });
+  },
+  messages: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    t.requireOpen();
+    const text = String(or(body.text, "")).trim();
+    if (!text) throw new ApiError("bad_request", "text 不能是空的。");
+    const attachments = (or(body.attachments, []) as string[]);
+    for (const rel of attachments) {
+      if (!isFile(service.materialPath(t, rel))) throw new ApiError("bad_request", `附件 ${rel} 不在材料目录里。`);
+    }
+    const session = sessionParam(req, body);
+    const clientId = body.client_id ?? null;
+    if (body.origin === "card_choice") throw new ApiError("not_implemented", "卡片点击在这一版的后端里还没有接上。");
+    const sent = withAttachments(rewriteSlash(text), attachments);
+    const queued = await t.executor.say(session, sent, clientId, text);
+    return json(200, { ok: true, client_id: clientId, queued });
+  },
+  events: (service, req) => {
+    const t = service.task(req.params.task);
+    const raw = String(req.headers["last-event-id"] ?? "") || req.query.last_event_id || "";
+    const last = raw && /^[0-9]+$/.test(raw) ? Number(raw) : null;
+    const [sub, replay] = t.hub.subscribe(sessionParam(req), last);
+    return {
+      stream: async (res) => {
+        let open = true;
+        res.on("close", () => {
+          open = false;
+          t.hub.unsubscribe(sub);
+        });
+        try {
+          res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
+          res.write(": connected\n\n");
+          for (const [name, seq, data] of replay) writeEvent(res, sub, name, seq, data);
+          while (open) {
+            const item = await sub.get(KEEPALIVE_MS);
+            if (!open) break;
+            if (item === null) res.write(": keepalive\n\n");
+            else writeEvent(res, sub, ...item);
+          }
+        } finally {
+          t.hub.unsubscribe(sub);
+          res.end();
+        }
+      },
+    };
+  },
   revisions: (service, req) => {
     const rows = library.itemRevisions(service.task(req.params.task).dir, req.params.item);
     if (rows === null) throw new ApiError("not_found", `没有条目 ${req.params.item}。`);
     return json(200, { ok: true, item_id: req.params.item, revisions: rows });
   },
-  revision_log: (service, req) => json(200, { ok: true, ...service.revisionLog(service.task(req.params.task)) }),
+  revision_log: async (service, req) => json(200, { ok: true, ...(await service.revisionLog(service.task(req.params.task))) }),
   material: (service, req) => {
     const t = service.task(req.params.task);
     const rel = req.query.path ?? "";
@@ -189,13 +286,13 @@ const handlers: Record<string, Handler> = {
     const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
     return json(200, service.upload(t, name, data, sessionParam(req)));
   },
-  documents: (service, req) => {
+  documents: async (service, req) => {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
     if (or(body.format, "markdown") !== "markdown") throw new ApiError("bad_request", "现在只支持 markdown。");
     const lib = library.libraryOf(t.dir);
     const [revisionNo, items] = render.documentRequest(body);
-    const text = render.render(t.dir, lib, revisionNo, items, wordsLocator(t));
+    const text = render.render(t.dir, lib, revisionNo, items, await wordsLocator(t, lib));
     if (req.params.mode === "preview") return json(200, { ok: true, text });
     return {
       status: 200,
@@ -203,12 +300,7 @@ const handlers: Record<string, Handler> = {
       body: Buffer.from(text, "utf-8"),
     };
   },
-  // 下面几个接口要启动或驱动 pi，这一版还没有接上。
-  new_session: notImplemented,
-  events: notImplemented,
-  snapshot: notImplemented,
-  conversation: notImplemented,
-  messages: notImplemented,
+  // 下面两个接口（直接操作、让助手停下）这一版还没有接上。
   actions: notImplemented,
   control: notImplemented,
 };
@@ -244,11 +336,11 @@ export const ROUTES: [string, RegExp, string][] = ([
 ] as const).map(([m, p, n]) => [m, new RegExp(`^${p}$`, "s"), n]);
 
 /** 路由分派：找到方法与路径都对得上的第一个接口，交给它；找不到是 not_found；接口抛的 ApiError 按错误形状回答。 */
-export function dispatch(service: Service, req: Omit<Request, "params">): Reply {
+export async function dispatch(service: Service, req: Omit<Request, "params">): Promise<Reply | Stream> {
   try {
     for (const [method, pattern, name] of ROUTES) {
       const match = pattern.exec(req.path);
-      if (method === req.method && match) return handlers[name](service, { ...req, params: { ...(match.groups ?? {}) } });
+      if (method === req.method && match) return await handlers[name](service, { ...req, params: { ...(match.groups ?? {}) } });
     }
     throw new ApiError("not_found", `没有这个接口：${req.method} ${req.path}`);
   } catch (error) {
@@ -312,9 +404,14 @@ export function makeServer(service: Service) {
     }
     const chunks: Buffer[] = [];
     incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
-    incoming.on("end", () => {
+    incoming.on("end", async () => {
       const body = Buffer.concat(chunks).subarray(0, length);
-      send(res, dispatch(service, { method, path, query, headers: incoming.headers, body }));
+      const reply = await dispatch(service, { method, path, query, headers: incoming.headers, body });
+      if ("stream" in reply) {
+        await reply.stream(res).catch(() => res.destroy());
+        return;
+      }
+      if (!res.destroyed) send(res, reply);
     });
     incoming.on("error", () => res.destroy());
   });
