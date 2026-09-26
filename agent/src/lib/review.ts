@@ -235,11 +235,26 @@ function materialsFor(workspaceDir: string, materialsDir: string): Materials {
   return { full: total <= MATERIAL_FULL_LIMIT, files };
 }
 
-/** 材料按空行分成自然段；含有摘录（摘录里用空行隔开的每一段都算）的自然段。 */
+/**
+ * 材料按空行分成自然段；摘录是材料里连续的一段原文，取含有它的自然段。摘录本身跨了几个自然段（中间隔着空行）时，
+ * 取它在材料里第一次出现的位置跨过的那几段。
+ */
 export function paragraphsWith(text: string, excerpt: string): string[] {
-  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-  const pieces = excerpt.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-  return paragraphs.filter((p) => pieces.some((piece) => p.includes(piece)));
+  const want = excerpt.trim();
+  if (!want) return [];
+  const spans: { start: number; end: number }[] = [];
+  let from = 0;
+  for (const gap of text.matchAll(/\n\s*\n/g)) {
+    spans.push({ start: from, end: gap.index! });
+    from = gap.index! + gap[0].length;
+  }
+  spans.push({ start: from, end: text.length });
+  const paragraphs = spans.map((span) => ({ ...span, text: text.slice(span.start, span.end).trim() })).filter((p) => p.text);
+  const inOne = paragraphs.filter((p) => p.text.includes(want)).map((p) => p.text);
+  if (inOne.length) return inOne;
+  const at = text.indexOf(want);
+  if (at < 0) return [];
+  return paragraphs.filter((p) => p.start < at + want.length && p.end > at).map((p) => p.text);
 }
 
 function valueLines(value: unknown): string {
