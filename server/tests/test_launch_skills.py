@@ -116,10 +116,11 @@ class PlatformSkillFileTest(unittest.TestCase):
                       "问题类发现照建议改", "建议类发现告诉用户，由用户定", "不得为通过评审删掉内容或来源"):
             self.assertIn(words, body)
 
-    def test_执行者工具白名单是八个_含请求评审_扩展里登记了它(self):
+    def test_执行者工具白名单是十个_含请求评审与自带的检索工具_扩展里登记了请求评审(self):
         tools = launch.load_profile("dev")["tools"]
-        self.assertEqual(len(tools), 8, tools)
+        self.assertEqual(len(tools), 10, tools)
         self.assertIn("request_review", tools)
+        self.assertTrue({"grep", "find"} <= set(tools), tools)
         extension = (launch.REPO_ROOT / "agent" / "src" / "extension.ts").read_text(encoding="utf-8")
         self.assertIn("registerRequestReview(pi);", extension)
         self.assertNotIn("开发期开关", launch.load_profile("dev"), "评审门禁做出来之后开发期开关退役")

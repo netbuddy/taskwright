@@ -3,12 +3,15 @@
  * 执行者读投影，保存修订时逐字核对也对着它。投影怎样写只在 agent 的 agent/src/lib/docx_markdown.ts 里写一份，这里在同一进程里调用它
  * （与命令行入口 agent/src/cli/docx_projection.mts 调用的是同一个函数，写文件的做法也与它相同）。
  *
+ * 写投影时接着写分段清单「文件名.docx.segments.json」（agent/src/lib/segments.ts，参数是启动配置的「材料分段」一节）。
+ *
  * 0.2 的任务里是纯文本投影「文件名.docx.txt」，照旧可读：找投影时先找 .md，没有再找 .txt。
  */
 
 import { mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MEDIA_SUFFIX, PROJECTION_SUFFIX, docxProjection } from "../../agent/src/lib/docx_markdown.ts";
+import { SEGMENTS_SUFFIX, SEGMENT_DEFAULTS, type SegmentParams, buildSegments, writeSegments } from "../../agent/src/lib/segments.ts";
 
 export const SUFFIX = PROJECTION_SUFFIX;
 export const LEGACY_SUFFIX = ".txt";
@@ -51,8 +54,10 @@ function project(docx: string, rel: string) {
   }
 }
 
-/** 在 .docx 旁边写投影（有图片时连同图片目录，先清空这个目录），返回投影的路径。不是合法的 .docx 时抛 ProjectionError。 */
-export function writeProjection(docx: string, rel: string): string {
+/**
+ * 在 .docx 旁边写投影（有图片时连同图片目录，先清空这个目录）与分段清单，返回投影的路径。不是合法的 .docx 时抛 ProjectionError。
+ */
+export function writeProjection(docx: string, rel: string, segments: SegmentParams = SEGMENT_DEFAULTS): string {
   const result = project(docx, rel);
   const projection = docx + SUFFIX;
   const media = docx + MEDIA_SUFFIX;
@@ -66,6 +71,11 @@ export function writeProjection(docx: string, rel: string): string {
   } catch (error) {
     throw new ProjectionError(`投影没有写成：${(error as Error).message}`);
   }
+  try {
+    writeSegments(docx + SEGMENTS_SUFFIX, buildSegments(result.markdown, segments, rel, rel + SUFFIX));
+  } catch (error) {
+    throw new ProjectionError(`分段清单没有写成：${(error as Error).message}`);
+  }
   return projection;
 }
 
@@ -74,12 +84,14 @@ export function projectionText(docx: string, rel: string): string {
   return project(docx, rel).markdown;
 }
 
-/** 删掉这份 .docx 的 Markdown 投影与图片目录（上传失败时清理）。 */
+/** 删掉这份 .docx 的 Markdown 投影、分段清单与图片目录（上传失败时清理）。 */
 export function removeProjection(docx: string): void {
-  try {
-    unlinkSync(docx + SUFFIX);
-  } catch {
-    // 本来就没有
+  for (const file of [docx + SUFFIX, docx + SEGMENTS_SUFFIX]) {
+    try {
+      unlinkSync(file);
+    } catch {
+      // 本来就没有
+    }
   }
   rmSync(docx + MEDIA_SUFFIX, { recursive: true, force: true });
 }

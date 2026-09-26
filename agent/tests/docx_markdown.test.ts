@@ -140,7 +140,7 @@ test("0.2 的纯文本投影照旧可解析：段数与各段文字", () => {
   assert.equal(got[75], "逾期的每本每天罚款一角，罚款最多不超过这本书的定价。罚款怎样缴纳待定。");
 });
 
-test("命令行入口：写投影与图片目录；--print 只给全文不写文件；坏文件退出码 1 并给中文原因", () => {
+test("命令行入口：写投影、图片目录与分段清单（参数经 --segments-json 给）；--print 只给全文不写文件；坏文件与坏参数退出码 1 并给中文原因", () => {
   const dir = mkdtempSync(join(tmpdir(), "docx-cli-"));
   const docx = join(dir, "需求.docx");
   writeFileSync(docx, readFileSync(SAMPLE));
@@ -154,7 +154,13 @@ test("命令行入口：写投影与图片目录；--print 只给全文不写文
   assert.match(printed.out.markdown, /出处写 inputs\/需求\.docx#p段落号/);
   assert.equal(existsSync(`${docx}.md`), false);
   const written = run("--docx", docx, "--rel", "inputs/需求.docx");
-  assert.deepEqual(written.out, { ok: true, projection: `${docx}.md`, paragraphs: 114, images: 2 });
+  assert.deepEqual(written.out, { ok: true, projection: `${docx}.md`, segments: `${docx}.segments.json`, paragraphs: 114, images: 2 });
+  const segments = JSON.parse(readFileSync(`${docx}.segments.json`, "utf-8"));
+  assert.deepEqual([segments.source, segments.projection, segments.blocks.length], ["inputs/需求.docx", "inputs/需求.docx.md", 11]);
+  run("--docx", docx, "--rel", "inputs/需求.docx", "--segments-json", '{"heading_depth":1}');
+  assert.equal(JSON.parse(readFileSync(`${docx}.segments.json`, "utf-8")).blocks.length, 6);
+  assert.deepEqual(run("--docx", docx, "--rel", "inputs/需求.docx", "--segments-json", '{"max_paragraphs":0}').out,
+    { ok: false, error: "分段参数 max_paragraphs 应当是正整数，现在是 0" });
   assert.equal(readFileSync(`${docx}.md`, "utf-8"), printed.out.markdown);
   assert.ok(existsSync(join(`${docx}.media`, "image2.png")));
   writeFileSync(join(dir, "坏.docx"), "x");

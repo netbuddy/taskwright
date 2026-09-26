@@ -303,7 +303,7 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   }
 
   // 给建议值的依据：交给 checkBasis 按保存修订的来源同一套规则逐字核对（文档原文、用户的话、领域说明），核对后的依据替换模型写的
-  // （用户的话的出处由工具代填，跨段或用空行分开的摘录拆成几条）。
+  // （用户的话的出处由工具代填；一条依据的摘录是材料里连续的一段，引几处就写几条）。
   let checkedBasis: ReplyAct["basis"] | null = null;
   if (k === "suggest") {
     if (isBlank(raw.value)) errors.push("给建议值（suggest）要写 act.value，也就是你建议的那个值");

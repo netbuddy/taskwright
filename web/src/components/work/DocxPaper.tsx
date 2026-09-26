@@ -30,12 +30,14 @@ function paragraphOf(t: DocxTable, excerpt: string): number | null {
   return null;
 }
 
-export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, onMouseUp, onCitedCount, onNote }: {
+export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, onMouseUp, onCitedCount, onNote, jump }: {
   taskId: string;
   path: string;
   items: Item[];
   /** 只传出处对得上这份材料的定位请求。 */
   locate: LocateRequest | null;
+  /** 跳到第 paragraph 段并把它闪一下（材料区「按章节看引用」点一节时给）；nonce 变了才跳。 */
+  jump?: { paragraph: number; nonce: number } | null;
   paperRef?: RefObject<HTMLDivElement | null>;
   onOpenItem?: (itemId: string) => void;
   onMouseUp?: () => void;
@@ -125,6 +127,19 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
     const timer = setTimeout(() => { undo(); setNote(null); }, ms);
     return () => { clearTimeout(timer); undo(); };
   }, [locate?.nonce, view]);
+
+  // 跳到某一段：滚到它的第一个元素，整段标出两秒。
+  useEffect(() => {
+    if (!jump || !view) return;
+    // 那一段是空段落、没有渲染出元素时，往后找最近的一段。
+    let n = jump.paragraph;
+    while (n < view.r.paras.length && !view.r.paras[n]?.length) n++;
+    const ps = view.r.paras[n] ?? [];
+    for (const p of ps) p.classList.add("hitpara");
+    ps[0]?.scrollIntoView({ block: "start", behavior: "smooth" });
+    const timer = setTimeout(() => { for (const p of ps) p.classList.remove("hitpara"); }, 2000);
+    return () => { clearTimeout(timer); for (const p of ps) p.classList.remove("hitpara"); };
+  }, [jump?.nonce, view]);
 
   return (
     <>

@@ -8,7 +8,7 @@
 用法：
 
     python -m taskwright_server.create_task <任务目录> [--type srs-authoring] [--name 任务名] [--tag 领域标签]
-                                      [--material 材料文件 ...]
+                                      [--material 材料文件 ...] [--profile dev]
 
 任务目录必须不存在或者是空的。三步——放起始文件、放材料、写任务记录——任何一步失败，整个创建失败，
 这次建出来的东西全部清掉，任务目录回到调用之前的样子。任务类型就是代码仓 `task-types/` 下的目录名，
@@ -27,7 +27,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from taskwright_server import new_workspace
+from taskwright_server import launch, new_workspace
 from taskwright_server.service import docx_projection
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -50,8 +50,10 @@ def definition_path_of(task_type: str) -> str:
 
 
 def create_task(target: Path, task_type: str = DEFAULT_TYPE, name: str | None = None, tag: str | None = None,
-                materials: list[Path] | None = None, op_id: str | None = None, task_id: str | None = None) -> dict:
-    """创建任务，返回命令行入口给出的结果（任务编号、任务名、任务类型、领域标签、事件序号），另加任务目录与操作编号。"""
+                materials: list[Path] | None = None, op_id: str | None = None, task_id: str | None = None,
+                segments: dict | None = None) -> dict:
+    """创建任务，返回命令行入口给出的结果（任务编号、任务名、任务类型、领域标签、事件序号），另加任务目录与操作编号。
+    segments 是 Word 材料的分段参数（启动配置「材料分段」一节，见 launch.segment_params），不给时用默认值。"""
     target = Path(target).expanduser().resolve()
     template = new_workspace.FIXTURE_DIR / task_type
     if not template.is_dir():
@@ -72,7 +74,7 @@ def create_task(target: Path, task_type: str = DEFAULT_TYPE, name: str | None = 
             shutil.copy2(material, target / "inputs" / material.name)
             if material.suffix.lower() == ".docx":  # Word 材料另生成 Markdown 投影，与界面上传时相同
                 try:
-                    docx_projection.write_projection(target / "inputs" / material.name, f"inputs/{material.name}")
+                    docx_projection.write_projection(target / "inputs" / material.name, f"inputs/{material.name}", segments)
                 except ValueError as e:
                     raise CreateTaskError(f"材料文件 {material}：{e}。")
         argv = [node, str(CLI), "--dir", str(target), "--definition", definition_path_of(task_type), "--op-id", op_id]
@@ -118,10 +120,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name", help="任务名，可以不给")
     parser.add_argument("--tag", help="领域标签，可以不给")
     parser.add_argument("--material", action="append", default=[], help="材料文件，放进任务目录的 inputs/，可以给多个")
+    parser.add_argument("--profile", default="dev", help="Word 材料的分段参数取自哪份启动配置，默认 dev")
     args = parser.parse_args(argv)
     try:
+        segments = launch.segment_params(launch.load_profile(args.profile))
         with contextlib.redirect_stdout(io.StringIO()):
-            result = create_task(Path(args.target), args.type, args.name, args.tag, [Path(m) for m in args.material])
+            result = create_task(Path(args.target), args.type, args.name, args.tag, [Path(m) for m in args.material], segments=segments)
+    except launch.LaunchError as error:
+        print(f"没有创建任务：{error}")
+        return 1
     except CreateTaskError as error:
         print(f"没有创建任务：{error}")
         return 1

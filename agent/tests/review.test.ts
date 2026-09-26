@@ -13,7 +13,7 @@ import { databasePath } from "../src/lib/db.ts";
 import { DefinitionError, loadDefinition } from "../src/lib/definition.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
-import { ReviewError, prepareReviews } from "../src/lib/review.ts";
+import { ReviewError, paragraphsWith, prepareReviews } from "../src/lib/review.ts";
 import { type Complete, runReviews } from "../src/lib/review_run.ts";
 import { reviewSlot } from "../src/lib/review_ui.ts";
 import { REVIEW_STATUS_KEY, USER_COMMAND, USER_EDIT_CUSTOM_TYPE, USER_RESULT_KEY, registerUserCommands } from "../src/hooks/user_commands.ts";
@@ -275,4 +275,11 @@ test("领域规矩文档里的规则列表与规则文件一致（渲染后没�
     const text = readFileSync(path, "utf-8");
     assert.equal(renderDocument(text, typeDir), text, `${path} 的生成区过期了，跑 node scripts/render-rules.mjs`);
   }
+});
+
+test("材料摘段：摘录是一段连续的原文，取含有它的自然段；跨了两个自然段时取它跨过的那两段", () => {
+  const text = "第一段。\n\n第二段前半。第二段后半。\n\n第三段。\n\n第四段。";
+  assert.deepEqual(paragraphsWith(text, "第二段后半。"), ["第二段前半。第二段后半。"]);
+  assert.deepEqual(paragraphsWith(text, "第二段后半。\n\n第三段。"), ["第二段前半。第二段后半。", "第三段。"]);
+  assert.deepEqual(paragraphsWith(text, "第一段。\n\n第四段。"), [], "不相邻的两处不是一段连续的原文");
 });
