@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `release/`: build scripts for a single executable (Node SEA) and a Linux AppImage around a stand-in backend, with a measurement script; the real backend is wired in later.
+- `backend/`: a TypeScript rewrite of the task service, run directly by Node 24 with no third-party dependencies, alongside the Python service. It serves the read side, task creation, material upload with the Markdown projection in process, the occupancy lock, the pi subprocess over RPC with the three archive files, the executor watch, and the event stream with replay. Direct operations, card clicks and stop are not wired yet, so the Python service remains the one started by `scripts/dev.sh`. `backend/compare/` runs the same operations against both services and diffs responses, events and archives; `observatory/archive-format.md` states the archive contract.
 
 ### Changed
 
