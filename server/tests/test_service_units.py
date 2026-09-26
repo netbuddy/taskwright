@@ -544,6 +544,12 @@ class PureUnitTest(unittest.TestCase):
                          ["助手想改 TBD-001 的「种类」，但问题条目写下后只能改状态与处理结果。", "UC-001 已经被用户改到修订 3，助手看到的还是修订 2。"])
         self.assertTrue(all("怎么办" not in one and "关联条目里列的" not in one for one in work_summary.rejection_reasons({}, text)))
 
+    def test_过程摘要_重放的保存修订写明没有重复写入(self):
+        from taskwright_server.service import work_summary
+        details = {"revision_no": 4, "replayed": True, "operations": [{"op": "add", "item": "UC-001", "collection": "功能用例"}]}
+        self.assertEqual(work_summary.step_text("save_revision", {}, True, False, details, {}),
+                         "这次保存是重复的请求，修订 4 之前已经保存过，没有重复写入")
+
     def test_过程摘要_请求评审写评审了几个条目几个不合规(self):
         from taskwright_server.service import work_summary
         details = {"results": [{"item_id": "UC-001", "status": "合规"}, {"item_id": "UC-002", "status": "不合规"},

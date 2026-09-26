@@ -27,8 +27,8 @@ import { ensureDialogueSchema } from "./dialogue_schema.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十二张表的名字，按建表的先后排。model_call、review_finding、review_waiver 是后来加的，旧库在 ensureSchema 里补上，
- *  所以缺这三张不算「表不全」。 */
+/** 十四张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection 是后来加的，
+ *  旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。 */
 export const TABLE_NAMES = [
   "task",
   "revision",
@@ -43,10 +43,11 @@ export const TABLE_NAMES = [
   "review_finding",
   "review_waiver",
   "dialogue_act",
+  "tool_rejection",
 ] as const;
 
 /** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act"];
+export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection"];
 
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
@@ -141,6 +142,58 @@ CREATE TABLE IF NOT EXISTS review_waiver (
   revoked_op_id  TEXT                  -- 撤销保留的那次界面操作的编号
 );
 `;
+
+/**
+ * 工具拒绝表：执行者的一次工具调用因为输入不合规（或缺了前置步骤）被工具拒绝时记一行——哪个工具、哪次调用、
+ * 事实与指引两层拒绝文字、被拒输入的前 2000 个字符。被拒的调用什么都没有写，所以不记事件；这是过程留痕，
+ * 用来事后查「助手被拒过什么、为什么」，不必再翻会话文件。模型服务出错、库打不开之类不是输入的问题，不记。
+ * 后来加的表，与 model_call 一样用 IF NOT EXISTS，旧库第一次被写入一侧打开时补上。
+ */
+export const TOOL_REJECTION_SQL = `
+CREATE TABLE IF NOT EXISTS tool_rejection (
+  rejection_id   INTEGER PRIMARY KEY,  -- 拒绝记录的编号
+  task_id        TEXT,                 -- 所属任务的任务编号；库里还没有任务时为空
+  session_id     TEXT NOT NULL,        -- 发起这次调用的 pi 会话编号
+  work_id        TEXT,                 -- 所属的那次工作：w- 加引出这次运行的那句用户的话的会话条目编号；认不出时为空
+  call_id        TEXT NOT NULL,        -- 被拒的那次工具调用的 pi 调用编号
+  tool_name      TEXT NOT NULL,        -- 工具名，例如 save_revision
+  reason_kind    TEXT NOT NULL CHECK (reason_kind IN ('input', 'gate')),  -- input：输入不合规；gate：缺前置步骤（这一轮还没写理解）
+  fact           TEXT NOT NULL,        -- 事实层：哪里不对，面向人
+  guidance       TEXT,                 -- 指引层：接下来该怎么做，只给助手；拒绝文字没有这一层时为空
+  input_excerpt  TEXT NOT NULL,        -- 被拒的输入（参数的 JSON）的前 2000 个字符，不存整份输入
+  created_at     TEXT NOT NULL         -- 时刻（本地时间）
+);
+`;
+
+/**
+ * 修订表上按调用编号判重的索引：同一任务里，同一次工具调用（同一个调用编号）只能形成一次修订。
+ * 模型重试或 pi 重发同一次调用时，「保存修订」先按这个编号查到第一次的修订、原样返回，不再写一遍（见 save_revision.ts）；
+ * 这个唯一索引是最后一道保险。调用编号为空文字的不算：模型服务没有给调用编号时，pi 交来的是空文字，这种调用无从判重。
+ * 旧库第一次被写入一侧打开时补建（见 ensureRevisionCallIndex）。
+ */
+export const REVISION_CALL_INDEX = "revision_call_id";
+export const REVISION_CALL_INDEX_SQL =
+  `CREATE UNIQUE INDEX IF NOT EXISTS ${REVISION_CALL_INDEX} ON revision (task_id, call_id) WHERE call_id <> '';`;
+/** 旧库里已经有同一调用编号的两次修订时建不成唯一索引，改建这个普通索引，只帮判重的查询提速。 */
+export const REVISION_CALL_LOOKUP_INDEX = "revision_call_id_lookup";
+
+/**
+ * 旧库补建按调用编号判重的索引。已有唯一索引（或已改建过普通索引）就什么都不做；库里已经有同一调用编号的两次修订
+ * （补这个索引之前重放过的调用）时唯一索引建不成，改建普通索引，那几行原样保留，此后的判重由代码里的查询保证。
+ */
+function ensureRevisionCallIndex(db: DatabaseSync): void {
+  const indexes = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'revision'").all() as { name: string }[])
+    .map((row) => row.name);
+  if (indexes.includes(REVISION_CALL_INDEX) || indexes.includes(REVISION_CALL_LOOKUP_INDEX)) return;
+  const duplicated = db.prepare(
+    "SELECT 1 FROM revision WHERE call_id <> '' GROUP BY task_id, call_id HAVING COUNT(*) > 1 LIMIT 1",
+  ).get();
+  if (duplicated) {
+    db.exec(`CREATE INDEX IF NOT EXISTS ${REVISION_CALL_LOOKUP_INDEX} ON revision (task_id, call_id);`);
+  } else {
+    db.exec(REVISION_CALL_INDEX_SQL);
+  }
+}
 
 export const SCHEMA_SQL = `
 CREATE TABLE task (
@@ -255,7 +308,9 @@ CREATE TABLE event (
 );
 ${MODEL_CALL_SQL}
 ${REVIEW_FINDING_SQL}
-${REVIEW_WAIVER_SQL}`;
+${REVIEW_WAIVER_SQL}
+${TOOL_REJECTION_SQL}
+${REVISION_CALL_INDEX_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
 export class NoDatabaseYet extends Error {}
@@ -299,7 +354,9 @@ export function ensureSchema(db: DatabaseSync): void {
   db.exec(REVIEW_WAIVER_SQL);
   // 对话行为表与对话理解加的两列是后来加的：只加表、只加列，做法同上（见 dialogue_schema.ts）。
   ensureDialogueSchema(db);
-  // 这两张刚在上面补过，不按开头读到的表名清单判它们缺不缺。
+  // 工具拒绝表是后来加的，做法同上。
+  db.exec(TOOL_REJECTION_SQL);
+  // 这几张刚在上面补过，不按开头读到的表名清单判它们缺不缺。
   const missing = TABLE_NAMES.filter((name) => !ADDED_TABLES.includes(name) && !tables.includes(name));
   if (missing.length > 0) {
     throw new Error(
@@ -320,6 +377,8 @@ export function ensureSchema(db: DatabaseSync): void {
   if (hasVersionColumns(db)) {
     throw new Error(OLD_VERSION_FORMAT_TEXT);
   }
+  // 按调用编号判重的索引是后来加的：只加索引，不动已有的行（见 REVISION_CALL_INDEX_SQL 的说明）。
+  ensureRevisionCallIndex(db);
   const taskColumns = (db.prepare("PRAGMA table_info(task)").all() as { name: string }[]).map((row) => row.name);
   const missingTaskColumns = TASK_TABLE_COLUMNS.filter((name) => !taskColumns.includes(name));
   if (missingTaskColumns.length > 0) {

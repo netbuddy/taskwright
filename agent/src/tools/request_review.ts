@@ -10,6 +10,8 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { checkReviewParams } from "../lib/review.ts";
 import { runReviews } from "../lib/review_run.ts";
 import { piComplete, reviewSlot } from "../lib/review_ui.ts";
+import { currentRun } from "../lib/dialogue_acts.ts";
+import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 
 export const TOOL_NAME = "request_review";
 
@@ -38,19 +40,24 @@ export function registerRequestReview(pi: ExtensionAPI): void {
     parameters,
     executionMode: "sequential",
     async execute(toolCallId: string, params: unknown, signal, _onUpdate, ctx: ExtensionContext) {
-      const requested = checkReviewParams(params);
-      const { model, complete } = piComplete(ctx, toolCallId);
-      const release = reviewSlot(ctx.cwd, toolCallId);
-      try {
-        const outcome = await runReviews(
-          { workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(), callId: toolCallId },
-          requested,
-          { model, signal, complete },
-        );
-        return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
-      } finally {
-        release();
-      }
+      // 被拒时把拒绝记进 tool_rejection 表（lib/tool_rejection.ts）；没有可用的模型、上一批评审还没做完两种不是输入的问题，不记。
+      const rejection = { workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(), callId: toolCallId, toolName: TOOL_NAME,
+        workId: workIdOf(currentRun(ctx.sessionManager.getBranch() as never)?.userEntryId) };
+      return withRejectionRecord(rejection, params, async () => {
+        const requested = checkReviewParams(params);
+        const { model, complete } = piComplete(ctx, toolCallId);
+        const release = reviewSlot(ctx.cwd, toolCallId);
+        try {
+          const outcome = await runReviews(
+            { workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(), callId: toolCallId },
+            requested,
+            { model, signal, complete },
+          );
+          return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
+        } finally {
+          release();
+        }
+      });
     },
   });
 }

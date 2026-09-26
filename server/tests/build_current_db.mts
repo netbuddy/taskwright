@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createTask } from "../../agent/src/lib/create_task.ts";
 import { saveRevision } from "../../agent/src/lib/save_revision.ts";
+import { withRejectionRecord } from "../../agent/src/lib/tool_rejection.ts";
 
 const workspaceDir = process.argv[2];
 const call = (id: string) => ({ workspaceDir, sessionId: "session-fixture", callId: id });
@@ -33,3 +34,7 @@ saveRevision({ ...call("call-r2"), userMessages }, {
   ],
 });
 saveRevision(call("call-r3"), { operations: [{ op: "delete", item: "UC-002", base_revision: 2 }] });
+// 一次被拒的保存修订：经工具登记处同一个外壳，拒绝记进 tool_rejection 表（修订不变）。
+const bad = { operations: [{ op: "add", collection: "没有这个集合", fields: {}, sources: [source] }] };
+await withRejectionRecord({ workspaceDir, sessionId: "session-fixture", callId: "call-bad", toolName: "save_revision", workId: "w-entry-9" }, bad,
+  () => saveRevision(call("call-bad"), bad)).catch(() => {});

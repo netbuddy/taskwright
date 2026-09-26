@@ -90,6 +90,25 @@ class CurrentFormatTest(unittest.TestCase):
         self.assertEqual([one["种类"] for one in items["TBD-001"]["当前内容"]["来源"]], ["文档原文", "用户的话"])
         self.assertEqual(items["UC-002"]["在第几次修订删除"], 3)
 
+    def test_read_tool_rejections(self):
+        """工具拒绝记录：taskdb 读出事实层与指引层，观测台按调用编号挂到那次被拒的调用上。"""
+        [task] = taskdb.read_workspace(self.workspace)["任务"]
+        [one] = task["拒绝记录"]
+        self.assertEqual((one["工具"], one["工具调用编号"], one["工作编号"], one["原因种类"]),
+                         ("save_revision", "call-bad", "w-entry-9", "输入不合规"))
+        self.assertIn("没有名叫「没有这个集合」的集合", one["事实层"])
+        self.assertIn("可用的集合是", one["指引层"])
+        self.assertEqual(json.loads(one["被拒输入摘录"])["operations"][0]["collection"], "没有这个集合")
+        archive = self.root / "archive"
+        archive.mkdir(exist_ok=True)
+        index = Index(archive, self.root)
+        changes = index.changes_of_call({"调用编号": "call-bad", "工具": "save_revision", "是否被拒": True,
+                                         "参数": {"operations": []}}, "ws-new")
+        self.assertEqual([c["种类"] for c in changes], ["被拒绝的保存修订", "工具的拒绝记录"])
+        self.assertEqual(changes[1]["记录"][0]["拒绝记录序号"], one["拒绝记录序号"])
+        self.assertEqual(index.changes_of_call({"调用编号": "call-bad", "工具": "save_revision", "是否被拒": True}, "ws-empty"),
+                         [{"种类": "被拒绝的保存修订", "说明": "工具拒绝了这次调用，下面这些操作一个都没有写入。", "想做的操作": [], "参数原样": {}}])
+
     def test_snapshot_at(self):
         [task] = taskdb.read_workspace(self.workspace)["任务"]
         at1 = {one["条目编号"]: one["内容"]["修订号"] for one in taskdb.snapshot_at(task, 1)}

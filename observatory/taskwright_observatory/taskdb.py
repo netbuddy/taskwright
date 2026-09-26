@@ -214,6 +214,7 @@ def read_tasks(conn: sqlite3.Connection) -> list[dict]:
             })
         judgements = read_judgements(conn, task_id)
         model_calls = read_model_calls(conn, task_id)
+        rejections = read_tool_rejections(conn, task_id)
         keys = task.keys()
         user_name = task["task_name"] if "task_name" in keys else None
         tasks.append({
@@ -234,6 +235,7 @@ def read_tasks(conn: sqlite3.Connection) -> list[dict]:
             "事件": events,
             "判读": judgements,
             "模型调用": model_calls,
+            "拒绝记录": rejections,
         })
     return tasks
 
@@ -277,6 +279,29 @@ def read_model_calls(conn: sqlite3.Connection, task_id: str) -> list[dict]:
         "输出用量": row["output_tokens"],
         "时刻": row["created_at"],
     } for row in conn.execute("SELECT * FROM model_call WHERE task_id = ? ORDER BY model_call_id", (task_id,))]
+
+
+#: 拒绝原因的两种取值（agent/src/lib/tool_rejection.ts 的 ReasonKind）写成中文。
+REJECTION_KINDS = {"input": "输入不合规", "gate": "缺前置步骤"}
+
+
+def read_tool_rejections(conn: sqlite3.Connection, task_id: str) -> list[dict]:
+    """工具拒绝记录：执行者的一次工具调用被工具拒绝时记的一行（agent/src/lib/tool_rejection.ts）。
+    加这张表之前建的库没有它，给空的。"""
+    if "tool_rejection" not in table_names(conn):
+        return []
+    return [{
+        "拒绝记录序号": row["rejection_id"],
+        "会话编号": row["session_id"],
+        "工作编号": row["work_id"],
+        "工具调用编号": row["call_id"],
+        "工具": row["tool_name"],
+        "原因种类": REJECTION_KINDS.get(row["reason_kind"], row["reason_kind"]),
+        "事实层": row["fact"],
+        "指引层": row["guidance"] or "",
+        "被拒输入摘录": row["input_excerpt"],
+        "时刻": row["created_at"],
+    } for row in conn.execute("SELECT * FROM tool_rejection WHERE task_id = ? ORDER BY rejection_id", (task_id,))]
 
 
 def split_user_words_locator(locator: str) -> tuple[str, str] | None:

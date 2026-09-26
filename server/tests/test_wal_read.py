@@ -46,7 +46,8 @@ class WalReadTest(unittest.TestCase):
         writer = sqlite3.connect(self.db, isolation_level=None)
         writer.execute("PRAGMA wal_autocheckpoint = 0")   # 不让改动合并回库文件，只留在 -wal 里
         writer.execute("INSERT INTO revision (task_id, revision_no, session_id, call_id, event_seq, created_at, summary) "
-                       "SELECT task_id, revision_no + 100, session_id, call_id, event_seq, "
+                       # 调用编号另起一个：修订表上同一任务同一调用编号只能有一行（按调用编号判重的唯一索引）。
+                       "SELECT task_id, revision_no + 100, session_id, call_id || '-copy', event_seq, "
                        "created_at, summary FROM revision LIMIT 1")
         try:
             self.assertTrue(Path(f"{self.db}-wal").exists())

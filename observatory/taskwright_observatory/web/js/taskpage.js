@@ -477,7 +477,8 @@ function 工具执行(c, t, key, ci) {
     链接: ""});
   const 上面画过 = c.改动.length && !c.被拒;
   const 跳 = `<button class="jump" style="color:var(--human);text-decoration:underline" data-jump="chg-${esc(key)}-${ci}">跳到对话层里那一块看改动</button>`;
-  const 变化块 = c.对不上 ? `<div class="none" style="color:var(--bad)">${esc(c.对不上)}</div>`
+  const 变化块 = c.重放说明 ? `<div class="none">${esc(c.重放说明)}</div>`
+    : c.对不上 ? `<div class="none" style="color:var(--bad)">${esc(c.对不上)}</div>`
     : 上面画过 ? (t.调用.length === 1 ? `<div>${跳}</div>` : `<div class="none">这次调用带来的改动显示在这一轮的对话层里。${跳}</div>`)
       : `<div class="none">这次调用没有改动交付物，也没有留下其他记录。</div>`;
   const 模型调用块 = (c.模型调用 || []).map((m, mi) => {
@@ -510,6 +511,23 @@ function 工具执行(c, t, key, ci) {
       <span class="sub">${esc(m.模型)}，${m.耗时毫秒} 毫秒。</span>${各段}</div></div>`;
   }).join("");
   const 拒因 = c.被拒 ? `<div class="sub" style="color:var(--bad)">上面这段就是工具拒绝这次调用时给出的原话。</div>` : "";
+  // 库里 tool_rejection 表的拒绝记录：工具被拒时自己记下的一行，事实层与指引层分开。被拒次数仍按 pi 的工具结果数，两处可能不一致。
+  const 拒绝记录块 = (c.拒绝记录 || []).map((x) => {
+    const 键 = 登记({
+      标题: `工具的拒绝记录：${c.中文名 || c.工具}`, 概念: [["业务领域的概念", "拒绝记录"]],
+      这是什么: "这是工具拒绝这次调用时自己在库里记下的一行（tool_rejection 表），不经过 pi。事实层说哪里不对，面向人；指引层说接下来该怎么做，只给助手。被拒的输入只留前 2000 个字符。",
+      字段: [["原因种类", esc(x.原因种类)], ["事实层", `<div style="white-space:pre-wrap">${esc(x.事实层)}</div>`],
+        ["指引层", x.指引层 ? `<div style="white-space:pre-wrap">${esc(x.指引层)}</div>` : "这次拒绝的文字没有分出指引层。"],
+        ["工作编号", `<code>${esc(x.工作编号 || "没有记")}</code>`], ["调用编号", `<code>${esc(x.工具调用编号)}</code>`],
+        ["时刻", esc(x.时刻)], ["被拒的输入（前 2000 个字符）", `<pre style="white-space:pre-wrap">${esc(x.被拒输入摘录)}</pre>`]],
+      链接: ""});
+    return `<div class="blk bad" data-k="${键}"><div class="k">拒绝记录</div>
+      <div><div class="bhead"><span>${esc(x.原因种类)}</span><span class="dbloc" title="工具被拒时自己记下的，不经过 pi">库里 tool_rejection 表第 ${esc(x.拒绝记录序号)} 条</span></div>
+      <div class="lpart"><div class="lname">事实层</div><div style="white-space:pre-wrap">${esc(x.事实层)}</div></div>
+      <div class="lpart"><div class="lname">指引层</div><div style="white-space:pre-wrap">${x.指引层 ? esc(x.指引层) : "这次拒绝的文字没有分出指引层。"}</div></div></div></div>`;
+  }).join("");
+  const 缺拒绝记录 = c.被拒 && !(c.拒绝记录 || []).length
+    ? `<div class="sub">库里的 tool_rejection 表没有这次调用的拒绝记录：可能是加这张表之前的运行、模型服务出错之类不是输入问题的拒绝，或者 pi 在调用工具之前就拒绝了参数。</div>` : "";
   const 第几个 = t.调用.length > 1 ? `（这一轮的第 ${ci + 1} 个调用）` : "";
   const 参数文 = JSON.stringify(c.参数, null, 2) ?? "";
   return `<div class="blk${坏}" id="blk-${esc(key)}-tool${ci}" data-k="${调用键}"><div class="k">调用</div>
@@ -517,7 +535,8 @@ function 工具执行(c, t, key, ci) {
       <span class="sub">${esc(c.参数摘要)}</span>
       <div class="lpart"><div class="lname">参数</div>${折叠HTML(参数文, `${位置(t)} · ${工具名(c)}的参数${第几个}`, "mono")}</div></div></div>
     <div class="blk${坏}" data-k="${结果键}"><div class="k">结果</div><div>${c.被拒 ? '<span class="pill no">被拒绝</span>' : c.有没有执行结果 ? '<span class="pill ok">已接受</span>' : "归档里没有这次调用的执行结果"}
-      ${(c.结果全文 || "").length ? 折叠HTML(c.结果全文, `${位置(t)} · ${工具名(c)}的结果${第几个}`, "result") : ""}${拒因}</div></div>
+      ${(c.结果全文 || "").length ? 折叠HTML(c.结果全文, `${位置(t)} · ${工具名(c)}的结果${第几个}`, "result") : ""}${拒因}${缺拒绝记录}</div></div>
+    ${拒绝记录块}
     ${模型调用块}
     <div class="blk${坏}" data-k="${库键}"><div class="k">变化</div><div><div class="chg-h">${变化标题(c)}</div>${变化块}</div></div>`;
 }

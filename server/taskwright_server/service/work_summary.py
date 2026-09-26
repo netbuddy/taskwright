@@ -125,6 +125,9 @@ def step_text(tool: str, args: dict, done: bool, failed: bool, details: dict | N
             return f"保存修订被拒：{first}{more}"
         if not done:
             return "正在保存修订"
+        if (details or {}).get("replayed") is True:
+            # 同一次工具调用被重放（模型重试或 pi 重发），工具按调用编号认出来，没有再写一遍。
+            return f"这次保存是重复的请求，修订 {(details or {}).get('revision_no')} 之前已经保存过，没有重复写入"
         ops = (details or {}).get("operations") or []
         grouped: dict[str, list[str]] = {}
         for op in ops:

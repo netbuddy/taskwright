@@ -25,12 +25,15 @@
  *
  * 写库、记事件、各项核对同在一个立即事务里；任何一个操作不通过，整次调用全部不写入，
  * 拒绝的文字逐条列出哪个操作的哪一处不对。本模块不依赖 pi。
+ *
+ * 按调用编号判重（幂等）：同一次工具调用被重放（模型重试、pi 重发）时，库里已有这个调用编号形成的修订，
+ * 就不再核对也不再写入，原样交回第一次的结果并注明「之前已经保存过」（savedBefore）；修订表上另有唯一索引兜底（schema.ts）。
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
-import type { DatabaseSync } from "node:sqlite";
-import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
+import { DatabaseSync } from "node:sqlite";
+import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, LEGACY_ACTOR_MODEL, databasePath, dump, emit, load, wallClockText } from "./db.ts";
 import {
   type CollectionDef,
   type FieldDef,
@@ -45,7 +48,7 @@ import {
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
 import { DOCX_LOCATOR, findParagraph, placeExcerpt, projectionParagraphs } from "./docx_source.ts";
-import { EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
@@ -149,12 +152,19 @@ export function rejectionText(reasons: RejectReason[]): string {
     reasons.map((r) => `- ${r.label}：${r.fact}。${r.guidance ? `\n  ${GUIDANCE_PREFIX}${r.guidance}。` : ""}`).join("\n") +
     "\n请把这些地方改正之后，把整批操作重新提交一次。";
 }
-/** 保存修订被拒时抛的错：正文是 rejectionText，reasons 带结构化的两层。 */
+/**
+ * 保存修订被拒时抛的错：正文是 rejectionText，reasons 带结构化的两层。
+ * fact 与 guidance 是逐个操作的两层文字各接成一段（一个操作一行），供拒绝留痕（lib/tool_rejection.ts）分开存。
+ */
 export class SaveRejected extends Error {
   reasons: RejectReason[];
+  fact: string;
+  guidance: string;
   constructor(reasons: RejectReason[]) {
     super(rejectionText(reasons));
     this.reasons = reasons;
+    this.fact = reasons.map((r) => `${r.label}：${r.fact}`).join("\n");
+    this.guidance = reasons.filter((r) => r.guidance).map((r) => `${r.label}：${r.guidance}`).join("\n");
   }
 }
 
@@ -221,6 +231,13 @@ export function saveRevision(
 }
 
 function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): ToolOutcome {
+  // 同一次工具调用重放（模型重试、pi 重发）：第一次已经形成了修订，就原样交回第一次的结果，不再写一遍。
+  // 放在一切核对之前：任务在两次之间结束了、条目又被改过，都不影响「这次调用已经保存过」这件事。
+  // 用户在界面上的操作不走这里：操作编号由后端每次新生成，不会重放。调用编号为空文字（模型服务没给编号）时无从判重。
+  if (call.actor !== ACTOR_USER && call.callId !== "") {
+    const replay = savedBefore(db, call.callId);
+    if (replay) return replay;
+  }
   const running = activeTasks(db);
   if (running.length === 0) {
     throw new Error(
@@ -244,20 +261,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     );
   }
 
-  const items = new Map<string, ItemRow>();
-  for (const row of db
-    .prepare("SELECT item_id, collection, serial, deleted_in_revision FROM item WHERE task_id = ?")
-    .all(taskId) as unknown as ItemRow[]) {
-    items.set(row.item_id, row);
-  }
-  // 条目当前所在的修订连同产生它的那条事件的发起方一起取，修订号对不上时好告诉模型是谁改的。
-  const latestVersion = (itemId: string): VersionRow =>
-    db
-      .prepare(
-        "SELECT v.revision_no, v.fields, e.actor FROM item_version v JOIN event e ON e.seq = v.event_seq " +
-          "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
-      )
-      .get(taskId, itemId) as unknown as VersionRow;
+  const items = itemsOf(db, taskId);
+  const latestVersion = latestVersionOf(db, taskId);
   const sourcesOf = (itemId: string, revisionNo: number): Source[] => {
     const rows = db
       .prepare(
@@ -289,32 +294,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (isObject(one) && one.op === "delete" && typeof one.item === "string") deletedHere.add(one.item);
   }
   const touched = new Map<string, number>();
-  // 种类为「领域说明」的来源：出处要是「领域说明」集合里还在的条目（这次调用之前就有，也没在这次调用里删）。
-  const noteRef = (locator: string): string | null => {
-    if (!definition.collections.some((one) => one.name === SOURCE_DOMAIN_NOTE)) return `这个任务没有「${SOURCE_DOMAIN_NOTE}」集合`;
-    const row = items.get(locator);
-    // 条目引用字段可以指向同一批里排在前面新增的条目（见下面的 addedAt），领域说明来源不行：摘录要对着那条说明已经保存的文字逐字核对。
-    if (!row && addedAt.has(locator)) return "指向的领域说明在这一批里才新增，还没有保存，摘录无从核对";
-    if (!row || row.collection !== SOURCE_DOMAIN_NOTE) return `不是这个任务里「${SOURCE_DOMAIN_NOTE}」集合的条目编号`;
-    if (row.deleted_in_revision !== null) return `指向的领域说明已在修订 ${row.deleted_in_revision} 删除`;
-    if (deletedHere.has(locator)) return "指向的领域说明在这次调用里被删除";
-    return null;
-  };
-  // 同一种来源的摘录：要逐字出现在那条领域说明当前修订的某个文本字段里（标题、内容之类，按任务定义的字段类型取）。
-  const noteText = (locator: string): string[] => {
-    const collection = definition.collections.find((one) => one.name === SOURCE_DOMAIN_NOTE);
-    const fields = JSON.parse(latestVersion(locator).fields) as Record<string, unknown>;
-    return (collection?.fields ?? []).flatMap((field) => {
-      const value = fields[field.name];
-      if (field.type === FIELD_TEXT && typeof value === "string") return [value];
-      if (field.type === FIELD_TEXT_LIST && Array.isArray(value)) return value.filter((one): one is string => typeof one === "string");
-      return [];
-    });
-  };
-
   // 这一批里新增的条目会拿到的编号：与 write 里分配编号的规矩相同（集合历史上的最大流水号加一，按操作顺序依次取）。
   // 排在前面的新增操作产生的条目，后面的操作可以引用；引用排在后面才新增的条目仍拒绝。
   const addedAt = new Map<string, number>();
+  const { noteRef, noteText } = domainNoteLookups(definition, items, latestVersion, { deletedHere, addedAt });
   {
     const serialOf = new Map<string, number>();
     for (const row of items.values()) {
@@ -501,6 +484,113 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   return write(db, call, taskId, definition, planned, params);
 }
 
+/** 任务里全部条目（含已删除的），按条目编号查。 */
+function itemsOf(db: DatabaseSync, taskId: string): Map<string, ItemRow> {
+  const items = new Map<string, ItemRow>();
+  for (const row of db
+    .prepare("SELECT item_id, collection, serial, deleted_in_revision FROM item WHERE task_id = ?")
+    .all(taskId) as unknown as ItemRow[]) {
+    items.set(row.item_id, row);
+  }
+  return items;
+}
+
+/** 查条目当前所在的修订：连同产生它的那条事件的发起方一起取，修订号对不上时好告诉模型是谁改的。 */
+function latestVersionOf(db: DatabaseSync, taskId: string): (itemId: string) => VersionRow {
+  const statement = db.prepare(
+    "SELECT v.revision_no, v.fields, e.actor FROM item_version v JOIN event e ON e.seq = v.event_seq " +
+      "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
+  );
+  return (itemId) => statement.get(taskId, itemId) as unknown as VersionRow;
+}
+
+/**
+ * 种类为「领域说明」的来源要用的两个查法。noteRef：出处是不是「领域说明」集合里还在的条目（这次调用之前就有，
+ * 也没在这次调用里删），是就返回 null，不是返回原因。noteText：那条领域说明当前修订的各文本字段（标题、内容之类，
+ * 按任务定义的字段类型取），摘录要逐字出现在其中之一里。batch 是这一批的删除与新增；不是一批操作（例如「回复」核对依据）时给空的。
+ */
+function domainNoteLookups(
+  definition: TaskDefinition,
+  items: Map<string, ItemRow>,
+  latestVersion: (itemId: string) => VersionRow,
+  batch: { deletedHere: Set<string>; addedAt: Map<string, number> },
+): { noteRef: (locator: string) => string | null; noteText: (locator: string) => string[] } {
+  const noteRef = (locator: string): string | null => {
+    if (!definition.collections.some((one) => one.name === SOURCE_DOMAIN_NOTE)) return `这个任务没有「${SOURCE_DOMAIN_NOTE}」集合`;
+    const row = items.get(locator);
+    // 条目引用字段可以指向同一批里排在前面新增的条目（见 save 里的 addedAt），领域说明来源不行：摘录要对着那条说明已经保存的文字逐字核对。
+    if (!row && batch.addedAt.has(locator)) return "指向的领域说明在这一批里才新增，还没有保存，摘录无从核对";
+    if (!row || row.collection !== SOURCE_DOMAIN_NOTE) return `不是这个任务里「${SOURCE_DOMAIN_NOTE}」集合的条目编号`;
+    if (row.deleted_in_revision !== null) return `指向的领域说明已在修订 ${row.deleted_in_revision} 删除`;
+    if (batch.deletedHere.has(locator)) return "指向的领域说明在这次调用里被删除";
+    return null;
+  };
+  const noteText = (locator: string): string[] => {
+    const collection = definition.collections.find((one) => one.name === SOURCE_DOMAIN_NOTE);
+    const fields = JSON.parse(latestVersion(locator).fields) as Record<string, unknown>;
+    return (collection?.fields ?? []).flatMap((field) => {
+      const value = fields[field.name];
+      if (field.type === FIELD_TEXT && typeof value === "string") return [value];
+      if (field.type === FIELD_TEXT_LIST && Array.isArray(value)) return value.filter((one): one is string => typeof one === "string");
+      return [];
+    });
+  };
+  return { noteRef, noteText };
+}
+
+/** 一条引用核对通过之后的样子：种类、出处（「用户的话」由工具代填）、摘录，以及「用户的话」可能带的规范化写入值。 */
+export interface CheckedQuote {
+  kind: string;
+  locator: string;
+  excerpt: string;
+  normalized_value?: string;
+}
+
+/**
+ * 核对执行者在「保存修订」之外交来的一串引用（现在只有「回复」给建议值时的依据 act.basis）：与保存修订的来源同一套核对，
+ * 同一套拒绝文字——文档原文逐字出自材料（.docx 按段落号核对、可跨段，文本材料可用空行分成不相邻的几段），
+ * 用户的话逐字出自当前会话分支上的某句用户消息（出处由这里代填），领域说明逐字出自那条还在的领域说明；执行者补充不核对摘录。
+ * 库只读打开，查完就关。通过时返回核对后的引用（出处代填、跨段或按空行拆开的已拆成几条），不通过时把原因推进 errors 并返回 null。
+ * errors 里的每一条可能带两层（事实与指引），用 splitGuide 拆开。
+ */
+export function checkQuotes(
+  workspaceDir: string,
+  sessionId: string,
+  userMessages: UserMessage[],
+  raw: unknown,
+  errors: string[],
+  whereOf: (index: number) => string,
+): CheckedQuote[] | null {
+  const path = databasePath(workspaceDir);
+  if (!existsSync(path) || statSync(path).size === 0) {
+    errors.push("这个任务目录还没有任务记录，依据无从核对");
+    return null;
+  }
+  const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  try {
+    const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+      { task_id: string; definition_text: string } | undefined;
+    if (!task) {
+      errors.push("这个任务目录还没有任务记录，依据无从核对");
+      return null;
+    }
+    const definition = validateDefinition(JSON.parse(task.definition_text));
+    const items = itemsOf(db, task.task_id);
+    const { noteRef, noteText } = domainNoteLookups(definition, items, latestVersionOf(db, task.task_id), { deletedHere: new Set(), addedAt: new Map() });
+    const checked = checkSources(raw, true, errors, sessionId, userMessages, ACTOR_EXECUTOR, materialReader(workspaceDir, definition.materialsDir),
+      undefined, noteRef, noteText, whereOf);
+    return checked && checked.map(({ kind, locator, excerpt, normalized_value }) => ({ kind, locator, excerpt, ...(normalized_value ? { normalized_value } : {}) }));
+  } finally {
+    db.close();
+  }
+}
+
+/** 把核对函数推进 errors 的一条拆成事实与指引两层；没有指引层时指引是空文字。 */
+export function splitGuide(one: string): { fact: string; guidance: string } {
+  const [fact, guidance] = one.split(GUIDE);
+  return { fact, guidance: guidance ?? "" };
+}
+
 /**
  * 修改时沿用条目当前的哪些来源：支持 changed 里的字段的那几处去掉；去掉之后什么都不支持的整条去掉；
  * 本来就支持整个条目的保留；与这次新给的某条来源一模一样的不重复保留。
@@ -644,6 +734,7 @@ function checkSources(
   notes?: string[],
   noteRef?: (locator: string) => string | null,
   noteText?: (locator: string) => string[],
+  whereOf: (index: number) => string = (index) => `第 ${index + 1} 条来源`,
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push("缺少 sources，至少要有一条来源");
@@ -656,7 +747,7 @@ function checkSources(
   const kept: Source[] = [];
   let ok = true;
   raw.forEach((one, index) => {
-    const where = `第 ${index + 1} 条来源`;
+    const where = whereOf(index);
     if (!isObject(one)) {
       errors.push(`${where}应当是一个对象，有 kind、locator、excerpt 三项`);
       ok = false;
@@ -1040,14 +1131,8 @@ function write(
     const notes = one.op === "add" || one.op === "update" ? one.notes ?? [] : [];
     return notes.length > 0 ? `${notes.join("；")}。` : "";
   };
-  const lines = outcomes.map((one, index) => {
-    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），${one.item} 现在是修订 ${revisionNo}。${splitNote(index)}`;
-    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}（改前在修订 ${one.from_revision}），${one.item} 现在是修订 ${revisionNo}。${splitNote(index)}`;
-    if (one.op === "restore") return `${index + 1}. 恢复了条目 ${one.item}，恢复成删除前的样子，${one.item} 现在是修订 ${revisionNo}。`;
-    return `${index + 1}. 删除了条目 ${one.item}（删除前在修订 ${one.from_revision}）。`;
-  });
   return {
-    text: `已保存为任务 ${taskId} 的修订 ${revisionNo}，一共 ${outcomes.length} 个操作：\n${lines.join("\n")}`,
+    text: savedText(taskId, revisionNo, outcomes, splitNote),
     details: {
       task_id: taskId,
       revision_no: revisionNo,
@@ -1056,6 +1141,56 @@ function write(
       saved: true,
       intent_act_id: intentActId,
       operations: outcomes.map(({ op, item, collection, from_revision, to_revision }) => ({ op, item, collection, from_revision, to_revision })),
+    },
+  };
+}
+
+/** 一次修订里的一个操作写下之后的样子，与 REVISION_SAVED 事件内容里 operations 的每一项同形。 */
+interface SavedOperation {
+  op: "add" | "update" | "delete" | "restore";
+  item: string;
+  collection: string;
+  from_revision: number | null;
+  to_revision: number | null;
+}
+
+/** 保存成功时交给模型的文字。note 给出第几个操作另要补的一句（摘录按空行拆成了几条之类），没有就是空文字。 */
+function savedText(taskId: string, revisionNo: number, operations: SavedOperation[], note: (index: number) => string = () => ""): string {
+  const lines = operations.map((one, index) => {
+    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），${one.item} 现在是修订 ${revisionNo}。${note(index)}`;
+    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}（改前在修订 ${one.from_revision}），${one.item} 现在是修订 ${revisionNo}。${note(index)}`;
+    if (one.op === "restore") return `${index + 1}. 恢复了条目 ${one.item}，恢复成删除前的样子，${one.item} 现在是修订 ${revisionNo}。`;
+    return `${index + 1}. 删除了条目 ${one.item}（删除前在修订 ${one.from_revision}）。`;
+  });
+  return `已保存为任务 ${taskId} 的修订 ${revisionNo}，一共 ${operations.length} 个操作：\n${lines.join("\n")}`;
+}
+
+/** 重放时补在第一次的结果文字后面的一句。 */
+export const REPLAYED_TEXT = "这次调用之前已经保存过，没有重复写入。";
+
+/**
+ * 这个调用编号在这个任务里是否已经形成过修订：形成过就按那次修订与它的事件重新拼出第一次的结果（details.replayed 为真），
+ * 文字末尾补一句 REPLAYED_TEXT；没有就返回 null。第一次结果里「摘录按空行拆成了几条」的附注不存库，重放的文字里没有这一句。
+ */
+function savedBefore(db: DatabaseSync, callId: string): ToolOutcome | null {
+  const row = db.prepare(
+    "SELECT r.task_id, r.revision_no, r.event_seq, r.intent_act_id, e.payload FROM revision r JOIN event e ON e.seq = r.event_seq " +
+      "WHERE r.call_id = ? AND r.task_id IN (SELECT task_id FROM task) ORDER BY r.revision_no LIMIT 1",
+  ).get(callId) as { task_id: string; revision_no: number; event_seq: number; intent_act_id: string | null; payload: string } | undefined;
+  if (!row) return null;
+  const payload = (load(row.payload) ?? {}) as { operations?: SavedOperation[]; undo_of_revision?: number };
+  const operations = Array.isArray(payload.operations) ? payload.operations : [];
+  return {
+    text: `${savedText(row.task_id, row.revision_no, operations)}\n${REPLAYED_TEXT}`,
+    details: {
+      task_id: row.task_id,
+      revision_no: row.revision_no,
+      event_seq: row.event_seq,
+      undo_of_revision: typeof payload.undo_of_revision === "number" ? payload.undo_of_revision : null,
+      saved: true,
+      replayed: true,
+      intent_act_id: row.intent_act_id,
+      operations,
     },
   };
 }
