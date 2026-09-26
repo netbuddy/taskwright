@@ -42,7 +42,7 @@ sys.stdout.write(json.dumps(out, ensure_ascii=False))
 function run(args: string[], input?: Buffer): { ok: boolean; text?: string; error?: string } {
   const python = process.env.TASKWRIGHT_PYTHON || "python3";
   const done = spawnSync(python, ["-c", SCRIPT, ...args], {
-    input, encoding: "utf-8", maxBuffer: 256 * 1024 * 1024, timeout: 60000,
+    input, encoding: "utf-8", maxBuffer: 256 * 1024 * 1024, timeout: 60000, windowsHide: true,
     env: { ...process.env, PYTHONPATH: join(REPO_ROOT, "server") },
   });
   if (done.status !== 0) throw new Error(`投影子进程失败：${done.error?.message ?? done.stderr.trim()}`);

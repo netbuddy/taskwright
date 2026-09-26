@@ -4,7 +4,7 @@
  * 用法：
  *   node backend/src/main.mts --tasks <任务目录的上级目录> --runs <归档目录> --port <端口> [--host 0.0.0.0] [--profile dev]
  *
- * 服务缺省绑 0.0.0.0。收到 SIGTERM 或 SIGINT 时停止接新连接、删掉本服务写的占用标记，然后退出。
+ * --tasks 与 --runs 不给时放在用户数据目录下（见 paths.ts 的 userDataDir），不写进安装位置。服务缺省绑 0.0.0.0。收到 SIGTERM 或 SIGINT 时停止接新连接、删掉本服务写的占用标记，然后退出。
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { makeServer } from "./http.ts";
-import { PROFILE_DIR } from "./paths.ts";
+import { PROFILE_DIR, userDataDir } from "./paths.ts";
 import { Service } from "./service.ts";
 
 function expandUser(path: string): string {
@@ -39,7 +39,7 @@ const { values } = parseArgs({
   },
   strict: true,
 });
-const missing = ["tasks", "runs", "port"].filter((k) => !values[k as keyof typeof values]);
+const missing = ["port"].filter((k) => !values[k as keyof typeof values]);
 if (missing.length) {
   process.stderr.write(`缺少参数：${missing.map((k) => `--${k}`).join("、")}。\n`);
   process.exit(2);
@@ -50,10 +50,12 @@ if (!Number.isInteger(port)) {
   process.exit(2);
 }
 
-const service = new Service(expandUser(values.tasks!), expandUser(values.runs!), loadProfile(values.profile!), { port });
+const tasksDir = expandUser(values.tasks ?? join(userDataDir(), "tasks"));
+const runsDir = expandUser(values.runs ?? join(userDataDir(), "runs"));
+const service = new Service(tasksDir, runsDir, loadProfile(values.profile!), { port });
 const server = makeServer(service);
 server.listen(port, values.host, () => {
-  console.log(`任务服务在 http://${values.host}:${port}/api/v1/tasks ，任务目录 ${values.tasks}，归档 ${values.runs}`);
+  console.log(`任务服务在 http://${values.host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}`);
 });
 
 let closing = false;
