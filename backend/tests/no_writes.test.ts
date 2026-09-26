@@ -22,6 +22,8 @@ const ALLOWED: Record<string, string[]> = {
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   "create_task.ts": ["createTask"],
   "docx_markdown.ts": ["docxProjection", "PROJECTION_SUFFIX", "MEDIA_SUFFIX"],
+  // 分段清单：算清单、写成材料旁边的文件（与投影一样是文件，不是库）。
+  "segments.ts": ["SEGMENTS_ENV", "SEGMENTS_SUFFIX", "SEGMENT_DEFAULTS", "SegmentParams", "buildSegments", "segmentParams", "writeSegments"],
 };
 
 function files(dir: string): string[] {

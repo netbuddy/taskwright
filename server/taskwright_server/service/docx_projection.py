@@ -3,6 +3,9 @@
 执行者读投影，保存修订时逐字核对也对着它。投影怎样写只在 agent 的 `agent/src/lib/docx_markdown.ts` 里写一份，
 这里起一个 Node 子进程运行它的命令行入口 `agent/src/cli/docx_projection.mts`（与建任务、算完成条件是同一种做法）。
 
+写投影时入口接着写分段清单「文件名.docx.segments.json」，分段参数（启动配置「材料分段」一节，见 launch.segment_params）经
+`--segments-json` 传过去，不给时入口用默认值。
+
 0.2 的任务里是纯文本投影「文件名.docx.txt」，照旧可读：找投影时先找 .md，没有再找 .txt。
 """
 
@@ -18,6 +21,7 @@ CLI = REPO_ROOT / "agent" / "src" / "cli" / "docx_projection.mts"
 SUFFIX = ".md"
 LEGACY_SUFFIX = ".txt"
 MEDIA_SUFFIX = ".media"
+SEGMENTS_SUFFIX = ".segments.json"
 
 
 def _run(docx: Path, rel: str, *extra: str) -> dict:
@@ -46,9 +50,9 @@ def projection_path(docx: Path) -> Path:
     return legacy if not md.is_file() and legacy.is_file() else md
 
 
-def write_projection(docx: Path, rel: str) -> Path:
-    """在 .docx 旁边写投影（有图片时连同图片目录），返回投影的路径。不是合法的 .docx 时抛 ValueError。"""
-    _run(docx, rel)
+def write_projection(docx: Path, rel: str, segments: dict | None = None) -> Path:
+    """在 .docx 旁边写投影（有图片时连同图片目录）与分段清单，返回投影的路径。不是合法的 .docx 时抛 ValueError。"""
+    _run(docx, rel, *(["--segments-json", json.dumps(segments, separators=(",", ":"))] if segments else []))
     return docx.with_name(docx.name + SUFFIX)
 
 
@@ -58,8 +62,9 @@ def projection_text(docx: Path, rel: str) -> str:
 
 
 def remove_projection(docx: Path) -> None:
-    """删掉这份 .docx 的 Markdown 投影与图片目录（上传失败时清理）。"""
+    """删掉这份 .docx 的 Markdown 投影、分段清单与图片目录（上传失败时清理）。"""
     docx.with_name(docx.name + SUFFIX).unlink(missing_ok=True)
+    docx.with_name(docx.name + SEGMENTS_SUFFIX).unlink(missing_ok=True)
     shutil.rmtree(docx.with_name(docx.name + MEDIA_SUFFIX), ignore_errors=True)
 
 

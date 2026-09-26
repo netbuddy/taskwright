@@ -36,6 +36,13 @@ class ProjectionTest(unittest.TestCase):
             self.assertIn("\n### 3.1.1 [p75] 逾期罚款\n", text)
             self.assertTrue((Path(tmp) / "x.docx.media/image1.png").is_file())
             self.assertEqual(docx_projection.projection_text(docx, "inputs/x.docx"), text)
+            # 分段清单随投影写，参数按传进来的
+            segments = json.loads((Path(tmp) / "x.docx.segments.json").read_text(encoding="utf-8"))
+            self.assertEqual((segments["source"], len(segments["blocks"])), ("inputs/x.docx", 11))
+            docx_projection.write_projection(docx, "inputs/x.docx", {**launch.SEGMENT_DEFAULTS, "heading_depth": 1})
+            self.assertEqual(len(json.loads((Path(tmp) / "x.docx.segments.json").read_text(encoding="utf-8"))["blocks"]), 6)
+            docx_projection.remove_projection(docx)
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["x.docx"])
 
     def test_不是docx时抛错(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -81,16 +88,23 @@ class DocxMaterialServiceTest(unittest.TestCase):
         self.assertTrue((self.t.dir / "inputs/需求-2.docx.media/image2.png").is_file())
         # 材料清单只列文件，图片目录不列
         paths = [m["path"] for m in self.service.task_page(self.t)["materials"]]
-        self.assertEqual(paths, ["inputs/需求-2.docx", "inputs/需求-2.docx.md", "inputs/需求.docx", "inputs/需求.docx.md"])
-        # 投影标明派生自哪份 Word 文件，界面据此不列出；原始材料为 None
+        self.assertEqual(paths, ["inputs/需求-2.docx", "inputs/需求-2.docx.md", "inputs/需求-2.docx.segments.json",
+                                 "inputs/需求.docx", "inputs/需求.docx.md", "inputs/需求.docx.segments.json"])
+        # 投影与分段清单标明派生自哪份 Word 文件，界面据此不列出；原始材料为 None
         marks = {m["path"]: m["derived_from"] for m in self.service.task_page(self.t)["materials"]}
         self.assertEqual(marks, {"inputs/需求-2.docx": None, "inputs/需求-2.docx.md": "inputs/需求-2.docx",
-                                 "inputs/需求.docx": None, "inputs/需求.docx.md": "inputs/需求.docx"})
+                                 "inputs/需求-2.docx.segments.json": "inputs/需求-2.docx",
+                                 "inputs/需求.docx": None, "inputs/需求.docx.md": "inputs/需求.docx",
+                                 "inputs/需求.docx.segments.json": "inputs/需求.docx"})
+        segments = json.loads((self.t.dir / "inputs/需求.docx.segments.json").read_text(encoding="utf-8"))
+        self.assertEqual((segments["source"], segments["projection"], len(segments["blocks"])), ("inputs/需求.docx", "inputs/需求.docx.md", 11))
         # 0.2 的 .txt 投影同样标明；没有对应 .docx 的 .md 是普通材料
         (self.t.dir / "inputs/需求.docx.txt").write_text("[第 1 段] 旧", encoding="utf-8")
         (self.t.dir / "inputs/孤儿.docx.md").write_text("x", encoding="utf-8")
+        (self.t.dir / "inputs/孤儿.docx.segments.json").write_text("{}", encoding="utf-8")
         marks = {m["path"]: m["derived_from"] for m in self.service.task_page(self.t)["materials"]}
-        self.assertEqual((marks["inputs/需求.docx.txt"], marks["inputs/孤儿.docx.md"]), ("inputs/需求.docx", None))
+        self.assertEqual((marks["inputs/需求.docx.txt"], marks["inputs/孤儿.docx.md"], marks["inputs/孤儿.docx.segments.json"]),
+                         ("inputs/需求.docx", None, None))
 
     def test_坏的docx与保留名拒绝(self):
         for name, data, code in (("坏.docx", b"x", "unsupported_type"), ("a.docx.txt", b"x", "bad_request"),

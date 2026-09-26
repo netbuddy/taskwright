@@ -5,8 +5,8 @@
  * 块怎样分（参数来自启动配置的「材料分段」一节，见 SegmentParams）：
  * - 标题行（以 1 到 6 个 # 开头、带段落号的行）的级别不超过 heading_depth 时，它开始一块；第一个这样的标题之前的段落是一块，标题为 null；
  *   没有这样的标题的材料整份一块。块按段落号首尾相接，覆盖 1 到段落总数。
- * - 有文字的段少于 min_paragraphs 的块并入下一块（标题取两块里先出现的那个非空标题）；最后一块不够时并入前一块。
- * - 有文字的段多于 max_paragraphs 的块按段数平均切成几块，标题相同。
+ * - 有文字的段少于 min_paragraphs 的块并入下一块，最后一块不够时并入前一块；合并后的标题是各块标题依次用「；」连起来。
+ * - 有文字的段多于 max_paragraphs 的块切成 ceil(段数 / max_paragraphs) 块，前面各块段数相同（ceil(段数 / 块数)），标题相同。
  * 段数只数有文字的段：空段落不写进投影、也不能被引用，但占着段落号。
  *
  * 清单存成材料旁边的「x.docx.segments.json」，文件头记参数的摘要：上传时随投影一起写；读时摘要与当前参数不一致或文件不在，
@@ -47,7 +47,7 @@ export const SEGMENT_DEFAULTS: Readonly<SegmentParams> = Object.freeze({ heading
 export interface SegmentBlock {
   /** 第几块，从 1 起。 */
   index: number;
-  /** 开始这一块的标题文字（带段落号左边的自动编号，不带 # 与段落号）；第一个标题之前的那块、没有标题的材料是 null。 */
+  /** 开始这一块的标题文字（带段落号左边的自动编号，不带 # 与段落号），几块合并的用「；」连起来；第一个标题之前的那块、没有标题的材料是 null。 */
   heading: string | null;
   first_paragraph: number;
   last_paragraph: number;
@@ -117,7 +117,7 @@ const LEGACY_LINE = /^\[第 (\d+) 段/;
 const HEADING = /^(#{1,6}) /;
 
 interface Draft {
-  heading: string | null;
+  headings: string[];
   first: number;
   last: number;
 }
@@ -162,17 +162,17 @@ export function buildSegments(text: string, params: SegmentParams, source: strin
   // 按标题切。
   let drafts: Draft[] = [];
   let start = 1;
-  let heading: string | null = null;
+  let heading: string[] = [];
   for (const h of headings) {
     if (h.n <= start) {
-      if (h.n === start) heading = h.text || null;
+      if (h.n === start && h.text) heading = [h.text];
       continue;
     }
-    drafts.push({ heading, first: start, last: h.n - 1 });
+    drafts.push({ headings: heading, first: start, last: h.n - 1 });
     start = h.n;
-    heading = h.text || null;
+    heading = h.text ? [h.text] : [];
   }
-  if (total >= start) drafts.push({ heading, first: start, last: total });
+  if (total >= start) drafts.push({ headings: heading, first: start, last: total });
   const count = (d: Draft) => {
     let c = 0;
     for (let n = d.first; n <= d.last; n++) if (hasText(n)) c++;
@@ -183,7 +183,7 @@ export function buildSegments(text: string, params: SegmentParams, source: strin
   const merged: Draft[] = [];
   let carry: Draft | null = null;
   for (const d of drafts) {
-    const cur: Draft = carry ? { heading: carry.heading ?? d.heading, first: carry.first, last: d.last } : d;
+    const cur: Draft = carry ? { headings: [...carry.headings, ...d.headings], first: carry.first, last: d.last } : d;
     if (count(cur) < params.min_paragraphs) carry = cur;
     else {
       merged.push(cur);
@@ -192,7 +192,7 @@ export function buildSegments(text: string, params: SegmentParams, source: strin
   }
   if (carry) {
     const prev = merged.pop();
-    merged.push(prev ? { heading: prev.heading ?? carry.heading, first: prev.first, last: carry.last } : carry);
+    merged.push(prev ? { headings: [...prev.headings, ...carry.headings], first: prev.first, last: carry.last } : carry);
   }
   drafts = merged;
 
@@ -211,12 +211,12 @@ export function buildSegments(text: string, params: SegmentParams, source: strin
     for (let p = d.first; p <= d.last; p++) {
       if (hasText(p)) seen++;
       if (seen === size && p < d.last) {
-        cut.push({ heading: d.heading, first, last: p });
+        cut.push({ headings: d.headings, first, last: p });
         first = p + 1;
         seen = 0;
       }
     }
-    cut.push({ heading: d.heading, first, last: d.last });
+    cut.push({ headings: d.headings, first, last: d.last });
   }
 
   // 起止行号：块从它第一段所在的行开始，到下一块开始之前最后一个非空行为止（段落之间的文本框、图片行算在前一块里）。
@@ -238,7 +238,7 @@ export function buildSegments(text: string, params: SegmentParams, source: strin
     for (let n = d.first; n <= d.last; n++) chars += [...(paragraphs[n - 1] ?? "")].length;
     return {
       index: k + 1,
-      heading: d.heading,
+      heading: d.headings.length ? d.headings.join("；") : null,
       first_paragraph: d.first,
       last_paragraph: d.last,
       first_line: first,

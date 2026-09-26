@@ -17,7 +17,7 @@ import { after, afterEach, before, describe, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
 import { makeServer } from "../src/http.ts";
 import * as occupancy from "../src/occupancy.ts";
-import { ProjectionError, projectionPath, projectionText, writeProjection } from "../src/projection.ts";
+import { ProjectionError, projectionPath, projectionText, removeProjection, writeProjection } from "../src/projection.ts";
 import { Service, taskTypes, userActionText } from "../src/service.ts";
 import { CreateTaskError, createTaskDir, newWorkspace } from "../src/workspace.ts";
 import { ROOT, sqlGet, tempDir } from "./helpers.ts";
@@ -187,6 +187,11 @@ describe("Word 材料", () => {
     assert.ok(text.includes("\n### 3.1.1 [p75] 逾期罚款\n"));
     assert.ok(existsSync(join(dir, "x.docx.media", "image1.png")));
     assert.equal(projectionText(docx, "inputs/x.docx"), text);
+    assert.equal(JSON.parse(readFileSync(join(dir, "x.docx.segments.json"), "utf-8")).blocks.length, 11, "分段清单随投影写");
+    writeProjection(docx, "inputs/x.docx", { heading_depth: 1, max_paragraphs: 300, min_paragraphs: 3 });
+    assert.equal(JSON.parse(readFileSync(join(dir, "x.docx.segments.json"), "utf-8")).blocks.length, 6, "参数按传进来的");
+    removeProjection(docx);
+    assert.deepEqual(readdirSync(dir), ["x.docx"], "上传失败时投影、分段清单与图片目录一起删掉");
     const bad = join(dir, "坏.docx");
     writeFileSync(bad, "not a zip");
     assert.throws(() => writeProjection(bad, "inputs/坏.docx"), (e: unknown) => e instanceof ProjectionError && e.message === "不是 Word 文件（.docx），或者文件已损坏");
@@ -212,13 +217,19 @@ describe("Word 材料", () => {
       assert.ok(readFileSync(join(t.dir, "inputs", "需求-2.docx.md"), "utf-8").includes("![图 1](inputs/需求-2.docx.media/image1.png)"));
       assert.ok(existsSync(join(t.dir, "inputs", "需求-2.docx.media", "image2.png")));
       const listing = () => service.taskPage(t).materials;
-      assert.deepEqual(listing().map((m) => m.path), ["inputs/需求-2.docx", "inputs/需求-2.docx.md", "inputs/需求.docx", "inputs/需求.docx.md"], "图片目录不列");
+      assert.deepEqual(listing().map((m) => m.path), ["inputs/需求-2.docx", "inputs/需求-2.docx.md", "inputs/需求-2.docx.segments.json",
+        "inputs/需求.docx", "inputs/需求.docx.md", "inputs/需求.docx.segments.json"], "图片目录不列");
       assert.deepEqual(Object.fromEntries(listing().map((m) => [m.path, m.derived_from])), {
-        "inputs/需求-2.docx": null, "inputs/需求-2.docx.md": "inputs/需求-2.docx", "inputs/需求.docx": null, "inputs/需求.docx.md": "inputs/需求.docx" });
+        "inputs/需求-2.docx": null, "inputs/需求-2.docx.md": "inputs/需求-2.docx", "inputs/需求-2.docx.segments.json": "inputs/需求-2.docx",
+        "inputs/需求.docx": null, "inputs/需求.docx.md": "inputs/需求.docx", "inputs/需求.docx.segments.json": "inputs/需求.docx" });
+      const segments = JSON.parse(readFileSync(join(t.dir, "inputs", "需求.docx.segments.json"), "utf-8"));
+      assert.deepEqual([segments.source, segments.projection, segments.blocks.length], ["inputs/需求.docx", "inputs/需求.docx.md", 11]);
       writeFileSync(join(t.dir, "inputs", "需求.docx.txt"), "[第 1 段] 旧", "utf-8");
       writeFileSync(join(t.dir, "inputs", "孤儿.docx.md"), "x", "utf-8");
+      writeFileSync(join(t.dir, "inputs", "孤儿.docx.segments.json"), "{}", "utf-8");
       const marks = Object.fromEntries(listing().map((m) => [m.path, m.derived_from]));
-      assert.deepEqual([marks["inputs/需求.docx.txt"], marks["inputs/孤儿.docx.md"]], ["inputs/需求.docx", null], "0.2 的 .txt 投影同样标明；没有对应 .docx 的 .md 是普通材料");
+      assert.deepEqual([marks["inputs/需求.docx.txt"], marks["inputs/孤儿.docx.md"], marks["inputs/孤儿.docx.segments.json"]], ["inputs/需求.docx", null, null],
+        "0.2 的 .txt 投影同样标明；没有对应 .docx 的 .md 与分段清单是普通材料");
     } finally {
       await service.close();
     }
