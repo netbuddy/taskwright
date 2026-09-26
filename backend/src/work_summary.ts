@@ -13,6 +13,8 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import * as clock from "./clock.ts";
 import { INTENT_SCHEMA_PATH } from "./paths.ts";
+import { jsonOrText } from "../../agent/src/lib/task_read.ts";
+import { openRo } from "./library.ts";
 import { isObject, or, truthy } from "./py.ts";
 
 export const REPLY_TOOL = "reply";
@@ -256,4 +258,83 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
   }
   close();
   return works;
+}
+
+// ───────────── 「理解为」那一行 ─────────────
+
+/** 这句话还没有合格的理解时，「理解为」那一行的三种说法（agent 侧的三种事件见 agent/src/lib/dialogue_acts.ts）。 */
+export const INTENT_INVALID_TEXT = "助手的理解里有对不上的地方，正在重写";
+export const INTENT_MISSING_TEXT = "助手这一轮没有写下理解";
+export const INTENT_PENDING_TEXT = "助手的理解正在重写";
+/** 这一轮还在进行中的两种说法：界面上这一行带进行中的样子。 */
+export const INTENT_IN_PROGRESS_TEXTS = [INTENT_INVALID_TEXT, INTENT_PENDING_TEXT];
+/** 几种说法的先后：同一句话有几种事件时取排在前面的；记下了理解就写理解，不看这几种。 */
+const NO_UNDERSTANDING: Record<string, string> = {
+  USER_INTENT_MISSING: INTENT_MISSING_TEXT, USER_INTENT_INVALID: INTENT_INVALID_TEXT, STRUCTURED_OUTPUT_UNMATCHED: INTENT_PENDING_TEXT,
+};
+const CONFIDENCE_ORDER = ["low", "medium", "high"];
+const CONFIDENCE_NOTE: Record<string, string> = { low: "（把握低）", medium: "（把握中）", high: "" };
+
+/** 一条用户行为在「理解为」一行里的写法：「中文名（英文码）摘要」。 */
+export function actText(act: Dict): string {
+  const summary = String(or(act.summary, "")).trim();
+  const code = act.function;
+  const name = truthy(code) ? functionNames()[code] : undefined;
+  return name ? `${name}（${code}）${summary}` : summary;
+}
+
+/** 一份理解写成一行：各条用户行为用「；」连起来，把握取最低的一档，中或低时括注。 */
+export function understandingText(acts: Dict[]): string | null {
+  const summaries = acts.filter((a) => String(or(a.summary, "")).trim()).map(actText);
+  if (!summaries.length) return null;
+  const levels = acts.map((a) => a.confidence).filter((c) => CONFIDENCE_ORDER.includes(c));
+  const lowest = levels.length ? levels.reduce((a, b) => (CONFIDENCE_ORDER.indexOf(b) < CONFIDENCE_ORDER.indexOf(a) ? b : a)) : "high";
+  return "理解为：" + summaries.join("；") + CONFIDENCE_NOTE[lowest];
+}
+
+/**
+ * 这条会话里每句用户的话（按会话条目编号）对应的「理解为」那一行，从任务库的事件表读。界面合成的话（origin 为 ui）值为 null；
+ * 还没有理解时按事件写一句（见 NO_UNDERSTANDING）。没有库、没有这几种事件的旧库，返回空的。只读。
+ */
+export function understandingLines(taskDir: string | null, sessionId: string): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  if (taskDir === null) return out;
+  const db = openRo(taskDir);
+  if (db === null) return out;
+  try {
+    const names = ["USER_INTENT_RECORDED", ...Object.keys(NO_UNDERSTANDING)];
+    const rows = db.prepare(`SELECT name, payload FROM event WHERE session_id = ? AND name IN (${names.map(() => "?").join(", ")}) ORDER BY seq`)
+      .all(sessionId, ...names) as Dict[];
+    const rank = Object.values(NO_UNDERSTANDING);
+    const understood = new Set<string>();
+    const hasActs = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dialogue_act'").get() !== undefined;
+    for (const { name, payload } of rows) {
+      const data = or(jsonOrText(payload), {}) as Dict;
+      const entry = data.user_entry;
+      if (!truthy(entry)) continue;
+      if (name in NO_UNDERSTANDING) {
+        const text = NO_UNDERSTANDING[name];
+        if (!understood.has(entry) && (!out.has(entry) || rank.indexOf(text) < rank.indexOf(out.get(entry) as string))) out.set(entry, text);
+        continue;
+      }
+      understood.add(entry);
+      if (data.origin === "ui") {
+        out.set(entry, null);
+        continue;
+      }
+      const acts = (or(data.acts, []) as unknown[]).filter(isObject).map((a) => ({ ...a }));
+      for (const act of acts) {
+        if ((act.confidence ?? null) === null && hasActs && truthy(act.act_id)) {
+          const found = db.prepare("SELECT confidence FROM dialogue_act WHERE session_id = ? AND act_id = ?").get(sessionId, act.act_id) as Dict | undefined;
+          act.confidence = found ? found.confidence : null;
+        }
+      }
+      out.set(entry, understandingText(acts));
+    }
+  } catch {
+    return out; // 读不出来只是少这一行，不影响摘要
+  } finally {
+    db.close();
+  }
+  return out;
 }

@@ -8,12 +8,13 @@
  *   一段用户消息之后没有成功的回复、只有助手正文的，取这段里最后一条有正文的助手消息，via_reply_tool 为假。
  * - taskwright-user-edit → ui_action_noted；taskwright-task-status → system_note。
  *
- * 每次工作的过程摘要（work_summary）另由 work_summary.ts 从同一批条目算；本模块给出的是不带摘要的对话记录。
+ * 每次工作的过程摘要（work_summary）由 work_summary.ts 从同一批条目算，插在这次工作的回复之前（messages）。
  */
 
 import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
+import { understandingLines, worksFromEntries } from "./work_summary.ts";
 
 export const SLASH_PREFIX = "用户说：";
 export const UI_CLICK = "taskwright-ui-click";
@@ -82,6 +83,37 @@ export function textOf(content: unknown): string {
 /** 用户打的以斜杠开头的字，后端发给 pi 时前面加了「用户说：」；界面上仍显示原来打的字。 */
 export function displayText(raw: string): string {
   return raw.startsWith(SLASH_PREFIX + "/") ? raw.slice(SLASH_PREFIX.length) : raw;
+}
+
+/**
+ * 当前分支上的对话记录，按先后排。每次工作的过程摘要插在这次工作的回复之前，回复的 work_id 补上。
+ * 给了任务目录时，摘要另带 understanding（「理解为」那一行，从任务库读）。
+ */
+export function messages(entries: Entry[], sessionId: string, definition: Record<string, any> = {}, taskDir: string | null = null): Record<string, any>[] {
+  const path = branch(entries);
+  return withWorkSummaries(messagesOfPath(path, sessionId), path, sessionId, definition, taskDir);
+}
+
+/** 把从会话条目算出的过程摘要插进对话记录：放在这次工作第一条回复之前；这次工作没有回复时，放在下一句用户的话之前。 */
+export function withWorkSummaries(out: Record<string, any>[], path: Entry[], sessionId: string, definition: Record<string, any>, taskDir: string | null = null) {
+  const understandings = understandingLines(taskDir, sessionId);
+  for (const work of worksFromEntries(path, definition, FALLBACK_TEXT, textOf)) {
+    const replies = new Set(work.reply_ids);
+    for (const m of out) if (m.type === "assistant_reply" && replies.has(m.message_id)) m.work_id = work.work_id;
+    const summary = {
+      type: "work_summary", session_id: sessionId, message_id: `summary-${work.user_message_id}`, work_id: work.work_id, at: work.at,
+      seconds: work.seconds, step_count: work.step_count, stages: work.stages, understanding: understandings.get(work.user_message_id) ?? null,
+    };
+    const ids = out.map((m) => m.message_id ?? null);
+    let first = out.findIndex((m) => m.type === "assistant_reply" && replies.has(m.message_id));
+    if (first < 0) {
+      const start = ids.includes(work.user_message_id) ? ids.indexOf(work.user_message_id) : out.length - 1;
+      first = out.findIndex((m, i) => i > start && m.type === "user_message");
+      if (first < 0) first = out.length;
+    }
+    out.splice(first, 0, summary);
+  }
+  return out;
 }
 
 /** 当前分支上的对话记录（不带过程摘要），按先后排。 */

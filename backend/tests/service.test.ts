@@ -56,7 +56,7 @@ describe("建任务目录：起始文件原样复制，没带 pi 项目设置时
     writeFileSync(join(source, "README.md"), "给人看的", "utf-8");
   });
 
-  test("起始文件没带时写一份；顶层 README.md 不复制；有 inputs/", () => {
+  test("起始文件没带时写一份；顶层 README.md 不复制；有 inputs/", async () => {
     const path = newWorkspace(join(tmp, "ws1"), source);
     assert.deepEqual(JSON.parse(readFileSync(join(path, ".pi", "settings.json"), "utf-8")), { followUpMode: "all" });
     assert.equal(existsSync(join(path, "README.md")), false);
@@ -64,7 +64,7 @@ describe("建任务目录：起始文件原样复制，没带 pi 项目设置时
     assert.equal(readFileSync(join(path, "docs", "a.md"), "utf-8"), "甲");
   });
 
-  test("起始文件带了就照它复制", () => {
+  test("起始文件带了就照它复制", async () => {
     mkdirSync(join(source, ".pi"), { recursive: true });
     writeFileSync(join(source, ".pi", "settings.json"), '{"followUpMode": "all", "x": 1}', "utf-8");
     const path = newWorkspace(join(tmp, "ws2"), source);
@@ -73,7 +73,7 @@ describe("建任务目录：起始文件原样复制，没带 pi 项目设置时
   });
 });
 
-test("建任务：同进程调用 agent 的 createTask，发起方记用户、编号是操作编号；任务名为空时取任务定义里的名字", () => {
+test("建任务：同进程调用 agent 的 createTask，发起方记用户、编号是操作编号；任务名为空时取任务定义里的名字", async () => {
   const service = newService();
   try {
     const { task_id: taskId } = service.create({ task_type: "srs-authoring", task_name: "  ", domain_tag: " 电商 " });
@@ -85,7 +85,7 @@ test("建任务：同进程调用 agent 的 createTask，发起方记用户、�
     assert.equal(service.taskPage(service.task(taskId)).task_name, "软件需求规格说明编制");
     assert.equal(codeOf(() => service.create({ task_type: "no-such" })), "bad_request");
   } finally {
-    service.close();
+    await service.close();
   }
 });
 
@@ -96,7 +96,7 @@ describe("建任务失败时整体清理", () => {
     else process.env.TASKWRIGHT_TASKS_ROOT = saved;
   });
 
-  test("写任务记录被拒：这次建的目录整个删掉；原来就有的空目录只清空里面", () => {
+  test("写任务记录被拒：这次建的目录整个删掉；原来就有的空目录只清空里面", async () => {
     // 任务根目录设成别处：写库前的核对不通过，任务记录写不成。
     process.env.TASKWRIGHT_TASKS_ROOT = join(tmp, "somewhere-else");
     const target = join(fresh(), "TASK-X");
@@ -108,7 +108,7 @@ describe("建任务失败时整体清理", () => {
     assert.deepEqual(readdirSync(empty), []);
   });
 
-  test("服务层把失败写成 rejected，data.reasons 带原因，任务目录里不留东西", () => {
+  test("服务层把失败写成 rejected，data.reasons 带原因，任务目录里不留东西", async () => {
     process.env.TASKWRIGHT_TASKS_ROOT = join(tmp, "somewhere-else");
     const service = newService();
     try {
@@ -116,11 +116,11 @@ describe("建任务失败时整体清理", () => {
         Array.isArray(e.data.reasons) && /任务记录没有写成/.test(String((e.data.reasons as string[])[0])));
       assert.deepEqual(readdirSync(service.tasksDir), []);
     } finally {
-      service.close();
+      await service.close();
     }
   });
 
-  test("目标目录已经有东西时不建", () => {
+  test("目标目录已经有东西时不建", async () => {
     const busy = fresh();
     mkdirSync(busy, { recursive: true });
     writeFileSync(join(busy, "x"), "x");
@@ -129,14 +129,14 @@ describe("建任务失败时整体清理", () => {
   });
 });
 
-test("任务目录里没有指向它自己绝对路径的东西", () => {
+test("任务目录里没有指向它自己绝对路径的东西", async () => {
   const root = fresh();
   const service = newService(8861, root);
   let dir: string;
   try {
     dir = service.task(service.create({ task_type: "srs-authoring", task_name: "路径盘点" }).task_id).dir;
   } finally {
-    service.close();
+    await service.close();
   }
   const needles = [dir!, resolve(dir!), root];
   const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
@@ -147,13 +147,13 @@ test("任务目录里没有指向它自己绝对路径的东西", () => {
   }
 });
 
-test("任务类型：task-types 下每个目录，显示名取任务定义里的任务名", () => {
+test("任务类型：task-types 下每个目录，显示名取任务定义里的任务名", async () => {
   assert.deepEqual(taskTypes(), [{ task_type: "srs-authoring", name: "软件需求规格说明编制" }]);
 });
 
 // ───────────── 材料 ─────────────
 
-test("上传材料：只收三种文本，重名加序号，超过 5 MB 拒绝，路径越界拒绝；任务页列出材料", () => {
+test("上传材料：只收三种文本，重名加序号，超过 5 MB 拒绝，路径越界拒绝；任务页列出材料", async () => {
   const service = newService();
   try {
     const t = service.task(service.create({ task_type: "srs-authoring", task_name: "材料测试" }).task_id);
@@ -171,12 +171,12 @@ test("上传材料：只收三种文本，重名加序号，超过 5 MB 拒绝�
     assert.deepEqual(page.materials.map((m) => m.path), ["inputs/需求-2.md", "inputs/需求.md"]);
     assert.deepEqual([page.task_name, page.sessions], ["材料测试", []]);
   } finally {
-    service.close();
+    await service.close();
   }
 });
 
 describe("Word 材料", () => {
-  test("投影：样本 114 段，每段一行，表格写位置；不是 docx 时抛错", () => {
+  test("投影：样本 114 段，每段一行，表格写位置；不是 docx 时抛错", async () => {
     const lines = projectionText(readFileSync(SAMPLE), "inputs/x.docx").split("\n").filter((l) => l.startsWith("["));
     assert.equal(lines.length, 114);
     assert.equal(lines[0], "[第 1 段] 学校图书馆借还书系统需求说明");
@@ -184,7 +184,7 @@ describe("Word 材料", () => {
     assert.throws(() => projectionText(Buffer.from("not a zip"), "inputs/x.docx"), ProjectionError);
   });
 
-  test("上传 docx：旁边生成投影，重名时投影跟着新名字，清单里两份都在；坏文件与保留名拒绝且不落盘", () => {
+  test("上传 docx：旁边生成投影，重名时投影跟着新名字，清单里两份都在；坏文件与保留名拒绝且不落盘", async () => {
     const service = newService();
     try {
       const t = service.task(service.create({ task_type: "srs-authoring", task_name: "Word 材料" }).task_id);
@@ -200,7 +200,7 @@ describe("Word 材料", () => {
       }
       assert.equal(existsSync(join(t.dir, "inputs", "坏.docx")), false);
     } finally {
-      service.close();
+      await service.close();
     }
   });
 
@@ -232,7 +232,7 @@ describe("Word 材料", () => {
       assert.ok(text.includes("[第 76 段] 逾期的每本每天罚款一角，罚款最多不超过这本书的定价。罚款怎样缴纳待定。"));
     } finally {
       server.close();
-      service.close();
+      await service.close();
     }
   });
 });
@@ -256,14 +256,14 @@ test("修订统一之前建的任务照样列出，标明不支持且打不开",
 });
 
 describe("占用标记", () => {
-  test("接手时写占用标记，退出时删掉", () => {
+  test("接手时写占用标记，退出时删掉", async () => {
     const service = newService(8861);
     const folder = service.task(service.create({ task_type: "srs-authoring", task_name: "占用测试" }).task_id).dir;
     const lock = JSON.parse(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8"));
     assert.deepEqual([lock.port, lock.pid, lock.host], [8861, process.pid, hostname()]);
     assert.ok("started_at" in lock);
     assert.match(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8"), /^\{"port": 8861, "pid": \d+, "started_at": "[^"]+", "host": "[^"]+"\}\n$/, "文件写法与 Python 版相同");
-    service.close();
+    await service.close();
     assert.equal(existsSync(join(folder, occupancy.LOCK_NAME)), false);
   });
 
@@ -282,7 +282,7 @@ describe("占用标记", () => {
       assert.equal(row.note, "这个任务正被端口 8790 的服务占用，这里不能打开。");
       assert.throws(() => second.task(taskId), (e: unknown) => e instanceof ApiError && e.code === "task_occupied" && e.status === 409);
       assert.equal(JSON.parse(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8")).pid, other.pid, "别人的标记不动");
-      second.close();
+      await second.close();
       assert.ok(existsSync(join(folder, occupancy.LOCK_NAME)), "没有接手的任务，退出时不删别人的标记");
     } finally {
       other.kill();
@@ -293,12 +293,12 @@ describe("占用标记", () => {
       assert.equal(third.task(taskId).taskId, taskId);
       assert.equal(JSON.parse(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8")).port, 8863);
     } finally {
-      third.close();
+      await third.close();
       first.tasks.clear();
     }
   });
 
-  test("另一台主机写的标记当作占用", () => {
+  test("另一台主机写的标记当作占用", async () => {
     const folder = fresh();
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, occupancy.LOCK_NAME), JSON.stringify({ port: 9000, pid: 1, host: "另一台主机" }), "utf-8");
@@ -308,7 +308,7 @@ describe("占用标记", () => {
   });
 });
 
-test("用户直接操作的修订写成一句操作名", () => {
+test("用户直接操作的修订写成一句操作名", async () => {
   const edit = { operations: [{ op: "update", item_id: "UC-002", fields_changed: ["基本流程", "前置条件"] }], undo_of_revision: null };
   assert.equal(userActionText("edit_fields", edit), "你改了 UC-002 的「基本流程」「前置条件」");
   assert.equal(userActionText("keep_pending", { operations: [{ op: "update", item_id: "TBD-003", fields_changed: ["状态"] }] }), "你把 TBD-003 标为先不管");

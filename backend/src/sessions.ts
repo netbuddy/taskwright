@@ -36,6 +36,19 @@ export class Sessions {
     return rows;
   }
 
+  /** 记下一条会话的文件（pi 报来的活动会话文件；刚新建的会话文件可能还没写出来）。 */
+  remember(sessionId: string, file: string): void {
+    this.files.set(sessionId, file);
+  }
+
+  isFile(path: string): boolean {
+    try {
+      return statSync(path).isFile();
+    } catch {
+      return false;
+    }
+  }
+
   file(sessionId: string): string | undefined {
     if (!this.files.has(sessionId)) this.list();
     return this.files.get(sessionId);

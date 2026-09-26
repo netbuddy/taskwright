@@ -503,6 +503,109 @@ export class Library {
   }
 }
 
+/** 事件 payload 里的一条发现，写成接口的形状（与整份数据里 reviews[].findings 相同）。 */
+export function findingView(one: Record<string, any>) {
+  return { rule_id: one.rule_id ?? null, level: one.level ?? null, field: one.field ?? null, index: one.index ?? null,
+    problem: one.problem ?? null, suggestion: one.suggestion ?? null };
+}
+
+/** 一行事件拼成 [事件名, data]；不认识的事件名返回 null。字段与来源取条目在那次修订下的内容。 */
+export function eventPayload(lib: Library, e: Row): [string, Record<string, any>] | null {
+  const payload = or(jsonOrText(e.payload), {}) as Record<string, any>;
+  const base = { seq: e.seq, at: clock.fromLocalText(e.at), task_id: e.task_id };
+  const actor = actorWord(e.actor);
+  const opId = actor === ACTOR_USER ? e.call_id : null;
+  if (e.name === "REVISION_SAVED") {
+    const ops = (or(payload.operations, []) as Record<string, any>[]).map((op) => {
+      const item = op.item ?? null;
+      const after = op.to_revision ?? null;
+      const before = op.from_revision ?? null;
+      const fields = lib.fieldsOf(item, after);
+      return {
+        op: op.op ?? null, collection: op.collection ?? null, item_id: item,
+        title: titleOf(fields !== null ? fields : lib.fieldsOf(item, before), lib.collections.get(op.collection)),
+        revision_before: before, revision_after: after, fields, sources: lib.sourcesOf(item, after),
+      };
+    });
+    return ["deliverable_changed", { ...base, revision_no: payload.revision_no ?? null, actor, op_id: opId,
+      undo_of_revision: payload.undo_of_revision ?? null, operations: ops, completion: null }];
+  }
+  if (e.name === "TASK_CREATED") {
+    return ["task_changed", { ...base, task_name: payload.task_name ?? null, status_before: null, status_after: "进行中", actor, completion: null }];
+  }
+  if (e.name === "TASK_COMPLETED") {
+    const task = lib.data.task!;
+    return ["task_changed", { ...base, task_name: or(task.task_name, lib.definition["任务名"]), status_before: or(payload.status_before, "进行中"),
+      status_after: or(payload.status_after, "已完成"), actor, completion: null }];
+  }
+  if (e.name === "ITEM_VIEWED") return ["item_viewed", { ...base, items: or(payload.items, []), op_id: opId, completion: null }];
+  if (e.name === "REVIEW_RECORDED") {
+    return ["review_recorded", { ...base, item_id: payload.item_id ?? null, revision_no: payload.revision_no ?? null, verdict: payload.verdict ?? null,
+      reason: payload.reason ?? null, findings: (or(payload.findings, []) as Record<string, any>[]).map(findingView),
+      batch_id: payload.batch_id ?? null, rules_hash: payload.rules_hash ?? null, forced: truthy(payload.forced), op_id: opId, completion: null }];
+  }
+  if (e.name === "REVIEW_UNFINISHED") {
+    return ["review_unfinished", { ...base, item_id: payload.item_id ?? null, revision_no: payload.revision_no ?? null, reason: payload.reason ?? null,
+      op_id: opId, completion: null }];
+  }
+  if (e.name === "REVIEW_PROGRESS") {
+    return ["review_progress", { ...base, op_id: payload.op_id ?? null, done: payload.done ?? null, total: payload.total ?? null,
+      current: or(payload.current, []), item_id: payload.item_id ?? null, completion: null }];
+  }
+  if (e.name === "REVIEW_FINISHED") {
+    return ["review_finished", { ...base, op_id: payload.op_id ?? null, total: payload.total ?? null, passed: payload.passed ?? null,
+      failed: payload.failed ?? null, unfinished: payload.unfinished ?? null, results: or(payload.results, []), error: payload.error ?? null, completion: null }];
+  }
+  if (e.name === "REVIEW_BATCH") {
+    const earlier = (lib.data.batches || []).filter((b) => b.seq < e.seq);
+    return ["review_batch", { ...base, ...batchView(earlier.length + 1, { seq: e.seq, at: e.at, actor: e.actor, call_id: e.call_id, payload: e.payload }), completion: null }];
+  }
+  if (e.name === "REVIEW_WAIVED" || e.name === "REVIEW_UNWAIVED") {
+    return [e.name === "REVIEW_WAIVED" ? "review_waived" : "review_unwaived", { ...base, items: or(payload.items, []), reason: payload.reason ?? null,
+      source: payload.source ?? null, op_id: opId, completion: null }];
+  }
+  if (e.name === "REVIEW_RULES_CHANGED") {
+    const name = payload.collection ?? null;
+    return ["review_rules_changed", { ...base, collection: name, off: or(payload.off, []), promote: or(payload.promote, []), op_id: opId, completion: null,
+      ...collectionReviewView(lib.definition, name, lib.data.task!.definition_text ?? null, lib.data.task_dir ?? null) }];
+  }
+  if (e.name === "CONFIRMATION_RECORDED") {
+    return ["confirmation_recorded", { ...base, items: or(payload.items, []), basis: or(payload.basis, "ui_click"), op_id: opId, completion: null }];
+  }
+  return null;
+}
+
+/** 取 afterSeq 之后的全部事件并拼好；完成条件算一次，附在最后一条上。返回 [事件列表, 当前最大序号]。 */
+export function libraryEvents(taskDir: string, afterSeq: number): [[string, Record<string, any>][], number] {
+  const db = openRo(taskDir);
+  if (db === null) return [[], 0];
+  let data: LibraryData;
+  try {
+    data = readAll(db, afterSeq);
+  } finally {
+    db.close();
+  }
+  if (data.task === null || !(data.events || []).length) return [[], data.seq];
+  data.task_dir = taskDir;
+  const lib = new Library(data);
+  const out = (data.events || []).map((e) => eventPayload(lib, e)).filter((p): p is [string, Record<string, any>] => p !== null);
+  if (out.length) out[out.length - 1][1].completion = completion(taskDir, lib.taskId, lib.definition, lib.totals());
+  return [out, data.seq];
+}
+
+/** 库里当前最大的事件序号：每次新开连接、查完就关，不留读事务。库不在或读不出时是 0。 */
+export function currentMax(taskDir: string): number {
+  const db = openRo(taskDir);
+  if (db === null) return 0;
+  try {
+    return Number((db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM event").get() as Row).n);
+  } catch {
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
 /** 取整份库，读事务只包住查询；库打不开时为 null。 */
 function readTask(taskDir: string): LibraryData | null {
   const db = openRo(taskDir);
