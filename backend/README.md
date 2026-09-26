@@ -9,28 +9,39 @@
 它**不写任务数据库**：库只由 pi 进程里的工具与扩展命令写。唯一的例外是建任务，而且也不在这里写，是调用 agent 侧的
 `createTask` 核心函数。`tests/no_writes.test.ts` 扫描本目录全部文件，从 `agent/src/lib` 导入的名字必须在白名单里。
 
-## 现在接上了哪些接口
+## 接口
+
+前端用到的全部接口都已接上：
 
 | 接口 | 说明 |
 |---|---|
 | `GET /api/v1/tasks`、`GET /api/v1/task-types`、`POST /api/v1/tasks` | 任务列表（含「占用中」「旧格式」两种打不开的任务）、任务类型、建任务。 |
-| `GET …/tasks/{t}`、`GET …/sessions` | 任务页、会话列表（只读会话目录里的文件）。 |
+| `GET …/tasks/{t}`、`GET …/sessions`、`POST …/sessions` | 任务页、会话列表、新建会话（新建时按需起 pi）。 |
+| `GET …/snapshot`、`GET …/events`、`GET …/conversation` | 整份数据（带 session 参数时打开那条会话，按需起 pi 或续接）、事件流（SSE）、往前读对话。 |
+| `POST …/messages` | 说一句话（斜杠改写、附件模板），或卡片点击（`origin` 为 `card_choice`，经扩展命令 `/tw-ui`）。 |
+| `POST …/actions` | 直接操作：经扩展命令 `/tw-user` 写库，等结果 10 秒。 |
+| `POST …/control` | 让助手停下（`action` 只能是 `stop`）：清掉排队的话、中止这一轮。 |
 | `GET …/items/{i}/revisions`、`GET …/revisions` | 条目修订史、修订日志。 |
 | `GET …/materials/content`、`GET …/materials/raw`、`POST …/materials` | 材料原文、原样取回、上传（Word 材料另生成文本投影）。 |
 | `POST …/documents/preview`、`POST …/documents/download` | 按某次修订生成文档。 |
-
-启动或驱动 pi 的接口（整份数据、事件流、对话记录、说话、直接操作、停下、新建会话）还没有接上，返回 501 与错误码 `not_implemented`。
+| `GET /api/v1/service` | 服务信息：`{ok, app, version, mode, pid, port, capabilities: {exit}}`，不需要任务。Python 版没有。 |
+| `POST /api/v1/service/exit` | 退出服务：只在 `--mode desktop` 下有，只接受本机回环地址的请求（别处来的回 403 `forbidden`）；先回 `{ok: true}` 再收尾退出。Python 版没有。 |
 
 ## 目录里有什么
 
 | 文件 | 它做什么 |
 |---|---|
-| `src/main.mts` | 入口：读命令行参数、建服务、监听端口；收到 SIGTERM 或 SIGINT 时删掉本服务写的占用标记再退出。 |
+| `src/main.mts` | 入口：读命令行参数、建服务、监听端口；收到 SIGTERM、SIGINT 或桌面形态下的退出请求时关掉各任务的 pi、删掉本服务写的占用标记再退出。 |
+| `src/listen.ts` | 按运行形态定缺省绑定地址；端口被占时依次换后面的端口。 |
 | `src/http.ts` | 路由与各接口，以及查询串、multipart 的解析。 |
 | `src/service.ts` | 任务服务：扫描任务目录、占用、任务列表、任务页、修订日志、上传材料、生成文档时「用户的话」的出处。 |
 | `src/library.ts` | 只读读库、拼接口形状；完成条件在同一进程里调用 agent 的核对函数。 |
 | `src/render.ts` | 按任务目录里的文档模板渲染 Markdown 文档。 |
 | `src/conversation.ts`、`src/work_summary.ts` | 从 pi 会话文件拼对话记录、切出每一次工作（修订日志据此找出触发修订的那句话）。 |
+| `src/launch.ts` | 读启动配置，拼 pi 的命令行与环境变量。 |
+| `src/pi_session.ts` | pi 子进程与 RPC 收发，三种归档文件。 |
+| `src/executor.ts` | 执行者看护：每个任务一个，启动、续接、切换会话，把 pi 事件翻译成过程与对话类事件，转交说话、卡片点击、直接操作与停下。 |
+| `src/hub.ts` | 事件分发：订阅、库事件带序号补发、保活、兜底轮询。 |
 | `src/sessions.ts` | 一个任务的会话文件：会话列表与会话条目。 |
 | `src/workspace.ts` | 建任务：复制起始文件、写 pi 项目设置、调用 `createTask`，失败时整体清理。 |
 | `src/occupancy.ts` | 任务占用标记 `service.lock`。 |
@@ -42,10 +53,22 @@
 ## 起法
 
 ```
-node backend/src/main.mts --tasks <放任务目录的上级目录> --runs <归档目录> --port <端口> [--host 0.0.0.0] [--profile dev]
+node backend/src/main.mts --tasks <放任务目录的上级目录> --runs <归档目录> --port <端口> [--mode desktop|server] [--host 地址] [--profile dev]
 ```
 
-`--tasks` 与 `--runs` 不给时放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`）。服务缺省绑 0.0.0.0。
+`--tasks` 与 `--runs` 不给时放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`）。
+
+`--mode` 是运行形态，缺省 `server`：
+
+| 形态 | 缺省绑定地址 | 退出接口 |
+|---|---|---|
+| `server`（服务器用，缺省） | `0.0.0.0` | 没有（404） |
+| `desktop`（单机桌面用） | `127.0.0.1` | 有，只接受本机请求 |
+
+`--host` 给了以它为准。两种形态的日志写法相同：写标准输出，也追加到日志目录下当天的文件（`TASKWRIGHT_LOG_DIR`，缺省在用户数据目录的 `logs/` 下）。
+运行形态写进启动日志与占用标记（`mode` 一项）。
+
+`--port` 给的端口被占时依次试后面的端口，最多 10 个，全被占时报错退出；实际端口打印到日志、写进占用标记，并由 `GET /api/v1/service` 回出。
 
 ## 测试
 

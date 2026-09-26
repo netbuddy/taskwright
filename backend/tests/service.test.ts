@@ -300,7 +300,7 @@ describe("占用标记", () => {
     const lock = JSON.parse(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8"));
     assert.deepEqual([lock.port, lock.pid, lock.host], [8861, process.pid, hostname()]);
     assert.ok("started_at" in lock);
-    assert.match(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8"), /^\{"port": 8861, "pid": \d+, "started_at": "[^"]+", "host": "[^"]+"\}\n$/, "文件写法与 Python 版相同");
+    assert.match(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8"), /^\{"port": 8861, "pid": \d+, "started_at": "[^"]+", "host": "[^"]+", "mode": "server"\}\n$/, "文件写法与 Python 版相同，另加运行形态一项");
     await service.close();
     assert.equal(existsSync(join(folder, occupancy.LOCK_NAME)), false);
   });

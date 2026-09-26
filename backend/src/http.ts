@@ -13,6 +13,7 @@ import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
+import { appVersion } from "./paths.ts";
 import { MAX_UPLOAD, type Service, taskTypes, wordsLocator } from "./service.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
@@ -30,12 +31,16 @@ interface Request {
   headers: IncomingMessage["headers"];
   body: Buffer;
   params: Params;
+  /** 请求来自哪个地址（套接字的对端地址）。 */
+  remote?: string;
 }
 interface Reply {
   status: number;
   headers: Record<string, string>;
   body: Buffer;
   close?: boolean;
+  /** 回答整个发出之后要做的事（退出接口用它在回答之后才收尾）。 */
+  after?: () => void;
 }
 /** 长连接的回答（事件流）：拿到响应对象后自己往里写，连接断了才结束。 */
 export interface Stream {
@@ -218,7 +223,22 @@ function writeEvent(res: ServerResponse, sub: Subscriber, name: string, seq: num
 /** 事件流的保活间隔（毫秒）。 */
 export const KEEPALIVE_MS = 15_000;
 
+/** 本机回环地址：退出接口只接受从这些地址来的请求（::ffff:127.0.0.1 是 IPv4 回环地址在 IPv6 套接字上的写法）。 */
+export const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+
+/** 服务信息：不需要任务。给打包后的启动程序认出端口上是不是自己、给部署与监控探活、给前端按能力显示按钮。 */
+export function serviceInfo(service: Service) {
+  return { ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port, capabilities: { exit: service.mode === "desktop" } };
+}
+
 const handlers: Record<string, Handler> = {
+  service_info: (service) => json(200, serviceInfo(service)),
+  service_exit: (service, req) => {
+    // 只有桌面形态注册这个接口；服务器形态下与没有这个接口一样。它是过渡包（后端自己开浏览器、没有外壳）专用的。
+    if (service.mode !== "desktop") throw new ApiError("not_found", `没有这个接口：${req.method} ${req.path}`);
+    if (!LOOPBACK.has(req.remote ?? "")) throw new ApiError("forbidden", "退出服务只接受从本机发来的请求。");
+    return { ...json(200, { ok: true }), after: () => service.exitHandler?.() };
+  },
   list_tasks: (service) => json(200, { ok: true, tasks: service.listTasks() }),
   list_task_types: () => json(200, { ok: true, task_types: taskTypes() }),
   create_task: (service, req) => json(200, service.create(bodyJson(req))),
@@ -354,6 +374,8 @@ function isFile(path: string): boolean {
 
 const T = "(?<task>[^/]+)";
 export const ROUTES: [string, RegExp, string][] = ([
+  ["GET", "/api/v1/service", "service_info"],
+  ["POST", "/api/v1/service/exit", "service_exit"],
   ["GET", "/api/v1/tasks", "list_tasks"],
   ["GET", "/api/v1/task-types", "list_task_types"],
   ["POST", "/api/v1/tasks", "create_task"],
@@ -445,11 +467,12 @@ export function makeServer(service: Service) {
     incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
     incoming.on("end", async () => {
       const body = Buffer.concat(chunks).subarray(0, length);
-      const reply = await dispatch(service, { method, path, query, headers: incoming.headers, body });
+      const reply = await dispatch(service, { method, path, query, headers: incoming.headers, body, remote: incoming.socket.remoteAddress ?? "" });
       if ("stream" in reply) {
         await reply.stream(res).catch(() => res.destroy());
         return;
       }
+      if (reply.after) res.once("finish", reply.after);
       if (!res.destroyed) send(res, reply);
     });
     incoming.on("error", () => res.destroy());
