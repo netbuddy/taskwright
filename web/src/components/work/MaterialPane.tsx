@@ -7,12 +7,14 @@
 //
 // Word 材料（.docx）按原版式分页显示，交给 DocxPaper；它的来源出处带段落号（inputs/x.docx#p37），按段落定位。
 // 上传 .docx 时后端生成的投影（x.docx.md；0.2 的任务里是 x.docx.txt）是给助手读的，材料清单里带 derived_from，材料下拉框里不列出。
+// Word 材料在说明文字下面另有一栏「按章节看引用」（SectionList，读材料旁的分段清单），点一节跳到那一节的第一段。
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { Item, Material } from "../../api/types";
 import { docxLocator, ownMaterials } from "../../model/docx";
 import { DocxPaper } from "./DocxPaper";
+import { SectionList } from "./SectionList";
 
 export interface LocateRequest {
   excerpt: string;
@@ -50,6 +52,8 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   const isDocx = !!path && /\.docx$/i.test(path);
   const [docxNote, setDocxNote] = useState<string | null>(null);
   const [docxCited, setDocxCited] = useState<number | null>(null);
+  // 在「按章节看引用」里点一节：跳到那一节的第一段（每点一次 nonce 加一）。
+  const [jump, setJump] = useState<{ paragraph: number; nonce: number } | null>(null);
   // 正文连同它属于哪份材料一起记：切材料的那一下旧正文还在，不能拿它去找高亮。
   const [doc, setDoc] = useState<{ path: string; text: string } | null>(null);
   const text = doc && doc.path === path ? doc.text : null;
@@ -140,6 +144,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
         {isDocx && docxCited != null && <span className="chip">{docxCited ? `被 ${docxCited} 个条目引用过` : "还没有被条目引用"}</span>}
       </div>
       {isDocx && <div className="hint docx-hint">Word 文件按原版式分页显示。页眉页脚、文本框、脚注尾注里的文字只能看，不能被条目引用；批注不显示，修订按接受后的文字显示。</div>}
+      {isDocx && path && <SectionList taskId={taskId} path={path} items={items} onJump={(paragraph) => setJump({ paragraph, nonce: (jump?.nonce ?? 0) + 1 })} />}
       {missed && <div className="busy-note locate-miss" data-testid="locate-miss">没有在材料里找到这段原文</div>}
       {isDocx && docxNote && <div className="busy-note locate-miss" data-testid="locate-note">{docxNote}</div>}
       <div className="doc-wrap">
@@ -148,7 +153,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
           {error && <div className="busy-note">{error}</div>}
           {path && isDocx && (
             <DocxPaper taskId={taskId} path={path} items={items} paperRef={paper} onOpenItem={onOpenItem} onMouseUp={onMouseUp}
-              locate={locate && samePath(path, locatorPath(locate.locator)) ? locate : null} onCitedCount={setDocxCited} onNote={setDocxNote} />
+              locate={locate && samePath(path, locatorPath(locate.locator)) ? locate : null} onCitedCount={setDocxCited} onNote={setDocxNote} jump={jump} />
           )}
           {path && !isDocx && text == null && !error && <div className="empty">正在读原文。</div>}
           {!isDocx && text != null && (
