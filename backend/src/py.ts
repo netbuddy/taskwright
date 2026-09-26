@@ -23,3 +23,24 @@ export function or<T, U>(value: T, fallback: U): T | U {
 }
 
 export const isObject = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Python 的 json.dumps(value, ensure_ascii=False) 的写法：各项之间是「逗号加空格」，键与值之间是「冒号加空格」。
+ * 归档里的后端补记按这个写法写，与 Python 版写出的文件逐字相同。
+ */
+export function pyDumps(value: unknown): string {
+  if (value === undefined || value === null) return "null";
+  if (Array.isArray(value)) return "[" + value.map(pyDumps).join(", ") + "]";
+  if (typeof value === "object") {
+    return "{" + Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== undefined)
+      .map(([k, v]) => `${JSON.stringify(k)}: ${pyDumps(v)}`).join(", ") + "}";
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) return Number.isNaN(value) ? "NaN" : value > 0 ? "Infinity" : "-Infinity";
+  return JSON.stringify(value);
+}
+
+/** 本机时间「年-月-日T时:分:秒」，不带时区（Python 的 time.strftime("%Y-%m-%dT%H:%M:%S")）。 */
+export function localStamp(at = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${p(at.getMonth() + 1)}-${p(at.getDate())}T${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
+}
