@@ -37,6 +37,12 @@ ENV_PROJECT_ID = "TASKWRIGHT_LANGFUSE_PROJECT_ID"
 #: Langfuse 插件自己读的环境变量里，表示「这批数据属于哪个环境」的那一个。
 ENV_TRACING_ENVIRONMENT = "LANGFUSE_TRACING_ENVIRONMENT"
 
+#: 材料分段的参数经这个环境变量交给 pi 里的扩展（一段 JSON），扩展读分段清单时用它判断清单是不是按当前参数算的。
+ENV_SEGMENTS = "TASKWRIGHT_SEGMENTS"
+
+#: 启动配置里「材料分段」一节没写或缺某一项时用的值，与 agent/src/lib/segments.ts 的 SEGMENT_DEFAULTS 相同。
+SEGMENT_DEFAULTS = {"heading_depth": 3, "max_paragraphs": 300, "min_paragraphs": 3}
+
 
 class LaunchError(Exception):
     """启动配置有问题，带一句说明缺什么、怎么补。"""
@@ -109,6 +115,18 @@ def platform_skill_dir(profile: dict) -> Path | None:
     return path
 
 
+def segment_params(profile: dict) -> dict[str, int]:
+    """启动配置里「材料分段」一节的三个参数；没写的一项用 SEGMENT_DEFAULTS。写了但不是正整数时抛 LaunchError。"""
+    section = profile.get("材料分段") or {}
+    out = {}
+    for name, default in SEGMENT_DEFAULTS.items():
+        value = section.get(name, default)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise LaunchError(f"启动配置「材料分段」一节的 {name} 应当是正整数，现在写的是 {json.dumps(value, ensure_ascii=False)}。")
+        out[name] = value
+    return out
+
+
 def runs_dir() -> Path:
     """运行目录。没设环境变量时用当前目录下的 runs 子目录。"""
     raw = os.environ.get(ENV_RUNS_DIR, "").strip()
@@ -137,6 +155,7 @@ def build_environment(profile: dict) -> dict[str, str]:
     if environment_tag:
         env.setdefault(ENV_TRACING_ENVIRONMENT, environment_tag)
         env[ENV_TRACING_ENVIRONMENT] = env.get(ENV_TRACING_ENVIRONMENT) or environment_tag
+    env[ENV_SEGMENTS] = json.dumps(segment_params(profile), separators=(",", ":"))
     return env
 
 
