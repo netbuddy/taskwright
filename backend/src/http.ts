@@ -232,7 +232,8 @@ export const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 /** 服务信息：不需要任务。给打包后的启动程序认出端口上是不是自己、给部署与监控探活、给前端按能力显示按钮。 */
 export function serviceInfo(service: Service) {
   // 模型探测每次都现查（只读两个小文件）：用户放好配置文件后，刷新页面即可看到结果。
-  const model = probeModel(service.profile);
+  // 原因句里的文件路径只在桌面形态写全（服务器形态远程也看得到，不带出服务器上的目录）。
+  const model = probeModel(service.profile, process.env, { paths: service.mode === "desktop" });
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
     capabilities: { exit: service.mode === "desktop", model: model.available }, model: { name: model.name, reason: model.reason },

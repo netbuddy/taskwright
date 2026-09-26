@@ -84,7 +84,8 @@ node backend/src/main.mts --tasks <放任务目录的上级目录> --runs <归�
 
 `GET /api/v1/service` 每次都现查：启动配置写的模型「服务商/型号」，在 pi 的配置目录（`PI_CODING_AGENT_DIR`，没设时是 `~/.pi/agent`）里
 ①模型登记文件 `models.json` 登记了这个服务商与型号，或②登录凭据文件 `auth.json` 里有这个服务商一项（只看键名，不读凭据内容），
-二者之一即 `capabilities.model` 为 true。只读这两个文件，不起 pi。识别不了的情形：内置服务商的密钥只放在环境变量里，这时判 false，
+二者之一即 `capabilities.model` 为 true。只读这两个文件，不起 pi。原因句 `model.reason` 在 desktop 形态写两个文件的完整路径，
+server 形态只写文件名（服务信息远程也看得到，不带出服务器上的目录）。识别不了的情形：内置服务商的密钥只放在环境变量里，这时判 false，
 原因句里写明。
 
 ### 桌面形态下的模型

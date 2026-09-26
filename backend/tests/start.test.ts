@@ -204,3 +204,26 @@ test("模型探测：models.json 登记了「服务商/型号」或 auth.json �
   assert.deepEqual(probeModel({}, env), { name: "", available: false, reason: "启动配置里没有写模型。" });
   assert.equal(JSON.parse(readFileSync(auth, "utf-8"))["some-cloud"].access, "不读这里", "探测不改文件");
 });
+
+test("模型探测的原因句：桌面形态写两个文件的完整路径；服务器形态只写文件名，不带出服务器上的目录", async () => {
+  const { Service } = await import("../src/service.ts");
+  const { serviceInfo } = await import("../src/http.ts");
+  const dir = join(tmp, "probe-agent");
+  mkdirSync(dir, { recursive: true });
+  const saved = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  try {
+    const profile = { model: "local/qwen" };
+    const desktop = serviceInfo(new Service(join(tmp, "pt1"), join(tmp, "pr1"), profile, { port: 1, mode: "desktop" }));
+    assert.equal(desktop.model.reason, `在模型登记文件 ${join(dir, "models.json")} 和登录凭据文件 ${join(dir, "auth.json")} 里都没有找到「local/qwen」。如果这个模型服务的密钥只放在环境变量里，这里也会显示没有找到。`);
+    const server = serviceInfo(new Service(join(tmp, "pt2"), join(tmp, "pr2"), profile, { port: 2, mode: "server" }));
+    assert.equal(server.model.reason, "在模型登记文件 models.json 和登录凭据文件 auth.json 里都没有找到「local/qwen」。如果这个模型服务的密钥只放在环境变量里，这里也会显示没有找到。");
+    writeFileSync(join(dir, "auth.json"), JSON.stringify({ local: {} }));
+    const found = serviceInfo(new Service(join(tmp, "pt3"), join(tmp, "pr3"), profile, { port: 3, mode: "server" }));
+    assert.deepEqual([found.capabilities.model, found.model.reason], [true, "模型服务「local」已经登录，登录凭据文件 auth.json 里有它。"]);
+    assert.ok(!found.model.reason.includes(dir));
+  } finally {
+    if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = saved;
+  }
+});

@@ -8,7 +8,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { type Profile, piAgentDir, resolveModel } from "./launch.ts";
 
 export interface ModelProbe {
@@ -35,12 +35,18 @@ function readObject(path: string): Record<string, any> | null | "bad" {
   }
 }
 
-export function probeModel(profile: Profile, env: NodeJS.ProcessEnv = process.env): ModelProbe {
+/**
+ * paths 为真时原因句写出两个文件的完整路径（桌面形态：用户要知道往哪里放文件）；为假时只写文件名（服务器形态：
+ * 服务信息远程也看得到，不带出服务器上的目录）。
+ */
+export function probeModel(profile: Profile, env: NodeJS.ProcessEnv = process.env, options: { paths?: boolean } = {}): ModelProbe {
+  const paths = options.paths ?? true;
   const resolved = resolveModel(profile, env);
   const name = resolved.model;
   const dir = piAgentDir(env);
   const modelsPath = join(dir, "models.json");
   const authPath = join(dir, "auth.json");
+  const shown = (path: string) => (paths ? path : basename(path));
   if (!name) return { name, available: false, reason: "启动配置里没有写模型。" };
   const picked = resolved.from === "pi 设置" ? `（由 pi 设置文件 ${resolved.settings} 指定）` : "";
   const slash = name.indexOf("/");
@@ -51,16 +57,16 @@ export function probeModel(profile: Profile, env: NodeJS.ProcessEnv = process.en
   if (models !== null && models !== "bad") {
     const entry = models.providers?.[provider];
     const ids = Array.isArray(entry?.models) ? entry.models.map((m: any) => m?.id) : [];
-    if (modelId && ids.includes(modelId)) return { name, available: true, reason: `在模型登记文件 ${modelsPath} 里找到了「${name}」${picked}。` };
+    if (modelId && ids.includes(modelId)) return { name, available: true, reason: `在模型登记文件 ${shown(modelsPath)} 里找到了「${name}」${picked}。` };
   }
   const auth = readObject(authPath);
   if (auth !== null && auth !== "bad" && Object.hasOwn(auth, provider)) {
-    return { name, available: true, reason: `模型服务「${provider}」已经登录，登录凭据文件 ${authPath} 里有它${picked ? `；模型「${name}」${picked}` : ""}。` };
+    return { name, available: true, reason: `模型服务「${provider}」已经登录，登录凭据文件 ${shown(authPath)} 里有它${picked ? `；模型「${name}」${picked}` : ""}。` };
   }
-  const unreadable = [models === "bad" ? modelsPath : null, auth === "bad" ? authPath : null].filter(Boolean);
+  const unreadable = [models === "bad" ? shown(modelsPath) : null, auth === "bad" ? shown(authPath) : null].filter(Boolean);
   const note = unreadable.length ? `（其中 ${unreadable.join("、")} 读不出来，不是有效的 JSON 对象）` : "";
   return {
     name, available: false,
-    reason: `在模型登记文件 ${modelsPath} 和登录凭据文件 ${authPath} 里都没有找到「${name}」${picked}${note}。如果这个模型服务的密钥只放在环境变量里，这里也会显示没有找到。`,
+    reason: `在模型登记文件 ${shown(modelsPath)} 和登录凭据文件 ${shown(authPath)} 里都没有找到「${name}」${picked}${note}。如果这个模型服务的密钥只放在环境变量里，这里也会显示没有找到。`,
   };
 }
