@@ -458,13 +458,24 @@ def arg_brief(call: dict, workspace_abs: str) -> str:
     return shorten(json.dumps(args, ensure_ascii=False), 80)
 
 
+def replay_note(call: dict) -> str:
+    """「保存修订」按调用编号判重：同一次调用重放时工具不再写入，结果细节里 replayed 为真。这时给一句说明，否则是空文字。"""
+    details = call.get("结果细节") or {}
+    if call.get("是否被拒") is not False or not isinstance(details, dict) or details.get("replayed") is not True:
+        return ""
+    return (f"这次调用的调用编号与之前一次相同（模型重试或 pi 重发），工具没有重复写入，交回的是第一次的结果"
+            f"（修订 {details.get('revision_no')}）。它带来的改动画在第一次那里。")
+
+
 def call_shape(call: dict, index, rules: dict, workspace_abs: str, run_offset: int) -> dict:
-    written = changes_of(call, index)
+    replayed = replay_note(call)
+    # 重放的那次与第一次共用调用编号，库里的事件会对到两次上；改动只画在第一次那里。
+    written = [] if replayed else changes_of(call, index)
     rejected = call.get("是否被拒") is True
     fix = call.get("改正") or None
     unmatched = ""
     writer = call["工具"] in rules["写交付物的工具"] or call["工具"] in rules["建任务的工具"]
-    if writer and not rejected and call.get("是否被拒") is False and not written:
+    if writer and not rejected and call.get("是否被拒") is False and not written and not replayed:
         unmatched = ("这次调用在库里找不到对应的记录：工具回的是接受，可是当前扫到的任务目录里没有这个调用编号写下的事件。"
                      "常见的原因是那个任务目录后来被重建过。观测台不猜它原来写下了什么。")
     return {
@@ -479,8 +490,9 @@ def call_shape(call: dict, index, rules: dict, workspace_abs: str, run_offset: i
         "泳道": call.get("泳道", 1), "链接": call.get("Langfuse 直达链接", ""),
         "改动": written, "有没有写入": bool(written), "对不上": unmatched, "模型调用": model_calls_of(call),
         "拒绝记录": rejections_of(call),
-        "事件": [event_shape(e) for e in (call.get("库里写下的事件") or [])],
-        "修订序号": (call.get("产生的修订") or {}).get("修订序号"),
+        "事件": [] if replayed else [event_shape(e) for e in (call.get("库里写下的事件") or [])],
+        "修订序号": None if replayed else (call.get("产生的修订") or {}).get("修订序号"),
+        "重放说明": replayed,
         "改正": ({"运行序号": fix.get("运行序号") + run_offset, "轮号": fix.get("轮号"),
                   "改正成功": bool(fix.get("改正成功")), "有没有再试": True}
                  if fix and fix.get("有没有再试") else
@@ -905,8 +917,8 @@ def head_chars(text, limit: int) -> str:
 
 
 def accepted(call: dict) -> bool:
-    """工具接受了这次调用：有执行结果，而且不是被拒。"""
-    return call["有没有执行结果"] and not call["被拒"]
+    """工具接受了这次调用：有执行结果，而且不是被拒。同一次调用的重放不算（工具没有再写入）。"""
+    return call["有没有执行结果"] and not call["被拒"] and not call.get("重放说明")
 
 
 def key_actions(calls: list[dict]) -> list[str]:

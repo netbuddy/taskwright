@@ -25,6 +25,9 @@
  *
  * 写库、记事件、各项核对同在一个立即事务里；任何一个操作不通过，整次调用全部不写入，
  * 拒绝的文字逐条列出哪个操作的哪一处不对。本模块不依赖 pi。
+ *
+ * 按调用编号判重（幂等）：同一次工具调用被重放（模型重试、pi 重发）时，库里已有这个调用编号形成的修订，
+ * 就不再核对也不再写入，原样交回第一次的结果并注明「之前已经保存过」（savedBefore）；修订表上另有唯一索引兜底（schema.ts）。
  */
 
 import { readFileSync } from "node:fs";
@@ -228,6 +231,13 @@ export function saveRevision(
 }
 
 function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): ToolOutcome {
+  // 同一次工具调用重放（模型重试、pi 重发）：第一次已经形成了修订，就原样交回第一次的结果，不再写一遍。
+  // 放在一切核对之前：任务在两次之间结束了、条目又被改过，都不影响「这次调用已经保存过」这件事。
+  // 用户在界面上的操作不走这里：操作编号由后端每次新生成，不会重放。调用编号为空文字（模型服务没给编号）时无从判重。
+  if (call.actor !== ACTOR_USER && call.callId !== "") {
+    const replay = savedBefore(db, call.callId);
+    if (replay) return replay;
+  }
   const running = activeTasks(db);
   if (running.length === 0) {
     throw new Error(
@@ -1047,14 +1057,8 @@ function write(
     const notes = one.op === "add" || one.op === "update" ? one.notes ?? [] : [];
     return notes.length > 0 ? `${notes.join("；")}。` : "";
   };
-  const lines = outcomes.map((one, index) => {
-    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），${one.item} 现在是修订 ${revisionNo}。${splitNote(index)}`;
-    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}（改前在修订 ${one.from_revision}），${one.item} 现在是修订 ${revisionNo}。${splitNote(index)}`;
-    if (one.op === "restore") return `${index + 1}. 恢复了条目 ${one.item}，恢复成删除前的样子，${one.item} 现在是修订 ${revisionNo}。`;
-    return `${index + 1}. 删除了条目 ${one.item}（删除前在修订 ${one.from_revision}）。`;
-  });
   return {
-    text: `已保存为任务 ${taskId} 的修订 ${revisionNo}，一共 ${outcomes.length} 个操作：\n${lines.join("\n")}`,
+    text: savedText(taskId, revisionNo, outcomes, splitNote),
     details: {
       task_id: taskId,
       revision_no: revisionNo,
@@ -1063,6 +1067,56 @@ function write(
       saved: true,
       intent_act_id: intentActId,
       operations: outcomes.map(({ op, item, collection, from_revision, to_revision }) => ({ op, item, collection, from_revision, to_revision })),
+    },
+  };
+}
+
+/** 一次修订里的一个操作写下之后的样子，与 REVISION_SAVED 事件内容里 operations 的每一项同形。 */
+interface SavedOperation {
+  op: "add" | "update" | "delete" | "restore";
+  item: string;
+  collection: string;
+  from_revision: number | null;
+  to_revision: number | null;
+}
+
+/** 保存成功时交给模型的文字。note 给出第几个操作另要补的一句（摘录按空行拆成了几条之类），没有就是空文字。 */
+function savedText(taskId: string, revisionNo: number, operations: SavedOperation[], note: (index: number) => string = () => ""): string {
+  const lines = operations.map((one, index) => {
+    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），${one.item} 现在是修订 ${revisionNo}。${note(index)}`;
+    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}（改前在修订 ${one.from_revision}），${one.item} 现在是修订 ${revisionNo}。${note(index)}`;
+    if (one.op === "restore") return `${index + 1}. 恢复了条目 ${one.item}，恢复成删除前的样子，${one.item} 现在是修订 ${revisionNo}。`;
+    return `${index + 1}. 删除了条目 ${one.item}（删除前在修订 ${one.from_revision}）。`;
+  });
+  return `已保存为任务 ${taskId} 的修订 ${revisionNo}，一共 ${operations.length} 个操作：\n${lines.join("\n")}`;
+}
+
+/** 重放时补在第一次的结果文字后面的一句。 */
+export const REPLAYED_TEXT = "这次调用之前已经保存过，没有重复写入。";
+
+/**
+ * 这个调用编号在这个任务里是否已经形成过修订：形成过就按那次修订与它的事件重新拼出第一次的结果（details.replayed 为真），
+ * 文字末尾补一句 REPLAYED_TEXT；没有就返回 null。第一次结果里「摘录按空行拆成了几条」的附注不存库，重放的文字里没有这一句。
+ */
+function savedBefore(db: DatabaseSync, callId: string): ToolOutcome | null {
+  const row = db.prepare(
+    "SELECT r.task_id, r.revision_no, r.event_seq, r.intent_act_id, e.payload FROM revision r JOIN event e ON e.seq = r.event_seq " +
+      "WHERE r.call_id = ? AND r.task_id IN (SELECT task_id FROM task) ORDER BY r.revision_no LIMIT 1",
+  ).get(callId) as { task_id: string; revision_no: number; event_seq: number; intent_act_id: string | null; payload: string } | undefined;
+  if (!row) return null;
+  const payload = (load(row.payload) ?? {}) as { operations?: SavedOperation[]; undo_of_revision?: number };
+  const operations = Array.isArray(payload.operations) ? payload.operations : [];
+  return {
+    text: `${savedText(row.task_id, row.revision_no, operations)}\n${REPLAYED_TEXT}`,
+    details: {
+      task_id: row.task_id,
+      revision_no: row.revision_no,
+      event_seq: row.event_seq,
+      undo_of_revision: typeof payload.undo_of_revision === "number" ? payload.undo_of_revision : null,
+      saved: true,
+      replayed: true,
+      intent_act_id: row.intent_act_id,
+      operations,
     },
   };
 }

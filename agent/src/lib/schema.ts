@@ -165,6 +165,36 @@ CREATE TABLE IF NOT EXISTS tool_rejection (
 );
 `;
 
+/**
+ * 修订表上按调用编号判重的索引：同一任务里，同一次工具调用（同一个调用编号）只能形成一次修订。
+ * 模型重试或 pi 重发同一次调用时，「保存修订」先按这个编号查到第一次的修订、原样返回，不再写一遍（见 save_revision.ts）；
+ * 这个唯一索引是最后一道保险。调用编号为空文字的不算：模型服务没有给调用编号时，pi 交来的是空文字，这种调用无从判重。
+ * 旧库第一次被写入一侧打开时补建（见 ensureRevisionCallIndex）。
+ */
+export const REVISION_CALL_INDEX = "revision_call_id";
+export const REVISION_CALL_INDEX_SQL =
+  `CREATE UNIQUE INDEX IF NOT EXISTS ${REVISION_CALL_INDEX} ON revision (task_id, call_id) WHERE call_id <> '';`;
+/** 旧库里已经有同一调用编号的两次修订时建不成唯一索引，改建这个普通索引，只帮判重的查询提速。 */
+export const REVISION_CALL_LOOKUP_INDEX = "revision_call_id_lookup";
+
+/**
+ * 旧库补建按调用编号判重的索引。已有唯一索引（或已改建过普通索引）就什么都不做；库里已经有同一调用编号的两次修订
+ * （补这个索引之前重放过的调用）时唯一索引建不成，改建普通索引，那几行原样保留，此后的判重由代码里的查询保证。
+ */
+function ensureRevisionCallIndex(db: DatabaseSync): void {
+  const indexes = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'revision'").all() as { name: string }[])
+    .map((row) => row.name);
+  if (indexes.includes(REVISION_CALL_INDEX) || indexes.includes(REVISION_CALL_LOOKUP_INDEX)) return;
+  const duplicated = db.prepare(
+    "SELECT 1 FROM revision WHERE call_id <> '' GROUP BY task_id, call_id HAVING COUNT(*) > 1 LIMIT 1",
+  ).get();
+  if (duplicated) {
+    db.exec(`CREATE INDEX IF NOT EXISTS ${REVISION_CALL_LOOKUP_INDEX} ON revision (task_id, call_id);`);
+  } else {
+    db.exec(REVISION_CALL_INDEX_SQL);
+  }
+}
+
 export const SCHEMA_SQL = `
 CREATE TABLE task (
   task_id          TEXT PRIMARY KEY,   -- 任务编号，由创建任务的核心函数生成，例如 TASK-001；一库一任务，这张表只有一行
@@ -279,7 +309,8 @@ CREATE TABLE event (
 ${MODEL_CALL_SQL}
 ${REVIEW_FINDING_SQL}
 ${REVIEW_WAIVER_SQL}
-${TOOL_REJECTION_SQL}`;
+${TOOL_REJECTION_SQL}
+${REVISION_CALL_INDEX_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
 export class NoDatabaseYet extends Error {}
@@ -346,6 +377,8 @@ export function ensureSchema(db: DatabaseSync): void {
   if (hasVersionColumns(db)) {
     throw new Error(OLD_VERSION_FORMAT_TEXT);
   }
+  // 按调用编号判重的索引是后来加的：只加索引，不动已有的行（见 REVISION_CALL_INDEX_SQL 的说明）。
+  ensureRevisionCallIndex(db);
   const taskColumns = (db.prepare("PRAGMA table_info(task)").all() as { name: string }[]).map((row) => row.name);
   const missingTaskColumns = TASK_TABLE_COLUMNS.filter((name) => !taskColumns.includes(name));
   if (missingTaskColumns.length > 0) {

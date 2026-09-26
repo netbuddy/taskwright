@@ -276,3 +276,24 @@ class DialogueAttachTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ───────────── 保存修订按调用编号判重：重放的那次 ─────────────
+
+class ReplayedSaveTests(unittest.TestCase):
+    def test_重放的保存修订不画改动_不计保存次数_注明交回的是第一次的结果(self):
+        index = make_index()
+        details = {"revision_no": 1, "replayed": True, "operations": []}
+        first = raw_call("save_revision", False, "已保存为任务 TASK-001 的修订 1", {"revision_no": 1, "operations": []})
+        again = raw_call("save_revision", False, "已保存为任务 TASK-001 的修订 1\n这次调用之前已经保存过，没有重复写入。", details)
+        first["调用编号"] = again["调用编号"] = "dup"
+        for one in (first, again):
+            one["带来的变化"] = index.changes_of_call(one, "ws-a")
+        shaped = [taskpage.call_shape(c, index, RULES, WS, 0) for c in (first, again)]
+        self.assertEqual(shaped[0]["重放说明"], "")
+        self.assertTrue(shaped[0]["改动"])
+        self.assertEqual(shaped[1]["改动"], [])
+        self.assertEqual(shaped[1]["对不上"], "")
+        self.assertIn("没有重复写入", shaped[1]["重放说明"])
+        self.assertIn("修订 1", shaped[1]["重放说明"])
+        self.assertEqual(taskpage.key_actions(shaped), ["保存修订 1 次"])

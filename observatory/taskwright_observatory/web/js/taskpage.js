@@ -477,7 +477,8 @@ function 工具执行(c, t, key, ci) {
     链接: ""});
   const 上面画过 = c.改动.length && !c.被拒;
   const 跳 = `<button class="jump" style="color:var(--human);text-decoration:underline" data-jump="chg-${esc(key)}-${ci}">跳到对话层里那一块看改动</button>`;
-  const 变化块 = c.对不上 ? `<div class="none" style="color:var(--bad)">${esc(c.对不上)}</div>`
+  const 变化块 = c.重放说明 ? `<div class="none">${esc(c.重放说明)}</div>`
+    : c.对不上 ? `<div class="none" style="color:var(--bad)">${esc(c.对不上)}</div>`
     : 上面画过 ? (t.调用.length === 1 ? `<div>${跳}</div>` : `<div class="none">这次调用带来的改动显示在这一轮的对话层里。${跳}</div>`)
       : `<div class="none">这次调用没有改动交付物，也没有留下其他记录。</div>`;
   const 模型调用块 = (c.模型调用 || []).map((m, mi) => {
