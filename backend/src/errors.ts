@@ -1,6 +1,6 @@
 /** 统一的错误形状：{"ok": false, "error": {"code", "message", "data"}}。 */
 
-/** 错误码到 HTTP 状态码。not_found 用于任务、会话、条目或接口不存在；not_implemented 是这一版还没有接上的接口。 */
+/** 错误码到 HTTP 状态码。not_found 用于任务、会话、条目或接口不存在；forbidden 是只接受本机请求的接口收到了别处来的请求。 */
 export const STATUS: Record<string, number> = {
   bad_request: 400,
   not_found: 404,
@@ -12,7 +12,7 @@ export const STATUS: Record<string, number> = {
   no_task: 409,
   session_busy: 409,
   task_occupied: 409,
-  not_implemented: 501,
+  forbidden: 403,
   executor_starting: 503,
   executor_unavailable: 503,
   busy_timeout: 503,

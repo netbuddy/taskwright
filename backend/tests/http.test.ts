@@ -36,22 +36,22 @@ test("错误形状与状态码", () => {
   const error = new ApiError("session_busy", "助手正在另一条会话里工作。", { active_session: "s1" });
   assert.equal(error.status, 409);
   assert.deepEqual(error.body(), { ok: false, error: { code: "session_busy", message: "助手正在另一条会话里工作。", data: { active_session: "s1" } } });
-  assert.deepEqual(["bad_request", "rejected", "executor_starting", "too_large", "unsupported_type", "task_occupied", "not_implemented", "别的"].map((c) => new ApiError(c, "").status),
-    [400, 422, 503, 413, 415, 409, 501, 500]);
+  assert.deepEqual(["bad_request", "rejected", "executor_starting", "too_large", "unsupported_type", "task_occupied", "forbidden", "别的"].map((c) => new ApiError(c, "").status),
+    [400, 422, 503, 413, 415, 409, 403, 500]);
   assert.equal(STATUS.old_format, 409);
 });
 
-test("路由分派：没有的接口、没有的任务、这一版还没接上的接口、方法不对", async () => {
+test("路由分派：没有的接口、没有的任务、pi 不在时的直接操作与停下、方法不对", async () => {
   assert.deepEqual((await go("GET", "/api/v1/nothing")).body.error.code, "not_found");
   assert.equal((await go("GET", "/api/v1/nothing")).body.error.message, "没有这个接口：GET /api/v1/nothing");
   assert.deepEqual([(await go("GET", "/api/v1/tasks/TASK-NONE")).status, (await go("GET", "/api/v1/tasks/TASK-NONE")).body.error.message], [404, "没有任务 TASK-NONE。"]);
   const { task_id: taskId } = service.create({});
-  for (const [method, path] of [["POST", `/api/v1/tasks/${taskId}/actions`], ["POST", `/api/v1/tasks/${taskId}/control`]]) {
-    const got = await go(method, path);
-    assert.deepEqual([got.status, got.body.error.code], [501, "not_implemented"], `${method} ${path}`);
-  }
-  const card = await go("POST", `/api/v1/tasks/${taskId}/messages`, JSON.stringify({ text: "我选：甲", origin: "card_choice" }));
-  assert.deepEqual([card.status, card.body.error.code], [501, "not_implemented"], "卡片点击这一版还没有接上");
+  const action = await go("POST", `/api/v1/tasks/${taskId}/actions`, JSON.stringify({ kind: "mark_viewed", targets: [] }));
+  assert.deepEqual([action.status, action.body.error.code, action.body.error.message, action.body.error.data],
+    [503, "executor_unavailable", "助手现在不可用，界面操作要在助手启动之后才能做。", { detail: "pi 没有在跑" }], "pi 不在时直接操作一律失败");
+  assert.deepEqual((await go("POST", `/api/v1/tasks/${taskId}/control`, JSON.stringify({ action: "stop" }))).body, { ok: true, cleared: [] }, "pi 不在时停下什么都不做");
+  const control = await go("POST", `/api/v1/tasks/${taskId}/control`, JSON.stringify({ action: "interrupt" }));
+  assert.deepEqual([control.status, control.body.error.message], [400, "action 现在只能是 stop。"]);
   const empty = await go("POST", `/api/v1/tasks/${taskId}/messages`, JSON.stringify({ text: "  " }));
   assert.deepEqual([empty.status, empty.body.error.message], [400, "text 不能是空的。"]);
   const outside = await go("POST", `/api/v1/tasks/${taskId}/messages`, JSON.stringify({ text: "看看", attachments: ["inputs/没有.md"] }));

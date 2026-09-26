@@ -1,6 +1,5 @@
 /**
  * 路由与各接口（node:http，无框架）。所有路径以 /api/v1 开头；错误一律是 {"ok": false, "error": {code, message, data}}。
- * 这一版接上的是读取一侧、建任务与上传材料；启动 pi、事件流与转交用户操作的几个接口返回 not_implemented。
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -10,7 +9,7 @@ import { extname } from "node:path";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
 import * as render from "./render.ts";
-import { or } from "./py.ts";
+import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
@@ -157,10 +156,6 @@ export function parseMultipart(contentType: string, body: Buffer): [string, Buff
 
 // ───────────── 各接口 ─────────────
 
-const notImplemented: Handler = () => {
-  throw new ApiError("not_implemented", "这个接口在这一版的后端里还没有接上。");
-};
-
 function sessionParam(req: Request, body: Record<string, any> = {}): string | null {
   return or(req.query.session, null) ?? or(body.session_id, null) ?? null;
 }
@@ -177,6 +172,37 @@ export function withAttachments(text: string, paths: string[]): string {
   const words = paths.filter((p) => p.toLowerCase().endsWith(".docx"));
   const note = words.length ? `其中 Word 文件请读同名的 .md 投影（${words.map((p) => p + ".md").join("、")}），引用时出处写 Word 文件加段落号` : "";
   return `${text}\n（我上传了材料：${paths.join("、")}${note ? "；" + note : ""}）`;
+}
+
+/**
+ * 卡片点击的标注。两种写法都认：annotation {reply_message_id, option_key, option_text}；
+ * 前端的 card {reply_message_id, kind, choice}，choice 是选项的 key 或「不对」「采纳」之类的按钮字。
+ * card 写法里没有选项的文字：按 reply_message_id 在会话条目里找到那条回复，从它「回复」工具参数的 act.options 里按键查回文字；
+ * 查不到（「不对」「采纳」这类按钮，或那条回复不在条目里）就用 choice 本身。
+ */
+export function cardAnnotation(body: Record<string, any>, entries: Record<string, any>[] = []): Record<string, any> {
+  if (isObject(body.annotation)) return body.annotation;
+  const card: Record<string, any> = isObject(body.card) ? body.card : {};
+  const choice = card.choice ?? null;
+  const text = replyOptionText(entries, card.reply_message_id ?? null, choice);
+  return { reply_message_id: card.reply_message_id ?? null, option_key: choice, option_text: text !== null ? text : choice, card_kind: card.kind ?? null };
+}
+
+/** 那条回复的卡片上，键为 key 的选项的文字；找不到返回 null。 */
+export function replyOptionText(entries: Record<string, any>[], replyId: unknown, key: unknown): unknown {
+  if (!truthy(replyId) || key === null || key === undefined) return null;
+  for (const e of entries) {
+    if (e.id !== replyId || e.type !== "message") continue;
+    for (const part of or((e.message || {}).content, []) as unknown[]) {
+      if (isObject(part) && part.type === "toolCall" && part.name === "reply") {
+        const act = or(or(part.arguments, {}).act, {});
+        for (const option of or(act.options, []) as unknown[]) {
+          if (isObject(option) && option.key === key) return option.text ?? null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /** SSE 的一条事件：库事件带 id 行；补发与实时推送重叠的那几条只发一次。写了返回真。 */
@@ -227,10 +253,26 @@ const handlers: Record<string, Handler> = {
     }
     const session = sessionParam(req, body);
     const clientId = body.client_id ?? null;
-    if (body.origin === "card_choice") throw new ApiError("not_implemented", "卡片点击在这一版的后端里还没有接上。");
-    const sent = withAttachments(rewriteSlash(text), attachments);
-    const queued = await t.executor.say(session, sent, clientId, text);
+    let queued: boolean;
+    if (body.origin === "card_choice") {
+      queued = await t.executor.cardClick(session, text, clientId, cardAnnotation(body, session ? await t.executor.entries(session) : []));
+    } else {
+      queued = await t.executor.say(session, withAttachments(rewriteSlash(text), attachments), clientId, text);
+    }
     return json(200, { ok: true, client_id: clientId, queued });
+  },
+  actions: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    t.requireOpen();
+    const opId = await t.executor.action(sessionParam(req, body), body);
+    return json(200, { ok: true, client_id: body.client_id ?? null, op_id: opId });
+  },
+  control: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    if (body.action !== "stop") throw new ApiError("bad_request", "action 现在只能是 stop。");
+    return json(200, { ok: true, cleared: await t.executor.stop(sessionParam(req, body)) });
   },
   events: (service, req) => {
     const t = service.task(req.params.task);
@@ -300,9 +342,6 @@ const handlers: Record<string, Handler> = {
       body: Buffer.from(text, "utf-8"),
     };
   },
-  // 下面两个接口（直接操作、让助手停下）这一版还没有接上。
-  actions: notImplemented,
-  control: notImplemented,
 };
 
 function isFile(path: string): boolean {
