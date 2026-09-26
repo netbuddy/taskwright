@@ -213,6 +213,8 @@ export interface Material {
   path: string;
   bytes: number;
   modified_at: string;
+  /** 由哪份材料生成（Word 材料的投影 x.docx.md 写 x.docx 的路径）；界面不单独列出这类文件。原始材料为 null。 */
+  derived_from?: string | null;
 }
 
 export type ExecutorStateName = "not_started" | "starting" | "idle" | "working" | "exited" | "failed_to_start";

@@ -657,9 +657,18 @@ def intent_acts(conn, task_id: str, rows: list[dict]) -> dict[tuple[str, str], d
 
 
 def materials(task_dir: Path, definition: dict | None) -> list[dict]:
+    """材料目录里的文件（不含子目录，Word 材料的图片目录因此不列）。由 Word 材料生成的投影（x.docx.md，0.2 的任务里是
+    x.docx.txt）旁边有那份 .docx 时，derived_from 写那份 .docx 的路径，界面据此不单独列出；其余为 None。"""
     folder = Path(task_dir) / ((definition or {}).get("材料目录") or taskdb.DEFAULT_MATERIALS_DIR)
     if not folder.is_dir():
         return []
     rel = (definition or {}).get("材料目录") or taskdb.DEFAULT_MATERIALS_DIR
-    return [{"path": f"{rel}{p.name}", "bytes": p.stat().st_size, "modified_at": clock.from_epoch(p.stat().st_mtime)}
-            for p in sorted(folder.iterdir()) if p.is_file()]
+    files = sorted(p for p in folder.iterdir() if p.is_file())
+    names = {p.name for p in files}
+
+    def source_of(name: str) -> str | None:
+        stem, dot, ext = name.rpartition(".")
+        return f"{rel}{stem}" if dot and ext.lower() in ("md", "txt") and stem.lower().endswith(".docx") and stem in names else None
+
+    return [{"path": f"{rel}{p.name}", "bytes": p.stat().st_size, "modified_at": clock.from_epoch(p.stat().st_mtime),
+             "derived_from": source_of(p.name)} for p in files]

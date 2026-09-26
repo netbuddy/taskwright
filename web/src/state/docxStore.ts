@@ -10,7 +10,7 @@ export interface DocxEntry {
   status: "loading" | "ready" | "error";
   bytes?: ArrayBuffer;
   table?: DocxTable;
-  /** 表格里的段落的位置（「表 3 第 2 行第 2 列」），取自后端生成的文本投影。 */
+  /** 表格里的段落的位置（「表 3 第 2 行第 2 列」），取自后端生成的投影。 */
   tablePos?: Map<number, string>;
   error?: string;
 }

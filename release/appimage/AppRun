@@ -1,0 +1,4 @@
+#!/bin/sh
+# Entry point of the AppImage: the bundled Node runs the prototype backend from the read-only image.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/lib/taskwright/bin/node" "$HERE/usr/lib/taskwright/app/main.mjs" "$@"

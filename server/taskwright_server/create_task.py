@@ -28,7 +28,7 @@ import uuid
 from pathlib import Path
 
 from taskwright_server import new_workspace
-from taskwright_server.service import docx_text
+from taskwright_server.service import docx_projection
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLI = REPO_ROOT / "agent" / "src" / "cli" / "create_task.mts"
@@ -70,9 +70,9 @@ def create_task(target: Path, task_type: str = DEFAULT_TYPE, name: str | None = 
             if not material.is_file():
                 raise CreateTaskError(f"材料文件 {material} 不存在。")
             shutil.copy2(material, target / "inputs" / material.name)
-            if material.suffix.lower() == ".docx":  # Word 材料另生成文本投影，与界面上传时相同
+            if material.suffix.lower() == ".docx":  # Word 材料另生成 Markdown 投影，与界面上传时相同
                 try:
-                    docx_text.write_projection(target / "inputs" / material.name, f"inputs/{material.name}")
+                    docx_projection.write_projection(target / "inputs" / material.name, f"inputs/{material.name}")
                 except ValueError as e:
                     raise CreateTaskError(f"材料文件 {material}：{e}。")
         argv = [node, str(CLI), "--dir", str(target), "--definition", definition_path_of(task_type), "--op-id", op_id]

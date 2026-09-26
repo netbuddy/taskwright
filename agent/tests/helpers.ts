@@ -7,7 +7,9 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { crc32 } from "node:zlib";
 import { databasePath } from "../src/lib/db.ts";
+import { docxProjection } from "../src/lib/docx_markdown.ts";
 // 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
 import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
 
@@ -104,15 +106,20 @@ export function count(workspaceDir: string, table: string): number {
 export const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。" };
 
 /**
- * Word 材料的样本：examples/library-lending/requirements-styled.docx。投影按 scripts/docx_paragraphs.mjs 的同一条计数规则现生成，
- * 行的写法与后端上传时生成的投影相同（server 的 service/docx_text.py，两边逐行一致由后端测试核对）。
+ * Word 材料的样本：examples/library-lending/requirements-styled.docx。投影由 lib/docx_markdown.ts 现生成，与后端上传时相同
+ * （后端经 cli/docx_projection.mts 调用同一个函数）。0.2 的纯文本投影按 scripts/docx_paragraphs.mjs 的计数规则现生成，给兼容的测试用。
  */
 export const SAMPLE = join(import.meta.dirname, "../../examples/library-lending/requirements-styled.docx");
 /** 样本放进任务目录后的出处写法（不带段落号）。 */
 export const SAMPLE_DOCX = "inputs/requirements-styled.docx";
 
-/** 样本的文本投影：每段一行，行首写「第 N 段」。 */
+/** 样本的 Markdown 投影。 */
 export function projection(): string {
+  return docxProjection(readFileSync(SAMPLE), SAMPLE_DOCX).markdown;
+}
+
+/** 样本的 0.2 纯文本投影：每段一行，行首写「第 N 段」。 */
+export function legacyProjection(): string {
   const xml = readZipEntry(readFileSync(SAMPLE), "word/document.xml").toString("utf8");
   const lines = ["# 由 requirements-styled.docx 生成，供助手阅读。"];
   for (const p of paragraphsOf(xml) as { n: number; text: string; table?: unknown[] }[]) {
@@ -121,8 +128,39 @@ export function projection(): string {
   return lines.join("\n") + "\n";
 }
 
-/** 把样本与它的文本投影放进任务目录的材料目录（任务目录要已经有 inputs/）。 */
-export function putSampleDocx(dir: string): void {
+/** 把样本与它的投影放进任务目录的材料目录（任务目录要已经有 inputs/）；legacy 为真时放 0.2 的纯文本投影。 */
+export function putSampleDocx(dir: string, legacy = false): void {
   copyFileSync(SAMPLE, join(dir, SAMPLE_DOCX));
-  writeFileSync(join(dir, `${SAMPLE_DOCX}.txt`), projection(), "utf-8");
+  if (legacy) writeFileSync(join(dir, `${SAMPLE_DOCX}.txt`), legacyProjection(), "utf-8");
+  else writeFileSync(join(dir, `${SAMPLE_DOCX}.md`), projection(), "utf-8");
+}
+
+/** 一个只含给定部件的 .docx（不压缩的 zip），给构造特定 Word 结构的测试用。document 是 w:body 里的内容。 */
+export function makeDocx(body: string, parts: Record<string, string | Buffer> = {}): Buffer {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    + ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"';
+  const files: Record<string, string | Buffer> = { "word/document.xml": `<?xml version="1.0" encoding="UTF-8"?><w:document ${W}><w:body>${body}</w:body></w:document>`, ...parts };
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const data = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");
+    const nameBuf = Buffer.from(name, "utf8");
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(nameBuf.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, nameBuf, data);
+    centrals.push(central, nameBuf);
+    offset += 30 + nameBuf.length + data.length;
+  }
+  const dir = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(Object.keys(files).length, 8); end.writeUInt16LE(Object.keys(files).length, 10);
+  end.writeUInt32LE(dir.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, dir, end]);
 }

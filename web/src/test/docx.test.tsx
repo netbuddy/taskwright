@@ -1,19 +1,24 @@
 // Word 材料在材料区按页显示：渲染与段落号回填、分页修补、派生表（页 · 章节 · 位置）、四种定位结果、宽表格横向滚动、来源标签。
 // 夹具是 examples/library-lending/requirements-styled.docx；段落的标准答案由 scripts/docx_paragraphs.mjs 按同一条计数规则抽出来，
-// 后端的文本投影与它逐行一致（server 的测试核对）。页、章节、位置的期望值是局部原型 v2 走查时核对过的。
+// 投影夹具 fixtures/requirements-styled.docx.md 与 agent 的生成结果逐字一致（agent/tests/docx_markdown.test.ts 核对）。
+// 页、章节、位置的期望值是局部原型 v2 走查时核对过的。
 
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import JSZip from "jszip";
 import { api } from "../api/client";
-import type { Item } from "../api/types";
+import type { Item, TaskDetail } from "../api/types";
+import { App as AntApp, ConfigProvider } from "antd";
+import { fireEvent } from "@testing-library/react";
+import { TaskPage } from "../pages/TaskPage";
 import { MaterialPane } from "../components/work/MaterialPane";
 import { SourceTag } from "../components/work/ItemDetail";
-import { polish, renderDocx, tableOf, whereOf, type RenderedDocx } from "../model/docx";
+import { ownMaterials, polish, renderDocx, tableOf, tablePositions, whereOf, type RenderedDocx } from "../model/docx";
 import { resetDocxStore, TaskIdContext } from "../state/docxStore";
 // 仓库脚本 docx_paragraphs.mjs 的抽取函数作标准答案（它的类型声明在同目录的 .d.mts）
 import { paragraphsOf, tableLabel, type Paragraph } from "../../../scripts/docx_paragraphs.mjs";
 import SAMPLE_DATA_URL from "../../../examples/library-lending/requirements-styled.docx?inline";
+import MARKDOWN_PROJECTION from "./fixtures/requirements-styled.docx.md?raw";
 
 const SAMPLE = Uint8Array.from(atob(SAMPLE_DATA_URL.slice(SAMPLE_DATA_URL.indexOf(",") + 1)), (c) => c.charCodeAt(0));
 const PATH = "inputs/requirements-styled.docx";
@@ -22,8 +27,10 @@ const expectedOf = async (bytes: Uint8Array): Promise<Paragraph[]> =>
 let expectedSample: Paragraph[] = [];
 beforeAll(async () => { expectedSample = await expectedOf(SAMPLE); });
 const squeeze = (s: string) => s.replace(/\s+/g, "");
-const projection = () =>
+/** 0.2 的纯文本投影（每行行首「[第 N 段 · 表 t 行 r 列 c]」），给兼容的测试用。 */
+const legacyProjection = () =>
   expectedSample.map((p) => `[第 ${p.n} 段${p.table ? " · " + tableLabel(p.table) : ""}] ${p.text.replace(/[\r\n]/g, " ")}`).join("\n");
+const projection = () => MARKDOWN_PROJECTION;
 
 async function rendered(bytes: Uint8Array = SAMPLE): Promise<RenderedDocx> {
   const host = document.createElement("div");
@@ -122,7 +129,7 @@ describe("派生表：页 · 章节 · 位置", () => {
 });
 
 describe("材料区的四种定位结果", () => {
-  const materials = [{ path: PATH, bytes: 1, modified_at: "" }, { path: `${PATH}.txt`, bytes: 1, modified_at: "" }];
+  const materials = [{ path: PATH, bytes: 1, modified_at: "", derived_from: null }, { path: `${PATH}.md`, bytes: 1, modified_at: "", derived_from: PATH }];
   const item = (id: string, locator: string, excerpt: string): Item => ({
     item_id: id, collection: "用例", title: id, revision_no: 1, revision_by: "executor", revision_at: "", revisions: [1],
     fields: {}, sources: [{ kind: "文档原文", locator, excerpt }], reviews: [], confirmations: [], confirmation_stale: false,
@@ -203,5 +210,54 @@ describe("条目区的来源标签", () => {
     await waitFor(() => expect(screen.getByRole("button")).toHaveTextContent("❝ requirements-styled.docx · 第 5 页 · 4 非功能需求 · 页上"), SLOW);
     expect(screen.getByRole("button").title).toBe("材料原文：「系统要能每分钟处理至少 100 笔借还」（表 3 第 2 行第 2 列）。点一下，材料区滚到这里。");
     expect(screen.getByRole("button").textContent).not.toMatch(/段/);
+  });
+});
+
+describe("投影：表格位置与材料清单", () => {
+  it("Markdown 投影与 0.2 的纯文本投影算出的表格位置相同（嵌在格里的小表格写外层位置；空段落不算）", () => {
+    const md = tablePositions(projection());
+    expect(md.get(91)).toBe("表 3 第 2 行第 2 列");
+    expect(md.get(37)).toBe("表 1 第 1 行第 2 列");
+    expect(md.get(59)).toBe("表 2 第 2 行第 4 列");
+    expect(md.get(105)).toBe("表 3 第 4 行第 3 列");
+    expect(md.has(76)).toBe(false);
+    // 空段落（如纵向合并续格里的）不写进 Markdown 投影，没有文字可引用，也就不需要位置；有文字的段落两边一致
+    const withText = new Set(expectedSample.filter((p) => squeeze(p.text)).map((p) => p.n));
+    expect(md).toEqual(new Map([...tablePositions(legacyProjection())].filter(([n]) => withText.has(n))));
+  });
+
+  it("材料清单按后端的 derived_from 去掉投影文件", () => {
+    const all = [{ path: PATH, derived_from: null }, { path: `${PATH}.md`, derived_from: PATH }, { path: "inputs/笔记.md" }];
+    expect(ownMaterials(all).map((m) => m.path)).toEqual([PATH, "inputs/笔记.md"]);
+  });
+});
+
+describe("任务页的材料清单", () => {
+  const detail = {
+    task_id: "TASK-D", task_name: "Word 任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    definition: { collections: [] }, items: [], completion: null, sessions: [],
+    materials: [
+      { path: PATH, bytes: 74000, modified_at: "2026-09-25T12:00:00Z", derived_from: null },
+      { path: `${PATH}.md`, bytes: 7000, modified_at: "2026-09-25T12:00:00Z", derived_from: PATH },
+      { path: "inputs/笔记.md", bytes: 3, modified_at: "2026-09-25T12:00:00Z", derived_from: null },
+    ],
+  } as unknown as TaskDetail;
+
+  it("不列投影、份数不算它；Word 的「查看原文」按原版式显示，不显示投影", async () => {
+    vi.spyOn(api, "getTask").mockResolvedValue(detail);
+    vi.spyOn(api, "listTasks").mockResolvedValue([]);
+    vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
+    const content = vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: projection() });
+    render(<ConfigProvider><AntApp><TaskPage taskId="TASK-D" /></AntApp></ConfigProvider>);
+    expect(await screen.findByText("这个任务现在有 2 份材料。助手读的就是这几份文件。")).toBeInTheDocument();
+    const rows = screen.getAllByTestId("material-row");
+    expect(rows.map((r) => r.firstChild!.textContent)).toEqual(["requirements-styled.docx", "笔记.md"]);
+    expect(document.body.textContent).not.toMatch(/供助手阅读|\.docx\.md/);
+    fireEvent.click(rows[0].querySelector("button")!);
+    await waitFor(() => expect(document.querySelector(".docx-view [data-testid=docx-paper] section.docx")).toBeTruthy(), SLOW);
+    expect(document.querySelector(".docx-view")!.textContent).toContain("学校图书馆借还书系统需求说明");
+    // 投影只在后台读来算表格位置，页面上不显示它
+    expect(document.body.textContent).not.toContain("[p1]");
+    expect(content).toHaveBeenCalledTimes(1);
   });
 });
