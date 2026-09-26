@@ -1,11 +1,12 @@
 // 任务列表页与任务页共用的外壳：左侧栏（新建任务、按最近活动排的任务、当前任务的会话）加主体。
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Button, Form, Input, Modal, Select, App as AntApp } from "antd";
+import { Button, Form, Input, Modal, Select } from "antd";
 import { CaretDownOutlined, CaretRightOutlined, MessageOutlined, PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { SessionListEntry, TaskListEntry } from "../api/types";
 import { go, href } from "../router";
+import { useToast } from "./Toasts";
 
 
 export function Shell({ currentTaskId, children }: { currentTaskId?: string; children: ReactNode }) {
@@ -68,7 +69,7 @@ export function NewTaskModal({ open, onClose }: { open: boolean; onClose: () => 
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [types, setTypes] = useState<{ value: string; label: string }[]>([]);
-  const { message } = AntApp.useApp();
+  const toast = useToast();
 
   // 任务类型从接口取（GET /api/v1/task-types，与后端对齐后新增）。
   useEffect(() => {
@@ -93,9 +94,10 @@ export function NewTaskModal({ open, onClose }: { open: boolean; onClose: () => 
       });
       onClose();
       form.resetFields();
+      toast.success(`已新建任务「${values.task_name.trim()}」。`);
       go(href.task(task_id));
     } catch (error) {
-      message.error(error instanceof ApiError ? error.message : "新建任务没有成功。");
+      toast.error(error instanceof ApiError ? error.message : "新建任务没有成功。");
     } finally {
       setSaving(false);
     }

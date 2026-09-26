@@ -278,10 +278,6 @@
   border-bottom:1px solid var(--line);background:var(--dark);font-size:0.901rem;color:#555;flex:none}
 .app .alertbar{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;padding:.32rem .7rem;font-size:0.901rem;
   background:var(--amber-bg);border-bottom:1px solid var(--amber-line);color:#7a4a06;flex:none}
-.app .netbar{display:none;align-items:center;gap:.4rem;padding:.28rem .8rem;font-size:0.897rem;
-  background:#f1f1f1;border-bottom:1px solid var(--line2);color:#6f6f6f;flex:none}
-.app .netbar.show{display:flex}
-.app .netbar .spin{width:.5rem;height:.5rem;border-radius:50%;background:#9a9a9a;animation:breathe 1.2s ease-in-out infinite}
 .app .act .prev{border:1px dashed var(--line2);background:var(--card);border-radius:.5rem;padding:.4rem .55rem;margin-top:.4rem}
 .app .act .prev .pvh{font-size:0.873rem;font-weight:700;color:var(--mut);letter-spacing:.05em;margin-bottom:.25rem}
 .app .act .prev .pvrow{font-size:0.901rem;display:flex;gap:.35rem;margin-bottom:.15rem}

@@ -2,6 +2,25 @@
 
 import { ApiError } from "../../api/client";
 
+/** 修订冲突（stale_revision）时条目现在所在的修订；不是修订冲突或没给时为 null。 */
+export function staleRevision(error: ApiError): number | null {
+  if (error.code !== "stale_revision") return null;
+  const items = (error.data.items as { item_id: string; current_revision?: number }[] | undefined) ?? [];
+  return items[0]?.current_revision ?? null;
+}
+
+/**
+ * 一次界面操作被拒时报给提示条的那句话：「修改 UC-002 的基本流程没有完成：原因」。
+ * 修订冲突时写明条目已被改到哪次修订、请先看最新的内容，提示条上另带「打开最新」。
+ */
+export function rejectedText(label: string, error: ApiError, itemId?: string): string {
+  if (error.code === "stale_revision") {
+    const now = staleRevision(error);
+    return `${label} 没有完成：${itemId ?? "这条"}${now != null ? ` 已经被改到修订 ${now}` : " 刚被改过"}，请先看最新的内容再改。`;
+  }
+  return `${label} 没有完成：${errorText(error)}`;
+}
+
 export function errorText(error: ApiError): string {
   switch (error.code) {
     case "stale_revision": {

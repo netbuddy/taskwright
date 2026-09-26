@@ -2,11 +2,12 @@
 // 页面上像结论的句子都由数据算出；集合名、完成条件名从接口取。任务已完成或已放弃时整页只读。
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Empty, Modal, Spin, Upload, App as AntApp } from "antd";
+import { Alert, Button, Empty, Modal, Spin, Upload } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { RevisionLogEntry, TaskDetail } from "../api/types";
 import { Shell } from "../components/Shell";
+import { useToast } from "../components/Toasts";
 import { DocumentModal } from "../components/DocumentModal";
 import { CompletionPanel } from "../components/CompletionPanel";
 import { completionHeadline, isUnread, needsReview, reviewState } from "../model/items";
@@ -23,7 +24,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const [log, setLog] = useState<RevisionLogEntry[]>([]);
   useEffect(() => { if (docOpen) api.revisionLog(taskId).then((r) => setLog(r.revisions)).catch(() => setLog([])); }, [docOpen, taskId]);
   const [material, setMaterial] = useState<{ path: string; text: string } | null>(null);
-  const { message } = AntApp.useApp();
+  const toast = useToast();
 
   const load = () =>
     api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
@@ -39,9 +40,10 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const newSession = async () => {
     try {
       const { session_id } = await api.createSession(taskId);
+      toast.success("已新建会话。");
       go(href.work(taskId, session_id));
     } catch (e) {
-      message.error(e instanceof ApiError ? e.message : "新建会话没有成功。");
+      toast.error(e instanceof ApiError ? e.message : "新建会话没有成功。");
     }
   };
 
@@ -124,11 +126,11 @@ export function TaskPage({ taskId }: { taskId: string }) {
                 customRequest={async ({ file, onSuccess, onError }) => {
                   try {
                     const r = await api.uploadMaterial(taskId, file as File);
-                    message.success(`已上传：${r.path}`);
+                    toast.success(`已上传：${r.path}`);
                     onSuccess?.(r);
                     void load();
                   } catch (e) {
-                    message.error(e instanceof ApiError ? e.message : "上传没有成功。");
+                    toast.error(e instanceof ApiError ? e.message : "上传没有成功。");
                     onError?.(e as Error);
                   }
                 }}

@@ -19,6 +19,8 @@ import type { SubmitAction } from "./ItemDetail";
 import { HOLD_TEXT } from "./ReplyCard";
 import { TURN_TEXT } from "./Conversation";
 import { IssueStateBadge } from "./ItemStatus";
+import { rejectedText } from "./errors";
+import { useToast } from "../Toasts";
 
 /** 问题条目里了结时写处理结果的字段名，与保存修订工具的判据相同。 */
 export const RESULT_FIELD = "处理结果";
@@ -80,6 +82,7 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
   submit: SubmitAction; onSend?: (text: string) => void; onPrefill?: (issue: Item) => void;
 }) {
   const [answer, setAnswer] = useState("");
+  const toast = useToast();
   const def = task.definition.collections.find((c) => c.name === issue.collection)!;
   const statusField = keepPendingField(task, issue.collection)!;
   const status = issueStatus(task, issue) ?? "";
@@ -103,8 +106,11 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
     onSend?.(issueAnswerText(issue.item_id, answer));
     setAnswer("");
   };
-  const keep = () => void submit({ kind: "keep_pending", targets: [{ item_id: issue.item_id, base_revision: issue.revision_no }], notify_executor: false },
-    `把 ${issue.item_id} 标为先不管`);
+  const keep = async () => {
+    const label = `把 ${issue.item_id} 标为先不管`;
+    const e = await submit({ kind: "keep_pending", targets: [{ item_id: issue.item_id, base_revision: issue.revision_no }], notify_executor: false }, label);
+    if (e) toast.error(rejectedText(label, e, issue.item_id));
+  };
 
   return (
     <div className={`sw-iss-card${open ? "" : " closed"}${hi ? " hi" : ""}`} data-testid={`issue-card-${issue.item_id}`}>
