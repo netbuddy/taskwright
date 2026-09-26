@@ -12,7 +12,7 @@ import { DocumentModal } from "../components/DocumentModal";
 import { CompletionPanel } from "../components/CompletionPanel";
 import { completionHeadline, isUnread, needsReview, reviewState } from "../model/items";
 import { formatBytes, formatTime } from "../model/format";
-import { isProjection } from "../model/docx";
+import { isProjection, projectionOf } from "../model/docx";
 import { go, href } from "../router";
 import { statusTag } from "./TaskListPage";
 
@@ -106,13 +106,13 @@ export function TaskPage({ taskId }: { taskId: string }) {
           <div className="section-title">材料清单</div>
           <div className="card">
             <div className="small" style={{ marginBottom: "0.571rem" }}>
-              这个任务现在有 {task.materials.filter((m) => !isProjection(m.path, task.materials.map((x) => x.path))).length} 份材料。助手读的就是这几份文件；Word 文件由系统另生成一份文本给助手读。
+              这个任务现在有 {task.materials.filter((m) => !isProjection(m.path, task.materials.map((x) => x.path))).length} 份材料。助手读的就是这几份文件；Word 文件由系统另生成一份 Markdown 文本给助手读。
             </div>
             {task.materials.map((m) => (
               <div key={m.path} style={{ display: "flex", alignItems: "center", gap: "0.571rem", padding: "0.286rem 0" }}>
                 <span style={{ flex: 1 }}>
                   {m.path.split("/").pop()}
-                  {isProjection(m.path, task.materials.map((x) => x.path)) && <span className="muted small">（由 {m.path.split("/").pop()!.slice(0, -4)} 生成，供助手阅读）</span>}
+                  {isProjection(m.path, task.materials.map((x) => x.path)) && <span className="muted small">（由 {projectionOf(m.path.split("/").pop()!)} 生成，供助手阅读）</span>}
                 </span>
                 <span className="muted small">{formatBytes(m.bytes)} · {formatTime(m.modified_at)}</span>
                 <Button size="small" onClick={() => api.materialContent(taskId, m.path).then(setMaterial)}>查看原文</Button>

@@ -21,7 +21,7 @@
  *
  * 种类为「文档原文」的来源（执行者交来的），摘录必须逐字是出处所指材料文件里连续的一段（换行按 \n 归一后比），
  * 否则界面上点来源找不到原文；跳句拼接、改字、出处不是文件的，都拒绝。用户在界面上撤销时交回的旧来源不再核对。
- * 出处是 Word 材料（.docx）时要写段落号（inputs/x.docx#p37），摘录对着它的文本投影 x.docx.txt 里那一段核对，规则见 lib/docx_source.ts。
+ * 出处是 Word 材料（.docx）时要写段落号（inputs/x.docx#p37），摘录对着它的投影 x.docx.md（0.2 的任务里是 x.docx.txt）里那一段核对，规则见 lib/docx_source.ts。
  *
  * 写库、记事件、各项核对同在一个立即事务里；任何一个操作不通过，整次调用全部不写入，
  * 拒绝的文字逐条列出哪个操作的哪一处不对。本模块不依赖 pi。
@@ -47,7 +47,9 @@ import {
   validateDefinition,
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
-import { DOCX_LOCATOR, findParagraph, placeExcerpt, projectionParagraphs } from "./docx_source.ts";
+import {
+  DOCX_LOCATOR, PROJECTION_SUFFIXES, findParagraph, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
+} from "./docx_source.ts";
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
 
@@ -701,6 +703,9 @@ function materialReader(workspaceDir: string, materialsDir: string): (locator: s
 /** 摘录在材料里找不到时，拒绝文字「怎么办」一层的第一句（模型常自行补句号或改写，被拒后又干脆删掉引用）。 */
 const EXACT_EXCERPT = "摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写";
 
+/** 摘录在材料里有好几处时，拒绝的文字里最多列出离原段落号最近的这么多处。 */
+const NEARBY_LIMIT = 6;
+
 /** 摘录超过这么多个字时，拒绝的文字里只引前这么多个字。 */
 const EXCERPT_QUOTE_LIMIT = 30;
 
@@ -827,9 +832,9 @@ function checkSources(
     }
     let pieces = [{ locator, excerpt: one.excerpt as string }];
     const docx = DOCX_LOCATOR.exec(locator);
-    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.docx\.txt$/i.test(locator)) {
-      errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的文本，不是材料本身`,
-        `出处写 Word 文件加段落号，例如 ${locator.replace(/\.txt$/i, "")}#p12`));
+    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.docx\.(txt|md)$/i.test(locator)) {
+      errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的投影，不是材料本身`,
+        `出处写 Word 文件加段落号，例如 ${locator.replace(/\.(txt|md)$/i, "")}#p12`));
       ok = false;
       return;
     }
@@ -889,28 +894,45 @@ function checkDocxSource(
   notes?: string[],
 ): { locator: string; excerpt: string }[] | null {
   const name = basename(path);
+  const suffix = PROJECTION_SUFFIXES.find((s) => materialText(`${path}${s}`) !== null);
+  const projection = suffix ? materialText(`${path}${suffix}`)! : null;
+  const pointer = projection !== null && isLegacyProjection(projection)
+    ? `段落号见 ${name}${suffix} 每行开头的「第 N 段」`
+    : `段落号见 ${name}${suffix ?? ".md"} 里每段前面方括号中的 p 加数字（例如 [p12]）`;
   if (n === null) {
-    errors.push(withGuide(`${where}的出处 ${path} 没有写段落号`, `Word 材料的出处要写段落号，例如 ${path}#p12；段落号见 ${name}.txt 每行开头的「第 N 段」`));
+    errors.push(withGuide(`${where}的出处 ${path} 没有写段落号`, `Word 材料的出处要写段落号，例如 ${path}#p12；${pointer}`));
     return null;
   }
-  const projection = materialText(`${path}.txt`);
   if (projection === null) {
-    errors.push(withGuide(`${where}的出处 ${path} 不是任务目录里能读到的 Word 材料（找不到由它生成的 ${name}.txt）`,
+    errors.push(withGuide(`${where}的出处 ${path} 不是任务目录里能读到的 Word 材料（找不到由它生成的 ${name}.md）`,
       "出处要写材料目录里的 Word 文件加段落号，例如 inputs/材料.docx#p12"));
     return null;
   }
   const paragraphs = projectionParagraphs(projection);
   if (n < 1 || n > paragraphs.length) {
-    errors.push(withGuide(`${where}的出处写的是第 ${n} 段，${name} 一共只有 ${paragraphs.length} 段`, `段落号见 ${name}.txt 每行开头的「第 N 段」`));
+    errors.push(withGuide(`${where}的出处写的是第 ${n} 段，${name} 一共只有 ${paragraphs.length} 段`, pointer));
     return null;
   }
   const excerpt = raw.replace(/\r\n/g, "\n").trim();
   if (placeExcerpt(paragraphs, n, excerpt).kind !== "miss") return [{ locator: `${path}#p${n}`, excerpt: raw }];
+  // 摘录在别处：只有一处时指给它；有好几处（短摘录、表格里的数字常这样）时不替模型挑一段，按离第 n 段的远近列出几处
+  // （带表格位置），请它按上下文确认——只给一个段号时，模型会照抄，写出逐字对得上但出处指错地方的来源。
+  const positions = projectionTablePositions(projection);
+  const labelOf = (m: number) => `第 ${m} 段${positions.has(m) ? `·${positions.get(m)}` : ""}`;
   const notFound = (quoted: string, part: string, label: string) => {
-    const elsewhere = findParagraph(paragraphs, part, n);
-    errors.push(withGuide(`${where}的${label}摘录「${quoteOf(quoted)}」在 ${name} 第 ${n} 段里找不到${elsewhere ? `，它在第 ${elsewhere} 段` : ""}`,
-      elsewhere ? `出处改写成 ${path}#p${elsewhere}`
-        : `${EXACT_EXCERPT}；摘录必须逐字抄自那一段里的文字（不带行首的方括号），不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));
+    const elsewhere = paragraphsWith(paragraphs, part).filter((m) => m !== n);
+    const head = `${where}的${label}摘录「${quoteOf(quoted)}」在 ${name} ${labelOf(n)}里找不到`;
+    if (elsewhere.length === 1) {
+      errors.push(withGuide(`${head}，它在${labelOf(elsewhere[0])}`, `出处改写成 ${path}#p${elsewhere[0]}`));
+    } else if (elsewhere.length > 1) {
+      const near = [...elsewhere].sort((a, b) => Math.abs(a - n) - Math.abs(b - n) || a - b).slice(0, NEARBY_LIMIT).sort((a, b) => a - b);
+      const more = elsewhere.length > near.length ? `等 ${elsewhere.length} 处` : "";
+      errors.push(withGuide(`${head}；这段文字在${near.map(labelOf).join("、")}${more}都有`,
+        "请按上下文确认是哪一段，出处写那一段的段落号"));
+    } else {
+      errors.push(withGuide(head,
+        `${EXACT_EXCERPT}；摘录必须逐字抄自那一段的正文（不带段落号、编号与 #、- 这些标记），不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));
+    }
   };
   const parts = excerpt.split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part !== "");
   if (parts.length <= 1) {
@@ -925,7 +947,7 @@ function checkDocxSource(
   const missed = located.findIndex((at) => at === null);
   if (missed >= 0) {
     errors.push(withGuide(`${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${name} 里找不到`,
-      `${EXACT_EXCERPT}；摘录必须逐字抄自材料里的文字（不带行首的方括号），引用不相邻的原文请用空行分开或写成几条来源`));
+      `${EXACT_EXCERPT}；摘录必须逐字抄自材料里的正文（不带段落号、编号与 #、- 这些标记），引用不相邻的原文请用空行分开或写成几条来源`));
     return null;
   }
   notes?.push(`${where}的摘录按空行拆成了 ${parts.length} 条来源`);

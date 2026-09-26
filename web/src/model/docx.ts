@@ -1,6 +1,6 @@
 // Word 材料（.docx）在材料区按原版式分页显示（docx-preview 0.4.1，版本钉死），以及由段落号派生给人看的「第几页 · 哪一节 · 页上中下」。
 //
-// 段落号的计数规则与后端文本投影（server 的 service/docx_text.py）、scripts/docx_paragraphs.mjs 相同：正文里的段落，
+// 段落号的计数规则与投影（agent 的 lib/docx_markdown.ts）、scripts/docx_paragraphs.mjs 相同：正文里的段落，
 // 含表格与嵌套表格里的，不含文本框里的。库里的来源存段落号（inputs/x.docx#p37），页、章节、位置只在这里派生，不入库。
 //
 // 分页开着时 docx-preview 有几处要修补（渲染前改解析树、渲染后整理页面，详见 prepare 与 arrangePages 的说明）：
@@ -315,17 +315,45 @@ export function docxLocator(locator: string): { path: string; paragraph: number 
   return m ? { path: m[1], paragraph: m[2] ? Number(m[2]) : null } : null;
 }
 
-/** 由 Word 材料生成的文本投影（x.docx.txt）：材料清单里不单独显示。 */
+/** 由 Word 材料生成的投影（x.docx.md；0.2 的任务里是 x.docx.txt）：材料清单里不单独显示。 */
 export function isProjection(path: string, all: string[]): boolean {
-  return /\.docx\.txt$/i.test(path) && all.includes(path.slice(0, -4));
+  const m = /^(.+\.docx)\.(md|txt)$/i.exec(path);
+  return !!m && all.includes(m[1]);
 }
 
-/** 文本投影里各段的表格位置，写成「表 3 第 2 行第 2 列」（嵌套表只写外层）。 */
+/** 投影文件名对应的 Word 文件名：「x.docx.md」「x.docx.txt」→「x.docx」。 */
+export const projectionOf = (name: string): string => name.replace(/\.(md|txt)$/i, "");
+
+/**
+ * 投影里各段的表格位置，写成「表 3 第 2 行第 2 列」（嵌套表只写外层）。
+ * Markdown 投影（agent 的 lib/docx_markdown.ts 生成）：连续以竖线开头的行是一张表，表头算第 1 行、分隔行不算；
+ * 一格里用 <br> 隔开的每截带一个段落号 [pN]，横向合并跨过的列写了占位，所以第几格就是第几列。
+ * 0.2 的纯文本投影：行首「[第 N 段 · 表 t 行 r 列 c]」。
+ */
 export function tablePositions(projection: string): Map<number, string> {
   const out = new Map<number, string>();
-  for (const line of projection.split("\n")) {
-    const m = /^\[第 (\d+) 段 · 表 (\d+) 行 (\d+) 列 (\d+)/.exec(line);
-    if (m) out.set(Number(m[1]), `表 ${m[2]} 第 ${m[3]} 行第 ${m[4]} 列`);
+  if (/^\[第 \d+ 段/m.test(projection)) {
+    for (const line of projection.split("\n")) {
+      const m = /^\[第 (\d+) 段 · 表 (\d+) 行 (\d+) 列 (\d+)/.exec(line);
+      if (m) out.set(Number(m[1]), `表 ${m[2]} 第 ${m[3]} 行第 ${m[4]} 列`);
+    }
+    return out;
+  }
+  let table = 0;
+  let row = 0;
+  let inTable = false;
+  for (const line of projection.replace(/<!--[\s\S]*?-->/g, "").split("\n")) {
+    if (!line.startsWith("|")) { inTable = false; continue; }
+    if (!inTable) { inTable = true; table++; row = 0; }
+    if (/^\|(\s*:?-+:?\s*\|)+\s*$/.test(line)) continue;
+    row++;
+    const cells = line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "").split(/(?<!\\)\|/);
+    cells.forEach((cell, i) => {
+      for (const seg of cell.split("<br>")) {
+        const m = /\[p(\d+)\]/.exec(seg);
+        if (m) out.set(Number(m[1]), `表 ${table} 第 ${row} 行第 ${i + 1} 列`);
+      }
+    });
   }
   return out;
 }
