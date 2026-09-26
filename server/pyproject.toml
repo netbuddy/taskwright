@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "taskwright-server"
-version = "0.1.0a0"
+version = "0.2.0a0"
 description = "Taskwright backend: starts and supervises the agent process, serves the HTTP/SSE API, and provides the terminal client and a fake model endpoint for tests."
 readme = "README.md"
 license = "AGPL-3.0-only"

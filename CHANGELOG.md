@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha] - 2026-09-25
+
 ### Added
 
 - Tool rejections are recorded in a `tool_rejection` table (tool, call id, unit of work, reason kind, fact and guidance, the first 2,000 characters of the input); the observatory shows them under the rejected call.
