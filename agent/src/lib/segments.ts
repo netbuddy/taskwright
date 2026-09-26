@@ -14,7 +14,7 @@
  * 清单照样能算，但不写文件。
  *
  * 引用情况（citationCounts）从来源表算：当前有效条目的当前修订里，种类为「文档原文」、出处是这份 Word 文件加段落号的来源，
- * 摘录跨段的（lib/docx_source.ts 的 placeExcerpt）算到它跨过的每一段。只读库。
+ * 摘录跨段的（lib/docx_source.ts 的 placeExcerpt）算到它跨过的每一段；每块数的是引用到它的条目个数，与界面同一个口径。只读库。
  *
  * 本模块只用 Node 自带模块，不依赖 pi。
  */
@@ -292,8 +292,8 @@ export function writeSegments(file: string, list: SegmentList): void {
 /** 一块的引用情况。 */
 export interface BlockCitations {
   index: number;
-  /** 引用到这一块里某一段的来源条数（同一条来源跨了几段也只算一条）。 */
-  sources: number;
+  /** 引用到这一块里某一段的条目个数（一个条目有几条来源引到这一块也只算一个）。 */
+  items: number;
   /** 这一块里有文字、却没有被任何来源引用的段数。 */
   uncited: number;
 }
@@ -345,24 +345,24 @@ export function citationCounts(db: DatabaseSync, taskId: string, list: SegmentLi
     const last = place.kind === "span" ? place.last : n;
     for (let p = n; p <= last; p++) {
       if (!cited.has(p)) cited.set(p, new Set());
-      cited.get(p)!.add(`${row.item_id}\u0000${row.position}`);
+      cited.get(p)!.add(row.item_id);
     }
   }
   const hasText = (n: number) => (paragraphs[n - 1] ?? "").trim() !== "";
   let uncited = 0;
   let textParagraphs = 0;
   const blocks = list.blocks.map((b) => {
-    const sources = new Set<string>();
+    const items = new Set<string>();
     let blank = 0;
     for (let p = b.first_paragraph; p <= b.last_paragraph; p++) {
       if (!hasText(p)) continue;
       textParagraphs++;
       const who = cited.get(p);
-      if (who) for (const one of who) sources.add(one);
+      if (who) for (const one of who) items.add(one);
       else blank++;
     }
     uncited += blank;
-    return { index: b.index, sources: sources.size, uncited: blank };
+    return { index: b.index, items: items.size, uncited: blank };
   });
   return { blocks, uncited, text_paragraphs: textParagraphs };
 }
@@ -384,7 +384,7 @@ export interface WordMaterialFacts {
   paragraphs: number;
   text_paragraphs: number;
   uncited: number;
-  blocks: (SegmentBlock & { sources: number; uncited: number })[];
+  blocks: (SegmentBlock & { items: number; uncited: number })[];
 }
 
 /** 一份文本材料（.md、.txt）被引用的次数。 */
@@ -421,7 +421,7 @@ export function materialFacts(db: DatabaseSync, taskId: string, workspaceDir: st
         paragraphs: list.paragraphs,
         text_paragraphs: counts.text_paragraphs,
         uncited: counts.uncited,
-        blocks: list.blocks.map((b, i) => ({ ...b, sources: counts.blocks[i].sources, uncited: counts.blocks[i].uncited })),
+        blocks: list.blocks.map((b, i) => ({ ...b, items: counts.blocks[i].items, uncited: counts.blocks[i].uncited })),
       });
     } else if (/\.(md|txt)$/i.test(path) && !PROJECTION_OF.test(path)) {
       out.push({ kind: "text", path, cited: fileCitationCount(db, taskId, path) });

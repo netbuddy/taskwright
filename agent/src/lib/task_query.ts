@@ -6,7 +6,7 @@
  * 查不到时抛异常，异常文字用中文写明原因，由 pi 交还模型。本模块不依赖 pi，单元测试可以直接调用。
  *
  * 「查询任务状态」另列每份材料的分段与引用情况（lib/segments.ts 的 materialFacts）：Word 材料逐块写标题、起止段落号与行号、
- * 有文字的段数、引用到这一块的来源条数；文本材料写被引用过几次。
+ * 有文字的段数、引用到这一块的条目个数；文本材料写被引用过几次。
  *
  * 对话理解：调用方给了会话编号时，两个工具的返回末尾另加三个派生事实（还在等回应的执行者行为、连续追问、改口，
  * 见 lib/dialogue_acts.ts 的 dialogueFacts），查看条目只算这个条目的；details.dialogue 是同一份结构化内容。
@@ -209,7 +209,7 @@ export function materialLines(materials: MaterialFacts[]): string[] {
       (f.uncited === 0 ? "每段都有条目引用。" : `还有 ${f.uncited} 段没有被任何条目引用。`));
     for (const b of f.blocks) {
       lines.push(`    第 ${b.index} 块 p${b.first_paragraph}–p${b.last_paragraph}（第 ${b.first_line}–${b.last_line} 行）${b.heading ? `「${b.heading}」` : "（第一个标题之前）"}：` +
-        `${b.paragraphs} 段，被 ${b.sources} 条来源引用${b.uncited ? `，${b.uncited} 段没有引用` : ""}。`);
+        `${b.paragraphs} 段，被 ${b.items} 个条目引用${b.uncited ? `，${b.uncited} 段没有引用` : ""}。`);
     }
   }
   return lines;

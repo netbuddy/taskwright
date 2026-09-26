@@ -170,11 +170,12 @@ test("Word 材料：现状写段数、块数与分段清单；续接写还有几
   const head = lines.findIndex((l) => l.startsWith("材料的分段与引用情况"));
   assert.deepEqual(lines.slice(head + 1, head + 4), [
     "  inputs/requirements-styled.docx（读 inputs/requirements-styled.docx.md）：共 108 段有文字、11 块，还有 104 段没有被任何条目引用。",
-    "    第 1 块 p1–p5（第 10–18 行）（第一个标题之前）：5 段，被 0 条来源引用，5 段没有引用。",
-    "    第 2 块 p6–p9（第 20–26 行）「1 概述」：4 段，被 1 条来源引用，2 段没有引用。",
+    "    第 1 块 p1–p5（第 10–18 行）（第一个标题之前）：5 段，被 0 个条目引用，5 段没有引用。",
+    "    第 2 块 p6–p9（第 20–26 行）「1 概述」：4 段，被 1 个条目引用，2 段没有引用。",
   ]);
-  const facts = (status.details.materials as { blocks: { index: number; sources: number }[] }[])[0];
-  assert.deepEqual(facts.blocks.filter((b) => b.sources).map((b) => [b.index, b.sources]), [[2, 1], [5, 1], [9, 1]]);
+  // UC-002 的两条来源（p25 与 p81）分在两块，各算一个条目。
+  const facts = (status.details.materials as { blocks: { index: number; items: number }[] }[])[0];
+  assert.deepEqual(facts.blocks.filter((b) => b.items).map((b) => [b.index, b.items]), [[2, 1], [5, 1], [9, 1]]);
 });
 
 test("0.2 的任务只有纯文本投影：分段现算、不写清单文件，现状里不提分段清单", () => {
