@@ -310,9 +310,10 @@ const handlers: Record<string, Handler> = {
           res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
           res.write(": connected\n\n");
           for (const [name, seq, data] of replay) writeEvent(res, sub, name, seq, data);
-          while (open) {
+          while (open && !t.hub.closed) {
             const item = await sub.get(KEEPALIVE_MS);
             if (!open) break;
+            if (item === null && t.hub.closed) break;
             if (item === null) res.write(": keepalive\n\n");
             else writeEvent(res, sub, ...item);
           }

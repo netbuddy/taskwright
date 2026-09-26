@@ -210,13 +210,15 @@ export class Service {
     return task;
   }
 
+  /** 收尾：各任务先停轮询、关 pi（「已退出」推到还开着的事件流上）、删占用标记；最后让各条事件流写完后正常结束。 */
   async close(): Promise<void> {
     for (const t of this.tasks.values()) {
       console.log(`任务 ${t.taskId} 的事件分发统计：${JSON.stringify(t.hub.stats)}`);
-      t.hub.close();
+      t.hub.stopPolling();
       await t.executor.close();
       this.releaseLock(t.dir);
     }
+    for (const t of this.tasks.values()) t.hub.close();
   }
 
   // ───────────── 任务与会话 ─────────────

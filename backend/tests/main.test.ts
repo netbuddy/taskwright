@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { request } from "node:http";
 import { type Server, createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
@@ -101,7 +101,7 @@ test("缺省绑定地址：desktop 是 127.0.0.1，server 是 0.0.0.0，给了 -
 test("服务信息的形状；退出接口在 server 形态下与没有这个接口一样，desktop 形态下只收本机回环地址的请求", async () => {
   const go = (service: Service, method: string, path: string, remote: string) => dispatch(service, { method, path, query: {}, headers: {}, body: Buffer.alloc(0), remote }) as Promise<Dict>;
   const server = new Service(join(tmp, "d1"), join(tmp, "d1r"), {}, { port: 8765 });
-  const info = JSON.parse((await go(server, "GET", "/api/v1/service", "10.0.0.9")).body.toString());
+  const info = JSON.parse((await go(server, "GET", "/api/v1/service", "198.51.100.9")).body.toString());
   assert.deepEqual(Object.keys(info), ["ok", "app", "version", "mode", "pid", "port", "capabilities"]);
   assert.deepEqual({ ...info, version: typeof info.version }, { ok: true, app: "taskwright", version: "string", mode: "server", pid: process.pid, port: 8765, capabilities: { exit: false } });
   assert.equal(info.version, JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")).version);
@@ -112,7 +112,7 @@ test("服务信息的形状；退出接口在 server 形态下与没有这个接
   assert.deepEqual(JSON.parse((await go(desktop, "GET", "/api/v1/service", "::1")).body.toString()).capabilities, { exit: true });
   let exits = 0;
   desktop.exitHandler = () => void (exits += 1);
-  for (const remote of ["192.168.1.5", "10.0.0.1", "::ffff:192.168.1.5", ""]) {
+  for (const remote of ["192.0.2.5", "198.51.100.1", "::ffff:192.0.2.5", ""]) {
     const refused = await go(desktop, "POST", "/api/v1/service/exit", remote);
     assert.deepEqual([refused.status, JSON.parse(refused.body.toString()).error], [403, { code: "forbidden", message: "退出服务只接受从本机发来的请求。", data: {} }], remote);
   }
@@ -167,7 +167,7 @@ test("真进程：端口被占时落到后面第一个空闲端口，服务信�
   }
 });
 
-test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再关 pi、删占用标记、释放端口、退出进程", async () => {
+test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", async () => {
   const { child, port, log } = await startBackend("desktop", ["--port", String(await freePort()), "--mode", "desktop"]);
   try {
     assert.match(log(), /任务服务在 http:\/\/127\.0\.0\.1:\d+\/api\/v1\/tasks ，.*运行形态 desktop/);
@@ -176,6 +176,10 @@ test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再�
     const taskDir = join(tmp, "desktop", "tasks", created.body.task_id);
     const lock = JSON.parse(readFileSync(join(taskDir, LOCK_NAME), "utf-8"));
     assert.deepEqual([lock.port, lock.pid, lock.mode], [port, child.pid, "desktop"], "占用标记写实际端口与运行形态");
+    let events = "";
+    const stream = request({ host: "127.0.0.1", port, path: `/api/v1/tasks/${created.body.task_id}/events` }, (res) => res.on("data", (c) => (events += c)));
+    stream.on("error", () => {});
+    stream.end();
     assert.equal((await call("127.0.0.1", port, "POST", `/api/v1/tasks/${created.body.task_id}/sessions`)).status, 200);
     const pis = spawnSync("pgrep", ["-P", String(child.pid)], { encoding: "utf-8" }).stdout.split("\n").filter(Boolean).map(Number);
     assert.equal(pis.length, 1, "打开会话起了一个 pi");
@@ -185,6 +189,9 @@ test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再�
     assert.equal(alive(pis[0]), false, "pi 已经不在");
     await assert.rejects(call("127.0.0.1", port, "GET", "/api/v1/service"), "端口已经释放");
     assert.match(log(), /收到本机发来的退出请求，服务收尾后退出。/);
+    assert.match(events, /event: executor_state\ndata: \{"state": "exited"/, "收尾时先关 pi，开着的事件流收到「已退出」，再断开连接");
+    const notes = readdirSync(join(tmp, "desktop", "runs", created.body.task_id, "pi-events")).filter((f) => f.endsWith(".backend.jsonl"));
+    assert.match(readFileSync(join(tmp, "desktop", "runs", created.body.task_id, "pi-events", notes[0]), "utf-8"), /"记录": "退出"/, "pi 关完、后端补记写下「退出」之后进程才退出");
   } finally {
     if (child.exitCode === null) {
       child.kill("SIGKILL");

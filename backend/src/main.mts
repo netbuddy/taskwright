@@ -84,11 +84,15 @@ let closing = false;
 async function stop(): Promise<void> {
   if (closing) return;
   closing = true;
-  server.close();
-  server.closeAllConnections();
+  // 先停止接新连接，再关各任务的 pi（执行者状态「已退出」还推得到开着的事件流上，与 Python 版相同），
+  // 然后各条事件流写完手上的事件、正常结束，空闲的连接关掉；连接都关了就退出，最多等 2 秒。
+  const closed = new Promise((ok) => server.close(ok));
   try {
     await service.close();
   } finally {
+    server.closeIdleConnections();
+    await Promise.race([closed, new Promise((ok) => setTimeout(ok, 2000))]);
+    server.closeAllConnections();
     process.exit(0);
   }
 }
