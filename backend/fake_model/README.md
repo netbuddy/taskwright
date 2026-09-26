@@ -82,59 +82,14 @@ node -e "for (const l of require('fs').readFileSync(process.argv[1], 'utf-8').sp
 
 ## 每个测试用自己的实例
 
-`await new FakeModel(...).start()` 不给端口时绑 0 号端口，由操作系统挑一个空闲端口，`fake.baseUrl` 给出地址。每个使用者起自己的实例，不与别的测试共用。实测时吃过亏：两个实验共用一个假端点，会互相覆盖对方的脚本。
+`await new FakeModel(...).start()` 不给端口时绑 0 号端口，由操作系统挑一个空闲端口，`fake.baseUrl` 给出地址。每个使用者起自己的实例，不与别人共用。实测时吃过亏：两个实验共用一个假端点，会互相覆盖对方的脚本。
 
-pi 这一侧用 `writeAgentDir(目录, fake.baseUrl)`（`agent_config.ts`） 写一个配置目录，里面的 `models.json` 只登记假端点这一家模型服务（服务名 `fake`，模型编号 `fake-model`）。启动 pi 时把环境变量 `PI_CODING_AGENT_DIR` 设成这个目录，`--model` 写 `fake/fake-model`。本机用户目录下 pi 的全局配置一概不碰。
-
-## 怎样新写一个集成测试
-
-照 `server/tests/integration/test_rpc_with_fake_model.py` 里的样子写。试验台 `rig.py` 的 `Rig` 一次备齐以下几样：
-
-- 一个从起始文件复制出来的空任务目录；
-- 一个自己的假端点；
-- 一个只认假端点的 pi 配置目录；
-- 一个经产品自己的会话类 `PiSession` 以 RPC 方式启动的 pi 进程。
-
-pi 进程加载 agent 扩展，工具白名单取开发用启动配置里的那一份，不加载 Langfuse 插件。
-
-```python
-from tests.integration.rig import Rig, call, tool_results
-
-script = [
-    {"tool_calls": [call("create_task", {"definition_path": "docs/task-definitions/srs-authoring.json"}, "call-1")]},
-    {"text": "建好了。"},
-]
-with Rig(script) as rig:
-    events = rig.say("帮我整理一份需求规格说明。")      # 经 RPC 发一句话，收齐到 agent_settled 为止
-    tasks = rig.rows("SELECT task_id, call_id FROM task")  # 只读查 task.sqlite
-    requests = rig.requests()                              # 假端点记下的请求
-assert tasks[0]["call_id"] == "call-1"
-```
-
-出了 `with` 块，pi 与假端点都会停掉，临时目录也会删掉。写测试时守三条：
-
-1. **断言只看事实。** 事实指库里的行、`tool_results(events)` 给出的工具结果、`rig.session_entries()` 给出的会话文件条目，以及 `rig.requests()` 给出的请求体。不断言对话是否按脚本走。
-2. **每个测试从空任务目录开始，单独可跑。** 测试之间不共用任何东西。
-3. **需要测试专用扩展时用 `extra_extensions` 加上。** 例如「用户直接写入」一条加的是 `rig.py` 里的 `USER_WRITE_EXTENSION`。
-
-想事后查看某次运行的任务目录、事件流与请求记录，运行前设环境变量 `TASKWRIGHT_IT_KEEP=1`，试验台会保留临时目录，并把路径打印出来：
-
-```bash
-TASKWRIGHT_IT_KEEP=1 python3 -m pytest server/tests/integration -q -s -k 用户直接写入
-```
-
-保留下来的目录里有这几样：
-
-- `ws/`：任务目录，含 `task.sqlite`。
-- `fake_requests.jsonl`：请求记录。
-- `runs/pi-events/`：原始事件流与后端补记。
-- `runs/pi-sessions/`：pi 的会话文件。
-- `pi-agent/`：测试用的 pi 配置目录。
+pi 这一侧用 `writeAgentDir(目录, fake.baseUrl)`（`agent_config.ts`）写一个配置目录，里面的 `models.json` 只登记假端点这一家模型服务（服务名 `fake`，模型编号 `fake-model`）。启动 pi 时把环境变量 `PI_CODING_AGENT_DIR` 设成这个目录，`--model` 写 `fake/fake-model`。本机用户目录下 pi 的全局配置一概不碰。
 
 ## 手工起一个假端点
 
 ```bash
-python3 -m taskwright_server.fake_model --script 脚本.json --log 请求记录.jsonl --agent-dir /tmp/fake-agent
+node backend/fake_model/main.mts --script 脚本.json --log 请求记录.jsonl --agent-dir /tmp/fake-agent
 ```
 
 启动后，终端会打印假端点的地址与配置目录。另开一个终端，用 `PI_CODING_AGENT_DIR=/tmp/fake-agent pi --model fake/fake-model ...` 启动 pi 即可。按 Ctrl+C 停掉假端点。
