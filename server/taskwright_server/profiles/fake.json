@@ -1,0 +1,39 @@
+{
+  "说明": "测试与双跑对照用的启动配置：与 dev 相同，只是模型换成仓内的假模型端点（fake/fake-model），不加载 Langfuse 插件，也不透传任何密钥。用它启动时要设 PI_CODING_AGENT_DIR 指向只登记了假端点的 pi 配置目录（python -m taskwright_server.fake_model --agent-dir 会写好）。",
+  "executable": "pi",
+  "mode": "rpc",
+  "model": "fake/fake-model",
+  "thinking": "medium",
+  "模型说明": "假模型端点对外报的模型编号是 fake-model，pi 配置目录里登记的服务名是 fake。",
+  "tools": [
+    "read",
+    "ls",
+    "save_revision",
+    "reply",
+    "get_item",
+    "get_task_status",
+    "complete_task",
+    "request_review"
+  ],
+  "flags": {
+    "no_extensions": true,
+    "no_skills": true,
+    "approve": true,
+    "offline": false
+  },
+  "platform_skill": "agent/prompts/skills/taskwright-executor",
+  "平台技能说明": "执行者在 Taskwright 里怎样工作的平台 skill，所有任务类型共用。它跟着代码走，路径相对代码仓根目录，不复制进任务目录；启动时在任务目录的技能之前用 --skill 加载，所以在 skill 清单里排在前面。",
+  "workspace_skills_dir": ".pi/skills",
+  "任务目录技能说明": "flags 里关掉了 pi 的技能自动发现（免得本机全局目录里的技能混进来），所以任务目录里这个目录下的技能要用 --skill 显式加载。路径相对任务目录根目录；任务目录里没有这个目录就不加。",
+  "extensions": [
+    {
+      "name": "任务数据工具",
+      "说明": "本代码仓自己的扩展，注册执行者的全部工具（保存修订、回复、查看条目、查询任务状态、完成任务、请求评审）、界面操作命令与几个只读小扩展。它跟着代码走，路径相对代码仓根目录。",
+      "source": "repo",
+      "path": "agent/src/extension.ts"
+    }
+  ],
+  "system_prompt_file": "server/taskwright_server/prompts/executor_system_prompt.md",
+  "系统提示说明": "执行者的系统提示，用 --system-prompt 整体替换 pi 自带的系统提示。文件路径相对代码仓根目录，这份文字是执行者行为的一部分，改动要连同测试一起评估。",
+  "env_passthrough": []
+}
