@@ -44,7 +44,7 @@
 | Table | One row is |
 |---|---|
 | `task` | the task: task definition path and snapshot, name, domain tag, status (in progress, completed, abandoned), who created it. |
-| `revision` | one batch of changes (one save-revision call or one direct operation). |
+| `revision` | one batch of changes (one save-revision call or one direct operation); a tool-call id forms at most one revision per task. |
 | `item` | an item's identity: its id (for example `UC-001`), collection, and the revisions that added or deleted it. |
 | `item_version` | an item's fields at one revision; an item has a row only for the revisions that added, changed or restored it. |
 | `item_source` | one place a source supports in an item at one revision: kind (document excerpt, user's words, added by the agent, domain note, direct user edit), locator, verbatim excerpt, field and list index. |
@@ -54,6 +54,7 @@
 | `event` | one thing that happened, with the pi session id, tool-call id and actor (executor or user). Every write adds exactly one. |
 | `model_call` | one model call made by a judge: prompt, raw output, model, duration, usage. A process record, not a domain fact. |
 | `dialogue_act` | one dialogue act of the user or the assistant in a session (for example request, correct, question; the assistant's inform, ask, confirm), numbered rN-M where rN is which user message of the session it belongs to. |
+| `tool_rejection` | one refused tool call of the assistant: tool, call id, unit of work, kind of reason (input, or a missing step), the fact and guidance layers of the refusal, the first 2,000 characters of the refused input. A process record, not a domain fact; no event is written. |
 
 **How the assistant's understanding of each user message is recorded.** For every user message the assistant writes an understanding: a JSON object in its text output, in the format of `agent/prompts/schemas/user_intent.schema.json` (the platform skill's description of the format is generated from the same file). The extension scans every text part of every assistant message of the turn, takes out the JSON fragments (fenced or bare) and matches each against the registered schemas (`agent/src/lib/registered_outputs.ts`; today only the understanding is registered). Four events record the outcome:
 

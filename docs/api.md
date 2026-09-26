@@ -176,7 +176,7 @@ Only accepted calls of the agent's `reply` tool become `assistant_reply` events 
   "items": [ { "item_id": "TBD-001", "revision_no": 3 } ],  // required for confirm, ask, suggest, propose; each item's current revision only
   "scope": "general",                                       // ask/suggest/propose only: not about any item (then no items)
   "options": [ { "key": "a", "text": "…" } ],               // choose only
-  "value": "…", "basis": [ { "kind": "文档原文", "locator": "…", "excerpt": "…" } ],   // suggest only
+  "value": "…", "basis": [ { "kind": "文档原文", "locator": "…", "excerpt": "…" } ],   // suggest only; each basis is checked verbatim like a save_revision source, and the user's words carry the locator the tool filled in
   "preview": [ { "effect": "remove" | "add" | "change", "text": "…" } ]           // propose only
 },
 "text": "…"                      // the reply as prose

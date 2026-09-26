@@ -178,7 +178,7 @@ data: {
   "items": [ { "item_id": "TBD-001", "revision_no": 3 } ],  // confirm、ask、suggest、propose 必填；每个条目只能写它当前所在的修订
   "scope": "general",                                       // 仅 ask/suggest/propose：不针对任何条目时用（此时不填 items）
   "options": [ { "key": "a", "text": "…" } ],               // 仅 choose
-  "value": "…", "basis": [ { "kind": "文档原文", "locator": "…", "excerpt": "…" } ],   // 仅 suggest
+  "value": "…", "basis": [ { "kind": "文档原文", "locator": "…", "excerpt": "…" } ],   // 仅 suggest；每条依据与 save_revision 的来源同一套逐字核对，用户的话的出处是工具填写的
   "preview": [ { "effect": "remove" | "add" | "change", "text": "…" } ]           // 仅 propose
 },
 "text": "…"                      // 以自然语言呈现的回复正文
