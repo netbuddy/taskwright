@@ -8,6 +8,7 @@ export PYTHONPATH="$ROOT/server:$ROOT/observatory:$ROOT"      # set fresh, not i
 
 echo "== agent (node --test)";  (cd agent && node --test 'tests/*.test.ts')
 echo "== sim (node --test)";    (cd sim && node --test 'tests/*.test.ts')
+echo "== backend (node --test)"; (cd backend && node --test 'tests/*.test.ts')
 echo "== web (vitest)";         npm test -w web
 echo "== web (build)";          npm run build -w web
 echo "== server, observatory and sim (pytest)"; python3 -m pytest server observatory sim -q
