@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from taskwright_server import create_task as create_task_module
+from taskwright_server import launch
 from taskwright_server import new_workspace
 from taskwright_observatory import taskdb
 from taskwright_server.service import clock, conversation, docx_projection, library, occupancy, render, work_summary
@@ -365,7 +366,7 @@ class Service:
             # Word 材料另生成一份 Markdown 投影（图片抽到旁边的目录），执行者读它，保存修订时核对摘录也对着它；
             # 它不单独发 material_added。生成不了（不是合法的 .docx）时连同这份文件一起删掉。
             try:
-                docx_projection.write_projection(target, path)
+                docx_projection.write_projection(target, path, launch.segment_params(self.profile))
             except ValueError as e:
                 target.unlink(missing_ok=True)
                 docx_projection.remove_projection(target)

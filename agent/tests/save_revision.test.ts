@@ -349,7 +349,7 @@ test("文档原文的摘录不用空行隔开就跳句拼接、改了字或出�
     return "";
   })();
   assert.match(message, /什么都没有写入，因为有 3 个操作不对/);
-  assert.match(message, /第 1 条来源的摘录「用户可以登录。退款须在七天内处理完毕。」在 材料\.md 里找不到。\n  怎么办：摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源/);
+  assert.match(message, /第 1 条来源的摘录「用户可以登录。退款须在七天内处理完毕。」在 材料\.md 里找不到。\n  怎么办：摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引了材料几处就写几条来源/);
   assert.match(message, /第 1 条来源的摘录「用户可以登陆。」在 材料\.md 里找不到/);
   assert.match(message, /出处 inputs\/没有这份\.md 不是任务目录里能读到的材料文件/);
   assert.deepEqual(snapshot(dir), before);
@@ -363,47 +363,37 @@ test("文档原文的摘录不用空行隔开就跳句拼接、改了字或出�
   });
   assert.match(outcome.text, /新增了条目 UC-001/);
   assert.match(outcome.text, /新增了条目 UC-002/);
-  // 整段原样找得到的（连着的两段，中间隔着空行）照旧存成一条来源，不拆。
-  assert.doesNotMatch(outcome.text, /拆成了/);
+  // 材料里连着的两段（中间隔着空行）原样引，是一段连续的原文，存成一条来源。
   assert.deepEqual(query<any>(dir, "SELECT excerpt FROM item_source WHERE item_id = 'UC-002'").map((r) => r.excerpt), ["# 登录与退款\r\n\r\n用户可以登录。"]);
 });
 
-test("摘录用空行隔开材料里不相邻的两段：两段都找到就在原位置展开成两条来源，position 连续、后面的来源顺延", () => {
+test("文本材料：一条来源的摘录用空行放进不相邻的两段时整批拒绝，提示引几处写几条来源；分成两条就通过", () => {
   const dir = workspaceWithTask();
+  const before = snapshot(dir);
   const supports = [{ field: "名称" }];
+  assert.throws(
+    () => saveRevision(callIn(dir), { operations: [{ ...addUseCase("甲"), sources: [{ ...SOURCE, excerpt: "用户可以登录。\n\n  \n退款须在七天内处理完毕。", supports }] }] }),
+    (error: Error) => error.message.includes(
+      "第 1 条来源的摘录在 材料.md 里不是连续的一段原文。\n  怎么办：摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引了材料几处就写几条来源"),
+  );
+  assert.deepEqual(snapshot(dir), before);
   const outcome = saveRevision(callIn(dir), {
     operations: [{ ...addUseCase("甲"), sources: [
       { kind: "执行者补充", locator: "执行者补充", excerpt: "按常识补的步骤" },
-      { ...SOURCE, excerpt: "用户可以登录。\n\n  \n退款须在七天内处理完毕。", supports },
-      { ...SOURCE, excerpt: "登录总要输入口令。" },
+      { ...SOURCE, excerpt: "用户可以登录。", supports },
+      { ...SOURCE, excerpt: "退款须在七天内处理完毕。", supports },
     ] }],
   });
-  assert.match(outcome.text, /新增了条目 UC-001（集合「用例」），UC-001 现在是修订 1。第 2 条来源的摘录按空行拆成了 2 条来源。/);
-  const rows = query<any>(dir, "SELECT position, kind, locator, excerpt, field FROM item_source WHERE item_id = 'UC-001' ORDER BY position");
+  assert.equal(outcome.text, "已保存为任务 TASK-001 的修订 1，一共 1 个操作：\n1. 新增了条目 UC-001（集合「用例」），UC-001 现在是修订 1。");
+  const rows = query<any>(dir, "SELECT position, kind, excerpt, field FROM item_source WHERE item_id = 'UC-001' ORDER BY position");
   assert.deepEqual(rows.map((r) => [r.position, r.kind, r.excerpt, r.field]), [
-    [1, "执行者补充", "按常识补的步骤", null],
-    [2, "文档原文", "用户可以登录。", "名称"],
-    [3, "文档原文", "退款须在七天内处理完毕。", "名称"],
-    [4, "文档原文", "登录总要输入口令。", null],
+    [1, "执行者补充", "按常识补的步骤", null], [2, "文档原文", "用户可以登录。", "名称"], [3, "文档原文", "退款须在七天内处理完毕。", "名称"],
   ]);
-  assert.deepEqual(new Set(rows.slice(1).map((r) => r.locator)), new Set(["inputs/材料.md"]));
 });
 
-test("摘录用空行隔开的几段里有一段找不到：整批拒绝，写明是第几段", () => {
+test("只有一段的摘录照旧存成一条来源", () => {
   const dir = workspaceWithTask();
-  const before = snapshot(dir);
-  assert.throws(
-    () => saveRevision(callIn(dir), { operations: [{ ...addUseCase(), sources: [{ ...SOURCE, excerpt: "用户可以登录。\n\n退款须在五天内处理完毕。" }] }] }),
-    (error: Error) => error.message.includes(
-      "第 1 条来源的第 2 段摘录「退款须在五天内处理完毕。」在 材料.md 里找不到。\n  怎么办：摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写；摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源"),
-  );
-  assert.deepEqual(snapshot(dir), before);
-});
-
-test("只有一段的摘录照旧：存成一条来源，返回里不提拆分", () => {
-  const dir = workspaceWithTask();
-  const outcome = saveRevision(callIn(dir), { operations: [addUseCase()] });
-  assert.doesNotMatch(outcome.text, /拆成了/);
+  saveRevision(callIn(dir), { operations: [addUseCase()] });
   assert.deepEqual(query<any>(dir, "SELECT position, excerpt FROM item_source WHERE item_id = 'UC-001'").map((r) => [r.position, r.excerpt]), [[1, "用户可以登录。"]]);
 });
 

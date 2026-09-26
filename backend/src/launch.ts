@@ -15,6 +15,7 @@ import { delimiter, dirname, join, relative, resolve } from "node:path";
 import { readTextFile } from "./files.ts";
 import { byCodePoint } from "./library.ts";
 import { PROFILE_DIR, fromRoot } from "./paths.ts";
+import { SEGMENTS_ENV, type SegmentParams, segmentParams } from "../../agent/src/lib/segments.ts";
 
 export const ENV_PLUGIN = "TASKWRIGHT_LANGFUSE_PLUGIN";
 export const ENV_KEY_FILE = "TASKWRIGHT_LANGFUSE_ENV_FILE";
@@ -107,6 +108,21 @@ export function platformSkillDir(profile: Profile): string | null {
   return path;
 }
 
+/**
+ * 启动配置里「材料分段」一节的三个参数；没写的一项用 agent 侧 lib/segments.ts 的默认值。写了但不是正整数时抛 LaunchError。
+ * 生成分段清单（上传 Word 材料）与 pi 里的扩展读清单都用这一份。
+ */
+export function segmentParamsOf(profile: Profile): SegmentParams {
+  const section = profile["材料分段"] || {};
+  for (const name of ["heading_depth", "max_paragraphs", "min_paragraphs"]) {
+    const value = section[name];
+    if (value !== undefined && !(typeof value === "number" && Number.isInteger(value) && value >= 1)) {
+      throw new LaunchError(`启动配置「材料分段」一节的 ${name} 应当是正整数，现在写的是 ${JSON.stringify(value)}。`);
+    }
+  }
+  return segmentParams(section);
+}
+
 /** 组装交给 pi 进程的环境变量。密钥从代码仓之外的那个文件读进来，只经环境变量传给 pi，不落任何文件、不进命令行参数。 */
 export function buildEnvironment(profile: Profile): Record<string, string> {
   const env: Record<string, string> = {};
@@ -124,6 +140,7 @@ export function buildEnvironment(profile: Profile): Record<string, string> {
   }
   const tag = (profile.langfuse || {}).environment;
   if (tag) env[ENV_TRACING_ENVIRONMENT] = env[ENV_TRACING_ENVIRONMENT] || tag;
+  env[SEGMENTS_ENV] = JSON.stringify(segmentParamsOf(profile));
   return env;
 }
 

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
-import { findParagraph, placeExcerpt, projectionParagraphs } from "../src/lib/docx_source.ts";
+import { placeExcerpt, projectionParagraphs } from "../src/lib/docx_source.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { DEFINITION_PATH, SAMPLE_DOCX, callIn, count, makeWorkspace, projection, putSampleDocx, query } from "./helpers.ts";
 
@@ -43,8 +43,6 @@ test("投影的段落与样本一致：114 段；段内、跨段、找不到、�
   assert.deepEqual(placeExcerpt(paragraphs, 91, "系统要能每分钟处理至少100笔\n借还"), { kind: "in" });
   // 从第 112 段起算，摘录的开头不在第 112 段里，不算跨段
   assert.deepEqual(placeExcerpt(paragraphs, 112, "寒暑假期间的借期另行规定。罚款的缴纳方式待定。"), { kind: "miss" });
-  assert.equal(findParagraph(paragraphs, "名下有逾期未还图书的，不能再借", 37), 28);
-  assert.equal(findParagraph(paragraphs, "这句话不在材料里"), null);
 });
 
 test("出处带段落号、摘录在那一段里：通过，库里存「文件#p段落号」；跨段的摘录也通过", () => {
@@ -85,18 +83,30 @@ test("出处不带段落号、段落号越界、写成投影文件、摘录不�
   assert.equal(count(dir, "item_source"), before);
 });
 
-test("摘录用空行隔开不相邻的两处：拆成两条来源，第二条记它自己所在的段落号", () => {
+test("一条来源只放一段连续的原文：用空行放进不相邻的两处时拒绝，提示引几处写几条来源；分成两条、各写段落号就通过", () => {
   const dir = workspaceWithDocx();
-  const outcome = saveRevision(callIn(dir), {
-    operations: [addUseCase([docxSource(76, "逾期的每本每天罚款一角\n\n系统要能每分钟处理至少 100 笔借还")])],
+  const before = count(dir, "item_source");
+  const message = rejection(dir, [docxSource(76, "逾期的每本每天罚款一角\n\n系统要能每分钟处理至少 100 笔借还")]);
+  assert.match(message, /第 1 条来源的摘录在 requirements-styled\.docx 的 p76 及其后 5 段里不是连续的一段原文。\n  怎么办：引了材料几处就写几条来源，每条各写段落号/);
+  assert.doesNotMatch(message, /拆成/);
+  assert.equal(count(dir, "item_source"), before, "不替执行者拆开，也不替它找第二处的位置");
+  saveRevision(callIn(dir), {
+    operations: [addUseCase([docxSource(76, "逾期的每本每天罚款一角"), docxSource(91, "系统要能每分钟处理至少 100 笔借还")])],
   });
-  assert.match(outcome.text, /第 1 条来源的摘录按空行拆成了 2 条来源/);
-  assert.deepEqual(query<any>(dir, "SELECT locator, excerpt FROM item_source ORDER BY position").map((r) => [r.locator, r.excerpt]), [
-    [`${DOCX}#p76`, "逾期的每本每天罚款一角"], [`${DOCX}#p91`, "系统要能每分钟处理至少 100 笔借还"],
+  assert.deepEqual(query<any>(dir, "SELECT position, locator, excerpt FROM item_source ORDER BY position").map((r) => [r.position, r.locator, r.excerpt]), [
+    [1, `${DOCX}#p76`, "逾期的每本每天罚款一角"], [2, `${DOCX}#p91`, "系统要能每分钟处理至少 100 笔借还"],
   ]);
-  // 第一段不在出处写的那一段里：拒绝，并指出它在哪一段
-  const message = rejection(workspaceWithDocx(), [docxSource(91, "逾期的每本每天罚款一角\n\n系统要能每分钟处理至少 100 笔借还")]);
-  assert.match(message, /第 1 条来源的第 1 段摘录「逾期的每本每天罚款一角」在 requirements-styled\.docx 第 91 段·表 3 行 2 列 2里找不到，它在第 76 段/);
+});
+
+test("相邻两段连着引：摘录从出处那一段开始、延续到下一段，中间的空行只当空白，存成一条来源", () => {
+  const dir = workspaceWithDocx();
+  const outcome = saveRevision(callIn(dir), { operations: [addUseCase([docxSource(111, "寒暑假期间的借期另行规定。\n\n罚款的缴纳方式待定。")])] });
+  assert.match(outcome.text, /新增了条目 UC-001/);
+  assert.deepEqual(query<any>(dir, "SELECT locator, excerpt FROM item_source").map((r) => [r.locator, r.excerpt]),
+    [[`${DOCX}#p111`, "寒暑假期间的借期另行规定。\n\n罚款的缴纳方式待定。"]]);
+  // 同样两段，出处写成后一段：摘录不从那一段开始，拒绝并指出它从第 111 段开始。
+  assert.match(rejection(workspaceWithDocx(), [docxSource(112, "寒暑假期间的借期另行规定。\n\n罚款的缴纳方式待定。")]),
+    /第 1 条来源的摘录「寒暑假期间的借期另行规定。 罚款的缴纳方式待定。」在 requirements-styled\.docx 第 112 段里找不到，它在第 111 段/);
 });
 
 test("0.2 的任务只有纯文本投影 x.docx.txt：照旧核对；段落号的指引按旧格式写", () => {

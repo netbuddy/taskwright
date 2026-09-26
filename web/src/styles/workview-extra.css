@@ -225,3 +225,19 @@
 .app .dn-side .ent .c { color: #333; margin-top: .15rem; }
 .app .dn-side .ent .m { color: var(--mut); font-size: .857rem; margin-top: .15rem; }
 .app .dn-side .ent.unl .m { color: var(--amber); }
+/* 材料区 Word 材料的「按章节看引用」：默认收起；展开后的列表在自己的框里滚动，不把原文挤没 */
+.app .sec { border-bottom: 1px solid var(--line); background: var(--card); flex: none; }
+.app .sec-head { display: flex; align-items: center; gap: .5rem; padding: .35rem .8rem; cursor: pointer; font-size: 0.901rem; user-select: none; color: #4a4a4a; }
+.app .sec-head:hover { background: var(--stage); }
+.app .sec-head .caret { color: var(--mut); width: 1em; }
+.app .sec-head b { color: var(--ink); }
+.app .sec-head .gray { color: var(--mut); }
+.app .sec-list { max-height: 38vh; overflow: auto; border-top: 1px solid var(--line); }
+.app .sec-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .1rem .6rem; padding: .3rem .8rem .3rem 1.8rem; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 0.901rem; }
+.app .sec-row:hover { background: var(--blue-bg); }
+.app .sec-row .t { grid-column: 1; grid-row: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .sec-row .r { grid-column: 1; grid-row: 2; color: var(--mut); font-size: 0.843rem; }
+.app .sec-row .n { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 0.873rem; color: var(--blue); white-space: nowrap; }
+.app .sec-row.none { background: #fbfbfb; }
+.app .sec-row.none .t { color: var(--mut); font-weight: 500; }
+.app .sec-row.none .n { color: var(--mut); }

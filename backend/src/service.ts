@@ -20,7 +20,7 @@ import { ProjectionError, isReserved, projectionPath, projectionText, removeProj
 import { or, pyStr, truthy } from "./py.ts";
 import { Executor } from "./executor.ts";
 import { Hub } from "./hub.ts";
-import type { Profile } from "./launch.ts";
+import { type Profile, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
 import { TASK_TYPES_DIR } from "./paths.ts";
@@ -416,7 +416,7 @@ export class Service {
       // Word 材料另生成一份 Markdown 投影（图片抽到旁边的目录），执行者读它，保存修订时核对摘录也对着它；
       // 它不单独发 material_added。生成不了（不是合法的 .docx）时连同这份文件一起删掉。
       try {
-        writeProjection(target, path);
+        writeProjection(target, path, segmentParamsOf(this.profile));
       } catch (error) {
         if (!(error instanceof ProjectionError)) throw error;
         try {

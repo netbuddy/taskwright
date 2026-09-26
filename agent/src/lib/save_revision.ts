@@ -48,7 +48,7 @@ import {
 } from "./definition.ts";
 import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } from "./create_task.ts";
 import {
-  DOCX_LOCATOR, PROJECTION_SUFFIXES, findParagraph, inTextBox, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
+  DOCX_LOCATOR, PROJECTION_SUFFIXES, SPAN_LIMIT, inTextBox, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
 } from "./docx_source.ts";
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
@@ -118,8 +118,8 @@ function actorText(actor: string): string {
 
 /** 核对通过之后，一个操作要写进库里的样子。 */
 type Planned =
-  | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[]; notes?: string[] }
-  | { op: "update"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes?: string[] }
+  | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[] }
+  | { op: "update"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[] }
   | { op: "delete"; itemId: string; collection: string; fromRevision: number }
   | { op: "restore"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[] };
 
@@ -370,15 +370,14 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         }
       }
       if (raw.base_revision !== undefined) errors.push("新增时不要写 base_revision，新条目还没有所在的修订");
-      const notes: string[] = [];
-      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes, noteRef, noteText);
+      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText);
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (errors.length > 0) {
         problems.push(reasonOf(label, `新增到「${collection.name}」的条目`, errors));
         return;
       }
-      planned.push({ op: "add", collection, fields, sources: sources!, notes });
+      planned.push({ op: "add", collection, fields, sources: sources! });
       return;
     }
 
@@ -454,8 +453,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     }
     const previousSources = sourcesOf(itemId, current.revision_no);
     const inherited = raw.sources === undefined;
-    const notes: string[] = [];
-    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, notes, noteRef, noteText);
+    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText);
     if (sources && !inherited && call.actor !== ACTOR_USER && isObject(raw.fields) && Object.keys(raw.fields).length > 0) {
       // 执行者修改时给了新来源：只替换这次改到的字段上的来源，其余字段的来源沿用。
       // 条目当前的来源里，支持改到的字段的那几处去掉，去掉之后什么都不支持的整条去掉，支持整个条目的保留；
@@ -477,7 +475,6 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       fromRevision: current.revision_no,
       fields: merged,
       sources: sources!,
-      ...(op === "restore" ? {} : { notes }),
     });
   });
 
@@ -550,9 +547,9 @@ export interface CheckedQuote {
 
 /**
  * 核对执行者在「保存修订」之外交来的一串引用（现在只有「回复」给建议值时的依据 act.basis）：与保存修订的来源同一套核对，
- * 同一套拒绝文字——文档原文逐字出自材料（.docx 按段落号核对、可跨段，文本材料可用空行分成不相邻的几段），
+ * 同一套拒绝文字——文档原文逐字出自材料里连续的一段（.docx 按段落号核对、可跨到其后相邻几段），
  * 用户的话逐字出自当前会话分支上的某句用户消息（出处由这里代填），领域说明逐字出自那条还在的领域说明；执行者补充不核对摘录。
- * 库只读打开，查完就关。通过时返回核对后的引用（出处代填、跨段或按空行拆开的已拆成几条），不通过时把原因推进 errors 并返回 null。
+ * 库只读打开，查完就关。通过时返回核对后的引用（用户的话的出处已代填），不通过时把原因推进 errors 并返回 null。
  * errors 里的每一条可能带两层（事实与指引），用 splitGuide 拆开。
  */
 export function checkQuotes(
@@ -580,7 +577,7 @@ export function checkQuotes(
     const items = itemsOf(db, task.task_id);
     const { noteRef, noteText } = domainNoteLookups(definition, items, latestVersionOf(db, task.task_id), { deletedHere: new Set(), addedAt: new Map() });
     const checked = checkSources(raw, true, errors, sessionId, userMessages, ACTOR_EXECUTOR, materialReader(workspaceDir, definition.materialsDir),
-      undefined, noteRef, noteText, whereOf);
+      noteRef, noteText, whereOf);
     return checked && checked.map(({ kind, locator, excerpt, normalized_value }) => ({ kind, locator, excerpt, ...(normalized_value ? { normalized_value } : {}) }));
   } finally {
     db.close();
@@ -703,6 +700,12 @@ function materialReader(workspaceDir: string, materialsDir: string): (locator: s
 /** 摘录在材料里找不到时，拒绝文字「怎么办」一层的第一句（模型常自行补句号或改写，被拒后又干脆删掉引用）。 */
 const EXACT_EXCERPT = "摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写";
 
+/** 摘录里的空行（一个或多个只含空白的行）。 */
+const BLANK_LINE = /\n\s*\n/;
+
+/** 摘录不连续时，拒绝文字「怎么办」一层说明引几处写几条来源的那一句。 */
+const SEVERAL_PLACES = "引了材料几处就写几条来源";
+
 /** 摘录在材料里有好几处时，拒绝的文字里最多列出离原段落号最近的这么多处。 */
 const NEARBY_LIMIT = 6;
 
@@ -724,9 +727,10 @@ function quoteOf(excerpt: string): string {
  * 出现在那条领域说明当前修订的某个文本字段里（noteText 给出这些文字），与「文档原文」同一个规矩；用户在界面上的操作不核对，
  * 撤销时原样交回旧来源。
  *
- * 种类为「文档原文」的来源，摘录可以用空行（一个或多个只含空白的行）隔开几段，各段是材料里不相邻的几处：
- * 整段原样找得到的照旧存成一条；找不到时按空行拆开，每段去掉首尾空白后各自到材料里逐字查找；全部找到时，这一条来源在原来的位置展开成几条，
- * 种类、出处、supports 相同，摘录各为一段，notes 里记一句拆成了几条；有一段找不到就拒绝，写明是第几段。
+ * 种类为「文档原文」的来源，位置由写来源的一方声明，这里只核对、不推断：一条来源的摘录是材料里连续的一段原文。
+ * Word 材料按出处写的段落号核对，摘录从那一段开始、可延续到其后相邻至多 5 段（checkDocxSource）；文本材料（.md、.txt）的摘录
+ * 要在整份文件里连续出现（现在是找第一处，等文本材料也有段落号之后再按位置核对）。摘录里的空行只当空白；引了材料几处不相邻的原文，
+ * 就要写几条来源，工具不替它拆开、也不替它找后几处的位置。
  */
 function checkSources(
   raw: unknown,
@@ -736,7 +740,6 @@ function checkSources(
   userMessages: UserMessage[],
   actor?: string,
   materialText?: (locator: string) => string | null,
-  notes?: string[],
   noteRef?: (locator: string) => string | null,
   noteText?: (locator: string) => string[],
   whereOf: (index: number) => string = (index) => `第 ${index + 1} 条来源`,
@@ -830,7 +833,6 @@ function checkSources(
       }
       locator = userWordsLocator(sessionId, hit.entryId);
     }
-    let pieces = [{ locator, excerpt: one.excerpt as string }];
     const docx = DOCX_LOCATOR.exec(locator);
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.docx\.(txt|md)$/i.test(locator)) {
       errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的投影，不是材料本身`,
@@ -839,12 +841,12 @@ function checkSources(
       return;
     }
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && docx) {
-      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors, notes);
+      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors);
       if (found === null) {
         ok = false;
         return;
       }
-      pieces = found;
+      locator = found;
     } else if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText) {
       const excerpt = (one.excerpt as string).replace(/\r\n/g, "\n").trim();
       const text = materialText(locator);
@@ -853,36 +855,24 @@ function checkSources(
         ok = false;
         return;
       }
-      const parts = excerpt.split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part !== "");
-      // 整段原样就能在材料里找到的（例如连着的两个自然段）照旧存成一条，只有整段找不到时才按空行拆开逐段找。
-      if (parts.length <= 1 || text.includes(excerpt)) {
-        if (!text.includes(excerpt)) {
-          errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到`,
-            `${EXACT_EXCERPT}；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));
-          ok = false;
-          return;
-        }
-      } else {
-        const missed = parts.findIndex((part) => !text.includes(part));
-        if (missed >= 0) {
-          errors.push(withGuide(`${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${basename(locator)} 里找不到`,
-            `${EXACT_EXCERPT}；摘录必须逐字抄自材料里连续的一段，引用不相邻的原文请用空行分开或写成几条来源`));
-          ok = false;
-          return;
-        }
-        pieces = parts.map((part) => ({ locator, excerpt: part }));
-        notes?.push(`${where}的摘录按空行拆成了 ${parts.length} 条来源`);
+      if (!text.includes(excerpt)) {
+        errors.push(withGuide(BLANK_LINE.test(excerpt)
+          ? `${where}的摘录在 ${basename(locator)} 里不是连续的一段原文`
+          : `${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到`,
+        `${EXACT_EXCERPT}；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；${SEVERAL_PLACES}`));
+        ok = false;
+        return;
       }
     }
-    for (const piece of pieces) kept.push({ kind: one.kind as string, locator: piece.locator, excerpt: piece.excerpt, supports, ...(normalized ? { normalized_value: normalized } : {}) });
+    kept.push({ kind: one.kind as string, locator, excerpt: one.excerpt as string, supports, ...(normalized ? { normalized_value: normalized } : {}) });
   });
   return ok ? kept : null;
 }
 
 /**
- * 核对一条出处是 Word 材料的来源：出处要带段落号，摘录要在那一段里（或从那一段起跨到后面几段）。
- * 摘录用空行隔开几段、整段又找不到时照文本材料的办法拆开：第一段要在出处写的那一段里，其余各段在哪一段找到就记哪一段的段落号。
- * 通过时返回拆好的（出处, 摘录）列表，不通过时把原因记进 errors 并返回 null。
+ * 核对一条出处是 Word 材料的来源：出处要带段落号，摘录要在那一段里（或从那一段起跨到其后相邻至多 5 段），比较时去掉全部空白。
+ * 不在那里就拒绝：摘录是一段连续的原文时，指出它在别处的段落号（只有一处时）或按远近列几处请执行者确认；摘录里有空行、
+ * 又不是连续的一段时，说明引几处要写几条来源。通过时返回规范写法的出处（x.docx#pN），不通过时把原因记进 errors 并返回 null。
  */
 function checkDocxSource(
   path: string,
@@ -891,8 +881,7 @@ function checkDocxSource(
   where: string,
   materialText: (locator: string) => string | null,
   errors: string[],
-  notes?: string[],
-): { locator: string; excerpt: string }[] | null {
+): string | null {
   const name = basename(path);
   const suffix = PROJECTION_SUFFIXES.find((s) => materialText(`${path}${s}`) !== null);
   const projection = suffix ? materialText(`${path}${suffix}`)! : null;
@@ -914,47 +903,31 @@ function checkDocxSource(
     return null;
   }
   const excerpt = raw.replace(/\r\n/g, "\n").trim();
-  if (placeExcerpt(paragraphs, n, excerpt).kind !== "miss") return [{ locator: `${path}#p${n}`, excerpt: raw }];
+  if (placeExcerpt(paragraphs, n, excerpt).kind !== "miss") return `${path}#p${n}`;
   // 摘录在别处：只有一处时指给它；有好几处（短摘录、表格里的数字常这样）时不替模型挑一段，按离第 n 段的远近列出几处
   // （带表格位置），请它按上下文确认——只给一个段号时，模型会照抄，写出逐字对得上但出处指错地方的来源。
   const positions = projectionTablePositions(projection);
   const labelOf = (m: number) => `第 ${m} 段${positions.has(m) ? `·${positions.get(m)}` : ""}`;
-  const notFound = (quoted: string, part: string, label: string) => {
-    const elsewhere = paragraphsWith(paragraphs, part).filter((m) => m !== n);
-    const head = `${where}的${label}摘录「${quoteOf(quoted)}」在 ${name} ${labelOf(n)}里找不到`;
-    if (elsewhere.length === 1) {
-      errors.push(withGuide(`${head}，它在${labelOf(elsewhere[0])}`, `出处改写成 ${path}#p${elsewhere[0]}`));
-    } else if (elsewhere.length > 1) {
-      const near = [...elsewhere].sort((a, b) => Math.abs(a - n) - Math.abs(b - n) || a - b).slice(0, NEARBY_LIMIT).sort((a, b) => a - b);
-      const more = elsewhere.length > near.length ? `等 ${elsewhere.length} 处` : "";
-      errors.push(withGuide(`${head}；这段文字在${near.map(labelOf).join("、")}${more}都有`,
-        "请按上下文确认是哪一段，出处写那一段的段落号"));
-    } else if (inTextBox(projection, part)) {
-      errors.push(withGuide(`${head}；这段文字在文本框里，文本框里的文字不能作出处`,
-        "请改引正文里说到同一件事的段落；正文里没有，就不要把这一处当作来源"));
-    } else {
-      errors.push(withGuide(head,
-        `${EXACT_EXCERPT}；摘录必须逐字抄自那一段的正文（不带段落号、编号与 #、- 这些标记），不要跳句拼接或改字；引用不相邻的原文请用空行分开或写成几条来源`));
-    }
-  };
-  const parts = excerpt.split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part !== "");
-  if (parts.length <= 1) {
-    notFound(excerpt, excerpt, "");
-    return null;
+  const elsewhere = paragraphsWith(paragraphs, excerpt).filter((m) => m !== n);
+  const head = `${where}的摘录「${quoteOf(excerpt)}」在 ${name} ${labelOf(n)}里找不到`;
+  if (elsewhere.length === 1) {
+    errors.push(withGuide(`${head}，它在${labelOf(elsewhere[0])}`, `出处改写成 ${path}#p${elsewhere[0]}`));
+  } else if (elsewhere.length > 1) {
+    const near = [...elsewhere].sort((a, b) => Math.abs(a - n) - Math.abs(b - n) || a - b).slice(0, NEARBY_LIMIT).sort((a, b) => a - b);
+    const more = elsewhere.length > near.length ? `等 ${elsewhere.length} 处` : "";
+    errors.push(withGuide(`${head}；这段文字在${near.map(labelOf).join("、")}${more}都有`,
+      "请按上下文确认是哪一段，出处写那一段的段落号"));
+  } else if (BLANK_LINE.test(excerpt)) {
+    // 摘录里有空行、整段在材料里哪儿都不是连续的一段：多半是把不相邻的几处写进了一条来源。
+    errors.push(withGuide(`${where}的摘录在 ${name} 的 p${n} 及其后 ${SPAN_LIMIT} 段里不是连续的一段原文`, `${SEVERAL_PLACES}，每条各写段落号`));
+  } else if (inTextBox(projection, excerpt)) {
+    errors.push(withGuide(`${head}；这段文字在文本框里，文本框里的文字不能作出处`,
+      "请改引正文里说到同一件事的段落；正文里没有，就不要把这一处当作来源"));
+  } else {
+    errors.push(withGuide(head,
+      `${EXACT_EXCERPT}；摘录必须逐字抄自那一段的正文（不带段落号、编号与 #、- 这些标记），不要跳句拼接或改字；${SEVERAL_PLACES}，每条各写段落号`));
   }
-  if (placeExcerpt(paragraphs, n, parts[0]).kind === "miss") {
-    notFound(parts[0], parts[0], "第 1 段");
-    return null;
-  }
-  const located = parts.map((part, i) => (i === 0 ? n : findParagraph(paragraphs, part, n)));
-  const missed = located.findIndex((at) => at === null);
-  if (missed >= 0) {
-    errors.push(withGuide(`${where}的第 ${missed + 1} 段摘录「${quoteOf(parts[missed])}」在 ${name} 里找不到`,
-      `${EXACT_EXCERPT}；摘录必须逐字抄自材料里的正文（不带段落号、编号与 #、- 这些标记），引用不相邻的原文请用空行分开或写成几条来源`));
-    return null;
-  }
-  notes?.push(`${where}的摘录按空行拆成了 ${parts.length} 条来源`);
-  return parts.map((part, i) => ({ locator: `${path}#p${located[i]}`, excerpt: part }));
+  return null;
 }
 
 /** 核对一条来源的 supports 的形状：省略或空列表表示支持整个条目；每一项有 field，可以有从 0 起的整数 index。 */
@@ -1151,13 +1124,8 @@ function write(
     });
   });
 
-  const splitNote = (index: number) => {
-    const one = planned[index];
-    const notes = one.op === "add" || one.op === "update" ? one.notes ?? [] : [];
-    return notes.length > 0 ? `${notes.join("；")}。` : "";
-  };
   return {
-    text: savedText(taskId, revisionNo, outcomes, splitNote),
+    text: savedText(taskId, revisionNo, outcomes),
     details: {
       task_id: taskId,
       revision_no: revisionNo,
@@ -1179,11 +1147,11 @@ interface SavedOperation {
   to_revision: number | null;
 }
 
-/** 保存成功时交给模型的文字。note 给出第几个操作另要补的一句（摘录按空行拆成了几条之类），没有就是空文字。 */
-function savedText(taskId: string, revisionNo: number, operations: SavedOperation[], note: (index: number) => string = () => ""): string {
+/** 保存成功时交给模型的文字。 */
+function savedText(taskId: string, revisionNo: number, operations: SavedOperation[]): string {
   const lines = operations.map((one, index) => {
-    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），${one.item} 现在是修订 ${revisionNo}。${note(index)}`;
-    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}（改前在修订 ${one.from_revision}），${one.item} 现在是修订 ${revisionNo}。${note(index)}`;
+    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），${one.item} 现在是修订 ${revisionNo}。`;
+    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}（改前在修订 ${one.from_revision}），${one.item} 现在是修订 ${revisionNo}。`;
     if (one.op === "restore") return `${index + 1}. 恢复了条目 ${one.item}，恢复成删除前的样子，${one.item} 现在是修订 ${revisionNo}。`;
     return `${index + 1}. 删除了条目 ${one.item}（删除前在修订 ${one.from_revision}）。`;
   });
@@ -1195,7 +1163,7 @@ export const REPLAYED_TEXT = "这次调用之前已经保存过，没有重复�
 
 /**
  * 这个调用编号在这个任务里是否已经形成过修订：形成过就按那次修订与它的事件重新拼出第一次的结果（details.replayed 为真），
- * 文字末尾补一句 REPLAYED_TEXT；没有就返回 null。第一次结果里「摘录按空行拆成了几条」的附注不存库，重放的文字里没有这一句。
+ * 文字末尾补一句 REPLAYED_TEXT；没有就返回 null。
  */
 function savedBefore(db: DatabaseSync, callId: string): ToolOutcome | null {
   const row = db.prepare(

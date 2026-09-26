@@ -133,12 +133,3 @@ export function projectionTablePositions(text: string): Map<number, string> {
   }
   return out;
 }
-
-/** 摘录从哪一段开始（按上面的规则能找到的第一段），先从第 from 段往后找，再从头找到第 from 段之前；都没有是 null。 */
-export function findParagraph(paragraphs: string[], excerpt: string, from = 1): number | null {
-  const order = [...paragraphs.keys()].map((i) => i + 1);
-  for (const n of [...order.slice(from - 1), ...order.slice(0, from - 1)]) {
-    if (placeExcerpt(paragraphs, n, excerpt).kind !== "miss") return n;
-  }
-  return null;
-}
