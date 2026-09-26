@@ -26,9 +26,6 @@
 .app .m.ai .degraded { font-size: 0.881rem; color: var(--mut); margin-bottom: .2rem; }
 .app .m.user.sending { opacity: .6; }
 .app .m.user .from-ui.bad { color: var(--gap); }
-.app .problem { background: var(--amber-bg); border: 1px solid var(--amber-line); border-radius: .5rem; padding: .3rem .55rem;
-  font-size: 0.897rem; color: #7a4a06; display: flex; gap: .4rem; align-items: center; margin: .35rem .8rem 0; }
-.app .problem .x { margin-left: auto; cursor: pointer; }
 .app .earlier { font-size: 0.881rem; color: var(--blue); cursor: pointer; text-decoration: underline; align-self: center; }
 .app .act .ctx { display: flex; align-items: baseline; gap: .3rem; flex-wrap: wrap; margin-bottom: .15rem; cursor: pointer; }
 .app .act .ctx:hover .ctxname { text-decoration: underline; }
@@ -62,9 +59,6 @@
 .app .fld .v textarea.ed { margin-bottom: .2rem; }
 .app .listed { display: flex; gap: .3rem; align-items: flex-start; margin-bottom: .2rem; }
 .app .listed .sn { color: var(--mut); font-size: 0.889rem; min-width: 1.1rem; padding-top: .15rem; }
-.app .detail .err { background: var(--gap-bg); border: 1px solid var(--gap-line); color: #8c1c1c; border-radius: .5rem; padding: .3rem .6rem;
-  font-size: 0.901rem; margin-bottom: .5rem; }
-.app .detail .err .x { float: right; cursor: pointer; }
 .app .srcbox .quote.said { color: #17534d; }
 .app .confirms { font-size: 0.897rem; color: #555; }
 .app .confirms div { margin-bottom: .15rem; }
@@ -155,11 +149,7 @@
 /* 完成前还有未读：卡片下面一行提示，可点筛出未读的条目。 */
 .app .sw-unread-hint { margin-top: .5rem; font-size: .881rem; color: var(--amber); display: flex; align-items: center; gap: .5rem; }
 
-/* 评审门禁：条目区顶部的进度行、筛选「评审通过」、字段旁的问题（红）与建议（琥珀）、条文展开 */
-.app .sw-review-prog { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; padding: .3rem .7rem; font-size: 0.889rem;
-  background: var(--card); border-bottom: 1px solid var(--line); flex: none; }
-.app .sw-bar { display: inline-block; width: 10rem; height: .4rem; background: var(--line); border-radius: .2rem; overflow: hidden; }
-.app .sw-bar i { display: block; height: 100%; background: var(--ai); transition: width .3s; }
+/* 评审门禁：筛选「评审通过」、字段旁的问题（红）与建议（琥珀）、条文展开 */
 .app .filt.okf { color: var(--ok); border-color: var(--ok-line); }
 .app .filt.okf.on { background: var(--ok); color: #fff; border-color: var(--ok); }
 .app .finding { display: block; margin: .25rem 0 0;  padding: .15rem .4rem; line-height: 1.5; white-space: normal; }
@@ -195,7 +185,6 @@
 .app .sw-rv-f .clause-body { display: block; margin-top: .2rem; color: #444; background: var(--card); border: 1px solid var(--line2); padding: .15rem .4rem; border-radius: .3rem; }
 .app .sw-rv-act { display: flex; flex-wrap: wrap; gap: .35rem; width: 100%; padding-left: .3rem; }
 .app .sw-rv-act .reason, .app .finding .reason { border: 1px solid var(--line2); border-radius: .3rem; padding: .05rem .45rem; font: inherit; font-size: .833rem; min-width: 12rem; }
-.app .err-inline { color: var(--gap); font-size: .833rem; }
 .app .sw-rules { border-top: 1px solid var(--line2); padding-top: .45rem; display: flex; flex-direction: column; gap: .25rem; }
 .app .sw-rule { display: grid; grid-template-columns: 2.2rem 4.4rem 1fr auto; align-items: center; gap: .35rem; }
 .app .sw-rule .rid { font-family: var(--mono, monospace); font-size: .833rem; }

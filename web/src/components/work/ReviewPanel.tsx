@@ -6,7 +6,7 @@
 //     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看它们的建议。
 //     点条目编号或一条发现，打开条目详情并高亮那个字段。
 //   · 底部规则区：按集合列规则。必选的开关锁住；可选的可以关掉，或点标签在「可选」与「升为必选」之间切换。改动只影响之后的评审。
-// 保留、改规则都是用户的界面操作（waive_review、set_review_rules），界面上的变化等库事件到了才发生。
+// 保留、改规则都是用户的界面操作（waive_review、set_review_rules），界面上的变化等库事件到了才发生；被拒时报一条失败提示（全站提示条）。
 
 import { useState } from "react";
 import type { ActionRequest, Finding, Item, Review, ReviewBatch, ReviewRule, Task } from "../../api/types";
@@ -18,6 +18,8 @@ import {
 import { formatTime } from "../../model/format";
 import { FindingLine } from "./FindingLine";
 import { fixText } from "./ItemDetail";
+import { rejectedText } from "./errors";
+import { useToast } from "../Toasts";
 
 type Submit = (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string) => Promise<ApiError | null>;
 
@@ -130,17 +132,16 @@ function FailedItem({ task, item, review, batch, onlyOpen, readOnly, writesOff, 
   task: Task; item: Item; review: Review; batch: ReviewBatch; onlyOpen: boolean; readOnly: boolean; writesOff: boolean;
   submit: Submit; onOpenFinding: (itemId: string, field: string | null) => void; onPrefill: (text: string) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   const status = findingStatus(item, review);
   const findings = review.findings ?? [];
   const current = review.revision_no === item.revision_no;
   const off = !!writeOffReason(task, { readOnly, writesOff });
   const act = async (kind: "waive_review" | "unwaive_review", reason?: string) => {
-    setError(null);
+    const label = kind === "waive_review" ? `保留 ${item.item_id} 现在的写法` : `撤销对 ${item.item_id} 的保留`;
     const e = await submit({ kind, targets: [{ item_id: item.item_id, base_revision: item.revision_no }],
-      ...(kind === "waive_review" ? { fields: { reason: (reason ?? "").trim(), source: "panel" } } : {}), notify_executor: false },
-      kind === "waive_review" ? `保留 ${item.item_id} 现在的写法` : `撤销对 ${item.item_id} 的保留`);
-    if (e) setError(e.message);
+      ...(kind === "waive_review" ? { fields: { reason: (reason ?? "").trim(), source: "panel" } } : {}), notify_executor: false }, label);
+    if (e) toast.error(rejectedText(label, e, item.item_id));
   };
   return (
     <div className="sw-rv-item" data-testid={`batch-${batch.no}-item-${item.item_id}`}>
@@ -153,7 +154,6 @@ function FailedItem({ task, item, review, batch, onlyOpen, readOnly, writesOff, 
           onKeep={isProblem(f) && status.kind === "open" && current && !off ? (reason) => void act("waive_review", reason) : undefined}
           onUnwaive={isProblem(f) && status.kind === "kept" && current ? () => void act("unwaive_review") : undefined} unwaiveOff={off} />
       ))}
-      {error && <span className="err-inline">{error}</span>}
     </div>
   );
 }
@@ -167,15 +167,14 @@ function ruleFor(task: Task, item: Item, finding: Finding): ReviewRule | undefin
 /** 规则区：按集合列规则与开关。 */
 function RulesArea({ task, readOnly, writesOff, submit }: { task: Task; readOnly: boolean; writesOff: boolean; submit: Submit }) {
   const [all, setAll] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   const collections = task.definition.collections.filter((c) => needsReview(task, c.name) && (c.all_rules?.length ?? 0) > 0);
   if (!collections.length) return null;
   const off = writeOffReason(task, { readOnly, writesOff });
   const total = collections.reduce((n, c) => n + (c.all_rules?.length ?? 0), 0);
   const change = async (collection: string, next: { off: string[]; promote: string[] }, label: string) => {
-    setError(null);
     const e = await submit({ kind: "set_review_rules", targets: [], fields: { collection, off: next.off, promote: next.promote }, notify_executor: false }, label);
-    if (e) setError(e.message);
+    if (e) toast.error(rejectedText(label, e));
   };
   let shown = 0;
   return (
@@ -201,7 +200,6 @@ function RulesArea({ task, readOnly, writesOff, submit }: { task: Task; readOnly
           </div>
         );
       })}
-      {error && <div className="err-inline">{error}</div>}
       <div className="muted">
         共 {total} 条{total > RULES_SHOWN && <>，<span role="button" className="ref" onClick={() => setAll(!all)} data-testid="rules-all">{all ? "只看前几条 ▴" : "展开全部 ▸"}</span></>}
         {" "}· 改动只影响之后的评审，已有评审记录不变

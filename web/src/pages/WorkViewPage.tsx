@@ -9,7 +9,6 @@
 // 助手改过的字段加框（字段修订标识）；执行者最近一次运行改过的条目带「刚改」（都在 model/revisions.ts）。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App as AntApp } from "antd";
 import { api, ApiError, clientId } from "../api/client";
 import type { ActionRequest, AssistantReply, Item, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
 import { useWorkView } from "../state/useWorkView";
@@ -26,6 +25,8 @@ import { FONT_TIERS, narrowViewport, readFontTier, saveFontTier, type FontTier }
 import { justChangedItems, marksByItem, revisionsOfReply, touchedItems } from "../model/revisions";
 import { openProblems, viewTarget } from "../model/items";
 import { go, href } from "../router";
+import { useToast } from "../components/Toasts";
+import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
 
 /** 「让助手改这一条」与「回答这个问题」预填的话。 */
 export const PREFILL = {
@@ -54,7 +55,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   const [locate, setLocate] = useState<LocateRequest | null>(null);
   const userToggledDoc = useRef(false);
   const input = useRef<HTMLTextAreaElement>(null);
-  const { message } = AntApp.useApp();
+  const toast = useToast();
 
   const task = state.task;
   const closed = !!task && task.status !== "进行中";
@@ -103,6 +104,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
       if (error.code === "session_busy" && error.data.reason !== "working") setBusyError(errorText(error));
       dispatch({ type: "outgoing_update", client_id: id, patch: { state: "failed", error: errorText(error) } });
+      // 那句话留在对话区原处（写着没有发出去的原因，可以重发），另报一条失败提示。
+      toast.error(`你的话没有发出去：${errorText(error)}`);
     }
   };
 
@@ -131,15 +134,15 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     void api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, kind: "mark_viewed", targets: [target], notify_executor: false })
       .catch(() => undefined);
   };
-  /** 发起评审：targets 为空＝全部待评审的条目。后端核对通过就回应，被拒时弹出原因。 */
+  /** 发起评审：targets 为空＝全部待评审的条目。后端核对通过就回应，被拒时报一条失败提示。 */
   const review = (targets: { item_id: string; base_revision: number }[], label: string, force?: boolean) =>
-    void submit({ kind: "request_review", targets, notify_executor: false, ...(force ? { force: true } : {}) }, label).then((e) => { if (e) message.error(errorText(e)); });
+    void submit({ kind: "request_review", targets, notify_executor: false, ...(force ? { force: true } : {}) }, label).then((e) => { if (e) toast.error(errorText(e)); });
   const undo = (revision: number) =>
-    void submit({ kind: "undo", targets: [{ revision_no: revision }], notify_executor: false }, `撤销修订 ${revision}`).then((e) => { if (e) message.error(errorText(e)); });
+    void submit({ kind: "undo", targets: [{ revision_no: revision }], notify_executor: false }, `撤销修订 ${revision}`).then((e) => { if (e) toast.error(errorText(e)); });
 
   const cardHandlers = {
     onAction: (req: Pick<ActionRequest, "kind" | "targets" | "notify_executor">, label: string) => {
-      void submit(req, label).then((e) => { if (e) message.error(errorText(e)); });
+      void submit(req, label).then((e) => { if (e) toast.error(errorText(e)); });
     },
     onMessage: (text: string, card?: MessageRequest["card"]) => void send(text, card),
     onShowUnread: () => setUnreadRequest((n) => n + 1),
@@ -149,9 +152,9 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     try {
       const r = await api.uploadMaterial(taskId, file, sessionId);
       setAttachments((a) => [...a, r.path]);
-      message.success(`已上传：${r.path}。它会随你的下一句话一起交给助手。`);
+      toast.success(`已上传：${r.path}。它会随你的下一句话一起交给助手。`);
     } catch (e) {
-      message.error(e instanceof ApiError ? errorText(e) : "上传没有成功。");
+      toast.error(e instanceof ApiError ? errorText(e) : "上传没有成功。");
     }
   };
 
@@ -162,9 +165,10 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     setMenuOpen(false);
     try {
       const { session_id } = await api.createSession(taskId);
+      toast.success("已新建会话。");
       go(href.work(taskId, session_id));
     } catch (e) {
-      message.error(e instanceof ApiError ? errorText(e) : "新建会话没有成功。");
+      toast.error(e instanceof ApiError ? errorText(e) : "新建会话没有成功。");
     }
   };
 
@@ -210,6 +214,9 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     setView((v) => ({ itemId, revision, nonce: (v?.nonce ?? 0) + 1 }));
   };
   const chooseFont = (tier: FontTier) => { setFontTier(tier); saveFontTier(tier); };
+  useReviewToast(state.review, showReviews);
+  useProblemToasts(state.problems);
+  useConnectionToast(stream);
 
   // 会话名由后端按第一句话起，整份数据里拿到之前先用会话列表里的，都没有时写「新会话」。
   const sessionName = state.session?.name || sessions.find((s) => s.session_id === sessionId)?.name || "新会话";
@@ -263,9 +270,6 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
 
           <div className="chat">
             <div className="chat-h"><b>{sessionName}</b><span className="chip">本任务共 {sessions.length} 条会话</span></div>
-            {state.problems.map((p, i) => (
-              <div key={i} className="problem">{p.text}<span className="x" role="button" onClick={() => dispatch({ type: "dismiss_problem", index: i })}>×</span></div>
-            ))}
             {!task && state.phase === "waiting_snapshot" ? <div className="msgs"><div className="selfnote">正在读这条会话。</div></div> : (
               <Conversation
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}
@@ -284,9 +288,6 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
           </div>
 
           <div className="stage-col">
-            <div className={`netbar${stream === "reconnecting" ? " show" : ""}`}>
-              <span className="spin" /><span>与服务器的连接断了，正在重连……你照常可以看和改，连上之后会补上断开期间的变化。</span>
-            </div>
             <div className="work">
               {task ? (
                 <ItemsPanel task={task} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}

@@ -10,10 +10,9 @@
 // 宽屏时列表每行在标题后多一列「一句摘要」，显隐由样式里的容器查询按条目区宽度决定（阈值 40rem）。
 //
 // 评审：顶上一行右侧「评审 N 条待评审的条目」（N 为 0、助手工作中、上一批还在评时灰化并悬停说明），点了发 request_review；
-// 后端核对通过就回应，评审在后台跑，review_progress 到了在页签下面显示「评审中 3/12」、进度条与正在评的条目，
-// review_finished 到了显示一行结果，5 秒后收起。进度汇总一行写待评审与评审不通过各几条。点开进度看到的完成条件
+// 后端核对通过就回应，评审在后台跑，进度与结果由全站提示条报（workToasts.ts）。进度汇总一行写待评审与评审不通过各几条。点开进度看到的完成条件
 // 与任务页是同一个面板，评审那一条旁边有「评审这 N 条」与「打开 X」。
-// 问题跟着条目走（ItemIssues.tsx）：列表行带「问题 N」，详情顶部列出挂在这条上的问题；从问题卡片上的「牵涉 UC-003」跳来时
+// 问题跟着条目走（ItemIssues.tsx）：列表行的状态徽标里带「问题 N」（ItemStatus.tsx），详情顶部列出挂在这条上的问题；从问题卡片上的「牵涉 UC-003」跳来时
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
 import { useEffect, useMemo, useState } from "react";
@@ -24,7 +23,9 @@ import { CompletionPanel } from "../CompletionPanel";
 import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
 import { unlinkedIds } from "../../model/domainNotes";
-import { FromIssueCrumb, IssueBadge, ItemIssues } from "./ItemIssues";
+import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
+import { rejectedText } from "./errors";
+import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
 export type ReviewAction = (targets: { item_id: string; base_revision: number }[], label: string, force?: boolean) => void;
@@ -80,8 +81,7 @@ export function ItemsPanel({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [showProgress, setShowProgress] = useState(false);
   const [flash, setFlash] = useState<string[]>([]);
-  /** 这批评审评完之后那一行结果还显示着（5 秒后收起）。 */
-  const [finishShown, setFinishShown] = useState<string | null>(null);
+  const toast = useToast();
   /** 从哪个问题跳到当前条目的；详情顶部据此给「回到问题列表」，那张问题卡片排第一并高亮。 */
   const [fromIssue, setFromIssue] = useState<{ issueId: string; itemId: string } | null>(null);
   /** 回到问题列表后要滚到并闪一下的问题卡片；n 每次加一。 */
@@ -110,13 +110,6 @@ export function ItemsPanel({
   }, [scrollTo]);
   // 卡片上点了「还有 N 条未读 · 筛出来看」。
   useEffect(() => { if (unreadRequest > 0) { setFilter("unread"); onSelect(null); } }, [unreadRequest]);
-  // 一批评审评完：结果显示 5 秒后收起。
-  useEffect(() => {
-    if (!review?.finished) return;
-    setFinishShown(review.op_id);
-    const t = setTimeout(() => setFinishShown(null), 5000);
-    return () => clearTimeout(t);
-  }, [review?.op_id, review?.finished]);
   // 库事件改过的条目闪一下。
   useEffect(() => {
     if (!recentlyChanged.length) return;
@@ -158,9 +151,15 @@ export function ItemsPanel({
   };
 
   const markMany = async (list: Item[]) => {
-    const e = await submit({ kind: "mark_viewed", targets: list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), notify_executor: false },
-      `把 ${list.map((i) => i.item_id).join("、")} 标为已读`);
+    const label = `把 ${list.map((i) => i.item_id).join("、")} 标为已读`;
+    const e = await submit({ kind: "mark_viewed", targets: list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), notify_executor: false }, label);
     if (!e) setChecked(new Set());
+    else toast.error(rejectedText(label, e));
+  };
+  const keepPending = async (item: Item) => {
+    const label = `把 ${item.item_id} 标为先不管`;
+    const e = await submit({ kind: "keep_pending", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], notify_executor: false }, label);
+    if (e) toast.error(rejectedText(label, e, item.item_id));
   };
 
   return (
@@ -181,22 +180,6 @@ export function ItemsPanel({
             onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
         )}
       </div>
-      {review && (reviewing || finishShown === review.op_id) && (
-        <div className="sw-review-prog" data-testid="review-progress">
-          {review.finished ? (
-            <span data-testid="review-finished">
-              评审完了：{review.finished.passed} 条合规，{review.finished.failed} 条不合规
-              {review.finished.unfinished ? `，${review.finished.unfinished} 条没有评完（可以再评一次）` : ""}。{review.finished.error ?? ""}
-            </span>
-          ) : (
-            <>
-              <span className="muted">评审中 {review.done}/{review.total}</span>
-              <span className="sw-bar"><i style={{ width: `${review.total ? Math.round((review.done / review.total) * 100) : 0}%` }} /></span>
-              <span className="muted">{review.current.length ? `${review.current.join("、")} 正在评审…` : "正在收尾…"}（每条约十秒，可以继续做别的）</span>
-            </>
-          )}
-        </div>
-      )}
       <div className="filters">
         {FILTERS.map((f) => (
           <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : f.key === "review_passed" ? " okf" : ""}`}
@@ -250,7 +233,7 @@ export function ItemsPanel({
               <PendingCard key={item.item_id} task={task} item={item} readOnly={readOnly} writesOff={writesOff} flash={flash.includes(item.item_id)}
                 hit={hitIds.includes(item.item_id)} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)}
                 onOpen={() => onSelect(item.item_id)} onOpenItem={(id) => openItem(id, { fromIssue: item.item_id })}
-                onKeep={() => void submit({ kind: "keep_pending", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], notify_executor: false }, `把 ${item.item_id} 标为先不管`)}
+                onKeep={() => void keepPending(item)}
                 onAnswer={() => onAnswer?.(item)} />
             ))}
           </div>
@@ -269,7 +252,6 @@ export function ItemsPanel({
                     <span className="lname" title={item.title}>{item.title}</span>
                     <span className="lsum" title={summary}>{summary}</span>
                     <ItemStatus task={task} item={item} just={just.has(item.item_id)} pending={pendingItems.has(item.item_id)} row />
-                    <IssueBadge task={task} itemId={item.item_id} />
                   </div>
                 </div>
               );

@@ -1,5 +1,4 @@
 // 问题跟着条目走：问题条目（见 keepPendingField）的「条目引用」字段列着它牵涉的条目，这里把问题挂回到那些条目上。
-//   · IssueBadge：条目列表行与详情标题行上的琥珀色「问题 N」，N 只数还没了结的问题，为 0 不显示。
 //   · ItemIssues：条目详情标题行之下「挂在这条上的问题」一区，每个问题一张卡片；没有问题时整块不渲染。
 //     未解决的卡片带一行输入框与「回答」「先不管，保留」：「回答」把「回答 TBD-002：用户写的话」直接发到对话区，
 //     输入框为空时只预填对话区输入框、不发送（与「问题」页签上的「回答这个问题」相同，助手工作中也照常可用）；
@@ -15,20 +14,16 @@
 
 import { useEffect, useState } from "react";
 import type { Item, Task } from "../../api/types";
-import { isEmptyValue, isOpenIssue, issueAnswerText, issuesOf, issueStatus, keepPendingField, RESOLVED_VALUE, unresolvedIssuesOf, writeOffReason } from "../../model/items";
+import { isEmptyValue, isOpenIssue, issueAnswerText, issuesOf, issueStatus, keepPendingField, writeOffReason } from "../../model/items";
 import type { SubmitAction } from "./ItemDetail";
 import { HOLD_TEXT } from "./ReplyCard";
 import { TURN_TEXT } from "./Conversation";
+import { IssueStateBadge } from "./ItemStatus";
+import { rejectedText } from "./errors";
+import { useToast } from "../Toasts";
 
 /** 问题条目里了结时写处理结果的字段名，与保存修订工具的判据相同。 */
 export const RESULT_FIELD = "处理结果";
-
-/** 列表行与详情标题行上的「问题 N」：牵涉这个条目、还没了结的问题个数；为 0 不显示。 */
-export function IssueBadge({ task, itemId }: { task: Task; itemId: string }) {
-  const n = unresolvedIssuesOf(task, itemId).length;
-  if (n === 0) return null;
-  return <span className="chip warn sw-issn" title={`有 ${n} 个牵涉这条的问题还没解决，打开详情可以看到并回答。`} data-testid={`issues-${itemId}`}>问题 {n}</span>;
-}
 
 /** 从问题跳来时详情顶部那一行。 */
 export function FromIssueCrumb({ issueId, onBack }: { issueId: string; onBack: () => void }) {
@@ -87,6 +82,7 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
   submit: SubmitAction; onSend?: (text: string) => void; onPrefill?: (issue: Item) => void;
 }) {
   const [answer, setAnswer] = useState("");
+  const toast = useToast();
   const def = task.definition.collections.find((c) => c.name === issue.collection)!;
   const statusField = keepPendingField(task, issue.collection)!;
   const status = issueStatus(task, issue) ?? "";
@@ -110,15 +106,18 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
     onSend?.(issueAnswerText(issue.item_id, answer));
     setAnswer("");
   };
-  const keep = () => void submit({ kind: "keep_pending", targets: [{ item_id: issue.item_id, base_revision: issue.revision_no }], notify_executor: false },
-    `把 ${issue.item_id} 标为先不管`);
+  const keep = async () => {
+    const label = `把 ${issue.item_id} 标为先不管`;
+    const e = await submit({ kind: "keep_pending", targets: [{ item_id: issue.item_id, base_revision: issue.revision_no }], notify_executor: false }, label);
+    if (e) toast.error(rejectedText(label, e, issue.item_id));
+  };
 
   return (
     <div className={`sw-iss-card${open ? "" : " closed"}${hi ? " hi" : ""}`} data-testid={`issue-card-${issue.item_id}`}>
       <div className="head">
         <span className="id">{issue.item_id}</span>
         {kinds.map((f) => <span key={f.name} className="chip">{String(issue.fields[f.name])}</span>)}
-        {status && <span className={`chip ${open ? "warn" : status === RESOLVED_VALUE ? "okc" : ""}`}>{status}</span>}
+        <IssueStateBadge value={status} unresolved={(statusField.values ?? [])[0]} />
       </div>
       <div className="body">{matter}</div>
       {!open && (

@@ -14,10 +14,11 @@ import { Markdown } from "../components/work/Markdown";
 import { Conversation } from "../components/work/Conversation";
 import { api } from "../api/client";
 import { PREFILL } from "../pages/WorkViewPage";
+import { ToastProvider } from "../components/Toasts";
 
 // 与应用里一样关掉按钮两个汉字之间自动加的空格，按文字找按钮才找得到。
 const Wrap = ({ children }: { children: ReactNode }) => (
-  <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
+  <ConfigProvider button={{ autoInsertSpace: false }}><AntApp><ToastProvider>{children}</ToastProvider></AntApp></ConfigProvider>
 );
 
 function task(reviewVerdict?: string): Task {
@@ -157,7 +158,7 @@ describe("提问挂在条目上", () => {
   });
 });
 
-describe("直接操作被拒时的错误显示", () => {
+describe("直接操作被拒时的错误显示：一律报一条停住的失败提示（全站提示条）", () => {
   function detail(submit: (...args: unknown[]) => Promise<ApiError | null>, itemIndex = 0) {
     const t = task();
     const item = t.items[itemIndex];
@@ -165,7 +166,7 @@ describe("直接操作被拒时的错误显示", () => {
       readOnly={false} pending={false} submit={submit as never} /></Wrap>);
   }
 
-  it("两个页面同时编辑的安全网（stale_revision）：只提示「这条已被改到修订 N，请重新打开」，不提供合并，刚填的内容留在编辑框", async () => {
+  it("两个页面同时编辑的安全网（stale_revision）：失败提示写明已被改到修订 N，带「打开最新」；不提供合并，刚填的内容留在编辑框，点「打开最新」才退出编辑", async () => {
     const submit = vi.fn(async () => new ApiError("stale_revision", "服务端的话", 409,
       { items: [{ item_id: "UC-001", base_revision: 2, current_revision: 3, changed_by: "executor" }] }));
     detail(submit);
@@ -173,12 +174,15 @@ describe("直接操作被拒时的错误显示", () => {
     const input = screen.getAllByRole("textbox")[0];
     fireEvent.change(input, { target: { value: "买家申请部分退款" } });
     fireEvent.click(screen.getByTestId("save-fields"));
-    await waitFor(() => expect(screen.getByTestId("action-error")).toHaveTextContent("这条已被改到修订 3，请重新打开。"));
+    await waitFor(() => expect(screen.getByTestId("toast-bad")).toHaveTextContent("修改 UC-001 的名称 没有完成：UC-001 已经被改到修订 3，请先看最新的内容再改。"));
     expect(screen.queryByTestId("redo-on-latest")).toBeNull();
     expect(screen.getAllByDisplayValue("买家申请部分退款").length).toBeGreaterThan(0); // 还在编辑框里
     expect(submit).toHaveBeenCalledWith(
       { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 2 }], fields: { 名称: "买家申请部分退款" }, notify_executor: false },
       expect.any(String));
+    fireEvent.click(screen.getByTestId("toast-action"));
+    expect(screen.queryByTestId("edit-form")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("toast-bad")).toBeNull());
   });
 
   it("编辑期间条目被改到新修订：保存仍用打开编辑时所在的修订作 base_revision，只提交自己改过的字段", async () => {
@@ -214,13 +218,14 @@ describe("直接操作被拒时的错误显示", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
-  it("工具核对不通过（rejected）：把后端给的原因显示在编辑处", async () => {
+  it("工具核对不通过（rejected）：失败提示里写后端给的原因，不带「打开最新」", async () => {
     const submit = vi.fn(async () => new ApiError("rejected", "这次修改没有保存：必填字段「名称」不能为空。", 422, { reasons: ["必填字段「名称」不能为空"] }));
     detail(submit);
     fireEvent.click(screen.getByText("修改"));
     fireEvent.change(screen.getAllByRole("textbox")[0], { target: { value: "" } });
     fireEvent.click(screen.getByTestId("save-fields"));
-    expect(await screen.findByText("这次修改没有保存：必填字段「名称」不能为空。")).toBeInTheDocument();
+    expect(await screen.findByTestId("toast-bad")).toHaveTextContent("这次修改没有保存：必填字段「名称」不能为空。");
+    expect(screen.queryByTestId("toast-action")).toBeNull();
   });
 
   it("响应被接受时不改界面（等库事件），编辑框收起；超时给出第 6 节规则 1 的提示", async () => {
@@ -248,14 +253,14 @@ describe("直接操作被拒时的错误显示", () => {
       readOnly={false} pending={false} submit={vi.fn(async () => null) as never} /></Wrap>);
     expect(screen.queryByTestId("detail-confirm")).toBeNull();
     expect(screen.queryByTestId("detail-unconfirm")).toBeNull();
-    expect(screen.getByTestId("read-UC-001")).toHaveTextContent("已读 · 修订 2");
+    expect(screen.getByTestId("detail-sub")).toHaveTextContent("已读 · 现在是修订 2，由你改的");
     expect(screen.getByTestId("confirmations")).toHaveTextContent("你在界面上改了它，改出来的内容算作你已确认");
   });
 
   it("超时显示「还没有得到确认」", async () => {
     detail(vi.fn(async () => new ApiError("timeout", "等了太久", 0)), 1);
     fireEvent.click(screen.getByText("先不管，保留"));
-    expect(await screen.findByText("这次修改还没有得到确认，请稍后看是否已经生效。")).toBeInTheDocument();
+    expect(await screen.findByTestId("toast-bad")).toHaveTextContent("这次修改还没有得到确认，请稍后看是否已经生效。");
   });
 });
 

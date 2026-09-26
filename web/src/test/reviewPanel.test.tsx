@@ -188,7 +188,8 @@ describe("条目详情", () => {
     render(<Wrap><ItemDetail task={t} item={UC3} def={t.definition.collections[0]} readOnly={false} pending={false} submit={submit} /></Wrap>);
     expect(screen.queryByTestId("review-banner")).toBeNull();
     expect(screen.queryByTestId("kept-banner")).toBeNull();
-    expect(screen.getByTestId("review-UC-003")).toHaveTextContent("评审不通过 1 处 · 已保留");
+    expect(screen.getByTestId("state-UC-003")).toHaveTextContent("评审不通过 1 处 · 已保留");
+    expect(screen.getByTestId("state-UC-003")).toHaveClass("kept");
     expect(screen.getByTestId("finding-fate")).toHaveTextContent("已保留 · 理由：材料原话如此");
     fireEvent.click(screen.getByTestId("unwaive-finding"));
     await waitFor(() => expect(submit).toHaveBeenCalledWith({ kind: "unwaive_review", targets: [{ item_id: "UC-003", base_revision: 15 }], notify_executor: false },

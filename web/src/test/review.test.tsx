@@ -1,4 +1,4 @@
-// 评审门禁的界面：条目区的评审按钮与灰化、进度与结果、字段旁的问题与建议两色和条文展开、
+// 评审门禁的界面：条目区的评审按钮与灰化、进度与结果（全站提示条）、字段旁的问题与建议两色和条文展开、
 // 徽标写法、完成条件面板里评审一条的两组与按钮，以及工作视图状态对三种评审事件的消费。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -9,7 +9,9 @@ import { ItemsPanel } from "../components/work/ItemsPanel";
 import { ItemDetail } from "../components/work/ItemDetail";
 import { ItemStatus } from "../components/work/ItemStatus";
 import { CompletionPanel } from "../components/CompletionPanel";
-import { initialWorkState, workReducer } from "../state/workState";
+import { initialWorkState, workReducer, type ReviewRun } from "../state/workState";
+import { ToastProvider } from "../components/Toasts";
+import { useReviewToast } from "../components/work/workToasts";
 import { failedReview, pendingReview } from "../model/items";
 
 const Wrap = ({ children }: { children: ReactNode }) => (
@@ -86,19 +88,25 @@ describe("条目区顶部的评审动作", () => {
     expect(screen.getByTestId("review-all").getAttribute("title")).toContain("上一批评审还在进行");
   });
 
-  it("评审中显示进度与正在评的条目；评完显示一行结果，5 秒后收起", () => {
+  it("评审进度走提示条：进行中带进度与正在评的条目；评完原地换成成功，带「看评审页签」，4 秒后淡出", () => {
     vi.useFakeTimers();
-    const view = (review: Parameters<typeof ItemsPanel>[0]["review"]) => (
-      <Wrap><ItemsPanel task={task([FAILED, PENDING_A])} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected={null}
-        onSelect={noop} submit={vi.fn(async () => null)} onGenerateDoc={noop} onReview={vi.fn()} review={review} /></Wrap>
-    );
+    const onShow = vi.fn();
+    const Probe = ({ review }: { review: ReviewRun | null }) => { useReviewToast(review, onShow); return null; };
+    const view = (review: ReviewRun | null) => <Wrap><ToastProvider><Probe review={review} /></ToastProvider></Wrap>;
     const { rerender } = render(view({ op_id: "ui-op-1", done: 3, total: 12, current: ["UC-004"], finished: null }));
-    expect(screen.getByTestId("review-progress")).toHaveTextContent("评审中 3/12");
-    expect(screen.getByTestId("review-progress")).toHaveTextContent("UC-004 正在评审…（每条约十秒，可以继续做别的）");
+    expect(screen.getByTestId("toast-run")).toHaveTextContent("评审中 3/12");
+    expect(screen.getByTestId("toast-run")).toHaveTextContent("UC-004 正在评审…（每条约十秒，可以继续做别的）");
+    expect(screen.getByTestId("toast-run").querySelector(".bar i")).toHaveStyle({ width: "25%" });
     rerender(view({ op_id: "ui-op-1", done: 12, total: 12, current: [], finished: { passed: 9, failed: 2, unfinished: 1, error: null } }));
-    expect(screen.getByTestId("review-finished")).toHaveTextContent("评审完了：9 条合规，2 条不合规，1 条没有评完（可以再评一次）。");
-    act(() => { vi.advanceTimersByTime(5100); });
-    expect(screen.queryByTestId("review-progress")).toBeNull();
+    expect(screen.queryByTestId("toast-run")).toBeNull();
+    expect(screen.getAllByTestId(/^toast-/).filter((e) => e.classList.contains("tw-toast"))).toHaveLength(1);
+    expect(screen.getByTestId("toast-ok")).toHaveTextContent("评审完了：9 条合规，2 条不合规，1 条没有评完（可以再评一次）。");
+    fireEvent.click(screen.getByTestId("toast-action"));
+    expect(onShow).toHaveBeenCalled();
+    rerender(view({ op_id: "ui-op-2", done: 4, total: 4, current: [], finished: { passed: 0, failed: 0, unfinished: 4, error: "模型服务不可用。" } }));
+    expect(screen.getByTestId("toast-bad")).toHaveTextContent("评审完了：0 条合规，0 条不合规，4 条没有评完（可以再评一次）。模型服务不可用。");
+    act(() => { vi.advanceTimersByTime(20000); });
+    expect(screen.getByTestId("toast-bad")).toBeInTheDocument();   // 失败停住
   });
 
   it("筛选有「评审通过」：评审通过（含只有建议的）的条目", () => {
@@ -110,7 +118,7 @@ describe("条目区顶部的评审动作", () => {
 });
 
 describe("徽标与条目详情", () => {
-  it("徽标：评审通过、评审通过（N 条建议）、评审不通过 N 处（只数问题）、待评审", () => {
+  it("主徽标：评审通过又已读的不挂徽标；评审不通过 N 处（只数问题）、待评审各一枚，悬停写评审结论", () => {
     const t = task([]);
     render(<>
       <ItemStatus task={t} item={item({ item_id: "UC-001", reviews: [{ revision_no: 3, verdict: "合规", findings: [] }] })} />
@@ -118,10 +126,12 @@ describe("徽标与条目详情", () => {
       <ItemStatus task={t} item={FAILED} />
       <ItemStatus task={t} item={PENDING_A} />
     </>);
-    expect(screen.getByTestId("review-UC-001")).toHaveTextContent(/^评审通过$/);
-    expect(screen.getByTestId("review-UC-002")).toHaveTextContent("评审通过（1 条建议）");
-    expect(screen.getByTestId("review-UC-003")).toHaveTextContent("评审不通过 1 处");
-    expect(screen.getByTestId("review-UC-004")).toHaveTextContent("待评审");
+    expect(screen.queryByTestId("state-UC-001")).toBeNull();
+    expect(screen.queryByTestId("state-UC-002")).toBeNull();
+    expect(screen.getByTestId("state-UC-003")).toHaveTextContent(/^评审不通过 1 处$/);
+    expect(screen.getByTestId("state-UC-003")).toHaveClass("failed");
+    expect(screen.getByTestId("state-UC-003").title).toContain("评审：不通过 1 处，还没处理");
+    expect(screen.getByTestId("state-UC-004")).toHaveTextContent("待评审");
   });
 
   it("评审不通过：横幅写问题处数；问题红、建议琥珀；点规则编号展开条文；让助手照这条改预填输入框；评审这条只带这个条目", () => {

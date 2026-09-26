@@ -6,6 +6,7 @@ import { TaskListPage } from "./pages/TaskListPage";
 import { TaskPage } from "./pages/TaskPage";
 import { WorkViewPage } from "./pages/WorkViewPage";
 import { useRootPx } from "./model/fontScale";
+import { ToastProvider } from "./components/Toasts";
 
 // Ant Design 的主题令牌对到 styles.css 里 :root 的同一套值：黑色主按钮，状态色只用在评审、确认几种标签上。
 // 令牌不能写 CSS 变量，所以这里是同值的字面量；改配色时两处一起改，以 :root 为准。
@@ -43,9 +44,11 @@ export function App() {
   return (
     <ConfigProvider locale={zhCN} theme={theme} button={{ autoInsertSpace: false }}>
       <AntApp>
-        {route.page === "tasks" && <TaskListPage />}
-        {route.page === "task" && <TaskPage key={route.taskId} taskId={route.taskId} />}
-        {route.page === "work" && <WorkViewPage key={`${route.taskId}/${route.sessionId}`} taskId={route.taskId} sessionId={route.sessionId} />}
+        <ToastProvider>
+          {route.page === "tasks" && <TaskListPage />}
+          {route.page === "task" && <TaskPage key={route.taskId} taskId={route.taskId} />}
+          {route.page === "work" && <WorkViewPage key={`${route.taskId}/${route.sessionId}`} taskId={route.taskId} sessionId={route.sessionId} />}
+        </ToastProvider>
       </AntApp>
     </ConfigProvider>
   );

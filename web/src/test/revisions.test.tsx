@@ -113,10 +113,11 @@ describe("字段修订标识：以上次确认的修订为基准", () => {
     await waitFor(() => expect(screen.getByTestId("marked-步骤").querySelector(".diff-new")?.textContent).toBe("系统登记"));
     // 没有「确认」按钮：打开就记为已读（由页面发 mark_viewed），这里还没收到库事件，状态是未读。
     expect(screen.queryByTestId("detail-confirm")).toBeNull();
-    expect(screen.getByTestId("read-UC-001")).toHaveTextContent("未读");
+    expect(screen.getByTestId("state-UC-001")).toHaveTextContent("未读");
+    expect(screen.getByTestId("detail-sub")).toHaveTextContent(/^未读 · 现在是修订 4/);
   });
 
-  it("看过之后（当前修订有接受的标记）再打开，边框与「刚改」都不再出现，状态是「已读 · 修订 N」", () => {
+  it("看过之后（当前修订有接受的标记）再打开，边框与「刚改」都不再出现，头部灰字写「已读 · 现在是修订 N」", () => {
     const confirmed = { ...UC1, confirmations: [{ revision_no: 4, accepted: true }] };
     const t = task([confirmed, UC2, TBD]);
     render(<Wrap><ItemsPanel task={t} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected="UC-001" onSelect={noop}
@@ -125,7 +126,7 @@ describe("字段修订标识：以上次确认的修订为基准", () => {
     expect(screen.queryByTestId("just-UC-001")).toBeNull();
     expect(screen.queryByTestId("mark-banner")).toBeNull();
     expect(screen.queryByTestId("detail-unconfirm")).toBeNull();
-    expect(screen.getByTestId("read-UC-001")).toHaveTextContent("已读 · 修订 4");
+    expect(screen.getByTestId("detail-sub")).toHaveTextContent("已读 · 现在是修订 4");
   });
 });
 
@@ -454,8 +455,8 @@ describe("已读即确认", () => {
       submit={submit} onGenerateDoc={noop} /></Wrap>);
     expect(screen.getByTestId("item-UC-001")).toHaveClass("unread");
     expect(screen.getByTestId("item-UC-002")).not.toHaveClass("unread");
-    expect(screen.getByTestId("read-UC-001")).toHaveTextContent("未读");
-    expect(screen.getByTestId("read-UC-002")).toHaveTextContent("已读 · 修订 2");
+    expect(screen.getByTestId("state-UC-001")).toHaveTextContent("未读");
+    expect(screen.queryByTestId("state-UC-002")?.textContent ?? "").not.toContain("未读");
     expect(screen.getByTestId("unread-bar")).toHaveTextContent("还有 1 条未读");
     expect(screen.getByTestId("progress")).toHaveTextContent("3 个条目 · 待评审 2 · 评审不通过 0 · 1 条未读");
     fireEvent.click(within(screen.getByTestId("unread-bar")).getByText("筛出来看"));
