@@ -41,6 +41,10 @@ export const STATE_TEXT: Record<string, string> = {
   exited: "助手已经退出，下一次说话时会重新启动。",
   failed_to_start: "助手没有启动起来。",
 };
+/** 续接或切换之后 pi 接着的不是请求的那条会话：执行者状态报 not_started（pi 已经停了），文字换成这句。 */
+export const RESUME_FAILED_STATE_TEXT = "助手没有接上这条会话，下一次说话时会重新启动。";
+/** 续接失败时给用户看的那句话（错误码 session_resume_failed）。 */
+export const RESUME_FAILED_TEXT = "没能接上这条会话。请再试一次；如果还是不行，请把这个页面的地址告诉管理员。";
 
 export function newId(prefix: string): string {
   return prefix + randomUUID().replaceAll("-", "").slice(0, 12);
@@ -113,6 +117,8 @@ export class Executor {
   pi: PiSession | null = null;
   state = "not_started";
   detail = "";
+  /** 最近一次续接或切换没有接上：执行者状态的文字换成 RESUME_FAILED_STATE_TEXT，直到状态再变。 */
+  private resumeFailed = false;
   activeSession: string | null = null;
   private cursor: string | null = null;
   work: Work | null = null;
@@ -154,20 +160,26 @@ export class Executor {
     return this.pi !== null && this.pi.alive();
   }
 
-  setState(state: string, detail = ""): void {
+  setState(state: string, detail = "", resumeFailed = false): void {
     this.state = state;
     this.detail = detail;
-    this.hub.emit("executor_state", { state, text: (STATE_TEXT[state] ?? "") + (detail ? `（${detail}）` : ""), active_session: this.activeSession, at: clock.now() });
+    this.resumeFailed = resumeFailed;
+    const text = resumeFailed ? RESUME_FAILED_STATE_TEXT : (STATE_TEXT[state] ?? "") + (detail ? `（${detail}）` : "");
+    this.hub.emit("executor_state", { state, text, active_session: this.activeSession, at: clock.now() });
   }
 
   view() {
     const state = this.running() || ["not_started", "failed_to_start", "starting"].includes(this.state) ? this.state : "exited";
-    return { state, text: STATE_TEXT[state] ?? "", active_session: this.activeSession };
+    const text = state === "not_started" && this.resumeFailed ? RESUME_FAILED_STATE_TEXT : STATE_TEXT[state] ?? "";
+    return { state, text, active_session: this.activeSession };
   }
 
   // ───────────── 启动、续接、切换、新建（都在锁里调用） ─────────────
 
-  private async startPi(sessionFile: string | null): Promise<void> {
+  /**
+   * 启动 pi；给了会话文件就续接它。expected 是请求续接的会话编号：pi 报的会话编号与它不同时不采纳，停掉 pi，报 session_resume_failed。
+   */
+  private async startPi(sessionFile: string | null, expected: string | null = null): Promise<void> {
     this.setState("starting");
     // 任务目录都在本服务的 --tasks 目录下；把它作为任务根目录传给 pi，扩展写库前核对任务库在它之下。
     const pi = new PiSession(this.profile, this.taskDir, join(this.runsDir, this.taskId), LABEL, dirname(resolve(this.taskDir)));
@@ -186,6 +198,7 @@ export class Executor {
       this.setState("failed_to_start", detail);
       throw new ApiError("executor_unavailable", "助手现在不可用。", { detail });
     }
+    if (expected !== null && state.sessionId !== expected) await this.resumeFailedLocked(pi, expected, state.sessionId ?? null, "带会话文件启动 pi");
     this.pi = pi;
     this.adopt(state);
     this.cursor = null;
@@ -204,14 +217,45 @@ export class Executor {
     const path = this.sessions.file(sessionId);
     if (!path || !this.sessions.isFile(path)) throw new ApiError("not_found", `这个任务里没有会话 ${sessionId}。`);
     if (!this.running()) {
-      await this.startPi(path);
+      await this.startPi(path, sessionId);
       return;
     }
     this.busyCheck(sessionId);
-    await this.pi!.switchSession(path);
-    this.adopt(await this.pi!.getState());
+    const pi = this.pi!;
+    let reported: string | null;
+    try {
+      await pi.switchSession(path);
+      reported = (await pi.getState()).sessionId ?? null;
+    } catch (error) {
+      if (!(error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
+      return this.resumeFailedLocked(pi, sessionId, null, `切换会话：${error.message}`);
+    }
+    if (reported !== sessionId) return this.resumeFailedLocked(pi, sessionId, reported, "切换会话");
+    this.adopt(await pi.getState());
     this.cursor = null;
     this.setState("idle");
+  }
+
+  /**
+   * 续接或切换之后 pi 接着的不是请求的那条会话（例如会话文件不在了，pi 不报错而是悄悄新开一条），或者切换失败：
+   * 不采纳 pi 报来的编号，停掉这个 pi，执行者回到没有在运行的状态，下一次请求按平常的方式重新启动。
+   * 停掉而不是再切回去：pi 这时处在一条本服务不认识的会话里，再发切换可能再次落空，停掉重起才能确定回到已知状态。
+   * 调用方在把用户的话交给 pi 之前调用它，所以那句话不会发出去。在锁里调用。
+   */
+  private async resumeFailedLocked(pi: PiSession, requested: string, reported: string | null, how: string): Promise<never> {
+    console.log(`任务 ${this.taskId} 没有接上会话 ${requested}（${how}）：pi 报告的会话是 ${reported ?? "（没有报告）"}；已停掉 pi，下一次请求时重新启动。`);
+    pi.note("续接没有接上", { 请求的会话: requested, pi报告的会话: reported, 经过: how, 处置: "停掉 pi，不采纳 pi 报告的会话编号" });
+    if (this.pi === pi) this.pi = null;
+    try {
+      await pi.close();
+    } catch {
+      // 关不掉也照样报错
+    }
+    this.activeSession = null;
+    this.cursor = null;
+    this.work = null;
+    this.setState("not_started", "", true);
+    throw new ApiError("session_resume_failed", RESUME_FAILED_TEXT, { session_id: requested });
   }
 
   /** 打开一条会话：pi 没在跑就启动并续接它；在跑、接着别的会话、并且空闲时切过去；正在工作时返回 session_busy。 */
