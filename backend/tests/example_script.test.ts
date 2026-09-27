@@ -1,0 +1,90 @@
+/**
+ * 示例脚本 examples/library-lending/run.sh 从头到尾跑一遍：起真的后端进程与真的 pi，模型换成进程内的假端点
+ * （第一句话保存一个用例、再经「回复」工具回一句），脚本退出码要是 0，生成的文档开头写明按哪个修订生成、里面有那个用例。
+ * 免得接口改了之后示例脚本悄悄失效（曾经读快照里不存在的字段名，第 6 步报错）。
+ */
+
+import assert from "node:assert/strict";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
+import { join } from "node:path";
+import { after, test } from "node:test";
+import { writeAgentDir } from "../fake_model/agent_config.ts";
+import { FakeModel } from "../fake_model/server.ts";
+import { ROOT, tempDir } from "./helpers.ts";
+
+type Dict = Record<string, any>;
+const MAIN = join(ROOT, "backend", "src", "main.mts");
+const SCRIPT = join(ROOT, "examples", "library-lending", "run.sh");
+const tmp = tempDir();
+after(() => rmSync(tmp, { recursive: true, force: true }));
+const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+const missing = ["pi", "curl", "python3", "bash"].filter((cmd) => spawnSync(cmd, ["--version"], { encoding: "utf-8" }).error);
+const SKIP = missing.length ? `本机 PATH 上没有 ${missing.join("、")}` : false;
+const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "TASKWRIGHT_TASKS_ROOT",
+  "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT"];
+
+const INTENT = '```json\n{"acts": [{"function": "request", "confidence": "high", "summary": "照用户说的做"}]}\n```';
+const EXCERPT = "学生一次最多借 5 本，教师一次最多借 10 本，借期都是 30 天。";
+const UC = { 用例名称: "借书", 用例功能: "读者凭借书证借书。", 参与者: ["读者"], 基本流程: ["读者出示借书证", "系统登记借出的图书"] };
+const MODEL_SCRIPT = {
+  sequence: [
+    { text: INTENT, tool_calls: [{ name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例", fields: UC,
+      sources: [{ kind: "文档原文", locator: "inputs/requirements.md", excerpt: EXCERPT }] }] } }] },
+    { tool_calls: [{ name: "reply", arguments: { informs: [], act: null, text: "整理了一个用例。" } }] },
+  ],
+  default: { text: "好的。" },
+};
+
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
+  const port = (probe.address() as { port: number }).port;
+  await new Promise((ok) => probe.close(ok));
+  return port;
+}
+
+function run(cmd: string, args: string[], cwd: string, env: Dict): Promise<{ code: number | null; out: string }> {
+  return new Promise((ok) => {
+    const child = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (c) => (out += c));
+    child.stderr.on("data", (c) => (out += c));
+    child.once("exit", (code) => ok({ code, out }));
+  });
+}
+
+test("示例脚本从建任务到生成文档跑通：退出码 0，文档写明按修订 1 生成，里面有保存的用例", { skip: SKIP, timeout: 180_000 }, async () => {
+  const fake = await new FakeModel(MODEL_SCRIPT).start();
+  const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(tmp, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(tmp, "logs") };
+  for (const name of DROPPED_ENV) delete env[name];
+  const port = await freePort();
+  let backend: ChildProcess | null = null;
+  try {
+    backend = spawn(process.execPath, [MAIN, "--tasks", join(tmp, "tasks"), "--runs", join(tmp, "runs"), "--profile", "fake", "--host", "127.0.0.1", "--port", String(port)],
+      { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
+    let log = "";
+    backend.stdout!.on("data", (c) => (log += c));
+    backend.stderr!.on("data", (c) => (log += c));
+    const end = Date.now() + 15000;
+    while (!/任务服务在 http:\/\//.test(log)) {
+      if (backend.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${log}`);
+      await sleep(50);
+    }
+    const work = join(tmp, "work");
+    mkdirSync(work);
+    const done = await run("bash", [SCRIPT, `http://127.0.0.1:${port}`], work, env);
+    assert.equal(done.code, 0, done.out);
+    const written = readdirSync(work).filter((n) => /^srs-TASK-.+\.md$/.test(n));
+    assert.equal(written.length, 1, done.out);
+    const doc = readFileSync(join(work, written[0]), "utf-8");
+    assert.match(doc.split("\n").slice(0, 5).join("\n"), /本文档按交付物的修订 1 生成/);
+    assert.match(doc, /借书/);
+  } finally {
+    backend?.kill("SIGTERM");
+    if (backend && backend.exitCode === null) await new Promise((ok) => backend!.once("exit", ok));
+    await fake.stop();
+  }
+});
