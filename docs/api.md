@@ -78,7 +78,7 @@ All carry `session_id`.
 | `work_summary` | after a unit of work | `work_id`, `at`, `seconds`, `step_count`, `stages` (each with `text`) |
 | `work_ended` | the agent settled | `work_id`, `at`, `seconds`, `step_count`, `outcome` (`replied`, `no_reply`, `stopped_by_user`, `failed`) |
 | `problem` | something the user should know (see 5.5) | `code`, `text`, `retry` |
-| `executor_state` | the agent's availability changed | `state` (`not_started`, `starting`, `idle`, `working`, `exited`, `failed_to_start`), `text`, `active_session` |
+| `executor_state` | the agent's availability changed | `state` (`not_started`, `starting`, `idle`, `working`, `exited`, `failed_to_start`), `text`, `active_session`; after a failed resume (`session_resume_failed`) `state` is `not_started` and `text` says the assistant did not pick up the session |
 | `system_note` | the task-status message at session start, or the fixed fallback sentence | `message_id`, `at`, `text`, `kind` (`task_status` or `reply_fallback`) |
 
 ## 4 Reading
@@ -206,6 +206,8 @@ New messages and direct operations are refused with `session_busy` (see 5.1); th
 
 Opening a session (a snapshot with `session`) starts pi for that task or switches it to that session. One task has one active session at a time: while the agent works in session A, messages and actions for session B return `session_busy`. During startup, requests return `executor_starting` (retry once shortly after); if pi failed or exited, `executor_unavailable`. Direct operations run inside pi, so they fail while pi is not running.
 
+After resuming or switching, the service checks that pi reports the requested session. If pi reports another session (for example because the session file is gone and pi opened a new session instead) or refuses to switch, the service does not adopt that session: it stops the task's pi, writes a log line with the task, the requested session and the session pi reported, and answers `session_resume_failed`. The check happens before a message is handed to pi, so the message is not sent and goes into no session; the next request starts pi again as usual. A snapshot is still answered in this case, with the conversation read from the session file and `executor.state` `not_started`. A session file that is missing altogether still gives `not_found`. The service turns `--tasks` and `--runs` into absolute paths when it starts, and hands pi absolute session file paths.
+
 ## 6 Direct operations
 
 `POST …/actions?session={session_id}`:
@@ -265,6 +267,7 @@ Shape: `{ "ok": false, "error": { "code": "…", "message": "…", "data": { …
 | `forbidden` | 403 | an endpoint that accepts only requests from this machine got one from elsewhere (so far only `POST /api/v1/service/exit`, see section 9) |
 | `executor_starting` | 503 | pi is starting |
 | `executor_unavailable` | 503 | pi failed to start or exited (`data.detail`) |
+| `session_resume_failed` | 503 | pi did not pick up the requested session after resuming or switching (section 5.6); pi was stopped and the message was not sent; `data.session_id` is the requested session |
 | `busy_timeout` | 503 | waited too long for the database write lock |
 | `too_large`, `unsupported_type` | 413, 415 | attachment too big or of the wrong type |
 
