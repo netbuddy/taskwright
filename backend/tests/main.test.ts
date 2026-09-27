@@ -165,8 +165,8 @@ test("服务信息的形状；退出接口在 server 形态下与没有这个接
   const go = (service: Service, method: string, path: string, remote: string) => dispatch(service, { method, path, query: {}, headers: {}, body: Buffer.alloc(0), remote }) as Promise<Dict>;
   const server = new Service(join(tmp, "d1"), join(tmp, "d1r"), {}, { port: 8765 });
   const info = JSON.parse((await go(server, "GET", "/api/v1/service", "198.51.100.9")).body.toString());
-  assert.deepEqual(Object.keys(info), ["ok", "app", "version", "mode", "pid", "port", "capabilities", "model"]);
-  assert.deepEqual({ ...info, version: typeof info.version, model: typeof info.model }, { ok: true, app: "taskwright", version: "string", mode: "server", pid: process.pid, port: 8765, capabilities: { exit: false, model: false }, model: "object" });
+  assert.deepEqual(Object.keys(info), ["ok", "app", "version", "mode", "pid", "port", "capabilities", "model", "upload"]);
+  assert.deepEqual({ ...info, version: typeof info.version, model: typeof info.model }, { ok: true, app: "taskwright", version: "string", mode: "server", pid: process.pid, port: 8765, capabilities: { exit: false, model: false }, model: "object", upload: { max_bytes: 5 * 1024 * 1024, too_large_text: "单个文件不能超过 5 MB。" } });
   assert.deepEqual(info.model, { name: "", reason: "启动配置里没有写模型。" });
   assert.equal(info.version, JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")).version);
   const missing = await go(server, "POST", "/api/v1/service/exit", "127.0.0.1");
