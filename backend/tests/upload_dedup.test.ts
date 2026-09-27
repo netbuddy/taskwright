@@ -171,3 +171,28 @@ test("并发：两个请求同时上传同一份文件只存下一份；同时�
     await service.close();
   }
 });
+
+test("经 HTTP：同名同内容报内容相同（duplicate_content）；同名不同内容报 name_taken，已有文件的字节不变", async () => {
+  const root = fresh();
+  const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1 });
+  const server = makeServer(service);
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const port = (server.address() as AddressInfo).port;
+  try {
+    const taskId = service.create({ task_type: "srs-authoring", task_name: "经 HTTP" }).task_id;
+    const t = service.task(taskId);
+    assert.equal((await post(port, taskId, "需求说明.md", "买家可以申请退货。")).status, 200);
+    const before = readFileSync(join(t.dir, "inputs", "需求说明.md"));
+    const same = await post(port, taskId, "需求说明.md", "买家可以申请退货。");
+    assert.deepEqual([same.status, same.body.error.code, same.body.error.data], [409, "duplicate_content", { path: "inputs/需求说明.md" }]);
+    const clash = await post(port, taskId, "需求说明.md", "买家不能申请退货。");
+    assert.deepEqual([clash.status, clash.body.error.code, clash.body.error.message, clash.body.error.data],
+      [409, "name_taken", nameTakenText("需求说明.md"), { path: "inputs/需求说明.md" }]);
+    assert.deepEqual(readFileSync(join(t.dir, "inputs", "需求说明.md")), before, "已有文件的字节没有变");
+    assert.deepEqual(files(t), ["需求说明.md"]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+    await service.close();
+  }
+});
