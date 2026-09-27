@@ -1,6 +1,6 @@
 # Deployment
 
-This page covers everything from a fresh machine to running services: dependencies, installation, connecting a model, starting the services, ports, environment variables, a production build, optional Langfuse tracing, data and backups, and common problems. How to use the running system is in the [user guide](user-guide.md).
+This page covers everything from a fresh machine to running services: dependencies, installation, connecting a model, starting the services, ports, environment variables, a production build, optional Langfuse tracing, data and backups, common problems, and the desktop packages that need no installation (section 10). How to use the running system is in the [user guide](user-guide.md).
 
 This version is meant for a single machine or a trusted local network. There is no authentication yet; do not expose the service to the internet.
 
@@ -99,7 +99,7 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 | Service | Command | Default port |
 |---|---|---|
 | Task service (HTTP/SSE API) | `python3 -m taskwright_server.service --tasks <dir> --runs <dir> --port <port> [--profile <name>]` | none, give one |
-| Task service, TypeScript version | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>]` | none, give one |
+| Task service, TypeScript version | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | none, give one |
 | Web interface (development server) | `TASKWRIGHT_API_TARGET=http://127.0.0.1:<api port> npm run dev -w web` | 5680 (`TASKWRIGHT_WEB_PORT`) |
 | Both at once | `scripts/dev.sh` (or `make dev`) | API 8790, web 5680 |
 | Observatory | `python3 -m taskwright_observatory --runs <archive dir> --workspaces <tasks dir>` | 8770 |
@@ -108,7 +108,9 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 - All services bind `0.0.0.0` by default (`--host` changes it). The one exception is the TypeScript task service started with `--mode desktop`, which binds `127.0.0.1` by default.
 - The TypeScript task service takes a run mode, `--mode desktop|server` (default `server`). `server` is for a shared server: it binds `0.0.0.0` by default and has no exit endpoint. `desktop` is for one person on one computer: it binds `127.0.0.1` by default and adds `POST /api/v1/service/exit`, which accepts requests from this machine only. `--host` overrides the default address in both modes. Both modes log the same way: to standard output and to a daily file under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory). See section 9 of the API description for `GET /api/v1/service` and the exit endpoint.
 - If the port given to the TypeScript task service is taken, it tries the following ports, up to 10 in all, and exits with an error when all are taken. The port it actually uses is printed in the log, written to each task's occupancy mark and returned by `GET /api/v1/service`.
-- Stop services with Ctrl+C or by process id; the task service closes each task's pi process on the way out.
+- Given `--web <dir>` (for example the built `web/dist`), the TypeScript task service serves the web interface itself: GET requests that do not start with `/api/` are answered from that directory, and paths it does not have get the start page. Then neither the reverse proxy of section 6 nor the development server is needed.
+- Started with `--mode desktop`, the TypeScript task service reads `defaultProvider` and `defaultModel` from `settings.json` in pi's configuration directory before starting pi, and when both are present uses them instead of the profile's model (see section 10.4); with `--mode server` it does not read that file.
+- Stop services with Ctrl+C or by process id; the TypeScript task service shuts down the same way on SIGHUP (when its terminal or Windows console window is closed). The task service closes each task's pi process on the way out.
 
 ## 5 Environment variables
 
@@ -127,7 +129,7 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 
 ## 6 Production build of the web interface
 
-Run `npm run build -w web` and serve `web/dist/` behind a reverse proxy that forwards `/api` to the task service. Disable response buffering for `/api/v1/tasks/*/events` (it is a Server-Sent Events stream) and raise the read timeout. Without HTTP/2, a browser allows only about six connections per host, so keep to four open task pages per browser.
+Run `npm run build -w web` and serve `web/dist/` behind a reverse proxy that forwards `/api` to the task service; with the TypeScript task service you can instead give it `--web web/dist` and skip the proxy (see section 4). Disable response buffering for `/api/v1/tasks/*/events` (it is a Server-Sent Events stream) and raise the read timeout. Without HTTP/2, a browser allows only about six connections per host, so keep to four open task pages per browser.
 
 ## 7 Optional: Langfuse tracing
 
@@ -174,5 +176,80 @@ After a checkpoint, `task.sqlite` alone is complete. The conversation itself is 
 **A write keeps being rejected.** A tool rejects the whole batch when one operation is wrong, and says exactly why. The reason is visible in the observatory's turn view and in `python3 -m taskwright_observatory.dbshow <task dir>`.
 
 **The page stops updating behind a proxy.** Response buffering is on for the event stream; see section 6.
+
+## 10 Desktop packages
+
+The desktop packages are for one person on one computer: a single file holds Node, the task service, pi, the web interface and rg and fd, the two programs pi's search tools use, so nothing else (Node, Python, pi) needs to be installed. Linux has `taskwright-x86_64.AppImage` and `taskwright-linux-x64`; Windows has `taskwright-win-x64.exe`. How to build them is in the repository's `release/README.md`. In 0.3 the desktop package is transitional: there is no desktop shell, and the service opens the system browser itself.
+
+### 10.1 Starting
+
+Double-click the file or run it from a terminal. It first checks ports 8950 to 8959 for a desktop package that is already running: if it finds one, it only opens the browser and ends. Otherwise it starts the task service with `--mode desktop --profile desktop --port 8950`, bound to `127.0.0.1`, and opens `http://127.0.0.1:<port>/` in the system browser. Arguments added on the command line are passed on to the task service and win over these defaults; for example `--host 0.0.0.0` lets other computers on the same network reach it (mind the warning at the top of this page about the internet).
+
+A single executable (`taskwright-linux-x64` and the Windows exe) extracts its contents to the user cache directory on the first start of each version (`~/.cache/taskwright/payload/` on Linux, `%LOCALAPPDATA%\Taskwright\cache\payload\` on Windows) and does not extract again later. On Windows, double-clicking the exe opens a console window; that window is the service's status window and shows the address and the log. Double-clicking the AppImage on Linux opens no window; the log goes to a file only (see section 10.2).
+
+### 10.2 Data and logs
+
+Task directories and archives are kept in the user data directory: `~/.local/share/taskwright/tasks/` and `runs/` on Linux, `%LOCALAPPDATA%\Taskwright\tasks\` and `runs\` on Windows. The log is written to `logs/backend-<date>.log` in the same directory. When the environment variable `TASKWRIGHT_DATA_DIR` is set, all three go under the directory it names. Back them up as described in section 8.
+
+### 10.3 Stopping
+
+Any one of three ways: choose 退出服务 ("stop the service") in the 本机用户 ("local user") menu, at the bottom left of the task list and task pages or the top right of the work view, and confirm; close the service's console window; or press Ctrl+C in that window. Each way closes each task's pi and removes the occupancy marks before the service exits.
+
+### 10.4 Setting up a model service
+
+The desktop package contains no keys. Model services and their credentials are read, as always, from pi's configuration directory: `~/.pi/agent/` on Linux, `%USERPROFILE%\.pi\agent\` on Windows, or the directory named by `PI_CODING_AGENT_DIR`.
+
+By default the desktop package uses the same model as the development profile (`openai-codex/gpt-6-luna`, see section 3.1); a computer that has already logged in to ChatGPT through pi needs nothing more. To use another model, put two files in pi's configuration directory: `models.json` registers the model service, and `settings.json` names the one to use with `defaultProvider` and `defaultModel` (the same two settings pi's `/model` command writes). When both are present, the desktop package starts pi with that model instead of the default. Restart the desktop package after placing the files.
+
+Example 1: llama.cpp (or another OpenAI-compatible endpoint) on this computer. `models.json`:
+
+```json
+{
+  "providers": {
+    "local": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "none",
+      "compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false },
+      "models": [ { "id": "<model name on the server>" } ]
+    }
+  }
+}
+```
+
+`settings.json`:
+
+```json
+{ "defaultProvider": "local", "defaultModel": "<model name on the server>" }
+```
+
+Example 2: an online model service with an OpenAI-compatible API. `models.json`:
+
+```json
+{
+  "providers": {
+    "online": {
+      "baseUrl": "https://<the provider's API address>/v1",
+      "api": "openai-completions",
+      "apiKey": "<your key>",
+      "models": [ { "id": "<model id>" } ]
+    }
+  }
+}
+```
+
+`settings.json`:
+
+```json
+{ "defaultProvider": "online", "defaultModel": "<model id>" }
+```
+
+When `models.json` holds a key, make it readable only by you. The fields are explained in section 3.3 and in pi's custom model documentation.
+
+On start the desktop package checks that the model it will use is set up: `models.json` registers that provider and model, or `auth.json` has that provider (pi has been logged in to it). When neither holds, the page shows a notice at the top that no model service is set up, and its 详情 ("details") says where the two files were looked for. The check reads only these two files; if a provider's key is only in an environment variable (section 3.2), the notice appears although the assistant can in fact work.
+
+### 10.5 When the port is taken
+
+If another program holds 8950, the task service tries 8951 to 8959 and uses the first free port; the address the browser opens changes with it. When all ten are taken, it does not start and says why in the log. The environment variable `TASKWRIGHT_PORT` changes the first port.
 
 [中文版](deployment.zh-CN.md)

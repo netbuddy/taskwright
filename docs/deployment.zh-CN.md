@@ -2,7 +2,7 @@
 
 # 部署（Deployment）
 
-本文覆盖从一台新机器到服务跑起来的全部步骤：依赖、安装、模型接入、启动服务、端口、环境变量、生产构建、可选的 Langfuse 追踪、数据与备份、常见故障。服务跑起来之后怎么用，见[用户手册](user-guide.zh-CN.md)。
+本文覆盖从一台新机器到服务跑起来的全部步骤：依赖、安装、模型接入、启动服务、端口、环境变量、生产构建、可选的 Langfuse 追踪、数据与备份、常见故障，以及不需要安装的桌面包（第 10 节）。服务跑起来之后怎么用，见[用户手册](user-guide.zh-CN.md)。
 
 当前版本面向单机或可信的本地网络设计。目前还没有身份认证（authentication）机制；不要把这套服务暴露到公网。
 
@@ -101,7 +101,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 | 服务 | 命令 | 默认端口 |
 |---|---|---|
 | 任务服务（HTTP/SSE 接口） | `python3 -m taskwright_server.service --tasks <dir> --runs <dir> --port <port> [--profile <name>]` | 无默认值，需自行指定 |
-| 任务服务的 TypeScript 版 | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>]` | 无默认值，需自行指定 |
+| 任务服务的 TypeScript 版 | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | 无默认值，需自行指定 |
 | 网页界面（开发服务器） | `TASKWRIGHT_API_TARGET=http://127.0.0.1:<api port> npm run dev -w web` | 5680（`TASKWRIGHT_WEB_PORT`） |
 | 两者一起启动 | `scripts/dev.sh`（或 `make dev`） | API 8790，web 5680 |
 | 观测台 | `python3 -m taskwright_observatory --runs <archive dir> --workspaces <tasks dir>` | 8770 |
@@ -110,7 +110,9 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 - 各服务默认绑定 `0.0.0.0`（可用 `--host` 更改）。唯一的例外是以 `--mode desktop` 启动的 TypeScript 版任务服务，它默认绑定 `127.0.0.1`。
 - TypeScript 版任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是用户数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。
 - 给 TypeScript 版任务服务的端口被占用时，它会依次尝试后面的端口，最多共试 10 个，全部被占时报错退出。实际使用的端口会打印到日志、写进各任务的占用标记，并由 `GET /api/v1/service` 返回。
-- 用 Ctrl+C 或按进程编号（process id）停止服务；任务服务退出时会顺带关闭它为每个任务启动的 pi 进程。
+- TypeScript 版任务服务给了 `--web <dir>`（例如构建好的 `web/dist`）时，自己托管网页：不以 `/api/` 开头的 GET 请求从这个目录取文件，找不到的路径回首页。这样不需要第 6 节的反向代理，也不需要开发服务器。
+- 以 `--mode desktop` 启动的 TypeScript 版任务服务，起 pi 之前读 pi 配置目录里 `settings.json` 的 `defaultProvider` 与 `defaultModel`，两项都有就用它们代替启动配置里的模型（见第 10.4 节）；`--mode server` 不读这个文件。
+- 用 Ctrl+C 或按进程编号（process id）停止服务；TypeScript 版任务服务收到 SIGHUP（关掉它所在的终端或 Windows 的命令行窗口）时也同样收尾。任务服务退出时会顺带关闭它为每个任务启动的 pi 进程。
 
 ## 5 环境变量
 
@@ -129,7 +131,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 
 ## 6 网页界面的生产构建
 
-运行 `npm run build -w web`，然后用一个反向代理托管 `web/dist/`，把 `/api` 转发给任务服务。要为 `/api/v1/tasks/*/events` 关闭响应缓冲（因为它是一条服务器推送事件流），并调高读超时时间。没有 HTTP/2 时，浏览器对同一主机只允许大约六个并发连接，所以每个浏览器最多同时打开四个任务页面。
+运行 `npm run build -w web`，然后用一个反向代理托管 `web/dist/`，把 `/api` 转发给任务服务；用 TypeScript 版任务服务时也可以不用反向代理，给它 `--web web/dist`（见第 4 节）。要为 `/api/v1/tasks/*/events` 关闭响应缓冲（因为它是一条服务器推送事件流），并调高读超时时间。没有 HTTP/2 时，浏览器对同一主机只允许大约六个并发连接，所以每个浏览器最多同时打开四个任务页面。
 
 ## 7 可选：Langfuse 追踪
 
@@ -176,3 +178,78 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 **写入反复被拒。** 一批操作里只要有一个不对，工具就整批拒绝，并逐条写明原因。原因可以在观测台的轮次视图里看到，也可以用 `python3 -m taskwright_observatory.dbshow <task dir>` 查看。
 
 **在反向代理后面页面不再更新。** 事件流的响应缓冲没有关闭，见第 6 节。
+
+## 10 桌面包
+
+桌面包是给一个人在自己电脑上用的安装包：一个文件里装着 Node、任务服务、pi、网页界面，以及 pi 的检索工具要用的 rg 与 fd 两个程序，不需要另装 Node、Python 或 pi。Linux 有 `taskwright-x86_64.AppImage` 与 `taskwright-linux-x64` 两种，Windows 是 `taskwright-win-x64.exe`；构建方法见代码仓的 `release/README.md`。0.3 的桌面包还是过渡形态：没有桌面外壳，由服务自己打开系统浏览器。
+
+### 10.1 启动
+
+双击，或在终端里运行。启动时先看 8950 到 8959 端口上有没有一个已经在运行的桌面包：有就只打开浏览器，然后结束；没有就以 `--mode desktop --profile desktop --port 8950` 启动任务服务，只绑定 `127.0.0.1`，再用系统浏览器打开 `http://127.0.0.1:<端口>/`。命令行上追加的参数原样交给任务服务，并且优先于上面这些默认值，例如 `--host 0.0.0.0` 让同一网络里的其他电脑也能访问（这时请留意本文开头关于不要暴露到公网的提醒）。
+
+单可执行文件（`taskwright-linux-x64` 与 Windows 的 exe）在每个版本第一次启动时，把内容解压到用户缓存目录（Linux 是 `~/.cache/taskwright/payload/`，Windows 是 `%LOCALAPPDATA%\Taskwright\cache\payload\`），以后再启动就不再解压。Windows 上双击 exe 会出现一个命令行窗口，它就是服务的状态窗口，显示地址与日志；在 Linux 上双击 AppImage 不出现窗口，日志只写到文件里（见第 10.2 节）。
+
+### 10.2 数据与日志
+
+任务目录与归档目录放在用户数据目录下：Linux 是 `~/.local/share/taskwright/tasks/` 与 `runs/`，Windows 是 `%LOCALAPPDATA%\Taskwright\tasks\` 与 `runs\`。日志写到同一目录下的 `logs/backend-<日期>.log`。设了环境变量 `TASKWRIGHT_DATA_DIR` 时，这三样一起放到它指定的目录下。备份方法同第 8 节。
+
+### 10.3 退出
+
+三种办法任选其一：在页面左下角（任务列表页、任务页）或右上角（工作视图）的「本机用户」菜单里点「退出服务」，确认之后退出；关掉服务的命令行窗口；在命令行窗口里按 Ctrl+C。三种办法都先关掉各任务的 pi、删掉占用标记，再退出。
+
+### 10.4 配置模型服务
+
+桌面包里不带任何密钥。模型服务的登记与凭据照旧从 pi 的配置目录读：Linux 是 `~/.pi/agent/`，Windows 是 `%USERPROFILE%\.pi\agent\`，设了环境变量 `PI_CODING_AGENT_DIR` 时以它为准。
+
+桌面包默认使用的模型与开发用的启动配置相同（`openai-codex/gpt-6-luna`，见第 3.1 节）；已经用 pi 登录过 ChatGPT 的电脑不用再做任何设置。要换成别的模型，在 pi 的配置目录里放两个文件：`models.json` 登记模型服务；`settings.json` 用 `defaultProvider` 与 `defaultModel` 两项指定用哪一个（pi 的 `/model` 命令写的也是这两项）。桌面包启动 pi 时，这两项都有就用它们代替默认模型。放好文件之后重新启动桌面包。
+
+例一：本机的 llama.cpp（或其他 OpenAI 兼容接口）。`models.json`：
+
+```json
+{
+  "providers": {
+    "local": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "none",
+      "compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false },
+      "models": [ { "id": "<模型在服务端的名字>" } ]
+    }
+  }
+}
+```
+
+`settings.json`：
+
+```json
+{ "defaultProvider": "local", "defaultModel": "<模型在服务端的名字>" }
+```
+
+例二：在线的模型服务（提供 OpenAI 兼容接口的服务商）。`models.json`：
+
+```json
+{
+  "providers": {
+    "online": {
+      "baseUrl": "https://<服务商的接口地址>/v1",
+      "api": "openai-completions",
+      "apiKey": "<你的密钥>",
+      "models": [ { "id": "<模型编号>" } ]
+    }
+  }
+}
+```
+
+`settings.json`：
+
+```json
+{ "defaultProvider": "online", "defaultModel": "<模型编号>" }
+```
+
+`models.json` 里有密钥时，把它设为只有你自己可读。字段的含义见第 3.3 节与 pi 的自定义模型文档。
+
+桌面包启动后会检查它要用的模型有没有着落：`models.json` 里登记了这个服务商与模型，或者 `auth.json` 里有这个服务商（用 pi 登录过）。两样都没有时，页面顶部显示「还没有配置模型服务，助手无法工作」，「详情」里写明查过的两个文件在哪里。这项检查只读这两个文件；如果某个服务商的密钥只放在环境变量里（第 3.2 节），这里也会显示没有找到，但助手实际可以工作。
+
+### 10.5 端口被占用时
+
+8950 被别的程序占着时，任务服务依次试 8951 到 8959，用第一个空闲的端口，浏览器打开的地址随之改变。十个端口都被占时，启动失败，日志里写明原因。用环境变量 `TASKWRIGHT_PORT` 可以改起始端口。
