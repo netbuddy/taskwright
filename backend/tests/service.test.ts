@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import type { AddressInfo } from "node:net";
 import { request } from "node:http";
 import { hostname } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { after, afterEach, before, describe, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
 import { makeServer } from "../src/http.ts";
@@ -20,7 +20,10 @@ import * as occupancy from "../src/occupancy.ts";
 import { ProjectionError, projectionPath, projectionText, removeProjection, writeProjection } from "../src/projection.ts";
 import { Service, taskTypes, userActionText } from "../src/service.ts";
 import { CreateTaskError, createTaskDir, newWorkspace } from "../src/workspace.ts";
-import { ROOT, sqlGet, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, sqlGet, tempDir } from "./helpers.ts";
+
+// 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
+const logs = captureConsole();
 
 const SAMPLE = join(ROOT, "examples", "library-lending", "requirements-styled.docx");
 const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -341,6 +344,7 @@ describe("占用标记", () => {
     try {
       assert.equal(third.task(taskId).taskId, taskId);
       assert.equal(JSON.parse(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8")).port, 8863);
+      assert.ok(logs.some((l) => l.includes(`任务目录 ${basename(folder)} 里有一份遗留的占用标记`) && l.endsWith("本服务覆盖它。")), "覆盖遗留标记时写一行日志");
     } finally {
       await third.close();
       first.tasks.clear();

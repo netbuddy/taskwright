@@ -1,14 +1,17 @@
 /**
  * 启动层：运行形态对缺省绑定地址与退出接口的影响、服务信息接口的形状、退出接口的来源检查与收尾、端口被占时换端口。
  * 起真的后端进程（node backend/src/main.mts），pi 换成测试用的假 pi 脚本（经 TASKWRIGHT_PI_ENTRY 注入）。
+ *
+ * 本文件里的每一次等待都有时限（helpers.ts 的 within），超时以写明在等什么的错误失败；每例起的监听端口、连接与后端进程
+ * 都在 finally 里关掉，出错时也一样。测试进程结束时还有没关的监听端口，这个文件的子进程就不会退出，整套测试会一直挂着。
  */
 
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { request } from "node:http";
-import { type Server, createServer } from "node:net";
-import { createServer as createHttpServer } from "node:http";
+import { type Server, type Socket, createServer } from "node:net";
+import { type Server as HttpServer, createServer as createHttpServer } from "node:http";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -16,9 +19,14 @@ import { dispatch } from "../src/http.ts";
 import { NoFreePort, defaultHost, listenFrom } from "../src/listen.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { Service } from "../src/service.ts";
-import { ROOT, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, tempDir, within } from "./helpers.ts";
+
+// 本文件有一例在测试进程里运行后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
+captureConsole();
 
 type Dict = Record<string, any>;
+/** 每例的总时限：超过就以这一例的名字失败。 */
+const CASE = { timeout: 60_000 };
 const MAIN = join(ROOT, "backend", "src", "main.mts");
 const FAKE_PI = join(ROOT, "backend", "tests", "fixtures", "fake_pi.mjs");
 const tmp = tempDir();
@@ -28,13 +36,42 @@ const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 /** 本机一个不是回环的 IPv4 地址；没有就是 null（这时跳过要它的几步）。 */
 const lanAddress = Object.values(networkInterfaces()).flat().find((a) => a && a.family === "IPv4" && !a.internal)?.address ?? null;
 
+/** 起来的每个监听服务器连进来的连接，关服务器之前先断开它们（服务器要等全部连接结束才算关掉）。 */
+const connections = new WeakMap<Server | HttpServer, Set<Socket>>();
+
+/** 在 host 上监听 port（0 由操作系统挑），返回实际端口；端口被占等错误照原样抛出。 */
+async function listenOn(server: Server | HttpServer, port: number, host: string): Promise<number> {
+  const open = new Set<Socket>();
+  connections.set(server, open);
+  server.on("connection", (socket: Socket) => {
+    open.add(socket);
+    socket.once("close", () => open.delete(socket));
+  });
+  await within(`监听 ${host}:${port}`, 10_000, new Promise<void>((ok, fail) => {
+    server.once("error", fail);
+    server.listen(port, host, () => {
+      server.off("error", fail);
+      ok();
+    });
+  }));
+  return (server.address() as { port: number }).port;
+}
+
+/** 断开连接再关掉服务器；没在监听的服务器直接返回。 */
+async function closeServer(server: Server | HttpServer): Promise<void> {
+  if (!server.listening) return;
+  for (const socket of connections.get(server) ?? []) socket.destroy();
+  await within("关掉监听端口", 10_000, new Promise((ok) => server.close(ok)));
+}
+
 /** 操作系统挑的一个空闲端口。 */
 async function freePort(): Promise<number> {
   const probe = createServer();
-  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
-  const port = (probe.address() as { port: number }).port;
-  await new Promise((ok) => probe.close(ok));
-  return port;
+  try {
+    return await listenOn(probe, 0, "127.0.0.1");
+  } finally {
+    await closeServer(probe);
+  }
 }
 
 function call(host: string, port: number, method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> {
@@ -43,15 +80,51 @@ function call(host: string, port: number, method: string, path: string, body?: u
     const req = request({ host, port, path, method, timeout: 5000, headers: data ? { "Content-Type": "application/json", "Content-Length": data.length } : {} }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c) => chunks.push(c));
-      res.on("end", () => ok({ status: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString("utf-8") || "null") }));
+      res.on("error", fail);
+      res.on("end", () => {
+        const text = Buffer.concat(chunks).toString("utf-8");
+        try {
+          ok({ status: res.statusCode ?? 0, body: JSON.parse(text || "null") });
+        } catch {
+          fail(new Error(`${method} ${path} 的回答不是 JSON：${text.slice(0, 200)}`));
+        }
+      });
     });
     req.on("error", fail);
-    req.on("timeout", () => req.destroy(new Error("超时")));
+    req.on("timeout", () => req.destroy(new Error(`${method} http://${host}:${port}${path} 超过 5 秒没有回答`)));
     req.end(data);
   });
 }
 
-/** 起一个后端进程，等它打印出监听地址；返回进程、实际端口与日志。 */
+/** 进程已经退出（正常退出或被信号结束）。 */
+const gone = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
+
+/**
+ * 等进程退出，返回退出码（被信号结束时是 null）。超过 ms 还没退出就强制结束它，并以写明在等什么的错误失败。
+ */
+async function exited(child: ChildProcess, ms = 20_000): Promise<number | null> {
+  if (!gone(child)) {
+    try {
+      await within(`后端进程 ${child.pid} 退出`, ms, new Promise((ok) => child.once("exit", ok)));
+    } catch (error) {
+      await stop(child);
+      throw error;
+    }
+  }
+  return child.exitCode;
+}
+
+/** 收尾用：进程还在就先 SIGTERM，20 秒内没退出再 SIGKILL；不抛错，免得盖住测试本身的错误。 */
+async function stop(child: ChildProcess | undefined): Promise<void> {
+  if (!child) return;
+  for (const [signal, ms] of [["SIGTERM", 20_000], ["SIGKILL", 5_000]] as const) {
+    if (gone(child)) return;
+    child.kill(signal);
+    await within(`后端进程 ${child.pid} 在 ${signal} 之后退出`, ms, new Promise((ok) => child.once("exit", ok))).catch(() => {});
+  }
+}
+
+/** 起一个后端进程，等它打印出监听地址；返回进程、实际端口与日志。没等到（进程退出或 15 秒超时）时先结束进程再抛错。 */
 async function startBackend(name: string, args: string[]): Promise<{ child: ChildProcess; port: number; log: () => string }> {
   const dir = join(tmp, name);
   let out = "";
@@ -60,27 +133,17 @@ async function startBackend(name: string, args: string[]): Promise<{ child: Chil
   });
   child.stdout!.on("data", (c) => (out += c));
   child.stderr!.on("data", (c) => (out += c));
-  const end = Date.now() + 15000;
+  const end = Date.now() + 15_000;
   for (;;) {
     const m = /任务服务在 http:\/\/[^:]+:(\d+)\//.exec(out);
     if (m) return { child, port: Number(m[1]), log: () => out };
-    if (child.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${out}`);
+    if (gone(child) || Date.now() > end) {
+      const why = gone(child) ? `进程已经退出（退出码 ${child.exitCode}，信号 ${child.signalCode}）` : "15 秒内没有打印监听地址";
+      await stop(child);
+      throw new Error(`后端没有起来：${why}。它的输出：${out}`);
+    }
     await sleep(50);
   }
-}
-
-function exited(child: ChildProcess, ms = 20000): Promise<number | null> {
-  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
-  return new Promise((ok) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      ok(null);
-    }, ms);
-    child.once("exit", (code) => {
-      clearTimeout(timer);
-      ok(code);
-    });
-  });
 }
 
 function alive(pid: number): boolean {
@@ -98,7 +161,7 @@ test("缺省绑定地址：desktop 是 127.0.0.1，server 是 0.0.0.0，给了 -
   assert.equal(defaultHost("desktop", "0.0.0.0"), "0.0.0.0");
 });
 
-test("服务信息的形状；退出接口在 server 形态下与没有这个接口一样，desktop 形态下只收本机回环地址的请求", async () => {
+test("服务信息的形状；退出接口在 server 形态下与没有这个接口一样，desktop 形态下只收本机回环地址的请求", CASE, async () => {
   const go = (service: Service, method: string, path: string, remote: string) => dispatch(service, { method, path, query: {}, headers: {}, body: Buffer.alloc(0), remote }) as Promise<Dict>;
   const server = new Service(join(tmp, "d1"), join(tmp, "d1r"), {}, { port: 8765 });
   const info = JSON.parse((await go(server, "GET", "/api/v1/service", "198.51.100.9")).body.toString());
@@ -126,34 +189,34 @@ test("服务信息的形状；退出接口在 server 形态下与没有这个接
   assert.equal((await go(desktop, "GET", "/api/v1/service/exit", "127.0.0.1")).status, 404, "只认 POST");
 });
 
-test("换端口：给的端口被占就依次试后面的；都被占时报错；端口被占以外的错误照原样抛出", async () => {
-  const start = await freePort();
-  const holders: Server[] = [];
-  const hold = async (port: number) => {
-    const s = createServer();
-    await new Promise<void>((ok, fail) => s.once("error", fail).listen(port, "127.0.0.1", () => ok()));
-    holders.push(s);
-  };
+test("换端口：给的端口被占就依次试后面的；都被占时报错；端口被占以外的错误照原样抛出", CASE, async () => {
+  // 这一例起的每个服务器（不论有没有监听上）都记在这里，finally 里一并关掉。
+  const opened: (Server | HttpServer)[] = [];
+  const track = <T extends Server | HttpServer>(s: T) => (opened.push(s), s);
   try {
-    await hold(start);
-    const server = createHttpServer();
-    const port = await listenFrom(server, start, "127.0.0.1");
+    const start = await freePort();
+    await listenOn(track(createServer()), start, "127.0.0.1");
+    const server = track(createHttpServer());
+    const port = await within(`从端口 ${start} 起换端口监听`, 10_000, listenFrom(server, start, "127.0.0.1"));
     assert.ok(port > start && port < start + 10, `落在 ${port}`);
-    await new Promise((ok) => server.close(ok));
-    const again = createHttpServer();
-    await assert.rejects(listenFrom(again, start, "127.0.0.1", 1), (e: Error) => e instanceof NoFreePort && e.message === `端口 ${start} 到 ${start} 都被占用了，服务没有起来。`);
-    await assert.rejects(listenFrom(createHttpServer(), start, "203.0.113.1", 3), (e: NodeJS.ErrnoException) => e.code === "EADDRNOTAVAIL");
+    await closeServer(server);
+    await assert.rejects(within("端口都被占时报错", 10_000, listenFrom(track(createHttpServer()), start, "127.0.0.1", 1)),
+      (e: Error) => e instanceof NoFreePort && e.message === `端口 ${start} 到 ${start} 都被占用了，服务没有起来。`);
+    await assert.rejects(within("绑不存在的地址时报错", 10_000, listenFrom(track(createHttpServer()), start, "203.0.113.1", 3)),
+      (e: NodeJS.ErrnoException) => e.code === "EADDRNOTAVAIL");
   } finally {
-    for (const s of holders) await new Promise((ok) => s.close(ok));
+    for (const s of opened) await closeServer(s);
   }
 });
 
-test("真进程：端口被占时落到后面第一个空闲端口，服务信息回出实际端口，日志写明；server 形态绑全部网卡、退出接口 404", async () => {
+test("真进程：端口被占时落到后面第一个空闲端口，服务信息回出实际端口，日志写明；server 形态绑全部网卡、退出接口 404", CASE, async () => {
   const holder = createServer();
-  await new Promise<void>((ok) => holder.listen(0, "0.0.0.0", ok));
-  const start = (holder.address() as { port: number }).port;
-  const { child, port, log } = await startBackend("fallback", ["--port", String(start)]);
+  let child: ChildProcess | undefined;
   try {
+    const start = await listenOn(holder, 0, "0.0.0.0");
+    const started = await startBackend("fallback", ["--port", String(start)]);
+    child = started.child;
+    const { port, log } = started;
     assert.ok(port > start && port < start + 10, `落在 ${port}（给的是 ${start}；中间的端口可能正被本机别的程序占着）`);
     const info = (await call("127.0.0.1", port, "GET", "/api/v1/service")).body;
     assert.deepEqual([info.port, info.mode, info.pid, info.capabilities.exit], [port, "server", child.pid, false]);
@@ -162,14 +225,14 @@ test("真进程：端口被占时落到后面第一个空闲端口，服务信�
     assert.equal((await call("127.0.0.1", port, "POST", "/api/v1/service/exit")).status, 404);
     if (lanAddress) assert.equal((await call(lanAddress, port, "GET", "/api/v1/service")).status, 200, "server 形态从别的网卡也连得上");
   } finally {
-    child.kill("SIGTERM");
-    await exited(child);
-    await new Promise((ok) => holder.close(ok));
+    await stop(child);
+    await closeServer(holder);
   }
 });
 
-test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", async () => {
+test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", CASE, async () => {
   const { child, port, log } = await startBackend("desktop", ["--port", String(await freePort()), "--mode", "desktop"]);
+  let stream: ReturnType<typeof request> | undefined;
   try {
     assert.match(log(), /任务服务在 http:\/\/127\.0\.0\.1:\d+\/api\/v1\/tasks ，.*运行形态 desktop/);
     if (lanAddress) await assert.rejects(call(lanAddress, port, "GET", "/api/v1/service"), "desktop 形态从别的网卡连不上");
@@ -178,7 +241,7 @@ test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再�
     const lock = JSON.parse(readFileSync(join(taskDir, LOCK_NAME), "utf-8"));
     assert.deepEqual([lock.port, lock.pid, lock.mode], [port, child.pid, "desktop"], "占用标记写实际端口与运行形态");
     let events = "";
-    const stream = request({ host: "127.0.0.1", port, path: `/api/v1/tasks/${created.body.task_id}/events` }, (res) => res.on("data", (c) => (events += c)));
+    stream = request({ host: "127.0.0.1", port, path: `/api/v1/tasks/${created.body.task_id}/events` }, (res) => res.on("data", (c) => (events += c)));
     stream.on("error", () => {});
     stream.end();
     assert.equal((await call("127.0.0.1", port, "POST", `/api/v1/tasks/${created.body.task_id}/sessions`)).status, 200);
@@ -194,26 +257,23 @@ test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再�
     const notes = readdirSync(join(tmp, "desktop", "runs", created.body.task_id, "pi-events")).filter((f) => f.endsWith(".backend.jsonl"));
     assert.match(readFileSync(join(tmp, "desktop", "runs", created.body.task_id, "pi-events", notes[0]), "utf-8"), /"记录": "退出"/, "pi 关完、后端补记写下「退出」之后进程才退出");
   } finally {
-    if (child.exitCode === null) {
-      child.kill("SIGKILL");
-      await exited(child);
-    }
+    stream?.destroy();
+    await stop(child);
   }
 });
 
-test("真进程：desktop 形态给了 --host 0.0.0.0 时，从别的网卡来的退出请求是 403", { skip: lanAddress === null ? "本机没有回环以外的地址" : false }, async () => {
+test("真进程：desktop 形态给了 --host 0.0.0.0 时，从别的网卡来的退出请求是 403", { ...CASE, skip: lanAddress === null ? "本机没有回环以外的地址" : false }, async () => {
   const { child, port } = await startBackend("desktop-any", ["--port", String(await freePort()), "--mode", "desktop", "--host", "0.0.0.0"]);
   try {
     const refused = await call(lanAddress!, port, "POST", "/api/v1/service/exit");
     assert.deepEqual([refused.status, refused.body.error.code], [403, "forbidden"]);
     assert.equal((await call("127.0.0.1", port, "GET", "/api/v1/service")).body.capabilities.exit, true);
   } finally {
-    child.kill("SIGTERM");
-    await exited(child);
+    await stop(child);
   }
 });
 
 test("--mode 只收 desktop 与 server", () => {
-  const done = spawnSync(process.execPath, [MAIN, "--port", "1", "--mode", "kiosk"], { encoding: "utf-8" });
+  const done = spawnSync(process.execPath, [MAIN, "--port", "1", "--mode", "kiosk"], { encoding: "utf-8", timeout: 30_000 });
   assert.deepEqual([done.status, done.stderr], [2, "--mode 只能是 desktop 或 server，现在是「kiosk」。\n"]);
 });

@@ -20,7 +20,11 @@ import { after, test } from "node:test";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
 import { RESUME_FAILED_STATE_TEXT, RESUME_FAILED_TEXT } from "../src/executor.ts";
-import { ROOT, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, tempDir } from "./helpers.ts";
+
+// 后端在子进程里运行，它的输出接到管道上；测试进程里另有假模型端点与本文件的代码。以防它们日后写日志，
+// console 的输出一律收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
+captureConsole();
 
 type Dict = Record<string, any>;
 const MAIN = join(ROOT, "backend", "src", "main.mts");

@@ -101,9 +101,10 @@ server 形态只写文件名（服务信息远程也看得到，不带出服务�
 ## 测试
 
 ```
-cd backend && node --test 'tests/*.test.ts'
+cd backend && node --test --import ./tests/deadline.ts 'tests/*.test.ts'
 ```
 
+每个测试文件有总时限（`tests/deadline.ts`，缺省 300 秒，慢机器上可用环境变量 `TASKWRIGHT_TEST_FILE_DEADLINE` 放宽）：到时还没结束的文件报为失败，多半是有服务器、连接或子进程没有关。
 测试用的库由 `agent/tests/fixtures/` 里的夹具脚本写出（子进程运行，内部调用真实的写入函数），本目录不导入写入函数。
 `scripts/test-all.sh` 已包含这一套。
 

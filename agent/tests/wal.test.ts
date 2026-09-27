@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -16,6 +16,20 @@ import { SCHEMA_SQL } from "../src/lib/schema.ts";
 import { DEFINITION_PATH, SOURCE, callIn, count, makeWorkspace, query } from "./helpers.ts";
 
 const LIB = join(import.meta.dirname, "..", "src", "lib");
+
+/** 等一件事，最多等 ms 毫秒：到时没有结果就以「等<什么>超过 N 秒」失败，而不是一直等下去。 */
+function within<T>(what: string, ms: number, promise: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, fail) => {
+    timer = setTimeout(() => fail(new Error(`等${what}超过 ${ms / 1000} 秒，没有等到。`)), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+/** 收尾用：子进程还在就结束它。 */
+function stop(child: ChildProcess): void {
+  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+}
 
 function journalMode(dir: string): string {
   return String(query<{ journal_mode: string }>(dir, "PRAGMA journal_mode")[0].journal_mode);
@@ -68,15 +82,20 @@ test("旧格式（有 slot 表）的库被拒绝时，日志模式也不改", ()
   assert.equal(journalMode(dir), "delete");
 });
 
-/** 在子进程里跑一段脚本，返回它打印的最后一行。 */
-function runChild(script: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["--input-type=module", "-e", script, ...args], { stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    child.stdout.on("data", (chunk) => (out += chunk));
-    child.on("error", reject);
-    child.on("close", () => resolve(out.trim().split("\n").pop() ?? ""));
-  });
+/** 在子进程里跑一段脚本，返回它打印的最后一行。30 秒内没有结束就结束它，并以写明在等什么的错误失败。 */
+async function runChild(script: string, args: string[]): Promise<string> {
+  const child = spawn(process.execPath, ["--input-type=module", "-e", script, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  child.stdout.on("data", (chunk) => (out += chunk));
+  try {
+    await within(`写入子进程（${args.at(-1)}）结束`, 30_000, new Promise((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", resolve);
+    }));
+  } finally {
+    stop(child);
+  }
+  return out.trim().split("\n").pop() ?? "";
 }
 
 test("六个进程同时写同一个库：全部成功，不报 database is locked，修订序号与事件序号不重不断", async () => {
@@ -111,11 +130,22 @@ test("另一个进程占着写锁一秒时，写入等锁放开后成功，而�
     db.exec("BEGIN IMMEDIATE"); console.log("占住了");
     setTimeout(() => { db.exec("ROLLBACK"); db.close(); }, 1000);`;
   const child = spawn(process.execPath, ["--input-type=module", "-e", holder, databasePath(dir)], { stdio: ["ignore", "pipe", "pipe"] });
-  await new Promise<void>((resolve) => child.stdout.once("data", () => resolve()));
-  const started = Date.now();
-  saveRevision(callIn(dir), { operations: [addOne("等锁")] });
-  const waited = Date.now() - started;
-  await new Promise((resolve) => child.on("close", resolve));
-  assert.ok(waited >= 500, `应当等了一阵，实际等了 ${waited} 毫秒`);
-  assert.equal(count(dir, "revision"), 1);
+  let errors = "";
+  child.stderr.on("data", (chunk) => (errors += chunk));
+  const closed = new Promise((resolve) => child.once("close", resolve));
+  try {
+    // 子进程没打印「占住了」就退出时，不再等下去，带上它的标准错误失败。
+    await within("占锁的子进程打印「占住了」", 15_000, Promise.race([
+      new Promise<void>((resolve) => child.stdout.once("data", () => resolve())),
+      closed.then(() => { throw new Error(`占锁的子进程没占住锁就退出了：${errors}`); }),
+    ]));
+    const started = Date.now();
+    saveRevision(callIn(dir), { operations: [addOne("等锁")] });
+    const waited = Date.now() - started;
+    await within("占锁的子进程放开锁并结束", 15_000, closed);
+    assert.ok(waited >= 500, `应当等了一阵，实际等了 ${waited} 毫秒`);
+    assert.equal(count(dir, "revision"), 1);
+  } finally {
+    stop(child);
+  }
 });

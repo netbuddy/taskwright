@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { format } from "node:util";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES = join(ROOT, "agent", "tests", "fixtures");
@@ -31,6 +32,39 @@ export const DEMO_DEFINITION = {
   执行方法: ".pi/skills/demo/SKILL.md",
   领域规矩: ["docs/domain-knowledge/demo.md"],
 };
+
+let captured: string[] | null = null;
+
+/**
+ * 把本进程里 console 的输出（log、info、debug、dir、warn、error）收进内存，不写标准输出与标准错误；返回收到的内容，
+ * 每调用一次 console 记一条，写法与 console 相同（util.format）。一个进程只接一次，再调用返回同一个数组。
+ *
+ * 为什么：Node 的测试框架让每个测试文件在子进程里运行，子进程经标准输出把结果数据回报给框架。测试进程里直接运行的后端代码
+ * 用 console.log 写日志时，日志与结果数据在标准输出上交错，框架偶尔读坏整个文件的结果（Unable to deserialize cloned data），
+ * 与断言无关。凡是在测试进程里运行会写日志的后端代码的测试文件，都在开头调用它；要核对日志的测试从返回的数组里读。
+ * 用 spawn 起的后端进程不受影响：它的标准输出、标准错误接到测试进程的管道上，不是测试进程自己的标准输出。
+ */
+export function captureConsole(): string[] {
+  if (captured) return captured;
+  const lines: string[] = [];
+  captured = lines;
+  for (const name of ["log", "info", "debug", "dir", "warn", "error"] as const) {
+    console[name] = (...args: unknown[]) => void lines.push(format(...args));
+  }
+  return lines;
+}
+
+/**
+ * 等一件事，最多等 ms 毫秒：到时没有结果就以「等 what 超过 N 秒」失败，而不是一直等下去。what 写在等什么，
+ * 例如「后端打印监听地址」。计时器在事情有结果时清掉，不会让测试进程多留一刻。
+ */
+export function within<T>(what: string, ms: number, promise: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, fail) => {
+    timer = setTimeout(() => fail(new Error(`等${what}超过 ${ms / 1000} 秒，没有等到。`)), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
 
 export function tempDir(prefix = "taskwright-backend-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
