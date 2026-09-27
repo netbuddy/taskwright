@@ -5,9 +5,9 @@
  * 列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。修订统一之前建的任务（旧格式）不接手，列表里标明不支持。
  */
 
-import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, parseDefinition } from "../../agent/src/lib/task_read.ts";
 import * as clock from "./clock.ts";
@@ -26,6 +26,22 @@ import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from
 import { TASK_TYPES_DIR } from "./paths.ts";
 
 export const MAX_UPLOAD = 5 * 1024 * 1024;
+
+/** 上传的内容与本任务已有的某份材料完全相同时的那句话（错误码 duplicate_content）。 */
+export const duplicateContentText = (name: string) => `这份文件与已有的材料《${name}》内容完全相同，没有重复保存。`;
+/** 上传的文件名与本任务已有的某份材料相同、内容不同时的那句话（错误码 name_taken）。 */
+export const nameTakenText = (name: string) => `这个任务里已经有一份叫《${name}》的材料，内容与这份不同。请给文件换一个名字再上传。`;
+
+/**
+ * 上传的文件名与已有材料的文件名算不算同名。现在按整理之后逐字相同判断（后端存文件时不改文件名，只拒绝带路径分隔符的名字）。
+ * 大小写、全角半角、首尾空白、同一个字的不同编码算不算同名，定下之后只改这一个函数。不论怎样判断，写文件时都用排他创建，
+ * 文件系统认为已经有这个文件（例如不区分大小写的文件系统上只差大小写）时同样按同名拒绝，不会覆盖已有的材料。
+ */
+export function sameMaterialName(uploaded: string, existing: string): boolean {
+  return uploaded === existing;
+}
+
+const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 /** 上传的文件超过上限时给用户看的那句话。服务信息接口把上限与这句话一起给前端，前端在发送之前就能拦下。 */
 export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
 export const UPLOAD_TYPES = [".md", ".txt", ".docx"];
@@ -417,16 +433,33 @@ export class Service {
     const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const folder = join(t.dir, folderRel);
     mkdirSync(folder, { recursive: true });
-    const dot = filename.lastIndexOf(".");
-    const stem = dot >= 0 ? filename.slice(0, dot) : "";
-    const ext = dot >= 0 ? filename.slice(dot + 1) : filename;
-    let target = join(folder, filename);
-    let n = 1;
-    while (existsSync(target)) {
-      n += 1;
-      target = join(folder, `${stem}-${n}.${ext}`);
+    // 只与用户放进来的材料比（投影、分段清单这些派生文件不算，判断沿用材料清单的 derived_from）。先比内容，再比文件名：
+    // 名字和内容都相同时报内容相同。摘要值（原始字节的 SHA-256）每次现算，不保存。
+    // 从这里到写完文件都是同步的：同一个服务里两个上传请求不会在比较与写入之间交错；不同的服务不会同时接手一个任务（占用标记）。
+    const own = library.materials(t.dir, t.definition()).filter((m) => m.derived_from === null);
+    const digest = sha256(data);
+    for (const m of own) {
+      if (m.bytes !== data.length) continue; // 大小不同，内容必然不同，不必读
+      let existing: Buffer;
+      try {
+        existing = readFileSync(join(t.dir, m.path));
+      } catch {
+        continue; // 刚被删掉的文件不算
+      }
+      if (sha256(existing) === digest) {
+        throw new ApiError("duplicate_content", duplicateContentText(basename(m.path)), { path: m.path });
+      }
     }
-    writeFileSync(target, data);
+    const same = own.find((m) => sameMaterialName(filename, basename(m.path)));
+    if (same) throw new ApiError("name_taken", nameTakenText(basename(same.path)), { path: same.path });
+    const target = join(folder, filename);
+    try {
+      // 排他创建：文件已经存在（文件系统认为同名）就不写，按同名拒绝，不覆盖。
+      writeFileSync(target, data, { flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      throw new ApiError("name_taken", nameTakenText(filename), { path: `${folderRel}${filename}` });
+    }
     const path = `${folderRel}${basename(target)}`;
     if (isDocx) {
       // Word 材料另生成一份 Markdown 投影（图片抽到旁边的目录），执行者读它，保存修订时核对摘录也对着它；

@@ -18,6 +18,8 @@ export const STATUS: Record<string, number> = {
   session_resume_failed: 503,
   busy_timeout: 503,
   too_large: 413,
+  duplicate_content: 409,
+  name_taken: 409,
   unsupported_type: 415,
 };
 
