@@ -352,6 +352,7 @@ export class Service {
     const spoken = new Map<string, any>();     // 用户的话的会话条目编号 → 那条对话记录
     const actions = new Map<string, any>();    // 操作编号 → 界面操作的记录
     const sessionIds = [...new Set(rows.map((r) => r.session_id).filter(truthy))].sort(library.byCodePoint);
+    const facts = library.callFacts(t.dir);
     for (const sessionId of sessionIds) {
       let entries;
       try {
@@ -360,7 +361,7 @@ export class Service {
         continue; // 会话记录读不出来：只是少了触发它的事，日志照给
       }
       const path = branch(entries);
-      for (const work of worksFromEntries(path, definition, FALLBACK_TEXT, textOf)) {
+      for (const work of worksFromEntries(path, definition, FALLBACK_TEXT, textOf, facts)) {
         for (const callId of work.call_ids) works.set(callId, work);
       }
       for (const m of baseMessages(entries, sessionId)) {

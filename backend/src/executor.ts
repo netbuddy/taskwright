@@ -18,7 +18,7 @@ import { ApiError } from "./errors.ts";
 import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
 import type { Profile } from "./launch.ts";
-import { openRo } from "./library.ts";
+import { callFacts, openRo } from "./library.ts";
 import { type PiEvent, PiExited, PiRefused, PiSession, PiTimeout } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
@@ -663,6 +663,15 @@ export class Executor {
       const text = conversation.textOf(message.content ?? null).trim();
       const calls = (message.content || []).filter((p: unknown) => typeof p === "object" && p !== null && (p as Dict).type === "toolCall");
       if (message.stopReason === "error") this.work.failed = true;
+      if (message.stopReason === "aborted" || message.stopReason === "error") {
+        // 被停下（或出错）时，这条消息里的工具调用没有开始执行，不会有 tool_execution 事件；补成这一轮的步骤，
+        // 一轮结束时按「没有结果」写，与刷新后从会话记录算出的过程摘要说法相同。
+        for (const call of calls as Dict[]) {
+          if (this.work.turn_tools.some((t) => t.id === (call.id ?? null))) continue;
+          this.work.turn_tools.push({ id: call.id ?? null, tool: call.name ?? "", args: call.arguments || {}, done: false, failed: false, details: null });
+          this.work.step_count += 1;
+        }
+      }
       if (text && !calls.length) this.work.last_text = text;
     }
   }
@@ -694,7 +703,8 @@ export class Executor {
       if (error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout) return;
       throw error;
     }
-    const found = workSummary.worksFromEntries(path, this.definition(), conversation.FALLBACK_TEXT, conversation.textOf).find((w) => w.user_message_id === userId);
+    const found = workSummary.worksFromEntries(path, this.definition(), conversation.FALLBACK_TEXT, conversation.textOf, callFacts(this.taskDir))
+      .find((w) => w.user_message_id === userId);
     if (!found) return;
     const understanding = sid ? workSummary.understandingLines(this.taskDir, sid).get(userId) ?? null : null;
     this.hub.emit("work_summary", { session_id: sid, work_id: work.work_id, at: found.at, seconds: found.seconds, step_count: found.step_count,
@@ -775,7 +785,10 @@ export class Executor {
     const work = this.work;
     if (work === null || !work.turn_tools.length) return;
     const key = `${work.work_id}-${work.turn}`;
-    const texts = work.turn_tools.map((t) => this.stepText(t.tool, t.args, true, t.failed, t.details));
+    // 一轮结束时还没有结果的调用（被停下）按「没有结果」写，写库的两种先查任务库，与过程摘要同一个函数。
+    const facts = work.turn_tools.some((t) => !t.done) ? callFacts(this.taskDir) : null;
+    const texts = work.turn_tools.map((t) => t.done ? this.stepText(t.tool, t.args, true, t.failed, t.details)
+      : workSummary.unfinishedText(t.tool, t.args, t.id, facts, this.definition()));
     const step = { session_id: sid, work_id: work.work_id, step_key: key, text: texts.join("；"), in_progress: false, failed: work.turn_tools.some((t) => t.failed) };
     work.steps.set(key, step);
     this.hub.emit("step", step);
