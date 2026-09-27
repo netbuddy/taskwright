@@ -13,7 +13,10 @@ import { Executor } from "../src/executor.ts";
 import { Hub } from "../src/hub.ts";
 import { callFacts } from "../src/library.ts";
 import { type CallFacts, UNFINISHED_TEXT, worksFromEntries } from "../src/work_summary.ts";
-import { makeWorkspace, tempDir } from "./helpers.ts";
+import { captureConsole, makeWorkspace, tempDir } from "./helpers.ts";
+
+// 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
+captureConsole();
 
 type Dict = Record<string, any>;
 let tmp: string;

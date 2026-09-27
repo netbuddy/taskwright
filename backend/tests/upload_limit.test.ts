@@ -10,7 +10,10 @@ import { after, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
 import { serviceInfo } from "../src/http.ts";
 import { MAX_UPLOAD, Service, TOO_LARGE_TEXT } from "../src/service.ts";
-import { tempDir } from "./helpers.ts";
+import { captureConsole, tempDir } from "./helpers.ts";
+
+// 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
+captureConsole();
 
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
