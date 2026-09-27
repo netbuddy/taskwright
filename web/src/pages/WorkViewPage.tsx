@@ -92,7 +92,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
 
   const toggleDoc = (collapsed: boolean) => { userToggledDoc.current = true; setDocCollapsed(collapsed); };
 
-  const send = async (text: string, card?: MessageRequest["card"]) => {
+  /** 发出一句话。返回真＝发出去了；假＝没有发出去（那句话留在对话区写明原因，发起的输入框还空着时把原文放回去）。 */
+  const send = async (text: string, card?: MessageRequest["card"]): Promise<boolean> => {
     const id = clientId();
     // 附件随用户自己打的下一句话发出；点卡片发出的话不带附件（docs/api.md §5.1）。
     const withFiles = card ? [] : attachments;
@@ -101,12 +102,14 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     try {
       await api.sendMessage(taskId, sessionId, { text, client_id: id, attachments: withFiles, ...(card ? { origin: "card_choice", card } : {}) });
       dispatch({ type: "outgoing_update", client_id: id, patch: { state: "sent" } });
+      return true;
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
       if (error.code === "session_busy" && error.data.reason !== "working") setBusyError(errorText(error));
       dispatch({ type: "outgoing_update", client_id: id, patch: { state: "failed", error: errorText(error) } });
       // 那句话留在对话区原处（写着没有发出去的原因，可以重发），另报一条失败提示。
       toast.error(`你的话没有发出去：${errorText(error)}`);
+      return false;
     }
   };
 
@@ -145,7 +148,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     onAction: (req: Pick<ActionRequest, "kind" | "targets" | "notify_executor">, label: string) => {
       void submit(req, label).then((e) => { if (e) toast.error(errorText(e)); });
     },
-    onMessage: (text: string, card?: MessageRequest["card"]) => void send(text, card),
+    onMessage: (text: string, card?: MessageRequest["card"]) => send(text, card),
     onShowUnread: () => setUnreadRequest((n) => n + 1),
   };
 
@@ -278,7 +281,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}
                 disabled={!!disabledReason} disabledReason={disabledReason} handlers={cardHandlers}
                 hold={dirty} working={working}
-                onSend={(t) => void send(t)} onUndo={undo} onShowReviews={showReviews}
+                onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)} onRevisionTag={showRevisions}
@@ -295,7 +298,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
               {task ? (
                 <ItemsPanel task={task} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
-                  onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => void send(t)}
+                  onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill} />
               ) : <div className="pane-items" />}

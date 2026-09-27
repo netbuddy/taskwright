@@ -266,7 +266,8 @@ export function buildCommand(profile: Profile, workspace: string, sessionDir: st
   const skillsDir = profile.workspace_skills_dir;
   if (skillsDir && isDir(join(workspace, skillsDir))) args.push("--skill", resolve(workspace, skillsDir));
   args.push("--session-dir", sessionDir);
-  if (sessionFile !== null) args.push("--session", sessionFile);
+  // 会话文件转成绝对路径：pi 按任务目录解析相对路径，找不到文件时会悄悄新开一条会话。
+  if (sessionFile !== null) args.push("--session", resolve(sessionFile));
   const promptFile = profile.system_prompt_file;
   if (promptFile) {
     const path = fromRoot(promptFile);
