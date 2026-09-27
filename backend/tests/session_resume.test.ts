@@ -54,16 +54,18 @@ async function freePort(): Promise<number> {
 /** 一套验证栈：一个假端点，一个以相对路径启动、工作目录是 dir 的后端；后端可以停下再起。 */
 class Stack {
   readonly dir: string;
+  readonly script: Dict;
   fake!: FakeModel;
   child: ChildProcess | null = null;
   port = 0;
-  constructor(name: string) {
+  constructor(name: string, script: Dict = SCRIPT) {
     this.dir = join(tmp, name);
+    this.script = script;
     mkdirSync(this.dir, { recursive: true });
   }
 
   async start(): Promise<void> {
-    this.fake ??= await new FakeModel(SCRIPT, join(this.dir, "fake.jsonl")).start();
+    this.fake ??= await new FakeModel(this.script, join(this.dir, "fake.jsonl")).start();
     const agentDir = writeAgentDir(join(this.dir, "pi-agent"), this.fake.baseUrl);
     const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: agentDir, TASKWRIGHT_LOG_DIR: join(this.dir, "logs") };
     for (const name of DROPPED_ENV) if (name !== "PI_CODING_AGENT_DIR") delete env[name];
@@ -185,6 +187,45 @@ class Stack {
   children(): string[] {
     const out = spawnSync("pgrep", ["-P", String(this.child!.pid)], { encoding: "utf-8" }).stdout.trim();
     return out ? out.split("\n") : [];
+  }
+
+  /** 任务库里某条事件（按 call_id 找，直接操作的 call_id 就是操作编号）记在哪条会话名下；没有这条事件时为空串。 */
+  eventSession(taskId: string, callId: string): string {
+    const out = spawnSync(process.execPath, ["-e", `const {DatabaseSync}=require("node:sqlite");const db=new DatabaseSync(process.argv[1],{readOnly:true});`
+      + `const r=db.prepare("SELECT session_id FROM event WHERE call_id=?").get(process.argv[2]);console.log(r?r.session_id:"")`,
+    join(this.dir, "tasks", taskId, "task.sqlite"), callId], { encoding: "utf-8" });
+    return out.stdout.trim();
+  }
+
+  /** 任务库里某种事件的条数。 */
+  eventCount(taskId: string, name: string): number {
+    const out = spawnSync(process.execPath, ["-e", `const {DatabaseSync}=require("node:sqlite");const db=new DatabaseSync(process.argv[1],{readOnly:true});`
+      + `console.log(db.prepare("SELECT COUNT(*) AS n FROM event WHERE name=?").get(process.argv[2]).n)`, join(this.dir, "tasks", taskId, "task.sqlite"), name], { encoding: "utf-8" });
+    return Number(out.stdout.trim());
+  }
+
+  /** 只读快照（不带 session，不会启动助手）里的执行者状态。 */
+  async executorState(taskId: string): Promise<Dict> {
+    return (await this.call("GET", `/api/v1/tasks/${taskId}/snapshot`)).body.executor;
+  }
+
+  /** 等执行者到某个状态，最多 30 秒。 */
+  async waitState(taskId: string, state: string): Promise<void> {
+    const end = Date.now() + 30000;
+    while ((await this.executorState(taskId)).state !== state) {
+      if (Date.now() > end) throw new Error(`等执行者到 ${state} 超时`);
+      await sleep(100);
+    }
+  }
+
+  /** 一次直接操作：改评审规则（它在任务库里记一条带会话编号与操作编号的事件，不需要先有条目）。 */
+  action(taskId: string, sessionId: string, off: string[]): Promise<{ status: number; body: any }> {
+    return this.call("POST", `/api/v1/tasks/${taskId}/actions?session=${sessionId}`,
+      { client_id: `a-${off.join("-")}`, task_id: taskId, kind: "set_review_rules", targets: [], fields: { collection: "功能用例", off, promote: [] } });
+  }
+
+  sessionFiles(taskId: string): string[] {
+    return readdirSync(this.sessionDir(taskId)).sort();
   }
 
   revisions(taskId: string): number {
@@ -327,6 +368,83 @@ test("会话文件被移走：照旧返回 not_found，用户的话没有进入�
     assert.equal(stack.fake.requests().length, requests);
     assert.deepEqual(stack.files("这句不该发出去").containing, []);
     assert.equal(stack.revisions(taskId), revisions);
+  } finally {
+    await stack.stop();
+  }
+});
+
+test("助手已经退出（exited）时做直接操作：按需启动助手、续接页面所在的那条会话，操作记在这条会话名下，会话文件不多出一条", { skip: NO_PI }, async () => {
+  const stack = new Stack("action-exited");
+  try {
+    await stack.start();
+    const [taskId, a] = await stack.taskWithOneTurn();
+    process.kill(Number(stack.children()[0]));
+    await stack.waitState(taskId, "exited");
+    const files = stack.sessionFiles(taskId);
+    const done = await stack.action(taskId, a, ["UC-R2"]);
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.equal(stack.eventSession(taskId, done.body.op_id), a, "操作记在原会话名下");
+    assert.equal((await stack.executorState(taskId)).active_session, a, "助手接的是页面所在的那条会话");
+    assert.deepEqual(stack.sessionFiles(taskId), files, "会话文件没有多出一条");
+    assert.equal(stack.children().length, 1);
+  } finally {
+    await stack.stop();
+  }
+});
+
+test("助手还没有启动（not_started，例如后端重启之后）时做直接操作：同样按需启动并续接原会话", { skip: NO_PI }, async () => {
+  const stack = new Stack("action-not-started");
+  try {
+    await stack.start();
+    const [taskId, a] = await stack.taskWithOneTurn();
+    await stack.stopBackend();
+    await stack.start();
+    assert.equal((await stack.executorState(taskId)).state, "not_started");
+    const files = stack.sessionFiles(taskId);
+    const done = await stack.action(taskId, a, ["UC-R2"]);
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.equal(stack.eventSession(taskId, done.body.op_id), a);
+    assert.equal((await stack.executorState(taskId)).active_session, a);
+    assert.deepEqual(stack.sessionFiles(taskId), files);
+  } finally {
+    await stack.stop();
+  }
+});
+
+test("按需启动时续接对不上（会话文件被改名互换）：直接操作返回 session_resume_failed，不在接错的会话里执行，停掉助手", { skip: NO_PI }, async () => {
+  const stack = new Stack("action-resume-mismatch");
+  try {
+    await stack.start();
+    const { taskId, a } = await swapped(stack);
+    process.kill(Number(stack.children()[0]));
+    await stack.waitState(taskId, "exited");
+    const files = stack.sessionFiles(taskId);
+    const done = await stack.action(taskId, a, ["UC-R2"]);
+    assert.equal(done.status, 503);
+    assert.deepEqual(done.body.error, { code: "session_resume_failed", message: RESUME_FAILED_TEXT, data: { session_id: a } });
+    assert.equal(stack.eventCount(taskId, "REVIEW_RULES_CHANGED"), 0, "操作没有执行，任务库里没有改规则的事件");
+    assert.deepEqual(stack.sessionFiles(taskId), files, "会话文件没有多出一条");
+    assert.deepEqual(stack.children(), []);
+    assert.deepEqual(await stack.executorState(taskId), { state: "not_started", text: RESUME_FAILED_STATE_TEXT, active_session: null });
+  } finally {
+    await stack.stop();
+  }
+});
+
+test("助手正在另一条会话里工作时做直接操作：照旧返回 session_busy，不打断那条会话", { skip: NO_PI }, async () => {
+  const slow = { ...SCRIPT, default: { ...SCRIPT.default, delay: 3 } };
+  const stack = new Stack("action-busy", slow);
+  try {
+    await stack.start();
+    const [taskId, a] = await stack.taskWithOneTurn();
+    const b = await stack.newSession(taskId);
+    assert.equal((await stack.call("POST", `/api/v1/tasks/${taskId}/messages?session=${b}`, { text: "慢慢做", client_id: "c-slow" })).status, 200);
+    await stack.waitState(taskId, "working");
+    const done = await stack.action(taskId, a, ["UC-R2"]);
+    assert.equal(done.status, 409);
+    assert.equal(done.body.error.code, "session_busy");
+    assert.equal((await stack.executorState(taskId)).active_session, b, "助手仍在另一条会话里");
+    await stack.waitState(taskId, "idle");
   } finally {
     await stack.stop();
   }
