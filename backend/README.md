@@ -8,6 +8,7 @@
 
 它**不写任务数据库**：库只由 pi 进程里的工具与扩展命令写。唯一的例外是建任务，而且也不在这里写，是调用 agent 侧的
 `createTask` 核心函数。`tests/no_writes.test.ts` 扫描本目录全部文件，从 `agent/src/lib` 导入的名字必须在白名单里。
+白名单只收只读函数、常量、写材料旁边文件的函数（Word 文本投影与分段清单，写的是文件不是库）和 `createTask`；写库的函数不能加进去。
 
 ## 接口
 
@@ -50,6 +51,8 @@
 | `src/occupancy.ts` | 任务占用标记 `service.lock`。 |
 | `src/projection.ts` | Word 材料文本投影的薄适配：投影只有一份实现，这里只负责调用它。 |
 | `src/paths.ts` | 仓根目录与各资源的位置（只在这一处从自身文件位置推出仓根），以及用户数据目录。 |
+| `profiles/` | 启动配置：`dev.json` 开发与服务器用，`desktop.json` 桌面包用（除 Langfuse 环境标签外与 dev 相同），`fake.json` 测试与对照用（模型换成假模型端点）。 |
+| `prompts/executor_system_prompt.md` | 执行者的系统提示，启动配置的 `system_prompt_file` 指向它。 |
 | `fake_model/` | 假模型端点：按脚本回话的 OpenAI 兼容本地服务，给双跑对照与测试用，说明见其中的 README.md。 |
 | `compare/compare.mts` | 双跑对照：对两个后端执行同一串操作，归一化后逐条比较响应。 |
 | `compare/sessions.mts` | 会话场景的双跑对照：两版后端各配一个假模型端点，跑 11 个场景，比较响应、事件流、归档与观测台读出的数据。 |
@@ -117,6 +120,9 @@ node backend/compare/compare.mts --a http://127.0.0.1:8960 --a-tasks /tmp/a/task
 ```
 
 脚本逐步打印「一致」或「差异」，全部一致时退出码为 0。归一化规则写在脚本开头的说明里。
+
+Python 版退役之后，两个对照脚本都改用 `--against fixtures`：不起 Python 版，拿 TypeScript 版与留存在 `compare/fixtures/` 里的 Python 版输出比较，
+说明见那里的 README.md。留存输出在 Python 版还在时用 `compare.mts … --save-fixture` 与 `sessions.mts … --save-fixtures` 生成。
 
 已有的任务数据只做只读对照，不起服务：
 

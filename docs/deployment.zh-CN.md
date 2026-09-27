@@ -10,12 +10,12 @@
 
 | 项目 | 版本 | 使用方 |
 |---|---|---|
-| Node.js | 24 或更新（使用内置的 `node:sqlite`） | agent、web 构建、simulator 工具 |
-| Python | 3.12 或更新 | server、observatory、simulator 的驱动程序 |
+| Node.js | 24 或更新（使用内置的 `node:sqlite`） | 任务服务、agent、web 构建、simulator 工具 |
+| Python | 3.12 或更新 | observatory、simulator 的驱动程序 |
 | pi coding agent | `@earendil-works/pi-coding-agent` 0.85.1 | 运行执行者与模拟用户 |
 | pi 能连到的一个模型 | pi 支持的任意服务商（见第 3 节） | 供执行者使用 |
 
-运行 Taskwright 只需要 Python 标准库。跑测试需要 pytest，它随 `observatory` 与 `server` 两个包的 `[test]` 附加项（extra）一起安装。
+任务服务由 Node.js 直接运行，不用任何第三方包；观测台只需要 Python 标准库。跑测试需要 pytest，它随 `observatory` 与 `server` 两个包的 `[test]` 附加项（extra）一起安装。
 
 ## 2 安装
 
@@ -28,18 +28,18 @@ make install
 
 `make install` 依次执行 `npm ci`（npm workspaces：agent、web、sim）与 `python3 -m pip install -e 'observatory[test]' -e 'server[test]'`。不想装 pytest 时，改为执行 `npm ci` 与 `python3 -m pip install -e observatory -e server`。
 
-任务服务、`scripts/dev.sh`、终端客户端、TUI 与观测台都用 `PATH` 里的 `python3` 运行，并且要用到上面装的包，所以每开一个新终端，启动它们之前都要先激活虚拟环境（在代码仓根目录执行 `. .venv/bin/activate`）。不激活就会因找不到 `taskwright_server` 或 `taskwright_observatory` 模块而报 `ModuleNotFoundError` 退出。示例脚本 `examples/library-lending/run.sh` 是例外：它只需要 `curl` 和一个 `python3`。
+观测台与模拟用户的驱动程序用 `PATH` 里的 `python3` 运行，并且要用到上面装的包，所以每开一个新终端，启动它们之前都要先激活虚拟环境（在代码仓根目录执行 `. .venv/bin/activate`）。不激活就会因找不到 `taskwright_observatory` 模块而报 `ModuleNotFoundError` 退出。任务服务、`scripts/dev.sh` 与 `scripts/tui.sh` 由 Node.js 运行，不需要虚拟环境。示例脚本 `examples/library-lending/run.sh` 是例外：它只需要 `curl` 和一个 `python3`。
 
 ## 3 模型接入
 
-Taskwright 自己不直接调用模型，调用模型的是 pi；执行者用的是 pi 启动时指定的那个模型。模型写在启动配置文件（startup profile）`server/taskwright_server/profiles/dev.json` 里：
+Taskwright 自己不直接调用模型，调用模型的是 pi；执行者用的是 pi 启动时指定的那个模型。模型写在启动配置文件（startup profile）`backend/profiles/dev.json` 里：
 
 ```json
 "model": "openai-codex/gpt-6-luna",
 "thinking": "medium",
 ```
 
-模型名的写法是「服务商/模型」（`provider/model`）。要换模型，可以直接改 `dev.json` 里的 `model`，也可以把它复制成 `profiles/<name>.json`、改好副本，再给任务服务、终端客户端或 TUI 传 `--profile <name>`。`pi --list-models [关键词]` 列出 pi 认识的模型及其服务商名；`pi auth check --provider <服务商>`（或 `--model <服务商/模型>`）可以在启动服务之前检查 pi 是否有可用的凭据；凭据可用时它打印 `ready`。
+模型名的写法是「服务商/模型」（`provider/model`）。要换模型，可以直接改 `dev.json` 里的 `model`，也可以把它复制成 `backend/profiles/<name>.json`、改好副本，再给任务服务或 `scripts/tui.sh` 传 `--profile <name>`。`pi --list-models [关键词]` 列出 pi 认识的模型及其服务商名；`pi auth check --provider <服务商>`（或 `--model <服务商/模型>`）可以在启动服务之前检查 pi 是否有可用的凭据；凭据可用时它打印 `ready`。
 
 pi 把凭据与自定义模型存放在 `~/.pi/agent/` 下（`auth.json` 与 `models.json`；环境变量 `PI_CODING_AGENT_DIR` 可以改这个目录）。任务服务用它自己的环境变量启动 pi，所以在启动服务的那个终端里设置的环境变量会传到 pi。
 
@@ -100,38 +100,39 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 
 | 服务 | 命令 | 默认端口 |
 |---|---|---|
-| 任务服务（HTTP/SSE 接口） | `python3 -m taskwright_server.service --tasks <dir> --runs <dir> --port <port> [--profile <name>]` | 无默认值，需自行指定 |
-| 任务服务的 TypeScript 版 | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | 无默认值，需自行指定 |
+| 任务服务（HTTP/SSE 接口） | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | 无默认值，需自行指定 |
 | 网页界面（开发服务器） | `TASKWRIGHT_API_TARGET=http://127.0.0.1:<api port> npm run dev -w web` | 5680（`TASKWRIGHT_WEB_PORT`） |
 | 两者一起启动 | `scripts/dev.sh`（或 `make dev`） | API 8790，web 5680 |
 | 观测台 | `python3 -m taskwright_observatory --runs <archive dir> --workspaces <tasks dir>` | 8770 |
 
-- `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。
-- 各服务默认绑定 `0.0.0.0`（可用 `--host` 更改）。唯一的例外是以 `--mode desktop` 启动的 TypeScript 版任务服务，它默认绑定 `127.0.0.1`。
-- TypeScript 版任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是用户数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。
-- 给 TypeScript 版任务服务的端口被占用时，它会依次尝试后面的端口，最多共试 10 个，全部被占时报错退出。实际使用的端口会打印到日志、写进各任务的占用标记，并由 `GET /api/v1/service` 返回。
-- TypeScript 版任务服务给了 `--web <dir>`（例如构建好的 `web/dist`）时，自己托管网页：不以 `/api/` 开头的 GET 请求从这个目录取文件，找不到的路径回首页。这样不需要第 6 节的反向代理，也不需要开发服务器。
-- 以 `--mode desktop` 启动的 TypeScript 版任务服务，起 pi 之前读 pi 配置目录里 `settings.json` 的 `defaultProvider` 与 `defaultModel`，两项都有就用它们代替启动配置里的模型（见第 10.4 节）；`--mode server` 不读这个文件。
-- 用 Ctrl+C 或按进程编号（process id）停止服务；TypeScript 版任务服务收到 SIGHUP（关掉它所在的终端或 Windows 的命令行窗口）时也同样收尾。任务服务退出时会顺带关闭它为每个任务启动的 pi 进程。
+- `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。两者不给时都放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`）。
+- 各服务默认绑定 `0.0.0.0`（可用 `--host` 更改）。唯一的例外是以 `--mode desktop` 启动的任务服务，它默认绑定 `127.0.0.1`。
+- 任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是用户数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。
+- 给任务服务的端口被占用时，它会依次尝试后面的端口，最多共试 10 个，全部被占时报错退出。实际使用的端口会打印到日志、写进各任务的占用标记，并由 `GET /api/v1/service` 返回。
+- `scripts/dev.sh` 在 `TASKWRIGHT_API_PORT`（缺省 8790）上起任务服务，并把网页开发服务器指向任务服务报出的实际端口，所以端口被占时网页不会被转到别的服务上。
+- 任务服务给了 `--web <dir>`（例如构建好的 `web/dist`）时，自己托管网页：不以 `/api/` 开头的 GET 请求从这个目录取文件，找不到的路径回首页。这样不需要第 6 节的反向代理，也不需要开发服务器。
+- 以 `--mode desktop` 启动的任务服务，起 pi 之前读 pi 配置目录里 `settings.json` 的 `defaultProvider` 与 `defaultModel`，两项都有就用它们代替启动配置里的模型（见第 10.4 节）；`--mode server` 不读这个文件。
+- 用 Ctrl+C 或按进程编号（process id）停止服务；任务服务收到 SIGHUP（关掉它所在的终端或 Windows 的命令行窗口）时也同样收尾。任务服务退出时会顺带关闭它为每个任务启动的 pi 进程。
 
 ## 5 环境变量
 
 | 变量 | 使用方 | 含义 |
 |---|---|---|
-| `TASKWRIGHT_RUNS_DIR` | 终端客户端、TUI、观测台、`scripts/dev.sh` | 命令行未指定归档目录时使用的默认值（默认 `./runs`）。 |
+| `TASKWRIGHT_RUNS_DIR` | `scripts/tui.sh`、观测台、`scripts/dev.sh` | 命令行未指定归档目录时使用的默认值（默认 `./runs`）。 |
 | `TASKWRIGHT_WEB_PORT` | web 开发服务器 | 端口（默认 5680）。 |
 | `TASKWRIGHT_API_TARGET` | web 开发服务器 | `/api` 代理转发的目标地址（默认：5681 端口上的模拟服务器）。 |
 | `TASKWRIGHT_TASKS_DIR`、`TASKWRIGHT_API_PORT` | `scripts/dev.sh` | 任务目录的根路径与 API 端口。 |
 | `TASKWRIGHT_TASKS_ROOT` | agent | 服务启动 pi 时设：任务根目录。不在它之下的任务库拒绝写入。单独跑 agent 代码时（命令行工具、测试）不设，也就不核对。 |
-| `TASKWRIGHT_LANGFUSE_PLUGIN` | server | 可选的 Langfuse 插件所在的位置（见第 7 节）。 |
-| `TASKWRIGHT_LANGFUSE_ENV_FILE` | server、observatory | 保存 Langfuse 地址与密钥的文件。 |
+| `TASKWRIGHT_LOG_DIR` | 任务服务 | 任务服务追加每日日志文件 `backend-<日期>.log` 的目录（缺省是用户数据目录下的 `logs/`）。 |
+| `TASKWRIGHT_LANGFUSE_PLUGIN` | 任务服务、`scripts/tui.sh` | 可选的 Langfuse 插件所在的位置（见第 7 节）。 |
+| `TASKWRIGHT_LANGFUSE_ENV_FILE` | 任务服务、`scripts/tui.sh`、observatory | 保存 Langfuse 地址与密钥的文件。 |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse 项目编号，用于生成直达链接。 |
 | `TASKWRIGHT_SIM_MATERIALS_DIR` | simulator | 存放模拟用户画像所用材料的目录。 |
 | `OPENAI_API_KEY` 等服务商变量 | pi | 模型凭据，见第 3.2 节。 |
 
 ## 6 网页界面的生产构建
 
-运行 `npm run build -w web`，然后用一个反向代理托管 `web/dist/`，把 `/api` 转发给任务服务；用 TypeScript 版任务服务时也可以不用反向代理，给它 `--web web/dist`（见第 4 节）。要为 `/api/v1/tasks/*/events` 关闭响应缓冲（因为它是一条服务器推送事件流），并调高读超时时间。没有 HTTP/2 时，浏览器对同一主机只允许大约六个并发连接，所以每个浏览器最多同时打开四个任务页面。
+运行 `npm run build -w web`，然后用一个反向代理托管 `web/dist/`，把 `/api` 转发给任务服务；也可以不用反向代理，给任务服务 `--web web/dist`（见第 4 节）。要为 `/api/v1/tasks/*/events` 关闭响应缓冲（因为它是一条服务器推送事件流），并调高读超时时间。没有 HTTP/2 时，浏览器对同一主机只允许大约六个并发连接，所以每个浏览器最多同时打开四个任务页面。
 
 ## 7 可选：Langfuse 追踪
 
@@ -170,7 +171,7 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 **去哪里看。**
 
-- 任务服务把输出打印在启动它的那个终端里。
+- 任务服务把输出打印在启动它的那个终端里，同时把同样的内容追加到 `TASKWRIGHT_LOG_DIR` 下的 `backend-<日期>.log`（缺省是用户数据目录下的 `logs/`）。
 - `<runs>/<task id>/pi-events/` 下，每启动一次 pi 就有一组文件：原始 pi 事件流（`<标签>-<时间>.jsonl`）、后端补记（`.backend.jsonl`，含 pi 的退出码与标准错误）、每一行的收到时刻（`.times.jsonl`）。格式见 [observatory/archive-format.md](../observatory/archive-format.md)。
 - `<runs>/<task id>/pi-sessions/` 下是 pi 的会话文件，也就是对话本身。
 - 观测台（见[用户手册第 7 节](user-guide.zh-CN.md#7-用观测台查看智能体做了什么)）把这些归档展示成页面，包括每次被拒的工具调用及其原因。

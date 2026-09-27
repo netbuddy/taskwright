@@ -449,6 +449,6 @@ python3 -m taskwright_observatory --runs ./runs/<任务编号> --workspaces ./ta
 
 ## 接下来
 
-- [用户手册](../user-guide.zh-CN.md)：各种卡片、其他操作方式（终端客户端、pi 自带的终端界面），以及观测台各页的完整说明。
+- [用户手册](../user-guide.zh-CN.md)：各种卡片、另一种操作方式（pi 自带的终端界面），以及观测台各页的完整说明。
 - [功能说明](../capabilities.zh-CN.md)：当前版本能做什么、还不能做什么。
 - `examples/library-lending/run.sh`：只用 HTTP 接口走同样的前半段流程（见[用户手册第 5 节](../user-guide.zh-CN.md#5-跑一遍示例)）。

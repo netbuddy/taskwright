@@ -8,12 +8,12 @@ This version is meant for a single machine or a trusted local network. There is 
 
 | What | Version | Used by |
 |---|---|---|
-| Node.js | 24 or newer (uses the built-in `node:sqlite`) | agent, web build, simulator tools |
-| Python | 3.12 or newer | server, observatory, simulator driver |
+| Node.js | 24 or newer (uses the built-in `node:sqlite`) | task service, agent, web build, simulator tools |
+| Python | 3.12 or newer | observatory, simulator driver |
 | pi coding agent | `@earendil-works/pi-coding-agent` 0.85.1 | runs the executor and the simulated user |
 | A model reachable from pi | any provider pi supports (see section 3) | the executor |
 
-Running Taskwright needs only the Python standard library. Running the tests needs pytest, which comes with the `[test]` extra of the `observatory` and `server` packages.
+The task service runs directly on Node.js with no third-party packages. The observatory needs only the Python standard library. Running the tests needs pytest, which comes with the `[test]` extra of the `observatory` and `server` packages.
 
 ## 2 Installation
 
@@ -26,18 +26,18 @@ make install
 
 `make install` runs `npm ci` (npm workspaces: agent, web, sim) and `python3 -m pip install -e 'observatory[test]' -e 'server[test]'`. If you do not want pytest, run `npm ci` and `python3 -m pip install -e observatory -e server` instead.
 
-The task service, `scripts/dev.sh`, the terminal client, the TUI and the observatory all run `python3` from your `PATH` and need the packages installed above, so activate the virtual environment (`. .venv/bin/activate` in the repository root) in every new terminal before you start any of them. Otherwise they stop with a `ModuleNotFoundError` for `taskwright_server` or `taskwright_observatory`. The example script `examples/library-lending/run.sh` is the exception: it needs only `curl` and a `python3`.
+The observatory and the simulator driver run `python3` from your `PATH` and need the packages installed above, so activate the virtual environment (`. .venv/bin/activate` in the repository root) in every new terminal before you start them. Otherwise they stop with a `ModuleNotFoundError` for `taskwright_observatory`. The task service, `scripts/dev.sh` and `scripts/tui.sh` run on Node.js and do not need the virtual environment. The example script `examples/library-lending/run.sh` is the exception: it needs only `curl` and a `python3`.
 
 ## 3 Connecting a model
 
-Taskwright does not talk to a model itself. pi does, and the executor uses the model pi was started with. The model is set in the startup profile `server/taskwright_server/profiles/dev.json`:
+Taskwright does not talk to a model itself. pi does, and the executor uses the model pi was started with. The model is set in the startup profile `backend/profiles/dev.json`:
 
 ```json
 "model": "openai-codex/gpt-6-luna",
 "thinking": "medium",
 ```
 
-A model name is written as `provider/model`. To use another model, either edit `model` in `dev.json`, or copy the file to `profiles/<name>.json`, edit the copy, and pass `--profile <name>` to the task service, the terminal client or the TUI. `pi --list-models [search]` lists the models pi knows, with their provider names. `pi auth check --provider <provider>` (or `--model <provider/model>`) checks whether pi has usable credentials before you start the service; it prints `ready` when they are usable.
+A model name is written as `provider/model`. To use another model, either edit `model` in `dev.json`, or copy the file to `backend/profiles/<name>.json`, edit the copy, and pass `--profile <name>` to the task service or to `scripts/tui.sh`. `pi --list-models [search]` lists the models pi knows, with their provider names. `pi auth check --provider <provider>` (or `--model <provider/model>`) checks whether pi has usable credentials before you start the service; it prints `ready` when they are usable.
 
 pi keeps its credentials and custom models under `~/.pi/agent/` (`auth.json` and `models.json`; the environment variable `PI_CODING_AGENT_DIR` moves that directory). The task service starts pi with the service's own environment, so environment variables set in the shell that starts the service reach pi.
 
@@ -98,38 +98,39 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 
 | Service | Command | Default port |
 |---|---|---|
-| Task service (HTTP/SSE API) | `python3 -m taskwright_server.service --tasks <dir> --runs <dir> --port <port> [--profile <name>]` | none, give one |
-| Task service, TypeScript version | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | none, give one |
+| Task service (HTTP/SSE API) | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | none, give one |
 | Web interface (development server) | `TASKWRIGHT_API_TARGET=http://127.0.0.1:<api port> npm run dev -w web` | 5680 (`TASKWRIGHT_WEB_PORT`) |
 | Both at once | `scripts/dev.sh` (or `make dev`) | API 8790, web 5680 |
 | Observatory | `python3 -m taskwright_observatory --runs <archive dir> --workspaces <tasks dir>` | 8770 |
 
-- `--tasks` is where task directories are created (one directory per task, named by task id); `--runs` is where each task's raw pi events and session files are archived (`<runs>/<task id>/pi-events/` and `pi-sessions/`).
-- All services bind `0.0.0.0` by default (`--host` changes it). The one exception is the TypeScript task service started with `--mode desktop`, which binds `127.0.0.1` by default.
-- The TypeScript task service takes a run mode, `--mode desktop|server` (default `server`). `server` is for a shared server: it binds `0.0.0.0` by default and has no exit endpoint. `desktop` is for one person on one computer: it binds `127.0.0.1` by default and adds `POST /api/v1/service/exit`, which accepts requests from this machine only. `--host` overrides the default address in both modes. Both modes log the same way: to standard output and to a daily file under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory). See section 9 of the API description for `GET /api/v1/service` and the exit endpoint.
-- If the port given to the TypeScript task service is taken, it tries the following ports, up to 10 in all, and exits with an error when all are taken. The port it actually uses is printed in the log, written to each task's occupancy mark and returned by `GET /api/v1/service`.
-- Given `--web <dir>` (for example the built `web/dist`), the TypeScript task service serves the web interface itself: GET requests that do not start with `/api/` are answered from that directory, and paths it does not have get the start page. Then neither the reverse proxy of section 6 nor the development server is needed.
-- Started with `--mode desktop`, the TypeScript task service reads `defaultProvider` and `defaultModel` from `settings.json` in pi's configuration directory before starting pi, and when both are present uses them instead of the profile's model (see section 10.4); with `--mode server` it does not read that file.
-- Stop services with Ctrl+C or by process id; the TypeScript task service shuts down the same way on SIGHUP (when its terminal or Windows console window is closed). The task service closes each task's pi process on the way out.
+- `--tasks` is where task directories are created (one directory per task, named by task id); `--runs` is where each task's raw pi events and session files are archived (`<runs>/<task id>/pi-events/` and `pi-sessions/`). When they are left out, both go to the user data directory (`~/.local/share/taskwright/` on Linux).
+- All services bind `0.0.0.0` by default (`--host` changes it). The one exception is the task service started with `--mode desktop`, which binds `127.0.0.1` by default.
+- The task service takes a run mode, `--mode desktop|server` (default `server`). `server` is for a shared server: it binds `0.0.0.0` by default and has no exit endpoint. `desktop` is for one person on one computer: it binds `127.0.0.1` by default and adds `POST /api/v1/service/exit`, which accepts requests from this machine only. `--host` overrides the default address in both modes. Both modes log the same way: to standard output and to a daily file under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory). See section 9 of the API description for `GET /api/v1/service` and the exit endpoint.
+- If the port given to the task service is taken, it tries the following ports, up to 10 in all, and exits with an error when all are taken. The port it actually uses is printed in the log, written to each task's occupancy mark and returned by `GET /api/v1/service`.
+- `scripts/dev.sh` starts the task service on `TASKWRIGHT_API_PORT` (default 8790) and points the web development server at the port the task service actually reports, so a taken port does not send the web interface to some other service.
+- Given `--web <dir>` (for example the built `web/dist`), the task service serves the web interface itself: GET requests that do not start with `/api/` are answered from that directory, and paths it does not have get the start page. Then neither the reverse proxy of section 6 nor the development server is needed.
+- Started with `--mode desktop`, the task service reads `defaultProvider` and `defaultModel` from `settings.json` in pi's configuration directory before starting pi, and when both are present uses them instead of the profile's model (see section 10.4); with `--mode server` it does not read that file.
+- Stop services with Ctrl+C or by process id; the task service shuts down the same way on SIGHUP (when its terminal or Windows console window is closed), and closes each task's pi process on the way out.
 
 ## 5 Environment variables
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `TASKWRIGHT_RUNS_DIR` | terminal client, TUI, observatory, `scripts/dev.sh` | Archive directory when none is given on the command line (default `./runs`). |
+| `TASKWRIGHT_RUNS_DIR` | `scripts/tui.sh`, observatory, `scripts/dev.sh` | Archive directory when none is given on the command line (default `./runs`). |
 | `TASKWRIGHT_WEB_PORT` | web dev server | Port (default 5680). |
 | `TASKWRIGHT_API_TARGET` | web dev server | Where `/api` is proxied (default: the mock server on 5681). |
 | `TASKWRIGHT_TASKS_DIR`, `TASKWRIGHT_API_PORT` | `scripts/dev.sh` | Task directory root and API port. |
 | `TASKWRIGHT_TASKS_ROOT` | agent | Set by the service when it starts pi: the task root. Writes to a task database outside it are refused. Not set when the agent code runs on its own (command-line tools, tests); then it is not checked. |
-| `TASKWRIGHT_LANGFUSE_PLUGIN` | server | Location of the optional Langfuse plugin (see section 7). |
-| `TASKWRIGHT_LANGFUSE_ENV_FILE` | server, observatory | File holding the Langfuse address and keys. |
+| `TASKWRIGHT_LOG_DIR` | task service | Where the task service appends its daily log file `backend-<date>.log` (default: `logs/` in the user data directory). |
+| `TASKWRIGHT_LANGFUSE_PLUGIN` | task service, `scripts/tui.sh` | Location of the optional Langfuse plugin (see section 7). |
+| `TASKWRIGHT_LANGFUSE_ENV_FILE` | task service, `scripts/tui.sh`, observatory | File holding the Langfuse address and keys. |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse project id, for deep links. |
 | `TASKWRIGHT_SIM_MATERIALS_DIR` | simulator | Directory holding the persona's materials. |
 | provider variables such as `OPENAI_API_KEY` | pi | Model credentials; see section 3.2. |
 
 ## 6 Production build of the web interface
 
-Run `npm run build -w web` and serve `web/dist/` behind a reverse proxy that forwards `/api` to the task service; with the TypeScript task service you can instead give it `--web web/dist` and skip the proxy (see section 4). Disable response buffering for `/api/v1/tasks/*/events` (it is a Server-Sent Events stream) and raise the read timeout. Without HTTP/2, a browser allows only about six connections per host, so keep to four open task pages per browser.
+Run `npm run build -w web` and serve `web/dist/` behind a reverse proxy that forwards `/api` to the task service, or instead give the task service `--web web/dist` and skip the proxy (see section 4). Disable response buffering for `/api/v1/tasks/*/events` (it is a Server-Sent Events stream) and raise the read timeout. Without HTTP/2, a browser allows only about six connections per host, so keep to four open task pages per browser.
 
 ## 7 Optional: Langfuse tracing
 
@@ -168,7 +169,7 @@ After a checkpoint, `task.sqlite` alone is complete. The conversation itself is 
 
 **Where to look.**
 
-- The task service prints to the terminal it was started in.
+- The task service prints to the terminal it was started in and appends the same lines to `backend-<date>.log` under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory).
 - `<runs>/<task id>/pi-events/` holds, for every start of pi, the raw pi event stream (`<label>-<time>.jsonl`), the backend's own notes such as pi's exit code and standard error (`.backend.jsonl`), and the arrival time of each line (`.times.jsonl`). The format is described in [observatory/archive-format.md](../observatory/archive-format.md).
 - `<runs>/<task id>/pi-sessions/` holds pi's session files, that is, the conversation.
 - The observatory ([user guide, section 7](user-guide.md#7-see-what-the-assistant-did-the-observatory)) shows the same archives as pages, including every rejected tool call and its reason.

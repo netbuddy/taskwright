@@ -5,12 +5,12 @@
  */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { buildCommand, loadProfile, piLauncher } from "../src/launch.ts";
 import { PiExited, PiRefused, PiSession, PiTimeout, rebaseSessionCwd } from "../src/pi_session.ts";
+import { normalize } from "./fixtures/py/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
 const FAKE_PI = join(ROOT, "backend", "tests", "fixtures", "fake_pi.mjs");
@@ -43,19 +43,15 @@ async function drain(pi: PiSession, until: (e: Record<string, any>) => boolean) 
   }
 }
 
-test("启动配置拼出的 pi 命令行、启动记录与 Python 版逐字一致", () => {
+test("启动配置拼出的 pi 命令行与 Python 版留存的输出逐字一致", () => {
   const profile = loadProfile("dev");
   profile.extensions = profile.extensions.filter((e: any) => e.source === "repo");
   delete process.env.TASKWRIGHT_PI_ENTRY;
   try {
     const ours = buildCommand(profile, workspace, join(tmp, "sd"), join(tmp, "s.jsonl"));
-    const script = "import json, sys\nfrom pathlib import Path\nfrom taskwright_server import launch\n" +
-      "p = launch.load_profile('dev'); p['extensions'] = [e for e in p['extensions'] if e['source'] == 'repo']\n" +
-      "argv, env = launch.build_command(p, Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]))\nprint(json.dumps(argv, ensure_ascii=False))";
-    const done = spawnSync(process.env.TASKWRIGHT_PYTHON || "python3", ["-c", script, workspace, join(tmp, "sd"), join(tmp, "s.jsonl")],
-      { encoding: "utf-8", env: { ...process.env, PYTHONPATH: join(ROOT, "server") } });
-    assert.equal(done.status, 0, done.stderr);
-    assert.deepEqual(ours.argv, JSON.parse(done.stdout));
+    // Python 版对同一份启动配置、同样摆放的任务目录拼出的命令行，留存在 fixtures/py/launch_argv.json（生成方法见那里的 README.md）。
+    const python = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "launch_argv.json"), "utf-8")).argv;
+    assert.deepEqual(normalize(["<pi>", ...ours.argv.slice(1)], [[tmp, "<临时目录>"], [ROOT, "<仓根>"]]), python);
   } finally {
     process.env.TASKWRIGHT_PI_ENTRY = FAKE_PI;
   }

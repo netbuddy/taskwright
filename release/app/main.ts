@@ -4,7 +4,7 @@
 //
 // Where things are: this file runs as <root>/app/main.mjs, and the payload repeats the repository's layout, so the
 // backend finds its resources from <root> exactly as it does in the repository: <root>/backend/src, <root>/agent,
-// <root>/task-types, <root>/server/taskwright_server/profiles and prompts, <root>/web, <root>/pi and <root>/tools.
+// <root>/task-types, <root>/backend/profiles and prompts, <root>/web, <root>/pi and <root>/tools.
 //
 // Order of work:
 //   1. From the first port on, ask GET /api/v1/service; if a desktop-mode Taskwright answers, only open the browser.

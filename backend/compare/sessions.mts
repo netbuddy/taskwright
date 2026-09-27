@@ -2,8 +2,13 @@
  * 会话场景的双跑对照：两版后端各配一个假模型端点，按同一份脚本、同一串操作各跑一遍，比较事件流、响应、归档与观测台读出的数据。
  *
  * 用法：
- *   node backend/compare/sessions.mts --work <空目录> [--only 场景名,…] [--out 结果.json]
+ *   node backend/compare/sessions.mts --work <空目录> [--only 场景名,…] [--out 结果.json] [--save-fixtures]
  *        [--ports 8960,8961,8962,8963]（A 后端、B 后端、A 的假端点、B 的假端点）
+ *   node backend/compare/sessions.mts --against fixtures --work <空目录> [--only 场景名,…] [--out 结果.json]
+ *
+ * --save-fixtures 在双跑时把每个场景 A 一侧归一化之后的观察存进 fixtures/sessions/<场景名>.json.gz（gzip 压缩的 JSON），只存两版一致的场景；
+ * --against fixtures 不起 A，拿 B 与这些留存的 Python 版输出比较（Python 版退役之后用这种方式）。
+ * 查看一份留存的输出：node -e 'process.stdout.write(require("zlib").gunzipSync(require("fs").readFileSync(process.argv[1])))' <文件>
  *
  * A 是 Python 版（python -m taskwright_server.service），B 是 TypeScript 版（node backend/src/main.mts），都用启动配置 fake。
  * 两边的假端点都是 TypeScript 版（node backend/fake_model/main.mts），pi 的配置目录由假端点写好、经 PI_CODING_AGENT_DIR 指过去。
@@ -12,7 +17,9 @@
  * Python 解释器可用环境变量 TASKWRIGHT_PYTHON 指定（需要能 import taskwright_server 与 taskwright_observatory）。
  *
  * 每个场景记下一串观察：HTTP 响应（状态码与正文）、事件流收到的全部事件、最后的三种归档文件、会话文件、假端点的请求记录、
- * 观测台读出的会话列表与会话详情。归一化之后逐条比较（规则见 Normalizer），另有四条比较规则：
+ * 观测台读出的会话列表与会话详情。归一化之后逐条比较（规则见 Normalizer：编号按首次出现的先后换成占位编号，先按观察里建任务的先后分配；
+ * 时刻、耗时、进程号、端口、工作目录、代码仓根目录、工作目录的各层上级、本机主机名也换成占位写法，所以留存的输出换一台机器、
+ * 换一个检出位置照样能比），另有七条比较规则：
  * 1. 事件流里 executor_state 与其它事件的相对先后不比，两类各自按先后比：Python 版在启动 pi 时先起读事件的线程、再报「空闲」，
  *    两个线程之间谁先推事件不固定。
  * 2. pi 流式输出的中间快照（message_start、message_update）不比 usage 与 responseId（见 stripStreamingSnapshot）。
@@ -22,23 +29,40 @@
  *    完成条件算一次、附在这一批的最后一条上，其余各条写 null；一批里有哪几条取决于 pi 的提示什么时候到、一次查库花多久
  *    （Python 版算完成条件要起一个 Node 子进程，约零点几秒，这期间新写的行并进下一批），界面评审这种一连写好几行的时候
  *    两版的批次边界不同，中间各条的 completion 就不同。最后一条是写完之后算的，两版相同；整份数据里的完成条件也照比。
+ * 6. 原始事件流里 get_entries（取会话条目）的回应只比命令名与成败，不比 data（条目列表与 leafId）：它是 pi 回应那一刻会话的快照，
+ *    有时已经含刚写完的回复与它的工具结果、有时还不含，取决于 pi 写会话与回应命令谁先谁后；后端怎样使用这些条目，由事件流与观测台两部分逐条比较。
+ * 7. 会话文件里记会话名的 session_info 行不比位置，内容照比（见 sessionInfoApart）：后端发起设置会话名的命令与 pi 写下模型的回答，
+ *    谁先写进会话文件由 pi 处理的先后决定，并不固定（假端点回答得极快，两者经常交错）。
  */
 
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
-import { hostname } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { gunzipSync, gzipSync } from "node:zlib";
+import { which } from "../src/launch.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PYTHON = process.env.TASKWRIGHT_PYTHON || "python3";
 const SEED = join(ROOT, "agent", "tests", "fixtures", "seed_compare_task.mts");
 const FAKE_MAIN = join(ROOT, "backend", "fake_model", "main.mts");
+/** 留存的 Python 版输出：每个场景一个 gzip 压缩的 JSON。 */
+const FIXTURES = join(ROOT, "backend", "compare", "fixtures", "sessions");
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY",
   "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT", "PI_CODING_AGENT_DIR", "TASKWRIGHT_TASKS_ROOT"];
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+/** 家目录下的路径，写成观测台显示的样子（家目录那一段换成「~」）。 */
+const tilde = (path: string) => (path.startsWith(homedir() + "/") ? "~" + path.slice(homedir().length) : path);
+/**
+ * 与本机目录布局有关的路径：pi 的位置与代码仓根目录，绝对写法与观测台的「~」写法各一份。留存输出要进公开仓，
+ * 这些路径一律换成占位写法；pi 排在前面，免得它恰好在代码仓里时先被换掉一半。
+ */
+const PI_PATH = which("pi");
+const MACHINE_PATHS: [string, string][] = [...(PI_PATH ? [[PI_PATH, "<pi>"], [tilde(PI_PATH), "<pi>"]] as [string, string][] : []),
+  [ROOT, "<仓根>"], [tilde(ROOT), "<仓根>"]];
 
 type Dict = Record<string, any>;
 
@@ -719,6 +743,20 @@ function stripStreamingSnapshot(line: unknown): unknown {
   return drop(line);
 }
 
+/**
+ * 比较规则第 7 条：把会话文件的各行分成两部分。「行」是去掉 session_info 行之后的各行，原来指向某个 session_info 行的 parentId
+ * 改指它的上一行，所以这一串与会话名那一行写在哪里无关；「会话名行」是各个 session_info 行，按原来的先后，
+ * 只去掉 parentId（它记的正是位置），编号、会话名、时刻照比。只有这一种行放宽，别的行的先后与内容一律照比。
+ */
+function sessionInfoApart(lines: Dict[]): Dict {
+  const info = new Map<string, Dict>(lines.filter((l) => l?.type === "session_info" && typeof l.id === "string").map((l) => [l.id, l]));
+  const above = (id: unknown): unknown => (typeof id === "string" && info.has(id) ? above(info.get(id)!.parentId) : id);
+  return {
+    行: lines.filter((l) => !info.has(l?.id)).map((l) => (l && "parentId" in l ? { ...l, parentId: above(l.parentId) } : l)),
+    会话名行: [...info.values()].map(({ parentId, ...rest }) => rest),
+  };
+}
+
 /** 归档目录下的三种文件与会话文件（按文件的先后排，文件名里的时刻由归一化处理），以及假端点的请求记录。 */
 function archives(side: Side): Dict {
   const out: Dict = {};
@@ -733,11 +771,13 @@ function archives(side: Side): Dict {
       原始事件流: byKind(".jsonl").map((f) => {
         const lines = readLines(join(events, f)).map(stripStreamingSnapshot) as Dict[];
         const answered = (l: Dict) => l && (l.type === "response" || l.type === "session_info_changed");
-        return { 文件: f, 行数: lines.length, 命令的回应: lines.filter(answered), 其余事件: lines.filter((l) => !answered(l)) };
+        // 比较规则第 6 条：get_entries 的回应不比 data。
+        const snapshot = (l: Dict) => (l.type === "response" && l.command === "get_entries" && "data" in l ? { ...l, data: "<会话条目的快照，不比>" } : l);
+        return { 文件: f, 行数: lines.length, 命令的回应: lines.filter(answered).map(snapshot), 其余事件: lines.filter((l) => !answered(l)) };
       }),
       后端补记: byKind(".backend.jsonl").map((f) => ({ 文件: f, 行: readLines(join(events, f)) })),
       收到时刻: byKind(".times.jsonl").map((f) => ({ 文件: f, 行数: readLines(join(events, f)).length, 行号: readLines(join(events, f)).map((x: any) => x["行号"]) })),
-      会话文件: existsSync(sessions) ? readdirSync(sessions).filter((f) => f.endsWith(".jsonl")).sort().map((f) => ({ 文件: f, 行: readLines(join(sessions, f)) })) : [],
+      会话文件: existsSync(sessions) ? readdirSync(sessions).filter((f) => f.endsWith(".jsonl")).sort().map((f) => ({ 文件: f, ...sessionInfoApart(readLines(join(sessions, f)) as Dict[]) })) : [],
     };
   }
   out.假端点的请求记录 = readLines(side.fakeLog);
@@ -774,8 +814,14 @@ class Normalizer {
   private maps = new Map<string, Map<string, string>>();
   private entries = new Set<string>();
   private side: Side;
+  /** 工作目录的各层上级（到根目录为止）：pi 查上下文文件时把它们逐层记下，随机器与运行的位置而变。 */
+  private ancestors = new Set<string>();
   constructor(side: Side) {
     this.side = side;
+    for (let dir = dirname(resolve(side.cfg.dir)); ; dir = dirname(dir)) {
+      this.ancestors.add(dir);
+      if (dirname(dir) === dir) break;
+    }
   }
 
   private label(kind: string, value: string): string {
@@ -796,7 +842,7 @@ class Normalizer {
 
   text(input: string): string {
     let out = input;
-    for (const [path, name] of [[resolve(this.side.cfg.dir), "<工作目录>"]] as const) out = out.split(path).join(name);
+    for (const [path, name] of [[resolve(this.side.cfg.dir), "<工作目录>"], ...MACHINE_PATHS]) out = out.split(path).join(name);
     out = out.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, (m) => this.label("会话", m));
     out = out.replace(/TASK-\d{8}-[0-9A-F]{4}/g, (m) => this.label("任务", m));
     out = out.replace(/work-[0-9a-f]{12}/g, (m) => this.label("工作", m));
@@ -813,17 +859,23 @@ class Normalizer {
   }
 
   value(value: unknown, key = ""): unknown {
-    if (typeof value === "string") return this.text(value);
+    if (typeof value === "string") return this.ancestors.has(value) ? "<更上层的目录>" : value === hostname() ? "<本机>" : this.text(value);
     if (typeof value === "number") {
       if (["seconds", "收到时刻", "timestamp", "created", "delay_ms", "duration", "durationMs", "pid", "进程号", "启动时刻", "开始时刻", "结束时刻"].includes(key)
         || key.includes("耗时") || key.endsWith("行号")) return `<${key}>`;
       if (value > 1e9 && value < 3e12) return "<时刻数>";
       return value;
     }
-    if (Array.isArray(value)) return value.map((v) => this.value(v, key));
+    if (Array.isArray(value)) {
+      // 工作目录放得多深，上级就有几层；连续的几项合成一项。
+      const out = value.map((v) => this.value(v, key));
+      return out.filter((v, i) => !(v === "<更上层的目录>" && i && out[i - 1] === v));
+    }
     if (value && typeof value === "object") {
+      // 键按归一化之后的写法排序：任务编号这类随机的键，按占位编号（建任务的先后）排，不按随机的原文排。
+      const keys = Object.keys(value).map((k) => [this.text(k), k] as const).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
       const out: Dict = {};
-      for (const k of Object.keys(value).sort()) out[this.text(k)] = this.value((value as Dict)[k], k);
+      for (const [label, k] of keys) out[label] = this.value((value as Dict)[k], k);
       return out;
     }
     return value;
@@ -854,7 +906,19 @@ function diff(a: unknown, b: unknown, path = "", out: [string, unknown, unknown]
 
 // ───────────── 主流程 ─────────────
 
-const { values } = parseArgs({ options: { work: { type: "string" }, only: { type: "string" }, out: { type: "string" }, ports: { type: "string" } }, strict: true });
+const { values } = parseArgs({ options: { work: { type: "string" }, only: { type: "string" }, out: { type: "string" }, ports: { type: "string" },
+  against: { type: "string" }, "save-fixtures": { type: "boolean", default: false } }, strict: true });
+if (values.against !== undefined && values.against !== "fixtures") {
+  process.stderr.write(`--against 只能写 fixtures，现在是「${values.against}」。\n`);
+  process.exit(2);
+}
+const fromFixtures = values.against === "fixtures";
+if (fromFixtures && values["save-fixtures"]) {
+  process.stderr.write("--save-fixtures 要在双跑时用，不能与 --against fixtures 一起给。\n");
+  process.exit(2);
+}
+const source = values["save-fixtures"] ? { commit: execFileSync("git", ["-C", ROOT, "log", "-1", "--format=%h", "--", "server"], { encoding: "utf-8" }).trim(),
+  generated: new Date().toISOString().slice(0, 10), command: "node backend/compare/sessions.mts --work <空目录> --save-fixtures" } : null;
 if (!values.work) {
   process.stderr.write("用法：node backend/compare/sessions.mts --work <空目录> [--only 场景名,…] [--out 结果.json]\n");
   process.exit(2);
@@ -877,7 +941,15 @@ for (const name of chosen) {
     new Side({ name: "B", kind: "typescript", port: portB, fakePort: fakeB, dir: join(work, name, "B") }),
   ];
   const observed: Dict[] = [];
-  for (const side of sides) {
+  if (fromFixtures) {
+    const file = join(FIXTURES, `${name}.json.gz`);
+    if (!existsSync(file)) {
+      process.stderr.write(`没有留存的 Python 版输出 ${file}，要在 Python 版还在时用 --save-fixtures 生成。\n`);
+      process.exit(2);
+    }
+    observed.push(JSON.parse(gunzipSync(readFileSync(file)).toString("utf-8")).observed);
+  }
+  for (const side of fromFixtures ? sides.slice(1) : sides) {
     const records: [string, unknown][] = [];
     const run: Run = { side, record: (label, value) => records.push([label, value]), streams: [] };
     try {
@@ -899,9 +971,18 @@ for (const name of chosen) {
     };
     const normalizer = new Normalizer(side);
     normalizer.collect(whole);
+    normalizer.value(whole.观察);      // 先按观察的先后（建任务的先后）分配占位编号，再归一化全部
     observed.push(normalizer.value(whole) as Dict);
   }
   const sections = ["观察", "事件流", "归档", "观测台"];
+  // 只存两版一致的场景：偶发的时序差别（例如 pi 回应取会话条目时最后一条写没写进去）不该被存成留存的输出。
+  const agreed = sections.every((section) => diff(observed[0][section], observed[1][section]).length === 0);
+  if (source && agreed) {
+    mkdirSync(FIXTURES, { recursive: true });
+    writeFileSync(join(FIXTURES, `${name}.json.gz`), gzipSync(Buffer.from(JSON.stringify({ source, scenario: name, observed: observed[0] }), "utf-8"), { level: 9 }));
+  } else if (source) {
+    process.stdout.write(`两版在 ${name} 上不一致，没有存它的留存输出；看清差异后用 --only ${name} --save-fixtures 重跑。\n`);
+  }
   const result: Dict = { 场景: name, 覆盖: scenario.covers, 各部分: {} };
   for (const section of sections) {
     const differences = diff(observed[0][section], observed[1][section]);
