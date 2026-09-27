@@ -19,7 +19,7 @@ import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
 import type { Profile } from "./launch.ts";
 import { callFacts, openRo } from "./library.ts";
-import { type PiEvent, PiExited, PiRefused, PiSession, PiTimeout } from "./pi_session.ts";
+import { type PiEvent, PiExited, PiRefused, PiSession, PiTimeout, technicalOf } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
 import * as workSummary from "./work_summary.ts";
@@ -189,6 +189,9 @@ export class Executor {
       state = await pi.getState();
     } catch (error) {
       const detail = (pi.stderrText || (error as Error).message || String(error)).trim().slice(-500);
+      // 页面上显示给人看的那句；排查用的原话（哪条命令、系统给的原话）写进日志与错误的附带信息。
+      const technical = (pi.stderrText || technicalOf(error)).trim().slice(-500);
+      console.log(`任务 ${this.taskId} 的助手没有启动起来：${technical}`);
       try {
         await pi.close();
       } catch {
@@ -196,7 +199,7 @@ export class Executor {
       }
       this.pi = null;
       this.setState("failed_to_start", detail);
-      throw new ApiError("executor_unavailable", "助手现在不可用。", { detail });
+      throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technical });
     }
     if (expected !== null && state.sessionId !== expected) await this.resumeFailedLocked(pi, expected, state.sessionId ?? null, "带会话文件启动 pi");
     this.pi = pi;
@@ -228,7 +231,7 @@ export class Executor {
       state = await pi.getState();
     } catch (error) {
       if (!(error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
-      return this.resumeFailedLocked(pi, sessionId, null, `切换会话：${error.message}`);
+      return this.resumeFailedLocked(pi, sessionId, null, `切换会话：${technicalOf(error)}`);
     }
     if (state.sessionId !== sessionId) return this.resumeFailedLocked(pi, sessionId, state.sessionId ?? null, "切换会话");
     this.adopt(state);
@@ -340,7 +343,7 @@ export class Executor {
       try {
         await this.pi!.request("prompt", { message: text });
       } catch (error) {
-        if (error instanceof PiExited || error instanceof PiRefused) throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: error.message });
+        if (error instanceof PiExited || error instanceof PiRefused) throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technicalOf(error) });
         throw error;
       }
     });
@@ -478,7 +481,7 @@ export class Executor {
     await this.lock.run(() => {
       if (this.pi === pi) {
         this.pi = null;
-        this.setState("exited", "pi 进程退出了");
+        this.setState("exited", "助手的程序退出了");
       }
     });
   }
