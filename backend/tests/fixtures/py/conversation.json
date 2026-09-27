@@ -1,0 +1,188 @@
+{
+ "source": {
+  "commit": "d067d1b",
+  "generated": "2026-09-27",
+  "command": "node backend/tests/fixtures/py/generate.mts"
+ },
+ "messages": [
+  {
+   "type": "system_note",
+   "session_id": "S",
+   "message_id": "s1",
+   "at": "2026-09-21T18:00:00-07:00",
+   "text": "【任务现状】"
+  },
+  {
+   "type": "user_message",
+   "session_id": "S",
+   "message_id": "u1",
+   "at": "2026-09-21T18:00:00-07:00",
+   "text": "整理材料",
+   "origin": "typed",
+   "annotation": null,
+   "queued": false
+  },
+  {
+   "type": "work_summary",
+   "session_id": "S",
+   "message_id": "summary-u1",
+   "work_id": "w-u1",
+   "at": "2026-09-21T18:00:12-07:00",
+   "seconds": 12,
+   "step_count": 5,
+   "stages": [
+    {
+     "text": "读了材料《甲.md》、《乙.md》",
+     "count": 2
+    },
+    {
+     "text": "保存修订被拒：摘录找不到。",
+     "count": 1,
+     "reasons": [
+      "摘录找不到。"
+     ]
+    },
+    {
+     "text": "写好并保存了修订 1：新增功能用例 1 个（UC-001）",
+     "count": 1
+    },
+    {
+     "text": "组织并发出了回复",
+     "count": 1
+    }
+   ],
+   "understanding": null
+  },
+  {
+   "type": "assistant_reply",
+   "session_id": "S",
+   "message_id": "a4",
+   "at": "2026-09-21T18:00:12-07:00",
+   "work_id": "w-u1",
+   "via_reply_tool": true,
+   "informs": [
+    {
+     "text": "存了",
+     "items": [
+      {
+       "item_id": "UC-001",
+       "revision_no": 1
+      }
+     ]
+    }
+   ],
+   "act": null,
+   "text": "好了",
+   "degraded": false
+  },
+  {
+   "type": "user_message",
+   "session_id": "S",
+   "message_id": "u2",
+   "at": "2026-09-21T18:00:20-07:00",
+   "text": "我选：甲",
+   "origin": "card_choice",
+   "annotation": {
+    "reply_message_id": "a4",
+    "option_key": "a",
+    "option_text": "甲",
+    "click_message_id": "k1"
+   },
+   "queued": false
+  },
+  {
+   "type": "work_summary",
+   "session_id": "S",
+   "message_id": "summary-u2",
+   "work_id": "w-u2",
+   "at": "2026-09-21T18:00:23-07:00",
+   "seconds": 3,
+   "step_count": 1,
+   "stages": [
+    {
+     "text": "看了目录",
+     "count": 1
+    }
+   ],
+   "understanding": null
+  },
+  {
+   "type": "user_message",
+   "session_id": "S",
+   "message_id": "u3",
+   "at": "2026-09-21T18:00:30-07:00",
+   "text": "/再看看",
+   "origin": "typed",
+   "annotation": null,
+   "queued": false
+  },
+  {
+   "type": "assistant_reply",
+   "session_id": "S",
+   "message_id": "a6",
+   "at": "2026-09-21T18:00:31-07:00",
+   "work_id": null,
+   "via_reply_tool": false,
+   "informs": [],
+   "act": null,
+   "text": "直接回答"
+  }
+ ],
+ "works": [
+  {
+   "work_id": "w-u1",
+   "user_message_id": "u1",
+   "reply_ids": [
+    "a4"
+   ],
+   "call_ids": [
+    "c1",
+    "c2",
+    "c3",
+    "c4",
+    "c5"
+   ],
+   "at": "2026-09-21T18:00:12-07:00",
+   "seconds": 12,
+   "step_count": 5,
+   "stages": [
+    {
+     "text": "读了材料《甲.md》、《乙.md》",
+     "count": 2
+    },
+    {
+     "text": "保存修订被拒：摘录找不到。",
+     "count": 1,
+     "reasons": [
+      "摘录找不到。"
+     ]
+    },
+    {
+     "text": "写好并保存了修订 1：新增功能用例 1 个（UC-001）",
+     "count": 1
+    },
+    {
+     "text": "组织并发出了回复",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "work_id": "w-u2",
+   "user_message_id": "u2",
+   "reply_ids": [],
+   "call_ids": [
+    "c6"
+   ],
+   "at": "2026-09-21T18:00:23-07:00",
+   "seconds": 3,
+   "step_count": 1,
+   "stages": [
+    {
+     "text": "看了目录",
+     "count": 1
+    }
+   ]
+  }
+ ]
+}

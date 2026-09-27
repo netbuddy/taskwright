@@ -1,6 +1,6 @@
 /**
  * 假模型端点自己的测试：不起 pi，直接用 HTTP 请求它，核对脚本的几种用法都按说明工作（与 Python 版 test_fake_model.py 一一对应）；
- * 另对两版各起一个命令行进程，喂同一份脚本、发同一串请求，比较回答与请求记录（逐字），以及写出的 pi 配置目录（逐字）。
+ * 另起一个命令行进程，喂同一份脚本、发同一串请求，回答、请求记录与写出的 pi 配置目录与 Python 版留存的输出逐字比较。
  */
 
 import assert from "node:assert/strict";
@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
+import { FAKE_MODEL } from "./fixtures/py/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
 type Dict = Record<string, any>;
@@ -136,15 +137,13 @@ test("pi 配置目录只登记假端点", () => {
   assert.equal(models.providers.fake.baseUrl, "http://127.0.0.1:1/v1");
 });
 
-// ───────────── 与 Python 版逐字对照 ─────────────
+// ───────────── 与 Python 版留存的输出逐字对照 ─────────────
 
 /** 起一个命令行假端点，等它打印出地址与 pi 配置目录。 */
-async function startCli(kind: "python" | "typescript", dir: string, script: unknown): Promise<{ child: ChildProcess; baseUrl: string }> {
+async function startCli(dir: string, script: unknown): Promise<{ child: ChildProcess; baseUrl: string }> {
   writeFileSync(join(dir + "-script.json"), JSON.stringify(script), "utf-8");
-  const args = ["--script", dir + "-script.json", "--log", join(dir, "requests.jsonl"), "--port", "0", "--agent-dir", join(dir, "pi-agent")];
-  const child = kind === "python"
-    ? spawn(process.env.TASKWRIGHT_PYTHON || "python3", ["-m", "taskwright_server.fake_model", ...args], { env: { ...process.env, PYTHONPATH: join(ROOT, "server") } })
-    : spawn(process.execPath, [join(ROOT, "backend", "fake_model", "main.mts"), ...args]);
+  const child = spawn(process.execPath, [join(ROOT, "backend", "fake_model", "main.mts"), "--script", dir + "-script.json", "--log", join(dir, "requests.jsonl"),
+    "--port", "0", "--agent-dir", join(dir, "pi-agent")]);
   let out = "";
   child.stdout!.on("data", (c) => (out += c));
   child.stderr!.on("data", (c) => (out += c));
@@ -156,39 +155,28 @@ async function startCli(kind: "python" | "typescript", dir: string, script: unkn
   return { child, baseUrl: /假端点已启动：(\S+)（只监听本机回环地址）/.exec(out)![1] };
 }
 
-test("两版命令行假端点：同一份脚本、同一串请求，回答、请求记录与 pi 配置目录逐字一致", async () => {
-  const script = {
-    rules: [{ when: { any_contains: "你是评审者" }, reply: { text: JSON.stringify({ 发现: [] }) } }, { when: { last_role: "tool", last_contains: "被拒" }, reply: { text: "我改一下。" }, max_uses: 1 }],
-    sequence: [{ text: "中文，含 \"引号\" 与 \\ 反斜杠。", tool_calls: [{ name: "save_revision", arguments: { operations: [{ op: "add", fields: { 名称: "甲", 步骤: ["一", "二"] }, n: 3, x: null, ok: true }] } }] },
-      { tool_calls: [{ name: "reply", arguments: { informs: [], act: null, text: "好。" }, id: "call-1" }] }, { status: 503, error_body: "暂时不可用" }, { text: "慢。", delay: 0.2 }],
-    default: { text: "" },
-  };
-  const requests: Dict[] = [
-    { ...user("整理一下"), stream: true, tools: [{ type: "function", function: { name: "ls", parameters: { type: "object" } } }] },
-    { model: "fake-model", messages: [{ role: "tool", content: [{ type: "text", text: "调用被拒：缺字段" }] }], stream: true },
-    { ...user("你是评审者，看一下"), stream: false },
-    user("再来"), user("出错"), { ...user("慢"), stream: true }, { ...user("用完了"), stream: true },
-  ];
-  const sides: Dict = {};
-  for (const kind of ["python", "typescript"] as const) {
-    const dir = join(tmp, `cli-${kind}`);
-    const { child, baseUrl } = await startCli(kind, dir, script);
-    try {
-      const answers = [];
-      for (const body of requests) {
-        const got = await post(baseUrl, body);
-        answers.push([got.status, got.text.replace(/"created": \d+/g, '"created": <秒>')]);
-      }
-      const lines = readFileSync(join(dir, "requests.jsonl"), "utf-8").replace(/"时刻": [0-9.]+/g, '"时刻": <秒>');
-      const agent = ["models.json", "settings.json", "auth.json"].map((f) => readFileSync(join(dir, "pi-agent", f), "utf-8").replace(baseUrl, "<地址>"));
-      sides[kind] = { answers, lines, agent };
-    } finally {
-      child.kill("SIGTERM");
-      await new Promise((ok) => (child.exitCode !== null ? ok(null) : child.once("exit", ok)));
+test("命令行假端点：同一份脚本、同一串请求，回答、请求记录与 pi 配置目录与 Python 版留存的输出逐字一致", async () => {
+  const { script, requests } = FAKE_MODEL;
+  const dir = join(tmp, "cli-typescript");
+  const { child, baseUrl } = await startCli(dir, script);
+  let ours: Dict;
+  try {
+    const answers = [];
+    for (const body of requests) {
+      const got = await post(baseUrl, body);
+      answers.push([got.status, got.text.replace(/"created": \d+/g, '"created": <秒>')]);
     }
+    const lines = readFileSync(join(dir, "requests.jsonl"), "utf-8").replace(/"时刻": [0-9.]+/g, '"时刻": <秒>');
+    const agent = ["models.json", "settings.json", "auth.json"].map((f) => readFileSync(join(dir, "pi-agent", f), "utf-8").replace(baseUrl, "<地址>"));
+    ours = { answers, lines, agent };
+  } finally {
+    child.kill("SIGTERM");
+    await new Promise((ok) => (child.exitCode !== null ? ok(null) : child.once("exit", ok)));
   }
-  assert.deepEqual(sides.typescript.answers, sides.python.answers);
-  assert.equal(sides.typescript.lines, sides.python.lines);
-  assert.deepEqual(sides.typescript.agent, sides.python.agent);
-  assert.equal(sides.python.lines.split("\n").filter(Boolean).length, requests.length);
+  // Python 版对同一份脚本、同一串请求的输出，留存在 fixtures/py/fake_model_cli.json（生成方法见那里的 README.md）。
+  const python = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "fake_model_cli.json"), "utf-8"));
+  assert.deepEqual(ours.answers, python.answers);
+  assert.equal(ours.lines, python.lines);
+  assert.deepEqual(ours.agent, python.agent);
+  assert.equal(python.lines.split("\n").filter(Boolean).length, requests.length);
 });
