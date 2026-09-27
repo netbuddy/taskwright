@@ -14,6 +14,7 @@ import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
+import { restoreOnFailure, type SendResult } from "./sendRestore";
 
 /** 执行者工作中，发送键为什么不能用。 */
 export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句；你可以先把话打好";
@@ -30,7 +31,8 @@ export function Conversation({
   disabled: boolean;
   disabledReason: string | null;
   handlers: CardHandlers;
-  onSend: (text: string) => void;
+  /** 发出一句话；返回假表示没有发出去，这时输入框还空着就把原文放回去。 */
+  onSend: (text: string) => SendResult;
   onUndo: (revisionNo: number) => void;
   onOpenItem: (itemId: string) => void;
   onAttach: (file: File) => void;
@@ -65,7 +67,15 @@ export function Conversation({
 
   const sendOff = disabled || hold || working;
   const sendTitle = disabled ? disabledReason ?? undefined : hold ? HOLD_TEXT : working ? TURN_TEXT : "发送";
-  const send = () => { if (draft.trim() && !sendOff) { onSend(draft.trim()); setDraft(""); } };
+  // 输入框此刻的内容：发送失败时据它判断用户有没有接着打新字。
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  const send = () => {
+    if (!draft.trim() || sendOff) return;
+    const original = draft;
+    setDraft("");
+    restoreOnFailure(onSend(original.trim()), original, () => latestDraft.current, setDraft);
+  };
   // 提示条：任务结束、助手不可用、执行者在另一条会话里工作这几种整个输入框都停用；有未保存的条目编辑时提示先保存或取消。
   const note = disabledReason ?? (hold ? HOLD_TEXT : null);
 

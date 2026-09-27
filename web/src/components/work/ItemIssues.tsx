@@ -12,7 +12,7 @@
 // 卡片上的字段：第一个字段是事项；名为「处理结果」的文本字段是了结时写的处理结果（与保存修订工具认问题条目的判据一致，
 // 那个工具只允许改状态与处理结果）；其余有内容的文本字段按任务定义的顺序显示；状态以外的枚举字段（例如种类）作小标签。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Item, Task } from "../../api/types";
 import { isEmptyValue, isOpenIssue, issueAnswerText, issuesOf, issueStatus, keepPendingField, writeOffReason } from "../../model/items";
 import type { SubmitAction } from "./ItemDetail";
@@ -21,6 +21,7 @@ import { TURN_TEXT } from "./Conversation";
 import { IssueStateBadge } from "./ItemStatus";
 import { rejectedText } from "./errors";
 import { useToast } from "../Toasts";
+import { restoreOnFailure, type SendResult } from "./sendRestore";
 
 /** 问题条目里了结时写处理结果的字段名，与保存修订工具的判据相同。 */
 export const RESULT_FIELD = "处理结果";
@@ -46,7 +47,7 @@ export function ItemIssues({ task, itemId, readOnly, writesOff = false, hold = f
   pendingItems: Set<string>;
   submit: SubmitAction;
   /** 把一句话直接发到对话区。 */
-  onSend?: (text: string) => void;
+  onSend?: (text: string) => SendResult;
   /** 输入框为空时点「回答」：只预填对话区输入框（与「问题」页签上「回答这个问题」同一个预填）。 */
   onPrefill?: (issue: Item) => void;
   /** 从这个问题跳过来的：它排第一张并高亮，其余折叠。 */
@@ -79,7 +80,7 @@ export function ItemIssues({ task, itemId, readOnly, writesOff = false, hold = f
 
 function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit, onSend, onPrefill }: {
   task: Task; issue: Item; hi: boolean; readOnly: boolean; writesOff: boolean; hold: boolean; pending: boolean;
-  submit: SubmitAction; onSend?: (text: string) => void; onPrefill?: (issue: Item) => void;
+  submit: SubmitAction; onSend?: (text: string) => SendResult; onPrefill?: (issue: Item) => void;
 }) {
   const [answer, setAnswer] = useState("");
   const toast = useToast();
@@ -100,11 +101,15 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
   const answerOff = readOnly || (typed && (writesOff || hold));
   const answerTitle = readOnly ? keepTitle : typed && writesOff ? TURN_TEXT : typed && hold ? HOLD_TEXT : undefined;
 
+  // 回答框此刻的内容：发送失败时据它判断用户有没有接着打新字。
+  const latestAnswer = useRef(answer);
+  latestAnswer.current = answer;
   const doAnswer = () => {
     if (answerOff) return;
     if (!answer.trim()) { onPrefill?.(issue); return; }
-    onSend?.(issueAnswerText(issue.item_id, answer));
+    const original = answer;
     setAnswer("");
+    restoreOnFailure(onSend?.(issueAnswerText(issue.item_id, original)), original, () => latestAnswer.current, setAnswer);
   };
   const keep = async () => {
     const label = `把 ${issue.item_id} 标为先不管`;
