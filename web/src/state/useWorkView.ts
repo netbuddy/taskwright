@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { openEventStream, type StreamStatus } from "../api/events";
+import { useService } from "../components/ServiceControls";
 import { initialWorkState, workReducer, type WorkAction, type WorkState } from "./workState";
 import type { RevisionLogEntry } from "../api/types";
 
@@ -27,6 +28,9 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
   stateRef.current = state;
   const loading = useRef(false);
   const everOpened = useRef(false);
+  const { markExited } = useService();
+  const exiting = useRef(markExited);
+  exiting.current = markExited;
 
   const loadSnapshot = useCallback(async () => {
     if (loading.current) return;
@@ -45,8 +49,17 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
   useEffect(() => {
     everOpened.current = false;
     const url = `/api/v1/tasks/${encodeURIComponent(taskId)}/events?session=${encodeURIComponent(sessionId)}`;
+    let stop = () => {};
     const close = openEventStream(url, () => stateRef.current.seq, {
-      onMessage: (m) => dispatch({ type: "sse", event: m.event, data: m.data }),
+      onMessage: (m) => {
+        // 服务即将退出：不再重连，整页换成退出画面（画面的文字按服务的运行形态）。
+        if (m.event === "service_exiting") {
+          stop();
+          exiting.current((m.data as { mode?: "desktop" | "server" } | null)?.mode);
+          return;
+        }
+        dispatch({ type: "sse", event: m.event, data: m.data });
+      },
       onStatus: (status) => {
         setStream(status);
         // 第一次连上之后读整份数据；重连之后如果还没有整份数据（例如上次读失败），也再读一次。
@@ -56,6 +69,7 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
         }
       },
     });
+    stop = close;
     return close;
   }, [taskId, sessionId, loadSnapshot]);
 

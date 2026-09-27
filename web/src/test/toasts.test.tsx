@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect } from "react";
 import { ToastProvider, useToast, type ToastApi } from "../components/Toasts";
-import { RECONNECTED_TEXT, RECONNECTING_TEXT, useConnectionToast, useProblemToasts } from "../components/work/workToasts";
+import { RECONNECTED_TEXT, RECONNECTING_TEXT, UNREACHABLE_TEXT, useConnectionToast, useProblemToasts } from "../components/work/workToasts";
 import type { StreamStatus } from "../api/events";
 import type { Problem } from "../api/types";
 
@@ -116,6 +116,22 @@ describe("工作视图里的两种报法", () => {
     expect(shown()).toEqual([]);
     advance(1300);
     expect(shown()).toEqual([RECONNECTING_TEXT]);
+    rerender(<ToastProvider><Probe stream="open" /></ToastProvider>);
+    expect(shown()).toEqual([RECONNECTED_TEXT]);
+  });
+
+  it("断开满一分钟（unreachable）：换成一条不自己消失的失败提示；连上之后收起它，另报一条成功；断线提示不再说「照常可以看和改」", () => {
+    vi.useFakeTimers();
+    const Probe = ({ stream }: { stream: StreamStatus }) => { useConnectionToast(stream); return null; };
+    const { rerender } = render(<ToastProvider><Probe stream="reconnecting" /></ToastProvider>);
+    expect(RECONNECTING_TEXT).toBe("与服务器的连接断了，正在重连……连上之前，你的修改发不出去；连上之后会补上断开期间的变化。");
+    rerender(<ToastProvider><Probe stream="unreachable" /></ToastProvider>);
+    expect(shown()).toEqual([UNREACHABLE_TEXT]);
+    expect(screen.getByTestId("toast-bad")).toHaveTextContent("连不上服务，可能已经停止。你可以稍后刷新这个页面再试。");
+    rerender(<ToastProvider><Probe stream="connecting" /></ToastProvider>);
+    rerender(<ToastProvider><Probe stream="unreachable" /></ToastProvider>);
+    advance(120_000);
+    expect(shown()).toEqual([UNREACHABLE_TEXT]);
     rerender(<ToastProvider><Probe stream="open" /></ToastProvider>);
     expect(shown()).toEqual([RECONNECTED_TEXT]);
   });

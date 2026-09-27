@@ -4,7 +4,8 @@
 //     对话区里那条「评审完成」的界面操作记录是对话留痕，照旧在。
 //   · 服务器发来的 problem：带重试信息的（模型服务暂时不可用，正在第 N 次重试）报「警告」，同一种问题用同一个 key，
 //     再次重试时重新出现；其余（助手没有说话就停下了）报「失败」。
-//   · 事件流断开：报「警告」，8 秒后淡出，还没连上就每隔一会儿重新出现；连上之后收起它，另报一条「成功」。
+//   · 事件流断开：报「警告」，8 秒后淡出，还没连上就每隔一会儿重新出现；断开超过一分钟换成一条不自己消失的「失败」
+//     （连不上服务，可能已经停止）；连上之后收起它，另报一条「成功」。
 
 import { useEffect, useRef } from "react";
 import type { StreamStatus } from "../../api/events";
@@ -12,7 +13,9 @@ import type { Problem } from "../../api/types";
 import type { ReviewRun } from "../../state/workState";
 import { TOAST_MS, useToast } from "../Toasts";
 
-export const RECONNECTING_TEXT = "与服务器的连接断了，正在重连……你照常可以看和改，连上之后会补上断开期间的变化。";
+export const RECONNECTING_TEXT = "与服务器的连接断了，正在重连……连上之前，你的修改发不出去；连上之后会补上断开期间的变化。";
+/** 断开超过一分钟还没连上（见 api/events.ts 的 UNREACHABLE_AFTER_MS）：服务可能已经停了。这条不自己消失，连上之后收起。 */
+export const UNREACHABLE_TEXT = "连不上服务，可能已经停止。你可以稍后刷新这个页面再试。";
 export const RECONNECTED_TEXT = "已重新连上服务器。";
 
 /** 评审完了那一句。 */
@@ -65,6 +68,11 @@ export function useConnectionToast(stream: StreamStatus) {
       // 警告 8 秒后淡出；情况还在，淡出之后再报一次。
       const timer = setInterval(say, (TOAST_MS.warn ?? 8000) + 1500);
       return () => clearInterval(timer);
+    }
+    if (stream === "unreachable") {
+      down.current = true;
+      toast.error(UNREACHABLE_TEXT, { key: "connection" });
+      return;
     }
     if (stream === "open" && down.current) {
       down.current = false;
