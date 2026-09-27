@@ -24,8 +24,8 @@ export function fromRoot(relative: string): string {
   return join(REPO_ROOT, ...parts);
 }
 
-/** 启动配置所在的目录（与 Python 版共用同一份）。 */
-export const PROFILE_DIR = join(REPO_ROOT, "server", "taskwright_server", "profiles");
+/** 启动配置所在的目录（Python 版退役之前与它共用同一份）。 */
+export const PROFILE_DIR = join(REPO_ROOT, "backend", "profiles");
 
 /** 理解格式的 schema：用户行为各功能的中文名写在它的 $defs.user_function 的 x-names 里。 */
 export const INTENT_SCHEMA_PATH = join(REPO_ROOT, "agent", "prompts", "schemas", "user_intent.schema.json");

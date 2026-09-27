@@ -20,11 +20,11 @@ import os
 import shutil
 from pathlib import Path
 
-#: 配置文件所在目录。
-PROFILE_DIR = Path(__file__).resolve().parent / "profiles"
-
 #: 代码仓根目录：本包的上一级。配置里写「跟着代码走」的扩展时，路径相对它解析。
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+#: 配置文件所在目录（与 TypeScript 版共用同一份，在 backend/ 下）。
+PROFILE_DIR = REPO_ROOT / "backend" / "profiles"
 
 #: 环境变量名。集中写在这里，别处引用这几个常量，不要重复写字符串。
 ENV_PLUGIN = "TASKWRIGHT_LANGFUSE_PLUGIN"

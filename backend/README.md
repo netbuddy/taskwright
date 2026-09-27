@@ -50,6 +50,8 @@
 | `src/occupancy.ts` | 任务占用标记 `service.lock`。 |
 | `src/projection.ts` | Word 材料文本投影的薄适配：投影只有一份实现，这里只负责调用它。 |
 | `src/paths.ts` | 仓根目录与各资源的位置（只在这一处从自身文件位置推出仓根），以及用户数据目录。 |
+| `profiles/` | 启动配置：`dev.json` 开发与服务器用，`desktop.json` 桌面包用（除 Langfuse 环境标签外与 dev 相同），`fake.json` 测试与对照用（模型换成假模型端点）。 |
+| `prompts/executor_system_prompt.md` | 执行者的系统提示，启动配置的 `system_prompt_file` 指向它。 |
 | `fake_model/` | 假模型端点：按脚本回话的 OpenAI 兼容本地服务，给双跑对照与测试用，说明见其中的 README.md。 |
 | `compare/compare.mts` | 双跑对照：对两个后端执行同一串操作，归一化后逐条比较响应。 |
 | `compare/sessions.mts` | 会话场景的双跑对照：两版后端各配一个假模型端点，跑 11 个场景，比较响应、事件流、归档与观测台读出的数据。 |

@@ -276,9 +276,8 @@ async function stagePayload({ work, cache, target, piDir, webDist, nodeVersion }
   copyTree(path.join(REPO, "agent", "src"), path.join(payload, "agent", "src"));
   copyTree(path.join(REPO, "agent", "prompts"), path.join(payload, "agent", "prompts"));
   copyTree(path.join(REPO, "task-types"), path.join(payload, "task-types"));
-  const server = path.join(REPO, "server", "taskwright_server");
-  copyTree(path.join(server, "profiles"), path.join(payload, "server", "taskwright_server", "profiles"));
-  copyTree(path.join(server, "prompts"), path.join(payload, "server", "taskwright_server", "prompts"));
+  copyTree(path.join(REPO, "backend", "profiles"), path.join(payload, "backend", "profiles"));
+  copyTree(path.join(REPO, "backend", "prompts"), path.join(payload, "backend", "prompts"));
   const product = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
   fs.writeFileSync(path.join(payload, "package.json"), JSON.stringify({ name: product.name, version: product.version, private: true }, null, 2) + "\n");
   copyTree(webDist, path.join(payload, "web"));
