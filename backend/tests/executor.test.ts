@@ -16,7 +16,10 @@ import { Executor } from "../src/executor.ts";
 import { makeServer } from "../src/http.ts";
 import { Hub, hubSettings } from "../src/hub.ts";
 import { Service } from "../src/service.ts";
-import { makeWorkspace, tempDir } from "./helpers.ts";
+import { captureConsole, makeWorkspace, tempDir } from "./helpers.ts";
+
+// 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
+captureConsole();
 
 let tmp: string;
 let ws: string;
