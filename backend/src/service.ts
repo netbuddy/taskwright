@@ -192,7 +192,10 @@ export class Service {
         const taken = this.claim(d, this.port, this.mode);
         if (taken !== null) {
           if (!this.occupied.has(taskId)) {
-            console.log(`任务 ${taskId}（目录 ${name}）正被端口 ${pyStr(taken.port)} 的服务（主机 ${pyStr(taken.host)}，进程 ${pyStr(taken.pid)}）占用，本服务不接手它。`);
+            // 标记里没写的项不写。
+            const where = truthy(taken.port) ? `端口 ${pyStr(taken.port)} 的服务` : "另一个服务";
+            const about = [truthy(taken.host) ? `主机 ${pyStr(taken.host)}` : "", truthy(taken.pid) ? `进程 ${pyStr(taken.pid)}` : ""].filter(Boolean);
+            console.log(`任务 ${taskId}（目录 ${name}）正被${where}${about.length ? `（${about.join("，")}）` : ""}占用，本服务不接手它。`);
           }
           this.occupied.set(taskId, { lock: taken, dir: d });
           continue;
@@ -471,7 +474,10 @@ export class Service {
 export function userActionText(kind: string | null, revision: Record<string, any>): string {
   const ops = revision.operations as Record<string, any>[];
   const ids = ops.map((op) => op.item_id).join("、");
-  if (kind === "undo" || truthy(revision.undo_of_revision)) return `你撤销了修订 ${pyStr(revision.undo_of_revision)}`;
+  if (kind === "undo" || truthy(revision.undo_of_revision)) {
+    // 撤销总会记下被撤销的修订号；库数据异常、缺这一项时不写空值。
+    return truthy(revision.undo_of_revision) ? `你撤销了修订 ${pyStr(revision.undo_of_revision)}` : "你撤销了一次修订";
+  }
   if (kind === "delete_item" || (kind === null && ops.length && ops.every((op) => op.op === "delete"))) return `你删除了 ${ids}`;
   if (kind === "keep_pending") return `你把 ${ids} 标为先不管`;
   if (kind === "edit_fields" || (kind === null && ops.length && ops.every((op) => op.op === "update"))) {

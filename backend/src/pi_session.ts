@@ -35,13 +35,16 @@ export const TASKS_ROOT_ENV = "TASKWRIGHT_TASKS_ROOT";
 
 export type PiEvent = Record<string, any>;
 
-/** pi 进程没了。附上它的标准错误原文。 */
+/**
+ * pi 进程没了。附上它的标准错误原文。这句话会显示在页面顶部（执行者状态的附带说明），所以用「助手的程序」「它报告的错误」
+ * 这样的说法；拿不到退出码时写「退出码未知」，没有错误内容时不写后半句。
+ */
 export class PiExited extends Error {
   readonly returncode: number | null;
   readonly stderr: string;
   constructor(returncode: number | null, stderr: string) {
-    const tail = stderr.trim() || "（标准错误是空的，pi 什么也没说）";
-    super(`pi 进程已经退出，退出码 ${returncode === null ? "None" : returncode}。它的标准错误是：\n${tail}`);
+    const said = stderr.trim();
+    super(`助手的程序已经退出（${returncode === null ? "退出码未知" : `退出码 ${returncode}`}）。` + (said ? `它报告的错误是：\n${said}` : ""));
     this.returncode = returncode;
     this.stderr = stderr;
   }
