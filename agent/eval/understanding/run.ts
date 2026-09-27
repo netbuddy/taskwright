@@ -5,7 +5,7 @@
  * 用法（在代码仓根目录）：
  *   node agent/eval/understanding/run.ts [--repeat N] [--only U-001,U-002] [--concurrency 4]
  *
- * 模型与思考档位取自生产用的启动配置 server/taskwright_server/profiles/dev.json。pi 在一个临时空目录里运行，
+ * 模型与思考档位取自生产用的启动配置 backend/profiles/dev.json。pi 在一个临时空目录里运行，
  * 不会读到代码仓里的说明文件。设了 TASKWRIGHT_LANGFUSE_PLUGIN 时加载 Langfuse 观测插件；设了 TASKWRIGHT_LANGFUSE_ENV_FILE 时，
  * 按启动配置的 env_passthrough 从那个文件读密钥，只经环境变量交给 pi，不写进任何文件。
  * LANGFUSE_TRACING_ENVIRONMENT 没设时用 intent-eval，在 Langfuse 里按它筛出评测的调用。
@@ -24,7 +24,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..");
 const SKILL = join(REPO, "agent/prompts/skills/taskwright-executor/SKILL.md");
 const SCHEMA = join(REPO, "agent/prompts/schemas/user_intent.schema.json");
-const PROFILE = join(REPO, "server/taskwright_server/profiles/dev.json");
+const PROFILE = join(REPO, "backend/profiles/dev.json");
 const TIMEOUT_MS = 180_000;
 
 function arg(name: string, fallback: string): string {

@@ -20,7 +20,7 @@ Taskwright 是一个通用的任务型智能体。给它一份**任务定义**�
 
 ## 组件
 
-**智能体**（`agent/`）基于 pi 开发：pi 提供 agent 循环、模型接入与会话记录，Taskwright 的工具与扩展作为 pi 的扩展加载，是唯一写任务数据库的代码。**服务端**（`server/`）启动并看护 pi，提供 HTTP/SSE 接口；**网页**（`web/`）与只读的**观测台**（`observatory/`）负责展示；**模拟用户**（`sim/`）以用户身份驱动智能体；`task-types/` 放每种任务类型的起始文件。细节见[架构](docs/architecture.zh-CN.md)。
+**智能体**（`agent/`）基于 pi 开发：pi 提供 agent 循环、模型接入与会话记录，Taskwright 的工具与扩展作为 pi 的扩展加载，是唯一写任务数据库的代码。**任务服务**（`backend/`，由 Node.js 直接运行的 TypeScript）启动并看护 pi，提供 HTTP/SSE 接口；**网页**（`web/`）与只读的**观测台**（`observatory/`）负责展示；**模拟用户**（`sim/`）以用户身份驱动智能体；`task-types/` 放每种任务类型的起始文件。细节见[架构](docs/architecture.zh-CN.md)。
 
 ## 最短安装路径
 
@@ -39,14 +39,15 @@ scripts/dev.sh                                          # 然后打开 http://lo
 
 ```
 agent/         pi 的工具、扩展与命令行入口（src/），提示与测试
-server/        taskwright_server：任务服务、创建任务、终端客户端、TUI、假模型端点
+backend/       任务服务（HTTP/SSE 接口）、假模型端点、对照脚本、测试
+server/        taskwright_server：早先的 Python 版任务服务，正在退役
 observatory/   taskwright_observatory：只读网页应用与读库模块；archive-format.md
 web/           浏览器界面
 sim/           模拟用户、演练驱动、判定程序、示例画像
 task-types/    srs-authoring：任务定义、skill、领域规矩、文档模板
 examples/      library-lending：示例材料与脚本化的一次完整运行
 docs/          功能说明、部署、用户手册、教程、接口参考、架构（英文版与中文译本）
-scripts/       check-public.sh、dev.sh、test-all.sh
+scripts/       check-public.sh、dev.sh、test-all.sh、tui.sh
 ```
 
 ## 文档

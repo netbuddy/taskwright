@@ -1,0 +1,56 @@
+{
+ "source": {
+  "commit": "d067d1b",
+  "generated": "2026-09-27",
+  "command": "node backend/tests/fixtures/py/generate.mts"
+ },
+ "annotations": [
+  {
+   "reply_message_id": "a0000002",
+   "option_key": "a",
+   "option_text": "甲"
+  },
+  {
+   "reply_message_id": "a0000002",
+   "option_key": "deny",
+   "option_text": "不允许续借",
+   "card_kind": "choose"
+  },
+  {
+   "reply_message_id": "a0000002",
+   "option_key": "不对",
+   "option_text": "不对",
+   "card_kind": "confirm"
+  },
+  {
+   "reply_message_id": "a0000002",
+   "option_key": "x",
+   "option_text": "x",
+   "card_kind": "choose"
+  },
+  {
+   "reply_message_id": "a9999999",
+   "option_key": "allow",
+   "option_text": "allow",
+   "card_kind": "choose"
+  },
+  {
+   "reply_message_id": null,
+   "option_key": null,
+   "option_text": null,
+   "card_kind": "choose"
+  },
+  {
+   "reply_message_id": null,
+   "option_key": null,
+   "option_text": null,
+   "card_kind": null
+  },
+  {
+   "reply_message_id": null,
+   "option_key": null,
+   "option_text": null,
+   "card_kind": null
+  }
+ ]
+}

@@ -9,7 +9,7 @@ python -m taskwright_server.service --tasks <放任务目录的上级目录> --r
 ```
 
 - 绑 `0.0.0.0`；端口由命令行给。
-- 启动配置默认取 `profiles/dev.json`（`--profile` 可换）。Langfuse 照终端客户端的做法经环境变量给：`TASKWRIGHT_LANGFUSE_PLUGIN`、`TASKWRIGHT_LANGFUSE_ENV_FILE`、`LANGFUSE_TRACING_ENVIRONMENT`。
+- 启动配置默认取 `backend/profiles/dev.json`（`--profile` 可换）。Langfuse 照终端客户端的做法经环境变量给：`TASKWRIGHT_LANGFUSE_PLUGIN`、`TASKWRIGHT_LANGFUSE_ENV_FILE`、`LANGFUSE_TRACING_ENVIRONMENT`。
 - 按进程号 `kill` 时会先关掉各任务的 pi，再打印每个任务的事件分发统计（轮询次数、提示次数、推送的库事件数）。
 - 每个任务的 pi 会话文件与原始事件流放在 `<归档目录>/<任务编号>/pi-sessions/service/` 与 `pi-events/`。
 

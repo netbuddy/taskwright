@@ -3,7 +3,8 @@
 # private paths, internal network addresses, credential values, or numbered internal document references.
 #
 # Usage:
-#   scripts/check-public.sh                 # scan every file in the working tree (except dependencies and build output)
+#   scripts/check-public.sh                 # scan every file in the working tree (except dependencies and build output;
+#                                           # gzip-compressed files are decompressed and scanned too)
 #   scripts/check-public.sh --message FILE  # also scan a commit message
 # Exit code 0 means nothing was found; 1 means at least one line matched and is printed.
 #
@@ -21,6 +22,8 @@ PATTERNS=(
   '附录 ?[A-Z]\b'                              # appendix letters
   '第[一二三四五六七八九十]稿'                     # draft numbers
   '/hom[e]/'                                   # private home-directory paths
+  '[~]/[A-Za-z0-9_][A-Za-z0-9_.-]*/'          # the same with the home directory written as a tilde (tools such as the
+                                               # observatory shorten it); hidden directories such as ~/.config are generic
   '192\.168\.[0-9]'                            # private network addresses
   '(^|[^0-9.])10\.[0-9]+\.[0-9]+\.[0-9]+'
   '172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+'
@@ -44,20 +47,31 @@ EXCLUDES=(--exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git --exc
 
 # Inside a git work tree, scan exactly what git would commit (tracked plus untracked-but-not-ignored),
 # so run output such as tasks/ and runs/ is skipped; elsewhere, scan the whole tree.
+# grep -I skips binary files; gzip-compressed files (saved test outputs) are listed in GZ and scanned decompressed.
 FILES=()
+GZ=()
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   while IFS= read -r -d '' f; do
     case "$f" in package-lock.json|*/package-lock.json|LICENSE|CODE_OF_CONDUCT.md) continue ;; esac
     [ -f "$f" ] && FILES+=("$f")
+    case "$f" in *.gz) [ -f "$f" ] && GZ+=("$f") ;; esac
   done < <(git -c core.quotepath=off ls-files -z -co --exclude-standard)
+else
+  while IFS= read -r -d '' f; do GZ+=("$f"); done < <(find . \( -name node_modules -o -name .git -o -name dist \) -prune -o -name '*.gz' -type f -print0)
 fi
 
 scan() {
-  if [ ${#FILES[@]} -gt 0 ]; then
-    grep -nIE -e "$1" -- "${FILES[@]}" 2>/dev/null
-  else
-    grep -rnIE "${EXCLUDES[@]}" -e "$1" . 2>/dev/null
-  fi
+  {
+    if [ ${#FILES[@]} -gt 0 ]; then
+      grep -nIE -e "$1" -- "${FILES[@]}" 2>/dev/null
+    else
+      grep -rnIE "${EXCLUDES[@]}" -e "$1" . 2>/dev/null
+    fi
+    # A compressed file is often one long line, so only the matched text is printed.
+    for f in ${GZ[@]+"${GZ[@]}"}; do
+      gzip -dc -- "$f" 2>/dev/null | grep -noE -e "$1" | awk -v f="$f" '{ print f " (decompressed):" $0 }'
+    done
+  } | grep .   # succeeds only when some line matched
 }
 
 status=0

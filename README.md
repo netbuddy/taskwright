@@ -20,7 +20,7 @@ The bundled task type, *software requirements specification*, adds four item col
 
 ## Components
 
-The **agent** (`agent/`) is built on pi: pi provides the agent loop, model access and session records; Taskwright's tools and extensions are loaded as pi extensions and are the only code that writes the task database. The **server** (`server/`) starts and supervises pi and serves the HTTP/SSE API. The **web** interface (`web/`) and the read-only **observatory** (`observatory/`) show what happened. The **simulator** (`sim/`) drives the agent as a simulated user, and `task-types/` holds the starting files of each task type. Details are in [docs/architecture.md](docs/architecture.md).
+The **agent** (`agent/`) is built on pi: pi provides the agent loop, model access and session records; Taskwright's tools and extensions are loaded as pi extensions and are the only code that writes the task database. The **task service** (`backend/`, TypeScript run directly by Node.js) starts and supervises pi and serves the HTTP/SSE API. The **web** interface (`web/`) and the read-only **observatory** (`observatory/`) show what happened. The **simulator** (`sim/`) drives the agent as a simulated user, and `task-types/` holds the starting files of each task type. Details are in [docs/architecture.md](docs/architecture.md).
 
 ## Install in short
 
@@ -39,14 +39,15 @@ Requirements, model setup, ports and troubleshooting are in [docs/deployment.md]
 
 ```
 agent/         pi tools, extensions, command-line entry points (src/), prompts, tests
-server/        taskwright_server: task service, create-task, terminal client, TUI, fake model endpoint
+backend/       task service (HTTP/SSE API), fake model endpoint, comparison scripts, tests
+server/        taskwright_server: the earlier Python task service, being retired
 observatory/   taskwright_observatory: read-only web app and database readers; archive-format.md
 web/           browser interface
 sim/           simulated user, run driver, judge, example persona
 task-types/    srs-authoring: task definition, skill, domain rules, document template
 examples/      library-lending: example material and a scripted run
 docs/          capabilities, deployment, user guide, tutorial, API reference, architecture
-scripts/       check-public.sh, dev.sh, test-all.sh
+scripts/       check-public.sh, dev.sh, test-all.sh, tui.sh
 ```
 
 ## Documentation
