@@ -233,7 +233,7 @@ test("真进程：端口被占时落到后面第一个空闲端口，服务信�
   }
 });
 
-test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", CASE, async () => {
+test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再发退出通知、关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", CASE, async () => {
   const { child, port, log } = await startBackend("desktop", ["--port", String(await freePort()), "--mode", "desktop"]);
   let stream: ReturnType<typeof request> | undefined;
   try {
@@ -257,6 +257,8 @@ test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再�
     await assert.rejects(call("127.0.0.1", port, "GET", "/api/v1/service"), "端口已经释放");
     assert.match(log(), /收到本机发来的退出请求，服务收尾后退出。/);
     assert.match(events, /event: executor_state\ndata: \{"state": "exited"/, "收尾时先关 pi，开着的事件流收到「已退出」，再断开连接");
+    const notice = events.indexOf('event: service_exiting\ndata: {"mode": "desktop"');
+    assert.ok(notice >= 0 && notice < events.indexOf('event: executor_state\ndata: {"state": "exited"'), "页内退出也先向事件流发 service_exiting，再关 pi");
     const notes = readdirSync(join(tmp, "desktop", "runs", created.body.task_id, "pi-events")).filter((f) => f.endsWith(".backend.jsonl"));
     assert.match(readFileSync(join(tmp, "desktop", "runs", created.body.task_id, "pi-events", notes[0]), "utf-8"), /"记录": "退出"/, "pi 关完、后端补记写下「退出」之后进程才退出");
   } finally {
