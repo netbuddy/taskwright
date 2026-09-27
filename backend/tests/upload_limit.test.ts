@@ -18,11 +18,11 @@ captureConsole();
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-test("服务信息的 upload：上限 5 MB 与「单个文件不能超过 5 MB。」，两种运行形态都给；上传超过上限时报的也是这句话", async () => {
+test("服务信息的 upload：上限 5 MB、「单个文件不能超过 5 MB。」与允许的扩展名，两种运行形态都给；上传超过上限时报的也是这句话", async () => {
   for (const mode of ["server", "desktop"] as const) {
     const service = new Service(join(tmp, `t-${mode}`), join(tmp, `r-${mode}`), {}, { port: 1, mode });
     try {
-      assert.deepEqual(serviceInfo(service).upload, { max_bytes: 5 * 1024 * 1024, too_large_text: "单个文件不能超过 5 MB。" });
+      assert.deepEqual(serviceInfo(service).upload, { max_bytes: 5 * 1024 * 1024, too_large_text: "单个文件不能超过 5 MB。", extensions: [".md", ".txt", ".docx"] });
     } finally {
       await service.close();
     }

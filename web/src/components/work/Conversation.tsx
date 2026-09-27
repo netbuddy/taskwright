@@ -15,6 +15,8 @@ import { formatSeconds } from "../../model/format";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
+import { useService } from "../ServiceControls";
+import { uploadAccept } from "../../model/upload";
 
 /** 执行者工作中，发送键为什么不能用。 */
 export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句；你可以先把话打好";
@@ -55,6 +57,8 @@ export function Conversation({
   revisionsOfReply?: (reply: AssistantReply) => number[];
   onRevisionTag?: (revisions: number[]) => void;
 }) {
+  // 附件按钮可选的文件类型取自服务信息；还没取到时不过滤，由后端拒绝。
+  const service = useService();
   const [ownDraft, setOwnDraft] = useState("");
   const draft = outerDraft ?? ownDraft;
   const setDraft = onDraft ?? setOwnDraft;
@@ -123,7 +127,7 @@ export function Conversation({
             <span className={`send${sendOff ? " off" : ""}`} role="button" aria-label="发送" title={sendTitle} onClick={send} data-testid="send">↑</span>
           </div>
         </div>
-        <input ref={fileInput} type="file" accept=".md,.txt,.docx" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); e.target.value = ""; }} />
+        <input ref={fileInput} type="file" accept={uploadAccept(service.info)} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); e.target.value = ""; }} />
       </div>
     </>
   );
