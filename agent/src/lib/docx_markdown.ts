@@ -8,7 +8,8 @@
  * 一段的文字是它自己的 w:t（插入的字算，删除的字在 w:delText 里不算，域代码在 w:instrText 里不算，锚在它里面的文本框的字不算）。
  *
  * 投影的写法（每段一行，段落号 [pN] 写在正文前面，它右边就是这一段的正文）：
- * - 标题（大纲级别 0 到 8，取自段落或沿样式继承）写 # 到 ######；Word 自动编号算出的编号写在段落号左边，不算正文；
+ * - 标题（lib/docx_heading.ts 的规则：段落或样式的大纲级别，没写时看样式名「heading N」「标题 N」）写 # 到 ######；
+ *   Word 自动编号算出的编号写在段落号左边，不算正文；
  * - 列表项写「- 」，编号本身是「1.」这类有序列表标记时直接当标记；下一级缩进三个空格；
  * - 表格一行写一行，第一行当表头；一格里的几段用 <br> 隔开、各带段落号；横向合并跨过的列写（同左），
  *   纵向合并续格写（同上）；嵌在格里的小表格拆开写进外层格子，前面注明（小表第 r 行第 c 列）；
@@ -19,6 +20,7 @@
  */
 
 import { inflateRawSync } from "node:zlib";
+import { type HeadingStyle, headingLevel } from "./docx_heading.ts";
 
 // ───────────── zip 与 XML ─────────────
 
@@ -105,7 +107,7 @@ class Styles {
     const root = child(parseXml(xml), "w:styles");
     for (const s of root ? elements(root) : []) if (s.name === "w:style") this.byId.set(s.attrs["w:styleId"], s);
   }
-  /** 段落属性里的一项（如 "w:outlineLvl"），沿 basedOn 往上找。 */
+  /** 段落属性里的一项（如 "w:numPr/w:numId"），沿 basedOn 往上找。 */
   prop(styleId: string | undefined, path: string): string | undefined {
     for (let id = styleId, i = 0; id && this.byId.has(id) && i < 10; i++) {
       const s = this.byId.get(id)!;
@@ -114,6 +116,11 @@ class Styles {
       id = valOf(s, "w:basedOn");
     }
     return undefined;
+  }
+  /** 标题判断要的三项（lib/docx_heading.ts）；没有这个样式时 undefined。 */
+  heading(styleId: string): HeadingStyle | undefined {
+    const s = this.byId.get(styleId);
+    return s && { name: valOf(s, "w:name"), basedOn: valOf(s, "w:basedOn"), outline: valOf(s, "w:pPr/w:outlineLvl") };
   }
 }
 
@@ -256,13 +263,13 @@ function paragraph(p: XmlElement, parts: Parts, images: { count: number }): Para
   };
   walk(p);
   const sid = valOf(p, "w:pPr/w:pStyle");
-  const outline = valOf(p, "w:pPr/w:outlineLvl") ?? parts.styles.prop(sid, "w:outlineLvl");
+  const heading = headingLevel(valOf(p, "w:pPr/w:outlineLvl"), sid, (id) => parts.styles.heading(id));
   const numId = valOf(p, "w:pPr/w:numPr/w:numId") ?? parts.styles.prop(sid, "w:numPr/w:numId");
   const ilvl = Number(valOf(p, "w:pPr/w:numPr/w:ilvl") ?? parts.styles.prop(sid, "w:numPr/w:ilvl") ?? 0);
   const numbered = !!numId && numId !== "0";
   const { label, bullet } = numbered ? parts.numbering.next(numId!, ilvl) : { label: "", bullet: false };
   return {
-    kind: "p", n: parts.numbers.get(p) ?? 0, pieces, boxes, heading: outline !== undefined && Number(outline) < 9 ? Number(outline) : null,
+    kind: "p", n: parts.numbers.get(p) ?? 0, pieces, boxes, heading,
     label, bullet, numbered, ilvl,
   };
 }
