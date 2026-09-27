@@ -14,13 +14,10 @@ import { probeModel } from "../src/model_probe.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { exitSignals, startService } from "../src/start.ts";
 import { isWebPath, webFile } from "../src/web.ts";
-import { ROOT, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, tempDir } from "./helpers.ts";
 
-// 本文件有几例在测试进程里直接起服务，服务的日志若写到标准输出，会与测试框架经标准输出回报的结果数据交错，
-// 偶尔让框架读坏（Unable to deserialize cloned data）。所以这里把 console 的输出收进内存，不写标准输出。
-const captured: string[] = [];
-console.log = (...args: unknown[]) => void captured.push(args.map(String).join(" "));
-console.error = console.log;
+// 本文件有几例在测试进程里直接起服务，服务的日志收进内存，不写标准输出（原因见 captureConsole 的说明）。
+captureConsole();
 
 const MAIN = join(ROOT, "backend", "src", "main.mts");
 const FAKE_PI = join(ROOT, "backend", "tests", "fixtures", "fake_pi.mjs");

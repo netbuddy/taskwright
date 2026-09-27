@@ -14,7 +14,10 @@ import * as clock from "../src/clock.ts";
 import { ApiError, STATUS } from "../src/errors.ts";
 import { dispatch, headerParams, makeServer, parseMultipart, parseQuery, unquote } from "../src/http.ts";
 import { Service } from "../src/service.ts";
-import { tempDir } from "./helpers.ts";
+import { captureConsole, tempDir } from "./helpers.ts";
+
+// 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
+captureConsole();
 
 let tmp: string;
 let service: Service;
