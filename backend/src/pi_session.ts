@@ -176,6 +176,8 @@ export class PiSession {
   /** 启动 pi 子进程。给了 sessionFile 就让它接着那个会话文件往下跑。 */
   async start(sessionFile: string | null = null): Promise<void> {
     if (this.alive()) throw new Error("这个会话的 pi 进程还在跑，不要重复启动。");
+    // 与 switchSession 相同，交给 pi 的会话文件一律是绝对路径；后端补记里记的也是这个路径。
+    if (sessionFile !== null) sessionFile = resolve(sessionFile);
     const sessionDir = join(this.runsDir, "pi-sessions", this.label);
     mkdirSync(sessionDir, { recursive: true });
     const eventsDir = join(this.runsDir, "pi-events");
@@ -283,11 +285,15 @@ export class PiSession {
       原文件备份: basename(backup), 说明: text });
   }
 
-  /** 让在跑的 pi 接上另一条会话文件；续接前同样核对并改写会话文件记的工作目录。 */
+  /**
+   * 让在跑的 pi 接上另一条会话文件；续接前同样核对并改写会话文件记的工作目录。
+   * 路径先转成绝对路径：pi 按它自己的工作目录（任务目录）解析相对路径，找不到文件时不报错，而是悄悄新开一条会话。
+   */
   async switchSession(sessionFile: string): Promise<PiEvent> {
-    const rebased = rebaseSessionCwd(sessionFile, this.workspace);
-    if (rebased !== null) this.noteRebased(sessionFile, ...rebased);
-    return this.request("switch_session", { sessionPath: sessionFile });
+    const path = resolve(sessionFile);
+    const rebased = rebaseSessionCwd(path, this.workspace);
+    if (rebased !== null) this.noteRebased(path, ...rebased);
+    return this.request("switch_session", { sessionPath: path });
   }
 
   /** 重启 pi；resume 为真时接回原来那条会话，返回接回的会话文件路径。 */
