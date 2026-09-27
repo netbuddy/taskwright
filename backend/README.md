@@ -117,6 +117,9 @@ node backend/compare/compare.mts --a http://127.0.0.1:8960 --a-tasks /tmp/a/task
 
 脚本逐步打印「一致」或「差异」，全部一致时退出码为 0。归一化规则写在脚本开头的说明里。
 
+Python 版退役之后，两个对照脚本都改用 `--against fixtures`：不起 Python 版，拿 TypeScript 版与留存在 `compare/fixtures/` 里的 Python 版输出比较，
+说明见那里的 README.md。留存输出在 Python 版还在时用 `compare.mts … --save-fixture` 与 `sessions.mts … --save-fixtures` 生成。
+
 已有的任务数据只做只读对照，不起服务：
 
 ```
