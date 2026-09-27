@@ -19,7 +19,7 @@
  * 每个场景记下一串观察：HTTP 响应（状态码与正文）、事件流收到的全部事件、最后的三种归档文件、会话文件、假端点的请求记录、
  * 观测台读出的会话列表与会话详情。归一化之后逐条比较（规则见 Normalizer：编号按首次出现的先后换成占位编号，先按观察里建任务的先后分配；
  * 时刻、耗时、进程号、端口、工作目录、代码仓根目录、工作目录的各层上级、本机主机名也换成占位写法，所以留存的输出换一台机器、
- * 换一个检出位置照样能比），另有六条比较规则：
+ * 换一个检出位置照样能比），另有七条比较规则：
  * 1. 事件流里 executor_state 与其它事件的相对先后不比，两类各自按先后比：Python 版在启动 pi 时先起读事件的线程、再报「空闲」，
  *    两个线程之间谁先推事件不固定。
  * 2. pi 流式输出的中间快照（message_start、message_update）不比 usage 与 responseId（见 stripStreamingSnapshot）。
@@ -31,6 +31,8 @@
  *    两版的批次边界不同，中间各条的 completion 就不同。最后一条是写完之后算的，两版相同；整份数据里的完成条件也照比。
  * 6. 原始事件流里 get_entries（取会话条目）的回应只比命令名与成败，不比 data（条目列表与 leafId）：它是 pi 回应那一刻会话的快照，
  *    有时已经含刚写完的回复与它的工具结果、有时还不含，取决于 pi 写会话与回应命令谁先谁后；后端怎样使用这些条目，由事件流与观测台两部分逐条比较。
+ * 7. 会话文件里记会话名的 session_info 行不比位置，内容照比（见 sessionInfoApart）：后端发起设置会话名的命令与 pi 写下模型的回答，
+ *    谁先写进会话文件由 pi 处理的先后决定，并不固定（假端点回答得极快，两者经常交错）。
  */
 
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
@@ -741,6 +743,20 @@ function stripStreamingSnapshot(line: unknown): unknown {
   return drop(line);
 }
 
+/**
+ * 比较规则第 7 条：把会话文件的各行分成两部分。「行」是去掉 session_info 行之后的各行，原来指向某个 session_info 行的 parentId
+ * 改指它的上一行，所以这一串与会话名那一行写在哪里无关；「会话名行」是各个 session_info 行，按原来的先后，
+ * 只去掉 parentId（它记的正是位置），编号、会话名、时刻照比。只有这一种行放宽，别的行的先后与内容一律照比。
+ */
+function sessionInfoApart(lines: Dict[]): Dict {
+  const info = new Map<string, Dict>(lines.filter((l) => l?.type === "session_info" && typeof l.id === "string").map((l) => [l.id, l]));
+  const above = (id: unknown): unknown => (typeof id === "string" && info.has(id) ? above(info.get(id)!.parentId) : id);
+  return {
+    行: lines.filter((l) => !info.has(l?.id)).map((l) => (l && "parentId" in l ? { ...l, parentId: above(l.parentId) } : l)),
+    会话名行: [...info.values()].map(({ parentId, ...rest }) => rest),
+  };
+}
+
 /** 归档目录下的三种文件与会话文件（按文件的先后排，文件名里的时刻由归一化处理），以及假端点的请求记录。 */
 function archives(side: Side): Dict {
   const out: Dict = {};
@@ -761,7 +777,7 @@ function archives(side: Side): Dict {
       }),
       后端补记: byKind(".backend.jsonl").map((f) => ({ 文件: f, 行: readLines(join(events, f)) })),
       收到时刻: byKind(".times.jsonl").map((f) => ({ 文件: f, 行数: readLines(join(events, f)).length, 行号: readLines(join(events, f)).map((x: any) => x["行号"]) })),
-      会话文件: existsSync(sessions) ? readdirSync(sessions).filter((f) => f.endsWith(".jsonl")).sort().map((f) => ({ 文件: f, 行: readLines(join(sessions, f)) })) : [],
+      会话文件: existsSync(sessions) ? readdirSync(sessions).filter((f) => f.endsWith(".jsonl")).sort().map((f) => ({ 文件: f, ...sessionInfoApart(readLines(join(sessions, f)) as Dict[]) })) : [],
     };
   }
   out.假端点的请求记录 = readLines(side.fakeLog);
