@@ -28,7 +28,7 @@ Whether the user accepts an item is not judged by a model: opening an item's det
 
 ### 1.3 The assistant's tools
 
-The startup profile (`server/taskwright_server/profiles/dev.json`) allows exactly ten tools: pi's built-in `read`, `ls`, `grep` and `find`, and six tools of Taskwright's own. pi's other built-in tools (such as `bash`, `edit` and `write`) are not loaded, so the assistant cannot run commands or change files; it can change the deliverable only through `save_revision`.
+The startup profile (`backend/profiles/dev.json`) allows exactly ten tools: pi's built-in `read`, `ls`, `grep` and `find`, and six tools of Taskwright's own. pi's other built-in tools (such as `bash`, `edit` and `write`) are not loaded, so the assistant cannot run commands or change files; it can change the deliverable only through `save_revision`.
 
 | Tool | What it does | What it checks, and when it refuses |
 |---|---|---|
@@ -195,6 +195,6 @@ The following are **not** available in the current version.
 
 ---
 
-Maintenance: this page is derived from the startup profile's tool allowlist (`server/taskwright_server/profiles/dev.json`), the tools and commands under `agent/src/`, the platform skill under `agent/prompts/skills/`, the assistant's system prompt (`server/taskwright_server/prompts/executor_system_prompt.md`), and the task definitions and skills under `task-types/`. When you change any of these, update this page (and [capabilities.zh-CN.md](capabilities.zh-CN.md)) in the same change.
+Maintenance: this page is derived from the startup profile's tool allowlist (`backend/profiles/dev.json`), the tools and commands under `agent/src/`, the platform skill under `agent/prompts/skills/`, the assistant's system prompt (`backend/prompts/executor_system_prompt.md`), and the task definitions and skills under `task-types/`. When you change any of these, update this page (and [capabilities.zh-CN.md](capabilities.zh-CN.md)) in the same change.
 
 [中文版](capabilities.zh-CN.md)

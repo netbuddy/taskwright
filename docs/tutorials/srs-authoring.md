@@ -480,6 +480,6 @@ The eight tools:
 
 ## What next
 
-- [User guide](../user-guide.md): the kinds of cards, other ways to work (the terminal client, pi's own terminal interface), and a full description of the observatory pages.
+- [User guide](../user-guide.md): the kinds of cards, another way to work (pi's own terminal interface), and a full description of the observatory pages.
 - [Capabilities](../capabilities.md): what the current version can and cannot do.
 - `examples/library-lending/run.sh`: the first half of the same flow using only the HTTP interface (see [user guide, section 5](../user-guide.md#5-try-the-example)).

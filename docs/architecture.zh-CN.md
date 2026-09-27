@@ -9,7 +9,7 @@
 | 组件 | 语言 | 运行在哪里 | 读任务数据库 | 写任务数据库 |
 |---|---|---|---|---|
 | 智能体（Agent，`agent/`） | TypeScript | 在 pi 进程内部 | 是 | **是，且是唯一的写入方** |
-| 服务端（Server，`server/`） | Python | 自己的进程；为每个任务启动一个 pi 进程 | 只读 | 从不写 |
+| 任务服务（Task service，`backend/`） | TypeScript，由 Node.js 直接运行 | 自己的进程；为每个任务启动一个 pi 进程 | 只读 | 从不写（建任务经 agent 的 `createTask`） |
 | 观测台（Observatory，`observatory/`） | Python | 自己的本地网页应用 | 只读 | 从不写 |
 | 网页（Web，`web/`） | TypeScript、React | 浏览器 | 否，它只调接口 | 从不写 |
 | 模拟用户（Simulator，`sim/`） | TypeScript 工具、Python 驱动程序 | 另一个 pi 进程 | 只读（用于判定） | 从不写 |
@@ -19,7 +19,7 @@
 | 种类 | 所在目录 | 它可以做什么 |
 |---|---|---|
 | 工具（tools）与扩展命令（extension commands） | `agent/src/tools`、`agent/src/hooks` | 校验并写任务数据库，始终经过 `agent/src/lib` 里的核心函数，一次写入对应一个事务、一条事件。 |
-| 后端 | `server/`、`observatory/` | 启动并看护 pi，转发用户说的话，转发事件，只读方式读数据库。从不解释或评判内容。 |
+| 后端 | `backend/`、`observatory/` | 启动并看护 pi，转发用户说的话，转发事件，只读方式读数据库。从不解释或评判内容。 |
 | 前端 | `web/` | 发送请求；只有对应的事件到达时才改变屏幕上的内容。 |
 
 ## 角色（Roles）
