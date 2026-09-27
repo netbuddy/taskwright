@@ -9,7 +9,6 @@ __pycache__/
 *.sqlite-wal
 *.sqlite-shm
 .env
-web/mock/runtime/
 # run output of the example, the dev script and the simulator (repository root only)
 /runs/
 /tasks/

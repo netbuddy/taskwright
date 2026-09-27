@@ -2,13 +2,14 @@
 //
 // 端口与后端地址都由环境变量给，代码里不写死：
 //   TASKWRIGHT_WEB_PORT      开发服务器端口，缺省 5680。
-//   TASKWRIGHT_API_TARGET    后端地址，/api 开头的请求代理到这里；缺省指向本目录 mock/ 里的假服务（http://127.0.0.1:5681）。
+//   TASKWRIGHT_API_TARGET    后端地址，/api 开头的请求代理到这里；缺省是本机的任务服务（http://127.0.0.1:8790，与 scripts/dev.sh
+//                            起后端时的缺省端口相同）。后端没有起来时，页面显示连不上服务的提示。
 // 服务绑 0.0.0.0，同一网段的其他机器也能打开。
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 const port = Number(process.env.TASKWRIGHT_WEB_PORT || 5680);
-const target = process.env.TASKWRIGHT_API_TARGET || "http://127.0.0.1:5681";
+const target = process.env.TASKWRIGHT_API_TARGET || "http://127.0.0.1:8790";
 
 export default defineConfig({
   plugins: [react()],
