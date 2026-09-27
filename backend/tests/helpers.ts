@@ -54,6 +54,18 @@ export function captureConsole(): string[] {
   return lines;
 }
 
+/**
+ * 等一件事，最多等 ms 毫秒：到时没有结果就以「等 what 超过 N 秒」失败，而不是一直等下去。what 写在等什么，
+ * 例如「后端打印监听地址」。计时器在事情有结果时清掉，不会让测试进程多留一刻。
+ */
+export function within<T>(what: string, ms: number, promise: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, fail) => {
+    timer = setTimeout(() => fail(new Error(`等${what}超过 ${ms / 1000} 秒，没有等到。`)), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
 export function tempDir(prefix = "taskwright-backend-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
