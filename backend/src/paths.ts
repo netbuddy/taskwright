@@ -32,7 +32,7 @@ export const INTENT_SCHEMA_PATH = join(REPO_ROOT, "agent", "prompts", "schemas",
 
 /**
  * 用户数据目录：安装位置可能是只读的，任务目录与归档目录缺省放在这里。
- * Linux 取 $XDG_DATA_HOME（缺省 ~/.local/share），Windows 取 %LOCALAPPDATA%，macOS 取 ~/Library/Application Support。
+ * Linux 取 $XDG_DATA_HOME（缺省 ~/.local/share），Windows 取 %LOCALAPPDATA%，macOS 取 $HOME/Library/Application Support。
  */
 export function userDataDir(): string {
   if (process.platform === "win32") return join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "Taskwright");
