@@ -26,6 +26,8 @@ import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from
 import { TASK_TYPES_DIR } from "./paths.ts";
 
 export const MAX_UPLOAD = 5 * 1024 * 1024;
+/** 上传的文件超过上限时给用户看的那句话。服务信息接口把上限与这句话一起给前端，前端在发送之前就能拦下。 */
+export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
 export const UPLOAD_TYPES = [".md", ".txt", ".docx"];
 
 /** 任务类型：task-types/ 下的每个目录，显示名取它的任务定义里的「任务名」；没有新格式任务定义的模板不列。 */
@@ -407,7 +409,7 @@ export class Service {
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", "只接受 .md、.txt 与 .docx（Word）三种文件。");
     if (isReserved(filename)) throw new ApiError("bad_request", "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 材料生成的投影用，请改个名字再上传。");
     const isDocx = filename.toLowerCase().endsWith(".docx");
-    if (data.length > MAX_UPLOAD) throw new ApiError("too_large", "单个文件不能超过 5 MB。");
+    if (data.length > MAX_UPLOAD) throw new ApiError("too_large", TOO_LARGE_TEXT);
     const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const folder = join(t.dir, folderRel);
     mkdirSync(folder, { recursive: true });

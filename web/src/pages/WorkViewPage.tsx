@@ -26,8 +26,9 @@ import { justChangedItems, marksByItem, revisionsOfReply, touchedItems } from ".
 import { openProblems, viewTarget } from "../model/items";
 import { go, href } from "../router";
 import { useToast } from "../components/Toasts";
-import { NoModelBanner, UserMenu } from "../components/ServiceControls";
+import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
+import { tooLargeText } from "../model/upload";
 
 /** 「让助手改这一条」与「回答这个问题」预填的话。 */
 export const PREFILL = {
@@ -57,6 +58,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   const userToggledDoc = useRef(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const toast = useToast();
+  const service = useService();
 
   const task = state.task;
   const closed = !!task && task.status !== "进行中";
@@ -153,6 +155,12 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   };
 
   const attach = async (file: File) => {
+    // 超过上限的文件不发请求，直接报后端给的那句话。
+    const tooLarge = tooLargeText(service.info, file);
+    if (tooLarge) {
+      toast.error(tooLarge);
+      return;
+    }
     try {
       const r = await api.uploadMaterial(taskId, file, sessionId);
       setAttachments((a) => [...a, r.path]);
