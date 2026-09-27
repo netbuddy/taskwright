@@ -74,3 +74,27 @@ body {
 .cond .missing { color: var(--mut); font-family: ui-monospace, Menlo, monospace; font-size: 0.929rem; }
 .doc-text { white-space: pre-wrap; font-size: 0.986rem; line-height: 1.8; }
 .busy-note { background: var(--amber-bg); border: 1px solid var(--amber-line); color: var(--amber); border-radius: 0.571rem; padding: 0.429rem 0.714rem; font-size: 0.957rem; margin-bottom: 0.571rem; }
+
+/* ───── 运行形态有关的三样（components/ServiceControls.tsx）：无模型提示、「本机用户」菜单、退出之后的整屏 ───── */
+.shell { flex-direction: column; }
+.shell > .shell-card { min-height: 0; }
+.svc-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; flex: none; background: var(--amber-bg); border: 1px solid var(--amber-line);
+  color: #7a4b00; border-radius: 0.6rem; padding: 0.45rem 0.9rem; margin: 0 0 0.5rem; font-size: 0.95rem; }
+.svc-banner a { color: var(--blue); cursor: pointer; }
+.svc-banner .why { flex-basis: 100%; color: #8a6a2a; font-size: 0.86rem; }
+.svc-user-wrap { position: relative; }
+.svc-user { cursor: pointer; }
+.svc-user.at-topbar { border: 1px solid var(--line2); background: var(--card); white-space: nowrap; border-radius: 0.5rem; padding: 0.12rem 0.6rem; font-size: 0.897rem; }
+.svc-user.at-topbar:hover { border-color: var(--ink); }
+.svc-menu { position: absolute; z-index: 90; background: var(--card); border: 1px solid var(--line2); border-radius: 0.6rem; width: 15rem; padding: 0.35rem;
+  box-shadow: 0 0.714rem 1.857rem #00000029; }
+.svc-menu.at-sider { left: 0; bottom: calc(100% + 0.6rem); }
+.svc-menu.at-topbar { right: 0; top: calc(100% + 0.4rem); }
+.svc-menu .svc-mh { color: var(--mut); padding: 0.2rem 0.5rem 0.3rem; font-size: 0.86rem; }
+.svc-menu .svc-row { cursor: pointer; border-radius: 0.45rem; padding: 0.35rem 0.5rem; font-size: 0.92rem; }
+.svc-menu .svc-row:hover { background: var(--sel); }
+.svc-menu .danger { color: var(--gap); }
+.svc-gone { position: fixed; inset: 0; background: var(--paper); display: flex; align-items: center; justify-content: center; }
+.svc-gone .box { background: var(--card); border: 1px solid var(--line); border-radius: 0.9rem; padding: 2rem 2.6rem; text-align: center; }
+.svc-gone .box b { font-size: 1.2rem; display: block; margin-bottom: 0.5rem; }
+.svc-gone .box span { color: var(--mut); }

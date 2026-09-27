@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // Measures a built package on Linux: time from start to the browser being opened, time until the page loads,
-// the backend's own timing marks, and memory. Each run gets fresh data and cache directories under --dir, so a
+// the launcher's own timing marks, and memory. Each run gets fresh data and cache directories under --dir, so a
 // single executable extracts its payload every run (a first start); pass --keep-cache to measure later starts.
 //
 // Usage:
-//   node release/proto/measure.mjs --dir <empty scratch dir> [--runs 3] [--keep-cache] [--hold-pi] -- <command...>
+//   node release/measure.mjs --dir <empty scratch dir> [--runs 3] [--keep-cache] [--with-pi] -- <command...>
 //
 // The browser is replaced by a small script that notes the time and loads the page with curl.
-// --hold-pi keeps the probed pi process running while memory is read, so its memory is included.
-// Only processes started by this script are stopped.
+// --with-pi creates a task and opens a session (which starts pi, without contacting any model) before memory is
+// read, so pi's memory is included. The service is stopped through its exit endpoint; only processes started by
+// this script are stopped.
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -21,9 +22,10 @@ const flags = argv.slice(0, split), command = argv.slice(split + 1);
 const option = (name, fallback) => { const i = flags.indexOf(name); return i >= 0 ? flags[i + 1] : fallback; };
 const dir = path.resolve(option("--dir"));
 const runs = Number(option("--runs", 3));
-const keepCache = flags.includes("--keep-cache"), holdPi = flags.includes("--hold-pi");
+const keepCache = flags.includes("--keep-cache"), withPi = flags.includes("--with-pi");
 const port = Number(process.env.TASKWRIGHT_PORT || 8950);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const post = async (p, body) => (await fetch(`http://127.0.0.1:${port}${p}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 
 function children() {
   const map = new Map();
@@ -59,7 +61,6 @@ async function once(index) {
   fs.writeFileSync(opener, `#!/bin/sh\ndate +%s%3N >> "${opened}"\ncurl -s -o /dev/null "$1" && date +%s%3N >> "${opened}"\n`, { mode: 0o755 });
   const cache = keepCache ? path.join(dir, "cache") : path.join(run, "cache");
   const env = { ...process.env, TASKWRIGHT_OPEN_WITH: opener, TASKWRIGHT_DATA_DIR: path.join(run, "data"), TASKWRIGHT_CACHE_DIR: cache, TASKWRIGHT_PORT: String(port) };
-  if (holdPi) env.TASKWRIGHT_HOLD_PI = "1";
   const log = fs.openSync(path.join(run, "output.log"), "w");
   const started = Date.now();
   const child = spawn(command[0], command.slice(1), { cwd: run, env, stdio: ["ignore", log, log] });
@@ -67,18 +68,22 @@ async function once(index) {
   child.on("exit", () => (exited = true));
 
   let lines = [];
-  for (let i = 0; i < 600 && !exited; i++) {   // up to 60 s for the pi check
+  for (let i = 0; i < 600 && !exited; i++) {   // up to 60 s for a first start
     await sleep(100);
-    lines = fs.readFileSync(path.join(run, "output.log"), "utf8").split("\n");
-    if (lines.some((l) => l.includes("pi_checked="))) break;
+    if (fs.existsSync(opened) && fs.readFileSync(opened, "utf8").trim().split("\n").length >= 2) break;
   }
-  await sleep(1000);                            // let the backend settle before reading memory
+  if (withPi) {
+    const task = await post("/api/v1/tasks", { task_type: "srs-authoring", task_name: "measure" });
+    await post(`/api/v1/tasks/${task.task_id}/sessions`, {});
+  }
+  await sleep(1000);                            // let the processes settle before reading memory
+  lines = fs.readFileSync(path.join(run, "output.log"), "utf8").split("\n");
   const pids = tree(child.pid);
   const memory = pids.map((pid) => ({ pid, what: name(pid), rss_mb: +(rssKb(pid) / 1024).toFixed(1) })).filter((p) => p.rss_mb > 0);
   const marks = Object.fromEntries(lines.map((l) => l.match(/^\[timing\] (\w+)=(\d+)ms/)).filter(Boolean).map((m) => [m[1], Number(m[2])]));
   const times = fs.existsSync(opened) ? fs.readFileSync(opened, "utf8").trim().split("\n").map(Number) : [];
 
-  await fetch(`http://127.0.0.1:${port}/api/v1/proto/quit`, { method: "POST" }).catch(() => {});
+  await post("/api/v1/service/exit", {}).catch(() => {});
   for (let i = 0; i < 50 && !exited; i++) await sleep(100);
   if (!exited) child.kill("SIGKILL");
   return {
@@ -95,7 +100,7 @@ fs.mkdirSync(dir, { recursive: true });
 const results = [];
 for (let i = 1; i <= runs; i++) { const r = await once(i); results.push(r); console.log(JSON.stringify(r)); await sleep(500); }
 console.log(JSON.stringify({
-  command: command.join(" "), runs, keep_cache: keepCache, hold_pi: holdPi,
+  command: command.join(" "), runs, keep_cache: keepCache, with_pi: withPi,
   median_browser_opened_s: median(results.map((r) => r.browser_opened_s)),
   median_page_loaded_s: median(results.map((r) => r.page_loaded_s)),
   median_total_rss_mb: median(results.map((r) => r.total_rss_mb)),

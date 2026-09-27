@@ -7,6 +7,7 @@ import type {
   ApiErrorBody,
   ItemRevision,
   RevisionLog,
+  ServiceInfo,
   TaskType,
   MessageRequest,
   SessionListEntry,
@@ -94,6 +95,10 @@ async function rawBytes(path: string, timeoutMs = 30_000): Promise<ArrayBuffer> 
 }
 
 export const api = {
+  // 服务信息与退出（退出只在桌面形态有）
+  serviceInfo: () => request<ServiceInfo>("GET", "/service", undefined, 5_000),
+  exitService: () => request<{ ok: true }>("POST", "/service/exit", {}, 10_000),
+
   // 任务类型（与后端对齐后新增的接口 GET /api/v1/task-types）
   taskTypes: () => request<{ task_types: TaskType[] }>("GET", "/task-types").then((r) => r.task_types),
 

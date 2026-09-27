@@ -7,6 +7,7 @@ import { api, ApiError } from "../api/client";
 import type { SessionListEntry, TaskListEntry } from "../api/types";
 import { go, href } from "../router";
 import { useToast } from "./Toasts";
+import { NoModelBanner, UserMenu } from "./ServiceControls";
 
 
 export function Shell({ currentTaskId, children }: { currentTaskId?: string; children: ReactNode }) {
@@ -24,6 +25,7 @@ export function Shell({ currentTaskId, children }: { currentTaskId?: string; chi
 
   return (
     <div className="shell">
+      <NoModelBanner />
       <div className="shell-card">
         <aside className="sider">
           <div className="sider-head">需求工作台</div>
@@ -52,7 +54,7 @@ export function Shell({ currentTaskId, children }: { currentTaskId?: string; chi
               </div>
             ))}
           </div>
-          <div className="sider-foot">本机用户</div>
+          <div className="sider-foot"><UserMenu where="sider" /></div>
         </aside>
         <main className="main">{children}</main>
       </div>

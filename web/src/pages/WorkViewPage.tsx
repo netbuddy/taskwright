@@ -26,6 +26,7 @@ import { justChangedItems, marksByItem, revisionsOfReply, touchedItems } from ".
 import { openProblems, viewTarget } from "../model/items";
 import { go, href } from "../router";
 import { useToast } from "../components/Toasts";
+import { NoModelBanner, UserMenu } from "../components/ServiceControls";
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
 
 /** 「让助手改这一条」与「回答这个问题」预填的话。 */
@@ -233,6 +234,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
 
   return (
     <div className="wv-page">
+      <NoModelBanner />
       <div className={`app ${docCollapsed ? "doc-closed" : "doc-open"}`}>
         <div className="topbar">
           <a className="tname" href={href.task(taskId)}>{task?.task_name ?? "…"}</a>
@@ -246,6 +248,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
             ))}
           </span>
           <span className="smenu-btn" role="button" onClick={() => setMenuOpen(!menuOpen)} data-testid="session-menu-button">会话 ▾</span>
+          <UserMenu where="topbar" />
           <div className={`smenu${menuOpen ? " show" : ""}`} data-testid="session-menu">
             <div className="mh">任务「{task?.task_name}」的会话（共 {sessions.length} 条，所有会话共享同一份交付物）</div>
             {sessions.map((s) => (

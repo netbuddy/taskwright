@@ -24,14 +24,17 @@
 | `GET …/items/{i}/revisions`、`GET …/revisions` | 条目修订史、修订日志。 |
 | `GET …/materials/content`、`GET …/materials/raw`、`POST …/materials` | 材料原文、原样取回、上传（Word 材料另生成文本投影）。 |
 | `POST …/documents/preview`、`POST …/documents/download` | 按某次修订生成文档。 |
-| `GET /api/v1/service` | 服务信息：`{ok, app, version, mode, pid, port, capabilities: {exit}}`，不需要任务。Python 版没有。 |
+| `GET /api/v1/service` | 服务信息：`{ok, app, version, mode, pid, port, capabilities: {exit, model}, model: {name, reason}}`，不需要任务。`capabilities.model` 是模型探测的结果（见下文「模型探测」），`model.reason` 是一句写明查过哪两个文件的原因。Python 版没有。 |
 | `POST /api/v1/service/exit` | 退出服务：只在 `--mode desktop` 下有，只接受本机回环地址的请求（别处来的回 403 `forbidden`）；先回 `{ok: true}` 再收尾退出。Python 版没有。 |
 
 ## 目录里有什么
 
 | 文件 | 它做什么 |
 |---|---|
-| `src/main.mts` | 入口：读命令行参数、建服务、监听端口；收到 SIGTERM、SIGINT 或桌面形态下的退出请求时关掉各任务的 pi、删掉本服务写的占用标记再退出。 |
+| `src/main.mts` | 命令行入口：检查参数后调 `start.ts`。 |
+| `src/start.ts` | 启动函数 `startService`（参数对象进，实际端口与停止函数出），命令行入口与打包后的启动程序都调它：建服务、监听端口；收到 SIGTERM、SIGINT、SIGHUP（Windows 另有 SIGBREAK）或桌面形态下的退出请求时关掉各任务的 pi、删掉本服务写的占用标记再退出。 |
+| `src/web.ts` | 网页静态文件：给了 `--web` 时出页面，找不到的路径回首页，跳出目录的路径拒绝。 |
+| `src/model_probe.ts` | 模型探测：启动配置写的模型在 pi 配置目录里有没有登记或登录。 |
 | `src/listen.ts` | 按运行形态定缺省绑定地址；端口被占时依次换后面的端口。 |
 | `src/http.ts` | 路由与各接口，以及查询串、multipart 的解析。 |
 | `src/service.ts` | 任务服务：扫描任务目录、占用、任务列表、任务页、修订日志、上传材料、生成文档时「用户的话」的出处。 |
@@ -55,7 +58,7 @@
 ## 起法
 
 ```
-node backend/src/main.mts --tasks <放任务目录的上级目录> --runs <归档目录> --port <端口> [--mode desktop|server] [--host 地址] [--profile dev]
+node backend/src/main.mts --tasks <放任务目录的上级目录> --runs <归档目录> --port <端口> [--mode desktop|server] [--host 地址] [--profile dev] [--web 网页目录]
 ```
 
 `--tasks` 与 `--runs` 不给时放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`）。
@@ -71,6 +74,26 @@ node backend/src/main.mts --tasks <放任务目录的上级目录> --runs <归�
 运行形态写进启动日志与占用标记（`mode` 一项）。
 
 `--port` 给的端口被占时依次试后面的端口，最多 10 个，全被占时报错退出；实际端口打印到日志、写进占用标记，并由 `GET /api/v1/service` 回出。
+
+`--web <目录>` 给了网页静态文件所在的目录（例如构建好的 `web/dist`）时，由本服务出页面：不以 `/api/` 开头的 GET 请求从这个目录取文件，
+找不到的路径回首页 `index.html`（前端是单页应用），解码后跳出目录的路径回 400。不给时行为不变，所有路径都归接口。开发时仍由 vite 出页面。
+
+收到 SIGHUP（关掉终端；Windows 关掉控制台窗口时 Node 收到的也是它）与收到 SIGTERM 一样收尾。
+
+### 模型探测
+
+`GET /api/v1/service` 每次都现查：启动配置写的模型「服务商/型号」，在 pi 的配置目录（`PI_CODING_AGENT_DIR`，没设时是 `~/.pi/agent`）里
+①模型登记文件 `models.json` 登记了这个服务商与型号，或②登录凭据文件 `auth.json` 里有这个服务商一项（只看键名，不读凭据内容），
+二者之一即 `capabilities.model` 为 true。只读这两个文件，不起 pi。原因句 `model.reason` 在 desktop 形态写两个文件的完整路径，
+server 形态只写文件名（服务信息远程也看得到，不带出服务器上的目录）。识别不了的情形：内置服务商的密钥只放在环境变量里，这时判 false，
+原因句里写明。
+
+### 桌面形态下的模型
+
+`--mode desktop` 时，起 pi 之前读 pi 配置目录里 `settings.json` 的 `defaultProvider` 与 `defaultModel`（pi 的 `/model` 命令写的也是这两项），
+两项都有就用「defaultProvider/defaultModel」代替启动配置里的模型；读不到或缺一项时照旧用启动配置里的。桌面包里的启动配置是只读的，
+用户换模型靠的就是这个。模型探测与服务信息里的 `model.name` 按替换后的结果；后端补记的启动记录多写一项「模型来自」。
+`--mode server` 不读这个文件，行为与启动记录都不变。实现在 `launch.ts` 的 `resolveModel`。
 
 ## 测试
 
