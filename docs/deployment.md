@@ -130,7 +130,7 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 
 ## 6 Production build of the web interface
 
-Run `npm run build -w web` and serve `web/dist/` behind a reverse proxy that forwards `/api` to the task service, or instead give the task service `--web web/dist` and skip the proxy (see section 4). Disable response buffering for `/api/v1/tasks/*/events` (it is a Server-Sent Events stream) and raise the read timeout. Without HTTP/2, a browser allows only about six connections per host, so keep to four open task pages per browser.
+Run `npm run build -w web` and serve `web/dist/` behind a reverse proxy that forwards `/api` to the task service, or instead give the task service `--web web/dist` and skip the proxy (see section 4). Disable response buffering for `/api/v1/tasks/*/events` (it is a Server-Sent Events stream) and raise the read timeout. Set the proxy's own request body limit to at least the upload limit plus some room for the multipart wrapping (for nginx, `client_max_body_size 6m;`; its default is 1 MB); otherwise a larger upload is refused by the proxy with its own error page instead of the task service's message. Without HTTP/2, a browser allows only about six connections per host, so keep to four open task pages per browser.
 
 ## 7 Optional: Langfuse tracing
 
