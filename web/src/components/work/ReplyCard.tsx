@@ -14,10 +14,11 @@
 // 单一写入者：有未保存的条目编辑时（hold），卡片上会启动执行者或写库的按钮一律灰化，
 // 卡片里写明「先保存或取消正在编辑的条目」；卡片内的输入框照常能打字，发送键灰化。执行者工作中（writesOff）同样灰化。
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Popconfirm } from "antd";
 import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../api/types";
 import { CONFIRM_CONDITION, conditionState, isUnread, itemContext, lastViewedRevision, REVIEW_CONDITION, reviewState, unreadItems } from "../../model/items";
+import { restoreOnFailure, type SendResult } from "./sendRestore";
 
 /** 有未保存的条目编辑时，对话区与卡片上会发话或写库的按钮为什么不能用。 */
 export const HOLD_TEXT = "先保存或取消正在编辑的条目";
@@ -42,7 +43,8 @@ const TEXT_LABEL: Record<ActKind, string> = { ask: "问题", confirm: "", sugges
 
 export interface CardHandlers {
   onAction: (req: Pick<ActionRequest, "kind" | "targets" | "notify_executor">, label: string) => void;
-  onMessage: (text: string, card?: MessageRequest["card"]) => void;
+  /** 发出一句话；返回假表示没有发出去（卡片里自己打的字这时放回卡片的输入框）。 */
+  onMessage: (text: string, card?: MessageRequest["card"]) => SendResult;
   /** 条目区筛出未读的条目。 */
   onShowUnread?: () => void;
 }
@@ -99,7 +101,14 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, w
   const offTitle = hold ? HOLD_TEXT : undefined;
   const sendOff = disabled || hold || writesOff;
   const done = answered ?? (chosen ? `你选了「${chosen}」` : null);
-  const sendDraft = () => { if (draft.trim() && !sendOff) { handlers.onMessage(draft.trim()); setDraft(""); } };
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  const sendDraft = () => {
+    if (!draft.trim() || sendOff) return;
+    const original = draft;
+    setDraft("");
+    restoreOnFailure(handlers.onMessage(original.trim()), original, () => latestDraft.current, setDraft);
+  };
   /** 条目行末尾的修订说明：请确认卡片写上次确认的修订，其余卡片只写修订号。 */
   const revisionNote = (itemId: string, revision: number) => {
     if (act.kind !== "confirm") return `修订 ${revision}`;

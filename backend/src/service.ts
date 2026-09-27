@@ -151,8 +151,10 @@ export class Service {
   private readonly releaseLock: (taskDir: string) => void;
 
   constructor(tasksDir: string, runsDir: string, profile: Profile, options: ServiceOptions = {}) {
-    this.tasksDir = tasksDir;
-    this.runsDir = runsDir;
+    // 两个目录一律转成绝对路径（相对路径按进程的当前工作目录解析）。pi 的工作目录是任务目录，交给它的会话文件路径
+    // 要是相对的，它会按任务目录去解析，找不到文件就悄悄新开一条会话；本服务内部从这里起只用绝对路径。
+    this.tasksDir = resolve(tasksDir);
+    this.runsDir = resolve(runsDir);
     // 桌面形态：模型可以由 pi 设置文件指定（见 launch.ts 的 PI_SETTINGS_MODEL）。标记只加在内存里的这份启动配置上。
     this.profile = options.mode === "desktop" ? { ...profile, [PI_SETTINGS_MODEL]: true } : profile;
     this.port = options.port ?? null;
@@ -307,7 +309,14 @@ export class Service {
 
   /** 整份数据：带 session 时先打开那条会话（pi 不在就按需启动或续接），再读库与对话记录。 */
   async snapshot(t: Task, session: string | null) {
-    if (session) await t.executor.openSession(session);
+    if (session) {
+      try {
+        await t.executor.openSession(session);
+      } catch (error) {
+        // 没有接上这条会话：快照照常给（对话记录从会话文件读，条目从任务库读，都不依赖 pi），执行者状态里写明没有接上。
+        if (!(error instanceof ApiError && error.code === "session_resume_failed")) throw error;
+      }
+    }
     const [seq, view] = library.taskSnapshot(t.dir);
     let info: Record<string, any> | null = null;
     let conv = null;
