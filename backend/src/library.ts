@@ -57,7 +57,8 @@ function str(value: unknown): string {
 export function titleOf(fields: Record<string, any> | null | undefined, collection: ParsedDefinition["集合"][number] | null | undefined): string {
   if (!truthy(fields) || !collection || !truthy(collection["字段"])) return "";
   const value = fields![collection["字段"][0]["名"]];
-  if (Array.isArray(value)) return value.map(str).join("、");
+  // 列表里的空项跳过：保存修订与界面修改都不让写进空项，这里是库数据异常时的兜底。
+  if (Array.isArray(value)) return value.filter((v) => v !== null && v !== undefined && v !== "").map(str).join("、");
   return str(or(value, ""));
 }
 
