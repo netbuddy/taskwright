@@ -222,16 +222,16 @@ export class Executor {
     }
     this.busyCheck(sessionId);
     const pi = this.pi!;
-    let reported: string | null;
+    let state: Dict;
     try {
       await pi.switchSession(path);
-      reported = (await pi.getState()).sessionId ?? null;
+      state = await pi.getState();
     } catch (error) {
       if (!(error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
       return this.resumeFailedLocked(pi, sessionId, null, `切换会话：${error.message}`);
     }
-    if (reported !== sessionId) return this.resumeFailedLocked(pi, sessionId, reported, "切换会话");
-    this.adopt(await pi.getState());
+    if (state.sessionId !== sessionId) return this.resumeFailedLocked(pi, sessionId, state.sessionId ?? null, "切换会话");
+    this.adopt(state);
     this.cursor = null;
     this.setState("idle");
   }
