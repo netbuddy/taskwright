@@ -16,7 +16,7 @@ import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
 import { appVersion } from "./paths.ts";
 import { probeModel } from "./model_probe.ts";
-import { MAX_UPLOAD, type Service, taskTypes, wordsLocator } from "./service.ts";
+import { MAX_UPLOAD, type Service, TOO_LARGE_TEXT, taskTypes, wordsLocator } from "./service.ts";
 import { isWebPath, webFile } from "./web.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
@@ -241,6 +241,8 @@ export function serviceInfo(service: Service, remote: string | null = null) {
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
     capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available }, model: { name: model.name, reason: model.reason },
+    // 上传上限与超过时的那句话：前端在发送之前按它拦下过大的文件（经开发服务器的代理上传过大文件时，代理可能回 502）。
+    upload: { max_bytes: MAX_UPLOAD, too_large_text: TOO_LARGE_TEXT },
   };
 }
 
@@ -480,7 +482,7 @@ export function makeServer(service: Service, options: ServerOptions = {}) {
       let reply: Reply;
       try {
         service.task(upload[1]);
-        reply = json(413, new ApiError("too_large", "单个文件不能超过 5 MB。").body());
+        reply = json(413, new ApiError("too_large", TOO_LARGE_TEXT).body());
       } catch (error) {
         reply = error instanceof ApiError ? json(error.status, error.body()) : json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String(error) } } });
       }

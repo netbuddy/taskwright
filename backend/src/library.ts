@@ -662,6 +662,41 @@ export function changedFields(before: Record<string, any> | null, after: Record<
 }
 
 /**
+ * 按调用编号查一次调用在任务库里留下的事实，给过程摘要用：保存修订形成的修订（修订号与碰到的条目，条目取自那次修订的
+ * REVISION_SAVED 事件），以及哪些调用把任务标为了已完成（TASK_COMPLETED 事件）。用户让助手停下时，工具可能已经写进了库、
+ * 只是结果没来得及回到会话里，摘要据此如实写「保存了修订 N」「把任务标为已完成」。只读；库不在或读不出时两样都是空的。
+ */
+export function callFacts(taskDir: string | null): { revision: (callId: string) => Record<string, any> | null; completed: (callId: string) => boolean } {
+  const revisions = new Map<string, Record<string, any>>();
+  const completed = new Set<string>();
+  const db = (() => {
+    try {
+      return taskDir === null ? null : openRo(taskDir);
+    } catch {
+      return null;
+    }
+  })();
+  if (db !== null) {
+    try {
+      inReadTransaction(db, () => {
+        const events = new Map(all(db, "SELECT seq, payload FROM event WHERE name = 'REVISION_SAVED'").map((x) => [x.seq as number, x]));
+        for (const row of all(db, "SELECT revision_no, call_id, event_seq FROM revision")) {
+          if (!row.call_id) continue;
+          const payload = or(jsonOrText(events.get(row.event_seq as number)?.payload ?? null), {}) as Record<string, any>;
+          revisions.set(String(row.call_id), { revision_no: row.revision_no, operations: or(payload.operations, []) });
+        }
+        for (const row of all(db, "SELECT call_id FROM event WHERE name = 'TASK_COMPLETED'")) if (row.call_id) completed.add(String(row.call_id));
+      });
+    } catch {
+      // 旧格式或读不出：当作查不到
+    } finally {
+      db.close();
+    }
+  }
+  return { revision: (callId) => revisions.get(callId) ?? null, completed: (callId) => completed.has(callId) };
+}
+
+/**
  * 修订日志的库部分：每次修订一项，最新的在前。每项写这次修订的时刻、发起方、产生它的会话与调用编号，以及碰到的条目：
  * 操作、编号、标题、所属集合、改前改后所在的修订、改了哪些字段。修订表的 intent_act_id 对得上对话行为表里的一项用户行为时，
  * 另带 intent（编号、功能码、功能的中文名、摘要）。触发它的事与工作编号要读会话记录，由调用方补。任务还没有创建时返回 null。

@@ -74,6 +74,57 @@ export function readKind(path: string, definition: Dict): [string, string] {
 
 const py = (v: unknown) => (v === null || v === undefined ? "None" : String(v));
 
+/**
+ * 一次调用没有结果时的说法，集中在这一处（要改措辞只改这里）。没有结果是指用户让助手停下时，工具还没开始、或没来得及把结果
+ * 送回会话。不写成做完了：读、看目录、查看条目、查看任务状态、请评审者评审沿用各自失败时「没有成」的说法；保存修订与完成任务
+ * 会写库，查过任务库、确实没有写进去时写「没有做成」，没法查（没有给 CallFacts）时写「没有做完」，不断言成败。
+ */
+export const UNFINISHED_TEXT = {
+  read: (what: string) => `读${what}没有读成`,
+  ls: "看目录没有看成",
+  get_item: (item: string) => `查看条目 ${item} 没有成`,
+  get_task_status: "查看任务状态没有成",
+  request_review: "请评审者评审没有做成",
+  save_revision: "保存修订没有做成",
+  save_revision_unchecked: "保存修订没有做完",
+  complete_task: "完成任务没有做成",
+  complete_task_unchecked: "完成任务没有做完",
+  reply: "组织回复没有做成",
+  other: (tool: string) => `调用 ${tool} 没有做成`,
+};
+
+/** 按调用编号查它在任务库里留下的事实（library.callFacts）：保存修订形成的修订，是否把任务标为了已完成。 */
+export interface CallFacts {
+  revision(callId: string): Dict | null;
+  completed(callId: string): boolean;
+}
+
+/**
+ * 没有结果的一次调用写成一句话。保存修订查得到修订、完成任务查得到完成事件时照常写做完的说法（与有结果时同一句），
+ * 否则按 UNFINISHED_TEXT。实时的 step 行与过程摘要共用，同一次调用两处说法相同。
+ */
+export function unfinishedText(tool: string, args: Dict, callId: string | null, facts: CallFacts | null, definition: Dict): string {
+  if (tool === "save_revision") {
+    const found = facts !== null && callId ? facts.revision(callId) : null;
+    if (found) return stepText(tool, args, true, false, found, definition);
+    return facts === null ? UNFINISHED_TEXT.save_revision_unchecked : UNFINISHED_TEXT.save_revision;
+  }
+  if (tool === "complete_task") {
+    if (facts !== null && callId && facts.completed(callId)) return stepText(tool, args, true, false, null, definition);
+    return facts === null ? UNFINISHED_TEXT.complete_task_unchecked : UNFINISHED_TEXT.complete_task;
+  }
+  if (tool === "read") {
+    const [kind, name] = readKind(String(or(args.path, "")), definition);
+    return UNFINISHED_TEXT.read(kind === "方法说明" || kind === "任务定义" ? name : `${kind === "领域规矩" ? "领域规矩" : kind}${name}`);
+  }
+  if (tool === "ls") return UNFINISHED_TEXT.ls;
+  if (tool === "get_item") return UNFINISHED_TEXT.get_item(String(or(args.item_id, "")));
+  if (tool === "get_task_status") return UNFINISHED_TEXT.get_task_status;
+  if (tool === "request_review") return UNFINISHED_TEXT.request_review;
+  if (tool === REPLY_TOOL) return UNFINISHED_TEXT.reply;
+  return UNFINISHED_TEXT.other(tool);
+}
+
 /** 一次工具调用写成一句话：进行中、做完、失败三种说法。实时的 step 行与过程摘要共用。 */
 export function stepText(tool: string, args: Dict, done: boolean, failed: boolean, details: Dict | null, definition: Dict): string {
   if (tool === "read") {
@@ -119,7 +170,7 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
   return failed ? `调用 ${tool} 失败` : done ? `调用了 ${tool}` : `正在调用 ${tool}`;
 }
 
-/** 把一次工作的全部工具调用合成阶段。calls 每项是 {tool, args, failed, details}，按先后排。 */
+/** 把一次工作的全部工具调用合成阶段。calls 每项是 {tool, args, failed, details}，按先后排；没有结果的调用另带 unfinished 为真与写好的 text。 */
 export function stages(calls: Dict[], definition: Dict) {
   const out: Dict[] = [];
   let lastKey: string | null = null;
@@ -129,7 +180,10 @@ export function stages(calls: Dict[], definition: Dict) {
     const failed = truthy(c.failed);
     let key: string | null;
     let text: string;
-    if (failed) {
+    if (truthy(c.unfinished)) {
+      key = null;
+      text = String(c.text);
+    } else if (failed) {
       key = null;
       text = stepText(tool, args, true, true, c.details ?? null, definition);
       const reasons = tool === "save_revision" ? rejectionReasons(c.details ?? null, "") : [];
@@ -214,7 +268,7 @@ export interface Work {
  * 从当前分支上的会话条目切出每一次工作，算出过程摘要。没有调用过工具、也没有回复的那一段不算一次工作。
  * call_ids 是这次工作里全部工具调用的调用编号，修订日志据此把一次修订归到产生它的那次工作。
  */
-export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallbackText: string, textOf: (c: unknown) => string): Work[] {
+export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallbackText: string, textOf: (c: unknown) => string, facts: CallFacts | null = null): Work[] {
   const results = new Map<string, Dict>();
   for (const e of pathEntries) {
     const m = or(e.message, {}) as Dict;
@@ -247,9 +301,16 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
     if (role !== "assistant") continue;
     for (const part of or(m.content, []) as unknown[]) {
       if (!(isObject(part) && part.type === "toolCall")) continue;
-      const result = results.get(part.id ?? null) ?? {};
-      const failed = truthy(result.isError);
       current.call_ids.push(part.id ?? null);
+      if (!results.has(part.id ?? null)) {
+        // 没有结果：被停下时工具还没开始或没来得及回结果。写库的两种工具先查任务库，说法见 unfinishedText。
+        const args = or(part.arguments, {}) as Dict;
+        current.calls.push({ tool: or(part.name, ""), args, failed: false, details: {}, unfinished: true,
+          text: unfinishedText(String(or(part.name, "")), args, part.id ?? null, facts, definition) });
+        continue;
+      }
+      const result = results.get(part.id ?? null)!;
+      const failed = truthy(result.isError);
       let details = or(result.details, {}) as Dict;
       if (failed && part.name === "save_revision") details = { ...details, reasons: rejectionParts(details, resultText(result)) };
       current.calls.push({ tool: or(part.name, ""), args: or(part.arguments, {}), failed, details });

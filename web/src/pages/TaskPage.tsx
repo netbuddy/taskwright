@@ -15,6 +15,8 @@ import { formatBytes, formatTime } from "../model/format";
 import { ownMaterials } from "../model/docx";
 import { DocxPaper } from "../components/work/DocxPaper";
 import { go, href } from "../router";
+import { useService } from "../components/ServiceControls";
+import { tooLargeText } from "../model/upload";
 import { statusTag } from "./TaskListPage";
 
 export function TaskPage({ taskId }: { taskId: string }) {
@@ -28,6 +30,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
   // Word 材料的「查看原文」按原版式显示（与工作视图材料区同一个渲染），不显示给助手读的投影。
   const [wordPath, setWordPath] = useState<string | null>(null);
   const toast = useToast();
+  const service = useService();
 
   const load = () =>
     api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
@@ -124,6 +127,13 @@ export function TaskPage({ taskId }: { taskId: string }) {
                 showUploadList={false}
                 style={{ marginTop: "0.714rem" }}
                 customRequest={async ({ file, onSuccess, onError }) => {
+                  // 超过上限的文件不发请求，直接报后端给的那句话。
+                  const tooLarge = tooLargeText(service.info, file as File);
+                  if (tooLarge) {
+                    toast.error(tooLarge);
+                    onError?.(new Error(tooLarge));
+                    return;
+                  }
                   try {
                     const r = await api.uploadMaterial(taskId, file as File);
                     toast.success(`已上传：${r.path}`);

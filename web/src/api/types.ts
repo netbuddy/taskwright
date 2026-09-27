@@ -716,4 +716,6 @@ export interface ServiceInfo {
   port: number | null;
   capabilities: { exit: boolean; model?: boolean };
   model?: { name: string; reason: string };
+  /** 上传上限（字节）与超过时的那句话；旧后端没有这一项。 */
+  upload?: { max_bytes: number; too_large_text: string };
 }
