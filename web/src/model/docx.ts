@@ -7,6 +7,8 @@
 // 分页标记处把一段拆成两个元素、空的前一半与空页、后面的节不沿用页眉页脚、页码域照抄、带上标的注释引用登记两次。
 
 import { defaultOptions, parseAsync, renderDocument } from "docx-preview";
+// 标题判断与投影共用一份规则（agent 的 lib/docx_heading.ts，不依赖任何模块）。
+import { headingLevel } from "../../../agent/src/lib/docx_heading";
 
 /** 注释引用的上标数字与普通上标都画成 sup；注释引用的唯一子节点是字符串，据此加 class，回填与查找时跳过。 */
 function h(props: Parameters<typeof defaultOptions.h>[0]): Node {
@@ -21,7 +23,7 @@ export const RENDER_OPTIONS = {
   renderChanges: false, renderComments: false, renderHeaders: true, renderFooters: true, renderFootnotes: true, renderEndnotes: true,
 };
 
-/** 一段是不是标题（大纲级别）与标题怎么写（「3.2 借阅规则」）。 */
+/** 一段是不是标题（大纲级别，0 是一级标题，规则见 agent 的 lib/docx_heading.ts）与标题怎么写（「3.2 借阅规则」）。 */
 export interface ParagraphInfo { heading: number | null; title: string }
 
 export interface RenderedDocx {
@@ -40,7 +42,7 @@ type Node0 = any;
 /**
  * 渲染之前，在解析树上：
  * 1. 按计数规则给每段打上 class「tw-p tw-pn-N」；分页拆开的后一半是前一半的浅拷贝，带着同一个 class，渲染后据此认回同一段；
- * 2. 记下每段的大纲级别与标题编号（只认十进制编号，如 3.2；别的编号格式只取标题文字）；
+ * 2. 记下每段的标题级别（与投影同一份规则：大纲级别，没写时看样式名）与标题编号（只认十进制编号，如 3.2；别的编号格式只取标题文字）；
  * 3. 后面的节没写自己的页眉页脚时沿用前一节的（Word 这样显示，docx-preview 不沿用）；
  * 4. 页眉页脚里 PAGE、NUMPAGES 域的显示结果打上 class，渲染后填真页码与总页数（docx-preview 照抄保存时的结果）；
  * 5. 脚注尾注引用所在文字块的上标格式去掉：带上标的文字块会被渲染两次，注释因此登记两次（引用号变 2、注释列两遍）；引用本来就画成上标。
@@ -82,8 +84,11 @@ export function prepare(d: Node0): { info: (ParagraphInfo | null)[]; marks: numb
       });
       if (!decimal) label = "";
     }
-    const outline = p.outlineLevel ?? fromStyle(p.styleName, "outlineLevel");
-    info.push({ heading: outline != null && outline < 9 ? outline : null, title: [label, textOf(p).trim()].filter(Boolean).join(" ") });
+    const heading = headingLevel(p.outlineLevel, p.styleName, (id) => {
+      const s = styles.get(id);
+      return s && { name: s.name, basedOn: s.basedOn, outline: s.paragraphProps?.outlineLevel };
+    });
+    info.push({ heading, title: [label, textOf(p).trim()].filter(Boolean).join(" ") });
   };
   const blocks = (els: Node0[] | undefined) => {
     for (const e of els ?? []) {
