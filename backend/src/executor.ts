@@ -529,7 +529,7 @@ export class Executor {
     if (kind === "tool_execution_end") return this.toolEnd(event, sid);
     if (kind === "turn_end") return this.turnEnd(sid);
     if (kind === "auto_retry_start") {
-      this.hub.emit("problem", { session_id: sid, code: "model_unavailable", text: `模型服务暂时不可用，正在第 ${event.attempt ?? "None"} 次重试。`,
+      this.hub.emit("problem", { session_id: sid, code: "model_unavailable", text: event.attempt == null ? "模型服务暂时不可用，正在重试。" : `模型服务暂时不可用，正在第 ${event.attempt} 次重试。`,
         retry: { attempt: event.attempt ?? null, delay_ms: event.delayMs ?? null } });
       return;
     }
