@@ -16,11 +16,11 @@
 | 文件 | 它做什么 |
 |---|---|
 | `launch.py` | 把启动配置读成一条 pi 命令行与一份环境变量。全部代码里拼 pi 命令行的地方只有它的 `build_command` 函数这一处。 |
-| `profiles/dev.json` | 开发用的启动配置：模式、模型、加载哪些扩展、工具白名单、要传给 pi 的环境变量名单。 |
+| `backend/profiles/`（在代码仓根目录下，不在本目录） | 启动配置：模式、模型、加载哪些扩展、工具白名单、要传给 pi 的环境变量名单。两版共用这一份，`launch.py` 从这里读；开发用的是 `dev.json`。 |
 | `pi_session.py` | 会话类：启动 pi 子进程、发话、逐条读事件、判定一句话说完了、把原始事件流归档、pi 没了立刻报告；每次启动时在后端补记里记下 pi 实际加载的 skill、上下文文件与知识仓库各文件的摘要值。 |
 | `chat.py` | 终端对话客户端，经 RPC 操作 pi，日常开发用它。入口是 `python -m taskwright_server.chat <任务目录>`。开场打印任务现状消息；「回复」与「保存修订」两个工具的结果经 `agent/src/cli/render.mts` 排版，与 pi 终端界面里的显示是同一份。 |
 | `tui.py` | TUI 验证程序：用 pi 自带的终端界面（交互模式）跟执行者对话，给人亲手验证用。启动配置与 RPC 模式同一份，只是不写 `--mode rpc`。入口是 `python -m taskwright_server.tui <任务目录> --label 名字`，可加 `--continue`（续接最近一条会话）、`--session <会话文件>`、`--env-tag <Langfuse 环境标签>`。在 pi 里打 `/tw-board` 看交付物看板，Ctrl+O 展开工具输出。每次启动在 `$TASKWRIGHT_RUNS_DIR/pi-tui/` 下记一份启动记录。 |
-| `prompts/executor_system_prompt.md` | 执行者的系统提示。启动时用 `--system-prompt` 整体替换 pi 自带的系统提示，这份文字是执行者行为的一部分，改动要连同测试一起评估。 |
+| `backend/prompts/executor_system_prompt.md`（在代码仓根目录下，不在本目录） | 执行者的系统提示。启动时用 `--system-prompt` 整体替换 pi 自带的系统提示，这份文字是执行者行为的一部分，改动要连同测试一起评估。 |
 | `taskdb.py` | 只读地读新格式（按条目记版本）的任务数据库。`dbshow`、`check_db` 与观测台都经它读，读法只有这一份。 |
 | `dbshow.py` | 只读查看任务目录里的 `task.sqlite`。入口是 `python -m taskwright_observatory.dbshow <任务目录>`。 |
 | `check_db.py` | 只读的不变式核对。入口是 `python -m taskwright_observatory.check_db <任务目录>`，逐项打印通过或不通过。 |
@@ -57,7 +57,7 @@ TASKWRIGHT_LANGFUSE_PROJECT_ID=<项目编号>
 这个文件建议把权限设成只有自己能读（`chmod 600`）。密钥只经环境变量传给 pi，不进命令行参数——
 命令行参数在进程列表里是同机器上所有人都看得见的。
 
-Langfuse 里这批数据的环境标签固定是 `development`，写在 `profiles/dev.json` 的 `langfuse` 一节里。
+Langfuse 里这批数据的环境标签固定是 `development`，写在 `backend/profiles/dev.json` 的 `langfuse` 一节里。
 
 ## 怎么用
 
@@ -179,7 +179,7 @@ python -m taskwright_server.create_task <任务目录> --name <任务名> --mate
 python -m taskwright_server.chat <任务目录>
 ```
 
-启动后先看客户端打出的几行：启动 pi 的完整命令（里面应当有 `--tools` 白名单，内容以 `profiles/dev.json` 为准、
+启动后先看客户端打出的几行：启动 pi 的完整命令（里面应当有 `--tools` 白名单，内容以 `backend/profiles/dev.json` 为准、
 `--system-prompt` 与两个 `--skill`：先是代码仓里的平台 skill `agent/prompts/skills/taskwright-executor`，再是 `<任务目录>/.pi/skills`）、两个扩展各自加载到哪个文件、环境标签、
 原始事件流归档到哪个文件、会话文件在哪、Langfuse 里这条会话的链接。**两个扩展都要显示出路径**，
 Langfuse 那个显示「没有加载」就说明 `TASKWRIGHT_LANGFUSE_PLUGIN` 没设对。

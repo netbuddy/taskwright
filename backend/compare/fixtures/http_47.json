@@ -1,0 +1,2397 @@
+{
+ "source": {
+  "commit": "d067d1b",
+  "generated": "2026-09-27",
+  "command": "node backend/compare/compare.mts … --save-fixture"
+ },
+ "steps": [
+  {
+   "label": "任务类型",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "task_types": [
+      {
+       "name": "软件需求规格说明编制",
+       "task_type": "srs-authoring"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "任务列表（空）",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "tasks": []
+    }
+   }
+  },
+  {
+   "label": "建任务",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "task_id": "TASK-1"
+    }
+   }
+  },
+  {
+   "label": "建任务：没有这种任务类型",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {
+       "available": [
+        "srs-authoring"
+       ]
+      },
+      "message": "没有「no-such-type」这种任务类型。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "建任务：请求体不是 JSON",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "请求体不是合法的 JSON。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "建任务：请求体不是对象",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "请求体应当是一个 JSON 对象。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "上传 .md",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "path": "inputs/需求说明.md"
+    }
+   }
+  },
+  {
+   "label": "上传 .txt",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "path": "inputs/会议纪要.txt"
+    }
+   }
+  },
+  {
+   "label": "上传 .docx",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "path": "inputs/退款规则.docx"
+    }
+   }
+  },
+  {
+   "label": "上传重名文件（加 -2）",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "path": "inputs/需求说明-2.md"
+    }
+   }
+  },
+  {
+   "label": "上传：类型不支持",
+   "reply": {
+    "status": 415,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "unsupported_type",
+      "data": {},
+      "message": "只接受 .md、.txt 与 .docx（Word）三种文件。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "上传：投影保留名（旧的 .txt）",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 材料生成的投影用，请改个名字再上传。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "上传：投影保留名（.md）",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 材料生成的投影用，请改个名字再上传。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "上传：损坏的 .docx",
+   "reply": {
+    "status": 415,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "unsupported_type",
+      "data": {},
+      "message": "不是 Word 文件（.docx），或者文件已损坏，请用 Word 另存为 .docx 后再上传。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "上传：文件名带路径",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "文件名里不能带路径分隔符。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "上传：超过 5 MB",
+   "reply": {
+    "status": 413,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "too_large",
+      "data": {},
+      "message": "单个文件不能超过 5 MB。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "上传：请求里没有文件",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "请求里没有文件。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "（造数：修订、界面操作、评审、会话文件；占用中与旧格式各一个任务）",
+   "reply": {
+    "status": 0,
+    "content_type": "",
+    "content_disposition": null,
+    "body": {
+     "字节数": 0,
+     "摘要": ""
+    }
+   }
+  },
+  {
+   "label": "任务列表（含占用中、旧格式）",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "tasks": [
+      {
+       "completion_met": 6,
+       "completion_total": 9,
+       "completion_unmet": 3,
+       "domain_tag": "电商",
+       "item_count": 6,
+       "last_active_at": "<时刻>",
+       "session_count": 2,
+       "status": "进行中",
+       "supported": true,
+       "task_id": "TASK-1",
+       "task_name": "跨境电商退款",
+       "task_type": "软件需求规格说明编制"
+      },
+      {
+       "completion_met": null,
+       "completion_total": null,
+       "completion_unmet": null,
+       "domain_tag": null,
+       "item_count": null,
+       "last_active_at": null,
+       "note": "这个任务正被端口 9999 的服务占用，这里不能打开。",
+       "occupied": {
+        "host": "<本机>",
+        "pid": "<进程号>",
+        "port": 9999
+       },
+       "session_count": null,
+       "status": "占用中",
+       "supported": false,
+       "task_id": "TASK-2",
+       "task_name": "别人的任务",
+       "task_type": null
+      },
+      {
+       "completion_met": null,
+       "completion_total": null,
+       "completion_unmet": null,
+       "domain_tag": null,
+       "item_count": null,
+       "last_active_at": "<时刻>",
+       "note": "这个任务是旧格式（修订统一之前建的，条目还按内容版本号记），本版本不支持。请新建一个任务。",
+       "session_count": null,
+       "status": "旧格式",
+       "supported": false,
+       "task_id": "TASK-3",
+       "task_name": "TASK-3",
+       "task_type": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "任务页",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "completion": {
+      "all_met": false,
+      "brief": "要完成任务，还差 3 项：非功能需求每个条目用户确认（还差 NFR-001）；约束每个条目评审通过（还差 CON-001、CON-002）；约束每个条目用户确认（还差 CON-001、CON-002）。",
+      "conditions": [
+       {
+        "collection": "功能用例",
+        "done": 1,
+        "met": true,
+        "missing": [],
+        "name": "至少一个条目",
+        "note": "现在有 1 个条目。",
+        "state": "met",
+        "total": 1
+       },
+       {
+        "collection": "功能用例",
+        "done": 1,
+        "met": true,
+        "missing": [],
+        "name": "每个条目评审通过",
+        "note": "每个条目在当前所在的修订都有评审通过的记录。",
+        "state": "met",
+        "total": 1
+       },
+       {
+        "collection": "功能用例",
+        "done": 1,
+        "met": true,
+        "missing": [],
+        "name": "每个条目用户确认",
+        "note": "每个条目用户都看过，没有未读的条目。",
+        "state": "met",
+        "total": 1
+       },
+       {
+        "collection": "非功能需求",
+        "done": 1,
+        "met": true,
+        "missing": [],
+        "name": "每个条目评审通过",
+        "note": "每个条目都评审通过，或由你保留了写法（NFR-001 评审不合规但你保留了，按你的决定算通过）。",
+        "state": "met",
+        "total": 1
+       },
+       {
+        "collection": "非功能需求",
+        "done": 0,
+        "met": false,
+        "missing": [
+         "NFR-001"
+        ],
+        "name": "每个条目用户确认",
+        "note": "有 1 个条目用户还没看过这个条目（未读）。",
+        "state": "unmet",
+        "total": 1
+       },
+       {
+        "collection": "约束",
+        "done": 0,
+        "met": false,
+        "missing": [
+         "CON-001",
+         "CON-002"
+        ],
+        "name": "每个条目评审通过",
+        "note": "CON-001、CON-002 还没评审。",
+        "state": "unmet",
+        "total": 2
+       },
+       {
+        "collection": "约束",
+        "done": 0,
+        "met": false,
+        "missing": [
+         "CON-001",
+         "CON-002"
+        ],
+        "name": "每个条目用户确认",
+        "note": "有 2 个条目用户还没看过这个条目（未读）。",
+        "state": "unmet",
+        "total": 2
+       },
+       {
+        "collection": "问题",
+        "done": 1,
+        "met": true,
+        "missing": [],
+        "name": "没有状态为未解决的条目",
+        "note": "没有状态为未解决的条目。",
+        "state": "met",
+        "total": 1
+       },
+       {
+        "collection": "领域说明",
+        "done": 1,
+        "met": true,
+        "missing": [],
+        "name": "每个条目用户确认",
+        "note": "每个条目用户都看过，没有未读的条目。",
+        "state": "met",
+        "total": 1
+       }
+      ],
+      "hints": [
+       {
+        "collection": "领域说明",
+        "items": [
+         "DN-001"
+        ],
+        "kind": "unlinked_domain_notes",
+        "summary": "有 1 条领域说明还没有和任何条目关联：DN-001。"
+       }
+      ],
+      "unmet_count": 3
+     },
+     "definition": {
+      "collections": [
+       {
+        "all_rules": [
+         {
+          "counter_example": "用例名称「点击续借按钮」；用例名称「借阅管理」。",
+          "example": "用例名称「续借图书」。",
+          "id": "UC-R1",
+          "level": "必选",
+          "state": "required",
+          "text": "用例粒度以参与者的一个目的为准；一个步骤不是用例，一堆用例的总称也不是。"
+         },
+         {
+          "counter_example": "用例功能「读者借阅图书并预约已借出的图书」。",
+          "example": "拆成「借阅图书」与「预约图书」两个用例。",
+          "id": "UC-R2",
+          "level": "可选",
+          "state": "optional",
+          "text": "一个用例只写一件事；材料里并列的、各有结果的两件事拆成两个用例。"
+         },
+         {
+          "counter_example": "「归还图书」与「逾期归还图书」各写一个用例，前五步完全相同。",
+          "example": "一个用例「归还图书」，扩展流程「3a. 图书已逾期：系统计算逾期费用……」。",
+          "id": "UC-R3",
+          "level": "可选",
+          "state": "optional",
+          "text": "两个用例的基本流程大部分相同时，应合并为同一用例的基本流程与扩展流程。"
+         },
+         {
+          "counter_example": "「借阅处理」。",
+          "example": "「借阅图书」。",
+          "id": "UC-R4",
+          "level": "可选",
+          "state": "optional",
+          "text": "用例名称是从参与者角度写的「动词加对象」短语，不用「管理」「处理」这类词。"
+         },
+         {
+          "counter_example": "参与者「张老师、系统管理员」；参与者「读者和管理员」写在一项里。",
+          "example": "参与者「读者」「管理员」两项，读者在前。",
+          "id": "UC-R5",
+          "level": "必选",
+          "state": "required",
+          "text": "参与者一项一个角色名，发起者排第一，不用人名。"
+         },
+         {
+          "counter_example": "前置条件「读者想续借」；后置条件「续借成功」。",
+          "example": "前置条件「图书处于借出状态」；后置条件「图书的应还日期已顺延 15 天」。",
+          "id": "UC-R6",
+          "level": "必选",
+          "state": "required",
+          "text": "前置条件与后置条件写成可以判断真假的状态陈述，一项一条。"
+         },
+         {
+          "counter_example": "步骤「校验预约情况」（没有主语）；步骤「续借完成」放在校验之前。",
+          "example": "「读者选择要续借的图书并提交」「系统校验这本图书是否已被他人预约」。",
+          "id": "UC-R7",
+          "level": "必选",
+          "state": "required",
+          "text": "基本流程每一步写明谁做了什么，主语是参与者或系统，按先后排列。"
+         },
+         {
+          "counter_example": "扩展流程「图书已被预约时拒绝续借」。",
+          "example": "「3a. 图书已被他人预约：系统拒绝续借并说明原因，用例结束。」",
+          "id": "UC-R8",
+          "level": "可选",
+          "state": "optional",
+          "text": "扩展流程每一条开头标明从基本流程的第几步分出。"
+         },
+         {
+          "counter_example": "步骤「读者点击右上角蓝色的续借按钮」；约束规则「续借记录写入 renew 表」。",
+          "example": "步骤「读者提交续借请求」。",
+          "id": "UC-R9",
+          "level": "可选",
+          "state": "optional",
+          "text": "不写界面细节与实现手段，除非材料明确把它当作约束提出。"
+         },
+         {
+          "counter_example": "材料只说「可以续借一次」，用例里写了「系统向读者发送续借成功的短信」且来源标为文档原文。",
+          "example": "不写短信步骤；确需补的步骤来源标「助手补充」。",
+          "id": "UC-R10",
+          "level": "必选",
+          "state": "required",
+          "text": "不把材料里没有的功能写进去；按常识补的步骤，来源必须标为助手补充。"
+         },
+         {
+          "counter_example": "材料写「寒暑假借期另定」，用例约束规则写成「寒暑假借期为 60 天」。",
+          "example": "约束规则不写寒暑假借期，另记问题条目「寒暑假借期的规则待澄清」。",
+          "id": "UC-R11",
+          "level": "必选",
+          "state": "required",
+          "text": "不把含糊之处自己定下来；材料说不清、前后矛盾或明说还没想好的，记为问题条目。"
+         },
+         {
+          "counter_example": "约束规则「逾期按每天 0.5 元计费，例如逾期 3 天收 1.5 元」。",
+          "example": "约束规则「逾期按每天 0.5 元计费」。",
+          "id": "UC-R12",
+          "level": "可选",
+          "state": "optional",
+          "text": "约束规则与流程里不举例。"
+         },
+         {
+          "counter_example": "步骤「系统核对借阅记录等」。",
+          "example": "步骤「系统核对该读者名下是否有逾期未还图书」。",
+          "id": "UC-R13",
+          "level": "可选",
+          "state": "optional",
+          "text": "步骤里不用「等」「相关」「必要的」这类无法验证的词。"
+         },
+         {
+          "counter_example": "材料写「学生一次最多借 5 本」，约束规则写「学生一次最多借几本」或「约 5 本」。",
+          "example": "约束规则「学生一次最多借 5 本」。",
+          "id": "UC-R14",
+          "level": "必选",
+          "state": "required",
+          "text": "材料里的数值、期限、判定条件在约束规则里原样写出。"
+         }
+        ],
+        "display": null,
+        "fields": [
+         {
+          "name": "用例名称",
+          "required": true,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "用例功能",
+          "required": true,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "参与者",
+          "required": true,
+          "type": "文本列表",
+          "values": null
+         },
+         {
+          "name": "前置条件",
+          "required": false,
+          "type": "文本列表",
+          "values": null
+         },
+         {
+          "name": "后置条件",
+          "required": false,
+          "type": "文本列表",
+          "values": null
+         },
+         {
+          "name": "约束规则",
+          "required": false,
+          "type": "文本列表",
+          "values": null
+         },
+         {
+          "name": "基本流程",
+          "required": true,
+          "type": "文本列表",
+          "values": null
+         },
+         {
+          "name": "扩展流程",
+          "required": false,
+          "type": "文本列表",
+          "values": null
+         }
+        ],
+        "name": "功能用例",
+        "needs_review": true,
+        "prefix": "UC",
+        "review_rules": [
+         {
+          "counter_example": "用例名称「点击续借按钮」；用例名称「借阅管理」。",
+          "example": "用例名称「续借图书」。",
+          "id": "UC-R1",
+          "level": "必选",
+          "text": "用例粒度以参与者的一个目的为准；一个步骤不是用例，一堆用例的总称也不是。"
+         },
+         {
+          "counter_example": "用例功能「读者借阅图书并预约已借出的图书」。",
+          "example": "拆成「借阅图书」与「预约图书」两个用例。",
+          "id": "UC-R2",
+          "level": "可选",
+          "text": "一个用例只写一件事；材料里并列的、各有结果的两件事拆成两个用例。"
+         },
+         {
+          "counter_example": "「归还图书」与「逾期归还图书」各写一个用例，前五步完全相同。",
+          "example": "一个用例「归还图书」，扩展流程「3a. 图书已逾期：系统计算逾期费用……」。",
+          "id": "UC-R3",
+          "level": "可选",
+          "text": "两个用例的基本流程大部分相同时，应合并为同一用例的基本流程与扩展流程。"
+         },
+         {
+          "counter_example": "「借阅处理」。",
+          "example": "「借阅图书」。",
+          "id": "UC-R4",
+          "level": "可选",
+          "text": "用例名称是从参与者角度写的「动词加对象」短语，不用「管理」「处理」这类词。"
+         },
+         {
+          "counter_example": "参与者「张老师、系统管理员」；参与者「读者和管理员」写在一项里。",
+          "example": "参与者「读者」「管理员」两项，读者在前。",
+          "id": "UC-R5",
+          "level": "必选",
+          "text": "参与者一项一个角色名，发起者排第一，不用人名。"
+         },
+         {
+          "counter_example": "前置条件「读者想续借」；后置条件「续借成功」。",
+          "example": "前置条件「图书处于借出状态」；后置条件「图书的应还日期已顺延 15 天」。",
+          "id": "UC-R6",
+          "level": "必选",
+          "text": "前置条件与后置条件写成可以判断真假的状态陈述，一项一条。"
+         },
+         {
+          "counter_example": "步骤「校验预约情况」（没有主语）；步骤「续借完成」放在校验之前。",
+          "example": "「读者选择要续借的图书并提交」「系统校验这本图书是否已被他人预约」。",
+          "id": "UC-R7",
+          "level": "必选",
+          "text": "基本流程每一步写明谁做了什么，主语是参与者或系统，按先后排列。"
+         },
+         {
+          "counter_example": "扩展流程「图书已被预约时拒绝续借」。",
+          "example": "「3a. 图书已被他人预约：系统拒绝续借并说明原因，用例结束。」",
+          "id": "UC-R8",
+          "level": "可选",
+          "text": "扩展流程每一条开头标明从基本流程的第几步分出。"
+         },
+         {
+          "counter_example": "步骤「读者点击右上角蓝色的续借按钮」；约束规则「续借记录写入 renew 表」。",
+          "example": "步骤「读者提交续借请求」。",
+          "id": "UC-R9",
+          "level": "可选",
+          "text": "不写界面细节与实现手段，除非材料明确把它当作约束提出。"
+         },
+         {
+          "counter_example": "材料只说「可以续借一次」，用例里写了「系统向读者发送续借成功的短信」且来源标为文档原文。",
+          "example": "不写短信步骤；确需补的步骤来源标「助手补充」。",
+          "id": "UC-R10",
+          "level": "必选",
+          "text": "不把材料里没有的功能写进去；按常识补的步骤，来源必须标为助手补充。"
+         },
+         {
+          "counter_example": "材料写「寒暑假借期另定」，用例约束规则写成「寒暑假借期为 60 天」。",
+          "example": "约束规则不写寒暑假借期，另记问题条目「寒暑假借期的规则待澄清」。",
+          "id": "UC-R11",
+          "level": "必选",
+          "text": "不把含糊之处自己定下来；材料说不清、前后矛盾或明说还没想好的，记为问题条目。"
+         },
+         {
+          "counter_example": "约束规则「逾期按每天 0.5 元计费，例如逾期 3 天收 1.5 元」。",
+          "example": "约束规则「逾期按每天 0.5 元计费」。",
+          "id": "UC-R12",
+          "level": "可选",
+          "text": "约束规则与流程里不举例。"
+         },
+         {
+          "counter_example": "步骤「系统核对借阅记录等」。",
+          "example": "步骤「系统核对该读者名下是否有逾期未还图书」。",
+          "id": "UC-R13",
+          "level": "可选",
+          "text": "步骤里不用「等」「相关」「必要的」这类无法验证的词。"
+         },
+         {
+          "counter_example": "材料写「学生一次最多借 5 本」，约束规则写「学生一次最多借几本」或「约 5 本」。",
+          "example": "约束规则「学生一次最多借 5 本」。",
+          "id": "UC-R14",
+          "level": "必选",
+          "text": "材料里的数值、期限、判定条件在约束规则里原样写出。"
+         }
+        ],
+        "rule_switches": {
+         "off": [],
+         "promote": []
+        },
+        "rules_hash": "a532928ffe417bc9"
+       },
+       {
+        "all_rules": [
+         {
+          "counter_example": "「系统应当在 2 秒内返回续借结果，并且应当保留操作记录 5 年。」",
+          "example": "拆成两条：响应时间一条，记录保留一条。",
+          "id": "EARS-R1",
+          "level": "必选",
+          "state": "required",
+          "text": "一条只说一件事；一句话里有两个「应当」就拆成两条。"
+         },
+         {
+          "counter_example": "「我们应当保证检索很快。」",
+          "example": "「借阅系统应当在 2 秒内返回检索结果。」",
+          "id": "EARS-R2",
+          "level": "必选",
+          "state": "required",
+          "text": "主语明确，是「系统」或具体的子系统名；系统的具体名称（例如「图书借还系统」）算合法主语。"
+         },
+         {
+          "counter_example": "「系统应当尽快返回续借结果。」",
+          "example": "「当读者提交续借请求时，系统应当在 2 秒内返回续借结果。」",
+          "id": "EARS-R3",
+          "level": "必选",
+          "state": "required",
+          "text": "可以验证：有数值的写数值与单位，计量方式说清；材料没定义的记问题条目，不自己定；「本」「天」这类计数单位算单位。"
+         },
+         {
+          "counter_example": "「系统应当提供友好的检索界面。」",
+          "example": "材料没有可验证标准时不写成需求，记问题条目。",
+          "id": "EARS-R4",
+          "level": "必选",
+          "state": "required",
+          "text": "不用含糊的词（快速、及时、友好、灵活、尽量、适当、智能等）。"
+         },
+         {
+          "counter_example": "「系统应当支持常见浏览器，例如 Chrome。」",
+          "example": "「系统应当支持材料附录列出的浏览器版本。」",
+          "id": "EARS-R5",
+          "level": "可选",
+          "state": "optional",
+          "text": "不举例；需求语句里不出现「例如」「比如」「如某某」。"
+         },
+         {
+          "counter_example": "「系统应当用 Redis 缓存检索结果。」",
+          "example": "「系统应当在 2 秒内返回检索结果。」（若材料要求对接统一身份认证，则「必须对接学校统一身份认证」是合法的约束。）",
+          "id": "EARS-R6",
+          "level": "可选",
+          "state": "optional",
+          "text": "不写实现手段，除非这个手段本身就是约束。"
+         },
+         {
+          "counter_example": "材料写「超过 5 本」，需求写「不少于 5 本」；材料写「3 天」，需求写「约 3 天」。",
+          "example": "与材料一致写「超过 5 本」「3 天」。",
+          "id": "EARS-R7",
+          "level": "必选",
+          "state": "required",
+          "text": "材料里的数值与条件原样保留，不四舍五入，不改比较方向。"
+         },
+         {
+          "counter_example": "句式类型填「事件驱动型」，语句是「系统应当保留操作记录 5 年」（普遍型骨架）。",
+          "example": "句式类型「普遍型」。",
+          "id": "EARS-R8",
+          "level": "必选",
+          "state": "required",
+          "text": "句式类型一栏与需求语句实际用的骨架一致。"
+         },
+         {
+          "counter_example": "约束集合里写「读者可以预约已借出的图书」（这是功能用例）。",
+          "example": "该内容记为功能用例「预约图书」。",
+          "id": "EARS-R9",
+          "level": "可选",
+          "state": "optional",
+          "text": "类别分清：做得多好的是非功能需求；不能改的既定条件是约束；参与者完成的一件事是功能用例，不写在这里。"
+         }
+        ],
+        "display": null,
+        "fields": [
+         {
+          "name": "类别",
+          "required": true,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "句式类型",
+          "required": true,
+          "type": "枚举",
+          "values": [
+           "普遍型",
+           "事件驱动型",
+           "状态驱动型",
+           "可选特性型",
+           "异常处理型",
+           "复合型"
+          ]
+         },
+         {
+          "name": "需求语句",
+          "required": true,
+          "type": "文本",
+          "values": null
+         }
+        ],
+        "name": "非功能需求",
+        "needs_review": true,
+        "prefix": "NFR",
+        "review_rules": [
+         {
+          "counter_example": "「系统应当在 2 秒内返回续借结果，并且应当保留操作记录 5 年。」",
+          "example": "拆成两条：响应时间一条，记录保留一条。",
+          "id": "EARS-R1",
+          "level": "必选",
+          "text": "一条只说一件事；一句话里有两个「应当」就拆成两条。"
+         },
+         {
+          "counter_example": "「我们应当保证检索很快。」",
+          "example": "「借阅系统应当在 2 秒内返回检索结果。」",
+          "id": "EARS-R2",
+          "level": "必选",
+          "text": "主语明确，是「系统」或具体的子系统名；系统的具体名称（例如「图书借还系统」）算合法主语。"
+         },
+         {
+          "counter_example": "「系统应当尽快返回续借结果。」",
+          "example": "「当读者提交续借请求时，系统应当在 2 秒内返回续借结果。」",
+          "id": "EARS-R3",
+          "level": "必选",
+          "text": "可以验证：有数值的写数值与单位，计量方式说清；材料没定义的记问题条目，不自己定；「本」「天」这类计数单位算单位。"
+         },
+         {
+          "counter_example": "「系统应当提供友好的检索界面。」",
+          "example": "材料没有可验证标准时不写成需求，记问题条目。",
+          "id": "EARS-R4",
+          "level": "必选",
+          "text": "不用含糊的词（快速、及时、友好、灵活、尽量、适当、智能等）。"
+         },
+         {
+          "counter_example": "「系统应当支持常见浏览器，例如 Chrome。」",
+          "example": "「系统应当支持材料附录列出的浏览器版本。」",
+          "id": "EARS-R5",
+          "level": "可选",
+          "text": "不举例；需求语句里不出现「例如」「比如」「如某某」。"
+         },
+         {
+          "counter_example": "「系统应当用 Redis 缓存检索结果。」",
+          "example": "「系统应当在 2 秒内返回检索结果。」（若材料要求对接统一身份认证，则「必须对接学校统一身份认证」是合法的约束。）",
+          "id": "EARS-R6",
+          "level": "可选",
+          "text": "不写实现手段，除非这个手段本身就是约束。"
+         },
+         {
+          "counter_example": "材料写「超过 5 本」，需求写「不少于 5 本」；材料写「3 天」，需求写「约 3 天」。",
+          "example": "与材料一致写「超过 5 本」「3 天」。",
+          "id": "EARS-R7",
+          "level": "必选",
+          "text": "材料里的数值与条件原样保留，不四舍五入，不改比较方向。"
+         },
+         {
+          "counter_example": "句式类型填「事件驱动型」，语句是「系统应当保留操作记录 5 年」（普遍型骨架）。",
+          "example": "句式类型「普遍型」。",
+          "id": "EARS-R8",
+          "level": "必选",
+          "text": "句式类型一栏与需求语句实际用的骨架一致。"
+         },
+         {
+          "counter_example": "约束集合里写「读者可以预约已借出的图书」（这是功能用例）。",
+          "example": "该内容记为功能用例「预约图书」。",
+          "id": "EARS-R9",
+          "level": "可选",
+          "text": "类别分清：做得多好的是非功能需求；不能改的既定条件是约束；参与者完成的一件事是功能用例，不写在这里。"
+         }
+        ],
+        "rule_switches": {
+         "off": [],
+         "promote": []
+        },
+        "rules_hash": "05280b6cb8839f9e"
+       },
+       {
+        "all_rules": [
+         {
+          "counter_example": "「系统应当在 2 秒内返回续借结果，并且应当保留操作记录 5 年。」",
+          "example": "拆成两条：响应时间一条，记录保留一条。",
+          "id": "EARS-R1",
+          "level": "必选",
+          "state": "required",
+          "text": "一条只说一件事；一句话里有两个「应当」就拆成两条。"
+         },
+         {
+          "counter_example": "「我们应当保证检索很快。」",
+          "example": "「借阅系统应当在 2 秒内返回检索结果。」",
+          "id": "EARS-R2",
+          "level": "必选",
+          "state": "required",
+          "text": "主语明确，是「系统」或具体的子系统名；系统的具体名称（例如「图书借还系统」）算合法主语。"
+         },
+         {
+          "counter_example": "「系统应当尽快返回续借结果。」",
+          "example": "「当读者提交续借请求时，系统应当在 2 秒内返回续借结果。」",
+          "id": "EARS-R3",
+          "level": "必选",
+          "state": "required",
+          "text": "可以验证：有数值的写数值与单位，计量方式说清；材料没定义的记问题条目，不自己定；「本」「天」这类计数单位算单位。"
+         },
+         {
+          "counter_example": "「系统应当提供友好的检索界面。」",
+          "example": "材料没有可验证标准时不写成需求，记问题条目。",
+          "id": "EARS-R4",
+          "level": "必选",
+          "state": "required",
+          "text": "不用含糊的词（快速、及时、友好、灵活、尽量、适当、智能等）。"
+         },
+         {
+          "counter_example": "「系统应当支持常见浏览器，例如 Chrome。」",
+          "example": "「系统应当支持材料附录列出的浏览器版本。」",
+          "id": "EARS-R5",
+          "level": "可选",
+          "state": "optional",
+          "text": "不举例；需求语句里不出现「例如」「比如」「如某某」。"
+         },
+         {
+          "counter_example": "「系统应当用 Redis 缓存检索结果。」",
+          "example": "「系统应当在 2 秒内返回检索结果。」（若材料要求对接统一身份认证，则「必须对接学校统一身份认证」是合法的约束。）",
+          "id": "EARS-R6",
+          "level": "可选",
+          "state": "optional",
+          "text": "不写实现手段，除非这个手段本身就是约束。"
+         },
+         {
+          "counter_example": "材料写「超过 5 本」，需求写「不少于 5 本」；材料写「3 天」，需求写「约 3 天」。",
+          "example": "与材料一致写「超过 5 本」「3 天」。",
+          "id": "EARS-R7",
+          "level": "必选",
+          "state": "required",
+          "text": "材料里的数值与条件原样保留，不四舍五入，不改比较方向。"
+         },
+         {
+          "counter_example": "句式类型填「事件驱动型」，语句是「系统应当保留操作记录 5 年」（普遍型骨架）。",
+          "example": "句式类型「普遍型」。",
+          "id": "EARS-R8",
+          "level": "必选",
+          "state": "required",
+          "text": "句式类型一栏与需求语句实际用的骨架一致。"
+         },
+         {
+          "counter_example": "约束集合里写「读者可以预约已借出的图书」（这是功能用例）。",
+          "example": "该内容记为功能用例「预约图书」。",
+          "id": "EARS-R9",
+          "level": "可选",
+          "state": "optional",
+          "text": "类别分清：做得多好的是非功能需求；不能改的既定条件是约束；参与者完成的一件事是功能用例，不写在这里。"
+         }
+        ],
+        "display": null,
+        "fields": [
+         {
+          "name": "类别",
+          "required": true,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "句式类型",
+          "required": true,
+          "type": "枚举",
+          "values": [
+           "普遍型",
+           "事件驱动型",
+           "状态驱动型",
+           "可选特性型",
+           "异常处理型",
+           "复合型"
+          ]
+         },
+         {
+          "name": "需求语句",
+          "required": true,
+          "type": "文本",
+          "values": null
+         }
+        ],
+        "name": "约束",
+        "needs_review": true,
+        "prefix": "CON",
+        "review_rules": [
+         {
+          "counter_example": "「系统应当在 2 秒内返回续借结果，并且应当保留操作记录 5 年。」",
+          "example": "拆成两条：响应时间一条，记录保留一条。",
+          "id": "EARS-R1",
+          "level": "必选",
+          "text": "一条只说一件事；一句话里有两个「应当」就拆成两条。"
+         },
+         {
+          "counter_example": "「我们应当保证检索很快。」",
+          "example": "「借阅系统应当在 2 秒内返回检索结果。」",
+          "id": "EARS-R2",
+          "level": "必选",
+          "text": "主语明确，是「系统」或具体的子系统名；系统的具体名称（例如「图书借还系统」）算合法主语。"
+         },
+         {
+          "counter_example": "「系统应当尽快返回续借结果。」",
+          "example": "「当读者提交续借请求时，系统应当在 2 秒内返回续借结果。」",
+          "id": "EARS-R3",
+          "level": "必选",
+          "text": "可以验证：有数值的写数值与单位，计量方式说清；材料没定义的记问题条目，不自己定；「本」「天」这类计数单位算单位。"
+         },
+         {
+          "counter_example": "「系统应当提供友好的检索界面。」",
+          "example": "材料没有可验证标准时不写成需求，记问题条目。",
+          "id": "EARS-R4",
+          "level": "必选",
+          "text": "不用含糊的词（快速、及时、友好、灵活、尽量、适当、智能等）。"
+         },
+         {
+          "counter_example": "「系统应当支持常见浏览器，例如 Chrome。」",
+          "example": "「系统应当支持材料附录列出的浏览器版本。」",
+          "id": "EARS-R5",
+          "level": "可选",
+          "text": "不举例；需求语句里不出现「例如」「比如」「如某某」。"
+         },
+         {
+          "counter_example": "「系统应当用 Redis 缓存检索结果。」",
+          "example": "「系统应当在 2 秒内返回检索结果。」（若材料要求对接统一身份认证，则「必须对接学校统一身份认证」是合法的约束。）",
+          "id": "EARS-R6",
+          "level": "可选",
+          "text": "不写实现手段，除非这个手段本身就是约束。"
+         },
+         {
+          "counter_example": "材料写「超过 5 本」，需求写「不少于 5 本」；材料写「3 天」，需求写「约 3 天」。",
+          "example": "与材料一致写「超过 5 本」「3 天」。",
+          "id": "EARS-R7",
+          "level": "必选",
+          "text": "材料里的数值与条件原样保留，不四舍五入，不改比较方向。"
+         },
+         {
+          "counter_example": "句式类型填「事件驱动型」，语句是「系统应当保留操作记录 5 年」（普遍型骨架）。",
+          "example": "句式类型「普遍型」。",
+          "id": "EARS-R8",
+          "level": "必选",
+          "text": "句式类型一栏与需求语句实际用的骨架一致。"
+         },
+         {
+          "counter_example": "约束集合里写「读者可以预约已借出的图书」（这是功能用例）。",
+          "example": "该内容记为功能用例「预约图书」。",
+          "id": "EARS-R9",
+          "level": "可选",
+          "text": "类别分清：做得多好的是非功能需求；不能改的既定条件是约束；参与者完成的一件事是功能用例，不写在这里。"
+         }
+        ],
+        "rule_switches": {
+         "off": [],
+         "promote": []
+        },
+        "rules_hash": "05280b6cb8839f9e"
+       },
+       {
+        "all_rules": null,
+        "display": null,
+        "fields": [
+         {
+          "name": "事项",
+          "required": true,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "种类",
+          "required": true,
+          "type": "枚举",
+          "values": [
+           "待澄清",
+           "范围外",
+           "后续迭代"
+          ]
+         },
+         {
+          "name": "建议的处理",
+          "required": false,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "状态",
+          "required": true,
+          "type": "枚举",
+          "values": [
+           "未解决",
+           "已解决",
+           "用户决定保留"
+          ]
+         },
+         {
+          "name": "处理结果",
+          "required": false,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "关联条目",
+          "required": false,
+          "type": "条目引用",
+          "values": null
+         }
+        ],
+        "name": "问题",
+        "needs_review": false,
+        "prefix": "TBD",
+        "review_rules": null,
+        "rule_switches": null,
+        "rules_hash": null
+       },
+       {
+        "all_rules": null,
+        "display": {
+         "group_field": "类别",
+         "leading_groups": [
+          "术语"
+         ],
+         "note": "材料里或你说明过的背景、术语、角色，供条目引用。",
+         "side_tab": true
+        },
+        "fields": [
+         {
+          "name": "标题",
+          "required": true,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "内容",
+          "required": true,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "类别",
+          "required": true,
+          "type": "文本",
+          "values": null
+         },
+         {
+          "name": "关联条目",
+          "required": false,
+          "type": "条目引用",
+          "values": null
+         }
+        ],
+        "name": "领域说明",
+        "needs_review": false,
+        "prefix": "DN",
+        "review_rules": null,
+        "rule_switches": null,
+        "rules_hash": null
+       }
+      ]
+     },
+     "domain_tag": "电商",
+     "ended_at": null,
+     "items": [
+      {
+       "collection": "功能用例",
+       "confirmation_basis": "ui_edit",
+       "confirmation_stale": false,
+       "confirmations": [
+        {
+         "accepted": true,
+         "at": "<时刻>",
+         "basis": "ui_edit",
+         "revision_no": 3
+        }
+       ],
+       "fields": {
+        "参与者": [
+         "买家"
+        ],
+        "基本流程": [
+         "买家提交退款申请",
+         "系统受理申请",
+         "平台审核"
+        ],
+        "用例功能": "买家对已收货订单发起退款",
+        "用例名称": "申请退款"
+       },
+       "item_id": "UC-001",
+       "reviews": [
+        {
+         "at": "<时刻>",
+         "batch_id": "ui-op-rev1",
+         "findings": [],
+         "forced": false,
+         "reason": "按 14 条规则逐条核对，没有发现问题。",
+         "revision_no": 3,
+         "rules_hash": "a532928ffe417bc9",
+         "verdict": "合规"
+        }
+       ],
+       "revision_at": "<时刻>",
+       "revision_by": "user",
+       "revision_no": 3,
+       "revisions": [
+        1,
+        2,
+        3
+       ],
+       "sources": [
+        {
+         "excerpt": "买家在收货后七天内可以申请退款。",
+         "kind": "文档原文",
+         "locator": "inputs/需求说明.md",
+         "supports": [
+          {
+           "field": "用例名称",
+           "index": null
+          },
+          {
+           "field": "基本流程",
+           "index": 0
+          }
+         ]
+        },
+        {
+         "excerpt": "平台在一个工作日内审核退款申请。",
+         "kind": "文档原文",
+         "locator": "inputs/退款规则.docx#p2",
+         "supports": [
+          {
+           "field": "基本流程",
+           "index": 1
+          }
+         ]
+        },
+        {
+         "excerpt": "买家对已收货订单发起退款",
+         "kind": "用户直接修改",
+         "locator": "ui-op-edit1",
+         "supports": [
+          {
+           "field": "用例功能",
+           "index": null
+          }
+         ]
+        }
+       ],
+       "title": "申请退款",
+       "viewed": true,
+       "waivers": []
+      },
+      {
+       "collection": "非功能需求",
+       "confirmation_basis": null,
+       "confirmation_stale": false,
+       "confirmations": [],
+       "fields": {
+        "句式类型": "普遍型",
+        "类别": "性能",
+        "需求语句": "系统应在一个工作日内完成退款审核。"
+       },
+       "item_id": "NFR-001",
+       "reviews": [
+        {
+         "at": "<时刻>",
+         "batch_id": "ui-op-rev1",
+         "findings": [
+          {
+           "field": "需求语句",
+           "index": null,
+           "level": "必选",
+           "problem": "没有写清是哪一个工作日。",
+           "rule_id": "EARS-R1",
+           "suggestion": "写明从申请提交起算。"
+          }
+         ],
+         "forced": false,
+         "reason": "按 9 条规则逐条核对：问题 1 处，建议 0 条。",
+         "revision_no": 1,
+         "rules_hash": "05280b6cb8839f9e",
+         "verdict": "不合规"
+        }
+       ],
+       "revision_at": "<时刻>",
+       "revision_by": "executor",
+       "revision_no": 1,
+       "revisions": [
+        1
+       ],
+       "sources": [
+        {
+         "excerpt": "平台在一个工作日内审核退款申请。",
+         "kind": "文档原文",
+         "locator": "inputs/退款规则.docx#p2",
+         "supports": []
+        }
+       ],
+       "title": "性能",
+       "viewed": false,
+       "waivers": [
+        {
+         "at": "<时刻>",
+         "reason": "工作日的算法另有规定",
+         "revision_no": 1,
+         "revoked": false,
+         "source": "detail"
+        }
+       ]
+      },
+      {
+       "collection": "约束",
+       "confirmation_basis": null,
+       "confirmation_stale": false,
+       "confirmations": [],
+       "fields": {
+        "句式类型": "普遍型",
+        "类别": "业务规则",
+        "需求语句": "退款金额应原路退回。"
+       },
+       "item_id": "CON-001",
+       "reviews": [],
+       "revision_at": "<时刻>",
+       "revision_by": "executor",
+       "revision_no": 1,
+       "revisions": [
+        1
+       ],
+       "sources": [
+        {
+         "excerpt": "退款金额原路退回。",
+         "kind": "文档原文",
+         "locator": "inputs/会议纪要.txt",
+         "supports": []
+        }
+       ],
+       "title": "业务规则",
+       "viewed": false,
+       "waivers": []
+      },
+      {
+       "collection": "约束",
+       "confirmation_basis": null,
+       "confirmation_stale": false,
+       "confirmations": [],
+       "fields": {
+        "句式类型": "事件驱动型",
+        "类别": "合规",
+        "需求语句": "当退款完成时，系统应通知买家。"
+       },
+       "item_id": "CON-002",
+       "reviews": [],
+       "revision_at": "<时刻>",
+       "revision_by": "user",
+       "revision_no": 6,
+       "revisions": [
+        2,
+        6
+       ],
+       "sources": [
+        {
+         "excerpt": "买家在收货后七天内可以申请退款。",
+         "kind": "文档原文",
+         "locator": "inputs/需求说明.md",
+         "supports": []
+        }
+       ],
+       "title": "合规",
+       "viewed": false,
+       "waivers": []
+      },
+      {
+       "collection": "问题",
+       "confirmation_basis": "ui_edit",
+       "confirmation_stale": false,
+       "confirmations": [
+        {
+         "accepted": true,
+         "at": "<时刻>",
+         "basis": "ui_edit",
+         "revision_no": 4
+        }
+       ],
+       "fields": {
+        "事项": "部分退款怎么算？",
+        "状态": "用户决定保留",
+        "种类": "待澄清"
+       },
+       "item_id": "TBD-001",
+       "reviews": [],
+       "revision_at": "<时刻>",
+       "revision_by": "user",
+       "revision_no": 4,
+       "revisions": [
+        1,
+        4
+       ],
+       "sources": [
+        {
+         "excerpt": "买家在收货后七天内可以申请退款。",
+         "kind": "文档原文",
+         "locator": "inputs/需求说明.md",
+         "supports": []
+        },
+        {
+         "excerpt": "用户决定保留",
+         "kind": "用户直接修改",
+         "locator": "ui-op-keep1",
+         "supports": [
+          {
+           "field": "状态",
+           "index": null
+          }
+         ]
+        }
+       ],
+       "title": "部分退款怎么算？",
+       "viewed": true,
+       "waivers": []
+      },
+      {
+       "collection": "领域说明",
+       "confirmation_basis": "viewed",
+       "confirmation_stale": false,
+       "confirmations": [
+        {
+         "accepted": true,
+         "at": "<时刻>",
+         "basis": "viewed",
+         "revision_no": 1
+        }
+       ],
+       "fields": {
+        "内容": "收货后七天内",
+        "标题": "退款时限",
+        "类别": "术语"
+       },
+       "item_id": "DN-001",
+       "reviews": [],
+       "revision_at": "<时刻>",
+       "revision_by": "executor",
+       "revision_no": 1,
+       "revisions": [
+        1
+       ],
+       "sources": [
+        {
+         "excerpt": "退款要在七天内处理完",
+         "kind": "用户的话",
+         "locator": "compare-session-1#e01",
+         "supports": []
+        }
+       ],
+       "title": "退款时限",
+       "viewed": true,
+       "waivers": []
+      }
+     ],
+     "latest_revision": 6,
+     "materials": [
+      {
+       "bytes": 41,
+       "derived_from": null,
+       "modified_at": "<时刻>",
+       "path": "inputs/会议纪要.txt"
+      },
+      {
+       "bytes": 1158,
+       "derived_from": null,
+       "modified_at": "<时刻>",
+       "path": "inputs/退款规则.docx"
+      },
+      {
+       "bytes": 1105,
+       "derived_from": "inputs/退款规则.docx",
+       "modified_at": "<时刻>",
+       "path": "inputs/退款规则.docx.md"
+      },
+      {
+       "bytes": 497,
+       "derived_from": "inputs/退款规则.docx",
+       "modified_at": "<时刻>",
+       "path": "inputs/退款规则.docx.segments.json"
+      },
+      {
+       "bytes": 91,
+       "derived_from": null,
+       "modified_at": "<时刻>",
+       "path": "inputs/需求说明-2.md"
+      },
+      {
+       "bytes": 91,
+       "derived_from": null,
+       "modified_at": "<时刻>",
+       "path": "inputs/需求说明.md"
+      }
+     ],
+     "ok": true,
+     "review_batches": [
+      {
+       "advice": 0,
+       "at": "<时刻>",
+       "batch_id": "ui-op-rev1",
+       "failed": 1,
+       "forced": [],
+       "items": [
+        {
+         "item_id": "UC-001",
+         "revision_no": 3
+        },
+        {
+         "item_id": "NFR-001",
+         "revision_no": 1
+        }
+       ],
+       "no": 1,
+       "passed": 1,
+       "problems": 1,
+       "scope": "named",
+       "started_by": "user",
+       "total": 2,
+       "unfinished": 0
+      }
+     ],
+     "sessions": [
+      {
+       "active": false,
+       "last_active_at": "<时刻>",
+       "message_count": 11,
+       "name": "退款需求整理",
+       "session_id": "compare-session-1",
+       "started_at": "<时刻>"
+      },
+      {
+       "active": false,
+       "last_active_at": "<时刻>",
+       "message_count": 3,
+       "name": "约束复核",
+       "session_id": "compare-session-2",
+       "started_at": "<时刻>"
+      }
+     ],
+     "started_at": "<时刻>",
+     "status": "进行中",
+     "task_id": "TASK-1",
+     "task_name": "跨境电商退款",
+     "task_type": "软件需求规格说明编制"
+    }
+   }
+  },
+  {
+   "label": "会话列表",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "sessions": [
+      {
+       "active": false,
+       "last_active_at": "<时刻>",
+       "message_count": 11,
+       "name": "退款需求整理",
+       "session_id": "compare-session-1",
+       "started_at": "<时刻>"
+      },
+      {
+       "active": false,
+       "last_active_at": "<时刻>",
+       "message_count": 3,
+       "name": "约束复核",
+       "session_id": "compare-session-2",
+       "started_at": "<时刻>"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "条目修订史 UC-001",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "item_id": "UC-001",
+     "ok": true,
+     "revisions": [
+      {
+       "at": "<时刻>",
+       "by": "executor",
+       "confirmations": [],
+       "fields": {
+        "参与者": [
+         "买家"
+        ],
+        "基本流程": [
+         "买家提交退款申请",
+         "系统受理申请"
+        ],
+        "用例功能": "买家对已收货的订单申请退款",
+        "用例名称": "申请退款"
+       },
+       "reviews": [],
+       "revision_no": 1,
+       "sources": [
+        {
+         "excerpt": "买家在收货后七天内可以申请退款。",
+         "kind": "文档原文",
+         "locator": "inputs/需求说明.md",
+         "supports": [
+          {
+           "field": "用例名称",
+           "index": null
+          },
+          {
+           "field": "基本流程",
+           "index": 0
+          }
+         ]
+        },
+        {
+         "excerpt": "平台在一个工作日内审核退款申请。",
+         "kind": "文档原文",
+         "locator": "inputs/退款规则.docx#p2",
+         "supports": [
+          {
+           "field": "基本流程",
+           "index": 1
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "at": "<时刻>",
+       "by": "executor",
+       "confirmations": [],
+       "fields": {
+        "参与者": [
+         "买家"
+        ],
+        "基本流程": [
+         "买家提交退款申请",
+         "系统受理申请",
+         "平台审核"
+        ],
+        "用例功能": "买家对已收货的订单申请退款",
+        "用例名称": "申请退款"
+       },
+       "reviews": [],
+       "revision_no": 2,
+       "sources": [
+        {
+         "excerpt": "买家在收货后七天内可以申请退款。",
+         "kind": "文档原文",
+         "locator": "inputs/需求说明.md",
+         "supports": [
+          {
+           "field": "用例名称",
+           "index": null
+          },
+          {
+           "field": "基本流程",
+           "index": 0
+          }
+         ]
+        },
+        {
+         "excerpt": "平台在一个工作日内审核退款申请。",
+         "kind": "文档原文",
+         "locator": "inputs/退款规则.docx#p2",
+         "supports": [
+          {
+           "field": "基本流程",
+           "index": 1
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "at": "<时刻>",
+       "by": "user",
+       "confirmations": [
+        {
+         "accepted": true,
+         "at": "<时刻>",
+         "basis": "ui_edit",
+         "revision_no": 3
+        }
+       ],
+       "fields": {
+        "参与者": [
+         "买家"
+        ],
+        "基本流程": [
+         "买家提交退款申请",
+         "系统受理申请",
+         "平台审核"
+        ],
+        "用例功能": "买家对已收货订单发起退款",
+        "用例名称": "申请退款"
+       },
+       "reviews": [
+        {
+         "at": "<时刻>",
+         "batch_id": "ui-op-rev1",
+         "findings": [],
+         "forced": false,
+         "reason": "按 14 条规则逐条核对，没有发现问题。",
+         "revision_no": 3,
+         "rules_hash": "a532928ffe417bc9",
+         "verdict": "合规"
+        }
+       ],
+       "revision_no": 3,
+       "sources": [
+        {
+         "excerpt": "买家在收货后七天内可以申请退款。",
+         "kind": "文档原文",
+         "locator": "inputs/需求说明.md",
+         "supports": [
+          {
+           "field": "用例名称",
+           "index": null
+          },
+          {
+           "field": "基本流程",
+           "index": 0
+          }
+         ]
+        },
+        {
+         "excerpt": "平台在一个工作日内审核退款申请。",
+         "kind": "文档原文",
+         "locator": "inputs/退款规则.docx#p2",
+         "supports": [
+          {
+           "field": "基本流程",
+           "index": 1
+          }
+         ]
+        },
+        {
+         "excerpt": "买家对已收货订单发起退款",
+         "kind": "用户直接修改",
+         "locator": "ui-op-edit1",
+         "supports": [
+          {
+           "field": "用例功能",
+           "index": null
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "条目修订史 CON-002（删过又恢复）",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "item_id": "CON-002",
+     "ok": true,
+     "revisions": [
+      {
+       "at": "<时刻>",
+       "by": "executor",
+       "confirmations": [],
+       "fields": {
+        "句式类型": "事件驱动型",
+        "类别": "合规",
+        "需求语句": "当退款完成时，系统应通知买家。"
+       },
+       "reviews": [],
+       "revision_no": 2,
+       "sources": [
+        {
+         "excerpt": "买家在收货后七天内可以申请退款。",
+         "kind": "文档原文",
+         "locator": "inputs/需求说明.md",
+         "supports": []
+        }
+       ]
+      },
+      {
+       "at": "<时刻>",
+       "by": "user",
+       "confirmations": [],
+       "fields": {
+        "句式类型": "事件驱动型",
+        "类别": "合规",
+        "需求语句": "当退款完成时，系统应通知买家。"
+       },
+       "reviews": [],
+       "revision_no": 6,
+       "sources": [
+        {
+         "excerpt": "买家在收货后七天内可以申请退款。",
+         "kind": "文档原文",
+         "locator": "inputs/需求说明.md",
+         "supports": []
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "条目修订史：没有这个条目",
+   "reply": {
+    "status": 404,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "not_found",
+      "data": {},
+      "message": "没有条目 UC-999。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "修订日志",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "latest_revision": 6,
+     "ok": true,
+     "revisions": [
+      {
+       "at": "<时刻>",
+       "by": "user",
+       "intent": null,
+       "op_id": "ui-op-undo1",
+       "operations": [
+        {
+         "collection": "约束",
+         "fields_changed": [],
+         "item_id": "CON-002",
+         "op": "restore",
+         "revision_after": 6,
+         "revision_before": 2,
+         "title": "合规"
+        }
+       ],
+       "revision_no": 6,
+       "session_id": "compare-session-2",
+       "trigger": {
+        "action": "undo",
+        "kind": "user_action",
+        "text": "你撤销了修订 5"
+       },
+       "undo_of_revision": 5,
+       "work_id": null
+      },
+      {
+       "at": "<时刻>",
+       "by": "executor",
+       "intent": null,
+       "op_id": null,
+       "operations": [
+        {
+         "collection": "约束",
+         "fields_changed": [],
+         "item_id": "CON-002",
+         "op": "delete",
+         "revision_after": null,
+         "revision_before": 2,
+         "title": "合规"
+        }
+       ],
+       "revision_no": 5,
+       "session_id": "compare-session-2",
+       "trigger": {
+        "kind": "typed",
+        "message_id": "f01",
+        "text": "第二条约束不要了"
+       },
+       "undo_of_revision": null,
+       "work_id": "w-f01"
+      },
+      {
+       "at": "<时刻>",
+       "by": "user",
+       "intent": null,
+       "op_id": "ui-op-keep1",
+       "operations": [
+        {
+         "collection": "问题",
+         "fields_changed": [
+          "状态"
+         ],
+         "item_id": "TBD-001",
+         "op": "update",
+         "revision_after": 4,
+         "revision_before": 1,
+         "title": "部分退款怎么算？"
+        }
+       ],
+       "revision_no": 4,
+       "session_id": "compare-session-1",
+       "trigger": {
+        "action": null,
+        "kind": "user_action",
+        "text": "你改了 TBD-001 的「状态」"
+       },
+       "undo_of_revision": null,
+       "work_id": null
+      },
+      {
+       "at": "<时刻>",
+       "by": "user",
+       "intent": null,
+       "op_id": "ui-op-edit1",
+       "operations": [
+        {
+         "collection": "功能用例",
+         "fields_changed": [
+          "用例功能"
+         ],
+         "item_id": "UC-001",
+         "op": "update",
+         "revision_after": 3,
+         "revision_before": 2,
+         "title": "申请退款"
+        }
+       ],
+       "revision_no": 3,
+       "session_id": "compare-session-1",
+       "trigger": {
+        "action": "edit_fields",
+        "kind": "user_action",
+        "text": "你改了 UC-001 的「用例功能」"
+       },
+       "undo_of_revision": null,
+       "work_id": null
+      },
+      {
+       "at": "<时刻>",
+       "by": "executor",
+       "intent": null,
+       "op_id": null,
+       "operations": [
+        {
+         "collection": "功能用例",
+         "fields_changed": [
+          "基本流程"
+         ],
+         "item_id": "UC-001",
+         "op": "update",
+         "revision_after": 2,
+         "revision_before": 1,
+         "title": "申请退款"
+        },
+        {
+         "collection": "约束",
+         "fields_changed": [],
+         "item_id": "CON-002",
+         "op": "add",
+         "revision_after": 2,
+         "revision_before": null,
+         "title": "合规"
+        }
+       ],
+       "revision_no": 2,
+       "session_id": "compare-session-1",
+       "trigger": {
+        "kind": "typed",
+        "message_id": "e09",
+        "text": "/检查一下约束"
+       },
+       "undo_of_revision": null,
+       "work_id": "w-e09"
+      },
+      {
+       "at": "<时刻>",
+       "by": "executor",
+       "intent": null,
+       "op_id": null,
+       "operations": [
+        {
+         "collection": "功能用例",
+         "fields_changed": [],
+         "item_id": "UC-001",
+         "op": "add",
+         "revision_after": 1,
+         "revision_before": null,
+         "title": "申请退款"
+        },
+        {
+         "collection": "非功能需求",
+         "fields_changed": [],
+         "item_id": "NFR-001",
+         "op": "add",
+         "revision_after": 1,
+         "revision_before": null,
+         "title": "性能"
+        },
+        {
+         "collection": "约束",
+         "fields_changed": [],
+         "item_id": "CON-001",
+         "op": "add",
+         "revision_after": 1,
+         "revision_before": null,
+         "title": "业务规则"
+        },
+        {
+         "collection": "问题",
+         "fields_changed": [],
+         "item_id": "TBD-001",
+         "op": "add",
+         "revision_after": 1,
+         "revision_before": null,
+         "title": "部分退款怎么算？"
+        },
+        {
+         "collection": "领域说明",
+         "fields_changed": [],
+         "item_id": "DN-001",
+         "op": "add",
+         "revision_after": 1,
+         "revision_before": null,
+         "title": "退款时限"
+        }
+       ],
+       "revision_no": 1,
+       "session_id": "compare-session-1",
+       "trigger": {
+        "kind": "typed",
+        "message_id": "e01",
+        "text": "请按材料整理退款的需求，退款要在七天内处理完。"
+       },
+       "undo_of_revision": null,
+       "work_id": "w-e01"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "材料内容 .md",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "path": "inputs/需求说明.md",
+     "text": "# 退款需求\n\n买家在收货后七天内可以申请退款。\n退款由平台审核。\n"
+    }
+   }
+  },
+  {
+   "label": "材料内容 .txt",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "path": "inputs/会议纪要.txt",
+     "text": "会议纪要\n退款金额原路退回。\n"
+    }
+   }
+  },
+  {
+   "label": "材料内容 .docx（投影）",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "path": "inputs/退款规则.docx",
+     "text": "<!--\n由 退款规则.docx 生成，供助手阅读。段落总数：5。\n每段一行；方括号里的 p 加数字（例如 [p12]）是这一段在 Word 文件里的段落号，它右边到行尾是这一段的正文（表格里到本格的下一个段落号或本格结束）。\n# 表示标题级别；段落号左边的编号是 Word 自动编号算出来的，不是正文。空段落不写，段落号照数。\n引用这份材料作来源时，出处写 inputs/退款规则.docx#p段落号（例如 inputs/退款规则.docx#p12），摘录逐字抄段落号右边的正文，不带编号、段落号和 #、- 这些标记。\n表格按行写；（同左）（同上）是合并单元格；（小表第 r 行第 c 列）是嵌在单元格里的小表格。\n![图 k](...) 是文件里的图片，能读图时用 read 读它；以「> （文本框）」开头的行是文本框里的字，没有段落号，不能作出处。\n-->\n\n[p1] 退款规则\n\n[p2] 平台在一个工作日内审核退款申请。\n\n| [p3] 退款方式 | [p4] 原路退回 |\n|---|---|\n\n[p5] 以上规则自发布之日起执行。\n"
+    }
+   }
+  },
+  {
+   "label": "材料内容：越出材料目录",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "路径 inputs/../task.sqlite 不在材料目录 inputs/ 里。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "材料内容：没有这份材料",
+   "reply": {
+    "status": 404,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "not_found",
+      "data": {},
+      "message": "没有材料 inputs/没有.md。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "材料内容：不带 path",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "路径  不在材料目录 inputs/ 里。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "材料原样 .docx",
+   "reply": {
+    "status": 200,
+    "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "content_disposition": null,
+    "body": {
+     "字节数": 1158,
+     "摘要": "UEsDBBQAAAgAAAAAAACaxphxOgEAADoBAAATAAAAW0NvbnRlbnRfVHlwZXNdLnht"
+    }
+   }
+  },
+  {
+   "label": "材料原样 .md",
+   "reply": {
+    "status": 200,
+    "content_type": "text/markdown; charset=utf-8",
+    "content_disposition": null,
+    "body": "# 退款需求\n\n买家在收货后七天内可以申请退款。\r\n退款由平台审核。\n"
+   }
+  },
+  {
+   "label": "文档预览（最新修订）",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "text": "# 软件需求规格说明\n\n> 本文档按交付物的修订 6 生成，由系统按库里的条目渲染，不经模型改写。每个条目后面的方括号里写着它的内容来自哪次修订，以及它在那次修订上有没有用户确认、有没有评审通过。\n\n## 1 术语与定义\n\n- **退款时限**（DN-001）：收货后七天内 ［修订 1 · 已确认（已读）］来源：用户的话，出处 会话「退款需求整理」里用户的第 1 句话（「退款要在七天内处理完」）\n\n## 2 总体描述\n\n本文档没有总体描述。\n\n## 3 功能需求\n\n### UC-001 申请退款 ［修订 3 · 已确认（用户修改） · 评审通过］\n\n| 项 | 内容 |\n|---|---|\n| 用例名称 | 申请退款 |\n| 用例 ID | UC-001 |\n| 用例功能 | 买家对已收货订单发起退款 |\n| 参与者 | 1. 买家 |\n| 前置条件 | （空） |\n| 后置条件 | （空） |\n| 约束规则 | （空） |\n| 基本流程 | 1. 买家提交退款申请；2. 系统受理申请；3. 平台审核 |\n| 扩展流程 | （空） |\n\n来源：文档原文，出处 inputs/需求说明.md（「买家在收货后七天内可以申请退款。」）；文档原文，出处 inputs/退款规则.docx（「平台在一个工作日内审核退款申请。」）；用户直接修改，出处 用户在界面上的第 1 次修改（<分钟>）（「买家对已收货订单发起退款」）\n\n## 4 非功能需求\n\n- **NFR-001**（性能，普遍型）系统应在一个工作日内完成退款审核。 ［修订 1 · 未确认 · 评审不通过，用户保留（理由：工作日的算法另有规定）］来源：文档原文，出处 inputs/退款规则.docx（「平台在一个工作日内审核退款申请。」）\n\n## 5 约束\n\n- **CON-001**（业务规则，普遍型）退款金额应原路退回。 ［修订 1 · 未确认 · 未评审］来源：文档原文，出处 inputs/会议纪要.txt（「退款金额原路退回。」）\n- **CON-002**（合规，事件驱动型）当退款完成时，系统应通知买家。 ［修订 6 · 未确认 · 未评审］来源：文档原文，出处 inputs/需求说明.md（「买家在收货后七天内可以申请退款。」）\n\n## 6 问题\n\n- **TBD-001**（待澄清，用户决定保留）部分退款怎么算？　建议的处理：（空）　处理结果：（空）　关联条目：（空）\n"
+    }
+   }
+  },
+  {
+   "label": "文档预览（修订 3）",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "text": "# 软件需求规格说明\n\n> 本文档按交付物的修订 3 生成，由系统按库里的条目渲染，不经模型改写。每个条目后面的方括号里写着它的内容来自哪次修订，以及它在那次修订上有没有用户确认、有没有评审通过。\n\n## 1 术语与定义\n\n- **退款时限**（DN-001）：收货后七天内 ［修订 1 · 已确认（已读）］来源：用户的话，出处 会话「退款需求整理」里用户的第 1 句话（「退款要在七天内处理完」）\n\n## 2 总体描述\n\n本文档没有总体描述。\n\n## 3 功能需求\n\n### UC-001 申请退款 ［修订 3 · 已确认（用户修改） · 评审通过］\n\n| 项 | 内容 |\n|---|---|\n| 用例名称 | 申请退款 |\n| 用例 ID | UC-001 |\n| 用例功能 | 买家对已收货订单发起退款 |\n| 参与者 | 1. 买家 |\n| 前置条件 | （空） |\n| 后置条件 | （空） |\n| 约束规则 | （空） |\n| 基本流程 | 1. 买家提交退款申请；2. 系统受理申请；3. 平台审核 |\n| 扩展流程 | （空） |\n\n来源：文档原文，出处 inputs/需求说明.md（「买家在收货后七天内可以申请退款。」）；文档原文，出处 inputs/退款规则.docx（「平台在一个工作日内审核退款申请。」）；用户直接修改，出处 用户在界面上的第 1 次修改（<分钟>）（「买家对已收货订单发起退款」）\n\n## 4 非功能需求\n\n- **NFR-001**（性能，普遍型）系统应在一个工作日内完成退款审核。 ［修订 1 · 未确认 · 评审不通过，用户保留（理由：工作日的算法另有规定）］来源：文档原文，出处 inputs/退款规则.docx（「平台在一个工作日内审核退款申请。」）\n\n## 5 约束\n\n- **CON-001**（业务规则，普遍型）退款金额应原路退回。 ［修订 1 · 未确认 · 未评审］来源：文档原文，出处 inputs/会议纪要.txt（「退款金额原路退回。」）\n- **CON-002**（合规，事件驱动型）当退款完成时，系统应通知买家。 ［修订 2 · 未确认 · 未评审］来源：文档原文，出处 inputs/需求说明.md（「买家在收货后七天内可以申请退款。」）\n\n## 6 问题\n\n- **TBD-001**（待澄清，未解决）部分退款怎么算？　建议的处理：（空）　处理结果：（空）　关联条目：（空）\n"
+    }
+   }
+  },
+  {
+   "label": "文档预览（只列两个条目）",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "text": "# 软件需求规格说明\n\n> 本文档按交付物的修订 6 生成，由系统按库里的条目渲染，不经模型改写。每个条目后面的方括号里写着它的内容来自哪次修订，以及它在那次修订上有没有用户确认、有没有评审通过。\n\n## 1 术语与定义\n\n- **退款时限**（DN-001）：收货后七天内 ［修订 1 · 已确认（已读）］来源：用户的话，出处 会话「退款需求整理」里用户的第 1 句话（「退款要在七天内处理完」）\n\n## 2 总体描述\n\n本文档没有总体描述。\n\n## 3 功能需求\n\n### UC-001 申请退款 ［修订 3 · 已确认（用户修改） · 评审通过］\n\n| 项 | 内容 |\n|---|---|\n| 用例名称 | 申请退款 |\n| 用例 ID | UC-001 |\n| 用例功能 | 买家对已收货订单发起退款 |\n| 参与者 | 1. 买家 |\n| 前置条件 | （空） |\n| 后置条件 | （空） |\n| 约束规则 | （空） |\n| 基本流程 | 1. 买家提交退款申请；2. 系统受理申请；3. 平台审核 |\n| 扩展流程 | （空） |\n\n来源：文档原文，出处 inputs/需求说明.md（「买家在收货后七天内可以申请退款。」）；文档原文，出处 inputs/退款规则.docx（「平台在一个工作日内审核退款申请。」）；用户直接修改，出处 用户在界面上的第 1 次修改（<分钟>）（「买家对已收货订单发起退款」）\n\n## 4 非功能需求\n\n本文档没有非功能需求条目。\n\n## 5 约束\n\n本文档没有约束条目。\n\n## 6 问题\n\n本文档没有问题条目。\n"
+    }
+   }
+  },
+  {
+   "label": "文档预览：修订号超过最新",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "这个任务还没有修订 99，最新是修订 6。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "文档预览：那时不在的条目",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {
+       "items": [
+        "CON-002"
+       ]
+      },
+      "message": "修订 1 时交付物里没有这些条目：CON-002。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "文档预览：修订号写错",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "revision_no 要写一个从 1 起的整数，或者不写（按最新修订生成）。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "文档预览：格式不支持",
+   "reply": {
+    "status": 400,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "bad_request",
+      "data": {},
+      "message": "现在只支持 markdown。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "文档下载",
+   "reply": {
+    "status": 200,
+    "content_type": "text/markdown; charset=utf-8",
+    "content_disposition": "attachment; filename=\"TASK-1.md\"",
+    "body": "# 软件需求规格说明\n\n> 本文档按交付物的修订 6 生成，由系统按库里的条目渲染，不经模型改写。每个条目后面的方括号里写着它的内容来自哪次修订，以及它在那次修订上有没有用户确认、有没有评审通过。\n\n## 1 术语与定义\n\n- **退款时限**（DN-001）：收货后七天内 ［修订 1 · 已确认（已读）］来源：用户的话，出处 会话「退款需求整理」里用户的第 1 句话（「退款要在七天内处理完」）\n\n## 2 总体描述\n\n本文档没有总体描述。\n\n## 3 功能需求\n\n### UC-001 申请退款 ［修订 3 · 已确认（用户修改） · 评审通过］\n\n| 项 | 内容 |\n|---|---|\n| 用例名称 | 申请退款 |\n| 用例 ID | UC-001 |\n| 用例功能 | 买家对已收货订单发起退款 |\n| 参与者 | 1. 买家 |\n| 前置条件 | （空） |\n| 后置条件 | （空） |\n| 约束规则 | （空） |\n| 基本流程 | 1. 买家提交退款申请；2. 系统受理申请；3. 平台审核 |\n| 扩展流程 | （空） |\n\n来源：文档原文，出处 inputs/需求说明.md（「买家在收货后七天内可以申请退款。」）；文档原文，出处 inputs/退款规则.docx（「平台在一个工作日内审核退款申请。」）；用户直接修改，出处 用户在界面上的第 1 次修改（<分钟>）（「买家对已收货订单发起退款」）\n\n## 4 非功能需求\n\n- **NFR-001**（性能，普遍型）系统应在一个工作日内完成退款审核。 ［修订 1 · 未确认 · 评审不通过，用户保留（理由：工作日的算法另有规定）］来源：文档原文，出处 inputs/退款规则.docx（「平台在一个工作日内审核退款申请。」）\n\n## 5 约束\n\n- **CON-001**（业务规则，普遍型）退款金额应原路退回。 ［修订 1 · 未确认 · 未评审］来源：文档原文，出处 inputs/会议纪要.txt（「退款金额原路退回。」）\n- **CON-002**（合规，事件驱动型）当退款完成时，系统应通知买家。 ［修订 6 · 未确认 · 未评审］来源：文档原文，出处 inputs/需求说明.md（「买家在收货后七天内可以申请退款。」）\n\n## 6 问题\n\n- **TBD-001**（待澄清，用户决定保留）部分退款怎么算？　建议的处理：（空）　处理结果：（空）　关联条目：（空）\n"
+   }
+  },
+  {
+   "label": "打开被占用的任务",
+   "reply": {
+    "status": 409,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "task_occupied",
+      "data": {
+       "host": "<本机>",
+       "pid": 1,
+       "port": 9999
+      },
+      "message": "这个任务正被端口 9999 的服务占用，这里不能打开。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "打开旧格式的任务",
+   "reply": {
+    "status": 404,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "not_found",
+      "data": {},
+      "message": "没有任务 TASK-3。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "打开没有的任务",
+   "reply": {
+    "status": 404,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "not_found",
+      "data": {},
+      "message": "没有任务 TASK-4。"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "没有这个接口",
+   "reply": {
+    "status": 404,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "error": {
+      "code": "not_found",
+      "data": {},
+      "message": "没有这个接口：GET /api/v1/nothing"
+     },
+     "ok": false
+    }
+   }
+  },
+  {
+   "label": "路径末尾带斜杠",
+   "reply": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "content_disposition": null,
+    "body": {
+     "ok": true,
+     "task_types": [
+      {
+       "name": "软件需求规格说明编制",
+       "task_type": "srs-authoring"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "不支持的方法 PUT",
+   "reply": {
+    "status": 501,
+    "content_type": "text/html; charset=utf-8",
+    "content_disposition": null,
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('PUT').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n"
+   }
+  }
+ ]
+}

@@ -89,15 +89,14 @@ The script creates a task, uploads the note, opens a session, asks the agent to 
 
 The task it creates also appears in the web interface's task list, so you can open it there and continue.
 
-## 6 Three ways to work with a task
+## 6 Two ways to work with a task
 
 | Interface | Command |
 |---|---|
 | Web (backend + browser interface) | `scripts/dev.sh`, then open `http://localhost:5680` |
-| Terminal client | `python3 -m taskwright_server.create_task tasks/library --name "Library" --material examples/library-lending/requirements.md`, then `python3 -m taskwright_server.chat tasks/library` |
-| pi's own terminal UI | `python3 -m taskwright_server.tui tasks/library` |
+| pi's own terminal UI | create the task in the web interface (or through the API), then `scripts/tui.sh tasks/<task id>` |
 
-In the terminal client, type to talk; `/db` shows the deliverable and `/help` lists the other commands. In pi's terminal UI, type `/tw-board` to see the deliverable. Scripted use through the HTTP API is described in [api.md](api.md).
+`scripts/tui.sh` starts pi's own terminal interface with the same startup profile the task service uses, so the assistant has the same tools, prompt, skills and model; type to talk and `/tw-board` to see the deliverable. It takes `--profile <name>`, `--label <name>` (sessions go to `$TASKWRIGHT_RUNS_DIR/pi-sessions/<name>/`, default `tui`), `--continue` (resume the latest session under that label) and `--session <file>`. When pi exits, it prints the session files it wrote. Scripted use through the HTTP API is described in [api.md](api.md).
 
 ## 7 See what the assistant did: the observatory
 
@@ -114,7 +113,7 @@ python3 -m taskwright_observatory --runs ./runs/<task id> --workspaces ./tasks
   python3 -m taskwright_observatory $(for d in runs/*/; do printf -- '--runs %s ' "$d"; done) --workspaces ./tasks
   ```
 
-- The terminal client writes `pi-events/` and `pi-sessions/` directly into `$TASKWRIGHT_RUNS_DIR` (default `./runs` under the directory you start it from), so for its sessions pass that directory itself. Sessions run in pi's own terminal UI produce no event archive and do not appear.
+- Sessions run in pi's own terminal UI (`scripts/tui.sh`) produce no event archive and do not appear.
 - `--workspaces` is the directory that holds the task directories (the service's `--tasks`).
 - The observatory prints nothing when it starts; open the address above once the command is running.
 - Files are re-read when they change: after a new session, refresh the browser.

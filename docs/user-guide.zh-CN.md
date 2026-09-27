@@ -91,15 +91,14 @@ examples/library-lending/run.sh http://127.0.0.1:8790
 
 脚本建的任务也会出现在网页界面的任务列表里，可以在那里打开它接着做。
 
-## 6 三种操作方式
+## 6 两种操作方式
 
 | 方式 | 命令 |
 |---|---|
 | 网页（后端加浏览器界面） | `scripts/dev.sh`，然后打开 `http://localhost:5680` |
-| 终端客户端 | `python3 -m taskwright_server.create_task tasks/library --name "图书馆" --material examples/library-lending/requirements.md`，再 `python3 -m taskwright_server.chat tasks/library` |
-| pi 自带的终端界面 | `python3 -m taskwright_server.tui tasks/library` |
+| pi 自带的终端界面 | 先在网页里（或经接口）建任务，再 `scripts/tui.sh tasks/<任务编号>` |
 
-在终端客户端里打字即可对话；`/db` 查看交付物，`/help` 列出其他命令。在 pi 自带的终端界面里输入 `/tw-board` 查看交付物。通过 HTTP 接口脚本化使用的方法见[接口参考](api.zh-CN.md)。
+`scripts/tui.sh` 用任务服务同一份启动配置起 pi 自带的终端界面，所以助手手上的工具、提示、skill 与模型都相同；打字即可对话，输入 `/tw-board` 查看交付物。它可以带 `--profile <名字>`、`--label <名字>`（会话文件放在 `$TASKWRIGHT_RUNS_DIR/pi-sessions/<名字>/`，缺省 `tui`）、`--continue`（续接这个名字下最近的一条会话）与 `--session <会话文件>`。pi 退出后，它把这次写过的会话文件打印出来。通过 HTTP 接口脚本化使用的方法见[接口参考](api.zh-CN.md)。
 
 ## 7 用观测台查看智能体做了什么
 
@@ -116,7 +115,7 @@ python3 -m taskwright_observatory --runs ./runs/<任务编号> --workspaces ./ta
   python3 -m taskwright_observatory $(for d in runs/*/; do printf -- '--runs %s ' "$d"; done) --workspaces ./tasks
   ```
 
-- 终端客户端把 `pi-events/` 与 `pi-sessions/` 直接写在 `$TASKWRIGHT_RUNS_DIR` 下（缺省是启动它时所在目录下的 `./runs`），看它的会话时传这个目录本身。在 pi 自带终端界面里跑的会话不产生事件归档，观测台里看不到。
+- 在 pi 自带终端界面（`scripts/tui.sh`）里跑的会话不产生事件归档，观测台里看不到。
 - `--workspaces`：放任务目录的上级目录，也就是任务服务的 `--tasks`。
 - 观测台启动时不打印任何内容；命令跑起来之后直接打开上面的地址。
 - 文件有变化时会重新读取：跑完新会话，刷新浏览器即可。

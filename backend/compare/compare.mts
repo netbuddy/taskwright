@@ -3,7 +3,11 @@
  *
  * 用法：
  *   node backend/compare/compare.mts --a http://127.0.0.1:8960 --a-tasks <A 的任务目录> --a-runs <A 的归档目录>
- *                                    --b http://127.0.0.1:8961 --b-tasks <B 的任务目录> --b-runs <B 的归档目录> [--out 结果.json]
+ *                                    --b http://127.0.0.1:8961 --b-tasks <B 的任务目录> --b-runs <B 的归档目录> [--out 结果.json] [--save-fixture]
+ *   node backend/compare/compare.mts --against fixtures --b http://127.0.0.1:8961 --b-tasks <B 的任务目录> --b-runs <B 的归档目录> [--out 结果.json]
+ *
+ * A 是 Python 版，B 是 TypeScript 版。--save-fixture 在双跑时把 A 一侧归一化之后的响应存进 fixtures/http_47.json；
+ * --against fixtures 不起 A，拿 B 与这份留存的 Python 版输出比较（Python 版退役之后用这种方式）。
  *
  * 两个后端各自用自己的、只放本次新建任务的任务目录与归档目录；不要把已有的任务目录交给它们。
  * 操作序列：建任务（含两种出错）、上传三种材料（含重名与五种出错）、经造数夹具写入修订与会话文件（夹具在 agent 的测试目录里，
@@ -15,13 +19,13 @@
  * 2. 带时区的时刻（年-月-日T时:分:秒±时:分）换成「<时刻>」，库里的本地时刻（年-月-日T时:分:秒.毫秒）换成「<库时刻>」，
  *    界面修改出处里的「年-月-日 时:分」换成「<分钟>」；时刻相等与否由旧库的进程内对照核对（read_only.mts）；
  * 3. 任务目录与归档目录的绝对路径换成「<任务根>」「<归档根>」；
- * 4. 占用标记里的进程号换成「<进程号>」；后端生成的操作编号 ui-op-十二位 换成「ui-op-<编号>」；
+ * 4. 占用标记里的进程号换成「<进程号>」，与本机主机名相同的值换成「<本机>」；后端生成的操作编号 ui-op-十二位 换成「ui-op-<编号>」；
  * 5. JSON 响应按键名排序后比较（键的先后不算差异）；非 JSON 响应比较内容类型与归一化后的正文。
  * 响应头只比状态码、Content-Type、Content-Disposition。
  */
 
-import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -32,6 +36,8 @@ import { refundRulesDocx } from "./docx_fixture.ts";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SEED = join(ROOT, "agent", "tests", "fixtures", "seed_compare_task.mts");
 const CREATE_CLI = join(ROOT, "agent", "src", "cli", "create_task.mts");
+/** 留存的 Python 版输出（A 一侧归一化之后的响应）。 */
+const FIXTURE = join(ROOT, "backend", "compare", "fixtures", "http_47.json");
 
 interface Side { name: string; url: string; tasks: string; runs: string }
 interface Reply { status: number; headers: Record<string, string | string[] | undefined>; body: Buffer }
@@ -83,7 +89,7 @@ class Normalizer {
   }
 
   value(value: unknown, key = ""): unknown {
-    if (typeof value === "string") return this.text(value);
+    if (typeof value === "string") return value === hostname() ? "<本机>" : this.text(value);
     if (Array.isArray(value)) return value.map((v) => this.value(v));
     if (value !== null && typeof value === "object") {
       const out: Record<string, unknown> = {};
@@ -217,28 +223,42 @@ const { values } = parseArgs({
   options: {
     a: { type: "string" }, "a-tasks": { type: "string" }, "a-runs": { type: "string" },
     b: { type: "string" }, "b-tasks": { type: "string" }, "b-runs": { type: "string" },
-    out: { type: "string" },
+    out: { type: "string" }, against: { type: "string" }, "save-fixture": { type: "boolean", default: false },
   },
   strict: true,
 });
-for (const k of ["a", "a-tasks", "a-runs", "b", "b-tasks", "b-runs"] as const) {
+if (values.against !== undefined && values.against !== "fixtures") {
+  process.stderr.write(`--against 只能写 fixtures，现在是「${values.against}」。\n`);
+  process.exit(2);
+}
+const fromFixture = values.against === "fixtures";
+if (fromFixture && values["save-fixture"]) {
+  process.stderr.write("--save-fixture 要在双跑时用，不能与 --against fixtures 一起给。\n");
+  process.exit(2);
+}
+for (const k of (fromFixture ? ["b", "b-tasks", "b-runs"] : ["a", "a-tasks", "a-runs", "b", "b-tasks", "b-runs"]) as (keyof typeof values)[]) {
   if (!values[k]) {
     process.stderr.write(`缺少参数 --${k}。用法见文件开头的说明。\n`);
     process.exit(2);
   }
 }
 const sides: Side[] = [
-  { name: "A", url: values.a!, tasks: values["a-tasks"]!, runs: values["a-runs"]! },
+  ...(fromFixture ? [] : [{ name: "A", url: values.a!, tasks: values["a-tasks"]!, runs: values["a-runs"]! }]),
   { name: "B", url: values.b!, tasks: values["b-tasks"]!, runs: values["b-runs"]! },
 ];
 for (const side of sides) mkdirSync(side.runs, { recursive: true });
+const fixture: { label: string; reply: unknown }[] = fromFixture ? JSON.parse(readFileSync(FIXTURE, "utf-8")).steps : [];
+if (fromFixture && fixture.map((f) => f.label).join("\n") !== STEPS.map((s) => s.label).join("\n")) {
+  process.stderr.write(`留存的输出（${FIXTURE}）与现在的步骤表对不上，要在 Python 版还在时重新生成。\n`);
+  process.exit(2);
+}
 
 const states = sides.map(() => ({} as Record<string, string>));
 const normalizers = sides.map((side) => new Normalizer(side));
 const results = [];
 let same = 0;
-for (const step of STEPS) {
-  const got = [];
+for (const [n, step] of STEPS.entries()) {
+  const got: any[] = fromFixture ? [fixture[n].reply] : [];
   for (let i = 0; i < sides.length; i++) {
     const reply = await step.run(sides[i], states[i]);
     if (step.label === "建任务" && reply.status === 200) states[i].task = JSON.parse(reply.body.toString("utf-8")).task_id;
@@ -255,4 +275,11 @@ for (const step of STEPS) {
 }
 process.stdout.write(`\n共 ${STEPS.length} 步，一致 ${same} 步，有差异 ${STEPS.length - same} 步。\n`);
 if (values.out) writeFileSync(values.out, JSON.stringify(results, null, 2) + "\n", "utf-8");
+if (values["save-fixture"]) {
+  const commit = execFileSync("git", ["-C", ROOT, "log", "-1", "--format=%h", "--", "server"], { encoding: "utf-8" }).trim();
+  mkdirSync(dirname(FIXTURE), { recursive: true });
+  writeFileSync(FIXTURE, JSON.stringify({ source: { commit, generated: new Date().toISOString().slice(0, 10), command: "node backend/compare/compare.mts … --save-fixture" },
+    steps: results.map((r) => ({ label: r.label, reply: r.a })) }, null, 1) + "\n", "utf-8");
+  process.stdout.write(`Python 版一侧的输出已存进 ${FIXTURE}。\n`);
+}
 process.exit(same === STEPS.length ? 0 : 1);

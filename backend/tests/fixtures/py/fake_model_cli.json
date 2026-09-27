@@ -1,0 +1,43 @@
+{
+ "source": {
+  "commit": "d067d1b",
+  "generated": "2026-09-27",
+  "command": "node backend/tests/fixtures/py/generate.mts"
+ },
+ "answers": [
+  [
+   200,
+   "data: {\"id\": \"chatcmpl-fake-1\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": \"\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-fake-1\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"中文，含 \\\"引号\\\" 与 \\\\ 反斜杠。\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-fake-1\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {\"tool_calls\": [{\"index\": 0, \"id\": \"call_fake_1_0\", \"type\": \"function\", \"function\": {\"name\": \"save_revision\", \"arguments\": \"{\\\"operations\\\": [{\\\"op\\\": \\\"add\\\", \\\"fields\\\": {\\\"名称\\\": \\\"甲\\\", \\\"步骤\\\": [\\\"一\\\", \\\"二\\\"]}, \\\"n\\\": 3, \\\"x\\\": null, \\\"ok\\\": true}]}\"}}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-fake-1\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}]}\n\ndata: {\"id\": \"chatcmpl-fake-1\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 1, \"total_tokens\": 2}}\n\ndata: [DONE]\n\n"
+  ],
+  [
+   200,
+   "data: {\"id\": \"chatcmpl-fake-2\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": \"\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-fake-2\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"我改一下。\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-fake-2\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: {\"id\": \"chatcmpl-fake-2\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 1, \"total_tokens\": 2}}\n\ndata: [DONE]\n\n"
+  ],
+  [
+   200,
+   "{\"id\": \"chatcmpl-fake-3\", \"object\": \"chat.completion\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"{\\\"发现\\\":[]}\"}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 1, \"total_tokens\": 2}}"
+  ],
+  [
+   200,
+   "{\"id\": \"chatcmpl-fake-4\", \"object\": \"chat.completion\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call-1\", \"type\": \"function\", \"function\": {\"name\": \"reply\", \"arguments\": \"{\\\"informs\\\": [], \\\"act\\\": null, \\\"text\\\": \\\"好。\\\"}\"}}]}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 1, \"total_tokens\": 2}}"
+  ],
+  [
+   503,
+   "{\"error\": {\"message\": \"暂时不可用\", \"type\": \"fake_error\"}}"
+  ],
+  [
+   200,
+   "data: {\"id\": \"chatcmpl-fake-6\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": \"\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-fake-6\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"慢。\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-fake-6\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: {\"id\": \"chatcmpl-fake-6\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 1, \"total_tokens\": 2}}\n\ndata: [DONE]\n\n"
+  ],
+  [
+   200,
+   "data: {\"id\": \"chatcmpl-fake-7\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": \"\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl-fake-7\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: {\"id\": \"chatcmpl-fake-7\", \"object\": \"chat.completion.chunk\", \"created\": <秒>, \"model\": \"fake-model\", \"choices\": [], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 1, \"total_tokens\": 2}}\n\ndata: [DONE]\n\n"
+  ]
+ ],
+ "lines": "{\"序号\": 1, \"时刻\": <秒>, \"请求体\": {\"model\": \"fake-model\", \"messages\": [{\"role\": \"user\", \"content\": \"整理一下\"}], \"stream\": true, \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"ls\", \"parameters\": {\"type\": \"object\"}}}]}, \"回答\": {\"text\": \"中文，含 \\\"引号\\\" 与 \\\\ 反斜杠。\", \"tool_calls\": [{\"name\": \"save_revision\", \"arguments\": {\"operations\": [{\"op\": \"add\", \"fields\": {\"名称\": \"甲\", \"步骤\": [\"一\", \"二\"]}, \"n\": 3, \"x\": null, \"ok\": true}]}}]}, \"按哪一条给的\": \"sequence 的下一条\"}\n{\"序号\": 2, \"时刻\": <秒>, \"请求体\": {\"model\": \"fake-model\", \"messages\": [{\"role\": \"tool\", \"content\": [{\"type\": \"text\", \"text\": \"调用被拒：缺字段\"}]}], \"stream\": true}, \"回答\": {\"text\": \"我改一下。\"}, \"按哪一条给的\": \"rules 第 2 条\"}\n{\"序号\": 3, \"时刻\": <秒>, \"请求体\": {\"model\": \"fake-model\", \"messages\": [{\"role\": \"user\", \"content\": \"你是评审者，看一下\"}], \"stream\": false}, \"回答\": {\"text\": \"{\\\"发现\\\":[]}\"}, \"按哪一条给的\": \"rules 第 1 条\"}\n{\"序号\": 4, \"时刻\": <秒>, \"请求体\": {\"model\": \"fake-model\", \"messages\": [{\"role\": \"user\", \"content\": \"再来\"}]}, \"回答\": {\"tool_calls\": [{\"name\": \"reply\", \"arguments\": {\"informs\": [], \"act\": null, \"text\": \"好。\"}, \"id\": \"call-1\"}]}, \"按哪一条给的\": \"sequence 的下一条\"}\n{\"序号\": 5, \"时刻\": <秒>, \"请求体\": {\"model\": \"fake-model\", \"messages\": [{\"role\": \"user\", \"content\": \"出错\"}]}, \"回答\": {\"status\": 503, \"error_body\": \"暂时不可用\"}, \"按哪一条给的\": \"sequence 的下一条\"}\n{\"序号\": 6, \"时刻\": <秒>, \"请求体\": {\"model\": \"fake-model\", \"messages\": [{\"role\": \"user\", \"content\": \"慢\"}], \"stream\": true}, \"回答\": {\"text\": \"慢。\", \"delay\": 0.2}, \"按哪一条给的\": \"sequence 的下一条\"}\n{\"序号\": 7, \"时刻\": <秒>, \"请求体\": {\"model\": \"fake-model\", \"messages\": [{\"role\": \"user\", \"content\": \"用完了\"}], \"stream\": true}, \"回答\": {\"text\": \"\"}, \"按哪一条给的\": \"default\"}\n",
+ "agent": [
+  "{\n \"providers\": {\n  \"fake\": {\n   \"baseUrl\": \"<地址>\",\n   \"api\": \"openai-completions\",\n   \"apiKey\": \"fake-placeholder-key\",\n   \"compat\": {\n    \"supportsDeveloperRole\": false,\n    \"supportsReasoningEffort\": false\n   },\n   \"models\": [\n    {\n     \"id\": \"fake-model\",\n     \"name\": \"按脚本回话的假模型\",\n     \"reasoning\": false,\n     \"input\": [\n      \"text\"\n     ],\n     \"contextWindow\": 32768,\n     \"maxTokens\": 8192,\n     \"cost\": {\n      \"input\": 0,\n      \"output\": 0,\n      \"cacheRead\": 0,\n      \"cacheWrite\": 0\n     }\n    }\n   ]\n  }\n }\n}",
+  "{}",
+  "{}"
+ ]
+}

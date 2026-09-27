@@ -1,5 +1,5 @@
 {
-  "说明": "开发用启动配置。pi 的全部启动参数都收在这里，代码里不另外写死任何一项。",
+  "说明": "桌面包用的启动配置：单可执行文件与 AppImage 里的启动程序用 --profile desktop 选它。除 Langfuse 环境标签是 desktop 以外与 dev 相同（改 dev 时要同步改这里，测试会核对）。包里不带任何密钥，模型的登记与凭据从用户机器上 pi 的配置目录读。",
   "executable": "pi",
   "mode": "rpc",
   "model": "openai-codex/gpt-6-luna",
@@ -52,7 +52,7 @@
       "required": false
     }
   ],
-  "system_prompt_file": "server/taskwright_server/prompts/executor_system_prompt.md",
+  "system_prompt_file": "backend/prompts/executor_system_prompt.md",
   "系统提示说明": "执行者的系统提示，用 --system-prompt 整体替换 pi 自带的系统提示。文件路径相对代码仓根目录，这份文字是执行者行为的一部分，改动要连同测试一起评估。",
   "env_passthrough": [
     "LANGFUSE_PUBLIC_KEY",
@@ -62,6 +62,6 @@
     "PI_LANGFUSE_DEBUG"
   ],
   "langfuse": {
-    "environment": "development"
+    "environment": "desktop"
   }
 }

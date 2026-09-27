@@ -413,7 +413,7 @@ class KnowledgeTests(unittest.TestCase):
     def test_补记里家目录缩写成波浪号时平台skill也能对上(self):
         home = str(Path.home())
         full = home + "/repo/agent/prompts/skills/p/SKILL.md"
-        launches = [{"知识仓库摘要": {"文件": [{"路径": "~/repo/agent/prompts/skills/p/SKILL.md", "摘要值": "1234123412341234",
+        launches = [{"知识仓库摘要": {"文件": [{"路径": "~" + full[len(home):], "摘要值": "1234123412341234",
                                                 "来自": "平台 skill", "代码仓里的路径": "agent/prompts/skills/p/SKILL.md"}]}}]
         facts = taskpage.launch_facts(launches)
         self.assertEqual(facts["平台 skill"], {full: "agent/prompts/skills/p/SKILL.md"})

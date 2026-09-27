@@ -7,7 +7,7 @@
 | Component | Language | Runs where | Reads the task database | Writes the task database |
 |---|---|---|---|---|
 | Agent (`agent/`) | TypeScript | inside the pi process | yes | **yes, the only writer** |
-| Server (`server/`) | Python | its own process; starts one pi process per task | read-only | never |
+| Task service (`backend/`) | TypeScript, run directly by Node.js | its own process; starts one pi process per task | read-only | never (creating a task goes through the agent's `createTask`) |
 | Observatory (`observatory/`) | Python | its own local web app | read-only | never |
 | Web (`web/`) | TypeScript, React | the browser | no, it only calls the API | never |
 | Simulator (`sim/`) | TypeScript tools, Python driver | a second pi process | read-only (for judging) | never |
@@ -17,7 +17,7 @@
 | Kind | Where | What it may do |
 |---|---|---|
 | Tools and extension commands | `agent/src/tools`, `agent/src/hooks` | Validate and write the task database, always through the core functions in `agent/src/lib`, one transaction and one event per write. |
-| Backend | `server/`, `observatory/` | Start and supervise pi, forward what the user says, relay events, read the database read-only. Never interpret or grade content. |
+| Backend | `backend/`, `observatory/` | Start and supervise pi, forward what the user says, relay events, read the database read-only. Never interpret or grade content. |
 | Frontend | `web/` | Send requests; change the screen only when the corresponding event arrives. |
 
 ## Roles

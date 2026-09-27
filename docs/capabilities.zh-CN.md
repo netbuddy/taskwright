@@ -30,7 +30,7 @@
 
 ### 1.3 助手的工具
 
-启动配置（`server/taskwright_server/profiles/dev.json`）的工具白名单里恰好有十个工具：pi 内置的 `read`、`ls`、`grep`、`find`，加上 Taskwright 自己的六个。pi 的其他内置工具（例如 `bash`、`edit`、`write`）不加载，所以助手不能执行命令、不能改文件，只能经 `save_revision` 改交付物。
+启动配置（`backend/profiles/dev.json`）的工具白名单里恰好有十个工具：pi 内置的 `read`、`ls`、`grep`、`find`，加上 Taskwright 自己的六个。pi 的其他内置工具（例如 `bash`、`edit`、`write`）不加载，所以助手不能执行命令、不能改文件，只能经 `save_revision` 改交付物。
 
 | 工具 | 做什么 | 核对什么、什么情况下拒绝 |
 |---|---|---|
@@ -197,4 +197,4 @@
 
 ---
 
-维护约定：本文依据启动配置的工具白名单（`server/taskwright_server/profiles/dev.json`）、`agent/src/` 下的工具与命令、`agent/prompts/skills/` 下的平台 skill、助手的系统提示（`server/taskwright_server/prompts/executor_system_prompt.md`），以及 `task-types/` 下的任务定义与 skill 整理而来。改动这些文件时，在同一次改动里同步更新本文与[英文版](capabilities.md)。
+维护约定：本文依据启动配置的工具白名单（`backend/profiles/dev.json`）、`agent/src/` 下的工具与命令、`agent/prompts/skills/` 下的平台 skill、助手的系统提示（`backend/prompts/executor_system_prompt.md`），以及 `task-types/` 下的任务定义与 skill 整理而来。改动这些文件时，在同一次改动里同步更新本文与[英文版](capabilities.md)。

@@ -1,5 +1,5 @@
 {
-  "说明": "用户 agent 的启动配置。形状与 server/taskwright_server/profiles/dev.json 相同，由 server/taskwright_server/launch.py 组装命令行；系统提示由 sim/launch_user.py 按用户画像拼好后另给。",
+  "说明": "用户 agent 的启动配置。形状与 backend/profiles/dev.json 相同，由 server/taskwright_server/launch.py 组装命令行；系统提示由 sim/launch_user.py 按用户画像拼好后另给。",
   "executable": "pi",
   "mode": "rpc",
   "model": "openai-codex/gpt-6-luna",
