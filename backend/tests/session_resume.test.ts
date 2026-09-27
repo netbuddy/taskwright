@@ -3,9 +3,8 @@
  * 执行者都应当接回原来那条会话，而不是另开一条。
  * 起真的后端进程（node backend/src/main.mts，工作目录是临时目录，--tasks tasks --runs runs）与真的 pi，模型换成进程内的假端点。
  *
- * 这两条目前是已知缺陷，标为 todo（失败不算整套测试失败）：后端把相对于自己工作目录的会话文件路径原样交给 pi，
- * pi 的工作目录是任务目录，按它解析找不到文件，于是不报错、悄悄新开一条空会话；之后的话、修订与对话记录都落进那条新会话。
- * 修好之后两条应当通过，届时去掉 todo。给绝对路径启动时不出问题，双跑对照与其余测试都是这样启动的，所以没有发现。
+ * 曾经的缺陷：后端把相对于自己工作目录的会话文件路径原样交给 pi，pi 的工作目录是任务目录，按它解析找不到文件，
+ * 于是不报错、悄悄新开一条空会话，之后的话、修订与对话记录都落进那条新会话。现在 Service 构造时把两个目录转成绝对路径。
  */
 
 import assert from "node:assert/strict";
@@ -26,7 +25,6 @@ after(() => rmSync(tmp, { recursive: true, force: true }));
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 const NO_PI = spawnSync("pi", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 pi" : false;
-const KNOWN_BUG = "已知缺陷：相对路径启动时回到旧会话会另开一条新会话；修好之后去掉 todo";
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "TASKWRIGHT_TASKS_ROOT", "PI_CODING_AGENT_DIR",
   "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT"];
 
@@ -132,7 +130,7 @@ class Stack {
 }
 
 test("新建第二条会话之后读第一条会话的快照：执行者接回第一条会话，会话列表里不多出没有名字的空会话",
-  { skip: NO_PI, todo: KNOWN_BUG }, async () => {
+  { skip: NO_PI }, async () => {
     const stack = new Stack("second-session");
     try {
       await stack.start();
@@ -151,7 +149,7 @@ test("新建第二条会话之后读第一条会话的快照：执行者接回�
   });
 
 test("后端重启之后用原会话编号读快照：执行者接回原会话，会话列表里只有这一条",
-  { skip: NO_PI, todo: KNOWN_BUG }, async () => {
+  { skip: NO_PI }, async () => {
     const stack = new Stack("restart");
     try {
       await stack.start();
