@@ -17,7 +17,7 @@ import { DatabaseSync } from "node:sqlite";
 import { completionLines, confirmState, itemDetailLines, itemRevisions, lastEventLine, latestRevision, reviewState, type TaskRow } from "./board.ts";
 import { checkCompletion, completionHints, currentItems, unreadItems, unreadList } from "./conditions.ts";
 import { REVIEW_CONDITION, findingText } from "./review.ts";
-import { activeWaiver, batchNumber, currentRulesHash, currentReviews } from "./review_state.ts";
+import { batchNumber, currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, hasVersionColumns } from "./schema.ts";
@@ -98,7 +98,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
         if (one.field !== null) source.supports.push(one.field_index === null ? { field: one.field } : { field: one.field, index: one.field_index });
         return list;
       }, []);
-    const lines = itemDetailLines(db, task, definition, itemId, typeof wanted === "number" ? wanted : undefined);
+    const lines = itemDetailLines(db, task, definition, itemId, typeof wanted === "number" ? wanted : undefined, workspaceDir);
     lines.push(
       "",
       shown === current
@@ -120,7 +120,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
         revisions,
         fields,
         sources,
-        review: reviewState(db, task.task_id, itemId, shown),
+        review: reviewState(db, task.task_id, itemId, shown, workspaceDir),
         confirm: confirmState(db, task.task_id, itemId, shown),
         dialogue,
       },
@@ -216,8 +216,8 @@ export function materialLines(materials: MaterialFacts[]): string[] {
 }
 
 /**
- * 评审发现：要评审的集合里，条目当前所在的修订上、当前规则下最近一次评审不合规的，逐条列出发现（带规则编号，写明是第几次评审）；
- * 用户保留了写法的只列一行。界面上评审结束时会话里只追加一句结论，执行者要照发现改时从这里取。
+ * 评审发现：要评审的集合里，条目当前所在的修订上的评审结论（lib/review_verdict.ts）是不通过的，逐条列出依据的那条记录的发现
+ * （带规则编号，写明是第几次评审）；结论是已保留的只列一行。界面上评审结束时会话里只追加一句结论，执行者要照发现改时从这里取。
  */
 export function reviewFindingLines(db: DatabaseSync, taskId: string, definition: TaskDefinition, workspaceDir: string): string[] {
   const out: string[] = [];
@@ -226,14 +226,12 @@ export function reviewFindingLines(db: DatabaseSync, taskId: string, definition:
     if (!names.includes(REVIEW_CONDITION)) continue;
     const hash = currentRulesHash(db, workspaceDir, collection);
     for (const row of currentItems(db, taskId, collection)) {
-      const reviews = currentReviews(db, taskId, row.item_id, row.revision_no, hash);
-      const last = reviews[reviews.length - 1];
-      if (!last || last.verdict !== "不合规" || reviews.some((r) => r.verdict === "合规")) continue;
-      const waiver = activeWaiver(db, taskId, row.item_id, row.revision_no);
-      if (waiver) {
-        kept.push(`${row.item_id}（修订 ${row.revision_no}${waiver.reason ? `，理由：${waiver.reason}` : ""}）`);
+      const { state, basis: last, waiver } = verdictAt(db, taskId, row.item_id, row.revision_no, hash);
+      if (state === "waived") {
+        kept.push(`${row.item_id}（修订 ${row.revision_no}${waiver!.reason ? `，理由：${waiver!.reason}` : ""}）`);
         continue;
       }
+      if (state !== "failed" || !last) continue;
       const no = batchNumber(db, taskId, last.batch_id);
       const findings = (db.prepare("SELECT field, item_index, problem, suggestion, rule_id, level FROM review_finding WHERE review_id = ? ORDER BY ordinal").all(last.review_id) as
         { field: string; item_index: number | null; problem: string; suggestion: string | null; rule_id: string | null; level: string | null }[])

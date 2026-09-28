@@ -11,9 +11,10 @@
  * 评审没有完成（超时、调用失败、两次输出都不合格、评审期间条目被改）时 writeUnfinished 只记模型调用与一条
  * REVIEW_UNFINISHED 事件，不写合规与否。
  *
- * 规则指纹与重评：每条评审记录带规则指纹（lib/review_state.ts）、评审者提示词的哈希与所属批次（发起它的调用编号）。
- * 「待评审」是条目当前所在的修订在当前规则下还没有评审记录；不点名时只评这些。点名的条目在当前规则下已经评过、
- * 内容与规则都没变时，只有带 force（用户在界面上点了「仍要重评」）才再评，这一次记 forced；否则整批拒绝并说明是第几次评审评过的。
+ * 规则指纹与只评一次：每条评审记录带规则指纹（lib/review_state.ts）、评审者提示词的哈希与所属批次（发起它的调用编号）。
+ * 同一个条目在同一次修订上、按同一套规则只评审一次：条目修订了，或者规则改了（指纹变了），才会再评。
+ * 「待评审」是条目当前所在的修订在当前规则下还没有评审记录；不点名时只评这些。点名的条目在当前规则下已经评过时整批拒绝，
+ * 界面发起的与执行者经工具发起的都一样。评审表的 forced 列是早期「仍要重评」留下的，新记录一律写 0，读的时候不另看它。
  * 每一批评审结束时记一条 REVIEW_BATCH 摘要事件（review_run.ts）。
  *
  * 材料：任务材料总长（全部材料文件的字符数）不超过 MATERIAL_FULL_LIMIT 时，评审者拿到材料全文；超过时只拿到这个条目的
@@ -36,7 +37,7 @@ import { ACTOR_EXECUTOR, databasePath, emit, wallClockText } from "./db.ts";
 import { withTaskDatabase } from "./schema.ts";
 import { extractJson, type ModelCallRecord } from "./model_call.ts";
 import { RULE_REQUIRED, type ReviewRule, effectiveRules, validateDefinition } from "./definition.ts";
-import { batchNumber, currentReviews, rulesHash } from "./review_state.ts";
+import { currentReviews, rulesHash } from "./review_state.ts";
 import { listMaterials } from "./task_status.ts";
 
 /** 材料全文给评审者的上限：全部材料文件的字符数不超过它时给全文。 */
@@ -73,8 +74,6 @@ export interface PreparedReview extends RequestedItem {
   rulesDigest: string;
   /** 这个集合现在的规则指纹；没写评审规矩的集合为空。 */
   rulesHash: string | null;
-  /** 在当前规则下已经评过、内容没变，用户仍要求重评。 */
-  forced: boolean;
   /** 评审者提示词文件的哈希。 */
   reviewerVersion: string;
   system: string;
@@ -124,9 +123,9 @@ const digest = (text: string) => createHash("sha256").update(text).digest("hex")
 
 /**
  * 第 1 步：只读核对并装配提示。拒绝：库或任务不存在、任务不是进行中；点名的条目不存在、已删除、所在集合不要求评审、
- * 修订号不是条目当前所在的修订；点名的条目在当前规则下已经评过而没有带 force；集合的规则文件读不出来；一个要评的也没有。
+ * 修订号不是条目当前所在的修订；点名的条目在当前修订、当前规则下已经评过；集合的规则文件读不出来；一个要评的也没有。
  */
-export function prepareReviews(workspaceDir: string, requested: RequestedItem[] | null, options: { force?: boolean } = {}): PreparedReviews {
+export function prepareReviews(workspaceDir: string, requested: RequestedItem[] | null): PreparedReviews {
   const path = databasePath(workspaceDir);
   if (!existsSync(path)) throw new ReviewError("这个任务目录还没有任务数据库，没有条目可以评审。");
   const system = readFileSync(REVIEW_PROMPT_PATH, "utf-8");
@@ -151,7 +150,6 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       }
       return hashOf.get(collection)!;
     };
-    const forced = new Set<string>();
     let wanted: RequestedItem[];
     const problems: string[] = [];
     if (requested) {
@@ -162,13 +160,10 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         if (row.deleted_in_revision !== null) { problems.push(`条目 ${want.item_id} 已经删除了`); continue; }
         if (!reviewed.has(row.collection)) { problems.push(`条目 ${want.item_id} 所在的集合「${row.collection}」不要求评审`); continue; }
         if (row.revision_no !== want.revision_no) { problems.push(`条目 ${want.item_id} 现在是修订 ${row.revision_no}，你写的是修订 ${want.revision_no}；只能评条目当前所在的修订`); continue; }
-        const done = currentReviews(db, task.task_id, want.item_id, want.revision_no, hash(row.collection));
-        if (done.length && !options.force) {
-          const no = batchNumber(db, task.task_id, done[done.length - 1].batch_id);
-          problems.push(`${want.item_id} 在当前修订上已经评过${no ? `（第 ${no} 次评审）` : ""}，内容和规则都没变`);
+        if (currentReviews(db, task.task_id, want.item_id, want.revision_no, hash(row.collection)).length) {
+          problems.push(`${want.item_id} 在当前修订上已经评过，内容和规则都没变；同一次修订、同一套规则只评审一次`);
           continue;
         }
-        if (done.length) forced.add(want.item_id);
         wanted.push(want);
       }
       if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
@@ -199,7 +194,7 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       items.push({
         ...want, collection: row.collection, fields, decls, rules, rulesPath: decl?.reviewRules?.file ?? null,
         rulesDigest: digest(JSON.stringify(rules) + "\n" + JSON.stringify(decls)),
-        rulesHash: hash(row.collection), forced: forced.has(want.item_id), reviewerVersion: digest(system),
+        rulesHash: hash(row.collection), reviewerVersion: digest(system),
         system, user: assembleUser(want, row.collection, fields, decls, rules, sources, materials),
       });
     }
@@ -396,13 +391,13 @@ export function writeReview(call: CallContext, taskId: string, item: PreparedRev
     const seq = emit(db, {
       taskId, sessionId: call.sessionId, callId: call.callId, name: EVENT_REVIEW_RECORDED, actor: call.actor ?? ACTOR_EXECUTOR,
       payload: { item_id: item.item_id, revision_no: item.revision_no, verdict: result.verdict, reason: result.reason, findings: result.findings,
-        batch_id: call.callId, rules_hash: item.rulesHash, forced: item.forced },
+        batch_id: call.callId, rules_hash: item.rulesHash },
     });
     const reviewId = Number(db.prepare(
       "INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at, " +
-        "batch_id, rules_hash, reviewer_version, forced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "batch_id, rules_hash, reviewer_version, forced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
     ).run(taskId, item.item_id, item.revision_no, result.verdict, result.reason, item.rulesDigest, `review-${call.callId}-${item.item_id}`,
-      call.callId, seq, wallClockText(), call.callId, item.rulesHash, item.reviewerVersion, item.forced ? 1 : 0).lastInsertRowid);
+      call.callId, seq, wallClockText(), call.callId, item.rulesHash, item.reviewerVersion).lastInsertRowid);
     const insert = db.prepare(
       "INSERT INTO review_finding (review_id, task_id, ordinal, field, item_index, problem, suggestion, rule_id, level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );

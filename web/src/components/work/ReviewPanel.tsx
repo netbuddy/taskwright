@@ -13,7 +13,7 @@ import type { ActionRequest, Finding, Item, Review, ReviewBatch, ReviewRule, Tas
 import type { ApiError } from "../../api/client";
 import type { ReviewRun } from "../../state/workState";
 import {
-  findingStatus, isProblem, needsRereview, needsReview, openProblems, pendingReview, reviewOffReason, writeOffReason,
+  findingStatus, isProblem, itemVerdict, needsRereview, needsReview, openProblems, pendingReview, reviewOffReason, writeOffReason,
 } from "../../model/items";
 import { formatTime } from "../../model/format";
 import { FindingLine } from "./FindingLine";
@@ -83,9 +83,9 @@ function BatchCard({ task, batch, latest, onlyOpen, readOnly, writesOff, submit,
   const failed = rows.filter((r) => r.review && r.review.verdict !== "合规");
   const passed = rows.filter((r) => r.review && r.review.verdict === "合规");
   const unfinished = rows.filter((r) => r.item && !r.review);
-  const allHandled = failed.every((r) => findingStatus(r.item!, r.review!).kind !== "open");
+  const allHandled = failed.every((r) => findingStatus(r.item!, r.review!, task).kind !== "open");
   if (onlyOpen && allHandled) return null;
-  const shownFailed = onlyOpen ? failed.filter((r) => findingStatus(r.item!, r.review!).kind === "open") : failed;
+  const shownFailed = onlyOpen ? failed.filter((r) => findingStatus(r.item!, r.review!, task).kind === "open") : failed;
   const withAdvice = passed.filter((r) => (r.review!.findings ?? []).length > 0).length;
   return (
     <div className={`sw-rcard${latest ? "" : " old"}`} data-testid={`batch-${batch.no}`}>
@@ -133,9 +133,10 @@ function FailedItem({ task, item, review, batch, onlyOpen, readOnly, writesOff, 
   submit: Submit; onOpenFinding: (itemId: string, field: string | null) => void; onPrefill: (text: string) => void;
 }) {
   const toast = useToast();
-  const status = findingStatus(item, review);
+  const status = findingStatus(item, review, task);
   const findings = review.findings ?? [];
-  const current = review.revision_no === item.revision_no;
+  // 操作链接只挂在条目现在的评审结论依据的那条记录上：保留针对的是它（同一修订上有几条记录只出现在早期的数据里）。
+  const current = itemVerdict(item, task).basis === review;
   const off = !!writeOffReason(task, { readOnly, writesOff });
   const act = async (kind: "waive_review" | "unwaive_review", reason?: string) => {
     const label = kind === "waive_review" ? `保留 ${item.item_id} 现在的写法` : `撤销对 ${item.item_id} 的保留`;

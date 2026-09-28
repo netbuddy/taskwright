@@ -37,7 +37,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
 import { DefinitionError, KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
-import { activeWaiver, currentRulesHash, currentReviews, reviewSpecOf } from "./review_state.ts";
+import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
 import { SaveRejected, type Source, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { NoDatabaseYet, SOURCE_USER_EDIT, TASK_ACTIVE, acceptsUserEditSource, withTaskDatabase } from "./schema.ts";
 
@@ -590,7 +590,7 @@ function itemsPhrase(items: { item_id: string; revision_no: number }[]): string 
   return items.map((t) => `${t.item_id}（修订 ${t.revision_no}）`).join("、");
 }
 
-/** 保留写法：每个目标在 base_revision 上、当前规则下评审不合规，而且还没有生效的保留，才写。 */
+/** 保留写法：每个目标在 base_revision 上的评审结论（lib/review_verdict.ts）是不通过，才写；保留针对的是当前规则下最后一条记录。 */
 function waiveReview(ctx: Ctx, opId: string, targets: Target[], rawFields: unknown): UserOpResult {
   const fields = isObject(rawFields) ? rawFields : {};
   const reason = typeof fields.reason === "string" && fields.reason.trim() ? fields.reason.trim() : null;
@@ -601,9 +601,9 @@ function waiveReview(ctx: Ctx, opId: string, targets: Target[], rawFields: unkno
     const problems: string[] = [];
     for (const one of items) {
       const collection = (db.prepare("SELECT collection FROM item WHERE task_id = ? AND item_id = ?").get(task.task_id, one.item_id) as { collection: string }).collection;
-      const verdicts = currentReviews(db, task.task_id, one.item_id, one.revision_no, currentRulesHash(db, ctx.workspaceDir, collection)).map((r) => r.verdict);
-      if (!verdicts.length || verdicts.includes("合规")) problems.push(`${one.item_id} 在修订 ${one.revision_no} 上没有评审不合规的记录，不用保留`);
-      else if (activeWaiver(db, task.task_id, one.item_id, one.revision_no)) problems.push(`${one.item_id} 在修订 ${one.revision_no} 上已经保留过了`);
+      const { state } = verdictAt(db, task.task_id, one.item_id, one.revision_no, currentRulesHash(db, ctx.workspaceDir, collection));
+      if (state === "pending" || state === "passed") problems.push(`${one.item_id} 在修订 ${one.revision_no} 上没有评审不合规的记录，不用保留`);
+      else if (state === "waived") problems.push(`${one.item_id} 在修订 ${one.revision_no} 上已经保留过了`);
     }
     if (problems.length) throw new UserOpError("rejected", `没有保留，因为：${problems.join("；")}。`, { reasons: problems });
     const at = wallClockText();
@@ -621,12 +621,18 @@ function waiveReview(ctx: Ctx, opId: string, targets: Target[], rawFields: unkno
   };
 }
 
-/** 撤销保留：每个目标在 base_revision 上要有一条生效的保留。 */
+/** 撤销保留：每个目标在 base_revision 上要有一条生效的保留（评审结论是已保留，lib/review_verdict.ts），撤销的就是它。 */
 function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult {
   const items = targets.map((t) => ({ item_id: t.item_id, revision_no: t.base_revision }));
   const seq = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
     const task = taskRow(db);
-    const found = items.map((one) => ({ one, waiver: activeWaiver(db, task.task_id, one.item_id, one.revision_no) }));
+    const collectionOf = (itemId: string) =>
+      (db.prepare("SELECT collection FROM item WHERE task_id = ? AND item_id = ?").get(task.task_id, itemId) as { collection: string } | undefined)?.collection;
+    const found = items.map((one) => {
+      const collection = collectionOf(one.item_id);
+      const hash = collection === undefined ? null : currentRulesHash(db, ctx.workspaceDir, collection);
+      return { one, waiver: verdictAt(db, task.task_id, one.item_id, one.revision_no, hash).waiver };
+    });
     const missing = found.filter((f) => !f.waiver).map((f) => `${f.one.item_id} 在修订 ${f.one.revision_no} 上没有生效的保留`);
     if (missing.length) throw new UserOpError("rejected", `没有撤销，因为：${missing.join("；")}。`, { reasons: missing });
     const eventSeq = emit(db, { taskId: task.task_id, sessionId: ctx.sessionId, callId: opId, name: EVENT_REVIEW_UNWAIVED, actor: ACTOR_USER, payload: { items } });

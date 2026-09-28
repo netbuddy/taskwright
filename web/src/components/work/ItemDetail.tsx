@@ -26,8 +26,9 @@
 // 旁边「让助手照这条改」往对话区输入框预填一句话，不写库。标题字段有发现时也照常列出这一行。
 // 每条发现分两行（FindingLine，与评审页签共用）：第一行是发现本身与「第 N 次评审指出」，第二行是去向（未处理／已在修订 N 改／已保留 · 理由）
 // 与操作链接（让助手照这条改、保留这种写法、撤销保留）；保留与评审页签是同一个操作（理由可空）。
-// 顶部横幅只在还有未处理的问题时显示一行「评审不通过：N 处问题未处理……」；保留的理由与「撤销保留」只在发现行第二行。条目在当前修订、当前规则下已经评过时，
-// 「评审这条」灰化并说明，旁边小字「仍要重评」，确认之后带 force 再评一次。
+// 顶部横幅只在还有未处理的问题时显示一行「评审不通过：N 处问题未处理……」；保留的理由与「撤销保留」只在发现行第二行。
+// 发现、状态与能不能保留都按条目在当前修订上的评审结论（model/items.ts 的 itemVerdict，以当前规则下最后一条记录为准）。
+// 同一次修订、同一套规则只评一次：条目在当前修订、当前规则下已经评过时，「评审这条」灰化并说明；不通过、还没保留时说明接下来能做什么。
 
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Popconfirm, Select } from "antd";
@@ -37,7 +38,7 @@ import { alignSteps } from "../../model/diff";
 import { docxLocator, pageAndPosition, placeText } from "../../model/docx";
 import { chapterOf } from "../../../../agent/src/lib/docx_locations";
 import { TaskIdContext, useDocx } from "../../state/docxStore";
-import { BUSY_TEXT, batchNo, currentReview, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
+import { BUSY_TEXT, batchNo, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, itemVerdict, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
 import { baselineRevision, confirmedRevision } from "../../model/revisions";
 import { formatTime } from "../../model/format";
 import { rejectedText } from "./errors";
@@ -88,7 +89,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   latestRevision?: number;
   onDirty?: (dirty: boolean) => void;
   /** 「评审这条」。 */
-  onReview?: (force?: boolean) => void;
+  onReview?: () => void;
   /** 评审按钮灰化的原因；可用时为 undefined。 */
   reviewOff?: string;
   /** 「让助手照这条改」：预填对话区输入框。 */
@@ -169,14 +170,15 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   /** 画线的比较对象：看旧修订时是它的上一次改动；有修订标识时是上次确认的修订；点了「比对」时是上一次改动。 */
   const beforeFields = old ? previous : showMarks ? baseFields : compare ? previous : null;
   const supplements = sources.filter((s) => s.kind === "执行者补充");
-  // 当前所在的修订上最近一条评审的发现（通过时也可能有建议）；看旧修订时不标。
-  const current = old ? undefined : currentReview(item, task);
+  // 当前所在的修订上评审结论依据的那条记录的发现（通过时也可能有建议）；看旧修订时不标。
+  const verdict = itemVerdict(item, task);
+  const current = old ? undefined : verdict.basis ?? undefined;
   const findings = current?.findings ?? [];
   const currentNo = batchNo(task, current?.batch_id);
-  const status = current ? findingStatus(item, current) : null;
-  /** 在当前修订、当前规则下已经评过：「评审这条」灰化，只能「仍要重评」。 */
-  const reviewedNow = !!currentReview(item, task);
-  const keepable = !!current && current.verdict !== "合规" && status?.kind === "open";
+  const status = current ? findingStatus(item, current, task) : null;
+  /** 在当前修订、当前规则下已经评过：「评审这条」灰化（同一次修订、同一套规则只评一次）。 */
+  const reviewedNow = verdict.state !== "pending";
+  const keepable = !!current && verdict.state === "failed";
   const keep = (reason: string) => void run({ kind: "waive_review", targets: [{ item_id: item.item_id, base_revision: item.revision_no }],
     fields: { reason: reason.trim(), source: "detail" }, notify_executor: false }, `保留 ${item.item_id} 现在的写法`);
   const unwaive = () => void run({ kind: "unwaive_review", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], notify_executor: false },
@@ -215,13 +217,8 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           {!keepField && onReview && needsReview(task, item.collection) && (
             <>
               <button type="button" className="btn sm" disabled={!!reviewOff || reviewedNow}
-                title={reviewOff ?? (reviewedNow ? `这条在当前修订上已经评过${currentNo ? `（第 ${currentNo} 次评审）` : ""}，内容和规则都没变。` : undefined)}
+                title={reviewOff ?? (reviewedNow ? `这条在当前修订上已经评过，内容和规则都没变。${verdict.state === "failed" ? "没有通过：可以照发现修改之后再评，或者保留这种写法。" : ""}` : undefined)}
                 onClick={() => onReview()} data-testid="review-one">评审这条</button>
-              {reviewedNow && !reviewOff && (
-                <Popconfirm title="再评一次会产生新的记录，最新一次为准。" okText="再评一次" cancelText="取消" onConfirm={() => onReview(true)}>
-                  <span className="rerun" role="button" data-testid="review-again">仍要重评</span>
-                </Popconfirm>
-              )}
             </>
           )}
           {!keepField && onAskAssistant && (
@@ -358,9 +355,17 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   );
 }
 
-/** 「让助手照这条改」预填的那句话。 */
+/** 「让助手照这条改」预填的那句话。有改法时把改法写进去：问题描述有时与改法字面上方向相反，只写问题会让人以为要照字面改。 */
 export function fixText(itemId: string, f: Finding): string {
-  return `请按评审发现改 ${itemId} 的${f.field}${f.index != null ? `第 ${f.index + 1} 项` : ""}：${f.problem}`;
+  const where = `${itemId} 的${f.field}${f.index != null ? `第 ${f.index + 1} 项` : ""}`;
+  const suggestion = f.suggestion?.trim();
+  if (!suggestion) return `请按评审发现改 ${where}：${f.problem}`;
+  return `请照评审建议的改法改 ${where}：${endSentence(suggestion)}评审指出的问题是：${endSentence(f.problem.trim())}`;
+}
+
+/** 句末没有句号、问号、叹号时补一个句号，好接下一句。 */
+function endSentence(text: string): string {
+  return /[。！？.!?]$/.test(text) ? text : `${text}。`;
 }
 
 /** 评审记录里的一条：「修订 15 · 不合规 2 处（时刻）」「修订 12 · 合规（时刻）」。 */

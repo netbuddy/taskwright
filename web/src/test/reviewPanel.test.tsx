@@ -1,5 +1,6 @@
 // 评审页签与评审的生命周期：页签渲染与发现状态三种（未处理、已在修订 N 改、已保留）、只看未处理、保留与撤销、规则开关、
-// 对话区一句提示、「仍要重评」确认、规则改了之后回到待评审、完成条件三类、工作视图状态消费四种新事件。
+// 对话区一句提示、评过的条目不能再评、同一修订上有几条记录时以最后一条为准（早期数据）、规则改了之后回到待评审、完成条件三类、
+// 工作视图状态消费四种新事件。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -10,7 +11,7 @@ import { ItemDetail } from "../components/work/ItemDetail";
 import { CompletionPanel } from "../components/CompletionPanel";
 import { Conversation } from "../components/work/Conversation";
 import { initialWorkState, workReducer } from "../state/workState";
-import { findingStatus, needsRereview, openProblems, pendingReview, reviewState } from "../model/items";
+import { failedReview, findingStatus, itemVerdict, needsRereview, openProblems, pendingReview, reviewState } from "../model/items";
 
 const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
@@ -105,7 +106,7 @@ describe("评审页签", () => {
     await waitFor(() => expect(submit).toHaveBeenCalledWith({ kind: "waive_review", targets: [{ item_id: "UC-004", base_revision: 6 }],
       fields: { reason: "材料原话", source: "panel" }, notify_executor: false }, "保留 UC-004 现在的写法"));
     fireEvent.click(within(uc4).getByTestId("fix-finding"));
-    expect(onPrefill).toHaveBeenCalledWith("请按评审发现改 UC-004 的基本流程第 2 项：第 2 步没有主语。");
+    expect(onPrefill).toHaveBeenCalledWith("请照评审建议的改法改 UC-004 的基本流程第 2 项：写明主语。评审指出的问题是：第 2 步没有主语。");
     fireEvent.click(within(uc3).getByTestId("unwaive-finding"));
     await waitFor(() => expect(submit).toHaveBeenLastCalledWith({ kind: "unwaive_review", targets: [{ item_id: "UC-003", base_revision: 15 }], notify_executor: false },
       "撤销对 UC-003 的保留"));
@@ -163,7 +164,7 @@ describe("发现状态派生与计数", () => {
 });
 
 describe("条目详情", () => {
-  it("发现旁写状态与第几次评审；「保留这种写法」带理由发 waive_review（来源 detail）；评过的条目「评审这条」灰化，「仍要重评」确认后带 force", async () => {
+  it("发现旁写状态与第几次评审；「保留这种写法」带理由发 waive_review（来源 detail）；评过的条目「评审这条」灰化，没有再评的入口", async () => {
     const t = task([UC4]);
     const submit = vi.fn(async () => null);
     const onReview = vi.fn();
@@ -176,10 +177,22 @@ describe("条目详情", () => {
     await waitFor(() => expect(submit).toHaveBeenCalledWith({ kind: "waive_review", targets: [{ item_id: "UC-004", base_revision: 6 }],
       fields: { reason: "先照抄", source: "detail" }, notify_executor: false }, "保留 UC-004 现在的写法"));
     expect(screen.getByTestId("review-one")).toBeDisabled();
-    expect(screen.getByTestId("review-one").getAttribute("title")).toContain("已经评过（第 3 次评审），内容和规则都没变");
-    fireEvent.click(screen.getByTestId("review-again"));
-    fireEvent.click(await screen.findByText("再评一次"));
-    expect(onReview).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId("review-one").getAttribute("title"))
+      .toBe("这条在当前修订上已经评过，内容和规则都没变。没有通过：可以照发现修改之后再评，或者保留这种写法。");
+    expect(screen.queryByTestId("review-again")).toBeNull();
+    expect(screen.queryByText("仍要重评")).toBeNull();
+    fireEvent.click(screen.getByTestId("review-one"));
+    expect(onReview).not.toHaveBeenCalled();
+  });
+
+  it("评审通过或已保留的条目：「评审这条」灰化，说明只有前半句", () => {
+    for (const one of [UC1, UC3]) {
+      const t = task([one]);
+      render(<Wrap><ItemDetail task={t} item={one} def={t.definition.collections[0]} readOnly={false} pending={false} submit={vi.fn(async () => null)} onReview={vi.fn()} /></Wrap>);
+      expect(screen.getByTestId("review-one")).toBeDisabled();
+      expect(screen.getByTestId("review-one").getAttribute("title")).toBe("这条在当前修订上已经评过，内容和规则都没变。");
+      cleanup();
+    }
   });
 
   it("全部问题都已保留时不显示横幅；理由与「撤销保留」只在发现行第二行；徽标写「评审不通过 N 处 · 已保留」", async () => {
@@ -194,6 +207,67 @@ describe("条目详情", () => {
     fireEvent.click(screen.getByTestId("unwaive-finding"));
     await waitFor(() => expect(submit).toHaveBeenCalledWith({ kind: "unwaive_review", targets: [{ item_id: "UC-003", base_revision: 15 }], notify_executor: false },
       "撤销对 UC-003 的保留"));
+  });
+});
+
+// 同一修订上有几条记录只出现在「同一次修订只评一次」之前留下的数据里；以最后一条（事件序号最大）为准。
+describe("同一修订上有几条记录：以最后一条为准", () => {
+  const PASS6 = { revision_no: 6, verdict: "合规", findings: [], batch_id: "ui-op-2", rules_hash: H };
+  const FAIL6 = { revision_no: 6, verdict: "不合规", findings: [P("UC-R7", "第 2 步没有主语。")], batch_id: "ui-op-3", rules_hash: H };
+  // 先合规、后来强制重评成不合规（试跑里遇到的样子）
+  const AGAIN = item({ item_id: "UC-005", reviews: [{ ...PASS6, seq: 10 }, { ...FAIL6, seq: 12, forced: true }] });
+  // 先不合规、后来重评成合规
+  const FIXED = item({ item_id: "UC-006", reviews: [{ ...FAIL6, seq: 10 }, { ...PASS6, seq: 12 }] });
+  // 不合规、保留、又重评成不合规：保留针对的是前一条，不算
+  const STALE = item({ item_id: "UC-007", reviews: [{ ...FAIL6, seq: 10 }, { ...FAIL6, batch_id: "ui-op-4", seq: 14 }],
+    waivers: [{ revision_no: 6, reason: "第一次", source: "detail", revoked: false, seq: 12 }] });
+
+  it("状态标签、筛选、角标、发现状态都按最后一条", () => {
+    const t = task([AGAIN, FIXED, STALE]);
+    expect(reviewState(AGAIN, t)).toEqual({ state: "failed", problems: 1, advice: 0, kept: null });
+    expect(itemVerdict(AGAIN, t).basis).toBe(AGAIN.reviews[1]);
+    expect(reviewState(FIXED, t)).toEqual({ state: "passed", advice: 0 });
+    expect(findingStatus(FIXED, FIXED.reviews[0], t)).toEqual({ kind: "superseded" });
+    expect(reviewState(STALE, t)).toMatchObject({ state: "failed", kept: null });
+    expect(failedReview(t).map((i) => i.item_id)).toEqual(["UC-005", "UC-007"]);
+    expect(openProblems(t)).toBe(2);
+    // 保留在最后一条之后才算
+    const kept = { ...STALE, waivers: [...STALE.waivers!, { revision_no: 6, reason: "第二次", source: "detail", revoked: false, seq: 16 }] };
+    expect(reviewState(kept, t)).toMatchObject({ state: "failed", kept: { reason: "第二次" } });
+    expect(findingStatus(kept, kept.reviews[0], t)).toEqual({ kind: "kept", reason: "第二次" });
+  });
+
+  it("条目详情：列出最后一条的发现，给「保留这种写法」；状态标签写评审不通过", async () => {
+    const t = task([AGAIN]);
+    const submit = vi.fn(async () => null);
+    render(<Wrap><ItemDetail task={t} item={AGAIN} def={t.definition.collections[0]} readOnly={false} pending={false} submit={submit} onReview={vi.fn()} /></Wrap>);
+    expect(screen.getByTestId("state-UC-005")).toHaveTextContent(/^评审不通过 1 处$/);
+    expect(screen.getByTestId("finding-problem")).toHaveTextContent("第 2 步没有主语。");
+    expect(screen.getByTestId("finding-status")).toHaveTextContent(/^未处理$/);
+    fireEvent.click(screen.getByTestId("keep-finding"));
+    fireEvent.click(screen.getByTestId("keep-finding-ok"));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({ kind: "waive_review", targets: [{ item_id: "UC-005", base_revision: 6 }] }),
+      "保留 UC-005 现在的写法"));
+  });
+
+  it("评审页签：被后来的合规取代的不合规不写状态、不给链接、不算未处理；角标只数最后一条", () => {
+    const t = task([FIXED, AGAIN], { review_batches: [{ ...BATCH3, no: 1, batch_id: "ui-op-3", items: [{ item_id: "UC-006", revision_no: 6 }], total: 1, passed: 0, failed: 1, problems: 1 },
+      { ...BATCH3, no: 2, batch_id: "ui-op-2", items: [{ item_id: "UC-005", revision_no: 6 }], total: 1, passed: 1, failed: 0, problems: 0 }] });
+    panel(t);
+    expect(screen.getByTestId("review-panel")).toHaveTextContent("未处理的问题 1 处");   // 只有 UC-005 最后一条不合规的那 1 处
+    fireEvent.click(screen.getByText("第 1 次评审"));
+    const row = screen.getByTestId("batch-1-item-UC-006");
+    expect(within(row).queryByTestId("finding-status")).toBeNull();
+    expect(within(row).queryByTestId("keep-finding")).toBeNull();
+  });
+
+  it("完成条件面板：最后一条不合规的条目列在评审不通过一组", () => {
+    const t = task([AGAIN, FIXED]);
+    const completion: Completion = { all_met: false, unmet_count: 1, brief: "", hints: [], conditions: [
+      { collection: "功能用例", name: "每个条目评审通过", met: false, state: "unmet", total: 2, done: 1, note: "UC-005 评审不合规。", missing: ["UC-005"] }] };
+    render(<Wrap><CompletionPanel completion={completion} items={t.items} task={t} onOpen={vi.fn()} onReview={vi.fn()} /></Wrap>);
+    expect(screen.getByTestId("cond-open-UC-005")).toBeInTheDocument();
+    expect(screen.queryByTestId("cond-open-UC-006")).toBeNull();
   });
 });
 

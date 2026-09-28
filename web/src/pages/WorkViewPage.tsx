@@ -76,7 +76,16 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   const hint = executorHint(executor, state.outgoing.some((m) => m.state === "sending"));
   const readOnly = closed || (!!disabledReason && !busyElsewhere && !busyError);
 
-  useEffect(() => { api.listSessions(taskId).then(setSessions).catch(() => setSessions([])); }, [taskId, state.session?.name]);
+  // 会话列表（会话菜单里每条会话的最近活动与消息条数）：打开页面、会话改名、助手做完一轮（执行者状态从工作中变为不在工作）、
+  // 打开会话菜单时各读一次；不定时轮询。执行者状态属于整个任务，别的会话里做完一轮也会重读。
+  const loadSessions = () => { api.listSessions(taskId).then(setSessions).catch(() => setSessions([])); };
+  useEffect(loadSessions, [taskId, state.session?.name]);
+  const wasWorking = useRef(working);
+  useEffect(() => {
+    if (wasWorking.current && !working) loadSessions();
+    wasWorking.current = working;
+  }, [working]);
+  useEffect(() => { if (menuOpen) loadSessions(); }, [menuOpen]);
   useEffect(() => { if (!busyElsewhere) setBusyError(null); }, [busyElsewhere]);
   // 新加了材料（material_added 事件）：展开右侧栏、切到材料页签，由材料页签选中它显示正文。
   useEffect(() => { if (state.focusMaterial) { setDocCollapsed(false); setSide("material"); } }, [state.focusMaterial]);
@@ -118,7 +127,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     }
   };
 
-  const submit = async (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor" | "force">, label: string): Promise<ApiError | null> => {
+  const submit = async (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string): Promise<ApiError | null> => {
     try {
       const r = await api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, ...req });
       // 标为已读不改内容，不显示「正在保存」；都已读过时后端什么都不写、没有库事件，挂着的话会一直等不到。
@@ -144,8 +153,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       .catch(() => undefined);
   };
   /** 发起评审：targets 为空＝全部待评审的条目。后端核对通过就回应，被拒时报一条失败提示。 */
-  const review = (targets: { item_id: string; base_revision: number }[], label: string, force?: boolean) =>
-    void submit({ kind: "request_review", targets, notify_executor: false, ...(force ? { force: true } : {}) }, label).then((e) => { if (e) toast.error(errorText(e)); });
+  const review = (targets: { item_id: string; base_revision: number }[], label: string) =>
+    void submit({ kind: "request_review", targets, notify_executor: false }, label).then((e) => { if (e) toast.error(errorText(e)); });
   const undo = (revision: number) =>
     void submit({ kind: "undo", targets: [{ revision_no: revision }], notify_executor: false }, `撤销修订 ${revision}`).then((e) => { if (e) toast.error(errorText(e)); });
 
@@ -187,10 +196,13 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     }
   };
 
-  /** 预填对话区输入框并把光标放到末尾，用户接着写（「让助手改这一条」「回答这个问题」）。 */
+  /**
+   * 预填对话区输入框并把光标放到末尾，用户接着写（「让助手照这条改」「让助手来改这一条」「回答这个问题」、问题卡片上输入框空着时点「回答」）。
+   * 输入框里已经有字时，预填的话接在后面、隔一个换行，不替换，用户打了一半的话不丢；空着（或只有空白）时只放预填的话。
+   */
   const prefill = (text: string) => {
-    setDraft(text);
-    setTimeout(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(text.length, text.length); } }, 0);
+    setDraft((d) => (d.trim() ? `${d.replace(/\n+$/, "")}\n${text}` : text));
+    setTimeout(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 0);
   };
   const answer = (item: Item) => {
     const def = task?.definition.collections.find((c) => c.name === item.collection);

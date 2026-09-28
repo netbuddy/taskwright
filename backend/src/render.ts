@@ -54,13 +54,15 @@ export function valueText(value: unknown, fieldType: string): string {
   return str(value).replaceAll("\n", " ");
 }
 
-/** 条目在修订 revisionNo 上的评审标记：评审通过、评审不通过、评审不通过但用户保留了写法（带理由）、未评审。 */
+/**
+ * 条目在修订 revisionNo 上的评审标记，按评审结论（agent/src/lib/review_verdict.ts）写：评审通过、评审不通过、
+ * 评审不通过但用户保留了写法（带理由）、未评审。规则改过之后旧规则下的记录不算，写未评审，与页面一致。
+ */
 export function reviewState(lib: Library, itemId: string, revisionNo: number): string {
-  const reviews = lib.reviewsOf(itemId, revisionNo);
-  if (!reviews.length) return "未评审";
-  if (reviews[reviews.length - 1].verdict === "合规") return "评审通过";
-  const kept = lib.activeWaiver(itemId, revisionNo);
-  if (kept) return truthy(kept.reason) ? `评审不通过，用户保留（理由：${str(kept.reason)}）` : "评审不通过，用户保留";
+  const { state, waiver } = lib.verdictOf(itemId, revisionNo);
+  if (state === "pending") return "未评审";
+  if (state === "passed") return "评审通过";
+  if (state === "waived") return truthy(waiver!.reason) ? `评审不通过，用户保留（理由：${str(waiver!.reason)}）` : "评审不通过，用户保留";
   return "评审不通过";
 }
 

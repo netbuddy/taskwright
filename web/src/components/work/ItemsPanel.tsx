@@ -28,7 +28,7 @@ import { rejectedText } from "./errors";
 import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
-export type ReviewAction = (targets: { item_id: string; base_revision: number }[], label: string, force?: boolean) => void;
+export type ReviewAction = (targets: { item_id: string; base_revision: number }[], label: string) => void;
 
 export { BUSY_TEXT };
 
@@ -133,8 +133,8 @@ export function ItemsPanel({
   const failed = failedReview(task);
   const reviewing = !!review && !review.finished;
   const reviewOff = reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: toReview.length });
-  const reviewItems = (list: Item[], label: string, force?: boolean) =>
-    onReview?.(list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), label, force);
+  const reviewItems = (list: Item[], label: string) =>
+    onReview?.(list.map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })), label);
 
   /** 打开一个条目；从问题卡片上跳来时带上来源。 */
   const openItem = (itemId: string, o: { fromIssue?: string } = {}) => {
@@ -216,7 +216,7 @@ export function ItemsPanel({
         {selectedItem && def ? (
           <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} writesOff={writesOff} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
             reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
-            onReview={onReview ? (force) => reviewItems([selectedItem], `评审 ${selectedItem.item_id}`, force) : undefined} onPrefill={onPrefill}
+            onReview={onReview ? () => reviewItems([selectedItem], `评审 ${selectedItem.item_id}`) : undefined} onPrefill={onPrefill}
             marked={marks[selectedItem.item_id] ?? []} just={just.has(selectedItem.item_id)} onBack={() => onSelect(null)}
             onPrev={pos > 0 ? () => onSelect(items[pos - 1].item_id) : null}
             onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
