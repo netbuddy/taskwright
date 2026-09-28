@@ -86,7 +86,7 @@ All carry `session_id` except `service_exiting`, which goes to every open stream
 
 ### 4.1 Snapshot
 
-`GET /api/v1/tasks/{task_id}/snapshot?session={session_id}` — opening a session this way also starts or resumes the agent. `seq` and all tables are read in one read transaction.
+`GET /api/v1/tasks/{task_id}/snapshot?session={session_id}` — opening a session this way also starts or resumes the agent. `seq` and all tables are read in one read transaction. If the agent cannot be started, the snapshot is still answered: the conversation comes from the session file and the items from the task database, `executor.state` is `failed_to_start` and `executor.text` gives the reason, worded as in the `executor_state` event. Every snapshot with `session` tries to start the agent again, so once the cause is fixed, reloading the page is enough.
 
 ```
 { "ok": true, "seq": 12, "generated_at": "…",
@@ -205,7 +205,7 @@ New messages and direct operations are refused with `session_busy` (see 5.1); th
 
 ### 5.6 Who starts the agent
 
-Opening a session (a snapshot with `session`) starts pi for that task or switches it to that session. One task has one active session at a time: while the agent works in session A, messages and actions for session B return `session_busy`. During startup, requests return `executor_starting` (retry once shortly after). A message, a card click or a direct operation for a session starts pi on demand when it is not running (not started yet, exited, or stopped after a failed resume) and resumes that session first, as opening the session does; direct operations run inside pi. If pi cannot be started, the request returns `executor_unavailable`. A direct operation without a `session` parameter does not start pi and returns `executor_unavailable` while pi is not running.
+Opening a session (a snapshot with `session`) starts pi for that task or switches it to that session. One task has one active session at a time: while the agent works in session A, messages and actions for session B return `session_busy`. During startup, requests return `executor_starting` (retry once shortly after). A message, a card click or a direct operation for a session starts pi on demand when it is not running (not started yet, exited, or stopped after a failed resume) and resumes that session first, as opening the session does; direct operations run inside pi. If pi cannot be started, the request returns `executor_unavailable`; a snapshot is still answered (section 4.1). A direct operation without a `session` parameter does not start pi and returns `executor_unavailable` while pi is not running.
 
 After resuming or switching, the service checks that pi reports the requested session. If pi reports another session (for example because the session file is gone and pi opened a new session instead) or refuses to switch, the service does not adopt that session: it stops the task's pi, writes a log line with the task, the requested session and the session pi reported, and answers `session_resume_failed`. The check happens before a message is handed to pi, so the message is not sent and goes into no session; the next request starts pi again as usual. A snapshot is still answered in this case, with the conversation read from the session file and `executor.state` `not_started`. A session file that is missing altogether still gives `not_found`. The service turns `--tasks` and `--runs` into absolute paths when it starts, and hands pi absolute session file paths.
 
