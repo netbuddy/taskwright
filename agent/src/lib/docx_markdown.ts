@@ -21,6 +21,9 @@
 
 import { inflateRawSync } from "node:zlib";
 import { type HeadingStyle, headingLevel } from "./docx_heading.ts";
+import { type NumberingLevel, NumberingCounter } from "./docx_numbering.ts";
+
+export { formatNumber } from "./docx_numbering.ts";
 
 // ───────────── zip 与 XML ─────────────
 
@@ -124,37 +127,12 @@ class Styles {
   }
 }
 
-const CN = "〇一二三四五六七八九";
-const chinese = (n: number) => n < 10 ? CN[n] : n < 20 ? "十" + (n % 10 ? CN[n % 10] : "") : n < 100 ? CN[Math.floor(n / 10)] + "十" + (n % 10 ? CN[n % 10] : "") : String(n);
-function roman(n: number): string {
-  let out = "";
-  for (const [v, s] of [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"], [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]] as const) {
-    while (n >= v) { out += s; n -= v; }
-  }
-  return out;
-}
-/** 编号数字按 Word 的编号格式写出来；认不出的格式写十进制。 */
-export function formatNumber(n: number, format: string | undefined): string {
-  switch (format) {
-    case "decimalZero": return String(n).padStart(2, "0");
-    case "lowerLetter": return String.fromCharCode(97 + (n - 1) % 26).repeat(Math.floor((n - 1) / 26) + 1);
-    case "upperLetter": return String.fromCharCode(65 + (n - 1) % 26).repeat(Math.floor((n - 1) / 26) + 1);
-    case "lowerRoman": return roman(n).toLowerCase();
-    case "upperRoman": return roman(n);
-    case "chineseCounting": case "chineseCountingThousand": case "japaneseCounting": case "taiwaneseCounting": return chinese(n);
-    case "ideographTraditional": return "甲乙丙丁戊己庚辛壬癸"[(n - 1) % 10];
-    case "decimalEnclosedCircle": case "decimalEnclosedCircleChinese": return n >= 1 && n <= 20 ? String.fromCodePoint(0x2460 + n - 1) : String(n);
-    case "decimalFullWidth": case "decimalFullWidth2": return [...String(n)].map((c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0)).join("");
-    default: return String(n);
-  }
-}
-
-interface Level { start: number; format?: string; text: string; legal: boolean }
-
+/** numbering.xml 读成编号定义；怎样数、怎样写在 lib/docx_numbering.ts（位置规则也用它）。 */
 class Numbering {
-  private levels = new Map<string, Level>();
-  private counters = new Map<string, (number | undefined)[]>();
+  private counter: NumberingCounter;
   constructor(xml: string | null) {
+    const levels = new Map<string, NumberingLevel>();
+    this.counter = new NumberingCounter(levels);
     const root = xml ? child(parseXml(xml), "w:numbering") : undefined;
     if (!root) return;
     const abstract = new Map(elements(root).filter((e) => e.name === "w:abstractNum").map((a) => [a.attrs["w:abstractNumId"], a]));
@@ -165,7 +143,7 @@ class Numbering {
       for (const lvl of elements(a).filter((e) => e.name === "w:lvl")) {
         const il = lvl.attrs["w:ilvl"];
         const start = valOf(overrides.get(il), "w:startOverride") ?? valOf(lvl, "w:start") ?? "1";
-        this.levels.set(`${num.attrs["w:numId"]}:${il}`, {
+        levels.set(`${num.attrs["w:numId"]}:${il}`, {
           start: Number(start), format: valOf(lvl, "w:numFmt"), text: valOf(lvl, "w:lvlText") ?? "", legal: !!child(lvl, "w:isLgl"),
         });
       }
@@ -173,20 +151,8 @@ class Numbering {
   }
   /** 这一段的编号文字与是不是项目符号。每套编号（numId）各自计数，上一级加一时更深的级别重新数，与材料区相同。 */
   next(numId: string, ilvl: number): { label: string; bullet: boolean } {
-    const lv = this.levels.get(`${numId}:${ilvl}`);
-    if (!lv) return { label: "", bullet: false };
-    const c = this.counters.get(numId) ?? [];
-    this.counters.set(numId, c);
-    c[ilvl] = (c[ilvl] ?? lv.start - 1) + 1;
-    c.length = ilvl + 1;
-    if (lv.format === "bullet") return { label: "", bullet: true };
-    if (lv.format === "none") return { label: "", bullet: false };
-    const label = lv.text.replace(/%(\d)/g, (_, k: string) => {
-      const i = Number(k) - 1;
-      const l = this.levels.get(`${numId}:${i}`);
-      return formatNumber(c[i] ?? l?.start ?? 1, lv.legal ? "decimal" : l?.format);
-    });
-    return { label: label.trim(), bullet: false };
+    const { label, bullet } = this.counter.next(numId, ilvl);
+    return { label, bullet };
   }
 }
 
