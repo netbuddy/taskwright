@@ -13,7 +13,7 @@ import { mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } 
 import { join } from "node:path";
 import { MEDIA_SUFFIX, PROJECTION_SUFFIX, docxProjection } from "../../agent/src/lib/docx_markdown.ts";
 import { SEGMENTS_SUFFIX, SEGMENT_DEFAULTS, type SegmentParams, buildSegments, writeSegments } from "../../agent/src/lib/segments.ts";
-import { LOCATIONS_SUFFIX } from "../../agent/src/lib/docx_locations.ts";
+import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { locationTable } from "../../agent/src/lib/docx_location_input.ts";
 
 export const SUFFIX = PROJECTION_SUFFIX;
@@ -33,7 +33,7 @@ function isFile(path: string): boolean {
 /** 以 .docx.md、.docx.txt、.docx.segments.json、.docx.locations.json 结尾的文件名留给由 Word 材料生成的投影、分段清单与位置表。 */
 export function isReserved(name: string): boolean {
   const lower = name.toLowerCase();
-  return [SUFFIX, LEGACY_SUFFIX, SEGMENTS_SUFFIX, LOCATIONS_SUFFIX].some((suffix) => lower.endsWith(".docx" + suffix));
+  return [SUFFIX, LEGACY_SUFFIX, SEGMENTS_SUFFIX].some((suffix) => lower.endsWith(".docx" + suffix)) || isLocationTable(name);
 }
 
 /** 这份 .docx 的投影：有 Markdown 投影用它，只有 0.2 的纯文本投影时用那个，都没有时是 Markdown 投影该在的位置。 */

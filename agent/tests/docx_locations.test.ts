@@ -3,14 +3,19 @@
 // 与页面现有推导逐段比较的测试在 web/src/test/docxLocations.test.tsx。页码与页内位置暂不测（位置表暂不写它们）。
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { chapterOf, headingsOf } from "../src/lib/docx_locations.ts";
+import { createTask } from "../src/lib/create_task.ts";
+import { LOCATIONS_SUFFIX, chapterOf, headingsOf, isLocationTable } from "../src/lib/docx_locations.ts";
 import { locationInput, locationTable } from "../src/lib/docx_location_input.ts";
 import { docxProjection } from "../src/lib/docx_markdown.ts";
+import { prepareReviews } from "../src/lib/review.ts";
+import { saveRevision } from "../src/lib/save_revision.ts";
+import { getTaskStatus } from "../src/lib/task_query.ts";
+import { listMaterials, taskStatusMessage } from "../src/lib/task_status.ts";
 import { headingFixtures } from "./heading_fixtures.ts";
-import { makeDocx } from "./helpers.ts";
+import { DEFINITION_PATH, SAMPLE_DOCX, SOURCE, callIn, demoDefinition, makeDocx, makeWorkspace, putSampleDocx } from "./helpers.ts";
 import { locationFixtures, locationTableFixtures } from "./location_fixtures.ts";
 
 const ROOT = join(import.meta.dirname, "../..");
@@ -111,4 +116,34 @@ test("同一份文件算两次，位置表逐字相同；读不到软件名时�
   assert.equal(JSON.stringify(locationTable(SAMPLE, "inputs/x.docx")), a);
   assert.ok(!a.includes("逾期的每本每天"));
   assert.equal(locationTable(makeDocx("<w:p><w:r><w:t>一段</w:t></w:r></w:p>"), "inputs/y.docx").application, "");
+});
+
+test("位置表的判断：以 .docx.locations.json 结尾（不分大小写）", () => {
+  assert.equal(isLocationTable("x.docx" + LOCATIONS_SUFFIX), true);
+  assert.equal(isLocationTable("X.DOCX.LOCATIONS.JSON"), true);
+  assert.equal(isLocationTable("x.locations.json"), false);
+  assert.equal(isLocationTable("x.docx.segments.json"), false);
+});
+
+test("助手一侧不列位置表：任务现状、查询任务状态、评审取材料里都没有它；分段清单照旧列出", () => {
+  const definition = demoDefinition() as any;
+  definition.交付物.条目集合[0].评审规矩 = { 规则文件: "docs/review-rules/demo.json" };
+  const dir = makeWorkspace(definition);
+  mkdirSync(join(dir, "docs/review-rules"), { recursive: true });
+  writeFileSync(join(dir, "docs/review-rules/demo.json"), JSON.stringify([{ 编号: "D-R1", 级别: "必选", 条文: "步骤写明谁做了什么。", 反例: "校验。", 正例: "系统校验。" }]), "utf-8");
+  putSampleDocx(dir);
+  writeFileSync(join(dir, SAMPLE_DOCX + LOCATIONS_SUFFIX), JSON.stringify(locationTable(SAMPLE, SAMPLE_DOCX)), "utf-8");
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["用户输入口令"] }, sources: [SOURCE] }] });
+  const fresh = { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null };
+  taskStatusMessage(dir, fresh, "s"); // 第一次读时补写分段清单
+  const listed = listMaterials(dir, "inputs/").files.map((f) => f.path);
+  assert.ok(listed.includes(SAMPLE_DOCX + ".segments.json") && !listed.some((p) => p.endsWith(LOCATIONS_SUFFIX)), listed.join(" "));
+  const status = taskStatusMessage(dir, fresh, "s")!.text;
+  assert.match(status, /requirements-styled\.docx\.segments\.json/);
+  assert.doesNotMatch(status, /locations/);
+  const later = taskStatusMessage(dir, { hasUserMessage: true, hasStatusMessage: true, lastMessageAt: 0 }, "s")?.text ?? "";
+  assert.doesNotMatch(later, /locations/, "「新放进来的」那一句里也没有");
+  assert.doesNotMatch(getTaskStatus(dir).text, /locations/);
+  assert.doesNotMatch(prepareReviews(dir, null).items[0].user, /locations/);
 });

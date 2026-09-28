@@ -299,6 +299,11 @@ export function locate(input: LocationInput): LocationResult {
 /** 位置表文件的格式版本（字段怎样写）；与规则版本 LOCATION_RULES_VERSION 分开。 */
 export const LOCATIONS_FORMAT_VERSION = 1;
 export const LOCATIONS_SUFFIX = ".locations.json";
+/**
+ * 文件名是不是位置表（x.docx.locations.json，不分大小写）。后端标派生文件、把它列为保留文件名，任务现状与评审列材料时跳过它，
+ * 都用这一个判断。
+ */
+export const isLocationTable = (name: string) => name.toLowerCase().endsWith(".docx" + LOCATIONS_SUFFIX);
 
 export interface LocationFile {
   version: number;

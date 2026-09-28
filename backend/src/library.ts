@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
+import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -791,9 +792,12 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
   }
   const present = new Set(files.map(([name]) => name));
   const sourceOf = (name: string): string | null => {
-    for (const suffix of [".segments.json", ".locations.json"]) {
-      if (!name.toLowerCase().endsWith(".docx" + suffix)) continue;
-      const stem = name.slice(0, -suffix.length);
+    if (name.toLowerCase().endsWith(".docx.segments.json")) {
+      const stem = name.slice(0, -".segments.json".length);
+      return present.has(stem) ? `${rel}${stem}` : null;
+    }
+    if (isLocationTable(name)) {
+      const stem = name.slice(0, -LOCATIONS_SUFFIX.length);
       return present.has(stem) ? `${rel}${stem}` : null;
     }
     const dot = name.lastIndexOf(".");

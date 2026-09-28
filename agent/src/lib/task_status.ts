@@ -32,6 +32,7 @@ import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
 import { FUNCTION_NAMES } from "./intent_schema.ts";
 import { unansweredActs } from "./dialogue_acts.ts";
+import { isLocationTable } from "./docx_locations.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
 
 /** 这条自定义消息的类型名。后端、观测台与会话文件里都认这个名字。 */
@@ -121,13 +122,16 @@ export interface Materials {
   facts?: MaterialFacts[];
 }
 
-/** 材料目录第一层的文件，按文件名排序；目录不存在时为空。隐藏文件不列。 */
+/**
+ * 材料目录第一层的文件，按文件名排序；目录不存在时为空。隐藏文件不列；Word 材料的位置表（lib/docx_locations.ts）也不列：
+ * 它给页面的来源标签用，助手不读它（任务现状、get_task_status 与评审取材料都经这里）。
+ */
 export function listMaterials(workspaceDir: string, materialsDir: string): { dir: string; files: MaterialFile[] } {
   const full = join(workspaceDir, materialsDir);
   if (!existsSync(full)) return { dir: materialsDir, files: [] };
   const files: MaterialFile[] = [];
   for (const name of readdirSync(full).sort()) {
-    if (name.startsWith(".")) continue;
+    if (name.startsWith(".") || isLocationTable(name)) continue;
     const stat = statSync(join(full, name));
     if (stat.isFile()) files.push({ path: `${materialsDir}${name}`, bytes: stat.size, modifiedAt: stat.mtimeMs });
   }
