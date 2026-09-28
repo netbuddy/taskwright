@@ -105,7 +105,7 @@ describe("评审页签", () => {
     await waitFor(() => expect(submit).toHaveBeenCalledWith({ kind: "waive_review", targets: [{ item_id: "UC-004", base_revision: 6 }],
       fields: { reason: "材料原话", source: "panel" }, notify_executor: false }, "保留 UC-004 现在的写法"));
     fireEvent.click(within(uc4).getByTestId("fix-finding"));
-    expect(onPrefill).toHaveBeenCalledWith("请按评审发现改 UC-004 的基本流程第 2 项：第 2 步没有主语。");
+    expect(onPrefill).toHaveBeenCalledWith("请照评审建议的改法改 UC-004 的基本流程第 2 项：写明主语。评审指出的问题是：第 2 步没有主语。");
     fireEvent.click(within(uc3).getByTestId("unwaive-finding"));
     await waitFor(() => expect(submit).toHaveBeenLastCalledWith({ kind: "unwaive_review", targets: [{ item_id: "UC-003", base_revision: 15 }], notify_executor: false },
       "撤销对 UC-003 的保留"));

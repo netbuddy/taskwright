@@ -148,7 +148,7 @@ describe("徽标与条目详情", () => {
     fireEvent.click(screen.getByTestId("clause-UC-R7"));
     expect(screen.getByTestId("clause-body")).toHaveTextContent(/^UC-R7（必选）\s+基本流程每一步写明谁做了什么/);
     fireEvent.click(screen.getAllByTestId("fix-finding")[0]);
-    expect(onPrefill).toHaveBeenCalledWith("请按评审发现改 UC-003 的基本流程第 2 项：第 2 步没有主语。");
+    expect(onPrefill).toHaveBeenCalledWith("请照评审建议的改法改 UC-003 的基本流程第 2 项：写明是系统核对。评审指出的问题是：第 2 步没有主语。");
     expect(screen.getByTestId("review-one")).toBeDisabled();   // 当前修订上已经评过：只能「仍要重评」
     expect(onReview).not.toHaveBeenCalled();
     expect(screen.getByTestId("review-records")).toHaveTextContent("评审记录：修订 3 · 不合规 1 处");
