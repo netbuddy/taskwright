@@ -96,7 +96,7 @@ try {
   profile = loadProfile(values.profile!);
   built = buildCommand(profile, workspace, sessionDir, sessionFile, true);
 } catch (error) {
-  if (error instanceof LaunchError) fail(error.message);
+  if (error instanceof LaunchError) fail(error.technical ?? error.message);   // 终端工具给开发者用，打印排查用的原话
   throw error;
 }
 if (values["env-tag"]) built.env[ENV_TRACING_ENVIRONMENT] = values["env-tag"];

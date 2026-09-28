@@ -9,7 +9,7 @@ import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } f
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { buildCommand, loadProfile, piLauncher } from "../src/launch.ts";
-import { PiExited, PiRefused, PiSession, PiTimeout, rebaseSessionCwd } from "../src/pi_session.ts";
+import { PiExited, PiRefused, PiSession, PiTimeout, rebaseSessionCwd, technicalOf } from "../src/pi_session.ts";
 import { normalize } from "./fixtures/py/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
@@ -152,7 +152,7 @@ test("系统提示太长、命令行超过系统上限时 spawn 当场报 E2BIG�
   process.env.TASKWRIGHT_AGENT_DIR = agentDir;
   try {
     const pi = new PiSession({ ...PROFILE, system_prompt_file: "agent/huge-prompt.md" }, workspace, join(tmp, "runs-e2big"));
-    await assert.rejects(pi.start(), (e: unknown) => (e as NodeJS.ErrnoException).code === "E2BIG");
+    await assert.rejects(pi.start(), (e: unknown) => /E2BIG/.test(technicalOf(e)));
     assert.equal(pi.process, null);
     for (const key of ["archive", "notes", "times"]) assert.equal((pi as any)[key], null, `${key} 的句柄没有关掉`);
   } finally {
