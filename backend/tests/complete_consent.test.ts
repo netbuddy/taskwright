@@ -4,6 +4,8 @@
  * 用户打字说「都看过了，完成吧」，助手调用完成任务被拒（打字不算同意），拒绝写明要先发「这个任务是否已经完成」的卡片；
  * 助手发了这张卡片，用户在卡片上点「已完成，提交交付物」（与页面一样经发话接口，origin 为 card_choice），助手再调用，任务变为已完成；
  * 之后改字段与说话都返回 409 task_closed（留存输出的对照里「确认与完成」场景原来核对这两步，现在它走不到已完成，由这里接着核对）。
+ * 另一条走页面：完成条件满足之后，用户在页面的提示条上提交交付物（直接操作 submit_deliverable，带页面看到的修订号），
+ * 修订号不是现在的被拒；是现在的，任务变为已完成，发起方是用户，会话里多一句说明，不引出助手的运行。
  */
 
 import assert from "node:assert/strict";
@@ -56,10 +58,21 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-test("打字说完成被拒；助手发了是否已经完成的卡片、用户点「已完成，提交交付物」之后，任务变为已完成", { skip: NO_PI, timeout: 120000 }, async () => {
-  const dir = join(tmp, "consent");
+type Stack = {
+  call: (method: string, path: string, body?: unknown) => Promise<{ status: number; body: any }>;
+  taskId: string; session: string; dir: string;
+  db: (sql: string, ...args: string[]) => Dict[];
+  send: (body: Dict) => Promise<void>;
+  action: (body: Dict) => Promise<{ status: number; body: any }>;
+  /** 保存一个用例、用户打开看过、发起评审并等它做完：完成条件全部满足。 */
+  ready: () => Promise<void>;
+};
+
+/** 起一套验证栈（假端点、真后端、真 pi），建任务与会话，交给 body；结束时停掉。 */
+async function withStack(name: string, script: Dict, body: (s: Stack) => Promise<void>): Promise<void> {
+  const dir = join(tmp, name);
   mkdirSync(dir, { recursive: true });
-  const fake = await new FakeModel(SCRIPT, join(dir, "fake.jsonl"), { autoIntent: true }).start();
+  const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent: true }).start();
   const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(dir, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(dir, "logs") };
   for (const name of DROPPED_ENV) delete env[name];
   const port = await freePort();
@@ -105,15 +118,32 @@ test("打字说完成被拒；助手发了是否已经完成的卡片、用户�
         await sleep(100);
       }
     };
-    const action = async (body: Dict) => (await call("POST", `/api/v1/tasks/${taskId}/actions?session=${session}`, { client_id: `a-${body.kind}`, task_id: taskId, ...body })).status;
-
-    await send({ text: "把材料整理成需求规格说明。", client_id: "c-1" });
-    assert.equal(await action({ kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] }), 200);
-    assert.equal(await action({ kind: "request_review", targets: [] }), 200);
-    for (const end = Date.now() + 30000; db("SELECT 1 FROM event WHERE name = 'REVIEW_FINISHED'").length === 0;) {
-      if (Date.now() > end) throw new Error("评审没有做完");
-      await sleep(100);
+    const action = (body: Dict) => call("POST", `/api/v1/tasks/${taskId}/actions?session=${session}`, { client_id: `a-${body.kind}`, task_id: taskId, ...body });
+    const ready = async () => {
+      await send({ text: "把材料整理成需求规格说明。", client_id: "c-1" });
+      assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] })).status, 200);
+      assert.equal((await action({ kind: "request_review", targets: [] })).status, 200);
+      for (const end = Date.now() + 30000; db("SELECT 1 FROM event WHERE name = 'REVIEW_FINISHED'").length === 0;) {
+        if (Date.now() > end) throw new Error("评审没有做完");
+        await sleep(100);
+      }
+    };
+    await body({ call, taskId, session, dir, db, send, action, ready });
+  } finally {
+    if (child.exitCode === null) {
+      await new Promise<void>((ok) => {
+        const timer = setTimeout(() => child.kill("SIGKILL"), 20000);
+        child.once("exit", () => { clearTimeout(timer); ok(); });
+        child.kill("SIGTERM");
+      });
     }
+    await fake.stop();
+  }
+}
+
+test("打字说完成被拒；助手发了是否已经完成的卡片、用户点「已完成，提交交付物」之后，任务变为已完成", { skip: NO_PI, timeout: 120000 }, () =>
+  withStack("consent", SCRIPT, async ({ call, taskId, session, dir, db, send, ready }) => {
+    await ready();
 
     await send({ text: "都看过了，完成吧。", client_id: "c-2" });
     const typed = db("SELECT call_id, fact, guidance FROM tool_rejection WHERE tool_name = 'complete_task'");
@@ -141,14 +171,24 @@ test("打字说完成被拒；助手发了是否已经完成的卡片、用户�
     assert.deepEqual([edit.status, edit.body.error.code], [409, "task_closed"]);
     const said = await call("POST", `/api/v1/tasks/${taskId}/messages?session=${session}`, { text: "再改改", client_id: "c-4" });
     assert.deepEqual([said.status, said.body.error.code], [409, "task_closed"]);
-  } finally {
-    if (child.exitCode === null) {
-      await new Promise<void>((ok) => {
-        const timer = setTimeout(() => child.kill("SIGKILL"), 20000);
-        child.once("exit", () => { clearTimeout(timer); ok(); });
-        child.kill("SIGTERM");
-      });
-    }
-    await fake.stop();
-  }
-});
+  }));
+
+test("页面提交：看到的修订号不是现在的被拒；带着现在的修订号提交，任务变为已完成，发起方是用户，会话里多一句说明，不引出助手的运行", { skip: NO_PI, timeout: 120000 }, () =>
+  withStack("page", { rules: SCRIPT.rules, sequence: SCRIPT.sequence.slice(0, 2) }, async ({ taskId, session, dir, db, action, ready }) => {
+    await ready();
+    const stale = await action({ kind: "submit_deliverable", targets: [], fields: { revision_no: 0 }, notify_executor: false });
+    assert.deepEqual([stale.body.error.code, stale.body.error.message], ["rejected", "这次没有提交：你看到的是修订 0，交付物现在已经是修订 1。请看过现在的内容再提交。"]);
+    assert.equal(db("SELECT status FROM task")[0].status, "进行中");
+
+    const done = await action({ kind: "submit_deliverable", targets: [], fields: { revision_no: 1 }, notify_executor: false });
+    assert.equal(done.status, 200);
+    assert.equal(db("SELECT status FROM task")[0].status, "已完成");
+    assert.deepEqual(db("SELECT actor, call_id FROM event WHERE name = 'TASK_COMPLETED'").map((r: Dict) => [r.actor, r.call_id]), [["user", done.body.op_id]]);
+    const sessionDir = join(dir, "runs", taskId, "pi-sessions", "service");
+    const file = join(sessionDir, readdirSync(sessionDir).find((n) => n.endsWith(`_${session}.jsonl`))!);
+    const entries = readFileSync(file, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    const note = entries.filter((e) => e.type === "custom_message" && e.details?.kind === "submit_deliverable");
+    assert.equal(note.length, 1);
+    assert.match(note[0].content, /^界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 1）。/);
+    assert.equal(entries.at(-1).type, "custom_message", "说明之后没有助手的运行");
+  }));
