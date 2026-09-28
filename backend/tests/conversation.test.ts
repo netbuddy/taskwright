@@ -164,8 +164,14 @@ test("对话记录与过程摘要：对同一份会话条目，TypeScript 版与
   const [entries, definition] = [CONVERSATION_ENTRIES, CONVERSATION_DEFINITION];
   // Python 版在同一份条目上的输出，留存在 fixtures/py/conversation.json（生成方法见那里的 README.md）。
   const python = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "conversation.json"), "utf-8"));
-  assert.deepEqual(fullMessages(entries, "S", definition), python.messages);
-  assert.deepEqual(worksFromEntries(branch(entries), definition, FALLBACK_TEXT, textOf), python.works);
+  // 结束原因（outcome）是 Python 版没有的字段（见 fixtures/py/README.md「已知差别」）：比较之前只去掉这一个字段，其余逐字比较，结束原因另外断言。
+  const withoutOutcome = <T extends Record<string, unknown>>(list: T[]) => list.map(({ outcome: _outcome, ...rest }) => rest);
+  const messages = fullMessages(entries, "S", definition);
+  const works = worksFromEntries(branch(entries), definition, FALLBACK_TEXT, textOf);
+  assert.deepEqual(withoutOutcome(messages), python.messages);
+  assert.deepEqual(withoutOutcome(works as unknown as Record<string, unknown>[]), python.works);
+  assert.deepEqual(works.map((w) => w.outcome), ["replied", "no_reply"]);
+  assert.deepEqual(messages.filter((m) => m.type === "work_summary").map((m) => m.outcome), ["replied", "no_reply"]);
   // 第二次工作没有回复，摘要放在下一句话之前；第三句话之后只有正文、没有工具调用也没有经回复工具说话，不算一次工作，不出摘要。
   assert.deepEqual(python.messages.map((m: any) => m.type), ["system_note", "user_message", "work_summary", "assistant_reply", "user_message", "work_summary",
     "user_message", "assistant_reply"]);
