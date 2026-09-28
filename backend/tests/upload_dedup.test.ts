@@ -125,11 +125,64 @@ test("最后一道防线：文件系统上已经有这个名字（材料清单�
   assert.ok(statSync(join(t.dir, "inputs", "占位.md")).isDirectory());
 }));
 
-test("同名的判断现在是逐字相同（大小写、全角半角、首尾空白算不算同名另行决定，决定后只改 sameMaterialName）", () => {
+test("同名的判断：只差大小写、同一个字的两种编码、首尾空白都算同名；只差全角半角不算", () => {
   assert.equal(sameMaterialName("需求.md", "需求.md"), true);
-  assert.equal(sameMaterialName("Report.md", "report.md"), false);
+  // 大小写：与区域设置无关；希腊字母词尾的 ς 与大写 Σ、德文 ß 与 SS 也对得上。
+  assert.equal(sameMaterialName("Spec.docx", "spec.docx"), true);
+  assert.equal(sameMaterialName("REPORT.MD", "report.md"), true);
+  assert.equal(sameMaterialName("ΟΔΟΣ.md", "οδος.md"), true);
+  assert.equal(sameMaterialName("Straße.md", "STRASSE.md"), true);
+  // 同一个字的两种编码：e 加组合用的尖音符（macOS 存文件名的写法）与预组合的 é。
+  assert.equal(sameMaterialName("Cafe\u0301.md", "Caf\u00e9.md"), true);
+  assert.equal(sameMaterialName("CAFE\u0301.md", "caf\u00e9.md"), true, "编码与大小写同时不同");
+  // 首尾空白：半角空格、制表符、全角空格都去掉；中间的空白照常比较。
+  assert.equal(sameMaterialName("  需求.md\t", "需求.md"), true);
+  assert.equal(sameMaterialName("\u3000需求.md", "需求.md"), true);
+  assert.equal(sameMaterialName("需 求.md", "需求.md"), false);
+  // 全角半角：括号、字母、数字只差全角半角都不算同名。
   assert.equal(sameMaterialName("需求(一).md", "需求（一）.md"), false);
+  assert.equal(sameMaterialName("ＡＢ.md", "ab.md"), false);
+  assert.equal(sameMaterialName("第1版.md", "第１版.md"), false);
+  // 真正不同的名字。
+  assert.equal(sameMaterialName("需求.md", "需求.txt"), false);
+  assert.equal(sameMaterialName("甲.md", "乙.md"), false);
 });
+
+test("只差大小写、内容不同：按同名拒绝，指出已有的那一份，已有的材料不变", () => withTask((service, t) => {
+  service.upload(t, "Spec.md", Buffer.from("甲"));
+  const e = rejected(() => service.upload(t, "spec.md", Buffer.from("乙")));
+  assert.deepEqual([e.code, e.message, e.data], ["name_taken", nameTakenText("Spec.md"), { path: "inputs/Spec.md" }]);
+  assert.equal(readFileSync(join(t.dir, "inputs", "Spec.md"), "utf-8"), "甲");
+  assert.deepEqual(files(t), ["Spec.md"]);
+}));
+
+test("同一个字的两种编码、内容不同：按同名拒绝", () => withTask((service, t) => {
+  service.upload(t, "Caf\u00e9.md", Buffer.from("甲"));
+  const e = rejected(() => service.upload(t, "Cafe\u0301.md", Buffer.from("乙")));
+  assert.deepEqual([e.code, e.data], ["name_taken", { path: "inputs/Caf\u00e9.md" }]);
+  assert.deepEqual(files(t), ["Caf\u00e9.md"]);
+}));
+
+test("首尾带空白、内容不同：按同名拒绝；保存时的名字不因这条规则改变", () => withTask((service, t) => {
+  // 末尾带空白的名字（「需求.md 」）过不了类型检查（扩展名要在最后），实际能碰到的是首部带空白。
+  assert.equal(service.upload(t, " 需求.md", Buffer.from("甲")).path, "inputs/ 需求.md", "保存时照原名，首部的空格也留着");
+  const e = rejected(() => service.upload(t, "需求.md", Buffer.from("乙")));
+  assert.deepEqual([e.code, e.message, e.data], ["name_taken", nameTakenText(" 需求.md"), { path: "inputs/ 需求.md" }]);
+  assert.equal(rejected(() => service.upload(t, "\u3000\t需求.md", Buffer.from("丙"))).code, "name_taken", "全角空格与制表符也去掉");
+  assert.equal(rejected(() => service.upload(t, "需求.md ", Buffer.from("丁"))).code, "unsupported_type");
+  assert.deepEqual(files(t), [" 需求.md"]);
+}));
+
+test("只差全角半角、内容不同：不算同名，照常保存", () => withTask((service, t) => {
+  service.upload(t, "需求(一).md", Buffer.from("甲"));
+  assert.deepEqual(service.upload(t, "需求（一）.md", Buffer.from("乙")), { ok: true, path: "inputs/需求（一）.md" });
+  assert.deepEqual(files(t), ["需求(一).md", "需求（一）.md"]);
+}));
+
+test("只差大小写、内容也相同：报内容相同（先比内容再比文件名）", () => withTask((service, t) => {
+  service.upload(t, "Spec.md", Buffer.from("甲"));
+  assert.equal(rejected(() => service.upload(t, "SPEC.md", Buffer.from("甲"))).code, "duplicate_content");
+}));
 
 /** 经 HTTP 上传一份文件，返回状态码与应答。 */
 function post(port: number, taskId: string, name: string, text: string): Promise<{ status: number; body: any }> {

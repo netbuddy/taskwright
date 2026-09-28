@@ -33,18 +33,35 @@ export const duplicateContentText = (name: string) => `这份文件与已有的�
 export const nameTakenText = (name: string) => `这个任务里已经有一份叫《${name}》的材料，内容与这份不同。请给文件换一个名字再上传。`;
 
 /**
- * 上传的文件名与已有材料的文件名算不算同名。现在按整理之后逐字相同判断（后端存文件时不改文件名，只拒绝带路径分隔符的名字）。
- * 大小写、全角半角、首尾空白、同一个字的不同编码算不算同名，定下之后只改这一个函数。不论怎样判断，写文件时都用排他创建，
- * 文件系统认为已经有这个文件（例如不区分大小写的文件系统上只差大小写）时同样按同名拒绝，不会覆盖已有的材料。
+ * 上传的文件名与已有材料的文件名算不算同名：两边都去掉首尾空白、统一成 Unicode 规范化的 NFC 形式（macOS 会把带声调的字母
+ * 拆成两个码位）、再折叠大小写之后逐字比较。所以只差大小写、只差编码方式、只差首尾空白都算同名；只差全角半角（例如全角括号与
+ * 半角括号）不算同名。这条规则只用于判断是否同名，保存时的文件名不变。不论怎样判断，写文件时都用排他创建，文件系统认为已经有
+ * 这个文件时同样按同名拒绝，不会覆盖已有的材料。
  */
 export function sameMaterialName(uploaded: string, existing: string): boolean {
-  return uploaded === existing;
+  return nameKey(uploaded) === nameKey(existing);
+}
+
+/**
+ * 比较文件名用的形式。大小写折叠用 toUpperCase 再 toLowerCase：两者按 Unicode 的缺省大小写映射，与区域设置无关（不像
+ * toLocaleLowerCase 在土耳其语等区域设置下结果不同）；先转大写再转小写，希腊字母词尾的 ς 与 σ、德文的 ß 与 SS 也能对上。
+ * 大小写映射可能产生未组合的形式，所以折叠之后再做一次 NFC。全角字母折叠后仍是全角，不会与半角混同。
+ */
+function nameKey(name: string): string {
+  return name.trim().normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
 }
 
 const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 /** 上传的文件超过上限时给用户看的那句话。服务信息接口把上限与这句话一起给前端，前端在发送之前就能拦下。 */
 export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
 export const UPLOAD_TYPES = [".md", ".txt", ".docx"];
+/**
+ * 上传的文件类型不在 UPLOAD_TYPES 里时给用户看的那句话。服务信息接口把它与扩展名一起给前端，前端在发送之前就能拦下。
+ * 写成函数是为了以后改成由 UPLOAD_TYPES 拼出来时只改这里；现在返回手写的原话。
+ */
+export function unsupportedTypeText(): string {
+  return "只接受 .md、.txt 与 .docx（Word）三种文件。";
+}
 
 /** 任务类型：task-types/ 下的每个目录，显示名取它的任务定义里的「任务名」；没有新格式任务定义的模板不列。 */
 export function taskTypes() {
@@ -430,7 +447,7 @@ export class Service {
     if (!filename || filename.includes("/") || filename.includes("\\") || filename === "." || filename === "..") {
       throw new ApiError("bad_request", "文件名里不能带路径分隔符。");
     }
-    if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", "只接受 .md、.txt 与 .docx（Word）三种文件。");
+    if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", unsupportedTypeText());
     if (isReserved(filename)) throw new ApiError("bad_request", "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 材料生成的投影用，请改个名字再上传。");
     const isDocx = filename.toLowerCase().endsWith(".docx");
     if (data.length > MAX_UPLOAD) throw new ApiError("too_large", TOO_LARGE_TEXT);
