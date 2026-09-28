@@ -117,3 +117,62 @@ describe("读不到文件", () => {
     await waitFor(() => expect(screen.getByText(/^❝/).textContent).toBe("❝ requirements-styled.docx · 4 非功能需求"));
   });
 });
+
+describe("文件显示不出来时，材料区上方「Word 文件按原版式分页显示」那句说明不显示", () => {
+  const HINT = /Word 文件按原版式分页显示/;
+  it("缓存那一遍画不出来", async () => {
+    mockApi();
+    render(<MaterialPane taskId="TASK-U" materials={materials} locate={null} />);
+    await screen.findByTestId("docx-unrenderable", undefined, SLOW);
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
+  it("缓存那一遍画好了、显示那一遍画不出来", async () => {
+    fail.on = "view";
+    mockApi();
+    render(<MaterialPane taskId="TASK-U" materials={materials} locate={null} />);
+    await screen.findByTestId("docx-unrenderable", undefined, SLOW);
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
+  it("读不到文件（接口出错）", async () => {
+    fail.on = "none";
+    vi.spyOn(api, "materialRaw").mockRejectedValue(new ApiError("not_found", "这个任务没有这份材料。", 404));
+    vi.spyOn(api, "materialContent").mockImplementation(content);
+    render(<MaterialPane taskId="TASK-U" materials={materials} locate={null} />);
+    await screen.findByText("这个任务没有这份材料。");
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
+  it("画得出来时照旧显示", async () => {
+    fail.on = "none";
+    mockApi();
+    render(<MaterialPane taskId="TASK-U" materials={materials} locate={null} />);
+    await waitFor(() => expect(document.querySelector("[data-testid=docx-paper] section.docx")).toBeTruthy(), SLOW);
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+  });
+});
+
+describe("在两份 Word 文件之间切换", () => {
+  it("从画得出来的切到已经知道画不出来的：说明收起；切回来：说明照旧显示", async () => {
+    fail.on = "none";
+    const OTHER = "inputs/other.docx";
+    vi.spyOn(api, "materialRaw").mockImplementation(async (_t, p) => {
+      if (p === OTHER) throw new ApiError("not_found", "这个任务没有这份材料。", 404);
+      return SAMPLE.slice().buffer;
+    });
+    vi.spyOn(api, "materialContent").mockImplementation(content);
+    const two = [...materials, { path: OTHER, bytes: 1, modified_at: "", derived_from: null }];
+    render(<MaterialPane taskId="TASK-U" materials={two} locate={null} />);
+    const select = await screen.findByTestId("material-select");
+    await waitFor(() => expect(document.querySelector("[data-testid=docx-paper] section.docx")).toBeTruthy(), SLOW);
+    fireEvent.change(select, { target: { value: OTHER } });
+    await screen.findByText("这个任务没有这份材料。");
+    expect(screen.queryByText(/Word 文件按原版式分页显示/)).toBeNull();
+    fireEvent.change(select, { target: { value: PATH } });
+    await waitFor(() => expect(screen.getByText(/Word 文件按原版式分页显示/)).toBeInTheDocument());
+    fireEvent.change(select, { target: { value: OTHER } });
+    await screen.findByText("这个任务没有这份材料。");
+    expect(screen.queryByText(/Word 文件按原版式分页显示/)).toBeNull();
+  });
+});

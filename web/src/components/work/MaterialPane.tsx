@@ -52,6 +52,9 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   const isDocx = !!path && /\.docx$/i.test(path);
   const [docxNote, setDocxNote] = useState<string | null>(null);
   const [docxCited, setDocxCited] = useState<number | null>(null);
+  // Word 文件显示不出来（读不到或画不出来）时不写「按原版式分页显示」那句说明，免得与下面的提示相互矛盾。
+  // 由 DocxPaper 在挂上与换文件时报上来；这里换文件时不清，子组件的副作用先于这里执行，清了会盖掉它刚报的值。
+  const [docxUnavailable, setDocxUnavailable] = useState(false);
   // 在「按章节看引用」里点一节：跳到那一节的第一段（每点一次 nonce 加一）。
   const [jump, setJump] = useState<{ paragraph: number; nonce: number } | null>(null);
   // 正文连同它属于哪份材料一起记：切材料的那一下旧正文还在，不能拿它去找高亮。
@@ -143,7 +146,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
         {text != null && <span className="chip">{citedItems.size ? `被 ${citedItems.size} 个条目引用过` : "还没有被条目引用"}</span>}
         {isDocx && docxCited != null && <span className="chip">{docxCited ? `被 ${docxCited} 个条目引用过` : "还没有被条目引用"}</span>}
       </div>
-      {isDocx && <div className="hint docx-hint">Word 文件按原版式分页显示。页眉页脚、文本框、脚注尾注里的文字只能看，不能被条目引用；批注不显示，修订按接受后的文字显示。</div>}
+      {isDocx && !docxUnavailable && <div className="hint docx-hint">Word 文件按原版式分页显示。页眉页脚、文本框、脚注尾注里的文字只能看，不能被条目引用；批注不显示，修订按接受后的文字显示。</div>}
       {isDocx && path && <SectionList taskId={taskId} path={path} items={items} onJump={(paragraph) => setJump({ paragraph, nonce: (jump?.nonce ?? 0) + 1 })} />}
       {missed && <div className="busy-note locate-miss" data-testid="locate-miss">没有在材料里找到这段原文</div>}
       {isDocx && docxNote && <div className="busy-note locate-miss" data-testid="locate-note">{docxNote}</div>}
@@ -153,7 +156,8 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
           {error && <div className="busy-note">{error}</div>}
           {path && isDocx && (
             <DocxPaper taskId={taskId} path={path} items={items} paperRef={paper} onOpenItem={onOpenItem} onMouseUp={onMouseUp}
-              locate={locate && samePath(path, locatorPath(locate.locator)) ? locate : null} onCitedCount={setDocxCited} onNote={setDocxNote} jump={jump} />
+              locate={locate && samePath(path, locatorPath(locate.locator)) ? locate : null} onCitedCount={setDocxCited} onNote={setDocxNote}
+              onUnavailable={setDocxUnavailable} jump={jump} />
           )}
           {path && !isDocx && text == null && !error && <div className="empty">正在读原文。</div>}
           {!isDocx && text != null && (
