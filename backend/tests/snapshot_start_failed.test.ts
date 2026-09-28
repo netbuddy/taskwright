@@ -73,11 +73,11 @@ function assertReadable(snap: Dict) {
 test("系统拒绝启动（EACCES）：快照照常给对话与条目，执行者状态带原因；反复打开结果相同，不留子进程与没关的文件；修好之后照常启动", async () => {
   const { service, t, root } = setUp("eacces", (r) => piScript(r, 0o644));
   try {
-    // 启动失败的那个子进程的三根管道在 error 事件之后才由 Node 异步关掉，所以先打开一次、稍等，再数文件，之后三次不应再增加。
+    // 启动失败的那个子进程的三根管道在 error 事件之后才由 Node 异步关掉，所以先打开一次、稍等，再数文件，之后十次不应再增加。
     assertReadable(await service.snapshot(t, "S1"));
     await sleep(300);
     const fds = openFiles();
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 10; i++) {
       const snap = await service.snapshot(t, "S1");
       assertReadable(snap);
       assert.deepEqual(snap.executor, { state: "failed_to_start", text: "助手没有启动起来，系统原因：EACCES", active_session: null });
@@ -85,11 +85,10 @@ test("系统拒绝启动（EACCES）：快照照常给对话与条目，执行�
     }
     await sleep(300);
     assert.equal(openFiles(), fds, "没有留下没关的文件");
-    // 每次失败的启动都打开一组归档文件（原始事件流、后端补记、收到时刻；文件名精确到秒，同一秒里的几次共用一组），都是空的：
-    // spawn 没成功，什么都没写。
+    // 每次失败的启动都打开一组归档文件（原始事件流、后端补记、收到时刻），spawn 没成功，什么都没写，启动失败时删掉：
+    // 刷新十一次之后归档目录里一个文件都没有。
     const events = join(root, "runs", t.taskId, "pi-events");
-    assert.ok(readdirSync(events).length >= 3);
-    assert.ok(readdirSync(events).every((f) => statSync(join(events, f)).size === 0));
+    assert.deepEqual(readdirSync(events), []);
 
     chmodSync(join(root, "pi-script"), 0o755);
     // 助手起来之后对话记录改由它给（假 pi 不带对话），这里只核对它照常启动、接上了这条会话。
@@ -97,6 +96,9 @@ test("系统拒绝启动（EACCES）：快照照常给对话与条目，执行�
     assert.equal(fixed.session.session_id, "S1");
     assert.deepEqual(fixed.executor, { state: "idle", text: "助手空闲，可以开始。", active_session: "S1" });
     assert.ok(t.executor.running());
+    // 起来了的那次启动照常留下一组归档文件，后端补记里有「启动」等记录。
+    assert.equal(readdirSync(events).length, 3);
+    assert.ok(readdirSync(events).some((f) => f.endsWith(".backend.jsonl") && statSync(join(events, f)).size > 0));
   } finally {
     await service.close();
   }
