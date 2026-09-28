@@ -84,7 +84,7 @@ export function writeProjection(docx: string, rel: string, segments: SegmentPara
     throw new ProjectionError(`分段清单没有写成：${(error as Error).message}`);
   }
   try {
-    writeFileSync(docx + LOCATIONS_SUFFIX, JSON.stringify(locationTable(data, rel), null, 2) + "\n", "utf-8");
+    writeFileSync(docx + LOCATIONS_SUFFIX, JSON.stringify(locationTable(data, rel, result), null, 2) + "\n", "utf-8");
   } catch (error) {
     throw new ProjectionError(`位置表没有写成：${(error as Error).message}`);
   }

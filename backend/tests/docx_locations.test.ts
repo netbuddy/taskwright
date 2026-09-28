@@ -48,7 +48,7 @@ test("上传 Word 文件：旁边写位置表，文件头与标题段照规则�
   const table = JSON.parse(readFileSync(file, "utf-8"));
   assert.deepEqual(Object.keys(table), ["version", "rules_version", "说明", "source", "paragraphs", "page_marks", "application", "headings"]);
   assert.deepEqual([table.version, table.rules_version, table.source, table.paragraphs, table.page_marks, table.application],
-    [1, 1, "inputs/需求.docx", 114, 4, "Microsoft Macintosh Word"]);
+    [1, 2, "inputs/需求.docx", 114, 4, "Microsoft Macintosh Word"]);
   assert.equal(table.headings.length, 15);
   assert.deepEqual(table.headings[0], { paragraph: 6, level: 1, title: "1 概述" });
   assert.deepEqual(table.headings.find((h: { paragraph: number }) => h.paragraph === 75), { paragraph: 75, level: 3, title: "3.1.1 逾期罚款" });

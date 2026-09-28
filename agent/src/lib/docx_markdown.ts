@@ -98,14 +98,14 @@ function at(el: XmlElement | undefined, path: string): XmlElement | undefined {
   for (const part of path.split("/")) el = child(el, part);
   return el;
 }
-export const valOf = (el: XmlElement | undefined, path: string) => at(el, path)?.attrs["w:val"];
+const valOf = (el: XmlElement | undefined, path: string) => at(el, path)?.attrs["w:val"];
 function* descendants(el: XmlElement): Generator<XmlElement> {
   for (const c of elements(el)) { yield c; yield* descendants(c); }
 }
 
 // ───────────── 样式、编号、关系 ─────────────
 
-export class Styles {
+class Styles {
   private byId = new Map<string, XmlElement>();
   constructor(xml: string | null) {
     if (!xml) return;
@@ -130,7 +130,7 @@ export class Styles {
 }
 
 /** numbering.xml 读成编号定义（键是「numId:级别」，起始值已按 w:startOverride 覆盖）；怎样数、怎样写在 lib/docx_numbering.ts。 */
-export function numberingLevels(xml: string | null): Map<string, NumberingLevel> {
+function numberingLevels(xml: string | null): Map<string, NumberingLevel> {
   const levels = new Map<string, NumberingLevel>();
   const root = xml ? child(parseXml(xml), "w:numbering") : undefined;
   if (!root) return levels;
@@ -151,7 +151,7 @@ export function numberingLevels(xml: string | null): Map<string, NumberingLevel>
 }
 
 /** 一段用哪套编号的哪一级：段落自己写的先于样式（沿 basedOn 往上找），级别没写时是 0；没有编号或 numId 为 0 时 null。 */
-export function paragraphNumbering(p: XmlElement, styles: Styles): { numId: string; ilvl: number } | null {
+function paragraphNumbering(p: XmlElement, styles: Styles): { numId: string; ilvl: number } | null {
   const sid = valOf(p, "w:pPr/w:pStyle");
   const numId = valOf(p, "w:pPr/w:numPr/w:numId") ?? styles.prop(sid, "w:numPr/w:numId");
   if (!numId || numId === "0") return null;
@@ -166,8 +166,7 @@ class Numbering {
   }
   /** 这一段的编号文字与是不是项目符号。每套编号（numId）各自计数，上一级加一时更深的级别重新数，与材料区相同。 */
   next(numId: string, ilvl: number): { label: string; bullet: boolean } {
-    const { label, bullet } = this.counter.next(numId, ilvl);
-    return { label, bullet };
+    return this.counter.next(numId, ilvl);
   }
 }
 
