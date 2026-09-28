@@ -186,9 +186,12 @@ export interface Item {
   waivers?: Waiver[];
   confirmations: Confirmation[];
   confirmation_stale: boolean;
-  /** 当前修订上最近一条确认标记是接受（任一依据）；为假就是未读。前端按 confirmations 现算，这两项只作对照。 */
+  /**
+   * 已读：条目在任何一次修订上有过一条接受的确认标记（任一依据）；为假就是未读。已读是条目级、单向的，
+   * 之后条目被改、或经接口撤回确认（unconfirm），都不会变回未读。前端按 confirmations 现算，这两项只作对照。
+   */
   viewed?: boolean;
-  /** viewed 为真时那条标记的依据，未读时为空。 */
+  /** 已读的依据：当前修订上最近一条标记是接受时取它的依据，否则取最近一条接受的标记的依据；未读时为空。 */
   confirmation_basis?: ConfirmationBasis | string | null;
 }
 
