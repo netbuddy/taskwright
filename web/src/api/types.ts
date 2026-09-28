@@ -672,7 +672,7 @@ export interface MessageRequest {
 
 /** request_review：请评审者评审；targets 为空列表时评全部待评审的条目。后端核对通过就回应，评审在后台跑。 */
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review"
-  | "waive_review" | "unwaive_review" | "set_review_rules";
+  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable";
 
 export interface ActionRequest {
   client_id: string;
@@ -680,7 +680,8 @@ export interface ActionRequest {
   task_id: string;
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。 */
   targets: { item_id?: string; base_revision?: number; revision_no?: number }[];
-  fields?: Fields;
+  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。 */
+  fields?: Fields | { revision_no: number };
   notify_executor: boolean;
 }
 

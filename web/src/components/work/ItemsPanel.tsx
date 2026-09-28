@@ -17,15 +17,17 @@
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
 import { useEffect, useMemo, useState } from "react";
+import { Modal } from "antd";
 import type { Item, Task } from "../../api/types";
 import type { ReviewRun } from "../../state/workState";
 import { BUSY_TEXT, FILTERS, failedReview, isEmptyValue, isUnread, keptReview, keepPendingField, matchesFilter, needsReading, pendingReview, reviewOffReason, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
 import { CompletionPanel } from "../CompletionPanel";
 import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
+import { submitQuestion } from "../../model/submit";
 import { unlinkedIds } from "../../model/domainNotes";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
-import { rejectedText } from "./errors";
+import { errorText, rejectedText } from "./errors";
 import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
@@ -36,6 +38,7 @@ export { BUSY_TEXT };
 export function ItemsPanel({
   task, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
   onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, unreadRequest = 0, review = null, onReview, onPrefill,
+  submitBar = false,
 }: {
   task: Task;
   /** 任务已结束或助手不可用：一切写入都不能做。 */
@@ -74,6 +77,8 @@ export function ItemsPanel({
   onReview?: ReviewAction;
   /** 往对话区输入框预填一句话（「让助手照这条改」）。 */
   onPrefill?: (text: string) => void;
+  /** 显示提交交付物的提示条（model/submit.ts 的 showSubmitBar 算好交进来）。 */
+  submitBar?: boolean;
 }) {
   const collections = task.definition.collections;
   const selectedItem = task.items.find((i) => i.item_id === selected);
@@ -83,6 +88,18 @@ export function ItemsPanel({
   const [showProgress, setShowProgress] = useState(false);
   const [flash, setFlash] = useState<string[]>([]);
   const toast = useToast();
+  // 提交交付物：点提示条上的按钮先弹确认框，点「提交」才作为直接操作发出，带上页面看到的修订号。
+  // 被拒（例如确认框开着时交付物又改了）把说明写在提示条上；成功时任务变为已完成，提示条随之消失。
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submitDeliverable = async () => {
+    setSubmitting(true);
+    const error = await submit({ kind: "submit_deliverable", targets: [], fields: { revision_no: latestRevision }, notify_executor: false }, "提交交付物");
+    setSubmitting(false);
+    setConfirmSubmit(false);
+    setSubmitError(error ? errorText(error) : null);
+  };
   /** 从哪个问题跳到当前条目的；详情顶部据此给「回到问题列表」，那张问题卡片排第一并高亮。 */
   const [fromIssue, setFromIssue] = useState<{ issueId: string; itemId: string } | null>(null);
   /** 回到问题列表后要滚到并闪一下的问题卡片；n 每次加一。 */
@@ -201,6 +218,16 @@ export function ItemsPanel({
           onReview={onReview ? (list) => reviewItems(list, `评审 ${list.map((i) => i.item_id).join("、")}`) : undefined}
           onOpen={(id) => { setShowProgress(false); onSelect(id); }} />}
       </div>
+      {submitBar && !readOnly && (
+        <div className="alertbar submitbar" data-testid="submit-bar">
+          <div className="q"><b>完成条件都满足了。</b>{submitQuestion(task)}{submitError && <div className="err" data-testid="submit-error">{submitError}</div>}</div>
+          <button type="button" className="btn sm pri" disabled={writesOff} onClick={() => setConfirmSubmit(true)} data-testid="submit-deliverable">已完成，提交交付物</button>
+        </div>
+      )}
+      <Modal title="提交交付物" open={confirmSubmit} onOk={() => void submitDeliverable()} onCancel={() => setConfirmSubmit(false)} okText="提交" cancelText="取消"
+        confirmLoading={submitting} destroyOnHidden>
+        提交之后这个任务变成只读，交付物不能再改，仍然可以生成文档。确定提交吗？
+      </Modal>
       {unread.length > 0 && filter !== "unread" && (
         <div className="alertbar" data-testid="unread-bar">
           还有 {unread.length} 条未读 ·

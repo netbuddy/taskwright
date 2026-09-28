@@ -24,6 +24,7 @@ import { formatTime } from "../model/format";
 import { FONT_TIERS, narrowViewport, readFontTier, saveFontTier, type FontTier } from "../model/fontScale";
 import { justChangedItems, marksByItem, revisionsOfReply, touchedItems } from "../model/revisions";
 import { openProblems, viewTarget } from "../model/items";
+import { showSubmitBar } from "../model/submit";
 import { go, href } from "../router";
 import { useToast } from "../components/Toasts";
 import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
@@ -132,7 +133,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       const r = await api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, ...req });
       // 标为已读不改内容，不显示「正在保存」；都已读过时后端什么都不写、没有库事件，挂着的话会一直等不到。
       // 评审也不改内容，进度与结果另有 review_progress、review_finished 两种事件，同样不登记。
-      if (req.kind !== "mark_viewed" && req.kind !== "request_review") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
+      // 提交交付物也不登记：任务变为已完成的事件不带操作编号，挂着的话同样等不到；提交之后任务只读，提示条随之消失。
+      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
       return null;
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
@@ -323,7 +325,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty}
-                  unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill} />
+                  unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
+                  submitBar={showSubmitBar(task, working, state.messages)} />
               ) : <div className="pane-items" />}
               <div className="pane-doc">
                 <SidePanel side={side} onSide={setSide} onCollapse={() => toggleDoc(true)} onExpand={() => toggleDoc(false)}

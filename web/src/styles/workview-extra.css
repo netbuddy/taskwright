@@ -240,3 +240,8 @@
 .app .sec-row.none { background: #fbfbfb; }
 .app .sec-row.none .t { color: var(--mut); font-weight: 500; }
 .app .sec-row.none .n { color: var(--mut); }
+/* 提交交付物的提示条：完成条件都满足、助手不在工作时在条目区顶部。尺寸与 .alertbar 相同，绿色（完成一类的颜色）。 */
+.app .alertbar.submitbar { background: var(--ok-bg); border-bottom: 1px solid var(--ok-line); color: #14532d; align-items: flex-start; padding: .5rem .7rem; gap: .5rem; }
+.app .submitbar .q { flex: 1 1 20rem; line-height: 1.55; }
+.app .submitbar .btn { align-self: center; flex: none; }
+.app .submitbar .err { color: var(--gap); margin-top: .2rem; }
