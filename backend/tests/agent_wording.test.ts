@@ -9,7 +9,7 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
-import { Executor } from "../src/executor.ts";
+import { Executor, stateText } from "../src/executor.ts";
 import { Hub } from "../src/hub.ts";
 import { LaunchError, loadProfile } from "../src/launch.ts";
 import { PiNotFound, PiRefused, PiSession, PiStartRefused, PiTimeout, startRefusedText, technicalOf } from "../src/pi_session.ts";
@@ -122,7 +122,7 @@ async function failStart(profile: Dict, runs: string) {
 test("没有安装：PATH 里找不到启动配置写的程序时，说明写「找不到助手的程序（pi），请检查安装。」，原话在 technical 里", async () => {
   const got = await failStart({ ...loadProfile("fake"), executable: "taskwright-no-such-program" }, "runs-missing");
   assert.equal(got.detail, "找不到助手的程序（pi），请检查安装。");
-  assert.equal(got.text, "助手没有启动起来。（找不到助手的程序（pi），请检查安装。）");
+  assert.equal(got.text, "助手没有启动起来，找不到助手的程序（pi），请检查安装。");
   assert.equal(got.apiDetail, "在 PATH 里找不到 taskwright-no-such-program 命令，先把 pi 装好再启动。");
   assert.ok(got.logs.some((l) => l === "任务 TASK-001 的助手没有启动起来：在 PATH 里找不到 taskwright-no-such-program 命令，先把 pi 装好再启动。"));
   assert.doesNotMatch(withoutInstallName(got.text), FORBIDDEN);
@@ -136,7 +136,7 @@ test("系统拒绝启动，没有执行权限：说明只写「系统原因：EA
   chmodSync(script, 0o644);
   const got = await failStart({ ...loadProfile("fake"), executable: script }, "runs-eacces");
   assert.equal(got.detail, "系统原因：EACCES");
-  assert.equal(got.text, "助手没有启动起来。（系统原因：EACCES）");
+  assert.equal(got.text, "助手没有启动起来，系统原因：EACCES");
   assert.equal(got.apiDetail, `spawn ${script} EACCES`);
   assert.ok(got.logs.some((l) => l === `任务 TASK-001 的助手没有启动起来：spawn ${script} EACCES`));
   assert.doesNotMatch(got.text, FORBIDDEN);
@@ -157,7 +157,7 @@ test("系统拒绝启动，命令行太长（系统提示文件超长）：说�
     const profile = { ...loadProfile("fake"), executable: script, extensions: [], platform_skill: undefined, system_prompt_file: "agent/huge-prompt.md" };
     const got = await failStart(profile, "runs-e2big");
     assert.equal(got.detail, "系统原因：E2BIG");
-    assert.equal(got.text, "助手没有启动起来。（系统原因：E2BIG）");
+    assert.equal(got.text, "助手没有启动起来，系统原因：E2BIG");
     assert.equal(got.apiDetail, "spawn E2BIG");
     assert.doesNotMatch(got.text, FORBIDDEN);
   } finally {
@@ -182,4 +182,12 @@ test("系统拒绝启动，资源不足与不是可执行格式：真实触发�
   assert.equal(technicalOf(unknown), "spawn /opt/pi/bin/pi Unknown system error -8");
   assert.equal(new PiStartRefused(new Error("说不清的错误")).message, "系统原因：未知");
   assert.equal(startRefusedText("EACCES"), "系统原因：EACCES");
+});
+
+test("状态文字的拼法：没有启动起来时原因用逗号接在后面，不套括号、不补句号；已经退出时照旧放在括号里；没有附带说明时只有固定的那句", () => {
+  assert.equal(stateText("failed_to_start", "系统原因：EACCES"), "助手没有启动起来，系统原因：EACCES");
+  assert.equal(stateText("failed_to_start", "配置里写的系统提示文件不存在：prompts/x.md"), "助手没有启动起来，配置里写的系统提示文件不存在：prompts/x.md");
+  assert.equal(stateText("failed_to_start", ""), "助手没有启动起来。");
+  assert.equal(stateText("exited", "助手的程序退出了"), "助手已经退出，下一次说话时会重新启动。（助手的程序退出了）");
+  assert.equal(stateText("idle", ""), "助手空闲，可以开始。");
 });

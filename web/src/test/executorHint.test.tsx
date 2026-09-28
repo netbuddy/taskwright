@@ -66,8 +66,8 @@ describe("助手没有在运行时的工作视图", () => {
   });
 
   it("助手启动不起来（failed_to_start）：仍然整页只读，写明原因", () => {
-    page({ state: "failed_to_start", text: "助手没有启动起来。（没有配置模型）", active_session: null });
-    expect(screen.getByTestId("busy-note")).toHaveTextContent("助手现在不可用：助手没有启动起来。（没有配置模型）");
+    page({ state: "failed_to_start", text: "助手没有启动起来，没有配置模型", active_session: null });
+    expect(screen.getByTestId("busy-note")).toHaveTextContent("助手现在不可用：助手没有启动起来，没有配置模型");
     expect(screen.queryByTestId("executor-hint")).toBeNull();
     expect(screen.getByTestId("chat-input")).toBeDisabled();
     expect(screen.getByTestId("send")).toHaveClass("off");
