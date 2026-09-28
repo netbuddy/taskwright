@@ -1,4 +1,4 @@
-// 任务页上传框的说明文字：类型与大小取自服务信息（upload.extensions、upload.max_bytes）；大小，写法与后端那句「单个文件不能超过 5 MB。」里的数字一致；
+// 任务页上传框的说明文字：类型与大小取自服务信息（upload.types_text、upload.max_bytes）；大小，写法与后端那句「单个文件不能超过 5 MB。」里的数字一致；
 // 还没取到服务信息时两半句都不写，不显示猜的内容。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +16,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const info = (maxBytes: number): ServiceInfo => ({
   ok: true, app: "taskwright", version: "0.3.0", mode: "server", pid: 1, port: 8940,
   capabilities: { exit: false, model: true },
-  upload: { max_bytes: maxBytes, too_large_text: `单个文件不能超过 ${maxBytes / 1024 / 1024} MB。`, extensions: [".md", ".txt", ".docx"] },
+  upload: { max_bytes: maxBytes, too_large_text: `单个文件不能超过 ${maxBytes / 1024 / 1024} MB。`, extensions: [".md", ".txt", ".docx"], types_text: ".md、.txt 与 Word 的 .docx" },
 });
 const detail = {
   task_id: "TASK-H", task_name: "说明文字", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
