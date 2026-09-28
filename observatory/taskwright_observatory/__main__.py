@@ -14,7 +14,7 @@ import os
 import sys
 from pathlib import Path
 
-from taskwright_observatory.server import expand_archive_dirs, serve
+from taskwright_observatory.server import expand_archive_dirs, serve  # noqa: F401 - 测试从这里取 expand_archive_dirs
 
 #: 环境变量名。与后端别处用的是同一批名字。
 ENV_RUNS_DIR = "TASKWRIGHT_RUNS_DIR"   # 归档目录。
@@ -37,9 +37,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                              f"不给就取环境变量 {ENV_RUNS_DIR}。界面与文档里一律叫它「归档目录」。")
     parser.add_argument("--workspaces", default="",
                         help="任务目录所在目录。它下面每个含有 task.sqlite 的子目录算一个任务目录；"
-                             "直接指向一个任务目录也行。不给时这样取：第一个 --runs 给的是 runs/ 这一层"
-                             "（子目录才是归档目录）而它旁边有 tasks/ 目录的，取那个 tasks/（产品后端的 runs/ 与 tasks/ 并排放）；"
-                             "其余情况取第一个归档目录的上一级。")
+                             "直接指向一个任务目录也行。不给时按第一个 --runs 给的目录取：它本身有 pi-events（是归档目录）的，"
+                             "取它的上一级；本身没有的（是 runs/ 这一层），它旁边有 tasks/ 目录就取那个 tasks/"
+                             "（产品后端的 runs/ 与 tasks/ 并排放），没有就取它自己。只看这个目录本身，"
+                             "不看它下面眼下有没有任务，所以在还空着的 runs/ 上先起观测台也取得对。")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT,
                         help=f"监听端口，默认 {DEFAULT_PORT}。")
     parser.add_argument("--host", default="0.0.0.0",
@@ -51,11 +52,13 @@ def parse_args(argv=None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def default_workspaces_dir(first_given: Path, first_archive: Path) -> Path:
+def default_workspaces_dir(first_given: Path) -> Path:
     """没给 --workspaces 时的默认值，规则写在 --help 里。"""
-    if first_archive != first_given and (first_given.parent / "tasks").is_dir():
+    if (first_given / "pi-events").is_dir():
+        return first_given.parent
+    if (first_given.parent / "tasks").is_dir():
         return first_given.parent / "tasks"
-    return first_archive.parent
+    return first_given
 
 
 def main(argv=None) -> int:
@@ -70,9 +73,8 @@ def main(argv=None) -> int:
         if not one.is_dir():
             print(f"归档目录不存在：{one}", file=sys.stderr)
             return 2
-    archive_dirs = expand_archive_dirs(given_dirs)
     workspaces_dir = (Path(args.workspaces).expanduser().resolve() if args.workspaces
-                      else default_workspaces_dir(given_dirs[0], archive_dirs[0]))
+                      else default_workspaces_dir(given_dirs[0]))
     if not workspaces_dir.is_dir():
         print(f"任务目录所在目录不存在：{workspaces_dir}", file=sys.stderr)
         return 2

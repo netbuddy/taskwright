@@ -345,15 +345,25 @@ class FindSessionTests(unittest.TestCase):
         (self.root / "tasks").mkdir()
         found = expand_archive_dirs([runs])
         self.assertEqual([d.name for d in found], ["TASK-A", "TASK-B"])
-        self.assertEqual(default_workspaces_dir(runs, found[0]), self.root / "tasks")
+        self.assertEqual(default_workspaces_dir(runs), self.root / "tasks")
         # 直接给一个归档目录：照旧取它的上一级。
         self.assertEqual(expand_archive_dirs([runs / "TASK-A"]), [runs / "TASK-A"])
-        self.assertEqual(default_workspaces_dir(runs / "TASK-A", runs / "TASK-A"), runs)
-        # runs 旁边没有 tasks/ 时，也取第一个归档目录的上一级。
+        self.assertEqual(default_workspaces_dir(runs / "TASK-A"), runs)
+        # runs 旁边没有 tasks/ 时，取 runs 自己（与原来「第一个归档目录的上一级」相同）。
         shutil.rmtree(self.root / "tasks")
-        self.assertEqual(default_workspaces_dir(runs, found[0]), runs)
+        self.assertEqual(default_workspaces_dir(runs), runs)
         # 两个都给、有重复的，只收一次。
         self.assertEqual(len(expand_archive_dirs([runs, runs / "TASK-A"])), 2)
+
+    def test_runs下面还没有任务时也取旁边的tasks(self):
+        # 先起观测台、之后再建任务：起的时候 runs/ 是空的，任务目录所在目录照样取旁边的 tasks/。
+        runs = self.root / "runs"
+        runs.mkdir()
+        (self.root / "tasks").mkdir()
+        self.assertEqual(expand_archive_dirs([runs]), [runs])
+        self.assertEqual(default_workspaces_dir(runs), self.root / "tasks")
+        (runs / "TASK-A" / "pi-events").mkdir(parents=True)
+        self.assertEqual(default_workspaces_dir(runs), self.root / "tasks")
 
     def test_给上一级目录时每次读取重新展开_启动之后新建的任务也看得到(self):
         runs = self.root / "runs"
