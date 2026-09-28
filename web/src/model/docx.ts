@@ -39,7 +39,8 @@ type Node0 = any;
  * 1. 按计数规则给每段打上 class「tw-p tw-pn-N」，并数分页标记；分页拆开的后一半是前一半的浅拷贝，带着同一个 class，渲染后据此认回同一段；
  * 2. 后面的节没写自己的页眉页脚时沿用前一节的（Word 这样显示，docx-preview 不沿用）；
  * 3. 页眉页脚里 PAGE、NUMPAGES 域的显示结果打上 class，渲染后填真页码与总页数（docx-preview 照抄保存时的结果）；
- * 4. 脚注尾注引用所在文字块的上标格式去掉：带上标的文字块会被渲染两次，注释因此登记两次（引用号变 2、注释列两遍）；引用本来就画成上标。
+ * 4. 脚注尾注引用所在文字块的上标格式去掉：带上标的文字块会被渲染两次，注释因此登记两次（引用号变 2、注释列两遍）；引用本来就画成上标；
+ * 5. 公式里缺属性的括号、横线、分组字符补上空的属性对象（见 fillMathProps）。
  */
 export function prepare(d: Node0): { marks: number } {
   let count = 0;
@@ -66,6 +67,7 @@ export function prepare(d: Node0): { marks: number } {
     (e.children ?? []).forEach(dropNoteVertAlign);
   };
   dropNoteVertAlign(body);
+  fillMathProps(d);
 
   const sects = [...body.children.filter((c: Node0) => c.type === "paragraph" && c.sectionProps).map((c: Node0) => c.sectionProps), body.props].filter(Boolean);
   for (let i = 1; i < sects.length; i++) {
@@ -92,6 +94,24 @@ export function prepare(d: Node0): { marks: number } {
     walk(root);
   }
   return { marks };
+}
+/** docx-preview 画这几种公式元素时直接读属性对象（elem.props.xxx），元素没写属性（m:dPr、m:barPr、m:groupChrPr）时属性对象不存在，整份文件画不出来。 */
+const MATH_NEEDS_PROPS = new Set(["mmlDelimiter", "mmlBar", "mmlGroupChar"]);
+
+/**
+ * 公式里的括号（m:d）、横线（m:bar）、分组字符（m:groupChr）没写属性时，补一个空的属性对象，让排版库按它自己的缺省值画
+ * （括号画成圆括号，横线不加线，分组字符放在下面、不画字符）。已有属性对象的不动。正文、页眉页脚、脚注尾注里的公式都补。
+ */
+export function fillMathProps(d: Node0): void {
+  const walk = (e: Node0) => {
+    if (MATH_NEEDS_PROPS.has(e.type) && !e.props) e.props = {};
+    (e.children ?? []).forEach(walk);
+  };
+  walk(d.documentPart.body);
+  for (const part of d.parts ?? []) {
+    if (part.rootElement) walk(part.rootElement);
+    for (const note of part.notes ?? []) walk(note);
+  }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
