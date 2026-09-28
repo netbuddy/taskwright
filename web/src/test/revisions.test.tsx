@@ -558,6 +558,31 @@ describe("生成文档：选一个修订加条目勾选", () => {
   });
 });
 
+describe("生成文档：修订日志后到，再从某次修订打开", () => {
+  // 工作视图的对话框在修订日志还没读到时就挂上了；读到日志之后第一次从修订卡片打开，要显示的是那次修订，不是最新的。
+  const at = (log: typeof LOG, open: boolean, revision: number | null) =>
+    <Wrap><DocumentModal task={task([UC1, UC2, TBD])} log={log} open={open} revision={revision} onClose={noop} /></Wrap>;
+
+  it("传进来了修订号就用它", async () => {
+    const preview = vi.spyOn(api, "previewDocument").mockResolvedValue({ text: "预览" });
+    const { rerender } = render(at([], false, null));
+    rerender(at(LOG, false, null));
+    rerender(at(LOG, true, 1));
+    await waitFor(() => expect(preview).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("doc-revision")).toHaveTextContent("修订 1"));
+    expect(preview).toHaveBeenLastCalledWith("TASK-001", { revision_no: 1 });
+    expect(preview.mock.calls.every((c) => (c[1] as { revision_no?: number }).revision_no === 1)).toBe(true);
+  });
+
+  it("没有传进来：打开时日志还没读到，读到之后选最新的", async () => {
+    const preview = vi.spyOn(api, "previewDocument").mockResolvedValue({ text: "预览" });
+    const { rerender } = render(at([], true, null));
+    rerender(at(LOG, true, null));
+    await waitFor(() => expect(preview).toHaveBeenLastCalledWith("TASK-001", { revision_no: 4 }));
+    expect(screen.getByTestId("doc-revision")).toHaveTextContent("修订 4");
+  });
+});
+
 describe("过程摘要：保存修订被拒附上原因", () => {
   it("原因多于一条的那一行可以点开逐条看全部原因，再点收起；只有一条原因的行不可点", () => {
     const summary = { type: "work_summary", message_id: "summary-u1", work_id: "w-u1", at: "", seconds: 12, step_count: 3, stages: [

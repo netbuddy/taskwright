@@ -24,8 +24,9 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { if (open) { setRevision(initial ?? latest); setUnchecked(new Set()); } }, [open, initial]);
-  // 打开时修订日志还没读到：读到之后选最新的那次。
-  useEffect(() => { if (open && !revision && latest) setRevision(latest); }, [open, latest]);
+  // 没有指定修订、打开时修订日志还没读到：读到之后选最新的那次。指定了修订时不管：这个副作用与上一个在同一次打开时先后执行，
+  // 它看到的 revision 还是打开之前的旧值（对话框在日志读到之前就挂上时是 0），不加这个条件会把刚设的那次盖成最新的。
+  useEffect(() => { if (open && initial == null && !revision && latest) setRevision(latest); }, [open, latest]);
 
   const alive = useMemo(() => aliveAt(log, revision), [log, revision]);
   const order = task.definition.collections.map((c) => c.name);
