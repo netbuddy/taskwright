@@ -149,7 +149,8 @@ describe("徽标与条目详情", () => {
     expect(screen.getByTestId("clause-body")).toHaveTextContent(/^UC-R7（必选）\s+基本流程每一步写明谁做了什么/);
     fireEvent.click(screen.getAllByTestId("fix-finding")[0]);
     expect(onPrefill).toHaveBeenCalledWith("请按评审发现改 UC-003 的基本流程第 2 项：第 2 步没有主语。");
-    expect(screen.getByTestId("review-one")).toBeDisabled();   // 当前修订上已经评过：只能「仍要重评」
+    expect(screen.getByTestId("review-one")).toBeDisabled();   // 当前修订上已经评过：同一次修订、同一套规则只评一次
+    expect(screen.getByTestId("review-one").title).toBe("这条在当前修订上已经评过，内容和规则都没变。没有通过：可以照发现修改之后再评，或者保留这种写法。");
     expect(onReview).not.toHaveBeenCalled();
     expect(screen.getByTestId("review-records")).toHaveTextContent("评审记录：修订 3 · 不合规 1 处");
   });

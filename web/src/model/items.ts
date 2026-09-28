@@ -1,6 +1,8 @@
 // 条目的几样由数据算出的状态，界面上的标签与筛选都用它们，不写死任何集合名或字段名。
 
 import type { Completion, CompletionCondition, FieldDef, FieldValue, Finding, Item, Review, ReviewRule, Task, Waiver } from "../api/types";
+// 带 .ts 扩展名：助手一侧的贯穿测试用 node 直接加载本文件（本文件别的引用都只是类型）。
+import { reviewVerdict, underCurrentRules, type VerdictState } from "../../../agent/src/lib/review_verdict.ts";
 
 /**
  * 评审状态：待评审、通过（advice 是可选规则给的建议条数）、不通过（problems 是必选规则的问题处数；kept 是用户保留写法的那条记录）。
@@ -9,21 +11,25 @@ import type { Completion, CompletionCondition, FieldDef, FieldValue, Finding, It
 export type ReviewState = { state: "pending" } | { state: "passed"; advice: number } | { state: "failed"; problems: number; advice: number; kept: Waiver | null };
 export type ConfirmState = "pending" | "confirmed" | "stale" | "rejected";
 
-/** 条目当前所在的修订上的评审状态：取针对这次修订的最近一条评审记录；没写修订号的评审按当前所在的修订算。 */
+/** 条目在当前所在的修订上的评审结论（agent/src/lib/review_verdict.ts，以当前规则下最后一条记录为准）；basis 是依据的那条记录。 */
+export function itemVerdict(item: Item, task?: Task): { state: VerdictState; basis: Review | null; waiver: Waiver | null } {
+  // 没写修订号的评审按当前所在的修订算；没带事件序号（早期的后端）时按列表里的先后，保留算在全部评审之后。
+  const reviews = item.reviews.map((r, i) => ({ revision_no: r.revision_no ?? item.revision_no, verdict: r.verdict, rules_hash: r.rules_hash, seq: r.seq ?? i, r }));
+  const waivers = (item.waivers ?? []).map((w) => ({ revision_no: w.revision_no, revoked: !!w.revoked, seq: w.seq ?? Number.MAX_SAFE_INTEGER, w }));
+  const v = reviewVerdict(item.revision_no, reviews, waivers, currentHash(task, item.collection));
+  return { state: v.state, basis: v.basis?.r ?? null, waiver: v.waiver?.w ?? null };
+}
+
+/** 条目当前所在的修订上的评审状态，按评审结论（itemVerdict）：已保留算作不通过、带上那条保留。 */
 export function reviewState(item: Item, task?: Task): ReviewState {
-  const mine = currentReviews(item, task);
-  const last = mine[mine.length - 1];
-  if (!last) return { state: "pending" };
-  const passed = [...mine].reverse().find((r) => r.verdict === "合规");
-  if (passed) {
-    const findings = passed.findings ?? [];
-    return { state: "passed", advice: findings.length - findings.filter(isProblem).length };
-  }
-  const findings = last.findings ?? [];
+  const { state, basis, waiver } = itemVerdict(item, task);
+  if (!basis) return { state: "pending" };
+  const findings = basis.findings ?? [];
   const problems = findings.filter(isProblem).length;
+  if (state === "passed") return { state: "passed", advice: findings.length - problems };
   // 早期的评审记录没有级别：不合规的每条发现都算问题。
   return { state: "failed", problems: findings.some((f) => f.level) ? problems : findings.length, advice: findings.some((f) => f.level) ? findings.length - problems : 0,
-    kept: activeWaiver(item) };
+    kept: waiver };
 }
 
 /** 一个集合现在的规则指纹；没有时为 null（不按指纹区分）。 */
@@ -31,25 +37,10 @@ export function currentHash(task: Task | undefined, collection: string): string 
   return task?.definition.collections.find((c) => c.name === collection)?.rules_hash ?? null;
 }
 
-/** 一条评审记录算不算在当前规则下：记录或当前指纹有一边为空时算。 */
-export function underCurrentRules(review: Review, hash: string | null): boolean {
-  return !review.rules_hash || !hash || review.rules_hash === hash;
-}
-
 /** 条目当前所在的修订上、当前规则下的评审记录，按先后。没给 task 时不按指纹区分。 */
 export function currentReviews(item: Item, task?: Task): Review[] {
   const hash = currentHash(task, item.collection);
-  return item.reviews.filter((r: Review) => (r.revision_no === undefined || r.revision_no === item.revision_no) && underCurrentRules(r, hash));
-}
-
-/** 条目当前所在的修订上、当前规则下最近一条评审记录；没有时为 undefined。 */
-export function currentReview(item: Item, task?: Task): Review | undefined {
-  return currentReviews(item, task).pop();
-}
-
-/** 条目在当前所在的修订上生效的保留（没撤销的最近一条）；没有时为 null。 */
-export function activeWaiver(item: Item): Waiver | null {
-  return [...(item.waivers ?? [])].reverse().find((w) => w.revision_no === item.revision_no && !w.revoked) ?? null;
+  return item.reviews.filter((r: Review) => (r.revision_no === undefined || r.revision_no === item.revision_no) && underCurrentRules(r.rules_hash, hash));
 }
 
 /** 规则改了之后要重评的条目：当前修订上有评审记录，但都不在当前规则下。 */
@@ -64,33 +55,40 @@ export function batchNo(task: Task, batchId: string | null | undefined): number 
   return task.review_batches?.find((b) => b.batch_id === batchId)?.no ?? null;
 }
 
-/** 一条发现现在的处理状态：已在修订 N 改（条目在更新的修订上有合规记录）、已保留（那次修订上有保留）、未处理。 */
-export type FindingStatus = { kind: "fixed"; revision: number } | { kind: "kept"; reason: string | null } | { kind: "open" };
+/**
+ * 一条不合规记录里的发现现在的处理状态：已在修订 N 改、已保留、未处理；superseded 是同一修订上被后来的记录取代、条目已经通过
+ * （只出现在同一修订只评一次之前留下的数据里），不写状态词，也不算未处理。按条目现在的评审结论（itemVerdict）认：
+ * - 依据的那条：不通过是未处理，已保留是已保留；
+ * - 更早修订上的：条目现在通过或已保留，是已在修订 N 改（N 是条目当前所在的修订），否则未处理；
+ * - 当前修订上、不是依据的（被后来的记录取代，或是旧规则下的）：随条目现在的结论，通过是 superseded，已保留是已保留，其余未处理。
+ */
+export type FindingStatus = { kind: "fixed"; revision: number } | { kind: "kept"; reason: string | null } | { kind: "open" } | { kind: "superseded" };
 
-export function findingStatus(item: Item, review: Review): FindingStatus {
-  const at = review.revision_no ?? item.revision_no;
-  const fixed = item.reviews.find((r) => (r.revision_no ?? 0) > at && r.verdict === "合规");
-  if (fixed) return { kind: "fixed", revision: fixed.revision_no! };
-  const kept = [...(item.waivers ?? [])].reverse().find((w) => w.revision_no === at && !w.revoked);
-  if (kept) return { kind: "kept", reason: kept.reason };
+export function findingStatus(item: Item, review: Review, task?: Task): FindingStatus {
+  const { state, basis, waiver } = itemVerdict(item, task);
+  if (state === "waived" && (review === basis || (review.revision_no ?? item.revision_no) === item.revision_no)) return { kind: "kept", reason: waiver!.reason };
+  if ((review.revision_no ?? item.revision_no) < item.revision_no) {
+    return state === "passed" || state === "waived" ? { kind: "fixed", revision: item.revision_no } : { kind: "open" };
+  }
+  if (review !== basis && state === "passed") return { kind: "superseded" };
   return { kind: "open" };
 }
 
-/** 发现状态的说法：「已在修订 8 改」「已保留：理由」「未处理」。 */
+/** 发现状态的说法：「已在修订 8 改」「已保留：理由」「未处理」；被取代的不写。 */
 export function findingStatusText(s: FindingStatus): string {
   if (s.kind === "fixed") return `已在修订 ${s.revision} 改`;
   if (s.kind === "kept") return s.reason ? `已保留：${s.reason}` : "已保留";
+  if (s.kind === "superseded") return "";
   return "未处理";
 }
 
-/** 未处理的问题数：每个要评审的条目最近一次评审里，状态是未处理的问题（必选规则的发现）。评审页签的角标用它。 */
+/** 未处理的问题数：每个要评审的条目，评审结论是不通过时依据的那条记录里的问题（必选规则的发现）。评审页签的角标用它。 */
 export function openProblems(task: Task): number {
   let n = 0;
   for (const item of task.items) {
     if (!needsReview(task, item.collection)) continue;
-    const last = item.reviews[item.reviews.length - 1];
-    if (!last || last.verdict === "合规" || findingStatus(item, last).kind !== "open") continue;
-    n += (last.findings ?? []).filter(isProblem).length;
+    const { state, basis } = itemVerdict(item, task);
+    if (state === "failed") n += (basis!.findings ?? []).filter(isProblem).length;
   }
   return n;
 }

@@ -303,7 +303,7 @@ function applyWaiver(state: WorkState, data: ReviewWaived, waived: boolean): Wor
     if (revision === undefined) return item;
     const waivers = item.waivers ?? [];
     return waived
-      ? { ...item, waivers: [...waivers, { revision_no: revision, reason: data.reason ?? null, source: data.source ?? undefined, at: data.at, revoked: false }] }
+      ? { ...item, waivers: [...waivers, { revision_no: revision, reason: data.reason ?? null, source: data.source ?? undefined, at: data.at, revoked: false, seq: data.seq }] }
       : { ...item, waivers: waivers.map((w) => (w.revision_no === revision && !w.revoked ? { ...w, revoked: true } : w)) };
   });
   return { ...state, task: withCompletion({ ...state.task, items }, data.completion), recentlyChanged: [...byId.keys()] };
@@ -410,7 +410,7 @@ function applyReviewRecorded(state: WorkState, data: ReviewRecorded): WorkState 
   const items = state.task.items.map((item) =>
     item.item_id === data.item_id
       ? { ...item, reviews: [...item.reviews, { revision_no: data.revision_no, verdict: data.verdict, findings: data.findings, at: data.at,
-          batch_id: data.batch_id ?? null, rules_hash: data.rules_hash ?? null, forced: !!data.forced }] }
+          batch_id: data.batch_id ?? null, rules_hash: data.rules_hash ?? null, forced: !!data.forced, seq: data.seq }] }
       : item,
   );
   return { ...state, task: withCompletion({ ...state.task, items }, data.completion), recentlyChanged: [data.item_id] };

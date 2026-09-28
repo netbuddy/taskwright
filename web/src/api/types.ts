@@ -124,8 +124,10 @@ export interface Review {
   batch_id?: string | null;
   /** 评审时的规则指纹；早期记录为空。 */
   rules_hash?: string | null;
-  /** 内容与规则都没变、用户仍要求重评的那一次。 */
+  /** 早期「仍要重评」写下的记录为真；现在同一次修订、同一套规则只评一次，新记录恒为假。读的时候与别的记录同样对待。 */
   forced?: boolean;
+  /** 记下这条评审的事件序号，认先后用（同一修订上以最后一条为准，保留要在它之后）；早期的后端不给。 */
+  seq?: number;
 }
 
 /** 用户保留了评审不合规的写法（评审豁免）。条目改出新修订后不再作数；撤销后 revoked 为真。 */
@@ -135,6 +137,8 @@ export interface Waiver {
   source?: "detail" | "panel" | string;
   at?: string;
   revoked?: boolean;
+  /** 记下这次保留的事件序号：保留只对它之前的最后一条评审作数；早期的后端不给。 */
+  seq?: number;
 }
 
 /** 一次评审（批次）：第几次、谁发起、范围与计数。 */
@@ -675,8 +679,6 @@ export interface ActionRequest {
   targets: { item_id?: string; base_revision?: number; revision_no?: number }[];
   fields?: Fields;
   notify_executor: boolean;
-  /** request_review：点名的条目在当前修订、当前规则下已经评过也再评一次（「仍要重评」）。 */
-  force?: boolean;
 }
 
 // ───────────── 8 错误 ─────────────
