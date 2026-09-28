@@ -5,7 +5,9 @@
 2. 用户打开条目详情（正式的 /tw-user 命令，kind 为 mark_viewed）就在条目当前修订上记为已读，事件是 ITEM_VIEWED；
    同一条目同一修订再打开一次不再写；
 3. 完成任务在还有未读、待评审的条目时被拒，拒绝文字写「还有 N 条你从没看过：……」与「……还没评审」；
-   用户打开看过、在界面上发起评审（假端点替评审者回「没有发现」）之后，任务变为已完成。
+   用户打开看过、在界面上发起评审（假端点替评审者回「没有发现」）之后，用户打字说「完成吧」，完成任务照样被拒：
+   要用户在问这个任务是否已经完成的卡片上点「已完成，提交交付物」；执行者发了这张卡片、用户点了之后（正式的 /tw-ui 命令），
+   任务变为已完成。
 
 断言只看事实：事件流、状态栏回传与 task.sqlite 里的行。
 """
@@ -54,6 +56,20 @@ def request_review(rig: Rig, op_id: str, count: int, targets=None) -> dict:
     command = {"op_id": op_id, "kind": "request_review", "targets": targets or []}
     rig.session.request("prompt", message="/tw-user " + json.dumps(command, ensure_ascii=False))
     return json.loads(rig.wait_status("taskwright-user-result", count)[-1])
+
+
+def click_card(rig: Rig, card_call_id: str, key: str, text: str) -> list[dict]:
+    """用户在卡片上点了一项：后端发的正是这条 /tw-ui 命令，它引出执行者的一次运行。返回这次运行的全部事件。"""
+    card_entry = next(e["id"] for e in rig.session_entries() if e.get("type") == "message"
+                      and any(p.get("type") == "toolCall" and p.get("id") == card_call_id
+                              for p in (e.get("message") or {}).get("content") or [] if isinstance(p, dict)))
+    command = {"op_id": "ui-op-card", "reply_entry": card_entry, "option_key": key, "option_text": text, "text": f"我选：{text}"}
+    return rig.say("/tw-ui " + json.dumps(command, ensure_ascii=False))
+
+
+#: 问这个任务是否已经完成的卡片：同意的那一项 key 是 complete。
+COMPLETION_CARD = {"kind": "choose", "text": "功能用例一共 2 个条目，都已经评审通过，你也都看过了。这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。",
+                   "options": [{"key": "complete", "text": "已完成，提交交付物"}, {"key": "continue", "text": "还没完成，继续修改"}]}
 
 
 def wait_review_finished(rig: Rig, op_id: str, timeout: float = 20.0) -> dict:
@@ -112,11 +128,13 @@ class ConfirmAndCompleteTests(unittest.TestCase):
         self.assertEqual(customs, [], "打开详情写已读不往会话里追加说明")
         self.assertEqual(after, before, "写已读不引出模型请求")
 
-    def test_还有未读与待评审时完成被拒_看过并评审之后任务变为已完成(self):
+    def test_还有未读与待评审时完成被拒_看过并评审之后打字说完成仍被拒_点卡片同意之后任务变为已完成(self):
         script = {"rules": [REVIEWER_PASSES], "sequence": [
             save_two(),
             {"tool_calls": [call("complete_task", {}, "call-complete-early")]},
             {"tool_calls": [reply_call("还有两条你没看过，也还没评审。", "call-ask")]},
+            {"tool_calls": [call("complete_task", {}, "call-complete-typed")]},
+            {"tool_calls": [reply_call("完成条件都满足了，请在卡片上选。", "call-card", COMPLETION_CARD)]},
             {"tool_calls": [call("complete_task", {}, "call-complete")]},
             {"tool_calls": [reply_call("任务已经完成。", "call-done")]},
         ]}
@@ -128,6 +146,8 @@ class ConfirmAndCompleteTests(unittest.TestCase):
             accepted = request_review(rig, "ui-op-review", 3)
             finished = wait_review_finished(rig, "ui-op-review")
             second = rig.say("都看过了，完成吧。")
+            status_typed = rig.rows("SELECT status FROM task")[0]["status"]
+            third = click_card(rig, "call-card", "complete", "已完成，提交交付物")
             task = rig.rows("SELECT status, ended_at FROM task")[0]
             completed = rig.rows("SELECT * FROM event WHERE name = 'TASK_COMPLETED'")
 
@@ -141,7 +161,13 @@ class ConfirmAndCompleteTests(unittest.TestCase):
         self.assertEqual(accepted["results"], [{"item_id": "UC-001", "revision_no": 1}, {"item_id": "UC-002", "revision_no": 1}])
         self.assertEqual((finished["total"], finished["passed"], finished["failed"], finished["unfinished"]), (2, 2, 0, 0))
 
-        done = {r["调用编号"]: r for r in tool_results(second)}["call-complete"]
+        typed = {r["调用编号"]: r for r in tool_results(second)}["call-complete-typed"]
+        self.assertTrue(typed["被拒"], "打字说完成不算同意")
+        self.assertIn("用户还没有在问这个任务是否已经完成的卡片上点「已完成，提交交付物」。", typed["文字"])
+        self.assertIn('{ key: "complete", text: "已完成，提交交付物" } 与「还没完成，继续修改」', typed["文字"])
+        self.assertEqual(status_typed, "进行中")
+
+        done = {r["调用编号"]: r for r in tool_results(third)}["call-complete"]
         self.assertFalse(done["被拒"], done["文字"])
         self.assertEqual(task["status"], "已完成")
         self.assertIsNotNone(task["ended_at"])
