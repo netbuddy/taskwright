@@ -234,17 +234,20 @@ export class PiSession {
     this.responses = new Map();
     this.stderrLines = [];
     const knowledge = launch.knowledgeSnapshot(this.workspace, this.profile);
-    const child = spawn(built.command, built.args, { cwd: this.workspace, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    // 启动失败有两种报法：命令行太长（E2BIG）、内存不足这类错误由 spawn 当场抛出，没有执行权限、找不到文件这类错误随后经
+    // error 事件报出。两种一样处理：关掉三个归档文件，再按错误代号报错。
+    let child: ChildProcess;
+    try {
+      child = spawn(built.command, built.args, { cwd: this.workspace, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    } catch (error) {
+      this.startFailed(error instanceof Error ? error : new Error(String(error)));
+    }
     this.process = child;
     const spawned = await new Promise<Error | null>((ok) => {
       child.once("spawn", () => ok(null));
       child.once("error", (error) => ok(error));
     });
-    if (spawned) {
-      this.process = null;
-      this.closeFiles();
-      throw (spawned as NodeJS.ErrnoException).code === "ENOENT" ? new PiNotFound(spawned) : spawned;
-    }
+    if (spawned) this.startFailed(spawned);
     this.exitedPromise = new Promise((ok) => child.once("exit", () => ok()));
     // 往已经关掉的管道里写时 Node 会异步报 EPIPE；不接住会把整个服务带倒。写不进去由 write 按进程已退出处理。
     child.stdin?.on("error", () => {});
@@ -296,6 +299,13 @@ export class PiSession {
     const child = this.process;
     if (child === null || child.exitCode !== null || child.signalCode !== null) return true;
     return Promise.race([this.exitedPromise.then(() => true), sleep(ms).then(() => false)]);
+  }
+
+  /** 子进程没有起来：清掉进程、关掉三个归档文件，报错。 */
+  private startFailed(error: Error): never {
+    this.process = null;
+    this.closeFiles();
+    throw (error as NodeJS.ErrnoException).code === "ENOENT" ? new PiNotFound(error) : error;
   }
 
   private closeFiles(): void {

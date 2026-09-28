@@ -143,6 +143,24 @@ test("发话：逐条交出一次运行的事件，直到 agent_settled；扩展
   assert.ok(notes.some((n) => n["记录"] === "本轮事实" && n["内容"].turnIndex === 0));
 });
 
+test("系统提示太长、命令行超过系统上限时 spawn 当场报 E2BIG：启动报错，进程清掉，三个归档文件的句柄都关掉", async () => {
+  // 系统提示文件的路径相对代码仓根目录；以 agent/ 开头时按 TASKWRIGHT_AGENT_DIR 找，这样超长的文件可以放在临时目录里。
+  const agentDir = join(tmp, "agent-e2big");
+  mkdirSync(agentDir);
+  writeFileSync(join(agentDir, "huge-prompt.md"), "x".repeat(1_000_000), "utf-8");   // 单个参数超过 Linux 的 128 KB 上限
+  const savedAgentDir = process.env.TASKWRIGHT_AGENT_DIR;
+  process.env.TASKWRIGHT_AGENT_DIR = agentDir;
+  try {
+    const pi = new PiSession({ ...PROFILE, system_prompt_file: "agent/huge-prompt.md" }, workspace, join(tmp, "runs-e2big"));
+    await assert.rejects(pi.start(), (e: unknown) => (e as NodeJS.ErrnoException).code === "E2BIG");
+    assert.equal(pi.process, null);
+    for (const key of ["archive", "notes", "times"]) assert.equal((pi as any)[key], null, `${key} 的句柄没有关掉`);
+  } finally {
+    if (savedAgentDir === undefined) delete process.env.TASKWRIGHT_AGENT_DIR;
+    else process.env.TASKWRIGHT_AGENT_DIR = savedAgentDir;
+  }
+});
+
 test("续接前改写会话文件记的工作目录，原文件原样备份；已经一致时什么都不做", () => {
   const dir = join(tmp, "sessions");
   mkdirSync(dir, { recursive: true });
