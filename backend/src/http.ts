@@ -16,7 +16,7 @@ import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
 import { appVersion } from "./paths.ts";
 import { probeModel } from "./model_probe.ts";
-import { MAX_UPLOAD, type Service, TOO_LARGE_TEXT, UPLOAD_TYPES, taskTypes, wordsLocator } from "./service.ts";
+import { MAX_UPLOAD, type Service, TOO_LARGE_TEXT, UPLOAD_TYPES, taskTypes, unsupportedTypeText, uploadTypesText, wordsLocator } from "./service.ts";
 import { isWebPath, webFile } from "./web.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
@@ -242,8 +242,9 @@ export function serviceInfo(service: Service, remote: string | null = null) {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
     capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available }, model: { name: model.name, reason: model.reason },
     // 上传上限与超过时的那句话：前端在发送之前按它拦下过大的文件（经开发服务器的代理上传过大文件时，代理可能回 502）。
-    // extensions 是允许上传的扩展名，前端据此过滤可选的文件、写上传框的说明。
-    upload: { max_bytes: MAX_UPLOAD, too_large_text: TOO_LARGE_TEXT, extensions: [...UPLOAD_TYPES] },
+    // extensions 是允许上传的扩展名，前端据此过滤可选的文件、在发送之前拦下类型不符的文件；types_text 是这些类型给人看的一串，
+    // 前端写上传框的说明用；unsupported_type_text 是类型不符时的那句话。叫法只在后端有一份。
+    upload: { max_bytes: MAX_UPLOAD, too_large_text: TOO_LARGE_TEXT, extensions: [...UPLOAD_TYPES], types_text: uploadTypesText(), unsupported_type_text: unsupportedTypeText() },
   };
 }
 

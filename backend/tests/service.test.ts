@@ -1,6 +1,6 @@
 /**
  * 服务层：建任务（起始文件、pi 项目设置、失败时整体清理、任务目录里没有指向自己的绝对路径）；上传材料的规则（类型、5 MB、
- * 重名加序号、投影保留名、路径越界）；Word 材料的投影、原样取回与 content 给投影；旧格式任务照样列出；占用标记的写入、
+ * 同名不同内容拒绝、投影保留名、路径越界）；Word 材料的投影、原样取回与 content 给投影；旧格式任务照样列出；占用标记的写入、
  * 拒绝、覆盖、删除；任务类型；用户直接操作的修订写成一句操作名。
  * 对应服务端 Python 测试 test_service_units（材料与旧格式两条）、test_new_workspace、test_isolation（占用锁部分与绝对路径）、
  * test_docx_material（读取与上传部分）。
@@ -156,22 +156,23 @@ test("任务类型：task-types 下每个目录，显示名取任务定义里的
 
 // ───────────── 材料 ─────────────
 
-test("上传材料：只收三种文本，重名加序号，超过 5 MB 拒绝，路径越界拒绝；任务页列出材料", async () => {
+test("上传材料：只收三种文本，同名不同内容拒绝（不再自动改名），超过 5 MB 拒绝，路径越界拒绝；任务页列出材料", async () => {
   const service = newService();
   try {
     const t = service.task(service.create({ task_type: "srs-authoring", task_name: "材料测试" }).task_id);
     assert.deepEqual(service.upload(t, "需求.md", Buffer.from("甲")), { ok: true, path: "inputs/需求.md" });
-    assert.equal(service.upload(t, "需求.md", Buffer.from("乙")).path, "inputs/需求-2.md");
+    assert.equal(codeOf(() => service.upload(t, "需求.md", Buffer.from("乙"))), "name_taken");
+    assert.equal(service.upload(t, "需求二.md", Buffer.from("乙")).path, "inputs/需求二.md");
     for (const [name, code] of [["图.png", "unsupported_type"], ["a/b.md", "bad_request"], ["a\\b.md", "bad_request"], ["", "bad_request"], ["x.DOCX.txt", "bad_request"], ["x.docx.MD", "bad_request"]]) {
       assert.equal(codeOf(() => service.upload(t, name, Buffer.from("x"))), code, name);
     }
     assert.equal(codeOf(() => service.upload(t, "大.txt", Buffer.alloc(5 * 1024 * 1024 + 1, 0x78))), "too_large");
-    assert.equal(readFileSync(service.materialPath(t, "inputs/需求-2.md"), "utf-8"), "乙");
+    assert.equal(readFileSync(service.materialPath(t, "inputs/需求二.md"), "utf-8"), "乙");
     for (const bad of ["inputs/../task.sqlite", "docs/task-definitions/srs-authoring.json", "/etc/passwd", ""]) {
       assert.equal(codeOf(() => service.materialPath(t, bad)), "bad_request", bad);
     }
     const page = service.taskPage(t);
-    assert.deepEqual(page.materials.map((m) => m.path), ["inputs/需求-2.md", "inputs/需求.md"]);
+    assert.deepEqual(page.materials.map((m) => m.path), ["inputs/需求.md", "inputs/需求二.md"]);
     assert.deepEqual([page.task_name, page.sessions], ["材料测试", []]);
   } finally {
     await service.close();
@@ -206,7 +207,7 @@ describe("Word 材料", () => {
     assert.equal(projectionPath(other), other + ".md");
   });
 
-  test("上传 docx：旁边生成投影与图片目录，重名时跟着新名字；材料清单标明派生自哪份 Word 文件", async () => {
+  test("上传 docx：旁边生成投影与图片目录；同一份文件再传被拒；材料清单标明派生自哪份 Word 文件", async () => {
     const service = newService();
     try {
       const t = service.task(service.create({ task_type: "srs-authoring", task_name: "Word 材料" }).task_id);
@@ -216,14 +217,10 @@ describe("Word 材料", () => {
       assert.ok(projection.includes("出处写 inputs/需求.docx#p段落号"));
       assert.ok(projection.includes("![图 1](inputs/需求.docx.media/image1.png)"));
       assert.ok(existsSync(join(t.dir, "inputs", "需求.docx.media", "image1.png")));
-      assert.equal(service.upload(t, "需求.docx", readFileSync(SAMPLE)).path, "inputs/需求-2.docx");
-      assert.ok(readFileSync(join(t.dir, "inputs", "需求-2.docx.md"), "utf-8").includes("![图 1](inputs/需求-2.docx.media/image1.png)"));
-      assert.ok(existsSync(join(t.dir, "inputs", "需求-2.docx.media", "image2.png")));
+      assert.equal(codeOf(() => service.upload(t, "需求.docx", readFileSync(SAMPLE))), "duplicate_content");
       const listing = () => service.taskPage(t).materials;
-      assert.deepEqual(listing().map((m) => m.path), ["inputs/需求-2.docx", "inputs/需求-2.docx.md", "inputs/需求-2.docx.segments.json",
-        "inputs/需求.docx", "inputs/需求.docx.md", "inputs/需求.docx.segments.json"], "图片目录不列");
+      assert.deepEqual(listing().map((m) => m.path), ["inputs/需求.docx", "inputs/需求.docx.md", "inputs/需求.docx.segments.json"], "图片目录不列");
       assert.deepEqual(Object.fromEntries(listing().map((m) => [m.path, m.derived_from])), {
-        "inputs/需求-2.docx": null, "inputs/需求-2.docx.md": "inputs/需求-2.docx", "inputs/需求-2.docx.segments.json": "inputs/需求-2.docx",
         "inputs/需求.docx": null, "inputs/需求.docx.md": "inputs/需求.docx", "inputs/需求.docx.segments.json": "inputs/需求.docx" });
       const segments = JSON.parse(readFileSync(join(t.dir, "inputs", "需求.docx.segments.json"), "utf-8"));
       assert.deepEqual([segments.source, segments.projection, segments.blocks.length], ["inputs/需求.docx", "inputs/需求.docx.md", 11]);

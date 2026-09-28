@@ -28,7 +28,7 @@ import { go, href } from "../router";
 import { useToast } from "../components/Toasts";
 import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
-import { tooLargeText } from "../model/upload";
+import { tooLargeText, unsupportedTypeText } from "../model/upload";
 import { executorHint } from "../components/work/executorHint";
 
 /** 「让助手改这一条」与「回答这个问题」预填的话。 */
@@ -158,10 +158,10 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   };
 
   const attach = async (file: File) => {
-    // 超过上限的文件不发请求，直接报后端给的那句话。
-    const tooLarge = tooLargeText(service.info, file);
-    if (tooLarge) {
-      toast.error(tooLarge);
+    // 类型不符或超过上限的文件不发请求，直接报后端给的那句话（先查类型，与后端的先后相同）。
+    const refused = unsupportedTypeText(service.info, file) ?? tooLargeText(service.info, file);
+    if (refused) {
+      toast.error(refused);
       return;
     }
     try {

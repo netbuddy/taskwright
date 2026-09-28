@@ -39,3 +39,18 @@ All four go away when the Python version and these saved outputs are retired.
 What step 12 used to check, a direct action while the assistant is not running, is now covered by the backend tests in
 `backend/tests/session_resume.test.ts` (after the assistant exited, before it was started, when resuming finds a different
 session, and while it is busy in another session) and `backend/tests/actions.test.ts` (no session given).
+
+Uploads have changed too: an upload whose bytes match a material already in the task is refused with `duplicate_content`,
+one whose name is taken by a material with other bytes with `name_taken`, instead of being stored as `<name>-2.<ext>`;
+and the unsupported type message is built from the upload extensions. So `compare.mts --against fixtures` reports the four
+steps below as different, and only these. They too go away when the Python version and these saved outputs are retired.
+
+| Step | What differs | Why |
+|---|---|---|
+| `上传重名文件（加 -2）` | 409 `duplicate_content` ("这份文件与已有的材料《需求说明.md》内容完全相同，没有重复保存。", `data.path` `inputs/需求说明.md`) instead of 200 with `inputs/需求说明-2.md`. | The step uploads the same name with the same bytes, which is now refused as duplicate content; the automatic `-2` name is gone. |
+| `上传：类型不支持` | The message is "只接受 .md、.txt 与 Word 的 .docx 文件。" instead of "只接受 .md、.txt 与 .docx（Word）三种文件。". | The message is built from the upload extensions and no longer states a count. |
+| `任务页` | The material list has no `inputs/需求说明-2.md`. | Same as the first row: that file is no longer stored. |
+| `材料原样 .md` | 404 `not_found` ("没有材料 inputs/需求说明-2.md。") instead of 200 with the file. | Same as the first row: the step reads the `-2` file. |
+
+What the first step used to check, a second file under a taken name, is now covered by `backend/tests/upload_dedup.test.ts`
+(same name with the same or other bytes, names that differ only in case, encoding or white space, and concurrent uploads).
