@@ -115,9 +115,14 @@ export function pendingReview(task: Task): Item[] {
   return task.items.filter((i) => needsReview(task, i.collection) && reviewState(i, task).state === "pending");
 }
 
-/** 评审不通过：要评审的集合里、当前所在的修订上最近一条评审是不合规的条目。 */
+/** 评审不通过：要评审的集合里、评审结论（itemVerdict）是不通过的条目；用户保留了写法的不算，见 keptReview。 */
 export function failedReview(task: Task): Item[] {
-  return task.items.filter((i) => needsReview(task, i.collection) && reviewState(i, task).state === "failed");
+  return task.items.filter((i) => needsReview(task, i.collection) && itemVerdict(i, task).state === "failed");
+}
+
+/** 已保留写法：要评审的集合里、评审不通过但用户保留了现在的写法的条目（评审结论为 waived，按用户的决定算通过）。 */
+export function keptReview(task: Task): Item[] {
+  return task.items.filter((i) => needsReview(task, i.collection) && itemVerdict(i, task).state === "waived");
 }
 
 /** 某个集合里编号为 ruleId 的那条规则；找不到时为 undefined。 */

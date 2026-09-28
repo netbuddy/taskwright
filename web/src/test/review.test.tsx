@@ -74,6 +74,17 @@ describe("条目区顶部的评审动作", () => {
     expect(screen.getByTestId("progress")).toHaveTextContent("5 个条目 · 待评审 2 · 评审不通过 1 ·");
   });
 
+  it("汇总行：评审不通过只数没有保留的，保留了写法的另写「已保留写法 N」；没有保留的条目时不写这一项", () => {
+    const kept = { ...FAILED, item_id: "UC-006", waivers: [{ revision_no: 3, reason: null, source: "panel", revoked: false }] };
+    panel({ task: task([FAILED, kept, PASSED_WITH_ADVICE, PENDING_A, TBD]) });
+    expect(screen.getByTestId("progress")).toHaveTextContent("5 个条目 · 待评审 1 · 评审不通过 1 · 已保留写法 1 ·");
+    cleanup();
+    // 撤销了的保留不算：这一条回到评审不通过。
+    panel({ task: task([FAILED, { ...kept, waivers: [{ ...kept.waivers[0], revoked: true }] }]) });
+    expect(screen.getByTestId("progress")).toHaveTextContent("2 个条目 · 待评审 0 · 评审不通过 2 · 0 条未读");
+    expect(screen.getByTestId("progress")).not.toHaveTextContent("已保留写法");
+  });
+
   it("没有待评审的条目、助手工作中、上一批还在评时灰化，悬停写明原因", () => {
     render(<Wrap><ItemsPanel task={task([FAILED])} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected={null}
       onSelect={noop} submit={vi.fn(async () => null)} onGenerateDoc={noop} onReview={vi.fn()} /></Wrap>);

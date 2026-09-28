@@ -10,7 +10,8 @@
 // 宽屏时列表每行在标题后多一列「一句摘要」，显隐由样式里的容器查询按条目区宽度决定（阈值 40rem）。
 //
 // 评审：顶上一行右侧「评审 N 条待评审的条目」（N 为 0、助手工作中、上一批还在评时灰化并悬停说明），点了发 request_review；
-// 后端核对通过就回应，评审在后台跑，进度与结果由全站提示条报（workToasts.ts）。进度汇总一行写待评审与评审不通过各几条。点开进度看到的完成条件
+// 后端核对通过就回应，评审在后台跑，进度与结果由全站提示条报（workToasts.ts）。进度汇总一行写待评审、评审不通过（不含保留的）各几条，
+// 有保留了写法的条目时另写「已保留写法 N」。点开进度看到的完成条件
 // 与任务页是同一个面板，评审那一条旁边有「评审这 N 条」与「打开 X」。
 // 问题跟着条目走（ItemIssues.tsx）：列表行的状态徽标里带「问题 N」（ItemStatus.tsx），详情顶部列出挂在这条上的问题；从问题卡片上的「牵涉 UC-003」跳来时
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
@@ -18,7 +19,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Item, Task } from "../../api/types";
 import type { ReviewRun } from "../../state/workState";
-import { BUSY_TEXT, FILTERS, failedReview, isEmptyValue, isUnread, keepPendingField, matchesFilter, needsReading, pendingReview, reviewOffReason, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
+import { BUSY_TEXT, FILTERS, failedReview, isEmptyValue, isUnread, keptReview, keepPendingField, matchesFilter, needsReading, pendingReview, reviewOffReason, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
 import { CompletionPanel } from "../CompletionPanel";
 import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
@@ -131,6 +132,7 @@ export function ItemsPanel({
   const hitsIn = (collection: string) => task.items.filter((i) => i.collection === collection && hitIds.includes(i.item_id)).length;
   const toReview = pendingReview(task);
   const failed = failedReview(task);
+  const kept = keptReview(task);
   const reviewing = !!review && !review.finished;
   const reviewOff = reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: toReview.length });
   const reviewItems = (list: Item[], label: string) =>
@@ -189,7 +191,7 @@ export function ItemsPanel({
           <span className="sw-hitnote" role="button" title="点一下取消高亮" onClick={onClearHit} data-testid="hit-note">修订 {hit.revision} 碰到的条目 ✕</span>
         )}
         <span className="prog" role="button" onClick={() => setShowProgress(!showProgress)} data-testid="progress">
-          {task.items.length} 个条目 · 待评审 {toReview.length} · 评审不通过 {failed.length} · {unread.length} 条未读；问题 {unresolved} 条未解决 {showProgress ? "▴" : "▾"}
+          {task.items.length} 个条目 · 待评审 {toReview.length} · 评审不通过 {failed.length}{kept.length > 0 ? ` · 已保留写法 ${kept.length}` : ""} · {unread.length} 条未读；问题 {unresolved} 条未解决 {showProgress ? "▴" : "▾"}
         </span>
       </div>
       <div className={`prog-detail${showProgress ? " show" : ""}`}>
