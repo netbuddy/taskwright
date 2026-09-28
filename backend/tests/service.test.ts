@@ -219,9 +219,10 @@ describe("Word 材料", () => {
       assert.ok(existsSync(join(t.dir, "inputs", "需求.docx.media", "image1.png")));
       assert.equal(codeOf(() => service.upload(t, "需求.docx", readFileSync(SAMPLE))), "duplicate_content");
       const listing = () => service.taskPage(t).materials;
-      assert.deepEqual(listing().map((m) => m.path), ["inputs/需求.docx", "inputs/需求.docx.md", "inputs/需求.docx.segments.json"], "图片目录不列");
+      assert.deepEqual(listing().map((m) => m.path), ["inputs/需求.docx", "inputs/需求.docx.locations.json", "inputs/需求.docx.md", "inputs/需求.docx.segments.json"], "图片目录不列");
       assert.deepEqual(Object.fromEntries(listing().map((m) => [m.path, m.derived_from])), {
-        "inputs/需求.docx": null, "inputs/需求.docx.md": "inputs/需求.docx", "inputs/需求.docx.segments.json": "inputs/需求.docx" });
+        "inputs/需求.docx": null, "inputs/需求.docx.locations.json": "inputs/需求.docx", "inputs/需求.docx.md": "inputs/需求.docx",
+        "inputs/需求.docx.segments.json": "inputs/需求.docx" });
       const segments = JSON.parse(readFileSync(join(t.dir, "inputs", "需求.docx.segments.json"), "utf-8"));
       assert.deepEqual([segments.source, segments.projection, segments.blocks.length], ["inputs/需求.docx", "inputs/需求.docx.md", 11]);
       writeFileSync(join(t.dir, "inputs", "需求.docx.txt"), "[第 1 段] 旧", "utf-8");
