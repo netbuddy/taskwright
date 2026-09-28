@@ -1,14 +1,13 @@
 // Word 材料（.docx）在材料区按原版式分页显示（docx-preview 0.4.1，版本钉死），以及由段落号派生给人看的「第几页 · 哪一节 · 页上中下」。
 //
 // 段落号的计数规则与投影（agent 的 lib/docx_markdown.ts）、scripts/docx_paragraphs.mjs 相同：正文里的段落，
-// 含表格与嵌套表格里的，不含文本框里的。库里的来源存段落号（inputs/x.docx#p37），页、章节、位置只在这里派生，不入库。
+// 含表格与嵌套表格里的，不含文本框里的。库里的来源存段落号（inputs/x.docx#p37）。页码与页内位置由这里从显示结果里数出；
+// 章节不在这里算，查后端上传时写的位置表（x.docx.locations.json，agent 的 lib/docx_locations.ts 的 chapterOf）。
 //
 // 分页开着时 docx-preview 有几处要修补（渲染前改解析树、渲染后整理页面，详见 prepare 与 arrangePages 的说明）：
 // 分页标记处把一段拆成两个元素、空的前一半与空页、后面的节不沿用页眉页脚、页码域照抄、带上标的注释引用登记两次。
 
 import { defaultOptions, parseAsync, renderDocument } from "docx-preview";
-// 标题判断与投影共用一份规则（agent 的 lib/docx_heading.ts，不依赖任何模块）。
-import { headingLevel } from "../../../agent/src/lib/docx_heading";
 
 /** 注释引用的上标数字与普通上标都画成 sup；注释引用的唯一子节点是字符串，据此加 class，回填与查找时跳过。 */
 function h(props: Parameters<typeof defaultOptions.h>[0]): Node {
@@ -23,14 +22,10 @@ export const RENDER_OPTIONS = {
   renderChanges: false, renderComments: false, renderHeaders: true, renderFooters: true, renderFootnotes: true, renderEndnotes: true,
 };
 
-/** 一段是不是标题（大纲级别，0 是一级标题，规则见 agent 的 lib/docx_heading.ts）与标题怎么写（「3.2 借阅规则」）。 */
-export interface ParagraphInfo { heading: number | null; title: string }
-
 export interface RenderedDocx {
   root: HTMLElement;
   /** paras[N]：第 N 段渲染出来的元素，一般一个，被分页拆开的两个。下标 0 不用。 */
   paras: HTMLElement[][];
-  info: (ParagraphInfo | null)[];
   /** 文件里分页标记的个数；为 0 时不写「第几页」。 */
   marks: number;
 }
@@ -41,56 +36,21 @@ type Node0 = any;
 
 /**
  * 渲染之前，在解析树上：
- * 1. 按计数规则给每段打上 class「tw-p tw-pn-N」；分页拆开的后一半是前一半的浅拷贝，带着同一个 class，渲染后据此认回同一段；
- * 2. 记下每段的标题级别（与投影同一份规则：大纲级别，没写时看样式名）与标题编号（只认十进制编号，如 3.2；别的编号格式只取标题文字）；
- * 3. 后面的节没写自己的页眉页脚时沿用前一节的（Word 这样显示，docx-preview 不沿用）；
- * 4. 页眉页脚里 PAGE、NUMPAGES 域的显示结果打上 class，渲染后填真页码与总页数（docx-preview 照抄保存时的结果）；
- * 5. 脚注尾注引用所在文字块的上标格式去掉：带上标的文字块会被渲染两次，注释因此登记两次（引用号变 2、注释列两遍）；引用本来就画成上标。
+ * 1. 按计数规则给每段打上 class「tw-p tw-pn-N」，并数分页标记；分页拆开的后一半是前一半的浅拷贝，带着同一个 class，渲染后据此认回同一段；
+ * 2. 后面的节没写自己的页眉页脚时沿用前一节的（Word 这样显示，docx-preview 不沿用）；
+ * 3. 页眉页脚里 PAGE、NUMPAGES 域的显示结果打上 class，渲染后填真页码与总页数（docx-preview 照抄保存时的结果）；
+ * 4. 脚注尾注引用所在文字块的上标格式去掉：带上标的文字块会被渲染两次，注释因此登记两次（引用号变 2、注释列两遍）；引用本来就画成上标。
  */
-export function prepare(d: Node0): { info: (ParagraphInfo | null)[]; marks: number } {
-  const styles = new Map<string, Node0>((d.stylesPart?.styles ?? []).map((s: Node0) => [s.id, s]));
-  const fromStyle = (id: string | undefined, key: string) => {
-    for (let s = id ? styles.get(id) : undefined, i = 0; s && i < 10; s = styles.get(s.basedOn), i++) {
-      if (s.paragraphProps?.[key] != null) return s.paragraphProps[key];
-    }
-    return undefined;
-  };
-  const levels = new Map<string, Node0>((d.numberingPart?.domNumberings ?? []).map((l: Node0) => [`${l.id}:${l.level}`, l]));
-  const counters = new Map<string, number[]>();
-  const info: (ParagraphInfo | null)[] = [null];
+export function prepare(d: Node0): { marks: number } {
+  let count = 0;
   let marks = 0;
-  const textOf = (e: Node0): string => (e.type === "text" ? e.text : e.type === "deletedText" ? "" : (e.children ?? []).map(textOf).join(""));
   const countMarks = (e: Node0) => {
     if (e.type === "break" && e.break === "lastRenderedPageBreak") marks++;
     (e.children ?? []).forEach(countMarks);
   };
   const para = (p: Node0) => {
-    const n = info.length;
-    p.className = [p.className, "tw-p", `tw-pn-${n}`].filter(Boolean).join(" ");
+    p.className = [p.className, "tw-p", `tw-pn-${++count}`].filter(Boolean).join(" ");
     countMarks(p);
-    const num = p.numbering ?? fromStyle(p.styleName, "numbering");
-    let label = "";
-    if (num) {
-      const c = counters.get(num.id) ?? [];
-      counters.set(num.id, c);
-      // 编号没写级别（w:ilvl）时按第 0 级，与 Word 和投影相同（编号写在样式里常只写 w:numId）。
-      const level: number = num.level ?? 0;
-      const lv = levels.get(`${num.id}:${level}`);
-      c[level] = (c[level] ?? Number(lv?.start ?? 1) - 1) + 1;
-      c.length = level + 1;
-      let decimal = !!lv;
-      label = String(lv?.levelText ?? "").replace(/%(\d)/g, (_, k: string) => {
-        const l = levels.get(`${num.id}:${Number(k) - 1}`);
-        if (l?.format !== "decimal") decimal = false;
-        return String(c[Number(k) - 1] ?? l?.start ?? 1);
-      });
-      if (!decimal) label = "";
-    }
-    const heading = headingLevel(p.outlineLevel, p.styleName, (id) => {
-      const s = styles.get(id);
-      return s && { name: s.name, basedOn: s.basedOn, outline: s.paragraphProps?.outlineLevel };
-    });
-    info.push({ heading, title: [label, textOf(p).trim()].filter(Boolean).join(" ") });
   };
   const blocks = (els: Node0[] | undefined) => {
     for (const e of els ?? []) {
@@ -131,7 +91,7 @@ export function prepare(d: Node0): { info: (ParagraphInfo | null)[]; marks: numb
     };
     walk(root);
   }
-  return { info, marks };
+  return { marks };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -208,10 +168,10 @@ export function polish(root: HTMLElement): void {
 /** 解析、修补、渲染进 into（清空原有内容），按页整理。into 可以不在页面上。 */
 export async function renderDocx(data: ArrayBuffer | Uint8Array, into: HTMLElement): Promise<RenderedDocx> {
   const d = await parseAsync(data instanceof Uint8Array ? data : new Uint8Array(data), RENDER_OPTIONS);
-  const { info, marks } = prepare(d);
+  const { marks } = prepare(d);
   const nodes = await renderDocument(d, RENDER_OPTIONS);
   into.replaceChildren(...nodes);
-  return { root: into, paras: arrangePages(into), info, marks };
+  return { root: into, paras: arrangePages(into), marks };
 }
 
 export interface CharAt { node: Text; i: number; ch: string }
@@ -257,11 +217,10 @@ export function placeExcerpt(texts: string[], n: number, excerpt: string): Place
   return { kind: "miss" };
 }
 
-/** 派生表：由段落号查页、章节、位置要用的一切，纯数据，渲染出来的元素没了也能用。 */
+/** 派生表：由段落号查页码与页内位置要用的一切，纯数据，渲染出来的元素没了也能用。 */
 export interface DocxTable {
   marks: number;
   pages: number;
-  info: (ParagraphInfo | null)[];
   /** texts[N]：第 N 段去掉空白后的文字。 */
   texts: string[];
   /** parts[N]：第 N 段的各部分从第几个字起、在第几页、页上中下。 */
@@ -292,28 +251,26 @@ export function tableOf(r: RenderedDocx): DocxTable {
       return part;
     });
   });
-  return { marks: r.marks, pages: sheets.length, info: r.info, texts, parts };
+  return { marks: r.marks, pages: sheets.length, texts, parts };
 }
 
 /**
- * 给人看的三段：「第 3 页」「3.1.1 逾期罚款」「页下」，取不到的段省略。
+ * 页面从显示结果里数出的页码与页内位置：「第 3 页」「页下」，取不到的为 null。
  * 页：摘录第一个字所在的那部分落在第几页（找不到摘录时按这一段的第一部分）；文件里没有分页标记时不写。
- * 章节：这一段（含）之前最近的标题。位置：这一段在本页正文段落（含表格里的）里排在前、中、后三分之一。
+ * 位置：这一段在本页正文段落（含表格里的）里排在前、中、后三分之一。
  */
-export function whereOf(t: DocxTable, n: number, excerpt?: string): string[] {
+export function pageAndPosition(t: DocxTable, n: number, excerpt?: string): { page: string | null; position: string | null } {
   const parts = t.parts[n];
-  if (!parts?.length) return [];
+  if (!parts?.length) return { page: null, position: null };
   const place = excerpt ? placeExcerpt(t.texts, n, excerpt) : { kind: "miss" as const };
   const start = place.kind === "miss" ? 0 : place.start;
   const part = [...parts].reverse().find((p) => p.from <= start) ?? parts[0];
-  const out: string[] = [];
-  if (t.marks > 0 && part.page) out.push(`第 ${part.page} 页`);
-  for (let m = n; m >= 1; m--) {
-    const i = t.info[m];
-    if (i?.heading != null) { if (i.title) out.push(i.title); break; }
-  }
-  if (part.pos) out.push(part.pos);
-  return out;
+  return { page: t.marks > 0 && part.page ? `第 ${part.page} 页` : null, position: part.pos || null };
+}
+
+/** 来源标签里给人看的几段，按「第几页 · 章节 · 页上中下」的先后，取不到的省略。章节来自位置表（chapterOf）。 */
+export function placeText(page: string | null, chapter: string | null, position: string | null): string[] {
+  return [page, chapter, position].filter((x): x is string => !!x);
 }
 
 /** 出处「inputs/x.docx#p37」拆成路径与段落号；不是 .docx 时段落号为 null。 */

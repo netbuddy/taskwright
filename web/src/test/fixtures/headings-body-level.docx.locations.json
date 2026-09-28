@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "rules_version": 1,
-  "说明": "Word 材料的位置表：由段落号得出来源标签里的章节；规则见 agent/src/lib/docx_locations.ts。headings 列出每个标题段，level 1 是一级标题；一段的章节是它（含）之前最近的标题。不含正文的文字。",
+  "rules_version": 2,
+  "说明": "Word 材料的位置表：由段落号得出来源标签里的章节；规则见 agent/src/lib/docx_locations.ts。headings 列出投影里写成标题行的段落，level 1 是一级标题，title 与投影的标题行相同（编号加标题文字）；一段的章节是它（含）之前最近的标题。不含正文的文字。",
   "source": "inputs/headings-body-level.docx",
   "paragraphs": 8,
   "page_marks": 0,

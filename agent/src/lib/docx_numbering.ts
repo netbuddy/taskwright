@@ -1,6 +1,6 @@
 /**
- * Word 自动编号怎样数、怎样写：投影（lib/docx_markdown.ts，编号写在标题与列表项前面）与位置规则（lib/docx_locations.ts，
- * 标题文字里的编号）共用这一份。编号定义从 numbering.xml 读出之后交给这里，这里不读 XML，也不依赖任何模块，前端可以直接引用。
+ * Word 自动编号怎样数、怎样写：投影（lib/docx_markdown.ts）用它把编号写在标题与列表项前面；位置表的标题取自投影，
+ * 所以也经过这里。编号定义从 numbering.xml 读出之后交给这里，这里不读 XML，也不依赖任何模块。
  *
  * 数法：每套编号（w:numId）各自计数；某一级第一次出现时从它的起始值数起（w:num 里的 w:startOverride 先于 w:lvl 里的 w:start），
  * 之后每出现一次加一；上一级加一时更深的级别重新数。编号定义里没有这一级的段落不数。
@@ -44,12 +44,10 @@ export function formatNumber(n: number, format: string | undefined): string {
   }
 }
 
-/** 一段的编号：写出来的文字（已去掉首尾空白）、是不是项目符号、引用到的各级是不是都写成十进制阿拉伯数字。 */
+/** 一段的编号：写出来的文字（已去掉首尾空白）、是不是项目符号。 */
 export interface NumberingLabel {
   label: string;
   bullet: boolean;
-  /** 级别文字引用到的每一级都写十进制（格式是 decimal 或没写格式，或者这一级是法律式编号）；项目符号与「不编号」为 false。 */
-  decimal: boolean;
 }
 
 /** 按文件里的先后逐段数编号。levels 的键是「numId:级别」。 */
@@ -63,21 +61,18 @@ export class NumberingCounter {
   /** 这一段的编号（numId 与级别 ilvl 已经沿样式找好）；编号定义里没有这一级时是空的，也不计数。 */
   next(numId: string, ilvl: number): NumberingLabel {
     const lv = this.levels.get(`${numId}:${ilvl}`);
-    if (!lv) return { label: "", bullet: false, decimal: false };
+    if (!lv) return { label: "", bullet: false };
     const c = this.counters.get(numId) ?? [];
     this.counters.set(numId, c);
     c[ilvl] = (c[ilvl] ?? lv.start - 1) + 1;
     c.length = ilvl + 1;
-    if (lv.format === "bullet") return { label: "", bullet: true, decimal: false };
-    if (lv.format === "none") return { label: "", bullet: false, decimal: false };
-    let decimal = true;
+    if (lv.format === "bullet") return { label: "", bullet: true };
+    if (lv.format === "none") return { label: "", bullet: false };
     const label = lv.text.replace(/%(\d)/g, (_, k: string) => {
       const i = Number(k) - 1;
       const l = this.levels.get(`${numId}:${i}`);
-      const format = lv.legal ? "decimal" : l?.format;
-      if (format !== undefined && format !== "decimal") decimal = false;
-      return formatNumber(c[i] ?? l?.start ?? 1, format);
+      return formatNumber(c[i] ?? l?.start ?? 1, lv.legal ? "decimal" : l?.format);
     });
-    return { label: label.trim(), bullet: false, decimal };
+    return { label: label.trim(), bullet: false };
   }
 }

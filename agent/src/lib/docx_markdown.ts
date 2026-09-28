@@ -5,7 +5,8 @@
  * 段落号的计数规则与 scripts/docx_paragraphs.mjs、材料区渲染后的回填相同，三处必须一致：
  * - 数 word/document.xml 里 w:body 下的每个 w:p，表格与嵌套表格里的段落也数，纵向合并续格里的空段落照数；
  * - 文本框里的段落（w:txbxContent，wps 一份与 VML 后备一份）不数；脚注、尾注、批注、页眉页脚在别的部件里，不读。
- * 一段的文字是它自己的 w:t（插入的字算，删除的字在 w:delText 里不算，域代码在 w:instrText 里不算，锚在它里面的文本框的字不算）。
+ * 一段的文字是它自己的 w:t（插入的字算，删除的字在 w:delText 里不算，域代码在 w:instrText 里不算，锚在它里面的文本框的字不算），
+ * 以及公式里的 m:t（只取文字，按原顺序接上，不还原公式的排版）。
  *
  * 投影的写法（每段一行，段落号 [pN] 写在正文前面，它右边就是这一段的正文）：
  * - 标题（lib/docx_heading.ts 的规则：段落或样式的大纲级别，没写时看样式名「heading N」「标题 N」）写 # 到 ######；
@@ -13,7 +14,8 @@
  * - 列表项写「- 」，编号本身是「1.」这类有序列表标记时直接当标记；下一级缩进三个空格；
  * - 表格一行写一行，第一行当表头；一格里的几段用 <br> 隔开、各带段落号；横向合并跨过的列写（同左），
  *   纵向合并续格写（同上）；嵌在格里的小表格拆开写进外层格子，前面注明（小表第 r 行第 c 列）；
- * - 图片写 ![图 k](文件名.docx.media/imageN.png)，占所在段落的段落号；Word 图表、SmartArt 写一行没有段落号的占位；
+ * - 图片写 ![图 k](文件名.docx.media/imageN.png)，占所在段落的段落号；标题里的图片另起一行写在标题行下面（没有段落号），
+ *   不进标题文字；Word 图表、SmartArt 写一行没有段落号的占位；
  * - 文本框里的字写在所在段落下面的引用块里（> （文本框）……），没有段落号；
  * - 空段落（没有文字也没有图片）不写，段落号照数；段内换行与制表符写成一个空格。
  * 只用 Node 自带模块。
@@ -96,14 +98,14 @@ function at(el: XmlElement | undefined, path: string): XmlElement | undefined {
   for (const part of path.split("/")) el = child(el, part);
   return el;
 }
-export const valOf = (el: XmlElement | undefined, path: string) => at(el, path)?.attrs["w:val"];
+const valOf = (el: XmlElement | undefined, path: string) => at(el, path)?.attrs["w:val"];
 function* descendants(el: XmlElement): Generator<XmlElement> {
   for (const c of elements(el)) { yield c; yield* descendants(c); }
 }
 
 // ───────────── 样式、编号、关系 ─────────────
 
-export class Styles {
+class Styles {
   private byId = new Map<string, XmlElement>();
   constructor(xml: string | null) {
     if (!xml) return;
@@ -128,7 +130,7 @@ export class Styles {
 }
 
 /** numbering.xml 读成编号定义（键是「numId:级别」，起始值已按 w:startOverride 覆盖）；怎样数、怎样写在 lib/docx_numbering.ts。 */
-export function numberingLevels(xml: string | null): Map<string, NumberingLevel> {
+function numberingLevels(xml: string | null): Map<string, NumberingLevel> {
   const levels = new Map<string, NumberingLevel>();
   const root = xml ? child(parseXml(xml), "w:numbering") : undefined;
   if (!root) return levels;
@@ -149,7 +151,7 @@ export function numberingLevels(xml: string | null): Map<string, NumberingLevel>
 }
 
 /** 一段用哪套编号的哪一级：段落自己写的先于样式（沿 basedOn 往上找），级别没写时是 0；没有编号或 numId 为 0 时 null。 */
-export function paragraphNumbering(p: XmlElement, styles: Styles): { numId: string; ilvl: number } | null {
+function paragraphNumbering(p: XmlElement, styles: Styles): { numId: string; ilvl: number } | null {
   const sid = valOf(p, "w:pPr/w:pStyle");
   const numId = valOf(p, "w:pPr/w:numPr/w:numId") ?? styles.prop(sid, "w:numPr/w:numId");
   if (!numId || numId === "0") return null;
@@ -164,8 +166,7 @@ class Numbering {
   }
   /** 这一段的编号文字与是不是项目符号。每套编号（numId）各自计数，上一级加一时更深的级别重新数，与材料区相同。 */
   next(numId: string, ilvl: number): { label: string; bullet: boolean } {
-    const { label, bullet } = this.counter.next(numId, ilvl);
-    return { label, bullet };
+    return this.counter.next(numId, ilvl);
   }
 }
 
@@ -218,6 +219,8 @@ function paragraph(p: XmlElement, parts: Parts, images: { count: number }): Para
           break;
         }
         case "w:t": pieces.push({ text: textOf(c) }); break;
+        // 公式里的字：只取文字、按原顺序接在段落文字里，不还原分式、上下标等排版（分式 a/b 写成 ab）。
+        case "m:t": pieces.push({ text: textOf(c) }); break;
         case "w:tab": if (el.name === "w:r") pieces.push({ text: "\t" }); break;
         case "w:br": case "w:cr":
           if (el.name === "w:r" && c.attrs["w:type"] !== "page" && c.attrs["w:type"] !== "column") pieces.push({ text: "\n" });
@@ -301,10 +304,21 @@ export const MEDIA_SUFFIX = ".media";
 
 const anchor = (n: number) => `[p${n}]`;
 
+const imageLink = (x: { image: number; target: string; alt: string }, media: string) =>
+  `![图 ${x.image}${x.alt ? `：${oneLine(x.alt)}` : ""}](${media}/${basename(x.target)})`;
+
 function inline(p: Para, media: string, cell: boolean): string {
-  const s = oneLine(p.pieces.map((x) =>
-    "text" in x ? x.text : "image" in x ? ` ![图 ${x.image}${x.alt ? `：${oneLine(x.alt)}` : ""}](${media}/${basename(x.target)}) ` : "").join("")).trim();
+  const s = oneLine(p.pieces.map((x) => "text" in x ? x.text : "image" in x ? ` ${imageLink(x, media)} ` : "").join("")).trim();
   return cell ? s.replace(/\|/g, "\\|") : s;
+}
+
+/**
+ * 标题段的编号与标题文字：编号是 Word 自动编号算出的（有就写，任何格式），标题文字是这一段的字，图片不算。
+ * 投影的标题行（「# 编号 [pN] 标题文字」，标题里的图片另起一行写在它下面）、分段清单的块标题（取自标题行）
+ * 与位置表的标题（docxProjection 返回的 headings）都出自这里。
+ */
+function headingTitle(p: Para): { label: string; text: string } {
+  return { label: p.label, text: oneLine(p.pieces.map((x) => ("text" in x ? x.text : "")).join("")).trim() };
 }
 
 const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);
@@ -362,6 +376,8 @@ export interface DocxProjection {
   paragraphs: number;
   /** 投影里链接到的图片：word/media/ 下的文件名 → 字节。 */
   media: Map<string, Buffer>;
+  /** 投影里写成标题行的段落：段落号、级别（1 是一级）与标题文字（「编号 标题文字」，没有编号时只有标题文字）。表格里的段落不写成标题。 */
+  headings: { paragraph: number; level: number; title: string }[];
 }
 
 /**
@@ -394,9 +410,26 @@ export function docxProjection(data: Buffer, rel: string): DocxProjection {
       for (const x of b.pieces) if ("image" in x) { const e = entries.get(`word/${x.target.replace(/^\.?\//, "")}`) ?? entries.get(x.target.replace(/^\//, "")); if (e) used.set(basename(x.target), e()); }
     } else for (const row of b.rows) for (const c of row) c.items.forEach(collectImages);
   };
+  const headings: DocxProjection["headings"] = [];
   for (const b of blocks) {
     collectImages(b);
-    if (b.kind === "p") {
+    if (b.kind === "p" && b.heading !== null) {
+      // 标题行只写编号与标题文字；标题里的图片另起一行写在下面，不进标题文字。
+      const { label, text } = headingTitle(b);
+      const images = b.pieces.filter((x): x is { image: number; target: string; alt: string } => "image" in x);
+      const extra = charts(b);
+      const written = !!text.replace(/\s+/g, "") || images.length > 0;
+      if (!written && !b.boxes.length && !extra.length) continue;
+      blank();
+      if (written) {
+        out.push(prefix(b) + `${label ? label + " " : ""}${anchor(b.n)} ${text}`.trimEnd() + "\n");
+        headings.push({ paragraph: b.n, level: b.heading + 1, title: [label, text].filter(Boolean).join(" ") });
+      }
+      for (const x of images) out.push(`\n${imageLink(x, media)}\n`);
+      for (const c of extra) out.push(`\n${c}\n`);
+      for (const box of b.boxes) out.push("\n" + box.map((t, i) => (i === 0 ? "> （文本框）" : "> ") + t).join("\n") + "\n");
+      prev = "other";
+    } else if (b.kind === "p") {
       const line = paraLine(b, media, false);
       const extra = charts(b);
       if (line === null && !b.boxes.length && !extra.length) continue;
@@ -418,5 +451,5 @@ export function docxProjection(data: Buffer, rel: string): DocxProjection {
       prev = "other";
     }
   }
-  return { markdown: out.join(""), paragraphs: numbers.size, media: used };
+  return { markdown: out.join(""), paragraphs: numbers.size, media: used, headings };
 }
