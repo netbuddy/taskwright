@@ -4,6 +4,7 @@
 //     最新一张默认展开，早先的变淡、折起，点标题展开。展开后逐条目列结果：不合规的条目逐条列发现（红点问题、琥珀点建议、
 //     每条发现与条目详情里同一个两行布局（FindingLine）：第一行是发现本身与「第 N 次评审指出」，第二行是去向（未处理／已在修订 N 改／
 //     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看它们的建议。
+//     规则改过之后，按改之前的规则评出的发现写「按改之前的规则评出，不再算数」，不给链接，「只看未处理」不列，也不算在角标里。
 //     点条目编号或一条发现，打开条目详情并高亮那个字段。
 //   · 底部规则区：按集合列规则。必选的开关锁住；可选的可以关掉，或点标签在「可选」与「升为必选」之间切换。改动只影响之后的评审。
 // 保留、改规则都是用户的界面操作（waive_review、set_review_rules），界面上的变化等库事件到了才发生；被拒时报一条失败提示（全站提示条）。
@@ -83,7 +84,10 @@ function BatchCard({ task, batch, latest, onlyOpen, readOnly, writesOff, submit,
   const failed = rows.filter((r) => r.review && r.review.verdict !== "合规");
   const passed = rows.filter((r) => r.review && r.review.verdict === "合规");
   const unfinished = rows.filter((r) => r.item && !r.review);
-  const allHandled = failed.every((r) => findingStatus(r.item!, r.review!, task).kind !== "open");
+  // 按改之前的规则评出的发现不再算数，与已改、已保留一样算处理完了（只看未处理不列，见 findingStatus）。
+  const statuses = failed.map((r) => findingStatus(r.item!, r.review!, task));
+  const allHandled = statuses.every((st) => st.kind !== "open");
+  const anyOldRules = statuses.some((st) => st.kind === "old_rules");
   if (onlyOpen && allHandled) return null;
   const shownFailed = onlyOpen ? failed.filter((r) => findingStatus(r.item!, r.review!, task).kind === "open") : failed;
   const withAdvice = passed.filter((r) => (r.review!.findings ?? []).length > 0).length;
@@ -96,7 +100,7 @@ function BatchCard({ task, batch, latest, onlyOpen, readOnly, writesOff, submit,
         {batch.failed > 0 && <span className="chip bad">{batch.failed} 不合规</span>}
         {batch.unfinished > 0 && <span className="chip">{batch.unfinished} 没有评完</span>}
         {(batch.problems > 0 || batch.advice > 0) && <span className="muted">问题 {batch.problems} 处 · 建议 {batch.advice} 条</span>}
-        {!latest && failed.length > 0 && allHandled && <span className="muted">全部发现已在后来的修订里改或保留</span>}
+        {!latest && failed.length > 0 && allHandled && <span className="muted">{anyOldRules ? "全部发现已在后来的修订里改或保留，或者按改之前的规则评出、不再算数" : "全部发现已在后来的修订里改或保留"}</span>}
       </div>
       {expanded && (
         <div className="b">
