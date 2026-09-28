@@ -76,7 +76,16 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   const hint = executorHint(executor, state.outgoing.some((m) => m.state === "sending"));
   const readOnly = closed || (!!disabledReason && !busyElsewhere && !busyError);
 
-  useEffect(() => { api.listSessions(taskId).then(setSessions).catch(() => setSessions([])); }, [taskId, state.session?.name]);
+  // 会话列表（会话菜单里每条会话的最近活动与消息条数）：打开页面、会话改名、助手做完一轮（执行者状态从工作中变为不在工作）、
+  // 打开会话菜单时各读一次；不定时轮询。执行者状态属于整个任务，别的会话里做完一轮也会重读。
+  const loadSessions = () => { api.listSessions(taskId).then(setSessions).catch(() => setSessions([])); };
+  useEffect(loadSessions, [taskId, state.session?.name]);
+  const wasWorking = useRef(working);
+  useEffect(() => {
+    if (wasWorking.current && !working) loadSessions();
+    wasWorking.current = working;
+  }, [working]);
+  useEffect(() => { if (menuOpen) loadSessions(); }, [menuOpen]);
   useEffect(() => { if (!busyElsewhere) setBusyError(null); }, [busyElsewhere]);
   // 新加了材料（material_added 事件）：展开右侧栏、切到材料页签，由材料页签选中它显示正文。
   useEffect(() => { if (state.focusMaterial) { setDocCollapsed(false); setSide("material"); } }, [state.focusMaterial]);
