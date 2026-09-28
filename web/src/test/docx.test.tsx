@@ -150,7 +150,8 @@ describe("材料区的四种定位结果", () => {
     const { rerender } = render(pane(null));
     await waitFor(() => expect(document.querySelectorAll(".cited").length).toBe(2), SLOW);
     expect(screen.queryByTestId("material-select")).toBeNull();
-    expect(screen.getByText("被 2 个条目引用过")).toBeInTheDocument();
+    // 这行文字在底线画完之后由材料区再渲染一次才出现，要等它，不能在底线出现的那一刻就查。
+    expect(await screen.findByText("被 2 个条目引用过", {}, SLOW)).toBeInTheDocument();
     expect(screen.getByText(/Word 文件按原版式分页显示/)).toBeInTheDocument();
     rerender(pane({ excerpt: "逾期的每本每天罚款一角，罚款最多不超过这本书的定价。", locator: `${PATH}#p76`, nonce: 1 }));
     await waitFor(() => expect(squeeze(document.querySelector("mark.hit")?.textContent ?? "")).toBe("逾期的每本每天罚款一角，罚款最多不超过这本书的定价。"), SLOW);
@@ -161,7 +162,8 @@ describe("材料区的四种定位结果", () => {
     mockApi();
     render(pane({ excerpt: "寒暑假期间的借期另行规定。罚款的缴纳方式待定。", locator: `${PATH}#p111`, nonce: 1 }));
     await waitFor(() => expect(document.querySelectorAll("p.hitpara").length).toBe(2), SLOW);
-    expect(screen.getByTestId("locate-note")).toHaveTextContent("这段引用跨越了多个段落，已整段标出。");
+    // 提示在两段标出之后由材料区再渲染一次才出现，要等它。
+    expect(await screen.findByTestId("locate-note", {}, SLOW)).toHaveTextContent("这段引用跨越了多个段落，已整段标出。");
   });
 
   it("找不到：提示用页 · 章节 · 位置写，不写段落号", async () => {
@@ -193,7 +195,8 @@ describe("同一句被几个条目引用", () => {
     await waitFor(() => expect(document.querySelectorAll(".cited").length).toBeGreaterThan(0), SLOW);
     expect(document.querySelectorAll(".cited .cited").length).toBe(0);
     expect(document.querySelector(".cited")!.getAttribute("title")).toBe("被 CON-001、UC-002 引用");
-    expect(screen.getByText("被 2 个条目引用过")).toBeInTheDocument();
+    // 同上：这行文字比底线晚一次渲染出现。
+    expect(await screen.findByText("被 2 个条目引用过", {}, SLOW)).toBeInTheDocument();
   });
 });
 
