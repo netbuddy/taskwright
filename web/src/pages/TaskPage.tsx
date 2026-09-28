@@ -16,7 +16,7 @@ import { ownMaterials } from "../model/docx";
 import { DocxPaper } from "../components/work/DocxPaper";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
-import { tooLargeText, uploadAccept, uploadLimitText, uploadTypesText } from "../model/upload";
+import { tooLargeText, unsupportedTypeText, uploadAccept, uploadLimitText, uploadTypesText } from "../model/upload";
 import { statusTag } from "./TaskListPage";
 
 export function TaskPage({ taskId }: { taskId: string }) {
@@ -129,11 +129,12 @@ export function TaskPage({ taskId }: { taskId: string }) {
                 showUploadList={false}
                 style={{ marginTop: "0.714rem" }}
                 customRequest={async ({ file, onSuccess, onError }) => {
-                  // 超过上限的文件不发请求，直接报后端给的那句话。
-                  const tooLarge = tooLargeText(service.info, file as File);
-                  if (tooLarge) {
-                    toast.error(tooLarge);
-                    onError?.(new Error(tooLarge));
+                  // 类型不符或超过上限的文件不发请求，直接报后端给的那句话（先查类型，与后端的先后相同）。
+                  // 拖进来的文件与在选择框里选了「所有文件」时选中的文件都不经过滤，所以类型也要在这里查。
+                  const refused = unsupportedTypeText(service.info, file as File) ?? tooLargeText(service.info, file as File);
+                  if (refused) {
+                    toast.error(refused);
+                    onError?.(new Error(refused));
                     return;
                   }
                   try {
