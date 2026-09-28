@@ -94,7 +94,7 @@ body {
 .svc-menu .svc-row { cursor: pointer; border-radius: 0.45rem; padding: 0.35rem 0.5rem; font-size: 0.92rem; }
 .svc-menu .svc-row:hover { background: var(--sel); }
 .svc-menu .danger { color: var(--gap); }
-.svc-gone { position: fixed; inset: 0; background: var(--paper); display: flex; align-items: center; justify-content: center; }
+.svc-gone { position: fixed; inset: 0; z-index: 2100; background: var(--paper); display: flex; align-items: center; justify-content: center; }
 .svc-gone .box { background: var(--card); border: 1px solid var(--line); border-radius: 0.9rem; padding: 2rem 2.6rem; text-align: center; }
 .svc-gone .box b { font-size: 1.2rem; display: block; margin-bottom: 0.5rem; }
 .svc-gone .box span { color: var(--mut); }

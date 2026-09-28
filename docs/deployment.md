@@ -101,13 +101,14 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 | Task service (HTTP/SSE API) | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | none, give one |
 | Web interface (development server) | `TASKWRIGHT_API_TARGET=http://127.0.0.1:<api port> npm run dev -w web` | 5680 (`TASKWRIGHT_WEB_PORT`) |
 | Both at once | `scripts/dev.sh` (or `make dev`) | API 8790, web 5680 |
+| Both at once, on the fake model with a demo task | `scripts/dev.sh --demo` | API 8790, web 5680 |
 | Observatory | `python3 -m taskwright_observatory --runs <archive dir> --workspaces <tasks dir>` | 8770 |
 
 - `--tasks` is where task directories are created (one directory per task, named by task id); `--runs` is where each task's raw pi events and session files are archived (`<runs>/<task id>/pi-events/` and `pi-sessions/`). When they are left out, both go to the user data directory (`~/.local/share/taskwright/` on Linux).
 - All services bind `0.0.0.0` by default (`--host` changes it). The one exception is the task service started with `--mode desktop`, which binds `127.0.0.1` by default.
-- The task service takes a run mode, `--mode desktop|server` (default `server`). `server` is for a shared server: it binds `0.0.0.0` by default and has no exit endpoint. `desktop` is for one person on one computer: it binds `127.0.0.1` by default and adds `POST /api/v1/service/exit`, which accepts requests from this machine only. `--host` overrides the default address in both modes. Both modes log the same way: to standard output and to a daily file under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory). See section 9 of the API description for `GET /api/v1/service` and the exit endpoint.
+- The task service takes a run mode, `--mode desktop|server` (default `server`). `server` is for a shared server: it binds `0.0.0.0` by default and has no exit endpoint. `desktop` is for one person on one computer: it binds `127.0.0.1` by default and adds `POST /api/v1/service/exit`, which accepts requests from this machine only. `--host` overrides the default address in both modes. Both modes log the same way: to standard output and to a daily file under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory). See section 9 of the API description for `GET /api/v1/service` and the exit endpoint. Only pages opened on the same computer are offered the exit; the service tells this from the request's source address, so do not put a desktop-mode service behind a reverse proxy (the service would see the proxy's address).
 - If the port given to the task service is taken, it tries the following ports, up to 10 in all, and exits with an error when all are taken. The port it actually uses is printed in the log, written to each task's occupancy mark and returned by `GET /api/v1/service`.
-- `scripts/dev.sh` starts the task service on `TASKWRIGHT_API_PORT` (default 8790) and points the web development server at the port the task service actually reports, so a taken port does not send the web interface to some other service.
+- `scripts/dev.sh` starts the task service on `TASKWRIGHT_API_PORT` (default 8790) and points the web development server at the port the task service actually reports, so a taken port does not send the web interface to some other service. With `--demo` the task service runs on the fake model endpoint (`backend/fake_model/`) with the launch profile `fake`, keeps its tasks and archives in a temporary directory that is removed on exit, and `examples/library-lending/run.sh` creates a demo task with the example material and a few items; no model service or key is needed, but pi must be on `PATH`.
 - Given `--web <dir>` (for example the built `web/dist`), the task service serves the web interface itself: GET requests that do not start with `/api/` are answered from that directory, and paths it does not have get the start page. Then neither the reverse proxy of section 6 nor the development server is needed.
 - Started with `--mode desktop`, the task service reads `defaultProvider` and `defaultModel` from `settings.json` in pi's configuration directory before starting pi, and when both are present uses them instead of the profile's model (see section 10.4); with `--mode server` it does not read that file.
 - Stop services with Ctrl+C or by process id; the task service shuts down the same way on SIGHUP (when its terminal or Windows console window is closed), and closes each task's pi process on the way out.
@@ -118,7 +119,7 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 |---|---|---|
 | `TASKWRIGHT_RUNS_DIR` | `scripts/tui.sh`, observatory, `scripts/dev.sh` | Archive directory when none is given on the command line (default `./runs`). |
 | `TASKWRIGHT_WEB_PORT` | web dev server | Port (default 5680). |
-| `TASKWRIGHT_API_TARGET` | web dev server | Where `/api` is proxied (default: the mock server on 5681). |
+| `TASKWRIGHT_API_TARGET` | web dev server | Where `/api` is proxied (default: the local task service, `http://127.0.0.1:8790`, the port `scripts/dev.sh` starts it on). |
 | `TASKWRIGHT_TASKS_DIR`, `TASKWRIGHT_API_PORT` | `scripts/dev.sh` | Task directory root and API port. |
 | `TASKWRIGHT_TASKS_ROOT` | agent | Set by the service when it starts pi: the task root. Writes to a task database outside it are refused. Not set when the agent code runs on its own (command-line tools, tests); then it is not checked. |
 | `TASKWRIGHT_LOG_DIR` | task service | Where the task service appends its daily log file `backend-<date>.log` (default: `logs/` in the user data directory). |
@@ -194,7 +195,7 @@ Task directories and archives are kept in the user data directory: `~/.local/sha
 
 ### 10.3 Stopping
 
-Any one of three ways: choose 退出服务 ("stop the service") in the 本机用户 ("local user") menu, at the bottom left of the task list and task pages or the top right of the work view, and confirm; close the service's console window; or press Ctrl+C in that window. Each way closes each task's pi and removes the occupancy marks before the service exits.
+Any one of three ways: choose 退出服务 ("stop the service") in the 本机用户 ("local user") menu, at the bottom left of the task list and task pages or the top right of the work view, and confirm; close the service's console window; or press Ctrl+C in that window. Each way first tells the open pages (work views then show that the service has stopped and no longer reconnect), then closes each task's pi and removes the occupancy marks before the service exits. The 本机用户 menu is only there on pages opened on the same computer; pages opened from another computer do not have it.
 
 ### 10.4 Setting up a model service
 

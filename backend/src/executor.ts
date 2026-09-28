@@ -19,7 +19,7 @@ import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
 import type { Profile } from "./launch.ts";
 import { callFacts, openRo } from "./library.ts";
-import { type PiEvent, PiExited, PiRefused, PiSession, PiTimeout } from "./pi_session.ts";
+import { type PiEvent, PiExited, PiRefused, PiSession, PiTimeout, technicalOf } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
 import * as workSummary from "./work_summary.ts";
@@ -189,6 +189,9 @@ export class Executor {
       state = await pi.getState();
     } catch (error) {
       const detail = (pi.stderrText || (error as Error).message || String(error)).trim().slice(-500);
+      // 页面上显示给人看的那句；排查用的原话（哪条命令、系统给的原话）写进日志与错误的附带信息。
+      const technical = (pi.stderrText || technicalOf(error)).trim().slice(-500);
+      console.log(`任务 ${this.taskId} 的助手没有启动起来：${technical}`);
       try {
         await pi.close();
       } catch {
@@ -196,7 +199,7 @@ export class Executor {
       }
       this.pi = null;
       this.setState("failed_to_start", detail);
-      throw new ApiError("executor_unavailable", "助手现在不可用。", { detail });
+      throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technical });
     }
     if (expected !== null && state.sessionId !== expected) await this.resumeFailedLocked(pi, expected, state.sessionId ?? null, "带会话文件启动 pi");
     this.pi = pi;
@@ -228,7 +231,7 @@ export class Executor {
       state = await pi.getState();
     } catch (error) {
       if (!(error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
-      return this.resumeFailedLocked(pi, sessionId, null, `切换会话：${error.message}`);
+      return this.resumeFailedLocked(pi, sessionId, null, `切换会话：${technicalOf(error)}`);
     }
     if (state.sessionId !== sessionId) return this.resumeFailedLocked(pi, sessionId, state.sessionId ?? null, "切换会话");
     this.adopt(state);
@@ -285,7 +288,7 @@ export class Executor {
     }
   }
 
-  /** 说话之前：会话要是活动的那条；start 为真时 pi 不在就按需启动，否则失败。 */
+  /** 说话与直接操作之前：会话要是活动的那条；start 为真时 pi 不在就按需启动，否则失败。 */
   require(sessionId: string | null, start: boolean): Promise<void> {
     return this.lock.run(async () => {
       if (this.state === "starting") throw new ApiError("executor_starting", "助手正在启动，请稍候。");
@@ -340,7 +343,7 @@ export class Executor {
       try {
         await this.pi!.request("prompt", { message: text });
       } catch (error) {
-        if (error instanceof PiExited || error instanceof PiRefused) throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: error.message });
+        if (error instanceof PiExited || error instanceof PiRefused) throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technicalOf(error) });
         throw error;
       }
     });
@@ -370,7 +373,9 @@ export class Executor {
    * 评审（request_review）也走这里：扩展命令核对通过、记下第一条进度事件就回报，评审在 pi 进程里接着跑，进度与结果作为库事件推给前端。
    */
   async action(sessionId: string | null, body: Dict): Promise<string> {
-    await this.require(sessionId, false);
+    // 助手不在（已退出、还没启动、续接没接上之后）时与说话一样按需启动并续接这条会话，页面在这些状态下不必设只读；
+    // 续接对不上照样报 session_resume_failed，操作不会在接错的会话里执行。没有给会话时不启动，免得为一次操作另开一条会话。
+    await this.require(sessionId, sessionId !== null);
     // 单一写入者规则管的是交付物内容。打开详情写已读（mark_viewed 且不通知执行者）不改内容，是唯一的例外：
     // 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
     const viewing = body.kind === "mark_viewed" && !truthy(body.notify_executor);
@@ -478,7 +483,7 @@ export class Executor {
     await this.lock.run(() => {
       if (this.pi === pi) {
         this.pi = null;
-        this.setState("exited", "pi 进程退出了");
+        this.setState("exited", "助手的程序退出了");
       }
     });
   }

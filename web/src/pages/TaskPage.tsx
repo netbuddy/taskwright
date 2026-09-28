@@ -16,7 +16,7 @@ import { ownMaterials } from "../model/docx";
 import { DocxPaper } from "../components/work/DocxPaper";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
-import { tooLargeText, uploadLimitText } from "../model/upload";
+import { tooLargeText, uploadAccept, uploadLimitText, uploadTypesText } from "../model/upload";
 import { statusTag } from "./TaskListPage";
 
 export function TaskPage({ taskId }: { taskId: string }) {
@@ -31,7 +31,8 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const [wordPath, setWordPath] = useState<string | null>(null);
   const toast = useToast();
   const service = useService();
-  const limitText = uploadLimitText(service.info);
+  // 上传框说明里写类型与大小的两半句，都取自服务信息；还没取到时两半句都不写，不猜。
+  const hintParts = [uploadTypesText(service.info), uploadLimitText(service.info)].filter(Boolean);
 
   const load = () =>
     api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
@@ -124,7 +125,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
             ))}
             {!closed && (
               <Upload.Dragger
-                accept=".md,.txt,.docx"
+                accept={uploadAccept(service.info)}
                 showUploadList={false}
                 style={{ marginTop: "0.714rem" }}
                 customRequest={async ({ file, onSuccess, onError }) => {
@@ -146,8 +147,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
                   }
                 }}
               >
-                {/* 大小取自服务信息（与后端拒绝时那句话同一个数）；还没取到时不写这半句，不猜一个数。 */}
-                <span className="muted small" data-testid="upload-hint">把文件拖到这里，或者点这里选择文件（只收 .md、.txt 与 Word 的 .docx{limitText ? `，${limitText}` : ""}）。新传的材料下一次会话开始时助手就能看到。</span>
+                <span className="muted small" data-testid="upload-hint">把文件拖到这里，或者点这里选择文件{hintParts.length ? `（${hintParts.join("，")}）` : ""}。新传的材料下一次会话开始时助手就能看到。</span>
               </Upload.Dragger>
             )}
           </div>

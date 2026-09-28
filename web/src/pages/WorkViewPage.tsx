@@ -29,6 +29,7 @@ import { useToast } from "../components/Toasts";
 import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
 import { tooLargeText } from "../model/upload";
+import { executorHint } from "../components/work/executorHint";
 
 /** 「让助手改这一条」与「回答这个问题」预填的话。 */
 export const PREFILL = {
@@ -68,9 +69,11 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   const busySession = sessions.find((s) => s.session_id === executor?.active_session)?.name;
   const disabledReason = closed ? "这个任务已经结束，只能查看。"
     : busyElsewhere || busyError ? `助手正在${busySession ? `会话「${busySession}」` : "另一条会话"}里工作，做完才能在这里继续。`
-    : executor?.state === "failed_to_start" || executor?.state === "exited" ? `助手现在不可用：${executor.text}`
+    : executor?.state === "failed_to_start" ? `助手现在不可用：${executor.text}`
     : null;
-  // 任务结束或助手不可用：一切写入都不能做。执行者工作中另算（writesOff），预填输入框的两个按钮那时照常可用。
+  // 任务结束或助手启动不起来：一切写入都不能做。执行者工作中另算（writesOff），预填输入框的两个按钮那时照常可用。
+  // 助手已经退出、还没启动、正在启动时不设只读：说话与操作都会让服务先把助手启动起来，只在输入框上方提示一句（executorHint.ts）。
+  const hint = executorHint(executor, state.outgoing.some((m) => m.state === "sending"));
   const readOnly = closed || (!!disabledReason && !busyElsewhere && !busyError);
 
   useEffect(() => { api.listSessions(taskId).then(setSessions).catch(() => setSessions([])); }, [taskId, state.session?.name]);
@@ -288,7 +291,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
               <Conversation
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}
                 disabled={!!disabledReason} disabledReason={disabledReason} handlers={cardHandlers}
-                hold={dirty} working={working}
+                hold={dirty} working={working} hint={hint} starting={executor?.state === "starting"}
                 onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input}
