@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "rules_version": 1,
+  "说明": "Word 材料的位置表：由段落号得出来源标签里的章节；规则见 agent/src/lib/docx_locations.ts。headings 列出每个标题段，level 1 是一级标题；一段的章节是它（含）之前最近的标题。不含正文的文字。",
+  "source": "inputs/requirements-styled.docx",
+  "paragraphs": 114,
+  "page_marks": 4,
+  "application": "Microsoft Macintosh Word",
+  "headings": [
+    {
+      "paragraph": 6,
+      "level": 1,
+      "title": "1 概述"
+    },
+    {
+      "paragraph": 10,
+      "level": 2,
+      "title": "1.1 范围"
+    },
+    {
+      "paragraph": 12,
+      "level": 2,
+      "title": "1.2 术语"
+    },
+    {
+      "paragraph": 15,
+      "level": 1,
+      "title": "2 读者与借阅规则"
+    },
+    {
+      "paragraph": 16,
+      "level": 2,
+      "title": "2.1 读者类型"
+    },
+    {
+      "paragraph": 24,
+      "level": 2,
+      "title": "2.2 借书流程"
+    },
+    {
+      "paragraph": 34,
+      "level": 2,
+      "title": "2.3 借阅上限"
+    },
+    {
+      "paragraph": 72,
+      "level": 1,
+      "title": "3 归还、罚款与预约"
+    },
+    {
+      "paragraph": 73,
+      "level": 2,
+      "title": "3.1 归还"
+    },
+    {
+      "paragraph": 75,
+      "level": 3,
+      "title": "3.1.1 逾期罚款"
+    },
+    {
+      "paragraph": 77,
+      "level": 3,
+      "title": "3.1.2 损坏与丢失"
+    },
+    {
+      "paragraph": 79,
+      "level": 2,
+      "title": "3.2 预约"
+    },
+    {
+      "paragraph": 82,
+      "level": 2,
+      "title": "3.3 到期提醒"
+    },
+    {
+      "paragraph": 85,
+      "level": 1,
+      "title": "4 非功能需求"
+    },
+    {
+      "paragraph": 110,
+      "level": 1,
+      "title": "5 待定事项"
+    }
+  ]
+}

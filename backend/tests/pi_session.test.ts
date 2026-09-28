@@ -155,10 +155,28 @@ test("系统提示太长、命令行超过系统上限时 spawn 当场报 E2BIG�
     await assert.rejects(pi.start(), (e: unknown) => /E2BIG/.test(technicalOf(e)));
     assert.equal(pi.process, null);
     for (const key of ["archive", "notes", "times"]) assert.equal((pi as any)[key], null, `${key} 的句柄没有关掉`);
+    assert.deepEqual(readdirSync(join(tmp, "runs-e2big", "pi-events")), [], "这一次留下的三份空归档文件已删掉");
   } finally {
     if (savedAgentDir === undefined) delete process.env.TASKWRIGHT_AGENT_DIR;
     else process.env.TASKWRIGHT_AGENT_DIR = savedAgentDir;
   }
+});
+
+test("启动失败时只删这一次新建的空归档文件：有一份写了内容，或者有一份是原来就有的，三份都保留", () => {
+  const dir = join(tmp, "archive-keep");
+  mkdirSync(dir);
+  const pi = new PiSession(PROFILE, workspace, join(tmp, "runs-keep"));
+  const arrange = (name: string, contents: [string, string, string], fresh: boolean[]) => {
+    const paths = ["", ".backend", ".times"].map((suffix) => join(dir, `${name}${suffix}.jsonl`));
+    paths.forEach((path, i) => writeFileSync(path, contents[i], "utf-8"));
+    Object.assign(pi as any, { archivePath: paths[0], notesPath: paths[1], timesPath: paths[2], newFiles: paths.filter((_, i) => fresh[i]) });
+    (pi as any).removeEmptyArchive();
+    return paths;
+  };
+  arrange("empty", ["", "", ""], [true, true, true]);
+  const written = arrange("written", ["", '{"记录": "启动"}\n', ""], [true, true, true]);
+  const older = arrange("older", ["", "", ""], [true, false, true]);
+  assert.deepEqual(readdirSync(dir).sort(), [...written, ...older].map((p) => p.slice(dir.length + 1)).sort());
 });
 
 test("续接前改写会话文件记的工作目录，原文件原样备份；已经一致时什么都不做", () => {

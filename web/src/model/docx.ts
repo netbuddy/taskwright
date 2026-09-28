@@ -73,9 +73,11 @@ export function prepare(d: Node0): { info: (ParagraphInfo | null)[]; marks: numb
     if (num) {
       const c = counters.get(num.id) ?? [];
       counters.set(num.id, c);
-      const lv = levels.get(`${num.id}:${num.level}`);
-      c[num.level] = (c[num.level] ?? Number(lv?.start ?? 1) - 1) + 1;
-      c.length = num.level + 1;
+      // 编号没写级别（w:ilvl）时按第 0 级，与 Word 和投影相同（编号写在样式里常只写 w:numId）。
+      const level: number = num.level ?? 0;
+      const lv = levels.get(`${num.id}:${level}`);
+      c[level] = (c[level] ?? Number(lv?.start ?? 1) - 1) + 1;
+      c.length = level + 1;
       let decimal = !!lv;
       label = String(lv?.levelText ?? "").replace(/%(\d)/g, (_, k: string) => {
         const l = levels.get(`${num.id}:${Number(k) - 1}`);

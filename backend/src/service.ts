@@ -361,8 +361,11 @@ export class Service {
       try {
         await t.executor.openSession(session);
       } catch (error) {
-        // 没有接上这条会话：快照照常给（对话记录从会话文件读，条目从任务库读，都不依赖 pi），执行者状态里写明没有接上。
-        if (!(error instanceof ApiError && error.code === "session_resume_failed")) throw error;
+        // 没有接上这条会话，或者助手没有启动起来：快照照常给（对话记录从会话文件读，条目从任务库读，都不依赖 pi），
+        // 执行者状态里写明没有接上，或者没有启动起来的原因，页面据此整页只读。每次打开都照常再试着启动一次，问题修好之后刷新就能恢复。
+        // 打开会话时报 executor_unavailable 的只有启动失败这一处；再核对一次执行者状态，别的原因（正在启动、另一条会话在工作等）照旧报错。
+        const startFailed = error instanceof ApiError && error.code === "executor_unavailable" && t.executor.view().state === "failed_to_start";
+        if (!(error instanceof ApiError && error.code === "session_resume_failed") && !startFailed) throw error;
       }
     }
     const [seq, view] = library.taskSnapshot(t.dir);

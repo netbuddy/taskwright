@@ -21,6 +21,9 @@
 
 import { inflateRawSync } from "node:zlib";
 import { type HeadingStyle, headingLevel } from "./docx_heading.ts";
+import { type NumberingLevel, NumberingCounter } from "./docx_numbering.ts";
+
+export { formatNumber } from "./docx_numbering.ts";
 
 // ───────────── zip 与 XML ─────────────
 
@@ -86,21 +89,21 @@ export function parseXml(xml: string): XmlElement {
   return root;
 }
 
-const elements = (el: XmlElement) => el.children.filter((c): c is XmlElement => typeof c !== "string");
-const child = (el: XmlElement | undefined, name: string) => el ? elements(el).find((c) => c.name === name) : undefined;
+export const elements = (el: XmlElement) => el.children.filter((c): c is XmlElement => typeof c !== "string");
+export const child = (el: XmlElement | undefined, name: string) => el ? elements(el).find((c) => c.name === name) : undefined;
 /** 按路径往下找第一个（如 "w:pPr/w:numPr/w:numId"）。 */
 function at(el: XmlElement | undefined, path: string): XmlElement | undefined {
   for (const part of path.split("/")) el = child(el, part);
   return el;
 }
-const valOf = (el: XmlElement | undefined, path: string) => at(el, path)?.attrs["w:val"];
+export const valOf = (el: XmlElement | undefined, path: string) => at(el, path)?.attrs["w:val"];
 function* descendants(el: XmlElement): Generator<XmlElement> {
   for (const c of elements(el)) { yield c; yield* descendants(c); }
 }
 
 // ───────────── 样式、编号、关系 ─────────────
 
-class Styles {
+export class Styles {
   private byId = new Map<string, XmlElement>();
   constructor(xml: string | null) {
     if (!xml) return;
@@ -124,69 +127,45 @@ class Styles {
   }
 }
 
-const CN = "〇一二三四五六七八九";
-const chinese = (n: number) => n < 10 ? CN[n] : n < 20 ? "十" + (n % 10 ? CN[n % 10] : "") : n < 100 ? CN[Math.floor(n / 10)] + "十" + (n % 10 ? CN[n % 10] : "") : String(n);
-function roman(n: number): string {
-  let out = "";
-  for (const [v, s] of [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"], [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]] as const) {
-    while (n >= v) { out += s; n -= v; }
-  }
-  return out;
-}
-/** 编号数字按 Word 的编号格式写出来；认不出的格式写十进制。 */
-export function formatNumber(n: number, format: string | undefined): string {
-  switch (format) {
-    case "decimalZero": return String(n).padStart(2, "0");
-    case "lowerLetter": return String.fromCharCode(97 + (n - 1) % 26).repeat(Math.floor((n - 1) / 26) + 1);
-    case "upperLetter": return String.fromCharCode(65 + (n - 1) % 26).repeat(Math.floor((n - 1) / 26) + 1);
-    case "lowerRoman": return roman(n).toLowerCase();
-    case "upperRoman": return roman(n);
-    case "chineseCounting": case "chineseCountingThousand": case "japaneseCounting": case "taiwaneseCounting": return chinese(n);
-    case "ideographTraditional": return "甲乙丙丁戊己庚辛壬癸"[(n - 1) % 10];
-    case "decimalEnclosedCircle": case "decimalEnclosedCircleChinese": return n >= 1 && n <= 20 ? String.fromCodePoint(0x2460 + n - 1) : String(n);
-    case "decimalFullWidth": case "decimalFullWidth2": return [...String(n)].map((c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0)).join("");
-    default: return String(n);
-  }
-}
-
-interface Level { start: number; format?: string; text: string; legal: boolean }
-
-class Numbering {
-  private levels = new Map<string, Level>();
-  private counters = new Map<string, (number | undefined)[]>();
-  constructor(xml: string | null) {
-    const root = xml ? child(parseXml(xml), "w:numbering") : undefined;
-    if (!root) return;
-    const abstract = new Map(elements(root).filter((e) => e.name === "w:abstractNum").map((a) => [a.attrs["w:abstractNumId"], a]));
-    for (const num of elements(root).filter((e) => e.name === "w:num")) {
-      const a = abstract.get(valOf(num, "w:abstractNumId") ?? "");
-      if (!a) continue;
-      const overrides = new Map(elements(num).filter((e) => e.name === "w:lvlOverride").map((o) => [o.attrs["w:ilvl"], o]));
-      for (const lvl of elements(a).filter((e) => e.name === "w:lvl")) {
-        const il = lvl.attrs["w:ilvl"];
-        const start = valOf(overrides.get(il), "w:startOverride") ?? valOf(lvl, "w:start") ?? "1";
-        this.levels.set(`${num.attrs["w:numId"]}:${il}`, {
-          start: Number(start), format: valOf(lvl, "w:numFmt"), text: valOf(lvl, "w:lvlText") ?? "", legal: !!child(lvl, "w:isLgl"),
-        });
-      }
+/** numbering.xml 读成编号定义（键是「numId:级别」，起始值已按 w:startOverride 覆盖）；怎样数、怎样写在 lib/docx_numbering.ts。 */
+export function numberingLevels(xml: string | null): Map<string, NumberingLevel> {
+  const levels = new Map<string, NumberingLevel>();
+  const root = xml ? child(parseXml(xml), "w:numbering") : undefined;
+  if (!root) return levels;
+  const abstract = new Map(elements(root).filter((e) => e.name === "w:abstractNum").map((a) => [a.attrs["w:abstractNumId"], a]));
+  for (const num of elements(root).filter((e) => e.name === "w:num")) {
+    const a = abstract.get(valOf(num, "w:abstractNumId") ?? "");
+    if (!a) continue;
+    const overrides = new Map(elements(num).filter((e) => e.name === "w:lvlOverride").map((o) => [o.attrs["w:ilvl"], o]));
+    for (const lvl of elements(a).filter((e) => e.name === "w:lvl")) {
+      const il = lvl.attrs["w:ilvl"];
+      const start = valOf(overrides.get(il), "w:startOverride") ?? valOf(lvl, "w:start") ?? "1";
+      levels.set(`${num.attrs["w:numId"]}:${il}`, {
+        start: Number(start), format: valOf(lvl, "w:numFmt"), text: valOf(lvl, "w:lvlText") ?? "", legal: !!child(lvl, "w:isLgl"),
+      });
     }
+  }
+  return levels;
+}
+
+/** 一段用哪套编号的哪一级：段落自己写的先于样式（沿 basedOn 往上找），级别没写时是 0；没有编号或 numId 为 0 时 null。 */
+export function paragraphNumbering(p: XmlElement, styles: Styles): { numId: string; ilvl: number } | null {
+  const sid = valOf(p, "w:pPr/w:pStyle");
+  const numId = valOf(p, "w:pPr/w:numPr/w:numId") ?? styles.prop(sid, "w:numPr/w:numId");
+  if (!numId || numId === "0") return null;
+  return { numId, ilvl: Number(valOf(p, "w:pPr/w:numPr/w:ilvl") ?? styles.prop(sid, "w:numPr/w:ilvl") ?? 0) };
+}
+
+/** numbering.xml 读成编号定义，按文件里的先后逐段数编号。 */
+class Numbering {
+  private counter: NumberingCounter;
+  constructor(xml: string | null) {
+    this.counter = new NumberingCounter(numberingLevels(xml));
   }
   /** 这一段的编号文字与是不是项目符号。每套编号（numId）各自计数，上一级加一时更深的级别重新数，与材料区相同。 */
   next(numId: string, ilvl: number): { label: string; bullet: boolean } {
-    const lv = this.levels.get(`${numId}:${ilvl}`);
-    if (!lv) return { label: "", bullet: false };
-    const c = this.counters.get(numId) ?? [];
-    this.counters.set(numId, c);
-    c[ilvl] = (c[ilvl] ?? lv.start - 1) + 1;
-    c.length = ilvl + 1;
-    if (lv.format === "bullet") return { label: "", bullet: true };
-    if (lv.format === "none") return { label: "", bullet: false };
-    const label = lv.text.replace(/%(\d)/g, (_, k: string) => {
-      const i = Number(k) - 1;
-      const l = this.levels.get(`${numId}:${i}`);
-      return formatNumber(c[i] ?? l?.start ?? 1, lv.legal ? "decimal" : l?.format);
-    });
-    return { label: label.trim(), bullet: false };
+    const { label, bullet } = this.counter.next(numId, ilvl);
+    return { label, bullet };
   }
 }
 
@@ -206,7 +185,7 @@ interface Table { kind: "table"; rows: Cell[][] }
 type Block = Para | Table;
 
 /** 按计数规则给段落编号：w:body 下每个不在文本框里的 w:p，按结束标记的先后（与另两处相同）。 */
-function numberParagraphs(body: XmlElement): Map<XmlElement, number> {
+export function numberParagraphs(body: XmlElement): Map<XmlElement, number> {
   const out = new Map<XmlElement, number>();
   const walk = (el: XmlElement, skip: boolean) => {
     for (const c of elements(el)) {
@@ -264,10 +243,10 @@ function paragraph(p: XmlElement, parts: Parts, images: { count: number }): Para
   walk(p);
   const sid = valOf(p, "w:pPr/w:pStyle");
   const heading = headingLevel(valOf(p, "w:pPr/w:outlineLvl"), sid, (id) => parts.styles.heading(id));
-  const numId = valOf(p, "w:pPr/w:numPr/w:numId") ?? parts.styles.prop(sid, "w:numPr/w:numId");
-  const ilvl = Number(valOf(p, "w:pPr/w:numPr/w:ilvl") ?? parts.styles.prop(sid, "w:numPr/w:ilvl") ?? 0);
-  const numbered = !!numId && numId !== "0";
-  const { label, bullet } = numbered ? parts.numbering.next(numId!, ilvl) : { label: "", bullet: false };
+  const which = paragraphNumbering(p, parts.styles);
+  const numbered = which !== null;
+  const ilvl = which ? which.ilvl : Number(valOf(p, "w:pPr/w:numPr/w:ilvl") ?? parts.styles.prop(sid, "w:numPr/w:ilvl") ?? 0);
+  const { label, bullet } = which ? parts.numbering.next(which.numId, which.ilvl) : { label: "", bullet: false };
   return {
     kind: "p", n: parts.numbers.get(p) ?? 0, pieces, boxes, heading,
     label, bullet, numbered, ilvl,

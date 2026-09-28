@@ -24,6 +24,9 @@ const ALLOWED: Record<string, string[]> = {
   "docx_markdown.ts": ["docxProjection", "PROJECTION_SUFFIX", "MEDIA_SUFFIX"],
   // 分段清单：算清单、写成材料旁边的文件（与投影一样是文件，不是库）。
   "segments.ts": ["SEGMENTS_ENV", "SEGMENTS_SUFFIX", "SEGMENT_DEFAULTS", "SegmentParams", "buildSegments", "segmentParams", "writeSegments"],
+  // 位置表：从 Word 文件算出章节，写成材料旁边的文件（与分段清单一样是文件，不是库）。
+  "docx_locations.ts": ["LOCATIONS_SUFFIX", "isLocationTable"],
+  "docx_location_input.ts": ["locationTable"],
 };
 
 function files(dir: string): string[] {
