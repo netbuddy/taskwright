@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { docxProjection, formatNumber } from "../src/lib/docx_markdown.ts";
 import { projectionParagraphs } from "../src/lib/docx_source.ts";
+import { buildSegments } from "../src/lib/segments.ts";
 import { SAMPLE, SAMPLE_DOCX, legacyProjection, makeDocx, projection } from "./helpers.ts";
 import { paragraphsOf, readZipEntry } from "../../scripts/docx_paragraphs.mjs";
 
@@ -118,6 +119,33 @@ test("现造的文件：图表与 SmartArt 写占位；格子里的竖线转义�
   assert.equal(got.length, 9);
   assert.equal(got[7], "a|b");
   assert.equal(got[6], "锚着文本框");
+});
+
+/** 一份带标题样式的小文件：heading 1 的样式与一张图片（关系 rId9）。body 是 w:body 里的内容。 */
+function headingDocx(body: string): Buffer {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082", "hex");
+  return makeDocx(body, {
+    "word/styles.xml": `<w:styles ${W}><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style></w:styles>`,
+    "word/_rels/document.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+      + '<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>',
+    "word/media/image1.png": png,
+  });
+}
+const IMAGE_RUN = '<w:r><w:drawing><wp:inline><wp:docPr id="1" name="图"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+  + '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:blipFill><a:blip r:embed="rId9"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>';
+
+test("标题里有图片：标题行只写编号与标题文字，图片写在标题行下面单独一行（没有段落号）；分段清单的块标题与位置表的标题都不带图片链接", () => {
+  const body = `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>带图片的标题</w:t></w:r>${IMAGE_RUN}</w:p><w:p><w:r><w:t>正文。</w:t></w:r></w:p>`
+    + `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>${IMAGE_RUN}</w:p><w:p><w:r><w:t>只有图片的标题之后的正文。</w:t></w:r></w:p>`;
+  const out = docxProjection(headingDocx(body), "inputs/x.docx");
+  assert.match(out.markdown, /\n# \[p1\] 带图片的标题\n\n!\[图 1\]\(inputs\/x\.docx\.media\/image1\.png\)\n/);
+  assert.match(out.markdown, /\n# \[p3\]\n\n!\[图 2\]\(inputs\/x\.docx\.media\/image1\.png\)\n/);
+  assert.deepEqual(out.headings, [{ paragraph: 1, level: 1, title: "带图片的标题" }, { paragraph: 3, level: 1, title: "" }]);
+  assert.deepEqual(buildSegments(out.markdown, { heading_depth: 3, max_paragraphs: 300, min_paragraphs: 1 }, "inputs/x.docx", "inputs/x.docx.md").blocks.map((b) => b.heading),
+    ["带图片的标题", null]);
+  assert.deepEqual(projectionParagraphs(out.markdown).slice(0, 2), ["带图片的标题", "正文。"]);
 });
 
 test("编号格式", () => {
