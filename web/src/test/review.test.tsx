@@ -120,6 +120,21 @@ describe("条目区顶部的评审动作", () => {
     expect(screen.getByTestId("toast-bad")).toBeInTheDocument();   // 失败停住
   });
 
+  it("筛选「评审不通过」只列没有保留的，「已保留写法」只列保留了写法的，「评审通过」不含保留的", () => {
+    const kept = { ...FAILED, item_id: "UC-006", waivers: [{ revision_no: 3, reason: "材料原话如此", source: "panel", revoked: false }] };
+    panel({ task: task([FAILED, kept, PASSED_WITH_ADVICE, PENDING_A, TBD]) });
+    fireEvent.click(screen.getByText("评审不通过"));
+    expect(screen.getByTestId("item-UC-003")).toBeInTheDocument();
+    expect(screen.queryByTestId("item-UC-006")).toBeNull();
+    fireEvent.click(screen.getByText("已保留写法"));
+    expect(screen.getByTestId("item-UC-006")).toBeInTheDocument();
+    expect(screen.queryByTestId("item-UC-003")).toBeNull();
+    expect(screen.queryByTestId("item-UC-002")).toBeNull();
+    fireEvent.click(screen.getByText("评审通过"));
+    expect(screen.getByTestId("item-UC-002")).toBeInTheDocument();
+    expect(screen.queryByTestId("item-UC-006")).toBeNull();
+  });
+
   it("筛选有「评审通过」：评审通过（含只有建议的）的条目", () => {
     panel();
     fireEvent.click(screen.getByText("评审通过"));

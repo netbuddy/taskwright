@@ -184,7 +184,7 @@ export function ItemsPanel({
       </div>
       <div className="filters">
         {FILTERS.map((f) => (
-          <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : f.key === "review_passed" ? " okf" : ""}`}
+          <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : f.key === "review_passed" || f.key === "review_kept" ? " okf" : ""}`}
             role="button" onClick={() => { setFilter(f.key); onSelect(null); }}>{f.label}</span>
         ))}
         {hit && hitIds.length > 0 && (

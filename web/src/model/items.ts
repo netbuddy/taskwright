@@ -112,17 +112,17 @@ export function needsReview(task: Task, collection: string): boolean {
 
 /** 待评审：要评审的集合里、当前所在的修订还没有任何评审记录的条目，按条目区的顺序。「评审 N 条待评审的条目」的 N 就是它的条数。 */
 export function pendingReview(task: Task): Item[] {
-  return task.items.filter((i) => needsReview(task, i.collection) && reviewState(i, task).state === "pending");
+  return task.items.filter((i) => needsReview(task, i.collection) && matchesFilter(i, "review_pending", task));
 }
 
 /** 评审不通过：要评审的集合里、评审结论（itemVerdict）是不通过的条目；用户保留了写法的不算，见 keptReview。 */
 export function failedReview(task: Task): Item[] {
-  return task.items.filter((i) => needsReview(task, i.collection) && itemVerdict(i, task).state === "failed");
+  return task.items.filter((i) => needsReview(task, i.collection) && matchesFilter(i, "review_failed", task));
 }
 
 /** 已保留写法：要评审的集合里、评审不通过但用户保留了现在的写法的条目（评审结论为 waived，按用户的决定算通过）。 */
 export function keptReview(task: Task): Item[] {
-  return task.items.filter((i) => needsReview(task, i.collection) && itemVerdict(i, task).state === "waived");
+  return task.items.filter((i) => needsReview(task, i.collection) && matchesFilter(i, "review_kept", task));
 }
 
 /** 某个集合里编号为 ruleId 的那条规则；找不到时为 undefined。 */
@@ -227,12 +227,13 @@ export function reviewOffReason(task: Task | null, o: { readOnly?: boolean; writ
   return undefined;
 }
 
-export type ItemFilter = "all" | "review_pending" | "review_failed" | "review_passed" | "unread" | "read" | "supplement";
+export type ItemFilter = "all" | "review_pending" | "review_failed" | "review_kept" | "review_passed" | "unread" | "read" | "supplement";
 
 export const FILTERS: { key: ItemFilter; label: string }[] = [
   { key: "all", label: "全部" },
   { key: "review_pending", label: "待评审" },
   { key: "review_failed", label: "评审不通过" },
+  { key: "review_kept", label: "已保留写法" },
   { key: "review_passed", label: "评审通过" },
   { key: "unread", label: "未读" },
   { key: "read", label: "已读" },
@@ -245,8 +246,11 @@ export function matchesFilter(item: Item, filter: ItemFilter, task?: Task): bool
       return true;
     case "review_pending":
       return reviewState(item, task).state === "pending";
+    // 评审三种按评审结论（itemVerdict）分：不通过只列没有保留的，保留了写法的单列一种；汇总行与看板的计数用同一个判断。
     case "review_failed":
-      return reviewState(item, task).state === "failed";
+      return itemVerdict(item, task).state === "failed";
+    case "review_kept":
+      return itemVerdict(item, task).state === "waived";
     case "review_passed":
       return reviewState(item, task).state === "passed";
     case "unread":
