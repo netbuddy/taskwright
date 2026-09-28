@@ -1,12 +1,13 @@
 // 按服务信息的能力清单显示的两样：没有模型时的顶部提示；桌面形态下「本机用户」菜单里的「退出服务」（二次确认、退出后整屏）。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { api } from "../api/client";
 import type { ServiceInfo } from "../api/types";
 import { Shell } from "../components/Shell";
 import { MODEL_SETUP_URL, ServiceProvider } from "../components/ServiceControls";
 import { ToastProvider } from "../components/Toasts";
+import { settled } from "./settled";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -41,22 +42,25 @@ describe("无模型提示", () => {
     vi.spyOn(api, "serviceInfo").mockResolvedValue(info());
     page();
     await screen.findByText("页面主体");
-    await waitFor(() => expect(api.serviceInfo).toHaveBeenCalled());
+    // 桌面形态的「本机用户」菜单按钮出现，说明服务信息已经进了页面；这时再看没有提示。
+    await screen.findByTestId("user-menu-button");
     expect(screen.queryByTestId("no-model-banner")).toBeNull();
   });
 });
 
 describe("退出服务", () => {
   it("只在桌面形态（capabilities.exit 为 true）有「本机用户」菜单；服务器形态与取不到服务信息时侧栏底部照旧只写「本机用户」", async () => {
-    vi.spyOn(api, "serviceInfo").mockResolvedValue(info({ mode: "server", capabilities: { exit: false, model: true } }));
+    const server = vi.spyOn(api, "serviceInfo").mockResolvedValue(info({ mode: "server", capabilities: { exit: false, model: true } }));
     page();
-    await waitFor(() => expect(api.serviceInfo).toHaveBeenCalled());
+    // 服务器形态的服务信息在页面上不留可见标志（侧栏与还没取到时一样），等它处理完再看。
+    await settled(server);
     await screen.findByText("本机用户");
     expect(screen.queryByTestId("user-menu-button")).toBeNull();
     cleanup();
 
-    vi.spyOn(api, "serviceInfo").mockRejectedValue(new Error("没有这个接口"));
+    const failed = vi.spyOn(api, "serviceInfo").mockRejectedValue(new Error("没有这个接口"));
     page();
+    await settled(failed);
     await screen.findByText("本机用户");
     expect(screen.queryByTestId("user-menu-button")).toBeNull();
     cleanup();
