@@ -166,6 +166,8 @@ After a checkpoint, `task.sqlite` alone is complete. The conversation itself is 
 
 ## 9 Common problems
 
+**The assistant cannot be started.** The work view turns read-only and the note above the input box says why, after 助手现在不可用：助手没有启动起来，. When pi is not on `PATH`, or the interpreter its script names is missing, it says 找不到助手的程序（pi），请检查安装。. When the system refuses to start it, it gives only the system's error code: 系统原因：EACCES when the file is not executable, 系统原因：E2BIG when the command line is too long (it carries the whole system prompt), 系统原因：EMFILE, ENFILE, ENOMEM or EAGAIN when the machine is out of open files, memory or processes. A mistake in the startup profile or in an environment variable (a missing system prompt file, extension or key file) is named as it is. The system's own message, with the path of the program, is in the backend log (任务 <task> 的助手没有启动起来：…) and in `data.detail` of the `executor_unavailable` error.
+
 **pi has no usable model.** If pi cannot start at all (for example the profile names a model pi does not know), opening a session fails: the interface reports that the assistant is unavailable, the executor state becomes `failed_to_start`, and the API returns `executor_unavailable` with the last lines pi wrote to standard error. If pi starts but the model service rejects or does not answer its requests (missing or expired credentials, an endpoint that is down), pi retries and the interface shows that the model service is temporarily unavailable and is being retried (a `problem` event with code `model_unavailable`). Run `pi auth check --model <provider/model>` and `pi --list-models <search>` to find out which case you are in, then fix the credentials or the model name as described in section 3.
 
 **Where to look.**
