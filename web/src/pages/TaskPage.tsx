@@ -11,7 +11,7 @@ import { Shell } from "../components/Shell";
 import { useToast } from "../components/Toasts";
 import { DocumentModal } from "../components/DocumentModal";
 import { CompletionPanel } from "../components/CompletionPanel";
-import { completionHeadline, isUnread, needsReview, reviewState } from "../model/items";
+import { completionHeadline, isUnread, needsReview, reviewCounts } from "../model/items";
 import { formatBytes, formatTime } from "../model/format";
 import { ownMaterials } from "../model/docx";
 import { DocxPaper } from "../components/work/DocxPaper";
@@ -82,23 +82,26 @@ export function TaskPage({ taskId }: { taskId: string }) {
       <div className="board">
         {task.definition.collections.map((coll) => {
           const items = task.items.filter((i) => i.collection === coll.name);
-          const reviewed = items.filter((i) => reviewState(i, task).state === "passed").length;
+          // 评审通过只数真正通过的；保留了写法的单列「已保留写法 N」，为 0 时不写。没有待评审、也没有评审不通过（未保留）的条目时是绿色。
+          const counts = reviewCounts(task, coll.name);
+          const reviewed = counts.passed;
+          const reviewDone = items.length > 0 && counts.pending === 0 && counts.failed === 0;
           const confirmed = items.filter((i) => !isUnread(i)).length;
           const latest = items.reduce((m, i) => Math.max(m, i.revision_no), 0);
           // 不评审的集合（问题、领域说明之类）不写「评审通过 0/N」。
           const reviewed_ = needsReview(task, coll.name);
           return (
-            <div className="card" key={coll.name}>
+            <div className="card" key={coll.name} data-testid={`board-${coll.name}`}>
               <div className="muted small">{coll.name}（编号前缀 {coll.prefix}）</div>
               <div><span className="count">{items.length}</span> 个条目</div>
               <div className="chips">
                 {items.length > 0 && <span className="chip">最后改在修订 {latest}</span>}
-                {reviewed_ && <span className={`chip ${reviewed === items.length && items.length ? "ok" : "warn"}`}>评审通过 {reviewed}/{items.length}</span>}
+                {reviewed_ && <span className={`chip ${reviewDone ? "ok" : "warn"}`} data-testid={`board-review-${coll.name}`}>评审通过 {reviewed}/{items.length}{counts.kept > 0 ? ` · 已保留写法 ${counts.kept}` : ""}</span>}
                 <span className={`chip ${confirmed === items.length && items.length ? "ok" : "warn"}`}>已读 {confirmed}/{items.length}</span>
               </div>
               <div className="muted small">
                 {items.length === 0 ? "这个集合还没有条目。" : reviewed_
-                  ? `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上有评审通过的记录，${confirmed} 个用户已经看过（已读）。`
+                  ? `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上评审通过，${counts.kept > 0 ? `${counts.kept} 个评审不通过但你保留了写法（按你的决定算通过），` : ""}${confirmed} 个用户已经看过（已读）。`
                   : `这 ${items.length} 个条目里，${confirmed} 个用户已经看过（已读）。这个集合不评审。`}
               </div>
             </div>

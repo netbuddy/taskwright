@@ -60,12 +60,17 @@ export function batchNo(task: Task, batchId: string | null | undefined): number 
  * （只出现在同一修订只评一次之前留下的数据里），不写状态词，也不算未处理。按条目现在的评审结论（itemVerdict）认：
  * - 依据的那条：不通过是未处理，已保留是已保留；
  * - 更早修订上的：条目现在通过或已保留，是已在修订 N 改（N 是条目当前所在的修订），否则未处理；
- * - 当前修订上、不是依据的（被后来的记录取代，或是旧规则下的）：随条目现在的结论，通过是 superseded，已保留是已保留，其余未处理。
+ * - 当前修订上、按改之前的规则评出的（规则指纹与集合现在的不同）：old_rules，不管条目后来有没有按新规则重评、保留；
+ *   它不再算数，不算未处理，页签角标也不数它；
+ * - 当前修订上、不是依据的其余记录（被后来的记录取代）：随条目现在的结论，通过是 superseded，已保留是已保留，其余未处理。
  */
-export type FindingStatus = { kind: "fixed"; revision: number } | { kind: "kept"; reason: string | null } | { kind: "open" } | { kind: "superseded" };
+export type FindingStatus = { kind: "fixed"; revision: number } | { kind: "kept"; reason: string | null } | { kind: "open" } | { kind: "superseded" }
+  | { kind: "old_rules" };
 
 export function findingStatus(item: Item, review: Review, task?: Task): FindingStatus {
   const { state, basis, waiver } = itemVerdict(item, task);
+  const onCurrent = (review.revision_no ?? item.revision_no) === item.revision_no;
+  if (onCurrent && !underCurrentRules(review.rules_hash, currentHash(task, item.collection))) return { kind: "old_rules" };
   if (state === "waived" && (review === basis || (review.revision_no ?? item.revision_no) === item.revision_no)) return { kind: "kept", reason: waiver!.reason };
   if ((review.revision_no ?? item.revision_no) < item.revision_no) {
     return state === "passed" || state === "waived" ? { kind: "fixed", revision: item.revision_no } : { kind: "open" };
@@ -74,11 +79,14 @@ export function findingStatus(item: Item, review: Review, task?: Task): FindingS
   return { kind: "open" };
 }
 
-/** 发现状态的说法：「已在修订 8 改」「已保留：理由」「未处理」；被取代的不写。 */
+/** 发现状态的说法：「已在修订 8 改」「已保留：理由」「按改之前的规则评出，不再算数」「未处理」；被取代的不写。 */
+export const OLD_RULES_TEXT = "按改之前的规则评出，不再算数";
+
 export function findingStatusText(s: FindingStatus): string {
   if (s.kind === "fixed") return `已在修订 ${s.revision} 改`;
   if (s.kind === "kept") return s.reason ? `已保留：${s.reason}` : "已保留";
   if (s.kind === "superseded") return "";
+  if (s.kind === "old_rules") return OLD_RULES_TEXT;
   return "未处理";
 }
 
@@ -112,12 +120,27 @@ export function needsReview(task: Task, collection: string): boolean {
 
 /** 待评审：要评审的集合里、当前所在的修订还没有任何评审记录的条目，按条目区的顺序。「评审 N 条待评审的条目」的 N 就是它的条数。 */
 export function pendingReview(task: Task): Item[] {
-  return task.items.filter((i) => needsReview(task, i.collection) && reviewState(i, task).state === "pending");
+  return task.items.filter((i) => needsReview(task, i.collection) && matchesFilter(i, "review_pending", task));
 }
 
-/** 评审不通过：要评审的集合里、当前所在的修订上最近一条评审是不合规的条目。 */
+/** 评审不通过：要评审的集合里、评审结论（itemVerdict）是不通过的条目；用户保留了写法的不算，见 keptReview。 */
 export function failedReview(task: Task): Item[] {
-  return task.items.filter((i) => needsReview(task, i.collection) && reviewState(i, task).state === "failed");
+  return task.items.filter((i) => needsReview(task, i.collection) && matchesFilter(i, "review_failed", task));
+}
+
+/** 已保留写法：要评审的集合里、评审不通过但用户保留了现在的写法的条目（评审结论为 waived，按用户的决定算通过）。 */
+export function keptReview(task: Task): Item[] {
+  return task.items.filter((i) => needsReview(task, i.collection) && matchesFilter(i, "review_kept", task));
+}
+
+/**
+ * 一个集合里评审四种状态各有几个条目：待评审、评审通过、评审不通过（没有保留的）、已保留写法。任务页看板用它；
+ * 与条目区的汇总行、筛选用同一个判断（matchesFilter），三处的数对同一个任务相同。
+ */
+export function reviewCounts(task: Task, collection: string): { pending: number; passed: number; failed: number; kept: number } {
+  const items = task.items.filter((i) => i.collection === collection);
+  const n = (filter: ItemFilter) => items.filter((i) => matchesFilter(i, filter, task)).length;
+  return { pending: n("review_pending"), passed: n("review_passed"), failed: n("review_failed"), kept: n("review_kept") };
 }
 
 /** 某个集合里编号为 ruleId 的那条规则；找不到时为 undefined。 */
@@ -222,12 +245,13 @@ export function reviewOffReason(task: Task | null, o: { readOnly?: boolean; writ
   return undefined;
 }
 
-export type ItemFilter = "all" | "review_pending" | "review_failed" | "review_passed" | "unread" | "read" | "supplement";
+export type ItemFilter = "all" | "review_pending" | "review_failed" | "review_kept" | "review_passed" | "unread" | "read" | "supplement";
 
 export const FILTERS: { key: ItemFilter; label: string }[] = [
   { key: "all", label: "全部" },
   { key: "review_pending", label: "待评审" },
   { key: "review_failed", label: "评审不通过" },
+  { key: "review_kept", label: "已保留写法" },
   { key: "review_passed", label: "评审通过" },
   { key: "unread", label: "未读" },
   { key: "read", label: "已读" },
@@ -240,8 +264,11 @@ export function matchesFilter(item: Item, filter: ItemFilter, task?: Task): bool
       return true;
     case "review_pending":
       return reviewState(item, task).state === "pending";
+    // 评审三种按评审结论（itemVerdict）分：不通过只列没有保留的，保留了写法的单列一种；汇总行与看板的计数用同一个判断。
     case "review_failed":
-      return reviewState(item, task).state === "failed";
+      return itemVerdict(item, task).state === "failed";
+    case "review_kept":
+      return itemVerdict(item, task).state === "waived";
     case "review_passed":
       return reviewState(item, task).state === "passed";
     case "unread":
