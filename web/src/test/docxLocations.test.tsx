@@ -3,7 +3,7 @@
 // 页码与页内位置暂不比较（位置表暂不写它们）。
 // 位置表由 agent/tests/fixtures/build_location_docx.mts 生成并存在 fixtures/ 下，agent 的测试核对存着的与现算的相同。
 //
-// 标题文字两边的数法不同：位置表按投影的数法（认 w:startOverride、法律式编号 w:isLgl，样式里没写级别按第 0 级），只带十进制编号；
+// 标题文字两边的数法不同：位置表按投影的数法（认 w:startOverride、法律式编号 w:isLgl），只带十进制编号；
 // 页面现有的数法不完整。在页面数法不完整的段落上，下面把两边各自的值都写出来，差别算页面的已知缺陷，第二段页面改为查表时消失。
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -91,9 +91,9 @@ describe("编号样例 loc-numbering.docx", () => {
 });
 
 describe("编号写在样式里、样式没写级别 loc-style-no-level.docx", () => {
-  it("位置表按第 0 级数出编号；页面现有的推导遇到这种文件出错（页面的已知缺陷），整份画不出来", SLOW, async () => {
+  it("两边都按第 0 级数出编号：页面能画出这份文件（以前在这里出错，整份画不出来），标题文字与位置表相同", SLOW, async () => {
+    await sameEverywhere(STYLE_NO_LEVEL, STYLE_NO_LEVEL_TABLE as LocationFile);
     expect((STYLE_NO_LEVEL_TABLE as LocationFile).headings).toEqual([{ paragraph: 1, level: 2, title: "1 样式里没写级别的标题" }]);
-    await expect(pageTable(STYLE_NO_LEVEL)).rejects.toThrow(RangeError);
   });
 });
 
