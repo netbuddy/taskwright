@@ -49,7 +49,7 @@ steps below as different, and only these. They too go away when the Python versi
 |---|---|---|
 | `上传重名文件（加 -2）` | 409 `duplicate_content` ("这份文件与已有的材料《需求说明.md》内容完全相同，没有重复保存。", `data.path` `inputs/需求说明.md`) instead of 200 with `inputs/需求说明-2.md`. | The step uploads the same name with the same bytes, which is now refused as duplicate content; the automatic `-2` name is gone. |
 | `上传：类型不支持` | The message is "只接受 .md、.txt 与 Word 的 .docx 文件。" instead of "只接受 .md、.txt 与 .docx（Word）三种文件。". | The message is built from the upload extensions and no longer states a count. |
-| `任务页` | The material list has no `inputs/需求说明-2.md`. | Same as the first row: that file is no longer stored. |
+| `任务页` | The material list has no `inputs/需求说明-2.md`, and it has `inputs/退款规则.docx.locations.json` with `derived_from` `inputs/退款规则.docx`. | Same as the first row: that file is no longer stored. Uploading a Word file now also writes its location table, a derived file like the projection and the segment list. |
 | `材料原样 .md` | 404 `not_found` ("没有材料 inputs/需求说明-2.md。") instead of 200 with the file. | Same as the first row: the step reads the `-2` file. |
 
 What the first step used to check, a second file under a taken name, is now covered by `backend/tests/upload_dedup.test.ts`
