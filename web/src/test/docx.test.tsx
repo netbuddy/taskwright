@@ -6,19 +6,21 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import JSZip from "jszip";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type { Item, TaskDetail } from "../api/types";
 import { App as AntApp, ConfigProvider } from "antd";
 import { fireEvent } from "@testing-library/react";
 import { TaskPage } from "../pages/TaskPage";
 import { MaterialPane } from "../components/work/MaterialPane";
 import { SourceTag } from "../components/work/ItemDetail";
-import { ownMaterials, polish, renderDocx, tableOf, tablePositions, whereOf, type RenderedDocx } from "../model/docx";
+import { ownMaterials, pageAndPosition, placeText, polish, renderDocx, tableOf, tablePositions, type DocxTable, type RenderedDocx } from "../model/docx";
+import { chapterOf, type LocationFile } from "../../../agent/src/lib/docx_locations";
 import { resetDocxStore, TaskIdContext } from "../state/docxStore";
 // 仓库脚本 docx_paragraphs.mjs 的抽取函数作标准答案（它的类型声明在同目录的 .d.mts）
 import { paragraphsOf, tableLabel, type Paragraph } from "../../../scripts/docx_paragraphs.mjs";
 import SAMPLE_DATA_URL from "../../../examples/library-lending/requirements-styled.docx?inline";
 import MARKDOWN_PROJECTION from "./fixtures/requirements-styled.docx.md?raw";
+import LOCATIONS_TEXT from "./fixtures/requirements-styled.docx.locations.json?raw";
 
 const SAMPLE = Uint8Array.from(atob(SAMPLE_DATA_URL.slice(SAMPLE_DATA_URL.indexOf(",") + 1)), (c) => c.charCodeAt(0));
 const PATH = "inputs/requirements-styled.docx";
@@ -31,6 +33,15 @@ const squeeze = (s: string) => s.replace(/\s+/g, "");
 const legacyProjection = () =>
   expectedSample.map((p) => `[第 ${p.n} 段${p.table ? " · " + tableLabel(p.table) : ""}] ${p.text.replace(/[\r\n]/g, " ")}`).join("\n");
 const projection = () => MARKDOWN_PROJECTION;
+const LOCATIONS = JSON.parse(LOCATIONS_TEXT) as LocationFile;
+/** 材料内容接口的模拟：位置表给后端写的位置表（夹具），别的给投影。 */
+const content = async (_task: string, path: string) =>
+  ({ path, text: path.endsWith(".locations.json") ? LOCATIONS_TEXT : projection() });
+/** 来源标签里的三段：页码与页内位置由页面从派生表数出，章节查位置表。 */
+const where = (t: DocxTable, n: number, excerpt?: string) => {
+  const { page, position } = pageAndPosition(t, n, excerpt);
+  return placeText(page, chapterOf(LOCATIONS, n), position);
+};
 
 async function rendered(bytes: Uint8Array = SAMPLE): Promise<RenderedDocx> {
   const host = document.createElement("div");
@@ -95,8 +106,8 @@ describe("渲染与分页修补", () => {
     expect(t.pages).toBe(6);
     // 摘录落在后一半时，页写后一半所在的那一页
     const tail = squeeze(want[7].text).slice(-8);
-    expect(whereOf(t, 8, tail)[0]).toBe("第 3 页");
-    expect(whereOf(t, 8, squeeze(want[7].text).slice(0, 6))[0]).toBe("第 2 页");
+    expect(pageAndPosition(t, 8, tail).page).toBe("第 3 页");
+    expect(pageAndPosition(t, 8, squeeze(want[7].text).slice(0, 6)).page).toBe("第 2 页");
   });
 
   it("文件里没有分页标记时不写「第几页」", async () => {
@@ -105,7 +116,7 @@ describe("渲染与分页修补", () => {
     zip.file("word/document.xml", xml.replaceAll("<w:lastRenderedPageBreak/>", ""));
     const t = tableOf(await rendered(await zip.generateAsync({ type: "uint8array" })));
     expect(t.marks).toBe(0);
-    expect(whereOf(t, 76, "逾期的每本每天罚款一角")).toEqual(["3.1.1 逾期罚款", expect.stringMatching(/^页[上中下]$/)]);
+    expect(where(t, 76, "逾期的每本每天罚款一角")).toEqual(["3.1.1 逾期罚款", expect.stringMatching(/^页[上中下]$/)]);
   });
 
   it("顶层表格都套在可横向滚动的框里（比材料区宽的表格出滚动条，不缩放）", async () => {
@@ -116,15 +127,15 @@ describe("渲染与分页修补", () => {
   });
 });
 
-describe("派生表：页 · 章节 · 位置", () => {
+describe("来源标签的三段：页码与页内位置取自派生表，章节查位置表", () => {
   it("四个来源与原型 v2 走查时核对过的值一致", async () => {
     const t = tableOf(await rendered());
-    expect(whereOf(t, 76, "逾期的每本每天罚款一角，罚款最多不超过这本书的定价。")).toEqual(["第 3 页", "3.1.1 逾期罚款", "页下"]);
-    expect(whereOf(t, 37, "名下有逾期未还图书的，不能再借")).toEqual(["第 3 页", "2.3 借阅上限", "页上"]);
-    expect(whereOf(t, 111, "寒暑假期间的借期另行规定。罚款的缴纳方式待定。")).toEqual(["第 5 页", "5 待定事项", "页下"]);
-    expect(whereOf(t, 91, "系统要能每分钟处理至少 100 笔借还")).toEqual(["第 5 页", "4 非功能需求", "页上"]);
+    expect(where(t, 76, "逾期的每本每天罚款一角，罚款最多不超过这本书的定价。")).toEqual(["第 3 页", "3.1.1 逾期罚款", "页下"]);
+    expect(where(t, 37, "名下有逾期未还图书的，不能再借")).toEqual(["第 3 页", "2.3 借阅上限", "页上"]);
+    expect(where(t, 111, "寒暑假期间的借期另行规定。罚款的缴纳方式待定。")).toEqual(["第 5 页", "5 待定事项", "页下"]);
+    expect(where(t, 91, "系统要能每分钟处理至少 100 笔借还")).toEqual(["第 5 页", "4 非功能需求", "页上"]);
     // 封面上的段落之前没有标题：不写章节
-    expect(whereOf(t, 2)).toEqual(["第 1 页", expect.stringMatching(/^页[上中下]$/)]);
+    expect(where(t, 2)).toEqual(["第 1 页", expect.stringMatching(/^页[上中下]$/)]);
   });
 });
 
@@ -140,7 +151,7 @@ describe("材料区的四种定位结果", () => {
   ];
   const mockApi = () => {
     vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
-    vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: projection() });
+    vi.spyOn(api, "materialContent").mockImplementation(content);
   };
   const pane = (locate: { excerpt: string; locator: string; nonce: number } | null) =>
     <MaterialPane taskId="TASK-D" materials={materials} items={items} locate={locate} />;
@@ -185,7 +196,7 @@ describe("材料区的四种定位结果", () => {
 describe("同一句被几个条目引用", () => {
   it("只画一层底线，悬停提示列出全部条目", async () => {
     vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
-    vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: projection() });
+    vi.spyOn(api, "materialContent").mockImplementation(content);
     const cite = (id: string) => ({
       item_id: id, collection: "约束", title: id, revision_no: 1, revision_by: "executor", revision_at: "", revisions: [1], fields: {},
       sources: [{ kind: "文档原文", locator: `${PATH}#p13`, excerpt: "借期（含续借延长的部分）届满之日的次日起仍未归还。" }],
@@ -203,7 +214,7 @@ describe("同一句被几个条目引用", () => {
 describe("条目区的来源标签", () => {
   it("写成「文件名 · 第几页 · 章节 · 页上中下」；悬停提示带表格位置；没算出来之前只写文件名", async () => {
     vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
-    vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: projection() });
+    vi.spyOn(api, "materialContent").mockImplementation(content);
     render(
       <TaskIdContext.Provider value="TASK-D">
         <SourceTag source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
@@ -213,6 +224,24 @@ describe("条目区的来源标签", () => {
     await waitFor(() => expect(screen.getByRole("button")).toHaveTextContent("❝ requirements-styled.docx · 第 5 页 · 4 非功能需求 · 页上"), SLOW);
     expect(screen.getByRole("button").title).toBe("材料原文：「系统要能每分钟处理至少 100 笔借还」（表 3 第 2 行第 2 列）。点一下，材料区滚到这里。");
     expect(screen.getByRole("button").textContent).not.toMatch(/段/);
+  });
+
+  it("读不到位置表（接口报错）或位置表不是合法的 JSON：不写章节，页码与页内位置照常，页面不出错", async () => {
+    vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
+    for (const broken of [
+      async (_t: string, path: string) => { if (path.endsWith(".locations.json")) throw new ApiError("not_found", "没有材料", 404); return content(_t, path); },
+      async (_t: string, path: string) => ({ path, text: path.endsWith(".locations.json") ? "不是 JSON" : projection() }),
+    ]) {
+      resetDocxStore();
+      vi.spyOn(api, "materialContent").mockImplementation(broken);
+      render(
+        <TaskIdContext.Provider value="TASK-D">
+          <SourceTag source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
+        </TaskIdContext.Provider>,
+      );
+      await waitFor(() => expect(screen.getByRole("button")).toHaveTextContent("❝ requirements-styled.docx · 第 5 页 · 页上"), SLOW);
+      cleanup();
+    }
   });
 });
 
@@ -250,7 +279,7 @@ describe("任务页的材料清单", () => {
     vi.spyOn(api, "getTask").mockResolvedValue(detail);
     vi.spyOn(api, "listTasks").mockResolvedValue([]);
     vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
-    const content = vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: projection() });
+    const read = vi.spyOn(api, "materialContent").mockImplementation(content);
     render(<ConfigProvider><AntApp><TaskPage taskId="TASK-D" /></AntApp></ConfigProvider>);
     expect(await screen.findByText("这个任务现在有 2 份材料。助手读的就是这几份文件。")).toBeInTheDocument();
     const rows = screen.getAllByTestId("material-row");
@@ -261,6 +290,7 @@ describe("任务页的材料清单", () => {
     expect(document.querySelector(".docx-view")!.textContent).toContain("学校图书馆借还书系统需求说明");
     // 投影只在后台读来算表格位置，页面上不显示它
     expect(document.body.textContent).not.toContain("[p1]");
-    expect(content).toHaveBeenCalledTimes(1);
+    // 投影与位置表各读一次
+    expect(read.mock.calls.map((c) => c[1]).sort()).toEqual([PATH, `${PATH}.locations.json`]);
   });
 });

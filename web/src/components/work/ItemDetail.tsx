@@ -34,7 +34,8 @@ import { Popconfirm, Select } from "antd";
 import { api, ApiError } from "../../api/client";
 import type { ActionRequest, CollectionDef, FieldDef, FieldValue, Fields, Finding, Item, ItemRevision, ReviewRule, Source, Task } from "../../api/types";
 import { alignSteps } from "../../model/diff";
-import { docxLocator, whereOf } from "../../model/docx";
+import { docxLocator, pageAndPosition, placeText } from "../../model/docx";
+import { chapterOf } from "../../../../agent/src/lib/docx_locations";
 import { TaskIdContext, useDocx } from "../../state/docxStore";
 import { BUSY_TEXT, batchNo, currentReview, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
 import { baselineRevision, confirmedRevision } from "../../model/revisions";
@@ -388,8 +389,9 @@ function sourcesForFields(sources: Source[], field: string): Source[] {
 const fileName = (locator: string) => locator.split("/").pop() || locator;
 
 /**
- * 「文档原文」来源给人看的出处：文本材料是文件名；Word 材料是「x.docx · 第 3 页 · 3.1.1 逾期罚款 · 页下」，
- * 三段由库里存的段落号派生（model/docx.ts），派生表还没算出来时只写文件名。tablePos 是表格里的段落的位置（「表 3 第 2 行第 2 列」）。
+ * 「文档原文」来源给人看的出处：文本材料是文件名；Word 材料是「x.docx · 第 3 页 · 3.1.1 逾期罚款 · 页下」，由库里存的段落号得出：
+ * 页码与页内位置取自页面的派生表（model/docx.ts），章节查位置表（没有位置表时不写章节）；派生表还没算出来时只写文件名。
+ * tablePos 是表格里的段落的位置（「表 3 第 2 行第 2 列」）。
  */
 function useSourcePlace(source: Source): { label: string; tablePos: string } {
   const taskId = useContext(TaskIdContext);
@@ -397,7 +399,9 @@ function useSourcePlace(source: Source): { label: string; tablePos: string } {
   const entry = useDocx(taskId, loc?.path ?? null);
   const name = fileName(loc?.path ?? source.locator);
   if (!loc?.paragraph || !entry?.table) return { label: name, tablePos: "" };
-  return { label: [name, ...whereOf(entry.table, loc.paragraph, source.excerpt)].join(" · "), tablePos: entry.tablePos?.get(loc.paragraph) ?? "" };
+  const { page, position } = pageAndPosition(entry.table, loc.paragraph, source.excerpt);
+  const chapter = entry.locations ? chapterOf(entry.locations, loc.paragraph) : null;
+  return { label: [name, ...placeText(page, chapter, position)].join(" · "), tablePos: entry.tablePos?.get(loc.paragraph) ?? "" };
 }
 
 /** 值格下方的一个来源小标签。种类为「领域说明」的写成「领域说明 DN-003」，点一下打开那条领域说明。 */

@@ -6,7 +6,8 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { Item } from "../../api/types";
-import { charsOf, docxLocator, placeExcerpt, polish, renderDocx, tableOf, whereOf, wrapChars, type DocxTable, type RenderedDocx } from "../../model/docx";
+import { charsOf, docxLocator, pageAndPosition, placeExcerpt, placeText, polish, renderDocx, tableOf, wrapChars, type DocxTable, type RenderedDocx } from "../../model/docx";
+import { chapterOf } from "../../../../agent/src/lib/docx_locations";
 import { useDocx } from "../../state/docxStore";
 import type { LocateRequest } from "./MaterialPane";
 
@@ -121,7 +122,8 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
       ms = 4000;
       setNote("这段引用跨越了多个段落，已整段标出。");
     } else {
-      const where = n ? whereOf(t, n) : [];
+      const { page, position } = n ? pageAndPosition(t, n) : { page: null, position: null };
+      const where = n ? placeText(page, entry?.locations ? chapterOf(entry.locations, n) : null, position) : [];
       setNote(`没有在${where.length ? `${where.join(" · ")}附近` : "材料里"}找到这段原文。`);
     }
     const timer = setTimeout(() => { undo(); setNote(null); }, ms);
