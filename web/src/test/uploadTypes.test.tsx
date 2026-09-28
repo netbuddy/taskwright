@@ -11,6 +11,7 @@ import { ToastProvider } from "../components/Toasts";
 import { Conversation } from "../components/work/Conversation";
 import { uploadAccept, uploadTypesText } from "../model/upload";
 import { TaskPage } from "../pages/TaskPage";
+import { settled } from "./settled";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -62,9 +63,10 @@ describe("两处入口", () => {
     chat();
     await waitFor(() => expect(document.querySelector("input[type=file]")).toHaveAttribute("accept", ".md,.txt,.docx"));
     cleanup();
-    vi.spyOn(api, "serviceInfo").mockRejectedValue(new Error("没有这个接口"));
+    const failed = vi.spyOn(api, "serviceInfo").mockRejectedValue(new Error("没有这个接口"));
     chat();
-    await waitFor(() => expect(api.serviceInfo).toHaveBeenCalled());
+    // 取不到时页面上不留痕迹；上一次渲染已经调用过这个接口，只等「被调用」一开始就成立。等这次失败处理完再看。
+    await settled(failed);
     expect(document.querySelector("input[type=file]")).not.toHaveAttribute("accept");
   });
 });

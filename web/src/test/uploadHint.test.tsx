@@ -10,6 +10,7 @@ import { ServiceProvider } from "../components/ServiceControls";
 import { ToastProvider } from "../components/Toasts";
 import { uploadLimitText } from "../model/upload";
 import { TaskPage } from "../pages/TaskPage";
+import { settled } from "./settled";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -55,7 +56,8 @@ describe("任务页上传框的说明文字", () => {
   it("取不到服务信息：类型与大小两半句都不写", async () => {
     taskPage(Promise.reject(new Error("没有这个接口")));
     const hint = await screen.findByTestId("upload-hint");
-    await waitFor(() => expect(api.serviceInfo).toHaveBeenCalled());
+    // 取不到时页面上不留痕迹，与还没取到时一样；等这次失败处理完再看说明。
+    await settled(vi.mocked(api.serviceInfo));
     expect(hint).toHaveTextContent("把文件拖到这里，或者点这里选择文件。新传的材料下一次会话开始时助手就能看到。");
     expect(hint.textContent).not.toMatch(/MB|只收/);
   });

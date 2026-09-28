@@ -15,6 +15,7 @@ import { TaskPage } from "../pages/TaskPage";
 import { WorkViewPage } from "../pages/WorkViewPage";
 import { useWorkView } from "../state/useWorkView";
 import { initialWorkState } from "../state/workState";
+import { settled } from "./settled";
 
 vi.mock("../state/useWorkView", () => ({ useWorkView: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -101,8 +102,9 @@ describe("任务页的上传框", () => {
 
   it("取不到服务信息时不按类型拦：照常发给后端", async () => {
     const sent = page(Promise.reject(new Error("没有这个接口")), () => Promise.reject(new ApiError("unsupported_type", TYPE_TEXT, 415)));
-    await waitFor(() => expect(api.serviceInfo).toHaveBeenCalled());
     await screen.findByText(/把文件拖到这里/);
+    // 取不到时页面上不留痕迹，与还没取到时一样；等这次失败处理完再选文件，否则「照常发出」在服务信息进页面之前就成立。
+    await settled(vi.mocked(api.serviceInfo));
     await choose(file("图.png"));
     await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(TYPE_TEXT)).toBeInTheDocument();

@@ -10,6 +10,7 @@ import { ServiceProvider } from "../components/ServiceControls";
 import { ToastProvider } from "../components/Toasts";
 import { tooLargeText } from "../model/upload";
 import { TaskPage } from "../pages/TaskPage";
+import { settled } from "./settled";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -49,8 +50,8 @@ const choose = async (bytes: number) => {
 describe("任务页的上传框", () => {
   it("文件超过上限：不发请求，红色提示写后端给的那句话", async () => {
     const upload = taskPage(Promise.resolve(info));
-    await waitFor(() => expect(api.serviceInfo).toHaveBeenCalled());
-    await screen.findByText(/把文件拖到这里/);
+    // 说明里写出上限，说明服务信息已经进了页面；在这之前选文件，前端还不知道上限，会照常发出。
+    await screen.findByText(/单个不超过/);
     await choose(11);
     expect(await screen.findByText(TEXT)).toBeInTheDocument();
     expect(upload).not.toHaveBeenCalled();
@@ -58,7 +59,8 @@ describe("任务页的上传框", () => {
 
   it("文件不超过上限：照常发请求", async () => {
     const upload = taskPage(Promise.resolve(info));
-    await screen.findByText(/把文件拖到这里/);
+    // 同上：等上限进了页面再选，否则「照常发出」在前端知道上限之前就成立。
+    await screen.findByText(/单个不超过/);
     await choose(10);
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
   });
@@ -66,6 +68,8 @@ describe("任务页的上传框", () => {
   it("取不到服务信息时不拦：照常发给后端", async () => {
     const upload = taskPage(Promise.reject(new Error("没有这个接口")));
     await screen.findByText(/把文件拖到这里/);
+    // 取不到时页面上不留痕迹；等这次失败处理完再选文件。
+    await settled(vi.mocked(api.serviceInfo));
     await choose(11);
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
   });
