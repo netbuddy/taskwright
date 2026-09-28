@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { api } from "../api/client";
 import type { ExecutorState, Task } from "../api/types";
 import { ToastProvider } from "../components/Toasts";
+import { DISABLED_PLACEHOLDER, INPUT_PLACEHOLDER } from "../components/work/Conversation";
 import { EXITED_HINT, STARTING_AFTER_SEND_HINT, STARTING_HINT, STARTING_SEND_TITLE, executorHint } from "../components/work/executorHint";
 import { WorkViewPage } from "../pages/WorkViewPage";
 import { useWorkView } from "../state/useWorkView";
@@ -27,10 +28,10 @@ const task: Task = {
     fields: { 名称: "买家申请退款" }, sources: [], reviews: [], confirmations: [], confirmation_stale: false }],
 } as unknown as Task;
 
-function page(executor: ExecutorState, outgoing: OutgoingMessage[] = []) {
+function page(executor: ExecutorState, outgoing: OutgoingMessage[] = [], shown: Task = task) {
   vi.spyOn(api, "listSessions").mockResolvedValue([]);
   (useWorkView as Mock).mockReturnValue({
-    state: { ...initialWorkState("S1"), phase: "ready", task, executor, outgoing },
+    state: { ...initialWorkState("S1"), phase: "ready", task: shown, executor, outgoing },
     log: [], dispatch: vi.fn(), stream: "open", loadError: null, reload: vi.fn(),
   });
   render(<Wrap><WorkViewPage taskId="TASK-001" sessionId="S1" /></Wrap>);
@@ -66,8 +67,8 @@ describe("助手没有在运行时的工作视图", () => {
   });
 
   it("助手启动不起来（failed_to_start）：仍然整页只读，写明原因", () => {
-    page({ state: "failed_to_start", text: "助手没有启动起来。（没有配置模型）", active_session: null });
-    expect(screen.getByTestId("busy-note")).toHaveTextContent("助手现在不可用：助手没有启动起来。（没有配置模型）");
+    page({ state: "failed_to_start", text: "助手没有启动起来，没有配置模型", active_session: null });
+    expect(screen.getByTestId("busy-note")).toHaveTextContent("助手现在不可用：助手没有启动起来，没有配置模型");
     expect(screen.queryByTestId("executor-hint")).toBeNull();
     expect(screen.getByTestId("chat-input")).toBeDisabled();
     expect(screen.getByTestId("send")).toHaveClass("off");
@@ -78,5 +79,27 @@ describe("助手没有在运行时的工作视图", () => {
     expect(executorHint({ state: "working", text: "", active_session: "S1" }, true)).toBeNull();
     expect(executorHint({ state: "starting", text: "", active_session: "S1" }, false)).toBe(STARTING_HINT);
     expect(executorHint(null, false)).toBeNull();
+  });
+
+  it("输入框整个停用时，占位文字不再重复提示条里的那句：助手不可用、任务已经结束、助手在另一条会话里工作三种情形相同", () => {
+    const cases: [ExecutorState, Task, string][] = [
+      [{ state: "failed_to_start", text: "助手没有启动起来，系统原因：EACCES", active_session: null }, task, "助手现在不可用：助手没有启动起来，系统原因：EACCES"],
+      [{ state: "idle", text: "", active_session: "S1" }, { ...task, status: "已完成" } as Task, "这个任务已经结束，只能查看。"],
+      [{ state: "working", text: "", active_session: "S2" }, task, "助手正在另一条会话里工作，做完才能在这里继续。"],
+    ];
+    for (const [executor, shown, note] of cases) {
+      page(executor, [], shown);
+      expect(screen.getByTestId("busy-note").textContent).toBe(note);
+      const input = screen.getByTestId("chat-input");
+      expect(input).toBeDisabled();
+      expect(input).toHaveAttribute("placeholder", DISABLED_PLACEHOLDER);
+      expect(input.getAttribute("placeholder")).not.toContain(note);
+      cleanup();
+    }
+  });
+
+  it("输入框可用时占位文字是平常的那句", () => {
+    page({ state: "idle", text: "", active_session: "S1" });
+    expect(screen.getByTestId("chat-input")).toHaveAttribute("placeholder", INPUT_PLACEHOLDER);
   });
 });

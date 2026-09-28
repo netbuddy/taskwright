@@ -61,8 +61,17 @@ export function resolveModel(profile: Profile, env: NodeJS.ProcessEnv | Record<s
   return fromProfile;
 }
 
-/** 启动配置有问题，带一句说明缺什么、怎么补。 */
-export class LaunchError extends Error {}
+/**
+ * 启动配置有问题，带一句说明缺什么、怎么补。说明会显示在页面顶部（执行者状态的附带说明）。
+ * 给了 technical 时，说明是给用户看的那句，technical 是排查要用的原话，写进后端日志与接口错误的附带信息 detail。
+ */
+export class LaunchError extends Error {
+  readonly technical?: string;
+  constructor(message: string, technical?: string) {
+    super(message);
+    if (technical !== undefined) this.technical = technical;
+  }
+}
 
 function isFile(path: string): boolean {
   try {
@@ -214,8 +223,9 @@ export function piLauncher(profile: Profile): { shown: string[]; command: string
     if (isSingleExecutable()) return { shown: [process.execPath, script], command: process.execPath, prefix: [], env: { [ENV_RUN_SCRIPT]: script } };
     return { shown: [process.execPath, script], command: process.execPath, prefix: [script], env: {} };
   }
-  const executable = which(profile.executable ?? "pi");
-  if (executable === null) throw new LaunchError("在 PATH 里找不到 pi 命令，先把 pi 装好再启动。");
+  const name = profile.executable ?? "pi";
+  const executable = which(name);
+  if (executable === null) throw new LaunchError("找不到助手的程序（pi），请检查安装。", `在 PATH 里找不到 ${name} 命令，先把 pi 装好再启动。`);
   return { shown: [executable], command: executable, prefix: [], env: {} };
 }
 

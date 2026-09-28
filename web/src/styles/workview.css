@@ -75,8 +75,9 @@
 .app .sysnote ul{margin:.2rem 0 .1rem 1.05rem}
 .app .sysnote li{font-size:0.901rem}
 .app .sysnote .demo{display:block;margin-top:.3rem;font-size:0.873rem;color:#4b6f6b}
+/* 说明里可能有不带空格的长串（文件路径、环境变量名）：overflow-wrap:anywhere 让它在框内任意处折行，否则会顶出框的右边被截掉 */
 .app .busybar{display:none;align-items:center;gap:.4rem;background:var(--amber-bg);border:1px solid var(--amber-line);
-  border-radius:.5rem;padding:.3rem .55rem;font-size:0.897rem;color:#7a4a06;margin-bottom:.4rem}
+  border-radius:.5rem;padding:.3rem .55rem;font-size:0.897rem;color:#7a4a06;margin-bottom:.4rem;overflow-wrap:anywhere}
 .app .busybar.show{display:flex}
 /* 不拦住操作的提示（助手已经退出、正在启动、还没启动）：蓝色，与拦住操作的琥珀色提示条区分开 */
 .app .busybar.info{background:var(--blue-bg);border-color:var(--blue-line);color:var(--ink)}

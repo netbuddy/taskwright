@@ -19,6 +19,14 @@ import { useService } from "../ServiceControls";
 import { uploadAccept } from "../../model/upload";
 import { STARTING_SEND_TITLE } from "./executorHint";
 
+/** 输入框平常的占位文字。 */
+export const INPUT_PLACEHOLDER = "把你的想法直接告诉助手，或者在右边直接动手改…";
+/**
+ * 输入框整个停用时（任务已经结束、助手不可用、助手在另一条会话里工作）的占位文字。停用的原因已经写在输入框上方的提示条里，
+ * 这里不再重复整句。
+ */
+export const DISABLED_PLACEHOLDER = "现在不能在这里输入，原因见上方。";
+
 /** 执行者工作中，发送键为什么不能用。 */
 export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句；你可以先把话打好";
 
@@ -123,7 +131,7 @@ export function Conversation({
         <div className={`busybar${note ? " show" : ""}${info ? " info" : ""}`} data-testid={note ? (info ? "executor-hint" : "busy-note") : undefined}>{note}</div>
         <div className="inbox">
           <textarea ref={inputRef} value={draft} disabled={disabled} rows={2} data-testid="chat-input"
-            placeholder={disabledReason ?? "把你的想法直接告诉助手，或者在右边直接动手改…"}
+            placeholder={disabledReason ? DISABLED_PLACEHOLDER : INPUT_PLACEHOLDER}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
           <div className="inrow">
