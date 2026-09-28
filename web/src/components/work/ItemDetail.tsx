@@ -390,7 +390,8 @@ const fileName = (locator: string) => locator.split("/").pop() || locator;
 
 /**
  * 「文档原文」来源给人看的出处：文本材料是文件名；Word 材料是「x.docx · 第 3 页 · 3.1.1 逾期罚款 · 页下」，由库里存的段落号得出：
- * 页码与页内位置取自页面的派生表（model/docx.ts），章节查位置表（没有位置表时不写章节）；派生表还没算出来时只写文件名。
+ * 页码与页内位置取自页面的派生表（model/docx.ts），章节查位置表（没有位置表时不写章节）；派生表还没算出来时只写文件名，
+ * 材料显示不出来、没有派生表时写「文件名 · 章节」。
  * tablePos 是表格里的段落的位置（「表 3 第 2 行第 2 列」）。
  */
 function useSourcePlace(source: Source): { label: string; tablePos: string } {
@@ -398,9 +399,11 @@ function useSourcePlace(source: Source): { label: string; tablePos: string } {
   const loc = source.kind === "文档原文" ? docxLocator(source.locator) : null;
   const entry = useDocx(taskId, loc?.path ?? null);
   const name = fileName(loc?.path ?? source.locator);
-  if (!loc?.paragraph || !entry?.table) return { label: name, tablePos: "" };
-  const { page, position } = pageAndPosition(entry.table, loc.paragraph, source.excerpt);
+  if (!loc?.paragraph || !entry || entry.status === "loading") return { label: name, tablePos: "" };
   const chapter = entry.locations ? chapterOf(entry.locations, loc.paragraph) : null;
+  // 材料显示不出来（读不到或画不出来）时没有派生表，页码与页内位置写不了，章节照写。
+  if (!entry.table) return { label: [name, ...placeText(null, chapter, null)].join(" · "), tablePos: entry.tablePos?.get(loc.paragraph) ?? "" };
+  const { page, position } = pageAndPosition(entry.table, loc.paragraph, source.excerpt);
   return { label: [name, ...placeText(page, chapter, position)].join(" · "), tablePos: entry.tablePos?.get(loc.paragraph) ?? "" };
 }
 
