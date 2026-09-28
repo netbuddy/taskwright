@@ -55,12 +55,18 @@ const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex")
 /** 上传的文件超过上限时给用户看的那句话。服务信息接口把上限与这句话一起给前端，前端在发送之前就能拦下。 */
 export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
 export const UPLOAD_TYPES = [".md", ".txt", ".docx"];
-/**
- * 上传的文件类型不在 UPLOAD_TYPES 里时给用户看的那句话。服务信息接口把它与扩展名一起给前端，前端在发送之前就能拦下。
- * 写成函数是为了以后改成由 UPLOAD_TYPES 拼出来时只改这里；现在返回手写的原话。
- */
+/** 扩展名给人看的叫法：表里有的写叫法，没有的直接写扩展名本身。前端不另存一份，叫法经服务信息的 upload.types_text 给出。 */
+const UPLOAD_TYPE_NAMES: Record<string, string> = { ".docx": "Word 的 .docx" };
+
+/** 允许上传的类型写成给人看的一串，例如「.md、.txt 与 Word 的 .docx」：多项之间用「、」，最后一项前用「与」。由 UPLOAD_TYPES 拼出。 */
+export function uploadTypesText(): string {
+  const names = UPLOAD_TYPES.map((ext) => UPLOAD_TYPE_NAMES[ext] ?? ext);
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join("、")} 与 ${names[names.length - 1]}`;
+}
+
+/** 上传的文件类型不在 UPLOAD_TYPES 里时给用户看的那句话，例如「只接受 .md、.txt 与 Word 的 .docx 文件。」。服务信息把它给前端，前端在发送之前就能拦下。 */
 export function unsupportedTypeText(): string {
-  return "只接受 .md、.txt 与 .docx（Word）三种文件。";
+  return `只接受 ${uploadTypesText()} 文件。`;
 }
 
 /** 任务类型：task-types/ 下的每个目录，显示名取它的任务定义里的「任务名」；没有新格式任务定义的模板不列。 */
