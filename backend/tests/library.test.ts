@@ -131,9 +131,34 @@ test("评审批次、保留进整份数据；导出时写「评审不通过，�
   const [, task] = library.taskSnapshot(copy);
   const uc1 = task!.items.find((i) => i.item_id === "UC-001")!;
   assert.equal(uc1.reviews[0].batch_id, "ui-op-b");
-  assert.deepEqual(uc1.waivers, [{ revision_no: 2, reason: "材料原话如此", source: "panel", at: uc1.waivers[0].at, revoked: false }]);
+  assert.deepEqual(uc1.waivers, [{ revision_no: 2, reason: "材料原话如此", source: "panel", at: uc1.waivers[0].at, revoked: false, seq: 7 }]);
+  assert.equal(uc1.reviews[0].seq, 5);
   assert.deepEqual(task!.review_batches.map((b) => [b.no, b.batch_id, b.started_by, b.total, b.failed, b.problems]), [[1, "ui-op-b", "user", 1, 1, 1]]);
   assert.equal(render.reviewState(lib(copy), "UC-001", 2), "评审不通过，用户保留（理由：材料原话如此）");
+});
+
+test("生成文档的评审状态用共用的评审结论：同一修订上以最后一条为准，保留要在它之后，规则改过之后写未评审", () => {
+  const copy = copyWorkspace(ws, join(tmp, "ws-latest-wins"));
+  const task = sqlGet(copy, "SELECT task_id, definition_text FROM task")!;
+  const definition = JSON.parse(task.definition_text);
+  definition.交付物.条目集合[0].评审规矩 = { 规则文件: "docs/r.json" };
+  writeFileSync(join(copy, "docs", "r.json"), JSON.stringify([{ 编号: "A", 级别: "必选", 条文: "", 反例: "", 正例: "" }]), "utf-8");
+  const hash = library.rulesHash(copy, { 规则文件: "docs/r.json" });
+  const review = (seq: number, verdict: string, forced: number) => [
+    "INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at, batch_id, rules_hash, forced) " +
+      `VALUES (?, 'UC-001', 2, ?, 'r', 'x', 'x', 'ui-op-${seq}', ?, '2026-09-24 10:00:0${seq}', 'ui-op-${seq}', ?, ?)`, task.task_id, verdict, seq, hash, forced] as [string, ...unknown[]];
+  // 先合规，后来强制重评成不合规（只评一次之前留下的数据）
+  sqlRun(copy, [["UPDATE task SET definition_text = ?", JSON.stringify(definition)], review(5, "合规", 0), review(6, "不合规", 1)]);
+  assert.equal(render.reviewState(lib(copy), "UC-001", 2), "评审不通过");
+  const [, snap] = library.taskSnapshot(copy);
+  assert.deepEqual(snap!.items[0].reviews.map((r) => [r.verdict, r.seq, r.rules_hash === hash]), [["合规", 5, true], ["不合规", 6, true]]);
+  assert.equal(snap!.definition.collections[0].rules_hash, hash);
+  // 保留在不合规那一条之后才算
+  sqlRun(copy, [["INSERT INTO review_waiver (task_id, item_id, revision_no, reason, source, op_id, event_seq, created_at) VALUES (?, 'UC-001', 2, '原话', 'detail', 'ui-op-w', 7, '2026-09-24 10:01:00')", task.task_id]]);
+  assert.equal(render.reviewState(lib(copy), "UC-001", 2), "评审不通过，用户保留（理由：原话）");
+  // 规则文件改了：旧规则下的记录不算，页面上回到待评审，文档写未评审
+  writeFileSync(join(copy, "docs", "r.json"), JSON.stringify([{ 编号: "B", 级别: "必选", 条文: "", 反例: "", 正例: "" }]), "utf-8");
+  assert.equal(render.reviewState(lib(copy), "UC-001", 2), "未评审");
 });
 
 test("修订日志最新在前，每项列出碰到的条目与改了哪些字段", () => {

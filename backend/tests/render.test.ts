@@ -200,7 +200,7 @@ describe("模板的按字段筛选与按字段归组", () => {
       items: new Map(rows.map(([id], n) => [id, { collection: "说明", serial: n + 1 }])),
       contents: new Map(), data: { sources: new Map(), event_meta: new Map() },
       latestRevision: () => 1, aliveAt: () => rows.map(([id]) => [id, 1]), fieldsOf: (id: string) => fields.get(id),
-      sourcesOf: () => [], reviewsOf: () => [], confirmationsOf: () => [], activeWaiver: () => null,
+      sourcesOf: () => [], reviewsOf: () => [], confirmationsOf: () => [], verdictOf: () => ({ state: "pending", basis: null, waiver: null, current: [] }),
     } as any;
     return render.render(dir, lib);
   };

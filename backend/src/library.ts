@@ -13,6 +13,7 @@ import { DatabaseSync } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
+import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -301,18 +302,18 @@ export function readAll(db: DatabaseSync, afterSeq: number | null = null): Libra
   });
 }
 
-/** 评审记录；早期的库没有批次、指纹、重评几列，读作空。 */
+/** 评审记录，按先后（写下它的事件序号）；早期的库没有批次、指纹、重评几列，读作空。 */
 export function readReviews(db: DatabaseSync, taskId: string): Row[] {
   const cols = columnNames(db, "review");
   const extra = ["batch_id", "rules_hash", "forced"].every((c) => cols.has(c))
     ? ", batch_id, rules_hash, forced" : ", NULL AS batch_id, NULL AS rules_hash, 0 AS forced";
-  return all(db, `SELECT item_id, revision_no, verdict, reason, created_at, review_id${extra} FROM review WHERE task_id = ? ORDER BY review_id`, taskId);
+  return all(db, `SELECT item_id, revision_no, verdict, reason, created_at, review_id, event_seq${extra} FROM review WHERE task_id = ? ORDER BY event_seq, review_id`, taskId);
 }
 
-/** 评审豁免（用户保留的写法），含已撤销的；早期的库没有这张表，读作空。 */
+/** 评审豁免（用户保留的写法），含已撤销的，按先后；早期的库没有这张表，读作空。 */
 export function readWaivers(db: DatabaseSync, taskId: string): Row[] {
   if (!tableNames(db).has("review_waiver")) return [];
-  return all(db, "SELECT item_id, revision_no, reason, source, created_at, revoked_at FROM review_waiver WHERE task_id = ? ORDER BY waiver_id", taskId);
+  return all(db, "SELECT item_id, revision_no, reason, source, created_at, revoked_at, event_seq FROM review_waiver WHERE task_id = ? ORDER BY event_seq, waiver_id", taskId);
 }
 
 /** 评审发现：评审编号 → 逐条发现（接口的形状）。发现表没有规则编号与级别两列的旧库，这两项读作空。 */
@@ -369,20 +370,23 @@ export class Library {
       .map((r) => ({
         revision_no: r.revision_no, verdict: r.verdict, reason: r.reason, findings: findings.get(r.review_id) || [],
         at: clock.fromLocalText(r.created_at), batch_id: r.batch_id ?? null, rules_hash: r.rules_hash ?? null, forced: truthy(r.forced),
+        seq: r.event_seq,
       }));
   }
 
-  /** 条目的保留记录（含已撤销的），按先后。 */
+  /** 条目的保留记录（含已撤销的），按先后。seq 是记下它的事件序号，页面据此认保留在哪一条评审之后。 */
   waiversOf(itemId: string) {
     return (this.data.waivers || []).filter((w) => w.item_id === itemId).map((w) => ({
       revision_no: w.revision_no, reason: w.reason, source: w.source, at: clock.fromLocalText(w.created_at), revoked: w.revoked_at !== null,
+      seq: w.event_seq,
     }));
   }
 
-  /** 条目在某次修订上生效的保留（没撤销的最近一条）。 */
-  activeWaiver(itemId: string, revisionNo: number) {
-    const live = this.waiversOf(itemId).filter((w) => w.revision_no === revisionNo && !w.revoked);
-    return live.length ? live[live.length - 1] : null;
+  /** 条目在某次修订上的评审结论（agent/src/lib/review_verdict.ts），按条目所在集合现在的规则指纹认记录。 */
+  verdictOf(itemId: string, revisionNo: number) {
+    const collection = this.items.get(itemId)?.collection;
+    const spec = collection === undefined ? undefined : reviewSpecs(this.data.task!.definition_text)[collection];
+    return reviewVerdict(revisionNo, this.reviewsOf(itemId), this.waiversOf(itemId), rulesHash(this.data.task_dir ?? null, spec));
   }
 
   /** 评审批次：每次评审一项，按先后，第几次评审即 no。 */
@@ -638,14 +642,17 @@ export function itemRevisions(taskDir: string, itemId: string) {
   return lib.items.has(itemId) ? lib.revisionsView(itemId) : null;
 }
 
-/** 生成文档用：整份库拼好的 Library（不带任务目录，与读事件时一样）。 */
+/** 生成文档用：整份库拼好的 Library。带上任务目录，评审结论才能按现在的规则指纹认记录（与页面一致）。 */
 export function libraryOf(taskDir: string): Library {
   const db = openRo(taskDir)!;
+  let data: LibraryData;
   try {
-    return new Library(readAll(db));
+    data = readAll(db);
   } finally {
     db.close();
   }
+  data.task_dir = taskDir;
+  return new Library(data);
 }
 
 /** 键按字母排好之后的 JSON 写法，用来逐字段比较两次修订的值。 */
