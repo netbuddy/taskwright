@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
+import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -767,7 +768,7 @@ function intentActs(db: DatabaseSync, taskId: string, rows: Row[]): Map<string, 
 
 /**
  * 材料清单：材料目录里的文件（不含子目录，Word 材料的图片目录因此不列），按名字排。由 Word 材料生成的投影（x.docx.md，
- * 0.2 的任务里是 x.docx.txt）与分段清单（x.docx.segments.json）旁边有那份 .docx 时，derived_from 写那份 .docx 的路径，
+ * 0.2 的任务里是 x.docx.txt）、分段清单（x.docx.segments.json）与位置表（x.docx.locations.json）旁边有那份 .docx 时，derived_from 写那份 .docx 的路径，
  * 界面据此不单独列出；其余为 null。
  */
 export function materials(taskDir: string, definition: ParsedDefinition | Record<string, any> | null) {
@@ -793,6 +794,10 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
   const sourceOf = (name: string): string | null => {
     if (name.toLowerCase().endsWith(".docx.segments.json")) {
       const stem = name.slice(0, -".segments.json".length);
+      return present.has(stem) ? `${rel}${stem}` : null;
+    }
+    if (isLocationTable(name)) {
+      const stem = name.slice(0, -LOCATIONS_SUFFIX.length);
       return present.has(stem) ? `${rel}${stem}` : null;
     }
     const dot = name.lastIndexOf(".");

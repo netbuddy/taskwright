@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "rules_version": 1,
+  "说明": "Word 材料的位置表：由段落号得出来源标签里的章节；规则见 agent/src/lib/docx_locations.ts。headings 列出每个标题段，level 1 是一级标题；一段的章节是它（含）之前最近的标题。不含正文的文字。",
+  "source": "inputs/loc-numbering.docx",
+  "paragraphs": 21,
+  "page_marks": 0,
+  "application": "Microsoft Office Word",
+  "headings": [
+    {
+      "paragraph": 1,
+      "level": 1,
+      "title": "1 总则"
+    },
+    {
+      "paragraph": 3,
+      "level": 2,
+      "title": "1.1 适用范围"
+    },
+    {
+      "paragraph": 5,
+      "level": 1,
+      "title": "中文编号的一章"
+    },
+    {
+      "paragraph": 6,
+      "level": 2,
+      "title": "章下的一节"
+    },
+    {
+      "paragraph": 8,
+      "level": 1,
+      "title": "罗马数字的一章"
+    },
+    {
+      "paragraph": 9,
+      "level": 2,
+      "title": "带项目符号的标题"
+    },
+    {
+      "paragraph": 10,
+      "level": 1,
+      "title": "2 编号来自样式的一章"
+    },
+    {
+      "paragraph": 11,
+      "level": 2,
+      "title": "2.1 编号来自样式的一节"
+    },
+    {
+      "paragraph": 13,
+      "level": 2,
+      "title": "3 起始值是三的标题"
+    },
+    {
+      "paragraph": 14,
+      "level": 2,
+      "title": "编号写成零的标题"
+    },
+    {
+      "paragraph": 15,
+      "level": 1,
+      "title": "7 起始值被覆盖成七的一章"
+    },
+    {
+      "paragraph": 16,
+      "level": 1,
+      "title": "罗马数字的一章，下一级是法律式编号"
+    },
+    {
+      "paragraph": 17,
+      "level": 2,
+      "title": "1.1 法律式编号的一节"
+    },
+    {
+      "paragraph": 18,
+      "level": 1,
+      "title": "带超链接的标题"
+    },
+    {
+      "paragraph": 19,
+      "level": 1,
+      "title": "带域结果的标题，第3页"
+    },
+    {
+      "paragraph": 20,
+      "level": 1,
+      "title": "带补充平面字符𠀋的标题"
+    }
+  ]
+}
