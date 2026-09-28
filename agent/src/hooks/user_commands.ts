@@ -15,7 +15,7 @@
  * 评审在后台接着跑（lib/review_ui.ts），不等它跑完，免得撞上后端等界面操作结果的 10 秒上限。每记一条进度事件，
  * 经状态栏键 taskwright-review 提示后端去查库转发；全部评完后往会话里追加一条 taskwright-user-edit 自定义消息，
  * 正文只有一句结论（几条合规、几条不合规，问题与建议各几条），details.review 带这几个数；逐条发现执行者经「查询任务状态」取，
- * 界面上看评审页签。不另外发话引出一次运行。request 带 force 为真时，点名的条目内容与规则都没变也再评一次。
+ * 界面上看评审页签。不另外发话引出一次运行。点名的条目在当前修订、当前规则下已经评过时整批拒绝（同一次修订只评审一次）。
  * 状态栏是给后端读的，交互模式下只显示成底部一行截短的 JSON；所以交互模式里被拒时另外用 notify 把完整的拒绝原因
  * 发给人看（rejectionText），RPC 模式不发，后端照旧只读状态栏。
  *
@@ -162,7 +162,7 @@ function startUiReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, request: 
     const requested = checkReviewRequest({ workspaceDir: ctx.cwd, sessionId }, request);
     const { model, complete } = piComplete(ctx, opId ?? "");
     started = startReview({ workspaceDir: ctx.cwd, sessionId, callId: opId ?? "" }, requested,
-      { model, complete, force: request.force === true, onRecorded: (seq) => nudge({ event_seq: seq }) });
+      { model, complete, onRecorded: (seq) => nudge({ event_seq: seq }) });
   } catch (error) {
     if (error instanceof UserOpError) report({ ok: false, error: { code: error.code, message: error.message, data: error.data } });
     else if (error instanceof ReviewError) report({ ok: false, error: { code: "rejected", message: error.message, data: { reasons: [error.message] } } });

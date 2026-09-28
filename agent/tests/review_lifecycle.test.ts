@@ -1,5 +1,5 @@
 /**
- * 评审的生命周期：规则指纹与规则改动后回到待评审、内容与规则都没变时重评要带 force、同一修订上有几条记录时以最后一条为准、
+ * 评审的生命周期：规则指纹与规则改动后回到待评审、同一次修订同一套规则只评一次、同一修订上有几条记录的旧数据以最后一条为准、
  * 保留写法（写入、撤销、改出新修订后失效）、
  * 完成条件三类文字、材料全文与超长时按段落回退、改评审规则时必选规则关不掉、批次摘要事件、查询任务状态列出发现、温度 0 与回退。
  * 评审者的模型调用一律用假的。
@@ -55,12 +55,12 @@ function reviewer(outputs: Record<string, string> = {}): { complete: Complete; u
 
 let op = 0;
 const ui = (dir: string, body: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-t${++op}`, ...body });
-const review = (dir: string, items: { item_id: string; revision_no: number }[] | null, outputs: Record<string, string> = {}, force = false) =>
-  runReviews({ ...callIn(dir), callId: `ui-op-r${++op}`, actor: "user" }, items, { complete: reviewer(outputs).complete, model: "假", force });
+const review = (dir: string, items: { item_id: string; revision_no: number }[] | null, outputs: Record<string, string> = {}) =>
+  runReviews({ ...callIn(dir), callId: `ui-op-r${++op}`, actor: "user" }, items, { complete: reviewer(outputs).complete, model: "假" });
 
 /**
- * 在已经评过的修订上再写一条评审记录，记作强制重评（「仍要重评」写下的样子）。
- * 用开评之前核对好的那份条目，直接交给写评审记录的函数。
+ * 造「只评一次」之前的旧数据：在已经评过的修订上再写一条评审记录，记作强制重评（早期「仍要重评」写下的样子）。
+ * prepareReviews 现在不再放行，所以用开评之前核对好的那份条目，直接交给写评审记录的函数。
  */
 function writeAgain(dir: string, prepared: ReturnType<typeof prepareReviews>, itemId: string, output: string): void {
   const item = prepared.items.find((i) => i.item_id === itemId)!;
@@ -114,19 +114,23 @@ test("改评审规则：必选规则关不掉，不存在的编号被拒，与�
   assert.throws(() => ui(dir, { kind: "set_review_rules", targets: [], fields: { collection: "问题", off: [], promote: [] } }), /没有评审规则/);
 });
 
-test("重评：点名一个在当前规则下评过、内容没变的条目，不带 force 拒绝并写明第几次评审；带 force 才评，记 forced", async () => {
+test("只评一次：点名一个在当前修订、当前规则下评过的条目整批拒绝，通过的与不通过的都一样；规则改了之后可以再评", async () => {
   const dir = workspace();
-  await review(dir, null);
-  await assert.rejects(() => review(dir, [{ item_id: "UC-001", revision_no: 1 }]),
-    (e: ReviewError) => /UC-001 在当前修订上已经评过（第 1 次评审），内容和规则都没变/.test(e.message));
-  await review(dir, [{ item_id: "UC-001", revision_no: 1 }], {}, true);
+  await review(dir, null, { "UC-001": FAIL });
+  for (const id of ["UC-001", "UC-002"]) {
+    await assert.rejects(() => review(dir, [{ item_id: id, revision_no: 1 }]),
+      (e: ReviewError) => e.message === `什么都没有评，因为：${id} 在当前修订上已经评过，内容和规则都没变；同一次修订、同一套规则只评审一次。`);
+  }
+  assert.equal(query(dir, "SELECT COUNT(*) AS n FROM review")[0].n, 2);
+  ui(dir, { kind: "set_review_rules", targets: [], fields: { collection: "用例", off: ["D-R2"], promote: [] } });
+  await review(dir, [{ item_id: "UC-001", revision_no: 1 }]);
   assert.deepEqual(query(dir, "SELECT item_id, forced FROM review ORDER BY review_id").map((r) => [r.item_id, r.forced]),
-    [["UC-001", 0], ["UC-002", 0], ["UC-001", 1]]);
+    [["UC-001", 0], ["UC-002", 0], ["UC-001", 0]]);
   const batches = query<{ payload: string }>(dir, "SELECT payload FROM event WHERE name = 'REVIEW_BATCH' ORDER BY seq").map((r) => JSON.parse(r.payload));
-  assert.deepEqual(batches.map((b) => [b.scope, b.total, b.passed, b.started_by, b.forced]), [["pending", 2, 2, "user", []], ["named", 1, 1, "user", ["UC-001"]]]);
+  assert.deepEqual(batches.map((b) => [b.scope, b.total, b.passed, b.started_by, "forced" in b]), [["pending", 2, 1, "user", false], ["named", 1, 1, "user", false]]);
 });
 
-test("同一修订上有几条记录：同一修订上先合规、后来强制重评成不合规，以最后一条为准；完成条件、查询任务状态、看板、查看条目都说不通过，保留点得成", async () => {
+test("旧数据：同一修订上先合规、后来强制重评成不合规，以最后一条为准；完成条件、查询任务状态、看板、查看条目都说不通过，保留点得成", async () => {
   const dir = workspace();
   const prepared = prepareReviews(dir, null);
   await review(dir, null);
@@ -142,7 +146,7 @@ test("同一修订上有几条记录：同一修订上先合规、后来强制�
   assert.deepEqual([after.board, after.item, after.details], Array(3).fill("评审没有通过，用户保留了写法"));
 });
 
-test("同一修订上有几条记录：先不合规后来重评成合规，以最后一条为准，此前的不合规不再列为发现，也不能保留", async () => {
+test("旧数据：先不合规后来重评成合规，以最后一条为准，此前的不合规不再列为发现，也不能保留", async () => {
   const dir = workspace();
   const prepared = prepareReviews(dir, null);
   await review(dir, null, { "UC-001": FAIL });
@@ -153,7 +157,7 @@ test("同一修订上有几条记录：先不合规后来重评成合规，以�
   assert.throws(() => ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: {} }), /没有评审不合规的记录/);
 });
 
-test("同一修订上有几条记录：保留之后又重评成不合规，原来的保留针对的是前一条，不算；可以再保留；撤销的是生效的那一条", async () => {
+test("旧数据：保留之后又重评成不合规，原来的保留针对的是前一条，不算；可以再保留；撤销的是生效的那一条", async () => {
   const dir = workspace();
   const prepared = prepareReviews(dir, null);
   await review(dir, null, { "UC-001": FAIL });

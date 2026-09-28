@@ -149,7 +149,6 @@ function recordBatch(call: CallContext, prepared: PreparedReviews, results: Item
       payload: {
         batch_id: call.callId, started_by: actor === ACTOR_USER ? "user" : "executor",
         scope: prepared.scope, items: prepared.items.map((i) => ({ item_id: i.item_id, revision_no: i.revision_no })),
-        forced: prepared.items.filter((i) => i.forced).map((i) => i.item_id),
         ...batchCounts(results),
       },
     }));
@@ -159,8 +158,8 @@ function recordBatch(call: CallContext, prepared: PreparedReviews, results: Item
 }
 
 /** 整个流程：核对、分批并行评审、写库、拼给调用方的文字。核对不通过时抛 ReviewError，什么都不评。 */
-export async function runReviews(call: CallContext, requested: RequestedItem[] | null, opts: RunOptions & { force?: boolean }): Promise<RunOutcome> {
-  return runPrepared(call, prepareReviews(call.workspaceDir, requested, { force: opts.force }), opts);
+export async function runReviews(call: CallContext, requested: RequestedItem[] | null, opts: RunOptions): Promise<RunOutcome> {
+  return runPrepared(call, prepareReviews(call.workspaceDir, requested), opts);
 }
 
 /** 一条结果的结论说法：「合规」「合规（建议 M 条）」「不合规（问题 N 处，建议 M 条）」。 */
