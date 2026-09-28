@@ -1,6 +1,7 @@
 /**
- * 评审状态的几样共用查询：规则指纹、一条评审记录算不算在当前规则下、条目在某次修订上有没有生效的保留（豁免）、
- * 一个批次是第几次评审。完成条件、评审的挑选与核对、查询任务状态都用这里，后端（Python）按同样的算法另写一份。
+ * 评审状态的几样共用查询：规则指纹、条目在某次修订上的评审记录与保留（豁免）记录、评审结论、一个批次是第几次评审。
+ * 完成条件、评审的挑选与核对、保留操作、查询任务状态、看板都用这里。评审结论的规则只写在 lib/review_verdict.ts 一处
+ * （以最新一次为准），本模块从库里读出记录交给它。
  *
  * 规则指纹：一个集合的规则文件原文，加任务定义里这个集合的「关闭」「升为必选」两项，按固定写法拼成一段文字取 sha256 的前 16 位
  * （rulesHashText）。任务级开关写在库里的任务定义快照（task.definition_text）里，规则文件在任务目录里，所以算当前指纹要给任务目录；
@@ -15,6 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { load } from "./db.ts";
+import { type ReviewVerdict, reviewVerdict, underCurrentRules } from "./review_verdict.ts";
 
 /** 事件名：一次评审（一个批次）结束时记的摘要。 */
 export const EVENT_REVIEW_BATCH = "REVIEW_BATCH";
@@ -53,11 +55,6 @@ export function currentRulesHash(db: DatabaseSync, workspaceDir: string | undefi
   return spec ? rulesHash(workspaceDir, spec) : null;
 }
 
-/** 一条评审记录算不算在当前规则下：记录或当前指纹有一边为空时算，否则要相等。 */
-export function underCurrentRules(recordHash: string | null | undefined, current: string | null): boolean {
-  return !recordHash || !current || recordHash === current;
-}
-
 export function hasTable(db: DatabaseSync, name: string): boolean {
   return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
 }
@@ -66,12 +63,16 @@ export function hasColumn(db: DatabaseSync, table: string, column: string): bool
   return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((row) => row.name === column);
 }
 
-export interface ReviewRow { review_id: number; verdict: string; batch_id: string | null; rules_hash: string | null; forced: number; call_id: string }
+/** seq 是记下这条评审的那条事件的序号。 */
+export interface ReviewRow {
+  review_id: number; revision_no: number; verdict: string; batch_id: string | null; rules_hash: string | null; forced: number; call_id: string; seq: number;
+}
 
 /** 条目在某次修订上的全部评审记录，按先后；只读的旧库缺新列时照样能读（新列读作空）。 */
 export function reviewsAt(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): ReviewRow[] {
   const extra = hasColumn(db, "review", "rules_hash") ? "batch_id, rules_hash, forced" : "NULL AS batch_id, NULL AS rules_hash, 0 AS forced";
-  return db.prepare(`SELECT review_id, verdict, call_id, ${extra} FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY review_id`)
+  return db.prepare(`SELECT review_id, revision_no, verdict, call_id, event_seq AS seq, ${extra} FROM review ` +
+    "WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY event_seq, review_id")
     .all(taskId, itemId, revisionNo) as unknown as ReviewRow[];
 }
 
@@ -80,14 +81,24 @@ export function currentReviews(db: DatabaseSync, taskId: string, itemId: string,
   return reviewsAt(db, taskId, itemId, revisionNo).filter((row) => underCurrentRules(row.rules_hash, current));
 }
 
-export interface WaiverRow { waiver_id: number; reason: string | null; source: string; op_id: string; created_at: string }
+/** seq 是记下这次保留的那条事件的序号；revoked 是撤销过没有。 */
+export interface WaiverRow {
+  waiver_id: number; revision_no: number; reason: string | null; source: string; op_id: string; created_at: string; seq: number; revoked: boolean;
+}
 
-/** 条目在某次修订上生效的保留（没撤销的最近一条）；没有时为 undefined。 */
-export function activeWaiver(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): WaiverRow | undefined {
-  if (!hasTable(db, "review_waiver")) return undefined;
-  return db.prepare(
-    "SELECT waiver_id, reason, source, op_id, created_at FROM review_waiver WHERE task_id = ? AND item_id = ? AND revision_no = ? AND revoked_at IS NULL ORDER BY waiver_id DESC LIMIT 1",
-  ).get(taskId, itemId, revisionNo) as WaiverRow | undefined;
+/** 条目在某次修订上的全部保留记录（含撤销过的），按先后。 */
+export function waiversAt(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): WaiverRow[] {
+  if (!hasTable(db, "review_waiver")) return [];
+  return (db.prepare(
+    "SELECT waiver_id, revision_no, reason, source, op_id, created_at, event_seq AS seq, revoked_at FROM review_waiver " +
+      "WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY event_seq, waiver_id",
+  ).all(taskId, itemId, revisionNo) as unknown as (Omit<WaiverRow, "revoked"> & { revoked_at: string | null })[])
+    .map(({ revoked_at, ...row }) => ({ ...row, revoked: revoked_at !== null }));
+}
+
+/** 条目在某次修订上的评审结论（规则见 lib/review_verdict.ts）；current 是这个集合现在的规则指纹（currentRulesHash）。 */
+export function verdictAt(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number, current: string | null): ReviewVerdict<ReviewRow, WaiverRow> {
+  return reviewVerdict(revisionNo, reviewsAt(db, taskId, itemId, revisionNo), waiversAt(db, taskId, itemId, revisionNo), current);
 }
 
 /** 一个批次是第几次评审：按 REVIEW_BATCH 事件的先后从 1 数；这个批次还没记摘要时为 null。 */
