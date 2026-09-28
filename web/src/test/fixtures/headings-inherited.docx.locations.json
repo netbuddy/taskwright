@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "rules_version": 1,
+  "说明": "Word 材料的位置表：由段落号得出来源标签里的章节；规则见 agent/src/lib/docx_locations.ts。headings 列出每个标题段，level 1 是一级标题；一段的章节是它（含）之前最近的标题。不含正文的文字。",
+  "source": "inputs/headings-inherited.docx",
+  "paragraphs": 9,
+  "page_marks": 0,
+  "application": "",
+  "headings": [
+    {
+      "paragraph": 1,
+      "level": 1,
+      "title": "1 总体安排"
+    },
+    {
+      "paragraph": 3,
+      "level": 2,
+      "title": "1.1 春季"
+    },
+    {
+      "paragraph": 5,
+      "level": 2,
+      "title": "1.2 夏季"
+    },
+    {
+      "paragraph": 7,
+      "level": 3,
+      "title": "1.2.1 防暑"
+    }
+  ]
+}
