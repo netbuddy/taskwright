@@ -2,11 +2,12 @@
 // 分段清单读不到时整栏不显示。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Item } from "../api/types";
 import { api } from "../api/client";
 import { SectionList } from "../components/work/SectionList";
 import { parseSegments, sectionRows, type SegmentList } from "../model/segments";
+import { settled } from "./settled";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -63,7 +64,8 @@ describe("按章节看引用", () => {
   it("分段清单读不到或不是清单时整栏不显示", async () => {
     const content = vi.spyOn(api, "materialContent").mockRejectedValue(new Error("没有这份材料"));
     const { container } = render(<SectionList taskId="TASK-001" path={PATH} items={ITEMS} onJump={() => {}} />);
-    await waitFor(() => expect(content).toHaveBeenCalled());
+    // 读的过程中这一栏本来就是空的；只等「被调用」，断言在读失败之前就成立。等这次失败处理完再看。
+    await settled(content);
     expect(container.textContent).toBe("");
   });
 });
