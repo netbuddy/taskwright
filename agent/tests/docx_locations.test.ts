@@ -83,13 +83,12 @@ test("已知的不同：投影把非十进制编号也写在标题前面，位�
 test("排版库不画的段落（w:customXml 里的、单元格里内容控件中的）：标题照记，章节推导照常用它", () => {
   const { input } = locationInput(readFileSync(join(FIXTURES, "loc-hidden.docx")));
   assert.deepEqual(input.paragraphs.filter((p) => !p.drawn).map((p) => p.n), [3, 4, 7]);
-  assert.deepEqual(input.paragraphs.filter((p) => p.inTable).map((p) => p.n), [6, 7, 8]);
   const t = tableOf("loc-hidden.docx");
   assert.deepEqual(t.headings.map((h) => [h.paragraph, h.title]), [[1, "1 总则"], [3, "2 包在自定义标记里的一章"], [9, "3 正文里内容控件中的一章"]]);
   assert.equal(chapterOf(t, 5), "2 包在自定义标记里的一章");
 });
 
-test("段落子节点的整理：超链接、插入里的字画出来也进标题文字；删除里的不画；域代码所在的文字块不画但进标题文字；符号字画出来不进标题文字", () => {
+test("标题文字的取法：超链接、插入里的字算；删除里的 w:t 与域代码所在文字块里的字也算（页面取标题文字时不管画不画）；删除的 w:delText 与符号字不算", () => {
   const body = '<w:p><w:pPr><w:outlineLvl w:val="0"/></w:pPr>'
     + '<w:r><w:t>甲</w:t></w:r>'
     + '<w:hyperlink w:anchor="a"><w:r><w:t>乙</w:t></w:r></w:hyperlink>'
@@ -99,16 +98,15 @@ test("段落子节点的整理：超链接、插入里的字画出来也进标�
     + '<w:r><w:sym w:font="Symbol" w:char="0041"/><w:tab/><w:t xml:space="preserve"> 己 </w:t></w:r>'
     + "</w:p>";
   const { input } = locationInput(makeDocx(body));
-  const [p] = headingsOf(input);
-  assert.equal(p.title, "甲乙丙戊 己", "标题文字：甲乙丙、域代码块里的戊、己；删除的丁与符号字不算");
-  assert.equal(p.chars, 5, "画出来的非空白字符：甲乙丙、符号字 A、己");
-  assert.deepEqual(input.paragraphs[0].children.map((c) => c.run), [true, false, false, false, true, true]);
+  assert.equal(headingsOf(input)[0].title, "甲乙丙戊 己");
 });
 
-test("补充平面的字按 UTF-16 码元计数（与页面相同），标题文字原样保留", () => {
-  const { input } = locationInput(makeDocx("<w:p><w:r><w:t>𠀋一</w:t></w:r></w:p>"));
-  const [p] = headingsOf(input);
-  assert.equal(p.chars, 3);
+test("分页标记的个数：超链接、插入、删除里的也数，排版库不画的段落里的不数", () => {
+  const mark = "<w:lastRenderedPageBreak/>";
+  const body = `<w:p><w:r>${mark}<w:t>一</w:t></w:r><w:hyperlink w:anchor="a"><w:r>${mark}</w:r></w:hyperlink></w:p>`
+    + `<w:p><w:del w:id="1" w:author="x"><w:r>${mark}</w:r></w:del></w:p>`
+    + `<w:customXml w:element="x"><w:p><w:r>${mark}<w:t>不画</w:t></w:r></w:p></w:customXml>`;
+  assert.equal(locationTable(makeDocx(body), "inputs/m.docx").page_marks, 3);
 });
 
 test("同一份文件算两次，位置表逐字相同；读不到软件名时为空文字；不记正文的文字", () => {

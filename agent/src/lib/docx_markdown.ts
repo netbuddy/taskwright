@@ -92,7 +92,7 @@ export function parseXml(xml: string): XmlElement {
 export const elements = (el: XmlElement) => el.children.filter((c): c is XmlElement => typeof c !== "string");
 export const child = (el: XmlElement | undefined, name: string) => el ? elements(el).find((c) => c.name === name) : undefined;
 /** 按路径往下找第一个（如 "w:pPr/w:numPr/w:numId"）。 */
-export function at(el: XmlElement | undefined, path: string): XmlElement | undefined {
+function at(el: XmlElement | undefined, path: string): XmlElement | undefined {
   for (const part of path.split("/")) el = child(el, part);
   return el;
 }
