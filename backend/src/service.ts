@@ -218,8 +218,12 @@ export class Service {
     return task;
   }
 
-  /** 收尾：各任务先停轮询、关 pi（「已退出」推到还开着的事件流上）、删占用标记；最后让各条事件流写完后正常结束。 */
+  /**
+   * 收尾：先向各任务开着的事件流发 service_exiting（页面据此显示服务已退出、不再重连），再各任务停轮询、关 pi（「已退出」推到
+   * 还开着的事件流上）、删占用标记；最后让各条事件流写完后正常结束。页内退出与各种退出信号都经这里，所以都会发这条通知。
+   */
   async close(): Promise<void> {
+    for (const t of this.tasks.values()) t.hub.emit("service_exiting", { mode: this.mode, at: clock.now() });
     for (const t of this.tasks.values()) {
       console.log(`任务 ${t.taskId} 的事件分发统计：${JSON.stringify(t.hub.stats)}`);
       t.hub.stopPolling();

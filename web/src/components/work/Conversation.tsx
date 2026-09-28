@@ -15,6 +15,7 @@ import { formatSeconds } from "../../model/format";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
+import { STARTING_SEND_TITLE } from "./executorHint";
 
 /** 执行者工作中，发送键为什么不能用。 */
 export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句；你可以先把话打好";
@@ -22,7 +23,7 @@ export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, working = false, revisionsOfReply, onRevisionTag, onShowReviews,
+  hold = false, working = false, hint = null, starting = false, revisionsOfReply, onRevisionTag, onShowReviews,
 }: {
   messages: ConversationMessage[];
   currentWork: CurrentWork | null;
@@ -51,6 +52,10 @@ export function Conversation({
   hold?: boolean;
   /** 执行者正在工作：发送与卡片按钮灰化，输入框照常能打字；撤销修订也不能点。 */
   working?: boolean;
+  /** 不拦住操作的提示（助手已经退出、正在启动、还没启动），显示成输入框上方的蓝色提示条；见 executorHint.ts。 */
+  hint?: string | null;
+  /** 助手正在启动：发送按钮暂不可用，输入框照常可以打字。 */
+  starting?: boolean;
   /** 一条回复产生了哪几次修订（按工作编号从修订日志里取）。 */
   revisionsOfReply?: (reply: AssistantReply) => number[];
   onRevisionTag?: (revisions: number[]) => void;
@@ -65,8 +70,8 @@ export function Conversation({
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, currentWork?.steps.length, outgoing.length]);
 
-  const sendOff = disabled || hold || working;
-  const sendTitle = disabled ? disabledReason ?? undefined : hold ? HOLD_TEXT : working ? TURN_TEXT : "发送";
+  const sendOff = disabled || hold || working || starting;
+  const sendTitle = disabled ? disabledReason ?? undefined : hold ? HOLD_TEXT : working ? TURN_TEXT : starting ? STARTING_SEND_TITLE : "发送";
   // 输入框此刻的内容：发送失败时据它判断用户有没有接着打新字。
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
@@ -77,7 +82,8 @@ export function Conversation({
     restoreOnFailure(onSend(original.trim()), original, () => latestDraft.current, setDraft);
   };
   // 提示条：任务结束、助手不可用、执行者在另一条会话里工作这几种整个输入框都停用；有未保存的条目编辑时提示先保存或取消。
-  const note = disabledReason ?? (hold ? HOLD_TEXT : null);
+  const note = disabledReason ?? (hold ? HOLD_TEXT : hint);
+  const info = !disabledReason && !hold && !!hint;
 
   return (
     <>
@@ -110,7 +116,7 @@ export function Conversation({
         )}
       </div>
       <div className={`chat-in${disabledReason ? " busy" : ""}`}>
-        <div className={`busybar${note ? " show" : ""}`} data-testid={note ? "busy-note" : undefined}>{note}</div>
+        <div className={`busybar${note ? " show" : ""}${info ? " info" : ""}`} data-testid={note ? (info ? "executor-hint" : "busy-note") : undefined}>{note}</div>
         <div className="inbox">
           <textarea ref={inputRef} value={draft} disabled={disabled} rows={2} data-testid="chat-input"
             placeholder={disabledReason ?? "把你的想法直接告诉助手，或者在右边直接动手改…"}

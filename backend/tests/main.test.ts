@@ -161,7 +161,7 @@ test("缺省绑定地址：desktop 是 127.0.0.1，server 是 0.0.0.0，给了 -
   assert.equal(defaultHost("desktop", "0.0.0.0"), "0.0.0.0");
 });
 
-test("服务信息的形状；退出接口在 server 形态下与没有这个接口一样，desktop 形态下只收本机回环地址的请求", CASE, async () => {
+test("服务信息的形状；退出接口在 server 形态下与没有这个接口一样，desktop 形态下只收本机回环地址的请求；退出能力按请求来源声明", CASE, async () => {
   const go = (service: Service, method: string, path: string, remote: string) => dispatch(service, { method, path, query: {}, headers: {}, body: Buffer.alloc(0), remote }) as Promise<Dict>;
   const server = new Service(join(tmp, "d1"), join(tmp, "d1r"), {}, { port: 8765 });
   const info = JSON.parse((await go(server, "GET", "/api/v1/service", "198.51.100.9")).body.toString());
@@ -173,7 +173,10 @@ test("服务信息的形状；退出接口在 server 形态下与没有这个接
   assert.deepEqual([missing.status, JSON.parse(missing.body.toString()).error], [404, { code: "not_found", message: "没有这个接口：POST /api/v1/service/exit", data: {} }]);
 
   const desktop = new Service(join(tmp, "d2"), join(tmp, "d2r"), {}, { port: 8766, mode: "desktop" });
-  assert.equal(JSON.parse((await go(desktop, "GET", "/api/v1/service", "::1")).body.toString()).capabilities.exit, true);
+  const exitFor = async (service: Service, remote: string) => JSON.parse((await go(service, "GET", "/api/v1/service", remote)).body.toString()).capabilities.exit;
+  for (const remote of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) assert.equal(await exitFor(desktop, remote), true, `desktop 形态、本机来源 ${remote}`);
+  for (const remote of ["192.0.2.5", "::ffff:192.0.2.5", ""]) assert.equal(await exitFor(desktop, remote), false, `desktop 形态、别处来源「${remote}」：点了也会被拒绝，不声明`);
+  assert.equal(await exitFor(server, "127.0.0.1"), false, "server 形态没有退出接口，本机来源也不声明");
   let exits = 0;
   desktop.exitHandler = () => void (exits += 1);
   for (const remote of ["192.0.2.5", "198.51.100.1", "::ffff:192.0.2.5", ""]) {
@@ -230,7 +233,7 @@ test("真进程：端口被占时落到后面第一个空闲端口，服务信�
   }
 });
 
-test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", CASE, async () => {
+test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再发退出通知、关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", CASE, async () => {
   const { child, port, log } = await startBackend("desktop", ["--port", String(await freePort()), "--mode", "desktop"]);
   let stream: ReturnType<typeof request> | undefined;
   try {
@@ -254,6 +257,8 @@ test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再�
     await assert.rejects(call("127.0.0.1", port, "GET", "/api/v1/service"), "端口已经释放");
     assert.match(log(), /收到本机发来的退出请求，服务收尾后退出。/);
     assert.match(events, /event: executor_state\ndata: \{"state": "exited"/, "收尾时先关 pi，开着的事件流收到「已退出」，再断开连接");
+    const notice = events.indexOf('event: service_exiting\ndata: {"mode": "desktop"');
+    assert.ok(notice >= 0 && notice < events.indexOf('event: executor_state\ndata: {"state": "exited"'), "页内退出也先向事件流发 service_exiting，再关 pi");
     const notes = readdirSync(join(tmp, "desktop", "runs", created.body.task_id, "pi-events")).filter((f) => f.endsWith(".backend.jsonl"));
     assert.match(readFileSync(join(tmp, "desktop", "runs", created.body.task_id, "pi-events", notes[0]), "utf-8"), /"记录": "退出"/, "pi 关完、后端补记写下「退出」之后进程才退出");
   } finally {
@@ -262,12 +267,13 @@ test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再�
   }
 });
 
-test("真进程：desktop 形态给了 --host 0.0.0.0 时，从别的网卡来的退出请求是 403", { ...CASE, skip: lanAddress === null ? "本机没有回环以外的地址" : false }, async () => {
+test("真进程：desktop 形态给了 --host 0.0.0.0 时，从别的网卡来的退出请求是 403，服务信息对它不声明退出能力", { ...CASE, skip: lanAddress === null ? "本机没有回环以外的地址" : false }, async () => {
   const { child, port } = await startBackend("desktop-any", ["--port", String(await freePort()), "--mode", "desktop", "--host", "0.0.0.0"]);
   try {
     const refused = await call(lanAddress!, port, "POST", "/api/v1/service/exit");
     assert.deepEqual([refused.status, refused.body.error.code], [403, "forbidden"]);
     assert.equal((await call("127.0.0.1", port, "GET", "/api/v1/service")).body.capabilities.exit, true);
+    assert.equal((await call(lanAddress!, port, "GET", "/api/v1/service")).body.capabilities.exit, false, "从别的网卡来的页面不显示退出服务");
   } finally {
     await stop(child);
   }
