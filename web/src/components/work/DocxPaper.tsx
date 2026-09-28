@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { Item } from "../../api/types";
 import { charsOf, docxLocator, pageAndPosition, placeExcerpt, placeText, polish, renderDocx, tableOf, wrapChars, type DocxTable, type RenderedDocx } from "../../model/docx";
 import { chapterOf } from "../../../../agent/src/lib/docx_locations";
-import { useDocx } from "../../state/docxStore";
+import { reportUnrenderable, useDocx } from "../../state/docxStore";
 import type { LocateRequest } from "./MaterialPane";
 
 /** 这份 Word 材料被哪些条目的哪一段引用：[{ 段落号, 摘录, 条目编号 }]（出处对得上这份材料、带段落号的「文档原文」来源）。 */
@@ -24,6 +24,9 @@ export function docxCitations(items: Item[], path: string): { n: number; excerpt
   }
   return out;
 }
+
+/** 文件读到了、但排版库画不出来时，材料区与「查看原文」显示的说明。错误原文不给用户看，写进浏览器的控制台。 */
+export const DOCX_UNRENDERABLE = "这份 Word 文件在这里显示不出来，但文件已经上传好了：助手仍然能读到它的内容，条目的来源仍然有效，不需要重新上传。";
 
 /** 出处没写段落号时（不该有，旧数据兜底），摘录在哪一段里；都没有是 null。 */
 function paragraphOf(t: DocxTable, excerpt: string): number | null {
@@ -50,6 +53,8 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
   const entry = useDocx(taskId, path);
   const host = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<{ r: RenderedDocx; t: DocxTable } | null>(null);
+  // 缓存那一遍画好了、显示这一遍却出错（很少见）时，与缓存那一遍出错一样处理。
+  const [failed, setFailed] = useState(false);
   const setNote = (text: string | null) => onNote?.(text);
   const handled = useRef(0);
 
@@ -58,11 +63,17 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
     if (!entry?.bytes || !el) return;
     let alive = true;
     setView(null);
+    setFailed(false);
     renderDocx(entry.bytes, el).then((r) => {
       if (!alive) return;
       polish(r.root);
       setView({ r, t: tableOf(r) });
-    }).catch(() => { if (alive) setNote("这份 Word 文件显示不出来。"); });
+    }).catch((e) => {
+      if (!alive) return;
+      reportUnrenderable(path, e);
+      el.replaceChildren();
+      setFailed(true);
+    });
     return () => { alive = false; };
   }, [entry?.bytes]);
 
@@ -147,6 +158,7 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
     <>
       {entry?.status === "loading" && <div className="empty">正在读原文。</div>}
       {entry?.status === "error" && <div className="busy-note">{entry.error}</div>}
+      {(entry?.status === "unrenderable" || failed) && <div className="busy-note" data-testid="docx-unrenderable">{DOCX_UNRENDERABLE}</div>}
       <div className="docx-paper" ref={(el) => { host.current = el; if (paperRef) paperRef.current = el; }} onMouseUp={onMouseUp} data-testid="docx-paper" />
     </>
   );
