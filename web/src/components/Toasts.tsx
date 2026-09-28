@@ -35,6 +35,8 @@ export interface ToastApi {
   error: (text: ReactNode, o?: Omit<ToastInput, "tone" | "text">) => string;
   running: (key: string, text: ReactNode, o?: Omit<ToastInput, "tone" | "text" | "key">) => string;
   dismiss: (key: string) => void;
+  /** 收起全部提示（服务已退出时用：整屏换成退出画面，先前的提示不再有意义）。 */
+  clear: () => void;
   /** 这一条现在还显示着没有。 */
   isShown: (key: string) => boolean;
 }
@@ -49,7 +51,7 @@ const ICON: Record<ToastTone, string> = { ok: "✓", run: "…", warn: "!", bad:
 
 interface Toast extends ToastInput { key: string; seq: number; leaving: boolean }
 
-const noop: ToastApi = { show: () => "", success: () => "", warning: () => "", error: () => "", running: () => "", dismiss: () => {}, isShown: () => false };
+const noop: ToastApi = { show: () => "", success: () => "", warning: () => "", error: () => "", running: () => "", dismiss: () => {}, clear: () => {}, isShown: () => false };
 const ToastContext = createContext<ToastApi>(noop);
 
 /** 取全站提示条。放在 ToastProvider 之外时什么也不做。 */
@@ -106,6 +108,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     error: (text, o) => show({ ...o, tone: "bad", text }),
     running: (key, text, o) => show({ ...o, key, tone: "run", text }),
     dismiss: (key) => { if (live.current.has(key)) remove(key); },
+    clear: () => { [...live.current].forEach((key) => remove(key)); },
     isShown: (key) => live.current.has(key),
   }), [show, remove]);
 

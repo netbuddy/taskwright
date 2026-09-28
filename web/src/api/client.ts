@@ -33,6 +33,8 @@ export class ApiError extends Error {
 export const ACTION_TIMEOUT_MS = 10_000;
 
 const BASE = "/api/v1";
+/** 请求发不出去（服务停了或网络断了）时的那句话。 */
+export const NETWORK_TEXT = "连不上服务，请检查服务是否在运行。";
 
 async function request<T>(method: string, path: string, body?: unknown, timeoutMs = 30_000): Promise<T> {
   const controller = new AbortController();
@@ -51,7 +53,7 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
     if ((error as Error).name === "AbortError") {
       throw new ApiError("timeout", "等了太久没有得到回应。", 0);
     }
-    throw new ApiError("network", "连不上服务，请检查后端是否在运行。", 0);
+    throw new ApiError("network", NETWORK_TEXT, 0);
   } finally {
     clearTimeout(timer);
   }
@@ -85,7 +87,7 @@ async function rawBytes(path: string, timeoutMs = 30_000): Promise<ArrayBuffer> 
     if (response.ok) return await response.arrayBuffer();
   } catch (error) {
     if ((error as Error).name === "AbortError") throw new ApiError("timeout", "等了太久没有得到回应。", 0);
-    throw new ApiError("network", "连不上服务，请检查后端是否在运行。", 0);
+    throw new ApiError("network", NETWORK_TEXT, 0);
   } finally {
     clearTimeout(timer);
   }

@@ -11,35 +11,48 @@ import { useToast } from "./Toasts";
 /** 部署文档里「10.4 配置模型服务」一节（GitHub 给标题生成的锚点去掉了小数点）。 */
 export const MODEL_SETUP_URL = "https://github.com/netbuddy/taskwright/blob/main/docs/deployment.zh-CN.md#104-配置模型服务";
 
+type Mode = ServiceInfo["mode"];
+
 interface ServiceState {
   info: ServiceInfo | null;
   exited: boolean;
-  markExited: () => void;
+  /** 服务已退出：本页点了「退出服务」，或者事件流收到了服务发来的 service_exiting。mode 是服务的运行形态，决定退出画面的文字。 */
+  markExited: (mode?: Mode) => void;
 }
 
 const ServiceContext = createContext<ServiceState>({ info: null, exited: false, markExited: () => {} });
 
 export function ServiceProvider({ children }: { children: ReactNode }) {
   const [info, setInfo] = useState<ServiceInfo | null>(null);
-  const [exited, setExited] = useState(false);
+  const [exited, setExited] = useState<Mode | null>(null);
+  const toast = useToast();
   useEffect(() => {
     api.serviceInfo().then(setInfo).catch(() => setInfo(null));
   }, []);
-  const markExited = useCallback(() => setExited(true), []);
-  return <ServiceContext.Provider value={{ info, exited, markExited }}>{exited ? <ExitedScreen /> : children}</ServiceContext.Provider>;
+  // 退出画面出现之后，先前的断线提示、助手状态与操作失败的提示都不再显示，免得几句话同时出现、互相矛盾。
+  const markExited = useCallback((mode?: Mode) => {
+    setExited((was) => was ?? mode ?? info?.mode ?? "desktop");
+    toast.clear();
+  }, [info?.mode, toast]);
+  return <ServiceContext.Provider value={{ info, exited: exited !== null, markExited }}>{exited ? <ExitedScreen mode={exited} /> : children}</ServiceContext.Provider>;
 }
 
 export function useService(): ServiceState {
   return useContext(ServiceContext);
 }
 
-/** 服务退出之后换上的整屏：页面上别的东西都不再显示。 */
-export function ExitedScreen() {
+/**
+ * 服务退出之后换上的整屏：页面上别的东西都不再显示，也不再重连。桌面形态下这一屏是告诉用户服务停了的主要办法；
+ * 服务器形态下停服务是有计划的事，用户事先已被告知，这一屏是补充，写明恢复之后刷新即可。
+ */
+export function ExitedScreen({ mode = "desktop" }: { mode?: Mode }) {
   return (
-    <div className="svc-gone" data-testid="service-exited">
+    <div className="svc-gone" data-testid="service-exited" data-mode={mode}>
       <div className="box">
-        <b>服务已退出，可以关闭此窗口</b>
-        <span>要再用时，重新双击程序即可。</span>
+        {mode === "server" ? <b>服务已停止。恢复之后刷新这个页面即可继续。</b> : <>
+          <b>服务已退出，可以关闭此窗口</b>
+          <span>要再用时，重新双击程序即可。</span>
+        </>}
       </div>
     </div>
   );
@@ -85,7 +98,7 @@ export function UserMenu({ where }: { where: "sider" | "topbar" }) {
     try {
       await api.exitService();
       setConfirming(false);
-      markExited();
+      markExited("desktop");
     } catch (error) {
       toast.error(error instanceof ApiError ? `没能退出服务：${error.message}` : "没能退出服务。");
       setLeaving(false);

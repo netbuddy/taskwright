@@ -288,7 +288,7 @@ export class Executor {
     }
   }
 
-  /** 说话之前：会话要是活动的那条；start 为真时 pi 不在就按需启动，否则失败。 */
+  /** 说话与直接操作之前：会话要是活动的那条；start 为真时 pi 不在就按需启动，否则失败。 */
   require(sessionId: string | null, start: boolean): Promise<void> {
     return this.lock.run(async () => {
       if (this.state === "starting") throw new ApiError("executor_starting", "助手正在启动，请稍候。");
@@ -373,7 +373,9 @@ export class Executor {
    * 评审（request_review）也走这里：扩展命令核对通过、记下第一条进度事件就回报，评审在 pi 进程里接着跑，进度与结果作为库事件推给前端。
    */
   async action(sessionId: string | null, body: Dict): Promise<string> {
-    await this.require(sessionId, false);
+    // 助手不在（已退出、还没启动、续接没接上之后）时与说话一样按需启动并续接这条会话，页面在这些状态下不必设只读；
+    // 续接对不上照样报 session_resume_failed，操作不会在接错的会话里执行。没有给会话时不启动，免得为一次操作另开一条会话。
+    await this.require(sessionId, sessionId !== null);
     // 单一写入者规则管的是交付物内容。打开详情写已读（mark_viewed 且不通知执行者）不改内容，是唯一的例外：
     // 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
     const viewing = body.kind === "mark_viewed" && !truthy(body.notify_executor);
