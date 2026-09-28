@@ -26,6 +26,8 @@ import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from
 import { TASK_TYPES_DIR } from "./paths.ts";
 
 export const MAX_UPLOAD = 5 * 1024 * 1024;
+/** 上传的文件超过上限时给用户看的那句话。服务信息接口把上限与这句话一起给前端，前端在发送之前就能拦下。 */
+export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
 export const UPLOAD_TYPES = [".md", ".txt", ".docx"];
 
 /** 任务类型：task-types/ 下的每个目录，显示名取它的任务定义里的「任务名」；没有新格式任务定义的模板不列。 */
@@ -190,7 +192,10 @@ export class Service {
         const taken = this.claim(d, this.port, this.mode);
         if (taken !== null) {
           if (!this.occupied.has(taskId)) {
-            console.log(`任务 ${taskId}（目录 ${name}）正被端口 ${pyStr(taken.port)} 的服务（主机 ${pyStr(taken.host)}，进程 ${pyStr(taken.pid)}）占用，本服务不接手它。`);
+            // 标记里没写的项不写。
+            const where = truthy(taken.port) ? `端口 ${pyStr(taken.port)} 的服务` : "另一个服务";
+            const about = [truthy(taken.host) ? `主机 ${pyStr(taken.host)}` : "", truthy(taken.pid) ? `进程 ${pyStr(taken.pid)}` : ""].filter(Boolean);
+            console.log(`任务 ${taskId}（目录 ${name}）正被${where}${about.length ? `（${about.join("，")}）` : ""}占用，本服务不接手它。`);
           }
           this.occupied.set(taskId, { lock: taken, dir: d });
           continue;
@@ -213,8 +218,12 @@ export class Service {
     return task;
   }
 
-  /** 收尾：各任务先停轮询、关 pi（「已退出」推到还开着的事件流上）、删占用标记；最后让各条事件流写完后正常结束。 */
+  /**
+   * 收尾：先向各任务开着的事件流发 service_exiting（页面据此显示服务已退出、不再重连），再各任务停轮询、关 pi（「已退出」推到
+   * 还开着的事件流上）、删占用标记；最后让各条事件流写完后正常结束。页内退出与各种退出信号都经这里，所以都会发这条通知。
+   */
   async close(): Promise<void> {
+    for (const t of this.tasks.values()) t.hub.emit("service_exiting", { mode: this.mode, at: clock.now() });
     for (const t of this.tasks.values()) {
       console.log(`任务 ${t.taskId} 的事件分发统计：${JSON.stringify(t.hub.stats)}`);
       t.hub.stopPolling();
@@ -350,6 +359,7 @@ export class Service {
     const spoken = new Map<string, any>();     // 用户的话的会话条目编号 → 那条对话记录
     const actions = new Map<string, any>();    // 操作编号 → 界面操作的记录
     const sessionIds = [...new Set(rows.map((r) => r.session_id).filter(truthy))].sort(library.byCodePoint);
+    const facts = library.callFacts(t.dir);
     for (const sessionId of sessionIds) {
       let entries;
       try {
@@ -358,7 +368,7 @@ export class Service {
         continue; // 会话记录读不出来：只是少了触发它的事，日志照给
       }
       const path = branch(entries);
-      for (const work of worksFromEntries(path, definition, FALLBACK_TEXT, textOf)) {
+      for (const work of worksFromEntries(path, definition, FALLBACK_TEXT, textOf, facts)) {
         for (const callId of work.call_ids) works.set(callId, work);
       }
       for (const m of baseMessages(entries, sessionId)) {
@@ -407,7 +417,7 @@ export class Service {
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", "只接受 .md、.txt 与 .docx（Word）三种文件。");
     if (isReserved(filename)) throw new ApiError("bad_request", "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 材料生成的投影用，请改个名字再上传。");
     const isDocx = filename.toLowerCase().endsWith(".docx");
-    if (data.length > MAX_UPLOAD) throw new ApiError("too_large", "单个文件不能超过 5 MB。");
+    if (data.length > MAX_UPLOAD) throw new ApiError("too_large", TOO_LARGE_TEXT);
     const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const folder = join(t.dir, folderRel);
     mkdirSync(folder, { recursive: true });
@@ -464,7 +474,10 @@ export class Service {
 export function userActionText(kind: string | null, revision: Record<string, any>): string {
   const ops = revision.operations as Record<string, any>[];
   const ids = ops.map((op) => op.item_id).join("、");
-  if (kind === "undo" || truthy(revision.undo_of_revision)) return `你撤销了修订 ${pyStr(revision.undo_of_revision)}`;
+  if (kind === "undo" || truthy(revision.undo_of_revision)) {
+    // 撤销总会记下被撤销的修订号；库数据异常、缺这一项时不写空值。
+    return truthy(revision.undo_of_revision) ? `你撤销了修订 ${pyStr(revision.undo_of_revision)}` : "你撤销了一次修订";
+  }
   if (kind === "delete_item" || (kind === null && ops.length && ops.every((op) => op.op === "delete"))) return `你删除了 ${ids}`;
   if (kind === "keep_pending") return `你把 ${ids} 标为先不管`;
   if (kind === "edit_fields" || (kind === null && ops.length && ops.every((op) => op.op === "update"))) {

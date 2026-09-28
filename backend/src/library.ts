@@ -57,7 +57,8 @@ function str(value: unknown): string {
 export function titleOf(fields: Record<string, any> | null | undefined, collection: ParsedDefinition["集合"][number] | null | undefined): string {
   if (!truthy(fields) || !collection || !truthy(collection["字段"])) return "";
   const value = fields![collection["字段"][0]["名"]];
-  if (Array.isArray(value)) return value.map(str).join("、");
+  // 列表里的空项跳过：保存修订与界面修改都不让写进空项，这里是库数据异常时的兜底。
+  if (Array.isArray(value)) return value.filter((v) => v !== null && v !== undefined && v !== "").map(str).join("、");
   return str(or(value, ""));
 }
 
@@ -659,6 +660,41 @@ export function changedFields(before: Record<string, any> | null, after: Record<
   return (or(collection["字段"], []) as ParsedDefinition["集合"][number]["字段"])
     .filter((f) => canonical(before[f["名"]]) !== canonical(after[f["名"]]))
     .map((f) => f["名"]);
+}
+
+/**
+ * 按调用编号查一次调用在任务库里留下的事实，给过程摘要用：保存修订形成的修订（修订号与碰到的条目，条目取自那次修订的
+ * REVISION_SAVED 事件），以及哪些调用把任务标为了已完成（TASK_COMPLETED 事件）。用户让助手停下时，工具可能已经写进了库、
+ * 只是结果没来得及回到会话里，摘要据此如实写「保存了修订 N」「把任务标为已完成」。只读；库不在或读不出时两样都是空的。
+ */
+export function callFacts(taskDir: string | null): { revision: (callId: string) => Record<string, any> | null; completed: (callId: string) => boolean } {
+  const revisions = new Map<string, Record<string, any>>();
+  const completed = new Set<string>();
+  const db = (() => {
+    try {
+      return taskDir === null ? null : openRo(taskDir);
+    } catch {
+      return null;
+    }
+  })();
+  if (db !== null) {
+    try {
+      inReadTransaction(db, () => {
+        const events = new Map(all(db, "SELECT seq, payload FROM event WHERE name = 'REVISION_SAVED'").map((x) => [x.seq as number, x]));
+        for (const row of all(db, "SELECT revision_no, call_id, event_seq FROM revision")) {
+          if (!row.call_id) continue;
+          const payload = or(jsonOrText(events.get(row.event_seq as number)?.payload ?? null), {}) as Record<string, any>;
+          revisions.set(String(row.call_id), { revision_no: row.revision_no, operations: or(payload.operations, []) });
+        }
+        for (const row of all(db, "SELECT call_id FROM event WHERE name = 'TASK_COMPLETED'")) if (row.call_id) completed.add(String(row.call_id));
+      });
+    } catch {
+      // 旧格式或读不出：当作查不到
+    } finally {
+      db.close();
+    }
+  }
+  return { revision: (callId) => revisions.get(callId) ?? null, completed: (callId) => completed.has(callId) };
 }
 
 /**

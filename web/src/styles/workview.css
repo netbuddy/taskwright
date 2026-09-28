@@ -78,6 +78,8 @@
 .app .busybar{display:none;align-items:center;gap:.4rem;background:var(--amber-bg);border:1px solid var(--amber-line);
   border-radius:.5rem;padding:.3rem .55rem;font-size:0.897rem;color:#7a4a06;margin-bottom:.4rem}
 .app .busybar.show{display:flex}
+/* 不拦住操作的提示（助手已经退出、正在启动、还没启动）：蓝色，与拦住操作的琥珀色提示条区分开 */
+.app .busybar.info{background:var(--blue-bg);border-color:var(--blue-line);color:var(--ink)}
 .app .chat-in.busy .inbox{opacity:.55}
 .app .chat-in.busy textarea{background:#f0f0f0;cursor:not-allowed}
 .app .steps{border:1px solid var(--line);border-radius:.45rem;overflow:hidden;background:var(--card)}

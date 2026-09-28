@@ -44,10 +44,13 @@ function str(value: unknown): string {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
+/** 列表里的一项：空项写「（空）」，与整个字段为空时同一个说法。保存修订与界面修改都不让写进空项，这里是库数据异常时的兜底。 */
+const itemText = (v: unknown) => (v === null || v === undefined || v === "" ? "（空）" : str(v));
+
 export function valueText(value: unknown, fieldType: string): string {
   if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) return "（空）";
-  if (fieldType === "条目引用" && Array.isArray(value)) return value.map(str).join("、");
-  if (Array.isArray(value)) return value.map((v, n) => `${n + 1}. ${str(v)}`).join("；");
+  if (fieldType === "条目引用" && Array.isArray(value)) return value.map(itemText).join("、");
+  if (Array.isArray(value)) return value.map((v, n) => `${n + 1}. ${itemText(v)}`).join("；");
   return str(value).replaceAll("\n", " ");
 }
 
@@ -114,8 +117,10 @@ export function editLocator(lib: Library): Locate {
 export function sourcesText(lib: Library, itemId: string, revisionNo: number, wordsLocator: Locate | null = null, editsLocator: Locate | null = null): string {
   const parts = [];
   for (const s of lib.sourcesOf(itemId, revisionNo)) {
+    // 摘录（与领域说明来源的出处）为空时不写那半句：保存修订要求来源都有摘录，这里是库数据异常时的兜底。
+    const quoted = truthy(s.excerpt) ? `（「${str(s.excerpt)}」）` : "";
     if (s.kind === DOMAIN_NOTE) {
-      parts.push(`${DOMAIN_NOTE} ${str(s.locator)}（「${str(s.excerpt)}」）`);
+      parts.push(`${DOMAIN_NOTE}${truthy(s.locator) ? ` ${str(s.locator)}` : ""}${quoted}`);
       continue;
     }
     let where: string;
@@ -130,7 +135,7 @@ export function sourcesText(lib: Library, itemId: string, revisionNo: number, wo
       const locator = String(or(s.locator, "")).replace(/(\.docx)#p\d+$/i, "$1");
       where = locator && s.kind !== EXECUTOR_SUPPLEMENT ? `，出处 ${locator}` : "";
     }
-    parts.push(`${KIND_WORDS[s.kind] ?? s.kind}${where}（「${str(s.excerpt)}」）`);
+    parts.push(`${KIND_WORDS[s.kind] ?? s.kind}${where}${quoted}`);
   }
   return parts.join("；") || "（没有登记来源）";
 }
@@ -240,7 +245,8 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
     const groups = new Map<string, Chosen>();
     for (const row of rows) {
       const value = row[2][field];
-      const key = Array.isArray(value) ? value.map(str).join("、") : str(or(value, "")).trim();
+      // 分组名：列表里的空项跳过（库数据异常时的兜底），整个为空时归到 EMPTY_GROUP。
+      const key = Array.isArray(value) ? value.filter((v) => v !== null && v !== undefined && v !== "").map(str).join("、") : str(or(value, "")).trim();
       const name = key || EMPTY_GROUP;
       if (!groups.has(name)) groups.set(name, []);
       groups.get(name)!.push(row);

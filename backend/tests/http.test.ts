@@ -44,14 +44,14 @@ test("错误形状与状态码", () => {
   assert.equal(STATUS.old_format, 409);
 });
 
-test("路由分派：没有的接口、没有的任务、pi 不在时的直接操作与停下、方法不对", async () => {
+test("路由分派：没有的接口、没有的任务、pi 不在且没有给会话时的直接操作与停下、方法不对", async () => {
   assert.deepEqual((await go("GET", "/api/v1/nothing")).body.error.code, "not_found");
   assert.equal((await go("GET", "/api/v1/nothing")).body.error.message, "没有这个接口：GET /api/v1/nothing");
   assert.deepEqual([(await go("GET", "/api/v1/tasks/TASK-NONE")).status, (await go("GET", "/api/v1/tasks/TASK-NONE")).body.error.message], [404, "没有任务 TASK-NONE。"]);
   const { task_id: taskId } = service.create({});
   const action = await go("POST", `/api/v1/tasks/${taskId}/actions`, JSON.stringify({ kind: "mark_viewed", targets: [] }));
   assert.deepEqual([action.status, action.body.error.code, action.body.error.message, action.body.error.data],
-    [503, "executor_unavailable", "助手现在不可用，界面操作要在助手启动之后才能做。", { detail: "pi 没有在跑" }], "pi 不在时直接操作一律失败");
+    [503, "executor_unavailable", "助手现在不可用，界面操作要在助手启动之后才能做。", { detail: "pi 没有在跑" }], "pi 不在、又没有给会话时直接操作失败：不为一次操作另开一条会话（给了会话时按需启动，见 session_resume.test.ts）");
   assert.deepEqual((await go("POST", `/api/v1/tasks/${taskId}/control`, JSON.stringify({ action: "stop" }))).body, { ok: true, cleared: [] }, "pi 不在时停下什么都不做");
   const control = await go("POST", `/api/v1/tasks/${taskId}/control`, JSON.stringify({ action: "interrupt" }));
   assert.deepEqual([control.status, control.body.error.message], [400, "action 现在只能是 stop。"]);

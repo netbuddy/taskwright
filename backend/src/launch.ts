@@ -131,7 +131,7 @@ export function resolveExtension(entry: Record<string, any>): string | null {
     if (!isFile(path)) throw new LaunchError(`扩展「${name}」按环境变量 ${variable} 找到的位置不是一个文件：${path}`);
     return path;
   }
-  throw new LaunchError(`扩展「${name}」的 source 只能写 repo 或 env，现在写的是 ${source === undefined || source === null ? "None" : `'${source}'`}。`);
+  throw new LaunchError(`扩展「${name}」的 source 只能写 repo 或 env，${source === undefined || source === null ? "现在没有写" : `现在写的是 '${source}'`}。`);
 }
 
 /** 平台 skill 所在的目录；配置没写这一项返回 null，写了但目录里没有 SKILL.md 就报错。 */

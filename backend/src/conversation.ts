@@ -14,6 +14,7 @@
 import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
+import { callFacts } from "./library.ts";
 import { understandingLines, worksFromEntries } from "./work_summary.ts";
 
 export const SLASH_PREFIX = "用户说：";
@@ -97,7 +98,8 @@ export function messages(entries: Entry[], sessionId: string, definition: Record
 /** 把从会话条目算出的过程摘要插进对话记录：放在这次工作第一条回复之前；这次工作没有回复时，放在下一句用户的话之前。 */
 export function withWorkSummaries(out: Record<string, any>[], path: Entry[], sessionId: string, definition: Record<string, any>, taskDir: string | null = null) {
   const understandings = understandingLines(taskDir, sessionId);
-  for (const work of worksFromEntries(path, definition, FALLBACK_TEXT, textOf)) {
+  // 给了任务目录时按任务库补上没有结果的调用的事实（保存修订、完成任务是否真的写进了库）。
+  for (const work of worksFromEntries(path, definition, FALLBACK_TEXT, textOf, taskDir !== null ? callFacts(taskDir) : null)) {
     const replies = new Set(work.reply_ids);
     for (const m of out) if (m.type === "assistant_reply" && replies.has(m.message_id)) m.work_id = work.work_id;
     const summary = {

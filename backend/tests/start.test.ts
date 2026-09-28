@@ -1,6 +1,6 @@
 /**
  * 启动函数与它带来的三件事：同一进程里起服务并拿到实际端口与停止函数；--web 给了时出网页静态文件（找不到回首页、
- * 跳出目录拒绝、/api 仍归接口）；SIGHUP 与 SIGTERM 同样收尾。另测模型探测（只读 pi 配置目录里的两个文件）。
+ * 跳出目录拒绝、/api 仍归接口）；SIGHUP、SIGTERM、SIGINT 同样收尾，事件流先收到 service_exiting。另测模型探测（只读 pi 配置目录里的两个文件）。
  */
 
 import assert from "node:assert/strict";
@@ -147,38 +147,50 @@ function call(port: number, method: string, path: string, body?: unknown): Promi
   });
 }
 
-test("真进程：收到 SIGHUP（关掉终端或控制台窗口）与 SIGTERM 一样收尾：关 pi、删占用标记、退出码 0", { skip: process.platform === "win32" ? "Windows 上不能向别的进程发 SIGHUP" : false }, async () => {
-  const dir = join(tmp, "hup");
-  let out = "";
-  const child = spawn(process.execPath, [MAIN, "--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--mode", "desktop", "--port", String(await freePort())], {
-    cwd: ROOT, env: { ...process.env, TASKWRIGHT_LOG_DIR: join(dir, "logs"), TASKWRIGHT_PI_ENTRY: FAKE_PI }, stdio: ["ignore", "pipe", "pipe"],
+for (const signal of ["SIGHUP", "SIGTERM", "SIGINT"] as const) {
+  test(`真进程：收到 ${signal} 时收尾：开着的事件流先收到 service_exiting，再关 pi、删占用标记、退出码 0（SIGHUP 是关掉终端或控制台窗口）`,
+    { skip: process.platform === "win32" ? "Windows 上不能向别的进程发这些信号" : false }, async () => {
+    const dir = join(tmp, `signal-${signal}`);
+    let out = "";
+    const child = spawn(process.execPath, [MAIN, "--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--mode", "desktop", "--port", String(await freePort())], {
+      cwd: ROOT, env: { ...process.env, TASKWRIGHT_LOG_DIR: join(dir, "logs"), TASKWRIGHT_PI_ENTRY: FAKE_PI }, stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout!.on("data", (c) => (out += c));
+    child.stderr!.on("data", (c) => (out += c));
+    let stream: ReturnType<typeof request> | undefined;
+    try {
+      let port = 0;
+      for (const end = Date.now() + 15000; !port; await sleep(50)) {
+        const m = /任务服务在 http:\/\/[^:]+:(\d+)\//.exec(out);
+        if (m) port = Number(m[1]);
+        else if (child.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${out}`);
+      }
+      const created = await call(port, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "关窗测试" });
+      const taskDir = join(dir, "tasks", created.body.task_id);
+      let events = "";
+      stream = request({ host: "127.0.0.1", port, path: `/api/v1/tasks/${created.body.task_id}/events` }, (res) => res.on("data", (c) => (events += c)));
+      stream.on("error", () => {});
+      stream.end();
+      assert.equal((await call(port, "POST", `/api/v1/tasks/${created.body.task_id}/sessions`)).status, 200);
+      const pis = spawnSync("pgrep", ["-P", String(child.pid)], { encoding: "utf-8" }).stdout.split("\n").filter(Boolean).map(Number);
+      assert.equal(pis.length, 1, "打开会话起了一个 pi");
+      assert.ok(existsSync(join(taskDir, LOCK_NAME)));
+      child.kill(signal);
+      assert.equal(await exited(child), 0);
+      assert.equal(existsSync(join(taskDir, LOCK_NAME)), false, "占用标记删掉了");
+      assert.throws(() => process.kill(pis[0], 0), "pi 已经不在");
+      const notice = events.indexOf("event: service_exiting\ndata: {\"mode\": \"desktop\"");
+      assert.ok(notice >= 0, `事件流收到了 service_exiting：${events}`);
+      assert.ok(notice < events.indexOf("event: executor_state\ndata: {\"state\": \"exited\""), "先发退出通知，再关 pi");
+    } finally {
+      stream?.destroy();
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+        await exited(child);
+      }
+    }
   });
-  child.stdout!.on("data", (c) => (out += c));
-  child.stderr!.on("data", (c) => (out += c));
-  try {
-    let port = 0;
-    for (const end = Date.now() + 15000; !port; await sleep(50)) {
-      const m = /任务服务在 http:\/\/[^:]+:(\d+)\//.exec(out);
-      if (m) port = Number(m[1]);
-      else if (child.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${out}`);
-    }
-    const created = await call(port, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "关窗测试" });
-    const taskDir = join(dir, "tasks", created.body.task_id);
-    assert.equal((await call(port, "POST", `/api/v1/tasks/${created.body.task_id}/sessions`)).status, 200);
-    const pis = spawnSync("pgrep", ["-P", String(child.pid)], { encoding: "utf-8" }).stdout.split("\n").filter(Boolean).map(Number);
-    assert.equal(pis.length, 1, "打开会话起了一个 pi");
-    assert.ok(existsSync(join(taskDir, LOCK_NAME)));
-    child.kill("SIGHUP");
-    assert.equal(await exited(child), 0);
-    assert.equal(existsSync(join(taskDir, LOCK_NAME)), false, "占用标记删掉了");
-    assert.throws(() => process.kill(pis[0], 0), "pi 已经不在");
-  } finally {
-    if (child.exitCode === null) {
-      child.kill("SIGKILL");
-      await exited(child);
-    }
-  }
-});
+}
 
 test("模型探测：models.json 登记了「服务商/型号」或 auth.json 有这个服务商即为有；都没有时原因句写明两个文件的位置", () => {
   const dir = join(tmp, "agent-dir");

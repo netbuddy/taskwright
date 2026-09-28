@@ -111,14 +111,15 @@ test("扩展命令的等待：到时没有结果以 busy_timeout 拒绝并带上
   }
 });
 
-test("成功的直接操作让事件分发去查库；pi 不在时直接操作失败", async () => {
+test("成功的直接操作让事件分发去查库；pi 不在、又没有给会话时直接操作失败", async () => {
   const { executor, hub } = setup();
   let triggered = 0;
   hub.trigger = () => void (triggered += 1);
   await executor.action("S1", BODIES[3]);
   assert.ok(triggered >= 1);
   executor.pi = null;
-  await assert.rejects(executor.action("S1", BODIES[3]), (e: ApiError) => e.code === "executor_unavailable" && (e.data as Dict).detail === "pi 没有在跑");
+  // 给了会话时按需启动 pi 并续接那条会话（真进程测试见 session_resume.test.ts）；没有给会话时不为一次操作另开会话，照旧失败。
+  await assert.rejects(executor.action(null, BODIES[3]), (e: ApiError) => e.code === "executor_unavailable" && (e.data as Dict).detail === "pi 没有在跑");
 });
 
 test("执行者工作中：打开详情写已读照写；带通知的已读、其余操作、卡片点击都是 session_busy", async () => {

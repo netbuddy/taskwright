@@ -44,9 +44,11 @@ echo
 curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
   '"\n".join("   agent: " + m.get("text", "") for m in d["conversation"]["messages"] if m.get("type") == "assistant_reply")'
 
-echo "6. generate the document from the current version of every item"
-SELECTION=$(curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
-  'json.dumps({"selection": [{"item_id": i["item_id"], "version_no": i["version_no"]} for i in d["task"]["items"]], "format": "markdown"})')
-curl -sf -X POST "$API/tasks/$TASK/documents/preview" -H 'Content-Type: application/json' -d "$SELECTION" \
+echo "6. generate the document from the latest revision of the whole deliverable"
+# Without revision_no and items the document covers every item at the latest revision. To generate it as of an earlier
+# revision, or only for some items, name them in the request body, for example:
+#   -d '{"revision_no": 3, "items": ["UC-001", "UC-002"], "format": "markdown"}'
+# Use /documents/download instead of /documents/preview to get the file itself.
+curl -sf -X POST "$API/tasks/$TASK/documents/preview" -H 'Content-Type: application/json' -d '{"format": "markdown"}' \
   | json 'd["text"]' > "srs-$TASK.md"
 echo "   written to srs-$TASK.md ($(wc -l < "srs-$TASK.md") lines)"

@@ -105,7 +105,7 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 
 - `--tasks` is where task directories are created (one directory per task, named by task id); `--runs` is where each task's raw pi events and session files are archived (`<runs>/<task id>/pi-events/` and `pi-sessions/`). When they are left out, both go to the user data directory (`~/.local/share/taskwright/` on Linux).
 - All services bind `0.0.0.0` by default (`--host` changes it). The one exception is the task service started with `--mode desktop`, which binds `127.0.0.1` by default.
-- The task service takes a run mode, `--mode desktop|server` (default `server`). `server` is for a shared server: it binds `0.0.0.0` by default and has no exit endpoint. `desktop` is for one person on one computer: it binds `127.0.0.1` by default and adds `POST /api/v1/service/exit`, which accepts requests from this machine only. `--host` overrides the default address in both modes. Both modes log the same way: to standard output and to a daily file under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory). See section 9 of the API description for `GET /api/v1/service` and the exit endpoint.
+- The task service takes a run mode, `--mode desktop|server` (default `server`). `server` is for a shared server: it binds `0.0.0.0` by default and has no exit endpoint. `desktop` is for one person on one computer: it binds `127.0.0.1` by default and adds `POST /api/v1/service/exit`, which accepts requests from this machine only. `--host` overrides the default address in both modes. Both modes log the same way: to standard output and to a daily file under `TASKWRIGHT_LOG_DIR` (default: `logs/` in the user data directory). See section 9 of the API description for `GET /api/v1/service` and the exit endpoint. Only pages opened on the same computer are offered the exit; the service tells this from the request's source address, so do not put a desktop-mode service behind a reverse proxy (the service would see the proxy's address).
 - If the port given to the task service is taken, it tries the following ports, up to 10 in all, and exits with an error when all are taken. The port it actually uses is printed in the log, written to each task's occupancy mark and returned by `GET /api/v1/service`.
 - `scripts/dev.sh` starts the task service on `TASKWRIGHT_API_PORT` (default 8790) and points the web development server at the port the task service actually reports, so a taken port does not send the web interface to some other service.
 - Given `--web <dir>` (for example the built `web/dist`), the task service serves the web interface itself: GET requests that do not start with `/api/` are answered from that directory, and paths it does not have get the start page. Then neither the reverse proxy of section 6 nor the development server is needed.
@@ -130,7 +130,7 @@ Taskwright relies on the model calling tools reliably: every reply goes through 
 
 ## 6 Production build of the web interface
 
-Run `npm run build -w web` and serve `web/dist/` behind a reverse proxy that forwards `/api` to the task service, or instead give the task service `--web web/dist` and skip the proxy (see section 4). Disable response buffering for `/api/v1/tasks/*/events` (it is a Server-Sent Events stream) and raise the read timeout. Without HTTP/2, a browser allows only about six connections per host, so keep to four open task pages per browser.
+Run `npm run build -w web` and serve `web/dist/` behind a reverse proxy that forwards `/api` to the task service, or instead give the task service `--web web/dist` and skip the proxy (see section 4). Disable response buffering for `/api/v1/tasks/*/events` (it is a Server-Sent Events stream) and raise the read timeout. Set the proxy's own request body limit to at least the upload limit plus some room for the multipart wrapping (for nginx, `client_max_body_size 6m;`; its default is 1 MB); otherwise a larger upload is refused by the proxy with its own error page instead of the task service's message. Without HTTP/2, a browser allows only about six connections per host, so keep to four open task pages per browser.
 
 ## 7 Optional: Langfuse tracing
 
@@ -194,7 +194,7 @@ Task directories and archives are kept in the user data directory: `~/.local/sha
 
 ### 10.3 Stopping
 
-Any one of three ways: choose 退出服务 ("stop the service") in the 本机用户 ("local user") menu, at the bottom left of the task list and task pages or the top right of the work view, and confirm; close the service's console window; or press Ctrl+C in that window. Each way closes each task's pi and removes the occupancy marks before the service exits.
+Any one of three ways: choose 退出服务 ("stop the service") in the 本机用户 ("local user") menu, at the bottom left of the task list and task pages or the top right of the work view, and confirm; close the service's console window; or press Ctrl+C in that window. Each way first tells the open pages (work views then show that the service has stopped and no longer reconnect), then closes each task's pi and removes the occupancy marks before the service exits. The 本机用户 menu is only there on pages opened on the same computer; pages opened from another computer do not have it.
 
 ### 10.4 Setting up a model service
 

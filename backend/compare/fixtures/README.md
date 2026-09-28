@@ -22,3 +22,20 @@ so they contain nothing specific to the machine they were generated on.
 These files are temporary. They will be deleted once the scenarios are rewritten as integration tests that assert facts
 (what was written to the database, which events arrived) instead of matching an older implementation's output.
 They can only be regenerated while `server/` is still in the repository.
+
+## Known differences from the saved outputs
+
+The TypeScript task service has since changed on purpose in two ways the Python one has not. The saved outputs are not
+regenerated for these changes, so `sessions.mts --against fixtures` reports the four parts below as different, and only these.
+All four go away when the Python version and these saved outputs are retired.
+
+| Scenario and part | What differs | Why |
+|---|---|---|
+| `isolation`, event stream | The TypeScript side has one more event at the end of the first task's stream: `service_exiting` with `mode: "server"`. | The service now tells open event streams that it is exiting before it closes them, so pages can say so instead of reconnecting. This scenario stops the service while a stream is open. |
+| `rpc`, observations | Step 12, a direct action sent after a restart before the session is opened (an empty `mark_viewed`), is answered 400 `bad_request` ("targets 应当是一个不为空的列表。") instead of 503 `executor_unavailable`. | A direct action now starts the assistant on demand and resumes the page's session, as a message does, and only then is the action itself checked. |
+| `rpc`, archives | The raw event stream, the backend notes and the session file have the assistant start one step earlier (122 differences in the latest run). | Same change: the assistant is started by step 12 instead of by the snapshot that follows it. |
+| `rpc`, observatory | The number of event lines of that start and the order of operation ids read by the observatory. | Same change. |
+
+What step 12 used to check, a direct action while the assistant is not running, is now covered by the backend tests in
+`backend/tests/session_resume.test.ts` (after the assistant exited, before it was started, when resuming finds a different
+session, and while it is busy in another session) and `backend/tests/actions.test.ts` (no session given).

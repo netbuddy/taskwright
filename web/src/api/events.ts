@@ -45,7 +45,17 @@ export function parseSseChunk(buffer: string): { messages: SseMessage[]; rest: s
 /** 45 秒收不到任何东西就主动重连（第 3 节）。 */
 export const IDLE_RECONNECT_MS = 45_000;
 
-export type StreamStatus = "connecting" | "open" | "reconnecting" | "closed";
+/**
+ * 断开之后连续这么久（毫秒）都没有重新连上，就认为服务可能已经停了，状态换成 unreachable，页面换一句兜底提示。
+ * 取 60 秒：重连间隔从 1 秒加倍到最多 15 秒（1、2、4、8、15、15 秒），60 秒里约重试 6 次，网络的短暂抖动一般在这之内恢复；
+ * 服务异常停止时页面收不到退出通知，一分钟后说实话，不让用户一直等一个不会再连上的服务。
+ */
+export const UNREACHABLE_AFTER_MS = 60_000;
+/** 换成 unreachable 之后照旧重连，但间隔放宽到这么久（毫秒）：服务一回来最多半分钟就能连上，又不至于一直频繁地请求。 */
+export const SLOW_RETRY_MS = 30_000;
+
+/** unreachable：断开已超过 UNREACHABLE_AFTER_MS，仍在以 SLOW_RETRY_MS 的间隔重连；连上之后回到 open。 */
+export type StreamStatus = "connecting" | "open" | "reconnecting" | "unreachable" | "closed";
 
 export interface StreamHandlers {
   onMessage: (message: SseMessage) => void;
@@ -65,6 +75,8 @@ export function openEventStream(
   let controller: AbortController | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let retryDelay = 1000;
+  /** 这一次断开从什么时候开始；连着时为 null。 */
+  let downSince: number | null = null;
 
   const resetIdle = () => {
     if (idleTimer) clearTimeout(idleTimer);
@@ -83,6 +95,7 @@ export function openEventStream(
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
       handlers.onStatus?.("open");
       retryDelay = 1000;
+      downSince = null;
       resetIdle();
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -101,6 +114,12 @@ export function openEventStream(
     }
     if (idleTimer) clearTimeout(idleTimer);
     if (closed) return;
+    downSince ??= Date.now();
+    if (Date.now() - downSince >= UNREACHABLE_AFTER_MS) {
+      handlers.onStatus?.("unreachable");
+      setTimeout(connect, SLOW_RETRY_MS);
+      return;
+    }
     handlers.onStatus?.("reconnecting");
     setTimeout(connect, retryDelay);
     retryDelay = Math.min(retryDelay * 2, 15_000);

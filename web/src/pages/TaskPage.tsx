@@ -15,6 +15,8 @@ import { formatBytes, formatTime } from "../model/format";
 import { ownMaterials } from "../model/docx";
 import { DocxPaper } from "../components/work/DocxPaper";
 import { go, href } from "../router";
+import { useService } from "../components/ServiceControls";
+import { tooLargeText, uploadLimitText } from "../model/upload";
 import { statusTag } from "./TaskListPage";
 
 export function TaskPage({ taskId }: { taskId: string }) {
@@ -28,6 +30,8 @@ export function TaskPage({ taskId }: { taskId: string }) {
   // Word 材料的「查看原文」按原版式显示（与工作视图材料区同一个渲染），不显示给助手读的投影。
   const [wordPath, setWordPath] = useState<string | null>(null);
   const toast = useToast();
+  const service = useService();
+  const limitText = uploadLimitText(service.info);
 
   const load = () =>
     api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
@@ -124,6 +128,13 @@ export function TaskPage({ taskId }: { taskId: string }) {
                 showUploadList={false}
                 style={{ marginTop: "0.714rem" }}
                 customRequest={async ({ file, onSuccess, onError }) => {
+                  // 超过上限的文件不发请求，直接报后端给的那句话。
+                  const tooLarge = tooLargeText(service.info, file as File);
+                  if (tooLarge) {
+                    toast.error(tooLarge);
+                    onError?.(new Error(tooLarge));
+                    return;
+                  }
                   try {
                     const r = await api.uploadMaterial(taskId, file as File);
                     toast.success(`已上传：${r.path}`);
@@ -135,7 +146,8 @@ export function TaskPage({ taskId }: { taskId: string }) {
                   }
                 }}
               >
-                <span className="muted small">把文件拖到这里，或者点这里选择文件（只收 .md、.txt 与 Word 的 .docx，单个不超过 5 MB）。新传的材料下一次会话开始时助手就能看到。</span>
+                {/* 大小取自服务信息（与后端拒绝时那句话同一个数）；还没取到时不写这半句，不猜一个数。 */}
+                <span className="muted small" data-testid="upload-hint">把文件拖到这里，或者点这里选择文件（只收 .md、.txt 与 Word 的 .docx{limitText ? `，${limitText}` : ""}）。新传的材料下一次会话开始时助手就能看到。</span>
               </Upload.Dragger>
             )}
           </div>

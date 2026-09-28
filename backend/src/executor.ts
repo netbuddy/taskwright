@@ -18,7 +18,7 @@ import { ApiError } from "./errors.ts";
 import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
 import type { Profile } from "./launch.ts";
-import { openRo } from "./library.ts";
+import { callFacts, openRo } from "./library.ts";
 import { type PiEvent, PiExited, PiRefused, PiSession, PiTimeout } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
@@ -285,7 +285,7 @@ export class Executor {
     }
   }
 
-  /** 说话之前：会话要是活动的那条；start 为真时 pi 不在就按需启动，否则失败。 */
+  /** 说话与直接操作之前：会话要是活动的那条；start 为真时 pi 不在就按需启动，否则失败。 */
   require(sessionId: string | null, start: boolean): Promise<void> {
     return this.lock.run(async () => {
       if (this.state === "starting") throw new ApiError("executor_starting", "助手正在启动，请稍候。");
@@ -370,7 +370,9 @@ export class Executor {
    * 评审（request_review）也走这里：扩展命令核对通过、记下第一条进度事件就回报，评审在 pi 进程里接着跑，进度与结果作为库事件推给前端。
    */
   async action(sessionId: string | null, body: Dict): Promise<string> {
-    await this.require(sessionId, false);
+    // 助手不在（已退出、还没启动、续接没接上之后）时与说话一样按需启动并续接这条会话，页面在这些状态下不必设只读；
+    // 续接对不上照样报 session_resume_failed，操作不会在接错的会话里执行。没有给会话时不启动，免得为一次操作另开一条会话。
+    await this.require(sessionId, sessionId !== null);
     // 单一写入者规则管的是交付物内容。打开详情写已读（mark_viewed 且不通知执行者）不改内容，是唯一的例外：
     // 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
     const viewing = body.kind === "mark_viewed" && !truthy(body.notify_executor);
@@ -529,7 +531,7 @@ export class Executor {
     if (kind === "tool_execution_end") return this.toolEnd(event, sid);
     if (kind === "turn_end") return this.turnEnd(sid);
     if (kind === "auto_retry_start") {
-      this.hub.emit("problem", { session_id: sid, code: "model_unavailable", text: `模型服务暂时不可用，正在第 ${event.attempt ?? "None"} 次重试。`,
+      this.hub.emit("problem", { session_id: sid, code: "model_unavailable", text: event.attempt == null ? "模型服务暂时不可用，正在重试。" : `模型服务暂时不可用，正在第 ${event.attempt} 次重试。`,
         retry: { attempt: event.attempt ?? null, delay_ms: event.delayMs ?? null } });
       return;
     }
@@ -663,6 +665,15 @@ export class Executor {
       const text = conversation.textOf(message.content ?? null).trim();
       const calls = (message.content || []).filter((p: unknown) => typeof p === "object" && p !== null && (p as Dict).type === "toolCall");
       if (message.stopReason === "error") this.work.failed = true;
+      if (message.stopReason === "aborted" || message.stopReason === "error") {
+        // 被停下（或出错）时，这条消息里的工具调用没有开始执行，不会有 tool_execution 事件；补成这一轮的步骤，
+        // 一轮结束时按「没有结果」写，与刷新后从会话记录算出的过程摘要说法相同。
+        for (const call of calls as Dict[]) {
+          if (this.work.turn_tools.some((t) => t.id === (call.id ?? null))) continue;
+          this.work.turn_tools.push({ id: call.id ?? null, tool: call.name ?? "", args: call.arguments || {}, done: false, failed: false, details: null });
+          this.work.step_count += 1;
+        }
+      }
       if (text && !calls.length) this.work.last_text = text;
     }
   }
@@ -694,7 +705,8 @@ export class Executor {
       if (error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout) return;
       throw error;
     }
-    const found = workSummary.worksFromEntries(path, this.definition(), conversation.FALLBACK_TEXT, conversation.textOf).find((w) => w.user_message_id === userId);
+    const found = workSummary.worksFromEntries(path, this.definition(), conversation.FALLBACK_TEXT, conversation.textOf, callFacts(this.taskDir))
+      .find((w) => w.user_message_id === userId);
     if (!found) return;
     const understanding = sid ? workSummary.understandingLines(this.taskDir, sid).get(userId) ?? null : null;
     this.hub.emit("work_summary", { session_id: sid, work_id: work.work_id, at: found.at, seconds: found.seconds, step_count: found.step_count,
@@ -775,7 +787,10 @@ export class Executor {
     const work = this.work;
     if (work === null || !work.turn_tools.length) return;
     const key = `${work.work_id}-${work.turn}`;
-    const texts = work.turn_tools.map((t) => this.stepText(t.tool, t.args, true, t.failed, t.details));
+    // 一轮结束时还没有结果的调用（被停下）按「没有结果」写，写库的两种先查任务库，与过程摘要同一个函数。
+    const facts = work.turn_tools.some((t) => !t.done) ? callFacts(this.taskDir) : null;
+    const texts = work.turn_tools.map((t) => t.done ? this.stepText(t.tool, t.args, true, t.failed, t.details)
+      : workSummary.unfinishedText(t.tool, t.args, t.id, facts, this.definition()));
     const step = { session_id: sid, work_id: work.work_id, step_key: key, text: texts.join("；"), in_progress: false, failed: work.turn_tools.some((t) => t.failed) };
     work.steps.set(key, step);
     this.hub.emit("step", step);

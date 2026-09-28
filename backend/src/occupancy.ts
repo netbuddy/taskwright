@@ -71,7 +71,9 @@ export function claim(taskDir: string, port: number | null, mode: string | null 
   const existing = readLock(taskDir);
   if (occupiedByOther(existing)) return existing;
   if (existing && !isOurs(existing)) {
-    console.log(`任务目录 ${basename(taskDir)} 里有一份遗留的占用标记（端口 ${pyStr(existing.port)}，进程 ${pyStr(existing.pid)} 已经不在了），本服务覆盖它。`);
+    // 标记里没写的项不写（标记被手工改过或很旧时会缺项）。
+    const parts = [truthy(existing.port) ? `端口 ${pyStr(existing.port)}` : "", truthy(existing.pid) ? `进程 ${pyStr(existing.pid)}` : ""].filter(Boolean);
+    console.log(`任务目录 ${basename(taskDir)} 里有一份遗留的占用标记（${parts.length ? `${parts.join("，")} ` : ""}已经不在了），本服务覆盖它。`);
   }
   const mine: Lock = { port, pid: process.pid, started_at: localStamp(), host: hostname() };
   if (mode !== null) mine.mode = mode;
@@ -95,6 +97,6 @@ export function release(taskDir: string): void {
 /** 给人看的一句：这个任务正被哪个服务占用。 */
 export function occupiedText(lock: Lock): string {
   const where = truthy(lock.port) ? `端口 ${pyStr(lock.port)} 的服务` : "另一个服务";
-  const host = lock.host === hostname() ? "" : `（主机 ${pyStr(lock.host)}）`;
+  const host = lock.host === hostname() || !truthy(lock.host) ? "" : `（主机 ${pyStr(lock.host)}）`;
   return `这个任务正被${where}${host}占用，这里不能打开。`;
 }

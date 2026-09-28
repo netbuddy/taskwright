@@ -16,7 +16,7 @@ import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
 import { appVersion } from "./paths.ts";
 import { probeModel } from "./model_probe.ts";
-import { MAX_UPLOAD, type Service, taskTypes, wordsLocator } from "./service.ts";
+import { MAX_UPLOAD, type Service, TOO_LARGE_TEXT, taskTypes, wordsLocator } from "./service.ts";
 import { isWebPath, webFile } from "./web.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
@@ -229,19 +229,25 @@ export const KEEPALIVE_MS = 15_000;
 /** 本机回环地址：退出接口只接受从这些地址来的请求（::ffff:127.0.0.1 是 IPv4 回环地址在 IPv6 套接字上的写法）。 */
 export const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
-/** 服务信息：不需要任务。给打包后的启动程序认出端口上是不是自己、给部署与监控探活、给前端按能力显示按钮。 */
-export function serviceInfo(service: Service) {
+/**
+ * 服务信息：不需要任务。给打包后的启动程序认出端口上是不是自己、给部署与监控探活、给前端按能力显示按钮。
+ * remote 是请求的来源地址：退出接口只接受本机回环地址来的请求，所以 capabilities.exit 只对这些来源为真，
+ * 从别的电脑打开页面时不显示一个点了也会被拒绝的「退出服务」。不给来源时按非本机算。
+ */
+export function serviceInfo(service: Service, remote: string | null = null) {
   // 模型探测每次都现查（只读两个小文件）：用户放好配置文件后，刷新页面即可看到结果。
   // 原因句里的文件路径只在桌面形态写全（服务器形态远程也看得到，不带出服务器上的目录）。
   const model = probeModel(service.profile, process.env, { paths: service.mode === "desktop" });
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
-    capabilities: { exit: service.mode === "desktop", model: model.available }, model: { name: model.name, reason: model.reason },
+    capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available }, model: { name: model.name, reason: model.reason },
+    // 上传上限与超过时的那句话：前端在发送之前按它拦下过大的文件（经开发服务器的代理上传过大文件时，代理可能回 502）。
+    upload: { max_bytes: MAX_UPLOAD, too_large_text: TOO_LARGE_TEXT },
   };
 }
 
 const handlers: Record<string, Handler> = {
-  service_info: (service) => json(200, serviceInfo(service)),
+  service_info: (service, req) => json(200, serviceInfo(service, req.remote ?? null)),
   service_exit: (service, req) => {
     // 只有桌面形态注册这个接口；服务器形态下与没有这个接口一样。它是过渡包（后端自己开浏览器、没有外壳）专用的。
     if (service.mode !== "desktop") throw new ApiError("not_found", `没有这个接口：${req.method} ${req.path}`);
@@ -476,7 +482,7 @@ export function makeServer(service: Service, options: ServerOptions = {}) {
       let reply: Reply;
       try {
         service.task(upload[1]);
-        reply = json(413, new ApiError("too_large", "单个文件不能超过 5 MB。").body());
+        reply = json(413, new ApiError("too_large", TOO_LARGE_TEXT).body());
       } catch (error) {
         reply = error instanceof ApiError ? json(error.status, error.body()) : json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String(error) } } });
       }
