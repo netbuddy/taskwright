@@ -63,11 +63,11 @@ function finishedPayload(opId: string, total: number, results: ItemOutcome[], er
  * call.callId 是操作编号；事件的发起方一律是用户。
  */
 export function startReview(call: CallContext, requested: RequestedItem[] | null,
-  opts: Omit<RunOptions, "onItemStart" | "onItemDone"> & { onRecorded?: (seq: number) => void; force?: boolean }): StartedReview {
+  opts: Omit<RunOptions, "onItemStart" | "onItemDone"> & { onRecorded?: (seq: number) => void }): StartedReview {
   const release = reviewSlot(call.workspaceDir, call.callId);
   let prepared;
   try {
-    prepared = prepareReviews(call.workspaceDir, requested, { force: opts.force });
+    prepared = prepareReviews(call.workspaceDir, requested);
   } catch (error) {
     release();
     throw error;

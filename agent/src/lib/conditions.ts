@@ -23,7 +23,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { load } from "./db.ts";
 import { titleOf } from "./tool_render.ts";
-import { activeWaiver, currentRulesHash, currentReviews } from "./review_state.ts";
+import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { SOURCE_DOMAIN_NOTE } from "./schema.ts";
 
 /** 一项条件的三种状态：已满足、还差、暂无条目（集合为空，这一条无从谈起）。 */
@@ -104,7 +104,8 @@ function idsPhrase(ids: string[], listAtMost = 6): string {
 }
 
 /**
- * 每个条目评审通过：条目当前所在的修订上，有一条当前规则下的合规记录，或者有一条生效的保留（用户保留了评审不合规的写法）。
+ * 每个条目评审通过：条目当前所在的修订上的评审结论（lib/review_verdict.ts，以当前规则下最后一条记录为准）是通过，
+ * 或者是已保留（用户保留了评审不合规的写法）。
  * 说明句分三类写：还没评审（当前修订在当前规则下没有评审记录）、评审不合规、评审不合规但你保留了（第三类计入满足，只是提示），
  * 例如「UC-004、UC-005 还没评审；UC-006 评审不合规；UC-003 评审不合规但你保留了。」条目改出新修订之后，旧修订上的保留不再作数。
  */
@@ -115,13 +116,13 @@ function everyReviewed(db: DatabaseSync, taskId: string, collection: string, ctx
   const kept: string[] = [];
   const unmet: ConditionResult["unmet"] = [];
   for (const row of currentItems(db, taskId, collection)) {
-    const verdicts = currentReviews(db, taskId, row.item_id, row.revision_no, current).map((r) => r.verdict);
-    if (verdicts.includes("合规")) continue;
-    if (activeWaiver(db, taskId, row.item_id, row.revision_no)) {
+    const { state } = verdictAt(db, taskId, row.item_id, row.revision_no, current);
+    if (state === "passed") continue;
+    if (state === "waived") {
       kept.push(row.item_id);
       continue;
     }
-    if (verdicts.length === 0) {
+    if (state === "pending") {
       pending.push(row.item_id);
       unmet.push({ item: row.item_id, reason: `条目 ${row.item_id} 在当前所在的修订 ${row.revision_no} 还没评审。` });
     } else {

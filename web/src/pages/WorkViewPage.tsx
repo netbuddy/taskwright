@@ -127,7 +127,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     }
   };
 
-  const submit = async (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor" | "force">, label: string): Promise<ApiError | null> => {
+  const submit = async (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string): Promise<ApiError | null> => {
     try {
       const r = await api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, ...req });
       // 标为已读不改内容，不显示「正在保存」；都已读过时后端什么都不写、没有库事件，挂着的话会一直等不到。
@@ -153,8 +153,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       .catch(() => undefined);
   };
   /** 发起评审：targets 为空＝全部待评审的条目。后端核对通过就回应，被拒时报一条失败提示。 */
-  const review = (targets: { item_id: string; base_revision: number }[], label: string, force?: boolean) =>
-    void submit({ kind: "request_review", targets, notify_executor: false, ...(force ? { force: true } : {}) }, label).then((e) => { if (e) toast.error(errorText(e)); });
+  const review = (targets: { item_id: string; base_revision: number }[], label: string) =>
+    void submit({ kind: "request_review", targets, notify_executor: false }, label).then((e) => { if (e) toast.error(errorText(e)); });
   const undo = (revision: number) =>
     void submit({ kind: "undo", targets: [{ revision_no: revision }], notify_executor: false }, `撤销修订 ${revision}`).then((e) => { if (e) toast.error(errorText(e)); });
 

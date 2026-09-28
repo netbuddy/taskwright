@@ -18,7 +18,7 @@
 import { existsSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { checkCompletion, currentItems } from "./conditions.ts";
-import { activeWaiver } from "./review_state.ts";
+import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, hasVersionColumns } from "./schema.ts";
@@ -63,13 +63,18 @@ export function withBoardDatabase(workspaceDir: string, body: (db: DatabaseSync,
   }
 }
 
-/** 条目在某次修订下的评审状态：有合规记录是评审通过；只有不合规记录是评审没有通过；一条都没有就说还没有。 */
-export function reviewState(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): string {
-  const rows = db
-    .prepare("SELECT verdict FROM review WHERE task_id = ? AND item_id = ? AND revision_no = ?")
-    .all(taskId, itemId, revisionNo) as { verdict: string }[];
-  if (rows.some((row) => row.verdict === "合规")) return "评审通过";
-  if (rows.length > 0) return activeWaiver(db, taskId, itemId, revisionNo) ? "评审没有通过，用户保留了写法" : "评审没有通过";
+/**
+ * 条目在某次修订下的评审状态，按评审结论（lib/review_verdict.ts）写：通过是评审通过；不通过是评审没有通过；
+ * 已保留是评审没有通过、用户保留了写法；待评审（当前规则下一条记录都没有）就说还没有。
+ * 给了任务目录时按现在的规则指纹区分记录，没给时不区分。
+ */
+export function reviewState(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number, workspaceDir?: string): string {
+  const collection = (db.prepare("SELECT collection FROM item WHERE task_id = ? AND item_id = ?").get(taskId, itemId) as { collection: string } | undefined)?.collection;
+  const hash = collection === undefined ? null : currentRulesHash(db, workspaceDir, collection);
+  const { state } = verdictAt(db, taskId, itemId, revisionNo, hash);
+  if (state === "passed") return "评审通过";
+  if (state === "waived") return "评审没有通过，用户保留了写法";
+  if (state === "failed") return "评审没有通过";
   return "还没有评审记录";
 }
 
@@ -118,7 +123,7 @@ export function boardLines(workspaceDir: string): string[] {
         const extra = collection.fields.some((f) => f.name === "状态") ? `　状态：${String((load(row.fields) as Fields)["状态"] ?? "")}` : "";
         lines.push(
           `  ${row.item_id}　${shorten(title, TITLE_LIMIT)}　修订 ${row.revision_no}` +
-            `　评审：${reviewState(db, task.task_id, row.item_id, row.revision_no)}` +
+            `　评审：${reviewState(db, task.task_id, row.item_id, row.revision_no, workspaceDir)}` +
             `　确认：${confirmState(db, task.task_id, row.item_id, row.revision_no)}${extra}`,
         );
       }
@@ -159,7 +164,7 @@ export function lastEventLine(db: DatabaseSync): string {
 
 /** 一个条目在某次修订时（缺省是最新）的全部字段与来源。 */
 export function itemLines(workspaceDir: string, itemId: string, revisionNo?: number): string[] {
-  return withBoardDatabase(workspaceDir, (db, task, definition) => itemDetailLines(db, task, definition, itemId, revisionNo));
+  return withBoardDatabase(workspaceDir, (db, task, definition) => itemDetailLines(db, task, definition, itemId, revisionNo, workspaceDir));
 }
 
 /** 任务最新的修订号；还没有修订时是 0。 */
@@ -177,7 +182,7 @@ export function itemRevisions(db: DatabaseSync, taskId: string, itemId: string):
  * 条目详情的排版，看板与「查看条目」共用。给了修订号 N 时，显示条目截至修订 N 的内容：条目在修订号不大于 N 的
  * 最近一次改动（如同看某个提交时的文件）。条目不存在、或修订 N 时还没有这个条目，返回一行说明。
  */
-export function itemDetailLines(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, itemId: string, revisionNo?: number): string[] {
+export function itemDetailLines(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, itemId: string, revisionNo?: number, workspaceDir?: string): string[] {
   const item = db
     .prepare("SELECT collection, added_in_revision, deleted_in_revision FROM item WHERE task_id = ? AND item_id = ?")
     .get(task.task_id, itemId) as { collection: string; added_in_revision: number; deleted_in_revision: number | null } | undefined;
@@ -202,7 +207,7 @@ export function itemDetailLines(db: DatabaseSync, task: TaskRow, definition: Tas
       (chosen === latest ? "，是最新内容" : `，最新内容在修订 ${latest.revision_no}`) +
       (item.deleted_in_revision !== null ? `；这个条目已在修订 ${item.deleted_in_revision} 删除` : "") +
       "。",
-    `  评审：${reviewState(db, task.task_id, itemId, chosen.revision_no)}　确认：${confirmState(db, task.task_id, itemId, chosen.revision_no)}`,
+    `  评审：${reviewState(db, task.task_id, itemId, chosen.revision_no, workspaceDir)}　确认：${confirmState(db, task.task_id, itemId, chosen.revision_no)}`,
     `  改动过的修订：${versions.map((v) => `修订 ${v.revision_no}（发起方 ${v.actor}）`).join("、")}。`,
     "",
     "字段：",

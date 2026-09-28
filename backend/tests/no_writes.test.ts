@@ -27,6 +27,8 @@ const ALLOWED: Record<string, string[]> = {
   // 位置表：从 Word 文件算出章节，写成材料旁边的文件（与分段清单一样是文件，不是库）。
   "docx_locations.ts": ["LOCATIONS_SUFFIX", "isLocationTable"],
   "docx_location_input.ts": ["locationTable"],
+  // 评审结论：不依赖任何模块的纯函数，只按传进去的记录下结论。
+  "review_verdict.ts": ["reviewVerdict"],
 };
 
 function files(dir: string): string[] {

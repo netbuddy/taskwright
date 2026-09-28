@@ -32,7 +32,7 @@ export function FindingLine({ finding, rule, batchNo = null, status = null, onOp
   const [keeping, setKeeping] = useState(false);
   const [reason, setReason] = useState("");
   const problem = isProblem(finding);
-  const statusWord = status === null ? null
+  const statusWord = status === null || status.kind === "superseded" ? null
     : status.kind === "fixed" ? `已在修订 ${status.revision} 改`
     : status.kind === "kept" ? (status.reason ? `已保留 · 理由：${status.reason}` : "已保留")
     : "未处理";

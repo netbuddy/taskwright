@@ -1,5 +1,6 @@
 /**
- * 评审的生命周期：规则指纹与规则改动后回到待评审、内容与规则都没变时重评要带 force、保留写法（写入、撤销、改出新修订后失效）、
+ * 评审的生命周期：规则指纹与规则改动后回到待评审、同一次修订同一套规则只评一次、同一修订上有几条记录的旧数据以最后一条为准、
+ * 保留写法（写入、撤销、改出新修订后失效）、
  * 完成条件三类文字、材料全文与超长时按段落回退、改评审规则时必选规则关不掉、批次摘要事件、查询任务状态列出发现、温度 0 与回退。
  * 评审者的模型调用一律用假的。
  */
@@ -10,13 +11,16 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { ReviewError, prepareReviews } from "../src/lib/review.ts";
+import { ReviewError, parseReview, prepareReviews, writeReview } from "../src/lib/review.ts";
 import { type Complete, runReviews } from "../src/lib/review_run.ts";
 import { piComplete } from "../src/lib/review_ui.ts";
 import { rulesHashText } from "../src/lib/review_state.ts";
 import { UserOpError, runUserOperation } from "../src/lib/user_ops.ts";
 import { completeTask } from "../src/lib/complete_task.ts";
-import { getTaskStatus } from "../src/lib/task_query.ts";
+import { getItem, getTaskStatus } from "../src/lib/task_query.ts";
+import { boardLines, itemLines } from "../src/lib/board.ts";
+import { DatabaseSync } from "node:sqlite";
+import { databasePath } from "../src/lib/db.ts";
 import { DEFINITION_PATH, SOURCE, callIn, demoDefinition, makeWorkspace, query } from "./helpers.ts";
 
 const RULES = [
@@ -51,8 +55,36 @@ function reviewer(outputs: Record<string, string> = {}): { complete: Complete; u
 
 let op = 0;
 const ui = (dir: string, body: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-t${++op}`, ...body });
-const review = (dir: string, items: { item_id: string; revision_no: number }[] | null, outputs: Record<string, string> = {}, force = false) =>
-  runReviews({ ...callIn(dir), callId: `ui-op-r${++op}`, actor: "user" }, items, { complete: reviewer(outputs).complete, model: "假", force });
+const review = (dir: string, items: { item_id: string; revision_no: number }[] | null, outputs: Record<string, string> = {}) =>
+  runReviews({ ...callIn(dir), callId: `ui-op-r${++op}`, actor: "user" }, items, { complete: reviewer(outputs).complete, model: "假" });
+
+/**
+ * 造「只评一次」之前的旧数据：在已经评过的修订上再写一条评审记录，记作强制重评（早期「仍要重评」写下的样子）。
+ * prepareReviews 现在不再放行，所以用开评之前核对好的那份条目，直接交给写评审记录的函数。
+ */
+function writeAgain(dir: string, prepared: ReturnType<typeof prepareReviews>, itemId: string, output: string): void {
+  const item = prepared.items.find((i) => i.item_id === itemId)!;
+  const written = writeReview({ ...callIn(dir), callId: `ui-op-r${++op}`, actor: "user" }, prepared.taskId, item, parseReview(output, item), []);
+  const db = new DatabaseSync(databasePath(dir));
+  try {
+    db.prepare("UPDATE review SET forced = 1 WHERE review_id = ?").run((written as { review_id: number }).review_id);
+  } finally {
+    db.close();
+  }
+}
+
+/** 九处之中助手一侧各处对 itemId 的说法：完成条件、查询任务状态的发现与保留、看板、查看条目（文字与 details）。 */
+function agentSays(dir: string, itemId: string) {
+  const status = getTaskStatus(dir).text;
+  const cond = status.split("\n").find((l) => l.includes("每个条目评审通过")) ?? "";
+  return {
+    status,
+    board: boardLines(dir).find((l) => l.includes(itemId))!.split("评审：")[1].split("　")[0],
+    item: itemLines(dir, itemId).find((l) => l.includes("评审："))!.split("评审：")[1].split("　")[0],
+    details: (getItem(dir, { item_id: itemId }).details as { review: string }).review,
+    cond,
+  };
+}
 
 test("规则改动后待评审集合变化，指纹写进评审记录", async () => {
   const dir = workspace();
@@ -82,16 +114,74 @@ test("改评审规则：必选规则关不掉，不存在的编号被拒，与�
   assert.throws(() => ui(dir, { kind: "set_review_rules", targets: [], fields: { collection: "问题", off: [], promote: [] } }), /没有评审规则/);
 });
 
-test("重评：点名一个在当前规则下评过、内容没变的条目，不带 force 拒绝并写明第几次评审；带 force 才评，记 forced", async () => {
+test("只评一次：点名一个在当前修订、当前规则下评过的条目整批拒绝，通过的与不通过的都一样；规则改了之后可以再评", async () => {
+  const dir = workspace();
+  await review(dir, null, { "UC-001": FAIL });
+  for (const id of ["UC-001", "UC-002"]) {
+    await assert.rejects(() => review(dir, [{ item_id: id, revision_no: 1 }]),
+      (e: ReviewError) => e.message === `什么都没有评，因为：${id} 在当前修订上已经评过，内容和规则都没变；同一次修订、同一套规则只评审一次。`);
+  }
+  assert.equal(query(dir, "SELECT COUNT(*) AS n FROM review")[0].n, 2);
+  ui(dir, { kind: "set_review_rules", targets: [], fields: { collection: "用例", off: ["D-R2"], promote: [] } });
+  await review(dir, [{ item_id: "UC-001", revision_no: 1 }]);
+  assert.deepEqual(query(dir, "SELECT item_id, forced FROM review ORDER BY review_id").map((r) => [r.item_id, r.forced]),
+    [["UC-001", 0], ["UC-002", 0], ["UC-001", 0]]);
+  const batches = query<{ payload: string }>(dir, "SELECT payload FROM event WHERE name = 'REVIEW_BATCH' ORDER BY seq").map((r) => JSON.parse(r.payload));
+  assert.deepEqual(batches.map((b) => [b.scope, b.total, b.passed, b.started_by, "forced" in b]), [["pending", 2, 1, "user", false], ["named", 1, 1, "user", false]]);
+});
+
+test("旧数据：同一修订上先合规、后来强制重评成不合规，以最后一条为准；完成条件、查询任务状态、看板、查看条目都说不通过，保留点得成", async () => {
+  const dir = workspace();
+  const prepared = prepareReviews(dir, null);
+  await review(dir, null);
+  writeAgain(dir, prepared, "UC-001", FAIL);
+  const before = agentSays(dir, "UC-001");
+  assert.match(before.cond, /UC-001 评审不合规/);
+  assert.match(before.status, /UC-001（修订 1）：\n    1\. 【问题 D-R1】步骤第 2 项：第 2 步没有主语。/);
+  assert.deepEqual([before.board, before.item, before.details], ["评审没有通过", "评审没有通过", "评审没有通过"]);
+  ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { reason: "材料原话如此" } });
+  const after = agentSays(dir, "UC-001");
+  assert.match(after.cond, /UC-001 评审不合规但你保留了/);
+  assert.match(after.status, /用户保留了写法的条目[^\n]*UC-001（修订 1，理由：材料原话如此）/);
+  assert.deepEqual([after.board, after.item, after.details], Array(3).fill("评审没有通过，用户保留了写法"));
+});
+
+test("旧数据：先不合规后来重评成合规，以最后一条为准，此前的不合规不再列为发现，也不能保留", async () => {
+  const dir = workspace();
+  const prepared = prepareReviews(dir, null);
+  await review(dir, null, { "UC-001": FAIL });
+  writeAgain(dir, prepared, "UC-001", PASS);
+  const says = agentSays(dir, "UC-001");
+  assert.match(says.status, /评审不通过、还没处理的条目：没有。/);
+  assert.deepEqual([says.board, says.item, says.details], Array(3).fill("评审通过"));
+  assert.throws(() => ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: {} }), /没有评审不合规的记录/);
+});
+
+test("旧数据：保留之后又重评成不合规，原来的保留针对的是前一条，不算；可以再保留；撤销的是生效的那一条", async () => {
+  const dir = workspace();
+  const prepared = prepareReviews(dir, null);
+  await review(dir, null, { "UC-001": FAIL });
+  ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { reason: "第一次" } });
+  writeAgain(dir, prepared, "UC-001", FAIL);
+  const says = agentSays(dir, "UC-001");
+  assert.match(says.cond, /UC-001 评审不合规/);
+  assert.equal(says.details, "评审没有通过");
+  assert.throws(() => ui(dir, { kind: "unwaive_review", targets: [{ item_id: "UC-001", base_revision: 1 }] }), /没有生效的保留/);
+  ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { reason: "第二次" } });
+  assert.equal(agentSays(dir, "UC-001").details, "评审没有通过，用户保留了写法");
+  ui(dir, { kind: "unwaive_review", targets: [{ item_id: "UC-001", base_revision: 1 }] });
+  assert.deepEqual(query(dir, "SELECT reason, revoked_at IS NOT NULL AS revoked FROM review_waiver ORDER BY waiver_id").map((r) => [r.reason, r.revoked]),
+    [["第一次", 0], ["第二次", 1]]);
+});
+
+test("看板与查看条目按规则指纹认记录：规则改了之后说还没有评审记录", async () => {
   const dir = workspace();
   await review(dir, null);
-  await assert.rejects(() => review(dir, [{ item_id: "UC-001", revision_no: 1 }]),
-    (e: ReviewError) => /UC-001 在当前修订上已经评过（第 1 次评审），内容和规则都没变/.test(e.message));
-  await review(dir, [{ item_id: "UC-001", revision_no: 1 }], {}, true);
-  assert.deepEqual(query(dir, "SELECT item_id, forced FROM review ORDER BY review_id").map((r) => [r.item_id, r.forced]),
-    [["UC-001", 0], ["UC-002", 0], ["UC-001", 1]]);
-  const batches = query<{ payload: string }>(dir, "SELECT payload FROM event WHERE name = 'REVIEW_BATCH' ORDER BY seq").map((r) => JSON.parse(r.payload));
-  assert.deepEqual(batches.map((b) => [b.scope, b.total, b.passed, b.started_by, b.forced]), [["pending", 2, 2, "user", []], ["named", 1, 1, "user", ["UC-001"]]]);
+  assert.equal(agentSays(dir, "UC-001").board, "评审通过");
+  ui(dir, { kind: "set_review_rules", targets: [], fields: { collection: "用例", off: ["D-R2"], promote: [] } });
+  const says = agentSays(dir, "UC-001");
+  assert.deepEqual([says.board, says.item, says.details], Array(3).fill("还没有评审记录"));
+  assert.match(says.cond, /UC-001、UC-002 还没评审/);
 });
 
 test("批次摘要：合规、不合规、问题、建议各几条；评审记录带批次编号与评审者版本", async () => {
