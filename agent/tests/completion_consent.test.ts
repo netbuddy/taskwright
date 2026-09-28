@@ -135,3 +135,46 @@ test("判断函数：两种来源同一套规则——没有、没同意、修�
   assert.deepEqual(judgeConsent({ source: "page", agreed: true, revisionNo: 3 }, 3), { ok: true });
   assert.deepEqual(judgeConsent({ source: "card", agreed: true, revisionNo: 0 }, 0), { ok: true });
 });
+
+// ───────────── 页面上的提交（直接操作 submit_deliverable） ─────────────
+
+const submit = (dir: string, fields: unknown, opId = `ui-op-submit${++serial}`) =>
+  runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: opId, kind: "submit_deliverable", targets: [], fields });
+const userOpError = (fn: () => unknown) => {
+  try {
+    fn();
+  } catch (error) {
+    return error as { code: string; message: string };
+  }
+  return assert.fail("应当被拒绝");
+};
+
+test("页面提交：带着现在的修订号提交，任务标为已完成，事件的发起方是用户、调用编号是操作编号，往会话里追加一句说明", () => {
+  const dir = workspace();
+  const result = submit(dir, { revision_no: 1 }, "ui-op-submit-ok");
+  assert.equal(status(dir), "已完成");
+  assert.deepEqual(query<any>(dir, "SELECT actor, call_id FROM event WHERE name = 'TASK_COMPLETED'").map((r) => [r.actor, r.call_id]), [["user", "ui-op-submit-ok"]]);
+  assert.equal(result.kind, "submit_deliverable");
+  assert.equal(result.note, "界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 1）。任务已标为已完成，交付物不能再改，仍然可以生成文档。");
+  assert.equal(result.notify_text, null, "不引出执行者的运行");
+  assert.equal(userOpError(() => submit(dir, { revision_no: 1 })).code, "task_closed");
+});
+
+test("页面提交：页面看到的修订号已经不是现在的，拒绝，说明给用户看；与卡片同一个判断函数", () => {
+  const dir = workspace();
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "用口令登录" } }] });
+  const error = userOpError(() => submit(dir, { revision_no: 1 }));
+  assert.equal(error.code, "rejected");
+  assert.equal(error.message, "这次没有提交：你看到的是修订 1，交付物现在已经是修订 2。请看过现在的内容再提交。");
+  assert.equal(status(dir), "进行中");
+});
+
+test("页面提交：完成条件没满足时拒绝，只写缺什么，不带写给助手的指引；fields 不对时 bad_request", () => {
+  const dir = workspace(false);
+  const error = userOpError(() => submit(dir, { revision_no: 1 }));
+  assert.equal(error.code, "rejected");
+  assert.match(error.message, /^任务没有标为已完成。\n另有 1 条完成条件没有满足/);
+  assert.ok(!/调用|告诉用户/.test(error.message));
+  assert.equal(userOpError(() => submit(dir, {})).code, "bad_request");
+  assert.equal(userOpError(() => submit(dir, { revision_no: "1" })).code, "bad_request");
+});
