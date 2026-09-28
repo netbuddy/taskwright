@@ -163,6 +163,59 @@ describe("发现状态派生与计数", () => {
   });
 });
 
+describe("规则改过之后按旧规则评出的发现", () => {
+  // 集合的指纹从 h1 改成 h2。UC-004：只有旧规则下的不合规，还没重评；UC-005：旧规则下不合规，按新规则重评仍不合规；
+  // UC-006：按新规则重评不合规、之后保留；UC-007：按新规则重评合规。
+  const OLD = (id: string) => ({ revision_no: 6, verdict: "不合规", findings: [P("UC-R7", `${id} 旧规则下的问题。`)], batch_id: "ui-op-3", rules_hash: H, seq: 10 });
+  const NEW_FAIL = (id: string) => ({ revision_no: 6, verdict: "不合规", findings: [P("UC-R7", `${id} 新规则下的问题。`)], batch_id: "ui-op-5", rules_hash: "h2", seq: 20 });
+  const U4 = item({ item_id: "UC-004", reviews: [OLD("UC-004")] });
+  const U5 = item({ item_id: "UC-005", reviews: [OLD("UC-005"), NEW_FAIL("UC-005")] });
+  const U6 = item({ item_id: "UC-006", reviews: [OLD("UC-006"), NEW_FAIL("UC-006")],
+    waivers: [{ revision_no: 6, reason: "照材料", source: "panel", revoked: false, seq: 30 }] });
+  const U7 = item({ item_id: "UC-007", reviews: [OLD("UC-007"), { revision_no: 6, verdict: "合规", findings: [], batch_id: "ui-op-5", rules_hash: "h2", seq: 20 }] });
+  const ids = ["UC-004", "UC-005", "UC-006", "UC-007"].map((item_id) => ({ item_id, revision_no: 6 }));
+  const OLD_BATCH: ReviewBatch = { ...BATCH3, items: ids, total: 4, passed: 0, failed: 4, problems: 4, advice: 0 };
+  const NEW_BATCH: ReviewBatch = { ...BATCH3, no: 5, batch_id: "ui-op-5", items: ids.slice(1), total: 3, passed: 1, failed: 2, problems: 2, advice: 0 };
+  const changed = () => {
+    const t = task([U4, U5, U6, U7], { review_batches: [OLD_BATCH, NEW_BATCH] });
+    return { ...t, definition: { collections: [{ ...t.definition.collections[0], rules_hash: "h2" }] } };
+  };
+
+  it("处理状态：旧规则下的一律是按改之前的规则评出，不管后来是否重评、保留；新规则下的照旧", () => {
+    const t = changed();
+    for (const i of [U4, U5, U6, U7]) expect(findingStatus(i, i.reviews[0], t)).toEqual({ kind: "old_rules" });
+    expect(findingStatus(U5, U5.reviews[1], t)).toEqual({ kind: "open" });
+    expect(findingStatus(U6, U6.reviews[1], t)).toEqual({ kind: "kept", reason: "照材料" });
+    // 不给任务（不按指纹区分）时照旧。
+    expect(findingStatus(U4, U4.reviews[0])).toEqual({ kind: "open" });
+  });
+
+  it("页签：旧规则下的发现写「按改之前的规则评出，不再算数」、不给链接；角标、「只看未处理」列出的发现、写「未处理」的发现三者相等", () => {
+    const t = changed();
+    panel(t);
+    const old = screen.getByTestId("batch-3");
+    fireEvent.click(within(old).getByText("第 3 次评审"));   // 早先的卡片折着，展开
+    for (const id of ["UC-004", "UC-005", "UC-006", "UC-007"]) {
+      const row = within(old).getByTestId(`batch-3-item-${id}`);
+      expect(within(row).getByTestId("finding-status")).toHaveTextContent(/^按改之前的规则评出，不再算数$/);
+      expect(within(row).queryByTestId("fix-finding")).toBeNull();
+      expect(within(row).queryByTestId("keep-finding")).toBeNull();
+      expect(within(row).queryByTestId("unwaive-finding")).toBeNull();
+    }
+    expect(old).toHaveTextContent("全部发现已在后来的修订里改或保留，或者按改之前的规则评出、不再算数");
+    const badge = openProblems(t);
+    expect(badge).toBe(1);   // 只有 UC-005 按新规则不合规、没有保留
+    expect(screen.getByTestId("review-panel")).toHaveTextContent(`未处理的问题 ${badge} 处`);
+    const openWords = () => screen.getAllByTestId("finding-status").filter((e) => e.textContent === "未处理");
+    expect(openWords()).toHaveLength(badge);
+    fireEvent.click(screen.getByTestId("review-only-open"));
+    expect(screen.queryByTestId("batch-3")).toBeNull();
+    expect(screen.getAllByTestId("finding-problem")).toHaveLength(badge);
+    expect(openWords()).toHaveLength(badge);
+    expect(screen.getByTestId("batch-5-item-UC-005")).toBeInTheDocument();
+  });
+});
+
 describe("条目详情", () => {
   it("发现旁写状态与第几次评审；「保留这种写法」带理由发 waive_review（来源 detail）；评过的条目「评审这条」灰化，没有再评的入口", async () => {
     const t = task([UC4]);

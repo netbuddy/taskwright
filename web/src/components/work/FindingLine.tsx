@@ -1,13 +1,13 @@
 // 一条评审发现，条目详情与评审页签共用，两行、都左对齐：
 //   第一行只放发现本身：「问题：」或「建议：」、列表型字段的第几项、问题原文、「改法：……」、「违反 UC-R7」（点编号展开条文），
 //     末尾小字「第 N 次评审指出」；
-//   第二行是这条发现的去向：状态词在前（未处理／已在修订 N 改／已保留），保留的理由跟在后面（「已保留 · 理由：……」），
+//   第二行是这条发现的去向：状态词在前（未处理／已在修订 N 改／已保留／按改之前的规则评出，不再算数），保留的理由跟在后面（「已保留 · 理由：……」），
 //     操作链接放在这一行末尾：让助手照这条改、保留这种写法（点开填理由，可以不写）、撤销保留。
 // 没给状态时（例如评审通过的条目的建议）不画第二行里的状态词，只放能用的链接。
 
 import { useState } from "react";
 import type { Finding, ReviewRule } from "../../api/types";
-import { type FindingStatus, isProblem } from "../../model/items";
+import { type FindingStatus, isProblem, OLD_RULES_TEXT } from "../../model/items";
 
 export function FindingLine({ finding, rule, batchNo = null, status = null, onOpen, onFix, fixOff, onKeep, onUnwaive, unwaiveOff }: {
   finding: Finding;
@@ -35,6 +35,7 @@ export function FindingLine({ finding, rule, batchNo = null, status = null, onOp
   const statusWord = status === null || status.kind === "superseded" ? null
     : status.kind === "fixed" ? `已在修订 ${status.revision} 改`
     : status.kind === "kept" ? (status.reason ? `已保留 · 理由：${status.reason}` : "已保留")
+    : status.kind === "old_rules" ? OLD_RULES_TEXT
     : "未处理";
   const hasSecond = statusWord !== null || !!onFix || !!onKeep || !!onUnwaive;
   const text = <>{finding.index != null ? `第 ${finding.index + 1} 项：` : ""}{finding.problem}</>;
