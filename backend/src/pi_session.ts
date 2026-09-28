@@ -50,10 +50,41 @@ export class PiExited extends Error {
   }
 }
 
+/**
+ * 排查要用的原话：错误的说明是给人看的（会显示在页面顶部），哪条命令、系统给的英文原话这些细节放在 technical 里，
+ * 写进后端日志与接口错误的附带信息 detail。没有 technical 的错误就用它的说明。
+ */
+export function technicalOf(error: unknown): string {
+  if (error !== null && typeof error === "object" && typeof (error as { technical?: unknown }).technical === "string") return (error as { technical: string }).technical;
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** pi 拒绝了一条命令（回应里 success 为假）。 */
-export class PiRefused extends Error {}
-/** 等一条命令的回应超时。 */
-export class PiTimeout extends Error {}
+export class PiRefused extends Error {
+  readonly technical: string;
+  constructor(command: string, reason: string) {
+    super(`助手的程序拒绝了这次操作：${reason}`);
+    this.technical = `pi 拒绝了命令「${command}」：${reason}`;
+  }
+}
+
+/** 等一条命令的回应超时。秒数是这条命令实际的时限。 */
+export class PiTimeout extends Error {
+  readonly technical: string;
+  constructor(command: string, seconds: number) {
+    super(`助手的程序在 ${seconds} 秒内没有回应。`);
+    this.technical = `等 pi 回应命令「${command}」等了 ${seconds} 秒还没等到。`;
+  }
+}
+
+/** 启动 pi 时系统说程序文件不存在（ENOENT），例如 pi 脚本开头指定的解释器不在。别的启动错误照系统的原话报。 */
+export class PiNotFound extends Error {
+  readonly technical: string;
+  constructor(original: Error) {
+    super("找不到助手的程序（pi），请检查安装。");
+    this.technical = original.message;
+  }
+}
 
 const stampCompact = (at = new Date()) => localStamp(at).replace(/[-:]/g, "").replace("T", "-");
 
@@ -212,7 +243,7 @@ export class PiSession {
     if (spawned) {
       this.process = null;
       this.closeFiles();
-      throw spawned;
+      throw (spawned as NodeJS.ErrnoException).code === "ENOENT" ? new PiNotFound(spawned) : spawned;
     }
     this.exitedPromise = new Promise((ok) => child.once("exit", () => ok()));
     // 往已经关掉的管道里写时 Node 会异步报 EPIPE；不接住会把整个服务带倒。写不进去由 write 按进程已退出处理。
@@ -509,9 +540,9 @@ export class PiSession {
       clearTimeout(timer);
       this.responses.delete(id);
     }
-    if (message === "timeout") throw new PiTimeout(`等 pi 回应命令「${command}」等了 ${Math.round(timeoutMs / 1000)} 秒还没等到。`);
+    if (message === "timeout") throw new PiTimeout(command, Math.round(timeoutMs / 1000));
     if (message === null) throw new PiExited(this.process ? exitCode(this.process) : null, this.stderrText);
-    if (!message.success) throw new PiRefused(`pi 拒绝了命令「${command}」：${message.error ?? "没有给原因"}`);
+    if (!message.success) throw new PiRefused(command, message.error ?? "没有给原因");
     return message.data || {};
   }
 

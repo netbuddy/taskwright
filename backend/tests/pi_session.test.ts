@@ -112,8 +112,10 @@ test("命令：回应、被拒、超时、进程退出", async () => {
   await pi.start();
   try {
     assert.deepEqual(await pi.getState(), { sessionId: "S1", sessionFile: null, isCompacting: false });
-    await assert.rejects(pi.request("refuse"), (e: unknown) => e instanceof PiRefused && /pi 拒绝了命令「refuse」：不认这条命令/.test((e as Error).message));
-    await assert.rejects(pi.request("slow", {}, 300), (e: unknown) => e instanceof PiTimeout && /等 pi 回应命令「slow」等了 0 秒还没等到/.test((e as Error).message));
+    await assert.rejects(pi.request("refuse"), (e: unknown) => e instanceof PiRefused && (e as Error).message === "助手的程序拒绝了这次操作：不认这条命令"
+      && e.technical === "pi 拒绝了命令「refuse」：不认这条命令");
+    await assert.rejects(pi.request("slow", {}, 300), (e: unknown) => e instanceof PiTimeout && (e as Error).message === "助手的程序在 0 秒内没有回应。"
+      && e.technical === "等 pi 回应命令「slow」等了 0 秒还没等到。");
     await assert.rejects(pi.request("die"), PiExited);
     assert.equal(pi.alive(), false);
     await drain(pi, (e) => e.type === "进程已退出");

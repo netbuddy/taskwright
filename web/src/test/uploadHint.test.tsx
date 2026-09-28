@@ -1,5 +1,5 @@
-// 任务页上传框的说明文字：大小取自服务信息的 upload.max_bytes，写法与后端那句「单个文件不能超过 5 MB。」里的数字一致；
-// 还没取到服务信息时不写大小那半句，不显示一个猜的数字。
+// 任务页上传框的说明文字：类型与大小取自服务信息（upload.extensions、upload.max_bytes）；大小，写法与后端那句「单个文件不能超过 5 MB。」里的数字一致；
+// 还没取到服务信息时两半句都不写，不显示猜的内容。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -15,7 +15,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const info = (maxBytes: number): ServiceInfo => ({
   ok: true, app: "taskwright", version: "0.3.0", mode: "server", pid: 1, port: 8940,
-  capabilities: { exit: false, model: true }, upload: { max_bytes: maxBytes, too_large_text: `单个文件不能超过 ${maxBytes / 1024 / 1024} MB。` },
+  capabilities: { exit: false, model: true },
+  upload: { max_bytes: maxBytes, too_large_text: `单个文件不能超过 ${maxBytes / 1024 / 1024} MB。`, extensions: [".md", ".txt", ".docx"] },
 });
 const detail = {
   task_id: "TASK-H", task_name: "说明文字", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
@@ -51,11 +52,11 @@ describe("任务页上传框的说明文字", () => {
     await waitFor(() => expect(hint).toHaveTextContent("单个不超过 10 MB"));
   });
 
-  it("取不到服务信息：不写大小那半句", async () => {
+  it("取不到服务信息：类型与大小两半句都不写", async () => {
     taskPage(Promise.reject(new Error("没有这个接口")));
     const hint = await screen.findByTestId("upload-hint");
     await waitFor(() => expect(api.serviceInfo).toHaveBeenCalled());
-    expect(hint).toHaveTextContent("（只收 .md、.txt 与 Word 的 .docx）");
-    expect(hint.textContent).not.toMatch(/MB/);
+    expect(hint).toHaveTextContent("把文件拖到这里，或者点这里选择文件。新传的材料下一次会话开始时助手就能看到。");
+    expect(hint.textContent).not.toMatch(/MB|只收/);
   });
 });
