@@ -46,6 +46,17 @@ export const RESUME_FAILED_STATE_TEXT = "助手没有接上这条会话，下一
 /** 续接失败时给用户看的那句话（错误码 session_resume_failed）。 */
 export const RESUME_FAILED_TEXT = "没能接上这条会话。请再试一次；如果还是不行，请把这个页面的地址告诉管理员。";
 
+/**
+ * 执行者状态的文字：固定的那句加附带说明。没有启动起来时整页只读，页面顶部显示这句，原因用逗号接在后面，读成一句话
+ * （「助手没有启动起来，系统原因：EACCES」）；原因本身常带冒号与括号，所以不再套括号，句末也不补句号（原因可能以路径结尾）。
+ * 其余状态的附带说明（助手的程序退出了）页面不显示，照旧放在括号里。
+ */
+export function stateText(state: string, detail: string): string {
+  const base = STATE_TEXT[state] ?? "";
+  if (!detail) return base;
+  return state === "failed_to_start" ? `${base.replace(/。$/, "")}，${detail}` : `${base}（${detail}）`;
+}
+
 export function newId(prefix: string): string {
   return prefix + randomUUID().replaceAll("-", "").slice(0, 12);
 }
@@ -164,7 +175,7 @@ export class Executor {
     this.state = state;
     this.detail = detail;
     this.resumeFailed = resumeFailed;
-    const text = resumeFailed ? RESUME_FAILED_STATE_TEXT : (STATE_TEXT[state] ?? "") + (detail ? `（${detail}）` : "");
+    const text = resumeFailed ? RESUME_FAILED_STATE_TEXT : stateText(state, detail);
     this.hub.emit("executor_state", { state, text, active_session: this.activeSession, at: clock.now() });
   }
 

@@ -77,11 +77,42 @@ export class PiTimeout extends Error {
   }
 }
 
-/** 启动 pi 时系统说程序文件不存在（ENOENT），例如 pi 脚本开头指定的解释器不在。别的启动错误照系统的原话报。 */
+/** 启动 pi 时系统说程序文件不存在（ENOENT），例如 pi 脚本开头指定的解释器不在。别的启动错误见 PiStartRefused。 */
 export class PiNotFound extends Error {
   readonly technical: string;
   constructor(original: Error) {
     super("找不到助手的程序（pi），请检查安装。");
+    this.technical = original.message;
+  }
+}
+
+/**
+ * 系统拒绝启动 pi 时给人看的那句，页面上显示在「助手没有启动起来。」后面的括号里。reason 是系统给的英文代号（例如 EACCES），
+ * 留着它是为了用户把这句话转告管理员时能据此排查。措辞只在这一处。
+ */
+export function startRefusedText(reason: string): string {
+  return `系统原因：${reason}`;
+}
+
+/** 错误对象上的英文代号；没有代号时写错误号，错误号也没有时写「未知」。 */
+export function systemReason(error: Error): string {
+  const { code, errno } = error as NodeJS.ErrnoException;
+  if (typeof code === "string" && /^E[A-Z0-9]+$/.test(code)) return code;
+  if (typeof errno === "number") return `错误号 ${errno}`;
+  return "未知";
+}
+
+/**
+ * 启动 pi 时系统拒绝了（ENOENT 以外的启动错误）：没有执行权限（EACCES）、命令行太长（E2BIG）、系统资源不足（EMFILE、ENFILE、
+ * ENOMEM、EAGAIN）等。说明只写英文代号，系统给的原话（带可执行文件的路径）在 technical 里。
+ */
+export class PiStartRefused extends Error {
+  readonly technical: string;
+  readonly reason: string;
+  constructor(original: Error) {
+    const reason = systemReason(original);
+    super(startRefusedText(reason));
+    this.reason = reason;
     this.technical = original.message;
   }
 }
@@ -234,17 +265,20 @@ export class PiSession {
     this.responses = new Map();
     this.stderrLines = [];
     const knowledge = launch.knowledgeSnapshot(this.workspace, this.profile);
-    const child = spawn(built.command, built.args, { cwd: this.workspace, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    // 启动失败有两种报法：命令行太长（E2BIG）、内存不足这类错误由 spawn 当场抛出，没有执行权限、找不到文件这类错误随后经
+    // error 事件报出。两种一样处理：关掉三个归档文件，再按错误代号报错。
+    let child: ChildProcess;
+    try {
+      child = spawn(built.command, built.args, { cwd: this.workspace, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    } catch (error) {
+      this.startFailed(error instanceof Error ? error : new Error(String(error)));
+    }
     this.process = child;
     const spawned = await new Promise<Error | null>((ok) => {
       child.once("spawn", () => ok(null));
       child.once("error", (error) => ok(error));
     });
-    if (spawned) {
-      this.process = null;
-      this.closeFiles();
-      throw (spawned as NodeJS.ErrnoException).code === "ENOENT" ? new PiNotFound(spawned) : spawned;
-    }
+    if (spawned) this.startFailed(spawned);
     this.exitedPromise = new Promise((ok) => child.once("exit", () => ok()));
     // 往已经关掉的管道里写时 Node 会异步报 EPIPE；不接住会把整个服务带倒。写不进去由 write 按进程已退出处理。
     child.stdin?.on("error", () => {});
@@ -296,6 +330,13 @@ export class PiSession {
     const child = this.process;
     if (child === null || child.exitCode !== null || child.signalCode !== null) return true;
     return Promise.race([this.exitedPromise.then(() => true), sleep(ms).then(() => false)]);
+  }
+
+  /** 子进程没有起来：清掉进程、关掉三个归档文件，报错。 */
+  private startFailed(error: Error): never {
+    this.process = null;
+    this.closeFiles();
+    throw (error as NodeJS.ErrnoException).code === "ENOENT" ? new PiNotFound(error) : new PiStartRefused(error);
   }
 
   private closeFiles(): void {
