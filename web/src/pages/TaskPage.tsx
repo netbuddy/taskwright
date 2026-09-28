@@ -1,5 +1,6 @@
 // 任务页：一次普通读取（GET …/tasks/{task_id}，里面带材料与会话），不连事件流，刷新即最新。
-// 页面上像结论的句子都由数据算出；集合名、完成条件名从接口取。任务已完成或已放弃时整页只读。
+// 页面上像结论的句子都由数据算出；集合名、完成条件名从接口取。任务已完成或已放弃时整页只读：「新建会话」与上传框都不显示，
+// 只读说明写明原因。
 
 import { useEffect, useState } from "react";
 import { Alert, Button, Empty, Modal, Spin, Upload } from "antd";
@@ -67,7 +68,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
         </div>
         <div style={{ display: "flex", gap: "0.571rem" }}>
           <Button onClick={() => setDocOpen(true)}>生成文档</Button>
-          <Button type="primary" icon={<PlusOutlined />} disabled={closed} onClick={newSession}>新建会话</Button>
+          {!closed && <Button type="primary" icon={<PlusOutlined />} onClick={newSession}>新建会话</Button>}
         </div>
       </div>
       <p className="lede">
