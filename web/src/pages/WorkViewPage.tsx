@@ -196,10 +196,13 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     }
   };
 
-  /** 预填对话区输入框并把光标放到末尾，用户接着写（「让助手改这一条」「回答这个问题」）。 */
+  /**
+   * 预填对话区输入框并把光标放到末尾，用户接着写（「让助手照这条改」「让助手来改这一条」「回答这个问题」、问题卡片上输入框空着时点「回答」）。
+   * 输入框里已经有字时，预填的话接在后面、隔一个换行，不替换，用户打了一半的话不丢；空着（或只有空白）时只放预填的话。
+   */
   const prefill = (text: string) => {
-    setDraft(text);
-    setTimeout(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(text.length, text.length); } }, 0);
+    setDraft((d) => (d.trim() ? `${d.replace(/\n+$/, "")}\n${text}` : text));
+    setTimeout(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 0);
   };
   const answer = (item: Item) => {
     const def = task?.definition.collections.find((c) => c.name === item.collection);
