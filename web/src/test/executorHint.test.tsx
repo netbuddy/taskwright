@@ -5,13 +5,13 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 import { api } from "../api/client";
-import type { ExecutorState, Task } from "../api/types";
+import type { ExecutorState, Snapshot, Task } from "../api/types";
 import { ToastProvider } from "../components/Toasts";
 import { DISABLED_PLACEHOLDER, INPUT_PLACEHOLDER } from "../components/work/Conversation";
 import { EXITED_HINT, STARTING_AFTER_SEND_HINT, STARTING_HINT, STARTING_SEND_TITLE, executorHint } from "../components/work/executorHint";
 import { WorkViewPage } from "../pages/WorkViewPage";
 import { useWorkView } from "../state/useWorkView";
-import { initialWorkState, type OutgoingMessage } from "../state/workState";
+import { initialWorkState, workReducer, type OutgoingMessage } from "../state/workState";
 
 vi.mock("../state/useWorkView", () => ({ useWorkView: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -101,5 +101,29 @@ describe("助手没有在运行时的工作视图", () => {
   it("输入框可用时占位文字是平常的那句", () => {
     page({ state: "idle", text: "", active_session: "S1" });
     expect(screen.getByTestId("chat-input")).toHaveAttribute("placeholder", INPUT_PLACEHOLDER);
+  });
+
+  it("打开或刷新页面时助手启动不起来：快照照常带着对话与条目，页面整页只读、显示原因，对话与条目照常显示", () => {
+    // 后端这时照常返回快照，执行者状态是 failed_to_start、文字带原因；这里用页面自己的归约函数把它变成页面状态。
+    const snapshot: Snapshot = {
+      seq: 4, generated_at: "", session: { session_id: "S1", name: "整理材料", started_at: "", last_active_at: "" } as Snapshot["session"],
+      executor: { state: "failed_to_start", text: "助手没有启动起来，系统原因：EACCES", active_session: null },
+      task, materials: [], current_work: null,
+      conversation: { has_earlier: false, earliest_id: null, messages: [
+        { type: "user_message", message_id: "u1", at: "", text: "请整理材料", origin: "typed", annotation: null, queued: false },
+        { type: "assistant_reply", message_id: "a1", at: "", work_id: null, via_reply_tool: true, informs: [], act: null, text: "整理好了。" },
+      ] as Snapshot["conversation"]["messages"] },
+    };
+    const state = workReducer(initialWorkState("S1"), { type: "snapshot", snapshot });
+    vi.spyOn(api, "listSessions").mockResolvedValue([]);
+    (useWorkView as Mock).mockReturnValue({ state, log: [], dispatch: vi.fn(), stream: "open", loadError: null, reload: vi.fn() });
+    render(<Wrap><WorkViewPage taskId="TASK-001" sessionId="S1" /></Wrap>);
+    expect(screen.getByTestId("busy-note").textContent).toBe("助手现在不可用：助手没有启动起来，系统原因：EACCES");
+    expect(screen.getByTestId("chat-input")).toBeDisabled();
+    const conversation = screen.getByTestId("conversation");
+    expect(conversation).toHaveTextContent("请整理材料");
+    expect(conversation).toHaveTextContent("整理好了。");
+    expect(document.body.textContent).toContain("买家申请退款");
+    expect(document.body.textContent).not.toContain("读不到这条会话的数据");
   });
 });

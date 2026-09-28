@@ -179,9 +179,14 @@ export class Executor {
     this.hub.emit("executor_state", { state, text, active_session: this.activeSession, at: clock.now() });
   }
 
+  /**
+   * 执行者状态（快照里的 executor）。没有启动起来时文字带上原因，与实时推送的 executor_state 事件同一个拼法，刷新页面前后看到的相同；
+   * 别的状态只给固定的那句。
+   */
   view() {
     const state = this.running() || ["not_started", "failed_to_start", "starting"].includes(this.state) ? this.state : "exited";
-    const text = state === "not_started" && this.resumeFailed ? RESUME_FAILED_STATE_TEXT : STATE_TEXT[state] ?? "";
+    const text = state === "not_started" && this.resumeFailed ? RESUME_FAILED_STATE_TEXT
+      : state === "failed_to_start" ? stateText(state, this.detail) : STATE_TEXT[state] ?? "";
     return { state, text, active_session: this.activeSession };
   }
 

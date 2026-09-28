@@ -9,7 +9,7 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, writeSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync, writeFileSync } from "node:fs";
 import { constants } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -224,6 +224,8 @@ export class PiSession {
   archivePath: string | null = null;
   notesPath: string | null = null;
   timesPath: string | null = null;
+  /** 这一次启动新建的归档文件（打开之前不存在的那几份）。 */
+  private newFiles: string[] = [];
   private stdoutDone: Promise<void> = Promise.resolve();
   private stderrDone: Promise<void> = Promise.resolve();
   private exitedPromise: Promise<void> = Promise.resolve();
@@ -254,10 +256,12 @@ export class PiSession {
     if (this.tasksRoot !== null) env[TASKS_ROOT_ENV] = this.tasksRoot;
     this.exitNoted = false;
     this.archivePath = join(eventsDir, `${this.label}-${stampCompact()}.jsonl`);
-    this.archive = openSync(this.archivePath, "a");
     this.notesPath = this.archivePath.replace(/\.jsonl$/, ".backend.jsonl");
-    this.notes = openSync(this.notesPath, "a");
     this.timesPath = this.archivePath.replace(/\.jsonl$/, ".times.jsonl");
+    // 文件名只精确到秒，同一秒里的两次启动共用一组文件：先记下哪几份是这一次新建的，启动失败时只删这一次新建的空文件。
+    this.newFiles = [this.archivePath, this.notesPath, this.timesPath].filter((path) => !existsSync(path));
+    this.archive = openSync(this.archivePath, "a");
+    this.notes = openSync(this.notesPath, "a");
     this.times = openSync(this.timesPath, "a");
     this.archivedLines = 0;
     this.exited = false;
@@ -332,11 +336,37 @@ export class PiSession {
     return Promise.race([this.exitedPromise.then(() => true), sleep(ms).then(() => false)]);
   }
 
-  /** 子进程没有起来：清掉进程、关掉三个归档文件，报错。 */
+  /** 子进程没有起来：清掉进程、关掉三个归档文件并删掉这一次留下的空文件，报错。 */
   private startFailed(error: Error): never {
     this.process = null;
     this.closeFiles();
+    this.removeEmptyArchive();
     throw (error as NodeJS.ErrnoException).code === "ENOENT" ? new PiNotFound(error) : new PiStartRefused(error);
+  }
+
+  /**
+   * 子进程没有起来时这组归档文件里什么都没写（后端补记的第一条「启动」在子进程起来之后才写）。每次打开会话都会再试着启动，
+   * 不删的话反复刷新页面会留下一组组空文件。只删这一次新建的、并且都是零字节的；三份里有一份是原来就有的或者写了内容，
+   * 三份都保留（那是留痕）。删不掉只写日志。
+   */
+  private removeEmptyArchive(): void {
+    const paths = [this.archivePath, this.notesPath, this.timesPath].filter((p): p is string => p !== null);
+    const fresh = this.newFiles;
+    this.newFiles = [];
+    if (paths.length !== 3 || !paths.every((p) => fresh.includes(p))) return;
+    try {
+      if (!paths.every((p) => statSync(p).size === 0)) return;
+    } catch {
+      return;
+    }
+    for (const path of paths) {
+      try {
+        unlinkSync(path);
+      } catch (error) {
+        console.log(`删不掉启动失败时留下的空归档文件 ${path}：${(error as Error).message}`);
+      }
+    }
+    this.archivePath = this.notesPath = this.timesPath = null;
   }
 
   private closeFiles(): void {
