@@ -1,4 +1,9 @@
-"""起用户 agent 的 pi：复用 server/taskwright_server/launch.py 的组装逻辑（经会话类 PiSession），只在这里把系统提示按用户画像拼好。
+"""起用户 agent 的 pi：经 Node 驱动程序 sim/user_agent_driver.mts，用后端的会话类（backend/src/pi_session.ts 的 PiSession）
+启动与驱动，拼命令行（backend/src/launch.ts）、写归档都走后端那一份；这里只把系统提示按用户画像拼好。
+
+UserAgentProcess 把驱动程序作为子进程启动，经它的标准输入与标准输出按行交换 JSON（消息的种类见驱动程序的文件头），
+对驾驭程序给出与会话类相同的四个方法：start()、get_state()、send()（逐条交出这一轮的 pi 事件）、close()。
+驱动程序退出、报错，或者启动超时，都抛 UserAgentError，原因写成给人看的一句话，附上驱动程序标准错误的最后几行。
 
 用户画像里只有自然语言部分交给扮演者：人设、目标、材料说明、隐藏事实的「事实」、接受底线的「说法」；
 隐藏事实的关键词与接受底线的判据是给判定程序用的，不给扮演者看。
@@ -12,12 +17,16 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import queue
+import shutil
+import subprocess
+import threading
 from pathlib import Path
 
-from taskwright_server import launch
-from taskwright_server.pi_session import PiSession
-
 HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parent
+DRIVER = HERE / "user_agent_driver.mts"
 PROFILE = HERE / "profiles" / "user_agent.json"
 PROMPT = HERE / "prompts" / "user_agent_system_prompt.md"
 LABEL = "user-agent"
@@ -62,20 +71,149 @@ def system_prompt(persona: dict, materials_dir: Path | None = None) -> str:
     return PROMPT.read_text(encoding="utf-8").replace("{{用户画像}}", text)
 
 
-def user_agent_session(persona: dict, sim_dir: Path, materials_dir: Path | None = None) -> PiSession:
-    """准备好用户 agent 的会话类：系统提示写进演练目录，工作目录是演练目录下一个空目录。调用方负责 start()。"""
+class UserAgentError(RuntimeError):
+    """模拟用户起不来、驱动程序退出或报错、启动超时。"""
+
+
+class UserAgentProcess:
+    """模拟用户的 pi，经 Node 驱动程序启动与驱动。接口与会话类相同：start()、get_state()、send()、close()。"""
+
+    #: 等驱动程序报告启动完成最多等这么久（秒）：它要起 pi、等 pi 回应两条命令。
+    START_TIMEOUT = 120.0
+    #: 关掉时等驱动程序报告已关、再等它退出，各最多等这么久（秒）。
+    CLOSE_TIMEOUT = 30.0
+    #: 出错时附上驱动程序标准错误的最后几行。
+    STDERR_TAIL = 20
+    #: 驱动程序的入口文件。
+    DRIVER = DRIVER
+
+    def __init__(self, profile: dict, cwd: Path, runs_dir: Path, label: str = LABEL):
+        self.profile = profile
+        self.cwd = Path(cwd).resolve()
+        self.runs_dir = Path(runs_dir).resolve()
+        self.label = label
+        self.process: subprocess.Popen | None = None
+        #: 模拟用户原始事件流的文件名（在 runs_dir/pi-events/ 下）。
+        self.archive: str | None = None
+        self._messages: queue.Queue = queue.Queue()
+        self._stderr: list[str] = []
+        self._state: dict = {}
+
+    def start(self, session_file: Path | None = None) -> None:
+        """启动模拟用户；给了 session_file 就续接那个会话文件。"""
+        node = shutil.which("node")
+        if node is None:
+            raise UserAgentError("在 PATH 里找不到 node，起不了模拟用户的驱动程序。")
+        self.process = subprocess.Popen([node, str(self.DRIVER)], cwd=str(REPO_ROOT), env=dict(os.environ), stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1)
+        threading.Thread(target=self._read_stdout, args=(self.process,), daemon=True).start()
+        threading.Thread(target=self._read_stderr, args=(self.process,), daemon=True).start()
+        self._write({"cmd": "start", "profile": self.profile, "cwd": str(self.cwd), "runs": str(self.runs_dir), "label": self.label,
+                     "session_file": str(Path(session_file).resolve()) if session_file is not None else None})
+        message = self._next("启动", self.START_TIMEOUT)
+        if message.get("type") != "started":
+            raise self._failure(message, "启动")
+        self._state = {"sessionId": message.get("session_id")}
+        self.archive = message.get("archive")
+
+    def get_state(self) -> dict:
+        return dict(self._state)
+
+    def send(self, text: str):
+        """唤起模拟用户，逐条交出这一轮的 pi 事件，直到这一轮结束。"""
+        self._write({"cmd": "send", "text": text})
+        while True:
+            message = self._next("回应", None)
+            if message.get("type") == "event":
+                yield message.get("event") or {}
+            elif message.get("type") == "turn_end":
+                return
+            else:
+                raise self._failure(message, "回应")
+
+    def close(self) -> None:
+        process = self.process
+        if process is None:
+            return
+        self.process = None
+        try:
+            process.stdin.write(json.dumps({"cmd": "close"}) + "\n")
+            process.stdin.flush()
+            process.stdin.close()
+        except (OSError, ValueError):
+            pass
+        try:
+            process.wait(self.CLOSE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(self.CLOSE_TIMEOUT)
+
+    # ───────────── 与驱动程序交换消息 ─────────────
+
+    def _read_stdout(self, process: subprocess.Popen) -> None:
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                self._messages.put(json.loads(line))
+            except json.JSONDecodeError:
+                self._messages.put({"type": "error", "stage": "output", "message": f"驱动程序在标准输出上写了一行不是 JSON 的文字：{line[:200]}"})
+        self._messages.put(None)
+
+    def _read_stderr(self, process: subprocess.Popen) -> None:
+        for line in process.stderr:
+            self._stderr.append(line.rstrip("\n"))
+            del self._stderr[:-self.STDERR_TAIL]
+
+    def _write(self, command: dict) -> None:
+        process = self.process
+        if process is None:
+            raise UserAgentError("模拟用户的驱动程序没有在运行。")
+        try:
+            process.stdin.write(json.dumps(command, ensure_ascii=False) + "\n")
+            process.stdin.flush()
+        except (OSError, ValueError):
+            raise UserAgentError(f"模拟用户的驱动程序已经退出了（退出码 {process.poll()}），命令发不过去。{self._stderr_tail()}") from None
+
+    def _next(self, stage: str, timeout: float | None) -> dict:
+        try:
+            message = self._messages.get(timeout=timeout)
+        except queue.Empty:
+            process, self.process = self.process, None
+            if process is not None:
+                process.kill()
+                process.wait(self.CLOSE_TIMEOUT)
+            raise UserAgentError(f"模拟用户的驱动程序在 {timeout:g} 秒内没有报告{stage}完成，已经把它停掉。{self._stderr_tail()}") from None
+        if message is None:
+            process = self.process
+            code = process.wait(self.CLOSE_TIMEOUT) if process is not None else None
+            raise UserAgentError(f"模拟用户的驱动程序在{stage}时退出了（退出码 {code}）。{self._stderr_tail()}")
+        return message
+
+    def _failure(self, message: dict, stage: str) -> UserAgentError:
+        return UserAgentError(f"模拟用户{stage}没有成功：{message.get('message') or '驱动程序没有给原因'}")
+
+    def _stderr_tail(self) -> str:
+        tail = [line for line in self._stderr if line.strip()]
+        return f"它最后写到标准错误的是：{' / '.join(tail)}" if tail else ""
+
+
+def user_agent_session(persona: dict, sim_dir: Path, materials_dir: Path | None = None) -> UserAgentProcess:
+    """准备好用户 agent：系统提示写进演练目录，工作目录是演练目录下一个空目录。调用方负责 start()。"""
     sim_dir = Path(sim_dir)
     prompt_file = sim_dir / "user_agent_system_prompt.md"
     prompt_file.write_text(system_prompt(persona, materials_dir), encoding="utf-8")
     profile = copy.deepcopy(json.loads(PROFILE.read_text(encoding="utf-8")))
-    profile["system_prompt_file"] = str(prompt_file)      # 绝对路径：launch.py 拼路径时绝对路径原样保留
+    # 后端按代码仓根目录拼这个路径（backend/src/paths.ts 的 fromRoot），绝对路径也会被接在根目录下面，所以写成相对代码仓根目录的路径。
+    profile["system_prompt_file"] = os.path.relpath(prompt_file.resolve(), REPO_ROOT)
     cwd = sim_dir / "user-agent-cwd"
     cwd.mkdir(parents=True, exist_ok=True)
-    return PiSession(profile, cwd, sim_dir / "user-agent", LABEL)
+    return UserAgentProcess(profile, cwd, sim_dir / "user-agent", LABEL)
 
 
 def load_profile() -> dict:
     return json.loads(PROFILE.read_text(encoding="utf-8"))
 
 
-__all__ = ["load_persona", "familiar_materials", "persona_text", "system_prompt", "user_agent_session", "launch"]
+__all__ = ["load_persona", "familiar_materials", "persona_text", "system_prompt", "user_agent_session", "UserAgentProcess", "UserAgentError"]
