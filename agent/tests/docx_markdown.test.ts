@@ -148,6 +148,24 @@ test("标题里有图片：标题行只写编号与标题文字，图片写在�
   assert.deepEqual(projectionParagraphs(out.markdown).slice(0, 2), ["带图片的标题", "正文。"]);
 });
 
+const MATH = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"';
+/** 公式：分式 a/b 与一段 x+1。 */
+const FRACTION = `<m:oMath ${MATH}><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath>`;
+const PLUS = `<m:oMath ${MATH}><m:r><m:t>x+1</m:t></m:r></m:oMath>`;
+
+test("公式里的字：只取文字、按原顺序接在段落文字里（不还原分式、上下标等排版），标题与正文都一样；段落号不变", () => {
+  const body = `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>带公式</w:t></w:r>${PLUS}<w:r><w:t>的标题</w:t></w:r></w:p>`
+    + `<w:p><w:r><w:t>单价等于</w:t></w:r>${FRACTION}<w:r><w:t>元。</w:t></w:r></w:p>`
+    + `<w:p><m:oMathPara ${MATH}>${PLUS}</m:oMathPara></w:p><w:p><w:r><w:t>最后一段。</w:t></w:r></w:p>`;
+  const out = docxProjection(headingDocx(body), "inputs/x.docx");
+  assert.equal(out.paragraphs, 4);
+  assert.equal(lineOf(out.markdown, "[p1]"), "# [p1] 带公式x+1的标题");
+  assert.equal(lineOf(out.markdown, "[p2]"), "[p2] 单价等于ab元。", "分式 a/b 只取文字 a 与 b");
+  assert.equal(lineOf(out.markdown, "[p3]"), "[p3] x+1", "独占一段的公式");
+  assert.deepEqual(out.headings, [{ paragraph: 1, level: 1, title: "带公式x+1的标题" }]);
+  assert.deepEqual(projectionParagraphs(out.markdown), ["带公式x+1的标题", "单价等于ab元。", "x+1", "最后一段。"]);
+});
+
 test("编号格式", () => {
   assert.deepEqual([1, 12, 20, 21].map((n) => formatNumber(n, "chineseCounting")), ["一", "十二", "二十", "二十一"]);
   assert.deepEqual([4, 9].map((n) => formatNumber(n, "upperRoman")), ["IV", "IX"]);

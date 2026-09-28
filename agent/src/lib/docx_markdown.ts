@@ -5,7 +5,8 @@
  * 段落号的计数规则与 scripts/docx_paragraphs.mjs、材料区渲染后的回填相同，三处必须一致：
  * - 数 word/document.xml 里 w:body 下的每个 w:p，表格与嵌套表格里的段落也数，纵向合并续格里的空段落照数；
  * - 文本框里的段落（w:txbxContent，wps 一份与 VML 后备一份）不数；脚注、尾注、批注、页眉页脚在别的部件里，不读。
- * 一段的文字是它自己的 w:t（插入的字算，删除的字在 w:delText 里不算，域代码在 w:instrText 里不算，锚在它里面的文本框的字不算）。
+ * 一段的文字是它自己的 w:t（插入的字算，删除的字在 w:delText 里不算，域代码在 w:instrText 里不算，锚在它里面的文本框的字不算），
+ * 以及公式里的 m:t（只取文字，按原顺序接上，不还原公式的排版）。
  *
  * 投影的写法（每段一行，段落号 [pN] 写在正文前面，它右边就是这一段的正文）：
  * - 标题（lib/docx_heading.ts 的规则：段落或样式的大纲级别，没写时看样式名「heading N」「标题 N」）写 # 到 ######；
@@ -219,6 +220,8 @@ function paragraph(p: XmlElement, parts: Parts, images: { count: number }): Para
           break;
         }
         case "w:t": pieces.push({ text: textOf(c) }); break;
+        // 公式里的字：只取文字、按原顺序接在段落文字里，不还原分式、上下标等排版（分式 a/b 写成 ab）。
+        case "m:t": pieces.push({ text: textOf(c) }); break;
         case "w:tab": if (el.name === "w:r") pieces.push({ text: "\t" }); break;
         case "w:br": case "w:cr":
           if (el.name === "w:r" && c.attrs["w:type"] !== "page" && c.attrs["w:type"] !== "column") pieces.push({ text: "\n" });

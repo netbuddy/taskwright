@@ -2,11 +2,14 @@
 // 夹具是 examples/library-lending/requirements-styled.docx，连同现生成的 Markdown 投影（或 0.2 的纯文本投影）由 helpers.ts 的 putSampleDocx 放进任务目录。
 
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
+import { docxProjection } from "../src/lib/docx_markdown.ts";
 import { placeExcerpt, projectionParagraphs } from "../src/lib/docx_source.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, SAMPLE_DOCX, callIn, count, makeWorkspace, projection, putSampleDocx, query } from "./helpers.ts";
+import { DEFINITION_PATH, SAMPLE_DOCX, callIn, count, makeDocx, makeWorkspace, projection, putSampleDocx, query } from "./helpers.ts";
 
 const DOCX = SAMPLE_DOCX;
 
@@ -149,4 +152,16 @@ test("摘录出自文本框：拒绝，并说明文本框里的文字不能作�
   assert.match(message, /怎么办：请改引正文里说到同一件事的段落；正文里没有，就不要把这一处当作来源/);
   // 0.2 的纯文本投影里没有文本框的字：照旧只说找不到
   assert.doesNotMatch(rejection(workspaceWithDocx(true), [docxSource(81, "保留期从图书归还上架时起算")]), /文本框/);
+});
+
+test("摘录里含公式里的字：保存修订时的逐字核对对着投影，能通过", () => {
+  const dir = makeWorkspace();
+  const MATH = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"';
+  const data = makeDocx(`<w:p><w:r><w:t>单价等于</w:t></w:r><m:oMath ${MATH}><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath><w:r><w:t>元。</w:t></w:r></w:p>`);
+  writeFileSync(join(dir, "inputs", "公式.docx"), data);
+  writeFileSync(join(dir, "inputs", "公式.docx.md"), docxProjection(data, "inputs/公式.docx").markdown, "utf-8");
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  const source = { kind: "文档原文", locator: "inputs/公式.docx#p1", excerpt: "单价等于ab元" };
+  assert.equal(rejection(dir, [source]), "", "含公式的字的摘录能保存");
+  assert.match(rejection(dir, [{ ...source, excerpt: "单价等于元" }]), /./, "少了公式的字就对不上");
 });
