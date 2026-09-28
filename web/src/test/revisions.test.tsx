@@ -529,18 +529,21 @@ describe("已读即确认", () => {
     expect(text).toContain("你在界面上改了它，改出来的内容算作你已确认");
   });
 
-  it("完成前只剩未读挡着时，还没结掉的卡片下提示「还有 N 条未读」，点它请条目区筛出未读；别的条件还差时不提示", () => {
+  it("完成前只剩未读挡着时，还没结掉的卡片下提示「还有 N 条未读」，点它请条目区筛出未读；别的条件还差时不提示，评审通过也算别的条件", () => {
     const onShowUnread = vi.fn();
     const act = { kind: "choose" as const, text: "现在完成吗？", options: [{ key: "a", text: "现在完成" }, { key: "b", text: "还要再改" }] };
-    render(<Wrap><ReplyCard act={act} replyMessageId="r1" task={withCompletion([UC1, read(UC2)], ["每个条目评审通过", "每个条目用户确认"])}
+    render(<Wrap><ReplyCard act={act} replyMessageId="r1" task={withCompletion([UC1, read(UC2)], ["每个条目用户确认"])}
       handlers={{ onAction: noop, onMessage: noop, onShowUnread }} /></Wrap>);
     expect(screen.getByTestId("card-unread")).toHaveTextContent("还有 1 条未读");
     fireEvent.click(screen.getByTestId("card-show-unread"));
     expect(onShowUnread).toHaveBeenCalledTimes(1);
-    cleanup();
-    render(<Wrap><ReplyCard act={act} replyMessageId="r1" task={withCompletion([UC1, read(UC2)], ["至少一个条目", "每个条目用户确认"])}
-      handlers={{ onAction: noop, onMessage: noop, onShowUnread }} /></Wrap>);
-    expect(screen.queryByTestId("card-unread")).toBeNull();
+    for (const others of [["至少一个条目"], ["每个条目评审通过"]]) {
+      cleanup();
+      render(<Wrap><ReplyCard act={act} replyMessageId="r1" task={withCompletion([UC1, read(UC2)], [...others, "每个条目用户确认"])}
+        handlers={{ onAction: noop, onMessage: noop, onShowUnread }} /></Wrap>);
+      expect(screen.getByText("现在完成吗？")).toBeInTheDocument();
+      expect(screen.queryByTestId("card-unread")).toBeNull();
+    }
   });
 });
 

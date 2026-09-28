@@ -17,7 +17,7 @@
 import { useRef, useState } from "react";
 import { Popconfirm } from "antd";
 import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../api/types";
-import { CONFIRM_CONDITION, conditionState, isUnread, itemContext, lastViewedRevision, REVIEW_CONDITION, reviewState, unreadItems } from "../../model/items";
+import { CONFIRM_CONDITION, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, unreadItems } from "../../model/items";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 
 /** 有未保存的条目编辑时，对话区与卡片上会发话或写库的按钮为什么不能用。 */
@@ -49,10 +49,10 @@ export interface CardHandlers {
   onShowUnread?: () => void;
 }
 
-/** 完成前还挡着的只剩未读：未满足的完成条件里，除了「用户确认」与这一版还没有工具的「评审通过」，没有别的。 */
+/** 完成前还挡着的只剩未读：未满足的完成条件都是「每个条目用户确认」；还有别的条件没满足（包括评审通过）时不算。 */
 function onlyUnreadLeft(task: Task | null): boolean {
   const unmet = (task?.completion?.conditions ?? []).filter((c) => conditionState(c) === "unmet");
-  return unmet.length > 0 && unmet.every((c) => c.name === CONFIRM_CONDITION || c.name === REVIEW_CONDITION);
+  return unmet.length > 0 && unmet.every((c) => c.name === CONFIRM_CONDITION);
 }
 
 export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, writesOff = false, answered, handlers, onOpenItem, onLocate }: {
