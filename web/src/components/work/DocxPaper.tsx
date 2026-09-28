@@ -34,7 +34,7 @@ function paragraphOf(t: DocxTable, excerpt: string): number | null {
   return null;
 }
 
-export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, onMouseUp, onCitedCount, onNote, jump }: {
+export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, onMouseUp, onCitedCount, onNote, onUnavailable, jump }: {
   taskId: string;
   path: string;
   items: Item[];
@@ -49,6 +49,8 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
   onCitedCount?: (n: number) => void;
   /** 定位时要在材料区顶部显示的提示（跨段、找不到）；null 表示收起。 */
   onNote?: (text: string | null) => void;
+  /** 这份文件显示不出来（读不到，或读到了画不出来）时报真，恢复时报假；材料区据此收起上方「按原版式分页显示」那句说明。 */
+  onUnavailable?: (unavailable: boolean) => void;
 }) {
   const entry = useDocx(taskId, path);
   const host = useRef<HTMLDivElement>(null);
@@ -57,6 +59,8 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
   const [failed, setFailed] = useState(false);
   const setNote = (text: string | null) => onNote?.(text);
   const handled = useRef(0);
+  const unavailable = entry?.status === "error" || entry?.status === "unrenderable" || failed;
+  useEffect(() => { onUnavailable?.(unavailable); }, [unavailable, path]);
 
   useEffect(() => {
     const el = host.current;

@@ -529,18 +529,21 @@ describe("已读即确认", () => {
     expect(text).toContain("你在界面上改了它，改出来的内容算作你已确认");
   });
 
-  it("完成前只剩未读挡着时，还没结掉的卡片下提示「还有 N 条未读」，点它请条目区筛出未读；别的条件还差时不提示", () => {
+  it("完成前只剩未读挡着时，还没结掉的卡片下提示「还有 N 条未读」，点它请条目区筛出未读；别的条件还差时不提示，评审通过也算别的条件", () => {
     const onShowUnread = vi.fn();
     const act = { kind: "choose" as const, text: "现在完成吗？", options: [{ key: "a", text: "现在完成" }, { key: "b", text: "还要再改" }] };
-    render(<Wrap><ReplyCard act={act} replyMessageId="r1" task={withCompletion([UC1, read(UC2)], ["每个条目评审通过", "每个条目用户确认"])}
+    render(<Wrap><ReplyCard act={act} replyMessageId="r1" task={withCompletion([UC1, read(UC2)], ["每个条目用户确认"])}
       handlers={{ onAction: noop, onMessage: noop, onShowUnread }} /></Wrap>);
     expect(screen.getByTestId("card-unread")).toHaveTextContent("还有 1 条未读");
     fireEvent.click(screen.getByTestId("card-show-unread"));
     expect(onShowUnread).toHaveBeenCalledTimes(1);
-    cleanup();
-    render(<Wrap><ReplyCard act={act} replyMessageId="r1" task={withCompletion([UC1, read(UC2)], ["至少一个条目", "每个条目用户确认"])}
-      handlers={{ onAction: noop, onMessage: noop, onShowUnread }} /></Wrap>);
-    expect(screen.queryByTestId("card-unread")).toBeNull();
+    for (const others of [["至少一个条目"], ["每个条目评审通过"]]) {
+      cleanup();
+      render(<Wrap><ReplyCard act={act} replyMessageId="r1" task={withCompletion([UC1, read(UC2)], [...others, "每个条目用户确认"])}
+        handlers={{ onAction: noop, onMessage: noop, onShowUnread }} /></Wrap>);
+      expect(screen.getByText("现在完成吗？")).toBeInTheDocument();
+      expect(screen.queryByTestId("card-unread")).toBeNull();
+    }
   });
 });
 
@@ -555,6 +558,31 @@ describe("生成文档：选一个修订加条目勾选", () => {
     cleanup();
     render(<Wrap><DocumentModal task={task([UC1, UC2, TBD])} log={LOG} open revision={1} onClose={noop} /></Wrap>);
     await waitFor(() => expect(preview).toHaveBeenLastCalledWith("TASK-001", { revision_no: 1 }));
+  });
+});
+
+describe("生成文档：修订日志后到，再从某次修订打开", () => {
+  // 工作视图的对话框在修订日志还没读到时就挂上了；读到日志之后第一次从修订卡片打开，要显示的是那次修订，不是最新的。
+  const at = (log: typeof LOG, open: boolean, revision: number | null) =>
+    <Wrap><DocumentModal task={task([UC1, UC2, TBD])} log={log} open={open} revision={revision} onClose={noop} /></Wrap>;
+
+  it("传进来了修订号就用它", async () => {
+    const preview = vi.spyOn(api, "previewDocument").mockResolvedValue({ text: "预览" });
+    const { rerender } = render(at([], false, null));
+    rerender(at(LOG, false, null));
+    rerender(at(LOG, true, 1));
+    await waitFor(() => expect(preview).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("doc-revision")).toHaveTextContent("修订 1"));
+    expect(preview).toHaveBeenLastCalledWith("TASK-001", { revision_no: 1 });
+    expect(preview.mock.calls.every((c) => (c[1] as { revision_no?: number }).revision_no === 1)).toBe(true);
+  });
+
+  it("没有传进来：打开时日志还没读到，读到之后选最新的", async () => {
+    const preview = vi.spyOn(api, "previewDocument").mockResolvedValue({ text: "预览" });
+    const { rerender } = render(at([], true, null));
+    rerender(at(LOG, true, null));
+    await waitFor(() => expect(preview).toHaveBeenLastCalledWith("TASK-001", { revision_no: 4 }));
+    expect(screen.getByTestId("doc-revision")).toHaveTextContent("修订 4");
   });
 });
 

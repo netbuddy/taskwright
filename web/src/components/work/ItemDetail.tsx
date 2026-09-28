@@ -355,9 +355,17 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   );
 }
 
-/** 「让助手照这条改」预填的那句话。 */
+/** 「让助手照这条改」预填的那句话。有改法时把改法写进去：问题描述有时与改法字面上方向相反，只写问题会让人以为要照字面改。 */
 export function fixText(itemId: string, f: Finding): string {
-  return `请按评审发现改 ${itemId} 的${f.field}${f.index != null ? `第 ${f.index + 1} 项` : ""}：${f.problem}`;
+  const where = `${itemId} 的${f.field}${f.index != null ? `第 ${f.index + 1} 项` : ""}`;
+  const suggestion = f.suggestion?.trim();
+  if (!suggestion) return `请按评审发现改 ${where}：${f.problem}`;
+  return `请照评审建议的改法改 ${where}：${endSentence(suggestion)}评审指出的问题是：${endSentence(f.problem.trim())}`;
+}
+
+/** 句末没有句号、问号、叹号时补一个句号，好接下一句。 */
+function endSentence(text: string): string {
+  return /[。！？.!?]$/.test(text) ? text : `${text}。`;
 }
 
 /** 评审记录里的一条：「修订 15 · 不合规 2 处（时刻）」「修订 12 · 合规（时刻）」。 */
