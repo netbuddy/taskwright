@@ -1,7 +1,8 @@
 """一个只用 Python 标准库的小型 HTTP 服务：读取接口返回 JSON，另外把网页文件发出去。
 
 它只回应 GET 请求，没有任何写入的路径。数据每次都从磁盘重读一遍，不过会看一眼文件的修改时刻，
-没变就用上一次读好的，免得每点一下都把几十个文件再扫一遍。
+没变就用上一次读好的，免得每点一下都把几十个文件再扫一遍。命令行给的是上一级目录时，每次读取前重新把它展开成
+下面的各个归档目录（只列目录，不读文件），所以观测台启动之后新建的任务也看得到，不用重启。
 """
 
 from __future__ import annotations
@@ -19,6 +20,20 @@ from taskwright_observatory.langfuse import LangfuseLinks
 from taskwright_observatory import taskpage
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+
+
+def expand_archive_dirs(given: list[Path]) -> list[Path]:
+    """把命令行给的目录展开成归档目录：本身有 pi-events 的就是归档目录；没有的，收它下面每个含有 pi-events 的
+    直接子目录（按名字排）。本身没有、子目录也都没有的，照旧当归档目录交给读取层，读出来就是空的。去掉重复的。
+    只列目录、不读文件，每次读取前调用一次也不费事。"""
+    found: list[Path] = []
+    for one in given:
+        if (one / "pi-events").is_dir():
+            picked = [one]
+        else:
+            picked = (sorted(p for p in one.iterdir() if p.is_dir() and (p / "pi-events").is_dir()) if one.is_dir() else []) or [one]
+        found.extend(p for p in picked if p not in found)
+    return found
 
 
 def directory_signature(*directories: Path) -> tuple:
@@ -39,11 +54,12 @@ def directory_signature(*directories: Path) -> tuple:
 
 
 class IndexCache:
-    """读一次留着用，文件变了再读。"""
+    """读一次留着用，文件变了、或者展开出来的归档目录变了（新建了任务）再读。"""
 
-    def __init__(self, archive_dirs: list[Path], workspaces_dir: Path,
+    def __init__(self, given_dirs: list[Path], workspaces_dir: Path,
                  langfuse_base: str, langfuse_project: str):
-        self.archive_dirs = [Path(d) for d in archive_dirs]
+        # 命令行给的目录，不是展开后的归档目录：每次读取前重新展开。
+        self.given_dirs = [Path(d) for d in given_dirs]
         self.workspaces_dir = Path(workspaces_dir)
         # 链接对象只建一次：它内存里那份 Langfuse 读取结果的缓存，不该随数据重读而丢。
         self.links = LangfuseLinks(langfuse_base, langfuse_project)
@@ -52,10 +68,12 @@ class IndexCache:
         self._index: Index | None = None
 
     def get(self) -> Index:
-        signature = directory_signature(*self.archive_dirs, self.workspaces_dir)
+        archive_dirs = expand_archive_dirs(self.given_dirs)
+        # 展开结果本身也放进指纹：新建的任务目录还没有文件时，也算变了。
+        signature = (tuple(str(d) for d in archive_dirs), directory_signature(*archive_dirs, self.workspaces_dir))
         with self._lock:
             if self._index is None or signature != self._signature:
-                self._index = Index(self.archive_dirs, self.workspaces_dir, links=self.links)
+                self._index = Index(archive_dirs, self.workspaces_dir, links=self.links)
                 self._signature = signature
             return self._index
 
@@ -157,13 +175,14 @@ def make_handler(cache: IndexCache):
     return Handler
 
 
-def serve(archive_dirs: list[Path], workspaces_dir: Path, port: int, host: str,
+def serve(given_dirs: list[Path], workspaces_dir: Path, port: int, host: str,
           langfuse_base: str, langfuse_project: str) -> None:
-    cache = IndexCache(archive_dirs, workspaces_dir, langfuse_base, langfuse_project)
+    """given_dirs 是命令行给的目录（归档目录，或者它们的上一级目录），每次读取前重新展开。"""
+    cache = IndexCache(given_dirs, workspaces_dir, langfuse_base, langfuse_project)
     cache.get()                                   # 先读一遍，启动时就能暴露路径写错之类的问题
     httpd = ThreadingHTTPServer((host, port), make_handler(cache))
     print(f"观测台已经起来了，用浏览器打开 http://127.0.0.1:{port}/ 就能看。")
-    print(f"  归档目录是 {'、'.join(str(d) for d in archive_dirs)}")
+    print(f"  归档目录是 {'、'.join(str(d) for d in given_dirs)}（上一级目录下新建的任务随时收进来）")
     print(f"  任务目录所在目录是 {workspaces_dir}")
     print("  按 Ctrl+C 停掉它。")
     try:
