@@ -25,9 +25,10 @@ They can only be regenerated while `server/` is still in the repository.
 
 ## Known differences from the saved outputs
 
-The TypeScript task service has since changed on purpose in two ways the Python one has not. The saved outputs are not
-regenerated for these changes, so `sessions.mts --against fixtures` reports the four parts below as different, and only these.
-All four go away when the Python version and these saved outputs are retired.
+The TypeScript task service has since changed on purpose in several ways the Python one has not. The saved outputs are not
+regenerated for these changes, so `sessions.mts --against fixtures` reports the nine parts below as different, and only these
+(besides values that differ only by the port the fake model endpoint listened on). All nine go away when the Python version
+and these saved outputs are retired.
 
 | Scenario and part | What differs | Why |
 |---|---|---|
@@ -35,6 +36,11 @@ All four go away when the Python version and these saved outputs are retired.
 | `rpc`, observations | Step 12, a direct action sent after a restart before the session is opened (an empty `mark_viewed`), is answered 400 `bad_request` ("targets 应当是一个不为空的列表。") instead of 503 `executor_unavailable`. | A direct action now starts the assistant on demand and resumes the page's session, as a message does, and only then is the action itself checked. |
 | `rpc`, archives | The raw event stream, the backend notes and the session file have the assistant start one step earlier (122 differences in the latest run). | Same change: the assistant is started by step 12 instead of by the snapshot that follows it. |
 | `rpc`, observatory | The number of event lines of that start and the order of operation ids read by the observatory. | Same change. |
+| `confirm_and_complete`, observations | Step 08, the task data after completion: each review carries `seq` (2 differences). | Reviews and keeps in the task data now carry the number of the event they were recorded at, so the page can tell whether a keep came after the latest review. |
+| `review_gate`, observations | Step 05 is refused with "……已经评过，内容和规则都没变；同一次修订、同一套规则只评审一次。" instead of "……已经评过（第 1 次评审），内容和规则都没变。". Step 06, a forced review of UC-001, is refused (422 `rejected`, same message) instead of starting. So step 07 is no longer refused as "上一批评审还没有做完" and reviews UC-002. In step 14 UC-001 has one review fewer and UC-002 one more, and the reviews carry `seq` (27 differences in the latest run). | An item is reviewed once per revision and rule set; the force flag no longer lets it be reviewed again. |
+| `review_gate`, event stream | The review progress, recorded review, batch and finish events of step 07 name UC-002 instead of UC-001; the recorded review has `forced` false and the batch has no `forced` list. | Same change. |
+| `review_gate`, archives | The extension's answers to steps 05 to 07, the session file line and the messages about the review name UC-002, and the reviewer's prompt is the one for UC-002. | Same change. |
+| `review_gate`, observatory | The same three answers as read by the observatory, and the events written by the reviewing tool call have no `forced`. | Same change. |
 
 What step 12 used to check, a direct action while the assistant is not running, is now covered by the backend tests in
 `backend/tests/session_resume.test.ts` (after the assistant exited, before it was started, when resuming finds a different
@@ -42,14 +48,16 @@ session, and while it is busy in another session) and `backend/tests/actions.tes
 
 Uploads have changed too: an upload whose bytes match a material already in the task is refused with `duplicate_content`,
 one whose name is taken by a material with other bytes with `name_taken`, instead of being stored as `<name>-2.<ext>`;
-and the unsupported type message is built from the upload extensions. So `compare.mts --against fixtures` reports the four
-steps below as different, and only these. They too go away when the Python version and these saved outputs are retired.
+and the unsupported type message is built from the upload extensions; and reviews and keeps carry `seq`, the number of the
+event they were recorded at. So `compare.mts --against fixtures` reports the five steps below as different, and only these.
+They too go away when the Python version and these saved outputs are retired.
 
 | Step | What differs | Why |
 |---|---|---|
 | `上传重名文件（加 -2）` | 409 `duplicate_content` ("这份文件与已有的材料《需求说明.md》内容完全相同，没有重复保存。", `data.path` `inputs/需求说明.md`) instead of 200 with `inputs/需求说明-2.md`. | The step uploads the same name with the same bytes, which is now refused as duplicate content; the automatic `-2` name is gone. |
 | `上传：类型不支持` | The message is "只接受 .md、.txt 与 Word 的 .docx 文件。" instead of "只接受 .md、.txt 与 .docx（Word）三种文件。". | The message is built from the upload extensions and no longer states a count. |
-| `任务页` | The material list has no `inputs/需求说明-2.md`, and it has `inputs/退款规则.docx.locations.json` with `derived_from` `inputs/退款规则.docx`. | Same as the first row: that file is no longer stored. Uploading a Word file now also writes its location table, a derived file like the projection and the segment list. |
+| `任务页` | The material list has no `inputs/需求说明-2.md`, and it has `inputs/退款规则.docx.locations.json` with `derived_from` `inputs/退款规则.docx`. The two reviews and the keep carry `seq`. | Same as the first row: that file is no longer stored. Uploading a Word file now also writes its location table, a derived file like the projection and the segment list. The page tells whether a keep came after the latest review by `seq`. |
+| `条目修订史 UC-001` | The review listed under revision 2 carries `seq`. | Same as the `seq` in `任务页`. |
 | `材料原样 .md` | 404 `not_found` ("没有材料 inputs/需求说明-2.md。") instead of 200 with the file. | Same as the first row: the step reads the `-2` file. |
 
 What the first step used to check, a second file under a taken name, is now covered by `backend/tests/upload_dedup.test.ts`
