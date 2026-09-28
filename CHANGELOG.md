@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A Word file with an equation whose brackets, bar or group character carried no properties (`m:dPr`, `m:barPr`, `m:groupChrPr` missing, which Word itself usually writes) could not be shown at all in the material pane or with **View** on the task page, only an English error line appeared. Empty properties are now filled in before rendering, so such brackets are drawn as round brackets.
 - The text inside Word equations was missing from the projection altogether, in headings and in body text; it is now taken in order as plain text, without the layout of the equation (a fraction a/b is written ab). The projection of a Word file with equations changes accordingly.
 - A heading with a picture had the picture link in its heading text, and so in the segment list's block heading; the link now goes on its own line under the heading line.
 - A Word file whose automatic numbering is set in a paragraph style without a level (`w:ilvl`) could not be shown at all in the material pane or with **View** on the task page; numbering without a level now counts as level 0, as in Word and in the projection.
