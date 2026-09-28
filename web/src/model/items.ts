@@ -133,6 +133,16 @@ export function keptReview(task: Task): Item[] {
   return task.items.filter((i) => needsReview(task, i.collection) && matchesFilter(i, "review_kept", task));
 }
 
+/**
+ * 一个集合里评审四种状态各有几个条目：待评审、评审通过、评审不通过（没有保留的）、已保留写法。任务页看板用它；
+ * 与条目区的汇总行、筛选用同一个判断（matchesFilter），三处的数对同一个任务相同。
+ */
+export function reviewCounts(task: Task, collection: string): { pending: number; passed: number; failed: number; kept: number } {
+  const items = task.items.filter((i) => i.collection === collection);
+  const n = (filter: ItemFilter) => items.filter((i) => matchesFilter(i, filter, task)).length;
+  return { pending: n("review_pending"), passed: n("review_passed"), failed: n("review_failed"), kept: n("review_kept") };
+}
+
 /** 某个集合里编号为 ruleId 的那条规则；找不到时为 undefined。 */
 export function ruleOf(task: Task, collection: string, ruleId: string | null | undefined): ReviewRule | undefined {
   if (!ruleId) return undefined;
