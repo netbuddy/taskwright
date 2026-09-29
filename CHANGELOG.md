@@ -18,6 +18,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The question on the green submit bar names the collections you must have read that are not reviewed, such as the domain notes, with their count, and says the issues are all resolved or kept pending only when there are issue items; before, it left the domain notes out and always said 没有未解决的问题 ("no unresolved issues").
 - After a page reload the conversation stays at the bottom when the revision tags appear; before, it could stop at the top with the last line half hidden behind the input box when the conversation was just over one screen long. It does not scroll if you have scrolled up.
 
+### When the assistant is not available
+
+- When the assistant's program exits right after it starts, the work view says 助手现在不可用：助手启动之后立刻退出了。请把这个页面的地址告诉管理员。 ("the assistant exited right after it started; tell your administrator the address of this page") instead of showing what the program wrote to its error output, which could carry file paths and internal words. That text goes to the backend log and stays in `data.detail` of `executor_unavailable`. Other unexpected start errors say 助手现在不可用：助手没有启动起来。请把这个页面的地址告诉管理员。 ("the assistant did not start").
+- When the task service cannot prepare the assistant's files before starting it (creating the archive directory, opening the archive files, or backing up and rewriting a session file it resumes; for example no write permission or a full disk), the work view says 助手现在不可用：启动助手之前，任务服务没能写入它要用的文件，系统原因：EACCES。请把这个页面的地址告诉管理员。 with the system's code, or 系统原因：未知 ("unknown") when there is none, instead of the system's English message; the path goes to the backend log only. The archive files opened so far are closed and the empty ones created by that start are removed.
+
+### Conversation and work view
+
+- The task status note at the top of a session opens with 这条会话开始时（time）的任务状况： ("the task at the start of this session") or, when a session is resumed, 接着这条会话继续时（time），上次之后交付物的变化： ("continuing this session, changes to the deliverable since last time"), instead of an opening written for the assistant that named the 执行者 ("executor") and the 扩展 ("extension"). In the note, 执行者在别的会话里做的 N 次 reads 助手在别的会话里做的 N 次 ("done by the assistant in other sessions"), and the line listing the assistant's acts still waiting for an answer is not shown. The assistant still reads the original text; the page gets the same wording live and after a reload.
+- A page reloaded while a review is running shows 评审中 ("reviewing") and the greyed-out **Review** button at once, instead of waiting for the next item to be reviewed. A review that was cut off because the assistant's program exited is no longer shown as running after a reload.
+
+### Task service and API
+
+- The snapshot has `review_in_progress`: the review started from the interface that is running now (`op_id`, `done`, `total`, `current`, as in `review_progress`), or null when there is none, the agent is not running, or its progress was written before the agent's current start.
+- `step_count` of `work_ended` is computed from the session record, like that of `work_summary`. When a turn was stopped halfway through a message with several tool calls, the calls that never started were counted in the summary but not in `work_ended`.
+- The API reference now documents `cleared` in the answer to a stop request (always empty, since no message is queued while the agent works) and says that database event numbers can skip, since a few kinds of records are not pushed.
+- An absolute path in a startup profile (`system_prompt_file`, `platform_skill`, the `path` of an extension from the repository) is used as it is; before, it was joined to the repository root.
+
+### Observatory
+
+- The deliverable board follows the latest review of an item's revision and shows a wording kept after it as 已保留写法 ("wording kept"), drawn like a pass; before, a kept item was shown as 评审过，没有通过 ("reviewed, not passed"), and an item that once passed stayed passed after a later failed review. The rule fingerprint is still not taken into account.
+
 ## [0.3.0-alpha] - 2026-09-28
 
 In 0.3 the task service is rewritten in TypeScript, so the task service, the web pages and the assistant need only Node, and the product can be started from a single executable; the observatory and the simulator are still Python programs. Word materials are read by the assistant as Markdown, with a segment list and a location table beside them. Reviews, uploads and completing a task follow stricter rules.
