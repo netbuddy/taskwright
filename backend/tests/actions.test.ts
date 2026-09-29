@@ -12,7 +12,7 @@ import { ApiError } from "../src/errors.ts";
 import { Executor, executorSettings } from "../src/executor.ts";
 import { cardAnnotation } from "../src/http.ts";
 import { Hub } from "../src/hub.ts";
-import { BODIES, CARDS, CARD_BODIES, CARD_ENTRIES, normalize } from "./fixtures/py/inputs.ts";
+import { BODIES, CARDS, CARD_BODIES, CARD_ENTRIES, normalize } from "./fixtures/expected/inputs.ts";
 import { ROOT, makeWorkspace, tempDir } from "./helpers.ts";
 
 type Dict = Record<string, any>;
@@ -71,8 +71,8 @@ function setup(answer?: (command: string, body: Dict) => Dict | null) {
   return { hub, executor, pi, drain };
 }
 
-/** 这组输入应当得到的输出（fixtures/py/，说明见那里的 README.md）。 */
-const expected = (name: string) => JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", name), "utf-8"));
+/** 这组输入应当得到的输出（fixtures/expected/，说明见那里的 README.md）。 */
+const expected = (name: string) => JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "expected", name), "utf-8"));
 
 test("十种直接操作与两种卡片点击发给 pi 的命令与期望值逐字一致", async () => {
   const { executor, pi } = setup();

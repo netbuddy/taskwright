@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
-import { FAKE_MODEL } from "./fixtures/py/inputs.ts";
+import { FAKE_MODEL } from "./fixtures/expected/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
 type Dict = Record<string, any>;
@@ -173,8 +173,8 @@ test("命令行假端点：一份脚本、一串请求，回答、请求记录�
     child.kill("SIGTERM");
     await new Promise((ok) => (child.exitCode !== null ? ok(null) : child.once("exit", ok)));
   }
-  // 期望值在 fixtures/py/fake_model_cli.json（说明见那里的 README.md）。
-  const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "fake_model_cli.json"), "utf-8"));
+  // 期望值在 fixtures/expected/fake_model_cli.json（说明见那里的 README.md）。
+  const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "expected", "fake_model_cli.json"), "utf-8"));
   assert.deepEqual(ours.answers, expected.answers);
   assert.equal(ours.lines, expected.lines);
   assert.deepEqual(ours.agent, expected.agent);

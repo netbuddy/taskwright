@@ -164,13 +164,13 @@ test("会话列表从会话文件读：编号、名字、开始与最近活动�
 import { readFileSync } from "node:fs";
 import { ROOT } from "./helpers.ts";
 import { messages as fullMessages } from "../src/conversation.ts";
-import { CONVERSATION_DEFINITION, CONVERSATION_ENTRIES } from "./fixtures/py/inputs.ts";
+import { CONVERSATION_DEFINITION, CONVERSATION_ENTRIES } from "./fixtures/expected/inputs.ts";
 
 test("对话记录与过程摘要：对一份会话条目，输出与期望值逐字一致；没有回复的那次工作的摘要放在下一句话之前、只有正文的不算一次工作", () => {
   const [entries, definition] = [CONVERSATION_ENTRIES, CONVERSATION_DEFINITION];
-  // 期望值在 fixtures/py/conversation.json（说明见那里的 README.md）。
-  const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "conversation.json"), "utf-8"));
-  // 结束原因（outcome）不在期望值里（见 fixtures/py/README.md「期望值里没有的字段」）：比较之前只去掉这一个字段，其余逐字比较，结束原因另外断言。
+  // 期望值在 fixtures/expected/conversation.json（说明见那里的 README.md）。
+  const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "expected", "conversation.json"), "utf-8"));
+  // 结束原因（outcome）不在期望值里（见 fixtures/expected/README.md「期望值里没有的字段」）：比较之前只去掉这一个字段，其余逐字比较，结束原因另外断言。
   const withoutOutcome = <T extends Record<string, unknown>>(list: T[]) => list.map(({ outcome: _outcome, ...rest }) => rest);
   const messages = fullMessages(entries, "S", definition);
   const works = worksFromEntries(branch(entries), definition, FALLBACK_TEXT, textOf);

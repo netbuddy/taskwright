@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { buildCommand, loadProfile, piLauncher } from "../src/launch.ts";
 import { PiExited, PiRefused, PiSession, PiTimeout, rebaseSessionCwd, technicalOf } from "../src/pi_session.ts";
-import { normalize } from "./fixtures/py/inputs.ts";
+import { normalize } from "./fixtures/expected/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
 const FAKE_PI = join(ROOT, "backend", "tests", "fixtures", "fake_pi.mjs");
@@ -49,8 +49,8 @@ test("启动配置拼出的 pi 命令行与期望值逐字一致", () => {
   delete process.env.TASKWRIGHT_PI_ENTRY;
   try {
     const ours = buildCommand(profile, workspace, join(tmp, "sd"), join(tmp, "s.jsonl"));
-    // 这份启动配置、这样摆放的任务目录应当拼出的命令行，期望值在 fixtures/py/launch_argv.json（说明见那里的 README.md）。
-    const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "launch_argv.json"), "utf-8")).argv;
+    // 这份启动配置、这样摆放的任务目录应当拼出的命令行，期望值在 fixtures/expected/launch_argv.json（说明见那里的 README.md）。
+    const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "expected", "launch_argv.json"), "utf-8")).argv;
     assert.deepEqual(normalize(["<pi>", ...ours.argv.slice(1)], [[tmp, "<临时目录>"], [ROOT, "<仓根>"]]), expected);
   } finally {
     process.env.TASKWRIGHT_PI_ENTRY = FAKE_PI;
