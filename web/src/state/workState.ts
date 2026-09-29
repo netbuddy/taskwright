@@ -58,7 +58,7 @@ export interface OutgoingMessage {
 
 /**
  * 界面发起的一批评审：进度来自 review_progress，全部评完时 review_finished 填上 finished。
- * 不在整份数据里：刷新页面之后，下一条进度事件到了才重新显示。
+ * 不在整份数据里：刷新页面之后，下一条进度事件到了才重新显示；序号有缺口而重读整份数据时，攒着的这两种事件照样用来设置它。
  */
 export interface ReviewRun {
   op_id: string;
@@ -205,7 +205,14 @@ function applySnapshot(state: WorkState, snapshot: Snapshot): WorkState {
   };
   const pending = [...state.buffered].sort((a, b) => a.data.seq - b.data.seq);
   for (const event of pending) {
-    if (event.data.seq <= snapshot.seq) continue;
+    if (event.data.seq <= snapshot.seq) {
+      // 整份数据里没有「有一批评审正在进行」：已被整份数据覆盖的评审进度与评审结束照样用来设置评审状态，
+      // 否则序号有缺口时点了「评审」，开始的那条进度被跳过，要到第一个条目评完页面才有反应。
+      // 只设置评审状态：不拨序号，也不用它们带的完成条件（比整份数据里的旧）。
+      const review = reviewRunOf(event);
+      if (review) next = { ...next, review };
+      continue;
+    }
     next = applyLibrary(next, event);
     if (next.phase === "waiting_snapshot") break;
   }
@@ -245,12 +252,9 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
     case "review_unfinished":
       next = withCompletionOnly(next, (event.data as { completion?: Completion | null }).completion);
       break;
-    case "review_progress": {
-      const data = event.data as unknown as ReviewProgress;
-      next = { ...withCompletionOnly(next, data.completion),
-        review: { op_id: data.op_id, done: data.done, total: data.total, current: data.current ?? [], finished: null } };
+    case "review_progress":
+      next = { ...withCompletionOnly(next, (event.data as unknown as ReviewProgress).completion), review: reviewRunOf(event) };
       break;
-    }
     case "review_batch": {
       const { seq: _seq, task_id: _t, completion, ...batch } = event.data as unknown as ReviewBatchEvent;
       next = withCompletionOnly(next, completion);
@@ -267,14 +271,9 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
     case "review_rules_changed":
       next = applyRulesChanged(next, event.data as unknown as ReviewRulesChanged);
       break;
-    case "review_finished": {
-      const data = event.data as unknown as ReviewFinished;
-      next = { ...withCompletionOnly(next, data.completion), review: {
-        op_id: data.op_id, done: data.total, total: data.total, current: [],
-        finished: { passed: data.passed, failed: data.failed, unfinished: data.unfinished, error: data.error ?? null },
-      } };
+    case "review_finished":
+      next = { ...withCompletionOnly(next, (event.data as unknown as ReviewFinished).completion), review: reviewRunOf(event) };
       break;
-    }
     case "confirmation_recorded":
       next = applyConfirmationRecorded(next, event.data as unknown as ConfirmationRecorded);
       break;
@@ -286,6 +285,20 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
     }
   }
   return next;
+}
+
+/** 评审进度与评审结束两种库事件给出的评审状态；别的事件为 null。 */
+function reviewRunOf(event: BufferedLibraryEvent): ReviewRun | null {
+  if (event.event === "review_progress") {
+    const data = event.data as unknown as ReviewProgress;
+    return { op_id: data.op_id, done: data.done, total: data.total, current: data.current ?? [], finished: null };
+  }
+  if (event.event === "review_finished") {
+    const data = event.data as unknown as ReviewFinished;
+    return { op_id: data.op_id, done: data.total, total: data.total, current: [],
+      finished: { passed: data.passed, failed: data.failed, unfinished: data.unfinished, error: data.error ?? null } };
+  }
+  return null;
 }
 
 function withCompletion(task: Task, completion: Completion | null | undefined): Task {
