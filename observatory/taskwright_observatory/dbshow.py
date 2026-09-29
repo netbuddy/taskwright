@@ -34,7 +34,7 @@ def connect(workspace: Path) -> sqlite3.Connection:
     """以只读方式打开任务目录里的库。库不在就报错，不新建。"""
     path = Path(workspace).expanduser().resolve() / DB_NAME
     if not path.is_file():
-        raise SystemExit(f"{path} 不存在。先用 python -m taskwright_server.new_workspace 建一个任务目录。")
+        raise SystemExit(f"{path} 不存在。请先在网页上新建一个任务，再把那个任务的目录交给这个命令。")
     # 与 taskdb 用同一个只读打开函数：同样的忙等待超时，同样处理 WAL 模式下目录不可写的情形。
     return taskdb.open_readonly(path)
 
