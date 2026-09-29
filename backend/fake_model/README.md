@@ -1,8 +1,8 @@
 # 假模型端点
 
-这是 `server/taskwright_server/fake_model/` 的 TypeScript 版：一个按脚本回固定内容的本地 HTTP 服务，接口与 OpenAI 的聊天接口兼容（`POST /v1/chat/completions`），只用 `node:http`，零依赖。它给后端的双跑对照与测试用：pi 以为自己在请求模型，实际每次拿到的回答都是测试事先写好的。这样，门禁拒绝、用户直接写入这类机制可以被确定性地测，不受真模型随机性的影响。
+假模型端点是一个按脚本回固定内容的本地 HTTP 服务，接口与 OpenAI 的聊天接口兼容（`POST /v1/chat/completions`），只用 `node:http`，零依赖。它给测试与手工验证用：pi 以为自己在请求模型，实际每次拿到的回答都是测试事先写好的。这样，门禁拒绝、用户直接写入这类机制可以被确定性地测，不受真模型随机性的影响。
 
-脚本格式、命令行参数、请求记录的写法都与 Python 版相同；同一份脚本、同一串请求，两版的回答与请求记录逐字一致（`backend/tests/fake_model.test.ts` 核对）。双跑对照 `backend/compare/sessions.mts` 让两版后端都用这一版。
+脚本格式、命令行参数、请求记录的写法由测试固定：命令行起的假端点对一份脚本、一串请求给出的回答、请求记录与写出的 pi 配置目录，与 `backend/tests/fixtures/expected/fake_model_cli.json` 逐字比较（`backend/tests/fake_model.test.ts`）。改这些写法时要同时改那份期望值。
 
 ## 它能回什么
 
@@ -58,7 +58,7 @@ pi 实测用的是流式请求（请求体里 `stream` 为真），假端点按 
 node backend/fake_model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
 ```
 
-`autoIntent` 为真时，用户说话之后第一个只有工具调用、没有文字的回答，前面自动补一段理解（与 Python 版的 `auto_intent` 相同）；命令行起的假端点不补。
+`autoIntent` 为真时，用户说话之后第一个只有工具调用、没有文字的回答，前面自动补一段理解；命令行起的假端点不补。
 
 ## 请求记录
 
@@ -78,7 +78,7 @@ node -e "for (const l of require('fs').readFileSync(process.argv[1], 'utf-8').sp
   const r = JSON.parse(l); console.log(r['序号'], r['按哪一条给的'], r['请求体'].messages.map((m) => m.role)); }" 请求记录.jsonl
 ```
 
-与 Python 版的一处传输差别：流式回答 Python 版不写长度、靠关闭连接结束，这一版用分块传输（chunked）再关闭连接；客户端读到的数据块完全相同。
+流式回答用分块传输（chunked），发完之后关闭连接。
 
 ## 每个测试用自己的实例
 
