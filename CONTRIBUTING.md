@@ -8,7 +8,7 @@ Thank you for helping. This page covers how to set up, test, and submit changes.
 npm install -g @earendil-works/pi-coding-agent@0.85.1   # the agent runtime; integration tests need it
 npm ci
 python3 -m venv .venv && . .venv/bin/activate
-python3 -m pip install -e 'observatory[test]' -e 'server[test]'
+python3 -m pip install -e 'observatory[test]'
 ```
 
 ## Before every commit
