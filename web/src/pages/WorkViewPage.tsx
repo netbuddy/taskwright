@@ -195,7 +195,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       toast.success("已新建会话。");
       go(href.work(taskId, session_id));
     } catch (e) {
-      toast.error(e instanceof ApiError ? errorText(e) : "新建会话没有成功。");
+      toast.error(e instanceof ApiError ? newSessionErrorText(e, sessionId) : "新建会话没有成功。");
     }
   };
 
@@ -368,6 +368,16 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       {task && <DocumentModal task={task} log={log} open={doc.open} revision={doc.revision} onClose={() => setDoc({ open: false, revision: null })} />}
     </div>
   );
+}
+
+/**
+ * 新建会话被拒时的提示。助手正在工作的那条会话就是用户现在所在的这一条时，「另一条会话」说不通，单独说；别的情形照 errorText。
+ */
+export function newSessionErrorText(error: ApiError, sessionId: string): string {
+  if (error.code === "session_busy" && error.data.reason !== "working" && error.data.active_session === sessionId) {
+    return "助手正在这条会话里工作，等它做完这一轮再新建会话。";
+  }
+  return errorText(error);
 }
 
 /**
