@@ -12,7 +12,7 @@
 | 任务服务（Task service，`backend/`） | TypeScript，由 Node.js 直接运行 | 自己的进程；为每个任务启动一个 pi 进程 | 只读 | 从不写（建任务经 agent 的 `createTask`） |
 | 观测台（Observatory，`observatory/`） | Python | 自己的本地网页应用 | 只读 | 从不写 |
 | 网页（Web，`web/`） | TypeScript、React | 浏览器 | 否，它只调接口 | 从不写 |
-| 模拟用户（Simulator，`sim/`） | TypeScript 工具、Python 驱动程序 | 另一个 pi 进程 | 只读（用于判定） | 从不写 |
+| 模拟用户（Simulator，`sim/`） | TypeScript 工具、Python 驱动程序，以及启动模拟用户的 Node 驱动程序 | 另一个 pi 进程 | 只读（用于判定） | 从不写 |
 
 **三种代码。**
 

@@ -8,7 +8,7 @@ This version is meant for a single machine or a trusted local network. There is 
 
 | What | Version | Used by |
 |---|---|---|
-| Node.js | 24 or newer (uses the built-in `node:sqlite`) | task service, agent, web build, simulator tools |
+| Node.js | 24 or newer (uses the built-in `node:sqlite`) | task service, agent, web build, simulator tools and driver |
 | Python | 3.12 or newer | observatory, simulator driver |
 | pi coding agent | `@earendil-works/pi-coding-agent` 0.85.1 | runs the executor and the simulated user |
 | A model reachable from pi | any provider pi supports (see section 3) | the executor |
@@ -26,7 +26,7 @@ make install
 
 `make install` runs `npm ci` (npm workspaces: agent, web, sim) and `python3 -m pip install -e 'observatory[test]' -e 'server[test]'`. If you do not want pytest, run `npm ci` and `python3 -m pip install -e observatory -e server` instead.
 
-The observatory and the simulator driver run `python3` from your `PATH` and need the packages installed above, so activate the virtual environment (`. .venv/bin/activate` in the repository root) in every new terminal before you start them. Otherwise they stop with a `ModuleNotFoundError` for `taskwright_observatory`. The task service, `scripts/dev.sh` and `scripts/tui.sh` run on Node.js and do not need the virtual environment. The example script `examples/library-lending/run.sh` is the exception: it needs only `curl` and a `python3`.
+The observatory and the simulator driver run `python3` from your `PATH` and need the `observatory` package installed above, so activate the virtual environment (`. .venv/bin/activate` in the repository root) in every new terminal before you start them. Otherwise they stop with a `ModuleNotFoundError` for `taskwright_observatory`. The simulator does not need the `server` package; it starts the task service and the simulated user's pi through Node.js, so Node.js and pi must be on `PATH` as well. The task service, `scripts/dev.sh` and `scripts/tui.sh` run on Node.js and do not need the virtual environment. The example script `examples/library-lending/run.sh` is the exception: it needs only `curl` and a `python3`.
 
 ## 3 Connecting a model
 

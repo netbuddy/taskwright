@@ -10,7 +10,7 @@
 
 | 项目 | 版本 | 使用方 |
 |---|---|---|
-| Node.js | 24 或更新（使用内置的 `node:sqlite`） | 任务服务、agent、web 构建、simulator 工具 |
+| Node.js | 24 或更新（使用内置的 `node:sqlite`） | 任务服务、agent、web 构建、simulator 的工具与驱动程序 |
 | Python | 3.12 或更新 | observatory、simulator 的驱动程序 |
 | pi coding agent | `@earendil-works/pi-coding-agent` 0.85.1 | 运行执行者与模拟用户 |
 | pi 能连到的一个模型 | pi 支持的任意服务商（见第 3 节） | 供执行者使用 |
@@ -28,7 +28,7 @@ make install
 
 `make install` 依次执行 `npm ci`（npm workspaces：agent、web、sim）与 `python3 -m pip install -e 'observatory[test]' -e 'server[test]'`。不想装 pytest 时，改为执行 `npm ci` 与 `python3 -m pip install -e observatory -e server`。
 
-观测台与模拟用户的驱动程序用 `PATH` 里的 `python3` 运行，并且要用到上面装的包，所以每开一个新终端，启动它们之前都要先激活虚拟环境（在代码仓根目录执行 `. .venv/bin/activate`）。不激活就会因找不到 `taskwright_observatory` 模块而报 `ModuleNotFoundError` 退出。任务服务、`scripts/dev.sh` 与 `scripts/tui.sh` 由 Node.js 运行，不需要虚拟环境。示例脚本 `examples/library-lending/run.sh` 是例外：它只需要 `curl` 和一个 `python3`。
+观测台与模拟用户的驱动程序用 `PATH` 里的 `python3` 运行，并且要用到上面装的 `observatory` 包，所以每开一个新终端，启动它们之前都要先激活虚拟环境（在代码仓根目录执行 `. .venv/bin/activate`）。不激活就会因找不到 `taskwright_observatory` 模块而报 `ModuleNotFoundError` 退出。模拟用户不需要 `server` 包；它经 Node.js 启动任务服务与模拟用户的 pi，所以 `PATH` 里还要有 Node.js 与 pi。任务服务、`scripts/dev.sh` 与 `scripts/tui.sh` 由 Node.js 运行，不需要虚拟环境。示例脚本 `examples/library-lending/run.sh` 是例外：它只需要 `curl` 和一个 `python3`。
 
 ## 3 模型接入
 

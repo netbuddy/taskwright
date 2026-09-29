@@ -10,7 +10,7 @@
 | Task service (`backend/`) | TypeScript, run directly by Node.js | its own process; starts one pi process per task | read-only | never (creating a task goes through the agent's `createTask`) |
 | Observatory (`observatory/`) | Python | its own local web app | read-only | never |
 | Web (`web/`) | TypeScript, React | the browser | no, it only calls the API | never |
-| Simulator (`sim/`) | TypeScript tools, Python driver | a second pi process | read-only (for judging) | never |
+| Simulator (`sim/`) | TypeScript tools, a Python driver, and a Node driver that starts the simulated user | a second pi process | read-only (for judging) | never |
 
 **The three kinds of code.**
 
