@@ -6,7 +6,7 @@
  *   文字与「确认之后通知执行者」的模板相符、并且紧跟在确认的 taskwright-user-edit 后面的，origin 为 ui_request。
  * - 「回复」工具一次成功的调用 → assistant_reply（via_reply_tool 为真，message_id 是那条助手消息的条目编号）；
  *   一段用户消息之后没有成功的回复、只有助手正文的，取这段里最后一条有正文的助手消息，via_reply_tool 为假。
- * - taskwright-user-edit → ui_action_noted；taskwright-task-status → system_note。
+ * - taskwright-user-edit → ui_action_noted；taskwright-task-status → system_note（文字换成页面上的说法，见 taskStatusDisplayText）。
  *
  * 每次工作的过程摘要（work_summary）由 work_summary.ts 从同一批条目算，插在这次工作的回复之前（messages）。
  */
@@ -46,6 +46,24 @@ export function normalizeInforms(informs: unknown): Record<string, any>[] {
 
 export function fallbackNoteText(raw: string): string {
   return `助手这次没有用回复工具说话，系统自动提醒了它一句：「${raw}」。这句不是你说的。`;
+}
+
+/**
+ * 任务现状消息（taskwright-task-status）在页面上的写法。助手看到的原文不动（改它要重跑评测），只在转给页面时换掉写给助手的
+ * 说法：开头两种（agent/src/lib/task_status.ts 里开始会话一处、续接两处）换成页面上的开头；「执行者在别的会话里做的」
+ * 换成「助手在别的会话里做的」；末尾那一行「还在等回应的执行者行为」是对助手说的，页面上整行不显示。
+ * 实时推送（executor.ts）与刷新之后从会话记录读回（baseMessages）都经过这里。靠文字匹配：助手一侧改了这几处说法，
+ * backend/tests/task_status_display.test.ts 会失败，提醒这里跟着改。
+ */
+const TASK_STATUS_WORDING: [RegExp, string][] = [
+  [/^【执行者开始这条会话时（([^（）]*)）的任务状况：由扩展写入，不是用户打的字】/, "这条会话开始时（$1）的任务状况："],
+  [/^【执行者续接这条会话时（([^（）]*)）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】/, "接着这条会话继续时（$1），上次之后交付物的变化："],
+  [/执行者在别的会话里做的 (\d+) 次/g, "助手在别的会话里做的 $1 次"],
+  [/\n还在等回应的执行者行为 \d+ 条[\s\S]*$/, ""],
+];
+
+export function taskStatusDisplayText(text: string): string {
+  return TASK_STATUS_WORDING.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
 }
 
 /** 读会话文件：每行一条 JSON，读不出的行跳过。 */
@@ -160,7 +178,7 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
         });
         lastConfirm = NOTIFY_KINDS.includes(details.kind) ? e : null;
       } else if (ctype === TASK_STATUS) {
-        out.push({ type: "system_note", session_id: sessionId, message_id: e.id, at, text: textOf(e.content ?? null) });
+        out.push({ type: "system_note", session_id: sessionId, message_id: e.id, at, text: taskStatusDisplayText(textOf(e.content ?? null)) });
       }
       continue;
     }

@@ -594,7 +594,8 @@ export class Executor {
     if (kind === "system_note") {
       // 只有任务现状消息算系统说明；界面操作的通知已经在 message_end 里转成 ui_action_noted。
       if (event.custom_type !== conversation.TASK_STATUS) return;
-      this.hub.emit("system_note", { session_id: event.session_id || sid, message_id: event.entry_id ?? null, at: clock.now(), text: event.text ?? "" });
+      this.hub.emit("system_note", { session_id: event.session_id || sid, message_id: event.entry_id ?? null, at: clock.now(),
+        text: conversation.taskStatusDisplayText(event.text ?? "") });
       return;
     }
     if (kind === "界面请求" && event.method === "setStatus") {
