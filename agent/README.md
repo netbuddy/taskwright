@@ -36,10 +36,10 @@
 | `lib/user_ops.ts` | 用户直接操作的核心逻辑，`/tw-user` 调用它；改到的字段写「用户直接修改」来源，通知正文带改后的值；标为已读（打开详情）写依据为「已读」的确认标记，幂等。 |
 | `lib/task_status.ts` | 任务现状消息的内容：新会话写现状，续接旧会话写上次之后的变化。只读库。 |
 | `lib/board.ts` | 交付物看板的取数与排版，`/tw-board` 与两个只读工具共用。 |
-| `lib/tool_render.ts` | 「回复」与「保存修订」怎样排成几行给人看；终端界面的渲染器与后端的终端客户端都用它。 |
-| **命令行入口（`cli/`，不经 pi）** | 给后端的 Python 代码起 Node 子进程调用。 |
-| `cli/create_task.mts` | 创建任务：后端（`server/taskwright_server/create_task.py`）建好任务目录之后运行它写任务记录，发起方 `user`。 |
-| `cli/render.mts` | 排版：标准输入给一次工具结果，标准输出拿回排好的几行；后端的终端客户端 `chat.py` 用它。 |
+| `lib/tool_render.ts` | 「回复」与「保存修订」怎样排成几行给人看；终端界面的渲染器与观测台都用它。 |
+| **命令行入口（`cli/`，不经 pi）** | 给不在 Node 里的程序（观测台）与手工使用，起 Node 子进程调用。 |
+| `cli/create_task.mts` | 创建任务：给一个已经放好起始文件的任务目录写任务记录，发起方 `user`。任务服务在进程里直接调用同一个核心函数（`backend/src/workspace.ts`），这个入口留给手工建任务与测试。 |
+| `cli/render.mts` | 排版：标准输入给一次工具结果，标准输出拿回排好的几行；观测台的任务页用它（`observatory/taskwright_observatory/taskpage.py`）。 |
 | `tests/` | 单元测试。它们直接测 `lib/` 里的核心函数，不经过 pi，也不经过模型。 |
 
 `lib/` 下的模块都不依赖 pi，是普通的函数；`tools/` 下的文件只做登记与形状转换。
@@ -73,7 +73,7 @@
 依据是 2026-09-21 的实测：4 个进程同时写 80 次，最长一次等了 154 毫秒；另一个进程占住写锁 3 秒时，
 写入等 3.1 秒后成功。最早格式的库是默认的回滚日志模式，写入一侧第一次打开它时自动切成 WAL；旧格式
 （有 `slot` 表）的库不切。WAL 模式下一个库是 `task.sqlite`、`task.sqlite-wal`、`task.sqlite-shm` 三个文件，
-复制或归档时要三个一起复制，或者先做检查点再只复制 `task.sqlite`（见 `server/README.md`）。
+复制或归档时要三个一起复制，或者先做检查点再只复制 `task.sqlite`（见 `docs/deployment.zh-CN.md` 第 8 节「数据与备份」）。
 
 数据库用 Node 自带的 `node:sqlite` 模块，不引入需要编译的第三方包。本目录没有任何依赖；
 `package.json` 只声明 TypeScript 按 ES 模块解析，并给出跑测试的命令。
@@ -82,7 +82,7 @@
 
 **创建任务**（核心函数 `createTask`，参数 `definition_path`、可选的 `task_name` 与 `domain_tag`）。一库一任务：
 库里已经有任务时一律拒绝。它读取并校验任务定义，写一行任务（带用户起的任务名与领域标签）、记一条
-`TASK_CREATED` 事件。它不再登记成执行者的工具，只经 `cli/create_task.mts` 由后端调用：
+`TASK_CREATED` 事件。它不再登记成执行者的工具；任务服务在进程里直接调用它，手工建任务时经 `cli/create_task.mts`：
 
 ```
 node cli/create_task.mts --dir <任务目录> --definition docs/task-definitions/srs-authoring.json --op-id ui-op-… [--name 任务名] [--tag 领域标签]
@@ -130,7 +130,7 @@ node --test 'tests/*.test.ts'
 ## 怎么运行
 
 日常一律经后端以 RPC 方式启动 pi。启动参数收在 `backend/profiles/dev.json`，拼命令行的唯一一处是
-`server/taskwright_server/launch.py`。几点要紧的：
+`backend/src/launch.ts` 的 `buildCommand`。几点要紧的：
 
 - `--tools` 白名单以 `backend/profiles/dev.json` 为准：read 读文件，ls 列出目录里有哪些文件（两者都是 pi 自带的只读工具），其余是本目录登记的工具。白名单里必须写上自定义工具的名字，漏写时模型看不到它。`create_task` 已从白名单去掉。不开放 find、grep、bash。
 - 系统提示用 `--system-prompt` 整体替换成执行者自己的系统提示（`backend/prompts/executor_system_prompt.md`）。

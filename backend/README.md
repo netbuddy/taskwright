@@ -1,7 +1,6 @@
-# backend：任务服务的 TypeScript 版
+# backend：任务服务
 
-这个目录是任务服务（给前端的 HTTP 接口）的 TypeScript 版，用来接替 `server/taskwright_server/service/` 里的 Python 版。
-接口的路径、字段、错误形状与 Python 版逐字一致，前端不需要知道后面换了哪一版。两版在切换之前并存，行为靠双跑对照核对（见下文）。
+这个目录是任务服务：给页面的 HTTP 接口，并启动、看护每个任务的助手程序（pi）。接口的写法见 `docs/api.md`。
 
 代码由 Node 24 直接运行（去掉类型标注即可执行，不经构建），没有任何第三方依赖：HTTP 用 `node:http`，SQLite 用 `node:sqlite`。
 完成条件的核对与建任务直接在同一进程里调用 `agent/src/lib` 的函数，与 pi 进程里的工具用的是同一份代码。
@@ -25,8 +24,8 @@
 | `GET …/items/{i}/revisions`、`GET …/revisions` | 条目修订史、修订日志。 |
 | `GET …/materials/content`、`GET …/materials/raw`、`POST …/materials` | 材料原文、原样取回、上传（Word 材料另生成文本投影）。 |
 | `POST …/documents/preview`、`POST …/documents/download` | 按某次修订生成文档。 |
-| `GET /api/v1/service` | 服务信息：`{ok, app, version, mode, pid, port, capabilities: {exit, model}, model: {name, reason}}`，不需要任务。`capabilities.model` 是模型探测的结果（见下文「模型探测」），`model.reason` 是一句写明查过哪两个文件的原因。Python 版没有。 |
-| `POST /api/v1/service/exit` | 退出服务：只在 `--mode desktop` 下有，只接受本机回环地址的请求（别处来的回 403 `forbidden`）；先回 `{ok: true}` 再收尾退出。Python 版没有。 |
+| `GET /api/v1/service` | 服务信息：`{ok, app, version, mode, pid, port, capabilities: {exit, model}, model: {name, reason}}`，不需要任务。`capabilities.model` 是模型探测的结果（见下文「模型探测」），`model.reason` 是一句写明查过哪两个文件的原因。 |
+| `POST /api/v1/service/exit` | 退出服务：只在 `--mode desktop` 下有，只接受本机回环地址的请求（别处来的回 403 `forbidden`）；先回 `{ok: true}` 再收尾退出。 |
 
 ## 目录里有什么
 
@@ -51,12 +50,9 @@
 | `src/occupancy.ts` | 任务占用标记 `service.lock`。 |
 | `src/projection.ts` | Word 材料文本投影的薄适配：投影只有一份实现，这里只负责调用它。 |
 | `src/paths.ts` | 仓根目录与各资源的位置（只在这一处从自身文件位置推出仓根），以及用户数据目录。 |
-| `profiles/` | 启动配置：`dev.json` 开发与服务器用，`desktop.json` 桌面包用（除 Langfuse 环境标签外与 dev 相同），`fake.json` 测试与对照用（模型换成假模型端点）。 |
+| `profiles/` | 启动配置：`dev.json` 开发与服务器用，`desktop.json` 桌面包用（除 Langfuse 环境标签外与 dev 相同），`fake.json` 测试用（模型换成假模型端点）。 |
 | `prompts/executor_system_prompt.md` | 执行者的系统提示，启动配置的 `system_prompt_file` 指向它。 |
-| `fake_model/` | 假模型端点：按脚本回话的 OpenAI 兼容本地服务，给双跑对照与测试用，说明见其中的 README.md。 |
-| `compare/compare.mts` | 双跑对照：对两个后端执行同一串操作，归一化后逐条比较响应。 |
-| `compare/sessions.mts` | 会话场景的双跑对照：两版后端各配一个假模型端点，跑 11 个场景，比较响应、事件流、归档与观测台读出的数据。 |
-| `compare/read_only.mts` | 已有任务的只读对照：不起服务，在进程内调用两版的拼装函数逐项比较。 |
+| `fake_model/` | 假模型端点：按脚本回话的 OpenAI 兼容本地服务，给测试与手工验证用，说明见其中的 README.md。 |
 
 ## 起法
 
@@ -76,7 +72,7 @@ node backend/src/main.mts --tasks <放任务目录的上级目录> --runs <归�
 `--host` 给了以它为准。两种形态的日志写法相同：写标准输出，也追加到日志目录下当天的文件（`TASKWRIGHT_LOG_DIR`，缺省在用户数据目录的 `logs/` 下）。
 运行形态写进启动日志与占用标记（`mode` 一项）。
 
-`--port` 给的端口被占时依次试后面的端口，最多 10 个，全被占时报错退出；实际端口打印到日志、写进占用标记，并由 `GET /api/v1/service` 回出。
+`--port` 给的端口被占时依次试后面的端口，最多 10 个，全被占时报错退出；给 0 时由操作系统挑一个空闲端口。实际端口打印到日志、写进占用标记，并由 `GET /api/v1/service` 回出。
 
 `--web <目录>` 给了网页静态文件所在的目录（例如构建好的 `web/dist`）时，由本服务出页面：不以 `/api/` 开头的 GET 请求从这个目录取文件，
 找不到的路径回首页 `index.html`（前端是单页应用），解码后跳出目录的路径回 400。不给时行为不变，所有路径都归接口。开发时仍由 vite 出页面。
@@ -106,39 +102,6 @@ cd backend && node --test --import ./tests/deadline.ts 'tests/*.test.ts'
 
 每个测试文件有总时限（`tests/deadline.ts`，缺省 300 秒，慢机器上可用环境变量 `TASKWRIGHT_TEST_FILE_DEADLINE` 放宽）：到时还没结束的文件报为失败，多半是有服务器、连接或子进程没有关。
 测试用的库由 `agent/tests/fixtures/` 里的夹具脚本写出（子进程运行，内部调用真实的写入函数），本目录不导入写入函数。
-`scripts/test-all.sh` 已包含这一套。
+`scripts/test-all.sh` 已包含这一套。测试起后端时一律给端口 0（`tests/helpers.ts` 的 `spawnBackend`），几个会话同时跑测试也不会抢同一个端口。
+几份测试拿 `tests/fixtures/expected/` 里的期望值逐字比较，说明见那里的 README.md。
 
-## 双跑对照
-
-先各起一个后端，各用自己的空目录（不要把已有的任务目录交给它们）：
-
-```
-python -m taskwright_server.service --tasks /tmp/a/tasks --runs /tmp/a/runs --port 8960
-node backend/src/main.mts --tasks /tmp/b/tasks --runs /tmp/b/runs --port 8961
-node backend/compare/compare.mts --a http://127.0.0.1:8960 --a-tasks /tmp/a/tasks --a-runs /tmp/a/runs \
-                                 --b http://127.0.0.1:8961 --b-tasks /tmp/b/tasks --b-runs /tmp/b/runs --out result.json
-```
-
-脚本逐步打印「一致」或「差异」，全部一致时退出码为 0。归一化规则写在脚本开头的说明里。
-
-Python 版退役之后，两个对照脚本都改用 `--against fixtures`：不起 Python 版，拿 TypeScript 版与留存在 `compare/fixtures/` 里的 Python 版输出比较，
-说明见那里的 README.md。留存输出在 Python 版还在时用 `compare.mts … --save-fixture` 与 `sessions.mts … --save-fixtures` 生成。
-
-已有的任务数据只做只读对照，不起服务：
-
-```
-node backend/compare/read_only.mts --tasks <已有的任务目录> --runs <已有的归档目录>
-```
-
-它在进程内调用两版的扫描与拼装函数，占用标记的写入换成不写文件的版本，库一律只读打开；输出不做归一化，逐字比较。
-
-会话场景的双跑对照不用事先起栈，脚本自己起全部进程：
-
-```
-TASKWRIGHT_PYTHON=.venv/bin/python node backend/compare/sessions.mts --work <空目录> [--only 场景名,…] [--out 结果.json]
-```
-
-它在 8960 起 Python 版、8961 起 TypeScript 版，各配一个 TypeScript 版假模型端点（8962、8963），都用启动配置 fake；每个场景重起一套，跑完自己停。
-端口可以用 `--ports A,B,A的假端点,B的假端点` 改。11 个场景：chat_opening、confirm_and_complete、fake_model（只对照两版假端点）、intent、isolation、
-reply、review_gate、rpc、save_replay、service、tool_rejection，各自覆盖什么写在脚本里每个场景的 covers 一项。每个场景比四部分：
-HTTP 响应、事件流、三种归档文件加会话文件与假端点的请求记录、观测台读出的数据。归一化与五条比较规则写在脚本开头的说明里。

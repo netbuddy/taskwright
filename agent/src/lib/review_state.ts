@@ -34,7 +34,7 @@ export function reviewSpecOf(definitionText: string, collection: string): RulesS
   return { file: spec["规则文件"], off: strings(spec["关闭"]), promote: strings(spec["升为必选"]) };
 }
 
-/** 规则指纹的算法。后端 service/library.py 的 rules_hash_text 与它逐字一致。 */
+/** 规则指纹的算法。后端 backend/src/library.ts 的 rulesHashText 与它逐字一致（页面与后端按指纹认评审记录）。 */
 export function rulesHashText(fileText: string, spec: Pick<RulesSpec, "off" | "promote">): string {
   const text = `${fileText}\n--\n关闭:${spec.off.join(",")}\n升为必选:${spec.promote.join(",")}`;
   return createHash("sha256").update(text).digest("hex").slice(0, 16);

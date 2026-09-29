@@ -21,7 +21,7 @@ jobs:
         run: |
           npm ci
           npm install -g @earendil-works/pi-coding-agent@0.85.1
-          python -m pip install -e 'observatory[test]' -e 'server[test]'
+          python -m pip install -e 'observatory[test]'
       - name: Public-content check
         run: scripts/check-public.sh
       - name: Tests and build

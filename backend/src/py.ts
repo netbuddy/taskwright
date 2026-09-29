@@ -1,6 +1,7 @@
 /**
- * 与 Python 版逐字一致所需的两样小工具：Python 的真假判断（空列表、空对象、空字符串、0 都算假），
- * 以及标量在 f-string 里的写法（None、True、False）。只用于拼给人看的文字与照抄原有的取值规则。
+ * 两样小工具：Python 式的真假判断（空列表、空对象、空字符串、0 都算假），以及标量写进文字时的写法（None、True、False）。
+ * 只用于拼给人看的文字与照抄原有的取值规则。这些写法来自早先的 Python 版任务服务，现在由测试的期望值
+ * （tests/fixtures/expected/）与观测台读归档的写法固定下来，改动要连同它们一起改。文件名 py.ts 沿用下来，没有改。
  */
 
 export function truthy(value: unknown): boolean {
@@ -26,7 +27,7 @@ export const isObject = (v: unknown): v is Record<string, any> => typeof v === "
 
 /**
  * Python 的 json.dumps(value, ensure_ascii=False) 的写法：各项之间是「逗号加空格」，键与值之间是「冒号加空格」。
- * 归档里的后端补记按这个写法写，与 Python 版写出的文件逐字相同。
+ * 归档里的后端补记按这个写法写；观测台读归档，期望值 tests/fixtures/expected/ 里也是这个写法。
  */
 export function pyDumps(value: unknown): string {
   if (value === undefined || value === null) return "null";

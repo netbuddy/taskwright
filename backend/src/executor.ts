@@ -440,9 +440,8 @@ export class Executor {
     if (!viewing) await this.lock.run(() => this.turnCheck("action"));
     const opId = newId("ui-op-");
     const command: Dict = {};
-    // force 已经不起作用（同一次修订、同一套规则只评审一次，扩展里的评审核对不再接收它）。照旧转交，只是为了与 Python 版留存的
-    // 命令逐字核对（tests/actions.test.ts）；Python 版后端删除之后一并去掉。
-    for (const key of ["kind", "task_id", "targets", "fields", "notify_executor", "force"]) if (Object.hasOwn(body, key)) command[key] = body[key];
+    // 只转交这五个键。请求里多带的键（例如早先的强制重评 force）不转交：同一次修订、同一套规则只评审一次。
+    for (const key of ["kind", "task_id", "targets", "fields", "notify_executor"]) if (Object.hasOwn(body, key)) command[key] = body[key];
     command.op_id = opId;
     if (truthy(command.notify_executor)) {
       this.pendingOrigin.set("我已经看过了：", "ui_request");

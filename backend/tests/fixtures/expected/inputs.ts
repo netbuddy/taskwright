@@ -1,6 +1,5 @@
 /**
- * 与 Python 版逐字对照用的输入：测试与夹具生成脚本（generate.mts）共用这一份，两边拿同样的输入。
- * Python 版在这些输入上的输出存在同目录的 *.json 里，说明见 README.md。
+ * 与期望值逐字对照用的输入。在这些输入上应当得到的输出存在同目录的 *.json 里，说明见 README.md。
  */
 
 type Dict = Record<string, any>;
@@ -9,7 +8,7 @@ type Dict = Record<string, any>;
 export const BODIES: Dict[] = [
   { client_id: "a-1", kind: "edit_fields", task_id: "TASK-001", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 用例名称: "改名", 基本流程: ["一", "二"] }, notify_executor: false },
   { client_id: "a-2", kind: "delete_item", targets: [{ item_id: "UC-002", base_revision: 3 }] },
-  { client_id: "a-3", kind: "unconfirm", targets: [{ item_id: "UC-001", base_revision: 2 }] },
+  { client_id: "a-3", kind: "submit_deliverable", targets: [], fields: { revision_no: 3 } },
   { client_id: "a-4", kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 2 }] },
   { client_id: "a-5", kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 2 }, { item_id: "UC-002", base_revision: 1 }], notify_executor: true },
   { client_id: "a-6", kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }, { item_id: "TBD-002", base_revision: 1 }], notify_executor: true },

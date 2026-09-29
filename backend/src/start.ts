@@ -110,7 +110,7 @@ export async function startService(options: StartOptions): Promise<Started> {
 
   let closing: Promise<void> | null = null;
   const stop = (): Promise<void> => {
-    // 先停止接新连接，再关各任务的 pi（执行者状态「已退出」还推得到开着的事件流上，与 Python 版相同），
+    // 先停止接新连接，再关各任务的 pi（执行者状态「已退出」还推得到开着的事件流上），
     // 然后各条事件流写完手上的事件、正常结束，空闲的连接关掉；连接都关了就算停好，最多等 2 秒。
     closing ??= (async () => {
       const closed = new Promise((ok) => server.close(ok));
@@ -136,7 +136,7 @@ export async function startService(options: StartOptions): Promise<Started> {
 
   const port = await listenFrom(server, options.port, host);
   service.port = port;
-  if (port !== options.port) console.log(`端口 ${options.port} 被占用，改用端口 ${port}。`);
+  if (options.port !== 0 && port !== options.port) console.log(`端口 ${options.port} 被占用，改用端口 ${port}。`);
   const web = options.web ? `，网页 ${options.web}` : "";
   console.log(`任务服务在 http://${host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}，运行形态 ${mode}${web}`);
   return { service, server, port, host, tasksDir, runsDir, stop };

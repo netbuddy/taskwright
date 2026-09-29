@@ -26,7 +26,7 @@ python3 -m venv .venv && . .venv/bin/activate
 make install
 ```
 
-`make install` 依次执行 `npm ci`（npm workspaces：agent、web、sim）与 `python3 -m pip install -e 'observatory[test]' -e 'server[test]'`。不想装 pytest 时，改为执行 `npm ci` 与 `python3 -m pip install -e observatory -e server`。
+`make install` 依次执行 `npm ci`（npm workspaces：agent、web、sim）与 `python3 -m pip install -e 'observatory[test]'`。不想装 pytest 时，改为执行 `npm ci` 与 `python3 -m pip install -e observatory`。
 
 观测台与模拟用户的驱动程序用 `PATH` 里的 `python3` 运行，并且要用到上面装的 `observatory` 包，所以每开一个新终端，启动它们之前都要先激活虚拟环境（在代码仓根目录执行 `. .venv/bin/activate`）。不激活就会因找不到 `taskwright_observatory` 模块而报 `ModuleNotFoundError` 退出。模拟用户不需要 `server` 包；它经 Node.js 启动任务服务与模拟用户的 pi，所以 `PATH` 里还要有 Node.js 与 pi。任务服务、`scripts/dev.sh` 与 `scripts/tui.sh` 由 Node.js 运行，不需要虚拟环境。示例脚本 `examples/library-lending/run.sh` 是例外：它只需要 `curl` 和一个 `python3`。
 
@@ -109,7 +109,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 - `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。两者不给时都放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`）。
 - 各服务默认绑定 `0.0.0.0`（可用 `--host` 更改）。唯一的例外是以 `--mode desktop` 启动的任务服务，它默认绑定 `127.0.0.1`。
 - 任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是用户数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。只有在本机打开的页面才有退出的入口；服务按请求的来源地址判断是不是本机，所以桌面形态不要放在反向代理后面（否则服务看到的是代理的地址）。
-- 给任务服务的端口被占用时，它会依次尝试后面的端口，最多共试 10 个，全部被占时报错退出。实际使用的端口会打印到日志、写进各任务的占用标记，并由 `GET /api/v1/service` 返回。
+- 给任务服务的端口被占用时，它会依次尝试后面的端口，最多共试 10 个，全部被占时报错退出。给 `--port 0` 时由系统挑一个空闲端口。实际使用的端口会打印到日志、写进各任务的占用标记，并由 `GET /api/v1/service` 返回。
 - `scripts/dev.sh` 在 `TASKWRIGHT_API_PORT`（缺省 8790）上起任务服务，并把网页开发服务器指向任务服务报出的实际端口，所以端口被占时网页不会被转到别的服务上。加 `--demo` 时，任务服务用假模型端点（`backend/fake_model/`）与启动配置 `fake` 运行，任务与归档放在退出时删除的临时目录里，并由 `examples/library-lending/run.sh` 建好一个带示例材料与几个条目的演示任务；不需要模型服务与密钥，但 `PATH` 里要有 pi。
 - 任务服务给了 `--web <dir>`（例如构建好的 `web/dist`）时，自己托管网页：不以 `/api/` 开头的 GET 请求从这个目录取文件，找不到的路径回首页。这样不需要第 6 节的反向代理，也不需要开发服务器。
 - 以 `--mode desktop` 启动的任务服务，起 pi 之前读 pi 配置目录里 `settings.json` 的 `defaultProvider` 与 `defaultModel`，两项都有就用它们代替启动配置里的模型（见第 10.4 节）；`--mode server` 不读这个文件。

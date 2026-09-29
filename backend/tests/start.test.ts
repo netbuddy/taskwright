@@ -4,34 +4,23 @@
  */
 
 import assert from "node:assert/strict";
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { probeModel } from "../src/model_probe.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { exitSignals, startService } from "../src/start.ts";
 import { isWebPath, webFile } from "../src/web.ts";
-import { ROOT, captureConsole, tempDir } from "./helpers.ts";
+import { captureConsole, ROOT, spawnBackend, tempDir } from "./helpers.ts";
 
 // 本文件有几例在测试进程里直接起服务，服务的日志收进内存，不写标准输出（原因见 captureConsole 的说明）。
 captureConsole();
 
-const MAIN = join(ROOT, "backend", "src", "main.mts");
 const FAKE_PI = join(ROOT, "backend", "tests", "fixtures", "fake_pi.mjs");
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
-const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
-
-async function freePort(): Promise<number> {
-  const probe = createServer();
-  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
-  const port = (probe.address() as { port: number }).port;
-  await new Promise((ok) => probe.close(ok));
-  return port;
-}
 
 /** 发一个 GET，原样取回状态、头与正文（不按 JSON 解析）；路径原样发出，不经 URL 规范化。 */
 function get(port: number, path: string): Promise<{ status: number; type: string; cache: string; text: string }> {
@@ -59,10 +48,10 @@ test("启动函数：同一进程里起服务，回实际端口；--web 出静�
   const dir = join(tmp, "inproc");
   const web = makeWeb(join(dir, "web"));
   process.env.TASKWRIGHT_LOG_DIR = join(dir, "logs");
-  const port = await freePort();
-  const started = await startService({ port, mode: "desktop", tasks: join(dir, "tasks"), runs: join(dir, "runs"), profile: "fake", web, ownProcess: false });
+  const started = await startService({ port: 0, mode: "desktop", tasks: join(dir, "tasks"), runs: join(dir, "runs"), profile: "fake", web, ownProcess: false });
+  const port = started.port;
   try {
-    assert.equal(started.port, port);
+    assert.ok(port > 0, "给 0 时回的是操作系统挑的端口");
     assert.equal(started.host, "127.0.0.1");
     assert.equal(started.service.port, port);
 
@@ -93,7 +82,7 @@ test("启动函数：同一进程里起服务，回实际端口；--web 出静�
 test("没给 --web 时行为不变：不以 /api/ 开头的路径也是接口的 404", async () => {
   const dir = join(tmp, "noweb");
   process.env.TASKWRIGHT_LOG_DIR = join(dir, "logs");
-  const started = await startService({ port: await freePort(), tasks: join(dir, "tasks"), runs: join(dir, "runs"), profile: "fake", ownProcess: false });
+  const started = await startService({ port: 0, tasks: join(dir, "tasks"), runs: join(dir, "runs"), profile: "fake", ownProcess: false });
   try {
     const page = await get(started.port, "/");
     assert.deepEqual([page.status, JSON.parse(page.text).error.code], [404, "not_found"]);
@@ -151,20 +140,11 @@ for (const signal of ["SIGHUP", "SIGTERM", "SIGINT"] as const) {
   test(`真进程：收到 ${signal} 时收尾：开着的事件流先收到 service_exiting，再关 pi、删占用标记、退出码 0（SIGHUP 是关掉终端或控制台窗口）`,
     { skip: process.platform === "win32" ? "Windows 上不能向别的进程发这些信号" : false }, async () => {
     const dir = join(tmp, `signal-${signal}`);
-    let out = "";
-    const child = spawn(process.execPath, [MAIN, "--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--mode", "desktop", "--port", String(await freePort())], {
-      cwd: ROOT, env: { ...process.env, TASKWRIGHT_LOG_DIR: join(dir, "logs"), TASKWRIGHT_PI_ENTRY: FAKE_PI }, stdio: ["ignore", "pipe", "pipe"],
+    const { child, port, output } = await spawnBackend(["--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--mode", "desktop"], {
+      cwd: ROOT, env: { ...process.env, TASKWRIGHT_LOG_DIR: join(dir, "logs"), TASKWRIGHT_PI_ENTRY: FAKE_PI },
     });
-    child.stdout!.on("data", (c) => (out += c));
-    child.stderr!.on("data", (c) => (out += c));
     let stream: ReturnType<typeof request> | undefined;
     try {
-      let port = 0;
-      for (const end = Date.now() + 15000; !port; await sleep(50)) {
-        const m = /任务服务在 http:\/\/[^:]+:(\d+)\//.exec(out);
-        if (m) port = Number(m[1]);
-        else if (child.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${out}`);
-      }
       const created = await call(port, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "关窗测试" });
       const taskDir = join(dir, "tasks", created.body.task_id);
       let events = "";

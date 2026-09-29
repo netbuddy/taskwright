@@ -18,7 +18,7 @@ export const PROVIDER = "fake";
 /** 启动 pi 时 --model 参数的值。 */
 export const MODEL_ARG = `${PROVIDER}/${MODEL_ID}`;
 
-/** 在 target 下写好 pi 的配置目录，返回目录路径。baseUrl 是假端点的地址，例如 http://127.0.0.1:43210/v1。三个文件与 Python 版写出的逐字相同。 */
+/** 在 target 下写好 pi 的配置目录，返回目录路径。baseUrl 是假端点的地址，例如 http://127.0.0.1:43210/v1。三个文件的写法由期望值 fake_model_cli.json 固定。 */
 export function writeAgentDir(target: string, baseUrl: string): string {
   mkdirSync(target, { recursive: true });
   const models = { providers: { [PROVIDER]: {

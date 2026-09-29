@@ -1,7 +1,6 @@
 /**
  * 会话记录：卡片点击合成、界面操作与系统说明、兜底回复、只取当前分支、分页；过程摘要：相邻同类合并、用时与工作编号、
  * 保存修订被拒的原因（两层写法）、重放的保存、请求评审；告知的两种写法；会话列表从会话文件读。
- * 对应服务端 Python 测试 test_service_units 的对话记录、过程摘要与告知几条（过程摘要插进对话记录的位置随快照接口一起接上时再测）。
  */
 
 import assert from "node:assert/strict";
@@ -159,26 +158,26 @@ test("会话列表从会话文件读：编号、名字、开始与最近活动�
   }
 });
 
-// ───────────── 带过程摘要的对话记录：与 Python 版对同一份会话条目留存的输出逐字一致 ─────────────
+// ───────────── 带过程摘要的对话记录：与期望值逐字一致 ─────────────
 
 import { readFileSync } from "node:fs";
 import { ROOT } from "./helpers.ts";
 import { messages as fullMessages } from "../src/conversation.ts";
-import { CONVERSATION_DEFINITION, CONVERSATION_ENTRIES } from "./fixtures/py/inputs.ts";
+import { CONVERSATION_DEFINITION, CONVERSATION_ENTRIES } from "./fixtures/expected/inputs.ts";
 
-test("对话记录与过程摘要：对同一份会话条目，TypeScript 版与 Python 版留存的输出逐字一致；没有回复的那次工作的摘要放在下一句话之前、只有正文的不算一次工作", () => {
+test("对话记录与过程摘要：对一份会话条目，输出与期望值逐字一致；没有回复的那次工作的摘要放在下一句话之前、只有正文的不算一次工作", () => {
   const [entries, definition] = [CONVERSATION_ENTRIES, CONVERSATION_DEFINITION];
-  // Python 版在同一份条目上的输出，留存在 fixtures/py/conversation.json（生成方法见那里的 README.md）。
-  const python = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "conversation.json"), "utf-8"));
-  // 结束原因（outcome）是 Python 版没有的字段（见 fixtures/py/README.md「已知差别」）：比较之前只去掉这一个字段，其余逐字比较，结束原因另外断言。
+  // 期望值在 fixtures/expected/conversation.json（说明见那里的 README.md）。
+  const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "expected", "conversation.json"), "utf-8"));
+  // 结束原因（outcome）不在期望值里（见 fixtures/expected/README.md「期望值里没有的字段」）：比较之前只去掉这一个字段，其余逐字比较，结束原因另外断言。
   const withoutOutcome = <T extends Record<string, unknown>>(list: T[]) => list.map(({ outcome: _outcome, ...rest }) => rest);
   const messages = fullMessages(entries, "S", definition);
   const works = worksFromEntries(branch(entries), definition, FALLBACK_TEXT, textOf);
-  assert.deepEqual(withoutOutcome(messages), python.messages);
-  assert.deepEqual(withoutOutcome(works as unknown as Record<string, unknown>[]), python.works);
+  assert.deepEqual(withoutOutcome(messages), expected.messages);
+  assert.deepEqual(withoutOutcome(works as unknown as Record<string, unknown>[]), expected.works);
   assert.deepEqual(works.map((w) => w.outcome), ["replied", "no_reply"]);
   assert.deepEqual(messages.filter((m) => m.type === "work_summary").map((m) => m.outcome), ["replied", "no_reply"]);
   // 第二次工作没有回复，摘要放在下一句话之前；第三句话之后只有正文、没有工具调用也没有经回复工具说话，不算一次工作，不出摘要。
-  assert.deepEqual(python.messages.map((m: any) => m.type), ["system_note", "user_message", "work_summary", "assistant_reply", "user_message", "work_summary",
+  assert.deepEqual(expected.messages.map((m: any) => m.type), ["system_note", "user_message", "work_summary", "assistant_reply", "user_message", "work_summary",
     "user_message", "assistant_reply"]);
 });

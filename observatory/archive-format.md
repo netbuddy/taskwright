@@ -1,6 +1,6 @@
 # Archive format
 
-The backend archives every pi process it starts. The observatory reads only these archives (plus the task databases and pi's own session files), so **any backend implementation must write exactly this format**. Two implementations write it today: the Python task service (`server/taskwright_server/pi_session.py`) and the TypeScript one (`backend/src/pi_session.ts`); `backend/compare/sessions.mts` runs both against the same fake model and checks that their archives, and what the observatory reads from them, are the same.
+The backend archives every pi process it starts. The observatory reads only these archives (plus the task databases and pi's own session files), so **the backend must write exactly this format**. It is written by `backend/src/pi_session.ts`; `backend/tests/observatory_parity.test.ts` runs one conversation against the fake model and checks that what the observatory reads from the archives matches the expected output.
 
 For each pi process start there are three files in `<archive dir>/pi-events/`, sharing one base name `<label>-<YYYYMMDD>-<HHMMSS>`:
 

@@ -55,7 +55,7 @@ ARCHIVE_NAME = re.compile(r"^(?P<run>.+)-(?P<date>\d{8})-(?P<time>\d{6})$")
 DIALOG_METHODS = ("select", "confirm", "input", "editor")
 
 #: 进程内那个只读小扩展在每一轮开始时报事实用的状态栏键名。三处是一份约定：
-#: agent/src/hooks/report_to_backend.ts、server/taskwright_server/pi_session.py、这里。
+#: agent/src/hooks/report_to_backend.ts、backend/src/pi_session.ts、这里。
 TURN_STATUS_KEY = "taskwright-turn"
 
 #: 读进来的每条事件上，观测台额外挂两个键：它在归档里的行号，与后端读到它的时刻。

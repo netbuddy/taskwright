@@ -1,7 +1,6 @@
 /**
  * 只读读库与拼装：整份数据的序号与各表同一时刻、删掉的条目不在里面；评审、发现、批次、保留在整份数据里的样子；
  * 任务定义视图的评审部分与规则指纹；修订日志；修订带上用户行为；WAL 模式下的只读打开；读事务不留着。
- * 对应服务端 Python 测试 test_service_units、test_revision_intent、test_wal_read 的读取部分。
  */
 
 import assert from "node:assert/strict";

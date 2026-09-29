@@ -1,7 +1,6 @@
 /**
  * 生成文档：按修订整体导出、如实标注确认与评审；文档请求的写法；「用户的话」的出处换成读者看得懂的说法；
  * Word 材料的出处只写文件名；真实任务类型的模板里的领域说明两节；模板的按字段筛选与按字段归组。
- * 对应服务端 Python 测试 test_service_units（文档部分）、test_domain_notes_render、test_docx_material 的导出一条。
  */
 
 import assert from "node:assert/strict";

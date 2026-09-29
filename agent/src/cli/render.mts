@@ -1,8 +1,8 @@
 /**
- * 工具块排版的命令行入口：给后端的终端对话客户端 server/taskwright_server/chat.py 用。
+ * 工具块排版的命令行入口：给观测台的任务页用（observatory/taskwright_observatory/taskpage.py 的 RENDER_SCRIPT）。
  *
- * chat.py 是 Python 写的，而「回复」与「保存修订」怎样显示只在 lib/tool_render.ts 里写一份（pi 的终端界面也用它），
- * 所以 chat.py 每遇到这两个工具的结果，就起一个 Node 子进程运行本文件，把结果交进来，拿回排好的几行。
+ * 观测台是 Python 写的，而「回复」与「保存修订」怎样显示只在 lib/tool_render.ts 里写一份（pi 的终端界面也用它），
+ * 所以观测台每遇到这两个工具的结果，就起一个 Node 子进程运行本文件，把结果交进来，拿回排好的几行。
  *
  * 用法：标准输入给一个 JSON 对象
  *   {"tool": "reply" 或 "save_revision", "is_error": 真或假, "text": 工具返回的文字,

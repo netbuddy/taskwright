@@ -2,7 +2,7 @@
 
 install:
 	npm ci
-	python3 -m pip install -e 'observatory[test]' -e 'server[test]'
+	python3 -m pip install -e 'observatory[test]'
 
 test:
 	scripts/test-all.sh

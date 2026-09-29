@@ -2,8 +2,6 @@
  * 服务层：建任务（起始文件、pi 项目设置、失败时整体清理、任务目录里没有指向自己的绝对路径）；上传材料的规则（类型、5 MB、
  * 同名不同内容拒绝、投影保留名、路径越界）；Word 材料的投影、原样取回与 content 给投影；旧格式任务照样列出；占用标记的写入、
  * 拒绝、覆盖、删除；任务类型；用户直接操作的修订写成一句操作名。
- * 对应服务端 Python 测试 test_service_units（材料与旧格式两条）、test_new_workspace、test_isolation（占用锁部分与绝对路径）、
- * test_docx_material（读取与上传部分）。
  */
 
 import assert from "node:assert/strict";

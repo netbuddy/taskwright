@@ -4,17 +4,15 @@
  */
 
 import assert from "node:assert/strict";
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
-import { ROOT } from "./helpers.ts";
+import { ROOT, spawnBackend } from "./helpers.ts";
 
 export type Dict = Record<string, any>;
-const MAIN = join(ROOT, "backend", "src", "main.mts");
 export const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 export const NO_PI = spawnSync("pi", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 pi" : false;
@@ -26,17 +24,13 @@ export const MATERIAL = "读者凭借书证在自助机上借书。";
 /** 假端点的一步：助手经「回复」说一段话，act 是向用户要的回应。 */
 export const reply = (text: string, id: string, act: Dict | null = null) => ({ tool_calls: [{ id, name: "reply", arguments: { informs: [], act, text } }] });
 
-export async function freePort(): Promise<number> {
-  const probe = createServer();
-  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
-  const port = (probe.address() as { port: number }).port;
-  await new Promise((ok) => probe.close(ok));
-  return port;
-}
-
 export type Stack = {
   call: (method: string, path: string, body?: unknown) => Promise<{ status: number; body: any }>;
   taskId: string; session: string; dir: string;
+  /** 后端实际监听的端口与后端进程的进程号。 */
+  port: number; pid: number;
+  /** 假端点到此为止收到的请求（每项的「请求体」是模型收到的原样请求）。 */
+  requests: () => Dict[];
   db: (sql: string, ...args: string[]) => Dict[];
   send: (body: Dict) => Promise<void>;
   action: (body: Dict) => Promise<{ status: number; body: any }>;
@@ -44,24 +38,19 @@ export type Stack = {
   entryOfCall: (callId: string) => string;
 };
 
-/** 起一套验证栈（假端点、真后端、真 pi），建任务与会话，交给 body；结束时停掉。 */
-export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>): Promise<void> {
+/**
+ * 起一套验证栈（假端点、真后端、真 pi），建任务与会话，交给 body；结束时停掉。
+ * autoIntent 为真（缺省）时假端点在用户说话之后第一个只有工具调用的回答前面自动补一段理解；测理解门禁时关掉，由脚本自己写。
+ */
+export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>, { autoIntent = true } = {}): Promise<void> {
   const dir = join(tmp, name);
   mkdirSync(dir, { recursive: true });
-  const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent: true }).start();
+  const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent }).start();
   const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(dir, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(dir, "logs") };
   for (const name of DROPPED_ENV) delete env[name];
-  const port = await freePort();
-  const child: ChildProcess = spawn(process.execPath, [MAIN, "--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake",
-    "--host", "127.0.0.1", "--port", String(port)], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"] });
-  let out = "";
-  child.stdout!.on("data", (c) => (out += c));
-  child.stderr!.on("data", (c) => (out += c));
+  const { child, port } = await spawnBackend(["--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--host", "127.0.0.1"],
+    { cwd: dir, env });
   try {
-    for (const end = Date.now() + 15000; !/任务服务在 http:\/\/[^:]+:\d+\//.test(out);) {
-      if (child.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${out}`);
-      await sleep(50);
-    }
     const call = (method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> => new Promise((ok, fail) => {
       const data = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
       const req = request({ host: "127.0.0.1", port, path, method, timeout: 60000,
@@ -101,7 +90,7 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
       return readFileSync(file, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
         .find((e) => e.type === "message" && (e.message?.content ?? []).some((p: Dict) => p?.type === "toolCall" && p.id === callId)).id;
     };
-    await body({ call, taskId, session, dir, db, send, action, entryOfCall });
+    await body({ call, taskId, session, dir, port, pid: child.pid!, requests: () => fake.requests(), db, send, action, entryOfCall });
   } finally {
     if (child.exitCode === null) {
       await new Promise<void>((ok) => {

@@ -41,7 +41,7 @@ export interface SegmentParams {
   min_paragraphs: number;
 }
 
-/** 启动配置没写某一项时用的值（后端 Python 版的 launch.SEGMENT_DEFAULTS 与它相同）。 */
+/** 启动配置没写某一项时用的值（后端 backend/src/launch.ts 读启动配置时直接用这一份）。 */
 export const SEGMENT_DEFAULTS: Readonly<SegmentParams> = Object.freeze({ heading_depth: 3, max_paragraphs: 300, min_paragraphs: 3 });
 
 export interface SegmentBlock {
