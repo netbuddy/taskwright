@@ -63,6 +63,8 @@ Source kinds: `文档原文` (verbatim document excerpt), `用户的话` (the us
 | `confirmation_recorded` | a confirmation mark other than "read": the user edited an item or marked an issue item as keep-pending (`basis` `ui_edit`, written together with the revision), or withdrew a confirmation (`basis` `ui_click`, `accepted` false) | `seq`, `at`, `task_id`, `items` (`item_id`, `revision_no`, `accepted`), `basis`, `op_id`, `completion` |
 | `resync` (no id) | too many events to replay | `{"reason": "gap_too_large"}` |
 
+Database event numbers can skip: a few kinds of records in the task database are not pushed. They are the assistant's understanding of what the user said (`USER_INTENT_RECORDED`, and the three cases where no understanding was written, `USER_INTENT_INVALID`, `USER_INTENT_MISSING` and `STRUCTURED_OUTPUT_UNMATCHED`) and the acts the assistant recorded with a reply (`EXECUTOR_ACTS_RECORDED`). The backend turns the first kinds into the 理解为 ("understood as") line, sent with `step` and `work_summary`; the content of a reply reaches the page through `assistant_reply`. The page reads a new snapshot when it sees a skipped number.
+
 ### 3.2 Conversation and progress events (not numbered, not replayed)
 
 All carry `session_id` except `service_exiting`, which goes to every open stream of every task.
@@ -76,10 +78,10 @@ All carry `session_id` except `service_exiting`, which goes to every open stream
 | `ui_action_noted` | a direct operation completed | `message_id`, `at`, `text`, `event_seq`, `op_id`, `revision_no`, `undoable`, `kind` (the operation kind), `review` (for the note at the end of a review: `total`, `passed`, `failed`, `unfinished`, `problems`, `advice`) |
 | `material_added` | a material was uploaded | `at`, `path`, `bytes`, `modified_at` |
 | `work_summary` | after a unit of work | `work_id`, `at`, `seconds`, `step_count`, `stages` (each with `text`), `outcome` (how the unit of work ended, with the values of `work_ended`; the `work_summary` messages of the conversation read after a reload carry the same value) |
-| `work_ended` | the agent settled | `work_id`, `at`, `seconds`, `step_count`, `outcome` (`replied`, `no_reply`, `stopped_by_user`, `failed`; decided by the last assistant message of the unit of work, so a unit of work whose model call failed and was then retried successfully is `replied` or `no_reply`, not `failed`) |
+| `work_ended` | the agent settled | `work_id`, `at`, `seconds`, `step_count` (the same as in `work_summary`, computed from the session record, so after a stop it counts the tool calls of a message that never started; the count kept during the turn is used only when the session record does not give this unit of work), `outcome` (`replied`, `no_reply`, `stopped_by_user`, `failed`; decided by the last assistant message of the unit of work, so a unit of work whose model call failed and was then retried successfully is `replied` or `no_reply`, not `failed`) |
 | `problem` | something the user should know (see 5.5) | `code`, `text`, `retry` |
 | `executor_state` | the agent's availability changed | `state` (`not_started`, `starting`, `idle`, `working`, `exited`, `failed_to_start`), `text`, `active_session`; after a failed resume (`session_resume_failed`) `state` is `not_started` and `text` says the assistant did not pick up the session |
-| `system_note` | the task-status message at session start, or the fixed fallback sentence | `message_id`, `at`, `text`, `kind` (`task_status` or `reply_fallback`) |
+| `system_note` | the task-status message at session start, or the fixed fallback sentence | `message_id`, `at`, `text`, `kind` (`task_status` or `reply_fallback`); the `text` of a task-status message is the page's wording: it opens with 这条会话开始时（time）的任务状况： ("the task at the start of this session (time):") or 接着这条会话继续时（time），上次之后交付物的变化： ("continuing this session (time), changes to the deliverable since last time:"), and leaves out the line written only for the assistant (its acts still waiting for an answer); the assistant still reads the original, and the conversation read back after a reload has the page's wording too |
 | `service_exiting` | the service is about to stop: exit requested from the page, SIGINT or SIGTERM, SIGHUP (SIGBREAK on Windows); sent before each task's pi is closed and the streams end | `mode` (`desktop` or `server`), `at`. A page that receives it should show that the service has stopped and stop reconnecting. |
 
 ## 4 Reading
@@ -113,8 +115,11 @@ All carry `session_id` except `service_exiting`, which goes to every open stream
             "review_batches": [ { "no": 1, "batch_id": "ui-op-…", "at": "…", "started_by": "user", "scope": "pending", "total": 16, "passed": 12, "failed": 4, … } ] },
   "materials": [ { "path": "inputs/requirements.md", "bytes": 1234, "modified_at": "…", "derived_from": null } ],   // derived_from: see Materials in 5.1
   "conversation": { "messages": [ … the latest 100, each with "type" … ], "has_earlier": false, "earliest_id": "…" },
-  "current_work": null }
+  "current_work": null,
+  "review_in_progress": null }         // or { "op_id": "ui-op-…", "done": 1, "total": 4, "current": ["UC-002"] }
 ```
+
+`review_in_progress` is the review started from the interface that is running now, shaped like `op_id`, `done`, `total` and `current` of the `review_progress` event and taken from the last review progress in the task database. It is null when that review is over, when the agent is not running, or when the progress was written before the agent's current start (the agent exited during the review). The page uses it to show 评审中 ("reviewing") right after a reload; when it is null and the page still has an unfinished review, the page clears it.
 
 `display` is the collection's optional display settings from the task definition (null when not given): `side_tab`, `group_field`, `leading_groups` and `note`; they only change how the collection is shown. `needs_review` says whether the completion conditions require "every item passed review" for the collection; `review_rules` is the collection's rule list after rules switched off or made required in the task definition (null for a collection without review rules). A finding under a `必选` (required) rule is a problem and makes the item not compliant; a finding under a `可选` (optional) rule is advice. `all_rules` lists every rule of the rule file with its `state` in this task: `required`, `optional`, `off` or `promoted`. `rules_hash` is the rule fingerprint, a hash of the rule file and the task's switches; a review counts only while its `rules_hash` equals the collection's (reviews without one, from older versions, always count), so switching rules sends every item of the collection back to waiting for review. `waivers` are the user's kept wordings. Reviews and waivers carry `seq`, the number of the event they were recorded at. An item's review verdict at its current revision comes from its last review there (by `seq`) that counts under the current `rules_hash`: compliant is passed; not compliant is failed, unless a waiver on that revision that is not `revoked` has a larger `seq`, which makes the item count as passed by the user's decision. With no such review the item waits for review. `forced` is true on reviews recorded by earlier versions through the former "review again"; they are read like any other review.
 
@@ -203,7 +208,7 @@ A Choose card that asks whether the task is finished has an option with `key` `c
 
 ### 5.5 While the agent is working
 
-New messages and direct operations are refused with `session_busy` (see 5.1); the one exception is `mark_viewed` without `notify_executor` (opening an item's details), which does not change the deliverable and is accepted while the agent works. `POST …/control?session=…` with `{"action": "stop"}` aborts the work; writes already saved stay. When the model service is unavailable, pi retries and the server sends `problem` with code `model_unavailable`.
+New messages and direct operations are refused with `session_busy` (see 5.1); the one exception is `mark_viewed` without `notify_executor` (opening an item's details), which does not change the deliverable and is accepted while the agent works. `POST …/control?session=…` with `{"action": "stop"}` aborts the work; writes already saved stay. The answer is `{"ok": true, "cleared": […]}`: `cleared` holds the messages that were still queued for the agent and were dropped with the stop; since the conversation takes strict turns, no message is accepted while the agent works, so it is always empty. When the model service is unavailable, pi retries and the server sends `problem` with code `model_unavailable`.
 
 ### 5.6 Who starts the agent
 

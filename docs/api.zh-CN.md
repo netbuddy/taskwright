@@ -65,6 +65,8 @@ data: {
 | `confirmation_recorded` | 已读以外的确认标记：用户改了条目或把问题条目标为先不管（`basis` 为 `ui_edit`，随修订一起写），或撤回了确认（`basis` 为 `ui_click`，`accepted` 为假） | `seq`、`at`、`task_id`、`items`（`item_id`、`revision_no`、`accepted`）、`basis`、`op_id`、`completion` |
 | `resync`（无 id） | 需要重放的事件太多 | `{"reason": "gap_too_large"}` |
 
+数据库事件的序号可能跳号：任务库里有几种记录不推送。它们是助手对用户一句话的理解（`USER_INTENT_RECORDED`，以及理解没有写成的三种情形 `USER_INTENT_INVALID`、`USER_INTENT_MISSING`、`STRUCTURED_OUTPUT_UNMATCHED`）与助手回复时记下的行为（`EXECUTOR_ACTS_RECORDED`）。前几种的内容由后端合成「理解为」那一行，随 `step` 与 `work_summary` 送到页面；回复的内容由 `assistant_reply` 送到页面。页面见到跳号时重读一份快照。
+
 ### 3.2 对话事件与进度事件（无编号，不参与重放）
 
 除 `service_exiting` 外都带有 `session_id`；`service_exiting` 发给每个任务的每一条打开着的事件流。
@@ -78,10 +80,10 @@ data: {
 | `ui_action_noted` | 一次直接操作完成 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`） |
 | `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at` |
 | `work_summary` | 一个工作单元结束后 | `work_id`、`at`、`seconds`、`step_count`、`stages`（每项带 `text`）、`outcome`（这个工作单元怎样结束，取值与 `work_ended` 相同；刷新后读到的对话里的 `work_summary` 消息带同样的值） |
-| `work_ended` | 智能体这一轮工作稳定下来 | `work_id`、`at`、`seconds`、`step_count`、`outcome`（`replied`、`no_reply`、`stopped_by_user`、`failed`；按这个工作单元最后一条助手消息判断，所以调用模型出错、随后自动重试成功的工作单元是 `replied` 或 `no_reply`，不是 `failed`） |
+| `work_ended` | 智能体这一轮工作稳定下来 | `work_id`、`at`、`seconds`、`step_count`（与 `work_summary` 的相同，由会话记录算出，被停下时一条消息里没有开始执行的工具调用也算在内；会话记录读不出这次工作时用本轮记下的计数）、`outcome`（`replied`、`no_reply`、`stopped_by_user`、`failed`；按这个工作单元最后一条助手消息判断，所以调用模型出错、随后自动重试成功的工作单元是 `replied` 或 `no_reply`，不是 `failed`） |
 | `problem` | 需要让用户知道的问题（见第 5.5 节） | `code`、`text`、`retry` |
 | `executor_state` | 执行者的可用状态发生变化 | `state`（`not_started`、`starting`、`idle`、`working`、`exited`、`failed_to_start`）、`text`、`active_session`；续接失败（`session_resume_failed`）之后 `state` 为 `not_started`，`text` 写明助手没有接上这条会话 |
-| `system_note` | 会话开始时的任务状态消息，或固定的兜底提示句 | `message_id`、`at`、`text`、`kind`（`task_status` 或 `reply_fallback`） |
+| `system_note` | 会话开始时的任务状态消息，或固定的兜底提示句 | `message_id`、`at`、`text`、`kind`（`task_status` 或 `reply_fallback`）；任务状态消息的 `text` 是页面上的写法：开头是「这条会话开始时（时刻）的任务状况：」或「接着这条会话继续时（时刻），上次之后交付物的变化：」，只写给助手看的那一行（还在等回应的助手行为）不带；助手看到的原文不变，刷新之后从对话记录读回的也是页面上的写法 |
 | `service_exiting` | 服务即将停止：页面上请求退出、收到 SIGINT 或 SIGTERM、收到 SIGHUP（Windows 另有 SIGBREAK）；在关掉各任务的 pi、结束事件流之前发出 | `mode`（`desktop` 或 `server`）、`at`。页面收到后应显示服务已经停止，并且不再重连。 |
 
 ## 4 读取
@@ -115,8 +117,11 @@ data: {
             "review_batches": [ { "no": 1, "batch_id": "ui-op-…", "at": "…", "started_by": "user", "scope": "pending", "total": 16, "passed": 12, "failed": 4, … } ] },
   "materials": [ { "path": "inputs/requirements.md", "bytes": 1234, "modified_at": "…", "derived_from": null } ],   // derived_from 见第 5.1 节「材料」
   "conversation": { "messages": [ … 最近的 100 条，每条都带 "type" … ], "has_earlier": false, "earliest_id": "…" },
-  "current_work": null }
+  "current_work": null,
+  "review_in_progress": null }         // 或 { "op_id": "ui-op-…", "done": 1, "total": 4, "current": ["UC-002"] }
 ```
+
+`review_in_progress` 是正在进行的一批界面发起的评审，形状与 `review_progress` 事件里的 `op_id`、`done`、`total`、`current` 相同，取自任务库里最后一条评审进度。这一批已经结束、助手现在没有在运行、或者这条进度写于助手这一次启动之前（助手在评审中途退出过）时为 null。页面据此在刷新之后立刻显示「评审中」；为 null 而页面上还有没结束的评审时，页面把它清掉。
 
 `display` 是任务定义里这个集合可选的显示方式（没写时为 null）：`side_tab`、`group_field`、`leading_groups` 与 `note`，只影响显示。`needs_review` 表示完成条件是否要求这个集合「每个条目评审通过」；`review_rules` 是这个集合实际要评的规则清单（任务定义里关闭或升为必选之后的），没有写评审规矩的集合为 null。依据 `必选` 规则的发现是「问题」，有一条条目就不合规；依据 `可选` 规则的发现是「建议」，不影响结论。`all_rules` 列出规则文件里的全部规则与它在这个任务里的状态 `state`：`required`（必选）、`optional`（可选）、`off`（已关闭）、`promoted`（升为必选）。`rules_hash` 是规则指纹，由规则文件与这个任务的开关算出；评审记录只有 `rules_hash` 与集合的相同时才算数（早期版本的记录没有指纹，照旧算数），所以改了规则开关，这个集合的条目都回到待评审。`waivers` 是用户保留的写法。评审记录与保留记录都带 `seq`，即记下它的那条事件的序号。条目在当前所在修订上的评审结论取这个修订上、在当前 `rules_hash` 下算数的最后一条评审记录（按 `seq`）：合规是通过；不合规是不通过，除非这个修订上有一条没撤销（`revoked` 为假）、`seq` 比它大的保留，那样条目按用户的决定算通过。没有这样的评审记录时条目待评审。`forced` 为真的是早先版本经「仍要重评」写下的记录，读的时候与别的记录同样对待。
 
@@ -205,7 +210,7 @@ data: {
 
 ### 5.5 智能体工作期间
 
-新的说话与直接操作都会被拒绝，错误码 `session_busy`（见第 5.1 节）；唯一的例外是不带 `notify_executor` 的 `mark_viewed`（打开条目详情），它不改交付物，执行者工作中照样接受。`POST …/control?session=…`，请求体为 `{"action": "stop"}`，会中止本次工作；已经保存的写入不受影响。模型服务不可用时，pi 会重试，服务器发送代码为 `model_unavailable` 的 `problem`。
+新的说话与直接操作都会被拒绝，错误码 `session_busy`（见第 5.1 节）；唯一的例外是不带 `notify_executor` 的 `mark_viewed`（打开条目详情），它不改交付物，执行者工作中照样接受。`POST …/control?session=…`，请求体为 `{"action": "stop"}`，会中止本次工作；已经保存的写入不受影响。返回 `{"ok": true, "cleared": […]}`：`cleared` 是随之清掉的、还排着队没交给智能体的话；对话严格轮替之后，智能体工作期间不再接受新的话，所以它总是空列表。模型服务不可用时，pi 会重试，服务器发送代码为 `model_unavailable` 的 `problem`。
 
 ### 5.6 谁来启动智能体
 
