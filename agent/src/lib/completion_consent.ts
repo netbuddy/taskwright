@@ -11,8 +11,13 @@
  * 点的是同意的那一项，而且点的时候交付物已经是现在的修订（之后没有新的修订）。已读、评审、保留不产生修订，不让同意失效。
  * 卡片以会话里最近一次对这种卡片的点击为准：后来点了「还没完成，继续修改」，先前的同意就不算。
  *
- * 不依赖任何模块：会话分支由调用方读好交进来，库里的查询由 complete_task.ts 做。
+ * 找卡片点击（cardClicks）与点击换成事件序号（clickEventSeq）两段是共用的：问题条目标为已解决之前核对用户点过头
+ * （lib/problem_consent.ts）用的是同一种认法，只是认的卡片不同。
+ *
+ * 不依赖任何模块：会话分支由调用方读好交进来，库由调用方打开。
  */
+
+import type { DatabaseSync } from "node:sqlite";
 
 /** 同意的那一项的 key（程序内部的约定，不显示给用户）。 */
 export const COMPLETE_KEY = "complete";
@@ -24,7 +29,7 @@ export const DECLINE_TEXT = "还没完成，继续修改";
 /** 卡片点击的自定义消息类型（hooks/user_commands.ts 的 UI_CLICK_CUSTOM_TYPE）。 */
 const UI_CLICK_TYPE = "taskwright-ui-click";
 
-type Entry = { id: string; type: string; customType?: string; details?: any; message?: { role?: string; content?: unknown } };
+export type Entry = { id: string; type: string; customType?: string; details?: any; message?: { role?: string; content?: unknown } };
 
 /** 会话里对一张「任务是否已经完成」卡片的一次点击。userEntryId 是点击之后系统替用户发的那句话的条目编号。 */
 export interface CardClick {
@@ -62,30 +67,60 @@ const textOf = (content: unknown): string =>
     : Array.isArray(content) ? content.map((part) => (part && typeof part === "object" && (part as any).type === "text" ? String((part as any).text ?? "") : "")).join("")
     : "";
 
+/** 这条助手消息里「回复」工具发的请选择（choose）；没有时为 null。「回复」必须单独调用，一条消息里至多一次。 */
+export function chooseActOf(entry: Entry): Record<string, any> | null {
+  if (entry.type !== "message" || entry.message?.role !== "assistant" || !Array.isArray(entry.message.content)) return null;
+  const call = entry.message.content.find((part: any) => part?.type === "toolCall" && part.name === "reply"
+    && part.arguments?.act?.kind === "choose" && Array.isArray(part.arguments.act.options));
+  return call ? (call as any).arguments.act : null;
+}
+
 /** 这条助手消息里是不是有一张问任务是否已经完成的卡片：回复工具的请选择，有一项的 key 是 COMPLETE_KEY。 */
 function isCompletionCard(entry: Entry): boolean {
-  if (entry.type !== "message" || entry.message?.role !== "assistant" || !Array.isArray(entry.message.content)) return false;
-  return entry.message.content.some((part: any) => part?.type === "toolCall" && part.name === "reply"
-    && part.arguments?.act?.kind === "choose" && Array.isArray(part.arguments.act.options)
-    && part.arguments.act.options.some((option: any) => option?.key === COMPLETE_KEY));
+  return chooseActOf(entry)?.options.some((option: any) => option?.key === COMPLETE_KEY) ?? false;
+}
+
+/** 会话里对某一种卡片的一次点击，连同那张卡片上的请选择（act）。 */
+export interface CardClickOn extends CardClick {
+  act: Record<string, any>;
 }
 
 /**
- * 会话分支上最近一次对「任务是否已经完成」卡片的点击；没有时为 null。
+ * 会话分支上对某一种卡片的全部点击，按先后排。cardOf 判断一条助手消息是不是要找的那种卡片，是就返回卡片上的请选择，不是返回 null。
  * 一次点击是一条界面点击的自定义消息，紧跟着系统替用户发的那句话（文字与点击记下的 text 相同）；
- * 点的那张卡片要在同一条分支上、在点击之前。
+ * 点的那张卡片要在同一条分支上、在点击之前。用户照着卡片的话打字不算，因为没有那条自定义消息。
  */
-export function lastCompletionClick(branch: readonly Entry[]): CardClick | null {
-  const cards = new Set<string>();
-  let last: CardClick | null = null;
+export function cardClicks(branch: readonly Entry[], cardOf: (entry: Entry) => Record<string, any> | null): CardClickOn[] {
+  const cards = new Map<string, Record<string, any>>();
+  const clicks: CardClickOn[] = [];
   for (let i = 0; i < branch.length; i++) {
     const entry = branch[i];
-    if (isCompletionCard(entry)) cards.add(entry.id);
+    const act = cardOf(entry);
+    if (act) cards.set(entry.id, act);
     if (entry.type !== "custom_message" || entry.customType !== UI_CLICK_TYPE) continue;
     const details = entry.details ?? {};
     const next = branch[i + 1];
-    if (!cards.has(details.reply_entry) || next?.type !== "message" || next.message?.role !== "user" || textOf(next.message.content) !== details.text) continue;
-    last = { replyEntry: details.reply_entry, optionKey: details.option_key ?? null, optionText: details.option_text ?? null, userEntryId: next.id };
+    const card = cards.get(details.reply_entry);
+    if (!card || next?.type !== "message" || next.message?.role !== "user" || textOf(next.message.content) !== details.text) continue;
+    clicks.push({ replyEntry: details.reply_entry, optionKey: details.option_key ?? null, optionText: details.option_text ?? null, userEntryId: next.id, act: card });
   }
-  return last;
+  return clicks;
+}
+
+/** 会话分支上最近一次对「任务是否已经完成」卡片的点击；没有时为 null。 */
+export function lastCompletionClick(branch: readonly Entry[]): CardClick | null {
+  const last = cardClicks(branch, (entry) => (isCompletionCard(entry) ? chooseActOf(entry) : null)).at(-1);
+  if (!last) return null;
+  const { act: _act, ...click } = last;
+  return click;
+}
+
+/**
+ * 一次点击发生在什么时候：点击之后系统替用户发的那句话记进对话行为表（界面操作合成，origin 为 ui）时的事件序号。
+ * 那句话在助手回应它的第一条消息落进会话时记下，早于助手这一轮的任何工具调用。库里找不到那一行时为 null。
+ */
+export function clickEventSeq(db: DatabaseSync, taskId: string, sessionId: string, userEntryId: string): number | null {
+  const row = db.prepare("SELECT event_seq FROM dialogue_act WHERE task_id = ? AND session_id = ? AND speaker = 'user' AND origin = 'ui' AND source_entry = ? " +
+    "ORDER BY rowid LIMIT 1").get(taskId, sessionId, userEntryId) as { event_seq: number } | undefined;
+  return row ? Number(row.event_seq) : null;
 }
