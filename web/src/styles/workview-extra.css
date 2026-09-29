@@ -192,7 +192,9 @@
 .app .sw-switch i { position: absolute; top: .1rem; left: .1rem; width: .8rem; height: .8rem; border-radius: 50%; background: #fff; transition: left .15s; }
 .app .sw-switch.on { background: var(--ok); }
 .app .sw-switch.on i { left: 1rem; }
-.app .sw-switch.lock { background: var(--line2); cursor: not-allowed; opacity: .7; }
+/* 必选规则：开着（绿色、圆点在右），不变淡；圆点对面的空处画一把白色的锁表示不能关，锁与左边缘、与圆点都留空隙 */
+.app .sw-switch.lock { cursor: not-allowed; }
+.app .sw-switch.lock .lk { position: absolute; left: .24rem; top: .2rem; width: .6rem; height: .6rem; display: block; color: #fff; }
 .app .chip.bad { color: var(--gap); border-color: var(--gap-line); background: var(--gap-bg); }
 .app .banner-line.kept { background: var(--amber-bg); border: 1px solid var(--amber-line); color: #7a4a06; }
 .app .finding .st { margin-right: .4rem; }
