@@ -133,21 +133,21 @@ test("点了之后问题条目本身又改过：要重新问", () => {
   const dir = workspace();
   const clicks = problemClicksOn(dir, SESSION, [userEntry("好"), problemCard("k1", TBD1), ...cardClick("k1", "a", "已解决")]);
   saveRevision(call(dir, clicks), { operations: [{ op: "update", item: "TBD-001", base_revision: 2, fields: { 处理结果: "先写结果" } }] });
-  assert.match(refused(() => settle(dir, "已解决", clicks, "TBD-001", 4)), /用户点「已解决」之后，TBD-001 又有了修订 4，要重新问/);
+  assert.match(refused(() => settle(dir, "已解决", clicks, "TBD-001", 4)), /用户点「已解决」之后，TBD-001 又改到了修订 4，要重新问/);
 });
 
 test("点了之后用户在页面上改了牵涉的条目：要重新问（不论是谁改的）", () => {
   const dir = workspace();
   const clicks = problemClicksOn(dir, SESSION, [userEntry("好"), problemCard("k1", TBD1), ...cardClick("k1", "a", "已解决")]);
   runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: "ui-op-edit", kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
-  assert.match(refused(() => settle(dir, "已解决", clicks)), /用户点「已解决」之后，UC-001 又有了修订 4，要重新问/);
+  assert.match(refused(() => settle(dir, "已解决", clicks)), /用户点「已解决」之后，UC-001 又改到了修订 4，要重新问/);
 });
 
 test("点了之后牵涉的条目被删除：要重新问", () => {
   const dir = workspace();
   const clicks = problemClicksOn(dir, SESSION, [userEntry("好"), problemCard("k1", TBD1), ...cardClick("k1", "a", "已解决")]);
   saveRevision(call(dir), { operations: [{ op: "delete", item: "UC-001", base_revision: 1 }] });
-  assert.match(refused(() => settle(dir, "已解决", clicks)), /UC-001 又有了修订 4 删除，要重新问/);
+  assert.match(refused(() => settle(dir, "已解决", clicks)), /用户点「已解决」之后，UC-001 又在修订 4 删除了，要重新问/);
 });
 
 test("同一批里又改了牵涉的条目：拒绝，指引先单独保存那处修改再问", () => {

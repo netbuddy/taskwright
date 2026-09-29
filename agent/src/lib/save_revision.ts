@@ -316,9 +316,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     changedAfter: (itemId, seq) => {
       const version = db.prepare("SELECT MAX(revision_no) AS n FROM item_version WHERE task_id = ? AND item_id = ? AND event_seq > ?")
         .get(taskId, itemId, seq) as { n: number | null };
-      if (version.n !== null) return `修订 ${version.n}`;
+      if (version.n !== null) return `改到了修订 ${version.n}`;
       const row = items.get(itemId);
-      return row && row.deleted_in_revision !== null && deletedAfter(db, taskId, itemId, seq) ? `修订 ${row.deleted_in_revision} 删除` : null;
+      return row && row.deleted_in_revision !== null && deletedAfter(db, taskId, itemId, seq) ? `在修订 ${row.deleted_in_revision} 删除了` : null;
     },
   };
   const touched = new Map<string, number>();

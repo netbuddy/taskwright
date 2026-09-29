@@ -63,7 +63,7 @@ export interface ProblemFacts {
   clicks: readonly ProblemClick[];
   /** 点击之后那句话记进对话行为表时的事件序号；库里找不到时为 null。 */
   clickSeq: (userEntryId: string) => number | null;
-  /** 这个条目在事件序号 seq 之后有没有新的修订或被删除：有就返回最近一次的说法（「修订 9」「修订 9 删除」），没有返回 null。 */
+  /** 这个条目在事件序号 seq 之后有没有新的修订或被删除：有就返回最近一次的说法（「改到了修订 9」「在修订 9 删除了」），没有返回 null。 */
   changedAfter: (itemId: string, seq: number) => string | null;
 }
 
@@ -104,7 +104,7 @@ export function judgeProblemStatus(
   }
   for (const one of [itemId, ...linked]) {
     const change = facts.changedAfter(one, seq);
-    if (change) return { fact: `${head}用户点「${option}」之后，${one} 又有了${change}，要重新问`, guidance: askGuidance(itemId, status) };
+    if (change) return { fact: `${head}用户点「${option}」之后，${one} 又${change}，要重新问`, guidance: askGuidance(itemId, status) };
   }
   const here = linked.filter((one) => changedInBatch.has(one));
   if (here.length) {
