@@ -27,6 +27,8 @@ export const reply = (text: string, id: string, act: Dict | null = null) => ({ t
 export type Stack = {
   call: (method: string, path: string, body?: unknown) => Promise<{ status: number; body: any }>;
   taskId: string; session: string; dir: string;
+  /** 后端实际监听的端口与后端进程的进程号。 */
+  port: number; pid: number;
   db: (sql: string, ...args: string[]) => Dict[];
   send: (body: Dict) => Promise<void>;
   action: (body: Dict) => Promise<{ status: number; body: any }>;
@@ -83,7 +85,7 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
       return readFileSync(file, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
         .find((e) => e.type === "message" && (e.message?.content ?? []).some((p: Dict) => p?.type === "toolCall" && p.id === callId)).id;
     };
-    await body({ call, taskId, session, dir, db, send, action, entryOfCall });
+    await body({ call, taskId, session, dir, port, pid: child.pid!, db, send, action, entryOfCall });
   } finally {
     if (child.exitCode === null) {
       await new Promise<void>((ok) => {
