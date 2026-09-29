@@ -247,3 +247,6 @@
 .app .submitbar .q { flex: 1 1 20rem; line-height: 1.55; }
 .app .submitbar .btn { align-self: center; flex: none; }
 .app .submitbar .err { color: var(--gap); margin-top: .2rem; }
+/* 找不到会话的那一页：两行说明，第二行是回到任务页的链接 */
+.app .empty.missing { line-height: 1.8; }
+.app .empty.missing a { color: var(--blue); text-decoration: underline; }
