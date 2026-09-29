@@ -1,4 +1,5 @@
-// 任务页：一次普通读取（GET …/tasks/{task_id}，里面带材料与会话），不连事件流，刷新即最新。
+// 任务页：一次普通读取（GET …/tasks/{task_id}，里面带材料与会话）。另开一条不带会话的事件连接，只听执行者状态：
+// 助手做完一轮时重读一次，会话卡片与「最近一次活动」不停在打开页面的那一刻（与工作视图的会话菜单同一个做法）。
 // 页面上像结论的句子都由数据算出；集合名、完成条件名从接口取。任务已完成或已放弃时整页只读：「新建会话」与上传框都不显示，
 // 只读说明写明原因。
 
@@ -6,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Empty, Modal, Spin, Upload } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
+import { openEventStream } from "../api/events";
 import type { RevisionLogEntry, TaskDetail } from "../api/types";
 import { Shell } from "../components/Shell";
 import { useToast } from "../components/Toasts";
@@ -38,6 +40,29 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const load = () =>
     api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
   useEffect(() => { void load(); }, [taskId]);
+  // 执行者状态从工作中变为别的状态（助手做完一轮）时重读任务；刚连上、还不知道之前的状态时收到的第一条非工作中状态也算。
+  // 连接不带会话，服务把整个任务的事件都发过来，这里只看 executor_state；不带 Last-Event-ID，不补发旧事件。
+  // 断线照 openEventStream 的办法重连，重新连上时重读一次（断开期间可能错过一轮的结束）。
+  // 任务已经结束时不开；离开页面时断开。不定时轮询。
+  const running = task?.status === "进行中";
+  useEffect(() => {
+    if (!running) return;
+    let last: string | null = null;
+    let opened = false;
+    return openEventStream(`/api/v1/tasks/${encodeURIComponent(taskId)}/events`, () => null, {
+      onMessage: (m) => {
+        if (m.event !== "executor_state") return;
+        const state = (m.data as { state?: string } | null)?.state ?? null;
+        if (state !== "working" && (last === null || last === "working")) void load();
+        last = state;
+      },
+      onStatus: (status) => {
+        if (status !== "open") return;
+        if (opened) void load();
+        opened = true;
+      },
+    });
+  }, [taskId, running]);
 
   if (error) return <Shell currentTaskId={taskId}><Alert type="error" showIcon message={error} /></Shell>;
   if (!task) return <Shell currentTaskId={taskId}><Spin /></Shell>;
