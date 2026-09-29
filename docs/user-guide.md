@@ -28,6 +28,8 @@ Tell the assistant what you want, for example *"请读 inputs 里的材料，整
 | Suggestion | a proposed value with its basis | **Adopt** (采纳) or **Another one** (换一个) |
 | Proposal | a plan, with what it would add, change or remove | **Do it** (就这样做) or **Don't** (不要) |
 
+After you answer an issue item, the assistant first changes the items it concerns, then asks with a choose card whether the issue is settled, with the options 已解决 ("resolved"), 还没解决，继续改 ("not yet, keep changing") and 先不管，保留 ("leave it for now"). The issue is marked resolved or kept by your decision only after you click 已解决 or 先不管，保留 on that card; if you type that it is settled, the assistant still sends the card for you to click. If the issue or the items it concerns change after your click, the assistant asks again. Clicking **Keep pending** (先不管，保留) on the item yourself still takes effect at once.
+
 You can always type instead of clicking; you do not have to answer the card first. If the options don't include what you know, say it in your own words.
 
 After changing items the assistant only tells you what it changed; it does not ask you to confirm. You confirm an item by reading it: opening its details counts (see section 3). Before asking whether to complete the task, the assistant tells you how many items you have never read. When nothing but unread items stands in the way of completing, a live card also shows 还有 N 条未读 ("N items still unread") with **Show them** (筛出来看), which filters the list to the unread items.
@@ -52,6 +54,8 @@ Each item carries at most one coloured status badge, saying what the item still 
 - **Added by the assistant** (助手补充): something it inferred or filled in, with its reason;
 - **Domain note** (领域说明 DN-002): an explanation already recorded in the Domain notes collection (领域说明: background, terms and roles from the material or from what you explained, for items to cite); click it to open that note. A domain note's details list which items cite it or link to it (被哪些条目引用). Collections that are not reviewed, such as issues and domain notes, show no review state in the items area or on the task page;
 - **Your direct edit** (用户直接修改): a field you changed yourself.
+
+When the assistant changes an item, its existing sources stay. Each entry of a list is recognised by its content: after the assistant inserts, removes or reorders entries, a source still points at the same sentence, and a source pointing at an entry that was removed goes with it. When the assistant rewrites an entry or a field, its existing sources stay as well; if the assistant finds that one no longer supports the new content, it relabels the item's sources to remove it.
 
 The drop-down at the top right of an item lists the revisions in which it changed; choose one to see the item as it was then, with the differences from its previous change marked. If the list of revisions could not be loaded, the drop-down says 修订列表没读到，再打开一次试试 ("the revision list did not load; open the item again"); go back to the list and open the item again.
 
