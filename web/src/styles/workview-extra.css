@@ -205,7 +205,7 @@
 .app .sw-rv-act { display: flex; flex-wrap: wrap; gap: .35rem; width: 100%; padding-left: .3rem; }
 .app .sw-rv-act .reason, .app .finding .reason { border: 1px solid var(--line2); border-radius: .3rem; padding: .05rem .45rem; font: inherit; font-size: .833rem; min-width: 12rem; }
 .app .sw-rules { border-top: 1px solid var(--line2); padding-top: .45rem; display: flex; flex-direction: column; gap: .25rem; }
-.app .sw-rule { display: grid; grid-template-columns: 2.2rem 4.4rem 1fr auto; align-items: center; gap: .35rem; }
+.app .sw-rule { display: grid; grid-template-columns: 2.2rem 4.4rem 1fr; align-items: center; gap: .35rem; }
 .app .sw-rule .rid { font-family: var(--mono, monospace); font-size: .833rem; }
 .app .sw-switch { width: 1.9rem; height: 1rem; border-radius: .5rem; background: var(--line2); position: relative; cursor: pointer; display: inline-block; }
 .app .sw-switch i { position: absolute; top: .1rem; left: .1rem; width: .8rem; height: .8rem; border-radius: 50%; background: #fff; transition: left .15s; }
@@ -277,7 +277,7 @@
 .app .rl-link:hover { text-decoration: underline; }
 .app .rl-list { margin-top: .35rem; background: var(--card); border: 1px solid var(--ok-line); border-radius: .4rem; padding: .25rem .45rem; color: var(--ink); display: flex; flex-direction: column; }
 .app .sw-pass-row .rl-list { border-color: var(--line2); }
-.app .rl-row { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr) auto; gap: .4rem; align-items: baseline; padding: .18rem 0; border-top: 1px dotted var(--line2); font-size: .86rem; line-height: 1.55; }
+.app .rl-row { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); gap: .4rem; align-items: baseline; padding: .18rem 0; border-top: 1px dotted var(--line2); font-size: .86rem; line-height: 1.55; }
 .app .rl-row:first-child { border-top: 0; }
 .app .rl-row .rid { font-family: var(--mono, monospace); font-size: .857rem; color: #444; }
 .app .rl-off { color: var(--mut); font-size: .857rem; padding: .25rem 0 .05rem; border-top: 1px dotted var(--line2); }
