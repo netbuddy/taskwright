@@ -1,6 +1,6 @@
 // 测试夹具：用 agent 里真实的核心函数，在给定的任务目录里写出一个新格式的库。
 // 后端（backend/tests）的读取一侧测试经子进程调用它，这样测的是工具真正写出来的库，而不是手工拼的库；
-// 后端自己不导入任何写入函数。内容与服务端 Python 测试用的夹具相同。
+// 后端自己不导入任何写入函数。观测台的测试（observatory/taskwright_observatory/tests/test_current_format.py）也用它造库。
 // 用法：node build_current_db.mts <任务目录>
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

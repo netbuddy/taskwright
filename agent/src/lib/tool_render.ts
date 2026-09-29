@@ -5,8 +5,8 @@
  *
  *   1. pi 的终端界面（TUI，交互模式）：hooks/tui_render.ts 给两个工具登记渲染器，渲染器调这里的函数，
  *      再加上颜色交给 pi 画成工具块；
- *   2. 后端的终端对话客户端 server/taskwright_server/chat.py：它是 Python，经命令行入口 cli/render.mts 调这里的函数，
- *      把得到的几行原样打印。
+ *   2. 观测台的任务页（observatory/taskwright_observatory/taskpage.py）：它是 Python，经命令行入口 cli/render.mts
+ *      调这里的函数，把得到的几行原样显示。
  *
  * 显示的内容全部来自工具的返回值与库里的事实，这里不判断内容好坏。
  */
@@ -83,7 +83,7 @@ export function replyBodyLines(reply: Dict): string[] {
   return lines;
 }
 
-/** 一次合格的回复连同标题行。chat.py 打印的就是这几行。 */
+/** 一次合格的回复连同标题行。观测台显示的就是这几行。 */
 export function replyLines(reply: Dict): string[] {
   return [REPLY_HEADING, ...replyBodyLines(reply)];
 }

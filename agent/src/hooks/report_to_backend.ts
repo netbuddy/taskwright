@@ -27,7 +27,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
  * 报工具清单用的状态栏键名。后端认这个键。
- * 改这里要同时改后端 `server/taskwright_server/pi_session.py` 里的同名常量，两边是一份约定。
+ * 改这里要同时改后端 `backend/src/pi_session.ts` 里的同名常量，两边是一份约定。
  */
 export const ACTIVE_TOOLS_STATUS_KEY = "taskwright-active-tools";
 

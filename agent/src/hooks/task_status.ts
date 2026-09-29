@@ -20,7 +20,7 @@ import { type SessionFacts, TASK_STATUS_CUSTOM_TYPE, taskStatusMessage } from ".
 /** 报错用的状态栏键名。 */
 export const TASK_STATUS_ERROR_KEY = "taskwright-task-status-error";
 
-/** 把追加的现状消息报给后端用的状态栏键名。与 server/taskwright_server/pi_session.py 里的同名常量是一份约定。 */
+/** 把追加的现状消息报给后端用的状态栏键名。与 backend/src/pi_session.ts 里的同名常量是一份约定。 */
 export const TASK_STATUS_REPORT_KEY = "taskwright-task-status";
 
 type Entry = { type: string; timestamp?: string; customType?: string; message?: { role?: string } };
