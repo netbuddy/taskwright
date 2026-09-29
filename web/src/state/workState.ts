@@ -24,6 +24,7 @@ import type {
   Problem,
   ReviewBatchEvent,
   ReviewFinished,
+  ReviewInProgress,
   ReviewProgress,
   ReviewRecorded,
   ReviewRulesChanged,
@@ -58,7 +59,8 @@ export interface OutgoingMessage {
 
 /**
  * 界面发起的一批评审：进度来自 review_progress，全部评完时 review_finished 填上 finished。
- * 不在整份数据里：刷新页面之后，下一条进度事件到了才重新显示；序号有缺口而重读整份数据时，攒着的这两种事件照样用来设置它。
+ * 整份数据里的 review_in_progress 给出正在进行的那一批，刷新页面之后立刻显示；序号有缺口而重读整份数据时，
+ * 攒着的这两种事件先照样用来设置它，再按整份数据校正（见 applySnapshot）。
  */
 export interface ReviewRun {
   op_id: string;
@@ -204,19 +206,31 @@ function applySnapshot(state: WorkState, snapshot: Snapshot): WorkState {
     pendingOps: {},
   };
   const pending = [...state.buffered].sort((a, b) => a.data.seq - b.data.seq);
-  for (const event of pending) {
-    if (event.data.seq <= snapshot.seq) {
-      // 整份数据里没有「有一批评审正在进行」：已被整份数据覆盖的评审进度与评审结束照样用来设置评审状态，
-      // 否则序号有缺口时点了「评审」，开始的那条进度被跳过，要到第一个条目评完页面才有反应。
-      // 只设置评审状态：不拨序号，也不用它们带的完成条件（比整份数据里的旧）。
-      const review = reviewRunOf(event);
-      if (review) next = { ...next, review };
-      continue;
-    }
+  // 已被整份数据覆盖的评审进度与评审结束照样用来设置评审状态（早于 0.4 的后端整份数据里没有进行中的评审时靠它）。
+  // 只设置评审状态：不拨序号，也不用它们带的完成条件（比整份数据里的旧）。
+  for (const event of pending.filter((e) => e.data.seq <= snapshot.seq)) {
+    const review = reviewRunOf(event);
+    if (review) next = { ...next, review };
+  }
+  next = { ...next, review: reviewFromSnapshot(next.review, snapshot.review_in_progress) };
+  for (const event of pending.filter((e) => e.data.seq > snapshot.seq)) {
     next = applyLibrary(next, event);
     if (next.phase === "waiting_snapshot") break;
   }
   return next;
+}
+
+/**
+ * 按整份数据里的进行中的评审校正评审状态：有一批在进行就照它设置；没有而页面上的评审还没结束，就清掉
+ * （那一批已经结束，或者助手在评审中途退出了，不能一直显示「评审中」）；没有而页面上的评审已经结束，保持不动，
+ * 「评审完了」的提示照常显示。整份数据里没有这一项（早于 0.4 的后端）时不动。
+ */
+function reviewFromSnapshot(current: ReviewRun | null, fromSnapshot: ReviewInProgress | null | undefined): ReviewRun | null {
+  if (fromSnapshot === undefined) return current;
+  if (fromSnapshot !== null) {
+    return { op_id: fromSnapshot.op_id, done: fromSnapshot.done, total: fromSnapshot.total, current: fromSnapshot.current ?? [], finished: null };
+  }
+  return current && !current.finished ? null : current;
 }
 
 function applySse(state: WorkState, name: string, data: unknown): WorkState {

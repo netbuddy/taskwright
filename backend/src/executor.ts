@@ -18,7 +18,7 @@ import { ApiError } from "./errors.ts";
 import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
 import { LaunchError, type Profile } from "./launch.ts";
-import { callFacts, openRo } from "./library.ts";
+import { callFacts, maxSeq, openRo } from "./library.ts";
 import { type PiEvent, PiExited, PiNotFound, PiPrepareFailed, PiRefused, PiSession, PiStartRefused, PiTimeout, technicalOf } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
@@ -173,6 +173,8 @@ export class Executor {
   private named = new Set<string>();
   private lastClick: Dict | null = null;
   private lastUserEntry: string | null = null;
+  /** 这个助手启动之前任务库的最大事件序号：整份数据里的进行中的评审只认这之后写下的进度。 */
+  private startedAfterSeq = 0;
   private readonly lock = new Mutex();
 
   constructor(taskId: string, taskDir: string, runsDir: string, profile: Profile, hub: Hub) {
@@ -201,6 +203,11 @@ export class Executor {
 
   running(): boolean {
     return this.pi !== null && this.pi.alive();
+  }
+
+  /** 整份数据算进行中的评审用：助手在运行时是它启动之前任务库的最大事件序号，不在运行时为 null（见 library.reviewInProgress）。 */
+  reviewSince(): number | null {
+    return this.running() ? this.startedAfterSeq : null;
   }
 
   setState(state: string, detail = "", resumeFailed = false, failedText: string | null = null): void {
@@ -232,6 +239,7 @@ export class Executor {
     this.setState("starting");
     // 任务目录都在本服务的 --tasks 目录下；把它作为任务根目录传给 pi，扩展写库前核对任务库在它之下。
     const pi = new PiSession(this.profile, this.taskDir, join(this.runsDir, this.taskId), LABEL, dirname(resolve(this.taskDir)));
+    this.startedAfterSeq = maxSeq(this.taskDir);
     let state: Dict;
     try {
       await pi.start(sessionFile);

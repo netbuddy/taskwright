@@ -370,6 +370,18 @@ export interface Snapshot {
   materials: Material[];
   conversation: { messages: ConversationMessage[]; has_earlier: boolean; earliest_id: string | null };
   current_work: CurrentWork | null;
+  /**
+   * 正在进行的一批评审，形状与评审进度事件里的几项相同；没有、助手不在运行、或者进度写于这个助手启动之前时为 null。
+   * 早于 0.4 的后端没有这一项。
+   */
+  review_in_progress?: ReviewInProgress | null;
+}
+
+export interface ReviewInProgress {
+  op_id: string;
+  done: number;
+  total: number;
+  current: string[];
 }
 
 // ───────────── 3.1 库事件 ─────────────
