@@ -109,7 +109,7 @@ This keeps the two sides from changing the deliverable at the same time: while y
 
 ![After saving](images/srs-authoring/09-item-saved.png)
 
-The conversation is usable again. Your save produced **revision 4**. Revision numbers count from 1 within the task, and the assistant's saves and your operations share the same numbering; the item's tag now says 修订 4 ("revision 4"). The conversation shows a grey note starting with 界面操作（不是用户打的字） ("interface operation, not typed by the user") that says which field you changed and that it produced revision 4, followed by a link **撤销修订 4** (undo revision 4); the same note tells the assistant what you changed. The changed field now carries a 用户直接修改 (direct user edit) source tag, and the drop-down at the top right of the detail lists every revision in which this item changed; the old content is still there.
+The conversation is usable again. Your save produced **revision 4**. Revision numbers count from 1 within the task, and the assistant's saves and your operations share the same numbering; the item's tag now says 修订 4 ("revision 4"). The conversation shows a grey note starting with 界面操作（不是用户打的字） ("interface operation, not typed by the user") that says which field you changed and that it produced revision 4, followed by a link **撤销修订 4** (undo revision 4); the same note tells the assistant what you changed. The changed field no longer shows its earlier source tags and gets no new one (who changed it is shown in the revisions), and the drop-down at the top right of the detail lists every revision in which this item changed; the old content is still there.
 
 ### Step 8: Confirm an item you have checked
 
@@ -356,7 +356,7 @@ The dialog selects the latest revision (here revision 14) and ticks every item i
 
 ![Generated from the latest revision](images/srs-authoring/42-generate-latest.png)
 
-The document starts by saying it was generated from revision 14 of the deliverable. After each item's heading, the brackets say which revision its content comes from and whether it was confirmed and reviewed in that revision, for example UC-001 ［修订 11 · 已确认 · 未评审］ ("revision 11 · confirmed · not reviewed"). Unconfirmed items are included and marked as such. Source locators are written so a reader can follow them: a user's-words source as "the user's N-th message in session …", a direct user edit as "the user's N-th edit in the interface (time)"; no internal ids are printed. The document is rendered from the template `docs/templates/srs.md` in the task directory, without any model.
+The document starts by saying it was generated from revision 14 of the deliverable. After each item's heading, the brackets say which revision its content comes from and whether it was confirmed and reviewed in that revision, for example UC-001 ［修订 11 · 已确认 · 未评审］ ("revision 11 · confirmed · not reviewed"). Unconfirmed items are included and marked as such. Source locators are written so a reader can follow them: a user's-words source as "the user's N-th message in session …"; no internal ids are printed. The document is rendered from the template `docs/templates/srs.md` in the task directory, without any model.
 
 ### Step 29: Only two items
 

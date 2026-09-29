@@ -46,7 +46,7 @@ data: {
 }
 ```
 
-Source kinds: `文档原文` (verbatim document excerpt), `用户的话` (the user's words), `执行者补充` (added by the agent, with its reason), `领域说明` (a domain note of the same task; locator is its item id such as `DN-002`, excerpt is the sentence relied on), `用户直接修改` (a direct edit in the interface; written by the system, locator is the operation id). Collection and field names come from the task definition.
+Source kinds: `文档原文` (verbatim document excerpt), `用户的话` (the user's words), `执行者补充` (added by the agent, with its reason), `领域说明` (a domain note of the same task; locator is its item id such as `DN-002`, excerpt is the sentence relied on). Earlier versions also wrote `用户直接修改` (a direct edit in the interface, locator is the operation id); it is no longer written, and old records stay in the database but are left out of the task data the interface returns. Collection and field names come from the task definition.
 
 | Event | When | `data` |
 |---|---|---|
