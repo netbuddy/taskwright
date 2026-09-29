@@ -5,7 +5,7 @@
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -16,8 +16,10 @@ export const TASK_TYPES_DIR = join(REPO_ROOT, "task-types");
 /**
  * 仓根目录下的一个相对路径。以 agent/ 开头的路径在设了 TASKWRIGHT_AGENT_DIR 时改从那个目录找：打包成 AppImage 时，
  * 打包层把 agent/ 复制到用户缓存目录里一个每个版本固定不变的位置并用这个变量指过来，pi 加载扩展时的编译缓存才能命中。
+ * 启动配置里写的是绝对路径时原样返回，不接在仓根目录下面。
  */
 export function fromRoot(relative: string): string {
+  if (isAbsolute(relative)) return relative;
   const agentDir = process.env.TASKWRIGHT_AGENT_DIR;
   const parts = relative.split(/[\\/]+/);
   if (agentDir && parts[0] === "agent") return join(agentDir, ...parts.slice(1));

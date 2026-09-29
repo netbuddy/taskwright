@@ -368,7 +368,7 @@ export class Service {
         if (!(error instanceof ApiError && error.code === "session_resume_failed") && !startFailed) throw error;
       }
     }
-    const [seq, view] = library.taskSnapshot(t.dir);
+    const [seq, view, review] = library.taskSnapshot(t.dir, t.executor.reviewSince());
     let info: Record<string, any> | null = null;
     let conv = null;
     let work = null;
@@ -384,6 +384,7 @@ export class Service {
       seq, generated_at: clock.now(), executor: t.executor.view(),
       session: info ? { session_id: info.session_id, name: info.name, started_at: info.started_at, last_active_at: info.last_active_at } : null,
       task: view, materials: library.materials(t.dir, t.definition()), conversation: conv, current_work: work,
+      review_in_progress: review,
     };
   }
 

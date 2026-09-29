@@ -268,11 +268,16 @@ export interface LibraryData {
   waivers?: Row[];
   batches?: Row[];
   confirmations?: Row[];
+  /** 最后一条评审进度，同一个操作编号已经有评审结束时为 null；只在 readAll 的 withReview 为真时取。 */
+  open_review?: { seq: number; payload: Record<string, any> } | null;
   task_dir?: string | null;
 }
 
-/** 一个读事务里把任务、事件（afterSeq 之后的，或不取）、条目、条目在各次修订下的内容、来源、评审、确认都取出来。 */
-export function readAll(db: DatabaseSync, afterSeq: number | null = null): LibraryData {
+/**
+ * 一个读事务里把任务、事件（afterSeq 之后的，或不取）、条目、条目在各次修订下的内容、来源、评审、确认都取出来。
+ * withReview 为真时另取还没有结束的那批评审的最后一条进度（整份数据用）。
+ */
+export function readAll(db: DatabaseSync, afterSeq: number | null = null, withReview = false): LibraryData {
   if (isPreRevision(db)) throw new ApiError("old_format", OLD_FORMAT_TEXT);
   return inReadTransaction(db, () => {
     const taskRow = db.prepare("SELECT * FROM task ORDER BY started_at LIMIT 1").get() as Row | undefined;
@@ -298,8 +303,43 @@ export function readAll(db: DatabaseSync, afterSeq: number | null = null): Libra
       confirmations: all(db,
         "SELECT j.item_id, j.revision_no, j.attitude, g.created_at, g.basis, g.call_id, j.judgement_id " +
         "FROM judgement_item j JOIN judgement g ON g.judgement_id = j.judgement_id WHERE j.task_id = ? ORDER BY j.judgement_id", tid),
+      ...(withReview ? { open_review: openReview(db) } : {}),
     };
   });
+}
+
+/** 任务库里最后一条评审进度；同一个操作编号已经有评审结束时为 null。 */
+function openReview(db: DatabaseSync): { seq: number; payload: Record<string, any> } | null {
+  const last = db.prepare("SELECT seq, payload FROM event WHERE name = 'REVIEW_PROGRESS' ORDER BY seq DESC LIMIT 1").get() as Row | undefined;
+  if (!last) return null;
+  const payload = or(jsonOrText(last.payload), {}) as Record<string, any>;
+  const finished = all(db, "SELECT payload FROM event WHERE name = 'REVIEW_FINISHED'")
+    .some((row) => (or(jsonOrText(row.payload), {}) as Record<string, any>).op_id === payload.op_id);
+  return finished ? null : { seq: Number(last.seq), payload };
+}
+
+/**
+ * 整份数据里的进行中的评审（review_in_progress）：形状与评审进度事件里的几项相同。since 是这个助手启动之前任务库的最大事件序号，
+ * 助手现在没有在运行时为 null；进度写于这个助手启动之前（助手在评审中途退出过）也为 null，免得页面一直显示「评审中」。
+ */
+export function reviewInProgress(data: LibraryData, since: number | null): { op_id: string | null; done: number | null; total: number | null; current: string[] } | null {
+  const open = data.open_review ?? null;
+  if (since === null || open === null || open.seq <= since) return null;
+  const p = open.payload;
+  return { op_id: p.op_id ?? null, done: p.done ?? null, total: p.total ?? null, current: or(p.current, []) as string[] };
+}
+
+/** 任务库现在的最大事件序号；没有库时为 0。 */
+export function maxSeq(taskDir: string): number {
+  const db = openRo(taskDir);
+  if (db === null) return 0;
+  try {
+    return Number((db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM event").get() as Row).n);
+  } catch {
+    return 0;
+  } finally {
+    db.close();
+  }
 }
 
 /** 评审记录，按先后（写下它的事件序号）；早期的库没有批次、指纹、重评几列，读作空。 */
@@ -515,7 +555,16 @@ export function findingView(one: Record<string, any>) {
     problem: one.problem ?? null, suggestion: one.suggestion ?? null };
 }
 
-/** 一行事件拼成 [事件名, data]；不认识的事件名返回 null。字段与来源取条目在那次修订下的内容。 */
+/**
+ * 一行事件拼成 [事件名, data]；不认识的事件名返回 null。字段与来源取条目在那次修订下的内容。
+ *
+ * 返回 null 的事件不推给页面，所以页面收到的事件序号会跳号。任务库里有五种记录有意不推，页面从别处拿到对应的内容：
+ * - USER_INTENT_RECORDED（记下助手对一句话的理解）、USER_INTENT_INVALID（理解事实核对没通过）、USER_INTENT_MISSING
+ *   （这一轮结束时仍没有理解）、STRUCTURED_OUTPUT_UNMATCHED（助手文字里有对不上登记格式的片段）：这四种合成「理解为」那一行，
+ *   由后端读任务库算出（work_summary.ts 的 understandingLines），实时随 step 与 work_summary 推送，刷新之后在对话记录的摘要里。
+ * - EXECUTOR_ACTS_RECORDED（助手回复时记下的行为）：回复的内容由「回复」工具的结果带到页面，实时是 assistant_reply，
+ *   刷新之后在对话记录里；这条记录本身只供助手查询与观测台使用。
+ */
 export function eventPayload(lib: Library, e: Row): [string, Record<string, any>] | null {
   const payload = or(jsonOrText(e.payload), {}) as Record<string, any>;
   const base = { seq: e.seq, at: clock.fromLocalText(e.at), task_id: e.task_id };
@@ -613,26 +662,30 @@ export function currentMax(taskDir: string): number {
 }
 
 /** 取整份库，读事务只包住查询；库打不开时为 null。 */
-function readTask(taskDir: string): LibraryData | null {
+function readTask(taskDir: string, withReview = false): LibraryData | null {
   const db = openRo(taskDir);
   if (db === null) return null;
   try {
-    return readAll(db);
+    return readAll(db, null, withReview);
   } finally {
     db.close();
   }
 }
 
-/** 整份数据里的 seq 与 task：取号与读表在同一个读事务里；完成条件在提交之后算。 */
-export function taskSnapshot(taskDir: string): [number, ReturnType<Library["taskView"]> | null] {
-  const data = readTask(taskDir);
-  if (data === null) return [0, null];
-  if (data.task === null) return [data.seq, null];
+/**
+ * 整份数据里的 seq、task 与进行中的评审：取号与读表在同一个读事务里；完成条件在提交之后算。
+ * reviewSince 见 reviewInProgress：这个助手启动之前的最大事件序号，助手没有在运行时为 null。
+ */
+export function taskSnapshot(taskDir: string, reviewSince: number | null = null):
+  [number, ReturnType<Library["taskView"]> | null, ReturnType<typeof reviewInProgress>] {
+  const data = readTask(taskDir, true);
+  if (data === null) return [0, null, null];
+  if (data.task === null) return [data.seq, null, null];
   data.task_dir = taskDir;
   const lib = new Library(data);
   const view = lib.taskView();
   view.completion = completion(taskDir, lib.taskId, lib.definition, lib.totals());
-  return [data.seq, view];
+  return [data.seq, view, reviewInProgress(data, reviewSince)];
 }
 
 export function itemRevisions(taskDir: string, itemId: string) {

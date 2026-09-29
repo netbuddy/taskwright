@@ -1147,14 +1147,31 @@ def condition_phrase(name: str) -> str:
     return CONDITION_PHRASE.get(name, name)
 
 
-def cells_of(version: dict) -> dict:
-    """评审与确认两个状态格。没有记录就是空心浅色格，不用红色。"""
+def review_state(version: dict) -> str:
+    """一个修订上的评审结论，照 agent 的 lib/review_verdict.ts：事件序号最大的那条评审合规是 passed；
+    不合规、但有一条没撤销、事件序号更大的保留是 waived（按通过算）；否则是 failed；没有评审是 pending。
+    规则指纹这里不算：规则改过之后的旧评审，观测台照样当作这个修订上的评审。"""
     reviews = version.get("评审记录") or []
+    if not reviews:
+        return "pending"
+    basis = max(reviews, key=lambda r: r["事件序号"])
+    if basis["结论"] == "合规":
+        return "passed"
+    waived = any(not w["已撤销"] and w["事件序号"] > basis["事件序号"] for w in version.get("保留记录") or [])
+    return "waived" if waived else "failed"
+
+
+REVIEW_CELL_TEXT = {"passed": "评审通过", "waived": "已保留写法", "failed": "评审过，没有通过", "pending": "还没有这类记录"}
+
+
+def cells_of(version: dict) -> dict:
+    """评审与确认两个状态格。没有记录就是空心浅色格，不用红色。已保留写法的格子按通过显示。"""
+    state = review_state(version)
     confirms = version.get("确认记录") or []
-    passed = any(r["结论"] == "合规" for r in reviews)
+    passed = state in ("passed", "waived")
     accepted = any(r["态度"] == "接受" for r in confirms)
     return {
-        "评审": "评审通过" if passed else ("评审过，没有通过" if reviews else "还没有这类记录"),
+        "评审": REVIEW_CELL_TEXT[state],
         "确认": "用户已确认" if accepted else ("用户没有接受" if confirms else "还没有这类记录"),
         "评审格": "ok" if passed else "", "确认格": "done" if accepted else "",
     }

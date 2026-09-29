@@ -161,16 +161,20 @@ def read_tasks(conn: sqlite3.Connection) -> list[dict]:
                 "来源": sources.get((row["item_id"], row["revision_no"]), []),
                 "事件序号": row["event_seq"],
             })
-        reviews = _item_records(conn, "SELECT item_id, revision_no, verdict, reason, created_at FROM review "
-                                      "WHERE task_id = ? ORDER BY review_id", task_id, "review")
+        reviews = _item_records(conn, "SELECT item_id, revision_no, verdict, reason, created_at, event_seq FROM review "
+                                      "WHERE task_id = ? ORDER BY event_seq, review_id", task_id, "review")
+        waivers = _item_records(conn, "SELECT item_id, revision_no, event_seq, revoked_at, created_at FROM review_waiver "
+                                      "WHERE task_id = ? ORDER BY event_seq, waiver_id", task_id, "review_waiver")
         confirms = _item_records(conn, "SELECT j.item_id, j.revision_no, j.attitude, g.created_at "
                                        "FROM judgement_item j JOIN judgement g ON g.judgement_id = j.judgement_id "
                                        "WHERE j.task_id = ? ORDER BY j.judgement_id", task_id, "judgement_item")
         for item_id, history in contents.items():
             for content in history:
                 key = (item_id, content["修订号"])
-                content["评审记录"] = [{"结论": r["verdict"], "理由": r["reason"], "时刻": r["created_at"]}
-                                       for r in reviews.get(key, [])]
+                content["评审记录"] = [{"结论": r["verdict"], "理由": r["reason"], "时刻": r["created_at"],
+                                        "事件序号": r["event_seq"]} for r in reviews.get(key, [])]
+                content["保留记录"] = [{"事件序号": r["event_seq"], "已撤销": r["revoked_at"] is not None, "时刻": r["created_at"]}
+                                       for r in waivers.get(key, [])]
                 content["确认记录"] = [{"态度": r["attitude"], "时刻": r["created_at"]}
                                        for r in confirms.get(key, [])]
         order = {c["名称"]: i for i, c in enumerate(definition["集合"])}
@@ -353,7 +357,7 @@ def support_text(supports: list[dict]) -> str:
 
 
 def _item_records(conn: sqlite3.Connection, sql: str, task_id: str, table: str) -> dict:
-    """按（条目编号, 修订号）分组取评审或确认的记录。那张表不在库里时给空的。"""
+    """按（条目编号, 修订号）分组取评审、保留或确认的记录。那张表不在库里时给空的。"""
     if table not in table_names(conn):
         return {}
     grouped: dict[tuple[str, int], list] = {}

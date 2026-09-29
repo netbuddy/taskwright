@@ -718,6 +718,70 @@ class CurrentFormatTests(unittest.TestCase):
             self.index.sessions.remove(empty)
 
 
+class ReviewCellTests(unittest.TestCase):
+    """看板的评审格照 agent 的 lib/review_verdict.ts 判断：序号最大的那条评审定结论，不合规时看有没有更晚、没撤销的保留。"""
+
+    @staticmethod
+    def version(reviews, waivers=()):
+        return {"评审记录": [{"结论": v, "理由": "", "时刻": "", "事件序号": seq} for v, seq in reviews],
+                "保留记录": [{"事件序号": seq, "已撤销": revoked, "时刻": ""} for seq, revoked in waivers], "确认记录": []}
+
+    def cell(self, reviews, waivers=()):
+        cells = taskpage.cells_of(self.version(reviews, waivers))
+        return cells["评审"], cells["评审格"]
+
+    def test_四种结论的写法与格子(self):
+        self.assertEqual(self.cell([]), ("还没有这类记录", ""))
+        self.assertEqual(self.cell([("合规", 3)]), ("评审通过", "ok"))
+        self.assertEqual(self.cell([("不合规", 3)]), ("评审过，没有通过", ""))
+        self.assertEqual(self.cell([("不合规", 3)], [(5, False)]), ("已保留写法", "ok"))
+
+    def test_以序号最大的那条评审为准_不看有没有过合规(self):
+        self.assertEqual(self.cell([("合规", 3), ("不合规", 7)]), ("评审过，没有通过", ""))
+        self.assertEqual(self.cell([("不合规", 7), ("合规", 3)]), ("评审过，没有通过", ""))
+        self.assertEqual(self.cell([("不合规", 3), ("合规", 7)]), ("评审通过", "ok"))
+
+    def test_保留只管它之前的最后一条评审_撤销过的不算(self):
+        self.assertEqual(self.cell([("不合规", 3)], [(5, True)]), ("评审过，没有通过", ""))
+        self.assertEqual(self.cell([("不合规", 3), ("不合规", 8)], [(5, False)]), ("评审过，没有通过", ""))
+        self.assertEqual(self.cell([("不合规", 3)], [(5, True), (9, False)]), ("已保留写法", "ok"))
+
+
+@unittest.skipIf(shutil.which("node") is None, "本机没有 node，写不出夹具库")
+class ReviewCellFromDatabaseTests(unittest.TestCase):
+    """观测台从任务库读出评审与保留的事件序号、撤销与否，看板据此显示「已保留写法」。"""
+
+    def test_读出保留记录_看板显示已保留写法(self):
+        from taskwright_observatory import taskdb
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = build_current_workspace(Path(temp))
+            db = workspace / taskdb.DB_NAME
+            conn = sqlite3.connect(db)
+            try:
+                base = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM event").fetchone()[0]
+                insert = ("INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, "
+                          "event_seq, created_at) VALUES ('TASK-001', 'UC-001', 2, ?, '理由', 'x', 'R', ?, ?, '2026-09-28 10:00:00')")
+                conn.execute(insert, ("不合规", "ui-1", base + 1))
+                conn.execute("INSERT INTO review_waiver (task_id, item_id, revision_no, reason, source, op_id, event_seq, created_at, revoked_at) "
+                             "VALUES ('TASK-001', 'UC-001', 2, NULL, 'panel', 'ui-2', ?, '2026-09-28 10:01:00', '2026-09-28 10:02:00')", (base + 2,))
+                conn.execute("INSERT INTO review_waiver (task_id, item_id, revision_no, reason, source, op_id, event_seq, created_at) "
+                             "VALUES ('TASK-001', 'UC-001', 2, NULL, 'panel', 'ui-3', ?, '2026-09-28 10:03:00')", (base + 3,))
+                conn.commit()
+            finally:
+                conn.close()
+            conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            try:
+                task = taskdb.read_tasks(conn)[0]
+            finally:
+                conn.close()
+        current = next(i for i in task["条目"] if i["条目编号"] == "UC-001")["当前内容"]
+        self.assertEqual([(r["结论"], r["事件序号"]) for r in current["评审记录"]], [("不合规", base + 1)])
+        self.assertEqual([(w["事件序号"], w["已撤销"]) for w in current["保留记录"]], [(base + 2, True), (base + 3, False)])
+        cells = taskpage.cells_of(current)
+        self.assertEqual((cells["评审"], cells["评审格"]), ("已保留写法", "ok"))
+
+
 class DiffTests(unittest.TestCase):
     """文字比对与列表比对。"""
 

@@ -144,3 +144,15 @@ test("实时推送：摘要与工作结束事件的结束原因和刷新后重�
   assert.equal(FAILED_TEXT, "助手这一轮因为出错停下了，你可以再说一句，让它接着做。");
   assert.equal(NO_REPLY_TEXT, "助手这次没有说话就停下了，你可以再问它一句。");
 });
+
+test("被停下时结束消息的步数与摘要相同：一条消息里几个调用执行到一半被停下，没有开始的调用也算步数，没有执行的保存修订写「没有做成」", async () => {
+  // 第一个调用做完了，停在第二个上（pi 给它回「Operation aborted」），第三个没有开始、会话记录里没有结果
+  const entries = [user(), assistant("toolUse", call("m1", "save_revision"), call("m2", "save_revision"), call("m3", "save_revision")),
+    result("m1"), result("m2", "Operation aborted", true), assistant("aborted")];
+  const events = await runTurn(entries, true);
+  const summary = events.find((e) => e.name === "work_summary")!;
+  const ended = events.find((e) => e.name === "work_ended")!;
+  assert.equal(summary.step_count, 3);
+  assert.equal(ended.step_count, summary.step_count);
+  assert.match(summary.stages.map((s: Dict) => s.text ?? JSON.stringify(s)).join("；"), /保存修订没有做成/);
+});
