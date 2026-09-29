@@ -1,7 +1,7 @@
 /**
- * 观测台对照用的一段对话：起一个后端（Python 版或 TypeScript 版）与 TypeScript 版假模型端点，建任务、放材料、开会话、说一句话，
- * 等这一轮做完停掉后端；再把归档交给观测台（Python 包 taskwright_observatory）读出会话列表与会话详情，归一化之后返回。
- * 测试（observatory_parity.test.ts）用 TypeScript 版跑，与夹具生成脚本（generate.mts）用 Python 版跑出的 observatory_view.json 比较。
+ * 观测台对照用的一段对话：起后端与假模型端点，建任务、放材料、开会话、说一句话，等这一轮做完停掉后端；
+ * 再把归档交给观测台（Python 包 taskwright_observatory）读出会话列表与会话详情，归一化之后返回。
+ * 测试（observatory_parity.test.ts）拿它与同目录的 observatory_view.json 比较。
  */
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
@@ -59,7 +59,7 @@ function stop(child: ChildProcess): Promise<void> {
 }
 
 /** 起后端与假端点，跑完那一段对话，停掉，返回 [归档目录, 任务目录]。 */
-export async function runConversation(kind: "python" | "typescript", root: string): Promise<[string, string]> {
+export async function runConversation(root: string): Promise<[string, string]> {
   const tasks = join(root, "tasks");
   const runs = join(root, "runs");
   mkdirSync(tasks, { recursive: true });
@@ -77,11 +77,8 @@ export async function runConversation(kind: "python" | "typescript", root: strin
   }
   const port = await freePort();
   const args = ["--tasks", tasks, "--runs", runs, "--port", String(port), "--host", "127.0.0.1", "--profile", "fake"];
-  const backendEnv = { ...env, PI_CODING_AGENT_DIR: join(root, "pi-agent"), TASKWRIGHT_LOG_DIR: join(root, "logs"),
-    PYTHONPATH: [join(ROOT, "server"), join(ROOT, "observatory")].join(":") };
-  const backend = kind === "python"
-    ? spawn(PYTHON, ["-m", "taskwright_server.service", ...args], { cwd: ROOT, env: backendEnv, stdio: "ignore" })
-    : spawn(process.execPath, [join(ROOT, "backend", "src", "main.mts"), ...args], { cwd: ROOT, env: backendEnv, stdio: "ignore" });
+  const backendEnv = { ...env, PI_CODING_AGENT_DIR: join(root, "pi-agent"), TASKWRIGHT_LOG_DIR: join(root, "logs") };
+  const backend = spawn(process.execPath, [join(ROOT, "backend", "src", "main.mts"), ...args], { cwd: ROOT, env: backendEnv, stdio: "ignore" });
   const base = `http://127.0.0.1:${port}`;
   let task = "";
   try {

@@ -1,7 +1,7 @@
 /**
  * 直接操作、卡片点击与让助手停下：用一个假的 pi（记下发给它的命令，按需经状态栏回报扩展命令的结果）驱动执行者看护。
- * 覆盖：十种直接操作的请求体与 Python 版留存的输出逐字一致；扩展命令的等待与超时；打开详情写已读在工作中的例外；
- * 「先不管这条」之后的固定句；卡片标注的计算与 Python 版留存的输出逐字一致；停下的三种分支与 stopped_by_user。
+ * 覆盖：十种直接操作的请求体与期望值逐字一致；扩展命令的等待与超时；打开详情写已读在工作中的例外；
+ * 「先不管这条」之后的固定句；卡片标注的计算与期望值逐字一致；停下的三种分支与 stopped_by_user。
  */
 
 import assert from "node:assert/strict";
@@ -71,16 +71,16 @@ function setup(answer?: (command: string, body: Dict) => Dict | null) {
   return { hub, executor, pi, drain };
 }
 
-/** Python 版在同一组输入上的输出（fixtures/py/，生成方法见那里的 README.md）。 */
-const pyFixture = (name: string) => JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", name), "utf-8"));
+/** 这组输入应当得到的输出（fixtures/py/，说明见那里的 README.md）。 */
+const expected = (name: string) => JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", name), "utf-8"));
 
-test("十种直接操作与两种卡片点击发给 pi 的命令与 Python 版留存的输出逐字一致", async () => {
+test("十种直接操作与两种卡片点击发给 pi 的命令与期望值逐字一致", async () => {
   const { executor, pi } = setup();
   const ops: string[] = [];
   for (const body of BODIES) ops.push(await executor.action("S1", body));
   for (const [text, annotation] of CARDS) assert.equal(await executor.cardClick("S1", text, "k-1", annotation), false);
   assert.ok(ops.every((op) => /^ui-op-[0-9a-f]{12}$/.test(op)));
-  assert.deepEqual(normalize(pi.calls), pyFixture("actions.json").commands);
+  assert.deepEqual(normalize(pi.calls), expected("actions.json").commands);
   // 抽看几条：请求体只转交五个键加操作编号，按固定先后，操作编号放最后；请求里多带的 force 不转交；「先不管这条」之后跟一句固定句。
   assert.equal(pi.calls[0][1].message, `/tw-user {"kind": "edit_fields", "task_id": "TASK-001", "targets": [{"item_id": "UC-001", "base_revision": 1}], "fields": {"用例名称": "改名", "基本流程": ["一", "二"]}, "notify_executor": false, "op_id": "${ops[0]}"}`);
   assert.deepEqual(pi.calls[6], ["prompt", { message: "我先不管 TBD-001、TBD-002，请接着往下做。" }]);
@@ -147,12 +147,12 @@ test("带通知的操作之后，执行者收到的那句话认作界面发起�
   assert.equal(user.origin, "ui_request");
 });
 
-test("卡片标注：annotation 原样用；card 写法按回复里的选项查回文字，查不到用 choice 本身；与 Python 版留存的输出逐字一致", () => {
+test("卡片标注：annotation 原样用；card 写法按回复里的选项查回文字，查不到用 choice 本身；与期望值逐字一致", () => {
   const [bodies, entries] = [CARD_BODIES, CARD_ENTRIES];
   const ts = bodies.map((b) => cardAnnotation(b, entries));
   assert.deepEqual(ts[1], { reply_message_id: "a0000002", option_key: "deny", option_text: "不允许续借", card_kind: "choose" });
   assert.deepEqual(ts[2].option_text, "不对");
-  assert.deepEqual(ts, pyFixture("card_annotations.json").annotations);
+  assert.deepEqual(ts, expected("card_annotations.json").annotations);
 });
 
 test("停下：pi 不在时什么都不做；对另一条会话是 session_busy；否则清队列、标记用户让停、中止，work_ended 为 stopped_by_user", async () => {

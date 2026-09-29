@@ -1,6 +1,6 @@
 /**
- * 假模型端点自己的测试：不起 pi，直接用 HTTP 请求它，核对脚本的几种用法都按说明工作（与 Python 版 test_fake_model.py 一一对应）；
- * 另起一个命令行进程，喂同一份脚本、发同一串请求，回答、请求记录与写出的 pi 配置目录与 Python 版留存的输出逐字比较。
+ * 假模型端点自己的测试：不起 pi，直接用 HTTP 请求它，核对脚本的几种用法都按说明工作；
+ * 另起一个命令行进程，喂一份脚本、发一串请求，回答、请求记录与写出的 pi 配置目录与期望值逐字比较。
  */
 
 import assert from "node:assert/strict";
@@ -137,7 +137,7 @@ test("pi 配置目录只登记假端点", () => {
   assert.equal(models.providers.fake.baseUrl, "http://127.0.0.1:1/v1");
 });
 
-// ───────────── 与 Python 版留存的输出逐字对照 ─────────────
+// ───────────── 与期望值逐字对照 ─────────────
 
 /** 起一个命令行假端点，等它打印出地址与 pi 配置目录。 */
 async function startCli(dir: string, script: unknown): Promise<{ child: ChildProcess; baseUrl: string }> {
@@ -155,7 +155,7 @@ async function startCli(dir: string, script: unknown): Promise<{ child: ChildPro
   return { child, baseUrl: /假端点已启动：(\S+)（只监听本机回环地址）/.exec(out)![1] };
 }
 
-test("命令行假端点：同一份脚本、同一串请求，回答、请求记录与 pi 配置目录与 Python 版留存的输出逐字一致", async () => {
+test("命令行假端点：一份脚本、一串请求，回答、请求记录与 pi 配置目录与期望值逐字一致", async () => {
   const { script, requests } = FAKE_MODEL;
   const dir = join(tmp, "cli-typescript");
   const { child, baseUrl } = await startCli(dir, script);
@@ -173,10 +173,10 @@ test("命令行假端点：同一份脚本、同一串请求，回答、请求�
     child.kill("SIGTERM");
     await new Promise((ok) => (child.exitCode !== null ? ok(null) : child.once("exit", ok)));
   }
-  // Python 版对同一份脚本、同一串请求的输出，留存在 fixtures/py/fake_model_cli.json（生成方法见那里的 README.md）。
-  const python = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "fake_model_cli.json"), "utf-8"));
-  assert.deepEqual(ours.answers, python.answers);
-  assert.equal(ours.lines, python.lines);
-  assert.deepEqual(ours.agent, python.agent);
-  assert.equal(python.lines.split("\n").filter(Boolean).length, requests.length);
+  // 期望值在 fixtures/py/fake_model_cli.json（说明见那里的 README.md）。
+  const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "fake_model_cli.json"), "utf-8"));
+  assert.deepEqual(ours.answers, expected.answers);
+  assert.equal(ours.lines, expected.lines);
+  assert.deepEqual(ours.agent, expected.agent);
+  assert.equal(expected.lines.split("\n").filter(Boolean).length, requests.length);
 });

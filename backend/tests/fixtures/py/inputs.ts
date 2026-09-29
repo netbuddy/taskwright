@@ -1,6 +1,5 @@
 /**
- * 与 Python 版逐字对照用的输入：测试与夹具生成脚本（generate.mts）共用这一份，两边拿同样的输入。
- * Python 版在这些输入上的输出存在同目录的 *.json 里，说明见 README.md。
+ * 与期望值逐字对照用的输入。在这些输入上应当得到的输出存在同目录的 *.json 里，说明见 README.md。
  */
 
 type Dict = Record<string, any>;

@@ -1,38 +1,32 @@
-# Outputs of the Python version, kept for comparison
+# Expected outputs for backend tests
 
-The task service used to exist in Python as well (`server/taskwright_server/`). While both versions existed, several backend tests
-ran the Python version in a child process and compared its output with the TypeScript version's, character for character.
-The Python version is being removed, so its output on the same inputs is kept here and the tests compare against these files.
+Several backend tests compare what the task service produces with the files in this directory, character for character.
+The files were first written from the output of the earlier Python task service, which has since been removed from the
+repository. They are now maintained by hand: when a change of behavior is intended, change these files in the same commit
+as the code, and say in the commit what changed and why.
 
-These files are temporary. They will be deleted once the comparisons are rewritten as integration tests that assert facts
-(what was written to the database, which events arrived) instead of matching an older implementation's output.
-
-| File | Python code that produced it | Test that reads it |
+| File | What it holds | Test that reads it |
 |---|---|---|
-| `actions.json` | `service/executor.py`: `action` and `card_click` on the direct-action bodies and card clicks in `inputs.ts` | `actions.test.ts` |
-| `card_annotations.json` | `service/app.py`: `card_annotation` | `actions.test.ts` |
-| `conversation.json` | `service/conversation.py` and `service/work_summary.py`: the conversation with work summaries, and the units of work | `conversation.test.ts` |
-| `launch_argv.json` | `launch.py`: `build_command` for the `dev` profile (repository extensions only) | `pi_session.test.ts` |
-| `fake_model_cli.json` | `python -m taskwright_server.fake_model`: answers, request log and pi configuration directory for one script and seven requests | `fake_model.test.ts` |
-| `observatory_view.json` | the Python task service running one conversation (real pi, TypeScript fake model), read by the observatory | `observatory_parity.test.ts` |
+| `actions.json` | The commands the task service sends to pi for the direct-action bodies and card clicks in `inputs.ts` | `actions.test.ts` |
+| `card_annotations.json` | The card annotations computed for the card clicks in `inputs.ts` | `actions.test.ts` |
+| `conversation.json` | The conversation with work summaries, and the units of work, for the session entries in `inputs.ts` | `conversation.test.ts` |
+| `launch_argv.json` | The pi command line built from the `dev` profile (repository extensions only) | `pi_session.test.ts` |
+| `fake_model_cli.json` | The fake model endpoint started from the command line: answers, request log and pi configuration directory for one script and seven requests | `fake_model.test.ts` |
+| `observatory_view.json` | What the observatory reads from the archives of one conversation (real pi, fake model) | `observatory_parity.test.ts` |
 
-`inputs.ts` holds the inputs both sides use; `observatory.ts` holds the conversation and the observatory call.
-Every file has a `source` entry with the commit of the last change to `server/` when it was generated, the date and the command.
-Parts that change from run to run or from machine to machine are replaced by placeholders before saving (repository root,
-temporary directories, the location of `pi`, operation ids, times, ports); the tests replace the same parts in their own output.
+`inputs.ts` holds the inputs; `observatory.ts` holds the conversation and the observatory call.
+The `source` entry of each file records how it was first generated; the command it names no longer exists.
+Parts that change from run to run or from machine to machine are replaced by placeholders (repository root, temporary
+directories, the location of `pi`, operation ids, times, ports); the tests replace the same parts in their own output.
 
-To regenerate (only possible while `server/` is still in the repository; needs `pi` on `PATH`):
+`observatory_view.json` matters beyond the backend: the observatory reads the archives in exactly this form
+(see `observatory/archive-format.md`), so a change here must be matched in the observatory.
 
-```
-TASKWRIGHT_PYTHON=.venv/bin/python node backend/tests/fixtures/py/generate.mts
-```
+## Fields not in the expected outputs
 
-## Known differences
-
-The TypeScript version has since changed on purpose in ways the Python one has not. `conversation.test.ts` removes the fields
-below from the TypeScript output before comparing it with `conversation.json`, names each of them, and checks their values
-in separate assertions; everything else is still compared character for character.
+`conversation.test.ts` removes the fields below from its output before comparing it with `conversation.json`, names each of
+them, and checks their values in separate assertions; everything else is compared character for character.
 
 | File | Field | Why |
 |---|---|---|
-| `conversation.json` | `outcome` on every work summary in the conversation and on every unit of work | Each unit of work states how it ended (`replied`, `no_reply`, `stopped_by_user` or `failed`), so the page can say when the user stopped it or it failed, also after a refresh. |
+| `conversation.json` | `outcome` on every work summary in the conversation and on every unit of work | Each unit of work states how it ended (`replied`, `no_reply`, `stopped_by_user` or `failed`), so the page can say when the user stopped it or it failed, also after a refresh. The field was added after the file was first written. |
