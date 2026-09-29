@@ -21,6 +21,7 @@
 // 末尾带「打开最新」：退出编辑、回到最新修订，不提供合并。其它被拒同样报失败提示，不在详情里就地写错误行。
 // 编辑框里的内容与打开时不同，就是「有未保存的条目编辑」，经 onDirty 告诉页面，对话区的发送与卡片按钮据此灰化。
 //
+// 评审通过时，评审不通过的红色横幅那个位置显示绿色的说明与所依据的规则（PassNote）。
 // 评审：右上角「评审这条」发 request_review（只带这个条目）。条目当前所在的修订上有评审记录时，每条发现标在它的字段旁：
 // 问题（必选规则）红色、建议（可选规则）琥珀色，末尾「违反 UC-R9」点一下展开那条规则的条文（规则清单取自任务定义），
 // 旁边「让助手照这条改」往对话区输入框预填一句话，不写库。标题字段有发现时也照常列出这一行。
@@ -46,6 +47,7 @@ import { useToast } from "../Toasts";
 import { StatusBadges } from "./ItemStatus";
 import { citationsOf, displayOf, liveOwnRefs, SOURCE_DOMAIN_NOTE } from "../../model/domainNotes";
 import { FindingLine } from "./FindingLine";
+import { PassNote } from "./PassNote";
 
 /** 从修订页签的「查看差异」来的请求：打开这个条目并停在那次修订。nonce 每点一次加一。 */
 export interface ViewRequest {
@@ -272,6 +274,8 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
       {review.state === "failed" && !review.kept && (
         <div className="banner-line gap" data-testid="review-banner"><span><b>评审不通过：</b>{review.problems} 处问题未处理，标在下面对应的字段旁。</span></div>
       )}
+      {/* 评审通过（不含已保留）：同一个位置换成绿色的说明与所依据的规则；看旧修订时不显示。 */}
+      {!old && verdict.state === "passed" && current && <PassNote task={task} collection={item.collection} review={current} />}
       {supplements.length > 0 && !editing && (
         <div className="banner-line diff" data-testid="supplement-banner">
           <span><b>助手补充：</b>{supplements.map((s) => s.excerpt).join("；")}　这部分材料里没有，看的时候留意。</span>

@@ -250,3 +250,15 @@
 /* 找不到会话的那一页：两行说明，第二行是回到任务页的链接 */
 .app .empty.missing { line-height: 1.8; }
 .app .empty.missing a { color: var(--blue); text-decoration: underline; }
+/* 评审通过的说明：条目详情里是评审不通过的横幅那个位置的一块绿色说明；评审页签里是条目那一行下面的一行（不加底色） */
+.app .sw-pass { border: 1px solid var(--ok-line); background: var(--ok-bg); border-radius: .5rem; padding: .35rem .6rem .4rem; color: #14602f; font-size: .901rem; margin-bottom: .5rem; }
+.app .sw-pass .ml, .app .sw-pass-row .ml { font-size: .857rem; color: #4b7a5a; margin-top: .05rem; }
+.app .sw-pass-row { flex-basis: 100%; padding-left: .3rem; font-size: .857rem; color: #14602f; }
+.app .rl-link { color: var(--blue); cursor: pointer; margin-left: .45rem; white-space: nowrap; }
+.app .rl-link:hover { text-decoration: underline; }
+.app .rl-list { margin-top: .35rem; background: var(--card); border: 1px solid var(--ok-line); border-radius: .4rem; padding: .25rem .45rem; color: var(--ink); display: flex; flex-direction: column; }
+.app .sw-pass-row .rl-list { border-color: var(--line2); }
+.app .rl-row { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr) auto; gap: .4rem; align-items: baseline; padding: .18rem 0; border-top: 1px dotted var(--line2); font-size: .86rem; line-height: 1.55; }
+.app .rl-row:first-child { border-top: 0; }
+.app .rl-row .rid { font-family: var(--mono, monospace); font-size: .857rem; color: #444; }
+.app .rl-off { color: var(--mut); font-size: .857rem; padding: .25rem 0 .05rem; border-top: 1px dotted var(--line2); }

@@ -436,7 +436,7 @@ function applyReviewRecorded(state: WorkState, data: ReviewRecorded): WorkState 
   if (!state.task) return state;
   const items = state.task.items.map((item) =>
     item.item_id === data.item_id
-      ? { ...item, reviews: [...item.reviews, { revision_no: data.revision_no, verdict: data.verdict, findings: data.findings, at: data.at,
+      ? { ...item, reviews: [...item.reviews, { revision_no: data.revision_no, verdict: data.verdict, reason: data.reason ?? null, findings: data.findings, at: data.at,
           batch_id: data.batch_id ?? null, rules_hash: data.rules_hash ?? null, forced: !!data.forced, seq: data.seq }] }
       : item,
   );

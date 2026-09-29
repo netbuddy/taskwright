@@ -3,7 +3,7 @@
 //   · 每次评审一张卡片，最新的在上：「第 N 次评审」、时刻、由谁发起、条数、合规与不合规、问题与建议各几。
 //     最新一张默认展开，早先的变淡、折起，点标题展开。展开后逐条目列结果：不合规的条目逐条列发现（红点问题、琥珀点建议、
 //     每条发现与条目详情里同一个两行布局（FindingLine）：第一行是发现本身与「第 N 次评审指出」，第二行是去向（未处理／已在修订 N 改／
-//     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看它们的建议。
+//     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看每条的通过说明（PassNote）与建议。
 //     规则改过之后，按改之前的规则评出的发现写「按改之前的规则评出，不再算数」，不给链接，「只看未处理」不列，也不算在角标里。
 //     点条目编号或一条发现，打开条目详情并高亮那个字段。
 //   · 底部规则区：按集合列规则。必选的开关是绿色、圆点对面画一把白色的锁，不能关；可选的可以关掉，或点标签在「可选」与「升为必选」之间切换。改动只影响之后的评审。
@@ -18,6 +18,7 @@ import {
 } from "../../model/items";
 import { formatTime } from "../../model/format";
 import { FindingLine } from "./FindingLine";
+import { PassNote } from "./PassNote";
 import { fixText } from "./ItemDetail";
 import { rejectedText } from "./errors";
 import { useToast } from "../Toasts";
@@ -118,6 +119,7 @@ function BatchCard({ task, batch, latest, onlyOpen, readOnly, writesOff, submit,
                 <div key={item!.item_id} className="sw-rv-item">
                   <span className="lid ref" role="button" onClick={() => onOpenFinding(item!.item_id, null)}>{item!.item_id}</span>
                   <span className="chip okc">合规</span><span className="muted">修订 {review!.revision_no}</span>
+                  <PassNote task={task} collection={item!.collection} review={review!} inRow />
                   {(review!.findings ?? []).map((f, i) => (
                     <FindingLine key={i} finding={f} rule={ruleFor(task, item!, f)} batchNo={batch.no} onOpen={() => onOpenFinding(item!.item_id, f.field)} />
                   ))}
