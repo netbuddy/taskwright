@@ -119,7 +119,8 @@ describe("评审页签", () => {
   it("点规则编号展开条文；点发现打开条目并指到字段", () => {
     const { onOpenFinding } = panel(task([UC4]));
     fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByTestId("clause-UC-R7"));
-    expect(screen.getByTestId("batch-3-item-UC-004")).toHaveTextContent("UC-R7（必选） 每一步写明谁做了什么。");
+    expect(screen.getByTestId("batch-3-item-UC-004")).toHaveTextContent("UC-R7 每一步写明谁做了什么。");
+    expect(screen.getByTestId("clause-body")).not.toHaveTextContent(/必选|可选/);
     fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByText(/第 2 步没有主语/));
     expect(onOpenFinding).toHaveBeenCalledWith("UC-004", "基本流程");
   });

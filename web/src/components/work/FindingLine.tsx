@@ -1,5 +1,5 @@
 // 一条评审发现，条目详情与评审页签共用，两行、都左对齐：
-//   第一行只放发现本身：「问题：」或「建议：」、列表型字段的第几项、问题原文、「改法：……」、「违反 UC-R7」（点编号展开条文），
+//   第一行只放发现本身：「问题：」或「建议：」、列表型字段的第几项、问题原文、「改法：……」、「违反 UC-R7」（点编号展开编号与条文），
 //     末尾小字「第 N 次评审指出」；
 //   第二行是这条发现的去向：状态词在前（未处理／已在修订 N 改／已保留／按改之前的规则评出，不再算数），保留的理由跟在后面（「已保留 · 理由：……」），
 //     操作链接放在这一行末尾：让助手照这条改、保留这种写法（点开填理由，可以不写）、撤销保留。
@@ -52,7 +52,8 @@ export function FindingLine({ finding, rule, batchNo = null, status = null, onOp
       </span>
       {open && (
         <span className="clause-body" data-testid="clause-body">
-          {rule ? `${rule.id}（${rule.level}）　${rule.text}` : `${finding.rule_id}　这条规则的条文这次没有读到。`}
+          {/* 只写编号与条文：级别已由前面的「问题」「建议」表达。 */}
+          {rule ? `${rule.id}　${rule.text}` : `${finding.rule_id}　这条规则的条文这次没有读到。`}
         </span>
       )}
       {hasSecond && (

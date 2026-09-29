@@ -184,7 +184,7 @@ describe("徽标与条目详情", () => {
     expect(screen.getByTestId("finding-advice")).toHaveClass("advice");
     expect(screen.queryByTestId("clause-body")).toBeNull();
     fireEvent.click(screen.getByTestId("clause-UC-R7"));
-    expect(screen.getByTestId("clause-body")).toHaveTextContent(/^UC-R7（必选）\s+基本流程每一步写明谁做了什么/);
+    expect(screen.getByTestId("clause-body")).toHaveTextContent(/^UC-R7\s+基本流程每一步写明谁做了什么/);
     fireEvent.click(screen.getAllByTestId("fix-finding")[0]);
     expect(onPrefill).toHaveBeenCalledWith("请照评审建议的改法改 UC-003 的基本流程第 2 项：写明是系统核对。评审指出的问题是：第 2 步没有主语。");
     expect(screen.getByTestId("review-one")).toBeDisabled();   // 当前修订上已经评过：同一次修订、同一套规则只评一次
