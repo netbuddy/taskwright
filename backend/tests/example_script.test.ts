@@ -7,19 +7,16 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
-import { ROOT, tempDir } from "./helpers.ts";
+import { ROOT, spawnBackend, tempDir } from "./helpers.ts";
 
 type Dict = Record<string, any>;
-const MAIN = join(ROOT, "backend", "src", "main.mts");
 const SCRIPT = join(ROOT, "examples", "library-lending", "run.sh");
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
-const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 const missing = ["pi", "curl", "python3", "bash"].filter((cmd) => spawnSync(cmd, ["--version"], { encoding: "utf-8" }).error);
 const SKIP = missing.length ? `本机 PATH 上没有 ${missing.join("、")}` : false;
@@ -28,14 +25,6 @@ const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE
 
 /** 与 scripts/dev.sh --demo 用同一份假模型脚本：第一句话之后保存几个条目（摘录取自示例材料），再经「回复」工具回一句。 */
 const MODEL_SCRIPT = JSON.parse(readFileSync(join(ROOT, "examples", "library-lending", "fake-model.json"), "utf-8"));
-
-async function freePort(): Promise<number> {
-  const probe = createServer();
-  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
-  const port = (probe.address() as { port: number }).port;
-  await new Promise((ok) => probe.close(ok));
-  return port;
-}
 
 function run(cmd: string, args: string[], cwd: string, env: Dict): Promise<{ code: number | null; out: string }> {
   return new Promise((ok) => {
@@ -51,19 +40,11 @@ test("示例脚本从建任务到生成文档跑通：退出码 0，文档写明
   const fake = await new FakeModel(MODEL_SCRIPT).start();
   const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(tmp, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(tmp, "logs") };
   for (const name of DROPPED_ENV) delete env[name];
-  const port = await freePort();
   let backend: ChildProcess | null = null;
   try {
-    backend = spawn(process.execPath, [MAIN, "--tasks", join(tmp, "tasks"), "--runs", join(tmp, "runs"), "--profile", "fake", "--host", "127.0.0.1", "--port", String(port)],
-      { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
-    let log = "";
-    backend.stdout!.on("data", (c) => (log += c));
-    backend.stderr!.on("data", (c) => (log += c));
-    const end = Date.now() + 15000;
-    while (!/任务服务在 http:\/\//.test(log)) {
-      if (backend.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${log}`);
-      await sleep(50);
-    }
+    const started = await spawnBackend(["--tasks", join(tmp, "tasks"), "--runs", join(tmp, "runs"), "--profile", "fake", "--host", "127.0.0.1"], { cwd: ROOT, env });
+    backend = started.child;
+    const port = started.port;
     const work = join(tmp, "work");
     mkdirSync(work);
     const done = await run("bash", [SCRIPT, `http://127.0.0.1:${port}`], work, env);

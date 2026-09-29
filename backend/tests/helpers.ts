@@ -4,7 +4,7 @@
  * 用 sqlRun 在临时副本上直接执行 SQL，与服务端 Python 测试的做法相同；那只是测试夹具，不是产品代码的写入路径。
  */
 
-import { spawnSync } from "node:child_process";
+import { type ChildProcess, type SpawnOptions, spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 import { format } from "node:util";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+/** 后端的入口。 */
+export const BACKEND_MAIN = join(ROOT, "backend", "src", "main.mts");
 const FIXTURES = join(ROOT, "agent", "tests", "fixtures");
 
 /** 与服务端测试同一份演示任务定义：用例、待定事项两个集合。 */
@@ -120,5 +122,32 @@ export function sqlGet(ws: string, sql: string, ...params: unknown[]): Record<st
     return row ? { ...row } : undefined;
   } finally {
     db.close();
+  }
+}
+
+/**
+ * 起一个后端进程，端口给 0，由操作系统挑一个空闲端口；等它打印出监听地址，返回进程、实际端口与它到此为止的全部输出。
+ * 不先向系统要一个端口、关掉再交给后端：那样中间有空隙，几个会话同时跑测试时端口会被别人占去。
+ * args 是端口以外的命令行参数；options 的 stdio 由这里定（两路输出都收下）。没等到（进程退出或超时）时先结束进程再抛错。
+ */
+export async function spawnBackend(args: string[], options: Omit<SpawnOptions, "stdio"> = {}, ms = 15_000):
+  Promise<{ child: ChildProcess; port: number; output: () => string }> {
+  const child = spawn(process.execPath, [BACKEND_MAIN, ...args, "--port", "0"], { ...options, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  child.stdout!.on("data", (c) => (out += c));
+  child.stderr!.on("data", (c) => (out += c));
+  const end = Date.now() + ms;
+  for (;;) {
+    const m = /任务服务在 http:\/\/[^:]+:(\d+)\//.exec(out);
+    if (m) return { child, port: Number(m[1]), output: () => out };
+    const gone = child.exitCode !== null || child.signalCode !== null;
+    if (gone || Date.now() > end) {
+      if (!gone) {
+        child.kill("SIGKILL");
+        await new Promise((ok) => child.once("exit", ok));
+      }
+      throw new Error(`后端没有起来：${gone ? `进程已经退出（退出码 ${child.exitCode}，信号 ${child.signalCode}）` : `${ms / 1000} 秒内没有打印监听地址`}。它的输出：${out}`);
+    }
+    await new Promise((ok) => setTimeout(ok, 50));
   }
 }

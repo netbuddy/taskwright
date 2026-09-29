@@ -4,17 +4,15 @@
  */
 
 import assert from "node:assert/strict";
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
-import { ROOT } from "./helpers.ts";
+import { ROOT, spawnBackend } from "./helpers.ts";
 
 export type Dict = Record<string, any>;
-const MAIN = join(ROOT, "backend", "src", "main.mts");
 export const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 export const NO_PI = spawnSync("pi", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 pi" : false;
@@ -25,14 +23,6 @@ export const MATERIAL = "读者凭借书证在自助机上借书。";
 
 /** 假端点的一步：助手经「回复」说一段话，act 是向用户要的回应。 */
 export const reply = (text: string, id: string, act: Dict | null = null) => ({ tool_calls: [{ id, name: "reply", arguments: { informs: [], act, text } }] });
-
-export async function freePort(): Promise<number> {
-  const probe = createServer();
-  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
-  const port = (probe.address() as { port: number }).port;
-  await new Promise((ok) => probe.close(ok));
-  return port;
-}
 
 export type Stack = {
   call: (method: string, path: string, body?: unknown) => Promise<{ status: number; body: any }>;
@@ -51,17 +41,9 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
   const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent: true }).start();
   const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(dir, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(dir, "logs") };
   for (const name of DROPPED_ENV) delete env[name];
-  const port = await freePort();
-  const child: ChildProcess = spawn(process.execPath, [MAIN, "--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake",
-    "--host", "127.0.0.1", "--port", String(port)], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"] });
-  let out = "";
-  child.stdout!.on("data", (c) => (out += c));
-  child.stderr!.on("data", (c) => (out += c));
+  const { child, port } = await spawnBackend(["--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--host", "127.0.0.1"],
+    { cwd: dir, env });
   try {
-    for (const end = Date.now() + 15000; !/任务服务在 http:\/\/[^:]+:\d+\//.test(out);) {
-      if (child.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${out}`);
-      await sleep(50);
-    }
     const call = (method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> => new Promise((ok, fail) => {
       const data = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
       const req = request({ host: "127.0.0.1", port, path, method, timeout: 60000,

@@ -7,9 +7,9 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
-import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnBackend } from "../../helpers.ts";
 
 type Dict = Record<string, any>;
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
@@ -24,14 +24,6 @@ export const SCRIPT = [
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY",
   "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT", "PI_CODING_AGENT_DIR", "TASKWRIGHT_TASKS_ROOT", "TASKWRIGHT_PI_ENTRY"];
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
-
-async function freePort(): Promise<number> {
-  const probe = createServer();
-  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
-  const port = (probe.address() as { port: number }).port;
-  await new Promise((ok) => probe.close(ok));
-  return port;
-}
 
 function call(base: string, method: string, path: string, body?: unknown, raw?: Buffer, headers: Dict = { "Content-Type": "application/json" }): Promise<Dict> {
   return new Promise((ok, fail) => {
@@ -75,21 +67,11 @@ export async function runConversation(root: string): Promise<[string, string]> {
   for (let end = Date.now() + 15000; !out.includes("pi 配置目录已写好"); await sleep(30)) {
     if (fake.exitCode !== null || Date.now() > end) throw new Error(`假端点没有起来：${out}`);
   }
-  const port = await freePort();
-  const args = ["--tasks", tasks, "--runs", runs, "--port", String(port), "--host", "127.0.0.1", "--profile", "fake"];
   const backendEnv = { ...env, PI_CODING_AGENT_DIR: join(root, "pi-agent"), TASKWRIGHT_LOG_DIR: join(root, "logs") };
-  const backend = spawn(process.execPath, [join(ROOT, "backend", "src", "main.mts"), ...args], { cwd: ROOT, env: backendEnv, stdio: "ignore" });
+  const { child: backend, port } = await spawnBackend(["--tasks", tasks, "--runs", runs, "--host", "127.0.0.1", "--profile", "fake"], { cwd: ROOT, env: backendEnv }, 30_000);
   const base = `http://127.0.0.1:${port}`;
   let task = "";
   try {
-    for (let n = 0; n < 150; n++) {
-      try {
-        await call(base, "GET", "/api/v1/task-types");
-        break;
-      } catch {
-        await sleep(200);
-      }
-    }
     task = (await call(base, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "对照任务" })).task_id;
     const material = Buffer.from(`--B\r\nContent-Disposition: form-data; name="file"; filename="材料.md"\r\n\r\n${SOURCE.excerpt}\r\n--B--\r\n`, "utf-8");
     await call(base, "POST", `/api/v1/tasks/${task}/materials`, undefined, material, { "Content-Type": "multipart/form-data; boundary=B" });

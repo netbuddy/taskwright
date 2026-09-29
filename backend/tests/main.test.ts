@@ -64,7 +64,10 @@ async function closeServer(server: Server | HttpServer): Promise<void> {
   await within("关掉监听端口", 10_000, new Promise((ok) => server.close(ok)));
 }
 
-/** 操作系统挑的一个空闲端口。 */
+/**
+ * 操作系统挑的一个空闲端口，关掉之后交给测试自己占住。只给「换端口」那一例用：它要一个已知的起点再故意占住；
+ * 别处起后端一律给端口 0（helpers.ts 的 spawnBackend 与下面的 startBackend）。
+ */
 async function freePort(): Promise<number> {
   const probe = createServer();
   try {
@@ -276,7 +279,7 @@ test("真进程：desktop 形态只绑 127.0.0.1；--port 0 由系统挑端口�
 });
 
 test("真进程：desktop 形态给了 --host 0.0.0.0 时，从别的网卡来的退出请求是 403，服务信息对它不声明退出能力", { ...CASE, skip: lanAddress === null ? "本机没有回环以外的地址" : false }, async () => {
-  const { child, port } = await startBackend("desktop-any", ["--port", String(await freePort()), "--mode", "desktop", "--host", "0.0.0.0"]);
+  const { child, port } = await startBackend("desktop-any", ["--port", "0", "--mode", "desktop", "--host", "0.0.0.0"]);
   try {
     const refused = await call(lanAddress!, port, "POST", "/api/v1/service/exit");
     assert.deepEqual([refused.status, refused.body.error.code], [403, "forbidden"]);
