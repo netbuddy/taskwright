@@ -26,8 +26,8 @@ They can only be regenerated while `server/` is still in the repository.
 ## Known differences from the saved outputs
 
 The TypeScript task service has since changed on purpose in several ways the Python one has not. The saved outputs are not
-regenerated for these changes, so `sessions.mts --against fixtures` reports the twelve parts below as different, and only these
-(besides values that differ only by the port the fake model endpoint listened on). All twelve go away when the Python version
+regenerated for these changes, so `sessions.mts --against fixtures` reports the fifteen parts below as different, and only these
+(besides values that differ only by the port the fake model endpoint listened on). All fifteen go away when the Python version
 and these saved outputs are retired.
 
 | Scenario and part | What differs | Why |
@@ -44,6 +44,7 @@ and these saved outputs are retired.
 | `review_gate`, event stream | The review progress, recorded review, batch and finish events of step 07 name UC-002 instead of UC-001; the recorded review has `forced` false and the batch has no `forced` list. | Same change. |
 | `review_gate`, archives | The extension's answers to steps 05 to 07, the session file line and the messages about the review name UC-002, and the reviewer's prompt is the one for UC-002. | Same change. |
 | `review_gate`, observatory | The same three answers as read by the observatory, and the events written by the reviewing tool call have no `forced`. | Same change. |
+| `service`, observations, archives and observatory | Step 27, a direct action of the retired kind `confirm`, is refused with the same 400 `bad_request`, but the message listing the operation kinds ends with 、set_review_rules、submit_deliverable 之一。 instead of 、set_review_rules 之一。 The same message appears once in each of the three parts: the observations, the extension's status text in the raw event stream, and the interface request read by the observatory. | A direct operation `submit_deliverable` was added, so the message listing the operation kinds names one more. |
 
 What step 12 used to check, a direct action while the assistant is not running, is now covered by the backend tests in
 `backend/tests/session_resume.test.ts` (after the assistant exited, before it was started, when resuming finds a different
