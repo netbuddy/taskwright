@@ -34,7 +34,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, databasePath, emit, wallClockText } from "./db.ts";
-import { withTaskDatabase } from "./schema.ts";
+import { SOURCE_USER_EDIT, withTaskDatabase } from "./schema.ts";
 import { extractJson, type ModelCallRecord } from "./model_call.ts";
 import { RULE_REQUIRED, type ReviewRule, effectiveRules, validateDefinition } from "./definition.ts";
 import { currentReviews, rulesHash } from "./review_state.ts";
@@ -189,8 +189,9 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       const rules = rulesOf.get(row.collection)!;
       if (!rules.length) continue;
       const fields = (JSON.parse(row.fields) as Record<string, unknown>) ?? {};
-      const sources = db.prepare("SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no")
-        .all(task.task_id, want.item_id, want.revision_no) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
+      // 早期版本写下的「用户直接修改」不交给评审：条目上的话都算用户自己的，来源只列引用的原始片段。
+      const sources = db.prepare("SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ? ORDER BY position, support_no")
+        .all(task.task_id, want.item_id, want.revision_no, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
       items.push({
         ...want, collection: row.collection, fields, decls, rules, rulesPath: decl?.reviewRules?.file ?? null,
         rulesDigest: digest(JSON.stringify(rules) + "\n" + JSON.stringify(decls)),

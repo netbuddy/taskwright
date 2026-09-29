@@ -17,7 +17,8 @@
  *
  * 没有评审通过或没有确认标记的条目不拦，如实写进「评审状态」「确认状态」两处。
  * 「用户的话」的出处在库里是「会话编号#消息编号」，文档里换成「会话「名称」里用户的第 N 句话」（由调用方算好传进来）；
- * Word 材料的出处只写文件路径；「用户直接修改」的出处换成「用户在界面上的第 N 次修改（时刻）」。
+ * Word 材料的出处只写文件路径。早期版本写下的「用户直接修改」不写进文档（条目上的话都算用户自己的，谁改的看修订）；
+ * 条目没有来源时，来源一项写「（无）」。
  */
 
 import { statSync } from "node:fs";
@@ -94,31 +95,14 @@ const EXECUTOR_SUPPLEMENT = "执行者补充";
 /** 来源种类在文档里的写法：库里的存储值「执行者补充」对读者写成「助手补充」，其余照存储值。 */
 const KIND_WORDS: Record<string, string> = { [EXECUTOR_SUPPLEMENT]: "助手补充" };
 
-/** 界面操作编号 → 「用户在界面上的第 N 次修改（时刻）」。编号与先后都取自库。 */
-export function editLocator(lib: Library): Locate {
-  const firstSeq = new Map<string, number>();
-  for (const rows of (lib.data.sources ?? new Map()).values()) {
-    for (const one of rows) {
-      const seq = one["事件序号"];
-      if (one["种类"] === USER_EDIT && truthy(one["出处"]) && Number.isInteger(seq)) {
-        firstSeq.set(one["出处"], Math.min(seq, firstSeq.get(one["出处"]) ?? seq));
-      }
-    }
-  }
-  const order = new Map([...firstSeq.keys()].sort((a, b) => firstSeq.get(a)! - firstSeq.get(b)!).map((op, n) => [op, n + 1]));
-  const meta = lib.data.event_meta ?? new Map();
-  return (locator) => {
-    const n = order.get(locator);
-    if (n === undefined) return null;
-    const at = String(or((meta.get(firstSeq.get(locator)!) ?? {}).at, ""));
-    const when = at.slice(0, 16).replace("T", " ");
-    return when ? `用户在界面上的第 ${n} 次修改（${when}）` : `用户在界面上的第 ${n} 次修改`;
-  };
-}
+/** 条目没有来源时，文档里来源一项的写法。 */
+export const NO_SOURCES_TEXT = "（无）";
 
-export function sourcesText(lib: Library, itemId: string, revisionNo: number, wordsLocator: Locate | null = null, editsLocator: Locate | null = null): string {
+export function sourcesText(lib: Library, itemId: string, revisionNo: number, wordsLocator: Locate | null = null): string {
   const parts = [];
   for (const s of lib.sourcesOf(itemId, revisionNo)) {
+    // 早期版本写下的「用户直接修改」不写进文档；读库时已经滤掉（lib/task_read.ts），这里再挡一次。
+    if (s.kind === USER_EDIT) continue;
     // 摘录（与领域说明来源的出处）为空时不写那半句：保存修订要求来源都有摘录，这里是库数据异常时的兜底。
     const quoted = truthy(s.excerpt) ? `（「${str(s.excerpt)}」）` : "";
     if (s.kind === DOMAIN_NOTE) {
@@ -129,9 +113,6 @@ export function sourcesText(lib: Library, itemId: string, revisionNo: number, wo
     if (s.kind === USER_WORDS) {
       const readable = wordsLocator && truthy(s.locator) ? wordsLocator(s.locator) : null;
       where = `，出处 ${readable || "对话里用户说的话"}`;
-    } else if (s.kind === USER_EDIT) {
-      const readable = editsLocator && truthy(s.locator) ? editsLocator(s.locator) : null;
-      where = `，出处 ${readable || "用户在界面上的修改"}`;
     } else {
       // Word 材料的出处在库里带段落号（inputs/x.docx#p37），段落号对读者没有用，文档里只写文件名。
       const locator = String(or(s.locator, "")).replace(/(\.docx)#p\d+$/i, "$1");
@@ -139,7 +120,7 @@ export function sourcesText(lib: Library, itemId: string, revisionNo: number, wo
     }
     parts.push(`${KIND_WORDS[s.kind] ?? s.kind}${where}${quoted}`);
   }
-  return parts.join("；") || "（没有登记来源）";
+  return parts.join("；") || NO_SOURCES_TEXT;
 }
 
 /** 「集合名 字段=值 字段!=值」→ [集合名, [字段, 是否要相等, 值]]。值里不能有空格。 */
@@ -202,7 +183,6 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
     if (missing.length) throw new ApiError("bad_request", `修订 ${docRevision} 时交付物里没有这些条目：${missing.join("、")}。`, { items: missing });
     alive = new Map(items.map((i) => [i, alive.get(i)!]));
   }
-  const edits = editLocator(lib);
   const chosen = new Map<string, [string, number][]>();
   for (const [itemId, contentRevision] of alive) {
     const collection = lib.items.get(itemId)!.collection;
@@ -227,7 +207,7 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
       // 「内容版本号」是旧模板里的写法，按修订号填（任务目录里拷去的旧模板照样能用）。
       const special: Record<string, string> = {
         编号: itemId, 修订号: String(no), 内容版本号: String(no), 评审状态: reviewState(lib, itemId, no),
-        确认状态: confirmState(lib, itemId, no), 来源: sourcesText(lib, itemId, no, wordsLocator, edits),
+        确认状态: confirmState(lib, itemId, no), 来源: sourcesText(lib, itemId, no, wordsLocator),
       };
       return body.replace(FIELD, (_m, raw: string) => {
         const key = raw.trim();

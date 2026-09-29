@@ -29,7 +29,10 @@
  * 修改时原来的来源宁可多留（lib/source_carry.ts）：执行者改了字段，原来的来源按内容跟着走——没改的内容上的一律保留，列表插入、
  * 删除别的项、调换先后之后序号改指原来那一项，删掉的项上的去掉，改写了的内容上的照旧留着并在结果末尾提醒它检查；这次给的来源
  * 接在后面，与原来同一句摘录的合成一条。执行者要去掉某条来源，用只给 sources、不改字段的修改整体重新标注，结果里写明去掉了哪几条。
- * 保留下来的旧来源不再核对摘录。用户在界面上的操作照旧：交来的来源整体替换，不交就全部沿用。
+ * 保留下来的旧来源不再核对摘录。用户在界面上的操作照旧：交来的来源整体替换（可以是空列表：用户改写之后条目可以没有来源），不交就全部沿用。
+ *
+ * 「用户直接修改」是早期版本在用户直接改字段时写下的来源，现在不再写。旧修订里的这种记录原样留在库里，但修改时一律不沿用，
+ * 当作不存在：不算进「改完之后至少一条来源」，提醒与「去掉了哪几条」里也不提它；用户撤销时交回的旧来源照原样恢复。
  *
  * 问题条目的状态：执行者把它改为「已解决」或「用户决定保留」之前，用户要在「这个问题是否已解决」的卡片上点过对应的那一项，
  * 而且点了之后这个问题条目与它牵涉的条目没有再改过；新增问题条目时状态不能直接写成这两种。规则在 lib/problem_consent.ts，
@@ -483,7 +486,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         }
       }
     }
-    const previousSources = sourcesOf(itemId, current.revision_no);
+    // 旧的「用户直接修改」当作不存在（见文件开头）。用户的操作（直接修改、撤销）都交来完整的来源，不经这里沿用，撤销照原样恢复。
+    const previousSources = sourcesOf(itemId, current.revision_no).filter((one) => one.kind !== SOURCE_USER_EDIT);
     const inherited = raw.sources === undefined;
     const given = inherited ? null : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText);
     let sources = inherited ? previousSources : given;
@@ -498,7 +502,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       const left = carried.rewritten.filter((one) => !restated.has(one.source));
       if (left.length) notes.push(rewrittenNote(itemId, left));
       if (sources.length === 0) {
-        errors.push(withGuide(`${itemId} 原来的来源指的都是这次删掉的内容，改完之后一条来源也不剩`, "请在这个操作里给出 sources，每个条目至少一条来源"));
+        errors.push(withGuide(`${itemId} 改完之后一条来源也没有`, "请在这个操作里给出 sources，每个条目至少一条来源"));
       }
     } else if (call.actor !== ACTOR_USER && given && !editsFields) {
       // 只给 sources、不改字段：整体重新标注，这是执行者去掉某条来源的写法；去掉了哪几条写进结果。
@@ -828,7 +832,8 @@ function checkSources(
     if (required) errors.push("缺少 sources，至少要有一条来源");
     return null;
   }
-  if (!Array.isArray(raw) || raw.length === 0) {
+  // 用户在界面上改写之后条目可以没有来源，所以发起方是用户时可以交空列表。
+  if (!Array.isArray(raw) || (raw.length === 0 && actor !== ACTOR_USER)) {
     errors.push("sources 应当是一个不为空的列表，至少要有一条来源");
     return null;
   }
@@ -842,10 +847,10 @@ function checkSources(
       return;
     }
     const missing: string[] = [];
-    // 「用户直接修改」只由用户在界面上的直接操作经扩展命令写，执行者只能填前三种。
+    // 「用户直接修改」是早期版本由系统写的，执行者不能填；执行者只能填 EXECUTOR_SOURCE_KINDS 那几种。
     const allowed: readonly string[] = actor === ACTOR_USER ? SOURCE_KINDS : EXECUTOR_SOURCE_KINDS;
     if (one.kind === SOURCE_USER_EDIT && actor !== ACTOR_USER) {
-      errors.push(withGuide(`${where}的种类写成了「${SOURCE_USER_EDIT}」，这一种只由系统在用户直接改字段时写`,
+      errors.push(withGuide(`${where}的种类写成了「${SOURCE_USER_EDIT}」，这一种助手不能填`,
         `kind 只能是${EXECUTOR_SOURCE_KINDS.map((kind) => `「${kind}」`).join("、")}之一`));
       ok = false;
     } else if (typeof one.kind !== "string" || !allowed.includes(one.kind)) {

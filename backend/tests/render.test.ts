@@ -1,5 +1,5 @@
 /**
- * 生成文档：按修订整体导出、如实标注确认与评审；文档请求的写法；「用户的话」与「用户直接修改」的出处换成读者看得懂的说法；
+ * 生成文档：按修订整体导出、如实标注确认与评审；文档请求的写法；「用户的话」的出处换成读者看得懂的说法；
  * Word 材料的出处只写文件名；真实任务类型的模板里的领域说明两节；模板的按字段筛选与按字段归组。
  */
 
@@ -99,32 +99,13 @@ describe("「用户的话」的出处换成会话名称与用户的第几句话"
   });
 });
 
-describe("「用户直接修改」的出处换成用户在界面上的第几次修改", () => {
-  const edit = (op: string, seq: number) => ({ 种类: "用户直接修改", 出处: op, 摘录: "新值", 第几条: 1, 事件序号: seq, 支持: [] });
-  const fakeLib = () => {
-    const sources = new Map<string, any[]>([
-      ["UC-001\u00002", [edit("ui-op-b", 7)]], ["UC-001\u00003", [edit("ui-op-b", 7), edit("ui-op-c", 9)]],
-      ["UC-002\u00002", [edit("ui-op-a", 5)]], ["UC-002\u00001", [{ 种类: "文档原文", 出处: "inputs/a.md", 摘录: "原文", 第几条: 1, 事件序号: 2, 支持: [] }]],
-    ]);
-    return {
-      data: { sources, event_meta: new Map([[5, { at: "2026-09-22T17:55:20.939" }], [7, { at: "2026-09-22T18:01:02.000" }], [9, { at: "" }]]) },
-      sourcesOf: (itemId: string, no: number) => (sources.get(`${itemId}\u0000${no}`) ?? []).map(library.sourceView),
-    } as any;
-  };
-
-  test("按写入先后编号并带上时刻", () => {
-    const locate = render.editLocator(fakeLib());
-    assert.equal(locate("ui-op-a"), "用户在界面上的第 1 次修改（2026-09-22 17:55）");
-    assert.equal(locate("ui-op-b"), "用户在界面上的第 2 次修改（2026-09-22 18:01）", "沿用到后一版的同一个来源不重复计数");
-    assert.equal(locate("ui-op-c"), "用户在界面上的第 3 次修改", "没有时刻就不写括号");
-    assert.equal(locate("ui-op-zzz"), null);
-  });
-
-  test("渲染不把操作编号印进文档", () => {
-    const lib = fakeLib();
-    assert.equal(render.sourcesText(lib, "UC-002", 2, null, render.editLocator(lib)), "用户直接修改，出处 用户在界面上的第 1 次修改（2026-09-22 17:55）（「新值」）");
-    assert.equal(render.sourcesText(lib, "UC-002", 2), "用户直接修改，出处 用户在界面上的修改（「新值」）");
-  });
+test("早期版本写下的「用户直接修改」不写进文档；条目没有别的来源时来源一项写「（无）」", () => {
+  const edit = { kind: "用户直接修改", locator: "ui-op-a", excerpt: "新值" };
+  const both = { sourcesOf: () => [edit, { kind: "文档原文", locator: "inputs/a.md", excerpt: "原文" }] } as any;
+  assert.equal(render.sourcesText(both, "UC-001", 1), "文档原文，出处 inputs/a.md（「原文」）");
+  const only = { sourcesOf: () => [edit] } as any;
+  assert.equal(render.sourcesText(only, "UC-001", 1), "（无）");
+  assert.equal(render.sourcesText({ sourcesOf: () => [] } as any, "UC-001", 1), "（无）");
 });
 
 test("导出文档里 Word 材料的出处只写文件名", () => {
