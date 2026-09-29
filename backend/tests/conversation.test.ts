@@ -123,6 +123,12 @@ test("过程摘要：重放的保存修订写明没有重复写入；请求评�
   assert.equal(stepText("request_review", {}, true, true, null, {}), "请评审者评审没有做成");
 });
 
+test("过程摘要：完成任务被拒时不写原因（条件没满足与用户还没同意都一样），做成了写把任务标为已完成", () => {
+  assert.equal(stepText("complete_task", {}, true, true, null, {}), "完成任务没有做成");
+  assert.equal(stepText("complete_task", {}, true, false, null, {}), "把任务标为已完成");
+  assert.equal(stepText("complete_task", {}, false, false, null, {}), "正在完成任务");
+});
+
 test("告知：纯文字与带条目的都整理成对象，认不出的丢掉", () => {
   assert.deepEqual(normalizeInforms(["甲", { text: "乙", items: [{ item_id: "UC-001" }, { x: 1 }] }, { text: "丙", items: [] }, 3, { items: [] }]),
     [{ text: "甲" }, { text: "乙", items: [{ item_id: "UC-001" }] }, { text: "丙" }]);
