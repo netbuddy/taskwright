@@ -59,7 +59,8 @@ export const TASK_ABANDONED = "已放弃";
 
 /**
  * 来源的五种种类。「文档原文」「用户的话」「执行者补充」「领域说明」由执行者在「保存修订」里填；
- * 「用户直接修改」只由系统写：用户在界面上直接改了某个字段时，扩展命令给改到的字段写一条这种来源，出处是那次操作的编号。
+ * 「用户直接修改」是早期版本在用户直接改了某个字段时由系统写的，出处是那次操作的编号；现在不再写，也不再显示，
+ * 旧修订里的记录原样留在库里（种类清单与表的检查照旧收它）。
  * 「领域说明」指向这个任务「领域说明」集合里的一个条目：出处写它的条目编号（例如 DN-002），摘录写引用的那句；
  * 种类名与集合名相同，保存修订核对出处是那个集合里还在的条目。
  */
@@ -503,12 +504,3 @@ export function useWriteAheadLog(db: DatabaseSync): void {
   }
 }
 
-/**
- * 这个库的来源表认不认「用户直接修改」。加入第四种来源之前建的库，来源表的种类检查只有三种，写这一种会被 SQLite 拒绝；
- * 库表改动不做迁移，这样的库在用户直接改字段时沿用旧做法（来源沿用条目当前的来源），由调用方据此判断。
- */
-export function acceptsUserEditSource(db: DatabaseSync): boolean {
-  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'item_source'").get() as { sql?: string } | undefined;
-  // 只看种类检查里带单引号的取值；建表语句的列注释里也出现这几个字，不能算。
-  return (row?.sql ?? "").includes(`'${SOURCE_USER_EDIT}'`);
-}

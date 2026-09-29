@@ -142,7 +142,7 @@ test("沿用条目当前的来源时，字段改短、来源指的项被删掉�
   const message = rejection(() =>
     saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 步骤: ["一步到位"] } }] }),
   );
-  assert.match(message, /UC-001 原来的来源指的都是这次删掉的内容，改完之后一条来源也不剩。\n  怎么办：请在这个操作里给出 sources，每个条目至少一条来源/);
+  assert.match(message, /UC-001 改完之后一条来源也没有。\n  怎么办：请在这个操作里给出 sources，每个条目至少一条来源/);
   // 沿用的来源仍然有效时照常沿用，supports 一起带到新的修订。
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "用口令登录" } }] });
   const rows = query<any>(dir, "SELECT field, field_index FROM item_source WHERE revision_no = 2");

@@ -2,7 +2,7 @@
  * 只读工具与用户直接修改来源的三部分：
  *   1. 两个只读工具的核心逻辑：查看条目（getItem）、查询任务状态（getTaskStatus）；
  *   2. 界面操作追加进会话的通知正文带改后的字段值；
- *   3. 来源种类「用户直接修改」：直接操作改到的字段写这种来源，没改的沿用；执行者不能填；执行者给新来源时自动带上。
+ *   3. 用户直接改字段时的来源：改到的那一处原来的来源去掉，不加新来源，没改的沿用；早期版本写的「用户直接修改」执行者不能填。
  * 直接测 lib，不经 pi。
  */
 
@@ -125,27 +125,23 @@ test("查询任务状态：还没有修订时如实说明", () => {
 
 // ───────────── 界面操作的通知带新值，来源换成「用户直接修改」 ─────────────
 
-test("改字段：改到的字段来源换成「用户直接修改」，没改的字段来源沿用，同时支持两处的来源只去掉改到的那一处", () => {
+test("改字段：改到的字段上原来的来源去掉，不加新来源；没改的字段来源沿用，同时支持两处的来源只去掉改到的那一处", () => {
   const dir = fixture();
   const result = op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
   assert.equal(result.note, "界面操作（不是用户打的字）：用户改了 UC-001 的「名称」，产生修订 2，UC-001 现在是修订 2。这次修改同时算作用户看过并认可了 UC-001（修订 2）。改后的内容是：\n「名称」：用口令登录");
   assert.deepEqual(sourcesOf(dir, "UC-001", 2), [
     { position: 1, kind: "执行者补充", locator: "执行者补充", excerpt: "登录总要输入口令。", field: "步骤", field_index: 1 },
-    { position: 2, kind: "用户直接修改", locator: result.op_id, excerpt: "用口令登录", field: "名称", field_index: null },
   ]);
 });
 
-test("改列表字段：通知逐条列出；「用户直接修改」只指新加的那一项，摘录取它的前 200 字；支持整个条目的来源保留", () => {
+test("改列表字段：通知逐条列出；新加的那一项不加来源；支持整个条目的来源保留", () => {
   const dir = fixture();
   const long = "很".repeat(250);
   const result = op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-002", base_revision: 1 }], fields: { 步骤: ["点注销", long] } });
   assert.ok(result.note.endsWith(`「步骤」：\n  1. 点注销\n  2. ${long}`));
   const rows = sourcesOf(dir, "UC-002", 2);
   assert.deepEqual(rows[0], { position: 1, kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。", field: null, field_index: null });
-  assert.deepEqual([rows[1].kind, rows[1].field, rows[1].field_index], ["用户直接修改", "步骤", 1]);
-  assert.equal([...rows[1].excerpt].length, 200);
-  assert.equal(rows[1].excerpt, "很".repeat(200), "没改的「点注销」不算进摘录");
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 1);
 });
 
 test("清空可选字段：通知写明清空了，不给空字段写来源", () => {
@@ -156,12 +152,12 @@ test("清空可选字段：通知写明清空了，不给空字段写来源", ()
   assert.deepEqual(sourcesOf(dir, "UC-002", 3).map((row) => row.kind), ["文档原文"]);
 });
 
-test("标为先不管：状态字段的来源换成「用户直接修改」；删除的通知写明已删除；撤销的通知写出撤销后的内容", () => {
+test("标为先不管：不给「状态」加来源，支持整个条目的来源保留；删除的通知写明已删除；撤销的通知写出撤销后的内容", () => {
   const dir = fixture();
   const keep = op(dir, { kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }] });
   const tbd = sourcesOf(dir, "TBD-001", 2);
-  assert.deepEqual(tbd.map((row) => [row.kind, row.field]), [["文档原文", null], ["用户直接修改", "状态"]]);
-  assert.equal(tbd[1].locator, keep.op_id);
+  assert.deepEqual(tbd.map((row) => [row.kind, row.field]), [["文档原文", null]]);
+  assert.match(keep.note, /TBD-001 标为先不管/);
   const del = op(dir, { kind: "delete_item", targets: [{ item_id: "UC-002", base_revision: 1 }] });
   assert.match(del.note, /用户删除了 UC-002（删除前在修订 1），产生修订 3。这些条目已删除，不再算在交付物里。$/);
   const edit = op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
@@ -177,29 +173,29 @@ test("执行者不能填「用户直接修改」", () => {
   const dir = fixture();
   assert.throws(
     () => saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "x", 步骤: ["y"] }, sources: [{ kind: "用户直接修改", locator: "ui-op-1", excerpt: "x" }] }] }),
-    /种类写成了「用户直接修改」，这一种只由系统在用户直接改字段时写/,
+    /种类写成了「用户直接修改」，这一种助手不能填/,
   );
 });
 
-test("执行者修改时：没改的内容上的来源（包括「用户直接修改」）保留；改写了用户改过的字段，那条也留着，结果里提醒", () => {
+test("执行者修改时：没改的内容上的来源保留；用户改写过的字段上已经没有来源，执行者给了就用它的", () => {
   const dir = fixture();
   op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
   const pairs = (revision: number) => sourcesOf(dir, "UC-001", revision).map((row) => [row.kind, row.field, row.field_index]);
-  assert.deepEqual(pairs(2), [["执行者补充", "步骤", 1], ["用户直接修改", "名称", null]]);
-  // 往「步骤」末尾加一项：原来指到第 2 项「输入口令」的来源仍指着它，「名称」上用户直接修改的那条照旧。
+  assert.deepEqual(pairs(2), [["执行者补充", "步骤", 1]]);
+  // 往「步骤」末尾加一项：原来指到第 2 项「输入口令」的来源仍指着它。
   saveRevision(callIn(dir), {
     operations: [{ op: "update", item: "UC-001", base_revision: 2, fields: { 步骤: ["打开页面", "输入口令", "点登录"] }, sources: [{ ...SOURCE, supports: [{ field: "步骤" }] }] }],
   });
-  assert.deepEqual(pairs(3), [["执行者补充", "步骤", 1], ["用户直接修改", "名称", null], ["文档原文", "步骤", null]]);
-  // 这次改的正是用户改过的「名称」：那条来源留着，结果里提醒；新给的与原来同一句摘录，合成一条，支持整个条目。
+  assert.deepEqual(pairs(3), [["执行者补充", "步骤", 1], ["文档原文", "步骤", null]]);
+  // 改「名称」：它上面没有来源，不提醒；新给的与原来同一句摘录，合成一条，支持整个条目。
   const outcome = saveRevision(callIn(dir), {
     operations: [{ op: "update", item: "UC-001", base_revision: 3, fields: { 名称: "账号登录" }, sources: [{ ...SOURCE, supports: [] }] }],
   });
-  assert.deepEqual(pairs(4), [["执行者补充", "步骤", 1], ["用户直接修改", "名称", null], ["文档原文", null, null]]);
-  assert.match(outcome.text, /\n提醒：UC-001 这次改写了的内容上还留着原来的来源：「名称」上的「用口令登录」（用户直接修改）。/);
+  assert.deepEqual(pairs(4), [["执行者补充", "步骤", 1], ["文档原文", null, null]]);
+  assert.doesNotMatch(outcome.text, /提醒/);
 });
 
-test("加入第四种来源之前建的库不认它：改字段照旧能改，来源沿用条目当前的来源", () => {
+test("加入第四种来源之前建的库：与新库同样处理，改字段照旧能改，改到的那一处原来的来源去掉", () => {
   const dir = fixture();
   // 把来源表换成旧的建表语句（种类检查只有三种），模拟较早建的库。
   const db = new DatabaseSync(databasePath(dir));
@@ -210,7 +206,7 @@ test("加入第四种来源之前建的库不认它：改字段照旧能改，�
   db.close();
   const result = op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
   assert.equal(result.results[0].revision_no, 2);
-  assert.deepEqual(sourcesOf(dir, "UC-001", 2).map((row) => row.kind), ["文档原文", "执行者补充", "执行者补充"]);
+  assert.deepEqual(sourcesOf(dir, "UC-001", 2).map((row) => [row.kind, row.field, row.field_index]), [["执行者补充", "步骤", 1]]);
   assert.ok(count(dir, "event") >= 3);
 });
 
