@@ -1,7 +1,7 @@
 // 评审门禁的界面：条目区的评审按钮与灰化、进度与结果（全站提示条）、字段旁的问题与建议两色和条文展开、
 // 徽标写法、完成条件面板里评审一条的两组与按钮，以及工作视图状态对三种评审事件的消费。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 import type { Completion, Item, Snapshot, Task } from "../api/types";
@@ -118,6 +118,18 @@ describe("条目区顶部的评审动作", () => {
     expect(screen.getByTestId("toast-bad")).toHaveTextContent("评审完了：0 条合规，0 条不合规，4 条没有评完（可以再评一次）。模型服务不可用。");
     act(() => { vi.advanceTimersByTime(20000); });
     expect(screen.getByTestId("toast-bad")).toBeInTheDocument();   // 失败停住
+  });
+
+  it("评审没有结束就被清掉（助手在评审中途不在运行了）：「评审中」的提示条收起；评完的提示不受影响", async () => {
+    const Probe = ({ review }: { review: ReviewRun | null }) => { useReviewToast(review, vi.fn()); return null; };
+    const view = (review: ReviewRun | null) => <Wrap><ToastProvider><Probe review={review} /></ToastProvider></Wrap>;
+    const { rerender } = render(view({ op_id: "ui-op-1", done: 0, total: 2, current: ["UC-002"], finished: null }));
+    expect(screen.getByTestId("toast-run")).toHaveTextContent("评审中 0/2");
+    rerender(view(null));
+    await waitFor(() => expect(screen.queryByTestId("toast-run")).toBeNull());
+    rerender(view({ op_id: "ui-op-2", done: 2, total: 2, current: [], finished: { passed: 2, failed: 0, unfinished: 0, error: null } }));
+    rerender(view(null));
+    expect(screen.getByTestId("toast-ok")).toBeInTheDocument();
   });
 
   it("筛选「评审不通过」只列没有保留的，「已保留写法」只列保留了写法的，「评审通过」不含保留的", () => {

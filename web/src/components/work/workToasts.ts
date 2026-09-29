@@ -27,10 +27,18 @@ export function useReviewToast(review: ReviewRun | null, onShowReviews: () => vo
   const toast = useToast();
   const show = useRef(onShowReviews);
   show.current = onShowReviews;
+  // 正在显示「评审中」的那一批：评审状态没有结束就被清掉（助手在评审中途不在运行了，或整份数据说没有进行中的评审）时收起它，
+  // 不能一直挂着「评审中」。
+  const running = useRef<string | null>(null);
   useEffect(() => {
-    if (!review) return;
+    if (!review) {
+      if (running.current) toast.dismiss(running.current);
+      running.current = null;
+      return;
+    }
     const key = `review-${review.op_id}`;
     const f = review.finished;
+    running.current = f ? null : key;
     if (!f) {
       toast.running(key, `评审中 ${review.done}/${review.total}`, {
         progress: review.total ? review.done / review.total : 0,
@@ -41,7 +49,7 @@ export function useReviewToast(review: ReviewRun | null, onShowReviews: () => vo
     const action = { label: "看评审页签", onClick: () => show.current() };
     if (f.error) toast.error(reviewFinishedText(f), { key, action });
     else toast.success(reviewFinishedText(f), { key, action });
-  }, [review?.op_id, review?.done, review?.total, review?.current.join("、"), !!review?.finished]);
+  }, [review?.op_id, review?.done, review?.total, review?.current.join("、"), !!review?.finished, !review]);
 }
 
 export function useProblemToasts(problems: Problem[]) {
