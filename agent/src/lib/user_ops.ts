@@ -506,7 +506,7 @@ function markViewed(ctx: Ctx, opId: string, targets: Target[], notify: boolean):
   };
 }
 
-/** 卡片上点「这几条都看过了」之后发给执行者的那句话的开头。后端（service/conversation.py）按它认出这句不是用户打的字。 */
+/** 卡片上点「这几条都看过了」之后发给执行者的那句话的开头。后端（backend/src/conversation.ts）按它认出这句不是用户打的字。 */
 export const VIEWED_NOTICE_PREFIX = "我已经看过了：";
 
 interface RevisionOp {
