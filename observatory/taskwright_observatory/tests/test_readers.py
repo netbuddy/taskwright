@@ -536,7 +536,7 @@ class DialogueReaderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from taskwright_observatory.tests.dialogue_fixture import ARCHIVE_SESSION, TASK_ID, add_dialogue
-        from tests.test_current_format import make_workspace
+        from taskwright_observatory.tests.test_current_format import make_workspace
         cls._temp = tempfile.TemporaryDirectory()
         cls.workspace = make_workspace(Path(cls._temp.name), "任务目录新库表", with_db=True)
         add_dialogue(cls.workspace)

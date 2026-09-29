@@ -1,9 +1,9 @@
 /**
  * 创建任务的命令行入口：不经 pi，也不经模型。
  *
- * 2026-09-21 起任务由用户在界面上创建，执行者没有「创建任务」工具。后端（server/taskwright_server/create_task.py）
- * 建好任务目录、放好起始文件之后，起一个 Node 子进程运行本文件，由它调用与工具相同的核心函数
- * lib/create_task.ts 的 createTask 写任务记录。写库的入口因此仍只在 agent 的代码里。
+ * 2026-09-21 起任务由用户在界面上创建，执行者没有「创建任务」工具。任务服务建任务时在进程里直接调用核心函数
+ * lib/create_task.ts 的 createTask（backend/src/workspace.ts）；本文件给一个已经放好起始文件的任务目录调用同一个函数，
+ * 留给手工建任务与测试用。写库的入口因此仍只在 agent 的代码里。
  *
  * 用法：
  *   node cli/create_task.mts --dir <任务目录> --definition <任务定义相对任务目录的路径>

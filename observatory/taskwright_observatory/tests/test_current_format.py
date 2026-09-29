@@ -1,6 +1,6 @@
 """新格式（条目按修订号记）任务数据库的读取一侧测试：taskdb、dbshow、check_db 与观测台。
 
-夹具库由 agent 里真实的核心函数写出（tests/build_current_db.mts，用 node 运行），
+夹具库由 agent 里真实的核心函数写出（agent/tests/fixtures/build_current_db.mts，用 node 运行，后端的测试也用它），
 所以这里读的就是工具真正写出来的库。本机没有 node 时这些测试跳过。
 """
 
@@ -20,7 +20,9 @@ from taskwright_observatory import check_db, dbshow, taskdb
 from taskwright_observatory.api import Index
 from taskwright_observatory.revisions import project_current_format
 
-HERE = Path(__file__).resolve().parent
+# 代码仓根目录：本文件在 observatory/taskwright_observatory/tests/ 下。
+ROOT = Path(__file__).resolve().parents[3]
+BUILD_DB = ROOT / "agent" / "tests" / "fixtures" / "build_current_db.mts"
 DEFINITION = {
     "任务名": "演示任务",
     "交付物": {
@@ -47,7 +49,7 @@ def make_workspace(root: Path, name: str, with_db: bool) -> Path:
     (workspace / "docs" / "task-definitions" / "demo.json").write_text(
         json.dumps(DEFINITION, ensure_ascii=False), encoding="utf-8")
     if with_db:
-        subprocess.run(["node", str(HERE / "build_current_db.mts"), str(workspace)],
+        subprocess.run(["node", str(BUILD_DB), str(workspace)],
                        check=True, capture_output=True, text=True)
     return workspace
 

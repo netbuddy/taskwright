@@ -2,7 +2,7 @@
  * 任务占用标记：一个后端服务一个任务时，在任务目录里写一份 service.lock，免得两个后端同时服务同一份任务数据。
  *
  * service.lock 是一个 JSON 对象：端口（port）、进程号（pid）、启动时刻（started_at）、主机名（host）、运行形态（mode，desktop 或 server）。
- * Python 版写的标记没有 mode 一项；两版读标记都只看端口、进程号与主机名。
+ * 早先版本写的标记没有 mode 一项；读标记时只看端口、进程号与主机名，所以旧标记照样认得。
  * - 后端第一次接手一个任务（扫描任务目录时）写它，退出时删掉自己写的那些。
  * - 接手前发现已经有标记：同一台主机上、进程号还活着、不是本进程，就是别的服务在用，拒绝接手（claim 返回那份标记）；
  *   另一台主机写的标记判断不了死活，同样当作占用；进程号已经不在了的，是遗留的旧标记，覆盖并在日志里写明。
@@ -61,7 +61,7 @@ function localStamp(at = new Date()): string {
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
 }
 
-/** 标记文件的写法：键与值之间、各项之间各一个空格，末尾换行（与 Python 版写出的文件逐字相同）。 */
+/** 标记文件的写法：键与值之间、各项之间各一个空格，末尾换行（tests/service.test.ts 按原文核对）。 */
 function lockText(lock: Lock): string {
   return "{" + Object.entries(lock).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(", ") + "}\n";
 }

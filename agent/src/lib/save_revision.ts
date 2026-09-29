@@ -139,7 +139,7 @@ const OP_NAMES: Record<string, string> = { add: "新增", update: "修改", dele
 /**
  * 拒绝原因分两层：事实（改了什么、为什么不行，一句话，面向人）与指引（接下来该怎么做，只给助手）。
  * 核对函数往 errors 里推的一条文字可以用 withGuide 把两层拼在一起，组装时再拆开。
- * 给模型的正文每个操作两行：「- 操作 N（……）：事实」与「  怎么办：指引」；后端的过程摘要只取事实（work_summary.py）。
+ * 给模型的正文每个操作两行：「- 操作 N（……）：事实」与「  怎么办：指引」；后端的过程摘要只取事实（backend/src/work_summary.ts）。
  */
 export interface RejectReason { label: string; fact: string; guidance: string }
 const GUIDE = "\u0000";

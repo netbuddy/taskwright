@@ -235,12 +235,12 @@ python3 -m taskwright_observatory --runs <归档目录> --workspaces <任务目�
 | `diffs.py` | 改前改后的文字比对与列表比对。 |
 | `web/js/taskpage.js`、`web/taskpage.css` | 任务页与会话详情页共用的画法：按运行排的流程表（列可隐藏）、各轮与机器细节、看板、知识的使用、检视抽屉。样式都限定在页面根元素 `.tp` 之下。 |
 | `web/` | 不经构建的静态网页：一个 HTML、一份 CSS、若干原生 JavaScript 模块。不引用任何外部资源。 |
-| `tests/` | 单元测试与脱敏夹具：`fixtures/runs/` 是常规情形；`runs并行/` 一轮里并行的工具调用；`runs重试/` 自动重试；`runs插话/` 用户中途插话；`runs新库表/` 的调用编号与 `server/tests/build_current_db.mts` 写出的库一一对上。事件顺序都照 pi 源码里真实的发出顺序排。 |
+| `tests/` | 单元测试与脱敏夹具：`fixtures/runs/` 是常规情形；`runs并行/` 一轮里并行的工具调用；`runs重试/` 自动重试；`runs插话/` 用户中途插话；`runs新库表/` 的调用编号与 `agent/tests/fixtures/build_current_db.mts` 写出的库一一对上。事件顺序都照 pi 源码里真实的发出顺序排。 |
 
 跑测试：
 
 ```bash
-python3 -m unittest discover -s taskwright_server -t .
+python3 -m unittest discover -s taskwright_observatory -t .
 ```
 
 有几样不在单元测试里，都在前端（`web/js/taskpage.js`），这个仓库的测试只用 Python 标准库，没有跑 JavaScript 的环境：

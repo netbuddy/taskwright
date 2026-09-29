@@ -1,7 +1,6 @@
 /**
  * 路由与请求解析：路由分派（路径末尾的斜杠、百分号编码、没有的接口、这一版还没接上的接口）、错误形状与状态码、
  * 查询串与 multipart 的解析（中文文件名、RFC 2231 写法、引号里的转义）、超大上传不读请求体就拒绝、不支持的方法、时间的换算。
- * 对应服务端 Python 测试 test_service_units 的错误形状一条；其余是 TypeScript 版自己的路由与解析。
  */
 
 import assert from "node:assert/strict";

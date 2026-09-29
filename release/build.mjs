@@ -16,7 +16,7 @@
 //   --web-dist <dir>      a built web interface (default: build it now with the repository's vite)
 //   --postject <path>     the postject executable, needed for sea. Install it outside the repository, e.g.
 //                         `npm install --prefix <tools dir> postject@1.0.0-alpha.6`; never in this repository.
-//   --appimagetool <path> appimagetool (default: download the continuous build into the cache)
+//   --appimagetool <path> appimagetool (default: download the pinned release into the cache and check its checksum)
 //   --level <n>           zstd level of the single executable's payload (default 19)
 //
 // Nothing is written inside the repository. Do not run npm install or npm ci in the repository for this.
@@ -138,6 +138,31 @@ async function nodeBinary(cache, version, target) {
   }
   return binary;
 }
+
+/** Downloads a pinned file into the cache (or takes the cached copy) and checks its SHA-256; a mismatch stops the build. */
+async function pinned(url, file, sha256) {
+  await download(url, file);
+  const actual = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  if (actual !== sha256) throw new Error(`checksum mismatch for ${path.basename(file)}: ${actual}`);
+  return file;
+}
+
+// ---- appimagetool and the AppImage runtime --------------------------------------------------------------------
+
+// appimagetool builds the AppImage; the runtime is the small program at the front of every AppImage. Without
+// --runtime-file, appimagetool downloads the latest runtime by itself, unchecked, so the build downloads a pinned
+// runtime, checks it and hands it over. Versions are pinned; the SHA-256 values are the ones GitHub publishes for
+// these release assets.
+const APPIMAGETOOL = {
+  version: "1.9.1",
+  url: (v) => `https://github.com/AppImage/appimagetool/releases/download/${v}/appimagetool-x86_64.AppImage`,
+  sha256: "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+};
+const APPIMAGE_RUNTIME = {
+  version: "20251108",
+  url: (v) => `https://github.com/AppImage/type2-runtime/releases/download/${v}/runtime-x86_64`,
+  sha256: "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+};
 
 // ---- rg and fd -------------------------------------------------------------------------------------------
 
@@ -276,7 +301,9 @@ async function stagePayload({ work, cache, target, piDir, webDist, nodeVersion }
   copyTree(path.join(REPO, "agent", "src"), path.join(payload, "agent", "src"));
   copyTree(path.join(REPO, "agent", "prompts"), path.join(payload, "agent", "prompts"));
   copyTree(path.join(REPO, "task-types"), path.join(payload, "task-types"));
-  copyTree(path.join(REPO, "backend", "profiles"), path.join(payload, "backend", "profiles"));
+  // Only the profile the package starts with; the development and test profiles (dev.json, fake.json) stay out of it.
+  fs.mkdirSync(path.join(payload, "backend", "profiles"), { recursive: true });
+  fs.copyFileSync(path.join(REPO, "backend", "profiles", "desktop.json"), path.join(payload, "backend", "profiles", "desktop.json"));
   copyTree(path.join(REPO, "backend", "prompts"), path.join(payload, "backend", "prompts"));
   const product = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
   fs.writeFileSync(path.join(payload, "package.json"), JSON.stringify({ name: product.name, version: product.version, private: true }, null, 2) + "\n");
@@ -348,14 +375,15 @@ async function buildAppImage({ work, out, cache, payload, nodeVersion, appimaget
   fs.chmodSync(path.join(appDir, "AppRun"), 0o755);
   fs.symlinkSync("taskwright.svg", path.join(appDir, ".DirIcon"));
 
-  const tool = appimagetool || await download(
-    "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage",
-    path.join(cache, "appimagetool-x86_64.AppImage"));
+  const tool = appimagetool || await pinned(APPIMAGETOOL.url(APPIMAGETOOL.version),
+    path.join(cache, `appimagetool-${APPIMAGETOOL.version}-x86_64.AppImage`), APPIMAGETOOL.sha256);
+  const runtime = await pinned(APPIMAGE_RUNTIME.url(APPIMAGE_RUNTIME.version),
+    path.join(cache, `appimage-runtime-${APPIMAGE_RUNTIME.version}-x86_64`), APPIMAGE_RUNTIME.sha256);
   fs.chmodSync(tool, 0o755);
   const image = path.join(out, "taskwright-x86_64.AppImage");
   fs.rmSync(image, { force: true });
   // Extract-and-run: appimagetool is itself an AppImage, and this way building does not need FUSE.
-  execFileSync(tool, ["--no-appstream", appDir, image], { stdio: "inherit", env: { ...process.env, ARCH: "x86_64", APPIMAGE_EXTRACT_AND_RUN: "1" } });
+  execFileSync(tool, ["--no-appstream", "--runtime-file", runtime, appDir, image], { stdio: "inherit", env: { ...process.env, ARCH: "x86_64", APPIMAGE_EXTRACT_AND_RUN: "1" } });
   log(`AppImage ${image}: ${mb(fs.statSync(image).size)} (AppDir ${mb(treeSize(appDir))})`);
   return image;
 }

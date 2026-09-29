@@ -5,7 +5,7 @@
  *
  * --port 不写或写 0 时由操作系统挑空闲端口，启动后把端口打印出来。给了 --agent-dir 就顺手在那里写好
  * 只认这个假端点的 pi 配置目录，之后用 PI_CODING_AGENT_DIR=<那个目录> 启动 pi 即可。按 Ctrl+C 停。
- * 参数与打印的两行字与 Python 版（python -m taskwright_server.fake_model）相同。
+ * 打印的两行字（地址与 pi 配置目录）是测试与脚本等它起来时认的，不要改。
  */
 
 import { readFileSync } from "node:fs";

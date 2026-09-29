@@ -57,7 +57,7 @@ const UI_CLICK_TYPE = "taskwright-ui-click";
 const USER_EDIT_TYPE = "taskwright-user-edit";
 /** 卡片上点「这几条都看过了」之后替用户发的那句话的开头（lib/user_ops.ts 的 VIEWED_NOTICE_PREFIX）。 */
 const VIEWED_PREFIX = "我已经看过了：";
-/** 「先不管这条」之后后端替用户发的那句话的开头（server/taskwright_server/service/executor.py 的 KEEP_PENDING_NOTICE_PREFIX）。 */
+/** 「先不管这条」之后后端替用户发的那句话的开头（backend/src/executor.ts 的 KEEP_PENDING_NOTICE_PREFIX）。 */
 const KEEP_PENDING_PREFIX = "我先不管 ";
 
 /** 这一轮的用户的话是系统按界面操作合成的：哪种操作、牵涉哪些条目、点的是哪条回复的哪个选项。 */

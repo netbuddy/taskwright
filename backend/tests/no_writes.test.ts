@@ -1,7 +1,7 @@
 /**
  * 静态扫描：后端不写库。
  *
- * 1. backend/ 下的任何文件（源码、对照脚本、测试）从 agent/src/lib 导入的名字都必须在下面的白名单里：只读函数、常量，
+ * 1. backend/ 下的任何文件（源码、测试）从 agent/src/lib 导入的名字都必须在下面的白名单里：只读函数、常量，
  *    以及唯一允许的写入——建任务的 createTask。保存修订、界面操作、评审等写入函数一律不许导入；也不许整个模块导入或动态导入。
  * 2. backend/src 下的源码里不出现写库的 SQL（INSERT、UPDATE、DELETE、REPLACE、CREATE、DROP、ALTER）。
  */

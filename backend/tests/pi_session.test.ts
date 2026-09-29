@@ -1,7 +1,7 @@
 /**
  * pi 子进程与 RPC：用测试用的假 pi（tests/fixtures/fake_pi.mjs，经 TASKWRIGHT_PI_ENTRY 注入）测命令的收发与超时、
- * 界面请求的应答、合成的事件、三种归档文件的写法、关闭顺序与进程退出；另测启动配置拼出的 pi 命令行与 Python 版逐字一致、
- * 续接前改写会话文件记的工作目录。对应服务端 Python 测试 test_launch_skills、test_isolation（续接）与集成测试 test_rpc 的收发部分。
+ * 界面请求的应答、合成的事件、三种归档文件的写法、关闭顺序与进程退出；另测启动配置拼出的 pi 命令行与期望值逐字一致、
+ * 续接前改写会话文件记的工作目录。
  */
 
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { buildCommand, loadProfile, piLauncher } from "../src/launch.ts";
 import { PiExited, PiRefused, PiSession, PiTimeout, rebaseSessionCwd, technicalOf } from "../src/pi_session.ts";
-import { normalize } from "./fixtures/py/inputs.ts";
+import { normalize } from "./fixtures/expected/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
 const FAKE_PI = join(ROOT, "backend", "tests", "fixtures", "fake_pi.mjs");
@@ -43,15 +43,15 @@ async function drain(pi: PiSession, until: (e: Record<string, any>) => boolean) 
   }
 }
 
-test("启动配置拼出的 pi 命令行与 Python 版留存的输出逐字一致", () => {
+test("启动配置拼出的 pi 命令行与期望值逐字一致", () => {
   const profile = loadProfile("dev");
   profile.extensions = profile.extensions.filter((e: any) => e.source === "repo");
   delete process.env.TASKWRIGHT_PI_ENTRY;
   try {
     const ours = buildCommand(profile, workspace, join(tmp, "sd"), join(tmp, "s.jsonl"));
-    // Python 版对同一份启动配置、同样摆放的任务目录拼出的命令行，留存在 fixtures/py/launch_argv.json（生成方法见那里的 README.md）。
-    const python = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "py", "launch_argv.json"), "utf-8")).argv;
-    assert.deepEqual(normalize(["<pi>", ...ours.argv.slice(1)], [[tmp, "<临时目录>"], [ROOT, "<仓根>"]]), python);
+    // 这份启动配置、这样摆放的任务目录应当拼出的命令行，期望值在 fixtures/expected/launch_argv.json（说明见那里的 README.md）。
+    const expected = JSON.parse(readFileSync(join(ROOT, "backend", "tests", "fixtures", "expected", "launch_argv.json"), "utf-8")).argv;
+    assert.deepEqual(normalize(["<pi>", ...ours.argv.slice(1)], [[tmp, "<临时目录>"], [ROOT, "<仓根>"]]), expected);
   } finally {
     process.env.TASKWRIGHT_PI_ENTRY = FAKE_PI;
   }
@@ -99,7 +99,7 @@ test("启动：三种归档文件、后端补记各种记录、收到时刻与�
   assert.deepEqual(notes.find((n) => n["记录"] === "标准错误")["文字"], "假 pi 启动了");
   assert.equal(notes.at(-1)["记录"], "退出");
   assert.equal(notes.at(-1)["退出码"], 0);
-  assert.match(readFileSync(pi.notesPath!, "utf-8").split("\n")[0], /^\{"记录": "启动", "时刻": "/, "各项之间「逗号加空格」、键值之间「冒号加空格」，与 Python 版写出的文件逐字相同");
+  assert.match(readFileSync(pi.notesPath!, "utf-8").split("\n")[0], /^\{"记录": "启动", "时刻": "/, "各项之间「逗号加空格」、键值之间「冒号加空格」：观测台按这个写法读");
   const raw = lines(pi.archivePath!);
   assert.equal(raw[0], "这不是 JSON", "原始事件流原样照写，不是 JSON 的行也写");
   const times = lines(pi.timesPath!).map((l) => JSON.parse(l));
