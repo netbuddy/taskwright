@@ -56,4 +56,14 @@ describe("交付物看板", () => {
     expect(screen.getByTestId("board-review-功能用例")).toHaveTextContent("评审通过 1/1");
     expect(screen.getByTestId("board-read-功能用例")).toHaveTextContent("已读 1/1");
   });
+
+  it("灰字与标题说明都称「你」，不称「用户」", async () => {
+    const unread = { confirmations: [] };
+    await open([item("UC-001", "功能用例", { reviews: [ok] }), item("UC-002", "功能用例", unread),
+      item("DN-001", "领域说明"), item("DN-002", "领域说明", unread)]);
+    expect(screen.getByTestId("board-功能用例")).toHaveTextContent("这 2 个条目里，1 个在当前所在的修订上评审通过，你已经看过其中 1 个（已读）。");
+    expect(screen.getByTestId("board-领域说明")).toHaveTextContent("这 2 个条目里，你已经看过 1 个（已读）。这个集合不评审。");
+    expect(screen.getByText(/交付物看板/).textContent).toContain("有几个你已经看过（已读）。");
+    expect(document.querySelector(".board")?.textContent).not.toContain("用户");
+  });
 });

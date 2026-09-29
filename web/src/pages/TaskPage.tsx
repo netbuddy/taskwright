@@ -78,7 +78,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
       </p>
       {closed && <Alert type="info" showIcon style={{ marginBottom: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能新建会话、上传材料或修改条目，生成文档照常可用。`} />}
 
-      <div className="section-title">交付物看板 <span className="muted" style={{ fontWeight: 400 }}>按条目集合分开看：每个集合现在有几个条目、最后一次被改是哪次修订、有几个条目在当前所在的修订上已经评审通过、有几个用户已经看过（已读）。</span></div>
+      <div className="section-title">交付物看板 <span className="muted" style={{ fontWeight: 400 }}>按条目集合分开看：每个集合现在有几个条目、最后一次被改是哪次修订、有几个条目在当前所在的修订上已经评审通过、有几个你已经看过（已读）。</span></div>
       <div className="board">
         {task.definition.collections.map((coll) => {
           const items = task.items.filter((i) => i.collection === coll.name);
@@ -102,8 +102,8 @@ export function TaskPage({ taskId }: { taskId: string }) {
               </div>
               <div className="muted small">
                 {empty ? "这个集合还没有条目。" : reviewed_
-                  ? `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上评审通过，${counts.kept > 0 ? `${counts.kept} 个评审不通过但你保留了写法（按你的决定算通过），` : ""}${confirmed} 个用户已经看过（已读）。`
-                  : `这 ${items.length} 个条目里，${confirmed} 个用户已经看过（已读）。这个集合不评审。`}
+                  ? `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上评审通过，${counts.kept > 0 ? `${counts.kept} 个评审不通过但你保留了写法（按你的决定算通过），` : ""}你已经看过其中 ${confirmed} 个（已读）。`
+                  : `这 ${items.length} 个条目里，你已经看过 ${confirmed} 个（已读）。这个集合不评审。`}
               </div>
             </div>
           );
