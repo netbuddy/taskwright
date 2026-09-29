@@ -19,7 +19,7 @@ import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
 import { LaunchError, type Profile } from "./launch.ts";
 import { callFacts, openRo } from "./library.ts";
-import { type PiEvent, PiExited, PiNotFound, PiRefused, PiSession, PiStartRefused, PiTimeout, technicalOf } from "./pi_session.ts";
+import { type PiEvent, PiExited, PiNotFound, PiPrepareFailed, PiRefused, PiSession, PiStartRefused, PiTimeout, technicalOf } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
 import * as workSummary from "./work_summary.ts";
@@ -73,7 +73,8 @@ export const START_FAILED_TEXT = "助手没有启动起来。请把这个页面�
 /**
  * 启动失败时执行者状态的两样：detail 是接在「助手没有启动起来」后面的原因，text 是页面上显示的整句（页面在前面加「助手现在不可用：」）。
  * 找不到程序、系统拒绝启动、启动配置写错、等待超时四种，错误本身的说明就是给人看的中文，照旧接在后面；
- * 启动之后立刻退出与其余没有预料到的错误（例如助手的程序拒绝了启动时的查询，说明里带着它给的英文原因），换成固定的一句。
+ * 启动之后立刻退出与其余没有预料到的错误（例如助手的程序拒绝了启动时的查询，说明里带着它给的英文原因），换成固定的一句；
+ * 启动之前准备文件出错是另一句带系统代号的整句（pi_session.ts 的 prepareFailedText）。
  * 哪一种都不取助手的程序写到错误输出里的原文。
  */
 export function startFailure(error: unknown): { detail: string; text: string } {
@@ -81,6 +82,8 @@ export function startFailure(error: unknown): { detail: string; text: string } {
     return { detail: error.message, text: stateText("failed_to_start", error.message) };
   }
   if (error instanceof PiExited) return { detail: "", text: EXITED_AT_START_TEXT };
+  // 启动之前准备文件出错：说明本身是整句（带系统代号，不带路径），代替「助手没有启动起来」。
+  if (error instanceof PiPrepareFailed) return { detail: "", text: error.message };
   return { detail: "", text: START_FAILED_TEXT };
 }
 

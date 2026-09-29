@@ -117,6 +117,31 @@ export class PiStartRefused extends Error {
   }
 }
 
+/**
+ * 启动 pi 之前准备目录与文件时出错时给人看的那句，页面上接在「助手现在不可用：」后面。reason 的取法与 startRefusedText 相同。
+ * 措辞只在这一处。
+ */
+export function prepareFailedText(reason: string): string {
+  return `启动助手之前，任务服务没能写入它要用的文件，系统原因：${reason}。请把这个页面的地址告诉管理员。`;
+}
+
+/**
+ * 启动 pi 之前准备目录与文件时出错：建会话目录与归档目录、续接前备份并改写会话文件、打开三个归档文件、记知识仓库摘要。
+ * 常见的是没有写权限（EACCES）与磁盘满（ENOSPC）。说明只写英文代号，系统给的原话（带绝对路径）在 technical 里。
+ */
+export class PiPrepareFailed extends Error {
+  readonly technical: string;
+  readonly reason: string;
+  constructor(original: Error) {
+    const reason = systemReason(original);
+    super(prepareFailedText(reason));
+    this.reason = reason;
+    this.technical = original.message;
+  }
+}
+
+const asError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
+
 const stampCompact = (at = new Date()) => localStamp(at).replace(/[-:]/g, "").replace("T", "-");
 
 /**
@@ -246,10 +271,15 @@ export class PiSession {
     // 与 switchSession 相同，交给 pi 的会话文件一律是绝对路径；后端补记里记的也是这个路径。
     if (sessionFile !== null) sessionFile = resolve(sessionFile);
     const sessionDir = join(this.runsDir, "pi-sessions", this.label);
-    mkdirSync(sessionDir, { recursive: true });
     const eventsDir = join(this.runsDir, "pi-events");
-    mkdirSync(eventsDir, { recursive: true });
-    const rebased = sessionFile !== null ? rebaseSessionCwd(sessionFile, this.workspace) : null;
+    let rebased: [string, string] | null;
+    try {
+      mkdirSync(sessionDir, { recursive: true });
+      mkdirSync(eventsDir, { recursive: true });
+      rebased = sessionFile !== null ? rebaseSessionCwd(sessionFile, this.workspace) : null;
+    } catch (error) {
+      throw new PiPrepareFailed(asError(error));
+    }
     const built = launch.buildCommand(this.profile, this.workspace, sessionDir, sessionFile);
     this.command = built.argv;
     const env = built.env;
@@ -260,15 +290,24 @@ export class PiSession {
     this.timesPath = this.archivePath.replace(/\.jsonl$/, ".times.jsonl");
     // 文件名只精确到秒，同一秒里的两次启动共用一组文件：先记下哪几份是这一次新建的，启动失败时只删这一次新建的空文件。
     this.newFiles = [this.archivePath, this.notesPath, this.timesPath].filter((path) => !existsSync(path));
-    this.archive = openSync(this.archivePath, "a");
-    this.notes = openSync(this.notesPath, "a");
-    this.times = openSync(this.timesPath, "a");
+    // 打开归档文件或记知识仓库摘要时出错：关掉已经打开的、删掉这一次新建的空文件再报错，不留下没关的文件。
+    // 知识仓库摘要里的启动配置错误（平台 skill 不在了）照原样报，别的按准备文件出错报。
+    let knowledge: ReturnType<typeof launch.knowledgeSnapshot>;
+    try {
+      this.archive = openSync(this.archivePath, "a");
+      this.notes = openSync(this.notesPath, "a");
+      this.times = openSync(this.timesPath, "a");
+      knowledge = launch.knowledgeSnapshot(this.workspace, this.profile);
+    } catch (error) {
+      this.closeFiles();
+      this.removeEmptyArchive();
+      throw error instanceof launch.LaunchError ? error : new PiPrepareFailed(asError(error));
+    }
     this.archivedLines = 0;
     this.exited = false;
     this.events = new EventQueue();
     this.responses = new Map();
     this.stderrLines = [];
-    const knowledge = launch.knowledgeSnapshot(this.workspace, this.profile);
     // 启动失败有两种报法：命令行太长（E2BIG）、内存不足这类错误由 spawn 当场抛出，没有执行权限、找不到文件这类错误随后经
     // error 事件报出。两种一样处理：关掉三个归档文件，再按错误代号报错。
     let child: ChildProcess;
@@ -347,15 +386,15 @@ export class PiSession {
   /**
    * 子进程没有起来时这组归档文件里什么都没写（后端补记的第一条「启动」在子进程起来之后才写）。每次打开会话都会再试着启动，
    * 不删的话反复刷新页面会留下一组组空文件。只删这一次新建的、并且都是零字节的；三份里有一份是原来就有的或者写了内容，
-   * 三份都保留（那是留痕）。删不掉只写日志。
+   * 三份都保留（那是留痕）。打开到一半出错时后面的文件还没有建出来，只看已经在的那几份。删不掉只写日志。
    */
   private removeEmptyArchive(): void {
-    const paths = [this.archivePath, this.notesPath, this.timesPath].filter((p): p is string => p !== null);
+    const paths = [this.archivePath, this.notesPath, this.timesPath].filter((p): p is string => p !== null && existsSync(p));
     const fresh = this.newFiles;
     this.newFiles = [];
-    if (paths.length !== 3 || !paths.every((p) => fresh.includes(p))) return;
+    if (!paths.every((p) => fresh.includes(p))) return;
     try {
-      if (!paths.every((p) => statSync(p).size === 0)) return;
+      if (!paths.every((p) => statSync(p).isFile() && statSync(p).size === 0)) return;
     } catch {
       return;
     }
