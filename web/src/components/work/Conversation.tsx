@@ -35,7 +35,7 @@ export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, onShowReviews,
+  hold = false, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews,
 }: {
   messages: ConversationMessage[];
   currentWork: CurrentWork | null;
@@ -73,6 +73,8 @@ export function Conversation({
   /** 一次工作产生了哪几次修订（按工作编号从修订日志里取）；被停下或出错停下的那一轮在说明下面带修订小标签。 */
   revisionsOfWork?: (workId: string) => number[];
   onRevisionTag?: (revisions: number[]) => void;
+  /** 修订日志里有几次修订。它变了（例如刷新之后修订日志才读回来），修订小标签随之画出或变化，对话区要跟着留在最底部。 */
+  revisionCount?: number;
 }) {
   // 附件按钮可选的文件类型取自服务信息；还没取到时不过滤，由后端拒绝。
   const service = useService();
@@ -85,6 +87,17 @@ export function Conversation({
     const el = box.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, currentWork?.steps.length, outgoing.length]);
+  // 修订小标签要等修订日志读回来才画出，那时上面这一下已经滚过了，内容又长高一截，刷新之后对话区会停在最上面、最后一行被输入框挡住。
+  // 所以修订日志变了时再滚一次到底，但只在用户停在最底部时滚：用户自己往上翻着看的时候不把他拽回去。
+  const atBottom = useRef(true);
+  const onScroll = () => {
+    const el = box.current;
+    if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+  };
+  useEffect(() => {
+    const el = box.current;
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [revisionCount]);
 
   const sendOff = disabled || hold || working || starting;
   const sendTitle = (disabled && disabledReason) || hold ? SEND_OFF_TITLE : disabled ? undefined : working ? TURN_TEXT : starting ? STARTING_SEND_TITLE : "发送";
@@ -103,7 +116,7 @@ export function Conversation({
 
   return (
     <>
-      <div className="msgs" ref={box} data-testid="conversation">
+      <div className="msgs" ref={box} onScroll={onScroll} data-testid="conversation">
         {hasEarlier && <span className="earlier" role="button" onClick={onLoadEarlier}>再往前读一段对话</span>}
         {messages.map((m, index) => (
           <MessageView key={(m as { message_id?: string }).message_id ?? `${m.type}-${index}`} message={m} task={task} handlers={handlers}

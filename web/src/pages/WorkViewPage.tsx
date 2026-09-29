@@ -310,7 +310,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}
-                revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions}
+                revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions} revisionCount={log.length}
                 onLocate={(excerpt) => locateSource(excerpt, "")}
                 hasEarlier={state.hasEarlier}
                 onLoadEarlier={() => state.earliestId && api.earlierConversation(taskId, sessionId, state.earliestId).then((c) =>
