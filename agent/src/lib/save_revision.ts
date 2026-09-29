@@ -26,6 +26,10 @@
  * 写库、记事件、各项核对同在一个立即事务里；任何一个操作不通过，整次调用全部不写入，
  * 拒绝的文字逐条列出哪个操作的哪一处不对。本模块不依赖 pi。
  *
+ * 问题条目的状态：执行者把它改为「已解决」或「用户决定保留」之前，用户要在「这个问题是否已解决」的卡片上点过对应的那一项，
+ * 而且点了之后这个问题条目与它牵涉的条目没有再改过；新增问题条目时状态不能直接写成这两种。规则在 lib/problem_consent.ts，
+ * 点击由调用方从会话分支读好交进来（CallContext.problemClicks）。用户在界面上的操作不受这条限制。
+ *
  * 按调用编号判重（幂等）：同一次工具调用被重放（模型重试、pi 重发）时，库里已有这个调用编号形成的修订，
  * 就不再核对也不再写入，原样交回第一次的结果并注明「之前已经保存过」（savedBefore）；修订表上另有唯一索引兜底（schema.ts）。
  */
@@ -52,6 +56,8 @@ import {
 } from "./docx_source.ts";
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
+import { clickEventSeq } from "./completion_consent.ts";
+import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
 export interface Support {
@@ -292,9 +298,23 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   // 这次调用里要删掉的条目，以及被修改或删除过的条目。先扫一遍，
   // 好让「条目引用」的核对知道哪些条目在这次调用之后就不在了。
   const deletedHere = new Set<string>();
+  // 这一批里被修改、删除的条目：问题条目改状态时，同一批里又改了它牵涉的条目，算用户点头之后改过。
+  const changedHere = new Set<string>();
   for (const one of operations) {
     if (isObject(one) && one.op === "delete" && typeof one.item === "string") deletedHere.add(one.item);
+    if (isObject(one) && one.op !== "add" && typeof one.item === "string") changedHere.add(one.item);
   }
+  const problemFacts: ProblemFacts = {
+    clicks: call.problemClicks ?? [],
+    clickSeq: (userEntryId) => clickEventSeq(db, taskId, call.sessionId, userEntryId),
+    changedAfter: (itemId, seq) => {
+      const version = db.prepare("SELECT MAX(revision_no) AS n FROM item_version WHERE task_id = ? AND item_id = ? AND event_seq > ?")
+        .get(taskId, itemId, seq) as { n: number | null };
+      if (version.n !== null) return `修订 ${version.n}`;
+      const row = items.get(itemId);
+      return row && row.deleted_in_revision !== null && deletedAfter(db, taskId, itemId, seq) ? `修订 ${row.deleted_in_revision} 删除` : null;
+    },
+  };
   const touched = new Map<string, number>();
   // 这一批里新增的条目会拿到的编号：与 write 里分配编号的规矩相同（集合历史上的最大流水号加一，按操作顺序依次取）。
   // 排在前面的新增操作产生的条目，后面的操作可以引用；引用排在后面才新增的条目仍拒绝。
@@ -363,6 +383,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         errors.push("fields 应当是一个对象，键是字段名，值是字段内容");
       } else {
         checkFields(collection, raw.fields, checkRef, errors);
+        const status = keepPendingField(collection);
+        const refusal = status && call.actor !== ACTOR_USER
+          ? newProblemStatus(raw.fields[status.name], (status.values ?? []).find((value) => !Object.hasOwn(CONSENT_OPTION, value)) ?? null) : null;
+        if (refusal) errors.push(withGuide(refusal.fact, refusal.guidance));
         for (const field of collection.fields) {
           if (field.required && isEmptyValue(raw.fields[field.name])) {
             errors.push(`必填字段「${field.name}」没有填或者是空的`);
@@ -443,7 +467,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       errors.push("fields 应当是一个对象，只写要改的字段");
     } else if (isObject(raw.fields)) {
       checkFields(collection, raw.fields, checkRef, errors);
-      if (call.actor !== ACTOR_USER) checkProblemUpdate(collection, itemId, before, raw.fields, errors);
+      if (call.actor !== ACTOR_USER) {
+        checkProblemUpdate(collection, itemId, before, raw.fields, errors);
+        checkProblemStatus(collection, itemId, before, raw.fields, changedHere, problemFacts, errors);
+      }
       merged = dropEmpty({ ...before, ...raw.fields });
       for (const field of collection.fields) {
         if (field.required && field.name in raw.fields && isEmptyValue(raw.fields[field.name])) {
@@ -609,7 +636,7 @@ export function carriedSources(previous: Source[], changed: Set<string>, given: 
 /**
  * 问题条目（集合里有取值含「用户决定保留」的状态字段，见 keepPendingField）写下之后，执行者修改它时
  * 只能改状态与处理结果：用户的回答要写进它牵涉的条目，而不是写回问题本身。值没有变的字段不算改。
- * 新增不受限；用户在界面上的操作（先不管、撤销）不经这里核对。
+ * 新增不受这条限制（新增时状态不能直接写成已解决或用户决定保留，见 lib/problem_consent.ts 的 newProblemStatus）；用户在界面上的操作（先不管、撤销）不经这里核对。
  */
 function checkProblemUpdate(collection: CollectionDef, itemId: string, before: Fields, fields: Fields, errors: string[]): void {
   const status = keepPendingField(collection);
@@ -625,6 +652,38 @@ function checkProblemUpdate(collection: CollectionDef, itemId: string, before: F
     `助手想改 ${itemId} 的${changed.map((name) => `「${name}」`).join("、")}，但问题条目写下后只能改${status.name}与${PROBLEM_RESULT_FIELD}`,
     "用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决",
   ));
+}
+
+/**
+ * 执行者把问题条目的状态改为「已解决」或「用户决定保留」时，核对用户点过头（规则见 lib/problem_consent.ts）。
+ * 状态没有变、改成别的取值时不核对。牵涉的条目取这个问题条目改之前各个条目引用字段里写的编号。
+ */
+function checkProblemStatus(
+  collection: CollectionDef,
+  itemId: string,
+  before: Fields,
+  fields: Fields,
+  changedHere: Set<string>,
+  facts: ProblemFacts,
+  errors: string[],
+): void {
+  const status = keepPendingField(collection);
+  if (!status || !(status.name in fields)) return;
+  const value = fields[status.name];
+  if (typeof value !== "string" || value === before[status.name] || !Object.hasOwn(CONSENT_OPTION, value)) return;
+  const linked = collection.fields
+    .filter((field) => field.type === FIELD_ITEM_REF)
+    .flatMap((field) => (Array.isArray(before[field.name]) ? (before[field.name] as unknown[]) : []))
+    .filter((one): one is string => typeof one === "string" && one !== itemId);
+  const others = new Set([...changedHere].filter((one) => one !== itemId));
+  const refusal = judgeProblemStatus(itemId, value, [...new Set(linked)], others, facts);
+  if (refusal) errors.push(withGuide(refusal.fact, refusal.guidance));
+}
+
+/** 条目是不是在事件序号 seq 之后被删除的。 */
+function deletedAfter(db: DatabaseSync, taskId: string, itemId: string, seq: number): boolean {
+  const row = db.prepare("SELECT deleted_event_seq FROM item WHERE task_id = ? AND item_id = ?").get(taskId, itemId) as { deleted_event_seq: number | null } | undefined;
+  return !!row && row.deleted_event_seq !== null && Number(row.deleted_event_seq) > seq;
 }
 
 /** 核对一组字段：字段名都在集合的声明里，值的类型对得上。 */

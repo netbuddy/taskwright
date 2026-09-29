@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { ACTOR_USER } from "../src/lib/db.ts";
-import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, makeWorkspace, query } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, cardClick, count, demoDefinition, makeWorkspace, problemCard, problemClicksOn, query, userEntry } from "./helpers.ts";
 
 function workspaceWithTask(): string {
   const dir = makeWorkspace();
@@ -446,7 +446,9 @@ test("问题条目写下后执行者只能改状态与处理结果：改事项�
 
 test("问题条目：改状态与处理结果放行；新增不受限；用户在界面上的修改不受这条限制", () => {
   const dir = workspaceWithProblems();
-  const outcome = saveRevision(callIn(dir), {
+  // 改为已解决要用户在卡片上点过头（tests/problem_consent.test.ts 专门测这一条），这里照规矩先问、用户点了再改。
+  const branch = [userEntry("口令至少 8 位"), problemCard("k1", [{ item_id: "TBD-001", revision_no: 2 }]), ...cardClick("k1", "a", "已解决")];
+  const outcome = saveRevision({ ...callIn(dir), problemClicks: problemClicksOn(dir, "session-test", branch) }, {
     operations: [
       { op: "update", item: "TBD-001", base_revision: 2, fields: { 状态: "已解决", 处理结果: "用户采纳：口令至少 8 位" } },
       { op: "add", collection: "问题", fields: { 事项: "要不要短信登录？", 建议的处理: "先不做", 状态: "未解决" }, sources: [SOURCE] },

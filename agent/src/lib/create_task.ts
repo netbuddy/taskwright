@@ -13,6 +13,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, type Actor, EVENT_TASK_CREATED, emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, loadDefinition } from "./definition.ts";
 import { TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
+import type { ProblemClick } from "./problem_consent.ts";
 
 /** 当前会话分支上的一条用户消息：pi 会话条目的编号与原文。 */
 export interface UserMessage {
@@ -43,6 +44,12 @@ export interface CallContext {
    * 由工具的登记处在调用核心函数之前从会话管理器读好（读会话是同步的），核心函数里不读会话。
    */
   userMessages?: UserMessage[];
+  /**
+   * 当前会话分支上对「这个问题是否已解决」卡片的全部点击，按先后排（lib/problem_consent.ts 的 problemClicks）。
+   * 「保存修订」据此核对助手把问题条目改为已解决或用户决定保留之前，用户点过头；不给就当作一次都没有点过。
+   * 与 userMessages 一样由工具的登记处从会话分支读好交进来。
+   */
+  problemClicks?: ProblemClick[];
 }
 
 export interface ToolOutcome {

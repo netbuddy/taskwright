@@ -10,6 +10,9 @@ import { DatabaseSync } from "node:sqlite";
 import { crc32 } from "node:zlib";
 import { databasePath } from "../src/lib/db.ts";
 import { docxProjection } from "../src/lib/docx_markdown.ts";
+import { recordAtSettle } from "../src/lib/dialogue_acts.ts";
+import { type ProblemClick, problemClicks } from "../src/lib/problem_consent.ts";
+import { REGISTERED_OUTPUTS } from "../src/lib/registered_outputs.ts";
 // 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
 import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
 
@@ -163,4 +166,29 @@ export function makeDocx(body: string, parts: Record<string, string | Buffer> = 
   end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(Object.keys(files).length, 8); end.writeUInt16LE(Object.keys(files).length, 10);
   end.writeUInt32LE(dir.length, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat([...locals, dir, end]);
+}
+
+// ───────────── 会话分支与卡片点击（照 pi 的条目形状现造） ─────────────
+
+type BranchEntry = { id: string; type: string; customType?: string; details?: any; message?: any };
+let entrySerial = 0;
+/** 会话里一句用户的话。 */
+export const userEntry = (text: string, id = `u${++entrySerial}`): BranchEntry =>
+  ({ id, type: "message", message: { role: "user", content: [{ type: "text", text }] } });
+/** 一张「这个问题是否已解决」的请选择卡片：items 点名问题条目（带修订号），选项照助手说明的三个，也可以另给。 */
+export const problemCard = (id: string, items: { item_id: string; revision_no: number }[],
+  options = [{ key: "a", text: "已解决" }, { key: "b", text: "还没解决，继续改" }, { key: "c", text: "先不管，保留" }]): BranchEntry => ({
+  id, type: "message", message: { role: "assistant", content: [{ type: "toolCall", id: `call-${id}`, name: "reply", arguments: {
+    informs: [], text: "……", act: { kind: "choose", text: "这个问题是否已解决？", items, options } } }] },
+});
+/** 用户在卡片上点了一项：界面点击的自定义消息，紧跟着系统替用户发的那句话。 */
+export const cardClick = (cardId: string, key: string, text: string): BranchEntry[] => {
+  const said = `我选：${text}`;
+  return [{ id: `c${++entrySerial}`, type: "custom_message", customType: "taskwright-ui-click",
+    details: { reply_entry: cardId, option_key: key, option_text: text, text: said } }, userEntry(said)];
+};
+/** 把分支上界面点击合成的那几句话记进对话行为表（与扩展在助手回应时做的相同），返回交给保存修订的点击。 */
+export function problemClicksOn(workspaceDir: string, sessionId: string, branch: BranchEntry[]): ProblemClick[] {
+  recordAtSettle(workspaceDir, sessionId, branch as never, branch.filter((e) => e.message?.role === "user").map((e) => e.id), REGISTERED_OUTPUTS);
+  return problemClicks(branch);
 }

@@ -13,6 +13,7 @@ import type { UserMessage } from "../lib/create_task.ts";
 import { ACTOR_EXECUTOR } from "../lib/db.ts";
 import { saveRevision } from "../lib/save_revision.ts";
 import { currentRun, requireUnderstanding } from "../lib/dialogue_acts.ts";
+import { problemClicks } from "../lib/problem_consent.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
@@ -135,6 +136,7 @@ export function registerSaveRevision(pi: ExtensionAPI): void {
             callId: toolCallId,
             actor: ACTOR_EXECUTOR,
             userMessages: userMessagesOnBranch(ctx),
+            problemClicks: problemClicks(branch),
             intentEntry: run?.userEntryId ?? null,
           },
           params,
