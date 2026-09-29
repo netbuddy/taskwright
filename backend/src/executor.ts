@@ -17,9 +17,9 @@ import * as conversation from "./conversation.ts";
 import { ApiError } from "./errors.ts";
 import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
-import type { Profile } from "./launch.ts";
+import { LaunchError, type Profile } from "./launch.ts";
 import { callFacts, openRo } from "./library.ts";
-import { type PiEvent, PiExited, PiRefused, PiSession, PiTimeout, technicalOf } from "./pi_session.ts";
+import { type PiEvent, PiExited, PiNotFound, PiRefused, PiSession, PiStartRefused, PiTimeout, technicalOf } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
 import * as workSummary from "./work_summary.ts";
@@ -60,6 +60,28 @@ export function stateText(state: string, detail: string): string {
   const base = STATE_TEXT[state] ?? "";
   if (!detail) return base;
   return state === "failed_to_start" ? `${base.replace(/。$/, "")}，${detail}` : `${base}（${detail}）`;
+}
+
+/**
+ * 助手启动之后立刻退出时页面上的那句（页面在前面加「助手现在不可用：」），整句代替「助手没有启动起来」。
+ * 助手的程序写到错误输出里的原文（英文，可能带路径）不上页面，写进日志与接口错误的附带信息 detail。
+ */
+export const EXITED_AT_START_TEXT = "助手启动之后立刻退出了。请把这个页面的地址告诉管理员。";
+/** 助手没有启动起来、原因不是下面 startFailure 里已经写好说明的那几种时，页面上的那句。 */
+export const START_FAILED_TEXT = "助手没有启动起来。请把这个页面的地址告诉管理员。";
+
+/**
+ * 启动失败时执行者状态的两样：detail 是接在「助手没有启动起来」后面的原因，text 是页面上显示的整句（页面在前面加「助手现在不可用：」）。
+ * 找不到程序、系统拒绝启动、启动配置写错、等待超时四种，错误本身的说明就是给人看的中文，照旧接在后面；
+ * 启动之后立刻退出与其余没有预料到的错误（例如助手的程序拒绝了启动时的查询，说明里带着它给的英文原因），换成固定的一句。
+ * 哪一种都不取助手的程序写到错误输出里的原文。
+ */
+export function startFailure(error: unknown): { detail: string; text: string } {
+  if (error instanceof PiNotFound || error instanceof PiStartRefused || error instanceof LaunchError || error instanceof PiTimeout) {
+    return { detail: error.message, text: stateText("failed_to_start", error.message) };
+  }
+  if (error instanceof PiExited) return { detail: "", text: EXITED_AT_START_TEXT };
+  return { detail: "", text: START_FAILED_TEXT };
 }
 
 export function newId(prefix: string): string {
@@ -135,6 +157,8 @@ export class Executor {
   detail = "";
   /** 最近一次续接或切换没有接上：执行者状态的文字换成 RESUME_FAILED_STATE_TEXT，直到状态再变。 */
   private resumeFailed = false;
+  /** 没有启动起来时页面上的整句（startFailure 的 text）；别的状态为 null。 */
+  private failedText: string | null = null;
   activeSession: string | null = null;
   private cursor: string | null = null;
   work: Work | null = null;
@@ -176,11 +200,12 @@ export class Executor {
     return this.pi !== null && this.pi.alive();
   }
 
-  setState(state: string, detail = "", resumeFailed = false): void {
+  setState(state: string, detail = "", resumeFailed = false, failedText: string | null = null): void {
     this.state = state;
     this.detail = detail;
     this.resumeFailed = resumeFailed;
-    const text = resumeFailed ? RESUME_FAILED_STATE_TEXT : stateText(state, detail);
+    this.failedText = state === "failed_to_start" ? failedText : null;
+    const text = resumeFailed ? RESUME_FAILED_STATE_TEXT : this.failedText ?? stateText(state, detail);
     this.hub.emit("executor_state", { state, text, active_session: this.activeSession, at: clock.now() });
   }
 
@@ -191,7 +216,7 @@ export class Executor {
   view() {
     const state = this.running() || ["not_started", "failed_to_start", "starting"].includes(this.state) ? this.state : "exited";
     const text = state === "not_started" && this.resumeFailed ? RESUME_FAILED_STATE_TEXT
-      : state === "failed_to_start" ? stateText(state, this.detail) : STATE_TEXT[state] ?? "";
+      : state === "failed_to_start" ? this.failedText ?? stateText(state, this.detail) : STATE_TEXT[state] ?? "";
     return { state, text, active_session: this.activeSession };
   }
 
@@ -209,9 +234,10 @@ export class Executor {
       await pi.start(sessionFile);
       state = await pi.getState();
     } catch (error) {
-      const detail = (pi.stderrText || (error as Error).message || String(error)).trim().slice(-500);
-      // 页面上显示给人看的那句；排查用的原话（哪条命令、系统给的原话）写进日志与错误的附带信息。
-      const technical = (pi.stderrText || technicalOf(error)).trim().slice(-500);
+      // 页面上显示给人看的那句（startFailure）；排查用的原话（哪条命令、系统给的原话、助手的程序写到错误输出里的原文与退出码）
+      // 写进日志与错误的附带信息。
+      const failure = startFailure(error);
+      const technical = (error instanceof PiExited ? technicalOf(error) : pi.stderrText || technicalOf(error)).trim().slice(-500);
       console.log(`任务 ${this.taskId} 的助手没有启动起来：${technical}`);
       try {
         await pi.close();
@@ -219,7 +245,7 @@ export class Executor {
         // 关不掉也不影响报错
       }
       this.pi = null;
-      this.setState("failed_to_start", detail);
+      this.setState("failed_to_start", failure.detail, false, failure.text);
       throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technical });
     }
     if (expected !== null && state.sessionId !== expected) await this.resumeFailedLocked(pi, expected, state.sessionId ?? null, "带会话文件启动 pi");

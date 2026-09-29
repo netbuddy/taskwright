@@ -36,8 +36,8 @@ export const TASKS_ROOT_ENV = "TASKWRIGHT_TASKS_ROOT";
 export type PiEvent = Record<string, any>;
 
 /**
- * pi 进程没了。附上它的标准错误原文。这句话会显示在页面顶部（执行者状态的附带说明），所以用「助手的程序」「它报告的错误」
- * 这样的说法；拿不到退出码时写「退出码未知」，没有错误内容时不写后半句。
+ * pi 进程没了。附上它的标准错误原文。这句话只进日志与接口错误的附带信息 detail，不上页面：启动之后立刻退出时页面上是
+ * executor.ts 的 EXITED_AT_START_TEXT。拿不到退出码时写「退出码未知」，没有错误内容时不写后半句。
  */
 export class PiExited extends Error {
   readonly returncode: number | null;

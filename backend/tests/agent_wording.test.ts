@@ -9,10 +9,10 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
-import { Executor, stateText } from "../src/executor.ts";
+import { EXITED_AT_START_TEXT, Executor, START_FAILED_TEXT, startFailure, stateText } from "../src/executor.ts";
 import { Hub } from "../src/hub.ts";
 import { LaunchError, loadProfile } from "../src/launch.ts";
-import { PiNotFound, PiRefused, PiSession, PiStartRefused, PiTimeout, startRefusedText, technicalOf } from "../src/pi_session.ts";
+import { PiExited, PiNotFound, PiRefused, PiSession, PiStartRefused, PiTimeout, startRefusedText, technicalOf } from "../src/pi_session.ts";
 import { captureConsole, makeWorkspace, tempDir } from "./helpers.ts";
 
 // 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
@@ -190,4 +190,47 @@ test("状态文字的拼法：没有启动起来时原因用逗号接在后面�
   assert.equal(stateText("failed_to_start", ""), "助手没有启动起来。");
   assert.equal(stateText("exited", "助手的程序退出了"), "助手已经退出，下一次说话时会重新启动。（助手的程序退出了）");
   assert.equal(stateText("idle", ""), "助手空闲，可以开始。");
+});
+
+test("启动之后立刻退出：页面上是固定的一句，不带助手的程序写到错误输出里的原文；原文与退出码在日志与附带信息里", async () => {
+  const script = join(tmp, "pi-exits-at-once");
+  writeFileSync(script, `#!/bin/sh\necho "Error: No API key found for /opt/someone/.pi/agent/models.json" >&2\nexit 3\n`, "utf-8");
+  chmodSync(script, 0o755);
+  const got = await failStart({ ...loadProfile("fake"), executable: script }, "runs-exits");
+  assert.equal(got.text, EXITED_AT_START_TEXT);
+  assert.equal(`助手现在不可用：${got.text}`, "助手现在不可用：助手启动之后立刻退出了。请把这个页面的地址告诉管理员。");
+  assert.equal(got.detail, "");
+  assert.doesNotMatch(got.text, /Error|models\.json|\//);
+  assert.match(got.apiDetail, /退出码 3/);
+  assert.match(got.apiDetail, /No API key found for \/opt\/someone/);
+  assert.ok(got.logs.some((l) => l.startsWith("任务 TASK-001 的助手没有启动起来：") && /No API key found/.test(l)));
+});
+
+test("没有预料到的启动错误（助手的程序拒绝了启动时的查询）：页面上是固定的一句，它给的英文原因只在日志与附带信息里", async () => {
+  // 一个按行读命令、每条都回「拒绝」的假程序：启动时的查询（get_state）被拒，说明里本来会带上它给的英文原因。
+  const script = join(tmp, "pi-refuses-all.mjs");
+  writeFileSync(script, `#!${process.execPath}
+import { createInterface } from "node:readline";
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, type } = JSON.parse(line);
+  process.stdout.write(JSON.stringify({ type: "response", id, command: type, success: false, error: "Unknown command: " + type }) + "\\n");
+});
+`, "utf-8");
+  chmodSync(script, 0o755);
+  const got = await failStart({ ...loadProfile("fake"), executable: script }, "runs-refused");
+  assert.equal(got.text, START_FAILED_TEXT);
+  assert.equal(`助手现在不可用：${got.text}`, "助手现在不可用：助手没有启动起来。请把这个页面的地址告诉管理员。");
+  assert.doesNotMatch(got.text, /Unknown|get_state/);
+  assert.equal(got.apiDetail, "pi 拒绝了命令「get_state」：Unknown command: get_state");
+});
+
+test("启动失败时页面文字的来历：四种已经写好说明的接在「助手没有启动起来」后面；启动之后立刻退出与其余错误是固定的一句，都不取错误输出", () => {
+  assert.deepEqual(startFailure(new PiStartRefused(Object.assign(new Error("spawn /opt/pi EACCES"), { code: "EACCES" }))),
+    { detail: "系统原因：EACCES", text: "助手没有启动起来，系统原因：EACCES" });
+  assert.deepEqual(startFailure(new PiTimeout("get_state", 60)), { detail: "助手的程序在 60 秒内没有回应。", text: "助手没有启动起来，助手的程序在 60 秒内没有回应。" });
+  assert.deepEqual(startFailure(new LaunchError("配置里写的系统提示文件不存在：prompts/x.md")),
+    { detail: "配置里写的系统提示文件不存在：prompts/x.md", text: "助手没有启动起来，配置里写的系统提示文件不存在：prompts/x.md" });
+  assert.deepEqual(startFailure(new PiExited(1, "Error: boom at /opt/pi/dist/cli.js\n")), { detail: "", text: EXITED_AT_START_TEXT });
+  assert.deepEqual(startFailure(new PiRefused("get_state", "Unknown command")), { detail: "", text: START_FAILED_TEXT });
+  assert.deepEqual(startFailure(new Error("something unexpected")), { detail: "", text: START_FAILED_TEXT });
 });
