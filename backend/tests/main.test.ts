@@ -207,6 +207,11 @@ test("换端口：给的端口被占就依次试后面的；都被占时报错�
       (e: Error) => e instanceof NoFreePort && e.message === `端口 ${start} 到 ${start} 都被占用了，服务没有起来。`);
     await assert.rejects(within("绑不存在的地址时报错", 10_000, listenFrom(track(createHttpServer()), start, "203.0.113.1", 3)),
       (e: NodeJS.ErrnoException) => e.code === "EADDRNOTAVAIL");
+    // 给 0 时由操作系统挑端口，返回的是实际监听的端口，不是 0
+    const any = track(createHttpServer());
+    const picked = await within("从端口 0 监听", 10_000, listenFrom(any, 0, "127.0.0.1"));
+    assert.ok(picked > 0);
+    assert.equal(picked, (any.address() as { port: number }).port);
   } finally {
     for (const s of opened) await closeServer(s);
   }
@@ -233,11 +238,14 @@ test("真进程：端口被占时落到后面第一个空闲端口，服务信�
   }
 });
 
-test("真进程：desktop 形态只绑 127.0.0.1；退出请求先回 ok，再发退出通知、关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", CASE, async () => {
-  const { child, port, log } = await startBackend("desktop", ["--port", String(await freePort()), "--mode", "desktop"]);
+test("真进程：desktop 形态只绑 127.0.0.1；--port 0 由系统挑端口，日志、服务信息与占用标记写实际端口；退出请求先回 ok，再发退出通知、关 pi（开着的事件流收到「已退出」）、删占用标记、释放端口、退出进程", CASE, async () => {
+  const { child, port, log } = await startBackend("desktop", ["--port", "0", "--mode", "desktop"]);
   let stream: ReturnType<typeof request> | undefined;
   try {
+    assert.ok(port > 0, `日志里的端口是 ${port}`);
     assert.match(log(), /任务服务在 http:\/\/127\.0\.0\.1:\d+\/api\/v1\/tasks ，.*运行形态 desktop/);
+    assert.doesNotMatch(log(), /被占用/, "给 0 时不说端口被占用");
+    assert.equal((await call("127.0.0.1", port, "GET", "/api/v1/service")).body.port, port, "服务信息回出实际端口");
     if (lanAddress) await assert.rejects(call(lanAddress, port, "GET", "/api/v1/service"), "desktop 形态从别的网卡连不上");
     const created = await call("127.0.0.1", port, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "退出测试" });
     const taskDir = join(tmp, "desktop", "tasks", created.body.task_id);

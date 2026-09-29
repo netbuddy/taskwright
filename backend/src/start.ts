@@ -136,7 +136,7 @@ export async function startService(options: StartOptions): Promise<Started> {
 
   const port = await listenFrom(server, options.port, host);
   service.port = port;
-  if (port !== options.port) console.log(`端口 ${options.port} 被占用，改用端口 ${port}。`);
+  if (options.port !== 0 && port !== options.port) console.log(`端口 ${options.port} 被占用，改用端口 ${port}。`);
   const web = options.web ? `，网页 ${options.web}` : "";
   console.log(`任务服务在 http://${host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}，运行形态 ${mode}${web}`);
   return { service, server, port, host, tasksDir, runsDir, stop };
