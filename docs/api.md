@@ -75,8 +75,8 @@ All carry `session_id` except `service_exiting`, which goes to every open stream
 | `assistant_reply` | the agent replied | `message_id`, `at`, `work_id`, `via_reply_tool`, `informs`, `act`, `text`, `degraded` (see 5.3) |
 | `ui_action_noted` | a direct operation completed | `message_id`, `at`, `text`, `event_seq`, `op_id`, `revision_no`, `undoable`, `kind` (the operation kind), `review` (for the note at the end of a review: `total`, `passed`, `failed`, `unfinished`, `problems`, `advice`) |
 | `material_added` | a material was uploaded | `at`, `path`, `bytes`, `modified_at` |
-| `work_summary` | after a unit of work | `work_id`, `at`, `seconds`, `step_count`, `stages` (each with `text`) |
-| `work_ended` | the agent settled | `work_id`, `at`, `seconds`, `step_count`, `outcome` (`replied`, `no_reply`, `stopped_by_user`, `failed`) |
+| `work_summary` | after a unit of work | `work_id`, `at`, `seconds`, `step_count`, `stages` (each with `text`), `outcome` (how the unit of work ended, with the values of `work_ended`; the `work_summary` messages of the conversation read after a reload carry the same value) |
+| `work_ended` | the agent settled | `work_id`, `at`, `seconds`, `step_count`, `outcome` (`replied`, `no_reply`, `stopped_by_user`, `failed`; decided by the last assistant message of the unit of work, so a unit of work whose model call failed and was then retried successfully is `replied` or `no_reply`, not `failed`) |
 | `problem` | something the user should know (see 5.5) | `code`, `text`, `retry` |
 | `executor_state` | the agent's availability changed | `state` (`not_started`, `starting`, `idle`, `working`, `exited`, `failed_to_start`), `text`, `active_session`; after a failed resume (`session_resume_failed`) `state` is `not_started` and `text` says the assistant did not pick up the session |
 | `system_note` | the task-status message at session start, or the fixed fallback sentence | `message_id`, `at`, `text`, `kind` (`task_status` or `reply_fallback`) |
@@ -165,7 +165,7 @@ The conversation lives in pi's session file; the database does not store it.
 
 ### 5.2 The agent replies
 
-Only accepted calls of the agent's `reply` tool become `assistant_reply` events with `via_reply_tool: true`. If a unit of work ends without an accepted reply, the server forwards the last assistant text with `via_reply_tool: false` and no `act`; if there is none, it sends `problem` with code `no_reply`.
+Only accepted calls of the agent's `reply` tool become `assistant_reply` events with `via_reply_tool: true`. If a unit of work ends without an accepted reply, the server forwards the last assistant text with `via_reply_tool: false` and no `act`; if there is none, it sends `problem` with code `no_reply`. When the unit of work ended because of an error, it sends `problem` with code `failed` instead, with the text 助手这一轮因为出错停下了，你可以再说一句，让它接着做。 ("the assistant stopped this turn because of an error; say something more to let it continue"). When the user stopped the work, it sends neither. A unit of work that was stopped or failed keeps its `work_summary`, also after a reload, even when it has no step and no reply.
 
 ### 5.3 Reply shape
 

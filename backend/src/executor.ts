@@ -43,6 +43,11 @@ export const STATE_TEXT: Record<string, string> = {
 };
 /** 续接或切换之后 pi 接着的不是请求的那条会话：执行者状态报 not_started（pi 已经停了），文字换成这句。 */
 export const RESUME_FAILED_STATE_TEXT = "助手没有接上这条会话，下一次说话时会重新启动。";
+/** 一轮做完了、但助手没有说话时右上角的提示（problem 事件，错误码 no_reply）。 */
+export const NO_REPLY_TEXT = "助手这次没有说话就停下了，你可以再问它一句。";
+/** 一轮因为出错停下时右上角的提示（problem 事件，错误码 failed）；与没有回复分开。 */
+export const FAILED_TEXT = "助手这一轮因为出错停下了，你可以再说一句，让它接着做。";
+
 /** 续接失败时给用户看的那句话（错误码 session_resume_failed）。 */
 export const RESUME_FAILED_TEXT = "没能接上这条会话。请再试一次；如果还是不行，请把这个页面的地址告诉管理员。";
 
@@ -685,7 +690,8 @@ export class Executor {
       this.understandingStep(sid);
       const text = conversation.textOf(message.content ?? null).trim();
       const calls = (message.content || []).filter((p: unknown) => typeof p === "object" && p !== null && (p as Dict).type === "toolCall");
-      if (message.stopReason === "error") this.work.failed = true;
+      // 出错看这一轮最后一条助手消息：出错之后自动重试成功时，后面那条不是 error，这一轮不算出错（与 work_summary.ts 的判断相同）。
+      this.work.failed = message.stopReason === "error";
       if (message.stopReason === "aborted" || message.stopReason === "error") {
         // 被停下（或出错）时，这条消息里的工具调用没有开始执行，不会有 tool_execution 事件；补成这一轮的步骤，
         // 一轮结束时按「没有结果」写，与刷新后从会话记录算出的过程摘要说法相同。
@@ -715,23 +721,24 @@ export class Executor {
     this.hub.emit("step", step);
   }
 
-  /** 工作结束时推一条过程摘要：从会话条目里切出这次工作，与刷新后从会话文件重算的是同一个函数。 */
-  private async emitSummary(pi: PiSession, sid: string | null, work: Work): Promise<void> {
+  /** 工作结束时推一条过程摘要：从会话条目里切出这次工作，与刷新后从会话文件重算的是同一个函数。返回算出的这次工作，切不出来时为 null。 */
+  private async emitSummary(pi: PiSession, sid: string | null, work: Work): Promise<workSummary.Work | null> {
     const userId = work.last_user_id || work.triggered_by;
-    if (!userId) return;
+    if (!userId) return null;
     let path: Dict[];
     try {
       path = conversation.branch(await this.fetchAllEntries(pi));
     } catch (error) {
-      if (error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout) return;
+      if (error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout) return null;
       throw error;
     }
     const found = workSummary.worksFromEntries(path, this.definition(), conversation.FALLBACK_TEXT, conversation.textOf, callFacts(this.taskDir))
       .find((w) => w.user_message_id === userId);
-    if (!found) return;
+    if (!found) return null;
     const understanding = sid ? workSummary.understandingLines(this.taskDir, sid).get(userId) ?? null : null;
     this.hub.emit("work_summary", { session_id: sid, work_id: work.work_id, at: found.at, seconds: found.seconds, step_count: found.step_count,
-      stages: found.stages, understanding });
+      stages: found.stages, understanding, outcome: found.outcome });
+    return found;
   }
 
   /** 会话名按第一句用户的话自动起（RPC 的 set_session_name）。 */
@@ -832,12 +839,15 @@ export class Executor {
         const hit = [...entries].reverse().find((e) => e.type === "message" && (e.message || {}).role === "assistant") ?? null;
         this.hub.emit("assistant_reply", { session_id: sid, message_id: hit ? hit.id ?? null : null, at: clock.now(), work_id: work.work_id,
           via_reply_tool: false, informs: [], act: null, text: work.last_text });
+      } else if (work.failed && !work.stopped) {
+        this.hub.emit("problem", { session_id: sid, code: "failed", text: FAILED_TEXT, retry: null });
       } else if (!work.stopped) {
-        this.hub.emit("problem", { session_id: sid, code: "no_reply", text: "助手这次没有说话就停下了，你可以再问它一句。", retry: null });
+        this.hub.emit("problem", { session_id: sid, code: "no_reply", text: NO_REPLY_TEXT, retry: null });
       }
     }
-    await this.emitSummary(pi, sid, work);
-    const outcome = work.stopped ? "stopped_by_user" : work.failed ? "failed" : work.replied ? "replied" : "no_reply";
+    // 结束原因以会话记录算出的为准，与摘要里的、刷新后重算的相同；会话记录读不出这次工作时按本轮记下的情况。
+    const found = await this.emitSummary(pi, sid, work);
+    const outcome = found?.outcome ?? (work.stopped ? "stopped_by_user" : work.failed ? "failed" : work.replied ? "replied" : "no_reply");
     this.hub.emit("work_ended", { session_id: sid, work_id: work.work_id, at: clock.now(), seconds: workSummary.round1(Date.now() / 1000 - work.started),
       step_count: work.step_count, outcome });
     this.work = null;

@@ -68,6 +68,9 @@
 .app .proc-fold{font-size:0.881rem;color:#9a9a9a;border-left:0.143rem solid var(--line2);padding:.1rem 0 .1rem .6rem;
   margin-left:.15rem;cursor:pointer}
 .app .proc-fold:hover{color:#6f6f6f;text-decoration:underline}
+/* 一轮被用户停下或出错停下：摘要行下面那一行说明用琥珀色（Conversation.tsx 的 WorkSummaryLine） */
+.app .proc.stopnote{border-left-color:var(--amber-line)}
+.app .proc.stopnote .pline{color:var(--amber)}
 .app .selfnote{font-size:0.881rem;color:#9a9a9a;border-left:0.143rem solid var(--line2);padding:.1rem 0 .1rem .6rem;margin-left:.15rem}
 .app .sysnote{background:var(--teal-bg);border:1px dashed var(--teal-line);border-radius:.6rem;
   padding:.45rem .65rem;font-size:0.905rem;color:#17534d;line-height:1.6}

@@ -96,8 +96,12 @@ export function justChangedItems(items: Item[], log: RevisionLogEntry[]): Set<st
 
 /** 一条执行者回复带出的修订：同一次工作（work_id）里执行者保存的修订，从小到大。 */
 export function revisionsOfReply(reply: AssistantReply, log: RevisionLogEntry[]): number[] {
-  if (!reply.work_id) return [];
-  return log.filter((r) => r.by === "executor" && r.work_id === reply.work_id).map((r) => r.revision_no).sort((a, b) => a - b);
+  return reply.work_id ? revisionsOfWork(reply.work_id, log) : [];
+}
+
+/** 一次工作（work_id）里执行者保存的修订，从小到大。 */
+export function revisionsOfWork(workId: string, log: RevisionLogEntry[]): number[] {
+  return log.filter((r) => r.by === "executor" && r.work_id === workId).map((r) => r.revision_no).sort((a, b) => a - b);
 }
 
 /** 一次修订碰到的条目编号。 */
