@@ -26,6 +26,11 @@
  * 写库、记事件、各项核对同在一个立即事务里；任何一个操作不通过，整次调用全部不写入，
  * 拒绝的文字逐条列出哪个操作的哪一处不对。本模块不依赖 pi。
  *
+ * 修改时原来的来源宁可多留（lib/source_carry.ts）：执行者改了字段，原来的来源按内容跟着走——没改的内容上的一律保留，列表插入、
+ * 删除别的项、调换先后之后序号改指原来那一项，删掉的项上的去掉，改写了的内容上的照旧留着并在结果末尾提醒它检查；这次给的来源
+ * 接在后面，与原来同一句摘录的合成一条。执行者要去掉某条来源，用只给 sources、不改字段的修改整体重新标注，结果里写明去掉了哪几条。
+ * 保留下来的旧来源不再核对摘录。用户在界面上的操作照旧：交来的来源整体替换，不交就全部沿用。
+ *
  * 问题条目的状态：执行者把它改为「已解决」或「用户决定保留」之前，用户要在「这个问题是否已解决」的卡片上点过对应的那一项，
  * 而且点了之后这个问题条目与它牵涉的条目没有再改过；新增问题条目时状态不能直接写成这两种。规则在 lib/problem_consent.ts，
  * 点击由调用方从会话分支读好交进来（CallContext.problemClicks）。用户在界面上的操作不受这条限制。
@@ -56,6 +61,7 @@ import {
 } from "./docx_source.ts";
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { revisionIntent } from "./dialogue_acts.ts";
+import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { clickEventSeq } from "./completion_consent.ts";
 import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
@@ -125,9 +131,9 @@ function actorText(actor: string): string {
 /** 核对通过之后，一个操作要写进库里的样子。 */
 type Planned =
   | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[] }
-  | { op: "update"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[] }
+  | { op: "update"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes: string[] }
   | { op: "delete"; itemId: string; collection: string; fromRevision: number }
-  | { op: "restore"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[] };
+  | { op: "restore"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes: string[] };
 
 const OP_NAMES: Record<string, string> = { add: "新增", update: "修改", delete: "删除", restore: "恢复" };
 
@@ -480,12 +486,25 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     }
     const previousSources = sourcesOf(itemId, current.revision_no);
     const inherited = raw.sources === undefined;
-    let sources = inherited ? previousSources : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText);
-    if (sources && !inherited && call.actor !== ACTOR_USER && isObject(raw.fields) && Object.keys(raw.fields).length > 0) {
-      // 执行者修改时给了新来源：只替换这次改到的字段上的来源，其余字段的来源沿用。
-      // 条目当前的来源里，支持改到的字段的那几处去掉，去掉之后什么都不支持的整条去掉，支持整个条目的保留；
-      // 「用户直接修改」执行者填不了，按同一条规则沿用。只给 sources、不改任何字段时，仍是整体替换（重新标注来源）。
-      sources = [...carriedSources(previousSources, new Set(Object.keys(raw.fields)), sources), ...sources];
+    const given = inherited ? null : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText);
+    let sources = inherited ? previousSources : given;
+    const notes: string[] = [];
+    const editsFields = isObject(raw.fields) && Object.keys(raw.fields).length > 0;
+    if (call.actor !== ACTOR_USER && editsFields && (inherited || given)) {
+      // 执行者修改字段：原来的来源按内容跟着走（lib/source_carry.ts），没改的内容来源一律保留，删掉的项上的去掉，
+      // 改写了的内容上的照旧留着并在结果里提醒；这次给了来源就接在后面，与原来同一句摘录的合成一条。
+      const carried = carrySources(previousSources, before, merged, listFieldsOf(collection));
+      const { sources: joined, restated } = mergeGiven(carried.kept, given ?? []);
+      sources = joined;
+      const left = carried.rewritten.filter((one) => !restated.has(one.source));
+      if (left.length) notes.push(rewrittenNote(itemId, left));
+      if (sources.length === 0) {
+        errors.push(withGuide(`${itemId} 原来的来源指的都是这次删掉的内容，改完之后一条来源也不剩`, "请在这个操作里给出 sources，每个条目至少一条来源"));
+      }
+    } else if (call.actor !== ACTOR_USER && given && !editsFields) {
+      // 只给 sources、不改字段：整体重新标注，这是执行者去掉某条来源的写法；去掉了哪几条写进结果。
+      const removed = previousSources.filter((old) => !given.some((one) => sameQuote(one, old)));
+      if (removed.length) notes.push(`这次重新标注了 ${itemId} 的来源，去掉了原来的 ${removed.length} 条：${removed.map(quoteLabel).join("、")}。`);
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
@@ -502,6 +521,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       fromRevision: current.revision_no,
       fields: merged,
       sources: sources!,
+      notes,
     });
   });
 
@@ -617,20 +637,22 @@ export function splitGuide(one: string): { fact: string; guidance: string } {
   return { fact, guidance: guidance ?? "" };
 }
 
-/**
- * 修改时沿用条目当前的哪些来源：支持 changed 里的字段的那几处去掉；去掉之后什么都不支持的整条去掉；
- * 本来就支持整个条目的保留；与这次新给的某条来源一模一样的不重复保留。
- */
-export function carriedSources(previous: Source[], changed: Set<string>, given: Source[]): Source[] {
-  const kept: Source[] = [];
-  for (const source of previous) {
-    const supports = source.supports.filter((support) => !changed.has(support.field));
-    if (source.supports.length > 0 && supports.length === 0) continue;
-    const one = { ...source, supports };
-    if (given.some((other) => sameJson(other, one))) continue;
-    kept.push(one);
-  }
-  return kept;
+/** 集合里列表型字段（文本列表、条目引用）的名字：来源可以指到其中一项。 */
+function listFieldsOf(collection: CollectionDef): Set<string> {
+  return new Set(collection.fields.filter((one) => one.type === FIELD_TEXT_LIST || one.type === FIELD_ITEM_REF).map((one) => one.name));
+}
+
+/** 结果里说到一条来源：摘录（长的只引前 30 字）加种类。 */
+function quoteLabel(source: Source): string {
+  return `「${quoteOf(source.excerpt)}」（${source.kind}）`;
+}
+
+/** 执行者改写了的内容上还留着原来的来源时，写在保存结果末尾的一句提醒：哪几处、哪几条，以及怎样去掉。 */
+function rewrittenNote(itemId: string, list: RewrittenSupport[]): string {
+  const where = (one: Support) => (one.index === undefined ? `「${one.field}」` : `「${one.field}」第 ${one.index + 1} 项`);
+  const parts = list.map(({ source, supports }) => `${supports.map(where).join("、")}上的${quoteLabel(source)}`);
+  return `提醒：${itemId} 这次改写了的内容上还留着原来的来源：${parts.join("；")}。它们如果已经不支持改后的内容，` +
+    `请对 ${itemId} 做一次只给 sources、不改字段的修改，把要保留的来源全部重新写一遍，没写的就去掉。`;
 }
 
 /**
@@ -1183,8 +1205,9 @@ function write(
     });
   });
 
+  const notes = planned.flatMap((one) => (one.op === "update" || one.op === "restore" ? one.notes : []));
   return {
-    text: savedText(taskId, revisionNo, outcomes),
+    text: savedText(taskId, revisionNo, outcomes) + notes.map((one) => `\n${one}`).join(""),
     details: {
       task_id: taskId,
       revision_no: revisionNo,

@@ -309,13 +309,13 @@ test("条目引用：多个编号里哪几个不对，拒绝文字逐个指出",
   assert.match(message, /第 4 个编号 7 应当写一个条目编号/);
 });
 
-test("修改时给了来源只替换改到的字段上的来源，没改的字段来源沿用；只给来源不改字段时整体替换", () => {
+test("修改时给了来源：原来的来源保留，新给的接在后面；只给来源不改字段时整体替换，结果里写明去掉了哪几条", () => {
   const dir = workspaceWithTask();
   // 一条文档原文逐个支持两个字段，与真跑里 UC-002 在修订 1 的样子相同。
   saveRevision(callIn(dir), {
     operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面"] }, sources: [{ ...SOURCE, supports: [{ field: "名称" }, { field: "步骤" }] }] }],
   });
-  saveRevision(callIn(dir), {
+  const added = saveRevision(callIn(dir), {
     operations: [{
       op: "update", item: "UC-001", base_revision: 1, fields: { 步骤: ["打开页面", "输入口令"] },
       sources: [{ kind: "执行者补充", locator: "执行者补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }] }],
@@ -324,11 +324,14 @@ test("修改时给了来源只替换改到的字段上的来源，没改的字�
   const v2 = query<any>(dir, "SELECT position, kind, field, field_index FROM item_source WHERE revision_no = 2 ORDER BY position, support_no").map((r) => ({ ...r }));
   assert.deepEqual(v2, [
     { position: 1, kind: "文档原文", field: "名称", field_index: null },
+    { position: 1, kind: "文档原文", field: "步骤", field_index: null },
     { position: 2, kind: "执行者补充", field: "步骤", field_index: 1 },
   ]);
-  // 只给 sources、不改字段：整体替换，用来重新标注来源。
-  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 2, sources: [SOURCE] }] });
+  assert.doesNotMatch(added.text, /提醒/, "只往列表里加了一项，原有的项没有改写，不提醒");
+  // 只给 sources、不改字段：整体替换，用来重新标注来源；去掉了哪几条写进结果。
+  const relabel = saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 2, sources: [SOURCE] }] });
   assert.deepEqual(query<any>(dir, "SELECT kind, field FROM item_source WHERE revision_no = 3").map((r) => [r.kind, r.field]), [["文档原文", null]]);
+  assert.match(relabel.text, /\n这次重新标注了 UC-001 的来源，去掉了原来的 1 条：「登录总要输入口令。」（执行者补充）。$/);
 });
 
 test("文档原文的摘录不用空行隔开就跳句拼接、改了字或出处读不到时整批拒绝，逐条列出；逐字连续的一段（换行写法不同也算）放行", () => {
