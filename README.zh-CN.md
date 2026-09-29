@@ -6,7 +6,7 @@ Taskwright 是一个通用的任务型智能体。给它一份**任务定义**�
 
 **许可证。** 核心代码采用 [GNU AGPL-3.0](LICENSE) 许可；商业许可另行签订，见 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
 
-> 状态：0.1.0-alpha，各版本之间接口仍可能变化。
+> 状态：0.3.0-alpha，各版本之间接口仍可能变化。
 
 ## 它做什么
 
