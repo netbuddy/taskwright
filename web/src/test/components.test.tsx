@@ -1,7 +1,7 @@
 // 卡片五种主行为的渲染与按钮走向，以及直接操作被拒时的错误显示（第 8 节）。
 
 import { describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 
@@ -372,7 +372,7 @@ describe("框选原文与高亮联动、「让助手改这一条」", () => {
     fireEvent.click(await screen.findByText("据此新建条目"));
     expect(onSend).toHaveBeenLastCalledWith("请根据材料 inputs/a.md 里的这段原文新建条目：「第一句话」");
     fireEvent.mouseUp(paper);
-    fireEvent.click(screen.getByText("补到当前条目（UC-001）"));
+    fireEvent.click(screen.getByText("补到当前条目"));
     expect(onSend).toHaveBeenLastCalledWith("请把材料 inputs/a.md 里的这段原文补到 UC-001：「第一句话」");
     fireEvent.mouseUp(paper);
     fireEvent.click(screen.getByText("就这段提问"));
@@ -412,6 +412,61 @@ describe("框选原文与高亮联动、「让助手改这一条」", () => {
     fireEvent.change(screen.getByTestId("selection-question"), { target: { value: "七天从哪天算？" } });
     fireEvent.mouseDown(document.body);
     expect(screen.getByTestId("selbar")).toBeInTheDocument();
+    sel.mockRestore();
+    spy.mockRestore();
+  });
+
+  it("浮在选区上方的动作条：一排三个按钮带悬停提示与可读的名字；没有打开条目时没有「补到当前条目」；没有「不用了」；Esc 收起", async () => {
+    const spy = vi.spyOn(api, "materialContent").mockResolvedValue({ path: "inputs/a.md", text: "第一句话。买家七天内可以退货。" });
+    const materials = [{ path: "inputs/a.md", bytes: 1, modified_at: "" }];
+    const t = task();
+    const { rerender } = render(<Wrap><MaterialPane taskId="TASK-001" materials={materials} items={t.items} currentItem="UC-001" onSend={vi.fn()} /></Wrap>);
+    const paper = await screen.findByTestId("paper");
+    const sel = vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "第一句话", anchorNode: paper.firstChild, removeAllRanges: () => {} } as unknown as Selection);
+    fireEvent.mouseUp(paper);
+    const bar = await screen.findByTestId("selbar");
+    expect(bar).toHaveAttribute("role", "toolbar");
+    expect(bar).toHaveClass("fbar");
+    const names = within(bar).getAllByRole("button").map((b) => b.textContent);
+    expect(names).toEqual(["据此新建条目", "补到当前条目", "就这段提问"]);
+    expect(within(bar).getByRole("button", { name: "据此新建条目" })).toHaveAttribute("title", "把这段原文发给助手，请它据此新建条目。它做完要等一会儿。");
+    expect(within(bar).getByRole("button", { name: "补到当前条目" })).toHaveAttribute("title", `把这段原文发给助手，请它补到 UC-001 ${t.items[0].title}。它做完要等一会儿。`);
+    expect(within(bar).getByRole("button", { name: "就这段提问" })).toHaveAttribute("title", "写下问题，连同这段原文发给助手。它做完要等一会儿。");
+    expect(screen.queryByText("不用了")).toBeNull();
+    expect(screen.queryByText(/你选中了一段原文/)).toBeNull();
+    expect(screen.queryByText("这三件都要发给助手，它做完要等一会儿")).toBeNull();
+    // 按钮在页面结构上紧跟原文之后：选中之后按 Tab 键先走到它们
+    expect(paper.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("selbar")).toBeNull());
+    // 没有打开条目
+    rerender(<Wrap><MaterialPane taskId="TASK-001" materials={materials} items={t.items} currentItem={null} onSend={vi.fn()} /></Wrap>);
+    fireEvent.mouseUp(paper);
+    const again = await screen.findByTestId("selbar");
+    expect(within(again).getAllByRole("button").map((b) => b.textContent)).toEqual(["据此新建条目", "就这段提问"]);
+    sel.mockRestore();
+    spy.mockRestore();
+  });
+
+  it("就这段提问：横条变成输入框，带「发送」与「取消」；空着不能发送，取消回到三个按钮", async () => {
+    const spy = vi.spyOn(api, "materialContent").mockResolvedValue({ path: "inputs/a.md", text: "第一句话。买家七天内可以退货。" });
+    const materials = [{ path: "inputs/a.md", bytes: 1, modified_at: "" }];
+    const onSend = vi.fn();
+    render(<Wrap><MaterialPane taskId="TASK-001" materials={materials} items={[]} onSend={onSend} /></Wrap>);
+    const paper = await screen.findByTestId("paper");
+    const sel = vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "第一句话", anchorNode: paper.firstChild, removeAllRanges: () => {} } as unknown as Selection);
+    fireEvent.mouseUp(paper);
+    fireEvent.click(await screen.findByText("就这段提问"));
+    const bar = screen.getByTestId("selbar");
+    expect(within(bar).getByRole("button", { name: "发送" })).toBeDisabled();
+    fireEvent.click(within(bar).getByRole("button", { name: "取消" }));
+    expect(screen.queryByTestId("selection-question")).toBeNull();
+    expect(within(screen.getByTestId("selbar")).getByRole("button", { name: "据此新建条目" })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("就这段提问"));
+    fireEvent.change(screen.getByTestId("selection-question"), { target: { value: "七天从哪天算？" } });
+    fireEvent.click(within(screen.getByTestId("selbar")).getByRole("button", { name: "发送" }));
+    expect(onSend).toHaveBeenLastCalledWith("关于材料 inputs/a.md 里的这段原文：「第一句话」，七天从哪天算？");
+    await waitFor(() => expect(screen.queryByTestId("selbar")).toBeNull());
     sel.mockRestore();
     spy.mockRestore();
   });
