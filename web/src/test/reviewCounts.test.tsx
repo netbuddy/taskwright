@@ -113,7 +113,7 @@ describe("评审计数三处一致", () => {
     b = await board(plain);
     expect(b.chip).toHaveClass("ok");
     expect(b.text).toContain("评审通过 1/1");
-    expect(b.text).toContain("这 1 个条目里，1 个在当前所在的修订上评审通过，1 个用户已经看过（已读）。");
+    expect(b.text).toContain("这 1 个条目里，1 个在当前所在的修订上评审通过，你已经看过其中 1 个（已读）。");
     expect(b.text).not.toContain("已保留写法");
   });
 });

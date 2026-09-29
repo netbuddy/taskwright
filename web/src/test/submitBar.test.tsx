@@ -42,14 +42,33 @@ function task(over: Partial<Task> = {}): Task {
   };
 }
 
+/** 问句最后两句是定稿，不随条目变。 */
+const TAIL = "这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。";
+
 const card = (keys: string[]): ConversationMessage => ({ type: "assistant_reply", session_id: "s", message_id: "a1", at: "", text: "……", informs: [],
   act: { kind: "choose", text: "这个任务是否已经完成？", options: keys.map((key) => ({ key, text: key })) } } as unknown as ConversationMessage);
 const said: ConversationMessage = { type: "user_message", session_id: "s", message_id: "u1", at: "", text: "我选：已完成，提交交付物", origin: "card_choice" } as unknown as ConversationMessage;
 
 describe("提示条显示的条件与问句", () => {
-  it("问句照实写：有条目的集合与条目总数、评审、看过、没有未解决的问题，末尾写后果", () => {
-    expect(submitQuestion(task())).toBe("功能用例、约束一共 3 个条目，都已经评审通过或者由你保留了写法，你也都看过了，没有未解决的问题。" +
-      "这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。");
+  it("问句照实写：有条目的集合与条目总数、评审、看过，末尾写后果；没有问题条目时不写问题那一句", () => {
+    expect(submitQuestion(task())).toBe("功能用例、约束一共 3 个条目，都已经评审通过或者由你保留了写法，你也都看过了。" + TAIL);
+  });
+
+  it("各种条目组合下的问句：领域说明单独点名并写个数，问题有条目时才写", () => {
+    const issue = (id: string, state: string) => ({ ...item(id, "问题"), fields: { 事项: id, 状态: state } });
+    const notes = [item("DN-001", "领域说明"), item("DN-002", "领域说明")];
+    const issues = [issue("TBD-001", "已解决"), issue("TBD-002", "用户决定保留")];
+    const base = [item("UC-001"), item("UC-002"), item("CON-001", "约束")];
+    const q = (items: Item[]) => submitQuestion(task({ items }));
+    expect(q([item("UC-001")])).toBe("功能用例一共 1 个条目，都已经评审通过或者由你保留了写法，你也都看过了。" + TAIL);
+    expect(q([...base, ...notes])).toBe("功能用例、约束一共 3 个条目，都已经评审通过或者由你保留了写法，你也都看过了；2 条领域说明你也都看过了。" + TAIL);
+    expect(q([...base, ...issues])).toBe("功能用例、约束一共 3 个条目，都已经评审通过或者由你保留了写法，你也都看过了；2 个问题都已经解决或者由你决定保留。" + TAIL);
+    expect(q([...base, ...notes, ...issues])).toBe("功能用例、约束一共 3 个条目，都已经评审通过或者由你保留了写法，你也都看过了；" +
+      "2 条领域说明你也都看过了；2 个问题都已经解决或者由你决定保留。" + TAIL);
+    // 要评审的集合一个条目都没有、只有领域说明（任务类型不要求至少一个功能用例时会出现）
+    expect(q(notes)).toBe("领域说明一共 2 个条目，你也都看过了。" + TAIL);
+    expect(q([...notes, ...issues])).toBe("领域说明一共 2 个条目，你也都看过了；2 个问题都已经解决或者由你决定保留。" + TAIL);
+    expect(q([])).toBe(TAIL);
   });
 
   it("任务进行中、完成条件全部满足、助手不在工作、没有未回应的提交卡片才显示", () => {

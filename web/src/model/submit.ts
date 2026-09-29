@@ -27,21 +27,30 @@ export function showSubmitBar(task: Task, working: boolean, messages: Conversati
 }
 
 /**
- * 提示条的问句：写明事实与后果。点名有条目的集合与条目总数（要求评审的集合；没有时是问题条目之外有条目的集合），
- * 完成条件里有评审、用户确认、没有未解决的问题时各说一句，末尾问是否已经完成、说清提交之后的后果。
+ * 提示条的问句：写明事实与后果。分三段，各段之间用分号：
+ * ①点名有条目的集合与条目总数（要求评审的集合；没有时是问题条目之外有条目的集合），完成条件里有评审、用户确认时各说一句；
+ * ②要求用户确认、但不在①里的集合（例如领域说明），单独点名并写条目个数：「2 条领域说明你也都看过了」；
+ * ③要求没有未解决条目的集合（例如问题）有条目时写「2 个问题都已经解决或者由你决定保留」，一个条目都没有时不写。
+ * 末尾问是否已经完成、说清提交之后的后果，这两句是定稿，不随条目变。
  */
 export function submitQuestion(task: Task): string {
   const conditions = task.completion?.conditions ?? [];
   const has = (collection: string, name: string) => conditions.some((c) => c.collection === collection && c.name === name);
-  const filled = task.definition.collections.filter((c) => task.items.some((i) => i.collection === c.name));
+  const countOf = (collection: string) => task.items.filter((i) => i.collection === collection).length;
+  const filled = task.definition.collections.filter((c) => countOf(c.name) > 0);
   const reviewed = filled.filter((c) => has(c.name, REVIEW_CONDITION));
   const listed = reviewed.length ? reviewed : filled.filter((c) => keepPendingField(task, c.name) === null);
-  const count = task.items.filter((i) => listed.some((c) => c.name === i.collection)).length;
+  const count = listed.reduce((n, c) => n + countOf(c.name), 0);
   const facts = [
     ...(reviewed.length ? ["都已经评审通过或者由你保留了写法"] : []),
     ...(listed.some((c) => has(c.name, CONFIRM_CONDITION)) ? ["你也都看过了"] : []),
-    ...(conditions.some((c) => c.name === UNRESOLVED_CONDITION) ? ["没有未解决的问题"] : []),
   ];
-  const head = listed.length ? `${listed.map((c) => c.name).join("、")}一共 ${count} 个条目${facts.length ? "，" + facts.join("，") : ""}。` : "";
-  return `${head}这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。`;
+  const read = filled.filter((c) => !listed.includes(c) && keepPendingField(task, c.name) === null && has(c.name, CONFIRM_CONDITION));
+  const issues = filled.filter((c) => has(c.name, UNRESOLVED_CONDITION));
+  const parts = [
+    ...(listed.length ? [`${listed.map((c) => c.name).join("、")}一共 ${count} 个条目${facts.map((f) => "，" + f).join("")}`] : []),
+    ...(read.length ? [`${read.map((c) => `${countOf(c.name)} 条${c.name}`).join("、")}你也都看过了`] : []),
+    ...(issues.length ? [`${issues.map((c) => `${countOf(c.name)} 个${c.name}`).join("、")}都已经解决或者由你决定保留`] : []),
+  ];
+  return `${parts.length ? parts.join("；") + "。" : ""}这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。`;
 }

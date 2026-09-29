@@ -72,6 +72,8 @@ describe("助手没有在运行时的工作视图", () => {
     expect(screen.queryByTestId("executor-hint")).toBeNull();
     expect(screen.getByTestId("chat-input")).toBeDisabled();
     expect(screen.getByTestId("send")).toHaveClass("off");
+    // 原因已经写在提示条里，发送键的悬停提示只说一句短的，不重复整句。
+    expect(screen.getByTestId("send")).toHaveAttribute("title", "现在不能发送，原因见上方。");
   });
 
   it("提示的取法：空闲与工作中没有提示；正在启动但用户没有刚发的话时是一般的一句", () => {

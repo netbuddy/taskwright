@@ -35,6 +35,16 @@ export const ACTION_TIMEOUT_MS = 10_000;
 const BASE = "/api/v1";
 /** 请求发不出去（服务停了或网络断了）时的那句话。 */
 export const NETWORK_TEXT = "连不上服务，请检查服务是否在运行。";
+/**
+ * 页面与任务服务之间隔着一层转发（开发服务器的代理、反向代理）时，任务服务停了或正在重启，转发的那一层回 502、503、504，
+ * 返回体里没有接口约定的说明；这时用这句话，不写状态码。任务服务自己回的 503 带说明，照它的说明写。
+ */
+export const GATEWAY_TEXT = "连不上任务服务，可能正在重启。请稍后再试；一直不行，请告诉管理员。";
+const gatewayStatus = (status: number) => status === 502 || status === 503 || status === 504;
+/** 返回体里没有说明时的兜底句：502、503、504 用 GATEWAY_TEXT，其余用各处自己那句带状态码的话。 */
+function fallbackText(status: number, text: string): string {
+  return gatewayStatus(status) ? GATEWAY_TEXT : text;
+}
 
 async function request<T>(method: string, path: string, body?: unknown, timeoutMs = 30_000): Promise<T> {
   const controller = new AbortController();
@@ -62,14 +72,14 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
   try {
     parsed = text ? JSON.parse(text) : null;
   } catch {
-    if (!response.ok) throw new ApiError("bad_response", `服务返回了看不懂的内容（HTTP ${response.status}）。`, response.status);
+    if (!response.ok) throw new ApiError("bad_response", fallbackText(response.status, `服务返回了看不懂的内容（HTTP ${response.status}）。`), response.status);
     return text as unknown as T;
   }
   const maybeError = parsed as Partial<ApiErrorBody> | null;
   if (!response.ok || (maybeError && maybeError.ok === false)) {
     const error = maybeError?.error;
     if (error?.code === "bad_request") console.error("接口说请求的形状不对：", method, path, error);
-    throw new ApiError(error?.code ?? "bad_response", error?.message ?? `请求没有成功（HTTP ${response.status}）。`,
+    throw new ApiError(error?.code ?? "bad_response", error?.message ?? fallbackText(response.status, `请求没有成功（HTTP ${response.status}）。`),
       response.status, (error?.data as Record<string, unknown>) ?? {});
   }
   return parsed as T;
@@ -93,7 +103,7 @@ async function rawBytes(path: string, timeoutMs = 30_000): Promise<ArrayBuffer> 
   }
   let body: Partial<ApiErrorBody> | null = null;
   try { body = await response.json(); } catch { body = null; }
-  throw new ApiError(body?.error?.code ?? "bad_response", body?.error?.message ?? `请求没有成功（HTTP ${response.status}）。`, response.status);
+  throw new ApiError(body?.error?.code ?? "bad_response", body?.error?.message ?? fallbackText(response.status, `请求没有成功（HTTP ${response.status}）。`), response.status);
 }
 
 export const api = {
@@ -138,7 +148,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...pick, format: "markdown" }),
     });
-    if (!response.ok) throw new ApiError("bad_response", `下载没有成功（HTTP ${response.status}）。`, response.status);
+    if (!response.ok) {
+      // 502、503、504 时看一眼返回体：任务服务自己回的带说明，照说明写；转发层回的没有说明，写 GATEWAY_TEXT。其余状态码照旧。
+      const said = gatewayStatus(response.status) ? ((await response.json().catch(() => null)) as Partial<ApiErrorBody> | null)?.error?.message : undefined;
+      throw new ApiError("bad_response", said ?? fallbackText(response.status, `下载没有成功（HTTP ${response.status}）。`), response.status);
+    }
     return response.blob();
   },
 
