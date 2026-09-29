@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { ExecutorState, SessionListEntry, Task } from "../api/types";
 import { ToastProvider } from "../components/Toasts";
 import { WorkViewPage } from "../pages/WorkViewPage";
@@ -69,5 +69,31 @@ describe("会话菜单的最近活动与消息条数", () => {
     rerender(view(WORKING));
     await waitFor(() => expect(screen.getByTestId("session-menu-button")).toBeInTheDocument());
     expect(list).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("新建会话被拒时的提示", () => {
+  const busy = (active: string) => new ApiError("session_busy", "助手正在另一条会话里工作，做完才能在这里继续。", 409, { active_session: active });
+  const clickNew = () => {
+    fireEvent.click(screen.getByTestId("session-menu-button"));
+    fireEvent.click(screen.getByText(/新建会话/));
+  };
+
+  it("助手就在用户现在所在的这条会话里工作：说这条会话", async () => {
+    vi.spyOn(api, "listSessions").mockResolvedValue([session(4, "2026-09-28T01:05:00Z")]);
+    vi.spyOn(api, "createSession").mockRejectedValue(busy("S1"));
+    render(view(WORKING));
+    clickNew();
+    await waitFor(() => expect(screen.getByTestId("toasts")).toHaveTextContent("助手正在这条会话里工作，等它做完这一轮再新建会话。"));
+    expect(screen.getByTestId("toasts")).not.toHaveTextContent("另一条会话");
+  });
+
+  it("助手在另一条会话里工作：照旧说另一条会话", async () => {
+    vi.spyOn(api, "listSessions").mockResolvedValue([session(4, "2026-09-28T01:05:00Z")]);
+    vi.spyOn(api, "createSession").mockRejectedValue(busy("S2"));
+    render(view({ state: "working", text: "", active_session: "S2" }));
+    clickNew();
+    await waitFor(() => expect(screen.getByTestId("toasts")).toHaveTextContent("助手正在另一条会话里工作，做完才能在这里继续。"));
+    expect(screen.getByTestId("toasts")).not.toHaveTextContent("这条会话里工作");
   });
 });

@@ -3,10 +3,10 @@
 //   · 每次评审一张卡片，最新的在上：「第 N 次评审」、时刻、由谁发起、条数、合规与不合规、问题与建议各几。
 //     最新一张默认展开，早先的变淡、折起，点标题展开。展开后逐条目列结果：不合规的条目逐条列发现（红点问题、琥珀点建议、
 //     每条发现与条目详情里同一个两行布局（FindingLine）：第一行是发现本身与「第 N 次评审指出」，第二行是去向（未处理／已在修订 N 改／
-//     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看它们的建议。
+//     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看每条的通过说明（PassNote）与建议。
 //     规则改过之后，按改之前的规则评出的发现写「按改之前的规则评出，不再算数」，不给链接，「只看未处理」不列，也不算在角标里。
 //     点条目编号或一条发现，打开条目详情并高亮那个字段。
-//   · 底部规则区：按集合列规则。必选的开关锁住；可选的可以关掉，或点标签在「可选」与「升为必选」之间切换。改动只影响之后的评审。
+//   · 底部规则区：按集合列规则。必选的开关是绿色、圆点对面画一把白色的锁，不能关；可选的可以关掉，或点标签在「可选」与「升为必选」之间切换。改动只影响之后的评审。
 // 保留、改规则都是用户的界面操作（waive_review、set_review_rules），界面上的变化等库事件到了才发生；被拒时报一条失败提示（全站提示条）。
 
 import { useState } from "react";
@@ -18,6 +18,7 @@ import {
 } from "../../model/items";
 import { formatTime } from "../../model/format";
 import { FindingLine } from "./FindingLine";
+import { PassNote } from "./PassNote";
 import { fixText } from "./ItemDetail";
 import { rejectedText } from "./errors";
 import { useToast } from "../Toasts";
@@ -118,6 +119,7 @@ function BatchCard({ task, batch, latest, onlyOpen, readOnly, writesOff, submit,
                 <div key={item!.item_id} className="sw-rv-item">
                   <span className="lid ref" role="button" onClick={() => onOpenFinding(item!.item_id, null)}>{item!.item_id}</span>
                   <span className="chip okc">合规</span><span className="muted">修订 {review!.revision_no}</span>
+                  <PassNote task={task} collection={item!.collection} review={review!} inRow />
                   {(review!.findings ?? []).map((f, i) => (
                     <FindingLine key={i} finding={f} rule={ruleFor(task, item!, f)} batchNo={batch.no} onOpen={() => onOpenFinding(item!.item_id, f.field)} />
                   ))}
@@ -221,9 +223,11 @@ function RuleRow({ rule, off, onToggle, onLevel }: {
   const tag = { required: ["bad", "必选"], optional: ["warn", "可选 ▾"], off: ["warn", "已关闭"], promoted: ["bad", "升为必选 ▾"] }[rule.state] ?? ["", rule.state];
   return (
     <div className="sw-rule" data-testid={`rule-${rule.id}`}>
+      {/* 必选规则是开着的：开关绿色、圆点在右，圆点对面的空处画一把白色的锁表示不能关。 */}
       <span className={`sw-switch${on ? " on" : ""}${locked ? " lock" : ""}`} role="switch" aria-checked={on}
+        aria-disabled={locked || !!off || undefined} aria-label={locked ? `规则 ${rule.id}：必选，不能关` : undefined}
         title={locked ? "必选规则不能关" : off ?? (on ? "关掉这条规则" : "打开这条规则")}
-        onClick={() => { if (!locked && !off) onToggle(); }} data-testid={`rule-switch-${rule.id}`}><i /></span>
+        onClick={() => { if (!locked && !off) onToggle(); }} data-testid={`rule-switch-${rule.id}`}>{locked && <LockIcon />}<i /></span>
       <span className="rid">{rule.id}</span>
       <span className="rt">{rule.text}</span>
       <span className={`chip ${tag[0]}`} role={rule.state === "optional" || rule.state === "promoted" ? "button" : undefined}
@@ -231,5 +235,15 @@ function RuleRow({ rule, off, onToggle, onLevel }: {
         onClick={() => { if ((rule.state === "optional" || rule.state === "promoted") && !off) onLevel(); }}
         data-testid={`rule-level-${rule.id}`}>{tag[1]}</span>
     </div>
+  );
+}
+
+/** 开关左半边的小锁：锁梁一笔，锁身一块。颜色随 currentColor（样式里设为白色）。 */
+function LockIcon() {
+  return (
+    <svg className="lk" viewBox="0 0 16 16" aria-hidden="true" data-testid="rule-lock">
+      <path d="M5.2 7.2V5.3a2.8 2.8 0 0 1 5.6 0v1.9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <rect x="3.3" y="7" width="9.4" height="7" rx="1.6" fill="currentColor" />
+    </svg>
   );
 }

@@ -96,4 +96,30 @@ describe("整份数据里的进行中的评审", () => {
     s = run(s, { type: "resync" }, { type: "snapshot", snapshot: snapshot(5) });
     expect(running(s)).toBe(true);
   });
+
+  describe("助手的程序在评审中途不在运行了（页面没有刷新）", () => {
+    const executor = (state: string) => ({ type: "sse" as const, event: "executor_state", data: { state, text: "", active_session: SESSION } });
+    for (const state of ["exited", "failed_to_start", "not_started", "starting"]) {
+      it(`收到助手状态 ${state}：还没结束的评审清掉，助手状态照常换上`, () => {
+        let s = run(fresh(), { type: "snapshot", snapshot: snapshot(5, null) }, progress(6, 1));
+        expect(running(s)).toBe(true);
+        s = run(s, executor(state));
+        expect(s.review).toBeNull();
+        expect(s.executor?.state).toBe(state);
+      });
+    }
+    for (const state of ["idle", "working", "some_future_state"]) {
+      it(`收到助手状态 ${state}：评审照旧在进行`, () => {
+        let s = run(fresh(), { type: "snapshot", snapshot: snapshot(5, null) }, progress(6, 1));
+        s = run(s, executor(state));
+        expect(running(s)).toBe(true);
+        expect(s.review?.done).toBe(1);
+      });
+    }
+    it("已经结束的评审（「评审完了」的提示）不动", () => {
+      let s = run(fresh(), { type: "snapshot", snapshot: snapshot(5, null) }, progress(6, 1), finished(7));
+      s = run(s, executor("exited"));
+      expect(s.review?.finished).toEqual({ passed: 2, failed: 0, unfinished: 0, error: null });
+    });
+  });
 });

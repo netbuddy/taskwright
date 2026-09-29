@@ -436,7 +436,7 @@ function applyReviewRecorded(state: WorkState, data: ReviewRecorded): WorkState 
   if (!state.task) return state;
   const items = state.task.items.map((item) =>
     item.item_id === data.item_id
-      ? { ...item, reviews: [...item.reviews, { revision_no: data.revision_no, verdict: data.verdict, findings: data.findings, at: data.at,
+      ? { ...item, reviews: [...item.reviews, { revision_no: data.revision_no, verdict: data.verdict, reason: data.reason ?? null, findings: data.findings, at: data.at,
           batch_id: data.batch_id ?? null, rules_hash: data.rules_hash ?? null, forced: !!data.forced, seq: data.seq }] }
       : item,
   );
@@ -468,6 +468,12 @@ function applyConfirmationRecorded(state: WorkState, data: ConfirmationRecorded)
     pendingOps,
   };
 }
+
+/**
+ * 助手的程序不在运行的几种状态：还没启动（或续接没接上、被停掉）、正在启动（上一个程序已经不在）、退出了、没有启动起来。
+ * 空闲（idle）与工作中（working）时程序在运行，评审可能还在进行；不认识的状态也不算。
+ */
+const NOT_RUNNING_STATES: readonly string[] = ["not_started", "starting", "exited", "failed_to_start"];
 
 /** 过程与对话类事件：不带序号，收到就应用；不属于本会话的忽略。 */
 function applyProcess(state: WorkState, name: string, data: unknown): WorkState {
@@ -514,8 +520,13 @@ function applyProcess(state: WorkState, name: string, data: unknown): WorkState 
     }
     case "work_summary":
       return applyWorkSummary(state, data as WorkSummary);
-    case "executor_state":
-      return { ...state, executor: data as ExecutorState };
+    case "executor_state": {
+      const executor = data as ExecutorState;
+      // 评审在助手的程序里进行：程序不在运行时不可能还有评审在进行（整份数据的 review_in_progress 也按这一条算）。
+      // 页面上还没结束的评审清掉，免得按钮一直灰、一直显示「评审中」；已经结束的（「评审完了」的提示）不动。
+      const stopped = NOT_RUNNING_STATES.includes(executor.state) && !!state.review && !state.review.finished;
+      return { ...state, executor, ...(stopped ? { review: null } : {}) };
+    }
     case "material_added": {
       const d = data as MaterialAdded;
       const material: Material = { path: d.path, bytes: d.bytes, modified_at: d.modified_at };

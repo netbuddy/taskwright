@@ -39,7 +39,8 @@ export const PREFILL = {
 };
 
 export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId: string }) {
-  const { state, log, dispatch, stream, loadError } = useWorkView(taskId, sessionId);
+  const { state, log, dispatch, stream, loadError, loadErrorCode } = useWorkView(taskId, sessionId);
+  const missing = useMissingSession(taskId, sessionId, !state.task && loadErrorCode === "not_found");
   const [selected, setSelected] = useState<string | null>(null);
   const [doc, setDoc] = useState<{ open: boolean; revision: number | null }>({ open: false, revision: null });
   const [sessions, setSessions] = useState<SessionListEntry[]>([]);
@@ -194,7 +195,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       toast.success("已新建会话。");
       go(href.work(taskId, session_id));
     } catch (e) {
-      toast.error(e instanceof ApiError ? errorText(e) : "新建会话没有成功。");
+      toast.error(e instanceof ApiError ? newSessionErrorText(e, sessionId) : "新建会话没有成功。");
     }
   };
 
@@ -256,6 +257,24 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   const hit = hitEntry ? { revision: hitEntry.revision_no, items: touchedItems(hitEntry) } : null;
   const latestRevision = Math.max(state.latestRevision, log[0]?.revision_no ?? 0);
 
+  // 这条会话不存在（任务在、会话列表里没有它）：两行说明，照常带顶栏。最常见的是新建之后没说话就打开了别的会话。
+  if (missing && !task) {
+    return (
+      <div className="wv-page">
+        <NoModelBanner />
+        <div className="app" data-testid="missing-session">
+          <div className="topbar">
+            <a className="tname" href={href.task(taskId)}>{missing.taskName}</a>
+            <UserMenu where="topbar" />
+          </div>
+          <div className="empty missing">
+            <div>找不到这条会话。还没有说过话的会话，在你打开别的会话之后不会保留。</div>
+            <div><a href={href.task(taskId)} data-testid="missing-session-back">回到任务页</a></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (loadError && state.phase === "waiting_snapshot" && !task) {
     return <div className="wv-page"><div className="app"><div className="empty">读不到这条会话的数据：{loadError}</div></div></div>;
   }
@@ -349,4 +368,31 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
       {task && <DocumentModal task={task} log={log} open={doc.open} revision={doc.revision} onClose={() => setDoc({ open: false, revision: null })} />}
     </div>
   );
+}
+
+/**
+ * 新建会话被拒时的提示。助手正在工作的那条会话就是用户现在所在的这一条时，「另一条会话」说不通，单独说；别的情形照 errorText。
+ */
+export function newSessionErrorText(error: ApiError, sessionId: string): string {
+  if (error.code === "session_busy" && error.data.reason !== "working" && error.data.active_session === sessionId) {
+    return "助手正在这条会话里工作，等它做完这一轮再新建会话。";
+  }
+  return errorText(error);
+}
+
+/**
+ * 整份数据读不到、后端说「没有」（not_found）时，核实是不是这条会话不存在：任务读得到，任务的会话列表里却没有这条会话。
+ * 是时返回任务名，给「找不到这条会话」那一页用；任务本身读不到或还没核实完时为 null，照别的读取失败处理。
+ */
+function useMissingSession(taskId: string, sessionId: string, notFound: boolean): { taskName: string } | null {
+  const [missing, setMissing] = useState<{ taskName: string } | null>(null);
+  useEffect(() => {
+    if (!notFound) { setMissing(null); return; }
+    let live = true;
+    api.getTask(taskId).then((t) => {
+      if (live) setMissing((t.sessions ?? []).some((s) => s.session_id === sessionId) ? null : { taskName: t.task_name });
+    }).catch(() => { if (live) setMissing(null); });
+    return () => { live = false; };
+  }, [taskId, sessionId, notFound]);
+  return missing;
 }

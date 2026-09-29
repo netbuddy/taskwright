@@ -17,6 +17,8 @@ export interface WorkView {
   dispatch: (action: WorkAction) => void;
   stream: StreamStatus;
   loadError: string | null;
+  /** 整份数据没有读到时的错误码（接口的 error.code，连不上服务是 network）；读到了为 null。 */
+  loadErrorCode?: string | null;
   reload: () => void;
 }
 
@@ -24,6 +26,7 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
   const [state, dispatch] = useReducer(workReducer, sessionId, initialWorkState);
   const [stream, setStream] = useState<StreamStatus>("connecting");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorCode, setLoadErrorCode] = useState<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
   const loading = useRef(false);
@@ -38,9 +41,11 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
     try {
       const snapshot = await api.snapshot(taskId, sessionId);
       setLoadError(null);
+      setLoadErrorCode(null);
       dispatch({ type: "snapshot", snapshot });
     } catch (error) {
       setLoadError(error instanceof ApiError ? error.message : String(error));
+      setLoadErrorCode(error instanceof ApiError ? error.code : null);
     } finally {
       loading.current = false;
     }
@@ -91,5 +96,5 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
     if (state.phase === "waiting_snapshot" && everOpened.current && stream === "open") void loadSnapshot();
   }, [state.phase, stream, loadSnapshot]);
 
-  return { state, log, dispatch, stream, loadError, reload: loadSnapshot };
+  return { state, log, dispatch, stream, loadError, loadErrorCode, reload: loadSnapshot };
 }

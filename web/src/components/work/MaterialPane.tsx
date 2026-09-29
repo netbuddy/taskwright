@@ -3,7 +3,8 @@
 //
 // 原文里被条目引用的句子画浅蓝底线（按各条目「文档原文」来源的摘录找，见 findExcerpt），点一下打开引用它的条目；
 // 条目那边点来源小标签时，这里切到那份材料、滚到那句并高亮（locate）；一段都找不到时在顶部提示两秒。
-// 选中一段原文后，底部出现三个动作，都要发给助手：据此新建条目、补到当前条目、就这段提问。
+// 选中一段原文后，选区上方浮出一条动作条（SelectionBar），三个动作都要发给助手：据此新建条目、补到当前条目、就这段提问。
+// 点原文别处、点页面别处、按 Esc 键，动作条消失。
 //
 // Word 材料（.docx）按原版式分页显示，交给 DocxPaper；它的来源出处带段落号（inputs/x.docx#p37），按段落定位。
 // 上传 .docx 时后端生成的投影（x.docx.md；0.2 的任务里是 x.docx.txt）是给助手读的，材料清单里带 derived_from，材料下拉框里不列出。
@@ -15,6 +16,7 @@ import type { Item, Material } from "../../api/types";
 import { docxLocator, ownMaterials } from "../../model/docx";
 import { DocxPaper } from "./DocxPaper";
 import { SectionList } from "./SectionList";
+import { SelectionBar, type SelectionAction } from "./SelectionBar";
 
 export interface LocateRequest {
   excerpt: string;
@@ -64,9 +66,13 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   const [hit, setHit] = useState<string | null>(null);
   const [missed, setMissed] = useState(false);
   const [selection, setSelection] = useState("");
+  // 选中的那段原文的范围，横条据此定位；拿不到时为 null。
+  const [range, setRange] = useState<Range | null>(null);
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState("");
   const paper = useRef<HTMLDivElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
+  const view = useRef<HTMLDivElement>(null);
 
   useEffect(() => { if (!path && materials[0]) setPath(materials[0].path); }, [materials, path]);
   useEffect(() => { if (focusPath) setPath(focusPath); }, [focusPath]);
@@ -78,6 +84,8 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
     if (!(match ? /\.docx$/i.test(match.path) : isDocx)) setHit(locate.excerpt);
   }, [locate?.nonce]);
   useEffect(() => { setDocxNote(null); setDocxCited(null); }, [path]);
+  // 换了材料，选区跟着旧的原文一起没了，动作条也收起。
+  useEffect(() => { setSelection(""); setAsking(false); }, [path]);
   useEffect(() => {
     if (!path || /\.docx$/i.test(path)) return;
     setDoc(null);
@@ -95,12 +103,13 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   }, [hit, text]);
 
   const name = path?.split("/").pop() ?? "还没有材料";
+  const openItem = currentItem ? { id: currentItem, title: items.find((i) => i.item_id === currentItem)?.title ?? "" } : null;
   const cites = useMemo(() => citationsOf(items, path), [items, path]);
   const segments = useMemo(() => (text == null ? [] : segment(text, cites, hit)), [text, cites, hit]);
   const citedItems = useMemo(() => (text == null ? new Set<string>() : citedIn(text, cites)), [text, cites]);
 
-  // 取消选中时收起底部的动作条：在纸面里点一下（选区为空）或在纸面与动作条之外按下鼠标，都算取消；
-  // 正在「就这段提问」而且输入框里已经写了字时不收，免得打断输入。
+  // 取消选中时收起动作条：在纸面里点一下（选区为空）或在纸面与动作条之外按下鼠标，都算取消；
+  // 正在「就这段提问」而且输入框里已经写了字时不收，免得打断输入。按 Esc 键一律收起。
   const keepAsking = useRef(false);
   keepAsking.current = asking && question.trim() !== "";
   const selbar = useRef<HTMLDivElement>(null);
@@ -112,16 +121,21 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
       if (target && (paper.current?.contains(target) || selbar.current?.contains(target))) return;
       dropSelection();
     };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setSelection(""); setAsking(false); } };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
   }, [selection]);
   const onMouseUp = () => {
     const sel = window.getSelection();
     const t = sel ? String(sel).trim() : "";
-    if (t.length > 1 && sel?.anchorNode && paper.current?.contains(sel.anchorNode)) { setSelection(t); setAsking(false); }
+    if (t.length > 1 && sel?.anchorNode && paper.current?.contains(sel.anchorNode)) {
+      setSelection(t); setAsking(false);
+      setRange(sel.rangeCount && typeof sel.getRangeAt === "function" ? sel.getRangeAt(0).cloneRange() : null);
+    }
     else if (selection) dropSelection();
   };
-  const act = (kind: "create" | "attach" | "ask") => {
+  const act = (kind: SelectionAction) => {
     if (!path || !selection || !onSend) return;
     if (kind === "ask") { setAsking(true); return; }
     onSend(kind === "create" ? SELECTION_TEMPLATES.create(path, selection) : SELECTION_TEMPLATES.attach(path, currentItem!, selection));
@@ -150,8 +164,8 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
       {isDocx && path && <SectionList taskId={taskId} path={path} items={items} onJump={(paragraph) => setJump({ paragraph, nonce: (jump?.nonce ?? 0) + 1 })} />}
       {missed && <div className="busy-note locate-miss" data-testid="locate-miss">没有在材料里找到这段原文</div>}
       {isDocx && docxNote && <div className="busy-note locate-miss" data-testid="locate-note">{docxNote}</div>}
-      <div className="doc-wrap">
-        <div className="doc-b">
+      <div className="doc-wrap sel-host" ref={wrap}>
+        <div className="doc-b" ref={view}>
           {!materials.length && <div className="empty">这个任务还没有材料。可以在任务页上传，或者在对话区「附一份材料」。</div>}
           {error && <div className="busy-note">{error}</div>}
           {path && isDocx && (
@@ -169,23 +183,8 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
           )}
         </div>
         {selection && onSend && (
-          <div className="selbar" ref={selbar} data-testid="selbar">
-            <span>你选中了一段原文：</span><span className="selq">「{selection}」</span>
-            <button type="button" className="aibtn" disabled={disabled} onClick={() => act("create")}>据此新建条目</button>
-            <button type="button" className="aibtn" disabled={disabled || !currentItem} title={currentItem ? `补到 ${currentItem}` : "先在条目区打开一个条目"} onClick={() => act("attach")}>
-              补到当前条目{currentItem ? `（${currentItem}）` : ""}
-            </button>
-            <button type="button" className="aibtn" disabled={disabled} onClick={() => act("ask")}>就这段提问</button>
-            <span className="aihint">这三件都要发给助手，它做完要等一会儿</span>
-            <span className="btn sm" role="button" style={{ marginLeft: "auto" }} onClick={() => { setSelection(""); setAsking(false); }}>不用了</span>
-            {asking && (
-              <div className="askbox">
-                <input autoFocus placeholder="想问这段原文什么？" value={question} onChange={(e) => setQuestion(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") sendQuestion(); }} data-testid="selection-question" />
-                <button type="button" className="btn sm pri" disabled={!question.trim()} onClick={sendQuestion}>发给助手</button>
-              </div>
-            )}
-          </div>
+          <SelectionBar range={range} containerRef={wrap} viewRef={view} barRef={selbar} current={openItem} disabled={disabled}
+            asking={asking} question={question} onQuestion={setQuestion} onAct={act} onSendQuestion={sendQuestion} onCancelAsk={() => setAsking(false)} />
         )}
       </div>
     </>

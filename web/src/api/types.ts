@@ -118,6 +118,8 @@ export interface Review {
   /** 被评审的是条目在哪次修订下的内容；标记不随后续修订移动。 */
   revision_no?: number;
   verdict: "合规" | "不合规" | string;
+  /** 程序按规则条数与发现记下的一句话，例如「按 14 条规则逐条核对，没有发现问题。」；早期的数据可能没有。 */
+  reason?: string | null;
   findings?: Finding[];
   at?: string;
   /** 所属的那一次评审（批次）编号；早期记录为空。 */
