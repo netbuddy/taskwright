@@ -26,6 +26,8 @@ export const INPUT_PLACEHOLDER = "把你的想法直接告诉助手，或者在�
  * 这里不再重复整句。
  */
 export const DISABLED_PLACEHOLDER = "现在不能在这里输入，原因见上方。";
+/** 输入框整个停用、或有没保存的条目编辑时，发送键的悬停提示：原因已经写在上方的提示条里，这里只说一句短的，不重复整句。 */
+export const SEND_OFF_TITLE = "现在不能发送，原因见上方。";
 
 /** 执行者工作中，发送键为什么不能用。 */
 export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句；你可以先把话打好";
@@ -85,7 +87,7 @@ export function Conversation({
   }, [messages.length, currentWork?.steps.length, outgoing.length]);
 
   const sendOff = disabled || hold || working || starting;
-  const sendTitle = disabled ? disabledReason ?? undefined : hold ? HOLD_TEXT : working ? TURN_TEXT : starting ? STARTING_SEND_TITLE : "发送";
+  const sendTitle = (disabled && disabledReason) || hold ? SEND_OFF_TITLE : disabled ? undefined : working ? TURN_TEXT : starting ? STARTING_SEND_TITLE : "发送";
   // 输入框此刻的内容：发送失败时据它判断用户有没有接着打新字。
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
