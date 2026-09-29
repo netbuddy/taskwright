@@ -20,7 +20,7 @@
 
 第二层：check_db 全过、功能用例至少一个、必填齐、来源逐字（文档原文在材料里找得到，用户的话在执行者会话的用户消息里
 找得到，其中包括界面操作之后后端代发的固定句子）、每条隐藏事实有没有被问出来（关键词组全部出现在同一个当前条目里，而且不是用户 agent 主动说出来的）、
-接受底线逐条按用户画像里写的判据查、执行者被工具拒绝的次数与原因、停止原因、完成条件（经 Node 子进程调 conditions.ts）。
+接受底线逐条按用户画像里写的判据查、执行者被工具拒绝的次数与原因、停止原因、完成条件（经观测台的 taskpage.check_completion 起 Node 子进程调 agent 的核对函数）。
 
 输出：演练目录下的「判定报告.md」与「判定摘要.json」（批处理汇总读它），并往 <演练目录的上级>/sim-summary.jsonl 追加一行。
 """
@@ -31,8 +31,7 @@ import json
 import re
 from pathlib import Path
 
-from taskwright_observatory import check_db, taskdb
-from taskwright_server.service import library
+from taskwright_observatory import check_db, taskdb, taskpage
 
 
 def _norm(text: str) -> str:
@@ -334,11 +333,12 @@ def layer2(data: dict) -> tuple[list[dict], dict]:
         checks.append({"项": f"接受底线：{rule['说法'][:40]}……", "通过": ok, "说明": note})
     rejected = rejected_calls(sim)
     facts["被工具拒绝"] = rejected
-    comp = library.completion(db_dir, task["任务编号"], definition, counts)
-    if comp is None:
+    results, _problem, _brief = taskpage.check_completion(Path(db_dir) / taskdb.DB_NAME, task["任务编号"], definition.get("完成条件") or {})
+    if results is None:
         facts["完成条件"] = None
     else:
-        states = [c.get("state") or ("met" if c["met"] else "unmet") for c in comp["conditions"]]
+        # 每项结果的 state：met（已满足）、unmet（还差）、empty（集合为空，这一条暂不需要核对）；早期的核对函数不给 state 时按 satisfied 算。
+        states = [r.get("state") or ("met" if r.get("satisfied") else "unmet") for r in results]
         empty = states.count("empty")
         facts["完成条件"] = (f"还差 {states.count('unmet')} 项" if "unmet" in states else "都已满足") + \
             (f"；另有 {empty} 项因集合暂无条目暂不需要核对" if empty else "")

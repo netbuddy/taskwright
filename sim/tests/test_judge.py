@@ -9,12 +9,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from taskwright_server import create_task as create_task_module
 from sim import judge
 
 REPO = Path(__file__).resolve().parents[2]
 MATERIAL = "读者凭借书证借书，每本书可以续借一次。读者还书时，逾期的每本每天罚款一角。寒暑假期间的借期另行规定。系统还要能智能推荐图书。"
 PERSONA = json.loads((REPO / "sim" / "personas" / "librarian.json").read_text(encoding="utf-8"))
+
+# 建任务目录、放起始文件、写任务记录：与任务服务建任务时用的是同一个函数（backend/src/workspace.ts 的 createTaskDir）。
+CREATE = r"""
+import { createTaskDir } from "./backend/src/workspace.ts";
+process.stdout.write(JSON.stringify(createTaskDir(process.argv[1], "srs-authoring", null, null, "TASK-T")));
+"""
 
 SCRIPT = r"""
 import { saveRevision } from "./agent/src/lib/save_revision.ts";
@@ -40,7 +45,8 @@ ASK_HOURS = {"replies": [{"text": "材料里说寒暑假期间的借期另行规
 def build(root: Path, first_words: str, looked: list, second_words: str = "寒暑假借的书顺延到开学第一周周五",
           executor_first: dict | None = None) -> Path:
     sim = root / "sim-001"
-    task = create_task_module.create_task(sim / "tasks" / "TASK-T", task_id="TASK-T")
+    task = json.loads(subprocess.run(["node", "--input-type=module", "-e", CREATE, str(sim / "tasks" / "TASK-T")], cwd=str(REPO), check=True,
+                                     capture_output=True, text=True).stdout)
     subprocess.run(["node", "--input-type=module", "-e", SCRIPT, task["任务目录"]], cwd=str(REPO), check=True, capture_output=True, text=True)
     (sim / "库副本").mkdir(parents=True)
     for f in Path(task["任务目录"]).glob("task.sqlite*"):
@@ -78,6 +84,9 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual(bottom, [True, True, True], report)
         self.assertIn("这次演练有效", report)
         self.assertIn("### 第 3 轮", report)
+        # 完成条件由 agent 的核对函数逐项核对（经观测台起的 Node 子进程）：用例与约束各缺评审与已读，问题有未解决的；
+        # 非功能需求与领域说明没有条目，这三项暂不需要核对。
+        self.assertIn("- 完成条件：还差 5 项；另有 3 项因集合暂无条目暂不需要核对", report)
 
     def test_第一句泄底与没看内容就确认都标为无效(self):
         with tempfile.TemporaryDirectory() as tmp:

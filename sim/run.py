@@ -11,15 +11,17 @@
 隐藏事实是否问出、被拒次数，并列出每次的记录目录供评判者读。某一次中途出错，记下原因接着跑下一次。
 
 做的事：
-1. 起后端任务服务（或接一个已起的），建任务、上传用户画像指定的材料、新建会话；
-2. 起用户 agent 的 pi（RPC），系统提示按用户画像拼好；
+1. 起后端任务服务（node backend/src/main.mts，启动配置用它的默认值 dev；或接一个已起的），建任务、上传用户画像指定的材料、新建会话；
+2. 起用户 agent 的 pi（RPC），系统提示按用户画像拼好：经 Node 驱动程序 sim/user_agent_driver.mts，由后端的会话类启动；
 3. 每轮用一句固定的话唤起用户 agent（第 1 轮「开始，先把你想做的事告诉助手」，之后「执行者停下了，看一下界面再回应」），
    不注入任何别的指示；用户 agent 回应之后，等执行者停下（事件流里出现新的 work_ended）；记下双方原话；
 4. 停止条件：轮数上限；用户 agent 表示目标达成（done）；用户 agent 放弃（give_up）；执行者连续两轮没有经「回复」说话，
-   或者执行者不可用。另有一条保险：用户 agent 连续两次被叫到都没有回应，也停；
+   或者执行者不可用。另有一条保险：用户 agent 连续两次被叫到都没有回应，也停。用户 agent 起不来、驱动程序退出或报错时，
+   停止原因写「模拟用户不可用：原因」，记录照常写下，错误再往外抛；
 5. 记录写进 <sim-root>/sim-<序号>/，结束后调用 judge.py 出判定报告。record.json 里自动记下代码仓的提交号与未提交的
    改动文件（「代码版本」），以及执行者实际登记的工具清单（「执行者工具清单」），判定报告与批处理汇总都列出这两项。
-两个 pi 进程都由会话类启动，标准输入就是 RPC 的命令通道，结束时关掉。Langfuse 环境标签是 sim-<序号>，两边相同。
+两个 pi 进程都由后端的会话类启动（执行者的由任务服务启动，用户 agent 的由驱动程序启动），标准输入就是 RPC 的命令通道，
+结束时关掉。Langfuse 环境标签是 sim-<序号>，两边相同。
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ import uuid
 from pathlib import Path
 
 from sim import judge
-from sim.launch_user import load_persona, user_agent_session
+from sim.launch_user import UserAgentError, load_persona, user_agent_session
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIRST_WAKE = "开始，先把你想做的事告诉助手"
@@ -160,7 +162,7 @@ def code_version() -> dict:
             return subprocess.run(["git", *args], cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=30).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return ""
-    dirty = [line[3:] for line in git("status", "--porcelain", "--", "agent", "server", "sim", "web", "task-types").splitlines() if line]
+    dirty = [line[3:] for line in git("status", "--porcelain", "--", "agent", "backend", "sim", "web", "task-types").splitlines() if line]
     # 还没有任何提交时 rev-parse HEAD 会原样打出「HEAD」，--verify 加 -q 则什么都不打
     return {"提交号": git("rev-parse", "-q", "--verify", "HEAD") or None, "未提交的改动": dirty}
 
@@ -275,9 +277,12 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
     base = args.backend
     if not base:
         base = f"http://127.0.0.1:{args.port}/api/v1"
-        service = subprocess.Popen([sys.executable, "-m", "taskwright_server.service", "--tasks", str(sim / "tasks"), "--runs", str(sim / "backend"),
-                                    "--port", str(args.port)], cwd=str(REPO_ROOT), stdout=open(sim / "backend.log", "w"),
-                                   stderr=subprocess.STDOUT, env=dict(os.environ))
+        node = shutil.which("node")
+        if node is None:
+            raise RuntimeError("在 PATH 里找不到 node，起不了后端任务服务。")
+        service = subprocess.Popen([node, str(REPO_ROOT / "backend" / "src" / "main.mts"), "--tasks", str(sim / "tasks"),
+                                    "--runs", str(sim / "backend"), "--port", str(args.port)], cwd=str(REPO_ROOT),
+                                   stdout=open(sim / "backend.log", "w"), stderr=subprocess.STDOUT, env=dict(os.environ))
     backend = Backend(base, sim / "执行者事件流.txt")
     ua = None
     try:
@@ -354,6 +359,9 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
                 break
         else:
             record["停止原因"] = f"到了轮数上限 {args.max_rounds}"
+    except UserAgentError as error:
+        record["停止原因"] = f"模拟用户不可用：{error}"
+        raise
     finally:
         if ua is not None:
             ua.close()

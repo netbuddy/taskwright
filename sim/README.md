@@ -15,12 +15,17 @@
 | `profiles/user_agent.json` | 用户 agent 的启动配置（模型 gpt-6-luna、思考档位 medium、工具只有 look,respond）。 |
 | `prompts/user_agent_system_prompt.md` | 用户 agent 的系统提示；`{{用户画像}}` 处由 `launch_user.py` 填入画像里给扮演者读的部分。 |
 | `personas/librarian.json` | 示例用户画像，与 examples/library-lending 配套。隐藏事实的关键词与接受底线的判据给判定程序用，不给扮演者看。 |
-| `launch_user.py` | 起用户 agent 的 pi（复用 `server/taskwright_server/launch.py` 经会话类组装命令行）。 |
+| `launch_user.py` | 起用户 agent：按用户画像拼好系统提示，再把 `user_agent_driver.mts` 作为子进程启动，经标准输入与标准输出按行交换 JSON。 |
+| `user_agent_driver.mts` | Node 驱动程序：用后端的会话类（`backend/src/pi_session.ts`）组装命令行、启动并驱动用户 agent 的 pi，归档也由会话类写。 |
 | `run.py` | 驾驭程序：跑一次演练。 |
 | `judge.py` | 判定程序：第一、二层判定，出判定报告。 |
 | `tests/` | 单元测试与集成测试。 |
 
 ## 跑一次演练
+
+需要的环境：Node.js 与 PATH 里的 pi（驾驭程序用 `node backend/src/main.mts` 起任务服务，用户 agent 经 Node 驱动程序启动）；
+能导入观测台包 `taskwright_observatory` 的 `python3`（判定程序用它读任务库、核对完成条件）。不需要旧版的 Python 后端包。
+没有安装观测台包时，把它放进 `PYTHONPATH` 也可以：`PYTHONPATH=observatory:. python3 -m sim.run …`。
 
 ```bash
 # 在代码仓根目录下；Langfuse 可选，接法见 docs/deployment.md
