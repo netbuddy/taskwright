@@ -73,7 +73,8 @@ body {
 .cond.hint, .cond.hint .tick { color: var(--amber); }
 .cond .missing { color: var(--mut); font-family: ui-monospace, Menlo, monospace; font-size: 0.929rem; }
 .doc-text { white-space: pre-wrap; font-size: 0.986rem; line-height: 1.8; }
-.busy-note { background: var(--amber-bg); border: 1px solid var(--amber-line); color: var(--amber); border-radius: 0.571rem; padding: 0.429rem 0.714rem; font-size: 0.957rem; margin-bottom: 0.571rem; }
+/* 出错说明里可能有不带空格的长串（文件路径、英文原文）：overflow-wrap:anywhere 让它在框内任意处折行，否则会顶出框的右边被截掉 */
+.busy-note { background: var(--amber-bg); border: 1px solid var(--amber-line); color: var(--amber); border-radius: 0.571rem; padding: 0.429rem 0.714rem; font-size: 0.957rem; margin-bottom: 0.571rem; overflow-wrap: anywhere; }
 
 /* ───── 运行形态有关的三样（components/ServiceControls.tsx）：无模型提示、「本机用户」菜单、退出之后的整屏 ───── */
 .shell { flex-direction: column; }

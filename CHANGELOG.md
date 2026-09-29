@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Web pages
+
+- The deliverable board on the task page no longer shows 评审通过 0/0 and 已读 0/0 in amber for a collection without items; it shows only 0 个条目 ("0 items") and 这个集合还没有条目。 ("this collection has no items yet"). Its grey lines address you throughout; before, one sentence switched to 用户 ("the user") halfway.
+- The task page opens an event stream without a session and listens only to `executor_state`: when the assistant finishes a turn it reloads the task, so the last activity and each session's message count and last activity no longer stay as they were when the page was opened. The stream is not opened for a completed or abandoned task and is closed when you leave the page.
+- A 502, 503 or 504 without an explanation, which a forwarding layer such as the development server's proxy returns while the task service is stopped or restarting, now reads 连不上任务服务，可能正在重启。请稍后再试；一直不行，请告诉管理员。 ("cannot reach the task service, it may be restarting; try again later, and tell your administrator if it keeps failing") instead of 请求没有成功（HTTP 502）。 ("the request failed (HTTP 502)"). This applies to ordinary requests, to reading a Word file for the original-layout view and to downloading a document; an explanation from the task service itself is still shown as it is.
+- Error notes in the material pane, the document preview and the Word original-layout view wrap inside their box; a long string without spaces could run past the right edge before.
+- When the input box is disabled or you have unsaved item edits, the send button's hover text is 现在不能发送，原因见上方。 ("you cannot send now; the reason is shown above") instead of repeating the notice above the input box.
+- 被 N 个条目引用过 ("cited by N items") on the Materials tab counts every item whose excerpt is found in the material. It used to miss an item whose excerpt overlapped another item's, and dropped further while a passage was highlighted.
+- The question on the green submit bar names the collections you must have read that are not reviewed, such as the domain notes, with their count, and says the issues are all resolved or kept pending only when there are issue items; before, it left the domain notes out and always said 没有未解决的问题 ("no unresolved issues").
+- After a page reload the conversation stays at the bottom when the revision tags appear; before, it could stop at the top with the last line half hidden behind the input box when the conversation was just over one screen long. It does not scroll if you have scrolled up.
+
 ## [0.3.0-alpha] - 2026-09-28
 
 In 0.3 the task service is rewritten in TypeScript, so the task service, the web pages and the assistant need only Node, and the product can be started from a single executable; the observatory and the simulator are still Python programs. Word materials are read by the assistant as Markdown, with a segment list and a location table beside them. Reviews, uploads and completing a task follow stricter rules.

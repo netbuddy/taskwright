@@ -97,7 +97,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   const name = path?.split("/").pop() ?? "还没有材料";
   const cites = useMemo(() => citationsOf(items, path), [items, path]);
   const segments = useMemo(() => (text == null ? [] : segment(text, cites, hit)), [text, cites, hit]);
-  const citedItems = new Set(segments.flatMap((s) => s.items ?? []));
+  const citedItems = useMemo(() => (text == null ? new Set<string>() : citedIn(text, cites)), [text, cites]);
 
   // 取消选中时收起底部的动作条：在纸面里点一下（选区为空）或在纸面与动作条之外按下鼠标，都算取消；
   // 正在「就这段提问」而且输入框里已经写了字时不收，免得打断输入。
@@ -207,6 +207,16 @@ export function citationsOf(items: Item[], path: string | null): Map<string, str
       out.set(s.excerpt, list);
     }
   }
+  return out;
+}
+
+/**
+ * 被引用过的条目：摘录在原文里找得到至少一处的条目（找法是 findExcerpt），与 Word 材料的计数同一个口径。
+ * 不按切好的分段数：分段时互相重叠的范围只留先出现的那段，高亮那段还会盖掉别的，拿分段数会少数，高亮时数字还会暂时变少。
+ */
+export function citedIn(text: string, cites: Map<string, string[]>): Set<string> {
+  const out = new Set<string>();
+  for (const [excerpt, items] of cites) if (findExcerpt(text, excerpt).length) for (const id of items) out.add(id);
   return out;
 }
 

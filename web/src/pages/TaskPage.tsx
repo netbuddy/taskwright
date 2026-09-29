@@ -1,4 +1,5 @@
-// 任务页：一次普通读取（GET …/tasks/{task_id}，里面带材料与会话），不连事件流，刷新即最新。
+// 任务页：一次普通读取（GET …/tasks/{task_id}，里面带材料与会话）。另开一条不带会话的事件连接，只听执行者状态：
+// 助手做完一轮时重读一次，会话卡片与「最近一次活动」不停在打开页面的那一刻（与工作视图的会话菜单同一个做法）。
 // 页面上像结论的句子都由数据算出；集合名、完成条件名从接口取。任务已完成或已放弃时整页只读：「新建会话」与上传框都不显示，
 // 只读说明写明原因。
 
@@ -6,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Empty, Modal, Spin, Upload } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
+import { openEventStream } from "../api/events";
 import type { RevisionLogEntry, TaskDetail } from "../api/types";
 import { Shell } from "../components/Shell";
 import { useToast } from "../components/Toasts";
@@ -38,6 +40,29 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const load = () =>
     api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
   useEffect(() => { void load(); }, [taskId]);
+  // 执行者状态从工作中变为别的状态（助手做完一轮）时重读任务；刚连上、还不知道之前的状态时收到的第一条非工作中状态也算。
+  // 连接不带会话，服务把整个任务的事件都发过来，这里只看 executor_state；不带 Last-Event-ID，不补发旧事件。
+  // 断线照 openEventStream 的办法重连，重新连上时重读一次（断开期间可能错过一轮的结束）。
+  // 任务已经结束时不开；离开页面时断开。不定时轮询。
+  const running = task?.status === "进行中";
+  useEffect(() => {
+    if (!running) return;
+    let last: string | null = null;
+    let opened = false;
+    return openEventStream(`/api/v1/tasks/${encodeURIComponent(taskId)}/events`, () => null, {
+      onMessage: (m) => {
+        if (m.event !== "executor_state") return;
+        const state = (m.data as { state?: string } | null)?.state ?? null;
+        if (state !== "working" && (last === null || last === "working")) void load();
+        last = state;
+      },
+      onStatus: (status) => {
+        if (status !== "open") return;
+        if (opened) void load();
+        opened = true;
+      },
+    });
+  }, [taskId, running]);
 
   if (error) return <Shell currentTaskId={taskId}><Alert type="error" showIcon message={error} /></Shell>;
   if (!task) return <Shell currentTaskId={taskId}><Spin /></Shell>;
@@ -78,7 +103,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
       </p>
       {closed && <Alert type="info" showIcon style={{ marginBottom: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能新建会话、上传材料或修改条目，生成文档照常可用。`} />}
 
-      <div className="section-title">交付物看板 <span className="muted" style={{ fontWeight: 400 }}>按条目集合分开看：每个集合现在有几个条目、最后一次被改是哪次修订、有几个条目在当前所在的修订上已经评审通过、有几个用户已经看过（已读）。</span></div>
+      <div className="section-title">交付物看板 <span className="muted" style={{ fontWeight: 400 }}>按条目集合分开看：每个集合现在有几个条目、最后一次被改是哪次修订、有几个条目在当前所在的修订上已经评审通过、有几个你已经看过（已读）。</span></div>
       <div className="board">
         {task.definition.collections.map((coll) => {
           const items = task.items.filter((i) => i.collection === coll.name);
@@ -88,21 +113,22 @@ export function TaskPage({ taskId }: { taskId: string }) {
           const reviewDone = items.length > 0 && counts.pending === 0 && counts.failed === 0;
           const confirmed = items.filter((i) => !isUnread(i)).length;
           const latest = items.reduce((m, i) => Math.max(m, i.revision_no), 0);
-          // 不评审的集合（问题、领域说明之类）不写「评审通过 0/N」。
+          // 不评审的集合（问题、领域说明之类）不写「评审通过 0/N」。空的集合两枚标签都不写：0/0 不说明什么，琥珀色留给真正要处理的事。
           const reviewed_ = needsReview(task, coll.name);
+          const empty = items.length === 0;
           return (
             <div className="card" key={coll.name} data-testid={`board-${coll.name}`}>
               <div className="muted small">{coll.name}（编号前缀 {coll.prefix}）</div>
               <div><span className="count">{items.length}</span> 个条目</div>
               <div className="chips">
                 {items.length > 0 && <span className="chip">最后改在修订 {latest}</span>}
-                {reviewed_ && <span className={`chip ${reviewDone ? "ok" : "warn"}`} data-testid={`board-review-${coll.name}`}>评审通过 {reviewed}/{items.length}{counts.kept > 0 ? ` · 已保留写法 ${counts.kept}` : ""}</span>}
-                <span className={`chip ${confirmed === items.length && items.length ? "ok" : "warn"}`}>已读 {confirmed}/{items.length}</span>
+                {reviewed_ && !empty && <span className={`chip ${reviewDone ? "ok" : "warn"}`} data-testid={`board-review-${coll.name}`}>评审通过 {reviewed}/{items.length}{counts.kept > 0 ? ` · 已保留写法 ${counts.kept}` : ""}</span>}
+                {!empty && <span className={`chip ${confirmed === items.length ? "ok" : "warn"}`} data-testid={`board-read-${coll.name}`}>已读 {confirmed}/{items.length}</span>}
               </div>
               <div className="muted small">
-                {items.length === 0 ? "这个集合还没有条目。" : reviewed_
-                  ? `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上评审通过，${counts.kept > 0 ? `${counts.kept} 个评审不通过但你保留了写法（按你的决定算通过），` : ""}${confirmed} 个用户已经看过（已读）。`
-                  : `这 ${items.length} 个条目里，${confirmed} 个用户已经看过（已读）。这个集合不评审。`}
+                {empty ? "这个集合还没有条目。" : reviewed_
+                  ? `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上评审通过，${counts.kept > 0 ? `${counts.kept} 个评审不通过但你保留了写法（按你的决定算通过），` : ""}你已经看过其中 ${confirmed} 个（已读）。`
+                  : `这 ${items.length} 个条目里，你已经看过 ${confirmed} 个（已读）。这个集合不评审。`}
               </div>
             </div>
           );

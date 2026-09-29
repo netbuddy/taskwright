@@ -251,6 +251,7 @@ describe("单一写入者：空闲但有未保存的条目编辑", () => {
       handlers={{ onAction: noop, onMessage: noop }} onSend={onSend} onUndo={noop} onOpenItem={noop} onAttach={noop}
       hasEarlier={false} onLoadEarlier={noop} revisionOf={() => null} attachments={[]} /></Wrap>);
     expect(screen.getByTestId("busy-note")).toHaveTextContent("先保存或取消正在编辑的条目");
+    expect(screen.getByTestId("send")).toHaveAttribute("title", "现在不能发送，原因见上方。");
     fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "一句话" } });
     fireEvent.keyDown(screen.getByTestId("chat-input"), { key: "Enter" });
     expect(onSend).not.toHaveBeenCalled();

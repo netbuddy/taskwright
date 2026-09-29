@@ -19,7 +19,7 @@ The task service speaks HTTP and Server-Sent Events (SSE). All paths start with 
 
 ## 3 Event stream
 
-`GET /api/v1/tasks/{task_id}/events?session={session_id}` — an SSE stream. Each message is one `event:` line and one `data:` line (JSON). **Only database events have an `id:` line**, equal to their sequence number. The server sends a keep-alive comment every 15 seconds; clients should reconnect after 45 seconds of silence and ignore unknown event types and fields.
+`GET /api/v1/tasks/{task_id}/events?session={session_id}` — an SSE stream. Each message is one `event:` line and one `data:` line (JSON). **Only database events have an `id:` line**, equal to their sequence number. The server sends a keep-alive comment every 15 seconds; clients should reconnect after 45 seconds of silence and ignore unknown event types and fields. Without `session` the stream carries the events of the whole task; the task page uses such a stream and listens only to `executor_state`, to reload the task when the assistant finishes a turn. Opening an event stream does not start the executor.
 
 ### 3.1 Database events (numbered, replayable)
 
