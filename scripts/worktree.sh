@@ -10,7 +10,7 @@
 #   - node_modules/ that links, package by package, to the main checkout's node_modules/ (nothing is downloaded);
 #   - no docs/: a sparse checkout set for that worktree only leaves the top-level docs/ out; the documentation is
 #     maintained in the main checkout, and a worktree's branch must not change docs/;
-#   - its own Python virtual environment .venv/ with observatory[test] and server[test] installed in editable mode
+#   - its own Python virtual environment .venv/ with observatory[test] installed in editable mode
 #     (uv is used when it is on PATH, otherwise python3 -m venv and pip).
 #
 # Why package by package and not one link for the whole node_modules/: npm clears node_modules/ before any
@@ -71,11 +71,11 @@ make_venv() {
   if command -v uv >/dev/null 2>&1; then
     echo "   using uv"
     uv venv --quiet --python python3 "$dir/.venv"
-    (cd "$dir" && uv pip install --quiet --python .venv/bin/python -e 'observatory[test]' -e 'server[test]')
+    (cd "$dir" && uv pip install --quiet --python .venv/bin/python -e 'observatory[test]')
   else
     echo "   using python3 -m venv and pip"
     python3 -m venv "$dir/.venv"
-    (cd "$dir" && .venv/bin/python -m pip install --quiet -e 'observatory[test]' -e 'server[test]')
+    (cd "$dir" && .venv/bin/python -m pip install --quiet -e 'observatory[test]')
   fi
 }
 
