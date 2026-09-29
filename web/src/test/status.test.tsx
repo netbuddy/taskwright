@@ -136,6 +136,19 @@ describe("条目详情头部", () => {
     expect(document.querySelectorAll(".banner-line.gap, .banner-line.amber")).toHaveLength(1);
   });
 
+  it("底部「来源」一节：有来源时显示；一条来源都没有时整节不显示，也不写说明", () => {
+    const headings = () => [...document.querySelectorAll(".sec-h")].map((one) => one.textContent);
+    const withSource = item({ item_id: "UC-002", sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭借书证借书。" }] as Item["sources"] });
+    detail(withSource);
+    expect(headings()).toContain("来源");
+    cleanup();
+    const bare = item({ item_id: "UC-003", sources: [] as Item["sources"] });
+    detail(bare);
+    expect(headings()).not.toContain("来源");
+    expect(screen.getByTestId("detail-sub")).toHaveTextContent("来源 0 条");
+    expect(document.body).not.toHaveTextContent("没有记下任何来源");
+  });
+
   it("不再有「现在的内容是修订 N 写的」横幅；「和修订 N 比对」挪到灰字行末尾", () => {
     const uc = item({ item_id: "UC-001", revisions: [1, 3], reviews: [passed] });
     detail(uc);

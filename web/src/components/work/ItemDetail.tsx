@@ -1,5 +1,5 @@
 // 条目详情：照设计原型画成一张表——左列字段名（必填带星），右列带边框的值格；列表型字段每步一行、行首是序号；
-// 每个值格下方是支持这个字段的来源小标签（材料文件名、执行者补充、用户的话、领域说明、用户直接修改五种各有配色），
+// 每个值格下方是支持这个字段的来源小标签（材料文件名、执行者补充、用户的话、领域说明四种各有配色；早期版本的「用户直接修改」由后端滤掉，不到这里），
 // 点材料标签，文档区滚到并高亮那句原文；点领域说明标签（「领域说明 DN-003」），打开那条领域说明。
 // 任务定义「界面」一项写了的集合（例如领域说明）：关联条目旁写上标题，来源之后另列「被哪些条目引用」。顶部一行：编号、标题、
 // 与列表行完全相同的主状态徽标与「问题 N」（ItemStatus.tsx）、修订下拉、上一条与下一条；下面一行灰字写「已读 · 现在是修订 N，由助手写的 · 来源 N 条」，
@@ -316,9 +316,9 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
             );
           })}
 
-          <div className="sec-h">来源</div>
+          {/* 条目上的话都算用户自己的，来源只标注引用了哪些原始片段；一条都没有时整节不显示。 */}
+          {sources.length > 0 && <div className="sec-h">来源</div>}
           {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} />)}
-          {sources.length === 0 && <div className="srcbox"><div className="fields">这次修订没有记下任何来源。</div></div>}
           {display && <CitedBy task={task} item={item} onOpenItem={onOpenItem} />}
 
           {item.reviews.length > 0 && (
@@ -433,7 +433,6 @@ export function SourceTag({ source, onLocate, onOpenItem, titleOf }: {
   }
   if (source.kind === "执行者补充") return <span className="srctag added" title={source.excerpt}>助手补充</span>;
   if (source.kind === "用户的话") return <span className="srctag said" title={source.excerpt}>用户的话</span>;
-  if (source.kind === "用户直接修改") return <span className="srctag edited" title={source.excerpt}>用户直接修改</span>;
   return <span className="srctag edited" title={source.excerpt}>{source.kind}</span>;
 }
 
@@ -524,7 +523,7 @@ function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
 }) {
   const place = useSourcePlace(source);
   const kinds: Record<string, [string, string]> = {
-    文档原文: ["src", "材料原文"], 执行者补充: ["warn", "助手补充"], 用户的话: ["teal", "用户的话"], 用户直接修改: ["on", "用户直接修改"],
+    文档原文: ["src", "材料原文"], 执行者补充: ["warn", "助手补充"], 用户的话: ["teal", "用户的话"],
     [SOURCE_DOMAIN_NOTE]: ["note", SOURCE_DOMAIN_NOTE],
   };
   const [cls, name] = kinds[source.kind] ?? ["on", source.kind];
