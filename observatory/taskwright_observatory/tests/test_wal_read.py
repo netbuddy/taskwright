@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 
 from taskwright_observatory import taskdb
-from tests.test_current_format import make_workspace
+from taskwright_observatory.tests.test_current_format import make_workspace
 
 
 def revision_count(db_path: Path) -> int:

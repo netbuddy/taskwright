@@ -7,14 +7,15 @@
 后端在启动时补记的知识仓库摘要值与上下文文件。
 
 判定与流程用手写的、与读取接口同形状的轮；其余用 fixtures/ 下的中性夹具，新库表的库由 agent 里真实的核心函数
-写出（要用 node，本机没有 node 时那几条跳过）。
+写出（要用 node，本机没有 node 时那几条跳过）；启动补记里的知识仓库摘要与上下文文件由任务服务自己的函数算出
+（launch_facts.mts，同样要用 node）。
 
 有几样不在这里测，它们在前端（web/js/taskpage.js），这个仓库的测试只用 Python 标准库，没有跑 JavaScript 的
 测试环境，所以靠浏览器里的走查核对，结论写在结果文件里：按字段类型画一个值；时间条上「真实宽度不到最小可见宽度
 就拉宽并打斜纹」；运行表的列可以隐藏、选择记在浏览器本地。
 
-跑法：在代码仓的 observatory 目录下、PYTHONPATH 含 server 目录时（新库表那几条要用 server/tests 里的造库函数）运行
-`python3 -m unittest taskwright_observatory.tests.test_taskpage`；scripts/test-all.sh 已经这样设好。
+跑法：在代码仓的 observatory 目录下运行 `python3 -m unittest taskwright_observatory.tests.test_taskpage`；
+scripts/test-all.sh 里的 pytest 也收这一份。
 """
 
 from __future__ import annotations
@@ -23,11 +24,11 @@ import copy
 import json
 import shutil
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from taskwright_server import launch
 from taskwright_observatory import taskpage
 from taskwright_observatory.api import Index
 from taskwright_observatory.diffs import MAX_DIFF_TOKENS, diff_list, diff_text
@@ -38,6 +39,22 @@ SOURCE = {"执行方法": ".pi/skills/demo/SKILL.md", "领域规矩": ["docs/dom
           "文档模板": "docs/templates/demo.md", "材料目录": "inputs/"}
 DECL = taskpage.declaration(RULES, SOURCE, "演示任务", {"全部": "测试里手写的"})
 WS = "/任务目录"
+NO_NODE = shutil.which("node") is None
+LAUNCH_FACTS = Path(__file__).resolve().parent / "launch_facts.mts"
+
+
+def launch_facts(*args: str):
+    """任务服务启动时记下的事实，由它自己的函数算出（见 launch_facts.mts）。"""
+    done = subprocess.run(["node", str(LAUNCH_FACTS), *args], capture_output=True, text=True, check=True)
+    return json.loads(done.stdout)
+
+
+def knowledge_snapshot(root: Path) -> dict:
+    return launch_facts("snapshot", str(root))
+
+
+def context_file_candidates(argv: list, root: Path, env: dict) -> dict:
+    return launch_facts("context", str(root), json.dumps(argv), json.dumps(env))
 
 
 # ───────────── 手写同形状的轮 ─────────────
@@ -348,6 +365,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(silent["关键动作"], ["被拒 1 次"])
 
 
+@unittest.skipIf(NO_NODE, "本机没有 node，算不出任务服务记下的知识仓库摘要")
 class KnowledgeTests(unittest.TestCase):
     """知识的使用：四种归类，摘要值取自启动补记。"""
 
@@ -358,7 +376,7 @@ class KnowledgeTests(unittest.TestCase):
                         "docs/task-definitions/demo.json", "docs/templates/demo.md"):
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
                 (root / rel).write_text(rel, encoding="utf-8")
-            snapshot = launch.knowledge_snapshot(root)
+            snapshot = knowledge_snapshot(root)
             launches = [{"知识仓库摘要": snapshot,
                          "已加载的 skill": {"取得到吗": True, "skill": [
                              {"名字": "demo", "文件": str(root / ".pi/skills/demo/SKILL.md")},
@@ -392,7 +410,7 @@ class KnowledgeTests(unittest.TestCase):
             platform = Path(folder) / "repo" / "agent" / "prompts" / "skills" / "p"
             platform.mkdir(parents=True)
             (platform / "SKILL.md").write_text("平台", encoding="utf-8")
-            snapshot = launch.knowledge_snapshot(root)
+            snapshot = knowledge_snapshot(root)
             snapshot["文件"].append({"路径": str(platform / "SKILL.md"), "字节数": 6, "摘要值": "abcdabcdabcdabcd",
                                    "来自": "平台 skill", "代码仓里的路径": "agent/prompts/skills/p/SKILL.md"})
             launches = [{"知识仓库摘要": snapshot,
@@ -437,6 +455,7 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(facts["摘要"]["docs/a.md"], [(1, "1111"), (2, "2222")])
 
 
+@unittest.skipIf(NO_NODE, "本机没有 node，算不出任务服务记下的知识仓库摘要与上下文文件")
 class LaunchNoteTests(unittest.TestCase):
     """后端在启动时补记的两样：知识仓库摘要值、上下文文件。"""
 
@@ -447,7 +466,7 @@ class LaunchNoteTests(unittest.TestCase):
             (root / ".pi" / "skills" / "x" / "SKILL.md").write_text("方法", encoding="utf-8")
             (root / "inputs").mkdir()
             (root / "inputs" / "材料.md").write_text("不在知识仓库里", encoding="utf-8")
-            snap = launch.knowledge_snapshot(root)
+            snap = knowledge_snapshot(root)
             self.assertEqual([f["路径"] for f in snap["文件"]], [".pi/skills/x/SKILL.md"])
             self.assertNotIn("方法", json.dumps(snap, ensure_ascii=False))
 
@@ -456,10 +475,10 @@ class LaunchNoteTests(unittest.TestCase):
             root = Path(folder) / "ws"
             root.mkdir()
             (Path(folder) / "AGENTS.md").write_text("上级目录里的", encoding="utf-8")
-            note = launch.context_file_candidates(["pi"], root, {"PI_CODING_AGENT_DIR": str(Path(folder) / "agent")})
+            note = context_file_candidates(["pi"], root, {"PI_CODING_AGENT_DIR": str(Path(folder) / "agent")})
             self.assertFalse(note["取得到吗"])
             self.assertEqual(note["照 pi 的发现规则在磁盘上查到的"], [str(Path(folder) / "AGENTS.md")])
-            note = launch.context_file_candidates(["pi", "--no-context-files"], root, {})
+            note = context_file_candidates(["pi", "--no-context-files"], root, {})
             self.assertEqual(note["照 pi 的发现规则在磁盘上查到的"], [])
 
 
@@ -604,7 +623,7 @@ class RetryAndSteerTests(unittest.TestCase):
 
 
 def build_current_workspace(root: Path) -> Path:
-    from tests.test_current_format import make_workspace
+    from taskwright_observatory.tests.test_current_format import make_workspace
     return make_workspace(root, "任务目录新库表", with_db=True)
 
 
