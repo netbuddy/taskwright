@@ -119,24 +119,41 @@ describe("评审页签", () => {
   it("点规则编号展开条文；点发现打开条目并指到字段", () => {
     const { onOpenFinding } = panel(task([UC4]));
     fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByTestId("clause-UC-R7"));
-    expect(screen.getByTestId("batch-3-item-UC-004")).toHaveTextContent("UC-R7（必选） 每一步写明谁做了什么。");
+    expect(screen.getByTestId("batch-3-item-UC-004")).toHaveTextContent("UC-R7 每一步写明谁做了什么。");
+    expect(screen.getByTestId("clause-body")).not.toHaveTextContent(/必选|可选/);
     fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByText(/第 2 步没有主语/));
     expect(onOpenFinding).toHaveBeenCalledWith("UC-004", "基本流程");
   });
 
-  it("规则区：必选的锁住；可选的开关发 set_review_rules，点「可选」升为必选，已关闭的可以打开", async () => {
+  it("规则区：每行只有开关、编号、条文，没有级别标签与升为必选的入口；必选的锁住；可选的开关发 set_review_rules，已关闭的可以打开", async () => {
     const { submit } = panel(task([UC4]));
+    expect(screen.getByTestId("rules-area")).toHaveTextContent("带锁的规则不能关；其余的可以关掉，只对这个任务生效");
+    for (const id of ["UC-R7", "UC-R12", "UC-R13"]) {
+      expect(screen.getByTestId(`rule-${id}`).children).toHaveLength(3);
+      expect(screen.getByTestId(`rule-${id}`)).not.toHaveTextContent(/必选|可选|已关闭/);
+    }
+    expect(screen.getByTestId("rules-area").querySelector(".chip")).toBeNull();
     fireEvent.click(screen.getByTestId("rule-switch-UC-R7"));
     expect(submit).not.toHaveBeenCalled();
-    expect(screen.getByTestId("rule-level-UC-R7")).toHaveTextContent("必选");
     fireEvent.click(screen.getByTestId("rule-switch-UC-R12"));
     await waitFor(() => expect(submit).toHaveBeenLastCalledWith({ kind: "set_review_rules", targets: [],
       fields: { collection: "功能用例", off: ["UC-R13", "UC-R12"], promote: [] }, notify_executor: false }, "关闭规则 UC-R12"));
-    fireEvent.click(screen.getByTestId("rule-level-UC-R12"));
-    await waitFor(() => expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ fields: { collection: "功能用例", off: ["UC-R13"], promote: ["UC-R12"] } }), "把 UC-R12 升为必选"));
-    expect(screen.getByTestId("rule-level-UC-R13")).toHaveTextContent("已关闭");
     fireEvent.click(screen.getByTestId("rule-switch-UC-R13"));
     await waitFor(() => expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ fields: { collection: "功能用例", off: [], promote: [] } }), "打开规则 UC-R13"));
+  });
+
+  it("规则区：已经升为必选的规则照开着的显示（绿色、不带锁），悬停提示写明已经升为必选；关掉时一并撤销升为必选", async () => {
+    const t = task([UC4]);
+    t.definition.collections[0].all_rules!.push({ id: "UC-R14", level: "可选", text: "原样写出数值。", state: "promoted" });
+    t.definition.collections[0].rule_switches = { off: ["UC-R13"], promote: ["UC-R14"] };
+    const { submit } = panel(t);
+    const sw = screen.getByTestId("rule-switch-UC-R14");
+    expect(sw).toHaveClass("on");
+    expect(sw).not.toHaveClass("lock");
+    expect(sw).toHaveAttribute("title", "这条规则已经升为必选，违反它算问题。关掉它会同时撤销升为必选。");
+    expect(sw).toHaveAttribute("aria-label", "规则 UC-R14：开着，已经升为必选");
+    fireEvent.click(sw);
+    await waitFor(() => expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ fields: { collection: "功能用例", off: ["UC-R13", "UC-R14"], promote: [] } }), "关闭规则 UC-R14"));
   });
 
   it("规则区：必选规则的开关是开着的（绿色）并在圆点对面画锁，读屏说明写必选、不能关；别的三种状态不画锁", () => {
@@ -155,7 +172,7 @@ describe("评审页签", () => {
       expect(sw).not.toHaveClass("lock");
       expect(sw.classList.contains("on")).toBe(on);
       expect(within(sw).queryByTestId("rule-lock")).toBeNull();
-      expect(sw).not.toHaveAttribute("aria-label");
+      expect(sw.getAttribute("aria-label")).toMatch(new RegExp(`^规则 ${id}：${on ? "开着" : "关着"}`));
     }
   });
 

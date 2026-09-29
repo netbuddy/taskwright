@@ -1,5 +1,5 @@
 // 评审通过时的说明：「评审通过：」加程序记下的那句话（不在页面上另拼），能列出规则时跟「看这 N 条规则」，点了展开规则清单，
-// 再点收起。清单每条写编号、条文、必选还是可选；这个任务里关闭了的规则不列，末尾用灰字写另有几条已经关闭。
+// 再点收起。清单每条写编号与条文（级别不写，以后由单独的规则配置面板说明）；这个任务里关闭了的规则不列，末尾用灰字写另有几条已经关闭。
 // 评审之后规则改过时不给链接，灰字说明列不出当时的规则。能列出哪些规则见 model/items.ts 的 passRules。
 // 条目详情里是一块绿色的说明，第二行写评审的时刻与修订；评审页签里是条目那一行下面的一行，时刻与修订卡片上已经有了，不重复。
 
@@ -34,7 +34,6 @@ export function PassNote({ task, collection, review, inRow = false }: {
             <div key={r.id} className="rl-row">
               <span className="rid">{r.id}</span>
               <span>{r.text}</span>
-              <span className={`chip ${r.level === "必选" ? "bad" : "warn"}`}>{r.level === "必选" ? "必选" : "可选"}</span>
             </div>
           ))}
           {basis.off > 0 && <div className="rl-off">另有 {basis.off} 条规则已经关闭，这次没有核对。</div>}

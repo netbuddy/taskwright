@@ -6,7 +6,9 @@
 //     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看每条的通过说明（PassNote）与建议。
 //     规则改过之后，按改之前的规则评出的发现写「按改之前的规则评出，不再算数」，不给链接，「只看未处理」不列，也不算在角标里。
 //     点条目编号或一条发现，打开条目详情并高亮那个字段。
-//   · 底部规则区：按集合列规则。必选的开关是绿色、圆点对面画一把白色的锁，不能关；可选的可以关掉，或点标签在「可选」与「升为必选」之间切换。改动只影响之后的评审。
+//   · 底部规则区：按集合列规则，每行只有开关、编号、条文，规则的状态只由开关表达：绿色带锁是必选，不能关；绿色不带锁是开着的，可以关；
+//     灰色是已经关闭。页面上没有「升为必选」的入口（以后由单独的规则配置面板提供）；已经升为必选的规则照开着的显示，悬停提示里写明。
+//     改动只影响之后的评审。
 // 保留、改规则都是用户的界面操作（waive_review、set_review_rules），界面上的变化等库事件到了才发生；被拒时报一条失败提示（全站提示条）。
 
 import { useState } from "react";
@@ -186,7 +188,7 @@ function RulesArea({ task, readOnly, writesOff, submit }: { task: Task; readOnly
   let shown = 0;
   return (
     <div className="sw-rules" data-testid="rules-area">
-      <div className="sw-rv-top"><b>评审规则</b><span className="muted">必选规则不能关；可选规则可以关掉或升为必选，只对这个任务生效</span></div>
+      <div className="sw-rv-top"><b>评审规则</b><span className="muted">带锁的规则不能关；其余的可以关掉，只对这个任务生效</span></div>
       {collections.map((c) => {
         const switches = c.rule_switches ?? { off: [], promote: [] };
         const rules = (c.all_rules ?? []).filter(() => all || shown++ < RULES_SHOWN);
@@ -195,13 +197,11 @@ function RulesArea({ task, readOnly, writesOff, submit }: { task: Task; readOnly
           <div key={c.name}>
             <div className="cond-group">{c.name}</div>
             {rules.map((r) => (
+              // 关掉时一并撤销升为必选：任务定义不允许同一条规则既关闭又升为必选，所以关掉再打开之后它是可选规则。
               <RuleRow key={r.id} rule={r} off={off} onToggle={() => {
                 const offList = r.state === "off" ? switches.off.filter((x) => x !== r.id) : [...switches.off, r.id];
                 const promote = switches.promote.filter((x) => x !== r.id);
                 void change(c.name, { off: offList, promote }, `${r.state === "off" ? "打开" : "关闭"}规则 ${r.id}`);
-              }} onLevel={() => {
-                const promote = r.state === "promoted" ? switches.promote.filter((x) => x !== r.id) : [...switches.promote, r.id];
-                void change(c.name, { off: switches.off, promote }, `把 ${r.id} ${r.state === "promoted" ? "改回可选" : "升为必选"}`);
               }} />
             ))}
           </div>
@@ -215,25 +215,21 @@ function RulesArea({ task, readOnly, writesOff, submit }: { task: Task; readOnly
   );
 }
 
-function RuleRow({ rule, off, onToggle, onLevel }: {
-  rule: ReviewRule & { state: string }; off: string | undefined; onToggle: () => void; onLevel: () => void;
-}) {
+function RuleRow({ rule, off, onToggle }: { rule: ReviewRule & { state: string }; off: string | undefined; onToggle: () => void }) {
   const locked = rule.state === "required";
   const on = rule.state !== "off";
-  const tag = { required: ["bad", "必选"], optional: ["warn", "可选 ▾"], off: ["warn", "已关闭"], promoted: ["bad", "升为必选 ▾"] }[rule.state] ?? ["", rule.state];
+  const promoted = rule.state === "promoted";
+  const title = locked ? "必选规则不能关"
+    : `${promoted ? "这条规则已经升为必选，违反它算问题。" : ""}${off ?? (on ? (promoted ? "关掉它会同时撤销升为必选。" : "关掉这条规则") : "打开这条规则")}`;
+  const label = locked ? `规则 ${rule.id}：必选，不能关` : `规则 ${rule.id}：${on ? "开着" : "关着"}${promoted ? "，已经升为必选" : ""}`;
   return (
     <div className="sw-rule" data-testid={`rule-${rule.id}`}>
       {/* 必选规则是开着的：开关绿色、圆点在右，圆点对面的空处画一把白色的锁表示不能关。 */}
       <span className={`sw-switch${on ? " on" : ""}${locked ? " lock" : ""}`} role="switch" aria-checked={on}
-        aria-disabled={locked || !!off || undefined} aria-label={locked ? `规则 ${rule.id}：必选，不能关` : undefined}
-        title={locked ? "必选规则不能关" : off ?? (on ? "关掉这条规则" : "打开这条规则")}
+        aria-disabled={locked || !!off || undefined} aria-label={label} title={title}
         onClick={() => { if (!locked && !off) onToggle(); }} data-testid={`rule-switch-${rule.id}`}>{locked && <LockIcon />}<i /></span>
       <span className="rid">{rule.id}</span>
       <span className="rt">{rule.text}</span>
-      <span className={`chip ${tag[0]}`} role={rule.state === "optional" || rule.state === "promoted" ? "button" : undefined}
-        title={rule.state === "optional" ? "点一下升为必选" : rule.state === "promoted" ? "点一下改回可选" : undefined}
-        onClick={() => { if ((rule.state === "optional" || rule.state === "promoted") && !off) onLevel(); }}
-        data-testid={`rule-level-${rule.id}`}>{tag[1]}</span>
     </div>
   );
 }

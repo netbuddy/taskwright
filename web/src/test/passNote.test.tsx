@@ -68,8 +68,9 @@ describe("评审通过时的说明", () => {
     expect(screen.queryByTestId("pass-rules")).toBeNull();
     fireEvent.click(link);
     const list = screen.getByTestId("pass-rules");
-    expect(list).toHaveTextContent("UC-R1用例粒度以参与者的一个目的为准。必选");
-    expect(list).toHaveTextContent("UC-R12约束规则与流程里不举例。可选");
+    const rows = [...list.querySelectorAll(".rl-row")].map((r) => r.textContent);
+    expect(rows).toEqual(["UC-R1用例粒度以参与者的一个目的为准。", "UC-R12约束规则与流程里不举例。"]);
+    expect(list.querySelector(".chip")).toBeNull();
     expect(list).not.toHaveTextContent("UC-R13");
     expect(list).toHaveTextContent("另有 2 条规则已经关闭，这次没有核对。");
     expect(link).toHaveTextContent("收起这 2 条规则 ▴");
