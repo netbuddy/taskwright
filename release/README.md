@@ -30,7 +30,7 @@ The payload repeats the repository's layout, so the backend finds its resources 
 
 | File | Purpose |
 |---|---|
-| `build.mjs` | Builds the payload and the packages. Node built-in modules only; downloads Node binaries, rg and fd (checked against pinned checksums) and appimagetool into a cache directory. |
+| `build.mjs` | Builds the payload and the packages. Node built-in modules only; downloads Node binaries, rg, fd, appimagetool and the AppImage runtime into a cache directory, each a pinned version checked against its checksum; appimagetool is given the checked runtime, so it downloads nothing by itself. |
 | `app/main.ts` | The launcher: recognizes a running instance, sets up pi, rg and fd, starts the service in the same process and opens the browser. |
 | `app/boot.cjs` | The single executable's embedded main script: extracts the payload once, or runs a script as plain Node would (this is how the backend starts pi). |
 | `measure.mjs` | Measures start time, time to the browser being opened, and memory, over several runs (Linux). |
