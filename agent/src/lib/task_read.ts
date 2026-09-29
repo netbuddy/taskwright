@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_MATERIALS_DIR } from "./definition.ts";
-import { BUSY_TIMEOUT_MS } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, SOURCE_USER_EDIT } from "./schema.ts";
 
 export { DEFAULT_MATERIALS_DIR };
 
@@ -140,13 +140,14 @@ export const itemKey = (itemId: string, revisionNo: number | null | undefined) =
 /**
  * 按（条目编号, 修订号）取条目在每次修订下的来源，键见 itemKey。所支持的字段放进「支持」列表：每项是字段名与列表里的
  * 第几项（从 0 起，为空表示整个字段）；列表为空表示这条来源支持整个条目。最早格式的库没有这几列，「支持」一律为空列表。
+ * 早期版本写下的「用户直接修改」不读出：页面、生成的文档都不再显示它（条目上的话都算用户自己的，谁改的看修订）。
  */
 export function readSources(db: DatabaseSync, taskId: string): Map<string, SourceRow[]> {
   const columns = columnNames(db, "item_source");
   const fieldLevel = ["support_no", "field", "field_index"].every((c) => columns.has(c));
   const order = "item_id, revision_no, position" + (fieldLevel ? ", support_no" : "");
   const grouped = new Map<string, SourceRow[]>();
-  for (const row of db.prepare(`SELECT * FROM item_source WHERE task_id = ? ORDER BY ${order}`).all(taskId) as Row[]) {
+  for (const row of db.prepare(`SELECT * FROM item_source WHERE task_id = ? AND kind <> ? ORDER BY ${order}`).all(taskId, SOURCE_USER_EDIT) as Row[]) {
     const key = itemKey(row.item_id, row.revision_no);
     let bucket = grouped.get(key);
     if (!bucket) grouped.set(key, (bucket = []));

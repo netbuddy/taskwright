@@ -6,13 +6,19 @@
 // 来源四支持整个「步骤」；来源五支持整个条目。
 
 import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { ACTOR_USER, databasePath } from "../src/lib/db.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, callIn, makeWorkspace, query } from "./helpers.ts";
+import { itemLines } from "../src/lib/board.ts";
+import { prepareReviews } from "../src/lib/review.ts";
+import { getItem } from "../src/lib/task_query.ts";
+import { openReadonly, readSources } from "../src/lib/task_read.ts";
+import { DEFINITION_PATH, callIn, demoDefinition, makeWorkspace, query } from "./helpers.ts";
 
 const S = (excerpt: string, supports: unknown[]) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt, supports });
 const STEPS = ["甲：打开页面", "乙：输入口令", "丙：点登录"];
@@ -178,4 +184,65 @@ test("旧记录：用户撤销时照原样恢复", () => {
   runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: "ui-op-undo", kind: "undo", targets: [{ revision_no: changed.revision_no }] });
   assert.deepEqual(shown(dir, 4), shown(dir, 2));
   assert.ok(hasOld(dir, 4));
+});
+
+// ───────────── 读出来源的地方都不列旧的「用户直接修改」 ─────────────
+
+/** 带评审规矩的任务：UC-001 在修订 2 有三条来源，中间那条是早期版本写下的「用户直接修改」。 */
+function readFixture(): string {
+  const definition = demoDefinition() as any;
+  definition.交付物.条目集合[0].评审规矩 = { 规则文件: "docs/review-rules/demo.json" };
+  const dir = makeWorkspace(definition);
+  mkdirSync(join(dir, "docs/review-rules"), { recursive: true });
+  writeFileSync(join(dir, "docs/review-rules/demo.json"), JSON.stringify([{ 编号: "D-R1", 级别: "必选", 条文: "步骤写明谁做了什么。", 反例: "校验。", 正例: "系统校验口令。" }]), "utf-8");
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: STEPS }, sources: [S("用户可以登录。", [])] }] });
+  saveRevision({ workspaceDir: dir, sessionId: "sess-ui", callId: "ui-op-old", actor: ACTOR_USER }, { operations: [{ op: "update", item: "UC-001", base_revision: 1,
+    fields: { 步骤: [...STEPS, "丁：看到首页"] },
+    sources: [S("用户可以登录。", []), { kind: "用户直接修改", locator: "ui-op-old", excerpt: "丁：看到首页", supports: [{ field: "步骤", index: 3 }] }, S("用口令登录", [{ field: "步骤", index: 2 }])] }] });
+  return dir;
+}
+
+test("读出：页面与生成文档用的数据（task_read）不列旧的「用户直接修改」", () => {
+  const dir = readFixture();
+  const db = openReadonly(databasePath(dir));
+  try {
+    const taskId = query<any>(dir, "SELECT task_id FROM task")[0].task_id;
+    const rows = [...readSources(db, taskId).entries()].filter(([key]) => key.includes("UC-001")).flatMap(([, list]) => list);
+    assert.ok(rows.length > 0);
+    assert.ok(rows.every((one) => one.种类 !== "用户直接修改"));
+  } finally {
+    db.close();
+  }
+});
+
+test("读出：助手查看条目时不列它，位置号留下的空位也去掉", () => {
+  const dir = readFixture();
+  const outcome = getItem(dir, { item_id: "UC-001" });
+  const sources = (outcome.details as any).sources as { kind: string; excerpt: string }[];
+  assert.deepEqual(sources.map((one) => [one.kind, one.excerpt]), [["文档原文", "用户可以登录。"], ["文档原文", "用口令登录"]]);
+  assert.doesNotMatch(outcome.text, /用户直接修改|丁：看到首页」（/);
+  assert.match(outcome.text, /来源（2 条）/);
+});
+
+test("读出：任务状态里的条目详情不列它", () => {
+  const dir = readFixture();
+  const text = itemLines(dir, "UC-001").join("\n");
+  assert.match(text, /来源（2 条）/);
+  assert.doesNotMatch(text, /用户直接修改/);
+});
+
+test("读出：交给评审的材料不列它；条目没有别的来源时仍写「这份内容没有来源」", () => {
+  const dir = readFixture();
+  const user = prepareReviews(dir, null).items.find((one) => one.item_id === "UC-001")!.user;
+  assert.doesNotMatch(user, /用户直接修改/);
+  assert.match(user, /用口令登录/);
+  const bare = makeWorkspace((() => { const d = demoDefinition() as any; d.交付物.条目集合[0].评审规矩 = { 规则文件: "docs/review-rules/demo.json" }; return d; })());
+  mkdirSync(join(bare, "docs/review-rules"), { recursive: true });
+  writeFileSync(join(bare, "docs/review-rules/demo.json"), JSON.stringify([{ 编号: "D-R1", 级别: "必选", 条文: "步骤写明谁做了什么。", 反例: "校验。", 正例: "系统校验口令。" }]), "utf-8");
+  createTask(callIn(bare), { definition_path: DEFINITION_PATH });
+  saveRevision(callIn(bare), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: STEPS }, sources: [S("用户可以登录。", [{ field: "名称" }])] }] });
+  saveRevision({ workspaceDir: bare, sessionId: "sess-ui", callId: "ui-op-old", actor: ACTOR_USER }, { operations: [{ op: "update", item: "UC-001", base_revision: 1,
+    fields: { 名称: "刷脸登录" }, sources: [{ kind: "用户直接修改", locator: "ui-op-old", excerpt: "刷脸登录", supports: [{ field: "名称" }] }] }] });
+  assert.match(prepareReviews(bare, null).items[0].user, /（这份内容没有来源）/);
 });
