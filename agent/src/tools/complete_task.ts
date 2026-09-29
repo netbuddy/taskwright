@@ -1,11 +1,12 @@
 /**
  * 「完成任务」工具（complete_task）：完成条件全部满足之后，执行者调用它把任务标为已完成。
- * 本文件只做两件事：声明参数（没有参数）、调用 lib/complete_task.ts 的核心函数。
+ * 本文件只做三件事：声明参数（没有参数）、从会话分支读出用户在完成卡片上的点击、调用 lib/complete_task.ts 的核心函数。
  */
 
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { completeTask } from "../lib/complete_task.ts";
+import { lastCompletionClick } from "../lib/completion_consent.ts";
 import { currentRun, requireUnderstanding } from "../lib/dialogue_acts.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 
@@ -30,10 +31,13 @@ export function registerCompleteTask(pi: ExtensionAPI): void {
         workId: workIdOf(currentRun(branch)?.userEntryId) };
       return withRejectionRecord(rejection, _params, () => {
         requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch, "完成任务", TOOL_NAME);
+        // 用户的同意：会话里最近一次对「这个任务是否已经完成」卡片的点击（lib/completion_consent.ts）。
+        const click = lastCompletionClick(branch);
         const outcome = completeTask({
           workspaceDir: ctx.cwd,
           sessionId: ctx.sessionManager.getSessionId(),
           callId: toolCallId,
+          consent: click ? { source: "card", click } : null,
         });
         return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
       });
