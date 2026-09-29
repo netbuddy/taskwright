@@ -1,7 +1,7 @@
 /**
  * 后端测试共用的夹具。写库一律经 agent 测试目录里的夹具脚本（子进程运行，内部调用真实的写入函数），
  * 后端的代码与测试都不导入写入函数。个别测试要在夹具库的副本上补几行（模拟旧库、补事件），
- * 用 sqlRun 在临时副本上直接执行 SQL，与服务端 Python 测试的做法相同；那只是测试夹具，不是产品代码的写入路径。
+ * 用 sqlRun 在临时副本上直接执行 SQL；那只是测试夹具，不是产品代码的写入路径。
  */
 
 import { type ChildProcess, type SpawnOptions, spawn, spawnSync } from "node:child_process";

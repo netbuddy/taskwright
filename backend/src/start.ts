@@ -110,7 +110,7 @@ export async function startService(options: StartOptions): Promise<Started> {
 
   let closing: Promise<void> | null = null;
   const stop = (): Promise<void> => {
-    // 先停止接新连接，再关各任务的 pi（执行者状态「已退出」还推得到开着的事件流上，与 Python 版相同），
+    // 先停止接新连接，再关各任务的 pi（执行者状态「已退出」还推得到开着的事件流上），
     // 然后各条事件流写完手上的事件、正常结束，空闲的连接关掉；连接都关了就算停好，最多等 2 秒。
     closing ??= (async () => {
       const closed = new Promise((ok) => server.close(ok));

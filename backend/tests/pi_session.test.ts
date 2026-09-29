@@ -1,7 +1,7 @@
 /**
  * pi 子进程与 RPC：用测试用的假 pi（tests/fixtures/fake_pi.mjs，经 TASKWRIGHT_PI_ENTRY 注入）测命令的收发与超时、
  * 界面请求的应答、合成的事件、三种归档文件的写法、关闭顺序与进程退出；另测启动配置拼出的 pi 命令行与期望值逐字一致、
- * 续接前改写会话文件记的工作目录。对应服务端 Python 测试 test_launch_skills、test_isolation（续接）与集成测试 test_rpc 的收发部分。
+ * 续接前改写会话文件记的工作目录。
  */
 
 import assert from "node:assert/strict";

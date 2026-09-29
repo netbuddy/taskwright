@@ -212,7 +212,7 @@ export function which(name: string): string | null {
  * 起 pi 用哪个可执行文件。三种情形：
  * 1. 设了 TASKWRIGHT_PI_ENTRY（pi 的入口脚本）：用当前的 Node 运行它；在单个可执行文件里，当前可执行文件就是 Node，
  *    但运行它会启动内嵌的程序，所以把脚本放进 TASKWRIGHT_RUN_SCRIPT 交给引导程序，参数里不写脚本；
- * 2. 否则在 PATH 里找启动配置里写的可执行文件（缺省 pi），与 Python 版相同。
+ * 2. 否则在 PATH 里找启动配置里写的可执行文件（缺省 pi）。
  * 返回记进后端补记的命令行开头、实际起进程用的可执行文件与参数开头、要另加的环境变量。
  */
 export function piLauncher(profile: Profile): { shown: string[]; command: string; prefix: string[]; env: Record<string, string> } {
@@ -244,7 +244,7 @@ export function isSingleExecutable(): boolean {
 }
 
 export interface Command {
-  /** 记进后端补记的命令行（与 Python 版相同的写法：可执行文件在前，后面是参数）。 */
+  /** 记进后端补记的命令行：可执行文件在前，后面是参数（观测台按这个写法读启动记录）。 */
   argv: string[];
   /** 实际起进程用的可执行文件与参数。 */
   command: string;
@@ -297,7 +297,7 @@ export function startupRecord(profile: Profile, argv: string[]) {
     扩展: describeExtensions(profile).map(([name, path]) => ({ 名字: name, 解析到的文件: path ?? "", 文件在不在: path !== null })),
     工具白名单: [...(profile.tools || [])],
     模型: resolveModel(profile).model,
-    // 模型来自哪里只在桌面形态写（服务器形态的启动记录与 Python 版逐字一致）
+    // 模型来自哪里只在桌面形态写；服务器形态的启动记录不多这一项（tests/profiles.test.ts 核对）
     ...(profile[PI_SETTINGS_MODEL] ? { 模型来自: modelSource(profile) } : {}),
     环境标签: (profile.langfuse || {}).environment ?? "",
     "平台 skill": platformSkillRecord(profile),
