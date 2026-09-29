@@ -11,13 +11,12 @@
  * 点的是同意的那一项，而且点的时候交付物已经是现在的修订（之后没有新的修订）。已读、评审、保留不产生修订，不让同意失效。
  * 卡片以会话里最近一次对这种卡片的点击为准：后来点了「还没完成，继续修改」，先前的同意就不算。
  *
- * 找卡片点击（cardClicks）与点击换成事件序号（clickEventSeq）两段是共用的：问题条目标为已解决之前核对用户点过头
- * （lib/problem_consent.ts）用的是同一种认法，只是认的卡片不同。
+ * 找卡片点击（cardClicks）是共用的：问题条目标为已解决之前核对用户点过头（lib/problem_consent.ts）用的是同一种认法，
+ * 只是认的卡片不同。点击换成事件序号要查库，在 lib/dialogue_acts.ts 的 clickEventSeq。
  *
- * 不依赖任何模块：会话分支由调用方读好交进来，库由调用方打开。
+ * 不依赖任何模块，也不得导入 Node 的模块（包括只导入类型）：页面（web/src/model/submit.ts）直接导入这个文件取 COMPLETE_KEY，
+ * 页面的类型检查里没有 Node 的类型。守护测试见 agent/tests/web_imports.test.ts。会话分支由调用方读好交进来。
  */
-
-import type { DatabaseSync } from "node:sqlite";
 
 /** 同意的那一项的 key（程序内部的约定，不显示给用户）。 */
 export const COMPLETE_KEY = "complete";
@@ -113,14 +112,4 @@ export function lastCompletionClick(branch: readonly Entry[]): CardClick | null 
   if (!last) return null;
   const { act: _act, ...click } = last;
   return click;
-}
-
-/**
- * 一次点击发生在什么时候：点击之后系统替用户发的那句话记进对话行为表（界面操作合成，origin 为 ui）时的事件序号。
- * 那句话在助手回应它的第一条消息落进会话时记下，早于助手这一轮的任何工具调用。库里找不到那一行时为 null。
- */
-export function clickEventSeq(db: DatabaseSync, taskId: string, sessionId: string, userEntryId: string): number | null {
-  const row = db.prepare("SELECT event_seq FROM dialogue_act WHERE task_id = ? AND session_id = ? AND speaker = 'user' AND origin = 'ui' AND source_entry = ? " +
-    "ORDER BY rowid LIMIT 1").get(taskId, sessionId, userEntryId) as { event_seq: number } | undefined;
-  return row ? Number(row.event_seq) : null;
 }

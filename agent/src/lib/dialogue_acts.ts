@@ -651,3 +651,13 @@ export function readDialogueFacts(workspaceDir: string, sessionId: string, itemI
     db.close();
   }
 }
+
+/**
+ * 一次点击发生在什么时候：点击之后系统替用户发的那句话记进对话行为表（界面操作合成，origin 为 ui）时的事件序号。
+ * 那句话在助手回应它的第一条消息落进会话时记下，早于助手这一轮的任何工具调用。库里找不到那一行时为 null。
+ */
+export function clickEventSeq(db: DatabaseSync, taskId: string, sessionId: string, userEntryId: string): number | null {
+  const row = db.prepare("SELECT event_seq FROM dialogue_act WHERE task_id = ? AND session_id = ? AND speaker = 'user' AND origin = 'ui' AND source_entry = ? " +
+    "ORDER BY rowid LIMIT 1").get(taskId, sessionId, userEntryId) as { event_seq: number } | undefined;
+  return row ? Number(row.event_seq) : null;
+}

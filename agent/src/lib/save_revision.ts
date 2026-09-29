@@ -60,9 +60,8 @@ import {
   DOCX_LOCATOR, PROJECTION_SUFFIXES, SPAN_LIMIT, inTextBox, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
 } from "./docx_source.ts";
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
-import { revisionIntent } from "./dialogue_acts.ts";
+import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
-import { clickEventSeq } from "./completion_consent.ts";
 import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */

@@ -15,7 +15,8 @@ import { CONFIRM_CONDITION, checkCompletion, type ConditionResult, unreadItems, 
 import { NoDatabaseYet, TASK_ACTIVE, TASK_DONE, withTaskDatabase } from "./schema.ts";
 import { validateDefinition } from "./definition.ts";
 import { ToolRejection } from "./tool_rejection.ts";
-import { AGREE_TEXT, COMPLETE_KEY, type CardClick, type Consent, DECLINE_TEXT, clickEventSeq, judgeConsent } from "./completion_consent.ts";
+import { AGREE_TEXT, COMPLETE_KEY, type CardClick, type Consent, DECLINE_TEXT, judgeConsent } from "./completion_consent.ts";
+import { clickEventSeq } from "./dialogue_acts.ts";
 import type { DatabaseSync } from "node:sqlite";
 
 export const EVENT_TASK_COMPLETED = "TASK_COMPLETED";
