@@ -205,7 +205,7 @@
 .app .sw-rv-act { display: flex; flex-wrap: wrap; gap: .35rem; width: 100%; padding-left: .3rem; }
 .app .sw-rv-act .reason, .app .finding .reason { border: 1px solid var(--line2); border-radius: .3rem; padding: .05rem .45rem; font: inherit; font-size: .833rem; min-width: 12rem; }
 .app .sw-rules { border-top: 1px solid var(--line2); padding-top: .45rem; display: flex; flex-direction: column; gap: .25rem; }
-.app .sw-rule { display: grid; grid-template-columns: 2.2rem 4.4rem 1fr auto; align-items: center; gap: .35rem; }
+.app .sw-rule { display: grid; grid-template-columns: 2.2rem 4.4rem 1fr; align-items: center; gap: .35rem; }
 .app .sw-rule .rid { font-family: var(--mono, monospace); font-size: .833rem; }
 .app .sw-switch { width: 1.9rem; height: 1rem; border-radius: .5rem; background: var(--line2); position: relative; cursor: pointer; display: inline-block; }
 .app .sw-switch i { position: absolute; top: .1rem; left: .1rem; width: .8rem; height: .8rem; border-radius: 50%; background: #fff; transition: left .15s; }
