@@ -39,8 +39,7 @@ scripts/dev.sh                                          # 然后打开 http://lo
 
 ```
 agent/         pi 的工具、扩展与命令行入口（src/），提示与测试
-backend/       任务服务（HTTP/SSE 接口）、假模型端点、对照脚本、测试
-server/        taskwright_server：早先的 Python 版任务服务，正在退役
+backend/       任务服务（HTTP/SSE 接口）、假模型端点、测试
 observatory/   taskwright_observatory：只读网页应用与读库模块；archive-format.md
 web/           浏览器界面
 sim/           模拟用户、演练驱动、判定程序、示例画像

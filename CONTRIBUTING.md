@@ -55,7 +55,7 @@ git diff --stat main...<branch> -- docs/    # must print nothing
 These boundaries are what keep the deliverable trustworthy. Please keep them:
 
 1. **Only the agent's tools and extension commands write the task database** (`agent/src/lib/`). Every write goes through the same core functions, runs in one transaction, checks base versions, and records one event. The table definitions exist only in `agent/src/lib/schema.ts`, and only `agent/src/lib/db.ts` writes the event table.
-2. **The server and the observatory never write the task database.** They open it read-only (`observatory/taskwright_observatory/taskdb.py` is the one reader) and never interpret or grade the content.
+2. **The task service and the observatory never write the task database.** They open it read-only (`agent/src/lib/task_read.ts` for the task service, `observatory/taskwright_observatory/taskdb.py` for the observatory) and never interpret or grade the content.
 3. **The web interface only reacts to events.** A request's response says only "accepted" or "rejected"; the interface changes when the corresponding event arrives. No optimistic updates.
 
 There are no content rules or keyword lists in the code: whether a use case is well written is a judgement for the reviewer role, not for validation code. Code checks structure only: collections, fields, types, required fields, and sources.
@@ -64,7 +64,7 @@ There are no content rules or keyword lists in the code: whether a use case is w
 
 ## Style
 
-- Python: standard library only in `server/` and `observatory/`; four-space indentation.
+- Python: standard library only in `observatory/` and `sim/`; four-space indentation.
 - TypeScript: ES modules, run directly by Node (no build step for `agent/` and `sim/`); two-space indentation.
 - Texts shown to users, collection names and field names come from the task definition, never hard-coded in the web interface.
 - Tests travel with the code: change a behaviour, change or add its test in the same commit.

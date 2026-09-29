@@ -39,8 +39,7 @@ Requirements, model setup, ports and troubleshooting are in [docs/deployment.md]
 
 ```
 agent/         pi tools, extensions, command-line entry points (src/), prompts, tests
-backend/       task service (HTTP/SSE API), fake model endpoint, comparison scripts, tests
-server/        taskwright_server: the earlier Python task service, being retired
+backend/       task service (HTTP/SSE API), fake model endpoint, tests
 observatory/   taskwright_observatory: read-only web app and database readers; archive-format.md
 web/           browser interface
 sim/           simulated user, run driver, judge, example persona
