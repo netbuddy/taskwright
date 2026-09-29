@@ -160,7 +160,7 @@ export interface ReviewBatch {
 
 /**
  * 确认标记的依据。viewed：用户打开详情或在卡片上点「这几条都看过了」（已读）；ui_edit：改字段或标为先不管时随修订自动写；
- * ui_click：撤回确认（早期版本还有点了确认的）；user_words：早期版本由执行者登记、依据是用户在对话里说的话。
+ * ui_click：早先版本的撤回确认（更早的版本还有点了确认的），接口已经不再接受这两种操作，库里已有的照常显示；user_words：早期版本由执行者登记、依据是用户在对话里说的话。
  */
 export type ConfirmationBasis = "viewed" | "ui_click" | "ui_edit" | "user_words";
 
@@ -192,7 +192,7 @@ export interface Item {
   confirmation_stale: boolean;
   /**
    * 已读：条目在任何一次修订上有过一条接受的确认标记（任一依据）；为假就是未读。已读是条目级、单向的，
-   * 之后条目被改、或经接口撤回确认（unconfirm），都不会变回未读。前端按 confirmations 现算，这两项只作对照。
+   * 之后条目被改、或库里有早先版本的撤回确认，都不会变回未读。前端按 confirmations 现算，这两项只作对照。
    */
   viewed?: boolean;
   /** 已读的依据：当前修订上最近一条标记是接受时取它的依据，否则取最近一条接受的标记的依据；未读时为空。 */
@@ -309,7 +309,7 @@ export interface UiActionNoted {
   text: string;
   event_seq: number | null;
   undoable: boolean;
-  /** 与后端对齐后新增：撤销要用的修订序号；确认、撤回确认不产生修订，为 null。 */
+  /** 与后端对齐后新增：撤销要用的修订序号；已读这类不产生修订的操作为 null。 */
   revision_no?: number | null;
   op_id?: string | null;
   /** 界面操作的种类；评审结束的那条是 request_review，另带 review 计数。 */
@@ -685,7 +685,7 @@ export interface MessageRequest {
 }
 
 /** request_review：请评审者评审；targets 为空列表时评全部待评审的条目。后端核对通过就回应，评审在后台跑。 */
-export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review"
+export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
   | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable";
 
 export interface ActionRequest {

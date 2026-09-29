@@ -10,8 +10,8 @@
  *   幂等：条目在这次修订上最近一条标记已经是接受时不再写。
  * - 界面修改（ui_edit）：改字段与「标为先不管」成功时，用户亲手改出来的内容就是用户认可的内容，在保存修订的同一个事务里
  *   为每个被改的条目在这次修订上自动写一条接受的标记，记一条 CONFIRMATION_RECORDED 事件。删除与撤销修订不自动写。
- * - 界面点击（ui_click）：撤回（unconfirm）写一条不接受的标记，记一条 CONFIRMATION_RECORDED 事件。已读是条目级、单向的，
- *   看过的条目撤回之后仍算看过（见 conditions.ts）。
+ * - 界面点击（ui_click）：早先的撤回确认（unconfirm）写下的不接受的标记。这个操作已经去掉，库里已有的这种标记照常读；
+ *   已读是条目级、单向的，看过的条目撤回之后仍算看过（见 conditions.ts）。
  * 旧库里还可能有依据为「用户的话」的标记，那是早期版本由执行者登记的，读取一侧照旧认。
  *
  * 改字段与「标为先不管」：用户改写了的内容（一个普通字段，或列表里的一项）来源换成「用户直接修改」（出处是操作编号，
@@ -57,7 +57,7 @@ export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
 export const EVENT_REVIEW_WAIVED = "REVIEW_WAIVED";
 export const EVENT_REVIEW_UNWAIVED = "REVIEW_UNWAIVED";
 export const EVENT_REVIEW_RULES_CHANGED = "REVIEW_RULES_CHANGED";
-export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "unconfirm", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules",
+export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules",
   "submit_deliverable"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
@@ -167,7 +167,6 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
   // 先在一个事务里读出任务与条目的现状，做任务状态与修订号的核对；标为已读与撤回确认在同一个事务里直接写。
   const state = inspect(ctx, request, kind);
   if (kind === "mark_viewed") return markViewed(ctx, opId, state.targets!, request.notify_executor === true);
-  if (kind === "unconfirm") return unconfirm(ctx, opId, state.targets!);
   if (kind === "undo") return undo(ctx, opId, state.revisionNo!);
   if (kind === "waive_review") return waiveReview(ctx, opId, state.targets!, request.fields);
   if (kind === "unwaive_review") return unwaiveReview(ctx, opId, state.targets!);
@@ -509,22 +508,6 @@ function markViewed(ctx: Ctx, opId: string, targets: Target[], notify: boolean):
 
 /** 卡片上点「这几条都看过了」之后发给执行者的那句话的开头。后端（service/conversation.py）按它认出这句不是用户打的字。 */
 export const VIEWED_NOTICE_PREFIX = "我已经看过了：";
-
-/** 撤回确认：写一条不接受的标记（依据是界面点击），记一条事件。 */
-function unconfirm(ctx: Ctx, opId: string, targets: Target[]): UserOpResult {
-  const items = targets.map((t) => ({ item_id: t.item_id, revision_no: t.base_revision }));
-  const seq = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db: DatabaseSync) => recordMark(db, ctx, opId, items, false, "ui_click"));
-  return {
-    op_id: opId,
-    kind: "unconfirm",
-    event_seqs: [seq],
-    results: items,
-    revision_no: null,
-    note: `界面操作（不是用户打的字）：用户在界面上撤回了对 ${items.map((t) => `${t.item_id}（修订 ${t.revision_no}）`).join("、")}的确认。`,
-    notify_text: null,
-    undoable: false,
-  };
-}
 
 interface RevisionOp {
   op: string;
