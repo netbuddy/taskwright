@@ -875,11 +875,12 @@ export class Executor {
         this.hub.emit("problem", { session_id: sid, code: "no_reply", text: NO_REPLY_TEXT, retry: null });
       }
     }
-    // 结束原因以会话记录算出的为准，与摘要里的、刷新后重算的相同；会话记录读不出这次工作时按本轮记下的情况。
+    // 结束原因与步数以会话记录算出的为准，与摘要里的、刷新后重算的相同；会话记录读不出这次工作时按本轮记下的情况。
+    // 步数不能只看本轮的计数：一条消息里有几个工具调用、执行到一半被停下时，后面没有开始的调用只在会话记录里有。
     const found = await this.emitSummary(pi, sid, work);
     const outcome = found?.outcome ?? (work.stopped ? "stopped_by_user" : work.failed ? "failed" : work.replied ? "replied" : "no_reply");
     this.hub.emit("work_ended", { session_id: sid, work_id: work.work_id, at: clock.now(), seconds: workSummary.round1(Date.now() / 1000 - work.started),
-      step_count: work.step_count, outcome });
+      step_count: found?.step_count ?? work.step_count, outcome });
     this.work = null;
     this.pendingOrigin.clear();
     this.setState("idle");
