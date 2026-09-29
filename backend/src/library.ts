@@ -515,7 +515,16 @@ export function findingView(one: Record<string, any>) {
     problem: one.problem ?? null, suggestion: one.suggestion ?? null };
 }
 
-/** 一行事件拼成 [事件名, data]；不认识的事件名返回 null。字段与来源取条目在那次修订下的内容。 */
+/**
+ * 一行事件拼成 [事件名, data]；不认识的事件名返回 null。字段与来源取条目在那次修订下的内容。
+ *
+ * 返回 null 的事件不推给页面，所以页面收到的事件序号会跳号。任务库里有五种记录有意不推，页面从别处拿到对应的内容：
+ * - USER_INTENT_RECORDED（记下助手对一句话的理解）、USER_INTENT_INVALID（理解事实核对没通过）、USER_INTENT_MISSING
+ *   （这一轮结束时仍没有理解）、STRUCTURED_OUTPUT_UNMATCHED（助手文字里有对不上登记格式的片段）：这四种合成「理解为」那一行，
+ *   由后端读任务库算出（work_summary.ts 的 understandingLines），实时随 step 与 work_summary 推送，刷新之后在对话记录的摘要里。
+ * - EXECUTOR_ACTS_RECORDED（助手回复时记下的行为）：回复的内容由「回复」工具的结果带到页面，实时是 assistant_reply，
+ *   刷新之后在对话记录里；这条记录本身只供助手查询与观测台使用。
+ */
 export function eventPayload(lib: Library, e: Row): [string, Record<string, any>] | null {
   const payload = or(jsonOrText(e.payload), {}) as Record<string, any>;
   const base = { seq: e.seq, at: clock.fromLocalText(e.at), task_id: e.task_id };
