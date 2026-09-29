@@ -79,7 +79,7 @@ test("桌面形态下 pi 设置文件的 defaultProvider 与 defaultModel 两项
     const record = startupRecord(desktop, argv);
     assert.equal(record["模型"], "local/qwen");
     assert.equal(record["模型来自"], `pi 设置（${settings} 的 defaultProvider 与 defaultModel）`);
-    assert.equal("模型来自" in startupRecord(server, serverArgv), false, "服务器形态的启动记录与 Python 版一致，不加这一项");
+    assert.equal("模型来自" in startupRecord(server, serverArgv), false, "服务器形态的启动记录不加这一项");
 
     writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { local: { models: [{ id: "qwen" }] } } }));
     assert.deepEqual(probeModel(desktop, env), { name: "local/qwen", available: true,

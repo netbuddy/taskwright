@@ -18,7 +18,8 @@ export function readTextFileLenient(path: string): string {
 
 /**
  * 按行切开，行分隔符与 Python 的 str.splitlines 相同：除了 \n、\r\n、\r，还有 \v、\f、\x1c、\x1d、\x1e、\x85、
- * \u2028、\u2029。会话文件按这个规则切行（一行里的字符串值含有这几个字符时，那一行会被切断、读不出来，与 Python 版一致）。
+ * \u2028、\u2029。会话文件按这个规则切行（一行里的字符串值含有这几个字符时，那一行会被切断、读不出来）。
+ * 不能换成只认换行符：观测台（Python）读同一批会话文件时用 str.splitlines，两边切行的规则一样，读出的条目才一样。
  */
 export function splitLines(text: string): string[] {
   const parts = text.split(/\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/);

@@ -137,7 +137,7 @@ test("mark_viewed：写已读标记（依据已读），记 ITEM_VIEWED；打开
   db.close();
 });
 
-test("mark_viewed 幂等：同一条目同一修订已经接受过的不再写、不记事件；撤回之后仍算看过，再打开会重新记一条", () => {
+test("mark_viewed 幂等：同一条目同一修订已经接受过的不再写、不记事件；库里已有的撤回记录照常读，撤回之后仍算看过，再打开会重新记一条", () => {
   const dir = taskWithItems();
   op(dir, { kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] });
   const events = count(dir, "event");
@@ -152,9 +152,17 @@ test("mark_viewed 幂等：同一条目同一修订已经接受过的不再写�
   // 用户亲手改出来的内容已经算认可，再打开不另写已读。
   const edit = op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-002", base_revision: 1 }], fields: { 名称: "退出" } });
   assert.deepEqual(op(dir, { kind: "mark_viewed", targets: [{ item_id: "UC-002", base_revision: edit.revision_no }] }).event_seqs, []);
-  // 撤回：写一条不接受；已读是条目级、单向的，看过的条目撤回之后仍不算未读。再打开照样重新写一条已读。
-  const back = op(dir, { kind: "unconfirm", targets: [{ item_id: "UC-001", base_revision: 1 }] });
-  assert.equal(back.note, "界面操作（不是用户打的字）：用户在界面上撤回了对 UC-001（修订 1）的确认。");
+  // 撤回确认这个操作已经去掉；库里可能还有早先写下的撤回记录（不接受，依据是界面点击）。照早先的写法补一条，
+  // 已读是条目级、单向的，看过的条目撤回之后仍不算未读；再打开照样重新写一条已读。
+  const writer = new DatabaseSync(databasePath(dir));
+  const seq = Number((writer.prepare("SELECT MAX(seq) AS n FROM event").get() as { n: number }).n) + 1;
+  writer.prepare("INSERT INTO event (seq, task_id, session_id, call_id, name, payload, actor, at) VALUES (?, 'TASK-001', 'S', 'ui-op-old', 'CONFIRMATION_RECORDED', ?, 'user', '2026-09-20 10:00:00')")
+    .run(seq, JSON.stringify({ items: [{ item_id: "UC-001", revision_no: 1, accepted: false }], basis: "ui_click" }));
+  const judgement = writer.prepare("INSERT INTO judgement (task_id, basis, call_id, event_seq, created_at) VALUES ('TASK-001', ?, 'ui-op-old', ?, '2026-09-20 10:00:00')")
+    .run(JSON.stringify([{ 依据: "界面点击", 操作编号: "ui-op-old" }]), seq);
+  writer.prepare("INSERT INTO judgement_item (judgement_id, task_id, item_id, revision_no, attitude, event_seq) VALUES (?, 'TASK-001', 'UC-001', 1, '不接受', ?)")
+    .run(Number(judgement.lastInsertRowid), seq);
+  writer.close();
   const db = new DatabaseSync(databasePath(dir), { readOnly: true });
   const unread = () => checkCompletion(db, "TASK-001", { 用例: ["每个条目用户确认"] })[0].unmet.map((u) => u.item);
   assert.deepEqual(unread(), []);
@@ -229,6 +237,10 @@ test("task_closed、no_task、bad_request、rejected", () => {
   assert.equal(refused(() => runUserOperation(ctx(dir), { op_id: "call-1", kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] })).code, "bad_request");
   // 界面上的「确认」已经退役，confirm 不再是直接操作的种类。
   assert.equal(refused(() => op(dir, { kind: "confirm", targets: [{ item_id: "UC-001", base_revision: 1 }] })).code, "bad_request");
+  // 撤回确认这个操作已经去掉，与早先退役的 confirm 一样回 bad_request，说明里列出的种类也不再有它。
+  const withdrawn = refused(() => op(dir, { kind: "unconfirm", targets: [{ item_id: "UC-001", base_revision: 1 }] }));
+  assert.equal(withdrawn.code, "bad_request");
+  assert.doesNotMatch(withdrawn.message, /、unconfirm、/);
   assert.equal(refused(() => op(dir, { kind: "frobnicate", targets: [{}] })).code, "bad_request");
   assert.equal(refused(() => op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }] })).code, "bad_request");
   assert.equal(refused(() => op(dir, { kind: "mark_viewed", targets: [{ item_id: "UC-404", base_revision: 1 }] })).code, "rejected");

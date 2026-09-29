@@ -3,7 +3,7 @@
  * 覆盖：用户的话（条目编号、client_id、工作编号改用那句话的条目编号、会话自动起名）、步骤行的实时生成与一轮结束时的更正、
  * 「回复」工具的回复、兜底转发正文、什么都没说时的 problem、模型服务不可用、任务现状与兜底句两种系统说明、保存修订被拒的原因、
  * 工作结束时的过程摘要与 work_ended；以及事件分发的会话过滤、补发与 resync、经 HTTP 的事件流写法。
- * 对应服务端 Python 版 executor.py 与 hub.py 的各分支（Python 版这部分由集成测试覆盖，这里拆成单元测试）。
+ * 各分支拆成单元测试，端到端的几种情形另见 live_scenarios.test.ts。
  */
 
 import assert from "node:assert/strict";

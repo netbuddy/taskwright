@@ -11,23 +11,21 @@
  */
 
 import assert from "node:assert/strict";
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
 import { RESUME_FAILED_STATE_TEXT, RESUME_FAILED_TEXT } from "../src/executor.ts";
-import { ROOT, captureConsole, tempDir } from "./helpers.ts";
+import { captureConsole, ROOT, spawnBackend, tempDir } from "./helpers.ts";
 
 // 后端在子进程里运行，它的输出接到管道上；测试进程里另有假模型端点与本文件的代码。以防它们日后写日志，
 // console 的输出一律收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
 captureConsole();
 
 type Dict = Record<string, any>;
-const MAIN = join(ROOT, "backend", "src", "main.mts");
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
@@ -42,14 +40,6 @@ const SCRIPT = {
   rules: [{ when: { last_role: "tool" }, reply: { text: "好的。" } }],
   default: { text: INTENT, tool_calls: [{ name: "reply", arguments: { informs: [], act: null, text: "我在。" } }] },
 };
-
-async function freePort(): Promise<number> {
-  const probe = createServer();
-  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
-  const port = (probe.address() as { port: number }).port;
-  await new Promise((ok) => probe.close(ok));
-  return port;
-}
 
 /** 一套验证栈：一个假端点，一个以相对路径启动、工作目录是 dir 的后端；后端可以停下再起。 */
 class Stack {
@@ -69,17 +59,7 @@ class Stack {
     const agentDir = writeAgentDir(join(this.dir, "pi-agent"), this.fake.baseUrl);
     const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: agentDir, TASKWRIGHT_LOG_DIR: join(this.dir, "logs") };
     for (const name of DROPPED_ENV) if (name !== "PI_CODING_AGENT_DIR") delete env[name];
-    const port = await freePort();
-    const child = spawn(process.execPath, [MAIN, "--tasks", "tasks", "--runs", "runs", "--profile", "fake", "--host", "127.0.0.1", "--port", String(port)],
-      { cwd: this.dir, env, stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    child.stdout!.on("data", (c) => (out += c));
-    child.stderr!.on("data", (c) => (out += c));
-    const end = Date.now() + 15000;
-    while (!/任务服务在 http:\/\/[^:]+:\d+\//.test(out)) {
-      if (child.exitCode !== null || Date.now() > end) throw new Error(`后端没有起来：${out}`);
-      await sleep(50);
-    }
+    const { child, port } = await spawnBackend(["--tasks", "tasks", "--runs", "runs", "--profile", "fake", "--host", "127.0.0.1"], { cwd: this.dir, env });
     this.child = child;
     this.port = port;
   }

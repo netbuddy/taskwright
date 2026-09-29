@@ -1,9 +1,10 @@
 /**
  * 监听端口：命令行给的端口被占（EADDRINUSE）时依次试后面的端口，最多试 PORT_TRIES 个；都被占就报错。
- * 实际端口由调用方打印到日志、写进占用标记，并由 GET /api/v1/service 回出。
+ * 给 0 时由操作系统挑一个空闲端口。实际端口由调用方打印到日志、写进占用标记，并由 GET /api/v1/service 回出。
  */
 
 import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 
 export const PORT_TRIES = 10;
 
@@ -15,7 +16,7 @@ export function defaultHost(mode: string, host: string | undefined): string {
 
 export class NoFreePort extends Error {}
 
-/** 在 host 上从 port 起依次试着监听，返回实际监听的端口。端口被占以外的错误（例如没有权限）照原样抛出。 */
+/** 在 host 上从 port 起依次试着监听，返回实际监听的端口（port 为 0 时是操作系统挑的那个）。端口被占以外的错误（例如没有权限）照原样抛出。 */
 export async function listenFrom(server: Server, port: number, host: string, tries = PORT_TRIES): Promise<number> {
   for (let n = 0; n < tries; n++) {
     const candidate = port + n;
@@ -32,7 +33,7 @@ export async function listenFrom(server: Server, port: number, host: string, tri
       server.once("listening", onListening);
       server.listen(candidate, host);
     });
-    if (error === null) return candidate;
+    if (error === null) return (server.address() as AddressInfo).port;
     if (error.code !== "EADDRINUSE") throw error;
   }
   throw new NoFreePort(`端口 ${port} 到 ${port + tries - 1} 都被占用了，服务没有起来。`);

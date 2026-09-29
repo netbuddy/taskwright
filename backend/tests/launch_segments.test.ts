@@ -1,4 +1,4 @@
-// 启动配置里「材料分段」一节：TypeScript 版读取的结果与 Python 版相同（缺项用默认值、写错时报清楚），参数经环境变量交给 pi 里的扩展。
+// 启动配置里「材料分段」一节：读取的结果（缺项用默认值、写错时报清楚），参数经环境变量交给 pi 里的扩展。
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -13,7 +13,7 @@ test("两份启动配置的材料分段参数等于默认值，白名单里有 g
   }
 });
 
-test("缺项用默认值，写错时报清楚，环境变量与 Python 版写法相同", () => {
+test("缺项用默认值，写错时报清楚，环境变量的写法", () => {
   assert.deepEqual(segmentParamsOf({}), SEGMENT_DEFAULTS);
   assert.deepEqual(segmentParamsOf({ 材料分段: { max_paragraphs: 120 } }), { ...SEGMENT_DEFAULTS, max_paragraphs: 120 });
   for (const bad of [0, -1, 2.5, "3", true]) {

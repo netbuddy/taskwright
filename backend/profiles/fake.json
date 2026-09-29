@@ -1,10 +1,10 @@
 {
-  "说明": "测试与双跑对照用的启动配置：与 dev 相同，只是模型换成仓内的假模型端点（fake/fake-model），不加载 Langfuse 插件，也不透传任何密钥。用它启动时要设 PI_CODING_AGENT_DIR 指向只登记了假端点的 pi 配置目录（node backend/fake_model/main.mts --agent-dir 会写好）。",
+  "说明": "测试用的启动配置：与 dev 相同，只是模型换成仓内的假模型端点（fake/fake-model），不加载 Langfuse 插件，也不透传任何密钥。用它启动时要设 PI_CODING_AGENT_DIR 指向只登记了假端点的配置目录（node backend/fake_model/main.mts --agent-dir 会写好）。",
   "executable": "pi",
   "mode": "rpc",
   "model": "fake/fake-model",
   "thinking": "medium",
-  "模型说明": "假模型端点对外报的模型编号是 fake-model，pi 配置目录里登记的服务名是 fake。",
+  "模型说明": "假模型端点对外报的模型编号是 fake-model，配置目录里登记的服务名是 fake。",
   "tools": [
     "read",
     "ls",
@@ -24,9 +24,9 @@
     "offline": false
   },
   "platform_skill": "agent/prompts/skills/taskwright-executor",
-  "平台技能说明": "执行者在 Taskwright 里怎样工作的平台 skill，所有任务类型共用。它跟着代码走，路径相对代码仓根目录，不复制进任务目录；启动时在任务目录的技能之前用 --skill 加载，所以在 skill 清单里排在前面。",
+  "平台技能说明": "助手在 Taskwright 里怎样工作的平台 skill，所有任务类型共用。它跟着代码走，路径相对代码仓根目录，不复制进任务目录；启动时在任务目录的技能之前用 --skill 加载，所以在 skill 清单里排在前面。",
   "workspace_skills_dir": ".pi/skills",
-  "任务目录技能说明": "flags 里关掉了 pi 的技能自动发现（免得本机全局目录里的技能混进来），所以任务目录里这个目录下的技能要用 --skill 显式加载。路径相对任务目录根目录；任务目录里没有这个目录就不加。",
+  "任务目录技能说明": "flags 里关掉了技能的自动发现（免得本机全局目录里的技能混进来），所以任务目录里这个目录下的技能要用 --skill 显式加载。路径相对任务目录根目录；任务目录里没有这个目录就不加。",
   "材料分段": {
     "说明": "Word 材料上传时，除了给助手读的 Markdown 文本，还按下面三个参数把它分成若干块，写一份分段清单（与材料同目录，文件名是材料名加 .segments.json）。助手先读清单，再一块一块地读材料、整理条目；任务状态里「还有几段没有被任何条目引用」也按块统计。参数改了之后，旧任务的分段清单在下次读到时按新参数重算。",
     "heading_depth": 3,
@@ -39,12 +39,12 @@
   "extensions": [
     {
       "name": "任务数据工具",
-      "说明": "本代码仓自己的扩展，注册执行者的全部工具（保存修订、回复、查看条目、查询任务状态、完成任务、请求评审）、界面操作命令与几个只读小扩展。它跟着代码走，路径相对代码仓根目录。",
+      "说明": "本代码仓自己的附加模块，登记助手的全部工具（保存修订、回复、查看条目、查询任务状态、完成任务、请求评审）、界面操作命令与几个只读的小模块。它跟着代码走，路径相对代码仓根目录。",
       "source": "repo",
       "path": "agent/src/extension.ts"
     }
   ],
   "system_prompt_file": "backend/prompts/executor_system_prompt.md",
-  "系统提示说明": "执行者的系统提示，用 --system-prompt 整体替换 pi 自带的系统提示。文件路径相对代码仓根目录，这份文字是执行者行为的一部分，改动要连同测试一起评估。",
+  "系统提示说明": "助手的系统提示，用 --system-prompt 整体替换助手程序自带的系统提示。文件路径相对代码仓根目录，这份文字是助手行为的一部分，改动要连同测试一起评估。",
   "env_passthrough": []
 }

@@ -1,13 +1,14 @@
 /**
- * 测试夹具：给后端的双跑对照（backend/compare/）在一个已建好的任务里写出一份像样的库，并配一条合成的会话文件。
+ * 造数夹具：在一个已建好的任务里写出一份像样的库，并配一条合成的会话文件，给手工走查用（例如 web/README.md 里「缺口太大」一步）。
+ * 原先还给后端的双跑对照用，那套对照已经删除。
  * 写库一律经 agent 里真实的写入函数（保存修订、界面操作、评审），不手工拼库；评审用假评审者，不连模型。
- * 两个后端各跑一遍同一个夹具，得到内容相同、只有时刻与任务编号不同的两份数据。
  *
  * 用法：
  *   node seed_compare_task.mts seed <任务目录> <归档目录>      写修订、界面操作、评审，并写会话文件
  *   node seed_compare_task.mts old-format <任务目录>          建一个修订统一之前格式的库（只有表结构），给「旧格式」一行用
  *   node seed_compare_task.mts many-events <任务目录> <条目编号> <修订号> <条数>
- *                                                             用「撤回确认」连记这么多条库事件，给事件流「差距太大发 resync」一步用
+ *                                                             在界面上把这个条目的第一个文字字段来回改这么多次，每次记下修订与确认两条库事件，
+ *                                                             给事件流「差距太大发 resync」一步用
  *
  * 任务目录里要先有建好的任务（srs-authoring 类型）与三份材料：inputs/需求说明.md、inputs/会议纪要.txt、inputs/退款规则.docx（及其投影）。
  */
@@ -31,8 +32,21 @@ if (mode === "old-format") {
 }
 if (mode === "many-events") {
   const [, , itemId, revision, count] = process.argv.slice(2);
+  // 条目在给定修订下的内容里，第一个值是文字的字段：来回改它，每次都是一次真的界面修改。
+  const db = new DatabaseSync(join(workspaceDir, "task.sqlite"), { readOnly: true });
+  const row = db.prepare("SELECT fields FROM item_version WHERE item_id = ? AND revision_no = ?").get(itemId, Number(revision)) as { fields: string } | undefined;
+  db.close();
+  const fields = row ? JSON.parse(row.fields) as Record<string, unknown> : {};
+  const field = Object.keys(fields).find((k) => typeof fields[k] === "string");
+  if (!field) {
+    process.stderr.write(`条目 ${itemId} 在修订 ${revision} 下没有文字字段可改。\n`);
+    process.exit(2);
+  }
+  let base = Number(revision);
   for (let n = 1; n <= Number(count); n++) {
-    runUserOperation({ workspaceDir, sessionId: "" }, { op_id: `ui-op-many-${n}`, kind: "unconfirm", targets: [{ item_id: itemId, base_revision: Number(revision) }] });
+    const done = runUserOperation({ workspaceDir, sessionId: "" }, { op_id: `ui-op-many-${n}`, kind: "edit_fields",
+      targets: [{ item_id: itemId, base_revision: base }], fields: { [field]: n % 2 ? `${fields[field]}（${n}）` : fields[field] } });
+    base = done.revision_no!;
   }
   process.exit(0);
 }

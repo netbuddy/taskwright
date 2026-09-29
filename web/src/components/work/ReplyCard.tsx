@@ -35,7 +35,7 @@ export const TEMPLATES = {
   dontKnow: (itemIds: string) => `关于 ${itemIds}，我不知道，你按常识补上并标明是你补的。`,
 };
 // 「先不管这条」发给执行者的那句「我先不管 {条目编号}，请接着往下做。」由后端在直接操作成功后发，
-// 见 server/taskwright_server/service/executor.py 的 keep_pending_notice；前端只发直接操作。
+// 见 backend/src/executor.ts 的 keepPendingNotice；前端只发直接操作。
 
 const KIND_LABEL: Record<ActKind, string> = { ask: "提问", confirm: "请确认", suggest: "给建议值", choose: "请选择", propose: "提议" };
 /** 卡片正文那一行左边的小标签，照原型的写法。 */

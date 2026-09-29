@@ -26,7 +26,7 @@ export function fromRoot(relative: string): string {
   return join(REPO_ROOT, ...parts);
 }
 
-/** 启动配置所在的目录（Python 版退役之前与它共用同一份）。 */
+/** 启动配置所在的目录。 */
 export const PROFILE_DIR = join(REPO_ROOT, "backend", "profiles");
 
 /** 理解格式的 schema：用户行为各功能的中文名写在它的 $defs.user_function 的 x-names 里。 */

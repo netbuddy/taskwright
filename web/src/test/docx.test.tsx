@@ -79,6 +79,8 @@ describe("渲染与分页修补", () => {
     const t = tableOf(r);
     const want = expectedSample;
     expect(r.paras.length - 1).toBe(114);
+    // 先核对期望的段落数：抽取脚本出错、一段也没抽出来时，下面的循环一条都不断言，这一例会照样通过。
+    expect(want.length).toBe(r.paras.length - 1);
     for (const p of want) expect([p.n, t.texts[p.n]]).toEqual([p.n, squeeze(p.text)]);
     expect(t.pages).toBe(5);
     expect(r.marks).toBe(4);
@@ -102,6 +104,7 @@ describe("渲染与分页修补", () => {
     expect(r.paras[8].length).toBe(2);
     expect(t.parts[8].map((p) => p.page)).toEqual([2, 3]);
     const want = await expectedOf(bytes);
+    expect(want.length).toBe(r.paras.length - 1);
     for (const p of want) expect(t.texts[p.n]).toBe(squeeze(p.text));
     expect(t.pages).toBe(6);
     // 摘录落在后一半时，页写后一半所在的那一页

@@ -28,7 +28,7 @@ Taskwright 是一个通用的任务型智能体。给它一份**任务定义**�
 npm install -g @earendil-works/pi-coding-agent@0.85.1   # 装好后在 pi 里接入一个模型
 git clone https://github.com/netbuddy/taskwright.git && cd taskwright
 python3 -m venv .venv && . .venv/bin/activate
-make install                                            # 即 npm ci 加 pip install -e 'observatory[test]' -e 'server[test]'
+make install                                            # 即 npm ci 加 pip install -e 'observatory[test]'
 scripts/dev.sh                                          # 然后打开 http://localhost:5680
 # 每开一个新终端，先执行 `. .venv/bin/activate`
 ```
@@ -39,8 +39,7 @@ scripts/dev.sh                                          # 然后打开 http://lo
 
 ```
 agent/         pi 的工具、扩展与命令行入口（src/），提示与测试
-backend/       任务服务（HTTP/SSE 接口）、假模型端点、对照脚本、测试
-server/        taskwright_server：早先的 Python 版任务服务，正在退役
+backend/       任务服务（HTTP/SSE 接口）、假模型端点、测试
 observatory/   taskwright_observatory：只读网页应用与读库模块；archive-format.md
 web/           浏览器界面
 sim/           模拟用户、演练驱动、判定程序、示例画像

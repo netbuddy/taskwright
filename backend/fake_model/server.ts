@@ -1,7 +1,7 @@
 /**
  * 假模型端点：一个按脚本回固定内容、与 OpenAI 聊天接口兼容的本地 HTTP 服务，只用 node:http。
  *
- * 它给集成测试与双跑对照用：pi 以为自己在请求一个模型，其实每次拿到的回答都是事先写好的，
+ * 它给集成测试与手工验证用：pi 以为自己在请求一个模型，其实每次拿到的回答都是事先写好的，
  * 于是门禁拒绝、用户直接写入这类机制可以被确定性地测，不受真模型的随机性影响。
  *
  * 它实现 `POST /v1/chat/completions`，流式（stream 为真，按 SSE 逐块发）与非流式都支持，
@@ -16,7 +16,7 @@
  *
  * 每来一个请求，先按先后试 rules，第一条条件全部满足、且没有用完次数的规则给出回答；
  * 都不满足时从 sequence 里取下一条；sequence 也用完了就回 default（没写就回一句「好的。」）。
- * 请求记录的每一行与 Python 版（server/taskwright_server/fake_model）写出的逐字相同。
+ * 请求记录每一行的写法由 backend/tests/fixtures/expected/fake_model_cli.json 固定（fake_model.test.ts 逐字比较）。
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -155,7 +155,7 @@ export class FakeModel {
   private record(entry: Dict): void {
     if (this.logPath === null) return;
     let line = pyDumps(entry);
-    // 时刻是保留三位小数的秒；正好是整数时照 Python 的浮点写法补「.0」。
+    // 时刻是保留三位小数的秒；正好是整数时也写成「N.0」，与期望值里的写法一致。
     if (Number.isInteger(entry.时刻)) line = line.replace(`"时刻": ${entry.时刻},`, `"时刻": ${entry.时刻}.0,`);
     mkdirSync(dirname(this.logPath), { recursive: true });
     appendFileSync(this.logPath, line + "\n", "utf-8");

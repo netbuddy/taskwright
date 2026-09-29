@@ -26,7 +26,7 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [ ] PDF materials
 - [ ] Semantic search over materials (vector retrieval)
 - [ ] Delete and replace materials
-- [ ] Remove the earlier Python task service
+- [x] Remove the earlier Python task service
 
 ## 0.5 Several users
 

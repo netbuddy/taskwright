@@ -1,15 +1,15 @@
 /**
- * 观测台对照用的一段对话：起一个后端（Python 版或 TypeScript 版）与 TypeScript 版假模型端点，建任务、放材料、开会话、说一句话，
- * 等这一轮做完停掉后端；再把归档交给观测台（Python 包 taskwright_observatory）读出会话列表与会话详情，归一化之后返回。
- * 测试（observatory_parity.test.ts）用 TypeScript 版跑，与夹具生成脚本（generate.mts）用 Python 版跑出的 observatory_view.json 比较。
+ * 观测台对照用的一段对话：起后端与假模型端点，建任务、放材料、开会话、说一句话，等这一轮做完停掉后端；
+ * 再把归档交给观测台（Python 包 taskwright_observatory）读出会话列表与会话详情，归一化之后返回。
+ * 测试（observatory_parity.test.ts）拿它与同目录的 observatory_view.json 比较。
  */
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
-import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnBackend } from "../../helpers.ts";
 
 type Dict = Record<string, any>;
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
@@ -24,14 +24,6 @@ export const SCRIPT = [
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY",
   "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT", "PI_CODING_AGENT_DIR", "TASKWRIGHT_TASKS_ROOT", "TASKWRIGHT_PI_ENTRY"];
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
-
-async function freePort(): Promise<number> {
-  const probe = createServer();
-  await new Promise<void>((ok) => probe.listen(0, "127.0.0.1", ok));
-  const port = (probe.address() as { port: number }).port;
-  await new Promise((ok) => probe.close(ok));
-  return port;
-}
 
 function call(base: string, method: string, path: string, body?: unknown, raw?: Buffer, headers: Dict = { "Content-Type": "application/json" }): Promise<Dict> {
   return new Promise((ok, fail) => {
@@ -59,7 +51,7 @@ function stop(child: ChildProcess): Promise<void> {
 }
 
 /** 起后端与假端点，跑完那一段对话，停掉，返回 [归档目录, 任务目录]。 */
-export async function runConversation(kind: "python" | "typescript", root: string): Promise<[string, string]> {
+export async function runConversation(root: string): Promise<[string, string]> {
   const tasks = join(root, "tasks");
   const runs = join(root, "runs");
   mkdirSync(tasks, { recursive: true });
@@ -75,24 +67,11 @@ export async function runConversation(kind: "python" | "typescript", root: strin
   for (let end = Date.now() + 15000; !out.includes("pi 配置目录已写好"); await sleep(30)) {
     if (fake.exitCode !== null || Date.now() > end) throw new Error(`假端点没有起来：${out}`);
   }
-  const port = await freePort();
-  const args = ["--tasks", tasks, "--runs", runs, "--port", String(port), "--host", "127.0.0.1", "--profile", "fake"];
-  const backendEnv = { ...env, PI_CODING_AGENT_DIR: join(root, "pi-agent"), TASKWRIGHT_LOG_DIR: join(root, "logs"),
-    PYTHONPATH: [join(ROOT, "server"), join(ROOT, "observatory")].join(":") };
-  const backend = kind === "python"
-    ? spawn(PYTHON, ["-m", "taskwright_server.service", ...args], { cwd: ROOT, env: backendEnv, stdio: "ignore" })
-    : spawn(process.execPath, [join(ROOT, "backend", "src", "main.mts"), ...args], { cwd: ROOT, env: backendEnv, stdio: "ignore" });
+  const backendEnv = { ...env, PI_CODING_AGENT_DIR: join(root, "pi-agent"), TASKWRIGHT_LOG_DIR: join(root, "logs") };
+  const { child: backend, port } = await spawnBackend(["--tasks", tasks, "--runs", runs, "--host", "127.0.0.1", "--profile", "fake"], { cwd: ROOT, env: backendEnv }, 30_000);
   const base = `http://127.0.0.1:${port}`;
   let task = "";
   try {
-    for (let n = 0; n < 150; n++) {
-      try {
-        await call(base, "GET", "/api/v1/task-types");
-        break;
-      } catch {
-        await sleep(200);
-      }
-    }
     task = (await call(base, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "对照任务" })).task_id;
     const material = Buffer.from(`--B\r\nContent-Disposition: form-data; name="file"; filename="材料.md"\r\n\r\n${SOURCE.excerpt}\r\n--B--\r\n`, "utf-8");
     await call(base, "POST", `/api/v1/tasks/${task}/materials`, undefined, material, { "Content-Type": "multipart/form-data; boundary=B" });
