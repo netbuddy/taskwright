@@ -5,7 +5,7 @@
 断言假后端收到的请求：带会话编号的整份数据读取、messages 的话、细看条目时写已读的 actions（不带通知），
 以及点「这几条都看过了」的 actions（mark_viewed，带 notify_executor 与 targets）。
 另外核对驱动程序本身：标准输出上每一行都是 JSON（会话类打的日志改道到标准错误）；模拟用户起不来、驱动程序迟迟不报告启动完成时，
-start 抛 UserAgentError，原因是给人看的一句话。
+start 抛 UserAgentError，原因是给人看的一句话；启动超时的，驱动程序已经被停掉。
 本机没有 pi 或 node 时跳过。
 """
 
@@ -241,17 +241,34 @@ class DriverTest(unittest.TestCase):
         silent = self.root / "silent.mjs"
         silent.write_text("process.stdin.resume();\n", encoding="utf-8")      # 读着标准输入，什么都不回
 
+        drivers: list[subprocess.Popen] = []
+
         class Slow(UserAgentProcess):
             START_TIMEOUT = 1.0
             DRIVER = silent
 
+            def _read_stdout(self, process):      # 记下 start 起的子进程，好核对超时之后它确实被停掉了
+                drivers.append(process)
+                super()._read_stdout(process)
+
         ua = Slow(self.profile(), self.root, self.root / "user-agent")
         started = time.time()
-        with self.assertRaises(UserAgentError) as caught:
-            ua.start()
-        ua.close()
-        self.assertLess(time.time() - started, 30)
-        self.assertEqual(str(caught.exception), "模拟用户的驱动程序在 1 秒内没有报告启动完成，已经把它停掉。")
+        try:
+            with self.assertRaises(UserAgentError) as caught:
+                ua.start()
+            self.assertEqual(len(drivers), 1)
+            try:
+                drivers[0].wait(5)      # 应当已经停掉；留几秒余量，免得机器忙时偶发失败
+            except subprocess.TimeoutExpired:
+                self.fail("超时之后驱动程序还在运行，没有被停掉。")
+            ua.close()
+            self.assertLess(time.time() - started, 30)
+            self.assertEqual(str(caught.exception), "模拟用户的驱动程序在 1 秒内没有报告启动完成，已经把它停掉。")
+        finally:
+            for process in drivers:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
 
 
 if __name__ == "__main__":
