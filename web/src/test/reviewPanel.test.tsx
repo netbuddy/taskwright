@@ -139,6 +139,26 @@ describe("评审页签", () => {
     await waitFor(() => expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ fields: { collection: "功能用例", off: [], promote: [] } }), "打开规则 UC-R13"));
   });
 
+  it("规则区：必选规则的开关是开着的（绿色）并在圆点对面画锁，读屏说明写必选、不能关；别的三种状态不画锁", () => {
+    const t = task([UC4]);
+    t.definition.collections[0].all_rules!.push({ id: "UC-R14", level: "可选", text: "原样写出数值。", state: "promoted" });
+    panel(t);
+    const req = screen.getByTestId("rule-switch-UC-R7");
+    expect(req).toHaveClass("sw-switch", "on", "lock");
+    expect(req).toHaveAttribute("aria-checked", "true");
+    expect(req).toHaveAttribute("aria-disabled", "true");
+    expect(req).toHaveAttribute("aria-label", "规则 UC-R7：必选，不能关");
+    expect(req).toHaveAttribute("title", "必选规则不能关");
+    expect(within(req).getByTestId("rule-lock")).toBeInTheDocument();
+    for (const [id, on] of [["UC-R12", true], ["UC-R13", false], ["UC-R14", true]] as const) {
+      const sw = screen.getByTestId(`rule-switch-${id}`);
+      expect(sw).not.toHaveClass("lock");
+      expect(sw.classList.contains("on")).toBe(on);
+      expect(within(sw).queryByTestId("rule-lock")).toBeNull();
+      expect(sw).not.toHaveAttribute("aria-label");
+    }
+  });
+
   it("规则改了（指纹变了）：顶部提示几条需要重评，条目回到待评审", () => {
     const t = task([UC4, UC1]);
     const changed = { ...t, definition: { collections: [{ ...t.definition.collections[0], rules_hash: "h2" }] } };

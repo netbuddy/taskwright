@@ -150,6 +150,26 @@ export function ruleOf(task: Task, collection: string, ruleId: string | null | u
 }
 
 /**
+ * 评审通过的说明能列出哪些规则。评审记录里没有记规则清单，只记了规则指纹（规则文件全文加关闭、升为必选两份名单算出）：
+ * - list：记录的指纹与集合现在的指纹都不为空并且相同，这次核对的就是现在生效的规则；off 是这个任务里已经关闭、这次没有核对的条数。
+ *   记下的那句话里的条数与现在生效的规则条数对不上时，不列，按 changed 处理，免得列出一份条数对不上的清单。
+ * - changed：两边都不为空但是不同，评审之后规则改过，列不出当时核对的规则。
+ * - none：有一边为空（没有规则文件的集合，或早期没有记指纹的记录），或者没有记下那句话：不列，也不说明。
+ */
+export type PassRules = { kind: "list"; rules: ReviewRule[]; off: number } | { kind: "changed" } | { kind: "none" };
+
+export function passRules(task: Task, collection: string, review: Review): PassRules {
+  const c = task.definition.collections.find((one) => one.name === collection);
+  const now = c?.rules_hash ?? null;
+  const then = review.rules_hash ?? null;
+  const count = /按 (\d+) 条规则/.exec(review.reason ?? "")?.[1];
+  if (!now || !then || count === undefined) return { kind: "none" };
+  const rules = c?.review_rules ?? null;
+  if (now !== then || !rules || rules.length !== Number(count)) return { kind: "changed" };
+  return { kind: "list", rules, off: (c?.all_rules ?? []).filter((r) => r.state === "off").length };
+}
+
+/**
  * 确认状态：最近一条确认标记；确认过的修订不是条目当前所在的修订时是 stale（看过之后又被改过）。
  * 这是「当前修订看过没有」，只用来决定打开详情时要不要补记一条已读、字段边框何时停住；
  * 界面上的已读与未读是条目级的，见 isUnread。
