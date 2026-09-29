@@ -180,18 +180,22 @@ test("执行者不能填「用户直接修改」", () => {
   );
 });
 
-test("执行者修改时给了新来源：没改到的字段上的「用户直接修改」来源自动带上；改到了就不带", () => {
+test("执行者修改时：没改的内容上的来源（包括「用户直接修改」）保留；改写了用户改过的字段，那条也留着，结果里提醒", () => {
   const dir = fixture();
   op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
+  const pairs = (revision: number) => sourcesOf(dir, "UC-001", revision).map((row) => [row.kind, row.field, row.field_index]);
+  assert.deepEqual(pairs(2), [["执行者补充", "步骤", 1], ["用户直接修改", "名称", null]]);
+  // 往「步骤」末尾加一项：原来指到第 2 项「输入口令」的来源仍指着它，「名称」上用户直接修改的那条照旧。
   saveRevision(callIn(dir), {
     operations: [{ op: "update", item: "UC-001", base_revision: 2, fields: { 步骤: ["打开页面", "输入口令", "点登录"] }, sources: [{ ...SOURCE, supports: [{ field: "步骤" }] }] }],
   });
-  assert.deepEqual(sourcesOf(dir, "UC-001", 3).map((row) => [row.kind, row.field]), [["用户直接修改", "名称"], ["文档原文", "步骤"]]);
-  saveRevision(callIn(dir), {
+  assert.deepEqual(pairs(3), [["执行者补充", "步骤", 1], ["用户直接修改", "名称", null], ["文档原文", "步骤", null]]);
+  // 这次改的正是用户改过的「名称」：那条来源留着，结果里提醒；新给的与原来同一句摘录，合成一条，支持整个条目。
+  const outcome = saveRevision(callIn(dir), {
     operations: [{ op: "update", item: "UC-001", base_revision: 3, fields: { 名称: "账号登录" }, sources: [{ ...SOURCE, supports: [] }] }],
   });
-  // 这次改的正是「名称」：用户直接修改那条不再沿用；「步骤」上的来源沿用。
-  assert.deepEqual(sourcesOf(dir, "UC-001", 4).map((row) => [row.kind, row.field]), [["文档原文", "步骤"], ["文档原文", null]]);
+  assert.deepEqual(pairs(4), [["执行者补充", "步骤", 1], ["用户直接修改", "名称", null], ["文档原文", null, null]]);
+  assert.match(outcome.text, /\n提醒：UC-001 这次改写了的内容上还留着原来的来源：「名称」上的「用口令登录」（用户直接修改）。/);
 });
 
 test("加入第四种来源之前建的库不认它：改字段照旧能改，来源沿用条目当前的来源", () => {

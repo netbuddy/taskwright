@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { ACTOR_USER } from "../src/lib/db.ts";
-import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, makeWorkspace, query } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, cardClick, count, demoDefinition, makeWorkspace, problemCard, problemClicksOn, query, userEntry } from "./helpers.ts";
 
 function workspaceWithTask(): string {
   const dir = makeWorkspace();
@@ -309,13 +309,13 @@ test("条目引用：多个编号里哪几个不对，拒绝文字逐个指出",
   assert.match(message, /第 4 个编号 7 应当写一个条目编号/);
 });
 
-test("修改时给了来源只替换改到的字段上的来源，没改的字段来源沿用；只给来源不改字段时整体替换", () => {
+test("修改时给了来源：原来的来源保留，新给的接在后面；只给来源不改字段时整体替换，结果里写明去掉了哪几条", () => {
   const dir = workspaceWithTask();
   // 一条文档原文逐个支持两个字段，与真跑里 UC-002 在修订 1 的样子相同。
   saveRevision(callIn(dir), {
     operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面"] }, sources: [{ ...SOURCE, supports: [{ field: "名称" }, { field: "步骤" }] }] }],
   });
-  saveRevision(callIn(dir), {
+  const added = saveRevision(callIn(dir), {
     operations: [{
       op: "update", item: "UC-001", base_revision: 1, fields: { 步骤: ["打开页面", "输入口令"] },
       sources: [{ kind: "执行者补充", locator: "执行者补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }] }],
@@ -324,11 +324,14 @@ test("修改时给了来源只替换改到的字段上的来源，没改的字�
   const v2 = query<any>(dir, "SELECT position, kind, field, field_index FROM item_source WHERE revision_no = 2 ORDER BY position, support_no").map((r) => ({ ...r }));
   assert.deepEqual(v2, [
     { position: 1, kind: "文档原文", field: "名称", field_index: null },
+    { position: 1, kind: "文档原文", field: "步骤", field_index: null },
     { position: 2, kind: "执行者补充", field: "步骤", field_index: 1 },
   ]);
-  // 只给 sources、不改字段：整体替换，用来重新标注来源。
-  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 2, sources: [SOURCE] }] });
+  assert.doesNotMatch(added.text, /提醒/, "只往列表里加了一项，原有的项没有改写，不提醒");
+  // 只给 sources、不改字段：整体替换，用来重新标注来源；去掉了哪几条写进结果。
+  const relabel = saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 2, sources: [SOURCE] }] });
   assert.deepEqual(query<any>(dir, "SELECT kind, field FROM item_source WHERE revision_no = 3").map((r) => [r.kind, r.field]), [["文档原文", null]]);
+  assert.match(relabel.text, /\n这次重新标注了 UC-001 的来源，去掉了原来的 1 条：「登录总要输入口令。」（执行者补充）。$/);
 });
 
 test("文档原文的摘录不用空行隔开就跳句拼接、改了字或出处读不到时整批拒绝，逐条列出；逐字连续的一段（换行写法不同也算）放行", () => {
@@ -446,7 +449,9 @@ test("问题条目写下后执行者只能改状态与处理结果：改事项�
 
 test("问题条目：改状态与处理结果放行；新增不受限；用户在界面上的修改不受这条限制", () => {
   const dir = workspaceWithProblems();
-  const outcome = saveRevision(callIn(dir), {
+  // 改为已解决要用户在卡片上点过头（tests/problem_consent.test.ts 专门测这一条），这里照规矩先问、用户点了再改。
+  const branch = [userEntry("口令至少 8 位"), problemCard("k1", [{ item_id: "TBD-001", revision_no: 2 }]), ...cardClick("k1", "a", "已解决")];
+  const outcome = saveRevision({ ...callIn(dir), problemClicks: problemClicksOn(dir, "session-test", branch) }, {
     operations: [
       { op: "update", item: "TBD-001", base_revision: 2, fields: { 状态: "已解决", 处理结果: "用户采纳：口令至少 8 位" } },
       { op: "add", collection: "问题", fields: { 事项: "要不要短信登录？", 建议的处理: "先不做", 状态: "未解决" }, sources: [SOURCE] },

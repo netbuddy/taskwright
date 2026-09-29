@@ -15,7 +15,7 @@ import { CONFIRM_CONDITION, checkCompletion, type ConditionResult, unreadItems, 
 import { NoDatabaseYet, TASK_ACTIVE, TASK_DONE, withTaskDatabase } from "./schema.ts";
 import { validateDefinition } from "./definition.ts";
 import { ToolRejection } from "./tool_rejection.ts";
-import { AGREE_TEXT, COMPLETE_KEY, type CardClick, type Consent, DECLINE_TEXT, judgeConsent } from "./completion_consent.ts";
+import { AGREE_TEXT, COMPLETE_KEY, type CardClick, type Consent, DECLINE_TEXT, clickEventSeq, judgeConsent } from "./completion_consent.ts";
 import type { DatabaseSync } from "node:sqlite";
 
 export const EVENT_TASK_COMPLETED = "TASK_COMPLETED";
@@ -42,11 +42,10 @@ export const CONSENT_GUIDANCE =
 
 /** 卡片点击换成同意：点击之后那句话记进对话行为表时的事件序号，定下点的时候交付物是哪次修订。库里找不到那一行时为空。 */
 function cardConsent(db: DatabaseSync, taskId: string, sessionId: string, click: CardClick): Consent | null {
-  const row = db.prepare("SELECT event_seq FROM dialogue_act WHERE task_id = ? AND session_id = ? AND speaker = 'user' AND origin = 'ui' AND source_entry = ? " +
-    "ORDER BY rowid LIMIT 1").get(taskId, sessionId, click.userEntryId) as { event_seq: number } | undefined;
-  if (!row) return null;
+  const seq = clickEventSeq(db, taskId, sessionId, click.userEntryId);
+  if (seq === null) return null;
   const revisionNo = Number((db.prepare("SELECT COALESCE(MAX(revision_no), 0) AS n FROM revision WHERE task_id = ? AND event_seq < ?")
-    .get(taskId, row.event_seq) as { n: number }).n);
+    .get(taskId, seq) as { n: number }).n);
   return { source: "card", agreed: click.optionKey === COMPLETE_KEY, revisionNo, optionText: click.optionText };
 }
 
