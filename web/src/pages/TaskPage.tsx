@@ -88,19 +88,20 @@ export function TaskPage({ taskId }: { taskId: string }) {
           const reviewDone = items.length > 0 && counts.pending === 0 && counts.failed === 0;
           const confirmed = items.filter((i) => !isUnread(i)).length;
           const latest = items.reduce((m, i) => Math.max(m, i.revision_no), 0);
-          // 不评审的集合（问题、领域说明之类）不写「评审通过 0/N」。
+          // 不评审的集合（问题、领域说明之类）不写「评审通过 0/N」。空的集合两枚标签都不写：0/0 不说明什么，琥珀色留给真正要处理的事。
           const reviewed_ = needsReview(task, coll.name);
+          const empty = items.length === 0;
           return (
             <div className="card" key={coll.name} data-testid={`board-${coll.name}`}>
               <div className="muted small">{coll.name}（编号前缀 {coll.prefix}）</div>
               <div><span className="count">{items.length}</span> 个条目</div>
               <div className="chips">
                 {items.length > 0 && <span className="chip">最后改在修订 {latest}</span>}
-                {reviewed_ && <span className={`chip ${reviewDone ? "ok" : "warn"}`} data-testid={`board-review-${coll.name}`}>评审通过 {reviewed}/{items.length}{counts.kept > 0 ? ` · 已保留写法 ${counts.kept}` : ""}</span>}
-                <span className={`chip ${confirmed === items.length && items.length ? "ok" : "warn"}`}>已读 {confirmed}/{items.length}</span>
+                {reviewed_ && !empty && <span className={`chip ${reviewDone ? "ok" : "warn"}`} data-testid={`board-review-${coll.name}`}>评审通过 {reviewed}/{items.length}{counts.kept > 0 ? ` · 已保留写法 ${counts.kept}` : ""}</span>}
+                {!empty && <span className={`chip ${confirmed === items.length ? "ok" : "warn"}`} data-testid={`board-read-${coll.name}`}>已读 {confirmed}/{items.length}</span>}
               </div>
               <div className="muted small">
-                {items.length === 0 ? "这个集合还没有条目。" : reviewed_
+                {empty ? "这个集合还没有条目。" : reviewed_
                   ? `这 ${items.length} 个条目里，${reviewed} 个在当前所在的修订上评审通过，${counts.kept > 0 ? `${counts.kept} 个评审不通过但你保留了写法（按你的决定算通过），` : ""}${confirmed} 个用户已经看过（已读）。`
                   : `这 ${items.length} 个条目里，${confirmed} 个用户已经看过（已读）。这个集合不评审。`}
               </div>
