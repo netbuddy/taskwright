@@ -135,16 +135,17 @@ test("改字段：改到的字段来源换成「用户直接修改」，没改�
   ]);
 });
 
-test("改列表字段：通知逐条列出，摘录取新值前 200 字；支持整个条目的来源保留", () => {
+test("改列表字段：通知逐条列出；「用户直接修改」只指新加的那一项，摘录取它的前 200 字；支持整个条目的来源保留", () => {
   const dir = fixture();
   const long = "很".repeat(250);
   const result = op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-002", base_revision: 1 }], fields: { 步骤: ["点注销", long] } });
   assert.ok(result.note.endsWith(`「步骤」：\n  1. 点注销\n  2. ${long}`));
   const rows = sourcesOf(dir, "UC-002", 2);
   assert.deepEqual(rows[0], { position: 1, kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。", field: null, field_index: null });
-  assert.equal(rows[1].kind, "用户直接修改");
+  assert.deepEqual([rows[1].kind, rows[1].field, rows[1].field_index], ["用户直接修改", "步骤", 1]);
   assert.equal([...rows[1].excerpt].length, 200);
-  assert.ok(rows[1].excerpt.startsWith("点注销；很"));
+  assert.equal(rows[1].excerpt, "很".repeat(200), "没改的「点注销」不算进摘录");
+  assert.equal(rows.length, 2);
 });
 
 test("清空可选字段：通知写明清空了，不给空字段写来源", () => {
