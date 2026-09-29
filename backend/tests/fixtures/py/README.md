@@ -26,3 +26,13 @@ To regenerate (only possible while `server/` is still in the repository; needs `
 ```
 TASKWRIGHT_PYTHON=.venv/bin/python node backend/tests/fixtures/py/generate.mts
 ```
+
+## Known differences
+
+The TypeScript version has since changed on purpose in ways the Python one has not. `conversation.test.ts` removes the fields
+below from the TypeScript output before comparing it with `conversation.json`, names each of them, and checks their values
+in separate assertions; everything else is still compared character for character.
+
+| File | Field | Why |
+|---|---|---|
+| `conversation.json` | `outcome` on every work summary in the conversation and on every unit of work | Each unit of work states how it ended (`replied`, `no_reply`, `stopped_by_user` or `failed`), so the page can say when the user stopped it or it failed, also after a refresh. |

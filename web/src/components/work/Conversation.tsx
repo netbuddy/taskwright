@@ -33,7 +33,7 @@ export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, working = false, hint = null, starting = false, revisionsOfReply, onRevisionTag, onShowReviews,
+  hold = false, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, onShowReviews,
 }: {
   messages: ConversationMessage[];
   currentWork: CurrentWork | null;
@@ -68,6 +68,8 @@ export function Conversation({
   starting?: boolean;
   /** 一条回复产生了哪几次修订（按工作编号从修订日志里取）。 */
   revisionsOfReply?: (reply: AssistantReply) => number[];
+  /** 一次工作产生了哪几次修订（按工作编号从修订日志里取）；被停下或出错停下的那一轮在说明下面带修订小标签。 */
+  revisionsOfWork?: (workId: string) => number[];
   onRevisionTag?: (revisions: number[]) => void;
 }) {
   // 附件按钮可选的文件类型取自服务信息；还没取到时不过滤，由后端拒绝。
@@ -106,7 +108,8 @@ export function Conversation({
             disabled={disabled} hold={hold} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
-            revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply) : []} onRevisionTag={onRevisionTag}
+            revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
+              : m.type === "work_summary" && revisionsOfWork ? revisionsOfWork((m as WorkSummary).work_id) : []} onRevisionTag={onRevisionTag}
             onShowReviews={onShowReviews} />
         ))}
         {outgoing.map((m) => (
@@ -280,7 +283,7 @@ function MessageView({ message, task, handlers, disabled, hold, working, answere
       );
     }
     case "work_summary":
-      return <WorkSummaryLine summary={message as WorkSummary} />;
+      return <WorkSummaryLine summary={message as WorkSummary} revisions={revisions} onRevisionTag={onRevisionTag} />;
     default:
       return null;
   }
@@ -306,9 +309,28 @@ function StageLine({ stage, index }: { stage: NonNullable<WorkSummary["stages"]>
   );
 }
 
-export function WorkSummaryLine({ summary }: { summary: WorkSummary }) {
+/** 出错停下的那一轮，摘要行下面的说明。这一轮没有保存修订时「已经保存的修订」指此前各轮保存的，照样成立。 */
+export const FAILED_NOTE = "这一轮因为出错停下了，助手没有做完。已经保存的修订保留着；你可以再说一句，让它接着做。";
+
+/** 被用户停下的那一轮，摘要行下面的说明：这一轮保存过的修订都列上，一次也没保存时换成「这一轮还没有保存任何修订」。 */
+export function stoppedNote(revisions: number[]): string {
+  const saved = revisions.length ? `已经保存的修订 ${revisions.join("、")} 保留着` : "这一轮还没有保存任何修订";
+  return `这一轮是你让助手停下的。${saved}；停下时它正在做的那一步没有做完，没有保存。`;
+}
+
+/**
+ * 过程摘要：收成一行「助手做了 N 步，用了 X ▸ 展开看做了什么」，点开是合并后的阶段。
+ * 这一轮被用户停下或者出错停下时，下面加一行琥珀色的说明；这一轮保存过修订时再带「产生了修订 N」，点它在「修订」页签里看。
+ */
+export function WorkSummaryLine({ summary, revisions = [], onRevisionTag }: {
+  summary: WorkSummary;
+  /** 这一轮保存过的修订。 */
+  revisions?: number[];
+  onRevisionTag?: (revisions: number[]) => void;
+}) {
   const [open, setOpen] = useState(false);
   const head = `助手做了 ${summary.step_count} 步，用了 ${formatSeconds(summary.seconds)}`;
+  const endNote = summary.outcome === "stopped_by_user" ? stoppedNote(revisions) : summary.outcome === "failed" ? FAILED_NOTE : null;
   return (
     <>
       {summary.understanding && (
@@ -324,6 +346,17 @@ export function WorkSummaryLine({ summary }: { summary: WorkSummary }) {
           {summary.stages?.length
             ? summary.stages.map((s, i) => <StageLine key={i} stage={s} index={i} />)
             : <div className="pline"><span className="ptxt">这次工作没有记下过程。</span></div>}
+        </div>
+      )}
+      {endNote && (
+        <div className="proc stopnote" data-testid="work-end-note">
+          <div className="pline"><span className="ptxt">{endNote}</span></div>
+        </div>
+      )}
+      {endNote && revisions.length > 0 && (
+        <div>
+          <span className="sw-revtag" role="button" title="在右侧的「修订」页签里看这几次修订" onClick={() => onRevisionTag?.(revisions)}
+            data-testid="work-end-revisions">产生了修订 {revisions.join("、")}</span>
         </div>
       )}
     </>

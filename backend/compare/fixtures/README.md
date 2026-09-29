@@ -26,8 +26,8 @@ They can only be regenerated while `server/` is still in the repository.
 ## Known differences from the saved outputs
 
 The TypeScript task service has since changed on purpose in several ways the Python one has not. The saved outputs are not
-regenerated for these changes, so `sessions.mts --against fixtures` reports the nine parts below as different, and only these
-(besides values that differ only by the port the fake model endpoint listened on). All nine go away when the Python version
+regenerated for these changes, so `sessions.mts --against fixtures` reports the twenty-three parts below as different, and only these
+(besides values that differ only by the port the fake model endpoint listened on). All of them go away when the Python version
 and these saved outputs are retired.
 
 | Scenario and part | What differs | Why |
@@ -41,6 +41,8 @@ and these saved outputs are retired.
 | `review_gate`, event stream | The review progress, recorded review, batch and finish events of step 07 name UC-002 instead of UC-001; the recorded review has `forced` false and the batch has no `forced` list. | Same change. |
 | `review_gate`, archives | The extension's answers to steps 05 to 07, the session file line and the messages about the review name UC-002, and the reviewer's prompt is the one for UC-002. | Same change. |
 | `review_gate`, observatory | The same three answers as read by the observatory, and the events written by the reviewing tool call have no `forced`. | Same change. |
+| Every scenario but `fake_model`, observations and event stream | Each work summary, as an event and in the conversation read back, has `outcome`: `"replied"` everywhere except the turn stopped in `service`, which has `"stopped_by_user"`. The `outcome` of `work_ended` is unchanged. | A work summary now says how the turn ended, with the same values as `work_ended`, so the page can say so under the summary line, also after a refresh. |
+| `service`, observations and event stream | The turn stopped before the assistant called a tool or replied now has a work summary (0 steps, `stopped_by_user`): one more `work_summary` event before its `work_ended`, and one more message in the conversation, so the later events and messages move by one (76 and 209 differences in the latest run). | A turn that was stopped or failed counts as a work even without a step or a reply, so the page can say it was stopped; before, a failed turn disappeared after a refresh. |
 
 What step 12 used to check, a direct action while the assistant is not running, is now covered by the backend tests in
 `backend/tests/session_resume.test.ts` (after the assistant exited, before it was started, when resuming finds a different
