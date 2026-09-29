@@ -29,6 +29,8 @@ export type Stack = {
   taskId: string; session: string; dir: string;
   /** 后端实际监听的端口与后端进程的进程号。 */
   port: number; pid: number;
+  /** 假端点到此为止收到的请求（每项的「请求体」是模型收到的原样请求）。 */
+  requests: () => Dict[];
   db: (sql: string, ...args: string[]) => Dict[];
   send: (body: Dict) => Promise<void>;
   action: (body: Dict) => Promise<{ status: number; body: any }>;
@@ -36,11 +38,14 @@ export type Stack = {
   entryOfCall: (callId: string) => string;
 };
 
-/** 起一套验证栈（假端点、真后端、真 pi），建任务与会话，交给 body；结束时停掉。 */
-export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>): Promise<void> {
+/**
+ * 起一套验证栈（假端点、真后端、真 pi），建任务与会话，交给 body；结束时停掉。
+ * autoIntent 为真（缺省）时假端点在用户说话之后第一个只有工具调用的回答前面自动补一段理解；测理解门禁时关掉，由脚本自己写。
+ */
+export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>, { autoIntent = true } = {}): Promise<void> {
   const dir = join(tmp, name);
   mkdirSync(dir, { recursive: true });
-  const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent: true }).start();
+  const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent }).start();
   const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(dir, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(dir, "logs") };
   for (const name of DROPPED_ENV) delete env[name];
   const { child, port } = await spawnBackend(["--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--host", "127.0.0.1"],
@@ -85,7 +90,7 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
       return readFileSync(file, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
         .find((e) => e.type === "message" && (e.message?.content ?? []).some((p: Dict) => p?.type === "toolCall" && p.id === callId)).id;
     };
-    await body({ call, taskId, session, dir, port, pid: child.pid!, db, send, action, entryOfCall });
+    await body({ call, taskId, session, dir, port, pid: child.pid!, requests: () => fake.requests(), db, send, action, entryOfCall });
   } finally {
     if (child.exitCode === null) {
       await new Promise<void>((ok) => {

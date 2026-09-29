@@ -5,6 +5,10 @@
  *    改规则之前同一次修订再评审被拒。
  * 3. 助手工作中途让它停下：停下请求返回 cleared（对话严格轮替，总是空的），这一轮的摘要与结束消息的结束原因都是 stopped_by_user，
  *    两处的步数相同。
+ * 4. 理解的门禁（假端点不自动补理解，由脚本写）：没写理解就调回复被拒、查看类工具不拦；理解写错被拒之后重写通过；
+ *    卡片点击合成的那句话不需要理解。
+ * 5. 「回复」工具与兜底：同一轮混入别的工具时回复被拒、单独重发后通过；模型直接输出正文时兜底追加一句提醒；
+ *    连续兜底两次仍不合格就不再追加。
  * 后端测试里别的几份用假的 pi 或直接喂事件，只核对各自那一段；这三种要整条链路一起走才看得到。
  */
 
@@ -166,4 +170,114 @@ test("助手工作中途让它停下：返回的 cleared 是空的，这一轮�
     } finally {
       stream.close();
     }
+  }));
+
+// ───────────── 理解的门禁 ─────────────
+
+const GATE = "先按 schema 写下你对用户这句话的理解";
+const understanding = (...acts: Dict[]) => "```json\n" + JSON.stringify({ acts }) + "\n```";
+const REQUEST = { function: "request", confidence: "high", summary: "把材料整理成用例" };
+const call = (id: string, name: string, args: Dict = {}) => ({ id, name, arguments: args });
+const replyCall = (id: string, text: string, act: Dict | null = null) => call(id, "reply", { informs: [], act, text });
+/** 被工具拒绝的调用：调用编号 → 事实与指引两层文字连在一起。 */
+const rejections = (db: (sql: string) => Dict[]) =>
+  new Map(db("SELECT call_id, fact, guidance FROM tool_rejection").map((r: Dict) => [r.call_id, `${r.fact}\n${r.guidance}`]));
+/** 这条会话的对话记录里助手经「回复」说的话。 */
+async function replies(call: (m: string, p: string) => Promise<{ body: any }>, taskId: string, session: string): Promise<string[]> {
+  const body = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body;
+  return body.messages.filter((m: Dict) => m.type === "assistant_reply").map((m: Dict) => m.text);
+}
+/** 一个模型请求里各条消息的角色与文字。 */
+const messageTexts = (request: Dict): [string, string][] => request["请求体"].messages.map((m: Dict) =>
+  [m.role, typeof m.content === "string" ? m.content : (m.content ?? []).map((p: Dict) => p.text ?? "").join("")]);
+
+test("理解的门禁：没写理解就调回复被拒，查看类工具不拦；写上理解之后回复送达", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "intent-gate", { sequence: [
+    { tool_calls: [call("call-status", "get_task_status")] },
+    { tool_calls: [replyCall("call-reply-1", "没什么。")] },
+    { text: understanding({ function: "other", confidence: "high", summary: "寒暄" }), tool_calls: [replyCall("call-reply-2", "没什么。")] },
+  ] }, async ({ call, taskId, session, db, send }) => {
+    await send({ text: "你好。", client_id: "c-1" });
+    const refused = rejections(db);
+    assert.ok(!refused.has("call-status"), "查看类工具不拦");
+    assert.ok(refused.get("call-reply-1")?.includes(GATE), "没写理解就调回复被拒");
+    assert.ok(!refused.has("call-reply-2"));
+    assert.deepEqual(await replies(call, taskId, session), ["没什么。"]);
+  }, { autoIntent: false }));
+
+test("理解的门禁：理解写错被拒，拒绝理由附上解析失败的原因；重写之后保存通过，修订带上这份理解的编号，不记失败", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "intent-rewrite", { sequence: [
+    { text: understanding({ function: "agree", confidence: "high", summary: "整理" }), ...save("call-save-1", "借书") },
+    { text: understanding(REQUEST), ...save("call-save-2", "借书") },
+    { tool_calls: [replyCall("call-reply", "存好了。")] },
+  ] }, async ({ db, send }) => {
+    await send({ text: "把材料整理成用例。", client_id: "c-1" });
+    const refused = rejections(db);
+    assert.ok(refused.get("call-save-1")?.includes(GATE));
+    assert.ok(refused.get("call-save-1")?.includes('function 写的是 "agree"'), "拒绝理由附上解析失败的原因");
+    assert.ok(!refused.has("call-save-2") && !refused.has("call-reply"));
+    assert.deepEqual(db("SELECT revision_no, call_id, intent_act_id FROM revision"), [{ revision_no: 1, call_id: "call-save-2", intent_act_id: "r1-1" }]);
+    assert.deepEqual(db("SELECT name FROM event WHERE name IN ('USER_INTENT_INVALID', 'USER_INTENT_MISSING')"), [], "重写之后这一轮有了理解，不记失败");
+  }, { autoIntent: false }));
+
+test("理解的门禁：卡片点击合成的那句话不需要理解，点击之后的回复照样送达，记一条回应那张卡片的告知", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "intent-card", { sequence: [
+    { text: understanding(REQUEST), ...save("call-save", "借书") },
+    { tool_calls: [replyCall("call-choose", "逾期的读者能不能续借？", { kind: "choose", text: "逾期的读者能不能续借？",
+      items: [{ item_id: "UC-001", revision_no: 1 }], options: [{ key: "allow", text: "允许续借" }, { key: "deny", text: "不允许续借" }] })] },
+    { tool_calls: [replyCall("call-after-click", "记下了，逾期的读者不能续借。")] },
+  ] }, async ({ call, taskId, session, db, send, entryOfCall }) => {
+    await send({ text: "整理一下，有不清楚的问我", client_id: "c-1" });
+    await send({ text: "我选：不允许续借", client_id: "k-1", origin: "card_choice",
+      card: { reply_message_id: entryOfCall("call-choose"), kind: "choose", choice: "deny" } });
+    assert.equal((await replies(call, taskId, session)).at(-1), "记下了，逾期的读者不能续借。", "点击之后助手没写理解，回复照样送达");
+    assert.ok(!rejections(db).has("call-after-click"));
+    assert.deepEqual(db("SELECT name FROM event WHERE name = 'USER_INTENT_INVALID'"), []);
+    const acts = db("SELECT act_id, speaker, function, origin, responds_to, summary FROM dialogue_act ORDER BY rowid");
+    const choose = acts.find((a: Dict) => a.function === "choose")!;
+    const click = acts.find((a: Dict) => a.origin === "ui")!;
+    assert.deepEqual([click.speaker, click.function, click.responds_to], ["user", "inform", choose.act_id]);
+    assert.match(click.summary, /不允许续借/);
+  }, { autoIntent: false }));
+
+// ───────────── 「回复」工具与兜底 ─────────────
+
+const FALLBACK_TEXT = "请用 reply 工具把要对用户说的话发出来";
+
+test("回复：同一轮混入别的工具调用时回复被拒，拒绝理由交还给模型；单独重发之后送达", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "reply-mixed", { sequence: [
+    { tool_calls: [call("call-ls", "ls", { path: "docs" }), replyCall("call-reply-1", "我看了目录。")] },
+    { tool_calls: [replyCall("call-reply-2", "我看了目录，里面有任务定义与领域规矩。")] },
+  ] }, async ({ call, taskId, session, db, send, requests }) => {
+    await send({ text: "目录里有什么？", client_id: "c-1" });
+    const refused = rejections(db);
+    assert.ok(!refused.has("call-ls"));
+    assert.ok(refused.get("call-reply-1")?.includes("回复必须单独调用，不能与其他工具同一轮"));
+    assert.ok(!refused.has("call-reply-2"));
+    const sent = requests();
+    assert.equal(sent.length, 2, "被拒之后正好再请求了一次模型");
+    assert.ok(messageTexts(sent[1]).some(([role, text]) => role === "tool" && text.includes("回复必须单独调用")), "拒绝理由在下一次请求里交还给了模型");
+    assert.deepEqual(await replies(call, taskId, session), ["我看了目录，里面有任务定义与领域规矩。"]);
+  }));
+
+test("回复的兜底：模型直接输出正文时追加一句提醒，模型第二次经回复说话", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "reply-fallback", { sequence: [
+    { text: "材料里一共有三个流程。" },
+    { tool_calls: [replyCall("call-reply", "材料里一共有三个流程。")] },
+  ] }, async ({ call, taskId, session, db, send, requests }) => {
+    await send({ text: "材料里有几个流程？", client_id: "c-1" });
+    const sent = requests();
+    assert.equal(sent.length, 2);
+    assert.deepEqual(messageTexts(sent[1]).at(-1), ["user", FALLBACK_TEXT], "第二次请求的最后一条是追加的提醒");
+    assert.ok(!rejections(db).has("call-reply"));
+    assert.deepEqual(await replies(call, taskId, session), ["材料里一共有三个流程。"]);
+  }));
+
+test("回复的兜底：连续兜底两次仍不合格就不再追加", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "reply-fallback-twice", { default: { text: "我直接说话。" } }, async ({ send, requests }) => {
+    await send({ text: "你好。", client_id: "c-1" });
+    await sleep(1000);
+    const sent = requests();
+    assert.equal(sent.length, 3, "说话一次、兜底两次，之后不再请求模型");
+    assert.deepEqual(messageTexts(sent[2]).filter(([role, text]) => role === "user" && text === FALLBACK_TEXT).length, 2);
   }));
