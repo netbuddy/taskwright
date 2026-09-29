@@ -199,6 +199,8 @@ A button whose result must be written to the database goes through `/actions` (s
 | ask (on an issue item) | Keep pending | `/actions`, kind `keep_pending`, `notify_executor: true` |
 | ask (on items) | I don't know, fill in from common sense | `/messages` |
 
+A Choose card that asks whether the task is finished has an option with `key` `complete` (text 已完成，提交交付物) and one with the text 还没完成，继续修改 ("not finished, keep editing"). The agent's `complete_task` succeeds only when the latest click on such a card was on `complete` and the deliverable has had no new revision since; typed messages do not count.
+
 ### 5.5 While the agent is working
 
 New messages and direct operations are refused with `session_busy` (see 5.1); the one exception is `mark_viewed` without `notify_executor` (opening an item's details), which does not change the deliverable and is accepted while the agent works. `POST …/control?session=…` with `{"action": "stop"}` aborts the work; writes already saved stay. When the model service is unavailable, pi retries and the server sends `problem` with code `model_unavailable`.
@@ -214,9 +216,9 @@ After resuming or switching, the service checks that pi reports the requested se
 `POST …/actions?session={session_id}`:
 
 ```
-{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review" | "waive_review" | "unwaive_review" | "set_review_rules",
+{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "unconfirm" | "keep_pending" | "undo" | "request_review" | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable",
   "targets": [ { "item_id": "UC-002", "base_revision": 3 } ],  // the item's revision when you opened it; for undo: "revision_no"
-  "fields": { "基本流程": ["…", "…"] },                          // edit_fields only: complete new values
+  "fields": { "基本流程": ["…", "…"] },                          // edit_fields: complete new values; submit_deliverable: { "revision_no": N }
   "notify_executor": false }
 ```
 
@@ -232,6 +234,7 @@ Response `{ok, client_id, op_id}`; the result arrives as events carrying the sam
 8. `set_review_rules` sets which optional rules of a collection are switched off or made required: `targets` is empty and `fields` is `{ "collection": …, "off": [rule ids], "promote": [rule ids] }`. It updates the task definition copy in the task directory and in the database, and is rejected for required rules, unknown rule ids, a collection without review rules, or no change. Existing reviews are kept; the rule fingerprint changes, so the collection's items wait for review again.
 9. On a closed task every operation returns `task_closed`.
 10. While the agent is working every operation returns `session_busy` with `data.reason` `working`, except `mark_viewed` without `notify_executor`.
+11. `submit_deliverable` completes the task on the user's behalf: the web interface sends it when the user clicks 已完成，提交交付物 ("finished, submit the deliverable") on the green bar above the items and then 提交 ("submit") in the confirmation. `targets` is empty and `fields` is `{ "revision_no": N }`, the latest revision of the deliverable the page showed. It runs the same checks as the agent's `complete_task`, and the click itself is the user's agreement. When a completion condition is not met it is refused with `rejected` and a message starting 任务没有标为已完成。 ("the task was not marked completed") followed by what is missing. When N is not the deliverable's latest revision it is refused with `rejected` and 这次没有提交：你看到的是修订 N，交付物现在已经是修订 M。请看过现在的内容再提交。 ("not submitted: you saw revision N, the deliverable is now at revision M; look at the current content and submit again"). Otherwise the task becomes 已完成: `task_changed` is sent with `actor` `user` and without `op_id`, and an interface-action note is appended to the session (`kind` `submit_deliverable`): 界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 N）。任务已标为已完成，交付物不能再改，仍然可以生成文档。 It does not start the agent's work, and it cannot be undone. Clients should not show "saving" for it. The interface shows the bar only while the task is in progress, `completion.all_met` is true, the agent is not working and the session has no unanswered Choose card with an option of `key` `complete` (see 5.4).
 
 ## 7 Fixed sentences sent to the agent
 

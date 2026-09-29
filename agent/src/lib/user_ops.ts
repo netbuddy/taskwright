@@ -28,6 +28,10 @@
  * - 改评审规则（set_review_rules）：改一个集合「评审规矩」里的「关闭」「升为必选」两项，同时改任务目录里的任务定义副本与库里的快照，
  *   记 REVIEW_RULES_CHANGED。必选规则不能关（与任务定义校验同一套核对）。规则指纹随之变化，这个集合的条目都回到待评审；已有评审记录不动。
  *
+ * 提交交付物（submit_deliverable）也只有用户能做：用户在页面的提示条上点「已完成，提交交付物」并在确认框里点「提交」。
+ * fields 写页面当时看到的修订号 revision_no；与执行者的「完成任务」同一个核心函数 completeTask 核对（先完成条件，再同意：
+ * 这次点击就是同意，修订号要是现在的），发起方记用户。任务标为已完成，往会话里追加一句说明，不引出执行者的运行。
+ *
  * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_revision、undo_conflict、
  * task_closed、no_task、rejected、bad_request）和给人看的一句中文，data 里放细节。本模块不依赖 pi。
  */
@@ -40,6 +44,8 @@ import { DefinitionError, KEEP_PENDING_STATUS, validateDefinition } from "./defi
 import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
 import { SaveRejected, type Source, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { NoDatabaseYet, SOURCE_USER_EDIT, TASK_ACTIVE, acceptsUserEditSource, withTaskDatabase } from "./schema.ts";
+import { completeTask } from "./complete_task.ts";
+import { ToolRejection } from "./tool_rejection.ts";
 
 /** 「用户直接修改」来源的摘录最多取新值的前这么多个字。 */
 export const USER_EDIT_EXCERPT_LIMIT = 200;
@@ -49,7 +55,8 @@ export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
 export const EVENT_REVIEW_WAIVED = "REVIEW_WAIVED";
 export const EVENT_REVIEW_UNWAIVED = "REVIEW_UNWAIVED";
 export const EVENT_REVIEW_RULES_CHANGED = "REVIEW_RULES_CHANGED";
-export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "unconfirm", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules"] as const;
+export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "unconfirm", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules",
+  "submit_deliverable"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
 export { KEEP_PENDING_STATUS };
@@ -150,6 +157,7 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
     throw new UserOpError("bad_request", `操作种类 kind 写的是 ${JSON.stringify(request.kind)}，只能是 ${USER_OP_KINDS.join("、")} 之一。`);
   }
   if (kind === "set_review_rules") return setReviewRules(ctx, opId, request);
+  if (kind === "submit_deliverable") return submitDeliverable(ctx, opId, request);
   if (!Array.isArray(request.targets) || request.targets.length === 0) {
     throw new UserOpError("bad_request", "targets 应当是一个不为空的列表。");
   }
@@ -643,6 +651,36 @@ function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult 
   return {
     op_id: opId, kind: "unwaive_review", event_seqs: [seq], results: items, revision_no: null,
     note: `界面操作（不是用户打的字）：用户撤销了对 ${itemsPhrase(items)} 的保留，这些条目重新算作评审不通过。`,
+    notify_text: null, undoable: false,
+  };
+}
+
+/** 提交交付物：见文件头。fields 写 { revision_no }，页面当时看到的修订号。 */
+function submitDeliverable(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
+  const fields = isObject(request.fields) ? request.fields : {};
+  const revisionNo = fields.revision_no;
+  if (!Number.isInteger(revisionNo) || (revisionNo as number) < 0) {
+    throw new UserOpError("bad_request", "submit_deliverable 要在 fields 里写 revision_no：页面当时看到的修订号，一个不小于 0 的整数。");
+  }
+  let outcome;
+  try {
+    withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
+      const task = db.prepare("SELECT status FROM task ORDER BY started_at LIMIT 1").get() as { status: string } | undefined;
+      if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再提交。`, { status: task.status });
+    });
+    outcome = completeTask({ workspaceDir: ctx.workspaceDir, sessionId: ctx.sessionId, callId: opId,
+      consent: { source: "page", revisionNo: revisionNo as number }, actor: ACTOR_USER });
+  } catch (error) {
+    if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+    // 完成条件没满足、修订号不是现在的：说明给用户看，只取事实一层（指引一层是写给执行者的）。
+    if (error instanceof ToolRejection) throw new UserOpError("rejected", error.fact, { reasons: [error.fact] });
+    throw error;
+  }
+  return {
+    op_id: opId, kind: "submit_deliverable", event_seqs: [outcome.details.event_seq], results: [], revision_no: null,
+    note: `界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 ${revisionNo}）。` +
+      "任务已标为已完成，交付物不能再改，仍然可以生成文档。",
     notify_text: null, undoable: false,
   };
 }

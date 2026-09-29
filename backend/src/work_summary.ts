@@ -158,7 +158,7 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
     return failed ? `查看条目 ${item} 没有成` : done ? `查看了条目 ${item}` : `正在查看条目 ${item}`;
   }
   if (tool === "get_task_status") return failed ? "查看任务状态没有成" : done ? "查看了任务状态" : "正在查看任务状态";
-  if (tool === "complete_task") return failed ? "完成任务被拒，完成条件还没满足" : done ? "把任务标为已完成" : "正在完成任务";
+  if (tool === "complete_task") return failed ? "完成任务没有做成" : done ? "把任务标为已完成" : "正在完成任务";
   if (tool === "request_review") {
     if (failed) return "请评审者评审没有做成";
     if (!done) return "正在请评审者评审";
