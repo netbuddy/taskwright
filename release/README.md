@@ -20,7 +20,7 @@ The payload repeats the repository's layout, so the backend finds its resources 
 | `backend/src/*.js`, `backend/package.json` | The task service. Every file it imports has its types removed and its `.ts` imports rewritten to `.js`; the backend's tests, comparison scripts and fake model endpoint are left out. |
 | `agent/` | The pi extension and its prompts (`src/`, `prompts/`, `package.json`). The library files the backend imports are there twice: `.ts` for pi, which loads the extension through jiti, and `.js` for the backend. |
 | `task-types/` | The task type templates. |
-| `backend/profiles/`, `backend/prompts/` | The launch profiles (the packages use `desktop.json`) and the executor's system prompt. |
+| `backend/profiles/desktop.json`, `backend/prompts/` | The launch profile the packages start with (the development and test profiles are left out) and the executor's system prompt. |
 | `web/` | The built web interface, served by the backend (`--web`). |
 | `pi/` | The part of the installed pi package that pi loads at run time, about 15 MB of the 400 MB npm installs. |
 | `tools/` | rg (ripgrep) and fd for the target platform, with their licence files. |

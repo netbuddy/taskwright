@@ -276,7 +276,9 @@ async function stagePayload({ work, cache, target, piDir, webDist, nodeVersion }
   copyTree(path.join(REPO, "agent", "src"), path.join(payload, "agent", "src"));
   copyTree(path.join(REPO, "agent", "prompts"), path.join(payload, "agent", "prompts"));
   copyTree(path.join(REPO, "task-types"), path.join(payload, "task-types"));
-  copyTree(path.join(REPO, "backend", "profiles"), path.join(payload, "backend", "profiles"));
+  // Only the profile the package starts with; the development and test profiles (dev.json, fake.json) stay out of it.
+  fs.mkdirSync(path.join(payload, "backend", "profiles"), { recursive: true });
+  fs.copyFileSync(path.join(REPO, "backend", "profiles", "desktop.json"), path.join(payload, "backend", "profiles", "desktop.json"));
   copyTree(path.join(REPO, "backend", "prompts"), path.join(payload, "backend", "prompts"));
   const product = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
   fs.writeFileSync(path.join(payload, "package.json"), JSON.stringify({ name: product.name, version: product.version, private: true }, null, 2) + "\n");
