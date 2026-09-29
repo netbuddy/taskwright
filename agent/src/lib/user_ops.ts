@@ -14,8 +14,9 @@
  *   看过的条目撤回之后仍算看过（见 conditions.ts）。
  * 旧库里还可能有依据为「用户的话」的标记，那是早期版本由执行者登记的，读取一侧照旧认。
  *
- * 改字段与「标为先不管」改到的字段，来源换成一条「用户直接修改」（出处是操作编号，摘录是新值的前 200 字），
- * 没改的字段来源沿用条目上一次修订时的来源；加入第四种来源之前建的库不认这一种，那样的库沿用旧做法。
+ * 改字段与「标为先不管」：用户改写了的内容（一个普通字段，或列表里的一项）来源换成「用户直接修改」（出处是操作编号，
+ * 摘录是用户写出的新内容的前 200 字），没动的内容来源保留、位置跟着内容走（规则见 withUserEditSources）；
+ * 加入第四种来源之前建的库不认这一种，那样的库只把原来的来源挪到对的位置。
  * 追加进会话的通知正文带上改后的字段值，执行者不必另去查（同节第 4 条）。
  *
  * 评审（request_review）也是一种界面操作，但它不写修订、要调模型、要跑很久：这里只做 checkReviewRequest 那一步核对，
@@ -40,9 +41,10 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
-import { DefinitionError, KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
+import { DefinitionError, FIELD_ITEM_REF, FIELD_TEXT_LIST, KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
 import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
-import { SaveRejected, type Source, isEmptyValue, saveRevision } from "./save_revision.ts";
+import { SaveRejected, type Source, type Support, isEmptyValue, saveRevision } from "./save_revision.ts";
+import { alignList, carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_USER_EDIT, TASK_ACTIVE, acceptsUserEditSource, withTaskDatabase } from "./schema.ts";
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
@@ -254,6 +256,10 @@ interface Inspected {
   revisionNo?: number;
   /** 改字段与标为先不管时：每个目标条目在当前所在修订下的来源。 */
   sources?: Map<string, Source[]>;
+  /** 改字段与标为先不管时：每个目标条目在当前所在修订下的全部字段（改之前的内容）。 */
+  fields?: Map<string, Record<string, unknown>>;
+  /** 改字段与标为先不管时：每个目标条目所在集合的列表型字段（文本列表、条目引用）的名字。 */
+  listFields?: Map<string, Set<string>>;
   /** 这个库的来源表认不认「用户直接修改」。 */
   userEditOk?: boolean;
 }
@@ -283,29 +289,52 @@ function valueText(value: unknown): string {
 }
 
 /**
- * 给一个直接改字段的操作配上来源：条目上一次修订时的来源里，支持改到的字段的那几处去掉（去掉之后什么都不支持的来源整条去掉，
- * 本来就支持整个条目的来源保留）；每个改到、而且新值不为空的字段各加一条「用户直接修改」。
- * 库不认这一种时不写 sources，沿用上一次修订时的来源（旧做法）。
+ * 给一个直接改字段的操作配上来源。原来的来源按内容跟着走（lib/source_carry.ts，与助手修改时同一个函数）：
+ * - 用户没动的内容：来源保留；列表插入、删除别的项、调换先后之后，序号改指原来那一项；
+ * - 列表里删掉的项、清空的字段：指到它的那一处去掉；
+ * - 用户改写了的内容（整个改了的普通字段，列表里原地改了文字的项）：原来的那一处去掉，因为内容是用户本人改的，以用户为准，
+ *   而用户在页面上没有办法去掉一条对不上的来源；指整个列表的来源留着（它仍支持没改的那几项）；
+ * - 去掉之后什么都不支持的来源整条去掉，本来就支持整个条目的来源保留。
+ * 然后给用户写出的新内容各加一条「用户直接修改」：普通字段指整个字段；列表字段只指新加的与改写的那几项（合成一条，摘录是这几项的文字），
+ * 只调换先后或只删项时不加。
+ * 库不认「用户直接修改」这一种时（加入第四种来源之前建的库），只把原来的来源按内容挪到对的位置，不去掉改写处的来源，也不加新来源；
+ * 这样挪完一条都不剩时不写 sources，沿用上一次修订时的来源（旧做法）。
  */
 function withUserEditSources(operation: Record<string, unknown>, state: Inspected, opId: string, changed: Record<string, unknown>) {
-  if (!state.userEditOk) return operation;
-  const previous = state.sources?.get(operation.item as string) ?? [];
-  const names = new Set(Object.keys(changed));
+  const item = operation.item as string;
+  const previous = state.sources?.get(item) ?? [];
+  const before = state.fields?.get(item) ?? {};
+  const lists = state.listFields?.get(item) ?? new Set<string>();
+  const after: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries({ ...before, ...changed })) if (!isEmptyValue(value)) after[name] = value;
+  const carried = carrySources(previous, before, after, lists);
+  if (!state.userEditOk) return carried.kept.length ? { ...operation, sources: carried.kept } : operation;
+
+  // 用户改写了的那几处：普通字段与列表里的某一项；指整个列表的不算。
+  const rewritten = new Map<Source, Support[]>(carried.rewritten.map((one) =>
+    [one.source, one.supports.filter((support) => !(lists.has(support.field) && support.index === undefined))]));
   const kept: Source[] = [];
-  for (const source of previous) {
-    if (source.supports.length === 0) {
-      kept.push(source);
-      continue;
-    }
-    const supports = source.supports.filter((support) => !names.has(support.field));
-    if (supports.length > 0) kept.push({ ...source, supports });
+  for (const source of carried.kept) {
+    const gone = rewritten.get(source) ?? [];
+    const supports = source.supports.filter((support) => !gone.some((one) => one.field === support.field && one.index === support.index));
+    if (source.supports.length === 0 || supports.length > 0) kept.push(supports.length === source.supports.length ? source : { ...source, supports });
   }
   for (const [field, value] of Object.entries(changed)) {
     if (isEmptyValue(value)) continue;
-    kept.push({ kind: SOURCE_USER_EDIT, locator: opId, excerpt: [...valueText(value)].slice(0, USER_EDIT_EXCERPT_LIMIT).join(""), supports: [{ field }] });
+    if (!lists.has(field) || !Array.isArray(value)) {
+      kept.push({ kind: SOURCE_USER_EDIT, locator: opId, excerpt: [...valueText(value)].slice(0, USER_EDIT_EXCERPT_LIMIT).join(""), supports: [{ field }] });
+      continue;
+    }
+    // 列表字段：原样还在的项（内容完全相同）之外，新加的与改写的项。
+    const old = Array.isArray(before[field]) ? (before[field] as unknown[]) : [];
+    const same = new Set(alignList(old, value).filter((fate) => fate.to !== null && !fate.rewritten).map((fate) => fate.to as number));
+    const fresh = value.map((_, index) => index).filter((index) => !same.has(index) && !isEmptyValue(value[index]));
+    if (!fresh.length) continue;
+    kept.push({ kind: SOURCE_USER_EDIT, locator: opId, excerpt: [...valueText(fresh.map((index) => value[index]))].slice(0, USER_EDIT_EXCERPT_LIMIT).join(""),
+      supports: fresh.map((index) => ({ field, index })) });
   }
   if (kept.length === 0) {
-    kept.push({ kind: SOURCE_USER_EDIT, locator: opId, excerpt: `用户清空了${[...names].map((n) => `「${n}」`).join("、")}`, supports: [] });
+    kept.push({ kind: SOURCE_USER_EDIT, locator: opId, excerpt: `用户清空了${Object.keys(changed).map((n) => `「${n}」`).join("、")}`, supports: [] });
   }
   return { ...operation, sources: kept };
 }
@@ -390,7 +419,14 @@ function inspect(ctx: Ctx, request: UserOpRequest, kind: UserOpKind): Inspected 
       }
       if (kind === "edit_fields" || kind === "keep_pending") {
         const sources = new Map(targets.map((t) => [t.item_id, readSources(db, task.task_id, t.item_id, t.base_revision)]));
-        return { targets, sources, userEditOk: acceptsUserEditSource(db) };
+        const fields = new Map(targets.map((t) => [t.item_id, load((db.prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no = ?")
+          .get(task.task_id, t.item_id, t.base_revision) as { fields: string }).fields) as Record<string, unknown>]));
+        const listFields = new Map(targets.map((t) => {
+          const row = db.prepare("SELECT collection FROM item WHERE task_id = ? AND item_id = ?").get(task.task_id, t.item_id) as { collection: string };
+          const collection = definition.collections.find((c) => c.name === row.collection);
+          return [t.item_id, new Set((collection?.fields ?? []).filter((f) => f.type === FIELD_TEXT_LIST || f.type === FIELD_ITEM_REF).map((f) => f.name))];
+        }));
+        return { targets, sources, fields, listFields, userEditOk: acceptsUserEditSource(db) };
       }
       return { targets };
     });
