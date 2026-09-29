@@ -253,6 +253,13 @@ function isFallback(entry: Dict, fallbackText: string, textOf: (c: unknown) => s
   return m.role === "user" && textOf(m.content ?? null) === fallbackText;
 }
 
+/**
+ * 一次工作怎样结束，与推给页面的 work_ended 事件同一套取值：有回复、没有回复、被用户停下、出错停下。
+ * 按这次工作最后一条助手消息的结束方式判断：pi 把被停下的消息记为 aborted、出错的记为 error；
+ * 出错之后自动重试成功时，出错的那条仍留在会话里，但它不是最后一条，不算出错。
+ */
+export type WorkOutcome = "replied" | "no_reply" | "stopped_by_user" | "failed";
+
 export interface Work {
   work_id: string;
   user_message_id: string;
@@ -262,10 +269,12 @@ export interface Work {
   seconds: number | null;
   step_count: number;
   stages: Dict[];
+  outcome: WorkOutcome;
 }
 
 /**
- * 从当前分支上的会话条目切出每一次工作，算出过程摘要。没有调用过工具、也没有回复的那一段不算一次工作。
+ * 从当前分支上的会话条目切出每一次工作，算出过程摘要与结束原因。没有调用过工具、也没有回复的那一段不算一次工作，
+ * 被停下或出错停下的除外：那一段照样算一次工作，页面要写明它是怎样停下的。
  * call_ids 是这次工作里全部工具调用的调用编号，修订日志据此把一次修订归到产生它的那次工作。
  */
 export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallbackText: string, textOf: (c: unknown) => string, facts: CallFacts | null = null): Work[] {
@@ -277,13 +286,15 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
   const works: Work[] = [];
   let current: Dict | null = null;
   const close = () => {
-    if (current && (current.calls.length || current.reply_ids.length)) {
+    const ended = current?.last_stop === "aborted" ? "stopped_by_user" : current?.last_stop === "error" ? "failed" : null;
+    if (current && (current.calls.length || current.reply_ids.length || ended)) {
       const start = clock.parseUtcIso(current.start);
       const end = clock.parseUtcIso(current.end);
       works.push({
         work_id: `w-${py(current.user_message_id)}`, user_message_id: current.user_message_id, reply_ids: current.reply_ids,
         call_ids: current.call_ids, at: clock.fromUtcIso(current.end), seconds: start !== null && end !== null ? round1(end - start) : null,
         step_count: current.calls.length, stages: stages(current.calls, definition),
+        outcome: ended ?? (current.reply_ids.length ? "replied" : "no_reply"),
       });
     }
   };
@@ -293,12 +304,13 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
     const role = m.role;
     if (role === "user" && !isFallback(e, fallbackText, textOf)) {
       close();
-      current = { user_message_id: e.id ?? null, start: e.timestamp ?? null, end: e.timestamp ?? null, calls: [], reply_ids: [], call_ids: [] };
+      current = { user_message_id: e.id ?? null, start: e.timestamp ?? null, end: e.timestamp ?? null, calls: [], reply_ids: [], call_ids: [], last_stop: null };
       continue;
     }
     if (current === null) continue;
     current.end = or(e.timestamp, null) ?? current.end;
     if (role !== "assistant") continue;
+    current.last_stop = m.stopReason ?? null;
     for (const part of or(m.content, []) as unknown[]) {
       if (!(isObject(part) && part.type === "toolCall")) continue;
       current.call_ids.push(part.id ?? null);

@@ -340,6 +340,8 @@ export interface WorkSummary {
    *  只写了没匹配上格式的片段时「助手的理解正在重写」，一轮结束仍没有时「助手这一轮没有写下理解」；
    *  界面点击替用户发的那句话没有这一行，为空。 */
   understanding?: string | null;
+  /** 这次工作怎样结束，取值与 work_ended 相同；被停下（stopped_by_user）与出错停下（failed）时摘要行下面加一行说明。旧数据没有这个字段。 */
+  outcome?: WorkEnded["outcome"] | null;
 }
 
 export type ConversationMessage = UserMessage | AssistantReply | UiActionNoted | SystemNote | WorkSummary;

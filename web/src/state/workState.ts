@@ -475,6 +475,7 @@ function applyProcess(state: WorkState, name: string, data: unknown): WorkState 
         step_count: d.step_count,
         stages: steps.filter((s) => !isUnderstandingStep(s)).map((s) => ({ text: s.text })),
         understanding: understanding ? understanding.text : null,
+        outcome: d.outcome ?? null,
       };
       // 过程摘要放在这次工作的回复之前：回复一般先于 work_ended 到达。后端算好的摘要（work_summary）先到了就不再拼。
       if (state.messages.some((m) => m.type === "work_summary" && (m as WorkSummary).work_id === d.work_id)) return { ...state, currentWork: null };

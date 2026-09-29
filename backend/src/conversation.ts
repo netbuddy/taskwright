@@ -105,6 +105,7 @@ export function withWorkSummaries(out: Record<string, any>[], path: Entry[], ses
     const summary = {
       type: "work_summary", session_id: sessionId, message_id: `summary-${work.user_message_id}`, work_id: work.work_id, at: work.at,
       seconds: work.seconds, step_count: work.step_count, stages: work.stages, understanding: understandings.get(work.user_message_id) ?? null,
+      outcome: work.outcome,
     };
     const ids = out.map((m) => m.message_id ?? null);
     let first = out.findIndex((m) => m.type === "assistant_reply" && replies.has(m.message_id));

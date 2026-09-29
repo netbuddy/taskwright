@@ -22,7 +22,7 @@ import { DocumentModal } from "../components/DocumentModal";
 import { errorText } from "../components/work/errors";
 import { formatTime } from "../model/format";
 import { FONT_TIERS, narrowViewport, readFontTier, saveFontTier, type FontTier } from "../model/fontScale";
-import { justChangedItems, marksByItem, revisionsOfReply, touchedItems } from "../model/revisions";
+import { justChangedItems, marksByItem, revisionsOfReply, revisionsOfWork, touchedItems } from "../model/revisions";
 import { openProblems, viewTarget } from "../model/items";
 import { showSubmitBar } from "../model/submit";
 import { go, href } from "../router";
@@ -309,7 +309,8 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                 onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input}
-                revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)} onRevisionTag={showRevisions}
+                revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}
+                revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions}
                 onLocate={(excerpt) => locateSource(excerpt, "")}
                 hasEarlier={state.hasEarlier}
                 onLoadEarlier={() => state.earliestId && api.earlierConversation(taskId, sessionId, state.earliestId).then((c) =>
