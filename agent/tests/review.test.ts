@@ -99,7 +99,12 @@ test("真实的任务类型：三个集合的规则文件都能读，问题集�
     ["docs/review-rules/use-case.json", "docs/review-rules/ears.json", "docs/review-rules/ears.json", null, null]);
   const count = (file: string) => (JSON.parse(readFileSync(join(typeDir, file), "utf-8")) as unknown[]).length;
   assert.equal(count("docs/review-rules/use-case.json"), 14);
-  assert.equal(count("docs/review-rules/ears.json"), 9);
+  assert.equal(count("docs/review-rules/ears.json"), 10);
+  // UC-R10（不把材料里没有的功能写进去）已去掉，编号不再使用；核对来源是否支持内容的是 UC-R15 与 EARS-R10。
+  const ids = (file: string) => (JSON.parse(readFileSync(join(typeDir, file), "utf-8")) as { 编号: string }[]).map((r) => r.编号);
+  assert.ok(!ids("docs/review-rules/use-case.json").includes("UC-R10"));
+  assert.ok(ids("docs/review-rules/use-case.json").includes("UC-R15"));
+  assert.ok(ids("docs/review-rules/ears.json").includes("EARS-R10"));
 });
 
 // ───────────── 评审者输出的核对与结论 ─────────────
