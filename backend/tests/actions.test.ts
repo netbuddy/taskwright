@@ -81,9 +81,11 @@ test("十种直接操作与两种卡片点击发给 pi 的命令与 Python 版�
   for (const [text, annotation] of CARDS) assert.equal(await executor.cardClick("S1", text, "k-1", annotation), false);
   assert.ok(ops.every((op) => /^ui-op-[0-9a-f]{12}$/.test(op)));
   assert.deepEqual(normalize(pi.calls), pyFixture("actions.json").commands);
-  // 抽看两条：请求体只转交六个键，按固定先后，操作编号放最后；「先不管这条」之后跟一句固定句。
+  // 抽看几条：请求体只转交五个键加操作编号，按固定先后，操作编号放最后；请求里多带的 force 不转交；「先不管这条」之后跟一句固定句。
   assert.equal(pi.calls[0][1].message, `/tw-user {"kind": "edit_fields", "task_id": "TASK-001", "targets": [{"item_id": "UC-001", "base_revision": 1}], "fields": {"用例名称": "改名", "基本流程": ["一", "二"]}, "notify_executor": false, "op_id": "${ops[0]}"}`);
   assert.deepEqual(pi.calls[6], ["prompt", { message: "我先不管 TBD-001、TBD-002，请接着往下做。" }]);
+  assert.ok(BODIES.some((b) => "force" in b), "输入里有一条带 force 的评审请求");
+  assert.ok(pi.calls.every((c) => !String(c[1]?.message ?? "").includes('"force"')), "force 不转交");
   assert.equal(pi.calls.at(-1)![1].message.startsWith('/tw-ui {"op_id": "ui-op-'), true);
   assert.equal(pi.calls.at(-1)![1].message.endsWith('"reply_entry": "a0000002", "option_key": null, "option_text": null, "text": "这个不对。"}'), true);
 });
