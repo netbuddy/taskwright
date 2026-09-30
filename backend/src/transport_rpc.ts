@@ -5,10 +5,33 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { constants } from "node:os";
-import { createInterface } from "node:readline";
+import type { Readable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import type { PiTransport, TransportHandlers, TransportSpec } from "./transport.ts";
 
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+/**
+ * 把一路输出切成行：只在换行符处断开，行尾的回车去掉；U+2028、U+2029 与行中间单独的回车都留在行里。
+ * pi 的 RPC 文档要求这样读：node:readline 还会在 U+2028、U+2029 与单独的回车处断行，而前两个字符可以合法地出现在
+ * 一行 JSON 的字符串里。读到头时，最后一段没有换行符的也算一行。按 UTF-8 解码，一个字符跨两块数据时照样拼得回来。
+ */
+export function readLines(stream: Readable, line: (text: string) => void, end: () => void): void {
+  const decoder = new StringDecoder("utf8");
+  const trim = (text: string) => (text.endsWith("\r") ? text.slice(0, -1) : text);
+  let pending = "";
+  stream.on("data", (chunk: Buffer | string) => {
+    const parts = (pending + (typeof chunk === "string" ? chunk : decoder.write(chunk))).split("\n");
+    pending = parts.pop()!;
+    for (const part of parts) line(trim(part));
+  });
+  stream.on("end", () => {
+    const rest = pending + decoder.end();
+    pending = "";
+    if (rest) line(trim(rest));
+    end();
+  });
+}
 
 export class RpcTransport implements PiTransport {
   private child: ChildProcess | null = null;
@@ -37,19 +60,13 @@ export class RpcTransport implements PiTransport {
 
   subscribe(handlers: TransportHandlers): void {
     const child = this.child!;
-    const stdout = createInterface({ input: child.stdout!, crlfDelay: Infinity });
-    stdout.on("line", (line) => handlers.line(line));
-    stdout.on("close", async () => {
+    readLines(child.stdout!, (line) => handlers.line(line), async () => {
       // 标准输出到头了，说明进程没了。先等标准错误读完、进程退干净，退出码与错误输出才齐。
       await Promise.race([this.stderrDone, sleep(2000)]);
       await Promise.race([this.exitedPromise, sleep(5000)]);
       handlers.ended();
     });
-    const stderr = createInterface({ input: child.stderr!, crlfDelay: Infinity });
-    this.stderrDone = new Promise((ok) => {
-      stderr.on("line", (line) => handlers.stderrLine(line));
-      stderr.on("close", () => ok());
-    });
+    this.stderrDone = new Promise((ok) => readLines(child.stderr!, (line) => handlers.stderrLine(line), ok));
   }
 
   writable(): boolean {

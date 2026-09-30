@@ -13,7 +13,7 @@ export interface TransportSpec {
 
 /** 读到的东西交给谁。只在 subscribe 之后才开始读。 */
 export interface TransportHandlers {
-  /** 助手输出的每一行，原样（不含行尾的换行）。 */
+  /** 助手输出的每一行：只按换行符断开，去掉行尾的换行与回车，其余原样。 */
   line(text: string): void;
   /** 助手错误输出的每一行，断法相同。 */
   stderrLine(text: string): void;
