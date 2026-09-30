@@ -179,42 +179,119 @@
 .app .finding.advice .clause-body { border-color: var(--amber-line); }
 .app .finding .aibtn.sm { font-size: 0.813rem; padding: 0 .4rem; margin-left: .4rem; }
 
-/* 评审页签：批次卡片、发现行（红点问题、琥珀点建议、右侧状态）、就近的保留与改法、规则区的开关 */
+/* 评审页签：顶上一行与进度线，「要处理的」「建议」按条目分组的卡片，「已经没事的」「评审记录」，最下面的规则链接与滑出的规则面板。
+   颜色一种一个意思：红（--gap）要处理的问题，琥珀（--amber）建议，绿（--ok）已经没事的，靛蓝（--ai）交给助手去做的动作。 */
 .app .sw-stab .cnt.bad { background: var(--gap); color: #fff; border-radius: .6rem; padding: 0 .35rem; margin-left: .25rem; font-size: .75rem; }
-.app .sw-review { flex: 1; min-height: 0; overflow: auto; padding: .5rem .6rem .8rem; background: var(--dark); display: flex; flex-direction: column; gap: .45rem; font-size: .889rem; }
-.app .sw-rv-top { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
-.app .sw-rv-top .spacer { flex: 1; }
-.app .sw-rcard { background: var(--card); border: 1px solid var(--line); border-radius: .45rem; padding: .45rem .6rem; }
-.app .sw-rcard.old { opacity: .8; }
-.app .sw-rcard .h { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; cursor: pointer; }
-.app .sw-rcard .b { margin-top: .35rem; display: flex; flex-direction: column; gap: .35rem; }
-.app .sw-rv-item { border-top: 1px dashed var(--line); padding-top: .35rem; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
-.app .sw-rv-item .lid { font-family: var(--mono, monospace); color: var(--blue); cursor: pointer; }
-.app .sw-rv-f { display: flex; gap: .4rem; align-items: flex-start; width: 100%; padding-left: .3rem; }
-.app .sw-rv-f .t { flex: 1 1 60%; min-width: 0; }
-.app .sw-rv-f .t [role="button"] { cursor: pointer; }
+.app .sw-review { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; background: var(--card); overflow: hidden; }
+.app .sw-review .rv-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 1.2rem 1.35rem 1.1rem; display: flex; flex-direction: column;
+  font-size: .93rem; line-height: 1.65; overflow-wrap: anywhere; }
+.app .sw-review .lk { color: #555; cursor: pointer; }
+.app .sw-review .lk:hover { color: var(--ink); text-decoration: underline; text-underline-offset: .2em; }
+.app .sw-review .lk.ai, .app .sw-review .lk.ai:hover { color: var(--ai); }
+.app .sw-review .lk.quiet { color: #6f6f6f; font-size: .857rem; }
+.app .sw-review .lk.quiet:hover { color: var(--ink); }
+.app .sw-review .lk[aria-disabled] { color: #b0b0b0; cursor: not-allowed; text-decoration: none; }
+.app .sw-review .push { margin-left: auto; }
+.app .sw-review .id { font-family: ui-monospace, Menlo, monospace; font-size: .857rem; color: #6f6f6f; flex: none; }
+.app .rv-top { display: flex; align-items: center; gap: .7rem 1rem; flex-wrap: wrap; }
+.app .rv-now { flex: 1 1 12rem; min-width: 0; font-size: 1.05rem; line-height: 1.6; }
+.app .rv-now em { font-style: normal; color: var(--gap); font-weight: 600; }
+.app .rv-now .okmark { display: inline-block; width: .95rem; height: .95rem; margin-right: .4rem; vertical-align: -.12rem; color: var(--ok); }
+.app .rv-top .btn { flex: none; }
+.app .rv-prog { height: .14rem; border-radius: .07rem; background: var(--ai-bg); margin-top: .7rem; overflow: hidden; flex: none; }
+.app .rv-prog i { display: block; height: 100%; border-radius: .07rem; background: var(--ai); transition: width .3s; }
+.app .rv-sec { margin-top: 2rem; }
+.app .rv-sec-h { font-size: .93rem; font-weight: 600; display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; }
+.app .rv-sec-h.tog { cursor: pointer; user-select: none; }
+.app .rv-sec-h.tog:hover .tx { text-decoration: underline; text-underline-offset: .2em; text-decoration-color: var(--line2); }
+.app .rv-sec-h .chev { width: .6rem; height: .6rem; color: var(--mut); flex: none; align-self: center; transition: transform .15s; }
+.app .rv-sec-h.open .chev { transform: rotate(90deg); }
+.app .rv-sec-h .aside { font-weight: 400; font-size: .857rem; color: var(--mut); }
+.app .rv-sec-h .n { font-variant-numeric: tabular-nums; }
+.app .sw-review .n.amb, .app .sw-review b.amb { color: var(--amber); }
+.app .sw-review .n.ok { color: var(--ok); }
+.app .sw-review b.gap { color: var(--gap); }
+.app .rv-sec-b { margin-top: .9rem; }
+/* 每个条目一组：圆角、细边线、淡阴影的卡片；组与组之间留白 */
+.app .rv-grp { border: 1px solid var(--line); border-radius: .75rem; background: var(--card); padding: .8rem .85rem .7rem;
+  box-shadow: 0 .07rem .14rem rgba(43,41,37,.05), 0 .3rem .9rem rgba(43,41,37,.06); }
+.app .rv-grp + .rv-grp, .app .rv-grp + .rv-grp-c, .app .rv-grp-c + .rv-grp { margin-top: .9rem; }
+.app .rv-grp-h { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; }
+.app .rv-grp-h .lk.t { font-weight: 600; font-size: .96rem; color: var(--ink); }
+.app .rv-grp-c { display: flex; align-items: baseline; gap: .55rem; padding: .1rem 0; cursor: pointer; }
+.app .rv-grp-c + .rv-grp-c { margin-top: .45rem; }
+.app .rv-grp-c .t { min-width: 0; }
+.app .rv-grp-c:hover .t { text-decoration: underline; text-underline-offset: .2em; }
+.app .rv-grp-c .cnt { margin-left: auto; color: #6f6f6f; font-size: .857rem; flex: none; }
+.app .rv-grp-c .cnt b { font-weight: 400; }
+/* 每一处问题（建议）：白底、无边框，左边一条带圆角的细线；鼠标移上去出现很淡的底色 */
+.app .rv-pb { position: relative; margin-top: .45rem; padding: .55rem .75rem .6rem 1.05rem; border-radius: .5rem; background: var(--card); transition: background-color .12s; }
+.app .rv-grp-h + .rv-pb { margin-top: .55rem; }
+.app .rv-pb::before { content: ""; position: absolute; left: 0; top: .5rem; bottom: .5rem; width: .18rem; border-radius: .09rem; background: var(--gap-line); }
+.app .rv-pb:hover, .app .rv-pb:focus-within { background: var(--gap-bg); }
+.app .rv-pb.adv::before { background: var(--amber-line); }
+.app .rv-pb.adv:hover, .app .rv-pb.adv:focus-within { background: var(--amber-bg); }
+.app .rv-pb .where { font-size: .857rem; color: #6f6f6f; display: inline-flex; align-items: center; gap: .4rem; }
+.app .rv-pb .where .dot { width: .36rem; height: .36rem; border-radius: 50%; background: var(--gap); flex: none; margin: 0; }
+.app .rv-pb.adv .where .dot { background: var(--amber); }
+.app .rv-pb .text { margin-top: .1rem; line-height: 1.65; }
+.app .rv-pb .fix { margin-top: .2rem; color: #6f6f6f; font-size: .9rem; line-height: 1.6; }
+.app .rv-pb .acts { margin-top: .5rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem 1.15rem; font-size: .873rem; }
+.app .sw-review .rv-rule { margin-top: .45rem; font-size: .873rem; color: #555; line-height: 1.6; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .7rem; }
+.app .sw-review .rid { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; color: #6f6f6f; white-space: nowrap; }
+.app .rv-keep { margin-top: .55rem; display: flex; flex-direction: column; gap: .5rem; }
+.app .rv-keep .note { font-size: .857rem; color: #6f6f6f; }
+.app .rv-keep input { width: 100%; border: 1px solid var(--line2); border-radius: .45rem; padding: .32rem .6rem; font: inherit; font-size: .9rem; color: var(--ink); outline: none; background: var(--card); }
+.app .rv-keep input:focus { border-color: var(--gap-line); }
+.app .rv-keep .row { display: flex; gap: .45rem; flex-wrap: wrap; }
+/* 已经没事的：通过的每个条目一行，展开之后是程序记下的说明与规则清单；你决定保留的每个条目一组 */
+.app .rv-sub { font-size: .857rem; color: #6f6f6f; margin-bottom: .35rem; }
+.app .rv-sec-b > * + .rv-sub { margin-top: 1.4rem; }
+.app .rv-okrow { display: flex; align-items: baseline; gap: .55rem; padding: .26rem 0; }
+.app .rv-okrow .lk.t { color: var(--ink); min-width: 0; }
+.app .rv-okd { padding: .1rem 0 .7rem; font-size: .873rem; color: #555; line-height: 1.6; }
+.app .rv-okd .rv-rl { margin-top: .5rem; display: flex; flex-direction: column; gap: .3rem; }
+.app .rv-okd .rv-rl .rv-rule { margin-top: 0; }
+.app .rv-okd .off { margin-top: .45rem; color: #6f6f6f; }
+.app .rv-kp { padding: .3rem 0 .4rem; }
+.app .rv-kp + .rv-kp { margin-top: .6rem; }
+.app .rv-kp .rv-okrow { padding: 0; }
+.app .rv-kp .text { margin-top: .1rem; }
+.app .rv-kp .reason { margin-top: .1rem; color: #6f6f6f; font-size: .9rem; }
+.app .rv-log { display: flex; flex-direction: column; gap: .5rem; font-size: .9rem; }
+.app .rv-log .tm { color: #6f6f6f; font-variant-numeric: tabular-nums; margin-right: .8rem; white-space: nowrap; }
+.app .rv-log .by { color: #6f6f6f; margin-left: .35rem; }
+.app .rv-foot { margin-top: auto; padding-top: 2.4rem; font-size: .857rem; }
+/* 评审规则的面板：从右侧滑出，盖住评审页签的大部分，左边留一窄条看得见底下的页签 */
+.app .rv-scrim { position: absolute; inset: 0; background: rgba(13,13,13,.10); z-index: 6; animation: rv-fade .2s; }
+.app .rv-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: calc(100% - 2.4rem); background: var(--card); box-shadow: -.5rem 0 1.8rem rgba(0,0,0,.10);
+  display: flex; flex-direction: column; z-index: 7; animation: rv-slide .22s ease; font-size: .93rem; overflow-wrap: anywhere; }
+@keyframes rv-slide { from { transform: translateX(105%); } to { transform: none; } }
+@keyframes rv-fade { from { opacity: 0; } to { opacity: 1; } }
+.app .rv-drawer .dr-h { display: flex; align-items: baseline; gap: .6rem; padding: 1.1rem 1.25rem .25rem; }
+.app .rv-drawer .dr-h b { font-size: 1rem; }
+.app .rv-drawer .lk { color: #555; cursor: pointer; }
+.app .rv-drawer .lk:hover { color: var(--ink); text-decoration: underline; text-underline-offset: .2em; }
+.app .rv-drawer .push { margin-left: auto; }
+.app .rv-drawer .dr-lead { padding: 0 1.25rem .5rem; font-size: .857rem; color: var(--mut); }
+.app .rv-drawer .dr-b { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: .2rem 1.25rem 1.4rem; }
+.app .rv-drawer .dr-g { font-weight: 600; font-size: .93rem; margin: 1.1rem 0 .35rem; }
+.app .rv-drawer .dr-b > div:first-child .dr-g { margin-top: .4rem; }
+.app .sw-rule { display: grid; grid-template-columns: 2.2rem 4.4rem minmax(0, 1fr); gap: .5rem; align-items: start; padding: .3rem 0; font-size: .889rem; line-height: 1.6; }
+.app .sw-rule .sw-switch { margin-top: .3rem; }
+.app .sw-rule .rid { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; color: #6f6f6f; padding-top: .1rem; }
+.app .sw-rule.off .rt { color: var(--mut); }
 .app .dot { width: .45rem; height: .45rem; border-radius: 50%; margin-top: .45rem; flex: none; display: inline-block; }
 .app .dot.p { background: var(--gap); }
 .app .dot.a { background: var(--amber); }
-.app .sw-rv-f .st { flex: 0 1 auto; max-width: 40%; font-size: .833rem; text-align: right; }
-.app .sw-rv-f .st.open { color: var(--gap); }
-.app .sw-rv-f .st.fixed { color: var(--ok); }
-.app .sw-rv-f .st.kept { color: var(--amber); }
-.app .sw-rv-f .clause, .app .finding .clause { text-decoration: underline dotted; cursor: pointer; color: var(--blue, #2563eb); }
-.app .sw-rv-f .clause-body { display: block; margin-top: .2rem; color: #444; background: var(--card); border: 1px solid var(--line2); padding: .15rem .4rem; border-radius: .3rem; }
-.app .sw-rv-act { display: flex; flex-wrap: wrap; gap: .35rem; width: 100%; padding-left: .3rem; }
-.app .sw-rv-act .reason, .app .finding .reason { border: 1px solid var(--line2); border-radius: .3rem; padding: .05rem .45rem; font: inherit; font-size: .833rem; min-width: 12rem; }
-.app .sw-rules { border-top: 1px solid var(--line2); padding-top: .45rem; display: flex; flex-direction: column; gap: .25rem; }
-.app .sw-rule { display: grid; grid-template-columns: 2.2rem 4.4rem 1fr; align-items: center; gap: .35rem; }
-.app .sw-rule .rid { font-family: var(--mono, monospace); font-size: .833rem; }
-.app .sw-switch { width: 1.9rem; height: 1rem; border-radius: .5rem; background: var(--line2); position: relative; cursor: pointer; display: inline-block; }
+.app .finding .reason { border: 1px solid var(--line2); border-radius: .3rem; padding: .05rem .45rem; font: inherit; font-size: .833rem; min-width: 12rem; }
+.app .sw-switch { width: 1.9rem; height: 1rem; border-radius: .5rem; background: var(--line2); position: relative; cursor: pointer; display: inline-block; flex: none; }
 .app .sw-switch i { position: absolute; top: .1rem; left: .1rem; width: .8rem; height: .8rem; border-radius: 50%; background: #fff; transition: left .15s; }
 .app .sw-switch.on { background: var(--ok); }
 .app .sw-switch.on i { left: 1rem; }
 /* 必选规则：开着（绿色、圆点在右），不变淡；圆点对面的空处画一把白色的锁表示不能关，锁与左边缘、与圆点都留空隙 */
 .app .sw-switch.lock { cursor: not-allowed; }
 .app .sw-switch.lock .lk { position: absolute; left: .24rem; top: .2rem; width: .6rem; height: .6rem; display: block; color: #fff; }
-.app .chip.bad { color: var(--gap); border-color: var(--gap-line); background: var(--gap-bg); }
 .app .banner-line.kept { background: var(--amber-bg); border: 1px solid var(--amber-line); color: #7a4a06; }
 .app .finding .st { margin-right: .4rem; }
 .app .finding .st.open { color: var(--gap); }

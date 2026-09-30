@@ -1,4 +1,4 @@
-// 评审通过时的说明：条目详情里评审不通过横幅的位置换成绿色的说明，评审页签里通过的那一行下面多一行。说明用程序记下的那句话；
+// 评审通过时的说明：条目详情里评审不通过横幅的位置换成绿色的说明；评审页签里「已经没事的」通过的那一行，点「核对了哪些规则」原地展开。说明用程序记下的那句话；
 // 能列出规则的三种情形（model/items.ts 的 passRules）：指纹相同并且条数对得上时给「看这 N 条规则」与清单；评审之后规则改过、
 // 或条数对不上时不给链接、灰字说明；有一边没有指纹时只写说明。没有记下那句话时只写「评审通过。」。已保留、不通过时没有这一块（看旧修订时也没有，见条目详情）。
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -51,7 +51,7 @@ function detail(t: Task, one: Item) {
 }
 function panel(t: Task) {
   render(<Wrap><ReviewPanel task={t} readOnly={false} writesOff={false} onReview={vi.fn()} submit={vi.fn(async () => null)} onOpenFinding={vi.fn()} onPrefill={vi.fn()} /></Wrap>);
-  fireEvent.click(screen.getByTestId("batch-1-passed"));
+  fireEvent.click(screen.getByTestId("review-done-toggle"));
 }
 
 describe("评审通过时的说明", () => {
@@ -131,20 +131,29 @@ describe("评审通过时的说明", () => {
     expect(screen.queryByTestId("pass-note")).toBeNull();
   });
 
-  it("评审页签：通过的那一行下面一行说明与链接，不写时刻与修订；评审之后规则改过的写灰字、不给链接", () => {
+  it("评审页签：已经没事的里通过的条目一行，「核对了哪些规则」原地展开记下的那句话与规则清单，不写时刻与修订；条数对不上时写灰字、不列清单", () => {
     const one = item({});
     panel(task([one]));
-    const row = screen.getByTestId("pass-note");
-    expect(row).toHaveClass("sw-pass-row");
-    expect(row).toHaveTextContent(`评审通过：${OK2}看这 2 条规则 ▸`);
-    expect(row).not.toHaveTextContent("评审于");
+    const row = screen.getByTestId("review-passed-UC-001");
+    expect(row).toHaveTextContent(/^UC-001续借图书核对了哪些规则$/);
+    expect(screen.queryByTestId("pass-note")).toBeNull();
     fireEvent.click(within(row).getByTestId("pass-rules-link"));
-    expect(within(row).getByTestId("pass-rules")).toHaveTextContent("另有 2 条规则已经关闭，这次没有核对。");
+    const note = screen.getByTestId("pass-note");
+    expect(note).toHaveTextContent(OK2);
+    expect(note).not.toHaveTextContent(/评审于|修订|评审通过：/);
+    expect(within(note).getByTestId("pass-rules")).toHaveTextContent("UC-R1用例粒度以参与者的一个目的为准。UC-R12约束规则与流程里不举例。");
+    expect(note).toHaveTextContent("另有 2 条规则已经关闭，这次没有核对。");
+    expect(within(row).getByTestId("pass-rules-link")).toHaveTextContent("收起");
+    fireEvent.click(within(row).getByTestId("pass-rules-link"));
+    expect(screen.queryByTestId("pass-note")).toBeNull();
     cleanup();
-    panel(task([one], "h2"));
-    expect(screen.getByTestId("pass-note")).toHaveTextContent(`评审通过：${OK2}`);
-    expect(screen.queryByTestId("pass-rules-link")).toBeNull();
+    panel(task([item({ reason: "按 3 条规则逐条核对，没有发现问题。" })]));
+    fireEvent.click(screen.getByTestId("pass-rules-link"));
     expect(screen.getByTestId("pass-rules-changed")).toHaveTextContent("评审之后规则改过，这里列不出当时核对的规则。");
+    expect(screen.queryByTestId("pass-rules")).toBeNull();
+    cleanup();
+    panel(task([item({ reason: null })], null));
+    expect(screen.queryByTestId("pass-rules-link")).toBeNull();   // 没有记下那句话、也列不出规则：不给链接
   });
 
   it("评审事件里的那句话记进条目的评审记录", () => {
