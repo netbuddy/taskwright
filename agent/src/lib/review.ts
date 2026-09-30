@@ -3,7 +3,7 @@
  * 请求评审工具时用它。每个条目装配一次评审者调用（一次不带工具的模型调用，干净上下文），发现与结论由这里的代码写进库。
  * 执行者自己写不了评审记录。分三步，模型调用夹在中间、不在事务里（事务里不能 await）：
  *   1. prepareReviews：只读核对并装配每个条目的提示——该集合实际要评的规则清单（编号、级别、条文、反例、正例）、
- *      字段声明、条目当前所在修订下的全部字段与来源；
+ *      字段声明、条目当前所在修订下的全部字段与来源，以及同一个任务里别的条目（【相关的条目】与【其余条目】，见 OTHER_ITEMS_LIMIT）；
  *   2. 调用方调模型，parseReview 解析与核对输出：每条发现必须引用清单里的规则编号、指到声明过的字段与存在的项，
  *      必选规则的发现必须给建议；不合格就重来一次。模型不输出结论；
  *   3. writeReview：在立即事务里再核对一次修订号，按发现的规则级别算出结论（有任一必选规则的发现即不合规，
@@ -34,14 +34,26 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, databasePath, emit, wallClockText } from "./db.ts";
-import { SOURCE_USER_EDIT, withTaskDatabase } from "./schema.ts";
+import { SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { DOCX_LOCATOR } from "./docx_source.ts";
 import { extractJson, type ModelCallRecord } from "./model_call.ts";
-import { RULE_REQUIRED, type ReviewRule, effectiveRules, validateDefinition } from "./definition.ts";
+import { type CollectionDef, FIELD_ITEM_REF, RULE_REQUIRED, type ReviewRule, effectiveRules, keepPendingField, validateDefinition } from "./definition.ts";
 import { currentReviews, rulesHash } from "./review_state.ts";
 import { listMaterials } from "./task_status.ts";
 
 /** 材料全文给评审者的上限：全部材料文件的字符数不超过它时给全文。 */
 export const MATERIAL_FULL_LIMIT = 20000;
+
+/**
+ * 同一个任务里别的条目交给评审时分两节（otherItemsLines）：【相关的条目】写全部字段，【其余条目】每个一行简述。
+ * 两节合起来的上限，按整段文字的字符数算（Unicode 字符，一个汉字算 1，与材料全文的计法相同）。它只是保险：
+ * 材料全文最多已有 MATERIAL_FULL_LIMIT（20000）字，这两节再取它的一半，一次评审请求连同规则清单大约不超过 35000 字，
+ * 上下文窗口小的模型（例如 32768 个 token）也放得下。超过时从【其余条目】的末尾往前省去条目，省完了还超过再省【相关的条目】，
+ * 被省的那一节末尾写明省去了几个；第一行总写别的条目共有几个、相关的几个，评审据此知道列全了没有。
+ */
+export const OTHER_ITEMS_LIMIT = 10000;
+/** 【其余条目】里一个条目的简述写全的上限（字符数，计法同上）；超过时只写第一个字段。 */
+export const OTHER_ITEM_BRIEF_LIMIT = 120;
 
 export const REVIEW_PROMPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts", "review.md");
 export const EVENT_REVIEW_RECORDED = "REVIEW_RECORDED";
@@ -171,6 +183,7 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       wanted = pendingItems(db, task.task_id, [...reviewed], hash);
     }
     const materials = materialsFor(workspaceDir, definition.materialsDir);
+    const live = liveItems(db, task.task_id, definition.collections);
 
     const items: PreparedReview[] = [];
     const rulesOf = new Map<string, ReviewRule[]>();
@@ -196,7 +209,7 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         ...want, collection: row.collection, fields, decls, rules, rulesPath: decl?.reviewRules?.file ?? null,
         rulesDigest: digest(JSON.stringify(rules) + "\n" + JSON.stringify(decls)),
         rulesHash: hash(row.collection), reviewerVersion: digest(system),
-        system, user: assembleUser(want, row.collection, fields, decls, rules, sources, materials),
+        system, user: assembleUser(want, row.collection, fields, decls, rules, sources, othersLines(live, want.item_id, materials), materials),
       });
     }
     if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
@@ -221,7 +234,7 @@ export function pendingItems(db: DatabaseSync, taskId: string, collections: stri
 }
 
 /** 给评审者的材料：全文（总长不超过上限时），或只按条目取段落（超过时，由 assembleUser 按来源去取）。 */
-interface Materials { full: boolean; files: { path: string; text: string }[] }
+export interface Materials { full: boolean; files: { path: string; text: string }[] }
 
 function materialsFor(workspaceDir: string, materialsDir: string): Materials {
   const files = listMaterials(workspaceDir, materialsDir).files
@@ -264,10 +277,135 @@ export function ruleText(rule: ReviewRule): string {
   return `- ${rule.编号}（${rule.级别}）${rule.条文}\n  反例：${rule.反例}\n  正例：${rule.正例}`;
 }
 
-/** 装配评审者的用户消息：规则清单、字段声明、条目在这次修订下的字段与来源。 */
+/**
+ * 同一个任务里还没有删除的一个条目，取当前所在的修订：编号、集合、字段、集合声明的字段名（按声明的先后）、
+ * 条目引用字段的字段名、是不是问题条目（集合有可以「用户决定保留」的状态字段，definition.ts 的 keepPendingField），
+ * 以及这次修订的来源（早期版本写下的「用户直接修改」不算）。
+ */
+export interface TaskItem {
+  item_id: string;
+  collection: string;
+  fields: Record<string, unknown>;
+  fieldNames: string[];
+  refFields: string[];
+  problem: boolean;
+  sources: { kind: string; locator: string; excerpt: string }[];
+}
+
+/** 任务里还没有删除的全部条目；按集合在任务定义里的先后、集合里按编号排。 */
+function liveItems(db: DatabaseSync, taskId: string, collections: CollectionDef[]): TaskItem[] {
+  const rows = db.prepare(
+    "SELECT i.item_id, i.collection, i.serial, v.revision_no, v.fields FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
+      "WHERE i.task_id = ? AND i.deleted_in_revision IS NULL " +
+      "AND v.revision_no = (SELECT MAX(w.revision_no) FROM item_version w WHERE w.task_id = i.task_id AND w.item_id = i.item_id)",
+  ).all(taskId) as { item_id: string; collection: string; serial: number; revision_no: number; fields: string }[];
+  const sourcesOf = db.prepare("SELECT kind, locator, excerpt FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ? ORDER BY position, support_no");
+  const order = (name: string) => { const at = collections.findIndex((c) => c.name === name); return at < 0 ? collections.length : at; };
+  return rows
+    .sort((a, b) => order(a.collection) - order(b.collection) || a.serial - b.serial)
+    .map((r) => {
+      const decl = collections.find((c) => c.name === r.collection);
+      return {
+        item_id: r.item_id, collection: r.collection, fields: (JSON.parse(r.fields) as Record<string, unknown>) ?? {},
+        fieldNames: decl?.fields.map((f) => f.name) ?? [],
+        refFields: decl?.fields.filter((f) => f.type === FIELD_ITEM_REF).map((f) => f.name) ?? [],
+        problem: decl ? keepPendingField(decl) !== null : false,
+        sources: sourcesOf.all(taskId, r.item_id, r.revision_no, SOURCE_USER_EDIT) as TaskItem["sources"],
+      };
+    });
+}
+
+/**
+ * 一个条目的来源落在哪里，用来判断两个条目是否引用了同一处：「文档原文」出处带 #p 的 Word 材料记文件与段落号；
+ * 出处是 .md 或 .txt 材料的记摘录所在的自然段（paragraphsWith）；「用户的话」与「领域说明」记出处。
+ */
+function anchorsOf(item: TaskItem, materials: Materials): Set<string> {
+  const out = new Set<string>();
+  for (const s of item.sources) {
+    if (s.kind === SOURCE_DOCUMENT) {
+      const docx = DOCX_LOCATOR.exec(s.locator);
+      if (docx) {
+        if (docx[2]) out.add(`段落\n${docx[1]}#p${docx[2]}`);
+        continue;
+      }
+      const file = materials.files.find((f) => f.path === s.locator);
+      if (file) for (const paragraph of paragraphsWith(file.text, s.excerpt)) out.add(`段落\n${file.path}\n${paragraph}`);
+    } else if (s.kind === SOURCE_USER_WORDS || s.kind === SOURCE_DOMAIN_NOTE) {
+      out.add(`出处\n${s.locator}`);
+    }
+  }
+  return out;
+}
+
+const refsOf = (item: TaskItem) => item.refFields.flatMap((name) => (Array.isArray(item.fields[name]) ? (item.fields[name] as unknown[]) : []));
+
+/**
+ * 评审 target 时别的条目分成两份：相关的与其余的。相关，是下面任一条成立：两个条目的来源落在同一处（anchorsOf）；
+ * target 的某条「领域说明」来源指向的就是这个领域说明条目；一方是问题条目，它的条目引用字段里有另一方。
+ * 两份里都是与 target 同一个集合的在前，别的集合在后，先后照 live。
+ */
+export function splitOthers(target: TaskItem, live: TaskItem[], materials: Materials): { related: TaskItem[]; rest: TaskItem[] } {
+  const mine = anchorsOf(target, materials);
+  const isRelated = (other: TaskItem) =>
+    [...anchorsOf(other, materials)].some((anchor) => mine.has(anchor)) ||
+    target.sources.some((s) => s.kind === SOURCE_DOMAIN_NOTE && s.locator === other.item_id) ||
+    (other.problem && refsOf(other).includes(target.item_id)) ||
+    (target.problem && refsOf(target).includes(other.item_id));
+  const others = live.filter((o) => o.item_id !== target.item_id);
+  const ordered = [...others.filter((o) => o.collection === target.collection), ...others.filter((o) => o.collection !== target.collection)];
+  return { related: ordered.filter(isRelated), rest: ordered.filter((o) => !isRelated(o)) };
+}
+
+/** 一个字段的内容：列表型字段的各项用「；」连起来；空的为 null。 */
+function fieldText(value: unknown): string | null {
+  if (Array.isArray(value)) return value.length ? value.map(String).join("；") : null;
+  const text = value == null ? "" : String(value);
+  return text.trim() ? text : null;
+}
+
+/** 【其余条目】里一个条目的简述：有内容的字段用「；」连起来不超过 OTHER_ITEM_BRIEF_LIMIT 个字符时写全，超过时只写第一个字段。 */
+function briefOf(item: TaskItem): string {
+  const texts = item.fieldNames.map((name) => fieldText(item.fields[name]));
+  const all = texts.filter((t): t is string => t !== null).join("；");
+  return [...all].length <= OTHER_ITEM_BRIEF_LIMIT ? all : (texts[0] ?? "");
+}
+
+/**
+ * 【相关的条目】与【其余条目】两节：相关的写编号、集合与有内容的字段，其余的每个一行简述；都不写来源、修订号与评审结论。
+ * 两节合起来超过 limit 时，先从【其余条目】的末尾往前省去条目，省完了还超过再从【相关的条目】的末尾往前省。
+ */
+export function otherItemsLines(related: TaskItem[], rest: TaskItem[], limit = OTHER_ITEMS_LIMIT): string[] {
+  if (!related.length && !rest.length) return ["【相关的条目】与【其余条目】", "（这个任务里没有别的条目。）"];
+  const full = (o: TaskItem) => [`- ${o.item_id}（${o.collection}）`,
+    ...o.fieldNames.flatMap((name) => { const text = fieldText(o.fields[name]); return text === null ? [] : [`  ${name}：${text}`]; })];
+  const section = (title: string, list: TaskItem[], kept: number, lines: (o: TaskItem) => string[], none: string) => [
+    title,
+    ...(list.length ? list.slice(0, kept).flatMap(lines) : [none]),
+    ...(kept < list.length ? [`另有 ${list.length - kept} 个条目没有列出。`] : []),
+  ];
+  const render = (keptRelated: number, keptRest: number) => [
+    `这个任务里别的条目共 ${related.length + rest.length} 个，其中相关的 ${related.length} 个。`,
+    ...section("【相关的条目】", related, keptRelated, full, "（没有相关的条目。）"),
+    ...section("【其余条目】", rest, keptRest, (o) => [`- ${o.item_id}（${o.collection}）：${briefOf(o)}`], "（没有其余条目。）"),
+  ];
+  const fits = (lines: string[]) => [...lines.join("\n")].length <= limit;
+  let lines = render(related.length, rest.length);
+  for (let keptRest = rest.length - 1; !fits(lines) && keptRest >= 0; keptRest--) lines = render(related.length, keptRest);
+  for (let keptRelated = related.length - 1; !fits(lines) && keptRelated >= 0; keptRelated--) lines = render(keptRelated, 0);
+  return lines;
+}
+
+/** 评审 itemId 时的【相关的条目】与【其余条目】。 */
+function othersLines(live: TaskItem[], itemId: string, materials: Materials): string[] {
+  const target = live.find((o) => o.item_id === itemId)!;
+  const { related, rest } = splitOthers(target, live, materials);
+  return otherItemsLines(related, rest);
+}
+
+/** 装配评审者的用户消息：规则清单、字段声明、条目在这次修订下的字段与来源、别的条目、材料。 */
 function assembleUser(want: RequestedItem, collection: string, fields: Record<string, unknown>, decls: FieldDecl[], rules: ReviewRule[],
   sources: { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[],
-  materials: Materials = { full: true, files: [] }): string {
+  others: string[], materials: Materials = { full: true, files: [] }): string {
   const byPosition = new Map<number, { kind: string; locator: string; excerpt: string; supports: string[] }>();
   for (const s of sources) {
     const one = byPosition.get(s.position) ?? { kind: s.kind, locator: s.locator, excerpt: s.excerpt, supports: [] };
@@ -288,6 +426,8 @@ function assembleUser(want: RequestedItem, collection: string, fields: Record<st
     ...([...byPosition.values()].map((s, i) => `${i + 1}. ${s.kind}${s.kind === "文档原文" || s.kind === "领域说明" ? `（${s.locator}）` : ""}：「${s.excerpt}」` +
       `，支持${s.supports.length ? s.supports.join("、") : "整个条目"}`)),
     ...(byPosition.size ? [] : ["（这份内容没有来源）"]),
+    "",
+    ...others,
     "",
     ...materialLines(materials, sources),
   ].join("\n");
