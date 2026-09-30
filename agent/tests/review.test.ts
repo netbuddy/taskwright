@@ -13,14 +13,14 @@ import { databasePath } from "../src/lib/db.ts";
 import { DefinitionError, effectiveRules, loadDefinition } from "../src/lib/definition.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
-import { ReviewError, paragraphsWith, prepareReviews } from "../src/lib/review.ts";
+import { type Materials, OTHER_ITEM_BRIEF_LIMIT, OTHER_ITEMS_LIMIT, ReviewError, type TaskItem, otherItemsLines, paragraphsWith, prepareReviews, splitOthers } from "../src/lib/review.ts";
 import { type Complete, runReviews } from "../src/lib/review_run.ts";
 import { reviewSlot } from "../src/lib/review_ui.ts";
 import { REVIEW_STATUS_KEY, USER_COMMAND, USER_EDIT_CUSTOM_TYPE, USER_RESULT_KEY, registerUserCommands } from "../src/hooks/user_commands.ts";
 import { completeTask } from "../src/lib/complete_task.ts";
 // @ts-ignore 仓库根目录的脚本是纯 JavaScript 模块
 import { documents, renderDocument } from "../../scripts/render-rules.mjs";
-import { DEFINITION_PATH, SOURCE, callIn, demoDefinition, makeWorkspace, query } from "./helpers.ts";
+import { DEFINITION_PATH, MATERIAL_TEXT, SOURCE, callIn, demoDefinition, makeWorkspace, query } from "./helpers.ts";
 
 const RULES = [
   { 编号: "D-R1", 级别: "必选", 条文: "步骤写明谁做了什么。", 反例: "校验。", 正例: "系统校验口令。" },
@@ -220,7 +220,8 @@ test("界面发起的评审：核对通过立即回报，评审在后台跑，�
   const gate = new Promise<void>((resolve) => (open = resolve));
   const { run, status, messages } = commandRig(dir, async (user) => {
     await gate;      // 回报之前评审者一个都没评完
-    return JSON.stringify({ 发现: user.includes("UC-001") ? [finding("D-R1")] : [] });
+    // 【别的条目】里也有别的条目的编号，按「要评审的条目」一行认出评的是哪一个。
+    return JSON.stringify({ 发现: user.includes("【要评审的条目】UC-001") ? [finding("D-R1")] : [] });
   });
   await run({ op_id: "ui-op-r1", kind: "request_review", targets: [] });
   const reported = JSON.parse(status[USER_RESULT_KEY][0]);
@@ -300,6 +301,110 @@ test("领域规矩文档里的规则列表与规则文件一致（渲染后没�
     const text = readFileSync(path, "utf-8");
     assert.equal(renderDocument(text, typeDir), text, `${path} 的生成区过期了，跑 node scripts/render-rules.mjs`);
   }
+});
+
+// ───────────── 【相关的条目】与【其余条目】 ─────────────
+
+test("别的条目：没有要评审的这一个，没有已删除的，取当前所在的修订；相关的写全部字段，其余的一行简述；放在来源与材料之间", () => {
+  const dir = withTwoItems(reviewWorkspace());
+  saveRevision(callIn(dir), { operations: [
+    { op: "update", item: "UC-002", base_revision: 1, fields: { 名称: "注销登录" } },
+    { op: "add", collection: "问题", fields: { 事项: "退款几天到账？", 状态: "未解决" }, sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "退款须在七天内处理完毕。" }] },
+    { op: "add", collection: "用例", fields: { 名称: "改口令", 步骤: ["用户输入新口令"] }, sources: [SOURCE] },
+  ] });
+  saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-003", base_revision: 2 }] });
+  const user = prepareReviews(dir, null).items.find((i) => i.item_id === "UC-001")!.user;
+  const section = user.slice(user.indexOf("这个任务里别的条目共"), user.indexOf("【材料全文】")).trimEnd();
+  assert.equal(section, [
+    "这个任务里别的条目共 2 个，其中相关的 1 个。",
+    "【相关的条目】",
+    "- UC-002（用例）",
+    "  名称：注销登录",
+    "  步骤：用户点注销",
+    "【其余条目】",
+    "- TBD-001（问题）：退款几天到账？；未解决",
+  ].join("\n"));
+  assert.ok(user.indexOf("【来源】") < user.indexOf("这个任务里别的条目共"), "来源在前");
+});
+
+test("别的条目：一个都没有时两节合成一句", () => {
+  const dir = reviewWorkspace();
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["用户输入口令"] }, sources: [SOURCE] }] });
+  assert.match(prepareReviews(dir, null).items[0].user, /【来源】\n.*\n\n【相关的条目】与【其余条目】\n（这个任务里没有别的条目。）\n\n【材料全文】/);
+});
+
+/** splitOthers 用的条目：字段是名称与步骤，问题条目另有状态与关联条目。 */
+function taskItem(item_id: string, collection: string, sources: TaskItem["sources"], fields: Record<string, unknown> = { 名称: item_id }): TaskItem {
+  const problem = collection === "问题";
+  return { item_id, collection, fields, sources, problem,
+    fieldNames: problem ? ["事项", "状态", "关联条目"] : ["名称", "步骤"], refFields: problem ? ["关联条目"] : [] };
+}
+const doc = (excerpt: string, locator = "inputs/材料.md") => ({ kind: "文档原文", locator, excerpt });
+const MATERIALS: Materials = { full: true, files: [{ path: "inputs/材料.md", text: MATERIAL_TEXT }] };
+
+test("相关的判定：摘录在同一个自然段、Word 材料同一个段落号、同一句用户的话、指向的领域说明条目、互相引用的问题条目；别的都不相关", () => {
+  const target = taskItem("UC-001", "用例", [doc("用户可以登录。"), doc("x", "inputs/说明.docx#p3"),
+    { kind: "用户的话", locator: "sess#a1", excerpt: "口令至少八位" }, { kind: "领域说明", locator: "DN-001", excerpt: "口令" }]);
+  const live = [
+    target,
+    taskItem("CON-001", "约束", [doc("用户可以登录。")]),                                // 别的集合、同一个自然段：排在同一个集合的后面
+    taskItem("UC-002", "用例", [doc("登录总要输入口令。")]),                              // 同一个自然段
+    taskItem("UC-003", "用例", [doc("退款须在七天内处理完毕。")]),                          // 别的自然段：不相关
+    taskItem("UC-004", "用例", [doc("y", "inputs/说明.docx#p3")]),                        // Word 材料同一个段落号
+    taskItem("UC-005", "用例", [doc("y", "inputs/说明.docx#p4")]),                        // 别的段落号：不相关
+    taskItem("UC-006", "用例", [{ kind: "用户的话", locator: "sess#a1", excerpt: "至少八位" }]), // 同一句用户的话
+    taskItem("UC-007", "用例", [{ kind: "用户的话", locator: "sess#b2", excerpt: "口令至少八位" }]), // 别的一句：不相关
+    taskItem("DN-001", "领域说明", [{ kind: "执行者补充", locator: "执行者补充", excerpt: "术语" }]), // 要评审的条目引用了它
+    taskItem("TBD-001", "问题", [], { 事项: "口令多长？", 状态: "未解决", 关联条目: ["UC-001"] }),   // 问题条目引用了要评审的条目
+    taskItem("TBD-002", "问题", [], { 事项: "退款几天？", 状态: "未解决", 关联条目: ["UC-003"] }),   // 引用的是别的条目：不相关
+  ];
+  const { related, rest } = splitOthers(target, live, MATERIALS);
+  assert.deepEqual(related.map((o) => o.item_id), ["UC-002", "UC-004", "UC-006", "CON-001", "DN-001", "TBD-001"]);
+  assert.deepEqual(rest.map((o) => o.item_id), ["UC-003", "UC-005", "UC-007", "TBD-002"]);
+  // 反过来：要评审的是问题条目时，它引用的条目相关。
+  const problem = live.find((o) => o.item_id === "TBD-002")!;
+  assert.deepEqual(splitOthers(problem, live, MATERIALS).related.map((o) => o.item_id), ["UC-003"]);
+});
+
+test("其余条目的简述：字段合起来不超过 120 个字符时用「；」连起来写全，超过时只写第一个字段；没有相关的条目、没有其余条目时各写一句", () => {
+  const short = taskItem("UC-002", "用例", [], { 名称: "注销", 步骤: ["用户点注销", "系统退出"] });
+  const long = taskItem("UC-003", "用例", [], { 名称: "退款", 步骤: ["说".repeat(OTHER_ITEM_BRIEF_LIMIT)] });
+  assert.deepEqual(otherItemsLines([], [short, long]), [
+    "这个任务里别的条目共 2 个，其中相关的 0 个。",
+    "【相关的条目】",
+    "（没有相关的条目。）",
+    "【其余条目】",
+    "- UC-002（用例）：注销；用户点注销；系统退出",
+    "- UC-003（用例）：退款",
+  ]);
+  assert.deepEqual(otherItemsLines([short], []), [
+    "这个任务里别的条目共 1 个，其中相关的 1 个。", "【相关的条目】", "- UC-002（用例）", "  名称：注销", "  步骤：用户点注销；系统退出",
+    "【其余条目】", "（没有其余条目。）",
+  ]);
+  // 正好 120 个字符时写全，多一个字符就只写第一个字段。
+  const edge = (n: number) => otherItemsLines([], [taskItem("UC-004", "用例", [], { 名称: "甲", 步骤: ["乙".repeat(n)] })]).at(-1);
+  assert.equal(edge(118), `- UC-004（用例）：甲；${"乙".repeat(118)}`);
+  assert.equal(edge(119), "- UC-004（用例）：甲");
+  assert.equal(OTHER_ITEM_BRIEF_LIMIT, 120);
+  assert.equal(OTHER_ITEMS_LIMIT, 10000);
+});
+
+test("两节超过上限：先从其余条目的末尾往前省去，省完了再省相关的条目，被省的那一节末尾写明省去了几个", () => {
+  const a = taskItem("UC-002", "用例", [], { 名称: "注销", 步骤: ["用户点注销"] });
+  const b = taskItem("UC-003", "用例", [], { 名称: "改口令", 步骤: ["用户输入新口令"] });
+  const c = taskItem("CON-001", "约束", [], { 名称: "口令长度" });
+  const d = taskItem("CON-002", "约束", [], { 名称: "锁定" });
+  const size = (lines: string[]) => [...lines.join("\n")].length;
+  const all = otherItemsLines([a, b], [c, d]);
+  assert.deepEqual(all.slice(-3), ["【其余条目】", "- CON-001（约束）：口令长度", "- CON-002（约束）：锁定"]);
+  assert.deepEqual(otherItemsLines([a, b], [c, d], size(all) - 1).slice(-3), ["【其余条目】", "- CON-001（约束）：口令长度", "另有 1 个条目没有列出。"]);
+  const noRest = otherItemsLines([a, b], [c, d], size(all) - 1 - "- CON-001（约束）：口令长度".length);
+  assert.deepEqual(noRest.slice(-2), ["【其余条目】", "另有 2 个条目没有列出。"]);
+  assert.deepEqual(otherItemsLines([a, b], [c, d], size(noRest) - 1), [
+    "这个任务里别的条目共 4 个，其中相关的 2 个。", "【相关的条目】", "- UC-002（用例）", "  名称：注销", "  步骤：用户点注销", "另有 1 个条目没有列出。",
+    "【其余条目】", "另有 2 个条目没有列出。",
+  ]);
 });
 
 test("材料摘段：摘录是一段连续的原文，取含有它的自然段；跨了两个自然段时取它跨过的那两段", () => {
