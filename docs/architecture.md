@@ -26,7 +26,7 @@
 |---|---|---|
 | User | a person in the web interface or a terminal, or the simulator | Supplies materials, answers questions, edits and confirms items. |
 | Executor | the agent inside pi, following the platform skill and the task type's skill | Reads materials, writes items with sources, asks about what is unclear, replies through the reply tool. |
-| Judges | model calls made inside tools, with no tools of their own | The reviewer checks one item against the numbered review rules of its collection; the user starts it from the interface, and the code computes the verdict from the rule levels of the findings. Whether the user accepts an item is not judged by a model: opening the item counts as reading and confirming it. |
+| Judges | model calls made inside tools, with no tools of their own | The reviewer checks one item against the numbered review rules of its collection, with the task's other items as background (related ones in full, the rest as one-line summaries); the user starts it from the interface, and the code computes the verdict from the rule levels of the findings. Whether the user accepts an item is not judged by a model: opening the item counts as reading and confirming it. |
 
 ## Data flow
 
