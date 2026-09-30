@@ -19,43 +19,67 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [x] Uploaded materials cannot repeat the content or the name of a material already in the task
 - [x] Reviews decided by one shared rule: once per revision and rule set, kept wordings counted apart
 
-## 0.4 Materials and retrieval
+## 0.4.0 Closing what 0.3 left open
 
-- [ ] Fixes for the issues found in the 0.3 trial runs that were not fixed in 0.3
+- [x] Fixes for the issues found in the 0.3 trial runs that were not fixed in 0.3
+- [x] Remove the earlier Python task service
+- [x] Review tab laid out by what needs your attention; the reviewer sees the task's other items; unverified review rules are off by default
+- [x] Items cite only original passages; your own edits add no source
+
+## 0.4.1 Knowledge base, retrieval and model configuration
+
+- [ ] Knowledge base: libraries and documents outside any task; a task selects the libraries it uses; the assistant cites them as its basis
+- [ ] Semantic search over materials and the knowledge base (vector retrieval), and lexical search in the knowledge base
+- [ ] Configure model services in the interface: local services (ollama, llama.cpp, vLLM) and API-key services, for both the language model and the embedding model; no network access at startup by default
+- [ ] Delete and replace materials
+
+## 0.4.2 Diagrams and Word export
+
+- [ ] Diagrams tab in the work view: the assistant draws UML diagrams in Mermaid from the conversation (use case, class, sequence, activity and state diagrams); each diagram is an item with its own revisions and related items; preview in the page, export as PNG or SVG
+- [ ] Export chosen items to Word: tick items in the list and download a .docx in which each item is a table, to paste into your own specification
+
+## 0.4.3 PDF
+
 - [ ] Word materials shown as PDF, so that pages match what Word shows
 - [ ] PDF materials
-- [ ] Semantic search over materials (vector retrieval)
-- [ ] Delete and replace materials
-- [x] Remove the earlier Python task service
 
 ## 0.5 Several users
 
 - [ ] Authentication and multiple users
 - [ ] Stop a run in progress from the interface
 - [ ] Abandon a task
+- [ ] Limits on how many assistants run at once, with idle shutdown and a queue
+- [ ] Upgrades that keep existing tasks
 
-## 0.6 Deliverables and desktop
+## 0.6 First public release
 
-- [ ] Word (.docx) export
+- [ ] Backup and restore of tasks
+- [ ] Review rules verified on real projects
+- [ ] One round of evaluation and improvement for the assistant's known faults: missed content, contradictions written as settled rules, one rule written twice
+- [ ] Load test with tens of users at once
+- [ ] Screenshots in the tutorial brought up to date
+
+## 0.7 Deliverables and desktop
+
+- [ ] Word (.docx) export of the whole deliverable
 - [ ] Cross-item review: duplicates, conflicts, inconsistent wording
 - [ ] Desktop application based on Electron
-- [ ] Upgrades that keep existing tasks
 - [ ] Baselines of the whole deliverable
 - [ ] Browse past tasks
 
-## 0.7 Long sessions
+## 0.8 Long sessions
 
 - [ ] Resume correctly after a session has been compacted
 - [ ] Recover after a crash
 
-## 0.8 Task orchestration
+## 0.9 Task orchestration
 
 - [ ] Nested tasks
 - [ ] Subtasks run one after another
 - [ ] A second task type: document writing
 - [ ] Read-only requirements pool shared across tasks
 
-## 0.9 Practice runs
+## 1.0 Practice runs
 
 - [ ] Simulated user as a product feature: choose a persona, run a practice session, read the verdicts and the judge's report
 - [ ] Observatory replay of what the user saw
