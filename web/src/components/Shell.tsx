@@ -1,19 +1,31 @@
-// 任务列表页与任务页共用的外壳：左侧栏（新建任务、按最近活动排的任务、当前任务的会话）加主体。
+// 任务列表页、任务页与知识库页面共用的外壳：左侧栏（新建任务、「任务」与「知识库」两个入口、按最近活动排的任务、当前任务的会话）加主体。
+// 「知识库」入口只在服务有知识库时出现。
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Form, Input, Modal, Select } from "antd";
-import { CaretDownOutlined, CaretRightOutlined, MessageOutlined, PlusOutlined } from "@ant-design/icons";
+import { BookOutlined, CaretDownOutlined, CaretRightOutlined, MessageOutlined, PlusOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { SessionListEntry, TaskListEntry } from "../api/types";
 import { go, href } from "../router";
 import { useToast } from "./Toasts";
-import { NoModelBanner, UserMenu } from "./ServiceControls";
+import { NoModelBanner, UserMenu, useService } from "./ServiceControls";
 
 
-export function Shell({ currentTaskId, children }: { currentTaskId?: string; children: ReactNode }) {
+export function Shell({ currentTaskId, nav = "tasks", libraries, children }: {
+  currentTaskId?: string;
+  nav?: "tasks" | "knowledge";
+  /** 知识库页面自己有库的清单，给了就用它的个数，增删库之后侧栏跟着变。 */
+  libraries?: number;
+  children: ReactNode;
+}) {
   const [tasks, setTasks] = useState<TaskListEntry[]>([]);
   const [sessions, setSessions] = useState<SessionListEntry[]>([]);
   const [open, setOpen] = useState(false);
+  const hasKnowledge = !!useService().info?.capabilities.knowledge;
+  const [libraryCount, setLibraryCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (hasKnowledge) api.knowledge().then((list) => setLibraryCount(list.length)).catch(() => setLibraryCount(null));
+  }, [hasKnowledge, nav]);
 
   useEffect(() => {
     // 侧栏只列打得开的任务；旧格式任务只在任务列表页里标明不支持。
@@ -34,6 +46,16 @@ export function Shell({ currentTaskId, children }: { currentTaskId?: string; chi
               新建任务
             </Button>
           </div>
+          {hasKnowledge && (
+            <div className="sider-nav">
+              <div className={`nav-item${nav === "tasks" ? " on" : ""}`} onClick={() => go(href.tasks())} data-testid="nav-tasks">
+                <UnorderedListOutlined className="ic" />任务<span className="cnt">{tasks.length}</span>
+              </div>
+              <div className={`nav-item${nav === "knowledge" ? " on" : ""}`} onClick={() => go(href.knowledge())} data-testid="nav-knowledge">
+                <BookOutlined className="ic" />知识库{(libraries ?? libraryCount) !== null && <span className="cnt">{libraries ?? libraryCount} 个库</span>}
+              </div>
+            </div>
+          )}
           <div className="sider-list">
             <div className="sider-caption">任务（按最近活动排序）</div>
             {tasks.map((t) => (

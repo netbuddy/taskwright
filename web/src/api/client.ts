@@ -6,6 +6,9 @@ import type {
   ActionRequest,
   ApiErrorBody,
   ItemRevision,
+  KnowledgeDocument,
+  KnowledgeKind,
+  KnowledgeLibrary,
   RevisionLog,
   ServiceInfo,
   TaskType,
@@ -166,8 +169,25 @@ export const api = {
     const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
     return request<{ path: string }>("POST", `${task(taskId)}/materials${query}`, form);
   },
+  deleteMaterial: (taskId: string, path: string) => request<{ ok: true; path: string }>("POST", `${task(taskId)}/materials/delete`, { path }),
   control: (taskId: string, sessionId: string, action: "stop") =>
     request<{ ok: true; cleared?: string[] }>("POST", `${task(taskId)}/control?session=${encodeURIComponent(sessionId)}`, { action }),
+
+  // 知识库
+  knowledge: () => request<{ libraries: KnowledgeLibrary[] }>("GET", "/knowledge").then((r) => r.libraries),
+  createLibrary: (name: string) =>
+    request<{ library: Omit<KnowledgeLibrary, "used_by_tasks" | "documents"> }>("POST", "/knowledge/libraries", { name }).then((r) => r.library),
+  renameLibrary: (id: string, name: string) => request<{ library: { id: string; name: string } }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}`, { name }),
+  deleteLibrary: (id: string) => request<{ ok: true }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}/delete`, {}),
+  uploadDocument: (id: string, file: File, kind: KnowledgeKind) => {
+    const form = new FormData();
+    form.append("kind", kind);
+    form.append("file", file, file.name);
+    return request<{ document: KnowledgeDocument }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}/documents`, form).then((r) => r.document);
+  },
+  deleteDocument: (id: string, name: string) => request<{ ok: true }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}/documents/delete`, { name }),
+  setTaskKnowledge: (taskId: string, libraries: string[]) =>
+    request<{ libraries: string[] }>("POST", `${task(taskId)}/knowledge`, { libraries }).then((r) => r.libraries),
 
   // 6 直接操作
   action: (taskId: string, sessionId: string, body: ActionRequest) =>

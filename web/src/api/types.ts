@@ -617,6 +617,27 @@ export interface TaskListEntry {
 export interface TaskDetail extends Task {
   materials: Material[];
   sessions: SessionListEntry[];
+  /** 这个任务选用的库的编号；没有知识库的旧后端不给。 */
+  knowledge_libraries?: string[];
+}
+
+/** 知识库文档的种类：只是标签，不决定用法。 */
+export type KnowledgeKind = "standard" | "glossary" | "template" | "past_work" | "other";
+
+export interface KnowledgeDocument {
+  name: string;
+  kind: KnowledgeKind;
+  bytes: number;
+  uploaded_at: string;
+}
+
+/** 知识库里的一个库（GET /api/v1/knowledge 的一项）。used_by_tasks 是本服务接手的进行中任务里选用了它的个数。 */
+export interface KnowledgeLibrary {
+  id: string;
+  name: string;
+  created_at: string;
+  used_by_tasks: number;
+  documents: KnowledgeDocument[];
 }
 
 /** 条目在它改动过的某次修订下的内容（GET …/items/{item_id}/revisions 的一项）。 */
@@ -743,8 +764,13 @@ export interface ServiceInfo {
   mode: "desktop" | "server";
   pid: number;
   port: number | null;
-  capabilities: { exit: boolean; model?: boolean };
+  capabilities: { exit: boolean; model?: boolean; knowledge?: boolean };
   model?: { name: string; reason: string };
   /** 上传上限（字节）、超过时的那句话、允许的扩展名、类型给人看的一串与类型不符时的那句话；旧后端没有这一项，较早的后端没有后三样。 */
   upload?: { max_bytes: number; too_large_text: string; extensions?: string[]; types_text?: string; unsupported_type_text?: string };
+  /** 知识库文档的上传：形状与 upload 相同，另有种类的取值与中文叫法；没有知识库时不给。 */
+  knowledge_upload?: {
+    max_bytes: number; too_large_text: string; extensions: string[]; types_text: string; unsupported_type_text: string;
+    kinds: { kind: KnowledgeKind; name: string }[];
+  };
 }
