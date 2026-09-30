@@ -239,6 +239,43 @@ describe("从「问题」页签跳到条目", () => {
       ["issue-card-TBD-010", "issue-card-TBD-002"]);
   });
 
+  it("从一个已经了结的问题跳来：顶部那一行照旧，那张卡片不显示，其余没了结的问题照常摊开、不折叠", () => {
+    render(<Panel />);
+    fireEvent.click(screen.getByRole("tab", { name: /问题/ }));
+    fireEvent.click(within(screen.getByTestId("item-TBD-001")).getByText("UC-003"));
+    expect(screen.getByTestId("from-issue")).toHaveTextContent("‹ 回到问题列表你从 TBD-001 跳过来，它牵涉这条。");
+    const cards = within(screen.getByTestId("item-issues")).getAllByTestId(/^issue-card-/);
+    expect(cards.map((e) => e.dataset.testid)).toEqual(["issue-card-TBD-002", "issue-card-TBD-010"]);
+    expect(cards.some((e) => e.classList.contains("hi"))).toBe(false);
+    expect(screen.queryByTestId("issues-more")).toBeNull();
+    fireEvent.click(screen.getByTestId("back-to-issues"));
+    expect(screen.getByTestId("item-TBD-001")).toHaveClass("flash");
+  });
+
+  it("从已经了结的问题跳到一个再没有别的问题的条目：只有顶部那一行，问题区整块不渲染", () => {
+    const t = task();
+    t.items = t.items.map((i) => (i.item_id === "TBD-001" ? { ...i, fields: { ...i.fields, 关联条目: ["UC-001"] } } : i));
+    render(<Panel t={t} />);
+    fireEvent.click(screen.getByRole("tab", { name: /问题/ }));
+    fireEvent.click(within(screen.getByTestId("item-TBD-001")).getByText("UC-001"));
+    expect(screen.getByTestId("from-issue")).toHaveTextContent("你从 TBD-001 跳过来，它牵涉这条。");
+    expect(screen.queryByTestId("item-issues")).toBeNull();
+  });
+
+  it("跳来之后在那张卡片上保留了它：卡片随即不再显示，顶部那一行照旧，其余问题摊开", async () => {
+    const submit = vi.fn(async () => null);
+    const t = task();
+    const { rerender } = render(<Panel t={t} submit={submit} />);
+    fireEvent.click(screen.getByRole("tab", { name: /问题/ }));
+    fireEvent.click(within(screen.getByTestId("item-TBD-010")).getByText("UC-003"));
+    fireEvent.click(screen.getByTestId("issue-keep-TBD-010"));
+    await waitFor(() => expect(submit).toHaveBeenCalled());
+    rerender(<Panel t={{ ...t, items: t.items.map((i) => (i.item_id === "TBD-010" ? { ...i, revision_no: 13, fields: { ...i.fields, 状态: "用户决定保留" } } : i)) } as Task} submit={submit} />);
+    expect(screen.getByTestId("from-issue")).toHaveTextContent("你从 TBD-010 跳过来，它牵涉这条。");
+    expect(within(screen.getByTestId("item-issues")).getAllByTestId(/^issue-card-/).map((e) => e.dataset.testid)).toEqual(["issue-card-TBD-002"]);
+    expect(screen.queryByTestId("issues-more")).toBeNull();
+  });
+
   it("点「回到问题列表」切回问题页签并闪一下那张问题卡片，来源随之清掉", () => {
     jump();
     fireEvent.click(screen.getByTestId("back-to-issues"));
