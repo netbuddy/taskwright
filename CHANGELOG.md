@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Task service
+
+- The task service splits what the assistant's program writes into lines at line feeds only. Before, a line whose JSON held the character U+2028 or U+2029, which can come from a material or the conversation, was split into pieces that could not be read, so the event was lost. The program's error output is split the same way, so a lone carriage return there no longer starts a new line either. Inside the task service, starting the program and sending and receiving its lines is now an interface with one implementation, a child process.
+
 ## [0.4.0] - 2026-09-29
 
 0.4.0 finishes the work that 0.3 left open, removes the earlier Python task service, and improves reviews. The Review tab is laid out by what needs your attention, the reviewer sees the task's other items, and two review rules are switched off by default. An item's sources now only mark the original passages it cites, and your own edits no longer add a source.
