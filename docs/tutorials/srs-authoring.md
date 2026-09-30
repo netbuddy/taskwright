@@ -26,7 +26,7 @@ It takes about 40 minutes, part of which is waiting for the assistant.
   scripts/dev.sh
   ```
 
-  One completion condition is "every item passed review". You start reviews from the items area (see [capabilities](../capabilities.md), section 1.9); the screenshots of this tutorial were taken before the review buttons existed and do not show them yet.
+  One completion condition is "every item passed review". You start reviews from the items area (see [capabilities](../capabilities.md), section 1.9); the screenshots of this tutorial were taken before the review buttons existed and do not show them yet, and the Review tab and the item details also look different in 0.4.0; where a screenshot and the text differ, the text describes the current interface.
 
 The screenshots come from a real run with the default model. **In your run the assistant's wording, the number and ids of the items and the revision numbers will differ**, but the steps and buttons are the same. The interface texts are in Chinese; the tutorial gives the English meaning next to each button name. Our task is called 图书馆借阅（教程） ("library lending (tutorial)"); yours can be called anything.
 
@@ -224,7 +224,7 @@ Back to the ask card: how are fines paid? You already typed the answer during st
 
 ![Your answer and its changes](images/srs-authoring/24-answer-typed.png)
 
-The assistant added the rule to the constraint rules of UC-002, marked TBD-001 as resolved with your answer as its outcome, saved this as revision 10, and asked you to confirm UC-002. The new rule carries a 用户的话 (user's words) source that quotes you.
+The assistant added the rule to the constraint rules of UC-002, saved this as revision 10, and asked you to confirm UC-002. The new rule carries a 用户的话 (user's words) source that quotes you. At the end of the reply the assistant asks on a choose card whether TBD-001 is settled, with the options 已解决 ("resolved"), 还没解决，继续改 ("not yet, keep changing") and 先不管，保留 ("leave it for now"). Only when you click **已解决** does it mark TBD-001 as resolved, with your answer as its outcome.
 
 ### Step 19: Ask what is left to answer
 
@@ -242,7 +242,7 @@ The material only says the holiday loan period "will be set separately", and you
 
 ![After filling in from common sense](images/srs-authoring/26-common-sense.png)
 
-It added "suggested holiday loan period: 60 days" to the constraint rules of UC-001, gave it an "added by the assistant" source that says the material gives no number, marked TBD-002 as resolved, saved this as revision 11, and asked you to confirm UC-001. The card says UC-001 修订 11（上次确认修订 4）: what you confirmed in step 17 was revision 4.
+It added "suggested holiday loan period: 60 days" to the constraint rules of UC-001, gave it an "added by the assistant" source that says the material gives no number, saved this as revision 11, and asked you to confirm UC-001. The card says UC-001 修订 11（上次确认修订 4）: what you confirmed in step 17 was revision 4. As in step 18, the assistant marks TBD-002 as resolved only after you click **已解决** on the choose card that asks whether the issue is settled.
 
 Click the tag **产生了修订 11** at the bottom of the reply. The side panel switches to the Revisions tab, selects this card, and the item area highlights the items it touched:
 
