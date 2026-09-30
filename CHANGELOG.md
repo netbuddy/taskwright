@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-09-30
+## [0.4.0] - 2026-09-29
 
 0.4.0 finishes the work that 0.3 left open, removes the earlier Python task service, and improves reviews. The Review tab is laid out by what needs your attention, the reviewer sees the task's other items, and two review rules are switched off by default. An item's sources now only mark the original passages it cites, and your own edits no longer add a source.
 
