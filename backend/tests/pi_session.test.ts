@@ -153,7 +153,7 @@ test("系统提示太长、命令行超过系统上限时 spawn 当场报 E2BIG�
   try {
     const pi = new PiSession({ ...PROFILE, system_prompt_file: "agent/huge-prompt.md" }, workspace, join(tmp, "runs-e2big"));
     await assert.rejects(pi.start(), (e: unknown) => /E2BIG/.test(technicalOf(e)));
-    assert.equal(pi.process, null);
+    assert.equal(pi.transport, null);
     for (const key of ["archive", "notes", "times"]) assert.equal((pi as any)[key], null, `${key} 的句柄没有关掉`);
     assert.deepEqual(readdirSync(join(tmp, "runs-e2big", "pi-events")), [], "这一次留下的三份空归档文件已删掉");
   } finally {

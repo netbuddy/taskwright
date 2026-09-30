@@ -1,6 +1,7 @@
 /**
  * 会话类：启动 pi 的 RPC 模式（pi 不画界面，改成按行收发 JSON：往它的标准输入写一行命令，它往标准输出写一行行事件），
  * 发命令，读事件，归档。它只做搬运与看护，不做判断：不写任务数据库，不解读用户说的话，不评价模型的产出。
+ * 启动程序与按行收发经收发数据这一层（transport.ts 的 PiTransport）；本类只管上面的事：命令与应答的对应、事件队列、归档与补记。
  *
  * 归档写三个文件（格式见 observatory/archive-format.md，观测台按它读）：
  * - 原始事件流「<label>-<年月日>-<时分秒>.jsonl」：pi 标准输出的每一行，原样；
@@ -8,13 +9,12 @@
  * - 收到时刻（同名，扩展名 .times.jsonl）：原始事件流第 N 行是什么时候读到的，每行 {"行号", "收到时刻"}。
  */
 
-import { type ChildProcess, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync, writeFileSync } from "node:fs";
-import { constants } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import * as launch from "./launch.ts";
 import { localStamp, pyDumps } from "./py.ts";
+import type { PiTransport } from "./transport.ts";
+import { RpcTransport } from "./transport_rpc.ts";
 
 /** 等一条命令的回应最多等这么久（毫秒）。超过就认为 pi 没反应。 */
 export const RESPONSE_TIMEOUT = 60_000;
@@ -212,15 +212,6 @@ class EventQueue<T> {
   }
 }
 
-/** 退出码：被信号杀掉时写成负的信号编号（与 Python 的 returncode 相同）。 */
-function exitCode(child: ChildProcess): number | null {
-  if (child.exitCode !== null) return child.exitCode;
-  if (child.signalCode) return -((constants.signals as Record<string, number>)[child.signalCode] ?? 0);
-  return null;
-}
-
-const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
-
 /** 一个 pi 子进程加它的一条会话。 */
 export class PiSession {
   readonly profile: launch.Profile;
@@ -228,7 +219,8 @@ export class PiSession {
   readonly workspace: string;
   readonly runsDir: string;
   readonly label: string;
-  process: ChildProcess | null = null;
+  /** 这一次启动用的收发数据层；没有启动或已经关掉时为 null。 */
+  transport: PiTransport | null = null;
   command: string[] = [];
   /** 自动应答过的界面请求，每项是 [方法名, 标题, 我们回了什么]。 */
   readonly uiRequests: [string, string, string][] = [];
@@ -251,11 +243,12 @@ export class PiSession {
   timesPath: string | null = null;
   /** 这一次启动新建的归档文件（打开之前不存在的那几份）。 */
   private newFiles: string[] = [];
-  private stdoutDone: Promise<void> = Promise.resolve();
-  private stderrDone: Promise<void> = Promise.resolve();
-  private exitedPromise: Promise<void> = Promise.resolve();
+  private readonly makeTransport: () => PiTransport;
 
-  constructor(profile: launch.Profile, workspace: string, runsDir: string, label = "session", tasksRoot: string | null = null) {
+  /** makeTransport 给出每次启动用的收发数据层，默认是子进程实现。 */
+  constructor(profile: launch.Profile, workspace: string, runsDir: string, label = "session", tasksRoot: string | null = null,
+    makeTransport: () => PiTransport = () => new RpcTransport()) {
+    this.makeTransport = makeTransport;
     this.profile = profile;
     this.tasksRoot = tasksRoot !== null ? resolve(tasksRoot) : null;
     this.workspace = resolve(workspace);
@@ -308,28 +301,18 @@ export class PiSession {
     this.events = new EventQueue();
     this.responses = new Map();
     this.stderrLines = [];
-    // 启动失败有两种报法：命令行太长（E2BIG）、内存不足这类错误由 spawn 当场抛出，没有执行权限、找不到文件这类错误随后经
-    // error 事件报出。两种一样处理：关掉三个归档文件，再按错误代号报错。
-    let child: ChildProcess;
+    // 启动失败时（系统当场拒绝或随后报错，见 transport_rpc.ts）关掉三个归档文件，再按错误代号报错。
+    const transport = this.makeTransport();
+    this.transport = transport;
     try {
-      child = spawn(built.command, built.args, { cwd: this.workspace, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      await transport.start({ command: built.command, args: built.args, cwd: this.workspace, env });
     } catch (error) {
       this.startFailed(error instanceof Error ? error : new Error(String(error)));
     }
-    this.process = child;
-    const spawned = await new Promise<Error | null>((ok) => {
-      child.once("spawn", () => ok(null));
-      child.once("error", (error) => ok(error));
-    });
-    if (spawned) this.startFailed(spawned);
-    this.exitedPromise = new Promise((ok) => child.once("exit", () => ok()));
-    // 往已经关掉的管道里写时 Node 会异步报 EPIPE；不接住会把整个服务带倒。写不进去由 write 按进程已退出处理。
-    child.stdin?.on("error", () => {});
     if (rebased !== null) this.noteRebased(sessionFile!, ...rebased);
     this.note("启动", { ...launch.startupRecord(this.profile, this.command), 任务目录: this.workspace, 接回的会话文件: sessionFile ?? "",
       是不是重启接回: sessionFile !== null, 归档文件: basename(this.archivePath) });
-    this.readStdout(child);
-    this.readStderr(child);
+    this.read(transport);
     this.note("知识仓库摘要", { ...knowledge, 说明: "启动 pi 之前那一刻，任务目录知识仓库与平台 skill 里每份文件的路径与内容摘要值；只记摘要值，不记内容。" });
     this.note("上下文文件", launch.contextFileCandidates(this.command, this.workspace, env));
     await this.noteLoadedSkills();
@@ -352,32 +335,17 @@ export class PiSession {
 
   /** 关掉 pi 子进程：先关它的标准输入让它自己退，等不及就强杀。 */
   async close(): Promise<void> {
-    const child = this.process;
-    if (child === null) return;
-    try {
-      child.stdin?.end();
-    } catch {
-      // 已经关了
-    }
-    if (!(await this.waitExit(SHUTDOWN_TIMEOUT))) {
-      child.kill("SIGKILL");
-      await this.waitExit(SHUTDOWN_TIMEOUT);
-    }
-    await Promise.race([this.stderrDone, sleep(2000)]);
-    this.noteExit(exitCode(child));
+    const transport = this.transport;
+    if (transport === null) return;
+    await transport.stop(SHUTDOWN_TIMEOUT);
+    this.noteExit(transport.exitCode());
     this.closeFiles();
-    this.process = null;
-  }
-
-  private async waitExit(ms: number): Promise<boolean> {
-    const child = this.process;
-    if (child === null || child.exitCode !== null || child.signalCode !== null) return true;
-    return Promise.race([this.exitedPromise.then(() => true), sleep(ms).then(() => false)]);
+    this.transport = null;
   }
 
   /** 子进程没有起来：清掉进程、关掉三个归档文件并删掉这一次留下的空文件，报错。 */
   private startFailed(error: Error): never {
-    this.process = null;
+    this.transport = null;
     this.closeFiles();
     this.removeEmptyArchive();
     throw (error as NodeJS.ErrnoException).code === "ENOENT" ? new PiNotFound(error) : new PiStartRefused(error);
@@ -485,37 +453,26 @@ export class PiSession {
   }
 
   alive(): boolean {
-    const child = this.process;
-    return child !== null && child.exitCode === null && child.signalCode === null && !this.exited;
+    const transport = this.transport;
+    return transport !== null && transport.running() && !this.exited;
   }
 
   // ───────────── 读 pi 的两路输出 ─────────────
 
-  private readStdout(child: ChildProcess): void {
-    const reader = createInterface({ input: child.stdout!, crlfDelay: Infinity });
-    this.stdoutDone = new Promise((ok) => {
-      reader.on("line", (line) => this.onLine(line));
-      reader.on("close", async () => {
+  private read(transport: PiTransport): void {
+    transport.subscribe({
+      line: (line) => this.onLine(line),
+      stderrLine: (line) => {
+        this.stderrLines.push(line + "\n");
+        this.note("标准错误", { 文字: line });
+      },
+      ended: () => {
         // 标准输出到头了，说明进程没了。先把退出码与标准错误记下来，再叫醒所有还在等的人。
-        await Promise.race([this.stderrDone, sleep(2000)]);
-        await Promise.race([this.exitedPromise, sleep(5000)]);
-        this.noteExit(exitCode(child));
+        this.noteExit(transport.exitCode());
         this.exited = true;
         this.events.put(null);
         for (const resolveOne of [...this.responses.values()]) resolveOne(null);
-        ok();
-      });
-    });
-  }
-
-  private readStderr(child: ChildProcess): void {
-    const reader = createInterface({ input: child.stderr!, crlfDelay: Infinity });
-    this.stderrDone = new Promise((ok) => {
-      reader.on("line", (line) => {
-        this.stderrLines.push(line + "\n");
-        this.note("标准错误", { 文字: line });
-      });
-      reader.on("close", () => ok());
+      },
     });
   }
 
@@ -626,11 +583,11 @@ export class PiSession {
   // ───────────── 发命令 ─────────────
 
   private write(payload: unknown): void {
-    const child = this.process;
-    if (child === null || !child.stdin || child.stdin.destroyed || child.stdin.writableEnded || this.exited) {
-      throw new PiExited(child ? exitCode(child) : null, this.stderrText);
+    const transport = this.transport;
+    if (transport === null || !transport.writable() || this.exited) {
+      throw new PiExited(transport ? transport.exitCode() : null, this.stderrText);
     }
-    child.stdin.write(pyDumps(payload) + "\n");
+    transport.write(pyDumps(payload));
   }
 
   /** 发一条命令并等它的回应。回应里 success 为假时抛 PiRefused，带上 pi 给的原因。 */
@@ -651,7 +608,7 @@ export class PiSession {
       this.responses.delete(id);
     }
     if (message === "timeout") throw new PiTimeout(command, Math.round(timeoutMs / 1000));
-    if (message === null) throw new PiExited(this.process ? exitCode(this.process) : null, this.stderrText);
+    if (message === null) throw new PiExited(this.exitCodeNow(), this.stderrText);
     if (!message.success) throw new PiRefused(command, message.error ?? "没有给原因");
     return message.data || {};
   }
@@ -663,19 +620,23 @@ export class PiSession {
     return got.value === null ? { type: "进程已退出" } : got.value;
   }
 
+  private exitCodeNow(): number | null {
+    return this.transport ? this.transport.exitCode() : null;
+  }
+
   getState(): Promise<PiEvent> {
     return this.request("get_state");
   }
 
   /** 把一句话发给 pi，逐条交出事件，直到这句话结束（agent_settled，之后用 get_state 确认没有卡在压缩里）。给测试与终端客户端用。 */
   async *send(text: string): AsyncGenerator<PiEvent> {
-    if (!this.alive()) throw new PiExited(this.process ? exitCode(this.process) : null, this.stderrText);
+    if (!this.alive()) throw new PiExited(this.exitCodeNow(), this.stderrText);
     this.events.clear();
     this.note("提示", { 原文: text, 投递方式: "后端经 RPC 的 prompt 命令提交", 下一条请求编号: `${this.label}-${this.counter + 1}` });
     await this.request("prompt", { message: text });
     for (;;) {
       const got = await this.events.get();
-      if (got === null || got.value === null) throw new PiExited(this.process ? exitCode(this.process) : null, this.stderrText);
+      if (got === null || got.value === null) throw new PiExited(this.exitCodeNow(), this.stderrText);
       yield got.value;
       if (got.value.type === "agent_settled") break;
     }
@@ -683,7 +644,7 @@ export class PiSession {
     if (state.isCompacting) {
       for (;;) {
         const got = await this.events.get();
-        if (got === null || got.value === null) throw new PiExited(this.process ? exitCode(this.process) : null, this.stderrText);
+        if (got === null || got.value === null) throw new PiExited(this.exitCodeNow(), this.stderrText);
         yield got.value;
         if (got.value.type === "compaction_end") break;
       }

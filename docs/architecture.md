@@ -12,6 +12,8 @@
 | Web (`web/`) | TypeScript, React | the browser | no, it only calls the API | never |
 | Simulator (`sim/`) | TypeScript tools, a Python driver, and a Node driver that starts the simulated user | a second pi process | read-only (for judging) | never |
 
+**How the task service talks to pi.** It starts pi in RPC mode and exchanges one JSON object per line with it: commands and answers to dialogs on pi's standard input, events and responses on its standard output (`backend/src/pi_session.ts`). Lines are split at line feeds only, as pi's RPC documentation requires, so the characters U+2028 and U+2029 inside a JSON string do not break a line. The layer that starts pi and sends and receives these lines is a replaceable interface (`backend/src/transport.ts`); there is one implementation now, a child process (`backend/src/transport_rpc.ts`). Commands, events, the archives and the answers to dialogs are handled above it, in `PiSession`.
+
 **The three kinds of code.**
 
 | Kind | Where | What it may do |
