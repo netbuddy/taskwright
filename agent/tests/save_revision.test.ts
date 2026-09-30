@@ -1,11 +1,13 @@
 /** 保存修订：新增、修改、删除，一次多个操作只产生一次修订，编号不复用，来源的沿用与替换，各类核对不通过时整体不写入。 */
 
 import assert from "node:assert/strict";
+import { rmSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { ACTOR_USER } from "../src/lib/db.ts";
-import { DEFINITION_PATH, SOURCE, callIn, cardClick, count, demoDefinition, makeWorkspace, problemCard, problemClicksOn, query, userEntry } from "./helpers.ts";
+import { DEFINITION_PATH, SAMPLE_DOCX, SOURCE, callIn, cardClick, count, demoDefinition, makeWorkspace, problemCard, problemClicksOn, putSampleDocx, query, userEntry } from "./helpers.ts";
 
 function workspaceWithTask(): string {
   const dir = makeWorkspace();
@@ -463,4 +465,56 @@ test("问题条目：改状态与处理结果放行；新增不受限；用户�
     operations: [{ op: "update", item: "TBD-002", base_revision: 3, fields: { 建议的处理: "下一期再做" } }],
   });
   assert.match(user.text, /修改了条目 TBD-002/);
+});
+
+// ───────────── 材料删除之后 ─────────────
+
+/** 建好 UC-001（来源引用 inputs/材料.md），再把这份材料删掉。 */
+function workspaceWithDeletedMaterial(): string {
+  const dir = workspaceWithTask();
+  saveRevision(callIn(dir), { operations: [addUseCase()] });
+  unlinkSync(join(dir, "inputs/材料.md"));
+  return dir;
+}
+
+test("材料删除之后，助手改字段并把原来的来源原样再交一次：保存成功，来源原样留着", () => {
+  const dir = workspaceWithDeletedMaterial();
+  const outcome = saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补一句" }, sources: [SOURCE] }] });
+  assert.match(outcome.text, /修订 2，/);
+  const rows = query<any>(dir, "SELECT locator, excerpt FROM item_source WHERE revision_no = 2").map((r) => ({ ...r }));
+  assert.deepEqual(rows, [{ locator: "inputs/材料.md", excerpt: "用户可以登录。" }]);
+});
+
+test("材料删除之后，助手只交来源整体重新标注（含原来那条）：保存成功", () => {
+  const dir = workspaceWithDeletedMaterial();
+  saveRevisionWith(dir, { operations: [{ op: "update", item: "UC-001", base_revision: 1, sources: [SOURCE, { kind: "用户的话", excerpt: "登录要记住我" }] }] },
+    [{ entryId: "u-login", text: "登录要记住我" }]);
+  assert.equal(count(dir, "revision"), 2);
+  assert.deepEqual(query<any>(dir, "SELECT kind FROM item_source WHERE revision_no = 2 ORDER BY kind").map((r) => r.kind), ["文档原文", "用户的话"]);
+});
+
+test("材料删除之后，新写的来源指向不存在的文件仍然拒绝：摘录与原来那条不同也算新写的", () => {
+  const dir = workspaceWithDeletedMaterial();
+  const before = snapshot(dir);
+  for (const source of [
+    { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以注销。" },
+    { kind: "文档原文", locator: "inputs/别的材料.md", excerpt: "用户可以登录。" },
+  ]) {
+    assert.throws(() => saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补" }, sources: [source] }] }),
+      /不是任务目录里能读到的材料文件/);
+  }
+  assert.throws(() => saveRevision(callIn(dir), { operations: [{ ...addUseCase("注销"), sources: [SOURCE] }] }), /不是任务目录里能读到的材料文件/,
+    "新增条目时引用已经删掉的材料照旧拒绝");
+  assert.deepEqual(snapshot(dir), before);
+});
+
+test("Word 材料删除之后，原来带段落号的来源原样再交一次：保存成功", () => {
+  const dir = workspaceWithTask();
+  putSampleDocx(dir);
+  const docx = { kind: "文档原文", locator: `${SAMPLE_DOCX}#p76`, excerpt: "逾期的每本每天罚款一角" };
+  saveRevision(callIn(dir), { operations: [{ ...addUseCase(), sources: [docx] }] });
+  rmSync(join(dir, SAMPLE_DOCX));
+  rmSync(join(dir, `${SAMPLE_DOCX}.md`));
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补" }, sources: [docx] }] });
+  assert.deepEqual(query<any>(dir, "SELECT locator FROM item_source WHERE revision_no = 2").map((r) => r.locator), [`${SAMPLE_DOCX}#p76`]);
 });
