@@ -41,15 +41,7 @@
 .app .lrow .saving { color: var(--amber); }
 .app .tbd.sel { border-color: var(--ink); }
 
-/* 详情：值格下方的来源小标签（四种各有配色），右下角固定的确认按钮 */
-.app .srcs { display: flex; gap: .25rem; flex-wrap: wrap; margin-top: .2rem; }
-.app .srctag { font-size: 0.857rem; border-radius: .4rem; padding: 0 .4rem; display: inline-block; white-space: nowrap; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; border: 1px solid; }
-.app .srctag.quote { color: var(--blue); border-color: var(--blue-line); background: var(--blue-bg); cursor: pointer; }
-.app .srctag.quote:hover { background: #dbe6fb; }
-.app .srctag.added { color: var(--amber); border-color: var(--amber-line); background: var(--amber-bg); font-weight: 600; }
-.app .srctag.said { color: var(--teal); border-color: var(--teal-line); background: var(--teal-bg); }
-.app .srctag.edited { color: var(--ink); border-color: var(--line2); background: var(--dark3); }
+/* 详情：右下角固定的确认按钮 */
 .app .detail { position: relative; min-height: 100%; display: flex; flex-direction: column; }
 .app .dfoot.sticky { position: sticky; bottom: 0; background: var(--card); padding: .5rem 0 .2rem; border-top: 1px solid var(--line);
   margin-top: auto; z-index: 2; }
@@ -302,9 +294,8 @@
 .app .m.ai .mentioned { margin-top: .35rem; font-size: 0.857rem; color: #8a8a8a; }
 
 /* 领域说明一类的集合（任务定义「界面」一项）：条目行上的分组小标签与修订、来源数；页签下的一句白话；
-   种类为「领域说明」的来源标签与来源框；详情里「被哪些条目引用」；右侧栏的分组清单。 */
-.app .srctag.note, .app .chip.note { color: var(--note); border: 1px solid var(--note-line); background: var(--note-bg); cursor: pointer; }
-.app .srctag.note:hover { background: #e2e8f0; }
+   种类为「领域说明」的来源框；详情里「被哪些条目引用」；右侧栏的分组清单。 */
+.app .chip.note { color: var(--note); border: 1px solid var(--note-line); background: var(--note-bg); cursor: pointer; }
 .app .cat { font-size: .857rem; color: var(--note); border: 1px solid var(--note-line); background: var(--note-bg); border-radius: .4rem; padding: 0 .4rem; white-space: nowrap; }
 .app .nd.plain { color: var(--mut); }
 .app .dn-lead { margin: .4rem .9rem .2rem; font-size: .93rem; color: var(--mut); }

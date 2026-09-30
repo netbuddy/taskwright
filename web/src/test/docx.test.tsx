@@ -12,7 +12,7 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { fireEvent } from "@testing-library/react";
 import { TaskPage } from "../pages/TaskPage";
 import { MaterialPane } from "../components/work/MaterialPane";
-import { SourceTag } from "../components/work/ItemDetail";
+import { SourceBox } from "../components/work/ItemDetail";
 import { ownMaterials, pageAndPosition, placeText, polish, renderDocx, tableOf, tablePositions, type DocxTable, type RenderedDocx } from "../model/docx";
 import { chapterOf, type LocationFile } from "../../../agent/src/lib/docx_locations";
 import { resetDocxStore, TaskIdContext } from "../state/docxStore";
@@ -214,18 +214,17 @@ describe("同一句被几个条目引用", () => {
   });
 });
 
-describe("条目区的来源标签", () => {
-  it("写成「文件名 · 第几页 · 章节 · 页上中下」；悬停提示带表格位置；没算出来之前只写文件名", async () => {
+describe("条目详情底部「来源」一节的出处", () => {
+  it("写成「文件名 · 第几页 · 章节 · 页上中下」，表格里的段落另写表格位置；没算出来之前只写文件名", async () => {
     vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
     vi.spyOn(api, "materialContent").mockImplementation(content);
     render(
       <TaskIdContext.Provider value="TASK-D">
-        <SourceTag source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
+        <SourceBox source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
       </TaskIdContext.Provider>,
     );
-    expect(screen.getByRole("button")).toHaveTextContent("❝ requirements-styled.docx");
-    await waitFor(() => expect(screen.getByRole("button")).toHaveTextContent("❝ requirements-styled.docx · 第 5 页 · 4 非功能需求 · 页上"), SLOW);
-    expect(screen.getByRole("button").title).toBe("材料原文：「系统要能每分钟处理至少 100 笔借还」（表 3 第 2 行第 2 列）。点一下，材料区滚到这里。");
+    expect(screen.getByRole("button")).toHaveTextContent("出处：requirements-styled.docx");
+    await waitFor(() => expect(screen.getByRole("button").textContent).toBe("出处：requirements-styled.docx · 第 5 页 · 4 非功能需求 · 页上，表 3 第 2 行第 2 列（点一下看原文）"), SLOW);
     expect(screen.getByRole("button").textContent).not.toMatch(/段/);
   });
 
@@ -239,10 +238,10 @@ describe("条目区的来源标签", () => {
       vi.spyOn(api, "materialContent").mockImplementation(broken);
       render(
         <TaskIdContext.Provider value="TASK-D">
-          <SourceTag source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
+          <SourceBox source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
         </TaskIdContext.Provider>,
       );
-      await waitFor(() => expect(screen.getByRole("button")).toHaveTextContent("❝ requirements-styled.docx · 第 5 页 · 页上"), SLOW);
+      await waitFor(() => expect(screen.getByRole("button")).toHaveTextContent("出处：requirements-styled.docx · 第 5 页 · 页上"), SLOW);
       cleanup();
     }
   });

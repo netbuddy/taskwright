@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { api } from "../api/client";
 import type { LocationFile } from "../../../agent/src/lib/docx_locations";
-import { SourceTag } from "../components/work/ItemDetail";
+import { SourceBox } from "../components/work/ItemDetail";
 import { renderDocx, tableOf, type DocxTable } from "../model/docx";
 import { resetDocxStore, TaskIdContext } from "../state/docxStore";
 import SAMPLE from "../../../examples/library-lending/requirements-styled.docx?inline";
@@ -55,17 +55,17 @@ describe("分页标记的个数：位置表与页面相同", () => {
   }
 });
 
-describe("来源标签的章节查位置表", () => {
-  it("非十进制编号的标题在标签上带编号：中文数字一章下的一节写成「一.1 章下的一节」", SLOW, async () => {
+describe("来源出处的章节查位置表", () => {
+  it("非十进制编号的标题在出处里带编号：中文数字一章下的一节写成「一.1 章下的一节」", SLOW, async () => {
     const path = "inputs/loc-numbering.docx";
     vi.spyOn(api, "materialRaw").mockResolvedValue(bytesOf(NUMBERING).slice().buffer);
     vi.spyOn(api, "materialContent").mockImplementation(async (_t, p) => ({ path: p, text: p.endsWith(".locations.json") ? NUMBERING_TABLE_TEXT : "" }));
     render(
       <TaskIdContext.Provider value="TASK-N">
-        <SourceTag source={{ kind: "文档原文", locator: `${path}#p7`, excerpt: "章下一节的正文。" }} />
+        <SourceBox source={{ kind: "文档原文", locator: `${path}#p7`, excerpt: "章下一节的正文。" }} />
       </TaskIdContext.Provider>,
     );
     // 这份样例没有分页标记，不写页码。
-    await waitFor(() => expect(screen.getByRole("button").textContent).toMatch(/^❝ loc-numbering\.docx · 一\.1 章下的一节 · 页[上中下]$/), SLOW);
+    await waitFor(() => expect(screen.getByRole("button").textContent).toMatch(/^出处：loc-numbering\.docx · 一\.1 章下的一节 · 页[上中下]（点一下看原文）$/), SLOW);
   });
 });

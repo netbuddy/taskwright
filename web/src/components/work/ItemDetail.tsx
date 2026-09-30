@@ -1,9 +1,9 @@
 // 条目详情：照设计原型画成一张表——左列字段名（必填带星），右列带边框的值格；列表型字段每步一行、行首是序号；
-// 每个值格下方是支持这个字段的来源小标签（材料文件名、执行者补充、用户的话、领域说明四种各有配色；早期版本的「用户直接修改」由后端滤掉，不到这里），
-// 点材料标签，文档区滚到并高亮那句原文；点领域说明标签（「领域说明 DN-003」），打开那条领域说明。
+// 值格下方不再挂来源小标签：来源只在底部「来源」一节列出（早期版本的「用户直接修改」由后端滤掉，不到这里）；
+// 点那里材料原文的出处，文档区滚到并高亮那句原文；点领域说明的编号，打开那条领域说明。
 // 任务定义「界面」一项写了的集合（例如领域说明）：关联条目旁写上标题，来源之后另列「被哪些条目引用」。顶部一行：编号、标题、
 // 与列表行完全相同的主状态徽标与「问题 N」（ItemStatus.tsx）、修订下拉、上一条与下一条；下面一行灰字写「已读 · 现在是修订 N，由助手写的 · 来源 N 条」，
-// 修订不止一次时末尾带「和修订 N 比对」。有助手补充时一条灰色横幅（讲的是内容，不是状态）；底部「来源」一节按种类列小标签加摘录。
+// 修订不止一次时末尾带「和修订 N 比对」。有助手补充时一条灰色横幅（讲的是内容，不是状态）；底部「来源」一节按种类列标签加摘录。
 // 没有「确认」按钮：用户打开详情就记为已读（页面在打开时发 mark_viewed），已读就算确认。用户在这里改字段或标为先不管，
 // 后端随修订自动写一条确认标记。已读是条目级、单向的，没有撤回按钮。
 // 问题条目（见 keepPendingField）写下之后只由用户了结：底部只有「先不管，保留」与「删除」，不能直接修改。
@@ -39,7 +39,7 @@ import { alignSteps } from "../../model/diff";
 import { docxLocator, pageAndPosition, placeText } from "../../model/docx";
 import { chapterOf } from "../../../../agent/src/lib/docx_locations";
 import { TaskIdContext, useDocx } from "../../state/docxStore";
-import { BUSY_TEXT, batchNo, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, itemVerdict, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, sourcesFor, writeOffReason } from "../../model/items";
+import { BUSY_TEXT, batchNo, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, itemVerdict, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, writeOffReason } from "../../model/items";
 import { baselineRevision, confirmedRevision } from "../../model/revisions";
 import { formatTime } from "../../model/format";
 import { rejectedText } from "./errors";
@@ -307,7 +307,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
             if (f.type === "文本" && value === item.title && !old && own.length === 0) return null; // 标题已在顶部那一行
             return (
               <FieldRow key={f.name} def={f} value={value ?? null} before={beforeFields ? beforeFields[f.name] ?? null : undefined}
-                marked={showMarks && markedSet.has(f.name)} sources={sourcesForFields(sources, f.name)}
+                marked={showMarks && markedSet.has(f.name)}
                 findings={own} ruleOf={(id) => ruleOf(task, item.collection, id)}
                 onFix={onPrefill ? (x) => onPrefill(fixText(item.item_id, x)) : undefined} fixOff={readOnly}
                 status={status} batchNo={currentNo} onKeep={keepable && !writeOff ? keep : undefined}
@@ -390,11 +390,6 @@ function confirmationText(c: Item["confirmations"][number]): string {
   return "你在界面上点的确认";
 }
 
-/** 支持某个字段的来源：指明了支持这个字段的那几条（整个条目的来源只在底部「来源」一节列）。 */
-function sourcesForFields(sources: Source[], field: string): Source[] {
-  return sourcesFor({ sources } as Item, field);
-}
-
 const fileName = (locator: string) => locator.split("/").pop() || locator;
 
 /**
@@ -416,27 +411,7 @@ function useSourcePlace(source: Source): { label: string; tablePos: string } {
   return { label: [name, ...placeText(page, chapter, position)].join(" · "), tablePos: entry.tablePos?.get(loc.paragraph) ?? "" };
 }
 
-/** 值格下方的一个来源小标签。种类为「领域说明」的写成「领域说明 DN-003」，点一下打开那条领域说明。 */
-export function SourceTag({ source, onLocate, onOpenItem, titleOf }: {
-  source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
-}) {
-  const place = useSourcePlace(source);
-  if (source.kind === SOURCE_DOMAIN_NOTE) {
-    const title = titleOf?.(source.locator);
-    return <span className="srctag note" role="button" data-testid={`note-source-${source.locator}`}
-      title={`${SOURCE_DOMAIN_NOTE} ${source.locator}${title ? `「${title}」` : ""}：${source.excerpt}（点一下，打开这条${SOURCE_DOMAIN_NOTE}）`}
-      onClick={() => onOpenItem?.(source.locator)}>{SOURCE_DOMAIN_NOTE} {source.locator}</span>;
-  }
-  if (source.kind === "文档原文") {
-    return <span className="srctag quote" title={`材料原文：「${source.excerpt}」${place.tablePos ? `（${place.tablePos}）` : ""}。点一下，材料区滚到这里。`} role="button"
-      onClick={() => onLocate?.(source.excerpt, source.locator)}>❝ {place.label}</span>;
-  }
-  if (source.kind === "执行者补充") return <span className="srctag added" title={source.excerpt}>助手补充</span>;
-  if (source.kind === "用户的话") return <span className="srctag said" title={source.excerpt}>用户的话</span>;
-  return <span className="srctag edited" title={source.excerpt}>{source.kind}</span>;
-}
-
-function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix, fixOff, status = null, batchNo: no = null, onKeep, onUnwaive, unwaiveOff,
+function FieldRow({ def, value, before, marked, findings, ruleOf, onFix, fixOff, status = null, batchNo: no = null, onKeep, onUnwaive, unwaiveOff,
   onLocate, onOpenItem, titleOf, refTitles = false }: {
   def: FieldDef;
   value: FieldValue;
@@ -444,7 +419,6 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
   before: FieldValue | undefined;
   /** 字段修订标识：自上次确认的修订以来助手改过，整块加框。 */
   marked: boolean;
-  sources: Source[];
   /** 这个字段上的评审发现。 */
   findings: Finding[];
   /** 按编号找规则，展开条文用。 */
@@ -512,13 +486,13 @@ function FieldRow({ def, value, before, marked, sources, findings, ruleOf, onFix
         {body}
         {findings.map((f, i) => <FindingLine key={i} finding={f} rule={ruleOf(f.rule_id)} onFix={onFix} fixOff={fixOff} status={status} batchNo={no}
           onKeep={isProblem(f) ? onKeep : undefined} onUnwaive={isProblem(f) ? onUnwaive : undefined} unwaiveOff={unwaiveOff} />)}
-        {sources.length > 0 && <div className="srcs">{sources.map((s, i) => <SourceTag key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} />)}</div>}
       </div>
     </div>
   );
 }
 
-function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
+/** 底部「来源」一节的一条来源：种类标签、出处（材料原文可点，点了材料区滚到那里；领域说明的编号点了打开它）、摘录与支持的字段。 */
+export function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
   source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
 }) {
   const place = useSourcePlace(source);
@@ -536,7 +510,7 @@ function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
           <span className="evi" role="button" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{place.label}{place.tablePos ? `，${place.tablePos}` : ""}（点一下看原文）</span>
         )}
         {source.kind === SOURCE_DOMAIN_NOTE && (
-          <> <span className="ref" role="button" onClick={() => onOpenItem?.(source.locator)}>{source.locator}</span> {titleOf?.(source.locator)}</>
+          <> <span className="ref" role="button" data-testid={`note-source-${source.locator}`} onClick={() => onOpenItem?.(source.locator)}>{source.locator}</span> {titleOf?.(source.locator)}</>
         )}
       </div>
       <div className={`quote${source.kind === "用户的话" ? " said" : ""}`}>{source.kind === "文档原文" || source.kind === "用户的话" || source.kind === SOURCE_DOMAIN_NOTE ? `「${source.excerpt}」` : source.excerpt}</div>
