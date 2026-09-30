@@ -51,7 +51,7 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [ ] Limits on how many assistants run at once, with idle shutdown and a queue
 - [ ] Upgrades that keep existing tasks
 
-## 0.6 First trial
+## 0.6 First public release
 
 - [ ] Backup and restore of tasks
 - [ ] Review rules verified on real projects
