@@ -1,6 +1,6 @@
 // 一个模型服务的详情（设置页面「模型」一栏的右边）：名称、种类、接口地址、API 密钥，获取模型列表，模型的清单，手工添加一个模型，删除。
 // 清单里的改动（勾选、种类、上下文长度、手工添加）先留在页面上，点「保存改动」一次交给后端（整个替换模型清单）。
-// editable 为假（从别的电脑打开）或者是手工登记的模型服务时只能看：按钮不显示，勾选框、下拉与输入框是灰的。
+// editable 为假或者是手工登记的模型服务时只能看：按钮不显示，勾选框、下拉与输入框是灰的。现在的后端 editable 恒为 true，这条只读的路留着。
 
 import { useEffect, useMemo, useState } from "react";
 import { App as AntApp, Button, Checkbox, Input, InputNumber, Select } from "antd";
@@ -308,7 +308,7 @@ function ManualAdd({ rows, onAdd }: { rows: Row[]; onAdd: (m: Row) => void }) {
   );
 }
 
-/** API 密钥一行：「已设置，末四位 3f9c」与「重新输入」；从别的电脑看只写「已设置」。 */
+/** API 密钥一行：「已设置，末四位 3f9c」与「重新输入」；只读时只写「已设置」。 */
 function KeyLine({ provider, editable, onChanged }: { provider: Provider; editable: boolean; onChanged: (p: Provider) => void }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);

@@ -740,7 +740,7 @@ export interface ServiceInfo {
   mode: "desktop" | "server";
   pid: number;
   port: number | null;
-  /** model_config：这个页面能不能改模型配置（只许运行任务服务的这台电脑）；较早的后端没有这一项。 */
+  /** model_config：这个页面能不能改模型配置；现在的后端恒为 true，较早的后端没有这一项。 */
   capabilities: { exit: boolean; model?: boolean; model_config?: boolean };
   model?: { name: string; reason: string };
   /** 上传上限（字节）、超过时的那句话、允许的扩展名、类型给人看的一串与类型不符时的那句话；旧后端没有这一项，较早的后端没有后三样。 */

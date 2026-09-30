@@ -123,7 +123,7 @@ export const api = {
   serviceInfo: () => request<ServiceInfo>("GET", "/service", undefined, 5_000),
   exitService: () => request<{ ok: true }>("POST", "/service/exit", {}, 10_000),
 
-  // 模型配置（接口文档第 10 节）：读谁都可以；改只许运行任务服务的这台电脑，别处来的请求后端回 forbidden。
+  // 模型配置（接口文档第 10 节）：从哪台电脑打开页面都可以读、可以改。
   modelConfig: () => request<ModelConfig>("GET", "/model-config"),
   addProvider: (body: { kind: ProviderKind; name?: string; base_url?: string; api_key?: string }) =>
     request<{ ok: true; provider: Provider }>("POST", "/model-config/providers", body, PROVIDER_TIMEOUT_MS),

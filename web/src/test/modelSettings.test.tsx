@@ -48,8 +48,9 @@ function page(cfg: ModelConfig) {
 }
 
 describe("设置页面的「模型」一栏", () => {
-  it("从别的电脑打开时整栏只读：顶上是后端的说明，没有更换、添加、获取、删除的按钮，勾选框与输入框是灰的，密钥只写「已设置」", async () => {
-    const notice = "模型的配置只能在运行任务服务的这台电脑上修改。";
+  it("后端给 editable 为假时整栏仍只读：顶上是后端的说明，没有更换、添加、获取、删除的按钮，勾选框与输入框是灰的，密钥只写「已设置」", async () => {
+    // 现在的后端 editable 恒为 true；页面的只读分支留着，这里照后端给假时的样子测。
+    const notice = "这里只能看，不能改。";
     page(config({ editable: false, notice, providers: [deepseek({ base_url: null, key: { set: true, last4: null } }), handWritten],
       selection: { language: { provider_id: "taskwright-deepseek", model_id: "deepseek-chat" }, embedding: null } }));
     expect(await screen.findByTestId("readonly-notice")).toHaveTextContent(notice);

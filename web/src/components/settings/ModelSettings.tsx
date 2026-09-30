@@ -1,6 +1,6 @@
 // 设置页面的「模型」一栏：上半部分「现在用的模型」两行，下半部分「模型服务」（左边清单，右边选中的那一个的详情）。
 // 「添加模型服务」换成添加的画面；添加成功之后回到这里，右边打开新的那一个，并随即获取一次它的模型列表。
-// editable 为假（从别的电脑打开）时整栏只读，顶上是后端给的那句说明。
+// editable 为假时整栏只读，顶上是后端给的那句说明。现在的后端 editable 恒为 true（从哪台电脑打开都能改），这条只读的路留着。
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Spin } from "antd";
