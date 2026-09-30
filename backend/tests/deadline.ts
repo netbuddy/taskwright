@@ -9,7 +9,8 @@
  * 只在测试框架起的子进程里生效（框架给子进程设了环境变量 NODE_TEST_CONTEXT），框架的主进程与别的进程里什么都不做。
  */
 
-import { relative } from "node:path";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 
 /**
  * 缺省时限（秒）。最慢的测试文件在开发机上约 10 秒跑完；机器很忙时慢几倍也远在 300 秒以内，而 300 秒又比「挂了十分钟才有人发现」早得多。
@@ -33,4 +34,9 @@ if (process.env.NODE_TEST_CONTEXT) {
       + `或者有一处等待没有时限；在这个文件里查每例起的东西有没有在 finally 里关掉。\n`);
     process.exit(1);
   }, seconds * 1000).unref();
+  // 这个文件是每个测试文件都预加载的唯一一个，所以顺带把产品自己的设置文件（在界面上选的模型，见 src/product_settings.ts）
+  // 指到临时目录里一个不存在的文件：测试不读开发者本机的设置，测试里起的后端进程继承这个环境变量。要用设置文件的测试自己另设。
+  if (!process.env.TASKWRIGHT_SETTINGS_FILE) {
+    process.env.TASKWRIGHT_SETTINGS_FILE = join(tmpdir(), `taskwright-test-no-settings-${process.pid}`, "settings.json");
+  }
 }
