@@ -1,15 +1,13 @@
-// 与运行形态有关的三样界面：没有模型时页面顶部的白话提示、「本机用户」菜单里的「退出服务」、退出之后的整屏。
+// 与运行形态有关的三样界面：没有模型时页面顶部的白话提示（带「去配置模型」）、「本机用户」菜单里的「退出服务」、退出之后的整屏。
 // 都按服务信息接口（GET /api/v1/service）的能力清单显示：capabilities.model 为 false 才出提示，capabilities.exit 为 true
 // 才有「退出服务」（只有桌面形态有）。取不到服务信息时（例如开发时的假服务没有这个接口）两样都不显示，页面照旧。
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { Modal } from "antd";
+import { Button, Modal } from "antd";
 import { api, ApiError } from "../api/client";
 import type { ServiceInfo } from "../api/types";
+import { openSettings } from "../router";
 import { useToast } from "./Toasts";
-
-/** 部署文档里「10.4 配置模型服务」一节（GitHub 给标题生成的锚点去掉了小数点）。 */
-export const MODEL_SETUP_URL = "https://github.com/netbuddy/taskwright/blob/main/docs/deployment.zh-CN.md#104-配置模型服务";
 
 type Mode = ServiceInfo["mode"];
 
@@ -61,16 +59,20 @@ export function ExitedScreen({ mode = "desktop" }: { mode?: Mode }) {
   );
 }
 
-/** 没有配置模型服务时，页面顶部的一条提示；「详情」展开后端给的一句原因（写明查过的两个文件在哪里）。 */
+/**
+ * 助手没有可用的模型时（capabilities.model 为 false），任务列表页、任务页与工作视图顶部的一条提示，右边「去配置模型」进设置页面；
+ * 「详情」展开后端给的一句原因（写明查过的两个文件在哪里）。在设置页面选定模型之后，服务信息重新取一次，提示随之收起。
+ */
 export function NoModelBanner() {
   const { info } = useService();
   const [open, setOpen] = useState(false);
   if (!info || info.capabilities.model !== false) return null;
   return (
     <div className={`svc-banner${open ? " open" : ""}`} data-testid="no-model-banner">
-      还没有配置模型服务，助手无法工作。请按说明放置配置文件后重新启动。
-      <a href={MODEL_SETUP_URL} target="_blank" rel="noreferrer">查看配置说明</a>
+      还没有选定助手用的模型，助手现在不能工作。
       {info.model?.reason && <a role="button" onClick={() => setOpen(!open)} data-testid="no-model-detail">详情</a>}
+      <span className="sp" />
+      <Button size="small" onClick={openSettings} data-testid="go-model-settings">去配置模型</Button>
       {open && info.model?.reason && <div className="why">{info.model.reason}</div>}
     </div>
   );

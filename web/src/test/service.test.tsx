@@ -5,7 +5,7 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { api } from "../api/client";
 import type { ServiceInfo } from "../api/types";
 import { Shell } from "../components/Shell";
-import { MODEL_SETUP_URL, ServiceProvider } from "../components/ServiceControls";
+import { ServiceProvider } from "../components/ServiceControls";
 import { ToastProvider } from "../components/Toasts";
 import { settled } from "./settled";
 
@@ -26,17 +26,20 @@ function page() {
 }
 
 describe("无模型提示", () => {
-  it("capabilities.model 为 false 时顶部出白话提示，链接到部署文档的配置说明，「详情」展开原因；为 true 时不出", async () => {
+  it("capabilities.model 为 false 时顶部出白话提示，「去配置模型」进设置页面，「详情」展开原因；为 true 时不出", async () => {
     const reason = "在模型登记文件 /x/models.json 和登录凭据文件 /x/auth.json 里都没有找到「local/qwen」。";
     vi.spyOn(api, "serviceInfo").mockResolvedValue(info({ capabilities: { exit: true, model: false }, model: { name: "local/qwen", reason } }));
     page();
     const banner = await screen.findByTestId("no-model-banner");
-    expect(banner).toHaveTextContent("还没有配置模型服务，助手无法工作。请按说明放置配置文件后重新启动。");
-    expect(screen.getByRole("link", { name: "查看配置说明" })).toHaveAttribute("href", MODEL_SETUP_URL);
+    expect(banner).toHaveTextContent("还没有选定助手用的模型，助手现在不能工作。");
+    expect(screen.queryByRole("link", { name: "查看配置说明" })).toBeNull();
     expect(banner).not.toHaveTextContent(reason);
     fireEvent.click(screen.getByTestId("no-model-detail"));
     expect(banner).toHaveTextContent(reason);
     for (const word of ["profile", "pi ", "投影"]) expect(banner.textContent).not.toContain(word);
+    window.location.hash = "#/tasks";
+    fireEvent.click(screen.getByTestId("go-model-settings"));
+    expect(window.location.hash).toBe("#/settings/models");
     cleanup();
 
     vi.spyOn(api, "serviceInfo").mockResolvedValue(info());
