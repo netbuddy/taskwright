@@ -57,11 +57,11 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [ ] Review rules verified on real projects
 - [ ] One round of evaluation and improvement for the assistant's known faults: missed content, contradictions written as settled rules, one rule written twice
 - [ ] Load test with tens of users at once
-- [ ] Screenshots in the tutorial and the user guide brought up to date
+- [ ] Screenshots in the tutorial brought up to date
 
 ## 0.7 Deliverables and desktop
 
-- [ ] Word (.docx) export
+- [ ] Word (.docx) export of the whole deliverable
 - [ ] Cross-item review: duplicates, conflicts, inconsistent wording
 - [ ] Desktop application based on Electron
 - [ ] Baselines of the whole deliverable
