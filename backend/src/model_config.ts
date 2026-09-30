@@ -291,8 +291,9 @@ function inUse(selection: Selection, id: string): ModelType[] {
 function managedView(id: string, p: StoredProvider, auth: Record<string, any> | null, selection: Selection, local: boolean): ProviderView {
   const key = keyOf(auth, id);
   const status = p.kind === "codex" && p.status ? { ...p.status, logged_in: codexLoggedIn(auth) } : p.status;
+  // 从别的电脑来的请求只看得到服务名与种类：接口地址与密钥末四位都不给（地址可能是内网里的服务器）。
   return {
-    id, managed: true, kind: p.kind, name: p.name, base_url: p.base_url,
+    id, managed: true, kind: p.kind, name: p.name, base_url: local ? p.base_url : null,
     key: p.kind === "codex" ? null : { set: key !== null, last4: key !== null && local ? key.slice(-4) : null },
     status, models: p.models, models_fetched_at: p.models_fetched_at, in_use: inUse(selection, id),
   };

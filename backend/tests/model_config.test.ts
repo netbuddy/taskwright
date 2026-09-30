@@ -159,7 +159,7 @@ test("只许本机：套接字来源、转发头与 Origin 三条都满足才算
   assert.equal(isLocalRequest("127.0.0.1", { origin: "http://[::1]:8940" }), true);
 });
 
-test("从别的电脑来的修改一律 403，读照常但不给可改、不给密钥末四位", async () => {
+test("从别的电脑来的修改一律 403，读照常但不给可改、不给接口地址与密钥末四位", async () => {
   const id = await addOllama();
   fake.routes["GET /v1/models"] = () => [200, { data: [] }];
   const other = [{ remote: "198.51.100.20" }, { headers: { origin: "http://198.51.100.20:5680" } }, { headers: { "x-forwarded-for": "198.51.100.20" } }];
@@ -184,6 +184,10 @@ test("从别的电脑来的修改一律 403，读照常但不给可改、不给�
   assert.equal(view.body.editable, false);
   assert.equal(view.body.notice, "模型的配置只能在运行任务服务的这台电脑上修改。");
   assert.equal(view.body.providers[0].name, "本机 ollama");
+  assert.equal(view.body.providers[0].kind, "ollama");
+  assert.equal(view.body.providers[0].base_url, null, "从别的电脑读时不给接口地址");
+  assert.equal(JSON.stringify(view.body).includes(String(fake.port)), false);
+  assert.equal((await go("GET", "/api/v1/model-config")).body.providers[0].base_url, fake.url, "本机读时给接口地址");
   const local = await go("GET", "/api/v1/model-config");
   assert.equal(local.body.editable, true);
   assert.equal(local.body.notice, null);
