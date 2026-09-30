@@ -1,20 +1,22 @@
 // 问题跟着条目走：问题条目（见 keepPendingField）的「条目引用」字段列着它牵涉的条目，这里把问题挂回到那些条目上。
-//   · ItemIssues：条目详情标题行之下「挂在这条上的问题」一区，每个问题一张卡片；没有问题时整块不渲染。
-//     未解决的卡片带一行输入框与「回答」「先不管，保留」：「回答」把「回答 TBD-002：用户写的话」直接发到对话区，
+//   · ItemIssues：条目详情标题行之下「挂在这条上的问题」一区，只列还没了结的问题（见 isOpenIssue），每个一张卡片；
+//     一个都没有时整块不渲染。已解决与用户决定保留的问题不挂在条目上，在「问题」页签与修订里看。
+//     卡片带一行输入框与「回答」「先不管，保留」：「回答」把「回答 TBD-002：用户写的话」直接发到对话区，
 //     输入框为空时只预填对话区输入框、不发送（与「问题」页签上的「回答这个问题」相同，助手工作中也照常可用）；
-//     「先不管，保留」走 keep_pending（notify_executor: false）。
-//     已了结的卡片变淡，写明处理结果与它所在的修订。问题卡片上没有「修改」：问题写下后只由用户了结。
+//     「先不管，保留」走 keep_pending（notify_executor: false），保留之后那张卡片随即不再显示。
+//     问题卡片上没有「修改」：问题写下后只由用户了结。
 //   · FromIssueCrumb：从「问题」页签点「牵涉 UC-003」跳来时，详情顶部那一行「‹ 回到问题列表」。
-//     这时那张问题卡片排第一张并加粗边框，其余问题折叠成一行「还有 N 个问题 ▸」。
+//     那个问题还没了结时，它的卡片排第一张并加粗边框，其余问题折叠成一行「还有 N 个问题 ▸」；
+//     已经了结时顶部那一行照旧，它的卡片不显示，其余问题照常摊开。
 // 灰化：「先不管，保留」与其它写入按钮一致（任务已结束、助手不可用、助手工作中、正在保存）；「回答」只在任务已结束或
 // 助手不可用时灰化，输入框里有字、要直接发送时，再按对话区发送键的规矩灰化（助手工作中、有未保存的条目编辑）。都悬停说明原因。
 //
 // 卡片上的字段：第一个字段是事项；名为「处理结果」的文本字段是了结时写的处理结果（与保存修订工具认问题条目的判据一致，
-// 那个工具只允许改状态与处理结果）；其余有内容的文本字段按任务定义的顺序显示；状态以外的枚举字段（例如种类）作小标签。
+// 那个工具只允许改状态与处理结果），卡片上不显示；其余有内容的文本字段按任务定义的顺序显示；状态以外的枚举字段（例如种类）作小标签。
 
 import { useEffect, useRef, useState } from "react";
 import type { Item, Task } from "../../api/types";
-import { isEmptyValue, isOpenIssue, issueAnswerText, issuesOf, issueStatus, keepPendingField, writeOffReason } from "../../model/items";
+import { isEmptyValue, issueAnswerText, issueStatus, keepPendingField, unresolvedIssuesOf, writeOffReason } from "../../model/items";
 import type { SubmitAction } from "./ItemDetail";
 import { HOLD_TEXT } from "./ReplyCard";
 import { TURN_TEXT } from "./Conversation";
@@ -50,14 +52,13 @@ export function ItemIssues({ task, itemId, readOnly, writesOff = false, hold = f
   onSend?: (text: string) => SendResult;
   /** 输入框为空时点「回答」：只预填对话区输入框（与「问题」页签上「回答这个问题」同一个预填）。 */
   onPrefill?: (issue: Item) => void;
-  /** 从这个问题跳过来的：它排第一张并高亮，其余折叠。 */
+  /** 从这个问题跳过来的：它还没了结时排第一张并高亮，其余折叠。 */
   fromIssue?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   useEffect(() => { setExpanded(false); }, [itemId, fromIssue]);
-  const issues = issuesOf(task, itemId);
+  const issues = unresolvedIssuesOf(task, itemId);
   if (issues.length === 0) return null;
-  const open = issues.filter((i) => isOpenIssue(task, i)).length;
   const pinned = fromIssue ? issues.find((i) => i.item_id === fromIssue) ?? null : null;
   const rest = pinned ? issues.filter((i) => i !== pinned) : issues;
   const card = (issue: Item, hi = false) => (
@@ -66,7 +67,7 @@ export function ItemIssues({ task, itemId, readOnly, writesOff = false, hold = f
   );
   return (
     <div className="sw-iss" data-testid="item-issues">
-      <div className="sw-iss-h">挂在这条上的问题 {issues.length} 个，{open} 个未解决</div>
+      <div className="sw-iss-h">挂在这条上的问题 {issues.length} 个</div>
       {pinned && card(pinned, true)}
       {pinned && rest.length > 0 && (
         <div className="sw-iss-more" role="button" onClick={() => setExpanded(!expanded)} data-testid="issues-more">
@@ -87,11 +88,9 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
   const def = task.definition.collections.find((c) => c.name === issue.collection)!;
   const statusField = keepPendingField(task, issue.collection)!;
   const status = issueStatus(task, issue) ?? "";
-  const open = isOpenIssue(task, issue);
   const [first, ...others] = def.fields;
   const filled = (f: (typeof others)[number]) => f.type === "文本" && !isEmptyValue(issue.fields[f.name]);
   const suggestions = others.filter((f) => f.name !== RESULT_FIELD && filled(f));
-  const outcomes = others.filter((f) => f.name === RESULT_FIELD && filled(f));
   const kinds = others.filter((f) => f.type === "枚举" && f.name !== statusField.name && !isEmptyValue(issue.fields[f.name]));
   const matter = first ? String(issue.fields[first.name] ?? issue.title) : issue.title;
   const keepOff = readOnly || writesOff || pending;
@@ -118,30 +117,22 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
   };
 
   return (
-    <div className={`sw-iss-card${open ? "" : " closed"}${hi ? " hi" : ""}`} data-testid={`issue-card-${issue.item_id}`}>
+    <div className={`sw-iss-card${hi ? " hi" : ""}`} data-testid={`issue-card-${issue.item_id}`}>
       <div className="head">
         <span className="id">{issue.item_id}</span>
         {kinds.map((f) => <span key={f.name} className="chip">{String(issue.fields[f.name])}</span>)}
         <IssueStateBadge value={status} unresolved={(statusField.values ?? [])[0]} />
       </div>
       <div className="body">{matter}</div>
-      {!open && (
-        <div className="res" data-testid={`issue-outcome-${issue.item_id}`}>
-          {outcomes.length > 0 ? `${outcomes.map((f) => `${f.name}：${String(issue.fields[f.name])}`).join("；")}（修订 ${issue.revision_no}）`
-            : `在修订 ${issue.revision_no} 标为${status}`}
-        </div>
-      )}
-      {open && suggestions.map((f) => <div className="sug" key={f.name}>助手{f.name}：{String(issue.fields[f.name])}</div>)}
-      {open && (
-        <div className="ans">
-          <input value={answer} disabled={readOnly} placeholder="回答这个问题，助手会改到牵涉的条目里…" aria-label={`回答 ${issue.item_id}`}
-            onChange={(e) => setAnswer(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) doAnswer(); }}
-            data-testid={`issue-input-${issue.item_id}`} />
-          <button type="button" className="btn sm" disabled={answerOff} title={answerTitle ?? (typed ? "发给助手" : "输入框空着时只把开头填进对话区输入框，不发送")} onClick={doAnswer}
-            data-testid={`issue-answer-${issue.item_id}`}>回答</button>
-          <button type="button" className="btn sm" disabled={keepOff} title={keepTitle} onClick={keep} data-testid={`issue-keep-${issue.item_id}`}>先不管，保留</button>
-        </div>
-      )}
+      {suggestions.map((f) => <div className="sug" key={f.name}>助手{f.name}：{String(issue.fields[f.name])}</div>)}
+      <div className="ans">
+        <input value={answer} disabled={readOnly} placeholder="回答这个问题，助手会改到牵涉的条目里…" aria-label={`回答 ${issue.item_id}`}
+          onChange={(e) => setAnswer(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) doAnswer(); }}
+          data-testid={`issue-input-${issue.item_id}`} />
+        <button type="button" className="btn sm" disabled={answerOff} title={answerTitle ?? (typed ? "发给助手" : "输入框空着时只把开头填进对话区输入框，不发送")} onClick={doAnswer}
+          data-testid={`issue-answer-${issue.item_id}`}>回答</button>
+        <button type="button" className="btn sm" disabled={keepOff} title={keepTitle} onClick={keep} data-testid={`issue-keep-${issue.item_id}`}>先不管，保留</button>
+      </div>
     </div>
   );
 }
