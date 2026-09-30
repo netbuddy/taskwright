@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
-import { DefinitionError, loadDefinition } from "../src/lib/definition.ts";
+import { DefinitionError, effectiveRules, loadDefinition } from "../src/lib/definition.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import { ReviewError, paragraphsWith, prepareReviews } from "../src/lib/review.ts";
@@ -105,6 +105,26 @@ test("真实的任务类型：三个集合的规则文件都能读，问题集�
   assert.ok(!ids("docs/review-rules/use-case.json").includes("UC-R10"));
   assert.ok(ids("docs/review-rules/use-case.json").includes("UC-R15"));
   assert.ok(ids("docs/review-rules/ears.json").includes("EARS-R10"));
+});
+
+test("真实的任务类型：UC-R15 与 EARS-R10 是可选规则，默认写在关闭名单里，实际要评的规则里没有它们", () => {
+  const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
+  const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
+  const level = (file: string, id: string) =>
+    (JSON.parse(readFileSync(join(typeDir, file), "utf-8")) as { 编号: string; 级别: string }[]).find((r) => r.编号 === id)?.级别;
+  assert.equal(level("docs/review-rules/use-case.json", "UC-R15"), "可选");
+  assert.equal(level("docs/review-rules/ears.json", "EARS-R10"), "可选");
+  const byName = Object.fromEntries(definition.collections.map((c) => [c.name, c.reviewRules]));
+  assert.deepEqual(byName["功能用例"]?.off, ["UC-R15"]);
+  assert.deepEqual(byName["非功能需求"]?.off, ["EARS-R10"]);
+  assert.deepEqual(byName["约束"]?.off, ["EARS-R10"]);
+  const effective = (name: string) => effectiveRules(typeDir, byName[name]!).map((r) => r.编号);
+  assert.equal(effective("功能用例").length, 13);
+  assert.ok(!effective("功能用例").includes("UC-R15"));
+  for (const name of ["非功能需求", "约束"]) {
+    assert.equal(effective(name).length, 9, name);
+    assert.ok(!effective(name).includes("EARS-R10"), name);
+  }
 });
 
 // ───────────── 评审者输出的核对与结论 ─────────────
