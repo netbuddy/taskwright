@@ -2,11 +2,12 @@
 # Starts the backend task service and the web dev server together; Ctrl+C stops both.
 #   TASKWRIGHT_TASKS_DIR   where task directories live   (default: ./tasks)
 #   TASKWRIGHT_RUNS_DIR    where raw event logs go       (default: ./runs)
+#   TASKWRIGHT_KNOWLEDGE_DIR  where the knowledge base lives (default: ./knowledge)
 #   TASKWRIGHT_API_PORT    backend port                  (default: 8790; the next free one if taken)
 #   TASKWRIGHT_WEB_PORT    web dev server port           (default: 5680)
 #
 # scripts/dev.sh --demo starts the same two servers without a model service: the backend uses the fake model endpoint
-# (backend/fake_model/) with the launch profile `fake`, its tasks and archives go to a temporary directory that is
+# (backend/fake_model/) with the launch profile `fake`, its tasks, archives and knowledge base go to a temporary directory that is
 # removed on exit, and examples/library-lending/run.sh creates a demo task with the example material, a session and a
 # few items, so the pages have something to show. The fake model answers from examples/library-lending/fake-model.json.
 # It needs pi on PATH, like the real backend, but no model service and no key.
@@ -23,6 +24,7 @@ esac
 
 TASKS="${TASKWRIGHT_TASKS_DIR:-$ROOT/tasks}"
 RUNS="${TASKWRIGHT_RUNS_DIR:-$ROOT/runs}"
+KNOWLEDGE="${TASKWRIGHT_KNOWLEDGE_DIR:-$ROOT/knowledge}"
 API_PORT="${TASKWRIGHT_API_PORT:-8790}"
 PIDS=()
 CLEANUP=()
@@ -48,6 +50,7 @@ if [ -n "$DEMO" ]; then
   CLEANUP+=("$DEMO_DIR")
   TASKS="$DEMO_DIR/tasks"
   RUNS="$DEMO_DIR/runs"
+  KNOWLEDGE="$DEMO_DIR/knowledge"
   node backend/fake_model/main.mts --script examples/library-lending/fake-model.json --log "$DEMO_DIR/fake-model.jsonl" \
     --agent-dir "$DEMO_DIR/pi-agent" > "$DEMO_DIR/fake-model.out" 2>&1 &
   PIDS+=($!)
@@ -56,13 +59,13 @@ if [ -n "$DEMO" ]; then
   PROFILE=(--profile fake)
   echo "dev.sh: demo data in $DEMO_DIR (removed on exit)"
 fi
-mkdir -p "$TASKS" "$RUNS"
+mkdir -p "$TASKS" "$RUNS" "$KNOWLEDGE"
 
 # The backend moves to the next free port when API_PORT is taken; read the port it actually uses from its first log
 # line, so the web dev server never forwards to some other service that happens to hold API_PORT.
 LOG="$(mktemp)"
 CLEANUP+=("$LOG")
-node backend/src/main.mts --tasks "$TASKS" --runs "$RUNS" --port "$API_PORT" "${PROFILE[@]}" > >(tee "$LOG") 2>&1 &
+node backend/src/main.mts --tasks "$TASKS" --runs "$RUNS" --knowledge "$KNOWLEDGE" --port "$API_PORT" "${PROFILE[@]}" > >(tee "$LOG") 2>&1 &
 PIDS+=($!)
 ACTUAL="$(wait_for "$LOG" 's|.*http://[^:]*:\([0-9][0-9]*\)/api/v1/tasks .*|\1|p' "${PIDS[-1]}" "the backend")"
 
