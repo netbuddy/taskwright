@@ -1,4 +1,4 @@
-// 一条评审发现，条目详情与评审页签共用，两行、都左对齐：
+// 条目详情里的一条评审发现，两行、都左对齐（评审页签另有自己的写法，见 ReviewPanel.tsx）：
 //   第一行只放发现本身：「问题：」或「建议：」、列表型字段的第几项、问题原文、「改法：……」、「违反 UC-R7」（点编号展开编号与条文），
 //     末尾小字「第 N 次评审指出」；
 //   第二行是这条发现的去向：状态词在前（未处理／已在修订 N 改／已保留／按改之前的规则评出，不再算数），保留的理由跟在后面（「已保留 · 理由：……」），
@@ -9,7 +9,7 @@ import { useState } from "react";
 import type { Finding, ReviewRule } from "../../api/types";
 import { type FindingStatus, isProblem, OLD_RULES_TEXT } from "../../model/items";
 
-export function FindingLine({ finding, rule, batchNo = null, status = null, onOpen, onFix, fixOff, onKeep, onUnwaive, unwaiveOff }: {
+export function FindingLine({ finding, rule, batchNo = null, status = null, onFix, fixOff, onKeep, onUnwaive, unwaiveOff }: {
   finding: Finding;
   /** 发现引用的那条规则，展开条文用。 */
   rule?: ReviewRule;
@@ -17,8 +17,6 @@ export function FindingLine({ finding, rule, batchNo = null, status = null, onOp
   batchNo?: number | null;
   /** 这条发现的去向；为空时第二行不写状态词。 */
   status?: FindingStatus | null;
-  /** 点发现文字：打开条目并指到字段（评审页签里用）。 */
-  onOpen?: () => void;
   /** 「让助手照这条改」。 */
   onFix?: (f: Finding) => void;
   fixOff?: boolean;
@@ -43,7 +41,7 @@ export function FindingLine({ finding, rule, batchNo = null, status = null, onOp
     <span className={`finding${problem ? "" : " advice"}`} data-testid={problem ? "finding-problem" : "finding-advice"}>
       <span>
         <b>{problem ? "问题：" : "建议："}</b>
-        {onOpen ? <span role="button" style={{ cursor: "pointer" }} onClick={onOpen}>{text}</span> : text}
+        {text}
         {finding.suggestion && <> 改法：{finding.suggestion}</>}
         {finding.rule_id && (
           <> 违反 <span className="clause" role="button" onClick={() => setOpen(!open)} data-testid={`clause-${finding.rule_id}`}>{finding.rule_id}</span></>

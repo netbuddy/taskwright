@@ -1,34 +1,31 @@
-// 右侧栏「评审」页签：按批次汇总与追溯评审，保留写法与规则开关也在这里。
-//   · 顶部一行：「N 次评审 · 未处理的问题 M 处」、「只看未处理」、「评审 N 条待评审的条目」；规则改了之后提示「规则改了，N 条需要重评」。
-//   · 每次评审一张卡片，最新的在上：「第 N 次评审」、时刻、由谁发起、条数、合规与不合规、问题与建议各几。
-//     最新一张默认展开，早先的变淡、折起，点标题展开。展开后逐条目列结果：不合规的条目逐条列发现（红点问题、琥珀点建议、
-//     每条发现与条目详情里同一个两行布局（FindingLine）：第一行是发现本身与「第 N 次评审指出」，第二行是去向（未处理／已在修订 N 改／
-//     已保留 · 理由）与操作链接（让助手照这条改、保留这种写法、撤销保留）；合规的条目折成一行，点开看每条的通过说明（PassNote）与建议。
-//     规则改过之后，按改之前的规则评出的发现写「按改之前的规则评出，不再算数」，不给链接，「只看未处理」不列，也不算在角标里。
-//     点条目编号或一条发现，打开条目详情并高亮那个字段。
-//   · 底部规则区：按集合列规则，每行只有开关、编号、条文，规则的状态只由开关表达：绿色带锁是必选，不能关；绿色不带锁是开着的，可以关；
-//     灰色是已经关闭。页面上没有「升为必选」的入口（以后由单独的规则配置面板提供）；已经升为必选的规则照开着的显示，悬停提示里写明。
-//     改动只影响之后的评审。
+// 右侧栏「评审」页签。只回答三个问题，从上到下：现在有什么要我处理；哪些已经没事了；以前评审过什么。各块的内容见 model/reviewTab.ts。
+//   · 顶上一行：一句话写现状，右边唯一的主按钮「评审这 N 个条目」（有还没评审的条目时才有）。评审正在进行时写已经评完几个、按钮变灰写
+//     「正在评审」，下面一条细的进度线；这只对页面上发起的评审有进度，助手在对话里发起的评审没有。
+//   · 要处理的：按条目分组，每个条目一张卡片，组头是编号与标题；每一处问题写位置、说明、改法，动作是「让助手照这条改」「保留这种写法」
+//     与不显眼的「依据的规则」；点「保留这种写法」时这一行换成填理由的输入框（KeepWording.tsx）。条目多于三个时只摊开前三个，
+//     其余每个折成一行。没有问题时整块不显示。
+//   · 建议（不影响通过）、已经没事的（通过的，你决定保留的）、评审记录：默认收起，点标题展开；没有内容时不显示。
+//   · 最下面一行评审规则的链接，点了从右侧滑出规则的面板：按集合列规则，每条一个开关、编号、条文；带锁的不能关。
+// 颜色只用产品已有的变量，一种颜色一个意思：红是要处理的问题，琥珀是建议，绿是已经没事的，靛蓝是交给助手去做的动作。
 // 保留、改规则都是用户的界面操作（waive_review、set_review_rules），界面上的变化等库事件到了才发生；被拒时报一条失败提示（全站提示条）。
+// 保留记在「条目 + 修订」上：在哪一处问题上点「保留这种写法」，都是这个条目的全部问题一起按你的决定算通过。
 
-import { useState } from "react";
-import type { ActionRequest, Finding, Item, Review, ReviewBatch, ReviewRule, Task } from "../../api/types";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import type { ActionRequest, Finding, Item, Review, ReviewRule, Task, Waiver } from "../../api/types";
 import type { ApiError } from "../../api/client";
 import type { ReviewRun } from "../../state/workState";
-import {
-  findingStatus, isProblem, itemVerdict, needsRereview, needsReview, openProblems, pendingReview, reviewOffReason, writeOffReason,
-} from "../../model/items";
+import { needsReview, passRules, reviewOffReason, writeOffReason } from "../../model/items";
+import { batchSentence, findingWhere, pendingSentence, reviewOverview, type FindingGroup, type ReviewOverview } from "../../model/reviewTab";
 import { formatTime } from "../../model/format";
-import { FindingLine } from "./FindingLine";
-import { PassNote } from "./PassNote";
 import { fixText } from "./ItemDetail";
 import { rejectedText } from "./errors";
 import { useToast } from "../Toasts";
+import { KeepBox, KeepLink } from "./KeepWording";
 
 type Submit = (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string) => Promise<ApiError | null>;
 
-/** 规则区默认显示的条数。 */
-const RULES_SHOWN = 5;
+/** 「要处理的」「建议」里整组摊开的条目个数，其余每个条目折成一行。 */
+export const GROUPS_SHOWN = 3;
 
 export function ReviewPanel({ task, review = null, readOnly, writesOff, onReview, submit, onOpenFinding, onPrefill }: {
   task: Task;
@@ -42,129 +39,274 @@ export function ReviewPanel({ task, review = null, readOnly, writesOff, onReview
   onOpenFinding: (itemId: string, field: string | null) => void;
   onPrefill: (text: string) => void;
 }) {
-  const [onlyOpen, setOnlyOpen] = useState(false);
-  const batches = [...(task.review_batches ?? [])].reverse();
-  const toReview = pendingReview(task);
-  const rereview = needsRereview(task);
-  const reviewing = !!review && !review.finished;
-  const reviewOff = reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: toReview.length });
-  const open = openProblems(task);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [drawer, setDrawer] = useState(false);
+  const toast = useToast();
+  const o = reviewOverview(task);
+  const toggle = (key: string) => setOpen((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const writeOff = writeOffReason(task, { readOnly, writesOff });
+  const waive = async (item: Item, kind: "waive_review" | "unwaive_review", reason?: string) => {
+    const label = kind === "waive_review" ? `保留 ${item.item_id} 现在的写法` : `撤销对 ${item.item_id} 的保留`;
+    const e = await submit({ kind, targets: [{ item_id: item.item_id, base_revision: item.revision_no }],
+      ...(kind === "waive_review" ? { fields: { reason: (reason ?? "").trim(), source: "panel" } } : {}), notify_executor: false }, label);
+    if (e) toast.error(rejectedText(label, e, item.item_id));
+  };
+  const cards: CardProps = { task, readOnly, keepOff: writeOff, onOpenFinding, onPrefill, onKeep: (item, reason) => void waive(item, "waive_review", reason) };
   return (
     <div className="sw-review" data-testid="review-panel">
-      <div className="sw-rv-top">
-        <span className="muted">{batches.length} 次评审 · 未处理的问题 {open} 处</span>
-        <span className="spacer" />
-        <span className={`filt${onlyOpen ? " on" : ""}`} role="button" onClick={() => setOnlyOpen(!onlyOpen)} data-testid="review-only-open">只看未处理</span>
-        <button type="button" className="btn sm pri" disabled={!!reviewOff} title={reviewOff} data-testid="review-panel-all"
-          onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
+      <div className="rv-body">
+        <TopLine task={task} overview={o} review={review} readOnly={readOnly} writesOff={writesOff} onReview={onReview} />
+        {o.problems.length > 0 && (
+          <section className="rv-sec" data-testid="review-todo">
+            <div className="rv-sec-h">要处理的</div>
+            <div className="rv-sec-b"><Groups groups={o.problems} kind="problem" {...cards} /></div>
+          </section>
+        )}
+        {o.advice.length > 0 && (
+          <Section id="advice" open={open} onToggle={toggle} aside="不影响通过"
+            title={<>建议 <span className="n amb">{o.adviceCount}</span> 条</>}>
+            <Groups groups={o.advice} kind="advice" {...cards} />
+          </Section>
+        )}
+        {o.passed.length + o.kept.length > 0 && (
+          <Section id="done" open={open} onToggle={toggle} title={<>已经没事的 <span className="n ok">{o.passed.length + o.kept.length}</span> 个条目</>}>
+            {o.passed.length > 0 && <div className="rv-sub">通过的</div>}
+            {o.passed.map(({ item, review: r }) => <PassRow key={item.item_id} task={task} item={item} review={r} onOpen={() => onOpenFinding(item.item_id, null)} />)}
+            {o.kept.length > 0 && <div className="rv-sub">你决定保留的</div>}
+            {o.kept.map(({ item, findings, waiver }) => (
+              <KeptRow key={item.item_id} item={item} findings={findings} waiver={waiver} off={writeOff}
+                onOpen={() => onOpenFinding(item.item_id, null)} onUnwaive={() => void waive(item, "unwaive_review")} />
+            ))}
+          </Section>
+        )}
+        {o.batches.length > 0 && (
+          <Section id="log" open={open} onToggle={toggle} title="评审记录">
+            <div className="rv-log">
+              {o.batches.map((b) => (
+                <div key={b.batch_id} data-testid={`batch-${b.no}`}>
+                  <span className="tm">{formatTime(b.at)}</span>{batchSentence(b)}{b.started_by !== "user" && <span className="by">由助手发起</span>}
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
+        <RulesLink task={task} onOpen={() => setDrawer(true)} />
       </div>
-      {rereview.length > 0 && <div className="banner-line amber" data-testid="rules-changed"><span>规则改了，{rereview.length} 条需要重评。</span></div>}
-      {batches.length === 0 && <div className="lead">还没有评审过。点上面的按钮，评审者会按下面的规则逐条评审待评审的条目。</div>}
-      {batches.map((b, i) => (
-        <BatchCard key={b.batch_id} task={task} batch={b} latest={i === 0} onlyOpen={onlyOpen} readOnly={readOnly} writesOff={writesOff}
-          submit={submit} onOpenFinding={onOpenFinding} onPrefill={onPrefill} />
-      ))}
-      <RulesArea task={task} readOnly={readOnly} writesOff={writesOff} submit={submit} />
+      {drawer && <RulesDrawer task={task} off={writeOff} submit={submit} onClose={() => setDrawer(false)} />}
     </div>
   );
 }
 
-/** 这次评审里某个条目的评审记录（按批次编号认）；没有（没评完）时为 undefined。 */
-function reviewIn(item: Item, batch: ReviewBatch): Review | undefined {
-  return item.reviews.find((r) => r.batch_id === batch.batch_id);
+/** 可以点的一段文字：role=button，回车与空格也能点；disabled 时灰掉，悬停说明原因。 */
+function Act({ className = "", disabled = false, title, onClick, testId, children }: {
+  className?: string; disabled?: boolean; title?: string; onClick: () => void; testId?: string; children: ReactNode;
+}) {
+  const run = () => { if (!disabled) onClick(); };
+  return (
+    <span className={`lk ${className}`} role="button" tabIndex={0} aria-disabled={disabled || undefined} title={title} data-testid={testId}
+      onClick={run} onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); run(); } }}>{children}</span>
+  );
 }
 
-function BatchCard({ task, batch, latest, onlyOpen, readOnly, writesOff, submit, onOpenFinding, onPrefill }: {
-  task: Task; batch: ReviewBatch; latest: boolean; onlyOpen: boolean; readOnly: boolean; writesOff: boolean;
-  submit: Submit; onOpenFinding: (itemId: string, field: string | null) => void; onPrefill: (text: string) => void;
+function TopLine({ task, overview: o, review, readOnly, writesOff, onReview }: {
+  task: Task; overview: ReviewOverview; review: ReviewRun | null; readOnly: boolean; writesOff: boolean;
+  onReview: (targets: { item_id: string; base_revision: number }[], label: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(latest);
-  const [showPassed, setShowPassed] = useState(false);
-  const rows = batch.items.map((one) => {
-    const item = task.items.find((i) => i.item_id === one.item_id);
-    return { one, item, review: item ? reviewIn(item, batch) : undefined };
-  });
-  const failed = rows.filter((r) => r.review && r.review.verdict !== "合规");
-  const passed = rows.filter((r) => r.review && r.review.verdict === "合规");
-  const unfinished = rows.filter((r) => r.item && !r.review);
-  // 按改之前的规则评出的发现不再算数，与已改、已保留一样算处理完了（只看未处理不列，见 findingStatus）。
-  const statuses = failed.map((r) => findingStatus(r.item!, r.review!, task));
-  const allHandled = statuses.every((st) => st.kind !== "open");
-  const anyOldRules = statuses.some((st) => st.kind === "old_rules");
-  if (onlyOpen && allHandled) return null;
-  const shownFailed = onlyOpen ? failed.filter((r) => findingStatus(r.item!, r.review!, task).kind === "open") : failed;
-  const withAdvice = passed.filter((r) => (r.review!.findings ?? []).length > 0).length;
+  if (!o.hasItems) {
+    return <div className="rv-top"><div className="rv-now" data-testid="review-now">还没有条目可以评审。</div></div>;
+  }
+  const running = !!review && !review.finished;
+  const parts: ReactNode[] = [];
+  let button: ReactNode = null;
+  if (running) {
+    parts.push(<span key="run">正在评审，已经评完 {review!.done} 个，共 {review!.total} 个。</span>);
+    button = <button type="button" className="btn pri" disabled title="上一批评审还在进行，评完之后再发起。" data-testid="review-panel-all">正在评审</button>;
+  } else {
+    const pending = pendingSentence(o.pending.length, o.rereview);
+    if (pending) {
+      const off = reviewOffReason(task, { readOnly, writesOff, running, count: o.pending.length });
+      parts.push(<span key="pending" data-testid={o.rereview ? "rules-changed" : undefined}>{pending}</span>);
+      button = (
+        <button type="button" className="btn pri" disabled={!!off} title={off} data-testid="review-panel-all"
+          onClick={() => onReview([], `评审 ${o.pending.length} 个条目`)}>评审这 {o.pending.length} 个条目</button>
+      );
+    }
+  }
+  if (o.problemCount > 0) parts.push(<span key="todo">有 <em>{o.problemCount}</em> 处问题等你处理。</span>);
   return (
-    <div className={`sw-rcard${latest ? "" : " old"}`} data-testid={`batch-${batch.no}`}>
-      <div className="h" role="button" onClick={() => setExpanded(!expanded)}>
-        <b>第 {batch.no} 次评审</b>
-        <span className="muted">{formatTime(batch.at)} · {batch.started_by === "user" ? "由你发起" : "由助手发起（你在对话里要求）"} · {batch.total} 条</span>
-        {batch.passed > 0 && <span className="chip okc">{batch.passed} 合规</span>}
-        {batch.failed > 0 && <span className="chip bad">{batch.failed} 不合规</span>}
-        {batch.unfinished > 0 && <span className="chip">{batch.unfinished} 没有评完</span>}
-        {(batch.problems > 0 || batch.advice > 0) && <span className="muted">问题 {batch.problems} 处 · 建议 {batch.advice} 条</span>}
-        {!latest && failed.length > 0 && allHandled && <span className="muted">{anyOldRules ? "全部发现已在后来的修订里改或保留，或者按改之前的规则评出、不再算数" : "全部发现已在后来的修订里改或保留"}</span>}
+    <>
+      <div className="rv-top">
+        <div className="rv-now" data-testid="review-now">
+          {parts.length ? parts : <><OkMark />全部条目都已经通过评审。</>}
+        </div>
+        {button}
       </div>
-      {expanded && (
-        <div className="b">
-          {shownFailed.map(({ item, review }) => (
-            <FailedItem key={item!.item_id} task={task} item={item!} review={review!} batch={batch} onlyOpen={onlyOpen} readOnly={readOnly}
-              writesOff={writesOff} submit={submit} onOpenFinding={onOpenFinding} onPrefill={onPrefill} />
-          ))}
-          {!onlyOpen && passed.length > 0 && (
-            <div className="sw-rv-passed">
-              <span role="button" className="muted" onClick={() => setShowPassed(!showPassed)} data-testid={`batch-${batch.no}-passed`}>
-                {passed.slice(0, 5).map((r) => r.one.item_id).join("、")}{passed.length > 5 ? " ……" : ""} {passed.length} 条合规
-                {withAdvice ? `（其中 ${withAdvice} 条有建议）` : ""} {showPassed ? "▴ 收起" : "▸ 展开"}
-              </span>
-              {showPassed && passed.map(({ item, review }) => (
-                <div key={item!.item_id} className="sw-rv-item">
-                  <span className="lid ref" role="button" onClick={() => onOpenFinding(item!.item_id, null)}>{item!.item_id}</span>
-                  <span className="chip okc">合规</span><span className="muted">修订 {review!.revision_no}</span>
-                  <PassNote task={task} collection={item!.collection} review={review!} inRow />
-                  {(review!.findings ?? []).map((f, i) => (
-                    <FindingLine key={i} finding={f} rule={ruleFor(task, item!, f)} batchNo={batch.no} onOpen={() => onOpenFinding(item!.item_id, f.field)} />
-                  ))}
-                </div>
-              ))}
+      {running && (
+        <div className="rv-prog" role="progressbar" aria-label="评审进度" aria-valuemin={0} aria-valuemax={review!.total} aria-valuenow={review!.done}
+          data-testid="review-progress">
+          <i style={{ width: `${review!.total ? Math.round((review!.done / review!.total) * 100) : 0}%` }} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** 收起与展开的一块：标题行点了切换；默认收起。 */
+function Section({ id, open, onToggle, title, aside, children }: {
+  id: string; open: Set<string>; onToggle: (id: string) => void; title: ReactNode; aside?: string; children: ReactNode;
+}) {
+  const on = open.has(id);
+  return (
+    <section className="rv-sec" data-testid={`review-${id}`}>
+      <div className={`rv-sec-h tog${on ? " open" : ""}`} role="button" tabIndex={0} aria-expanded={on} data-testid={`review-${id}-toggle`}
+        onClick={() => onToggle(id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(id); } }}>
+        <Chevron /><span className="tx">{title}</span>{aside && <span className="aside">{aside}</span>}
+      </div>
+      {on && <div className="rv-sec-b">{children}</div>}
+    </section>
+  );
+}
+
+type CardProps = {
+  task: Task; readOnly: boolean; keepOff: string | undefined;
+  onOpenFinding: (itemId: string, field: string | null) => void; onPrefill: (text: string) => void; onKeep: (item: Item, reason: string) => void;
+};
+
+/**
+ * 按条目分组的发现：前 GROUPS_SHOWN 个条目整组摊开，其余每个折成一行，点了在原地摊开，组头的「收起」再折回去。
+ * 组的先后：页签打开时按条目区的顺序；之后新出现的组（例如评审进行中刚评完的条目）排在已有的组后面，已有的内容不跳动。
+ */
+function Groups({ groups, kind, ...props }: CardProps & { groups: FindingGroup[]; kind: "problem" | "advice" }) {
+  const [unfolded, setUnfolded] = useState<Set<string>>(new Set());
+  const seen = useRef<string[]>([]);
+  const set = (id: string, on: boolean) => setUnfolded((s) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
+  const ids = groups.map((g) => g.item.item_id);
+  seen.current = [...seen.current.filter((id) => ids.includes(id)), ...ids.filter((id) => !seen.current.includes(id))];
+  const ordered = seen.current.map((id) => groups.find((g) => g.item.item_id === id)!);
+  return (
+    <>
+      {ordered.map((g, i) => {
+        const foldable = groups.length > GROUPS_SHOWN && i >= GROUPS_SHOWN;
+        const id = g.item.item_id;
+        if (foldable && !unfolded.has(id)) {
+          return (
+            <div key={id} className="rv-grp-c" role="button" tabIndex={0} onClick={() => set(id, true)} data-testid={`review-folded-${id}`}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); set(id, true); } }}>
+              <span className="id">{id}</span><span className="t">{g.item.title}</span>
+              <span className="cnt"><b className={kind === "problem" ? "gap" : "amb"}>{g.findings.length}</b> 处</span>
             </div>
+          );
+        }
+        return (
+          <div key={id} className="rv-grp" data-testid={`review-group-${id}`}>
+            <div className="rv-grp-h">
+              <Act className="id" onClick={() => props.onOpenFinding(id, null)}>{id}</Act>
+              <Act className="t" onClick={() => props.onOpenFinding(id, null)}>{g.item.title}</Act>
+              {foldable && <Act className="quiet push" onClick={() => set(id, false)} testId={`review-refold-${id}`}>收起</Act>}
+            </div>
+            {g.findings.map((f, j) => (
+              <FindingCard key={j} item={g.item} finding={f} kind={kind} problems={kind === "problem" ? g.findings.length : 0} {...props} />
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** 一处问题或一条建议：位置、说明、改法、动作。 */
+function FindingCard({ task, item, finding: f, kind, problems, readOnly, keepOff, onOpenFinding, onPrefill, onKeep }: CardProps & {
+  item: Item; finding: Finding; kind: "problem" | "advice";
+  /** 这个条目要处理的问题共几处（保留时一起算通过）；建议为 0。 */
+  problems: number;
+}) {
+  const [rule, setRule] = useState(false);
+  const [keeping, setKeeping] = useState(false);
+  const fixOff = readOnly ? writeOffReason(task, { readOnly }) : undefined;
+  const r = ruleFor(task, item, f);
+  return (
+    <div className={`rv-pb${kind === "advice" ? " adv" : ""}`} data-testid={kind === "problem" ? "finding-problem" : "finding-advice"}>
+      <div><Act className="where" onClick={() => onOpenFinding(item.item_id, f.field)} testId="finding-where"><i className="dot" aria-hidden="true" />{findingWhere(f)}</Act></div>
+      <div className="text">{f.problem}</div>
+      {f.suggestion && <div className="fix">改法：{f.suggestion}</div>}
+      {keeping ? <KeepBox problems={problems} off={keepOff} onKeep={(reason) => onKeep(item, reason)} onClose={() => setKeeping(false)} /> : (
+        <div className="acts">
+          <Act className="ai" disabled={!!fixOff} title={fixOff} onClick={() => onPrefill(fixText(item.item_id, f))} testId="fix-finding">让助手照这条改</Act>
+          {kind === "problem" && <KeepLink off={keepOff} onOpen={() => setKeeping(true)} />}
+          {f.rule_id && (
+            <Act className="quiet push" onClick={() => setRule(!rule)} testId={`clause-${f.rule_id}`}>{rule ? "收起规则" : "依据的规则"}</Act>
           )}
-          {!onlyOpen && unfinished.map(({ one }) => <div key={one.item_id} className="muted">{one.item_id} 这次没有评完，可以再评一次。</div>)}
+        </div>
+      )}
+      {rule && f.rule_id && (
+        <div className="rv-rule" data-testid="clause-body">
+          <span className="rid">{f.rule_id}</span><span>{r ? r.text : "这条规则的条文这次没有读到。"}</span>
         </div>
       )}
     </div>
   );
 }
 
-function FailedItem({ task, item, review, batch, onlyOpen, readOnly, writesOff, submit, onOpenFinding, onPrefill }: {
-  task: Task; item: Item; review: Review; batch: ReviewBatch; onlyOpen: boolean; readOnly: boolean; writesOff: boolean;
-  submit: Submit; onOpenFinding: (itemId: string, field: string | null) => void; onPrefill: (text: string) => void;
-}) {
-  const toast = useToast();
-  const status = findingStatus(item, review, task);
-  const findings = review.findings ?? [];
-  // 操作链接只挂在条目现在的评审结论依据的那条记录上：保留针对的是它（同一修订上有几条记录只出现在早期的数据里）。
-  const current = itemVerdict(item, task).basis === review;
-  const off = !!writeOffReason(task, { readOnly, writesOff });
-  const act = async (kind: "waive_review" | "unwaive_review", reason?: string) => {
-    const label = kind === "waive_review" ? `保留 ${item.item_id} 现在的写法` : `撤销对 ${item.item_id} 的保留`;
-    const e = await submit({ kind, targets: [{ item_id: item.item_id, base_revision: item.revision_no }],
-      ...(kind === "waive_review" ? { fields: { reason: (reason ?? "").trim(), source: "panel" } } : {}), notify_executor: false }, label);
-    if (e) toast.error(rejectedText(label, e, item.item_id));
-  };
+/** 「已经没事的」里一个通过的条目：编号、标题，行尾「核对了哪些规则」，点了在原地展开程序记下的那句说明与规则清单。 */
+function PassRow({ task, item, review, onOpen }: { task: Task; item: Item; review: Review; onOpen: () => void }) {
+  const [open, setOpen] = useState(false);
+  const basis = passRules(task, item.collection, review);
+  const has = !!review.reason || basis.kind !== "none";
   return (
-    <div className="sw-rv-item" data-testid={`batch-${batch.no}-item-${item.item_id}`}>
-      <span className="lid ref" role="button" onClick={() => onOpenFinding(item.item_id, null)}>{item.item_id}</span>
-      <span className="chip bad">不合规</span><span className="muted">修订 {review.revision_no}</span>
-      {findings.filter((f) => !onlyOpen || isProblem(f)).map((f, i) => (
-        <FindingLine key={i} finding={f} rule={ruleFor(task, item, f)} batchNo={batch.no} status={status}
-          onOpen={() => onOpenFinding(item.item_id, f.field)}
-          onFix={status.kind === "open" && current ? (x) => onPrefill(fixText(item.item_id, x)) : undefined} fixOff={readOnly}
-          onKeep={isProblem(f) && status.kind === "open" && current && !off ? (reason) => void act("waive_review", reason) : undefined}
-          onUnwaive={isProblem(f) && status.kind === "kept" && current ? () => void act("unwaive_review") : undefined} unwaiveOff={off} />
-      ))}
+    <div data-testid={`review-passed-${item.item_id}`}>
+      <div className="rv-okrow">
+        <Act className="id" onClick={onOpen}>{item.item_id}</Act>
+        <Act className="t" onClick={onOpen}>{item.title}</Act>
+        {has && <Act className="quiet push" onClick={() => setOpen(!open)} testId="pass-rules-link">{open ? "收起" : "核对了哪些规则"}</Act>}
+      </div>
+      {open && (
+        <div className="rv-okd" data-testid="pass-note">
+          <div>{review.reason ?? "评审通过。"}</div>
+          {basis.kind === "changed" && <div className="off" data-testid="pass-rules-changed">评审之后规则改过，这里列不出当时核对的规则。</div>}
+          {basis.kind === "list" && (
+            <>
+              <div className="rv-rl" data-testid="pass-rules">
+                {basis.rules.map((r) => <div key={r.id} className="rv-rule"><span className="rid">{r.id}</span><span>{r.text}</span></div>)}
+              </div>
+              {basis.off > 0 && <div className="off">另有 {basis.off} 条规则已经关闭，这次没有核对。</div>}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+/** 「已经没事的」里一个你保留了写法的条目：编号、标题、「撤销保留」，下面逐行写每一处问题，最后写理由。 */
+function KeptRow({ item, findings, waiver, off, onOpen, onUnwaive }: {
+  item: Item; findings: Finding[]; waiver: Waiver; off: string | undefined; onOpen: () => void; onUnwaive: () => void;
+}) {
+  return (
+    <div className="rv-kp" data-testid={`review-kept-${item.item_id}`}>
+      <div className="rv-okrow">
+        <span className="id">{item.item_id}</span>
+        <Act className="t" onClick={onOpen}>{item.title}</Act>
+        <Act className="quiet push" disabled={!!off} title={off} onClick={onUnwaive} testId="unwaive-finding">撤销保留</Act>
+      </div>
+      {findings.map((f, i) => <div key={i} className="text">{findingWhere(f)}：{f.problem}</div>)}
+      <div className="reason">{waiver.reason ? `理由：${waiver.reason}` : "没有填理由。"}</div>
+    </div>
+  );
+}
+
+/** 最下面一行：评审规则共几条、开着几条；点了滑出规则的面板。没有规则的任务不显示。 */
+function RulesLink({ task, onOpen }: { task: Task; onOpen: () => void }) {
+  const rules = ruleCollections(task).flatMap((c) => c.all_rules ?? []);
+  if (!rules.length) return null;
+  return (
+    <div className="rv-foot">
+      <Act className="quiet" onClick={onOpen} testId="rules-link">评审规则（共 {rules.length} 条，开着 {rules.filter((r) => r.state !== "off").length} 条）</Act>
+    </div>
+  );
+}
+
+function ruleCollections(task: Task) {
+  return task.definition.collections.filter((c) => needsReview(task, c.name) && (c.all_rules?.length ?? 0) > 0);
 }
 
 /** 发现引用的那条规则：先在全部规则里找，找不到再在生效的规则里找。 */
@@ -173,45 +315,44 @@ function ruleFor(task: Task, item: Item, finding: Finding): ReviewRule | undefin
   return c?.all_rules?.find((r) => r.id === finding.rule_id) ?? c?.review_rules?.find((r) => r.id === finding.rule_id);
 }
 
-/** 规则区：按集合列规则与开关。 */
-function RulesArea({ task, readOnly, writesOff, submit }: { task: Task; readOnly: boolean; writesOff: boolean; submit: Submit }) {
-  const [all, setAll] = useState(false);
+/** 规则的面板：从右侧滑出，盖住页签的大部分，左边留一窄条；点这一窄条、「关闭」或按 Esc 收回。 */
+function RulesDrawer({ task, off, submit, onClose }: { task: Task; off: string | undefined; submit: Submit; onClose: () => void }) {
   const toast = useToast();
-  const collections = task.definition.collections.filter((c) => needsReview(task, c.name) && (c.all_rules?.length ?? 0) > 0);
-  if (!collections.length) return null;
-  const off = writeOffReason(task, { readOnly, writesOff });
-  const total = collections.reduce((n, c) => n + (c.all_rules?.length ?? 0), 0);
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const change = async (collection: string, next: { off: string[]; promote: string[] }, label: string) => {
     const e = await submit({ kind: "set_review_rules", targets: [], fields: { collection, off: next.off, promote: next.promote }, notify_executor: false }, label);
     if (e) toast.error(rejectedText(label, e));
   };
-  let shown = 0;
   return (
-    <div className="sw-rules" data-testid="rules-area">
-      <div className="sw-rv-top"><b>评审规则</b><span className="muted">带锁的规则不能关；其余的可以关掉，只对这个任务生效</span></div>
-      {collections.map((c) => {
-        const switches = c.rule_switches ?? { off: [], promote: [] };
-        const rules = (c.all_rules ?? []).filter(() => all || shown++ < RULES_SHOWN);
-        if (!rules.length) return null;
-        return (
-          <div key={c.name}>
-            <div className="cond-group">{c.name}</div>
-            {rules.map((r) => (
-              // 关掉时一并撤销升为必选：任务定义不允许同一条规则既关闭又升为必选，所以关掉再打开之后它是可选规则。
-              <RuleRow key={r.id} rule={r} off={off} onToggle={() => {
-                const offList = r.state === "off" ? switches.off.filter((x) => x !== r.id) : [...switches.off, r.id];
-                const promote = switches.promote.filter((x) => x !== r.id);
-                void change(c.name, { off: offList, promote }, `${r.state === "off" ? "打开" : "关闭"}规则 ${r.id}`);
-              }} />
-            ))}
-          </div>
-        );
-      })}
-      <div className="muted">
-        共 {total} 条{total > RULES_SHOWN && <>，<span role="button" className="ref" onClick={() => setAll(!all)} data-testid="rules-all">{all ? "只看前几条 ▴" : "展开全部 ▸"}</span></>}
-        {" "}· 改动只影响之后的评审，已有评审记录不变
+    <>
+      <div className="rv-scrim" onClick={onClose} data-testid="rules-scrim" />
+      <div className="rv-drawer" role="dialog" aria-label="评审规则" data-testid="rules-area">
+        <div className="dr-h"><b>评审规则</b><Act className="push" onClick={onClose} testId="rules-close">关闭</Act></div>
+        <div className="dr-lead">带锁的不能关；其余的可以关掉，只对这个任务生效。改动只影响之后的评审。</div>
+        <div className="dr-b">
+          {ruleCollections(task).map((c) => {
+            const switches = c.rule_switches ?? { off: [], promote: [] };
+            return (
+              <div key={c.name}>
+                <div className="dr-g">{c.name}</div>
+                {(c.all_rules ?? []).map((r) => (
+                  // 关掉时一并撤销升为必选：任务定义不允许同一条规则既关闭又升为必选，所以关掉再打开之后它是可选规则。
+                  <RuleRow key={r.id} rule={r} off={off} onToggle={() => {
+                    const offList = r.state === "off" ? switches.off.filter((x) => x !== r.id) : [...switches.off, r.id];
+                    const promote = switches.promote.filter((x) => x !== r.id);
+                    void change(c.name, { off: offList, promote }, `${r.state === "off" ? "打开" : "关闭"}规则 ${r.id}`);
+                  }} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -223,7 +364,7 @@ function RuleRow({ rule, off, onToggle }: { rule: ReviewRule & { state: string }
     : `${promoted ? "这条规则已经升为必选，违反它算问题。" : ""}${off ?? (on ? (promoted ? "关掉它会同时撤销升为必选。" : "关掉这条规则") : "打开这条规则")}`;
   const label = locked ? `规则 ${rule.id}：必选，不能关` : `规则 ${rule.id}：${on ? "开着" : "关着"}${promoted ? "，已经升为必选" : ""}`;
   return (
-    <div className="sw-rule" data-testid={`rule-${rule.id}`}>
+    <div className={`sw-rule${on ? "" : " off"}`} data-testid={`rule-${rule.id}`}>
       {/* 必选规则是开着的：开关绿色、圆点在右，圆点对面的空处画一把白色的锁表示不能关。 */}
       <span className={`sw-switch${on ? " on" : ""}${locked ? " lock" : ""}`} role="switch" aria-checked={on}
         aria-disabled={locked || !!off || undefined} aria-label={label} title={title}
@@ -240,6 +381,24 @@ function LockIcon() {
     <svg className="lk" viewBox="0 0 16 16" aria-hidden="true" data-testid="rule-lock">
       <path d="M5.2 7.2V5.3a2.8 2.8 0 0 1 5.6 0v1.9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
       <rect x="3.3" y="7" width="9.4" height="7" rx="1.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 收起与展开的小箭头：收起时朝右，展开时转成朝下。 */
+function Chevron() {
+  return (
+    <svg className="chev" viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M3.5 1.8 L6.7 5 L3.5 8.2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** 全部通过时顶上一行前面的小对勾。 */
+function OkMark() {
+  return (
+    <svg className="okmark" viewBox="0 0 16 16" aria-hidden="true" data-testid="review-okmark">
+      <path d="M3.2 8.4 L6.5 11.6 L12.8 4.6" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

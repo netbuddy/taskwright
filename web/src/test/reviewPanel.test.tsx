@@ -1,5 +1,5 @@
-// 评审页签与评审的生命周期：页签渲染与发现状态三种（未处理、已在修订 N 改、已保留）、只看未处理、保留与撤销、规则开关、
-// 对话区一句提示、评过的条目不能再评、同一修订上有几条记录时以最后一条为准（早期数据）、规则改了之后回到待评审、完成条件三类、
+// 评审页签与评审的生命周期：页签的顶上一行五种现状、要处理的／建议／已经没事的／评审记录四块、保留与撤销、问题很多时的折叠、
+// 评审进行中、规则面板与开关；发现状态派生、对话区一句提示、评过的条目不能再评、同一修订上有几条记录时以最后一条为准（早期数据）、规则改了之后回到待评审、完成条件三类、
 // 工作视图状态消费四种新事件。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -10,8 +10,10 @@ import { ReviewPanel } from "../components/work/ReviewPanel";
 import { ItemDetail } from "../components/work/ItemDetail";
 import { CompletionPanel } from "../components/CompletionPanel";
 import { Conversation } from "../components/work/Conversation";
-import { initialWorkState, workReducer } from "../state/workState";
-import { failedReview, findingStatus, itemVerdict, needsRereview, openProblems, pendingReview, reviewState } from "../model/items";
+import { initialWorkState, workReducer, type ReviewRun } from "../state/workState";
+import { BUSY_TEXT, failedReview, findingStatus, itemVerdict, needsRereview, openProblems, pendingReview, reviewState } from "../model/items";
+import { batchSentence, findingWhere } from "../model/reviewTab";
+import { formatTime } from "../model/format";
 
 const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
@@ -75,59 +77,260 @@ function panel(t: Task, props: Partial<Parameters<typeof ReviewPanel>[0]> = {}) 
 }
 
 describe("评审页签", () => {
-  it("顶部计数、第几次评审的卡片（最新展开、早先的变淡）、发现状态三种、合规的折成一行", () => {
-    panel(task([CON2, UC3, UC4, UC1]));
-    expect(screen.getByTestId("review-panel")).toHaveTextContent("2 次评审 · 未处理的问题 1 处");
-    const card = screen.getByTestId("batch-3");
-    expect(card).toHaveTextContent("第 3 次评审");
-    expect(card).toHaveTextContent("由你发起 · 4 条");
-    expect(card).toHaveTextContent("问题 3 处 · 建议 1 条");
-    const con = within(card).getByTestId("batch-3-item-CON-002");
-    expect(within(con).getAllByTestId("finding-status")[0]).toHaveTextContent("已在修订 8 改");
-    expect(within(con).getAllByTestId("finding-problem")[0]).toHaveTextContent("第 3 次评审指出");
-    expect(within(within(card).getByTestId("batch-3-item-UC-003")).getByTestId("finding-status")).toHaveTextContent("已保留 · 理由：材料原话如此");
-    expect(within(within(card).getByTestId("batch-3-item-UC-004")).getByTestId("finding-status")).toHaveTextContent("未处理");
-    expect(within(card).getByTestId("batch-3-passed")).toHaveTextContent("UC-001 1 条合规（其中 1 条有建议）");
-    expect(screen.getByTestId("batch-2")).toHaveClass("old");
-    expect(screen.getByTestId("batch-2")).toHaveTextContent("由助手发起（你在对话里要求）");
-    expect(within(screen.getByTestId("batch-2")).queryByTestId("batch-2-passed")).toBeNull();   // 早先的折起
+  // 固定数据：CON-002 修订 8 通过（修订 6 的问题已经改掉）；UC-003 不通过、已保留；UC-004 不通过（1 处问题）；UC-001 通过、带 1 条建议。
+  const all = () => task([CON2, UC3, UC4, UC1]);
+  const text = () => screen.getByTestId("review-panel").textContent ?? "";
+
+  it("顶上一行：有问题要处理时写处数（与页签行上的个数同一个函数），不给按钮；页签里不出现合规、修订号、第几次评审、未处理、必选可选这些说法", () => {
+    const t = all();
+    panel(t);
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^有 1 处问题等你处理。$/);
+    expect(screen.getByTestId("review-now").querySelector("em")).toHaveTextContent(String(openProblems(t)));
+    expect(screen.queryByTestId("review-panel-all")).toBeNull();
+    for (const key of ["advice", "done", "log"]) fireEvent.click(screen.getByTestId(`review-${key}-toggle`));
+    expect(text()).not.toMatch(/合规|修订 \d|第 \d+ 次评审|未处理|必选|可选|只看/);
   });
 
-  it("只看未处理：已改、已保留的条目不列；「保留这种写法」「让助手照这条改」只在未处理的发现第二行，已保留的给「撤销保留」", async () => {
-    const { submit, onPrefill } = panel(task([CON2, UC3, UC4, UC1]));
-    const con = screen.getByTestId("batch-3-item-CON-002");
-    const uc3 = screen.getByTestId("batch-3-item-UC-003");
-    const uc4 = screen.getByTestId("batch-3-item-UC-004");
-    expect(within(con).queryByTestId("keep-finding")).toBeNull();
-    expect(within(uc3).queryByTestId("keep-finding")).toBeNull();
-    fireEvent.click(within(uc4).getByTestId("keep-finding"));
-    fireEvent.change(within(uc4).getByTestId("keep-finding-reason"), { target: { value: "材料原话" } });
-    fireEvent.click(within(uc4).getByTestId("keep-finding-ok"));
+  it("顶上一行：有还没评审的条目时写个数并给唯一的主按钮，点了评审全部待评审的；同时有问题时两句都写，先写还没评审的", () => {
+    const fresh = item({ item_id: "UC-008", reviews: [] });
+    const { onReview } = panel(task([fresh, UC4]));
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^1 个条目还没有评审。有 1 处问题等你处理。$/);
+    fireEvent.click(screen.getByTestId("review-panel-all"));
+    expect(screen.getByTestId("review-panel-all")).toHaveTextContent(/^评审这 1 个条目$/);
+    expect(onReview).toHaveBeenCalledWith([], "评审 1 个条目");
+    cleanup();
+    panel(task([fresh]), { writesOff: true });
+    expect(screen.getByTestId("review-panel-all")).toBeDisabled();
+    expect(screen.getByTestId("review-panel-all")).toHaveAttribute("title", "助手正在工作，结束之后才能发起评审。");
+  });
+
+  it("顶上一行：评审正在进行时写评完几个，按钮灰掉写「正在评审」，下面一条进度线；评完之后不再写", () => {
+    const fresh = item({ item_id: "UC-008", reviews: [] });
+    const running = { op_id: "op-1", done: 2, total: 5, current: ["UC-008"], finished: null };
+    panel(task([fresh]), { review: running });
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^正在评审，已经评完 2 个，共 5 个。$/);
+    expect(screen.getByTestId("review-panel-all")).toBeDisabled();
+    expect(screen.getByTestId("review-panel-all")).toHaveTextContent(/^正在评审$/);
+    expect(screen.getByTestId("review-progress")).toHaveAttribute("aria-valuenow", "2");
+    expect(screen.getByTestId("review-progress")).toHaveAttribute("aria-valuemax", "5");
+    cleanup();
+    panel(task([fresh]), { review: { ...running, done: 5, finished: { passed: 5, failed: 0, unfinished: 0, error: null } } });
+    expect(screen.queryByTestId("review-progress")).toBeNull();
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^1 个条目还没有评审。$/);
+  });
+
+  it("顶上一行：全部通过时一个绿色的小对勾；还没有条目时只写一句；两种都没有按钮", () => {
+    panel(task([CON2, UC1]));
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^全部条目都已经通过评审。$/);
+    expect(screen.getByTestId("review-okmark")).toBeInTheDocument();
+    expect(screen.queryByTestId("review-panel-all")).toBeNull();
+    expect(screen.queryByTestId("review-todo")).toBeNull();
+    expect(screen.queryByTestId("review-advice")).not.toBeNull();   // UC-001 的建议
+    cleanup();
+    panel(task([]));
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^还没有条目可以评审。$/);
+    expect(screen.queryByTestId("review-panel-all")).toBeNull();
+    expect(screen.queryByTestId("review-log")).not.toBeNull();   // 批次还在
+  });
+
+  it("规则改过：顶上一行写要重新评审的个数，不另有横幅与按钮；只有一部分是因为规则改过时两种一起写", () => {
+    const t = task([UC4, UC1]);
+    const changed = { ...t, definition: { collections: [{ ...t.definition.collections[0], rules_hash: "h2" }] } };
+    expect(pendingReview(changed).map((i) => i.item_id)).toEqual(["UC-004", "UC-001"]);
+    expect(needsRereview(changed)).toHaveLength(2);
+    panel(changed);
+    expect(screen.getByTestId("rules-changed")).toHaveTextContent(/^规则改过，2 个条目要重新评审。$/);
+    expect(screen.getByTestId("review-panel-all")).toHaveTextContent(/^评审这 2 个条目$/);
+    expect(screen.queryByTestId("review-todo")).toBeNull();
+    cleanup();
+    const mixed = { ...changed, items: [...changed.items, item({ item_id: "UC-008", reviews: [] })] };
+    panel(mixed);
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^3 个条目还没有评审，其中 2 个是因为规则改过。$/);
+  });
+
+  it("要处理的：按条目分组，组头是编号与标题；每一处写位置（第几项从 1 起数）、说明、改法；标题后面不写个数", () => {
+    const { onOpenFinding } = panel(all());
+    const todo = screen.getByTestId("review-todo");
+    expect(within(todo).getByText("要处理的").textContent).toBe("要处理的");
+    const group = within(todo).getByTestId("review-group-UC-004");
+    expect(within(group).getByTestId("finding-where")).toHaveTextContent(/^基本流程 第 2 项$/);   // 数据里 index 为 1
+    expect(within(group).getByTestId("finding-problem")).toHaveTextContent("第 2 步没有主语。");
+    expect(within(group).getByTestId("finding-problem")).toHaveTextContent("改法：写明主语。");
+    expect(within(todo).queryByTestId("review-group-UC-003")).toBeNull();   // 已保留的不在这里
+    expect(within(todo).queryByTestId("review-group-CON-002")).toBeNull();   // 已经改掉的不在这里
+    fireEvent.click(within(group).getByTestId("finding-where"));
+    expect(onOpenFinding).toHaveBeenLastCalledWith("UC-004", "基本流程");
+    // 夹具里条目的标题就是编号：组头两处都能点，都只打开条目
+    for (const e of within(group).getAllByText("UC-004")) {
+      fireEvent.click(e);
+      expect(onOpenFinding).toHaveBeenLastCalledWith("UC-004", null);
+    }
+  });
+
+  it("位置：第几项从 0 起存、显示时加 1；不是列表里的某一项时只写字段名", () => {
+    expect(findingWhere({ ...P("UC-R7", "x"), index: 0 })).toBe("基本流程 第 1 项");
+    expect(findingWhere({ ...P("UC-R7", "x"), index: 4 })).toBe("基本流程 第 5 项");
+    expect(findingWhere(A("UC-R12", "x"))).toBe("约束规则");
+  });
+
+  it("「让助手照这条改」预填对话框；「依据的规则」原地展开编号与条文、再点收起", () => {
+    const { onPrefill } = panel(all());
+    const group = screen.getByTestId("review-group-UC-004");
+    fireEvent.click(within(group).getByTestId("fix-finding"));
+    expect(onPrefill).toHaveBeenCalledWith("请照评审建议的改法改 UC-004 的基本流程第 2 项：写明主语。评审指出的问题是：第 2 步没有主语。");
+    fireEvent.click(within(group).getByTestId("clause-UC-R7"));
+    expect(within(group).getByTestId("clause-body")).toHaveTextContent(/^UC-R7每一步写明谁做了什么。$/);
+    expect(within(group).getByTestId("clause-UC-R7")).toHaveTextContent("收起规则");
+    fireEvent.click(within(group).getByTestId("clause-UC-R7"));
+    expect(within(group).queryByTestId("clause-body")).toBeNull();
+  });
+
+  it("保留这种写法：原地填理由（可以不填），「保留」或回车发 waive_review，「取消」与 Esc 收起；两处以上问题时说明一起算通过", async () => {
+    const { submit } = panel(all());
+    const group = screen.getByTestId("review-group-UC-004");
+    fireEvent.click(within(group).getByTestId("keep-finding"));
+    expect(within(group).queryByTestId("keep-finding-note")).toBeNull();   // 只有 1 处
+    expect(within(group).queryByTestId("fix-finding")).toBeNull();   // 这一行换成了输入框
+    expect(within(group).queryByTestId("clause-UC-R7")).toBeNull();
+    fireEvent.click(within(group).getByTestId("keep-finding-cancel"));
+    expect(within(group).queryByTestId("keep-finding-reason")).toBeNull();
+    fireEvent.click(within(group).getByTestId("keep-finding"));
+    fireEvent.keyDown(within(group).getByTestId("keep-finding-reason"), { key: "Escape" });
+    expect(within(group).queryByTestId("keep-finding-reason")).toBeNull();
+    fireEvent.click(within(group).getByTestId("keep-finding"));
+    fireEvent.change(within(group).getByTestId("keep-finding-reason"), { target: { value: "材料原话" } });
+    fireEvent.keyDown(within(group).getByTestId("keep-finding-reason"), { key: "Enter" });
     await waitFor(() => expect(submit).toHaveBeenCalledWith({ kind: "waive_review", targets: [{ item_id: "UC-004", base_revision: 6 }],
       fields: { reason: "材料原话", source: "panel" }, notify_executor: false }, "保留 UC-004 现在的写法"));
-    fireEvent.click(within(uc4).getByTestId("fix-finding"));
-    expect(onPrefill).toHaveBeenCalledWith("请照评审建议的改法改 UC-004 的基本流程第 2 项：写明主语。评审指出的问题是：第 2 步没有主语。");
-    fireEvent.click(within(uc3).getByTestId("unwaive-finding"));
+    cleanup();
+    const two = item({ item_id: "UC-009", reviews: [{ revision_no: 6, verdict: "不合规", findings: [P("UC-R7", "甲。"), { ...P("UC-R7", "乙。"), index: 0 }], batch_id: "ui-op-3", rules_hash: H }] });
+    const r = panel(task([two]));
+    fireEvent.click(screen.getAllByTestId("keep-finding")[1]);
+    expect(screen.getByTestId("keep-finding-note")).toHaveTextContent("保留之后，这个条目的 2 处问题都按你的决定算通过。");
+    fireEvent.click(screen.getByTestId("keep-finding-ok"));
+    await waitFor(() => expect(r.submit).toHaveBeenCalledWith(expect.objectContaining({ kind: "waive_review", fields: { reason: "", source: "panel" } }),
+      "保留 UC-009 现在的写法"));
+  });
+
+  it("你决定保留的：条目一组，逐处写问题、写理由，「撤销保留」发 unwaive_review；写入不可用时灰掉并说明原因", async () => {
+    const { submit } = panel(all());
+    fireEvent.click(screen.getByTestId("review-done-toggle"));
+    const kept = screen.getByTestId("review-kept-UC-003");
+    expect(kept).toHaveTextContent("基本流程 第 2 项：第 2 步用了「等」。");
+    expect(kept).toHaveTextContent("理由：材料原话如此");
+    fireEvent.click(within(kept).getByTestId("unwaive-finding"));
     await waitFor(() => expect(submit).toHaveBeenLastCalledWith({ kind: "unwaive_review", targets: [{ item_id: "UC-003", base_revision: 15 }], notify_executor: false },
       "撤销对 UC-003 的保留"));
-    fireEvent.click(screen.getByTestId("review-only-open"));
-    expect(screen.queryByTestId("batch-3-item-CON-002")).toBeNull();
-    expect(screen.queryByTestId("batch-3-item-UC-003")).toBeNull();
-    expect(screen.getByTestId("batch-3-item-UC-004")).toBeInTheDocument();
+    cleanup();
+    const busy = panel(all(), { writesOff: true });
+    expect(screen.getByTestId("keep-finding")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("keep-finding")).toHaveAttribute("title", BUSY_TEXT);
+    fireEvent.click(screen.getByTestId("keep-finding"));
+    expect(screen.queryByTestId("keep-finding-reason")).toBeNull();
+    fireEvent.click(screen.getByTestId("review-done-toggle"));
+    expect(screen.getByTestId("unwaive-finding")).toHaveAttribute("title", BUSY_TEXT);
+    fireEvent.click(screen.getByTestId("unwaive-finding"));
+    expect(busy.submit).not.toHaveBeenCalled();
+    expect(screen.getByTestId("fix-finding")).not.toHaveAttribute("aria-disabled");   // 预填照常能用
   });
 
-  it("点规则编号展开条文；点发现打开条目并指到字段", () => {
-    const { onOpenFinding } = panel(task([UC4]));
-    fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByTestId("clause-UC-R7"));
-    expect(screen.getByTestId("batch-3-item-UC-004")).toHaveTextContent("UC-R7 每一步写明谁做了什么。");
-    expect(screen.getByTestId("clause-body")).not.toHaveTextContent(/必选|可选/);
-    fireEvent.click(within(screen.getByTestId("batch-3-item-UC-004")).getByText(/第 2 步没有主语/));
-    expect(onOpenFinding).toHaveBeenCalledWith("UC-004", "基本流程");
+  it("建议、已经没事的、评审记录：默认收起，点标题展开；个数只在标题里出现一次", () => {
+    panel(all());
+    expect(screen.getByTestId("review-advice-toggle")).toHaveTextContent(/^建议 1 条不影响通过$/);
+    expect(screen.getByTestId("review-done-toggle")).toHaveTextContent(/^已经没事的 3 个条目$/);
+    expect(screen.getByTestId("review-log-toggle")).toHaveTextContent(/^评审记录$/);
+    expect(screen.queryByTestId("finding-advice")).toBeNull();
+    expect(screen.queryByTestId("review-passed-UC-001")).toBeNull();
+    expect(screen.queryByTestId("batch-3")).toBeNull();
+    fireEvent.click(screen.getByTestId("review-advice-toggle"));
+    const advice = within(screen.getByTestId("review-advice")).getByTestId("finding-advice");
+    expect(advice).toHaveTextContent("约束规则举了例子。");
+    expect(within(advice).queryByTestId("keep-finding")).toBeNull();
+    expect(within(advice).getByTestId("fix-finding")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("review-done-toggle"));
+    const done = screen.getByTestId("review-done");
+    expect(within(done).getByText("通过的")).toBeInTheDocument();
+    expect(within(done).getByText("你决定保留的")).toBeInTheDocument();
+    expect(within(done).getByTestId("review-passed-CON-002")).toBeInTheDocument();
+    expect(within(done).getByTestId("review-passed-UC-001")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("review-log-toggle"));
+    const log = screen.getByTestId("review-log");
+    expect(within(log).getAllByTestId(/^batch-/).map((e) => e.dataset.testid)).toEqual(["batch-3", "batch-2"]);   // 最新的在上
+    expect(screen.getByTestId("batch-3")).toHaveTextContent(`${formatTime(BATCH3.at)}评审了 4 个条目：1 个通过，3 个有问题。`);
+    expect(screen.getByTestId("batch-3")).not.toHaveTextContent("由助手发起");
+    expect(screen.getByTestId("batch-2")).toHaveTextContent("评审了 1 个条目：1 个通过。由助手发起");
+    fireEvent.click(screen.getByTestId("review-advice-toggle"));
+    expect(screen.queryByTestId("finding-advice")).toBeNull();
   });
 
-  it("规则区：每行只有开关、编号、条文，没有级别标签与升为必选的入口；必选的锁住；可选的开关发 set_review_rules，已关闭的可以打开", async () => {
+  it("评审记录一行：个数为 0 的不写，没有评完的写在末尾", () => {
+    expect(batchSentence({ ...BATCH3, total: 5, passed: 3, failed: 1, unfinished: 1 })).toBe("评审了 5 个条目：3 个通过，1 个有问题，1 个没有评完。");
+    expect(batchSentence({ ...BATCH3, total: 2, passed: 0, failed: 2, unfinished: 0 })).toBe("评审了 2 个条目：2 个有问题。");
+  });
+
+  it("问题很多时只摊开前三个条目，其余每个折成一行写几处；点这一行在原地摊开，组头的「收起」再折回去", () => {
+    const many = ["UC-011", "UC-012", "UC-013", "UC-014", "UC-015"].map((id, i) => item({ item_id: id, reviews: [{ revision_no: 6, verdict: "不合规",
+      findings: Array.from({ length: i + 1 }, (_, j) => ({ ...P("UC-R7", `${id} 的第 ${j + 1} 处。`), index: j })), batch_id: "ui-op-3", rules_hash: H }] }));
+    panel(task(many));
+    const todo = screen.getByTestId("review-todo");
+    expect(within(todo).getAllByTestId(/^review-group-/).map((e) => e.dataset.testid)).toEqual(["review-group-UC-011", "review-group-UC-012", "review-group-UC-013"]);
+    expect(within(todo).getByTestId("review-folded-UC-014")).toHaveTextContent(/^UC-014UC-0144 处$/);
+    expect(within(todo).getByTestId("review-folded-UC-015")).toHaveTextContent("5 处");
+    expect(screen.getByTestId("review-now")).toHaveTextContent("有 15 处问题等你处理。");
+    fireEvent.click(within(todo).getByTestId("review-folded-UC-014"));
+    expect(within(screen.getByTestId("review-group-UC-014")).getAllByTestId("finding-problem")).toHaveLength(4);
+    expect(screen.queryByTestId("review-folded-UC-014")).toBeNull();
+    fireEvent.click(screen.getByTestId("review-refold-UC-014"));
+    expect(screen.getByTestId("review-folded-UC-014")).toBeInTheDocument();
+  });
+
+  it("评审进行中：已经评完的条目的问题随评随出现，新出现的一组排在已有的后面，即使它在条目区里排得更前", () => {
+    const fresh = (id: string) => item({ item_id: id, reviews: [] });
+    const failed = (id: string, text: string) => item({ item_id: id, reviews: [{ revision_no: 6, verdict: "不合规", findings: [P("UC-R7", text)], batch_id: "op-1", rules_hash: H }] });
+    const running: ReviewRun = { op_id: "op-1", done: 1, total: 3, current: ["UC-020"], finished: null };
+    const view = (items: Item[], review: ReviewRun) => (
+      <Wrap><ReviewPanel task={task(items)} review={review} readOnly={false} writesOff={false} onReview={vi.fn()} submit={vi.fn(async () => null)} onOpenFinding={vi.fn()} onPrefill={vi.fn()} /></Wrap>
+    );
+    const { rerender } = render(view([fresh("UC-020"), failed("UC-021", "甲。"), fresh("UC-022")], running));
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^正在评审，已经评完 1 个，共 3 个。有 1 处问题等你处理。$/);
+    expect(within(screen.getByTestId("review-todo")).getAllByTestId(/^review-group-/)).toHaveLength(1);
+    rerender(view([failed("UC-020", "乙。"), failed("UC-021", "甲。"), fresh("UC-022")], { ...running, done: 2, current: ["UC-022"] }));
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^正在评审，已经评完 2 个，共 3 个。有 2 处问题等你处理。$/);
+    expect(within(screen.getByTestId("review-todo")).getAllByTestId(/^review-group-/).map((e) => e.dataset.testid)).toEqual(["review-group-UC-021", "review-group-UC-020"]);
+    cleanup();
+    // 重新打开页签时按条目区的顺序
+    render(view([failed("UC-020", "乙。"), failed("UC-021", "甲。")], { ...running, done: 3, finished: { passed: 0, failed: 2, unfinished: 0, error: null } }));
+    expect(within(screen.getByTestId("review-todo")).getAllByTestId(/^review-group-/).map((e) => e.dataset.testid)).toEqual(["review-group-UC-020", "review-group-UC-021"]);
+  });
+
+  it("条目改过之后还没有重新评审：旧的问题不放进要处理的，只算进还没有评审的个数", () => {
+    const edited = { ...UC4, revision_no: 7, revisions: [6, 7] };
+    panel(task([edited]));
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^1 个条目还没有评审。$/);
+    expect(screen.queryByTestId("review-todo")).toBeNull();
+    expect(text()).not.toContain("第 2 步没有主语");
+  });
+
+  it("评审规则：页签最下面一行写共几条、开着几条，点了滑出面板；「关闭」、点左边一窄条或 Esc 收回", () => {
+    panel(all());
+    expect(screen.queryByTestId("rules-area")).toBeNull();
+    expect(screen.getByTestId("rules-link")).toHaveTextContent(/^评审规则（共 3 条，开着 2 条）$/);
+    fireEvent.click(screen.getByTestId("rules-link"));
+    expect(screen.getByTestId("rules-area")).toHaveTextContent("带锁的不能关；其余的可以关掉，只对这个任务生效。改动只影响之后的评审。");
+    expect(within(screen.getByTestId("rules-area")).getByText("功能用例")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("rules-close"));
+    expect(screen.queryByTestId("rules-area")).toBeNull();
+    fireEvent.click(screen.getByTestId("rules-link"));
+    fireEvent.click(screen.getByTestId("rules-scrim"));
+    expect(screen.queryByTestId("rules-area")).toBeNull();
+    fireEvent.click(screen.getByTestId("rules-link"));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByTestId("rules-area")).toBeNull();
+  });
+
+  it("规则面板：每行只有开关、编号、条文，没有级别标签与升为必选的入口；必选的锁住；可选的开关发 set_review_rules，已关闭的可以打开", async () => {
     const { submit } = panel(task([UC4]));
-    expect(screen.getByTestId("rules-area")).toHaveTextContent("带锁的规则不能关；其余的可以关掉，只对这个任务生效");
+    fireEvent.click(screen.getByTestId("rules-link"));
     for (const id of ["UC-R7", "UC-R12", "UC-R13"]) {
       expect(screen.getByTestId(`rule-${id}`).children).toHaveLength(3);
       expect(screen.getByTestId(`rule-${id}`)).not.toHaveTextContent(/必选|可选|已关闭/);
@@ -142,11 +345,12 @@ describe("评审页签", () => {
     await waitFor(() => expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ fields: { collection: "功能用例", off: [], promote: [] } }), "打开规则 UC-R13"));
   });
 
-  it("规则区：已经升为必选的规则照开着的显示（绿色、不带锁），悬停提示写明已经升为必选；关掉时一并撤销升为必选", async () => {
+  it("规则面板：已经升为必选的规则照开着的显示（绿色、不带锁），悬停提示写明已经升为必选；关掉时一并撤销升为必选", async () => {
     const t = task([UC4]);
     t.definition.collections[0].all_rules!.push({ id: "UC-R14", level: "可选", text: "原样写出数值。", state: "promoted" });
     t.definition.collections[0].rule_switches = { off: ["UC-R13"], promote: ["UC-R14"] };
     const { submit } = panel(t);
+    fireEvent.click(screen.getByTestId("rules-link"));
     const sw = screen.getByTestId("rule-switch-UC-R14");
     expect(sw).toHaveClass("on");
     expect(sw).not.toHaveClass("lock");
@@ -156,10 +360,11 @@ describe("评审页签", () => {
     await waitFor(() => expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ fields: { collection: "功能用例", off: ["UC-R13", "UC-R14"], promote: [] } }), "关闭规则 UC-R14"));
   });
 
-  it("规则区：必选规则的开关是开着的（绿色）并在圆点对面画锁，读屏说明写必选、不能关；别的三种状态不画锁", () => {
+  it("规则面板：必选规则的开关是开着的（绿色）并在圆点对面画锁，读屏说明写必选、不能关；别的三种状态不画锁", () => {
     const t = task([UC4]);
     t.definition.collections[0].all_rules!.push({ id: "UC-R14", level: "可选", text: "原样写出数值。", state: "promoted" });
     panel(t);
+    fireEvent.click(screen.getByTestId("rules-link"));
     const req = screen.getByTestId("rule-switch-UC-R7");
     expect(req).toHaveClass("sw-switch", "on", "lock");
     expect(req).toHaveAttribute("aria-checked", "true");
@@ -174,16 +379,6 @@ describe("评审页签", () => {
       expect(within(sw).queryByTestId("rule-lock")).toBeNull();
       expect(sw.getAttribute("aria-label")).toMatch(new RegExp(`^规则 ${id}：${on ? "开着" : "关着"}`));
     }
-  });
-
-  it("规则改了（指纹变了）：顶部提示几条需要重评，条目回到待评审", () => {
-    const t = task([UC4, UC1]);
-    const changed = { ...t, definition: { collections: [{ ...t.definition.collections[0], rules_hash: "h2" }] } };
-    expect(pendingReview(changed).map((i) => i.item_id)).toEqual(["UC-004", "UC-001"]);
-    expect(needsRereview(changed)).toHaveLength(2);
-    panel(changed);
-    expect(screen.getByTestId("rules-changed")).toHaveTextContent("规则改了，2 条需要重评。");
-    expect(screen.getByTestId("review-panel-all")).toHaveTextContent("评审 2 条待评审的条目");
   });
 });
 
@@ -227,29 +422,18 @@ describe("规则改过之后按旧规则评出的发现", () => {
     expect(findingStatus(U4, U4.reviews[0])).toEqual({ kind: "open" });
   });
 
-  it("页签：旧规则下的发现写「按改之前的规则评出，不再算数」、不给链接；角标、「只看未处理」列出的发现、写「未处理」的发现三者相等", () => {
+  it("页签：旧规则下的发现不显示、不算要处理的；只有旧规则下记录的条目算进要重新评审的个数；角标与顶上一行的处数相等", () => {
     const t = changed();
     panel(t);
-    const old = screen.getByTestId("batch-3");
-    fireEvent.click(within(old).getByText("第 3 次评审"));   // 早先的卡片折着，展开
-    for (const id of ["UC-004", "UC-005", "UC-006", "UC-007"]) {
-      const row = within(old).getByTestId(`batch-3-item-${id}`);
-      expect(within(row).getByTestId("finding-status")).toHaveTextContent(/^按改之前的规则评出，不再算数$/);
-      expect(within(row).queryByTestId("fix-finding")).toBeNull();
-      expect(within(row).queryByTestId("keep-finding")).toBeNull();
-      expect(within(row).queryByTestId("unwaive-finding")).toBeNull();
-    }
-    expect(old).toHaveTextContent("全部发现已在后来的修订里改或保留，或者按改之前的规则评出、不再算数");
+    for (const key of ["advice", "done", "log"]) if (screen.queryByTestId(`review-${key}-toggle`)) fireEvent.click(screen.getByTestId(`review-${key}-toggle`));
     const badge = openProblems(t);
     expect(badge).toBe(1);   // 只有 UC-005 按新规则不合规、没有保留
-    expect(screen.getByTestId("review-panel")).toHaveTextContent(`未处理的问题 ${badge} 处`);
-    const openWords = () => screen.getAllByTestId("finding-status").filter((e) => e.textContent === "未处理");
-    expect(openWords()).toHaveLength(badge);
-    fireEvent.click(screen.getByTestId("review-only-open"));
-    expect(screen.queryByTestId("batch-3")).toBeNull();
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^规则改过，1 个条目要重新评审。有 1 处问题等你处理。$/);
     expect(screen.getAllByTestId("finding-problem")).toHaveLength(badge);
-    expect(openWords()).toHaveLength(badge);
-    expect(screen.getByTestId("batch-5-item-UC-005")).toBeInTheDocument();
+    expect(screen.getByTestId("review-group-UC-005")).toHaveTextContent("UC-005 新规则下的问题。");
+    expect(screen.getByTestId("review-panel")).not.toHaveTextContent("旧规则下的问题");
+    expect(screen.getByTestId("review-kept-UC-006")).toHaveTextContent("理由：照材料");
+    expect(screen.getByTestId("review-passed-UC-007")).toBeInTheDocument();
   });
 });
 
@@ -340,15 +524,16 @@ describe("同一修订上有几条记录：以最后一条为准", () => {
       "保留 UC-005 现在的写法"));
   });
 
-  it("评审页签：被后来的合规取代的不合规不写状态、不给链接、不算未处理；角标只数最后一条", () => {
+  it("评审页签：被后来的合规取代的不合规不显示；要处理的与顶上一行只数最后一条", () => {
     const t = task([FIXED, AGAIN], { review_batches: [{ ...BATCH3, no: 1, batch_id: "ui-op-3", items: [{ item_id: "UC-006", revision_no: 6 }], total: 1, passed: 0, failed: 1, problems: 1 },
       { ...BATCH3, no: 2, batch_id: "ui-op-2", items: [{ item_id: "UC-005", revision_no: 6 }], total: 1, passed: 1, failed: 0, problems: 0 }] });
     panel(t);
-    expect(screen.getByTestId("review-panel")).toHaveTextContent("未处理的问题 1 处");   // 只有 UC-005 最后一条不合规的那 1 处
-    fireEvent.click(screen.getByText("第 1 次评审"));
-    const row = screen.getByTestId("batch-1-item-UC-006");
-    expect(within(row).queryByTestId("finding-status")).toBeNull();
-    expect(within(row).queryByTestId("keep-finding")).toBeNull();
+    expect(screen.getByTestId("review-now")).toHaveTextContent(/^有 1 处问题等你处理。$/);   // 只有 UC-005 最后一条不合规的那 1 处
+    expect(screen.getByTestId("review-group-UC-005")).toBeInTheDocument();
+    expect(screen.queryByTestId("review-group-UC-006")).toBeNull();
+    fireEvent.click(screen.getByTestId("review-done-toggle"));
+    expect(screen.getByTestId("review-passed-UC-006")).toBeInTheDocument();
+    expect(screen.getAllByTestId("keep-finding")).toHaveLength(1);
   });
 
   it("完成条件面板：最后一条不合规的条目列在评审不通过一组", () => {
