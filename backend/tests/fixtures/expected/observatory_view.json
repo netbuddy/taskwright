@@ -235,27 +235,27 @@
         },
         {
          "字节数": 5973,
-         "摘要值": "8b811e23c90045d1",
+         "摘要值": "5bc99fb593610006",
          "路径": "docs/domain-knowledge/ears-writing.md"
         },
         {
-         "字节数": 7034,
-         "摘要值": "4636760c1201c6be",
+         "字节数": 7142,
+         "摘要值": "d02b521394762bb7",
          "路径": "docs/domain-knowledge/use-case-writing.md"
         },
         {
          "字节数": 3622,
-         "摘要值": "41eb0c074f00955b",
+         "摘要值": "5feebfcc463e5e41",
          "路径": "docs/review-rules/ears.json"
         },
         {
-         "字节数": 4890,
-         "摘要值": "3a8fef04fd71efbd",
+         "字节数": 4998,
+         "摘要值": "76b911dc7268aeb6",
          "路径": "docs/review-rules/use-case.json"
         },
         {
-         "字节数": 3892,
-         "摘要值": "d48e4579d451e9dd",
+         "字节数": 3962,
+         "摘要值": "2b7c90f70c6aa723",
          "路径": "docs/task-definitions/srs-authoring.json"
         },
         {
