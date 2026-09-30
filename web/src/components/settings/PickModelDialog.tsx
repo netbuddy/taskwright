@@ -53,7 +53,7 @@ export function PickModelDialog({ config, type, onClose, onPicked, onGoFill }: {
       onPicked(got.selection, got.note);
     } catch (e) {
       if (e instanceof ApiError && e.code === "rejected") setError(e.message);
-      else toast.error(e instanceof ApiError ? e.message : "没有换成。");
+      else toast.error(e instanceof ApiError ? e.message : "更换没有成功。");
     } finally {
       setSaving(false);
     }

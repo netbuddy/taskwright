@@ -102,7 +102,7 @@ export function ProviderDetail({ config, provider, editable, fetching, fetchNote
       if (got.context_window !== null) change(id, { context_window: got.context_window, context_source: "service" });
       else setLookNote((n) => ({ ...n, [id]: got.message }));
     } catch (error) {
-      setLookNote((n) => ({ ...n, [id]: error instanceof ApiError ? error.message : "没有查到。" }));
+      setLookNote((n) => ({ ...n, [id]: error instanceof ApiError ? error.message : "没有查到上下文长度。" }));
     } finally {
       setLooking((s) => { const next = new Set(s); next.delete(id); return next; });
     }
