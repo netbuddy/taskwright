@@ -1,14 +1,17 @@
 // 任务页：一次普通读取（GET …/tasks/{task_id}，里面带材料与会话）。另开一条不带会话的事件连接，只听执行者状态：
 // 助手做完一轮时重读一次，会话卡片与「最近一次活动」不停在打开页面的那一刻（与工作视图的会话菜单同一个做法）。
-// 页面上像结论的句子都由数据算出；集合名、完成条件名从接口取。任务已完成或已放弃时整页只读：「新建会话」与上传框都不显示，
+// 页面上像结论的句子都由数据算出；集合名、完成条件名从接口取。任务已完成或已放弃时整页只读：「新建会话」、上传框与材料的「删除」都不显示，
 // 只读说明写明原因。
+// 服务有知识库时：上传框选好文件后先弹出「这份文件用来做什么？」（UploadDestinationModal），按选择上传成材料或放进知识库；
+// 材料清单旁边另有「选用的知识库」一栏（TaskKnowledgeCard）。没有知识库的旧服务照旧直接上传成材料。
+// 每份材料一行有「删除」：先确认，删除之后引用它的条目上的来源照旧保留，工作视图里出处旁写明已经删除。
 
 import { useEffect, useState } from "react";
 import { Alert, Button, Empty, Modal, Spin, Upload } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import { openEventStream } from "../api/events";
-import type { RevisionLogEntry, TaskDetail } from "../api/types";
+import type { KnowledgeLibrary, RevisionLogEntry, TaskDetail } from "../api/types";
 import { Shell } from "../components/Shell";
 import { useToast } from "../components/Toasts";
 import { DocumentModal } from "../components/DocumentModal";
@@ -20,6 +23,9 @@ import { DocxPaper } from "../components/work/DocxPaper";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
 import { tooLargeText, unsupportedTypeText, uploadAccept, uploadLimitText, uploadTypesText } from "../model/upload";
+import { GENERAL, knowledgeLimitText, knowledgeTooLargeText } from "../model/knowledge";
+import { type UploadChoice, UploadDestinationModal } from "../components/UploadDestinationModal";
+import { TaskKnowledgeCard } from "../components/TaskKnowledgeCard";
 import { statusTag } from "./TaskListPage";
 
 export function TaskPage({ taskId }: { taskId: string }) {
@@ -34,8 +40,19 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const [wordPath, setWordPath] = useState<string | null>(null);
   const toast = useToast();
   const service = useService();
-  // 上传框说明里写类型与大小的两半句，都取自服务信息；还没取到时两半句都不写，不猜。
-  const hintParts = [uploadTypesText(service.info), uploadLimitText(service.info)].filter(Boolean);
+  const hasKnowledge = !!service.info?.capabilities.knowledge;
+  // 上传框说明里写类型与大小的两半句，都取自服务信息；还没取到时两半句都不写，不猜。有知识库时大小分材料与放进知识库的两种写。
+  const limit = uploadLimitText(service.info);
+  const kbLimit = knowledgeLimitText(service.info);
+  const hintParts = [uploadTypesText(service.info), hasKnowledge && limit && kbLimit ? `材料${limit}，放进知识库的${kbLimit.replace("单个文件", "单个")}` : limit]
+    .filter(Boolean);
+  // 知识库：全部库（选用框与上传对话框要用），选好文件、等着选去向的那份文件，删除材料前确认的那份。
+  const [libraries, setLibraries] = useState<KnowledgeLibrary[]>([]);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const loadKnowledge = () => { if (hasKnowledge) api.knowledge().then(setLibraries).catch(() => setLibraries([])); };
+  useEffect(loadKnowledge, [hasKnowledge]);
 
   const load = () =>
     api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
@@ -68,6 +85,73 @@ export function TaskPage({ taskId }: { taskId: string }) {
   if (!task) return <Shell currentTaskId={taskId}><Spin /></Shell>;
 
   const closed = task.status !== "进行中";
+  const selected = task.knowledge_libraries ?? [GENERAL];
+
+  const uploadMaterial = async (file: File) => {
+    const r = await api.uploadMaterial(taskId, file);
+    toast.success(`已上传：${r.path}`);
+    void load();
+  };
+
+  // 按对话框的选择上传：材料照旧；放进知识库时先建库（选了「新建一个库…」），再上传，勾了「同时让这个任务选用它」就改选用。
+  const uploadChosen = async (choice: UploadChoice) => {
+    const file = pendingFile;
+    if (!file) return;
+    const refused = choice.dest === "material" ? tooLargeText(service.info, file) : knowledgeTooLargeText(service.info, file);
+    if (refused) {
+      toast.error(refused);
+      return;
+    }
+    setUploading(true);
+    try {
+      if (choice.dest === "material") {
+        await uploadMaterial(file);
+      } else {
+        let id = choice.library;
+        let name = libraries.find((l) => l.id === id)?.name ?? "";
+        if (id === null) {
+          const created = await api.createLibrary(choice.newName);
+          id = created.id;
+          name = created.name;
+        }
+        await api.uploadDocument(id, file, choice.kind);
+        if (choice.alsoSelect) await api.setTaskKnowledge(taskId, [...selected, id]);
+        toast.success(`已放进知识库「${name}」：${file.name}。`);
+        void load();
+      }
+      setPendingFile(null);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "上传没有成功。");
+    } finally {
+      setUploading(false);
+      loadKnowledge();
+    }
+  };
+
+  const changeKnowledge = async (ids: string[]) => {
+    try {
+      await api.setTaskKnowledge(taskId, ids);
+      void load();
+      loadKnowledge();
+      return true;
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "选用的库没有改成。");
+      return false;
+    }
+  };
+
+  const deleteMaterial = async () => {
+    const path = deleting;
+    if (!path) return;
+    try {
+      await api.deleteMaterial(taskId, path);
+      toast.success(`已删除材料《${path.split("/").pop()}》。`);
+      setDeleting(null);
+      void load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "删除没有成功。");
+    }
+  };
   const completion = task.completion;
   const lastActive = task.sessions.map((s) => s.last_active_at).filter(Boolean).sort().pop();
 
@@ -151,6 +235,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
                 <span style={{ flex: 1 }}>{m.path.split("/").pop()}</span>
                 <span className="muted small">{formatBytes(m.bytes)} · {formatTime(m.modified_at)}</span>
                 <Button size="small" onClick={() => (/\.docx$/i.test(m.path) ? setWordPath(m.path) : api.materialContent(taskId, m.path).then(setMaterial))}>查看原文</Button>
+                {!closed && <Button size="small" onClick={() => setDeleting(m.path)} data-testid="material-delete">删除</Button>}
               </div>
             ))}
             {!closed && (
@@ -161,17 +246,21 @@ export function TaskPage({ taskId }: { taskId: string }) {
                 customRequest={async ({ file, onSuccess, onError }) => {
                   // 类型不符或超过上限的文件不发请求，直接报后端给的那句话（先查类型，与后端的先后相同）。
                   // 拖进来的文件与在选择框里选了「所有文件」时选中的文件都不经过滤，所以类型也要在这里查。
-                  const refused = unsupportedTypeText(service.info, file as File) ?? tooLargeText(service.info, file as File);
+                  // 有知识库时大小要等选了去向才知道按哪个上限查，先弹出对话框。
+                  const refused = unsupportedTypeText(service.info, file as File) ?? (hasKnowledge ? null : tooLargeText(service.info, file as File));
                   if (refused) {
                     toast.error(refused);
                     onError?.(new Error(refused));
                     return;
                   }
+                  if (hasKnowledge) {
+                    setPendingFile(file as File);
+                    onSuccess?.({});
+                    return;
+                  }
                   try {
-                    const r = await api.uploadMaterial(taskId, file as File);
-                    toast.success(`已上传：${r.path}`);
-                    onSuccess?.(r);
-                    void load();
+                    await uploadMaterial(file as File);
+                    onSuccess?.({});
                   } catch (e) {
                     toast.error(e instanceof ApiError ? e.message : "上传没有成功。");
                     onError?.(e as Error);
@@ -182,6 +271,13 @@ export function TaskPage({ taskId }: { taskId: string }) {
               </Upload.Dragger>
             )}
           </div>
+
+          {hasKnowledge && (
+            <>
+              <div className="section-title">选用的知识库</div>
+              <TaskKnowledgeCard libraries={libraries} selected={selected} readOnly={closed} onChange={changeKnowledge} />
+            </>
+          )}
 
           <div className="section-title">会话</div>
           <div className="card">
@@ -198,6 +294,12 @@ export function TaskPage({ taskId }: { taskId: string }) {
       </div>
 
       <DocumentModal task={task} log={log} open={docOpen} onClose={() => setDocOpen(false)} />
+      <UploadDestinationModal file={pendingFile} libraries={libraries} selected={selected} info={service.info} busy={uploading}
+        onCancel={() => setPendingFile(null)} onUpload={(choice) => void uploadChosen(choice)} />
+      <Modal title={deleting ? `删除材料《${deleting.split("/").pop()}》？` : ""} open={!!deleting} onCancel={() => setDeleting(null)}
+        onOk={() => void deleteMaterial()} okText="删除" cancelText="取消" destroyOnHidden>
+        <p>删除之后，已经引用它的条目上的来源仍然保留，出处旁会写明这份材料已经删除。</p>
+      </Modal>
       <Modal title={material?.path} open={!!material} onCancel={() => setMaterial(null)} footer={null} width="min(54.286rem, 94vw)">
         <pre className="doc-text" style={{ maxHeight: "40rem", overflow: "auto" }}>{material?.text}</pre>
       </Modal>
