@@ -19,20 +19,31 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [x] Uploaded materials cannot repeat the content or the name of a material already in the task
 - [x] Reviews decided by one shared rule: once per revision and rule set, kept wordings counted apart
 
-## 0.4 Materials and retrieval
+## 0.4.0 Closing what 0.3 left open
 
-- [ ] Fixes for the issues found in the 0.3 trial runs that were not fixed in 0.3
+- [x] Fixes for the issues found in the 0.3 trial runs that were not fixed in 0.3
+- [x] Remove the earlier Python task service
+- [x] Review tab laid out by what needs your attention; the reviewer sees the task's other items; unverified review rules are off by default
+- [x] Items cite only original passages; your own edits add no source
+
+## 0.4.1 Knowledge base, retrieval and model configuration
+
+- [ ] Knowledge base: libraries and documents outside any task; a task selects the libraries it uses; the assistant cites them as its basis
+- [ ] Semantic search over materials and the knowledge base (vector retrieval), and lexical search in the knowledge base
+- [ ] Configure model services in the interface: local services (ollama, llama.cpp, vLLM) and API-key services, for both the language model and the embedding model; no network access at startup by default
+- [ ] Delete and replace materials
+
+## 0.4.2 PDF
+
 - [ ] Word materials shown as PDF, so that pages match what Word shows
 - [ ] PDF materials
-- [ ] Semantic search over materials (vector retrieval)
-- [ ] Delete and replace materials
-- [x] Remove the earlier Python task service
 
 ## 0.5 Several users
 
 - [ ] Authentication and multiple users
 - [ ] Stop a run in progress from the interface
 - [ ] Abandon a task
+- [ ] Limits on how many assistants run at once, with idle shutdown and a queue
 
 ## 0.6 Deliverables and desktop
 
