@@ -47,7 +47,10 @@ body {
 .sider-task .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sider-session { display: flex; align-items: center; gap: 0.429rem; padding: 0.357rem 0.571rem 0.357rem 1.857rem; font-size: 0.972rem; color: #4a4a4a; cursor: pointer; border-radius: 0.429rem; }
 .sider-session:hover { background: var(--dark3); }
-.sider-foot { border-top: 1px solid var(--line); padding: 0.857rem; font-size: 0.972rem; color: #4a4a4a; }
+.sider-foot { border-top: 1px solid var(--line); padding: 0.857rem; font-size: 0.972rem; color: #4a4a4a; display: flex; align-items: center; }
+/* 侧栏底部「本机用户」右边的「设置」入口 */
+.set-link { margin-left: auto; display: inline-flex; align-items: center; gap: 0.3rem; color: #4a4a4a; cursor: pointer; font-size: 0.93rem; }
+.set-link:hover { color: var(--ink); }
 .main { flex: 1; min-width: 0; overflow: auto; padding: 1.429rem 2.571rem 2.286rem; }
 .page-title { display: flex; align-items: center; gap: 0.714rem; flex-wrap: wrap; }
 .page-title h1 { font-size: 1.357rem; margin: 0; }

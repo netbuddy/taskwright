@@ -1,0 +1,146 @@
+/* 设置页面（pages/SettingsPage.tsx 与 components/settings/）。外壳沿用任务页的左侧栏加主体（styles.css 的 .shell、.sider、.main），
+ * 这里只写设置页面自己的部分，照「在界面上配置模型服务」的原型。记号要少：正常时不加颜色，只有连不上、被拒这些要用户动手的地方才突出。
+ * 全部写在 .settings 下面，不影响别的页面。对话框挂在页面之外，写在 .settings-pick 下面。 */
+
+.settings .set-back { display: flex; align-items: center; gap: .3rem; padding: .9rem .857rem 0; font-size: .93rem; color: #4a4a4a; }
+.settings .set-back:hover { color: var(--ink); }
+.settings .set-nav { padding: .2rem .571rem 0; display: flex; flex-direction: column; gap: .1rem; }
+.settings .nav-item { display: flex; align-items: center; gap: .5rem; padding: .42rem .571rem; border-radius: .429rem; font-size: .972rem; color: #333; }
+.settings .nav-item.on { background: var(--dark3); font-weight: 600; color: var(--ink); }
+.settings .nav-item.off { color: #b5b5b5; cursor: default; }
+.settings .nav-item .nic { color: var(--mut); }
+.settings .nav-item.off .nic { color: #cfcfcf; }
+.settings .nav-item .later { margin-left: auto; font-size: .82rem; color: #b5b5b5; font-weight: 400; }
+.settings .section-title.first { margin-top: 0; }
+.settings .section-title .plain { font-weight: 400; }
+.settings .crumb { margin-bottom: .429rem; }
+.settings .crumb a { color: var(--blue); cursor: pointer; }
+.settings a[role="button"] { color: var(--blue); cursor: pointer; }
+.settings a[role="button"]:hover { text-decoration: underline; }
+
+/* 从别的电脑打开时顶上那句说明；手工登记的模型服务详情顶上那句 */
+.settings .ro-note { display: flex; align-items: center; gap: .5rem; background: var(--dark); border: 1px solid var(--line2); border-radius: .5rem;
+  padding: .45rem .75rem; font-size: .95rem; color: #4a4a4a; margin-bottom: 1rem; }
+.settings .ro-note.small { font-size: .9rem; margin-bottom: .8rem; }
+
+/* 现在用的模型：右边一列给「更换」与下一批的「测试」留了两个按钮的宽度，加上「测试」时不重排 */
+.settings .cur { padding: .2rem 1.143rem .7rem; }
+.settings .currow { display: grid; grid-template-columns: minmax(8.5rem, 11rem) minmax(0, 1fr) 9.5rem; gap: .4rem 1rem; align-items: center;
+  padding: .75rem 0; border-bottom: 1px solid var(--line); }
+.settings .currow .cl { color: #4a4a4a; font-size: .95rem; }
+.settings .currow .ci { min-width: 0; overflow-wrap: anywhere; }
+.settings .currow .mname { font-weight: 600; word-break: break-all; }
+.settings .currow .mmeta { color: #4a4a4a; font-size: .93rem; margin-left: .5rem; }
+.settings .currow .ca { display: flex; gap: .45rem; flex-wrap: wrap; justify-content: flex-end; }
+.settings .effect { color: var(--mut); font-size: .9rem; padding-top: .6rem; }
+
+/* 模型服务：左边清单，右边详情 */
+.settings .svcgrid { display: grid; grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
+.settings .svcs { padding: .45rem; }
+.settings .svcs .cap { color: var(--mut); font-size: .9rem; padding: .2rem .5rem .35rem; }
+.settings .svcs .cap ~ .cap { margin-top: .5rem; border-top: 1px solid var(--line); padding-top: .55rem; }
+.settings .svc { padding: .5rem .6rem; border-radius: .5rem; cursor: pointer; display: flex; align-items: flex-start; gap: .4rem; }
+.settings .svc:hover { background: var(--sel); }
+.settings .svc.on { background: var(--dark3); }
+.settings .svc .sb { flex: 1; min-width: 0; }
+.settings .svc .sn { font-weight: 600; word-break: break-all; }
+.settings .svc .sk { color: var(--mut); font-size: .88rem; }
+.settings .svc .warn { color: var(--amber); margin-top: .3rem; }
+.settings .svc-add { margin-top: .4rem; border-top: 1px solid var(--line); padding: .5rem .1rem .1rem; }
+.settings .empty-svcs { text-align: center; padding: 1.6rem 1rem 1.4rem; color: #4a4a4a; }
+.settings .empty-svcs > div { margin-top: .7rem; }
+
+/* 一个模型服务的详情 */
+.settings .det .alert { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; border-radius: .5rem; padding: .45rem .7rem; font-size: .93rem;
+  margin-bottom: .8rem; background: var(--dark); border: 1px solid var(--line); color: #4a4a4a; overflow-wrap: anywhere; }
+.settings .det .alert.warn { background: var(--amber-bg); border-color: var(--amber-line); color: #7a4a06; }
+.settings .det .alert .sp { flex: 1; }
+.settings .det .alert .why { margin-left: .4rem; font-size: .88rem; color: #9a7a3a; }
+.settings .dhead { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.settings .dhead h2 { font-size: 1.12rem; margin: 0; word-break: break-all; }
+.settings .kv { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: .35rem .8rem; font-size: .95rem; margin-bottom: .8rem; }
+.settings .kv .k { color: var(--mut); }
+.settings .kv .v { min-width: 0; overflow-wrap: anywhere; }
+.settings .kv .v .note { color: var(--mut); font-size: .88rem; margin-top: .25rem; }
+.settings .kv .v .gap { margin-left: .6rem; }
+.settings .inl { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin-top: .35rem; }
+.settings .inl .ant-input-affix-wrapper { flex: 1 1 14rem; max-width: 24rem; }
+.settings .login .st { font-weight: 600; }
+.settings .login .ant-btn { margin-top: .35rem; }
+.settings .cmd { display: flex; align-items: center; gap: .5rem; background: var(--dark); border: 1px solid var(--line2); border-radius: .5rem;
+  padding: .35rem .4rem .35rem .7rem; margin: .5rem 0; max-width: 32rem; }
+.settings .cmd code { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, monospace; font-size: .9rem; color: #4a4a4a; }
+.settings .fetchbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: .8rem; margin-bottom: .6rem; }
+.settings .fetchbar .muted { font-size: .9rem; }
+.settings .mhint { color: var(--mut); font-size: .88rem; margin: .1rem 0 .35rem; }
+.settings .mhint:empty { display: none; }
+.settings .mfilter { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .2rem 0 .4rem; }
+.settings .mfilter .ant-input { flex: 1 1 12rem; max-width: 20rem; }
+.settings .mtab { width: 100%; border-collapse: collapse; font-size: .93rem; table-layout: fixed; }
+.settings .mtab th { background: #fafafa; color: #4a4a4a; font-weight: 600; text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); }
+.settings .mtab td { padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.settings .mtab td.mn { word-break: break-all; padding-top: .55rem; }
+.settings .mtab td.mk { padding-top: .55rem; }
+.settings .mtab tr.off td.mn { color: #8a8a8a; }
+.settings .mtab .ctxcell { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+.settings .mtab .cnote { font-size: .84rem; color: var(--mut); margin-top: .15rem; line-height: 1.5; }
+.settings .mtab tr.exp td { padding-top: 0; }
+.settings .expbox { font-size: .88rem; color: #4a4a4a; background: var(--dark); border: 1px solid var(--line); border-radius: .5rem; padding: .4rem .65rem; line-height: 1.65; }
+.settings .mtab tr.more td { color: var(--mut); font-size: .9rem; }
+.settings .mtab tr.more a { margin-left: .4rem; }
+.settings .madd { margin-top: 1rem; }
+.settings .madd .mt { font-weight: 600; font-size: .95rem; margin-bottom: .3rem; }
+.settings .maddrow { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
+.settings .maddrow .nm { flex: 1 1 12rem; max-width: 18rem; }
+.settings .savebar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .9rem; }
+.settings .savebar .ferr { flex-basis: 100%; }
+.settings .ferr, .settings-pick .ferr { color: var(--gap); font-size: .9rem; margin-top: .25rem; overflow-wrap: anywhere; }
+.settings .dfoot2 { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; border-top: 1px solid var(--line); margin-top: 1.1rem; padding-top: .8rem; }
+.settings .dfoot2 .muted { font-size: .9rem; flex: 1 1 16rem; }
+
+/* 「高级」折叠 */
+.settings .fold, .settings-pick .fold { margin-top: .6rem; }
+.settings .fold .fh, .settings-pick .fold .fh { display: inline-flex; align-items: center; gap: .3rem; color: #4a4a4a; font-size: .93rem; user-select: none; }
+.settings .fold .fic, .settings-pick .fold .fic { font-size: .75rem; transition: transform .15s; }
+.settings .fold.open .fic, .settings-pick .fold.open .fic { transform: rotate(90deg); }
+.settings .fold .fb, .settings-pick .fold .fb { margin-top: .5rem; padding-left: .9rem; border-left: .15rem solid var(--line2); }
+
+/* 添加模型服务 */
+.settings .kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .55rem; width: 100%; }
+/* 每个种类是一个单选项（Ant Design 的 Radio 本身画成一张小卡片） */
+.settings .opt { display: flex; align-items: flex-start; margin: 0; border: 1px solid var(--line2); border-radius: .6rem; padding: .55rem .75rem;
+  cursor: pointer; background: #fff; min-width: 0; }
+.settings .opt .ant-radio { align-self: flex-start; margin-top: .3rem; }
+.settings .opt:hover { border-color: #9a9a9a; }
+.settings .opt.on { border-color: var(--ink); background: var(--stage); }
+.settings .opt .ot { font-weight: 600; font-size: .97rem; display: block; }
+.settings .opt .od { color: #4a4a4a; font-size: .9rem; display: block; }
+.settings .frm { max-width: 40rem; }
+.settings .frow { margin-bottom: .85rem; }
+.settings .flabel, .settings-pick .flabel { font-size: .92rem; color: #4a4a4a; margin-bottom: .25rem; }
+.settings .flabel .req { color: var(--gap); margin-left: .15rem; }
+.settings .flabel .opt2 { color: var(--mut); font-size: .86rem; margin-left: .3rem; }
+.settings .fhelp, .settings-pick .fhelp { font-size: .86rem; color: var(--mut); margin-top: .2rem; }
+.settings .formfoot { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+
+/* 「更换」「选择」的对话框 */
+.settings-pick .pick { display: flex; flex-direction: column; margin-top: .5rem; width: 100%; }
+.settings-pick .pg { color: var(--mut); font-size: .88rem; margin: .6rem 0 .2rem; }
+.settings-pick .po { display: flex; align-items: flex-start; margin: 0 0 .3rem; padding: .4rem .55rem; border: 1px solid var(--line); border-radius: .5rem;
+  cursor: pointer; }
+.settings-pick .po .ant-radio { align-self: flex-start; margin-top: .3rem; }
+.settings-pick .po > span:last-child { flex: 1; min-width: 0; }
+.settings-pick .po:hover { border-color: #9a9a9a; }
+.settings-pick .po.on { border-color: var(--ink); background: var(--stage); }
+.settings-pick .po.dis { cursor: not-allowed; background: #fafafa; }
+.settings-pick .po.dis:hover { border-color: var(--line); }
+.settings-pick .po .pb { flex: 1; min-width: 0; }
+.settings-pick .po .pn { font-weight: 600; word-break: break-all; display: block; }
+.settings-pick .po .pn.plain { font-weight: 500; }
+.settings-pick .po.dis .pn { color: #9a9a9a; font-weight: 500; }
+.settings-pick .po .pc { display: block; color: var(--mut); font-size: .88rem; }
+.settings-pick .po .pc a { color: var(--blue); cursor: pointer; margin-left: .3rem; }
+.settings-pick .pempty { color: #4a4a4a; margin: .8rem 0 .4rem; }
+.settings-pick .fold a[role="button"] { cursor: pointer; }
+.pick-foot { display: flex; justify-content: flex-end; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.pick-foot .fnote { margin-right: auto; font-size: .86rem; color: var(--mut); flex: 1 1 12rem; text-align: left; }

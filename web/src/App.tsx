@@ -5,6 +5,7 @@ import { useRoute } from "./router";
 import { TaskListPage } from "./pages/TaskListPage";
 import { TaskPage } from "./pages/TaskPage";
 import { WorkViewPage } from "./pages/WorkViewPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { useRootPx } from "./model/fontScale";
 import { ToastProvider } from "./components/Toasts";
 import { ServiceProvider } from "./components/ServiceControls";
@@ -50,6 +51,7 @@ export function App() {
           {route.page === "tasks" && <TaskListPage />}
           {route.page === "task" && <TaskPage key={route.taskId} taskId={route.taskId} />}
           {route.page === "work" && <WorkViewPage key={`${route.taskId}/${route.sessionId}`} taskId={route.taskId} sessionId={route.sessionId} />}
+          {route.page === "settings" && <SettingsPage />}
           </ServiceProvider>
         </ToastProvider>
       </AntApp>

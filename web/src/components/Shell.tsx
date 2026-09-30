@@ -2,10 +2,10 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Form, Input, Modal, Select } from "antd";
-import { CaretDownOutlined, CaretRightOutlined, MessageOutlined, PlusOutlined } from "@ant-design/icons";
+import { CaretDownOutlined, CaretRightOutlined, MessageOutlined, PlusOutlined, SettingOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { SessionListEntry, TaskListEntry } from "../api/types";
-import { go, href } from "../router";
+import { go, href, openSettings } from "../router";
 import { useToast } from "./Toasts";
 import { NoModelBanner, UserMenu } from "./ServiceControls";
 
@@ -54,7 +54,10 @@ export function Shell({ currentTaskId, children }: { currentTaskId?: string; chi
               </div>
             ))}
           </div>
-          <div className="sider-foot"><UserMenu where="sider" /></div>
+          <div className="sider-foot">
+            <UserMenu where="sider" />
+            <span className="set-link" role="button" onClick={openSettings} data-testid="open-settings"><SettingOutlined />设置</span>
+          </div>
         </aside>
         <main className="main">{children}</main>
       </div>
