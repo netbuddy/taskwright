@@ -389,6 +389,11 @@ const handlers: Record<string, Handler> = {
     const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
     return json(200, service.upload(t, name, data, sessionParam(req)));
   },
+  delete_material: (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    return json(200, service.deleteMaterial(t, body.path, sessionParam(req, body)));
+  },
   knowledge: (service) => json(200, { ok: true, libraries: service.knowledgeOverview() }),
   create_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().create(bodyJson(req).name) }),
   rename_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().rename(req.params.lib, bodyJson(req).name) }),
@@ -462,6 +467,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/tasks/${T}/materials/content`, "material"],
   ["GET", `/api/v1/tasks/${T}/materials/raw`, "material_raw"],
   ["POST", `/api/v1/tasks/${T}/materials`, "upload"],
+  ["POST", `/api/v1/tasks/${T}/materials/delete`, "delete_material"],
   ["GET", `/api/v1/tasks/${T}/knowledge`, "task_knowledge"],
   ["POST", `/api/v1/tasks/${T}/knowledge`, "set_task_knowledge"],
   ["GET", "/api/v1/knowledge", "knowledge"],

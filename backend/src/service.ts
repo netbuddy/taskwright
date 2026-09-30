@@ -527,6 +527,33 @@ export class Service {
     return { ok: true, path };
   }
 
+  /**
+   * 删除一份材料：本体连同 Word 材料的投影、分段清单、位置表与图片目录一起删。只接受用户放进来的材料（派生文件的路径不接受），
+   * 路径必须落在材料目录里；助手正在工作时不删。条目上引用它的来源照旧存着，页面按「出处文件不在材料清单里」写明已经删除。
+   */
+  deleteMaterial(t: Task, rel: unknown, session: string | null = null) {
+    t.requireOpen();
+    const path = typeof rel === "string" ? rel : "";
+    const target = this.materialPath(t, path);
+    const row = library.materials(t.dir, t.definition()).find((m) => m.path === path);
+    if (row && row.derived_from !== null) throw new ApiError("bad_request", "这是由 Word 材料生成的文件，不能单独删除。");
+    if (!row || !isFile(target)) throw new ApiError("not_found", `没有材料 ${path}。`);
+    if (t.executor.state === "working") {
+      throw new ApiError("session_busy", "助手正在工作，结束后才能删除材料。", { active_session: t.executor.activeSession, reason: "working" });
+    }
+    unlinkSync(target);
+    if (target.toLowerCase().endsWith(".docx")) {
+      removeProjection(target);
+      try {
+        unlinkSync(target + ".txt"); // 0.2 的纯文本投影
+      } catch {
+        // 本来就没有
+      }
+    }
+    t.hub.emit("material_removed", { session_id: session, at: clock.now(), path });
+    return { ok: true, path };
+  }
+
   // ───────────── 知识库 ─────────────
 
   requireKnowledge(): KnowledgeStore {
