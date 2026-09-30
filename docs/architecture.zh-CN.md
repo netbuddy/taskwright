@@ -14,6 +14,8 @@
 | 网页（Web，`web/`） | TypeScript、React | 浏览器 | 否，它只调接口 | 从不写 |
 | 模拟用户（Simulator，`sim/`） | TypeScript 工具、Python 驱动程序，以及启动模拟用户的 Node 驱动程序 | 另一个 pi 进程 | 只读（用于判定） | 从不写 |
 
+**任务服务怎样与 pi 通信。** 任务服务以 RPC 方式启动 pi，与它按行收发 JSON，一行一个对象：命令与对话框的应答写进 pi 的标准输入，事件与回应从它的标准输出读出（`backend/src/pi_session.ts`）。读的时候只在换行符处断行，这是 pi 的 RPC 文档的要求，所以 JSON 字符串里的 U+2028、U+2029 两个字符不会把一行切断。启动 pi 与收发这些行的一层是可以替换的接口（`backend/src/transport.ts`），现在只有一种实现：子进程（`backend/src/transport_rpc.ts`）。命令与回应的对应、事件、归档与对话框的应答在它上面一层，由 `PiSession` 处理。
+
 **三种代码。**
 
 | 种类 | 所在目录 | 它可以做什么 |
