@@ -97,7 +97,7 @@ test("打开归档文件打开到一半出错：已经打开的关掉，按准�
   try {
     const pi = new PiSession(loadProfile("fake"), ws, runs, "service", tmp);
     await assert.rejects(pi.start(), (e: unknown) => e instanceof PiPrepareFailed && e.reason === "EISDIR");
-    assert.equal(pi.process, null, "没有起子进程");
+    assert.equal(pi.transport, null, "没有起子进程");
   } finally {
     if (savedEntry === undefined) delete process.env.TASKWRIGHT_PI_ENTRY;
     else process.env.TASKWRIGHT_PI_ENTRY = savedEntry;
