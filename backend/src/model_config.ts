@@ -30,7 +30,6 @@ export const NO_KEY = "taskwright-no-key";
 /** pi 里 Codex 订阅的服务名。 */
 export const CODEX_PROVIDER = "openai-codex";
 
-export const READONLY_TEXT = "模型的配置只能在运行任务服务的这台电脑上修改。";
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
 export const UNREACHABLE_TEXT = "连不上这个地址。请确认模型服务已经启动，地址与端口没有写错。";
 export const KEY_REJECTED_TEXT = "模型服务拒绝了这个密钥。";
@@ -65,8 +64,6 @@ function isKind(value: unknown): value is Kind {
 export interface Context {
   env: NodeJS.ProcessEnv;
   profile: Profile;
-  /** 这个请求能不能改配置（只许本机，见 http.ts 的 isLocalRequest）。 */
-  local: boolean;
 }
 
 function agentDir(ctx: Context): string {
@@ -288,13 +285,12 @@ function inUse(selection: Selection, id: string): ModelType[] {
   return out;
 }
 
-function managedView(id: string, p: StoredProvider, auth: Record<string, any> | null, selection: Selection, local: boolean): ProviderView {
+function managedView(id: string, p: StoredProvider, auth: Record<string, any> | null, selection: Selection): ProviderView {
   const key = keyOf(auth, id);
   const status = p.kind === "codex" && p.status ? { ...p.status, logged_in: codexLoggedIn(auth) } : p.status;
-  // 从别的电脑来的请求只看得到服务名与种类：接口地址与密钥末四位都不给（地址可能是内网里的服务器）。
   return {
-    id, managed: true, kind: p.kind, name: p.name, base_url: local ? p.base_url : null,
-    key: p.kind === "codex" ? null : { set: key !== null, last4: key !== null && local ? key.slice(-4) : null },
+    id, managed: true, kind: p.kind, name: p.name, base_url: p.base_url,
+    key: p.kind === "codex" ? null : { set: key !== null, last4: key !== null ? key.slice(-4) : null },
     status, models: p.models, models_fetched_at: p.models_fetched_at, in_use: inUse(selection, id),
   };
 }
@@ -322,7 +318,7 @@ export function view(ctx: Context) {
   const dir = readPiDirSettings(agentDir(ctx), ctx.env);
   const auth = readForView(authFile(ctx));
   const models = readForView(modelsFile(ctx));
-  const providers = Object.entries(dir.providers).map(([id, p]) => managedView(id, p, auth, dir.selection, ctx.local));
+  const providers = Object.entries(dir.providers).map(([id, p]) => managedView(id, p, auth, dir.selection));
   const selection = {
     language: dir.selection.language ? { provider_id: dir.selection.language.provider, model_id: dir.selection.language.model } : null,
     embedding: dir.selection.embedding
@@ -335,16 +331,12 @@ export function view(ctx: Context) {
     fallback = { model: resolved.model, from: resolved.from };
   }
   return {
-    ok: true, editable: ctx.local, notice: ctx.local ? null : READONLY_TEXT, selection, fallback,
+    ok: true, editable: true, notice: null, selection, fallback,
     providers: [...providers, ...externalViews(models, dir)],
   };
 }
 
 // ───────────── 写：先查共用文件能不能写，再改产品设置，最后改共用文件 ─────────────
-
-function requireLocal(ctx: Context): void {
-  if (!ctx.local) throw new ApiError("forbidden", READONLY_TEXT);
-}
 
 function checkFilesWritable(ctx: Context): void {
   checkWritable(ctx.env);
@@ -418,7 +410,7 @@ function status(ok: boolean, message: string, extra: Partial<ProviderStatus> = {
 
 async function providerView(ctx: Context, id: string) {
   const dir = readPiDirSettings(agentDir(ctx), ctx.env);
-  return managedView(id, dir.providers[id], readForView(authFile(ctx)), dir.selection, ctx.local);
+  return managedView(id, dir.providers[id], readForView(authFile(ctx)), dir.selection);
 }
 
 function managedOrThrow(dir: PiDirSettings, id: string): StoredProvider {
@@ -429,7 +421,6 @@ function managedOrThrow(dir: PiDirSettings, id: string): StoredProvider {
 
 /** POST /api/v1/model-config/providers */
 export async function addProvider(ctx: Context, body: Record<string, any>) {
-  requireLocal(ctx);
   if (!isKind(body.kind)) throw rejected("kind", "请选择模型服务的种类。");
   const kind = body.kind;
   const info = KINDS[kind];
@@ -507,7 +498,6 @@ function guardSelection(dir: PiDirSettings, id: string, models: StoredModel[]): 
 
 /** POST /api/v1/model-config/providers/{id} */
 export async function updateProvider(ctx: Context, id: string, body: Record<string, any>) {
-  requireLocal(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const p = managedOrThrow(current, id);
   const name = textField(body, "name");
@@ -546,7 +536,6 @@ export async function updateProvider(ctx: Context, id: string, body: Record<stri
 
 /** POST /api/v1/model-config/providers/{id}/delete */
 export async function deleteProvider(ctx: Context, id: string) {
-  requireLocal(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const p = managedOrThrow(current, id);
   const using = inUse(current.selection, id);
@@ -574,7 +563,6 @@ export async function deleteProvider(ctx: Context, id: string) {
 
 /** POST /api/v1/model-config/providers/{id}/check */
 export async function checkProvider(ctx: Context, id: string) {
-  requireLocal(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const p = managedOrThrow(current, id);
   let checked: ProviderStatus;
@@ -611,7 +599,6 @@ export function mergeModels(existing: StoredModel[], listed: Listed["models"]): 
 
 /** POST /api/v1/model-config/providers/{id}/fetch-models */
 export async function fetchModels(ctx: Context, id: string) {
-  requireLocal(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const p = managedOrThrow(current, id);
   const listed = await listModels(ctx, p.kind, p.base_url, keyOf(readForView(authFile(ctx)), id));
@@ -628,7 +615,6 @@ export async function fetchModels(ctx: Context, id: string) {
 
 /** POST /api/v1/model-config/providers/{id}/context-window：服务实际给这个模型的上下文长度；查不到时是 null。不保存。 */
 export async function contextWindow(ctx: Context, id: string, body: Record<string, any>) {
-  requireLocal(ctx);
   const modelId = typeof body.model_id === "string" ? body.model_id.trim() : "";
   if (!modelId) throw rejected("model_id", "请给出模型名。");
   const p = managedOrThrow(readPiDirSettings(agentDir(ctx), ctx.env), id);
@@ -651,7 +637,6 @@ export async function contextWindow(ctx: Context, id: string, body: Record<strin
 
 /** POST /api/v1/model-config/selection */
 export async function select(ctx: Context, body: Record<string, any>) {
-  requireLocal(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const external = externalViews(readForView(modelsFile(ctx)), current);
   const pick = (value: any, type: ModelType) => {

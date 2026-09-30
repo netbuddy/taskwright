@@ -230,69 +230,19 @@ export const KEEPALIVE_MS = 15_000;
 /** 本机回环地址：退出接口只接受从这些地址来的请求（::ffff:127.0.0.1 是 IPv4 回环地址在 IPv6 套接字上的写法）。 */
 export const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
-/** 一个写在请求头里的地址是不是本机回环地址：127.0.0.0/8、::1、IPv6 套接字上的 IPv4 回环地址；允许带引号、方括号与端口。 */
-export function isLoopbackAddress(raw: string): boolean {
-  let text = raw.trim().replace(/^"|"$/g, "");
-  if (text.startsWith("[")) text = text.slice(1, text.indexOf("]") > 0 ? text.indexOf("]") : undefined);
-  else if (/^[\d.]+:\d+$/.test(text)) text = text.slice(0, text.lastIndexOf(":"));
-  text = text.toLowerCase().replace(/^::ffff:/, "");
-  return text === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(text);
-}
-
-function headerText(headers: IncomingMessage["headers"] | undefined, name: string): string | undefined {
-  const value = headers?.[name];
-  return Array.isArray(value) ? value.join(",") : value;
-}
-
-/**
- * 这个请求是不是从运行任务服务的这台电脑上发来的（改模型配置只接受这样的请求）。三条都满足才算：
- *   1. 套接字的对端是回环地址；
- *   2. 转发层写的 Forwarded、X-Forwarded-For、X-Real-IP 出现了就只能写回环地址（前面有开发代理或反向代理时，套接字的对端是代理自己）；
- *   3. Origin 出现了，它的主机名只能是 localhost、127.0.0.1 或 [::1]（浏览器发改动请求都带它：挡住经不加转发头的代理从别的电脑
- *      打开的页面，也挡住别的网站伪造的请求）。
- * 反向代理不加 X-Forwarded-For、又有人不用浏览器伪造 Origin 时挡不住，所以部署文档要求反向代理设置 X-Forwarded-For。
- */
-export function isLocalRequest(remote: string | null | undefined, headers: IncomingMessage["headers"] | undefined = {}): boolean {
-  if (!LOOPBACK.has(remote ?? "")) return false;
-  for (const name of ["x-forwarded-for", "x-real-ip"]) {
-    const value = headerText(headers, name);
-    if (value !== undefined && !value.split(",").every((part) => isLoopbackAddress(part))) return false;
-  }
-  const forwarded = headerText(headers, "forwarded");
-  if (forwarded !== undefined) {
-    for (const element of forwarded.split(",")) {
-      for (const pair of element.split(";")) {
-        const at = pair.indexOf("=");
-        if (at > 0 && pair.slice(0, at).trim().toLowerCase() === "for" && !isLoopbackAddress(pair.slice(at + 1))) return false;
-      }
-    }
-  }
-  const origin = headerText(headers, "origin");
-  if (origin !== undefined) {
-    let host: string;
-    try {
-      host = new URL(origin).hostname.toLowerCase();
-    } catch {
-      return false;
-    }
-    if (!["localhost", "127.0.0.1", "[::1]"].includes(host)) return false;
-  }
-  return true;
-}
-
 /**
  * 服务信息：不需要任务。给打包后的启动程序认出端口上是不是自己、给部署与监控探活、给前端按能力显示按钮。
  * remote 是请求的来源地址：退出接口只接受本机回环地址来的请求，所以 capabilities.exit 只对这些来源为真，
  * 从别的电脑打开页面时不显示一个点了也会被拒绝的「退出服务」。不给来源时按非本机算。
- * capabilities.model_config 是这个请求能不能改模型配置（isLocalRequest，要看请求头，所以另给 headers）。
+ * capabilities.model_config 表示页面能不能改模型配置；现在从任何地方打开都能改，恒为 true（字段保留给以后加登录时用）。
  */
-export function serviceInfo(service: Service, remote: string | null = null, headers: IncomingMessage["headers"] = {}) {
+export function serviceInfo(service: Service, remote: string | null = null) {
   // 模型探测每次都现查（只读两个小文件）：用户放好配置文件后，刷新页面即可看到结果。
   // 原因句里的文件路径只在桌面形态写全（服务器形态远程也看得到，不带出服务器上的目录）。
   const model = probeModel(service.profile, process.env, { paths: service.mode === "desktop" });
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
-    capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available, model_config: isLocalRequest(remote, headers) },
+    capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available, model_config: true },
     model: { name: model.name, reason: model.reason },
     // 上传上限与超过时的那句话：前端在发送之前按它拦下过大的文件（经开发服务器的代理上传过大文件时，代理可能回 502）。
     // extensions 是允许上传的扩展名，前端据此过滤可选的文件、在发送之前拦下类型不符的文件；types_text 是这些类型给人看的一串，
@@ -301,21 +251,21 @@ export function serviceInfo(service: Service, remote: string | null = null, head
   };
 }
 
-/** 模型配置各接口的环境：这个请求能不能改由 isLocalRequest 定。 */
-function modelContext(service: Service, req: Request): modelConfig.Context {
-  return { env: process.env, profile: service.profile, local: isLocalRequest(req.remote, req.headers) };
+/** 模型配置各接口的环境。 */
+function modelContext(service: Service): modelConfig.Context {
+  return { env: process.env, profile: service.profile };
 }
 
 const handlers: Record<string, Handler> = {
-  service_info: (service, req) => json(200, serviceInfo(service, req.remote ?? null, req.headers)),
-  model_config: (service, req) => json(200, modelConfig.view(modelContext(service, req))),
-  model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service, req), bodyJson(req))),
-  model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service, req), req.params.provider, bodyJson(req))),
-  model_provider_delete: async (service, req) => json(200, await modelConfig.deleteProvider(modelContext(service, req), req.params.provider)),
-  model_provider_check: async (service, req) => json(200, await modelConfig.checkProvider(modelContext(service, req), req.params.provider)),
-  model_provider_fetch: async (service, req) => json(200, await modelConfig.fetchModels(modelContext(service, req), req.params.provider)),
-  model_provider_context: async (service, req) => json(200, await modelConfig.contextWindow(modelContext(service, req), req.params.provider, bodyJson(req))),
-  model_selection: async (service, req) => json(200, await modelConfig.select(modelContext(service, req), bodyJson(req))),
+  service_info: (service, req) => json(200, serviceInfo(service, req.remote ?? null)),
+  model_config: (service, req) => json(200, modelConfig.view(modelContext(service))),
+  model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
+  model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service), req.params.provider, bodyJson(req))),
+  model_provider_delete: async (service, req) => json(200, await modelConfig.deleteProvider(modelContext(service), req.params.provider)),
+  model_provider_check: async (service, req) => json(200, await modelConfig.checkProvider(modelContext(service), req.params.provider)),
+  model_provider_fetch: async (service, req) => json(200, await modelConfig.fetchModels(modelContext(service), req.params.provider)),
+  model_provider_context: async (service, req) => json(200, await modelConfig.contextWindow(modelContext(service), req.params.provider, bodyJson(req))),
+  model_selection: async (service, req) => json(200, await modelConfig.select(modelContext(service), bodyJson(req))),
   service_exit: (service, req) => {
     // 只有桌面形态注册这个接口；服务器形态下与没有这个接口一样。它是过渡包（后端自己开浏览器、没有外壳）专用的。
     if (service.mode !== "desktop") throw new ApiError("not_found", `没有这个接口：${req.method} ${req.path}`);

@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, uti
 import { join } from "node:path";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import { BACKUP_KEEP, LOCK_WAIT_MS, lockPath, updateJsonFile } from "../src/config_files.ts";
-import { dispatch, isLocalRequest, serviceInfo } from "../src/http.ts";
+import { dispatch, serviceInfo } from "../src/http.ts";
 import { resolveModel } from "../src/launch.ts";
 import { Service } from "../src/service.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
@@ -139,61 +139,36 @@ async function addOllama(): Promise<string> {
   return r.body.provider.id;
 }
 
-// ───────────── 只许本机 ─────────────
+// ───────────── 从哪里来的请求都能改 ─────────────
 
-test("只许本机：套接字来源、转发头与 Origin 三条都满足才算本机", () => {
-  assert.equal(isLocalRequest("127.0.0.1", {}), true);
-  assert.equal(isLocalRequest("::1", {}), true);
-  assert.equal(isLocalRequest("::ffff:127.0.0.1", {}), true);
-  assert.equal(isLocalRequest("198.51.100.20", {}), false);
-  assert.equal(isLocalRequest(null, {}), false);
-  assert.equal(isLocalRequest("127.0.0.1", { "x-forwarded-for": "198.51.100.20" }), false);
-  assert.equal(isLocalRequest("127.0.0.1", { "x-forwarded-for": "127.0.0.1, ::1" }), true);
-  assert.equal(isLocalRequest("127.0.0.1", { "x-real-ip": "203.0.113.3" }), false);
-  assert.equal(isLocalRequest("127.0.0.1", { forwarded: 'for="[2001:db8::1]:4711";proto=http' }), false);
-  assert.equal(isLocalRequest("127.0.0.1", { forwarded: "for=127.0.0.1;proto=http" }), true);
-  assert.equal(isLocalRequest("127.0.0.1", { origin: "http://198.51.100.20:5680" }), false);
-  assert.equal(isLocalRequest("127.0.0.1", { origin: "https://evil.example" }), false);
-  assert.equal(isLocalRequest("127.0.0.1", { origin: "null" }), false);
-  assert.equal(isLocalRequest("127.0.0.1", { origin: "http://localhost:5680" }), true);
-  assert.equal(isLocalRequest("127.0.0.1", { origin: "http://[::1]:8940" }), true);
-});
-
-test("从别的电脑来的修改一律 403，读照常但不给可改、不给接口地址与密钥末四位", async () => {
-  const id = await addOllama();
-  fake.routes["GET /v1/models"] = () => [200, { data: [] }];
+test("从别的电脑来的请求（来源地址、Origin、X-Forwarded-For 三种写法）也能改，也读得到接口地址与密钥末四位", async () => {
+  openaiRoutes("sk-right-key-1234");
   const other = [{ remote: "198.51.100.20" }, { headers: { origin: "http://198.51.100.20:5680" } }, { headers: { "x-forwarded-for": "198.51.100.20" } }];
   for (const from of other) {
+    const where = JSON.stringify(from);
+    const added = await go("POST", "/api/v1/model-config/providers", { kind: "openai_compatible", name: "内网服务", base_url: `${fake.url}/v1`, api_key: "sk-right-key-1234" }, from);
+    assert.equal(added.status, 200, `${where} ${JSON.stringify(added.body)}`);
+    const id = added.body.provider.id;
     for (const [path, body] of [
-      ["/api/v1/model-config/providers", { kind: "ollama", base_url: fake.url }],
       [`/api/v1/model-config/providers/${id}`, { name: "改名" }],
-      [`/api/v1/model-config/providers/${id}/delete`, {}],
       [`/api/v1/model-config/providers/${id}/check`, {}],
       [`/api/v1/model-config/providers/${id}/fetch-models`, {}],
       [`/api/v1/model-config/providers/${id}/context-window`, { model_id: "qwen3:8b" }],
       ["/api/v1/model-config/selection", { language: null, embedding: null }],
     ] as const) {
       const r = await go("POST", path, body, from);
-      assert.equal(r.status, 403, `${path} ${JSON.stringify(from)}`);
-      assert.equal(r.body.error.code, "forbidden");
-      assert.equal(r.body.error.message, "模型的配置只能在运行任务服务的这台电脑上修改。");
+      assert.equal(r.status, 200, `${path} ${where} ${JSON.stringify(r.body)}`);
     }
+    const view = await go("GET", "/api/v1/model-config", undefined, from);
+    assert.equal(view.body.editable, true, where);
+    assert.equal(view.body.notice, null, where);
+    assert.equal(view.body.providers[0].base_url, `${fake.url}/v1`, `${where} 读得到接口地址`);
+    assert.deepEqual(view.body.providers[0].key, { set: true, last4: "1234" }, `${where} 读得到密钥末四位`);
+    const gone = await go("POST", `/api/v1/model-config/providers/${id}/delete`, {}, from);
+    assert.equal(gone.status, 200, `${where} ${JSON.stringify(gone.body)}`);
   }
-  const view = await go("GET", "/api/v1/model-config", undefined, { remote: "198.51.100.20" });
-  assert.equal(view.status, 200);
-  assert.equal(view.body.editable, false);
-  assert.equal(view.body.notice, "模型的配置只能在运行任务服务的这台电脑上修改。");
-  assert.equal(view.body.providers[0].name, "本机 ollama");
-  assert.equal(view.body.providers[0].kind, "ollama");
-  assert.equal(view.body.providers[0].base_url, null, "从别的电脑读时不给接口地址");
-  assert.equal(JSON.stringify(view.body).includes(String(fake.port)), false);
-  assert.equal((await go("GET", "/api/v1/model-config")).body.providers[0].base_url, fake.url, "本机读时给接口地址");
-  const local = await go("GET", "/api/v1/model-config");
-  assert.equal(local.body.editable, true);
-  assert.equal(local.body.notice, null);
-  assert.equal(serviceInfo(service, "127.0.0.1", {}).capabilities.model_config, true);
-  assert.equal(serviceInfo(service, "127.0.0.1", { origin: "http://198.51.100.20:5680" }).capabilities.model_config, false);
-  assert.equal(serviceInfo(service, "198.51.100.20", {}).capabilities.model_config, false);
+  assert.equal(serviceInfo(service, "127.0.0.1").capabilities.model_config, true);
+  assert.equal(serviceInfo(service, "198.51.100.20").capabilities.model_config, true);
 });
 
 // ───────────── 新增、修改、删除 ─────────────
@@ -250,7 +225,7 @@ test("密钥写进凭据文件（0600），接口只给「已设置」与末四�
   assert.equal(statSync(authJson()).mode & 0o777, 0o600);
   assert.equal(readJson(modelsJson()).providers[id].baseUrl, `${fake.url}/v1`, "末尾的斜杠去掉");
   assert.equal(JSON.stringify((await go("GET", "/api/v1/model-config")).body).includes("sk-right-key-1234"), false, "读配置不带密钥");
-  assert.equal(JSON.stringify((await go("GET", "/api/v1/model-config", undefined, { remote: "203.0.113.9" })).body.providers[0].key), '{"set":true,"last4":null}');
+  assert.equal(JSON.stringify((await go("GET", "/api/v1/model-config", undefined, { remote: "203.0.113.9" })).body.providers[0].key), '{"set":true,"last4":"1234"}');
   openaiRoutes("sk-new-key-9999");
   const changed = await go("POST", `/api/v1/model-config/providers/${id}`, { name: "改过名的服务", api_key: "sk-new-key-9999" });
   assert.equal(changed.status, 200, JSON.stringify(changed.body));
