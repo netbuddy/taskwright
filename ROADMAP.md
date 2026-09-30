@@ -33,7 +33,12 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [ ] Configure model services in the interface: local services (ollama, llama.cpp, vLLM) and API-key services, for both the language model and the embedding model; no network access at startup by default
 - [ ] Delete and replace materials
 
-## 0.4.2 PDF
+## 0.4.2 Diagrams and Word export
+
+- [ ] Diagrams tab in the work view: the assistant draws UML diagrams in Mermaid from the conversation (use case, class, sequence, activity and state diagrams); each diagram is an item with its own revisions and related items; preview in the page, export as PNG or SVG
+- [ ] Export chosen items to Word: tick items in the list and download a .docx in which each item is a table, to paste into your own specification
+
+## 0.4.3 PDF
 
 - [ ] Word materials shown as PDF, so that pages match what Word shows
 - [ ] PDF materials
@@ -44,29 +49,37 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [ ] Stop a run in progress from the interface
 - [ ] Abandon a task
 - [ ] Limits on how many assistants run at once, with idle shutdown and a queue
+- [ ] Upgrades that keep existing tasks
 
-## 0.6 Deliverables and desktop
+## 0.6 First trial
+
+- [ ] Backup and restore of tasks
+- [ ] Review rules verified on real projects
+- [ ] One round of evaluation and improvement for the assistant's known faults: missed content, contradictions written as settled rules, one rule written twice
+- [ ] Load test with tens of users at once
+- [ ] Screenshots in the tutorial and the user guide brought up to date
+
+## 0.7 Deliverables and desktop
 
 - [ ] Word (.docx) export
 - [ ] Cross-item review: duplicates, conflicts, inconsistent wording
 - [ ] Desktop application based on Electron
-- [ ] Upgrades that keep existing tasks
 - [ ] Baselines of the whole deliverable
 - [ ] Browse past tasks
 
-## 0.7 Long sessions
+## 0.8 Long sessions
 
 - [ ] Resume correctly after a session has been compacted
 - [ ] Recover after a crash
 
-## 0.8 Task orchestration
+## 0.9 Task orchestration
 
 - [ ] Nested tasks
 - [ ] Subtasks run one after another
 - [ ] A second task type: document writing
 - [ ] Read-only requirements pool shared across tasks
 
-## 0.9 Practice runs
+## 1.0 Practice runs
 
 - [ ] Simulated user as a product feature: choose a persona, run a practice session, read the verdicts and the judge's report
 - [ ] Observatory replay of what the user saw
