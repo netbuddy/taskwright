@@ -204,6 +204,22 @@ describe("新加的材料（material_added）", () => {
   });
 });
 
+describe("删除了材料（material_removed）", () => {
+  it("从材料清单里去掉那份材料与由它生成的文件；别的会话删的也收；正要选中的是它时清掉", () => {
+    const withMaterials = { ...snapshot(0), materials: [
+      { path: "inputs/a.md", bytes: 1, modified_at: "", derived_from: null },
+      { path: "inputs/b.docx", bytes: 1, modified_at: "", derived_from: null },
+      { path: "inputs/b.docx.md", bytes: 1, modified_at: "", derived_from: "inputs/b.docx" },
+    ] };
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: withMaterials },
+      { type: "sse", event: "material_added", data: { session_id: null, at: "", path: "inputs/b.docx", bytes: 1, modified_at: "" } });
+    expect(s.focusMaterial).toBe("inputs/b.docx");
+    s = run(s, { type: "sse", event: "material_removed", data: { session_id: "别的会话", at: "", path: "inputs/b.docx" } });
+    expect(s.materials.map((m) => m.path)).toEqual(["inputs/a.md"]);
+    expect(s.focusMaterial).toBeNull();
+  });
+});
+
 describe("事件流的解析", () => {
   it("按空行切消息，只有库事件带 id；注释行（保活）忽略；最后不完整的一段留到下一次", () => {
     const { messages, rest } = parseSseChunk(

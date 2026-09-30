@@ -579,6 +579,13 @@ export interface MaterialAdded {
   modified_at: string;
 }
 
+/** 删除了一份材料（material_removed）：path 是那份材料；由它生成的文件一并删掉了，不另发。 */
+export interface MaterialRemoved {
+  session_id: string | null;
+  at: string;
+  path: string;
+}
+
 export interface Problem {
   session_id?: string;
   code: string;

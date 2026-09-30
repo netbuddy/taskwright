@@ -75,6 +75,8 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   const view = useRef<HTMLDivElement>(null);
 
   useEffect(() => { if (!path && materials[0]) setPath(materials[0].path); }, [materials, path]);
+  // 正在看的那份材料被删掉了：改看清单里的第一份（清单空了就什么都不选）。
+  useEffect(() => { if (path && !materials.some((m) => m.path === path)) setPath(materials[0]?.path ?? null); }, [materials, path]);
   useEffect(() => { if (focusPath) setPath(focusPath); }, [focusPath]);
   useEffect(() => {
     if (!locate) return;

@@ -52,6 +52,11 @@
 .app .listed { display: flex; gap: .3rem; align-items: flex-start; margin-bottom: .2rem; }
 .app .listed .sn { color: var(--mut); font-size: 0.889rem; min-width: 1.1rem; padding-top: .15rem; }
 .app .srcbox .quote.said { color: #17534d; }
+/* 来源的出处文件已经不在（材料删除了）：出处不可点，旁边灰字说明 */
+.app .srcbox .evi.off { cursor: default; }
+.app .srcbox .gone { font-size: 0.873rem; color: #9a9a9a; }
+/* 出自知识库的来源（紫红色，只表示「出自知识库」） */
+.app .chip.src.kb { color: #8b2a8e; border-color: #dcb7de; background: #f8eef8; }
 .app .confirms { font-size: 0.897rem; color: #555; }
 .app .confirms div { margin-bottom: .15rem; }
 

@@ -21,6 +21,7 @@ import type {
   ItemViewed,
   Material,
   MaterialAdded,
+  MaterialRemoved,
   Problem,
   ReviewBatchEvent,
   ReviewFinished,
@@ -478,8 +479,8 @@ const NOT_RUNNING_STATES: readonly string[] = ["not_started", "starting", "exite
 /** 过程与对话类事件：不带序号，收到就应用；不属于本会话的忽略。 */
 function applyProcess(state: WorkState, name: string, data: unknown): WorkState {
   const payload = (data ?? {}) as { session_id?: string };
-  // 执行者状态与新加的材料属于整个任务，不按会话过滤。
-  if (payload.session_id && payload.session_id !== state.sessionId && name !== "executor_state" && name !== "material_added") return state;
+  // 执行者状态与材料的增删属于整个任务，不按会话过滤。
+  if (payload.session_id && payload.session_id !== state.sessionId && !["executor_state", "material_added", "material_removed"].includes(name)) return state;
   switch (name) {
     case "user_message":
       return applyUserMessage(state, data as UserMessage);
@@ -532,6 +533,12 @@ function applyProcess(state: WorkState, name: string, data: unknown): WorkState 
       const material: Material = { path: d.path, bytes: d.bytes, modified_at: d.modified_at };
       const materials = [...state.materials.filter((m) => m.path !== d.path), material].sort((a, b) => a.path.localeCompare(b.path));
       return { ...state, materials, focusMaterial: d.path };
+    }
+    case "material_removed": {
+      // 删掉的材料连同由它生成的文件（Word 材料的投影等）一起从清单里去掉；引用它的来源由条目详情按清单写明「已经删除」。
+      const d = data as MaterialRemoved;
+      const materials = state.materials.filter((m) => m.path !== d.path && m.derived_from !== d.path);
+      return { ...state, materials, focusMaterial: state.focusMaterial === d.path ? null : state.focusMaterial };
     }
     case "problem":
       return { ...state, problems: [...state.problems, data as Problem] };
