@@ -24,6 +24,7 @@ import { PI_SETTINGS_MODEL, type Profile, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
 import { TASK_TYPES_DIR } from "./paths.ts";
+import { GENERAL, KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
 
 export const MAX_UPLOAD = 5 * 1024 * 1024;
 
@@ -142,6 +143,8 @@ export interface ServiceOptions {
   release?: (taskDir: string) => void;
   /** 不存在时是否建出任务目录（缺省建）。 */
   createTasksDir?: boolean;
+  /** 知识库根目录；不给时这个服务没有知识库（服务信息里 capabilities.knowledge 为假，知识库的接口一律 not_found）。 */
+  knowledgeDir?: string | null;
 }
 
 /** 按码位排好的目录项。 */
@@ -188,6 +191,8 @@ export class Service {
   /** 正被别的服务占用、本服务没有接手的任务：任务编号 → {lock, dir}。 */
   readonly occupied = new Map<string, { lock: occupancy.Lock; dir: string }>();
   readonly skipped = new Set<string>();
+  /** 知识库；启动时没给根目录就是 null。 */
+  readonly knowledge: KnowledgeStore | null;
   private readonly claim: Claim;
   private readonly releaseLock: (taskDir: string) => void;
 
@@ -203,6 +208,9 @@ export class Service {
     this.claim = options.claim ?? occupancy.claim;
     this.releaseLock = options.release ?? occupancy.release;
     if (options.createTasksDir !== false) mkdirSync(this.tasksDir, { recursive: true });
+    // 知识库根目录同样转成绝对路径；第一次启动、还没有库的清单时建出通用库。
+    this.knowledge = options.knowledgeDir ? new KnowledgeStore(resolve(options.knowledgeDir)) : null;
+    if (this.knowledge && options.createTasksDir !== false) this.knowledge.ensure();
   }
 
   scan(): void {
@@ -345,6 +353,8 @@ export class Service {
       if (error instanceof CreateTaskError) throw new ApiError("rejected", "任务没有创建成功。", { reasons: [error.message] });
       throw error;
     }
+    // 新任务只选用通用库。
+    writeFileSync(join(result.任务目录, SELECTION_FILE), JSON.stringify(initialSelection(), null, 2) + "\n", "utf-8");
     this.scan();
     return { ok: true, task_id: result.task_id };
   }
@@ -352,7 +362,9 @@ export class Service {
   taskPage(t: Task) {
     const [, view] = library.taskSnapshot(t.dir);
     if (view === null) throw new ApiError("no_task", "这个任务目录里没有任务记录。");
-    return { ...view, materials: library.materials(t.dir, t.definition()), sessions: t.executor.listSessions() };
+    return {
+      ...view, materials: library.materials(t.dir, t.definition()), sessions: t.executor.listSessions(), knowledge_libraries: selectedLibraries(t.dir),
+    };
   }
 
   /** 整份数据：带 session 时先打开那条会话（pi 不在就按需启动或续接），再读库与对话记录。 */
@@ -513,6 +525,57 @@ export class Service {
     const st = statSync(target, { bigint: true });
     t.hub.emit("material_added", { session_id: session, at: clock.now(), path, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs) });
     return { ok: true, path };
+  }
+
+  // ───────────── 知识库 ─────────────
+
+  requireKnowledge(): KnowledgeStore {
+    if (this.knowledge === null) throw new ApiError("not_found", "这个服务没有配置知识库。");
+    return this.knowledge;
+  }
+
+  /** 本服务接手了的、进行中的任务：选用了多少个库按它们数；被别的服务占用的任务不数。 */
+  private openTasks(): Task[] {
+    this.scan();
+    return [...this.tasks.values()].filter((t) => t.row()?.status === "进行中");
+  }
+
+  /** 全部库与每个库的文档清单；used_by_tasks 是本服务接手的进行中任务里选用了它的个数。 */
+  knowledgeOverview() {
+    const store = this.requireKnowledge();
+    const selections = this.openTasks().map((t) => selectedLibraries(t.dir));
+    return store.libraries().map((lib) => ({
+      ...lib,
+      used_by_tasks: selections.filter((ids) => ids.includes(lib.id)).length,
+      documents: store.documents(lib.id).map(({ name, kind, bytes, uploaded_at }) => ({ name, kind, bytes, uploaded_at })),
+    }));
+  }
+
+  /**
+   * 删除库：文档一并删除；本服务接手的任务里选用了它的，改为不再选用，并在任务的 knowledge.json 里记一句（不发事件）。
+   * 被别的服务占用的任务不改。
+   */
+  removeLibrary(id: string) {
+    const row = this.requireKnowledge().remove(id);
+    this.scan();
+    for (const t of this.tasks.values()) {
+      const ids = selectedLibraries(t.dir);
+      if (ids.includes(id)) writeSelection(t.dir, ids.filter((one) => one !== id), `库「${row.name}」已经删除，这个任务不再选用它。`);
+    }
+    return { ok: true, id };
+  }
+
+  /** 改任务选用的库：不存在的库以 rejected 拒绝；通用库每个任务都选用，没写时补在最前面。 */
+  setTaskKnowledge(t: Task, body: Record<string, any>) {
+    const store = this.requireKnowledge();
+    t.requireOpen();
+    const given = body.libraries;
+    if (!Array.isArray(given) || !given.every((one) => typeof one === "string")) throw new ApiError("bad_request", "libraries 应当是库编号的列表。");
+    const unknown = given.filter((one) => !store.has(one));
+    if (unknown.length) throw new ApiError("rejected", `没有这个库：${unknown.join("、")}。`, { unknown });
+    const ids = [GENERAL, ...new Set(given.filter((one) => one !== GENERAL))];
+    writeSelection(t.dir, ids);
+    return { ok: true, libraries: ids };
   }
 
   /** 材料原文：.docx 给投影（先找 .md 再找旧的 .txt；都不在时现算一份，不写文件），其余按 UTF-8 读（不合法的字节换成替换字符）。 */

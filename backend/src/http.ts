@@ -18,6 +18,8 @@ import { appVersion } from "./paths.ts";
 import { probeModel } from "./model_probe.ts";
 import { MAX_UPLOAD, type Service, TOO_LARGE_TEXT, UPLOAD_TYPES, taskTypes, unsupportedTypeText, uploadTypesText, wordsLocator } from "./service.ts";
 import { isWebPath, webFile } from "./web.ts";
+import { KNOWLEDGE_MAX_UPLOAD, KNOWLEDGE_TOO_LARGE_TEXT, KIND_NAMES } from "./knowledge.ts";
+import { segmentParamsOf } from "./launch.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
 export const RAW_TYPES: Record<string, string> = {
@@ -131,6 +133,15 @@ export function headerParams(value: string): Record<string, string> {
 
 /** 取出 multipart 请求里的第一个文件：[文件名, 内容]。 */
 export function parseMultipart(contentType: string, body: Buffer): [string, Buffer] {
+  const form = parseMultipartForm(contentType, body);
+  if (form.file) return form.file;
+  throw new ApiError("bad_request", "请求里没有文件。");
+}
+
+/** multipart 请求里的第一个文件（[文件名, 内容]，没有时为 null）与文字字段（没有文件名的部分，按 UTF-8 解码；同名字段取第一个）。 */
+export function parseMultipartForm(contentType: string, body: Buffer): { file: [string, Buffer] | null; fields: Record<string, string> } {
+  let file: [string, Buffer] | null = null;
+  const fields: Record<string, string> = {};
   const boundary = headerParams(";" + contentType.split(";").slice(1).join(";")).boundary;
   if (contentType.split(";")[0].trim().toLowerCase().startsWith("multipart/") && boundary) {
     const delimiter = Buffer.from(`--${boundary}`, "latin1");
@@ -154,12 +165,16 @@ export function parseMultipart(contentType: string, body: Buffer): [string, Buff
       const disposition = headerParams(";" + (headers.get("content-disposition") ?? "").split(";").slice(1).join(";"));
       const typeParams = headerParams(";" + (headers.get("content-type") ?? "").split(";").slice(1).join(";"));
       const name = disposition.filename ?? typeParams.name;
-      if (name) return [name, Buffer.from(content)];
+      if (name) {
+        file ??= [name, Buffer.from(content)];
+      } else if (disposition.name !== undefined && !(disposition.name in fields)) {
+        fields[disposition.name] = content.toString("utf-8");
+      }
       if (next < 0) break;
       at = next + 2;
     }
   }
-  throw new ApiError("bad_request", "请求里没有文件。");
+  return { file, fields };
 }
 
 // ───────────── 各接口 ─────────────
@@ -240,11 +255,19 @@ export function serviceInfo(service: Service, remote: string | null = null) {
   const model = probeModel(service.profile, process.env, { paths: service.mode === "desktop" });
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
-    capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available }, model: { name: model.name, reason: model.reason },
+    capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available, knowledge: service.knowledge !== null },
+    model: { name: model.name, reason: model.reason },
     // 上传上限与超过时的那句话：前端在发送之前按它拦下过大的文件（经开发服务器的代理上传过大文件时，代理可能回 502）。
     // extensions 是允许上传的扩展名，前端据此过滤可选的文件、在发送之前拦下类型不符的文件；types_text 是这些类型给人看的一串，
     // 前端写上传框的说明用；unsupported_type_text 是类型不符时的那句话。叫法只在后端有一份。
     upload: { max_bytes: MAX_UPLOAD, too_large_text: TOO_LARGE_TEXT, extensions: [...UPLOAD_TYPES], types_text: uploadTypesText(), unsupported_type_text: unsupportedTypeText() },
+    // 知识库文档的上传：类型与材料相同，上限另算（20 MB）；kinds 是文档种类的取值与中文叫法。没有知识库时不给。
+    ...(service.knowledge !== null ? {
+      knowledge_upload: {
+        max_bytes: KNOWLEDGE_MAX_UPLOAD, too_large_text: KNOWLEDGE_TOO_LARGE_TEXT, extensions: [...UPLOAD_TYPES], types_text: uploadTypesText(),
+        unsupported_type_text: unsupportedTypeText(), kinds: Object.entries(KIND_NAMES).map(([kind, name]) => ({ kind, name })),
+      },
+    } : {}),
   };
 }
 
@@ -366,6 +389,37 @@ const handlers: Record<string, Handler> = {
     const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
     return json(200, service.upload(t, name, data, sessionParam(req)));
   },
+  knowledge: (service) => json(200, { ok: true, libraries: service.knowledgeOverview() }),
+  create_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().create(bodyJson(req).name) }),
+  rename_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().rename(req.params.lib, bodyJson(req).name) }),
+  delete_library: (service, req) => json(200, service.removeLibrary(req.params.lib)),
+  upload_document: (service, req) => {
+    const store = service.requireKnowledge();
+    const form = parseMultipartForm(String(req.headers["content-type"] ?? ""), req.body);
+    if (!form.file) throw new ApiError("bad_request", "请求里没有文件。");
+    const [name, data] = form.file;
+    const row = store.upload(req.params.lib, name, data, form.fields.kind, segmentParamsOf(service.profile));
+    const { sha256: _, ...document } = row;
+    return json(200, { ok: true, document });
+  },
+  delete_document: (service, req) => {
+    service.requireKnowledge().removeDocument(req.params.lib, bodyJson(req).name);
+    return json(200, { ok: true });
+  },
+  document: (service, req) => {
+    const name = req.query.name ?? "";
+    return json(200, { ok: true, name, text: service.requireKnowledge().text(req.params.lib, name) });
+  },
+  document_raw: (service, req) => {
+    const target = service.requireKnowledge().filePath(req.params.lib, req.query.name ?? "");
+    return { status: 200, headers: { "Content-Type": RAW_TYPES[extname(target).toLowerCase()] ?? "application/octet-stream" }, body: readFileSync(target) };
+  },
+  task_knowledge: (service, req) => {
+    const t = service.task(req.params.task);
+    service.requireKnowledge();
+    return json(200, { ok: true, libraries: service.taskPage(t).knowledge_libraries });
+  },
+  set_task_knowledge: (service, req) => json(200, service.setTaskKnowledge(service.task(req.params.task), bodyJson(req))),
   documents: async (service, req) => {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
@@ -391,6 +445,7 @@ function isFile(path: string): boolean {
 }
 
 const T = "(?<task>[^/]+)";
+const L = "(?<lib>[^/]+)";
 export const ROUTES: [string, RegExp, string][] = ([
   ["GET", "/api/v1/service", "service_info"],
   ["POST", "/api/v1/service/exit", "service_exit"],
@@ -407,6 +462,16 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/tasks/${T}/materials/content`, "material"],
   ["GET", `/api/v1/tasks/${T}/materials/raw`, "material_raw"],
   ["POST", `/api/v1/tasks/${T}/materials`, "upload"],
+  ["GET", `/api/v1/tasks/${T}/knowledge`, "task_knowledge"],
+  ["POST", `/api/v1/tasks/${T}/knowledge`, "set_task_knowledge"],
+  ["GET", "/api/v1/knowledge", "knowledge"],
+  ["POST", "/api/v1/knowledge/libraries", "create_library"],
+  ["POST", `/api/v1/knowledge/libraries/${L}`, "rename_library"],
+  ["POST", `/api/v1/knowledge/libraries/${L}/delete`, "delete_library"],
+  ["POST", `/api/v1/knowledge/libraries/${L}/documents`, "upload_document"],
+  ["POST", `/api/v1/knowledge/libraries/${L}/documents/delete`, "delete_document"],
+  ["GET", `/api/v1/knowledge/libraries/${L}/documents/content`, "document"],
+  ["GET", `/api/v1/knowledge/libraries/${L}/documents/raw`, "document_raw"],
   ["GET", `/api/v1/tasks/${T}/conversation`, "conversation"],
   ["POST", `/api/v1/tasks/${T}/messages`, "messages"],
   ["POST", `/api/v1/tasks/${T}/actions`, "actions"],
@@ -453,6 +518,8 @@ function send(res: ServerResponse, reply: Reply, head = false): void {
 
 /** 上传请求体的上限：文件 5 MB 加 multipart 的包装。更大的请求不读，直接以 too_large 拒绝。 */
 const MAX_BODY = MAX_UPLOAD + 64 * 1024;
+/** 知识库文档上传请求体的上限：文件 20 MB 加 multipart 的包装。 */
+const KNOWLEDGE_MAX_BODY = KNOWLEDGE_MAX_UPLOAD + 64 * 1024;
 
 export interface ServerOptions {
   /** 网页静态文件所在的目录；null 时不出页面，所有路径都归接口（与没有这个选项时相同）。 */
@@ -485,6 +552,20 @@ export function makeServer(service: Service, options: ServerOptions = {}) {
       try {
         service.task(upload[1]);
         reply = json(413, new ApiError("too_large", TOO_LARGE_TEXT).body());
+      } catch (error) {
+        reply = error instanceof ApiError ? json(error.status, error.body()) : json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String(error) } } });
+      }
+      send(res, { ...reply, close: true });
+      incoming.resume();
+      return;
+    }
+    const knowledgeUpload = /^\/api\/v1\/knowledge\/libraries\/([^/]+)\/documents$/s.exec(path);
+    if (method === "POST" && length > KNOWLEDGE_MAX_BODY && knowledgeUpload) {
+      // 知识库文档的上传同样不读过大的请求体：先认库（没有知识库或没有这个库时照常报 not_found），再以 too_large 拒绝并关掉连接。
+      let reply: Reply;
+      try {
+        service.requireKnowledge().library(knowledgeUpload[1]);
+        reply = json(413, new ApiError("too_large", KNOWLEDGE_TOO_LARGE_TEXT).body());
       } catch (error) {
         reply = error instanceof ApiError ? json(error.status, error.body()) : json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String(error) } } });
       }

@@ -2,9 +2,9 @@
  * 启动任务服务。
  *
  * 用法：
- *   node backend/src/main.mts --tasks <任务目录的上级目录> --runs <归档目录> --port <端口> [--mode desktop|server] [--host 地址] [--profile dev] [--web 网页目录]
+ *   node backend/src/main.mts --tasks <任务目录的上级目录> --runs <归档目录> [--knowledge <知识库目录>] --port <端口> [--mode desktop|server] [--host 地址] [--profile dev] [--web 网页目录]
  *
- * --tasks 与 --runs 不给时放在用户数据目录下（见 paths.ts 的 userDataDir），不写进安装位置。
+ * --tasks、--runs 与 --knowledge 不给时放在用户数据目录下（见 paths.ts 的 userDataDir），不写进安装位置。
  * 运行形态 --mode 缺省 server：缺省绑 0.0.0.0，没有退出接口。desktop 是单机桌面用：缺省只绑 127.0.0.1，并注册只接受本机请求的
  * 退出接口 POST /api/v1/service/exit。--host 给了以它为准。两种形态的日志写法相同：写标准输出，也追加到日志文件。
  * --port 给的端口被占时依次试后面的端口，最多 10 个；实际端口打印到日志、写进占用标记，并由 GET /api/v1/service 回出。
@@ -26,6 +26,7 @@ const { values } = parseArgs({
   options: {
     tasks: { type: "string" },
     runs: { type: "string" },
+    knowledge: { type: "string" },
     port: { type: "string" },
     host: { type: "string" },
     mode: { type: "string", default: "server" },
@@ -50,7 +51,7 @@ if (!(MODES as readonly string[]).includes(values.mode!)) {
 
 try {
   await startService({
-    port, mode: values.mode as Mode, host: values.host, tasks: values.tasks, runs: values.runs, profile: values.profile, web: values.web,
+    port, mode: values.mode as Mode, host: values.host, tasks: values.tasks, runs: values.runs, knowledge: values.knowledge, profile: values.profile, web: values.web,
   });
 } catch (error) {
   console.error(error instanceof NoFreePort ? error.message : `服务没有起来：${(error as Error).message}`);
