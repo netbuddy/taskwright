@@ -252,8 +252,21 @@ describe("交付物", () => {
     expect(card).toHaveAttribute("href", `#/tasks/TASK-P/sessions/S-new?collection=${encodeURIComponent("功能用例")}`);
     expect(card.getAttribute("title")).toContain("点这张卡进入工作视图，只看功能用例。");
     expect(screen.getByTestId("board-问题")).toHaveAttribute("href", `#/tasks/TASK-P/sessions/S-new?collection=${encodeURIComponent("问题")}`);
-    // 每个集合一种颜色，按先后取。
-    expect(["功能用例", "非功能需求", "问题"].map((name) => screen.getByTestId(`board-${name}`).className.match(/\bc\d\b/)?.[0])).toEqual(["c1", "c2", "c3"]);
+    // 每个集合一种颜色，按集合名取：这个任务没有「约束」，「问题」照旧是它自己的颜色。
+    expect(["功能用例", "非功能需求", "问题"].map((name) => screen.getByTestId(`board-${name}`).className.match(/\bc\d\b/)?.[0])).toEqual(["c1", "c2", "c4"]);
+  });
+
+  it("集合的颜色与图标按集合名取，与它排第几无关；不认识的集合用通用图标，颜色按它在任务定义里的先后轮换", async () => {
+    const names = ["问题", "用例", "领域说明", "待定事项", "功能用例", "约束", "非功能需求", "别的"];
+    page(detail({ definition: { collections: names.map((name, i) => ({ name, prefix: `P${i}`, needs_review: false, review_rules: null, fields: [FIELD] })) } } as unknown as Partial<TaskDetail>));
+    await ready();
+    const look = (name: string) => {
+      const card = screen.getByTestId(`board-${name}`);
+      return [card.className.match(/\bc\d\b/)?.[0], card.querySelector(".cic .anticon")?.className.match(/anticon-([a-z-]+)/)?.[1]];
+    };
+    expect(names.map(look)).toEqual([
+      ["c4", "question-circle"], ["c2", "profile"], ["c5", "read"], ["c4", "profile"], ["c1", "apartment"], ["c3", "lock"], ["c2", "sliders"], ["c3", "profile"],
+    ]);
   });
 
   it("还没有会话时集合卡不可点，悬停提示写明原因；还没有修订时不写「最后改在」", async () => {

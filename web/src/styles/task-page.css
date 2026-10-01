@@ -65,7 +65,7 @@
 /* 4 交付物：集合卡最多一行五张，每个集合一种色相 */
 .tp-colls { display: grid; gap: 0.857rem;
   grid-template-columns: repeat(auto-fill, minmax(max(10rem, calc((100% - 4 * 0.857rem) / 5)), 1fr)); }
-/* 集合色按先后：蓝、青绿、靛蓝、琥珀、石板灰 */
+/* 五种集合色：蓝、青绿、靛蓝、琥珀、石板灰。哪个集合用哪一种由 CollectionCards.tsx 按集合名定 */
 .tp-coll.c1 { --c: var(--blue); } .tp-coll.c2 { --c: var(--teal); } .tp-coll.c3 { --c: var(--ai); } .tp-coll.c4 { --c: var(--amber); } .tp-coll.c5 { --c: var(--note); }
 .tp-coll { position: relative; overflow: hidden; display: flex; flex-direction: column; color: var(--ink);
   background: color-mix(in srgb, var(--c) 4%, var(--card)); border: 1px solid var(--line); border-radius: 0.714rem;
