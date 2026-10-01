@@ -19,6 +19,7 @@ import { Popconfirm } from "antd";
 import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../api/types";
 import { CONFIRM_CONDITION, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, unreadItems } from "../../model/items";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
+import { isKnowledgeLocator } from "../../model/knowledge";
 
 /** 有未保存的条目编辑时，对话区与卡片上会发话或写库的按钮为什么不能用。 */
 export const HOLD_TEXT = "先保存或取消正在编辑的条目";
@@ -70,7 +71,8 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, w
   handlers: CardHandlers;
   onOpenItem?: (itemId: string) => void;
   /** 点「依据：材料原文」小标签，文档区滚到这句原文。 */
-  onLocate?: (excerpt: string) => void;
+  /** 点依据看原文；locator 是那条依据的出处。 */
+  onLocate?: (excerpt: string, locator?: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [chosen, setChosen] = useState<string | null>(null);
@@ -158,8 +160,8 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, w
           <div><span className="fk">建议值</span><span className="val">{act.value}</span></div>
           <div>
             {(act.basis ?? []).map((b, i) => (
-              <span key={i} className="evi" title={b.excerpt} onClick={() => b.kind === "文档原文" && onLocate?.(b.excerpt)}>
-                依据：{b.kind === "文档原文" ? "材料原文" : b.kind}{b.excerpt ? `「${b.excerpt.length > 18 ? b.excerpt.slice(0, 18) + "…" : b.excerpt}」` : ""}
+              <span key={i} className="evi" title={b.excerpt} onClick={() => b.kind === "文档原文" && onLocate?.(b.excerpt, b.locator)}>
+                依据：{b.kind === "文档原文" ? (isKnowledgeLocator(b.locator ?? "") ? "知识库" : "材料原文") : b.kind}{b.excerpt ? `「${b.excerpt.length > 18 ? b.excerpt.slice(0, 18) + "…" : b.excerpt}」` : ""}
               </span>
             ))}
           </div>

@@ -40,6 +40,8 @@ import { docxLocator, pageAndPosition, placeText } from "../../model/docx";
 import { chapterOf } from "../../../../agent/src/lib/docx_locations";
 import { TaskIdContext, useDocx } from "../../state/docxStore";
 import { MaterialsContext, hasMaterial } from "../../state/materials";
+import { KnowledgeContext } from "../../state/knowledge";
+import { isKnowledgeLocator, knowledgePlace } from "../../model/knowledge";
 import { BUSY_TEXT, batchNo, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, itemVerdict, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, writeOffReason } from "../../model/items";
 import { baselineRevision, confirmedRevision } from "../../model/revisions";
 import { formatTime } from "../../model/format";
@@ -493,29 +495,39 @@ function FieldRow({ def, value, before, marked, findings, ruleOf, onFix, fixOff,
   );
 }
 
-/** 底部「来源」一节的一条来源：种类标签、出处（材料原文可点，点了材料区滚到那里；领域说明的编号点了打开它）、摘录与支持的字段。 */
+/**
+ * 底部「来源」一节的一条来源：种类标签、出处（材料原文可点，点了材料区滚到那里；领域说明的编号点了打开它）、摘录与支持的字段。
+ * 出自知识库文档的来源，种类仍是「文档原文」，出处以 knowledge/ 开头：标签写「知识库」（紫红色），出处写「知识库名 / 文档名」，
+ * 点了打开那份文档的正文；文档已经不在知识库的清单里时出处不可点，旁边灰字写明。
+ */
 export function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
   source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
 }) {
   // 出处文件不在材料清单里：那份材料已经删除了，出处不可点，旁边灰字写明。来源本身照旧列出。
   const materials = useContext(MaterialsContext);
-  const gone = source.kind === "文档原文" && materials !== null && !hasMaterial(materials, docxLocator(source.locator)?.path ?? source.locator);
-  const place = useSourcePlace(source, gone);
-  // 「知识库」给出自知识库文档的来源预留（紫红色），现在还没有这种来源。
+  const libraries = useContext(KnowledgeContext);
+  const kb = source.kind === "文档原文" && isKnowledgeLocator(source.locator) ? knowledgePlace(source.locator, libraries) : null;
+  const gone = !kb && source.kind === "文档原文" && materials !== null && !hasMaterial(materials, docxLocator(source.locator)?.path ?? source.locator);
+  // 知识库来源不去读材料（它不是材料），出处由知识库清单得出。
+  const place = useSourcePlace(source, gone || !!kb);
   const kinds: Record<string, [string, string]> = {
     文档原文: ["src", "材料原文"], 执行者补充: ["warn", "助手补充"], 用户的话: ["teal", "用户的话"],
-    [SOURCE_DOMAIN_NOTE]: ["note", SOURCE_DOMAIN_NOTE], 知识库: ["src kb", "知识库"],
+    [SOURCE_DOMAIN_NOTE]: ["note", SOURCE_DOMAIN_NOTE],
   };
-  const [cls, name] = kinds[source.kind] ?? ["on", source.kind];
+  const [cls, name] = kb ? ["src kb", "知识库"] : kinds[source.kind] ?? ["on", source.kind];
   const supports = source.supports ?? [];
   return (
     <div className={`srcbox${source.kind === "执行者补充" ? " added" : ""}`}>
       <div className="sh">
         <span className={`chip ${cls}`}>{name}</span>
-        {source.kind === "文档原文" && !gone && (
+        {source.kind === "文档原文" && !kb && !gone && (
           <span className="evi" role="button" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{place.label}{place.tablePos ? `，${place.tablePos}` : ""}（点一下看原文）</span>
         )}
         {gone && <><span className="evi off">出处：{place.label}</span><span className="gone" data-testid="material-gone">这份材料已经删除</span></>}
+        {kb && !kb.gone && (
+          <span className="evi" role="button" data-testid="kb-source" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{kb.label}（点一下看原文）</span>
+        )}
+        {kb && kb.gone && <><span className="evi off">出处：{kb.label}</span><span className="gone" data-testid="kb-doc-gone">这份文档已经不在知识库里</span></>}
         {source.kind === SOURCE_DOMAIN_NOTE && (
           <> <span className="ref" role="button" data-testid={`note-source-${source.locator}`} onClick={() => onOpenItem?.(source.locator)}>{source.locator}</span> {titleOf?.(source.locator)}</>
         )}

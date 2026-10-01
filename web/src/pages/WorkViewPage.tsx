@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SettingOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
-import type { ActionRequest, AssistantReply, Item, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
+import type { ActionRequest, AssistantReply, Item, KnowledgeLibrary, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
 import { useWorkView } from "../state/useWorkView";
 import { Conversation } from "../components/work/Conversation";
 import { ItemsPanel } from "../components/work/ItemsPanel";
@@ -33,6 +33,9 @@ import { useConnectionToast, useProblemToasts, useReviewToast } from "../compone
 import { tooLargeText, unsupportedTypeText } from "../model/upload";
 import { executorHint } from "../components/work/executorHint";
 import { MaterialsContext } from "../state/materials";
+import { KnowledgeContext } from "../state/knowledge";
+import { KnowledgeDocModal, type KnowledgeDocRequest } from "../components/work/KnowledgeDocModal";
+import { isKnowledgeLocator } from "../model/knowledge";
 
 /** 「让助手改这一条」与「回答这个问题」预填的话。 */
 export const PREFILL = {
@@ -64,6 +67,20 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
   const input = useRef<HTMLTextAreaElement>(null);
   const toast = useToast();
   const service = useService();
+  // 知识库清单：来源卡片据此把出处里的知识库编号换成名字、判断文档还在不在。知识库的增删不推送事件，
+  // 所以进入工作视图时取一次，浏览器窗口重新得到焦点时再取一次。服务没有知识库时是空清单；还没取到时是 null。
+  const [libraries, setLibraries] = useState<KnowledgeLibrary[] | null>(null);
+  const hasKnowledge = service.info ? !!service.info.capabilities.knowledge : null;
+  useEffect(() => {
+    if (hasKnowledge === null) return;
+    if (!hasKnowledge) { setLibraries([]); return; }
+    const load = () => { api.knowledge().then(setLibraries).catch(() => undefined); };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, [hasKnowledge]);
+  /** 正在看原文的那条知识库来源；没有在看时为 null。 */
+  const [knowledgeDoc, setKnowledgeDoc] = useState<KnowledgeDocRequest | null>(null);
 
   const task = state.task;
   const closed = !!task && task.status !== "进行中";
@@ -215,6 +232,11 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
     prefill(PREFILL.answer(item.item_id, first ? String(item.fields[first] ?? item.title) : item.title));
   };
   const locateSource = (excerpt: string, locator: string) => {
+    // 出自知识库文档的来源：另开对话框看那份文档，不进「材料」页签（材料页签只放这次要整理的材料）。
+    if (isKnowledgeLocator(locator)) {
+      setKnowledgeDoc({ excerpt, locator });
+      return;
+    }
     setDocCollapsed(false);
     setSide("material");
     setLocate((l) => ({ excerpt, locator, nonce: (l?.nonce ?? 0) + 1 }));
@@ -333,7 +355,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
                 draft={draft} onDraft={setDraft} inputRef={input}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}
                 revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions} revisionCount={log.length}
-                onLocate={(excerpt) => locateSource(excerpt, "")}
+                onLocate={(excerpt, locator) => locateSource(excerpt, locator && isKnowledgeLocator(locator) ? locator : "")}
                 hasEarlier={state.hasEarlier}
                 onLoadEarlier={() => state.earliestId && api.earlierConversation(taskId, sessionId, state.earliestId).then((c) =>
                   dispatch({ type: "earlier", messages: c.messages, hasEarlier: c.has_earlier, earliestId: c.earliest_id }))}
@@ -345,12 +367,14 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
             <div className="work">
               {task ? (
                 <MaterialsContext.Provider value={state.materials}>
+                <KnowledgeContext.Provider value={libraries}>
                 <ItemsPanel task={task} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} />
+                </KnowledgeContext.Provider>
                 </MaterialsContext.Provider>
               ) : <div className="pane-items" />}
               <div className="pane-doc">
@@ -371,6 +395,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
         </div>
       </div>
       {task && <DocumentModal task={task} log={log} open={doc.open} revision={doc.revision} onClose={() => setDoc({ open: false, revision: null })} />}
+      <KnowledgeDocModal request={knowledgeDoc} libraries={libraries} onClose={() => setKnowledgeDoc(null)} />
     </div>
   );
 }

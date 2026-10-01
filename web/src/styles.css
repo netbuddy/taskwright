@@ -149,6 +149,11 @@ body {
 .kbpick .pm { margin-left: 0.4rem; color: var(--mut); font-size: 0.86rem; }
 .kbpick .pf { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.5rem; }
 
+/* 点知识库来源的出处看原文的只读对话框：正文按原样换行，摘录高亮 */
+.kbdoc-text { white-space: pre-wrap; max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.8rem 1rem; line-height: 1.8; }
+.kbdoc-text mark.hit { background: #cfe0ff; border-radius: 0.2rem; color: inherit; }
+.kbdoc-note { color: var(--mut); font-size: 0.93rem; margin-bottom: 0.5rem; }
+
 /* 知识库页面：左边库的清单，右边文档表格 */
 .kbgrid { display: grid; grid-template-columns: minmax(12.5rem, 16rem) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
 .kblibs { padding: 0.45rem; }
