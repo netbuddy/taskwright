@@ -17,10 +17,10 @@ const TERMS = "# 退款术语\n\n原路退回：把钱退到买家付款时用�
 const TERM = { kind: "文档原文", locator: "knowledge/general/术语.md", excerpt: "原路退回：把钱退到买家付款时用的那个账户。" };
 const WORD = { kind: "文档原文", locator: "knowledge/lib-a1/规范.docx#p76", excerpt: "逾期的每本每天罚款一角" };
 
-/** 知识库根目录：通用库里一份术语表；「行业规范」里一份 Word 文档与它的投影；「别的资料」里一份文本文档。 */
+/** 知识库根目录：通用知识库里一份术语表；「行业规范」里一份 Word 文档与它的投影；「别的资料」里一份文本文档。 */
 function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
-  writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用库" }, { id: "lib-a1", name: "行业规范" }, { id: "lib-b2", name: "别的资料" }] }));
+  writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用知识库" }, { id: "lib-a1", name: "行业规范" }, { id: "lib-b2", name: "别的资料" }] }));
   for (const id of ["general", "lib-a1", "lib-b2"]) mkdirSync(join(root, id, "files"), { recursive: true });
   writeFileSync(join(root, "general", "files", "术语.md"), TERMS);
   copyFileSync(SAMPLE, join(root, "lib-a1", "files", "规范.docx"));
@@ -29,7 +29,7 @@ function makeRoot(): string {
   return root;
 }
 
-/** 一个选用了通用库与「行业规范」的任务。 */
+/** 一个选用了通用知识库与「行业规范」的任务。 */
 function makeTask(libraries: string[] = ["general", "lib-a1"]): string {
   const dir = makeWorkspace();
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
@@ -77,7 +77,7 @@ test("新写的来源读不到知识库文档时拒绝，并说明原因：文�
   const dir = makeTask();
   const rejected = (locator: string, pattern: RegExp, knowledgeRoot: string | null = root) =>
     assert.throws(() => save(dir, knowledgeRoot, add({ ...TERM, locator })), pattern, locator);
-  rejected("knowledge/general/没有这份.md", /出处 knowledge\/general\/没有这份\.md 指向的文档《没有这份\.md》在知识库「通用库」里找不到。\n\s*怎么办：出处照抄任务现状消息（或查询任务状态）里那份文档后面给出的写法；文档已经从知识库删除时，不要把它当作来源/);
+  rejected("knowledge/general/没有这份.md", /出处 knowledge\/general\/没有这份\.md 指向的文档《没有这份\.md》在知识库「通用知识库」里找不到。\n\s*怎么办：出处照抄任务现状消息（或查询任务状态）里那份文档后面给出的写法；文档已经从知识库删除时，不要把它当作来源/);
   rejected("knowledge/lib-b2/术语.md", /出处 knowledge\/lib-b2\/术语\.md 指向知识库「别的资料」里的文档，而这个任务没有选用知识库「别的资料」。\n\s*怎么办：只能引用这个任务选用的知识库里的文档/);
   rejected("knowledge/lib-gone/术语.md", /出处 knowledge\/lib-gone\/术语\.md 指向的知识库 lib-gone 已经不在了/);
   for (const locator of ["knowledge/术语.md", "knowledge/general/../lib-b2/files/术语.md", "knowledge/../inputs/材料.md"]) {
@@ -93,7 +93,7 @@ test("材料目录里有同名文件时，知识库出处也不会被当成那�
   assert.throws(() => save(dir, null, add(TERM)), /这个任务没有知识库/);
   const root = makeRoot();
   rmSync(join(root, "general", "files", "术语.md"));
-  assert.throws(() => save(dir, root, add(TERM)), /在知识库「通用库」里找不到/);
+  assert.throws(() => save(dir, root, add(TERM)), /在知识库「通用知识库」里找不到/);
 });
 
 test("旧来源原样再交一次：文档已经从知识库删除、知识库不再选用、服务没有知识库，都照收不核对；同样情形下新写的来源拒绝", () => {
@@ -112,13 +112,13 @@ test("旧来源原样再交一次：文档已经从知识库删除、知识库�
   assert.match(again("UC-002", 2, WORD, root).text, /UC-002 现在是修订 4/);
   assert.deepEqual(sourcesAt(dir, 3), [TERM]);
   assert.deepEqual(sourcesAt(dir, 4), [WORD]);
-  assert.throws(() => again("UC-001", 3, { ...TERM, excerpt: "部分退款：只退订单金额的一部分。" }, root), /在知识库「通用库」里找不到/, "摘录不同就是新写的");
+  assert.throws(() => again("UC-001", 3, { ...TERM, excerpt: "部分退款：只退订单金额的一部分。" }, root), /在知识库「通用知识库」里找不到/, "摘录不同就是新写的");
 
   // 知识库不再选用（文档还在）
   writeFileSync(join(root, "general", "files", "术语.md"), TERMS);
   writeFileSync(join(dir, "knowledge.json"), JSON.stringify({ version: 1, libraries: ["lib-a1"], notes: [] }));
   assert.match(again("UC-001", 3, TERM, root).text, /UC-001 现在是修订 5/);
-  assert.throws(() => save(dir, root, add(TERM, "新的")), /这个任务没有选用知识库「通用库」/);
+  assert.throws(() => save(dir, root, add(TERM, "新的")), /这个任务没有选用知识库「通用知识库」/);
 
   // 服务没有知识库
   assert.match(again("UC-001", 5, TERM, null).text, /UC-001 现在是修订 6/);

@@ -6,10 +6,10 @@ import { isKnowledgeLocator, parseKnowledgeLocator } from "../../../agent/src/li
 
 export { isKnowledgeLocator };
 
-/** 通用库的编号：每个任务都选用它，不能删除、不能改名。 */
+/** 通用知识库的编号：每个任务都选用它，不能删除、不能改名。 */
 export const GENERAL = "general";
 
-/** 通用库排第一，其余照后端给的先后。 */
+/** 通用知识库排第一，其余照后端给的先后。 */
 export function sortedLibraries(libs: KnowledgeLibrary[]): KnowledgeLibrary[] {
   return [...libs.filter((l) => l.id === GENERAL), ...libs.filter((l) => l.id !== GENERAL)];
 }
@@ -17,7 +17,7 @@ export function sortedLibraries(libs: KnowledgeLibrary[]): KnowledgeLibrary[] {
 export const docCountText = (lib: KnowledgeLibrary) => `${lib.documents.length} 份文档`;
 
 /**
- * 有几个任务在用这个库。通用库写「每个任务都会用到」。thisTask 给了时按这个任务是否选用了它说：
+ * 有几个任务在用这个库。通用知识库写「每个任务都会用到」。thisTask 给了时按这个任务是否选用了它说：
  * 只有这个任务在用时写「只有这个任务在用」。
  */
 export function usageText(lib: KnowledgeLibrary, thisTask?: { selected: boolean }): string {

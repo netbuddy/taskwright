@@ -135,7 +135,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
       loadKnowledge();
       return true;
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "选用的库没有改成。");
+      toast.error(e instanceof ApiError ? e.message : "选用的知识库没有改成。");
       return false;
     }
   };

@@ -82,9 +82,9 @@ test("生成文档里出自知识库文档的来源：种类写「知识库」�
     { kind: "文档原文", locator: "knowledge/lib-gone/旧规范.md", excerpt: "旧的说法。" },
     { kind: "文档原文", locator: "inputs/材料.docx#p3", excerpt: "买家可以退货。" },
   ] } as any;
-  const names: Record<string, string> = { general: "通用库", "lib-a1": "行业规范" };
+  const names: Record<string, string> = { general: "通用知识库", "lib-a1": "行业规范" };
   assert.equal(sourcesText(lib, "UC-001", 1, null, (id) => names[id] ?? null),
-    "知识库，出处 通用库 / 术语.md（「原路退回：把钱退到买家付款时用的那个账户。」）；知识库，出处 行业规范 / 规范.docx 第 12 段（「退款在 3 个工作日内到账。」）；" +
+    "知识库，出处 通用知识库 / 术语.md（「原路退回：把钱退到买家付款时用的那个账户。」）；知识库，出处 行业规范 / 规范.docx 第 12 段（「退款在 3 个工作日内到账。」）；" +
     "知识库，出处 lib-gone / 旧规范.md（「旧的说法。」）；文档原文，出处 inputs/材料.docx（「买家可以退货。」）");
   // 服务没有知识库（不给名字的查法）：一律写编号
   assert.match(sourcesText(lib, "UC-001", 1), /^知识库，出处 general \/ 术语\.md（/);

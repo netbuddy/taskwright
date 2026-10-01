@@ -13,10 +13,10 @@ import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
 
 const FRESH = { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null };
 
-/** 知识库根目录：通用库里一份术语表，「行业规范」里一份 Word 规范（带投影），「空的」里没有文档。 */
+/** 知识库根目录：通用知识库里一份术语表，「行业规范」里一份 Word 规范（带投影），「空的」里没有文档。 */
 function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
-  writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用库" }, { id: "lib-a1", name: "行业规范" }, { id: "lib-e0", name: "空的" }] }));
+  writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用知识库" }, { id: "lib-a1", name: "行业规范" }, { id: "lib-e0", name: "空的" }] }));
   for (const id of ["general", "lib-a1", "lib-e0"]) mkdirSync(join(root, id, "files"), { recursive: true });
   writeFileSync(join(root, "general", "documents.json"), JSON.stringify({ documents: [{ name: "术语.md", kind: "glossary", bytes: 64 }] }));
   writeFileSync(join(root, "lib-a1", "documents.json"), JSON.stringify({ documents: [{ name: "规范.docx", kind: "standard", bytes: 2048 }] }));
@@ -32,7 +32,7 @@ function makeTask(libraries: string[]): string {
 
 const section = (root: string) => [
   "这个任务选用的知识库（参考资料，不整理成条目；需要时用 grep 按字面查找、用 read 读相关的一段；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：",
-  "知识库「通用库」有 1 份文档：",
+  "知识库「通用知识库」有 1 份文档：",
   `- 术语.md（术语表，64 字节）：读 ${join(root, "general", "files", "术语.md")}；出处写 knowledge/general/术语.md`,
   "知识库「行业规范」有 1 份文档：",
   `- 规范.docx（规范，2.0 KB）：这是 Word 文档，读由它生成的投影 ${join(root, "lib-a1", "files", "规范.docx.md")}（每段一行，段落号写在方括号里）；出处写 knowledge/lib-a1/规范.docx 加段落号，例如 knowledge/lib-a1/规范.docx#p12`,
@@ -46,7 +46,7 @@ test("新会话的现状另起一行列出这个任务选用的知识库：每�
   const without = taskStatusMessage(dir, FRESH, "s", null)!;
   assert.equal(message.text.replace(/（\d\d:\d\d:\d\d）/, ""), `${without.text.replace(/（\d\d:\d\d:\d\d）/, "")}\n${section(root)}`);
   assert.deepEqual(message.details.knowledge, [
-    { id: "general", name: "通用库", documents: [{ name: "术语.md", kind: "术语表", bytes: 64, locator: "knowledge/general/术语.md" }] },
+    { id: "general", name: "通用知识库", documents: [{ name: "术语.md", kind: "术语表", bytes: 64, locator: "knowledge/general/术语.md" }] },
     { id: "lib-a1", name: "行业规范", documents: [{ name: "规范.docx", kind: "规范", bytes: 2048, locator: "knowledge/lib-a1/规范.docx" }] },
     { id: "lib-e0", name: "空的", documents: [] },
   ]);
@@ -76,7 +76,7 @@ test("续接：上次之后知识库没有变就不写；任务的选用或文�
   for (const file of [join(dir, "knowledge.json"), join(root, "libraries.json"), join(root, "general", "documents.json"), join(root, "lib-a1", "documents.json")]) at(file, last - 60_000);
   assert.equal(taskStatusMessage(dir, facts, "s", root), null, "知识库没有变，交付物也没有变");
 
-  at(join(root, "general", "documents.json"), last + 60_000);   // 通用库里上传或删除过文档
+  at(join(root, "general", "documents.json"), last + 60_000);   // 通用知识库里上传或删除过文档
   const only = taskStatusMessage(dir, facts, "s", root)!;
   assert.equal(only.kind, "变化");
   assert.equal(only.text.replace(/（\d\d:\d\d:\d\d）/, "（时刻）"),

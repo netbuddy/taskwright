@@ -108,7 +108,7 @@ describe("条目详情里的来源", () => {
   });
 
   it("出自知识库文档的来源种类仍是「文档原文」，按出处以 knowledge/ 开头认出，用另一种颜色的标签（样式类 kb）；没有「知识库」这个种类", () => {
-    render(<OpenItem t={sourcesTask([src("文档原文", "knowledge/general/公司术语表.md", "读者：持有借书证的人。"), src("知识库", "通用库/公司术语表.md", "读者：持有借书证的人。")])} />);
+    render(<OpenItem t={sourcesTask([src("文档原文", "knowledge/general/公司术语表.md", "读者：持有借书证的人。"), src("知识库", "通用知识库/公司术语表.md", "读者：持有借书证的人。")])} />);
     const [byLocator, byKind] = screen.getByTestId("item-detail").querySelectorAll(".srcbox .chip");
     expect(byLocator.textContent).toBe("知识库");
     expect(byLocator.className).toBe("chip src kb");

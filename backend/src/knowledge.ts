@@ -1,6 +1,6 @@
 /**
  * 知识库：整理材料时用来参考的资料，与任务的输入材料是两样东西。知识库分成若干个库，每个任务选用其中几个；
- * 「通用库」（编号 general）每个任务默认选用，不能删除、不能改名，服务启动时没有就建出来。
+ * 「通用知识库」（编号 general）每个任务默认选用，不能删除、不能改名，服务启动时没有就建出来。
  *
  * 存放（根目录由启动参数 --knowledge 给，缺省在用户数据目录下，与任务目录并列）：
  *   <根>/libraries.json                  {version: 1, libraries: [{id, name, created_at}]}
@@ -9,7 +9,7 @@
  * 两个 JSON 文件都先写临时文件再改名。文档没有版本：一份文档改了，就当作一份新文件上传。
  *
  * 任务选用了哪些库记在任务目录的 knowledge.json（{version: 1, libraries: [库编号], notes: [{at, text}]}），新建任务时写 ["general"]；
- * 没有这个文件的旧任务按只选用通用库算，用户改选用之前不写文件。删除一个库时，选用了它的任务改为不再选用它，并在 notes 里记一句。
+ * 没有这个文件的旧任务按只选用通用知识库算，用户改选用之前不写文件。删除一个库时，选用了它的任务改为不再选用它，并在 notes 里记一句。
  */
 
 import { randomBytes, createHash } from "node:crypto";
@@ -26,16 +26,18 @@ import { UPLOAD_TYPES, resolvePath, sameMaterialName, unsupportedTypeText } from
 
 // 编号、种类与任务目录里记选用的文件名，助手一侧也要用，定义在 agent/src/lib 下，这里原样交出去。
 export { GENERAL, KINDS, KIND_NAMES, SELECTION_FILE, type Kind };
-export const GENERAL_NAME = "通用库";
+/** 通用知识库的名字。0.4.1 之前叫「通用库」，已有的清单里存着旧名，服务启动时改成新名（ensure）。 */
+export const GENERAL_NAME = "通用知识库";
+export const LEGACY_GENERAL_NAME = "通用库";
 
 /** 知识库文档的上传上限（材料的 5 MB 上限不变）。 */
 export const KNOWLEDGE_MAX_UPLOAD = 20 * 1024 * 1024;
 export const KNOWLEDGE_TOO_LARGE_TEXT = `单个文件不能超过 ${KNOWLEDGE_MAX_UPLOAD / 1024 / 1024} MB。`;
 
 /** 上传的内容与这个库里已有的某份文档完全相同时的那句话（错误码 duplicate_content）。 */
-export const docDuplicateText = (name: string) => `这份文件与这个库里已有的文档《${name}》内容完全相同，没有重复保存。`;
+export const docDuplicateText = (name: string) => `这份文件与这个知识库里已有的文档《${name}》内容完全相同，没有重复保存。`;
 /** 上传的文件名与这个库里已有的某份文档相同、内容不同时的那句话（错误码 name_taken）。 */
-export const docNameTakenText = (name: string) => `这个库里已经有一份叫《${name}》的文档，内容与这份不同。请给文件换一个名字再上传。`;
+export const docNameTakenText = (name: string) => `这个知识库里已经有一份叫《${name}》的文档，内容与这份不同。请给文件换一个名字再上传。`;
 
 export interface LibraryRow {
   id: string;
@@ -75,11 +77,19 @@ export class KnowledgeStore {
     this.root = root;
   }
 
-  /** 建出根目录；libraries.json 不存在时写一份只有通用库的。 */
+  /**
+   * 建出根目录；libraries.json 不存在时写一份只有通用知识库的。已有的清单里通用知识库那一项还叫旧名「通用库」时，
+   * 改成现在的名字再写回去（先写临时文件再改名）；用户自己起的名字不动。
+   */
   ensure(): void {
     mkdirSync(this.root, { recursive: true });
     if (!existsSync(this.librariesFile())) {
       writeJson(this.librariesFile(), { version: 1, libraries: [{ id: GENERAL, name: GENERAL_NAME, created_at: clock.now() }] });
+    } else {
+      const rows = this.libraries();
+      if (rows.some((one) => one.id === GENERAL && one.name === LEGACY_GENERAL_NAME)) {
+        this.saveLibraries(rows.map((one) => (one.id === GENERAL && one.name === LEGACY_GENERAL_NAME ? { ...one, name: GENERAL_NAME } : one)));
+      }
     }
     mkdirSync(this.filesDir(GENERAL), { recursive: true });
   }
@@ -112,7 +122,7 @@ export class KnowledgeStore {
   /** 按编号找库；没有时以 not_found 拒绝。 */
   library(id: string): LibraryRow {
     const row = this.libraries().find((one) => one.id === id);
-    if (!row) throw new ApiError("not_found", `没有这个库：${id}。`);
+    if (!row) throw new ApiError("not_found", `没有这个知识库：${id}。`);
     return row;
   }
 
@@ -137,9 +147,9 @@ export class KnowledgeStore {
   /** 库名：去掉首尾空白后不能是空的，也不能与别的库同名（同名规则与材料的文件名相同）。 */
   private checkName(name: unknown, except: string | null): string {
     const text = typeof name === "string" ? name.trim() : "";
-    if (!text) throw new ApiError("rejected", "库名不能是空的。");
+    if (!text) throw new ApiError("rejected", "知识库的名字不能是空的。");
     const same = this.libraries().find((one) => one.id !== except && sameMaterialName(text, one.name));
-    if (same) throw new ApiError("rejected", `已经有一个叫「${same.name}」的库了。`);
+    if (same) throw new ApiError("rejected", `已经有一个叫「${same.name}」的知识库了。`);
     return text;
   }
 
@@ -156,7 +166,7 @@ export class KnowledgeStore {
 
   rename(id: string, name: unknown): LibraryRow {
     this.library(id);
-    if (id === GENERAL) throw new ApiError("rejected", "通用库不能改名。");
+    if (id === GENERAL) throw new ApiError("rejected", "通用知识库不能改名。");
     const text = this.checkName(name, id);
     const rows = this.libraries().map((one) => (one.id === id ? { ...one, name: text } : one));
     this.saveLibraries(rows);
@@ -166,7 +176,7 @@ export class KnowledgeStore {
   /** 删除库：先从清单里去掉，再删它的目录（文档一并删除）。 */
   remove(id: string): LibraryRow {
     const row = this.library(id);
-    if (id === GENERAL) throw new ApiError("rejected", "通用库不能删除。");
+    if (id === GENERAL) throw new ApiError("rejected", "通用知识库不能删除。");
     this.saveLibraries(this.libraries().filter((one) => one.id !== id));
     rmSync(this.libraryDir(id), { recursive: true, force: true });
     return row;
@@ -226,7 +236,7 @@ export class KnowledgeStore {
     this.library(id);
     const rows = this.documents(id);
     const row = rows.find((one) => one.name === name);
-    if (!row) throw new ApiError("not_found", `这个库里没有文档《${String(name ?? "")}》。`);
+    if (!row) throw new ApiError("not_found", `这个知识库里没有文档《${String(name ?? "")}》。`);
     this.saveDocuments(id, rows.filter((one) => one !== row));
     const target = join(this.filesDir(id), row.name);
     try {
@@ -249,8 +259,8 @@ export class KnowledgeStore {
     this.library(id);
     const base = resolvePath(this.filesDir(id));
     const target = resolvePath(join(base, name));
-    if (!name || !target.startsWith(base + sep)) throw new ApiError("bad_request", `《${name}》不在这个库里。`);
-    if (!isFile(target)) throw new ApiError("not_found", `这个库里没有《${name}》。`);
+    if (!name || !target.startsWith(base + sep)) throw new ApiError("bad_request", `《${name}》不在这个知识库里。`);
+    if (!isFile(target)) throw new ApiError("not_found", `这个知识库里没有《${name}》。`);
     return target;
   }
 
@@ -288,7 +298,7 @@ function readSelectionFile(taskDir: string): Selection | null {
   }
 }
 
-/** 任务选用的库；没有 knowledge.json（旧任务）或读不出来时按只选用通用库算。 */
+/** 任务选用的库；没有 knowledge.json（旧任务）或读不出来时按只选用通用知识库算。 */
 export function selectedLibraries(taskDir: string): string[] {
   return readSelectionFile(taskDir)?.libraries ?? [GENERAL];
 }
@@ -300,7 +310,7 @@ export function writeSelection(taskDir: string, libraries: string[], note: strin
   writeJson(join(taskDir, SELECTION_FILE), { version: 1, libraries, notes });
 }
 
-/** 新建任务时写的内容：只选用通用库。 */
+/** 新建任务时写的内容：只选用通用知识库。 */
 export function initialSelection(): Selection {
   return { version: 1, libraries: [GENERAL], notes: [] };
 }

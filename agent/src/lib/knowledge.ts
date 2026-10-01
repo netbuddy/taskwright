@@ -6,7 +6,7 @@
  *   <根>/libraries.json            {libraries: [{id, name}]}
  *   <根>/<知识库编号>/documents.json  {documents: [{name, kind, bytes}]}
  *   <根>/<知识库编号>/files/<文档名>  文档本体；Word 文档旁边有由它生成的投影（文档名加 .md）
- * 任务选用了哪些知识库记在任务目录的 knowledge.json（{libraries: [知识库编号]}）；没有这个文件的旧任务按只选用通用库算。
+ * 任务选用了哪些知识库记在任务目录的 knowledge.json（{libraries: [知识库编号]}）；没有这个文件的旧任务按只选用通用知识库算。
  *
  * 本模块不依赖 pi，单元测试可以直接调用。
  */
@@ -53,7 +53,7 @@ function readJson(path: string): Record<string, unknown> | null {
   }
 }
 
-/** 任务选用的知识库的编号；没有 knowledge.json（旧任务）或读不出来时按只选用通用库算。 */
+/** 任务选用的知识库的编号；没有 knowledge.json（旧任务）或读不出来时按只选用通用知识库算。 */
 export function selectedLibraryIds(taskDir: string): string[] {
   const raw = readJson(join(taskDir, SELECTION_FILE));
   if (!Array.isArray(raw?.libraries)) return [GENERAL];

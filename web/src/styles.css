@@ -135,7 +135,7 @@ body {
 .updest-foot { display: flex; justify-content: flex-end; gap: 0.5rem; align-items: center; }
 .updest-foot .fnote { margin-right: auto; font-size: 0.86rem; color: var(--mut); text-align: left; }
 
-/* 任务页「选用的知识库」一栏与「选用别的库」的勾选框列表 */
+/* 任务页「选用的知识库」一栏与「选用别的知识库」的勾选框列表 */
 .kbrow { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px dashed var(--line); }
 .kbrow:last-of-type { border-bottom: 0; }
 .kbrow .nm { font-weight: 600; }

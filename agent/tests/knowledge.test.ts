@@ -8,10 +8,10 @@ import { test } from "node:test";
 import { KNOWLEDGE_ROOT_ENV, envKnowledgeRoot, knowledgeChangedAt, knowledgeFilePath, selectedKnowledge, selectedLibraryIds } from "../src/lib/knowledge.ts";
 import { isKnowledgeLocator, knowledgeLocator, parseKnowledgeLocator } from "../src/lib/knowledge_locator.ts";
 
-/** 建一个知识库根目录：通用库里一份术语表，另一个知识库里一份 Word 规范（带投影）。 */
+/** 建一个知识库根目录：通用知识库里一份术语表，另一个知识库里一份 Word 规范（带投影）。 */
 function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
-  writeFileSync(join(root, "libraries.json"), JSON.stringify({ version: 1, libraries: [{ id: "general", name: "通用库" }, { id: "lib-a1", name: "行业规范" }] }));
+  writeFileSync(join(root, "libraries.json"), JSON.stringify({ version: 1, libraries: [{ id: "general", name: "通用知识库" }, { id: "lib-a1", name: "行业规范" }] }));
   mkdirSync(join(root, "general", "files"), { recursive: true });
   writeFileSync(join(root, "general", "files", "术语.md"), "原路退回：把钱退到买家付款时用的那个账户。\n");
   writeFileSync(join(root, "general", "documents.json"), JSON.stringify({ version: 1, documents: [{ name: "术语.md", kind: "glossary", bytes: 64 }] }));
@@ -47,7 +47,7 @@ test("知识库根目录取自环境变量；没设或是空的就当作没有�
   assert.equal(envKnowledgeRoot({ [KNOWLEDGE_ROOT_ENV]: "/data/knowledge" }), "/data/knowledge");
 });
 
-test("任务选用的知识库：没有 knowledge.json 的旧任务按只选用通用库算；带路径分隔符的编号不认", () => {
+test("任务选用的知识库：没有 knowledge.json 的旧任务按只选用通用知识库算；带路径分隔符的编号不认", () => {
   assert.deepEqual(selectedLibraryIds(makeTask()), ["general"]);
   assert.deepEqual(selectedLibraryIds(makeTask(["lib-a1", "general"])), ["lib-a1", "general"]);
   assert.deepEqual(selectedLibraryIds(makeTask([])), []);
@@ -61,7 +61,7 @@ test("选用的知识库与文档清单：照任务选用的先后；Word 文档
     { id: "lib-a1", name: "行业规范", documents: [
       { name: "规范.docx", kindName: "规范", bytes: 2048, readPath: join(root, "lib-a1", "files", "规范.docx.md"), locator: "knowledge/lib-a1/规范.docx", word: true },
     ] },
-    { id: "general", name: "通用库", documents: [
+    { id: "general", name: "通用知识库", documents: [
       { name: "术语.md", kindName: "术语表", bytes: 64, readPath: join(root, "general", "files", "术语.md"), locator: "knowledge/general/术语.md", word: false },
     ] },
   ]);
@@ -72,8 +72,8 @@ test("没有知识库根目录、根目录不存在、文档清单读不出来�
   assert.deepEqual(selectedKnowledge(task, null), []);
   assert.deepEqual(selectedKnowledge(task, join(tmpdir(), "tw-kb-没有这个目录")), []);
   const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
-  writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用库" }] }));
-  assert.deepEqual(selectedKnowledge(task, root), [{ id: "general", name: "通用库", documents: [] }]);
+  writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用知识库" }] }));
+  assert.deepEqual(selectedKnowledge(task, root), [{ id: "general", name: "通用知识库", documents: [] }]);
 });
 
 test("出处指向的文件在知识库根目录下的「编号/files/文件名」；写法不对时指不到文件", () => {
