@@ -151,14 +151,14 @@ data: {
 | `GET /api/v1/task-types` | 「新建任务」时用的任务类型列表 | `{ok, task_types: [{task_type, name}]}` |
 | `GET /api/v1/tasks` | 任务列表 | `{ok, tasks: [{task_id, task_name, task_type, domain_tag, status, item_count, completion_met, completion_total, completion_unmet, last_active_at, session_count, supported}]}`（展示时用 `completion_unmet`，即「还差 N 项」）。修订取代条目版本之前创建的任务也会列出，`supported` 为 `false`，`status` 为「旧格式」，另带 `note`；它打不开。正被别的在跑的服务占用的任务也会列出，`supported` 为 `false`，`status` 为「占用中」，另带 `occupied`（`port`、`pid`、`host`）与 `note`；对它的一切请求都返回 `task_occupied`。 |
 | `POST /api/v1/tasks` `{task_type, task_name, domain_tag}` | 创建任务 | `{ok, task_id}`；之后再上传材料 |
-| `GET /api/v1/tasks/{task_id}` | 任务页（已关闭的任务同样可读） | 该任务，外加 `materials`、`sessions` 与 `knowledge_libraries`（这个任务选用的知识库的编号，第 11 节） |
-| `GET …/sessions` | 会话列表 | `{ok, sessions: [{session_id, name, started_at, last_active_at, message_count, active}]}` |
+| `GET /api/v1/tasks/{task_id}` | 任务页（已关闭的任务同样可读） | 该任务，外加 `materials`（每项比整份数据里的多一个 `deletable`：现在能不能删除，见第 5.1 节「删除材料」）、`sessions`（每项的形状与下一行的会话列表相同）与 `knowledge_libraries`（这个任务选用的知识库的编号，第 11 节） |
+| `GET …/sessions` | 会话列表 | `{ok, sessions: [{session_id, name, started_at, last_active_at, message_count, active, revision_count}]}`；`revision_count` 是这条会话产生了几次修订（修订表按会话编号计数，没有时为 0）。刚新建、还没有说过话的会话 `name`、`started_at`、`last_active_at` 为 null |
 | `POST …/sessions` | 新建会话 | `{ok, session_id}`；执行者在别的会话里工作时返回 `session_busy` |
 | `GET …/items/{item_id}/revisions` | 条目在改动过它的每次修订下的内容 | `{ok, item_id, revisions: [{revision_no, by, at, fields, sources, reviews, confirmations}]}` |
 | `GET …/revisions` | 修订日志 | `{ok, latest_revision, revisions: [{revision_no, at, by, session_id, work_id, op_id, undo_of_revision, trigger, intent, operations}]}`，最新的在前。`work_id` 是智能体的那次工作（用户的修订为空）；`op_id` 是用户的那次直接操作。`trigger` 写触发这次修订的事：智能体的修订是 `{kind: "typed" \| "card_choice" \| "ui_request", text, message_id}`，即启动那次工作的那句话；用户的修订是 `{kind: "user_action", action, text}`，`text` 是「你把 TBD-003 标为先不管」这样的一句操作名；都找不到时是 `{kind: "none"}`。`intent` 是触发智能体这次修订的那项用户行为：智能体对你那句话写下的理解里有与这次修订对得上的一项时给出，`{act_id, function, function_name, summary}`（`act_id` 如 r13-2，`function` 是理解格式里九种用户功能之一，`function_name` 是它的中文名，如「纠正」）；用户自己的修订、没有理解记录的任务为空。每个操作有 `op`、`item_id`、`collection`、`title`、`revision_before`、`revision_after` 和 `fields_changed`（与条目上一次改动相比值不同的字段名；新增、删除、恢复时为空）。 |
 | `GET …/materials/content?path=…` | 某份材料的正文 | `{ok, path, text}`；路径必须落在材料目录内。`.docx` 返回的是生成的 Markdown 投影（见第 5.1 节「材料」）；0.2 建的任务只有旧的 `文件名.docx.txt` 时返回那份 |
 | `GET …/materials/raw?path=…` | 材料文件的原样内容 | 文件的原始字节；`Content-Type` 按扩展名给：`.md` 为 `text/markdown; charset=utf-8`，`.txt` 为 `text/plain; charset=utf-8`，`.docx` 为 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`，其余为 `application/octet-stream`。路径限制与 `content` 相同；网页界面用它按原版式显示 Word 文件 |
-| `POST …/materials/delete` `{path}` | 删除一份材料 | `{ok, path}`；见第 5.1 节「删除材料」 |
+| `POST …/materials/delete` `{path}` | 删除一份还没有进入对话的材料 | `{ok, path}`；已经进入对话的返回 `rejected`；见第 5.1 节「删除材料」 |
 | `GET …/knowledge`、`POST …/knowledge` `{libraries}` | 这个任务选用的知识库，以及改选用 | 见第 11 节 |
 | `GET …/conversation?session=…&before={message_id}&limit=100` | 更早的对话 | 形状与第 4.1 节 `conversation` 相同 |
 | `POST …/documents/preview` 与 `…/download` `{"revision_no": N, "items": [编号…], "format": "markdown"}` | 按某一次修订（缺省为最新）渲染整份交付物，也可以只列出其中几个条目 | 预览：`{ok, text}`；下载：文件本身。文档写明它按哪次修订生成，并在每个条目上标出它的内容来自哪次修订、在那次修订上有没有确认与评审；确认写明依据：已读、用户修改或明确确认。修订号超过最新修订，或列出的条目在那次修订时不在交付物里，返回 `bad_request` |
@@ -173,7 +173,7 @@ data: {
 
 **材料。** `POST …/materials`（multipart，单文件）：接受 `.md`、`.txt` 与 Word 的 `.docx`，最大 5 MB，存入该任务的材料目录（带路径分隔符的文件名会被拒绝）。返回 `{ok, path}`。上传的内容与本任务已有的某份材料的字节完全相同时（不论文件名），拒绝并且什么都不保存（`duplicate_content`，409）；文件名与已有的某份材料相同而内容不同时，同样拒绝（`name_taken`，409）。两种拒绝的 `data.path` 都是已有的那份材料，说明里写出它的文件名。只与用户放进来的材料比较，Word 文件旁边的投影与分段清单（带 `derived_from` 的项）不参与。内容按原始字节的 SHA-256 比较，每次上传时现算，不保存。判断两个文件名是否相同时，两边都去掉首尾空白、统一成 Unicode 规范化的 NFC 形式、不区分大小写；只差全角半角的（例如全角括号与半角括号）算不同的名字。这条规则只用来判断是否同名，文件照上传时的名字保存。检查的先后是类型、保留的文件名、大小、内容、文件名；内容与文件名都相同时回 `duplicate_content`。以前重名的文件会存成「原名-2.扩展名」，现在不再这样。`.docx` 另在旁边生成一份给助手读的 Markdown 投影 `文件名.docx.md`，文件里的图片抽到 `文件名.docx.media/`。同时写一份分段清单 `文件名.docx.segments.json`：按启动配置「材料分段」一节的参数把投影按标题分块（`heading_depth` 是认到第几级标题；有文字的段少于 `min_paragraphs` 的块并入下一块，多于 `max_paragraphs` 的块按段数切开），每块记标题、起止段落号、在投影里的起止行号、有文字的段数与字数。文件里记着参数的摘要，参数改了之后，下次读到时重算并覆盖。同时写一份位置表 `文件名.docx.locations.json`：文件头（格式版本 `version`、位置规则的版本 `rules_version`、`source`、段落总数 `paragraphs`、分页标记 `w:lastRenderedPageBreak` 的个数 `page_marks`，以及 `application`：`docProps/app.xml` 里记的保存文件的软件，没记时为空）与 `headings`：每个标题段一项，写段落号 `paragraph`、级别 `level`（1 是一级）与标题文字 `title`，`title` 与投影里这一段的标题行相同：自动编号（任何格式）加标题文字。标题段就是投影写成标题行的那些段落，所以表格里的段落不在其中。被引用的一段的章节是它（含）之前最近的标题；网页界面的来源标签从这里取章节，读不到位置表时不写章节。规则在 `agent/src/lib/docx_locations.ts`；位置表不记别的段落的文字，在它出现之前上传的 Word 文件没有位置表。段落按 `word/document.xml` 正文计数，表格与嵌套表格里的段落都数，文本框里的不数；页眉页脚、脚注尾注、批注不数。投影里每段一行，段落号写成 `[pN]`，放在这一段的正文前面；标题以 `#` 到 `######` 开头，级别先看段落自身的大纲级别，没写时看样式的大纲级别（沿样式继承往上找），再没有时看样式名「heading N」「标题 N」（大纲级别写成 9 表示正文，不是标题），Word 自动编号写在段落号前面，不算正文；列表项以 `- ` 开头，编号是 `1.` 这种形式时直接以编号开头；表格写成 Markdown 表格，Word 的一行写一行、第一行当表头，一格里的几段用 `<br>` 隔开，横向合并跨过的格子写 `（同左）`，纵向合并续格写 `（同上）`，嵌在格里的小表格的各段写进外层格子，前面注明 `（小表第 r 行第 c 列）`；图片写成链接 `![图 k](文件名.docx.media/imageN.png)`，放在它所在的段落里，标题里的图片除外：它另起一行写在标题行下面，不算标题文字；Word 图表与 SmartArt 写一行说明没有转出；文本框里的字写成引用块（`> （文本框）……`），没有段落号；空段落不写，段落号照数。公式里的字只取文字、按原顺序写进段落，不还原公式的排版（分式 a/b 写成 `ab`）。开头的注释写明段落总数与引用的写法。投影由 `agent/src/cli/docx_projection.mts` 生成，服务起 Node 子进程运行它。材料清单列出 `.docx`、`.md`、`.segments.json` 与 `.locations.json`；每一项带 `derived_from`：Word 文件旁边的投影、分段清单与位置表（`.md`、`.segments.json`、`.locations.json`，或 0.2 的 `.txt`）写那份 `.docx` 的路径，其余文件为 `null`，网页界面不列出带它的项。清单只列文件，所以不含图片目录。读不出来的 `.docx` 返回 `unsupported_type`，什么都不留下；以 `.docx.md` 或 `.docx.txt` 结尾的文件名返回 `bad_request`。消息的 `attachments` 里有 `.docx` 时，发给助手的文字会说明去读它旁边的 `.md`。0.2 建的任务保留原来的 `文件名.docx.txt`（每段一行，行首是 `[第 N 段]` 或 `[第 N 段 · 表 t 行 r 列 c]`）；Word 文件旁边没有 `.md` 时，助手、摘录核对与网页界面改读这份文件，分段清单按它现算、不写文件。
 
-**删除材料。** `POST …/materials/delete`，请求体为 `{"path": "inputs/…"}`：删除用户放进来的一份材料，Word 材料连同由它生成的文件（投影、分段清单、位置表、图片目录，以及 0.2 的 `.txt` 投影）一起删，并推送 `material_removed`（第 3.2 节）。返回 `{ok, path}`。路径落在材料目录之外返回 `bad_request`，生成的文件的路径同样返回 `bad_request`；路径不在材料清单里返回 `not_found`；智能体正在工作时拒绝，错误码 `session_busy`，`data.reason` 为 `working`；任务已完成或已放弃时返回 `task_closed`。引用它的条目上的来源原样保留：服务不改来源数据，网页界面按「来源的出处文件不在材料清单里」判断这份材料已经删除，出处旁写灰字「这份材料已经删除」，出处不能再点。「替换」就是删掉旧的再上传新的，条目不自动改。智能体再次保存这个条目、把条目当前的某条来源原样再交一次（种类、出处、摘录都相同），而那条来源的出处文件已经删掉时，`save_revision` 不核对摘录、原样收下：来源是当初引用时的记录，文件没了不等于引用错了。新写的来源指向不存在的文件照旧拒绝。已知的局限：删掉一份材料之后又上传了同名的新文件，引用旧文件的来源会被当作材料还在，摘录在新文件里可能找不到。
+**删除材料。** `POST …/materials/delete`，请求体为 `{"path": "inputs/…"}`：删除用户放进来的一份材料，Word 材料连同由它生成的文件（投影、分段清单、位置表、图片目录，以及 0.2 的 `.txt` 投影）一起删，并推送 `material_removed`（第 3.2 节）。返回 `{ok, path}`。只有还没有进入对话的材料可以删除。判据：材料上传之后，任务里任何一条会话有过活动，就算进入了对话，即全部会话的最近活动时刻里最晚的一个，晚于或等于材料的上传时刻（按毫秒比较，相等算进入）。上传时刻取材料文件的修改时刻：上传时文件是排他创建的，之后服务不再改写它。还没有说过话的新会话没有活动时刻，不算。已经进入对话的材料返回 `rejected`（422），说明是「这份材料已经进入了对话，不能删除。」，`data.path` 是那份材料。任务页接口（`GET /api/v1/tasks/{task_id}`）的 `materials` 每项带 `deletable`，按同一个判据给出；任务已完成或已放弃、或者这一项是生成的文件时也为假；智能体正在工作是一时的，不算在内。别的拒绝照旧：路径落在材料目录之外返回 `bad_request`，生成的文件的路径同样返回 `bad_request`；路径不在材料清单里返回 `not_found`；任务已完成或已放弃时返回 `task_closed`；智能体正在工作时拒绝，错误码 `session_busy`，`data.reason` 为 `working`（已经进入对话的材料先按 `rejected` 拒绝）。删除不留痕：智能体引用一份材料必然发生在某条会话里，被引用过的材料都进入过对话，所以删得掉的材料没有来源引用它。进入对话之前可以删了重传；进入对话之后只能再上传一份新的，条目不自动改。已知的局限：上传时刻取的是文件的修改时刻，任务目录被整体复制而没有保留文件时间、或者材料文件被别的程序改写之后，修改时刻变晚，这份材料会重新变成可以删除。
 
 ### 5.2 智能体回复
 
@@ -385,7 +385,7 @@ data: {
 | `GET /api/v1/tasks/{task_id}/knowledge` | 这个任务选用的知识库 | `{ok, libraries: [知识库编号…]}`；`GET /api/v1/tasks/{task_id}` 的 `knowledge_libraries` 也是它 |
 | `POST /api/v1/tasks/{task_id}/knowledge` `{libraries: [知识库编号…]}` | 改选用 | `{ok, libraries}`。`general` 总保留并排在最前；不存在的知识库编号返回 `rejected`，说明「没有这个知识库：…。」；任务已完成或已放弃时返回 `task_closed`。改选用不影响正在进行的会话：下一条会话开头的任务现状消息按新的选用写，续接旧会话时另写一段 |
 
-上传材料的接口不变。网页界面在上传时先问这份文件用来做什么；选「整理时要参考的资料」时改调上面的文档上传，选了「新建一个库…」就先建库，勾了「同时让这个任务选用它」就再调一次改选用。
+上传材料的接口不变。网页界面的任务页上传的一律是材料，不问去向；整理时要参考的文档在知识库页面上传，调上面的文档上传。
 
 **助手怎样用知识库。** 任务服务启动助手时，经环境变量 `TASKWRIGHT_KNOWLEDGE_ROOT` 把知识库根目录（绝对路径）交给它；没有知识库的服务不交，并把自己环境里的同名变量去掉。助手只读知识库，不新增工具，用它已有的 `read`、`grep`、`ls`：
 
@@ -398,7 +398,7 @@ data: {
 
 - 到知识库根目录下 `<知识库编号>/files/<文档名>` 读文件，摘录照材料的规矩逐字核对（Word 文档按段落号对着投影核对；出处写成投影本身的拒绝）。
 - 只能引用这个任务选用的知识库里的文档。服务没有知识库、出处的写法不对、那个知识库已经不在、这个任务没有选用那个知识库、文档找不到，这五种情形下新写的来源被拒绝，拒绝的文字写明是哪一种。
-- 助手把条目当前的某条来源原样再交一次时，上面几种情形都照收、不核对（与材料已经删除时同一条规矩，见第 5.1 节「删除材料」）。
+- 助手把条目当前的某条来源原样再交一次（种类、出处、摘录都相同）时，上面几种情形都照收、不核对：来源是当初引用时的记录，文档没了不等于引用错了。材料出处的来源没有这个例外：进入了对话的材料不能删除（第 5.1 节「删除材料」），被引用过的材料文件一定还在，读不到时与新写的来源一样拒绝。
 - 不是知识库来源的出处，解析之后必须落在任务目录里：任务目录之外的绝对路径、用 `..` 绕出去的相对路径都按读不到处理，新写的来源被拒绝。
 
 评审时，出自知识库文档的来源与材料的来源一样参与「两个条目是否引用了同一处」的判断；知识库文档不放进给评审者的材料里。生成的文档里，知识库来源写成「知识库，出处 <知识库名> / <文档名>」，Word 文档再写「第 N 段」，知识库已经不在时写它的编号。
