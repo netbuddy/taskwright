@@ -25,7 +25,7 @@ const info: ServiceInfo = {
 };
 const lib = (id: string, name: string, used = 0, docs = 0): KnowledgeLibrary =>
   ({ id, name, created_at: "", used_by_tasks: used, documents: Array.from({ length: docs }, (_, i) => ({ name: `d${i}.md`, kind: "other", bytes: 1, uploaded_at: "" })) });
-const LIBS = [lib("general", "通用库", 2, 3), lib("lib-hy", "行业规范", 1, 4), lib("lib-cb", "城北区图书馆的资料", 0, 5)];
+const LIBS = [lib("general", "通用知识库", 2, 3), lib("lib-hy", "行业规范", 1, 4), lib("lib-cb", "城北区图书馆的资料", 0, 5)];
 
 function detail(over: Partial<TaskDetail> = {}): TaskDetail {
   return {
@@ -81,7 +81,7 @@ describe("上传时选择去向", () => {
     fireEvent.click(screen.getByTestId("dest-knowledge"));
     await pickLibrary("城北区图书馆的资料（5 份文档）");
     expect(screen.getByTestId("dest-hint").className).not.toContain("amber");
-    expect(screen.getByTestId("dest-hint").textContent).toBe("这个任务现在选用了：通用库、城北区图书馆的资料。放进去之后，助手下一次会话开始时就查得到。");
+    expect(screen.getByTestId("dest-hint").textContent).toBe("这个任务现在选用了：通用知识库、城北区图书馆的资料。放进去之后，助手下一次会话开始时就查得到。");
     fireEvent.click(screen.getByText("术语表", { selector: ".updest-seg label" }));
     expect(screen.getByTestId("upload-note").textContent).toBe("上传之后会出现在知识库「城北区图书馆的资料」里，不会出现在「材料清单」里。");
     fireEvent.click(screen.getByTestId("upload-confirm"));
@@ -179,17 +179,17 @@ describe("删除材料", () => {
 });
 
 describe("选用的知识库", () => {
-  it("列出选用的库：通用库注明每个任务都会用到、不能去掉；别的库可以不再选用", async () => {
+  it("列出选用的知识库：通用知识库注明每个任务都会用到、不能去掉；别的知识库可以不再选用", async () => {
     const calls = page();
     const card = await screen.findByTestId("task-knowledge");
     await within(card).findByTestId("kb-row-general");
-    expect(within(card).getByTestId("kb-row-general").textContent).toContain("通用库3 份文档 · 每个任务都会用到不能去掉");
+    expect(within(card).getByTestId("kb-row-general").textContent).toContain("通用知识库3 份文档 · 每个任务都会用到不能去掉");
     expect(within(within(card).getByTestId("kb-row-general")).queryByText("不再选用")).toBeNull();
     fireEvent.click(within(within(card).getByTestId("kb-row-lib-cb")).getByText("不再选用"));
     await waitFor(() => expect(calls.select).toHaveBeenCalledWith("TASK-K", ["general"]));
   });
 
-  it("「选用别的库」勾上一个库、确定之后整体改选用；通用库勾着、不能去掉", async () => {
+  it("「选用别的知识库」勾上一个知识库、确定之后整体改选用；通用知识库勾着、不能去掉", async () => {
     const calls = page();
     await screen.findByTestId("kb-row-general");
     fireEvent.click(screen.getByTestId("kb-pick"));

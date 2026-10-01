@@ -24,6 +24,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { isLegacyProjection, placeExcerpt, projectionParagraphs } from "./docx_source.ts";
+import { isKnowledgeLocator } from "./knowledge_locator.ts";
 
 /** 分段清单跟在 Word 文件路径后面的后缀：x.docx → x.docx.segments.json。 */
 export const SEGMENTS_SUFFIX = ".segments.json";
@@ -325,8 +326,12 @@ export function currentDocumentSources(db: DatabaseSync, taskId: string): Source
     .all(taskId) as unknown as SourceRow[];
 }
 
-/** 出处的文件部分与材料路径是不是同一份（写全了相对路径，或只写了文件名）。 */
+/**
+ * 出处的文件部分与材料路径是不是同一份（写全了相对路径，或只写了文件名）。出处指向知识库里的文档（以 knowledge/ 开头）的
+ * 一律不是：知识库里可以有与材料同名的文档，它不是这份材料。
+ */
 export function sameMaterial(locatorPath: string, rel: string): boolean {
+  if (isKnowledgeLocator(locatorPath)) return false;
   const a = locatorPath.replace(/^\.\//, "");
   return a === rel || basename(a) === basename(rel);
 }

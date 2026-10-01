@@ -212,6 +212,9 @@ export const api = {
     form.append("file", file, file.name);
     return request<{ document: KnowledgeDocument }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}/documents`, form).then((r) => r.document);
   },
+  /** 知识库文档的正文：Word 文档给由它生成的文字（每段一行，段落号写在方括号里）。 */
+  documentText: (id: string, name: string) =>
+    request<{ name: string; text: string }>("GET", `/knowledge/libraries/${encodeURIComponent(id)}/documents/content?name=${encodeURIComponent(name)}`),
   deleteDocument: (id: string, name: string) => request<{ ok: true }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}/documents/delete`, { name }),
   setTaskKnowledge: (taskId: string, libraries: string[]) =>
     request<{ libraries: string[] }>("POST", `${task(taskId)}/knowledge`, { libraries }).then((r) => r.libraries),

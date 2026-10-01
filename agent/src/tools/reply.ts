@@ -22,6 +22,7 @@ import { spoken } from "../lib/speak.ts";
 import { currentRun, recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 import { checkQuotes } from "../lib/save_revision.ts";
+import { envKnowledgeRoot } from "../lib/knowledge.ts";
 import { userMessagesOnBranch } from "./save_revision.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
@@ -146,7 +147,7 @@ export function registerReply(pi: ExtensionAPI): void {
             priorRejections: consecutiveReplyRejections(branch),
             // 给建议值的依据：与保存修订的来源同一套逐字核对。
             checkBasis: (raw, errors, whereOf) =>
-              checkQuotes(ctx.cwd, ctx.sessionManager.getSessionId(), userMessagesOnBranch(ctx), raw, errors, whereOf),
+              checkQuotes(ctx.cwd, ctx.sessionManager.getSessionId(), userMessagesOnBranch(ctx), raw, errors, whereOf, envKnowledgeRoot()),
           });
         } finally {
           lookup.close();

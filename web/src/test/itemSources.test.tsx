@@ -107,11 +107,12 @@ describe("条目详情里的来源", () => {
     expect(onLocate).toHaveBeenCalledTimes(1);
   });
 
-  it("出自知识库的来源用另一种颜色的标签（样式类 kb）", () => {
-    render(<OpenItem t={sourcesTask([src("知识库", "通用库/公司术语表.md", "读者：持有借书证的人。")])} />);
-    const chip = screen.getByTestId("item-detail").querySelector(".srcbox .chip")!;
-    expect(chip.textContent).toBe("知识库");
-    expect(chip.className).toContain("kb");
+  it("出自知识库文档的来源种类仍是「文档原文」，按出处以 knowledge/ 开头认出，用另一种颜色的标签（样式类 kb）；没有「知识库」这个种类", () => {
+    render(<OpenItem t={sourcesTask([src("文档原文", "knowledge/general/公司术语表.md", "读者：持有借书证的人。"), src("知识库", "通用知识库/公司术语表.md", "读者：持有借书证的人。")])} />);
+    const [byLocator, byKind] = screen.getByTestId("item-detail").querySelectorAll(".srcbox .chip");
+    expect(byLocator.textContent).toBe("知识库");
+    expect(byLocator.className).toBe("chip src kb");
+    expect(byKind.className).toBe("chip on");
   });
 
   it("「材料」页签：正在看的材料被删掉之后改看清单里的第一份，下拉框里不再列它", async () => {

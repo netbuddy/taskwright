@@ -52,7 +52,7 @@ export function Shell({ currentTaskId, nav = "tasks", libraries, children }: {
                 <UnorderedListOutlined className="ic" />任务<span className="cnt">{tasks.length}</span>
               </div>
               <div className={`nav-item${nav === "knowledge" ? " on" : ""}`} onClick={() => go(href.knowledge())} data-testid="nav-knowledge">
-                <BookOutlined className="ic" />知识库{(libraries ?? libraryCount) !== null && <span className="cnt">{libraries ?? libraryCount} 个库</span>}
+                <BookOutlined className="ic" />知识库{(libraries ?? libraryCount) !== null && <span className="cnt">{libraries ?? libraryCount} 个知识库</span>}
               </div>
             </div>
           )}

@@ -58,7 +58,7 @@ export function Conversation({
   /** 输入框的内容由页面持有时传进来（「让助手改这一条」要预填它）；不传就由这里自己持有。 */
   draft?: string;
   onDraft?: (text: string) => void;
-  onLocate?: (excerpt: string) => void;
+  onLocate?: (excerpt: string, locator?: string) => void;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   /** 有未保存的条目编辑：发送与卡片按钮灰化。 */
   hold?: boolean;
@@ -217,7 +217,7 @@ function MessageView({ message, task, handlers, disabled, hold, working, answere
   answered: string | null;
   onUndo: (revisionNo: number) => void;
   onOpenItem: (itemId: string) => void;
-  onLocate?: (excerpt: string) => void;
+  onLocate?: (excerpt: string, locator?: string) => void;
   revisionOf: (note: UiActionNoted) => number | null;
 }) {
   switch (message.type) {

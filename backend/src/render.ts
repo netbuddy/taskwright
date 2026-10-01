@@ -27,6 +27,7 @@ import { ApiError } from "./errors.ts";
 import { readTextFile } from "./files.ts";
 import { type Library, actorWord } from "./library.ts";
 import { or, truthy } from "./py.ts";
+import { parseKnowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
 
 const EACH = /\{\{#每个 (.+?)\}\}\n?(.*?)\{\{\/每个\}\}\n?/gs;
 const GROUP = /\{\{#按 (\S+) 归组 (.+?)\}\}\n?(.*?)\{\{\/按\}\}\n?/gs;
@@ -85,6 +86,7 @@ export function confirmState(lib: Library, itemId: string, revisionNo: number): 
   return `用户最后看过修订 ${Math.max(...seen)}，之后${by === "executor" ? "由助手" : ""}改为修订 ${revisionNo}`;
 }
 
+const DOCUMENT = "文档原文";
 const USER_WORDS = "用户的话";
 const USER_EDIT = "用户直接修改";
 /** 种类为「领域说明」的来源，出处是那条领域说明的条目编号，文档里写成「领域说明 DN-002（「摘录」）」。 */
@@ -98,7 +100,16 @@ const KIND_WORDS: Record<string, string> = { [EXECUTOR_SUPPLEMENT]: "助手补�
 /** 条目没有来源时，文档里来源一项的写法。 */
 export const NO_SOURCES_TEXT = "（无）";
 
-export function sourcesText(lib: Library, itemId: string, revisionNo: number, wordsLocator: Locate | null = null): string {
+/** 出自知识库文档的来源在文档里的种类写法（库里的种类仍是「文档原文」，与页面上的标签同一个叫法）。 */
+const KNOWLEDGE_WORD = "知识库";
+/** 知识库编号 → 名字；那个知识库已经不在（或服务没有知识库）时返回 null。 */
+type LibraryName = (id: string) => string | null;
+
+/**
+ * 条目的来源写成一句话。出自知识库文档的来源（出处是 knowledge/知识库编号/文档名）种类写「知识库」，出处写成
+ * 「知识库名 / 文档名」，Word 文档再写第几段；知识库已经不在时写它的编号。
+ */
+export function sourcesText(lib: Library, itemId: string, revisionNo: number, wordsLocator: Locate | null = null, libraryName: LibraryName | null = null): string {
   const parts = [];
   for (const s of lib.sourcesOf(itemId, revisionNo)) {
     // 早期版本写下的「用户直接修改」不写进文档；读库时已经滤掉（lib/task_read.ts），这里再挡一次。
@@ -114,6 +125,12 @@ export function sourcesText(lib: Library, itemId: string, revisionNo: number, wo
       const readable = wordsLocator && truthy(s.locator) ? wordsLocator(s.locator) : null;
       where = `，出处 ${readable || "对话里用户说的话"}`;
     } else {
+      const inKnowledge = s.kind === DOCUMENT ? parseKnowledgeLocator(String(or(s.locator, ""))) : null;
+      if (inKnowledge) {
+        const paragraph = inKnowledge.paragraph !== null ? ` 第 ${inKnowledge.paragraph} 段` : "";
+        parts.push(`${KNOWLEDGE_WORD}，出处 ${libraryName?.(inKnowledge.library) ?? inKnowledge.library} / ${inKnowledge.name}${paragraph}${quoted}`);
+        continue;
+      }
       // Word 材料的出处在库里带段落号（inputs/x.docx#p37），段落号对读者没有用，文档里只写文件名。
       const locator = String(or(s.locator, "")).replace(/(\.docx)#p\d+$/i, "$1");
       where = locator && s.kind !== EXECUTOR_SUPPLEMENT ? `，出处 ${locator}` : "";
@@ -162,7 +179,8 @@ export function documentRequest(body: Dict): [number | null, string[] | null] {
 
 type Chosen = [string, number, Dict][];
 
-export function render(taskDir: string, lib: Library, revisionNo: number | null = null, items: string[] | null = null, wordsLocator: Locate | null = null): string {
+export function render(taskDir: string, lib: Library, revisionNo: number | null = null, items: string[] | null = null, wordsLocator: Locate | null = null,
+  libraryName: LibraryName | null = null): string {
   const templateRel = String(or(lib.definition["文档模板"], "docs/templates/srs.md"));
   const templatePath = join(taskDir, templateRel);
   let isFile = false;
@@ -207,7 +225,7 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
       // 「内容版本号」是旧模板里的写法，按修订号填（任务目录里拷去的旧模板照样能用）。
       const special: Record<string, string> = {
         编号: itemId, 修订号: String(no), 内容版本号: String(no), 评审状态: reviewState(lib, itemId, no),
-        确认状态: confirmState(lib, itemId, no), 来源: sourcesText(lib, itemId, no, wordsLocator),
+        确认状态: confirmState(lib, itemId, no), 来源: sourcesText(lib, itemId, no, wordsLocator, libraryName),
       };
       return body.replace(FIELD, (_m, raw: string) => {
         const key = raw.trim();

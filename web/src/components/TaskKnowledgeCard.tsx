@@ -1,5 +1,5 @@
-// 任务页「选用的知识库」一栏：列出这个任务选用的库（通用库注明每个任务都会用到，不能去掉），每个库可以查看、不再选用；
-// 「选用别的库」弹出勾选框列表，确定之后整体改选用。任务已结束时只列出，不能改。
+// 任务页「选用的知识库」一栏：列出这个任务选用的库（通用知识库注明每个任务都会用到，不能去掉），每个库可以查看、不再选用；
+// 「选用别的知识库」弹出勾选框列表，确定之后整体改选用。任务已结束时只列出，不能改。
 
 import { useState } from "react";
 import { Button, Checkbox, Popover } from "antd";
@@ -28,7 +28,7 @@ export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
 
   const picker = (
     <div className="kbpick" data-testid="kb-picker">
-      <div className="ph">勾上的库这个任务会用到。改完之后，下一次会话开始时助手按新的选择查找。</div>
+      <div className="ph">勾上的知识库这个任务会用到。改完之后，下一次会话开始时助手按新的选择查找。</div>
       {libs.map((l) => (
         <div key={l.id} className="kbpick-row">
           <Checkbox checked={l.id === GENERAL || draft.includes(l.id)} disabled={l.id === GENERAL}
@@ -57,11 +57,11 @@ export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
       {!readOnly && (
         <div style={{ marginTop: "0.6rem" }}>
           <Popover content={picker} trigger="click" open={open} onOpenChange={openPicker} placement="bottomLeft">
-            <Button size="small" data-testid="kb-pick">选用别的库</Button>
+            <Button size="small" data-testid="kb-pick">选用别的知识库</Button>
           </Popover>
         </div>
       )}
-      <div className="kbnote">助手只在这几个库里查找。去掉一个库之后，已经写进条目的来源不会消失，但会标明它所在的库已经不再选用。</div>
+      <div className="kbnote">助手只在这几个知识库里查找。去掉一个知识库之后，已经写进条目的来源不会消失。</div>
     </div>
   );
 }

@@ -367,6 +367,24 @@ test("相关的判定：摘录在同一个自然段、Word 材料同一个段落
   assert.deepEqual(splitOthers(problem, live, MATERIALS).related.map((o) => o.item_id), ["UC-003"]);
 });
 
+test("相关的判定：出自知识库文档的来源同样参与——文本文档看摘录是不是在同一个自然段，Word 文档看是不是同一个段落号；没有知识库时文本文档不参与", () => {
+  const TERMS = "原路退回：把钱退到买家付款时用的那个账户。\n原路退回不收手续费。\n\n部分退款：只退订单金额的一部分。\n";
+  const kb = (excerpt: string, locator = "knowledge/general/术语.md") => doc(excerpt, locator);
+  const withKnowledge: Materials = { ...MATERIALS, knowledgeText: (locator) => (locator === "knowledge/general/术语.md" ? TERMS : null) };
+  const target = taskItem("UC-001", "用例", [kb("原路退回：把钱退到买家付款时用的那个账户。"), kb("x", "knowledge/lib-a1/规范.docx#p3")]);
+  const live = [
+    target,
+    taskItem("UC-002", "用例", [kb("原路退回不收手续费。")]),                       // 同一份知识库文档的同一个自然段
+    taskItem("UC-003", "用例", [kb("部分退款：只退订单金额的一部分。")]),             // 同一份文档、别的自然段：不相关
+    taskItem("UC-004", "用例", [kb("y", "knowledge/lib-a1/规范.docx#p3")]),          // Word 文档同一个段落号
+    taskItem("UC-005", "用例", [kb("y", "knowledge/lib-b2/规范.docx#p3")]),          // 别的知识库里同名的文档：不相关
+    taskItem("UC-006", "用例", [kb("原路退回不收手续费。", "knowledge/lib-b2/术语.md")]), // 读不到的文档：不相关
+    taskItem("UC-007", "用例", [doc("原路退回不收手续费。", "inputs/术语.md")]),        // 材料里同名的文件不是同一处：不相关
+  ];
+  assert.deepEqual(splitOthers(target, live, withKnowledge).related.map((o) => o.item_id), ["UC-002", "UC-004"]);
+  assert.deepEqual(splitOthers(target, live, MATERIALS).related.map((o) => o.item_id), ["UC-004"], "没有知识库时只剩 Word 文档按出处比");
+});
+
 test("其余条目的简述：字段合起来不超过 120 个字符时用「；」连起来写全，超过时只写第一个字段；没有相关的条目、没有其余条目时各写一句", () => {
   const short = taskItem("UC-002", "用例", [], { 名称: "注销", 步骤: ["用户点注销", "系统退出"] });
   const long = taskItem("UC-003", "用例", [], { 名称: "退款", 步骤: ["说".repeat(OTHER_ITEM_BRIEF_LIMIT)] });
