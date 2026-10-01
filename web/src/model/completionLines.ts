@@ -79,8 +79,8 @@ function lineOf(c: CompletionCondition, task: Task): LinePart[] {
 /** 暂时不用核对的条件合成的那一行：只写是哪几个集合还没有条目，集合按接口给的先后、不重复。 */
 export function emptyLineText(collections: string[]): string {
   return collections.length === 1
-    ? `${collections[0]}现在还没有条目，暂时不用核对。`
-    : `${collections.join("、")}现在还没有条目，这几项暂时不用核对。`;
+    ? `${collections[0]}现在还没有条目，它的完成条件暂时不用核对。`
+    : `${collections.join("、")}现在还没有条目，它们的完成条件暂时不用核对。`;
 }
 
 /**
