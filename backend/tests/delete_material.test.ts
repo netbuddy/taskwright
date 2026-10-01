@@ -2,7 +2,7 @@
  * 删除材料：本体连同 Word 材料的派生文件一起删、发 material_removed；助手正在工作时拒绝；路径不在材料目录里、
  * 或者是派生文件的路径时拒绝；任务已结束时拒绝。
  * 已经进入对话的材料拒绝删除：材料上传之后（文件的修改时刻）任务里任何一条会话有过活动，就算进入了对话；按毫秒比，相等算进入。
- * 任务详情里每份材料带 deletable（同一个判据）。
+ * 任务详情里每份材料带 deletable（同一个判据），每条会话带 revision_count（这条会话产生了几次修订）。
  * 会话文件在这里直接写出来（一行会话头，之后每行一条消息），不起助手。
  */
 
@@ -206,4 +206,20 @@ test("经接口删除一份已经进入对话的材料：返回 422 与 rejected
   const body = JSON.parse(reply.body.toString());
   assert.deepEqual([reply.status, body.ok, body.error.code, body.error.message], [422, false, "rejected", "这份材料已经进入了对话，不能删除。"]);
   assert.deepEqual(files(t), ["需求.md"]);
+}));
+
+test("会话清单每条带 revision_count：按修订表里的会话编号计数，没有修订的会话是 0；任务详情与会话清单接口给的相同", () => withTask(async (service, t) => {
+  writeSession(t, "S1", at("2026-09-30T09:00:00.000Z"), [at("2026-09-30T09:01:00.000Z")]);
+  writeSession(t, "S2", at("2026-09-30T09:30:00.000Z"));
+  const insert = "INSERT INTO revision (task_id, revision_no, session_id, call_id, event_seq, created_at, summary, intent_act_id) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)";
+  sqlRun(t.dir, [
+    [insert, t.taskId, 1, "S1", "call-1", 1, "2026-09-30T09:01:10", "[]"],
+    [insert, t.taskId, 2, "S1", "call-2", 1, "2026-09-30T09:01:20", "[]"],
+  ]);
+  const counts = (rows: any[]) => Object.fromEntries(rows.map((row) => [row.session_id, row.revision_count]));
+  assert.deepEqual(counts(service.taskPage(t).sessions), { S1: 2, S2: 0 });
+  const reply = (await dispatch(service, { method: "GET", path: `/api/v1/tasks/${t.taskId}/sessions`, query: {}, headers: {}, body: Buffer.alloc(0) })) as any;
+  assert.deepEqual(counts(JSON.parse(reply.body.toString()).sessions), { S1: 2, S2: 0 });
+  assert.deepEqual(Object.keys(service.taskPage(t).sessions[0]).sort(),
+    ["active", "last_active_at", "message_count", "name", "revision_count", "session_id", "started_at"]);
 }));

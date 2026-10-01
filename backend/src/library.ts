@@ -233,6 +233,26 @@ export function completion(taskDir: string, taskId: string, definition: ParsedDe
   };
 }
 
+/**
+ * 每条会话产生了几次修订：修订表按会话编号计数，返回「会话编号 → 次数」。库另开一个只读连接；还没有库、或者读不出来时为空表。
+ */
+export function revisionCountsBySession(taskDir: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  try {
+    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+    try {
+      for (const row of db.prepare("SELECT session_id, COUNT(*) AS n FROM revision GROUP BY session_id").all() as Row[]) {
+        counts.set(String(row.session_id), Number(row.n));
+      }
+    } finally {
+      db.close();
+    }
+  } catch {
+    counts.clear();
+  }
+  return counts;
+}
+
 // ───────────────────────── 读库（都在显式开好的读事务里） ─────────────────────────
 
 /** 在一个读事务里取一次库的全部所需，取完就提交；之后的拼装只用内存里的这些行。 */

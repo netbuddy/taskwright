@@ -364,7 +364,7 @@ export class Service {
   taskPage(t: Task) {
     const [, view] = library.taskSnapshot(t.dir);
     if (view === null) throw new ApiError("no_task", "这个任务目录里没有任务记录。");
-    const sessions = t.executor.listSessions();
+    const sessions = this.sessionRows(t);
     // deletable：现在调删除接口会不会被这份材料本身的情况挡住（任务已结束、派生文件、已经进入对话）；助手正在工作是一时的，不算在内。
     const lastActivity = t.executor.sessions.lastActivityMs(false);
     const open = view.status === "进行中";
@@ -372,6 +372,12 @@ export class Service {
       ...m, deletable: open && m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
     }));
     return { ...view, materials, sessions, knowledge_libraries: selectedLibraries(t.dir) };
+  }
+
+  /** 会话清单，每条另带 revision_count：这条会话产生了几次修订（修订表按会话编号计数，没有时为 0）。 */
+  sessionRows(t: Task) {
+    const counts = library.revisionCountsBySession(t.dir);
+    return t.executor.listSessions().map((row) => ({ ...row, revision_count: counts.get(row.session_id) ?? 0 }));
   }
 
   /**
