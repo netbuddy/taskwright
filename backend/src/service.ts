@@ -55,6 +55,8 @@ function nameKey(name: string): string {
 const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 /** 上传的文件超过上限时给用户看的那句话。服务信息接口把上限与这句话一起给前端，前端在发送之前就能拦下。 */
 export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
+/** 删除一份已经进入对话的材料时的拒绝说明。 */
+export const ENTERED_CONVERSATION_TEXT = "这份材料已经进入了对话，不能删除。";
 export const UPLOAD_TYPES = [".md", ".txt", ".docx"];
 /** 扩展名给人看的叫法：表里有的写叫法，没有的直接写扩展名本身。前端不另存一份，叫法经服务信息的 upload.types_text 给出。 */
 const UPLOAD_TYPE_NAMES: Record<string, string> = { ".docx": "Word 的 .docx" };
@@ -362,9 +364,34 @@ export class Service {
   taskPage(t: Task) {
     const [, view] = library.taskSnapshot(t.dir);
     if (view === null) throw new ApiError("no_task", "这个任务目录里没有任务记录。");
-    return {
-      ...view, materials: library.materials(t.dir, t.definition()), sessions: t.executor.listSessions(), knowledge_libraries: selectedLibraries(t.dir),
-    };
+    const sessions = this.sessionRows(t);
+    // deletable：现在调删除接口会不会被这份材料本身的情况挡住（任务已结束、派生文件、已经进入对话）；助手正在工作是一时的，不算在内。
+    const lastActivity = t.executor.sessions.lastActivityMs(false);
+    const open = view.status === "进行中";
+    const materials = library.materials(t.dir, t.definition()).map((m) => ({
+      ...m, deletable: open && m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
+    }));
+    return { ...view, materials, sessions, knowledge_libraries: selectedLibraries(t.dir) };
+  }
+
+  /** 会话清单，每条另带 revision_count：这条会话产生了几次修订（修订表按会话编号计数，没有时为 0）。 */
+  sessionRows(t: Task) {
+    const counts = library.revisionCountsBySession(t.dir);
+    return t.executor.listSessions().map((row) => ({ ...row, revision_count: counts.get(row.session_id) ?? 0 }));
+  }
+
+  /**
+   * 一份材料有没有进入对话：它上传之后，任务里任何一条会话有过活动。上传时刻取文件的修改时刻（上传时排他创建，之后后端不再改写它），
+   * 与全部会话里最晚的一次活动按毫秒比，相等算进入了。进入对话的材料不许删除：助手可能已经读过、引用过它。
+   * lastActivityMs 为 null（还没有任何会话活动）时一律没有进入。
+   */
+  private enteredConversation(file: string, lastActivityMs: number | null): boolean {
+    if (lastActivityMs === null) return false;
+    try {
+      return lastActivityMs >= Math.floor(statSync(file).mtimeMs);
+    } catch {
+      return false; // 文件已经不在了，谈不上进入
+    }
   }
 
   /** 整份数据：带 session 时先打开那条会话（pi 不在就按需启动或续接），再读库与对话记录。 */
@@ -529,7 +556,7 @@ export class Service {
 
   /**
    * 删除一份材料：本体连同 Word 材料的投影、分段清单、位置表与图片目录一起删。只接受用户放进来的材料（派生文件的路径不接受），
-   * 路径必须落在材料目录里；助手正在工作时不删。条目上引用它的来源照旧存着，页面按「出处文件不在材料清单里」写明已经删除。
+   * 路径必须落在材料目录里；已经进入对话的材料不删（见 enteredConversation），所以被条目引用过的材料删不掉；助手正在工作时不删。
    */
   deleteMaterial(t: Task, rel: unknown, session: string | null = null) {
     t.requireOpen();
@@ -538,6 +565,9 @@ export class Service {
     const row = library.materials(t.dir, t.definition()).find((m) => m.path === path);
     if (row && row.derived_from !== null) throw new ApiError("bad_request", "这是由 Word 材料生成的文件，不能单独删除。");
     if (!row || !isFile(target)) throw new ApiError("not_found", `没有材料 ${path}。`);
+    if (this.enteredConversation(target, t.executor.sessions.lastActivityMs())) {
+      throw new ApiError("rejected", ENTERED_CONVERSATION_TEXT, { path, reasons: [ENTERED_CONVERSATION_TEXT] });
+    }
     if (t.executor.state === "working") {
       throw new ApiError("session_busy", "助手正在工作，结束后才能删除材料。", { active_session: t.executor.activeSession, reason: "working" });
     }

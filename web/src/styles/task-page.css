@@ -1,0 +1,152 @@
+/* 任务页（pages/TaskPage.tsx 与 components/task/）。类名一律以 tp- 开头，不与别的页面相混；尺寸写 rem，颜色只引用 styles.css 的变量。
+ * 颜色各管一件事：集合色只用于集合卡（标识集合，不表示状态）；绿只表示「满足、进行中」；琥珀只表示「还差、待处理」；
+ * 蓝只表示「可点、会话」。主按钮照全站是黑色。 */
+
+/* 主体内容整体最宽 1440px 居中，六块共用同一左右边线 */
+.tp-page { max-width: 1440px; margin: 0 auto; }
+.tp-page a { text-decoration: none; }
+
+/* 文字链接：蓝色，悬停下划线；次一级的操作（不再选用、删除）平时是灰字，悬停才变蓝 */
+.tp-lnk { color: var(--blue); cursor: pointer; white-space: nowrap; }
+.tp-lnk:hover { color: var(--blue); text-decoration: underline; text-underline-offset: 0.2em; }
+.tp-lnk.quiet { color: var(--mut); }
+.tp-lnk.quiet:hover { color: var(--blue); }
+
+/* 1 面包屑 */
+.tp-crumb { font-size: 0.929rem; color: var(--mut); margin-bottom: 0.857rem; }
+.tp-crumb a { color: inherit; }
+.tp-crumb a:hover { color: var(--ink); }
+.tp-crumb .sep { margin: 0 0.35rem; }
+
+/* 2 任务头 */
+.tp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.143rem; flex-wrap: wrap; }
+.tp-head-l { min-width: 0; }
+.tp-head-title { display: flex; align-items: baseline; gap: 0.714rem; flex-wrap: wrap; }
+.tp-head h1 { font-size: 1.857rem; font-weight: 600; line-height: 1.3; margin: 0; letter-spacing: 0.01em; overflow-wrap: anywhere; }
+/* 状态：进行中是绿底绿字，已完成、已放弃是灰底 */
+.tp-status { font-size: 0.857rem; font-weight: 600; color: var(--text2); background: var(--dark3); border-radius: 0.429rem; padding: 0.071rem 0.5rem; position: relative; top: -0.2rem; white-space: nowrap; }
+.tp-status.on { color: var(--ok); background: var(--ok-bg); }
+.tp-ttype { font-size: 0.972rem; color: var(--text2); }
+.tp-head-meta { margin-top: 0.357rem; font-size: 0.929rem; color: var(--mut); }
+.tp-head-r { display: flex; gap: 0.571rem; padding-top: 0.286rem; }
+
+/* 区块标题前的图标：灰色，不抢眼 */
+.tp-hic { color: var(--mut); margin-right: 0.5rem; font-size: 1.143rem; }
+
+/* 3 完成条件横条 */
+.tp-progress { margin-top: 1.429rem; background: var(--stage); border: 1px solid var(--line); border-radius: 0.714rem;
+  display: grid; grid-template-columns: minmax(10rem, auto) 1px minmax(0, 1fr); align-items: center; }
+.tp-score { padding: 1rem 1.714rem 1rem 1.286rem; white-space: nowrap; display: flex; align-items: baseline; }
+.tp-score .tp-hic { align-self: center; }
+.tp-score .lbl { font-size: 1.143rem; font-weight: 600; margin-right: 0.429rem; }
+.tp-score .num { font-size: 2.286rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.tp-vr { align-self: stretch; background: var(--line); }
+.tp-conds { list-style: none; margin: 0; padding: 0.857rem 1.286rem; }
+.tp-conds li { display: flex; align-items: baseline; gap: 0.643rem; padding: 0.179rem 0; font-size: 0.972rem; color: var(--text2); }
+.tp-conds .mk { width: 1rem; flex: none; text-align: center; }
+.tp-conds .met .mk { color: var(--ok); }
+.tp-conds .unmet { color: var(--ink); }
+.tp-conds .unmet .mk { color: var(--amber); }
+/* 提示行（完成条件之外、不挡完成任务）的记号用灰色：琥珀只留给还差的条件 */
+.tp-conds .hint .mk { color: var(--mut); }
+/* 还差的记号是一个空心圈 */
+.tp-conds .ring { display: inline-block; width: 0.714rem; height: 0.714rem; border: 0.129rem solid currentColor; border-radius: 50%; vertical-align: -0.05rem; }
+.tp-conds .empty, .tp-conds .empty .mk { color: var(--mut); }
+.tp-progress.done { grid-template-columns: minmax(0, 1fr); }
+.tp-all { padding: 1rem 1.286rem; font-size: 1.071rem; display: flex; align-items: center; gap: 0.643rem; }
+.tp-all .mk { color: var(--ok); display: inline-flex; font-size: 1.143rem; }
+.tp-progress.done .tp-conds { padding-top: 0; }
+
+/* 区块标题（第二级） */
+.tp-sec { margin-top: 2.286rem; }
+.tp-sec-h { display: flex; align-items: baseline; gap: 0.571rem; margin-bottom: 0.786rem; }
+.tp-sec-h h2 { font-size: 1.143rem; font-weight: 600; margin: 0; }
+.tp-sec-h .cnt { color: var(--mut); font-size: 0.972rem; font-variant-numeric: tabular-nums; }
+.tp-sec-h .aside { margin-left: auto; color: var(--mut); font-size: 0.929rem; }
+
+/* 4 交付物：集合卡最多一行五张，每个集合一种色相 */
+.tp-colls { display: grid; gap: 0.857rem;
+  grid-template-columns: repeat(auto-fill, minmax(max(10rem, calc((100% - 4 * 0.857rem) / 5)), 1fr)); }
+/* 五种集合色：蓝、青绿、靛蓝、琥珀、石板灰。哪个集合用哪一种由 CollectionCards.tsx 按集合名定 */
+.tp-coll.c1 { --c: var(--blue); } .tp-coll.c2 { --c: var(--teal); } .tp-coll.c3 { --c: var(--ai); } .tp-coll.c4 { --c: var(--amber); } .tp-coll.c5 { --c: var(--note); }
+.tp-coll { position: relative; overflow: hidden; display: flex; flex-direction: column; color: var(--ink);
+  background: color-mix(in srgb, var(--c) 4%, var(--card)); border: 1px solid var(--line); border-radius: 0.714rem;
+  padding: 1.071rem 1rem 0.857rem; cursor: pointer; transition: border-color .12s; }
+/* 顶部一条同色细线 */
+.tp-coll::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--c); }
+.tp-coll:hover { border-color: var(--c); color: var(--ink); }
+.tp-coll-h { display: flex; align-items: baseline; gap: 0.429rem; min-width: 0; }
+.tp-coll-h .cic { font-size: 1.286rem; color: var(--c); align-self: center; display: inline-flex; }
+.tp-coll-name { font-size: 0.929rem; font-weight: 600; color: var(--c); white-space: nowrap; }
+.tp-coll-pre { font-family: ui-monospace, Menlo, monospace; font-size: 0.857rem; color: var(--mut); }
+.tp-coll-n { font-size: 2.571rem; font-weight: 600; line-height: 1.15; margin: 0.571rem 0 0.429rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+.tp-coll-s { font-size: 0.857rem; color: var(--mut); }
+.tp-coll-s b { color: var(--text2); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 没有条目的集合：颜色降到灰阶，图标轮廓保留 */
+.tp-coll.empty { --c: var(--mut); background: var(--stage); }
+.tp-coll.empty::before { background: var(--line2); }
+.tp-coll.empty .tp-coll-name { font-weight: 400; }
+.tp-coll.empty .tp-coll-n { color: var(--line2); }
+.tp-coll.empty:hover { border-color: var(--line2); }
+/* 任务还没有会话时卡片不可点 */
+.tp-coll.static { cursor: default; }
+.tp-coll.static:hover { border-color: var(--line); }
+
+/* 5 会话 */
+.tp-sessions { background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; }
+.tp-srow { display: flex; align-items: center; gap: 0.857rem; padding: 0.857rem 1.143rem; cursor: pointer; }
+.tp-srow + .tp-srow { border-top: 1px solid var(--line); }
+.tp-srow:hover { background: var(--stage); }
+.tp-srow:first-child { border-radius: 0.714rem 0.714rem 0 0; }
+.tp-srow:last-child { border-radius: 0 0 0.714rem 0.714rem; }
+.tp-srow:only-child { border-radius: 0.714rem; }
+.tp-srow .sic { color: var(--blue); font-size: 1.071rem; }
+.tp-srow .sbody { flex: 1; min-width: 0; }
+.tp-srow .sfirst { font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-srow .smeta { font-size: 0.857rem; color: var(--mut); margin-top: 0.071rem; }
+.tp-srow .smeta .dot { margin: 0 0.357rem; }
+.tp-srow .tp-lnk { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.929rem; }
+/* 助手正接着的那条会话：行前一个绿色小圆点 */
+.tp-live { color: var(--ok); margin-right: 0.429rem; font-size: 0.643rem; vertical-align: 0.143rem; }
+.tp-sempty { padding: 1.143rem; color: var(--mut); font-size: 0.972rem; }
+
+/* 6 材料与知识库：两张同高的卡并排；没有知识库时材料卡独占一行 */
+.tp-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.143rem; align-items: stretch; margin-top: 2.286rem; }
+.tp-pair.single { grid-template-columns: minmax(0, 1fr); }
+.tp-pane { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; padding: 1rem 1.143rem 1.143rem; min-width: 0; }
+.tp-pane .tp-sec-h { margin-bottom: 0.571rem; }
+.tp-none { color: var(--mut); font-size: 0.929rem; padding: 0.286rem 0 0.571rem; }
+.tp-mtable { width: 100%; border-collapse: collapse; font-size: 0.929rem; }
+.tp-mtable th { text-align: left; font-weight: 400; color: var(--mut); font-size: 0.857rem; padding: 0.286rem 0.5rem 0.357rem 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tp-mtable td { padding: 0.571rem 0.5rem 0.571rem 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tp-mtable td.nm { white-space: normal; word-break: break-all; width: 100%; }
+.tp-mtable td.num { color: var(--text2); font-variant-numeric: tabular-nums; }
+.tp-mtable th:last-child, .tp-mtable td:last-child { text-align: right; padding-right: 0; }
+.tp-mtable td .tp-lnk + .tp-lnk { margin-left: 0.857rem; }
+/* 文件图标按类型分形状，颜色一律灰 */
+.tp-mtable .fic { color: var(--mut); margin-right: 0.429rem; font-size: 1.143rem; vertical-align: -0.2rem; }
+/* 上传区：虚线框，贴在卡片底部 */
+.tp-drop { margin-top: auto; padding-top: 0.857rem; }
+.tp-drop .ant-upload-wrapper .ant-upload-drag { border: 1px dashed var(--line2); border-radius: 0.571rem; background: var(--stage); }
+.tp-drop .ant-upload-wrapper .ant-upload-drag:hover { border-color: var(--ink); }
+.tp-drop .ant-upload-wrapper .ant-upload-drag .ant-upload-btn { padding: 1rem 1.143rem; }
+.tp-drop .ant-upload-drag-container { color: var(--mut); font-size: 0.893rem; line-height: 1.7; }
+.tp-drop .up { display: block; font-size: 1.286rem; color: var(--mut); margin: 0 auto 0.214rem; }
+.tp-kbrow { display: flex; align-items: baseline; gap: 0.714rem; padding: 0.643rem 0; border-bottom: 1px solid var(--line); }
+.tp-kbrow .nm { font-weight: 600; font-size: 0.972rem; white-space: nowrap; }
+/* 知识库行前的书本图标：通用知识库灰色，其它知识库靛蓝 */
+.tp-kbrow .kic { color: var(--ai); margin-right: 0.429rem; font-size: 1.143rem; vertical-align: -0.2rem; }
+.tp-kbrow.general .kic { color: var(--mut); }
+.tp-kbrow .dc { color: var(--text2); font-size: 0.893rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tp-kbrow .ds { color: var(--mut); font-size: 0.857rem; flex: 1; min-width: 0; }
+.tp-kbrow .acts { display: flex; gap: 0.857rem; font-size: 0.893rem; }
+.tp-kbfoot { margin-top: auto; padding-top: 0.857rem; display: flex; align-items: center; gap: 0.857rem; flex-wrap: wrap; }
+.tp-kbfoot .note { color: var(--mut); font-size: 0.893rem; }
+
+/* 窄于 1000px：材料与知识库上下排，完成条件的分数移到清单上面 */
+@media (max-width: 1000px) {
+  .tp-pair { grid-template-columns: minmax(0, 1fr); }
+  .tp-progress { grid-template-columns: minmax(0, 1fr); }
+  .tp-vr { display: none; }
+  .tp-score { padding-bottom: 0; }
+}

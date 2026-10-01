@@ -36,11 +36,13 @@ export type ReviewAction = (targets: { item_id: string; base_revision: number }[
 export { BUSY_TEXT };
 
 export function ItemsPanel({
-  task, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
+  task, initialCollection = null, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
   onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, unreadRequest = 0, review = null, onReview, onPrefill,
   submitBar = false,
 }: {
   task: Task;
+  /** 一打开停在哪个集合的页签（任务页的集合卡带过来的）；不给、或者没有这个集合时是第一个集合。 */
+  initialCollection?: string | null;
   /** 任务已结束或助手不可用：一切写入都不能做。 */
   readOnly: boolean;
   /** 执行者正在工作：写入按钮灰化，预填输入框的两个按钮照常可用。 */
@@ -82,7 +84,9 @@ export function ItemsPanel({
 }) {
   const collections = task.definition.collections;
   const selectedItem = task.items.find((i) => i.item_id === selected);
-  const [tab, setTab] = useState<string>(selectedItem?.collection ?? collections[0]?.name ?? "");
+  // 页签的初值：选中的条目所在的集合；没有选中条目时用地址里带的集合（要是这个任务确有的集合），再不然是第一个集合。
+  const [tab, setTab] = useState<string>(selectedItem?.collection
+    ?? (collections.some((c) => c.name === initialCollection) ? initialCollection! : collections[0]?.name ?? ""));
   const [filter, setFilter] = useState<ItemFilter>("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [showProgress, setShowProgress] = useState(false);

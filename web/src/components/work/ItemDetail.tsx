@@ -39,7 +39,6 @@ import { alignSteps } from "../../model/diff";
 import { docxLocator, pageAndPosition, placeText } from "../../model/docx";
 import { chapterOf } from "../../../../agent/src/lib/docx_locations";
 import { TaskIdContext, useDocx } from "../../state/docxStore";
-import { MaterialsContext, hasMaterial } from "../../state/materials";
 import { KnowledgeContext } from "../../state/knowledge";
 import { isKnowledgeLocator, knowledgePlace } from "../../model/knowledge";
 import { BUSY_TEXT, batchNo, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, itemVerdict, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, writeOffReason } from "../../model/items";
@@ -401,11 +400,11 @@ const fileName = (locator: string) => locator.split("/").pop() || locator;
  * 材料显示不出来、没有派生表时写「文件名 · 章节」。
  * tablePos 是表格里的段落的位置（「表 3 第 2 行第 2 列」）。
  */
-function useSourcePlace(source: Source, gone = false): { label: string; tablePos: string } {
+function useSourcePlace(source: Source, inKnowledge = false): { label: string; tablePos: string } {
   const taskId = useContext(TaskIdContext);
   const loc = source.kind === "文档原文" ? docxLocator(source.locator) : null;
-  // 材料已经删除时不去读它（读不到），只写文件名。
-  const entry = useDocx(taskId, gone ? null : loc?.path ?? null);
+  // 出处是知识库里的文档时不按材料去读（它不是材料），只写文件名。
+  const entry = useDocx(taskId, inKnowledge ? null : loc?.path ?? null);
   const name = fileName(loc?.path ?? source.locator);
   if (!loc?.paragraph || !entry || entry.status === "loading") return { label: name, tablePos: "" };
   const chapter = entry.locations ? chapterOf(entry.locations, loc.paragraph) : null;
@@ -503,13 +502,10 @@ function FieldRow({ def, value, before, marked, findings, ruleOf, onFix, fixOff,
 export function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
   source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
 }) {
-  // 出处文件不在材料清单里：那份材料已经删除了，出处不可点，旁边灰字写明。来源本身照旧列出。
-  const materials = useContext(MaterialsContext);
   const libraries = useContext(KnowledgeContext);
   const kb = source.kind === "文档原文" && isKnowledgeLocator(source.locator) ? knowledgePlace(source.locator, libraries) : null;
-  const gone = !kb && source.kind === "文档原文" && materials !== null && !hasMaterial(materials, docxLocator(source.locator)?.path ?? source.locator);
   // 知识库来源不去读材料（它不是材料），出处由知识库清单得出。
-  const place = useSourcePlace(source, gone || !!kb);
+  const place = useSourcePlace(source, !!kb);
   const kinds: Record<string, [string, string]> = {
     文档原文: ["src", "材料原文"], 执行者补充: ["warn", "助手补充"], 用户的话: ["teal", "用户的话"],
     [SOURCE_DOMAIN_NOTE]: ["note", SOURCE_DOMAIN_NOTE],
@@ -520,10 +516,9 @@ export function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
     <div className={`srcbox${source.kind === "执行者补充" ? " added" : ""}`}>
       <div className="sh">
         <span className={`chip ${cls}`}>{name}</span>
-        {source.kind === "文档原文" && !kb && !gone && (
+        {source.kind === "文档原文" && !kb && (
           <span className="evi" role="button" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{place.label}{place.tablePos ? `，${place.tablePos}` : ""}（点一下看原文）</span>
         )}
-        {gone && <><span className="evi off">出处：{place.label}</span><span className="gone" data-testid="material-gone">这份材料已经删除</span></>}
         {kb && !kb.gone && (
           <span className="evi" role="button" data-testid="kb-source" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{kb.label}（点一下看原文）</span>
         )}

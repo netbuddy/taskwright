@@ -32,7 +32,6 @@ import { NoModelBanner, UserMenu, useService } from "../components/ServiceContro
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
 import { tooLargeText, unsupportedTypeText } from "../model/upload";
 import { executorHint } from "../components/work/executorHint";
-import { MaterialsContext } from "../state/materials";
 import { KnowledgeContext } from "../state/knowledge";
 import { KnowledgeDocModal, type KnowledgeDocRequest } from "../components/work/KnowledgeDocModal";
 import { isKnowledgeLocator } from "../model/knowledge";
@@ -43,7 +42,12 @@ export const PREFILL = {
   answer: (itemId: string, matter: string) => `关于 ${itemId}「${matter}」：`,
 };
 
-export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId: string }) {
+export function WorkViewPage({ taskId, sessionId, collection = null }: {
+  taskId: string;
+  sessionId: string;
+  /** 地址里带的集合名（从任务页的集合卡点进来）：条目区一打开就停在这个集合的页签。 */
+  collection?: string | null;
+}) {
   const { state, log, dispatch, stream, loadError, loadErrorCode } = useWorkView(taskId, sessionId);
   const missing = useMissingSession(taskId, sessionId, !state.task && loadErrorCode === "not_found");
   const [selected, setSelected] = useState<string | null>(null);
@@ -366,16 +370,14 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
           <div className="stage-col">
             <div className="work">
               {task ? (
-                <MaterialsContext.Provider value={state.materials}>
                 <KnowledgeContext.Provider value={libraries}>
-                <ItemsPanel task={task} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
+                <ItemsPanel task={task} initialCollection={collection} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} />
                 </KnowledgeContext.Provider>
-                </MaterialsContext.Provider>
               ) : <div className="pane-items" />}
               <div className="pane-doc">
                 <SidePanel side={side} onSide={setSide} onCollapse={() => toggleDoc(true)} onExpand={() => toggleDoc(false)}

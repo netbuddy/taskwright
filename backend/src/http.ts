@@ -298,7 +298,7 @@ const handlers: Record<string, Handler> = {
   list_task_types: () => json(200, { ok: true, task_types: taskTypes() }),
   create_task: (service, req) => json(200, service.create(bodyJson(req))),
   get_task: (service, req) => json(200, { ok: true, ...service.taskPage(service.task(req.params.task)) }),
-  list_sessions: (service, req) => json(200, { ok: true, sessions: service.task(req.params.task).executor.listSessions() }),
+  list_sessions: (service, req) => json(200, { ok: true, sessions: service.sessionRows(service.task(req.params.task)) }),
   new_session: async (service, req) => {
     const t = service.task(req.params.task);
     return json(200, { ok: true, session_id: await t.executor.newSession() });

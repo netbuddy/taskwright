@@ -13,6 +13,11 @@ export const LABEL = "service";
 export class Sessions {
   readonly dir: string;
   private files = new Map<string, string>();
+  /**
+   * 最近一次 list() 读到的最晚活动（毫秒）。它依赖调用顺序：只在 list() 里更新，所以 lastActivityMs(false) 给的是上一次 list() 那一刻的值，
+   * 只能紧跟在一次 list()（或经它的 executor.listSessions()）之后用；别处要用最新的值就调 lastActivityMs()，它自己先读一遍。
+   */
+  private latest: number | null = null;
 
   constructor(runsDir: string, taskId: string) {
     this.dir = join(runsDir, taskId, "pi-sessions", LABEL);
@@ -27,13 +32,25 @@ export class Sessions {
     } catch {
       names = [];
     }
+    let latest: number | null = null;
     for (const name of names) {
-      const { file, ...info } = sessionInfo(join(this.dir, name));
+      const { file, last_active_ms, ...info } = sessionInfo(join(this.dir, name));
       if (!info.session_id) continue;
       this.files.set(info.session_id, file);
+      if (last_active_ms !== null && (latest === null || last_active_ms > latest)) latest = last_active_ms;
       rows.push({ ...info, active: false });
     }
+    this.latest = latest;
     return rows;
+  }
+
+  /**
+   * 这个任务的全部会话里最晚的一次活动（毫秒）；没有会话文件、或者都没有时刻时为 null。材料有没有进入对话按它判断。
+   * 缺省重读一遍会话目录；刚调用过 list() 的地方传 false，用那一次读到的结果，不再读一遍。
+   */
+  lastActivityMs(fresh = true): number | null {
+    if (fresh) this.list();
+    return this.latest;
   }
 
   /** 记下一条会话的文件（pi 报来的活动会话文件；刚新建的会话文件可能还没写出来）。 */

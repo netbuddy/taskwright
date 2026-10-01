@@ -252,7 +252,10 @@ export function page(allMessages: Record<string, any>[], before: string | null =
   return { messages: chosen, has_earlier: items.length > chosen.length, earliest_id: chosen.length ? chosen[0].message_id : null };
 }
 
-/** 会话列表里的一行：编号、名字（会话文件里最后一条 session_info 的名字）、开始时刻、最近活动、消息条数。 */
+/**
+ * 会话列表里的一行：编号、名字（会话文件里最后一条 session_info 的名字）、开始时刻、最近活动、消息条数。
+ * last_active_ms 是最近活动的毫秒数（接口里的 last_active_at 只到秒），判断材料有没有进入对话时用，不给接口。
+ */
 export function sessionInfo(path: string) {
   const entries = readSessionFile(path);
   const header = entries.find((e) => isObject(e) && e.type === "session") ?? {};
@@ -267,8 +270,10 @@ export function sessionInfo(path: string) {
       if (e.type === "message" && ["user", "assistant"].includes((or(e.message, {}) as any).role)) count += 1;
     }
   }
+  const seconds = clock.parseUtcIso(last);
   return {
     session_id: "id" in header ? header.id : "", name, started_at: clock.fromUtcIso(header.timestamp ?? null),
     last_active_at: clock.fromUtcIso(last), message_count: count, file: path,
+    last_active_ms: seconds === null ? null : Math.round(seconds * 1000),
   };
 }

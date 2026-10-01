@@ -467,34 +467,38 @@ test("问题条目：改状态与处理结果放行；新增不受限；用户�
   assert.match(user.text, /修改了条目 TBD-002/);
 });
 
-// ───────────── 材料删除之后 ─────────────
+// ───────────── 材料文件不在了 ─────────────
+// 进入了对话的材料不能删除，被引用过的材料文件按规则一定还在。万一文件不在了（例如被别的程序移走），材料出处没有
+// 「旧来源原样再交照收」的例外（那个例外只给知识库文档，见 knowledge_sources.test.ts）：再交就与新写的来源一样核对、读不到就拒绝。
 
-/** 建好 UC-001（来源引用 inputs/材料.md），再把这份材料删掉。 */
-function workspaceWithDeletedMaterial(): string {
+/** 建好 UC-001（来源引用 inputs/材料.md），再把这份材料文件拿走。 */
+function workspaceWithMissingMaterial(): string {
   const dir = workspaceWithTask();
   saveRevision(callIn(dir), { operations: [addUseCase()] });
   unlinkSync(join(dir, "inputs/材料.md"));
   return dir;
 }
 
-test("材料删除之后，助手改字段并把原来的来源原样再交一次：保存成功，来源原样留着", () => {
-  const dir = workspaceWithDeletedMaterial();
-  const outcome = saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补一句" }, sources: [SOURCE] }] });
+test("材料文件不在了，助手把原来的来源原样再交一次（改字段时带上，或者只交来源整体重新标注）：与新写的来源一样被拒绝，什么都不写入", () => {
+  const dir = workspaceWithMissingMaterial();
+  const before = snapshot(dir);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补一句" }, sources: [SOURCE] }] }),
+    /不是任务目录里能读到的材料文件/);
+  assert.throws(() => saveRevisionWith(dir, { operations: [{ op: "update", item: "UC-001", base_revision: 1, sources: [SOURCE, { kind: "用户的话", excerpt: "登录要记住我" }] }] },
+    [{ entryId: "u-login", text: "登录要记住我" }]), /不是任务目录里能读到的材料文件/);
+  assert.deepEqual(snapshot(dir), before);
+});
+
+test("材料文件不在了，助手只改字段、不交来源：原来的来源照旧沿用，不核对，保存成功", () => {
+  const dir = workspaceWithMissingMaterial();
+  const outcome = saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补一句" } }] });
   assert.match(outcome.text, /修订 2，/);
   const rows = query<any>(dir, "SELECT locator, excerpt FROM item_source WHERE revision_no = 2").map((r) => ({ ...r }));
   assert.deepEqual(rows, [{ locator: "inputs/材料.md", excerpt: "用户可以登录。" }]);
 });
 
-test("材料删除之后，助手只交来源整体重新标注（含原来那条）：保存成功", () => {
-  const dir = workspaceWithDeletedMaterial();
-  saveRevisionWith(dir, { operations: [{ op: "update", item: "UC-001", base_revision: 1, sources: [SOURCE, { kind: "用户的话", excerpt: "登录要记住我" }] }] },
-    [{ entryId: "u-login", text: "登录要记住我" }]);
-  assert.equal(count(dir, "revision"), 2);
-  assert.deepEqual(query<any>(dir, "SELECT kind FROM item_source WHERE revision_no = 2 ORDER BY kind").map((r) => r.kind), ["文档原文", "用户的话"]);
-});
-
-test("材料删除之后，新写的来源指向不存在的文件仍然拒绝：摘录与原来那条不同也算新写的", () => {
-  const dir = workspaceWithDeletedMaterial();
+test("材料文件不在了，新写的来源指向它照旧拒绝：摘录与原来那条不同的、换了出处的、新增条目时引用的都一样", () => {
+  const dir = workspaceWithMissingMaterial();
   const before = snapshot(dir);
   for (const source of [
     { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以注销。" },
@@ -503,18 +507,18 @@ test("材料删除之后，新写的来源指向不存在的文件仍然拒绝�
     assert.throws(() => saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补" }, sources: [source] }] }),
       /不是任务目录里能读到的材料文件/);
   }
-  assert.throws(() => saveRevision(callIn(dir), { operations: [{ ...addUseCase("注销"), sources: [SOURCE] }] }), /不是任务目录里能读到的材料文件/,
-    "新增条目时引用已经删掉的材料照旧拒绝");
+  assert.throws(() => saveRevision(callIn(dir), { operations: [{ ...addUseCase("注销"), sources: [SOURCE] }] }), /不是任务目录里能读到的材料文件/);
   assert.deepEqual(snapshot(dir), before);
 });
 
-test("Word 材料删除之后，原来带段落号的来源原样再交一次：保存成功", () => {
+test("Word 材料文件不在了，原来带段落号的来源原样再交一次：同样被拒绝", () => {
   const dir = workspaceWithTask();
   putSampleDocx(dir);
   const docx = { kind: "文档原文", locator: `${SAMPLE_DOCX}#p76`, excerpt: "逾期的每本每天罚款一角" };
   saveRevision(callIn(dir), { operations: [{ ...addUseCase(), sources: [docx] }] });
   rmSync(join(dir, SAMPLE_DOCX));
   rmSync(join(dir, `${SAMPLE_DOCX}.md`));
-  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补" }, sources: [docx] }] });
-  assert.deepEqual(query<any>(dir, "SELECT locator FROM item_source WHERE revision_no = 2").map((r) => r.locator), [`${SAMPLE_DOCX}#p76`]);
+  const before = snapshot(dir);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 备注: "补" }, sources: [docx] }] }), /读不到|不是任务目录里能读到的/);
+  assert.deepEqual(snapshot(dir), before);
 });

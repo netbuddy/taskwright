@@ -8,6 +8,16 @@ export function formatTime(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 与 formatTime 相同，只是时刻落在今天时只写「时:分」（任务页上的最近活动、上传时间）。now 只在测试里给。 */
+export function formatTimeShort(iso: string | null | undefined, now: Date = new Date()): string {
+  const full = formatTime(iso);
+  if (!iso) return full;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return full;
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  return sameDay ? full.slice(-5) : full;
+}
+
 export function formatSeconds(s: number | null | undefined): string {
   if (s == null) return "未知时长";
   if (s < 60) return `${Math.round(s)} 秒`;

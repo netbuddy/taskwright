@@ -8,7 +8,6 @@ import type { Item, KnowledgeLibrary, Task } from "../api/types";
 import { ItemsPanel } from "../components/work/ItemsPanel";
 import { KnowledgeDocModal } from "../components/work/KnowledgeDocModal";
 import { KnowledgeContext } from "../state/knowledge";
-import { MaterialsContext } from "../state/materials";
 import { excerptSpan, knowledgePlace } from "../model/knowledge";
 import { ApiError, api } from "../api/client";
 
@@ -41,17 +40,15 @@ function task(sources: unknown[]): Task {
   } as unknown as Task;
 }
 
-/** 打开 UC-001 的条目详情；libraries 是知识库清单（null 表示还没有取到），材料清单是空的。 */
+/** 打开 UC-001 的条目详情；libraries 是知识库清单（null 表示还没有取到）。 */
 function OpenItem({ sources, libraries, onLocate }: { sources: unknown[]; libraries: KnowledgeLibrary[] | null; onLocate?: (excerpt: string, locator: string) => void }) {
   const [selected, setSelected] = useState<string | null>("UC-001");
   return (
     <Wrap><div className="app">
-      <MaterialsContext.Provider value={[]}>
-        <KnowledgeContext.Provider value={libraries}>
-          <ItemsPanel task={task(sources)} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected={selected} onSelect={setSelected}
-            submit={vi.fn(async () => null)} onGenerateDoc={() => {}} onLocate={onLocate} />
-        </KnowledgeContext.Provider>
-      </MaterialsContext.Provider>
+      <KnowledgeContext.Provider value={libraries}>
+        <ItemsPanel task={task(sources)} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected={selected} onSelect={setSelected}
+          submit={vi.fn(async () => null)} onGenerateDoc={() => {}} onLocate={onLocate} />
+      </KnowledgeContext.Provider>
     </div></Wrap>
   );
 }
@@ -59,19 +56,18 @@ function OpenItem({ sources, libraries, onLocate }: { sources: unknown[]; librar
 const boxes = () => [...screen.getByTestId("item-detail").querySelectorAll<HTMLElement>(".srcbox")];
 
 describe("条目详情里出自知识库文档的来源", () => {
-  it("标签写「知识库」并用紫红样式，出处写「知识库名 / 文档名」，Word 文档再写第几段；不当作已经删除的材料", () => {
+  it("标签写「知识库」并用紫红样式，出处写「知识库名 / 文档名」，Word 文档再写第几段；材料来源照旧是蓝色的「材料原文」、出处可点", () => {
     render(<OpenItem sources={[TERM, WORD, src("inputs/说明.md", "买家可以退货。")]} libraries={LIBRARIES} />);
     const [term, word, material] = boxes();
     expect(term.querySelector(".chip")!.className).toBe("chip src kb");
     expect(term.querySelector(".chip")!.textContent).toBe("知识库");
     expect(within(term).getByTestId("kb-source").textContent).toBe("出处：通用知识库 / 术语.md（点一下看原文）");
     expect(within(word).getByTestId("kb-source").textContent).toBe("出处：行业规范 / 规范.docx · 第 12 段（点一下看原文）");
-    expect(term.textContent).not.toMatch(/这份材料已经删除|knowledge\//);
-    expect(within(term).queryByTestId("material-gone")).toBeNull();
-    // 材料来源照旧：蓝色的「材料原文」；这份材料不在清单里，写「这份材料已经删除」
+    expect(term.textContent).not.toMatch(/knowledge\//);
+    // 材料来源照旧：蓝色的「材料原文」，出处可点。
     expect(material.querySelector(".chip")!.className).toBe("chip src");
     expect(material.querySelector(".chip")!.textContent).toBe("材料原文");
-    expect(within(material).getByTestId("material-gone")).toBeTruthy();
+    expect(within(material).getByText("出处：说明.md（点一下看原文）").getAttribute("role")).toBe("button");
   });
 
   it("点出处时把摘录与出处交出去（由工作视图打开那份文档）", () => {

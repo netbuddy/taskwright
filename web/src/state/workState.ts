@@ -535,7 +535,7 @@ function applyProcess(state: WorkState, name: string, data: unknown): WorkState 
       return { ...state, materials, focusMaterial: d.path };
     }
     case "material_removed": {
-      // 删掉的材料连同由它生成的文件（Word 材料的投影等）一起从清单里去掉；引用它的来源由条目详情按清单写明「已经删除」。
+      // 删掉的材料连同由它生成的文件（Word 材料的投影等）一起从清单里去掉。能删掉的只有还没有进入对话的材料，条目的来源不会引用它。
       const d = data as MaterialRemoved;
       const materials = state.materials.filter((m) => m.path !== d.path && m.derived_from !== d.path);
       return { ...state, materials, focusMaterial: state.focusMaterial === d.path ? null : state.focusMaterial };

@@ -6,7 +6,6 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { useState, type ReactNode } from "react";
 import type { Item, Material, Task } from "../api/types";
 import { ItemsPanel } from "../components/work/ItemsPanel";
-import { MaterialsContext } from "../state/materials";
 import { MaterialPane } from "../components/work/MaterialPane";
 import { api } from "../api/client";
 
@@ -76,35 +75,6 @@ describe("条目详情里的来源", () => {
     render(<Panel />);
     fireEvent.click(screen.getByText("出处：借阅说明.md（点一下看原文）"));
     expect(onLocate).toHaveBeenCalledWith("读者可以借书。", "inputs/借阅说明.md");
-  });
-
-  it("出处文件不在材料清单里：出处不可点，旁边灰字写「这份材料已经删除」，摘录照旧；清单里还在的照常可点", () => {
-    const onLocate = vi.fn();
-    const t = sourcesTask([
-      src("文档原文", "inputs/借阅说明.md", "读者可以借书。", "参与者"),
-      src("文档原文", "inputs/旧规定.docx#p3", "逾期罚款一角。"),
-    ]);
-    function Panel() {
-      const [selected, setSelected] = useState<string | null>("UC-001");
-      return (
-        <Wrap><div className="app">
-          <MaterialsContext.Provider value={materials("inputs/借阅说明.md")}>
-            <ItemsPanel task={t} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected={selected} onSelect={setSelected}
-              submit={vi.fn(async () => null)} onGenerateDoc={() => {}} onLocate={onLocate} />
-          </MaterialsContext.Provider>
-        </div></Wrap>
-      );
-    }
-    render(<Panel />);
-    const boxes = [...screen.getByTestId("item-detail").querySelectorAll(".srcbox")] as HTMLElement[];
-    expect(within(boxes[0]).queryByTestId("material-gone")).toBeNull();
-    expect(within(boxes[1]).getByTestId("material-gone").textContent).toBe("这份材料已经删除");
-    expect(within(boxes[1]).getByText("出处：旧规定.docx").getAttribute("role")).toBeNull();
-    expect(within(boxes[1]).getByText("「逾期罚款一角。」")).toBeTruthy();
-    fireEvent.click(within(boxes[1]).getByText("出处：旧规定.docx"));
-    expect(onLocate).not.toHaveBeenCalled();
-    fireEvent.click(within(boxes[0]).getByText("出处：借阅说明.md（点一下看原文）"));
-    expect(onLocate).toHaveBeenCalledTimes(1);
   });
 
   it("出自知识库文档的来源种类仍是「文档原文」，按出处以 knowledge/ 开头认出，用另一种颜色的标签（样式类 kb）；没有「知识库」这个种类", () => {
