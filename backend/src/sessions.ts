@@ -13,7 +13,10 @@ export const LABEL = "service";
 export class Sessions {
   readonly dir: string;
   private files = new Map<string, string>();
-  /** 最近一次 list() 读到的最晚活动（毫秒）。 */
+  /**
+   * 最近一次 list() 读到的最晚活动（毫秒）。它依赖调用顺序：只在 list() 里更新，所以 lastActivityMs(false) 给的是上一次 list() 那一刻的值，
+   * 只能紧跟在一次 list()（或经它的 executor.listSessions()）之后用；别处要用最新的值就调 lastActivityMs()，它自己先读一遍。
+   */
   private latest: number | null = null;
 
   constructor(runsDir: string, taskId: string) {
