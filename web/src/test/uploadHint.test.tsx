@@ -1,4 +1,4 @@
-// 任务页上传框的说明文字：类型与大小取自服务信息（upload.types_text、upload.max_bytes）；大小，写法与后端那句「单个文件不能超过 5 MB。」里的数字一致；
+// 任务页上传区的说明文字：前一句固定，后面类型与大小两半句取自服务信息（upload.types_text、upload.max_bytes）；大小，写法与后端那句「单个文件不能超过 5 MB。」里的数字一致；
 // 还没取到服务信息时两半句都不写，不显示猜的内容。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -44,7 +44,7 @@ describe("任务页上传框的说明文字", () => {
   it("取到服务信息：写后端给的上限", async () => {
     taskPage(Promise.resolve(info(5 * 1024 * 1024)));
     const hint = await screen.findByTestId("upload-hint");
-    await waitFor(() => expect(hint).toHaveTextContent("（只收 .md、.txt 与 Word 的 .docx，单个不超过 5 MB）"));
+    await waitFor(() => expect(hint.textContent).toBe("把文件拖到这里，或者点这里选择文件。只收 .md、.txt 与 Word 的 .docx，单个不超过 5 MB。"));
   });
 
   it("后端给的上限变了，说明跟着变", async () => {
@@ -58,7 +58,7 @@ describe("任务页上传框的说明文字", () => {
     const hint = await screen.findByTestId("upload-hint");
     // 取不到时页面上不留痕迹，与还没取到时一样；等这次失败处理完再看说明。
     await settled(vi.mocked(api.serviceInfo));
-    expect(hint).toHaveTextContent("把文件拖到这里，或者点这里选择文件。新传的材料下一次会话开始时助手就能看到。");
+    expect(hint.textContent).toBe("把文件拖到这里，或者点这里选择文件。");
     expect(hint.textContent).not.toMatch(/MB|只收/);
   });
 });

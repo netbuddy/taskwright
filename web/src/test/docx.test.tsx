@@ -277,17 +277,17 @@ describe("任务页的材料清单", () => {
     ],
   } as unknown as TaskDetail;
 
-  it("不列投影、份数不算它；Word 的「查看原文」按原版式显示，不显示投影", async () => {
+  it("不列投影、份数不算它；Word 的「查看」按原版式显示，不显示投影", async () => {
     vi.spyOn(api, "getTask").mockResolvedValue(detail);
     vi.spyOn(api, "listTasks").mockResolvedValue([]);
     vi.spyOn(api, "materialRaw").mockResolvedValue(SAMPLE.slice().buffer);
     const read = vi.spyOn(api, "materialContent").mockImplementation(content);
     render(<ConfigProvider><AntApp><TaskPage taskId="TASK-D" /></AntApp></ConfigProvider>);
-    expect(await screen.findByText("这个任务现在有 2 份材料。助手读的就是这几份文件。")).toBeInTheDocument();
+    expect(await screen.findByTestId("material-count")).toHaveTextContent("2 份");
     const rows = screen.getAllByTestId("material-row");
     expect(rows.map((r) => r.firstChild!.textContent)).toEqual(["requirements-styled.docx", "笔记.md"]);
     expect(document.body.textContent).not.toMatch(/供助手阅读|\.docx\.md/);
-    fireEvent.click(rows[0].querySelector("button")!);
+    fireEvent.click(rows[0].querySelector("[data-testid=material-view]")!);
     await waitFor(() => expect(document.querySelector(".docx-view [data-testid=docx-paper] section.docx")).toBeTruthy(), SLOW);
     expect(document.querySelector(".docx-view")!.textContent).toContain("学校图书馆借还书系统需求说明");
     // 投影只在后台读来算表格位置，页面上不显示它

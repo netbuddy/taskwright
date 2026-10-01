@@ -58,15 +58,11 @@ body {
 .section-title { color: var(--mut); font-size: 0.957rem; font-weight: 600; margin: 1.571rem 0 0.571rem; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; padding: 1rem 1.143rem; }
 
-.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(16.429rem, 1fr)); gap: 0.857rem; }
-.board .count { font-size: 1.571rem; font-weight: 600; }
-.chips { display: flex; flex-wrap: wrap; gap: 0.429rem; margin: 0.429rem 0; }
 .chip { font-size: 0.943rem; border-radius: 71.357rem; padding: 0.071rem 0.643rem; border: 1px solid var(--line); color: #4a4a4a; background: var(--dark); white-space: nowrap; }
 .chip.ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
 .chip.bad { color: var(--gap); background: var(--gap-bg); border-color: var(--gap-line); }
 .chip.warn { color: var(--amber); background: var(--amber-bg); border-color: var(--amber-line); }
 .chip.dark { color: #fff; background: var(--ink); border-color: var(--ink); }
-.two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.143rem; align-items: start; }
 .cond-group { margin: 0.714rem 0 0.286rem; font-weight: 600; font-size: 0.972rem; }
 .cond { display: flex; gap: 0.571rem; font-size: 0.972rem; padding: 0.214rem 0; color: #4a4a4a; }
 .cond .tick { width: 1rem; flex: none; }
@@ -112,37 +108,14 @@ body {
 .nav-item .ic { width: 1.1rem; color: var(--mut); }
 .nav-item .cnt { margin-left: auto; color: var(--mut); font-size: 0.88rem; font-weight: 400; }
 
-/* 上传时选择去向的对话框 */
-.updest-file { display: flex; align-items: center; gap: 0.5rem; background: var(--dark); border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.4rem 0.65rem; font-size: 0.93rem; margin: 0.5rem 0 0.8rem; }
-.updest-file .fs { margin-left: auto; color: var(--mut); font-size: 0.88rem; white-space: nowrap; }
-.updest-opts { display: flex; flex-direction: column; gap: 0.5rem; }
-.updest-opt { display: flex; gap: 0.6rem; align-items: flex-start; border: 1px solid var(--line2); border-radius: 0.6rem; padding: 0.55rem 0.75rem; cursor: pointer; }
-.updest-opt:hover { border-color: #9a9a9a; }
-.updest-opt.on { border-color: var(--ink); background: var(--stage); }
-.updest-opt input { margin-top: 0.35rem; accent-color: var(--ink); flex: none; }
-.updest-opt .ot { font-weight: 600; font-size: 0.97rem; }
-.updest-opt .od { color: #4a4a4a; font-size: 0.92rem; }
-.updest-kb { border-left: 0.15rem solid var(--line2); margin: 0.7rem 0 0 0.45rem; padding: 0.1rem 0 0.1rem 0.9rem; display: flex; flex-direction: column; gap: 0.75rem; }
+/* 小字标签与单选的圆角按钮组（知识库页面的上传框、设置页面的表单用） */
 .flabel { font-size: 0.92rem; color: #4a4a4a; margin-bottom: 0.25rem; }
 .updest-seg { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .updest-seg label { border: 1px solid var(--line2); border-radius: 1rem; padding: 0.08rem 0.7rem; font-size: 0.92rem; cursor: pointer; background: #fff; }
 .updest-seg input { display: none; }
 .updest-seg label.on { background: var(--ink); border-color: var(--ink); color: #fff; }
-.seg-note { font-size: 0.86rem; color: var(--mut); margin-top: 0.3rem; }
-.updest-hint { font-size: 0.92rem; line-height: 1.65; border-radius: 0.5rem; padding: 0.4rem 0.65rem; background: var(--dark); border: 1px solid var(--line); color: #4a4a4a; }
-.updest-hint.amber { background: var(--amber-bg); border-color: var(--amber-line); color: #7a4a06; }
-.updest-hint .ant-checkbox-wrapper { margin-top: 0.35rem; color: #7a4a06; font-weight: 600; }
-.updest-foot { display: flex; justify-content: flex-end; gap: 0.5rem; align-items: center; }
-.updest-foot .fnote { margin-right: auto; font-size: 0.86rem; color: var(--mut); text-align: left; }
 
-/* 任务页「选用的知识库」一栏与「选用别的库」的勾选框列表 */
-.kbrow { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px dashed var(--line); }
-.kbrow:last-of-type { border-bottom: 0; }
-.kbrow .nm { font-weight: 600; }
-.kbrow .mt { color: var(--mut); font-size: 0.92rem; flex: 1; min-width: 0; }
-.kbrow .lock { color: var(--mut); font-size: 0.88rem; }
-.kbrow a.muted { color: var(--mut); cursor: pointer; }
-.kbnote { font-size: 0.93rem; color: #4a4a4a; margin-top: 0.6rem; line-height: 1.7; }
+/* 任务页「选用别的知识库」的勾选框列表（任务页别的样式在 styles/task-page.css） */
 .kbpick { width: min(24rem, 86vw); }
 .kbpick .ph { font-size: 0.9rem; color: #4a4a4a; margin-bottom: 0.4rem; }
 .kbpick-row { padding: 0.2rem 0; }

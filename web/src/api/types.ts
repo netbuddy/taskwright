@@ -224,6 +224,8 @@ export interface Material {
   modified_at: string;
   /** 由哪份材料生成（Word 材料的投影 x.docx.md 写 x.docx 的路径）；界面不单独列出这类文件。原始材料为 null。 */
   derived_from?: string | null;
+  /** 现在能不能删除（只有任务详情里给）：任务进行中、不是派生文件、还没有进入对话（上传之后没有任何会话有过活动）。 */
+  deletable?: boolean;
 }
 
 export type ExecutorStateName = "not_started" | "starting" | "idle" | "working" | "exited" | "failed_to_start";
@@ -244,6 +246,8 @@ export interface SessionInfo {
 export interface SessionListEntry extends SessionInfo {
   message_count: number;
   active: boolean;
+  /** 这条会话产生了几次修订；旧后端没有这一项。 */
+  revision_count?: number;
 }
 
 // ───────────── 5.3 回复的形状 ─────────────

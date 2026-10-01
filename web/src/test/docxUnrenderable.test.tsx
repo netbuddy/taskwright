@@ -1,4 +1,4 @@
-// Word 文件读到了、但排版库画不出来：材料区与任务页「查看原文」显示一句固定的中文说明，排版库的错误原文只写进浏览器的控制台；
+// Word 文件读到了、但排版库画不出来：材料区与任务页材料的「查看」显示一句固定的中文说明，排版库的错误原文只写进浏览器的控制台；
 // 读不到文件（接口出错）时照旧显示后端的说明；来源标签照写「文件名 · 章节」（章节取自位置表，不依赖排版结果）。
 // 排版库出错用模拟触发：让画的那一步抛出一个错误，不依赖某种具体的文件结构。缓存那一遍画在页面外的元素里，显示那一遍画在页面里，
 // 按目标元素在不在页面里区分两遍。
@@ -66,7 +66,7 @@ describe("排版库画不出来", () => {
     loggedToConsole();
   });
 
-  it("任务页「查看原文」：显示同一句说明，不显示错误原文", async () => {
+  it("任务页材料的「查看」：显示同一句说明，不显示错误原文", async () => {
     mockApi();
     vi.spyOn(api, "listTasks").mockResolvedValue([]);
     vi.spyOn(api, "getTask").mockResolvedValue({
@@ -74,7 +74,7 @@ describe("排版库画不出来", () => {
       definition: { collections: [] }, items: [], completion: null, sessions: [], materials,
     } as unknown as TaskDetail);
     render(<ConfigProvider><AntApp><TaskPage taskId="TASK-U" /></AntApp></ConfigProvider>);
-    fireEvent.click((await screen.findAllByTestId("material-row"))[0].querySelector("button")!);
+    fireEvent.click((await screen.findAllByTestId("material-view"))[0]);
     await waitFor(() => expect(document.querySelector(".docx-view [data-testid=docx-unrenderable]")).toHaveTextContent(DOCX_UNRENDERABLE), SLOW);
     noRawError();
     loggedToConsole();

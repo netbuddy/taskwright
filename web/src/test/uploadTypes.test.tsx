@@ -49,7 +49,7 @@ describe("两处入口", () => {
     vi.spyOn(api, "serviceInfo").mockResolvedValue(info([".md", ".pdf"], ".md 与 .pdf"));
     render(<ConfigProvider><AntApp><ToastProvider><ServiceProvider><TaskPage taskId="TASK-T" /></ServiceProvider></ToastProvider></AntApp></ConfigProvider>);
     const hint = await screen.findByTestId("upload-hint");
-    await waitFor(() => expect(hint).toHaveTextContent("（只收 .md 与 .pdf，单个不超过 5 MB）"));
+    await waitFor(() => expect(hint).toHaveTextContent("只收 .md 与 .pdf，单个不超过 5 MB。"));
     expect(document.querySelector("input[type=file]")).toHaveAttribute("accept", ".md,.pdf");
   });
 

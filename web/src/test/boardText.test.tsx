@@ -1,4 +1,5 @@
-// 任务页交付物看板的标签与灰字：空的集合只写条目个数与「这个集合还没有条目。」，不写「评审通过 0/0」「已读 0/0」。
+// 任务页交付物一块的集合卡：空的集合降成灰阶，只写条目个数 0 与「还没有条目。」，不写「评审通过 0/0」「已读 0/0」；
+// 详细的说明在悬停提示里，称「你」不称「用户」。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -41,29 +42,36 @@ async function open(items: Item[]) {
   await screen.findByTestId("board-功能用例");
 }
 
-describe("交付物看板", () => {
-  it("空的集合（要评审的与不评审的）不写评审通过与已读两枚标签，只写条目个数与一句话", async () => {
+describe("交付物的集合卡", () => {
+  it("空的集合（要评审的与不评审的）降成灰阶，只写条目个数 0 与「还没有条目。」，不写评审通过与已读", async () => {
     await open([item("UC-001", "功能用例", { reviews: [ok] })]);
     for (const name of ["约束", "领域说明"]) {
       const card = screen.getByTestId(`board-${name}`);
-      expect(card).toHaveTextContent("0 个条目");
-      expect(card).toHaveTextContent("这个集合还没有条目。");
+      expect(card).toHaveClass("empty");
+      expect(screen.getByTestId(`board-count-${name}`)).toHaveTextContent(/^0$/);
+      expect(card).toHaveTextContent("还没有条目。");
       expect(card).not.toHaveTextContent("评审通过");
       expect(card).not.toHaveTextContent("已读");
-      expect(card.querySelector(".chip.warn")).toBeNull();
+      expect(card.getAttribute("title")).toContain(`${name}还没有条目。`);
     }
-    // 有条目的集合照旧写两枚标签。
+    // 有条目的集合不是灰阶，写评审通过与已读两项。
+    expect(screen.getByTestId("board-功能用例")).not.toHaveClass("empty");
+    expect(screen.getByTestId("board-count-功能用例")).toHaveTextContent(/^1$/);
     expect(screen.getByTestId("board-review-功能用例")).toHaveTextContent("评审通过 1/1");
     expect(screen.getByTestId("board-read-功能用例")).toHaveTextContent("已读 1/1");
   });
 
-  it("灰字与标题说明都称「你」，不称「用户」", async () => {
+  it("悬停提示里的说明称「你」，不称「用户」；不评审的集合只写已读，不写评审通过", async () => {
     const unread = { confirmations: [] };
     await open([item("UC-001", "功能用例", { reviews: [ok] }), item("UC-002", "功能用例", unread),
       item("DN-001", "领域说明"), item("DN-002", "领域说明", unread)]);
-    expect(screen.getByTestId("board-功能用例")).toHaveTextContent("这 2 个条目里，1 个在当前所在的修订上评审通过，你已经看过其中 1 个（已读）。");
-    expect(screen.getByTestId("board-领域说明")).toHaveTextContent("这 2 个条目里，你已经看过 1 个（已读）。这个集合不评审。");
-    expect(screen.getByText(/交付物看板/).textContent).toContain("有几个你已经看过（已读）。");
-    expect(document.querySelector(".board")?.textContent).not.toContain("用户");
+    const uc = screen.getByTestId("board-功能用例");
+    const dn = screen.getByTestId("board-领域说明");
+    expect(uc.getAttribute("title")).toContain("这 2 个条目里，1 个在当前所在的修订上评审通过，你已经看过其中 1 个。");
+    expect(uc).toHaveTextContent("评审通过 1/2 · 已读 1/2");
+    expect(dn.getAttribute("title")).toContain("这 2 个条目里，你已经看过 1 个。这个集合不评审。");
+    expect(dn).toHaveTextContent("已读 1/2");
+    expect(dn).not.toHaveTextContent("评审通过");
+    for (const card of document.querySelectorAll(".tp-coll")) expect(`${card.textContent}${card.getAttribute("title")}`).not.toContain("用户");
   });
 });

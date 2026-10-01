@@ -1,5 +1,5 @@
 // 评审计数三处一致：条目区的汇总行、任务页的交付物看板、条目区的筛选，对同一个任务给出的评审通过、评审不通过（不含保留的）、
-// 已保留写法三个数各自相同；看板的颜色与灰字说明。
+// 已保留写法三个数各自相同；集合卡上的那行数字与悬停提示里的说明。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -81,9 +81,10 @@ async function board(t: Task) {
   vi.spyOn(api, "serviceInfo").mockRejectedValue(new Error("没有这个接口"));
   render(<ConfigProvider><AntApp><ToastProvider><ServiceProvider><TaskPage taskId="TASK-C" /></ServiceProvider></ToastProvider></AntApp></ConfigProvider>);
   const card = await screen.findByTestId("board-功能用例");
-  const text = card.textContent ?? "";
-  return { card, text, passed: Number(text.match(/评审通过 (\d+)\//)?.[1]), kept: Number(text.match(/已保留写法 (\d+)/)?.[1] ?? 0),
-    chip: screen.getByTestId("board-review-功能用例") };
+  // 卡上只有一行数字，详细的说明在悬停提示里：两处合起来看。
+  const line = card.textContent ?? "";
+  const text = `${line} ${card.getAttribute("title") ?? ""}`;
+  return { card, text, passed: Number(line.match(/评审通过 (\d+)\//)?.[1]), kept: Number(line.match(/已保留写法 (\d+)/)?.[1] ?? 0) };
 }
 
 describe("评审计数三处一致", () => {
@@ -97,23 +98,20 @@ describe("评审计数三处一致", () => {
     expect(b.kept).toBe(s.filters.kept);
     expect(b.text).toContain(`评审通过 ${EXPECTED.passed}/8`);
     expect(b.text).toContain(`${EXPECTED.passed} 个在当前所在的修订上评审通过，${EXPECTED.kept} 个评审不通过但你保留了写法（按你的决定算通过）`);
-    expect(b.chip).toHaveClass("warn");   // 还有待评审与不通过的
   });
 
-  it("没有待评审、也没有不通过而未保留的：看板是绿色，写已保留写法；没有保留的条目时照原来的写法", async () => {
+  it("有保留了写法的条目时集合卡写出已保留写法的个数；没有保留的条目时不写这一项", async () => {
     const t = task([item("UC-001", { reviews: [ok] }), item("UC-004", { reviews: [bad], waivers: [waiver] })]);
     expect(summary(t).text).toContain("评审不通过 0 · 已保留写法 1 ·");
     let b = await board(t);
-    expect(b.chip).toHaveClass("ok");
     expect(b.text).toContain("评审通过 1/2");
     expect(b.kept).toBe(1);
     cleanup(); vi.restoreAllMocks();
     const plain = task([item("UC-001", { reviews: [ok] })]);
     expect(summary(plain).text).not.toContain("已保留写法");
     b = await board(plain);
-    expect(b.chip).toHaveClass("ok");
     expect(b.text).toContain("评审通过 1/1");
-    expect(b.text).toContain("这 1 个条目里，1 个在当前所在的修订上评审通过，你已经看过其中 1 个（已读）。");
+    expect(b.text).toContain("这 1 个条目里，1 个在当前所在的修订上评审通过，你已经看过其中 1 个。");
     expect(b.text).not.toContain("已保留写法");
   });
 });
