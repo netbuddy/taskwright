@@ -446,7 +446,9 @@ const handlers: Record<string, Handler> = {
     if (or(body.format, "markdown") !== "markdown") throw new ApiError("bad_request", "现在只支持 markdown。");
     const lib = library.libraryOf(t.dir);
     const [revisionNo, items] = render.documentRequest(body);
-    const text = render.render(t.dir, lib, revisionNo, items, await wordsLocator(t, lib));
+    // 知识库来源的出处在文档里写知识库的名字：名字取自现在的知识库清单，已经不在的写编号。
+    const names = new Map((service.knowledge?.libraries() ?? []).map((one) => [one.id, one.name]));
+    const text = render.render(t.dir, lib, revisionNo, items, await wordsLocator(t, lib), (id) => names.get(id) ?? null);
     if (req.params.mode === "preview") return json(200, { ok: true, text });
     return {
       status: 200,
