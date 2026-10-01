@@ -88,6 +88,21 @@ test("已有的清单里通用知识库还叫旧名「通用库」：服务启�
   await service.close();
 });
 
+test("已有的清单文件损坏（读不出来）：服务照常启动，不改那个文件；知识库的清单接口到用的时候才出错", async () => {
+  const root = join(tmp, `case-${++n}`);
+  const dir = join(root, "knowledge");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "libraries.json");
+  writeFileSync(file, '{"version": 1, "libraries": [{"id": "general", "name": "通用库"', "utf-8");   // 写到一半的 JSON
+  const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: dir });
+  assert.equal(readFileSync(file, "utf-8"), '{"version": 1, "libraries": [{"id": "general", "name": "通用库"');
+  assert.equal(existsSync(join(dir, GENERAL, "files")), true);
+  assert.throws(() => service.knowledge!.libraries(), SyntaxError);
+  // 任务的接口不受影响：照常新建任务，它选用通用知识库
+  assert.deepEqual(service.taskPage(newTask(service)).knowledge_libraries, [GENERAL]);
+  await service.close();
+});
+
 test("新建知识库：名字空或与已有的重名（只差大小写或首尾空白也算）返回 rejected；编号由产品生成", async () => {
   const service = fresh();
   const store = service.knowledge!;

@@ -79,16 +79,21 @@ export class KnowledgeStore {
 
   /**
    * 建出根目录；libraries.json 不存在时写一份只有通用知识库的。已有的清单里通用知识库那一项还叫旧名「通用库」时，
-   * 改成现在的名字再写回去（先写临时文件再改名）；用户自己起的名字不动。
+   * 改成现在的名字再写回去（先写临时文件再改名）；用户自己起的名字不动。清单读不出来（文件损坏）或写不回去时
+   * 跳过这一步，服务照常启动，知识库的接口到用的时候再报错。
    */
   ensure(): void {
     mkdirSync(this.root, { recursive: true });
     if (!existsSync(this.librariesFile())) {
       writeJson(this.librariesFile(), { version: 1, libraries: [{ id: GENERAL, name: GENERAL_NAME, created_at: clock.now() }] });
     } else {
-      const rows = this.libraries();
-      if (rows.some((one) => one.id === GENERAL && one.name === LEGACY_GENERAL_NAME)) {
-        this.saveLibraries(rows.map((one) => (one.id === GENERAL && one.name === LEGACY_GENERAL_NAME ? { ...one, name: GENERAL_NAME } : one)));
+      try {
+        const rows = this.libraries();
+        if (rows.some((one) => one.id === GENERAL && one.name === LEGACY_GENERAL_NAME)) {
+          this.saveLibraries(rows.map((one) => (one.id === GENERAL && one.name === LEGACY_GENERAL_NAME ? { ...one, name: GENERAL_NAME } : one)));
+        }
+      } catch {
+        // 清单读不出来或写不回去：不修正，也不让服务因此起不来
       }
     }
     mkdirSync(this.filesDir(GENERAL), { recursive: true });
