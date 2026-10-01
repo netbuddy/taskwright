@@ -102,18 +102,18 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 
 | 服务 | 命令 | 默认端口 |
 |---|---|---|
-| 任务服务（HTTP/SSE 接口） | `node backend/src/main.mts --tasks <dir> --runs <dir> --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | 无默认值，需自行指定 |
+| 任务服务（HTTP/SSE 接口） | `node backend/src/main.mts --tasks <dir> --runs <dir> [--knowledge <dir>] --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | 无默认值，需自行指定 |
 | 网页界面（开发服务器） | `TASKWRIGHT_API_TARGET=http://127.0.0.1:<api port> npm run dev -w web` | 5680（`TASKWRIGHT_WEB_PORT`） |
 | 两者一起启动 | `scripts/dev.sh`（或 `make dev`） | API 8790，web 5680 |
 | 两者一起启动，用假模型并建好演示任务 | `scripts/dev.sh --demo` | API 8790，web 5680 |
 | 观测台 | `python3 -m taskwright_observatory --runs <archive dir> --workspaces <tasks dir>` | 8770 |
 
-- `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。两者不给时都放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`）。
+- `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。`--knowledge` 是知识库的根目录：各任务选用的参考资料库（接口文档第 11 节）。三者不给时都放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`），分别是 `tasks/`、`runs/` 与 `knowledge/`。
 - 各服务默认绑定 `0.0.0.0`（可用 `--host` 更改）。唯一的例外是以 `--mode desktop` 启动的任务服务，它默认绑定 `127.0.0.1`。
 - 任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是用户数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。只有在本机打开的页面才有退出的入口；服务按请求的来源地址判断是不是本机，所以桌面形态不要放在反向代理后面（否则服务看到的是代理的地址）。
 - **任何能打开页面的人都能修改模型配置。** 在加登录之前，任何能打开这个网址的人都能在网页界面上修改模型配置，包括换掉 API 密钥、删除模型服务。以 `--mode server` 启动的任务服务，只在可信的内网里部署。
 - 给任务服务的端口被占用时，它会依次尝试后面的端口，最多共试 10 个，全部被占时报错退出。给 `--port 0` 时由系统挑一个空闲端口。实际使用的端口会打印到日志、写进各任务的占用标记，并由 `GET /api/v1/service` 返回。
-- `scripts/dev.sh` 在 `TASKWRIGHT_API_PORT`（缺省 8790）上起任务服务，并把网页开发服务器指向任务服务报出的实际端口，所以端口被占时网页不会被转到别的服务上。加 `--demo` 时，任务服务用假模型端点（`backend/fake_model/`）与启动配置 `fake` 运行，任务与归档放在退出时删除的临时目录里，并由 `examples/library-lending/run.sh` 建好一个带示例材料与几个条目的演示任务；不需要模型服务与密钥，但 `PATH` 里要有 pi。
+- `scripts/dev.sh` 在 `TASKWRIGHT_API_PORT`（缺省 8790）上起任务服务，并把网页开发服务器指向任务服务报出的实际端口，所以端口被占时网页不会被转到别的服务上。加 `--demo` 时，任务服务用假模型端点（`backend/fake_model/`）与启动配置 `fake` 运行，任务、归档与知识库放在退出时删除的临时目录里，并由 `examples/library-lending/run.sh` 建好一个带示例材料与几个条目的演示任务；不需要模型服务与密钥，但 `PATH` 里要有 pi。
 - 任务服务给了 `--web <dir>`（例如构建好的 `web/dist`）时，自己托管网页：不以 `/api/` 开头的 GET 请求从这个目录取文件，找不到的路径回首页。这样不需要第 6 节的反向代理，也不需要开发服务器。
 - 以 `--mode desktop` 启动的任务服务，起 pi 之前读 pi 配置目录里 `settings.json` 的 `defaultProvider` 与 `defaultModel`，两项都有就用它们代替启动配置里的模型（见第 10.4 节）；`--mode server` 不读这个文件。
 - 用 Ctrl+C 或按进程编号（process id）停止服务；任务服务收到 SIGHUP（关掉它所在的终端或 Windows 的命令行窗口）时也同样收尾。任务服务退出时会顺带关闭它为每个任务启动的 pi 进程。
@@ -126,6 +126,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 | `TASKWRIGHT_WEB_PORT` | web 开发服务器 | 端口（默认 5680）。 |
 | `TASKWRIGHT_API_TARGET` | web 开发服务器 | `/api` 代理转发的目标地址（默认：本机的任务服务 `http://127.0.0.1:8790`，即 `scripts/dev.sh` 起任务服务的端口）。 |
 | `TASKWRIGHT_TASKS_DIR`、`TASKWRIGHT_API_PORT` | `scripts/dev.sh` | 任务目录的根路径与 API 端口。 |
+| `TASKWRIGHT_KNOWLEDGE_DIR` | `scripts/dev.sh` | 知识库的根目录（默认 `./knowledge`）。 |
 | `TASKWRIGHT_TASKS_ROOT` | agent | 服务启动 pi 时设：任务根目录。不在它之下的任务库拒绝写入。单独跑 agent 代码时（命令行工具、测试）不设，也就不核对。 |
 | `TASKWRIGHT_LOG_DIR` | 任务服务 | 任务服务追加每日日志文件 `backend-<日期>.log` 的目录（缺省是用户数据目录下的 `logs/`）。 |
 | `TASKWRIGHT_LANGFUSE_PLUGIN` | 任务服务、`scripts/tui.sh` | 可选的 Langfuse 插件所在的位置（见第 7 节）。 |
@@ -170,6 +171,8 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 **复制或搬动任务数据。** 任务目录里的路径都是相对的，任务目录可以搬家或复制。pi 的会话文件记着它当初是在哪个任务目录里开始的；服务续接这样的会话时，如果记着的目录不是自己的任务目录，就把会话文件第一行改写为自己的任务目录（原文件原样留在旁边，名为「….cwd-时刻.bak」），日志里写「会话文件记的工作目录是 X，已按本服务的任务目录 Y 续接」。服务还把自己的任务根目录传给 pi（`TASKWRIGHT_TASKS_ROOT`），不在它之下的任务库一律拒绝写入。所以复制出来的服务不会写回原来的任务数据。在副本上起服务之前先停掉原来的服务，否则副本会显示为占用中。
 
+**知识库。** 知识库根目录下有 `libraries.json`，每个库一个目录，里面是 `documents.json` 与放文档本体的 `files/`（Word 文档旁边还有投影等生成的文件）。备份时把整个目录一起复制。两个 JSON 文件每次都整份替换（先写临时文件再改名），所以服务在跑时复制下来的要么是旧清单、要么是新清单；恰好在那一刻上传的文档可能已经在 `files/` 里、还不在清单里。任务选用了哪些库记在任务目录的 `knowledge.json` 里，随任务一起备份。
+
 ## 9 常见故障
 
 **助手启动不起来。** 工作视图整页只读，输入框上方的提示条在「助手现在不可用：助手没有启动起来，」后面写明原因。PATH 里找不到 pi，或者 pi 脚本开头指定的解释器不存在时，写「找不到助手的程序（pi），请检查安装。」。系统拒绝启动时只写系统给的英文代号：文件没有执行权限时是「系统原因：EACCES」，命令行太长时（系统提示整份放在命令行里）是「系统原因：E2BIG」，打开的文件数、内存或进程数到了上限时是「系统原因：EMFILE」「ENFILE」「ENOMEM」或「EAGAIN」。启动配置或环境变量写错（系统提示文件、扩展、密钥文件不存在等）时照原样写出是哪一项。另有三种情形，提示条整句是固定的：助手的程序启动之后立刻退出时写「助手现在不可用：助手启动之后立刻退出了。请把这个页面的地址告诉管理员。」；启动之前任务服务没能建好归档目录、打开归档文件或备份并改写要续接的会话文件（没有写权限、磁盘满）时写「助手现在不可用：启动助手之前，任务服务没能写入它要用的文件，系统原因：EACCES。请把这个页面的地址告诉管理员。」，系统原因取不到时写「系统原因：未知」；其他没有预料到的错误写「助手现在不可用：助手没有启动起来。请把这个页面的地址告诉管理员。」。这几种情形下页面上不出现助手的程序写到错误输出里的原文，也不出现文件路径。系统给的原话（带程序的路径）与助手的程序写到错误输出里的原文写在后端日志里（「任务 <任务编号> 的助手没有启动起来：…」），也放在 `executor_unavailable` 错误的 `data.detail` 里。
@@ -199,7 +202,7 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 ### 10.2 数据与日志
 
-任务目录与归档目录放在用户数据目录下：Linux 是 `~/.local/share/taskwright/tasks/` 与 `runs/`，Windows 是 `%LOCALAPPDATA%\Taskwright\tasks\` 与 `runs\`。日志写到同一目录下的 `logs/backend-<日期>.log`。设了环境变量 `TASKWRIGHT_DATA_DIR` 时，这三样一起放到它指定的目录下。备份方法同第 8 节。
+任务目录、归档目录与知识库放在用户数据目录下：Linux 是 `~/.local/share/taskwright/tasks/`、`runs/` 与 `knowledge/`，Windows 是 `%LOCALAPPDATA%\Taskwright\tasks\`、`runs\` 与 `knowledge\`。日志写到同一目录下的 `logs/backend-<日期>.log`。设了环境变量 `TASKWRIGHT_DATA_DIR` 时，这四样一起放到它指定的目录下。备份方法同第 8 节。
 
 ### 10.3 退出
 

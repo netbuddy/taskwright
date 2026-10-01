@@ -79,6 +79,7 @@ data: {
 | `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节） |
 | `ui_action_noted` | 一次直接操作完成 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`） |
 | `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at` |
+| `material_removed` | 删除了一份材料（第 5.1 节） | `at`、`path`；由 Word 材料生成的文件随它一起删掉，不另发事件 |
 | `work_summary` | 一个工作单元结束后 | `work_id`、`at`、`seconds`、`step_count`、`stages`（每项带 `text`）、`outcome`（这个工作单元怎样结束，取值与 `work_ended` 相同；刷新后读到的对话里的 `work_summary` 消息带同样的值） |
 | `work_ended` | 智能体这一轮工作稳定下来 | `work_id`、`at`、`seconds`、`step_count`（与 `work_summary` 的相同，由会话记录算出，被停下时一条消息里没有开始执行的工具调用也算在内；会话记录读不出这次工作时用本轮记下的计数）、`outcome`（`replied`、`no_reply`、`stopped_by_user`、`failed`；按这个工作单元最后一条助手消息判断，所以调用模型出错、随后自动重试成功的工作单元是 `replied` 或 `no_reply`，不是 `failed`） |
 | `problem` | 需要让用户知道的问题（见第 5.5 节） | `code`、`text`、`retry` |
@@ -150,13 +151,15 @@ data: {
 | `GET /api/v1/task-types` | 「新建任务」时用的任务类型列表 | `{ok, task_types: [{task_type, name}]}` |
 | `GET /api/v1/tasks` | 任务列表 | `{ok, tasks: [{task_id, task_name, task_type, domain_tag, status, item_count, completion_met, completion_total, completion_unmet, last_active_at, session_count, supported}]}`（展示时用 `completion_unmet`，即「还差 N 项」）。修订取代条目版本之前创建的任务也会列出，`supported` 为 `false`，`status` 为「旧格式」，另带 `note`；它打不开。正被别的在跑的服务占用的任务也会列出，`supported` 为 `false`，`status` 为「占用中」，另带 `occupied`（`port`、`pid`、`host`）与 `note`；对它的一切请求都返回 `task_occupied`。 |
 | `POST /api/v1/tasks` `{task_type, task_name, domain_tag}` | 创建任务 | `{ok, task_id}`；之后再上传材料 |
-| `GET /api/v1/tasks/{task_id}` | 任务页（已关闭的任务同样可读） | 该任务，外加 `materials` 与 `sessions` |
+| `GET /api/v1/tasks/{task_id}` | 任务页（已关闭的任务同样可读） | 该任务，外加 `materials`、`sessions` 与 `knowledge_libraries`（这个任务选用的知识库的编号，第 11 节） |
 | `GET …/sessions` | 会话列表 | `{ok, sessions: [{session_id, name, started_at, last_active_at, message_count, active}]}` |
 | `POST …/sessions` | 新建会话 | `{ok, session_id}`；执行者在别的会话里工作时返回 `session_busy` |
 | `GET …/items/{item_id}/revisions` | 条目在改动过它的每次修订下的内容 | `{ok, item_id, revisions: [{revision_no, by, at, fields, sources, reviews, confirmations}]}` |
 | `GET …/revisions` | 修订日志 | `{ok, latest_revision, revisions: [{revision_no, at, by, session_id, work_id, op_id, undo_of_revision, trigger, intent, operations}]}`，最新的在前。`work_id` 是智能体的那次工作（用户的修订为空）；`op_id` 是用户的那次直接操作。`trigger` 写触发这次修订的事：智能体的修订是 `{kind: "typed" \| "card_choice" \| "ui_request", text, message_id}`，即启动那次工作的那句话；用户的修订是 `{kind: "user_action", action, text}`，`text` 是「你把 TBD-003 标为先不管」这样的一句操作名；都找不到时是 `{kind: "none"}`。`intent` 是触发智能体这次修订的那项用户行为：智能体对你那句话写下的理解里有与这次修订对得上的一项时给出，`{act_id, function, function_name, summary}`（`act_id` 如 r13-2，`function` 是理解格式里九种用户功能之一，`function_name` 是它的中文名，如「纠正」）；用户自己的修订、没有理解记录的任务为空。每个操作有 `op`、`item_id`、`collection`、`title`、`revision_before`、`revision_after` 和 `fields_changed`（与条目上一次改动相比值不同的字段名；新增、删除、恢复时为空）。 |
 | `GET …/materials/content?path=…` | 某份材料的正文 | `{ok, path, text}`；路径必须落在材料目录内。`.docx` 返回的是生成的 Markdown 投影（见第 5.1 节「材料」）；0.2 建的任务只有旧的 `文件名.docx.txt` 时返回那份 |
 | `GET …/materials/raw?path=…` | 材料文件的原样内容 | 文件的原始字节；`Content-Type` 按扩展名给：`.md` 为 `text/markdown; charset=utf-8`，`.txt` 为 `text/plain; charset=utf-8`，`.docx` 为 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`，其余为 `application/octet-stream`。路径限制与 `content` 相同；网页界面用它按原版式显示 Word 文件 |
+| `POST …/materials/delete` `{path}` | 删除一份材料 | `{ok, path}`；见第 5.1 节「删除材料」 |
+| `GET …/knowledge`、`POST …/knowledge` `{libraries}` | 这个任务选用的知识库，以及改选用 | 见第 11 节 |
 | `GET …/conversation?session=…&before={message_id}&limit=100` | 更早的对话 | 形状与第 4.1 节 `conversation` 相同 |
 | `POST …/documents/preview` 与 `…/download` `{"revision_no": N, "items": [编号…], "format": "markdown"}` | 按某一次修订（缺省为最新）渲染整份交付物，也可以只列出其中几个条目 | 预览：`{ok, text}`；下载：文件本身。文档写明它按哪次修订生成，并在每个条目上标出它的内容来自哪次修订、在那次修订上有没有确认与评审；确认写明依据：已读、用户修改或明确确认。修订号超过最新修订，或列出的条目在那次修订时不在交付物里，返回 `bad_request` |
 
@@ -169,6 +172,8 @@ data: {
 `POST …/messages?session={session_id}`，请求体为 `{"text": "…", "client_id": "…", "attachments": ["inputs/…"], "origin": "typed", "card": null}`。响应为 `{ok, client_id, queued}`，`queued` 恒为 `false`。对应的 `user_message` 事件带有相同的 `client_id`。智能体正在工作时，消息被拒绝，错误码 `session_busy`，`data.reason` 为 `working`；等这次工作结束后再发。以 `/` 开头的文本会在送到 pi 之前被加上「用户说：」前缀，因此永远不会被当成命令。
 
 **材料。** `POST …/materials`（multipart，单文件）：接受 `.md`、`.txt` 与 Word 的 `.docx`，最大 5 MB，存入该任务的材料目录（带路径分隔符的文件名会被拒绝）。返回 `{ok, path}`。上传的内容与本任务已有的某份材料的字节完全相同时（不论文件名），拒绝并且什么都不保存（`duplicate_content`，409）；文件名与已有的某份材料相同而内容不同时，同样拒绝（`name_taken`，409）。两种拒绝的 `data.path` 都是已有的那份材料，说明里写出它的文件名。只与用户放进来的材料比较，Word 文件旁边的投影与分段清单（带 `derived_from` 的项）不参与。内容按原始字节的 SHA-256 比较，每次上传时现算，不保存。判断两个文件名是否相同时，两边都去掉首尾空白、统一成 Unicode 规范化的 NFC 形式、不区分大小写；只差全角半角的（例如全角括号与半角括号）算不同的名字。这条规则只用来判断是否同名，文件照上传时的名字保存。检查的先后是类型、保留的文件名、大小、内容、文件名；内容与文件名都相同时回 `duplicate_content`。以前重名的文件会存成「原名-2.扩展名」，现在不再这样。`.docx` 另在旁边生成一份给助手读的 Markdown 投影 `文件名.docx.md`，文件里的图片抽到 `文件名.docx.media/`。同时写一份分段清单 `文件名.docx.segments.json`：按启动配置「材料分段」一节的参数把投影按标题分块（`heading_depth` 是认到第几级标题；有文字的段少于 `min_paragraphs` 的块并入下一块，多于 `max_paragraphs` 的块按段数切开），每块记标题、起止段落号、在投影里的起止行号、有文字的段数与字数。文件里记着参数的摘要，参数改了之后，下次读到时重算并覆盖。同时写一份位置表 `文件名.docx.locations.json`：文件头（格式版本 `version`、位置规则的版本 `rules_version`、`source`、段落总数 `paragraphs`、分页标记 `w:lastRenderedPageBreak` 的个数 `page_marks`，以及 `application`：`docProps/app.xml` 里记的保存文件的软件，没记时为空）与 `headings`：每个标题段一项，写段落号 `paragraph`、级别 `level`（1 是一级）与标题文字 `title`，`title` 与投影里这一段的标题行相同：自动编号（任何格式）加标题文字。标题段就是投影写成标题行的那些段落，所以表格里的段落不在其中。被引用的一段的章节是它（含）之前最近的标题；网页界面的来源标签从这里取章节，读不到位置表时不写章节。规则在 `agent/src/lib/docx_locations.ts`；位置表不记别的段落的文字，在它出现之前上传的 Word 文件没有位置表。段落按 `word/document.xml` 正文计数，表格与嵌套表格里的段落都数，文本框里的不数；页眉页脚、脚注尾注、批注不数。投影里每段一行，段落号写成 `[pN]`，放在这一段的正文前面；标题以 `#` 到 `######` 开头，级别先看段落自身的大纲级别，没写时看样式的大纲级别（沿样式继承往上找），再没有时看样式名「heading N」「标题 N」（大纲级别写成 9 表示正文，不是标题），Word 自动编号写在段落号前面，不算正文；列表项以 `- ` 开头，编号是 `1.` 这种形式时直接以编号开头；表格写成 Markdown 表格，Word 的一行写一行、第一行当表头，一格里的几段用 `<br>` 隔开，横向合并跨过的格子写 `（同左）`，纵向合并续格写 `（同上）`，嵌在格里的小表格的各段写进外层格子，前面注明 `（小表第 r 行第 c 列）`；图片写成链接 `![图 k](文件名.docx.media/imageN.png)`，放在它所在的段落里，标题里的图片除外：它另起一行写在标题行下面，不算标题文字；Word 图表与 SmartArt 写一行说明没有转出；文本框里的字写成引用块（`> （文本框）……`），没有段落号；空段落不写，段落号照数。公式里的字只取文字、按原顺序写进段落，不还原公式的排版（分式 a/b 写成 `ab`）。开头的注释写明段落总数与引用的写法。投影由 `agent/src/cli/docx_projection.mts` 生成，服务起 Node 子进程运行它。材料清单列出 `.docx`、`.md`、`.segments.json` 与 `.locations.json`；每一项带 `derived_from`：Word 文件旁边的投影、分段清单与位置表（`.md`、`.segments.json`、`.locations.json`，或 0.2 的 `.txt`）写那份 `.docx` 的路径，其余文件为 `null`，网页界面不列出带它的项。清单只列文件，所以不含图片目录。读不出来的 `.docx` 返回 `unsupported_type`，什么都不留下；以 `.docx.md` 或 `.docx.txt` 结尾的文件名返回 `bad_request`。消息的 `attachments` 里有 `.docx` 时，发给助手的文字会说明去读它旁边的 `.md`。0.2 建的任务保留原来的 `文件名.docx.txt`（每段一行，行首是 `[第 N 段]` 或 `[第 N 段 · 表 t 行 r 列 c]`）；Word 文件旁边没有 `.md` 时，助手、摘录核对与网页界面改读这份文件，分段清单按它现算、不写文件。
+
+**删除材料。** `POST …/materials/delete`，请求体为 `{"path": "inputs/…"}`：删除用户放进来的一份材料，Word 材料连同由它生成的文件（投影、分段清单、位置表、图片目录，以及 0.2 的 `.txt` 投影）一起删，并推送 `material_removed`（第 3.2 节）。返回 `{ok, path}`。路径落在材料目录之外返回 `bad_request`，生成的文件的路径同样返回 `bad_request`；路径不在材料清单里返回 `not_found`；智能体正在工作时拒绝，错误码 `session_busy`，`data.reason` 为 `working`；任务已完成或已放弃时返回 `task_closed`。引用它的条目上的来源原样保留：服务不改来源数据，网页界面按「来源的出处文件不在材料清单里」判断这份材料已经删除，出处旁写灰字「这份材料已经删除」，出处不能再点。「替换」就是删掉旧的再上传新的，条目不自动改。智能体再次保存这个条目、把条目当前的某条来源原样再交一次（种类、出处、摘录都相同），而那条来源的出处文件已经删掉时，`save_revision` 不核对摘录、原样收下：来源是当初引用时的记录，文件没了不等于引用错了。新写的来源指向不存在的文件照旧拒绝。已知的局限：删掉一份材料之后又上传了同名的新文件，引用旧文件的来源会被当作材料还在，摘录在新文件里可能找不到。
 
 ### 5.2 智能体回复
 
@@ -265,22 +270,22 @@ data: {
 
 | code | HTTP 状态码 | 含义 |
 |---|---|---|
-| `bad_request` | 400 | 请求格式错误，或路径落在材料目录之外 |
-| `not_found` | 404 | 任务、会话、条目、材料或端点不存在 |
+| `bad_request` | 400 | 请求格式错误，或路径落在材料目录之外、落在知识库某个库的 `files/` 之外 |
+| `not_found` | 404 | 任务、会话、条目、材料、知识库的库、知识库的文档或端点不存在，或者这个服务没有知识库 |
 | `rejected` | 422 | 校验未通过；`data.reasons` 列出每一条原因 |
 | `stale_revision` | 409 | 修订检查未通过；`data.items` 为 `[{item_id, base_revision, current_revision, changed_by}]` |
 | `old_format` | 409 | 修订取代条目版本之前创建的任务，本版本不支持（任务列表里这类任务的 `supported` 为 `false`） |
 | `undo_conflict` | 409 | 被撤销的那次修订之后，该条目又被改动过 |
 | `task_closed` | 409 | 任务已完成或已放弃 |
-| `session_busy` | 409 | 执行者正在工作：在另一个会话里（`data.active_session`），或者就在这个会话里而这时又来了说话或直接操作（`data.reason` 为 `working`） |
+| `session_busy` | 409 | 执行者正在工作：在另一个会话里（`data.active_session`），或者就在这个会话里而这时又来了说话或直接操作（`data.reason` 为 `working`）；执行者工作时删除材料也返回它 |
 | `task_occupied` | 409 | 这个任务正被另一个在跑的服务占用（它的 `service.lock` 记着一个活着的进程）；`data` 里有那个服务的 `port`、`pid`、`host` |
 | `forbidden` | 403 | 只接受本机请求的接口收到了从别处来的请求（目前只有 `POST /api/v1/service/exit`，见第 9 节） |
 | `executor_starting` | 503 | pi 正在启动 |
 | `executor_unavailable` | 503 | pi 启动失败（`data.detail`），或者 pi 不在运行时来了没有带 `session` 的直接操作 |
 | `session_resume_failed` | 503 | 续接或切换之后 pi 接着的不是请求的会话（见 5.6 节）；pi 已停掉，用户的话没有发出去；`data.session_id` 是请求的会话 |
 | `busy_timeout` | 503 | 等待数据库写锁超时 |
-| `too_large`、`unsupported_type` | 413、415 | 附件过大，或类型不受支持 |
-| `duplicate_content`、`name_taken` | 409 | 上传的材料与本任务已有的某份材料内容完全相同，或者与已有的某份材料同名而内容不同（见第 5 节的「材料」）；`data.path` 是已有的那份材料 |
+| `too_large`、`unsupported_type` | 413、415 | 附件过大（材料超过 5 MB，知识库文档超过 20 MB），或类型不受支持 |
+| `duplicate_content`、`name_taken` | 409 | 上传的材料与本任务已有的某份材料内容完全相同，或者与已有的某份材料同名而内容不同（见第 5 节的「材料」）；`data.path` 是已有的那份材料。知识库文档比的是同一个库里已有的文档，`data.name` 是那份文档（第 11 节） |
 | `in_use` | 409 | 选定的模型属于要删除的模型服务，或者正要被停用（见第 10 节）；`data.provider_id` 是那个模型服务 |
 | `config_unwritable` | 409 | `models.json`、`auth.json` 或产品自己的设置文件读不成一个 JSON 对象，或者里面有注释、改写时会丢掉（见第 10 节）；`data.file` 是文件名，文件原样不动 |
 | `config_locked` | 503 | 别的程序拿着这几个文件之一的锁超过两秒（见第 10 节）；`data.file` 是文件名 |
@@ -292,8 +297,9 @@ data: {
 3. 路径带着版本号 `v1`；字段只会新增，含义不会改变；客户端应忽略未知的事件与字段。
 4. 本版本尚不支持：多用户并发、身份认证、流式回复文本。
 5. **服务信息与运行形态。** 下面两个接口不需要任务。
-   - `GET /api/v1/service` 返回 `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "capabilities": { "exit": true | false, "model": true | false, "model_config": true | false }, "model": { "name": …, "reason": … }, "upload": { "max_bytes": 5242880, "too_large_text": "单个文件不能超过 5 MB。", "extensions": [".md", ".txt", ".docx"], "types_text": ".md、.txt 与 Word 的 .docx", "unsupported_type_text": "只接受 .md、.txt 与 Word 的 .docx 文件。" } }`，其中 `port` 是服务实际监听的端口；`upload` 给出上传上限（字节）、超过时给用户看的那句话（与 `too_large` 拒绝里的是同一句）、允许上传的扩展名、这些类型给人看的写法（`types_text`）与 `unsupported_type` 拒绝里的那句话（`unsupported_type_text`），后两项由扩展名拼出。网页界面按上限与扩展名在发送之前就拦下过大或类型不符的文件，显示对应的那句话；按扩展名过滤可选的文件，按 `types_text` 写上传框的说明。它有三种用途：打包后的启动程序用它认出某个端口上跑的是不是自己；部署与监控用它探活；客户端按 `capabilities` 决定显示还是隐藏相应的按钮或提示。`capabilities.exit` 只在以 `--mode desktop` 启动、并且这次请求来自本机回环地址时为 `true`（与退出接口的判断相同）；从别的电脑打开页面时为 `false`，页面也就不显示退出的入口。经反向代理访问时，服务看到的来源是代理的地址，所以桌面形态不应放在反向代理后面。`capabilities.model_config` 是页面能不能修改模型配置（见第 10 节）；现在从哪台电脑打开都能改，恒为 `true`，这个字段留给以后加登录时用。
+   - `GET /api/v1/service` 返回 `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "capabilities": { "exit": true | false, "model": true | false, "model_config": true | false, "knowledge": true | false }, "model": { "name": …, "reason": … }, "upload": { "max_bytes": 5242880, "too_large_text": "单个文件不能超过 5 MB。", "extensions": [".md", ".txt", ".docx"], "types_text": ".md、.txt 与 Word 的 .docx", "unsupported_type_text": "只接受 .md、.txt 与 Word 的 .docx 文件。" } }`，其中 `port` 是服务实际监听的端口；`upload` 给出上传上限（字节）、超过时给用户看的那句话（与 `too_large` 拒绝里的是同一句）、允许上传的扩展名、这些类型给人看的写法（`types_text`）与 `unsupported_type` 拒绝里的那句话（`unsupported_type_text`），后两项由扩展名拼出。网页界面按上限与扩展名在发送之前就拦下过大或类型不符的文件，显示对应的那句话；按扩展名过滤可选的文件，按 `types_text` 写上传框的说明。它有三种用途：打包后的启动程序用它认出某个端口上跑的是不是自己；部署与监控用它探活；客户端按 `capabilities` 决定显示还是隐藏相应的按钮或提示。`capabilities.exit` 只在以 `--mode desktop` 启动、并且这次请求来自本机回环地址时为 `true`（与退出接口的判断相同）；从别的电脑打开页面时为 `false`，页面也就不显示退出的入口。经反向代理访问时，服务看到的来源是代理的地址，所以桌面形态不应放在反向代理后面。`capabilities.model_config` 是页面能不能修改模型配置（见第 10 节）；现在从哪台电脑打开都能改，恒为 `true`，这个字段留给以后加登录时用。
    - `capabilities.model` 是模型探测的结果：服务起 pi 时要用的模型「服务商/模型」（`model.name`；在模型配置里选定了语言模型时就是它，见第 10 节），在 pi 配置目录的 `models.json` 里登记了、或者这个服务商在 `auth.json` 里有一项，就是 `true`。`model.reason` 是一句说明：以 `--mode desktop` 启动时写明查过的两个文件的完整路径，以 `--mode server` 启动时只写文件名，不带出服务器上的目录。探测在每次请求时现查，只读这两个文件，不启动 pi；服务商的密钥只放在环境变量里的情形识别不了，这时是 `false`。以 `--mode desktop` 启动时，`model.name` 可能来自 pi 的 `settings.json`（见部署文档第 10.4 节）。
+   - `capabilities.knowledge` 在服务有知识库时为 `true`（第 11 节）。这时回答里另有 `knowledge_upload`：知识库文档的上传，五项与 `upload` 相同（上限是 20 MB，`too_large_text` 是「单个文件不能超过 20 MB。」），另加 `kinds`：文档的种类与中文叫法，`[{kind, name}]`。网页界面只在 `capabilities.knowledge` 为 `true` 时显示「知识库」入口、上传时先问去向。
    - `POST /api/v1/service/exit` 只在以 `--mode desktop` 启动时存在，以 `--mode server` 启动时返回 `not_found`。它只接受来自本机回环地址（`127.0.0.1` 或 `::1`；`::ffff:127.0.0.1` 是 IPv4 回环地址在 IPv6 套接字上的写法，也算本机）的请求，其他来源一律返回 `forbidden`（403）。它先回答 `{ "ok": true }`，再照收到 SIGTERM 时的做法收尾：停止接收新连接、向每一条打开着的事件流发 `service_exiting`、关掉各任务的 pi、删掉本服务写的占用标记，然后退出进程。它只供 0.3 的过渡安装包使用（这种包由服务自己打开浏览器，没有桌面外壳）；最终的桌面版由外壳停止服务，这个接口不承诺长期保留。
    - 运行形态（`--mode desktop|server`，缺省 `server`）决定默认绑定地址（`desktop` 为 `127.0.0.1`，`server` 为 `0.0.0.0`，两种形态下 `--host` 都优先）以及退出接口是否存在；其余行为两种形态完全相同。运行形态会写进启动日志和各任务的占用标记（`service.lock` 里的 `mode` 一项）。
 
@@ -357,3 +363,26 @@ data: {
 
 - `GET /api/v1/service`：`capabilities` 多一项 `model_config`（见第 9 节）；`capabilities.model` 与 `model` 先看选定的语言模型。
 - 错误（第 8 节）多三种：`in_use`、`config_unwritable`、`config_locked`。
+
+## 11 知识库
+
+任务的材料是这次任务要整理成条目的对象；知识库放的是整理时用来参考的资料，例如规范、术语表、模板、以往的成果。材料不进知识库。知识库分成若干个库，每个任务选用其中几个。编号为 `general` 的「通用库」每个任务都选用，不能改名、不能删除；服务启动时没有库的清单就把它建出来。文档没有版本：一份文档改了，就当作一份新文件上传。本版本的助手还不读知识库，这里的接口与页面是为下一步准备的。
+
+**存放。** 在知识库根目录（`--knowledge`，缺省是用户数据目录下的 `knowledge/`，与任务目录并列）下：`libraries.json`（`{version: 1, libraries: [{id, name, created_at}]}`），每个库一个 `<库编号>/documents.json`（`{version: 1, documents: [{name, kind, bytes, sha256, uploaded_at}]}`），文档本体放在 `<库编号>/files/`。Word 文档照 Word 材料的办法生成投影、分段清单、位置表与图片目录（第 5.1 节），其中的路径写成 `<库编号>/files/<文件名>`；这些文件不列在 `documents` 里。两个 JSON 文件都先写临时文件再改名。库编号是 `lib-` 加 8 位十六进制数。任务选用了哪些库记在任务目录的 `knowledge.json` 里（`{version: 1, libraries: [库编号…], notes: [{at, text}]}`）：新建任务时写 `["general"]`；没有这个文件的任务（本版本之前建的）按只选用通用库算，改选用时才写文件。不给知识库根目录的服务（只有在代码里建服务时才会这样，命令行启动总有）没有知识库：`capabilities.knowledge` 为 `false`，下面的接口一律返回 `not_found`。
+
+**文档的种类。** `kind` 取 `standard`（规范）、`glossary`（术语表）、`template`（模板）、`past_work`（以往的成果）、`other`（其他）之一。种类只是标签，不决定文档怎样用。中文叫法随服务信息给出（`knowledge_upload.kinds`，第 9 节）。
+
+| 端点 | 用途 | 返回 |
+|---|---|---|
+| `GET /api/v1/knowledge` | 全部库与每个库的文档清单 | `{ok, libraries: [{id, name, created_at, used_by_tasks, documents: [{name, kind, bytes, uploaded_at}]}]}`。`used_by_tasks` 数的是本服务接手的、进行中的任务里选用了这个库的个数；被别的服务占用的任务不数 |
+| `POST /api/v1/knowledge/libraries` `{name}` | 新建库 | `{ok, library: {id, name, created_at}}`。名字空返回 `rejected`，说明「库名不能是空的。」；与已有的库同名（同名规则与材料相同）返回 `rejected`，说明「已经有一个叫「…」的库了。」 |
+| `POST /api/v1/knowledge/libraries/{id}` `{name}` | 改名 | `{ok, library}`；`general` 返回 `rejected`，说明「通用库不能改名。」 |
+| `POST /api/v1/knowledge/libraries/{id}/delete` | 删除库，文档一并删除 | `{ok, id}`。本服务接手的任务里选用了它的，自动不再选用，在它的 `knowledge.json` 的 `notes` 里记一句，不发事件；被别的服务占用的任务不改。`general` 返回 `rejected`，说明「通用库不能删除。」 |
+| `POST /api/v1/knowledge/libraries/{id}/documents` | 上传文档（multipart，单文件，另带字段 `kind`） | `{ok, document: {name, kind, bytes, uploaded_at}}`。检查照上传材料的办法（第 5.1 节）：文件名、类型（`.md`、`.txt`、Word 的 `.docx`）、保留的文件名、大小（最大 20 MB，`too_large`；更大的请求体不读就拒绝）、`kind`（`bad_request`）、内容、文件名。内容与文件名只在同一个库里比：内容相同返回 `duplicate_content`，说明「这份文件与这个库里已有的文档《…》内容完全相同，没有重复保存。」；同名而内容不同返回 `name_taken`，说明「这个库里已经有一份叫《…》的文档，内容与这份不同。请给文件换一个名字再上传。」；两种拒绝的 `data.name` 都是已有的那份文档。读不出来的 `.docx` 返回 `unsupported_type`，什么都不留下 |
+| `POST /api/v1/knowledge/libraries/{id}/documents/delete` `{name}` | 删除文档，生成的文件一起删 | `{ok}` |
+| `GET /api/v1/knowledge/libraries/{id}/documents/content?name=…` | 文档的正文 | `{ok, name, text}`；`.docx` 给投影。文件必须落在那个库的 `files/` 里，否则返回 `bad_request` |
+| `GET /api/v1/knowledge/libraries/{id}/documents/raw?name=…` | 文档文件的原样内容 | 文件的原始字节，`Content-Type` 与材料相同 |
+| `GET /api/v1/tasks/{task_id}/knowledge` | 这个任务选用的库 | `{ok, libraries: [库编号…]}`；`GET /api/v1/tasks/{task_id}` 的 `knowledge_libraries` 也是它 |
+| `POST /api/v1/tasks/{task_id}/knowledge` `{libraries: [库编号…]}` | 改选用 | `{ok, libraries}`。`general` 总保留并排在最前；不存在的库编号返回 `rejected`，说明「没有这个库：…。」；任务已完成或已放弃时返回 `task_closed` |
+
+上传材料的接口不变。网页界面在上传时先问这份文件用来做什么；选「整理时要参考的资料」时改调上面的文档上传，选了「新建一个库…」就先建库，勾了「同时让这个任务选用它」就再调一次改选用。

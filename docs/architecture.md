@@ -14,6 +14,8 @@
 
 **How the task service talks to pi.** It starts pi in RPC mode and exchanges one JSON object per line with it: commands and answers to dialogs on pi's standard input, events and responses on its standard output (`backend/src/pi_session.ts`). Lines are split at line feeds only, as pi's RPC documentation requires, so the characters U+2028 and U+2029 inside a JSON string do not break a line. The layer that starts pi and sends and receives these lines is a replaceable interface (`backend/src/transport.ts`); there is one implementation now, a child process (`backend/src/transport_rpc.ts`). Commands, events, the archives and the answers to dialogs are handled above it, in `PiSession`. One exception: to list the model catalog of a Codex subscription, `backend/src/model_config.ts` starts pi once more to print the catalog, outside this interface; later this will read the catalog through pi's command interface instead.
 
+**Where the knowledge base lives.** The reference documents that tasks consult are kept outside the task directories, under the knowledge root given by `--knowledge` (default `knowledge/` in the user data directory, next to `tasks/` and `runs/`): `libraries.json`, and for each library `documents.json` and the document files in `files/` (`backend/src/knowledge.ts`; the layout is in section 11 of the API description). The task service reads and writes these files itself; they are not in any task database. Which libraries a task uses is kept in `knowledge.json` in the task directory, also written by the task service. In this version the agent does not read the knowledge base.
+
 **The three kinds of code.**
 
 | Kind | Where | What it may do |
