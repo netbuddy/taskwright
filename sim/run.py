@@ -280,8 +280,10 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
         node = shutil.which("node")
         if node is None:
             raise RuntimeError("在 PATH 里找不到 node，起不了后端任务服务。")
+        # 三个目录都给，放在这一次演练的目录里：哪一个不给，后端就把它放到用户数据目录下，演练不该往那里写东西。
         service = subprocess.Popen([node, str(REPO_ROOT / "backend" / "src" / "main.mts"), "--tasks", str(sim / "tasks"),
-                                    "--runs", str(sim / "backend"), "--port", str(args.port)], cwd=str(REPO_ROOT),
+                                    "--runs", str(sim / "backend"), "--knowledge", str(sim / "knowledge"),
+                                    "--port", str(args.port)], cwd=str(REPO_ROOT),
                                    stdout=open(sim / "backend.log", "w"), stderr=subprocess.STDOUT, env=dict(os.environ))
     backend = Backend(base, sim / "执行者事件流.txt")
     ua = None
