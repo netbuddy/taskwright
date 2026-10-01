@@ -32,7 +32,6 @@ import { NoModelBanner, UserMenu, useService } from "../components/ServiceContro
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
 import { tooLargeText, unsupportedTypeText } from "../model/upload";
 import { executorHint } from "../components/work/executorHint";
-import { MaterialsContext } from "../state/materials";
 import { KnowledgeContext } from "../state/knowledge";
 import { KnowledgeDocModal, type KnowledgeDocRequest } from "../components/work/KnowledgeDocModal";
 import { isKnowledgeLocator } from "../model/knowledge";
@@ -371,7 +370,6 @@ export function WorkViewPage({ taskId, sessionId, collection = null }: {
           <div className="stage-col">
             <div className="work">
               {task ? (
-                <MaterialsContext.Provider value={state.materials}>
                 <KnowledgeContext.Provider value={libraries}>
                 <ItemsPanel task={task} initialCollection={collection} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
@@ -380,7 +378,6 @@ export function WorkViewPage({ taskId, sessionId, collection = null }: {
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} />
                 </KnowledgeContext.Provider>
-                </MaterialsContext.Provider>
               ) : <div className="pane-items" />}
               <div className="pane-doc">
                 <SidePanel side={side} onSide={setSide} onCollapse={() => toggleDoc(true)} onExpand={() => toggleDoc(false)}
