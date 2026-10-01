@@ -1,14 +1,16 @@
 /**
  * 测试文件的总时限（tests/deadline.ts）：结束时留着监听服务器的测试文件，到时限被报为失败并点出文件名；正常结束的文件不受影响。
  * 另起一次 node --test，时限设成 1 秒，整例两三秒跑完。
+ * 同一个文件顺带把 pi 的配置目录指到临时目录：没设环境变量时新建一个空目录、进程退出时删掉，已经设了的不动。
  */
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DEADLINE_ENV, DEFAULT_DEADLINE_SECONDS, deadlineSeconds } from "./deadline.ts";
+import { AGENT_DIR_ENV, DEADLINE_ENV, DEFAULT_DEADLINE_SECONDS, deadlineSeconds } from "./deadline.ts";
 import { tempDir } from "./helpers.ts";
 
 const tmp = tempDir();
@@ -43,4 +45,36 @@ test("结束时留着监听服务器的测试文件到时限被报为失败，�
   assert.match(out, /✖ leak\.test\.mjs/);
   assert.match(out, /✔ 什么都不留/);
   assert.doesNotMatch(out, /测试文件 fine\.test\.mjs/);
+});
+
+test("pi 的配置目录：没设环境变量或设成空串时指到新建的空临时目录，进程退出时删掉；已经设了的照用、不删", () => {
+  const dir = join(tmp, "agent-dir");
+  mkdirSync(dir);
+  // 被测的测试文件把它看到的配置目录、那时目录在不在、里面有什么记进 seen.json。
+  writeFileSync(join(dir, "agent_dir.test.mjs"), [
+    'import { test } from "node:test";',
+    'import { existsSync, readdirSync, writeFileSync } from "node:fs";',
+    `test("记下配置目录", () => { const dir = process.env.${AGENT_DIR_ENV}; `
+      + 'writeFileSync("seen.json", JSON.stringify({ dir, exists: existsSync(dir), entries: existsSync(dir) ? readdirSync(dir) : null })); });',
+  ].join("\n"));
+  const run = (given: string | undefined) => {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    if (given === undefined) delete env[AGENT_DIR_ENV];
+    else env[AGENT_DIR_ENV] = given;
+    const done = spawnSync(process.execPath, ["--test", "--import", join(import.meta.dirname, "deadline.ts"), "agent_dir.test.mjs"],
+      { cwd: dir, env, encoding: "utf-8", timeout: 30_000 });
+    assert.equal(done.status, 0, done.stdout + done.stderr);
+    return JSON.parse(readFileSync(join(dir, "seen.json"), "utf-8"));
+  };
+  for (const given of [undefined, ""]) {
+    const seen = run(given);
+    assert.ok(seen.dir.startsWith(join(tmpdir(), "taskwright-test-pi-agent-")), seen.dir);
+    assert.deepEqual([seen.exists, seen.entries], [true, []]);
+    assert.equal(existsSync(seen.dir), false, "进程退出时删掉");
+  }
+  const own = join(dir, "own-agent");
+  mkdirSync(own);
+  assert.deepEqual(run(own), { dir: own, exists: true, entries: [] });
+  assert.equal(existsSync(own), true, "不是本文件建的目录不删");
 });

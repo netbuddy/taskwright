@@ -131,7 +131,8 @@ describe("文件显示不出来时，材料区上方「Word 文件按原版式�
     mockApi();
     render(<MaterialPane taskId="TASK-U" materials={materials} locate={null} />);
     await screen.findByTestId("docx-unrenderable", undefined, SLOW);
-    expect(screen.queryByText(HINT)).toBeNull();
+    // 这种情形下「显示不出来」那块先出现，DocxPaper 随后才在副作用里报给材料区，那句说明晚一步才收起：等它消失，不是立刻查。
+    await waitFor(() => expect(screen.queryByText(HINT)).toBeNull(), SLOW);
   });
 
   it("读不到文件（接口出错）", async () => {
