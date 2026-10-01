@@ -1,6 +1,7 @@
-// 任务页完成条件横条里的句子与分数。每条完成条件写成一行：前半句说要求（带集合名），后半句说现状。
+// 任务页完成条件横条里的句子与分数。已经满足的与还差的完成条件各写成一行：前半句说要求（带集合名），后半句说现状。
 // 现有的四种条件各有一套写法；认不出的条件名退回「集合名：条件名，接口给的说明」。
-// 分数的分母只数用得上的条件（集合有条目，或者条件本身要求有条目），分子数其中已经满足的；集合还没有条目的条件不算进分数，照样列出来。
+// 集合还没有条目、暂时不用核对的条件不逐条列，合成末尾的一行，只写是哪几个集合。
+// 分数的分母只数用得上的条件（集合有条目，或者条件本身要求有条目），分子数其中已经满足的；暂时不用核对的不算进分数。
 
 import type { Completion, CompletionCondition, Item, Task } from "../api/types";
 import { REVIEW_CONDITION, conditionState, reviewState } from "./items";
@@ -54,10 +55,7 @@ function reviewGroups(c: CompletionCondition, items: Item[], task: Task) {
 function lineOf(c: CompletionCondition, task: Task): LinePart[] {
   const state = conditionState(c);
   const requirement = REQUIREMENT[c.name];
-  if (!requirement) {
-    return [`${c.collection}：${c.name}，${state === "empty" ? "这个集合现在还没有条目，这一条暂时不用核对。" : c.note}`];
-  }
-  if (state === "empty") return [`${requirement(c.collection)}，现在还没有条目，这一条暂时不用核对。`];
+  if (!requirement) return [`${c.collection}：${c.name}，${c.note}`];
   if (c.name === "至少一个条目") {
     return [state === "met" ? `${c.collection}至少有一个条目，这一条已经满足。` : `${requirement(c.collection)}，现在一个也没有。`];
   }
@@ -78,9 +76,23 @@ function lineOf(c: CompletionCondition, task: Task): LinePart[] {
   return [head, ...idsThat(c.missing, c.name === "每个条目用户确认" ? "你还没有读过" : "还没有解决"), "。"];
 }
 
-/** 完成条件逐条写成一行，保持接口给的先后（按集合，再按条件）。 */
+/** 暂时不用核对的条件合成的那一行：只写是哪几个集合还没有条目，集合按接口给的先后、不重复。 */
+export function emptyLineText(collections: string[]): string {
+  return collections.length === 1
+    ? `${collections[0]}现在还没有条目，暂时不用核对。`
+    : `${collections.join("、")}现在还没有条目，这几项暂时不用核对。`;
+}
+
+/**
+ * 完成条件横条的各行：已经满足的与还差的逐条一行，保持接口给的先后（按集合，再按条件）；
+ * 暂时不用核对的（集合还没有条目）不逐条列，合成末尾的一行。
+ */
 export function completionLines(completion: Completion, task: Task): CompletionLine[] {
-  return completion.conditions.map((c) => ({ key: `${c.collection}/${c.name}`, state: conditionState(c), parts: lineOf(c, task) }));
+  const lines: CompletionLine[] = completion.conditions.filter((c) => conditionState(c) !== "empty")
+    .map((c) => ({ key: `${c.collection}/${c.name}`, state: conditionState(c), parts: lineOf(c, task) }));
+  const emptyCollections = [...new Set(completion.conditions.filter((c) => conditionState(c) === "empty").map((c) => c.collection))];
+  if (emptyCollections.length) lines.push({ key: "暂时不用核对", state: "empty", parts: [emptyLineText(emptyCollections)] });
+  return lines;
 }
 
 /** 分数「已满足几条／用得上的一共几条」：集合还没有条目、暂时不用核对的条件不算在内。 */

@@ -9,7 +9,7 @@ import type { Completion, CompletionCondition, Item, KnowledgeLibrary, ServiceIn
 import { ServiceProvider } from "../components/ServiceControls";
 import { ToastProvider } from "../components/Toasts";
 import { NO_SESSION_TITLE } from "../components/task/CollectionCards";
-import { completionLines, completionScore } from "../model/completionLines";
+import { completionLines, completionScore, emptyLineText } from "../model/completionLines";
 import { formatTimeShort } from "../model/format";
 import { TaskPage } from "../pages/TaskPage";
 
@@ -132,7 +132,7 @@ describe("完成条件横条", () => {
     cond("问题", "没有状态为未解决的条目", "empty"),
   ];
 
-  it("分数只数用得上的条件；已满足、还差、暂时不用核对各写一句，带集合名与条目编号", async () => {
+  it("分数只数用得上的条件；已满足的与还差的各写一句，带集合名与条目编号；暂时不用核对的合成末尾的一行", async () => {
     page(detail({ items, completion: completionOf(conditions) }));
     await ready();
     expect(screen.getByTestId("completion-score").textContent).toBe("1/3");
@@ -141,15 +141,13 @@ describe("完成条件横条", () => {
       "cond-met：功能用例至少有一个条目，这一条已经满足。",
       "cond-unmet：功能用例的每个条目都要评审通过，UC-001 和 UC-002 还在等评审。",
       "cond-unmet：功能用例的每个条目都要经你确认，UC-002 你还没有读过。",
-      "cond-empty：非功能需求的每个条目都要评审通过，现在还没有条目，这一条暂时不用核对。",
-      "cond-empty：非功能需求的每个条目都要经你确认，现在还没有条目，这一条暂时不用核对。",
-      "cond-empty：问题里不能有状态为未解决的条目，现在还没有条目，这一条暂时不用核对。",
+      "cond-empty：非功能需求、问题现在还没有条目，这几项暂时不用核对。",
     ]);
     // 条目编号用等宽字写；三种记号各是各的：勾、圈、短横。
     expect([...bar.querySelectorAll(".tp-conds .unmet .mono")].map(text)).toEqual(["UC-001", "UC-002", "UC-002"]);
     expect(bar.querySelectorAll(".met .anticon-check").length).toBe(1);
     expect(bar.querySelectorAll(".unmet .ring").length).toBe(2);
-    expect(bar.querySelectorAll(".empty .anticon-minus").length).toBe(3);
+    expect(bar.querySelectorAll(".empty .anticon-minus").length).toBe(1);
     expect(bar.textContent).not.toContain("用户");
   });
 
@@ -196,7 +194,6 @@ describe("完成条件横条", () => {
       cond("问题", "没有状态为未解决的条目", "unmet", ["TBD-001"]),
       cond("问题", "没有状态为未解决的条目", "met"),
       cond("功能用例", "每个条目都有来源", "unmet", ["UC-001"], "UC-001 没有来源。"),
-      cond("功能用例", "每个条目都有来源", "empty"),
     ])).toEqual([
       "功能用例的每个条目都要评审通过，UC-001 还在等评审，UC-002 评审不通过；UC-003 评审不通过，但你保留了写法。",
       "功能用例的每个条目都要评审通过，这一条已经满足；UC-003 评审不通过，但你保留了写法。",
@@ -206,9 +203,41 @@ describe("完成条件横条", () => {
       "问题里不能有状态为未解决的条目，TBD-001 还没有解决。",
       "问题里不能有状态为未解决的条目，这一条已经满足。",
       "功能用例：每个条目都有来源，UC-001 没有来源。",
-      "功能用例：每个条目都有来源，这个集合现在还没有条目，这一条暂时不用核对。",
     ]);
     expect(completionScore(completionOf([cond("甲", "x", "met"), cond("甲", "y", "unmet"), cond("乙", "x", "empty")]))).toEqual({ met: 1, total: 2 });
+  });
+});
+
+describe("完成条件里暂时不用核对的那一行", () => {
+  const task = detail();
+  const lines = (list: CompletionCondition[]) => completionLines(completionOf(list), task)
+    .map((line) => `${line.state}：${line.parts.map((p) => (typeof p === "string" ? p : p.id)).join("")}`);
+
+  it("只有一个集合还没有条目时写「某集合现在还没有条目，暂时不用核对。」，它有几条条件都只写一行", () => {
+    expect(lines([cond("非功能需求", "每个条目评审通过", "empty"), cond("非功能需求", "每个条目用户确认", "empty")]))
+      .toEqual(["empty：非功能需求现在还没有条目，暂时不用核对。"]);
+    expect(emptyLineText(["问题"])).toBe("问题现在还没有条目，暂时不用核对。");
+  });
+
+  it("好几个集合还没有条目时用顿号连起来写一行，集合不重复、按接口给的先后；这一行排在已满足与还差的各行之后", () => {
+    expect(lines([
+      cond("功能用例", "至少一个条目", "unmet"),
+      cond("功能用例", "每个条目评审通过", "empty"),
+      cond("非功能需求", "每个条目评审通过", "empty"),
+      cond("问题", "没有状态为未解决的条目", "met"),
+      cond("非功能需求", "每个条目用户确认", "empty"),
+      cond("约束", "每个条目用户确认", "empty"),
+    ])).toEqual([
+      "unmet：功能用例至少要有一个条目，现在一个也没有。",
+      "met：问题里不能有状态为未解决的条目，这一条已经满足。",
+      "empty：功能用例、非功能需求、约束现在还没有条目，这几项暂时不用核对。",
+    ]);
+  });
+
+  it("没有暂时不用核对的条件时不写这一行；分数照旧不数它们", () => {
+    expect(lines([cond("功能用例", "至少一个条目", "met")])).toEqual(["met：功能用例至少有一个条目，这一条已经满足。"]);
+    expect(completionScore(completionOf([cond("功能用例", "至少一个条目", "met"), cond("约束", "每个条目评审通过", "empty"), cond("约束", "每个条目用户确认", "empty")])))
+      .toEqual({ met: 1, total: 1 });
   });
 });
 
