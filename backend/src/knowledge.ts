@@ -20,15 +20,13 @@ import { ApiError } from "./errors.ts";
 import { readTextFile, readTextFileLenient } from "./files.ts";
 import { ProjectionError, isReserved, projectionPath, projectionText, removeProjection, writeProjection } from "./projection.ts";
 import type { SegmentParams } from "../../agent/src/lib/segments.ts";
+import { SELECTION_FILE } from "../../agent/src/lib/knowledge.ts";
+import { GENERAL, KINDS, KIND_NAMES, type Kind } from "../../agent/src/lib/knowledge_locator.ts";
 import { UPLOAD_TYPES, resolvePath, sameMaterialName, unsupportedTypeText } from "./service.ts";
 
-export const GENERAL = "general";
+// 编号、种类与任务目录里记选用的文件名，助手一侧也要用，定义在 agent/src/lib 下，这里原样交出去。
+export { GENERAL, KINDS, KIND_NAMES, SELECTION_FILE, type Kind };
 export const GENERAL_NAME = "通用库";
-
-/** 文档的种类：只是标签，不决定用法。界面上显示中文。 */
-export const KINDS = ["standard", "glossary", "template", "past_work", "other"] as const;
-export type Kind = (typeof KINDS)[number];
-export const KIND_NAMES: Record<Kind, string> = { standard: "规范", glossary: "术语表", template: "模板", past_work: "以往的成果", other: "其他" };
 
 /** 知识库文档的上传上限（材料的 5 MB 上限不变）。 */
 export const KNOWLEDGE_MAX_UPLOAD = 20 * 1024 * 1024;
@@ -38,9 +36,6 @@ export const KNOWLEDGE_TOO_LARGE_TEXT = `单个文件不能超过 ${KNOWLEDGE_MA
 export const docDuplicateText = (name: string) => `这份文件与这个库里已有的文档《${name}》内容完全相同，没有重复保存。`;
 /** 上传的文件名与这个库里已有的某份文档相同、内容不同时的那句话（错误码 name_taken）。 */
 export const docNameTakenText = (name: string) => `这个库里已经有一份叫《${name}》的文档，内容与这份不同。请给文件换一个名字再上传。`;
-
-/** 任务目录里记选用的库的文件。 */
-export const SELECTION_FILE = "knowledge.json";
 
 export interface LibraryRow {
   id: string;
