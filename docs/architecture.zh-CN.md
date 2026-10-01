@@ -16,7 +16,7 @@
 
 **任务服务怎样与 pi 通信。** 任务服务以 RPC 方式启动 pi，与它按行收发 JSON，一行一个对象：命令与对话框的应答写进 pi 的标准输入，事件与回应从它的标准输出读出（`backend/src/pi_session.ts`）。读的时候只在换行符处断行，这是 pi 的 RPC 文档的要求，所以 JSON 字符串里的 U+2028、U+2029 两个字符不会把一行切断。启动 pi 与收发这些行的一层是可以替换的接口（`backend/src/transport.ts`），现在只有一种实现：子进程（`backend/src/transport_rpc.ts`）。命令与回应的对应、事件、归档与对话框的应答在它上面一层，由 `PiSession` 处理。有一处例外：列 Codex 订阅的模型目录时，`backend/src/model_config.ts` 会另起一次 pi 的进程让它印出模型清单，不经过这个接口；以后改用 pi 的命令接口读目录。
 
-**知识库放在哪里。** 任务整理时参考的资料放在任务目录之外，在 `--knowledge` 给的知识库根目录下（缺省是用户数据目录下的 `knowledge/`，与 `tasks/`、`runs/` 并列）：`libraries.json`，每个库一份 `documents.json` 与放文档本体的 `files/`（`backend/src/knowledge.ts`；目录结构见接口文档第 11 节）。这些文件由任务服务自己读写，不在任何任务数据库里。任务选用了哪些库记在任务目录的 `knowledge.json` 里，同样由任务服务写。本版本的智能体不读知识库。
+**知识库放在哪里。** 任务整理时参考的资料放在任务目录之外，在 `--knowledge` 给的知识库根目录下（缺省是用户数据目录下的 `knowledge/`，与 `tasks/`、`runs/` 并列）：`libraries.json`，每个知识库一份 `documents.json` 与放文档本体的 `files/`（`backend/src/knowledge.ts`；目录结构见接口文档第 11 节）。这些文件由任务服务自己读写，不在任何任务数据库里。任务选用了哪些知识库记在任务目录的 `knowledge.json` 里，同样由任务服务写。任务服务启动智能体时，经环境变量 `TASKWRIGHT_KNOWLEDGE_ROOT` 把知识库根目录交给它；智能体一侧只读知识库（`agent/src/lib/knowledge.ts`）：在任务现状消息里列出任务选用的知识库与文档，核对出处以 `knowledge/` 开头的来源（接口文档第 11 节）。智能体不写知识库。
 
 **三种代码。**
 
