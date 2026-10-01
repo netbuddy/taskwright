@@ -101,6 +101,7 @@ cd backend && node --test --import ./tests/deadline.ts 'tests/*.test.ts'
 ```
 
 每个测试文件有总时限（`tests/deadline.ts`，缺省 300 秒，慢机器上可用环境变量 `TASKWRIGHT_TEST_FILE_DEADLINE` 放宽）：到时还没结束的文件报为失败，多半是有服务器、连接或子进程没有关。
+同一个文件还保证测试不碰用户自己的 pi 配置目录：没有设环境变量 `PI_CODING_AGENT_DIR` 时，它为每个测试文件的进程在系统临时目录下新建一个空目录并把变量指到它，进程退出时删掉；所以测试命令里的 `--import ./tests/deadline.ts` 不能省。
 测试用的库由 `agent/tests/fixtures/` 里的夹具脚本写出（子进程运行，内部调用真实的写入函数），本目录不导入写入函数。
 `scripts/test-all.sh` 已包含这一套。测试起后端时一律给端口 0（`tests/helpers.ts` 的 `spawnBackend`），几个会话同时跑测试也不会抢同一个端口。
 几份测试拿 `tests/fixtures/expected/` 里的期望值逐字比较，说明见那里的 README.md。
