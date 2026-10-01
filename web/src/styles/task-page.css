@@ -46,7 +46,9 @@
 .tp-conds .mk { width: 1rem; flex: none; text-align: center; }
 .tp-conds .met .mk { color: var(--ok); }
 .tp-conds .unmet { color: var(--ink); }
-.tp-conds .unmet .mk, .tp-conds .hint .mk { color: var(--amber); }
+.tp-conds .unmet .mk { color: var(--amber); }
+/* 提示行（完成条件之外、不挡完成任务）的记号用灰色：琥珀只留给还差的条件 */
+.tp-conds .hint .mk { color: var(--mut); }
 /* 还差的记号是一个空心圈 */
 .tp-conds .ring { display: inline-block; width: 0.714rem; height: 0.714rem; border: 0.129rem solid currentColor; border-radius: 50%; vertical-align: -0.05rem; }
 .tp-conds .empty, .tp-conds .empty .mk { color: var(--mut); }

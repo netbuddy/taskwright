@@ -1,4 +1,5 @@
-// 任务页样式文件（styles/task-page.css）的两条规矩：颜色只引用 styles.css 里的变量，不直接写色值；类名一律以 tp- 开头，不与别的页面相混。
+// 任务页样式文件（styles/task-page.css）的几条规矩：颜色只引用 styles.css 里的变量，不直接写色值；类名一律以 tp- 开头，不与别的页面相混；
+// 琥珀色只表示「还差」，提示行的记号不用它。
 // 测试环境不计算样式表（测试配置里 css 关着，?raw 引入也读不到内容），这里直接读样式表文件。
 
 import { describe, expect, it } from "vitest";
@@ -27,6 +28,15 @@ describe("任务页的样式文件", () => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
     expect(defined.has("--text2")).toBe(true);
     expect(used.has("--text2")).toBe(true);
+  });
+
+  it("完成条件横条里琥珀色只给还差的条件：提示行的记号用灰色", () => {
+    const declarations = (selector: string) => [...rules.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter((m) => m[1].split(",").some((one) => one.trim() === selector)).map((m) => m[2].trim());
+    expect(declarations(".tp-conds .unmet .mk")).toEqual(["color: var(--amber);"]);
+    expect(declarations(".tp-conds .hint .mk")).toEqual(["color: var(--mut);"]);
+    const amberRules = [...rules.matchAll(/([^{}]+)\{[^{}]*var\(--amber\)[^{}]*\}/g)].map((m) => m[1].trim());
+    expect(amberRules.filter((selector) => selector.includes(".hint"))).toEqual([]);
   });
 
   it("类名一律以 tp- 开头：每条规则的第一个选择器都从 .tp- 起", () => {
