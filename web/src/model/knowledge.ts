@@ -2,12 +2,10 @@
 // 种类的叫法与上传上限都来自服务信息（GET /api/v1/service 的 knowledge_upload），前端不另写一份。
 
 import type { KnowledgeKind, KnowledgeLibrary, ServiceInfo } from "../api/types";
-import { isKnowledgeLocator, parseKnowledgeLocator } from "../../../agent/src/lib/knowledge_locator.ts";
+import { GENERAL, isKnowledgeLocator, parseKnowledgeLocator } from "../../../agent/src/lib/knowledge_locator.ts";
 
-export { isKnowledgeLocator };
-
-/** 通用知识库的编号：每个任务都选用它，不能删除、不能改名。 */
-export const GENERAL = "general";
+// 通用知识库的编号（每个任务都选用它，不能删除、不能改名）与「出处是不是指向知识库」的判断，定义在助手一侧，这里原样交出去。
+export { GENERAL, isKnowledgeLocator };
 
 /** 通用知识库排第一，其余照后端给的先后。 */
 export function sortedLibraries(libs: KnowledgeLibrary[]): KnowledgeLibrary[] {
