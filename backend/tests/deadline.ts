@@ -7,8 +7,15 @@
  * 所以这里设一个不拖住进程的定时器：文件正常结束时它不起作用；到时进程还在，就写明是哪个文件、以失败退出，框架把这个文件报为失败。
  *
  * 只在测试框架起的子进程里生效（框架给子进程设了环境变量 NODE_TEST_CONTEXT），框架的主进程与别的进程里什么都不做。
+ *
+ * 顺带做的另一件事：测试不得碰用户自己的 pi 配置目录。后端取 pi 配置目录时看环境变量 PI_CODING_AGENT_DIR，没设就用用户主目录下
+ * 的缺省目录（见 src/launch.ts 的 piAgentDir），pi 自己也是这个规则。于是没设这个变量就跑测试时，用到的就是用户的配置目录：
+ * 几个测试文件开头用 pi --version 探测本机有没有装 pi，pi 一运行就在配置目录里给配置文件建锁目录又删掉（目录的修改时间随之变化）；
+ * 测试里运行的后端代码没有另给配置目录时也会读到用户的配置。所以这里在变量没设（或是空串）时，为这个测试文件的进程在系统临时目录下
+ * 新建一个空目录并把变量指到它，进程退出时删掉；测试里起的子进程继承这个变量。自己另设配置目录的测试不受影响。
  */
 
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -19,6 +26,9 @@ import { join, relative } from "node:path";
 export const DEFAULT_DEADLINE_SECONDS = 300;
 
 export const DEADLINE_ENV = "TASKWRIGHT_TEST_FILE_DEADLINE";
+
+/** pi 配置目录的环境变量（pi 自己的规则，后端也照它取）。 */
+export const AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
 /** 环境变量给的秒数；没设或写的不是正数时用缺省值。 */
 export function deadlineSeconds(env: NodeJS.ProcessEnv = process.env): number {
@@ -38,5 +48,11 @@ if (process.env.NODE_TEST_CONTEXT) {
   // 指到临时目录里一个不存在的文件：测试不读开发者本机的设置，测试里起的后端进程继承这个环境变量。要用设置文件的测试自己另设。
   if (!process.env.TASKWRIGHT_SETTINGS_FILE) {
     process.env.TASKWRIGHT_SETTINGS_FILE = join(tmpdir(), `taskwright-test-no-settings-${process.pid}`, "settings.json");
+  }
+  // pi 的配置目录同样不用开发者本机的（理由见文件开头）：没设时指到一个新建的空目录，进程退出时删掉。
+  if (!process.env[AGENT_DIR_ENV]) {
+    const agentDir = mkdtempSync(join(tmpdir(), "taskwright-test-pi-agent-"));
+    process.env[AGENT_DIR_ENV] = agentDir;
+    process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
   }
 }
