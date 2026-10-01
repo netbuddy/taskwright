@@ -107,12 +107,16 @@ export function knowledgeFilePath(root: string, locator: string): string | null 
 }
 
 /**
- * 这个任务选用的知识库最近一次变动的时刻（毫秒）：任务的选用、知识库清单、各选用知识库的文档清单这几个文件里
- * 最晚的修改时刻；一个都读不到时为 0。续接会话时用它判断上次之后知识库有没有变。
+ * 这个任务选用的知识库最近一次变动的时刻（毫秒）：任务的选用与各选用知识库的文档清单这几个文件里最晚的修改时刻；
+ * 一个都读不到时为 0。续接会话时用它判断上次之后知识库有没有变。
+ *
+ * 不看知识库根目录的 libraries.json：新建、改名或删除任何一个知识库都会改写它，与这个任务无关的也算进来的话，
+ * 每条续接的会话都会误报「知识库有变化」。删除任务选用的知识库时，后端会改写任务的 knowledge.json，仍然察觉得到；
+ * 只给选用的知识库改名察觉不到，名字在下一次写这一段时才更新。
  */
 export function knowledgeChangedAt(taskDir: string, root: string | null): number {
   if (!root) return 0;
-  const files = [join(taskDir, SELECTION_FILE), join(root, "libraries.json"), ...selectedLibraryIds(taskDir).map((id) => join(root, id, "documents.json"))];
+  const files = [join(taskDir, SELECTION_FILE), ...selectedLibraryIds(taskDir).map((id) => join(root, id, "documents.json"))];
   let latest = 0;
   for (const file of files) {
     try {

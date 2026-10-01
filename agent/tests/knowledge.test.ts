@@ -83,16 +83,16 @@ test("出处指向的文件在知识库根目录下的「编号/files/文件名�
   assert.equal(knowledgeFilePath("/data/kb", "inputs/术语.md"), null);
 });
 
-test("最近一次变动的时刻：取任务的选用、知识库清单与各选用知识库的文档清单里最晚的修改时刻；没有知识库时为 0", () => {
+test("最近一次变动的时刻：取任务的选用与各选用知识库的文档清单里最晚的修改时刻；知识库清单与没有选用的知识库不算；没有知识库时为 0", () => {
   const root = makeRoot();
   const task = makeTask(["general"]);
   assert.equal(knowledgeChangedAt(task, null), 0);
   const at = (path: string, seconds: number) => utimesSync(path, seconds, seconds);
   at(join(task, "knowledge.json"), 1000);
-  at(join(root, "libraries.json"), 2000);
+  at(join(root, "libraries.json"), 8000);
   at(join(root, "general", "documents.json"), 3000);
   at(join(root, "lib-a1", "documents.json"), 9000);
-  assert.equal(knowledgeChangedAt(task, root), 3000 * 1000, "没有选用的知识库不算");
+  assert.equal(knowledgeChangedAt(task, root), 3000 * 1000, "知识库清单与没有选用的知识库不算");
   at(join(task, "knowledge.json"), 5000);
   assert.equal(knowledgeChangedAt(task, root), 5000 * 1000);
 });

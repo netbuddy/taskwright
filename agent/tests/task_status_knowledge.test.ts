@@ -103,6 +103,30 @@ test("续接：上次之后知识库没有变就不写；任务的选用或文�
   assert.match(taskStatusMessage(narrowed, facts, "s", root)!.text, /交付物没有变化。\n上次之后，这个任务选用的知识库或其中的文档有变化：现在选用的知识库里没有文档。$/);
 });
 
+test("续接：新建、改名或删除与这个任务无关的知识库之后，续接消息不提知识库；删除任务选用的知识库（后端同时改写任务的选用）才提", () => {
+  const root = makeRoot();
+  const dir = makeTask(["general"]);
+  const last = Date.now() + 5;
+  const facts = { hasUserMessage: true, hasStatusMessage: true, lastMessageAt: last };
+  const at = (path: string, ms: number) => utimesSync(path, ms / 1000, ms / 1000);
+  for (const file of [join(dir, "knowledge.json"), join(dir, "inputs/材料.md"), join(root, "general", "documents.json")]) at(file, last - 60_000);
+  // 新建一个与任务无关的知识库：清单文件改写了，别的知识库多了文档
+  writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用知识库" }, { id: "lib-a1", name: "行业规范（改过名）" }, { id: "lib-new", name: "刚建的" }] }));
+  at(join(root, "libraries.json"), last + 60_000);
+  at(join(root, "lib-a1", "documents.json"), last + 60_000);
+  assert.equal(taskStatusMessage(dir, facts, "s", root), null, "与任务无关的知识库变了，不追加消息");
+  // 任务选用的知识库被删除：后端改写了任务的 knowledge.json
+  const both = makeTask(["general", "lib-a1"]);
+  for (const file of [join(both, "knowledge.json"), join(both, "inputs/材料.md")]) at(file, last - 60_000);
+  at(join(root, "lib-a1", "documents.json"), last - 60_000);
+  assert.equal(taskStatusMessage(both, facts, "s", root), null);
+  writeFileSync(join(both, "knowledge.json"), JSON.stringify({ version: 1, libraries: ["general"], notes: [] }));
+  at(join(both, "knowledge.json"), last + 60_000);
+  const message = taskStatusMessage(both, facts, "s", root)!;
+  assert.match(message.text, /交付物没有变化。\n上次之后，这个任务选用的知识库或其中的文档有变化，现在是这样。这个任务选用的知识库/);
+  assert.doesNotMatch(message.text, /行业规范/);
+});
+
 test("「查询任务状态」也列出选用的知识库与文档，写法与任务现状消息里的那一段相同；没有文档时不列", () => {
   const root = makeRoot();
   const dir = makeTask(["general", "lib-a1", "lib-e0"]);
