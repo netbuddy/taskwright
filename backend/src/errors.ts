@@ -21,6 +21,10 @@ export const STATUS: Record<string, number> = {
   duplicate_content: 409,
   name_taken: 409,
   unsupported_type: 415,
+  // 模型配置（docs/api.md §10）：选中的模型属于这个服务或者正要停用它；共用配置文件不能改写；共用配置文件的锁等不到。
+  in_use: 409,
+  config_unwritable: 409,
+  config_locked: 503,
 };
 
 /** 接口拒绝一个请求。message 是给用户看的一句中文。 */

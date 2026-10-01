@@ -5,6 +5,13 @@
 import type {
   ActionRequest,
   ApiErrorBody,
+  ContextWindowResult,
+  FetchModelsResult,
+  ModelConfig,
+  ModelSelection,
+  ModelType,
+  Provider,
+  ProviderKind,
   ItemRevision,
   RevisionLog,
   ServiceInfo,
@@ -86,6 +93,11 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
 }
 
 const task = (taskId: string) => `/tasks/${encodeURIComponent(taskId)}`;
+const provider = (id: string) => `/model-config/providers/${encodeURIComponent(id)}`;
+/** 添加、修改模型服务时后端先检查连得上（每个请求最多等 5 秒），获取模型列表时 ollama 要逐个查模型，所以多等一些。 */
+const PROVIDER_TIMEOUT_MS = 60_000;
+/** 查 ollama 的上下文长度要先载入模型，后端最多等两分钟。 */
+const CONTEXT_TIMEOUT_MS = 150_000;
 
 /** 材料文件的原始字节（GET …/materials/raw）：Word 材料要在浏览器里按原版式渲染。出错时按接口约定的错误体折成 ApiError。 */
 async function rawBytes(path: string, timeoutMs = 30_000): Promise<ArrayBuffer> {
@@ -110,6 +122,21 @@ export const api = {
   // 服务信息与退出（退出只在桌面形态有）
   serviceInfo: () => request<ServiceInfo>("GET", "/service", undefined, 5_000),
   exitService: () => request<{ ok: true }>("POST", "/service/exit", {}, 10_000),
+
+  // 模型配置（接口文档第 10 节）：从哪台电脑打开页面都可以读、可以改。
+  modelConfig: () => request<ModelConfig>("GET", "/model-config"),
+  addProvider: (body: { kind: ProviderKind; name?: string; base_url?: string; api_key?: string }) =>
+    request<{ ok: true; provider: Provider }>("POST", "/model-config/providers", body, PROVIDER_TIMEOUT_MS),
+  updateProvider: (id: string, body: { name?: string; base_url?: string; api_key?: string;
+    models?: { id: string; type: ModelType; enabled: boolean; context_window: number | null }[] }) =>
+    request<{ ok: true; provider: Provider }>("POST", provider(id), body, PROVIDER_TIMEOUT_MS),
+  deleteProvider: (id: string) => request<{ ok: true }>("POST", `${provider(id)}/delete`, {}),
+  checkProvider: (id: string) => request<{ ok: true; provider: Provider }>("POST", `${provider(id)}/check`, {}, PROVIDER_TIMEOUT_MS),
+  fetchModels: (id: string) => request<FetchModelsResult>("POST", `${provider(id)}/fetch-models`, {}, PROVIDER_TIMEOUT_MS),
+  contextWindow: (id: string, modelId: string) =>
+    request<ContextWindowResult>("POST", `${provider(id)}/context-window`, { model_id: modelId }, CONTEXT_TIMEOUT_MS),
+  selectModels: (selection: ModelSelection) =>
+    request<{ ok: true; selection: ModelSelection; note: string }>("POST", "/model-config/selection", selection),
 
   // 任务类型（与后端对齐后新增的接口 GET /api/v1/task-types）
   taskTypes: () => request<{ task_types: TaskType[] }>("GET", "/task-types").then((r) => r.task_types),

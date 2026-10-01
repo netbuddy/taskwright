@@ -716,7 +716,11 @@ export type ErrorCode =
   | "busy_timeout"
   | "too_large"
   | "unsupported_type"
-  | "not_found";
+  | "not_found"
+  | "forbidden"
+  | "in_use"
+  | "config_unwritable"
+  | "config_locked";
 
 export interface TaskType {
   task_type: string;
@@ -736,8 +740,82 @@ export interface ServiceInfo {
   mode: "desktop" | "server";
   pid: number;
   port: number | null;
-  capabilities: { exit: boolean; model?: boolean };
+  /** model_config：这个页面能不能改模型配置；现在的后端恒为 true，较早的后端没有这一项。 */
+  capabilities: { exit: boolean; model?: boolean; model_config?: boolean };
   model?: { name: string; reason: string };
   /** 上传上限（字节）、超过时的那句话、允许的扩展名、类型给人看的一串与类型不符时的那句话；旧后端没有这一项，较早的后端没有后三样。 */
   upload?: { max_bytes: number; too_large_text: string; extensions?: string[]; types_text?: string; unsupported_type_text?: string };
+}
+
+// ───── 模型配置（接口文档第 10 节）─────
+
+/** 模型服务的种类。 */
+export type ProviderKind = "ollama" | "llamacpp" | "vllm" | "deepseek" | "aliyun" | "openai_compatible" | "codex";
+/** language：语言模型；embedding：嵌入模型。 */
+export type ModelType = "language" | "embedding";
+
+export interface ProviderModel {
+  id: string;
+  type: ModelType;
+  /** 勾选了的才能选定。 */
+  enabled: boolean;
+  /** 上下文长度（词元数）；还没有时为 null。 */
+  context_window: number | null;
+  /** service：从模型服务查到的；user：用户填的；null：还没有。 */
+  context_source?: "service" | "user" | null;
+}
+
+export interface ProviderStatus {
+  checked_at: string;
+  ok: boolean;
+  message: string;
+  /** 只有 Codex 订阅有：登录凭据在不在。 */
+  logged_in?: boolean;
+}
+
+export interface Provider {
+  id: string;
+  /** 在这里添加的是 true；用户在配置文件里手工写的是 false（只读）。 */
+  managed: boolean;
+  kind: ProviderKind | null;
+  name: string;
+  /** Codex 订阅、只读的、不是从本机来的请求都是 null。 */
+  base_url: string | null;
+  key: { set: boolean; last4: string | null } | null;
+  status: ProviderStatus | null;
+  models: ProviderModel[];
+  models_fetched_at: string | null;
+  /** 选定的模型属于这个模型服务时写 language 和／或 embedding。 */
+  in_use: ModelType[];
+}
+
+export interface ModelSelection {
+  language: { provider_id: string; model_id: string } | null;
+  embedding: { provider_id: string; model_id: string; query_prefix: string } | null;
+}
+
+/** GET /api/v1/model-config */
+export interface ModelConfig {
+  ok: true;
+  editable: boolean;
+  /** 不能改时那句说明；能改时是 null。 */
+  notice: string | null;
+  selection: ModelSelection;
+  /** 没有选定语言模型时助手启动用的模型；from 是后端给的来源（「启动配置」或「pi 设置」）。 */
+  fallback: { model: string; from: string } | null;
+  providers: Provider[];
+}
+
+export interface FetchModelsResult {
+  ok: true;
+  result: "listed" | "not_offered" | "failed";
+  message: string;
+  provider: Provider;
+}
+
+export interface ContextWindowResult {
+  ok: true;
+  context_window: number | null;
+  source: "service" | null;
+  message: string;
 }

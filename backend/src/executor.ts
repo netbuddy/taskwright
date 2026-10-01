@@ -17,7 +17,7 @@ import * as conversation from "./conversation.ts";
 import { ApiError } from "./errors.ts";
 import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
-import { LaunchError, type Profile } from "./launch.ts";
+import { LaunchError, type Profile, resolveModel } from "./launch.ts";
 import { callFacts, maxSeq, openRo } from "./library.ts";
 import { type PiEvent, PiExited, PiNotFound, PiPrepareFailed, PiRefused, PiSession, PiStartRefused, PiTimeout, technicalOf } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
@@ -85,6 +85,17 @@ export function startFailure(error: unknown): { detail: string; text: string } {
   // 启动之前准备文件出错：说明本身是整句（带系统代号，不带路径），代替「助手没有启动起来」。
   if (error instanceof PiPrepareFailed) return { detail: "", text: error.message };
   return { detail: "", text: START_FAILED_TEXT };
+}
+
+/**
+ * 换不到在界面上选定的语言模型时页面上的那句（页面在前面加「助手现在不可用：」）。pi 给的英文原因不上页面，按它认得出的两种换成中文：
+ * 模型登记里没有这个模型（Model not found），它的模型服务没有凭据（No API key）；别的原因写成一般的一句。
+ */
+export function modelUnavailableText(model: string, technical: string): string {
+  const why = /Model not found/i.test(technical) ? "模型登记里找不到它"
+    : /No API key/i.test(technical) ? "它的模型服务还没有设置密钥或者还没有登录"
+    : "换成这个模型没有成功";
+  return `选定的模型「${model}」用不了，${why}。请到设置的「模型」一栏检查。`;
 }
 
 export function newId(prefix: string): string {
@@ -260,6 +271,7 @@ export class Executor {
       throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technical });
     }
     if (expected !== null && state.sessionId !== expected) await this.resumeFailedLocked(pi, expected, state.sessionId ?? null, "带会话文件启动 pi");
+    await this.ensureModel(pi, state);
     this.pi = pi;
     this.adopt(state);
     this.cursor = null;
@@ -270,6 +282,37 @@ export class Executor {
   private adopt(state: Dict): void {
     this.activeSession = state.sessionId ?? null;
     if (state.sessionFile && this.activeSession) this.sessions.remember(this.activeSession, String(state.sessionFile));
+  }
+
+  /**
+   * 在界面上选定了语言模型时（产品设置，见 launch.ts 的 resolveModel），核对 pi 在这条会话里用的是不是它，不是就用 RPC 的
+   * set_model 换过去：pi 新建会话时回到启动参数里的模型，切回旧会话时恢复那条会话记下的模型，所以每次启动、新建、切换之后都核对。
+   * 切回旧会话时旧会话也改用选定的模型（pi 在那条会话记录里加一条换模型的记录）。没有在界面上选过时不动，与 0.3 相同。
+   * 换不过去时停掉这个 pi，照「助手不可用」的方式说明原因。在锁里调用。
+   */
+  private async ensureModel(pi: PiSession, state: Dict): Promise<void> {
+    const wanted = resolveModel(this.profile);
+    if (wanted.from !== "产品设置" || !wanted.model) return;
+    const current = state.model ? `${state.model.provider}/${state.model.id}` : "";
+    if (current === wanted.model) return;
+    const at = wanted.model.indexOf("/");
+    try {
+      await pi.request("set_model", { provider: wanted.model.slice(0, at), modelId: wanted.model.slice(at + 1) });
+    } catch (error) {
+      if (!(error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
+      const technical = technicalOf(error);
+      console.log(`任务 ${this.taskId} 的助手换不到选定的模型 ${wanted.model}：${technical}`);
+      if (this.pi === pi) this.pi = null;
+      try {
+        await pi.close();
+      } catch {
+        // 关不掉也照样报错
+      }
+      this.activeSession = null;
+      this.cursor = null;
+      this.setState("failed_to_start", technical, false, modelUnavailableText(wanted.model, technical));
+      throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technical });
+    }
   }
 
   private async openLocked(sessionId: string): Promise<void> {
@@ -292,6 +335,7 @@ export class Executor {
       return this.resumeFailedLocked(pi, sessionId, null, `切换会话：${technicalOf(error)}`);
     }
     if (state.sessionId !== sessionId) return this.resumeFailedLocked(pi, sessionId, state.sessionId ?? null, "切换会话");
+    await this.ensureModel(pi, state);
     this.adopt(state);
     this.cursor = null;
     this.setState("idle");
@@ -331,8 +375,11 @@ export class Executor {
         await this.startPi(null);
       } else {
         this.busyCheck(null);
-        await this.pi!.request("new_session");
-        this.adopt(await this.pi!.getState());
+        const pi = this.pi!;
+        await pi.request("new_session");
+        const state = await pi.getState();
+        await this.ensureModel(pi, state);
+        this.adopt(state);
         this.cursor = null;
         this.setState("idle");
       }

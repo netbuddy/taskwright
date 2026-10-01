@@ -15,6 +15,7 @@ import { delimiter, dirname, join, relative, resolve } from "node:path";
 import { readTextFile } from "./files.ts";
 import { byCodePoint } from "./library.ts";
 import { PROFILE_DIR, fromRoot } from "./paths.ts";
+import { selectedLanguageModel, settingsFile } from "./product_settings.ts";
 import { SEGMENTS_ENV, type SegmentParams, segmentParams } from "../../agent/src/lib/segments.ts";
 
 export const ENV_PLUGIN = "TASKWRIGHT_LANGFUSE_PLUGIN";
@@ -41,13 +42,18 @@ export function piAgentDir(env: NodeJS.ProcessEnv | Record<string, string> = pro
 export interface ResolvedModel {
   /** 交给 pi 的模型「服务商/型号」；启动配置没写又没有被替换时是空串。 */
   model: string;
-  from: "启动配置" | "pi 设置";
-  /** 模型来自 pi 设置时，那个设置文件的路径。 */
+  from: "产品设置" | "启动配置" | "pi 设置";
+  /** 模型来自产品设置或 pi 设置时，那个设置文件的路径。 */
   settings?: string;
 }
 
-/** 这一次起 pi 用哪个模型（见 PI_SETTINGS_MODEL）。settings.json 读不出、或两项缺一项时，照旧用启动配置里的。 */
+/**
+ * 这一次起 pi 用哪个模型。先看产品自己的设置文件里有没有为这个 pi 配置目录选过语言模型（在界面上选，见 model_config.ts）；
+ * 没有选过时照 0.3 的规则：桌面形态读 pi 设置文件（见 PI_SETTINGS_MODEL），settings.json 读不出、或两项缺一项时，照旧用启动配置里的。
+ */
 export function resolveModel(profile: Profile, env: NodeJS.ProcessEnv | Record<string, string> = process.env): ResolvedModel {
+  const selected = selectedLanguageModel(piAgentDir(env), env);
+  if (selected) return { model: selected, from: "产品设置", settings: settingsFile(env) };
   const fromProfile: ResolvedModel = { model: typeof profile.model === "string" ? profile.model : "", from: "启动配置" };
   if (!profile[PI_SETTINGS_MODEL]) return fromProfile;
   const settings = join(piAgentDir(env), "settings.json");
@@ -297,8 +303,8 @@ export function startupRecord(profile: Profile, argv: string[]) {
     扩展: describeExtensions(profile).map(([name, path]) => ({ 名字: name, 解析到的文件: path ?? "", 文件在不在: path !== null })),
     工具白名单: [...(profile.tools || [])],
     模型: resolveModel(profile).model,
-    // 模型来自哪里只在桌面形态写；服务器形态的启动记录不多这一项（tests/profiles.test.ts 核对）
-    ...(profile[PI_SETTINGS_MODEL] ? { 模型来自: modelSource(profile) } : {}),
+    // 模型来自哪里只在桌面形态或者模型来自产品设置时写；服务器形态没有在界面上选过模型时，启动记录不多这一项（tests/profiles.test.ts 核对）
+    ...(profile[PI_SETTINGS_MODEL] || resolveModel(profile).from === "产品设置" ? { 模型来自: modelSource(profile) } : {}),
     环境标签: (profile.langfuse || {}).environment ?? "",
     "平台 skill": platformSkillRecord(profile),
   };
@@ -306,6 +312,7 @@ export function startupRecord(profile: Profile, argv: string[]) {
 
 function modelSource(profile: Profile): string {
   const resolved = resolveModel(profile);
+  if (resolved.from === "产品设置") return `产品设置（${resolved.settings} 里在界面上选定的语言模型）`;
   return resolved.from === "pi 设置" ? `pi 设置（${resolved.settings} 的 defaultProvider 与 defaultModel）` : "启动配置";
 }
 

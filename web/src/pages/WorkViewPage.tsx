@@ -9,6 +9,7 @@
 // 助手改过的字段加框（字段修订标识）；执行者最近一次运行改过的条目带「刚改」（都在 model/revisions.ts）。
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SettingOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
 import type { ActionRequest, AssistantReply, Item, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
 import { useWorkView } from "../state/useWorkView";
@@ -25,7 +26,7 @@ import { FONT_TIERS, narrowViewport, readFontTier, saveFontTier, type FontTier }
 import { justChangedItems, marksByItem, revisionsOfReply, revisionsOfWork, touchedItems } from "../model/revisions";
 import { openProblems, viewTarget } from "../model/items";
 import { showSubmitBar } from "../model/submit";
-import { go, href } from "../router";
+import { go, href, openSettings } from "../router";
 import { useToast } from "../components/Toasts";
 import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
@@ -295,6 +296,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
             ))}
           </span>
           <span className="smenu-btn" role="button" onClick={() => setMenuOpen(!menuOpen)} data-testid="session-menu-button">会话 ▾</span>
+          <span className="set-btn" role="button" onClick={openSettings} data-testid="open-settings"><SettingOutlined />设置</span>
           <UserMenu where="topbar" />
           <div className={`smenu${menuOpen ? " show" : ""}`} data-testid="session-menu">
             <div className="mh">任务「{task?.task_name}」的会话（共 {sessions.length} 条，所有会话共享同一份交付物）</div>
@@ -315,7 +317,7 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
             <a className="ico on" title="当前任务：回到任务页" href={href.task(taskId)}>▣</a>
             <div className="ico" title="材料、文档与修订：展开或收起右侧栏" role="button" style={{ cursor: "pointer" }} onClick={() => toggleDoc(!docCollapsed)}>▤</div>
             <div className="sp" />
-            <div className="ico" title="设置（还没有做）">◉</div>
+            <div className="ico" title="设置" role="button" style={{ cursor: "pointer" }} onClick={openSettings} data-testid="rail-settings">◉</div>
           </div>
 
           <div className="chat">
