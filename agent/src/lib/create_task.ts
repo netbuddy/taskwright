@@ -50,6 +50,11 @@ export interface CallContext {
    * 与 userMessages 一样由工具的登记处从会话分支读好交进来。
    */
   problemClicks?: ProblemClick[];
+  /**
+   * 知识库根目录（绝对路径）；没有知识库时不给或给 null。「保存修订」据此核对出处以 knowledge/ 开头的来源。
+   * 由工具的登记处从环境变量读好交进来（lib/knowledge.ts 的 envKnowledgeRoot），核心函数里不读环境变量。
+   */
+  knowledgeRoot?: string | null;
 }
 
 export interface ToolOutcome {

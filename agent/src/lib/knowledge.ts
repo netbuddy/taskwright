@@ -62,7 +62,7 @@ export function selectedLibraryIds(taskDir: string): string[] {
 }
 
 /** 知识库的编号到名字；根目录不存在或清单读不出来时是空的。 */
-function libraryNames(root: string): Map<string, string> {
+export function libraryNames(root: string): Map<string, string> {
   const raw = readJson(join(root, "libraries.json"));
   const rows = Array.isArray(raw?.libraries) ? (raw.libraries as { id?: unknown; name?: unknown }[]) : [];
   return new Map(rows.filter((one) => typeof one?.id === "string").map((one) => [one.id as string, typeof one.name === "string" ? one.name : (one.id as string)]));

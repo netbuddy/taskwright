@@ -23,6 +23,11 @@
  * 否则界面上点来源找不到原文；跳句拼接、改字、出处不是文件的，都拒绝。用户在界面上撤销时交回的旧来源不再核对。
  * 出处是 Word 材料（.docx）时要写段落号（inputs/x.docx#p37），摘录对着它的投影 x.docx.md（0.2 的任务里是 x.docx.txt）里那一段核对，规则见 lib/docx_source.ts。
  *
+ * 出处以 knowledge/ 开头的「文档原文」来源指向知识库里的文档（knowledge/<知识库编号>/<文档名>，Word 文档加段落号），
+ * 到知识库根目录下那个知识库的 files/ 里读文件，摘录照材料的规矩逐字核对。只能引用这个任务选用的知识库里的文档；
+ * 没有知识库、知识库没有选用或已经不在、文档找不到的，新写的来源拒绝，旧来源原样再交的照收（与材料已删除同一条规矩）。
+ * 其余出处解析之后必须落在任务目录里：任务目录之外的绝对路径、用 .. 绕出去的相对路径都按读不到处理。
+ *
  * 写库、记事件、各项核对同在一个立即事务里；任何一个操作不通过，整次调用全部不写入，
  * 拒绝的文字逐条列出哪个操作的哪一处不对。本模块不依赖 pi。
  *
@@ -45,7 +50,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, LEGACY_ACTOR_MODEL, databasePath, dump, emit, load, wallClockText } from "./db.ts";
 import {
@@ -67,6 +72,8 @@ import {
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
+import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
+import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
 import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
@@ -303,7 +310,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     return [...byPosition.values()];
   };
   const userMessages = call.userMessages ?? [];
-  const materialText = materialReader(call.workspaceDir, definition.materialsDir);
+  const materialText = materialReader(call.workspaceDir, definition.materialsDir, call.knowledgeRoot ?? null);
 
   // 这次调用里要删掉的条目，以及被修改或删除过的条目。先扫一遍，
   // 好让「条目引用」的核对知道哪些条目在这次调用之后就不在了。
@@ -612,6 +619,7 @@ export function checkQuotes(
   raw: unknown,
   errors: string[],
   whereOf: (index: number) => string,
+  knowledgeRoot: string | null = null,
 ): CheckedQuote[] | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) {
@@ -629,7 +637,7 @@ export function checkQuotes(
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const items = itemsOf(db, task.task_id);
     const { noteRef, noteText } = domainNoteLookups(definition, items, latestVersionOf(db, task.task_id), { deletedHere: new Set(), addedAt: new Map() });
-    const checked = checkSources(raw, true, errors, sessionId, userMessages, ACTOR_EXECUTOR, materialReader(workspaceDir, definition.materialsDir),
+    const checked = checkSources(raw, true, errors, sessionId, userMessages, ACTOR_EXECUTOR, materialReader(workspaceDir, definition.materialsDir, knowledgeRoot),
       noteRef, noteText, whereOf);
     return checked && checked.map(({ kind, locator, excerpt, normalized_value }) => ({ kind, locator, excerpt, ...(normalized_value ? { normalized_value } : {}) }));
   } finally {
@@ -762,11 +770,20 @@ function checkFields(
   }
 }
 
+/** 按出处读文件全文；knowledgeProblem 说明一条知识库出处为什么读不到（[事实, 怎么办]），读得到或不是知识库出处时为 null。 */
+type MaterialReader = ((locator: string) => string | null) & { knowledgeProblem: (locator: string) => [string, string] | null };
+
+/** 知识库出处读不到时「怎么办」一层常用的一句。 */
+const COPY_KNOWLEDGE_LOCATOR = "出处照抄任务现状消息（或查询任务状态）里那份文档后面给出的写法";
+
 /**
- * 按出处读材料文件的全文（换行归一为 \n），读不到返回 null。出处按任务目录下的相对路径找，
- * 找不到再到材料目录里按文件名找；同一次保存里读过的不再读。
+ * 按出处读文件的全文（换行归一为 \n），读不到返回 null。同一次保存里读过的不再读。
+ *
+ * 出处以 knowledge/ 开头的指向知识库文档：到知识库根目录下「知识库编号/files/文档名」读；没有知识库根目录、写法不对、
+ * 那个知识库这个任务没有选用或已经不在、文件不存在，都是读不到。其余出处是材料：按任务目录下的相对路径找，找不到再到
+ * 材料目录里按文件名找；解析出来的路径不在任务目录里的（任务目录之外的绝对路径、用 .. 绕出去的相对路径）按读不到处理。
  */
-function materialReader(workspaceDir: string, materialsDir: string): (locator: string) => string | null {
+function materialReader(workspaceDir: string, materialsDir: string, knowledgeRoot: string | null = null): MaterialReader {
   const cache = new Map<string, string | null>();
   const read = (path: string): string | null => {
     try {
@@ -775,23 +792,70 @@ function materialReader(workspaceDir: string, materialsDir: string): (locator: s
       return null;
     }
   };
-  return (locator) => {
+  const base = resolve(workspaceDir);
+  const inside = (path: string) => {
+    const rel = relative(base, path);
+    return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  };
+  const readMaterial = (locator: string): string | null => {
+    const direct = resolve(base, locator);
+    if (!inside(direct)) return null;
+    return read(direct) ?? read(join(base, materialsDir, basename(locator)));
+  };
+  // 知识库的清单与任务的选用，用到时读一次。
+  let lookup: { names: Map<string, string>; selected: Set<string> } | null = null;
+  const knowledge = () => (lookup ??= { names: libraryNames(knowledgeRoot!), selected: new Set(selectedLibraryIds(workspaceDir)) });
+  /** 知识库出处指向的文件路径，或者读不到的原因。 */
+  const locate = (locator: string): { path: string } | { problem: [string, string] } => {
+    if (knowledgeRoot === null) {
+      return { problem: ["指向知识库里的文档，但这个任务没有知识库", "任务现状消息里没有列出知识库时，不要写 knowledge/ 开头的出处"] };
+    }
+    const parsed = parseKnowledgeLocator(locator);
+    if (!parsed) return { problem: ["不是知识库文档的写法", `出处写 knowledge/知识库编号/文档名；${COPY_KNOWLEDGE_LOCATOR}`] };
+    const { names, selected } = knowledge();
+    if (!names.has(parsed.library)) return { problem: [`指向的知识库 ${parsed.library} 已经不在了`, `只能引用这个任务选用的知识库里的文档；${COPY_KNOWLEDGE_LOCATOR}`] };
+    if (!selected.has(parsed.library)) {
+      return { problem: [`指向知识库「${names.get(parsed.library)}」里的文档，而这个任务没有选用知识库「${names.get(parsed.library)}」`,
+        "只能引用这个任务选用的知识库里的文档，清单见任务现状消息或查询任务状态"] };
+    }
+    return { path: join(knowledgeRoot, parsed.library, "files", parsed.name) };
+  };
+  const reader = ((locator: string) => {
     if (!cache.has(locator)) {
-      const direct = isAbsolute(locator) ? locator : join(workspaceDir, locator);
-      cache.set(locator, read(direct) ?? read(join(workspaceDir, materialsDir, basename(locator))));
+      if (isKnowledgeLocator(locator)) {
+        const found = locate(locator);
+        cache.set(locator, "path" in found ? read(found.path) : null);
+      } else {
+        cache.set(locator, readMaterial(locator));
+      }
     }
     return cache.get(locator)!;
+  }) as MaterialReader;
+  reader.knowledgeProblem = (locator) => {
+    if (!isKnowledgeLocator(locator) || reader(locator) !== null) return null;
+    const found = locate(locator);
+    if ("problem" in found) return found.problem;
+    const parsed = parseKnowledgeLocator(locator)!;
+    return [`指向的文档《${parsed.name}》在知识库「${knowledge().names.get(parsed.library)}」里找不到`,
+      `${COPY_KNOWLEDGE_LOCATOR}；文档已经从知识库删除时，不要把它当作来源`];
   };
+  return reader;
 }
 
-/** 摘录在材料里找不到时，拒绝文字「怎么办」一层的第一句（模型常自行补句号或改写，被拒后又干脆删掉引用）。 */
-const EXACT_EXCERPT = "摘录必须与材料原文逐字一致，包括标点；不要自行补标点或改写";
+/**
+ * 摘录在材料里找不到时，拒绝文字「怎么办」一层的第一句（模型常自行补句号或改写，被拒后又干脆删掉引用）。
+ * noun 是「材料」或「文档」：出处指向知识库时说文档。
+ */
+const exactExcerpt = (noun: Noun) => `摘录必须与${noun}原文逐字一致，包括标点；不要自行补标点或改写`;
+
+/** 拒绝文字里怎样称呼出处所指的文件：任务的输入是「材料」，知识库里的是「文档」。 */
+type Noun = "材料" | "文档";
 
 /** 摘录里的空行（一个或多个只含空白的行）。 */
 const BLANK_LINE = /\n\s*\n/;
 
 /** 摘录不连续时，拒绝文字「怎么办」一层说明引几处写几条来源的那一句。 */
-const SEVERAL_PLACES = "引了材料几处就写几条来源";
+const severalPlaces = (noun: Noun) => `引了${noun}几处就写几条来源`;
 
 /** 摘录在材料里有好几处时，拒绝的文字里最多列出离原段落号最近的这么多处。 */
 const NEARBY_LIMIT = 6;
@@ -826,7 +890,7 @@ function checkSources(
   sessionId: string,
   userMessages: UserMessage[],
   actor?: string,
-  materialText?: (locator: string) => string | null,
+  materialText?: MaterialReader,
   noteRef?: (locator: string) => string | null,
   noteText?: (locator: string) => string[],
   whereOf: (index: number) => string = (index) => `第 ${index + 1} 条来源`,
@@ -929,14 +993,24 @@ function checkSources(
       kept.push({ kind: one.kind as string, locator, excerpt: one.excerpt as string, supports });
       return;
     }
+    // 出处指向知识库里的文档：拒绝文字里说「文档」，不说「材料」。
+    const inKnowledge = one.kind === SOURCE_DOCUMENT && isKnowledgeLocator(locator);
+    const noun: Noun = inKnowledge ? "文档" : "材料";
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.docx\.(txt|md)$/i.test(locator)) {
-      errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的投影，不是材料本身`,
+      errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的投影，不是${noun}本身`,
         `出处写 Word 文件加段落号，例如 ${locator.replace(/\.(txt|md)$/i, "")}#p12`));
       ok = false;
       return;
     }
+    // 知识库出处读不到（没有知识库、写法不对、知识库没有选用或已经不在、文档找不到）：新写的来源拒绝，说明原因。
+    const problem = inKnowledge && actor !== ACTOR_USER && materialText ? materialText.knowledgeProblem(docx ? docx[1] : locator) : null;
+    if (problem) {
+      errors.push(withGuide(`${where}的出处 ${locator} ${problem[0]}`, problem[1]));
+      ok = false;
+      return;
+    }
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && docx) {
-      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors);
+      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors, noun);
       if (found === null) {
         ok = false;
         return;
@@ -954,7 +1028,7 @@ function checkSources(
         errors.push(withGuide(BLANK_LINE.test(excerpt)
           ? `${where}的摘录在 ${basename(locator)} 里不是连续的一段原文`
           : `${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到`,
-        `${EXACT_EXCERPT}；摘录必须逐字抄自材料里连续的一段，不要跳句拼接或改字；${SEVERAL_PLACES}`));
+        `${exactExcerpt(noun)}；摘录必须逐字抄自${noun}里连续的一段，不要跳句拼接或改字；${severalPlaces(noun)}`));
         ok = false;
         return;
       }
@@ -976,6 +1050,7 @@ function checkDocxSource(
   where: string,
   materialText: (locator: string) => string | null,
   errors: string[],
+  noun: Noun = "材料",
 ): string | null {
   const name = basename(path);
   const suffix = PROJECTION_SUFFIXES.find((s) => materialText(`${path}${s}`) !== null);
@@ -984,12 +1059,14 @@ function checkDocxSource(
     ? `段落号见 ${name}${suffix} 每行开头的「第 N 段」`
     : `段落号见 ${name}${suffix ?? ".md"} 里每段前面方括号中的 p 加数字（例如 [p12]）`;
   if (n === null) {
-    errors.push(withGuide(`${where}的出处 ${path} 没有写段落号`, `Word 材料的出处要写段落号，例如 ${path}#p12；${pointer}`));
+    errors.push(withGuide(`${where}的出处 ${path} 没有写段落号`, `Word ${noun}的出处要写段落号，例如 ${path}#p12；${pointer}`));
     return null;
   }
   if (projection === null) {
-    errors.push(withGuide(`${where}的出处 ${path} 不是任务目录里能读到的 Word 材料（找不到由它生成的 ${name}.md）`,
-      "出处要写材料目录里的 Word 文件加段落号，例如 inputs/材料.docx#p12"));
+    errors.push(noun === "文档"
+      ? withGuide(`${where}的出处 ${path} 在知识库里找不到由它生成的 ${name}.md，摘录无从核对`, COPY_KNOWLEDGE_LOCATOR)
+      : withGuide(`${where}的出处 ${path} 不是任务目录里能读到的 Word 材料（找不到由它生成的 ${name}.md）`,
+        "出处要写材料目录里的 Word 文件加段落号，例如 inputs/材料.docx#p12"));
     return null;
   }
   const paragraphs = projectionParagraphs(projection);
@@ -1014,13 +1091,13 @@ function checkDocxSource(
       "请按上下文确认是哪一段，出处写那一段的段落号"));
   } else if (BLANK_LINE.test(excerpt)) {
     // 摘录里有空行、整段在材料里哪儿都不是连续的一段：多半是把不相邻的几处写进了一条来源。
-    errors.push(withGuide(`${where}的摘录在 ${name} 的 p${n} 及其后 ${SPAN_LIMIT} 段里不是连续的一段原文`, `${SEVERAL_PLACES}，每条各写段落号`));
+    errors.push(withGuide(`${where}的摘录在 ${name} 的 p${n} 及其后 ${SPAN_LIMIT} 段里不是连续的一段原文`, `${severalPlaces(noun)}，每条各写段落号`));
   } else if (inTextBox(projection, excerpt)) {
     errors.push(withGuide(`${head}；这段文字在文本框里，文本框里的文字不能作出处`,
       "请改引正文里说到同一件事的段落；正文里没有，就不要把这一处当作来源"));
   } else {
     errors.push(withGuide(head,
-      `${EXACT_EXCERPT}；摘录必须逐字抄自那一段的正文（不带段落号、编号与 #、- 这些标记），不要跳句拼接或改字；${SEVERAL_PLACES}，每条各写段落号`));
+      `${exactExcerpt(noun)}；摘录必须逐字抄自那一段的正文（不带段落号、编号与 #、- 这些标记），不要跳句拼接或改字；${severalPlaces(noun)}，每条各写段落号`));
   }
   return null;
 }
