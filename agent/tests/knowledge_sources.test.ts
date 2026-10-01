@@ -11,7 +11,8 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { docxProjection } from "../src/lib/docx_markdown.ts";
 import { checkQuotes, saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, SAMPLE, SOURCE, callIn, count, makeWorkspace, query } from "./helpers.ts";
+import { getTaskStatus } from "../src/lib/task_query.ts";
+import { DEFINITION_PATH, MATERIAL_TEXT, SAMPLE, SAMPLE_DOCX, SOURCE, callIn, count, makeWorkspace, putSampleDocx, query } from "./helpers.ts";
 
 const TERMS = "# 退款术语\n\n原路退回：把钱退到买家付款时用的那个账户。\n部分退款：只退订单金额的一部分。\n";
 const TERM = { kind: "文档原文", locator: "knowledge/general/术语.md", excerpt: "原路退回：把钱退到买家付款时用的那个账户。" };
@@ -139,6 +140,28 @@ test("不是知识库的出处必须落在任务目录里：任务目录之外�
   assert.match(save(dir, root, add(SOURCE)).text, /新增了条目 UC-001/);
   assert.match(save(dir, root, add({ ...SOURCE, locator: join(dir, "inputs", "材料.md") }, "绝对路径但在任务目录里")).text, /新增了条目 UC-002/);
   assert.match(save(dir, root, add({ ...SOURCE, locator: "inputs/../inputs/材料.md" }, "绕了一下但没有出去")).text, /新增了条目 UC-003/);
+});
+
+test("知识库里的文档与材料同名时，知识库来源不算那份材料的引用；引用材料本身才算", () => {
+  const root = makeRoot();
+  const dir = makeTask();
+  // 知识库里各放一份与任务的文本材料、Word 材料同名的文档
+  writeFileSync(join(root, "general", "files", "材料.md"), MATERIAL_TEXT);
+  putSampleDocx(dir);
+  const name = SAMPLE_DOCX.split("/").pop()!;
+  copyFileSync(SAMPLE, join(root, "lib-a1", "files", name));
+  writeFileSync(join(root, "lib-a1", "files", `${name}.md`), docxProjection(readFileSync(SAMPLE), `lib-a1/files/${name}`).markdown);
+  save(dir, root, add({ kind: "文档原文", locator: "knowledge/general/材料.md", excerpt: "用户可以登录。" }));
+  save(dir, root, add({ kind: "文档原文", locator: `knowledge/lib-a1/${name}#p76`, excerpt: "逾期的每本每天罚款一角" }, "罚款"));
+  const facts = () => {
+    const materials = getTaskStatus(dir, undefined, root).details.materials as any[];
+    const word = materials.find((one) => one.kind === "word");
+    return { text: materials.find((one) => one.path === "inputs/材料.md").cited, wordCited: word.text_paragraphs - word.uncited };
+  };
+  assert.deepEqual(facts(), { text: 0, wordCited: 0 });
+  save(dir, root, add(SOURCE, "登录"));
+  save(dir, root, add({ kind: "文档原文", locator: `${SAMPLE_DOCX}#p76`, excerpt: "逾期的每本每天罚款一角" }, "罚款二"));
+  assert.deepEqual(facts(), { text: 1, wordCited: 1 });
 });
 
 test("回复给建议值时的依据走同一套核对：知识库出处通过、摘录不符拒绝、没有知识库拒绝", () => {
