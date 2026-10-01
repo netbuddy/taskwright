@@ -281,6 +281,9 @@ data: {
 | `busy_timeout` | 503 | 等待数据库写锁超时 |
 | `too_large`、`unsupported_type` | 413、415 | 附件过大，或类型不受支持 |
 | `duplicate_content`、`name_taken` | 409 | 上传的材料与本任务已有的某份材料内容完全相同，或者与已有的某份材料同名而内容不同（见第 5 节的「材料」）；`data.path` 是已有的那份材料 |
+| `in_use` | 409 | 选定的模型属于要删除的模型服务，或者正要被停用（见第 10 节）；`data.provider_id` 是那个模型服务 |
+| `config_unwritable` | 409 | `models.json`、`auth.json` 或产品自己的设置文件读不成一个 JSON 对象，或者里面有注释、改写时会丢掉（见第 10 节）；`data.file` 是文件名，文件原样不动 |
+| `config_locked` | 503 | 别的程序拿着这几个文件之一的锁超过两秒（见第 10 节）；`data.file` 是文件名 |
 
 ## 9 其他约定
 
@@ -289,7 +292,68 @@ data: {
 3. 路径带着版本号 `v1`；字段只会新增，含义不会改变；客户端应忽略未知的事件与字段。
 4. 本版本尚不支持：多用户并发、身份认证、流式回复文本。
 5. **服务信息与运行形态。** 下面两个接口不需要任务。
-   - `GET /api/v1/service` 返回 `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "capabilities": { "exit": true | false, "model": true | false }, "model": { "name": …, "reason": … }, "upload": { "max_bytes": 5242880, "too_large_text": "单个文件不能超过 5 MB。", "extensions": [".md", ".txt", ".docx"], "types_text": ".md、.txt 与 Word 的 .docx", "unsupported_type_text": "只接受 .md、.txt 与 Word 的 .docx 文件。" } }`，其中 `port` 是服务实际监听的端口；`upload` 给出上传上限（字节）、超过时给用户看的那句话（与 `too_large` 拒绝里的是同一句）、允许上传的扩展名、这些类型给人看的写法（`types_text`）与 `unsupported_type` 拒绝里的那句话（`unsupported_type_text`），后两项由扩展名拼出。网页界面按上限与扩展名在发送之前就拦下过大或类型不符的文件，显示对应的那句话；按扩展名过滤可选的文件，按 `types_text` 写上传框的说明。它有三种用途：打包后的启动程序用它认出某个端口上跑的是不是自己；部署与监控用它探活；客户端按 `capabilities` 决定显示还是隐藏相应的按钮或提示。`capabilities.exit` 只在以 `--mode desktop` 启动、并且这次请求来自本机回环地址时为 `true`（与退出接口的判断相同）；从别的电脑打开页面时为 `false`，页面也就不显示退出的入口。经反向代理访问时，服务看到的来源是代理的地址，所以桌面形态不应放在反向代理后面。
-   - `capabilities.model` 是模型探测的结果：服务起 pi 时要用的模型「服务商/模型」（`model.name`），在 pi 配置目录的 `models.json` 里登记了、或者这个服务商在 `auth.json` 里有一项，就是 `true`。`model.reason` 是一句说明：以 `--mode desktop` 启动时写明查过的两个文件的完整路径，以 `--mode server` 启动时只写文件名，不带出服务器上的目录。探测在每次请求时现查，只读这两个文件，不启动 pi；服务商的密钥只放在环境变量里的情形识别不了，这时是 `false`。以 `--mode desktop` 启动时，`model.name` 可能来自 pi 的 `settings.json`（见部署文档第 10.4 节）。
+   - `GET /api/v1/service` 返回 `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "capabilities": { "exit": true | false, "model": true | false, "model_config": true | false }, "model": { "name": …, "reason": … }, "upload": { "max_bytes": 5242880, "too_large_text": "单个文件不能超过 5 MB。", "extensions": [".md", ".txt", ".docx"], "types_text": ".md、.txt 与 Word 的 .docx", "unsupported_type_text": "只接受 .md、.txt 与 Word 的 .docx 文件。" } }`，其中 `port` 是服务实际监听的端口；`upload` 给出上传上限（字节）、超过时给用户看的那句话（与 `too_large` 拒绝里的是同一句）、允许上传的扩展名、这些类型给人看的写法（`types_text`）与 `unsupported_type` 拒绝里的那句话（`unsupported_type_text`），后两项由扩展名拼出。网页界面按上限与扩展名在发送之前就拦下过大或类型不符的文件，显示对应的那句话；按扩展名过滤可选的文件，按 `types_text` 写上传框的说明。它有三种用途：打包后的启动程序用它认出某个端口上跑的是不是自己；部署与监控用它探活；客户端按 `capabilities` 决定显示还是隐藏相应的按钮或提示。`capabilities.exit` 只在以 `--mode desktop` 启动、并且这次请求来自本机回环地址时为 `true`（与退出接口的判断相同）；从别的电脑打开页面时为 `false`，页面也就不显示退出的入口。经反向代理访问时，服务看到的来源是代理的地址，所以桌面形态不应放在反向代理后面。`capabilities.model_config` 是页面能不能修改模型配置（见第 10 节）；现在从哪台电脑打开都能改，恒为 `true`，这个字段留给以后加登录时用。
+   - `capabilities.model` 是模型探测的结果：服务起 pi 时要用的模型「服务商/模型」（`model.name`；在模型配置里选定了语言模型时就是它，见第 10 节），在 pi 配置目录的 `models.json` 里登记了、或者这个服务商在 `auth.json` 里有一项，就是 `true`。`model.reason` 是一句说明：以 `--mode desktop` 启动时写明查过的两个文件的完整路径，以 `--mode server` 启动时只写文件名，不带出服务器上的目录。探测在每次请求时现查，只读这两个文件，不启动 pi；服务商的密钥只放在环境变量里的情形识别不了，这时是 `false`。以 `--mode desktop` 启动时，`model.name` 可能来自 pi 的 `settings.json`（见部署文档第 10.4 节）。
    - `POST /api/v1/service/exit` 只在以 `--mode desktop` 启动时存在，以 `--mode server` 启动时返回 `not_found`。它只接受来自本机回环地址（`127.0.0.1` 或 `::1`；`::ffff:127.0.0.1` 是 IPv4 回环地址在 IPv6 套接字上的写法，也算本机）的请求，其他来源一律返回 `forbidden`（403）。它先回答 `{ "ok": true }`，再照收到 SIGTERM 时的做法收尾：停止接收新连接、向每一条打开着的事件流发 `service_exiting`、关掉各任务的 pi、删掉本服务写的占用标记，然后退出进程。它只供 0.3 的过渡安装包使用（这种包由服务自己打开浏览器，没有桌面外壳）；最终的桌面版由外壳停止服务，这个接口不承诺长期保留。
    - 运行形态（`--mode desktop|server`，缺省 `server`）决定默认绑定地址（`desktop` 为 `127.0.0.1`，`server` 为 `0.0.0.0`，两种形态下 `--host` 都优先）以及退出接口是否存在；其余行为两种形态完全相同。运行形态会写进启动日志和各任务的占用标记（`service.lock` 里的 `mode` 一项）。
+
+## 10 模型配置
+
+这组接口供网页界面配置模型服务（model provider，提供模型调用接口的一方，可以是本机或内网里运行的程序，也可以是商业公司的在线接口），并选定用哪个模型。助手用的语言模型由 pi 调用：pi 从它配置目录（`PI_CODING_AGENT_DIR`，缺省是用户主目录下的 `.pi/agent`）里的 `models.json` 读模型服务的登记，从 `auth.json` 读密钥。嵌入模型（embedding model，把一段文字换算成一串数字的模型，知识库按意思检索时要用）由任务服务自己调用；这一版只记下选了哪一个。选了哪些模型记在产品自己的设置文件里（见[部署文档](deployment.zh-CN.md)第 5 节）。
+
+**什么时候生效。** 新选定的语言模型从下一次打开或者新建会话起使用；正在进行的会话不受影响。任务服务在启动 pi 之后、`new_session` 之后、`switch_session` 之后，只要 pi 用的模型与选定的不同，就用 `set_model` 换过去。所以改了之后重新打开的旧会话也接着用新选定的模型，pi 会在那条会话的记录里加一条换模型的记录。换不过去时这条会话不打开：请求返回 `executor_unavailable`，执行者状态里写明哪个模型用不了、为什么。没有选定语言模型时照 0.3 的规则：用启动配置里的模型，以 `--mode desktop` 启动时用 pi 的 `settings.json` 指定的那一个。
+
+**任务服务写什么。** 它只增改、删除自己登记的模型服务：名字以 `taskwright-` 开头，并且记在设置文件的名单上。`models.json` 与 `auth.json` 里别的内容原样保留，包括用户在任务服务管的那几项里手工另加的字段。每次写之前，它把文件复制一份到同一目录，名字是 `<文件名>.taskwright-backup-<时刻>`，只留最近 5 份；`auth.json` 的备份与原文件权限相同（0600）。它与 pi 用同样的锁：在文件旁边建一个名字是文件名加 `.lock` 的目录。写的时候先写临时文件，再改名替换原文件。文件里有注释时（pi 允许写注释）不改写，因为改写会把注释丢掉，请求返回 `config_unwritable`。
+
+**密钥从不返回。** 有密钥的模型服务显示 `key: {set: true, last4: "3f9c"}`。
+
+### 10.1 对象
+
+**模型服务**（`provider`）：
+
+| 字段 | 含义 |
+|---|---|
+| `id` | 它在 `models.json` 里登记的名字，例如 `taskwright-ollama`（同一种类的第二个是 `-2`，依此类推）；也是「服务商/模型」里服务商那一段 |
+| `managed` | 在这里添加的模型服务是 `true`。用户手工写进 `models.json` 的是 `false`：它们只读地列出来，只有 `id`、`name` 与模型，模型一律显示为勾选了的语言模型；这里不能改、不能删，也不查它们的密钥，但是其中的模型可以选为语言模型 |
+| `kind` | `ollama`、`llamacpp`、`vllm`、`deepseek`、`aliyun`（只有按量付费）、`openai_compatible` 或 `codex`；`managed` 为 `false` 时是 `null` |
+| `name` | 给人看的名字 |
+| `base_url` | 用户填的地址；`codex` 与只读的模型服务是 `null` |
+| `key` | `{set, last4}`；`codex` 与只读的模型服务是 `null` |
+| `status` | 上一次连接检查的结果 `{checked_at, ok, message}`；`codex` 是 `{checked_at, ok, logged_in, message}`；只读的模型服务是 `null` |
+| `models` | `[{id, type, enabled, context_window, context_source}]`：`type` 是 `language`（语言模型）或 `embedding`（嵌入模型）；只有勾选了（`enabled`）的模型可以选定；`context_window` 是上下文长度，整数，单位是词元（token），或 `null`；`context_source` 是 `service`（从模型服务查到的）、`user`（用户填的）或 `null` |
+| `models_fetched_at` | 上一次获取模型列表的时刻，或 `null` |
+| `in_use` | `[]`；选定的某种模型属于这个模型服务时，写 `language` 和／或 `embedding` |
+
+### 10.2 接口
+
+与其余接口一样，只用 GET 与 POST。
+
+| 接口 | 用途 | 返回 |
+|---|---|---|
+| `GET /api/v1/model-config` | 设置页面要显示的全部内容 | `{ok, editable, notice, selection, fallback, providers}`。`editable` 恒为 `true`，`notice` 恒为 `null`，两项都留给以后加登录时用。`selection` 是 `{language: {provider_id, model_id} \| null, embedding: {provider_id, model_id, query_prefix} \| null}`。`fallback` 是没有选定语言模型时 pi 启动用的模型 `{model, from}`，`from` 是「启动配置」或「pi 设置」；选定了语言模型时是 `null`。`providers` 先列在这里添加的模型服务，再列只读的。 |
+| `POST /api/v1/model-config/providers` `{kind, name, base_url, api_key}` | 添加一个模型服务 | 先检查一次能不能连上（不发模型请求），连上了才保存：`{ok, provider}`。`name` 可以不给（按种类给缺省名）；`base_url` 对 `ollama`、`llamacpp`、`vllm`、`deepseek`、`aliyun` 可以不给（用它们的缺省地址），对 `openai_compatible` 必须给，对 `codex` 不看；本地的三种填的是服务的地址，交给 pi 时后面加 `/v1`。`api_key` 对 `deepseek` 与 `aliyun` 必须给，对别的种类可以不给，对 `codex` 不看。检查不通过时返回 `rejected`（422），什么都不保存；`data.field` 是 `base_url` 时说明是「连不上这个地址。请确认模型服务已经启动，地址与端口没有写错。」，是 `api_key` 时是「模型服务拒绝了这个密钥。」。`codex` 只看 `auth.json` 里有没有 Codex 的登录凭据，有没有都保存。 |
+| `POST /api/v1/model-config/providers/{id}` `{name?, base_url?, api_key?, models?}` | 修改一个模型服务 | `{ok, provider}`。给了新的 `base_url` 或 `api_key` 时与添加时一样先检查。`models` 用 `[{id, type, enabled, context_window}]` 整个替换模型清单；勾选了却没有 `context_window` 的语言模型返回 `rejected`，`codex` 下的嵌入模型也是。停用或删掉选定的模型返回 `in_use`。只读的模型服务返回 `not_found`。 |
+| `POST /api/v1/model-config/providers/{id}/delete` | 删除一个模型服务 | `{ok}`；从 `models.json` 删掉它那一项，从 `auth.json` 删掉它的密钥。选定的模型属于它时返回 `in_use`（409）；只读的模型服务返回 `not_found`。 |
+| `POST /api/v1/model-config/providers/{id}/check` | 重新检查连接（`codex` 是重新检查登录） | `{ok, provider}`，带新的 `status`；不会返回 `rejected` |
+| `POST /api/v1/model-config/providers/{id}/fetch-models` | 向模型服务查询它的模型 | `{ok, result, message, provider}`。`result` 是 `listed`（查到的清单并进已存的：新的模型不勾选，已有的模型保留原来的设置，上下文长度不是用户填的就换成查到的值，并记下 `models_fetched_at`）、`not_offered`（「这个模型服务没有提供模型的清单，请手工添加。」）或 `failed`（「获取模型列表没有成功：原因。可以稍后再试，或者手工添加。」）。各种类怎样查见 10.3。 |
+| `POST /api/v1/model-config/providers/{id}/context-window` `{model_id}` | 查模型服务实际给这个模型的上下文长度 | `{ok, context_window, source, message}`；查不到时 `context_window` 是 `null`，`message` 请用户手工填写。`ollama` 要先载入这个模型，可能要等两分钟。查到的值不保存，要保存就修改模型服务。 |
+| `POST /api/v1/model-config/selection` `{language, embedding}` | 选定模型 | `{ok, selection, note}`，`note` 是「更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。」。两部分各是 `{provider_id, model_id}`（嵌入模型可以另带 `query_prefix`，查询前缀）或 `null`。模型要勾选了、种类要对，在这里添加的模型服务里的语言模型还要有上下文长度，否则返回 `rejected`。语言模型可以选只读的模型服务里的，嵌入模型不行。`language: null` 回到 0.3 的规则；`embedding: null` 表示不用嵌入模型。 |
+
+### 10.3 怎样查模型列表与上下文长度
+
+向模型服务发的每个请求 5 秒没有回答就放弃，只有载入 `ollama` 的模型等 120 秒。
+
+| 种类 | 模型列表 | 种类的判断 | 上下文长度 |
+|---|---|---|---|
+| `ollama` | `GET /api/tags`，再对每个模型发 `POST /api/show` | `capabilities` 里有 `embedding` 而没有 `completion` 的是嵌入模型 | 列表里不填（`/api/show` 给的是训练时的最大值）。`context-window` 先载入模型，再从 `GET /api/ps` 读 `context_length`。 |
+| `llamacpp` | `GET /v1/models` | 语言模型 | `meta.n_ctx` |
+| `vllm` | `GET /v1/models` | 语言模型 | `max_model_len` |
+| `deepseek` | `GET /models` | 语言模型 | `context_window` |
+| `aliyun` | `GET /models`；没有这个接口时是 `not_offered` | 名字里有 `embedding` 的是嵌入模型，别的是语言模型 | `null` |
+| `openai_compatible` | `GET /models`；回 404 时是 `not_offered` | 语言模型 | 有 `max_model_len`、`context_window` 或 `meta.n_ctx` 就用它，否则是 `null` |
+| `codex` | pi 自带的 Codex 订阅模型目录，不联网读取；没有登录时是空的 | 语言模型 | 取自 pi 的目录 |
+
+### 10.4 其他部分的变化
+
+- `GET /api/v1/service`：`capabilities` 多一项 `model_config`（见第 9 节）；`capabilities.model` 与 `model` 先看选定的语言模型。
+- 错误（第 8 节）多三种：`in_use`、`config_unwritable`、`config_locked`。

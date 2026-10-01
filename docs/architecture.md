@@ -12,7 +12,7 @@
 | Web (`web/`) | TypeScript, React | the browser | no, it only calls the API | never |
 | Simulator (`sim/`) | TypeScript tools, a Python driver, and a Node driver that starts the simulated user | a second pi process | read-only (for judging) | never |
 
-**How the task service talks to pi.** It starts pi in RPC mode and exchanges one JSON object per line with it: commands and answers to dialogs on pi's standard input, events and responses on its standard output (`backend/src/pi_session.ts`). Lines are split at line feeds only, as pi's RPC documentation requires, so the characters U+2028 and U+2029 inside a JSON string do not break a line. The layer that starts pi and sends and receives these lines is a replaceable interface (`backend/src/transport.ts`); there is one implementation now, a child process (`backend/src/transport_rpc.ts`). Commands, events, the archives and the answers to dialogs are handled above it, in `PiSession`.
+**How the task service talks to pi.** It starts pi in RPC mode and exchanges one JSON object per line with it: commands and answers to dialogs on pi's standard input, events and responses on its standard output (`backend/src/pi_session.ts`). Lines are split at line feeds only, as pi's RPC documentation requires, so the characters U+2028 and U+2029 inside a JSON string do not break a line. The layer that starts pi and sends and receives these lines is a replaceable interface (`backend/src/transport.ts`); there is one implementation now, a child process (`backend/src/transport_rpc.ts`). Commands, events, the archives and the answers to dialogs are handled above it, in `PiSession`. One exception: to list the model catalog of a Codex subscription, `backend/src/model_config.ts` starts pi once more to print the catalog, outside this interface; later this will read the catalog through pi's command interface instead.
 
 **The three kinds of code.**
 
@@ -40,6 +40,16 @@
 6. Generating a document renders the deliverable as of one revision (optionally only some items) through the task type's template. No model is involved.
 
 **Event stream in one sentence:** every database event has a monotonically increasing sequence number, the browser applies each number once and asks for a fresh snapshot when it detects a gap, and conversation and progress events carry no number and are rebuilt from the snapshot after a reload.
+
+## Where configuration is kept
+
+| What | Where | Written by |
+|---|---|---|
+| How pi is started: tools, extensions, skills, the default model | startup profiles in `backend/profiles/` | the repository; only read at run time |
+| Model services and their keys | `models.json` and `auth.json` in pi's configuration directory, shared with pi used on the command line | the user by hand, pi (`/login`), and the task service for the entries it registered (`backend/src/model_config.ts`, with pi's lock, a backup and a temporary file that is renamed; see section 10 of the [API reference](api.md)) |
+| Which language model and embedding model are used, the embedding model's query prefix, and which model services the task service registered | the product's settings file, `settings.json` in the user data directory (`TASKWRIGHT_SETTINGS_FILE` overrides it), one part per pi configuration directory | the task service (`backend/src/product_settings.ts`); it holds no keys |
+
+The model pi is started with comes from `resolveModel` in `backend/src/launch.ts`: the language model chosen in the settings first; then, as in 0.3, pi's `settings.json` for the desktop package; then the startup profile. When a model was chosen in the settings, the executor checks pi's model after each start, new session and switched session and changes it with `set_model` (`ensureModel` in `backend/src/executor.ts`).
 
 ## Database tables (`task.sqlite`, one task per task directory)
 
