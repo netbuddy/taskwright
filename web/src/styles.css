@@ -13,6 +13,8 @@
   --ai:#4f46e5; --ai-bg:#eff0fd; --ai-line:#c6c9f4;
   /* 可被引作来源的解释性条目（领域说明）：石板灰，与材料蓝、用户的话青绿、助手补充琥珀、助手做事靛蓝都不相混 */
   --note:#475569; --note-bg:#eef2f6; --note-line:#c5ced9;
+  /* 次一级的正文色：比 --ink 浅、比 --mut 深 */
+  --text2:#4a4a4a;
   --w-rail:clamp(2.6rem,3vw,3.2rem); --w-chat:clamp(18rem,24%,26rem); --w-handle:2rem;
 }
 

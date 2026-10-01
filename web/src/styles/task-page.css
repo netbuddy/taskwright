@@ -24,9 +24,9 @@
 .tp-head-title { display: flex; align-items: baseline; gap: 0.714rem; flex-wrap: wrap; }
 .tp-head h1 { font-size: 1.857rem; font-weight: 600; line-height: 1.3; margin: 0; letter-spacing: 0.01em; overflow-wrap: anywhere; }
 /* 状态：进行中是绿底绿字，已完成、已放弃是灰底 */
-.tp-status { font-size: 0.857rem; font-weight: 600; color: #4a4a4a; background: var(--dark3); border-radius: 0.429rem; padding: 0.071rem 0.5rem; position: relative; top: -0.2rem; white-space: nowrap; }
+.tp-status { font-size: 0.857rem; font-weight: 600; color: var(--text2); background: var(--dark3); border-radius: 0.429rem; padding: 0.071rem 0.5rem; position: relative; top: -0.2rem; white-space: nowrap; }
 .tp-status.on { color: var(--ok); background: var(--ok-bg); }
-.tp-ttype { font-size: 0.972rem; color: #4a4a4a; }
+.tp-ttype { font-size: 0.972rem; color: var(--text2); }
 .tp-head-meta { margin-top: 0.357rem; font-size: 0.929rem; color: var(--mut); }
 .tp-head-r { display: flex; gap: 0.571rem; padding-top: 0.286rem; }
 
@@ -42,7 +42,7 @@
 .tp-score .num { font-size: 2.286rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
 .tp-vr { align-self: stretch; background: var(--line); }
 .tp-conds { list-style: none; margin: 0; padding: 0.857rem 1.286rem; }
-.tp-conds li { display: flex; align-items: baseline; gap: 0.643rem; padding: 0.179rem 0; font-size: 0.972rem; color: #4a4a4a; }
+.tp-conds li { display: flex; align-items: baseline; gap: 0.643rem; padding: 0.179rem 0; font-size: 0.972rem; color: var(--text2); }
 .tp-conds .mk { width: 1rem; flex: none; text-align: center; }
 .tp-conds .met .mk { color: var(--ok); }
 .tp-conds .unmet { color: var(--ink); }
@@ -79,7 +79,7 @@
 .tp-coll-pre { font-family: ui-monospace, Menlo, monospace; font-size: 0.857rem; color: var(--mut); }
 .tp-coll-n { font-size: 2.571rem; font-weight: 600; line-height: 1.15; margin: 0.571rem 0 0.429rem; color: var(--ink); font-variant-numeric: tabular-nums; }
 .tp-coll-s { font-size: 0.857rem; color: var(--mut); }
-.tp-coll-s b { color: #4a4a4a; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tp-coll-s b { color: var(--text2); font-weight: 600; font-variant-numeric: tabular-nums; }
 /* 没有条目的集合：颜色降到灰阶，图标轮廓保留 */
 .tp-coll.empty { --c: var(--mut); background: var(--stage); }
 .tp-coll.empty::before { background: var(--line2); }
@@ -118,7 +118,7 @@
 .tp-mtable th { text-align: left; font-weight: 400; color: var(--mut); font-size: 0.857rem; padding: 0.286rem 0.5rem 0.357rem 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .tp-mtable td { padding: 0.571rem 0.5rem 0.571rem 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .tp-mtable td.nm { white-space: normal; word-break: break-all; width: 100%; }
-.tp-mtable td.num { color: #4a4a4a; font-variant-numeric: tabular-nums; }
+.tp-mtable td.num { color: var(--text2); font-variant-numeric: tabular-nums; }
 .tp-mtable th:last-child, .tp-mtable td:last-child { text-align: right; padding-right: 0; }
 .tp-mtable td .tp-lnk + .tp-lnk { margin-left: 0.857rem; }
 /* 文件图标按类型分形状，颜色一律灰 */
@@ -135,7 +135,7 @@
 /* 知识库行前的书本图标：通用知识库灰色，其它知识库靛蓝 */
 .tp-kbrow .kic { color: var(--ai); margin-right: 0.429rem; font-size: 1.143rem; vertical-align: -0.2rem; }
 .tp-kbrow.general .kic { color: var(--mut); }
-.tp-kbrow .dc { color: #4a4a4a; font-size: 0.893rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tp-kbrow .dc { color: var(--text2); font-size: 0.893rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tp-kbrow .ds { color: var(--mut); font-size: 0.857rem; flex: 1; min-width: 0; }
 .tp-kbrow .acts { display: flex; gap: 0.857rem; font-size: 0.893rem; }
 .tp-kbfoot { margin-top: auto; padding-top: 0.857rem; display: flex; align-items: center; gap: 0.857rem; flex-wrap: wrap; }
