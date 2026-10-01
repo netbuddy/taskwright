@@ -40,6 +40,8 @@ import { extractJson, type ModelCallRecord } from "./model_call.ts";
 import { type CollectionDef, FIELD_ITEM_REF, RULE_REQUIRED, type ReviewRule, effectiveRules, keepPendingField, validateDefinition } from "./definition.ts";
 import { currentReviews, rulesHash } from "./review_state.ts";
 import { listMaterials } from "./task_status.ts";
+import { envKnowledgeRoot, knowledgeFilePath } from "./knowledge.ts";
+import { isKnowledgeLocator } from "./knowledge_locator.ts";
 
 /** 材料全文给评审者的上限：全部材料文件的字符数不超过它时给全文。 */
 export const MATERIAL_FULL_LIMIT = 20000;
@@ -234,14 +236,37 @@ export function pendingItems(db: DatabaseSync, taskId: string, collections: stri
 }
 
 /** 给评审者的材料：全文（总长不超过上限时），或只按条目取段落（超过时，由 assembleUser 按来源去取）。 */
-export interface Materials { full: boolean; files: { path: string; text: string }[] }
+export interface Materials {
+  full: boolean;
+  files: { path: string; text: string }[];
+  /**
+   * 按出处（knowledge/知识库编号/文档名）读知识库里的文本文档全文，读不到返回 null；没有知识库时不给。
+   * 只用来判断两个条目是不是引用了同一处，知识库文档不放进给评审者的材料里。
+   */
+  knowledgeText?: (locator: string) => string | null;
+}
 
-function materialsFor(workspaceDir: string, materialsDir: string): Materials {
+function materialsFor(workspaceDir: string, materialsDir: string, knowledgeRoot: string | null = envKnowledgeRoot()): Materials {
   const files = listMaterials(workspaceDir, materialsDir).files
     .filter((f) => /\.(md|txt)$/i.test(f.path))
     .map((f) => ({ path: f.path, text: readFileSync(join(workspaceDir, f.path), "utf-8") }));
   const total = files.reduce((sum, f) => sum + [...f.text].length, 0);
-  return { full: total <= MATERIAL_FULL_LIMIT, files };
+  if (knowledgeRoot === null) return { full: total <= MATERIAL_FULL_LIMIT, files };
+  const cache = new Map<string, string | null>();
+  const knowledgeText = (locator: string): string | null => {
+    if (!cache.has(locator)) {
+      const path = knowledgeFilePath(knowledgeRoot, locator);
+      let text: string | null = null;
+      try {
+        if (path !== null) text = readFileSync(path, "utf-8");
+      } catch {
+        // 文档已经不在知识库里
+      }
+      cache.set(locator, text);
+    }
+    return cache.get(locator)!;
+  };
+  return { full: total <= MATERIAL_FULL_LIMIT, files, knowledgeText };
 }
 
 /**
@@ -318,6 +343,7 @@ function liveItems(db: DatabaseSync, taskId: string, collections: CollectionDef[
 /**
  * 一个条目的来源落在哪里，用来判断两个条目是否引用了同一处：「文档原文」出处带 #p 的 Word 材料记文件与段落号；
  * 出处是 .md 或 .txt 材料的记摘录所在的自然段（paragraphsWith）；「用户的话」与「领域说明」记出处。
+ * 出自知识库文档的来源（出处以 knowledge/ 开头）同样参与：Word 文档记出处与段落号，文本文档记摘录所在的自然段。
  */
 function anchorsOf(item: TaskItem, materials: Materials): Set<string> {
   const out = new Set<string>();
@@ -328,8 +354,10 @@ function anchorsOf(item: TaskItem, materials: Materials): Set<string> {
         if (docx[2]) out.add(`段落\n${docx[1]}#p${docx[2]}`);
         continue;
       }
-      const file = materials.files.find((f) => f.path === s.locator);
-      if (file) for (const paragraph of paragraphsWith(file.text, s.excerpt)) out.add(`段落\n${file.path}\n${paragraph}`);
+      const text = isKnowledgeLocator(s.locator)
+        ? materials.knowledgeText?.(s.locator) ?? null
+        : materials.files.find((f) => f.path === s.locator)?.text ?? null;
+      if (text !== null) for (const paragraph of paragraphsWith(text, s.excerpt)) out.add(`段落\n${s.locator}\n${paragraph}`);
     } else if (s.kind === SOURCE_USER_WORDS || s.kind === SOURCE_DOMAIN_NOTE) {
       out.add(`出处\n${s.locator}`);
     }

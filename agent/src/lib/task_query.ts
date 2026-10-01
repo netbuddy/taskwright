@@ -25,7 +25,8 @@ import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
 import { hasColumn } from "./dialogue_schema.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
-import { listMaterials } from "./task_status.ts";
+import { knowledgeDetails, knowledgeSection, listMaterials } from "./task_status.ts";
+import { envKnowledgeRoot, selectedKnowledge } from "./knowledge.ts";
 
 /** 工具的返回：给模型的一段文字，给读取一侧的结构化内容。 */
 export interface QueryOutcome {
@@ -131,7 +132,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
 }
 
 /** 「查询任务状态」：各集合的条目、完成条件逐项、未解决的问题条目、未读清单、最近一次修订与事件序号。 */
-export function getTaskStatus(workspaceDir: string, sessionId?: string): QueryOutcome {
+export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledgeRoot: string | null = envKnowledgeRoot()): QueryOutcome {
   return withTask(workspaceDir, (db, task, definition) => {
     const name = task.task_name ?? definition.taskName;
     const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}），状态是${task.status}。`, ""];
@@ -169,6 +170,10 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string): QueryOu
     const materials = materialFacts(db, task.task_id, workspaceDir,
       listMaterials(workspaceDir, definition.materialsDir).files.map((f) => f.path), envSegmentParams());
     if (materials.length) lines.push(...materialLines(materials));
+    // 任务选用的知识库与文档：与任务现状消息里的那一段相同；选用的知识库里没有文档时不写。
+    const libraries = selectedKnowledge(workspaceDir, knowledgeRoot);
+    const knowledge = knowledgeSection(libraries);
+    if (knowledge) lines.push(knowledge);
     const revision = db.prepare("SELECT revision_no, event_seq FROM revision WHERE task_id = ? ORDER BY revision_no DESC LIMIT 1").get(task.task_id) as
       | { revision_no: number; event_seq: number }
       | undefined;
@@ -193,6 +198,7 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string): QueryOu
         last_revision_no: revision?.revision_no ?? null,
         last_event_seq: last.seq,
         materials,
+        ...(knowledge ? { knowledge: knowledgeDetails(libraries) } : {}),
         dialogue,
       },
     };

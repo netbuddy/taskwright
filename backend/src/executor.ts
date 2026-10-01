@@ -165,6 +165,7 @@ export class Executor {
   readonly runsDir: string;
   readonly profile: Profile;
   readonly hub: Hub;
+  readonly knowledgeRoot: string | null;
   readonly sessions: Sessions;
   pi: PiSession | null = null;
   state = "not_started";
@@ -188,7 +189,9 @@ export class Executor {
   private startedAfterSeq = 0;
   private readonly lock = new Mutex();
 
-  constructor(taskId: string, taskDir: string, runsDir: string, profile: Profile, hub: Hub) {
+  /** knowledgeRoot 是本服务的知识库根目录，没有知识库时为 null；启动助手时交给它。 */
+  constructor(taskId: string, taskDir: string, runsDir: string, profile: Profile, hub: Hub, knowledgeRoot: string | null = null) {
+    this.knowledgeRoot = knowledgeRoot;
     this.taskId = taskId;
     this.taskDir = taskDir;
     this.runsDir = runsDir;
@@ -249,7 +252,7 @@ export class Executor {
   private async startPi(sessionFile: string | null, expected: string | null = null): Promise<void> {
     this.setState("starting");
     // 任务目录都在本服务的 --tasks 目录下；把它作为任务根目录传给 pi，扩展写库前核对任务库在它之下。
-    const pi = new PiSession(this.profile, this.taskDir, join(this.runsDir, this.taskId), LABEL, dirname(resolve(this.taskDir)));
+    const pi = new PiSession(this.profile, this.taskDir, join(this.runsDir, this.taskId), LABEL, dirname(resolve(this.taskDir)), undefined, this.knowledgeRoot);
     this.startedAfterSeq = maxSeq(this.taskDir);
     let state: Dict;
     try {

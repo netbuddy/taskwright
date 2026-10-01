@@ -101,11 +101,11 @@ export class Task {
   readonly hub: Hub;
   readonly executor: Executor;
 
-  constructor(taskId: string, dir: string, runsDir: string, profile: Profile) {
+  constructor(taskId: string, dir: string, runsDir: string, profile: Profile, knowledgeRoot: string | null = null) {
     this.taskId = taskId;
     this.dir = dir;
     this.hub = new Hub(dir, () => this.executor.running());
-    this.executor = new Executor(taskId, dir, runsDir, profile, this.hub);
+    this.executor = new Executor(taskId, dir, runsDir, profile, this.hub, knowledgeRoot);
   }
 
   row(): Row | null {
@@ -210,7 +210,7 @@ export class Service {
     this.claim = options.claim ?? occupancy.claim;
     this.releaseLock = options.release ?? occupancy.release;
     if (options.createTasksDir !== false) mkdirSync(this.tasksDir, { recursive: true });
-    // 知识库根目录同样转成绝对路径；第一次启动、还没有库的清单时建出通用库。
+    // 知识库根目录同样转成绝对路径；第一次启动、还没有知识库的清单时建出通用知识库。
     this.knowledge = options.knowledgeDir ? new KnowledgeStore(resolve(options.knowledgeDir)) : null;
     if (this.knowledge && options.createTasksDir !== false) this.knowledge.ensure();
   }
@@ -250,7 +250,7 @@ export class Service {
           continue;
         }
         this.occupied.delete(taskId);
-        this.tasks.set(taskId, new Task(taskId, d, this.runsDir, this.profile));
+        this.tasks.set(taskId, new Task(taskId, d, this.runsDir, this.profile, this.knowledge?.root ?? null));
       }
     }
   }
@@ -355,7 +355,7 @@ export class Service {
       if (error instanceof CreateTaskError) throw new ApiError("rejected", "任务没有创建成功。", { reasons: [error.message] });
       throw error;
     }
-    // 新任务只选用通用库。
+    // 新任务只选用通用知识库。
     writeFileSync(join(result.任务目录, SELECTION_FILE), JSON.stringify(initialSelection(), null, 2) + "\n", "utf-8");
     this.scan();
     return { ok: true, task_id: result.task_id };
@@ -617,19 +617,19 @@ export class Service {
     this.scan();
     for (const t of this.tasks.values()) {
       const ids = selectedLibraries(t.dir);
-      if (ids.includes(id)) writeSelection(t.dir, ids.filter((one) => one !== id), `库「${row.name}」已经删除，这个任务不再选用它。`);
+      if (ids.includes(id)) writeSelection(t.dir, ids.filter((one) => one !== id), `知识库「${row.name}」已经删除，这个任务不再选用它。`);
     }
     return { ok: true, id };
   }
 
-  /** 改任务选用的库：不存在的库以 rejected 拒绝；通用库每个任务都选用，没写时补在最前面。 */
+  /** 改任务选用的库：不存在的库以 rejected 拒绝；通用知识库每个任务都选用，没写时补在最前面。 */
   setTaskKnowledge(t: Task, body: Record<string, any>) {
     const store = this.requireKnowledge();
     t.requireOpen();
     const given = body.libraries;
-    if (!Array.isArray(given) || !given.every((one) => typeof one === "string")) throw new ApiError("bad_request", "libraries 应当是库编号的列表。");
+    if (!Array.isArray(given) || !given.every((one) => typeof one === "string")) throw new ApiError("bad_request", "libraries 应当是知识库编号的列表。");
     const unknown = given.filter((one) => !store.has(one));
-    if (unknown.length) throw new ApiError("rejected", `没有这个库：${unknown.join("、")}。`, { unknown });
+    if (unknown.length) throw new ApiError("rejected", `没有这个知识库：${unknown.join("、")}。`, { unknown });
     const ids = [GENERAL, ...new Set(given.filter((one) => one !== GENERAL))];
     writeSelection(t.dir, ids);
     return { ok: true, libraries: ids };

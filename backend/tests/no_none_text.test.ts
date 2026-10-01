@@ -75,6 +75,21 @@ test("生成文档里的空项（库数据异常）：列表与条目引用里�
   assert.equal(sourcesText(lib, "UC-001", 1), "文档原文，出处 inputs/a.md；领域说明；文档原文，出处 inputs/b.md（「买家可以退货。」）");
 });
 
+test("生成文档里出自知识库文档的来源：种类写「知识库」，出处写「知识库名 / 文档名」，Word 文档再写第几段；知识库已经不在时写编号；材料的出处照旧", () => {
+  const lib = { sourcesOf: () => [
+    { kind: "文档原文", locator: "knowledge/general/术语.md", excerpt: "原路退回：把钱退到买家付款时用的那个账户。" },
+    { kind: "文档原文", locator: "knowledge/lib-a1/规范.docx#p12", excerpt: "退款在 3 个工作日内到账。" },
+    { kind: "文档原文", locator: "knowledge/lib-gone/旧规范.md", excerpt: "旧的说法。" },
+    { kind: "文档原文", locator: "inputs/材料.docx#p3", excerpt: "买家可以退货。" },
+  ] } as any;
+  const names: Record<string, string> = { general: "通用知识库", "lib-a1": "行业规范" };
+  assert.equal(sourcesText(lib, "UC-001", 1, null, (id) => names[id] ?? null),
+    "知识库，出处 通用知识库 / 术语.md（「原路退回：把钱退到买家付款时用的那个账户。」）；知识库，出处 行业规范 / 规范.docx 第 12 段（「退款在 3 个工作日内到账。」）；" +
+    "知识库，出处 lib-gone / 旧规范.md（「旧的说法。」）；文档原文，出处 inputs/材料.docx（「买家可以退货。」）");
+  // 服务没有知识库（不给名字的查法）：一律写编号
+  assert.match(sourcesText(lib, "UC-001", 1), /^知识库，出处 general \/ 术语\.md（/);
+});
+
 test("条目标题：第一个字段是列表而有空项时（库数据异常）跳过空项", () => {
   const collection = { 名称: "用例", 字段: [{ 名: "名称", 类型: "文本列表" }] } as any;
   assert.equal(titleOf({ 名称: ["借书", null, "还书"] }, collection), "借书、还书");

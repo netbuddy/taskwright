@@ -12,6 +12,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { UserMessage } from "../lib/create_task.ts";
 import { ACTOR_EXECUTOR } from "../lib/db.ts";
 import { saveRevision } from "../lib/save_revision.ts";
+import { envKnowledgeRoot } from "../lib/knowledge.ts";
 import { currentRun, requireUnderstanding } from "../lib/dialogue_acts.ts";
 import { problemClicks } from "../lib/problem_consent.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
@@ -138,6 +139,7 @@ export function registerSaveRevision(pi: ExtensionAPI): void {
             userMessages: userMessagesOnBranch(ctx),
             problemClicks: problemClicks(branch),
             intentEntry: run?.userEntryId ?? null,
+            knowledgeRoot: envKnowledgeRoot(),
           },
           params,
         );

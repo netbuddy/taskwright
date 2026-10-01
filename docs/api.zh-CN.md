@@ -366,23 +366,41 @@ data: {
 
 ## 11 知识库
 
-任务的材料是这次任务要整理成条目的对象；知识库放的是整理时用来参考的资料，例如规范、术语表、模板、以往的成果。材料不进知识库。知识库分成若干个库，每个任务选用其中几个。编号为 `general` 的「通用库」每个任务都选用，不能改名、不能删除；服务启动时没有库的清单就把它建出来。文档没有版本：一份文档改了，就当作一份新文件上传。本版本的助手还不读知识库，这里的接口与页面是为下一步准备的。
+任务的材料是这次任务要整理成条目的对象；知识库放的是整理时用来参考的资料，例如规范、术语表、模板、以往的成果。材料不进知识库。知识库可以建若干个，每个任务选用其中几个。编号为 `general` 的「通用知识库」每个任务都选用，不能改名、不能删除；服务启动时没有知识库的清单就把它建出来；已有的清单里它还叫 0.4.1 之前的旧名「通用库」时，启动时改成现在的名字再写回去，用户自己起的名字不动。文档没有版本：一份文档改了，就当作一份新文件上传。助手怎样用知识库、来源怎样引用知识库里的文档，见本节末尾。
 
-**存放。** 在知识库根目录（`--knowledge`，缺省是用户数据目录下的 `knowledge/`，与任务目录并列）下：`libraries.json`（`{version: 1, libraries: [{id, name, created_at}]}`），每个库一个 `<库编号>/documents.json`（`{version: 1, documents: [{name, kind, bytes, sha256, uploaded_at}]}`），文档本体放在 `<库编号>/files/`。Word 文档照 Word 材料的办法生成投影、分段清单、位置表与图片目录（第 5.1 节），其中的路径写成 `<库编号>/files/<文件名>`；这些文件不列在 `documents` 里。两个 JSON 文件都先写临时文件再改名。库编号是 `lib-` 加 8 位十六进制数。任务选用了哪些库记在任务目录的 `knowledge.json` 里（`{version: 1, libraries: [库编号…], notes: [{at, text}]}`）：新建任务时写 `["general"]`；没有这个文件的任务（本版本之前建的）按只选用通用库算，改选用时才写文件。不给知识库根目录的服务（只有在代码里建服务时才会这样，命令行启动总有）没有知识库：`capabilities.knowledge` 为 `false`，下面的接口一律返回 `not_found`。
+**存放。** 在知识库根目录（`--knowledge`，缺省是用户数据目录下的 `knowledge/`，与任务目录并列）下：`libraries.json`（`{version: 1, libraries: [{id, name, created_at}]}`），每个知识库一个 `<知识库编号>/documents.json`（`{version: 1, documents: [{name, kind, bytes, sha256, uploaded_at}]}`），文档本体放在 `<知识库编号>/files/`。Word 文档照 Word 材料的办法生成投影、分段清单、位置表与图片目录（第 5.1 节），其中的路径写成 `<知识库编号>/files/<文件名>`；这些文件不列在 `documents` 里。两个 JSON 文件都先写临时文件再改名。知识库编号是 `lib-` 加 8 位十六进制数。任务选用了哪些知识库记在任务目录的 `knowledge.json` 里（`{version: 1, libraries: [知识库编号…], notes: [{at, text}]}`）：新建任务时写 `["general"]`；没有这个文件的任务（本版本之前建的）按只选用通用知识库算，改选用时才写文件。不给知识库根目录的服务（只有在代码里建服务时才会这样，命令行启动总有）没有知识库：`capabilities.knowledge` 为 `false`，下面的接口一律返回 `not_found`。
 
 **文档的种类。** `kind` 取 `standard`（规范）、`glossary`（术语表）、`template`（模板）、`past_work`（以往的成果）、`other`（其他）之一。种类只是标签，不决定文档怎样用。中文叫法随服务信息给出（`knowledge_upload.kinds`，第 9 节）。
 
 | 端点 | 用途 | 返回 |
 |---|---|---|
-| `GET /api/v1/knowledge` | 全部库与每个库的文档清单 | `{ok, libraries: [{id, name, created_at, used_by_tasks, documents: [{name, kind, bytes, uploaded_at}]}]}`。`used_by_tasks` 数的是本服务接手的、进行中的任务里选用了这个库的个数；被别的服务占用的任务不数 |
-| `POST /api/v1/knowledge/libraries` `{name}` | 新建库 | `{ok, library: {id, name, created_at}}`。名字空返回 `rejected`，说明「库名不能是空的。」；与已有的库同名（同名规则与材料相同）返回 `rejected`，说明「已经有一个叫「…」的库了。」 |
-| `POST /api/v1/knowledge/libraries/{id}` `{name}` | 改名 | `{ok, library}`；`general` 返回 `rejected`，说明「通用库不能改名。」 |
-| `POST /api/v1/knowledge/libraries/{id}/delete` | 删除库，文档一并删除 | `{ok, id}`。本服务接手的任务里选用了它的，自动不再选用，在它的 `knowledge.json` 的 `notes` 里记一句，不发事件；被别的服务占用的任务不改。`general` 返回 `rejected`，说明「通用库不能删除。」 |
-| `POST /api/v1/knowledge/libraries/{id}/documents` | 上传文档（multipart，单文件，另带字段 `kind`） | `{ok, document: {name, kind, bytes, uploaded_at}}`。检查照上传材料的办法（第 5.1 节）：文件名、类型（`.md`、`.txt`、Word 的 `.docx`）、保留的文件名、大小（最大 20 MB，`too_large`；更大的请求体不读就拒绝）、`kind`（`bad_request`）、内容、文件名。内容与文件名只在同一个库里比：内容相同返回 `duplicate_content`，说明「这份文件与这个库里已有的文档《…》内容完全相同，没有重复保存。」；同名而内容不同返回 `name_taken`，说明「这个库里已经有一份叫《…》的文档，内容与这份不同。请给文件换一个名字再上传。」；两种拒绝的 `data.name` 都是已有的那份文档。读不出来的 `.docx` 返回 `unsupported_type`，什么都不留下 |
+| `GET /api/v1/knowledge` | 全部知识库与每个知识库的文档清单 | `{ok, libraries: [{id, name, created_at, used_by_tasks, documents: [{name, kind, bytes, uploaded_at}]}]}`。`used_by_tasks` 数的是本服务接手的、进行中的任务里选用了这个知识库的个数；被别的服务占用的任务不数 |
+| `POST /api/v1/knowledge/libraries` `{name}` | 新建知识库 | `{ok, library: {id, name, created_at}}`。名字空返回 `rejected`，说明「知识库的名字不能是空的。」；与已有的知识库同名（同名规则与材料相同）返回 `rejected`，说明「已经有一个叫「…」的知识库了。」 |
+| `POST /api/v1/knowledge/libraries/{id}` `{name}` | 改名 | `{ok, library}`；`general` 返回 `rejected`，说明「通用知识库不能改名。」 |
+| `POST /api/v1/knowledge/libraries/{id}/delete` | 删除知识库，文档一并删除 | `{ok, id}`。本服务接手的任务里选用了它的，自动不再选用，在它的 `knowledge.json` 的 `notes` 里记一句，不发事件；被别的服务占用的任务不改。`general` 返回 `rejected`，说明「通用知识库不能删除。」 |
+| `POST /api/v1/knowledge/libraries/{id}/documents` | 上传文档（multipart，单文件，另带字段 `kind`） | `{ok, document: {name, kind, bytes, uploaded_at}}`。检查照上传材料的办法（第 5.1 节）：文件名、类型（`.md`、`.txt`、Word 的 `.docx`）、保留的文件名、大小（最大 20 MB，`too_large`；更大的请求体不读就拒绝）、`kind`（`bad_request`）、内容、文件名。内容与文件名只在同一个知识库里比：内容相同返回 `duplicate_content`，说明「这份文件与这个知识库里已有的文档《…》内容完全相同，没有重复保存。」；同名而内容不同返回 `name_taken`，说明「这个知识库里已经有一份叫《…》的文档，内容与这份不同。请给文件换一个名字再上传。」；两种拒绝的 `data.name` 都是已有的那份文档。读不出来的 `.docx` 返回 `unsupported_type`，什么都不留下 |
 | `POST /api/v1/knowledge/libraries/{id}/documents/delete` `{name}` | 删除文档，生成的文件一起删 | `{ok}` |
-| `GET /api/v1/knowledge/libraries/{id}/documents/content?name=…` | 文档的正文 | `{ok, name, text}`；`.docx` 给投影。文件必须落在那个库的 `files/` 里，否则返回 `bad_request` |
+| `GET /api/v1/knowledge/libraries/{id}/documents/content?name=…` | 文档的正文 | `{ok, name, text}`；`.docx` 给投影。文件必须落在那个知识库的 `files/` 里，否则返回 `bad_request` |
 | `GET /api/v1/knowledge/libraries/{id}/documents/raw?name=…` | 文档文件的原样内容 | 文件的原始字节，`Content-Type` 与材料相同 |
-| `GET /api/v1/tasks/{task_id}/knowledge` | 这个任务选用的库 | `{ok, libraries: [库编号…]}`；`GET /api/v1/tasks/{task_id}` 的 `knowledge_libraries` 也是它 |
-| `POST /api/v1/tasks/{task_id}/knowledge` `{libraries: [库编号…]}` | 改选用 | `{ok, libraries}`。`general` 总保留并排在最前；不存在的库编号返回 `rejected`，说明「没有这个库：…。」；任务已完成或已放弃时返回 `task_closed` |
+| `GET /api/v1/tasks/{task_id}/knowledge` | 这个任务选用的知识库 | `{ok, libraries: [知识库编号…]}`；`GET /api/v1/tasks/{task_id}` 的 `knowledge_libraries` 也是它 |
+| `POST /api/v1/tasks/{task_id}/knowledge` `{libraries: [知识库编号…]}` | 改选用 | `{ok, libraries}`。`general` 总保留并排在最前；不存在的知识库编号返回 `rejected`，说明「没有这个知识库：…。」；任务已完成或已放弃时返回 `task_closed`。改选用不影响正在进行的会话：下一条会话开头的任务现状消息按新的选用写，续接旧会话时另写一段 |
 
 上传材料的接口不变。网页界面在上传时先问这份文件用来做什么；选「整理时要参考的资料」时改调上面的文档上传，选了「新建一个库…」就先建库，勾了「同时让这个任务选用它」就再调一次改选用。
+
+**助手怎样用知识库。** 任务服务启动助手时，经环境变量 `TASKWRIGHT_KNOWLEDGE_ROOT` 把知识库根目录（绝对路径）交给它；没有知识库的服务不交，并把自己环境里的同名变量去掉。助手只读知识库，不新增工具，用它已有的 `read`、`grep`、`ls`：
+
+- 每条会话开头的任务现状消息在材料清单之后另起一行列出「这个任务选用的知识库」：每个知识库一行写名字与文档个数，下面每份文档一行，写文档名、种类（中文）、大小、助手可以读的绝对路径（Word 文档给由它生成的投影 `<文档名>.md` 的路径）与引用它时出处的写法。选用的知识库里一份文档都没有、或者服务没有知识库时不写这一段。消息的 `details.knowledge` 是同一份清单：`[{id, name, documents: [{name, kind, bytes, locator}]}]`。
+- 续接旧会话时，只在上次之后任务的选用或选用的知识库的文档清单变过时把这一段再写一遍（按任务目录的 `knowledge.json` 与选用的知识库的 `documents.json` 的修改时刻判断；与这个任务无关的知识库新建、改名、删除不算，只给选用的知识库改名也不算）；交付物与材料都没有变时，消息写「交付物没有变化。」再接这一段。
+- `get_task_status` 的结果里也列出同一段，`details.knowledge` 同上。
+- 文档一律按需查找：助手看清单，需要时用 `grep` 按字面查找、用 `read` 读相关的一段，不把整份文档放进上下文。本版本只按字面查找。知识库里的文档不整理成条目。
+
+**来源怎样引用知识库里的文档。** 不新增来源种类：种类仍是「文档原文」，出处写 `knowledge/<知识库编号>/<文档名>`，Word 文档照材料的办法加段落号（`knowledge/<知识库编号>/<文档名>.docx#p12`）。出处以 `knowledge/` 开头的就是知识库来源，其余的是材料。保存修订与回复里给建议值的依据都这样核对：
+
+- 到知识库根目录下 `<知识库编号>/files/<文档名>` 读文件，摘录照材料的规矩逐字核对（Word 文档按段落号对着投影核对；出处写成投影本身的拒绝）。
+- 只能引用这个任务选用的知识库里的文档。服务没有知识库、出处的写法不对、那个知识库已经不在、这个任务没有选用那个知识库、文档找不到，这五种情形下新写的来源被拒绝，拒绝的文字写明是哪一种。
+- 助手把条目当前的某条来源原样再交一次时，上面几种情形都照收、不核对（与材料已经删除时同一条规矩，见第 5.1 节「删除材料」）。
+- 不是知识库来源的出处，解析之后必须落在任务目录里：任务目录之外的绝对路径、用 `..` 绕出去的相对路径都按读不到处理，新写的来源被拒绝。
+
+评审时，出自知识库文档的来源与材料的来源一样参与「两个条目是否引用了同一处」的判断；知识库文档不放进给评审者的材料里。生成的文档里，知识库来源写成「知识库，出处 <知识库名> / <文档名>」，Word 文档再写「第 N 段」，知识库已经不在时写它的编号。
+
+网页界面里，知识库来源的标签写「知识库」，出处写「知识库名 / 文档名」，点它在只读对话框里看那份文档的正文（上表的 `documents/content`）；文档已经不在那个知识库的清单里时出处不可点，旁边写「这份文档已经不在知识库里」。工作视图在打开时与浏览器窗口重新得到焦点时各取一次知识库清单（`GET /api/v1/knowledge`），知识库的增删不推送事件。

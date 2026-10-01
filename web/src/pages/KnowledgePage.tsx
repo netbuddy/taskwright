@@ -1,5 +1,5 @@
 // 知识库页面（#/knowledge，带库编号时选中那个库）：左边是库的清单（新建、改名、删除），右边是选中的库里的文档表格与上传框。
-// 通用库每个任务都会用到，不能改名、不能删除。文档没有版本：一份文档改了，就当作一份新文件上传。
+// 通用知识库每个任务都会用到，不能改名、不能删除。文档没有版本：一份文档改了，就当作一份新文件上传。
 // 上传前先选「这是什么资料」（五种种类，只是标签）；类型与大小按服务信息里知识库那一项先查，不符的不发请求。
 
 import { useEffect, useState } from "react";
@@ -46,16 +46,16 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
     try {
       if (dialog.mode === "create") {
         const created = await api.createLibrary(name);
-        toast.success(`已新建库「${created.name}」。`);
+        toast.success(`已新建知识库「${created.name}」。`);
         go(href.knowledge(created.id));
       } else {
         await api.renameLibrary(dialog.id, name);
-        toast.success(`已把库「${dialog.name}」改名为「${name.trim()}」。`);
+        toast.success(`已把知识库「${dialog.name}」改名为「${name.trim()}」。`);
       }
       setDialog(null);
       void load();
     } catch (e) {
-      fail(e, dialog.mode === "create" ? "新建库没有成功。" : "改名没有成功。");
+      fail(e, dialog.mode === "create" ? "新建知识库没有成功。" : "改名没有成功。");
     }
   };
 
@@ -64,7 +64,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
     if (!lib) return;
     try {
       await api.deleteLibrary(lib.id);
-      toast.success(`已删除库「${lib.name}」。`);
+      toast.success(`已删除知识库「${lib.name}」。`);
       setRemovingLib(null);
       go(href.knowledge());
       void load();
@@ -93,12 +93,12 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
     <Shell nav="knowledge" libraries={libs.length}>
       <div className="page-title" style={{ justifyContent: "space-between" }}>
         <div className="page-title"><h1>知识库</h1></div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setName(""); setDialog({ mode: "create" }); }} data-testid="kb-new-library">新建一个库</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setName(""); setDialog({ mode: "create" }); }} data-testid="kb-new-library">新建一个知识库</Button>
       </div>
-      <p className="lede">知识库里放的是整理材料时用来参考的资料。助手只在任务选用的库里查找。</p>
+      <p className="lede">知识库里放的是整理材料时用来参考的资料。助手只在任务选用的知识库里查找。</p>
       <div className="kbgrid">
         <div className="card kblibs" data-testid="kb-libraries">
-          <div className="cap">一共 {libs.length} 个库</div>
+          <div className="cap">一共 {libs.length} 个知识库</div>
           {libs.map((l) => (
             <div key={l.id} className={`kblib${l.id === current?.id ? " on" : ""}`} onClick={() => go(href.knowledge(l.id))} data-testid={`kb-lib-${l.id}`}>
               <div className="ln">{l.name}{l.id === GENERAL && <span className="chip def">默认选用</span>}</div>
@@ -113,7 +113,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
               {current.id === GENERAL && <span className="chip def">默认选用</span>}
               <span className="sp" />
               {current.id !== GENERAL && <Button size="small" onClick={() => { setName(current.name); setDialog({ mode: "rename", id: current.id, name: current.name }); }}>改名</Button>}
-              {current.id !== GENERAL && <Button size="small" onClick={() => setRemovingLib(current)} data-testid="kb-delete-library">删除这个库</Button>}
+              {current.id !== GENERAL && <Button size="small" onClick={() => setRemovingLib(current)} data-testid="kb-delete-library">删除这个知识库</Button>}
             </div>
             <div className="kbmeta">
               {current.documents.length} 份文档。{current.id === GENERAL ? "每个任务都会用到。新建的任务会自动选用它，也不能去掉。" : `${usageText(current)}。`}
@@ -152,7 +152,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
               </span>
             </Upload.Dragger>
             {current.documents.length === 0
-              ? <Empty description="这个库里还没有文档。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ? <Empty description="这个知识库里还没有文档。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               : (
                 <table className="kbtable" data-testid="kb-documents">
                   <thead><tr><th>文档名</th><th>种类</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
@@ -169,19 +169,19 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
                   </tbody>
                 </table>
               )}
-            <div className="kbfoot">文档没有版本：一份文档改了，就当作一份新文件上传。助手在任务里看到的是所选用的库的文档清单（名称、种类、一句话说明），需要时到文档里查找相关的片段。</div>
+            <div className="kbfoot">文档没有版本：一份文档改了，就当作一份新文件上传。助手在任务里看到的是所选用的知识库的文档清单（名称、种类、大小），需要时到文档里查找相关的片段。</div>
           </div>
         )}
       </div>
 
-      <Modal title={dialog?.mode === "rename" ? `给库「${dialog.name}」改名` : "新建一个库"} open={!!dialog} onCancel={() => setDialog(null)}
+      <Modal title={dialog?.mode === "rename" ? `给知识库「${dialog.name}」改名` : "新建一个知识库"} open={!!dialog} onCancel={() => setDialog(null)}
         onOk={() => void saveName()} okText={dialog?.mode === "rename" ? "改名" : "新建"} cancelText="取消" okButtonProps={{ disabled: !name.trim() }} destroyOnHidden>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="库的名字，例如：城北区图书馆的资料" onPressEnter={() => name.trim() && void saveName()}
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="知识库的名字，例如：城北区图书馆的资料" onPressEnter={() => name.trim() && void saveName()}
           data-testid="kb-name-input" autoFocus />
       </Modal>
-      <Modal title={removingLib ? `删除库「${removingLib.name}」？` : ""} open={!!removingLib} onCancel={() => setRemovingLib(null)}
+      <Modal title={removingLib ? `删除知识库「${removingLib.name}」？` : ""} open={!!removingLib} onCancel={() => setRemovingLib(null)}
         onOk={() => void removeLibrary()} okText="删除" cancelText="取消" destroyOnHidden>
-        <p>{removingLib ? `库里的 ${removingLib.documents.length} 份文档会一并删除。选用了这个库的任务会自动不再选用它。` : ""}</p>
+        <p>{removingLib ? `这个知识库里的 ${removingLib.documents.length} 份文档会一并删除。选用了这个知识库的任务会自动不再选用它。` : ""}</p>
       </Modal>
       <Modal title={removingDoc ? `删除文档《${removingDoc}》？` : ""} open={!!removingDoc} onCancel={() => setRemovingDoc(null)}
         onOk={() => void removeDocument()} okText="删除" cancelText="取消" destroyOnHidden>
