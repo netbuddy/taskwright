@@ -103,3 +103,69 @@ body {
 .svc-gone .box { background: var(--card); border: 1px solid var(--line); border-radius: 0.9rem; padding: 2rem 2.6rem; text-align: center; }
 .svc-gone .box b { font-size: 1.2rem; display: block; margin-bottom: 0.5rem; }
 .svc-gone .box span { color: var(--mut); }
+
+/* 左侧栏的「任务」「知识库」两个入口 */
+.sider-nav { padding: 0.6rem 0.571rem 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.nav-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.42rem 0.571rem; border-radius: 0.429rem; font-size: 0.972rem; cursor: pointer; color: #333; }
+.nav-item:hover { background: var(--dark3); }
+.nav-item.on { background: var(--dark3); font-weight: 600; color: var(--ink); }
+.nav-item .ic { width: 1.1rem; color: var(--mut); }
+.nav-item .cnt { margin-left: auto; color: var(--mut); font-size: 0.88rem; font-weight: 400; }
+
+/* 上传时选择去向的对话框 */
+.updest-file { display: flex; align-items: center; gap: 0.5rem; background: var(--dark); border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.4rem 0.65rem; font-size: 0.93rem; margin: 0.5rem 0 0.8rem; }
+.updest-file .fs { margin-left: auto; color: var(--mut); font-size: 0.88rem; white-space: nowrap; }
+.updest-opts { display: flex; flex-direction: column; gap: 0.5rem; }
+.updest-opt { display: flex; gap: 0.6rem; align-items: flex-start; border: 1px solid var(--line2); border-radius: 0.6rem; padding: 0.55rem 0.75rem; cursor: pointer; }
+.updest-opt:hover { border-color: #9a9a9a; }
+.updest-opt.on { border-color: var(--ink); background: var(--stage); }
+.updest-opt input { margin-top: 0.35rem; accent-color: var(--ink); flex: none; }
+.updest-opt .ot { font-weight: 600; font-size: 0.97rem; }
+.updest-opt .od { color: #4a4a4a; font-size: 0.92rem; }
+.updest-kb { border-left: 0.15rem solid var(--line2); margin: 0.7rem 0 0 0.45rem; padding: 0.1rem 0 0.1rem 0.9rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.flabel { font-size: 0.92rem; color: #4a4a4a; margin-bottom: 0.25rem; }
+.updest-seg { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.updest-seg label { border: 1px solid var(--line2); border-radius: 1rem; padding: 0.08rem 0.7rem; font-size: 0.92rem; cursor: pointer; background: #fff; }
+.updest-seg input { display: none; }
+.updest-seg label.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.seg-note { font-size: 0.86rem; color: var(--mut); margin-top: 0.3rem; }
+.updest-hint { font-size: 0.92rem; line-height: 1.65; border-radius: 0.5rem; padding: 0.4rem 0.65rem; background: var(--dark); border: 1px solid var(--line); color: #4a4a4a; }
+.updest-hint.amber { background: var(--amber-bg); border-color: var(--amber-line); color: #7a4a06; }
+.updest-hint .ant-checkbox-wrapper { margin-top: 0.35rem; color: #7a4a06; font-weight: 600; }
+.updest-foot { display: flex; justify-content: flex-end; gap: 0.5rem; align-items: center; }
+.updest-foot .fnote { margin-right: auto; font-size: 0.86rem; color: var(--mut); text-align: left; }
+
+/* 任务页「选用的知识库」一栏与「选用别的库」的勾选框列表 */
+.kbrow { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px dashed var(--line); }
+.kbrow:last-of-type { border-bottom: 0; }
+.kbrow .nm { font-weight: 600; }
+.kbrow .mt { color: var(--mut); font-size: 0.92rem; flex: 1; min-width: 0; }
+.kbrow .lock { color: var(--mut); font-size: 0.88rem; }
+.kbrow a.muted { color: var(--mut); cursor: pointer; }
+.kbnote { font-size: 0.93rem; color: #4a4a4a; margin-top: 0.6rem; line-height: 1.7; }
+.kbpick { width: min(24rem, 86vw); }
+.kbpick .ph { font-size: 0.9rem; color: #4a4a4a; margin-bottom: 0.4rem; }
+.kbpick-row { padding: 0.2rem 0; }
+.kbpick .pm { margin-left: 0.4rem; color: var(--mut); font-size: 0.86rem; }
+.kbpick .pf { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.5rem; }
+
+/* 知识库页面：左边库的清单，右边文档表格 */
+.kbgrid { display: grid; grid-template-columns: minmax(12.5rem, 16rem) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
+.kblibs { padding: 0.45rem; }
+.kblibs .cap { color: var(--mut); font-size: 0.9rem; padding: 0.2rem 0.5rem 0.35rem; }
+.kblib { padding: 0.5rem 0.6rem; border-radius: 0.5rem; cursor: pointer; }
+.kblib:hover { background: var(--sel); }
+.kblib.on { background: var(--dark3); }
+.kblib .ln { font-weight: 600; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.kblib .lm { color: var(--mut); font-size: 0.9rem; }
+.chip.def { font-size: 0.82rem; padding: 0 0.45rem; color: var(--ink); background: #fff; border-color: var(--line2); font-weight: 600; }
+.kbhead { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
+.kbhead h2 { font-size: 1.12rem; margin: 0; }
+.kbhead .sp { flex: 1; }
+.kbmeta { color: #4a4a4a; font-size: 0.93rem; margin-bottom: 0.7rem; }
+.kbtable { width: 100%; border-collapse: collapse; font-size: 0.93rem; margin-top: 0.8rem; }
+.kbtable th { background: #fafafa; color: #4a4a4a; font-weight: 600; text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.kbtable td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.kbtable .dn { font-weight: 600; word-break: break-all; }
+.kbfoot { font-size: 0.88rem; color: var(--mut); margin-top: 0.55rem; }
+@media (max-width: 60rem) { .kbgrid { grid-template-columns: minmax(0, 1fr); } }

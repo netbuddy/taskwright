@@ -381,11 +381,6 @@ export function isListField(def: FieldDef): boolean {
   return def.type === "文本列表" || def.type === "条目引用";
 }
 
-/** 按「支持哪一处」挑出支持某个字段的来源；supports 为空的来源支持整个条目。 */
-export function sourcesFor(item: Item, field: string): Item["sources"] {
-  return item.sources.filter((s) => (s.supports?.length ?? 0) > 0 && s.supports!.some((x) => x.field === field));
-}
-
 /**
  * 列表里的「一句摘要」：标题字段之后第一个有内容的文本字段。按任务定义的字段顺序取，不写死集合名或字段名；
  * 需求规格这类任务里，功能用例取到「用例功能」，非功能需求与约束取到「需求语句」。

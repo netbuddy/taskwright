@@ -12,6 +12,7 @@ __pycache__/
 # run output of the example, the dev script and the simulator (repository root only)
 /runs/
 /tasks/
+/knowledge/
 /sim-runs/
 /srs-*.md
 *.tsbuildinfo

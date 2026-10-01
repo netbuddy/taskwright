@@ -29,7 +29,9 @@
  * 修改时原来的来源宁可多留（lib/source_carry.ts）：执行者改了字段，原来的来源按内容跟着走——没改的内容上的一律保留，列表插入、
  * 删除别的项、调换先后之后序号改指原来那一项，删掉的项上的去掉，改写了的内容上的照旧留着并在结果末尾提醒它检查；这次给的来源
  * 接在后面，与原来同一句摘录的合成一条。执行者要去掉某条来源，用只给 sources、不改字段的修改整体重新标注，结果里写明去掉了哪几条。
- * 保留下来的旧来源不再核对摘录。用户在界面上的操作照旧：交来的来源整体替换（可以是空列表：用户改写之后条目可以没有来源），不交就全部沿用。
+ * 保留下来的旧来源不再核对摘录。执行者把旧来源原样再交一次（例如整体重新标注）时，出处所指的材料文件还在就照常核对；
+ * 文件已经被删掉就不核对、原样收下：来源是过去引用时的记录，文件没了不等于引用错了。新写的来源指向不存在的文件照旧拒绝。
+ * 用户在界面上的操作照旧：交来的来源整体替换（可以是空列表：用户改写之后条目可以没有来源），不交就全部沿用。
  *
  * 「用户直接修改」是早期版本在用户直接改字段时写下的来源，现在不再写。旧修订里的这种记录原样留在库里，但修改时一律不沿用，
  * 当作不存在：不算进「改完之后至少一条来源」，提醒与「去掉了哪几条」里也不提它；用户撤销时交回的旧来源照原样恢复。
@@ -489,7 +491,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     // 旧的「用户直接修改」当作不存在（见文件开头）。用户的操作（直接修改、撤销）都交来完整的来源，不经这里沿用，撤销照原样恢复。
     const previousSources = sourcesOf(itemId, current.revision_no).filter((one) => one.kind !== SOURCE_USER_EDIT);
     const inherited = raw.sources === undefined;
-    const given = inherited ? null : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText);
+    const given = inherited ? null
+      : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText, undefined, previousSources);
     let sources = inherited ? previousSources : given;
     const notes: string[] = [];
     const editsFields = isObject(raw.fields) && Object.keys(raw.fields).length > 0;
@@ -827,6 +830,7 @@ function checkSources(
   noteRef?: (locator: string) => string | null,
   noteText?: (locator: string) => string[],
   whereOf: (index: number) => string = (index) => `第 ${index + 1} 条来源`,
+  previous: readonly Source[] = [],
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push("缺少 sources，至少要有一条来源");
@@ -919,6 +923,12 @@ function checkSources(
       locator = userWordsLocator(sessionId, hit.entryId);
     }
     const docx = DOCX_LOCATOR.exec(locator);
+    // 与这个条目当前修订里的某条来源是同一句摘录、而出处所指的材料文件已经删掉：原样收下，不核对（见文件开头）。
+    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && materialText(docx ? docx[1] : locator) === null
+      && previous.some((old) => sameQuote(old, { kind: one.kind as string, locator, excerpt: one.excerpt as string, supports }))) {
+      kept.push({ kind: one.kind as string, locator, excerpt: one.excerpt as string, supports });
+      return;
+    }
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.docx\.(txt|md)$/i.test(locator)) {
       errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的投影，不是材料本身`,
         `出处写 Word 文件加段落号，例如 ${locator.replace(/\.(txt|md)$/i, "")}#p12`));

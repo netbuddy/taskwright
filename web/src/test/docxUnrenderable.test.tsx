@@ -9,7 +9,7 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { ApiError, api } from "../api/client";
 import type { TaskDetail } from "../api/types";
 import { DOCX_UNRENDERABLE } from "../components/work/DocxPaper";
-import { SourceTag } from "../components/work/ItemDetail";
+import { SourceBox } from "../components/work/ItemDetail";
 import { MaterialPane } from "../components/work/MaterialPane";
 import { TaskPage } from "../pages/TaskPage";
 import { resetDocxStore, TaskIdContext } from "../state/docxStore";
@@ -89,32 +89,31 @@ describe("排版库画不出来", () => {
     loggedToConsole();
   });
 
-  it("来源标签照写「文件名 · 章节」，悬停提示照带表格位置", async () => {
+  it("来源的出处照写「文件名 · 章节」，照带表格位置", async () => {
     mockApi();
     render(
       <TaskIdContext.Provider value="TASK-U">
-        <SourceTag source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
+        <SourceBox source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
       </TaskIdContext.Provider>,
     );
-    await waitFor(() => expect(screen.getByRole("button").textContent).toBe("❝ requirements-styled.docx · 4 非功能需求"), SLOW);
-    expect(screen.getByRole("button").title).toContain("（表 3 第 2 行第 2 列）");
+    await waitFor(() => expect(screen.getByRole("button").textContent).toBe("出处：requirements-styled.docx · 4 非功能需求，表 3 第 2 行第 2 列（点一下看原文）"), SLOW);
   });
 });
 
 describe("读不到文件", () => {
-  it("照旧显示后端的说明，不显示画不出来的那句；来源标签照写章节", async () => {
+  it("照旧显示后端的说明，不显示画不出来的那句；来源的出处照写章节", async () => {
     fail.on = "none";
     vi.spyOn(api, "materialRaw").mockRejectedValue(new ApiError("not_found", "这个任务没有这份材料。", 404));
     vi.spyOn(api, "materialContent").mockImplementation(content);
     render(
       <TaskIdContext.Provider value="TASK-U">
         <MaterialPane taskId="TASK-U" materials={materials} locate={null} />
-        <SourceTag source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
+        <SourceBox source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
       </TaskIdContext.Provider>,
     );
     expect(await screen.findByText("这个任务没有这份材料。")).toBeInTheDocument();
     expect(screen.queryByTestId("docx-unrenderable")).toBeNull();
-    await waitFor(() => expect(screen.getByText(/^❝/).textContent).toBe("❝ requirements-styled.docx · 4 非功能需求"));
+    await waitFor(() => expect(screen.getByText(/^出处：/).textContent).toBe("出处：requirements-styled.docx · 4 非功能需求（点一下看原文）"));
   });
 });
 

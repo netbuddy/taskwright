@@ -111,11 +111,11 @@ describe("条目区与详情", () => {
     expect(screen.getByTestId("collection-lead").textContent).toBe("领域说明：材料里或你说明过的背景、术语、角色，供条目引用。 有 1 条还没有和任何条目关联（DN-004）。");
   });
 
-  it("「领域说明 DN-002」来源标签点一下打开那条说明；说明的详情列出被哪些条目引用", () => {
+  it("底部「来源」一节里领域说明的编号 DN-002 点一下打开那条说明；说明的详情列出被哪些条目引用", () => {
     render(<Panel t={task()} />);
     fireEvent.click(screen.getByTestId("item-UC-001"));
     const tag = screen.getByTestId("note-source-DN-002");
-    expect(tag.textContent).toBe("领域说明 DN-002");
+    expect(tag.textContent).toBe("DN-002");
     fireEvent.click(tag);
     const detail = screen.getByTestId("item-detail");
     expect(within(detail).getByRole("heading").textContent).toBe("借还台管理员");

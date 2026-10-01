@@ -30,6 +30,8 @@ export interface StartOptions {
   tasks?: string;
   /** 归档目录；不给时在用户数据目录下。 */
   runs?: string;
+  /** 知识库根目录；不给时在用户数据目录下，与任务目录并列。 */
+  knowledge?: string;
   /** 启动配置名，缺省 dev。 */
   profile?: string;
   /** 网页静态文件所在的目录；给了就由本服务出页面（不以 /api/ 开头的 GET 请求）。 */
@@ -46,6 +48,7 @@ export interface Started {
   host: string;
   tasksDir: string;
   runsDir: string;
+  knowledgeDir: string;
   /** 停止接新连接、关掉各任务的 pi、删掉占用标记；不退出进程。重复调用只做一次。 */
   stop: () => Promise<void>;
 }
@@ -105,7 +108,8 @@ export async function startService(options: StartOptions): Promise<Started> {
   teeLogs();
   const tasksDir = expandUser(options.tasks ?? join(userDataDir(), "tasks"));
   const runsDir = expandUser(options.runs ?? join(userDataDir(), "runs"));
-  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode });
+  const knowledgeDir = expandUser(options.knowledge ?? join(userDataDir(), "knowledge"));
+  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir });
   const server = makeServer(service, { webDir: options.web ?? null });
 
   let closing: Promise<void> | null = null;
@@ -138,6 +142,6 @@ export async function startService(options: StartOptions): Promise<Started> {
   service.port = port;
   if (options.port !== 0 && port !== options.port) console.log(`端口 ${options.port} 被占用，改用端口 ${port}。`);
   const web = options.web ? `，网页 ${options.web}` : "";
-  console.log(`任务服务在 http://${host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}，运行形态 ${mode}${web}`);
-  return { service, server, port, host, tasksDir, runsDir, stop };
+  console.log(`任务服务在 http://${host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}，知识库 ${service.knowledge!.root}，运行形态 ${mode}${web}`);
+  return { service, server, port, host, tasksDir, runsDir, knowledgeDir: service.knowledge!.root, stop };
 }

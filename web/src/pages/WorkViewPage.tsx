@@ -32,6 +32,7 @@ import { NoModelBanner, UserMenu, useService } from "../components/ServiceContro
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
 import { tooLargeText, unsupportedTypeText } from "../model/upload";
 import { executorHint } from "../components/work/executorHint";
+import { MaterialsContext } from "../state/materials";
 
 /** 「让助手改这一条」与「回答这个问题」预填的话。 */
 export const PREFILL = {
@@ -343,12 +344,14 @@ export function WorkViewPage({ taskId, sessionId }: { taskId: string; sessionId:
           <div className="stage-col">
             <div className="work">
               {task ? (
+                <MaterialsContext.Provider value={state.materials}>
                 <ItemsPanel task={task} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} />
+                </MaterialsContext.Provider>
               ) : <div className="pane-items" />}
               <div className="pane-doc">
                 <SidePanel side={side} onSide={setSide} onCollapse={() => toggleDoc(true)} onExpand={() => toggleDoc(false)}

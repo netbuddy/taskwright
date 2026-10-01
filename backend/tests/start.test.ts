@@ -48,7 +48,7 @@ test("启动函数：同一进程里起服务，回实际端口；--web 出静�
   const dir = join(tmp, "inproc");
   const web = makeWeb(join(dir, "web"));
   process.env.TASKWRIGHT_LOG_DIR = join(dir, "logs");
-  const started = await startService({ port: 0, mode: "desktop", tasks: join(dir, "tasks"), runs: join(dir, "runs"), profile: "fake", web, ownProcess: false });
+  const started = await startService({ port: 0, mode: "desktop", tasks: join(dir, "tasks"), runs: join(dir, "runs"), knowledge: join(dir, "knowledge"), profile: "fake", web, ownProcess: false });
   const port = started.port;
   try {
     assert.ok(port > 0, "给 0 时回的是操作系统挑的端口");
@@ -82,7 +82,7 @@ test("启动函数：同一进程里起服务，回实际端口；--web 出静�
 test("没给 --web 时行为不变：不以 /api/ 开头的路径也是接口的 404", async () => {
   const dir = join(tmp, "noweb");
   process.env.TASKWRIGHT_LOG_DIR = join(dir, "logs");
-  const started = await startService({ port: 0, tasks: join(dir, "tasks"), runs: join(dir, "runs"), profile: "fake", ownProcess: false });
+  const started = await startService({ port: 0, tasks: join(dir, "tasks"), runs: join(dir, "runs"), knowledge: join(dir, "knowledge"), profile: "fake", ownProcess: false });
   try {
     const page = await get(started.port, "/");
     assert.deepEqual([page.status, JSON.parse(page.text).error.code], [404, "not_found"]);

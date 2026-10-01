@@ -5,6 +5,7 @@ import { useRoute } from "./router";
 import { TaskListPage } from "./pages/TaskListPage";
 import { TaskPage } from "./pages/TaskPage";
 import { WorkViewPage } from "./pages/WorkViewPage";
+import { KnowledgePage } from "./pages/KnowledgePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { useRootPx } from "./model/fontScale";
 import { ToastProvider } from "./components/Toasts";
@@ -50,6 +51,7 @@ export function App() {
           <ServiceProvider>
           {route.page === "tasks" && <TaskListPage />}
           {route.page === "task" && <TaskPage key={route.taskId} taskId={route.taskId} />}
+          {route.page === "knowledge" && <KnowledgePage libraryId={route.libraryId} />}
           {route.page === "work" && <WorkViewPage key={`${route.taskId}/${route.sessionId}`} taskId={route.taskId} sessionId={route.sessionId} />}
           {route.page === "settings" && <SettingsPage />}
           </ServiceProvider>

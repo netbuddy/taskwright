@@ -16,7 +16,7 @@
 //
 // Environment:
 //   TASKWRIGHT_PORT          first port to try (default 8950); the next nine are tried when it is taken
-//   TASKWRIGHT_DATA_DIR      where tasks, archives and logs go (default: the backend's user data directory)
+//   TASKWRIGHT_DATA_DIR      where tasks, archives, the knowledge base and logs go (default: the backend's user data directory)
 //   TASKWRIGHT_CACHE_DIR     where an AppImage keeps its copy of agent/ (default: the user cache directory)
 //   TASKWRIGHT_NO_BROWSER=1  do not open a browser
 //   TASKWRIGHT_OPEN_WITH     a command that is run with the URL instead of the platform's opener
@@ -102,7 +102,7 @@ function runningInstance(port: number): Promise<boolean> {
   });
 }
 
-type Options = { port: string; mode: string; profile: string; web: string; host?: string; tasks?: string; runs?: string };
+type Options = { port: string; mode: string; profile: string; web: string; host?: string; tasks?: string; runs?: string; knowledge?: string };
 
 // The package's defaults, then the user's own arguments, which win. Unknown arguments are refused with a sentence.
 function options(argv: string[]): Options {
@@ -110,14 +110,14 @@ function options(argv: string[]): Options {
     args: argv,
     options: {
       port: { type: "string" }, host: { type: "string" }, mode: { type: "string" }, profile: { type: "string" },
-      web: { type: "string" }, tasks: { type: "string" }, runs: { type: "string" },
+      web: { type: "string" }, tasks: { type: "string" }, runs: { type: "string" }, knowledge: { type: "string" },
     },
     strict: true,
   });
   const data = process.env.TASKWRIGHT_DATA_DIR;
   return {
     port: process.env.TASKWRIGHT_PORT || "8950", mode: "desktop", profile: "desktop", web: path.join(ROOT, "web"),
-    ...(data ? { tasks: path.join(data, "tasks"), runs: path.join(data, "runs") } : {}),
+    ...(data ? { tasks: path.join(data, "tasks"), runs: path.join(data, "runs"), knowledge: path.join(data, "knowledge") } : {}),
     ...Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined)),
   } as Options;
 }
@@ -153,7 +153,7 @@ async function main(): Promise<void> {
   let started;
   try {
     started = await startService({
-      port: first, mode: chosen.mode, host: chosen.host, profile: chosen.profile, web: chosen.web, tasks: chosen.tasks, runs: chosen.runs,
+      port: first, mode: chosen.mode, host: chosen.host, profile: chosen.profile, web: chosen.web, tasks: chosen.tasks, runs: chosen.runs, knowledge: chosen.knowledge,
     });
   } catch (error) {
     console.error(`服务没有起来：${(error as Error).message}`);

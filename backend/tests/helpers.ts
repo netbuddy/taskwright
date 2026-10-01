@@ -132,7 +132,10 @@ export function sqlGet(ws: string, sql: string, ...params: unknown[]): Record<st
  */
 export async function spawnBackend(args: string[], options: Omit<SpawnOptions, "stdio"> = {}, ms = 15_000):
   Promise<{ child: ChildProcess; port: number; output: () => string }> {
-  const child = spawn(process.execPath, [BACKEND_MAIN, ...args, "--port", "0"], { ...options, stdio: ["ignore", "pipe", "pipe"] });
+  // 没给知识库目录时放在任务目录的旁边（同一个临时目录里），不落到用户数据目录下。
+  const at = args.indexOf("--tasks");
+  const knowledge = !args.includes("--knowledge") && at >= 0 ? ["--knowledge", join(dirname(args[at + 1]), "knowledge")] : [];
+  const child = spawn(process.execPath, [BACKEND_MAIN, ...args, ...knowledge, "--port", "0"], { ...options, stdio: ["ignore", "pipe", "pipe"] });
   let out = "";
   child.stdout!.on("data", (c) => (out += c));
   child.stderr!.on("data", (c) => (out += c));
