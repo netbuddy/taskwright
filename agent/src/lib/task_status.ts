@@ -16,6 +16,10 @@
  * 上次之后新放进来的文件，也写一条，只列材料。Word 材料另写它有几段、分成几块、分段清单在哪（lib/segments.ts）；
  * 续接时再写每份材料的引用情况：Word 材料还有几段没有被任何条目引用，文本材料被引用过几次。
  *
+ * 知识库：任务选用的知识库（lib/knowledge.ts）里有文档时，现状消息另列一段：每个知识库的名字与文档个数，每份文档的名字、种类、
+ * 大小、助手可以 read 与 grep 的绝对路径（Word 文档给投影的路径）与引用它时出处的写法。选用的知识库里一份文档都没有、或者
+ * 没有知识库时不写这一段。续接时，只在上次之后任务的选用或知识库的文档清单变过时写这一段（按文件的修改时刻判断，整段重写）。
+ *
  * 对话理解：这条会话里还有在等回应的执行者行为（你问过、用户还没回应的，见 lib/dialogue_acts.ts）时，消息末尾另列一行，
  * details.open_acts 是同一份清单。新会话里还没有对话行为，这一行只在续接时出现。
  *
@@ -33,6 +37,7 @@ import { BUSY_TIMEOUT_MS } from "./schema.ts";
 import { FUNCTION_NAMES } from "./intent_schema.ts";
 import { unansweredActs } from "./dialogue_acts.ts";
 import { isLocationTable } from "./docx_locations.ts";
+import { type SelectedLibrary, envKnowledgeRoot, knowledgeChangedAt, selectedKnowledge } from "./knowledge.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
 
 /** 这条自定义消息的类型名。后端、观测台与会话文件里都认这个名字。 */
@@ -70,8 +75,12 @@ interface EventRow {
   at: string;
 }
 
-/** 按会话的样子决定写哪一种：新会话写现状，续接写变化。库不存在或没有任务时返回 null。 */
-export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, sessionId: string): TaskStatusMessage | null {
+/**
+ * 按会话的样子决定写哪一种：新会话写现状，续接写变化。库不存在或没有任务时返回 null。
+ * knowledgeRoot 是知识库根目录，缺省取环境变量；为 null 时当作没有知识库。
+ */
+export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, sessionId: string,
+  knowledgeRoot: string | null = envKnowledgeRoot()): TaskStatusMessage | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
@@ -83,14 +92,62 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const materials: Materials = listMaterials(workspaceDir, definition.materialsDir);
     materials.facts = materialFacts(db, task.task_id, workspaceDir, materials.files.map((f) => f.path), envSegmentParams());
+    const libraries = selectedKnowledge(workspaceDir, knowledgeRoot);
     const fresh = !facts.hasUserMessage && !facts.hasStatusMessage;
     const message = fresh || facts.lastMessageAt === null
-      ? statusNow(db, task, definition, materials, workspaceDir)
-      : changesSince(db, task, facts.lastMessageAt, sessionId, materials);
+      ? withKnowledge(statusNow(db, task, definition, materials, workspaceDir), libraries, "")
+      // 续接：上次之后任务的选用或知识库的文档清单变过，才把知识库一段再写一遍。
+      : changesSince(db, task, facts.lastMessageAt, sessionId, materials,
+        knowledgeChangedAt(workspaceDir, knowledgeRoot) > facts.lastMessageAt ? libraries : null);
     return withOpenActs(db, task.task_id, sessionId, message);
   } finally {
     db.close();
   }
+}
+
+/**
+ * 「这个任务选用的知识库」一段：每个知识库一行写名字与文档个数，下面每份文档一行。所有选用的知识库都没有文档
+ * （或者没有知识库）时是空文字。任务现状、续接时的变化与「查询任务状态」都用它。
+ */
+export function knowledgeSection(libraries: SelectedLibrary[]): string {
+  if (!libraries.some((one) => one.documents.length > 0)) return "";
+  const lines = ["这个任务选用的知识库（参考资料，不整理成条目；需要时用 grep 按字面查找、用 read 读相关的一段；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）："];
+  for (const library of libraries) {
+    if (library.documents.length === 0) {
+      lines.push(`知识库「${library.name}」现在没有文档。`);
+      continue;
+    }
+    lines.push(`知识库「${library.name}」有 ${library.documents.length} 份文档：`);
+    for (const doc of library.documents) {
+      lines.push(doc.word
+        ? `- ${doc.name}（${doc.kindName}，${sizeText(doc.bytes)}）：这是 Word 文档，读由它生成的投影 ${doc.readPath}（每段一行，段落号写在方括号里）；出处写 ${doc.locator} 加段落号，例如 ${doc.locator}#p12`
+        : `- ${doc.name}（${doc.kindName}，${sizeText(doc.bytes)}）：读 ${doc.readPath}；出处写 ${doc.locator}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** 知识库一段对应的 details：每个选用的知识库的编号、名字与文档（名字、种类、大小、出处的写法）。 */
+export const knowledgeDetails = (libraries: SelectedLibrary[]) => libraries.map((one) => ({
+  id: one.id, name: one.name,
+  documents: one.documents.map((doc) => ({ name: doc.name, kind: doc.kindName, bytes: doc.bytes, locator: doc.locator })),
+}));
+
+/** 在消息后面另起一行写知识库一段（前面可以加一句引子）；这一段是空的就原样返回。 */
+function withKnowledge(message: TaskStatusMessage, libraries: SelectedLibrary[], lead: string): TaskStatusMessage {
+  const section = knowledgeSection(libraries);
+  if (!section) return message;
+  return { ...message, text: `${message.text}\n${lead}${section}`, details: { ...message.details, knowledge: knowledgeDetails(libraries) } };
+}
+
+/** 续接时知识库变过：把知识库一段再写一遍；现在选用的知识库里一份文档都没有时只说一句。 */
+function withKnowledgeChange(message: TaskStatusMessage, libraries: SelectedLibrary[]): TaskStatusMessage {
+  if (knowledgeSection(libraries)) return withKnowledge(message, libraries, "上次之后，这个任务选用的知识库或其中的文档有变化，现在是这样。");
+  return {
+    ...message,
+    text: `${message.text}\n上次之后，这个任务选用的知识库或其中的文档有变化：现在选用的知识库里没有文档。`,
+    details: { ...message.details, knowledge: knowledgeDetails(libraries) },
+  };
 }
 
 /** 在消息末尾列出这条会话里还在等回应的执行者行为；没有就原样返回。 */
@@ -232,8 +289,30 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
   };
 }
 
-/** 上次这条会话结束之后的变化；没有变化返回 null。 */
+/** 上次这条会话结束之后的变化（交付物、材料、知识库）；都没有变化返回 null。 */
 function changesSince(
+  db: DatabaseSync,
+  task: TaskRow,
+  lastMessageAt: number,
+  sessionId: string,
+  materials: Materials,
+  /** 上次之后知识库变过时，是现在选用的知识库；没变过为 null。 */
+  knowledge: SelectedLibrary[] | null,
+): TaskStatusMessage | null {
+  const changed = changesInItems(db, task, lastMessageAt, sessionId, materials);
+  if (knowledge === null) return changed;
+  const cutoff = wallClockText(new Date(lastMessageAt));
+  // 交付物与材料都没有变、只有知识库变了：照「只有新材料」的样子写一条，材料清单不重复。
+  return withKnowledgeChange(changed ?? {
+    kind: "变化",
+    text: `【执行者续接这条会话时（${clock()}）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。`,
+    details: { kind: "变化", task_id: task.task_id, since: cutoff, session_id: sessionId, added: [], updated: [], deleted: [], event_seqs: [],
+      materials: materialsDetails(materials), new_materials: [] },
+  }, knowledge);
+}
+
+/** 上次之后交付物与材料的变化；都没有变返回 null。 */
+function changesInItems(
   db: DatabaseSync,
   task: TaskRow,
   lastMessageAt: number,
