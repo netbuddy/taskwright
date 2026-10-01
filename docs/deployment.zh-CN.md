@@ -43,6 +43,8 @@ Taskwright 自己不直接调用模型，调用模型的是 pi；执行者用的
 
 pi 把凭据与自定义模型存放在 `~/.pi/agent/` 下（`auth.json` 与 `models.json`；环境变量 `PI_CODING_AGENT_DIR` 可以改这个目录）。任务服务用它自己的环境变量启动 pi，所以在启动服务的那个终端里设置的环境变量会传到 pi。
 
+模型服务也可以在网页界面上配置，经[接口参考](api.zh-CN.md)第 10 节的那组接口。这时任务服务在 `models.json` 与 `auth.json` 里加上它自己的几项，名字是 `taskwright-…`，文件里别的内容原样保留；每次改之前在文件旁边存一份备份（`<文件名>.taskwright-backup-<时刻>`，只留最近 5 份）。在那里选定的语言模型优先于启动配置，桌面包里也优先于 pi 的 `settings.json`。它从下一次打开或者新建会话起使用，改了之后重新打开的旧会话也用它；正在进行的会话不受影响。选了什么记在产品自己的设置文件里：用户数据目录下的 `settings.json`（Linux 是 `$XDG_DATA_HOME/taskwright/`，缺省是用户主目录下的 `.local/share/taskwright/`），设了 `TASKWRIGHT_SETTINGS_FILE` 时是它指的文件。这个文件里不存密钥。
+
 接入模型有三条路径。
 
 ### 3.1 默认路径：ChatGPT（Codex）订阅
@@ -109,6 +111,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 - `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。两者不给时都放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`）。
 - 各服务默认绑定 `0.0.0.0`（可用 `--host` 更改）。唯一的例外是以 `--mode desktop` 启动的任务服务，它默认绑定 `127.0.0.1`。
 - 任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是用户数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。只有在本机打开的页面才有退出的入口；服务按请求的来源地址判断是不是本机，所以桌面形态不要放在反向代理后面（否则服务看到的是代理的地址）。
+- **任何能打开页面的人都能修改模型配置。** 在加登录之前，任何能打开这个网址的人都能在网页界面上修改模型配置，包括换掉 API 密钥、删除模型服务。以 `--mode server` 启动的任务服务，只在可信的内网里部署。
 - 给任务服务的端口被占用时，它会依次尝试后面的端口，最多共试 10 个，全部被占时报错退出。给 `--port 0` 时由系统挑一个空闲端口。实际使用的端口会打印到日志、写进各任务的占用标记，并由 `GET /api/v1/service` 返回。
 - `scripts/dev.sh` 在 `TASKWRIGHT_API_PORT`（缺省 8790）上起任务服务，并把网页开发服务器指向任务服务报出的实际端口，所以端口被占时网页不会被转到别的服务上。加 `--demo` 时，任务服务用假模型端点（`backend/fake_model/`）与启动配置 `fake` 运行，任务与归档放在退出时删除的临时目录里，并由 `examples/library-lending/run.sh` 建好一个带示例材料与几个条目的演示任务；不需要模型服务与密钥，但 `PATH` 里要有 pi。
 - 任务服务给了 `--web <dir>`（例如构建好的 `web/dist`）时，自己托管网页：不以 `/api/` 开头的 GET 请求从这个目录取文件，找不到的路径回首页。这样不需要第 6 节的反向代理，也不需要开发服务器。
@@ -129,6 +132,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 | `TASKWRIGHT_LANGFUSE_ENV_FILE` | 任务服务、`scripts/tui.sh`、observatory | 保存 Langfuse 地址与密钥的文件。 |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse 项目编号，用于生成直达链接。 |
 | `TASKWRIGHT_SIM_MATERIALS_DIR` | simulator | 存放模拟用户画像所用材料的目录。 |
+| `TASKWRIGHT_SETTINGS_FILE` | 任务服务 | 产品自己的设置文件：在网页界面上选定的模型与登记的模型服务（缺省是用户数据目录下的 `settings.json`）。测试与试用环境把它指到临时文件。 |
 | `OPENAI_API_KEY` 等服务商变量 | pi | 模型凭据，见第 3.2 节。 |
 
 ## 6 网页界面的生产构建
@@ -205,7 +209,7 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 桌面包里不带任何密钥。模型服务的登记与凭据照旧从 pi 的配置目录读：Linux 是 `~/.pi/agent/`，Windows 是 `%USERPROFILE%\.pi\agent\`，设了环境变量 `PI_CODING_AGENT_DIR` 时以它为准。
 
-桌面包默认使用的模型与开发用的启动配置相同（`openai-codex/gpt-6-luna`，见第 3.1 节）；已经用 pi 登录过 ChatGPT 的电脑不用再做任何设置。要换成别的模型，在 pi 的配置目录里放两个文件：`models.json` 登记模型服务；`settings.json` 用 `defaultProvider` 与 `defaultModel` 两项指定用哪一个（pi 的 `/model` 命令写的也是这两项）。桌面包启动 pi 时，这两项都有就用它们代替默认模型。放好文件之后重新启动桌面包。
+桌面包默认使用的模型与开发用的启动配置相同（`openai-codex/gpt-6-luna`，见第 3.1 节）；已经用 pi 登录过 ChatGPT 的电脑不用再做任何设置。要换成别的模型，在 pi 的配置目录里放两个文件：`models.json` 登记模型服务；`settings.json` 用 `defaultProvider` 与 `defaultModel` 两项指定用哪一个（pi 的 `/model` 命令写的也是这两项）。桌面包启动 pi 时，这两项都有就用它们代替默认模型。放好文件之后重新启动桌面包。在网页界面上选定的语言模型（见第 3 节）优先于这两项。
 
 例一：本机的 llama.cpp（或其他 OpenAI 兼容接口）。`models.json`：
 

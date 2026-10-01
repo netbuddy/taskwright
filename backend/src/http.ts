@@ -15,6 +15,7 @@ import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
 import { appVersion } from "./paths.ts";
+import * as modelConfig from "./model_config.ts";
 import { probeModel } from "./model_probe.ts";
 import { MAX_UPLOAD, type Service, TOO_LARGE_TEXT, UPLOAD_TYPES, taskTypes, unsupportedTypeText, uploadTypesText, wordsLocator } from "./service.ts";
 import { isWebPath, webFile } from "./web.ts";
@@ -248,6 +249,7 @@ export const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
  * 服务信息：不需要任务。给打包后的启动程序认出端口上是不是自己、给部署与监控探活、给前端按能力显示按钮。
  * remote 是请求的来源地址：退出接口只接受本机回环地址来的请求，所以 capabilities.exit 只对这些来源为真，
  * 从别的电脑打开页面时不显示一个点了也会被拒绝的「退出服务」。不给来源时按非本机算。
+ * capabilities.model_config 表示页面能不能改模型配置；现在从任何地方打开都能改，恒为 true（字段保留给以后加登录时用）。
  */
 export function serviceInfo(service: Service, remote: string | null = null) {
   // 模型探测每次都现查（只读两个小文件）：用户放好配置文件后，刷新页面即可看到结果。
@@ -255,7 +257,7 @@ export function serviceInfo(service: Service, remote: string | null = null) {
   const model = probeModel(service.profile, process.env, { paths: service.mode === "desktop" });
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
-    capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available, knowledge: service.knowledge !== null },
+    capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available, model_config: true, knowledge: service.knowledge !== null },
     model: { name: model.name, reason: model.reason },
     // 上传上限与超过时的那句话：前端在发送之前按它拦下过大的文件（经开发服务器的代理上传过大文件时，代理可能回 502）。
     // extensions 是允许上传的扩展名，前端据此过滤可选的文件、在发送之前拦下类型不符的文件；types_text 是这些类型给人看的一串，
@@ -271,8 +273,21 @@ export function serviceInfo(service: Service, remote: string | null = null) {
   };
 }
 
+/** 模型配置各接口的环境。 */
+function modelContext(service: Service): modelConfig.Context {
+  return { env: process.env, profile: service.profile };
+}
+
 const handlers: Record<string, Handler> = {
   service_info: (service, req) => json(200, serviceInfo(service, req.remote ?? null)),
+  model_config: (service, req) => json(200, modelConfig.view(modelContext(service))),
+  model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
+  model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service), req.params.provider, bodyJson(req))),
+  model_provider_delete: async (service, req) => json(200, await modelConfig.deleteProvider(modelContext(service), req.params.provider)),
+  model_provider_check: async (service, req) => json(200, await modelConfig.checkProvider(modelContext(service), req.params.provider)),
+  model_provider_fetch: async (service, req) => json(200, await modelConfig.fetchModels(modelContext(service), req.params.provider)),
+  model_provider_context: async (service, req) => json(200, await modelConfig.contextWindow(modelContext(service), req.params.provider, bodyJson(req))),
+  model_selection: async (service, req) => json(200, await modelConfig.select(modelContext(service), bodyJson(req))),
   service_exit: (service, req) => {
     // 只有桌面形态注册这个接口；服务器形态下与没有这个接口一样。它是过渡包（后端自己开浏览器、没有外壳）专用的。
     if (service.mode !== "desktop") throw new ApiError("not_found", `没有这个接口：${req.method} ${req.path}`);
@@ -454,6 +469,14 @@ const L = "(?<lib>[^/]+)";
 export const ROUTES: [string, RegExp, string][] = ([
   ["GET", "/api/v1/service", "service_info"],
   ["POST", "/api/v1/service/exit", "service_exit"],
+  ["GET", "/api/v1/model-config", "model_config"],
+  ["POST", "/api/v1/model-config/providers", "model_provider_add"],
+  ["POST", "/api/v1/model-config/providers/(?<provider>[^/]+)", "model_provider_update"],
+  ["POST", "/api/v1/model-config/providers/(?<provider>[^/]+)/delete", "model_provider_delete"],
+  ["POST", "/api/v1/model-config/providers/(?<provider>[^/]+)/check", "model_provider_check"],
+  ["POST", "/api/v1/model-config/providers/(?<provider>[^/]+)/fetch-models", "model_provider_fetch"],
+  ["POST", "/api/v1/model-config/providers/(?<provider>[^/]+)/context-window", "model_provider_context"],
+  ["POST", "/api/v1/model-config/selection", "model_selection"],
   ["GET", "/api/v1/tasks", "list_tasks"],
   ["GET", "/api/v1/task-types", "list_task_types"],
   ["POST", "/api/v1/tasks", "create_task"],

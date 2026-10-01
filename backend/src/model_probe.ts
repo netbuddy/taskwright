@@ -4,7 +4,8 @@
  *   2. 登录凭据文件 auth.json：有以这个服务商为名的一项（pi 内置服务商登录后写在这里）。只看键名，不读凭据内容。
  * 二者之一满足即判「有」。识别不了的情形：内置服务商的密钥只放在环境变量里，这时会判「没有」，原因句里写明。
  * pi 的配置目录取环境变量 PI_CODING_AGENT_DIR，没设时是用户主目录下的 .pi/agent（与 pi 自己的规则相同）。
- * 要探测的模型与起 pi 时用的相同（launch.ts 的 resolveModel）：桌面形态下 pi 设置文件指定了模型时，探测的是那一个。
+ * 要探测的模型与起 pi 时用的相同（launch.ts 的 resolveModel）：先看产品设置里在界面上选定的语言模型；没有选过时，
+ * 桌面形态下 pi 设置文件指定了模型就探测那一个，否则是启动配置里的。
  */
 
 import { readFileSync } from "node:fs";
@@ -48,7 +49,8 @@ export function probeModel(profile: Profile, env: NodeJS.ProcessEnv = process.en
   const authPath = join(dir, "auth.json");
   const shown = (path: string) => (paths ? path : basename(path));
   if (!name) return { name, available: false, reason: "启动配置里没有写模型。" };
-  const picked = resolved.from === "pi 设置" ? `（由 pi 设置文件 ${resolved.settings} 指定）` : "";
+  const picked = resolved.from === "pi 设置" ? `（由 pi 设置文件 ${resolved.settings} 指定）`
+    : resolved.from === "产品设置" ? "（在设置的「模型」一栏选定）" : "";
   const slash = name.indexOf("/");
   const provider = slash > 0 ? name.slice(0, slash) : name;
   const modelId = slash > 0 ? name.slice(slash + 1) : "";

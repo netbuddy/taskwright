@@ -14,7 +14,7 @@
 | 网页（Web，`web/`） | TypeScript、React | 浏览器 | 否，它只调接口 | 从不写 |
 | 模拟用户（Simulator，`sim/`） | TypeScript 工具、Python 驱动程序，以及启动模拟用户的 Node 驱动程序 | 另一个 pi 进程 | 只读（用于判定） | 从不写 |
 
-**任务服务怎样与 pi 通信。** 任务服务以 RPC 方式启动 pi，与它按行收发 JSON，一行一个对象：命令与对话框的应答写进 pi 的标准输入，事件与回应从它的标准输出读出（`backend/src/pi_session.ts`）。读的时候只在换行符处断行，这是 pi 的 RPC 文档的要求，所以 JSON 字符串里的 U+2028、U+2029 两个字符不会把一行切断。启动 pi 与收发这些行的一层是可以替换的接口（`backend/src/transport.ts`），现在只有一种实现：子进程（`backend/src/transport_rpc.ts`）。命令与回应的对应、事件、归档与对话框的应答在它上面一层，由 `PiSession` 处理。
+**任务服务怎样与 pi 通信。** 任务服务以 RPC 方式启动 pi，与它按行收发 JSON，一行一个对象：命令与对话框的应答写进 pi 的标准输入，事件与回应从它的标准输出读出（`backend/src/pi_session.ts`）。读的时候只在换行符处断行，这是 pi 的 RPC 文档的要求，所以 JSON 字符串里的 U+2028、U+2029 两个字符不会把一行切断。启动 pi 与收发这些行的一层是可以替换的接口（`backend/src/transport.ts`），现在只有一种实现：子进程（`backend/src/transport_rpc.ts`）。命令与回应的对应、事件、归档与对话框的应答在它上面一层，由 `PiSession` 处理。有一处例外：列 Codex 订阅的模型目录时，`backend/src/model_config.ts` 会另起一次 pi 的进程让它印出模型清单，不经过这个接口；以后改用 pi 的命令接口读目录。
 
 **三种代码。**
 
@@ -42,6 +42,16 @@
 6. 生成文档，是把交付物按某一次修订（也可以只取其中几个条目）通过任务类型的模板渲染出来。这一步不涉及模型。
 
 **用一句话概括事件流：** 每条数据库事件都有一个单调递增的序号，浏览器把每个序号只应用一次，检测到序号有缺口时就请求一份新快照；对话事件与进度事件不带编号，刷新页面后会依据快照重新构建。
+
+## 配置放在哪里
+
+| 什么 | 在哪里 | 谁写 |
+|---|---|---|
+| pi 怎样启动：工具、扩展、技能、缺省的模型 | `backend/profiles/` 下的启动配置 | 代码仓；运行时只读 |
+| 模型服务及其密钥 | pi 配置目录里的 `models.json` 与 `auth.json`，与用户在命令行里用的 pi 共用 | 用户手工写、pi（`/login`）写，任务服务写它自己登记的那几项（`backend/src/model_config.ts`，照 pi 的办法加锁、先备份、先写临时文件再改名；见[接口参考](api.zh-CN.md)第 10 节） |
+| 用哪个语言模型、哪个嵌入模型，嵌入模型的查询前缀，任务服务登记过哪些模型服务 | 产品自己的设置文件：用户数据目录下的 `settings.json`（`TASKWRIGHT_SETTINGS_FILE` 可以改它的位置），每个 pi 配置目录一份 | 任务服务（`backend/src/product_settings.ts`）；里面不存密钥 |
+
+pi 启动时用哪个模型由 `backend/src/launch.ts` 的 `resolveModel` 决定：先看设置里选定的语言模型；没有时照 0.3，桌面包看 pi 的 `settings.json`；再没有时用启动配置里的。设置里选定了模型时，执行者在每次启动、新建会话、切换会话之后核对 pi 用的模型，不同就用 `set_model` 换过去（`backend/src/executor.ts` 的 `ensureModel`）。
 
 ## 数据库表（`task.sqlite`，每个任务目录一份）
 

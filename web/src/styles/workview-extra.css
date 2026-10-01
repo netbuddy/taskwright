@@ -352,3 +352,8 @@
 .app .rl-row:first-child { border-top: 0; }
 .app .rl-row .rid { font-family: var(--mono, monospace); font-size: .857rem; color: #444; }
 .app .rl-off { color: var(--mut); font-size: .857rem; padding: .25rem 0 .05rem; border-top: 1px dotted var(--line2); }
+
+/* 顶栏的「设置」：样子与「会话 ▾」一样，前面一个齿轮，放在「会话 ▾」与「本机用户 ▾」之间 */
+.app .topbar .set-btn { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--line2); border-radius: .5rem; background: var(--card);
+  font-size: .897rem; padding: .12rem .6rem; cursor: pointer; white-space: nowrap; }
+.app .topbar .set-btn:hover { border-color: var(--ink); }

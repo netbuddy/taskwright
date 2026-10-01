@@ -21,7 +21,8 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       // 事件流是长连接：关掉代理超时，免得 SSE 被中途切断。
-      "/api": { target, changeOrigin: true, timeout: 0, proxyTimeout: 0 },
+      // xfwd 让代理加上 X-Forwarded-For，写明页面是从哪台电脑打开的（代理到后端的连接都来自本机）；任务服务现在不凭它做判断，留着无害。
+      "/api": { target, changeOrigin: true, timeout: 0, proxyTimeout: 0, xfwd: true },
     },
   },
   test: {
