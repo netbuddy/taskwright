@@ -335,6 +335,28 @@ describe("材料", () => {
     expect(await screen.findByText("已删除材料《补充说明.docx》。")).toBeInTheDocument();
   });
 
+  it("删除请求还没有回来时，确认框的「删除」转圈、「取消」不可点，再点「删除」不会发第二次请求；回来之后照常提示并重读任务", async () => {
+    const calls = page(detail({ materials }));
+    let finish: (value: { ok: true; path: string }) => void = () => {};
+    calls.remove.mockImplementation(() => new Promise((ok) => { finish = ok; }));
+    fireEvent.click(await screen.findByTestId("material-delete"));
+    await screen.findByText("删除材料《补充说明.docx》？");
+    const ok = () => document.querySelector(".ant-modal .ant-btn-primary") as HTMLButtonElement;
+    const cancel = () => document.querySelector(".ant-modal .ant-btn-default") as HTMLButtonElement;
+    fireEvent.click(ok());
+    await waitFor(() => expect(ok()).toHaveClass("ant-btn-loading"));
+    expect(cancel().disabled).toBe(true);
+    fireEvent.click(ok());
+    fireEvent.click(ok());
+    fireEvent.click(cancel());
+    expect(calls.remove).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("删除材料《补充说明.docx》？")).toBeInTheDocument();
+    finish({ ok: true, path: "inputs/补充说明.docx" });
+    expect(await screen.findByText("已删除材料《补充说明.docx》。")).toBeInTheDocument();
+    await waitFor(() => expect(calls.get).toHaveBeenCalledTimes(2));
+    expect(calls.remove).toHaveBeenCalledTimes(1);
+  });
+
   it("删除被后端拒绝（材料刚进入了对话）：红色提示照写后端的原话，并重读任务，「删除」随新的数据消失", async () => {
     const calls = page(detail({ materials }));
     calls.remove.mockRejectedValue(new ApiError("rejected", "这份材料已经进入了对话，不能删除。", 422));

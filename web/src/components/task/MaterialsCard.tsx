@@ -32,10 +32,13 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
 }) {
   const toast = useToast();
   const [deleting, setDeleting] = useState<string | null>(null);
+  // 删除请求发出去、还没有回来：确认框的「删除」转圈、「取消」不可点，再点不会发第二次。
+  const [removing, setRemoving] = useState(false);
 
   const remove = async () => {
     const path = deleting;
-    if (!path) return;
+    if (!path || removing) return;
+    setRemoving(true);
     try {
       await api.deleteMaterial(taskId, path);
       toast.success(`已删除材料《${fileName(path)}》。`);
@@ -45,6 +48,7 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
       // 被拒绝多半是它刚进入了对话：重读一次，让「删除」按新的情况显示。
       onChanged();
     } finally {
+      setRemoving(false);
       setDeleting(null);
     }
   };
@@ -100,8 +104,9 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
           </Upload.Dragger>
         </div>
       )}
-      <Modal title={deleting ? `删除材料《${fileName(deleting)}》？` : ""} open={!!deleting} onCancel={() => setDeleting(null)}
-        onOk={() => void remove()} okText="删除" cancelText="取消" destroyOnHidden>
+      <Modal title={deleting ? `删除材料《${fileName(deleting)}》？` : ""} open={!!deleting} onCancel={() => { if (!removing) setDeleting(null); }}
+        onOk={() => void remove()} okText="删除" cancelText="取消" confirmLoading={removing} cancelButtonProps={{ disabled: removing }}
+        closable={!removing} maskClosable={!removing} keyboard={!removing} destroyOnHidden>
         <p>删除之后这份材料就没有了，助手下次开始会话时不会再看到它。</p>
       </Modal>
     </section>
