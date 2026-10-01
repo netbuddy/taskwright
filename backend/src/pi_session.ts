@@ -12,6 +12,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import * as launch from "./launch.ts";
+import { KNOWLEDGE_ROOT_ENV } from "../../agent/src/lib/knowledge.ts";
 import { localStamp, pyDumps } from "./py.ts";
 import type { PiTransport } from "./transport.ts";
 import { RpcTransport } from "./transport_rpc.ts";
@@ -216,6 +217,8 @@ class EventQueue<T> {
 export class PiSession {
   readonly profile: launch.Profile;
   readonly tasksRoot: string | null;
+  /** 本服务的知识库根目录（绝对路径）；没有知识库时为 null。启动时经环境变量交给 pi 里的扩展。 */
+  readonly knowledgeRoot: string | null;
   readonly workspace: string;
   readonly runsDir: string;
   readonly label: string;
@@ -247,8 +250,9 @@ export class PiSession {
 
   /** makeTransport 给出每次启动用的收发数据层，默认是子进程实现。 */
   constructor(profile: launch.Profile, workspace: string, runsDir: string, label = "session", tasksRoot: string | null = null,
-    makeTransport: () => PiTransport = () => new RpcTransport()) {
+    makeTransport: () => PiTransport = () => new RpcTransport(), knowledgeRoot: string | null = null) {
     this.makeTransport = makeTransport;
+    this.knowledgeRoot = knowledgeRoot !== null ? resolve(knowledgeRoot) : null;
     this.profile = profile;
     this.tasksRoot = tasksRoot !== null ? resolve(tasksRoot) : null;
     this.workspace = resolve(workspace);
@@ -277,6 +281,10 @@ export class PiSession {
     this.command = built.argv;
     const env = built.env;
     if (this.tasksRoot !== null) env[TASKS_ROOT_ENV] = this.tasksRoot;
+    // 知识库根目录：扩展据此列出任务选用的知识库、核对出自知识库文档的来源。没有知识库时把继承来的同名变量删掉，
+    // 免得后端自己的环境里碰巧有这个变量、让助手以为有知识库。
+    if (this.knowledgeRoot !== null) env[KNOWLEDGE_ROOT_ENV] = this.knowledgeRoot;
+    else delete env[KNOWLEDGE_ROOT_ENV];
     this.exitNoted = false;
     this.archivePath = join(eventsDir, `${this.label}-${stampCompact()}.jsonl`);
     this.notesPath = this.archivePath.replace(/\.jsonl$/, ".backend.jsonl");

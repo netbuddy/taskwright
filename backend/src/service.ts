@@ -99,11 +99,11 @@ export class Task {
   readonly hub: Hub;
   readonly executor: Executor;
 
-  constructor(taskId: string, dir: string, runsDir: string, profile: Profile) {
+  constructor(taskId: string, dir: string, runsDir: string, profile: Profile, knowledgeRoot: string | null = null) {
     this.taskId = taskId;
     this.dir = dir;
     this.hub = new Hub(dir, () => this.executor.running());
-    this.executor = new Executor(taskId, dir, runsDir, profile, this.hub);
+    this.executor = new Executor(taskId, dir, runsDir, profile, this.hub, knowledgeRoot);
   }
 
   row(): Row | null {
@@ -248,7 +248,7 @@ export class Service {
           continue;
         }
         this.occupied.delete(taskId);
-        this.tasks.set(taskId, new Task(taskId, d, this.runsDir, this.profile));
+        this.tasks.set(taskId, new Task(taskId, d, this.runsDir, this.profile, this.knowledge?.root ?? null));
       }
     }
   }
