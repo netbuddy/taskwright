@@ -7,6 +7,9 @@ import { api, ApiError } from "../../api/client";
 import type { KnowledgeLibrary } from "../../api/types";
 import { excerptSpan, knowledgePlace } from "../../model/knowledge";
 
+/** 文档的正文读不到、后端又没有给说明时的那句话。 */
+const NOT_READ = "这份文档的正文没有读到。";
+
 export interface KnowledgeDocRequest {
   /** 来源的出处（knowledge/知识库编号/文档名，Word 文档带段落号）。 */
   locator: string;
@@ -26,10 +29,15 @@ export function KnowledgeDocModal({ request, libraries, onClose }: {
   useEffect(() => {
     setText(null);
     setError(null);
-    if (!place || !place.library) return;
+    if (!place) return;
+    // 出处拆不出知识库编号与文档名（写法不对）：没有文档可读，直接写明没有读到，不停在「正在读」。
+    if (!place.library) {
+      setError(NOT_READ);
+      return;
+    }
     let live = true;
     api.documentText(place.library, place.name).then((r) => { if (live) setText(r.text); })
-      .catch((e) => { if (live) setError(e instanceof ApiError ? e.message : "这份文档的正文没有读到。"); });
+      .catch((e) => { if (live) setError(e instanceof ApiError ? e.message : NOT_READ); });
     return () => { live = false; };
   }, [request?.locator]);
 

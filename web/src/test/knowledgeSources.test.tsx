@@ -152,6 +152,14 @@ describe("点知识库来源的出处打开的只读对话框", () => {
     expect(screen.getByTestId("kb-doc").querySelector(".kbdoc-text")!.textContent).toContain("[p11] 退款须审核。");
   });
 
+  it("出处拆不出知识库编号与文档名时写「这份文档的正文没有读到。」，不去读、也不停在「正在读这份文档。」", async () => {
+    const documentText = vi.spyOn(api, "documentText");
+    open("knowledge/坏的写法", "一句话");
+    expect((await screen.findByTestId("kb-doc-error")).textContent).toBe("这份文档的正文没有读到。");
+    expect(screen.getByTestId("kb-doc").textContent).not.toContain("正在读这份文档。");
+    expect(documentText).not.toHaveBeenCalled();
+  });
+
   it("文档读不到时显示后端给的那句话", async () => {
     vi.spyOn(api, "documentText").mockRejectedValue(new ApiError("not_found", "这个知识库里没有《术语.md》。", 404));
     open(TERM.locator, TERM.excerpt);
