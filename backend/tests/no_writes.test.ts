@@ -29,6 +29,10 @@ const ALLOWED: Record<string, string[]> = {
   "docx_location_input.ts": ["locationTable"],
   // 评审结论：不依赖任何模块的纯函数，只按传进去的记录下结论。
   "review_verdict.ts": ["reviewVerdict"],
+  // 知识库：文档的种类与通用库的编号、来源出处的拆法（不依赖任何模块的纯函数）。
+  "knowledge_locator.ts": ["GENERAL", "KINDS", "KIND_NAMES", "Kind", "parseKnowledgeLocator"],
+  // 知识库：交给助手的环境变量名、任务目录里记选用的文件名（两个常量）。
+  "knowledge.ts": ["KNOWLEDGE_ROOT_ENV", "SELECTION_FILE"],
 };
 
 function files(dir: string): string[] {
