@@ -393,6 +393,23 @@ test("Codex 订阅：不写两个共用文件，只看凭据文件里有没有�
   assert.equal(again.body.provider.status.ok, true);
 });
 
+test("Codex 订阅没有登录时获取模型列表：说明里让用户先登录，不建议手工添加", async () => {
+  // 假的助手程序：列模型时什么都不输出，等于一个服务都没有登录
+  const entry = join(tmp, "list-nothing.mjs");
+  writeFileSync(entry, "");
+  const before = process.env.TASKWRIGHT_PI_ENTRY;
+  process.env.TASKWRIGHT_PI_ENTRY = entry;
+  try {
+    await go("POST", "/api/v1/model-config/providers", { kind: "codex" });
+    const r = await go("POST", "/api/v1/model-config/providers/taskwright-codex/fetch-models", {});
+    assert.equal(r.body.result, "failed");
+    assert.equal(r.body.message, "获取模型列表没有成功：还没有登录 Codex 订阅。请先在命令行里登录，再回到这里刷新。");
+  } finally {
+    if (before === undefined) delete process.env.TASKWRIGHT_PI_ENTRY;
+    else process.env.TASKWRIGHT_PI_ENTRY = before;
+  }
+});
+
 // ───────────── 写文件的三条规矩 ─────────────
 
 test("别的内容原样保留：用户的服务、不认识的字段、产品那一项里用户另加的字段、凭据文件里别人的凭据", async () => {

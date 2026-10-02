@@ -169,8 +169,10 @@ function contextOf(entry: any): number | null {
   return positive(entry?.max_model_len) ?? positive(entry?.context_window) ?? positive(entry?.meta?.n_ctx) ?? positive(entry?.context_length);
 }
 
-function failed(reason: string): Listed {
-  return { result: "failed", message: `获取模型列表没有成功：${reason}。可以稍后再试，或者手工添加。`, models: [] };
+/** 获取模型列表没有成功时的说明。Codex 订阅的模型在页面上不能手工添加，所以它的建议是先登录。 */
+function failed(reason: string, kind?: Kind): Listed {
+  const advice = kind === "codex" ? "请先在命令行里登录，再回到这里刷新。" : "可以稍后再试，或者手工添加。";
+  return { result: "failed", message: `获取模型列表没有成功：${reason}。${advice}`, models: [] };
 }
 
 function reasonOf(answer: Answer): string {
@@ -225,7 +227,7 @@ async function listCodexModels(ctx: Context): Promise<Listed> {
   try {
     launcher = piLauncher(ctx.profile);
   } catch {
-    return failed("找不到助手的程序");
+    return failed("找不到助手的程序", "codex");
   }
   const env = { ...buildEnvironment(ctx.profile), ...launcher.env, PI_OFFLINE: "1" };
   const args = [...launcher.prefix, "--offline", "--no-extensions", "--no-skills", "--list-models", CODEX_PROVIDER];
@@ -240,13 +242,13 @@ async function listCodexModels(ctx: Context): Promise<Listed> {
       done({ code, text });
     });
   });
-  if (output.code !== 0) return failed("没能读出 Codex 订阅的模型目录");
+  if (output.code !== 0) return failed("没能读出 Codex 订阅的模型目录", "codex");
   const models: Listed["models"] = [];
   for (const line of output.text.split("\n")) {
     const cols = line.trim().split(/\s+/);
     if (cols.length >= 3 && cols[0] === CODEX_PROVIDER) models.push({ id: cols[1], type: "language", context_window: tokens(cols[2]) });
   }
-  if (!models.length) return failed("还没有登录 Codex 订阅");
+  if (!models.length) return failed("还没有登录 Codex 订阅", "codex");
   return { result: "listed", message: "", models };
 }
 
