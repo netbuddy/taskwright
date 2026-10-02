@@ -67,8 +67,10 @@ export const TYPE_NAME: Record<ModelType, string> = { language: "语言模型", 
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
 export const READONLY_PROVIDER_TEXT = "这个模型服务是在配置文件里手工登记的，这里只能看，不能改。";
 export const LOGIN_NOTE = "这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请在选定模型之后点「测试」。";
-/** 登录命令的位置先写成占位，不写出具体的程序名。 */
-export const LOGIN_COMMAND = "登录的命令";
+/** 登录分两步：先在命令行里运行启动的命令，再在它的界面里输入登录的指令。命令的字面绕不开程序名，别的页面文字不写它。 */
+export const LOGIN_COMMAND = "pi";
+export const LOGIN_INSTRUCTION = "/login";
+export const LOGIN_INSTRUCTION_HINT = "输入后在列表里选 ChatGPT Plus/Pro (Codex)";
 /** 模型超过这么多个时，清单平时只列出勾上的。 */
 export const MANY_MODELS = 10;
 

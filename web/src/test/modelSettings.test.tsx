@@ -27,6 +27,10 @@ const ollama = (over: Partial<Provider> = {}): Provider => ({
   ],
   models_fetched_at: null, in_use: [], ...over,
 });
+const codex = (over: Partial<Provider> = {}): Provider => ({
+  id: "taskwright-codex", managed: true, kind: "codex", name: "Codex 订阅", base_url: null, key: null,
+  status: { checked_at: "2026-09-29T10:40:00Z", ok: false, message: "", logged_in: false }, models: [], models_fetched_at: null, in_use: [], ...over,
+});
 const handWritten: Provider = {
   id: "my-gateway", managed: false, kind: null, name: "我的网关", base_url: null, key: null, status: null,
   models: [{ id: "gateway-chat", type: "language", enabled: true, context_window: null, context_source: null }], models_fetched_at: null, in_use: [],
@@ -72,6 +76,25 @@ describe("设置页面的「模型」一栏", () => {
     expect(await screen.findByTestId("current-language")).toHaveTextContent("还没有选。现在用的是：local/qwen（来自助手程序的设置）。");
     expect(screen.getByTestId("current-embedding")).toHaveTextContent("还没有选。知识库只能按字面查找。");
     expect(screen.getByTestId("current-language")).not.toHaveTextContent("pi");
+  });
+
+  it("Codex 订阅还没有登录时给出两行：第一行是启动的命令，第二行是启动之后要输入的指令与一句说明；「复制」只复制第一行", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    try {
+      page(config({ providers: [codex()] }));
+      const login = await screen.findByTestId("codex-login");
+      expect(within(login).getByTestId("login-command")).toHaveTextContent(/^pi$/);
+      const second = within(login).getByTestId("login-instruction");
+      expect(second).toHaveTextContent(/^\/login$/);
+      expect(second.parentElement).toHaveTextContent("/login输入后在列表里选 ChatGPT Plus/Pro (Codex)");
+      expect(login).not.toHaveTextContent("登录的命令");
+      fireEvent.click(within(login).getByRole("button", { name: /复制/ }));
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(writeText).toHaveBeenCalledWith("pi");
+    } finally {
+      delete (navigator as { clipboard?: unknown }).clipboard;
+    }
   });
 
   it("添加时后端回 rejected：停在添加的画面，按 data.field 把后端那句话写在接口地址下面", async () => {

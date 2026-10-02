@@ -110,7 +110,7 @@ export function AddProvider({ onAdded, onCancel }: { onAdded: (provider: Provide
         {group === "compatible" && <>{nameRow}{urlRow(true)}{keyRow(true)}</>}
         {group === "codex" && (
           <div className="login">
-            <div>保存之后，在这个模型服务的详情里显示是否已经登录。还没有登录的话，请在运行任务服务的这台电脑上打开命令行，运行下面这条命令，照提示登录。</div>
+            <div>保存之后，在这个模型服务的详情里显示是否已经登录。还没有登录的话，请在运行任务服务的这台电脑上打开命令行，运行下面第一行的命令，等它启动后输入第二行的指令，照提示登录。</div>
             <LoginCommand />
             <div className="fhelp">{LOGIN_NOTE}</div>
           </div>
