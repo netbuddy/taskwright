@@ -23,15 +23,19 @@
   padding: .45rem .75rem; font-size: .95rem; color: #4a4a4a; margin-bottom: 1rem; }
 .settings .ro-note.small { font-size: .9rem; margin-bottom: .8rem; }
 
-/* 现在用的模型：右边一列给「更换」与下一批的「测试」留了两个按钮的宽度，加上「测试」时不重排 */
+/* 现在用的模型：右边一列是「更换」与「正在测试……」两个按钮并排的宽度，测试当中不折行；测试的结果在这一行下面，占后两列 */
 .settings .cur { padding: .2rem 1.143rem .7rem; }
-.settings .currow { display: grid; grid-template-columns: minmax(8.5rem, 11rem) minmax(0, 1fr) 9.5rem; gap: .4rem 1rem; align-items: center;
+.settings .currow { display: grid; grid-template-columns: minmax(8.5rem, 11rem) minmax(0, 1fr) 12rem; gap: .4rem 1rem; align-items: center;
   padding: .75rem 0; border-bottom: 1px solid var(--line); }
 .settings .currow .cl { color: #4a4a4a; font-size: .95rem; }
 .settings .currow .ci { min-width: 0; overflow-wrap: anywhere; }
 .settings .currow .mname { font-weight: 600; word-break: break-all; }
 .settings .currow .mmeta { color: #4a4a4a; font-size: .93rem; margin-left: .5rem; }
 .settings .currow .ca { display: flex; gap: .45rem; flex-wrap: wrap; justify-content: flex-end; }
+.settings .currow .tres { grid-column: 2 / -1; font-size: .93rem; overflow-wrap: anywhere; }
+.settings .currow .tres .anticon { margin-right: .4rem; }
+.settings .currow .tres.ok .anticon { color: var(--ok); }
+.settings .currow .tres.bad .anticon { color: var(--amber); }
 .settings .effect { color: var(--mut); font-size: .9rem; padding-top: .6rem; }
 
 /* 模型服务：左边清单，右边详情 */

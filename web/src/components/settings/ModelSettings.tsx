@@ -1,23 +1,24 @@
 // 设置页面的「模型」一栏：上半部分「现在用的模型」两行，下半部分「模型服务」（左边清单，右边选中的那一个的详情）。
 // 「添加模型服务」换成添加的画面；添加成功之后回到这里，右边打开新的那一个，并随即获取一次它的模型列表。
 // editable 为假时整栏只读，顶上是后端给的那句说明。现在的后端 editable 恒为 true（从哪台电脑打开都能改），这条只读的路留着。
+// 语言模型那一行有「测试」：后端起一次助手，让模型读一个小文件并回一句话；结果写在这一行下面，换了模型或者刷新页面就清掉。
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Spin } from "antd";
-import { LockOutlined, PlusOutlined, WarningOutlined } from "@ant-design/icons";
+import { CheckCircleFilled, LockOutlined, PlusOutlined, WarningFilled, WarningOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../../api/client";
-import type { ModelConfig, ModelSelection, ModelType, Provider } from "../../api/types";
+import type { ModelConfig, ModelSelection, ModelTestResult, ModelType, Provider } from "../../api/types";
 import { useService } from "../ServiceControls";
 import { useToast } from "../Toasts";
 import { AddProvider } from "./AddProvider";
 import { PickModelDialog } from "./PickModelDialog";
 import { ProviderDetail, type FetchNote } from "./ProviderDetail";
-import { APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, formatNumber, kindName, selected } from "./text";
+import { APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, formatNumber, kindName, selected, testConfirmText, testResultText } from "./text";
 
 export function ModelSettings() {
   const toast = useToast();
   const { modal } = AntApp.useApp();
-  const { refresh } = useService();
+  const { refresh, info } = useService();
   const [config, setConfig] = useState<ModelConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -26,6 +27,8 @@ export function ModelSettings() {
   const [note, setNote] = useState(APPLIES_TEXT);
   const [fetching, setFetching] = useState<Set<string>>(new Set());
   const [fetchNotes, setFetchNotes] = useState<Record<string, FetchNote>>({});
+  const [testing, setTesting] = useState(false);
+  const [tested, setTested] = useState<ModelTestResult | null>(null);
   const dirty = useRef(false);
   const markDirty = useCallback((d: boolean) => { dirty.current = d; }, []);
   const detailRef = useRef<HTMLDivElement>(null);
@@ -82,9 +85,29 @@ export function ModelSettings() {
     void fetchModels(p.id);
   };
 
+  const runTest = async () => {
+    setTesting(true);
+    setTested(null);
+    try {
+      setTested(await api.testModel("language"));
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "测试没有做成。");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  /** 测试之前先问一句：会发一次真实的请求。model 是现在实际会用的那个语言模型的名字。 */
+  const confirmTest = (model: string) => {
+    modal.confirm({
+      title: "测试语言模型", content: testConfirmText(model), okText: "开始测试", cancelText: "取消", onOk: () => { void runTest(); },
+    });
+  };
+
   const onPicked = async (_: ModelSelection, text: string) => {
     setPicking(null);
     setNote(text);
+    setTested(null);
     await load();
     refresh();
   };
@@ -124,7 +147,8 @@ export function ModelSettings() {
 
       <div className="section-title first">现在用的模型</div>
       <div className="card cur">
-        <CurrentRow label={LANGUAGE_LABEL} type="language" config={config} editable={editable} canPick={candidates("language")} onPick={() => setPicking("language")} />
+        <CurrentRow label={LANGUAGE_LABEL} type="language" config={config} editable={editable} canPick={candidates("language")} onPick={() => setPicking("language")}
+          test={info?.capabilities.model_test ? { testing, result: tested, onTest: confirmTest } : undefined} />
         <CurrentRow label={EMBEDDING_LABEL} type="embedding" config={config} editable={editable} canPick={candidates("embedding")} onPick={() => setPicking("embedding")} />
         <div className="effect" data-testid="applies-note">{note}</div>
       </div>
@@ -180,9 +204,13 @@ function ProviderItem({ provider, on, onClick }: { provider: Provider; on: boole
   );
 }
 
-/** 「现在用的模型」的一行。右边「更换」或者「选择」；再右边给下一批的「测试」留了位置。 */
-function CurrentRow({ label, type, config, editable, canPick, onPick }: {
+/**
+ * 「现在用的模型」的一行。右边「更换」或者「选择」；给了 test 的那一行（语言模型）再右边是「测试」，测的是现在实际会用的那个模型：
+ * 选定的，没有选定时是后端说的那一个；两个都没有时按钮是灰的。测试当中不能再点，也不能更换。结果写在这一行下面。
+ */
+function CurrentRow({ label, type, config, editable, canPick, onPick, test }: {
   label: string; type: ModelType; config: ModelConfig; editable: boolean; canPick: boolean; onPick: () => void;
+  test?: { testing: boolean; result: ModelTestResult | null; onTest: (model: string) => void };
 }) {
   const ref = selected(config, type);
   const model = ref?.provider?.models.find((m) => m.id === ref.modelId) ?? null;
@@ -200,13 +228,25 @@ function CurrentRow({ label, type, config, editable, canPick, onPick }: {
   } else {
     body = <div>还没有选。知识库只能按字面查找。</div>;
   }
+  const testable = ref ? ref.modelId : config.fallback?.model || null;
+  const passed = test?.result?.result === "passed";
   return (
     <div className="currow" data-testid={`current-${type}`}>
       <div className="cl">{label}</div>
       <div className="ci">{body}</div>
       <div className="ca">
-        {editable && <Button size="small" disabled={!canPick} onClick={onPick} data-testid={`pick-${type}-button`}>{ref ? "更换" : "选择"}</Button>}
+        {editable && <Button size="small" disabled={!canPick || test?.testing} onClick={onPick} data-testid={`pick-${type}-button`}>{ref ? "更换" : "选择"}</Button>}
+        {test && (
+          <Button size="small" disabled={testable === null} loading={test.testing} onClick={() => test.onTest(testable!)} data-testid={`test-${type}-button`}>
+            {test.testing ? "正在测试……" : "测试"}
+          </Button>
+        )}
       </div>
+      {test?.result && (
+        <div className={`tres ${passed ? "ok" : "bad"}`} data-testid={`test-${type}-result`}>
+          {passed ? <CheckCircleFilled /> : <WarningFilled />}{testResultText(test.result)}
+        </div>
+      )}
     </div>
   );
 }

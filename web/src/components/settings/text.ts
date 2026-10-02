@@ -1,7 +1,7 @@
 // 设置页面「模型」一栏里页面自己写的文字与几个小工具。后端给了说明的地方（被拒的原因、获取模型列表的结果、只读的说明）照后端的话显示，不在这里另写。
 // 界面上的词：模型服务、语言模型、嵌入模型、接口地址、API 密钥、上下文长度、获取模型列表；「检索」在页面上写成「查找」。
 
-import type { ModelConfig, ModelType, Provider, ProviderKind } from "../../api/types";
+import type { ModelConfig, ModelTestResult, ModelType, Provider, ProviderKind } from "../../api/types";
 
 /** 种类的名字；short 是清单里种类那一行用的短写法。 */
 export const KIND_NAME: Record<ProviderKind, string> = {
@@ -71,6 +71,14 @@ export const LOGIN_NOTE = "这里只能看出登录凭据在不在，看不出�
 export const LOGIN_COMMAND = "pi";
 export const LOGIN_INSTRUCTION = "/login";
 export const LOGIN_INSTRUCTION_HINT = "输入后在列表里选 ChatGPT Plus/Pro (Codex)";
+/** 测试语言模型之前确认框里的那句：写明会发一次真实的请求。 */
+export function testConfirmText(model: string): string {
+  return `会用「${model}」发一次真实的请求：让模型读一个小文件并回一句话。商业接口可能产生很少的费用。`;
+}
+/** 测试结果的那一行。只说这一次，不说这个模型以后都可以用。 */
+export function testResultText(result: ModelTestResult): string {
+  return result.result === "passed" ? `这一次测试通过，用时 ${result.seconds} 秒。模型回复：${result.reply}` : `这一次测试没有通过：${result.reason ?? ""}`;
+}
 /** 模型超过这么多个时，清单平时只列出勾上的。 */
 export const MANY_MODELS = 10;
 

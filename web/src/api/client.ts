@@ -9,6 +9,7 @@ import type {
   FetchModelsResult,
   ModelConfig,
   ModelSelection,
+  ModelTestResult,
   ModelType,
   Provider,
   ProviderKind,
@@ -101,6 +102,8 @@ const provider = (id: string) => `/model-config/providers/${encodeURIComponent(i
 const PROVIDER_TIMEOUT_MS = 60_000;
 /** 查 ollama 的上下文长度要先载入模型，后端最多等两分钟。 */
 const CONTEXT_TIMEOUT_MS = 150_000;
+/** 测试语言模型要起一次助手、发一次模型请求，后端最多等 90 秒。 */
+const MODEL_TEST_TIMEOUT_MS = 105_000;
 
 /** 材料文件的原始字节（GET …/materials/raw）：Word 材料要在浏览器里按原版式渲染。出错时按接口约定的错误体折成 ApiError。 */
 async function rawBytes(path: string, timeoutMs = 30_000): Promise<ArrayBuffer> {
@@ -140,6 +143,7 @@ export const api = {
     request<ContextWindowResult>("POST", `${provider(id)}/context-window`, { model_id: modelId }, CONTEXT_TIMEOUT_MS),
   selectModels: (selection: ModelSelection) =>
     request<{ ok: true; selection: ModelSelection; note: string }>("POST", "/model-config/selection", selection),
+  testModel: (type: "language") => request<ModelTestResult>("POST", "/model-config/test", { type }, MODEL_TEST_TIMEOUT_MS),
 
   // 任务类型（与后端对齐后新增的接口 GET /api/v1/task-types）
   taskTypes: () => request<{ task_types: TaskType[] }>("GET", "/task-types").then((r) => r.task_types),

@@ -1,9 +1,9 @@
-// 设置页面的「模型」一栏：只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法。
+// 设置页面的「模型」一栏：只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { api, ApiError } from "../api/client";
-import type { ModelConfig, Provider, ServiceInfo } from "../api/types";
+import type { ModelConfig, ModelTestResult, Provider, ServiceInfo } from "../api/types";
 import { ServiceProvider } from "../components/ServiceControls";
 import { ToastProvider } from "../components/Toasts";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -40,8 +40,15 @@ const config = (over: Partial<ModelConfig> = {}): ModelConfig => ({
   providers: [deepseek(), ollama(), handWritten], ...over,
 });
 
-function page(cfg: ModelConfig) {
-  vi.spyOn(api, "serviceInfo").mockResolvedValue(service);
+/** 后端有测试语言模型的接口时的服务信息。 */
+const withTest: ServiceInfo = { ...service, capabilities: { ...service.capabilities, model_test: true } };
+const tested = (over: Partial<ModelTestResult> = {}): ModelTestResult => ({
+  ok: true, result: "passed", model: "taskwright-deepseek/deepseek-chat", seconds: 3.2, tool_calls: 1, reply: "K7Q4MX", reason: null, ...over,
+});
+const chosen = { selection: { language: { provider_id: "taskwright-deepseek", model_id: "deepseek-chat" }, embedding: null } };
+
+function page(cfg: ModelConfig, info: ServiceInfo = service) {
+  vi.spyOn(api, "serviceInfo").mockResolvedValue(info);
   const load = vi.spyOn(api, "modelConfig").mockResolvedValue(cfg);
   render(
     <ConfigProvider button={{ autoInsertSpace: false }}><AntApp><ToastProvider><ServiceProvider>
@@ -206,5 +213,85 @@ describe("设置页面的「模型」一栏", () => {
     fireEvent.change(screen.getByTestId("model-filter"), { target: { value: "m-1" } });
     expect(screen.getByTestId("model-m-11")).toBeInTheDocument();
     expect(screen.queryByTestId("model-m-5")).toBeNull();
+  });
+
+  it("后端没有测试接口时不显示「测试」；有接口时只有语言模型那一行有，没有模型可测时是灰的", async () => {
+    page(config(chosen));
+    await screen.findByTestId("current-language");
+    expect(screen.queryByTestId("test-language-button")).toBeNull();
+    cleanup();
+    page(config({ fallback: null }), withTest);
+    expect(await screen.findByTestId("test-language-button")).toBeDisabled();
+    expect(screen.queryByTestId("test-embedding-button")).toBeNull();
+  });
+
+  it("点「测试」先问一句，写明会发一次真实的请求与可能的费用；点取消不发请求", async () => {
+    page(config(chosen), withTest);
+    const run = vi.spyOn(api, "testModel").mockResolvedValue(tested());
+    fireEvent.click(await screen.findByTestId("test-language-button"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("测试语言模型");
+    expect(dialog).toHaveTextContent("会用「deepseek-chat」发一次真实的请求：让模型读一个小文件并回一句话。商业接口可能产生很少的费用。");
+    expect(within(dialog).getByRole("button", { name: "开始测试" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    expect(run).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("test-language-result")).toBeNull();
+  });
+
+  it("测试当中按钮写「正在测试……」、不能再点，「更换」也不能点；通过之后在这一行下面写这一次通过、用时与模型的回复", async () => {
+    page(config(chosen), withTest);
+    let finish: (r: ModelTestResult) => void = () => {};
+    const run = vi.spyOn(api, "testModel").mockReturnValue(new Promise((ok) => { finish = ok; }));
+    fireEvent.click(await screen.findByTestId("test-language-button"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "开始测试" }));
+    await waitFor(() => expect(screen.getByTestId("test-language-button")).toHaveTextContent("正在测试……"));
+    expect(run).toHaveBeenCalledWith("language");
+    expect(screen.getByTestId("pick-language-button")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("test-language-button"));
+    expect(run).toHaveBeenCalledTimes(1);
+    finish(tested());
+    const result = await screen.findByTestId("test-language-result");
+    expect(result).toHaveTextContent("这一次测试通过，用时 3.2 秒。模型回复：K7Q4MX");
+    expect(result).toHaveClass("ok");
+    expect(result).not.toHaveTextContent("可以用");
+    expect(screen.getByTestId("test-language-button")).toHaveTextContent(/^测试$/);
+    expect(screen.getByTestId("pick-language-button")).not.toBeDisabled();
+  });
+
+  it("没有通过时写这一次没有通过与原因；没有选定语言模型时测的是现在实际用的那一个", async () => {
+    page(config({ fallback: { model: "local/qwen", from: "启动配置" } }), withTest);
+    vi.spyOn(api, "testModel").mockResolvedValue(tested({ result: "failed", model: "local/qwen", reply: "", tool_calls: 0, reason: "模型没有调用读文件的工具。" }));
+    fireEvent.click(await screen.findByTestId("test-language-button"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("会用「local/qwen」发一次真实的请求");
+    fireEvent.click(within(dialog).getByRole("button", { name: "开始测试" }));
+    const result = await screen.findByTestId("test-language-result");
+    expect(result).toHaveTextContent("这一次测试没有通过：模型没有调用读文件的工具。");
+    expect(result).toHaveClass("bad");
+  });
+
+  it("接口报错（例如已经有一个测试在跑）时把那句话提示出来，不写结果；换了模型之后上一次的结果清掉", async () => {
+    const load = page(config(chosen), withTest);
+    const run = vi.spyOn(api, "testModel").mockRejectedValueOnce(new ApiError("busy", "正在测试，请等它结束。", 409));
+    // 确认框关掉之后在测试环境里不会从页面上摘掉，所以第二次点的是最后出现的那个「开始测试」。
+    const start = async () => fireEvent.click((await screen.findAllByRole("button", { name: "开始测试" })).at(-1)!);
+    fireEvent.click(await screen.findByTestId("test-language-button"));
+    await start();
+    expect(await screen.findByText("正在测试，请等它结束。")).toBeInTheDocument();
+    expect(screen.queryByTestId("test-language-result")).toBeNull();
+    await waitFor(() => expect(screen.getByTestId("test-language-button")).toHaveTextContent(/^测试$/));
+    run.mockResolvedValue(tested());
+    fireEvent.click(screen.getByTestId("test-language-button"));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "开始测试" })).toHaveLength(2));
+    await start();
+    expect(await screen.findByTestId("test-language-result")).toBeInTheDocument();
+    const next = { language: { provider_id: "my-gateway", model_id: "gateway-chat" }, embedding: null };
+    vi.spyOn(api, "selectModels").mockResolvedValue({ ok: true, note: "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。", selection: next });
+    fireEvent.click(screen.getByTestId("pick-language-button"));
+    fireEvent.click(within(await screen.findByTestId("pick-language")).getByTestId("pick-my-gateway-gateway-chat"));
+    load.mockResolvedValue(config({ selection: next }));
+    fireEvent.click(screen.getByTestId("use-model"));
+    expect(await screen.findByText("gateway-chat", { selector: ".mname" })).toBeInTheDocument();
+    expect(screen.queryByTestId("test-language-result")).toBeNull();
   });
 });
