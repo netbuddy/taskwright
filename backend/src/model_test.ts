@@ -1,5 +1,5 @@
 /**
- * 测试语言模型（docs/api.md §10）：起一次不属于任何任务的助手，让模型读一个小文件并回一句话，回报这一次通过还是没有通过。
+ * 测试语言模型（docs/api.md §10）：起一次不属于任何任务的助手，让模型读一个小文件并回答文件里写的一个数，回报这一次通过还是没有通过。
  *
  * 走的是任务里起助手的同一条路：同一份启动配置、同一个模型（launch.ts 的 resolveModel）、同一个会话类与收发数据层。
  * 与任务不同的只有这几样：工作目录是一个临时目录；工具只留读文件的那一个；不加载任何扩展与技能，所以没有产品自己的工具，
@@ -25,8 +25,9 @@ export const BUSY_TEXT = "正在测试，请等它结束。";
 /** 模型最后一句回复最多带回这么多个字。 */
 const REPLY_LIMIT = 200;
 const READ_TOOL = "read";
-const FILE_NAME = "passphrase.txt";
-const PROMPT = `请读当前目录下的文件 ${FILE_NAME}，然后只回复文件里的口令，不要说别的。读文件的工具只调用一次。`;
+const FILE_NAME = "inventory.txt";
+/** 问模型的那句话；结果里原样带回，页面把它与模型的回答一起显示。 */
+export const QUESTION = `请读当前目录下的文件 ${FILE_NAME}，然后用一句话回答：这批货一共有多少箱？`;
 
 export interface TestResult {
   ok: true;
@@ -37,6 +38,8 @@ export interface TestResult {
   seconds: number;
   /** 模型调用了几次工具。 */
   tool_calls: number;
+  /** 问模型的那句话。 */
+  question: string;
   /** 模型最后一句回复，最多 200 个字；没有回复时是空串。 */
   reply: string;
   /** 没有通过时一句给人看的原因；通过时是 null。 */
@@ -64,10 +67,9 @@ function testProfile(profile: Profile): Profile {
   return { ...rest, tools: [READ_TOOL], extensions: [] };
 }
 
-/** 口令：六个不容易看混的大写字母与数字。 */
-function passphrase(): string {
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return Array.from({ length: 6 }, () => letters[randomInt(letters.length)]).join("");
+/** 回答里有没有这个箱数：只认阿拉伯数字，前后不能再紧挨着别的数字（文件里写 42 时，「420」「142」都不算）。 */
+function mentions(reply: string, count: number): boolean {
+  return new RegExp(`(?<![0-9])${count}(?![0-9])`).test(reply);
 }
 
 function clip(text: string, limit: number): string {
@@ -86,7 +88,7 @@ function knownReason(model: string, technical: string): string | null {
 }
 
 /** 起助手、核对模型、发一句话、看事件。返回没有通过的原因，通过时返回 null；不负责停助手（由调用方在 finally 里停）。 */
-async function run(pi: PiSession, model: string, word: string, progress: Progress): Promise<string | null> {
+async function run(pi: PiSession, model: string, count: number, progress: Progress): Promise<string | null> {
   let state: Record<string, any>;
   try {
     await pi.start();
@@ -103,7 +105,7 @@ async function run(pi: PiSession, model: string, word: string, progress: Progres
   }
   let error = "";
   try {
-    for await (const event of pi.send(PROMPT)) {
+    for await (const event of pi.send(QUESTION)) {
       if (event.type === "tool_execution_start") progress.toolCalls += 1;
       if (event.type !== "message_end" || event.message?.role !== "assistant") continue;
       const message = event.message;
@@ -120,12 +122,12 @@ async function run(pi: PiSession, model: string, word: string, progress: Progres
   }
   if (error) return `模型服务报错：${clip(error, REPLY_LIMIT)}`;
   if (progress.toolCalls === 0) return "模型没有调用读文件的工具。";
-  if (!progress.reply.includes(word)) return "模型的回复里没有文件里的口令。";
+  if (!mentions(progress.reply, count)) return "模型的回答里没有文件里写的箱数。";
   return null;
 }
 
 /**
- * 对助手现在实际会用的语言模型做一次测试。通过要两条都满足：事件里有工具调用；最后一句回复里有文件里的口令。
+ * 对助手现在实际会用的语言模型做一次测试。通过要两条都满足：事件里有工具调用；最后一句回复里有文件里写的箱数（阿拉伯数字）。
  * 工具调用了不止一次不算没有通过，次数记在 tool_calls 里。已经有一个测试在跑时报 busy。
  */
 export async function testLanguageModel(ctx: Context, options: TestOptions = {}): Promise<TestResult> {
@@ -137,7 +139,7 @@ export async function testLanguageModel(ctx: Context, options: TestOptions = {})
   const progress: Progress = { toolCalls: 0, reply: "" };
   const result = (reason: string | null): TestResult => ({
     ok: true, result: reason === null ? "passed" : "failed", model, seconds: Math.round((Date.now() - started) / 100) / 10,
-    tool_calls: progress.toolCalls, reply: progress.reply, reason,
+    tool_calls: progress.toolCalls, question: QUESTION, reply: progress.reply, reason,
   });
   let dir: string | null = null;
   let pi: PiSession | null = null;
@@ -147,10 +149,11 @@ export async function testLanguageModel(ctx: Context, options: TestOptions = {})
     dir = mkdtempSync(join(tmpdir(), "taskwright-model-test-"));
     const workspace = join(dir, "work");
     mkdirSync(workspace);
-    const word = passphrase();
-    writeFileSync(join(workspace, FILE_NAME), `口令是 ${word}\n`, "utf-8");
+    // 文件里的箱数每次随机取一个两位数，模型不读文件就答不出来。
+    const count = randomInt(10, 100);
+    writeFileSync(join(workspace, FILE_NAME), `这批货一共有 ${count} 箱。\n`, "utf-8");
     pi = new PiSession(testProfile(ctx.profile), workspace, join(dir, "runs"), "model-test", null, options.makeTransport);
-    const work = run(pi, model, word, progress);
+    const work = run(pi, model, count, progress);
     // 超时之后助手在 finally 里被停掉，这时 run 里等着的那一步会出错；它已经没有人等了，接住免得成为没有处理的拒绝。
     work.catch(() => {});
     const timeout = new Promise<string>((ok) => {

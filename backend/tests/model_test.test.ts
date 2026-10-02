@@ -1,6 +1,6 @@
 /**
  * 测试语言模型的接口（docs/api.md §10）：POST /api/v1/model-config/test。在本进程里直接调接口，起真的 pi，模型换成进程内的假端点。
- * 通过、没有调用工具、回复里没有口令、模型服务报错、超时、同时来第二个请求、助手起不来、模型登记里找不到、没有密钥、没有模型可测、type 写错各一例；
+ * 通过、没有调用工具、回答里没有箱数、模型服务报错、超时、同时来第二个请求、助手起不来、模型登记里找不到、没有密钥、没有模型可测、type 写错各一例；
  * 每一例之后核对助手已经停了（起助手用的收发数据层都报程序不在跑了）、临时目录已经删了（系统临时目录指到本文件自己的空目录，例后仍是空的）。
  * pi 的配置目录与产品设置文件都在本文件的临时目录里。
  */
@@ -72,11 +72,14 @@ after(async () => {
 });
 
 const text = (content: unknown): string => (typeof content === "string" ? content : ((content as Dict[]) || []).map((p) => p.text ?? "").join(""));
-/** 工具结果回到模型时，最后一条消息里就是文件的内容；从里面取出口令。 */
-const wordIn = (body: Dict): string => /口令是 ([A-Z0-9]+)/.exec(text(body.messages.at(-1).content))?.[1] ?? "";
-const READ = { tool_calls: [{ name: "read", arguments: { path: "passphrase.txt" } }] };
-/** 照要求做的模型：先读文件，拿到工具结果后只回口令。 */
-const obedient = (first: Dict = READ) => ({ rules: [{ when: { last_role: "tool" }, reply_from: (body: Dict) => ({ text: wordIn(body) }) }], default: first });
+const QUESTION = "请读当前目录下的文件 inventory.txt，然后用一句话回答：这批货一共有多少箱？";
+/** 工具结果回到模型时，最后一条消息里就是文件的内容；从里面取出箱数。 */
+const countIn = (body: Dict): string => /这批货一共有 ([0-9]+) 箱。/.exec(text(body.messages.at(-1).content))?.[1] ?? "";
+const READ = { tool_calls: [{ name: "read", arguments: { path: "inventory.txt" } }] };
+const answer = (body: Dict) => ({ text: `这批货一共有 ${countIn(body)} 箱。` });
+const ANSWERED = /^这批货一共有 [1-9][0-9] 箱。$/;
+/** 照要求做的模型：先读文件，拿到工具结果后用一句话答出箱数。 */
+const obedient = (first: Dict = READ) => ({ rules: [{ when: { last_role: "tool" }, reply_from: answer }], default: first });
 
 async function go(body: unknown, target: Service = service) {
   const reply = (await dispatch(target, {
@@ -92,20 +95,20 @@ function assertCleanedUp(started: number): void {
   assert.deepEqual(readdirSync(osTmp), [], "接口建的临时目录应当已经删掉");
 }
 
-test("通过：模型读了文件并回了口令；结果带模型名、用时、工具调用次数与回复；测试当中助手在跑、临时目录在，结束后都没有了", CASE, async () => {
+test("通过：模型读了文件并答出了箱数；结果带模型名、用时、工具调用次数、问模型的话与回答；测试当中助手在跑、临时目录在，结束后都没有了", CASE, async () => {
   let duringTest: { running: boolean[]; dirs: string[] } | null = null;
   fake.setScript({
     rules: [{ when: { last_role: "tool" }, reply_from: (body: Dict) => {
       duringTest = { running: transports.map((t) => t.running()), dirs: readdirSync(osTmp) };
-      return { text: wordIn(body) };
+      return answer(body);
     } }],
     default: READ,
   });
   const before = fake.requestCount;
   const r = await run();
-  assert.deepEqual(Object.keys(r), ["ok", "result", "model", "seconds", "tool_calls", "reply", "reason"]);
-  assert.deepEqual({ ...r, seconds: typeof r.seconds, reply: /^[A-Z0-9]{6}$/.test(r.reply) },
-    { ok: true, result: "passed", model: "fake/fake-model", seconds: "number", tool_calls: 1, reply: true, reason: null });
+  assert.deepEqual(Object.keys(r), ["ok", "result", "model", "seconds", "tool_calls", "question", "reply", "reason"]);
+  assert.deepEqual({ ...r, seconds: typeof r.seconds, reply: ANSWERED.test(r.reply) },
+    { ok: true, result: "passed", model: "fake/fake-model", seconds: "number", tool_calls: 1, question: QUESTION, reply: true, reason: null });
   assert.ok(r.seconds > 0);
   assert.deepEqual([duringTest!.running, duringTest!.dirs.length, duringTest!.dirs[0].startsWith("taskwright-model-test-")], [[true], 1, true]);
   assertCleanedUp(1);
@@ -114,30 +117,39 @@ test("通过：模型读了文件并回了口令；结果带模型名、用时�
   assert.equal(first.model, "fake-model");
   assert.deepEqual(first.tools.map((t: Dict) => t.function.name), ["read"]);
   assert.equal(first.messages.some((m: Dict) => text(m.content).includes("save_revision")), false);
-  assert.equal(text(first.messages.at(-1).content), "请读当前目录下的文件 passphrase.txt，然后只回复文件里的口令，不要说别的。读文件的工具只调用一次。");
+  assert.equal(text(first.messages.at(-1).content), QUESTION);
 });
 
 test("工具调用了两次不算没有通过，次数记在结果里", CASE, async () => {
   let reads = 0;
-  fake.setScript({ rules: [{ when: { last_role: "tool" }, reply_from: (body: Dict) => (++reads < 2 ? READ : { text: `口令是 ${wordIn(body)}` }) }], default: READ });
+  fake.setScript({ rules: [{ when: { last_role: "tool" }, reply_from: (body: Dict) => (++reads < 2 ? READ : answer(body)) }], default: READ });
   const r = await run();
   assert.deepEqual([r.result, r.tool_calls, r.reason], ["passed", 2, null]);
   assertCleanedUp(1);
 });
 
 test("没有通过：模型没有调用工具", CASE, async () => {
-  fake.setScript({ default: { text: "口令是 ABC123" } });
+  fake.setScript({ default: { text: "这批货一共有 50 箱。" } });
   const r = await run();
-  assert.deepEqual([r.result, r.tool_calls, r.reply, r.reason], ["failed", 0, "口令是 ABC123", "模型没有调用读文件的工具。"]);
+  assert.deepEqual([r.result, r.tool_calls, r.reply, r.reason], ["failed", 0, "这批货一共有 50 箱。", "模型没有调用读文件的工具。"]);
   assertCleanedUp(1);
 });
 
-test("没有通过：模型读了文件，回复里却没有口令；回复超过 200 个字时截短", CASE, async () => {
+test("没有通过：模型读了文件，回答里却没有文件里写的箱数；只认阿拉伯数字，箱数前后紧挨着别的数字不算；回复超过 200 个字时截短", CASE, async () => {
   fake.setScript({ rules: [{ when: { last_role: "tool" }, reply: { text: "读".repeat(300) } }], default: READ });
   const r = await run();
-  assert.deepEqual([r.result, r.tool_calls, r.reason], ["failed", 1, "模型的回复里没有文件里的口令。"]);
+  assert.deepEqual([r.result, r.tool_calls, r.reason], ["failed", 1, "模型的回答里没有文件里写的箱数。"]);
   assert.equal(r.reply, "读".repeat(200) + "…");
   assertCleanedUp(1);
+  // 文件里写 42 时，「420 箱」「142 箱」与「四十二箱」都不算答对。
+  for (const wrong of [(n: string) => `一共有 ${n}0 箱。`, (n: string) => `一共有 1${n} 箱。`, () => "一共有四十二箱。"]) {
+    fake.setScript({ rules: [{ when: { last_role: "tool" }, reply_from: (body: Dict) => ({ text: wrong(countIn(body)) }) }], default: READ });
+    assert.equal((await run()).reason, "模型的回答里没有文件里写的箱数。");
+  }
+  // 箱数夹在别的字中间、后面跟着标点，都算答对。
+  fake.setScript({ rules: [{ when: { last_role: "tool" }, reply_from: (body: Dict) => ({ text: `我读了文件，答案是${countIn(body)}，没有别的了。` }) }], default: READ });
+  assert.equal((await run()).result, "passed");
+  assertCleanedUp(5);
 });
 
 test("没有通过：模型服务报错，原因里带上它给的原文", CASE, async () => {
@@ -164,8 +176,8 @@ test("经接口测试：结果的形状；同一时间只跑一个测试，第�
   assert.deepEqual([second.status, second.body.error], [409, { code: "busy", message: "正在测试，请等它结束。", data: {} }]);
   const done = await first;
   assert.equal(done.status, 200, JSON.stringify(done.body));
-  assert.deepEqual({ ...done.body, seconds: typeof done.body.seconds, reply: /^[A-Z0-9]{6}$/.test(done.body.reply) },
-    { ok: true, result: "passed", model: "fake/fake-model", seconds: "number", tool_calls: 1, reply: true, reason: null });
+  assert.deepEqual({ ...done.body, seconds: typeof done.body.seconds, reply: ANSWERED.test(done.body.reply) },
+    { ok: true, result: "passed", model: "fake/fake-model", seconds: "number", tool_calls: 1, question: QUESTION, reply: true, reason: null });
   fake.setScript(obedient());
   assert.equal((await go({ type: "language" })).body.result, "passed");
   assert.deepEqual(readdirSync(osTmp), []);
@@ -207,7 +219,7 @@ test("没有模型可测时不起助手，直接说明；type 不是 language �
   try {
     const before = fake.requestCount;
     const r = await go({ type: "language" }, empty);
-    assert.deepEqual(r.body, { ok: true, result: "failed", model: "", seconds: 0, tool_calls: 0, reply: "", reason: "还没有选定语言模型，启动配置里也没有写模型。" });
+    assert.deepEqual(r.body, { ok: true, result: "failed", model: "", seconds: 0, tool_calls: 0, question: QUESTION, reply: "", reason: "还没有选定语言模型，启动配置里也没有写模型。" });
     assert.equal(fake.requestCount, before);
   } finally {
     await empty.close();

@@ -75,9 +75,16 @@ export const LOGIN_INSTRUCTION_HINT = "输入后在列表里选 ChatGPT Plus/Pro
 export function testConfirmText(model: string): string {
   return `会用「${model}」发一次真实的请求：让模型读一个小文件并回一句话。商业接口可能产生很少的费用。`;
 }
-/** 测试结果的那一行。只说这一次，不说这个模型以后都可以用。 */
+/** 测试结果的头一行。只说这一次，不说这个模型以后都可以用。 */
 export function testResultText(result: ModelTestResult): string {
-  return result.result === "passed" ? `这一次测试通过，用时 ${result.seconds} 秒。模型回复：${result.reply}` : `这一次测试没有通过：${result.reason ?? ""}`;
+  return result.result === "passed" ? `这一次测试通过，用时 ${result.seconds} 秒。` : `这一次测试没有通过：${result.reason ?? ""}`;
+}
+/** 头一行下面的两行：问了模型什么，模型答了什么。通过与没有通过都写；模型没有回答时照实说。 */
+export function testQuestionText(result: ModelTestResult): string {
+  return `问模型：${result.question}`;
+}
+export function testReplyText(result: ModelTestResult): string {
+  return result.reply ? `模型回答：${result.reply}` : "模型没有回答";
 }
 /** 模型超过这么多个时，清单平时只列出勾上的。 */
 export const MANY_MODELS = 10;

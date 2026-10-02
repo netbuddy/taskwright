@@ -850,7 +850,7 @@ export interface FetchModelsResult {
   provider: Provider;
 }
 
-/** 测试语言模型的结果：让模型读一个小文件并回一句话，这一次通过还是没有通过。 */
+/** 测试语言模型的结果：让模型读一个小文件并回答文件里写的一个数，这一次通过还是没有通过。 */
 export interface ModelTestResult {
   ok: true;
   result: "passed" | "failed";
@@ -859,7 +859,9 @@ export interface ModelTestResult {
   /** 用时，秒，一位小数。 */
   seconds: number;
   tool_calls: number;
-  /** 模型最后一句回复，最多 200 个字。 */
+  /** 问模型的那句话。 */
+  question: string;
+  /** 模型最后一句回复，最多 200 个字；没有回复时是空串。 */
   reply: string;
   /** 没有通过时的原因；通过时是 null。 */
   reason: string | null;

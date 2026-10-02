@@ -43,7 +43,8 @@ const config = (over: Partial<ModelConfig> = {}): ModelConfig => ({
 /** 后端有测试语言模型的接口时的服务信息。 */
 const withTest: ServiceInfo = { ...service, capabilities: { ...service.capabilities, model_test: true } };
 const tested = (over: Partial<ModelTestResult> = {}): ModelTestResult => ({
-  ok: true, result: "passed", model: "taskwright-deepseek/deepseek-chat", seconds: 3.2, tool_calls: 1, reply: "K7Q4MX", reason: null, ...over,
+  ok: true, result: "passed", model: "taskwright-deepseek/deepseek-chat", seconds: 3.2, tool_calls: 1,
+  question: "请读当前目录下的文件 inventory.txt，然后用一句话回答：这批货一共有多少箱？", reply: "这批货一共有 42 箱。", reason: null, ...over,
 });
 const chosen = { selection: { language: { provider_id: "taskwright-deepseek", model_id: "deepseek-chat" }, embedding: null } };
 
@@ -238,7 +239,7 @@ describe("设置页面的「模型」一栏", () => {
     expect(screen.queryByTestId("test-language-result")).toBeNull();
   });
 
-  it("测试当中按钮写「正在测试……」、不能再点，「更换」也不能点；通过之后在这一行下面写这一次通过、用时与模型的回复", async () => {
+  it("测试当中按钮写「正在测试……」、不能再点，「更换」也不能点；通过之后在这一行下面写这一次通过与用时，再写问了模型什么、模型答了什么", async () => {
     page(config(chosen), withTest);
     let finish: (r: ModelTestResult) => void = () => {};
     const run = vi.spyOn(api, "testModel").mockReturnValue(new Promise((ok) => { finish = ok; }));
@@ -251,14 +252,16 @@ describe("设置页面的「模型」一栏", () => {
     expect(run).toHaveBeenCalledTimes(1);
     finish(tested());
     const result = await screen.findByTestId("test-language-result");
-    expect(result).toHaveTextContent("这一次测试通过，用时 3.2 秒。模型回复：K7Q4MX");
+    expect(result.querySelector(".th")).toHaveTextContent(/^这一次测试通过，用时 3.2 秒。$/);
+    expect(screen.getByTestId("test-language-question")).toHaveTextContent(/^问模型：请读当前目录下的文件 inventory.txt，然后用一句话回答：这批货一共有多少箱？$/);
+    expect(screen.getByTestId("test-language-reply")).toHaveTextContent(/^模型回答：这批货一共有 42 箱。$/);
     expect(result).toHaveClass("ok");
     expect(result).not.toHaveTextContent("可以用");
     expect(screen.getByTestId("test-language-button")).toHaveTextContent(/^测试$/);
     expect(screen.getByTestId("pick-language-button")).not.toBeDisabled();
   });
 
-  it("没有通过时写这一次没有通过与原因；没有选定语言模型时测的是现在实际用的那一个", async () => {
+  it("没有通过时写这一次没有通过与原因，后面照样写问与答，模型没有回答时照实说；没有选定语言模型时测的是现在实际用的那一个", async () => {
     page(config({ fallback: { model: "local/qwen", from: "启动配置" } }), withTest);
     vi.spyOn(api, "testModel").mockResolvedValue(tested({ result: "failed", model: "local/qwen", reply: "", tool_calls: 0, reason: "模型没有调用读文件的工具。" }));
     fireEvent.click(await screen.findByTestId("test-language-button"));
@@ -266,7 +269,9 @@ describe("设置页面的「模型」一栏", () => {
     expect(dialog).toHaveTextContent("会用「local/qwen」发一次真实的请求");
     fireEvent.click(within(dialog).getByRole("button", { name: "开始测试" }));
     const result = await screen.findByTestId("test-language-result");
-    expect(result).toHaveTextContent("这一次测试没有通过：模型没有调用读文件的工具。");
+    expect(result.querySelector(".th")).toHaveTextContent(/^这一次测试没有通过：模型没有调用读文件的工具。$/);
+    expect(screen.getByTestId("test-language-question")).toHaveTextContent("问模型：请读当前目录下的文件 inventory.txt，然后用一句话回答：这批货一共有多少箱？");
+    expect(screen.getByTestId("test-language-reply")).toHaveTextContent(/^模型没有回答$/);
     expect(result).toHaveClass("bad");
   });
 

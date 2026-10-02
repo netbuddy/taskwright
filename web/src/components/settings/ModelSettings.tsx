@@ -1,7 +1,7 @@
 // 设置页面的「模型」一栏：上半部分「现在用的模型」两行，下半部分「模型服务」（左边清单，右边选中的那一个的详情）。
 // 「添加模型服务」换成添加的画面；添加成功之后回到这里，右边打开新的那一个，并随即获取一次它的模型列表。
 // editable 为假时整栏只读，顶上是后端给的那句说明。现在的后端 editable 恒为 true（从哪台电脑打开都能改），这条只读的路留着。
-// 语言模型那一行有「测试」：后端起一次助手，让模型读一个小文件并回一句话；结果写在这一行下面，换了模型或者刷新页面就清掉。
+// 语言模型那一行有「测试」：后端起一次助手，让模型读一个小文件并回答一句；结果连同问与答写在这一行下面，换了模型或者刷新页面就清掉。
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Spin } from "antd";
@@ -13,7 +13,9 @@ import { useToast } from "../Toasts";
 import { AddProvider } from "./AddProvider";
 import { PickModelDialog } from "./PickModelDialog";
 import { ProviderDetail, type FetchNote } from "./ProviderDetail";
-import { APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, formatNumber, kindName, selected, testConfirmText, testResultText } from "./text";
+import {
+  APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, formatNumber, kindName, selected, testConfirmText, testQuestionText, testReplyText, testResultText,
+} from "./text";
 
 export function ModelSettings() {
   const toast = useToast();
@@ -244,7 +246,9 @@ function CurrentRow({ label, type, config, editable, canPick, onPick, test }: {
       </div>
       {test?.result && (
         <div className={`tres ${passed ? "ok" : "bad"}`} data-testid={`test-${type}-result`}>
-          {passed ? <CheckCircleFilled /> : <WarningFilled />}{testResultText(test.result)}
+          <div className="th">{passed ? <CheckCircleFilled /> : <WarningFilled />}{testResultText(test.result)}</div>
+          <div className="tq" data-testid={`test-${type}-question`}>{testQuestionText(test.result)}</div>
+          <div className="tq" data-testid={`test-${type}-reply`}>{testReplyText(test.result)}</div>
         </div>
       )}
     </div>
