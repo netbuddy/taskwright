@@ -169,9 +169,8 @@ function contextOf(entry: any): number | null {
   return positive(entry?.max_model_len) ?? positive(entry?.context_window) ?? positive(entry?.meta?.n_ctx) ?? positive(entry?.context_length);
 }
 
-/** 获取模型列表没有成功时的说明。Codex 订阅的模型在页面上不能手工添加，所以它的建议是先登录。 */
-function failed(reason: string, kind?: Kind): Listed {
-  const advice = kind === "codex" ? "请先在命令行里登录，再回到这里刷新。" : "可以稍后再试，或者手工添加。";
+/** 获取模型列表没有成功时的说明：原因后面跟一句建议。 */
+function failed(reason: string, advice = "可以稍后再试，或者手工添加。"): Listed {
   return { result: "failed", message: `获取模型列表没有成功：${reason}。${advice}`, models: [] };
 }
 
@@ -221,13 +220,17 @@ function tokens(text: string): number | null {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
+/** Codex 订阅的模型在页面上不能手工添加，所以它的建议里不提手工添加；没有登录时的建议是先登录。 */
+const CODEX_RETRY = "可以稍后再试。";
+const CODEX_LOGIN = "请先在命令行里登录，再回到这里点「获取模型列表」。";
+
 /** Codex 订阅的模型：让 pi 按它自己的目录列出（不联网；只列已经登录的服务的模型）。 */
 async function listCodexModels(ctx: Context): Promise<Listed> {
   let launcher: ReturnType<typeof piLauncher>;
   try {
     launcher = piLauncher(ctx.profile);
   } catch {
-    return failed("找不到助手的程序", "codex");
+    return failed("找不到助手的程序", CODEX_RETRY);
   }
   const env = { ...buildEnvironment(ctx.profile), ...launcher.env, PI_OFFLINE: "1" };
   const args = [...launcher.prefix, "--offline", "--no-extensions", "--no-skills", "--list-models", CODEX_PROVIDER];
@@ -242,13 +245,13 @@ async function listCodexModels(ctx: Context): Promise<Listed> {
       done({ code, text });
     });
   });
-  if (output.code !== 0) return failed("没能读出 Codex 订阅的模型目录", "codex");
+  if (output.code !== 0) return failed("没能读出 Codex 订阅的模型目录", CODEX_RETRY);
   const models: Listed["models"] = [];
   for (const line of output.text.split("\n")) {
     const cols = line.trim().split(/\s+/);
     if (cols.length >= 3 && cols[0] === CODEX_PROVIDER) models.push({ id: cols[1], type: "language", context_window: tokens(cols[2]) });
   }
-  if (!models.length) return failed("还没有登录 Codex 订阅", "codex");
+  if (!models.length) return failed("还没有登录 Codex 订阅", CODEX_LOGIN);
   return { result: "listed", message: "", models };
 }
 

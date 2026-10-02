@@ -393,17 +393,26 @@ test("Codex 订阅：不写两个共用文件，只看凭据文件里有没有�
   assert.equal(again.body.provider.status.ok, true);
 });
 
-test("Codex 订阅没有登录时获取模型列表：说明里让用户先登录，不建议手工添加", async () => {
-  // 假的助手程序：列模型时什么都不输出，等于一个服务都没有登录
-  const entry = join(tmp, "list-nothing.mjs");
-  writeFileSync(entry, "");
+test("Codex 订阅获取模型列表没有成功：没有登录时让用户先登录；别的原因只说稍后再试；都不建议手工添加", async () => {
   const before = process.env.TASKWRIGHT_PI_ENTRY;
-  process.env.TASKWRIGHT_PI_ENTRY = entry;
-  try {
-    await go("POST", "/api/v1/model-config/providers", { kind: "codex" });
+  const fetchWith = async (entry: string) => {
+    process.env.TASKWRIGHT_PI_ENTRY = entry;
     const r = await go("POST", "/api/v1/model-config/providers/taskwright-codex/fetch-models", {});
     assert.equal(r.body.result, "failed");
-    assert.equal(r.body.message, "获取模型列表没有成功：还没有登录 Codex 订阅。请先在命令行里登录，再回到这里刷新。");
+    return r.body.message;
+  };
+  try {
+    // 假的助手程序：列模型时什么都不输出，等于一个服务都没有登录
+    const nothing = join(tmp, "list-nothing.mjs");
+    writeFileSync(nothing, "");
+    process.env.TASKWRIGHT_PI_ENTRY = nothing;
+    await go("POST", "/api/v1/model-config/providers", { kind: "codex" });
+    assert.equal(await fetchWith(nothing), "获取模型列表没有成功：还没有登录 Codex 订阅。请先在命令行里登录，再回到这里点「获取模型列表」。");
+    // 假的助手程序：一运行就出错退出
+    const broken = join(tmp, "list-broken.mjs");
+    writeFileSync(broken, "process.exit(1);\n");
+    assert.equal(await fetchWith(broken), "获取模型列表没有成功：没能读出 Codex 订阅的模型目录。可以稍后再试。");
+    assert.equal(await fetchWith(join(tmp, "no-such-entry.mjs")), "获取模型列表没有成功：找不到助手的程序。可以稍后再试。");
   } finally {
     if (before === undefined) delete process.env.TASKWRIGHT_PI_ENTRY;
     else process.env.TASKWRIGHT_PI_ENTRY = before;
