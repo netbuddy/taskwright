@@ -491,7 +491,7 @@ function guardSelection(dir: PiDirSettings, id: string, models: StoredModel[]): 
     if (!ref || ref.provider !== id) continue;
     const m = models.find((x) => x.id === ref.model);
     if (!m || !m.enabled || m.type !== what) {
-      throw new ApiError("in_use", `模型「${ref.model}」正被选为${what === "language" ? "助手用的语言模型" : "检索用的嵌入模型"}，先换成别的模型再停用它。`, { provider_id: id, model_id: ref.model });
+      throw new ApiError("in_use", `模型「${ref.model}」正被选为${what === "language" ? "助手用的语言模型" : "查找用的嵌入模型"}，先换成别的模型再停用它。`, { provider_id: id, model_id: ref.model });
     }
   }
 }
@@ -540,7 +540,7 @@ export async function deleteProvider(ctx: Context, id: string) {
   const p = managedOrThrow(current, id);
   const using = inUse(current.selection, id);
   if (using.length) {
-    throw new ApiError("in_use", `这个模型服务的模型正被选为${using.includes("language") ? "助手用的语言模型" : "检索用的嵌入模型"}，先换成别的模型再删除它。`, { provider_id: id });
+    throw new ApiError("in_use", `这个模型服务的模型正被选为${using.includes("language") ? "助手用的语言模型" : "查找用的嵌入模型"}，先换成别的模型再删除它。`, { provider_id: id });
   }
   checkFilesWritable(ctx);
   const dir = await updatePiDirSettings(agentDir(ctx), (d) => {

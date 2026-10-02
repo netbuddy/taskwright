@@ -341,8 +341,20 @@ test("选定语言模型与嵌入模型：起助手用选定的模型；停用�
   const disable = await go("POST", `/api/v1/model-config/providers/${id}`, { models: [{ id: "qwen3:8b", type: "language", enabled: false, context_window: 8192 }] });
   assert.equal(disable.status, 409);
   assert.equal(disable.body.error.code, "in_use");
+  assert.equal(disable.body.error.message, "模型「qwen3:8b」正被选为助手用的语言模型，先换成别的模型再停用它。");
+  const disableEmbedding = await go("POST", `/api/v1/model-config/providers/${id}`, { models: [
+    { id: "qwen3:8b", type: "language", enabled: true, context_window: 8192 },
+    { id: "qwen3-embedding:8b", type: "embedding", enabled: false, context_window: null },
+  ] });
+  assert.equal(disableEmbedding.body.error.code, "in_use");
+  assert.equal(disableEmbedding.body.error.message, "模型「qwen3-embedding:8b」正被选为查找用的嵌入模型，先换成别的模型再停用它。");
   const del = await go("POST", `/api/v1/model-config/providers/${id}/delete`, {});
   assert.equal(del.body.error.code, "in_use");
+  assert.equal(del.body.error.message, "这个模型服务的模型正被选为助手用的语言模型，先换成别的模型再删除它。");
+  const onlyEmbedding = await go("POST", "/api/v1/model-config/selection", { language: null, embedding: { provider_id: id, model_id: "qwen3-embedding:8b" } });
+  assert.equal(onlyEmbedding.status, 200, JSON.stringify(onlyEmbedding.body));
+  const delEmbedding = await go("POST", `/api/v1/model-config/providers/${id}/delete`, {});
+  assert.equal(delEmbedding.body.error.message, "这个模型服务的模型正被选为查找用的嵌入模型，先换成别的模型再删除它。");
   const noEmbedding = await go("POST", "/api/v1/model-config/selection", { language: { provider_id: id, model_id: "qwen3:8b" }, embedding: null });
   assert.equal(noEmbedding.body.selection.embedding, null);
   await go("POST", "/api/v1/model-config/selection", { language: null, embedding: null });
