@@ -289,6 +289,7 @@ data: {
 | `in_use` | 409 | 选定的模型属于要删除的模型服务，或者正要被停用（见第 10 节）；`data.provider_id` 是那个模型服务 |
 | `config_unwritable` | 409 | `models.json`、`auth.json` 或产品自己的设置文件读不成一个 JSON 对象，或者里面有注释、改写时会丢掉（见第 10 节）；`data.file` 是文件名，文件原样不动 |
 | `config_locked` | 503 | 别的程序拿着这几个文件之一的锁超过两秒（见第 10 节）；`data.file` 是文件名 |
+| `busy` | 409 | 已经有一个语言模型的测试在跑（见第 10 节） |
 
 ## 9 其他约定
 
@@ -297,7 +298,7 @@ data: {
 3. 路径带着版本号 `v1`；字段只会新增，含义不会改变；客户端应忽略未知的事件与字段。
 4. 本版本尚不支持：多用户并发、身份认证、流式回复文本。
 5. **服务信息与运行形态。** 下面两个接口不需要任务。
-   - `GET /api/v1/service` 返回 `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "capabilities": { "exit": true | false, "model": true | false, "model_config": true | false, "knowledge": true | false }, "model": { "name": …, "reason": … }, "upload": { "max_bytes": 5242880, "too_large_text": "单个文件不能超过 5 MB。", "extensions": [".md", ".txt", ".docx"], "types_text": ".md、.txt 与 Word 的 .docx", "unsupported_type_text": "只接受 .md、.txt 与 Word 的 .docx 文件。" } }`，其中 `port` 是服务实际监听的端口；`upload` 给出上传上限（字节）、超过时给用户看的那句话（与 `too_large` 拒绝里的是同一句）、允许上传的扩展名、这些类型给人看的写法（`types_text`）与 `unsupported_type` 拒绝里的那句话（`unsupported_type_text`），后两项由扩展名拼出。网页界面按上限与扩展名在发送之前就拦下过大或类型不符的文件，显示对应的那句话；按扩展名过滤可选的文件，按 `types_text` 写上传框的说明。它有三种用途：打包后的启动程序用它认出某个端口上跑的是不是自己；部署与监控用它探活；客户端按 `capabilities` 决定显示还是隐藏相应的按钮或提示。`capabilities.exit` 只在以 `--mode desktop` 启动、并且这次请求来自本机回环地址时为 `true`（与退出接口的判断相同）；从别的电脑打开页面时为 `false`，页面也就不显示退出的入口。经反向代理访问时，服务看到的来源是代理的地址，所以桌面形态不应放在反向代理后面。`capabilities.model_config` 是页面能不能修改模型配置（见第 10 节）；现在从哪台电脑打开都能改，恒为 `true`，这个字段留给以后加登录时用。
+   - `GET /api/v1/service` 返回 `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "capabilities": { "exit": true | false, "model": true | false, "model_config": true | false, "model_test": true | false, "knowledge": true | false }, "model": { "name": …, "reason": … }, "upload": { "max_bytes": 5242880, "too_large_text": "单个文件不能超过 5 MB。", "extensions": [".md", ".txt", ".docx"], "types_text": ".md、.txt 与 Word 的 .docx", "unsupported_type_text": "只接受 .md、.txt 与 Word 的 .docx 文件。" } }`，其中 `port` 是服务实际监听的端口；`upload` 给出上传上限（字节）、超过时给用户看的那句话（与 `too_large` 拒绝里的是同一句）、允许上传的扩展名、这些类型给人看的写法（`types_text`）与 `unsupported_type` 拒绝里的那句话（`unsupported_type_text`），后两项由扩展名拼出。网页界面按上限与扩展名在发送之前就拦下过大或类型不符的文件，显示对应的那句话；按扩展名过滤可选的文件，按 `types_text` 写上传框的说明。它有三种用途：打包后的启动程序用它认出某个端口上跑的是不是自己；部署与监控用它探活；客户端按 `capabilities` 决定显示还是隐藏相应的按钮或提示。`capabilities.exit` 只在以 `--mode desktop` 启动、并且这次请求来自本机回环地址时为 `true`（与退出接口的判断相同）；从别的电脑打开页面时为 `false`，页面也就不显示退出的入口。经反向代理访问时，服务看到的来源是代理的地址，所以桌面形态不应放在反向代理后面。`capabilities.model_config` 是页面能不能修改模型配置（见第 10 节）；现在从哪台电脑打开都能改，恒为 `true`，这个字段留给以后加登录时用。
    - `capabilities.model` 是模型探测的结果：服务起 pi 时要用的模型「服务商/模型」（`model.name`；在模型配置里选定了语言模型时就是它，见第 10 节），在 pi 配置目录的 `models.json` 里登记了、或者这个服务商在 `auth.json` 里有一项，就是 `true`。`model.reason` 是一句说明：以 `--mode desktop` 启动时写明查过的两个文件的完整路径，以 `--mode server` 启动时只写文件名，不带出服务器上的目录。探测在每次请求时现查，只读这两个文件，不启动 pi；服务商的密钥只放在环境变量里的情形识别不了，这时是 `false`。以 `--mode desktop` 启动时，`model.name` 可能来自 pi 的 `settings.json`（见部署文档第 10.4 节）。
    - `capabilities.knowledge` 在服务有知识库时为 `true`（第 11 节）。这时回答里另有 `knowledge_upload`：知识库文档的上传，五项与 `upload` 相同（上限是 20 MB，`too_large_text` 是「单个文件不能超过 20 MB。」），另加 `kinds`：文档的种类与中文叫法，`[{kind, name}]`。网页界面只在 `capabilities.knowledge` 为 `true` 时显示「知识库」入口、上传时先问去向。
    - `POST /api/v1/service/exit` 只在以 `--mode desktop` 启动时存在，以 `--mode server` 启动时返回 `not_found`。它只接受来自本机回环地址（`127.0.0.1` 或 `::1`；`::ffff:127.0.0.1` 是 IPv4 回环地址在 IPv6 套接字上的写法，也算本机）的请求，其他来源一律返回 `forbidden`（403）。它先回答 `{ "ok": true }`，再照收到 SIGTERM 时的做法收尾：停止接收新连接、向每一条打开着的事件流发 `service_exiting`、关掉各任务的 pi、删掉本服务写的占用标记，然后退出进程。它只供 0.3 的过渡安装包使用（这种包由服务自己打开浏览器，没有桌面外壳）；最终的桌面版由外壳停止服务，这个接口不承诺长期保留。
@@ -344,6 +345,7 @@ data: {
 | `POST /api/v1/model-config/providers/{id}/fetch-models` | 向模型服务查询它的模型 | `{ok, result, message, provider}`。`result` 是 `listed`（查到的清单并进已存的：新的模型不勾选，已有的模型保留原来的设置，上下文长度不是用户填的就换成查到的值，并记下 `models_fetched_at`）、`not_offered`（「这个模型服务没有提供模型的清单，请手工添加。」）或 `failed`（「获取模型列表没有成功：原因。可以稍后再试，或者手工添加。」；`codex` 的模型不能手工添加，原因后面那句是「可以稍后再试。」，原因是还没有登录时是「请先在命令行里登录，再回到这里点「获取模型列表」。」）。各种类怎样查见 10.3。 |
 | `POST /api/v1/model-config/providers/{id}/context-window` `{model_id}` | 查模型服务实际给这个模型的上下文长度 | `{ok, context_window, source, message}`；查不到时 `context_window` 是 `null`，`message` 请用户手工填写。`ollama` 要先载入这个模型，可能要等两分钟。查到的值不保存，要保存就修改模型服务。 |
 | `POST /api/v1/model-config/selection` `{language, embedding}` | 选定模型 | `{ok, selection, note}`，`note` 是「更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。」。两部分各是 `{provider_id, model_id}`（嵌入模型可以另带 `query_prefix`，查询前缀）或 `null`。模型要勾选了、种类要对，在这里添加的模型服务里的语言模型还要有上下文长度，否则返回 `rejected`。语言模型可以选只读的模型服务里的，嵌入模型不行。`language: null` 回到 0.3 的规则；`embedding: null` 表示不用嵌入模型。 |
+| `POST /api/v1/model-config/test` `{type}` | 测试语言模型 | `type` 只认 `language`，别的值返回 `rejected`（`data.field` 是 `type`）。服务起一次不属于任何任务的助手，让模型读一个小文件（里面写着「这批货一共有 N 箱。」，N 是每次随机取的两位数）并回答有多少箱，再把助手停掉。它与任务里起助手走的是同一条路：同一份启动配置、同一个模型（选定的语言模型，没有选定时是 `fallback` 里的那个）、同一种启动与收发方式；不同的是工作目录换成一个临时目录，工具只留读文件的那一个，不加载产品自己的工具与任务现状消息，也不带任务的系统提示。这会向模型服务发真实的请求。回答 `{ok, result, model, seconds, tool_calls, question, reply, reason}`：`result` 是 `passed` 或 `failed`，通过要两条都满足——模型调用了工具，最后一句回复里有文件里写的箱数（只认阿拉伯数字，前后不能紧挨着别的数字）；`model` 是这一次测的模型；`seconds` 是用时，秒，一位小数；`tool_calls` 是工具调用的次数，多于一次不算没有通过；`question` 是问模型的那句话（「请读当前目录下的文件 inventory.txt，然后用一句话回答：这批货一共有多少箱？」）；`reply` 是模型最后一句回复，最多 200 个字，没有回复时是空串；`reason` 是没有通过时给人看的一句原因（助手起不来、90 秒内没有做完、模型没有调用工具、回答里没有文件里写的箱数、模型服务报错的原文、模型登记里找不到这个模型、模型服务没有密钥或者没有登录），通过时是 `null`。最多等 90 秒。同一时间只跑一个测试，这时再来的请求返回 `busy`（409，「正在测试，请等它结束。」）。测试结束后助手已经停掉、临时目录已经删掉，结果不保存。 |
 
 ### 10.3 怎样查模型列表与上下文长度
 
@@ -361,8 +363,8 @@ data: {
 
 ### 10.4 其他部分的变化
 
-- `GET /api/v1/service`：`capabilities` 多一项 `model_config`（见第 9 节）；`capabilities.model` 与 `model` 先看选定的语言模型。
-- 错误（第 8 节）多三种：`in_use`、`config_unwritable`、`config_locked`。
+- `GET /api/v1/service`：`capabilities` 多两项，`model_config`（见第 9 节）与 `model_test`（有测试语言模型的接口时为 `true`，网页界面据此显示「测试」按钮）；`capabilities.model` 与 `model` 先看选定的语言模型。
+- 错误（第 8 节）多四种：`in_use`、`config_unwritable`、`config_locked`、`busy`。
 
 ## 11 知识库
 

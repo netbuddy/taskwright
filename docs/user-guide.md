@@ -148,4 +148,12 @@ A rejected tool call is marked where it happened; open the turn to read the reas
 
 In a terminal, `python3 -m taskwright_observatory.dbshow tasks/<task id>` prints the task, its items with the revisions in which each changed and their sources, the revisions and the latest events; `python3 -m taskwright_observatory.check_db tasks/<task id>` checks that the database rows and events agree.
 
+## 8 Test the language model in the settings
+
+A configuration that was saved is not yet a model that works: a wrong key, a misspelt model name, a model service that runs but has not loaded the model, or an expired subscription only show when you talk to the assistant in a task. On the settings page, under **模型** ("models"), the row **助手用的语言模型** ("the assistant's language model") has a **测试** ("test") button to try it first.
+
+Click **测试**; the dialog names the model that will be used. After **开始测试** ("start the test") the service starts the assistant once, the same way it does for a task, has the model read a small file and answer a question, and stops the assistant again. The file says how many boxes a shipment has, a number picked at random each time, and the model is asked 这批货一共有多少箱？ ("how many boxes does this shipment have?"), which it can only answer by really reading the file. **This sends one real request to the model service, and a commercial service may charge a very small amount.** The test is of the language model the assistant would use right now: the chosen one, or, when none is chosen, the one the row shows after 现在用的是 ("now using"). A test takes at most 90 seconds, and the language model cannot be changed while it runs.
+
+The result appears below that row: 这一次测试通过，用时 N 秒。 ("this test passed, it took N seconds"), or 这一次测试没有通过： ("this test did not pass:") followed by the reason. Either way two more lines follow: 问模型：… ("asked the model: …") with the sentence the model was asked, and 模型回答：… ("the model answered: …") with what it said, or 模型没有回答 ("the model did not answer"). The reason is, for example, that the model did not call the tool that reads files, that its answer lacks the number of boxes written in the file, that the model service returned an error, that the test was not finished within 90 seconds, or that the model service has no key or is not signed in. The result is about this one test only: it is cleared when you change the model or reload the page. The embedding model cannot be tested yet.
+
 [中文版](user-guide.zh-CN.md)
