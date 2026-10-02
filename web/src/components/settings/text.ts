@@ -66,7 +66,7 @@ export const TYPE_NAME: Record<ModelType, string> = { language: "语言模型", 
 /** 「现在用的模型」下面那句灰字；选定之后换成接口返回的 note（同一句话）。 */
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
 export const READONLY_PROVIDER_TEXT = "这个模型服务是在配置文件里手工登记的，这里只能看，不能改。";
-export const LOGIN_NOTE = "这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请在选定模型之后点「测试」。";
+export const LOGIN_NOTE = "这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请选定模型后到任务里试着让助手说一句话。";
 /** 登录分两步：先在命令行里运行启动的命令，再在它的界面里输入登录的指令。命令的字面绕不开程序名，别的页面文字不写它。 */
 export const LOGIN_COMMAND = "pi";
 export const LOGIN_INSTRUCTION = "/login";

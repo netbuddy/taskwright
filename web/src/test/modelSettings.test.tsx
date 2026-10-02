@@ -97,6 +97,13 @@ describe("设置页面的「模型」一栏", () => {
     }
   });
 
+  it("Codex 订阅的登录说明只指向页面上做得到的事：到任务里让助手说一句话，不提还没有的按钮", async () => {
+    page(config({ providers: [codex()] }));
+    const login = await screen.findByTestId("codex-login");
+    expect(login).toHaveTextContent("这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请选定模型后到任务里试着让助手说一句话。");
+    expect(login).not.toHaveTextContent("测试");
+  });
+
   it("添加时后端回 rejected：停在添加的画面，按 data.field 把后端那句话写在接口地址下面", async () => {
     page(config());
     const text = "连不上这个地址。请确认模型服务已经启动，地址与端口没有写错。";
