@@ -340,7 +340,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null }: {
         </div>
         <div className="app-body">
           <div className="rail">
-            <div className="ico" title="全局检索（还没有做）">⌕</div>
+            <div className="ico" title="全局查找（还没有做）">⌕</div>
             <a className="ico on" title="当前任务：回到任务页" href={href.task(taskId)}>▣</a>
             <div className="ico" title="材料、文档与修订：展开或收起右侧栏" role="button" style={{ cursor: "pointer" }} onClick={() => toggleDoc(!docCollapsed)}>▤</div>
             <div className="sp" />
