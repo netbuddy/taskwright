@@ -31,7 +31,7 @@ function makeTask(libraries: string[]): string {
 }
 
 const section = (root: string) => [
-  "这个任务选用的知识库（参考资料，不整理成条目；需要时用 grep 按字面查找、用 read 读相关的一段；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：",
+  "这个任务选用的知识库（参考资料，不整理成条目；材料指向规范、术语表这类文档时必须到这里查出具体规定写进条目，查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：",
   "知识库「通用知识库」有 1 份文档：",
   `- 术语.md（术语表，64 字节）：读 ${join(root, "general", "files", "术语.md")}；出处写 knowledge/general/术语.md`,
   "知识库「行业规范」有 1 份文档：",

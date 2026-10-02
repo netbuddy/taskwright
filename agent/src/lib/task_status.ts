@@ -112,7 +112,7 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
  */
 export function knowledgeSection(libraries: SelectedLibrary[]): string {
   if (!libraries.some((one) => one.documents.length > 0)) return "";
-  const lines = ["这个任务选用的知识库（参考资料，不整理成条目；需要时用 grep 按字面查找、用 read 读相关的一段；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）："];
+  const lines = ["这个任务选用的知识库（参考资料，不整理成条目；材料指向规范、术语表这类文档时必须到这里查出具体规定写进条目，查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）："];
   for (const library of libraries) {
     if (library.documents.length === 0) {
       lines.push(`知识库「${library.name}」现在没有文档。`);
