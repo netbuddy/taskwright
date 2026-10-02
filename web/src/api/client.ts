@@ -102,8 +102,8 @@ const provider = (id: string) => `/model-config/providers/${encodeURIComponent(i
 const PROVIDER_TIMEOUT_MS = 60_000;
 /** 查 ollama 的上下文长度要先载入模型，后端最多等两分钟。 */
 const CONTEXT_TIMEOUT_MS = 150_000;
-/** 测试语言模型要起一次助手、发一次模型请求，后端最多等 90 秒。 */
-const MODEL_TEST_TIMEOUT_MS = 105_000;
+/** 测试语言模型要起一次助手、发一次模型请求：后端最多等 90 秒，到时间后停助手最多还要 20 多秒，所以这里等 120 秒。 */
+const MODEL_TEST_TIMEOUT_MS = 120_000;
 
 /** 材料文件的原始字节（GET …/materials/raw）：Word 材料要在浏览器里按原版式渲染。出错时按接口约定的错误体折成 ApiError。 */
 async function rawBytes(path: string, timeoutMs = 30_000): Promise<ArrayBuffer> {

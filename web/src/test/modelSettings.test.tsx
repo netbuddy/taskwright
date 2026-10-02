@@ -294,4 +294,24 @@ describe("设置页面的「模型」一栏", () => {
     expect(await screen.findByText("gateway-chat", { selector: ".mname" })).toBeInTheDocument();
     expect(screen.queryByTestId("test-language-result")).toBeNull();
   });
+
+  it("测试语言模型的请求等 120 秒：后端到 90 秒之后还要停助手，119 秒时还在等，到 120 秒才报等了太久", async () => {
+    vi.useFakeTimers();
+    try {
+      // 一直不回答的后端：只在请求被放弃时照浏览器的办法报 AbortError。
+      const fetched = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => new Promise((_ok, fail) => {
+        init!.signal!.addEventListener("abort", () => fail(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      }));
+      let outcome: unknown = "还在等";
+      api.testModel("language").then((r) => { outcome = r; }, (e) => { outcome = e; });
+      await vi.advanceTimersByTimeAsync(119_000);
+      expect(outcome).toBe("还在等");
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(outcome).toBeInstanceOf(ApiError);
+      expect([(outcome as ApiError).code, (outcome as ApiError).message]).toEqual(["timeout", "等了太久没有得到回应。"]);
+      expect(fetched).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
