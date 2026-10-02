@@ -72,11 +72,6 @@ export const LOGIN_COMMAND = "登录的命令";
 /** 模型超过这么多个时，清单平时只列出勾上的。 */
 export const MANY_MODELS = 10;
 
-/** 没有选定语言模型时，后端说的来源里「pi 设置」在页面上写成「助手程序的设置」。 */
-export function fallbackFrom(from: string): string {
-  return from === "pi 设置" ? "助手程序的设置" : from;
-}
-
 export function formatNumber(n: number | null | undefined): string {
   return n == null ? "" : n.toLocaleString("en-US");
 }
