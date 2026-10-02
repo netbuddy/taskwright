@@ -772,8 +772,8 @@ export interface ServiceInfo {
   mode: "desktop" | "server";
   pid: number;
   port: number | null;
-  /** model_config：这个页面能不能改模型配置；现在的后端恒为 true，较早的后端没有这一项。 */
-  capabilities: { exit: boolean; model?: boolean; model_config?: boolean; knowledge?: boolean };
+  /** model_config：这个页面能不能改模型配置；现在的后端恒为 true，较早的后端没有这一项。model_test：后端有测试语言模型的接口。 */
+  capabilities: { exit: boolean; model?: boolean; model_config?: boolean; model_test?: boolean; knowledge?: boolean };
   model?: { name: string; reason: string };
   /** 上传上限（字节）、超过时的那句话、允许的扩展名、类型给人看的一串与类型不符时的那句话；旧后端没有这一项，较早的后端没有后三样。 */
   upload?: { max_bytes: number; too_large_text: string; extensions?: string[]; types_text?: string; unsupported_type_text?: string };
@@ -848,6 +848,23 @@ export interface FetchModelsResult {
   result: "listed" | "not_offered" | "failed";
   message: string;
   provider: Provider;
+}
+
+/** 测试语言模型的结果：让模型读一个小文件并回答文件里写的一个数，这一次通过还是没有通过。 */
+export interface ModelTestResult {
+  ok: true;
+  result: "passed" | "failed";
+  /** 这一次测的模型，「服务商/型号」。 */
+  model: string;
+  /** 用时，秒，一位小数。 */
+  seconds: number;
+  tool_calls: number;
+  /** 问模型的那句话。 */
+  question: string;
+  /** 模型最后一句回复，最多 200 个字；没有回复时是空串。 */
+  reply: string;
+  /** 没有通过时的原因；通过时是 null。 */
+  reason: string | null;
 }
 
 export interface ContextWindowResult {
