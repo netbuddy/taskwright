@@ -25,6 +25,8 @@ export const STATUS: Record<string, number> = {
   in_use: 409,
   config_unwritable: 409,
   config_locked: 503,
+  // 测试语言模型（docs/api.md §10）：已经有一个测试在跑。
+  busy: 409,
 };
 
 /** 接口拒绝一个请求。message 是给用户看的一句中文。 */
