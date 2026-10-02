@@ -70,6 +70,9 @@
 .settings .cmd { display: flex; align-items: center; gap: .5rem; background: var(--dark); border: 1px solid var(--line2); border-radius: .5rem;
   padding: .35rem .4rem .35rem .7rem; margin: .5rem 0; max-width: 32rem; }
 .settings .cmd code { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, monospace; font-size: .9rem; color: #4a4a4a; }
+.settings .cmd.next { margin-top: -.15rem; padding-top: .45rem; padding-bottom: .45rem; }
+.settings .cmd.next code { flex: none; }
+.settings .cmd.next .hint { flex: 1; min-width: 0; color: var(--mut); font-size: .88rem; }
 .settings .fetchbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: .8rem; margin-bottom: .6rem; }
 .settings .fetchbar .muted { font-size: .9rem; }
 .settings .mhint { color: var(--mut); font-size: .88rem; margin: .1rem 0 .35rem; }

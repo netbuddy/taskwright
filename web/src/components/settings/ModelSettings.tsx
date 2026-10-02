@@ -12,7 +12,7 @@ import { useToast } from "../Toasts";
 import { AddProvider } from "./AddProvider";
 import { PickModelDialog } from "./PickModelDialog";
 import { ProviderDetail, type FetchNote } from "./ProviderDetail";
-import { APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, fallbackFrom, formatNumber, kindName, selected } from "./text";
+import { APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, formatNumber, kindName, selected } from "./text";
 
 export function ModelSettings() {
   const toast = useToast();
@@ -196,7 +196,7 @@ function CurrentRow({ label, type, config, editable, canPick, onPick }: {
     );
   } else if (type === "language") {
     const fb = config.fallback;
-    body = <div>还没有选。{fb && fb.model && `现在用的是：${fb.model}（来自${fallbackFrom(fb.from)}）。`}</div>;
+    body = <div>还没有选。{fb && fb.model && `现在用的是：${fb.model}（来自${fb.from}）。`}</div>;
   } else {
     body = <div>还没有选。知识库只能按字面查找。</div>;
   }

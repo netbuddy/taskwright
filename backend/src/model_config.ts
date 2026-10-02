@@ -169,8 +169,9 @@ function contextOf(entry: any): number | null {
   return positive(entry?.max_model_len) ?? positive(entry?.context_window) ?? positive(entry?.meta?.n_ctx) ?? positive(entry?.context_length);
 }
 
-function failed(reason: string): Listed {
-  return { result: "failed", message: `获取模型列表没有成功：${reason}。可以稍后再试，或者手工添加。`, models: [] };
+/** 获取模型列表没有成功时的说明：原因后面跟一句建议。 */
+function failed(reason: string, advice = "可以稍后再试，或者手工添加。"): Listed {
+  return { result: "failed", message: `获取模型列表没有成功：${reason}。${advice}`, models: [] };
 }
 
 function reasonOf(answer: Answer): string {
@@ -219,13 +220,17 @@ function tokens(text: string): number | null {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
+/** Codex 订阅的模型在页面上不能手工添加，所以它的建议里不提手工添加；没有登录时的建议是先登录。 */
+const CODEX_RETRY = "可以稍后再试。";
+const CODEX_LOGIN = "请先在命令行里登录，再回到这里点「获取模型列表」。";
+
 /** Codex 订阅的模型：让 pi 按它自己的目录列出（不联网；只列已经登录的服务的模型）。 */
 async function listCodexModels(ctx: Context): Promise<Listed> {
   let launcher: ReturnType<typeof piLauncher>;
   try {
     launcher = piLauncher(ctx.profile);
   } catch {
-    return failed("找不到助手的程序");
+    return failed("找不到助手的程序", CODEX_RETRY);
   }
   const env = { ...buildEnvironment(ctx.profile), ...launcher.env, PI_OFFLINE: "1" };
   const args = [...launcher.prefix, "--offline", "--no-extensions", "--no-skills", "--list-models", CODEX_PROVIDER];
@@ -240,13 +245,13 @@ async function listCodexModels(ctx: Context): Promise<Listed> {
       done({ code, text });
     });
   });
-  if (output.code !== 0) return failed("没能读出 Codex 订阅的模型目录");
+  if (output.code !== 0) return failed("没能读出 Codex 订阅的模型目录", CODEX_RETRY);
   const models: Listed["models"] = [];
   for (const line of output.text.split("\n")) {
     const cols = line.trim().split(/\s+/);
     if (cols.length >= 3 && cols[0] === CODEX_PROVIDER) models.push({ id: cols[1], type: "language", context_window: tokens(cols[2]) });
   }
-  if (!models.length) return failed("还没有登录 Codex 订阅");
+  if (!models.length) return failed("还没有登录 Codex 订阅", CODEX_LOGIN);
   return { result: "listed", message: "", models };
 }
 
@@ -491,7 +496,7 @@ function guardSelection(dir: PiDirSettings, id: string, models: StoredModel[]): 
     if (!ref || ref.provider !== id) continue;
     const m = models.find((x) => x.id === ref.model);
     if (!m || !m.enabled || m.type !== what) {
-      throw new ApiError("in_use", `模型「${ref.model}」正被选为${what === "language" ? "助手用的语言模型" : "检索用的嵌入模型"}，先换成别的模型再停用它。`, { provider_id: id, model_id: ref.model });
+      throw new ApiError("in_use", `模型「${ref.model}」正被选为${what === "language" ? "助手用的语言模型" : "查找用的嵌入模型"}，先换成别的模型再停用它。`, { provider_id: id, model_id: ref.model });
     }
   }
 }
@@ -540,7 +545,7 @@ export async function deleteProvider(ctx: Context, id: string) {
   const p = managedOrThrow(current, id);
   const using = inUse(current.selection, id);
   if (using.length) {
-    throw new ApiError("in_use", `这个模型服务的模型正被选为${using.includes("language") ? "助手用的语言模型" : "检索用的嵌入模型"}，先换成别的模型再删除它。`, { provider_id: id });
+    throw new ApiError("in_use", `这个模型服务的模型正被选为${using.includes("language") ? "助手用的语言模型" : "查找用的嵌入模型"}，先换成别的模型再删除它。`, { provider_id: id });
   }
   checkFilesWritable(ctx);
   const dir = await updatePiDirSettings(agentDir(ctx), (d) => {

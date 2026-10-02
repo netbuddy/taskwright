@@ -27,6 +27,10 @@ const ollama = (over: Partial<Provider> = {}): Provider => ({
   ],
   models_fetched_at: null, in_use: [], ...over,
 });
+const codex = (over: Partial<Provider> = {}): Provider => ({
+  id: "taskwright-codex", managed: true, kind: "codex", name: "Codex 订阅", base_url: null, key: null,
+  status: { checked_at: "2026-09-29T10:40:00Z", ok: false, message: "", logged_in: false }, models: [], models_fetched_at: null, in_use: [], ...over,
+});
 const handWritten: Provider = {
   id: "my-gateway", managed: false, kind: null, name: "我的网关", base_url: null, key: null, status: null,
   models: [{ id: "gateway-chat", type: "language", enabled: true, context_window: null, context_source: null }], models_fetched_at: null, in_use: [],
@@ -67,11 +71,37 @@ describe("设置页面的「模型」一栏", () => {
     expect(screen.queryByText("手工添加一个模型")).toBeNull();
   });
 
-  it("没有选语言模型时写出现在用的模型与来源，来源「pi 设置」写成「助手程序的设置」；没有选嵌入模型时写只能按字面查找", async () => {
-    page(config({ fallback: { model: "local/qwen", from: "pi 设置" } }));
+  it("没有选语言模型时写出现在用的模型与来源，来源照后端给的原样写；没有选嵌入模型时写只能按字面查找", async () => {
+    page(config({ fallback: { model: "local/qwen", from: "助手程序的设置" } }));
     expect(await screen.findByTestId("current-language")).toHaveTextContent("还没有选。现在用的是：local/qwen（来自助手程序的设置）。");
     expect(screen.getByTestId("current-embedding")).toHaveTextContent("还没有选。知识库只能按字面查找。");
     expect(screen.getByTestId("current-language")).not.toHaveTextContent("pi");
+  });
+
+  it("Codex 订阅还没有登录时给出两行：第一行是启动的命令，第二行是启动之后要输入的指令与一句说明；「复制」只复制第一行", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    try {
+      page(config({ providers: [codex()] }));
+      const login = await screen.findByTestId("codex-login");
+      expect(within(login).getByTestId("login-command")).toHaveTextContent(/^pi$/);
+      const second = within(login).getByTestId("login-instruction");
+      expect(second).toHaveTextContent(/^\/login$/);
+      expect(second.parentElement).toHaveTextContent("/login输入后在列表里选 ChatGPT Plus/Pro (Codex)");
+      expect(login).not.toHaveTextContent("登录的命令");
+      fireEvent.click(within(login).getByRole("button", { name: /复制/ }));
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(writeText).toHaveBeenCalledWith("pi");
+    } finally {
+      delete (navigator as { clipboard?: unknown }).clipboard;
+    }
+  });
+
+  it("Codex 订阅的登录说明只指向页面上做得到的事：到任务里让助手说一句话，不提还没有的按钮", async () => {
+    page(config({ providers: [codex()] }));
+    const login = await screen.findByTestId("codex-login");
+    expect(login).toHaveTextContent("这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请选定模型后到任务里试着让助手说一句话。");
+    expect(login).not.toHaveTextContent("测试");
   });
 
   it("添加时后端回 rejected：停在添加的画面，按 data.field 把后端那句话写在接口地址下面", async () => {

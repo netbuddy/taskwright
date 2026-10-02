@@ -10,7 +10,7 @@ import type { ModelConfig, ModelType, Provider, ProviderModel } from "../../api/
 import { formatTime } from "../../model/format";
 import { useToast } from "../Toasts";
 import {
-  LOGIN_COMMAND, LOGIN_NOTE, MANY_MODELS, READONLY_PROVIDER_TEXT, TYPE_NAME, formatNumber, inUseText, kindKnown, kindName, whereToFind,
+  LOGIN_COMMAND, LOGIN_INSTRUCTION, LOGIN_INSTRUCTION_HINT, LOGIN_NOTE, MANY_MODELS, READONLY_PROVIDER_TEXT, TYPE_NAME, formatNumber, inUseText, kindKnown, kindName, whereToFind,
 } from "./text";
 
 export interface FetchNote {
@@ -352,7 +352,7 @@ function KeyLine({ provider, editable, onChanged }: { provider: Provider; editab
   );
 }
 
-/** Codex 订阅的登录状态：只看登录凭据在不在；没有登录时给出登录的命令（占位）与「重新检查」。 */
+/** Codex 订阅的登录状态：只看登录凭据在不在；没有登录时给出登录的两步与「重新检查」。 */
 function CodexLogin({ provider, editable, checking, onRecheck }: { provider: Provider; editable: boolean; checking: boolean; onRecheck: () => void }) {
   const loggedIn = provider.status?.logged_in === true;
   return (
@@ -361,7 +361,7 @@ function CodexLogin({ provider, editable, checking, onRecheck }: { provider: Pro
         <>
           <div className="st">还没有登录。</div>
           {editable && <>
-            <div>请在运行任务服务的这台电脑上打开命令行，运行下面这条命令，照提示登录，然后回到这里点「重新检查」。</div>
+            <div>请在运行任务服务的这台电脑上打开命令行，运行下面第一行的命令，等它启动后输入第二行的指令，照提示登录，然后回到这里点「重新检查」。</div>
             <LoginCommand />
           </>}
         </>
@@ -372,12 +372,16 @@ function CodexLogin({ provider, editable, checking, onRecheck }: { provider: Pro
   );
 }
 
+/** 登录的两步：第一行是启动的命令，「复制」只复制它；第二行是启动之后要输入的指令与一句说明。 */
 export function LoginCommand() {
   const toast = useToast();
   const copy = () => {
     navigator.clipboard?.writeText(LOGIN_COMMAND).then(() => toast.success("已复制。"), () => toast.error("没能复制，请手工选中复制。"));
   };
   return (
-    <div className="cmd"><code>{LOGIN_COMMAND}</code><Button size="small" icon={<CopyOutlined />} onClick={copy}>复制</Button></div>
+    <>
+      <div className="cmd"><code data-testid="login-command">{LOGIN_COMMAND}</code><Button size="small" icon={<CopyOutlined />} onClick={copy}>复制</Button></div>
+      <div className="cmd next"><code data-testid="login-instruction">{LOGIN_INSTRUCTION}</code><span className="hint">{LOGIN_INSTRUCTION_HINT}</span></div>
+    </>
   );
 }

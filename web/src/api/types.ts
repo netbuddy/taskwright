@@ -838,7 +838,7 @@ export interface ModelConfig {
   /** 不能改时那句说明；能改时是 null。 */
   notice: string | null;
   selection: ModelSelection;
-  /** 没有选定语言模型时助手启动用的模型；from 是后端给的来源（「启动配置」或「pi 设置」）。 */
+  /** 没有选定语言模型时助手启动用的模型；from 是后端给的来源（「启动配置」或「助手程序的设置」），页面原样显示。 */
   fallback: { model: string; from: string } | null;
   providers: Provider[];
 }

@@ -203,7 +203,7 @@ export class Service {
     // 要是相对的，它会按任务目录去解析，找不到文件就悄悄新开一条会话；本服务内部从这里起只用绝对路径。
     this.tasksDir = resolve(tasksDir);
     this.runsDir = resolve(runsDir);
-    // 桌面形态：模型可以由 pi 设置文件指定（见 launch.ts 的 PI_SETTINGS_MODEL）。标记只加在内存里的这份启动配置上。
+    // 桌面形态：模型可以由 pi 的设置文件指定（见 launch.ts 的 PI_SETTINGS_MODEL）。标记只加在内存里的这份启动配置上。
     this.profile = options.mode === "desktop" ? { ...profile, [PI_SETTINGS_MODEL]: true } : profile;
     this.port = options.port ?? null;
     this.mode = options.mode ?? "server";

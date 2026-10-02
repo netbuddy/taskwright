@@ -44,7 +44,7 @@ test("desktop.json 拼出的命令行与 dev 相同，环境标签是 desktop；
   }
 });
 
-test("桌面形态下 pi 设置文件的 defaultProvider 与 defaultModel 两项都有时代替启动配置里的模型；命令行、启动记录、模型探测、服务信息都按它；服务器形态不变", async () => {
+test("桌面形态下 pi 的设置文件的 defaultProvider 与 defaultModel 两项都有时代替启动配置里的模型；命令行、启动记录、模型探测、服务信息都按它；服务器形态不变", async () => {
   const { PI_SETTINGS_MODEL, resolveModel, startupRecord } = await import("../src/launch.ts");
   const { probeModel } = await import("../src/model_probe.ts");
   const { Service } = await import("../src/service.ts");
@@ -66,8 +66,8 @@ test("桌面形态下 pi 设置文件的 defaultProvider 与 defaultModel 两项
     writeFileSync(settings, "{ 不是 JSON");
     assert.equal(resolveModel(desktop, env).model, original, "读不出时用启动配置里的");
     writeFileSync(settings, JSON.stringify({ theme: "light", defaultProvider: "local", defaultModel: "qwen" }));
-    assert.deepEqual(resolveModel(desktop, env), { model: "local/qwen", from: "pi 设置", settings });
-    assert.deepEqual(resolveModel(server, env), { model: original, from: "启动配置" }, "服务器形态不读 pi 设置");
+    assert.deepEqual(resolveModel(desktop, env), { model: "local/qwen", from: "助手程序的设置", settings });
+    assert.deepEqual(resolveModel(server, env), { model: original, from: "启动配置" }, "服务器形态不读 pi 的设置文件");
 
     const workspace = join(tmp, "ws2");
     mkdirSync(workspace, { recursive: true });
@@ -78,12 +78,12 @@ test("桌面形态下 pi 设置文件的 defaultProvider 与 defaultModel 两项
 
     const record = startupRecord(desktop, argv);
     assert.equal(record["模型"], "local/qwen");
-    assert.equal(record["模型来自"], `pi 设置（${settings} 的 defaultProvider 与 defaultModel）`);
+    assert.equal(record["模型来自"], `助手程序的设置（${settings} 的 defaultProvider 与 defaultModel）`);
     assert.equal("模型来自" in startupRecord(server, serverArgv), false, "服务器形态的启动记录不加这一项");
 
     writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { local: { models: [{ id: "qwen" }] } } }));
     assert.deepEqual(probeModel(desktop, env), { name: "local/qwen", available: true,
-      reason: `在模型登记文件 ${join(agentDir, "models.json")} 里找到了「local/qwen」（由 pi 设置文件 ${settings} 指定）。` });
+      reason: `在模型登记文件 ${join(agentDir, "models.json")} 里找到了「local/qwen」（由助手程序的设置文件 ${settings} 指定）。` });
 
     const service = new Service(join(tmp, "t3"), join(tmp, "r3"), loadProfile("desktop"), { port: 8950, mode: "desktop" });
     const info = serviceInfo(service);

@@ -341,8 +341,20 @@ test("选定语言模型与嵌入模型：起助手用选定的模型；停用�
   const disable = await go("POST", `/api/v1/model-config/providers/${id}`, { models: [{ id: "qwen3:8b", type: "language", enabled: false, context_window: 8192 }] });
   assert.equal(disable.status, 409);
   assert.equal(disable.body.error.code, "in_use");
+  assert.equal(disable.body.error.message, "模型「qwen3:8b」正被选为助手用的语言模型，先换成别的模型再停用它。");
+  const disableEmbedding = await go("POST", `/api/v1/model-config/providers/${id}`, { models: [
+    { id: "qwen3:8b", type: "language", enabled: true, context_window: 8192 },
+    { id: "qwen3-embedding:8b", type: "embedding", enabled: false, context_window: null },
+  ] });
+  assert.equal(disableEmbedding.body.error.code, "in_use");
+  assert.equal(disableEmbedding.body.error.message, "模型「qwen3-embedding:8b」正被选为查找用的嵌入模型，先换成别的模型再停用它。");
   const del = await go("POST", `/api/v1/model-config/providers/${id}/delete`, {});
   assert.equal(del.body.error.code, "in_use");
+  assert.equal(del.body.error.message, "这个模型服务的模型正被选为助手用的语言模型，先换成别的模型再删除它。");
+  const onlyEmbedding = await go("POST", "/api/v1/model-config/selection", { language: null, embedding: { provider_id: id, model_id: "qwen3-embedding:8b" } });
+  assert.equal(onlyEmbedding.status, 200, JSON.stringify(onlyEmbedding.body));
+  const delEmbedding = await go("POST", `/api/v1/model-config/providers/${id}/delete`, {});
+  assert.equal(delEmbedding.body.error.message, "这个模型服务的模型正被选为查找用的嵌入模型，先换成别的模型再删除它。");
   const noEmbedding = await go("POST", "/api/v1/model-config/selection", { language: { provider_id: id, model_id: "qwen3:8b" }, embedding: null });
   assert.equal(noEmbedding.body.selection.embedding, null);
   await go("POST", "/api/v1/model-config/selection", { language: null, embedding: null });
@@ -379,6 +391,32 @@ test("Codex 订阅：不写两个共用文件，只看凭据文件里有没有�
   const again = await go("POST", "/api/v1/model-config/providers/taskwright-codex/check", {});
   assert.equal(again.body.provider.status.logged_in, true);
   assert.equal(again.body.provider.status.ok, true);
+});
+
+test("Codex 订阅获取模型列表没有成功：没有登录时让用户先登录；别的原因只说稍后再试；都不建议手工添加", async () => {
+  const before = process.env.TASKWRIGHT_PI_ENTRY;
+  const fetchWith = async (entry: string) => {
+    process.env.TASKWRIGHT_PI_ENTRY = entry;
+    const r = await go("POST", "/api/v1/model-config/providers/taskwright-codex/fetch-models", {});
+    assert.equal(r.body.result, "failed");
+    return r.body.message;
+  };
+  try {
+    // 假的助手程序：列模型时什么都不输出，等于一个服务都没有登录
+    const nothing = join(tmp, "list-nothing.mjs");
+    writeFileSync(nothing, "");
+    process.env.TASKWRIGHT_PI_ENTRY = nothing;
+    await go("POST", "/api/v1/model-config/providers", { kind: "codex" });
+    assert.equal(await fetchWith(nothing), "获取模型列表没有成功：还没有登录 Codex 订阅。请先在命令行里登录，再回到这里点「获取模型列表」。");
+    // 假的助手程序：一运行就出错退出
+    const broken = join(tmp, "list-broken.mjs");
+    writeFileSync(broken, "process.exit(1);\n");
+    assert.equal(await fetchWith(broken), "获取模型列表没有成功：没能读出 Codex 订阅的模型目录。可以稍后再试。");
+    assert.equal(await fetchWith(join(tmp, "no-such-entry.mjs")), "获取模型列表没有成功：找不到助手的程序。可以稍后再试。");
+  } finally {
+    if (before === undefined) delete process.env.TASKWRIGHT_PI_ENTRY;
+    else process.env.TASKWRIGHT_PI_ENTRY = before;
+  }
 });
 
 // ───────────── 写文件的三条规矩 ─────────────

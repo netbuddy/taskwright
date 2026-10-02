@@ -42,14 +42,14 @@ export function piAgentDir(env: NodeJS.ProcessEnv | Record<string, string> = pro
 export interface ResolvedModel {
   /** 交给 pi 的模型「服务商/型号」；启动配置没写又没有被替换时是空串。 */
   model: string;
-  from: "产品设置" | "启动配置" | "pi 设置";
-  /** 模型来自产品设置或 pi 设置时，那个设置文件的路径。 */
+  from: "产品设置" | "启动配置" | "助手程序的设置";
+  /** 模型来自产品设置或助手程序的设置时，那个设置文件的路径。 */
   settings?: string;
 }
 
 /**
  * 这一次起 pi 用哪个模型。先看产品自己的设置文件里有没有为这个 pi 配置目录选过语言模型（在界面上选，见 model_config.ts）；
- * 没有选过时照 0.3 的规则：桌面形态读 pi 设置文件（见 PI_SETTINGS_MODEL），settings.json 读不出、或两项缺一项时，照旧用启动配置里的。
+ * 没有选过时照 0.3 的规则：桌面形态读 pi 的设置文件（见 PI_SETTINGS_MODEL），settings.json 读不出、或两项缺一项时，照旧用启动配置里的。
  */
 export function resolveModel(profile: Profile, env: NodeJS.ProcessEnv | Record<string, string> = process.env): ResolvedModel {
   const selected = selectedLanguageModel(piAgentDir(env), env);
@@ -60,7 +60,7 @@ export function resolveModel(profile: Profile, env: NodeJS.ProcessEnv | Record<s
   try {
     const value = JSON.parse(readFileSync(settings, "utf-8"));
     const provider = value?.defaultProvider, model = value?.defaultModel;
-    if (typeof provider === "string" && provider && typeof model === "string" && model) return { model: `${provider}/${model}`, from: "pi 设置", settings };
+    if (typeof provider === "string" && provider && typeof model === "string" && model) return { model: `${provider}/${model}`, from: "助手程序的设置", settings };
   } catch {
     // 没有这个文件或读不出：用启动配置里的
   }
@@ -313,7 +313,7 @@ export function startupRecord(profile: Profile, argv: string[]) {
 function modelSource(profile: Profile): string {
   const resolved = resolveModel(profile);
   if (resolved.from === "产品设置") return `产品设置（${resolved.settings} 里在界面上选定的语言模型）`;
-  return resolved.from === "pi 设置" ? `pi 设置（${resolved.settings} 的 defaultProvider 与 defaultModel）` : "启动配置";
+  return resolved.from === "助手程序的设置" ? `助手程序的设置（${resolved.settings} 的 defaultProvider 与 defaultModel）` : "启动配置";
 }
 
 export function platformSkillRecord(profile: Profile) {
