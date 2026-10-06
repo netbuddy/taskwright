@@ -847,6 +847,8 @@ export interface ProviderStatus {
   message: string;
   /** 只有 Codex 订阅有：登录凭据在不在。 */
   logged_in?: boolean;
+  /** 只有 Codex 订阅有：只在更早的登录入口登录过，要用现在的入口重新登录一次；没有这种情形时不带这一项。 */
+  relogin?: boolean;
 }
 
 export interface Provider {

@@ -16,7 +16,7 @@
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { codexAccessIn } from "./codex.ts";
+import { CODEX_PROVIDER } from "./codex.ts";
 import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
 import { userDataDir } from "./paths.ts";
 
@@ -84,6 +84,8 @@ export interface ProviderStatus {
   message: string;
   /** 只有 Codex 订阅有：pi 的凭据文件里有没有它的登录凭据。 */
   logged_in?: boolean;
+  /** 只有 Codex 订阅有：只在 pi 旧的登录入口登录过，要用现在的入口重新登录一次。没有这种情形时不写这一项。 */
+  relogin?: boolean;
 }
 
 export interface StoredProvider {
@@ -185,7 +187,7 @@ export function selectedLanguageModel(agentDir: string, env: NodeJS.ProcessEnv |
   if (!language) return null;
   const provider = dir.providers[language.provider];
   if (provider && provider.purpose !== "language") return null;
-  return `${provider?.kind === "codex" ? codexAccessIn(agentDir).provider : language.provider}/${language.model}`;
+  return `${provider?.kind === "codex" ? CODEX_PROVIDER : language.provider}/${language.model}`;
 }
 
 /**

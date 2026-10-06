@@ -19,7 +19,7 @@ import { join, resolve } from "node:path";
 import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
 import { ApiError } from "./errors.ts";
 import * as clock from "./clock.ts";
-import { CODEX_PROVIDER, codexAccess } from "./codex.ts";
+import { CODEX_PROVIDER, codexLogin } from "./codex.ts";
 import { type Profile, buildEnvironment, piAgentDir, piLauncher, resolveModel } from "./launch.ts";
 import {
   type Kind, type ModelType, type PiDirSettings, type ProviderStatus, type Purpose, type Selection, type StoredModel, type StoredProvider,
@@ -239,7 +239,7 @@ function tokens(text: string): number | null {
 const CODEX_RETRY = "可以稍后再试。";
 const CODEX_LOGIN = "请先在命令行里登录，再回到这里点「获取模型列表」。";
 
-/** Codex 订阅的模型：让 pi 按它自己的目录列出（不联网；只列已经登录的服务的模型）。列的是登录用的那个入口在 pi 里的服务商（见 codex.ts）。 */
+/** Codex 订阅的模型：让 pi 按它自己的目录列出（不联网；只列已经登录的服务的模型）。列的是 pi 里 ChatGPT 订阅的那个服务商（见 codex.ts）。 */
 async function listCodexModels(ctx: Context): Promise<Listed> {
   let launcher: ReturnType<typeof piLauncher>;
   try {
@@ -247,9 +247,8 @@ async function listCodexModels(ctx: Context): Promise<Listed> {
   } catch {
     return failed("找不到助手的程序", CODEX_RETRY);
   }
-  const provider = codexAccess(readForView(authFile(ctx))).provider;
   const env = { ...buildEnvironment(ctx.profile), ...launcher.env, PI_OFFLINE: "1" };
-  const args = [...launcher.prefix, "--offline", "--no-extensions", "--no-skills", "--list-models", provider];
+  const args = [...launcher.prefix, "--offline", "--no-extensions", "--no-skills", "--list-models", CODEX_PROVIDER];
   const output = await new Promise<{ code: number | null; text: string }>((done) => {
     const child = spawn(launcher.command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
@@ -265,7 +264,7 @@ async function listCodexModels(ctx: Context): Promise<Listed> {
   const models: Listed["models"] = [];
   for (const line of output.text.split("\n")) {
     const cols = line.trim().split(/\s+/);
-    if (cols.length >= 3 && cols[0] === provider) models.push({ id: cols[1], type: "language", context_window: tokens(cols[2]) });
+    if (cols.length >= 3 && cols[0] === CODEX_PROVIDER) models.push({ id: cols[1], type: "language", context_window: tokens(cols[2]) });
   }
   if (!models.length) return failed("还没有登录 Codex 订阅", CODEX_LOGIN);
   return { result: "listed", message: "", models };
@@ -279,8 +278,14 @@ function keyOf(auth: Record<string, any> | null, id: string): string | null {
   return entry && entry.type === "api_key" && typeof entry.key === "string" && entry.key ? entry.key : null;
 }
 
-function codexLoggedIn(auth: Record<string, any> | null): boolean {
-  return codexAccess(auth).logged_in;
+export const CODEX_NOT_LOGGED_IN_TEXT = "还没有登录 Codex 订阅。";
+export const CODEX_RELOGIN_TEXT = "还没有登录 Codex 订阅。这一版改用新的登录入口，请重新登录一次。";
+
+/** Codex 订阅的检查结果：凭据文件里有登录凭据就算通过；只在旧的入口登录过时写明要重新登录。 */
+function codexStatus(auth: Record<string, any> | null): ProviderStatus {
+  const login = codexLogin(auth);
+  const message = login.logged_in ? "" : login.relogin ? CODEX_RELOGIN_TEXT : CODEX_NOT_LOGGED_IN_TEXT;
+  return status(login.logged_in, message, { logged_in: login.logged_in, ...(login.relogin ? { relogin: true } : {}) });
 }
 
 // ───────────── 对外的视图 ─────────────
@@ -305,7 +310,13 @@ function inUse(selection: Selection, id: string): ModelType[] {
 
 function managedView(id: string, p: StoredProvider, auth: Record<string, any> | null, selection: Selection): ProviderView {
   const key = keyOf(auth, id);
-  const status = p.kind === "codex" && p.status ? { ...p.status, logged_in: codexLoggedIn(auth) } : p.status;
+  // Codex 订阅登录了没有，每次读的时候按凭据文件现在的样子给，不用上一次检查时记下的。
+  let status = p.status;
+  if (p.kind === "codex" && p.status) {
+    const { relogin: _stale, ...rest } = p.status;
+    const login = codexLogin(auth);
+    status = { ...rest, logged_in: login.logged_in, ...(login.relogin ? { relogin: true } : {}) };
+  }
   return {
     id, managed: true, kind: p.kind, purpose: p.purpose, name: p.name, base_url: p.base_url,
     key: p.kind === "codex" ? null : { set: key !== null, last4: key !== null ? key.slice(-4) : null },
@@ -509,8 +520,7 @@ export async function addProvider(ctx: Context, body: Record<string, any>) {
   checkFilesWritable(ctx);
   let checked: ProviderStatus;
   if (kind === "codex") {
-    const loggedIn = codexLoggedIn(readForView(authFile(ctx)));
-    checked = status(loggedIn, loggedIn ? "" : "还没有登录 Codex 订阅。", { logged_in: loggedIn });
+    checked = codexStatus(readForView(authFile(ctx)));
   } else {
     const result = await checkConnection(kind, base!, key);
     if (!result.ok) throw rejected(result.field!, result.message);
@@ -641,8 +651,7 @@ export async function checkProvider(ctx: Context, id: string) {
   const p = managedOrThrow(current, id);
   let checked: ProviderStatus;
   if (p.kind === "codex") {
-    const loggedIn = codexLoggedIn(readForView(authFile(ctx)));
-    checked = status(loggedIn, loggedIn ? "" : "还没有登录 Codex 订阅。", { logged_in: loggedIn });
+    checked = codexStatus(readForView(authFile(ctx)));
   } else {
     const result = await checkConnection(p.kind, p.base_url!, keyOf(readForView(authFile(ctx)), id));
     checked = status(result.ok, result.message);

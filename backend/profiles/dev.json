@@ -2,7 +2,7 @@
   "说明": "开发用启动配置。助手程序的全部启动参数都收在这里，代码里不另外写死任何一项。",
   "executable": "pi",
   "mode": "rpc",
-  "model": "openai-codex/gpt-6-luna",
+  "model": "openai/gpt-6-luna",
   "thinking": "medium",
   "模型说明": "助手用的模型，写法是「服务商/模型」。换模型就改这一项，或者复制一份启动配置改好之后用 --profile 选它；思考档位写在 thinking 一项。",
   "tools": [

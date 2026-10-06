@@ -13,7 +13,7 @@ import { formatTime } from "../../model/format";
 import { useToast } from "../Toasts";
 import {
   LOGIN_COMMAND, LOGIN_INSTRUCTION, LOGIN_INSTRUCTION_HINT, LOGIN_NOTE, MANY_MODELS, PURPOSES, READONLY_PROVIDER_TEXT, REFRESH_CATALOG_CONFIRM, REFRESH_CATALOG_DONE,
-  REFRESH_CATALOG_LABEL, allModelsListedText, formatNumber, inUseText, kindName,
+  REFRESH_CATALOG_LABEL, RELOGIN_TEXT, allModelsListedText, formatNumber, inUseText, kindName,
   tellsModelType, whereToFind,
 } from "./text";
 
@@ -374,7 +374,7 @@ function KeyLine({ provider, editable, onChanged }: { provider: Provider; editab
   );
 }
 
-/** Codex 订阅的登录状态：只看登录凭据在不在；没有登录时给出登录的两步与「重新检查」。 */
+/** Codex 订阅的登录状态：只看登录凭据在不在；没有登录时给出登录的两步与「重新检查」。只在更早的入口登录过时，另写一句要重新登录。 */
 function CodexLogin({ provider, editable, checking, onRecheck }: { provider: Provider; editable: boolean; checking: boolean; onRecheck: () => void }) {
   const loggedIn = provider.status?.logged_in === true;
   return (
@@ -382,6 +382,7 @@ function CodexLogin({ provider, editable, checking, onRecheck }: { provider: Pro
       {loggedIn ? <div>已经登录。</div> : (
         <>
           <div className="st">还没有登录。</div>
+          {provider.status?.relogin === true && <div data-testid="codex-relogin">{RELOGIN_TEXT}</div>}
           {editable && <>
             <div>请在运行任务服务的这台电脑上打开命令行，运行下面第一行的命令，等它启动后输入第二行的指令，照提示登录，然后回到这里点「重新检查」。</div>
             <LoginCommand />
