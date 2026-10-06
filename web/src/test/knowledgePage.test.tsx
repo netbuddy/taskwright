@@ -172,7 +172,11 @@ describe("知识库页面", () => {
     expect([bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax"), (bar.firstElementChild as HTMLElement).style.width]).toEqual(["2", "4", "50%"]);
     expect(line.textContent).toBe("已换算 2 / 4嵌入模型：bge-m3开始换算");
     expect(screen.getByTestId("kb-doc-embedding-规则.md").textContent).toBe("已换算");
-    expect(screen.getByTestId("kb-doc-embedding-长文.txt").textContent).toBe("换算失败重试模型服务回答了错误（HTTP 500）：the input length exceeds the context length");
+    expect(screen.getByTestId("kb-doc-embedding-长文.txt").textContent).toBe("换算失败重试");
+    // 原因写在这份文档下面单独的一行里，横跨整张表的六列。
+    const why = screen.getByTestId("kb-doc-embedding-error-长文.txt");
+    expect([why.textContent, why.getAttribute("colspan")]).toEqual(["模型服务回答了错误（HTTP 500）：the input length exceeds the context length", "6"]);
+    expect(screen.queryByTestId("kb-doc-embedding-error-规则.md")).toBeNull();
     expect(screen.getByTestId("kb-doc-embedding-说明.txt").textContent).toBe("未换算");
     expect(screen.getByTestId("kb-doc-embedding-空白.txt").textContent).toBe("没有文字，不用换算");
     expect(screen.queryByTestId("kb-embedding-stopped")).toBeNull();

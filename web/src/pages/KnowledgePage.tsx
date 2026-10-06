@@ -4,7 +4,7 @@
 // 文档要换算成数字串之后才能按意思查找：文档表格里每份文档有换算状态，表格上面一行是这个知识库「已换算几份 / 一共几份」与进度条；
 // 选了嵌入模型而且有没换算的文档时给「开始换算」，换算失败的文档给「重试」。有文档在等待换算或者换算中时，隔两秒再取一次清单。
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Alert, Button, Empty, Input, Modal, Spin, Upload } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
@@ -199,24 +199,26 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
                 <table className="kbtable" data-testid="kb-documents">
                   <thead><tr><th>文档名</th><th>种类</th><th>大小</th><th>上传时间</th><th>换算</th><th>操作</th></tr></thead>
                   <tbody>
-                    {current.documents.map((d) => (
-                      <tr key={d.name}>
-                        <td className="dn">{d.name}</td>
-                        <td>{kindName(service.info, d.kind)}</td>
-                        <td>{formatBytes(d.bytes)}</td>
-                        <td>{formatTime(d.uploaded_at)}</td>
-                        <td className={`de ${d.embedding.status}`} data-testid={`kb-doc-embedding-${d.name}`}>
-                          {embeddingStatusText(d.embedding)}
-                          {d.embedding.status === "failed" && (
-                            <>
-                              {embedding.model !== null && <a role="button" className="retry" onClick={() => void embed(current.id, d.name)}>重试</a>}
-                              <div className="why">{d.embedding.error}</div>
-                            </>
-                          )}
-                        </td>
-                        <td><a role="button" onClick={() => setRemovingDoc(d.name)}>删除</a></td>
-                      </tr>
-                    ))}
+                    {current.documents.map((d) => {
+                      // 换算失败的原因可能很长：写在这份文档下面单独的一行里，横跨整张表，不把「换算」那一列撑宽。
+                      const failed = d.embedding.status === "failed";
+                      return (
+                        <Fragment key={d.name}>
+                          <tr className={failed ? "failed" : undefined}>
+                            <td className="dn">{d.name}</td>
+                            <td>{kindName(service.info, d.kind)}</td>
+                            <td>{formatBytes(d.bytes)}</td>
+                            <td>{formatTime(d.uploaded_at)}</td>
+                            <td className={`de ${d.embedding.status}`} data-testid={`kb-doc-embedding-${d.name}`}>
+                              {embeddingStatusText(d.embedding)}
+                              {failed && embedding.model !== null && <a role="button" className="retry" onClick={() => void embed(current.id, d.name)}>重试</a>}
+                            </td>
+                            <td><a role="button" onClick={() => setRemovingDoc(d.name)}>删除</a></td>
+                          </tr>
+                          {failed && <tr className="why"><td colSpan={6} data-testid={`kb-doc-embedding-error-${d.name}`}>{d.embedding.error}</td></tr>}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}

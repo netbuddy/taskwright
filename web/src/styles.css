@@ -156,8 +156,10 @@ body {
 .kbbar { flex: 0 1 12rem; min-width: 6rem; height: 0.5rem; border-radius: 0.25rem; background: #ececec; overflow: hidden; }
 .kbbar > span { display: block; height: 100%; background: var(--ok); transition: width 0.3s; }
 .kbtable .de { white-space: nowrap; }
-.kbtable .de.failed { color: var(--gap); white-space: normal; }
+.kbtable .de.failed { color: var(--gap); }
 .kbtable .de .retry { margin-left: 0.5rem; }
-.kbtable .de .why { font-size: 0.86rem; margin-top: 0.15rem; word-break: break-word; }
+/* 换算失败的原因：在那份文档下面单独一行，横跨整张表；上面那一行不画底线，两行看起来是一份文档 */
+.kbtable tr.failed td { border-bottom: none; padding-bottom: 0.15rem; }
+.kbtable tr.why td { color: var(--gap); font-size: 0.86rem; padding-top: 0; word-break: break-word; }
 .kbtable .de.none, .kbtable .de.queued { color: var(--mut); }
 @media (max-width: 60rem) { .kbgrid { grid-template-columns: minmax(0, 1fr); } }
