@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { format } from "node:util";
 import { makeServer } from "./http.ts";
 import { expandUser, loadProfile } from "./launch.ts";
+import { migrateProviderPurposes } from "./model_config.ts";
 import { defaultHost, listenFrom } from "./listen.ts";
 import { logDir, userDataDir } from "./paths.ts";
 import { MODES, type Mode, Service } from "./service.ts";
@@ -110,6 +111,12 @@ export async function startService(options: StartOptions): Promise<Started> {
   const runsDir = expandUser(options.runs ?? join(userDataDir(), "runs"));
   const knowledgeDir = expandUser(options.knowledge ?? join(userDataDir(), "knowledge"));
   const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir });
+  // 设置文件里还没定用途的模型服务（上一版留下的）先定用途。做不成不拦着服务起来，日志里写明原因。
+  try {
+    for (const note of await migrateProviderPurposes({ env: process.env, profile: service.profile })) console.log(note);
+  } catch (error) {
+    console.log(`没能给设置文件里的模型服务定用途：${(error as Error).message}`);
+  }
   const server = makeServer(service, { webDir: options.web ?? null });
 
   let closing: Promise<void> | null = null;

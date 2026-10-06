@@ -92,8 +92,8 @@ after(async () => {
 });
 
 const provider = (kind: Kind, base: string | null): StoredProvider => ({
-  kind, name: `测试用的 ${kind}`, base_url: base, models_fetched_at: null, status: null,
-  models: [{ id: "bge-m3", type: "embedding", enabled: true, context_window: null, context_source: null }],
+  kind, purpose: "embedding", name: `测试用的 ${kind}`, base_url: base, models_fetched_at: null, status: null,
+  models: [{ id: "bge-m3", enabled: true, context_window: null, context_source: null }],
 });
 
 /** 产品设置里登记一个这种模型服务并选定它的嵌入模型；key 写进凭据文件。 */

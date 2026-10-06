@@ -5,6 +5,9 @@
  * auth.json；嵌入模型由任务服务自己调用（embedding.ts，连接从这里的 embeddingTarget 取）。「选了哪一个」记在产品自己的设置文件里
  * （product_settings.ts）。
  *
+ * 一个模型服务只有一种用途（purpose）：它提供哪一类模型。模型的类型就是所在模型服务的用途，清单里不再逐个标；同一个地址
+ * 两类都提供时登记成两个模型服务。用途添加时定下，之后不改。
+ *
  * 产品只增改自己登记的那几项（服务名以 taskwright- 开头、并且在产品设置的名单上）；两个共用文件里别的内容原样保留，
  * 写之前备份、照 pi 的办法加锁（config_files.ts）。用户自己在 models.json 里写的服务在接口里单列成只读的一组（managed 为假）。
  *
@@ -18,14 +21,15 @@ import { ApiError } from "./errors.ts";
 import * as clock from "./clock.ts";
 import { type Profile, buildEnvironment, piAgentDir, piLauncher, resolveModel } from "./launch.ts";
 import {
-  type Kind, type ModelType, type PiDirSettings, type ProviderStatus, type Selection, type StoredModel, type StoredProvider,
-  checkWritable, readPiDirSettings, updatePiDirSettings,
+  type Kind, type ModelType, type PiDirSettings, type ProviderStatus, type Purpose, type Selection, type StoredModel, type StoredProvider,
+  DEFAULT_PURPOSE, ID_PREFIX, PURPOSES, PURPOSE_INFO, checkWritable, isPurpose, migratePurposes, nameWithPurpose, needsPurposeMigration,
+  newProviderId, readPiDirSettings, updatePiDirSettings,
 } from "./product_settings.ts";
+
+export { ID_PREFIX };
 
 export const REQUEST_TIMEOUT_MS = 5_000;
 export const LOAD_TIMEOUT_MS = 120_000;
-/** 产品登记的服务名的前缀：不会与 pi 内置的服务名（例如 deepseek）重名。 */
-export const ID_PREFIX = "taskwright-";
 /** 没有密钥的服务在 models.json 里写的占位值：pi 要有凭据才把模型列为可用（本地服务不检查它）。 */
 export const NO_KEY = "taskwright-no-key";
 /** pi 里 Codex 订阅的服务名。 */
@@ -186,7 +190,12 @@ function reasonOf(answer: Answer): string {
   return `模型服务回答了错误（HTTP ${answer.status}）`;
 }
 
-/** 按种类向模型服务查询模型清单。 */
+/** 这种模型服务分辨得出模型的类型吗：分辨得出的，取回的清单只留与模型服务的用途对得上的；分辨不出的全留。 */
+function tellsModelType(kind: Kind): boolean {
+  return kind === "ollama" || kind === "aliyun" || kind === "codex";
+}
+
+/** 按种类向模型服务查询模型清单。每个模型标着查到（或者猜到）的类型，只用来按用途筛选。 */
 async function listModels(ctx: Context, kind: Kind, base: string | null, key: string | null): Promise<Listed> {
   if (kind === "codex") return listCodexModels(ctx);
   if (base === null) return failed("没有接口地址");
@@ -280,6 +289,7 @@ export interface ProviderView {
   id: string;
   managed: boolean;
   kind: Kind | null;
+  purpose: Purpose;
   name: string;
   base_url: string | null;
   key: { set: boolean; last4: string | null } | null;
@@ -290,23 +300,20 @@ export interface ProviderView {
 }
 
 function inUse(selection: Selection, id: string): ModelType[] {
-  const out: ModelType[] = [];
-  if (selection.language?.provider === id) out.push("language");
-  if (selection.embedding?.provider === id) out.push("embedding");
-  return out;
+  return PURPOSES.filter((what) => selection[what]?.provider === id);
 }
 
 function managedView(id: string, p: StoredProvider, auth: Record<string, any> | null, selection: Selection): ProviderView {
   const key = keyOf(auth, id);
   const status = p.kind === "codex" && p.status ? { ...p.status, logged_in: codexLoggedIn(auth) } : p.status;
   return {
-    id, managed: true, kind: p.kind, name: p.name, base_url: p.base_url,
+    id, managed: true, kind: p.kind, purpose: p.purpose, name: p.name, base_url: p.base_url,
     key: p.kind === "codex" ? null : { set: key !== null, last4: key !== null ? key.slice(-4) : null },
     status, models: p.models, models_fetched_at: p.models_fetched_at, in_use: inUse(selection, id),
   };
 }
 
-/** 用户自己在模型登记文件里写的服务：只读，列出显示名与模型；不查它的密钥。 */
+/** 用户自己在模型登记文件里写的服务：只读，列出显示名与模型；不查它的密钥。模型登记文件里只有助手用的那一类模型，所以用途是缺省的那一种。 */
 function externalViews(models: Record<string, any> | null, dir: PiDirSettings): ProviderView[] {
   const providers = models?.providers;
   if (!providers || typeof providers !== "object") return [];
@@ -314,10 +321,10 @@ function externalViews(models: Record<string, any> | null, dir: PiDirSettings): 
   for (const [id, entry] of Object.entries<any>(providers).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (Object.hasOwn(dir.providers, id) || !entry || !Array.isArray(entry.models)) continue;
     out.push({
-      id, managed: false, kind: null, name: typeof entry.name === "string" && entry.name ? entry.name : id,
+      id, managed: false, kind: null, purpose: DEFAULT_PURPOSE, name: typeof entry.name === "string" && entry.name ? entry.name : id,
       base_url: null, key: null, status: null, models_fetched_at: null, in_use: inUse(dir.selection, id),
       models: entry.models.filter((m: any) => m && typeof m.id === "string").map((m: any) => ({
-        id: m.id, type: "language" as const, enabled: true, context_window: positive(m.contextWindow), context_source: null,
+        id: m.id, enabled: true, context_window: positive(m.contextWindow), context_source: null,
       })),
     });
   }
@@ -356,7 +363,7 @@ export interface EmbeddingTarget {
   kind: Kind | null;
   /** 模型服务的显示名；不在名单上时是服务名。 */
   name: string;
-  /** 调嵌入模型的地址；Codex 订阅与不在名单上的模型服务是 null。 */
+  /** 调嵌入模型的地址；不在名单上的、提供的不是嵌入模型的模型服务是 null。 */
   url: string | null;
   key: string | null;
 }
@@ -369,7 +376,7 @@ export function embeddingTarget(ctx: Context): EmbeddingTarget | null {
   const chosen = { provider_id: ref.provider, model: ref.model, query_prefix: ref.query_prefix };
   const p = dir.providers[ref.provider];
   if (!p) return { ...chosen, kind: null, name: ref.provider, url: null, key: null };
-  if (p.kind === "codex" || p.base_url === null) return { ...chosen, kind: p.kind, name: p.name, url: null, key: null };
+  if (p.purpose !== "embedding" || p.base_url === null) return { ...chosen, kind: p.kind, name: p.name, url: null, key: null };
   return { ...chosen, kind: p.kind, name: p.name, url: embeddingsUrl(p.kind, p.base_url), key: keyOf(readForView(authFile(ctx)), ref.provider) };
 }
 
@@ -381,14 +388,41 @@ function checkFilesWritable(ctx: Context): void {
   readForWrite(authFile(ctx));
 }
 
-/** 写进模型登记文件的那一项：只动产品管的几个字段，这一项里用户另加的字段保留。 */
+/**
+ * 给还没定用途的模型服务定用途（设置文件第 1 版留下的；规则见 product_settings.ts 的 migratePurposes）。拆出来的模型服务照抄原来的
+ * 密钥，并在模型登记文件里写上它那一项。返回给日志的话，没有要迁移的时候是空的，也不碰任何文件。任务服务启动时调用一次。
+ */
+export async function migrateProviderPurposes(ctx: Context): Promise<string[]> {
+  if (!needsPurposeMigration(agentDir(ctx), ctx.env)) return [];
+  checkFilesWritable(ctx);
+  const taken = new Set(Object.keys(readForView(modelsFile(ctx))?.providers ?? {}));
+  const outcome = await migratePurposes(agentDir(ctx), taken, ctx.env);
+  if (outcome.split.length) {
+    const auth = readForView(authFile(ctx));
+    for (const { from, to } of outcome.split) {
+      const key = keyOf(auth, from);
+      if (key !== null) await syncKey(ctx, to, key);
+    }
+    await syncModels(ctx, readPiDirSettings(agentDir(ctx), ctx.env), outcome.split.map((s) => s.to));
+  }
+  return outcome.notes;
+}
+
+/** 改模型配置之前先保证用途都定了：任务服务启动时已经迁移过，这里给没有经过启动就改配置的情形兜底（没有要迁移的时候只读一次设置文件）。 */
+async function ensurePurposes(ctx: Context): Promise<void> {
+  for (const note of await migrateProviderPurposes(ctx)) console.log(note);
+}
+
+/** 写进模型登记文件的那一项：只动产品管的几个字段，这一项里用户另加的字段保留。提供的不是助手用的那一类模型时，模型清单是空的。 */
 function piEntry(p: StoredProvider, existing: any): Record<string, any> {
   const entry: Record<string, any> = existing && typeof existing === "object" && !Array.isArray(existing) ? { ...existing } : {};
   entry.baseUrl = piBaseUrl(p.kind, p.base_url!);
   entry.api = "openai-completions";
   entry.apiKey = NO_KEY;
   if (KINDS[p.kind].local) entry.compat = { ...(entry.compat ?? {}), supportsDeveloperRole: false, supportsReasoningEffort: false };
-  entry.models = p.models.filter((m) => m.enabled && m.type === "language").map((m) => ({ id: m.id, ...(m.context_window ? { contextWindow: m.context_window } : {}) }));
+  entry.models = PURPOSE_INFO[p.purpose].registered_with_pi
+    ? p.models.filter((m) => m.enabled).map((m) => ({ id: m.id, ...(m.context_window ? { contextWindow: m.context_window } : {}) }))
+    : [];
   return entry;
 }
 
@@ -427,11 +461,8 @@ async function syncKey(ctx: Context, id: string, key: string | null): Promise<vo
   }, 0o600);
 }
 
-function newId(kind: Kind, dir: PiDirSettings, models: Record<string, any> | null): string {
-  const taken = new Set([...Object.keys(dir.providers), ...Object.keys(models?.providers ?? {})]);
-  const base = `${ID_PREFIX}${kind}`;
-  if (!taken.has(base)) return base;
-  for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+function newId(kind: Kind, purpose: Purpose, dir: PiDirSettings, models: Record<string, any> | null): string {
+  return newProviderId(kind, purpose, new Set([...Object.keys(dir.providers), ...Object.keys(models?.providers ?? {})]));
 }
 
 function textField(body: Record<string, any>, name: string): string | undefined {
@@ -458,10 +489,14 @@ function managedOrThrow(dir: PiDirSettings, id: string): StoredProvider {
 
 /** POST /api/v1/model-config/providers */
 export async function addProvider(ctx: Context, body: Record<string, any>) {
+  if (!isPurpose(body.purpose)) throw rejected("purpose", "请选择这个模型服务提供哪一类模型。");
+  const purpose = body.purpose;
   if (!isKind(body.kind)) throw rejected("kind", "请选择模型服务的种类。");
   const kind = body.kind;
   const info = KINDS[kind];
-  const name = (textField(body, "name") ?? "").trim() || info.name;
+  if (PURPOSE_INFO[purpose].not_offered_by.includes(kind)) throw rejected("kind", `${info.name}没有${PURPOSE_INFO[purpose].name}。`);
+  await ensurePurposes(ctx);
+  const name = (textField(body, "name") ?? "").trim() || nameWithPurpose(info.name, purpose);
   let base: string | null = null;
   let key: string | null = null;
   if (kind !== "codex") {
@@ -483,8 +518,8 @@ export async function addProvider(ctx: Context, body: Record<string, any>) {
   }
   const models = readForView(modelsFile(ctx));
   const id = await updatePiDirSettings(agentDir(ctx), (dir) => {
-    const fresh = newId(kind, dir, models);
-    dir.providers[fresh] = { kind, name, base_url: base, models_fetched_at: null, status: checked, models: [] };
+    const fresh = newId(kind, purpose, dir, models);
+    dir.providers[fresh] = { kind, purpose, name, base_url: base, models_fetched_at: null, status: checked, models: [] };
     return fresh;
   }, ctx.env);
   if (kind !== "codex") {
@@ -502,7 +537,7 @@ export async function addProvider(ctx: Context, body: Record<string, any>) {
   return { ok: true, provider: await providerView(ctx, id) };
 }
 
-function parseModels(value: unknown, kind: Kind): StoredModel[] {
+function parseModels(value: unknown, purpose: Purpose): StoredModel[] {
   if (!Array.isArray(value)) throw rejected("models", "models 应当是一个列表。");
   const seen = new Set<string>();
   const out: StoredModel[] = [];
@@ -511,30 +546,30 @@ function parseModels(value: unknown, kind: Kind): StoredModel[] {
     if (!id) throw rejected("models", "每个模型都要有模型名。");
     if (seen.has(id)) throw rejected("models", `模型「${id}」写了两次。`);
     seen.add(id);
-    const type: ModelType = raw.type === "embedding" ? "embedding" : "language";
-    if (kind === "codex" && type === "embedding") throw rejected("models", "Codex 订阅没有嵌入模型。");
     const cw = raw.context_window;
     if (cw !== null && cw !== undefined && positive(cw) === null) throw rejected("models", `模型「${id}」的上下文长度应当是一个正整数。`);
     const enabled = raw.enabled === true;
-    if (enabled && type === "language" && positive(cw) === null) throw rejected("models", `模型「${id}」还没有填上下文长度，填了才能保存。`);
-    out.push({ id, type, enabled, context_window: positive(cw), context_source: positive(cw) === null ? null : raw.context_source === "service" ? "service" : "user" });
+    if (enabled && PURPOSE_INFO[purpose].needs_context_window && positive(cw) === null) throw rejected("models", `模型「${id}」还没有填上下文长度，填了才能保存。`);
+    out.push({ id, enabled, context_window: positive(cw), context_source: positive(cw) === null ? null : raw.context_source === "service" ? "service" : "user" });
   }
   return out;
 }
 
 /** 选中的模型还在不在：停用或删掉被选中的模型时拒绝。 */
 function guardSelection(dir: PiDirSettings, id: string, models: StoredModel[]): void {
-  for (const [what, ref] of [["language", dir.selection.language], ["embedding", dir.selection.embedding]] as const) {
+  for (const what of PURPOSES) {
+    const ref = dir.selection[what];
     if (!ref || ref.provider !== id) continue;
     const m = models.find((x) => x.id === ref.model);
-    if (!m || !m.enabled || m.type !== what) {
-      throw new ApiError("in_use", `模型「${ref.model}」正被选为${what === "language" ? "助手用的语言模型" : "查找用的嵌入模型"}，先换成别的模型再停用它。`, { provider_id: id, model_id: ref.model });
+    if (!m || !m.enabled) {
+      throw new ApiError("in_use", `模型「${ref.model}」正被选为${PURPOSE_INFO[what].role}，先换成别的模型再停用它。`, { provider_id: id, model_id: ref.model });
     }
   }
 }
 
 /** POST /api/v1/model-config/providers/{id} */
 export async function updateProvider(ctx: Context, id: string, body: Record<string, any>) {
+  await ensurePurposes(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const p = managedOrThrow(current, id);
   const name = textField(body, "name");
@@ -543,7 +578,7 @@ export async function updateProvider(ctx: Context, id: string, body: Record<stri
   const base = p.kind === "codex" || givenBase === undefined ? p.base_url : checkBaseUrl(givenBase);
   const key = p.kind === "codex" || givenKey === undefined ? undefined : givenKey.trim() || null;
   if (key === null && KINDS[p.kind].key === "required") throw rejected("api_key", "请填写 API 密钥。");
-  const models = body.models === undefined ? undefined : parseModels(body.models, p.kind);
+  const models = body.models === undefined ? undefined : parseModels(body.models, p.purpose);
   if (models) guardSelection(current, id, models);
   checkFilesWritable(ctx);
   let checked: ProviderStatus | undefined;
@@ -573,11 +608,12 @@ export async function updateProvider(ctx: Context, id: string, body: Record<stri
 
 /** POST /api/v1/model-config/providers/{id}/delete */
 export async function deleteProvider(ctx: Context, id: string) {
+  await ensurePurposes(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const p = managedOrThrow(current, id);
   const using = inUse(current.selection, id);
   if (using.length) {
-    throw new ApiError("in_use", `这个模型服务的模型正被选为${using.includes("language") ? "助手用的语言模型" : "查找用的嵌入模型"}，先换成别的模型再删除它。`, { provider_id: id });
+    throw new ApiError("in_use", `这个模型服务的模型正被选为${PURPOSE_INFO[using[0]].role}，先换成别的模型再删除它。`, { provider_id: id });
   }
   checkFilesWritable(ctx);
   const dir = await updatePiDirSettings(agentDir(ctx), (d) => {
@@ -600,6 +636,7 @@ export async function deleteProvider(ctx: Context, id: string) {
 
 /** POST /api/v1/model-config/providers/{id}/check */
 export async function checkProvider(ctx: Context, id: string) {
+  await ensurePurposes(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const p = managedOrThrow(current, id);
   let checked: ProviderStatus;
@@ -617,8 +654,8 @@ export async function checkProvider(ctx: Context, id: string) {
   return { ok: true, provider: await providerView(ctx, id) };
 }
 
-/** 把取回的清单并进已有的：新的默认不勾选；已有的保留勾选与种类，上下文长度只在不是用户填的时候用查到的值更新。清单里没有的已有模型保留。 */
-export function mergeModels(existing: StoredModel[], listed: Listed["models"]): StoredModel[] {
+/** 把取回的清单并进已有的：新的默认不勾选；已有的保留勾选，上下文长度只在不是用户填的时候用查到的值更新。清单里没有的已有模型保留。 */
+export function mergeModels(existing: StoredModel[], listed: { id: string; context_window: number | null }[]): StoredModel[] {
   const out = existing.map((m) => ({ ...m }));
   for (const got of listed) {
     const known = out.find((m) => m.id === got.id);
@@ -628,7 +665,7 @@ export function mergeModels(existing: StoredModel[], listed: Listed["models"]): 
         known.context_source = "service";
       }
     } else {
-      out.push({ id: got.id, type: got.type, enabled: false, context_window: got.context_window, context_source: got.context_window === null ? null : "service" });
+      out.push({ id: got.id, enabled: false, context_window: got.context_window, context_source: got.context_window === null ? null : "service" });
     }
   }
   return out;
@@ -636,14 +673,17 @@ export function mergeModels(existing: StoredModel[], listed: Listed["models"]): 
 
 /** POST /api/v1/model-config/providers/{id}/fetch-models */
 export async function fetchModels(ctx: Context, id: string) {
+  await ensurePurposes(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const p = managedOrThrow(current, id);
   const listed = await listModels(ctx, p.kind, p.base_url, keyOf(readForView(authFile(ctx)), id));
   if (listed.result === "listed") {
+    // 分辨得出类型的模型服务，只留与这个模型服务的用途对得上的模型；分辨不出的全留。
+    const offered = tellsModelType(p.kind) ? listed.models.filter((m) => m.type === p.purpose) : listed.models;
     checkWritable(ctx.env);
     await updatePiDirSettings(agentDir(ctx), (d) => {
       const q = managedOrThrow(d, id);
-      q.models = mergeModels(q.models, listed.models);
+      q.models = mergeModels(q.models, offered);
       q.models_fetched_at = clock.now();
     }, ctx.env);
   }
@@ -674,21 +714,27 @@ export async function contextWindow(ctx: Context, id: string, body: Record<strin
 
 /** POST /api/v1/model-config/selection */
 export async function select(ctx: Context, body: Record<string, any>) {
+  await ensurePurposes(ctx);
   const current = readPiDirSettings(agentDir(ctx), ctx.env);
   const external = externalViews(readForView(modelsFile(ctx)), current);
+  /** 名单上的模型服务，或者手工登记的那一组里的。 */
+  const providerOf = (id: string): { name: string; purpose: Purpose; managed: boolean; models: StoredModel[] } | undefined => {
+    const managed = current.providers[id];
+    if (managed) return { name: managed.name, purpose: managed.purpose, managed: true, models: managed.models };
+    const found = external.find((e) => e.id === id);
+    return found && { name: found.name, purpose: found.purpose, managed: false, models: found.models };
+  };
   const pick = (value: any, type: ModelType) => {
     if (value === null || value === undefined) return null;
     const providerId = typeof value.provider_id === "string" ? value.provider_id : "";
     const modelId = typeof value.model_id === "string" ? value.model_id : "";
-    const field = type === "language" ? "language" : "embedding";
-    const label = type === "language" ? "语言模型" : "嵌入模型";
-    const managed = current.providers[providerId];
-    const models = managed ? managed.models : type === "language" ? external.find((e) => e.id === providerId)?.models : undefined;
-    if (!models) throw rejected(field, `没有这个模型服务：${providerId}。`);
-    const m = models.find((x) => x.id === modelId);
-    if (!m || !m.enabled) throw rejected(field, `模型服务「${managed?.name ?? providerId}」里没有勾选模型「${modelId}」。`);
-    if (m.type !== type) throw rejected(field, `模型「${modelId}」不是${label}。`);
-    if (type === "language" && managed && m.context_window === null) throw rejected(field, `模型「${modelId}」还没有填上下文长度。`);
+    const field = type;
+    const from = providerOf(providerId);
+    if (!from) throw rejected(field, `没有这个模型服务：${providerId}。`);
+    if (from.purpose !== type) throw rejected(field, `模型服务「${from.name}」提供的不是${PURPOSE_INFO[type].name}。`);
+    const m = from.models.find((x) => x.id === modelId);
+    if (!m || !m.enabled) throw rejected(field, `模型服务「${from.name}」里没有勾选模型「${modelId}」。`);
+    if (PURPOSE_INFO[type].needs_context_window && from.managed && m.context_window === null) throw rejected(field, `模型「${modelId}」还没有填上下文长度。`);
     return { provider: providerId, model: modelId };
   };
   const language = pick(body.language, "language");

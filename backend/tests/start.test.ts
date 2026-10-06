@@ -92,6 +92,58 @@ test("没给 --web 时行为不变：不以 /api/ 开头的路径也是接口的
   }
 });
 
+test("启动时给上一版设置文件里没有用途的模型服务定用途，日志里记下；改写不了共用文件时服务照常起来，日志里写明原因", async () => {
+  const dir = join(tmp, "purposes");
+  const agent = join(dir, "pi-agent");
+  mkdirSync(agent, { recursive: true });
+  const settings = join(dir, "settings.json");
+  const old = JSON.stringify({ version: 1, pi_dirs: { [agent]: { selection: { language: null, embedding: null }, providers: {
+    "taskwright-ollama": { kind: "ollama", name: "本机 ollama", base_url: "http://127.0.0.1:11434", models_fetched_at: null, status: null, models: [
+      { id: "qwen3:8b", type: "language", enabled: true, context_window: 8192, context_source: "user" },
+      { id: "bge-m3", type: "embedding", enabled: true, context_window: null, context_source: null },
+    ] },
+  } } } });
+  const names = ["PI_CODING_AGENT_DIR", "TASKWRIGHT_SETTINGS_FILE", "TASKWRIGHT_LOG_DIR"] as const;
+  const saved = names.map((name) => process.env[name]);
+  process.env.PI_CODING_AGENT_DIR = agent;
+  process.env.TASKWRIGHT_SETTINGS_FILE = settings;
+  process.env.TASKWRIGHT_LOG_DIR = join(dir, "logs");
+  const lines = captureConsole();
+  const startAndStop = async (): Promise<string[]> => {
+    const from = lines.length;
+    const started = await startService({ port: 0, tasks: join(dir, "tasks"), runs: join(dir, "runs"), knowledge: join(dir, "knowledge"), profile: "fake", ownProcess: false });
+    await started.stop();
+    return lines.slice(from);
+  };
+  try {
+    // 模型登记文件里有注释，改写不了：服务照常起来，设置文件一字不动
+    writeFileSync(settings, old);
+    writeFileSync(join(agent, "models.json"), '{\n  // 我的注释\n  "providers": {}\n}\n');
+    const refused = await startAndStop();
+    assert.equal(refused.filter((line) => line.startsWith("没能给设置文件里的模型服务定用途：")).length, 1, refused.join("\n"));
+    assert.equal(readFileSync(settings, "utf-8"), old);
+    // 改写得了：两类模型都有的那一个拆成两个，日志里记一句
+    writeFileSync(join(agent, "models.json"), JSON.stringify({ providers: {} }));
+    const done = await startAndStop();
+    assert.equal(done.filter((line) => line.includes("既有语言模型又有嵌入模型，已经拆成两个")).length, 1, done.join("\n"));
+    const now = JSON.parse(readFileSync(settings, "utf-8"));
+    assert.equal(now.version, 2);
+    assert.deepEqual(Object.entries<any>(now.pi_dirs[agent].providers).map(([id, p]) => [id, p.purpose, p.models.map((m: any) => m.id)]), [
+      ["taskwright-ollama", "language", ["qwen3:8b"]], ["taskwright-ollama-embedding", "embedding", ["bge-m3"]],
+    ]);
+    // 再起一次：没有要迁移的，日志里不再提，文件不再写
+    const before = readFileSync(settings, "utf-8");
+    const again = await startAndStop();
+    assert.equal(again.some((line) => line.includes("用途") || line.includes("拆成两个")), false, again.join("\n"));
+    assert.equal(readFileSync(settings, "utf-8"), before);
+  } finally {
+    names.forEach((name, i) => {
+      if (saved[i] === undefined) delete process.env[name];
+      else process.env[name] = saved[i];
+    });
+  }
+});
+
 test("静态文件的两个小函数：哪些路径归网页；网页目录里没有首页时回 404", () => {
   assert.deepEqual(["/", "/tasks", "/apiary", "/api", "/api/v1/tasks"].map(isWebPath), [true, true, true, false, false]);
   const empty = join(tmp, "empty-web");
