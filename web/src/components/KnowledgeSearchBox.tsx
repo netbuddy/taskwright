@@ -53,7 +53,7 @@ export function KnowledgeSearchBox({ library, model }: { library: EmbeddedLibrar
             : result.hits.length === 0 ? <div className="none">{SEARCH_NO_CHUNKS_TEXT}</div>
               : (
                 <>
-                  <div className="cap">在 {result.chunks} 个片段里，最相近的 {result.hits.length} 个。相近程度在 0 到 1 之间，越大越相近。</div>
+                  <div className="cap">在 {result.chunks} 个片段里，最相近的 {result.hits.length} 个。相近程度最大是 1，越大越相近。</div>
                   {result.hits.map((hit, i) => (
                     <div className="hit" key={i} data-testid="kb-search-hit">
                       <div className="hh">

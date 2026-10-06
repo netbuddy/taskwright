@@ -107,7 +107,7 @@ test("查到了：把要找的话、任务选用的知识库的编号与要几�
   const got = await searchKnowledge(makeTask(), root, { query: "  图书超期不还怎样罚款  " });
   assert.deepEqual(hits, [{ method: "POST", path: SEARCH_PATH, body: { query: "图书超期不还怎样罚款", libraries: ["general", "lib-a1"], limit: 5 } }]);
   assert.equal(got.text, [
-    "按意思查找「图书超期不还怎样罚款」：在这个任务选用的 2 个知识库、37 个片段里，最相近的 2 个如下。相近程度在 0 到 1 之间，越大越相近；它只说明意思相近，不说明这就是你要找的规定。",
+    "按意思查找「图书超期不还怎样罚款」：在这个任务选用的 2 个知识库、37 个片段里，最相近的 2 个如下。相近程度最大是 1，越大越相近；它只说明意思相近，不说明这就是你要找的规定。",
     "",
     "1. 相近程度 0.71 · 知识库「通用知识库」《借阅规范.md》 · 片段标题：借阅规范 / 逾期",
     `   读原文：${join(root, "general", "files", "借阅规范.md")} 第 5 行`,

@@ -189,7 +189,7 @@ export async function searchKnowledge(
   };
   const lines = [
     `按意思查找「${query}」：在这个任务选用的 ${Number(body.libraries) || selected.length} 个知识库、${Number(body.chunks) || hits.length} 个片段里，最相近的 ${hits.length} 个如下。` +
-      "相近程度在 0 到 1 之间，越大越相近；它只说明意思相近，不说明这就是你要找的规定。",
+      "相近程度最大是 1，越大越相近；它只说明意思相近，不说明这就是你要找的规定。",
     "",
   ];
   hits.forEach((hit, i) => lines.push(...hitLines(i + 1, hit, readPathOf(hit)), ""));

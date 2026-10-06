@@ -270,7 +270,7 @@ describe("知识库页面", () => {
     fireEvent.click(screen.getByTestId("kb-search-button"));
     await waitFor(() => expect(calls.search).toHaveBeenCalledWith("图书超期不还怎样罚款", ["general"]));
     const result = await screen.findByTestId("kb-search-result");
-    expect(within(result).getByText("在 37 个片段里，最相近的 3 个。相近程度在 0 到 1 之间，越大越相近。")).toBeTruthy();
+    expect(within(result).getByText("在 37 个片段里，最相近的 3 个。相近程度最大是 1，越大越相近。")).toBeTruthy();
     const hits = within(result).getAllByTestId("kb-search-hit");
     expect(hits.map((h) => h.querySelector(".hh")!.textContent)).toEqual([
       "相近程度 0.71借阅规范.md借阅规范 / 逾期第 31 到 35 行", "相近程度 0.63需求说明.docx3.1.1 逾期罚款第 75 到 78 段", "相近程度 0.20术语表.txt第 7 行"]);
