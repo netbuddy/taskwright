@@ -772,7 +772,7 @@ export interface ServiceInfo {
   mode: "desktop" | "server";
   pid: number;
   port: number | null;
-  /** model_config：这个页面能不能改模型配置；现在的后端恒为 true，较早的后端没有这一项。model_test：后端有测试语言模型的接口。 */
+  /** model_config：这个页面能不能改模型配置；现在的后端恒为 true，较早的后端没有这一项。model_test：后端有测试模型的接口（语言模型与嵌入模型）。 */
   capabilities: { exit: boolean; model?: boolean; model_config?: boolean; model_test?: boolean; knowledge?: boolean };
   model?: { name: string; reason: string };
   /** 上传上限（字节）、超过时的那句话、允许的扩展名、类型给人看的一串与类型不符时的那句话；旧后端没有这一项，较早的后端没有后三样。 */
@@ -850,7 +850,10 @@ export interface FetchModelsResult {
   provider: Provider;
 }
 
-/** 测试语言模型的结果：让模型读一个小文件并回答文件里写的一个数，这一次通过还是没有通过。 */
+/**
+ * 测试模型的结果，这一次通过还是没有通过。测试语言模型是让模型读一个小文件并回答文件里写的一个数，结果带 tool_calls 与 reply；
+ * 测试嵌入模型是把一句话换算成一串数字，结果带 dimensions。
+ */
 export interface ModelTestResult {
   ok: true;
   result: "passed" | "failed";
@@ -858,11 +861,14 @@ export interface ModelTestResult {
   model: string;
   /** 用时，秒，一位小数。 */
   seconds: number;
-  tool_calls: number;
-  /** 问模型的那句话。 */
+  /** 只有语言模型的结果有：模型调用了几次工具。 */
+  tool_calls?: number;
+  /** 语言模型：问模型的那句话。嵌入模型：送去换算的那句话（前面带着查询前缀）。 */
   question: string;
-  /** 模型最后一句回复，最多 200 个字；没有回复时是空串。 */
-  reply: string;
+  /** 只有语言模型的结果有：模型最后一句回复，最多 200 个字；没有回复时是空串。 */
+  reply?: string;
+  /** 只有嵌入模型的结果有：算出来的数字串的长度；没有拿到数字串时是 null。 */
+  dimensions?: number | null;
   /** 没有通过时的原因；通过时是 null。 */
   reason: string | null;
 }

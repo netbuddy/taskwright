@@ -1,4 +1,4 @@
-// 设置页面的「模型」一栏：只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型。
+// 设置页面的「模型」一栏：只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型、测试嵌入模型。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -47,6 +47,12 @@ const tested = (over: Partial<ModelTestResult> = {}): ModelTestResult => ({
   question: "请读当前目录下的文件 inventory.txt，然后用一句话回答：这批货一共有多少箱？", reply: "这批货一共有 42 箱。", reason: null, ...over,
 });
 const chosen = { selection: { language: { provider_id: "taskwright-deepseek", model_id: "deepseek-chat" }, embedding: null } };
+/** 两种模型都选定了；嵌入模型的查询前缀里有换行。 */
+const PREFIX = "Instruct: 找相关段落\nQuery:";
+const bothChosen = { selection: { ...chosen.selection, embedding: { provider_id: "taskwright-ollama", model_id: "embed:large", query_prefix: PREFIX } } };
+const embedded = (over: Partial<ModelTestResult> = {}): ModelTestResult => ({
+  ok: true, result: "passed", model: "taskwright-ollama/embed:large", seconds: 0.4, question: `${PREFIX}这批货一共有 42 箱。`, dimensions: 1024, reason: null, ...over,
+});
 
 function page(cfg: ModelConfig, info: ServiceInfo = service) {
   vi.spyOn(api, "serviceInfo").mockResolvedValue(info);
@@ -216,14 +222,22 @@ describe("设置页面的「模型」一栏", () => {
     expect(screen.queryByTestId("model-m-5")).toBeNull();
   });
 
-  it("后端没有测试接口时不显示「测试」；有接口时只有语言模型那一行有，没有模型可测时是灰的", async () => {
-    page(config(chosen));
+  it("后端没有测试接口时两行都不显示「测试」；有接口时两行都有，没有模型可测时是灰的：嵌入模型没有选定就没有可测的，不拿语言模型的那一个顶替", async () => {
+    page(config(bothChosen));
     await screen.findByTestId("current-language");
     expect(screen.queryByTestId("test-language-button")).toBeNull();
+    expect(screen.queryByTestId("test-embedding-button")).toBeNull();
     cleanup();
     page(config({ fallback: null }), withTest);
     expect(await screen.findByTestId("test-language-button")).toBeDisabled();
-    expect(screen.queryByTestId("test-embedding-button")).toBeNull();
+    expect(screen.getByTestId("test-embedding-button")).toBeDisabled();
+    cleanup();
+    page(config(), withTest);
+    expect(await screen.findByTestId("test-language-button")).not.toBeDisabled();
+    expect(screen.getByTestId("test-embedding-button")).toBeDisabled();
+    cleanup();
+    page(config(bothChosen), withTest);
+    expect(await screen.findByTestId("test-embedding-button")).not.toBeDisabled();
   });
 
   it("点「测试」先问一句，写明会发一次真实的请求与可能的费用；点取消不发请求", async () => {
@@ -298,6 +312,117 @@ describe("设置页面的「模型」一栏", () => {
     fireEvent.click(screen.getByTestId("use-model"));
     expect(await screen.findByText("gateway-chat", { selector: ".mname" })).toBeInTheDocument();
     expect(screen.queryByTestId("test-language-result")).toBeNull();
+  });
+
+  it("嵌入模型点「测试」先问一句，写明是把一句话换算成一串数字、会发一次真实的请求与可能的费用；点取消不发请求", async () => {
+    page(config(bothChosen), withTest);
+    const run = vi.spyOn(api, "testModel").mockResolvedValue(embedded());
+    fireEvent.click(await screen.findByTestId("test-embedding-button"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("测试嵌入模型");
+    expect(dialog).toHaveTextContent("会用「embed:large」发一次真实的请求：把一句话换算成一串数字。商业接口可能产生很少的费用。");
+    expect(within(dialog).getByRole("button", { name: "开始测试" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    expect(run).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("test-embedding-result")).toBeNull();
+  });
+
+  it("嵌入模型测试当中按钮写「正在测试……」，两行的「测试」与「更换」都不能点；通过之后写这一次通过与用时、送去换算的话（前缀里的换行保留）、数字串的长度", async () => {
+    page(config(bothChosen), withTest);
+    let finish: (r: ModelTestResult) => void = () => {};
+    const run = vi.spyOn(api, "testModel").mockReturnValue(new Promise((ok) => { finish = ok; }));
+    fireEvent.click(await screen.findByTestId("test-embedding-button"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "开始测试" }));
+    await waitFor(() => expect(screen.getByTestId("test-embedding-button")).toHaveTextContent("正在测试……"));
+    expect(run).toHaveBeenCalledWith("embedding");
+    expect(screen.getByTestId("test-language-button")).toBeDisabled();
+    expect(screen.getByTestId("test-language-button")).toHaveTextContent(/^测试$/);
+    expect(screen.getByTestId("pick-language-button")).toBeDisabled();
+    expect(screen.getByTestId("pick-embedding-button")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("test-embedding-button"));
+    fireEvent.click(screen.getByTestId("test-language-button"));
+    expect(run).toHaveBeenCalledTimes(1);
+    finish(embedded());
+    const result = await screen.findByTestId("test-embedding-result");
+    expect(result.querySelector(".th")).toHaveTextContent(/^这一次测试通过，用时 0.4 秒。$/);
+    const sent = screen.getByTestId("test-embedding-question");
+    expect(sent.textContent).toBe("送去换算的话：Instruct: 找相关段落\nQuery:这批货一共有 42 箱。");
+    expect(sent).toHaveClass("sent");
+    expect(screen.getByTestId("test-embedding-dimensions")).toHaveTextContent(/^算出来的数字串长度：1024$/);
+    expect(result).toHaveClass("ok");
+    expect(result).not.toHaveTextContent("可以用");
+    expect(screen.queryByTestId("test-language-result")).toBeNull();
+    for (const id of ["test-embedding-button", "test-language-button", "pick-language-button", "pick-embedding-button"]) expect(screen.getByTestId(id)).not.toBeDisabled();
+  });
+
+  it("语言模型测试当中，嵌入模型那一行的「测试」与「更换」也不能点", async () => {
+    page(config(bothChosen), withTest);
+    let finish: (r: ModelTestResult) => void = () => {};
+    const run = vi.spyOn(api, "testModel").mockReturnValue(new Promise((ok) => { finish = ok; }));
+    fireEvent.click(await screen.findByTestId("test-language-button"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "开始测试" }));
+    await waitFor(() => expect(screen.getByTestId("test-language-button")).toHaveTextContent("正在测试……"));
+    expect(screen.getByTestId("test-embedding-button")).toBeDisabled();
+    expect(screen.getByTestId("pick-embedding-button")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("test-embedding-button"));
+    expect(run).toHaveBeenCalledTimes(1);
+    finish(tested());
+    await screen.findByTestId("test-language-result");
+    expect(screen.getByTestId("test-embedding-button")).not.toBeDisabled();
+    expect(screen.getByTestId("pick-embedding-button")).not.toBeDisabled();
+  });
+
+  it("嵌入模型没有通过时只写这一次没有通过与原因，不写送去的话与长度", async () => {
+    page(config(bothChosen), withTest);
+    vi.spyOn(api, "testModel").mockResolvedValue(embedded({ result: "failed", dimensions: null, reason: "送去 1 段文字，拿回 0 条数字串。" }));
+    fireEvent.click(await screen.findByTestId("test-embedding-button"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "开始测试" }));
+    const result = await screen.findByTestId("test-embedding-result");
+    expect(result).toHaveTextContent(/^这一次测试没有通过：送去 1 段文字，拿回 0 条数字串。$/);
+    expect(result).toHaveClass("bad");
+    expect(screen.queryByTestId("test-embedding-question")).toBeNull();
+    expect(screen.queryByTestId("test-embedding-dimensions")).toBeNull();
+  });
+
+  it("更换了哪一种模型就清掉哪一种的测试结果，另一种的留着；只改嵌入模型的查询前缀也算更换", async () => {
+    const load = page(config(bothChosen), withTest);
+    const run = vi.spyOn(api, "testModel").mockImplementation(async (type) => (type === "language" ? tested() : embedded()));
+    const start = async () => fireEvent.click((await screen.findAllByRole("button", { name: "开始测试" })).at(-1)!);
+    fireEvent.click(await screen.findByTestId("test-language-button"));
+    await start();
+    await screen.findByTestId("test-language-result");
+    fireEvent.click(screen.getByTestId("test-embedding-button"));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "开始测试" })).toHaveLength(2));
+    await start();
+    await screen.findByTestId("test-embedding-result");
+    expect(run).toHaveBeenCalledTimes(2);
+    // 测嵌入模型不清语言模型的结果。
+    expect(screen.getByTestId("test-language-result")).toBeInTheDocument();
+    // 只改查询前缀。
+    const next = { ...bothChosen.selection, embedding: { ...bothChosen.selection.embedding, query_prefix: "查询：" } };
+    const select = vi.spyOn(api, "selectModels").mockResolvedValue({ ok: true, note: "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。", selection: next });
+    fireEvent.click(screen.getByTestId("pick-embedding-button"));
+    fireEvent.click(within(await screen.findByTestId("pick-embedding")).getByText("高级"));
+    fireEvent.change(screen.getByTestId("query-prefix"), { target: { value: "查询：" } });
+    load.mockResolvedValue(config({ selection: next }));
+    fireEvent.click(screen.getByTestId("use-model"));
+    await waitFor(() => expect(select).toHaveBeenCalledWith(next));
+    await waitFor(() => expect(screen.queryByTestId("test-embedding-result")).toBeNull());
+    expect(screen.getByTestId("test-language-result")).toBeInTheDocument();
+    // 再测一次嵌入模型，然后更换语言模型：清掉的是语言模型的结果。
+    fireEvent.click(screen.getByTestId("test-embedding-button"));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "开始测试" })).toHaveLength(3));
+    await start();
+    await screen.findByTestId("test-embedding-result");
+    const other = { ...next, language: { provider_id: "my-gateway", model_id: "gateway-chat" } };
+    select.mockResolvedValue({ ok: true, note: "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。", selection: other });
+    fireEvent.click(screen.getByTestId("pick-language-button"));
+    fireEvent.click(within(await screen.findByTestId("pick-language")).getByTestId("pick-my-gateway-gateway-chat"));
+    load.mockResolvedValue(config({ selection: other }));
+    fireEvent.click(screen.getByTestId("use-model"));
+    expect(await screen.findByText("gateway-chat", { selector: ".mname" })).toBeInTheDocument();
+    expect(screen.queryByTestId("test-language-result")).toBeNull();
+    expect(screen.getByTestId("test-embedding-result")).toBeInTheDocument();
   });
 
   it("测试语言模型的请求等 120 秒：后端到 90 秒之后还要停助手，119 秒时还在等，到 120 秒才报等了太久", async () => {
