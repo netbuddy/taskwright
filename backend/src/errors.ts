@@ -27,6 +27,8 @@ export const STATUS: Record<string, number> = {
   config_locked: 503,
   // 测试模型（docs/api.md §10）：已经有一个测试在跑。
   busy: 409,
+  // 知识库按意思查找（docs/api.md §11）：换算要找的那句话时模型服务出了事（连不上、到时间没有回答、回答了错误）。
+  embedding_failed: 502,
 };
 
 /** 接口拒绝一个请求。message 是给用户看的一句中文。 */
