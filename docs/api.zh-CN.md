@@ -81,7 +81,7 @@ data: {
 | `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at` |
 | `material_removed` | 删除了一份材料（第 5.1 节） | `at`、`path`；由 Word 材料生成的文件随它一起删掉，不另发事件 |
 | `work_summary` | 一个工作单元结束后 | `work_id`、`at`、`seconds`、`step_count`、`stages`（每项带 `text`）、`outcome`（这个工作单元怎样结束，取值与 `work_ended` 相同；刷新后读到的对话里的 `work_summary` 消息带同样的值） |
-| `work_ended` | 智能体这一轮工作稳定下来 | `work_id`、`at`、`seconds`、`step_count`（与 `work_summary` 的相同，由会话记录算出，被停下时一条消息里没有开始执行的工具调用也算在内；会话记录读不出这次工作时用本轮记下的计数）、`outcome`（`replied`、`no_reply`、`stopped_by_user`、`failed`；按这个工作单元最后一条助手消息判断，所以调用模型出错、随后自动重试成功的工作单元是 `replied` 或 `no_reply`，不是 `failed`） |
+| `work_ended` | 智能体这一轮工作稳定下来 | `work_id`、`at`、`seconds`、`step_count`（与 `work_summary` 的相同，由会话记录算出，被停下时一条消息里没有开始执行的工具调用也算在内；会话记录读不出这次工作时用本轮记下的计数）、`outcome`（`replied`、`no_reply`、`stopped_by_user`、`failed`、`stopped_by_limit`；前四种按这个工作单元最后一条助手消息判断，所以调用模型出错、随后自动重试成功的工作单元是 `replied` 或 `no_reply`，不是 `failed`；`stopped_by_limit` 是智能体这一轮连续被拒到上限、由工具停下的，见本节末尾「连续被拒的上限」） |
 | `problem` | 需要让用户知道的问题（见第 5.5 节） | `code`、`text`、`retry` |
 | `executor_state` | 执行者的可用状态发生变化 | `state`（`not_started`、`starting`、`idle`、`working`、`exited`、`failed_to_start`）、`text`、`active_session`；续接失败（`session_resume_failed`）之后 `state` 为 `not_started`，`text` 写明助手没有接上这条会话 |
 | `system_note` | 会话开始时的任务状态消息，或固定的兜底提示句 | `message_id`、`at`、`text`、`kind`（`task_status` 或 `reply_fallback`）；任务状态消息的 `text` 是页面上的写法：开头是「这条会话开始时（时刻）的任务状况：」或「接着这条会话继续时（时刻），上次之后交付物的变化：」，只写给助手看的那一行（还在等回应的助手行为）不带；助手看到的原文不变，刷新之后从对话记录读回的也是页面上的写法 |
@@ -178,6 +178,16 @@ data: {
 ### 5.2 智能体回复
 
 只有智能体调用 `reply` 工具且被接受的那次调用，才会成为带 `via_reply_tool: true` 的 `assistant_reply` 事件。如果一个工作单元结束时没有一次被接受的回复，服务器会转发最后一段助手文本，带 `via_reply_tool: false` 且不带 `act`；如果连这个也没有，就发送代码为 `no_reply` 的 `problem`。工作单元因为出错而结束时，改发代码为 `failed` 的 `problem`，文字是「助手这一轮因为出错停下了，你可以再说一句，让它接着做。」。用户让它停下时，两种都不发。被停下或出错结束的工作单元即使没有步骤、也没有回复，也保留它的 `work_summary`，刷新之后也在。
+
+**连续被拒的上限。** 工具拒绝之后模型会再试，产品给它定了上限：自用户最近一句话起，智能体连续被拒到第 5 次时，这个工作单元就此停下，不再请求模型。
+
+- 数的是：`reply` 的每一次被拒，不论原因（这一轮还没有写理解、写的理解不合格、回复的形式不对）；`save_revision` 与 `complete_task` 因为没有合格的理解而被拒（三个工具过的是同一道「先写理解」的门）。这两个工具因为输入不合规被拒不算，那是正常的改正过程。
+- 计数在这几处从头数：用户说了一句话（兜底追加的那句固定的话不算）；这三个工具里任何一个做成了一次。别的工具调用不打断。
+- `reply` 因为形式不对被拒原有的放行规则不变（连续第 5 次放行一条纯文字回复，`degraded` 为真，见第 5.3 节），所以形式不对连着 5 次时是放行，不是停下；没有写理解的回复不放行，因为理解是留痕的根据。
+- 怎样停：第 5 次被拒的那个工具不再只是报错，而是返回一个出错并结束这次运行的结果，结果的 `details` 是 `{stopped: true, rejections, reason_kind}`，`reason_kind` 是 `understanding_missing`、`understanding_invalid` 或 `form`。兜底不再追加那句话。
+- 这时服务器发送代码为 `stopped_by_limit` 的 `problem`，文字是「助手这一轮一直没有按规矩回答，已经停下。你可以再说一句，让它重新来。」，不转发这一轮的助手文本；`work_ended` 与 `work_summary` 的 `outcome` 是 `stopped_by_limit`，刷新之后重算也是它。用户再说一句话，下一个工作单元照常进行。
+- `step` 与过程摘要里，`reply` 被拒按原因分写：「助手还没有写下对这句话的理解，正在补」「助手写的理解不合格，正在改」「回复的形式不对，助手正在改」；停下的那一步写「助手这一轮没有按规矩回答，已经停下」。
+- 停下这件事另经状态栏报一行（键 `taskwright-reply-stopped`，内容是连续被拒了几次、是哪个工具、最后一次的原因），记在后端的补记里，观测台看得到。
 
 ### 5.3 回复的结构
 
