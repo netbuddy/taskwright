@@ -115,7 +115,10 @@ export function embedConfirmOk(changing: boolean): string {
 export function embedStartedText(documents: number): string {
   return `已开始换算知识库里的 ${documents} 份文档，进度在知识库页面上看。`;
 }
-
+/** Codex 订阅的「更新模型目录」：平时不访问外网，点了才访问一次。按钮的字、确认框里的那句、更新好之后的提示。 */
+export const REFRESH_CATALOG_LABEL = "更新模型目录";
+export const REFRESH_CATALOG_CONFIRM = "会访问一次外网，更新可选模型的目录。";
+export const REFRESH_CATALOG_DONE = "模型目录已更新。";
 /** 测试之前确认框的标题与里面的那句：写明会发一次真实的请求。 */
 export function testConfirmTitle(type: ModelType): string {
   return `测试${TYPE_NAME[type]}`;

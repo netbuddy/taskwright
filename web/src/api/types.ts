@@ -884,6 +884,13 @@ export interface ModelConfig {
   providers: Provider[];
 }
 
+/** POST /api/v1/model-config/providers/{id}/refresh-catalog：联网更新一次模型目录的结果；没有成功时 message 是原因。 */
+export interface RefreshCatalogResult {
+  ok: true;
+  result: "refreshed" | "failed";
+  message: string;
+}
+
 export interface FetchModelsResult {
   ok: true;
   result: "listed" | "not_offered" | "failed";

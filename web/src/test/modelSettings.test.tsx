@@ -115,6 +115,68 @@ describe("设置页面的「模型」一栏", () => {
     }
   });
 
+  it("Codex 订阅的详情里有「更新模型目录」，别的模型服务没有；点了先问一句，写明会访问一次外网；点取消不发请求", async () => {
+    page(config({ providers: [codex(), deepseek()] }));
+    const refresh = vi.spyOn(api, "refreshCatalog").mockResolvedValue({ ok: true, result: "refreshed", message: "" });
+    const button = await screen.findByTestId("refresh-catalog");
+    expect(button).toHaveTextContent(/^更新模型目录$/);
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("更新模型目录");
+    expect(dialog).toHaveTextContent("会访问一次外网，更新可选模型的目录。");
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    expect(refresh).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("provider-taskwright-deepseek"));
+    await waitFor(() => expect(screen.getByTestId("provider-detail")).toHaveTextContent("DeepSeek"));
+    expect(screen.getByTestId("fetch-models")).toBeInTheDocument();
+    expect(screen.queryByTestId("refresh-catalog")).toBeNull();
+  });
+
+  it("更新模型目录当中按钮写「正在更新……」，「获取模型列表」不能点；更新好之后提示一句，并随即重新获取一次模型列表", async () => {
+    const fresh = codex({ models: [{ id: "gpt-new", enabled: false, context_window: 272000, context_source: "service" }] });
+    page(config({ providers: [codex()] }));
+    let finish: (r: { ok: true; result: "refreshed" | "failed"; message: string }) => void = () => {};
+    const refresh = vi.spyOn(api, "refreshCatalog").mockReturnValue(new Promise((ok) => { finish = ok; }));
+    const fetched = vi.spyOn(api, "fetchModels").mockResolvedValue({ ok: true, result: "listed", message: "", provider: fresh });
+    fireEvent.click(await screen.findByTestId("refresh-catalog"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "更新" }));
+    await waitFor(() => expect(screen.getByTestId("refresh-catalog")).toHaveTextContent("正在更新……"));
+    expect(refresh).toHaveBeenCalledWith("taskwright-codex");
+    expect(screen.getByTestId("fetch-models")).toBeDisabled();
+    expect(fetched).not.toHaveBeenCalled();
+    finish({ ok: true, result: "refreshed", message: "" });
+    expect(await screen.findByText("模型目录已更新。")).toBeInTheDocument();
+    await waitFor(() => expect(fetched).toHaveBeenCalledWith("taskwright-codex"));
+    expect(await screen.findByTestId("model-gpt-new")).toBeInTheDocument();
+    expect(screen.getByTestId("refresh-catalog")).toHaveTextContent(/^更新模型目录$/);
+    expect(screen.queryByTestId("refresh-note")).toBeNull();
+  });
+
+  it("更新模型目录没有成功时把后端给的原因写在下面，不重新获取模型列表", async () => {
+    page(config({ providers: [codex()] }));
+    const text = "更新模型目录没有成功：没能从外网取回新的模型目录。请检查这台电脑能不能访问外网，稍后再试。";
+    vi.spyOn(api, "refreshCatalog").mockResolvedValue({ ok: true, result: "failed", message: text });
+    const fetched = vi.spyOn(api, "fetchModels");
+    fireEvent.click(await screen.findByTestId("refresh-catalog"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "更新" }));
+    expect(await screen.findByTestId("refresh-note")).toHaveTextContent(text);
+    expect(fetched).not.toHaveBeenCalled();
+    expect(screen.queryByText("模型目录已更新。")).toBeNull();
+    expect(screen.getByTestId("refresh-catalog")).toHaveTextContent(/^更新模型目录$/);
+  });
+
+  it("更新模型目录的接口报错（例如已经在更新）时把那句话提示出来，下面不写原因，也不重新获取模型列表", async () => {
+    page(config({ providers: [codex()] }));
+    vi.spyOn(api, "refreshCatalog").mockRejectedValue(new ApiError("busy", "正在更新模型目录，请等它结束。", 409));
+    const fetched = vi.spyOn(api, "fetchModels");
+    fireEvent.click(await screen.findByTestId("refresh-catalog"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "更新" }));
+    expect(await screen.findByText("正在更新模型目录，请等它结束。")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("refresh-catalog")).toHaveTextContent(/^更新模型目录$/));
+    expect(screen.queryByTestId("refresh-note")).toBeNull();
+    expect(fetched).not.toHaveBeenCalled();
+  });
+
   it("Codex 订阅的登录说明只指向页面上做得到的事：到任务里让助手说一句话，不提还没有的按钮", async () => {
     page(config({ providers: [codex()] }));
     const login = await screen.findByTestId("codex-login");
