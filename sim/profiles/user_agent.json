@@ -2,7 +2,7 @@
   "说明": "用户 agent 的启动配置。形状与 backend/profiles/dev.json 相同，由 sim/user_agent_driver.mts 交给后端的会话类（backend/src/pi_session.ts）组装命令行并启动；系统提示由 sim/launch_user.py 按用户画像拼好后另给。",
   "executable": "pi",
   "mode": "rpc",
-  "model": "openai-codex/gpt-6-luna",
+  "model": "openai/gpt-6-luna",
   "thinking": "medium",
   "模型说明": "用户 agent 与执行者用同一个模型 gpt-6-luna，思考档位 medium；观察到说话风格趋同再换。",
   "tools": ["look", "respond"],
