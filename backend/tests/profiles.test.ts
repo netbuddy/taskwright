@@ -22,6 +22,21 @@ test("desktop.json 能读，除说明与环境标签外与 dev 相同", () => {
   assert.deepEqual(strip(desktop), strip(dev), "改 dev 时要同步改 desktop");
 });
 
+test("三个启动配置起助手时都带 --offline：助手的程序不自动访问外网；这个参数排在 --approve 后面", () => {
+  const workspace = join(tmp, "ws-offline");
+  mkdirSync(workspace, { recursive: true });
+  for (const name of ["dev", "desktop", "fake"]) {
+    const profile = loadProfile(name);
+    assert.equal(profile.flags.offline, true, name);
+    const args = buildCommand(profile, workspace, join(tmp, "sd-offline")).args;
+    assert.equal(args.filter((arg) => arg === "--offline").length, 1, name);
+    assert.equal(args[args.indexOf("--offline") - 1], "--approve", name);
+  }
+  // 配置里关掉时不带
+  const online = { ...loadProfile("fake"), flags: { ...loadProfile("fake").flags, offline: false } };
+  assert.equal(buildCommand(online, workspace, join(tmp, "sd-offline")).args.includes("--offline"), false);
+});
+
 test("desktop.json 拼出的命令行与 dev 相同，环境标签是 desktop；没设 Langfuse 插件的环境变量时跳过插件", () => {
   const saved = { plugin: process.env.TASKWRIGHT_LANGFUSE_PLUGIN, tag: process.env.LANGFUSE_TRACING_ENVIRONMENT, entry: process.env.TASKWRIGHT_PI_ENTRY };
   delete process.env.TASKWRIGHT_LANGFUSE_PLUGIN;
