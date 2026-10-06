@@ -194,7 +194,7 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 ## 10 桌面包
 
-桌面包是给一个人在自己电脑上用的安装包：一个文件里装着 Node、任务服务、pi、网页界面，以及 pi 的检索工具要用的 rg 与 fd 两个程序，不需要另装 Node、Python 或 pi。Linux 有 `taskwright-x86_64.AppImage` 与 `taskwright-linux-x64` 两种，Windows 是 `taskwright-win-x64.exe`；构建方法见代码仓的 `release/README.md`。0.3 的桌面包还是过渡形态：没有桌面外壳，由服务自己打开系统浏览器。
+桌面包是给一个人在自己电脑上用的安装包：一个文件里装着 Node、任务服务、pi、网页界面，以及 pi 的检索工具要用的 rg 与 fd 两个程序，不需要另装 Node、Python 或 pi。桌面包自带的 pi 是 1.0.4，它和它的依赖的版本由代码仓 `release/pi/` 里的锁文件钉住，每次构建带进去的都相同。Linux 有 `taskwright-x86_64.AppImage` 与 `taskwright-linux-x64` 两种，Windows 是 `taskwright-win-x64.exe`；构建方法见代码仓的 `release/README.md`。0.3 的桌面包还是过渡形态：没有桌面外壳，由服务自己打开系统浏览器。
 
 ### 10.1 启动
 

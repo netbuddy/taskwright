@@ -31,6 +31,7 @@ The payload repeats the repository's layout, so the backend finds its resources 
 | File | Purpose |
 |---|---|
 | `build.mjs` | Builds the payload and the packages. Node built-in modules only; downloads Node binaries, rg, fd, appimagetool and the AppImage runtime into a cache directory, each a pinned version checked against its checksum; appimagetool is given the checked runtime, so it downloads nothing by itself. |
+| `pi/` | Pins the pi that goes into the packages: `package.json` with one exact version, `package-lock.json` with every dependency and its checksum, and the npm settings both are used with. `build.mjs` installs pi from it; `pi/README.md` says how to upgrade. |
 | `app/main.ts` | The launcher: recognizes a running instance, sets up pi, rg and fd, starts the service in the same process and opens the browser. |
 | `app/boot.cjs` | The single executable's embedded main script: extracts the payload once, or runs a script as plain Node would (this is how the backend starts pi). |
 | `measure.mjs` | Measures start time, time to the browser being opened, and memory, over several runs (Linux). |
@@ -38,12 +39,14 @@ The payload repeats the repository's layout, so the backend finds its resources 
 
 ## Building
 
-Requirements: Node 24, pi installed globally (`npm install -g @earendil-works/pi-coding-agent@1.0.4`), network access for the first build, and postject installed **outside** this repository:
+Requirements: Node 24 with npm, network access for the first build, and postject installed **outside** this repository:
 
 ```bash
 npm install --prefix ~/.cache/taskwright-tools postject@1.0.0-alpha.6
 node release/build.mjs --out /tmp/taskwright-package --postject ~/.cache/taskwright-tools/node_modules/.bin/postject
 ```
+
+The build installs pi by itself. It copies `release/pi/package.json`, `package-lock.json` and `.npmrc` into the staging directory and runs `npm ci --omit=dev --ignore-scripts` there, so every build packs the pi version and the dependencies the lock file names; npm's downloads are kept under the cache directory. The build stops when the installed pi is not the pinned version, when a dependency differs from the lock file, or when the packages it keeps are not inside pi's own `node_modules/`. A globally installed pi is neither needed nor used. `--pi-dir <dir>` packs an already installed pi instead: its version must be the pinned one, and where its dependencies differ from the lock file the build prints warnings. `manifest.json` in the package records the pi version and the versions of the pi dependencies that were packed.
 
 Do not run `npm install` or `npm ci` inside the repository for this. `--targets linux-x64` or `--formats appimage` builds a subset; `node release/build.mjs --help` lists every option.
 

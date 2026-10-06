@@ -192,7 +192,7 @@ After a checkpoint, `task.sqlite` alone is complete. The conversation itself is 
 
 ## 10 Desktop packages
 
-The desktop packages are for one person on one computer: a single file holds Node, the task service, pi, the web interface and rg and fd, the two programs pi's search tools use, so nothing else (Node, Python, pi) needs to be installed. Linux has `taskwright-x86_64.AppImage` and `taskwright-linux-x64`; Windows has `taskwright-win-x64.exe`. How to build them is in the repository's `release/README.md`. In 0.3 the desktop package is transitional: there is no desktop shell, and the service opens the system browser itself.
+The desktop packages are for one person on one computer: a single file holds Node, the task service, pi, the web interface and rg and fd, the two programs pi's search tools use, so nothing else (Node, Python, pi) needs to be installed. The pi in the package is 1.0.4; its version and the versions of its dependencies are pinned by the lock file in the repository's `release/pi/`, so every build packs the same ones. Linux has `taskwright-x86_64.AppImage` and `taskwright-linux-x64`; Windows has `taskwright-win-x64.exe`. How to build them is in the repository's `release/README.md`. In 0.3 the desktop package is transitional: there is no desktop shell, and the service opens the system browser itself.
 
 ### 10.1 Starting
 
