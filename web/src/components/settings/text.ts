@@ -89,10 +89,15 @@ export const TYPE_NAME: Record<ModelType, string> = { language: PURPOSES.languag
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
 export const READONLY_PROVIDER_TEXT = "这个模型服务是在配置文件里手工登记的，这里只能看，不能改。";
 export const LOGIN_NOTE = "这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请选定模型后到任务里试着让助手说一句话。";
-/** 登录分两步：先在命令行里运行启动的命令，再在它的界面里输入登录的指令。命令的字面绕不开程序名，别的页面文字不写它。 */
+/**
+ * 登录分两步：先在命令行里运行启动的命令，再在它的界面里输入登录的指令。命令的字面绕不开程序名，别的页面文字不写它。
+ * 登录的入口是列表里的 OpenAI。更早另有一个入口（列表里带 legacy 字样的那一项），在那里登录的不算数，后端会说明要重新登录一次。
+ */
 export const LOGIN_COMMAND = "pi";
 export const LOGIN_INSTRUCTION = "/login";
-export const LOGIN_INSTRUCTION_HINT = "输入后在列表里选 ChatGPT Plus/Pro (Codex)";
+export const LOGIN_INSTRUCTION_HINT = "输入后在列表里选 OpenAI，按提示用 ChatGPT 订阅登录。";
+/** 只在更早的入口登录过时，「还没有登录」下面的那句。 */
+export const RELOGIN_TEXT = "这一版改用新的登录入口，请重新登录一次。";
 /**
  * 更换或者第一次选定嵌入模型之前确认框的标题、里面的话与确定按钮上的字：知识库里已经有文档时才问。changing 为真是更换（原来选着一个），
  * 为假是第一次选定；documents 是知识库里文档的份数。换算要向模型服务发请求，所以两种情形末尾都写明可能的费用，说法与「测试」的确认框一致。
@@ -112,7 +117,10 @@ export function embedConfirmOk(changing: boolean): string {
 export function embedStartedText(documents: number): string {
   return `已开始换算知识库里的 ${documents} 份文档，进度在知识库页面上看。`;
 }
-
+/** Codex 订阅的「更新模型目录」：平时不访问外网，点了才访问一次。按钮的字、确认框里的那句、更新好之后的提示。 */
+export const REFRESH_CATALOG_LABEL = "更新模型目录";
+export const REFRESH_CATALOG_CONFIRM = "会访问一次外网，更新可选模型的目录。";
+export const REFRESH_CATALOG_DONE = "模型目录已更新。";
 /** 测试之前确认框的标题与里面的那句：写明会发一次真实的请求。 */
 export function testConfirmTitle(type: ModelType): string {
   return `测试${TYPE_NAME[type]}`;

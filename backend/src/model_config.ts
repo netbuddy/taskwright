@@ -19,6 +19,7 @@ import { join, resolve } from "node:path";
 import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
 import { ApiError } from "./errors.ts";
 import * as clock from "./clock.ts";
+import { CODEX_PROVIDER, codexLogin } from "./codex.ts";
 import { type Profile, buildEnvironment, piAgentDir, piLauncher, resolveModel } from "./launch.ts";
 import {
   type Kind, type ModelType, type PiDirSettings, type ProviderStatus, type Purpose, type Selection, type StoredModel, type StoredProvider,
@@ -32,8 +33,7 @@ export const REQUEST_TIMEOUT_MS = 5_000;
 export const LOAD_TIMEOUT_MS = 120_000;
 /** 没有密钥的服务在 models.json 里写的占位值：pi 要有凭据才把模型列为可用（本地服务不检查它）。 */
 export const NO_KEY = "taskwright-no-key";
-/** pi 里 Codex 订阅的服务名。 */
-export const CODEX_PROVIDER = "openai-codex";
+export { CODEX_PROVIDER };
 
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
 export const UNREACHABLE_TEXT = "连不上这个地址。请确认模型服务已经启动，地址与端口没有写错。";
@@ -239,7 +239,7 @@ function tokens(text: string): number | null {
 const CODEX_RETRY = "可以稍后再试。";
 const CODEX_LOGIN = "请先在命令行里登录，再回到这里点「获取模型列表」。";
 
-/** Codex 订阅的模型：让 pi 按它自己的目录列出（不联网；只列已经登录的服务的模型）。 */
+/** Codex 订阅的模型：让 pi 按它自己的目录列出（不联网；只列已经登录的服务的模型）。列的是 pi 里 ChatGPT 订阅的那个服务商（见 codex.ts）。 */
 async function listCodexModels(ctx: Context): Promise<Listed> {
   let launcher: ReturnType<typeof piLauncher>;
   try {
@@ -278,9 +278,14 @@ function keyOf(auth: Record<string, any> | null, id: string): string | null {
   return entry && entry.type === "api_key" && typeof entry.key === "string" && entry.key ? entry.key : null;
 }
 
-function codexLoggedIn(auth: Record<string, any> | null): boolean {
-  const entry = auth?.[CODEX_PROVIDER];
-  return !!entry && typeof entry === "object" && entry.type === "oauth";
+export const CODEX_NOT_LOGGED_IN_TEXT = "还没有登录 Codex 订阅。";
+export const CODEX_RELOGIN_TEXT = "还没有登录 Codex 订阅。这一版改用新的登录入口，请重新登录一次。";
+
+/** Codex 订阅的检查结果：凭据文件里有登录凭据就算通过；只在旧的入口登录过时写明要重新登录。 */
+function codexStatus(auth: Record<string, any> | null): ProviderStatus {
+  const login = codexLogin(auth);
+  const message = login.logged_in ? "" : login.relogin ? CODEX_RELOGIN_TEXT : CODEX_NOT_LOGGED_IN_TEXT;
+  return status(login.logged_in, message, { logged_in: login.logged_in, ...(login.relogin ? { relogin: true } : {}) });
 }
 
 // ───────────── 对外的视图 ─────────────
@@ -305,7 +310,13 @@ function inUse(selection: Selection, id: string): ModelType[] {
 
 function managedView(id: string, p: StoredProvider, auth: Record<string, any> | null, selection: Selection): ProviderView {
   const key = keyOf(auth, id);
-  const status = p.kind === "codex" && p.status ? { ...p.status, logged_in: codexLoggedIn(auth) } : p.status;
+  // Codex 订阅登录了没有，每次读的时候按凭据文件现在的样子给，不用上一次检查时记下的。
+  let status = p.status;
+  if (p.kind === "codex" && p.status) {
+    const { relogin: _stale, ...rest } = p.status;
+    const login = codexLogin(auth);
+    status = { ...rest, logged_in: login.logged_in, ...(login.relogin ? { relogin: true } : {}) };
+  }
   return {
     id, managed: true, kind: p.kind, purpose: p.purpose, name: p.name, base_url: p.base_url,
     key: p.kind === "codex" ? null : { set: key !== null, last4: key !== null ? key.slice(-4) : null },
@@ -509,8 +520,7 @@ export async function addProvider(ctx: Context, body: Record<string, any>) {
   checkFilesWritable(ctx);
   let checked: ProviderStatus;
   if (kind === "codex") {
-    const loggedIn = codexLoggedIn(readForView(authFile(ctx)));
-    checked = status(loggedIn, loggedIn ? "" : "还没有登录 Codex 订阅。", { logged_in: loggedIn });
+    checked = codexStatus(readForView(authFile(ctx)));
   } else {
     const result = await checkConnection(kind, base!, key);
     if (!result.ok) throw rejected(result.field!, result.message);
@@ -641,8 +651,7 @@ export async function checkProvider(ctx: Context, id: string) {
   const p = managedOrThrow(current, id);
   let checked: ProviderStatus;
   if (p.kind === "codex") {
-    const loggedIn = codexLoggedIn(readForView(authFile(ctx)));
-    checked = status(loggedIn, loggedIn ? "" : "还没有登录 Codex 订阅。", { logged_in: loggedIn });
+    checked = codexStatus(readForView(authFile(ctx)));
   } else {
     const result = await checkConnection(p.kind, p.base_url!, keyOf(readForView(authFile(ctx)), id));
     checked = status(result.ok, result.message);
@@ -688,6 +697,63 @@ export async function fetchModels(ctx: Context, id: string) {
     }, ctx.env);
   }
   return { ok: true, result: listed.result, message: listed.message, provider: await providerView(ctx, id) };
+}
+
+/** 更新模型目录最多等这么久：pi 自己给这件事的时限是 15 秒，多留一些给它启动与收尾。 */
+export const REFRESH_TIMEOUT_MS = 30_000;
+export const REFRESH_BUSY_TEXT = "正在更新模型目录，请等它结束。";
+const REFRESH_ADVICE = "请检查这台电脑能不能访问外网，稍后再试。";
+let refreshing = false;
+
+/**
+ * POST /api/v1/model-config/providers/{id}/refresh-catalog：让 pi 联网更新一次它的模型目录（pi update --models）。
+ * 起助手与列模型都不访问外网（启动配置里的 offline、列模型时的 --offline），所以 pi 自带的目录不会自己变新；用户点了才更新这一次。
+ * 这一次不带 --offline，并把环境变量 PI_OFFLINE 拿掉：pi 只看这个变量设没设，设成 0 也算离线，所以是拿掉而不是改值。
+ * 只有 Codex 订阅有这一项（别的种类的模型清单是向模型服务自己问的）。同一时间只更新一次，再来的报 busy。
+ * 更新没有成功时照样回答 200，原因写在 message 里；pi 的英文原话写进日志，不上页面。
+ */
+export async function refreshCatalog(ctx: Context, id: string, options: { timeoutMs?: number } = {}) {
+  const p = managedOrThrow(readPiDirSettings(agentDir(ctx), ctx.env), id);
+  if (p.kind !== "codex") throw rejected("kind", "只有 Codex 订阅可以更新模型目录。");
+  if (refreshing) throw new ApiError("busy", REFRESH_BUSY_TEXT);
+  refreshing = true;
+  const failed = (reason: string) => ({ ok: true, result: "failed" as const, message: `更新模型目录没有成功：${reason}。${REFRESH_ADVICE}` });
+  try {
+    let launcher: ReturnType<typeof piLauncher>;
+    try {
+      launcher = piLauncher(ctx.profile);
+    } catch {
+      return { ok: true, result: "failed" as const, message: "更新模型目录没有成功：找不到助手的程序。" };
+    }
+    const env: Record<string, string> = { ...buildEnvironment(ctx.profile), ...launcher.env };
+    delete env.PI_OFFLINE;
+    const timeoutMs = options.timeoutMs ?? REFRESH_TIMEOUT_MS;
+    const output = await new Promise<{ code: number | null; text: string; timedOut: boolean }>((done) => {
+      const child = spawn(launcher.command, [...launcher.prefix, "update", "--models"], { env, stdio: ["ignore", "pipe", "pipe"] });
+      let text = "";
+      let timedOut = false;
+      child.stdout.on("data", (chunk) => (text += chunk));
+      child.stderr.on("data", (chunk) => (text += chunk));
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGKILL");
+      }, timeoutMs);
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        done({ code: -1, text: String(error?.message ?? error), timedOut });
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        done({ code, text, timedOut });
+      });
+    });
+    if (output.code === 0) return { ok: true, result: "refreshed" as const, message: "" };
+    console.log(`更新模型目录没有成功（退出码 ${output.code}${output.timedOut ? "，等到时限被停掉" : ""}）：${output.text.trim().slice(-500)}`);
+    if (output.timedOut) return failed(`等了 ${Math.round(timeoutMs / 1000)} 秒没有做完`);
+    return failed("没能从外网取回新的模型目录");
+  } finally {
+    refreshing = false;
+  }
 }
 
 /** POST /api/v1/model-config/providers/{id}/context-window：服务实际给这个模型的上下文长度；查不到时是 null。不保存。 */

@@ -1,6 +1,7 @@
 // 一个模型服务的详情（设置页面「模型」一栏的右边）：名称、种类、用途、接口地址、API 密钥，获取模型列表，模型的清单，手工添加一个模型，删除。
 // 清单里的模型是哪一类，看模型服务的用途，不逐个标；只有要填上下文长度的那一类（语言模型）才有上下文长度一栏。
 // 清单里的改动（勾选、上下文长度、手工添加）先留在页面上，点「保存改动」一次交给后端（整个替换模型清单）。
+// Codex 订阅另有「更新模型目录」：平时不访问外网，点了先问一句，再访问一次外网把可选模型的目录更新过来，更新好之后随即重新获取模型列表。
 // editable 为假或者是手工登记的模型服务时只能看：按钮不显示，勾选框、下拉与输入框是灰的。现在的后端 editable 恒为 true，这条只读的路留着。
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,7 +12,8 @@ import type { ModelConfig, Provider, ProviderModel } from "../../api/types";
 import { formatTime } from "../../model/format";
 import { useToast } from "../Toasts";
 import {
-  LOGIN_COMMAND, LOGIN_INSTRUCTION, LOGIN_INSTRUCTION_HINT, LOGIN_NOTE, MANY_MODELS, PURPOSES, READONLY_PROVIDER_TEXT, allModelsListedText, formatNumber, inUseText, kindName,
+  LOGIN_COMMAND, LOGIN_INSTRUCTION, LOGIN_INSTRUCTION_HINT, LOGIN_NOTE, MANY_MODELS, PURPOSES, READONLY_PROVIDER_TEXT, REFRESH_CATALOG_CONFIRM, REFRESH_CATALOG_DONE,
+  REFRESH_CATALOG_LABEL, RELOGIN_TEXT, allModelsListedText, formatNumber, inUseText, kindName,
   tellsModelType, whereToFind,
 } from "./text";
 
@@ -54,6 +56,8 @@ export function ProviderDetail({ config, provider, editable, fetching, fetchNote
   const [showAll, setShowAll] = useState(false);
   const [filter, setFilter] = useState("");
   const [checking, setChecking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
 
   // 后端给了新的模型清单（保存、获取模型列表之后）：页面上的清单换成它。
   useEffect(() => { setRows(provider.models); setSaveError(null); }, [provider.models]);
@@ -121,6 +125,29 @@ export function ProviderDetail({ config, provider, editable, fetching, fetchNote
     }
   };
 
+  const refreshCatalog = async () => {
+    setRefreshing(true);
+    setRefreshNote(null);
+    try {
+      const got = await api.refreshCatalog(provider.id);
+      if (got.result === "refreshed") {
+        toast.success(REFRESH_CATALOG_DONE);
+        onFetch();
+      } else {
+        setRefreshNote(got.message);
+      }
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "更新模型目录没有做成。");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  /** 更新之前先问一句：会访问一次外网。 */
+  const confirmRefresh = () => {
+    modal.confirm({ title: REFRESH_CATALOG_LABEL, content: REFRESH_CATALOG_CONFIRM, okText: "更新", cancelText: "取消", onOk: () => { void refreshCatalog(); } });
+  };
+
   const remove = () => {
     modal.confirm({
       title: `删除模型服务「${provider.name}」？`,
@@ -165,8 +192,13 @@ export function ProviderDetail({ config, provider, editable, fetching, fetchNote
       {provider.managed && (
         <div className="fetchbar">
           {canEdit && (
-            <Button size="small" icon={<ReloadOutlined />} loading={fetching} disabled={dirty} onClick={onFetch} data-testid="fetch-models">
+            <Button size="small" icon={<ReloadOutlined />} loading={fetching} disabled={dirty || refreshing} onClick={onFetch} data-testid="fetch-models">
               {fetching ? "正在获取……" : "获取模型列表"}
+            </Button>
+          )}
+          {canEdit && codex && (
+            <Button size="small" loading={refreshing} disabled={dirty || fetching} onClick={confirmRefresh} data-testid="refresh-catalog">
+              {refreshing ? "正在更新……" : REFRESH_CATALOG_LABEL}
             </Button>
           )}
           <span className="muted">{provider.models_fetched_at ? `上一次获取：${formatTime(provider.models_fetched_at)}` : "还没有获取过模型列表。"}</span>
@@ -175,6 +207,7 @@ export function ProviderDetail({ config, provider, editable, fetching, fetchNote
       )}
       {fetchNote && fetchNote.result === "not_offered" && <div className="alert" data-testid="fetch-note">{fetchNote.message}</div>}
       {fetchNote && fetchNote.result === "failed" && <div className="alert warn" data-testid="fetch-note"><WarningOutlined /><span>{fetchNote.message}</span></div>}
+      {refreshNote && <div className="alert warn" data-testid="refresh-note"><WarningOutlined /><span>{refreshNote}</span></div>}
 
       {rows.length > 0 && (
         <>
@@ -341,7 +374,7 @@ function KeyLine({ provider, editable, onChanged }: { provider: Provider; editab
   );
 }
 
-/** Codex 订阅的登录状态：只看登录凭据在不在；没有登录时给出登录的两步与「重新检查」。 */
+/** Codex 订阅的登录状态：只看登录凭据在不在；没有登录时给出登录的两步与「重新检查」。只在更早的入口登录过时，另写一句要重新登录。 */
 function CodexLogin({ provider, editable, checking, onRecheck }: { provider: Provider; editable: boolean; checking: boolean; onRecheck: () => void }) {
   const loggedIn = provider.status?.logged_in === true;
   return (
@@ -349,6 +382,7 @@ function CodexLogin({ provider, editable, checking, onRecheck }: { provider: Pro
       {loggedIn ? <div>已经登录。</div> : (
         <>
           <div className="st">还没有登录。</div>
+          {provider.status?.relogin === true && <div data-testid="codex-relogin">{RELOGIN_TEXT}</div>}
           {editable && <>
             <div>请在运行任务服务的这台电脑上打开命令行，运行下面第一行的命令，等它启动后输入第二行的指令，照提示登录，然后回到这里点「重新检查」。</div>
             <LoginCommand />

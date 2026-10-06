@@ -847,6 +847,8 @@ export interface ProviderStatus {
   message: string;
   /** 只有 Codex 订阅有：登录凭据在不在。 */
   logged_in?: boolean;
+  /** 只有 Codex 订阅有：只在更早的登录入口登录过，要用现在的入口重新登录一次；没有这种情形时不带这一项。 */
+  relogin?: boolean;
 }
 
 export interface Provider {
@@ -882,6 +884,13 @@ export interface ModelConfig {
   /** 没有选定语言模型时助手启动用的模型；from 是后端给的来源（「启动配置」或「助手程序的设置」），页面原样显示。 */
   fallback: { model: string; from: string } | null;
   providers: Provider[];
+}
+
+/** POST /api/v1/model-config/providers/{id}/refresh-catalog：联网更新一次模型目录的结果；没有成功时 message 是原因。 */
+export interface RefreshCatalogResult {
+  ok: true;
+  result: "refreshed" | "failed";
+  message: string;
 }
 
 export interface FetchModelsResult {

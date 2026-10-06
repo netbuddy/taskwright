@@ -248,7 +248,7 @@ test("模型探测：models.json 登记了「服务商/型号」或 auth.json �
 
   writeFileSync(models, "{ 不是 JSON");
   assert.match(probeModel({ model: "local/qwen" }, env).reason, new RegExp(`其中 ${models.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")} 读不出来`));
-  assert.deepEqual(probeModel({}, env), { name: "", available: false, reason: "启动配置里没有写模型。" });
+  assert.deepEqual(probeModel({}, env), { name: "", available: false, reason: "没有在设置里选定语言模型，启动配置里也没有写模型。" });
   assert.equal(JSON.parse(readFileSync(auth, "utf-8"))["some-cloud"].access, "不读这里", "探测不改文件");
 });
 

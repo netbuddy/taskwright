@@ -67,6 +67,8 @@ export function stateText(state: string, detail: string): string {
  * 助手的程序写到错误输出里的原文（英文，可能带路径）不上页面，写进日志与接口错误的附带信息 detail。
  */
 export const EXITED_AT_START_TEXT = "助手启动之后立刻退出了。请把这个页面的地址告诉管理员。";
+/** 没有选定语言模型、启动配置里也没有写模型时，不启动助手；页面上与接口错误里都是这一句（页面在前面加「助手现在不可用：」）。 */
+export const NO_MODEL_TEXT = "还没有选定语言模型，请先到设置里添加模型服务并选定。";
 /** 助手没有启动起来、原因不是下面 startFailure 里已经写好说明的那几种时，页面上的那句。 */
 export const START_FAILED_TEXT = "助手没有启动起来。请把这个页面的地址告诉管理员。";
 
@@ -250,6 +252,12 @@ export class Executor {
    * 启动 pi；给了会话文件就续接它。expected 是请求续接的会话编号：pi 报的会话编号与它不同时不采纳，停掉 pi，报 session_resume_failed。
    */
   private async startPi(sessionFile: string | null, expected: string | null = null): Promise<void> {
+    // 没有模型就不启动：不带模型起助手的程序，它会自己挑一个模型，或者立刻退出，哪一种都不是用户选的。
+    if (!resolveModel(this.profile).model) {
+      this.pi = null;
+      this.setState("failed_to_start", "", false, NO_MODEL_TEXT);
+      throw new ApiError("executor_unavailable", NO_MODEL_TEXT, { detail: "没有在设置里选定语言模型，启动配置里也没有写模型" });
+    }
     this.setState("starting");
     // 任务目录都在本服务的 --tasks 目录下；把它作为任务根目录传给 pi，扩展写库前核对任务库在它之下。
     const pi = new PiSession(this.profile, this.taskDir, join(this.runsDir, this.taskId), LABEL, dirname(resolve(this.taskDir)), undefined, this.knowledgeRoot);

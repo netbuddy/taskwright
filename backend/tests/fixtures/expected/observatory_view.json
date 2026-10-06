@@ -108,6 +108,7 @@
         "--no-extensions",
         "--no-skills",
         "--approve",
+        "--offline",
         "--tools",
         "read,ls,grep,find,save_revision,reply,get_item,get_task_status,complete_task,request_review",
         "--model",

@@ -21,8 +21,9 @@
     "no_extensions": true,
     "no_skills": true,
     "approve": true,
-    "offline": false
+    "offline": true
   },
+  "不访问外网说明": "flags 里的 offline 为真时，助手的程序启动时带 --offline：不自动访问外网，不去取新的模型目录，不检查新版本，找不到搜索工具（rg、fd）时也不去下载。向模型服务发请求不受它影响。要更新模型目录，在设置页面 Codex 订阅的详情里点「更新模型目录」，那一次不带这个参数。",
   "platform_skill": "agent/prompts/skills/taskwright-executor",
   "平台技能说明": "助手在 Taskwright 里怎样工作的平台 skill，所有任务类型共用。它跟着代码走，路径相对代码仓根目录，不复制进任务目录；启动时在任务目录的技能之前用 --skill 加载，所以在 skill 清单里排在前面。",
   "workspace_skills_dir": ".pi/skills",

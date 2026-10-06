@@ -2,9 +2,8 @@
   "说明": "桌面包用的启动配置：单可执行文件与 AppImage 里的启动程序用 --profile desktop 选它。除 Langfuse 环境标签是 desktop 以外与 dev 相同（改 dev 时要同步改这里，测试会核对）。包里不带任何密钥，模型的登记与凭据从用户机器上助手程序的配置目录读。",
   "executable": "pi",
   "mode": "rpc",
-  "model": "openai-codex/gpt-6-luna",
   "thinking": "medium",
-  "模型说明": "助手用的模型，写法是「服务商/模型」。换模型就改这一项，或者复制一份启动配置改好之后用 --profile 选它；思考档位写在 thinking 一项。",
+  "模型说明": "桌面包不带默认的模型，所以这里不写 model。助手用的模型在设置页面的「模型」一栏选定；没有选定时，看助手程序自己的设置文件里有没有默认的模型；那里也没有就不启动助手，页面提示先去设置里选定。思考档位写在 thinking 一项。",
   "tools": [
     "read",
     "ls",
@@ -21,8 +20,9 @@
     "no_extensions": true,
     "no_skills": true,
     "approve": true,
-    "offline": false
+    "offline": true
   },
+  "不访问外网说明": "flags 里的 offline 为真时，助手的程序启动时带 --offline：不自动访问外网，不去取新的模型目录，不检查新版本，找不到搜索工具（rg、fd）时也不去下载。向模型服务发请求不受它影响。要更新模型目录，在设置页面 Codex 订阅的详情里点「更新模型目录」，那一次不带这个参数。",
   "platform_skill": "agent/prompts/skills/taskwright-executor",
   "平台技能说明": "助手在 Taskwright 里怎样工作的平台 skill，所有任务类型共用。它跟着代码走，路径相对代码仓根目录，不复制进任务目录；启动时在任务目录的技能之前用 --skill 加载，所以在 skill 清单里排在前面。",
   "workspace_skills_dir": ".pi/skills",

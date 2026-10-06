@@ -6,7 +6,7 @@ import type {
   ActionRequest,
   ApiErrorBody,
   ContextWindowResult,
-  FetchModelsResult,
+  FetchModelsResult, RefreshCatalogResult,
   ModelConfig,
   ModelSelection,
   ModelTestResult,
@@ -144,6 +144,8 @@ export const api = {
   deleteProvider: (id: string) => request<{ ok: true }>("POST", `${provider(id)}/delete`, {}),
   checkProvider: (id: string) => request<{ ok: true; provider: Provider }>("POST", `${provider(id)}/check`, {}, PROVIDER_TIMEOUT_MS),
   fetchModels: (id: string) => request<FetchModelsResult>("POST", `${provider(id)}/fetch-models`, {}, PROVIDER_TIMEOUT_MS),
+  // 更新模型目录：后端最多等 30 秒，这里留够余量。
+  refreshCatalog: (id: string) => request<RefreshCatalogResult>("POST", `${provider(id)}/refresh-catalog`, {}, PROVIDER_TIMEOUT_MS),
   contextWindow: (id: string, modelId: string) =>
     request<ContextWindowResult>("POST", `${provider(id)}/context-window`, { model_id: modelId }, CONTEXT_TIMEOUT_MS),
   selectModels: (selection: ModelSelection) =>

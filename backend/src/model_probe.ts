@@ -36,6 +36,9 @@ function readObject(path: string): Record<string, any> | null | "bad" {
   }
 }
 
+/** 模型名是空的时候的原因：没有在界面上选，启动配置里也没有写。 */
+export const NO_MODEL_REASON = "没有在设置里选定语言模型，启动配置里也没有写模型。";
+
 /**
  * paths 为真时原因句写出两个文件的完整路径（桌面形态：用户要知道往哪里放文件）；为假时只写文件名（服务器形态：
  * 服务信息远程也看得到，不带出服务器上的目录）。
@@ -48,7 +51,7 @@ export function probeModel(profile: Profile, env: NodeJS.ProcessEnv = process.en
   const modelsPath = join(dir, "models.json");
   const authPath = join(dir, "auth.json");
   const shown = (path: string) => (paths ? path : basename(path));
-  if (!name) return { name, available: false, reason: "启动配置里没有写模型。" };
+  if (!name) return { name, available: false, reason: NO_MODEL_REASON };
   const picked = resolved.from === "助手程序的设置" ? `（由助手程序的设置文件 ${resolved.settings} 指定）`
     : resolved.from === "产品设置" ? "（在设置的「模型」一栏选定）" : "";
   const slash = name.indexOf("/");

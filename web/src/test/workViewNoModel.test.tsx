@@ -1,4 +1,4 @@
-// 工作视图顶上的无模型提示与设置入口：capabilities.model 为 false 时顶上出「还没有选定助手用的模型」与「去配置模型」；
+// 工作视图顶上的无模型提示与设置入口：capabilities.model 为 false 时顶上出「还没有选定语言模型」与「去配置模型」；
 // 顶栏的「设置」与左边竖栏底部的图标都进设置页面。
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -33,10 +33,10 @@ function page(model: boolean) {
 }
 
 describe("工作视图顶上的无模型提示与设置入口", () => {
-  it("没有可用模型时工作视图顶上有提示「还没有选定助手用的模型，助手现在不能工作。」，点「去配置模型」进设置页面", async () => {
+  it("没有可用模型时工作视图顶上有提示「还没有选定语言模型，助手现在不能工作。」，点「去配置模型」进设置页面", async () => {
     page(false);
     const banner = await screen.findByTestId("no-model-banner");
-    expect(banner).toHaveTextContent("还没有选定助手用的模型，助手现在不能工作。");
+    expect(banner).toHaveTextContent("还没有选定语言模型，助手现在不能工作。");
     window.location.hash = "#/tasks/TASK-001/sessions/S-1";
     fireEvent.click(screen.getByTestId("go-model-settings"));
     expect(window.location.hash).toBe("#/settings/models");

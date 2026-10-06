@@ -454,10 +454,83 @@ test("Codex 订阅：不写两个共用文件，只看凭据文件里有没有�
   assert.equal(r.body.provider.status.logged_in, false);
   assert.equal(existsSync(modelsJson()), false);
   assert.equal(existsSync(authJson()), false);
-  writeFileSync(authJson(), JSON.stringify({ "openai-codex": { type: "oauth", access: "a", refresh: "r", expires: 1 } }));
+  writeFileSync(authJson(), JSON.stringify({ openai: { type: "oauth", access: "a", refresh: "r", expires: 1 } }));
   const again = await go("POST", "/api/v1/model-config/providers/taskwright-codex/check", {});
   assert.equal(again.body.provider.status.logged_in, true);
   assert.equal(again.body.provider.status.ok, true);
+});
+
+test("选定 Codex 订阅里的模型：交给助手程序的模型名用助手程序自己的服务商名，不是产品给这个模型服务起的服务名", async () => {
+  writeFileSync(authJson(), JSON.stringify({ openai: { type: "oauth", access: "a", refresh: "r", expires: 1 } }));
+  const id = (await go("POST", "/api/v1/model-config/providers", { purpose: "language", kind: "codex" })).body.provider.id;
+  assert.equal(id, "taskwright-codex");
+  const saved = await go("POST", `/api/v1/model-config/providers/${id}`, { models: [{ id: "gpt-6-luna", enabled: true, context_window: 272000 }] });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const picked = await go("POST", "/api/v1/model-config/selection", { language: { provider_id: id, model_id: "gpt-6-luna" }, embedding: null });
+  assert.equal(picked.status, 200, JSON.stringify(picked.body));
+  // 接口里选定的仍然是产品的服务名；起助手、换模型用的是「openai/模型」
+  assert.deepEqual(picked.body.selection.language, { provider_id: id, model_id: "gpt-6-luna" });
+  assert.deepEqual([resolveModel(service.profile).model, resolveModel(service.profile).from], ["openai/gpt-6-luna", "产品设置"]);
+  // 「有没有可用的模型」按同一个名字查：凭据文件里有这个服务商的登录凭据，所以是有
+  const info = serviceInfo(service, "127.0.0.1");
+  assert.equal(info.capabilities.model, true, info.model.reason);
+  assert.equal(info.model.name, "openai/gpt-6-luna");
+});
+
+test("Codex 订阅只认助手程序现在的登录入口：凭据记在 openai 名下才算登录，列模型与交给助手程序的模型名都用这个名字；按量付费的密钥不算；只在旧的入口登录过时说明要重新登录一次", async () => {
+  // 假的助手程序：记下收到的参数，按最后一个参数（要列的服务商）回一行这个服务商的模型，再回一行别的服务商的
+  const log = join(tmp, `list-args-${round}.jsonl`);
+  const lister = join(tmp, `list-by-provider-${round}.mjs`);
+  writeFileSync(lister, [
+    'import { appendFileSync } from "node:fs";',
+    "const args = process.argv.slice(2);",
+    `appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");`,
+    'console.log("provider  model  context  max-out  thinking  images");',
+    "console.log(`${args.at(-1)}  gpt-6-luna  272K  128K  yes  yes`);",
+    'console.log("openai-codex  old-entry-model  128K  128K  yes  yes");',
+  ].join("\n"));
+  const before = process.env.TASKWRIGHT_PI_ENTRY;
+  process.env.TASKWRIGHT_PI_ENTRY = lister;
+  const oauth = { type: "oauth", access: "a", refresh: "r", expires: 1 };
+  const listed = () => readFileSync(log, "utf-8").trim().split("\n").map((line) => JSON.parse(line).at(-1));
+  const check = async (id: string) => (await go("POST", `/api/v1/model-config/providers/${id}/check`, {})).body.provider.status;
+  try {
+    // openai 名下是按量付费的密钥：不算登录，也不是「要重新登录」
+    writeFileSync(authJson(), JSON.stringify({ openai: { type: "api_key", key: "sk-pay-as-you-go" } }));
+    const added = await go("POST", "/api/v1/model-config/providers", { purpose: "language", kind: "codex" });
+    const id = added.body.provider.id;
+    const { checked_at: _at, ...first } = added.body.provider.status;
+    assert.deepEqual(first, { ok: false, message: "还没有登录 Codex 订阅。", logged_in: false });
+    // 只在旧的入口登录过：还是没有登录，说明里写要重新登录一次
+    writeFileSync(authJson(), JSON.stringify({ "openai-codex": oauth }));
+    const { checked_at: _at2, ...legacy } = await check(id);
+    assert.deepEqual(legacy, { ok: false, message: "还没有登录 Codex 订阅。这一版改用新的登录入口，请重新登录一次。", logged_in: false, relogin: true });
+    assert.equal(resolveModel(service.profile).model, "fake/fake-model", "还没有选定时不受影响");
+    // 现在的入口登录了：算已经登录，「要重新登录」随凭据文件现在的样子去掉，不用等下一次检查
+    writeFileSync(authJson(), JSON.stringify({ openai: { ...oauth, clientId: "c", scopes: ["openid"] }, "openai-codex": oauth }));
+    const seen = (await go("GET", "/api/v1/model-config")).body.providers[0].status;
+    assert.deepEqual([seen.logged_in, "relogin" in seen], [true, false]);
+    const { checked_at: _at3, ...now } = await check(id);
+    assert.deepEqual(now, { ok: true, message: "", logged_in: true });
+    // 列模型问的是 openai，只收第一列是 openai 的行
+    const fetched = await go("POST", `/api/v1/model-config/providers/${id}/fetch-models`, {});
+    assert.equal(fetched.body.result, "listed", JSON.stringify(fetched.body));
+    assert.deepEqual(fetched.body.provider.models.map((m: Dict) => [m.id, m.context_window]), [["gpt-6-luna", 272000]]);
+    assert.deepEqual(listed(), ["openai"]);
+    await go("POST", `/api/v1/model-config/providers/${id}`, { models: [{ id: "gpt-6-luna", enabled: true, context_window: 272000 }] });
+    await go("POST", "/api/v1/model-config/selection", { language: { provider_id: id, model_id: "gpt-6-luna" }, embedding: null });
+    assert.equal(resolveModel(service.profile).model, "openai/gpt-6-luna");
+    assert.equal(serviceInfo(service, "127.0.0.1").capabilities.model, true);
+    // 凭据文件里只剩旧入口的：交给助手程序的模型名不变，状态回到没有登录、要重新登录
+    writeFileSync(authJson(), JSON.stringify({ "openai-codex": oauth }));
+    assert.equal(resolveModel(service.profile).model, "openai/gpt-6-luna");
+    const back = (await go("GET", "/api/v1/model-config")).body.providers[0].status;
+    assert.deepEqual([back.logged_in, back.relogin], [false, true]);
+    assert.equal(serviceInfo(service, "127.0.0.1").capabilities.model, false, "凭据文件里没有 openai 的登录凭据，模型就不算可用");
+  } finally {
+    if (before === undefined) delete process.env.TASKWRIGHT_PI_ENTRY;
+    else process.env.TASKWRIGHT_PI_ENTRY = before;
+  }
 });
 
 test("Codex 订阅获取模型列表没有成功：没有登录时让用户先登录；别的原因只说稍后再试；都不建议手工添加", async () => {
@@ -483,6 +556,70 @@ test("Codex 订阅获取模型列表没有成功：没有登录时让用户先�
   } finally {
     if (before === undefined) delete process.env.TASKWRIGHT_PI_ENTRY;
     else process.env.TASKWRIGHT_PI_ENTRY = before;
+  }
+});
+
+test("更新模型目录：只有 Codex 订阅有；这一次起助手的程序不带 --offline、环境里没有 PI_OFFLINE，列模型那一次两样都带；成功、没有成功、到时间没有做完都回答 200；同时只更新一次", async () => {
+  // 假的助手程序：记下收到的参数与环境里的 PI_OFFLINE；开关文件决定这一次是成功、出错退出还是一直不结束
+  const log = join(tmp, `refresh-${round}.jsonl`);
+  const mode = join(tmp, `refresh-mode-${round}`);
+  const fakePi = join(tmp, `fake-updater-${round}.mjs`);
+  writeFileSync(fakePi, [
+    'import { appendFileSync, existsSync, readFileSync } from "node:fs";',
+    "const args = process.argv.slice(2);",
+    `appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, offline: process.env.PI_OFFLINE ?? null }) + "\\n");`,
+    `const mode = existsSync(${JSON.stringify(mode)}) ? readFileSync(${JSON.stringify(mode)}, "utf-8").trim() : "ok";`,
+    'if (args[0] !== "update") { console.log("openai  gpt-6-luna  272K  128K  yes  yes"); process.exit(0); }',
+    'if (mode === "fail") { console.error("Error: Could not refresh model catalogs: openai: fetch failed"); process.exit(1); }',
+    'if (mode === "hang") setInterval(() => {}, 1000);',
+    'else if (mode === "slow") setTimeout(() => { console.log("Model catalogs refreshed"); }, 400);',
+    'else console.log("Model catalogs refreshed");',
+  ].join("\n"));
+  const saved = { entry: process.env.TASKWRIGHT_PI_ENTRY, offline: process.env.PI_OFFLINE };
+  process.env.TASKWRIGHT_PI_ENTRY = fakePi;
+  // 任务服务自己的环境里设着 PI_OFFLINE 时，更新目录的那一次也要把它拿掉
+  process.env.PI_OFFLINE = "1";
+  const calls = () => readFileSync(log, "utf-8").trim().split("\n").map((line) => JSON.parse(line));
+  try {
+    writeFileSync(authJson(), JSON.stringify({ openai: { type: "oauth", access: "a", refresh: "r", expires: 1 } }));
+    const id = (await go("POST", "/api/v1/model-config/providers", { purpose: "language", kind: "codex" })).body.provider.id;
+    const ok = await go("POST", `/api/v1/model-config/providers/${id}/refresh-catalog`, {});
+    assert.deepEqual([ok.status, ok.body], [200, { ok: true, result: "refreshed", message: "" }]);
+    assert.deepEqual(calls().at(-1), { args: ["update", "--models"], offline: null });
+    // 对照：列模型的那一次不访问外网
+    await go("POST", `/api/v1/model-config/providers/${id}/fetch-models`, {});
+    assert.deepEqual(calls().at(-1), { args: ["--offline", "--no-extensions", "--no-skills", "--list-models", "openai"], offline: "1" });
+    // 没有成功：回答 200，说明是给人看的一句，不带助手程序的英文原话
+    writeFileSync(mode, "fail");
+    const bad = await go("POST", `/api/v1/model-config/providers/${id}/refresh-catalog`, {});
+    assert.deepEqual([bad.status, bad.body], [200, { ok: true, result: "failed", message: "更新模型目录没有成功：没能从外网取回新的模型目录。请检查这台电脑能不能访问外网，稍后再试。" }]);
+    // 到时间没有做完：把它停掉，照样回答
+    writeFileSync(mode, "hang");
+    const { refreshCatalog } = await import("../src/model_config.ts");
+    const late = await refreshCatalog(ctx(), id, { timeoutMs: 300 });
+    assert.deepEqual(late, { ok: true, result: "failed", message: "更新模型目录没有成功：等了 0 秒没有做完。请检查这台电脑能不能访问外网，稍后再试。" });
+    // 同时只更新一次：第二个请求报 busy，第一个不受影响，做完之后可以再更新
+    writeFileSync(mode, "slow");
+    const first = go("POST", `/api/v1/model-config/providers/${id}/refresh-catalog`, {});
+    await new Promise((done) => setTimeout(done, 100));
+    const second = await go("POST", `/api/v1/model-config/providers/${id}/refresh-catalog`, {});
+    assert.deepEqual([second.status, second.body.error.code, second.body.error.message], [409, "busy", "正在更新模型目录，请等它结束。"]);
+    assert.equal((await first).body.result, "refreshed");
+    assert.equal((await go("POST", `/api/v1/model-config/providers/${id}/refresh-catalog`, {})).body.result, "refreshed");
+    // 找不到助手的程序
+    process.env.TASKWRIGHT_PI_ENTRY = join(tmp, "no-such-updater.mjs");
+    assert.equal((await go("POST", `/api/v1/model-config/providers/${id}/refresh-catalog`, {})).body.message, "更新模型目录没有成功：找不到助手的程序。");
+    process.env.TASKWRIGHT_PI_ENTRY = fakePi;
+    // 别的种类没有这一项；不在名单上的模型服务是 not_found
+    const other = await addOllama();
+    const refused = await go("POST", `/api/v1/model-config/providers/${other}/refresh-catalog`, {});
+    assert.deepEqual([refused.status, refused.body.error.data.field, refused.body.error.message], [422, "kind", "只有 Codex 订阅可以更新模型目录。"]);
+    assert.equal((await go("POST", "/api/v1/model-config/providers/nobody/refresh-catalog", {})).status, 404);
+  } finally {
+    for (const [name, value] of [["TASKWRIGHT_PI_ENTRY", saved.entry], ["PI_OFFLINE", saved.offline]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
 });
 
