@@ -16,6 +16,7 @@
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { CODEX_PROVIDER } from "./codex.ts";
 import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
 import { userDataDir } from "./paths.ts";
 
@@ -173,14 +174,18 @@ export function readPiDirSettings(agentDir: string, env: NodeJS.ProcessEnv | Rec
   return normalize(value?.pi_dirs?.[resolve(agentDir)]);
 }
 
-/** 选中的语言模型「服务名/模型」；没有选过时是 null。选中的模型服务在名单上而它提供的不是语言模型时，也当作没有选。 */
+/**
+ * 选中的语言模型，写成交给 pi 的「服务商/模型」；没有选过时是 null。选中的模型服务在名单上而它提供的不是语言模型时，也当作没有选。
+ * 服务商那一段一般就是模型服务的服务名（它在 pi 的模型登记文件里登记的名字）；Codex 订阅不登记，pi 不认识产品给它起的服务名，
+ * 要换成 pi 自己的服务商名（见 codex.ts）。
+ */
 export function selectedLanguageModel(agentDir: string, env: NodeJS.ProcessEnv | Record<string, string> = process.env): string | null {
   const dir = readPiDirSettings(agentDir, env);
   const language = dir.selection.language;
   if (!language) return null;
   const provider = dir.providers[language.provider];
   if (provider && provider.purpose !== "language") return null;
-  return `${language.provider}/${language.model}`;
+  return `${provider?.kind === "codex" ? CODEX_PROVIDER : language.provider}/${language.model}`;
 }
 
 /**

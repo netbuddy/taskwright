@@ -460,6 +460,23 @@ test("Codex 订阅：不写两个共用文件，只看凭据文件里有没有�
   assert.equal(again.body.provider.status.ok, true);
 });
 
+test("选定 Codex 订阅里的模型：交给助手程序的模型名用助手程序自己的服务商名，不是产品给这个模型服务起的服务名", async () => {
+  writeFileSync(authJson(), JSON.stringify({ "openai-codex": { type: "oauth", access: "a", refresh: "r", expires: 1 } }));
+  const id = (await go("POST", "/api/v1/model-config/providers", { purpose: "language", kind: "codex" })).body.provider.id;
+  assert.equal(id, "taskwright-codex");
+  const saved = await go("POST", `/api/v1/model-config/providers/${id}`, { models: [{ id: "gpt-6-luna", enabled: true, context_window: 272000 }] });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const picked = await go("POST", "/api/v1/model-config/selection", { language: { provider_id: id, model_id: "gpt-6-luna" }, embedding: null });
+  assert.equal(picked.status, 200, JSON.stringify(picked.body));
+  // 接口里选定的仍然是产品的服务名；起助手、换模型用的是「openai-codex/模型」
+  assert.deepEqual(picked.body.selection.language, { provider_id: id, model_id: "gpt-6-luna" });
+  assert.deepEqual([resolveModel(service.profile).model, resolveModel(service.profile).from], ["openai-codex/gpt-6-luna", "产品设置"]);
+  // 「有没有可用的模型」按同一个名字查：凭据文件里有这个服务商的登录凭据，所以是有
+  const info = serviceInfo(service, "127.0.0.1");
+  assert.equal(info.capabilities.model, true, info.model.reason);
+  assert.equal(info.model.name, "openai-codex/gpt-6-luna");
+});
+
 test("Codex 订阅获取模型列表没有成功：没有登录时让用户先登录；别的原因只说稍后再试；都不建议手工添加", async () => {
   const before = process.env.TASKWRIGHT_PI_ENTRY;
   const fetchWith = async (entry: string) => {

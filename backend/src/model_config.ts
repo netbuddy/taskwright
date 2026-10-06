@@ -19,6 +19,7 @@ import { join, resolve } from "node:path";
 import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
 import { ApiError } from "./errors.ts";
 import * as clock from "./clock.ts";
+import { CODEX_PROVIDER } from "./codex.ts";
 import { type Profile, buildEnvironment, piAgentDir, piLauncher, resolveModel } from "./launch.ts";
 import {
   type Kind, type ModelType, type PiDirSettings, type ProviderStatus, type Purpose, type Selection, type StoredModel, type StoredProvider,
@@ -32,8 +33,7 @@ export const REQUEST_TIMEOUT_MS = 5_000;
 export const LOAD_TIMEOUT_MS = 120_000;
 /** 没有密钥的服务在 models.json 里写的占位值：pi 要有凭据才把模型列为可用（本地服务不检查它）。 */
 export const NO_KEY = "taskwright-no-key";
-/** pi 里 Codex 订阅的服务名。 */
-export const CODEX_PROVIDER = "openai-codex";
+export { CODEX_PROVIDER };
 
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
 export const UNREACHABLE_TEXT = "连不上这个地址。请确认模型服务已经启动，地址与端口没有写错。";
