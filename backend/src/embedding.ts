@@ -8,6 +8,9 @@
  * 请求体 {model, input}，回答里的 embeddings 是各段的数字串；别的种类都是兼容 OpenAI 接口的 …/embeddings，请求体相同，
  * 回答里的 data 每项有 index 与 embedding。Codex 订阅没有嵌入模型，不发请求。
  *
+ * 文字超过模型一次能收的长度时：ollama 缺省会悄悄只算前面一部分，所以请求体里另带 truncate: false，让它报错；
+ * 兼容 OpenAI 接口的几种没有这个字段，超长时它们自己会报错。
+ *
  * 一次调用只发一个请求，不分批、不并发；段数超过这一种模型服务一次能收的上限（BATCH_LIMIT）时直接报错。只用 fetch，不引入依赖。
  * 没有做成一律抛 EmbeddingError，message 是给人看的一句。
  */
@@ -105,13 +108,14 @@ export async function embed(ctx: Context, texts: string[], purpose: Purpose, opt
   const inputs = purpose === "query" ? texts.map((text) => target.query_prefix + text) : [...texts];
   const timeoutMs = options.timeoutMs ?? EMBED_TIMEOUT_MS;
 
+  const request = { model: target.model, input: inputs };
   const headers: Record<string, string> = { Accept: "application/json", "Content-Type": "application/json" };
   if (target.key) headers.Authorization = `Bearer ${target.key}`;
   let status: number;
   let text: string;
   try {
     const res = await fetch(target.url, {
-      method: "POST", headers, body: JSON.stringify({ model: target.model, input: inputs }), signal: AbortSignal.timeout(timeoutMs), redirect: "follow",
+      method: "POST", headers, body: JSON.stringify(kind === "ollama" ? { ...request, truncate: false } : request), signal: AbortSignal.timeout(timeoutMs), redirect: "follow",
     });
     status = res.status;
     text = await res.text();

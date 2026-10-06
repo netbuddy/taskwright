@@ -295,7 +295,7 @@ test("嵌入模型通过：把一句话按查询的用途送去换算，拿回�
   assert.deepEqual({ ...r.body, seconds: typeof r.body.seconds },
     { ok: true, result: "passed", model: "taskwright-ollama/bge-m3", seconds: "number", question: `Instruct: 找相关段落\nQuery:${sentence}`, dimensions: 1024, reason: null });
   // 只发了一次请求，送去的正是结果里写的那句话。
-  assert.deepEqual(embedHits, [{ model: "bge-m3", input: [r.body.question] }]);
+  assert.deepEqual(embedHits, [{ model: "bge-m3", input: [r.body.question], truncate: false }]);
   // 没有查询前缀时送去的就是那句话本身。
   await chooseEmbedding();
   const plain = await go({ type: "embedding" });

@@ -126,23 +126,23 @@ async function failure(texts: string[] = ["一句话"], timeoutMs?: number): Pro
   assert.fail("应当没有做成");
 }
 
-test("ollama：请求发到根地址下的 /api/embed，请求体是模型名与各段文字；每段拿回一条数字串，结果带模型名、送去的文字与数字串的长度", async () => {
+test("ollama：请求发到根地址下的 /api/embed，请求体是模型名、各段文字与 truncate: false（超长时让它报错，不悄悄截断）；每段拿回一条数字串，结果带模型名、送去的文字与数字串的长度", async () => {
   fake.reply = ollamaReply;
   // 用户填的地址末尾带了 /v1 也照根地址算。
   const id = await choose("ollama", { base: `${fake.url}/v1` });
   const r = await embed(ctx(), ["第一段", "第二段长一些"], "document");
-  assert.deepEqual(fake.hits, [{ path: "/api/embed", auth: null, body: { model: "bge-m3", input: ["第一段", "第二段长一些"] } }]);
+  assert.deepEqual(fake.hits, [{ path: "/api/embed", auth: null, body: { model: "bge-m3", input: ["第一段", "第二段长一些"], truncate: false } }]);
   assert.deepEqual(r, { model: `${id}/bge-m3`, inputs: ["第一段", "第二段长一些"], vectors: [[3, 0.5, -0.25], [6, 0.5, -0.25]], dimensions: 3 });
 });
 
-test("兼容 OpenAI 接口的几种：本地的两种在根地址后面补 /v1，别的照用户填的地址，都发到 …/embeddings；有密钥时带上；回答按 index 对上各段", async () => {
+test("兼容 OpenAI 接口的几种：本地的两种在根地址后面补 /v1，别的照用户填的地址，都发到 …/embeddings，请求体里没有 truncate；有密钥时带上；回答按 index 对上各段", async () => {
   // 回答故意倒着排：靠 index 对回原来的顺序。
   fake.reply = (path, body) => ({ body: { data: (openaiReply(path, body).body as Dict).data.reverse() } });
   for (const kind of ["llamacpp", "vllm"] as const) {
     fake.hits.length = 0;
     await choose(kind);
     const r = await embed(ctx(), ["甲", "乙乙"], "document");
-    assert.deepEqual(fake.hits.map((h) => [h.path, h.auth]), [["/v1/embeddings", null]], kind);
+    assert.deepEqual(fake.hits, [{ path: "/v1/embeddings", auth: null, body: { model: "bge-m3", input: ["甲", "乙乙"] } }], kind);
     assert.deepEqual(r.vectors, [[1, 0.5, -0.25], [2, 0.5, -0.25]], kind);
   }
   for (const kind of ["deepseek", "aliyun", "openai_compatible"] as const) {
