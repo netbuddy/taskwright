@@ -644,6 +644,45 @@ export interface KnowledgeLibrary {
   documents: KnowledgeDocument[];
 }
 
+/**
+ * 一份文档的换算状态。按意思查找之前，文档要先切成片段、用嵌入模型换算成数字串。none：未换算；queued：等待换算；running：换算中；
+ * done：已换算；failed：换算失败，error 是原因。done 与 total 是片段数：已换算时两个数相同，换算中是算完了几个、一共几个
+ * （还没有切好时 total 是 null），别的状态是 null。model 是用的嵌入模型「服务名/型号」，没有时是 null。
+ */
+export interface DocumentEmbedding {
+  status: "none" | "queued" | "running" | "done" | "failed";
+  model: string | null;
+  error: string | null;
+  done: number | null;
+  total: number | null;
+}
+
+/**
+ * 全部知识库合起来的换算情况。model 是现在选定的嵌入模型「服务名/型号」，没有选是 null；running 是有文档正在算或者在队里；
+ * ready 是选了嵌入模型而且文档都换算好了；pending 是还没有换算好的份数，total 是文档一共多少份；stopped_reason 是上一次整个换算停下的原因。
+ */
+export interface KnowledgeEmbedding {
+  model: string | null;
+  running: boolean;
+  ready: boolean;
+  pending: number;
+  total: number;
+  stopped_reason: string | null;
+}
+
+/** 知识库页面用的清单（GET /api/v1/knowledge 的全部内容）：每个知识库另带「换算好了几份、一共几份」，每份文档另带换算状态。 */
+export interface EmbeddedDocument extends KnowledgeDocument {
+  embedding: DocumentEmbedding;
+}
+export interface EmbeddedLibrary extends Omit<KnowledgeLibrary, "documents"> {
+  embedding: { done: number; total: number };
+  documents: EmbeddedDocument[];
+}
+export interface KnowledgeOverview {
+  libraries: EmbeddedLibrary[];
+  embedding: KnowledgeEmbedding;
+}
+
 /** 条目在它改动过的某次修订下的内容（GET …/items/{item_id}/revisions 的一项）。 */
 export interface ItemRevision {
   revision_no: number;

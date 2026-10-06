@@ -1,6 +1,6 @@
-// 设置页面的「模型」一栏：添加时先选用途、清单按用途分组、只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型、测试嵌入模型。
+// 设置页面的「模型」一栏：添加时先选用途、清单按用途分组、只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型、测试嵌入模型、更换嵌入模型时知识库里的文档要重新换算。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { api, ApiError } from "../api/client";
 import type { ModelConfig, ModelTestResult, Provider, ServiceInfo } from "../api/types";
@@ -536,5 +536,102 @@ describe("设置页面的「模型」一栏", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("更换嵌入模型时知识库里的文档要重新换算", () => {
+    const NOTE = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
+    const withKnowledge: ServiceInfo = { ...service, capabilities: { ...service.capabilities, knowledge: true } };
+    const two = embedder({ models: ["embed:large", "embed:small"].map((id) => ({ id, enabled: true, context_window: null, context_source: null })) });
+    const large = { provider_id: "taskwright-ollama-embedding", model_id: "embed:large", query_prefix: "" };
+    const small = { ...large, model_id: "embed:small" };
+    const cfg = (embedding: typeof large | null) => config({ providers: [deepseek(), two], selection: { language: chosen.selection.language, embedding } });
+
+    /** 打开设置页并点开选嵌入模型的对话框；documents 是知识库里文档的份数，null 是取不到。 */
+    async function open(embedding: typeof large | null, documents: number | null, info: ServiceInfo = withKnowledge) {
+      const load = page(cfg(embedding), info);
+      const overview = vi.spyOn(api, "knowledgeOverview");
+      if (documents === null) overview.mockRejectedValue(new ApiError("not_found", "这个服务没有配置知识库。", 404));
+      else overview.mockResolvedValue({ libraries: [], embedding: { model: null, running: false, ready: false, pending: documents, total: documents, stopped_reason: null } });
+      const select = vi.spyOn(api, "selectModels").mockImplementation(async (body) => ({ ok: true, note: NOTE, selection: body }));
+      const embed = vi.spyOn(api, "embedKnowledge").mockResolvedValue({ queued: documents ?? 0, embedding: { model: null, running: true, ready: false, pending: 0, total: 0, stopped_reason: null } });
+      fireEvent.click(await screen.findByTestId("pick-embedding-button"));
+      const dialog = await screen.findByTestId("pick-embedding");
+      // 等对话框把知识库里文档的份数取回来。
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      return { load, overview, select, embed, dialog };
+    }
+
+    it("换成另一个嵌入模型：点「用这个模型」先问一句，写明几份文档要重新换算与可能的费用；取消不保存；确定之后先保存选择，再开始换算并提示", async () => {
+      const { overview, select, embed, dialog } = await open(large, 3);
+      expect(overview).toHaveBeenCalledTimes(1);
+      fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:small"));
+      fireEvent.click(screen.getByTestId("use-model"));
+      // 只弹出一个确认框，但界面库把它的标题写在两处（标题栏与那句话上方），所以按「至少有一处」看。
+      expect((await screen.findAllByText("更换嵌入模型？")).length).toBeGreaterThan(0);
+      expect(screen.getByText("换了嵌入模型后，知识库里的 3 份文档要重新换算，换算完成前按意思查找暂时不可用。商业接口可能产生费用。")).toBeInTheDocument();
+      expect(select).not.toHaveBeenCalled();
+      fireEvent.click(screen.getAllByRole("button", { name: "取消" }).at(-1)!);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(select).not.toHaveBeenCalled();
+      expect(embed).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId("use-model"));
+      await waitFor(() => expect(screen.getAllByRole("button", { name: "更换并重新换算" }).length).toBeGreaterThan(0));
+      fireEvent.click(screen.getAllByRole("button", { name: "更换并重新换算" }).at(-1)!);
+      await waitFor(() => expect(select).toHaveBeenCalledWith({ language: chosen.selection.language, embedding: small }));
+      await waitFor(() => expect(embed).toHaveBeenCalledWith());
+      expect(select.mock.invocationCallOrder[0]).toBeLessThan(embed.mock.invocationCallOrder[0]);
+      expect(await screen.findByText("已开始换算知识库里的 3 份文档，进度在知识库页面上看。")).toBeInTheDocument();
+    });
+
+    it("第一次选定嵌入模型、知识库里已经有文档：同样先问，那句话写的是要先换算，也写明可能的费用", async () => {
+      const { select, embed, dialog } = await open(null, 2);
+      fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:large"));
+      fireEvent.click(screen.getByTestId("use-model"));
+      expect((await screen.findAllByText("选定嵌入模型？")).length).toBeGreaterThan(0);
+      expect(screen.getByText("选定嵌入模型后，知识库里的 2 份文档要先换算，换算完成后才能按意思查找。商业接口可能产生费用。")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "选定并开始换算" }));
+      await waitFor(() => expect(select).toHaveBeenCalledWith({ language: chosen.selection.language, embedding: large }));
+      await waitFor(() => expect(embed).toHaveBeenCalledTimes(1));
+    });
+
+    it("不问的几种：知识库里没有文档、取不到文档的份数、只改查询前缀、改成不用嵌入模型，都直接保存，不开始换算", async () => {
+      for (const [documents, change, saved] of [
+        [0, (d: HTMLElement) => fireEvent.click(within(d).getByTestId("pick-taskwright-ollama-embedding-embed:small")), small],
+        [null, (d: HTMLElement) => fireEvent.click(within(d).getByTestId("pick-taskwright-ollama-embedding-embed:small")), small],
+        [3, (d: HTMLElement) => { fireEvent.click(within(d).getByText("高级")); fireEvent.change(screen.getByTestId("query-prefix"), { target: { value: "查询：" } }); }, { ...large, query_prefix: "查询：" }],
+        [3, (d: HTMLElement) => fireEvent.click(within(d).getByTestId("pick-no-embedding")), null],
+      ] as const) {
+        const { select, embed, dialog } = await open(large, documents);
+        change(dialog);
+        fireEvent.click(screen.getByTestId("use-model"));
+        await waitFor(() => expect(select).toHaveBeenCalledWith({ language: chosen.selection.language, embedding: saved }));
+        expect(screen.queryByText("更换嵌入模型？")).toBeNull();
+        expect(embed).not.toHaveBeenCalled();
+        cleanup();
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("服务没有知识库时不取文档的份数，也不问", async () => {
+      const { overview, select, embed, dialog } = await open(large, 3, service);
+      expect(overview).not.toHaveBeenCalled();
+      fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:small"));
+      fireEvent.click(screen.getByTestId("use-model"));
+      await waitFor(() => expect(select).toHaveBeenCalledTimes(1));
+      expect(embed).not.toHaveBeenCalled();
+    });
+
+    it("选择保存了、换算却没能开始：提示一句，选择照样算数", async () => {
+      const { load, select, embed, dialog } = await open(large, 3);
+      embed.mockRejectedValue(new ApiError("rejected", "还没有选嵌入模型。", 422));
+      fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:small"));
+      load.mockResolvedValue(cfg(small));
+      fireEvent.click(screen.getByTestId("use-model"));
+      fireEvent.click(await screen.findByRole("button", { name: "更换并重新换算" }));
+      await waitFor(() => expect(select).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText("没能开始换算知识库里的文档：还没有选嵌入模型。")).toBeInTheDocument();
+      expect(await screen.findByText("embed:small", { selector: ".mname" })).toBeInTheDocument();
+    });
   });
 });

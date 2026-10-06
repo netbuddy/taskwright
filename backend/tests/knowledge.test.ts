@@ -272,7 +272,9 @@ test("经接口：新建、改名、上传（带种类）、清单、正文与�
 
   const t = newTask(service);
   assert.deepEqual((await call(service, "POST", `/api/v1/tasks/${t.taskId}/knowledge`, { libraries: [GENERAL, id] })).json, { ok: true, libraries: [GENERAL, id] });
-  assert.deepEqual((await call(service, "GET", `/api/v1/tasks/${t.taskId}/knowledge`)).json, { ok: true, libraries: [GENERAL, id] });
+  // embedding 是这个任务选用的知识库的换算情况：这里没有选嵌入模型，那一份文档还没有换算。
+  assert.deepEqual((await call(service, "GET", `/api/v1/tasks/${t.taskId}/knowledge`)).json,
+    { ok: true, libraries: [GENERAL, id], embedding: { model: null, ready: false, pending: 1 } });
   assert.deepEqual((await call(service, "GET", `/api/v1/tasks/${t.taskId}`)).json.knowledge_libraries, [GENERAL, id]);
 
   const all = (await call(service, "GET", "/api/v1/knowledge")).json;

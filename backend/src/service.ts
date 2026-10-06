@@ -25,6 +25,7 @@ import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
 import { TASK_TYPES_DIR } from "./paths.ts";
 import { GENERAL, KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
+import { KnowledgeEmbedder } from "./knowledge_embedder.ts";
 
 export const MAX_UPLOAD = 5 * 1024 * 1024;
 
@@ -195,6 +196,8 @@ export class Service {
   readonly skipped = new Set<string>();
   /** 知识库；启动时没给根目录就是 null。 */
   readonly knowledge: KnowledgeStore | null;
+  /** 知识库文档的后台换算；没有知识库时是 null。 */
+  readonly embedder: KnowledgeEmbedder | null;
   private readonly claim: Claim;
   private readonly releaseLock: (taskDir: string) => void;
 
@@ -213,6 +216,10 @@ export class Service {
     // 知识库根目录同样转成绝对路径；第一次启动、还没有知识库的清单时建出通用知识库。
     this.knowledge = options.knowledgeDir ? new KnowledgeStore(resolve(options.knowledgeDir)) : null;
     if (this.knowledge && options.createTasksDir !== false) this.knowledge.ensure();
+    // 读模型配置用的环境与模型配置的接口相同（http.ts 的 modelContext）；Word 文档的分段参数与上传时用的相同。
+    this.embedder = this.knowledge
+      ? new KnowledgeEmbedder(this.knowledge, () => ({ env: process.env, profile: this.profile }), () => segmentParamsOf(this.profile))
+      : null;
   }
 
   scan(): void {
@@ -272,6 +279,8 @@ export class Service {
    * 还开着的事件流上）、删占用标记；最后让各条事件流写完后正常结束。页内退出与各种退出信号都经这里，所以都会发这条通知。
    */
   async close(): Promise<void> {
+    // 知识库文档的后台换算先停：手上的请求放下，正在算的那一份作废（下次启动时它是「未换算」）。
+    await this.embedder?.close();
     for (const t of this.tasks.values()) t.hub.emit("service_exiting", { mode: this.mode, at: clock.now() });
     for (const t of this.tasks.values()) {
       console.log(`任务 ${t.taskId} 的事件分发统计：${JSON.stringify(t.hub.stats)}`);
@@ -597,15 +606,60 @@ export class Service {
     return [...this.tasks.values()].filter((t) => t.row()?.status === "进行中");
   }
 
-  /** 全部库与每个库的文档清单；used_by_tasks 是本服务接手的进行中任务里选用了它的个数。 */
+  /**
+   * 全部库与每个库的文档清单；used_by_tasks 是本服务接手的进行中任务里选用了它的个数。每份文档带换算状态（embedding），
+   * 每个库带「换算好了几份、一共几份」。
+   */
   knowledgeOverview() {
     const store = this.requireKnowledge();
+    const embedder = this.embedder!;
+    const model = embedder.model();
     const selections = this.openTasks().map((t) => selectedLibraries(t.dir));
-    return store.libraries().map((lib) => ({
-      ...lib,
-      used_by_tasks: selections.filter((ids) => ids.includes(lib.id)).length,
-      documents: store.documents(lib.id).map(({ name, kind, bytes, uploaded_at }) => ({ name, kind, bytes, uploaded_at })),
-    }));
+    return store.libraries().map((lib) => {
+      const documents = store.documents(lib.id).map((row) => ({
+        name: row.name, kind: row.kind, bytes: row.bytes, uploaded_at: row.uploaded_at, embedding: embedder.documentState(lib.id, row, model),
+      }));
+      return {
+        ...lib,
+        used_by_tasks: selections.filter((ids) => ids.includes(lib.id)).length,
+        embedding: { done: documents.filter((one) => one.embedding.status === "done").length, total: documents.length },
+        documents,
+      };
+    });
+  }
+
+  /** 这些知识库合起来的换算情况（不给是全部知识库）：选定的嵌入模型、是不是都换算好了、还差几份、停下的原因。 */
+  knowledgeEmbedding(libraries?: string[]) {
+    this.requireKnowledge();
+    return this.embedder!.overview(libraries);
+  }
+
+  /** 上传一份文档；选了嵌入模型时随即把它排进后台换算，没有选时它是「未换算」。 */
+  uploadDocument(id: string, filename: string, data: Buffer, kind: unknown) {
+    const row = this.requireKnowledge().upload(id, filename, data, kind, segmentParamsOf(this.profile));
+    const embedder = this.embedder!;
+    if (embedder.model() !== null) embedder.enqueue({ library: id, name: row.name });
+    return row;
+  }
+
+  /** 删除一份文档：正在换算或者排着队的先放下，再连同它的数字串一起删。 */
+  removeDocument(id: string, name: unknown): void {
+    const store = this.requireKnowledge();
+    if (typeof name === "string") this.embedder!.forget(id, name);
+    store.removeDocument(id, name);
+  }
+
+  /**
+   * 开始换算：body 里不给范围是全部知识库，给 library 是那一个库，再给 name 是那一份文档。返回这一次新排进去几份与换算情况。
+   * 没有选嵌入模型时 rejected。
+   */
+  embedKnowledge(body: Record<string, any>) {
+    this.requireKnowledge();
+    const { library, name } = body;
+    if (library !== undefined && typeof library !== "string") throw new ApiError("bad_request", "library 应当是知识库编号。");
+    if (name !== undefined && (typeof name !== "string" || library === undefined)) throw new ApiError("bad_request", "name 应当是文档名，并且要同时给 library。");
+    const queued = this.embedder!.enqueue({ library, name });
+    return { ok: true, queued, embedding: this.embedder!.overview() };
   }
 
   /**
@@ -613,7 +667,9 @@ export class Service {
    * 被别的服务占用的任务不改。
    */
   removeLibrary(id: string) {
-    const row = this.requireKnowledge().remove(id);
+    const store = this.requireKnowledge();
+    if (id !== GENERAL && store.has(id)) this.embedder!.forget(id);
+    const row = store.remove(id);
     this.scan();
     for (const t of this.tasks.values()) {
       const ids = selectedLibraries(t.dir);

@@ -1,17 +1,21 @@
 // 知识库页面：知识库的清单与选中的知识库的文档表格；通用知识库不能改名、不能删除；新建与改名；删除知识库、删除文档先确认；
 // 上传时带上先选好的种类；类型不符或超过 20 MB 不发请求；左侧栏在服务有知识库时有「知识库」入口。
+// 文档的换算：每份文档的换算状态、这个知识库「已换算几份 / 一共几份」与进度条、「开始换算」与「重试」、停下的原因、
+// 没有选嵌入模型时的提示；有文档在等待换算或者换算中时隔一会儿自动再取一次清单。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
-import { api } from "../api/client";
-import type { KnowledgeLibrary, ServiceInfo } from "../api/types";
+import { api, ApiError } from "../api/client";
+import type { DocumentEmbedding, EmbeddedLibrary, KnowledgeEmbedding, KnowledgeOverview, ServiceInfo } from "../api/types";
 import { ServiceProvider } from "../components/ServiceControls";
 import { ToastProvider } from "../components/Toasts";
+import { embeddingPolling } from "../model/knowledge";
 import { KnowledgePage } from "../pages/KnowledgePage";
 import { parseRoute } from "../router";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); window.location.hash = ""; });
+const POLL_MS = embeddingPolling.intervalMs;
+afterEach(() => { cleanup(); vi.restoreAllMocks(); window.location.hash = ""; embeddingPolling.intervalMs = POLL_MS; });
 
 const info: ServiceInfo = {
   ok: true, app: "taskwright", version: "0.4.1", mode: "server", pid: 1, port: 8950, capabilities: { exit: false, model: true, knowledge: true },
@@ -19,16 +23,35 @@ const info: ServiceInfo = {
     unsupported_type_text: "只接受 .md、.txt 与 Word 的 .docx 文件。",
     kinds: [{ kind: "standard", name: "规范" }, { kind: "glossary", name: "术语表" }, { kind: "template", name: "模板" }, { kind: "past_work", name: "以往的成果" }, { kind: "other", name: "其他" }] },
 };
-const LIBS: KnowledgeLibrary[] = [
-  { id: "general", name: "通用知识库", created_at: "", used_by_tasks: 3, documents: [{ name: "公司术语表.md", kind: "glossary", bytes: 2048, uploaded_at: "2026-09-29T10:12:00+08:00" }] },
-  { id: "lib-hy", name: "行业规范", created_at: "", used_by_tasks: 2, documents: [] },
+const MODEL = "taskwright-ollama-embedding/bge-m3";
+/** 一份文档的换算状态：只写与「未换算」不同的项。 */
+const state = (given: Partial<DocumentEmbedding> = {}): DocumentEmbedding => ({ status: "none", model: null, error: null, done: null, total: null, ...given });
+const NONE: KnowledgeEmbedding = { model: null, running: false, ready: false, pending: 1, total: 1, stopped_reason: null };
+const LIBS: EmbeddedLibrary[] = [
+  { id: "general", name: "通用知识库", created_at: "", used_by_tasks: 3, embedding: { done: 0, total: 1 },
+    documents: [{ name: "公司术语表.md", kind: "glossary", bytes: 2048, uploaded_at: "2026-09-29T10:12:00+08:00", embedding: state() }] },
+  { id: "lib-hy", name: "行业规范", created_at: "", used_by_tasks: 2, embedding: { done: 0, total: 0 }, documents: [] },
 ];
 
-function page(libraryId: string | null = null) {
+/** 通用知识库里放这几份文档的清单；done 是其中换算好了几份。 */
+function overviewOf(documents: [string, DocumentEmbedding][], embedding: Partial<KnowledgeEmbedding> = {}): KnowledgeOverview {
+  const done = documents.filter(([, e]) => e.status === "done").length;
+  return {
+    libraries: [{ ...LIBS[0], embedding: { done, total: documents.length },
+      documents: documents.map(([name, e]) => ({ name, kind: "standard" as const, bytes: 1024, uploaded_at: "2026-10-05T09:00:00+08:00", embedding: e })) }, LIBS[1]],
+    embedding: { model: MODEL, running: false, ready: done === documents.length, pending: documents.length - done, total: documents.length, stopped_reason: null, ...embedding },
+  };
+}
+
+function page(libraryId: string | null = null, overview: KnowledgeOverview | KnowledgeOverview[] = { libraries: LIBS, embedding: NONE }) {
   vi.spyOn(api, "serviceInfo").mockResolvedValue(info);
   vi.spyOn(api, "listTasks").mockResolvedValue([]);
   vi.spyOn(api, "knowledge").mockResolvedValue(LIBS);
+  // 给了几份清单时依次给出，给完之后一直给最后一份。
+  const answers = Array.isArray(overview) ? [...overview] : [overview];
   const calls = {
+    overview: vi.spyOn(api, "knowledgeOverview").mockImplementation(async () => (answers.length > 1 ? answers.shift()! : answers[0])),
+    embed: vi.spyOn(api, "embedKnowledge").mockResolvedValue({ queued: 1, embedding: NONE }),
     create: vi.spyOn(api, "createLibrary").mockResolvedValue({ id: "lib-new", name: "新知识库", created_at: "" }),
     rename: vi.spyOn(api, "renameLibrary").mockResolvedValue({ library: { id: "lib-hy", name: "国家标准" } }),
     removeLib: vi.spyOn(api, "deleteLibrary").mockResolvedValue({ ok: true }),
@@ -118,5 +141,93 @@ describe("知识库页面", () => {
     await waitFor(() => expect(entry.textContent).toBe("知识库2 个知识库"));
     expect(entry.className).toContain("on");
     expect(screen.getByTestId("nav-tasks").className).not.toContain("on");
+  });
+
+  it("没有选嵌入模型：表格上面写明这些文档没有换算、只能按字面查找，给去设置的链接；文档都是「未换算」；没有「开始换算」", async () => {
+    page();
+    const line = await screen.findByTestId("kb-embedding");
+    expect(line.textContent).toBe("还没有选嵌入模型，这些文档没有换算，只能按字面查找。去设置里选");
+    expect(within(line).getByText("去设置里选").getAttribute("href")).toBe("#/settings/models");
+    expect(screen.getByTestId("kb-doc-embedding-公司术语表.md").textContent).toBe("未换算");
+    expect(screen.queryByTestId("kb-embed-start")).toBeNull();
+    expect([...within(screen.getByTestId("kb-documents")).getAllByRole("columnheader")].map((c) => c.textContent)).toEqual(["文档名", "种类", "大小", "上传时间", "换算", "操作"]);
+  });
+
+  it("没有文档的知识库不写换算的那一行", async () => {
+    page("lib-hy");
+    await screen.findByTestId("kb-pane");
+    expect(screen.queryByTestId("kb-embedding")).toBeNull();
+  });
+
+  it("选了嵌入模型：写「已换算 N / M」、进度条与嵌入模型的型号；文档各写各的状态，换算失败的带原因；「开始换算」只换算这个知识库，之后重新取清单", async () => {
+    const calls = page(null, overviewOf([
+      ["规则.md", state({ status: "done", model: MODEL, done: 5, total: 5 })],
+      ["长文.txt", state({ status: "failed", model: MODEL, error: "模型服务回答了错误（HTTP 500）：the input length exceeds the context length" })],
+      ["说明.txt", state()],
+      ["空白.txt", state({ status: "done", model: MODEL, done: 0, total: 0 })],
+    ]));
+    const line = await screen.findByTestId("kb-embedding");
+    expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已换算 2 / 4");
+    const bar = within(line).getByRole("progressbar");
+    expect([bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax"), (bar.firstElementChild as HTMLElement).style.width]).toEqual(["2", "4", "50%"]);
+    expect(line.textContent).toBe("已换算 2 / 4嵌入模型：bge-m3开始换算");
+    expect(screen.getByTestId("kb-doc-embedding-规则.md").textContent).toBe("已换算");
+    expect(screen.getByTestId("kb-doc-embedding-长文.txt").textContent).toBe("换算失败重试");
+    // 原因写在这份文档下面单独的一行里，横跨整张表的六列。
+    const why = screen.getByTestId("kb-doc-embedding-error-长文.txt");
+    expect([why.textContent, why.getAttribute("colspan")]).toEqual(["模型服务回答了错误（HTTP 500）：the input length exceeds the context length", "6"]);
+    expect(screen.queryByTestId("kb-doc-embedding-error-规则.md")).toBeNull();
+    expect(screen.getByTestId("kb-doc-embedding-说明.txt").textContent).toBe("未换算");
+    expect(screen.getByTestId("kb-doc-embedding-空白.txt").textContent).toBe("没有文字，不用换算");
+    expect(screen.queryByTestId("kb-embedding-stopped")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("kb-embed-start"));
+    await waitFor(() => expect(calls.embed).toHaveBeenCalledWith({ library: "general" }));
+    await waitFor(() => expect(calls.overview).toHaveBeenCalledTimes(2));
+  });
+
+  it("换算失败的文档：「重试」只换算这一份", async () => {
+    const calls = page(null, overviewOf([["长文.txt", state({ status: "failed", model: MODEL, error: "模型服务回答的数字串全是 0，没法用。" })]]));
+    fireEvent.click(within(await screen.findByTestId("kb-doc-embedding-长文.txt")).getByText("重试"));
+    await waitFor(() => expect(calls.embed).toHaveBeenCalledWith({ library: "general", name: "长文.txt" }));
+  });
+
+  it("换算中：文档写「换算中（算完几个 / 一共几个）」与「等待换算」，没有「开始换算」；隔一会儿自动再取清单，都换算好了就不再取", async () => {
+    embeddingPolling.intervalMs = 20;
+    const during = overviewOf([["长文.txt", state({ status: "running", model: MODEL, done: 32, total: 40 })], ["规则.md", state({ status: "queued" })]], { running: true });
+    const after = overviewOf([["长文.txt", state({ status: "done", model: MODEL, done: 40, total: 40 })], ["规则.md", state({ status: "done", model: MODEL, done: 5, total: 5 })]]);
+    const calls = page(null, [during, during, after]);
+    expect((await screen.findByTestId("kb-doc-embedding-长文.txt")).textContent).toBe("换算中（32 / 40）");
+    expect(screen.getByTestId("kb-doc-embedding-规则.md").textContent).toBe("等待换算");
+    expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已换算 0 / 2");
+    expect(screen.queryByTestId("kb-embed-start")).toBeNull();
+    await waitFor(() => expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已换算 2 / 2"));
+    expect(calls.overview).toHaveBeenCalledTimes(3);
+    expect(screen.queryByTestId("kb-embed-start")).toBeNull();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls.overview).toHaveBeenCalledTimes(3);
+  });
+
+  it("还没有切好片段时只写「换算中」；自动取的那一次没取到时页面照旧，不换成报错", async () => {
+    embeddingPolling.intervalMs = 20;
+    const during = overviewOf([["长文.txt", state({ status: "running", model: MODEL, done: 0, total: null })]], { running: true });
+    const calls = page(null, during);
+    expect((await screen.findByTestId("kb-doc-embedding-长文.txt")).textContent).toBe("换算中");
+    calls.overview.mockRejectedValue(new Error("网络断了"));
+    await waitFor(() => expect(calls.overview.mock.calls.length).toBeGreaterThanOrEqual(3));
+    expect(screen.getByTestId("kb-doc-embedding-长文.txt").textContent).toBe("换算中");
+  });
+
+  it("整个换算停下了：写明停下的原因，「开始换算」还在", async () => {
+    page(null, overviewOf([["规则.md", state()]], { stopped_reason: "连不上这个模型服务。请确认它已经启动，地址与端口没有写错。" }));
+    expect((await screen.findByTestId("kb-embedding-stopped")).textContent).toBe("换算停下了：连不上这个模型服务。请确认它已经启动，地址与端口没有写错。");
+    expect(screen.getByTestId("kb-embed-start")).toBeTruthy();
+  });
+
+  it("开始换算没有做成：给出后端的那句话", async () => {
+    const calls = page(null, overviewOf([["规则.md", state()]]));
+    calls.embed.mockRejectedValue(new ApiError("rejected", "还没有选嵌入模型。", 422));
+    fireEvent.click(await screen.findByTestId("kb-embed-start"));
+    expect(await screen.findByText("还没有选嵌入模型。")).toBeTruthy();
   });
 });

@@ -1,14 +1,14 @@
 // 知识库在页面上的几种说法：文档份数、有几个任务在用、种类的中文叫法、上传前的大小检查。
 // 种类的叫法与上传上限都来自服务信息（GET /api/v1/service 的 knowledge_upload），前端不另写一份。
 
-import type { KnowledgeKind, KnowledgeLibrary, ServiceInfo } from "../api/types";
+import type { DocumentEmbedding, EmbeddedLibrary, KnowledgeKind, KnowledgeLibrary, ServiceInfo } from "../api/types";
 import { GENERAL, isKnowledgeLocator, parseKnowledgeLocator } from "../../../agent/src/lib/knowledge_locator.ts";
 
 // 通用知识库的编号（每个任务都选用它，不能删除、不能改名）与「出处是不是指向知识库」的判断，定义在助手一侧，这里原样交出去。
 export { GENERAL, isKnowledgeLocator };
 
 /** 通用知识库排第一，其余照后端给的先后。 */
-export function sortedLibraries(libs: KnowledgeLibrary[]): KnowledgeLibrary[] {
+export function sortedLibraries<T extends KnowledgeLibrary>(libs: T[]): T[] {
   return [...libs.filter((l) => l.id === GENERAL), ...libs.filter((l) => l.id !== GENERAL)];
 }
 
@@ -23,6 +23,27 @@ export function usageText(lib: KnowledgeLibrary, thisTask?: { selected: boolean 
   if (lib.used_by_tasks === 0) return "没有任务在用";
   if (thisTask?.selected && lib.used_by_tasks === 1) return "只有这个任务在用";
   return `${lib.used_by_tasks} 个任务在用`;
+}
+
+/** 有文档在等待换算或者换算中时，知识库页面隔多久再取一次清单。 */
+export const embeddingPolling = { intervalMs: 2000 };
+
+/** 一份文档的换算状态给人看的写法。换算中带「算完了几个片段 / 一共几个」；没有文字的文档不用换算。 */
+export function embeddingStatusText(e: DocumentEmbedding): string {
+  if (e.status === "queued") return "等待换算";
+  if (e.status === "running") return e.total === null ? "换算中" : `换算中（${e.done ?? 0} / ${e.total}）`;
+  if (e.status === "done") return e.total === 0 ? "没有文字，不用换算" : "已换算";
+  return e.status === "failed" ? "换算失败" : "未换算";
+}
+
+/** 嵌入模型「服务名/型号」里给人看的那一半：型号。 */
+export function embeddingModelName(model: string): string {
+  return model.slice(model.indexOf("/") + 1);
+}
+
+/** 这个知识库里有没有文档正在换算或者等着换算。 */
+export function embeddingBusy(lib: EmbeddedLibrary): boolean {
+  return lib.documents.some((d) => d.embedding.status === "queued" || d.embedding.status === "running");
 }
 
 /** 种类的中文叫法；服务信息里没有时写种类本身。 */

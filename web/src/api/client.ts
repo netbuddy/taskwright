@@ -16,7 +16,9 @@ import type {
   ItemRevision,
   KnowledgeDocument,
   KnowledgeKind,
+  KnowledgeEmbedding,
   KnowledgeLibrary,
+  KnowledgeOverview,
   RevisionLog,
   ServiceInfo,
   TaskType,
@@ -209,6 +211,11 @@ export const api = {
 
   // 知识库
   knowledge: () => request<{ libraries: KnowledgeLibrary[] }>("GET", "/knowledge").then((r) => r.libraries),
+  /** 同一个接口的全部内容：各知识库与各文档的换算状态，以及合起来的换算情况。知识库页面用。 */
+  knowledgeOverview: () => request<KnowledgeOverview>("GET", "/knowledge"),
+  /** 开始换算：不给范围是全部知识库，给 library 是那一个知识库，再给 name 是那一份文档（没算成之后重试用）。queued 是这一次新排进去几份。 */
+  embedKnowledge: (scope: { library?: string; name?: string } = {}) =>
+    request<{ queued: number; embedding: KnowledgeEmbedding }>("POST", "/knowledge/embed", scope),
   createLibrary: (name: string) =>
     request<{ library: Omit<KnowledgeLibrary, "used_by_tasks" | "documents"> }>("POST", "/knowledge/libraries", { name }).then((r) => r.library),
   renameLibrary: (id: string, name: string) => request<{ library: { id: string; name: string } }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}`, { name }),

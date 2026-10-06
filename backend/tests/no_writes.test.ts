@@ -33,6 +33,8 @@ const ALLOWED: Record<string, string[]> = {
   "knowledge_locator.ts": ["GENERAL", "KINDS", "KIND_NAMES", "Kind", "parseKnowledgeLocator"],
   // 知识库：交给助手的环境变量名、任务目录里记选用的文件名（两个常量）。
   "knowledge.ts": ["KNOWLEDGE_ROOT_ENV", "SELECTION_FILE"],
+  // Word 文档的投影全文 → 各段文字：只做计算的函数，知识库文档切成片段时用。
+  "docx_source.ts": ["projectionParagraphs"],
 };
 
 function files(dir: string): string[] {

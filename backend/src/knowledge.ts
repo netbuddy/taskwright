@@ -6,6 +6,7 @@
  *   <根>/libraries.json                  {version: 1, libraries: [{id, name, created_at}]}
  *   <根>/<库编号>/documents.json         {version: 1, documents: [{name, kind, bytes, sha256, uploaded_at}]}
  *   <根>/<库编号>/files/<文件名>          文档本体；Word 文档旁边照材料的办法生成投影、分段清单、位置表与图片目录，这些派生文件不列在 documents 里。
+ *                                        换算好的数字串也在文档旁边（<文件名>.embeddings.json 与 .embeddings.bin，见 knowledge_embeddings.ts），同样不列。
  * 两个 JSON 文件都先写临时文件再改名。文档没有版本：一份文档改了，就当作一份新文件上传。
  *
  * 任务选用了哪些库记在任务目录的 knowledge.json（{version: 1, libraries: [库编号], notes: [{at, text}]}），新建任务时写 ["general"]；
@@ -18,6 +19,7 @@ import { join, sep } from "node:path";
 import * as clock from "./clock.ts";
 import { ApiError } from "./errors.ts";
 import { readTextFile, readTextFileLenient } from "./files.ts";
+import { removeEmbeddings, sweepLeftovers } from "./knowledge_embeddings.ts";
 import { ProjectionError, isReserved, projectionPath, projectionText, removeProjection, writeProjection } from "./projection.ts";
 import type { SegmentParams } from "../../agent/src/lib/segments.ts";
 import { SELECTION_FILE } from "../../agent/src/lib/knowledge.ts";
@@ -80,7 +82,7 @@ export class KnowledgeStore {
   /**
    * 建出根目录；libraries.json 不存在时写一份只有通用知识库的。已有的清单里通用知识库那一项还叫旧名「通用库」时，
    * 改成现在的名字再写回去（先写临时文件再改名）；用户自己起的名字不动。清单读不出来（文件损坏）或写不回去时
-   * 跳过这一步，服务照常启动，知识库的接口到用的时候再报错。
+   * 跳过这一步，服务照常启动，知识库的接口到用的时候再报错。各库的文档目录里换算留下的半成品（上一次服务停下时正算到一半的）顺手清掉。
    */
   ensure(): void {
     mkdirSync(this.root, { recursive: true });
@@ -97,6 +99,11 @@ export class KnowledgeStore {
       }
     }
     mkdirSync(this.filesDir(GENERAL), { recursive: true });
+    try {
+      for (const lib of this.libraries()) sweepLeftovers(this.filesDir(lib.id));
+    } catch {
+      // 清单读不出来：不清，也不让服务因此起不来
+    }
   }
 
   private librariesFile(): string {
@@ -217,6 +224,8 @@ export class KnowledgeStore {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       throw new ApiError("name_taken", docNameTakenText(filename), { name: filename });
     }
+    // 这个名字以前的文档留下的数字串（正常删除时已经删了）不是这份文件的，先清掉。
+    removeEmbeddings(target);
     if (filename.toLowerCase().endsWith(".docx")) {
       try {
         writeProjection(target, `${id}/files/${filename}`, segments);
@@ -236,7 +245,7 @@ export class KnowledgeStore {
     return row;
   }
 
-  /** 删除文档：从清单里去掉，再删本体与派生文件。 */
+  /** 删除文档：从清单里去掉，再删本体与派生文件（投影一类，以及换算好的数字串）。 */
   removeDocument(id: string, name: unknown): void {
     this.library(id);
     const rows = this.documents(id);
@@ -250,6 +259,7 @@ export class KnowledgeStore {
       // 已经不在了
     }
     removeProjection(target);
+    removeEmbeddings(target);
     if (row.name.toLowerCase().endsWith(".docx")) {
       try {
         unlinkSync(target + ".txt");

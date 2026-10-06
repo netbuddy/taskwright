@@ -21,7 +21,6 @@ import { probeModel } from "./model_probe.ts";
 import { MAX_UPLOAD, type Service, TOO_LARGE_TEXT, UPLOAD_TYPES, taskTypes, unsupportedTypeText, uploadTypesText, wordsLocator } from "./service.ts";
 import { isWebPath, webFile } from "./web.ts";
 import { KNOWLEDGE_MAX_UPLOAD, KNOWLEDGE_TOO_LARGE_TEXT, KIND_NAMES } from "./knowledge.ts";
-import { segmentParamsOf } from "./launch.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
 export const RAW_TYPES: Record<string, string> = {
@@ -412,21 +411,22 @@ const handlers: Record<string, Handler> = {
     const body = bodyJson(req);
     return json(200, service.deleteMaterial(t, body.path, sessionParam(req, body)));
   },
-  knowledge: (service) => json(200, { ok: true, libraries: service.knowledgeOverview() }),
+  knowledge: (service) => json(200, { ok: true, libraries: service.knowledgeOverview(), embedding: service.knowledgeEmbedding() }),
+  embed_knowledge: (service, req) => json(200, service.embedKnowledge(bodyJson(req))),
   create_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().create(bodyJson(req).name) }),
   rename_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().rename(req.params.lib, bodyJson(req).name) }),
   delete_library: (service, req) => json(200, service.removeLibrary(req.params.lib)),
   upload_document: (service, req) => {
-    const store = service.requireKnowledge();
+    service.requireKnowledge();
     const form = parseMultipartForm(String(req.headers["content-type"] ?? ""), req.body);
     if (!form.file) throw new ApiError("bad_request", "请求里没有文件。");
     const [name, data] = form.file;
-    const row = store.upload(req.params.lib, name, data, form.fields.kind, segmentParamsOf(service.profile));
+    const row = service.uploadDocument(req.params.lib, name, data, form.fields.kind);
     const { sha256: _, ...document } = row;
     return json(200, { ok: true, document });
   },
   delete_document: (service, req) => {
-    service.requireKnowledge().removeDocument(req.params.lib, bodyJson(req).name);
+    service.removeDocument(req.params.lib, bodyJson(req).name);
     return json(200, { ok: true });
   },
   document: (service, req) => {
@@ -440,7 +440,10 @@ const handlers: Record<string, Handler> = {
   task_knowledge: (service, req) => {
     const t = service.task(req.params.task);
     service.requireKnowledge();
-    return json(200, { ok: true, libraries: service.taskPage(t).knowledge_libraries });
+    // embedding 按这个任务选用的知识库算：选定的嵌入模型、是不是都换算好了、还差几份（按意思查找据此决定能不能用）。
+    const libraries = service.taskPage(t).knowledge_libraries;
+    const { model, ready, pending } = service.knowledgeEmbedding(libraries);
+    return json(200, { ok: true, libraries, embedding: { model, ready, pending } });
   },
   set_task_knowledge: (service, req) => json(200, service.setTaskKnowledge(service.task(req.params.task), bodyJson(req))),
   documents: async (service, req) => {
@@ -500,6 +503,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/tasks/${T}/knowledge`, "task_knowledge"],
   ["POST", `/api/v1/tasks/${T}/knowledge`, "set_task_knowledge"],
   ["GET", "/api/v1/knowledge", "knowledge"],
+  ["POST", "/api/v1/knowledge/embed", "embed_knowledge"],
   ["POST", "/api/v1/knowledge/libraries", "create_library"],
   ["POST", `/api/v1/knowledge/libraries/${L}`, "rename_library"],
   ["POST", `/api/v1/knowledge/libraries/${L}/delete`, "delete_library"],

@@ -148,4 +148,18 @@ body {
 .kbtable td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 .kbtable .dn { font-weight: 600; word-break: break-all; }
 .kbfoot { font-size: 0.88rem; color: var(--mut); margin-top: 0.55rem; }
+/* 这个知识库的文档换算了多少：一行里是「已换算 N / M」、进度条、用的嵌入模型、「开始换算」与停下的原因 */
+.kbembed { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; font-size: 0.93rem; color: #4a4a4a; margin-top: 0.8rem; }
+.kbembed .en { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.kbembed .em { color: var(--mut); }
+.kbembed .es { color: var(--gap); flex-basis: 100%; }
+.kbbar { flex: 0 1 12rem; min-width: 6rem; height: 0.5rem; border-radius: 0.25rem; background: #ececec; overflow: hidden; }
+.kbbar > span { display: block; height: 100%; background: var(--ok); transition: width 0.3s; }
+.kbtable .de { white-space: nowrap; }
+.kbtable .de.failed { color: var(--gap); }
+.kbtable .de .retry { margin-left: 0.5rem; }
+/* 换算失败的原因：在那份文档下面单独一行，横跨整张表；上面那一行不画底线，两行看起来是一份文档 */
+.kbtable tr.failed td { border-bottom: none; padding-bottom: 0.15rem; }
+.kbtable tr.why td { color: var(--gap); font-size: 0.86rem; padding-top: 0; word-break: break-word; }
+.kbtable .de.none, .kbtable .de.queued { color: var(--mut); }
 @media (max-width: 60rem) { .kbgrid { grid-template-columns: minmax(0, 1fr); } }
