@@ -8,18 +8,20 @@
 // Options:
 //   --out <dir>           where the packages go (required; must be outside the repository)
 //   --work <dir>          staging directory (default: <out>/work)
-//   --cache <dir>         downloads: Node binaries, rg and fd, appimagetool (default: <out>/cache)
+//   --cache <dir>         downloads: Node binaries, rg and fd, appimagetool, npm's cache for pi (default: <out>/cache)
 //   --targets <list>      linux-x64,win-x64 (default: both)
 //   --formats <list>      appimage,sea (default: both; appimage is built for linux-x64 only)
 //   --node-version <v>    Node version put into the packages (default 24.15.0)
-//   --pi-dir <dir>        installed pi package (default: <npm root -g>/@earendil-works/pi-coding-agent)
+//   --pi-dir <dir>        an installed pi package to pack instead (default: install the pi that release/pi pins,
+//                         from its lock file, into the staging directory); its version must be the pinned one
 //   --web-dist <dir>      a built web interface (default: build it now with the repository's vite)
 //   --postject <path>     the postject executable, needed for sea. Install it outside the repository, e.g.
 //                         `npm install --prefix <tools dir> postject@1.0.0-alpha.6`; never in this repository.
 //   --appimagetool <path> appimagetool (default: download the pinned release into the cache and check its checksum)
 //   --level <n>           zstd level of the single executable's payload (default 19)
 //
-// Nothing is written inside the repository. Do not run npm install or npm ci in the repository for this.
+// Nothing is written inside the repository. Do not run npm install or npm ci in the repository for this: the
+// build runs `npm ci` for pi in the staging directory, with its downloads kept under <cache>/npm.
 
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -32,7 +34,7 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
-const PI_VERSION = "1.0.4";
+const PI_PIN = path.join(HERE, "pi"); // package.json, package-lock.json and .npmrc: the pi that goes into the packages
 const SEA_FUSE = "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2";
 
 // ---- arguments -------------------------------------------------------------------------------------------
@@ -51,7 +53,7 @@ function parseArgs(argv) {
 
 function usage(message) {
   if (message) console.error(`build.mjs: ${message}`);
-  (message ? console.error : console.log)(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(4, 21).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+  (message ? console.error : console.log)(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(4, 22).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(message ? 2 : 0);
 }
 
@@ -258,6 +260,90 @@ function piKeep(rel) {
   return PI_KEEP.some((kept) => rel === kept || rel.startsWith(`${kept}/`) || kept.startsWith(`${rel}/`));
 }
 
+const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+
+// The pi version release/pi pins: an exact version in package.json, and the same one in the lock file.
+function pinnedPi() {
+  const version = readJson(path.join(PI_PIN, "package.json")).dependencies[PI_PACKAGE];
+  if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error(`release/pi/package.json must pin ${PI_PACKAGE} to an exact version, found ${version}`);
+  const lock = readJson(path.join(PI_PIN, "package-lock.json"));
+  const locked = lock.packages[`node_modules/${PI_PACKAGE}`]?.version;
+  if (locked !== version) throw new Error(`release/pi/package-lock.json has pi ${locked}, package.json pins ${version}; regenerate the lock file (release/pi/README.md)`);
+  return { version, lock };
+}
+
+// The package directories under <root>/node_modules, nested ones included, as paths relative to <root>.
+function installedPackages(root, relative = "node_modules") {
+  const out = [];
+  if (!fs.existsSync(path.join(root, relative))) return out;
+  for (const name of fs.readdirSync(path.join(root, relative)).sort()) {
+    if (name.startsWith(".")) continue;
+    const names = name.startsWith("@") ? fs.readdirSync(path.join(root, relative, name)).sort().map((child) => `${name}/${child}`) : [name];
+    for (const each of names) out.push(`${relative}/${each}`, ...installedPackages(root, `${relative}/${each}/node_modules`));
+  }
+  return out;
+}
+
+// How pi's dependencies in piDir differ from the lock file: a package the lock file does not have, one that is
+// missing (an optional package for another platform may be), or another version. The lock file was written with
+// install-strategy=shallow, so every dependency is inside pi's own node_modules, as in a global install.
+function piTreeDifferences(piDir, lock) {
+  const prefix = `node_modules/${PI_PACKAGE}/`;
+  const locked = new Map(Object.entries(lock.packages).filter(([key]) => key.startsWith(prefix)).map(([key, entry]) => [key.slice(prefix.length), entry]));
+  const installed = installedPackages(piDir);
+  const differences = [];
+  for (const rel of installed) {
+    const entry = locked.get(rel);
+    const version = readJson(path.join(piDir, rel, "package.json")).version;
+    if (!entry) differences.push(`${rel} ${version} is not in the lock file`);
+    else if (entry.version !== version) differences.push(`${rel} is ${version}, the lock file has ${entry.version}`);
+  }
+  const present = new Set(installed);
+  for (const [rel, entry] of locked) if (!present.has(rel) && !entry.optional) differences.push(`${rel} ${entry.version} is in the lock file but not installed`);
+  return { differences, packages: installed.length };
+}
+
+// The packages PI_KEEP takes from pi's own node_modules, with their versions; an error when one is not there
+// (npm's default layout puts them next to pi instead, where copying pi's directory would miss them).
+function keptPiPackages(piDir) {
+  const kept = {};
+  for (const rel of PI_KEEP.filter((each) => each.startsWith("node_modules/"))) {
+    const file = path.join(piDir, rel, "package.json");
+    if (!fs.existsSync(file)) throw new Error(`${rel} is not inside ${piDir}; pi's dependencies must be in pi's own node_modules (install-strategy=shallow, or a global install)`);
+    kept[rel.slice("node_modules/".length)] = readJson(file).version;
+  }
+  return kept;
+}
+
+// Install pi into <work>/pi-install exactly as release/pi/package-lock.json says. No install scripts run: the
+// packages that have one (esbuild among them) do not go into the packages.
+function installPi(work, cache) {
+  const dir = path.join(work, "pi-install");
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  for (const name of ["package.json", "package-lock.json", ".npmrc"]) fs.copyFileSync(path.join(PI_PIN, name), path.join(dir, name));
+  log(`installing pi from release/pi/package-lock.json into ${dir}`);
+  execFileSync("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--cache", path.join(cache, "npm")], { cwd: dir, stdio: "inherit" });
+  return path.join(dir, "node_modules", PI_PACKAGE);
+}
+
+// The pi to pack: the one --pi-dir names, or one installed now from the lock file. Its version must be the pinned
+// one. An installed-now pi must match the lock file package by package; for --pi-dir the differences are printed.
+function resolvePi({ work, cache, given }) {
+  const { version, lock } = pinnedPi();
+  const piDir = given ? path.resolve(given) : installPi(work, cache);
+  const found = readJson(path.join(piDir, "package.json")).version;
+  if (found !== version) throw new Error(`pi ${found} found in ${piDir}, release/pi pins ${version}`);
+  const kept = keptPiPackages(piDir);
+  const { differences, packages } = piTreeDifferences(piDir, lock);
+  if (differences.length) {
+    for (const line of differences) log(`${given ? "warning" : "error"}: ${line}`);
+    if (!given) throw new Error(`the installed pi differs from release/pi/package-lock.json in ${differences.length} place(s)`);
+  }
+  log(`pi ${found}: ${packages} dependency packages, ${differences.length ? `${differences.length} not as in the lock file` : "all as in the lock file"}; packing ${Object.entries(kept).map(([name, v]) => `${name} ${v}`).join(", ")}`);
+  return { piDir, kept };
+}
+
 // Relative import specifiers ending in .ts or .mts, in `from "…"`, `import "…"` and `import("…")`.
 const TS_IMPORT = /(\bfrom\s*|\bimport\s*\(?\s*)(["'])(\.{1,2}\/[^"']+?)\.(m?)ts\2/g;
 
@@ -287,7 +373,7 @@ function stageBackend(payload) {
   return written;
 }
 
-async function stagePayload({ work, cache, target, piDir, webDist, nodeVersion }) {
+async function stagePayload({ work, cache, target, piDir, piPackages, webDist, nodeVersion }) {
   const payload = path.join(work, target, "payload");
   fs.rmSync(payload, { recursive: true, force: true });
   fs.mkdirSync(path.join(payload, "app"), { recursive: true });
@@ -312,7 +398,7 @@ async function stagePayload({ work, cache, target, piDir, webDist, nodeVersion }
   const tools = await stageTools(cache, target, path.join(payload, "tools"));
 
   const piVersion = JSON.parse(fs.readFileSync(path.join(piDir, "package.json"), "utf8")).version;
-  const manifest = { app: "taskwright", version: product.version, target, node: nodeVersion, pi: piVersion, ...tools, built_at: new Date().toISOString() };
+  const manifest = { app: "taskwright", version: product.version, target, node: nodeVersion, pi: piVersion, pi_packages: piPackages, ...tools, built_at: new Date().toISOString() };
   fs.writeFileSync(path.join(payload, "manifest.json"), JSON.stringify(manifest, null, 2));
   log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, pi ${mb(treeSize(path.join(payload, "pi")))}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
   return { payload, manifest };
@@ -402,9 +488,7 @@ async function main() {
   for (const target of targets) if (!TARGETS.includes(target)) usage(`unknown target ${target}`);
   for (const dir of [out, work, cache]) fs.mkdirSync(dir, { recursive: true });
 
-  const piDir = options["pi-dir"] || path.join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), PI_PACKAGE);
-  const piVersion = JSON.parse(fs.readFileSync(path.join(piDir, "package.json"), "utf8")).version;
-  if (piVersion !== PI_VERSION) log(`warning: pi ${piVersion} found, this release pins ${PI_VERSION}`);
+  const { piDir, kept: piPackages } = resolvePi({ work, cache, given: options["pi-dir"] });
 
   let webDist = options["web-dist"];
   if (!webDist) {
@@ -415,7 +499,7 @@ async function main() {
 
   const results = [];
   for (const target of targets) {
-    const { payload, manifest } = await stagePayload({ work, cache, target, piDir, webDist, nodeVersion });
+    const { payload, manifest } = await stagePayload({ work, cache, target, piDir, piPackages, webDist, nodeVersion });
     if (formats.includes("sea")) results.push(await buildSea({ work, out, cache, target, payload, manifest, nodeVersion, postject: options.postject, level }));
     if (formats.includes("appimage") && target === "linux-x64") results.push(await buildAppImage({ work, out, cache, payload, nodeVersion, appimagetool: options.appimagetool }));
   }
