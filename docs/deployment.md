@@ -10,7 +10,7 @@ This version is meant for a single machine or a trusted local network. There is 
 |---|---|---|
 | Node.js | 24 or newer (uses the built-in `node:sqlite`) | task service, agent, web build, simulator tools and driver |
 | Python | 3.12 or newer | observatory, simulator driver |
-| pi coding agent | `@earendil-works/pi-coding-agent` 0.85.1 | runs the executor and the simulated user |
+| pi coding agent | `@earendil-works/pi-coding-agent` 1.0.4 | runs the executor and the simulated user |
 | A model reachable from pi | any provider pi supports (see section 3) | the executor |
 
 The task service runs directly on Node.js with no third-party packages. The observatory needs only the Python standard library. Running the tests needs pytest, which comes with the `[test]` extra of the `observatory` and `server` packages.
@@ -18,7 +18,7 @@ The task service runs directly on Node.js with no third-party packages. The obse
 ## 2 Installation
 
 ```bash
-npm install -g @earendil-works/pi-coding-agent@0.85.1
+npm install -g @earendil-works/pi-coding-agent@1.0.4
 git clone https://github.com/netbuddy/taskwright.git && cd taskwright
 python3 -m venv .venv && . .venv/bin/activate
 make install

@@ -25,7 +25,7 @@ The **agent** (`agent/`) is built on pi: pi provides the agent loop, model acces
 ## Install in short
 
 ```bash
-npm install -g @earendil-works/pi-coding-agent@0.85.1   # then connect a model in pi
+npm install -g @earendil-works/pi-coding-agent@1.0.4    # then connect a model in pi
 git clone https://github.com/netbuddy/taskwright.git && cd taskwright
 python3 -m venv .venv && . .venv/bin/activate
 make install                                            # npm ci + pip install -e 'observatory[test]'

@@ -12,7 +12,7 @@
 |---|---|---|
 | Node.js | 24 或更新（使用内置的 `node:sqlite`） | 任务服务、agent、web 构建、simulator 的工具与驱动程序 |
 | Python | 3.12 或更新 | observatory、simulator 的驱动程序 |
-| pi coding agent | `@earendil-works/pi-coding-agent` 0.85.1 | 运行执行者与模拟用户 |
+| pi coding agent | `@earendil-works/pi-coding-agent` 1.0.4 | 运行执行者与模拟用户 |
 | pi 能连到的一个模型 | pi 支持的任意服务商（见第 3 节） | 供执行者使用 |
 
 任务服务由 Node.js 直接运行，不用任何第三方包；观测台只需要 Python 标准库。跑测试需要 pytest，它随 `observatory` 与 `server` 两个包的 `[test]` 附加项（extra）一起安装。
@@ -20,7 +20,7 @@
 ## 2 安装
 
 ```bash
-npm install -g @earendil-works/pi-coding-agent@0.85.1
+npm install -g @earendil-works/pi-coding-agent@1.0.4
 git clone https://github.com/netbuddy/taskwright.git && cd taskwright
 python3 -m venv .venv && . .venv/bin/activate
 make install

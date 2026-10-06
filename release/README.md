@@ -38,7 +38,7 @@ The payload repeats the repository's layout, so the backend finds its resources 
 
 ## Building
 
-Requirements: Node 24, pi installed globally (`npm install -g @earendil-works/pi-coding-agent@0.85.1`), network access for the first build, and postject installed **outside** this repository:
+Requirements: Node 24, pi installed globally (`npm install -g @earendil-works/pi-coding-agent@1.0.4`), network access for the first build, and postject installed **outside** this repository:
 
 ```bash
 npm install --prefix ~/.cache/taskwright-tools postject@1.0.0-alpha.6

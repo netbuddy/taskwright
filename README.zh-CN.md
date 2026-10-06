@@ -25,7 +25,7 @@ Taskwright 是一个通用的任务型智能体。给它一份**任务定义**�
 ## 最短安装路径
 
 ```bash
-npm install -g @earendil-works/pi-coding-agent@0.85.1   # 装好后在 pi 里接入一个模型
+npm install -g @earendil-works/pi-coding-agent@1.0.4    # 装好后在 pi 里接入一个模型
 git clone https://github.com/netbuddy/taskwright.git && cd taskwright
 python3 -m venv .venv && . .venv/bin/activate
 make install                                            # 即 npm ci 加 pip install -e 'observatory[test]'
