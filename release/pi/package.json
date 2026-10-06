@@ -1,0 +1,8 @@
+{
+  "name": "taskwright-bundled-pi",
+  "private": true,
+  "description": "Pins the pi that goes into the desktop packages. Used by release/build.mjs only.",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.0.4"
+  }
+}
