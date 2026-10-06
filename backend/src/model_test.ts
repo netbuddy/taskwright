@@ -1,10 +1,13 @@
 /**
- * 测试语言模型（docs/api.md §10）：起一次不属于任何任务的助手，让模型读一个小文件并回答文件里写的一个数，回报这一次通过还是没有通过。
+ * 测试模型（docs/api.md §10）。测试语言模型：起一次不属于任何任务的助手，让模型读一个小文件并回答文件里写的一个数，回报这一次通过还是没有通过。
  *
  * 走的是任务里起助手的同一条路：同一份启动配置、同一个模型（launch.ts 的 resolveModel）、同一个会话类与收发数据层。
  * 与任务不同的只有这几样：工作目录是一个临时目录；工具只留读文件的那一个；不加载任何扩展与技能，所以没有产品自己的工具，
  * 也没有任务现状消息；不带任务的系统提示，用助手程序自带的。归档也写在临时目录里，测试结束连同临时目录一起删掉，结果不保存。
- * 同一时间只跑一个测试。
+ *
+ * 测试嵌入模型：不起助手，用调嵌入模型的模块（embedding.ts）把一句话按查询的用途换算一次，拿回一条数字串就算通过。
+ *
+ * 同一时间只跑一个测试，两种模型的测试共用这一条。
  */
 
 import { randomInt } from "node:crypto";
@@ -12,10 +15,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { textOf } from "./conversation.ts";
+import { EmbeddingError, embed } from "./embedding.ts";
 import { ApiError } from "./errors.ts";
 import { startFailure } from "./executor.ts";
 import { type Profile, resolveModel } from "./launch.ts";
-import type { Context } from "./model_config.ts";
+import { type Context, embeddingTarget } from "./model_config.ts";
 import { PiExited, PiSession, technicalOf } from "./pi_session.ts";
 import type { PiTransport } from "./transport.ts";
 
@@ -172,11 +176,59 @@ export async function testLanguageModel(ctx: Context, options: TestOptions = {})
   }
 }
 
-/** POST /api/v1/model-config/test */
-export async function testModel(ctx: Context, body: Record<string, any>): Promise<TestResult> {
-  if (body.type !== "language") {
-    const message = "现在只能测试语言模型，type 应当是 language。";
-    throw new ApiError("rejected", message, { field: "type", reasons: [message] });
+export interface EmbeddingTestResult {
+  ok: true;
+  result: "passed" | "failed";
+  /** 这一次测的嵌入模型，「服务名/型号」；没有选嵌入模型时是空串。 */
+  model: string;
+  /** 用时，秒，一位小数。 */
+  seconds: number;
+  /** 送去换算的那句话：设置里的查询前缀接上「这批货一共有 N 箱。」。 */
+  question: string;
+  /** 算出来的数字串的长度；没有拿到数字串时是 null。 */
+  dimensions: number | null;
+  /** 没有通过时一句给人看的原因；通过时是 null。 */
+  reason: string | null;
+}
+
+export interface EmbeddingTestOptions {
+  /** 最多等多久；不给时是调嵌入模型的模块的时限（60 秒）。 */
+  timeoutMs?: number;
+}
+
+/**
+ * 对选定的嵌入模型做一次测试：把一句话按查询的用途（前面加设置里的查询前缀）送去换算。拿回正好一条数字串算通过；
+ * 数字串非空、每一项都是数由调嵌入模型的模块核对。没有做成的各种情形（没有选嵌入模型也在内）都算没有通过，原因写在 reason 里。
+ * 已经有一个测试在跑时报 busy。
+ */
+export async function testEmbeddingModel(ctx: Context, options: EmbeddingTestOptions = {}): Promise<EmbeddingTestResult> {
+  if (running) throw new ApiError("busy", BUSY_TEXT);
+  running = true;
+  const started = Date.now();
+  try {
+    // 句式与测试语言模型时文件里写的那一句相同，箱数每次随机取一个两位数。
+    const sentence = `这批货一共有 ${randomInt(10, 100)} 箱。`;
+    const target = embeddingTarget(ctx);
+    const result = (reason: string | null, dimensions: number | null): EmbeddingTestResult => ({
+      ok: true, result: reason === null ? "passed" : "failed", model: target ? `${target.provider_id}/${target.model}` : "",
+      seconds: Math.round((Date.now() - started) / 100) / 10, question: (target?.query_prefix ?? "") + sentence, dimensions, reason,
+    });
+    try {
+      const got = await embed(ctx, [sentence], "query", { timeoutMs: options.timeoutMs });
+      return result(null, got.dimensions);
+    } catch (error) {
+      if (!(error instanceof EmbeddingError)) throw error;
+      return result(error.message, null);
+    }
+  } finally {
+    running = false;
   }
-  return testLanguageModel(ctx);
+}
+
+/** POST /api/v1/model-config/test */
+export async function testModel(ctx: Context, body: Record<string, any>): Promise<TestResult | EmbeddingTestResult> {
+  if (body.type === "language") return testLanguageModel(ctx);
+  if (body.type === "embedding") return testEmbeddingModel(ctx);
+  const message = "type 应当是 language 或 embedding。";
+  throw new ApiError("rejected", message, { field: "type", reasons: [message] });
 }

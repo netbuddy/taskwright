@@ -1,7 +1,8 @@
 // 设置页面的「模型」一栏：上半部分「现在用的模型」两行，下半部分「模型服务」（左边清单，右边选中的那一个的详情）。
 // 「添加模型服务」换成添加的画面；添加成功之后回到这里，右边打开新的那一个，并随即获取一次它的模型列表。
 // editable 为假时整栏只读，顶上是后端给的那句说明。现在的后端 editable 恒为 true（从哪台电脑打开都能改），这条只读的路留着。
-// 语言模型那一行有「测试」：后端起一次助手，让模型读一个小文件并回答一句；结果连同问与答写在这一行下面，换了模型或者刷新页面就清掉。
+// 两行各有「测试」。语言模型：后端起一次助手，让模型读一个小文件并回答一句，结果连同问与答写在这一行下面。嵌入模型：后端把一句话送去换算，
+// 结果写送去的那句话与算出来的数字串有多长。同一时间只测一种；更换了哪一种模型就清掉哪一种的结果，刷新页面两种都清掉。
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Spin } from "antd";
@@ -14,7 +15,8 @@ import { AddProvider } from "./AddProvider";
 import { PickModelDialog } from "./PickModelDialog";
 import { ProviderDetail, type FetchNote } from "./ProviderDetail";
 import {
-  APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, formatNumber, kindName, selected, testConfirmText, testQuestionText, testReplyText, testResultText,
+  APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, formatNumber, kindName, selected, testConfirmText, testConfirmTitle, testDimensionsText,
+  testQuestionText, testReplyText, testResultText, testSentText,
 } from "./text";
 
 export function ModelSettings() {
@@ -29,8 +31,8 @@ export function ModelSettings() {
   const [note, setNote] = useState(APPLIES_TEXT);
   const [fetching, setFetching] = useState<Set<string>>(new Set());
   const [fetchNotes, setFetchNotes] = useState<Record<string, FetchNote>>({});
-  const [testing, setTesting] = useState(false);
-  const [tested, setTested] = useState<ModelTestResult | null>(null);
+  const [testing, setTesting] = useState<ModelType | null>(null);
+  const [tested, setTested] = useState<Partial<Record<ModelType, ModelTestResult>>>({});
   const dirty = useRef(false);
   const markDirty = useCallback((d: boolean) => { dirty.current = d; }, []);
   const detailRef = useRef<HTMLDivElement>(null);
@@ -87,29 +89,37 @@ export function ModelSettings() {
     void fetchModels(p.id);
   };
 
-  const runTest = async () => {
-    setTesting(true);
-    setTested(null);
+  /** 去掉某一种模型上一次测试的结果。 */
+  const clearTested = (type: ModelType) => setTested((t) => { const next = { ...t }; delete next[type]; return next; });
+
+  const runTest = async (type: ModelType) => {
+    setTesting(type);
+    clearTested(type);
     try {
-      setTested(await api.testModel("language"));
+      const result = await api.testModel(type);
+      setTested((t) => ({ ...t, [type]: result }));
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "测试没有做成。");
     } finally {
-      setTesting(false);
+      setTesting(null);
     }
   };
 
-  /** 测试之前先问一句：会发一次真实的请求。model 是现在实际会用的那个语言模型的名字。 */
-  const confirmTest = (model: string) => {
+  /** 测试之前先问一句：会发一次真实的请求。model 是要测的那个模型的名字（语言模型是现在实际会用的那一个）。 */
+  const confirmTest = (type: ModelType, model: string) => {
     modal.confirm({
-      title: "测试语言模型", content: testConfirmText(model), okText: "开始测试", cancelText: "取消", onOk: () => { void runTest(); },
+      title: testConfirmTitle(type), content: testConfirmText(type, model), okText: "开始测试", cancelText: "取消", onOk: () => { void runTest(type); },
     });
   };
+  const testOf = (type: ModelType) => info?.capabilities.model_test
+    ? { testing: testing === type, busy: testing !== null, result: tested[type] ?? null, onTest: (model: string) => confirmTest(type, model) }
+    : undefined;
 
   const onPicked = async (_: ModelSelection, text: string) => {
+    // 更换的是哪一种（只改了嵌入模型的查询前缀也算更换），就清掉哪一种的测试结果。
+    if (picking) clearTested(picking);
     setPicking(null);
     setNote(text);
-    setTested(null);
     await load();
     refresh();
   };
@@ -150,8 +160,9 @@ export function ModelSettings() {
       <div className="section-title first">现在用的模型</div>
       <div className="card cur">
         <CurrentRow label={LANGUAGE_LABEL} type="language" config={config} editable={editable} canPick={candidates("language")} onPick={() => setPicking("language")}
-          test={info?.capabilities.model_test ? { testing, result: tested, onTest: confirmTest } : undefined} />
-        <CurrentRow label={EMBEDDING_LABEL} type="embedding" config={config} editable={editable} canPick={candidates("embedding")} onPick={() => setPicking("embedding")} />
+          test={testOf("language")} />
+        <CurrentRow label={EMBEDDING_LABEL} type="embedding" config={config} editable={editable} canPick={candidates("embedding")} onPick={() => setPicking("embedding")}
+          test={testOf("embedding")} />
         <div className="effect" data-testid="applies-note">{note}</div>
       </div>
 
@@ -207,12 +218,13 @@ function ProviderItem({ provider, on, onClick }: { provider: Provider; on: boole
 }
 
 /**
- * 「现在用的模型」的一行。右边「更换」或者「选择」；给了 test 的那一行（语言模型）再右边是「测试」，测的是现在实际会用的那个模型：
- * 选定的，没有选定时是后端说的那一个；两个都没有时按钮是灰的。测试当中不能再点，也不能更换。结果写在这一行下面。
+ * 「现在用的模型」的一行。右边「更换」或者「选择」；给了 test 时再右边是「测试」。语言模型测的是现在实际会用的那个模型：选定的，
+ * 没有选定时是后端说的那一个；嵌入模型测的是选定的那一个。没有模型可测时按钮是灰的。test.testing 是这一行正在测，test.busy 是
+ * 两行里有一行正在测：这时两行的「测试」都不能再点，也都不能更换。结果写在这一行下面。
  */
 function CurrentRow({ label, type, config, editable, canPick, onPick, test }: {
   label: string; type: ModelType; config: ModelConfig; editable: boolean; canPick: boolean; onPick: () => void;
-  test?: { testing: boolean; result: ModelTestResult | null; onTest: (model: string) => void };
+  test?: { testing: boolean; busy: boolean; result: ModelTestResult | null; onTest: (model: string) => void };
 }) {
   const ref = selected(config, type);
   const model = ref?.provider?.models.find((m) => m.id === ref.modelId) ?? null;
@@ -230,16 +242,16 @@ function CurrentRow({ label, type, config, editable, canPick, onPick, test }: {
   } else {
     body = <div>还没有选。知识库只能按字面查找。</div>;
   }
-  const testable = ref ? ref.modelId : config.fallback?.model || null;
+  const testable = ref ? ref.modelId : type === "language" ? config.fallback?.model || null : null;
   const passed = test?.result?.result === "passed";
   return (
     <div className="currow" data-testid={`current-${type}`}>
       <div className="cl">{label}</div>
       <div className="ci">{body}</div>
       <div className="ca">
-        {editable && <Button size="small" disabled={!canPick || test?.testing} onClick={onPick} data-testid={`pick-${type}-button`}>{ref ? "更换" : "选择"}</Button>}
+        {editable && <Button size="small" disabled={!canPick || test?.busy} onClick={onPick} data-testid={`pick-${type}-button`}>{ref ? "更换" : "选择"}</Button>}
         {test && (
-          <Button size="small" disabled={testable === null} loading={test.testing} onClick={() => test.onTest(testable!)} data-testid={`test-${type}-button`}>
+          <Button size="small" disabled={testable === null || (test.busy && !test.testing)} loading={test.testing} onClick={() => test.onTest(testable!)} data-testid={`test-${type}-button`}>
             {test.testing ? "正在测试……" : "测试"}
           </Button>
         )}
@@ -247,8 +259,17 @@ function CurrentRow({ label, type, config, editable, canPick, onPick, test }: {
       {test?.result && (
         <div className={`tres ${passed ? "ok" : "bad"}`} data-testid={`test-${type}-result`}>
           <div className="th">{passed ? <CheckCircleFilled /> : <WarningFilled />}{testResultText(test.result)}</div>
-          <div className="tq" data-testid={`test-${type}-question`}>{testQuestionText(test.result)}</div>
-          <div className="tq" data-testid={`test-${type}-reply`}>{testReplyText(test.result)}</div>
+          {type === "language" ? (
+            <>
+              <div className="tq" data-testid="test-language-question">{testQuestionText(test.result)}</div>
+              <div className="tq" data-testid="test-language-reply">{testReplyText(test.result)}</div>
+            </>
+          ) : passed && (
+            <>
+              <div className="tq sent" data-testid="test-embedding-question">{testSentText(test.result)}</div>
+              <div className="tq" data-testid="test-embedding-dimensions">{testDimensionsText(test.result)}</div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -2,7 +2,8 @@
  * 在界面上配置模型服务（docs/api.md §10）。
  *
  * 两种模型的调用者不同：语言模型由 pi 调用，模型服务的连接写进 pi 配置目录里的模型登记文件 models.json，密钥写进登录凭据文件
- * auth.json；嵌入模型由任务服务自己调用（这一版只记下选了哪一个）。「选了哪一个」记在产品自己的设置文件里（product_settings.ts）。
+ * auth.json；嵌入模型由任务服务自己调用（embedding.ts，连接从这里的 embeddingTarget 取）。「选了哪一个」记在产品自己的设置文件里
+ * （product_settings.ts）。
  *
  * 产品只增改自己登记的那几项（服务名以 taskwright- 开头、并且在产品设置的名单上）；两个共用文件里别的内容原样保留，
  * 写之前备份、照 pi 的办法加锁（config_files.ts）。用户自己在 models.json 里写的服务在接口里单列成只读的一组（managed 为假）。
@@ -95,6 +96,11 @@ export function piBaseUrl(kind: Kind, base: string): string {
 /** 列出模型用的地址：兼容 OpenAI 接口的 …/models（ollama 另用它自己的接口，见 listModels）。 */
 function modelsUrl(kind: Kind, base: string): string {
   return `${piBaseUrl(kind, base)}/models`;
+}
+
+/** 调嵌入模型用的地址：ollama 用它自己的接口，别的是兼容 OpenAI 接口的 …/embeddings。 */
+function embeddingsUrl(kind: Kind, base: string): string {
+  return kind === "ollama" ? `${rootOf(base)}/api/embed` : `${piBaseUrl(kind, base)}/embeddings`;
 }
 
 function checkBaseUrl(value: unknown): string {
@@ -339,6 +345,32 @@ export function view(ctx: Context) {
     ok: true, editable: true, notice: null, selection, fallback,
     providers: [...providers, ...externalViews(models, dir)],
   };
+}
+
+/** 选定的嵌入模型连到哪里。 */
+export interface EmbeddingTarget {
+  provider_id: string;
+  model: string;
+  query_prefix: string;
+  /** 模型服务的种类；这个模型服务已经不在产品设置的名单上时是 null。 */
+  kind: Kind | null;
+  /** 模型服务的显示名；不在名单上时是服务名。 */
+  name: string;
+  /** 调嵌入模型的地址；Codex 订阅与不在名单上的模型服务是 null。 */
+  url: string | null;
+  key: string | null;
+}
+
+/** 选定的嵌入模型所在的模型服务、地址与密钥；没有选嵌入模型时是 null。只读，不改任何文件。 */
+export function embeddingTarget(ctx: Context): EmbeddingTarget | null {
+  const dir = readPiDirSettings(agentDir(ctx), ctx.env);
+  const ref = dir.selection.embedding;
+  if (!ref) return null;
+  const chosen = { provider_id: ref.provider, model: ref.model, query_prefix: ref.query_prefix };
+  const p = dir.providers[ref.provider];
+  if (!p) return { ...chosen, kind: null, name: ref.provider, url: null, key: null };
+  if (p.kind === "codex" || p.base_url === null) return { ...chosen, kind: p.kind, name: p.name, url: null, key: null };
+  return { ...chosen, kind: p.kind, name: p.name, url: embeddingsUrl(p.kind, p.base_url), key: keyOf(readForView(authFile(ctx)), ref.provider) };
 }
 
 // ───────────── 写：先查共用文件能不能写，再改产品设置，最后改共用文件 ─────────────

@@ -71,20 +71,31 @@ export const LOGIN_NOTE = "这里只能看出登录凭据在不在，看不出�
 export const LOGIN_COMMAND = "pi";
 export const LOGIN_INSTRUCTION = "/login";
 export const LOGIN_INSTRUCTION_HINT = "输入后在列表里选 ChatGPT Plus/Pro (Codex)";
-/** 测试语言模型之前确认框里的那句：写明会发一次真实的请求。 */
-export function testConfirmText(model: string): string {
-  return `会用「${model}」发一次真实的请求：让模型读一个小文件并回一句话。商业接口可能产生很少的费用。`;
+/** 测试之前确认框的标题与里面的那句：写明会发一次真实的请求。 */
+export function testConfirmTitle(type: ModelType): string {
+  return `测试${TYPE_NAME[type]}`;
+}
+export function testConfirmText(type: ModelType, model: string): string {
+  const what = type === "language" ? "让模型读一个小文件并回一句话" : "把一句话换算成一串数字";
+  return `会用「${model}」发一次真实的请求：${what}。商业接口可能产生很少的费用。`;
 }
 /** 测试结果的头一行。只说这一次，不说这个模型以后都可以用。 */
 export function testResultText(result: ModelTestResult): string {
   return result.result === "passed" ? `这一次测试通过，用时 ${result.seconds} 秒。` : `这一次测试没有通过：${result.reason ?? ""}`;
 }
-/** 头一行下面的两行：问了模型什么，模型答了什么。通过与没有通过都写；模型没有回答时照实说。 */
+/** 语言模型的结果，头一行下面的两行：问了模型什么，模型答了什么。通过与没有通过都写；模型没有回答时照实说。 */
 export function testQuestionText(result: ModelTestResult): string {
   return `问模型：${result.question}`;
 }
 export function testReplyText(result: ModelTestResult): string {
   return result.reply ? `模型回答：${result.reply}` : "模型没有回答";
+}
+/** 嵌入模型通过时的结果，头一行下面的两行：送去换算的是哪句话（前面带着查询前缀），算出来的数字串有多长。没有通过时只有头一行。 */
+export function testSentText(result: ModelTestResult): string {
+  return `送去换算的话：${result.question}`;
+}
+export function testDimensionsText(result: ModelTestResult): string {
+  return `算出来的数字串长度：${result.dimensions ?? ""}`;
 }
 /** 模型超过这么多个时，清单平时只列出勾上的。 */
 export const MANY_MODELS = 10;

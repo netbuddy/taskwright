@@ -25,7 +25,7 @@ export const STATUS: Record<string, number> = {
   in_use: 409,
   config_unwritable: 409,
   config_locked: 503,
-  // 测试语言模型（docs/api.md §10）：已经有一个测试在跑。
+  // 测试模型（docs/api.md §10）：已经有一个测试在跑。
   busy: 409,
 };
 
