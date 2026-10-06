@@ -33,6 +33,12 @@ export const FUNCTION_NAMES: Record<string, string> = {
 
 /** 门禁拒绝的开头。lib/reply.ts 数「回复」连续被拒几次时，按它把门禁的拒绝排除在外。 */
 export const INTENT_GATE_TEXT = "先按 schema 写下你对用户这句话的理解";
+/**
+ * 门禁拒绝里说原因的两句：这一轮一个理解的片段都没有写，或者写了但都不合格。后端的过程摘要按这两句分开写
+ * （backend/src/work_summary.ts），lib/rejection_limit.ts 也按它们认是哪一种拒绝；改这里的字，两处跟着变。
+ */
+export const GATE_MISSING_TEXT = "这一轮还没有写理解";
+export const GATE_INVALID_TEXT = "都不是合格的理解";
 
 /** 摘要最多几个字（与 schema 里 summary 的 maxLength 一致）。 */
 export const SUMMARY_LIMIT: number = INTENT_SCHEMA.properties.acts.items.properties.summary.maxLength;

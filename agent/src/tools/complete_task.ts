@@ -8,6 +8,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { completeTask } from "../lib/complete_task.ts";
 import { lastCompletionClick } from "../lib/completion_consent.ts";
 import { currentRun, requireUnderstanding } from "../lib/dialogue_acts.ts";
+import { isUnderstandingGate, reportStopped, stopAtLimit } from "../lib/rejection_limit.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 
 export const TOOL_NAME = "complete_task";
@@ -40,6 +41,13 @@ export function registerCompleteTask(pi: ExtensionAPI): void {
           consent: click ? { source: "card", click } : null,
         });
         return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
+      }).catch((error: unknown) => {
+        // 因为没有合格的理解而被拒、而且这一轮连续被拒到上限：返回「出错并结束本次运行」的结果（lib/rejection_limit.ts）。
+        // 输入不合规的拒绝不算，照常抛出，让模型改正之后再试。
+        const stopped = stopAtLimit(error, branch, isUnderstandingGate(error));
+        if (!stopped) throw error;
+        reportStopped(ctx.ui, TOOL_NAME, stopped);
+        return stopped;
       });
     },
   });

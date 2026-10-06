@@ -15,6 +15,7 @@ import { saveRevision } from "../lib/save_revision.ts";
 import { envKnowledgeRoot } from "../lib/knowledge.ts";
 import { currentRun, requireUnderstanding } from "../lib/dialogue_acts.ts";
 import { problemClicks } from "../lib/problem_consent.ts";
+import { isUnderstandingGate, reportStopped, stopAtLimit } from "../lib/rejection_limit.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
@@ -144,6 +145,13 @@ export function registerSaveRevision(pi: ExtensionAPI): void {
           params,
         );
         return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
+      }).catch((error: unknown) => {
+        // 因为没有合格的理解而被拒、而且这一轮连续被拒到上限：返回「出错并结束本次运行」的结果（lib/rejection_limit.ts）。
+        // 输入不合规的拒绝不算，照常抛出，让模型改正之后再试。
+        const stopped = stopAtLimit(error, branch, isUnderstandingGate(error));
+        if (!stopped) throw error;
+        reportStopped(ctx.ui, TOOL_NAME, stopped);
+        return stopped;
       });
     },
   });

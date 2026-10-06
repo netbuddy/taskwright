@@ -7,7 +7,8 @@
  * pi 在 agent_end 之后看到队列里有消息，会接着跑，不会先发 agent_settled。
  *
  * 不兜底的情形：最后一条助手消息是出错（error，可能由 pi 自动重试，也可能是模型服务的问题）或被中止
- * （aborted，用户或后端主动停的）。这两种都不是执行者没按规矩说话。
+ * （aborted，用户或后端主动停的）。这两种都不是执行者没按规矩说话。还有一种：这次运行是因为连续被拒到上限、
+ * 由工具停下的（lib/rejection_limit.ts），再追加一句只会让它接着被拒。
  *
  * 连续兜底两次仍不合格就停止，不再追加，留给后端按接口约定第 5.2 节第 3 条转发正文。用户（经 RPC 或界面）
  * 再说一句话时计数清零。每次兜底与放弃都经状态栏报一行事实（键名 taskwright-reply-fallback），
@@ -17,6 +18,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { endedStopped } from "../lib/rejection_limit.ts";
 import { REPLY_TOOL_NAME } from "../lib/reply.ts";
 
 /** 兜底时追加的那句话。固定文字，不随情形变。 */
@@ -61,6 +63,10 @@ export function registerReplyFallback(pi: ExtensionAPI): void {
     if (endedWithReply(messages)) {
       if (fallbacks > 0) report({ 结果: "兜底之后执行者经回复工具说了话" });
       fallbacks = 0;
+      return;
+    }
+    if (endedStopped(messages)) {
+      report({ 结果: "这次运行因为连续被拒到上限已经停下，不追加" });
       return;
     }
     const stop = lastStopReason(messages);
