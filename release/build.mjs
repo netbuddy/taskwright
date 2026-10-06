@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
-const PI_VERSION = "0.85.1";
+const PI_VERSION = "1.0.4";
 const SEA_FUSE = "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2";
 
 // ---- arguments -------------------------------------------------------------------------------------------
