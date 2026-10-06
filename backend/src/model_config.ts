@@ -19,7 +19,7 @@ import { join, resolve } from "node:path";
 import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
 import { ApiError } from "./errors.ts";
 import * as clock from "./clock.ts";
-import { CODEX_PROVIDER } from "./codex.ts";
+import { CODEX_PROVIDER, codexAccess } from "./codex.ts";
 import { type Profile, buildEnvironment, piAgentDir, piLauncher, resolveModel } from "./launch.ts";
 import {
   type Kind, type ModelType, type PiDirSettings, type ProviderStatus, type Purpose, type Selection, type StoredModel, type StoredProvider,
@@ -239,7 +239,7 @@ function tokens(text: string): number | null {
 const CODEX_RETRY = "可以稍后再试。";
 const CODEX_LOGIN = "请先在命令行里登录，再回到这里点「获取模型列表」。";
 
-/** Codex 订阅的模型：让 pi 按它自己的目录列出（不联网；只列已经登录的服务的模型）。 */
+/** Codex 订阅的模型：让 pi 按它自己的目录列出（不联网；只列已经登录的服务的模型）。列的是登录用的那个入口在 pi 里的服务商（见 codex.ts）。 */
 async function listCodexModels(ctx: Context): Promise<Listed> {
   let launcher: ReturnType<typeof piLauncher>;
   try {
@@ -247,8 +247,9 @@ async function listCodexModels(ctx: Context): Promise<Listed> {
   } catch {
     return failed("找不到助手的程序", CODEX_RETRY);
   }
+  const provider = codexAccess(readForView(authFile(ctx))).provider;
   const env = { ...buildEnvironment(ctx.profile), ...launcher.env, PI_OFFLINE: "1" };
-  const args = [...launcher.prefix, "--offline", "--no-extensions", "--no-skills", "--list-models", CODEX_PROVIDER];
+  const args = [...launcher.prefix, "--offline", "--no-extensions", "--no-skills", "--list-models", provider];
   const output = await new Promise<{ code: number | null; text: string }>((done) => {
     const child = spawn(launcher.command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
@@ -264,7 +265,7 @@ async function listCodexModels(ctx: Context): Promise<Listed> {
   const models: Listed["models"] = [];
   for (const line of output.text.split("\n")) {
     const cols = line.trim().split(/\s+/);
-    if (cols.length >= 3 && cols[0] === CODEX_PROVIDER) models.push({ id: cols[1], type: "language", context_window: tokens(cols[2]) });
+    if (cols.length >= 3 && cols[0] === provider) models.push({ id: cols[1], type: "language", context_window: tokens(cols[2]) });
   }
   if (!models.length) return failed("还没有登录 Codex 订阅", CODEX_LOGIN);
   return { result: "listed", message: "", models };
@@ -279,8 +280,7 @@ function keyOf(auth: Record<string, any> | null, id: string): string | null {
 }
 
 function codexLoggedIn(auth: Record<string, any> | null): boolean {
-  const entry = auth?.[CODEX_PROVIDER];
-  return !!entry && typeof entry === "object" && entry.type === "oauth";
+  return codexAccess(auth).logged_in;
 }
 
 // ───────────── 对外的视图 ─────────────

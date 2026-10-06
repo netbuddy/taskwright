@@ -16,7 +16,7 @@
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { CODEX_PROVIDER } from "./codex.ts";
+import { codexAccessIn } from "./codex.ts";
 import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
 import { userDataDir } from "./paths.ts";
 
@@ -185,7 +185,7 @@ export function selectedLanguageModel(agentDir: string, env: NodeJS.ProcessEnv |
   if (!language) return null;
   const provider = dir.providers[language.provider];
   if (provider && provider.purpose !== "language") return null;
-  return `${provider?.kind === "codex" ? CODEX_PROVIDER : language.provider}/${language.model}`;
+  return `${provider?.kind === "codex" ? codexAccessIn(agentDir).provider : language.provider}/${language.model}`;
 }
 
 /**

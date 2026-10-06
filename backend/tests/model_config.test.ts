@@ -477,6 +477,56 @@ test("选定 Codex 订阅里的模型：交给助手程序的模型名用助手�
   assert.equal(info.model.name, "openai-codex/gpt-6-luna");
 });
 
+test("Codex 订阅认两个登录入口的凭据：旧入口登录了用旧入口；只有新入口登录了就用新入口，列模型与交给助手程序的模型名都跟着换；按量付费的密钥不算登录", async () => {
+  // 假的助手程序：记下收到的参数，按最后一个参数（要列的服务商）回一行这个服务商的模型，再回一行别的服务商的
+  const log = join(tmp, `list-args-${round}.jsonl`);
+  const lister = join(tmp, `list-by-provider-${round}.mjs`);
+  writeFileSync(lister, [
+    'import { appendFileSync } from "node:fs";',
+    "const args = process.argv.slice(2);",
+    `appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");`,
+    'console.log("provider  model  context  max-out  thinking  images");',
+    "console.log(`${args.at(-1)}  gpt-6-luna  272K  128K  yes  yes`);",
+    'console.log("someone-else  other-model  128K  128K  yes  yes");',
+  ].join("\n"));
+  const before = process.env.TASKWRIGHT_PI_ENTRY;
+  process.env.TASKWRIGHT_PI_ENTRY = lister;
+  const oauth = { type: "oauth", access: "a", refresh: "r", expires: 1 };
+  const listed = () => readFileSync(log, "utf-8").trim().split("\n").map((line) => JSON.parse(line).at(-1));
+  try {
+    // 凭据文件里 openai 名下是按量付费的密钥：不算登录，按旧入口算
+    writeFileSync(authJson(), JSON.stringify({ openai: { type: "api_key", key: "sk-pay-as-you-go" } }));
+    const added = await go("POST", "/api/v1/model-config/providers", { purpose: "language", kind: "codex" });
+    const id = added.body.provider.id;
+    assert.deepEqual([added.body.provider.status.ok, added.body.provider.status.logged_in], [false, false]);
+    // 只有新入口的登录凭据：算已经登录，列的是 openai 这个服务商的模型
+    writeFileSync(authJson(), JSON.stringify({ openai: { ...oauth, clientId: "c", scopes: ["openid"] } }));
+    const checked = await go("POST", `/api/v1/model-config/providers/${id}/check`, {});
+    assert.deepEqual([checked.body.provider.status.ok, checked.body.provider.status.logged_in], [true, true]);
+    const fetched = await go("POST", `/api/v1/model-config/providers/${id}/fetch-models`, {});
+    assert.equal(fetched.body.result, "listed", JSON.stringify(fetched.body));
+    assert.deepEqual(fetched.body.provider.models.map((m: Dict) => [m.id, m.context_window]), [["gpt-6-luna", 272000]]);
+    assert.deepEqual(listed(), ["openai"]);
+    await go("POST", `/api/v1/model-config/providers/${id}`, { models: [{ id: "gpt-6-luna", enabled: true, context_window: 272000 }] });
+    await go("POST", "/api/v1/model-config/selection", { language: { provider_id: id, model_id: "gpt-6-luna" }, embedding: null });
+    assert.equal(resolveModel(service.profile).model, "openai/gpt-6-luna");
+    assert.equal(serviceInfo(service, "127.0.0.1").capabilities.model, true);
+    // 两个入口都登录了：用旧入口，已经在用的不受影响
+    writeFileSync(authJson(), JSON.stringify({ openai: oauth, "openai-codex": oauth }));
+    assert.equal(resolveModel(service.profile).model, "openai-codex/gpt-6-luna");
+    await go("POST", `/api/v1/model-config/providers/${id}/fetch-models`, {});
+    assert.deepEqual(listed(), ["openai", "openai-codex"]);
+    // 两个都没有登录：按旧入口算，状态是没有登录
+    writeFileSync(authJson(), "{}");
+    assert.equal(resolveModel(service.profile).model, "openai-codex/gpt-6-luna");
+    assert.equal((await go("POST", `/api/v1/model-config/providers/${id}/check`, {})).body.provider.status.logged_in, false);
+    assert.equal((await go("GET", "/api/v1/model-config")).body.providers[0].status.logged_in, false);
+  } finally {
+    if (before === undefined) delete process.env.TASKWRIGHT_PI_ENTRY;
+    else process.env.TASKWRIGHT_PI_ENTRY = before;
+  }
+});
+
 test("Codex 订阅获取模型列表没有成功：没有登录时让用户先登录；别的原因只说稍后再试；都不建议手工添加", async () => {
   const before = process.env.TASKWRIGHT_PI_ENTRY;
   const fetchWith = async (entry: string) => {

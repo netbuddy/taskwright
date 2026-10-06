@@ -105,7 +105,7 @@ describe("设置页面的「模型」一栏", () => {
       expect(within(login).getByTestId("login-command")).toHaveTextContent(/^pi$/);
       const second = within(login).getByTestId("login-instruction");
       expect(second).toHaveTextContent(/^\/login$/);
-      expect(second.parentElement).toHaveTextContent("/login输入后在列表里选 ChatGPT Plus/Pro (Codex)");
+      expect(second.parentElement).toHaveTextContent("/login输入后在列表里选 OpenAI (ChatGPT subscription)；用旧入口 OpenAI Codex (legacy) 登录的也可以");
       expect(login).not.toHaveTextContent("登录的命令");
       fireEvent.click(within(login).getByRole("button", { name: /复制/ }));
       expect(writeText).toHaveBeenCalledTimes(1);
