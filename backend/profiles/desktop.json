@@ -14,7 +14,8 @@
     "get_item",
     "get_task_status",
     "complete_task",
-    "request_review"
+    "request_review",
+    "search_knowledge"
   ],
   "flags": {
     "no_extensions": true,

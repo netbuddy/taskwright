@@ -94,12 +94,13 @@ test("平台 skill 写明知识库什么时候必须查、怎样查、来源怎�
 
 // 工具数量受限是产品的原则：新增一个工具之前，先排除用现有工具的参数、读会话记录、改后端或页面代码这几条路能不能做到。
 // 这一例盯着启动配置里的工具清单；增减工具时要有意识地改这里的个数与名单，不要顺手改掉。
-test("执行者的工具清单是十个：含请求评审与自带的检索工具 grep、find；扩展里登记了请求评审", () => {
+test("执行者的工具清单是十一个：含请求评审、按意思查找知识库与自带的检索工具 grep、find；扩展里登记了请求评审与按意思查找知识库", () => {
   const tools: string[] = DEV_PROFILE.tools;
-  assert.equal(tools.length, 10, JSON.stringify(tools));
-  assert.ok(tools.includes("request_review"));
+  assert.equal(tools.length, 11, JSON.stringify(tools));
+  assert.ok(tools.includes("request_review") && tools.includes("search_knowledge"));
   assert.ok(tools.includes("grep") && tools.includes("find"), JSON.stringify(tools));
-  assert.ok(readFileSync(join(ROOT, "agent", "src", "extension.ts"), "utf-8").includes("registerRequestReview(pi);"));
+  const extension = readFileSync(join(ROOT, "agent", "src", "extension.ts"), "utf-8");
+  assert.ok(extension.includes("registerRequestReview(pi);") && extension.includes("registerSearchKnowledge(pi);"));
   assert.ok(!("开发期开关" in DEV_PROFILE), "评审门禁做出来之后开发期开关退役");
 });
 

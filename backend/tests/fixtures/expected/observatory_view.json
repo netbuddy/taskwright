@@ -110,7 +110,7 @@
         "--approve",
         "--offline",
         "--tools",
-        "read,ls,grep,find,save_revision,reply,get_item,get_task_status,complete_task,request_review",
+        "read,ls,grep,find,save_revision,reply,get_item,get_task_status,complete_task,request_review,search_knowledge",
         "--model",
         "fake/fake-model",
         "--thinking",
@@ -134,7 +134,8 @@
         "get_item",
         "get_task_status",
         "complete_task",
-        "request_review"
+        "request_review",
+        "search_knowledge"
        ],
        "平台 skill": {
         "代码仓里的路径": "agent/prompts/skills/taskwright-executor",
@@ -183,7 +184,7 @@
       },
       "启动时刻": "<时刻>",
       "实际工具清单": {
-       "原文": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\"]",
+       "原文": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\",\"search_knowledge\"]",
        "工具": [
         "read",
         "ls",
@@ -194,7 +195,8 @@
         "get_item",
         "get_task_status",
         "complete_task",
-        "request_review"
+        "request_review",
+        "search_knowledge"
        ],
        "时刻": "<时刻>",
        "记录": "实际工具清单"
@@ -381,7 +383,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\"]",
+        "文字": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\",\"search_knowledge\"]",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-active-tools",
