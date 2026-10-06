@@ -1,7 +1,7 @@
 // 知识库在页面上的几种说法：文档份数、有几个任务在用、种类的中文叫法、上传前的大小检查。
 // 种类的叫法与上传上限都来自服务信息（GET /api/v1/service 的 knowledge_upload），前端不另写一份。
 
-import type { DocumentEmbedding, EmbeddedLibrary, KnowledgeKind, KnowledgeLibrary, ServiceInfo } from "../api/types";
+import type { DocumentEmbedding, EmbeddedLibrary, KnowledgeKind, KnowledgeLibrary, KnowledgeSearchHit, ServiceInfo } from "../api/types";
 import { GENERAL, isKnowledgeLocator, parseKnowledgeLocator } from "../../../agent/src/lib/knowledge_locator.ts";
 
 // 通用知识库的编号（每个任务都选用它，不能删除、不能改名）与「出处是不是指向知识库」的判断，定义在助手一侧，这里原样交出去。
@@ -44,6 +44,13 @@ export function embeddingModelName(model: string): string {
 /** 这个知识库里有没有文档正在换算或者等着换算。 */
 export function embeddingBusy(lib: EmbeddedLibrary): boolean {
   return lib.documents.some((d) => d.embedding.status === "queued" || d.embedding.status === "running");
+}
+
+/** 按意思查到的片段在文档的哪里：Word 文档写第几到几段，别的写第几到几行；起止相同时只写一个。 */
+export function searchPlaceText(hit: Pick<KnowledgeSearchHit, "first_paragraph" | "last_paragraph" | "first_line" | "last_line">): string {
+  const range = (from: number, to: number, unit: string) => (from === to ? `第 ${from} ${unit}` : `第 ${from} 到 ${to} ${unit}`);
+  if (hit.first_paragraph !== null && hit.last_paragraph !== null) return range(hit.first_paragraph, hit.last_paragraph, "段");
+  return hit.first_line !== null && hit.last_line !== null ? range(hit.first_line, hit.last_line, "行") : "";
 }
 
 /** 种类的中文叫法；服务信息里没有时写种类本身。 */

@@ -162,4 +162,17 @@ body {
 .kbtable tr.failed td { border-bottom: none; padding-bottom: 0.15rem; }
 .kbtable tr.why td { color: var(--gap); font-size: 0.86rem; padding-top: 0; word-break: break-word; }
 .kbtable .de.none, .kbtable .de.queued { color: var(--mut); }
+/* 文档表格下面「试一试按意思查找」：一行输入框与按钮，一句说明，下面是查到的片段 */
+.kbsearch { margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+.kbsearch .row { display: flex; gap: 0.5rem; margin-top: 0.35rem; }
+.kbsearch .hint { font-size: 0.88rem; color: var(--mut); margin-top: 0.35rem; }
+.kbsearch .hits { margin-top: 0.7rem; }
+.kbsearch .cap, .kbsearch .none { font-size: 0.9rem; color: #4a4a4a; }
+.kbsearch .hit { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.55rem 0.7rem; margin-top: 0.5rem; }
+.kbsearch .hh { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; align-items: baseline; font-size: 0.9rem; }
+.kbsearch .sc { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.kbsearch .hh .dn { font-weight: 600; word-break: break-all; }
+.kbsearch .ht { color: #4a4a4a; }
+.kbsearch .hp { color: var(--mut); white-space: nowrap; }
+.kbsearch .hx { font-size: 0.92rem; margin-top: 0.35rem; white-space: pre-wrap; word-break: break-word; }
 @media (max-width: 60rem) { .kbgrid { grid-template-columns: minmax(0, 1fr); } }

@@ -683,6 +683,38 @@ export interface KnowledgeOverview {
   embedding: KnowledgeEmbedding;
 }
 
+/**
+ * 按意思查找查到的一个片段（POST /api/v1/knowledge/search 的 hits 的一项）。score 是相近程度，越大越相近；title 是片段的标题，没有是 null。
+ * 位置：Word 文档给起止段落号，别的文档给起止行号，另一组是 null。locator 是引用这份文档作来源时出处的写法。
+ */
+export interface KnowledgeSearchHit {
+  score: number;
+  library: string;
+  library_name: string;
+  name: string;
+  kind: KnowledgeKind;
+  title: string | null;
+  first_paragraph: number | null;
+  last_paragraph: number | null;
+  first_line: number | null;
+  last_line: number | null;
+  text: string;
+  locator: string;
+}
+
+/**
+ * 按意思查找的结果。ready 为假是这几个知识库里的文档还没有都换算好，这时不查，hits 是空的，pending 是还差几份；
+ * libraries 与 chunks 是比了几个知识库、几个片段。
+ */
+export interface KnowledgeSearchResult {
+  ready: boolean;
+  model: string;
+  pending: number;
+  libraries: number;
+  chunks: number;
+  hits: KnowledgeSearchHit[];
+}
+
 /** 条目在它改动过的某次修订下的内容（GET …/items/{item_id}/revisions 的一项）。 */
 export interface ItemRevision {
   revision_no: number;
