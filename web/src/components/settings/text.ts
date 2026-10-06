@@ -94,16 +94,16 @@ export const LOGIN_COMMAND = "pi";
 export const LOGIN_INSTRUCTION = "/login";
 export const LOGIN_INSTRUCTION_HINT = "输入后在列表里选 ChatGPT Plus/Pro (Codex)";
 /**
- * 更换或者第一次选定嵌入模型之前确认框的标题、里面的那句与确定按钮上的字：知识库里已经有文档时才问。changing 为真是更换（原来选着一个），
- * 为假是第一次选定；documents 是知识库里文档的份数。
+ * 更换或者第一次选定嵌入模型之前确认框的标题、里面的话与确定按钮上的字：知识库里已经有文档时才问。changing 为真是更换（原来选着一个），
+ * 为假是第一次选定；documents 是知识库里文档的份数。换算要向模型服务发请求，所以两种情形末尾都写明可能的费用，说法与「测试」的确认框一致。
  */
 export function embedConfirmTitle(changing: boolean): string {
   return changing ? "更换嵌入模型？" : "选定嵌入模型？";
 }
 export function embedConfirmText(documents: number, changing: boolean): string {
   return changing
-    ? `换了嵌入模型后，知识库里的 ${documents} 份文档要重新换算，换算完成前按意思查找暂时不可用。`
-    : `选定嵌入模型后，知识库里的 ${documents} 份文档要先换算，换算完成后才能按意思查找。`;
+    ? `换了嵌入模型后，知识库里的 ${documents} 份文档要重新换算，换算完成前按意思查找暂时不可用。商业接口可能产生费用。`
+    : `选定嵌入模型后，知识库里的 ${documents} 份文档要先换算，换算完成后才能按意思查找。商业接口可能产生费用。`;
 }
 export function embedConfirmOk(changing: boolean): string {
   return changing ? "更换并重新换算" : "选定并开始换算";

@@ -561,14 +561,14 @@ describe("设置页面的「模型」一栏", () => {
       return { load, overview, select, embed, dialog };
     }
 
-    it("换成另一个嵌入模型：点「用这个模型」先问一句，写明几份文档要重新换算；取消不保存；确定之后先保存选择，再开始换算并提示", async () => {
+    it("换成另一个嵌入模型：点「用这个模型」先问一句，写明几份文档要重新换算与可能的费用；取消不保存；确定之后先保存选择，再开始换算并提示", async () => {
       const { overview, select, embed, dialog } = await open(large, 3);
       expect(overview).toHaveBeenCalledTimes(1);
       fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:small"));
       fireEvent.click(screen.getByTestId("use-model"));
       // 只弹出一个确认框，但界面库把它的标题写在两处（标题栏与那句话上方），所以按「至少有一处」看。
       expect((await screen.findAllByText("更换嵌入模型？")).length).toBeGreaterThan(0);
-      expect(screen.getByText("换了嵌入模型后，知识库里的 3 份文档要重新换算，换算完成前按意思查找暂时不可用。")).toBeInTheDocument();
+      expect(screen.getByText("换了嵌入模型后，知识库里的 3 份文档要重新换算，换算完成前按意思查找暂时不可用。商业接口可能产生费用。")).toBeInTheDocument();
       expect(select).not.toHaveBeenCalled();
       fireEvent.click(screen.getAllByRole("button", { name: "取消" }).at(-1)!);
       await new Promise((r) => setTimeout(r, 20));
@@ -584,12 +584,12 @@ describe("设置页面的「模型」一栏", () => {
       expect(await screen.findByText("已开始换算知识库里的 3 份文档，进度在知识库页面上看。")).toBeInTheDocument();
     });
 
-    it("第一次选定嵌入模型、知识库里已经有文档：同样先问，那句话写的是要先换算", async () => {
+    it("第一次选定嵌入模型、知识库里已经有文档：同样先问，那句话写的是要先换算，也写明可能的费用", async () => {
       const { select, embed, dialog } = await open(null, 2);
       fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:large"));
       fireEvent.click(screen.getByTestId("use-model"));
       expect((await screen.findAllByText("选定嵌入模型？")).length).toBeGreaterThan(0);
-      expect(screen.getByText("选定嵌入模型后，知识库里的 2 份文档要先换算，换算完成后才能按意思查找。")).toBeInTheDocument();
+      expect(screen.getByText("选定嵌入模型后，知识库里的 2 份文档要先换算，换算完成后才能按意思查找。商业接口可能产生费用。")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "选定并开始换算" }));
       await waitFor(() => expect(select).toHaveBeenCalledWith({ language: chosen.selection.language, embedding: large }));
       await waitFor(() => expect(embed).toHaveBeenCalledTimes(1));
