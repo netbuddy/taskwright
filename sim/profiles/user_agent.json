@@ -10,7 +10,7 @@
     "no_extensions": true,
     "no_skills": true,
     "approve": true,
-    "offline": false
+    "offline": true
   },
   "extensions": [
     {
