@@ -251,7 +251,7 @@ export const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
  * remote 是请求的来源地址：退出接口只接受本机回环地址来的请求，所以 capabilities.exit 只对这些来源为真，
  * 从别的电脑打开页面时不显示一个点了也会被拒绝的「退出服务」。不给来源时按非本机算。
  * capabilities.model_config 表示页面能不能改模型配置；现在从任何地方打开都能改，恒为 true（字段保留给以后加登录时用）。
- * capabilities.model_test 表示有测试语言模型的接口，页面据此显示「测试」按钮。
+ * capabilities.model_test 表示有测试模型的接口（语言模型与嵌入模型都经它），页面据此显示「测试」按钮。
  */
 export function serviceInfo(service: Service, remote: string | null = null) {
   // 模型探测每次都现查（只读两个小文件）：用户放好配置文件后，刷新页面即可看到结果。

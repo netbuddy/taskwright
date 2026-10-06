@@ -3,18 +3,24 @@
  * 通过、没有调用工具、回答里没有箱数、模型服务报错、超时、同时来第二个请求、助手起不来、模型登记里找不到、没有密钥、没有模型可测、type 写错各一例；
  * 每一例之后核对助手已经停了（起助手用的收发数据层都报程序不在跑了）、临时目录已经删了（系统临时目录指到本文件自己的空目录，例后仍是空的）。
  * pi 的配置目录与产品设置文件都在本文件的临时目录里。
+ *
+ * 同一个接口也测试嵌入模型（type 是 embedding）：不起助手，嵌入模型的服务是本文件里起的一个假服务。通过、没有通过、没有选嵌入模型、
+ * 到时间没有回答各一例；两种测试共用「同一时间只跑一个」，两个方向各一例。
  */
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
 import { dispatch } from "../src/http.ts";
 import { loadProfile } from "../src/launch.ts";
-import { testLanguageModel } from "../src/model_test.ts";
+import { testEmbeddingModel, testLanguageModel } from "../src/model_test.ts";
+import { updatePiDirSettings } from "../src/product_settings.ts";
 import { Service } from "../src/service.ts";
 import { RpcTransport } from "../src/transport_rpc.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
@@ -42,8 +48,31 @@ const tracked = () => {
 /** 直接调接口背后的函数，起助手用记得住的收发数据层。 */
 const run = (profile: Dict = service.profile, timeoutMs?: number) => testLanguageModel({ env: process.env, profile }, { makeTransport: tracked, timeoutMs });
 
+/** 假的嵌入服务（ollama 的接口）：embedReply 定它怎样回答，embedHits 记下收到的每个请求体。 */
+let embedder: Server;
+let embedUrl: string;
+let embedReply: (body: Dict) => { body: unknown; delay?: number };
+const embedHits: Dict[] = [];
+/** 每段文字回一条 1024 个数的数字串。 */
+const embedded = (body: Dict) => ({ body: { model: body.model, embeddings: body.input.map(() => Array.from({ length: 1024 }, (_, i) => i / 1024)) } });
+
 before(async () => {
   tmp = tempDir();
+  embedder = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+      embedHits.push(body);
+      const answer = embedReply(body);
+      setTimeout(() => {
+        res.writeHead(req.url === "/api/embed" ? 200 : 404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(answer.body));
+      }, answer.delay ?? 0);
+    });
+  });
+  await new Promise<void>((ok) => embedder.listen(0, "127.0.0.1", ok));
+  embedUrl = `http://127.0.0.1:${(embedder.address() as AddressInfo).port}`;
   for (const name of ENV_NAMES) saved[name] = process.env[name];
   fake = await new FakeModel([], join(tmp, "fake.jsonl")).start();
   osTmp = join(tmp, "os");
@@ -56,6 +85,8 @@ before(async () => {
 beforeEach(() => {
   process.env.TMPDIR = osTmp;
   transports.length = 0;
+  embedHits.length = 0;
+  embedReply = embedded;
 });
 afterEach(() => {
   process.env.TMPDIR = saved.TMPDIR ?? "";
@@ -64,6 +95,8 @@ afterEach(() => {
 after(async () => {
   await service.close();
   await fake.stop();
+  embedder.closeAllConnections();
+  await new Promise<void>((ok) => embedder.close(() => ok()));
   for (const name of ENV_NAMES) {
     if (saved[name] === undefined) delete process.env[name];
     else process.env[name] = saved[name];
@@ -214,7 +247,7 @@ test("没有通过：模型登记里找不到要测的模型；它的模型服�
   assertCleanedUp(2);
 });
 
-test("没有模型可测时不起助手，直接说明；type 不是 language 时拒绝", async () => {
+test("没有模型可测时不起助手，直接说明；type 不是 language 也不是 embedding 时拒绝", async () => {
   const empty = new Service(join(tmp, "tasks-3"), join(tmp, "runs-3"), {});
   try {
     const before = fake.requestCount;
@@ -224,10 +257,97 @@ test("没有模型可测时不起助手，直接说明；type 不是 language �
   } finally {
     await empty.close();
   }
-  for (const body of [{ type: "embedding" }, {}]) {
+  for (const body of [{ type: "image" }, {}]) {
     const bad = await go(body);
-    const message = "现在只能测试语言模型，type 应当是 language。";
+    const message = "type 应当是 language 或 embedding。";
     assert.deepEqual([bad.status, bad.body.error], [422, { code: "rejected", message, data: { field: "type", reasons: [message] } }]);
   }
+  assert.deepEqual(readdirSync(osTmp), []);
+});
+
+// ───────────── 测试嵌入模型 ─────────────
+
+const SENTENCE = /^这批货一共有 [1-9][0-9] 箱。$/;
+const EMBEDDING_KEYS = ["ok", "result", "model", "seconds", "question", "dimensions", "reason"];
+
+/** 产品设置里登记假的嵌入服务并选定它的嵌入模型；chosen 为假时只登记不选。 */
+async function chooseEmbedding(prefix = "", chosen = true): Promise<void> {
+  await updatePiDirSettings(process.env.PI_CODING_AGENT_DIR!, (dir) => {
+    dir.providers["taskwright-ollama"] = {
+      kind: "ollama", name: "本机的 ollama", base_url: embedUrl, models_fetched_at: null, status: null,
+      models: [{ id: "bge-m3", type: "embedding", enabled: true, context_window: null, context_source: null }],
+    };
+    dir.selection.embedding = chosen ? { provider: "taskwright-ollama", model: "bge-m3", query_prefix: prefix } : null;
+  });
+}
+
+test("嵌入模型通过：把一句话按查询的用途送去换算，拿回一条数字串；结果带模型名、用时、送去的那句话（含查询前缀）与数字串的长度，不带工具调用次数与回答", async () => {
+  await chooseEmbedding("Instruct: 找相关段落\nQuery:");
+  const r = await go({ type: "embedding" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(Object.keys(r.body), EMBEDDING_KEYS);
+  const sentence = r.body.question.slice("Instruct: 找相关段落\nQuery:".length);
+  assert.match(sentence, SENTENCE);
+  assert.deepEqual({ ...r.body, seconds: typeof r.body.seconds },
+    { ok: true, result: "passed", model: "taskwright-ollama/bge-m3", seconds: "number", question: `Instruct: 找相关段落\nQuery:${sentence}`, dimensions: 1024, reason: null });
+  // 只发了一次请求，送去的正是结果里写的那句话。
+  assert.deepEqual(embedHits, [{ model: "bge-m3", input: [r.body.question] }]);
+  // 没有查询前缀时送去的就是那句话本身。
+  await chooseEmbedding();
+  const plain = await go({ type: "embedding" });
+  assert.match(plain.body.question, SENTENCE);
+  assert.deepEqual(embedHits[1].input, [plain.body.question]);
+  assert.deepEqual(readdirSync(osTmp), []);
+});
+
+test("嵌入模型没有通过：模型服务没有给数字串、到时间没有回答、没有选嵌入模型，都照样回答 200，原因写在 reason 里，数字串的长度是 null", async () => {
+  await chooseEmbedding();
+  embedReply = (body) => ({ body: { model: body.model, embeddings: [] } });
+  const empty = await go({ type: "embedding" });
+  assert.equal(empty.status, 200);
+  assert.deepEqual(Object.keys(empty.body), EMBEDDING_KEYS);
+  assert.match(empty.body.question, SENTENCE);
+  assert.deepEqual({ ...empty.body, seconds: typeof empty.body.seconds, question: "" },
+    { ok: true, result: "failed", model: "taskwright-ollama/bge-m3", seconds: "number", question: "", dimensions: null, reason: "送去 1 段文字，拿回 0 条数字串。" });
+  embedReply = (body) => ({ ...embedded(body), delay: 2_000 });
+  const late = await testEmbeddingModel({ env: process.env, profile: service.profile }, { timeoutMs: 1_000 });
+  assert.deepEqual([late.result, late.dimensions, late.reason], ["failed", null, "1 秒内没有算完。"]);
+  await chooseEmbedding("", false);
+  const before = embedHits.length;
+  const none = await go({ type: "embedding" });
+  assert.equal(none.status, 200);
+  assert.match(none.body.question, SENTENCE);
+  assert.deepEqual([none.body.result, none.body.model, none.body.dimensions, none.body.reason], ["failed", "", null, "还没有选嵌入模型。"]);
+  assert.equal(embedHits.length, before, "没有选嵌入模型时不应当发请求");
+  // 没有通过之后还能再测。
+  await chooseEmbedding();
+  embedReply = embedded;
+  assert.equal((await go({ type: "embedding" })).body.result, "passed");
+});
+
+test("嵌入模型的测试在跑时，再来的测试请求（哪一种都一样）报 busy；它做完之后可以再测", async () => {
+  await chooseEmbedding();
+  embedReply = (body) => ({ ...embedded(body), delay: 800 });
+  const first = go({ type: "embedding" });
+  for (const type of ["embedding", "language"]) {
+    const second = await go({ type });
+    assert.deepEqual([second.status, second.body.error], [409, { code: "busy", message: "正在测试，请等它结束。", data: {} }], type);
+  }
+  assert.equal((await first).body.result, "passed");
+  assert.equal(embedHits.length, 1);
+  embedReply = embedded;
+  assert.equal((await go({ type: "embedding" })).body.result, "passed");
+  assertCleanedUp(0);
+});
+
+test("语言模型的测试在跑时，嵌入模型的测试请求报 busy，不发换算的请求；语言模型的测试不受影响", CASE, async () => {
+  await chooseEmbedding();
+  fake.setScript(obedient({ ...READ, delay: 1.5 }));
+  const first = go({ type: "language" });
+  const second = await go({ type: "embedding" });
+  assert.deepEqual([second.status, second.body.error], [409, { code: "busy", message: "正在测试，请等它结束。", data: {} }]);
+  assert.equal(embedHits.length, 0);
+  assert.equal((await first).body.result, "passed");
+  assert.equal((await go({ type: "embedding" })).body.result, "passed");
   assert.deepEqual(readdirSync(osTmp), []);
 });
