@@ -2,12 +2,13 @@
 // 上传时带上先选好的种类；类型不符或超过 20 MB 不发请求；左侧栏在服务有知识库时有「知识库」入口。
 // 文档的换算：每份文档的换算状态、这个知识库「已换算几份 / 一共几份」与进度条、「开始换算」与「重试」、停下的原因、
 // 没有选嵌入模型时的提示；有文档在等待换算或者换算中时隔一会儿自动再取一次清单。
+// 试一试按意思查找：只查选中的这一个知识库；文档没有都换算好或者没有选嵌入模型时不能查；查到的片段怎样列。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { api, ApiError } from "../api/client";
-import type { DocumentEmbedding, EmbeddedLibrary, KnowledgeEmbedding, KnowledgeOverview, ServiceInfo } from "../api/types";
+import type { DocumentEmbedding, EmbeddedLibrary, KnowledgeEmbedding, KnowledgeOverview, KnowledgeSearchHit, KnowledgeSearchResult, ServiceInfo } from "../api/types";
 import { ServiceProvider } from "../components/ServiceControls";
 import { ToastProvider } from "../components/Toasts";
 import { embeddingPolling } from "../model/knowledge";
@@ -43,6 +44,25 @@ function overviewOf(documents: [string, DocumentEmbedding][], embedding: Partial
   };
 }
 
+const hit = (given: Partial<KnowledgeSearchHit>): KnowledgeSearchHit => ({
+  score: 0.5, library: "general", library_name: "通用知识库", name: "借阅规范.md", kind: "standard", title: null,
+  first_paragraph: null, last_paragraph: null, first_line: null, last_line: null, text: "", locator: "knowledge/general/借阅规范.md", ...given,
+});
+/** 查到三个片段：一个 Markdown 的带标题与行号，一个 Word 文档的带段落号，一个没有标题、只占一行。 */
+const FOUND: KnowledgeSearchResult = {
+  ready: true, model: MODEL, pending: 0, libraries: 1, chunks: 37, hits: [
+    hit({ score: 0.7136, title: "借阅规范 / 逾期", first_line: 31, last_line: 35, text: "第 4.2 条　逾期归还的，每册每天收取罚款 0.2 元。\n单册罚款累计不超过该书定价。" }),
+    hit({ score: 0.63, name: "需求说明.docx", title: "3.1.1 逾期罚款", first_paragraph: 75, last_paragraph: 78, text: "逾期罚款" }),
+    hit({ score: 0.2, name: "术语表.txt", first_line: 7, last_line: 7, text: "逾期：过了应还日期还没有归还。" }),
+  ],
+};
+/** 按一下回车：输入框按下回车后要等抬起才认下一次，所以按下与抬起都发。 */
+const pressEnter = (input: HTMLElement) => {
+  fireEvent.keyDown(input, { key: "Enter", code: "Enter", keyCode: 13 });
+  fireEvent.keyUp(input, { key: "Enter", code: "Enter", keyCode: 13 });
+};
+const EMBEDDED = () => overviewOf([["借阅规范.md", state({ status: "done", model: MODEL, done: 12, total: 12 })]]);
+
 function page(libraryId: string | null = null, overview: KnowledgeOverview | KnowledgeOverview[] = { libraries: LIBS, embedding: NONE }) {
   vi.spyOn(api, "serviceInfo").mockResolvedValue(info);
   vi.spyOn(api, "listTasks").mockResolvedValue([]);
@@ -52,6 +72,7 @@ function page(libraryId: string | null = null, overview: KnowledgeOverview | Kno
   const calls = {
     overview: vi.spyOn(api, "knowledgeOverview").mockImplementation(async () => (answers.length > 1 ? answers.shift()! : answers[0])),
     embed: vi.spyOn(api, "embedKnowledge").mockResolvedValue({ queued: 1, embedding: NONE }),
+    search: vi.spyOn(api, "searchKnowledge").mockResolvedValue(FOUND),
     create: vi.spyOn(api, "createLibrary").mockResolvedValue({ id: "lib-new", name: "新知识库", created_at: "" }),
     rename: vi.spyOn(api, "renameLibrary").mockResolvedValue({ library: { id: "lib-hy", name: "国家标准" } }),
     removeLib: vi.spyOn(api, "deleteLibrary").mockResolvedValue({ ok: true }),
@@ -229,5 +250,69 @@ describe("知识库页面", () => {
     calls.embed.mockRejectedValue(new ApiError("rejected", "还没有选嵌入模型。", 422));
     fireEvent.click(await screen.findByTestId("kb-embed-start"));
     expect(await screen.findByText("还没有选嵌入模型。")).toBeTruthy();
+  });
+
+  it("试一试按意思查找：这个知识库换算好了就能查，只查这一个知识库；空着不发请求；查到的片段写相近程度、文档名、标题、位置与正文", async () => {
+    const calls = page(null, EMBEDDED());
+    const box = await screen.findByTestId("kb-search");
+    expect(within(box).getByText("试一试按意思查找")).toBeTruthy();
+    expect(screen.getByTestId("kb-search-hint").textContent).toBe("在这个知识库的文档里找意思最相近的几个片段，用词不同也找得到。助手在任务里用的是同一种办法，它查的是任务选用的全部知识库。");
+    const input = screen.getByTestId("kb-search-input") as HTMLInputElement;
+    expect([input.disabled, input.placeholder]).toEqual([false, "写一句完整的话，例如：图书超期不还怎样罚款"]);
+    expect((screen.getByTestId("kb-search-button") as HTMLButtonElement).disabled).toBe(true);
+    pressEnter(input);
+    fireEvent.change(input, { target: { value: "   " } });
+    pressEnter(input);
+    expect(calls.search).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("kb-search-result")).toBeNull();
+
+    fireEvent.change(input, { target: { value: " 图书超期不还怎样罚款 " } });
+    fireEvent.click(screen.getByTestId("kb-search-button"));
+    await waitFor(() => expect(calls.search).toHaveBeenCalledWith("图书超期不还怎样罚款", ["general"]));
+    const result = await screen.findByTestId("kb-search-result");
+    expect(within(result).getByText("在 37 个片段里，最相近的 3 个。相近程度最大是 1，越大越相近。")).toBeTruthy();
+    const hits = within(result).getAllByTestId("kb-search-hit");
+    expect(hits.map((h) => h.querySelector(".hh")!.textContent)).toEqual([
+      "相近程度 0.71借阅规范.md借阅规范 / 逾期第 31 到 35 行", "相近程度 0.63需求说明.docx3.1.1 逾期罚款第 75 到 78 段", "相近程度 0.20术语表.txt第 7 行"]);
+    expect(hits[0].querySelector(".hx")!.textContent).toBe("第 4.2 条　逾期归还的，每册每天收取罚款 0.2 元。\n单册罚款累计不超过该书定价。");
+    // 回车也查。
+    fireEvent.change(input, { target: { value: "预约" } });
+    pressEnter(input);
+    await waitFor(() => expect(calls.search).toHaveBeenLastCalledWith("预约", ["general"]));
+  });
+
+  it("试一试按意思查找不能用的时候：没有选嵌入模型，或者这个知识库里的文档没有都换算好，输入框是灰的并写明原因；没有文档的知识库没有这一块", async () => {
+    page();
+    expect(((await screen.findByTestId("kb-search-input")) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByTestId("kb-search-hint").textContent).toBe("还没有选嵌入模型，不能按意思查找。");
+    cleanup();
+    vi.restoreAllMocks();
+    page(null, overviewOf([["借阅规范.md", state({ status: "done", model: MODEL, done: 12, total: 12 })], ["说明.txt", state()]]));
+    expect(((await screen.findByTestId("kb-search-input")) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByTestId("kb-search-hint").textContent).toBe("这个知识库里的文档都换算好之后，才能按意思查找。");
+    expect((screen.getByTestId("kb-search-button") as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    vi.restoreAllMocks();
+    page("lib-hy");
+    await screen.findByTestId("kb-pane");
+    expect(screen.queryByTestId("kb-search")).toBeNull();
+  });
+
+  it("试一试按意思查找没有结果的几种：后端说还有文档没换算好、文档没有可比较的文字，各写一句；这一次没有查成时给出后端的那句话", async () => {
+    const calls = page(null, EMBEDDED());
+    const ask = async (text: string) => {
+      fireEvent.change(await screen.findByTestId("kb-search-input"), { target: { value: text } });
+      fireEvent.click(screen.getByTestId("kb-search-button"));
+    };
+    calls.search.mockResolvedValue({ ...FOUND, ready: false, pending: 2, chunks: 0, hits: [] });
+    await ask("罚款");
+    expect((await screen.findByTestId("kb-search-result")).textContent).toBe("这个知识库里还有 2 份文档没有换算好，换算完成后才能按意思查找。");
+    calls.search.mockResolvedValue({ ...FOUND, chunks: 0, hits: [] });
+    await ask("预约");
+    await waitFor(() => expect(screen.getByTestId("kb-search-result").textContent).toBe("这个知识库里的文档没有可比较的文字。"));
+    calls.search.mockRejectedValue(new ApiError("embedding_failed", "连不上这个模型服务。请确认它已经启动，地址与端口没有写错。", 502));
+    await ask("续借");
+    expect(await screen.findByText("连不上这个模型服务。请确认它已经启动，地址与端口没有写错。")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByTestId("kb-search-result")).toBeNull());
   });
 });

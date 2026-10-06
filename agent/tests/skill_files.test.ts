@@ -77,7 +77,7 @@ test("平台 skill 有评审一节：评审由用户发起，请求评审的工�
     "问题类发现照建议改", "建议类发现告诉用户，由用户定", "不得为通过评审删掉内容或来源"]) assert.ok(body.includes(words), words);
 });
 
-test("平台 skill 写明知识库什么时候必须查、怎样查、来源怎样记", () => {
+test("平台 skill 写明知识库什么时候必须查、怎样查（按字面与按意思两种办法）、来源怎样记", () => {
   const body = bodyOf(PLATFORM);
   // 什么时候必须查：材料把具体内容指给别的文档时，不以用户提没提知识库为条件；查不到就记问题条目，不编。
   for (const words of ["必须到知识库里把那条具体规定查出来，把规定本身写进条目", "这一条不看用户有没有提到知识库",
@@ -85,6 +85,9 @@ test("平台 skill 写明知识库什么时候必须查、怎样查、来源怎�
   // 怎样查：小文档可以整份读，大文档先按字面找再按行读；要找的词不许是什么都能匹配的写法。
   for (const words of ["不超过 4 KB 的文档可以用 read 整份读", "超过 4 KB 的不要整份读", "一次不超过 120 行",
     "不得写 `.*`、`.`、空串这类什么都能匹配的写法", "一个词没有找到时换近义词再找"]) assert.ok(body.includes(words), words);
+  // 两种查法各在什么时候用；按意思查到的只是线索，要读原文核对过才引用；它说不能用时改用按字面查找；两种都没有找到才算没有。
+  for (const words of ["有两种办法：按字面查找（grep）与按意思查找（search_knowledge）", "几种说法都没有命中，再按意思查找一次", "不要只写一个词",
+    "排在第一的也可能不是你要的规定", "核对过才引用，摘录与出处的规矩不变", "改用按字面查找，不要反复再试", "两种办法都没有找到，才算知识库里没有"]) assert.ok(body.includes(words), words);
   // 来源怎样记：摘录从条号开始抄；每条知识库来源都写明支持哪一处，第四节同样要求。
   for (const words of ["文档里的规定带条号时，摘录从条号开始抄", "每条知识库来源都必须用 `supports` 写明它支持条目的哪个字段、哪一项",
     "条目有两条或更多来源时，每条来源都必须写 `supports`；出处指向知识库的来源一律必须写"]) assert.ok(body.includes(words), words);
@@ -94,12 +97,13 @@ test("平台 skill 写明知识库什么时候必须查、怎样查、来源怎�
 
 // 工具数量受限是产品的原则：新增一个工具之前，先排除用现有工具的参数、读会话记录、改后端或页面代码这几条路能不能做到。
 // 这一例盯着启动配置里的工具清单；增减工具时要有意识地改这里的个数与名单，不要顺手改掉。
-test("执行者的工具清单是十个：含请求评审与自带的检索工具 grep、find；扩展里登记了请求评审", () => {
+test("执行者的工具清单是十一个：含请求评审、按意思查找知识库与自带的检索工具 grep、find；扩展里登记了请求评审与按意思查找知识库", () => {
   const tools: string[] = DEV_PROFILE.tools;
-  assert.equal(tools.length, 10, JSON.stringify(tools));
-  assert.ok(tools.includes("request_review"));
+  assert.equal(tools.length, 11, JSON.stringify(tools));
+  assert.ok(tools.includes("request_review") && tools.includes("search_knowledge"));
   assert.ok(tools.includes("grep") && tools.includes("find"), JSON.stringify(tools));
-  assert.ok(readFileSync(join(ROOT, "agent", "src", "extension.ts"), "utf-8").includes("registerRequestReview(pi);"));
+  const extension = readFileSync(join(ROOT, "agent", "src", "extension.ts"), "utf-8");
+  assert.ok(extension.includes("registerRequestReview(pi);") && extension.includes("registerSearchKnowledge(pi);"));
   assert.ok(!("开发期开关" in DEV_PROFILE), "评审门禁做出来之后开发期开关退役");
 });
 

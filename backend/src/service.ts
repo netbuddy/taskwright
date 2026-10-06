@@ -26,6 +26,7 @@ import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from
 import { TASK_TYPES_DIR } from "./paths.ts";
 import { GENERAL, KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
 import { KnowledgeEmbedder } from "./knowledge_embedder.ts";
+import { searchKnowledge, searchRequest } from "./knowledge_search.ts";
 
 export const MAX_UPLOAD = 5 * 1024 * 1024;
 
@@ -632,6 +633,15 @@ export class Service {
   knowledgeEmbedding(libraries?: string[]) {
     this.requireKnowledge();
     return this.embedder!.overview(libraries);
+  }
+
+  /**
+   * 按意思查找：body 是 {query, libraries?, limit?}，不给 libraries 是全部知识库。这几个知识库里的文档没有都换算好时不查，
+   * 回 ready 为假与还差几份；没有选嵌入模型时 rejected。
+   */
+  searchKnowledge(body: Record<string, any>) {
+    const store = this.requireKnowledge();
+    return searchKnowledge(store, this.embedder!, { env: process.env, profile: this.profile }, searchRequest(body));
   }
 
   /** 上传一份文档；选了嵌入模型时随即把它排进后台换算，没有选时它是「未换算」。 */

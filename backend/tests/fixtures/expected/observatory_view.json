@@ -110,7 +110,7 @@
         "--approve",
         "--offline",
         "--tools",
-        "read,ls,grep,find,save_revision,reply,get_item,get_task_status,complete_task,request_review",
+        "read,ls,grep,find,save_revision,reply,get_item,get_task_status,complete_task,request_review,search_knowledge",
         "--model",
         "fake/fake-model",
         "--thinking",
@@ -134,14 +134,15 @@
         "get_item",
         "get_task_status",
         "complete_task",
-        "request_review"
+        "request_review",
+        "search_knowledge"
        ],
        "平台 skill": {
         "代码仓里的路径": "agent/prompts/skills/taskwright-executor",
         "文件": [
          {
-          "字节数": 43440,
-          "摘要值": "12bb79d380d0f0d9",
+          "字节数": 44609,
+          "摘要值": "6a1aa0c1c5f6914b",
           "路径": "SKILL.md"
          }
         ],
@@ -183,7 +184,7 @@
       },
       "启动时刻": "<时刻>",
       "实际工具清单": {
-       "原文": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\"]",
+       "原文": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\",\"search_knowledge\"]",
        "工具": [
         "read",
         "ls",
@@ -194,7 +195,8 @@
         "get_item",
         "get_task_status",
         "complete_task",
-        "request_review"
+        "request_review",
+        "search_knowledge"
        ],
        "时刻": "<时刻>",
        "记录": "实际工具清单"
@@ -266,8 +268,8 @@
         },
         {
          "代码仓里的路径": "agent/prompts/skills/taskwright-executor/SKILL.md",
-         "字节数": 43440,
-         "摘要值": "12bb79d380d0f0d9",
+         "字节数": 44609,
+         "摘要值": "6a1aa0c1c5f6914b",
          "来自": "平台 skill",
          "路径": "<仓根>/agent/prompts/skills/taskwright-executor/SKILL.md"
         }
@@ -381,7 +383,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\"]",
+        "文字": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\",\"search_knowledge\"]",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-active-tools",

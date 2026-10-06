@@ -122,6 +122,15 @@ test("过程摘要：重放的保存修订写明没有重复写入；请求评�
   assert.equal(stepText("request_review", {}, true, true, null, {}), "请评审者评审没有做成");
 });
 
+test("过程摘要：按意思查找知识库写找到几个相近的片段；知识库还不能用或者没有联系上时工具只回一句话，写没有查到片段", () => {
+  const query = { query: "图书超期不还怎样罚款" };
+  assert.equal(stepText("search_knowledge", query, false, false, null, {}), "正在按意思查找知识库");
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, ready: true, hits: [{ score: 0.71 }, { score: 0.63 }] }, {}), "按意思在知识库里找到 2 个相近的片段");
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, ready: false, pending: 3, hits: [] }, {}), "按意思查找知识库，没有查到片段");
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: false, ready: false, reason: "unreachable", hits: [] }, {}), "按意思查找知识库，没有查到片段");
+  assert.equal(stepText("search_knowledge", {}, true, true, null, {}), "按意思查找知识库没有成");
+});
+
 test("过程摘要：完成任务被拒时不写原因（条件没满足与用户还没同意都一样），做成了写把任务标为已完成", () => {
   assert.equal(stepText("complete_task", {}, true, true, null, {}), "完成任务没有做成");
   assert.equal(stepText("complete_task", {}, true, false, null, {}), "把任务标为已完成");

@@ -48,10 +48,11 @@ test("没有结果的各种工具都不写成做完了，沿用各自「没有�
   const entries = [userEntry, aborted(
     call("c1", "read", { path: "inputs/材料.md" }), call("c2", "ls"), call("c3", "get_item", { item_id: "UC-002" }), call("c4", "get_task_status"),
     call("c5", "request_review"), call("c6", "complete_task"), call("c7", "reply", { text: "好" }), call("c8", "grep"),
+    call("c9", "search_knowledge", { query: "罚款" }),
   )];
   const texts = stagesOf(entries, nothing);
   assert.deepEqual(texts, ["读材料《材料.md》没有读成", "看目录没有看成", "查看条目 UC-002 没有成", "查看任务状态没有成", "请评审者评审没有做成",
-    "完成任务没有做成", "组织回复没有做成", "调用 grep 没有做成"]);
+    "完成任务没有做成", "组织回复没有做成", "调用 grep 没有做成", "按意思查找知识库没有成"]);
   assert.equal(stagesOf([userEntry, aborted(call("c6", "complete_task"))], null)[0], "完成任务没有做完");
   assert.equal(stagesOf([userEntry, aborted(call("c6", "complete_task"))], { ...nothing, completed: (id) => id === "c6" })[0], "把任务标为已完成");
   for (const text of texts) assert.doesNotMatch(text, /None/);

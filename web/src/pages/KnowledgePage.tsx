@@ -3,12 +3,14 @@
 // 上传前先选「这是什么资料」（五种种类，只是标签）；类型与大小按服务信息里知识库那一项先查，不符的不发请求。
 // 文档要换算成数字串之后才能按意思查找：文档表格里每份文档有换算状态，表格上面一行是这个知识库「已换算几份 / 一共几份」与进度条；
 // 选了嵌入模型而且有没换算的文档时给「开始换算」，换算失败的文档给「重试」。有文档在等待换算或者换算中时，隔两秒再取一次清单。
+// 文档表格下面是「试一试按意思查找」（components/KnowledgeSearchBox.tsx），只查选中的这一个知识库。
 
 import { Fragment, useEffect, useState } from "react";
 import { Alert, Button, Empty, Input, Modal, Spin, Upload } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { EmbeddedLibrary, KnowledgeKind, KnowledgeOverview } from "../api/types";
+import { KnowledgeSearchBox } from "../components/KnowledgeSearchBox";
 import { Shell } from "../components/Shell";
 import { useToast } from "../components/Toasts";
 import { useService } from "../components/ServiceControls";
@@ -222,6 +224,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
                   </tbody>
                 </table>
               )}
+            {current.documents.length > 0 && <KnowledgeSearchBox key={current.id} library={current} model={embedding.model} />}
             <div className="kbfoot">文档没有版本：一份文档改了，就当作一份新文件上传。助手在任务里看到的是所选用的知识库的文档清单（名称、种类、大小），需要时到文档里查找相关的片段。</div>
           </div>
         )}

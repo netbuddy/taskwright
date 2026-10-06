@@ -13,6 +13,7 @@
 | `tools/reply.ts` | 「回复」（`reply`）：执行者对用户说的每一句话都经它发出；合格时结束本次运行，连续被拒到上限时放行纯文字回复并标 `degraded`。 |
 | `tools/get_item.ts` | 「查看条目」（`get_item`）：按编号看一个条目某一版的全部字段、来源、当前版本号、评审与确认状态。只读。 |
 | `tools/get_task_status.ts` | 「查询任务状态」（`get_task_status`）：各集合的条目、完成条件逐项、未解决的问题条目、未读清单（用户还没看过现在样子的条目）、最近一次修订。只读，输出与 `/tw-board` 同源。 |
+| `tools/search_knowledge.ts` | 「按意思查找知识库」（`search_knowledge`）：在任务选用的知识库里找与一句话意思最相近的几个片段，每个带相近程度、所在的知识库与文档、读原文用的路径与行号、正文。比远近由任务服务算（要调嵌入模型），核心逻辑在 `lib/knowledge_search.ts`。只读。 |
 | `tools/complete_task.ts` | 「完成任务」：按任务定义的完成条件逐项核对，全部满足才把任务标为已完成。 |
 | **扩展点（`hooks/`）** | 挂在 pi 的事件上或登记成扩展命令，不写任务数据；扩展命令写库时调用与工具相同的核心函数。 |
 | `hooks/task_status.ts` | 打开会话时往会话里追加任务现状消息（`customType` 为 `taskwright-task-status`），并经状态栏同名的键报给后端。 |

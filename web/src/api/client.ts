@@ -19,6 +19,7 @@ import type {
   KnowledgeEmbedding,
   KnowledgeLibrary,
   KnowledgeOverview,
+  KnowledgeSearchResult,
   RevisionLog,
   ServiceInfo,
   TaskType,
@@ -109,6 +110,8 @@ const CONTEXT_TIMEOUT_MS = 150_000;
  * 测试嵌入模型后端最多等 60 秒，用同一个时限。
  */
 const MODEL_TEST_TIMEOUT_MS = 120_000;
+/** 按意思查找最多等多久：后端换算要找的那句话最多等模型服务 60 秒（本地的模型服务第一次载入模型要几十秒）。 */
+const KNOWLEDGE_SEARCH_TIMEOUT_MS = 70_000;
 
 /** 材料文件的原始字节（GET …/materials/raw）：Word 材料要在浏览器里按原版式渲染。出错时按接口约定的错误体折成 ApiError。 */
 async function rawBytes(path: string, timeoutMs = 30_000): Promise<ArrayBuffer> {
@@ -218,6 +221,9 @@ export const api = {
   /** 开始换算：不给范围是全部知识库，给 library 是那一个知识库，再给 name 是那一份文档（没算成之后重试用）。queued 是这一次新排进去几份。 */
   embedKnowledge: (scope: { library?: string; name?: string } = {}) =>
     request<{ queued: number; embedding: KnowledgeEmbedding }>("POST", "/knowledge/embed", scope),
+  /** 按意思查找：在这几个知识库里找与这句话意思最相近的几个片段；不给 libraries 是全部知识库。等模型服务换算这句话，所以等得久一些。 */
+  searchKnowledge: (query: string, libraries?: string[]) =>
+    request<KnowledgeSearchResult>("POST", "/knowledge/search", libraries ? { query, libraries } : { query }, KNOWLEDGE_SEARCH_TIMEOUT_MS),
   createLibrary: (name: string) =>
     request<{ library: Omit<KnowledgeLibrary, "used_by_tasks" | "documents"> }>("POST", "/knowledge/libraries", { name }).then((r) => r.library),
   renameLibrary: (id: string, name: string) => request<{ library: { id: string; name: string } }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}`, { name }),
