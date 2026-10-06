@@ -141,8 +141,8 @@
         "代码仓里的路径": "agent/prompts/skills/taskwright-executor",
         "文件": [
          {
-          "字节数": 43440,
-          "摘要值": "12bb79d380d0f0d9",
+          "字节数": 44609,
+          "摘要值": "6a1aa0c1c5f6914b",
           "路径": "SKILL.md"
          }
         ],
@@ -268,8 +268,8 @@
         },
         {
          "代码仓里的路径": "agent/prompts/skills/taskwright-executor/SKILL.md",
-         "字节数": 43440,
-         "摘要值": "12bb79d380d0f0d9",
+         "字节数": 44609,
+         "摘要值": "6a1aa0c1c5f6914b",
          "来自": "平台 skill",
          "路径": "<仓根>/agent/prompts/skills/taskwright-executor/SKILL.md"
         }
