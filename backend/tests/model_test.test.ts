@@ -27,8 +27,12 @@ const CASE = { skip: NO_PI };
 const ENV_NAMES = ["PI_CODING_AGENT_DIR", "TASKWRIGHT_SETTINGS_FILE", "PI_OFFLINE", "TMPDIR"];
 
 let tmp: string;
-/** 系统临时目录指到这里：接口建的临时目录都在它下面，例后应当是空的。 */
+/** 系统临时目录指到这里：接口建的临时目录都在它下面，例后应当只剩 pi 自己的编译缓存目录。 */
 let osTmp: string;
+/** pi 启动时在系统临时目录下建的 Node 编译缓存目录：不是接口建的，测完还在。 */
+const PI_COMPILE_CACHE = "node-compile-cache";
+/** 系统临时目录下除 pi 的编译缓存目录以外的东西。 */
+const leftInOsTmp = (): string[] => readdirSync(osTmp).filter((name) => name !== PI_COMPILE_CACHE);
 let fake: FakeModel;
 let service: Service;
 const saved: Dict = {};
@@ -92,14 +96,14 @@ async function go(body: unknown, target: Service = service) {
 function assertCleanedUp(started: number): void {
   assert.equal(transports.length, started, "起助手的次数");
   assert.deepEqual(transports.map((t) => t.running()), transports.map(() => false), "助手的程序不应当还在跑");
-  assert.deepEqual(readdirSync(osTmp), [], "接口建的临时目录应当已经删掉");
+  assert.deepEqual(leftInOsTmp(), [], "接口建的临时目录应当已经删掉，系统临时目录下除 pi 的编译缓存目录以外不应当有别的东西");
 }
 
 test("通过：模型读了文件并答出了箱数；结果带模型名、用时、工具调用次数、问模型的话与回答；测试当中助手在跑、临时目录在，结束后都没有了", CASE, async () => {
   let duringTest: { running: boolean[]; dirs: string[] } | null = null;
   fake.setScript({
     rules: [{ when: { last_role: "tool" }, reply_from: (body: Dict) => {
-      duringTest = { running: transports.map((t) => t.running()), dirs: readdirSync(osTmp) };
+      duringTest = { running: transports.map((t) => t.running()), dirs: leftInOsTmp() };
       return answer(body);
     } }],
     default: READ,
@@ -180,7 +184,7 @@ test("经接口测试：结果的形状；同一时间只跑一个测试，第�
     { ok: true, result: "passed", model: "fake/fake-model", seconds: "number", tool_calls: 1, question: QUESTION, reply: true, reason: null });
   fake.setScript(obedient());
   assert.equal((await go({ type: "language" })).body.result, "passed");
-  assert.deepEqual(readdirSync(osTmp), []);
+  assert.deepEqual(leftInOsTmp(), []);
 });
 
 test("没有通过：助手起不来，原因是任务里助手起不来时的那一句；起不来之后还能再测", CASE, async () => {
@@ -229,5 +233,5 @@ test("没有模型可测时不起助手，直接说明；type 不是 language �
     const message = "现在只能测试语言模型，type 应当是 language。";
     assert.deepEqual([bad.status, bad.body.error], [422, { code: "rejected", message, data: { field: "type", reasons: [message] } }]);
   }
-  assert.deepEqual(readdirSync(osTmp), []);
+  assert.deepEqual(leftInOsTmp(), []);
 });
