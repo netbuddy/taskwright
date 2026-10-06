@@ -134,10 +134,10 @@ export const api = {
 
   // 模型配置（接口文档第 10 节）：从哪台电脑打开页面都可以读、可以改。
   modelConfig: () => request<ModelConfig>("GET", "/model-config"),
-  addProvider: (body: { kind: ProviderKind; name?: string; base_url?: string; api_key?: string }) =>
+  addProvider: (body: { purpose: ModelType; kind: ProviderKind; name?: string; base_url?: string; api_key?: string }) =>
     request<{ ok: true; provider: Provider }>("POST", "/model-config/providers", body, PROVIDER_TIMEOUT_MS),
   updateProvider: (id: string, body: { name?: string; base_url?: string; api_key?: string;
-    models?: { id: string; type: ModelType; enabled: boolean; context_window: number | null }[] }) =>
+    models?: { id: string; enabled: boolean; context_window: number | null }[] }) =>
     request<{ ok: true; provider: Provider }>("POST", provider(id), body, PROVIDER_TIMEOUT_MS),
   deleteProvider: (id: string) => request<{ ok: true }>("POST", `${provider(id)}/delete`, {}),
   checkProvider: (id: string) => request<{ ok: true; provider: Provider }>("POST", `${provider(id)}/check`, {}, PROVIDER_TIMEOUT_MS),

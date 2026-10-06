@@ -278,8 +278,8 @@ const EMBEDDING_KEYS = ["ok", "result", "model", "seconds", "question", "dimensi
 async function chooseEmbedding(prefix = "", chosen = true): Promise<void> {
   await updatePiDirSettings(process.env.PI_CODING_AGENT_DIR!, (dir) => {
     dir.providers["taskwright-ollama"] = {
-      kind: "ollama", name: "本机的 ollama", base_url: embedUrl, models_fetched_at: null, status: null,
-      models: [{ id: "bge-m3", type: "embedding", enabled: true, context_window: null, context_source: null }],
+      kind: "ollama", purpose: "embedding", name: "本机的 ollama", base_url: embedUrl, models_fetched_at: null, status: null,
+      models: [{ id: "bge-m3", enabled: true, context_window: null, context_source: null }],
     };
     dir.selection.embedding = chosen ? { provider: "taskwright-ollama", model: "bge-m3", query_prefix: prefix } : null;
   });

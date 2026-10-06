@@ -788,12 +788,12 @@ export interface ServiceInfo {
 
 /** 模型服务的种类。 */
 export type ProviderKind = "ollama" | "llamacpp" | "vllm" | "deepseek" | "aliyun" | "openai_compatible" | "codex";
-/** language：语言模型；embedding：嵌入模型。 */
+/** language：语言模型；embedding：嵌入模型。模型服务的用途、选定模型的键、测试接口的 type 用的是同一组值。 */
 export type ModelType = "language" | "embedding";
 
+/** 模型服务里的一个模型。它是哪一类模型，看所在模型服务的用途。 */
 export interface ProviderModel {
   id: string;
-  type: ModelType;
   /** 勾选了的才能选定。 */
   enabled: boolean;
   /** 上下文长度（词元数）；还没有时为 null。 */
@@ -815,6 +815,8 @@ export interface Provider {
   /** 在这里添加的是 true；用户在配置文件里手工写的是 false（只读）。 */
   managed: boolean;
   kind: ProviderKind | null;
+  /** 用途：这个模型服务提供哪一类模型。添加时定下，之后不改；手工写的那些是 language。 */
+  purpose: ModelType;
   name: string;
   /** Codex 订阅、只读的、不是从本机来的请求都是 null。 */
   base_url: string | null;
@@ -822,7 +824,7 @@ export interface Provider {
   status: ProviderStatus | null;
   models: ProviderModel[];
   models_fetched_at: string | null;
-  /** 选定的模型属于这个模型服务时写 language 和／或 embedding。 */
+  /** 选定的模型属于这个模型服务时是它的用途这一项，否则是空的。 */
   in_use: ModelType[];
 }
 

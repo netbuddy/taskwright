@@ -1,10 +1,10 @@
-// 设置页面的「模型」一栏：上半部分「现在用的模型」两行，下半部分「模型服务」（左边清单，右边选中的那一个的详情）。
+// 设置页面的「模型」一栏：上半部分「现在用的模型」两行，下半部分「模型服务」（左边清单按用途分组，右边选中的那一个的详情）。
 // 「添加模型服务」换成添加的画面；添加成功之后回到这里，右边打开新的那一个，并随即获取一次它的模型列表。
 // editable 为假时整栏只读，顶上是后端给的那句说明。现在的后端 editable 恒为 true（从哪台电脑打开都能改），这条只读的路留着。
 // 两行各有「测试」。语言模型：后端起一次助手，让模型读一个小文件并回答一句，结果连同问与答写在这一行下面。嵌入模型：后端把一句话送去换算，
 // 结果写送去的那句话与算出来的数字串有多长。同一时间只测一种；更换了哪一种模型就清掉哪一种的结果，刷新页面两种都清掉。
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Spin } from "antd";
 import { CheckCircleFilled, LockOutlined, PlusOutlined, WarningFilled, WarningOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../../api/client";
@@ -15,7 +15,7 @@ import { AddProvider } from "./AddProvider";
 import { PickModelDialog } from "./PickModelDialog";
 import { ProviderDetail, type FetchNote } from "./ProviderDetail";
 import {
-  APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, formatNumber, kindName, selected, testConfirmText, testConfirmTitle, testDimensionsText,
+  APPLIES_TEXT, EMBEDDING_LABEL, LANGUAGE_LABEL, PURPOSES, PURPOSE_ORDER, formatNumber, kindName, selected, testConfirmText, testConfirmTitle, testDimensionsText,
   testQuestionText, testReplyText, testResultText, testSentText,
 } from "./text";
 
@@ -137,11 +137,11 @@ export function ModelSettings() {
   if (adding) return <AddProvider onAdded={(p) => void onAdded(p)} onCancel={() => setAdding(false)} />;
 
   const editable = config.editable;
-  const managed = config.providers.filter((p) => p.managed);
+  // 在这里添加的模型服务按用途分组，每组里照后端给的先后；手工登记的另成一组，排在最后。
+  const groups = PURPOSE_ORDER.map((purpose) => ({ purpose, providers: config.providers.filter((p) => p.managed && p.purpose === purpose) })).filter((g) => g.providers.length > 0);
   const external = config.providers.filter((p) => !p.managed);
-  const current = config.providers.find((p) => p.id === chosen) ?? managed[0] ?? external[0] ?? null;
-  const candidates = (type: ModelType) =>
-    config.providers.some((p) => (type === "language" || p.managed) && p.models.some((m) => m.enabled && m.type === type));
+  const current = config.providers.find((p) => p.id === chosen) ?? groups[0]?.providers[0] ?? external[0] ?? null;
+  const candidates = (type: ModelType) => config.providers.some((p) => p.purpose === type && p.models.some((m) => m.enabled));
 
   const goFill = (id: string) => {
     setPicking(null);
@@ -154,7 +154,7 @@ export function ModelSettings() {
       {!editable && config.notice && <div className="ro-note" data-testid="readonly-notice"><LockOutlined />{config.notice}</div>}
       <div className="page-title"><h1>模型</h1></div>
       <p className="lede">
-        助手靠语言模型工作；知识库按意思查找时要用嵌入模型。{editable && "先在下面连接模型服务，再在上面选定用哪个模型。"}
+        助手靠语言模型工作；知识库按意思查找时要用嵌入模型。{editable && "两类模型各自添加模型服务：先在下面添加，再在上面选定用哪个模型。"}
       </p>
 
       <div className="section-title first">现在用的模型</div>
@@ -177,8 +177,12 @@ export function ModelSettings() {
       ) : (
         <div className="svcgrid">
           <div className="card svcs" data-testid="provider-list">
-            {managed.length > 0 && <div className="cap">已经连接的模型服务</div>}
-            {managed.map((p) => <ProviderItem key={p.id} provider={p} on={p.id === current?.id} onClick={() => choose(p.id)} />)}
+            {groups.map((g) => (
+              <Fragment key={g.purpose}>
+                <div className="cap" data-testid={`group-${g.purpose}`}>{PURPOSES[g.purpose].name}</div>
+                {g.providers.map((p) => <ProviderItem key={p.id} provider={p} on={p.id === current?.id} onClick={() => choose(p.id)} />)}
+              </Fragment>
+            ))}
             {external.length > 0 && <div className="cap" data-testid="external-group">配置文件里手工登记的</div>}
             {external.map((p) => <ProviderItem key={p.id} provider={p} on={p.id === current?.id} onClick={() => choose(p.id)} />)}
             {editable && (

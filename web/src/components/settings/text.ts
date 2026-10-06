@@ -1,7 +1,20 @@
 // 设置页面「模型」一栏里页面自己写的文字与几个小工具。后端给了说明的地方（被拒的原因、获取模型列表的结果、只读的说明）照后端的话显示，不在这里另写。
-// 界面上的词：模型服务、语言模型、嵌入模型、接口地址、API 密钥、上下文长度、获取模型列表；「检索」在页面上写成「查找」。
+// 界面上的词：模型服务、用途、语言模型、嵌入模型、接口地址、API 密钥、上下文长度、获取模型列表；「检索」在页面上写成「查找」。
 
 import type { ModelConfig, ModelTestResult, ModelType, Provider, ProviderKind } from "../../api/types";
+
+/**
+ * 模型服务的用途：它提供哪一类模型。一个模型服务只有一种用途。每一行是：这类模型的名字、添加时的一句说明、选定的这类模型在页面上的叫法、
+ * 这类模型要不要填上下文长度、哪些种类没有这类模型。以后多一类模型，在这里加一行（后端的用途表也加一行）。
+ */
+export const PURPOSES: Record<ModelType, { name: string; choice: string; label: string; needsContextWindow: boolean; notOfferedBy: ProviderKind[] }> = {
+  language: { name: "语言模型", choice: "助手靠它工作。", label: "助手用的语言模型", needsContextWindow: true, notOfferedBy: [] },
+  embedding: { name: "嵌入模型", choice: "知识库按意思查找时用它。", label: "查找用的嵌入模型", needsContextWindow: false, notOfferedBy: ["codex"] },
+};
+/** 用途在页面上出现的先后：添加时的选项、模型服务清单的分组。 */
+export const PURPOSE_ORDER = Object.keys(PURPOSES) as ModelType[];
+/** 添加模型服务第一步下面的那句说明。 */
+export const ONE_PURPOSE_TEXT = "一个模型服务只提供一类模型。同一个地址两类模型都有时，添加两次。";
 
 /** 种类的名字；short 是清单里种类那一行用的短写法。 */
 export const KIND_NAME: Record<ProviderKind, string> = {
@@ -20,7 +33,7 @@ export function kindName(kind: ProviderKind | null, short = false): string {
   return (short && KIND_SHORT[kind]) || KIND_NAME[kind];
 }
 
-/** 添加模型服务第一步的七个种类，各一句说明。 */
+/** 添加模型服务第二步的七个种类，各一句说明。 */
 export const KIND_CHOICES: [ProviderKind, string][] = [
   ["ollama", "在本机或者内网里运行的 ollama。"],
   ["llamacpp", "在本机或者内网里运行的 llama.cpp 服务程序。"],
@@ -30,6 +43,11 @@ export const KIND_CHOICES: [ProviderKind, string][] = [
   ["openai_compatible", "任何提供兼容 OpenAI 接口的模型服务。"],
   ["codex", "用 ChatGPT 的订阅。要先在命令行里登录。"],
 ];
+
+/** 添加某种用途的模型服务时可选的种类：没有这类模型的种类不列。 */
+export function kindChoices(purpose: ModelType): [ProviderKind, string][] {
+  return KIND_CHOICES.filter(([kind]) => !PURPOSES[purpose].notOfferedBy.includes(kind));
+}
 
 /** 添加时接口地址一栏预先填的值（与后端的缺省地址相同）；兼容服务要用户自己填，Codex 订阅没有地址。 */
 export const DEFAULT_URL: Partial<Record<ProviderKind, string>> = {
@@ -47,9 +65,13 @@ export function kindGroup(kind: ProviderKind): KindGroup {
   return kind === "openai_compatible" ? "compatible" : "codex";
 }
 
-/** 这种模型服务能不能自己分辨模型的种类（能的话清单里「种类」只显示，不让选）。 */
-export function kindKnown(kind: ProviderKind | null): boolean {
-  return kind === "ollama" || kind === "codex" || kind === null;
+/** 这种模型服务分辨得出模型是哪一类吗：分辨得出的，取回的清单里只有与用途对得上的模型；分辨不出的，清单里是它的全部模型。 */
+export function tellsModelType(kind: ProviderKind | null): boolean {
+  return kind === "ollama" || kind === "aliyun" || kind === "codex" || kind === null;
+}
+/** 分辨不出的模型服务，清单上面的那句提醒。 */
+export function allModelsListedText(purpose: ModelType): string {
+  return `这个模型服务分辨不出哪些是${PURPOSES[purpose].name}，清单里列的是它的全部模型，请只勾${PURPOSES[purpose].name}。`;
 }
 
 /** 「到哪里看这个数字」展开的那段说明。 */
@@ -59,9 +81,9 @@ export function whereToFind(kind: ProviderKind | null): string {
   return "这个模型服务没有报告上下文长度。请查看模型服务的设置或者它的说明文档，填上它实际分配给这个模型的上下文长度。";
 }
 
-export const LANGUAGE_LABEL = "助手用的语言模型";
-export const EMBEDDING_LABEL = "查找用的嵌入模型";
-export const TYPE_NAME: Record<ModelType, string> = { language: "语言模型", embedding: "嵌入模型" };
+export const LANGUAGE_LABEL = PURPOSES.language.label;
+export const EMBEDDING_LABEL = PURPOSES.embedding.label;
+export const TYPE_NAME: Record<ModelType, string> = { language: PURPOSES.language.name, embedding: PURPOSES.embedding.name };
 
 /** 「现在用的模型」下面那句灰字；选定之后换成接口返回的 note（同一句话）。 */
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
@@ -115,7 +137,7 @@ export function selected(config: ModelConfig, type: ModelType): { provider: Prov
 export function inUseText(config: ModelConfig, provider: Provider): string {
   const parts = provider.in_use.map((type) => {
     const ref = selected(config, type);
-    return `${type === "language" ? LANGUAGE_LABEL : EMBEDDING_LABEL} ${ref?.modelId ?? ""}`.trim();
+    return `${PURPOSES[type].label} ${ref?.modelId ?? ""}`.trim();
   });
   return `这个模型服务的模型正在被使用（${parts.join("、")}），不能删除。要删除，先在「现在用的模型」里换成别的模型。`;
 }

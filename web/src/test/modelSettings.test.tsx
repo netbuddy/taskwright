@@ -1,4 +1,4 @@
-// 设置页面的「模型」一栏：只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型、测试嵌入模型。
+// 设置页面的「模型」一栏：添加时先选用途、清单按用途分组、只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型、测试嵌入模型。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -13,31 +13,35 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const service: ServiceInfo = { ok: true, app: "taskwright", version: "0.4.1", mode: "server", pid: 1, port: 8940, capabilities: { exit: false, model: true, model_config: true } };
 
 const deepseek = (over: Partial<Provider> = {}): Provider => ({
-  id: "taskwright-deepseek", managed: true, kind: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com",
+  id: "taskwright-deepseek", managed: true, kind: "deepseek", purpose: "language", name: "DeepSeek", base_url: "https://api.deepseek.com",
   key: { set: true, last4: "3f9c" }, status: { checked_at: "2026-09-29T10:40:00Z", ok: true, message: "" },
-  models: [{ id: "deepseek-chat", type: "language", enabled: true, context_window: 65536, context_source: "service" }],
+  models: [{ id: "deepseek-chat", enabled: true, context_window: 65536, context_source: "service" }],
   models_fetched_at: "2026-09-29T10:41:00Z", in_use: [], ...over,
 });
 const ollama = (over: Partial<Provider> = {}): Provider => ({
-  id: "taskwright-ollama", managed: true, kind: "ollama", name: "本机的 ollama", base_url: "http://127.0.0.1:11434", key: { set: false, last4: null },
+  id: "taskwright-ollama", managed: true, kind: "ollama", purpose: "language", name: "本机的 ollama", base_url: "http://127.0.0.1:11434", key: { set: false, last4: null },
   status: { checked_at: "2026-09-29T10:40:00Z", ok: true, message: "" },
-  models: [
-    { id: "qianwen:14b", type: "language", enabled: true, context_window: null, context_source: null },
-    { id: "embed:large", type: "embedding", enabled: true, context_window: null, context_source: null },
-  ],
+  models: [{ id: "qianwen:14b", enabled: true, context_window: null, context_source: null }],
+  models_fetched_at: null, in_use: [], ...over,
+});
+/** 同一台 ollama 上的嵌入模型：另一个模型服务，用途是嵌入模型。 */
+const embedder = (over: Partial<Provider> = {}): Provider => ({
+  id: "taskwright-ollama-embedding", managed: true, kind: "ollama", purpose: "embedding", name: "本机的 ollama（嵌入模型）", base_url: "http://127.0.0.1:11434", key: { set: false, last4: null },
+  status: { checked_at: "2026-09-29T10:40:00Z", ok: true, message: "" },
+  models: [{ id: "embed:large", enabled: true, context_window: null, context_source: null }],
   models_fetched_at: null, in_use: [], ...over,
 });
 const codex = (over: Partial<Provider> = {}): Provider => ({
-  id: "taskwright-codex", managed: true, kind: "codex", name: "Codex 订阅", base_url: null, key: null,
+  id: "taskwright-codex", managed: true, kind: "codex", purpose: "language", name: "Codex 订阅", base_url: null, key: null,
   status: { checked_at: "2026-09-29T10:40:00Z", ok: false, message: "", logged_in: false }, models: [], models_fetched_at: null, in_use: [], ...over,
 });
 const handWritten: Provider = {
-  id: "my-gateway", managed: false, kind: null, name: "我的网关", base_url: null, key: null, status: null,
-  models: [{ id: "gateway-chat", type: "language", enabled: true, context_window: null, context_source: null }], models_fetched_at: null, in_use: [],
+  id: "my-gateway", managed: false, kind: null, purpose: "language", name: "我的网关", base_url: null, key: null, status: null,
+  models: [{ id: "gateway-chat", enabled: true, context_window: null, context_source: null }], models_fetched_at: null, in_use: [],
 };
 const config = (over: Partial<ModelConfig> = {}): ModelConfig => ({
   ok: true, editable: true, notice: null, selection: { language: null, embedding: null }, fallback: { model: "fake/fake-model", from: "启动配置" },
-  providers: [deepseek(), ollama(), handWritten], ...over,
+  providers: [deepseek(), ollama(), embedder(), handWritten], ...over,
 });
 
 /** 后端有测试语言模型的接口时的服务信息。 */
@@ -49,9 +53,9 @@ const tested = (over: Partial<ModelTestResult> = {}): ModelTestResult => ({
 const chosen = { selection: { language: { provider_id: "taskwright-deepseek", model_id: "deepseek-chat" }, embedding: null } };
 /** 两种模型都选定了；嵌入模型的查询前缀里有换行。 */
 const PREFIX = "Instruct: 找相关段落\nQuery:";
-const bothChosen = { selection: { ...chosen.selection, embedding: { provider_id: "taskwright-ollama", model_id: "embed:large", query_prefix: PREFIX } } };
+const bothChosen = { selection: { ...chosen.selection, embedding: { provider_id: "taskwright-ollama-embedding", model_id: "embed:large", query_prefix: PREFIX } } };
 const embedded = (over: Partial<ModelTestResult> = {}): ModelTestResult => ({
-  ok: true, result: "passed", model: "taskwright-ollama/embed:large", seconds: 0.4, question: `${PREFIX}这批货一共有 42 箱。`, dimensions: 1024, reason: null, ...over,
+  ok: true, result: "passed", model: "taskwright-ollama-embedding/embed:large", seconds: 0.4, question: `${PREFIX}这批货一共有 42 箱。`, dimensions: 1024, reason: null, ...over,
 });
 
 function page(cfg: ModelConfig, info: ServiceInfo = service) {
@@ -118,6 +122,94 @@ describe("设置页面的「模型」一栏", () => {
     expect(login).not.toHaveTextContent("测试");
   });
 
+  it("添加模型服务先选它提供哪一类模型：两项各有一句说明；选嵌入模型时种类里没有 Codex 订阅，原来选着它就回到头一个种类；请求里带着用途", async () => {
+    page(config());
+    const added = embedder({ id: "taskwright-vllm-embedding", kind: "vllm", name: "vLLM（嵌入模型）", base_url: "http://127.0.0.1:8000", models: [] });
+    const add = vi.spyOn(api, "addProvider").mockResolvedValue({ ok: true, provider: added });
+    vi.spyOn(api, "fetchModels").mockResolvedValue({ ok: true, result: "listed", message: "", provider: added });
+    fireEvent.click(await screen.findByTestId("add-provider"));
+    const form = await screen.findByTestId("add-provider");
+    expect(form).toHaveTextContent("第一步：选它提供哪一类模型");
+    expect(screen.getByTestId("purpose-language").closest(".opt")).toHaveTextContent("语言模型助手靠它工作。");
+    expect(screen.getByTestId("purpose-embedding").closest(".opt")).toHaveTextContent("嵌入模型知识库按意思查找时用它。");
+    expect(form).toHaveTextContent("一个模型服务只提供一类模型。同一个地址两类模型都有时，添加两次。");
+    expect(screen.getByTestId("purpose-language")).toBeChecked();
+    // 语言模型有七个种类，Codex 订阅在里面；先选上它
+    expect(within(screen.getByTestId("add-kind")).getAllByRole("radio")).toHaveLength(7);
+    fireEvent.click(screen.getByTestId("kind-codex"));
+    expect(form).toHaveTextContent("第三步：填写 （Codex 订阅，语言模型）");
+    // 改选嵌入模型：种类剩六个，没有 Codex 订阅，选着的种类回到 ollama，接口地址跟着换成它的默认地址
+    fireEvent.click(screen.getByTestId("purpose-embedding"));
+    expect(within(screen.getByTestId("add-kind")).getAllByRole("radio")).toHaveLength(6);
+    expect(screen.queryByTestId("kind-codex")).toBeNull();
+    expect(screen.getByTestId("kind-ollama")).toBeChecked();
+    expect(screen.getByTestId("add-url")).toHaveValue("http://127.0.0.1:11434");
+    fireEvent.click(screen.getByTestId("kind-vllm"));
+    expect(form).toHaveTextContent("第三步：填写 （vLLM，嵌入模型）");
+    fireEvent.click(screen.getByTestId("add-save"));
+    await waitFor(() => expect(add).toHaveBeenCalledWith({ purpose: "embedding", kind: "vllm", base_url: "http://127.0.0.1:8000" }));
+  });
+
+  it("模型服务的清单按用途分组：语言模型一组，嵌入模型一组，手工登记的在最后；每个服务第二行只写种类；详情里有「用途」一行", async () => {
+    page(config());
+    const list = await screen.findByTestId("provider-list");
+    const order = Array.from(list.querySelectorAll("[data-testid^='group-'], [data-testid='external-group'], [data-testid^='provider-taskwright'], [data-testid='provider-my-gateway']"))
+      .map((el) => el.getAttribute("data-testid"));
+    expect(order).toEqual(["group-language", "provider-taskwright-deepseek", "provider-taskwright-ollama", "group-embedding", "provider-taskwright-ollama-embedding", "external-group", "provider-my-gateway"]);
+    expect(screen.getByTestId("group-language")).toHaveTextContent(/^语言模型$/);
+    expect(screen.getByTestId("group-embedding")).toHaveTextContent(/^嵌入模型$/);
+    expect(screen.getByTestId("provider-taskwright-ollama-embedding").querySelector(".sk")).toHaveTextContent(/^ollama$/);
+    // 平时打开的是头一组的头一个；它的详情里写着用途
+    expect(screen.getByTestId("provider-purpose")).toHaveTextContent(/^语言模型$/);
+    fireEvent.click(screen.getByTestId("provider-taskwright-ollama-embedding"));
+    await waitFor(() => expect(screen.getByTestId("provider-purpose")).toHaveTextContent(/^嵌入模型$/));
+    // 只有一组有模型服务时，另一组的标题不出现
+    cleanup();
+    page(config({ providers: [embedder()] }));
+    await screen.findByTestId("group-embedding");
+    expect(screen.queryByTestId("group-language")).toBeNull();
+    expect(screen.getByTestId("provider-purpose")).toHaveTextContent(/^嵌入模型$/);
+  });
+
+  it("模型清单不再逐个标种类：语言模型的模型服务有上下文长度一栏，嵌入模型的没有；手工添加时不用选种类，保存的请求里模型不带种类", async () => {
+    page(config({ providers: [ollama(), embedder()] }));
+    const table = await screen.findByTestId("model-table");
+    expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual(["", "模型名", "上下文长度"]);
+    // ollama 分辨得出模型是哪一类，不出现「清单里是全部模型」的提醒
+    expect(screen.queryByTestId("all-models-listed")).toBeNull();
+    fireEvent.click(screen.getByTestId("provider-taskwright-ollama-embedding"));
+    await screen.findByTestId("model-embed:large");
+    expect(within(screen.getByTestId("model-table")).getAllByRole("columnheader").map((th) => th.textContent)).toEqual(["", "模型名"]);
+    expect(screen.queryByTestId("add-model-ctx")).toBeNull();
+    expect(screen.getByTestId("provider-detail").querySelector(".ant-select")).toBeNull();
+    const update = vi.spyOn(api, "updateProvider").mockResolvedValue({ ok: true, provider: embedder() });
+    fireEvent.change(screen.getByTestId("add-model-name"), { target: { value: "bge-m3" } });
+    fireEvent.click(screen.getByTestId("add-model"));
+    fireEvent.click(screen.getByTestId("save-models"));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("taskwright-ollama-embedding", { models: [
+      { id: "embed:large", enabled: true, context_window: null }, { id: "bge-m3", enabled: true, context_window: null },
+    ] }));
+  });
+
+  it("分辨不出模型是哪一类的模型服务，清单上面提醒清单里是它的全部模型、只勾这一类", async () => {
+    page(config({ providers: [embedder({ id: "taskwright-vllm-embedding", kind: "vllm", name: "vLLM（嵌入模型）" })] }));
+    expect(await screen.findByTestId("all-models-listed")).toHaveTextContent("这个模型服务分辨不出哪些是嵌入模型，清单里列的是它的全部模型，请只勾嵌入模型。");
+  });
+
+  it("选择嵌入模型时只列嵌入模型的模型服务：语言模型的模型服务与手工登记的都不出现；没有嵌入模型的模型服务时「选择」是灰的", async () => {
+    page(config());
+    fireEvent.click(await screen.findByTestId("pick-embedding-button"));
+    const dialog = await screen.findByTestId("pick-embedding");
+    expect(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:large")).not.toBeDisabled();
+    expect(Array.from(dialog.querySelectorAll(".pg")).map((el) => el.textContent)).toEqual(["本机的 ollama（嵌入模型）"]);
+    expect(within(dialog).queryByText("qianwen:14b")).toBeNull();
+    expect(within(dialog).queryByText("gateway-chat")).toBeNull();
+    cleanup();
+    page(config({ providers: [deepseek(), ollama(), handWritten] }));
+    expect(await screen.findByTestId("pick-embedding-button")).toBeDisabled();
+    expect(screen.getByTestId("pick-language-button")).not.toBeDisabled();
+  });
+
   it("添加时后端回 rejected：停在添加的画面，按 data.field 把后端那句话写在接口地址下面", async () => {
     page(config());
     const text = "连不上这个地址。请确认模型服务已经启动，地址与端口没有写错。";
@@ -125,7 +217,7 @@ describe("设置页面的「模型」一栏", () => {
     fireEvent.click(await screen.findByTestId("add-provider"));
     fireEvent.click(await screen.findByTestId("add-save"));
     expect(await screen.findByTestId("err-base_url")).toHaveTextContent(text);
-    expect(add).toHaveBeenCalledWith({ kind: "ollama", base_url: "http://127.0.0.1:11434" });
+    expect(add).toHaveBeenCalledWith({ purpose: "language", kind: "ollama", base_url: "http://127.0.0.1:11434" });
     expect(screen.getByTestId("add-provider")).toBeInTheDocument();
     expect(screen.queryByTestId("err-api_key")).toBeNull();
   });
@@ -144,9 +236,9 @@ describe("设置页面的「模型」一栏", () => {
     const added = ollama({ id: "taskwright-ollama-2", name: "ollama", models: [] });
     const load = page(config());
     vi.spyOn(api, "addProvider").mockResolvedValue({ ok: true, provider: added });
-    load.mockResolvedValue(config({ providers: [deepseek(), ollama(), added, handWritten] }));
+    load.mockResolvedValue(config({ providers: [deepseek(), ollama(), added, embedder(), handWritten] }));
     const fetched = vi.spyOn(api, "fetchModels").mockResolvedValue({ ok: true, result: "listed", message: "",
-      provider: { ...added, models: [{ id: "llama:8b", type: "language", enabled: false, context_window: null, context_source: null }] } });
+      provider: { ...added, models: [{ id: "llama:8b", enabled: false, context_window: null, context_source: null }] } });
     fireEvent.click(await screen.findByTestId("add-provider"));
     fireEvent.click(screen.getByTestId("add-save"));
     expect(await screen.findByTestId("model-llama:8b")).toBeInTheDocument();
@@ -172,8 +264,9 @@ describe("设置页面的「模型」一栏", () => {
     const hand = within(dialog).getByTestId("pick-my-gateway-gateway-chat");
     expect(hand).not.toBeDisabled();
     expect(dialog).toHaveTextContent("我的网关");
-    // 嵌入模型不出现在语言模型的列表里。
+    // 嵌入模型的模型服务不出现在语言模型的列表里。
     expect(within(dialog).queryByText("embed:large")).toBeNull();
+    expect(dialog).not.toHaveTextContent("本机的 ollama（嵌入模型）");
   });
 
   it("选定手工登记的语言模型：嵌入模型原样传回，之后「现在用的模型」换成它", async () => {
@@ -204,13 +297,13 @@ describe("设置页面的「模型」一栏", () => {
     page(config({ providers: [ollama()] }));
     const text = "模型「qianwen:14b」还没有填上下文长度，填了才能保存。";
     vi.spyOn(api, "updateProvider").mockRejectedValue(new ApiError("rejected", text, 422, { field: "models" }));
-    fireEvent.click(within(await screen.findByTestId("model-embed:large")).getByRole("checkbox"));
+    fireEvent.click(within(await screen.findByTestId("model-qianwen:14b")).getByRole("checkbox"));
     fireEvent.click(screen.getByTestId("save-models"));
     expect(await screen.findByTestId("save-error")).toHaveTextContent(text);
   });
 
   it("模型超过 10 个时平时只列勾上的，其余收成一行；点「显示全部」之后列出全部并可以按模型名筛选", async () => {
-    const models = Array.from({ length: 12 }, (_, i) => ({ id: `m-${i}`, type: "language" as const, enabled: i < 2, context_window: 4096, context_source: "service" as const }));
+    const models = Array.from({ length: 12 }, (_, i) => ({ id: `m-${i}`, enabled: i < 2, context_window: 4096, context_source: "service" as const }));
     page(config({ providers: [ollama({ models })] }));
     await screen.findByTestId("model-m-0");
     expect(screen.queryByTestId("model-m-5")).toBeNull();

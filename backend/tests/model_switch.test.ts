@@ -79,10 +79,10 @@ test("选定的模型在新建会话与切回旧会话时生效；换不过去�
     assert.equal(lastModel(), "fake-model", "没有选过模型时用启动配置里的");
 
     // 经接口登记假端点为一个兼容 OpenAI 接口的服务，手工加一个模型 other-model 并选定它（假端点不看模型名，照样回答）。
-    const added = await call("POST", "/api/v1/model-config/providers", { kind: "openai_compatible", name: "假端点", base_url: fake.baseUrl });
+    const added = await call("POST", "/api/v1/model-config/providers", { purpose: "language", kind: "openai_compatible", name: "假端点", base_url: fake.baseUrl });
     assert.equal(added.status, 200, JSON.stringify(added.body));
     const id = added.body.provider.id;
-    assert.equal((await call("POST", `/api/v1/model-config/providers/${id}`, { models: [{ id: "other-model", type: "language", enabled: true, context_window: 32768 }] })).status, 200);
+    assert.equal((await call("POST", `/api/v1/model-config/providers/${id}`, { models: [{ id: "other-model", enabled: true, context_window: 32768 }] })).status, 200);
     const picked = await call("POST", "/api/v1/model-config/selection", { language: { provider_id: id, model_id: "other-model" }, embedding: null });
     assert.equal(picked.status, 200, JSON.stringify(picked.body));
     assert.equal((await call("GET", "/api/v1/service")).body.model.name, `${id}/other-model`);
