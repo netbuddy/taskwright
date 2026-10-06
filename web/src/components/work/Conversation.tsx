@@ -324,6 +324,12 @@ function StageLine({ stage, index }: { stage: NonNullable<WorkSummary["stages"]>
   );
 }
 
+/**
+ * 助手这一轮连续被拒到上限、由系统停下的那一轮，摘要行下面的说明。哪一步因为什么被拒写在展开的过程摘要里，这里不写原因。
+ * 「已经保存的修订」的意思与出错停下那一句相同。
+ */
+export const LIMIT_NOTE = "这一轮助手一直没有按规矩回答，系统让它停下了。已经保存的修订保留着；你可以再说一句，让它重新来。";
+
 /** 出错停下的那一轮，摘要行下面的说明。这一轮没有保存修订时「已经保存的修订」指此前各轮保存的，照样成立。 */
 export const FAILED_NOTE = "这一轮因为出错停下了，助手没有做完。已经保存的修订保留着；你可以再说一句，让它接着做。";
 
@@ -345,7 +351,8 @@ export function WorkSummaryLine({ summary, revisions = [], onRevisionTag }: {
 }) {
   const [open, setOpen] = useState(false);
   const head = `助手做了 ${summary.step_count} 步，用了 ${formatSeconds(summary.seconds)}`;
-  const endNote = summary.outcome === "stopped_by_user" ? stoppedNote(revisions) : summary.outcome === "failed" ? FAILED_NOTE : null;
+  const endNote = summary.outcome === "stopped_by_user" ? stoppedNote(revisions) : summary.outcome === "failed" ? FAILED_NOTE
+    : summary.outcome === "stopped_by_limit" ? LIMIT_NOTE : null;
   return (
     <>
       {summary.understanding && (
