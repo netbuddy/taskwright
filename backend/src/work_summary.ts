@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import * as clock from "./clock.ts";
 import { INTENT_SCHEMA_PATH } from "./paths.ts";
+import { GATE_MISSING_TEXT, INTENT_GATE_TEXT } from "../../agent/src/lib/intent_schema.ts";
 import { jsonOrText } from "../../agent/src/lib/task_read.ts";
 import { openRo } from "./library.ts";
 import { isObject, or, truthy } from "./py.ts";
@@ -55,6 +56,25 @@ export function rejectionReasons(details: Dict | null, text: string): string[] {
 }
 
 /** 工具结果正文里的文字部分，连成一段。 */
+/**
+ * 「回复」被拒是哪一种，按拒绝的文字认（文字是助手一侧拼的，两句固定的话见 agent/src/lib/intent_schema.ts）：
+ * 这一轮还没有写理解、写了但不合格，或者别的（回复的形式不对）。
+ */
+export type ReplyRefusal = "understanding_missing" | "understanding_invalid" | "form";
+export function replyRefusal(text: string): ReplyRefusal {
+  if (!text.includes(INTENT_GATE_TEXT)) return "form";
+  return text.includes(GATE_MISSING_TEXT) ? "understanding_missing" : "understanding_invalid";
+}
+
+/** 「回复」被拒时过程摘要里的说法，按真实原因分写；模型接着会再试，所以都说「正在补」「正在改」。 */
+export const REPLY_REFUSAL_TEXT: Record<ReplyRefusal, string> = {
+  understanding_missing: "助手还没有写下对这句话的理解，正在补",
+  understanding_invalid: "助手写的理解不合格，正在改",
+  form: "回复的形式不对，助手正在改",
+};
+/** 这一轮连续被拒到上限、由工具停下这次运行的那一步（工具结果的 details.stopped 为真）。 */
+export const LIMIT_STOPPED_STEP_TEXT = "助手这一轮没有按规矩回答，已经停下";
+
 export function resultText(result: Dict): string {
   const content = result.content;
   if (typeof content === "string") return content;
@@ -129,6 +149,8 @@ export function unfinishedText(tool: string, args: Dict, callId: string | null, 
 
 /** 一次工具调用写成一句话：进行中、做完、失败三种说法。实时的 step 行与过程摘要共用。 */
 export function stepText(tool: string, args: Dict, done: boolean, failed: boolean, details: Dict | null, definition: Dict): string {
+  // 连续被拒到上限、由工具停下的那一次（回复、保存修订、完成任务都可能）：模型不会再试了，不写「正在改」。
+  if (done && truthy((details || {}).stopped)) return LIMIT_STOPPED_STEP_TEXT;
   if (tool === "read") {
     const [kind, name] = readKind(String(or(args.path, "")), definition);
     const what = kind === "方法说明" || kind === "任务定义" ? name : `${kind === "领域规矩" ? "领域规矩" : kind}${name}`;
@@ -175,7 +197,11 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
     const bad = results.filter((r) => r.status === "不合规").length;
     return `评审了 ${results.length} 个条目，${bad} 个不合规`;
   }
-  if (tool === REPLY_TOOL) return failed ? "回复的形式不对，助手正在改" : done ? "说完了" : "正在组织回复";
+  if (tool === REPLY_TOOL) {
+    // 被拒的原因在结果的文字里，调用的一方先认出来放进 details.refusal（见 replyRefusal）；没有放时按形式不对说。
+    const refusal = (details || {}).refusal as ReplyRefusal | undefined;
+    return failed ? REPLY_REFUSAL_TEXT[refusal && Object.hasOwn(REPLY_REFUSAL_TEXT, refusal) ? refusal : "form"] : done ? "说完了" : "正在组织回复";
+  }
   return failed ? `调用 ${tool} 失败` : done ? `调用了 ${tool}` : `正在调用 ${tool}`;
 }
 
@@ -267,7 +293,7 @@ function isFallback(entry: Dict, fallbackText: string, textOf: (c: unknown) => s
  * 按这次工作最后一条助手消息的结束方式判断：pi 把被停下的消息记为 aborted、出错的记为 error；
  * 出错之后自动重试成功时，出错的那条仍留在会话里，但它不是最后一条，不算出错。
  */
-export type WorkOutcome = "replied" | "no_reply" | "stopped_by_user" | "failed";
+export type WorkOutcome = "replied" | "no_reply" | "stopped_by_user" | "failed" | "stopped_by_limit";
 
 export interface Work {
   work_id: string;
@@ -303,7 +329,8 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
         work_id: `w-${py(current.user_message_id)}`, user_message_id: current.user_message_id, reply_ids: current.reply_ids,
         call_ids: current.call_ids, at: clock.fromUtcIso(current.end), seconds: start !== null && end !== null ? round1(end - start) : null,
         step_count: current.calls.length, stages: stages(current.calls, definition),
-        outcome: ended ?? (current.reply_ids.length ? "replied" : "no_reply"),
+        // 连续被拒到上限、由工具停下：这一轮最后是带 stopped 标记的工具结果，之后没有成功的回复。
+        outcome: ended ?? (truthy(current.limit_stopped) ? "stopped_by_limit" : current.reply_ids.length ? "replied" : "no_reply"),
       });
     }
   };
@@ -334,8 +361,13 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
       const failed = truthy(result.isError);
       let details = or(result.details, {}) as Dict;
       if (failed && part.name === "save_revision") details = { ...details, reasons: rejectionParts(details, resultText(result)) };
+      if (failed && part.name === REPLY_TOOL) details = { ...details, refusal: replyRefusal(resultText(result)) };
       current.calls.push({ tool: or(part.name, ""), args: or(part.arguments, {}), failed, details });
-      if (part.name === REPLY_TOOL && truthy(result) && !failed) current.reply_ids.push(e.id ?? null);
+      if (truthy(details.stopped)) current.limit_stopped = true;
+      if (part.name === REPLY_TOOL && truthy(result) && !failed) {
+        current.reply_ids.push(e.id ?? null);
+        current.limit_stopped = false;
+      }
     }
   }
   close();
