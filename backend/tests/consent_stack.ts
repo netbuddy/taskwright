@@ -87,9 +87,9 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
     const entryOfCall = (callId: string): string => {
       const sessionDir = join(dir, "runs", taskId, "pi-sessions", "service");
       const file = join(sessionDir, readdirSync(sessionDir).find((n) => n.endsWith(`_${session}.jsonl`))!);
-      // 只看用户与助手的消息：会话文件里还有 system 消息，它的 content 是一段文字，不是数组。
+      // 只看助手的消息：工具调用只出现在那里；别的消息（例如 system 消息）的 content 可以是一段文字，不是数组。
       return readFileSync(file, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
-        .find((e) => e.type === "message" && ["user", "assistant"].includes(e.message?.role)
+        .find((e) => e.type === "message" && e.message?.role === "assistant"
           && (e.message.content ?? []).some((p: Dict) => p?.type === "toolCall" && p.id === callId)).id;
     };
     await body({ call, taskId, session, dir, port, pid: child.pid!, requests: () => fake.requests(), db, send, action, entryOfCall });
