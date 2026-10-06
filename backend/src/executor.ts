@@ -45,6 +45,11 @@ export const STATE_TEXT: Record<string, string> = {
 export const RESUME_FAILED_STATE_TEXT = "助手没有接上这条会话，下一次说话时会重新启动。";
 /** 一轮做完了、但助手没有说话时右上角的提示（problem 事件，错误码 no_reply）。 */
 export const NO_REPLY_TEXT = "助手这次没有说话就停下了，你可以再问它一句。";
+/**
+ * 一轮里助手连续被拒到上限、由工具停下这次运行时右上角的提示（problem 事件，错误码 stopped_by_limit）。
+ * 不写内部的原因句：哪一步因为什么被拒，在过程摘要里。
+ */
+export const LIMIT_STOPPED_TEXT = "助手这一轮一直没有按规矩回答，已经停下。你可以再说一句，让它重新来。";
 /** 一轮因为出错停下时右上角的提示（problem 事件，错误码 failed）；与没有回复分开。 */
 export const FAILED_TEXT = "助手这一轮因为出错停下了，你可以再说一句，让它接着做。";
 
@@ -154,6 +159,8 @@ interface Work {
   turn_tools: Dict[];
   replied: boolean;
   stopped: boolean;
+  /** 这一轮连续被拒到上限、由工具停下了这次运行（工具结果的 details.stopped 为真）。 */
+  limit_stopped: boolean;
   failed: boolean;
   last_text: string | null;
   last_user_id: string | null;
@@ -628,7 +635,7 @@ export class Executor {
     if (kind === "agent_start") {
       if (this.work === null) {
         this.work = { work_id: newId("work-"), started: Date.now() / 1000, started_at: clock.now(), triggered_by: null, announced: false, steps: new Map(),
-          step_count: 0, turn: 0, turn_tools: [], replied: false, stopped: false, failed: false, last_text: null, last_user_id: null, replied_since_user: true };
+          step_count: 0, turn: 0, turn_tools: [], replied: false, stopped: false, limit_stopped: false, failed: false, last_text: null, last_user_id: null, replied_since_user: true };
         this.setState("working");
       }
       return;
@@ -890,6 +897,9 @@ export class Executor {
     let details: Dict = result.details || {};
     // 保存修订被拒时原因只在结果正文里，先拆出来，实时的 step 行与过程摘要同一个写法。
     if (failed && tool === "save_revision") details = { ...details, reasons: workSummary.rejectionParts(details, workSummary.resultText(result)) };
+    // 回复被拒的原因也只在结果正文里：认出是没有写理解、理解不合格还是形式不对，过程摘要按它分写。
+    if (failed && tool === REPLY_TOOL) details = { ...details, refusal: workSummary.replyRefusal(workSummary.resultText(result)) };
+    if (work !== null && truthy(details.stopped)) work.limit_stopped = true;
     if (work !== null) {
       for (const t of work.turn_tools) if (t.id === (event.toolCallId ?? null)) Object.assign(t, { done: true, failed, details });
     }
@@ -927,7 +937,10 @@ export class Executor {
     } catch (error) {
       if (!(error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
     }
-    if (!work.replied_since_user) {
+    if (work.limit_stopped && !work.stopped) {
+      // 连续被拒到上限、由工具停下：只告诉用户已经停下。这一轮的助手正文不转发，它多半是没写合格的那份理解。
+      this.hub.emit("problem", { session_id: sid, code: "stopped_by_limit", text: LIMIT_STOPPED_TEXT, retry: null });
+    } else if (!work.replied_since_user) {
       // 兜底：这段话之后没有一次被接受的「回复」。转发最后一条助手正文；正文也没有就发 problem。
       if (work.last_text) {
         const entries = await this.fetchNewEntries(pi);
@@ -943,7 +956,7 @@ export class Executor {
     // 结束原因与步数以会话记录算出的为准，与摘要里的、刷新后重算的相同；会话记录读不出这次工作时按本轮记下的情况。
     // 步数不能只看本轮的计数：一条消息里有几个工具调用、执行到一半被停下时，后面没有开始的调用只在会话记录里有。
     const found = await this.emitSummary(pi, sid, work);
-    const outcome = found?.outcome ?? (work.stopped ? "stopped_by_user" : work.failed ? "failed" : work.replied ? "replied" : "no_reply");
+    const outcome = found?.outcome ?? (work.stopped ? "stopped_by_user" : work.failed ? "failed" : work.limit_stopped ? "stopped_by_limit" : work.replied ? "replied" : "no_reply");
     this.hub.emit("work_ended", { session_id: sid, work_id: work.work_id, at: clock.now(), seconds: workSummary.round1(Date.now() / 1000 - work.started),
       step_count: found?.step_count ?? work.step_count, outcome });
     this.work = null;

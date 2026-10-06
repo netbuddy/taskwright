@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 import type { ConversationMessage, WorkSummary } from "../api/types";
-import { Conversation, FAILED_NOTE, stoppedNote } from "../components/work/Conversation";
+import { Conversation, FAILED_NOTE, LIMIT_NOTE, stoppedNote } from "../components/work/Conversation";
 import { initialWorkState, workReducer } from "../state/workState";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -57,6 +57,16 @@ describe("一轮怎样结束：摘要行下面的说明", () => {
     show("failed", []);
     expect(screen.getByTestId("work-end-note").textContent).toBe(FAILED_NOTE);
     expect(screen.queryByTestId("work-end-revisions")).toBeNull();
+  });
+
+  it("助手连续被拒到上限、由系统停下：固定的一句，不写内部的原因；保存过修订时带小标签", () => {
+    show("stopped_by_limit", []);
+    expect(screen.getByTestId("work-end-note")).toHaveTextContent(/^这一轮助手一直没有按规矩回答，系统让它停下了。已经保存的修订保留着；你可以再说一句，让它重新来。$/);
+    expect(screen.getByTestId("work-end-note").textContent).toBe(LIMIT_NOTE);
+    expect(screen.queryByTestId("work-end-revisions")).toBeNull();
+    cleanup();
+    show("stopped_by_limit", [3]);
+    expect(screen.getByTestId("work-end-revisions")).toHaveTextContent("产生了修订 3");
   });
 
   it("正常做完、做完了但没有回复、旧数据没有结束原因：不加这一行", () => {

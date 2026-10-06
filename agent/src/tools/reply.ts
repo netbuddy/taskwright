@@ -20,6 +20,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup } from "../lib/reply.ts";
 import { spoken } from "../lib/speak.ts";
 import { currentRun, recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
+import { reportStopped, stopAtLimit } from "../lib/rejection_limit.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 import { checkQuotes } from "../lib/save_revision.ts";
 import { envKnowledgeRoot } from "../lib/knowledge.ts";
@@ -135,7 +136,7 @@ export function registerReply(pi: ExtensionAPI): void {
       // 被拒时把拒绝记进 tool_rejection 表（lib/tool_rejection.ts），拒绝文字照样交还模型。
       const rejection = { workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(), callId: toolCallId, toolName: TOOL_NAME,
         workId: workIdOf(currentRun(branch as never)?.userEntryId) };
-      const decision = await withRejectionRecord(rejection, params, () => {
+      const decided = withRejectionRecord(rejection, params, () => {
         requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch as never, "回复", TOOL_NAME);
         const lookup = openRevisionLookup(ctx.cwd);
         try {
@@ -153,6 +154,16 @@ export function registerReply(pi: ExtensionAPI): void {
           lookup.close();
         }
       });
+      let decision: Awaited<typeof decided>;
+      try {
+        decision = await decided;
+      } catch (error) {
+        // 这一轮连续被拒到上限：不再抛异常让模型接着试，返回「出错并结束本次运行」的结果（lib/rejection_limit.ts）。
+        const stopped = stopAtLimit(error, branch as never);
+        if (!stopped) throw error;
+        reportStopped(ctx.ui, TOOL_NAME, stopped);
+        return stopped;
+      }
       const messageId = turn.calls.some((call) => call.id === toolCallId) ? turn.entryId : null;
       const recorded = recordReplyActs(ctx.cwd, ctx.sessionManager.getSessionId(), branch as never, decision.reply, messageId, toolCallId);
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。

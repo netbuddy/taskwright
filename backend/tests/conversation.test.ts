@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FALLBACK_TEXT, baseMessages, branch, normalizeInforms, page, textOf } from "../src/conversation.ts";
 import { Sessions } from "../src/sessions.ts";
-import { rejectionParts, rejectionReasons, stepText, worksFromEntries } from "../src/work_summary.ts";
+import { LIMIT_STOPPED_STEP_TEXT, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
 import { tempDir } from "./helpers.ts";
 
 const works = (entries: Record<string, unknown>[], definition: Record<string, unknown> = {}) =>
@@ -129,6 +129,26 @@ test("过程摘要：按意思查找知识库写找到几个相近的片段；�
   assert.equal(stepText("search_knowledge", query, true, false, { ok: true, ready: false, pending: 3, hits: [] }, {}), "按意思查找知识库，没有查到片段");
   assert.equal(stepText("search_knowledge", query, true, false, { ok: false, ready: false, reason: "unreachable", hits: [] }, {}), "按意思查找知识库，没有查到片段");
   assert.equal(stepText("search_knowledge", {}, true, true, null, {}), "按意思查找知识库没有成");
+});
+
+test("过程摘要：回复被拒按真实原因分写（没有写理解、理解不合格、形式不对）；连续被拒到上限、由工具停下的那一步写已经停下", () => {
+  const missing = "回复没有执行：先按 schema 写下你对用户这句话的理解。这一轮还没有写理解。\n请按平台 skill「先写理解」一节的格式……";
+  const invalid = "回复没有执行：先按 schema 写下你对用户这句话的理解。这一轮写了 2 个 JSON 片段，都不是合格的理解。各片段的问题：（1）……";
+  const form = "回复没有执行：informs 应当是一个列表。";
+  assert.deepEqual([replyRefusal(missing), replyRefusal(invalid), replyRefusal(form)], ["understanding_missing", "understanding_invalid", "form"]);
+  const said = (text: string) => stepText("reply", {}, true, true, { refusal: replyRefusal(text) }, {});
+  assert.equal(said(missing), "助手还没有写下对这句话的理解，正在补");
+  assert.equal(said(invalid), "助手写的理解不合格，正在改");
+  assert.equal(said(form), "回复的形式不对，助手正在改");
+  // 没有认出原因（旧的调用方没有放 refusal）时照原来的说法。
+  assert.equal(stepText("reply", {}, true, true, null, {}), "回复的形式不对，助手正在改");
+  assert.equal(stepText("reply", {}, true, false, { delivered: true }, {}), "说完了");
+  assert.equal(stepText("reply", {}, false, false, null, {}), "正在组织回复");
+  // 停下的那一步：三个工具都可能，都写同一句，不写「正在改」。
+  for (const tool of ["reply", "save_revision", "complete_task"]) {
+    assert.equal(stepText(tool, {}, true, true, { stopped: true, rejections: 5, reason_kind: "understanding_missing" }, {}), "助手这一轮没有按规矩回答，已经停下", tool);
+  }
+  assert.equal(LIMIT_STOPPED_STEP_TEXT, "助手这一轮没有按规矩回答，已经停下");
 });
 
 test("过程摘要：完成任务被拒时不写原因（条件没满足与用户还没同意都一样），做成了写把任务标为已完成", () => {

@@ -22,7 +22,7 @@ import { DatabaseSync } from "node:sqlite";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { ACTOR_EXECUTOR, ACTOR_USER, databasePath, dump, emit, load, wallClockText } from "./db.ts";
 import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
-import { FUNCTION_NAMES, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
+import { FUNCTION_NAMES, GATE_INVALID_TEXT, GATE_MISSING_TEXT, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
@@ -421,8 +421,8 @@ export function requireUnderstanding(workspaceDir: string, sessionId: string, br
   }
   const shown = problems.slice(-GATE_PROBLEMS_SHOWN);
   const why = shown.length === 0
-    ? "这一轮还没有写理解"
-    : `这一轮写了 ${problems.length} 个 JSON 片段，都不是合格的理解。` +
+    ? GATE_MISSING_TEXT
+    : `这一轮写了 ${problems.length} 个 JSON 片段，${GATE_INVALID_TEXT}。` +
       `${problems.length > shown.length ? `最近 ${shown.length} 个` : "各片段"}的问题：` + shown.map((one, i) => `（${i + 1}）${one}`).join("");
   const fact = `${label}没有执行：${INTENT_GATE_TEXT}。${why}。`;
   const guidance = "请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
