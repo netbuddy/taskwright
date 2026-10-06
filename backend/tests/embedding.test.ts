@@ -11,7 +11,7 @@ import type { AddressInfo } from "node:net";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
-import { BATCH_LIMIT, EmbeddingError, embed } from "../src/embedding.ts";
+import { BATCH_LIMIT, CANCELLED_TEXT, EmbeddingError, embed } from "../src/embedding.ts";
 import type { Context } from "../src/model_config.ts";
 import { type Kind, type StoredProvider, updatePiDirSettings } from "../src/product_settings.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
@@ -244,4 +244,19 @@ test("回答里的数字串不对：没有、个数与送去的段数不符、�
   assert.deepEqual(await failure(["甲", "乙"]), ["bad_answer", "送去 2 段文字，拿回 1 条数字串。"]);
   fake.reply = () => ({ body: { object: "list" } });
   assert.deepEqual(await failure(["甲", "乙"]), ["bad_answer", "模型服务的回答里没有数字串。"]);
+});
+
+test("中途取消：给了 signal 时，它一中止这一次请求就放下，种类是 cancelled，不等到超时；已经中止的 signal 不发出有结果的请求", async () => {
+  fake.reply = (path, body) => ({ ...ollamaReply(path, body), delay: 3000 });
+  await choose("ollama");
+  const stop = new AbortController();
+  const started = Date.now();
+  setTimeout(() => stop.abort(), 50);
+  await assert.rejects(embed(ctx(), ["一句话"], "document", { signal: stop.signal }), (error: unknown) => {
+    assert.ok(error instanceof EmbeddingError);
+    assert.deepEqual([error.kind, error.message], ["cancelled", CANCELLED_TEXT]);
+    return true;
+  });
+  assert.ok(Date.now() - started < 2000, "应当立刻放下，不等模型服务回答");
+  await assert.rejects(embed(ctx(), ["一句话"], "document", { signal: AbortSignal.abort() }), (error: unknown) => error instanceof EmbeddingError && error.kind === "cancelled");
 });

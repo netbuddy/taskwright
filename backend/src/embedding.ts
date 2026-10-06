@@ -33,14 +33,15 @@ export const NOT_SELECTED_TEXT = "还没有选嵌入模型。";
 export const NOT_OFFERED_TEXT = "这个模型服务没有嵌入模型。";
 export const UNREACHABLE_TEXT = "连不上这个模型服务。请确认它已经启动，地址与端口没有写错。";
 export const KEY_REJECTED_TEXT = "模型服务拒绝了这个密钥。";
+export const CANCELLED_TEXT = "这一次换算中途取消了。";
 
 /**
  * 没有做成的几种：not_selected 没有选嵌入模型；provider_gone 选定的模型所在的模型服务不在了；not_offered 这种模型服务没有嵌入模型；
  * too_many 段数超过上限；unreachable 连不上；timeout 到时间没有回答；key_rejected 密钥被拒绝；service_error 模型服务回答了错误；
- * bad_answer 回答里的数字串不对（没有、个数不符、是空的、有不是数的项、长短不一）。
+ * bad_answer 回答里的数字串不对（没有、个数不符、是空的、有不是数的项、长短不一）；cancelled 调用的一方中途取消了（EmbedOptions 的 signal）。
  */
 export type EmbeddingFailure =
-  | "not_selected" | "provider_gone" | "not_offered" | "too_many" | "unreachable" | "timeout" | "key_rejected" | "service_error" | "bad_answer";
+  | "not_selected" | "provider_gone" | "not_offered" | "too_many" | "unreachable" | "timeout" | "key_rejected" | "service_error" | "bad_answer" | "cancelled";
 
 export class EmbeddingError extends Error {
   readonly kind: EmbeddingFailure;
@@ -65,6 +66,8 @@ export interface Embedded {
 export interface EmbedOptions {
   /** 最多等多久；不给时是 EMBED_TIMEOUT_MS。 */
   timeoutMs?: number;
+  /** 给了时，它一中止，这一次请求就放下，抛种类为 cancelled 的 EmbeddingError（后台换算在服务停止、文档被删除时用）。 */
+  signal?: AbortSignal;
 }
 
 function clip(text: string, limit: number): string {
@@ -115,11 +118,12 @@ export async function embed(ctx: Context, texts: string[], purpose: Purpose, opt
   let text: string;
   try {
     const res = await fetch(target.url, {
-      method: "POST", headers, body: JSON.stringify(kind === "ollama" ? { ...request, truncate: false } : request), signal: AbortSignal.timeout(timeoutMs), redirect: "follow",
+      method: "POST", headers, body: JSON.stringify(kind === "ollama" ? { ...request, truncate: false } : request), signal: options.signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), options.signal]) : AbortSignal.timeout(timeoutMs), redirect: "follow",
     });
     status = res.status;
     text = await res.text();
   } catch (error) {
+    if (options.signal?.aborted) throw new EmbeddingError("cancelled", CANCELLED_TEXT);
     if ((error as Error)?.name === "TimeoutError") throw new EmbeddingError("timeout", `${Math.round(timeoutMs / 1000)} 秒内没有算完。`);
     throw new EmbeddingError("unreachable", UNREACHABLE_TEXT);
   }
