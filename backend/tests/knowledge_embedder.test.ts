@@ -305,6 +305,30 @@ test("换了嵌入模型：原来换算好的全都回到未换算，开始换�
   await service.close();
 });
 
+test("Word 文档的切法改过之后：按旧切法存下的 Word 成品回到未换算，开始换算只重算它，送去的表格是带竖线的行；Markdown 的成品照旧算换算好了，不重发请求", async () => {
+  const service = fresh();
+  await upload(service, "规范.docx", readFileSync(SAMPLE));
+  await upload(service, "规则.md", RULES);
+  await idle(service);
+  assert.deepEqual(await statuses(service), { "规范.docx": "done", "规则.md": "done" });
+  // 把两份成品都改成上一版存下来的样子：切法版本是 1
+  const headFile = (name: string) => service.knowledge!.filePath(GENERAL, name) + EMBEDDINGS_SUFFIX;
+  for (const name of ["规范.docx", "规则.md"]) writeFileSync(headFile(name), JSON.stringify({ ...JSON.parse(readFileSync(headFile(name), "utf-8")), chunk_rules: 1 }));
+  assert.deepEqual(await statuses(service), { "规范.docx": "none", "规则.md": "done" });
+  const before = (await overview(service)).embedding;
+  assert.deepEqual([before.ready, before.pending, before.total], [false, 1, 2]);
+  fake.hits = [];
+  assert.equal((await call(service, "POST", "/api/v1/knowledge/embed", {})).json.queued, 1);
+  await idle(service);
+  const sent: string[] = fake.hits.flatMap((h) => h.input);
+  assert.ok(sent.some((text) => text.includes("| 读者类型 | 一次最多（本） | 借期（天） | 可续借次数 |\n| 学生 | 5 | 30 | 1 |")), "送去换算的表格保留着行");
+  assert.equal(sent.some((text) => text.includes("七天之内可以退款")), false, "Markdown 的那一份没有重发");
+  assert.deepEqual(await statuses(service), { "规范.docx": "done", "规则.md": "done" });
+  assert.deepEqual([readHead(service.knowledge!.filePath(GENERAL, "规范.docx"))!.chunk_rules, readHead(service.knowledge!.filePath(GENERAL, "规则.md"))!.chunk_rules], [2, 1]);
+  assert.equal((await overview(service)).embedding.ready, true);
+  await service.close();
+});
+
 test("一份文档没算成：整份作废，旁边什么都不留下，状态是换算失败带模型服务的原话；别的文档照算；重试之后算成", async () => {
   const service = fresh();
   // 送 8 段去的那一个请求（长文靠后的 8 个片段）回答错误，像文字超过了模型一次能收的长度。
