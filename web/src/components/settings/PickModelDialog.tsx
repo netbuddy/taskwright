@@ -1,4 +1,4 @@
-// 「更换」「选择」打开的对话框：按模型服务分组，列出勾选了的语言模型（含手工登记的那一组）或者嵌入模型，选一个再点「用这个模型」。
+// 「更换」「选择」打开的对话框：只列用途对得上的模型服务（语言模型含手工登记的那一组），按模型服务分组列出勾选了的模型，选一个再点「用这个模型」。
 // 在这里添加的模型服务里，还没有填上下文长度的语言模型不能选，旁边给「去填」；手工登记的那一组不受此限（后端也不拦）。
 // 嵌入模型另有「不用嵌入模型」一项，「高级」里是查询前缀。选定时另一种模型原样传回。这一批不做测试。
 
@@ -31,10 +31,10 @@ export function PickModelDialog({ config, type, onClose, onPicked, onGoFill }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // 语言模型：在这里添加的与手工登记的都列；嵌入模型只列在这里添加的（后端不许选手工登记的嵌入模型）。
+  // 只列提供这一类模型的模型服务；手工登记的那些都算语言模型，所以选嵌入模型时不会出现。
   const groups = config.providers
-    .filter((p) => language || p.managed)
-    .map((p) => ({ provider: p, models: p.models.filter((m) => m.enabled && m.type === type) }))
+    .filter((p) => p.purpose === type)
+    .map((p) => ({ provider: p, models: p.models.filter((m) => m.enabled) }))
     .filter((g) => g.models.length > 0);
 
   const unchanged = language ? pick === (current ? keyOf(current.provider_id, current.model_id) : NONE)
