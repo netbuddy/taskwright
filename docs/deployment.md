@@ -33,7 +33,7 @@ The observatory and the simulator driver run `python3` from your `PATH` and need
 Taskwright does not talk to a model itself. pi does, and the executor uses the model pi was started with. The model is set in the startup profile `backend/profiles/dev.json`:
 
 ```json
-"model": "openai-codex/gpt-6-luna",
+"model": "openai/gpt-6-luna",
 "thinking": "medium",
 ```
 
@@ -45,16 +45,18 @@ Model services can also be set up in the web interface, through the endpoints in
 
 There are three ways to connect a model.
 
+**No automatic network access.** All startup profiles set `flags.offline`, so the task service starts pi with `--offline`: pi does not go to the network by itself. It does not fetch a newer catalog of models, does not check for a new version, and does not download the search tools rg and fd when they are missing. Requests to the model service are not affected. Two things follow. The assistant's `grep` and `find` tools need rg and fd: the desktop package brings them, and on a machine set up by hand the simplest way is to run `pi` once on the command line, without `--offline`, and let it download them. And pi's catalog of models does not renew itself: with a ChatGPT subscription, press 更新模型目录 ("update the model catalog") in the Codex subscription's details on the settings page, or run `pi update --models`. To let pi use the network by itself again, set `offline` to `false` in the profile.
+
 ### 3.1 The default: a ChatGPT (Codex) subscription
 
-The default profile uses `openai-codex/gpt-6-luna`, which needs a ChatGPT Plus or Pro subscription signed in through pi:
+The default profile uses `openai/gpt-6-luna`, which needs a ChatGPT Plus or Pro subscription signed in through pi:
 
 ```bash
 pi                 # start pi's interactive mode once, in any directory
-/login             # inside pi: choose "ChatGPT Plus/Pro (Codex)" and finish the sign-in in the browser
+/login             # inside pi: choose OpenAI, then sign in with the ChatGPT subscription as prompted
 ```
 
-The token is saved in `~/.pi/agent/auth.json` and refreshed automatically. Check it with `pi auth check --provider openai-codex`. The task service starts pi in RPC mode, which cannot sign in, so do this once beforehand as the same operating-system user that runs the service.
+The token is saved in `~/.pi/agent/auth.json` and refreshed automatically. Check it with `pi auth check --provider openai`. Earlier versions of pi had another sign-in entry, listed as OpenAI Codex (legacy), which keeps its login under `openai-codex`; Taskwright no longer uses it, so a computer signed in only there must sign in once through the entry above. The task service starts pi in RPC mode, which cannot sign in, so do this once beforehand as the same operating-system user that runs the service.
 
 ### 3.2 A provider API key (OpenAI, Anthropic and others)
 
@@ -210,7 +212,7 @@ Any one of three ways: choose 退出服务 ("stop the service") in the 本机用
 
 The desktop package contains no keys. Model services and their credentials are read, as always, from pi's configuration directory: `~/.pi/agent/` on Linux, `%USERPROFILE%\.pi\agent\` on Windows, or the directory named by `PI_CODING_AGENT_DIR`.
 
-By default the desktop package uses the same model as the development profile (`openai-codex/gpt-6-luna`, see section 3.1); a computer that has already logged in to ChatGPT through pi needs nothing more. To use another model, put two files in pi's configuration directory: `models.json` registers the model service, and `settings.json` names the one to use with `defaultProvider` and `defaultModel` (the same two settings pi's `/model` command writes). When both are present, the desktop package starts pi with that model instead of the default. Restart the desktop package after placing the files. A language model chosen in the web interface (section 3) takes precedence over these two settings.
+The desktop package ships without a default model. On first start the page says at the top that no language model is chosen; press 去配置模型 ("set up the model"), add a model service under 模型 on the settings page and choose a model (for a ChatGPT subscription, sign in first as in section 3.1). After upgrading from an earlier version, choose the model there once as well. Instead of choosing on the page, you can put two files in pi's configuration directory: `models.json` registers the model service, and `settings.json` names the one to use with `defaultProvider` and `defaultModel` (the same two settings pi's `/model` command writes). When both are present, the desktop package starts pi with that model. Restart the desktop package after placing the files. A language model chosen in the web interface (section 3) takes precedence over these two settings.
 
 Example 1: llama.cpp (or another OpenAI-compatible endpoint) on this computer. `models.json`:
 
@@ -257,7 +259,7 @@ Example 2: an online model service with an OpenAI-compatible API. `models.json`:
 
 When `models.json` holds a key, make it readable only by you. The fields are explained in section 3.3 and in pi's custom model documentation.
 
-On start the desktop package checks that the model it will use is set up: `models.json` registers that provider and model, or `auth.json` has that provider (pi has been logged in to it). When neither holds, the page shows a notice at the top that no model service is set up, and its 详情 ("details") says where the two files were looked for. The check reads only these two files; if a provider's key is only in an environment variable (section 3.2), the notice appears although the assistant can in fact work.
+On start the desktop package checks that the model it will use is set up: `models.json` registers that provider and model, or `auth.json` has that provider (pi has been logged in to it). When neither holds, or when no model is named at all, the page shows 还没有选定语言模型，助手现在不能工作。 ("no language model is chosen yet; the assistant cannot work") at the top, and its 详情 ("details") gives the reason; with no model named, the assistant is not started. The check reads only these two files; if a provider's key is only in an environment variable (section 3.2), the notice appears although the assistant can in fact work.
 
 ### 10.5 When the port is taken
 

@@ -35,7 +35,7 @@ make install
 Taskwright 自己不直接调用模型，调用模型的是 pi；执行者用的是 pi 启动时指定的那个模型。模型写在启动配置文件（startup profile）`backend/profiles/dev.json` 里：
 
 ```json
-"model": "openai-codex/gpt-6-luna",
+"model": "openai/gpt-6-luna",
 "thinking": "medium",
 ```
 
@@ -47,16 +47,18 @@ pi 把凭据与自定义模型存放在 `~/.pi/agent/` 下（`auth.json` 与 `mo
 
 接入模型有三条路径。
 
+**不自动访问外网。** 各个启动配置的 `flags.offline` 都是真，任务服务启动 pi 时带 `--offline`：pi 不自己访问外网，不去取更新的模型目录，不检查新版本，找不到搜索工具 rg、fd 时也不去下载。向模型服务发的请求不受影响。由此有两件事要知道。一、助手的 `grep` 与 `find` 两个工具要用 rg 与 fd：桌面包自带；自己安装的机器，最简单的办法是先在命令行里不带 `--offline` 运行一次 `pi`，让它自己下载。二、pi 自带的模型目录不会自己变新：用 ChatGPT 订阅的，在设置页面 Codex 订阅的详情里点「更新模型目录」，或者运行 `pi update --models`。要让 pi 照旧自己访问外网，把启动配置里的 `offline` 改成 `false`。
+
 ### 3.1 默认路径：ChatGPT（Codex）订阅
 
-默认启动配置用的是 `openai-codex/gpt-6-luna`，需要一个 ChatGPT Plus 或 Pro 订阅，并在 pi 里登录：
+默认启动配置用的是 `openai/gpt-6-luna`，需要一个 ChatGPT Plus 或 Pro 订阅，并在 pi 里登录：
 
 ```bash
 pi                 # 在任意目录启动一次 pi 的交互模式
-/login             # 在 pi 里选择「ChatGPT Plus/Pro (Codex)」，在浏览器里完成登录
+/login             # 在 pi 里选择 OpenAI，按提示用 ChatGPT 订阅登录
 ```
 
-令牌（token）保存在 `~/.pi/agent/auth.json`，过期后自动刷新。用 `pi auth check --provider openai-codex` 检查。任务服务以 RPC 模式启动 pi，这种模式下无法登录，所以要事先用运行服务的同一个操作系统用户登录一次。
+令牌（token）保存在 `~/.pi/agent/auth.json`，过期后自动刷新。用 `pi auth check --provider openai` 检查。pi 更早的版本另有一个登录入口（列表里的 OpenAI Codex (legacy)），凭据记在 `openai-codex` 名下；Taskwright 不再用它，只在那里登录过的电脑要用上面的入口重新登录一次。任务服务以 RPC 模式启动 pi，这种模式下无法登录，所以要事先用运行服务的同一个操作系统用户登录一次。
 
 ### 3.2 服务商接口密钥（OpenAI、Anthropic 等）
 
@@ -212,7 +214,7 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 桌面包里不带任何密钥。模型服务的登记与凭据照旧从 pi 的配置目录读：Linux 是 `~/.pi/agent/`，Windows 是 `%USERPROFILE%\.pi\agent\`，设了环境变量 `PI_CODING_AGENT_DIR` 时以它为准。
 
-桌面包默认使用的模型与开发用的启动配置相同（`openai-codex/gpt-6-luna`，见第 3.1 节）；已经用 pi 登录过 ChatGPT 的电脑不用再做任何设置。要换成别的模型，在 pi 的配置目录里放两个文件：`models.json` 登记模型服务；`settings.json` 用 `defaultProvider` 与 `defaultModel` 两项指定用哪一个（pi 的 `/model` 命令写的也是这两项）。桌面包启动 pi 时，这两项都有就用它们代替默认模型。放好文件之后重新启动桌面包。在网页界面上选定的语言模型（见第 3 节）优先于这两项。
+桌面包不带默认的模型。第一次打开时页面顶部提示还没有选定语言模型，点「去配置模型」，在设置页面的「模型」一栏添加模型服务并选定（用 ChatGPT 订阅的先照第 3.1 节登录）。从更早的版本升级上来的，也要到设置里选定一次。也可以不在页面上选，而在 pi 的配置目录里放两个文件：`models.json` 登记模型服务；`settings.json` 用 `defaultProvider` 与 `defaultModel` 两项指定用哪一个（pi 的 `/model` 命令写的也是这两项）。桌面包启动 pi 时，这两项都有就用它们。放好文件之后重新启动桌面包。在网页界面上选定的语言模型（见第 3 节）优先于这两项。
 
 例一：本机的 llama.cpp（或其他 OpenAI 兼容接口）。`models.json`：
 
@@ -259,7 +261,7 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 `models.json` 里有密钥时，把它设为只有你自己可读。字段的含义见第 3.3 节与 pi 的自定义模型文档。
 
-桌面包启动后会检查它要用的模型有没有着落：`models.json` 里登记了这个服务商与模型，或者 `auth.json` 里有这个服务商（用 pi 登录过）。两样都没有时，页面顶部显示「还没有配置模型服务，助手无法工作」，「详情」里写明查过的两个文件在哪里。这项检查只读这两个文件；如果某个服务商的密钥只放在环境变量里（第 3.2 节），这里也会显示没有找到，但助手实际可以工作。
+桌面包启动后会检查它要用的模型有没有着落：`models.json` 里登记了这个服务商与模型，或者 `auth.json` 里有这个服务商（用 pi 登录过）。两样都没有时，或者根本没有写用哪个模型时，页面顶部显示「还没有选定语言模型，助手现在不能工作。」，「详情」里写明原因；没有写用哪个模型时不启动助手。这项检查只读这两个文件；如果某个服务商的密钥只放在环境变量里（第 3.2 节），这里也会显示没有找到，但助手实际可以工作。
 
 ### 10.5 端口被占用时
 
