@@ -10,7 +10,9 @@ import { test } from "node:test";
 import { docxProjection } from "../../agent/src/lib/docx_markdown.ts";
 import { projectionParagraphs } from "../../agent/src/lib/docx_source.ts";
 import { SEGMENT_DEFAULTS, buildSegments } from "../../agent/src/lib/segments.ts";
-import { CHUNK_MAX_CHARS, type Chunk, chunkDocument, chunkInput, chunkMarkdown, chunkPlain, chunkWord, splitLong } from "../src/knowledge_chunks.ts";
+import {
+  CHUNK_MAX_CHARS, CHUNK_RULES, type Chunk, chunkDocument, chunkInput, chunkMarkdown, chunkPlain, chunkRulesVersion, chunkWord, documentKind, splitLong,
+} from "../src/knowledge_chunks.ts";
 import { ROOT } from "./helpers.ts";
 
 const SAMPLE = join(ROOT, "examples", "library-lending", "requirements-styled.docx");
@@ -166,6 +168,12 @@ test("表格里没有段落号的行（全是合并格）位置沿用上一行�
     // 全是合并格的一行没有段落号：位置沿用上一行的末段（第 5 段）
     [5, 10, ["| 类型 | 借期 | （同左） |", "| （同上） | （同上） | （同上） |", "| 教师 | 60 | （同左） |"]],
   ]);
+});
+
+test("文档的种类看扩展名；切法的版本每种各记各的，Word 文档的是 2，Markdown 与纯文本的是 1", () => {
+  assert.deepEqual(["规范.docx", "规范.DOCX", "规则.md", "说明.txt", "没有扩展名", "表.docx.md"].map(documentKind), ["word", "word", "markdown", "plain", "plain", "markdown"]);
+  assert.deepEqual(CHUNK_RULES, { word: 2, markdown: 1, plain: 1 });
+  assert.deepEqual([chunkRulesVersion("规范.docx"), chunkRulesVersion("规则.md"), chunkRulesVersion("说明.txt")], [2, 1, 1]);
 });
 
 test("超过上限的一段：先在句末的标点后面切；上限的后一半里没有句末的标点就在上限处切；各片位置相同", () => {

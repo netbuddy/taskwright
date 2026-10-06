@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { CHUNK_RULES_VERSION, type Chunk, chunkPlain } from "../src/knowledge_chunks.ts";
+import { CHUNK_RULES, type Chunk, chunkPlain, chunkRulesVersion } from "../src/knowledge_chunks.ts";
 import {
   EMBEDDINGS_SUFFIX, EMBEDDINGS_VERSION, VECTORS_SUFFIX, isEmbedded, normalize, readEmbeddings, readHead, removeEmbeddings, sweepLeftovers, writeEmbeddings,
 } from "../src/knowledge_embeddings.ts";
@@ -20,8 +20,8 @@ captureConsole();
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 let n = 0;
-/** 一份文档本体的路径（文件本身用不着在）。 */
-const doc = () => join(tmp, `文档-${++n}.md`);
+/** 一份文档本体的路径（文件本身用不着在）；不给扩展名时是 Markdown。 */
+const doc = (extension = ".md") => join(tmp, `文档-${++n}${extension}`);
 const chunks: Chunk[] = chunkPlain("第一段。\n\n第二段长一些。").concat(chunkPlain("另一个片段。")).map((c, i) => ({ ...c, index: i + 1 }));
 const vectors = () => [normalize([3, 4, 0])!, normalize([0, 0, 2])!];
 const near = (a: ArrayLike<number>, b: number[]) => assert.deepEqual(Array.from(a, (x) => Math.round(x * 1e6) / 1e6), b);
@@ -38,7 +38,7 @@ test("缩放成长度 1：有不是数的项或者全是 0 时是 null", () => {
 test("写了再读：概况、各片段与数字串都对得上；.bin 是每个数 4 个字节、低位字节在前；不留下临时文件", () => {
   const path = doc();
   const written = writeEmbeddings(path, "sha-甲", "svc/bge-m3", chunks, vectors());
-  const head = { version: EMBEDDINGS_VERSION, chunk_rules: CHUNK_RULES_VERSION, document_sha256: "sha-甲", model: "svc/bge-m3", dimensions: 3, chunks: 2, embedded_at: written.embedded_at };
+  const head = { version: EMBEDDINGS_VERSION, chunk_rules: CHUNK_RULES.markdown, document_sha256: "sha-甲", model: "svc/bge-m3", dimensions: 3, chunks: 2, embedded_at: written.embedded_at };
   assert.deepEqual(written, head);
   assert.deepEqual(readHead(path), head);
   const bin = readFileSync(path + VECTORS_SUFFIX);
@@ -67,10 +67,28 @@ test("算不算换算好了：文档的 sha256、模型名都与成品里记的�
   // 切法或者格式的版本对不上的不算。
   const file = path + EMBEDDINGS_SUFFIX;
   const json = JSON.parse(readFileSync(file, "utf-8"));
-  writeFileSync(file, JSON.stringify({ ...json, chunk_rules: CHUNK_RULES_VERSION + 1 }));
+  writeFileSync(file, JSON.stringify({ ...json, chunk_rules: CHUNK_RULES.markdown + 1 }));
   assert.equal(isEmbedded(path, "sha-甲", "svc/另一个模型"), false);
   writeFileSync(file, JSON.stringify({ ...json, version: EMBEDDINGS_VERSION + 1, note: "换一个长度" }));
   assert.equal(isEmbedded(path, "sha-甲", "svc/另一个模型"), false);
+});
+
+test("切法的版本每种文档各记各的：Word 文档的切法改过，按旧切法存下的 Word 成品不算换算好了；Markdown 与纯文本的切法没有变，它们的成品照旧算", () => {
+  assert.deepEqual([chunkRulesVersion("规范.docx"), chunkRulesVersion("规范.DOCX"), chunkRulesVersion("规则.md"), chunkRulesVersion("说明.txt"), chunkRulesVersion("没有扩展名")], [2, 2, 1, 1, 1]);
+  const paths = { word: doc(".docx"), markdown: doc(".md"), plain: doc(".txt") };
+  for (const [kind, path] of Object.entries(paths)) {
+    const head = writeEmbeddings(path, "sha-甲", "svc/bge-m3", chunks, vectors());
+    assert.equal(head.chunk_rules, CHUNK_RULES[kind as keyof typeof CHUNK_RULES], kind);
+    assert.equal(isEmbedded(path, "sha-甲", "svc/bge-m3"), true, kind);
+    // 把成品改成上一版存下来的样子：切法版本是 1
+    const file = path + EMBEDDINGS_SUFFIX;
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf-8")), chunk_rules: 1 }));
+  }
+  assert.deepEqual([isEmbedded(paths.word, "sha-甲", "svc/bge-m3"), isEmbedded(paths.markdown, "sha-甲", "svc/bge-m3"), isEmbedded(paths.plain, "sha-甲", "svc/bge-m3")], [false, true, true]);
+  // 成品还在，读得出来，只是不算数；重新换算之后写的是现在的版本，又算数了
+  assert.equal(readHead(paths.word)!.chunk_rules, 1);
+  writeEmbeddings(paths.word, "sha-甲", "svc/bge-m3", chunks, vectors());
+  assert.deepEqual([readHead(paths.word)!.chunk_rules, isEmbedded(paths.word, "sha-甲", "svc/bge-m3")], [2, true]);
 });
 
 test("没有片段的文档照样写：.bin 是空文件，片段数与数字串的长度都是 0，算换算好了", () => {

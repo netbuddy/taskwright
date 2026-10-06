@@ -30,8 +30,24 @@ import { type SegmentParams, buildSegments } from "../../agent/src/lib/segments.
 /** 片段的正文最多多少个字。 */
 export const CHUNK_MAX_CHARS = 800;
 
-/** 切法的版本：切法改了就加一，已经存下的片段按旧切法算的，要重新换算。 */
-export const CHUNK_RULES_VERSION = 1;
+export type DocumentKind = "word" | "markdown" | "plain";
+
+/** 按文档名的扩展名看它是哪一种文档：.docx 是 Word 文档，.md 是 Markdown，别的都当纯文本。 */
+export function documentKind(name: string): DocumentKind {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".docx") ? "word" : lower.endsWith(".md") ? "markdown" : "plain";
+}
+
+/**
+ * 切法的版本，每种文档各记各的：哪一种的切法改了就给哪一种加一，已经存下的那一种文档的片段是按旧切法算的，要重新换算；
+ * 别的种类不受影响。Word 文档的 2：表格按行进片段（1 是每个单元格各算一段）。
+ */
+export const CHUNK_RULES: Readonly<Record<DocumentKind, number>> = { word: 2, markdown: 1, plain: 1 };
+
+/** 这份文档现在的切法版本。 */
+export function chunkRulesVersion(name: string): number {
+  return CHUNK_RULES[documentKind(name)];
+}
 
 export interface Chunk {
   /** 第几个片段，从 1 起。 */
@@ -307,9 +323,9 @@ export function chunkPlain(text: string): Chunk[] {
  * 按文档名的扩展名选切法。text 是文档的正文：Word 文档给投影全文，别的给文件的内容（行尾已经统一成 \n）。
  */
 export function chunkDocument(name: string, text: string, params: SegmentParams): Chunk[] {
-  const lower = name.toLowerCase();
-  if (lower.endsWith(".docx")) return chunkWord(text, params);
-  return lower.endsWith(".md") ? chunkMarkdown(text) : chunkPlain(text);
+  const kind = documentKind(name);
+  if (kind === "word") return chunkWord(text, params);
+  return kind === "markdown" ? chunkMarkdown(text) : chunkPlain(text);
 }
 
 /** 这个片段送去换算的文字：标题一行加正文；没有标题，或者正文本来就以标题开头时只送正文。 */

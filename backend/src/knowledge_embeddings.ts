@@ -19,7 +19,7 @@ import { closeSync, openSync, readFileSync, readdirSync, renameSync, statSync, u
 import { endianness } from "node:os";
 import { join } from "node:path";
 import * as clock from "./clock.ts";
-import { CHUNK_RULES_VERSION, type Chunk } from "./knowledge_chunks.ts";
+import { type Chunk, chunkRulesVersion } from "./knowledge_chunks.ts";
 
 export const EMBEDDINGS_SUFFIX = ".embeddings.json";
 export const VECTORS_SUFFIX = ".embeddings.bin";
@@ -134,7 +134,7 @@ export function readHead(document: string): EmbeddingsHead | null {
 /** 这份文档（内容的 sha256 是 sha256）在嵌入模型 model 下是不是换算好了。 */
 export function isEmbedded(document: string, sha256: string, model: string): boolean {
   const head = readHead(document);
-  return head !== null && head.version === EMBEDDINGS_VERSION && head.chunk_rules === CHUNK_RULES_VERSION && head.document_sha256 === sha256 && head.model === model;
+  return head !== null && head.version === EMBEDDINGS_VERSION && head.chunk_rules === chunkRulesVersion(document) && head.document_sha256 === sha256 && head.model === model;
 }
 
 /** 读整份成品（按意思查找时用）；不在或对不上时是 null。 */
@@ -170,7 +170,7 @@ export function writeEmbeddings(document: string, sha256: string, model: string,
     closeSync(fd);
   }
   renameSync(bin + mark, bin);
-  const head = { version: EMBEDDINGS_VERSION, chunk_rules: CHUNK_RULES_VERSION, document_sha256: sha256, model, dimensions };
+  const head = { version: EMBEDDINGS_VERSION, chunk_rules: chunkRulesVersion(document), document_sha256: sha256, model, dimensions };
   const at = clock.now();
   writeFileSync(file + mark, JSON.stringify({ ...head, byte_order: "little", normalized: true, embedded_at: at, chunks }, null, 2) + "\n", "utf-8");
   renameSync(file + mark, file);
