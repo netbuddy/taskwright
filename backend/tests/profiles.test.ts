@@ -13,12 +13,15 @@ import { ROOT, tempDir } from "./helpers.ts";
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-test("desktop.json 能读，除说明与环境标签外与 dev 相同", () => {
+test("desktop.json 能读，不带默认的模型；除说明、模型与环境标签外与 dev 相同", () => {
   const dev = loadProfile("dev");
   const desktop = loadProfile("desktop");
   assert.deepEqual(desktop.langfuse, { environment: "desktop" });
   assert.match(desktop["说明"], /桌面包/);
-  const strip = (p: Record<string, any>) => Object.fromEntries(Object.entries(p).filter(([k]) => k !== "说明" && k !== "langfuse"));
+  assert.equal("model" in desktop, false, "桌面包不带默认的模型");
+  assert.match(desktop["模型说明"], /不带默认的模型/);
+  assert.equal(typeof dev.model, "string");
+  const strip = (p: Record<string, any>) => Object.fromEntries(Object.entries(p).filter(([k]) => !["说明", "langfuse", "model", "模型说明"].includes(k)));
   assert.deepEqual(strip(desktop), strip(dev), "改 dev 时要同步改 desktop");
 });
 
@@ -37,7 +40,7 @@ test("三个启动配置起助手时都带 --offline：助手的程序不自动�
   assert.equal(buildCommand(online, workspace, join(tmp, "sd-offline")).args.includes("--offline"), false);
 });
 
-test("desktop.json 拼出的命令行与 dev 相同，环境标签是 desktop；没设 Langfuse 插件的环境变量时跳过插件", () => {
+test("desktop.json 拼出的命令行除了不带 --model 以外与 dev 相同，环境标签是 desktop；没设 Langfuse 插件的环境变量时跳过插件", () => {
   const saved = { plugin: process.env.TASKWRIGHT_LANGFUSE_PLUGIN, tag: process.env.LANGFUSE_TRACING_ENVIRONMENT, entry: process.env.TASKWRIGHT_PI_ENTRY };
   delete process.env.TASKWRIGHT_LANGFUSE_PLUGIN;
   delete process.env.LANGFUSE_TRACING_ENVIRONMENT;
@@ -49,7 +52,10 @@ test("desktop.json 拼出的命令行与 dev 相同，环境标签是 desktop；
     assert.deepEqual(describeExtensions(desktop).map(([, path]) => path === null), [false, true]);
     const ours = buildCommand(desktop, workspace, join(tmp, "sd"));
     const dev = buildCommand(loadProfile("dev"), workspace, join(tmp, "sd"));
-    assert.deepEqual(ours.argv, dev.argv);
+    const at = dev.argv.indexOf("--model");
+    assert.ok(at > 0, "dev 的命令行里有 --model");
+    assert.equal(ours.argv.includes("--model"), false, "桌面包的配置没有写模型，命令行里就没有 --model");
+    assert.deepEqual(ours.argv, [...dev.argv.slice(0, at), ...dev.argv.slice(at + 2)]);
     assert.equal(ours.env.LANGFUSE_TRACING_ENVIRONMENT, "desktop");
   } finally {
     for (const [name, value] of [["TASKWRIGHT_LANGFUSE_PLUGIN", saved.plugin], ["LANGFUSE_TRACING_ENVIRONMENT", saved.tag], ["TASKWRIGHT_PI_ENTRY", saved.entry]] as const) {
@@ -72,8 +78,9 @@ test("桌面形态下 pi 的设置文件的 defaultProvider 与 defaultModel 两
   process.env.PI_CODING_AGENT_DIR = agentDir;
   process.env.TASKWRIGHT_PI_ENTRY = join(ROOT, "backend", "tests", "fixtures", "fake_pi.mjs");
   try {
-    const desktop = { ...loadProfile("desktop"), [PI_SETTINGS_MODEL]: true };
-    const server = loadProfile("desktop");
+    // 启动配置里写着模型的情形用 dev 的那一份（桌面包自己的配置不写模型，见本例末尾）
+    const desktop = { ...loadProfile("dev"), [PI_SETTINGS_MODEL]: true };
+    const server = loadProfile("dev");
     const original = server.model;
     assert.deepEqual(resolveModel(desktop, env), { model: original, from: "启动配置" }, "没有设置文件时用启动配置里的");
     writeFileSync(settings, JSON.stringify({ defaultProvider: "local" }));
@@ -103,8 +110,18 @@ test("桌面形态下 pi 的设置文件的 defaultProvider 与 defaultModel 两
     const service = new Service(join(tmp, "t3"), join(tmp, "r3"), loadProfile("desktop"), { port: 8950, mode: "desktop" });
     const info = serviceInfo(service);
     assert.deepEqual([info.model.name, info.capabilities.model], ["local/qwen", true]);
-    const serverService = new Service(join(tmp, "t4"), join(tmp, "r4"), loadProfile("desktop"), { port: 8951, mode: "server" });
+    const serverService = new Service(join(tmp, "t4"), join(tmp, "r4"), loadProfile("dev"), { port: 8951, mode: "server" });
     assert.equal(serviceInfo(serverService).model.name, original);
+
+    // 桌面包自己的配置不带默认的模型：助手程序的设置里有默认的模型就用它；没有时模型名是空的，服务信息说没有可用的模型
+    const packaged = { ...loadProfile("desktop"), [PI_SETTINGS_MODEL]: true };
+    assert.deepEqual(resolveModel(packaged, env), { model: "local/qwen", from: "助手程序的设置", settings });
+    rmSync(settings);
+    assert.deepEqual(resolveModel(packaged, env), { model: "", from: "启动配置" });
+    assert.deepEqual(probeModel(packaged, env), { name: "", available: false, reason: "没有在设置里选定语言模型，启动配置里也没有写模型。" });
+    const emptyService = new Service(join(tmp, "t5"), join(tmp, "r5"), loadProfile("desktop"), { port: 8952, mode: "desktop" });
+    const empty = serviceInfo(emptyService);
+    assert.deepEqual([empty.model.name, empty.capabilities.model, empty.model.reason], ["", false, "没有在设置里选定语言模型，启动配置里也没有写模型。"]);
   } finally {
     for (const [name, value] of [["PI_CODING_AGENT_DIR", saved.dir], ["TASKWRIGHT_PI_ENTRY", saved.entry]] as const) {
       if (value === undefined) delete process.env[name];

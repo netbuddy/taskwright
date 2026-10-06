@@ -10,6 +10,7 @@ import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } fr
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
+import { NO_MODEL_TEXT } from "../src/executor.ts";
 import { loadProfile } from "../src/launch.ts";
 import { Service } from "../src/service.ts";
 import { ROOT, captureConsole, makeWorkspace, sqlGet, tempDir } from "./helpers.ts";
@@ -37,7 +38,7 @@ after(() => {
  * 一个服务、一个带条目的任务、一条会话文件（编号 S1，与假 pi 报的会话编号相同）。
  * 助手的可执行文件是一个 shell 脚本，用当前的 Node 运行假 pi；mode 给 0o644 时系统拒绝执行（EACCES）。
  */
-function setUp(name: string, executable: (dir: string) => string) {
+function setUp(name: string, executable: (dir: string) => string, change: (profile: Dict) => Dict = (profile) => profile) {
   const root = join(tmp, name);
   const tasks = join(root, "tasks");
   const ws = makeWorkspace(tasks, "ws", true);
@@ -50,8 +51,9 @@ function setUp(name: string, executable: (dir: string) => string) {
     { type: "message", id: "a1", parentId: "u1", timestamp: ts, message: { role: "assistant", content: [{ type: "text", text: "整理好了。" }] } },
   ];
   writeFileSync(join(sessions, "s1.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n", "utf-8");
-  const service = new Service(tasks, join(root, "runs"), { ...loadProfile("fake"), executable: executable(root) }, { port: null });
-  return { service, t: service.task(taskId), root };
+  const profile = change({ ...loadProfile("fake"), executable: executable(root) });
+  const service = new Service(tasks, join(root, "runs"), profile, { port: null });
+  return { service, t: service.task(taskId), root, profile };
 }
 
 function piScript(root: string, mode: number): string {
@@ -110,6 +112,27 @@ test("没有安装（PATH 里找不到程序）：快照照常给，执行者状
     const snap = await service.snapshot(t, "S1");
     assertReadable(snap);
     assert.deepEqual(snap.executor, { state: "failed_to_start", text: "助手没有启动起来，找不到助手的程序（pi），请检查安装。", active_session: null });
+  } finally {
+    await service.close();
+  }
+});
+
+test("没有选定语言模型、启动配置里也没有写模型：不启动助手，快照照常给，执行者状态与新建会话的报错都是「还没有选定语言模型，请先到设置里添加模型服务并选定。」；有了模型之后照常启动", async () => {
+  // 助手的程序是能起来的；不启动只因为没有模型
+  const { service, t, profile } = setUp("no-model", (r) => piScript(r, 0o755), ({ model: _dropped, ...rest }) => rest);
+  try {
+    const before = openFiles();
+    for (let round = 1; round <= 2; round++) {
+      const snap = await service.snapshot(t, "S1");
+      assertReadable(snap);
+      assert.deepEqual(snap.executor, { state: "failed_to_start", text: NO_MODEL_TEXT, active_session: null }, `第 ${round} 次打开`);
+    }
+    assert.equal(NO_MODEL_TEXT, "还没有选定语言模型，请先到设置里添加模型服务并选定。");
+    await assert.rejects(t.executor.newSession(), (e: unknown) => e instanceof ApiError && e.code === "executor_unavailable" && e.message === NO_MODEL_TEXT);
+    assert.equal(openFiles(), before, "没有起过子进程，也没有留下没关的文件");
+    profile.model = "fake/fake-model";
+    const started = await service.snapshot(t, "S1");
+    assert.equal(started.executor.state, "idle");
   } finally {
     await service.close();
   }

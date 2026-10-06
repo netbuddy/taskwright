@@ -69,7 +69,7 @@ export function NoModelBanner() {
   if (!info || info.capabilities.model !== false) return null;
   return (
     <div className={`svc-banner${open ? " open" : ""}`} data-testid="no-model-banner">
-      还没有选定助手用的模型，助手现在不能工作。
+      还没有选定语言模型，助手现在不能工作。
       {info.model?.reason && <a role="button" onClick={() => setOpen(!open)} data-testid="no-model-detail">详情</a>}
       <span className="sp" />
       <Button size="small" onClick={openSettings} data-testid="go-model-settings">去配置模型</Button>

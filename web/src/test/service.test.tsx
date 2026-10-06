@@ -31,7 +31,7 @@ describe("无模型提示", () => {
     vi.spyOn(api, "serviceInfo").mockResolvedValue(info({ capabilities: { exit: true, model: false }, model: { name: "local/qwen", reason } }));
     page();
     const banner = await screen.findByTestId("no-model-banner");
-    expect(banner).toHaveTextContent("还没有选定助手用的模型，助手现在不能工作。");
+    expect(banner).toHaveTextContent("还没有选定语言模型，助手现在不能工作。");
     expect(screen.queryByRole("link", { name: "查看配置说明" })).toBeNull();
     expect(banner).not.toHaveTextContent(reason);
     fireEvent.click(screen.getByTestId("no-model-detail"));
