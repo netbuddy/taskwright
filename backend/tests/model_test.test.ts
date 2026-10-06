@@ -301,7 +301,7 @@ test("嵌入模型通过：把一句话按查询的用途送去换算，拿回�
   const plain = await go({ type: "embedding" });
   assert.match(plain.body.question, SENTENCE);
   assert.deepEqual(embedHits[1].input, [plain.body.question]);
-  assert.deepEqual(readdirSync(osTmp), []);
+  assert.deepEqual(leftInOsTmp(), []);
 });
 
 test("嵌入模型没有通过：模型服务没有给数字串、到时间没有回答、没有选嵌入模型，都照样回答 200，原因写在 reason 里，数字串的长度是 null", async () => {
@@ -353,5 +353,5 @@ test("语言模型的测试在跑时，嵌入模型的测试请求报 busy，不
   assert.equal(embedHits.length, 0);
   assert.equal((await first).body.result, "passed");
   assert.equal((await go({ type: "embedding" })).body.result, "passed");
-  assert.deepEqual(readdirSync(osTmp), []);
+  assert.deepEqual(leftInOsTmp(), []);
 });
