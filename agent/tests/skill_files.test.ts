@@ -158,3 +158,17 @@ test("系统提示先读平台 skill，且不提领域", () => {
   assert.ok(text.includes("先用 read 读 taskwright-executor 的正文，再读任务 skill 的正文"));
   assert.ok(!text.includes("需求工程"));
 });
+
+test("系统提示写明知识库的三条规矩：材料指向别的文档时必须查、查知识库只用按意思查找这一个工具、不一次整份读大文件", () => {
+  const text = readFileSync(join(ROOT, DEV_PROFILE.system_prompt_file), "utf-8");
+  for (const words of [
+    "7. 材料里把具体规定指给了别的文档（例如「按公司规范执行」「见术语表」）时，必须到知识库里把那条规定查出来写进条目，并记来源；查法见 taskwright-executor 第二节第 4 条。",
+    "8. 查知识库只用 search_knowledge 这一个工具；知识库目录不能用 grep、find 搜，也不能用 ls 看；知识库文档不要用 read 整份读，只按 search_knowledge 返回的位置读原文核对。",
+    "9. 不要一次整份读大文件：长材料照 taskwright-executor 第二节第 1 条按块读；知识库文档只按 search_knowledge 返回的位置读，一次不超过 120 行。",
+  ]) assert.ok(text.includes(words), words);
+  // 三条都写在「怎样工作」里，在「底线」之前。
+  assert.ok(text.indexOf("9. 不要一次整份读大文件") < text.indexOf("## 底线"));
+  // 一律说「知识库」，不简称「库」；不用这几个写给开发者看的词。
+  assert.doesNotMatch(text.replaceAll("知识库", ""), /库/);
+  for (const word of ["检索", "向量", "进程", "项目"]) assert.ok(!text.includes(word), word);
+});
