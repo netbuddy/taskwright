@@ -7,12 +7,14 @@
 // 服务绑 0.0.0.0，同一网段的其他机器也能打开。
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { pdfjsAssets } from "./pdfjs_assets.mjs";
 
 const port = Number(process.env.TASKWRIGHT_WEB_PORT || 5680);
 const target = process.env.TASKWRIGHT_API_TARGET || "http://127.0.0.1:8790";
 
 export default defineConfig({
-  plugins: [react()],
+  // pdfjsAssets：把 pdf.js 显示 PDF 材料时要另外取的字符映射表、标准字体等文件带进产物的 pdfjs/ 目录，开发服务器上也提供（pdfjs_assets.mjs）。
+  plugins: [react(), pdfjsAssets()],
   // Word 文件当作静态资源：测试里以 ?inline 引入样本 .docx。
   assetsInclude: ["**/*.docx"],
   server: {
