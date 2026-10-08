@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FALLBACK_TEXT, baseMessages, branch, normalizeInforms, page, textOf } from "../src/conversation.ts";
 import { Sessions } from "../src/sessions.ts";
-import { LIMIT_STOPPED_STEP_TEXT, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
+import { LIMIT_STOPPED_STEP_TEXT, docxDerived, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
 import { tempDir } from "./helpers.ts";
 
 const works = (entries: Record<string, unknown>[], definition: Record<string, unknown> = {}) =>
@@ -79,6 +79,41 @@ test("过程摘要：相邻同类合并，用时与工作编号，回复所在�
   assert.deepEqual(first.stages.map((s) => s.text), ["读了材料《甲.md》、《乙.md》", "保存修订被拒，助手正在照原因改", "写好并保存了修订 1：新增功能用例 1 个（UC-001）", "组织并发出了回复"]);
   assert.ok(!("reasons" in first.stages[1]), "结果正文里取不到原因时照旧写固定的一句，不带 reasons");
   assert.deepEqual([second.work_id, second.step_count, second.stages[0].text], ["w-u2", 1, "看了目录"]);
+});
+
+test("过程摘要：由 Word 文件生成的投影、分段清单与位置表都写成 Word 文件的本名；同一份读几次只写一次；只看了分段清单的另写", () => {
+  assert.deepEqual(docxDerived("退货说明.docx.md"), { docx: "退货说明.docx", part: "text" });
+  assert.deepEqual(docxDerived("退货说明.DOCX.txt"), { docx: "退货说明.DOCX", part: "text" });
+  assert.deepEqual(docxDerived("退货说明.docx.segments.json"), { docx: "退货说明.docx", part: "outline" });
+  assert.deepEqual(docxDerived("退货说明.docx.locations.json"), { docx: "退货说明.docx", part: "outline" });
+  for (const name of ["退货说明.docx", "说明.md", "笔记.segments.json", "退货说明.docx.media"]) assert.equal(docxDerived(name), null, name);
+
+  const definition = { 材料目录: "inputs/" };
+  const step = (path: string, done: boolean, failed = false) => stepText("read", { path }, done, failed, null, definition);
+  assert.deepEqual([step("inputs/退货说明.docx.md", false), step("inputs/退货说明.docx.md", true), step("inputs/退货说明.docx.md", true, true)],
+    ["正在读材料《退货说明.docx》", "读了材料《退货说明.docx》", "读材料《退货说明.docx》没有读成"]);
+  assert.deepEqual([step("inputs/退货说明.docx.segments.json", false), step("inputs/退货说明.docx.segments.json", true), step("inputs/退货说明.docx.segments.json", true, true)],
+    ["正在看材料《退货说明.docx》的分段清单", "看了材料《退货说明.docx》的分段清单", "看材料《退货说明.docx》的分段清单没有看成"]);
+  assert.equal(step("inputs/退货说明.docx.locations.json", true), "看了材料《退货说明.docx》的分段清单", "位置表并进分段清单的说法，不对用户说「位置表」");
+  assert.equal(step("/kb/K-001/files/退货政策.docx.md", true), "读了文件《退货政策.docx》", "知识库文档的投影同样写本名");
+
+  const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-08T01:00:00.000Z", message: { role, content } });
+  /** 一次工作：依次读这些路径（每次一条助手消息、一条成功的结果），返回各阶段的 [文字, 次数]。 */
+  const read = (...paths: string[]) => {
+    const entries: Record<string, unknown>[] = [{ type: "session", id: "h" }, msg("u1", null, "user", "整理材料")];
+    paths.forEach((path, i) => {
+      const parent = i === 0 ? "u1" : `r${i - 1}`;
+      entries.push(msg(`a${i}`, parent, "assistant", [{ type: "toolCall", id: `c${i}`, name: "read", arguments: { path } }]));
+      entries.push({ ...msg(`r${i}`, `a${i}`, "toolResult", []), message: { role: "toolResult", toolCallId: `c${i}`, isError: false, details: {} } });
+    });
+    return works(entries, definition)[0].stages.map((s) => [s.text, s.count]);
+  };
+  // 走查时的顺序：先看分段清单，再读投影，又读了一次投影。
+  assert.deepEqual(read("inputs/退货说明.docx.segments.json", "inputs/退货说明.docx.md", "inputs/退货说明.docx.md"), [["读了材料《退货说明.docx》", 3]]);
+  assert.deepEqual(read("inputs/退货说明.docx.segments.json"), [["看了材料《退货说明.docx》的分段清单", 1]]);
+  assert.deepEqual(read("inputs/甲.docx.segments.json", "inputs/乙.docx.locations.json"), [["看了材料《甲.docx》、《乙.docx》的分段清单", 2]]);
+  assert.deepEqual(read("inputs/甲.docx.md", "inputs/乙.docx.segments.json", "inputs/丙.md"), [["读了材料《甲.docx》、《丙.md》，看了《乙.docx》的分段清单", 3]]);
+  assert.deepEqual(read("inputs/丙.md", "inputs/丙.md", "inputs/丁.md"), [["读了材料《丙.md》、《丁.md》", 3]], "不是 Word 材料时同一份也只写一次");
 });
 
 test("过程摘要：保存修订被拒附上原因，多于一条时写还有几条", () => {
