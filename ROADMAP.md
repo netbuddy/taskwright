@@ -33,15 +33,16 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [x] Model services and the models in use set up on a settings page
 - [x] The assistant's program is pi 1.0.4, packaged from a lock file; no network access at startup
 
-## 0.4.2 Diagrams and Word export
+## 0.4.2 Sources, diagrams and Word export
 
-- [ ] Diagrams tab in the work view: the assistant draws UML diagrams in Mermaid from the conversation (use case, class, sequence, activity and state diagrams; a use case diagram is written as a flowchart); each diagram is an item with its own revisions and related items; preview in the page, export as PNG
-- [ ] Export chosen items to Word: tick items in the list and download a .docx in which each item is a table, to paste into your own specification
+- [x] Sources name the element of the task an item rests on: an item can cite any other item, and a basis changed or deleted afterwards is marked
+- [x] Diagrams: the assistant draws use case, class, state and sequence diagrams and flowcharts as Mermaid text, checked before they are saved; a diagrams tab in the work view shows them, lets you move, scale and change them, and exports PNG
+- [x] Export chosen items to Word: tick items in the list and download a .docx in which each item is a table, to paste into your own specification
 
 ## 0.4.3 PDF
 
+- [ ] PDF materials and knowledge base documents (the parsing module is on the main branch)
 - [ ] Word materials shown as PDF, so that pages match what Word shows
-- [ ] PDF materials: parsing and a Markdown text for the assistant (the groundwork is on a branch)
 - [ ] Replace a material
 
 ## 0.5 Several users
