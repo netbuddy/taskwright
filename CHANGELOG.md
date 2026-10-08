@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-XX
+
+0.4.2 lets the assistant draw diagrams and lets you take chosen items out as a Word file. A source now says which element of the task an item rests on: an item can cite any other item, and a basis that was changed or deleted afterwards is marked. Diagrams are a second kind of task element beside items, with their own tab in the work view.
+
 ### Upgrading from 0.4.1
 
 - Task databases are migrated on their own. The sources table gets two columns and two kinds are renamed (see **Sources** below). A task's database is migrated the first time it is written after the upgrade (the assistant saves something, or you do something on the page), inside one transaction, with the same rows and the same content. Until then the pages, the interface and generated documents already show the current names, because the reading side translates the old ones. As before, back up the task directories before upgrading.
+- Two kinds of sources have new names. `执行者补充` is stored as `助手补充`, which is what the pages already called it, and its reason is now shown after **理由：** ("reason:"). A source that cited a domain note, formerly its own kind `领域说明`, is now of the kind `条目` ("item"). The instructions copied into existing task directories still use the old names; the assistant's tools accept them and store the current ones.
 - An item that cited a domain note before the upgrade, where the note was changed afterwards, shows **依据已变** ("the basis has changed") straight after the upgrade. Old sources never recorded which revision of the note they cited, so the migration fills in the latest revision the note had at the revision the source belongs to. For a source that was written earlier and merely carried over while its item was changed, this is later than the true revision, so the mark can be missing for such old sources; it is never shown wrongly.
+- A new task cannot declare a collection whose id prefix is the single letter `D`, because diagram ids are written `D-001`. Existing tasks are not affected.
+- If you run Taskwright from a clone of the repository, install the dependencies again (`make install`, or `npm ci`). The task service now has two packages of its own, docx and pdfjs-dist, and the pages use mermaid. Without them the export to Word answers with an error and diagrams cannot be checked, so they are not saved. The desktop packages carry what they need.
 
 ### Sources
 
@@ -18,30 +25,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When an item is cited, the revision it had at that moment is recorded. If the cited item is changed later, the source is marked **依据已变：DN-002 在这之后改过（引用时是修订 2，现在是修订 5）** ("the basis has changed: DN-002 was changed after this; revision 2 when cited, revision 5 now"); if it is deleted, the source says **DN-002 已经删除** ("DN-002 has been deleted"). The mark goes away when the assistant writes the source again. Carrying a source over while other fields change, editing a field on the page and undoing do not count as citing again.
 - The details of an item that other items rest on have a line **被谁依据** ("cited by") listing them. Domain notes keep their fuller section **被哪些条目引用** ("which items cite it").
 - **助手补充** ("added by the assistant") must carry a reason: the assistant writes it in the excerpt, a source of this kind without one is refused, and the page shows it after **理由：** ("reason:"). The assistant no longer writes a locator for this kind.
-- Two kinds were renamed in the database and the interface: `执行者补充` is now `助手补充`, and `领域说明` is now part of `条目`. The assistant's tools still accept the two old names and store the current ones, so the instructions copied into existing task directories keep working. A kind `图` ("figure") is reserved for the figures planned for this release and is refused until they exist.
+- Two kinds were renamed in the database and the interface: `执行者补充` is now `助手补充`, and `领域说明` is now part of `条目`. The assistant's tools still accept the two old names and store the current ones, so the instructions copied into existing task directories keep working. A kind `图` ("diagram") is reserved for an item that rests on a diagram; it cannot be used yet, and the assistant's tools refuse it.
 - Task data from the interface: a source of kind `条目` carries `depends_revision`, `current_revision` and `stale` (`"changed"`, `"deleted"` or `null`), and each item carries `depended_by`. The last three are worked out when the data is read and are not stored.
 - Generated documents and the Word export write a source that cites an item as the collection name, the item id and the excerpt, so documents of existing tasks read as before.
 - The observatory and the simulation judge read sources under the current kind names; the simulation summary key `执行者补充累计` is now `助手补充累计` (old result files are still read).
 
 ### Diagrams
 
-- The assistant can draw diagrams when you ask for one, for example "把这几个用例画成用例图" ("draw these use cases as a use case diagram"). Five kinds: use case, class, state, sequence and flowchart, written as Mermaid text. In the conversation a diagram shows up as a step such as **保存了图 D-001（用例图：读者用例）**.
-- A diagram is a second kind of task element beside items: it has an id (`D-001`), its own revisions, a note and sources, is not reviewed and does not count towards the completion conditions. Its revision numbers are apart from the task's.
+- The assistant can draw diagrams when you ask for one, for example "把这几个用例画成用例图" ("draw these use cases as a use case diagram"). Five kinds: use case, class, state, sequence and flowchart, written as Mermaid text; a use case diagram is written as a flowchart. In the conversation a diagram shows up as a step such as **保存了图 D-001（用例图：读者用例）**. When a diagram is refused and then saved in the same piece of work, the conversation shows one step, such as **图第一次没有存上（缺来源），补上后保存了图 D-001（用例图：读者用例）** ("the diagram was not saved the first time (no sources); saved as D-001 once they were added"), instead of a failed step followed by a saved one. A refusal that is not followed by a save says why when the reason is missing sources or a Mermaid text that did not pass the check.
+- A diagram is a second kind of task element beside items: it has an id (`D-001`), its own revisions, a note and sources. Its revision numbers are apart from the task's. A diagram is not reviewed, does not count towards the completion conditions, and is not part of generated documents or the Word export.
 - Before a diagram is saved the task service checks the Mermaid text. A text with a syntax error is not saved; the assistant is told the line and corrects it. After three failed checks in a row it stops and tells you. If the check itself cannot be made, nothing is saved and the assistant says so.
-- When a node stands for an item, the assistant writes the item id into the node's text and cites the item as a source of the diagram. When that item is changed later, the diagram's source is marked **依据已变** ("the basis has changed"), and the item's **被谁依据** ("cited by") line lists the diagram.
-- New tool for the assistant: `save_diagram` (twelve tools in all). `get_item` also shows a diagram when given its id, and `get_task_status` lists the diagrams of the task.
-- A new diagram needs at least one source. In the parameters of `save_diagram`, `sources` is required: a list for a new diagram, and `null` when a diagram is changed without touching its sources or is deleted (leaving it out still works and is read as `null`). A new diagram without sources is refused with the reason, as before.
-- When a diagram is refused and then saved in the same piece of work, the conversation shows one step, such as **图第一次没有存上（缺来源），补上后保存了图 D-001（用例图：读者用例）** ("the diagram was not saved the first time (no sources); saved as D-001 once they were added"), instead of a failed step followed by a saved one. A refusal that is not followed by a save says why when the reason is missing sources or a Mermaid text that did not pass the check.
-- Interface: `GET …/diagrams`, `GET …/diagrams/{diagram_id}` (with the sources and the items drawn in it), `POST …/diagrams/validate`, `diagrams` in the task data and the event `diagram_changed`.
-- A new task cannot declare a collection whose id prefix is the single letter `D`. Existing tasks are not affected.
-- The observatory reads diagrams (`dbshow` lists them) and `check_db` has an eleventh check for them.
+- A new diagram needs at least one source, for example the sentence in which you asked for it. When a node stands for an item, the assistant writes the item id into the node's text and cites the item as a source of the diagram. When that item is changed later, the diagram's source is marked **依据已变** ("the basis has changed"), and the item's **被谁依据** ("cited by") line lists the diagram; clicking it there opens the diagram.
 - The work view has a tab **图表** ("diagrams") after the collection tabs, with the number of diagrams on it. It lists each diagram's id, name, kind and latest revision; with no diagram yet it says how to ask the assistant for one. The item filters are hidden while this tab is open.
 - A diagram's page gives the whole middle of the items area to the drawing. The revision and the note are on one line above it; the Mermaid text, the sources and **图里画了谁** ("the items drawn in it") are in a column on the right with the tabs **文本** and **来源**, which can be hidden to give the drawing more room. The sources use the same cards as an item's, with the same **依据已变** and **已经删除** marks. The items drawn can be clicked; a deleted item, or an id the task does not have, is grey with a note. A text that cannot be drawn shows Mermaid's own words instead of a drawing. The drawing is made in the browser; Mermaid is loaded only when a diagram is opened.
 - Moving and scaling: drag the drawing to move it, turn the mouse wheel to scale it around the pointer, or use **缩小**, **放大**, **适应宽度** and **原始大小**; the scale, from 25% to 400%, is shown beside them. A diagram wider than the board opens at the board's width but never below 50%.
 - **导出 PNG** ("export PNG") saves the drawing at twice its size on a white background, named after the diagram's id and name, whatever the scale and position on the page.
 - You can change a diagram's Mermaid text on its page. The text is edited in the 文本 tab and the drawing follows it as a preview; **保存** makes it a new revision of the diagram, made by you, and **放弃改动** drops the change. The task service checks the text first: a text with a mistake is not saved and the reason is shown under the text box. No sources are asked for, and the assistant is told with one line in the session. While a change is unsaved, exporting and sending a message are unavailable. Name, note, kind and deletion remain the assistant's to change, and a change to a diagram cannot be undone.
-- In an item's details, a diagram in the **被谁依据** ("cited by") line can be clicked and opens that diagram.
-- Interface: the operation `edit_diagram` of `POST …/actions`; `diagram_changed` also carries `kind_name`. The page now follows `diagram_changed` as it arrives; before, it read the whole task again after a diagram was saved. The address of a session takes `?tab=diagrams` and `?diagram=D-001`.
+- New tool for the assistant: `save_diagram` (twelve tools in all), which adds, changes or deletes a diagram. Its parameter `sources` is required: a list for a new diagram, and `null` when a diagram is changed without touching its sources or is deleted (leaving it out still works and is read as `null`); a new diagram without sources is refused with the reason. `get_item` also shows a diagram when given its id, and `get_task_status` lists the diagrams of the task.
+- Interface: `GET …/diagrams`, `GET …/diagrams/{diagram_id}` (with the sources and the items drawn in it), `POST …/diagrams/validate`, the operation `edit_diagram` of `POST …/actions`, `diagrams` in the task data and the event `diagram_changed` (with `kind_name`). The address of a session takes `?tab=diagrams` and `?diagram=D-001`.
+- A new task cannot declare a collection whose id prefix is the single letter `D`. Existing tasks are not affected.
+- The observatory reads diagrams (`dbshow` lists them) and `check_db` has an eleventh check for them.
 
 ### Export to Word
 
@@ -50,6 +53,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The file groups the items by collection, the collection name as Heading 1. Each item is a Heading 2 line with its id and title and a two-column table with one row per field: the entries of a text list each as a numbered paragraph, other multiple values joined with 、, an empty field as （空）. With the sources included, the last row lists them, one per paragraph, as kind · locator：excerpt, with the same wording of kinds and locators as the generated document. Chinese text is set in 宋体 (SimSun), Latin text and digits in Calibri; the tables use Word's built-in Table Grid style; the page margins are Word's defaults. The file is named 任务名-条目-YYYY-MM-DD.docx ("task name-items-date").
 - The file is made by the task service: `POST …/documents/download` accepts `"format": "docx"` with `items` (required) and `with_sources` (default `true`), and names the file in `Content-Disposition`. This format cannot be previewed and takes no `revision_no`.
 - The backend has a second dependency, the [docx](https://github.com/dolanmiu/docx) package 9.9.0 (MIT), loaded on the first export. The desktop packages carry it as one bundled file in `backend/vendor/docx/`, with the licence files of docx and of the packages built into it.
+
+### Work view and conversation
+
+- The work summary no longer shows the names of the files generated from a Word document. Reading the text of a Word material reads **读了材料《退货说明.docx》** ("read the material 退货说明.docx"), where it used to give a name ending in `.docx.md`; looking only at its segment list or its location table reads **看了材料《退货说明.docx》的分段清单** ("looked at the segment list of the material 退货说明.docx"). A file that is read several times in a row is named once. The same holds for Word documents of the knowledge base.
+- A `read` that starts after the last line of a file is no longer shown as a failed read (读材料《…》没有读成). The file had been read, so the step is folded into the reading step before it, or reads **材料《…》已经读到末尾** ("the material … has been read to the end"). A file that cannot be read is still shown as failed.
+
+### Task service
+
+- The repository now holds a module that turns a PDF file into a Markdown text, a segment list and a location table (`backend/src/pdf_projection.ts`, with pdfjs-dist 6.4.299 as a dependency of the task service), in preparation for 0.4.3. Nothing uses it yet: PDF files are still not accepted, and the desktop packages do not carry pdfjs-dist.
+
+### Known issues
+
+- A change to a diagram cannot be undone. The **修订** ("revisions") tab does not list the revisions of diagrams, and an earlier revision of a diagram cannot be looked at: its page shows the latest one only.
+- An item cannot rest on a diagram yet: the source kind `图` is refused, and the refusal says that the task has no diagrams even when it has.
+- Diagrams are not part of generated documents or the Word export, and the reviewer does not see them.
+- When you remove from a diagram's text a node that stands for an item, the diagram keeps its source for that item, because your changes leave the sources as they were. **依据已变** can therefore still appear for an item that is no longer drawn.
+- The reason shown when your change to a diagram's text is not saved was written for the assistant, and a few of its sentences read oddly when it is you who made the change.
+- Scaling a diagram with a touchpad can be too fast, because every wheel event scales by one step.
+- **适应宽度** ("fit to width") does not go below 25%, so a very wide diagram still does not fit and has to be dragged.
+- In the items area the number on **导出 Word** counts the ticked items of all tabs, while the line 已勾选 N 个条目 above the list counts those of the current tab and filter, so the two numbers can differ.
+- In a knowledge base search the first two chunks by keyword always come into the result, whatever their score, so now and then a chunk that merely shares a few characters with the question takes the place of a closer one.
+- The keyword scores are computed anew at every search. With more than about ten thousand chunks in the knowledge bases a task uses, one search takes more than a second.
+- **试一试按意思查找** on the knowledge base page shows only the score by meaning and does not say when a chunk came in by keyword; it cannot be used while no embedding model is chosen or documents are still to be embedded, although the assistant can then still search by keyword.
+- The limit of five refusals in a row covers refused replies and refusals for a missing or invalid understanding. A revision refused for its content is not counted, and the number of rounds in one run has no limit.
+- Nothing is done about large materials: the assistant does not get through a material of several MB.
+- When one cell of a Word table is longer than 800 characters, a search returns the whole cell for each piece of it.
+- Without the programs rg and fd the assistant's `grep` and `find` tools do not work. The desktop package brings both; on a machine set up by hand they have to be installed, or downloaded by running `pi` once without `--offline`.
+- PDF files are not accepted, as materials or in the knowledge base (planned for 0.4.3).
+- The assistant may still miss content in the materials, even in short ones. Statements in the materials that contradict each other may be written down as a settled rule, and the same rule may be written as two.
+- The review rules have not been verified one by one, so a review verdict is for reference only, and you can overrule it with **保留这种写法** ("keep this wording"). A task created earlier uses the review rules copied when it was created, and an upgrade does not update them.
+- When the package (AppImage) runs on a computer without FUSE, it leaves the files it unpacked in the system's temporary directory.
+- While a review is running, the progress note in the top right corner covers the top line of the Review tab.
+- The screenshots in the tutorial were taken from an earlier version. The task page, the Review tab and the item details look different now, and the diagrams tab and the export to Word are not in them; where they differ, follow the text.
+- The Windows executable can be built with the same scripts but has not been verified.
+- Tasks from 0.4.1 are carried over by the migration described above, but upgrades do not yet promise in general that existing tasks keep working: a task keeps the instructions and the review rules copied when it was created. Back up the task directories before upgrading.
 
 ## [0.4.1] - 2026-10-08
 
@@ -369,6 +407,7 @@ First public release.
 - HTTP/SSE task service, terminal client, read-only observatory, and a simulated user for test runs.
 - Documentation in English and Chinese, and a GitHub Actions workflow for checks and tests.
 
+[0.4.2]: https://github.com/netbuddy/taskwright/releases/tag/v0.4.2
 [0.4.1]: https://github.com/netbuddy/taskwright/releases/tag/v0.4.1
 [0.4.0]: https://github.com/netbuddy/taskwright/releases/tag/v0.4.0
 [0.3.0-alpha]: https://github.com/netbuddy/taskwright/releases/tag/v0.3.0-alpha
