@@ -7,6 +7,7 @@
  * · 阶段：每个工具调用写成一句，相邻的同类调用合成一句，例如连着读了三份材料写成「读了材料《a》、《b》、《c》」；
  *   同一份材料读了几次只写一次名字。由 Word 材料生成的投影、分段清单与位置表是内部的文件，都写成 Word 文件的本名。
  *   保存修订被拒时，这一句写「保存修订被拒：」加第一条原因的事实，阶段另有 reasons 列出全部原因的事实。
+ *   保存图被拒之后在同一次工作里又存上了，被拒的几次并进存上的那一句：「图第一次没有存上（缺来源），补上后保存了图 D-001（…）」。
  *   read 的起始行号超过了文件末尾不算没读成：前一句里读过这一份就并进去，不然写「已经读到末尾」。
  * · 工作编号：「w-{那句用户的话的会话条目编号}」。修订日志按它把修订归到工作。
  */
@@ -80,6 +81,45 @@ export const REPLY_REFUSAL_TEXT: Record<ReplyRefusal, string> = {
 };
 /** 这一轮连续被拒到上限、由工具停下这次运行的那一步（工具结果的 details.stopped 为真）。 */
 export const LIMIT_STOPPED_STEP_TEXT = "助手这一轮没有按规矩回答，已经停下";
+
+/**
+ * 「保存图」被拒是哪一种，按拒绝的文字认（文字是助手一侧拼的，见 agent/src/lib/save_diagram.ts 的 reject 与 VALIDATION_FAILED_TEXT、
+ * lib/save_revision.ts 的 checkSources）：没有写来源、Mermaid 文本没有通过校验，或者别的。过程摘要只给前两种加括注。
+ */
+export type DiagramRejection = "no_sources" | "mermaid" | "other";
+const DIAGRAM_REJECTED_HEAD = "这张图没有保存：";
+export function diagramRejection(text: string): DiagramRejection {
+  if (!text.startsWith(DIAGRAM_REJECTED_HEAD)) return "other";
+  const fact = text.slice(DIAGRAM_REJECTED_HEAD.length);
+  if (fact.startsWith("Mermaid 文本没有通过校验")) return "mermaid";
+  return fact.startsWith("缺少 sources") || fact.startsWith("sources 应当是") ? "no_sources" : "other";
+}
+
+/** 「保存图」被拒时过程摘要里括注的说法；别的原因不加括注（原因在工具的结果里）。 */
+export const DIAGRAM_REJECTION_TEXT: Record<DiagramRejection, string> = { no_sources: "缺来源", mermaid: "Mermaid 文本没有通过校验", other: "" };
+
+const diagramRejectionOf = (details: Dict | null): DiagramRejection => {
+  const kind = (details || {}).rejection;
+  return typeof kind === "string" && Object.hasOwn(DIAGRAM_REJECTION_TEXT, kind) ? kind as DiagramRejection : "other";
+};
+const noted = (labels: string[]) => (labels.length ? `（${labels.join("、")}）` : "");
+
+/**
+ * 图被拒之后在同一次工作里又存上了：被拒的几次并进存上的那一句，不单列「图没有存上」。
+ * 「图第一次没有存上（缺来源），补上后保存了图 D-001（用例图：…）」；被拒不止一次时写「图前 N 次没有存上」；原因只有缺来源时说「补上后」，不然说「改好后」。
+ */
+function retriedDiagramText(rejections: DiagramRejection[], saved: string): string {
+  const labels = [...new Set(rejections.map((kind) => DIAGRAM_REJECTION_TEXT[kind]).filter(Boolean))];
+  const times = rejections.length === 1 ? "第一次" : `前 ${rejections.length} 次`;
+  const fixed = rejections.every((kind) => kind === "no_sources") ? "补上后" : "改好后";
+  return `图${times}没有存上${noted(labels)}，${fixed}${saved}`;
+}
+
+/** 一次「保存图」说的是哪一张图：修改与删除按图的编号认，新画的按图名认。认不出时是 null，不与别的调用合并。 */
+function diagramKey(args: Dict): string | null {
+  if (typeof args.diagram === "string" && args.diagram.trim()) return `id\u0000${args.diagram.trim()}`;
+  return typeof args.name === "string" && args.name.trim() ? `name\u0000${args.name.trim()}` : null;
+}
 
 export function resultText(result: Dict): string {
   const content = result.content;
@@ -244,8 +284,8 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
     return `写好并保存了修订 ${py(d.revision_no)}：` + parts.join("；");
   }
   if (tool === "save_diagram") {
-    // 图没有存上的原因（参数不对、来源不对、Mermaid 文本没有通过校验、校验没有做成）在工具的结果里，这里只说没有存上。
-    if (failed) return "图没有存上";
+    // 图没有存上的原因在工具的结果里；调用的一方认出是缺来源或者 Mermaid 文本没有通过校验时放进 details.rejection（见 diagramRejection），这里加个括注。
+    if (failed) return `图没有存上${noted([DIAGRAM_REJECTION_TEXT[diagramRejectionOf(details)]].filter(Boolean))}`;
     if (!done) return "正在保存图";
     const d = details || {};
     const what = `图 ${py(d.diagram_id)}`;
@@ -308,6 +348,23 @@ export function stages(calls: Dict[], definition: Dict) {
       const reasons = tool === "save_revision" ? rejectionReasons(c.details ?? null, "") : [];
       if (reasons.length) {
         out.push({ text, count: 1, names: [], _key: key, reasons });
+        lastKey = key;
+        continue;
+      }
+      if (tool === "save_diagram") {
+        // 记下被拒的是哪一张图、因为什么：后面这张图存上了，就并进那一句（见下面成功的那一支）。
+        out.push({ text, count: 1, names: [], _key: key, _diagram: diagramKey(args), _rejection: diagramRejectionOf(c.details ?? null) });
+        lastKey = key;
+        continue;
+      }
+    } else if (tool === "save_diagram" && diagramKey(args) !== null && (c.details ?? {}).replayed !== true) {
+      key = null;
+      text = stepText(tool, args, true, false, c.details ?? null, definition);
+      const mine = diagramKey(args);
+      const refused = out.filter((s) => s._diagram === mine);
+      if (refused.length) {
+        for (const one of refused) out.splice(out.indexOf(one), 1);
+        out.push({ text: retriedDiagramText(refused.map((s) => s._rejection), text), count: refused.length + 1, names: [], _key: key });
         lastKey = key;
         continue;
       }
@@ -462,6 +519,7 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
       }
       if (failed && part.name === "save_revision") details = { ...details, reasons: rejectionParts(details, resultText(result)) };
       if (failed && part.name === REPLY_TOOL) details = { ...details, refusal: replyRefusal(resultText(result)) };
+      if (failed && part.name === "save_diagram") details = { ...details, rejection: diagramRejection(resultText(result)) };
       current.calls.push({ tool: or(part.name, ""), args: or(part.arguments, {}), failed, details });
       if (truthy(details.stopped)) current.limit_stopped = true;
       if (part.name === REPLY_TOOL && truthy(result) && !failed) {

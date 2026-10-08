@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FALLBACK_TEXT, baseMessages, branch, normalizeInforms, page, textOf } from "../src/conversation.ts";
 import { Sessions } from "../src/sessions.ts";
-import { LIMIT_STOPPED_STEP_TEXT, docxDerived, readPastEnd, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
+import { LIMIT_STOPPED_STEP_TEXT, diagramRejection, docxDerived, readPastEnd, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
 import { tempDir } from "./helpers.ts";
 
 const works = (entries: Record<string, unknown>[], definition: Record<string, unknown> = {}) =>
@@ -212,6 +212,52 @@ test("过程摘要：查找知识库写查到几个片段，只按字面找的�
   assert.equal(stepText("save_diagram", {}, true, false, { diagram_id: "D-001", op: "add", name: "读者用例", kind: "use_case", revision_no: 1, replayed: true }, {}),
     "这次保存图是重复的请求，图 D-001 之前已经保存过，没有重复写入");
   assert.equal(stepText("save_diagram", {}, true, true, null, {}), "图没有存上");
+});
+
+test("过程摘要：保存图被拒之后同一次工作里又存上了，并成一句并括注原因；没有再存上的单列；两张图各认各的", () => {
+  const NO_SOURCES = "这张图没有保存：缺少 sources，至少要有一条来源。\n怎么办：图至少要有一条来源：用户要你画图的那句话写一条「用户的话」。";
+  const EMPTY_SOURCES = "这张图没有保存：sources 应当是一个不为空的列表，至少要有一条来源。";
+  const MERMAID = "这张图没有保存：Mermaid 文本没有通过校验。Mermaid 文本第 2 行附近写得不对。\n照上面说的改了再保存。";
+  const OTHER = "这张图没有保存：图名里有换行。\n怎么办：图名写成一行。";
+  assert.deepEqual([NO_SOURCES, EMPTY_SOURCES, MERMAID, OTHER, "Validation failed for tool \"save_diagram\"", ""].map(diagramRejection),
+    ["no_sources", "no_sources", "mermaid", "other", "other", "other"]);
+  // 实时的 step 行：被拒的那一刻还不知道后面存不存得上，只加括注。
+  assert.equal(stepText("save_diagram", {}, true, true, { rejection: "no_sources" }, {}), "图没有存上（缺来源）");
+  assert.equal(stepText("save_diagram", {}, true, true, { rejection: "mermaid" }, {}), "图没有存上（Mermaid 文本没有通过校验）");
+  assert.equal(stepText("save_diagram", {}, true, true, { rejection: "other" }, {}), "图没有存上");
+
+  const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-08T01:00:00.000Z", message: { role, content } });
+  /** 一次工作：依次做这些「保存图」，每项是 [参数, 被拒时结果的正文或者存上时的 details]；返回各阶段的 [文字, 次数]。 */
+  const run = (...calls: [Record<string, unknown>, string | Record<string, unknown>][]) => {
+    const entries: Record<string, unknown>[] = [{ type: "session", id: "h" }, msg("u1", null, "user", "画图")];
+    calls.forEach(([args, outcome], i) => {
+      const refused = typeof outcome === "string";
+      entries.push(msg(`a${i}`, i === 0 ? "u1" : `r${i - 1}`, "assistant", [{ type: "toolCall", id: `c${i}`, name: "save_diagram", arguments: args }]));
+      entries.push({ type: "message", id: `r${i}`, parentId: `a${i}`, timestamp: "2026-10-08T01:00:01.000Z",
+        message: { role: "toolResult", toolCallId: `c${i}`, isError: refused, details: refused ? {} : outcome, content: [{ type: "text", text: refused ? outcome : "" }] } });
+    });
+    return works(entries)[0].stages.map((s) => [s.text, s.count]);
+  };
+  const flow = { name: "退货处理", kind: "use_case" };
+  const saved = (id: string, name: string) => ({ diagram_id: id, op: "add", name, kind: "use_case", revision_no: 1 });
+  // 走查时的情形：第一次漏了来源，补上就存成了。
+  assert.deepEqual(run([flow, NO_SOURCES], [flow, saved("D-001", "退货处理")]), [["图第一次没有存上（缺来源），补上后保存了图 D-001（用例图：退货处理）", 2]]);
+  assert.deepEqual(run([flow, MERMAID], [flow, MERMAID], [flow, saved("D-001", "退货处理")]),
+    [["图前 2 次没有存上（Mermaid 文本没有通过校验），改好后保存了图 D-001（用例图：退货处理）", 3]]);
+  assert.deepEqual(run([flow, NO_SOURCES], [flow, MERMAID], [flow, saved("D-001", "退货处理")]),
+    [["图前 2 次没有存上（缺来源、Mermaid 文本没有通过校验），改好后保存了图 D-001（用例图：退货处理）", 3]]);
+  assert.deepEqual(run([flow, OTHER], [flow, saved("D-001", "退货处理")]), [["图第一次没有存上，改好后保存了图 D-001（用例图：退货处理）", 2]]);
+  // 两张图交错：各自并进各自存上的那一句。
+  const other = { name: "入库验收", kind: "use_case" };
+  assert.deepEqual(run([flow, NO_SOURCES], [other, NO_SOURCES], [flow, saved("D-001", "退货处理")], [other, saved("D-002", "入库验收")]),
+    [["图第一次没有存上（缺来源），补上后保存了图 D-001（用例图：退货处理）", 2], ["图第一次没有存上（缺来源），补上后保存了图 D-002（用例图：入库验收）", 2]]);
+  // 这次工作里没有再存上：单列一句，带上认得出的原因；别的图存上了不算。
+  assert.deepEqual(run([flow, NO_SOURCES]), [["图没有存上（缺来源）", 1]]);
+  assert.deepEqual(run([flow, NO_SOURCES], [other, saved("D-001", "入库验收")]), [["图没有存上（缺来源）", 1], ["保存了图 D-001（用例图：入库验收）", 1]]);
+  // 修改一张图按图的编号认。
+  const change = { diagram: "D-001", base_revision: 1, mermaid: "flowchart LR" };
+  assert.deepEqual(run([change, MERMAID], [change, { diagram_id: "D-001", op: "update", name: "退货处理", kind: "use_case", revision_no: 2 }]),
+    [["图第一次没有存上（Mermaid 文本没有通过校验），改好后修改了图 D-001（用例图：退货处理），现在是修订 2", 2]]);
 });
 
 test("过程摘要：grep 的返回太多、被截短时写搜到几行、只看了前几行；没有截短的与出错的照旧", () => {

@@ -4,7 +4,7 @@
  * 漏写的不被 pi 用英文拦下，而是由工具用中文拒绝并留痕；补上来源后交来的 Mermaid 文本括号没有闭合，工具经任务服务校验后退回，
  * 拒绝的话里有校验给的原因；助手改对了再存，图存成 D-001 的修订 1，来源是用户那句话与被画的用例；
  * 用户让它改图名，助手先用「查看条目」看这张图（拿到 Mermaid 文本与修订号），再用同一个工具带编号改，成了修订 2。
- * 图不占任务的修订序号；被拒的那一次记进了工具拒绝表；图的列表接口读得到。
+ * 图不占任务的修订序号；被拒的两次都记进了工具拒绝表，过程摘要把它们并进存上的那一句；图的列表接口读得到。
  * 最后用户在页面上改这张图的 Mermaid 文本（界面操作 edit_diagram）：写错的被任务服务校验拦下；写对的成了修订 3、发起方是用户，
  * 会话里多一句界面操作的说明；页面看到的修订号过时了按修订号过时拒绝。
  */
@@ -70,7 +70,12 @@ test("助手画图：写错的 Mermaid 文本被校验退回，改对之后存�
     // 两次拒绝都记进了工具拒绝表。
     assert.deepEqual(db("SELECT tool_name, reason_kind, call_id FROM tool_rejection ORDER BY rowid"),
       [{ tool_name: "save_diagram", reason_kind: "input", call_id: "call-d0" }, { tool_name: "save_diagram", reason_kind: "input", call_id: "call-d1" }]);
-    // 第二次存上了。
+    // 过程摘要：被拒的两次并进存上的那一句，不单列「图没有存上」。
+    const { messages } = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body;
+    const summaries: Dict[] = messages.filter((m: Dict) => m.type === "work_summary");
+    assert.deepEqual(summaries.at(-1)!.stages.map((stage: Dict) => [stage.text, stage.count]),
+      [["图前 2 次没有存上（缺来源、Mermaid 文本没有通过校验），改好后保存了图 D-001（用例图：读者用例）", 3], ["组织并发出了回复", 1]]);
+    // 第三次存上了。
     assert.match(resultOf(requests(), "call-d2"), /已保存图 D-001「读者用例」（用例图），现在是修订 1。[\s\S]*图里画了 1 个条目：UC-001。/);
     assert.deepEqual(db("SELECT diagram_id, revision_no, op, name, kind, actor, call_id FROM diagram_version"),
       [{ diagram_id: "D-001", revision_no: 1, op: "add", name: "读者用例", kind: "use_case", actor: "executor", call_id: "call-d2" }]);
