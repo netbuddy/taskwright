@@ -77,6 +77,23 @@ test("平台 skill 第四节写明来源的四种：助手补充要写理由、�
   assert.ok(!section.includes("执行者"));
 });
 
+test("平台 skill 有画图一节：只在用户要求时画、用保存图这一个工具、五种图的画法、节点写条目编号、来源怎样写、校验不过与改图删图", () => {
+  const body = bodyOf(PLATFORM);
+  const section = body.slice(body.indexOf("## 十一、画图"));
+  assert.ok(body.includes("## 十一、画图"));
+  for (const words of ["整理条目时不要主动画图", "图不是条目，不要用 save_revision 存；图不评审，不算进完成条件",
+    "用流程图的写法画，第一行写 `flowchart LR`", "参与者与用例都写成圆角节点，例如 `buyer([\"买家\"])`", "系统边界写成子图", "包含与扩展写在虚线上",
+    "不要用 Mermaid 自带的用例图写法", "第一行写 `classDiagram`", "第一行写 `stateDiagram-v2`", "第一行写 `sequenceDiagram`", "第一行写 `flowchart TD`",
+    "把条目编号写在这个节点的文字里，放在最前面", "不要把条目编号当节点的名字", "只写任务里现有的条目编号",
+    "每个条目写一条种类为「条目」的来源，出处写条目编号，画图时这种来源不用写摘录", "图的来源不写 `supports`",
+    "同一轮里连续三次没有通过，就不要再试：用回复告诉用户这张图哪里画不出来", "系统说这一次没有办法校验（不是文本写错了）时，图没有存，直接告诉用户",
+    "写上图的编号（diagram）与你看到的它的修订号（base_revision）", "删图写 `delete` 为真", "用 get_item 写图的编号", "图的修订号是图自己的"]) {
+    assert.ok(section.includes(words), words);
+  }
+  // 五个种类的写法与工具认的相同。
+  for (const kind of ["use_case", "class", "state", "sequence", "flowchart"]) assert.ok(section.includes(`（${kind}）`), kind);
+});
+
 test("平台 skill 写明被拒之后不删信息换取通过", () => {
   const body = bodyOf(PLATFORM);
   assert.ok(body.includes("不得为了通过而删掉引用、来源或关联条目"));
