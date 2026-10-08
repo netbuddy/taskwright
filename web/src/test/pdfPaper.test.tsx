@@ -40,6 +40,8 @@ const PROJECTION = ["<!--", "由 借阅管理办法.pdf 生成。", "-->", "", "
   "[p2-1] 学生一次最多借 5 本，", "", "[p2-2] 借期都是 30 天。", "", "[p3-1] 逾期的每本每天罚款一角。", "", "[p4-0] （这一页没有文字，可能是扫描件）", "", "[p5-1] 预约的图书保留 3 天。", ""].join("\n");
 
 const rendered = vi.fn();
+/** 为 true 时画页不会自己画完（模拟画得慢），只有被取消时才结束。 */
+let slowRender = false;
 const closed = vi.fn();
 class FakeTextLayer {
   textDivs: HTMLElement[] = [];
@@ -64,7 +66,12 @@ const fakeDoc = (pages = 5) => ({
   numPages: pages,
   getPage: async (n: number) => ({
     getViewport: ({ scale }: { scale: number }) => ({ width: W * scale, height: H * scale, scale, convertToViewportPoint: (x: number, y: number) => [x * scale, (H - y) * scale] }),
-    render: (options: { viewport: { scale: number } }) => { rendered(n, options.viewport.scale); return { promise: Promise.resolve(), cancel() {} }; },
+    render: (options: { viewport: { scale: number } }) => {
+      rendered(n, options.viewport.scale);
+      let fail: (reason: Error) => void = () => {};
+      const promise = slowRender ? new Promise<void>((_ok, no) => { fail = no; }) : Promise.resolve();
+      return { promise, cancel: () => fail(new Error("Rendering cancelled")) };
+    },
     getTextContent: async () => ({ items: (TEXT[n] ?? []).map(([str, x, y]) => ({ str, transform: [1, 0, 0, 1, x, y] })) }),
   }),
 });
@@ -117,7 +124,7 @@ beforeEach(() => {
     ({ text: path.endsWith(".locations.json") ? JSON.stringify(TABLE) : PROJECTION }) as Awaited<ReturnType<typeof api.materialContent>>);
   pdfHit.fadeMs = 60;
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); rendered.mockClear(); closed.mockClear(); resetPdfStore(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); rendered.mockClear(); closed.mockClear(); resetPdfStore(); slowRender = false; });
 
 describe("只画看得见的页", () => {
   it("每一页都先留同样大小的位置，一打开只画看得见的页与它下面一页；滚过去才画别的，滚走的收掉", async () => {
@@ -144,6 +151,21 @@ describe("只画看得见的页", () => {
     // 滚到最后：只留第 4、5 页。
     await scrollTo(4 * (H + PAGE_GAP));
     await waitFor(() => expect(drawnPages()).toEqual([4, 5]));
+  });
+
+  it("一页还没画完就滚走了：取消这一次，页里那张没画完的画布也收掉，不算出错", async () => {
+    slowRender = true;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    await opened();
+    await waitFor(() => expect(drawnPages()).toEqual([1, 2]));
+    await scrollTo(4 * (H + PAGE_GAP));
+    await waitFor(() => expect(drawnPages()).toEqual([4, 5]));
+    expect(screen.getByTestId("pdf-page-1").querySelector(".pdf-drawn")!.childElementCount).toBe(0);
+    // 滚回去：重新开始画。
+    await scrollTo(0);
+    await waitFor(() => expect(drawnPages()).toEqual([1, 2]));
+    expect(rendered.mock.calls.map(([n]) => n)).toEqual([1, 2, 4, 5, 1, 2]);
+    expect(logged).not.toHaveBeenCalled();
   });
 
   it("位置表读不到时，各页按第一页实际的大小留位置，照样显示", async () => {

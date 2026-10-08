@@ -204,7 +204,8 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
       if (!wanted(n) || one.scale !== scale) { clearPage(n); drawn.current.delete(n); setTick((t) => t + 1); }
     }
     for (const [n, one] of drawing.current) {
-      if (!wanted(n) || one.scale !== scale) { one.cancel(); drawing.current.delete(n); }
+      // 还在画的那一次已经把画布放进了页里：取消的同时把它收掉，不然滚走的页上留着一张没画完的画布。
+      if (!wanted(n) || one.scale !== scale) { one.cancel(); clearPage(n); drawing.current.delete(n); }
     }
     for (let n = visible.first; n <= visible.last; n++) {
       if (drawn.current.has(n) || drawing.current.has(n)) continue;
@@ -218,7 +219,8 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
   async function drawPage(file: PDFDocumentProxy, n: number, at: number) {
     let cancelled = false;
     let stop = () => { cancelled = true; };
-    drawing.current.set(n, { scale: at, cancel: () => stop() });
+    const mine = { scale: at, cancel: () => stop() };
+    drawing.current.set(n, mine);
     try {
       const lib = await loadPdfjs();
       const page = await file.getPage(n);
@@ -261,7 +263,8 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
       // 滚走时取消的那一次不算出错。
       if (!cancelled) console.error(`PDF 文件 ${path} 的第 ${n} 页没有画出来：`, error);
     } finally {
-      if (drawing.current.get(n)?.scale === at) drawing.current.delete(n);
+      // 只收自己登记的那一项：这一次被取消之后同一页可能又开始画了一次，那是另一项。
+      if (drawing.current.get(n) === mine) drawing.current.delete(n);
     }
   }
 
