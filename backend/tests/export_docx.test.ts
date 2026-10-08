@@ -9,14 +9,13 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import JSZip from "jszip";
-import { saveRevision } from "../../agent/src/lib/save_revision.ts";
 import { ApiError } from "../src/errors.ts";
 import { DOCX_MISSING_TEXT, DOCX_TYPE, docxDisposition, docxFileName, docxRequest, exportItemsDocx, sourceLine, valueLines } from "../src/export_docx.ts";
 import { dispatch } from "../src/http.ts";
 import * as library from "../src/library.ts";
 import { sourceEntries, sourcesText } from "../src/render.ts";
 import { Service } from "../src/service.ts";
-import { captureConsole, makeTypedTask, tempDir } from "./helpers.ts";
+import { captureConsole, makeTypedTask, sqlRun, tempDir } from "./helpers.ts";
 
 captureConsole();
 
@@ -64,6 +63,8 @@ test("三个条目跨两个集合：两个标题 1、三个标题 2、三张两�
   // 交来的先后是乱的，文档里照集合与编号排。
   const file = await exportItemsDocx(lib, ["DN-001", "UC-002", "UC-001"], true, null, null, new Date(2026, 9, 8));
   assert.equal(file.data.subarray(0, 2).toString("latin1"), "PK");
+  // 这个任务没有另起任务名，文件名里用任务类型定义里的名字。
+  assert.equal(file.fileName, `${lib.definition["任务名"]}-条目-2026-10-08.docx`);
   const { document } = await unpack(file.data);
   assert.deepEqual(headings(document, "Heading1"), ["功能用例", "领域说明"]);
   assert.deepEqual(headings(document, "Heading2"), ["UC-001 登录", "UC-002 借出图书", "DN-001 口令"]);
@@ -201,14 +202,15 @@ test("请求体与文件名", () => {
 });
 
 test("下载接口：format 写 docx 回 Word 文件与文件名；只能下载不能预览；别的格式拒绝；markdown 那一路照旧", async () => {
+  // 后端不写库：任务与条目由夹具在任务根目录里建好，任务服务只读它；任务编号从这个任务的库里读。
   const root = join(tmp, "service");
+  const dir = makeTypedTask(join(root, "tasks"), "srs-authoring", { "材料.md": "读者凭口令登录。" }, [[
+    { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] }, sources: [{ kind: "执行者补充", locator: "执行者补充", excerpt: "试验用。" }] },
+  ]]);
+  sqlRun(dir, [["UPDATE task SET task_name = ?", "图书馆借还"]]);   // 夹具不另起任务名，这里给它起一个
+  const taskId = library.libraryOf(dir).taskId;
   const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1 });
   try {
-    const { task_id: taskId } = service.create({ task_type: "srs-authoring", task_name: "图书馆借还" });
-    const dir = service.task(taskId).dir;
-    saveRevision({ workspaceDir: dir, sessionId: "s", callId: "c1" }, { operations: [
-      { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] }, sources: [{ kind: "执行者补充", locator: "执行者补充", excerpt: "试验用。" }] },
-    ] });
     const post = async (mode: string, body: Dict) => {
       const reply = (await dispatch(service, { method: "POST", path: `/api/v1/tasks/${taskId}/documents/${mode}`, query: {}, headers: {}, body: Buffer.from(JSON.stringify(body)), remote: "127.0.0.1" })) as Dict;
       return reply as { status: number; headers: Record<string, string>; body: Buffer };
