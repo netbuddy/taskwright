@@ -122,13 +122,31 @@ test("过程摘要：重放的保存修订写明没有重复写入；请求评�
   assert.equal(stepText("request_review", {}, true, true, null, {}), "请评审者评审没有做成");
 });
 
-test("过程摘要：按意思查找知识库写找到几个相近的片段；知识库还不能用或者没有联系上时工具只回一句话，写没有查到片段", () => {
+test("过程摘要：查找知识库写查到几个片段，只按字面找的写明；工具只回一句话（没有查到、没有联系上）时写没有查到片段；列给助手的个数比查到的少时写列出的个数", () => {
   const query = { query: "图书超期不还怎样罚款" };
-  assert.equal(stepText("search_knowledge", query, false, false, null, {}), "正在按意思查找知识库");
-  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, ready: true, hits: [{ score: 0.71 }, { score: 0.63 }] }, {}), "按意思在知识库里找到 2 个相近的片段");
-  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, ready: false, pending: 3, hits: [] }, {}), "按意思查找知识库，没有查到片段");
-  assert.equal(stepText("search_knowledge", query, true, false, { ok: false, ready: false, reason: "unreachable", hits: [] }, {}), "按意思查找知识库，没有查到片段");
-  assert.equal(stepText("search_knowledge", {}, true, true, null, {}), "按意思查找知识库没有成");
+  assert.equal(stepText("search_knowledge", query, false, false, null, {}), "正在查找知识库");
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, mode: "hybrid", hits: [{ score: 0.71 }, { score: 0.63 }], shown: 2 }, {}), "在知识库里查到 2 个片段");
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, mode: "hybrid_partial", hits: [{ score: 0.71 }], shown: 1 }, {}), "在知识库里查到 1 个片段");
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, mode: "keyword", reason: "not_selected", hits: [{}, {}, {}], shown: 3 }, {}), "只按字面在知识库里查到 3 个片段");
+  // 超过字节上限、只列了前 3 个。
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, mode: "hybrid", hits: [{}, {}, {}, {}, {}], shown: 3 }, {}), "在知识库里查到 3 个片段");
+  // 更早的结果里没有 shown：按片段的个数写。
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, ready: true, hits: [{ score: 0.71 }, { score: 0.63 }] }, {}), "在知识库里查到 2 个片段");
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: true, mode: "keyword", hits: [], shown: 0 }, {}), "查找知识库，没有查到片段");
+  assert.equal(stepText("search_knowledge", query, true, false, { ok: false, ready: false, reason: "unreachable", hits: [] }, {}), "查找知识库，没有查到片段");
+  assert.equal(stepText("search_knowledge", {}, true, true, null, {}), "查找知识库没有成");
+});
+
+test("过程摘要：grep 的返回太多、被截短时写搜到几行、只看了前几行；没有截短的与出错的照旧", () => {
+  const args = { pattern: "罚款", path: "inputs" };
+  assert.equal(stepText("grep", args, true, false, { capped: { shown_lines: 40, total_lines: 100 } }, {}), "用 grep 搜到 100 行，只看了前 40 行");
+  assert.equal(stepText("grep", args, true, false, { matchLimitReached: 100, capped: { shown_lines: 12, total_lines: 30 } }, {}), "用 grep 搜到 30 行，只看了前 12 行");
+  assert.equal(stepText("grep", args, true, false, null, {}), "调用了 grep");
+  assert.equal(stepText("grep", args, true, false, { matchLimitReached: 100 }, {}), "调用了 grep");
+  assert.equal(stepText("grep", args, false, false, null, {}), "正在调用 grep");
+  assert.equal(stepText("grep", args, true, true, { capped: { shown_lines: 40, total_lines: 100 } }, {}), "调用 grep 失败");
+  // 别的工具的结果里碰巧有同名的一项：不当成截短。
+  assert.equal(stepText("find", args, true, false, { capped: { shown_lines: 40, total_lines: 100 } }, {}), "调用了 find");
 });
 
 test("过程摘要：回复被拒按真实原因分写（没有写理解、理解不合格、形式不对）；连续被拒到上限、由工具停下的那一步写已经停下", () => {

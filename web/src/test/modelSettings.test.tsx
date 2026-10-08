@@ -89,10 +89,10 @@ describe("设置页面的「模型」一栏", () => {
     expect(screen.queryByText("手工添加一个模型")).toBeNull();
   });
 
-  it("没有选语言模型时写出现在用的模型与来源，来源照后端给的原样写；没有选嵌入模型时写只能按字面查找", async () => {
+  it("没有选语言模型时写出现在用的模型与来源，来源照后端给的原样写；没有选嵌入模型时写助手查知识库只按字面找", async () => {
     page(config({ fallback: { model: "local/qwen", from: "助手程序的设置" } }));
     expect(await screen.findByTestId("current-language")).toHaveTextContent("还没有选。现在用的是：local/qwen（来自助手程序的设置）。");
-    expect(screen.getByTestId("current-embedding")).toHaveTextContent("还没有选。知识库只能按字面查找。");
+    expect(screen.getByTestId("current-embedding")).toHaveTextContent("还没有选。助手查知识库只按字面找，用词不同的找不到。");
     expect(screen.getByTestId("current-language")).not.toHaveTextContent("pi");
   });
 
