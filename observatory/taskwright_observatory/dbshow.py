@@ -175,6 +175,20 @@ def show_current_format(workspace: Path, events_limit: int) -> None:
                     print(f"      来源 {source['第几条']}：种类是{source['种类']}，出处是 {source['出处']}，"
                           f"支持{taskdb.support_text(source.get('支持') or [])}，摘录是「{clip(source['摘录'])}」")
 
+        if task.get("图"):
+            print("\n【图】（不是条目，修订号是图自己的，不占下面的修订列表）")
+            for one in task["图"]:
+                now = one["修订内容"][-1] if one["修订内容"] else None
+                gone = f"，在它的修订 {one['在第几次修订删除']} 删除" if one["在第几次修订删除"] is not None else ""
+                print(f"  {one['图的编号']}「{now['图名'] if now else '？'}」（{now['种类名'] if now else '？'}）{gone}，"
+                      f"改动过的修订：{'、'.join(str(v['修订号']) for v in one['修订内容'])}。")
+                for version in one["修订内容"]:
+                    print(f"    修订 {version['修订号']}（{version['操作']}，由 {version['由谁']}，{version['时刻']}）：挂在第 {version['事件序号']} 号事件上，"
+                          f"Mermaid 文本 {len(version['Mermaid 文本'])} 个字，来源 {len(version['来源'])} 条。")
+                    for source in version["来源"]:
+                        then = f"，引用时它是修订 {source['依据的修订']}" if source.get("依据的修订") is not None else ""
+                        print(f"      来源 {source['第几条']}：种类是{source['种类']}，出处是 {source['出处']}{then}，摘录是「{clip(source['摘录'])}」")
+
         print("\n【修订列表】")
         if not task["修订"]:
             print("  还没有任何一次修订。")

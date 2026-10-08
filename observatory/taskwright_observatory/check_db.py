@@ -22,6 +22,8 @@
    或「界面点击」（撤回确认，早期版本还有点了确认的）之一；都不是的，是早期版本由模型读用户原话登记的确认，模型调用表里要有一行
    采用了的调用指向它。加模型调用表之前建的库没有这张表时，这一项只看有没有需要它的标记。
 10. 评审与确认是挂在「条目加修订」上的标记：每条评审记录、每条确认标记都指向存在的（条目、修订）内容行。
+11. 图（任务的另一种要素，修订号是图自己的）：每一行图的内容都指向存在的图，同一张图的修订号从 1 起连续；图记的删除修订有内容行；
+    图的每一行来源都指向存在的（图、修订）内容行；图的每次修订都找得到同一个调用编号的事件。还没有图的两张表的库，这一项算通过。
 
 这是事后查账，不是门禁：它只读不写，也不替写入工具做核对，写入时的核对在 pi 进程里的工具里。
 全部通过时退出码是 0，有不通过的是 1。库文件不存在时说明「这个任务目录还没有创建任务」并以 0 退出。
@@ -52,6 +54,9 @@ def check(workspace: Path) -> list[dict]:
     try:
         rows = {name: [dict(r) for r in conn.execute(f"SELECT * FROM {name}")]
                 for name in ("task", "revision", "item", "item_version", "item_source", "event", "judgement", "judgement_item", "review")}
+        has_diagrams = {"diagram", "diagram_version"} <= taskdb.table_names(conn)
+        for name in ("diagram", "diagram_version"):
+            rows[name] = [dict(r) for r in conn.execute(f"SELECT * FROM {name}")] if has_diagrams else []
         has_model_call = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_call'").fetchone() is not None
         rows["model_call"] = [dict(r) for r in conn.execute("SELECT * FROM model_call")] if has_model_call else []
     finally:
@@ -61,7 +66,9 @@ def check(workspace: Path) -> list[dict]:
     for one in rows["item_source"]:
         # 产出方的种类（条目、图）是后来加的一列，还没有迁过的库里没有它，都算条目。
         unique_sources.setdefault((one["task_id"], one.get("element_kind", "条目"), one["item_id"], one["revision_no"], one["position"]), one)
-    rows["item_source"] = list(unique_sources.values())
+    # 条目的来源与图的来源同在一张表里：下面第 2、4 项核对条目的，第 11 项核对图的。
+    figure_sources = [s for s in unique_sources.values() if s.get("element_kind", "条目") == "图"]
+    rows["item_source"] = [s for s in unique_sources.values() if s.get("element_kind", "条目") != "图"]
     events = {e["seq"]: e for e in rows["event"]}
     revisions = {(r["task_id"], r["revision_no"]): r for r in rows["revision"]}
     items = {(i["task_id"], i["item_id"]): i for i in rows["item"]}
@@ -213,6 +220,31 @@ def check(workspace: Path) -> list[dict]:
         if (j["task_id"], j["item_id"], j["revision_no"]) not in contents:
             bad.append(f"第 {j['judgement_id']} 条确认标记指向条目 {j['item_id']} 在修订 {j['revision_no']} 下的内容，内容表里没有这一行。")
     result("评审与确认指向存在的（条目、修订）", bad)
+
+    # 11
+    bad = []
+    diagrams = {(d["task_id"], d["diagram_id"]): d for d in rows["diagram"]}
+    figure_contents = {(v["task_id"], v["diagram_id"], v["revision_no"]): v for v in rows["diagram_version"]}
+    numbers: dict[tuple[str, str], list[int]] = {}
+    for v in rows["diagram_version"]:
+        if (v["task_id"], v["diagram_id"]) not in diagrams:
+            bad.append(f"图 {v['diagram_id']} 在修订 {v['revision_no']} 下的内容指向的图不存在。")
+        numbers.setdefault((v["task_id"], v["diagram_id"]), []).append(v["revision_no"])
+        event = events.get(v["event_seq"])
+        if event is None:
+            bad.append(f"图 {v['diagram_id']} 的修订 {v['revision_no']} 记的事件序号 {v['event_seq']} 找不到对应的事件。")
+        elif event["call_id"] != v["call_id"] or event["task_id"] != v["task_id"]:
+            bad.append(f"图 {v['diagram_id']} 的修订 {v['revision_no']} 的调用编号是 {v['call_id']}，它记的第 {v['event_seq']} 号事件对不上。")
+    for (task_id, diagram_id), d in diagrams.items():
+        have = sorted(numbers.get((task_id, diagram_id), []))
+        if have != list(range(1, len(have) + 1)) or not have:
+            bad.append(f"图 {diagram_id} 的修订号不是从 1 起连续的：{have or '一行内容都没有'}。")
+        if d["deleted_in_revision"] is not None and (task_id, diagram_id, d["deleted_in_revision"]) not in figure_contents:
+            bad.append(f"图 {diagram_id} 记的删除修订（修订 {d['deleted_in_revision']}）没有内容行。")
+    for s in figure_sources:
+        if (s["task_id"], s["item_id"], s["revision_no"]) not in figure_contents:
+            bad.append(f"来源（图 {s['item_id']} 在修订 {s['revision_no']} 下的第 {s['position']} 条）指向的内容行不存在。")
+    result("图的内容、修订号、来源与事件对得上", bad)
     return results
 
 

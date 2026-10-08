@@ -236,6 +236,7 @@ def read_tasks(conn: sqlite3.Connection) -> list[dict]:
             "结束时刻": task["ended_at"],
             "条目": items,
             "修订": revisions,
+            "图": read_diagrams(conn, task_id),
             "事件": events,
             "判读": judgements,
             "模型调用": model_calls,
@@ -330,8 +331,10 @@ def source_kind_now(kind: str) -> str:
     return LEGACY_SOURCE_KINDS.get(kind, kind)
 
 
-def read_sources(conn: sqlite3.Connection, task_id: str) -> dict[tuple[str, int], list[dict]]:
-    """按（条目编号, 修订号）取条目在每次修订下的来源。
+def read_sources(conn: sqlite3.Connection, task_id: str, element_kind: str = "条目") -> dict[tuple[str, int], list[dict]]:
+    """按（条目编号, 修订号）取条目在每次修订下的来源。element_kind 写「图」时取的是图的来源：键是图的编号与图自己的修订号。
+
+    条目的来源与图的来源同在一张表里，靠 element_kind 一列区分；还没有迁过的库没有这一列，里面只有条目的来源。
 
     库里一条来源支持几处字段就展开成几行（support_no 从 1 起），这里按「第几条」合回一条，
     所支持的字段放进「支持」列表：每项是字段名与列表里的第几项（从 0 起，为空表示整个字段）；
@@ -347,7 +350,13 @@ def read_sources(conn: sqlite3.Connection, task_id: str) -> dict[tuple[str, int]
     order = "item_id, revision_no, position" + (", support_no" if field_level else "")
     migrated = "depends_revision" in columns
     grouped: dict[tuple[str, int], list[dict]] = {}
-    for row in conn.execute(f"SELECT * FROM item_source WHERE task_id = ? ORDER BY {order}", (task_id,)):
+    if "element_kind" not in columns:
+        if element_kind != "条目":
+            return grouped
+        which, args = "", (task_id,)
+    else:
+        which, args = " AND element_kind = ?", (task_id, element_kind)
+    for row in conn.execute(f"SELECT * FROM item_source WHERE task_id = ?{which} ORDER BY {order}", args):
         key = (row["item_id"], row["revision_no"])
         bucket = grouped.setdefault(key, [])
         if not bucket or bucket[-1]["第几条"] != row["position"]:
@@ -390,6 +399,32 @@ def _item_records(conn: sqlite3.Connection, sql: str, task_id: str, table: str) 
     for row in conn.execute(sql, (task_id,)):
         grouped.setdefault((row["item_id"], row["revision_no"]), []).append(row)
     return grouped
+
+
+#: 图的种类的中文名，与 agent/src/lib/diagram.ts 的 DIAGRAM_KIND_NAMES 一致。
+DIAGRAM_KIND_NAMES = {"use_case": "用例图", "class": "类图", "state": "状态图", "sequence": "时序图", "flowchart": "流程图"}
+
+
+def read_diagrams(conn: sqlite3.Connection, task_id: str) -> list[dict]:
+    """任务里的全部图（删掉的也在），按流水号排；每张图带它自己的每次修订（从早到晚）与那次修订下的来源。
+
+    图是任务的另一种要素，不是条目：修订号是图自己的（从 1 起连续），不占任务的修订序号；删除也记一行内容（照删除之前的样子），
+    删除那一次没有来源。库里还没有图的两张表（旧库还没有被写入一侧打开过）时是空列表。
+    """
+    if not {"diagram", "diagram_version"} <= table_names(conn):
+        return []
+    sources = read_sources(conn, task_id, "图")
+    versions: dict[str, list[dict]] = {}
+    for row in conn.execute("SELECT * FROM diagram_version WHERE task_id = ? ORDER BY diagram_id, revision_no", (task_id,)):
+        versions.setdefault(row["diagram_id"], []).append({
+            "修订号": row["revision_no"], "操作": row["op"], "图名": row["name"], "种类": row["kind"],
+            "种类名": DIAGRAM_KIND_NAMES.get(row["kind"], row["kind"]), "Mermaid 文本": row["mermaid"], "说明": row["note"],
+            "由谁": row["actor"], "时刻": row["created_at"], "事件序号": row["event_seq"], "调用编号": row["call_id"], "会话编号": row["session_id"],
+            "来源": sources.get((row["diagram_id"], row["revision_no"]), []),
+        })
+    return [{"图的编号": row["diagram_id"], "流水号": row["serial"], "在第几次修订删除": row["deleted_in_revision"],
+             "修订内容": versions.get(row["diagram_id"], [])}
+            for row in conn.execute("SELECT * FROM diagram WHERE task_id = ? ORDER BY serial", (task_id,))]
 
 
 def read_workspace(workspace: Path) -> dict:
