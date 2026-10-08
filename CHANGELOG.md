@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The desktop packages carry the files of [pdfjs-dist](https://github.com/mozilla/pdf.js) 6.4.299 (Apache-2.0) that the backend uses, in `backend/vendor/pdfjs-dist/`, about 3.6 MB; the build checks them by reading a PDF.
 - The upload box of the knowledge base page no longer says that PDF files are not accepted yet.
 
+### Replacing a material
+
+- A material that has not entered the conversation can be replaced with another file: on the task page such a material has **替换** ("replace") beside **删除**. You choose a file, confirm, and the material is the new file; the old file and the files generated from it are gone, and a Word or PDF file gets its generated files anew. The new file may have another name and another type, and is taken in by the rules of an upload. Once the material has entered the conversation, **替换** is grey and the request is refused with `rejected` and 这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。 ("this material has entered the conversation and cannot be replaced; upload a new material and tell the assistant to go by the new one"). The interface is `POST …/materials/replace?path=…`; open work views are updated by `material_removed` with `replaced_by` followed by `material_added` with `replaces`. When the new file cannot be stored, the old material stays as it was.
+- After a Word material is deleted or replaced on the task page, **查看** ("view") shows the file that is there now. Before, a file uploaded under the name of a deleted one was still shown with the old content until the page was reloaded.
+
 ## [0.4.2] - 2026-10-08
 
 0.4.2 lets the assistant draw diagrams and lets you take chosen items out as a Word file. A source now says which element of the task an item rests on: an item can cite any other item, and a basis that was changed or deleted afterwards is marked. Diagrams are a second kind of task element beside items, with their own tab in the work view.

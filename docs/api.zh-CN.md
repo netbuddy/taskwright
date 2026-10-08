@@ -79,8 +79,8 @@ data: {
 | `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`card`、`queued` |
 | `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节） |
 | `ui_action_noted` | 一次直接操作完成 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`） |
-| `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at` |
-| `material_removed` | 删除了一份材料（第 5.1 节） | `at`、`path`；由 Word 材料、PDF 材料生成的文件随它一起删掉，不另发事件 |
+| `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at`；这份材料是替换上来的时候另带 `replaces`，值是被换掉的那份材料的路径（第 5.1 节「替换材料」） |
+| `material_removed` | 删除了一份材料，或者一份材料被替换掉了（第 5.1 节） | `at`、`path`；由 Word 材料、PDF 材料生成的文件随它一起删掉，不另发事件。被替换掉的时候另带 `replaced_by`，值是换上来的那份材料的路径，紧接着有一条那份材料的 `material_added` |
 | `work_summary` | 一个工作单元结束后 | `work_id`、`at`、`seconds`、`step_count`、`stages`（每项带 `text`）、`outcome`（这个工作单元怎样结束，取值与 `work_ended` 相同；刷新后读到的对话里的 `work_summary` 消息带同样的值） |
 | `work_ended` | 智能体这一轮工作稳定下来 | `work_id`、`at`、`seconds`、`step_count`（与 `work_summary` 的相同，由会话记录算出，被停下时一条消息里没有开始执行的工具调用也算在内；会话记录读不出这次工作时用本轮记下的计数）、`outcome`（`replied`、`no_reply`、`stopped_by_user`、`failed`、`stopped_by_limit`；前四种按这个工作单元最后一条助手消息判断，所以调用模型出错、随后自动重试成功的工作单元是 `replied` 或 `no_reply`，不是 `failed`；`stopped_by_limit` 是智能体这一轮连续被拒到上限、由工具停下的，见本节末尾「连续被拒的上限」） |
 | `problem` | 需要让用户知道的问题（见第 5.5 节） | `code`、`text`、`retry` |
@@ -153,7 +153,7 @@ data: {
 | `GET /api/v1/task-types` | 「新建任务」时用的任务类型列表 | `{ok, task_types: [{task_type, name}]}` |
 | `GET /api/v1/tasks` | 任务列表 | `{ok, tasks: [{task_id, task_name, task_type, domain_tag, status, item_count, completion_met, completion_total, completion_unmet, last_active_at, session_count, supported}]}`（展示时用 `completion_unmet`，即「还差 N 项」）。修订取代条目版本之前创建的任务也会列出，`supported` 为 `false`，`status` 为「旧格式」，另带 `note`；它打不开。正被别的在跑的服务占用的任务也会列出，`supported` 为 `false`，`status` 为「占用中」，另带 `occupied`（`port`、`pid`、`host`）与 `note`；对它的一切请求都返回 `task_occupied`。 |
 | `POST /api/v1/tasks` `{task_type, task_name, domain_tag}` | 创建任务 | `{ok, task_id}`；之后再上传材料 |
-| `GET /api/v1/tasks/{task_id}` | 任务页（已关闭的任务同样可读） | 该任务，外加 `materials`（每项比整份数据里的多一个 `deletable`：现在能不能删除，见第 5.1 节「删除材料」）、`sessions`（每项的形状与下一行的会话列表相同）与 `knowledge_libraries`（这个任务选用的知识库的编号，第 11 节） |
+| `GET /api/v1/tasks/{task_id}` | 任务页（已关闭的任务同样可读） | 该任务，外加 `materials`（每项比整份数据里的多一个 `deletable`：现在能不能删除、能不能替换，见第 5.1 节「删除材料」与「替换材料」）、`sessions`（每项的形状与下一行的会话列表相同）与 `knowledge_libraries`（这个任务选用的知识库的编号，第 11 节） |
 | `GET …/sessions` | 会话列表 | `{ok, sessions: [{session_id, name, started_at, last_active_at, message_count, active, revision_count}]}`；`revision_count` 是这条会话产生了几次修订（修订表按会话编号计数，没有时为 0）。刚新建、还没有说过话的会话 `name`、`started_at`、`last_active_at` 为 null |
 | `POST …/sessions` | 新建会话 | `{ok, session_id}`；执行者在别的会话里工作时返回 `session_busy` |
 | `GET …/items/{item_id}/revisions` | 条目在改动过它的每次修订下的内容 | `{ok, item_id, revisions: [{revision_no, by, at, fields, sources, reviews, confirmations}]}` |
@@ -164,6 +164,7 @@ data: {
 | `GET …/materials/content?path=…` | 某份材料的正文 | `{ok, path, text}`；路径必须落在材料目录内。`.docx` 返回的是生成的 Markdown 投影（见第 5.1 节「材料」），`.pdf` 返回的是上传时生成的投影（见第 5.1 节「PDF 材料」）；0.2 建的任务只有旧的 `文件名.docx.txt` 时返回那份 |
 | `GET …/materials/raw?path=…` | 材料文件的原样内容 | 文件的原始字节；`Content-Type` 按扩展名给：`.md` 为 `text/markdown; charset=utf-8`，`.txt` 为 `text/plain; charset=utf-8`，`.docx` 为 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`，`.pdf` 为 `application/pdf`，其余为 `application/octet-stream`。路径限制与 `content` 相同；网页界面用它按原版式显示 Word 文件 |
 | `POST …/materials/delete` `{path}` | 删除一份还没有进入对话的材料 | `{ok, path}`；已经进入对话的返回 `rejected`；见第 5.1 节「删除材料」 |
+| `POST …/materials/replace?path=…`（multipart，单文件） | 用另一个文件替换一份还没有进入对话的材料 | `{ok, path, replaced}`；已经进入对话的返回 `rejected`；见第 5.1 节「替换材料」 |
 | `GET …/knowledge`、`POST …/knowledge` `{libraries}` | 这个任务选用的知识库，以及改选用 | 见第 11 节 |
 | `GET …/conversation?session=…&before={message_id}&limit=100` | 更早的对话 | 形状与第 4.1 节 `conversation` 相同 |
 | `POST …/documents/preview` 与 `…/download` `{"revision_no": N, "items": [编号…], "format": "markdown"}` | 按某一次修订（缺省为最新）渲染整份交付物，也可以只列出其中几个条目 | 预览：`{ok, text}`；下载：文件本身。文档写明它按哪次修订生成，并在每个条目上标出它的内容来自哪次修订、在那次修订上有没有确认与评审；确认写明依据：已读、用户修改或明确确认。修订号超过最新修订，或列出的条目在那次修订时不在交付物里，返回 `bad_request` |
@@ -182,6 +183,8 @@ data: {
 **PDF 材料。** 上传 `.pdf` 时，任务服务另起一次运行解析它，在材料旁边生成三个文件：给助手读的投影 `文件名.pdf.md`（每块一行，行首是 `[p页-块]`；页眉页脚行以 `>` 开头，没有页与块；没有文字的页写一行 `[p页-0] （这一页没有文字，可能是扫描件）`）、按页分段的分段清单 `文件名.pdf.segments.json`、位置表 `文件名.pdf.locations.json`（每页的宽高与各块的矩形，以及书签目录）。请求等解析做完才返回，四个文件一起出现在材料目录里。这三个文件名是留用的；材料清单里它们的 `derived_from` 是那份 PDF，PDF 自己另带 `pdf: {pages, units, no_text_pages}`（总页数、块的总数、没有文字的页码），`material_added` 事件同样带这一项。下面几种情形拒绝并且什么都不保存（`unsupported_type`）：整份没有可读的文字，说明「这份 PDF 没有可读的文字（可能是扫描件），本版不支持。」；不是合法的 PDF，或者设了打开口令；超过页数或字数的上限；到时限没有解析完，说明写明用了多久、读到第几页，例如「解析用了 60 秒仍没有完成（已读到第 420 页，共 1000 页），这份文件太复杂，本版不支持。」。上限在启动配置的「PDF 解析」一节：`max_pages`（缺省 1000）、`max_chars`（缺省 3000000）、`max_seconds`（缺省 60），以及 `stop_after_seconds`（缺省 75，另起的那一次运行最多等多少秒，到时把它停掉）。条目引用 PDF 材料时出处写 `inputs/文件名.pdf#p页-块`，例如 `inputs/a.pdf#p3-2`；摘录要在那一块里，或者从那一块起接到同一页后面相邻的至多 5 块，不能跨页。比较之前两边都做规范化：部首字符换成通用汉字、全角与半角归一、去掉空白与连字符，然后逐字比较。出处写成投影本身（`…pdf.md`）、不写页与块、块号写 0 的都拒绝。
 
 **删除材料。** `POST …/materials/delete`，请求体为 `{"path": "inputs/…"}`：删除用户放进来的一份材料，Word 材料连同由它生成的文件（投影、分段清单、位置表、图片目录，以及 0.2 的 `.txt` 投影）一起删，PDF 材料连同它的投影、分段清单与位置表一起删，并推送 `material_removed`（第 3.2 节）。返回 `{ok, path}`。只有还没有进入对话的材料可以删除。判据：材料上传之后，任务里任何一条会话有过活动，就算进入了对话，即全部会话的最近活动时刻里最晚的一个，晚于或等于材料的上传时刻（按毫秒比较，相等算进入）。上传时刻取材料文件的修改时刻：上传时文件是排他创建的，之后服务不再改写它。还没有说过话的新会话没有活动时刻，不算。已经进入对话的材料返回 `rejected`（422），说明是「这份材料已经进入了对话，不能删除。」，`data.path` 是那份材料。任务页接口（`GET /api/v1/tasks/{task_id}`）的 `materials` 每项带 `deletable`，按同一个判据给出；任务已完成或已放弃、或者这一项是生成的文件时也为假；智能体正在工作是一时的，不算在内。别的拒绝照旧：路径落在材料目录之外返回 `bad_request`，生成的文件的路径同样返回 `bad_request`；路径不在材料清单里返回 `not_found`；任务已完成或已放弃时返回 `task_closed`；智能体正在工作时拒绝，错误码 `session_busy`，`data.reason` 为 `working`（已经进入对话的材料先按 `rejected` 拒绝）。删除不留痕：智能体引用一份材料必然发生在某条会话里，被引用过的材料都进入过对话，所以删得掉的材料没有来源引用它。进入对话之前可以删了重传；进入对话之后只能再上传一份新的，条目不自动改。已知的局限：上传时刻取的是文件的修改时刻，任务目录被整体复制而没有保留文件时间、或者材料文件被别的程序改写之后，修改时刻变晚，这份材料会重新变成可以删除。
+
+**替换材料。** `POST …/materials/replace?path=inputs/…`（multipart，单文件，格式与上传相同）：用请求体里的文件替换 `path` 指的那份材料，返回 `{ok, path, replaced}`，`path` 是新材料的路径，`replaced` 是被换掉的那份的路径。只有还没有进入对话的材料可以替换，判据与删除相同，任务页接口的 `deletable` 为真就是可以替换；已经进入对话的材料返回 `rejected`（422），说明是「这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。」，`data.path` 是那份材料。别的前提也与删除相同：路径落在材料目录之外、或者是生成的文件的路径返回 `bad_request`；路径不在材料清单里返回 `not_found`；任务已完成或已放弃返回 `task_closed`；智能体正在工作时返回 `session_busy`，`data.reason` 为 `working`。新文件照上传的规则收下：类型、大小上限、留用的文件名、与别的材料内容相同（`duplicate_content`）或同名（`name_taken`）都照上传的规则拒绝，Word 文件与 PDF 文件照常生成各自的投影、分段清单与位置表；新文件的名字与类型可以和旧的不同，按新名字保存。新文件与被替换的那份内容完全相同时不替换，返回 `duplicate_content`，说明是「新文件与这份材料内容完全相同，没有替换。」，`data.path` 是那份材料。替换成功后旧文件连同由它生成的文件都不再保留，并推送两条事件（第 3.2 节）：先是旧材料的 `material_removed`，带 `replaced_by`；再是新材料的 `material_added`，带 `replaces`。新文件没有存成时旧材料原样留着（文件的修改时刻不变），不推送事件。新文件是 PDF 时，与上传 PDF 一样要等它解析完请求才返回；等的这段时间里旧材料照旧在材料清单里、照旧可以读，解析好了才换，解析不成时材料目录没有动过。解析好之后会把前提再查一遍：这段时间里旧材料进入了对话就返回 `rejected`，已经被删除或被别的文件换掉就返回 `not_found`，都不替换。新文件的上传时刻是替换的那一刻，所以替换上来的材料在下一次会话活动之前仍然可以删除、可以再替换。替换与删除一样不留痕。超过上限的请求不读请求体就以 `too_large`（413）拒绝，与上传相同。
 
 ### 5.2 智能体回复
 
@@ -296,7 +299,7 @@ data: {
 | `old_format` | 409 | 修订取代条目版本之前创建的任务，本版本不支持（任务列表里这类任务的 `supported` 为 `false`） |
 | `undo_conflict` | 409 | 被撤销的那次修订之后，该条目又被改动过 |
 | `task_closed` | 409 | 任务已完成或已放弃 |
-| `session_busy` | 409 | 执行者正在工作：在另一个会话里（`data.active_session`），或者就在这个会话里而这时又来了说话或直接操作（`data.reason` 为 `working`）；执行者工作时删除材料也返回它 |
+| `session_busy` | 409 | 执行者正在工作：在另一个会话里（`data.active_session`），或者就在这个会话里而这时又来了说话或直接操作（`data.reason` 为 `working`）；执行者工作时删除材料、替换材料也返回它 |
 | `task_occupied` | 409 | 这个任务正被另一个在跑的服务占用（它的 `service.lock` 记着一个活着的进程）；`data` 里有那个服务的 `port`、`pid`、`host` |
 | `forbidden` | 403 | 只接受本机请求的接口收到了从别处来的请求（目前只有 `POST /api/v1/service/exit`，见第 9 节） |
 | `executor_starting` | 503 | pi 正在启动 |
@@ -304,7 +307,7 @@ data: {
 | `session_resume_failed` | 503 | 续接或切换之后 pi 接着的不是请求的会话（见 5.6 节）；pi 已停掉，用户的话没有发出去；`data.session_id` 是请求的会话 |
 | `busy_timeout` | 503 | 等待数据库写锁超时 |
 | `too_large`、`unsupported_type` | 413、415 | 附件过大（材料超过 5 MB，知识库文档超过 20 MB），或类型不受支持 |
-| `duplicate_content`、`name_taken` | 409 | 上传的材料与本任务已有的某份材料内容完全相同，或者与已有的某份材料同名而内容不同（见第 5 节的「材料」）；`data.path` 是已有的那份材料。知识库文档比的是同一个库里已有的文档，`data.name` 是那份文档（第 11 节） |
+| `duplicate_content`、`name_taken` | 409 | 上传的材料与本任务已有的某份材料内容完全相同，或者与已有的某份材料同名而内容不同（见第 5 节的「材料」）；`data.path` 是已有的那份材料。替换材料时新文件与被替换的那份内容完全相同也返回 `duplicate_content`（第 5.1 节「替换材料」）。知识库文档比的是同一个库里已有的文档，`data.name` 是那份文档（第 11 节） |
 | `in_use` | 409 | 选定的模型属于要删除的模型服务，或者正要被停用（见第 10 节）；`data.provider_id` 是那个模型服务 |
 | `config_unwritable` | 409 | `models.json`、`auth.json` 或产品自己的设置文件读不成一个 JSON 对象，或者里面有注释、改写时会丢掉（见第 10 节）；`data.file` 是文件名，文件原样不动 |
 | `config_locked` | 503 | 别的程序拿着这几个文件之一的锁超过两秒（见第 10 节）；`data.file` 是文件名 |
