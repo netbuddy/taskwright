@@ -1,7 +1,7 @@
 {
   "name": "taskwright-backend",
   "private": true,
-  "description": "任务服务的 TypeScript 版：给前端的 HTTP 接口。由 Node 24 直接运行；只有一个依赖 pdfjs-dist（解析 PDF 材料用，版本固定，头一次用到时才加载）。这份文件声明本目录的 TypeScript 按 ES 模块解析、列出这个依赖，并给出跑单元测试的命令。",
+  "description": "任务服务的 TypeScript 版：给前端的 HTTP 接口。由 Node 24 直接运行；只有一个依赖 pdfjs-dist（解析 PDF 材料用，版本固定，头一次用到时才加载）；校验图表的 Mermaid 文本时用仓根 node_modules 里的 mermaid（由页面清单声明），安装包里用打好的那一份。这份文件声明本目录的 TypeScript 按 ES 模块解析、列出这个依赖，并给出跑单元测试的命令。",
   "type": "module",
   "scripts": {
     "start": "node src/main.mts",
