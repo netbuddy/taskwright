@@ -636,12 +636,12 @@ export class Service {
   }
 
   /**
-   * 按意思查找：body 是 {query, libraries?, limit?}，不给 libraries 是全部知识库。这几个知识库里的文档没有都换算好时不查，
-   * 回 ready 为假与还差几份；没有选嵌入模型时 rejected。
+   * 查找知识库：按意思与按字面两路并行，按意思那一路做不了时退到只按字面（knowledge_search.ts）。
+   * signal 在调用的一方断开连接时中止。
    */
-  searchKnowledge(body: Record<string, any>) {
+  searchKnowledge(body: Record<string, any>, signal?: AbortSignal) {
     const store = this.requireKnowledge();
-    return searchKnowledge(store, this.embedder!, { env: process.env, profile: this.profile }, searchRequest(body));
+    return searchKnowledge(store, this.embedder!, { env: process.env, profile: this.profile }, searchRequest(body), { signal, params: segmentParamsOf(this.profile) });
   }
 
   /** 上传一份文档；选了嵌入模型时随即把它排进后台换算，没有选时它是「未换算」。 */

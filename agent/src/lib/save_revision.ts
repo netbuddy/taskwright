@@ -856,6 +856,14 @@ type Noun = "材料" | "文档";
 /** 摘录里的空行（一个或多个只含空白的行）。 */
 const BLANK_LINE = /\n\s*\n/;
 
+/**
+ * 逐字核对文本材料（Markdown、纯文本）的摘录之前，对摘录与原文做同一件事，而且只做这一件：把行尾统一成换行符，去掉每一行
+ * 行尾的空白。行里的空白不动，空行不压：原文是「甲\n\n乙」时，摘录写成「甲\n乙」对不上。Word 材料另有规则（docx_source.ts）。
+ */
+export function lineEndsOnly(text: string): string {
+  return text.replace(/\r\n?/g, "\n").replace(/[^\S\n]+$/gm, "");
+}
+
 /** 摘录不连续时，拒绝文字「怎么办」一层说明引几处写几条来源的那一句。 */
 const severalPlaces = (noun: Noun) => `引了${noun}几处就写几条来源`;
 
@@ -1019,14 +1027,14 @@ function checkSources(
       }
       locator = found;
     } else if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText) {
-      const excerpt = (one.excerpt as string).replace(/\r\n/g, "\n").trim();
+      const excerpt = lineEndsOnly(one.excerpt as string).trim();
       const text = materialText(locator);
       if (text === null) {
         errors.push(withGuide(`${where}的出处 ${locator} 不是任务目录里能读到的材料文件`, "出处要写材料文件的路径，例如 inputs/材料.md"));
         ok = false;
         return;
       }
-      if (!text.includes(excerpt)) {
+      if (!lineEndsOnly(text).includes(excerpt)) {
         errors.push(withGuide(BLANK_LINE.test(excerpt)
           ? `${where}的摘录在 ${basename(locator)} 里不是连续的一段原文`
           : `${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到`,

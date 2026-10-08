@@ -96,7 +96,7 @@ const py = (v: unknown) => (v === null || v === undefined ? "None" : String(v));
 
 /**
  * 一次调用没有结果时的说法，集中在这一处（要改措辞只改这里）。没有结果是指用户让助手停下时，工具还没开始、或没来得及把结果
- * 送回会话。不写成做完了：读、看目录、查看条目、查看任务状态、按意思查找知识库、请评审者评审沿用各自失败时「没有成」的说法；保存修订与完成任务
+ * 送回会话。不写成做完了：读、看目录、查看条目、查看任务状态、查找知识库、请评审者评审沿用各自失败时「没有成」的说法；保存修订与完成任务
  * 会写库，查过任务库、确实没有写进去时写「没有做成」，没法查（没有给 CallFacts）时写「没有做完」，不断言成败。
  */
 export const UNFINISHED_TEXT = {
@@ -104,7 +104,7 @@ export const UNFINISHED_TEXT = {
   ls: "看目录没有看成",
   get_item: (item: string) => `查看条目 ${item} 没有成`,
   get_task_status: "查看任务状态没有成",
-  search_knowledge: "按意思查找知识库没有成",
+  search_knowledge: "查找知识库没有成",
   request_review: "请评审者评审没有做成",
   save_revision: "保存修订没有做成",
   save_revision_unchecked: "保存修订没有做完",
@@ -184,10 +184,14 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
   if (tool === "get_task_status") return failed ? "查看任务状态没有成" : done ? "查看了任务状态" : "正在查看任务状态";
   if (tool === "search_knowledge") {
     if (failed) return UNFINISHED_TEXT.search_knowledge;
-    if (!done) return "正在按意思查找知识库";
-    // 工具自己不报错：知识库还没有换算好、联系不上之类只回一句话，这时没有查到片段。
-    const found = (or((details || {}).hits, []) as Dict[]).length;
-    return found ? `按意思在知识库里找到 ${found} 个相近的片段` : "按意思查找知识库，没有查到片段";
+    if (!done) return "正在查找知识库";
+    // 工具自己不报错：联系不上之类只回一句话，这时没有查到片段。列给助手的个数记在 shown 里（超过字节上限时比查到的少）。
+    const d = details || {};
+    const hits = (or(d.hits, []) as Dict[]).length;
+    const found = typeof d.shown === "number" ? d.shown : hits;
+    if (!found) return "查找知识库，没有查到片段";
+    // 这一次只按字面找了（没有选嵌入模型，或者按意思那一路没有做成）：写明，用户看得出为什么用词不同的没有找到。
+    return d.mode === "keyword" ? `只按字面在知识库里查到 ${found} 个片段` : `在知识库里查到 ${found} 个片段`;
   }
   if (tool === "complete_task") return failed ? "完成任务没有做成" : done ? "把任务标为已完成" : "正在完成任务";
   if (tool === "request_review") {
@@ -202,6 +206,9 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
     const refusal = (details || {}).refusal as ReplyRefusal | undefined;
     return failed ? REPLY_REFUSAL_TEXT[refusal && Object.hasOwn(REPLY_REFUSAL_TEXT, refusal) ? refusal : "form"] : done ? "说完了" : "正在组织回复";
   }
+  // grep 的返回太多、被截短了（agent/src/lib/tool_limits.ts 在结果的 details 里留了标记）：写明搜到几行、只看了前几行。
+  const capped = tool === "grep" && done && !failed ? ((details || {}).capped as { shown_lines?: unknown; total_lines?: unknown } | undefined) : undefined;
+  if (capped && typeof capped.shown_lines === "number" && typeof capped.total_lines === "number") return `用 grep 搜到 ${capped.total_lines} 行，只看了前 ${capped.shown_lines} 行`;
   return failed ? `调用 ${tool} 失败` : done ? `调用了 ${tool}` : `正在调用 ${tool}`;
 }
 

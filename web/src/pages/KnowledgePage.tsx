@@ -181,7 +181,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
             {current.documents.length > 0 && (
               <div className="kbembed" data-testid="kb-embedding">
                 {embedding.model === null ? (
-                  <span>还没有选嵌入模型，这些文档没有换算，只能按字面查找。<a href={href.settings()}>去设置里选</a></span>
+                  <span>还没有选嵌入模型，这些文档没有换算：助手查知识库只按字面找，用词不同的找不到。<a href={href.settings()}>去设置里选</a></span>
                 ) : (
                   <>
                     <span className="en" data-testid="kb-embedding-count">已换算 {current.embedding.done} / {current.embedding.total}</span>

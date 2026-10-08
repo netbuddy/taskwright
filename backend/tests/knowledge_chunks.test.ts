@@ -8,10 +8,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { docxProjection } from "../../agent/src/lib/docx_markdown.ts";
-import { projectionParagraphs } from "../../agent/src/lib/docx_source.ts";
+import { projectionParagraphs, tableCells } from "../../agent/src/lib/docx_source.ts";
 import { SEGMENT_DEFAULTS, buildSegments } from "../../agent/src/lib/segments.ts";
 import {
-  CHUNK_MAX_CHARS, CHUNK_RULES, type Chunk, chunkDocument, chunkInput, chunkMarkdown, chunkPlain, chunkRulesVersion, chunkWord, documentKind, splitLong,
+  CHUNK_MAX_CHARS, CHUNK_RULES, type Chunk, chunkDocument, chunkInput, chunkMarkdown, chunkPlain, chunkRulesVersion, chunkWord, documentKind, pieceText, splitLong,
+  splitLongRanges, tableCellRanges,
 } from "../src/knowledge_chunks.ts";
 import { ROOT } from "./helpers.ts";
 
@@ -247,4 +248,143 @@ test("按扩展名选切法；送去换算的文字是标题一行加正文，�
   assert.equal(chunkInput({ heading: "退款", text: "七天之内可以退款。" }), "退款\n七天之内可以退款。");
   assert.equal(chunkInput({ heading: null, text: "七天之内可以退款。" }), "七天之内可以退款。");
   assert.equal(chunkInput({ heading: "术语甲", text: "术语甲" }), "术语甲");
+});
+
+// ───────────── 片段在源文字里的位置 ─────────────
+
+/** 片段的各截读成文字。 */
+const pieceTexts = (chunk: Chunk, source: string) => chunk.pieces.map((piece) => pieceText(source, piece));
+
+test("Markdown 与纯文本的位置：片段在源文字里的那一段就是原文，连段与段之间的空行；各截接起来是片段的正文；小节与块的编号", () => {
+  const source = "开头一段。\n\n# 退款\n\n第 1 条 七天内可以退。  \n\n\n第 2 条 运费由卖家出。\n\n## 时限\n\n# 只有标题\n";
+  const chunks = chunkMarkdown(source);
+  assert.deepEqual(chunks.map((c) => [c.block, c.heading, source.slice(c.start_offset, c.end_offset)]), [
+    [0, null, "开头一段。"],
+    [1, "退款", "第 1 条 七天内可以退。  \n\n\n第 2 条 运费由卖家出。"],
+    // 小节里除了标题没有别的字：位置是标题的文字本身。
+    [2, "退款 / 时限", "时限"],
+    [3, "只有标题", "只有标题"],
+  ]);
+  for (const c of chunks) {
+    assert.equal(pieceTexts(c, source).join("\n"), c.text);
+    assert.deepEqual([c.start_offset, c.end_offset], [c.pieces[0].start, c.pieces.at(-1)!.end]);
+    assert.equal("partial" in c || "rows" in c || "header" in c, false);
+    for (const piece of c.pieces) assert.equal("paragraph" in piece, false);
+  }
+  // 一行行尾的空白留在第一截里（去首尾空白只去整段的两头），所以这一截与片段正文的第一行相同。
+  assert.deepEqual(pieceTexts(chunks[1], source), ["第 1 条 七天内可以退。", "第 2 条 运费由卖家出。"]);
+  // 纯文本：块的编号恒为 0；整段两头的空白不在位置里。
+  const plain = "  缩进的一行  \n# 不是标题\n\n\n另一段\n";
+  const got = chunkPlain(plain);
+  assert.deepEqual(got.map((c) => [c.block, plain.slice(c.start_offset, c.end_offset)]), [[0, "缩进的一行  \n# 不是标题\n\n\n另一段"]]);
+  assert.deepEqual(pieceTexts(got[0], plain), ["缩进的一行  \n# 不是标题", "另一段"]);
+});
+
+test("超过上限的一段切出来的各截各有自己的位置：按位置读出来就是这一截，位置互不重叠，都标着是一截；字的位置按 UTF-16 码元算", () => {
+  // 每句 100 个字（99 个字加一个句号），一共 20 句；中间夹着占两个码元的字。
+  const sentence = (i: number) => `${i % 2 ? "借" : "𠮷"}`.repeat(99) + "。";
+  const long = Array.from({ length: 20 }, (_, i) => sentence(i)).join("");
+  const source = `前言\n\n${long}\n\n结尾\n`;
+  const chunks = chunkPlain(source);
+  const pieces = chunks.filter((c) => c.partial);
+  assert.equal(pieces.length, 3);
+  assert.deepEqual(pieces.map((c) => [c.first_line, c.last_line, size(c.text)]), [[3, 3, 800], [3, 3, 800], [3, 3, 400]]);
+  for (const c of pieces) {
+    assert.equal(c.pieces.length, 1);
+    assert.equal(source.slice(c.start_offset, c.end_offset), c.text);
+    assert.deepEqual([c.pieces[0].start, c.pieces[0].end], [c.start_offset, c.end_offset]);
+  }
+  for (let i = 1; i < pieces.length; i++) assert.equal(pieces[i].start_offset, pieces[i - 1].end_offset);
+  assert.equal(pieces.map((c) => c.text).join(""), long);
+  // 不是切出来的片段没有这个标记。
+  assert.deepEqual(chunks.filter((c) => !c.partial).map((c) => c.text), ["前言", "结尾"]);
+  // 切的时候去掉了每截两头的空白：位置跟着缩进去。
+  const spaced = `${"甲".repeat(799)}。  ${"乙".repeat(10)}`;
+  assert.deepEqual(splitLongRanges(spaced).map((one) => [one.text, spaced.slice(one.start, one.end)]), [[`${"甲".repeat(799)}。`, `${"甲".repeat(799)}。`], ["乙".repeat(10), "乙".repeat(10)]]);
+  assert.deepEqual(splitLongRanges(spaced).map((one) => one.text), splitLong(spaced));
+});
+
+test("Word 文档的位置：每一截提取出来与核对摘录用的段文字相同（带图片链接的段、表格里带转义竖线的格也一样）；表格的各行各格记段落号，合并格记占位；块的编号是分段清单的块序号", () => {
+  const projection = projectionOf(10, [
+    "# 1 [p1] 规则", "",
+    "[p2] 普通的一段。", "",
+    "| [p3] 类型 | [p4] 上限<br>[p5] （本） |",
+    "|---|---|",
+    "| [p6] 学生 | [p7] 5 |",
+    "| （同上） | [p8] 含 \\| 竖线 |",
+    "|  | [p9] 前一格是空的 |", "",
+    "[p10] 带图 ![图](media/a.png) 的一段", "",
+  ]);
+  const paragraphs = projectionParagraphs(projection);
+  const [chunk, ...rest] = chunkWord(projection, SEGMENT_DEFAULTS);
+  assert.equal(rest.length, 0);
+  assert.equal(chunk.block, buildSegments(projection, SEGMENT_DEFAULTS, "", "").blocks[0].index);
+  assert.deepEqual(chunk.pieces.map((piece) => piece.paragraph), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  for (const piece of chunk.pieces) assert.equal(pieceText(projection, piece), paragraphs[piece.paragraph! - 1], `第 ${piece.paragraph} 段`);
+  assert.equal(pieceText(projection, chunk.pieces[7]), "含 | 竖线");
+  assert.equal(pieceText(projection, chunk.pieces[9]), "带图 的一段");
+  // 表格里的段带 cell，不在表格里的不带。
+  assert.deepEqual(chunk.pieces.map((piece) => piece.cell === true), [false, false, true, true, true, true, true, true, true, false]);
+  assert.deepEqual(chunk.rows, [[[3], [4, 5]], [[6], [7]], ["（同上）", [8]], ["", [9]]]);
+  assert.equal("header" in chunk, false);
+  // 片段的起止盖住它的每一截。
+  assert.ok(chunk.pieces.every((piece) => piece.start >= chunk.start_offset && piece.end <= chunk.end_offset));
+  // 没有表格的片段没有 rows。
+  const plainOnly = chunkWord(projectionOf(2, ["# 1 [p1] 规则", "", "[p2] 一段。", ""]), SEGMENT_DEFAULTS);
+  assert.equal("rows" in plainOnly[0], false);
+});
+
+test("Word 表格切到两个片段：后面的片段记下重复的表头行（它自己的段落号范围、各格与各段的位置），表头不算进片段的各截与起止段落号", () => {
+  const row = (n: number) => `| [p${n}] ${"甲".repeat(180)} | [p${n + 1}] ${"乙".repeat(180)} |`;
+  const projection = projectionOf(12, ["# 1 [p1] 表", "", "| [p2] 名称 | [p3] 说明 |", "|---|---|", row(4), row(6), row(8), row(10), ""]);
+  const paragraphs = projectionParagraphs(projection);
+  const chunks = chunkWord(projection, SEGMENT_DEFAULTS);
+  assert.ok(chunks.length >= 2);
+  assert.equal("header" in chunks[0], false);
+  for (const c of chunks.slice(1)) {
+    assert.ok(c.text.startsWith("| 名称 | 说明 |\n"));
+    assert.deepEqual([c.header!.first_paragraph, c.header!.last_paragraph, c.header!.cells], [2, 3, [[2], [3]]]);
+    assert.deepEqual(c.header!.pieces.map((piece) => [piece.paragraph, pieceText(projection, piece)]), [[2, "名称"], [3, "说明"]]);
+    // 表头的段不在片段自己的各截里，片段的起止段落号也不含它。
+    assert.ok(c.pieces.every((piece) => piece.paragraph! >= c.first_paragraph! && piece.paragraph! <= c.last_paragraph!));
+    assert.ok(c.first_paragraph! > 3);
+    assert.equal(c.rows!.length, c.text.split("\n").length - 1);
+  }
+  for (const c of chunks) for (const piece of c.pieces) assert.equal(pieceText(projection, piece), paragraphs[piece.paragraph! - 1]);
+});
+
+test("Word 文档里超过上限的一段：各截记自己的位置；段里夹着图片链接、在投影里找不到这一截的原样文字时记整段的位置。超过上限的一行表格：在格之间切出来的各片记各自的格，单独一格切出来的各截都记这一格的段", () => {
+  const long = `${"借".repeat(799)}。${"还".repeat(300)}`;
+  const projection = projectionOf(3, ["# 1 [p1] 规则", "", `[p2] ${long}`, "", `[p3] ${"借".repeat(500)} ![图](media/a.png) ${"还".repeat(500)}`, ""]);
+  const paragraphs = projectionParagraphs(projection);
+  const chunks = chunkWord(projection, SEGMENT_DEFAULTS);
+  const second = chunks.filter((c) => c.first_paragraph === 2 && c.partial);
+  assert.deepEqual(second.map((c) => size(c.text)), [800, 300]);
+  for (const c of second) assert.deepEqual([pieceText(projection, c.pieces[0]), c.pieces[0].paragraph], [c.text, 2]);
+  // 第 3 段夹着图片链接：切出来的两截都记整段，提取出来是整段的文字。
+  const third = chunks.filter((c) => c.first_paragraph === 3);
+  assert.equal(third.length, 2);
+  for (const c of third) {
+    assert.equal(c.partial, true);
+    assert.equal(pieceText(projection, c.pieces[0]), paragraphs[2]);
+    assert.ok(paragraphs[2].includes(c.text));
+  }
+  // 一行表格超过上限：在格之间切。
+  const wide = projectionOf(5, ["# 1 [p1] 表", "", `| [p2] ${"甲".repeat(500)} | [p3] ${"乙".repeat(500)} | [p4] ${"丙".repeat(900)}<br>[p5] 尾 |`, ""]);
+  const cut = chunkWord(wide, SEGMENT_DEFAULTS).filter((c) => c.rows);
+  assert.deepEqual(cut.map((c) => [c.first_paragraph, c.last_paragraph, c.rows, c.partial === true, c.pieces.map((piece) => piece.paragraph)]), [
+    [2, 2, [[[2]]], false, [2]],
+    [3, 3, [[[3]]], false, [3]],
+    // 单独一格超过上限：切出来的两截都记这一格的两段。
+    [4, 5, [[[4, 5]]], true, [4, 5]],
+    [4, 5, [[[4, 5]]], true, [4, 5]],
+  ]);
+});
+
+test("表格一行拆成各格的办法与核对摘录时相同，另给每格的起点：转义的竖线不算分隔，两头的空白与竖线去掉", () => {
+  for (const line of ["| [p1] 甲 | [p2] 乙 |", "|甲|乙|丙|", "  | 含 \\| 竖线 |  尾 |  ", "| （同左） |  | [p3] 丙<br>[p4] 丁 |", "| 末尾是转义的竖线 \\|", "||"]) {
+    const got = tableCellRanges(line);
+    assert.deepEqual(got.map((cell) => cell.text), tableCells(line), line);
+    for (const cell of got) assert.equal(line.slice(cell.at, cell.at + cell.text.length), cell.text, line);
+  }
 });

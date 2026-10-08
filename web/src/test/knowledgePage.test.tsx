@@ -164,10 +164,10 @@ describe("知识库页面", () => {
     expect(screen.getByTestId("nav-tasks").className).not.toContain("on");
   });
 
-  it("没有选嵌入模型：表格上面写明这些文档没有换算、只能按字面查找，给去设置的链接；文档都是「未换算」；没有「开始换算」", async () => {
+  it("没有选嵌入模型：表格上面写明这些文档没有换算、助手查知识库只按字面找，给去设置的链接；文档都是「未换算」；没有「开始换算」", async () => {
     page();
     const line = await screen.findByTestId("kb-embedding");
-    expect(line.textContent).toBe("还没有选嵌入模型，这些文档没有换算，只能按字面查找。去设置里选");
+    expect(line.textContent).toBe("还没有选嵌入模型，这些文档没有换算：助手查知识库只按字面找，用词不同的找不到。去设置里选");
     expect(within(line).getByText("去设置里选").getAttribute("href")).toBe("#/settings/models");
     expect(screen.getByTestId("kb-doc-embedding-公司术语表.md").textContent).toBe("未换算");
     expect(screen.queryByTestId("kb-embed-start")).toBeNull();

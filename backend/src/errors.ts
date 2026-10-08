@@ -29,6 +29,8 @@ export const STATUS: Record<string, number> = {
   busy: 409,
   // 知识库按意思查找（docs/api.md §11）：换算要找的那句话时模型服务出了事（连不上、到时间没有回答、回答了错误）。
   embedding_failed: 502,
+  // 调用的一方中途取消了（断开了连接）：没有人在等这个回答，状态码只是占位（nginx 的惯例）。
+  cancelled: 499,
 };
 
 /** 接口拒绝一个请求。message 是给用户看的一句中文。 */

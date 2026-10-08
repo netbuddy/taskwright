@@ -244,7 +244,7 @@ function CurrentRow({ label, type, config, editable, canPick, onPick, test }: {
     const fb = config.fallback;
     body = <div>还没有选。{fb && fb.model && `现在用的是：${fb.model}（来自${fb.from}）。`}</div>;
   } else {
-    body = <div>还没有选。知识库只能按字面查找。</div>;
+    body = <div>还没有选。助手查知识库只按字面找，用词不同的找不到。</div>;
   }
   const testable = ref ? ref.modelId : type === "language" ? config.fallback?.model || null : null;
   const passed = test?.result?.result === "passed";

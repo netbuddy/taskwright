@@ -105,7 +105,7 @@ export function PickModelDialog({ config, type, onClose, onPicked, onGoFill }: {
       <div className="settings-pick" data-testid={`pick-${type}`}>
         <div className="muted small">
           {language ? "下面按模型服务分组，列出各个模型服务里勾上的语言模型。"
-            : "下面按模型服务分组，列出各个模型服务里勾上的嵌入模型。嵌入模型可以不选，不选时知识库只能按字面查找。"}
+            : "下面按模型服务分组，列出各个模型服务里勾上的嵌入模型。嵌入模型可以不选，不选时助手查知识库只按字面找，用词不同的找不到。"}
         </div>
         {groups.length === 0 && language && <div className="pempty">还没有可选的语言模型。请先在模型服务的清单里勾上模型。</div>}
         <Radio.Group value={pick} onChange={(e) => setPick(e.target.value)} className="pick">
@@ -136,7 +136,7 @@ export function PickModelDialog({ config, type, onClose, onPicked, onGoFill }: {
           ))}
           {!language && (
             <Radio value={NONE} className={`po${pick === NONE ? " on" : ""}`} data-testid="pick-no-embedding">
-              <span className="pb"><span className="pn plain">不用嵌入模型</span><span className="pc">知识库只能按字面查找。</span></span>
+              <span className="pb"><span className="pn plain">不用嵌入模型</span><span className="pc">助手查知识库只按字面找，用词不同的找不到。</span></span>
             </Radio>
           )}
         </Radio.Group>
