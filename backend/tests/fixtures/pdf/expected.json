@@ -1,0 +1,117 @@
+{
+  "multipage": {
+    "header": "借阅管理办法（样本）",
+    "pages": [
+      {
+        "heading": "第一章 总则",
+        "paragraphs": [
+          "为了规范图书的借阅与归还，保护读者的权益，根据学校的有关规定，结合图书馆的实际情况，制定本办法。本办法适用于在校的学生、教职工以及经过登记的校外读者。",
+          "读者凭借书证借书。借书证只限本人使用，不得转借他人；借书证遗失的，应当及时到服务台办理挂失，挂失之前造成的损失由读者本人承担。"
+        ],
+        "bookmarks": [
+          [
+            1,
+            "第一章 总则"
+          ]
+        ]
+      },
+      {
+        "heading": "第二章 借阅",
+        "paragraphs": [
+          "每位读者一次最多借五本，借期三十天。借期届满之前，读者可以在自助借还机上续借一次，续借的期限为十五天；已经被他人预约的图书不能续借。",
+          "寒假与暑假期间到期的图书，归还的日期顺延到开学后的第七天。图书馆在到期前三天给读者发一次提醒，提醒不影响到期的日期。",
+          "工具书、期刊的合订本以及标明仅供阅览的图书只能在馆内阅览，不外借。"
+        ],
+        "bookmarks": [
+          [
+            1,
+            "第二章 借阅"
+          ],
+          [
+            2,
+            "第一节 期限"
+          ]
+        ]
+      },
+      {
+        "heading": "第三章 归还",
+        "paragraphs": [
+          "读者应当在到期之前归还图书。逾期归还的，每本每天收取罚款一角，罚款累计不超过这本图书的定价；罚款结清之前不能再借书。",
+          "图书损坏或者丢失的，读者应当按照图书馆的规定赔偿。"
+        ],
+        "bookmarks": [
+          [
+            1,
+            "第三章 归还"
+          ]
+        ]
+      }
+    ]
+  },
+  "two_column": {
+    "title": "自助借还机使用说明",
+    "a": "读者把借书证放在感应区，屏幕上显示读者的姓名与借出的图书。核对无误之后，选择借书或者还书。",
+    "b1": "借书时把图书逐本放到感应台上，屏幕上列出每本书的书名与应还的日期。读者确认之",
+    "b2": "后，机器打印一张借书凭条，借书完成。",
+    "c": "还书时把图书逐本放进还书口，屏幕上显示归还成功。有逾期罚款的，机器提示读者到服务台结清。"
+  },
+  "table": {
+    "before": "各类读者的借阅上限见下表。表中的借期从借出的当天起算，遇到法定节假日不顺延。",
+    "rows": [
+      [
+        "读者类型",
+        "一次最多",
+        "借期",
+        "续借次数"
+      ],
+      [
+        "学生",
+        "五本",
+        "三十天",
+        "一次"
+      ],
+      [
+        "教职工",
+        "十本",
+        "六十天",
+        "两次"
+      ],
+      [
+        "校外读者",
+        "两本",
+        "十五天",
+        "不能续借"
+      ]
+    ],
+    "after": "校外读者办理借书证时需要交纳押金，退证时全额退还。"
+  },
+  "scanned": {
+    "header": "读者意见登记表（扫描件样本）",
+    "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"
+  },
+  "quirks": {
+    "radicals": "平台应当在两个工作日内答复，退款金额按原路退回，风险由平台承担。",
+    "radical_code_points": {
+      "工": 12079,
+      "日": 12103,
+      "金": 12198,
+      "风": 11995
+    },
+    "spaced": "汇率按申请当天的中间价计算"
+  },
+  "english": {
+    "first": "The assistant checks every item against the rules before asking for confirmation. Results are recorded, and a rejected wording can be kept when the reader gives a reason.",
+    "second": "Sources are verified word for word.",
+    "third": "A source names the page and the block it was taken from, so that the reader can open the material at that place.",
+    "hyphenated": [
+      "confirmation",
+      "confir-",
+      "mation"
+    ],
+    "first_lines": [
+      "The assistant checks every item against the rules before asking for confir-",
+      "mation. Results are recorded, and a rejected wording can be kept when",
+      "the reader gives a reason."
+    ]
+  }
+}
