@@ -39,6 +39,12 @@ const ALLOWED: Record<string, string[]> = {
   "docx_source.ts": ["projectionParagraphs", "tableCells"],
   // 自带工具返回的限量：几个常量与截短之后加的那句话（只做计算，不碰库），集成测试拿它们核对助手实际收到的文字。
   "tool_limits.ts": ["GREP_CAPPED_STATUS_KEY", "GREP_MAX_BYTES", "cappedText"],
+  // PDF 材料：文字规范化（不依赖任何模块的纯函数）；定位符与位置表的格式（同上）；分段清单的算法与写成材料旁边的文件
+  // （与 Word 材料的投影、分段清单、位置表一样是文件，不是库）。
+  "pdf_normalize.ts": ["comparablePdfText", "tidyPdfText"],
+  "pdf_locations.ts": ["PDF_LOCATIONS_SUFFIX", "PDF_LOCATION_RULES_VERSION", "PdfBox", "PdfLocationFile", "PdfPageLocation", "pdfAnchor", "pdfBlockBox",
+    "pdfChapterOf", "pdfLocationFile", "pdfLocationsJson"],
+  "pdf_segments.ts": ["PDF_SEGMENTS_SUFFIX", "PdfSegmentList", "buildPdfSegments", "pdfProjectionUnits", "writePdfSegments"],
 };
 
 function files(dir: string): string[] {
