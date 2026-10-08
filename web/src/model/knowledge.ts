@@ -46,10 +46,15 @@ export function embeddingBusy(lib: EmbeddedLibrary): boolean {
   return lib.documents.some((d) => d.embedding.status === "queued" || d.embedding.status === "running");
 }
 
-/** 按意思查到的片段在文档的哪里：Word 文档写第几到几段，别的写第几到几行；起止相同时只写一个。 */
-export function searchPlaceText(hit: Pick<KnowledgeSearchHit, "first_paragraph" | "last_paragraph" | "first_line" | "last_line">): string {
+/** 按意思查到的片段在文档的哪里：Word 文档写第几到几段，PDF 文档写第几页第几到几块，别的写第几到几行；起止相同时只写一个。 */
+export function searchPlaceText(hit: Pick<KnowledgeSearchHit, "first_paragraph" | "last_paragraph" | "first_line" | "last_line" | "first_unit" | "last_unit">): string {
   const range = (from: number, to: number, unit: string) => (from === to ? `第 ${from} ${unit}` : `第 ${from} 到 ${to} ${unit}`);
   if (hit.first_paragraph !== null && hit.last_paragraph !== null) return range(hit.first_paragraph, hit.last_paragraph, "段");
+  // PDF 文档：片段不跨页，起止在同一页；只有一块写「第 3 页第 2 块」，几块写「第 3 页第 2 到 4 块」。
+  if (hit.first_unit && hit.last_unit) {
+    const { page, block } = hit.first_unit;
+    return hit.last_unit.block === block ? `第 ${page} 页第 ${block} 块` : `第 ${page} 页第 ${block} 到 ${hit.last_unit.block} 块`;
+  }
   return hit.first_line !== null && hit.last_line !== null ? range(hit.first_line, hit.last_line, "行") : "";
 }
 

@@ -756,7 +756,7 @@ export interface KnowledgeOverview {
 
 /**
  * 按意思查找查到的一个片段（POST /api/v1/knowledge/search 的 hits 的一项）。score 是相近程度，越大越相近；title 是片段的标题，没有是 null。
- * 位置：Word 文档给起止段落号，别的文档给起止行号，另一组是 null。locator 是引用这份文档作来源时出处的写法。
+ * 位置：Word 文档给起止段落号，PDF 文档给起止的页与块，别的文档给起止行号，用不上的几项是 null。locator 是引用这份文档作来源时出处的写法。
  */
 export interface KnowledgeSearchHit {
   score: number;
@@ -769,6 +769,9 @@ export interface KnowledgeSearchHit {
   last_paragraph: number | null;
   first_line: number | null;
   last_line: number | null;
+  /** PDF 文档起止的那两块（页与块号）；别的文档是 null，更早的任务服务不给这两项。 */
+  first_unit?: { page: number; block: number } | null;
+  last_unit?: { page: number; block: number } | null;
   text: string;
   locator: string;
 }

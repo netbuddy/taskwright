@@ -12,7 +12,7 @@ import { projectionParagraphs, tableCells } from "../../agent/src/lib/docx_sourc
 import { SEGMENT_DEFAULTS, buildSegments } from "../../agent/src/lib/segments.ts";
 import {
   CHUNK_MAX_CHARS, CHUNK_RULES, type Chunk, chunkDocument, chunkInput, chunkMarkdown, chunkPlain, chunkRulesVersion, chunkWord, documentKind, pieceText, splitLong,
-  splitLongRanges, tableCellRanges,
+  splitLongRanges, tableCellRanges, chunkPdf,
 } from "../src/knowledge_chunks.ts";
 import { ROOT } from "./helpers.ts";
 
@@ -173,7 +173,7 @@ test("表格里没有段落号的行（全是合并格）位置沿用上一行�
 
 test("文档的种类看扩展名；切法的版本每种各记各的，Word 文档的是 2，Markdown 与纯文本的是 1", () => {
   assert.deepEqual(["规范.docx", "规范.DOCX", "规则.md", "说明.txt", "没有扩展名", "表.docx.md"].map(documentKind), ["word", "word", "markdown", "plain", "plain", "markdown"]);
-  assert.deepEqual(CHUNK_RULES, { word: 2, markdown: 1, plain: 1 });
+  assert.deepEqual(CHUNK_RULES, { word: 2, pdf: 1, markdown: 1, plain: 1 });
   assert.deepEqual([chunkRulesVersion("规范.docx"), chunkRulesVersion("规则.md"), chunkRulesVersion("说明.txt")], [2, 1, 1]);
 });
 
@@ -387,4 +387,34 @@ test("表格一行拆成各格的办法与核对摘录时相同，另给每格�
     assert.deepEqual(got.map((cell) => cell.text), tableCells(line), line);
     for (const cell of got) assert.equal(line.slice(cell.at, cell.at + cell.text.length), cell.text, line);
   }
+});
+
+test("PDF 文档：一页之内把各块接成片段，不跨页；记起止的页与块，各截带页与块号；页眉页脚行与没有文字的那一行不在里面；超过上限的一块切成几截", () => {
+  const long = "逾期不还的，每册每天收取滞纳金。".repeat(60);
+  const projection = [
+    "<!--", "由 规范.pdf 生成，供助手阅读。页数：3。块总数：5。", "-->", "",
+    "> （页眉页脚）借阅规范", "[p1-1] 第一条 读者凭借书证借书。", "", "[p1-2] 每次最多借五本  借期三十天", "",
+    "[p2-0] （这一页没有文字，可能是扫描件）", "",
+    "[p3-1] 第二条 逾期的处理。", "", `[p3-2] ${long}`, "",
+  ].join("\n");
+  assert.equal(documentKind("规范.PDF"), "pdf");
+  const chunks = chunkPdf(projection);
+  assert.deepEqual(chunkDocument("规范.pdf", projection, SEGMENT_DEFAULTS), chunks);
+  const [first, second, ...parts] = chunks;
+  assert.deepEqual([first.text, first.block, first.first_unit, first.last_unit, first.heading, first.first_paragraph, first.first_line],
+    ["第一条 读者凭借书证借书。\n每次最多借五本  借期三十天", 1, { page: 1, block: 1 }, { page: 1, block: 2 }, null, null, null]);
+  assert.deepEqual(first.pieces.map((piece) => [piece.page, piece.unit, projection.slice(piece.start, piece.end)]),
+    [[1, 1, "第一条 读者凭借书证借书。"], [1, 2, "每次最多借五本  借期三十天"]]);
+  assert.deepEqual([projection.slice(first.start_offset, first.start_offset + 3), projection.slice(first.end_offset - 3, first.end_offset)], ["第一条", "三十天"]);
+  // 第 3 页的头一块自成一个片段：再接上那块很长的就超过上限。
+  assert.deepEqual([second.text, second.block, second.first_unit, second.last_unit], ["第二条 逾期的处理。", 3, { page: 3, block: 1 }, { page: 3, block: 1 }]);
+  assert.ok(parts.length >= 2, `很长的那一块切成了 ${parts.length} 截`);
+  for (const part of parts) {
+    assert.ok([...part.text].length <= CHUNK_MAX_CHARS);
+    assert.deepEqual([part.partial, part.first_unit, part.last_unit, part.pieces.length, part.pieces[0].page, part.pieces[0].unit], [true, { page: 3, block: 2 }, { page: 3, block: 2 }, 1, 3, 2]);
+    assert.equal(projection.slice(part.pieces[0].start, part.pieces[0].end), part.text);
+  }
+  assert.equal(parts.map((part) => part.text).join(""), long);
+  assert.deepEqual(chunks.map((chunk) => chunk.index), chunks.map((_, i) => i + 1));
+  assert.deepEqual(chunkPdf("<!--\n页数：1。\n-->\n\n[p1-0] （这一页没有文字，可能是扫描件）\n"), [], "整份没有块的文档切出来是零个片段");
 });

@@ -122,3 +122,18 @@ test("知识库出处：PDF 文档写页与块，拆出文档名、页与块；W
   assert.deepEqual(parseKnowledgeLocator("knowledge/general/规范.docx#p12"), { library: "general", name: "规范.docx", paragraph: 12 });
   assert.deepEqual(parseKnowledgeLocator("knowledge/general/规范.pdf.md"), { library: "general", name: "规范.pdf.md", paragraph: null });
 });
+
+test("查找知识库的结果：PDF 文档的片段写第几页第几块，正文逐块带页与块，出处教它写页与块", () => {
+  const hit = {
+    score: 0.8, score_kind: "semantic", rank_semantic: 1, rank_keyword: 2, library: "general", library_name: "通用知识库", name: "规范.pdf", index: 3, title: null,
+    first_paragraph: null, last_paragraph: null, first_line: null, last_line: null, first_unit: { page: 3, block: 2 }, last_unit: { page: 3, block: 4 }, partial: false,
+    text: "第二条 逾期的处理。\n逾期每册每天罚款 0.5 元。\n读者类别  借期  册数", locator: "knowledge/general/规范.pdf", body: null, paragraphs: null, table: null, header: null,
+    units: [{ page: 3, block: 2, text: "第二条 逾期的处理。" }, { page: 3, block: 3, text: "逾期每册每天罚款 0.5 元。" }, { page: 3, block: 4, text: "读者类别  借期  册数" }],
+  };
+  const { text } = assemble("查到 1 个片段。", [hit as never], false);
+  assert.match(text, /位置：第 3 页第 2 到 4 块\n/);
+  assert.match(text, /引用时出处写：knowledge\/general\/规范\.pdf#p页-块（写摘录所在那一块的页与块，例如 knowledge\/general\/规范\.pdf#p3-2）/);
+  assert.match(text, /正文（每行是一块，开头方括号里是这一块的页与块，摘录不带它；表格的一行是一块，各格之间隔着空格）：\n<<<原文开始\n\[p3-2\] 第二条 逾期的处理。\n\[p3-3\] 逾期每册每天罚款 0\.5 元。\n\[p3-4\] 读者类别  借期  册数\n原文结束>>>/);
+  const one = assemble("查到 1 个片段。", [{ ...hit, last_unit: { page: 3, block: 2 }, units: hit.units.slice(0, 1) } as never], false).text;
+  assert.match(one, /位置：第 3 页第 2 块\n/);
+});

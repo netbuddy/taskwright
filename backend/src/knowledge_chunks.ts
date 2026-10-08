@@ -4,7 +4,7 @@
  * 片段的正文最多 CHUNK_MAX_CHARS 个字（按字数，不按词元）。这个数是固定的：模型一次能收多长，产品这边查不到
  * （ollama 的嵌入模型登记时不带上下文长度）；模型连这么长都收不下时，由模型服务报错，那份文档记成换算失败。
  *
- * 三种文档各自的切法：
+ * 四种文档各自的切法：
  * - Word 文档（.docx）：对着它的投影切。先按分段清单（agent/src/lib/segments.ts）分成块，块内照投影的行依次接起来，
  *   接到再加一行就超过上限为止；片段不跨块。每个片段记所在块的标题与起止段落号，引用时出处的段落号取起始的那一个。
  *   不是表格的行就是一个段落，取段落的文字，不带段落号记号、编号与图片链接。表格的一行整行算一个单位，不拆开，
@@ -14,6 +14,9 @@
  * - Markdown（.md）：标题行（1 到 6 个 # 开头，代码围栏里的不算）开始一个小节，小节内用空行隔开的各段依次接起来；片段不跨小节。
  *   片段的标题是各级标题用「 / 」连起来（「退款 / 时限」），位置记起止行号。小节里除了标题没有别的字时，标题自己算一个片段。
  * - 纯文本（.txt 与别的）：没有标题，只按空行分段再接起来，位置记起止行号。
+ * - PDF 文档（.pdf）：对着它的投影切。投影里一块一行（agent/src/lib/pdf_source.ts 的 pdfProjectionUnits），一页之内把各块依次接起来，
+ *   接到再加一块就超过上限为止；片段不跨页（引用时摘录也不能跨页）。每个片段记起止的页与块，没有标题（书签目录在位置表里，这里拿不到）。
+ *   表格的一行在投影里本来就是一块，不用另外处理。页眉页脚行、「这一页没有文字」那一行没有块号或块号是 0，不在片段里。
  * 单独一段就超过上限时，先在句末的标点后面切开，上限的后一半里找不到句末的标点就在上限处切开；切出来的各片位置相同。
  * 表格的一行超过上限时在单元格之间切开，每片仍写成一行；单独一格就超过上限时，那一格照上面的办法切。
  * 切出来的各片前面也加表头行，放不下的不加。
@@ -25,9 +28,9 @@
  * 文件的内容（行尾已经统一成 \n），Word 文档是投影全文。位置都是 UTF-16 码元的偏移，`string.slice` 可以直接用。
  * - start_offset、end_offset：片段在源文字里从哪里到哪里。Markdown 与纯文本的片段，这一段源文字就是它的原文（连段与段之间的空行）。
  * - block：所属结构单位的编号。Word 是分段清单里的块序号（从 1 起）；Markdown 是小节序号（文档开头、第一个标题之前的那一节是 0，
- *   此后每遇到一个标题加 1）；纯文本恒为 0。
+ *   此后每遇到一个标题加 1）；纯文本恒为 0；PDF 是页码。
  * - pieces：片段由源文字里哪几截接成。Markdown 与纯文本是各段的起止；Word 是各段在投影里的那一截（段落号记号右边、去掉首尾空白），
- *   带段落号，表格里的段另带 cell。Word 的一截要再照 docx_source.ts 的办法提取（去图片链接、去首尾空白，表格里把转义的竖线还原）
+ *   带段落号，表格里的段另带 cell；PDF 是各块在投影里的那一截（行首的定位符右边、去掉首尾空白），带页与块号。Word 的一截要再照 docx_source.ts 的办法提取（去图片链接、去首尾空白，表格里把转义的竖线还原）
  *   才是这一段的文字，提取出来的与保存修订核对摘录时用的段文字相同。
  * - rows：片段里有表格的行时，每行各格里是哪几段（段落号），合并格写它在投影里的占位（「（同左）」「（同上）」），空格写空文字。
  * - header：片段开头重复了表头行时，表头行自己的段落号范围、各格与各段的位置；表头不算进片段的起止段落号与 pieces。
@@ -39,24 +42,25 @@
  */
 
 import { projectionParagraphs, tableCells } from "../../agent/src/lib/docx_source.ts";
+import { pdfProjectionUnits } from "../../agent/src/lib/pdf_source.ts";
 import { type SegmentParams, buildSegments } from "../../agent/src/lib/segments.ts";
 
 /** 片段的正文最多多少个字。 */
 export const CHUNK_MAX_CHARS = 800;
 
-export type DocumentKind = "word" | "markdown" | "plain";
+export type DocumentKind = "word" | "pdf" | "markdown" | "plain";
 
-/** 按文档名的扩展名看它是哪一种文档：.docx 是 Word 文档，.md 是 Markdown，别的都当纯文本。 */
+/** 按文档名的扩展名看它是哪一种文档：.docx 是 Word 文档，.pdf 是 PDF 文档，.md 是 Markdown，别的都当纯文本。 */
 export function documentKind(name: string): DocumentKind {
   const lower = name.toLowerCase();
-  return lower.endsWith(".docx") ? "word" : lower.endsWith(".md") ? "markdown" : "plain";
+  return lower.endsWith(".docx") ? "word" : lower.endsWith(".pdf") ? "pdf" : lower.endsWith(".md") ? "markdown" : "plain";
 }
 
 /**
  * 切法的版本，每种文档各记各的：哪一种的切法改了就给哪一种加一，已经存下的那一种文档的片段是按旧切法算的，要重新换算；
  * 别的种类不受影响。Word 文档的 2：表格按行进片段（1 是每个单元格各算一段）。
  */
-export const CHUNK_RULES: Readonly<Record<DocumentKind, number>> = { word: 2, markdown: 1, plain: 1 };
+export const CHUNK_RULES: Readonly<Record<DocumentKind, number>> = { word: 2, pdf: 1, markdown: 1, plain: 1 };
 
 /** 这份文档现在的切法版本。 */
 export function chunkRulesVersion(name: string): number {
@@ -72,7 +76,13 @@ export interface Piece {
   paragraph?: number;
   /** Word 文档表格里的段：提取文字时要把转义的竖线还原。 */
   cell?: true;
+  /** PDF 文档：这一截是第几页的第几块（unit 是块号，从 1 起）。别的文档没有这两项。 */
+  page?: number;
+  unit?: number;
 }
+
+/** PDF 文档里的一块：页与块号。 */
+export interface PdfPlace { page: number; block: number }
 
 /** 表格一行里的一格：格里各段的段落号；合并格是它在投影里的占位（「（同左）」「（同上）」）；什么都没有的格是空文字。 */
 export type RowCell = number[] | string;
@@ -111,6 +121,9 @@ export interface Chunk {
   header?: TableHeader;
   /** 单独一段超过上限切出来的一截。 */
   partial?: true;
+  /** PDF 文档：片段起止的那两块；别的文档没有这两项。 */
+  first_unit?: PdfPlace;
+  last_unit?: PdfPlace;
 }
 
 /**
@@ -523,17 +536,64 @@ export function chunkPlain(text: string): Chunk[] {
   return chunkLines(text, false);
 }
 
+/** PDF 文档：projection 是它的投影全文（切法见文件开头）。 */
+export function chunkPdf(projection: string): Chunk[] {
+  const lines = projection.split("\n");
+  /** 第 i 行（从 0 起）在投影里的起点。 */
+  const lineStart: number[] = [0];
+  for (const line of lines) lineStart.push(lineStart[lineStart.length - 1] + line.length + 1);
+  const out: Chunk[] = [];
+  let open: { place: PdfPlace; text: string; piece: Piece }[] = [];
+  const flush = () => {
+    if (!open.length) return;
+    const first = open[0];
+    const last = open[open.length - 1];
+    out.push({
+      index: out.length + 1, heading: null, first_paragraph: null, last_paragraph: null, first_line: null, last_line: null,
+      text: open.map((one) => one.text).join("\n"), start_offset: first.piece.start, end_offset: last.piece.end, block: first.place.page,
+      pieces: open.map((one) => one.piece), first_unit: first.place, last_unit: last.place,
+    });
+    open = [];
+  };
+  for (const unit of pdfProjectionUnits(projection)) {
+    const text = unit.text.trim();
+    if (unit.block < 1 || text === "") continue;
+    const line = lines[unit.line - 1];
+    // 这一块的文字在投影里的起点：这一行的末尾往回数（行首是定位符），再跳过文字前面的空白。
+    const start = lineStart[unit.line - 1] + (line.length - unit.text.length) + (unit.text.length - unit.text.trimStart().length);
+    const place = { page: unit.page, block: unit.block };
+    if (charCount(text) > CHUNK_MAX_CHARS) {
+      // 单独一块就超过上限：切成几截，每截自己是一个片段，位置都是这一块。
+      flush();
+      for (const part of splitLongRanges(text)) {
+        out.push({
+          index: out.length + 1, heading: null, first_paragraph: null, last_paragraph: null, first_line: null, last_line: null,
+          text: part.text, start_offset: start + part.start, end_offset: start + part.end, block: unit.page,
+          pieces: [{ start: start + part.start, end: start + part.end, page: unit.page, unit: unit.block }], first_unit: place, last_unit: place, partial: true,
+        });
+      }
+      continue;
+    }
+    const used = open.reduce((sum, one) => sum + charCount(one.text), 0) + open.length; // 各块之间各算一个换行
+    if (open.length && (open[0].place.page !== unit.page || used + charCount(text) > CHUNK_MAX_CHARS)) flush();
+    open.push({ place, text, piece: { start, end: start + text.length, page: unit.page, unit: unit.block } });
+  }
+  flush();
+  return out;
+}
+
 /**
- * 按文档名的扩展名选切法。text 是文档的正文：Word 文档给投影全文，别的给文件的内容（行尾已经统一成 \n）。
+ * 按文档名的扩展名选切法。text 是文档的正文：Word 文档与 PDF 文档给投影全文，别的给文件的内容（行尾已经统一成 \n）。
  */
 export function chunkDocument(name: string, text: string, params: SegmentParams): Chunk[] {
   const kind = documentKind(name);
   if (kind === "word") return chunkWord(text, params);
+  if (kind === "pdf") return chunkPdf(text);
   return kind === "markdown" ? chunkMarkdown(text) : chunkPlain(text);
 }
 
 /**
- * 片段的一截读成文字。Markdown 与纯文本就是源文字里的这一截；Word 文档照 docx_source.ts 取段文字的办法提取
+ * 片段的一截读成文字。Markdown、纯文本与 PDF 文档就是源文字里的这一截；Word 文档照 docx_source.ts 取段文字的办法提取
  * （去图片链接、去首尾空白，表格里把转义的竖线还原），与保存修订核对摘录时用的段文字相同。
  */
 export function pieceText(source: string, piece: Piece): string {

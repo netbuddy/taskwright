@@ -106,6 +106,9 @@ interface Hit {
   last_paragraph: number | null;
   first_line: number | null;
   last_line: number | null;
+  /** PDF 文档起止的那两块；别的文档是 null（更早的任务服务不给这两项）。 */
+  first_unit?: { page: number; block: number } | null;
+  last_unit?: { page: number; block: number } | null;
   partial: boolean;
   /** 片段里存的文字（页面显示用）；给助手的是下面的原文。 */
   text: string;
@@ -114,6 +117,8 @@ interface Hit {
   body: string | null;
   /** Word 文档：各段。 */
   paragraphs: Paragraph[] | null;
+  /** PDF 文档：各块（页、块号与文字）。 */
+  units?: { page: number; block: number; text: string }[] | null;
   table: RowCell[][] | null;
   header: { first_paragraph: number | null; last_paragraph: number | null; cells: RowCell[]; paragraphs: Paragraph[] } | null;
 }
@@ -166,9 +171,14 @@ export const trimmedText = (removed: number) => `（这一次的结果超过了 
 /** 第 1 个片段的正文也放不下、只显示了前几个字时的那一行。 */
 export const truncatedText = (chars: number) => `（正文只显示了前 ${chars} 字；要看后面的内容，把问题缩小再查。）`;
 
-/** 片段在哪里：Word 文档是段落号，别的是行号。 */
+/** 片段在哪里：Word 文档是段落号，PDF 文档是页与块，别的是行号。 */
 function positionOf(hit: Hit): string {
   if (hit.first_paragraph !== null && hit.last_paragraph !== null) return range(hit.first_paragraph, hit.last_paragraph, "段");
+  if (hit.first_unit && hit.last_unit) {
+    // 片段不跨页，所以起止在同一页：只有一块写「第 3 页第 2 块」，几块写「第 3 页第 2 到 5 块」。
+    const { page, block } = hit.first_unit;
+    return hit.last_unit.block === block ? `第 ${page} 页第 ${block} 块` : `第 ${page} 页第 ${block} 到 ${hit.last_unit.block} 块`;
+  }
   if (hit.first_line !== null && hit.last_line !== null) return range(hit.first_line, hit.last_line, "行");
   return "位置不详";
 }
@@ -176,6 +186,7 @@ function positionOf(hit: Hit): string {
 /** 表格的一行写成「p36｜p37、p38｜（同上）」：竖线隔开各格，格里是它的段落号。 */
 const rowShape = (cells: RowCell[]) => cells.map((cell) => (Array.isArray(cell) ? cell.map((n) => `p${n}`).join("、") : cell || "（空）")).join("｜");
 const paragraphLines = (paragraphs: Paragraph[]) => paragraphs.map((one) => `[p${one.paragraph}] ${one.text}`);
+const unitLines = (units: { page: number; block: number; text: string }[]) => units.map((one) => `[p${one.page}-${one.block}] ${one.text}`);
 
 /** 它在两路里各排第几。keywordOnly 为真是这一次只按字面找了。 */
 function ranksText(hit: Hit, keywordOnly: boolean): string {
@@ -194,10 +205,13 @@ interface Block {
 
 function hitBlock(no: number, hit: Hit, keywordOnly: boolean): Block {
   const word = hit.paragraphs !== null;
+  const pdf = Array.isArray(hit.units) && hit.units.length > 0 ? hit.units : null;
   const head = [
     `【第 ${no} 个片段】知识库「${hit.library_name}」《${hit.name}》${hit.title ? ` · 标题：${hit.title}` : ""} · ${ranksText(hit, keywordOnly)}`,
     `位置：${positionOf(hit)}${hit.partial ? "（这一段很长，切成了几个片段，这里是其中的一截，不是全文）" : ""}`,
-    word ? `引用时出处写：${hit.locator}#p段落号（写摘录所在那一段的段落号）` : `引用时出处写：${hit.locator}`,
+    word ? `引用时出处写：${hit.locator}#p段落号（写摘录所在那一段的段落号）`
+      : pdf ? `引用时出处写：${hit.locator}#p页-块（写摘录所在那一块的页与块，例如 ${hit.locator}#p${pdf[0].page}-${pdf[0].block}）`
+        : `引用时出处写：${hit.locator}`,
   ];
   if (hit.table?.length) {
     head.push(`表格结构（每个分号是表格的一行，竖线隔开各格，格里写的是它的段落号；一条来源只抄一格里的字，不要把一行的几格连起来抄）：${hit.table.map(rowShape).join("；")}`);
@@ -208,8 +222,9 @@ function hitBlock(no: number, hit: Hit, keywordOnly: boolean): Block {
     head.push(`这张表的表头（出自${where}，只帮你看懂各列，不在这个片段的位置范围里；要引用表头里的字，出处写它自己的段落号）：${rowShape(h.cells)}`,
       BODY_OPEN, ...paragraphLines(h.paragraphs), BODY_CLOSE);
   }
-  head.push(word ? "正文（每行是一段，开头方括号里是这一段的段落号，摘录不带它）：" : "正文：", BODY_OPEN);
-  return { head, body: word ? paragraphLines(hit.paragraphs!).join("\n") : hit.body ?? hit.text, tail: [BODY_CLOSE] };
+  head.push(word ? "正文（每行是一段，开头方括号里是这一段的段落号，摘录不带它）："
+    : pdf ? "正文（每行是一块，开头方括号里是这一块的页与块，摘录不带它；表格的一行是一块，各格之间隔着空格）：" : "正文：", BODY_OPEN);
+  return { head, body: word ? paragraphLines(hit.paragraphs!).join("\n") : pdf ? unitLines(pdf).join("\n") : hit.body ?? hit.text, tail: [BODY_CLOSE] };
 }
 
 /**
