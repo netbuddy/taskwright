@@ -6,6 +6,7 @@
  * （2026-09-21 起任务由用户在界面上创建，执行者不再有「创建任务」工具，
  * 创建任务走不经 pi 的命令行入口 cli/create_task.mts），挂一个在打开会话时追加任务现状消息的扩展、
  * 一个在执行者没有经「回复」说话就停下时追加一句话要它重说的兜底扩展，
+ * 一个把知识库目录对自带的 grep、find、ls 关上的扩展（查知识库只经「按意思查找知识库」，hooks/knowledge_gate.ts），
  * 两个扩展命令 /tw-user（用户在界面上的直接操作，不经模型写库）与 /tw-ui（卡片点击，带标注地发一句话），
  * 一个只读的扩展命令 /tw-board（在终端界面里打印交付物看板），「回复」与「保存修订」两个工具在终端界面里的渲染器
  * （只有 pi 的交互模式调用，RPC 模式不调；经 withTuiRenderers 并进工具定义），
@@ -30,6 +31,7 @@ import { registerSearchKnowledge } from "./tools/search_knowledge.ts";
 import { registerCompleteTask } from "./tools/complete_task.ts";
 import { registerRequestReview } from "./tools/request_review.ts";
 import { registerIntentRecord } from "./hooks/intent_record.ts";
+import { registerKnowledgeGate } from "./hooks/knowledge_gate.ts";
 
 export default function (pi: ExtensionAPI) {
   registerSaveRevision(withTuiRenderers(pi));
@@ -46,4 +48,6 @@ export default function (pi: ExtensionAPI) {
   registerBoardCommand(pi);
   // 对话理解：助手消息落进会话时按登记的 schema 认出它写的理解，记进对话行为表；一轮结束时没有理解记失败（hooks/intent_record.ts）。
   registerIntentRecord(pi);
+  // 知识库只有一个入口：grep、find、ls 的范围包含知识库目录时拦下，请助手改用按意思查找（hooks/knowledge_gate.ts）。
+  registerKnowledgeGate(pi);
 }
