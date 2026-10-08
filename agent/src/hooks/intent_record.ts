@@ -20,8 +20,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { currentRun, recordAtSettle, recordFromAssistantMessage } from "../lib/dialogue_acts.ts";
 import { REGISTERED_OUTPUTS } from "../lib/registered_outputs.ts";
 
-/** 要求这一轮先有理解的三个工具。 */
-export const GATED_TOOLS = ["save_revision", "complete_task", "reply"] as const;
+/** 要求这一轮先有理解的四个工具。 */
+export const GATED_TOOLS = ["save_revision", "save_diagram", "complete_task", "reply"] as const;
 
 /** 报错用的状态栏键名。 */
 export const INTENT_ERROR_KEY = "taskwright-intent-error";

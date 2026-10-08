@@ -9,6 +9,7 @@
  * · 工作编号：「w-{那句用户的话的会话条目编号}」。修订日志按它把修订归到工作。
  */
 
+import { kindName } from "../../agent/src/lib/diagram.ts";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import * as clock from "./clock.ts";
@@ -108,6 +109,7 @@ export const UNFINISHED_TEXT = {
   request_review: "请评审者评审没有做成",
   save_revision: "保存修订没有做成",
   save_revision_unchecked: "保存修订没有做完",
+  save_diagram: "保存图没有做完",
   complete_task: "完成任务没有做成",
   complete_task_unchecked: "完成任务没有做完",
   reply: "组织回复没有做成",
@@ -142,6 +144,7 @@ export function unfinishedText(tool: string, args: Dict, callId: string | null, 
   if (tool === "get_item") return UNFINISHED_TEXT.get_item(String(or(args.item_id, "")));
   if (tool === "get_task_status") return UNFINISHED_TEXT.get_task_status;
   if (tool === "search_knowledge") return UNFINISHED_TEXT.search_knowledge;
+  if (tool === "save_diagram") return UNFINISHED_TEXT.save_diagram;
   if (tool === "request_review") return UNFINISHED_TEXT.request_review;
   if (tool === REPLY_TOOL) return UNFINISHED_TEXT.reply;
   return UNFINISHED_TEXT.other(tool);
@@ -176,6 +179,17 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
     }
     const parts = [...grouped].map(([k, v]) => `${k} ${v.length} 个（${v.length === 1 ? py(v[0]) : py(v[0]) + " 到 " + py(v[v.length - 1])}）`);
     return `写好并保存了修订 ${py(d.revision_no)}：` + parts.join("；");
+  }
+  if (tool === "save_diagram") {
+    // 图没有存上的原因（参数不对、来源不对、Mermaid 文本没有通过校验、校验没有做成）在工具的结果里，这里只说没有存上。
+    if (failed) return "图没有存上";
+    if (!done) return "正在保存图";
+    const d = details || {};
+    const what = `图 ${py(d.diagram_id)}`;
+    if (d.replayed === true) return `这次保存图是重复的请求，${what} 之前已经保存过，没有重复写入`;
+    if (d.op === "delete") return `删除了${what}（${py(d.name)}）`;
+    const named = `${what}（${kindName(String(or(d.kind, "")))}：${py(d.name)}）`;
+    return d.op === "update" ? `修改了${named}，现在是修订 ${py(d.revision_no)}` : `保存了${named}`;
   }
   if (tool === "get_item") {
     const item = or(args.item_id, "");

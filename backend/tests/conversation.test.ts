@@ -135,6 +135,14 @@ test("过程摘要：查找知识库写查到几个片段，只按字面找的�
   assert.equal(stepText("search_knowledge", query, true, false, { ok: true, mode: "keyword", hits: [], shown: 0 }, {}), "查找知识库，没有查到片段");
   assert.equal(stepText("search_knowledge", query, true, false, { ok: false, ready: false, reason: "unreachable", hits: [] }, {}), "查找知识库，没有查到片段");
   assert.equal(stepText("search_knowledge", {}, true, true, null, {}), "查找知识库没有成");
+  // 保存图：进行中、存上（新画、修改、删除、重复的请求）、没有存上。
+  assert.equal(stepText("save_diagram", {}, false, false, null, {}), "正在保存图");
+  assert.equal(stepText("save_diagram", {}, true, false, { diagram_id: "D-001", op: "add", name: "读者用例", kind: "use_case", revision_no: 1 }, {}), "保存了图 D-001（用例图：读者用例）");
+  assert.equal(stepText("save_diagram", {}, true, false, { diagram_id: "D-001", op: "update", name: "读者用例", kind: "sequence", revision_no: 3 }, {}), "修改了图 D-001（时序图：读者用例），现在是修订 3");
+  assert.equal(stepText("save_diagram", {}, true, false, { diagram_id: "D-002", op: "delete", name: "借书证", kind: "class", revision_no: 2 }, {}), "删除了图 D-002（借书证）");
+  assert.equal(stepText("save_diagram", {}, true, false, { diagram_id: "D-001", op: "add", name: "读者用例", kind: "use_case", revision_no: 1, replayed: true }, {}),
+    "这次保存图是重复的请求，图 D-001 之前已经保存过，没有重复写入");
+  assert.equal(stepText("save_diagram", {}, true, true, null, {}), "图没有存上");
 });
 
 test("过程摘要：grep 的返回太多、被截短时写搜到几行、只看了前几行；没有截短的与出错的照旧", () => {

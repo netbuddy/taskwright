@@ -122,13 +122,19 @@ test("平台 skill 写明知识库什么时候必须查、怎样查（用查找�
 
 // 工具数量受限是产品的原则：新增一个工具之前，先排除用现有工具的参数、读会话记录、改后端或页面代码这几条路能不能做到。
 // 这一例盯着启动配置里的工具清单；增减工具时要有意识地改这里的个数与名单，不要顺手改掉。
-test("执行者的工具清单是十一个：含请求评审、查找知识库与自带的检索工具 grep、find；扩展里登记了请求评审与查找知识库", () => {
+test("执行者的工具清单是十二个：含请求评审、查找知识库、保存图与自带的检索工具 grep、find；扩展里登记了请求评审、查找知识库与保存图", () => {
   const tools: string[] = DEV_PROFILE.tools;
-  assert.equal(tools.length, 11, JSON.stringify(tools));
-  assert.ok(tools.includes("request_review") && tools.includes("search_knowledge"));
+  assert.equal(tools.length, 12, JSON.stringify(tools));
+  assert.ok(tools.includes("request_review") && tools.includes("search_knowledge") && tools.includes("save_diagram"));
   assert.ok(tools.includes("grep") && tools.includes("find"), JSON.stringify(tools));
   const extension = readFileSync(join(ROOT, "agent", "src", "extension.ts"), "utf-8");
   assert.ok(extension.includes("registerRequestReview(pi);") && extension.includes("registerSearchKnowledge(pi);"));
+  // 整行核对：登记保存图的那一行被注释掉也要抓得到。
+  assert.match(extension, /^  registerSaveDiagram\(pi\);$/m);
+  // 三个启动配置的工具清单相同。
+  for (const name of ["desktop", "fake"]) {
+    assert.deepEqual(JSON.parse(readFileSync(join(ROOT, "backend", "profiles", `${name}.json`), "utf-8")).tools, tools, name);
+  }
   assert.ok(!("开发期开关" in DEV_PROFILE), "评审门禁做出来之后开发期开关退役");
 });
 

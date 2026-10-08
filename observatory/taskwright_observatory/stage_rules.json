@@ -4,6 +4,7 @@
     "ls": "找材料",
     "create_task": "创建任务",
     "save_revision": "写交付物",
+    "save_diagram": "画图",
     "save_version": "写任务字段",
     "complete_task": "完成任务",
     "get_item": "查看条目",
