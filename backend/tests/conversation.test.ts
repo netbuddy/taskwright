@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FALLBACK_TEXT, baseMessages, branch, normalizeInforms, page, textOf } from "../src/conversation.ts";
 import { Sessions } from "../src/sessions.ts";
-import { LIMIT_STOPPED_STEP_TEXT, docxDerived, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
+import { LIMIT_STOPPED_STEP_TEXT, docxDerived, readPastEnd, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
 import { tempDir } from "./helpers.ts";
 
 const works = (entries: Record<string, unknown>[], definition: Record<string, unknown> = {}) =>
@@ -114,6 +114,40 @@ test("过程摘要：由 Word 文件生成的投影、分段清单与位置表�
   assert.deepEqual(read("inputs/甲.docx.segments.json", "inputs/乙.docx.locations.json"), [["看了材料《甲.docx》、《乙.docx》的分段清单", 2]]);
   assert.deepEqual(read("inputs/甲.docx.md", "inputs/乙.docx.segments.json", "inputs/丙.md"), [["读了材料《甲.docx》、《丙.md》，看了《乙.docx》的分段清单", 3]]);
   assert.deepEqual(read("inputs/丙.md", "inputs/丙.md", "inputs/丁.md"), [["读了材料《丙.md》、《丁.md》", 3]], "不是 Word 材料时同一份也只写一次");
+});
+
+test("过程摘要：read 的起始行号超过了文件末尾不算没读成，并进前一句或者写已经读到末尾；真读不到的照旧写没有读成", () => {
+  const PAST = "Offset 301 is beyond end of file (86 lines total)";
+  assert.equal(readPastEnd(PAST), true);
+  for (const text of ["ENOENT: no such file or directory, access '/w/inputs/没有.md'", "EISDIR: illegal operation on a directory, read",
+    "Validation failed for tool \"read\":\n  - path: must have required properties path", "Operation aborted", ""]) assert.equal(readPastEnd(text), false, text);
+
+  const definition = { 材料目录: "inputs/" };
+  assert.equal(stepText("read", { path: "inputs/说明.docx.md", offset: 301 }, true, false, { past_end: true }, definition), "材料《说明.docx》已经读到末尾");
+  const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-08T01:00:00.000Z", message: { role, content } });
+  /** 一次工作：依次做这些调用，每项是 [工具, 参数, 出错时结果的正文]；返回各阶段的 [文字, 次数]。 */
+  const run = (...calls: [string, Record<string, unknown>, string?][]) => {
+    const entries: Record<string, unknown>[] = [{ type: "session", id: "h" }, msg("u1", null, "user", "整理材料")];
+    calls.forEach(([name, args, error], i) => {
+      entries.push(msg(`a${i}`, i === 0 ? "u1" : `r${i - 1}`, "assistant", [{ type: "toolCall", id: `c${i}`, name, arguments: args }]));
+      entries.push({ type: "message", id: `r${i}`, parentId: `a${i}`, timestamp: "2026-10-08T01:00:01.000Z",
+        message: { role: "toolResult", toolCallId: `c${i}`, isError: error !== undefined, details: {}, content: [{ type: "text", text: error ?? "" }] } });
+    });
+    const [work] = works(entries, definition);
+    return { stages: work.stages.map((s) => [s.text, s.count]), steps: work.step_count };
+  };
+  // 走查时的情形：读完整份之后又从第 301 行读了一次。
+  assert.deepEqual(run(["read", { path: "inputs/说明.docx.md" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST]),
+    { stages: [["读了材料《说明.docx》", 2]], steps: 2 });
+  // 前一句不是读这一份：单独写一句，后面再读别的另起一句。
+  assert.deepEqual(run(["ls", { path: "inputs" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST], ["read", { path: "inputs/乙.md" }]).stages,
+    [["看了目录", 1], ["材料《说明.docx》已经读到末尾", 1], ["读了材料《乙.md》", 1]]);
+  assert.deepEqual(run(["read", { path: "inputs/乙.md" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST]).stages,
+    [["读了材料《乙.md》", 1], ["材料《说明.docx》已经读到末尾", 1]]);
+  // 真读不到：文件不存在、参数不合模式、被停下，都照旧。
+  for (const error of ["ENOENT: no such file or directory, access '/w/inputs/没有.md'", "Validation failed for tool \"read\":\n  - path: must be string", "Operation aborted"]) {
+    assert.deepEqual(run(["read", { path: "inputs/没有.md" }, error]).stages, [["读材料《没有.md》没有读成", 1]], error);
+  }
 });
 
 test("过程摘要：保存修订被拒附上原因，多于一条时写还有几条", () => {

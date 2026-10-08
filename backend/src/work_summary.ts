@@ -7,6 +7,7 @@
  * · 阶段：每个工具调用写成一句，相邻的同类调用合成一句，例如连着读了三份材料写成「读了材料《a》、《b》、《c》」；
  *   同一份材料读了几次只写一次名字。由 Word 材料生成的投影、分段清单与位置表是内部的文件，都写成 Word 文件的本名。
  *   保存修订被拒时，这一句写「保存修订被拒：」加第一条原因的事实，阶段另有 reasons 列出全部原因的事实。
+ *   read 的起始行号超过了文件末尾不算没读成：前一句里读过这一份就并进去，不然写「已经读到末尾」。
  * · 工作编号：「w-{那句用户的话的会话条目编号}」。修订日志按它把修订归到工作。
  */
 
@@ -84,6 +85,17 @@ export function resultText(result: Dict): string {
   const content = result.content;
   if (typeof content === "string") return content;
   return (or(content, []) as unknown[]).filter((p) => isObject(p) && p.type === "text").map((p: any) => or(p.text, "")).join("\n");
+}
+
+/**
+ * pi 自带的 read 在起始行号超过文件总行数时回的话的开头（pi 的 core/tools/read.js：「Offset N is beyond end of file (M lines total)」）。
+ * 这时文件读得到，只是后面已经没有行了：不算没读成，过程摘要写「已经读到末尾」。pi 改了这句话时认不出来，照旧写「没有读成」。
+ */
+const READ_PAST_END = /^Offset \d+ is beyond end of file/;
+
+/** 一次出错的 read 是不是只因为起始行号超过了文件末尾。text 是工具结果的正文。 */
+export function readPastEnd(text: string): boolean {
+  return READ_PAST_END.test(text.trim());
 }
 
 /** 读分段清单（或位置表）时接在名字后面的说法。 */
@@ -205,6 +217,8 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
   if (done && truthy((details || {}).stopped)) return LIMIT_STOPPED_STEP_TEXT;
   if (tool === "read") {
     const { what, outline } = readWhat(String(or(args.path, "")), definition);
+    // 起始行号超过了文件末尾（调用的一方认出来放进 details.past_end，见 readPastEnd）：这一份已经读完了。
+    if (done && !failed && truthy((details || {}).past_end)) return `${what}已经读到末尾`;
     if (outline) return failed ? UNFINISHED_TEXT.read_outline(what) : done ? `看了${what}${OUTLINE_WORD}` : `正在看${what}${OUTLINE_WORD}`;
     return failed ? UNFINISHED_TEXT.read(what) : done ? `读了${what}` : `正在读${what}`;
   }
@@ -300,6 +314,16 @@ export function stages(calls: Dict[], definition: Dict) {
     } else if (tool === "read") {
       const [kind, name, part] = readKind(String(or(args.path, "")), definition);
       key = `read\u0000${kind}`;
+      if (truthy((c.details ?? {}).past_end)) {
+        // 已经读到末尾的那一次：前一句里读过这一份就并进去，不另起一句；不然单独写一句。
+        if (lastKey === key && out[out.length - 1].names.includes(name)) {
+          out[out.length - 1].count += 1;
+          continue;
+        }
+        out.push({ text: stepText(tool, args, true, false, c.details ?? null, definition), count: 1, names: [], _key: null });
+        lastKey = null;
+        continue;
+      }
       if (lastKey === key && ["材料", "领域规矩", "文件"].includes(kind)) {
         // 同一份只写一次：分几次读同一份材料，或者先看分段清单再读正文，都还是一个名字。
         const last = out[out.length - 1];
@@ -430,8 +454,12 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
         continue;
       }
       const result = results.get(part.id ?? null)!;
-      const failed = truthy(result.isError);
+      let failed = truthy(result.isError);
       let details = or(result.details, {}) as Dict;
+      if (failed && part.name === "read" && readPastEnd(resultText(result))) {
+        failed = false;
+        details = { ...details, past_end: true };
+      }
       if (failed && part.name === "save_revision") details = { ...details, reasons: rejectionParts(details, resultText(result)) };
       if (failed && part.name === REPLY_TOOL) details = { ...details, refusal: replyRefusal(resultText(result)) };
       current.calls.push({ tool: or(part.name, ""), args: or(part.arguments, {}), failed, details });
