@@ -7,6 +7,33 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      浏览器太旧时写一句话，不留一片空白。支持的下限是 Chrome 或 Edge 125、Firefox 128、Safari 18（vite.config.ts 的 build.target 同此）。
+      这里查的是页面离不开的几样（Object.hasOwn、structuredClone，样式里的 :has()、color-mix()、容器查询），查不到其中一样就不画页面。
+      它是一段普通脚本、只用很旧的写法，并且排在页面脚本之前：页面脚本在太旧的浏览器里可能连读都读不了，这一段照样能跑。
+      src/main.tsx 看到 __taskwrightUnsupportedBrowser 就不画页面。
+    -->
+    <script>
+      (function () {
+        var ok = false;
+        try {
+          ok = typeof Object.hasOwn === "function" && typeof structuredClone === "function" &&
+            !!window.CSS && typeof window.CSS.supports === "function" &&
+            window.CSS.supports("selector(:has(a))") &&
+            window.CSS.supports("color", "color-mix(in srgb, red, blue)") &&
+            window.CSS.supports("container-type", "inline-size");
+        } catch (e) {
+          ok = false;
+        }
+        if (ok) return;
+        window.__taskwrightUnsupportedBrowser = true;
+        var root = document.getElementById("root");
+        if (root) {
+          root.innerHTML = '<p id="unsupported-browser" style="max-width:32em;margin:18vh auto 0;padding:0 1.5em;font:16px/1.7 system-ui,sans-serif;color:#333;text-align:center">' +
+            "这个浏览器版本太旧，请更新到两年内的版本（Chrome 或 Edge 125、Firefox 128、Safari 18 以上）。</p>";
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
