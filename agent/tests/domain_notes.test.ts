@@ -232,7 +232,7 @@ test("平台 skill 与任务 skill 写了领域说明的做法：记下并说出
   const platform = readFileSync(resolve(import.meta.dirname, "../prompts/skills/taskwright-executor/SKILL.md"), "utf-8");
   assert.match(platform, /## 十、领域说明（任务定义里有「领域说明」集合时）/);
   assert.match(platform, /我把「借还台管理员」记到领域说明了（DN-002）/);
-  assert.match(platform, /来源种类写「领域说明」，locator 写它的条目编号/);
+  assert.match(platform, /来源种类写「条目」（见第四节），locator 写它的条目编号/);
   const task = readFileSync(resolve(import.meta.dirname, "../../task-types/srs-authoring/.pi/skills/srs-authoring/SKILL.md"), "utf-8");
   assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、领域说明/);
   assert.match(task, /材料里的术语定义段落也整理成领域说明，类别写「术语」/);

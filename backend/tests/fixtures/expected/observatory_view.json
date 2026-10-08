@@ -141,8 +141,8 @@
         "代码仓里的路径": "agent/prompts/skills/taskwright-executor",
         "文件": [
          {
-          "字节数": 44769,
-          "摘要值": "b5570f4ab9189867",
+          "字节数": 44954,
+          "摘要值": "413026107917942a",
           "路径": "SKILL.md"
          }
         ],
@@ -232,8 +232,8 @@
        "摘要算法": "SHA-256 取前 16 位十六进制",
        "文件": [
         {
-         "字节数": 11077,
-         "摘要值": "1fae2a0a1a988c20",
+         "字节数": 11059,
+         "摘要值": "3ee6f99c76abd298",
          "路径": ".pi/skills/srs-authoring/SKILL.md"
         },
         {
@@ -268,8 +268,8 @@
         },
         {
          "代码仓里的路径": "agent/prompts/skills/taskwright-executor/SKILL.md",
-         "字节数": 44769,
-         "摘要值": "b5570f4ab9189867",
+         "字节数": 44954,
+         "摘要值": "413026107917942a",
          "来自": "平台 skill",
          "路径": "<仓根>/agent/prompts/skills/taskwright-executor/SKILL.md"
         }
