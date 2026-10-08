@@ -45,6 +45,8 @@ const ALLOWED: Record<string, string[]> = {
   "pdf_locations.ts": ["PDF_LOCATIONS_SUFFIX", "PDF_LOCATION_RULES_VERSION", "PdfBox", "PdfLocationFile", "PdfPageLocation", "pdfAnchor", "pdfBlockBox",
     "pdfChapterOf", "pdfLocationFile", "pdfLocationsJson"],
   "pdf_segments.ts": ["PDF_SEGMENTS_SUFFIX", "PdfSegmentList", "buildPdfSegments", "pdfProjectionUnits", "writePdfSegments"],
+  // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
+  "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],
 };
 
 function files(dir: string): string[] {
