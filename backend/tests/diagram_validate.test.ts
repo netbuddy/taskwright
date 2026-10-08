@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DIAGRAM_KINDS, DIAGRAM_TEXT_LIMIT, DiagramChecker, type DiagramCheck, type DiagramKind, validateDiagram } from "../src/diagram_validate.ts";
+import { DIAGRAM_KINDS, DIAGRAM_TEXT_LIMIT, DiagramChecker, type DiagramCheck, type DiagramKind, diagramEngineUrl, validateDiagram } from "../src/diagram_validate.ts";
 import { ROOT } from "./helpers.ts";
 
 const checker = new DiagramChecker();
@@ -166,6 +166,17 @@ test("校验引擎加载不了，或者里面没有要用的函数：说是程�
 test("任务服务用的那一个校验器：不用另外准备就能校验", async () => {
   assert.deepEqual(await validateDiagram("sequence", GOOD.sequence), { ok: true });
   assert.equal(failed(await validateDiagram("sequence", BAD.sequence.text)).reason, "syntax");
+});
+
+test("仓库里校验引擎用源文件；安装包的构建脚本把校验模块、线程入口与打好的引擎都放进去", () => {
+  // 仓库里没有 backend/vendor/（它只在安装包里），所以用的是 src/diagram_engine.mjs。
+  assert.match(diagramEngineUrl(), /\/backend\/src\/diagram_engine\.mjs$/);
+  const build = readFileSync(join(ROOT, "release", "build.mjs"), "utf-8");
+  // 校验模块现在还没有别的文件导入它，线程入口是按文件名起的：两个都得列为构建脚本收文件的起点，否则不进安装包。
+  for (const entry of ["backend/src/diagram_validate.ts", "backend/src/diagram_worker.ts"]) assert.ok(build.includes(`"${entry}"`), `release/build.mjs 的起点里没有 ${entry}`);
+  // 打好的引擎放的位置要与 diagramEngineUrl 找的位置相同。
+  assert.ok(build.includes('path.join(payload, "backend", "vendor", "mermaid")'), "release/build.mjs 没有把打好的引擎放到 backend/vendor/mermaid/");
+  assert.match(readFileSync(join(ROOT, "backend", "src", "diagram_validate.ts"), "utf-8"), /fromRoot\("backend\/vendor\/mermaid\/diagram_engine\.mjs"\)/);
 });
 
 test("仓库里校验用的 mermaid 就是页面清单里写明的那个版本", () => {
