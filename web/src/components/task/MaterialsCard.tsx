@@ -5,7 +5,7 @@
 
 import { useRef, useState } from "react";
 import { Modal, Upload } from "antd";
-import { FileTextOutlined, FileWordOutlined, UploadOutlined } from "@ant-design/icons";
+import { FileTextOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../../api/client";
 import type { Material, ServiceInfo } from "../../api/types";
 import { formatBytes, formatTimeShort } from "../../model/format";
@@ -22,6 +22,11 @@ export const ENTERED_REPLACE_HINT = "这份材料已经进入了对话，不能�
 export function uploadHintText(info: ServiceInfo | null): string {
   const parts = [uploadTypesText(info), uploadLimitText(info)].filter(Boolean);
   return `把文件拖到这里，或者点这里选择文件。${parts.length ? `${parts.join("，")}。` : ""}`;
+}
+
+/** PDF 材料名字后面的那句：共几页，有几页没有可读的文字（都读出了文字时不写后半句）。 */
+export function pdfSummary(pdf: { pages: number; no_text_pages: number[] }): string {
+  return `${pdf.pages} 页${pdf.no_text_pages.length > 0 ? `，其中 ${pdf.no_text_pages.length} 页没有可读的文字` : ""}`;
 }
 
 export function MaterialsCard({ taskId, materials, closed, info, onView, onChanged }: {
@@ -111,7 +116,10 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
           <tbody>
             {materials.map((m) => (
               <tr key={m.path} data-testid="material-row">
-                <td className="nm">{/\.docx$/i.test(m.path) ? <FileWordOutlined className="fic" /> : <FileTextOutlined className="fic" />}{fileName(m.path)}</td>
+                <td className="nm">
+                  {/\.docx$/i.test(m.path) ? <FileWordOutlined className="fic" /> : /\.pdf$/i.test(m.path) ? <FilePdfOutlined className="fic" /> : <FileTextOutlined className="fic" />}{fileName(m.path)}
+                  {m.pdf && <span className="tp-mnote" data-testid="material-pdf">{pdfSummary(m.pdf)}</span>}
+                </td>
                 <td className="num">{formatBytes(m.bytes)}</td>
                 <td className="num">{formatTimeShort(m.modified_at)}</td>
                 <td>

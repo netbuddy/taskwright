@@ -9,12 +9,21 @@
 // Word 材料（.docx）按原版式分页显示，交给 DocxPaper；它的来源出处带段落号（inputs/x.docx#p37），按段落定位。
 // 上传 .docx 时后端生成的投影（x.docx.md；0.2 的任务里是 x.docx.txt）是给助手读的，材料清单里带 derived_from，材料下拉框里不列出。
 // Word 材料在说明文字下面另有一栏「按章节看引用」（SectionList，读材料旁的分段清单），点一节跳到那一节的第一段。
+//
+// PDF 材料（.pdf）按原样分页显示，交给 PdfPaper；它的来源出处带页与块（inputs/x.pdf#p3-2），按块定位。上传 .pdf 时后端生成的投影、
+// 位置表与分段清单同样带 derived_from，不在下拉框里列出。文件名一行另写页数与有几页没有可读的文字；说明文字下面是目录
+// （PdfOutline，取文件自己的书签目录，没有时按页列），点一项跳到那一页。
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { Item, Material } from "../../api/types";
 import { docxLocator, ownMaterials } from "../../model/docx";
 import { DocxPaper } from "./DocxPaper";
+import { PdfOutline } from "./PdfOutline";
+import { PdfPaper } from "./PdfPaper";
+import { parsePdfLocator } from "../../../../agent/src/lib/pdf_locations";
+import { selectedPdfText } from "../../model/pdfView";
+import { usePdfLocations } from "../../state/pdfStore";
 import { SectionList } from "./SectionList";
 import { SelectionBar, type SelectionAction } from "./SelectionBar";
 
@@ -32,8 +41,11 @@ export const SELECTION_TEMPLATES = {
   ask: (path: string, quote: string, question: string) => `关于材料 ${path} 里的这段原文：「${quote}」，${question}`,
 };
 
-/** 出处去掉 Word 材料的段落号，剩下的是文件路径。 */
-const locatorPath = (locator: string) => docxLocator(locator)?.path ?? locator;
+/** 出处去掉 Word 材料的段落号、PDF 材料的页与块，剩下的是文件路径。 */
+const locatorPath = (locator: string) => docxLocator(locator)?.path ?? parsePdfLocator(locator)?.path ?? locator;
+const isPdfPath = (path: string | null | undefined) => !!path && /\.pdf$/i.test(path);
+/** PDF 材料文件名下面的那句说明。 */
+export const PDF_HINT = "PDF 材料按原样分页显示。PDF 里的表格按行读取，不分格。";
 const samePath = (a: string, b: string) => a === b || a.endsWith(b) || b.endsWith(a);
 
 export function MaterialPane({ taskId, materials: all, focusPath, items = [], locate, currentItem, disabled, onOpenItem, onSend }: {
@@ -52,6 +64,14 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   const materials = useMemo(() => ownMaterials(all), [all]);
   const [path, setPath] = useState<string | null>(materials[0]?.path ?? null);
   const isDocx = !!path && /\.docx$/i.test(path);
+  const isPdf = isPdfPath(path);
+  // PDF 材料：现在看的页与总页数（由显示部件报上来）、目录里点的那一页。页数与没有文字的页数先取材料清单里的，没有时数位置表。
+  const [pdfPage, setPdfPage] = useState({ page: 0, count: 0 });
+  const [pdfJump, setPdfJump] = useState<{ page: number; nonce: number } | null>(null);
+  const pdfLocations = usePdfLocations(taskId, isPdf ? path : null)?.locations ?? null;
+  const pdfMeta = all.find((m) => m.path === path)?.pdf ?? null;
+  const pdfPages = isPdf ? pdfMeta?.pages ?? pdfLocations?.pages.length ?? pdfPage.count : 0;
+  const pdfNoText = isPdf ? pdfMeta?.no_text_pages.length ?? pdfLocations?.pages.filter((one) => one.no_text).length ?? 0 : 0;
   const [docxNote, setDocxNote] = useState<string | null>(null);
   const [docxCited, setDocxCited] = useState<number | null>(null);
   // Word 文件显示不出来（读不到或画不出来）时不写「按原版式分页显示」那句说明，免得与下面的提示相互矛盾。
@@ -83,13 +103,14 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
     const target = locatorPath(locate.locator);
     const match = materials.find((m) => samePath(m.path, target));
     if (match) setPath(match.path);
-    if (!(match ? /\.docx$/i.test(match.path) : isDocx)) setHit(locate.excerpt);
+    const paged = (p: string) => /\.docx$/i.test(p) || isPdfPath(p);
+    if (!(match ? paged(match.path) : isDocx || isPdf)) setHit(locate.excerpt);
   }, [locate?.nonce]);
-  useEffect(() => { setDocxNote(null); setDocxCited(null); }, [path]);
+  useEffect(() => { setDocxNote(null); setDocxCited(null); setPdfPage({ page: 0, count: 0 }); }, [path]);
   // 换了材料，选区跟着旧的原文一起没了，动作条也收起。
   useEffect(() => { setSelection(""); setAsking(false); }, [path]);
   useEffect(() => {
-    if (!path || /\.docx$/i.test(path)) return;
+    if (!path || /\.docx$/i.test(path) || isPdfPath(path)) return;
     setDoc(null);
     api.materialContent(taskId, path).then((r) => { setDoc({ path, text: r.text }); setError(null); })
       .catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
@@ -130,7 +151,8 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   }, [selection]);
   const onMouseUp = () => {
     const sel = window.getSelection();
-    const t = sel ? String(sel).trim() : "";
+    // PDF 的文字层一行是一个元素，选区跨行时带着换行：整理成一段话再用。
+    const t = sel ? (isPdf ? selectedPdfText(String(sel)) : String(sel).trim()) : "";
     if (t.length > 1 && sel?.anchorNode && paper.current?.contains(sel.anchorNode)) {
       setSelection(t); setAsking(false);
       setRange(sel.rangeCount && typeof sel.getRangeAt === "function" ? sel.getRangeAt(0).cloneRange() : null);
@@ -160,12 +182,18 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
         ) : <b>{name}</b>}
         <span className="chip">外来 · 只读</span>
         {text != null && <span className="chip">{citedItems.size ? `被 ${citedItems.size} 个条目引用过` : "还没有被条目引用"}</span>}
-        {isDocx && docxCited != null && <span className="chip">{docxCited ? `被 ${docxCited} 个条目引用过` : "还没有被条目引用"}</span>}
+        {isPdf && pdfPages > 0 && <span className="chip" data-testid="pdf-pages-chip">{pdfPages} 页</span>}
+        {isPdf && pdfNoText > 0 && <span className="chip warn" data-testid="pdf-notext-chip">其中 {pdfNoText} 页没有可读的文字</span>}
+        {(isDocx || isPdf) && docxCited != null && <span className="chip">{docxCited ? `被 ${docxCited} 个条目引用过` : "还没有被条目引用"}</span>}
       </div>
       {isDocx && !docxUnavailable && <div className="hint docx-hint">Word 文件按原版式分页显示。页眉页脚、文本框、脚注尾注里的文字只能看，不能被条目引用；批注不显示，修订按接受后的文字显示。</div>}
       {isDocx && path && <SectionList taskId={taskId} path={path} items={items} onJump={(paragraph) => setJump({ paragraph, nonce: (jump?.nonce ?? 0) + 1 })} />}
+      {isPdf && !docxUnavailable && <div className="hint docx-hint" data-testid="pdf-hint">{PDF_HINT}</div>}
+      {isPdf && path && !docxUnavailable && (
+        <PdfOutline taskId={taskId} path={path} page={pdfPage.page} pages={pdfPages} onJump={(page) => setPdfJump({ page, nonce: (pdfJump?.nonce ?? 0) + 1 })} />
+      )}
       {missed && <div className="busy-note locate-miss" data-testid="locate-miss">没有在材料里找到这段原文</div>}
-      {isDocx && docxNote && <div className="busy-note locate-miss" data-testid="locate-note">{docxNote}</div>}
+      {(isDocx || isPdf) && docxNote && <div className="busy-note locate-miss" data-testid="locate-note">{docxNote}</div>}
       <div className="doc-wrap sel-host" ref={wrap}>
         <div className="doc-b" ref={view}>
           {!materials.length && <div className="empty">这个任务还没有材料。可以在任务页上传，或者在对话区「附一份材料」。</div>}
@@ -175,8 +203,13 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
               locate={locate && samePath(path, locatorPath(locate.locator)) ? locate : null} onCitedCount={setDocxCited} onNote={setDocxNote}
               onUnavailable={setDocxUnavailable} jump={jump} />
           )}
-          {path && !isDocx && text == null && !error && <div className="empty">正在读原文。</div>}
-          {!isDocx && text != null && (
+          {path && isPdf && (
+            <PdfPaper taskId={taskId} path={path} items={items} paperRef={paper} scrollRef={view} onOpenItem={onOpenItem} onMouseUp={onMouseUp}
+              locate={locate && samePath(path, locatorPath(locate.locator)) ? locate : null} onCitedCount={setDocxCited} onNote={setDocxNote}
+              onUnavailable={setDocxUnavailable} jump={pdfJump} onPage={(page, count) => setPdfPage({ page, count })} />
+          )}
+          {path && !isDocx && !isPdf && text == null && !error && <div className="empty">正在读原文。</div>}
+          {!isDocx && !isPdf && text != null && (
             <div className="paper" ref={paper} onMouseUp={onMouseUp} data-testid="paper">
               {segments.map((s, i) => s.hit ? <mark key={i} className="hit">{s.text}</mark>
                 : s.items ? <span key={i} className="cited" title={`被 ${s.items.join("、")} 引用`} onClick={() => onOpenItem?.(s.items![0])}>{s.text}</span>

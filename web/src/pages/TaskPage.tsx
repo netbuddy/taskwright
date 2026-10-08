@@ -17,6 +17,7 @@ import { DocumentModal } from "../components/DocumentModal";
 import { formatTime, formatTimeShort } from "../model/format";
 import { ownMaterials } from "../model/docx";
 import { DocxPaper } from "../components/work/DocxPaper";
+import { PdfPaper } from "../components/work/PdfPaper";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
 import { GENERAL } from "../model/knowledge";
@@ -37,6 +38,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const [material, setMaterial] = useState<{ path: string; text: string } | null>(null);
   // Word 材料的「查看」按原版式显示（与工作视图材料区同一个渲染），不显示给助手读的投影。
   const [wordPath, setWordPath] = useState<string | null>(null);
+  const [pdfPath, setPdfPath] = useState<string | null>(null);
   const toast = useToast();
   const service = useService();
   const hasKnowledge = !!service.info?.capabilities.knowledge;
@@ -102,7 +104,9 @@ export function TaskPage({ taskId }: { taskId: string }) {
     }
   };
 
-  const view = (m: Material) => (/\.docx$/i.test(m.path) ? setWordPath(m.path) : void api.materialContent(taskId, m.path).then(setMaterial));
+  // 查看一份材料：Word 与 PDF 按原样分页显示，别的显示文字。
+  const view = (m: Material) => (/\.docx$/i.test(m.path) ? setWordPath(m.path) : /\.pdf$/i.test(m.path) ? setPdfPath(m.path)
+    : void api.materialContent(taskId, m.path).then(setMaterial));
 
   return (
     <Shell currentTaskId={taskId}>
@@ -146,6 +150,13 @@ export function TaskPage({ taskId }: { taskId: string }) {
         {wordPath && (
           <div className="app docx-view">
             <div className="doc-b"><DocxPaper taskId={taskId} path={wordPath} items={[]} locate={null} /></div>
+          </div>
+        )}
+      </Modal>
+      <Modal title={pdfPath} open={!!pdfPath} onCancel={() => setPdfPath(null)} footer={null} width="min(64rem, 94vw)" destroyOnHidden>
+        {pdfPath && (
+          <div className="app docx-view">
+            <div className="doc-b pdf-modal-b"><PdfPaper taskId={taskId} path={pdfPath} items={[]} locate={null} /></div>
           </div>
         )}
       </Modal>
