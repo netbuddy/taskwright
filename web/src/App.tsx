@@ -52,7 +52,8 @@ export function App() {
           {route.page === "tasks" && <TaskListPage />}
           {route.page === "task" && <TaskPage key={route.taskId} taskId={route.taskId} />}
           {route.page === "knowledge" && <KnowledgePage libraryId={route.libraryId} />}
-          {route.page === "work" && <WorkViewPage key={`${route.taskId}/${route.sessionId}`} taskId={route.taskId} sessionId={route.sessionId} collection={route.collection} />}
+          {route.page === "work" && <WorkViewPage key={`${route.taskId}/${route.sessionId}`} taskId={route.taskId} sessionId={route.sessionId} collection={route.collection}
+            diagrams={route.diagrams} diagram={route.diagram} />}
           {route.page === "settings" && <SettingsPage />}
           </ServiceProvider>
         </ToastProvider>

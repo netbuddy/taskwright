@@ -23,6 +23,8 @@ import { isKnowledgeLocator } from "../../model/knowledge";
 
 /** 有未保存的条目编辑时，对话区与卡片上会发话或写库的按钮为什么不能用。 */
 export const HOLD_TEXT = "先保存或取消正在编辑的条目";
+/** 没保存的是对一张图的改动时的说法（图表页签里改 Mermaid 文本）。 */
+export const DIAGRAM_HOLD_TEXT = "先保存或放弃对图的改动";
 
 /** 第 7 节的固定模板。 */
 export const TEMPLATES = {
@@ -56,7 +58,7 @@ function onlyUnreadLeft(task: Task | null): boolean {
   return unmet.length > 0 && unmet.every((c) => c.name === CONFIRM_CONDITION);
 }
 
-export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, writesOff = false, answered, handlers, onOpenItem, onLocate }: {
+export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, handlers, onOpenItem, onLocate }: {
   act: Act;
   replyMessageId: string;
   task: Task | null;
@@ -64,6 +66,8 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, w
   disabled?: boolean;
   /** 有未保存的条目编辑。 */
   hold?: boolean;
+  /** hold 时写的原因；不给是条目的那一句。 */
+  holdText?: string;
   /** 执行者正在工作。 */
   writesOff?: boolean;
   /** 这张卡片之后用户已经说过话时，写成「✓ 你选了…」一类的一句话，按钮与输入框收起（原型的「结掉卡片」）。 */
@@ -100,7 +104,7 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, w
     return item && reviewState(item, task ?? undefined).state === "failed";
   });
   const off = disabled || !!chosen || hold || writesOff;
-  const offTitle = hold ? HOLD_TEXT : undefined;
+  const offTitle = hold ? holdText : undefined;
   const sendOff = disabled || hold || writesOff;
   const done = answered ?? (chosen ? `你选了「${chosen}」` : null);
   const latestDraft = useRef(draft);
@@ -181,7 +185,7 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, w
 
       {!done && (
         <>
-          {hold && <div className="sw-holdhint" data-testid="card-hold-hint">{HOLD_TEXT}</div>}
+          {hold && <div className="sw-holdhint" data-testid="card-hold-hint">{holdText}</div>}
           {act.kind === "choose" && (
             <div className="actions opts">
               {(act.options ?? []).map((o) => (

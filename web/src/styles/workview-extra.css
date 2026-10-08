@@ -366,3 +366,28 @@
 .app .topbar .set-btn { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--line2); border-radius: .5rem; background: var(--card);
   font-size: .897rem; padding: .12rem .6rem; cursor: pointer; white-space: nowrap; }
 .app .topbar .set-btn:hover { border-color: var(--ink); }
+
+/* 图表页签（components/work/DiagramsPane.tsx）：图的列表与详情。 */
+.app .lrow .dg-rev { margin-left: auto; font-size: 0.881rem; color: var(--mut); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.app .dg-detail .dh-sub { margin-bottom: .3rem; }
+/* 左边 Mermaid 文本、右边画出来的图；条目区窄于 40rem 时上下排。 */
+.app .dg-split { display: flex; flex-direction: column; gap: .2rem 1rem; }
+.app .dg-text, .app .dg-figure { min-width: 0; }
+@container items (min-width: 40rem) {
+  .app .dg-split { flex-direction: row; align-items: flex-start; }
+  .app .dg-text { flex: 0 0 38%; }
+  .app .dg-figure { flex: 1 1 0; }
+}
+.app textarea.ed.dg-mermaid { font-family: ui-monospace, Menlo, monospace; font-size: 0.857rem; line-height: 1.5; min-height: 16rem; white-space: pre; overflow: auto; tab-size: 2; }
+.app textarea.ed.dg-mermaid:read-only { background: #f6f6f6; border-color: var(--line); color: #4a4a4a; }
+.app .dg-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin-top: .3rem; }
+.app .dg-hint { font-size: 0.873rem; color: var(--mut); }
+.app .dg-err { margin-top: .35rem; font-size: 0.901rem; color: #b42318; white-space: pre-wrap; word-break: break-word; }
+.app .dg-preview { margin-left: .6rem; font-weight: 400; letter-spacing: 0; color: var(--amber); }
+.app .dg-figure .diagram-frame { border: 1px solid var(--line); border-radius: .5rem; background: #fff; padding: .5rem; }
+.app .dg-note { font-size: 0.921rem; line-height: 1.6; white-space: pre-wrap; }
+.app .dg-drawn { font-size: 0.93rem; line-height: 1.9; }
+.app .dg-drawn .gone { color: #9a9a9a; }
+/* 图表组件里的按钮是 antd 的：工作视图的全局清零把它们的内边距清掉了，这里补回来。 */
+.app .diagram-view .ant-btn { padding: 0 .75rem; }
+.app .diagram-view .ant-btn.ant-btn-sm { padding: 0 .5rem; }

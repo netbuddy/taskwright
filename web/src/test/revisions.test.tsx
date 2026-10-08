@@ -11,7 +11,7 @@ import { api } from "../api/client";
 import { ItemsPanel } from "../components/work/ItemsPanel";
 import { ItemDetail } from "../components/work/ItemDetail";
 import { Conversation, WorkSummaryLine } from "../components/work/Conversation";
-import { ReplyCard } from "../components/work/ReplyCard";
+import { DIAGRAM_HOLD_TEXT, ReplyCard } from "../components/work/ReplyCard";
 import { SidePanel } from "../components/work/SidePanel";
 import { DocumentModal } from "../components/DocumentModal";
 import { aliveAt, justChangedItems, markedFields, marksByItem, revisionsOfReply, triggerText, undoBlocked } from "../model/revisions";
@@ -242,6 +242,20 @@ describe("单一写入者：空闲但有未保存的条目编辑", () => {
     expect(onDirty).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByTestId("cancel-edit"));
     expect(onDirty).toHaveBeenLastCalledWith(false);
+  });
+
+  it("没保存的是对图的改动时，输入框上方与卡片上的原因改说图，不说条目", () => {
+    const reply: AssistantReply = { type: "assistant_reply", message_id: "r1", at: "", work_id: "w-u1", via_reply_tool: true, informs: [],
+      act: { kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", revision_no: 4 }] }, text: "改好了。" };
+    render(<Wrap><Conversation messages={[reply]} currentWork={null} outgoing={[]} task={task([UC1])} disabled={false} disabledReason={null} hold
+      holdText={DIAGRAM_HOLD_TEXT} handlers={{ onAction: noop, onMessage: noop }} onSend={noop} onUndo={noop} onOpenItem={noop} onAttach={noop}
+      hasEarlier={false} onLoadEarlier={noop} revisionOf={() => null} attachments={[]} /></Wrap>);
+    expect(DIAGRAM_HOLD_TEXT).toBe("先保存或放弃对图的改动");
+    expect(screen.getByTestId("busy-note")).toHaveTextContent(DIAGRAM_HOLD_TEXT);
+    expect(screen.getByTestId("busy-note")).not.toHaveTextContent("条目");
+    expect(screen.getByTestId("send")).toHaveAttribute("title", "现在不能发送，原因见上方。");
+    expect(screen.getByTestId("card-confirm")).toBeDisabled();
+    expect(screen.getByTestId("card-hold-hint")).toHaveTextContent(DIAGRAM_HOLD_TEXT);
   });
 
   it("编辑中不能发送：发送键灰化、输入框上方提示；卡片上的确认、不对、选项与卡片内发送键都灰化并写明原因", () => {
