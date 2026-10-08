@@ -992,6 +992,30 @@ function intentActs(db: DatabaseSync, taskId: string, rows: Row[]): Map<string, 
 }
 
 /**
+ * 文件名 name 是由同一个目录里的哪个文件生成的；present 是这个目录里全部文件的名字。由 Word 材料生成的是投影（x.docx.md，
+ * 0.2 的任务里是 x.docx.txt）、分段清单（x.docx.segments.json）与位置表（x.docx.locations.json），由 PDF 材料生成的是
+ * x.pdf.md、x.pdf.segments.json 与 x.pdf.locations.json。不是这几种，或者它的那份 Word、PDF 文件不在这个目录里时是 null。
+ * 材料清单的 derived_from 与任务现状消息给页面的材料清单（conversation.ts 的 taskStatusDisplayDetails）都用它。
+ */
+export function derivedSourceName(name: string, present: ReadonlySet<string>): string | null {
+  const pdf = pdfSourceName(name);
+  if (pdf !== null) return present.has(pdf) ? pdf : null;
+  if (name.toLowerCase().endsWith(".docx.segments.json")) {
+    const stem = name.slice(0, -".segments.json".length);
+    return present.has(stem) ? stem : null;
+  }
+  if (isLocationTable(name)) {
+    const stem = name.slice(0, -LOCATIONS_SUFFIX.length);
+    return present.has(stem) ? stem : null;
+  }
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return null;
+  const stem = name.slice(0, dot);
+  const ext = name.slice(dot + 1).toLowerCase();
+  return (ext === "md" || ext === "txt") && stem.toLowerCase().endsWith(".docx") && present.has(stem) ? stem : null;
+}
+
+/**
  * 材料清单：材料目录里的文件（不含子目录，Word 材料的图片目录因此不列），按名字排。由 Word 材料生成的投影（x.docx.md，
  * 0.2 的任务里是 x.docx.txt）、分段清单（x.docx.segments.json）与位置表（x.docx.locations.json）旁边有那份 .docx 时，derived_from 写那份 .docx 的路径，
  * 界面据此不单独列出；其余为 null。由 PDF 材料生成的投影、分段清单与位置表（x.pdf.md、x.pdf.segments.json、x.pdf.locations.json）同样处理。
@@ -1018,21 +1042,8 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
   }
   const present = new Set(files.map(([name]) => name));
   const sourceOf = (name: string): string | null => {
-    const pdf = pdfSourceName(name);
-    if (pdf !== null) return present.has(pdf) ? `${rel}${pdf}` : null;
-    if (name.toLowerCase().endsWith(".docx.segments.json")) {
-      const stem = name.slice(0, -".segments.json".length);
-      return present.has(stem) ? `${rel}${stem}` : null;
-    }
-    if (isLocationTable(name)) {
-      const stem = name.slice(0, -LOCATIONS_SUFFIX.length);
-      return present.has(stem) ? `${rel}${stem}` : null;
-    }
-    const dot = name.lastIndexOf(".");
-    if (dot < 0) return null;
-    const stem = name.slice(0, dot);
-    const ext = name.slice(dot + 1).toLowerCase();
-    return (ext === "md" || ext === "txt") && stem.toLowerCase().endsWith(".docx") && present.has(stem) ? `${rel}${stem}` : null;
+    const source = derivedSourceName(name, present);
+    return source === null ? null : `${rel}${source}`;
   };
   return files.map(([name, st]: [string, any]) => {
     const facts = name.toLowerCase().endsWith(".pdf") ? pdfFacts(join(folder, name)) : null;

@@ -6,7 +6,8 @@
  *   文字与「确认之后通知执行者」的模板相符、并且紧跟在确认的 taskwright-user-edit 后面的，origin 为 ui_request。
  * - 「回复」工具一次成功的调用 → assistant_reply（via_reply_tool 为真，message_id 是那条助手消息的条目编号）；
  *   一段用户消息之后没有成功的回复、只有助手正文的，取这段里最后一条有正文的助手消息，via_reply_tool 为假。
- * - taskwright-user-edit → ui_action_noted；taskwright-task-status → system_note（文字换成页面上的说法，见 taskStatusDisplayText）。
+ * - taskwright-user-edit → ui_action_noted；taskwright-task-status → system_note（kind 为 task_status；文字换成页面上的说法，
+ *   见 taskStatusDisplayText；另带这条消息的 details，见 taskStatusDisplayDetails）。兜底追加的那句也是 system_note，kind 为 reply_fallback。
  *
  * 每次工作的过程摘要（work_summary）由 work_summary.ts 从同一批条目算，插在这次工作的回复之前（messages）。
  */
@@ -14,7 +15,7 @@
 import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
-import { callFacts } from "./library.ts";
+import { callFacts, derivedSourceName } from "./library.ts";
 import { understandingLines, worksFromEntries } from "./work_summary.ts";
 
 export const SLASH_PREFIX = "用户说：";
@@ -64,6 +65,32 @@ const TASK_STATUS_WORDING: [RegExp, string][] = [
 
 export function taskStatusDisplayText(text: string): string {
   return TASK_STATUS_WORDING.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
+}
+
+/** system_note 的两种：任务现状消息，与「回复」工具的兜底扩展追加的那句固定文字。 */
+export const NOTE_TASK_STATUS = "task_status";
+export const NOTE_REPLY_FALLBACK = "reply_fallback";
+
+/**
+ * 任务现状消息的 details 给页面的样子（页面拿它写折叠起来的那一行要点）；不是对象时是 null。照原样给，只动两处：
+ * · 去掉 open_acts：那是只写给助手看的「还在等回应的行为」，文字里对应的那一行页面上也不显示；
+ * · materials.files 的每一项加 derived_from：由同一清单里哪个文件生成（判法与材料清单相同，见 library.ts 的 derivedSourceName），
+ *   不是生成的文件为 null。页面数「几份材料」时只数为 null 的。
+ */
+export function taskStatusDisplayDetails(details: unknown): Record<string, any> | null {
+  if (!isObject(details)) return null;
+  const { open_acts: _, ...rest } = details as Record<string, any>;
+  const materials = rest.materials;
+  if (!isObject(materials) || !Array.isArray(materials.files)) return rest;
+  const cut = (path: string) => path.lastIndexOf("/") + 1;
+  const paths = materials.files.map((file: unknown) => (isObject(file) && typeof file.path === "string" ? file.path : ""));
+  const present = new Set<string>(paths.map((path: string) => path.slice(cut(path))));
+  const files = materials.files.map((file: unknown, i: number) => {
+    const path = paths[i];
+    const source = derivedSourceName(path.slice(cut(path)), present);
+    return { ...(isObject(file) ? file : {}), derived_from: source === null ? null : path.slice(0, cut(path)) + source };
+  });
+  return { ...rest, materials: { ...materials, files } };
 }
 
 /** 读会话文件：每行一条 JSON，读不出的行跳过。 */
@@ -178,7 +205,10 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
         });
         lastConfirm = NOTIFY_KINDS.includes(details.kind) ? e : null;
       } else if (ctype === TASK_STATUS) {
-        out.push({ type: "system_note", session_id: sessionId, message_id: e.id, at, text: taskStatusDisplayText(textOf(e.content ?? null)) });
+        out.push({
+          type: "system_note", session_id: sessionId, message_id: e.id, at, kind: NOTE_TASK_STATUS,
+          text: taskStatusDisplayText(textOf(e.content ?? null)), details: taskStatusDisplayDetails(e.details ?? null),
+        });
       }
       continue;
     }
@@ -187,7 +217,7 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
     const role = m.role;
     if (role === "user" && textOf(m.content ?? null) === FALLBACK_TEXT) {
       // 兜底追加的那句：不算用户的话，也不结束这一段。
-      out.push({ type: "system_note", session_id: sessionId, message_id: e.id, at, text: fallbackNoteText(FALLBACK_TEXT) });
+      out.push({ type: "system_note", session_id: sessionId, message_id: e.id, at, kind: NOTE_REPLY_FALLBACK, text: fallbackNoteText(FALLBACK_TEXT) });
       continue;
     }
     if (role === "user") {

@@ -10,7 +10,9 @@
    "session_id": "S",
    "message_id": "s1",
    "at": "2026-09-21T18:00:00-07:00",
-   "text": "【任务现状】"
+   "kind": "task_status",
+   "text": "【任务现状】",
+   "details": null
   },
   {
    "type": "user_message",
