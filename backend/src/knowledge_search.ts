@@ -17,6 +17,9 @@
  * - 某份文档的文字读不出来：跳过它，别的照常；uncovered 列出它。
  * - 调用的一方中途取消（signal）：不退化，以 cancelled 结束。
  *
+ * 查到的每个片段另给它的原文（knowledge_passage.ts）：按片段记下的位置从源文字现读，Markdown 与纯文本逐字节相同、连空行，
+ * Word 文档逐段给并带段落号。助手照它抄摘录，保存时系统到同一份源文字里核对。读不到源文字的片段不给（那份文档记进 uncovered）。
+ *
  * 每次查找都逐份读文档旁边的文件、当场比完，不在内存里留着数字串；按字面一路的词的统计也是现算的。各阶段的耗时记在 timing 里。
  */
 
@@ -30,6 +33,7 @@ import { type Chunk, chunkDocument } from "./knowledge_chunks.ts";
 import type { KnowledgeEmbedder } from "./knowledge_embedder.ts";
 import { isEmbedded, normalize, readEmbeddings } from "./knowledge_embeddings.ts";
 import { keywordIndex, keywordRanking } from "./knowledge_keywords.ts";
+import { type Passage, passageOf } from "./knowledge_passage.ts";
 import type { Context } from "./model_config.ts";
 
 /** 不说要几个时给几个，以及最多给几个。 */
@@ -48,8 +52,8 @@ export type SearchMode = "hybrid" | "hybrid_partial" | "keyword";
 /** 只按字面找的原因：没有选嵌入模型，或者换算要找的那句话时出的那一种事。 */
 export type SearchReason = "not_selected" | "provider_gone" | "not_offered" | "timeout" | "unreachable" | "key_rejected" | "service_error" | "bad_answer";
 
-/** 查到的一个片段。 */
-export interface SearchHit {
+/** 查到的一个片段：它的位置与名次，加它的原文（Passage 的 body、paragraphs、table、header、exact）。 */
+export interface SearchHit extends Passage {
   /** 按意思的相近程度（-1 到 1，四位小数）；这个片段没有按意思比过时是按字面的得分。score_kind 说明是哪一种。 */
   score: number;
   score_kind: "semantic" | "keyword";
@@ -74,7 +78,7 @@ export interface SearchHit {
   last_line: number | null;
   /** 这是很长的一段切出来的一截。 */
   partial: boolean;
-  /** 片段的文字（Word 表格的行是改写成带竖线的一行的文字）。 */
+  /** 片段里存的文字，页面显示用（各段用一个换行接起来；Word 表格的行是改写成带竖线的一行的文字）。照抄摘录要用原文，不用它。 */
   text: string;
   /** 引用这份文档作来源时出处的写法；Word 文档还要加摘录所在那一段的段落号。 */
   locator: string;
@@ -281,15 +285,32 @@ export async function searchKnowledge(
   const keywordRank = new Map(keyword.map((one, at) => [one.i, at + 1]));
   const keywordScore = new Map(keyword.map((one) => [one.i, one.score]));
   const picked = combine(semantic.map((one) => one.i), keyword.map((one) => one.i), request.limit);
-  const hits = picked.map((i): SearchHit => {
+  // 取中的片段各读一次源文字（一份文档只读一次）；读不到的这一个不给，文档记进没有查到的。
+  const sources = new Map<string, string | null>();
+  const sourceOf = (library: { id: string; name: string }, row: DocumentRow): string | null => {
+    const key = `${library.id}/${row.name}`;
+    if (!sources.has(key)) {
+      try {
+        sources.set(key, timed("read_source", () => store.text(library.id, row.name)));
+      } catch {
+        sources.set(key, null);
+        if (!uncovered.some((one) => one.library === library.id && one.name === row.name)) uncovered.push({ ...refOf(library, row), reason: "source_unreadable" });
+      }
+    }
+    return sources.get(key)!;
+  };
+  const hits = picked.flatMap((i): SearchHit[] => {
     const { library, row, chunk, semantic: near } = entries[i];
-    return {
+    const source = sourceOf(library, row);
+    if (source === null) return [];
+    return [{
       score: Math.round((near ?? keywordScore.get(i) ?? 0) * 10000) / 10000, score_kind: near !== null ? "semantic" : "keyword",
       rank_semantic: semanticRank.get(i) ?? null, rank_keyword: keywordRank.get(i) ?? null,
       library: library.id, library_name: library.name, name: row.name, kind: row.kind, title: chunk.heading, block: chunk.block,
       first_paragraph: chunk.first_paragraph, last_paragraph: chunk.last_paragraph, first_line: chunk.first_line, last_line: chunk.last_line,
       partial: chunk.partial === true, text: chunk.text, locator: knowledgeLocator(library.id, row.name),
-    };
+      ...passageOf(row.name, chunk, source),
+    }];
   });
   const mode: SearchMode = reason !== null ? "keyword" : uncoveredSemantic.length > 0 ? "hybrid_partial" : "hybrid";
   for (const key of Object.keys(timing) as (keyof SearchTiming)[]) timing[key] = Math.round(timing[key] * 10) / 10;

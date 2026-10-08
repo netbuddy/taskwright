@@ -31,8 +31,6 @@ export interface KnowledgeDocument {
   /** 种类的中文叫法。 */
   kindName: string;
   bytes: number;
-  /** 读原文用的绝对路径：Word 文档是由它生成的那份文字，其余是文档本体。只写进按意思查找的结果，任务现状消息里不写。 */
-  readPath: string;
   /** 引用它作来源时出处的写法（Word 文档还要加段落号）。 */
   locator: string;
   word: boolean;
@@ -87,7 +85,6 @@ export function selectedKnowledge(taskDir: string, root: string | null): Selecte
         name,
         kindName: KIND_NAMES[one.kind as Kind] ?? String(one.kind ?? ""),
         bytes: typeof one.bytes === "number" ? one.bytes : 0,
-        readPath: join(root, id, "files", word ? `${name}.md` : name),
         locator: knowledgeLocator(id, name),
         word,
       };

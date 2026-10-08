@@ -59,10 +59,10 @@ test("选用的知识库与文档清单：照任务选用的先后；Word 文档
   const libraries = selectedKnowledge(makeTask(["lib-a1", "lib-gone", "general"]), root);
   assert.deepEqual(libraries, [
     { id: "lib-a1", name: "行业规范", documents: [
-      { name: "规范.docx", kindName: "规范", bytes: 2048, readPath: join(root, "lib-a1", "files", "规范.docx.md"), locator: "knowledge/lib-a1/规范.docx", word: true },
+      { name: "规范.docx", kindName: "规范", bytes: 2048, locator: "knowledge/lib-a1/规范.docx", word: true },
     ] },
     { id: "general", name: "通用知识库", documents: [
-      { name: "术语.md", kindName: "术语表", bytes: 64, readPath: join(root, "general", "files", "术语.md"), locator: "knowledge/general/术语.md", word: false },
+      { name: "术语.md", kindName: "术语表", bytes: 64, locator: "knowledge/general/术语.md", word: false },
     ] },
   ]);
 });

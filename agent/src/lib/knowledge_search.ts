@@ -13,8 +13,10 @@
  * 出错）不算没有做成：任务服务退到只按字面找，结果照样给，开头一句写明这一次是怎样找的、哪些文档只按字面找了、哪些没有查到。
  * 助手取消这次调用时回「查找被取消了」。
  *
- * 给助手的每个片段写着到哪里读原文（路径与行号）。Word 文档的片段存的是起止段落号，行号在这里现找：读由它生成的那份文字，
- * 找这两个段落号所在的行。引用时出处的写法不变：Word 文档要写摘录所在那一段的段落号，所以只告诉助手怎样写，不替它写一个段落号。
+ * 给助手的每个片段写着它在哪份文档、位置（行号或段落号，不给文件的路径）、它在两路里各排第几、出处的写法，与逐字的原文：
+ * 原文是任务服务按片段的位置从源文字现读的，Markdown 与纯文本连空行逐字节相同，Word 文档每段一行、行首是段落号，表格另写行结构。
+ * 助手照原文抄摘录，不必再读知识库文件核对；保存修订时系统逐字核对。引用时出处的写法不变：Word 文档要写摘录所在那一段的段落号。
+ * 全部文字按 UTF-8 的字节数不超过 BUDGET_BYTES：超过时从末尾去掉片段并写明还有几条，第 1 个永不去掉。
  *
  * 本模块不依赖 pi，单元测试可以直接调用。
  */
@@ -38,7 +40,7 @@ export const RETRY_TEXT = "可以再查一次；仍然不成时把这个原因�
 export const NO_KNOWLEDGE_TEXT = "这个任务没有知识库，没有可查的。";
 export const NO_DOCUMENTS_TEXT = "这个任务选用的知识库里没有文档，没有可查的。";
 export const UNREACHABLE_TEXT = `按意思查找这一次没有做成：联系不上系统里负责查找的那一部分。${RETRY_TEXT}`;
-export const CLOSING_TEXT = "摘录逐字照抄原文；引用之前按上面给的位置用 read 读原文核对，一次不超过 120 行。";
+export const CLOSING_TEXT = "查到的片段就是逐字的原文：摘录从片段逐字抄，出处照片段给的写法写；不必再读知识库文件核对，保存时系统会逐字核对，对不上会退回并说明原因。";
 
 export const CANCELLED_TEXT = "查找被取消了。";
 export const NOT_FOUND_TEXT = "没有找到相关的片段。换一种说法再查一次；换了说法仍然没有，才算知识库里没有。";
@@ -80,9 +82,21 @@ export interface SearchOutcome {
   details: Record<string, unknown>;
 }
 
+/** Word 文档的一段：段落号与文字。 */
+interface Paragraph {
+  paragraph: number;
+  text: string;
+}
+
+/** 表格一行里的一格：格里各段的段落号；合并格是占位的字；空格是空文字。 */
+type RowCell = number[] | string;
+
 /** 任务服务回的一个片段（backend/src/knowledge_search.ts 的 SearchHit）。 */
 interface Hit {
   score: number;
+  score_kind: string;
+  rank_semantic: number | null;
+  rank_keyword: number | null;
   library: string;
   library_name: string;
   name: string;
@@ -91,8 +105,16 @@ interface Hit {
   last_paragraph: number | null;
   first_line: number | null;
   last_line: number | null;
+  partial: boolean;
+  /** 片段里存的文字（页面显示用）；给助手的是下面的原文。 */
   text: string;
   locator: string;
+  /** Markdown 与纯文本：逐字节的原文。 */
+  body: string | null;
+  /** Word 文档：各段。 */
+  paragraphs: Paragraph[] | null;
+  table: RowCell[][] | null;
+  header: { first_paragraph: number | null; last_paragraph: number | null; cells: RowCell[]; paragraphs: Paragraph[] } | null;
 }
 
 export interface SearchOptions {
@@ -129,37 +151,99 @@ export function searchParams(params: { query?: unknown; limit?: unknown }): { qu
   return { query, limit };
 }
 
-/** 由 Word 文档生成的那份文字里，第 first 段与第 last 段各在第几行（从 1 起）；读不到或找不到时是 null。 */
-function paragraphLines(path: string, first: number, last: number): [number, number] | null {
-  let lines: string[];
-  try {
-    lines = readFileSync(path, "utf-8").split(/\r?\n/);
-  } catch {
-    return null;
-  }
-  const lineOf = (n: number) => lines.findIndex((line) => line.includes(`[p${n}]`)) + 1;
-  const from = lineOf(first);
-  const to = lineOf(last);
-  return from > 0 && to >= from ? [from, to] : null;
+const range = (from: number, to: number, unit: string) => (from === to ? `第 ${from} ${unit}` : `第 ${from} 到 ${to} ${unit}`);
+const bytesOf = (text: string) => Buffer.byteLength(text, "utf-8");
+
+/** 助手收到的全部文字（连同说明）最多多少字节；超过时从末尾去掉片段，第 1 个永不去掉。 */
+export const BUDGET_BYTES = 8192;
+/** 正文前后的记号：正文夹在这两行之间，摘录从这里面逐字抄。 */
+export const BODY_OPEN = "<<<原文开始";
+export const BODY_CLOSE = "原文结束>>>";
+
+/** 去掉了几个片段时的那一行。 */
+export const trimmedText = (removed: number) => `（这一次的结果超过了 ${BUDGET_BYTES} 字节的上限：还有 ${removed} 条没有列出，缩小问题再查。）`;
+/** 第 1 个片段的正文也放不下、只显示了前几个字时的那一行。 */
+export const truncatedText = (chars: number) => `（正文只显示了前 ${chars} 字；要看后面的内容，把问题缩小再查。）`;
+
+/** 片段在哪里：Word 文档是段落号，别的是行号。 */
+function positionOf(hit: Hit): string {
+  if (hit.first_paragraph !== null && hit.last_paragraph !== null) return range(hit.first_paragraph, hit.last_paragraph, "段");
+  if (hit.first_line !== null && hit.last_line !== null) return range(hit.first_line, hit.last_line, "行");
+  return "位置不详";
 }
 
-const range = (from: number, to: number, unit: string) => (from === to ? `第 ${from} ${unit}` : `第 ${from} 到 ${to} ${unit}`);
+/** 表格的一行写成「p36｜p37、p38｜（同上）」：竖线隔开各格，格里是它的段落号。 */
+const rowShape = (cells: RowCell[]) => cells.map((cell) => (Array.isArray(cell) ? cell.map((n) => `p${n}`).join("、") : cell || "（空）")).join("｜");
+const paragraphLines = (paragraphs: Paragraph[]) => paragraphs.map((one) => `[p${one.paragraph}] ${one.text}`);
 
-/** 一个片段排成给助手看的几行。readPath 是助手读原文用的路径。 */
-function hitLines(no: number, hit: Hit, readPath: string): string[] {
-  const head = `${no}. 相近程度 ${hit.score.toFixed(2)} · 知识库「${hit.library_name}」《${hit.name}》${hit.title ? ` · 片段标题：${hit.title}` : ""}`;
-  let where: string;
-  let cite: string;
-  if (hit.first_paragraph !== null && hit.last_paragraph !== null) {
-    const paragraphs = range(hit.first_paragraph, hit.last_paragraph, "段");
-    const found = paragraphLines(readPath, hit.first_paragraph, hit.last_paragraph);
-    where = found ? `读原文：${readPath} ${range(found[0], found[1], "行")}（${paragraphs}）` : `读原文：${readPath}，${paragraphs}（每段前面方括号里的 p 加数字是段落号）`;
-    cite = `引用时出处写：${hit.locator}#p 加段落号，段落号是原文里摘录所在那一段前面方括号中的数字`;
-  } else {
-    where = hit.first_line !== null && hit.last_line !== null ? `读原文：${readPath} ${range(hit.first_line, hit.last_line, "行")}` : `读原文：${readPath}`;
-    cite = `引用时出处写：${hit.locator}`;
+/** 它在两路里各排第几。keywordOnly 为真是这一次只按字面找了。 */
+function ranksText(hit: Hit, keywordOnly: boolean): string {
+  if (keywordOnly) return `按字面排第 ${hit.rank_keyword}`;
+  if (hit.rank_semantic !== null && hit.rank_keyword !== null) return `按意思排第 ${hit.rank_semantic}，按字面排第 ${hit.rank_keyword}`;
+  if (hit.rank_semantic !== null) return `按意思排第 ${hit.rank_semantic}，按字面没有命中`;
+  return `按字面排第 ${hit.rank_keyword}，按意思没有比（这份文档还没有换算好）`;
+}
+
+/** 一个片段排成的几部分：正文之前的各行、正文、正文之后的一行。 */
+interface Block {
+  head: string[];
+  body: string;
+  tail: string[];
+}
+
+function hitBlock(no: number, hit: Hit, keywordOnly: boolean): Block {
+  const word = hit.paragraphs !== null;
+  const head = [
+    `【第 ${no} 个片段】知识库「${hit.library_name}」《${hit.name}》${hit.title ? ` · 标题：${hit.title}` : ""} · ${ranksText(hit, keywordOnly)}`,
+    `位置：${positionOf(hit)}${hit.partial ? "（这一段很长，切成了几个片段，这里是其中的一截，不是全文）" : ""}`,
+    word ? `引用时出处写：${hit.locator}#p段落号（写摘录所在那一段的段落号）` : `引用时出处写：${hit.locator}`,
+  ];
+  if (hit.table?.length) {
+    head.push(`表格结构（每个分号是表格的一行，竖线隔开各格，格里写的是它的段落号；一条来源只抄一格里的字，不要把一行的几格连起来抄）：${hit.table.map(rowShape).join("；")}`);
   }
-  return [head, `   ${where}`, `   ${cite}`, "   正文：", ...hit.text.split("\n").map((line) => `   ${line}`)];
+  if (hit.header) {
+    const h = hit.header;
+    const where = h.first_paragraph !== null && h.last_paragraph !== null ? range(h.first_paragraph, h.last_paragraph, "段") : "位置不详";
+    head.push(`这张表的表头（出自${where}，只帮你看懂各列，不在这个片段的位置范围里；要引用表头里的字，出处写它自己的段落号）：${rowShape(h.cells)}`,
+      BODY_OPEN, ...paragraphLines(h.paragraphs), BODY_CLOSE);
+  }
+  head.push(word ? "正文（每行是一段，开头方括号里是这一段的段落号，摘录不带它）：" : "正文：", BODY_OPEN);
+  return { head, body: word ? paragraphLines(hit.paragraphs!).join("\n") : hit.body ?? hit.text, tail: [BODY_CLOSE] };
+}
+
+/**
+ * 把查到的片段排成助手收到的文字，并按 BUDGET_BYTES 裁剪：全部文字（开头一句、各片段、裁剪的说明与末尾的说明）按 UTF-8 的字节数算。
+ * 超过时从末尾一个一个去掉片段并写明还有几条没有列出；第 1 个永不去掉，只剩它仍然超过时截短它的正文并写明只显示了前几个字。
+ * opening 是开头的一句。返回文字、列出了几个、去掉了几个，与第 1 个的正文显示了几个字（没有截短是 null）。
+ */
+export function assemble(opening: string, hits: Hit[], keywordOnly: boolean, budget: number = BUDGET_BYTES):
+  { text: string; shown: number; removed: number; truncated_chars: number | null } {
+  const blocks = hits.map((hit, i) => hitBlock(i + 1, hit, keywordOnly));
+  const render = (shown: number, truncate: number | null) => {
+    const lines = [opening, ""];
+    blocks.slice(0, shown).forEach((block, i) => {
+      const cut = i === 0 && truncate !== null;
+      lines.push(...block.head, cut ? Array.from(block.body).slice(0, truncate!).join("") : block.body, ...block.tail);
+      if (cut) lines.push(truncatedText(truncate!));
+      lines.push("");
+    });
+    if (shown < blocks.length) lines.push(trimmedText(blocks.length - shown), "");
+    lines.push(CLOSING_TEXT);
+    return lines.join("\n");
+  };
+  for (let shown = blocks.length; shown >= 1; shown--) {
+    const text = render(shown, null);
+    if (bytesOf(text) <= budget) return { text, shown, removed: blocks.length - shown, truncated_chars: null };
+  }
+  // 只剩第 1 个仍然超过：截短它的正文，取放得下的最多的字数。
+  let low = 0;
+  let high = Array.from(blocks[0].body).length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (bytesOf(render(1, mid)) <= budget) low = mid;
+    else high = mid - 1;
+  }
+  return { text: render(1, low), shown: 1, removed: blocks.length - 1, truncated_chars: low };
 }
 
 /**
@@ -204,21 +288,16 @@ export async function searchKnowledge(
   }
   const model = typeof body.model === "string" ? body.model : null;
   const hits: Hit[] = Array.isArray(body.hits) ? body.hits : [];
-  const details = {
+  const keywordOnly = body.mode === "keyword";
+  const base = {
     ok: true, ready: body.ready === true, query, limit, model, pending: Number(body.pending) || 0,
     mode: typeof body.mode === "string" ? body.mode : "hybrid", reason: typeof body.reason === "string" ? body.reason : null,
     uncovered_semantic: Array.isArray(body.uncovered_semantic) ? body.uncovered_semantic : [], uncovered: Array.isArray(body.uncovered) ? body.uncovered : [],
-    hits: hits.map(({ text: _, ...rest }) => rest),
   };
   const opening = openingText(query, body, selected.length);
-  if (!hits.length) return { text: `${opening}\n${NOT_FOUND_TEXT}`, details };
-
-  const readPathOf = (hit: Hit) => {
-    const known = selected.find((lib) => lib.id === hit.library)?.documents.find((doc) => doc.name === hit.name)?.readPath;
-    return known ?? join(knowledgeRoot, hit.library, "files", /\.docx$/i.test(hit.name) ? `${hit.name}.md` : hit.name);
-  };
-  const lines = [`${opening}下面是最相关的 ${hits.length} 个片段。排在前面不等于就是你要找的规定：逐个看正文，对得上的才引用；一个片段里有多条规定时逐条看。`, ""];
-  hits.forEach((hit, i) => lines.push(...hitLines(i + 1, hit, readPathOf(hit)), ""));
-  lines.push(CLOSING_TEXT);
-  return { text: lines.join("\n"), details };
+  if (!hits.length) return { text: `${opening}\n${NOT_FOUND_TEXT}`, details: { ...base, hits: [], shown: 0, bytes: bytesOf(`${opening}\n${NOT_FOUND_TEXT}`), truncated_chars: null } };
+  const done = assemble(`${opening}下面是最相关的 ${hits.length} 个片段。排在前面不等于就是你要找的规定：逐个看正文，对得上的才引用；一个片段里有多条规定时逐条看。`, hits, keywordOnly);
+  // 结构化的那一份不带片段的文字与原文；shown 是这一次实际列给助手的个数（排在前面的那几个）。
+  const brief = hits.map(({ text: _text, body: _body, paragraphs: _paragraphs, table: _table, header: _header, ...rest }) => rest);
+  return { text: done.text, details: { ...base, hits: brief, shown: done.shown, bytes: bytesOf(done.text), truncated_chars: done.truncated_chars } };
 }

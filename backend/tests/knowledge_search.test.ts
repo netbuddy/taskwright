@@ -9,6 +9,7 @@ import { readFileSync, rmSync, truncateSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { GENERAL } from "../src/knowledge.ts";
+import { projectionParagraphs } from "../../agent/src/lib/docx_source.ts";
 import { ApiError } from "../src/errors.ts";
 import { dispatch } from "../src/http.ts";
 import { EMBEDDINGS_SUFFIX, VECTORS_SUFFIX } from "../src/knowledge_embeddings.ts";
@@ -74,6 +75,7 @@ test("两路都做：每个片段带它在两路里各排第几、知识库、�
     score: 1, score_kind: "semantic", rank_semantic: 1, rank_keyword: 1,
     library: GENERAL, library_name: "通用知识库", name: "借阅规范.md", kind: "standard", title: "借阅规范 / 逾期", block: 2,
     first_paragraph: null, last_paragraph: null, first_line: 5, last_line: 5, partial: false, text: "逾期每册每天罚款 0.5 元。", locator: "knowledge/general/借阅规范.md",
+    body: "逾期每册每天罚款 0.5 元。", paragraphs: null, table: null, header: null, exact: true,
   });
   // 各阶段的耗时都记了，是不小于 0 的数。
   assert.deepEqual(Object.keys(got.json.timing), ["embed_query", "read_derived", "read_source", "chunk_now", "vector_compare", "tokenize", "keyword_score"]);
@@ -308,5 +310,72 @@ test("请求写得不对以 bad_request 拒绝：limit 最多是 5", async () =>
   }
   assert.equal(LIMIT_RANGE_TEXT, "limit 应当是 1 到 5 的整数。");
   assert.equal((await search(service, { query: "罚款", limit: 5 })).status, 200);
+  await service.close();
+});
+
+// ───────────── 查到的片段的原文 ─────────────
+
+test("Markdown 与纯文本的原文：与源文字逐字节相同，连段与段之间的空行；片段里存的文字把空行接掉了，原文没有", async () => {
+  const service = fresh();
+  const source = "# 退款\n\n第 7 条 下列商品不予退货：   \n\n\n第 8 条 退货申请通过后，买家应在 7 天内寄出商品。\r\n\r\n## 别的\n\n无关的一段。\n";
+  await upload(service, "退款规范.md", source);
+  await upload(service, "说明.txt", "第一段说罚款。\n\n\n\n第二段也说罚款。\n");
+  await idle(service);
+  const got = (await search(service, { query: "第8条 寄出商品" })).json;
+  const hit = got.hits.find((h: Dict) => h.title === "退款");
+  // 源文字的行尾已经统一成换行符；第 7 条行尾的三个空格与两条之间的两个空行都原样在。
+  assert.equal(hit.body, "第 7 条 下列商品不予退货：   \n\n\n第 8 条 退货申请通过后，买家应在 7 天内寄出商品。");
+  assert.equal(hit.text, "第 7 条 下列商品不予退货：\n第 8 条 退货申请通过后，买家应在 7 天内寄出商品。");
+  assert.notEqual(hit.body, hit.text);
+  assert.deepEqual([hit.paragraphs, hit.table, hit.header, hit.exact, hit.first_line, hit.last_line], [null, null, null, true, 3, 6]);
+  const stored = service.knowledge!.text(GENERAL, "退款规范.md");
+  assert.ok(stored.includes(hit.body));
+  const plain = (await search(service, { query: "罚款", limit: 5 })).json.hits.find((h: Dict) => h.name === "说明.txt");
+  assert.equal(plain.body, "第一段说罚款。\n\n\n\n第二段也说罚款。");
+  await service.close();
+});
+
+test("Word 文档的原文：逐段给并带段落号，文字与核对摘录用的段文字相同；表格的行也逐段给，另给行结构；没有换算好、现切出来的片段也一样", async () => {
+  const service = fresh();
+  await upload(service, "需求.docx", readFileSync(SAMPLE));
+  await idle(service);
+  const projection = service.knowledge!.text(GENERAL, "需求.docx");
+  const wanted = projectionParagraphs(projection);
+  const check = (json: Dict) => {
+    const table = json.hits.find((h: Dict) => h.title === "2.3 借阅上限");
+    assert.ok(table, JSON.stringify(json.hits.map((h: Dict) => h.title)));
+    assert.equal(table.body, null);
+    assert.deepEqual([table.first_paragraph, table.last_paragraph], [34, 71]);
+    // 每一段的文字就是核对摘录时用的那一段；段落号在片段的范围里，从小到大。
+    for (const one of table.paragraphs) assert.equal(one.text, wanted[one.paragraph - 1], `第 ${one.paragraph} 段`);
+    const numbers = table.paragraphs.map((one: Dict) => one.paragraph);
+    assert.deepEqual(numbers, [...numbers].sort((a, b) => a - b));
+    assert.ok(numbers[0] >= 34 && numbers.at(-1) <= 71);
+    // 表格的行结构：每行各格里是哪几段；行里的段都在逐段给的清单里。
+    assert.ok(table.table.length >= 3);
+    for (const row of table.table) for (const cell of row) if (Array.isArray(cell)) for (const n of cell) assert.ok(numbers.includes(n), `第 ${n} 段`);
+    assert.equal(table.header, null);
+    // 片段里存的文字是带竖线的改写文字，原文里没有竖线行。
+    assert.match(table.text, /^\| /m);
+    assert.ok(table.paragraphs.every((one: Dict) => !one.text.startsWith("|")));
+  };
+  check((await search(service, { query: "各类读者的借阅上限", limit: 5 })).json);
+  // 没有选嵌入模型：片段是现切的，原文照样逐段给。
+  await chooseEmbedding(agent, fake.url, null);
+  const keyword = (await search(service, { query: "各类读者的借阅上限", limit: 5 })).json;
+  assert.equal(keyword.mode, "keyword");
+  check(keyword);
+  await service.close();
+});
+
+test("取中的片段读不到源文字（文档本体不在了，旁边的成品还在）：这个片段不给，文档记进没有查到的", async () => {
+  const service = fresh();
+  await upload(service, "借阅规范.md", RULES);
+  await upload(service, "规定.md", SIX);
+  await idle(service);
+  unlinkSync(join(service.knowledge!.filesDir(GENERAL), "规定.md"));
+  const got = (await search(service, { query: ASK, limit: 5 })).json;
+  assert.deepEqual(got.uncovered, [{ library: GENERAL, library_name: "通用知识库", name: "规定.md", reason: "source_unreadable" }]);
+  assert.ok(got.hits.length >= 1 && got.hits.every((h: Dict) => h.name === "借阅规范.md" && typeof h.body === "string"));
   await service.close();
 });
