@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Builds the desktop packages: a payload (launcher, backend, web files, pi, agent extension, rg and fd) and, from it,
-// a Linux AppImage and single executables (Node SEA) for Linux and Windows. Node built-in modules only.
+// a Linux AppImage and single executables (Node SEA) for Linux and Windows. Node built-in modules only; the web
+// interface and the backend's diagram check engine are bundled with the repository's vite.
 //
 // Usage:
 //   node release/build.mjs --out <dir> [options]
@@ -53,7 +54,7 @@ function parseArgs(argv) {
 
 function usage(message) {
   if (message) console.error(`build.mjs: ${message}`);
-  (message ? console.error : console.log)(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(4, 22).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+  (message ? console.error : console.log)(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(5, 23).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(message ? 2 : 0);
 }
 
@@ -351,9 +352,12 @@ const TS_IMPORT = /(\bfrom\s*|\bimport\s*\(?\s*)(["'])(\.{1,2}\/[^"']+?)\.(m?)ts
 // its types removed with Node's stripTypeScriptTypes (the backend only uses erasable syntax) and its relative
 // .ts/.mts imports rewritten to .js/.mjs. The files keep their places, so agent/src/lib/*.js lands next to the .ts
 // files that pi loads through jiti. Returns the repository-relative paths written.
+//
+// Two more starting points besides the entry points: diagram_validate.ts, which nothing imports yet, and
+// diagram_worker.ts, which diagram_validate.ts starts as a thread by its file name, not with an import.
 function stageBackend(payload) {
   const seen = new Set();
-  const todo = ["backend/src/start.ts", "backend/src/main.mts"].map((rel) => path.join(REPO, rel));
+  const todo = ["backend/src/start.ts", "backend/src/main.mts", "backend/src/diagram_validate.ts", "backend/src/diagram_worker.ts"].map((rel) => path.join(REPO, rel));
   while (todo.length) {
     const file = todo.pop();
     if (seen.has(file)) continue;
@@ -373,7 +377,95 @@ function stageBackend(payload) {
   return written;
 }
 
-async function stagePayload({ work, cache, target, piDir, piPackages, webDist, nodeVersion }) {
+// The backend checks Mermaid texts with mermaid, an npm package; the packages carry no node_modules. So the check
+// engine (backend/src/diagram_engine.mjs) is bundled with mermaid into files for Node, reduced to the files the
+// five kinds of diagram load (release/diagram/prune.mjs), and checked again after that. In the payload it lies in
+// backend/vendor/mermaid/, where backend/src/diagram_validate.ts looks for it first.
+// The files it keeps hold code of mermaid and of the packages mermaid uses, so their licence files go with them, as
+// rg's and fd's do: <dir>/licenses/<package>-<file> for every licence file a package ships, and PACKAGES.txt with
+// each package's name, version and licence. A package that ships no licence file but states "MIT" in its
+// package.json gets <package>-LICENSE with the standard MIT text, the copyright line taken from package.json.
+function buildDiagramEngine(work) {
+  const dir = path.join(work, "diagram-engine");
+  const vite = path.join(REPO, "node_modules", ".bin", "vite");
+  execFileSync(vite, ["build", "--config", path.join(HERE, "diagram", "vite.config.mjs"), "--outDir", dir, "--emptyOutDir"], { cwd: REPO, stdio: "inherit" });
+  const prune = path.join(HERE, "diagram", "prune.mjs");
+  const modules = readJson(path.join(dir, "modules.json")); // written by the vite configuration: output file -> the source files in it
+  const all = listFiles(dir).filter((file) => file.rel !== "modules.json");
+  fs.rmSync(path.join(dir, "modules.json"));
+  const used = new Set(JSON.parse(execFileSync(process.execPath, [prune, "trace", dir], { encoding: "utf8" })));
+  for (const file of all) if (!used.has(file.rel)) fs.rmSync(path.join(dir, file.rel));
+  execFileSync(process.execPath, [prune, "check", dir], { stdio: "inherit" });
+  const size = treeSize(dir);
+  const packages = stageDiagramLicences(dir, [...used].flatMap((file) => modules[file] ?? []));
+  log(`diagram check engine: ${used.size} of ${all.length} files kept, ${mb(size)} of ${mb(all.reduce((sum, f) => sum + f.size, 0))}; licence files of ${packages} packages`);
+  return dir;
+}
+
+const MIT_TEXT = `Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+`;
+
+// The MIT licence for a package that ships no licence file: who holds the copyright is taken from the author
+// field of its package.json, and the file says so.
+function mitFromManifest(manifest) {
+  const author = typeof manifest.author === "string" ? manifest.author : [manifest.author?.name, manifest.author?.email && `<${manifest.author.email}>`].filter(Boolean).join(" ");
+  const holder = author ? `${author} (${manifest.name})` : `the authors of ${manifest.name}`;
+  return `${manifest.name} ${manifest.version}\n\nThis package ships no licence file. Its package.json states the licence "MIT"${author ? ` and the author "${author}"` : ""};\n`
+    + `the text below is the standard MIT licence with the copyright line written from those two fields.\n\nMIT License\n\nCopyright (c) ${holder}\n\n${MIT_TEXT}`;
+}
+
+// sources: the source files bundled into the kept files. Returns the number of npm packages they come from.
+function stageDiagramLicences(dir, sources) {
+  const marker = `${path.sep}node_modules${path.sep}`;
+  const packages = new Map();
+  for (const source of sources) {
+    const at = source.lastIndexOf(marker);
+    if (at < 0) continue; // the repository's own file, or the bundler's helper
+    const parts = source.slice(at + marker.length).split(path.sep);
+    const name = parts[0].startsWith("@") ? `${parts[0]}/${parts[1]}` : parts[0];
+    packages.set(name, path.join(source.slice(0, at + marker.length), name));
+  }
+  const out = path.join(dir, "licenses");
+  fs.mkdirSync(out, { recursive: true });
+  const lines = ["The diagram check engine (../diagram_engine.mjs and ../assets/) contains code of these npm packages.", "Name, version, licence, and the licence files copied here from the package:", ""];
+  for (const name of [...packages.keys()].sort()) {
+    const from = packages.get(name);
+    const manifest = readJson(path.join(from, "package.json"));
+    const files = fs.readdirSync(from).filter((file) => /^(licen[sc]e|copying|notice)/i.test(file) && fs.statSync(path.join(from, file)).isFile()).sort();
+    const copies = files.map((file) => `${name.replace("/", "__")}-${file}`);
+    files.forEach((file, i) => fs.copyFileSync(path.join(from, file), path.join(out, copies[i])));
+    let listed = copies.join(", ");
+    if (!copies.length && manifest.license === "MIT") {
+      const written = `${name.replace("/", "__")}-LICENSE`;
+      fs.writeFileSync(path.join(out, written), mitFromManifest(manifest));
+      listed = `${written} (the package ships no licence file; written from its package.json)`;
+    } else if (!copies.length) {
+      listed = "the package ships no licence file";
+      log(`warning: ${name} ${manifest.version} ships no licence file and its licence is not MIT; nothing was written for it`);
+    }
+    lines.push(`${name} ${manifest.version}, ${typeof manifest.license === "string" ? manifest.license : "licence not stated in package.json"}: ${listed}`);
+  }
+  fs.writeFileSync(path.join(out, "PACKAGES.txt"), lines.join("\n") + "\n");
+  return packages.size;
+}
+
+async function stagePayload({ work, cache, target, piDir, piPackages, webDist, diagramEngine, nodeVersion }) {
   const payload = path.join(work, target, "payload");
   fs.rmSync(payload, { recursive: true, force: true });
   fs.mkdirSync(path.join(payload, "app"), { recursive: true });
@@ -391,6 +483,7 @@ async function stagePayload({ work, cache, target, piDir, piPackages, webDist, n
   fs.mkdirSync(path.join(payload, "backend", "profiles"), { recursive: true });
   fs.copyFileSync(path.join(REPO, "backend", "profiles", "desktop.json"), path.join(payload, "backend", "profiles", "desktop.json"));
   copyTree(path.join(REPO, "backend", "prompts"), path.join(payload, "backend", "prompts"));
+  copyTree(diagramEngine, path.join(payload, "backend", "vendor", "mermaid"));
   const product = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
   fs.writeFileSync(path.join(payload, "package.json"), JSON.stringify({ name: product.name, version: product.version, private: true }, null, 2) + "\n");
   copyTree(webDist, path.join(payload, "web"));
@@ -400,7 +493,7 @@ async function stagePayload({ work, cache, target, piDir, piPackages, webDist, n
   const piVersion = JSON.parse(fs.readFileSync(path.join(piDir, "package.json"), "utf8")).version;
   const manifest = { app: "taskwright", version: product.version, target, node: nodeVersion, pi: piVersion, pi_packages: piPackages, ...tools, built_at: new Date().toISOString() };
   fs.writeFileSync(path.join(payload, "manifest.json"), JSON.stringify(manifest, null, 2));
-  log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, pi ${mb(treeSize(path.join(payload, "pi")))}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
+  log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, diagram check engine ${mb(treeSize(path.join(payload, "backend", "vendor", "mermaid")))}, pi ${mb(treeSize(path.join(payload, "pi")))}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
   return { payload, manifest };
 }
 
@@ -497,9 +590,11 @@ async function main() {
     execFileSync(vite, ["build", "--outDir", webDist, "--emptyOutDir"], { cwd: path.join(REPO, "web"), stdio: "inherit" });
   }
 
+  const diagramEngine = buildDiagramEngine(work);
+
   const results = [];
   for (const target of targets) {
-    const { payload, manifest } = await stagePayload({ work, cache, target, piDir, piPackages, webDist, nodeVersion });
+    const { payload, manifest } = await stagePayload({ work, cache, target, piDir, piPackages, webDist, diagramEngine, nodeVersion });
     if (formats.includes("sea")) results.push(await buildSea({ work, out, cache, target, payload, manifest, nodeVersion, postject: options.postject, level }));
     if (formats.includes("appimage") && target === "linux-x64") results.push(await buildAppImage({ work, out, cache, payload, nodeVersion, appimagetool: options.appimagetool }));
   }

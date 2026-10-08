@@ -15,6 +15,8 @@ __pycache__/
 /knowledge/
 /sim-runs/
 /srs-*.md
+# the bundled diagram check engine exists only in the desktop packages (release/build.mjs)
+/backend/vendor/
 *.tsbuildinfo
 
 # understanding evaluation reports: only the baseline is kept in the repository
