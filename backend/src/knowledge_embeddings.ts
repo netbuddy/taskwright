@@ -23,7 +23,8 @@ import { type Chunk, chunkRulesVersion } from "./knowledge_chunks.ts";
 
 export const EMBEDDINGS_SUFFIX = ".embeddings.json";
 export const VECTORS_SUFFIX = ".embeddings.bin";
-export const EMBEDDINGS_VERSION = 1;
+/** 成品的格式版本。2：每个片段另记它在源文字里的位置（knowledge_chunks.ts 的 start_offset、pieces 等）。版本对不上的旧成品算没有换算过，重新换算，不做兼容读取。 */
+export const EMBEDDINGS_VERSION = 2;
 
 const LITTLE = endianness() === "LE";
 /** 写到一半的临时文件：成品的文件名后面加「.进程号.tmp」。 */

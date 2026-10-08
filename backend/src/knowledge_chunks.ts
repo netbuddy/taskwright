@@ -21,6 +21,20 @@
  *
  * 送去换算的文字（chunkInput）是「标题一行加正文」；没有标题，或者正文本来就以标题开头时只送正文。
  *
+ * 每个片段另记它在源文字里的位置（查找时按位置把原文逐字读出来交给助手，见 knowledge_passage.ts）。源文字：Markdown 与纯文本是
+ * 文件的内容（行尾已经统一成 \n），Word 文档是投影全文。位置都是 UTF-16 码元的偏移，`string.slice` 可以直接用。
+ * - start_offset、end_offset：片段在源文字里从哪里到哪里。Markdown 与纯文本的片段，这一段源文字就是它的原文（连段与段之间的空行）。
+ * - block：所属结构单位的编号。Word 是分段清单里的块序号（从 1 起）；Markdown 是小节序号（文档开头、第一个标题之前的那一节是 0，
+ *   此后每遇到一个标题加 1）；纯文本恒为 0。
+ * - pieces：片段由源文字里哪几截接成。Markdown 与纯文本是各段的起止；Word 是各段在投影里的那一截（段落号记号右边、去掉首尾空白），
+ *   带段落号，表格里的段另带 cell。Word 的一截要再照 docx_source.ts 的办法提取（去图片链接、去首尾空白，表格里把转义的竖线还原）
+ *   才是这一段的文字，提取出来的与保存修订核对摘录时用的段文字相同。
+ * - rows：片段里有表格的行时，每行各格里是哪几段（段落号），合并格写它在投影里的占位（「（同左）」「（同上）」），空格写空文字。
+ * - header：片段开头重复了表头行时，表头行自己的段落号范围、各格与各段的位置；表头不算进片段的起止段落号与 pieces。
+ * - partial：这是单独一段（或表格里单独一格）超过上限切出来的一截。各截各记自己的位置；Word 的一段里夹着图片链接、
+ *   在投影里找不到这一截的原样文字时，这一截记整段的位置。
+ * 只多记位置，切法没有变（切法的版本不动）。
+ *
  * 本模块只做计算，不读写文件。
  */
 
@@ -49,6 +63,29 @@ export function chunkRulesVersion(name: string): number {
   return CHUNK_RULES[documentKind(name)];
 }
 
+/** 片段由源文字里的哪一截接成。 */
+export interface Piece {
+  /** 这一截在源文字里的起止（UTF-16 码元）。 */
+  start: number;
+  end: number;
+  /** Word 文档：这一截是第几段。别的文档没有这一项。 */
+  paragraph?: number;
+  /** Word 文档表格里的段：提取文字时要把转义的竖线还原。 */
+  cell?: true;
+}
+
+/** 表格一行里的一格：格里各段的段落号；合并格是它在投影里的占位（「（同左）」「（同上）」）；什么都没有的格是空文字。 */
+export type RowCell = number[] | string;
+
+/** 片段开头重复的表头行。 */
+export interface TableHeader {
+  /** 表头行里最小与最大的段落号；表头行里没有段落号时是 null。 */
+  first_paragraph: number | null;
+  last_paragraph: number | null;
+  cells: RowCell[];
+  pieces: Piece[];
+}
+
 export interface Chunk {
   /** 第几个片段，从 1 起。 */
   index: number;
@@ -62,24 +99,46 @@ export interface Chunk {
   last_line: number | null;
   /** 片段的正文，不带标题。 */
   text: string;
+  /** 片段在源文字里的起止（见文件开头）。 */
+  start_offset: number;
+  end_offset: number;
+  /** 所属结构单位的编号（见文件开头）。 */
+  block: number;
+  pieces: Piece[];
+  /** 片段里表格的各行；没有表格时没有这一项。 */
+  rows?: RowCell[][];
+  /** 片段开头重复的表头行；没有重复时没有这一项。 */
+  header?: TableHeader;
+  /** 单独一段超过上限切出来的一截。 */
+  partial?: true;
 }
 
-/** 接起来之前的一段：文字（去掉了首尾空白，不是空的）与它的位置（Word 文档是段落号，别的是行号）。 */
+/**
+ * 接起来之前的一段：文字（去掉了首尾空白，不是空的）、它的位置（Word 文档是段落号，别的是行号），与它在源文字里的起止。
+ * 表格的行：start、end 是投影里这一整行。
+ */
 interface Unit {
   text: string;
   first: number;
   last: number;
+  start: number;
+  end: number;
+  pieces: Piece[];
+  /** 源文字里 start 到 end 这一截是不是原样就是 text（不是时，超过上限切出来的各截找不到自己的位置，记整段的）。 */
+  exact: boolean;
   /** 只有 Word 表格的行有：这一行的各格（超过上限时在格之间切）。 */
   cells?: Cell[];
   /** 只有 Word 表格里表头以外的行有：这张表的表头行。 */
-  header?: string;
+  header?: Unit;
 }
 
-/** Word 表格的一格：文字，与格里各段的起止段落号（合并格没有段落号，是 null）。 */
+/** Word 表格的一格：文字，格里各段的起止段落号（合并格没有段落号，是 null），各段的位置，与这一格在行结构里的写法。 */
 interface Cell {
   text: string;
   first: number | null;
   last: number | null;
+  pieces: Piece[];
+  shape: RowCell;
 }
 
 const SENTENCE_END = new Set(["。", "！", "？", "；", "…", ".", "!", "?", ";", "\n"]);
@@ -90,10 +149,15 @@ function charCount(text: string): number {
   return n;
 }
 
-/** 把超过上限的一段切成各片不超过上限的几片：尽量切在句末的标点后面。 */
-export function splitLong(text: string, max: number = CHUNK_MAX_CHARS): string[] {
+/**
+ * 把超过上限的一段切成各片不超过上限的几片：尽量切在句末的标点后面。每片另给它在 text 里的起止（UTF-16 码元）。
+ */
+export function splitLongRanges(text: string, max: number = CHUNK_MAX_CHARS): { text: string; start: number; end: number }[] {
   const chars = Array.from(text);
-  const out: string[] = [];
+  /** 第 i 个字在 text 里的起点。 */
+  const at: number[] = [0];
+  for (const c of chars) at.push(at[at.length - 1] + c.length);
+  const cuts: [number, number][] = [];
   let start = 0;
   while (chars.length - start > max) {
     let cut = start + max;
@@ -103,30 +167,56 @@ export function splitLong(text: string, max: number = CHUNK_MAX_CHARS): string[]
         break;
       }
     }
-    out.push(chars.slice(start, cut).join(""));
+    cuts.push([start, cut]);
     start = cut;
   }
-  out.push(chars.slice(start).join(""));
-  return out.map((piece) => piece.trim()).filter((piece) => piece !== "");
+  cuts.push([start, chars.length]);
+  const out: { text: string; start: number; end: number }[] = [];
+  for (const [a, b] of cuts) {
+    const piece = chars.slice(a, b).join("");
+    const trimmed = piece.trim();
+    if (trimmed === "") continue;
+    const lead = piece.length - piece.trimStart().length;
+    out.push({ text: trimmed, start: at[a] + lead, end: at[a] + lead + trimmed.length });
+  }
+  return out;
+}
+
+/** 把超过上限的一段切成各片不超过上限的几片：尽量切在句末的标点后面。 */
+export function splitLong(text: string, max: number = CHUNK_MAX_CHARS): string[] {
+  return splitLongRanges(text, max).map((piece) => piece.text);
 }
 
 const rowText = (cells: string[]) => `| ${cells.join(" | ")} |`;
 
+/** 超过上限的一行表格切出来的一片：文字、位置，与它含的各格。 */
+interface RowPiece {
+  text: string;
+  first: number;
+  last: number;
+  cells: Cell[];
+  /** 单独一格超过上限切出来的一截。 */
+  partial: boolean;
+}
+
 /** 把超过上限的一行表格切成几片：在格与格之间切，每片仍写成一行；单独一格就超过上限时，那一格再照 splitLong 切。 */
-function splitRow(unit: Unit): Unit[] {
-  const out: Unit[] = [];
+function splitRow(unit: Unit): RowPiece[] {
+  const out: RowPiece[] = [];
   let group: Cell[] = [];
   const emit = () => {
     if (!group.length) return;
     const numbers = group.flatMap((cell) => (cell.first === null ? [] : [cell.first, cell.last!]));
-    out.push({ text: rowText(group.map((cell) => cell.text)), first: numbers.length ? Math.min(...numbers) : unit.first, last: numbers.length ? Math.max(...numbers) : unit.last });
+    out.push({ text: rowText(group.map((cell) => cell.text)), first: numbers.length ? Math.min(...numbers) : unit.first, last: numbers.length ? Math.max(...numbers) : unit.last,
+      cells: group, partial: false });
     group = [];
   };
   for (const cell of unit.cells!) {
     if (charCount(rowText([cell.text])) > CHUNK_MAX_CHARS) {
       emit();
-      // 两头的竖线与空格占 4 个字。
-      for (const piece of splitLong(cell.text, CHUNK_MAX_CHARS - 4)) out.push({ text: rowText([piece]), first: cell.first ?? unit.first, last: cell.last ?? unit.last });
+      // 两头的竖线与空格占 4 个字。格里的文字是几段接起来的改写文字，各截找不到自己的位置，都记这一格各段的位置。
+      for (const piece of splitLong(cell.text, CHUNK_MAX_CHARS - 4)) {
+        out.push({ text: rowText([piece]), first: cell.first ?? unit.first, last: cell.last ?? unit.last, cells: [cell], partial: true });
+      }
       continue;
     }
     if (group.length && charCount(rowText([...group.map((one) => one.text), cell.text])) > CHUNK_MAX_CHARS) emit();
@@ -141,29 +231,69 @@ function withHeader(row: string, header: string | undefined): string {
   return header !== undefined && charCount(header) + 1 + charCount(row) <= CHUNK_MAX_CHARS ? `${header}\n${row}` : row;
 }
 
-/** 把同一个块（或小节）里的各段依次接成片段，追加到 out；word 为真时位置记成段落号，否则记成行号。 */
-function pack(units: Unit[], heading: string | null, word: boolean, out: Chunk[]): void {
-  const push = (text: string, first: number, last: number) => out.push({
-    index: out.length + 1, heading,
-    first_paragraph: word ? first : null, last_paragraph: word ? last : null,
-    first_line: word ? null : first, last_line: word ? null : last,
-    text,
-  });
-  let parts: string[] = [];
+function headerOf(unit: Unit): TableHeader {
+  const numbers = unit.cells!.flatMap((cell) => (cell.first === null ? [] : [cell.first, cell.last!]));
+  return { first_paragraph: numbers.length ? Math.min(...numbers) : null, last_paragraph: numbers.length ? Math.max(...numbers) : null,
+    cells: unit.cells!.map((cell) => cell.shape), pieces: unit.cells!.flatMap((cell) => cell.pieces) };
+}
+
+/** 片段里的一截或一行：它的位置、各截，与（表格的行）各格。 */
+interface Part {
+  start: number;
+  end: number;
+  pieces: Piece[];
+  row?: RowCell[];
+}
+
+const partOf = (unit: Unit): Part => ({ start: unit.start, end: unit.end, pieces: unit.pieces, ...(unit.cells ? { row: unit.cells.map((cell) => cell.shape) } : {}) });
+
+/** 把同一个块（或小节）里的各段依次接成片段，追加到 out；word 为真时位置记成段落号，否则记成行号。block 是这个块（或小节）的编号。 */
+function pack(units: Unit[], heading: string | null, word: boolean, block: number, out: Chunk[]): void {
+  const push = (text: string, first: number, last: number, parts: Part[], header: Unit | undefined, partial: boolean) => {
+    const rows = parts.flatMap((part) => (part.row ? [part.row] : []));
+    out.push({
+      index: out.length + 1, heading,
+      first_paragraph: word ? first : null, last_paragraph: word ? last : null,
+      first_line: word ? null : first, last_line: word ? null : last,
+      text,
+      start_offset: Math.min(...parts.map((part) => part.start)), end_offset: Math.max(...parts.map((part) => part.end)), block,
+      pieces: parts.flatMap((part) => part.pieces),
+      ...(rows.length ? { rows } : {}),
+      ...(header ? { header: headerOf(header) } : {}),
+      ...(partial ? { partial: true as const } : {}),
+    });
+  };
+  let texts: string[] = [];
+  let parts: Part[] = [];
+  let head: Unit | undefined;
   let size = 0;
   let first = 0;
   let last = 0;
   const flush = () => {
-    if (parts.length) push(parts.join("\n"), first, last);
+    if (parts.length) push(texts.join("\n"), first, last, parts, head, false);
+    texts = [];
     parts = [];
+    head = undefined;
     size = 0;
   };
   for (const unit of units) {
     const n = charCount(unit.text);
     if (n > CHUNK_MAX_CHARS) {
       flush();
-      if (unit.cells) for (const piece of splitRow(unit)) push(withHeader(piece.text, unit.header), piece.first, piece.last);
-      else for (const piece of splitLong(unit.text)) push(piece, unit.first, unit.last);
+      if (unit.cells) {
+        for (const piece of splitRow(unit)) {
+          const text = withHeader(piece.text, unit.header?.text);
+          const part: Part = { start: unit.start, end: unit.end, pieces: piece.cells.flatMap((cell) => cell.pieces), row: piece.cells.map((cell) => cell.shape) };
+          push(text, piece.first, piece.last, [part], text !== piece.text ? unit.header : undefined, piece.partial);
+        }
+      } else {
+        for (const piece of splitLongRanges(unit.text)) {
+          // 这一截在源文字里的位置：整段原样就是 text 时照它在 text 里的起止算；不是（Word 的段里夹着图片链接）时记整段的。
+          const range = unit.exact ? { start: unit.start + piece.start, end: unit.start + piece.end } : { start: unit.start, end: unit.end };
+          const at: Piece = { ...range, ...(word ? { paragraph: unit.first } : {}) };
+          push(piece.text, unit.first, unit.last, [{ ...range, pieces: [at] }], undefined, true);
+        }
+      }
       continue;
     }
     // 各段之间用一个换行接起来，这个换行也算一个字。
@@ -171,13 +301,15 @@ function pack(units: Unit[], heading: string | null, word: boolean, out: Chunk[]
     if (!parts.length) {
       first = unit.first;
       // 片段从一张表的中间开始：先重复这张表的表头行。
-      if (unit.header !== undefined && withHeader(unit.text, unit.header) !== unit.text) {
-        parts.push(unit.header);
-        size = charCount(unit.header);
+      if (unit.header !== undefined && withHeader(unit.text, unit.header.text) !== unit.text) {
+        texts.push(unit.header.text);
+        head = unit.header;
+        size = charCount(unit.header.text);
       }
     }
-    size += (parts.length ? 1 : 0) + n;
-    parts.push(unit.text);
+    size += (texts.length ? 1 : 0) + n;
+    texts.push(unit.text);
+    parts.push(partOf(unit));
     last = unit.last;
   }
   flush();
@@ -188,14 +320,61 @@ const ANCHORS = /\[p(\d+)\] ?/g;
 const IMAGE = /\s*!\[[^\]]*\]\([^)]*\)\s*/g;
 /** 投影里表头下面的那一行分隔行（|---|---|）。 */
 const TABLE_RULE = /^\|(\s*:?-+:?\s*\|)+\s*$/;
+/** 合并格在投影里的占位。 */
+const MERGED = /^（同[左上]）$/;
 
-/** 投影里表格一行的一格：去掉段落号记号与图片链接，格里用 <br> 隔开的几段用一个空格接起来。 */
-function cellOf(cell: string): Cell {
+/**
+ * 投影里一截（一行，或表格一格里用 <br> 隔开的一截）里段落号记号右边的文字在哪里：去掉首尾空白之后的起止，相对这一截的开头。
+ * 没有段落号记号时是 null。
+ */
+function anchoredRange(segment: string): { n: number; start: number; end: number } | null {
+  const m = ANCHOR.exec(segment);
+  if (!m) return null;
+  const rest = segment.slice(m.index + m[0].length);
+  const start = m.index + m[0].length + (rest.length - rest.trimStart().length);
+  return { n: Number(m[1]), start, end: start + rest.trim().length };
+}
+
+/**
+ * 投影里表格一行的一格：去掉段落号记号与图片链接，格里用 <br> 隔开的几段用一个空格接起来。at 是这一格（去掉首尾空白之后）
+ * 在投影里的起点，各段的位置由它算出。
+ */
+function cellOf(cell: string, at: number): Cell {
   const numbers: number[] = [];
   const text = cell.split("<br>")
     .map((part) => part.replace(ANCHORS, (_, n: string) => (numbers.push(Number(n)), "")).replace(IMAGE, " ").replace(/\s+/g, " ").trim())
     .filter((part) => part !== "").join(" ");
-  return { text, first: numbers.length ? Math.min(...numbers) : null, last: numbers.length ? Math.max(...numbers) : null };
+  const pieces: Piece[] = [];
+  let offset = 0;
+  for (const part of cell.split("<br>")) {
+    const found = anchoredRange(part);
+    if (found) pieces.push({ start: at + offset + found.start, end: at + offset + found.end, paragraph: found.n, cell: true });
+    offset += part.length + "<br>".length;
+  }
+  const shape: RowCell = pieces.length ? pieces.map((piece) => piece.paragraph!) : MERGED.test(cell) ? cell : "";
+  return { text, first: numbers.length ? Math.min(...numbers) : null, last: numbers.length ? Math.max(...numbers) : null, pieces, shape };
+}
+
+/**
+ * 投影里的一行表格拆成各格，拆法与 docx_source.ts 的 tableCells 相同（按没有转义的竖线拆，去掉两头，各格去掉首尾空白），
+ * 另给每格在这一行里的起点。
+ */
+export function tableCellRanges(line: string): { text: string; at: number }[] {
+  let base = line.length - line.trimStart().length;
+  let body = line.trim();
+  if (body.startsWith("|")) {
+    body = body.slice(1);
+    base += 1;
+  }
+  body = body.replace(/(?<!\\)\|$/, "");
+  const out: { text: string; at: number }[] = [];
+  let from = 0;
+  for (const bar of [...[...body.matchAll(/(?<!\\)\|/g)].map((m) => m.index!), body.length]) {
+    const cell = body.slice(from, bar);
+    out.push({ text: cell.trim(), at: base + from + (cell.length - cell.trimStart().length) });
+    from = bar + 1;
+  }
+  return out;
 }
 
 /**
@@ -204,26 +383,31 @@ function cellOf(cell: string): Cell {
  */
 function projectionUnits(projection: string): Unit[] {
   const paragraphs = projectionParagraphs(projection);
-  // 开头的说明是一段 HTML 注释：换成同样行数的空行，行的先后不变。
-  const lines = projection.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, "")).split("\n");
+  // 开头的说明是一段 HTML 注释：换成同样长度的空格，行的先后与每个字的位置都不变。
+  const lines = projection.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, " ")).split("\n");
   const out: Unit[] = [];
   /** 正在走的这张表的表头行；不在表格里时是 null。 */
-  let header: string | null = null;
+  let header: Unit | null = null;
   let table = false;
+  let next = 0;
   for (const line of lines) {
+    const here = next;
+    next += line.length + 1;
     if (!line.startsWith("|")) {
       table = false;
       header = null;
       if (line.startsWith(">")) continue;
-      const m = ANCHOR.exec(line);
-      if (!m) continue;
-      const n = Number(m[1]);
-      const text = (paragraphs[n - 1] ?? "").trim();
-      if (text) out.push({ text, first: n, last: n });
+      const found = anchoredRange(line);
+      if (!found) continue;
+      const text = (paragraphs[found.n - 1] ?? "").trim();
+      if (!text) continue;
+      const start = here + found.start;
+      const end = here + found.end;
+      out.push({ text, first: found.n, last: found.n, start, end, pieces: [{ start, end, paragraph: found.n }], exact: line.slice(found.start, found.end) === text });
       continue;
     }
     if (TABLE_RULE.test(line)) continue;
-    const cells = tableCells(line).map(cellOf);
+    const cells = tableCellRanges(line).map((cell) => cellOf(cell.text, here + cell.at));
     const first = !table;
     table = true;
     if (cells.every((cell) => cell.text === "")) continue;
@@ -231,8 +415,9 @@ function projectionUnits(projection: string): Unit[] {
     const numbers = cells.flatMap((cell) => (cell.first === null ? [] : [cell.first, cell.last!]));
     // 一行里没有段落号（全是合并格）：位置沿用上一个单位的末段；前面什么都没有时算第 1 段。
     const before = out.length ? out[out.length - 1].last : 1;
-    const unit: Unit = { text, cells, first: numbers.length ? Math.min(...numbers) : before, last: numbers.length ? Math.max(...numbers) : before };
-    if (first) header = text;
+    const unit: Unit = { text, cells, first: numbers.length ? Math.min(...numbers) : before, last: numbers.length ? Math.max(...numbers) : before,
+      start: here, end: here + line.length, pieces: cells.flatMap((cell) => cell.pieces), exact: false };
+    if (first) header = unit;
     else if (header !== null) unit.header = header;
     out.push(unit);
   }
@@ -245,7 +430,7 @@ export function chunkWord(projection: string, params: SegmentParams): Chunk[] {
   const out: Chunk[] = [];
   for (const block of buildSegments(projection, params, "", "").blocks) {
     // 一个单位归它起始段落号所在的块：表格的一行不拆到两个块里。
-    pack(all.filter((unit) => unit.first >= block.first_paragraph && unit.first <= block.last_paragraph), block.heading, true, out);
+    pack(all.filter((unit) => unit.first >= block.first_paragraph && unit.first <= block.last_paragraph), block.heading, true, block.index, out);
   }
   return out;
 }
@@ -257,55 +442,74 @@ const HEADING = /^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/;
 function chunkLines(text: string, headings: boolean): Chunk[] {
   const out: Chunk[] = [];
   const titles: (string | null)[] = [];
-  /** 这个小节自己的标题与它所在的行；文档开头、第一个标题之前的那一节没有。 */
-  let own: { text: string; line: number } | null = null;
+  /** 这个小节自己的标题、它所在的行与标题文字在源文字里的起点；文档开头、第一个标题之前的那一节没有。 */
+  let own: { text: string; line: number; start: number } | null = null;
   let units: Unit[] = [];
   let lines: string[] = [];
   let first = 0;
   let last = 0;
+  /** 这一段第一行在源文字里的起点。 */
+  let firstStart = 0;
   let fence: string | null = null;
-  const add = (line: string, no: number) => {
-    if (!lines.length) first = no;
+  /** 小节序号：文档开头的那一节是 0，此后每遇到一个标题加 1。 */
+  let section = 0;
+  const add = (line: string, no: number, start: number) => {
+    if (!lines.length) {
+      first = no;
+      firstStart = start;
+    }
     lines.push(line);
     last = no;
   };
   const endParagraph = () => {
-    const joined = lines.join("\n").trim();
-    if (joined) units.push({ text: joined, first, last });
+    const raw = lines.join("\n");
+    const joined = raw.trim();
+    if (joined) {
+      const start = firstStart + (raw.length - raw.trimStart().length);
+      const end = start + joined.length;
+      units.push({ text: joined, first, last, start, end, pieces: [{ start, end }], exact: true });
+    }
     lines = [];
   };
   const endSection = () => {
     endParagraph();
-    if (!units.length && own) units.push({ text: own.text, first: own.line, last: own.line });
-    pack(units, titles.filter((one) => one).join(" / ") || null, false, out);
+    if (!units.length && own) {
+      const end = own.start + own.text.length;
+      units.push({ text: own.text, first: own.line, last: own.line, start: own.start, end, pieces: [{ start: own.start, end }], exact: true });
+    }
+    pack(units, titles.filter((one) => one).join(" / ") || null, false, section, out);
     units = [];
   };
+  let next = 0;
   text.split("\n").forEach((line, i) => {
     const no = i + 1;
+    const here = next;
+    next += line.length + 1;
     const mark = FENCE.exec(line);
     if (fence !== null) {
-      add(line, no);
+      add(line, no, here);
       // 围栏用同一种符号、不少于开头那么多个、后面不带别的字的一行收尾。
       if (mark && mark[1][0] === fence[0] && mark[1].length >= fence.length && line.trim() === mark[1]) fence = null;
       return;
     }
     if (mark) {
-      add(line, no);
+      add(line, no, here);
       fence = mark[1];
       return;
     }
     const heading = headings ? HEADING.exec(line) : null;
     if (heading) {
       endSection();
+      section++;
       const level = heading[1].length;
       titles.length = Math.min(titles.length, level - 1);
       while (titles.length < level - 1) titles.push(null);
       titles.push(heading[2] || null);
-      own = heading[2] ? { text: heading[2], line: no } : null;
+      own = heading[2] ? { text: heading[2], line: no, start: here + line.indexOf(heading[2], heading[1].length) } : null;
       return;
     }
     if (line.trim() === "") endParagraph();
-    else add(line, no);
+    else add(line, no, here);
   });
   endSection();
   return out;
@@ -326,6 +530,17 @@ export function chunkDocument(name: string, text: string, params: SegmentParams)
   const kind = documentKind(name);
   if (kind === "word") return chunkWord(text, params);
   return kind === "markdown" ? chunkMarkdown(text) : chunkPlain(text);
+}
+
+/**
+ * 片段的一截读成文字。Markdown 与纯文本就是源文字里的这一截；Word 文档照 docx_source.ts 取段文字的办法提取
+ * （去图片链接、去首尾空白，表格里把转义的竖线还原），与保存修订核对摘录时用的段文字相同。
+ */
+export function pieceText(source: string, piece: Piece): string {
+  const raw = source.slice(piece.start, piece.end);
+  if (piece.paragraph === undefined) return raw;
+  const text = raw.replace(IMAGE, " ").trim();
+  return piece.cell ? text.replace(/\\\|/g, "|") : text;
 }
 
 /** 这个片段送去换算的文字：标题一行加正文；没有标题，或者正文本来就以标题开头时只送正文。 */
