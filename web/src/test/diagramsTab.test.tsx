@@ -72,6 +72,8 @@ const openDiagram = async (t: Task, over: Over = {}) => {
   return view;
 };
 const textarea = () => screen.getByTestId("diagram-text") as HTMLTextAreaElement;
+/** 切到右边一栏的「来源」页签。 */
+const showSources = () => fireEvent.click(screen.getByTestId("diagram-tab-sources"));
 const type = (text: string) => fireEvent.change(textarea(), { target: { value: text } });
 
 describe("图表页签与列表", () => {
@@ -114,7 +116,7 @@ describe("图表页签与列表", () => {
 });
 
 describe("图的详情", () => {
-  it("点一行打开：顶上编号、图名、种类与修订；左边 Mermaid 文本，右边画出来的图；说明、来源与图里画了谁", async () => {
+  it("点一行打开：顶上编号、图名、种类，下一行修订信息与说明；图占中间；右边一栏「文本」页签是 Mermaid 文本，「来源」页签是来源与图里画了谁", async () => {
     const got = mockDetail(detail());
     render(panel(task([row()]), { initialDiagrams: true }));
     fireEvent.click(screen.getByTestId("diagram-D-001"));
@@ -122,22 +124,32 @@ describe("图的详情", () => {
     const sub = await screen.findByTestId("diagram-sub");
     expect(got).toHaveBeenCalledWith("TASK-D", "D-001");
     const view = screen.getByTestId("diagram-detail");
-    expect(view.querySelector(".dh")!.textContent).toBe("D-001读者用例用例图");
+    expect([...view.querySelector(".dh")!.children].slice(0, 3).map((one) => one.textContent)).toEqual(["D-001", "读者用例", "用例图"]);
     expect(sub.textContent).toBe(`${revisionLine(row())} · 来源 3 条`);
     expect(revisionLine(row())).toBe("现在是修订 2，由助手改的 · 2026-10-08 14:03");
     expect([revisionLine(row({ revision_no: 1 })), revisionLine(row({ revision_by: "user" }))]).toEqual(["现在是修订 1，由助手画的 · 2026-10-08 14:03", "现在是修订 2，由你改的 · 2026-10-08 14:03"]);
-    expect(textarea().value).toBe(MERMAID);
+    // 说明与修订信息在同一行，太长时省略，悬停看全文。
+    const note = screen.getByTestId("diagram-note-text");
+    expect([note.textContent, note.getAttribute("title"), note.parentElement === sub.parentElement]).toEqual([" · 说明：读者能做的事。", "读者能做的事。", true]);
+    // 图在中间那一块里，右边一栏在它旁边。
     await waitFor(() => expect(screen.getByTestId("diagram-svg").querySelector("svg")).not.toBeNull());
     expect(screen.getByTestId("diagram-svg").textContent).toBe(MERMAID);
-    expect(screen.getByTestId("diagram-note-text").textContent).toBe("读者能做的事。");
+    expect([...view.querySelector(".dg-body")!.children].map((one) => one.className)).toEqual(["dg-figure", "dg-side"]);
+    // 右边一栏两个页签，一打开停在「文本」。
+    expect([...screen.getByTestId("diagram-side").querySelectorAll("[role=tab]")].map((one) => [one.textContent, one.classList.contains("on")])).toEqual([["文本", true], ["来源3", false]]);
+    expect(textarea().value).toBe(MERMAID);
+    expect(screen.queryByTestId("diagram-sources")).toBeNull();
+    showSources();
+    expect(screen.queryByTestId("diagram-text")).toBeNull();
+    const sources = screen.getByTestId("diagram-sources");
     // 来源用条目的来源卡片：依据已变、已经删除的记号相同；图的来源不写「支持哪个字段」。
-    expect([...view.querySelectorAll(".srcbox .chip")].map((one) => one.textContent)).toEqual(["用户的话", "条目", "条目"]);
-    expect(within(view).getByTestId("basis-stale-UC-001").textContent).toBe("依据已变：UC-001 在这之后改过（引用时是修订 1，现在是修订 2）");
-    expect(within(view).getByTestId("basis-deleted-UC-003").textContent).toBe("UC-003 已经删除");
-    expect(view.querySelectorAll(".srcbox .fields").length).toBe(0);
+    expect([...sources.querySelectorAll(".srcbox .chip")].map((one) => one.textContent)).toEqual(["用户的话", "条目", "条目"]);
+    expect(within(sources).getByTestId("basis-stale-UC-001").textContent).toBe("依据已变：UC-001 在这之后改过（引用时是修订 1，现在是修订 2）");
+    expect(within(sources).getByTestId("basis-deleted-UC-003").textContent).toBe("UC-003 已经删除");
+    expect(sources.querySelectorAll(".srcbox .fields").length).toBe(0);
     // 依据条目的来源可以没有摘录：没有摘录就不留一对空的引号。
-    expect([...view.querySelectorAll(".srcbox .quote")].map((one) => one.textContent)).toEqual(["「把这几个用例画成用例图」"]);
-    // 图里画了谁：还在的可点，已经删除的、任务里没有的标灰并说明。
+    expect([...sources.querySelectorAll(".srcbox .quote")].map((one) => one.textContent)).toEqual(["「把这几个用例画成用例图」"]);
+    // 图里画了谁（在「来源」页签里）：还在的可点，已经删除的、任务里没有的标灰并说明。
     expect(screen.getByTestId("diagram-drawn").textContent).toBe("UC-001 借出图书、UC-003 挂失借书证（已经删除）、UC-404（任务里没有这个条目）");
     expect(screen.getByTestId("drawn-UC-001").querySelector(".ref")!.getAttribute("role")).toBe("button");
     expect([screen.getByTestId("drawn-UC-003").querySelector(".ref"), screen.getByTestId("drawn-UC-404").querySelector(".ref")]).toEqual([null, null]);
@@ -147,19 +159,57 @@ describe("图的详情", () => {
     expect(screen.getByTestId("diagram-list")).toBeTruthy();
   });
 
+  it("右边一栏：切页签、收起再展开，改了一半的文本都还在；收起之后图那一块独占中间；换一张图看时这一栏的样子不变", async () => {
+    mockDetail(detail());
+    const rows = [row(), row({ diagram_id: "D-002", name: "借书的先后" })];
+    await openDiagram(task(rows));
+    const toggle = () => screen.getByTestId("diagram-side-toggle");
+    expect(toggle().textContent).toBe("收起文本与来源 ›");
+    const changed = `${MERMAID}\n  b(["UC-002 归还图书"])`;
+    type(changed);
+    expect(screen.getByTestId("diagram-dirty-dot")).toBeTruthy();
+    // 切到「来源」再切回来：草稿还在，图上方的预览提示一直在。
+    showSources();
+    expect(screen.getByTestId("diagram-preview-note").textContent).toBe(PREVIEW_TEXT);
+    expect(screen.getByTestId("diagram-dirty-dot")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("diagram-tab-text"));
+    expect(textarea().value).toBe(changed);
+    // 收起：右边一栏不在了，中间只剩图那一块；再展开，还停在「文本」，草稿还在。
+    fireEvent.click(toggle());
+    expect(screen.queryByTestId("diagram-side")).toBeNull();
+    expect([toggle().textContent, screen.getByTestId("diagram-detail").querySelector(".dg-body")!.className]).toEqual(["‹ 文本与来源", "dg-body side-closed"]);
+    expect([...screen.getByTestId("diagram-detail").querySelector(".dg-body")!.children].map((one) => one.className)).toEqual(["dg-figure"]);
+    expect(screen.getByTestId("diagram-preview-note")).toBeTruthy();
+    fireEvent.click(toggle());
+    expect(textarea().value).toBe(changed);
+    fireEvent.click(screen.getByTestId("diagram-discard"));
+    // 停在「来源」并收起，回到列表打开另一张图：还是收起的，展开后还停在「来源」。
+    showSources();
+    fireEvent.click(toggle());
+    fireEvent.click(screen.getByText("‹ 回到列表"));
+    fireEvent.click(screen.getByTestId("diagram-D-002"));
+    await screen.findByTestId("diagram-sub");
+    expect(screen.queryByTestId("diagram-side")).toBeNull();
+    fireEvent.click(toggle());
+    expect(screen.getByTestId("diagram-tab-sources").classList.contains("on")).toBe(true);
+  });
+
   it("点图里画的条目或来源里的条目：打开那个条目；文本里没有条目编号、没有说明时各有交代", async () => {
     mockDetail(detail());
     const onSelect = vi.fn();
     const view = await openDiagram(task([row()]), { onSelect });
+    showSources();
     fireEvent.click(screen.getByTestId("drawn-UC-001").querySelector(".ref")!);
     fireEvent.click(screen.getByTestId("note-source-UC-001"));
     expect(onSelect.mock.calls.map((call) => call[0])).toEqual(["UC-001", "UC-001"]);
     view.unmount();
     mockDetail(detail({ drawn: [], note: "", sources: [] }));
     await openDiagram(task([row()]));
-    expect(screen.getByTestId("diagram-drawn").textContent).toBe(NOTHING_DRAWN_TEXT);
     expect(screen.queryByTestId("diagram-note-text")).toBeNull();
-    expect([...screen.getByTestId("diagram-detail").querySelectorAll(".sec-h")].map((one) => one.textContent)).toEqual(["Mermaid 文本", "图", "图里画了谁"]);
+    expect(screen.getByTestId("diagram-tab-sources").textContent).toBe("来源0");
+    showSources();
+    expect(screen.getByTestId("diagram-drawn").textContent).toBe(NOTHING_DRAWN_TEXT);
+    expect(screen.getByTestId("diagram-sources").textContent).toBe(`这张图没有来源。图里画了谁${NOTHING_DRAWN_TEXT}`);
   });
 
   it("画不出来时写 mermaid 的原话，「导出 PNG」不能点；画出来了点导出，文件名是「编号 图名」", async () => {

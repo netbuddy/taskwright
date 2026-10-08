@@ -369,25 +369,37 @@
 
 /* 图表页签（components/work/DiagramsPane.tsx）：图的列表与详情。 */
 .app .lrow .dg-rev { margin-left: auto; font-size: 0.881rem; color: var(--mut); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.app .dg-detail .dh-sub { margin-bottom: .3rem; }
-/* 左边 Mermaid 文本、右边画出来的图；条目区窄于 40rem 时上下排。 */
-.app .dg-split { display: flex; flex-direction: column; gap: .2rem 1rem; }
-.app .dg-text, .app .dg-figure { min-width: 0; }
-@container items (min-width: 40rem) {
-  .app .dg-split { flex-direction: row; align-items: flex-start; }
-  .app .dg-text { flex: 0 0 38%; }
-  .app .dg-figure { flex: 1 1 0; }
-}
-.app textarea.ed.dg-mermaid { font-family: ui-monospace, Menlo, monospace; font-size: 0.857rem; line-height: 1.5; min-height: 16rem; white-space: pre; overflow: auto; tab-size: 2; }
+/* 详情占满条目区的高度：顶上两行，下面图在左、文本与来源一栏在右；这一栏可以收起。 */
+.app .dg-detail { height: 100%; max-width: none; padding-bottom: .6rem; }
+.app .dg-sub { display: flex; min-width: 0; margin-bottom: .4rem; white-space: nowrap; }
+.app .dg-sub .dg-note { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.app .dg-body { flex: 1 1 auto; min-height: 0; display: flex; gap: .8rem; }
+.app .dg-figure { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.app .dg-figure .diagram-view { flex: 1 1 auto; }
+.app .dg-figure .diagram-stage { border: 1px solid var(--line); border-radius: .5rem; background: #fff; }
+.app .dg-figure .diagram-stage svg { display: block; }
+.app .dg-preview { margin-bottom: .3rem; font-size: 0.889rem; color: var(--amber); }
+.app .dg-side { flex: 0 0 clamp(15rem, 34%, 22rem); min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line); padding-left: .8rem; }
+.app .dg-tabs { flex: 0 0 auto; border-bottom: 1px solid var(--line); margin-bottom: .5rem; }
+.app .dg-tabs .dg-dot { margin-left: .25rem; font-size: .6rem; color: var(--amber); vertical-align: middle; }
+.app .dg-side-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.app .dg-side-body.dg-text { display: flex; flex-direction: column; overflow: visible; }
+.app textarea.ed.dg-mermaid { flex: 1 1 auto; font-family: ui-monospace, Menlo, monospace; font-size: 0.857rem; line-height: 1.5; min-height: 12rem; white-space: pre; overflow: auto; tab-size: 2; resize: none; }
 .app textarea.ed.dg-mermaid:read-only { background: #f6f6f6; border-color: var(--line); color: #4a4a4a; }
 .app .dg-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin-top: .3rem; }
 .app .dg-hint { font-size: 0.873rem; color: var(--mut); }
-.app .dg-err { margin-top: .35rem; font-size: 0.901rem; color: #b42318; white-space: pre-wrap; word-break: break-word; }
-.app .dg-preview { margin-left: .6rem; font-weight: 400; letter-spacing: 0; color: var(--amber); }
-.app .dg-figure .diagram-frame { border: 1px solid var(--line); border-radius: .5rem; background: #fff; padding: .5rem; }
-.app .dg-note { font-size: 0.921rem; line-height: 1.6; white-space: pre-wrap; }
+.app .dg-err { margin-top: .35rem; max-height: 9rem; overflow-y: auto; font-size: 0.901rem; color: #b42318; white-space: pre-wrap; word-break: break-word; }
+.app .dg-none { font-size: 0.921rem; color: var(--mut); }
 .app .dg-drawn { font-size: 0.93rem; line-height: 1.9; }
 .app .dg-drawn .gone { color: #9a9a9a; }
+/* 条目区窄：右边一栏排到图的下面，页面自己滚。 */
+@container items (max-width: 40rem) {
+  .app .dg-detail { height: auto; }
+  .app .dg-body { flex-direction: column; }
+  .app .dg-figure .diagram-stage { min-height: 20rem; }
+  .app .dg-side { flex: 0 0 auto; border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: .5rem; }
+  .app .dg-side-body { overflow: visible; }
+}
 /* 图表组件里的按钮是 antd 的：工作视图的全局清零把它们的内边距清掉了，这里补回来。 */
 .app .diagram-view .ant-btn { padding: 0 .75rem; }
 .app .diagram-view .ant-btn.ant-btn-sm { padding: 0 .5rem; }
