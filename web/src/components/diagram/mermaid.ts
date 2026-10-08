@@ -58,39 +58,56 @@ export function sizedSvg(svg: string): { text: string; width: number; height: nu
 }
 
 /**
- * 页面上放大缩小用：把 SVG 改成填满它外面那一层（宽高都写 100%，去掉 mermaid 写的最大宽度），大小由外面那一层按比例定。
- * 返回改过的 SVG 文本与图原始的宽高（取 viewBox 的大小）。
+ * 页面上看图的视图：比例与平移。图放在一块看板里，左上角对着看板的左上角，再按 translate(x, y) scale(zoom) 摆放
+ * （变换的原点是图的左上角）。平移用变换做，不靠滚动条。
  */
-export function scalableSvg(svg: string): { text: string; width: number; height: number } {
-  const { text, width, height } = sizedSvg(svg);
-  const root = new DOMParser().parseFromString(text, "image/svg+xml").documentElement;
-  if (!root.getAttribute("viewBox")) root.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  root.setAttribute("width", "100%");
-  root.setAttribute("height", "100%");
-  return { text: new XMLSerializer().serializeToString(root), width, height };
-}
+export interface DiagramViewport { zoom: number; x: number; y: number }
 
-/** 页面上看图的比例：最小、最大、每按一次放大或缩小乘除的倍数；一打开时自动缩小最多缩到 AUTO_MIN_ZOOM，再大的图靠滚动看。 */
-export const MIN_ZOOM = 0.1;
+/** 比例的上下限、按一次「放大」「缩小」乘除的倍数、滚轮滚一格乘除的倍数；一打开时自动缩小最多缩到 AUTO_MIN_ZOOM，再大的图拖着看。 */
+export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 4;
 export const ZOOM_STEP = 1.25;
+export const WHEEL_STEP = 1.1;
 export const AUTO_MIN_ZOOM = 0.5;
+/** 图与看板边缘之间留的空（像素）。 */
+export const STAGE_MARGIN = 8;
 
-const clampZoom = (zoom: number): number => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+/** 比例收进上下限，并取到百分之一，免得连着缩放攒出零头。 */
+export const clampZoom = (zoom: number): number => Math.round(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom)) * 100) / 100;
 
-/** 一打开时的比例：图不比容器宽就按原始大小；比容器宽就缩到容器宽度，但最多缩到 AUTO_MIN_ZOOM。量不到容器宽度时按原始大小。 */
-export function initialZoom(width: number, container: number): number {
-  if (!(container > 0) || width <= container) return 1;
-  return Math.max(AUTO_MIN_ZOOM, container / width);
+/** 一打开时的比例：图不比看板宽就按原始大小；比看板宽就缩到看板的宽度，但最多缩到 AUTO_MIN_ZOOM。量不到看板的宽度时按原始大小。 */
+export function initialZoom(width: number, room: number): number {
+  if (!(room > 0) || width <= room) return 1;
+  return clampZoom(Math.max(AUTO_MIN_ZOOM, room / width));
 }
 
-/** 「适应宽度」的比例：正好与容器一样宽（不超过最小与最大）。量不到容器宽度时按原始大小。 */
-export function fitZoom(width: number, container: number): number {
-  return container > 0 && width > 0 ? clampZoom(container / width) : 1;
+/** 「适应宽度」的比例：正好与看板一样宽（不超过上下限）。量不到看板的宽度时按原始大小。 */
+export function fitZoom(width: number, room: number): number {
+  return room > 0 && width > 0 ? clampZoom(room / width) : 1;
 }
 
 /** 放大或缩小一档。 */
 export const stepZoom = (zoom: number, direction: 1 | -1): number => clampZoom(direction > 0 ? zoom * ZOOM_STEP : zoom / ZOOM_STEP);
+
+/**
+ * 按这个比例把图摆进看板：放得下的方向居中，放不下的方向从边上开始（左边或上边留 STAGE_MARGIN）。
+ * size 是图原始的宽高，stage 是看板的宽高（量不到时是 0，那时都从边上开始）。
+ */
+export function placed(size: { width: number; height: number }, stage: { width: number; height: number }, zoom: number): DiagramViewport {
+  const along = (length: number, room: number) => Math.max(STAGE_MARGIN, (room - length * zoom) / 2);
+  return { zoom, x: along(size.width, stage.width), y: along(size.height, stage.height) };
+}
+
+/**
+ * 换一个比例，并让看板上 (px, py) 这一点（相对看板左上角）底下的那一处图不动：新的平移 = p − (新比例 / 旧比例) × (p − 旧的平移)。
+ * 比例没有变（已经到了上下限）时原样返回。
+ */
+export function zoomAt(view: DiagramViewport, zoom: number, px: number, py: number): DiagramViewport {
+  const next = clampZoom(zoom);
+  if (next === view.zoom) return view;
+  const ratio = next / view.zoom;
+  return { zoom: next, x: px - ratio * (px - view.x), y: py - ratio * (py - view.y) };
+}
 
 /** 这么大的图导出时放大几倍：平常是 PNG_SCALE；放大后超过画布上限的，降到正好放得下。 */
 export function pngScale(width: number, height: number): number {

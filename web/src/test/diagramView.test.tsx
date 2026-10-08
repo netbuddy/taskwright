@@ -3,7 +3,7 @@
 // 真的画图与导出在浏览器里另行实测。给 SVG 写宽高、定放大倍数、定文件名这三样不靠浏览器，直接测。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DIAGRAM_DRAWING_TEXT, DIAGRAM_EMPTY_TEXT, DIAGRAM_FAILED_TEXT, DiagramView, EXPORT_FAILED_TEXT, exportShrunkText } from "../components/diagram/DiagramView";
 import * as diagram from "../components/diagram/mermaid";
 
@@ -139,56 +139,145 @@ describe("导出用到的三样计算", () => {
   });
 });
 
-describe("放大、缩小与滚动", () => {
-  const sizeOf = () => { const box = screen.getByTestId("diagram-svg"); return [box.style.width, box.style.height]; };
-  const framed = (width: number) => vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width);
-
-  it("图放在可以滚动的框里，SVG 填满由比例定大小的那一层；四个按钮改比例，旁边写现在是百分之几", async () => {
-    const spy = framed(600);
-    render(<DiagramView text={GOOD} />);
+describe("看板：拖动、滚轮与四个按钮", () => {
+  /** 看板的大小（jsdom 里量不到，这里给定）与它在页面上的位置。 */
+  const stageIs = (width: number, height: number, left = 0, top = 0) => {
+    const spies = [
+      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width),
+      vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(height),
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }),
+    ];
+    return () => spies.forEach((spy) => spy.mockRestore());
+  };
+  const drawnView = async (text = GOOD) => {
+    const view = render(<DiagramView text={text} />);
     await waitFor(() => expect(screen.getByTestId("diagram-svg").querySelector("svg")).not.toBeNull());
-    const svg = screen.getByTestId("diagram-svg").querySelector("svg")!;
-    expect([svg.getAttribute("width"), svg.getAttribute("height"), svg.getAttribute("viewBox"), svg.getAttribute("style")]).toEqual(["100%", "100%", "0 0 120 60", null]);
-    expect(screen.getByTestId("diagram-frame").style.overflow).toBe("auto");
-    // 图（120 宽）不比框（600）宽：按原始大小。
-    expect([sizeOf(), screen.getByTestId("diagram-zoom-now").textContent]).toEqual([["120px", "60px"], "100%"]);
+    return view;
+  };
+  const transform = () => screen.getByTestId("diagram-svg").style.transform;
+  const percent = () => screen.getByTestId("diagram-zoom-now").textContent;
+
+  it("图按原始大小放在看板里，放得下就居中；四个按钮以看板中心为锚改比例或重新摆放，旁边写现在是百分之几", async () => {
+    const restore = stageIs(600, 400);
+    await drawnView();
+    const box = screen.getByTestId("diagram-svg");
+    const svg = box.querySelector("svg")!;
+    // SVG 写上了原始的宽高（120×60），放大缩小靠外面那一层的变换。
+    expect([svg.getAttribute("width"), svg.getAttribute("height"), svg.getAttribute("style")]).toEqual(["120", "60", null]);
+    expect([box.style.width, box.style.height, box.style.transformOrigin]).toEqual(["120px", "60px", "0 0"]);
+    expect(screen.getByTestId("diagram-stage").style.overflow).toBe("hidden");
+    expect([transform(), percent()]).toEqual(["translate(240px, 170px) scale(1)", "100%"]);
     fireEvent.click(screen.getByTestId("diagram-zoom-in"));
-    expect([sizeOf(), screen.getByTestId("diagram-zoom-now").textContent]).toEqual([["150px", "75px"], "125%"]);
+    expect([transform(), percent()]).toEqual(["translate(225px, 163px) scale(1.25)", "125%"]);
     fireEvent.click(screen.getByTestId("diagram-zoom-out"));
     fireEvent.click(screen.getByTestId("diagram-zoom-out"));
-    expect([sizeOf(), screen.getByTestId("diagram-zoom-now").textContent]).toEqual([["96px", "48px"], "80%"]);
+    expect([transform(), percent()]).toEqual(["translate(252px, 176px) scale(0.8)", "80%"]);
+    // 适应宽度：比例到了上限 4 倍，重新摆放。
     fireEvent.click(screen.getByTestId("diagram-zoom-fit"));
-    expect([sizeOf(), screen.getByTestId("diagram-zoom-now").textContent]).toEqual([["480px", "240px"], "400%"]);
+    expect([transform(), percent()]).toEqual(["translate(60px, 80px) scale(4)", "400%"]);
     fireEvent.click(screen.getByTestId("diagram-zoom-actual"));
-    expect(sizeOf()).toEqual(["120px", "60px"]);
-    spy.mockRestore();
+    expect([transform(), percent()]).toEqual(["translate(240px, 170px) scale(1)", "100%"]);
+    restore();
   });
 
-  it("一打开时比框宽的图缩到框的宽度，但最多缩到一半，再大的靠滚动；用户调过比例之后文本再变也不改比例", async () => {
-    const spy = framed(100);
-    const view = render(<DiagramView text={GOOD} />);
-    await waitFor(() => expect(screen.getByTestId("diagram-zoom-now").textContent).toBe("83%"));
-    expect(sizeOf()).toEqual(["100px", "50px"]);
-    view.unmount();
-    spy.mockReturnValue(30);
-    const second = render(<DiagramView text={GOOD} />);
-    await waitFor(() => expect(screen.getByTestId("diagram-zoom-now").textContent).toBe("50%"));
-    expect(sizeOf()).toEqual(["60px", "30px"]);
-    // 「适应宽度」是用户自己要的，可以缩到一半以下。
+  it("按住左键拖动是平移：移动与松开在整个窗口上都算，松开之后不再跟着动；右键不拖；比例不变", async () => {
+    const restore = stageIs(600, 400);
+    await drawnView();
+    const stage = screen.getByTestId("diagram-stage");
+    expect(stage.style.cursor).toBe("grab");
+    fireEvent.pointerDown(stage, { button: 0, clientX: 100, clientY: 100 });
+    expect(stage.style.cursor).toBe("grabbing");
+    fireEvent.pointerMove(window, { clientX: 130, clientY: 80 });
+    expect(transform()).toBe("translate(270px, 150px) scale(1)");
+    // 鼠标移到看板外面也接着拖。
+    fireEvent.pointerMove(window, { clientX: -500, clientY: 900 });
+    expect(transform()).toBe("translate(-360px, 970px) scale(1)");
+    fireEvent.pointerUp(window);
+    expect(stage.style.cursor).toBe("grab");
+    fireEvent.pointerMove(window, { clientX: 0, clientY: 0 });
+    expect(transform()).toBe("translate(-360px, 970px) scale(1)");
+    fireEvent.pointerDown(stage, { button: 2, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 300, clientY: 300 });
+    expect([transform(), percent(), stage.style.cursor]).toEqual(["translate(-360px, 970px) scale(1)", "100%", "grab"]);
+    restore();
+  });
+
+  it("滚轮放大缩小，光标底下的那一处图不动；页面不跟着滚；比例有上下限", async () => {
+    const restore = stageIs(600, 400, 100, 50);
+    await drawnView();
+    const stage = screen.getByTestId("diagram-stage");
+    const parsed = () => { const m = /translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([\d.]+)\)/.exec(transform())!; return { x: Number(m[1]), y: Number(m[2]), zoom: Number(m[3]) }; };
+    /** 看板上 (px, py) 这一点底下是图上的哪一处。 */
+    const under = (px: number, py: number) => { const v = parsed(); return [Math.round((px - v.x) / v.zoom), Math.round((py - v.y) / v.zoom)]; };
+    // 光标在页面上的 (150, 70)，也就是看板上的 (50, 20)。
+    const before = under(50, 20);
+    const up = createEvent.wheel(stage, { deltaY: -100, clientX: 150, clientY: 70 });
+    fireEvent(stage, up);
+    expect(up.defaultPrevented).toBe(true);
+    expect([transform(), percent()]).toEqual(["translate(259px, 185px) scale(1.1)", "110%"]);
+    expect(under(50, 20)).toEqual(before);
+    fireEvent.wheel(stage, { deltaY: 100, clientX: 150, clientY: 70 });
+    expect([percent(), under(50, 20)]).toEqual(["100%", before]);
+    for (let i = 0; i < 30; i++) fireEvent.wheel(stage, { deltaY: 100, clientX: 150, clientY: 70 });
+    expect(percent()).toBe("25%");
+    for (let i = 0; i < 60; i++) fireEvent.wheel(stage, { deltaY: -100, clientX: 150, clientY: 70 });
+    expect(percent()).toBe("400%");
+    restore();
+  });
+
+  it("一打开时比看板宽的图缩到看板的宽度，但最多缩到一半；用户动过视图之后文本再变也不改视图", async () => {
+    let restore = stageIs(100, 400);
+    const first = await drawnView();
+    expect([transform(), percent()]).toEqual(["translate(8px, 175px) scale(0.83)", "83%"]);
+    first.unmount();
+    restore();
+    restore = stageIs(30, 400);
+    const second = await drawnView();
+    expect([transform(), percent()]).toEqual(["translate(8px, 185px) scale(0.5)", "50%"]);
+    // 「适应宽度」是用户自己要的，可以缩到一半以下（到下限 25%）。
     fireEvent.click(screen.getByTestId("diagram-zoom-fit"));
-    expect(screen.getByTestId("diagram-zoom-now").textContent).toBe("25%");
+    expect(percent()).toBe("25%");
+    const kept = transform();
     second.rerender(<DiagramView text={`${GOOD}\n  B --> C[退款]`} />);
-    await waitFor(() => expect(fakeRender).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fakeRender.mock.calls.some((call) => String(call[1]).includes("退款"))).toBe(true));
     await waitFor(() => expect(screen.getByTestId("diagram-svg").querySelector("svg")).not.toBeNull());
-    expect(screen.getByTestId("diagram-zoom-now").textContent).toBe("25%");
-    spy.mockRestore();
+    expect([transform(), percent()]).toEqual([kept, "25%"]);
+    restore();
   });
 
-  it("比例的三样计算：一打开的、适应宽度的、放大缩小一档的（有上下限）；量不到框的宽度时按原始大小", () => {
-    expect([diagram.initialZoom(300, 600), diagram.initialZoom(600, 300), diagram.initialZoom(3000, 300), diagram.initialZoom(300, 0)]).toEqual([1, 0.5, 0.5, 1]);
-    expect(diagram.initialZoom(400, 300)).toBe(0.75);
-    expect([diagram.fitZoom(3000, 300), diagram.fitZoom(30000, 300), diagram.fitZoom(10, 300), diagram.fitZoom(300, 0)]).toEqual([0.1, 0.1, 4, 1]);
-    expect([diagram.stepZoom(1, 1), diagram.stepZoom(1, -1), diagram.stepZoom(4, 1), diagram.stepZoom(0.1, -1)]).toEqual([1.25, 0.8, 4, 0.1]);
+  it("导出 PNG 不受视图影响：放大、拖动之后导出的仍是画出来的原图（由导出按原始大小的 2 倍画）", async () => {
+    const restore = stageIs(600, 400);
+    await drawnView();
+    fireEvent.click(screen.getByTestId("diagram-zoom-in"));
+    fireEvent.click(screen.getByTestId("diagram-zoom-in"));
+    fireEvent.pointerDown(screen.getByTestId("diagram-stage"), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 300, clientY: 200 });
+    fireEvent.pointerUp(window);
+    expect(percent()).toBe("156%");
+    fireEvent.click(screen.getByTestId("diagram-export"));
+    await waitFor(() => expect(exportPng).toHaveBeenCalledTimes(1));
+    // 交给导出的是 mermaid 画出来的那份 SVG，没有带看板里的比例与平移。
+    const handed = exportPng.mock.calls[0][0];
+    expect(handed).toContain('viewBox="0 0 120 60" width="100%"');
+    expect(handed).not.toMatch(/scale\(|translate\(/);
+    expect(diagram.sizedSvg(handed)).toMatchObject({ width: 120, height: 60 });
+    expect(diagram.pngScale(120, 60)).toBe(2);
+    restore();
+  });
+
+  it("视图的几样计算：一打开的比例、适应宽度、放大缩小一档、摆进看板、以一点为锚换比例（有上下限）", () => {
+    expect([diagram.initialZoom(300, 600), diagram.initialZoom(600, 300), diagram.initialZoom(3000, 300), diagram.initialZoom(300, 0), diagram.initialZoom(400, 300)]).toEqual([1, 0.5, 0.5, 1, 0.75]);
+    expect([diagram.fitZoom(3000, 300), diagram.fitZoom(600, 300), diagram.fitZoom(10, 300), diagram.fitZoom(300, 0)]).toEqual([0.25, 0.5, 4, 1]);
+    expect([diagram.stepZoom(1, 1), diagram.stepZoom(1, -1), diagram.stepZoom(4, 1), diagram.stepZoom(0.25, -1)]).toEqual([1.25, 0.8, 4, 0.25]);
+    expect([diagram.MIN_ZOOM, diagram.MAX_ZOOM]).toEqual([0.25, 4]);
+    // 放得下的方向居中，放不下的方向从边上开始；量不到看板时都从边上开始。
+    expect(diagram.placed({ width: 200, height: 100 }, { width: 600, height: 400 }, 1)).toEqual({ zoom: 1, x: 200, y: 150 });
+    expect(diagram.placed({ width: 2000, height: 100 }, { width: 600, height: 400 }, 0.5)).toEqual({ zoom: 0.5, x: 8, y: 175 });
+    expect(diagram.placed({ width: 200, height: 100 }, { width: 0, height: 0 }, 1)).toEqual({ zoom: 1, x: 8, y: 8 });
+    // 新的平移 = p − (新比例 / 旧比例) × (p − 旧的平移)。
+    expect(diagram.zoomAt({ zoom: 1, x: 100, y: 40 }, 2, 300, 200)).toEqual({ zoom: 2, x: -100, y: -120 });
+    const same = { zoom: 4, x: 5, y: 6 };
+    expect(diagram.zoomAt(same, 8, 0, 0)).toBe(same);
   });
 
   it("给了现在不能导出的原因：「导出 PNG」灰掉，悬停显示这句话", async () => {
