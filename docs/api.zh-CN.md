@@ -53,7 +53,7 @@ data: {
 | 事件 | 发生时机 | `data` |
 |---|---|---|
 | `task_changed` | 任务被创建、完成或放弃时 | `seq`、`at`、`task_id`、`task_name`、`status_before`、`status_after`、`actor`、`completion` |
-| `diagram_changed` | 一张图被新画、修改或删除时 | `seq`、`at`、`task_id`、`actor`、`op_id`、`diagram_id`、`revision_no`（这张图自己改后的修订号）、`op`（`add`、`update`、`delete`）、`name`、`kind`。不带 Mermaid 文本与来源，要用时取图的详情 |
+| `diagram_changed` | 一张图被新画、修改或删除时 | `seq`、`at`、`task_id`、`actor`、`op_id`、`diagram_id`、`revision_no`（这张图自己改后的修订号）、`op`（`add`、`update`、`delete`）、`name`、`kind`、`kind_name`（种类的中文名，例如「用例图」）。不带 Mermaid 文本与来源，要用时取图的详情 |
 | `review_recorded` | 评审者（reviewer）评完一个条目时；`verdict` 为 `合规` 或 `不合规`，由代码按发现所依据规则的级别算出 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`verdict`、`reason`、`findings`（每条有 `rule_id`、`level`（`必选` 或 `可选`）、`field`、`index`（从 0 起，指整个字段时为 null）、`problem`、`suggestion`）、`op_id`（用户在界面上发起的评审才有）、`completion` |
 | `review_unfinished` | 一个条目的评审没有完成（超时、调用失败、两次输出不合格、评审期间条目被改），不记合规与否 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`reason`、`op_id`、`completion` |
 | `review_progress` | 界面发起的一批评审（`request_review`）开始时（`done` 为 0），以及每评完一个条目时 | `seq`、`at`、`task_id`、`op_id`、`done`、`total`、`current`（此刻正在评的条目）、`item_id`（刚评完的条目，开始时为 null）、`completion` |
@@ -244,9 +244,9 @@ data: {
 `POST …/actions?session={session_id}`：
 
 ```
-{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review" | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable",
-  "targets": [ { "item_id": "UC-002", "base_revision": 3 } ],  // 打开这个条目时它所在的修订号；undo 时用 "revision_no"
-  "fields": { "基本流程": ["…", "…"] },                          // edit_fields：给出完整的新值；submit_deliverable：{ "revision_no": N }
+{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review" | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram",
+  "targets": [ { "item_id": "UC-002", "base_revision": 3 } ],  // 打开这个条目时它所在的修订号；undo 时用 "revision_no"；edit_diagram 时写 { "diagram_id", "base_revision" }
+  "fields": { "基本流程": ["…", "…"] },                          // edit_fields：给出完整的新值；submit_deliverable：{ "revision_no": N }；edit_diagram：{ "mermaid": "…" }
   "notify_executor": false }
 ```
 
@@ -263,6 +263,7 @@ data: {
 9. 对已关闭的任务，任何操作都返回 `task_closed`。
 10. 智能体工作期间，任何操作都返回 `session_busy`，`data.reason` 为 `working`；不带 `notify_executor` 的 `mark_viewed` 除外。
 11. `submit_deliverable` 由用户把任务标为已完成：用户在条目区顶部的绿色提示条上点「已完成，提交交付物」、再在确认框里点「提交」时，网页界面发出它。`targets` 为空列表，`fields` 写 `{ "revision_no": N }`，是页面当时看到的交付物最新修订号。它与智能体的 `complete_task` 做同一组核对，这次点击本身就是用户的同意。完成条件没有全部满足时返回 `rejected`，说明以「任务没有标为已完成。」开头，后面写缺什么。N 不是交付物现在的最新修订时返回 `rejected`，说明是「这次没有提交：你看到的是修订 N，交付物现在已经是修订 M。请看过现在的内容再提交。」。都通过时任务变为已完成：发出 `task_changed`，`actor` 为 `user`，不带 `op_id`；会话里追加一条界面操作说明（`kind` 为 `submit_deliverable`）：「界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 N）。任务已标为已完成，交付物不能再改，仍然可以生成文档。」它不引出智能体的工作，也不能撤销。客户端不要为它显示「正在保存」。界面只在任务进行中、`completion.all_met` 为真、智能体不在工作、而且这条会话里没有还没回应的、带 `key` 为 `complete` 选项的请选择卡片（见 5.4）时显示这条提示条。
+12. `edit_diagram` 把用户在页面上改过的 Mermaid 文本存成那张图的一次新修订，发起方是用户：`targets` 只写一项 `{ "diagram_id": "D-001", "base_revision": N }`，N 是页面看到的这张图自己的修订号；`fields` 只写 `{ "mermaid": "…" }`（图名、种类、说明与删除由智能体来改）。任务服务先校验这段文本，做法与 `POST …/diagrams/validate` 相同，种类用这张图现在的种类。没有通过的不保存：返回 `rejected`，说明以「这张图没有保存：」开头、后面是校验给的原话，`data` 里带 `reason`、`line` 与 `message`；校验本身没有做成时 `data.reason` 是 `unavailable`，说明写的是这是程序这边的问题、不是文本写错了。`base_revision` 已经不是这张图现在的修订号时返回 `stale_revision`，`data.diagrams` 列出这张图、它现在的修订号与是谁改的；文本没有改动、图不存在或已经删除，返回 `rejected`。与智能体的 `save_diagram` 不同：不核对文本里写的条目编号是不是现有的条目，也不要求画进图里的条目各有来源；来源沿用上一次修订的，「图里画了谁」按新文本重算。结果以带同一个 `op_id` 的 `diagram_changed` 事件到达；任务的修订序号不动，这一步不能撤销。会话里追加一行界面操作的说明「界面操作（不是用户打的字）：用户在界面上改了图 D-001「…」的 Mermaid 文本，D-001 现在是修订 N。要看现在的文本，用 get_item 写 D-001。」，不引出一次运行。
 
 ## 7 发送给智能体的固定句式
 
