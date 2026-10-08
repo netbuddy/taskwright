@@ -28,13 +28,10 @@ Planned themes for the next releases. No dates; order and scope may change.
 
 ## 0.4.1 Knowledge base, search and model configuration
 
-- [x] Knowledge base: libraries of reference documents outside any task; a task chooses the libraries it uses; the assistant looks rules up in them and cites them as sources
-- [x] Knowledge base search by meaning (with an embedding model) and by keyword at once, falling back to keyword only without an embedding model; what is found is the verbatim source text, which the assistant cites directly
-- [x] Word documents in the knowledge base split into chunks along their Markdown text, with table rows kept whole
-- [x] Model services set up on a settings page: local services (ollama, llama.cpp, vLLM), API-key services and the Codex subscription, each providing language models or embedding models; both models can be tested
-- [x] The assistant's program is pi 1.0.4, packaged from a lock file kept in the repository; no network access at startup
-- [x] A turn in which the assistant keeps being refused stops after five refusals in a row
-- [x] Delete a material that has not entered the conversation
+- [x] Knowledge base: reference documents kept outside any task, chosen per task; the assistant looks rules up in them and cites the source text verbatim
+- [x] Knowledge base search by meaning and by keyword
+- [x] Model services and the models in use set up on a settings page
+- [x] The assistant's program is pi 1.0.4, packaged from a lock file; no network access at startup
 
 ## 0.4.2 Diagrams and Word export
 
