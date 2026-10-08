@@ -97,6 +97,21 @@ describe("条目详情里的来源", () => {
     expect([...detail.querySelectorAll(".srcbox")].map((b) => b.classList.contains("stale"))).toEqual([true, true]);
   });
 
+  it("被谁依据里的图：写编号、图名与「图」字，不能点；条目照旧能点", () => {
+    const t = sourcesTask([src("文档原文", "inputs/借阅说明.md", "读者可以借书。")]);
+    (t.items[0] as Item).depended_by = [{ element_kind: "条目", id: "UC-002", revision_no: 1 }, { element_kind: "图", id: "D-001", revision_no: 2 }];
+    t.items.push({ ...t.items[0], item_id: "UC-002", title: "办理借书证", sources: [], depended_by: [] } as unknown as Item);
+    t.diagrams = [{ diagram_id: "D-001", name: "读者用例", kind: "use_case", kind_name: "用例图", revision_no: 2, revision_by: "executor", revision_at: "", created_at: "", source_count: 2 }];
+    render(<OpenItem t={t} />);
+    const detail = screen.getByTestId("item-detail");
+    expect(within(detail).getByTestId("depended-by").textContent).toBe("被谁依据：UC-002 办理借书证、D-001 读者用例（图）");
+    const figure = within(detail).getByTestId("depended-by-D-001");
+    expect([figure.getAttribute("role"), figure.classList.contains("ref")]).toEqual([null, false]);
+    fireEvent.click(figure);
+    expect(within(screen.getByTestId("item-detail")).getByTestId("depended-by-D-001")).toBeTruthy(); // 点了没有反应，还在原来的条目上
+    expect(within(detail).getByTestId("depended-by-UC-002").getAttribute("role")).toBe("button");
+  });
+
   it("依据图的来源有自己的标签样式", () => {
     render(<OpenItem t={sourcesTask([{ ...src("图", "FIG-001", "借阅流程"), depends_revision: 1, current_revision: null, stale: null }])} />);
     const chip = screen.getByTestId("item-detail").querySelector(".srcbox .chip")!;

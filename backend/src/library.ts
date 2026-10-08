@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
+import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import {
@@ -187,8 +188,9 @@ export function batchView(no: number, row: Row) {
 /** 依据方是任务里的要素的两种来源：另一个条目，或者一张图（图这种要素还没有做出来）。 */
 const SOURCE_ITEM = "条目";
 const SOURCE_FIGURE = "图";
-/** 产出方是哪种要素。现在只有条目。 */
+/** 产出方是哪种要素：条目，或者图。 */
 const ELEMENT_ITEM = "条目";
+const ELEMENT_FIGURE = "图";
 
 /** 接口里的一条来源。后三项只在种类是「条目」或「图」时有（见 Library.sourcesOf）。 */
 export interface SourceView {
@@ -303,6 +305,9 @@ export interface LibraryData {
   contents?: Row[];
   revisions?: number[];
   sources?: Map<string, SourceRow[]>;
+  /** 任务里的全部图（删掉的也在）与图的来源（键是图的编号加图自己的修订号）。还没有图的表的旧库里是空的。 */
+  diagrams?: DiagramRecord[];
+  diagram_sources?: Map<string, SourceRow[]>;
   event_meta?: Map<number, { actor: any; at: any; call_id: any }>;
   reviews?: Row[];
   findings?: Map<number, any[]>;
@@ -336,6 +341,8 @@ export function readAll(db: DatabaseSync, afterSeq: number | null = null, withRe
       contents: all(db, "SELECT * FROM item_version WHERE task_id = ? ORDER BY item_id, revision_no", tid),
       revisions: all(db, "SELECT revision_no FROM revision WHERE task_id = ? ORDER BY revision_no", tid).map((x) => x.revision_no),
       sources: readSources(db, tid),
+      diagrams: readDiagrams(db, tid),
+      diagram_sources: readSources(db, tid, ELEMENT_FIGURE),
       event_meta: eventMeta,
       reviews: readReviews(db, tid),
       findings: readFindings(db, tid),
@@ -446,21 +453,72 @@ export class Library {
    */
   sourcesOf(itemId: string, revisionNo: number | null | undefined): SourceView[] {
     if (!revisionNo) return [];
-    return (this.data.sources?.get(itemKey(itemId, revisionNo)) || []).map((row) => {
-      const one = sourceView(row);
-      if (one.kind === SOURCE_FIGURE) return { ...one, current_revision: null, stale: null };
-      if (one.kind !== SOURCE_ITEM) return one;
-      const cited = this.items.get(one.locator);
-      if (!cited || cited.deleted_in_revision !== null) return { ...one, current_revision: null, stale: "deleted" as const };
-      const current = this.currentRevision(one.locator);
-      const then = one.depends_revision ?? null;
-      return { ...one, current_revision: current, stale: then !== null && current !== null && current > then ? "changed" as const : null };
-    });
+    return (this.data.sources?.get(itemKey(itemId, revisionNo)) || []).map((row) => this.withBasisState(sourceView(row)));
+  }
+
+  /** 给依据另一个条目（或图）的来源带上对方现在的修订号与依据的现状；别的种类原样。 */
+  withBasisState(one: SourceView): SourceView {
+    if (one.kind === SOURCE_FIGURE) return { ...one, current_revision: null, stale: null };
+    if (one.kind !== SOURCE_ITEM) return one;
+    const cited = this.items.get(one.locator);
+    if (!cited || cited.deleted_in_revision !== null) return { ...one, current_revision: null, stale: "deleted" as const };
+    const current = this.currentRevision(one.locator);
+    const then = one.depends_revision ?? null;
+    return { ...one, current_revision: current, stale: then !== null && current !== null && current > then ? "changed" as const : null };
+  }
+
+  /** 图在它自己的某次修订下的来源，与条目的来源同形；依据条目的同样带依据的现状。 */
+  diagramSourcesOf(diagramId: string, revisionNo: number): SourceView[] {
+    return (this.data.diagram_sources?.get(itemKey(diagramId, revisionNo)) || []).map((row) => this.withBasisState(sourceView(row)));
+  }
+
+  /** 图的列表里的一项：编号、图名、种类、它自己现在的修订号、最近一次是谁在什么时候改的、什么时候画的、有几条来源。 */
+  diagramRow(record: DiagramRecord) {
+    const now = latestVersion(record)!;
+    return {
+      diagram_id: record.diagram_id, name: now.name, kind: now.kind, kind_name: kindName(now.kind),
+      revision_no: now.revision_no, revision_by: actorWord(now.actor), revision_at: clock.fromLocalText(now.created_at),
+      created_at: clock.fromLocalText(record.versions[0].created_at),
+      source_count: (this.data.diagram_sources?.get(itemKey(record.diagram_id, now.revision_no)) || []).length,
+    };
+  }
+
+  /** 还在的图，按编号排。 */
+  diagramsView() {
+    return liveDiagrams(this.data.diagrams || []).map((record) => this.diagramRow(record));
   }
 
   /**
-   * 被谁依据：每个条目被哪些要素当作依据，键是被依据的条目编号。只数还没有删除的条目在它当前修订下的来源；一个条目有几条来源
-   * 都依据同一个条目时只列一次。每项是产出方的种类（现在只有条目）、编号与它当前的修订号，先后照条目清单的顺序。现算，不存库。
+   * 一张图的详情：列表里的各项，加 Mermaid 文本、说明、它改动过的修订号、来源、被谁依据（现在没有要素能依据图，是空列表）、
+   * 图里画了谁（drawn）。drawn 是从 Mermaid 文本里扫条目编号得出的补充视图，不存库：每项是条目编号、条目现在的标题与状态
+   * （live 还在、deleted 已经删除、missing 任务里没有这个编号）。已经删除的图也给得出详情（deleted 为真），没有这张图返回 null。
+   */
+  diagramView(diagramId: string) {
+    const record = (this.data.diagrams || []).find((one) => one.diagram_id === diagramId);
+    if (!record || record.versions.length === 0) return null;
+    const now = latestVersion(record)!;
+    // 删除那一次修订不带来源：已经删除的图给它删除之前那一次的来源。
+    const sourcesAt = record.deleted_in_revision !== null && record.versions.length > 1 ? record.versions[record.versions.length - 2].revision_no : now.revision_no;
+    const prefixes = [...this.collections.values()].map((one) => one["编号前缀"]);
+    const drawn = drawnItemIds(now.mermaid, prefixes).map((id) => {
+      const item = this.items.get(id);
+      if (!item) return { item_id: id, title: null, state: "missing" as const };
+      const fields = this.fieldsOf(id, this.currentRevision(id)) ?? {};
+      return { item_id: id, title: titleOf(fields, this.collections.get(item.collection)), state: item.deleted_in_revision === null ? "live" as const : "deleted" as const };
+    });
+    return {
+      ...this.diagramRow(record), deleted: record.deleted_in_revision !== null,
+      mermaid: now.mermaid, note: now.note, revisions: record.versions.map((one) => one.revision_no),
+      sources: this.diagramSourcesOf(diagramId, sourcesAt),
+      depended_by: [] as { element_kind: string; id: string; revision_no: number | null }[],
+      drawn,
+    };
+  }
+
+  /**
+   * 被谁依据：每个条目被哪些要素当作依据，键是被依据的条目编号。只数还没有删除的条目在它当前修订下的来源，与还没有删除的图
+   * 在它当前修订下的来源；一个要素有几条来源都依据同一个条目时只列一次。每项是产出方的种类（条目或图）、编号与它当前的修订号
+   * （图的是图自己的修订号），先是条目（照条目清单的顺序）、后是图（照编号）。现算，不存库。
    */
   dependedBy(order: Row[]): Map<string, { element_kind: string; id: string; revision_no: number | null }[]> {
     const out = new Map<string, { element_kind: string; id: string; revision_no: number | null }[]>();
@@ -472,6 +530,15 @@ export class Library {
         let list = out.get(one["出处"]);
         if (!list) out.set(one["出处"], (list = []));
         if (!list.some((have) => have.id === i.item_id)) list.push({ element_kind: ELEMENT_ITEM, id: i.item_id, revision_no: no });
+      }
+    }
+    for (const record of liveDiagrams(this.data.diagrams || [])) {
+      const no = latestVersion(record)!.revision_no;
+      for (const one of this.data.diagram_sources?.get(itemKey(record.diagram_id, no)) || []) {
+        if (one["种类"] !== SOURCE_ITEM) continue;
+        let list = out.get(one["出处"]);
+        if (!list) out.set(one["出处"], (list = []));
+        if (!list.some((have) => have.element_kind === ELEMENT_FIGURE && have.id === record.diagram_id)) list.push({ element_kind: ELEMENT_FIGURE, id: record.diagram_id, revision_no: no });
       }
     }
     return out;
@@ -606,6 +673,7 @@ export class Library {
       definition: definitionView(this.definition, task.definition_text ?? null, this.data.task_dir ?? null),
       completion: null as any,
       items,
+      diagrams: this.diagramsView(),
       latest_revision: this.latestRevision(),
       review_batches: this.batchesView(),
     };
@@ -663,6 +731,11 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
   }
   if (e.name === "TASK_CREATED") {
     return ["task_changed", { ...base, task_name: payload.task_name ?? null, status_before: null, status_after: "进行中", actor, completion: null }];
+  }
+  if (e.name === "DIAGRAM_SAVED") {
+    // 图新增、修改或删除了一次。只带是哪一张、它自己改后的修订号、做了什么与图名、种类；内容与来源由图的接口取。
+    return ["diagram_changed", { ...base, actor, op_id: opId, diagram_id: payload.diagram_id ?? null, revision_no: payload.revision_no ?? null,
+      op: payload.op ?? null, name: payload.name ?? null, kind: payload.kind ?? null }];
   }
   if (e.name === "TASK_COMPLETED") {
     const task = lib.data.task!;
@@ -762,6 +835,20 @@ export function taskSnapshot(taskDir: string, reviewSince: number | null = null)
   const view = lib.taskView();
   view.completion = completion(taskDir, lib.taskId, lib.definition, lib.totals());
   return [data.seq, view, reviewInProgress(data, reviewSince)];
+}
+
+/** 图的列表（还在的图）；任务目录里还没有库或者没有任务时是空列表。 */
+export function diagramList(taskDir: string) {
+  const data = readTask(taskDir);
+  if (data === null || data.task === null) return [];
+  return new Library(data).diagramsView();
+}
+
+/** 一张图的详情；没有这张图返回 null。 */
+export function diagramDetail(taskDir: string, diagramId: string) {
+  const data = readTask(taskDir);
+  if (data === null || data.task === null) return null;
+  return new Library(data).diagramView(diagramId);
 }
 
 export function itemRevisions(taskDir: string, itemId: string) {

@@ -89,8 +89,8 @@ export function makeWorkspace(root: string, name: string, withDb: boolean): stri
   return ws;
 }
 
-/** 用真实任务类型的起始文件建一个任务目录，按几批操作各保存一次修订。 */
-export function makeTypedTask(root: string, taskType: string, materials: Record<string, string>, batches: unknown[][]): string {
+/** 用真实任务类型的起始文件建一个任务目录，按几批各写一次：一批是操作列表时保存一次修订，是 { diagram, said } 时保存一张图。 */
+export function makeTypedTask(root: string, taskType: string, materials: Record<string, string>, batches: unknown[]): string {
   const ws = join(root, "task");
   cpSync(join(ROOT, "task-types", taskType), ws, { recursive: true });
   mkdirSync(join(ws, "inputs"), { recursive: true });
