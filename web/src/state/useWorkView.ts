@@ -7,6 +7,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { openEventStream, type StreamStatus } from "../api/events";
 import { useService } from "../components/ServiceControls";
+import { forgetPdf } from "./pdfStore";
 import { initialWorkState, workReducer, type WorkAction, type WorkState } from "./workState";
 import type { RevisionLogEntry } from "../api/types";
 
@@ -62,6 +63,11 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
           stop();
           exiting.current((m.data as { mode?: "desktop" | "server" } | null)?.mode);
           return;
+        }
+        // 材料被删掉、被替换，或者新来了一份（可以与先前的同名）：先前按这个路径读过的 PDF 不作数了。
+        if (m.event === "material_removed" || m.event === "material_added") {
+          const d = m.data as { path?: unknown; replaced_by?: unknown; replaces?: unknown } | null;
+          for (const path of [d?.path, d?.replaced_by, d?.replaces]) if (typeof path === "string") forgetPdf(taskId, path);
         }
         dispatch({ type: "sse", event: m.event, data: m.data });
       },
