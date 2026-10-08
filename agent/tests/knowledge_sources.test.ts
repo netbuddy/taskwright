@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { docxProjection } from "../src/lib/docx_markdown.ts";
-import { checkQuotes, saveRevision } from "../src/lib/save_revision.ts";
+import { checkQuotes, lineEndsOnly, saveRevision } from "../src/lib/save_revision.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
 import { DEFINITION_PATH, MATERIAL_TEXT, SAMPLE, SAMPLE_DOCX, SOURCE, callIn, count, makeWorkspace, putSampleDocx, query } from "./helpers.ts";
 
@@ -176,4 +176,98 @@ test("回复给建议值时的依据走同一套核对：知识库出处通过�
   assert.equal(wrong.checked, null);
   assert.match(wrong.errors[0], /第 1 条依据的摘录「没有这句话。」在 术语\.md 里找不到/);
   assert.match(check([TERM], null).errors[0], /这个任务没有知识库/);
+});
+
+// ───────────── 逐字核对的松紧：只放宽行尾 ─────────────
+
+/** 一份行尾是回车换行、有的行行尾带空白的规范：第 7 条与第 8 条之间隔着一个空行。 */
+const REFUND = "# 退款规范\r\n\r\n第 7 条 下列商品不予退货：   \r\n定制商品、已拆封的音像制品。\r\n\r\n第 8 条 退货申请通过后，买家应在 7 天内寄出商品。\t\r\n";
+const NOTES = "一、总则\n\n本办法不适用于电子资源。\n\n五、错误码 E-4021 表示借书证已挂失。\n";
+
+function rootWith(files: Record<string, string>): string {
+  const root = makeRoot();
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(root, "general", "files", name), text);
+  return root;
+}
+const refund = (excerpt: string) => add({ kind: "文档原文", locator: "knowledge/general/退款规范.md", excerpt });
+const notes = (excerpt: string) => add({ kind: "文档原文", locator: "knowledge/general/说明.txt", excerpt });
+const word = (n: number, excerpt: string) => add({ kind: "文档原文", locator: `knowledge/lib-a1/规范.docx#p${n}`, excerpt });
+
+test("只放宽行尾：行尾符不同、每行行尾多出或少掉空白都不碍事；行里的空白与空行不动", () => {
+  assert.equal(lineEndsOnly("甲  \r\n乙\t\r\n\r\n丙 丁\r"), "甲\n乙\n\n丙 丁\n");
+  assert.equal(lineEndsOnly("甲\n\n\n乙"), "甲\n\n\n乙");
+  assert.equal(lineEndsOnly("  行首的空白不动 "), "  行首的空白不动");
+});
+
+test("Markdown 文档：照查到的原文逐字抄的摘录都通过（一条；相邻两条连空行；行尾多出空白；行尾是回车换行）", () => {
+  const root = rootWith({ "退款规范.md": REFUND });
+  const dir = makeTask();
+  for (const [i, excerpt] of [
+    "第 8 条 退货申请通过后，买家应在 7 天内寄出商品。",
+    // 查找交回的原文是源文字的原样（行尾统一成换行符）：两条之间的空行、第 7 条行尾的空白都照抄。
+    "第 7 条 下列商品不予退货：   \n定制商品、已拆封的音像制品。\n\n第 8 条 退货申请通过后，买家应在 7 天内寄出商品。",
+    // 抄的时候每行行尾多带了空白，或者把原文行尾的空白丢了。
+    "第 7 条 下列商品不予退货：\n定制商品、已拆封的音像制品。  ",
+    "第 7 条 下列商品不予退货： \t\r\n定制商品、已拆封的音像制品。\r\n\r\n第 8 条 退货申请通过后，买家应在 7 天内寄出商品。\r\n",
+  ].entries()) assert.match(save(dir, root, refund(excerpt)).text, new RegExp(`新增了条目 UC-00${i + 1}`), excerpt);
+});
+
+test("Markdown 文档：改了数字、否定词、条号的摘录被拒；把空行压掉、把不相邻的两条接起来、动了行里的空白也被拒", () => {
+  const root = rootWith({ "退款规范.md": REFUND });
+  const dir = makeTask();
+  for (const excerpt of [
+    "第 8 条 退货申请通过后，买家应在 8 天内寄出商品。",          // 数字
+    "第 7 条 下列商品予以退货：",                                  // 否定词
+    "第 9 条 退货申请通过后，买家应在 7 天内寄出商品。",          // 条号
+    "第8条 退货申请通过后，买家应在 7 天内寄出商品。",            // 条号里的空格去掉了：行里的空白不放宽
+    "定制商品、已拆封的音像制品。\n第 8 条 退货申请通过后，买家应在 7 天内寄出商品。",   // 空行压成了一个换行
+    "第 7 条 下列商品不予退货：\n\n第 8 条 退货申请通过后，买家应在 7 天内寄出商品。",   // 不相邻的两处接在一起
+    "第 7 条  下列商品不予退货：",                                 // 行里多了一个空格
+  ]) assert.throws(() => save(dir, root, refund(excerpt)), /在 退款规范\.md 里(找不到|不是连续的一段原文)/, excerpt);
+  assert.equal(count(dir, "revision"), 0);
+});
+
+test("纯文本文档：合法的摘录通过；改了数字、否定词、序号与编号的被拒", () => {
+  const root = rootWith({ "说明.txt": NOTES });
+  const dir = makeTask();
+  assert.match(save(dir, root, notes("本办法不适用于电子资源。")).text, /新增了条目 UC-001/);
+  assert.match(save(dir, root, notes("一、总则\n\n本办法不适用于电子资源。")).text, /新增了条目 UC-002/);
+  for (const excerpt of ["本办法适用于电子资源。", "六、错误码 E-4021 表示借书证已挂失。", "五、错误码 E-4022 表示借书证已挂失。", "一、总则\n本办法不适用于电子资源。"]) {
+    assert.throws(() => save(dir, root, notes(excerpt)), /在 说明\.txt 里(找不到|不是连续的一段原文)/, excerpt);
+  }
+});
+
+test("Word 文档的规则不变：一段、表格一格里的一段（出处写那一格的段落号）、摘录夹着多余空白都通过；从指定段起连同其后 5 段可以，再远不行", () => {
+  const root = makeRoot();
+  const dir = makeTask();
+  let n = 0;
+  const ok = (paragraph: number, excerpt: string) => assert.match(save(dir, root, word(paragraph, excerpt)).text, new RegExp(`新增了条目 UC-0*${++n}\\b`), excerpt);
+  ok(76, "逾期的每本每天罚款一角，罚款最多不超过这本书的定价。");
+  // 表格里的字：出处写摘录所在那一格里那一段的段落号。
+  ok(41, "5");
+  ok(44, "教师");
+  // 比较时去掉全部空白。
+  ok(76, "逾期的每本 每天罚款一角，\n罚款最多不超过这本书的定价。");
+  // 从第 36 段起连续 6 段（它自己加其后 5 段）：表头一行四格加下一行的前两格。
+  ok(36, "读者类型一次最多（本）借期（天）可续借次数学生5");
+  const before = snapshot(dir);
+  // 再往后一段就超出了范围。
+  assert.throws(() => save(dir, root, word(36, "读者类型一次最多（本）借期（天）可续借次数学生530")), /在 规范\.docx/);
+  // 带竖线的整行是改写文字，不是原文。
+  assert.throws(() => save(dir, root, word(40, "| 学生 | 5 | 30 | 1 |")), /在 规范\.docx/);
+  // 改了数字、否定词；段落号写成前一段、后一段。
+  assert.throws(() => save(dir, root, word(76, "逾期的每本每天罚款二角")), /在 规范\.docx 第 76 段里找不到/);
+  assert.throws(() => save(dir, root, word(76, "罚款最多超过这本书的定价")), /在 规范\.docx 第 76 段里找不到/);
+  assert.throws(() => save(dir, root, word(75, "罚款怎样缴纳待定。")), /规范\.docx/);
+  assert.throws(() => save(dir, root, word(77, "逾期的每本每天罚款一角")), /规范\.docx/);
+  assert.deepEqual(snapshot(dir), before);
+});
+
+test("材料来源走同一条规则：行尾的空白放宽，别的不放宽；不为知识库单独放宽", () => {
+  const dir = makeTask();
+  writeFileSync(join(dir, "inputs", "规定.md"), "第 1 条 借期 30 天。  \r\n\r\n第 2 条 可以续借一次。\r\n");
+  const material = (excerpt: string) => add({ kind: "文档原文", locator: "inputs/规定.md", excerpt });
+  assert.match(save(dir, null, material("第 1 条 借期 30 天。\n\n第 2 条 可以续借一次。")).text, /新增了条目 UC-001/);
+  assert.throws(() => save(dir, null, material("第 1 条 借期 30 天。\n第 2 条 可以续借一次。")), /在 规定\.md 里找不到/);
+  assert.throws(() => save(dir, null, material("第 1 条 借期 31 天。")), /在 规定\.md 里找不到/);
 });
