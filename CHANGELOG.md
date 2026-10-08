@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading from 0.4.1
+
+- Task databases are migrated on their own. The sources table gets two columns and two kinds are renamed (see **Sources** below). A task's database is migrated the first time it is written after the upgrade (the assistant saves something, or you do something on the page), inside one transaction, with the same rows and the same content. Until then the pages, the interface and generated documents already show the current names, because the reading side translates the old ones. As before, back up the task directories before upgrading.
+- An item that cited a domain note before the upgrade, where the note was changed afterwards, shows **依据已变** ("the basis has changed") straight after the upgrade. Old sources never recorded which revision of the note they cited, so the migration fills in the latest revision the note had at the revision the source belongs to. For a source that was written earlier and merely carried over while its item was changed, this is later than the true revision, so the mark can be missing for such old sources; it is never shown wrongly.
+
+### Sources
+
+- A source now says which element of the task an item rests on. An item can cite any other item of the task, not only a domain note: the kind is **条目** ("item"), the locator is the cited item's id, and the excerpt is checked verbatim against the cited item's current content. The cited item must exist, must not be deleted and cannot be the item itself; an item added or changed earlier in the same save can be cited.
+- When an item is cited, the revision it had at that moment is recorded. If the cited item is changed later, the source is marked **依据已变：DN-002 在这之后改过（引用时是修订 2，现在是修订 5）** ("the basis has changed: DN-002 was changed after this; revision 2 when cited, revision 5 now"); if it is deleted, the source says **DN-002 已经删除** ("DN-002 has been deleted"). The mark goes away when the assistant writes the source again. Carrying a source over while other fields change, editing a field on the page and undoing do not count as citing again.
+- The details of an item that other items rest on have a line **被谁依据** ("cited by") listing them. Domain notes keep their fuller section **被哪些条目引用** ("which items cite it").
+- **助手补充** ("added by the assistant") must carry a reason: the assistant writes it in the excerpt, a source of this kind without one is refused, and the page shows it after **理由：** ("reason:"). The assistant no longer writes a locator for this kind.
+- Two kinds were renamed in the database and the interface: `执行者补充` is now `助手补充`, and `领域说明` is now part of `条目`. The assistant's tools still accept the two old names and store the current ones, so the instructions copied into existing task directories keep working. A kind `图` ("figure") is reserved for the figures planned for this release and is refused until they exist.
+- Task data from the interface: a source of kind `条目` carries `depends_revision`, `current_revision` and `stale` (`"changed"`, `"deleted"` or `null`), and each item carries `depended_by`. The last three are worked out when the data is read and are not stored.
+- Generated documents and the Word export write a source that cites an item as the collection name, the item id and the excerpt, so documents of existing tasks read as before.
+- The observatory and the simulation judge read sources under the current kind names; the simulation summary key `执行者补充累计` is now `助手补充累计` (old result files are still read).
+
 ### Export to Word
 
 - **导出 Word** ("export to Word") at the top of the items area, next to **生成文档** ("generate document"), exports the ticked items as one Word file (.docx). The ticks are the boxes at the start of the rows in the item list; they are kept across the collection tabs, the button shows how many items are ticked in all tabs and is grey when none is. Ticking and exporting change nothing, so the boxes can now also be ticked while the assistant is working and after the task is completed; **把选中的这几条标为已读** ("mark the chosen ones as read") is still unavailable then. Collections shown as cards, such as the issues, have no tick boxes and cannot be exported this way.
