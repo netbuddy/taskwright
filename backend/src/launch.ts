@@ -173,6 +173,30 @@ export function segmentParamsOf(profile: Profile): SegmentParams {
   return segmentParams(section);
 }
 
+/** 启动配置「PDF 解析」一节的四个数：解析的三个上限，与另起的那一次运行最多等多少秒（到时还没有结束就停掉它）。 */
+export interface PdfRunLimits { max_pages: number; max_chars: number; max_seconds: number; stop_after_seconds: number }
+/** 没写时的缺省值：1000 页、300 万字、60 秒；外面再多等 15 秒，留给启动与写文件。 */
+export const PDF_RUN_DEFAULTS: Readonly<PdfRunLimits> = Object.freeze({ max_pages: 1000, max_chars: 3_000_000, max_seconds: 60, stop_after_seconds: 75 });
+
+/**
+ * 启动配置里「PDF 解析」一节；没写的一项用缺省值。页数与字数要是正整数，两个秒数要是正数，写错时抛 LaunchError。
+ * 上传 PDF 材料与知识库文档时用。
+ */
+export function pdfLimitsOf(profile: Profile): PdfRunLimits {
+  const section = profile["PDF 解析"] || {};
+  const out: PdfRunLimits = { ...PDF_RUN_DEFAULTS };
+  for (const name of ["max_pages", "max_chars", "max_seconds", "stop_after_seconds"] as const) {
+    const value = section[name];
+    if (value === undefined) continue;
+    const whole = name === "max_pages" || name === "max_chars";
+    if (!(typeof value === "number" && Number.isFinite(value) && value > 0 && (!whole || Number.isInteger(value)))) {
+      throw new LaunchError(`启动配置「PDF 解析」一节的 ${name} 应当是${whole ? "正整数" : "正数"}，现在写的是 ${JSON.stringify(value)}。`);
+    }
+    out[name] = value;
+  }
+  return out;
+}
+
 /** 组装交给 pi 进程的环境变量。密钥从代码仓之外的那个文件读进来，只经环境变量传给 pi，不落任何文件、不进命令行参数。 */
 export function buildEnvironment(profile: Profile): Record<string, string> {
   const env: Record<string, string> = {};

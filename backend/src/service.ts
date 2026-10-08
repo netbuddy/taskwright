@@ -5,7 +5,7 @@
  * 列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。修订统一之前建的任务（旧格式）不接手，列表里标明不支持。
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
@@ -16,11 +16,13 @@ import { ApiError } from "./errors.ts";
 import { readTextFile, readTextFileLenient } from "./files.ts";
 import * as library from "./library.ts";
 import * as occupancy from "./occupancy.ts";
-import { ProjectionError, isReserved, projectionPath, projectionText, removeProjection, writeProjection } from "./projection.ts";
+import { PDF_NO_TEXT, PdfUploadError, runPdfProjection } from "./pdf_upload.ts";
+import { PDF_PROJECTION_SUFFIX, removePdfProjection } from "./pdf_projection.ts";
+import { PDF_DERIVED_SUFFIXES, ProjectionError, isReserved, pdfFacts, projectionPath, projectionText, removeProjection, reservedNameText, writeProjection } from "./projection.ts";
 import { or, pyStr, truthy } from "./py.ts";
 import { Executor } from "./executor.ts";
 import { Hub } from "./hub.ts";
-import { PI_SETTINGS_MODEL, type Profile, segmentParamsOf } from "./launch.ts";
+import { PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
 import { TASK_TYPES_DIR } from "./paths.ts";
@@ -59,17 +61,19 @@ const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex")
 export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
 /** 删除一份已经进入对话的材料时的拒绝说明。 */
 export const ENTERED_CONVERSATION_TEXT = "这份材料已经进入了对话，不能删除。";
-export const UPLOAD_TYPES = [".md", ".txt", ".docx"];
+export const UPLOAD_TYPES = [".md", ".txt", ".docx", ".pdf"];
+/** 上传 PDF 时放它与派生文件的临时目录（在任务目录下，与材料目录在同一个盘上，生成好了才移进材料目录）。 */
+export const UPLOADING_DIR = ".uploading";
 /** 扩展名给人看的叫法：表里有的写叫法，没有的直接写扩展名本身。前端不另存一份，叫法经服务信息的 upload.types_text 给出。 */
-const UPLOAD_TYPE_NAMES: Record<string, string> = { ".docx": "Word 的 .docx" };
+const UPLOAD_TYPE_NAMES: Record<string, string> = { ".docx": "Word 的 .docx", ".pdf": "PDF" };
 
-/** 允许上传的类型写成给人看的一串，例如「.md、.txt 与 Word 的 .docx」：多项之间用「、」，最后一项前用「与」。由 UPLOAD_TYPES 拼出。 */
+/** 允许上传的类型写成给人看的一串，例如「.md、.txt、Word 的 .docx 与 PDF」：多项之间用「、」，最后一项前用「与」。由 UPLOAD_TYPES 拼出。 */
 export function uploadTypesText(): string {
   const names = UPLOAD_TYPES.map((ext) => UPLOAD_TYPE_NAMES[ext] ?? ext);
   return names.length === 1 ? names[0] : `${names.slice(0, -1).join("、")} 与 ${names[names.length - 1]}`;
 }
 
-/** 上传的文件类型不在 UPLOAD_TYPES 里时给用户看的那句话，例如「只接受 .md、.txt 与 Word 的 .docx 文件。」。服务信息把它给前端，前端在发送之前就能拦下。 */
+/** 上传的文件类型不在 UPLOAD_TYPES 里时给用户看的那句话，例如「只接受 .md、.txt、Word 的 .docx 与 PDF 文件。」。服务信息把它给前端，前端在发送之前就能拦下。 */
 export function unsupportedTypeText(): string {
   return `只接受 ${uploadTypesText()} 文件。`;
 }
@@ -502,20 +506,25 @@ export class Service {
     return target;
   }
 
-  upload(t: Task, filename: string, data: Buffer, session: string | null = null) {
+  /** 上传之前不看已有材料的那几样检查：文件名、类型、留用的名字、大小。返回材料目录相对任务目录的路径与它的全路径（不在就建）。 */
+  private checkUpload(t: Task, filename: string, data: Buffer): { folderRel: string; folder: string } {
     if (!filename || filename.includes("/") || filename.includes("\\") || filename === "." || filename === "..") {
       throw new ApiError("bad_request", "文件名里不能带路径分隔符。");
     }
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", unsupportedTypeText());
-    if (isReserved(filename)) throw new ApiError("bad_request", "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 材料生成的投影用，请改个名字再上传。");
-    const isDocx = filename.toLowerCase().endsWith(".docx");
+    if (isReserved(filename)) throw new ApiError("bad_request", reservedNameText("材料"));
     if (data.length > MAX_UPLOAD) throw new ApiError("too_large", TOO_LARGE_TEXT);
     const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const folder = join(t.dir, folderRel);
     mkdirSync(folder, { recursive: true });
-    // 只与用户放进来的材料比（投影、分段清单这些派生文件不算，判断沿用材料清单的 derived_from）。先比内容，再比文件名：
-    // 名字和内容都相同时报内容相同。摘要值（原始字节的 SHA-256）每次现算，不保存。
-    // 从这里到写完文件都是同步的：同一个服务里两个上传请求不会在比较与写入之间交错；不同的服务不会同时接手一个任务（占用标记）。
+    return { folderRel, folder };
+  }
+
+  /**
+   * 与已有的材料重内容或者重名就拒绝。只与用户放进来的材料比（投影、分段清单这些派生文件不算，判断沿用材料清单的 derived_from）。
+   * 先比内容，再比文件名：名字和内容都相同时报内容相同。摘要值（原始字节的 SHA-256）每次现算，不保存。
+   */
+  private refuseDuplicate(t: Task, filename: string, data: Buffer): void {
     const own = library.materials(t.dir, t.definition()).filter((m) => m.derived_from === null);
     const digest = sha256(data);
     for (const m of own) {
@@ -532,6 +541,15 @@ export class Service {
     }
     const same = own.find((m) => sameMaterialName(filename, basename(m.path)));
     if (same) throw new ApiError("name_taken", nameTakenText(basename(same.path)), { path: same.path });
+  }
+
+  /** 上传一份材料。PDF 材料要另起一次运行生成派生文件，所以这一种是异步的（uploadPdf）；别的类型当场做完。 */
+  upload(t: Task, filename: string, data: Buffer, session: string | null = null): { ok: true; path: string } | Promise<{ ok: true; path: string }> {
+    const { folderRel, folder } = this.checkUpload(t, filename, data);
+    if (filename.toLowerCase().endsWith(".pdf")) return this.uploadPdf(t, filename, data, session, folderRel, folder);
+    const isDocx = filename.toLowerCase().endsWith(".docx");
+    // 从这里到写完文件都是同步的：同一个服务里两个上传请求不会在比较与写入之间交错；不同的服务不会同时接手一个任务（占用标记）。
+    this.refuseDuplicate(t, filename, data);
     const target = join(folder, filename);
     try {
       // 排他创建：文件已经存在（文件系统认为同名）就不写，按同名拒绝，不覆盖。
@@ -565,7 +583,60 @@ export class Service {
   }
 
   /**
-   * 删除一份材料：本体连同 Word 材料的投影、分段清单、位置表与图片目录一起删。只接受用户放进来的材料（派生文件的路径不接受），
+   * 上传一份 PDF 材料。三步，保证材料目录里要么 PDF 与它的三个派生文件都在、要么一个都没有：
+   * 1. 先照规矩比较重内容、重名；
+   * 2. 把 PDF 写进任务目录下的临时目录，在那里另起一次运行生成投影、分段清单与位置表（见 pdf_upload.ts）；整份没有可读的文字就拒绝；
+   * 3. 等的这段时间里可能有别的上传进来，所以再比较一次，然后把四个文件一起移进材料目录（第 3 步是同步的，不会与别的上传交错）。
+   * 哪一步不成都把临时目录删掉，材料目录里不留东西，也不发 material_added。
+   */
+  private async uploadPdf(t: Task, filename: string, data: Buffer, session: string | null, folderRel: string, folder: string): Promise<{ ok: true; path: string }> {
+    this.refuseDuplicate(t, filename, data);
+    const path = `${folderRel}${filename}`;
+    const holding = join(t.dir, UPLOADING_DIR);
+    const staging = join(holding, randomUUID());
+    mkdirSync(staging, { recursive: true });
+    const staged = join(staging, filename);
+    try {
+      writeFileSync(staged, data);
+      let parsed;
+      try {
+        parsed = await runPdfProjection(staged, path, segmentParamsOf(this.profile), pdfLimitsOf(this.profile));
+      } catch (error) {
+        if (!(error instanceof PdfUploadError)) throw error;
+        throw new ApiError("unsupported_type", error.message);
+      }
+      if (parsed.units === 0) throw new ApiError("unsupported_type", PDF_NO_TEXT);
+      this.refuseDuplicate(t, filename, data);
+      const target = join(folder, filename);
+      const names = [...PDF_DERIVED_SUFFIXES.map((suffix) => filename + suffix), filename];
+      // 文件系统认为同名的文件已经在了（例如只差大小写）：不覆盖，按同名拒绝。
+      if (names.some((name) => existsSync(join(folder, name)))) throw new ApiError("name_taken", nameTakenText(filename), { path });
+      const moved: string[] = [];
+      try {
+        for (const name of names) {
+          renameSync(join(staging, name), join(folder, name));
+          moved.push(name);
+        }
+      } catch (error) {
+        for (const name of moved) rmSync(join(folder, name), { force: true });
+        throw error;
+      }
+      const st = statSync(target, { bigint: true });
+      const facts = pdfFacts(target);
+      t.hub.emit("material_added", { session_id: session, at: clock.now(), path, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), ...(facts ? { pdf: facts } : {}) });
+      return { ok: true, path };
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+      try {
+        rmdirSync(holding); // 没有别的上传还在用它时才删得掉
+      } catch {
+        // 还有别的上传在用，或者已经不在了
+      }
+    }
+  }
+
+  /**
+   * 删除一份材料：本体连同 Word 材料的投影、分段清单、位置表与图片目录一起删，PDF 材料连同它的投影、分段清单与位置表一起删。只接受用户放进来的材料（派生文件的路径不接受），
    * 路径必须落在材料目录里；已经进入对话的材料不删（见 enteredConversation），所以被条目引用过的材料删不掉；助手正在工作时不删。
    */
   deleteMaterial(t: Task, rel: unknown, session: string | null = null) {
@@ -573,7 +644,7 @@ export class Service {
     const path = typeof rel === "string" ? rel : "";
     const target = this.materialPath(t, path);
     const row = library.materials(t.dir, t.definition()).find((m) => m.path === path);
-    if (row && row.derived_from !== null) throw new ApiError("bad_request", "这是由 Word 材料生成的文件，不能单独删除。");
+    if (row && row.derived_from !== null) throw new ApiError("bad_request", "这是由别的材料生成的文件，不能单独删除。");
     if (!row || !isFile(target)) throw new ApiError("not_found", `没有材料 ${path}。`);
     if (this.enteredConversation(target, t.executor.sessions.lastActivityMs())) {
       throw new ApiError("rejected", ENTERED_CONVERSATION_TEXT, { path, reasons: [ENTERED_CONVERSATION_TEXT] });
@@ -590,6 +661,7 @@ export class Service {
         // 本来就没有
       }
     }
+    if (target.toLowerCase().endsWith(".pdf")) removePdfProjection(target);
     t.hub.emit("material_removed", { session_id: session, at: clock.now(), path });
     return { ok: true, path };
   }
@@ -645,8 +717,9 @@ export class Service {
   }
 
   /** 上传一份文档；选了嵌入模型时随即把它排进后台换算，没有选时它是「未换算」。 */
-  uploadDocument(id: string, filename: string, data: Buffer, kind: unknown) {
-    const row = this.requireKnowledge().upload(id, filename, data, kind, segmentParamsOf(this.profile));
+  async uploadDocument(id: string, filename: string, data: Buffer, kind: unknown) {
+    // PDF 文档要另起一次运行生成派生文件，等它做完；别的类型当场就有结果。
+    const row = await this.requireKnowledge().upload(id, filename, data, kind, segmentParamsOf(this.profile), pdfLimitsOf(this.profile));
     const embedder = this.embedder!;
     if (embedder.model() !== null) embedder.enqueue({ library: id, name: row.name });
     return row;
@@ -701,8 +774,16 @@ export class Service {
     return { ok: true, libraries: ids };
   }
 
-  /** 材料原文：.docx 给投影（先找 .md 再找旧的 .txt；都不在时现算一份，不写文件），其余按 UTF-8 读（不合法的字节换成替换字符）。 */
+  /**
+   * 材料原文：.docx 给投影（先找 .md 再找旧的 .txt；都不在时现算一份，不写文件），.pdf 给上传时生成的投影，
+   * 其余按 UTF-8 读（不合法的字节换成替换字符）。
+   */
   materialText(target: string, rel: string): string {
+    if (target.toLowerCase().endsWith(".pdf")) {
+      const projection = target + PDF_PROJECTION_SUFFIX;
+      if (!isFile(projection)) throw new ApiError("not_found", `没有由 ${rel} 生成的投影。`);
+      return readTextFile(projection);
+    }
     if (target.toLowerCase().endsWith(".docx")) {
       const projection = projectionPath(target);
       try {

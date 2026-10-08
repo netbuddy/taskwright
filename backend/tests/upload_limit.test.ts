@@ -23,7 +23,7 @@ test("服务信息的 upload：上限 5 MB、「单个文件不能超过 5 MB。
   for (const mode of ["server", "desktop"] as const) {
     const service = new Service(join(tmp, `t-${mode}`), join(tmp, `r-${mode}`), {}, { port: 1, mode });
     try {
-      assert.deepEqual(serviceInfo(service).upload, { max_bytes: 5 * 1024 * 1024, too_large_text: "单个文件不能超过 5 MB。", extensions: [".md", ".txt", ".docx"], types_text: ".md、.txt 与 Word 的 .docx", unsupported_type_text: "只接受 .md、.txt 与 Word 的 .docx 文件。" });
+      assert.deepEqual(serviceInfo(service).upload, { max_bytes: 5 * 1024 * 1024, too_large_text: "单个文件不能超过 5 MB。", extensions: [".md", ".txt", ".docx", ".pdf"], types_text: ".md、.txt、Word 的 .docx 与 PDF", unsupported_type_text: "只接受 .md、.txt、Word 的 .docx 与 PDF 文件。" });
     } finally {
       await service.close();
     }
@@ -43,8 +43,8 @@ test("上传类型不符的文件时报的那句话，与服务信息 upload.uns
   try {
     const { task_id: taskId } = service.create({ task_type: "srs-authoring" });
     assert.equal(serviceInfo(service).upload.unsupported_type_text, unsupportedTypeText());
-    assert.equal(unsupportedTypeText(), "只接受 .md、.txt 与 Word 的 .docx 文件。", "由扩展名清单拼出，不写个数");
-    for (const name of ["图.png", "说明.pdf", "没有扩展名"]) {
+    assert.equal(unsupportedTypeText(), "只接受 .md、.txt、Word 的 .docx 与 PDF 文件。", "由扩展名清单拼出，不写个数");
+    for (const name of ["图.png", "说明.pptx", "没有扩展名"]) {
       assert.throws(() => service.upload(service.task(taskId), name, Buffer.from("x")),
         (error: unknown) => error instanceof ApiError && error.code === "unsupported_type" && error.message === unsupportedTypeText(), name);
     }

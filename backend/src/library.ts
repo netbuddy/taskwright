@@ -14,6 +14,7 @@ import { checkCompletion, completionBrief, completionHints } from "../../agent/s
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
+import { pdfFacts, pdfSourceName } from "./projection.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -993,7 +994,8 @@ function intentActs(db: DatabaseSync, taskId: string, rows: Row[]): Map<string, 
 /**
  * 材料清单：材料目录里的文件（不含子目录，Word 材料的图片目录因此不列），按名字排。由 Word 材料生成的投影（x.docx.md，
  * 0.2 的任务里是 x.docx.txt）、分段清单（x.docx.segments.json）与位置表（x.docx.locations.json）旁边有那份 .docx 时，derived_from 写那份 .docx 的路径，
- * 界面据此不单独列出；其余为 null。
+ * 界面据此不单独列出；其余为 null。由 PDF 材料生成的投影、分段清单与位置表（x.pdf.md、x.pdf.segments.json、x.pdf.locations.json）同样处理。
+ * PDF 材料另带 pdf 一项：总页数、块的总数、没有文字的页码（读自它的位置表；位置表不在时没有这一项）。
  */
 export function materials(taskDir: string, definition: ParsedDefinition | Record<string, any> | null) {
   const rel = or((definition || {})["材料目录"], DEFAULT_MATERIALS_DIR) as string;
@@ -1016,6 +1018,8 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
   }
   const present = new Set(files.map(([name]) => name));
   const sourceOf = (name: string): string | null => {
+    const pdf = pdfSourceName(name);
+    if (pdf !== null) return present.has(pdf) ? `${rel}${pdf}` : null;
     if (name.toLowerCase().endsWith(".docx.segments.json")) {
       const stem = name.slice(0, -".segments.json".length);
       return present.has(stem) ? `${rel}${stem}` : null;
@@ -1030,9 +1034,13 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
     const ext = name.slice(dot + 1).toLowerCase();
     return (ext === "md" || ext === "txt") && stem.toLowerCase().endsWith(".docx") && present.has(stem) ? `${rel}${stem}` : null;
   };
-  return files.map(([name, st]: [string, any]) => ({
-    path: `${rel}${name}`, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), derived_from: sourceOf(name),
-  }));
+  return files.map(([name, st]: [string, any]) => {
+    const facts = name.toLowerCase().endsWith(".pdf") ? pdfFacts(join(folder, name)) : null;
+    return {
+      path: `${rel}${name}`, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), derived_from: sourceOf(name),
+      ...(facts ? { pdf: facts } : {}),
+    };
+  });
 }
 
 /** 按码位比较两个字符串（与 Python 的字符串排序相同）。 */

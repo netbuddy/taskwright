@@ -29,6 +29,7 @@ export const RAW_TYPES: Record<string, string> = {
   ".md": "text/markdown; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pdf": "application/pdf",
 };
 
 type Params = Record<string, string>;
@@ -194,12 +195,16 @@ export function rewriteSlash(text: string): string {
   return text.startsWith("/") ? SLASH_PREFIX + text : text;
 }
 
-/** 用户附了材料时在话后面补一句路径；Word 材料另说一句读哪份投影、出处怎么写。 */
+/** 用户附了材料时在话后面补一句路径；Word 材料与 PDF 材料另各说一句读哪份投影、出处怎么写。 */
 export function withAttachments(text: string, paths: string[]): string {
   if (!paths.length) return text;
   const words = paths.filter((p) => p.toLowerCase().endsWith(".docx"));
-  const note = words.length ? `其中 Word 文件请读同名的 .md 投影（${words.map((p) => p + ".md").join("、")}），引用时出处写 Word 文件加段落号` : "";
-  return `${text}\n（我上传了材料：${paths.join("、")}${note ? "；" + note : ""}）`;
+  const pdfs = paths.filter((p) => p.toLowerCase().endsWith(".pdf"));
+  const notes = [
+    ...(words.length ? [`其中 Word 文件请读同名的 .md 投影（${words.map((p) => p + ".md").join("、")}），引用时出处写 Word 文件加段落号`] : []),
+    ...(pdfs.length ? [`${words.length ? "" : "其中 "}PDF 文件请读同名的 .md 投影（${pdfs.map((p) => p + ".md").join("、")}），引用时出处写 PDF 文件加页与块，例如 ${pdfs[0]}#p3-2`] : []),
+  ];
+  return `${text}\n（我上传了材料：${paths.join("、")}${notes.length ? "；" + notes.join("；") : ""}）`;
 }
 
 /**
@@ -423,10 +428,11 @@ const handlers: Record<string, Handler> = {
     if (!isFile(target)) throw new ApiError("not_found", `没有材料 ${rel}。`);
     return { status: 200, headers: { "Content-Type": RAW_TYPES[extname(target).toLowerCase()] ?? "application/octet-stream" }, body: readFileSync(target) };
   },
-  upload: (service, req) => {
+  upload: async (service, req) => {
     const t = service.task(req.params.task);
     const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
-    return json(200, service.upload(t, name, data, sessionParam(req)));
+    // PDF 材料要另起一次运行生成派生文件，等它做完才回答；别的类型当场就有结果。
+    return json(200, await service.upload(t, name, data, sessionParam(req)));
   },
   delete_material: (service, req) => {
     const t = service.task(req.params.task);
@@ -439,12 +445,12 @@ const handlers: Record<string, Handler> = {
   create_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().create(bodyJson(req).name) }),
   rename_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().rename(req.params.lib, bodyJson(req).name) }),
   delete_library: (service, req) => json(200, service.removeLibrary(req.params.lib)),
-  upload_document: (service, req) => {
+  upload_document: async (service, req) => {
     service.requireKnowledge();
     const form = parseMultipartForm(String(req.headers["content-type"] ?? ""), req.body);
     if (!form.file) throw new ApiError("bad_request", "请求里没有文件。");
     const [name, data] = form.file;
-    const row = service.uploadDocument(req.params.lib, name, data, form.fields.kind);
+    const row = await service.uploadDocument(req.params.lib, name, data, form.fields.kind);
     const { sha256: _, ...document } = row;
     return json(200, { ok: true, document });
   },

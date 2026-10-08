@@ -13,18 +13,21 @@
  * 没有这个文件的旧任务按只选用通用知识库算，用户改选用之前不写文件。删除一个库时，选用了它的任务改为不再选用它，并在 notes 里记一句。
  */
 
-import { randomBytes, createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import * as clock from "./clock.ts";
 import { ApiError } from "./errors.ts";
 import { readTextFile, readTextFileLenient } from "./files.ts";
 import { removeEmbeddings, sweepLeftovers } from "./knowledge_embeddings.ts";
-import { ProjectionError, isReserved, projectionPath, projectionText, removeProjection, writeProjection } from "./projection.ts";
-import type { SegmentParams } from "../../agent/src/lib/segments.ts";
+import type { PdfRunLimits } from "./launch.ts";
+import { PDF_PROJECTION_SUFFIX, removePdfProjection } from "./pdf_projection.ts";
+import { PDF_NO_TEXT, PdfUploadError, runPdfProjection } from "./pdf_upload.ts";
+import { PDF_DERIVED_SUFFIXES, ProjectionError, isReserved, projectionPath, projectionText, removeProjection, reservedNameText, writeProjection } from "./projection.ts";
+import { SEGMENT_DEFAULTS, type SegmentParams } from "../../agent/src/lib/segments.ts";
 import { SELECTION_FILE } from "../../agent/src/lib/knowledge.ts";
 import { GENERAL, KINDS, KIND_NAMES, type Kind } from "../../agent/src/lib/knowledge_locator.ts";
-import { UPLOAD_TYPES, resolvePath, sameMaterialName, unsupportedTypeText } from "./service.ts";
+import { UPLOADING_DIR, UPLOAD_TYPES, resolvePath, sameMaterialName, unsupportedTypeText } from "./service.ts";
 
 // 编号、种类与任务目录里记选用的文件名，助手一侧也要用，定义在 agent/src/lib 下，这里原样交出去。
 export { GENERAL, KINDS, KIND_NAMES, SELECTION_FILE, type Kind };
@@ -194,29 +197,37 @@ export class KnowledgeStore {
     return row;
   }
 
+  /** 与同一个库里已有的文档重内容或者重名就拒绝；返回这个库现在的文档清单。 */
+  private refuseTwin(id: string, filename: string, digest: string): DocumentRow[] {
+    const rows = this.documents(id);
+    const twin = rows.find((one) => one.sha256 === digest);
+    if (twin) throw new ApiError("duplicate_content", docDuplicateText(twin.name), { name: twin.name });
+    const same = rows.find((one) => sameMaterialName(filename, one.name));
+    if (same) throw new ApiError("name_taken", docNameTakenText(same.name), { name: same.name });
+    return rows;
+  }
+
   /**
    * 上传一份文档：文件名、类型、大小、同内容、同名依次检查（规则与上传材料相同，上限 20 MB）；同内容与同名只在同一个库里比。
    * Word 文档另生成投影、分段清单与位置表，路径写成相对知识库根目录的「库编号/files/文件名」；生成不了时连同文件一起删掉。
+   * PDF 文档要另起一次运行生成这三样，所以这一种是异步的（uploadPdf）；别的类型当场做完。
    */
-  upload(id: string, filename: string, data: Buffer, kind: unknown, segments?: SegmentParams): DocumentRow {
+  upload(id: string, filename: string, data: Buffer, kind: unknown, segments?: SegmentParams, pdf?: PdfRunLimits): DocumentRow | Promise<DocumentRow> {
     this.library(id);
     if (!filename || filename.includes("/") || filename.includes("\\") || filename === "." || filename === "..") {
       throw new ApiError("bad_request", "文件名里不能带路径分隔符。");
     }
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", unsupportedTypeText());
-    if (isReserved(filename)) throw new ApiError("bad_request", "以 .docx.md 或 .docx.txt 结尾的文件名留给由 Word 文档生成的文件用，请改个名字再上传。");
+    if (isReserved(filename)) throw new ApiError("bad_request", reservedNameText("文档"));
     if (data.length > KNOWLEDGE_MAX_UPLOAD) throw new ApiError("too_large", KNOWLEDGE_TOO_LARGE_TEXT);
     if (typeof kind !== "string" || !(KINDS as readonly string[]).includes(kind)) {
       throw new ApiError("bad_request", `资料的种类只能是${KINDS.map((k) => `「${KIND_NAMES[k]}」`).join("、")}之一。`);
     }
-    const rows = this.documents(id);
     const digest = sha256(data);
-    const twin = rows.find((one) => one.sha256 === digest);
-    if (twin) throw new ApiError("duplicate_content", docDuplicateText(twin.name), { name: twin.name });
-    const same = rows.find((one) => sameMaterialName(filename, one.name));
-    if (same) throw new ApiError("name_taken", docNameTakenText(same.name), { name: same.name });
+    const rows = this.refuseTwin(id, filename, digest);
     const folder = this.filesDir(id);
     mkdirSync(folder, { recursive: true });
+    if (filename.toLowerCase().endsWith(".pdf")) return this.uploadPdf(id, filename, data, kind as Kind, digest, segments, pdf);
     const target = join(folder, filename);
     try {
       writeFileSync(target, data, { flag: "wx" });
@@ -245,6 +256,55 @@ export class KnowledgeStore {
     return row;
   }
 
+  /**
+   * 上传一份 PDF 文档，照上传 PDF 材料的三步做（service.ts 的 uploadPdf）：先在这个库的临时目录里另起一次运行生成投影、分段清单与位置表，
+   * 整份没有可读的文字就拒绝；做成了再比较一次重内容、重名，把四个文件一起移进文档目录并记进清单。哪一步不成都不留东西。
+   */
+  private async uploadPdf(id: string, filename: string, data: Buffer, kind: Kind, digest: string, segments?: SegmentParams, limits?: PdfRunLimits): Promise<DocumentRow> {
+    const folder = this.filesDir(id);
+    const holding = join(this.libraryDir(id), UPLOADING_DIR);
+    const staging = join(holding, randomUUID());
+    mkdirSync(staging, { recursive: true });
+    const staged = join(staging, filename);
+    try {
+      writeFileSync(staged, data);
+      let parsed;
+      try {
+        parsed = await runPdfProjection(staged, `${id}/files/${filename}`, segments ?? SEGMENT_DEFAULTS, limits);
+      } catch (error) {
+        if (!(error instanceof PdfUploadError)) throw error;
+        throw new ApiError("unsupported_type", error.message);
+      }
+      if (parsed.units === 0) throw new ApiError("unsupported_type", PDF_NO_TEXT);
+      const rows = this.refuseTwin(id, filename, digest);
+      const names = [...PDF_DERIVED_SUFFIXES.map((suffix) => filename + suffix), filename];
+      if (names.some((name) => existsSync(join(folder, name)))) throw new ApiError("name_taken", docNameTakenText(filename), { name: filename });
+      const target = join(folder, filename);
+      // 这个名字以前的文档留下的数字串不是这份文件的，先清掉。
+      removeEmbeddings(target);
+      const moved: string[] = [];
+      try {
+        for (const name of names) {
+          renameSync(join(staging, name), join(folder, name));
+          moved.push(name);
+        }
+      } catch (error) {
+        for (const name of moved) rmSync(join(folder, name), { force: true });
+        throw error;
+      }
+      const row: DocumentRow = { name: filename, kind, bytes: data.length, sha256: digest, uploaded_at: clock.now() };
+      this.saveDocuments(id, [...rows, row]);
+      return row;
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+      try {
+        rmdirSync(holding); // 没有别的上传还在用它时才删得掉
+      } catch {
+        // 还有别的上传在用，或者已经不在了
+      }
+    }
+  }
+
   /** 删除文档：从清单里去掉，再删本体与派生文件（投影一类，以及换算好的数字串）。 */
   removeDocument(id: string, name: unknown): void {
     this.library(id);
@@ -259,6 +319,7 @@ export class KnowledgeStore {
       // 已经不在了
     }
     removeProjection(target);
+    removePdfProjection(target);
     removeEmbeddings(target);
     if (row.name.toLowerCase().endsWith(".docx")) {
       try {
@@ -279,9 +340,14 @@ export class KnowledgeStore {
     return target;
   }
 
-  /** 文档正文：.docx 给投影（没有投影时现算一份，不写文件），其余按 UTF-8 读。 */
+  /** 文档正文：.docx 给投影（没有投影时现算一份，不写文件），.pdf 给上传时生成的投影，其余按 UTF-8 读。 */
   text(id: string, name: string): string {
     const target = this.filePath(id, name);
+    if (target.toLowerCase().endsWith(".pdf")) {
+      const projection = target + PDF_PROJECTION_SUFFIX;
+      if (!isFile(projection)) throw new ApiError("not_found", `没有由《${name}》生成的投影。`);
+      return readTextFile(projection);
+    }
     if (target.toLowerCase().endsWith(".docx")) {
       const projection = projectionPath(target);
       try {

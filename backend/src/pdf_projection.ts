@@ -381,7 +381,23 @@ function failure(error: unknown): PdfProjectionError {
  * .pdf 的字节 → 投影与位置表。rel 是这份 .pdf 相对任务目录的路径（写进开头的说明与位置表）。
  * 不是合法的 PDF、设了口令、超过上限时抛 PdfProjectionError，消息是给人看的一句中文。
  */
-export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLimits = PDF_LIMITS): Promise<PdfProjection> {
+/** 用了多少秒，写给人看：十秒以上写整数，不到十秒留一位小数。 */
+export function secondsText(ms: number): string {
+  const seconds = ms / 1000;
+  return seconds >= 10 ? String(Math.round(seconds)) : String(Math.round(seconds * 10) / 10);
+}
+
+/**
+ * 到时限没有做完时的那句话：用了多久、读到了第几页、一共几页。read 是已经读完的页数，total 是总页数；
+ * 一页都还没有读完、或者不知道总页数时不写括号里的那一截。
+ */
+export function tooSlowText(ms: number, read: number | null, total: number | null): string {
+  const where = read !== null && total !== null && read > 0 ? `（已读到第 ${read} 页，共 ${total} 页）` : total !== null ? `（共 ${total} 页，第 1 页还没有读完）` : "";
+  return `解析用了 ${secondsText(ms)} 秒仍没有完成${where}，这份文件太复杂，本版不支持`;
+}
+
+/** progress 在每读完一页之后调一次：已经读完几页、一共几页（上传时另起的那一次运行靠它把进度报给任务服务）。 */
+export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLimits = PDF_LIMITS, progress?: (read: number, total: number) => void): Promise<PdfProjection> {
   const started = performance.now();
   const expired = () => performance.now() - started > limits.seconds * 1000;
   const { lib, cmaps, fonts } = await loadPdfjs();
@@ -395,7 +411,7 @@ export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLi
     const pages: PageResult[] = [];
     let chars = 0;
     for (let n = 1; n <= doc.numPages; n++) {
-      if (expired()) throw new PdfProjectionError(`解析这份 PDF 超过了 ${limits.seconds} 秒，在第 ${n} 页停下了`);
+      if (expired()) throw new PdfProjectionError(tooSlowText(performance.now() - started, n - 1, doc.numPages));
       const page = await doc.getPage(n);
       const viewport = page.getViewport({ scale: 1 });
       const { items } = await page.getTextContent();
@@ -404,6 +420,7 @@ export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLi
       if (chars > limits.chars) throw new PdfProjectionError(`这份 PDF 的文字超过上限 ${limits.chars} 字，在第 ${n} 页停下了`);
       pages.push({ page: n, width: viewport.width, height: viewport.height, rotate: page.rotate, blocks: pageBlocks(items, viewport) });
       page.cleanup();
+      progress?.(n, doc.numPages);
     }
     markRunningHeads(pages);
     const headings = await outlineHeadings(doc, expired);
@@ -428,14 +445,15 @@ export interface WrittenPdfProjection { projection: string; segments: string; lo
  * 在 .pdf 旁边写投影、分段清单与位置表。pdf 是文件路径，rel 是它相对任务目录的路径。
  * 解析不了，或者三样里有一样没写成时抛 PdfProjectionError，已经写下的由 removePdfProjection 清掉。
  */
-export async function writePdfProjection(pdf: string, rel: string, segments: SegmentParams = SEGMENT_DEFAULTS, limits: PdfLimits = PDF_LIMITS): Promise<WrittenPdfProjection> {
+export async function writePdfProjection(pdf: string, rel: string, segments: SegmentParams = SEGMENT_DEFAULTS, limits: PdfLimits = PDF_LIMITS,
+  progress?: (read: number, total: number) => void): Promise<WrittenPdfProjection> {
   let data: Buffer;
   try {
     data = readFileSync(pdf);
   } catch {
     throw new PdfProjectionError(`读不到文件 ${pdf}。`);
   }
-  const result = await pdfProjection(data, rel, limits);
+  const result = await pdfProjection(data, rel, limits, progress);
   const out = { projection: pdf + PDF_PROJECTION_SUFFIX, segments: pdf + PDF_SEGMENTS_SUFFIX, locations: pdf + PDF_LOCATIONS_SUFFIX };
   try {
     try {
