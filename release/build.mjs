@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds the desktop packages: a payload (launcher, backend, web files, pi, agent extension, rg and fd) and, from it,
 // a Linux AppImage and single executables (Node SEA) for Linux and Windows. Node built-in modules only; the web
-// interface and the backend's diagram check engine are bundled with the repository's vite.
+// interface, the backend's diagram check engine and the docx package are bundled with the repository's vite.
 //
 // Usage:
 //   node release/build.mjs --out <dir> [options]
@@ -397,7 +397,7 @@ function buildDiagramEngine(work) {
   for (const file of all) if (!used.has(file.rel)) fs.rmSync(path.join(dir, file.rel));
   execFileSync(process.execPath, [prune, "check", dir], { stdio: "inherit" });
   const size = treeSize(dir);
-  const packages = stageDiagramLicences(dir, [...used].flatMap((file) => modules[file] ?? []));
+  const packages = stageLicences(dir, [...used].flatMap((file) => modules[file] ?? []), "The diagram check engine (../diagram_engine.mjs and ../assets/)");
   log(`diagram check engine: ${used.size} of ${all.length} files kept, ${mb(size)} of ${mb(all.reduce((sum, f) => sum + f.size, 0))}; licence files of ${packages} packages`);
   return dir;
 }
@@ -430,10 +430,35 @@ function mitFromManifest(manifest) {
     + `the text below is the standard MIT licence with the copyright line written from those two fields.\n\nMIT License\n\nCopyright (c) ${holder}\n\n${MIT_TEXT}`;
 }
 
-// sources: the source files bundled into the kept files. Returns the number of npm packages they come from.
-function stageDiagramLicences(dir, sources) {
+// The packages an installed package needs at run time, itself included: name -> directory. Follows `dependencies`
+// the way Node finds them, from the package's own node_modules upwards. Packages that hold only type declarations
+// (@types/*, undici-types) have no code in a bundle and are left out.
+function runtimeClosure(packageDir, found = new Map()) {
+  const manifest = readJson(path.join(packageDir, "package.json"));
+  if (found.has(manifest.name)) return found;
+  found.set(manifest.name, packageDir);
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    if (name.startsWith("@types/") || name === "undici-types") continue;
+    let at = packageDir;
+    let dependency = null;
+    while (!dependency) {
+      const candidate = path.join(at, "node_modules", name);
+      if (fs.existsSync(path.join(candidate, "package.json"))) dependency = fs.realpathSync(candidate);
+      else if (path.dirname(at) === at) throw new Error(`${name}, which ${manifest.name} depends on, is not installed`);
+      else at = path.dirname(at);
+    }
+    runtimeClosure(dependency, found);
+  }
+  return found;
+}
+
+// For a bundle made from npm packages: puts into <dir>/licenses/ the licence files of the packages whose code is in
+// it, and PACKAGES.txt. sources: the source files bundled into the files that are shipped; what: how PACKAGES.txt
+// names the bundle; more: further packages (name -> directory) whose code is in the bundle although no source file
+// of theirs was read, because a package came with them already built into its own files. Returns the number of packages.
+function stageLicences(dir, sources, what, more = new Map()) {
   const marker = `${path.sep}node_modules${path.sep}`;
-  const packages = new Map();
+  const packages = new Map(more);
   for (const source of sources) {
     const at = source.lastIndexOf(marker);
     if (at < 0) continue; // the repository's own file, or the bundler's helper
@@ -443,7 +468,7 @@ function stageDiagramLicences(dir, sources) {
   }
   const out = path.join(dir, "licenses");
   fs.mkdirSync(out, { recursive: true });
-  const lines = ["The diagram check engine (../diagram_engine.mjs and ../assets/) contains code of these npm packages.", "Name, version, licence, and the licence files copied here from the package:", ""];
+  const lines = [`${what} contains code of these npm packages.`, "Name, version, licence, and the licence files copied here from the package:", ""];
   for (const name of [...packages.keys()].sort()) {
     const from = packages.get(name);
     const manifest = readJson(path.join(from, "package.json"));
@@ -459,13 +484,40 @@ function stageDiagramLicences(dir, sources) {
       listed = "the package ships no licence file";
       log(`warning: ${name} ${manifest.version} ships no licence file and its licence is not MIT; nothing was written for it`);
     }
-    lines.push(`${name} ${manifest.version}, ${typeof manifest.license === "string" ? manifest.license : "licence not stated in package.json"}: ${listed}`);
+    // A package offered under a choice of licences is used under the permissive one.
+    const licence = typeof manifest.license === "string" ? manifest.license : "licence not stated in package.json";
+    const chosen = /^\(MIT OR [^)]+\)$/.test(licence) ? `${licence}, used under MIT` : licence;
+    lines.push(`${name} ${manifest.version}, ${chosen}: ${listed}`);
   }
   fs.writeFileSync(path.join(out, "PACKAGES.txt"), lines.join("\n") + "\n");
   return packages.size;
 }
 
-async function stagePayload({ work, cache, target, piDir, piPackages, webDist, diagramEngine, nodeVersion }) {
+// The backend writes Word files with docx, an npm package; the packages carry no node_modules. So backend/src/docx_lib.mjs,
+// which names the few things the backend uses from docx, is bundled with docx into one file, checked by writing a
+// small document with it (release/docx/check.mjs), and shipped with the licence files of the packages in it. In the
+// payload it lies in backend/vendor/docx/, where backend/src/export_docx.ts looks for it first.
+function buildDocxLib(work) {
+  const dir = path.join(work, "docx-lib");
+  const vite = path.join(REPO, "node_modules", ".bin", "vite");
+  execFileSync(vite, ["build", "--config", path.join(HERE, "docx", "vite.config.mjs"), "--outDir", dir, "--emptyOutDir"], { cwd: REPO, stdio: "inherit" });
+  const modules = readJson(path.join(dir, "modules.json")); // written by the vite configuration: output file -> the source files in it
+  fs.rmSync(path.join(dir, "modules.json"));
+  execFileSync(process.execPath, [path.join(HERE, "docx", "check.mjs"), dir], { stdio: "inherit" });
+  const files = listFiles(dir);
+  const size = treeSize(dir);
+  // docx's own files already have the packages it depends on built in (jszip and others), so the bundler reads no
+  // source file of theirs: take them from docx's dependencies.
+  const sources = files.flatMap((file) => modules[file.rel] ?? []);
+  const docxSource = sources.find((source) => /[\\/]node_modules[\\/]docx[\\/]/.test(source));
+  if (!docxSource) throw new Error("the docx bundle holds no file of the docx package");
+  const docxDir = docxSource.slice(0, docxSource.search(/[\\/]node_modules[\\/]docx[\\/]/)) + `${path.sep}node_modules${path.sep}docx`;
+  const packages = stageLicences(dir, sources, "The bundled docx package (../docx_lib.mjs)", runtimeClosure(docxDir));
+  log(`docx bundle: ${files.length} file${files.length === 1 ? "" : "s"}, ${mb(size)}; licence files of ${packages} packages`);
+  return dir;
+}
+
+async function stagePayload({ work, cache, target, piDir, piPackages, webDist, diagramEngine, docxLib, nodeVersion }) {
   const payload = path.join(work, target, "payload");
   fs.rmSync(payload, { recursive: true, force: true });
   fs.mkdirSync(path.join(payload, "app"), { recursive: true });
@@ -484,6 +536,7 @@ async function stagePayload({ work, cache, target, piDir, piPackages, webDist, d
   fs.copyFileSync(path.join(REPO, "backend", "profiles", "desktop.json"), path.join(payload, "backend", "profiles", "desktop.json"));
   copyTree(path.join(REPO, "backend", "prompts"), path.join(payload, "backend", "prompts"));
   copyTree(diagramEngine, path.join(payload, "backend", "vendor", "mermaid"));
+  copyTree(docxLib, path.join(payload, "backend", "vendor", "docx"));
   const product = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
   fs.writeFileSync(path.join(payload, "package.json"), JSON.stringify({ name: product.name, version: product.version, private: true }, null, 2) + "\n");
   copyTree(webDist, path.join(payload, "web"));
@@ -493,7 +546,7 @@ async function stagePayload({ work, cache, target, piDir, piPackages, webDist, d
   const piVersion = JSON.parse(fs.readFileSync(path.join(piDir, "package.json"), "utf8")).version;
   const manifest = { app: "taskwright", version: product.version, target, node: nodeVersion, pi: piVersion, pi_packages: piPackages, ...tools, built_at: new Date().toISOString() };
   fs.writeFileSync(path.join(payload, "manifest.json"), JSON.stringify(manifest, null, 2));
-  log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, diagram check engine ${mb(treeSize(path.join(payload, "backend", "vendor", "mermaid")))}, pi ${mb(treeSize(path.join(payload, "pi")))}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
+  log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, diagram check engine ${mb(treeSize(path.join(payload, "backend", "vendor", "mermaid")))}, docx ${mb(treeSize(path.join(payload, "backend", "vendor", "docx")))}, pi ${mb(treeSize(path.join(payload, "pi")))}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
   return { payload, manifest };
 }
 
@@ -591,10 +644,11 @@ async function main() {
   }
 
   const diagramEngine = buildDiagramEngine(work);
+  const docxLib = buildDocxLib(work);
 
   const results = [];
   for (const target of targets) {
-    const { payload, manifest } = await stagePayload({ work, cache, target, piDir, piPackages, webDist, diagramEngine, nodeVersion });
+    const { payload, manifest } = await stagePayload({ work, cache, target, piDir, piPackages, webDist, diagramEngine, docxLib, nodeVersion });
     if (formats.includes("sea")) results.push(await buildSea({ work, out, cache, target, payload, manifest, nodeVersion, postject: options.postject, level }));
     if (formats.includes("appimage") && target === "linux-x64") results.push(await buildAppImage({ work, out, cache, payload, nodeVersion, appimagetool: options.appimagetool }));
   }
