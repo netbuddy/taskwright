@@ -12,6 +12,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, type Actor, EVENT_TASK_CREATED, emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, loadDefinition } from "./definition.ts";
+import { DIAGRAM_PREFIX } from "./diagram.ts";
 import { TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
 import type { ProblemClick } from "./problem_consent.ts";
 
@@ -151,6 +152,11 @@ const TASK_ID_PATTERN = /^TASK-[A-Z0-9-]{1,40}$/;
 export function createTask(call: CallContext, params: CreateTaskParams): ToolOutcome {
   return withTaskDatabase(call.workspaceDir, { createIfMissing: true }, (db) => {
     const { definition, text, relativePath } = loadDefinition(call.workspaceDir, params.definition_path);
+    // 图的编号是 D-001 这样的（lib/diagram.ts）：集合的编号前缀单写 D 会与它同形，新建任务时不许。已有的任务不拦。
+    const clash = definition.collections.find((one) => one.prefix === DIAGRAM_PREFIX);
+    if (clash) {
+      throw new Error(`任务定义里集合「${clash.name}」的编号前缀是 ${DIAGRAM_PREFIX}，与图的编号（${DIAGRAM_PREFIX}-001 这样）同形，所以没有创建任务。请把这个集合的编号前缀改成别的。`);
+    }
     const existing = db
       .prepare("SELECT task_id, task_name, status, definition_text FROM task ORDER BY started_at, task_id")
       .all() as { task_id: string; task_name: string | null; status: string; definition_text: string }[];

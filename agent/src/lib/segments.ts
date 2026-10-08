@@ -20,6 +20,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { ELEMENT_ITEM, elementClause } from "./schema.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -319,7 +320,7 @@ export function currentDocumentSources(db: DatabaseSync, taskId: string): Source
   return db
     .prepare(
       "SELECT s.item_id, s.position, s.locator, s.excerpt FROM item_source s JOIN item i ON i.task_id = s.task_id AND i.item_id = s.item_id " +
-        "WHERE s.task_id = ? AND s.kind = '文档原文' AND s.support_no = 1 AND i.deleted_in_revision IS NULL " +
+        `WHERE s.task_id = ? AND s.kind = '文档原文' AND s.support_no = 1 AND i.deleted_in_revision IS NULL${elementClause(db, ELEMENT_ITEM, "s.")} ` +
         "AND s.revision_no = (SELECT MAX(revision_no) FROM item_version v WHERE v.task_id = s.task_id AND v.item_id = s.item_id) " +
         "ORDER BY s.item_id, s.position",
     )

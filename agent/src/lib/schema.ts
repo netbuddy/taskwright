@@ -27,7 +27,7 @@ import { ensureDialogueSchema } from "./dialogue_schema.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十四张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection 是后来加的，
+/** 十六张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version 是后来加的，
  *  旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。 */
 export const TABLE_NAMES = [
   "task",
@@ -44,10 +44,12 @@ export const TABLE_NAMES = [
   "review_waiver",
   "dialogue_act",
   "tool_rejection",
+  "diagram",
+  "diagram_version",
 ] as const;
 
 /** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection"];
+export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version"];
 
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
@@ -90,10 +92,21 @@ export const sourceLocatorNow = (kind: string, locator: string): string =>
 /** 「领域说明」集合的名字：助手记下领域里的说法与规矩的那个集合。引用它里面的条目，种类是「条目」。 */
 export const DOMAIN_NOTE_COLLECTION = "领域说明";
 
-/** 产出方是哪种要素（来源表的 element_kind 列）：条目，或者图。现在写入的都是条目。 */
+/** 产出方是哪种要素（来源表的 element_kind 列）：条目，或者图。 */
 export const ELEMENT_ITEM = "条目";
 export const ELEMENT_FIGURE = "图";
 export const ELEMENT_KINDS = [ELEMENT_ITEM, ELEMENT_FIGURE] as const;
+
+/**
+ * 读来源表时「只要某一种要素的来源」这个条件，拼在 WHERE 里用，开头自带 AND。条目的来源与图的来源同在一张表里，
+ * 靠 element_kind 区分；凡是按条目编号取来源的地方都要带上它，免得把图的来源当成条目的。alias 是表的别名（带点，例如 "s."）。
+ * 还没有迁过的库（来源表没有 element_kind 一列，只读的一侧会遇到）里只有条目的来源：要条目的不加条件，要图的一行都不取。
+ */
+export function elementClause(db: DatabaseSync, kind: string = ELEMENT_ITEM, alias = ""): string {
+  const migrated = (db.prepare("PRAGMA table_info(item_source)").all() as { name: string }[]).some((row) => row.name === SOURCE_ELEMENT_COLUMN);
+  if (!migrated) return kind === ELEMENT_ITEM ? "" : " AND 0";
+  return ` AND ${alias}element_kind = '${kind === ELEMENT_FIGURE ? ELEMENT_FIGURE : ELEMENT_ITEM}'`;
+}
 export const SOURCE_USER_WORDS = "用户的话";
 export const SOURCE_DOCUMENT = "文档原文";
 
@@ -188,6 +201,46 @@ CREATE TABLE IF NOT EXISTS tool_rejection (
   guidance       TEXT,                 -- 指引层：接下来该怎么做，只给助手；拒绝文字没有这一层时为空
   input_excerpt  TEXT NOT NULL,        -- 被拒的输入（参数的 JSON）的前 2000 个字符，不存整份输入
   created_at     TEXT NOT NULL         -- 时刻（本地时间）
+);
+`;
+
+/**
+ * 图的两张表。图是任务的一种要素，不是集合里的条目：它没有字段，内容是一段 Mermaid 文本；不评审，不算进完成条件。
+ * 与条目同构：diagram 只放身份（编号、流水号、有没有删除），内容都在 diagram_version 里，一张图「现在的样子」就是它修订号最大的那一行。
+ *
+ * 图的修订号是这张图自己的，从 1 起连续，不占任务的修订序号（revision 表）：新增是修订 1，之后每改一次、删除一次各加一。
+ * 所以任务的修订日志、撤销、按修订生成文档都不涉及图。删除也记一行内容（照删除之前的样子），谁在什么时候删的由它说明。
+ *
+ * 图的来源写在 item_source 里：element_kind 为「图」，item_id 是图的编号，revision_no 是图自己的修订号，不写支持的字段。
+ * 图的编号是 D- 加三位流水号（D-001），由代码生成，不复用；新建任务时集合的编号前缀不许单写 D（见 definition.ts）。
+ *
+ * 后来加的表，用 IF NOT EXISTS，旧库第一次被写入一侧打开时补上；只读的一侧遇到还没有这两张表的库，当作一张图都没有。
+ */
+export const DIAGRAM_SQL = `
+CREATE TABLE IF NOT EXISTS diagram (
+  task_id              TEXT NOT NULL,     -- 所属任务的任务编号
+  diagram_id           TEXT NOT NULL,     -- 图的编号，D- 加三位流水号，例如 D-001，由代码生成，不复用
+  serial               INTEGER NOT NULL,  -- 流水号，同一任务里只增不减
+  deleted_in_revision  INTEGER,           -- 在这张图自己的第几次修订里删除，没删为空
+  event_seq            INTEGER NOT NULL,  -- 记下新增的那条事件的序号
+  deleted_event_seq    INTEGER,           -- 记下删除的那条事件的序号，没删为空
+  PRIMARY KEY (task_id, diagram_id)
+);
+CREATE TABLE IF NOT EXISTS diagram_version (  -- 图在它自己的每次修订下的内容
+  task_id      TEXT NOT NULL,          -- 所属任务的任务编号
+  diagram_id   TEXT NOT NULL,          -- 图的编号
+  revision_no  INTEGER NOT NULL,       -- 这张图自己的修订号，从 1 起连续
+  op           TEXT NOT NULL CHECK (op IN ('add', 'update', 'delete')),  -- 这次修订做了什么
+  name         TEXT NOT NULL,          -- 图名
+  kind         TEXT NOT NULL CHECK (kind IN ('use_case', 'class', 'state', 'sequence', 'flowchart')),  -- 图的种类：用例图、类图、状态图、时序图、流程图
+  mermaid      TEXT NOT NULL,          -- Mermaid 文本
+  note         TEXT NOT NULL,          -- 说明，没有写时是空文字
+  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),  -- 由谁：助手或用户
+  session_id   TEXT NOT NULL,          -- 产生这次修订的会话编号
+  call_id      TEXT NOT NULL,          -- 产生这次修订的那次工具调用的调用编号，或者界面操作的操作编号
+  created_at   TEXT NOT NULL,          -- 时刻（本地时间）
+  event_seq    INTEGER NOT NULL,       -- 记下这次修订的那条事件的序号
+  PRIMARY KEY (task_id, diagram_id, revision_no)
 );
 `;
 
@@ -343,6 +396,7 @@ ${MODEL_CALL_SQL}
 ${REVIEW_FINDING_SQL}
 ${REVIEW_WAIVER_SQL}
 ${TOOL_REJECTION_SQL}
+${DIAGRAM_SQL}
 ${REVISION_CALL_INDEX_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
@@ -389,6 +443,8 @@ export function ensureSchema(db: DatabaseSync): void {
   ensureDialogueSchema(db);
   // 工具拒绝表是后来加的，做法同上。
   db.exec(TOOL_REJECTION_SQL);
+  // 图的两张表是后来加的，做法同上。
+  db.exec(DIAGRAM_SQL);
   // 这几张刚在上面补过，不按开头读到的表名清单判它们缺不缺。
   const missing = TABLE_NAMES.filter((name) => !ADDED_TABLES.includes(name) && !tables.includes(name));
   if (missing.length > 0) {

@@ -20,7 +20,7 @@ import { REVIEW_CONDITION, findingText } from "./review.ts";
 import { batchNumber, currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
-import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, hasVersionColumns, sourceKindNow, sourceLocatorNow } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
 import { hasColumn } from "./dialogue_schema.ts";
@@ -87,7 +87,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     const sources = (db
       .prepare(
         `SELECT position, kind, locator, excerpt, field, field_index, ${hasColumn(db, "item_source", "normalized_value") ? "normalized_value" : "NULL AS normalized_value"} ` +
-          "FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ? ORDER BY position, support_no",
+          `FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause(db)} ORDER BY position, support_no`,
       )
       .all(task.task_id, itemId, shown, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null }[])
       .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[]; normalized_value?: string }[]>((list, one) => {

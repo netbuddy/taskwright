@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_MATERIALS_DIR } from "./definition.ts";
-import { BUSY_TIMEOUT_MS, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_USER_EDIT, sourceKindNow, sourceLocatorNow } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_USER_EDIT, sourceKindNow, sourceLocatorNow, ELEMENT_ITEM, elementClause } from "./schema.ts";
 
 export { DEFAULT_MATERIALS_DIR };
 
@@ -140,7 +140,8 @@ export interface SourceRow {
 export const itemKey = (itemId: string, revisionNo: number | null | undefined) => `${itemId}\u0000${revisionNo}`;
 
 /**
- * 按（条目编号, 修订号）取条目在每次修订下的来源，键见 itemKey。所支持的字段放进「支持」列表：每项是字段名与列表里的
+ * 按（条目编号, 修订号）取条目在每次修订下的来源，键见 itemKey。elementKind 写「图」时取的是图的来源：键里的编号是图的编号，
+ * 修订号是图自己的修订号。条目的来源与图的来源同在一张表里，两种从不混在一次读取里。所支持的字段放进「支持」列表：每项是字段名与列表里的
  * 第几项（从 0 起，为空表示整个字段）；列表为空表示这条来源支持整个条目。最早格式的库没有这几列，「支持」一律为空列表。
  * 早期版本写下的「用户直接修改」不读出：页面、生成的文档都不再显示它（条目上的话都算用户自己的，谁改的看修订）。
  *
@@ -148,14 +149,14 @@ export const itemKey = (itemId: string, revisionNo: number | null | undefined) =
  * 样子，这里照迁移的规矩现算：「执行者补充」读成「助手补充」，出处正好是「执行者补充」的也读成「助手补充」；「领域说明」读成
  * 「条目」，依据的修订取被引用的条目在这条来源所在修订当时的最新修订号。迁过之后读到的与这里现算的一样。
  */
-export function readSources(db: DatabaseSync, taskId: string): Map<string, SourceRow[]> {
+export function readSources(db: DatabaseSync, taskId: string, elementKind: string = ELEMENT_ITEM): Map<string, SourceRow[]> {
   const columns = columnNames(db, "item_source");
   const fieldLevel = ["support_no", "field", "field_index"].every((c) => columns.has(c));
   const order = "item_id, revision_no, position" + (fieldLevel ? ", support_no" : "");
   const grouped = new Map<string, SourceRow[]>();
   const migrated = columns.has("depends_revision");
   const revisionThen = db.prepare("SELECT MAX(revision_no) AS no FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no <= ?");
-  for (const row of db.prepare(`SELECT * FROM item_source WHERE task_id = ? AND kind <> ? ORDER BY ${order}`).all(taskId, SOURCE_USER_EDIT) as Row[]) {
+  for (const row of db.prepare(`SELECT * FROM item_source WHERE task_id = ? AND kind <> ?${elementClause(db, elementKind)} ORDER BY ${order}`).all(taskId, SOURCE_USER_EDIT) as Row[]) {
     const key = itemKey(row.item_id, row.revision_no);
     let bucket = grouped.get(key);
     if (!bucket) grouped.set(key, (bucket = []));
