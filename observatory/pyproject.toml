@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "taskwright-observatory"
-version = "0.4.1"
+version = "0.4.2"
 description = "Taskwright observatory: a read-only local web app that shows what the agent did, plus the read-only task-database modules (reader, viewer, invariant checks) the other components share."
 readme = "README.md"
 license = "AGPL-3.0-only"
