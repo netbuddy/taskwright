@@ -38,7 +38,7 @@ function makeTask(libraries: string[]): string {
 }
 
 const SECTION = [
-  "这个任务选用的知识库（参考资料，不整理成条目；材料里把具体规定指给了别的文档时，必须到这里把那条规定查出来写进条目并记来源；查知识库只用 search_knowledge，知识库目录不能用 grep、find 搜，也不能用 ls 看，知识库文档不要整份读；查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：",
+  "这个任务选用的知识库（参考资料，不整理成条目；材料里把具体规定指给了别的文档时，必须到这里把那条规定查出来写进条目并记来源；查知识库用 search_knowledge，不要用 grep 去翻知识库，命中太多也拿不全；查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：",
   "知识库「通用知识库」有 2 份文档：",
   "- 术语.md（术语表，64 字节）：用 search_knowledge 查；出处写 knowledge/general/术语.md",
   "- 长文.md（规范，58.0 KB）：用 search_knowledge 查；出处写 knowledge/general/长文.md",

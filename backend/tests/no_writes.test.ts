@@ -37,6 +37,8 @@ const ALLOWED: Record<string, string[]> = {
   "intent_schema.ts": ["GATE_MISSING_TEXT", "INTENT_GATE_TEXT"],
   // Word 文档的投影全文 → 各段文字：只做计算的函数，知识库文档切成片段时用。
   "docx_source.ts": ["projectionParagraphs", "tableCells"],
+  // 自带工具返回的限量：几个常量与截短之后加的那句话（只做计算，不碰库），集成测试拿它们核对助手实际收到的文字。
+  "tool_limits.ts": ["GREP_CAPPED_STATUS_KEY", "GREP_MAX_BYTES", "cappedText"],
 };
 
 function files(dir: string): string[] {
