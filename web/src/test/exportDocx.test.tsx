@@ -95,6 +95,8 @@ describe("对话框与导出", () => {
     render(<Wrap><ExportDocxModal open task={TASK} items={TASK.items} onClose={onClose} /></Wrap>);
     fireEvent.click(await screen.findByTestId("export-docx-ok"));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    // 关掉之后按钮才收起转圈；转圈中的按钮不理会点击，所以等它收起再点第二次。
+    await waitFor(() => expect(screen.getByTestId("export-docx-ok")).not.toHaveClass("ant-btn-loading"));
     exported.mockRejectedValueOnce(new ApiError("bad_response", "交付物里没有这些条目：UC-009。", 400));
     fireEvent.click(screen.getByTestId("export-docx-ok"));
     expect(await screen.findByTestId("export-docx-error")).toHaveTextContent("没有导出成：交付物里没有这些条目：UC-009。");
