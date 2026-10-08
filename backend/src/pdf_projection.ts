@@ -30,11 +30,12 @@
 
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { type PdfBox, type PdfLocationFile, type PdfPageLocation, PDF_LOCATIONS_SUFFIX, pdfAnchor, pdfLocationFile, pdfLocationsJson } from "../../agent/src/lib/pdf_locations.ts";
 import { tidyPdfText } from "../../agent/src/lib/pdf_normalize.ts";
 import { PDF_SEGMENTS_SUFFIX, buildPdfSegments, writePdfSegments } from "../../agent/src/lib/pdf_segments.ts";
 import { SEGMENT_DEFAULTS, type SegmentParams } from "../../agent/src/lib/segments.ts";
+import { fromRoot } from "./paths.ts";
 
 /** 投影跟在 PDF 文件路径后面的后缀：x.pdf → x.pdf.md。 */
 export const PDF_PROJECTION_SUFFIX = ".md";
@@ -93,17 +94,29 @@ const WORKER = "pdfjs-dist/legacy/build/pdf.worker.min.mjs";
  */
 export const PDFJS_FILES: readonly string[] = ["package.json", "LICENSE", "legacy/build/pdf.min.mjs", "legacy/build/pdf.worker.min.mjs", "cmaps", "standard_fonts"];
 
+/** 安装包里放 pdfjs-dist 那几样文件的目录（相对仓根；构建时由 release/build.mjs 照 PDFJS_FILES 拷进去）。 */
+export const PDFJS_VENDOR_DIR = "backend/vendor/pdfjs-dist";
+
+/**
+ * 主库与解析库两个文件在哪里：安装包里没有 node_modules，用构建时放进随包目录的那一份；仓库里按包名从 node_modules 找。
+ * 包没有装上时抛 PdfProjectionError。
+ */
+export function pdfjsFiles(): { main: string; worker: string } {
+  const packed = fromRoot(`${PDFJS_VENDOR_DIR}/legacy/build/pdf.min.mjs`);
+  if (existsSync(packed)) return { main: packed, worker: join(dirname(packed), "pdf.worker.min.mjs") };
+  try {
+    return { main: fileURLToPath(import.meta.resolve(MAIN)), worker: fileURLToPath(import.meta.resolve(WORKER)) };
+  } catch {
+    throw new PdfProjectionError("解析 PDF 要用的 pdfjs-dist 没有装上。");
+  }
+}
+
 let loading: Promise<{ lib: Pdfjs; cmaps: string; fonts: string }> | undefined;
 
 /** 第一次用到时才加载 pdf.js（后端启动时不加载）。 */
 function loadPdfjs() {
   loading ??= (async () => {
-    let main: string;
-    try {
-      main = fileURLToPath(import.meta.resolve(MAIN));
-    } catch {
-      throw new PdfProjectionError("解析 PDF 要用的 pdfjs-dist 没有装上。");
-    }
+    const { main, worker } = pdfjsFiles();
     const root = join(dirname(main), "..", "..");
     const cmaps = join(root, "cmaps") + sep;
     const fonts = join(root, "standard_fonts") + sep;
@@ -114,13 +127,13 @@ function loadPdfjs() {
     console.warn = () => {};
     let lib: Pdfjs;
     try {
-      lib = await import(MAIN);
+      lib = await import(pathToFileURL(main).href);
     } finally {
       console.warn = warn;
     }
     if (lib.version !== PDFJS_VERSION) throw new PdfProjectionError(`pdfjs-dist 的版本是 ${lib.version}，应当是 ${PDFJS_VERSION}。`);
     // 压缩过的主库默认去找没压缩的解析库文件名，要明说。
-    lib.GlobalWorkerOptions.workerSrc = import.meta.resolve(WORKER);
+    lib.GlobalWorkerOptions.workerSrc = pathToFileURL(worker).href;
     return { lib, cmaps, fonts };
   })();
   loading.catch(() => { loading = undefined; });

@@ -9,7 +9,7 @@ import { copyFileSync, cpSync, mkdirSync, readFileSync, readdirSync, realpathSyn
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { PDFJS_FILES } from "../src/pdf_projection.ts";
+import { PDFJS_FILES, PDFJS_VENDOR_DIR } from "../src/pdf_projection.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
 const SCRIPT = join(ROOT, "backend", "src", "pdf_projection_cli.mts");
@@ -89,16 +89,17 @@ test("失败：缺参数、参数写错、读不到文件、不是 PDF，都是�
   assert.deepEqual(readdirSync(dir), ["x.pdf"]);
 });
 
-test("像安装包那样摆：pdfjs-dist 只带清单上的几样、旁边没有画页面用的原生模块，结果相同，标准错误输出没有东西", () => {
-  // 摆出与仓库同样的相对位置：<根>/backend/src、<根>/agent/src/lib、<根>/node_modules/pdfjs-dist（只有 PDFJS_FILES 列的几样）。
+test("像安装包那样摆：没有 node_modules，pdfjs-dist 只带清单上的几样、放在随包目录里，旁边没有画页面用的原生模块，结果相同，标准错误输出没有东西", () => {
+  // 摆出安装包的相对位置：<根>/backend/src、<根>/agent/src/lib、<根>/backend/vendor/pdfjs-dist（只有 PDFJS_FILES 列的几样）；没有 node_modules。
   const root = join(tmp, "packed");
   cpSync(join(ROOT, "backend", "src", "pdf_projection.ts"), join(root, "backend", "src", "pdf_projection.ts"));
+  cpSync(join(ROOT, "backend", "src", "paths.ts"), join(root, "backend", "src", "paths.ts"));
   cpSync(join(ROOT, "backend", "src", "pdf_projection_cli.mts"), join(root, "backend", "src", "pdf_projection_cli.mts"));
   cpSync(join(ROOT, "backend", "package.json"), join(root, "backend", "package.json"));
   cpSync(join(ROOT, "agent", "package.json"), join(root, "agent", "package.json"));
   cpSync(join(ROOT, "agent", "src", "lib"), join(root, "agent", "src", "lib"), { recursive: true });
   const installed = realpathSync(join(dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")))));
-  for (const each of PDFJS_FILES) cpSync(join(installed, each), join(root, "node_modules", "pdfjs-dist", each), { recursive: true });
+  for (const each of PDFJS_FILES) cpSync(join(installed, each), join(root, ...PDFJS_VENDOR_DIR.split("/"), each), { recursive: true });
   const dir = workdir("packed-work", "multipage.pdf");
   const args = ["--pdf", join(dir, "x.pdf"), "--rel", "inputs/x.pdf", "--print"];
   const packed = spawnSync(process.execPath, [join(root, "backend", "src", "pdf_projection_cli.mts"), ...args], { encoding: "utf-8", cwd: root });

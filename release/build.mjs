@@ -353,11 +353,13 @@ const TS_IMPORT = /(\bfrom\s*|\bimport\s*\(?\s*)(["'])(\.{1,2}\/[^"']+?)\.(m?)ts
 // .ts/.mts imports rewritten to .js/.mjs. The files keep their places, so agent/src/lib/*.js lands next to the .ts
 // files that pi loads through jiti. Returns the repository-relative paths written.
 //
-// Two more starting points besides the entry points: diagram_validate.ts, which nothing imports yet, and
-// diagram_worker.ts, which diagram_validate.ts starts as a thread by its file name, not with an import.
+// Three more starting points besides the entry points: diagram_validate.ts, which nothing imports yet,
+// diagram_worker.ts, which diagram_validate.ts starts as a thread by its file name, not with an import, and
+// pdf_projection_cli.mts, which the backend runs as a script of its own when a PDF is uploaded.
+const PDF_CLI = "backend/src/pdf_projection_cli.mts";
 function stageBackend(payload) {
   const seen = new Set();
-  const todo = ["backend/src/start.ts", "backend/src/main.mts", "backend/src/diagram_validate.ts", "backend/src/diagram_worker.ts"].map((rel) => path.join(REPO, rel));
+  const todo = ["backend/src/start.ts", "backend/src/main.mts", "backend/src/diagram_validate.ts", "backend/src/diagram_worker.ts", PDF_CLI].map((rel) => path.join(REPO, rel));
   while (todo.length) {
     const file = todo.pop();
     if (seen.has(file)) continue;
@@ -493,6 +495,41 @@ function stageLicences(dir, sources, what, more = new Map()) {
   return packages.size;
 }
 
+// The backend reads PDF files with pdfjs-dist, an npm package; the packages carry no node_modules. Its files are
+// built already, so nothing is bundled: the six entries the backend uses (PDFJS_FILES of backend/src/pdf_projection.ts,
+// repeated here and compared by backend/tests/release_pdfjs.test.ts) are copied as they are into
+// backend/vendor/pdfjs-dist/, where pdf_projection.ts looks first. The package's own LICENSE is one of the six, and
+// cmaps/ and standard_fonts/ hold the licence files of what is in them. The native canvas module that npm installs
+// beside it (an optional dependency, for drawing pages) is not among them and stays out.
+const PDFJS_FILES = ["package.json", "LICENSE", "legacy/build/pdf.min.mjs", "legacy/build/pdf.worker.min.mjs", "cmaps", "standard_fonts"];
+
+// The version the backend's package.json pins; the build stops when another one is installed.
+function pinnedPdfjs() {
+  const wanted = readJson(path.join(REPO, "backend", "package.json")).dependencies?.["pdfjs-dist"];
+  const dir = path.join(REPO, "node_modules", "pdfjs-dist");
+  if (!fs.existsSync(path.join(dir, "package.json"))) throw new Error("pdfjs-dist is not installed in the repository's node_modules; run npm ci first");
+  const installed = readJson(path.join(dir, "package.json")).version;
+  if (installed !== wanted) throw new Error(`pdfjs-dist ${installed} is installed, but backend/package.json pins ${wanted}`);
+  return { dir, version: installed };
+}
+
+function stagePdfjs(payload) {
+  const { dir, version } = pinnedPdfjs();
+  const out = path.join(payload, "backend", "vendor", "pdfjs-dist");
+  for (const rel of PDFJS_FILES) {
+    const from = path.join(dir, rel);
+    if (!fs.existsSync(from)) throw new Error(`pdfjs-dist ${version} has no ${rel}`);
+    const to = path.join(out, rel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    if (fs.statSync(from).isDirectory()) copyTree(from, to);
+    else fs.copyFileSync(from, to);
+  }
+  // Read a PDF with what was just staged, the way the backend does on an upload: the payload's own script and nothing
+  // from the repository's node_modules. The sample has Chinese text without embedded fonts, so it also needs cmaps/.
+  execFileSync(process.execPath, [path.join(HERE, "pdfjs", "check.mjs"), payload, path.join(REPO, "backend", "tests", "fixtures", "pdf", "multipage.pdf")], { stdio: "inherit" });
+  return version;
+}
+
 // The backend writes Word files with docx, an npm package; the packages carry no node_modules. So backend/src/docx_lib.mjs,
 // which names the few things the backend uses from docx, is bundled with docx into one file, checked by writing a
 // small document with it (release/docx/check.mjs), and shipped with the licence files of the packages in it. In the
@@ -537,6 +574,7 @@ async function stagePayload({ work, cache, target, piDir, piPackages, webDist, d
   copyTree(path.join(REPO, "backend", "prompts"), path.join(payload, "backend", "prompts"));
   copyTree(diagramEngine, path.join(payload, "backend", "vendor", "mermaid"));
   copyTree(docxLib, path.join(payload, "backend", "vendor", "docx"));
+  const pdfjs = stagePdfjs(payload);
   const product = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
   fs.writeFileSync(path.join(payload, "package.json"), JSON.stringify({ name: product.name, version: product.version, private: true }, null, 2) + "\n");
   copyTree(webDist, path.join(payload, "web"));
@@ -544,9 +582,9 @@ async function stagePayload({ work, cache, target, piDir, piPackages, webDist, d
   const tools = await stageTools(cache, target, path.join(payload, "tools"));
 
   const piVersion = JSON.parse(fs.readFileSync(path.join(piDir, "package.json"), "utf8")).version;
-  const manifest = { app: "taskwright", version: product.version, target, node: nodeVersion, pi: piVersion, pi_packages: piPackages, ...tools, built_at: new Date().toISOString() };
+  const manifest = { app: "taskwright", version: product.version, target, node: nodeVersion, pi: piVersion, pi_packages: piPackages, pdfjs, ...tools, built_at: new Date().toISOString() };
   fs.writeFileSync(path.join(payload, "manifest.json"), JSON.stringify(manifest, null, 2));
-  log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, diagram check engine ${mb(treeSize(path.join(payload, "backend", "vendor", "mermaid")))}, docx ${mb(treeSize(path.join(payload, "backend", "vendor", "docx")))}, pi ${mb(treeSize(path.join(payload, "pi")))}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
+  log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, diagram check engine ${mb(treeSize(path.join(payload, "backend", "vendor", "mermaid")))}, docx ${mb(treeSize(path.join(payload, "backend", "vendor", "docx")))}, pdfjs-dist ${pdfjs} ${mb(treeSize(path.join(payload, "backend", "vendor", "pdfjs-dist")))}, pi ${mb(treeSize(path.join(payload, "pi")))}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
   return { payload, manifest };
 }
 
