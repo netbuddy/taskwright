@@ -2,6 +2,7 @@
 // 错误统一成 ApiError：后端按接口约定返回 { ok: false, error: { code, message, data } }；
 // 连不上后端、超时、返回的不是 JSON 时，也折成同一种形状，code 用前端自己的几个值（network、timeout、bad_response）。
 
+import { dispositionFileName } from "../model/download";
 import type {
   ActionRequest,
   ApiErrorBody,
@@ -198,6 +199,20 @@ export const api = {
       throw new ApiError("bad_response", said ?? fallbackText(response.status, `下载没有成功（HTTP ${response.status}）。`), response.status);
     }
     return response.blob();
+  },
+  // 导出 Word：选中的条目各取最新的修订，生成一份 .docx。文件名由任务服务定，写在响应头里；读不到时用 fallbackName。
+  // 被拒绝时（例如选中的条目都已经删除）照任务服务说的原因写。
+  exportItemsDocx: async (taskId: string, items: string[], withSources: boolean, fallbackName: string) => {
+    const response = await fetch(`${BASE}${task(taskId)}/documents/download`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format: "docx", items, with_sources: withSources }),
+    });
+    if (!response.ok) {
+      const said = ((await response.json().catch(() => null)) as Partial<ApiErrorBody> | null)?.error?.message;
+      throw new ApiError("bad_response", said ?? fallbackText(response.status, `导出没有成功（HTTP ${response.status}）。`), response.status);
+    }
+    return { blob: await response.blob(), fileName: dispositionFileName(response.headers.get("Content-Disposition")) ?? fallbackName };
   },
 
   // 5 对话
