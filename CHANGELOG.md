@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.1] - 2026-10-XX
+## [0.4.1] - 2026-10-08
 
 0.4.1 adds a knowledge base: reference documents such as standards and glossaries are kept outside any task, a task chooses the libraries it uses, and the assistant searches them by meaning and by keyword and cites what it finds. Model services and the models in use are set up on a settings page instead of in files. The task page is rebuilt as an overview. The assistant's program is now pi 1.0.4, and it no longer goes to the network by itself.
 
