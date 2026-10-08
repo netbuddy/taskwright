@@ -78,6 +78,11 @@ export interface SaveDiagramOptions {
   /** 这一轮里图已经连续几次没有通过校验（不含这一次）。不给当作 0。 */
   priorFailures?: number;
   onTask?: OnTask;
+  /**
+   * 用户在页面上改图（lib/user_diagram.ts）：不核对「Mermaid 文本里写的条目编号是现有的条目」与「画进图里的条目各有一条来源」。
+   * 用户随手改文本不强求来源；写了任务里没有的编号，页面的「图里画了谁」会标出来。图里画了哪些条目照常重算。
+   */
+  userEdit?: boolean;
 }
 
 /** 核对通过之后要写的东西。 */
@@ -130,7 +135,7 @@ function activeTask(db: DatabaseSync): { taskId: string; definition: TaskDefinit
 }
 
 /** 第 1 步：在库里核对参数与来源，得出要写的东西。不通过抛 ToolRejection。 */
-function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams): Plan {
+function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, userEdit = false): Plan {
   const { taskId, definition } = activeTask(db);
   const records = readDiagrams(db, taskId);
   const deleting = params.delete === true;
@@ -186,9 +191,9 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams): P
   if (sameContent && !given(params.sources)) {
     throw reject(`对图 ${id} 的修改与它在修订 ${current.revision_no} 的内容完全一样，没有改动任何东西`, "只写要改的那几项；不需要改就不用保存");
   }
-  // 图里写的条目编号与来源对不对得上，只在这一次动了 Mermaid 文本或者来源时核对；只改图名或说明不核对。
+  // 图里写的条目编号与来源对不对得上，只在这一次动了 Mermaid 文本或者来源时核对；只改图名或说明不核对，用户在页面上改图也不核对。
   const touched = content.mermaid !== undefined || given(params.sources);
-  const drawn = touched ? checkDrawn(db, taskId, definition, merged.mermaid, sources) : drawnItemIds(merged.mermaid, definition.collections.map((one) => one.prefix));
+  const drawn = touched && !userEdit ? checkDrawn(db, taskId, definition, merged.mermaid, sources) : drawnItemIds(merged.mermaid, definition.collections.map((one) => one.prefix));
   return { taskId, op: "update", record, ...merged, sources, validate: content.mermaid !== undefined || merged.kind !== current.kind, drawn };
 }
 
@@ -317,7 +322,8 @@ function inDatabase<T>(call: CallContext, body: (db: DatabaseSync) => T): T {
 
 /** 保存一张图。做成返回给模型的文字与结构化结果；不通过抛 ToolRejection（参数、来源、校验不过）或普通异常（校验没有做成、库的问题）。 */
 export async function saveDiagram(call: CallContext, params: SaveDiagramParams, options: SaveDiagramOptions): Promise<ToolOutcome> {
-  const first = inDatabase(call, (db) => savedBefore(db, call) ?? plan(db, call, params));
+  const userEdit = options.userEdit === true;
+  const first = inDatabase(call, (db) => savedBefore(db, call) ?? plan(db, call, params, userEdit));
   if ("text" in first) return first;
   if (first.validate) {
     // 这一轮已经连续到了上限：不再校验，直接拒绝，直到用户再说话。
@@ -334,7 +340,7 @@ export async function saveDiagram(call: CallContext, params: SaveDiagramParams, 
     }
   }
   // 校验是在事务之外等的，这中间库可能变了：重新核对一遍再写。
-  return inDatabase(call, (db) => savedBefore(db, call) ?? write(db, call, plan(db, call, params)));
+  return inDatabase(call, (db) => savedBefore(db, call) ?? write(db, call, plan(db, call, params, userEdit)));
 }
 
 type BranchEntry = { type: string; message?: { role?: string; toolName?: string; isError?: boolean; content?: unknown } };

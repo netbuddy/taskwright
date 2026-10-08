@@ -16,6 +16,8 @@
  * 经状态栏键 taskwright-review 提示后端去查库转发；全部评完后往会话里追加一条 taskwright-user-edit 自定义消息，
  * 正文只有一句结论（几条合规、几条不合规，问题与建议各几条），details.review 带这几个数；逐条发现执行者经「查询任务状态」取，
  * 界面上看评审页签。不另外发话引出一次运行。点名的条目在当前修订、当前规则下已经评过时整批拒绝（同一次修订只评审一次）。
+ * 另一个例外是改图（kind 为 edit_diagram）：用户在页面上改了一张图的 Mermaid 文本，写的是图自己的一次新修订，走 lib/user_diagram.ts；
+ * 结果里 results 是 [{diagram_id, revision_no}]（图自己的修订号），revision_no 为 null，追加的那条自定义消息不可撤销。
  * 状态栏是给后端读的，交互模式下只显示成底部一行截短的 JSON；所以交互模式里被拒时另外用 notify 把完整的拒绝原因
  * 发给人看（rejectionText），RPC 模式不发，后端照旧只读状态栏。
  *
@@ -33,6 +35,7 @@ import { REVIEW_OP_KIND, UserOpError, checkReviewRequest, runUserOperation } fro
 import { ReviewError } from "../lib/review.ts";
 import { piComplete, startReview } from "../lib/review_ui.ts";
 import { batchCounts } from "../lib/review_run.ts";
+import { DIAGRAM_OP_KIND, editDiagram } from "../lib/user_diagram.ts";
 
 export const USER_COMMAND = "tw-user";
 export const UI_COMMAND = "tw-ui";
@@ -78,6 +81,23 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       }
       if (request.kind === REVIEW_OP_KIND) {
         startUiReview(pi, ctx, request, opId, report);
+        return;
+      }
+      if (request.kind === DIAGRAM_OP_KIND) {
+        // 用户改了一张图的 Mermaid 文本：写的是图自己的修订，不经 runUserOperation（lib/user_diagram.ts）。
+        try {
+          const result = await editDiagram({ workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId() }, request);
+          pi.sendMessage({
+            customType: USER_EDIT_CUSTOM_TYPE,
+            content: result.note,
+            display: true,
+            details: { op_id: result.op_id, kind: result.kind, event_seqs: result.event_seqs, results: result.results, revision_no: null, undoable: false },
+          });
+          report({ ok: true, event_seqs: result.event_seqs, results: result.results, revision_no: null });
+        } catch (error) {
+          if (error instanceof UserOpError) report({ ok: false, error: { code: error.code, message: error.message, data: error.data } });
+          else report({ ok: false, error: { code: "rejected", message: (error as Error).message, data: { reasons: [(error as Error).message] } } });
+        }
         return;
       }
       try {
