@@ -1,11 +1,14 @@
-// PDF 材料的位置表与原始字节，按「任务编号 + 材料路径」各读一次、缓存起来（材料上传后不再改：同名的文件再上传会被拒绝，不会覆盖）。
+// PDF 材料的位置表、原始字节与投影里的各块，按「任务编号 + 材料路径」各读一次、缓存起来（材料上传后不再改：同名的文件再上传会被拒绝，不会覆盖）。
 //
-// 两样分开读：条目区的来源标签只要位置表（「第 N 页」后面的章节取自它的书签目录），不必为了一个标签把整份 PDF 取回来；
-// 材料区显示时两样都要。位置表是上传时任务服务写的 x.pdf.locations.json（格式见 agent/src/lib/pdf_locations.ts）。
+// 三样分开读：条目区的来源标签只要位置表（「第 N 页」后面的章节取自它的书签目录），不必为了一个标签把整份 PDF 取回来；
+// 材料区显示时三样都要。位置表是上传时任务服务写的 x.pdf.locations.json（格式见 agent/src/lib/pdf_locations.ts）；
+// 投影是给助手读的那份文字（每块一行，行首是「[p页-块]」），页面用它来算一段摘录落在哪几块的哪里，与保存修订时的核对
+// 用同一个函数（agent/src/lib/pdf_source.ts）。
 
 import { useSyncExternalStore } from "react";
 import { api, ApiError } from "../api/client";
 import { PDF_LOCATIONS_SUFFIX, type PdfLocationFile } from "../../../agent/src/lib/pdf_locations";
+import { type PdfUnit, pdfProjectionUnits } from "../../../agent/src/lib/pdf_source";
 
 export interface PdfLocationsEntry {
   status: "loading" | "ready";
@@ -20,7 +23,14 @@ export interface PdfBytesEntry {
   error?: string;
 }
 
+export interface PdfUnitsEntry {
+  status: "loading" | "ready";
+  /** 投影里的各块；投影读不到时为 null：来源点过去只能框出那一块，摘录不逐字标，被引用的句子不画底线。 */
+  units: PdfUnit[] | null;
+}
+
 const locations = new Map<string, PdfLocationsEntry>();
+const units = new Map<string, PdfUnitsEntry>();
 const bytes = new Map<string, PdfBytesEntry>();
 const listeners = new Set<() => void>();
 const keyOf = (taskId: string, path: string) => `${taskId}\u0000${path}`;
@@ -65,6 +75,19 @@ export function pdfBytesEntry(taskId: string, path: string): PdfBytesEntry {
   return entry;
 }
 
+/** 取这份 PDF 材料投影里的各块；还没读过就开始读（读完通知订阅者）。 */
+export function pdfUnitsEntry(taskId: string, path: string): PdfUnitsEntry {
+  const key = keyOf(taskId, path);
+  let entry = units.get(key);
+  if (!entry) {
+    entry = { status: "loading", units: null };
+    units.set(key, entry);
+    api.materialContent(taskId, path).then((r) => pdfProjectionUnits(r.text), () => null)
+      .then((list) => { units.set(key, { status: "ready", units: list }); notify(); });
+  }
+  return entry;
+}
+
 /** 组件里用：位置表。taskId 或 path 为空时不读，返回 null。 */
 export function usePdfLocations(taskId: string | null | undefined, path: string | null | undefined): PdfLocationsEntry | null {
   return useSyncExternalStore(subscribe, () => (taskId && path ? pdfLocationsEntry(taskId, path) : null));
@@ -75,8 +98,14 @@ export function usePdfBytes(taskId: string | null | undefined, path: string | nu
   return useSyncExternalStore(subscribe, () => (taskId && path ? pdfBytesEntry(taskId, path) : null));
 }
 
+/** 组件里用：投影里的各块。taskId 或 path 为空时不读，返回 null。 */
+export function usePdfUnits(taskId: string | null | undefined, path: string | null | undefined): PdfUnitsEntry | null {
+  return useSyncExternalStore(subscribe, () => (taskId && path ? pdfUnitsEntry(taskId, path) : null));
+}
+
 /** 测试用：清空缓存。 */
 export function resetPdfStore(): void {
+  units.clear();
   locations.clear();
   bytes.clear();
 }
