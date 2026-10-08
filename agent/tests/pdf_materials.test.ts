@@ -97,6 +97,25 @@ test("PDF 来源核对：改了字、块不对、跨页、块 0、没有写页�
   assert.equal(count(dir, "revision"), before);
 });
 
+test("任务现状消息与查询任务状态：PDF 材料列页数、块数、没有文字的页与读法；未引用按块统计，接了几块的来源那几块都算引用过", () => {
+  const dir = workspace();
+  const files = listMaterials(dir, "inputs/").files.map((f) => f.path);
+  assert.deepEqual(files, ["inputs/办法.pdf", "inputs/办法.pdf.md", "inputs/办法.pdf.segments.json"], "位置表不列");
+  const fresh = taskStatusMessage(dir, { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null }, "s")!;
+  assert.match(fresh.text, /其中 inputs\/办法\.pdf 是 PDF 文件，请读由它生成的投影 inputs\/办法\.pdf\.md（每块一行，行首方括号里是页与块）；引用它作来源时，出处写 PDF 文件加页与块，例如 inputs\/办法\.pdf#p3-2。/);
+  assert.match(fresh.text, /inputs\/办法\.pdf 共 4 页、6 块，其中第 3 页没有文字，分段清单按页，见 inputs\/办法\.pdf\.segments\.json。/);
+  assert.deepEqual((fresh.details.materials as { citations: unknown[] }).citations, [{ path: "inputs/办法.pdf", pages: 4, units: 6, no_text_pages: [3], uncited: 6 }]);
+  assert.doesNotMatch(materialsSentence({ dir: "inputs/", files: [{ path: "inputs/a.md", bytes: 3, modifiedAt: 0 }] }), /PDF/);
+
+  add(dir, "接块", "inputs/办法.pdf#p1-1", "买家申请退款的，平台应当在两个工作日内答复");
+  add(dir, "运费", "inputs/办法.pdf#p2-2", "运费由卖家承担");
+  const status = getTaskStatus(dir, "s");
+  assert.match(status.text, /inputs\/办法\.pdf（读 inputs\/办法\.pdf\.md）：共 4 页、6 块，第 3 页没有文字，还有 3 块没有被任何条目引用。/);
+  assert.match(status.text, /第 1 段 第 1–4 页（第 \d+–\d+ 行）：6 块，被 2 个条目引用，3 块没有引用。/);
+  const facts = (status.details as { materials: Record<string, unknown>[] }).materials[0];
+  assert.deepEqual([facts.kind, facts.pages, facts.units, facts.no_text_pages, facts.uncited], ["pdf", 4, 6, [3], 3]);
+});
+
 test("知识库出处：PDF 文档写页与块，拆出文档名、页与块；Word 文档照旧", () => {
   assert.deepEqual(parseKnowledgeLocator("knowledge/general/规范.pdf#p3-2"), { library: "general", name: "规范.pdf", paragraph: null, page: 3, block: 2 });
   assert.deepEqual(parseKnowledgeLocator("knowledge/general/规范.pdf"), { library: "general", name: "规范.pdf", paragraph: null });

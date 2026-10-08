@@ -38,6 +38,7 @@ import { BUSY_TIMEOUT_MS } from "./schema.ts";
 import { FUNCTION_NAMES } from "./intent_schema.ts";
 import { unansweredActs } from "./dialogue_acts.ts";
 import { isLocationTable } from "./docx_locations.ts";
+import { isPdfLocationTable } from "./pdf_locations.ts";
 import { type SelectedLibrary, envKnowledgeRoot, knowledgeChangedAt, selectedKnowledge } from "./knowledge.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
 
@@ -180,7 +181,7 @@ export interface Materials {
 }
 
 /**
- * 材料目录第一层的文件，按文件名排序；目录不存在时为空。隐藏文件不列；Word 材料的位置表（lib/docx_locations.ts）也不列：
+ * 材料目录第一层的文件，按文件名排序；目录不存在时为空。隐藏文件不列；Word 材料与 PDF 材料的位置表（lib/docx_locations.ts、lib/pdf_locations.ts）也不列：
  * 它给页面的来源标签用，助手不读它（任务现状、get_task_status 与评审取材料都经这里）。
  */
 export function listMaterials(workspaceDir: string, materialsDir: string): { dir: string; files: MaterialFile[] } {
@@ -188,7 +189,7 @@ export function listMaterials(workspaceDir: string, materialsDir: string): { dir
   if (!existsSync(full)) return { dir: materialsDir, files: [] };
   const files: MaterialFile[] = [];
   for (const name of readdirSync(full).sort()) {
-    if (name.startsWith(".") || isLocationTable(name)) continue;
+    if (name.startsWith(".") || isLocationTable(name) || isPdfLocationTable(name)) continue;
     const stat = statSync(join(full, name));
     if (stat.isFile()) files.push({ path: `${materialsDir}${name}`, bytes: stat.size, modifiedAt: stat.mtimeMs });
   }
@@ -204,6 +205,7 @@ function sizeText(bytes: number): string {
 /**
  * 材料清单那一句。Word 材料（.docx）旁边有上传时生成的 Markdown 投影（同名加 .md；0.2 的任务里是同名加 .txt 的纯文本投影），
  * 清单里照样列出，另加一句：Word 材料读投影，引用时出处写 Word 文件加段落号。带了分段情况时，每份 Word 材料再写一句段数、块数与分段清单。
+ * PDF 材料（.pdf）同样：读由它生成的投影，出处写 PDF 文件加页与块；带了分段情况时写页数、块数、哪几页没有文字与分段清单。
  */
 export function materialsSentence(materials: Materials): string {
   if (materials.files.length === 0) return `材料目录 ${materials.dir} 里现在没有文件。`;
@@ -213,17 +215,26 @@ export function materialsSentence(materials: Materials): string {
   const note = words.length
     ? `其中 ${words.join("、")} 是 Word 文件，请读由它生成的投影 ${projections.join("、")}（每段一行，段落号写在方括号里）；引用它作来源时，出处写 Word 文件加段落号，例如 ${words[0]}#p12。`
     : "";
+  const pdfs = materials.files.filter((f) => /\.pdf$/i.test(f.path) && paths.has(`${f.path}.md`)).map((f) => f.path);
+  const pdfNote = pdfs.length
+    ? `${words.length ? "" : "其中 "}${pdfs.join("、")} 是 PDF 文件，请读由它生成的投影 ${pdfs.map((p) => `${p}.md`).join("、")}（每块一行，行首方括号里是页与块）；`
+      + `引用它作来源时，出处写 PDF 文件加页与块，例如 ${pdfs[0]}#p3-2。`
+    : "";
   const segments = (materials.facts ?? []).flatMap((f) => (f.kind === "word"
     ? [`${f.path} 共 ${f.text_paragraphs} 段有文字（段落号 1 到 ${f.paragraphs}）、${f.blocks.length} 块${f.segments_file ? `，分段清单见 ${f.segments_file}` : ""}。`]
-    : []));
-  return `材料目录 ${materials.dir} 里有 ${materials.files.length} 个文件：${materials.files.map((f) => `${f.path}（${sizeText(f.bytes)}）`).join("、")}。${note}${segments.join("")}`;
+    : f.kind === "pdf"
+      ? [`${f.path} 共 ${f.pages} 页、${f.units} 块${f.no_text_pages.length ? `，其中第 ${f.no_text_pages.join("、")} 页没有文字` : ""}${f.segments_file ? `，分段清单按页，见 ${f.segments_file}` : ""}。`]
+      : []));
+  return `材料目录 ${materials.dir} 里有 ${materials.files.length} 个文件：${materials.files.map((f) => `${f.path}（${sizeText(f.bytes)}）`).join("、")}。${note}${pdfNote}${segments.join("")}`;
 }
 
-/** 续接时的引用情况那一句：Word 材料还有几段没有被任何条目引用，文本材料被引用过几次；没有这两种材料时是空文字。 */
+/** 续接时的引用情况那一句：Word 材料还有几段、PDF 材料还有几块没有被任何条目引用，文本材料被引用过几次；没有这几种材料时是空文字。 */
 export function citationSentence(facts: MaterialFacts[] | undefined): string {
   const parts = (facts ?? []).map((f) => (f.kind === "word"
     ? (f.uncited === 0 ? `${f.path} 每段都有条目引用` : `${f.path} 还有 ${f.uncited} 段没有被任何条目引用`)
-    : `${f.path} 被引用过 ${f.cited} 次`));
+    : f.kind === "pdf"
+      ? (f.uncited === 0 ? `${f.path} 每块都有条目引用` : `${f.path} 还有 ${f.uncited} 块没有被任何条目引用`)
+      : `${f.path} 被引用过 ${f.cited} 次`));
   return parts.length ? `材料的引用情况：${parts.join("；")}。` : "";
 }
 
@@ -232,7 +243,9 @@ const materialsDetails = (materials: Materials) => ({
   files: materials.files.map((f) => ({ path: f.path, bytes: f.bytes })),
   citations: (materials.facts ?? []).map((f) => (f.kind === "word"
     ? { path: f.path, text_paragraphs: f.text_paragraphs, blocks: f.blocks.length, uncited: f.uncited }
-    : { path: f.path, cited: f.cited })),
+    : f.kind === "pdf"
+      ? { path: f.path, pages: f.pages, units: f.units, no_text_pages: f.no_text_pages, uncited: f.uncited }
+      : { path: f.path, cited: f.cited })),
 });
 
 /** 写入这条消息的本机时刻（时:分:秒），写在消息开头，读的人知道这是哪一刻的状况。 */
