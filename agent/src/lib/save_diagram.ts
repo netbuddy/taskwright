@@ -109,6 +109,16 @@ const reject = (fact: string, guidance = ""): ToolRejection =>
 const isText = (value: unknown): value is string => typeof value === "string" && value.trim() !== "";
 const given = (value: unknown): boolean => value !== undefined && value !== null;
 
+/**
+ * 工具的参数模式里 sources 是必填的一项（可以是 null），pi 在调用工具之前核对，漏写会被它拦下。这里在核对之前把没有写的补成 null：
+ * null 与没有写在核心函数里是一回事（见 given），新画而没有来源的照常得到中文的拒绝，修改与删除照旧可以不写。
+ * 不是对象的参数原样交回，由 pi 去拒绝。
+ */
+export function withSourcesKey(args: unknown): unknown {
+  if (typeof args !== "object" || args === null || Array.isArray(args) || "sources" in args) return args;
+  return { ...args, sources: null };
+}
+
 /** 这张图在它当前修订下的来源。 */
 function sourcesOf(db: DatabaseSync, taskId: string, id: string, revisionNo: number): Source[] {
   const rows = db.prepare(

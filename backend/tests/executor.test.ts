@@ -158,6 +158,30 @@ test("系统说明、模型服务不可用、保存修订被拒的原因、模�
   assert.equal(got.find(([n]) => n === "work_ended")![1].outcome, "failed");
 });
 
+test("实时步骤行：read 的起始行号超过了文件末尾写已经读到末尾、不标成失败；文件不存在的照旧写没有读成并标成失败", async () => {
+  const { feed, drain } = setup([user("u1", null, "读一下")]);
+  await feed({ type: "agent_start" }, { type: "message_end", message: { role: "user", content: "读一下" } });
+  await drain();
+  const read = (id: string, path: string, text: string) => [
+    { type: "turn_start" }, { type: "tool_execution_start", toolCallId: id, toolName: "read", args: { path, offset: 301 } },
+    { type: "tool_execution_end", toolCallId: id, toolName: "read", isError: true, result: { content: [{ type: "text", text }], details: {} } }, { type: "turn_end" }];
+  await feed(...read("c1", "/w/inputs/说明.docx.md", "Offset 301 is beyond end of file (86 lines total)"),
+    ...read("c2", "/w/inputs/没有.md", "ENOENT: no such file or directory, access '/w/inputs/没有.md'"));
+  const steps = (await drain()).filter(([n, d]) => n === "step" && !d.in_progress).map(([, d]) => [d.text, d.failed]);
+  assert.deepEqual(steps, [["材料《说明.docx》已经读到末尾", false], ["读材料《没有.md》没有读成", true]]);
+});
+
+test("实时步骤行：保存图被拒时括注认得出的原因（缺来源），仍标成失败", async () => {
+  const { feed, drain } = setup([user("u1", null, "画图")]);
+  await feed({ type: "agent_start" }, { type: "message_end", message: { role: "user", content: "画图" } });
+  await drain();
+  await feed({ type: "turn_start" }, { type: "tool_execution_start", toolCallId: "c1", toolName: "save_diagram", args: { name: "退货处理" } },
+    { type: "tool_execution_end", toolCallId: "c1", toolName: "save_diagram", isError: true,
+      result: { content: [{ type: "text", text: "这张图没有保存：缺少 sources，至少要有一条来源。\n怎么办：图至少要有一条来源。" }], details: {} } }, { type: "turn_end" });
+  const steps = (await drain()).filter(([n, d]) => n === "step" && !d.in_progress).map(([, d]) => [d.text, d.failed]);
+  assert.deepEqual(steps, [["图没有存上（缺来源）", true]]);
+});
+
 test("事件分发：带会话订阅的只收自己会话的过程事件；Last-Event-ID 补发；差距太大发 resync；不带就不补", () => {
   const hub = new Hub(ws);
   try {

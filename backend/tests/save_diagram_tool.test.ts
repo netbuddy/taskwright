@@ -1,9 +1,10 @@
 /**
  * 「保存图」工具走完整条链路：起真的后端进程与真的 pi，模型换成进程内的假端点。
- * 流程：助手先整理出一个用例；用户说「把借书画成一张用例图」，助手交来的 Mermaid 文本括号没有闭合，工具经任务服务校验后退回，
+ * 流程：助手先整理出一个用例；用户说「把借书画成一张用例图」，助手头一次没有写来源：sources 在发给模型的参数模式里是必填的一项，
+ * 漏写的不被 pi 用英文拦下，而是由工具用中文拒绝并留痕；补上来源后交来的 Mermaid 文本括号没有闭合，工具经任务服务校验后退回，
  * 拒绝的话里有校验给的原因；助手改对了再存，图存成 D-001 的修订 1，来源是用户那句话与被画的用例；
  * 用户让它改图名，助手先用「查看条目」看这张图（拿到 Mermaid 文本与修订号），再用同一个工具带编号改，成了修订 2。
- * 图不占任务的修订序号；被拒的那一次记进了工具拒绝表；图的列表接口读得到。
+ * 图不占任务的修订序号；被拒的两次都记进了工具拒绝表，过程摘要把它们并进存上的那一句；图的列表接口读得到。
  * 最后用户在页面上改这张图的 Mermaid 文本（界面操作 edit_diagram）：写错的被任务服务校验拦下；写对的成了修订 3、发起方是用户，
  * 会话里多一句界面操作的说明；页面看到的修订号过时了按修订号过时拒绝。
  */
@@ -29,6 +30,7 @@ const SCRIPT = {
       sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
       fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } }] } }] },
     reply("整理好了一个用例。", "call-r1"),
+    { tool_calls: [{ id: "call-d0", name: "save_diagram", arguments: { name: "读者用例", kind: "use_case", mermaid: GOOD, note: "读者能做的事。" } }] },
     { tool_calls: [{ id: "call-d1", name: "save_diagram", arguments: { name: "读者用例", kind: "use_case", mermaid: BAD, note: "读者能做的事。", sources: SOURCES } }] },
     { tool_calls: [{ id: "call-d2", name: "save_diagram", arguments: { name: "读者用例", kind: "use_case", mermaid: GOOD, note: "读者能做的事。", sources: SOURCES } }] },
     reply("图画好了，是 D-001。", "call-r2"),
@@ -52,12 +54,28 @@ test("助手画图：写错的 Mermaid 文本被校验退回，改对之后存�
   await withStack(tmp, "diagram", SCRIPT, async ({ call, taskId, session, requests, db, send, action }) => {
     await send({ text: "把材料整理成需求规格说明。", client_id: "c-1" });
     await send({ text: `${ASK}。`, client_id: "c-2" });
-    // 第一次被校验退回：拒绝的话里有固定的开头与校验给的原因（括号没有闭合，报在第 2 行附近）。
+    // 发给模型的参数模式里 sources 是必填的一项，可以是列表或者 null；别的各项都不是必填。
+    const declared: Dict = (requests()[0]["请求体"].tools as Dict[]).map((one) => one.function ?? one).find((one) => one.name === "save_diagram")!;
+    assert.deepEqual(declared.parameters.required, ["sources"]);
+    assert.deepEqual((declared.parameters.properties.sources.anyOf as Dict[]).map((one) => one.type), ["array", "null"]);
+    assert.match(declared.description, /新画一张图时必须写来源（sources）/);
+    // 头一次没有写来源：不是 pi 拦下的英文，是工具自己的拒绝，带着怎么办。
+    const unsourced = resultOf(requests(), "call-d0");
+    assert.match(unsourced, /这张图没有保存：缺少 sources，至少要有一条来源。\n怎么办：图至少要有一条来源/);
+    assert.doesNotMatch(unsourced, /Validation failed/);
+    // 补上来源之后被校验退回：拒绝的话里有固定的开头与校验给的原因（括号没有闭合，报在第 2 行附近）。
     const refused = resultOf(requests(), "call-d1");
     assert.match(refused, /这张图没有保存：Mermaid 文本没有通过校验。Mermaid 文本第 2/);
     assert.match(refused, /照上面说的改了再保存。/);
-    assert.deepEqual(db("SELECT tool_name, reason_kind FROM tool_rejection"), [{ tool_name: "save_diagram", reason_kind: "input" }]);
-    // 第二次存上了。
+    // 两次拒绝都记进了工具拒绝表。
+    assert.deepEqual(db("SELECT tool_name, reason_kind, call_id FROM tool_rejection ORDER BY rowid"),
+      [{ tool_name: "save_diagram", reason_kind: "input", call_id: "call-d0" }, { tool_name: "save_diagram", reason_kind: "input", call_id: "call-d1" }]);
+    // 过程摘要：被拒的两次并进存上的那一句，不单列「图没有存上」。
+    const { messages } = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body;
+    const summaries: Dict[] = messages.filter((m: Dict) => m.type === "work_summary");
+    assert.deepEqual(summaries.at(-1)!.stages.map((stage: Dict) => [stage.text, stage.count]),
+      [["图前 2 次没有存上（缺来源、Mermaid 文本没有通过校验），改好后保存了图 D-001（用例图：读者用例）", 3], ["组织并发出了回复", 1]]);
+    // 第三次存上了。
     assert.match(resultOf(requests(), "call-d2"), /已保存图 D-001「读者用例」（用例图），现在是修订 1。[\s\S]*图里画了 1 个条目：UC-001。/);
     assert.deepEqual(db("SELECT diagram_id, revision_no, op, name, kind, actor, call_id FROM diagram_version"),
       [{ diagram_id: "D-001", revision_no: 1, op: "add", name: "读者用例", kind: "use_case", actor: "executor", call_id: "call-d2" }]);

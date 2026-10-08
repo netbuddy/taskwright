@@ -56,6 +56,9 @@ test("没有结果的各种工具都不写成做完了，沿用各自「没有�
   assert.equal(stagesOf([userEntry, aborted(call("c6", "complete_task"))], null)[0], "完成任务没有做完");
   assert.equal(stagesOf([userEntry, aborted(call("c6", "complete_task"))], { ...nothing, completed: (id) => id === "c6" })[0], "把任务标为已完成");
   for (const text of texts) assert.doesNotMatch(text, /None/);
+  // 由 Word 材料生成的文件写 Word 文件的本名；被停下的是看分段清单那一步时照「看」的说法。
+  assert.deepEqual(stagesOf([userEntry, aborted(call("c1", "read", { path: "inputs/材料.docx.md" }), call("c2", "read", { path: "inputs/材料.docx.segments.json" }))], nothing),
+    ["读材料《材料.docx》没有读成", "看材料《材料.docx》的分段清单没有看成"]);
 });
 
 test("callFacts 从任务库按调用编号查出修订号与碰到的条目；查不到、库不在时为空", () => {

@@ -924,13 +924,20 @@ export class Executor {
   private toolEnd(event: PiEvent, sid: string | null): void {
     const work = this.work;
     const tool = event.toolName || "";
-    const failed = truthy(event.isError);
+    let failed = truthy(event.isError);
     const result = event.result || {};
     let details: Dict = result.details || {};
+    // read 的起始行号超过了文件末尾：文件读得到，不算失败，实时的 step 行与过程摘要都写「已经读到末尾」。
+    if (failed && tool === "read" && workSummary.readPastEnd(workSummary.resultText(result))) {
+      failed = false;
+      details = { ...details, past_end: true };
+    }
     // 保存修订被拒时原因只在结果正文里，先拆出来，实时的 step 行与过程摘要同一个写法。
     if (failed && tool === "save_revision") details = { ...details, reasons: workSummary.rejectionParts(details, workSummary.resultText(result)) };
     // 回复被拒的原因也只在结果正文里：认出是没有写理解、理解不合格还是形式不对，过程摘要按它分写。
     if (failed && tool === REPLY_TOOL) details = { ...details, refusal: workSummary.replyRefusal(workSummary.resultText(result)) };
+    // 保存图被拒是因为缺来源还是 Mermaid 文本没有通过校验，同样只在结果正文里：认出来，step 行与过程摘要加个括注。
+    if (failed && tool === "save_diagram") details = { ...details, rejection: workSummary.diagramRejection(workSummary.resultText(result)) };
     if (work !== null && truthy(details.stopped)) work.limit_stopped = true;
     if (work !== null) {
       for (const t of work.turn_tools) if (t.id === (event.toolCallId ?? null)) Object.assign(t, { done: true, failed, details });

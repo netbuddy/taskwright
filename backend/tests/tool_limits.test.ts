@@ -1,6 +1,7 @@
 /**
  * 自带工具的返回定量，接线这一层：起真的后端进程与真的 pi，模型换成进程内的假端点。
  * - read 读知识库目录下的文件而没有写要读几行：只读回 120 行，末尾是 pi 自己的接着读的提示；写了几行的照写的；读材料不受影响。
+ * - read 的起始行号超过了文件末尾：pi 回的还是过程摘要认的那句话（work_summary.ts 的 readPastEnd），摘要不写成没有读成。
  * - grep 的返回太多：只留前 40 行并加一句话，归档里留一条状态栏记录；返回不多的原样不动。grep 要用 rg，本机没有时这一例跳过。
  * - 对知识库目录的路径拦截已经撤掉：ls 知识库目录照常执行。
  * 截短与补行数的各种情形由 agent/tests/tool_limits.test.ts 逐一核对，这里只看这两件确实接上了。
@@ -58,6 +59,7 @@ test("read 读知识库里的文件不写要读几行时只读回 120 行；写�
     { tool_calls: [{ id: "call-read-kb", name: "read", arguments: { path: doc } }] },
     { tool_calls: [{ id: "call-read-kb-5", name: "read", arguments: { path: doc, offset: 200, limit: 5 } }] },
     { tool_calls: [{ id: "call-read-material", name: "read", arguments: { path: "inputs/长材料.md" } }] },
+    { tool_calls: [{ id: "call-read-past-end", name: "read", arguments: { path: "inputs/长材料.md", offset: 400 } }] },
     { tool_calls: [{ id: "call-ls-kb", name: "ls", arguments: { path: join(knowledgeOf(name), "general", "files") } }] },
     reply("看过了。", "call-done"),
   ] };
@@ -75,6 +77,11 @@ test("read 读知识库里的文件不写要读几行时只读回 120 行；写�
     assert.equal(rowsOf(toolResult(requests, "call-read-material")).length, 300);
     // 路径拦截撤掉了：ls 知识库目录照常返回文件名。
     assert.match(toolResult(requests, "call-ls-kb"), /大文档\.md/);
+    // 起始行号超过了文件末尾：pi 回的是这句话；过程摘要把这一次并进读材料那一句，不写成没有读成。
+    assert.match(toolResult(requests, "call-read-past-end"), /^Offset 400 is beyond end of file \(\d+ lines total\)/);
+    const { messages } = (await s.call("GET", `/api/v1/tasks/${s.taskId}/conversation?session=${s.session}`)).body;
+    const stages: string[] = messages.find((m: Dict) => m.type === "work_summary").stages.map((stage: Dict) => stage.text);
+    assert.deepEqual(stages, ["读了文件《大文档.md》", "读了材料《长材料.md》", "看了目录", "组织并发出了回复"]);
   });
 });
 

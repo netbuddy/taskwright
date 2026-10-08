@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FALLBACK_TEXT, baseMessages, branch, normalizeInforms, page, textOf } from "../src/conversation.ts";
 import { Sessions } from "../src/sessions.ts";
-import { LIMIT_STOPPED_STEP_TEXT, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
+import { LIMIT_STOPPED_STEP_TEXT, diagramRejection, docxDerived, readPastEnd, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
 import { tempDir } from "./helpers.ts";
 
 const works = (entries: Record<string, unknown>[], definition: Record<string, unknown> = {}) =>
@@ -81,6 +81,75 @@ test("过程摘要：相邻同类合并，用时与工作编号，回复所在�
   assert.deepEqual([second.work_id, second.step_count, second.stages[0].text], ["w-u2", 1, "看了目录"]);
 });
 
+test("过程摘要：由 Word 文件生成的投影、分段清单与位置表都写成 Word 文件的本名；同一份读几次只写一次；只看了分段清单的另写", () => {
+  assert.deepEqual(docxDerived("退货说明.docx.md"), { docx: "退货说明.docx", part: "text" });
+  assert.deepEqual(docxDerived("退货说明.DOCX.txt"), { docx: "退货说明.DOCX", part: "text" });
+  assert.deepEqual(docxDerived("退货说明.docx.segments.json"), { docx: "退货说明.docx", part: "outline" });
+  assert.deepEqual(docxDerived("退货说明.docx.locations.json"), { docx: "退货说明.docx", part: "outline" });
+  for (const name of ["退货说明.docx", "说明.md", "笔记.segments.json", "退货说明.docx.media"]) assert.equal(docxDerived(name), null, name);
+
+  const definition = { 材料目录: "inputs/" };
+  const step = (path: string, done: boolean, failed = false) => stepText("read", { path }, done, failed, null, definition);
+  assert.deepEqual([step("inputs/退货说明.docx.md", false), step("inputs/退货说明.docx.md", true), step("inputs/退货说明.docx.md", true, true)],
+    ["正在读材料《退货说明.docx》", "读了材料《退货说明.docx》", "读材料《退货说明.docx》没有读成"]);
+  assert.deepEqual([step("inputs/退货说明.docx.segments.json", false), step("inputs/退货说明.docx.segments.json", true), step("inputs/退货说明.docx.segments.json", true, true)],
+    ["正在看材料《退货说明.docx》的分段清单", "看了材料《退货说明.docx》的分段清单", "看材料《退货说明.docx》的分段清单没有看成"]);
+  assert.equal(step("inputs/退货说明.docx.locations.json", true), "看了材料《退货说明.docx》的分段清单", "位置表并进分段清单的说法，不对用户说「位置表」");
+  assert.equal(step("/kb/K-001/files/退货政策.docx.md", true), "读了文件《退货政策.docx》", "知识库文档的投影同样写本名");
+
+  const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-08T01:00:00.000Z", message: { role, content } });
+  /** 一次工作：依次读这些路径（每次一条助手消息、一条成功的结果），返回各阶段的 [文字, 次数]。 */
+  const read = (...paths: string[]) => {
+    const entries: Record<string, unknown>[] = [{ type: "session", id: "h" }, msg("u1", null, "user", "整理材料")];
+    paths.forEach((path, i) => {
+      const parent = i === 0 ? "u1" : `r${i - 1}`;
+      entries.push(msg(`a${i}`, parent, "assistant", [{ type: "toolCall", id: `c${i}`, name: "read", arguments: { path } }]));
+      entries.push({ ...msg(`r${i}`, `a${i}`, "toolResult", []), message: { role: "toolResult", toolCallId: `c${i}`, isError: false, details: {} } });
+    });
+    return works(entries, definition)[0].stages.map((s) => [s.text, s.count]);
+  };
+  // 走查时的顺序：先看分段清单，再读投影，又读了一次投影。
+  assert.deepEqual(read("inputs/退货说明.docx.segments.json", "inputs/退货说明.docx.md", "inputs/退货说明.docx.md"), [["读了材料《退货说明.docx》", 3]]);
+  assert.deepEqual(read("inputs/退货说明.docx.segments.json"), [["看了材料《退货说明.docx》的分段清单", 1]]);
+  assert.deepEqual(read("inputs/甲.docx.segments.json", "inputs/乙.docx.locations.json"), [["看了材料《甲.docx》、《乙.docx》的分段清单", 2]]);
+  assert.deepEqual(read("inputs/甲.docx.md", "inputs/乙.docx.segments.json", "inputs/丙.md"), [["读了材料《甲.docx》、《丙.md》，看了《乙.docx》的分段清单", 3]]);
+  assert.deepEqual(read("inputs/丙.md", "inputs/丙.md", "inputs/丁.md"), [["读了材料《丙.md》、《丁.md》", 3]], "不是 Word 材料时同一份也只写一次");
+});
+
+test("过程摘要：read 的起始行号超过了文件末尾不算没读成，并进前一句或者写已经读到末尾；真读不到的照旧写没有读成", () => {
+  const PAST = "Offset 301 is beyond end of file (86 lines total)";
+  assert.equal(readPastEnd(PAST), true);
+  for (const text of ["ENOENT: no such file or directory, access '/w/inputs/没有.md'", "EISDIR: illegal operation on a directory, read",
+    "Validation failed for tool \"read\":\n  - path: must have required properties path", "Operation aborted", ""]) assert.equal(readPastEnd(text), false, text);
+
+  const definition = { 材料目录: "inputs/" };
+  assert.equal(stepText("read", { path: "inputs/说明.docx.md", offset: 301 }, true, false, { past_end: true }, definition), "材料《说明.docx》已经读到末尾");
+  const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-08T01:00:00.000Z", message: { role, content } });
+  /** 一次工作：依次做这些调用，每项是 [工具, 参数, 出错时结果的正文]；返回各阶段的 [文字, 次数]。 */
+  const run = (...calls: [string, Record<string, unknown>, string?][]) => {
+    const entries: Record<string, unknown>[] = [{ type: "session", id: "h" }, msg("u1", null, "user", "整理材料")];
+    calls.forEach(([name, args, error], i) => {
+      entries.push(msg(`a${i}`, i === 0 ? "u1" : `r${i - 1}`, "assistant", [{ type: "toolCall", id: `c${i}`, name, arguments: args }]));
+      entries.push({ type: "message", id: `r${i}`, parentId: `a${i}`, timestamp: "2026-10-08T01:00:01.000Z",
+        message: { role: "toolResult", toolCallId: `c${i}`, isError: error !== undefined, details: {}, content: [{ type: "text", text: error ?? "" }] } });
+    });
+    const [work] = works(entries, definition);
+    return { stages: work.stages.map((s) => [s.text, s.count]), steps: work.step_count };
+  };
+  // 走查时的情形：读完整份之后又从第 301 行读了一次。
+  assert.deepEqual(run(["read", { path: "inputs/说明.docx.md" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST]),
+    { stages: [["读了材料《说明.docx》", 2]], steps: 2 });
+  // 前一句不是读这一份：单独写一句，后面再读别的另起一句。
+  assert.deepEqual(run(["ls", { path: "inputs" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST], ["read", { path: "inputs/乙.md" }]).stages,
+    [["看了目录", 1], ["材料《说明.docx》已经读到末尾", 1], ["读了材料《乙.md》", 1]]);
+  assert.deepEqual(run(["read", { path: "inputs/乙.md" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST]).stages,
+    [["读了材料《乙.md》", 1], ["材料《说明.docx》已经读到末尾", 1]]);
+  // 真读不到：文件不存在、参数不合模式、被停下，都照旧。
+  for (const error of ["ENOENT: no such file or directory, access '/w/inputs/没有.md'", "Validation failed for tool \"read\":\n  - path: must be string", "Operation aborted"]) {
+    assert.deepEqual(run(["read", { path: "inputs/没有.md" }, error]).stages, [["读材料《没有.md》没有读成", 1]], error);
+  }
+});
+
 test("过程摘要：保存修订被拒附上原因，多于一条时写还有几条", () => {
   const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-09-22T01:00:00.000Z", message: { role, content } });
   const rejected = (id: string, parentId: string, callId: string, text: string) =>
@@ -143,6 +212,52 @@ test("过程摘要：查找知识库写查到几个片段，只按字面找的�
   assert.equal(stepText("save_diagram", {}, true, false, { diagram_id: "D-001", op: "add", name: "读者用例", kind: "use_case", revision_no: 1, replayed: true }, {}),
     "这次保存图是重复的请求，图 D-001 之前已经保存过，没有重复写入");
   assert.equal(stepText("save_diagram", {}, true, true, null, {}), "图没有存上");
+});
+
+test("过程摘要：保存图被拒之后同一次工作里又存上了，并成一句并括注原因；没有再存上的单列；两张图各认各的", () => {
+  const NO_SOURCES = "这张图没有保存：缺少 sources，至少要有一条来源。\n怎么办：图至少要有一条来源：用户要你画图的那句话写一条「用户的话」。";
+  const EMPTY_SOURCES = "这张图没有保存：sources 应当是一个不为空的列表，至少要有一条来源。";
+  const MERMAID = "这张图没有保存：Mermaid 文本没有通过校验。Mermaid 文本第 2 行附近写得不对。\n照上面说的改了再保存。";
+  const OTHER = "这张图没有保存：图名里有换行。\n怎么办：图名写成一行。";
+  assert.deepEqual([NO_SOURCES, EMPTY_SOURCES, MERMAID, OTHER, "Validation failed for tool \"save_diagram\"", ""].map(diagramRejection),
+    ["no_sources", "no_sources", "mermaid", "other", "other", "other"]);
+  // 实时的 step 行：被拒的那一刻还不知道后面存不存得上，只加括注。
+  assert.equal(stepText("save_diagram", {}, true, true, { rejection: "no_sources" }, {}), "图没有存上（缺来源）");
+  assert.equal(stepText("save_diagram", {}, true, true, { rejection: "mermaid" }, {}), "图没有存上（Mermaid 文本没有通过校验）");
+  assert.equal(stepText("save_diagram", {}, true, true, { rejection: "other" }, {}), "图没有存上");
+
+  const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-08T01:00:00.000Z", message: { role, content } });
+  /** 一次工作：依次做这些「保存图」，每项是 [参数, 被拒时结果的正文或者存上时的 details]；返回各阶段的 [文字, 次数]。 */
+  const run = (...calls: [Record<string, unknown>, string | Record<string, unknown>][]) => {
+    const entries: Record<string, unknown>[] = [{ type: "session", id: "h" }, msg("u1", null, "user", "画图")];
+    calls.forEach(([args, outcome], i) => {
+      const refused = typeof outcome === "string";
+      entries.push(msg(`a${i}`, i === 0 ? "u1" : `r${i - 1}`, "assistant", [{ type: "toolCall", id: `c${i}`, name: "save_diagram", arguments: args }]));
+      entries.push({ type: "message", id: `r${i}`, parentId: `a${i}`, timestamp: "2026-10-08T01:00:01.000Z",
+        message: { role: "toolResult", toolCallId: `c${i}`, isError: refused, details: refused ? {} : outcome, content: [{ type: "text", text: refused ? outcome : "" }] } });
+    });
+    return works(entries)[0].stages.map((s) => [s.text, s.count]);
+  };
+  const flow = { name: "退货处理", kind: "use_case" };
+  const saved = (id: string, name: string) => ({ diagram_id: id, op: "add", name, kind: "use_case", revision_no: 1 });
+  // 走查时的情形：第一次漏了来源，补上就存成了。
+  assert.deepEqual(run([flow, NO_SOURCES], [flow, saved("D-001", "退货处理")]), [["图第一次没有存上（缺来源），补上后保存了图 D-001（用例图：退货处理）", 2]]);
+  assert.deepEqual(run([flow, MERMAID], [flow, MERMAID], [flow, saved("D-001", "退货处理")]),
+    [["图前 2 次没有存上（Mermaid 文本没有通过校验），改好后保存了图 D-001（用例图：退货处理）", 3]]);
+  assert.deepEqual(run([flow, NO_SOURCES], [flow, MERMAID], [flow, saved("D-001", "退货处理")]),
+    [["图前 2 次没有存上（缺来源、Mermaid 文本没有通过校验），改好后保存了图 D-001（用例图：退货处理）", 3]]);
+  assert.deepEqual(run([flow, OTHER], [flow, saved("D-001", "退货处理")]), [["图第一次没有存上，改好后保存了图 D-001（用例图：退货处理）", 2]]);
+  // 两张图交错：各自并进各自存上的那一句。
+  const other = { name: "入库验收", kind: "use_case" };
+  assert.deepEqual(run([flow, NO_SOURCES], [other, NO_SOURCES], [flow, saved("D-001", "退货处理")], [other, saved("D-002", "入库验收")]),
+    [["图第一次没有存上（缺来源），补上后保存了图 D-001（用例图：退货处理）", 2], ["图第一次没有存上（缺来源），补上后保存了图 D-002（用例图：入库验收）", 2]]);
+  // 这次工作里没有再存上：单列一句，带上认得出的原因；别的图存上了不算。
+  assert.deepEqual(run([flow, NO_SOURCES]), [["图没有存上（缺来源）", 1]]);
+  assert.deepEqual(run([flow, NO_SOURCES], [other, saved("D-001", "入库验收")]), [["图没有存上（缺来源）", 1], ["保存了图 D-001（用例图：入库验收）", 1]]);
+  // 修改一张图按图的编号认。
+  const change = { diagram: "D-001", base_revision: 1, mermaid: "flowchart LR" };
+  assert.deepEqual(run([change, MERMAID], [change, { diagram_id: "D-001", op: "update", name: "退货处理", kind: "use_case", revision_no: 2 }]),
+    [["图第一次没有存上（Mermaid 文本没有通过校验），改好后修改了图 D-001（用例图：退货处理），现在是修订 2", 2]]);
 });
 
 test("过程摘要：grep 的返回太多、被截短时写搜到几行、只看了前几行；没有截短的与出错的照旧", () => {

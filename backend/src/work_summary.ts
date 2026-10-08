@@ -4,8 +4,11 @@
  * 一次工作从一句用户的话开始，到下一句用户的话之前为止（兜底追加的那句固定文字不算用户的话）。
  * · 步数：这次工作里工具调用的次数。
  * · 用时：从那句用户的话到这次工作最后一个条目的时刻。
- * · 阶段：每个工具调用写成一句，相邻的同类调用合成一句，例如连着读了三份材料写成「读了材料《a》、《b》、《c》」。
+ * · 阶段：每个工具调用写成一句，相邻的同类调用合成一句，例如连着读了三份材料写成「读了材料《a》、《b》、《c》」；
+ *   同一份材料读了几次只写一次名字。由 Word 材料生成的投影、分段清单与位置表是内部的文件，都写成 Word 文件的本名。
  *   保存修订被拒时，这一句写「保存修订被拒：」加第一条原因的事实，阶段另有 reasons 列出全部原因的事实。
+ *   保存图被拒之后在同一次工作里又存上了，被拒的几次并进存上的那一句：「图第一次没有存上（缺来源），补上后保存了图 D-001（…）」。
+ *   read 的起始行号超过了文件末尾不算没读成：前一句里读过这一份就并进去，不然写「已经读到末尾」。
  * · 工作编号：「w-{那句用户的话的会话条目编号}」。修订日志按它把修订归到工作。
  */
 
@@ -14,9 +17,12 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import * as clock from "./clock.ts";
 import { INTENT_SCHEMA_PATH } from "./paths.ts";
+import { LOCATIONS_SUFFIX } from "../../agent/src/lib/docx_locations.ts";
 import { GATE_MISSING_TEXT, INTENT_GATE_TEXT } from "../../agent/src/lib/intent_schema.ts";
+import { SEGMENTS_SUFFIX } from "../../agent/src/lib/segments.ts";
 import { jsonOrText } from "../../agent/src/lib/task_read.ts";
 import { openRo } from "./library.ts";
+import { LEGACY_SUFFIX, SUFFIX } from "./projection.ts";
 import { isObject, or, truthy } from "./py.ts";
 
 export const REPLY_TOOL = "reply";
@@ -76,21 +82,115 @@ export const REPLY_REFUSAL_TEXT: Record<ReplyRefusal, string> = {
 /** 这一轮连续被拒到上限、由工具停下这次运行的那一步（工具结果的 details.stopped 为真）。 */
 export const LIMIT_STOPPED_STEP_TEXT = "助手这一轮没有按规矩回答，已经停下";
 
+/**
+ * 「保存图」被拒是哪一种，按拒绝的文字认（文字是助手一侧拼的，见 agent/src/lib/save_diagram.ts 的 reject 与 VALIDATION_FAILED_TEXT、
+ * lib/save_revision.ts 的 checkSources）：没有写来源、Mermaid 文本没有通过校验，或者别的。过程摘要只给前两种加括注。
+ */
+export type DiagramRejection = "no_sources" | "mermaid" | "other";
+const DIAGRAM_REJECTED_HEAD = "这张图没有保存：";
+export function diagramRejection(text: string): DiagramRejection {
+  if (!text.startsWith(DIAGRAM_REJECTED_HEAD)) return "other";
+  const fact = text.slice(DIAGRAM_REJECTED_HEAD.length);
+  if (fact.startsWith("Mermaid 文本没有通过校验")) return "mermaid";
+  return fact.startsWith("缺少 sources") || fact.startsWith("sources 应当是") ? "no_sources" : "other";
+}
+
+/** 「保存图」被拒时过程摘要里括注的说法；别的原因不加括注（原因在工具的结果里）。 */
+export const DIAGRAM_REJECTION_TEXT: Record<DiagramRejection, string> = { no_sources: "缺来源", mermaid: "Mermaid 文本没有通过校验", other: "" };
+
+const diagramRejectionOf = (details: Dict | null): DiagramRejection => {
+  const kind = (details || {}).rejection;
+  return typeof kind === "string" && Object.hasOwn(DIAGRAM_REJECTION_TEXT, kind) ? kind as DiagramRejection : "other";
+};
+const noted = (labels: string[]) => (labels.length ? `（${labels.join("、")}）` : "");
+
+/**
+ * 图被拒之后在同一次工作里又存上了：被拒的几次并进存上的那一句，不单列「图没有存上」。
+ * 「图第一次没有存上（缺来源），补上后保存了图 D-001（用例图：…）」；被拒不止一次时写「图前 N 次没有存上」；原因只有缺来源时说「补上后」，不然说「改好后」。
+ */
+function retriedDiagramText(rejections: DiagramRejection[], saved: string): string {
+  const labels = [...new Set(rejections.map((kind) => DIAGRAM_REJECTION_TEXT[kind]).filter(Boolean))];
+  const times = rejections.length === 1 ? "第一次" : `前 ${rejections.length} 次`;
+  const fixed = rejections.every((kind) => kind === "no_sources") ? "补上后" : "改好后";
+  return `图${times}没有存上${noted(labels)}，${fixed}${saved}`;
+}
+
+/** 一次「保存图」说的是哪一张图：修改与删除按图的编号认，新画的按图名认。认不出时是 null，不与别的调用合并。 */
+function diagramKey(args: Dict): string | null {
+  if (typeof args.diagram === "string" && args.diagram.trim()) return `id\u0000${args.diagram.trim()}`;
+  return typeof args.name === "string" && args.name.trim() ? `name\u0000${args.name.trim()}` : null;
+}
+
 export function resultText(result: Dict): string {
   const content = result.content;
   if (typeof content === "string") return content;
   return (or(content, []) as unknown[]).filter((p) => isObject(p) && p.type === "text").map((p: any) => or(p.text, "")).join("\n");
 }
 
-/** 读的是什么：[种类, 显示的名字]。种类用来判断相邻两次读能不能合成一句。 */
-export function readKind(path: string, definition: Dict): [string, string] {
-  const name = basename(path);
+/**
+ * pi 自带的 read 在起始行号超过文件总行数时回的话的开头（pi 的 core/tools/read.js：「Offset N is beyond end of file (M lines total)」）。
+ * 这时文件读得到，只是后面已经没有行了：不算没读成，过程摘要写「已经读到末尾」。pi 改了这句话时认不出来，照旧写「没有读成」。
+ */
+const READ_PAST_END = /^Offset \d+ is beyond end of file/;
+
+/** 一次出错的 read 是不是只因为起始行号超过了文件末尾。text 是工具结果的正文。 */
+export function readPastEnd(text: string): boolean {
+  return READ_PAST_END.test(text.trim());
+}
+
+/** 读分段清单（或位置表）时接在名字后面的说法。 */
+const OUTLINE_WORD = "的分段清单";
+
+/** 读的是一份 Word 文件的哪一部分：正文（它的投影），还是分段清单（位置表也归在这里，对用户不单说「位置表」）。 */
+export type DocxPart = "text" | "outline";
+
+/**
+ * 由 Word 文件生成的文件折回 Word 文件的本名：投影（x.docx.md，0.2 的任务里是 x.docx.txt）算正文，分段清单（x.docx.segments.json）
+ * 与位置表（x.docx.locations.json）算分段清单。这些是内部的文件，过程摘要里只写 x.docx。不是这几种文件名时返回 null。
+ * 这几种文件名是留用的（projection.ts 的 isReserved），用户传不上来同名的文件，所以只看文件名。
+ */
+export function docxDerived(name: string): { docx: string; part: DocxPart } | null {
+  const lower = name.toLowerCase();
+  const parts: [string, DocxPart][] = [[SEGMENTS_SUFFIX, "outline"], [LOCATIONS_SUFFIX, "outline"], [SUFFIX, "text"], [LEGACY_SUFFIX, "text"]];
+  for (const [suffix, part] of parts) {
+    if (lower.endsWith(".docx" + suffix)) return { docx: name.slice(0, -suffix.length), part };
+  }
+  return null;
+}
+
+/**
+ * 读的是什么：[种类, 显示的名字, 读的是 Word 文件的哪一部分]。种类用来判断相邻两次读能不能合成一句。
+ * 由 Word 文件生成的文件，名字写 Word 文件的本名（见 docxDerived）；别的文件第三项是 null。
+ */
+export function readKind(path: string, definition: Dict): [string, string, DocxPart | null] {
+  const derived = docxDerived(basename(path));
+  const name = derived ? derived.docx : basename(path);
+  const part = derived ? derived.part : null;
   const materials = or(definition["材料目录"], "inputs/") as string;
-  if (path.includes(".pi/skills/") || path.endsWith("SKILL.md")) return ["方法说明", "方法说明"];
-  if ((or(definition["领域规矩"], []) as string[]).some((r) => path.endsWith(r) || path.includes(r))) return ["领域规矩", `《${name}》`];
-  if (path.includes("task-definitions/")) return ["任务定义", "任务定义"];
-  if (path.includes(`/${materials}`) || path.startsWith(materials)) return ["材料", `《${name}》`];
-  return ["文件", `《${name}》`];
+  if (path.includes(".pi/skills/") || path.endsWith("SKILL.md")) return ["方法说明", "方法说明", null];
+  if ((or(definition["领域规矩"], []) as string[]).some((r) => path.endsWith(r) || path.includes(r))) return ["领域规矩", `《${name}》`, part];
+  if (path.includes("task-definitions/")) return ["任务定义", "任务定义", null];
+  if (path.includes(`/${materials}`) || path.startsWith(materials)) return ["材料", `《${name}》`, part];
+  return ["文件", `《${name}》`, part];
+}
+
+/** 一次读写成一句话时要用的两样：读的东西怎样称呼（「材料《x.docx》」「方法说明」），读的是不是只有分段清单。 */
+function readWhat(path: string, definition: Dict): { what: string; outline: boolean } {
+  const [kind, name, part] = readKind(path, definition);
+  return { what: kind === "方法说明" || kind === "任务定义" ? name : `${kind}${name}`, outline: part === "outline" };
+}
+
+/**
+ * 相邻几次读合成的那一句。names 是这一句里读过的东西，同一份只记一次；full 是其中读了正文的。只看了分段清单的另写半句：
+ * 「读了材料《甲.docx》，看了《乙.docx》的分段清单」；一份正文也没有读时写「看了材料《乙.docx》的分段清单」。
+ */
+function mergedReadText(kind: string, names: string[], full: Set<string>): string {
+  const read = names.filter((name) => full.has(name));
+  const seen = names.filter((name) => !full.has(name));
+  const parts = [];
+  if (read.length) parts.push(`读了${kind}${read.join("、")}`);
+  if (seen.length) parts.push(`看了${read.length ? "" : kind}${seen.join("、")}${OUTLINE_WORD}`);
+  return parts.join("，");
 }
 
 const py = (v: unknown) => (v === null || v === undefined ? "None" : String(v));
@@ -102,6 +202,7 @@ const py = (v: unknown) => (v === null || v === undefined ? "None" : String(v));
  */
 export const UNFINISHED_TEXT = {
   read: (what: string) => `读${what}没有读成`,
+  read_outline: (what: string) => `看${what}${OUTLINE_WORD}没有看成`,
   ls: "看目录没有看成",
   get_item: (item: string) => `查看条目 ${item} 没有成`,
   get_task_status: "查看任务状态没有成",
@@ -137,8 +238,8 @@ export function unfinishedText(tool: string, args: Dict, callId: string | null, 
     return facts === null ? UNFINISHED_TEXT.complete_task_unchecked : UNFINISHED_TEXT.complete_task;
   }
   if (tool === "read") {
-    const [kind, name] = readKind(String(or(args.path, "")), definition);
-    return UNFINISHED_TEXT.read(kind === "方法说明" || kind === "任务定义" ? name : `${kind === "领域规矩" ? "领域规矩" : kind}${name}`);
+    const { what, outline } = readWhat(String(or(args.path, "")), definition);
+    return outline ? UNFINISHED_TEXT.read_outline(what) : UNFINISHED_TEXT.read(what);
   }
   if (tool === "ls") return UNFINISHED_TEXT.ls;
   if (tool === "get_item") return UNFINISHED_TEXT.get_item(String(or(args.item_id, "")));
@@ -155,9 +256,11 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
   // 连续被拒到上限、由工具停下的那一次（回复、保存修订、完成任务都可能）：模型不会再试了，不写「正在改」。
   if (done && truthy((details || {}).stopped)) return LIMIT_STOPPED_STEP_TEXT;
   if (tool === "read") {
-    const [kind, name] = readKind(String(or(args.path, "")), definition);
-    const what = kind === "方法说明" || kind === "任务定义" ? name : `${kind === "领域规矩" ? "领域规矩" : kind}${name}`;
-    return failed ? `读${what}没有读成` : done ? `读了${what}` : `正在读${what}`;
+    const { what, outline } = readWhat(String(or(args.path, "")), definition);
+    // 起始行号超过了文件末尾（调用的一方认出来放进 details.past_end，见 readPastEnd）：这一份已经读完了。
+    if (done && !failed && truthy((details || {}).past_end)) return `${what}已经读到末尾`;
+    if (outline) return failed ? UNFINISHED_TEXT.read_outline(what) : done ? `看了${what}${OUTLINE_WORD}` : `正在看${what}${OUTLINE_WORD}`;
+    return failed ? UNFINISHED_TEXT.read(what) : done ? `读了${what}` : `正在读${what}`;
   }
   if (tool === "ls") return failed ? "看目录没有看成" : done ? "看了目录" : "正在看目录";
   if (tool === "save_revision") {
@@ -181,8 +284,8 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
     return `写好并保存了修订 ${py(d.revision_no)}：` + parts.join("；");
   }
   if (tool === "save_diagram") {
-    // 图没有存上的原因（参数不对、来源不对、Mermaid 文本没有通过校验、校验没有做成）在工具的结果里，这里只说没有存上。
-    if (failed) return "图没有存上";
+    // 图没有存上的原因在工具的结果里；调用的一方认出是缺来源或者 Mermaid 文本没有通过校验时放进 details.rejection（见 diagramRejection），这里加个括注。
+    if (failed) return `图没有存上${noted([DIAGRAM_REJECTION_TEXT[diagramRejectionOf(details)]].filter(Boolean))}`;
     if (!done) return "正在保存图";
     const d = details || {};
     const what = `图 ${py(d.diagram_id)}`;
@@ -248,18 +351,47 @@ export function stages(calls: Dict[], definition: Dict) {
         lastKey = key;
         continue;
       }
+      if (tool === "save_diagram") {
+        // 记下被拒的是哪一张图、因为什么：后面这张图存上了，就并进那一句（见下面成功的那一支）。
+        out.push({ text, count: 1, names: [], _key: key, _diagram: diagramKey(args), _rejection: diagramRejectionOf(c.details ?? null) });
+        lastKey = key;
+        continue;
+      }
+    } else if (tool === "save_diagram" && diagramKey(args) !== null && (c.details ?? {}).replayed !== true) {
+      key = null;
+      text = stepText(tool, args, true, false, c.details ?? null, definition);
+      const mine = diagramKey(args);
+      const refused = out.filter((s) => s._diagram === mine);
+      if (refused.length) {
+        for (const one of refused) out.splice(out.indexOf(one), 1);
+        out.push({ text: retriedDiagramText(refused.map((s) => s._rejection), text), count: refused.length + 1, names: [], _key: key });
+        lastKey = key;
+        continue;
+      }
     } else if (tool === "read") {
-      const [kind, name] = readKind(String(or(args.path, "")), definition);
+      const [kind, name, part] = readKind(String(or(args.path, "")), definition);
       key = `read\u0000${kind}`;
+      if (truthy((c.details ?? {}).past_end)) {
+        // 已经读到末尾的那一次：前一句里读过这一份就并进去，不另起一句；不然单独写一句。
+        if (lastKey === key && out[out.length - 1].names.includes(name)) {
+          out[out.length - 1].count += 1;
+          continue;
+        }
+        out.push({ text: stepText(tool, args, true, false, c.details ?? null, definition), count: 1, names: [], _key: null });
+        lastKey = null;
+        continue;
+      }
       if (lastKey === key && ["材料", "领域规矩", "文件"].includes(kind)) {
+        // 同一份只写一次：分几次读同一份材料，或者先看分段清单再读正文，都还是一个名字。
         const last = out[out.length - 1];
-        last.names.push(name);
+        if (!last.names.includes(name)) last.names.push(name);
+        if (part !== "outline") last.full.add(name);
         last.count += 1;
-        last.text = `读了${kind === "领域规矩" ? "领域规矩" : kind}` + last.names.join("、");
+        last.text = mergedReadText(kind, last.names, last.full);
         continue;
       }
       text = stepText(tool, args, true, false, c.details ?? null, definition);
-      out.push({ text, count: 1, names: [name], _key: key });
+      out.push({ text, count: 1, names: [name], full: new Set(part === "outline" ? [] : [name]), _key: key });
       lastKey = key;
       continue;
     } else if (["ls", "get_task_status", REPLY_TOOL].includes(tool)) {
@@ -379,10 +511,15 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
         continue;
       }
       const result = results.get(part.id ?? null)!;
-      const failed = truthy(result.isError);
+      let failed = truthy(result.isError);
       let details = or(result.details, {}) as Dict;
+      if (failed && part.name === "read" && readPastEnd(resultText(result))) {
+        failed = false;
+        details = { ...details, past_end: true };
+      }
       if (failed && part.name === "save_revision") details = { ...details, reasons: rejectionParts(details, resultText(result)) };
       if (failed && part.name === REPLY_TOOL) details = { ...details, refusal: replyRefusal(resultText(result)) };
+      if (failed && part.name === "save_diagram") details = { ...details, rejection: diagramRejection(resultText(result)) };
       current.calls.push({ tool: or(part.name, ""), args: or(part.arguments, {}), failed, details });
       if (truthy(details.stopped)) current.limit_stopped = true;
       if (part.name === REPLY_TOOL && truthy(result) && !failed) {

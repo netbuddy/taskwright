@@ -12,7 +12,7 @@ import { databasePath } from "../src/lib/db.ts";
 import { DIAGRAM_KINDS, drawnItemIds, liveDiagrams, readDiagrams } from "../src/lib/diagram.ts";
 import {
   GIVE_UP_TEXT, OVER_LIMIT_TEXT, TELL_USER_TEXT, VALIDATION_FAILED_TEXT, type DiagramCheck, type SaveDiagramParams,
-  consecutiveDiagramFailures, saveDiagram,
+  consecutiveDiagramFailures, saveDiagram, withSourcesKey,
 } from "../src/lib/save_diagram.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { rejectionOf } from "../src/lib/tool_rejection.ts";
@@ -89,6 +89,24 @@ test("新画一张图缺项、种类不对、图名太长、写了 base_revision
   const error = await save(dir, fresh({ kind: "用例图" })).catch((e: unknown) => e);
   assert.deepEqual(rejectionOf(error)?.reasonKind, "input");
   assert.match(rejectionOf(error)!.guidance, /kind 只能是/);
+});
+
+test("sources 在参数模式里必填：没有写的在核对之前补成 null；null 与没有写一样，新画照常被拒，修改沿用原来的来源，删除照常", async () => {
+  assert.deepEqual(withSourcesKey({ name: "图" }), { name: "图", sources: null });
+  assert.deepEqual(withSourcesKey({ diagram: "D-001", delete: true }), { diagram: "D-001", delete: true, sources: null });
+  const written = { name: "图", sources: [SOURCES[0]] };
+  assert.equal(withSourcesKey(written), written, "写了的原样交回");
+  assert.deepEqual(withSourcesKey({ name: "图", sources: null }), { name: "图", sources: null });
+  for (const odd of [null, undefined, "文字", 3, ["列表"]]) assert.equal(withSourcesKey(odd), odd, "不是对象的原样交回，由 pi 去拒绝");
+
+  const dir = workspace();
+  await assert.rejects(save(dir, withSourcesKey(fresh({ sources: undefined })) as SaveDiagramParams), /这张图没有保存：缺少 sources，至少要有一条来源。\n怎么办：图至少要有一条来源/);
+  await save(dir, fresh());
+  const renamed = await save(dir, withSourcesKey({ diagram: "D-001", base_revision: 1, name: "两个用例" }) as SaveDiagramParams);
+  assert.deepEqual([renamed.details.op, renamed.details.revision_no], ["update", 2]);
+  assert.deepEqual(sourceRows(dir, "D-001", 2).map((row) => row.kind), sourceRows(dir, "D-001", 1).map((row) => row.kind), "来源沿用原来的");
+  const removed = await save(dir, withSourcesKey({ diagram: "D-001", base_revision: 2, delete: true }) as SaveDiagramParams);
+  assert.equal(removed.details.op, "delete");
 });
 
 test("图里写的条目编号必须是现有的条目，画进图里的条目必须各有一条种类为「条目」的来源", async () => {
