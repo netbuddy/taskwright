@@ -7,12 +7,13 @@ import { api, ApiError } from "../api/client";
 import { loadPdfjs, openPdf, pdfAssetUrls } from "../model/pdf";
 import { parsePdfLocations, resetPdfStore, usePdfBytes, usePdfLocations } from "../state/pdfStore";
 
-const getDocument = vi.fn((_source: Record<string, unknown>) => ({ promise: Promise.resolve({ numPages: 3 }) }));
+const destroy = vi.fn(async () => {});
+const getDocument = vi.fn((_source: Record<string, unknown>): { promise: Promise<unknown>; destroy: () => Promise<void> } => ({ promise: Promise.resolve({ numPages: 3 }), destroy }));
 const options = { workerSrc: "" };
 vi.mock("pdfjs-dist", () => ({ version: "6.4.299", GlobalWorkerOptions: options, getDocument: (source: Record<string, unknown>) => getDocument(source) }));
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "/assets/pdf.worker.min-abc.mjs" }));
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); getDocument.mockClear(); resetPdfStore(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); getDocument.mockClear(); destroy.mockClear(); resetPdfStore(); });
 
 const TABLE = { version: 1, rules_version: 1, 说明: "", source: "inputs/办法.pdf", engine: "pdfjs-dist 6.4.299", producer: "",
   pages: [{ page: 1, width: 595, height: 842, rotate: 0, no_text: false, blocks: [{ block: 1, bbox: [72, 700, 520, 760] }] }],
@@ -36,8 +37,12 @@ describe("加载 pdf.js 与打开一份 PDF", () => {
 
   it("打开时交给 pdf.js 的是字节的副本与那几组文件的地址；缓存里的原始字节原样留着", async () => {
     const bytes = new Uint8Array([37, 80, 68, 70, 45]).buffer;
-    const doc = await openPdf(bytes);
-    expect(doc).toEqual({ numPages: 3 });
+    const opened = await openPdf(bytes);
+    expect(opened.doc).toEqual({ numPages: 3 });
+    // 不用了调 close：把这份文件在工作线程里占的东西放掉。
+    expect(destroy).not.toHaveBeenCalled();
+    opened.close();
+    expect(destroy).toHaveBeenCalledTimes(1);
     const source = getDocument.mock.calls[0][0] as { data: Uint8Array; cMapUrl: string; cMapPacked: boolean; standardFontDataUrl: string; wasmUrl: string; iccUrl: string };
     expect([...source.data]).toEqual([37, 80, 68, 70, 45]);
     expect(source.data.buffer).not.toBe(bytes);
@@ -46,9 +51,10 @@ describe("加载 pdf.js 与打开一份 PDF", () => {
       source.wasmUrl.endsWith("/pdfjs/6.4.299/wasm/"), source.iccUrl.endsWith("/pdfjs/6.4.299/iccs/")]).toEqual([true, true, true, true, true]);
   });
 
-  it("打不开时把 pdf.js 的错误原样抛出", async () => {
-    getDocument.mockReturnValueOnce({ promise: Promise.reject(new Error("Invalid PDF structure.")) });
+  it("打不开时把 pdf.js 的错误原样抛出，并把这一次打开占的东西放掉", async () => {
+    getDocument.mockReturnValueOnce({ promise: Promise.reject(new Error("Invalid PDF structure.")), destroy });
     await expect(openPdf(new ArrayBuffer(3))).rejects.toThrow("Invalid PDF structure.");
+    expect(destroy).toHaveBeenCalledTimes(1);
   });
 });
 

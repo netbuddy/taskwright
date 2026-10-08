@@ -35,11 +35,20 @@ export function pdfAssetUrls(version: string, base: string = new URL(import.meta
   return { cMapUrl: `${root}cmaps/`, cMapPacked: true, standardFontDataUrl: `${root}standard_fonts/`, wasmUrl: `${root}wasm/`, iccUrl: `${root}iccs/` };
 }
 
+/** 打开了的一份 PDF：doc 是 pdf.js 的文件对象；不用了要调 close，把它在工作线程里占的东西放掉。 */
+export interface OpenedPdf { doc: PDFDocumentProxy; close: () => void }
+
 /**
  * 打开一份 PDF。bytes 是文件的原始字节；交给 pdf.js 的是它的一份副本（pdf.js 会把收到的字节转交给工作线程，
  * 转交之后原来那一份就空了，而原始字节在缓存里还要再用）。打不开时抛出错误，message 是 pdf.js 的原话。
  */
-export async function openPdf(bytes: ArrayBuffer): Promise<PDFDocumentProxy> {
+export async function openPdf(bytes: ArrayBuffer): Promise<OpenedPdf> {
   const lib = await loadPdfjs();
-  return lib.getDocument({ data: new Uint8Array(bytes.slice(0)), ...pdfAssetUrls(lib.version) }).promise;
+  const task = lib.getDocument({ data: new Uint8Array(bytes.slice(0)), ...pdfAssetUrls(lib.version) });
+  try {
+    return { doc: await task.promise, close: () => { void task.destroy(); } };
+  } catch (error) {
+    void task.destroy();
+    throw error;
+  }
 }

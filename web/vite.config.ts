@@ -5,9 +5,10 @@
 //   TASKWRIGHT_API_TARGET    后端地址，/api 开头的请求代理到这里；缺省是本机的任务服务（http://127.0.0.1:8790，与 scripts/dev.sh
 //                            起后端时的缺省端口相同）。后端没有起来时，页面显示连不上服务的提示。
 // 服务绑 0.0.0.0，同一网段的其他机器也能打开。
-import { defineConfig } from "vite";
+import { realpathSync } from "node:fs";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import react from "@vitejs/plugin-react";
-import { pdfjsAssets } from "./pdfjs_assets.mjs";
+import { pdfjsAssets, pdfjsDir } from "./pdfjs_assets.mjs";
 
 const port = Number(process.env.TASKWRIGHT_WEB_PORT || 5680);
 const target = process.env.TASKWRIGHT_API_TARGET || "http://127.0.0.1:8790";
@@ -21,6 +22,9 @@ export default defineConfig({
     host: "0.0.0.0",
     port,
     strictPort: true,
+    // 允许读的目录：仓库本身，加 pdfjs-dist 实际所在的目录。页面按地址导入 pdf.js 的工作线程文件（?url）；并行的工作树里
+    // node_modules 是逐包链到主检出的，这个文件的真实位置在仓库目录之外，不列出来就会被拒绝（开发服务器与测试都是）。
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), realpathSync(pdfjsDir())] },
     proxy: {
       // 事件流是长连接：关掉代理超时，免得 SSE 被中途切断。
       // xfwd 让代理加上 X-Forwarded-For，写明页面是从哪台电脑打开的（代理到后端的连接都来自本机）；任务服务现在不凭它做判断，留着无害。
