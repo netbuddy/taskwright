@@ -5,7 +5,7 @@
  * · 步数：这次工作里工具调用的次数。
  * · 用时：从那句用户的话到这次工作最后一个条目的时刻。
  * · 阶段：每个工具调用写成一句，相邻的同类调用合成一句，例如连着读了三份材料写成「读了材料《a》、《b》、《c》」；
- *   同一份材料读了几次只写一次名字。由 Word 材料生成的投影、分段清单与位置表是内部的文件，都写成 Word 文件的本名。
+ *   同一份材料读了几次只写一次名字。由 Word 材料、PDF 材料生成的投影、分段清单与位置表是内部的文件，都写成原文件的本名。
  *   保存修订被拒时，这一句写「保存修订被拒：」加第一条原因的事实，阶段另有 reasons 列出全部原因的事实。
  *   保存图被拒之后在同一次工作里又存上了，被拒的几次并进存上的那一句：「图第一次没有存上（缺来源），补上后保存了图 D-001（…）」。
  *   read 的起始行号超过了文件末尾不算没读成：前一句里读过这一份就并进去，不然写「已经读到末尾」。
@@ -22,6 +22,9 @@ import { GATE_MISSING_TEXT, INTENT_GATE_TEXT } from "../../agent/src/lib/intent_
 import { SEGMENTS_SUFFIX } from "../../agent/src/lib/segments.ts";
 import { jsonOrText } from "../../agent/src/lib/task_read.ts";
 import { openRo } from "./library.ts";
+import { PDF_LOCATIONS_SUFFIX } from "../../agent/src/lib/pdf_locations.ts";
+import { PDF_SEGMENTS_SUFFIX } from "../../agent/src/lib/pdf_segments.ts";
+import { PDF_PROJECTION_SUFFIX } from "./pdf_projection.ts";
 import { LEGACY_SUFFIX, SUFFIX } from "./projection.ts";
 import { isObject, or, truthy } from "./py.ts";
 
@@ -147,13 +150,17 @@ export type DocxPart = "text" | "outline";
 /**
  * 由 Word 文件生成的文件折回 Word 文件的本名：投影（x.docx.md，0.2 的任务里是 x.docx.txt）算正文，分段清单（x.docx.segments.json）
  * 与位置表（x.docx.locations.json）算分段清单。这些是内部的文件，过程摘要里只写 x.docx。不是这几种文件名时返回 null。
+ * 由 PDF 文件生成的三个文件（x.pdf.md、x.pdf.segments.json、x.pdf.locations.json）同样折回 x.pdf；返回值里仍叫 docx，指的是原文件的名字。
  * 这几种文件名是留用的（projection.ts 的 isReserved），用户传不上来同名的文件，所以只看文件名。
  */
 export function docxDerived(name: string): { docx: string; part: DocxPart } | null {
   const lower = name.toLowerCase();
-  const parts: [string, DocxPart][] = [[SEGMENTS_SUFFIX, "outline"], [LOCATIONS_SUFFIX, "outline"], [SUFFIX, "text"], [LEGACY_SUFFIX, "text"]];
-  for (const [suffix, part] of parts) {
-    if (lower.endsWith(".docx" + suffix)) return { docx: name.slice(0, -suffix.length), part };
+  const parts: [string, string, DocxPart][] = [
+    [".docx", SEGMENTS_SUFFIX, "outline"], [".docx", LOCATIONS_SUFFIX, "outline"], [".docx", SUFFIX, "text"], [".docx", LEGACY_SUFFIX, "text"],
+    [".pdf", PDF_SEGMENTS_SUFFIX, "outline"], [".pdf", PDF_LOCATIONS_SUFFIX, "outline"], [".pdf", PDF_PROJECTION_SUFFIX, "text"],
+  ];
+  for (const [extension, suffix, part] of parts) {
+    if (lower.endsWith(extension + suffix)) return { docx: name.slice(0, -suffix.length), part };
   }
   return null;
 }
