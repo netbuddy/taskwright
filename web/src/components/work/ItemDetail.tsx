@@ -67,7 +67,7 @@ function contentAt(revisions: ItemRevision[] | null, n: number | null): ItemRevi
 }
 
 export function ItemDetail({ task, item, def, readOnly, writesOff = false, pending, submit, marked = [], onBack, onPrev, onNext, onLocate, onOpenItem,
-  onAskAssistant, view = null, latestRevision = 0, onDirty, just = false, onReview, reviewOff, onPrefill, top = null, crumb = null }: {
+  onAskAssistant, view = null, latestRevision = 0, onDirty, just = false, onReview, reviewOff, onPrefill, top = null, crumb = null, onOpenDiagram }: {
   task: Task;
   item: Item;
   def: CollectionDef;
@@ -86,6 +86,8 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   onNext?: (() => void) | null;
   onLocate?: (excerpt: string, locator: string) => void;
   onOpenItem?: (itemId: string) => void;
+  /** 「被谁依据」里点了一张图：切到图表页签并打开它。 */
+  onOpenDiagram?: (diagramId: string) => void;
   /** 「让助手来改这一条」：预填对话区输入框。 */
   onAskAssistant?: (itemId: string) => void;
   view?: ViewRequest | null;
@@ -325,12 +327,13 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} />)}
           {display && <CitedBy task={task} item={item} onOpenItem={onOpenItem} />}
           {/* 被谁依据：把这一条写成来源的别的条目与图。领域说明一类的集合上面已经有「被哪些条目引用」一节，那里列了条目，这一行只补上图。
-              图的编号现在不能点（图表页签还没有做），后面写图名与「图」字。 */}
+              图的编号点了切到图表页签并打开那张图，后面写图名与「图」字。 */}
           {dependedBy.length > 0 && (
             <div className="depended" data-testid="depended-by">
               被谁依据：{dependedBy.map((one, i) => (
                 <span key={`${one.element_kind}-${one.id}`}>{i > 0 && "、"}{one.element_kind === SOURCE_FIGURE
-                  ? <span data-testid={`depended-by-${one.id}`}>{one.id}{diagramName(one.id) ? ` ${diagramName(one.id)}` : ""}（图）</span>
+                  ? <><span className="ref" role="button" data-testid={`depended-by-${one.id}`} onClick={() => onOpenDiagram?.(one.id)}>{one.id}</span>
+                    {diagramName(one.id) ? ` ${diagramName(one.id)}` : ""}（图）</>
                   : <><span className="ref" role="button" data-testid={`depended-by-${one.id}`} onClick={() => onOpenItem?.(one.id)}>{one.id}</span>
                     {titleOf?.(one.id) ? ` ${titleOf(one.id)}` : ""}</>}</span>
               ))}
@@ -515,8 +518,10 @@ function FieldRow({ def, value, before, marked, findings, ruleOf, onFix, fixOff,
  * 出自知识库文档的来源，种类仍是「文档原文」，出处以 knowledge/ 开头：标签写「知识库」（紫红色），出处写「知识库名 / 文档名」，
  * 点了打开那份文档的正文；文档已经不在知识库的清单里时出处不可点，旁边灰字写明。
  */
-export function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
+export function SourceBox({ source, onLocate, onOpenItem, titleOf, whole = "条目" }: {
   source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
+  /** 这条来源属于什么：条目的来源没有指明字段时写「算作支持整个条目」；图的来源不指字段，写「图」时这一行不显示。 */
+  whole?: "条目" | "图";
 }) {
   const libraries = useContext(KnowledgeContext);
   const kb = source.kind === "文档原文" && isKnowledgeLocator(source.locator) ? knowledgePlace(source.locator, libraries) : null;
@@ -552,15 +557,20 @@ export function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
           </span>
         )}
       </div>
-      <div className={`quote${source.kind === "用户的话" ? " said" : ""}`}>
-        {source.kind === SOURCE_SUPPLEMENT ? <><span className="why">理由：</span>{source.excerpt}</>
-          : source.kind === "文档原文" || source.kind === "用户的话" || onElement ? `「${source.excerpt}」` : source.excerpt}
-      </div>
-      <div className="fields">
-        {supports.length
-          ? <>支持这几处：<b>{supports.map((x) => (x.index != null ? `${x.field}第 ${x.index + 1} 条` : x.field)).join("、")}</b></>
-          : "没有指明它支持哪个字段，算作支持整个条目"}
-      </div>
+      {/* 图依据一个条目时可以不写摘录：没有摘录就不留一对空的引号。 */}
+      {source.excerpt !== "" && (
+        <div className={`quote${source.kind === "用户的话" ? " said" : ""}`}>
+          {source.kind === SOURCE_SUPPLEMENT ? <><span className="why">理由：</span>{source.excerpt}</>
+            : source.kind === "文档原文" || source.kind === "用户的话" || onElement ? `「${source.excerpt}」` : source.excerpt}
+        </div>
+      )}
+      {whole === "条目" && (
+        <div className="fields">
+          {supports.length
+            ? <>支持这几处：<b>{supports.map((x) => (x.index != null ? `${x.field}第 ${x.index + 1} 条` : x.field)).join("、")}</b></>
+            : "没有指明它支持哪个字段，算作支持整个条目"}
+        </div>
+      )}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import type { ActionRequest, AssistantReply, Item, KnowledgeLibrary, MessageRequ
 import { useWorkView } from "../state/useWorkView";
 import { Conversation } from "../components/work/Conversation";
 import { ItemsPanel } from "../components/work/ItemsPanel";
+import { DIAGRAM_HOLD_TEXT } from "../components/work/ReplyCard";
 import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
@@ -42,11 +43,15 @@ export const PREFILL = {
   answer: (itemId: string, matter: string) => `关于 ${itemId}「${matter}」：`,
 };
 
-export function WorkViewPage({ taskId, sessionId, collection = null }: {
+export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = false, diagram = null }: {
   taskId: string;
   sessionId: string;
   /** 地址里带的集合名（从任务页的集合卡点进来）：条目区一打开就停在这个集合的页签。 */
   collection?: string | null;
+  /** 地址里带了 tab=diagrams：条目区一打开就停在图表页签。 */
+  diagrams?: boolean;
+  /** 地址里带的图的编号：条目区一打开就打开这张图。 */
+  diagram?: string | null;
 }) {
   const { state, log, dispatch, stream, loadError, loadErrorCode } = useWorkView(taskId, sessionId);
   const missing = useMissingSession(taskId, sessionId, !state.task && loadErrorCode === "not_found");
@@ -63,6 +68,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null }: {
   /** 卡片上点「还有 N 条未读 · 筛出来看」的次数：条目区据此切到「未读」筛选。 */
   const [unreadRequest, setUnreadRequest] = useState(0);
   const [dirty, setDirty] = useState(false);
+  /** 图表页签里有没保存的改图：与有未保存的条目编辑一样，发送键与卡片按钮灰化，只是提示的说法不同。 */
+  const [diagramDirty, setDiagramDirty] = useState(false);
   const [fontTier, setFontTier] = useState<FontTier>(readFontTier);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
@@ -158,6 +165,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null }: {
       // 标为已读不改内容，不显示「正在保存」；都已读过时后端什么都不写、没有库事件，挂着的话会一直等不到。
       // 评审也不改内容，进度与结果另有 review_progress、review_finished 两种事件，同样不登记。
       // 提交交付物也不登记：任务变为已完成的事件不带操作编号，挂着的话同样等不到；提交之后任务只读，提示条随之消失。
+      // 改图（edit_diagram）照常登记：图的事件 diagram_changed 带操作编号，到了就消去。
       if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
       return null;
     } catch (e) {
@@ -353,7 +361,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null }: {
               <Conversation
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}
                 disabled={!!disabledReason} disabledReason={disabledReason} handlers={cardHandlers}
-                hold={dirty} working={working} hint={hint} starting={executor?.state === "starting"}
+                hold={dirty || diagramDirty} holdText={diagramDirty && !dirty ? DIAGRAM_HOLD_TEXT : undefined} working={working} hint={hint} starting={executor?.state === "starting"}
                 onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input}
@@ -371,10 +379,10 @@ export function WorkViewPage({ taskId, sessionId, collection = null }: {
             <div className="work">
               {task ? (
                 <KnowledgeContext.Provider value={libraries}>
-                <ItemsPanel task={task} initialCollection={collection} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
+                <ItemsPanel task={task} initialCollection={collection} initialDiagrams={diagrams} initialDiagram={diagram} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
-                  hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty}
+                  hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} />
                 </KnowledgeContext.Provider>

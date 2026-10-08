@@ -13,14 +13,26 @@ const noop = () => {};
 
 describe("工作视图的地址", () => {
   it("不带参数时 collection 为 null，带了就解析出集合名；集合名里的汉字与空格照常编码", () => {
-    expect(parseRoute("#/tasks/TASK-1/sessions/S1")).toEqual({ page: "work", taskId: "TASK-1", sessionId: "S1", collection: null });
+    const work = (collection: string | null) => ({ page: "work", taskId: "TASK-1", sessionId: "S1", collection, diagrams: false, diagram: null });
+    expect(parseRoute("#/tasks/TASK-1/sessions/S1")).toEqual(work(null));
     expect(href.work("TASK-1", "S1")).toBe("#/tasks/TASK-1/sessions/S1");
     for (const name of ["功能用例", "非 功能/需求", "A&B=C"]) {
       const to = href.work("TASK-1", "S1", name);
       expect(to).toBe(`#/tasks/TASK-1/sessions/S1?collection=${encodeURIComponent(name)}`);
-      expect(parseRoute(to)).toEqual({ page: "work", taskId: "TASK-1", sessionId: "S1", collection: name });
+      expect(parseRoute(to)).toEqual(work(name));
     }
-    expect(parseRoute("#/tasks/TASK-1/sessions/S1?collection=")).toEqual({ page: "work", taskId: "TASK-1", sessionId: "S1", collection: null });
+    expect(parseRoute("#/tasks/TASK-1/sessions/S1?collection=")).toEqual(work(null));
+  });
+
+  it("图表页签另用两个参数，不借用 collection：tab=diagrams 停在图表页签，diagram=D-001 直接打开那张图", () => {
+    const work = (diagrams: boolean, diagram: string | null, collection: string | null = null) => ({ page: "work", taskId: "TASK-1", sessionId: "S1", collection, diagrams, diagram });
+    expect(href.diagrams("TASK-1", "S1")).toBe("#/tasks/TASK-1/sessions/S1?tab=diagrams");
+    expect(href.diagrams("TASK-1", "S1", "D-001")).toBe("#/tasks/TASK-1/sessions/S1?diagram=D-001");
+    expect(parseRoute(href.diagrams("TASK-1", "S1"))).toEqual(work(true, null));
+    expect(parseRoute(href.diagrams("TASK-1", "S1", "D-001"))).toEqual(work(false, "D-001"));
+    // 任务里有一个名叫「图表」的集合时，collection=图表 指的是那个集合，不是图表页签。
+    expect(parseRoute(href.work("TASK-1", "S1", "图表"))).toEqual(work(false, null, "图表"));
+    expect(parseRoute("#/tasks/TASK-1/sessions/S1?tab=别的&diagram=")).toEqual(work(false, null));
   });
 
   it("别的页面的地址不受影响", () => {

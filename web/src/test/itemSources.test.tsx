@@ -97,19 +97,25 @@ describe("条目详情里的来源", () => {
     expect([...detail.querySelectorAll(".srcbox")].map((b) => b.classList.contains("stale"))).toEqual([true, true]);
   });
 
-  it("被谁依据里的图：写编号、图名与「图」字，不能点；条目照旧能点", () => {
+  it("被谁依据里的图：写编号、图名与「图」字，点了切到图表页签并打开那张图；条目照旧能点", async () => {
     const t = sourcesTask([src("文档原文", "inputs/借阅说明.md", "读者可以借书。")]);
     (t.items[0] as Item).depended_by = [{ element_kind: "条目", id: "UC-002", revision_no: 1 }, { element_kind: "图", id: "D-001", revision_no: 2 }];
     t.items.push({ ...t.items[0], item_id: "UC-002", title: "办理借书证", sources: [], depended_by: [] } as unknown as Item);
-    t.diagrams = [{ diagram_id: "D-001", name: "读者用例", kind: "use_case", kind_name: "用例图", revision_no: 2, revision_by: "executor", revision_at: "", created_at: "", source_count: 2 }];
+    const row = { diagram_id: "D-001", name: "读者用例", kind: "use_case", kind_name: "用例图", revision_no: 2, revision_by: "executor", revision_at: "", created_at: "", source_count: 2 };
+    t.diagrams = [row];
+    const got = vi.spyOn(api, "diagram").mockResolvedValue({ ...row, deleted: false, mermaid: "", note: "", revisions: [1, 2], sources: [], depended_by: [], drawn: [] });
     render(<OpenItem t={t} />);
     const detail = screen.getByTestId("item-detail");
     expect(within(detail).getByTestId("depended-by").textContent).toBe("被谁依据：UC-002 办理借书证、D-001 读者用例（图）");
-    const figure = within(detail).getByTestId("depended-by-D-001");
-    expect([figure.getAttribute("role"), figure.classList.contains("ref")]).toEqual([null, false]);
-    fireEvent.click(figure);
-    expect(within(screen.getByTestId("item-detail")).getByTestId("depended-by-D-001")).toBeTruthy(); // 点了没有反应，还在原来的条目上
     expect(within(detail).getByTestId("depended-by-UC-002").getAttribute("role")).toBe("button");
+    const figure = within(detail).getByTestId("depended-by-D-001");
+    expect([figure.getAttribute("role"), figure.classList.contains("ref")]).toEqual(["button", true]);
+    fireEvent.click(figure);
+    expect(screen.queryByTestId("item-detail")).toBeNull();
+    expect(screen.getByTestId("diagrams-tab").classList.contains("on")).toBe(true);
+    expect(await screen.findByTestId("diagram-sub")).toBeTruthy();
+    expect(got).toHaveBeenCalledWith("TASK-S", "D-001");
+    got.mockRestore();
   });
 
   it("依据图的来源有自己的标签样式", () => {

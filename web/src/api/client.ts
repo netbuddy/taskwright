@@ -7,6 +7,7 @@ import type {
   ActionRequest,
   ApiErrorBody,
   ContextWindowResult,
+  DiagramDetail,
   FetchModelsResult, RefreshCatalogResult,
   ModelConfig,
   ModelSelection,
@@ -176,6 +177,9 @@ export const api = {
   itemRevisions: (taskId: string, itemId: string) =>
     request<{ revisions: ItemRevision[] }>("GET", `${task(taskId)}/items/${encodeURIComponent(itemId)}/revisions`).then((r) => r.revisions),
   revisionLog: (taskId: string) => request<RevisionLog>("GET", `${task(taskId)}/revisions`),
+  /** 一张图的详情：Mermaid 文本、说明、来源（带依据的现状）与图里画了谁。已经删除的图也取得到（deleted 为真）。 */
+  diagram: (taskId: string, diagramId: string) =>
+    request<{ diagram: DiagramDetail }>("GET", `${task(taskId)}/diagrams/${encodeURIComponent(diagramId)}`).then((r) => r.diagram),
   materialContent: (taskId: string, path: string) =>
     request<{ path: string; text: string }>("GET", `${task(taskId)}/materials/content?path=${encodeURIComponent(path)}`),
   materialRaw: (taskId: string, path: string) => rawBytes(`${task(taskId)}/materials/raw?path=${encodeURIComponent(path)}`),

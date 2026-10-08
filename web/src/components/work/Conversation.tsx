@@ -35,7 +35,7 @@ export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews,
+  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews,
 }: {
   messages: ConversationMessage[];
   currentWork: CurrentWork | null;
@@ -60,8 +60,10 @@ export function Conversation({
   onDraft?: (text: string) => void;
   onLocate?: (excerpt: string, locator?: string) => void;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
-  /** 有未保存的条目编辑：发送与卡片按钮灰化。 */
+  /** 有未保存的条目编辑（或者对图的改动）：发送与卡片按钮灰化。 */
   hold?: boolean;
+  /** hold 时输入框上方与卡片上写的原因；不给是条目的那一句。 */
+  holdText?: string;
   /** 执行者正在工作：发送与卡片按钮灰化，输入框照常能打字；撤销修订也不能点。 */
   working?: boolean;
   /** 不拦住操作的提示（助手已经退出、正在启动、还没启动），显示成输入框上方的蓝色提示条；见 executorHint.ts。 */
@@ -111,7 +113,7 @@ export function Conversation({
     restoreOnFailure(onSend(original.trim()), original, () => latestDraft.current, setDraft);
   };
   // 提示条：任务结束、助手不可用、执行者在另一条会话里工作这几种整个输入框都停用；有未保存的条目编辑时提示先保存或取消。
-  const note = disabledReason ?? (hold ? HOLD_TEXT : hint);
+  const note = disabledReason ?? (hold ? holdText : hint);
   const info = !disabledReason && !hold && !!hint;
 
   return (
@@ -120,7 +122,7 @@ export function Conversation({
         {hasEarlier && <span className="earlier" role="button" onClick={onLoadEarlier}>再往前读一段对话</span>}
         {messages.map((m, index) => (
           <MessageView key={(m as { message_id?: string }).message_id ?? `${m.type}-${index}`} message={m} task={task} handlers={handlers}
-            disabled={disabled} hold={hold} working={working}
+            disabled={disabled} hold={hold} holdText={holdText} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
@@ -204,12 +206,13 @@ function ItemLink({ id, onOpenItem }: { id: string; onOpenItem: (itemId: string)
   return <span className="ref" role="button" title={`打开 ${id}`} onClick={() => onOpenItem(id)} data-testid={`inform-item-${id}`}>{id}</span>;
 }
 
-function MessageView({ message, task, handlers, disabled, hold, working, answered, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
   disabled: boolean;
   hold: boolean;
+  holdText: string;
   working: boolean;
   revisions: number[];
   onRevisionTag?: (revisions: number[]) => void;
@@ -262,7 +265,7 @@ function MessageView({ message, task, handlers, disabled, hold, working, answere
             </>
           )}
           {m.act && !m.degraded && (
-            <ReplyCard act={m.act} replyMessageId={m.message_id} task={task} disabled={disabled} hold={hold} writesOff={working} answered={answered}
+            <ReplyCard act={m.act} replyMessageId={m.message_id} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}
           {revisions.length > 0 && (

@@ -14,11 +14,12 @@ import { dirname, join, resolve } from "node:path";
 import { parseDefinition } from "../../agent/src/lib/task_read.ts";
 import * as clock from "./clock.ts";
 import * as conversation from "./conversation.ts";
+import { type DiagramCheck, validateDiagram } from "./diagram_validate.ts";
 import { ApiError } from "./errors.ts";
 import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
 import { LaunchError, type Profile, resolveModel } from "./launch.ts";
-import { callFacts, maxSeq, openRo } from "./library.ts";
+import { callFacts, diagramDetail, maxSeq, openRo } from "./library.ts";
 import { type PiEvent, PiExited, PiNotFound, PiPrepareFailed, PiRefused, PiSession, PiStartRefused, PiTimeout, technicalOf } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
@@ -112,7 +113,18 @@ export function newId(prefix: string): string {
 /** 直接操作与卡片点击经扩展命令转交之后，等结果的时长（毫秒）。 */
 export const ACTION_TIMEOUT = 10_000;
 /** 测试可以改短的设置。 */
-export const executorSettings = { actionTimeout: ACTION_TIMEOUT };
+export const executorSettings = {
+  actionTimeout: ACTION_TIMEOUT,
+  /** 校验一段 Mermaid 文本；测试里换成假的。 */
+  validateDiagram: validateDiagram as (kind: unknown, text: unknown) => Promise<DiagramCheck>,
+};
+
+/** 界面操作的一个种类：用户在页面上改了一张图的 Mermaid 文本。写库之前先在任务服务这里校验（checkDiagramEdit）。 */
+export const EDIT_DIAGRAM = "edit_diagram";
+/** 用户改图、Mermaid 文本没有通过校验时，说明的开头；后面接校验给的原话。 */
+export const DIAGRAM_NOT_SAVED_TEXT = "这张图没有保存：";
+/** 用户改图、校验没有做成时的说明。 */
+export const DIAGRAM_UNCHECKED_TEXT = "这一次没有办法校验 Mermaid 文本，图没有保存。这是程序这边的问题，不是文本写错了。";
 
 /** 「先不管这条」之后发给执行者的固定模板。前缀用来把这句话认成界面操作之后发的话。 */
 export const KEEP_PENDING_NOTICE_PREFIX = "我先不管 ";
@@ -503,6 +515,7 @@ export class Executor {
     // 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
     const viewing = body.kind === "mark_viewed" && !truthy(body.notify_executor);
     if (!viewing) await this.lock.run(() => this.turnCheck("action"));
+    if (body.kind === EDIT_DIAGRAM) await this.checkDiagramEdit(body);
     const opId = newId("ui-op-");
     const command: Dict = {};
     // 只转交这五个键。请求里多带的键（例如早先的强制重评 force）不转交：同一次修订、同一套规则只评审一次。
@@ -524,6 +537,25 @@ export class Executor {
       await this.say(sessionId, keepPendingNotice(ids), null);
     }
     return opId;
+  }
+
+  /**
+   * 用户改图：转交助手一侧写库之前，先在这里校验 Mermaid 文本的写法（种类用这张图现在的种类）。不过、或者校验没有做成，
+   * 都以 rejected 拒绝、不转交；data 里带校验给的 reason、line 与原话。助手一侧不再问一遍（agent/src/lib/user_diagram.ts）。
+   * 页面看到的修订号过时、文本没有改动，由助手一侧写库时核对。
+   */
+  private async checkDiagramEdit(body: Dict): Promise<void> {
+    const target = Array.isArray(body.targets) && body.targets.length === 1 ? (body.targets[0] as Dict | null) : null;
+    const mermaid = (or(body.fields, {}) as Dict).mermaid;
+    if (!target || typeof target !== "object" || typeof target.diagram_id !== "string" || typeof mermaid !== "string") {
+      throw new ApiError("bad_request", "edit_diagram 的 targets 只写一项 { diagram_id, base_revision }，fields 写 { mermaid }。");
+    }
+    const diagram = diagramDetail(this.taskDir, target.diagram_id);
+    if (!diagram || diagram.deleted) throw new ApiError("rejected", `图 ${target.diagram_id} 不存在或已经删除。`, { reasons: [`图 ${target.diagram_id} 不存在或已经删除`] });
+    const check = await executorSettings.validateDiagram(diagram.kind, mermaid);
+    if (check.ok) return;
+    throw new ApiError("rejected", check.reason === "unavailable" ? DIAGRAM_UNCHECKED_TEXT : `${DIAGRAM_NOT_SAVED_TEXT}${check.message}`,
+      { reason: check.reason, line: check.line, message: check.message });
   }
 
   /** 把一条扩展命令交给 pi，等它经状态栏回报结果；10 秒没有结果以 busy_timeout 拒绝。 */

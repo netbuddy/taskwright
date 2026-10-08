@@ -733,9 +733,10 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
     return ["task_changed", { ...base, task_name: payload.task_name ?? null, status_before: null, status_after: "进行中", actor, completion: null }];
   }
   if (e.name === "DIAGRAM_SAVED") {
-    // 图新增、修改或删除了一次。只带是哪一张、它自己改后的修订号、做了什么与图名、种类；内容与来源由图的接口取。
+    // 图新增、修改或删除了一次。只带是哪一张、它自己改后的修订号、做了什么与图名、种类（连同中文名）；内容与来源由图的接口取。
     return ["diagram_changed", { ...base, actor, op_id: opId, diagram_id: payload.diagram_id ?? null, revision_no: payload.revision_no ?? null,
-      op: payload.op ?? null, name: payload.name ?? null, kind: payload.kind ?? null }];
+      op: payload.op ?? null, name: payload.name ?? null, kind: payload.kind ?? null,
+      kind_name: typeof payload.kind === "string" ? kindName(payload.kind) : null }];
   }
   if (e.name === "TASK_COMPLETED") {
     const task = lib.data.task!;

@@ -88,6 +88,32 @@ describe("事件应用规则", () => {
     expect(s.revisionBySeq[5]).toBe(2);
   });
 
+  it("图的事件（diagram_changed）是库事件：更新任务里图的清单，按操作编号消去「正在保存」，之后的库事件不因为缺号而重读", () => {
+    const diagram = (seq: number, op: string, id: string, revision: number, name: string, actor = "executor", opId: string | null = null) => ({
+      type: "sse" as const, event: "diagram_changed",
+      data: { seq, at: `2026-10-08T10:0${seq}:00+08:00`, task_id: "TASK-001", actor, op_id: opId, diagram_id: id, revision_no: revision, op, name, kind: "use_case", kind_name: "用例图" },
+    });
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) });
+    expect(s.task!.diagrams).toBeUndefined();
+    s = run(s, diagram(5, "add", "D-002", 1, "借书的先后"), diagram(6, "add", "D-001", 1, "读者用例"));
+    expect(s.task!.diagrams!.map((one) => [one.diagram_id, one.name, one.kind_name, one.revision_no, one.revision_by, one.revision_at, one.created_at, one.source_count])).toEqual([
+      ["D-001", "读者用例", "用例图", 1, "executor", "2026-10-08T10:06:00+08:00", "2026-10-08T10:06:00+08:00", 0],
+      ["D-002", "借书的先后", "用例图", 1, "executor", "2026-10-08T10:05:00+08:00", "2026-10-08T10:05:00+08:00", 0],
+    ]);
+    // 用户改图：按操作编号消去「正在保存」；这一行换成新的修订号与改的人，画出来的时刻不变。
+    s = run(s, { type: "op_pending", op_id: "ui-op-7", label: "修改图 D-001", items: [] });
+    expect(Object.keys(s.pendingOps)).toEqual(["ui-op-7"]);
+    s = run(s, diagram(7, "update", "D-001", 2, "读者用例", "user", "ui-op-7"));
+    expect(s.pendingOps).toEqual({});
+    expect(s.task!.diagrams!.map((one) => [one.diagram_id, one.revision_no, one.revision_by, one.created_at])).toEqual([
+      ["D-001", 2, "user", "2026-10-08T10:06:00+08:00"], ["D-002", 1, "executor", "2026-10-08T10:05:00+08:00"]]);
+    s = run(s, diagram(8, "delete", "D-002", 2, "借书的先后"));
+    expect(s.task!.diagrams!.map((one) => one.diagram_id)).toEqual(["D-001"]);
+    // 序号一直接得上：下一条条目的库事件照常应用，没有回到「等整份数据」。
+    s = run(s, changed(9, 2));
+    expect([s.phase, s.seq, s.task!.items[0].revision_no]).toEqual(["ready", 9, 2]);
+  });
+
   it("重新读取整份数据时「正在保存」一律清掉：后端写完库才回应，重读到的数据已经包含那次操作", () => {
     let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) },
       { type: "op_pending", op_id: "ui-op-5", label: "修改", items: ["UC-001"] });
