@@ -11,6 +11,7 @@ import type { Material, ServiceInfo } from "../../api/types";
 import { formatBytes, formatTimeShort } from "../../model/format";
 import { pdfUploadingText, tooLargeText, unsupportedTypeText, uploadAccept, uploadLimitText, uploadTypesText } from "../../model/upload";
 import { forgetDocx } from "../../state/docxStore";
+import { forgetPdf } from "../../state/pdfStore";
 import { useToast } from "../Toasts";
 
 const fileName = (path: string) => path.split("/").pop() ?? path;
@@ -52,6 +53,7 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
     try {
       await api.deleteMaterial(taskId, path);
       forgetDocx(taskId, path);
+      forgetPdf(taskId, path);
       toast.success(`已删除材料《${fileName(path)}》。`);
       onChanged();
     } catch (e) {
@@ -94,6 +96,8 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
       const r = await api.replaceMaterial(taskId, path, file);
       forgetDocx(taskId, path);
       forgetDocx(taskId, r.path);
+      forgetPdf(taskId, path);
+      forgetPdf(taskId, r.path);
       const [was, now] = [fileName(path), fileName(r.path)];
       toast.success(was === now ? `已替换材料《${was}》。` : `已把材料《${was}》替换成《${now}》。`);
       onChanged();
