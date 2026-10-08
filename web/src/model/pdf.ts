@@ -8,9 +8,13 @@
 // 字符映射表、标准字体、颜色配置与解图片用的文件不是代码，由构建插件带进产物的「pdfjs/版本号/」目录（web/pdfjs_assets.mjs）。
 // 交给 pdf.js 的必须是完整地址：写成相对地址时，工作线程会按它自己所在的目录去找，取不到；取不到字符映射表时
 // 不嵌入字体的中文显示不出字，而且页面不报错。地址里的版本号取自加载到的库，所以库与这些文件总是同一个版本。
+//
+// 主库与工作线程文件都用 pdfjs-dist 的 legacy 构建（给旧一些的浏览器用的那一套，任务服务用的也是它）。标准构建直接调用
+// 很新的方法（例如 Map.prototype.getOrInsertComputed），没有这些方法的浏览器里一页也画不出来；legacy 构建自带这些方法的
+// 替代实现，浏览器自己有就用浏览器的。两个文件必须同是 legacy：主库跑在页面里，工作线程文件跑在后台线程里，各补各的。
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 type Pdfjs = typeof import("pdfjs-dist");
 
@@ -18,7 +22,7 @@ let loading: Promise<Pdfjs> | null = null;
 
 /** 第一次用到时加载 pdf.js 并告诉它工作线程文件在哪里；没有加载成时下一次再试。 */
 export function loadPdfjs(): Promise<Pdfjs> {
-  loading ??= import("pdfjs-dist").then((lib) => {
+  loading ??= import("pdfjs-dist/legacy/build/pdf.mjs").then((lib) => {
     lib.GlobalWorkerOptions.workerSrc = workerUrl;
     return lib;
   });

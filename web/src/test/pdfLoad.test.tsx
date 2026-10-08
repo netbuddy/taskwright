@@ -10,8 +10,8 @@ import { parsePdfLocations, resetPdfStore, usePdfBytes, usePdfLocations } from "
 const destroy = vi.fn(async () => {});
 const getDocument = vi.fn((_source: Record<string, unknown>): { promise: Promise<unknown>; destroy: () => Promise<void> } => ({ promise: Promise.resolve({ numPages: 3 }), destroy }));
 const options = { workerSrc: "" };
-vi.mock("pdfjs-dist", () => ({ version: "6.4.299", GlobalWorkerOptions: options, getDocument: (source: Record<string, unknown>) => getDocument(source) }));
-vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "/assets/pdf.worker.min-abc.mjs" }));
+vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({ version: "6.4.299", GlobalWorkerOptions: options, getDocument: (source: Record<string, unknown>) => getDocument(source) }));
+vi.mock("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url", () => ({ default: "/assets/pdf.worker.min-abc.mjs" }));
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); getDocument.mockClear(); destroy.mockClear(); resetPdfStore(); });
 
