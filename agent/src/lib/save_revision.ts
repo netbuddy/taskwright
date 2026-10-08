@@ -71,7 +71,7 @@ import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } fro
 import {
   DOCX_LOCATOR, PROJECTION_SUFFIXES, SPAN_LIMIT, inTextBox, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
 } from "./docx_source.ts";
-import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, sourceKindNow, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
@@ -92,7 +92,15 @@ export interface Source {
   supports: Support[];
   /** 只有种类为「用户的话」时可能有：写入字段的值与原话不同时，写入的值。 */
   normalized_value?: string;
+  /**
+   * 只有种类为「条目」（或「图」）时有：引用那一刻对方的修订号。THIS_REVISION 表示对方在这一次保存里才新增或修改，
+   * 写库时换成这一次的修订号。沿用下来的来源保留原来的号；助手重新写上同一条来源时换成最新的号。
+   */
+  depends_revision?: number | typeof THIS_REVISION | null;
 }
+
+/** 来源依据的条目在这一次保存里才新增或修改：它的修订号就是这一次的。 */
+export const THIS_REVISION = "this" as const;
 
 /** 「用户的话」的出处写法：会话编号与会话条目编号之间用 # 隔开。读取一侧按同一写法拆开。 */
 export function userWordsLocator(sessionId: string, entryId: string): string {
@@ -132,6 +140,7 @@ interface SourceRow {
   field: string | null;
   field_index: number | null;
   normalized_value: string | null;
+  depends_revision?: number | null;
 }
 
 /** 发起方写成中文。拒绝原因的事实一层也给人看，所以执行者写作「助手」。 */
@@ -293,7 +302,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const sourcesOf = (itemId: string, revisionNo: number): Source[] => {
     const rows = db
       .prepare(
-        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value FROM item_source " +
+        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision FROM item_source " +
           "WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no",
       )
       .all(taskId, itemId, revisionNo) as unknown as SourceRow[];
@@ -303,6 +312,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (!source) {
         source = { kind: row.kind, locator: row.locator, excerpt: row.excerpt, supports: [] };
         if (row.normalized_value !== null) source.normalized_value = row.normalized_value;
+        if (row.depends_revision !== null && row.depends_revision !== undefined) source.depends_revision = row.depends_revision;
         byPosition.set(row.position, source);
       }
       if (row.field !== null) {
@@ -338,7 +348,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   // 这一批里新增的条目会拿到的编号：与 write 里分配编号的规矩相同（集合历史上的最大流水号加一，按操作顺序依次取）。
   // 排在前面的新增操作产生的条目，后面的操作可以引用；引用排在后面才新增的条目仍拒绝。
   const addedAt = new Map<string, number>();
-  const { noteRef, noteText } = domainNoteLookups(definition, items, latestVersion, { deletedHere, addedAt });
+  // 这一批里已经通过核对的新增与修改将要保存的内容：后面的操作把它们当作依据时，摘录对着这里核对，修订号是这一次的。
+  const written = new Map<string, { collection: string; fields: Record<string, unknown> }>();
+  const itemSources = (number: number, self: string | null) => itemSourceLookups(definition, items, latestVersion, { deletedHere, addedAt, written }, number, self);
   {
     const serialOf = new Map<string, number>();
     for (const row of items.values()) {
@@ -413,7 +425,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         }
       }
       if (raw.base_revision !== undefined) errors.push("新增时不要写 base_revision，新条目还没有所在的修订");
-      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText);
+      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, null));
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (errors.length > 0) {
@@ -421,6 +433,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         return;
       }
       planned.push({ op: "add", collection, fields, sources: sources! });
+      const newId = [...addedAt].find(([, at]) => at === number)?.[0];
+      if (newId) written.set(newId, { collection: collection.name, fields });
       return;
     }
 
@@ -501,7 +515,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     const previousSources = sourcesOf(itemId, current.revision_no).filter((one) => one.kind !== SOURCE_USER_EDIT);
     const inherited = raw.sources === undefined;
     const given = inherited ? null
-      : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, noteRef, noteText, undefined, previousSources);
+      : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, itemId), undefined, previousSources);
     let sources = inherited ? previousSources : given;
     const notes: string[] = [];
     const editsFields = isObject(raw.fields) && Object.keys(raw.fields).length > 0;
@@ -538,6 +552,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       sources: sources!,
       notes,
     });
+    written.set(itemId, { collection: row.collection, fields: merged });
   });
 
   if (problems.length > 0) throw new SaveRejected(problems);
@@ -565,30 +580,49 @@ function latestVersionOf(db: DatabaseSync, taskId: string): (itemId: string) => 
   return (itemId) => statement.get(taskId, itemId) as unknown as VersionRow;
 }
 
+/** 种类为「条目」的来源要用的三个查法（见 itemSourceLookups）。 */
+export interface ItemSourceLookups {
+  /** 出处指的条目能不能引用：能就返回 null，不能返回原因。 */
+  ref: (locator: string) => string | null;
+  /** 那个条目当前内容里的各段文字（文本字段与文本列表的各项），摘录要逐字出现在其中之一里。 */
+  text: (locator: string) => string[];
+  /** 引用这一刻那个条目的修订号；它在这一次保存里才新增或修改时是 THIS_REVISION。 */
+  revision: (locator: string) => number | typeof THIS_REVISION;
+}
+
 /**
- * 种类为「领域说明」的来源要用的两个查法。noteRef：出处是不是「领域说明」集合里还在的条目（这次调用之前就有，
- * 也没在这次调用里删），是就返回 null，不是返回原因。noteText：那条领域说明当前修订的各文本字段（标题、内容之类，
- * 按任务定义的字段类型取），摘录要逐字出现在其中之一里。batch 是这一批的删除与新增；不是一批操作（例如「回复」核对依据）时给空的。
+ * 种类为「条目」的来源要用的查法。被引用的条目可以在任何集合里，必须还在：这次调用之前就有、没有删除、也没在这次调用里删；
+ * 或者是这一批里排在前面、已经通过核对的新增或修改（written 里有它，摘录对着它将要保存的内容核对，修订号就是这一次的）。
+ * 一个条目不能把自己当作依据。number 是正在核对的操作是这一批的第几个，self 是它修改的条目编号（新增时没有）。
+ * batch 是这一批的删除、新增与已经通过核对的内容；不是一批操作（例如「回复」核对依据）时给空的。
  */
-function domainNoteLookups(
+function itemSourceLookups(
   definition: TaskDefinition,
   items: Map<string, ItemRow>,
   latestVersion: (itemId: string) => VersionRow,
-  batch: { deletedHere: Set<string>; addedAt: Map<string, number> },
-): { noteRef: (locator: string) => string | null; noteText: (locator: string) => string[] } {
-  const noteRef = (locator: string): string | null => {
-    if (!definition.collections.some((one) => one.name === SOURCE_DOMAIN_NOTE)) return `这个任务没有「${SOURCE_DOMAIN_NOTE}」集合`;
+  batch: { deletedHere: Set<string>; addedAt: Map<string, number>; written: Map<string, { collection: string; fields: Record<string, unknown> }> },
+  number: number,
+  self: string | null,
+): ItemSourceLookups {
+  const ref = (locator: string): string | null => {
+    if (self !== null && locator === self) return "指的就是这个条目自己，一个条目不能把自己当作依据";
     const row = items.get(locator);
-    // 条目引用字段可以指向同一批里排在前面新增的条目（见 save 里的 addedAt），领域说明来源不行：摘录要对着那条说明已经保存的文字逐字核对。
-    if (!row && batch.addedAt.has(locator)) return "指向的领域说明在这一批里才新增，还没有保存，摘录无从核对";
-    if (!row || row.collection !== SOURCE_DOMAIN_NOTE) return `不是这个任务里「${SOURCE_DOMAIN_NOTE}」集合的条目编号`;
-    if (row.deleted_in_revision !== null) return `指向的领域说明已在修订 ${row.deleted_in_revision} 删除`;
-    if (batch.deletedHere.has(locator)) return "指向的领域说明在这次调用里被删除";
+    if (!row) {
+      const at = batch.addedAt.get(locator);
+      if (at === undefined) return "指向的条目在这个任务里不存在";
+      if (at === number) return "指的就是这个操作自己要新增的条目，一个条目不能把自己当作依据";
+      if (at > number) return `指向的条目在这一批里排在第 ${at} 个操作才新增，在这个操作之后；请把新增它的操作排到前面`;
+      return batch.written.has(locator) ? null : "指向的条目在这一批里排在前面新增，但那个操作自己没有通过核对";
+    }
+    if (row.deleted_in_revision !== null) return `指向的条目已在修订 ${row.deleted_in_revision} 删除`;
+    if (batch.deletedHere.has(locator)) return "指向的条目在这次调用里被删除";
     return null;
   };
-  const noteText = (locator: string): string[] => {
-    const collection = definition.collections.find((one) => one.name === SOURCE_DOMAIN_NOTE);
-    const fields = JSON.parse(latestVersion(locator).fields) as Record<string, unknown>;
+  const text = (locator: string): string[] => {
+    const written = batch.written.get(locator);
+    const collectionName = written?.collection ?? items.get(locator)?.collection;
+    const collection = definition.collections.find((one) => one.name === collectionName);
+    const fields = written?.fields ?? (JSON.parse(latestVersion(locator).fields) as Record<string, unknown>);
     return (collection?.fields ?? []).flatMap((field) => {
       const value = fields[field.name];
       if (field.type === FIELD_TEXT && typeof value === "string") return [value];
@@ -596,7 +630,8 @@ function domainNoteLookups(
       return [];
     });
   };
-  return { noteRef, noteText };
+  const revision = (locator: string) => (batch.written.has(locator) ? THIS_REVISION : latestVersion(locator).revision_no);
+  return { ref, text, revision };
 }
 
 /** 一条引用核对通过之后的样子：种类、出处（「用户的话」由工具代填）、摘录，以及「用户的话」可能带的规范化写入值。 */
@@ -610,7 +645,7 @@ export interface CheckedQuote {
 /**
  * 核对执行者在「保存修订」之外交来的一串引用（现在只有「回复」给建议值时的依据 act.basis）：与保存修订的来源同一套核对，
  * 同一套拒绝文字——文档原文逐字出自材料里连续的一段（.docx 按段落号核对、可跨到其后相邻几段），
- * 用户的话逐字出自当前会话分支上的某句用户消息（出处由这里代填），领域说明逐字出自那条还在的领域说明；执行者补充不核对摘录。
+ * 用户的话逐字出自当前会话分支上的某句用户消息（出处由这里代填），条目逐字出自那个还在的条目；助手补充不核对摘录，只要求写了理由。
  * 库只读打开，查完就关。通过时返回核对后的引用（用户的话的出处已代填），不通过时把原因推进 errors 并返回 null。
  * errors 里的每一条可能带两层（事实与指引），用 splitGuide 拆开。
  */
@@ -638,9 +673,9 @@ export function checkQuotes(
     }
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const items = itemsOf(db, task.task_id);
-    const { noteRef, noteText } = domainNoteLookups(definition, items, latestVersionOf(db, task.task_id), { deletedHere: new Set(), addedAt: new Map() });
+    const lookups = itemSourceLookups(definition, items, latestVersionOf(db, task.task_id), { deletedHere: new Set(), addedAt: new Map(), written: new Map() }, 0, null);
     const checked = checkSources(raw, true, errors, sessionId, userMessages, ACTOR_EXECUTOR, materialReader(workspaceDir, definition.materialsDir, knowledgeRoot),
-      noteRef, noteText, whereOf);
+      lookups, whereOf);
     return checked && checked.map(({ kind, locator, excerpt, normalized_value }) => ({ kind, locator, excerpt, ...(normalized_value ? { normalized_value } : {}) }));
   } finally {
     db.close();
@@ -884,9 +919,14 @@ function quoteOf(excerpt: string): string {
  * 种类为「用户的话」的来源，出处在这里代填（见文件开头的说明）；supports 所指的字段是否存在、
  * 序号是否在范围内，要等字段合并完才知道，另由 checkSupports 核对。
  *
- * 种类为「领域说明」的来源，出处去掉首尾空白后由 noteRef 核对是「领域说明」集合里还在的条目，摘录（去掉首尾空白）要逐字
- * 出现在那条领域说明当前修订的某个文本字段里（noteText 给出这些文字），与「文档原文」同一个规矩；用户在界面上的操作不核对，
- * 撤销时原样交回旧来源。
+ * 种类名先换成现在的叫法：早期版本的「执行者补充」「领域说明」照收，存成「助手补充」「条目」（已有任务目录里复制的说明、
+ * 续接的旧会话还会这样写）。「图」这种要素还没有做出来，助手写了就拒绝。
+ *
+ * 种类为「助手补充」的来源，出处不用写，这里一律填「助手补充」；摘录是理由，必须有。
+ *
+ * 种类为「条目」的来源，出处去掉首尾空白后由 itemSource.ref 核对是任务里还在的另一个条目（哪个集合都可以），摘录（去掉首尾空白）
+ * 要逐字出现在那个条目当前内容的某段文字里（itemSource.text 给出这些文字），与「文档原文」同一个规矩；通过之后记下引用这一刻
+ * 那个条目的修订号（itemSource.revision）。用户在界面上的操作不核对，撤销时原样交回旧来源，连同它原来记的修订号。
  *
  * 种类为「文档原文」的来源，位置由写来源的一方声明，这里只核对、不推断：一条来源的摘录是材料里连续的一段原文。
  * Word 材料按出处写的段落号核对，摘录从那一段开始、可延续到其后相邻至多 5 段（checkDocxSource）；文本材料（.md、.txt）的摘录
@@ -901,8 +941,7 @@ function checkSources(
   userMessages: UserMessage[],
   actor?: string,
   materialText?: MaterialReader,
-  noteRef?: (locator: string) => string | null,
-  noteText?: (locator: string) => string[],
+  itemSource?: ItemSourceLookups,
   whereOf: (index: number) => string = (index) => `第 ${index + 1} 条来源`,
   previous: readonly Source[] = [],
 ): Source[] | null {
@@ -917,19 +956,24 @@ function checkSources(
   }
   const kept: Source[] = [];
   let ok = true;
-  raw.forEach((one, index) => {
+  raw.forEach((given, index) => {
     const where = whereOf(index);
-    if (!isObject(one)) {
+    if (!isObject(given)) {
       errors.push(`${where}应当是一个对象，有 kind、locator、excerpt 三项`);
       ok = false;
       return;
     }
+    // 早期版本的种类名照收，按现在的名字核对与保存。
+    const one: Record<string, unknown> = typeof given.kind === "string" ? { ...given, kind: sourceKindNow(given.kind) } : given;
     const missing: string[] = [];
     // 「用户直接修改」是早期版本由系统写的，执行者不能填；执行者只能填 EXECUTOR_SOURCE_KINDS 那几种。
     const allowed: readonly string[] = actor === ACTOR_USER ? SOURCE_KINDS : EXECUTOR_SOURCE_KINDS;
+    const kindsGuide = `kind 只能是${EXECUTOR_SOURCE_KINDS.map((kind) => `「${kind}」`).join("、")}之一`;
     if (one.kind === SOURCE_USER_EDIT && actor !== ACTOR_USER) {
-      errors.push(withGuide(`${where}的种类写成了「${SOURCE_USER_EDIT}」，这一种助手不能填`,
-        `kind 只能是${EXECUTOR_SOURCE_KINDS.map((kind) => `「${kind}」`).join("、")}之一`));
+      errors.push(withGuide(`${where}的种类写成了「${SOURCE_USER_EDIT}」，这一种助手不能填`, kindsGuide));
+      ok = false;
+    } else if (one.kind === SOURCE_FIGURE && actor !== ACTOR_USER) {
+      errors.push(withGuide(`${where}的种类写成了「${SOURCE_FIGURE}」，这个任务里现在还没有图，这一种还不能用`, kindsGuide));
       ok = false;
     } else if (typeof one.kind !== "string" || !allowed.includes(one.kind)) {
       errors.push(
@@ -938,7 +982,13 @@ function checkSources(
       ok = false;
     }
     const userWords = one.kind === SOURCE_USER_WORDS;
-    if (!userWords && (typeof one.locator !== "string" || one.locator.trim() === "")) missing.push("locator（出处）");
+    const supplement = one.kind === SOURCE_SUPPLEMENT;
+    if (supplement && (typeof one.excerpt !== "string" || one.excerpt.trim() === "")) {
+      errors.push(withGuide(`${where}的种类是「${SOURCE_SUPPLEMENT}」，没有写理由`, "在 excerpt 里写一句理由：为什么这样补、依据的是什么常识或推断"));
+      ok = false;
+      return;
+    }
+    if (!userWords && !supplement && (typeof one.locator !== "string" || one.locator.trim() === "")) missing.push("locator（出处）");
     if (typeof one.excerpt !== "string" || one.excerpt.trim() === "") missing.push("excerpt（摘录的原文）");
     if (missing.length > 0) {
       errors.push(`${where}缺少 ${missing.join("、")}`);
@@ -964,23 +1014,28 @@ function checkSources(
       ok = false;
       return;
     }
-    let locator = one.locator as string;
-    if (one.kind === SOURCE_DOMAIN_NOTE && actor !== ACTOR_USER && noteRef) {
+    // 助手补充的出处由这里填；用户的操作交回的旧来源照它原来的出处。
+    let locator = supplement && (actor !== ACTOR_USER || typeof one.locator !== "string" || one.locator.trim() === "") ? SOURCE_SUPPLEMENT : (one.locator as string);
+    // 依据条目时引用那一刻对方的修订号。用户的操作（直接修改、撤销）交回的旧来源保留它原来记的号。
+    let depends: Source["depends_revision"] =
+      actor === ACTOR_USER && (typeof one.depends_revision === "number" || one.depends_revision === THIS_REVISION) ? one.depends_revision : undefined;
+    if (one.kind === SOURCE_ITEM && actor !== ACTOR_USER && itemSource) {
       locator = locator.trim();
-      const reason = noteRef(locator);
+      const reason = itemSource.ref(locator);
       if (reason) {
-        errors.push(withGuide(`${where}的种类是「${SOURCE_DOMAIN_NOTE}」，出处 ${locator} ${reason}`,
-          `出处写一条还在的领域说明的条目编号，例如 DN-001；要引用的说明还没有记下，先新增它，保存之后再引用`));
+        errors.push(withGuide(`${where}的种类是「${SOURCE_ITEM}」，出处 ${locator} ${reason}`,
+          `出处写一个还在的条目的编号，例如 DN-001、UC-003；要引用的条目还没有记下，先新增它（排在前面），再引用`));
         ok = false;
         return;
       }
       const excerpt = (one.excerpt as string).trim();
-      if (noteText && !noteText(locator).some((text) => text.includes(excerpt))) {
+      if (!itemSource.text(locator).some((text) => text.includes(excerpt))) {
         errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在 ${locator} 的当前修订里找不到`,
-          `摘录必须逐字一致，包括标点，抄自这条领域说明的标题或内容里连续的一段`));
+          `摘录必须逐字一致，包括标点，抄自这个条目某个字段里连续的一段`));
         ok = false;
         return;
       }
+      depends = itemSource.revision(locator);
     }
     const keepLocator =
       userWords && actor === ACTOR_USER && typeof one.locator === "string" && one.locator.includes("#");
@@ -1043,7 +1098,8 @@ function checkSources(
         return;
       }
     }
-    kept.push({ kind: one.kind as string, locator, excerpt: one.excerpt as string, supports, ...(normalized ? { normalized_value: normalized } : {}) });
+    kept.push({ kind: one.kind as string, locator, excerpt: one.excerpt as string, supports, ...(normalized ? { normalized_value: normalized } : {}),
+      ...(depends !== undefined && depends !== null ? { depends_revision: depends } : {}) });
   });
   return ok ? kept : null;
 }
@@ -1273,8 +1329,8 @@ function write(
     "INSERT INTO item_version (task_id, item_id, revision_no, fields, event_seq) VALUES (?, ?, ?, ?, ?)",
   );
   const insertSource = db.prepare(
-    "INSERT INTO item_source (task_id, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO item_source (task_id, element_kind, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value, depends_revision) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const markDeleted = db.prepare(
     "UPDATE item SET deleted_in_revision = ?, deleted_event_seq = ? WHERE task_id = ? AND item_id = ?",
@@ -1299,8 +1355,10 @@ function write(
       const rows: Array<Support | null> = source.supports.length > 0 ? source.supports : [null];
       rows.forEach((support, supportIndex) => {
         insertSource.run(
-          taskId, outcome.item, revisionNo, position + 1, supportIndex + 1,
+          taskId, ELEMENT_ITEM, outcome.item, revisionNo, position + 1, supportIndex + 1,
           source.kind, source.locator, source.excerpt, support?.field ?? null, support?.index ?? null, seq, source.normalized_value ?? null,
+          // 依据的条目在这一次保存里才新增或修改：它的修订号就是这一次的。
+          source.depends_revision === THIS_REVISION ? revisionNo : source.depends_revision ?? null,
         );
       });
     });

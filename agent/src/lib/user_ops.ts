@@ -260,8 +260,8 @@ interface Inspected {
 /** 从库里读某个条目在某次修订下的来源，按条目来源的形状整理（一条来源支持的几处合回一条）。 */
 function readSources(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): Source[] {
   const rows = db
-    .prepare("SELECT position, kind, locator, excerpt, field, field_index, normalized_value FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no")
-    .all(taskId, itemId, revisionNo) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null }[];
+    .prepare("SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no")
+    .all(taskId, itemId, revisionNo) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null; depends_revision: number | null }[];
   const byPosition = new Map<number, Source>();
   for (const row of rows) {
     let source = byPosition.get(row.position);
@@ -269,6 +269,8 @@ function readSources(db: DatabaseSync, taskId: string, itemId: string, revisionN
       byPosition.set(row.position, (source = { kind: row.kind, locator: row.locator, excerpt: row.excerpt, supports: [] }));
       // 撤销时把旧来源原样交回，「用户的话」写入的规范化值也跟着回去。
       if (row.normalized_value !== null) source.normalized_value = row.normalized_value;
+      // 依据条目的来源原来记的修订号也跟着回去：用户改字段、撤销都不算重新引用。
+      if (row.depends_revision !== null) source.depends_revision = row.depends_revision;
     }
     if (row.field !== null) source.supports.push(row.field_index === null ? { field: row.field } : { field: row.field, index: row.field_index });
   }

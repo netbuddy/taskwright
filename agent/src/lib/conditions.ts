@@ -24,7 +24,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { load } from "./db.ts";
 import { titleOf } from "./tool_render.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
-import { SOURCE_DOMAIN_NOTE } from "./schema.ts";
+import { DOMAIN_NOTE_COLLECTION, LEGACY_SOURCE_KINDS, SOURCE_ITEM } from "./schema.ts";
 
 /** 一项条件的三种状态：已满足、还差、暂无条目（集合为空，这一条无从谈起）。 */
 export type ConditionState = "met" | "unmet" | "empty";
@@ -294,14 +294,17 @@ function itemRefFields(db: DatabaseSync, taskId: string): Map<string, string[]> 
   return out;
 }
 
+/** 「条目」这一种来源在还没有迁过的库里的种类名。 */
+const LEGACY_ITEM_KIND = Object.keys(LEGACY_SOURCE_KINDS).find((old) => LEGACY_SOURCE_KINDS[old] === SOURCE_ITEM)!;
+
 /**
  * 还没有和任何条目关联的领域说明。一条领域说明只要有下面任一种联系就算关联了，只看还没删除的条目、只看它们的当前修订：
- * （a）别的条目的来源里有种类为「领域说明」、出处是它的；（b）别的条目的条目引用字段（例如问题的「关联条目」）写了它；
+ * （a）别的条目的来源里有种类为「条目」、出处是它的（还没有迁过的库里这种来源的种类叫「领域说明」，一样算）；（b）别的条目的条目引用字段（例如问题的「关联条目」）写了它；
  * （c）它自己的条目引用字段指向了一个还没删除的别的条目。联系是哪一边写的只是哪一边有字段的产物，所以三种都算。
  * 任务没有「领域说明」集合、或者这个集合没有条目时返回空列表。
  */
 export function unlinkedDomainNotes(db: DatabaseSync, taskId: string): string[] {
-  const notes = currentItems(db, taskId, SOURCE_DOMAIN_NOTE);
+  const notes = currentItems(db, taskId, DOMAIN_NOTE_COLLECTION);
   if (notes.length === 0) return [];
   const refFields = itemRefFields(db, taskId);
   const alive = db.prepare(
@@ -315,27 +318,27 @@ export function unlinkedDomainNotes(db: DatabaseSync, taskId: string): string[] 
     return (refFields.get(row.collection) ?? []).flatMap((name) => (Array.isArray(fields[name]) ? fields[name] as unknown[] : [])).map(String);
   };
   const cited = db.prepare(
-    "SELECT DISTINCT s.item_id, s.locator FROM item_source s WHERE s.task_id = ? AND s.kind = ? AND s.revision_no = (SELECT MAX(revision_no) " +
+    "SELECT DISTINCT s.item_id, s.locator FROM item_source s WHERE s.task_id = ? AND s.kind IN (?, ?) AND s.revision_no = (SELECT MAX(revision_no) " +
       "FROM item_version w WHERE w.task_id = s.task_id AND w.item_id = s.item_id)",
-  ).all(taskId, SOURCE_DOMAIN_NOTE) as { item_id: string; locator: string }[];
+  ).all(taskId, SOURCE_ITEM, LEGACY_ITEM_KIND) as { item_id: string; locator: string }[];
   const linked = new Set<string>();
   for (const one of cited) if (aliveIds.has(one.item_id) && one.item_id !== one.locator) linked.add(one.locator);
   for (const row of alive) {
     const refs = refsOf(row).filter((id) => id !== row.item_id);
     for (const id of refs) linked.add(id);
-    if (row.collection === SOURCE_DOMAIN_NOTE && refs.some((id) => aliveIds.has(id))) linked.add(row.item_id);
+    if (row.collection === DOMAIN_NOTE_COLLECTION && refs.some((id) => aliveIds.has(id))) linked.add(row.item_id);
   }
   return notes.map((row) => row.item_id).filter((id) => !linked.has(id));
 }
 
 /** 完成条件面板另列的提示。完成条件里有「领域说明」集合时才算未关联的领域说明。 */
 export function completionHints(db: DatabaseSync, taskId: string, completion: Record<string, string[]>): CompletionHint[] {
-  if (!(SOURCE_DOMAIN_NOTE in completion)) return [];
+  if (!(DOMAIN_NOTE_COLLECTION in completion)) return [];
   const items = unlinkedDomainNotes(db, taskId);
   if (items.length === 0) return [];
   return [{
     kind: "unlinked_domain_notes",
-    collection: SOURCE_DOMAIN_NOTE,
+    collection: DOMAIN_NOTE_COLLECTION,
     items,
     summary: `有 ${items.length} 条领域说明还没有和任何条目关联：${idsPhrase(items)}。`,
   }];

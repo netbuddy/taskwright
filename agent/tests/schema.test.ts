@@ -58,7 +58,8 @@ test("来源表带字段一级的列：支持的第几处、字段名、列表�
   const columns = query<{ name: string }>(dir, "PRAGMA table_info(item_source)").map((r) => r.name);
   for (const name of ["support_no", "field", "field_index"]) assert.ok(columns.includes(name), `缺 ${name} 列`);
   const sql = query<{ sql: string }>(dir, "SELECT sql FROM sqlite_master WHERE name = 'item_source'")[0].sql;
-  assert.match(sql, /PRIMARY KEY \(task_id, item_id, revision_no, position, support_no\)/);
+  assert.match(sql, /PRIMARY KEY \(task_id, element_kind, item_id, revision_no, position, support_no\)/);
+  for (const name of ["element_kind", "depends_revision"]) assert.ok(columns.includes(name), `缺 ${name} 列`);
 });
 
 test("最早格式的库（来源表没有字段一级的列）被拒绝并说明换一个新的任务目录", () => {

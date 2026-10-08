@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_MATERIALS_DIR } from "./definition.ts";
-import { BUSY_TIMEOUT_MS, SOURCE_USER_EDIT } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_USER_EDIT, sourceKindNow, sourceLocatorNow } from "./schema.ts";
 
 export { DEFAULT_MATERIALS_DIR };
 
@@ -132,6 +132,8 @@ export interface SourceRow {
   事件序号: number;
   支持: { 字段: string; 第几项: number | null }[];
   对话出处?: { 会话编号: string; 条目编号: string } | null;
+  /** 只有种类为「条目」或「图」时有：引用那一刻对方的修订号；库里没有记下时为 null。 */
+  依据的修订?: number | null;
 }
 
 /** 「条目编号 修订号」拼成的键，给按（条目, 修订）分组的表用。 */
@@ -141,18 +143,29 @@ export const itemKey = (itemId: string, revisionNo: number | null | undefined) =
  * 按（条目编号, 修订号）取条目在每次修订下的来源，键见 itemKey。所支持的字段放进「支持」列表：每项是字段名与列表里的
  * 第几项（从 0 起，为空表示整个字段）；列表为空表示这条来源支持整个条目。最早格式的库没有这几列，「支持」一律为空列表。
  * 早期版本写下的「用户直接修改」不读出：页面、生成的文档都不再显示它（条目上的话都算用户自己的，谁改的看修订）。
+ *
+ * 读出的种类一律是现在的名字。来源表的迁移只在这个库下一次被写入时发生（读取一侧只读、不改库），在那之前库里还是早期版本的
+ * 样子，这里照迁移的规矩现算：「执行者补充」读成「助手补充」，出处正好是「执行者补充」的也读成「助手补充」；「领域说明」读成
+ * 「条目」，依据的修订取被引用的条目在这条来源所在修订当时的最新修订号。迁过之后读到的与这里现算的一样。
  */
 export function readSources(db: DatabaseSync, taskId: string): Map<string, SourceRow[]> {
   const columns = columnNames(db, "item_source");
   const fieldLevel = ["support_no", "field", "field_index"].every((c) => columns.has(c));
   const order = "item_id, revision_no, position" + (fieldLevel ? ", support_no" : "");
   const grouped = new Map<string, SourceRow[]>();
+  const migrated = columns.has("depends_revision");
+  const revisionThen = db.prepare("SELECT MAX(revision_no) AS no FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no <= ?");
   for (const row of db.prepare(`SELECT * FROM item_source WHERE task_id = ? AND kind <> ? ORDER BY ${order}`).all(taskId, SOURCE_USER_EDIT) as Row[]) {
     const key = itemKey(row.item_id, row.revision_no);
     let bucket = grouped.get(key);
     if (!bucket) grouped.set(key, (bucket = []));
     if (bucket.length === 0 || bucket[bucket.length - 1]["第几条"] !== row.position) {
-      const one: SourceRow = { 种类: row.kind, 出处: row.locator, 摘录: row.excerpt, 第几条: row.position, 事件序号: row.event_seq, 支持: [] };
+      const kind = sourceKindNow(row.kind);
+      const one: SourceRow = { 种类: kind, 出处: sourceLocatorNow(row.kind, row.locator), 摘录: row.excerpt, 第几条: row.position, 事件序号: row.event_seq, 支持: [] };
+      if (kind === SOURCE_ITEM || kind === SOURCE_FIGURE) {
+        one["依据的修订"] = migrated ? row.depends_revision ?? null
+          : (revisionThen.get(taskId, String(row.locator).trim(), row.revision_no) as { no: number | null }).no;
+      }
       if (row.kind === "用户的话") {
         const split = splitUserWordsLocator(row.locator);
         one["对话出处"] = split ? { 会话编号: split[0], 条目编号: split[1] } : null;

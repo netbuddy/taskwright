@@ -1,5 +1,6 @@
 /**
- * 「领域说明」集合：真实任务类型的定义里有它；来源种类「领域说明」的出处核对（存在、属于这个集合、没有删除）；
+ * 「领域说明」集合：真实任务类型的定义里有它；来源种类「条目」（早期版本只能引用领域说明，种类名叫「领域说明」）的核对：
+ * 被引用的条目存在、没有删除、不是自己，摘录逐字出自它的当前内容，记下引用时它的修订号；
  * 完成条件里的「每个条目用户确认」与完成条件之外的提示「还没有和任何条目关联的领域说明」（三种联系都算）。
  */
 
@@ -15,6 +16,7 @@ import { loadDefinition, validateDefinition } from "../src/lib/definition.ts";
 import { checkCompletion, completionHints, unlinkedDomainNotes } from "../src/lib/conditions.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
+import { runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, SOURCE, callIn, demoDefinition, makeWorkspace, query } from "./helpers.ts";
 
 /** 演示定义加上「领域说明」集合与它的完成条件。 */
@@ -37,7 +39,7 @@ function definitionWithNotes(): Record<string, any> {
 const note = (标题: string, 类别 = "术语", 关联条目?: string[]) => ({
   op: "add", collection: "领域说明",
   fields: { 标题, 内容: `${标题}是登录时输入的一串字符，区分大小写。`, 类别, ...(关联条目 ? { 关联条目 } : {}) },
-  sources: [{ kind: "执行者补充", locator: "执行者补充", excerpt: `${标题}是这个意思` }],
+  sources: [{ kind: "助手补充", locator: "助手补充", excerpt: `${标题}是这个意思` }],
 });
 
 /** 建任务：UC-001、UC-002（修订 1），DN-001、DN-002（修订 2）。 */
@@ -54,10 +56,15 @@ function workspace(def: Record<string, any> = definitionWithNotes()): string {
   return dir;
 }
 
-const cite = (locator: string, base = 1, item = "UC-001", excerpt = "登录时输入的一串字符") => ({
+const cite = (locator: string, base = 1, item = "UC-001", excerpt = "登录时输入的一串字符", kind = "条目") => ({
   op: "update", item, base_revision: base, fields: { 名称: `登录（${locator}）` },
-  sources: [{ kind: "领域说明", locator, excerpt, supports: [{ field: "名称" }] }],
+  sources: [{ kind, locator, excerpt, supports: [{ field: "名称" }] }],
 });
+
+/** 某个条目在某次修订下种类为「条目」的来源行。 */
+const itemRows = (dir: string, item: string, revisionNo: number) =>
+  query<any>(dir, "SELECT element_kind, kind, locator, excerpt, field, depends_revision FROM item_source WHERE item_id = ? AND revision_no = ? AND kind = '条目' ORDER BY position", item, revisionNo)
+    .map((row) => ({ ...row }));
 
 test("真实的任务类型：有「领域说明」集合（DN，四个字段，不评审），完成条件是每个条目用户确认", () => {
   const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
@@ -70,15 +77,30 @@ test("真实的任务类型：有「领域说明」集合（DN，四个字段，
   assert.deepEqual(definition.completion.领域说明, ["每个条目用户确认"]);
 });
 
-test("来源种类「领域说明」：出处是还在的领域说明时保存，存进来源表；出处去掉首尾空白", () => {
+test("来源种类「条目」：出处是还在的条目时保存，记下引用时它的修订号；出处去掉首尾空白；产出方记作条目", () => {
   const dir = workspace();
   const out = saveRevision(callIn(dir), { operations: [{ ...cite(" DN-001 ") }] });
-  const row = query<any>(dir, "SELECT kind, locator, excerpt, field FROM item_source WHERE item_id = 'UC-001' AND revision_no = ?", out.details.revision_no)
-    .find((one) => one.kind === "领域说明");
-  assert.deepEqual({ ...row }, { kind: "领域说明", locator: "DN-001", excerpt: "登录时输入的一串字符", field: "名称" });
+  // DN-001 是修订 2 新增的，之后没有改过。
+  assert.deepEqual(itemRows(dir, "UC-001", out.details.revision_no),
+    [{ element_kind: "条目", kind: "条目", locator: "DN-001", excerpt: "登录时输入的一串字符", field: "名称", depends_revision: 2 }]);
+  // 别的种类不记修订号。
+  assert.deepEqual(query<any>(dir, "SELECT DISTINCT depends_revision FROM item_source WHERE kind <> '条目'").map((row) => row.depends_revision), [null]);
 });
 
-test("来源种类「领域说明」：摘录要逐字出现在那条说明当前修订的标题或内容里，标点不同也拒绝", () => {
+test("来源种类「条目」：哪个集合的条目都可以引用，任务没有「领域说明」集合时也一样", () => {
+  const dir = workspace(demoDefinition() as Record<string, any>);
+  const out = saveRevision(callIn(dir), { operations: [cite("UC-002", 1, "UC-001", "点退出")] });
+  assert.deepEqual(itemRows(dir, "UC-001", out.details.revision_no).map((row) => [row.locator, row.excerpt, row.depends_revision]), [["UC-002", "点退出", 1]]);
+});
+
+test("来源种类「条目」：早期版本的名字「领域说明」照收，存成「条目」；查看条目时读到的也是「条目」", () => {
+  const dir = workspace();
+  const out = saveRevision(callIn(dir), { operations: [cite("DN-001", 1, "UC-001", "登录时输入的一串字符", "领域说明")] });
+  assert.deepEqual(itemRows(dir, "UC-001", out.details.revision_no).map((row) => [row.kind, row.locator, row.depends_revision]), [["条目", "DN-001", 2]]);
+  assert.equal(query(dir, "SELECT 1 FROM item_source WHERE kind = '领域说明'").length, 0);
+});
+
+test("来源种类「条目」：摘录要逐字出现在那个条目当前修订的某段文字里，标点不同也拒绝", () => {
   const dir = workspace();
   // 标题里的一段也认。
   saveRevision(callIn(dir), { operations: [cite("DN-001", 1, "UC-001", "口令")] });
@@ -86,37 +108,84 @@ test("来源种类「领域说明」：摘录要逐字出现在那条说明当�
     /这次「保存修订」什么都没有写入[\s\S]*第 1 条来源的摘录「登录时输入的一串字符,区分大小写」在 DN-001 的当前修订里找不到[\s\S]*摘录必须逐字一致，包括标点/);
   assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-002", 3, "UC-001", "口令是登录时输入的一串字符")] }),
     /在 DN-002 的当前修订里找不到/);
-  // 领域说明改了内容之后，按改后的内容核对。
+  // 被引用的条目改了内容之后，按改后的内容核对，记下的是改后的修订号。
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "DN-002", base_revision: 2, fields: { 内容: "坐在服务台办理借还的人" } }] });
-  saveRevision(callIn(dir), { operations: [cite("DN-002", 3, "UC-001", "坐在服务台办理借还的人")] });
+  const out = saveRevision(callIn(dir), { operations: [cite("DN-002", 3, "UC-001", "坐在服务台办理借还的人")] });
+  // 修订 3 写下的那条引用 DN-001 的来源沿用下来，记的仍是当时的修订号。
+  assert.deepEqual(itemRows(dir, "UC-001", out.details.revision_no).map((row) => [row.locator, row.depends_revision]), [["DN-001", 2], ["DN-002", 4]]);
 });
 
-test("来源种类「领域说明」：出处不存在、不是领域说明、已删除、在这次调用里删除时整批拒绝，按现有格式写原因", () => {
+test("来源种类「条目」：出处不存在、已删除、在这次调用里删除、指的是自己时整批拒绝，按现有格式写原因", () => {
   const dir = workspace();
   assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-009")] }),
-    /这次「保存修订」什么都没有写入[\s\S]*第 1 条来源的种类是「领域说明」，出处 DN-009 不是这个任务里「领域说明」集合的条目编号/);
-  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("UC-002")] }), /出处 UC-002 不是这个任务里「领域说明」集合的条目编号/);
+    /这次「保存修订」什么都没有写入[\s\S]*第 1 条来源的种类是「条目」，出处 DN-009 指向的条目在这个任务里不存在[\s\S]*出处写一个还在的条目的编号/);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("UC-001", 1, "UC-001", "登录")] }),
+    /出处 UC-001 指的就是这个条目自己，一个条目不能把自己当作依据/);
   assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-002"), { op: "delete", item: "DN-002", base_revision: 2 }] }),
-    /出处 DN-002 指向的领域说明在这次调用里被删除/);
+    /出处 DN-002 指向的条目在这次调用里被删除/);
   saveRevision(callIn(dir), { operations: [{ op: "delete", item: "DN-002", base_revision: 2 }] });
-  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-002")] }), /出处 DN-002 指向的领域说明已在修订 3 删除/);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-002")] }), /出处 DN-002 指向的条目已在修订 3 删除/);
   // 没有写进任何东西。
-  assert.equal(query(dir, "SELECT 1 FROM item_source WHERE kind = '领域说明'").length, 0);
+  assert.equal(query(dir, "SELECT 1 FROM item_source WHERE kind = '条目'").length, 0);
 });
 
-test("来源种类「领域说明」：同一批里才新增的领域说明不能引作来源（条目引用字段可以），拒绝原因写明先保存", () => {
+test("来源种类「条目」：同一批里排在前面新增或修改的条目可以引用，修订号就是这一次；排在后面才新增的、新增操作引用自己的拒绝", () => {
   const dir = workspace();
-  // DN-003 是这一批第 1 个操作新增的；第 2 个操作的来源指向它。
-  assert.throws(() => saveRevision(callIn(dir), { operations: [note("借阅"), cite("DN-003")] }),
-    /出处 DN-003 指向的领域说明在这一批里才新增，还没有保存，摘录无从核对[\s\S]*先新增它，保存之后再引用/);
-  // 同一批里的条目引用字段照样可以指向排在前面新增的领域说明。
-  saveRevision(callIn(dir), { operations: [note("借阅"),
-    { op: "add", collection: "问题", fields: { 事项: "借阅期限", 状态: "未解决", 关联条目: ["DN-003"] }, sources: [SOURCE] }] });
+  // DN-003 要到这一批第 2 个操作才新增；第 1 个操作的来源指向它。
+  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-003", 1, "UC-001", "借阅"), note("借阅")] }),
+    /出处 DN-003 指向的条目在这一批里排在第 2 个操作才新增，在这个操作之后；请把新增它的操作排到前面/);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [{ ...note("借阅"), sources: [{ kind: "条目", locator: "DN-003", excerpt: "借阅" }] }] }),
+    /出处 DN-003 指的就是这个操作自己要新增的条目，一个条目不能把自己当作依据/);
+  // 排在前面新增的 DN-003 可以引用，摘录对着它将要保存的内容核对；这一批是修订 3。
+  assert.throws(() => saveRevision(callIn(dir), { operations: [note("借阅"), cite("DN-003", 1, "UC-001", "这句话不在里面")] }), /在 DN-003 的当前修订里找不到/);
+  const out = saveRevision(callIn(dir), { operations: [
+    note("借阅"),
+    { op: "update", item: "DN-001", base_revision: 2, fields: { 内容: "口令是进门时说的一句话。" } },
+    { op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "登录（引两条）" }, sources: [
+      { kind: "条目", locator: "DN-003", excerpt: "借阅是登录时输入的一串字符", supports: [{ field: "名称" }] },
+      { kind: "条目", locator: "DN-001", excerpt: "进门时说的一句话", supports: [{ field: "名称" }] },
+    ] },
+  ] });
+  assert.equal(out.details.revision_no, 3);
+  assert.deepEqual(itemRows(dir, "UC-001", 3).map((row) => [row.locator, row.depends_revision]), [["DN-003", 3], ["DN-001", 3]]);
+  // 同一批里的条目引用字段照样可以指向排在前面新增的条目。
+  saveRevision(callIn(dir), { operations: [note("续借"),
+    { op: "add", collection: "问题", fields: { 事项: "借阅期限", 状态: "未解决", 关联条目: ["DN-004"] }, sources: [SOURCE] }] });
 });
 
-test("来源种类「领域说明」：任务定义里没有这个集合时拒绝", () => {
-  const dir = workspace(demoDefinition() as Record<string, any>);
-  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("DN-001")] }), /出处 DN-001 这个任务没有「领域说明」集合/);
+test("来源种类「条目」：这个条目后来被修改而这条来源原样沿用时，记下的修订号不变；助手重新写上同一条来源才换成最新的", () => {
+  const dir = workspace();
+  saveRevision(callIn(dir), { operations: [cite("DN-001")] }); // 修订 3，引用时 DN-001 是修订 2
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "DN-001", base_revision: 2, fields: { 内容: "口令是登录时输入的一串字符，区分大小写，至少八位。" } }] }); // 修订 4
+  // 只改 UC-001 的别的字段，来源沿用。
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 3, fields: { 步骤: ["打开页面", "输入口令"] } }] }); // 修订 5
+  assert.deepEqual(itemRows(dir, "UC-001", 5).map((row) => [row.locator, row.depends_revision]), [["DN-001", 2]]);
+  // 重新写上同一条来源：与原来的合成一条，修订号换成 DN-001 现在的。
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 5, fields: { 步骤: ["打开页面", "输入口令", "点登录"] },
+    sources: [{ kind: "条目", locator: "DN-001", excerpt: "登录时输入的一串字符", supports: [{ field: "名称" }] }] }] }); // 修订 6
+  assert.deepEqual(itemRows(dir, "UC-001", 6).map((row) => [row.locator, row.depends_revision]), [["DN-001", 4]]);
+});
+
+test("来源种类「条目」：用户在界面上改字段、撤销，都不算重新引用，沿用下来的来源记的修订号不变", () => {
+  const dir = workspace();
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1,
+    sources: [SOURCE, { kind: "条目", locator: "DN-001", excerpt: "登录时输入的一串字符", supports: [{ field: "步骤" }] }] }] }); // 修订 3
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "DN-001", base_revision: 2, fields: { 内容: "口令是登录时输入的一串字符，区分大小写，至少八位。" } }] }); // 修订 4
+  let n = 0;
+  const ui = (body: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-dn-${++n}`, ...body });
+  // 用户改「名称」：指到「步骤」的那条来源沿用。
+  const edit = ui({ kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 3 }], fields: { 名称: "用口令登录" } });
+  assert.equal(edit.results[0].revision_no, 5);
+  assert.deepEqual(itemRows(dir, "UC-001", 5).map((row) => [row.locator, row.field, row.depends_revision]), [["DN-001", "步骤", 2]]);
+  // 撤销这次修改：来源照修订 3 的原样交回，修订号还是当时的。
+  ui({ kind: "undo", targets: [{ revision_no: 5 }] });
+  assert.deepEqual(itemRows(dir, "UC-001", 6).map((row) => [row.locator, row.field, row.depends_revision]), [["DN-001", "步骤", 2]]);
+});
+
+test("来源种类「图」：任务里还没有图，助手写了就拒绝，并说明能用的是哪几种", () => {
+  const dir = workspace();
+  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("FIG-001", 1, "UC-001", "登录", "图")] }),
+    /第 1 条来源的种类写成了「图」，这个任务里现在还没有图，这一种还不能用[\s\S]*kind 只能是「文档原文」、「用户的话」、「助手补充」、「条目」之一/);
 });
 
 test("提示：还没有和任何条目关联的领域说明——来源引用、别的条目的关联条目、自己的关联条目三种联系都算，删掉的条目不算", () => {

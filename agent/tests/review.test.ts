@@ -345,7 +345,7 @@ const MATERIALS: Materials = { full: true, files: [{ path: "inputs/材料.md", t
 
 test("相关的判定：摘录在同一个自然段、Word 材料同一个段落号、同一句用户的话、指向的领域说明条目、互相引用的问题条目；别的都不相关", () => {
   const target = taskItem("UC-001", "用例", [doc("用户可以登录。"), doc("x", "inputs/说明.docx#p3"),
-    { kind: "用户的话", locator: "sess#a1", excerpt: "口令至少八位" }, { kind: "领域说明", locator: "DN-001", excerpt: "口令" }]);
+    { kind: "用户的话", locator: "sess#a1", excerpt: "口令至少八位" }, { kind: "条目", locator: "DN-001", excerpt: "口令" }]);
   const live = [
     target,
     taskItem("CON-001", "约束", [doc("用户可以登录。")]),                                // 别的集合、同一个自然段：排在同一个集合的后面
@@ -355,7 +355,7 @@ test("相关的判定：摘录在同一个自然段、Word 材料同一个段落
     taskItem("UC-005", "用例", [doc("y", "inputs/说明.docx#p4")]),                        // 别的段落号：不相关
     taskItem("UC-006", "用例", [{ kind: "用户的话", locator: "sess#a1", excerpt: "至少八位" }]), // 同一句用户的话
     taskItem("UC-007", "用例", [{ kind: "用户的话", locator: "sess#b2", excerpt: "口令至少八位" }]), // 别的一句：不相关
-    taskItem("DN-001", "领域说明", [{ kind: "执行者补充", locator: "执行者补充", excerpt: "术语" }]), // 要评审的条目引用了它
+    taskItem("DN-001", "领域说明", [{ kind: "助手补充", locator: "助手补充", excerpt: "术语" }]), // 要评审的条目引用了它
     taskItem("TBD-001", "问题", [], { 事项: "口令多长？", 状态: "未解决", 关联条目: ["UC-001"] }),   // 问题条目引用了要评审的条目
     taskItem("TBD-002", "问题", [], { 事项: "退款几天？", 状态: "未解决", 关联条目: ["UC-003"] }),   // 引用的是别的条目：不相关
   ];

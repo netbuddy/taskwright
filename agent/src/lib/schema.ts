@@ -58,17 +58,42 @@ export const TASK_DONE = "已完成";
 export const TASK_ABANDONED = "已放弃";
 
 /**
- * 来源的五种种类。「文档原文」「用户的话」「执行者补充」「领域说明」由执行者在「保存修订」里填；
- * 「用户直接修改」是早期版本在用户直接改了某个字段时由系统写的，出处是那次操作的编号；现在不再写，也不再显示，
- * 旧修订里的记录原样留在库里（种类清单与表的检查照旧收它）。
- * 「领域说明」指向这个任务「领域说明」集合里的一个条目：出处写它的条目编号（例如 DN-002），摘录写引用的那句；
- * 种类名与集合名相同，保存修订核对出处是那个集合里还在的条目。
+ * 来源是任务要素之间的「依据」关系：一个产出型的要素（条目，以后还有图）记下它依据了哪个要素的哪个位置。
+ *
+ * 依据方的种类（来源表的 kind 列）：
+ * - 「文档原文」：材料里或知识库文档里的一段原话，出处写文件的路径（知识库文档以 knowledge/ 开头，不另立种类）。
+ * - 「用户的话」：用户在对话里说过的一段原话。
+ * - 「助手补充」：助手按常识补上、或者从材料里推出来而材料没有明说的内容；摘录里写的是理由。早期版本叫「执行者补充」。
+ * - 「条目」：任务里的另一个条目，出处写它的条目编号（例如 DN-002、UC-003），摘录写引用的那句；另记引用时它的修订号
+ *   （depends_revision），它之后又改了，读取一侧据此标「依据已变」。早期版本只能引用「领域说明」集合里的条目，种类名就叫「领域说明」。
+ * - 「图」：任务里的一张图，出处写图的编号，同样记修订号。图这种要素还没有做出来，保存修订现在不收这一种。
+ * - 「用户直接修改」：早期版本在用户直接改了某个字段时由系统写的，出处是那次操作的编号；现在不再写，也不再显示，
+ *   旧修订里的记录原样留在库里（种类清单与表的检查照旧收它）。
  */
 export const SOURCE_USER_EDIT = "用户直接修改";
-export const SOURCE_DOMAIN_NOTE = "领域说明";
-export const SOURCE_KINDS = ["文档原文", "用户的话", "执行者补充", SOURCE_DOMAIN_NOTE, SOURCE_USER_EDIT] as const;
-/** 执行者可以填的四种。 */
-export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", "执行者补充", SOURCE_DOMAIN_NOTE] as const;
+export const SOURCE_SUPPLEMENT = "助手补充";
+export const SOURCE_ITEM = "条目";
+export const SOURCE_FIGURE = "图";
+export const SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM, SOURCE_FIGURE, SOURCE_USER_EDIT] as const;
+/** 助手可以填的四种。「图」要等图这种要素做出来。 */
+export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM] as const;
+/** 早期版本的两个种类名与它们现在的名字。库迁移之前读到的、助手照旧说明写来的都按现在的名字认（sourceKindNow）。 */
+export const LEGACY_SOURCE_KINDS: Readonly<Record<string, string>> = { 执行者补充: SOURCE_SUPPLEMENT, 领域说明: SOURCE_ITEM };
+/** 一个种类名现在叫什么：早期版本的名字换成现在的，别的照原样。 */
+export const sourceKindNow = (kind: string): string => LEGACY_SOURCE_KINDS[kind] ?? kind;
+/**
+ * 一条来源的出处现在怎样写。早期版本的「执行者补充」出处照例就写「执行者补充」这几个字，现在写「助手补充」；别的出处照原样。
+ * 迁移改写旧行、迁移之前只读的一侧读旧行，用的是同一条规矩。
+ */
+export const sourceLocatorNow = (kind: string, locator: string): string =>
+  kind in LEGACY_SOURCE_KINDS && LEGACY_SOURCE_KINDS[kind] === SOURCE_SUPPLEMENT && locator === kind ? SOURCE_SUPPLEMENT : locator;
+/** 「领域说明」集合的名字：助手记下领域里的说法与规矩的那个集合。引用它里面的条目，种类是「条目」。 */
+export const DOMAIN_NOTE_COLLECTION = "领域说明";
+
+/** 产出方是哪种要素（来源表的 element_kind 列）：条目，或者图。现在写入的都是条目。 */
+export const ELEMENT_ITEM = "条目";
+export const ELEMENT_FIGURE = "图";
+export const ELEMENT_KINDS = [ELEMENT_ITEM, ELEMENT_FIGURE] as const;
 export const SOURCE_USER_WORDS = "用户的话";
 export const SOURCE_DOCUMENT = "文档原文";
 
@@ -196,6 +221,28 @@ function ensureRevisionCallIndex(db: DatabaseSync): void {
   }
 }
 
+/** 来源表的建表语句。建新库与把旧库的来源表迁成现在的样子（migrateSourcesToElements）用的是同一份，只是表名不同。 */
+export function itemSourceSql(name: string): string {
+  return `CREATE TABLE ${name} (
+  task_id      TEXT NOT NULL,          -- 所属任务的任务编号
+  element_kind TEXT NOT NULL DEFAULT '条目' CHECK (element_kind IN ('条目', '图')),  -- 产出方是哪种要素：条目，或者图
+  item_id      TEXT NOT NULL,          -- 产出方的编号：条目编号（以后还有图的编号）
+  revision_no  INTEGER NOT NULL,       -- 产出方在哪次修订下的来源
+  position     INTEGER NOT NULL,       -- 这次修订下这个要素的第几条来源，从 1 起
+  support_no   INTEGER NOT NULL,       -- 这条来源支持的第几处，从 1 起；一条来源支持几处字段就展开成几行，支持整个条目时只有一行
+  kind         TEXT NOT NULL CHECK (kind IN ('文档原文', '用户的话', '助手补充', '条目', '图', '用户直接修改')),  -- 依据方的种类；「用户直接修改」只由早期版本的系统写
+  locator      TEXT NOT NULL,          -- 出处：文档原文写文件路径；用户的话写「会话编号#会话条目编号」，由工具代填；助手补充由工具填「助手补充」；条目写条目编号；图写图的编号
+  excerpt      TEXT NOT NULL,          -- 摘录的原文；种类为助手补充时是理由
+  field        TEXT,                   -- 这一处支持的字段名；为空表示这条来源支持整个条目
+  field_index  INTEGER,                -- 列表型字段里的第几项，从 0 起；为空表示支持整个字段
+  event_seq    INTEGER NOT NULL,       -- 记下这次修订的那条事件的序号
+  normalized_value TEXT,               -- 种类为用户的话、写入的值与原话不同时，写入的值；摘录仍是逐字的原话
+  depends_revision INTEGER,            -- 种类为条目或图时，引用那一刻对方的修订号；别的种类为空
+  PRIMARY KEY (task_id, element_kind, item_id, revision_no, position, support_no)
+);
+`;
+}
+
 export const SCHEMA_SQL = `
 CREATE TABLE task (
   task_id          TEXT PRIMARY KEY,   -- 任务编号，由创建任务的核心函数生成，例如 TASK-001；一库一任务，这张表只有一行
@@ -244,22 +291,7 @@ CREATE TABLE item_version (         -- 条目在某次修订下的内容：条�
   PRIMARY KEY (task_id, item_id, revision_no)
 );
 
-CREATE TABLE item_source (
-  task_id      TEXT NOT NULL,          -- 所属任务的任务编号
-  item_id      TEXT NOT NULL,          -- 条目编号
-  revision_no  INTEGER NOT NULL,       -- 条目在哪次修订下的来源
-  position     INTEGER NOT NULL,       -- 这次修订下这个条目的第几条来源，从 1 起
-  support_no   INTEGER NOT NULL,       -- 这条来源支持的第几处，从 1 起；一条来源支持几处字段就展开成几行，支持整个条目时只有一行
-  kind         TEXT NOT NULL CHECK (kind IN ('文档原文', '用户的话', '执行者补充', '领域说明', '用户直接修改')),  -- 来源的种类；「用户直接修改」只由系统写
-  locator      TEXT NOT NULL,          -- 出处：文档原文写文件路径；用户的话写「会话编号#会话条目编号」，由工具代填；执行者补充照模型写的存；领域说明写那条领域说明的条目编号；用户直接修改写操作编号
-  excerpt      TEXT NOT NULL,          -- 摘录的原文
-  field        TEXT,                   -- 这一处支持的字段名；为空表示这条来源支持整个条目
-  field_index  INTEGER,                -- 列表型字段里的第几项，从 0 起；为空表示支持整个字段
-  event_seq    INTEGER NOT NULL,       -- 记下这次修订的那条事件的序号
-  normalized_value TEXT,               -- 种类为用户的话、写入的值与原话不同时，写入的值；摘录仍是逐字的原话
-  PRIMARY KEY (task_id, item_id, revision_no, position, support_no)
-);
-
+${itemSourceSql("item_source")}
 CREATE TABLE review (
   review_id           INTEGER PRIMARY KEY,  -- 评审记录的编号
   task_id             TEXT NOT NULL,        -- 所属任务的任务编号
@@ -378,6 +410,8 @@ export function ensureSchema(db: DatabaseSync): void {
   if (hasVersionColumns(db)) {
     throw new Error(OLD_VERSION_FORMAT_TEXT);
   }
+  // 来源提到要素层之前建的库：来源表没有 element_kind 一列。这一处做迁移（重建来源表、改写旧行），见 migrateSourcesToElements。
+  if (!sourceColumns.includes(SOURCE_ELEMENT_COLUMN)) migrateSourcesToElements(db);
   // 按调用编号判重的索引是后来加的：只加索引，不动已有的行（见 REVISION_CALL_INDEX_SQL 的说明）。
   ensureRevisionCallIndex(db);
   const taskColumns = (db.prepare("PRAGMA table_info(task)").all() as { name: string }[]).map((row) => row.name);
@@ -388,6 +422,41 @@ export function ensureSchema(db: DatabaseSync): void {
         "库表改动不做迁移，所以没有写入。请新建一个任务。",
     );
   }
+}
+
+/** 来源提到要素层时给来源表加的一列：有它就是现在的样子，没有就是还没有迁过的库。 */
+export const SOURCE_ELEMENT_COLUMN = "element_kind";
+
+/**
+ * 把来源表迁成现在的样子（来源提到要素层）。种类一列带着检查约束，SQLite 改不了约束，所以重建：建一张新表，把旧行改写着抄过去，
+ * 删掉旧表，把新表改成原来的名字。必须在调用方已经开好的事务里调用（ensureSchema 就是）：中途出错整体回退，库还是迁移之前的样子。
+ * 迁过的库有 element_kind 一列，ensureSchema 据此不再调它，所以重复打开不会重做。
+ *
+ * 旧行怎样改写（行数不变；摘录、支持的字段、事件序号、写入的值都原样）：
+ * - 产出方都是条目（element_kind 为「条目」）。
+ * - 种类「执行者补充」改成「助手补充」；出处正好是「执行者补充」这几个字的也改成「助手补充」，别的出处不动。
+ * - 种类「领域说明」改成「条目」，出处不动（本来就是条目编号）；depends_revision 填被引用的那个条目在这条来源所在修订当时的
+ *   最新修订号（它不晚于这条来源的修订）。找不到那个条目的填空。
+ * - 别的种类（文档原文、用户的话、用户直接修改）原样，depends_revision 为空。
+ * 事件表与修订的摘要是历史记录，不改写。
+ */
+export function migrateSourcesToElements(db: DatabaseSync): void {
+  db.exec("DROP TABLE IF EXISTS item_source_new");
+  db.exec(itemSourceSql("item_source_new"));
+  db.exec(`
+    INSERT INTO item_source_new
+      (task_id, element_kind, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value, depends_revision)
+    SELECT s.task_id, '条目', s.item_id, s.revision_no, s.position, s.support_no,
+      CASE s.kind WHEN '执行者补充' THEN '助手补充' WHEN '领域说明' THEN '条目' ELSE s.kind END,
+      CASE WHEN s.kind = '执行者补充' AND s.locator = '执行者补充' THEN '助手补充' ELSE s.locator END,
+      s.excerpt, s.field, s.field_index, s.event_seq, s.normalized_value,
+      CASE WHEN s.kind = '领域说明'
+        THEN (SELECT MAX(v.revision_no) FROM item_version v WHERE v.task_id = s.task_id AND v.item_id = TRIM(s.locator) AND v.revision_no <= s.revision_no)
+        ELSE NULL END
+    FROM item_source s;
+    DROP TABLE item_source;
+    ALTER TABLE item_source_new RENAME TO item_source;
+  `);
 }
 
 /** 修订统一之前的库给出的拒绝文字。后端与观测台遇到这种库时说的是同一件事。 */

@@ -98,7 +98,7 @@ test("supports 展开成来源表的多行；不写或写空列表表示支持�
     operations: [
       addUseCase("登录", [
         { ...SOURCE, supports: [{ field: "名称" }, { field: "步骤", index: 2 }] },
-        { kind: "执行者补充", locator: "执行者补充", excerpt: "按常识补的第一步", supports: [{ field: "步骤", index: 0 }] },
+        { kind: "助手补充", locator: "助手补充", excerpt: "按常识补的第一步", supports: [{ field: "步骤", index: 0 }] },
         { ...SOURCE, excerpt: "登录总要输入口令。", supports: [] },
       ]),
     ],

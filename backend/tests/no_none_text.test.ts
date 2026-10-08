@@ -64,15 +64,15 @@ test("修订日志里的撤销：库里缺被撤销的修订号时（库数据�
   assert.equal(userActionText(null, { operations: [], undo_of_revision: 4 }), "你撤销了修订 4");
 });
 
-test("生成文档里的空项（库数据异常）：列表与条目引用里的空项写「（空）」；来源没有摘录时不写书名号那半句，领域说明没有出处时不写出处", () => {
+test("生成文档里的空项（库数据异常）：列表与条目引用里的空项写「（空）」；来源没有摘录时不写书名号那半句，依据条目的来源没有出处时不写出处", () => {
   assert.equal(valueText(["提交申请", null, ""], "文本列表"), "1. 提交申请；2. （空）；3. （空）");
   assert.equal(valueText(["UC-001", null], "条目引用"), "UC-001、（空）");
   const lib = { sourcesOf: () => [
     { kind: "文档原文", locator: "inputs/a.md", excerpt: null },
-    { kind: "领域说明", locator: null, excerpt: "" },
+    { kind: "条目", locator: null, excerpt: "" },
     { kind: "文档原文", locator: "inputs/b.md", excerpt: "买家可以退货。" },
   ] } as any;
-  assert.equal(sourcesText(lib, "UC-001", 1), "文档原文，出处 inputs/a.md；领域说明；文档原文，出处 inputs/b.md（「买家可以退货。」）");
+  assert.equal(sourcesText(lib, "UC-001", 1), "文档原文，出处 inputs/a.md；条目；文档原文，出处 inputs/b.md（「买家可以退货。」）");
 });
 
 test("生成文档里出自知识库文档的来源：种类写「知识库」，出处写「知识库名 / 文档名」，Word 文档再写第几段；知识库已经不在时写编号；材料的出处照旧", () => {

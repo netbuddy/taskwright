@@ -163,6 +163,8 @@ export function mergeGiven(kept: readonly Source[], given: readonly Source[]): {
     }
     restated.add(kept[at]);
     const one = sources[at];
+    // 依据条目的来源被重新写上：记的修订号换成这一次引用时的。
+    if (add.depends_revision !== undefined) one.depends_revision = add.depends_revision;
     if (one.supports.length === 0 || add.supports.length === 0) {
       one.supports = [];
       continue;
