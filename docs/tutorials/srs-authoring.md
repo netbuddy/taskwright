@@ -26,7 +26,7 @@ It takes about 40 minutes, part of which is waiting for the assistant.
   scripts/dev.sh
   ```
 
-  One completion condition is "every item passed review". You start reviews from the items area (see [capabilities](../capabilities.md), section 1.9); the screenshots of this tutorial were taken before the review buttons existed and do not show them yet, and the Review tab and the item details also look different in 0.4.0; in 0.4.1 the task page was rebuilt as an overview and the sidebar gained a 知识库 ("knowledge base") entry. Where a screenshot and the text differ, the text describes the current interface.
+  One completion condition is "every item passed review". You start reviews from the items area (see [capabilities](../capabilities.md), section 1.9); the screenshots of this tutorial were taken before the review buttons existed and do not show them yet, and the Review tab and the item details also look different in 0.4.0; in 0.4.1 the task page was rebuilt as an overview and the sidebar gained a 知识库 ("knowledge base") entry, and in 0.4.2 the items area gained the 图表 ("diagrams") tab and the 导出 Word ("export to Word") button, none of which is in the screenshots. Where a screenshot and the text differ, the text describes the current interface.
 
 The screenshots come from a real run with the default model. **In your run the assistant's wording, the number and ids of the items and the revision numbers will differ**, but the steps and buttons are the same. The interface texts are in Chinese; the tutorial gives the English meaning next to each button name. Our task is called 图书馆借阅（教程） ("library lending (tutorial)"); yours can be called anything.
 

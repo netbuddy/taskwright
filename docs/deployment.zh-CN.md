@@ -15,7 +15,7 @@
 | pi coding agent | `@earendil-works/pi-coding-agent` 1.0.4 | 运行执行者与模拟用户 |
 | pi 能连到的一个模型 | pi 支持的任意服务商（见第 3 节） | 供执行者使用 |
 
-任务服务由 Node.js 直接运行，不用任何第三方包；观测台只需要 Python 标准库。跑测试需要 pytest，它随 `observatory` 与 `server` 两个包的 `[test]` 附加项（extra）一起安装。
+任务服务由 Node.js 直接运行，自己的第三方包有两个：docx（把选中的条目导出成 Word 文件时用）与 pdfjs-dist（为 0.4.3 的 PDF 材料准备，现在还没有用到）；校验图的 Mermaid 文本时用页面那边装的 mermaid。三样都随 `make install` 装好。观测台只需要 Python 标准库。跑测试需要 pytest，它随 `observatory` 这个包的 `[test]` 附加项（extra）一起安装。
 
 ## 2 安装
 
