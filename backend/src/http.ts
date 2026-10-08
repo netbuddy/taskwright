@@ -39,6 +39,8 @@ interface Request {
   params: Params;
   /** 请求来自哪个地址（套接字的对端地址）。 */
   remote?: string;
+  /** 对方在回答发出之前断开连接时中止；耗时的处理函数拿它提前收手。不经套接字直接调 dispatch 时没有。 */
+  signal?: AbortSignal;
 }
 interface Reply {
   status: number;
@@ -414,7 +416,7 @@ const handlers: Record<string, Handler> = {
   },
   knowledge: (service) => json(200, { ok: true, libraries: service.knowledgeOverview(), embedding: service.knowledgeEmbedding() }),
   embed_knowledge: (service, req) => json(200, service.embedKnowledge(bodyJson(req))),
-  search_knowledge: async (service, req) => json(200, await service.searchKnowledge(bodyJson(req))),
+  search_knowledge: async (service, req) => json(200, await service.searchKnowledge(bodyJson(req), req.signal)),
   create_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().create(bodyJson(req).name) }),
   rename_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().rename(req.params.lib, bodyJson(req).name) }),
   delete_library: (service, req) => json(200, service.removeLibrary(req.params.lib)),
@@ -620,7 +622,12 @@ export function makeServer(service: Service, options: ServerOptions = {}) {
     incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
     incoming.on("end", async () => {
       const body = Buffer.concat(chunks).subarray(0, length);
-      const reply = await dispatch(service, { method, path, query, headers: incoming.headers, body, remote: incoming.socket.remoteAddress ?? "" });
+      // 对方在回答发完之前断开：把这件事交给处理函数（查找知识库据此不再往下算）。
+      const gone = new AbortController();
+      res.once("close", () => {
+        if (!res.writableFinished) gone.abort();
+      });
+      const reply = await dispatch(service, { method, path, query, headers: incoming.headers, body, remote: incoming.socket.remoteAddress ?? "", signal: gone.signal });
       if ("stream" in reply) {
         await reply.stream(res).catch(() => res.destroy());
         return;
