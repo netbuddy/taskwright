@@ -100,6 +100,7 @@ interface Hit {
   library: string;
   library_name: string;
   name: string;
+  index: number;
   title: string | null;
   first_paragraph: number | null;
   last_paragraph: number | null;
@@ -293,6 +294,8 @@ export async function searchKnowledge(
     ok: true, ready: body.ready === true, query, limit, model, pending: Number(body.pending) || 0,
     mode: typeof body.mode === "string" ? body.mode : "hybrid", reason: typeof body.reason === "string" ? body.reason : null,
     uncovered_semantic: Array.isArray(body.uncovered_semantic) ? body.uncovered_semantic : [], uncovered: Array.isArray(body.uncovered) ? body.uncovered : [],
+    // 取结果之前考虑过的片段，原样留在结果里：评估用（agent/eval/knowledge）。
+    candidates: body.candidates && typeof body.candidates === "object" ? body.candidates : { semantic: [], keyword: [] },
   };
   const opening = openingText(query, body, selected.length);
   if (!hits.length) return { text: `${opening}\n${NOT_FOUND_TEXT}`, details: { ...base, hits: [], shown: 0, bytes: bytesOf(`${opening}\n${NOT_FOUND_TEXT}`), truncated_chars: null } };

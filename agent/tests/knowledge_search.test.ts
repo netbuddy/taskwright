@@ -88,7 +88,7 @@ function makeTask(libraries: string[] = ["general", "lib-a1"], lock: Dict | null
 /** 一个 Markdown 片段：原文里两条规定之间有一个空行。 */
 const MD_HIT = {
   score: 0.7136, score_kind: "semantic", rank_semantic: 1, rank_keyword: 2,
-  library: "general", library_name: "通用知识库", name: "借阅规范.md", kind: "standard", title: "借阅规范 / 逾期", block: 2,
+  library: "general", library_name: "通用知识库", name: "借阅规范.md", kind: "standard", index: 2, title: "借阅规范 / 逾期", block: 2,
   first_paragraph: null, last_paragraph: null, first_line: 5, last_line: 7, partial: false,
   text: "第 6 条 逾期每册每天罚款 0.5 元。\n第 7 条 逾期超过 60 天的，暂停借阅。", locator: "knowledge/general/借阅规范.md",
   body: "第 6 条 逾期每册每天罚款 0.5 元。\n\n第 7 条 逾期超过 60 天的，暂停借阅。", paragraphs: null, table: null, header: null, exact: true,
@@ -96,7 +96,7 @@ const MD_HIT = {
 /** 一个 Word 片段：两段正文加表格的两行，从表中间开始，所以带表头。 */
 const WORD_HIT = {
   score: 0.63, score_kind: "semantic", rank_semantic: 2, rank_keyword: null,
-  library: "lib-a1", library_name: "公司规范", name: "需求说明.docx", kind: "standard", title: "3.1.1 逾期罚款", block: 9,
+  library: "lib-a1", library_name: "公司规范", name: "需求说明.docx", kind: "standard", index: 9, title: "3.1.1 逾期罚款", block: 9,
   first_paragraph: 75, last_paragraph: 81, first_line: null, last_line: null, partial: false,
   text: "| 读者类型 | 罚款 |\n逾期罚款\n逾期每册每天罚款 0.2 元。\n| 学生 | 0.2 元 |\n| （同上） | 上限 |", locator: "knowledge/lib-a1/需求说明.docx",
   body: null,
@@ -138,8 +138,10 @@ const WORD_LINES = [
 ];
 const SECOND = "下面是最相关的 2 个片段。排在前面不等于就是你要找的规定：逐个看正文，对得上的才引用；一个片段里有多条规定时逐条看。";
 const found = (list: Dict[], extra: Dict = {}) => ({ body: {
-  ok: true, mode: "hybrid", reason: null, model: "svc/bge-m3", ready: true, pending: 0, libraries: 2, documents: 2, chunks: 37, uncovered_semantic: [], uncovered: [], hits: list, ...extra,
+  ok: true, mode: "hybrid", reason: null, model: "svc/bge-m3", ready: true, pending: 0, libraries: 2, documents: 2, chunks: 37, uncovered_semantic: [], uncovered: [], hits: list,
+  candidates: { semantic: [{ library: "general", name: "借阅规范.md", index: 2 }], keyword: [] }, ...extra,
 } });
+const CANDIDATES = found([]).body.candidates;
 const OPENING = "查找「图书超期不还怎样罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找。";
 
 test("任务服务的地址：先是本机回环地址上占用标记里的端口，再是标记里的主机名；没有标记、标记里没有端口时是空的", () => {
@@ -166,7 +168,7 @@ test("查到了：把要找的话、任务选用的知识库的编号与要几�
   // 结构化的那一份不带片段的文字与原文；另记这一次列了几个、一共多少字节。
   const brief = ({ text: _t, body: _b, paragraphs: _p, table: _tb, header: _h, ...rest }: Dict) => rest;
   assert.deepEqual(got.details, { ok: true, ready: true, query: "图书超期不还怎样罚款", limit: 3, model: "svc/bge-m3", pending: 0,
-    mode: "hybrid", reason: null, uncovered_semantic: [], uncovered: [], hits: [brief(MD_HIT), brief(WORD_HIT)],
+    mode: "hybrid", reason: null, uncovered_semantic: [], uncovered: [], candidates: CANDIDATES, hits: [brief(MD_HIT), brief(WORD_HIT)],
     shown: 2, bytes: Buffer.byteLength(got.text, "utf-8"), truncated_chars: null });
 });
 
@@ -251,7 +253,7 @@ test("开头的一句写明这一次是怎样找的：两路都做；只按字�
   const none = await searchKnowledge(makeTask(), root, { query: "罚款" });
   assert.equal(none.text, `查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里只按字面找（没有选嵌入模型）。\n${NOT_FOUND_TEXT}`);
   assert.equal(NOT_FOUND_TEXT, "没有找到相关的片段。换一种说法再查一次；换了说法仍然没有，才算知识库里没有。");
-  assert.deepEqual(none.details, { ok: true, ready: false, query: "罚款", limit: 3, model: null, pending: 2, mode: "keyword", reason: "not_selected", uncovered_semantic: [], uncovered: [], hits: [],
+  assert.deepEqual(none.details, { ok: true, ready: false, query: "罚款", limit: 3, model: null, pending: 2, mode: "keyword", reason: "not_selected", uncovered_semantic: [], uncovered: [], candidates: CANDIDATES, hits: [],
     shown: 0, bytes: Buffer.byteLength(none.text, "utf-8"), truncated_chars: null });
   // 文档没有都换算好不再是「不能查」：照样把结果给助手，开头写明哪一份只按字面找了。
   reply = () => found([MD_HIT], { mode: "hybrid_partial", ready: false, pending: 1, uncovered_semantic: [doc("需求说明.docx")] });

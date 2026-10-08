@@ -49,7 +49,7 @@ function fresh(): Service {
 const idle = (service: Service) => within("后台换算收住", 20_000, service.embedder!.idle());
 const search = (service: Service, body: Dict) => call(service, "POST", "/api/v1/knowledge/search", body);
 
-const KEYS = ["ok", "mode", "reason", "model", "ready", "pending", "libraries", "documents", "chunks", "uncovered_semantic", "uncovered", "hits", "timing"];
+const KEYS = ["ok", "mode", "reason", "model", "ready", "pending", "libraries", "documents", "chunks", "uncovered_semantic", "uncovered", "hits", "candidates", "timing"];
 const titles = (json: Dict) => json.hits.map((h: Dict) => h.title);
 const ranks = (json: Dict) => json.hits.map((h: Dict) => [h.title, h.rank_semantic, h.rank_keyword]);
 
@@ -73,7 +73,7 @@ test("两路都做：每个片段带它在两路里各排第几、知识库、�
     [["借阅规范 / 逾期", 1, 1, 1], ["借阅规范 / 丢失", 0.714, 2, 2], ["借阅规范", 0.1961, 3, null]]);
   assert.deepEqual(got.json.hits[0], {
     score: 1, score_kind: "semantic", rank_semantic: 1, rank_keyword: 1,
-    library: GENERAL, library_name: "通用知识库", name: "借阅规范.md", kind: "standard", title: "借阅规范 / 逾期", block: 2,
+    library: GENERAL, library_name: "通用知识库", name: "借阅规范.md", kind: "standard", index: 2, title: "借阅规范 / 逾期", block: 2,
     first_paragraph: null, last_paragraph: null, first_line: 5, last_line: 5, partial: false, text: "逾期每册每天罚款 0.5 元。", locator: "knowledge/general/借阅规范.md",
     body: "逾期每册每天罚款 0.5 元。", paragraphs: null, table: null, header: null, exact: true,
   });
@@ -102,7 +102,11 @@ test("取哪几个：按意思的前 limit 名是候选，按字面的前 2 名�
   assert.equal(five.mode, "hybrid");
   assert.deepEqual(ranks(five), [["一", 1, 4], ["二", 2, 3], ["三", 3, 5], ["五", 5, 1], ["六", 6, 2]]);
   // limit 1：只有按意思第 1 名，按字面第 1 名不进来。
-  assert.deepEqual(titles(await at(1)), ["一"]);
+  const one = await at(1);
+  assert.deepEqual(titles(one), ["一"]);
+  // 响应另记取结果之前考虑过的片段：按意思的前 limit 名与按字面的前 2 名。「五」进了候选（按字面第 1 名）却没有进结果。
+  assert.deepEqual(one.candidates, { semantic: [{ library: GENERAL, name: "规定.md", index: 1 }], keyword: [{ library: GENERAL, name: "规定.md", index: 5 }, { library: GENERAL, name: "规定.md", index: 6 }] });
+  assert.deepEqual(five.candidates.semantic.map((c: Dict) => c.index), [1, 2, 3, 4, 5]);
   // limit 2：按字面第 1 名替换按意思第 2 名；按字面第 2 名没有位置可换（剩下的只有按意思第 1 名）。
   assert.deepEqual(titles(await at(2)), ["一", "五"]);
   // limit 3：按字面前 2 名替换按意思的第 3、第 2 名；被替换进来的按字面名次排在最后。

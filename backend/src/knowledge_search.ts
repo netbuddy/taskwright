@@ -66,6 +66,8 @@ export interface SearchHit extends Passage {
   /** 文档名与种类。 */
   name: string;
   kind: Kind;
+  /** 它是这份文档的第几个片段（从 1 起）。 */
+  index: number;
   /** 片段的标题（Word 文档是所在块的标题，Markdown 是各级标题连起来）；没有是 null。 */
   title: string | null;
   /** 所属结构单位的编号（knowledge_chunks.ts）。 */
@@ -89,6 +91,13 @@ export interface DocumentRef {
   library: string;
   library_name: string;
   name: string;
+}
+
+/** 一个片段是哪份文档的第几个。 */
+export interface ChunkRef {
+  library: string;
+  name: string;
+  index: number;
 }
 
 /** 各阶段的耗时，毫秒。 */
@@ -121,6 +130,11 @@ export interface SearchResult {
   /** 这一次没有查到的文档与原因。 */
   uncovered: (DocumentRef & { reason: "source_unreadable" })[];
   hits: SearchHit[];
+  /**
+   * 取结果之前考虑过的片段：按意思一路的前 limit 名与按字面一路的前 KEYWORD_KEEP 名。评估用它分清「没有进候选」与
+   * 「进了候选却没有进结果」（agent/eval/knowledge）。
+   */
+  candidates: { semantic: ChunkRef[]; keyword: ChunkRef[] };
   timing: SearchTiming;
 }
 
@@ -306,16 +320,19 @@ export async function searchKnowledge(
     return [{
       score: Math.round((near ?? keywordScore.get(i) ?? 0) * 10000) / 10000, score_kind: near !== null ? "semantic" : "keyword",
       rank_semantic: semanticRank.get(i) ?? null, rank_keyword: keywordRank.get(i) ?? null,
-      library: library.id, library_name: library.name, name: row.name, kind: row.kind, title: chunk.heading, block: chunk.block,
+      library: library.id, library_name: library.name, name: row.name, kind: row.kind, index: chunk.index, title: chunk.heading, block: chunk.block,
       first_paragraph: chunk.first_paragraph, last_paragraph: chunk.last_paragraph, first_line: chunk.first_line, last_line: chunk.last_line,
       partial: chunk.partial === true, text: chunk.text, locator: knowledgeLocator(library.id, row.name),
       ...passageOf(row.name, chunk, source),
     }];
   });
+  const refs = (ranking: { i: number }[], n: number): ChunkRef[] =>
+    ranking.slice(0, n).map(({ i }) => ({ library: entries[i].library.id, name: entries[i].row.name, index: entries[i].chunk.index }));
   const mode: SearchMode = reason !== null ? "keyword" : uncoveredSemantic.length > 0 ? "hybrid_partial" : "hybrid";
   for (const key of Object.keys(timing) as (keyof SearchTiming)[]) timing[key] = Math.round(timing[key] * 10) / 10;
   return {
     ok: true, mode, reason, model, ready: overview.ready, pending: overview.pending, libraries: libraries.length, documents, chunks: entries.length,
-    uncovered_semantic: mode === "keyword" ? [] : uncoveredSemantic, uncovered, hits, timing,
+    uncovered_semantic: mode === "keyword" ? [] : uncoveredSemantic, uncovered, hits,
+    candidates: { semantic: refs(semantic, request.limit), keyword: refs(keyword, KEYWORD_KEEP) }, timing,
   };
 }

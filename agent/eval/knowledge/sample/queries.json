@@ -1,0 +1,10 @@
+{
+ "说明": "离线比较的样例查询：每句查询期望命中的规定在哪份文档、规定里逐字的一句。语料是同目录 knowledge/ 下的两份文档。",
+ "queries": [
+  {"query": "图书超期不还怎样罚款、上限是多少", "expect": [{"document": "借阅规范.md", "sentence": "第 6 条 逾期每册每天罚款 0.5 元"}]},
+  {"query": "第12条", "expect": [{"document": "借阅规范.md", "sentence": "第 12 条 图书丢失的，按该书定价的三倍赔偿。"}]},
+  {"query": "一张借书证一次能借几本书、能借多久", "expect": [{"document": "借阅规范.md", "sentence": "每证最多同时借 5 册"}, {"document": "借阅规范.md", "sentence": "借期为 30 天"}]},
+  {"query": "想借的书都被借走了怎么办", "expect": [{"document": "读者常见问题.txt", "sentence": "可以排队等。"}, {"document": "借阅规范.md", "sentence": "全部借出的图书可以预约"}]},
+  {"query": "馆际互借怎样办理", "expect": []}
+ ]
+}
