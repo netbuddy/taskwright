@@ -183,6 +183,8 @@ export const api = {
   materialContent: (taskId: string, path: string) =>
     request<{ path: string; text: string }>("GET", `${task(taskId)}/materials/content?path=${encodeURIComponent(path)}`),
   materialRaw: (taskId: string, path: string) => rawBytes(`${task(taskId)}/materials/raw?path=${encodeURIComponent(path)}`),
+  /** 材料文件原始字节的地址（给 <iframe> 这类要一个真实地址的地方用；取字节用 materialRaw）。 */
+  materialRawUrl: (taskId: string, path: string) => `${BASE}${task(taskId)}/materials/raw?path=${encodeURIComponent(path)}`,
   earlierConversation: (taskId: string, sessionId: string, before: string) =>
     request<Snapshot["conversation"]>(
       "GET",

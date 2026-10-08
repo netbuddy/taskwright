@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
+import { api } from "../../api/client";
 import type { Item } from "../../api/types";
 import { parsePdfLocator, pdfBlockBox, type PdfLocationFile } from "../../../../agent/src/lib/pdf_locations";
 import { type PdfUnit, placePdfExcerpt, pdfUnitsWith } from "../../../../agent/src/lib/pdf_source";
@@ -26,8 +27,12 @@ import {
 import { usePdfBytes, usePdfLocations, usePdfUnits } from "../../state/pdfStore";
 import type { LocateRequest } from "./MaterialPane";
 
-/** 文件读到了、但 pdf.js 打不开（文件坏了、设了口令）时显示的说明。错误原文不给用户看，写进浏览器的控制台。 */
-export const PDF_UNRENDERABLE = "这份 PDF 在这里显示不出来，但文件已经上传好了：助手仍然能读到它的内容，条目的来源仍然有效，不需要重新上传。";
+/**
+ * 退路：文件读到了、但 pdf.js 打不开它，或者有一页画不出来（多半是浏览器太旧）时，改用 <iframe> 让浏览器自带的 PDF 查看器显示，
+ * 这时顶上写这一句。点来源、点目录只能跳到那一页（地址后面加 #page=N），框不出块、标不出摘录、被引用的句子也不画底线。
+ * 出错的原文不给用户看，写进浏览器的控制台。
+ */
+export const PDF_FALLBACK_NOTE = "这个浏览器里只能按页显示，不能标出摘录。";
 /** 没有读出文字的页顶上的提示。 */
 export const NO_TEXT_PAGE = "这一页没有可读的文字（多半是扫描的图片），助手读不到这一页的内容，条目也不能引用它。";
 /** 页面两边各留的空（像素）：「适应宽度」时页面比材料区窄这么多的两倍。 */
@@ -113,7 +118,10 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
   const host = paperRef ?? ownHost;
   const pagesEl = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
-  const [failed, setFailed] = useState(false);
+  /** 走退路了没有（见 PDF_FALLBACK_NOTE）。 */
+  const [fallback, setFallback] = useState(false);
+  /** 退路里现在跳到第几页；nonce 每跳一次加一，同一页再点一次也重新跳。 */
+  const [fallbackAt, setFallbackAt] = useState({ page: 1, nonce: 0 });
   const [first, setFirst] = useState<PageSize | null>(null);
   /** 用户定的比例；null 是「适应宽度」，跟着材料区的宽度走。 */
   const [chosen, setChosen] = useState<number | null>(null);
@@ -136,7 +144,8 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
   // 打开文件：原始字节到了就交给 pdf.js；换文件、卸下时关掉上一份。
   useEffect(() => {
     setDoc(null);
-    setFailed(false);
+    setFallback(false);
+    setFallbackAt({ page: 1, nonce: 0 });
     setFirst(null);
     setTarget(null);
     if (bytes?.status !== "ready" || !bytes.bytes) return;
@@ -153,8 +162,8 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
       setDoc(got.doc);
     }).catch((error: unknown) => {
       if (!live) return;
-      console.error(`PDF 文件 ${path} 显示不出来，pdf.js 的报错：`, error);
-      setFailed(true);
+      console.error(`PDF 文件 ${path} 显示不出来，改用浏览器自带的查看器。pdf.js 的报错：`, error);
+      setFallback(true);
     });
     return () => {
       live = false;
@@ -165,7 +174,7 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
     };
   }, [bytes?.status, bytes?.bytes, path]);
 
-  const unavailable = bytes?.status === "error" || failed;
+  const unavailable = bytes?.status === "error";
   useEffect(() => { onUnavailable?.(unavailable); }, [unavailable]);
 
   const count = doc?.numPages ?? 0;
@@ -198,7 +207,7 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
 
   // 画看得见的页，收掉滚走的与比例不对的。
   useEffect(() => {
-    if (!doc || !visible) return;
+    if (!doc || !visible || fallback) return;
     const wanted = (n: number) => n >= visible.first && n <= visible.last;
     for (const [n, one] of drawn.current) {
       if (!wanted(n) || one.scale !== scale) { clearPage(n); drawn.current.delete(n); setTick((t) => t + 1); }
@@ -211,7 +220,7 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
       if (drawn.current.has(n) || drawing.current.has(n)) continue;
       void drawPage(doc, n, scale);
     }
-  }, [doc, scale, visible?.first, visible?.last]);
+  }, [doc, scale, visible?.first, visible?.last, fallback]);
 
   const slot = (n: number) => pagesEl.current?.querySelector<HTMLElement>(`[data-pdf-page="${n}"] .pdf-drawn`) ?? null;
   function clearPage(n: number) { slot(n)?.replaceChildren(); }
@@ -239,11 +248,10 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
       holder.style.setProperty("--scale-factor", String(at));
       holder.style.setProperty("--total-scale-factor", String(at));
       const context = canvas.getContext("2d");
-      if (context) {
-        const task = page.render({ canvas, canvasContext: context, viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : undefined });
-        stop = () => { cancelled = true; task.cancel(); };
-        await task.promise;
-      }
+      if (!context) throw new Error("这个浏览器给不出画布的绘图环境。");
+      const task = page.render({ canvas, canvasContext: context, viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : undefined });
+      stop = () => { cancelled = true; task.cancel(); };
+      await task.promise;
       const content = await page.getTextContent();
       if (cancelled) return;
       const layer = new lib.TextLayer({ textContentSource: content, container: layerEl, viewport });
@@ -261,7 +269,10 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
       setTick((t) => t + 1);
     } catch (error) {
       // 滚走时取消的那一次不算出错。
-      if (!cancelled) console.error(`PDF 文件 ${path} 的第 ${n} 页没有画出来：`, error);
+      if (!cancelled) {
+        console.error(`PDF 文件 ${path} 的第 ${n} 页没有画出来，改用浏览器自带的查看器：`, error);
+        setFallback(true);
+      }
     } finally {
       // 只收自己登记的那一项：这一次被取消之后同一页可能又开始画了一次，那是另一项。
       if (drawing.current.get(n) === mine) drawing.current.delete(n);
@@ -282,7 +293,7 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
 
   // 收到定位请求：算出要去哪一页、框哪几块、标哪几截，先滚到附近。
   useEffect(() => {
-    if (!locate || !doc) return;
+    if (!locate || !doc || fallback) return;
     // 投影还在读时先等一等：算摘录落在哪里要用它；读不到（null）时照样能框出那一块。
     if (projected?.status === "loading") return;
     const loc = parsePdfLocator(locate.locator);
@@ -315,9 +326,23 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
     return () => clearTimeout(timer);
   }, [locate?.nonce, doc, projected?.status]);
 
+  // 退路里点来源、点目录：只跳到那一页。出处没有写页时按摘录找它在哪一页，找不到就不动。
+  useEffect(() => {
+    if (!fallback || !locate) return;
+    const page = parsePdfLocator(locate.locator)?.page ?? (units ? pdfUnitsWith(units, locate.excerpt)[0]?.page : null) ?? null;
+    onNote?.(null);
+    if (page !== null && page >= 1) setFallbackAt((old) => ({ page, nonce: old.nonce + 1 }));
+  }, [fallback, locate?.nonce]);
+  useEffect(() => {
+    if (!fallback || !jump || jump.page < 1) return;
+    setFallbackAt((old) => ({ page: jump.page, nonce: old.nonce + 1 }));
+  }, [fallback, jump?.nonce]);
+  // 退路里看不到浏览器的查看器翻到了第几页，只知道最后一次跳到了哪一页。
+  useEffect(() => { if (fallback) onPage?.(fallbackAt.page, locations?.pages.length ?? 0); }, [fallback, fallbackAt.page, locations?.pages.length]);
+
   // 目录里点了一项：滚到那一页的开头。
   useEffect(() => {
-    if (!jump || !doc) return;
+    if (!jump || !doc || fallback) return;
     const pane = scroller();
     if (!pane || jump.page < 1 || jump.page > doc.numPages) return;
     pane.scrollTop = Math.max(0, pagesOffset(pane) + layout.tops[jump.page - 1]);
@@ -380,7 +405,17 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
   }, [tick, target]);
 
   if (bytes?.status === "error") return <div className="busy-note" data-testid="pdf-error">{bytes.error}</div>;
-  if (failed) return <div className="busy-note" data-testid="pdf-unrenderable">{PDF_UNRENDERABLE}</div>;
+  if (fallback) {
+    // 用真实的接口地址，不用 blob 地址（有的浏览器自带的查看器不显示 blob 地址）。每跳一次换一个 key 重新装一遍：
+    // 只改地址里 # 后面的部分，有的查看器不跟着跳。
+    return (
+      <div className="pdf-paper pdf-fallback" ref={host} data-testid="pdf-fallback">
+        <div className="pdf-fallback-note" data-testid="pdf-fallback-note">{PDF_FALLBACK_NOTE}</div>
+        <iframe key={fallbackAt.nonce} title={`PDF 材料 ${path.split("/").pop() ?? path}`} data-testid="pdf-fallback-frame"
+          src={`${api.materialRawUrl(taskId, path)}#page=${fallbackAt.page}`} />
+      </div>
+    );
+  }
   if (!doc) return <div className="empty" data-testid="pdf-loading">正在读这份 PDF。</div>;
 
   const zoom = (next: number) => setChosen(clampScale(next));

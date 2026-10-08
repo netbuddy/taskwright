@@ -9,7 +9,7 @@ import { useRef } from "react";
 import { api, ApiError } from "../api/client";
 import type { Item } from "../api/types";
 import type { LocateRequest } from "../components/work/MaterialPane";
-import { NO_TEXT_PAGE, PDF_NOTES, PDF_UNRENDERABLE, PdfPaper, pdfCitations, pdfHit } from "../components/work/PdfPaper";
+import { NO_TEXT_PAGE, PDF_FALLBACK_NOTE, PDF_NOTES, PdfPaper, pdfCitations, pdfHit } from "../components/work/PdfPaper";
 import * as pdf from "../model/pdf";
 import { PAGE_GAP } from "../model/pdfView";
 import { resetPdfStore } from "../state/pdfStore";
@@ -42,6 +42,8 @@ const PROJECTION = ["<!--", "由 借阅管理办法.pdf 生成。", "-->", "", "
 const rendered = vi.fn();
 /** 为 true 时画页不会自己画完（模拟画得慢），只有被取消时才结束。 */
 let slowRender = false;
+/** 为 true 时每一页都画不出来（模拟浏览器太旧，pdf.js 画到一半报错）。 */
+let brokenRender = false;
 const closed = vi.fn();
 class FakeTextLayer {
   textDivs: HTMLElement[] = [];
@@ -69,7 +71,8 @@ const fakeDoc = (pages = 5) => ({
     render: (options: { viewport: { scale: number } }) => {
       rendered(n, options.viewport.scale);
       let fail: (reason: Error) => void = () => {};
-      const promise = slowRender ? new Promise<void>((_ok, no) => { fail = no; }) : Promise.resolve();
+      const promise = brokenRender ? Promise.reject(new TypeError("getOrInsertComputed is not a function"))
+        : slowRender ? new Promise<void>((_ok, no) => { fail = no; }) : Promise.resolve();
       return { promise, cancel: () => fail(new Error("Rendering cancelled")) };
     },
     getTextContent: async () => ({ items: (TEXT[n] ?? []).map(([str, x, y]) => ({ str, transform: [1, 0, 0, 1, x, y] })) }),
@@ -124,7 +127,7 @@ beforeEach(() => {
     ({ text: path.endsWith(".locations.json") ? JSON.stringify(TABLE) : PROJECTION }) as Awaited<ReturnType<typeof api.materialContent>>);
   pdfHit.fadeMs = 60;
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); rendered.mockClear(); closed.mockClear(); resetPdfStore(); slowRender = false; });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); rendered.mockClear(); closed.mockClear(); resetPdfStore(); slowRender = false; brokenRender = false; });
 
 describe("只画看得见的页", () => {
   it("每一页都先留同样大小的位置，一打开只画看得见的页与它下面一页；滚过去才画别的，滚走的收掉", async () => {
@@ -332,21 +335,91 @@ describe("被引用的句子与没有文字的页", () => {
 });
 
 describe("显示不出来", () => {
-  it("读不到文件：显示任务服务给的说明；读到了但打不开：显示一句固定的说明，原因写进控制台；两种都报告显示不出来", async () => {
+  it("读不到文件：显示任务服务给的说明，报告显示不出来，不走退路", async () => {
     vi.mocked(api.materialRaw).mockRejectedValueOnce(new ApiError("not_found", "材料目录里没有这份文件。", 404));
     const onUnavailable = vi.fn();
-    const first = render(<Host onUnavailable={onUnavailable} />);
+    render(<Host onUnavailable={onUnavailable} />);
     expect((await screen.findByTestId("pdf-error")).textContent).toBe("材料目录里没有这份文件。");
     expect(onUnavailable).toHaveBeenLastCalledWith(true);
-    first.unmount();
-    resetPdfStore();
+    expect(screen.queryByTestId("pdf-fallback")).toBeNull();
+  });
+});
+
+describe("退路：改用浏览器自带的查看器", () => {
+  const RAW = `/api/v1/tasks/TASK-1/materials/raw?path=${encodeURIComponent(PATH)}`;
+  const frame = () => screen.getByTestId("pdf-fallback-frame") as HTMLIFrameElement;
+
+  it("读到了但 pdf.js 打不开：用 iframe 指向这份文件的真实地址，顶上写明只能按页显示；原因写进控制台，不给用户看", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(pdf.openPdf).mockRejectedValueOnce(new Error("No password given"));
+    const onUnavailable = vi.fn();
     render(<Host onUnavailable={onUnavailable} />);
     expect(screen.getByTestId("pdf-loading").textContent).toBe("正在读这份 PDF。");
-    expect((await screen.findByTestId("pdf-unrenderable")).textContent).toBe(PDF_UNRENDERABLE);
-    expect(screen.getByTestId("pdf-unrenderable").textContent).not.toContain("password");
+    expect((await screen.findByTestId("pdf-fallback-note")).textContent).toBe(PDF_FALLBACK_NOTE);
+    expect(PDF_FALLBACK_NOTE).toBe("这个浏览器里只能按页显示，不能标出摘录。");
+    // 真实的接口地址（不是 blob 地址），一开始在第 1 页。
+    expect(frame().getAttribute("src")).toBe(`${RAW}#page=1`);
+    expect(screen.getByTestId("pdf-fallback").textContent).not.toContain("password");
     expect(logged).toHaveBeenCalledTimes(1);
-    expect(onUnavailable).toHaveBeenLastCalledWith(true);
+    // 文件本身没有问题，不算「显示不出来」：材料区的说明与目录都留着。
+    expect(onUnavailable).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByTestId("pdf-pages")).toBeNull();
+  });
+
+  it("有一页画不出来（浏览器太旧）：整份改走退路，不再接着画", async () => {
+    brokenRender = true;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<Host />);
+    expect((await screen.findByTestId("pdf-fallback-note")).textContent).toBe(PDF_FALLBACK_NOTE);
+    expect(frame().getAttribute("src")).toBe(`${RAW}#page=1`);
+    expect(logged).toHaveBeenCalled();
+    const calls = rendered.mock.calls.length;
+    await new Promise((ok) => setTimeout(ok, 30));
+    expect(rendered.mock.calls.length).toBe(calls);
+  });
+
+  it("浏览器给不出画布的绘图环境：同样走退路，不留一片空白", async () => {
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<Host />);
+    expect((await screen.findByTestId("pdf-fallback-note")).textContent).toBe(PDF_FALLBACK_NOTE);
+  });
+
+  it("退路里点来源、点目录只跳到那一页：地址后面换成 #page=N，查看器重新装一遍；不框块、不写找不到之类的话", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(pdf.openPdf).mockRejectedValue(new Error("打不开"));
+    const onNote = vi.fn();
+    const onPage = vi.fn();
+    const view = render(<Host onNote={onNote} onPage={onPage} />);
+    await screen.findByTestId("pdf-fallback");
+    const first = frame();
+    view.rerender(<Host onNote={onNote} onPage={onPage} locate={locateAt(`${PATH}#p3-1`, "逾期的每本每天罚款一角", 1)} />);
+    await waitFor(() => expect(frame().getAttribute("src")).toBe(`${RAW}#page=3`));
+    expect(frame()).not.toBe(first);
+    expect(onNote).toHaveBeenLastCalledWith(null);
+    expect(document.querySelector(".pdf-blockbox")).toBeNull();
+    await waitFor(() => expect(onPage).toHaveBeenLastCalledWith(3, 5));
+    // 同一页再点一次：也重新装一遍（查看器里可能已经翻到别处了）。
+    const third = frame();
+    view.rerender(<Host onNote={onNote} onPage={onPage} locate={locateAt(`${PATH}#p3-1`, "逾期的每本每天罚款一角", 2)} />);
+    await waitFor(() => expect(frame()).not.toBe(third));
+    expect(frame().getAttribute("src")).toBe(`${RAW}#page=3`);
+    // 出处没有写页：按摘录找它在哪一页。
+    view.rerender(<Host onNote={onNote} onPage={onPage} locate={locateAt(PATH, "预约的图书保留 3 天", 3)} />);
+    await waitFor(() => expect(frame().getAttribute("src")).toBe(`${RAW}#page=5`));
+    // 目录里点一项。
+    view.rerender(<Host onNote={onNote} onPage={onPage} jump={{ page: 2, nonce: 1 }} />);
+    await waitFor(() => expect(frame().getAttribute("src")).toBe(`${RAW}#page=2`));
+    await waitFor(() => expect(onPage).toHaveBeenLastCalledWith(2, 5));
+  });
+
+  it("换一份文件：重新先用 pdf.js 试", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(pdf.openPdf).mockRejectedValueOnce(new Error("打不开"));
+    const view = render(<Host />);
+    await screen.findByTestId("pdf-fallback");
+    view.rerender(<Host path="inputs/另一份.pdf" />);
+    await screen.findByTestId("pdf-pages");
+    expect(screen.queryByTestId("pdf-fallback")).toBeNull();
   });
 });

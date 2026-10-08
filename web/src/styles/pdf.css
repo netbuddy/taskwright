@@ -53,3 +53,9 @@
 .tp-mtable td.nm .tp-mnote { margin-left: .5rem; color: var(--mut); font-size: .857rem; white-space: nowrap; }
 .ant-modal .doc-b.pdf-modal-b { height: min(44rem, 72vh); overflow-y: auto; }
 .app .sw-subh .chip.warn { color: var(--amber); border-color: var(--amber-line); background: var(--amber-bg); }
+
+/* 退路：pdf.js 打不开或画不出来时，用浏览器自带的查看器（iframe）显示，占满材料区，由它自己滚动。 */
+.app .doc-b:has(> .pdf-fallback), .ant-modal .doc-b:has(> .pdf-fallback) { display: flex; flex-direction: column; overflow: hidden; }
+.pdf-fallback { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pdf-fallback-note { flex: none; padding: .35rem .8rem; font-size: .857rem; color: var(--amber, #8a5a00); background: var(--amber-bg, #fff7e6); border-bottom: 1px solid var(--line); }
+.pdf-fallback iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--paper); }
