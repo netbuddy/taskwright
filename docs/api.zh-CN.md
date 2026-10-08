@@ -162,6 +162,7 @@ data: {
 | `GET …/knowledge`、`POST …/knowledge` `{libraries}` | 这个任务选用的知识库，以及改选用 | 见第 11 节 |
 | `GET …/conversation?session=…&before={message_id}&limit=100` | 更早的对话 | 形状与第 4.1 节 `conversation` 相同 |
 | `POST …/documents/preview` 与 `…/download` `{"revision_no": N, "items": [编号…], "format": "markdown"}` | 按某一次修订（缺省为最新）渲染整份交付物，也可以只列出其中几个条目 | 预览：`{ok, text}`；下载：文件本身。文档写明它按哪次修订生成，并在每个条目上标出它的内容来自哪次修订、在那次修订上有没有确认与评审；确认写明依据：已读、用户修改或明确确认。修订号超过最新修订，或列出的条目在那次修订时不在交付物里，返回 `bad_request` |
+| `POST …/documents/download` `{"format": "docx", "items": [编号…], "with_sources": true}` | 把列出的条目导出成一份 Word 文件（.docx） | 文件本身；文件名「任务名-条目-年-月-日.docx」写在 `Content-Disposition` 里：带中文的写在 `filename*`（UTF-8），旁边另有一个只有英文数字的 `filename`。每个条目导出的是它最新的修订，已删除的条目不导出。条目按集合分段，集合照任务定义里的先后，集合名作标题 1；每个条目一行标题 2（编号加名称），接一张两列的表，集合声明的字段每个一行：文本列表每项一段、带序号，别的多值用顿号连起来，空字段写「（空）」。`with_sources`（缺省 `true`）为真时表的最后一行是「来源」，一条来源一段，写成「种类 · 出处：摘录」，条目没有来源时写「（无）」。`items` 必填、不能是空的；列了交付物里从来没有过的编号、列出的条目都已删除、写了 `revision_no`（导出的总是最新的修订），或者对 `…/preview` 用这个格式，都返回 `bad_request` |
 
 ## 5 对话
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Export to Word
+
+- **导出 Word** ("export to Word") at the top of the items area, next to **生成文档** ("generate document"), exports the ticked items as one Word file (.docx). The ticks are the boxes at the start of the rows in the item list; they are kept across the collection tabs, the button shows how many items are ticked in all tabs and is grey when none is. Ticking and exporting change nothing, so the boxes can now also be ticked while the assistant is working and after the task is completed; **把选中的这几条标为已读** ("mark the chosen ones as read") is still unavailable then. Collections shown as cards, such as the issues, have no tick boxes and cannot be exported this way.
+- The dialog says that the latest version of each chosen item is exported and has one option, **带上来源** ("include the sources"), ticked by default. Deleted items are left out.
+- The file groups the items by collection, the collection name as Heading 1. Each item is a Heading 2 line with its id and title and a two-column table with one row per field: the entries of a text list each as a numbered paragraph, other multiple values joined with 、, an empty field as （空）. With the sources included, the last row lists them, one per paragraph, as kind · locator：excerpt, with the same wording of kinds and locators as the generated document. Chinese text is set in 宋体 (SimSun), Latin text and digits in Calibri; the tables use Word's built-in Table Grid style; the page margins are Word's defaults. The file is named 任务名-条目-YYYY-MM-DD.docx ("task name-items-date").
+- The file is made by the task service: `POST …/documents/download` accepts `"format": "docx"` with `items` (required) and `with_sources` (default `true`), and names the file in `Content-Disposition`. This format cannot be previewed and takes no `revision_no`.
+- The backend has a second dependency, the [docx](https://github.com/dolanmiu/docx) package 9.9.0 (MIT), loaded on the first export. The desktop packages carry it as one bundled file in `backend/vendor/docx/`, with the licence files of docx and of the packages built into it.
+
 ## [0.4.1] - 2026-10-08
 
 0.4.1 adds a knowledge base: reference documents such as standards and glossaries are kept outside any task, a task chooses the libraries it uses, and the assistant searches them by meaning and by keyword and cites what it finds. Model services and the models in use are set up on a settings page instead of in files. The task page is rebuilt as an overview. The assistant's program is now pi 1.0.4, and it no longer goes to the network by itself.
