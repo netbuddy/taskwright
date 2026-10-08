@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.2] - 2026-10-XX
+## [0.4.2] - 2026-10-08
 
 0.4.2 lets the assistant draw diagrams and lets you take chosen items out as a Word file. A source now says which element of the task an item rests on: an item can cite any other item, and a basis that was changed or deleted afterwards is marked. Diagrams are a second kind of task element beside items, with their own tab in the work view.
 
