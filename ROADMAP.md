@@ -26,25 +26,30 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [x] Review tab laid out by what needs your attention; the reviewer sees the task's other items; unverified review rules are off by default
 - [x] Items cite only original passages; your own edits add no source
 
-## 0.4.1 Knowledge base, retrieval and model configuration
+## 0.4.1 Knowledge base, search and model configuration
 
-- [ ] Knowledge base: libraries and documents outside any task; a task selects the libraries it uses; the assistant cites them as its basis
-- [ ] Semantic search over materials and the knowledge base (vector retrieval), and lexical search in the knowledge base
-- [ ] Configure model services in the interface: local services (ollama, llama.cpp, vLLM) and API-key services, for both the language model and the embedding model; no network access at startup by default
-- [ ] Delete and replace materials
+- [x] Knowledge base: libraries of reference documents outside any task; a task chooses the libraries it uses; the assistant looks rules up in them and cites them as sources
+- [x] Knowledge base search by meaning (with an embedding model) and by keyword at once, falling back to keyword only without an embedding model; what is found is the verbatim source text, which the assistant cites directly
+- [x] Word documents in the knowledge base split into chunks along their Markdown text, with table rows kept whole
+- [x] Model services set up on a settings page: local services (ollama, llama.cpp, vLLM), API-key services and the Codex subscription, each providing language models or embedding models; both models can be tested
+- [x] The assistant's program is pi 1.0.4, packaged from a lock file kept in the repository; no network access at startup
+- [x] A turn in which the assistant keeps being refused stops after five refusals in a row
+- [x] Delete a material that has not entered the conversation
 
 ## 0.4.2 Diagrams and Word export
 
-- [ ] Diagrams tab in the work view: the assistant draws UML diagrams in Mermaid from the conversation (use case, class, sequence, activity and state diagrams); each diagram is an item with its own revisions and related items; preview in the page, export as PNG or SVG
+- [ ] Diagrams tab in the work view: the assistant draws UML diagrams in Mermaid from the conversation (use case, class, sequence, activity and state diagrams; a use case diagram is written as a flowchart); each diagram is an item with its own revisions and related items; preview in the page, export as PNG
 - [ ] Export chosen items to Word: tick items in the list and download a .docx in which each item is a table, to paste into your own specification
 
 ## 0.4.3 PDF
 
 - [ ] Word materials shown as PDF, so that pages match what Word shows
-- [ ] PDF materials
+- [ ] PDF materials: parsing and a Markdown text for the assistant (the groundwork is on a branch)
+- [ ] Replace a material
 
 ## 0.5 Several users
 
+- [ ] Search of materials by meaning
 - [ ] Authentication and multiple users
 - [ ] Stop a run in progress from the interface
 - [ ] Abandon a task
