@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generated documents and the Word export write a source that cites an item as the collection name, the item id and the excerpt, so documents of existing tasks read as before.
 - The observatory and the simulation judge read sources under the current kind names; the simulation summary key `执行者补充累计` is now `助手补充累计` (old result files are still read).
 
+### Diagrams
+
+- The assistant can draw diagrams when you ask for one, for example "把这几个用例画成用例图" ("draw these use cases as a use case diagram"). Five kinds: use case, class, state, sequence and flowchart, written as Mermaid text. The page for looking at them comes with the next step of this release; until then a diagram shows up in the conversation as a step such as **保存了图 D-001（用例图：读者用例）** and in the task data.
+- A diagram is a second kind of task element beside items: it has an id (`D-001`), its own revisions, a note and sources, is not reviewed and does not count towards the completion conditions. Its revision numbers are apart from the task's.
+- Before a diagram is saved the task service checks the Mermaid text. A text with a syntax error is not saved; the assistant is told the line and corrects it. After three failed checks in a row it stops and tells you. If the check itself cannot be made, nothing is saved and the assistant says so.
+- When a node stands for an item, the assistant writes the item id into the node's text and cites the item as a source of the diagram. When that item is changed later, the diagram's source is marked **依据已变** ("the basis has changed"), and the item's **被谁依据** ("cited by") line lists the diagram.
+- New tool for the assistant: `save_diagram` (twelve tools in all). `get_item` also shows a diagram when given its id, and `get_task_status` lists the diagrams of the task.
+- Interface: `GET …/diagrams`, `GET …/diagrams/{diagram_id}` (with the sources and the items drawn in it), `POST …/diagrams/validate`, `diagrams` in the task data and the event `diagram_changed`.
+- A new task cannot declare a collection whose id prefix is the single letter `D`. Existing tasks are not affected.
+- The observatory reads diagrams (`dbshow` lists them) and `check_db` has an eleventh check for them.
+
 ### Export to Word
 
 - **导出 Word** ("export to Word") at the top of the items area, next to **生成文档** ("generate document"), exports the ticked items as one Word file (.docx). The ticks are the boxes at the start of the rows in the item list; they are kept across the collection tabs, the button shows how many items are ticked in all tabs and is grey when none is. Ticking and exporting change nothing, so the boxes can now also be ticked while the assistant is working and after the task is completed; **把选中的这几条标为已读** ("mark the chosen ones as read") is still unavailable then. Collections shown as cards, such as the issues, have no tick boxes and cannot be exported this way.
