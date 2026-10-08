@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### PDF materials and knowledge base documents
+
+- PDF files are accepted as materials and as knowledge base documents (up to 5 MB and 20 MB, as for other files). A PDF is parsed when it is uploaded, in a run of its own, into a text for the assistant in which every block of text is one line marked with its page and block, such as `[p3-2]`; running heads and feet are kept apart, and a table is read row by row, not cell by cell. Parsing takes under a second for most files.
+- A PDF without any readable text, most likely a scan, is refused with **这份 PDF 没有可读的文字（可能是扫描件），本版不支持。** ("this PDF has no readable text (it may be a scan); not supported in this version"); there is no text recognition. A PDF in which only some pages have no text is accepted, and the assistant is told which pages could not be read. Also refused: a PDF that needs a password, one over 1000 pages or 3 million characters, and one whose parsing is not finished after 60 seconds, with a message that says how long it took and which page it reached, such as **解析用了 60 秒仍没有完成（已读到第 420 页，共 1000 页），这份文件太复杂，本版不支持。** A refused upload leaves nothing behind.
+- A source that cites a PDF names the page and the block: `inputs/a.pdf#p3-2`, or `knowledge/<library id>/a.pdf#p3-2` for a knowledge base document. The excerpt is checked verbatim against that block, or from that block into at most five following blocks of the same page; an excerpt cannot cross a page. Before the comparison both sides are normalised, because the text layer of a PDF often writes ordinary characters as look-alikes: radical characters become ordinary Han characters, full-width and half-width forms are unified, and whitespace and hyphens are dropped. This applies to PDF sources only.
+- The task status message and `get_task_status` give, for every PDF material, its number of pages and blocks and the pages without text, and count the blocks no item cites yet. The assistant's instructions say how to read a PDF material and how to cite it.
+- A knowledge base search returns PDF passages with their page and blocks, such as 第 3 页第 2 到 4 块 ("page 3, blocks 2 to 4"); PDF documents are split into chunks page by page.
+- Generated documents and the Word export write a PDF source as the file name and the page, such as inputs/a.pdf（第 3 页）. The work summary names a PDF material by its own name, as it does for Word materials.
+- Interface: `upload.extensions` and `knowledge_upload.extensions` of `GET /api/v1/service` include `.pdf`; a PDF in the list of materials and in the event `material_added` carries `pdf: {pages, units, no_text_pages}`, and the three files generated from it (`<name>.pdf.md`, `.pdf.segments.json`, `.pdf.locations.json`) carry `derived_from`; `GET …/materials/raw` answers a PDF with `application/pdf` and `GET …/materials/content` with its text; a search hit in a PDF document has `first_unit`, `last_unit` and `units`. See **PDF materials** in section 5.1 of the API reference.
+- The limits are in a new section **PDF 解析** of the startup profiles: `max_pages`, `max_chars`, `max_seconds` and `stop_after_seconds`, each with a default.
+- The desktop packages carry the files of [pdfjs-dist](https://github.com/mozilla/pdf.js) 6.4.299 (Apache-2.0) that the backend uses, in `backend/vendor/pdfjs-dist/`, about 3.6 MB; the build checks them by reading a PDF.
+- The upload box of the knowledge base page no longer says that PDF files are not accepted yet.
+
 ## [0.4.2] - 2026-10-08
 
 0.4.2 lets the assistant draw diagrams and lets you take chosen items out as a Word file. A source now says which element of the task an item rests on: an item can cite any other item, and a basis that was changed or deleted afterwards is marked. Diagrams are a second kind of task element beside items, with their own tab in the work view.
