@@ -17,8 +17,8 @@
  * 续接时再写每份材料的引用情况：Word 材料还有几段没有被任何条目引用，文本材料被引用过几次。
  *
  * 知识库：任务选用的知识库（lib/knowledge.ts）里有文档时，现状消息另列一段：每个知识库的名字与文档个数，每份文档的名字、种类、
- * 大小、助手可以 read 与 grep 的绝对路径（Word 文档给投影的路径）与引用它时出处的写法。选用的知识库里一份文档都没有、或者
- * 没有知识库时不写这一段。续接时，只在上次之后任务的选用或选用的知识库的文档清单变过时写这一段（按这两种文件的修改时刻判断，
+ * 大小与引用它时出处的写法。这一段不写文档的路径，也不写文档的正文，文档不分大小都是一行：助手查知识库只经按意思查找
+ * （search_knowledge），读原文用的位置由查找的结果给。选用的知识库里一份文档都没有、或者没有知识库时不写这一段。续接时，只在上次之后任务的选用或选用的知识库的文档清单变过时写这一段（按这两种文件的修改时刻判断，
  * 整段重写；与任务无关的知识库新建、改名、删除不算）。
  *
  * 对话理解：这条会话里还有在等回应的执行者行为（你问过、用户还没回应的，见 lib/dialogue_acts.ts）时，消息末尾另列一行，
@@ -107,12 +107,13 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
 }
 
 /**
- * 「这个任务选用的知识库」一段：每个知识库一行写名字与文档个数，下面每份文档一行。所有选用的知识库都没有文档
- * （或者没有知识库）时是空文字。任务现状、续接时的变化与「查询任务状态」都用它。
+ * 「这个任务选用的知识库」一段：每个知识库一行写名字与文档个数，下面每份文档一行（名字、种类、大小、出处的写法；
+ * 不给路径，不给正文）。所有选用的知识库都没有文档（或者没有知识库）时是空文字。任务现状、续接时的变化与「查询任务状态」都用它。
+ * 开头那句里的规矩与系统提示、平台 skill 第二节第 4 条、按意思查找工具的说明是同一条，改一处要四处一起改。
  */
 export function knowledgeSection(libraries: SelectedLibrary[]): string {
   if (!libraries.some((one) => one.documents.length > 0)) return "";
-  const lines = ["这个任务选用的知识库（参考资料，不整理成条目；材料指向规范、术语表这类文档时必须到这里查出具体规定写进条目，查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）："];
+  const lines = ["这个任务选用的知识库（参考资料，不整理成条目；材料里把具体规定指给了别的文档时，必须到这里把那条规定查出来写进条目并记来源；查知识库只用 search_knowledge，知识库目录不能用 grep、find 搜，也不能用 ls 看，知识库文档不要整份读；查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）："];
   for (const library of libraries) {
     if (library.documents.length === 0) {
       lines.push(`知识库「${library.name}」现在没有文档。`);
@@ -120,9 +121,7 @@ export function knowledgeSection(libraries: SelectedLibrary[]): string {
     }
     lines.push(`知识库「${library.name}」有 ${library.documents.length} 份文档：`);
     for (const doc of library.documents) {
-      lines.push(doc.word
-        ? `- ${doc.name}（${doc.kindName}，${sizeText(doc.bytes)}）：这是 Word 文档，读由它生成的投影 ${doc.readPath}（每段一行，段落号写在方括号里）；出处写 ${doc.locator} 加段落号，例如 ${doc.locator}#p12`
-        : `- ${doc.name}（${doc.kindName}，${sizeText(doc.bytes)}）：读 ${doc.readPath}；出处写 ${doc.locator}`);
+      lines.push(`- ${doc.name}（${doc.kindName}，${sizeText(doc.bytes)}）：用 search_knowledge 查；出处写 ${doc.locator}${doc.word ? ` 加段落号，例如 ${doc.locator}#p12` : ""}`);
     }
   }
   return lines.join("\n");
