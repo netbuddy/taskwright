@@ -8,8 +8,12 @@
 
 export type Actor = "executor" | "user";
 export type TaskStatus = "进行中" | "已完成" | "已放弃";
-/** 来源的种类。「用户直接修改」是早期版本在用户直接改字段时写的，现在不再写，后端也不再把它交给页面；取值留着，旧数据里还有。 */
-export type SourceKind = "文档原文" | "用户的话" | "执行者补充" | "领域说明" | "用户直接修改";
+/**
+ * 来源的种类，也就是这个条目依据的是什么：材料或知识库里的原文、用户的话、助手补充（摘录里写的是理由）、任务里的另一个条目、
+ * 任务里的一张图（图还没有做出来，现在不会收到）。早期版本的「执行者补充」「领域说明」，后端交来时已经换成「助手补充」「条目」。
+ * 「用户直接修改」是早期版本在用户直接改字段时写的，现在不再写，后端也不再把它交给页面；取值留着，旧数据里还有。
+ */
+export type SourceKind = "文档原文" | "用户的话" | "助手补充" | "条目" | "图" | "用户直接修改";
 
 /** 一条来源支持哪一处：某个字段，列表型字段还可以指到第几项。supports 为空数组＝支持整个条目。 */
 export interface SourceSupport {
@@ -22,6 +26,19 @@ export interface Source {
   locator: string;
   excerpt: string;
   supports?: SourceSupport[];
+  /** 下面三项只在种类是「条目」或「图」时有。引用那一刻对方的修订号；库里没有记下时为 null。 */
+  depends_revision?: number | null;
+  /** 对方现在的修订号；对方已经删除时为 null。 */
+  current_revision?: number | null;
+  /** 依据的现状：changed 是对方在引用之后改过（依据已变），deleted 是对方已经删除，null 是没有变。 */
+  stale?: "changed" | "deleted" | null;
+}
+
+/** 依据了某个条目的一个要素：种类（现在只有条目）、编号、它当前的修订号。 */
+export interface DependedBy {
+  element_kind: string;
+  id: string;
+  revision_no: number | null;
 }
 
 /** 字段的值：文本、文本列表、枚举（文字）、条目引用（条目编号列表）。 */
@@ -187,6 +204,8 @@ export interface Item {
   revisions: number[];
   fields: Fields;
   sources: Source[];
+  /** 被谁依据：把这个条目写成来源的别的条目（只数它们当前的修订），没有时是空列表。 */
+  depended_by?: DependedBy[];
   reviews: Review[];
   /** 保留记录（含已撤销的）；旧后端没有这一项。 */
   waivers?: Waiver[];

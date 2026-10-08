@@ -20,7 +20,7 @@ import { REVIEW_CONDITION, findingText } from "./review.ts";
 import { batchNumber, currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
-import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, hasVersionColumns } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, hasVersionColumns, sourceKindNow, sourceLocatorNow } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
 import { hasColumn } from "./dialogue_schema.ts";
@@ -93,7 +93,8 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
       .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[]; normalized_value?: string }[]>((list, one) => {
         let source = list[one.position - 1];
         if (!source) {
-          list[one.position - 1] = source = { kind: one.kind, locator: one.locator, excerpt: one.excerpt, supports: [] };
+          // 还没有迁过的库里种类是早期版本的名字：给助手看的一律是现在的名字。
+          list[one.position - 1] = source = { kind: sourceKindNow(one.kind), locator: sourceLocatorNow(one.kind, one.locator), excerpt: one.excerpt, supports: [] };
           if (one.normalized_value !== null) source.normalized_value = one.normalized_value;
         }
         if (one.field !== null) source.supports.push(one.field_index === null ? { field: one.field } : { field: one.field, index: one.field_index });

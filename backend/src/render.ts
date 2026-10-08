@@ -89,13 +89,15 @@ export function confirmState(lib: Library, itemId: string, revisionNo: number): 
 const DOCUMENT = "文档原文";
 const USER_WORDS = "用户的话";
 const USER_EDIT = "用户直接修改";
-/** 种类为「领域说明」的来源，出处是那条领域说明的条目编号，文档里写成「领域说明 DN-002（「摘录」）」。 */
-const DOMAIN_NOTE = "领域说明";
+/**
+ * 种类为「条目」的来源，出处是所依据的那个条目的编号，文档里写成「集合名 条目编号（「摘录」）」，例如「领域说明 DN-002（「摘录」）」；
+ * 那个条目找不到时集合名的位置写「条目」。
+ */
+const ITEM = "条目";
 /** 按字段归组时空值那一组的组名。 */
 const EMPTY_GROUP = "（未填）";
-const EXECUTOR_SUPPLEMENT = "执行者补充";
-/** 来源种类在文档里的写法：库里的存储值「执行者补充」对读者写成「助手补充」，其余照存储值。 */
-const KIND_WORDS: Record<string, string> = { [EXECUTOR_SUPPLEMENT]: "助手补充" };
+/** 助手补充：摘录是理由，文档里不写出处。 */
+const SUPPLEMENT = "助手补充";
 
 /** 条目没有来源时，文档里来源一项的写法。 */
 export const NO_SOURCES_TEXT = "（无）";
@@ -114,10 +116,11 @@ export function sourcesText(lib: Library, itemId: string, revisionNo: number, wo
   for (const s of lib.sourcesOf(itemId, revisionNo)) {
     // 早期版本写下的「用户直接修改」不写进文档；读库时已经滤掉（lib/task_read.ts），这里再挡一次。
     if (s.kind === USER_EDIT) continue;
-    // 摘录（与领域说明来源的出处）为空时不写那半句：保存修订要求来源都有摘录，这里是库数据异常时的兜底。
+    // 摘录（与条目来源的出处）为空时不写那半句：保存修订要求来源都有摘录，这里是库数据异常时的兜底。
     const quoted = truthy(s.excerpt) ? `（「${str(s.excerpt)}」）` : "";
-    if (s.kind === DOMAIN_NOTE) {
-      parts.push(`${DOMAIN_NOTE}${truthy(s.locator) ? ` ${str(s.locator)}` : ""}${quoted}`);
+    if (s.kind === ITEM) {
+      const collection = truthy(s.locator) ? lib.items.get(str(s.locator))?.collection : null;
+      parts.push(`${collection ?? ITEM}${truthy(s.locator) ? ` ${str(s.locator)}` : ""}${quoted}`);
       continue;
     }
     let where: string;
@@ -133,9 +136,9 @@ export function sourcesText(lib: Library, itemId: string, revisionNo: number, wo
       }
       // Word 材料的出处在库里带段落号（inputs/x.docx#p37），段落号对读者没有用，文档里只写文件名。
       const locator = String(or(s.locator, "")).replace(/(\.docx)#p\d+$/i, "$1");
-      where = locator && s.kind !== EXECUTOR_SUPPLEMENT ? `，出处 ${locator}` : "";
+      where = locator && s.kind !== SUPPLEMENT ? `，出处 ${locator}` : "";
     }
-    parts.push(`${KIND_WORDS[s.kind] ?? s.kind}${where}${quoted}`);
+    parts.push(`${s.kind}${where}${quoted}`);
   }
   return parts.join("；") || NO_SOURCES_TEXT;
 }
@@ -152,8 +155,10 @@ export function sourceEntries(lib: Library, itemId: string, revisionNo: number, 
   for (const s of lib.sourcesOf(itemId, revisionNo)) {
     if (s.kind === USER_EDIT) continue;
     const excerpt = truthy(s.excerpt) ? str(s.excerpt) : "";
-    if (s.kind === DOMAIN_NOTE) {
-      out.push({ kind: DOMAIN_NOTE, where: truthy(s.locator) ? str(s.locator) : "", excerpt });
+    if (s.kind === ITEM) {
+      // 依据另一个条目：种类的位置写它所在的集合名（找不到时写「条目」），出处写它的编号，与 sourcesText 相同。
+      const collection = truthy(s.locator) ? lib.items.get(str(s.locator))?.collection : null;
+      out.push({ kind: collection ?? ITEM, where: truthy(s.locator) ? str(s.locator) : "", excerpt });
       continue;
     }
     if (s.kind === USER_WORDS) {
@@ -168,7 +173,7 @@ export function sourceEntries(lib: Library, itemId: string, revisionNo: number, 
       continue;
     }
     const locator = String(or(s.locator, "")).replace(/(\.docx)#p\d+$/i, "$1");
-    out.push({ kind: KIND_WORDS[s.kind] ?? s.kind, where: s.kind !== EXECUTOR_SUPPLEMENT ? locator : "", excerpt });
+    out.push({ kind: s.kind, where: s.kind !== SUPPLEMENT ? locator : "", excerpt });
   }
   return out;
 }

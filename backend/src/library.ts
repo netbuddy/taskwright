@@ -184,10 +184,31 @@ export function batchView(no: number, row: Row) {
   return out;
 }
 
-export function sourceView(one: SourceRow) {
+/** 依据方是任务里的要素的两种来源：另一个条目，或者一张图（图这种要素还没有做出来）。 */
+const SOURCE_ITEM = "条目";
+const SOURCE_FIGURE = "图";
+/** 产出方是哪种要素。现在只有条目。 */
+const ELEMENT_ITEM = "条目";
+
+/** 接口里的一条来源。后三项只在种类是「条目」或「图」时有（见 Library.sourcesOf）。 */
+export interface SourceView {
+  kind: string;
+  locator: string;
+  excerpt: string;
+  supports: { field: string; index: number | null }[];
+  /** 引用那一刻对方的修订号；库里没有记下时为 null。 */
+  depends_revision?: number | null;
+  /** 对方现在的修订号；对方已经删除（或者找不到）时为 null。 */
+  current_revision?: number | null;
+  /** 依据的现状："changed" 是对方在引用之后改过，"deleted" 是对方已经删除，null 是没有变。 */
+  stale?: "changed" | "deleted" | null;
+}
+
+export function sourceView(one: SourceRow): SourceView {
   return {
     kind: one["种类"], locator: one["出处"], excerpt: one["摘录"],
     supports: (one["支持"] || []).map((s) => ({ field: s["字段"], index: s["第几项"] })),
+    ...(one["依据的修订"] !== undefined ? { depends_revision: one["依据的修订"] } : {}),
   };
 }
 
@@ -418,9 +439,42 @@ export class Library {
     return v ? jsonOrText(v.fields) : null;
   }
 
-  sourcesOf(itemId: string, revisionNo: number | null | undefined) {
+  /**
+   * 条目在某次修订下的来源。依据另一个条目的来源另带两项，都是现算的、不存库：对方现在的修订号（current_revision），
+   * 与依据的现状（stale）——对方已经删除是 "deleted"；对方现在的修订号大于引用时记下的修订号是 "changed"（依据已变）；
+   * 否则是 null。依据图的来源这两项先给 null：图这种要素还没有做出来。
+   */
+  sourcesOf(itemId: string, revisionNo: number | null | undefined): SourceView[] {
     if (!revisionNo) return [];
-    return (this.data.sources?.get(itemKey(itemId, revisionNo)) || []).map(sourceView);
+    return (this.data.sources?.get(itemKey(itemId, revisionNo)) || []).map((row) => {
+      const one = sourceView(row);
+      if (one.kind === SOURCE_FIGURE) return { ...one, current_revision: null, stale: null };
+      if (one.kind !== SOURCE_ITEM) return one;
+      const cited = this.items.get(one.locator);
+      if (!cited || cited.deleted_in_revision !== null) return { ...one, current_revision: null, stale: "deleted" as const };
+      const current = this.currentRevision(one.locator);
+      const then = one.depends_revision ?? null;
+      return { ...one, current_revision: current, stale: then !== null && current !== null && current > then ? "changed" as const : null };
+    });
+  }
+
+  /**
+   * 被谁依据：每个条目被哪些要素当作依据，键是被依据的条目编号。只数还没有删除的条目在它当前修订下的来源；一个条目有几条来源
+   * 都依据同一个条目时只列一次。每项是产出方的种类（现在只有条目）、编号与它当前的修订号，先后照条目清单的顺序。现算，不存库。
+   */
+  dependedBy(order: Row[]): Map<string, { element_kind: string; id: string; revision_no: number | null }[]> {
+    const out = new Map<string, { element_kind: string; id: string; revision_no: number | null }[]>();
+    for (const i of order) {
+      if (i.deleted_in_revision !== null) continue;
+      const no = this.currentRevision(i.item_id);
+      for (const one of this.data.sources?.get(itemKey(i.item_id, no)) || []) {
+        if (one["种类"] !== SOURCE_ITEM || one["出处"] === i.item_id) continue;
+        let list = out.get(one["出处"]);
+        if (!list) out.set(one["出处"], (list = []));
+        if (!list.some((have) => have.id === i.item_id)) list.push({ element_kind: ELEMENT_ITEM, id: i.item_id, revision_no: no });
+      }
+    }
+    return out;
   }
 
   reviewsOf(itemId: string, revisionNo: number | null = null) {
@@ -512,6 +566,7 @@ export class Library {
     const sorted = [...this.items.values()].sort((a, b) =>
       (order.get(a.collection) ?? 99) - (order.get(b.collection) ?? 99) || (a.serial < b.serial ? -1 : a.serial > b.serial ? 1 : 0));
     const items = [];
+    const dependedBy = this.dependedBy(sorted);
     for (const i of sorted) {
       if (i.deleted_in_revision !== null) continue;
       const no = this.currentRevision(i.item_id);
@@ -528,6 +583,7 @@ export class Library {
         revision_no: no, revision_by: actorWord(meta.actor ?? ""), revision_at: clock.fromLocalText(meta.at ?? null),
         revisions: this.itemRevisions(i.item_id),
         fields, sources: this.sourcesOf(i.item_id, no),
+        depended_by: dependedBy.get(i.item_id) ?? [],
         reviews: this.reviewsOf(i.item_id),
         waivers: this.waiversOf(i.item_id),
         confirmations,

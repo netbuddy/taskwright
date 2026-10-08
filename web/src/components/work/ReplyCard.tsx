@@ -17,7 +17,7 @@
 import { useRef, useState } from "react";
 import { Popconfirm } from "antd";
 import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../api/types";
-import { CONFIRM_CONDITION, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, unreadItems } from "../../model/items";
+import { CONFIRM_CONDITION, SOURCE_ITEM, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, sourceKindNow, unreadItems } from "../../model/items";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { isKnowledgeLocator } from "../../model/knowledge";
 
@@ -161,7 +161,7 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, w
           <div>
             {(act.basis ?? []).map((b, i) => (
               <span key={i} className="evi" title={b.excerpt} onClick={() => b.kind === "文档原文" && onLocate?.(b.excerpt, b.locator)}>
-                依据：{b.kind === "文档原文" ? (isKnowledgeLocator(b.locator ?? "") ? "知识库" : "材料原文") : b.kind}{b.excerpt ? `「${b.excerpt.length > 18 ? b.excerpt.slice(0, 18) + "…" : b.excerpt}」` : ""}
+                依据：{b.kind === "文档原文" ? (isKnowledgeLocator(b.locator ?? "") ? "知识库" : "材料原文") : sourceKindNow(b.kind)}{b.kind && sourceKindNow(b.kind) === SOURCE_ITEM && b.locator ? ` ${b.locator}` : ""}{b.excerpt ? `「${b.excerpt.length > 18 ? b.excerpt.slice(0, 18) + "…" : b.excerpt}」` : ""}
               </span>
             ))}
           </div>

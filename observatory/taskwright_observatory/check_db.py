@@ -59,7 +59,8 @@ def check(workspace: Path) -> list[dict]:
     # 一条来源支持几处字段就展开成几行，核对只看每条来源一次。
     unique_sources = {}
     for one in rows["item_source"]:
-        unique_sources.setdefault((one["task_id"], one["item_id"], one["revision_no"], one["position"]), one)
+        # 产出方的种类（条目、图）是后来加的一列，还没有迁过的库里没有它，都算条目。
+        unique_sources.setdefault((one["task_id"], one.get("element_kind", "条目"), one["item_id"], one["revision_no"], one["position"]), one)
     rows["item_source"] = list(unique_sources.values())
     events = {e["seq"]: e for e in rows["event"]}
     revisions = {(r["task_id"], r["revision_no"]): r for r in rows["revision"]}

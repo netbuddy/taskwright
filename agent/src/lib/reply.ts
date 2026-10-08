@@ -30,7 +30,7 @@ import { EXECUTOR_FUNCTIONS, INTENT_GATE_TEXT } from "./intent_schema.ts";
 import { type TurnCall, isBlank, isObject, lastAssistantTurn, requireAlone } from "./speak.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import { GUIDANCE_PREFIX, splitGuide } from "./save_revision.ts";
-import { EXECUTOR_SOURCE_KINDS } from "./schema.ts";
+import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT, sourceKindNow } from "./schema.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
 export { type TurnCall, lastAssistantTurn };
@@ -351,10 +351,17 @@ function basisShape(basis: unknown[], errors: string[], whereOf: (index: number)
       errors.push(`${where}应当是一个对象，有 kind、locator、excerpt 三项`);
       return;
     }
-    if (typeof one.kind !== "string" || !(BASIS_KINDS as readonly string[]).includes(one.kind)) {
+    // 早期版本的种类名（「执行者补充」「领域说明」）照收，按现在的名字核对。
+    const kind = typeof one.kind === "string" ? sourceKindNow(one.kind) : one.kind;
+    if (typeof kind !== "string" || !(BASIS_KINDS as readonly string[]).includes(kind)) {
       errors.push(`${where}的 kind 写的是 ${JSON.stringify(one.kind)}，只能是${BASIS_KINDS.map((x) => `「${x}」`).join("、")}之一`);
     }
-    if (one.kind !== "用户的话" && isBlank(one.locator)) errors.push(`${where}缺少 locator（出处）`);
+    if (kind === SOURCE_SUPPLEMENT) {
+      // 助手补充的出处不用写；摘录是理由。
+      if (isBlank(one.excerpt)) errors.push(`${where}的种类是「${SOURCE_SUPPLEMENT}」，没有写理由：在 excerpt 里写一句为什么这样补、依据的是什么常识或推断`);
+      return;
+    }
+    if (kind !== "用户的话" && isBlank(one.locator)) errors.push(`${where}缺少 locator（出处）`);
     if (isBlank(one.excerpt)) errors.push(`${where}缺少 excerpt（摘录的原文）`);
   });
   return null;

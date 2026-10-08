@@ -29,7 +29,7 @@ const BATCHES = [
   [
     { op: "add", collection: "领域说明", fields: { 标题: "口令", 内容: "读者登录时输入的一串字符", 类别: "术语" }, sources: [SOURCE] },
     { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者", "管理员"], 基本流程: ["输入口令", "系统核对口令"] },
-      sources: [{ ...SOURCE, supports: [{ field: "用例功能" }] }, { kind: "执行者补充", locator: "执行者补充", excerpt: "登录失败的处理材料没有写，按常识补充。", supports: [{ field: "基本流程", index: 1 }] }] },
+      sources: [{ ...SOURCE, supports: [{ field: "用例功能" }] }, { kind: "助手补充", excerpt: "登录失败的处理材料没有写，按常识补充。", supports: [{ field: "基本流程", index: 1 }] }] },
     { op: "add", collection: "功能用例", fields: { 用例名称: "借出图书", 用例功能: "读者在服务台借出图书。", 参与者: ["读者"], 基本流程: ["管理员扫描借书证"] }, sources: [SOURCE] },
   ],
   [{ op: "add", collection: "非功能需求", fields: { 类别: "性能", 句式类型: "普遍型", 需求语句: "系统应在 2 秒内给出登录结果。" }, sources: [SOURCE] }],
@@ -83,7 +83,7 @@ test("字段值的写法：文本列表每项一段带序号，空字段写「�
   assert.deepEqual(useCase["参与者"], ["1. 读者", "2. 管理员"]);
   assert.deepEqual(useCase["基本流程"], ["1. 输入口令", "2. 系统核对口令"]);
   assert.deepEqual(useCase["扩展流程"], ["（空）"]);
-  // 助手补充没有出处，只写种类与摘录；库里存的是「执行者补充」，给读者看的叫法是「助手补充」。
+  // 助手补充没有出处，只写种类与摘录（摘录是理由）。
   assert.deepEqual(useCase["来源"], ["文档原文 · inputs/材料.md：读者凭口令登录。", "助手补充：登录失败的处理材料没有写，按常识补充。"]);
   assert.deepEqual(note["关联条目"], ["（空）"]);
   assert.deepEqual(note["来源"], ["文档原文 · inputs/材料.md：读者凭口令登录。"]);
@@ -111,7 +111,7 @@ test("不带来源时表里没有来源一行；条目没有来源时写「（�
   assert.deepEqual(tables(bare.document)[0].at(-1), [["来源"], ["（无）"]]);
 });
 
-test("各种来源的叫法与生成文档相同：知识库写知识库名与文档名，用户的话写会话里第几句，领域说明写条目编号，Word 材料不写段落号", () => {
+test("各种来源的叫法与生成文档相同：知识库写知识库名与文档名，用户的话写会话里第几句，依据另一个条目写它所在的集合名与条目编号，Word 材料不写段落号", () => {
   const db = library.openRo(ws)!;
   let data;
   try {
@@ -125,9 +125,11 @@ test("各种来源的叫法与生成文档相同：知识库写知识库名与�
     row("文档原文", "knowledge/lib-1a2b3c4d/借阅规范.docx#p12", "逾期每册每天罚款 0.5 元"),
     row("文档原文", "knowledge/lib-gone/旧规范.md", "已经不在的知识库"),
     row("用户的话", "sess-1#m-7", "金额大的要主管复核"),
-    row("领域说明", "DN-001", "读者登录时输入的一串字符"),
+    row("条目", "DN-001", "读者登录时输入的一串字符"),
+    row("条目", "UC-001", "读者登录系统。"),
+    row("条目", "UC-404", "找不到的条目"),
     row("文档原文", "inputs/需求.docx#p37", "读者凭借书证借书"),
-    row("执行者补充", "执行者补充", ""),
+    row("助手补充", "助手补充", ""),
   ]);
   const changed = new library.Library(data);
   const revision = changed.currentRevision("UC-002")!;
@@ -138,6 +140,8 @@ test("各种来源的叫法与生成文档相同：知识库写知识库名与�
     "知识库 · lib-gone / 旧规范.md：已经不在的知识库",
     "用户的话 · 会话「第一次整理」里用户的第 2 句话：金额大的要主管复核",
     "领域说明 · DN-001：读者登录时输入的一串字符",
+    "功能用例 · UC-001：读者登录系统。",
+    "条目 · UC-404：找不到的条目",
     "文档原文 · inputs/需求.docx：读者凭借书证借书",
     "助手补充",
   ]);
@@ -145,6 +149,7 @@ test("各种来源的叫法与生成文档相同：知识库写知识库名与�
   assert.equal(sourcesText(changed, "UC-002", revision, words, names),
     "知识库，出处 公司规范 / 借阅规范.docx 第 12 段（「逾期每册每天罚款 0.5 元」）；知识库，出处 lib-gone / 旧规范.md（「已经不在的知识库」）；"
     + "用户的话，出处 会话「第一次整理」里用户的第 2 句话（「金额大的要主管复核」）；领域说明 DN-001（「读者登录时输入的一串字符」）；"
+    + "功能用例 UC-001（「读者登录系统。」）；条目 UC-404（「找不到的条目」）；"
     + "文档原文，出处 inputs/需求.docx（「读者凭借书证借书」）；助手补充");
 });
 
@@ -205,7 +210,7 @@ test("下载接口：format 写 docx 回 Word 文件与文件名；只能下载�
   // 后端不写库：任务与条目由夹具在任务根目录里建好，任务服务只读它；任务编号从这个任务的库里读。
   const root = join(tmp, "service");
   const dir = makeTypedTask(join(root, "tasks"), "srs-authoring", { "材料.md": "读者凭口令登录。" }, [[
-    { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] }, sources: [{ kind: "执行者补充", locator: "执行者补充", excerpt: "试验用。" }] },
+    { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] }, sources: [{ kind: "助手补充", excerpt: "试验用。" }] },
   ]]);
   sqlRun(dir, [["UPDATE task SET task_name = ?", "图书馆借还"]]);   // 夹具不另起任务名，这里给它起一个
   const taskId = library.libraryOf(dir).taskId;

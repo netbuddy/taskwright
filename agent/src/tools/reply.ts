@@ -70,9 +70,9 @@ const act = Type.Object(
         Type.Object({ kind: Type.Optional(Type.String()), locator: Type.Optional(Type.String()), excerpt: Type.Optional(Type.String()) }, { additionalProperties: true }),
         {
           description:
-            "只有给建议值（suggest）写，而且必须写：建议的依据，至少一条。kind 是「文档原文」「用户的话」「执行者补充」「领域说明」之一，" +
+            "只有给建议值（suggest）写，而且必须写：建议的依据，至少一条。kind 是「文档原文」「用户的话」「助手补充」「条目」之一，" +
             "locator 是出处，excerpt 是摘录的原文。依据与「保存修订」的来源同一个写法、同一套逐字核对：文档原文写材料路径（Word 材料写段落号），" +
-            "用户的话不写 locator（工具在对话里找到那句话并代填），领域说明写那条说明的条目编号。",
+            "用户的话不写 locator（工具在对话里找到那句话并代填），条目写所依据的那个条目的编号，助手补充不写 locator、excerpt 写理由。",
         },
       ),
     ),

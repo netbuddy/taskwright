@@ -34,7 +34,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, databasePath, emit, wallClockText } from "./db.ts";
-import { SOURCE_DOCUMENT, SOURCE_DOMAIN_NOTE, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { SOURCE_DOCUMENT, SOURCE_ITEM, SOURCE_USER_EDIT, SOURCE_USER_WORDS, sourceKindNow, sourceLocatorNow, withTaskDatabase } from "./schema.ts";
 import { DOCX_LOCATOR } from "./docx_source.ts";
 import { extractJson, type ModelCallRecord } from "./model_call.ts";
 import { type CollectionDef, FIELD_ITEM_REF, RULE_REQUIRED, type ReviewRule, effectiveRules, keepPendingField, validateDefinition } from "./definition.ts";
@@ -207,6 +207,8 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       // 早期版本写下的「用户直接修改」不交给评审：条目上的话都算用户自己的，来源只列引用的原始片段。
       const sources = db.prepare("SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ? ORDER BY position, support_no")
         .all(task.task_id, want.item_id, want.revision_no, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
+      // 还没有迁过的库里种类是早期版本的名字：一律按现在的名字交给评审。
+      for (const one of sources) [one.locator, one.kind] = [sourceLocatorNow(one.kind, one.locator), sourceKindNow(one.kind)];
       items.push({
         ...want, collection: row.collection, fields, decls, rules, rulesPath: decl?.reviewRules?.file ?? null,
         rulesDigest: digest(JSON.stringify(rules) + "\n" + JSON.stringify(decls)),
@@ -335,14 +337,14 @@ function liveItems(db: DatabaseSync, taskId: string, collections: CollectionDef[
         fieldNames: decl?.fields.map((f) => f.name) ?? [],
         refFields: decl?.fields.filter((f) => f.type === FIELD_ITEM_REF).map((f) => f.name) ?? [],
         problem: decl ? keepPendingField(decl) !== null : false,
-        sources: sourcesOf.all(taskId, r.item_id, r.revision_no, SOURCE_USER_EDIT) as TaskItem["sources"],
+        sources: (sourcesOf.all(taskId, r.item_id, r.revision_no, SOURCE_USER_EDIT) as TaskItem["sources"]).map((one) => ({ ...one, kind: sourceKindNow(one.kind), locator: sourceLocatorNow(one.kind, one.locator) })),
       };
     });
 }
 
 /**
  * 一个条目的来源落在哪里，用来判断两个条目是否引用了同一处：「文档原文」出处带 #p 的 Word 材料记文件与段落号；
- * 出处是 .md 或 .txt 材料的记摘录所在的自然段（paragraphsWith）；「用户的话」与「领域说明」记出处。
+ * 出处是 .md 或 .txt 材料的记摘录所在的自然段（paragraphsWith）；「用户的话」与「条目」记出处。
  * 出自知识库文档的来源（出处以 knowledge/ 开头）同样参与：Word 文档记出处与段落号，文本文档记摘录所在的自然段。
  */
 function anchorsOf(item: TaskItem, materials: Materials): Set<string> {
@@ -358,7 +360,7 @@ function anchorsOf(item: TaskItem, materials: Materials): Set<string> {
         ? materials.knowledgeText?.(s.locator) ?? null
         : materials.files.find((f) => f.path === s.locator)?.text ?? null;
       if (text !== null) for (const paragraph of paragraphsWith(text, s.excerpt)) out.add(`段落\n${s.locator}\n${paragraph}`);
-    } else if (s.kind === SOURCE_USER_WORDS || s.kind === SOURCE_DOMAIN_NOTE) {
+    } else if (s.kind === SOURCE_USER_WORDS || s.kind === SOURCE_ITEM) {
       out.add(`出处\n${s.locator}`);
     }
   }
@@ -369,14 +371,14 @@ const refsOf = (item: TaskItem) => item.refFields.flatMap((name) => (Array.isArr
 
 /**
  * 评审 target 时别的条目分成两份：相关的与其余的。相关，是下面任一条成立：两个条目的来源落在同一处（anchorsOf）；
- * target 的某条「领域说明」来源指向的就是这个领域说明条目；一方是问题条目，它的条目引用字段里有另一方。
+ * target 的某条「条目」来源指向的就是这个条目；一方是问题条目，它的条目引用字段里有另一方。
  * 两份里都是与 target 同一个集合的在前，别的集合在后，先后照 live。
  */
 export function splitOthers(target: TaskItem, live: TaskItem[], materials: Materials): { related: TaskItem[]; rest: TaskItem[] } {
   const mine = anchorsOf(target, materials);
   const isRelated = (other: TaskItem) =>
     [...anchorsOf(other, materials)].some((anchor) => mine.has(anchor)) ||
-    target.sources.some((s) => s.kind === SOURCE_DOMAIN_NOTE && s.locator === other.item_id) ||
+    target.sources.some((s) => s.kind === SOURCE_ITEM && s.locator === other.item_id) ||
     (other.problem && refsOf(other).includes(target.item_id)) ||
     (target.problem && refsOf(target).includes(other.item_id));
   const others = live.filter((o) => o.item_id !== target.item_id);
@@ -451,7 +453,7 @@ function assembleUser(want: RequestedItem, collection: string, fields: Record<st
     ...decls.map((d) => `- ${d.名}：\n${valueLines(fields[d.名])}`),
     "",
     "【来源】",
-    ...([...byPosition.values()].map((s, i) => `${i + 1}. ${s.kind}${s.kind === "文档原文" || s.kind === "领域说明" ? `（${s.locator}）` : ""}：「${s.excerpt}」` +
+    ...([...byPosition.values()].map((s, i) => `${i + 1}. ${s.kind}${s.kind === SOURCE_DOCUMENT || s.kind === SOURCE_ITEM ? `（${s.locator}）` : ""}：「${s.excerpt}」` +
       `，支持${s.supports.length ? s.supports.join("、") : "整个条目"}`)),
     ...(byPosition.size ? [] : ["（这份内容没有来源）"]),
     "",

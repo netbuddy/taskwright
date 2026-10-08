@@ -33,7 +33,7 @@ function fixture(): string {
         op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面", "输入口令"] },
         sources: [
           { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。", supports: [{ field: "名称" }] },
-          { kind: "执行者补充", locator: "执行者补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }, { field: "名称" }] },
+          { kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }, { field: "名称" }] },
         ],
       },
       { op: "add", collection: "用例", fields: { 名称: "注销", 步骤: ["点注销"] }, sources: [SOURCE] },
@@ -61,7 +61,7 @@ test("查看条目：最新内容的全部字段、来源、评审与确认；�
   assert.deepEqual(outcome.details.fields, { 名称: "登录", 步骤: ["打开页面", "输入口令"] });
   assert.deepEqual(outcome.details.sources, [
     { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。", supports: [{ field: "名称" }] },
-    { kind: "执行者补充", locator: "执行者补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }, { field: "名称" }] },
+    { kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }, { field: "名称" }] },
   ]);
   assert.equal(outcome.details.review, "还没有评审记录");
   assert.equal(outcome.details.confirm, "未读（用户从没看过）");
@@ -130,7 +130,7 @@ test("改字段：改到的字段上原来的来源去掉，不加新来源；�
   const result = op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
   assert.equal(result.note, "界面操作（不是用户打的字）：用户改了 UC-001 的「名称」，产生修订 2，UC-001 现在是修订 2。这次修改同时算作用户看过并认可了 UC-001（修订 2）。改后的内容是：\n「名称」：用口令登录");
   assert.deepEqual(sourcesOf(dir, "UC-001", 2), [
-    { position: 1, kind: "执行者补充", locator: "执行者补充", excerpt: "登录总要输入口令。", field: "步骤", field_index: 1 },
+    { position: 1, kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", field: "步骤", field_index: 1 },
   ]);
 });
 
@@ -181,17 +181,17 @@ test("执行者修改时：没改的内容上的来源保留；用户改写过�
   const dir = fixture();
   op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
   const pairs = (revision: number) => sourcesOf(dir, "UC-001", revision).map((row) => [row.kind, row.field, row.field_index]);
-  assert.deepEqual(pairs(2), [["执行者补充", "步骤", 1]]);
+  assert.deepEqual(pairs(2), [["助手补充", "步骤", 1]]);
   // 往「步骤」末尾加一项：原来指到第 2 项「输入口令」的来源仍指着它。
   saveRevision(callIn(dir), {
     operations: [{ op: "update", item: "UC-001", base_revision: 2, fields: { 步骤: ["打开页面", "输入口令", "点登录"] }, sources: [{ ...SOURCE, supports: [{ field: "步骤" }] }] }],
   });
-  assert.deepEqual(pairs(3), [["执行者补充", "步骤", 1], ["文档原文", "步骤", null]]);
+  assert.deepEqual(pairs(3), [["助手补充", "步骤", 1], ["文档原文", "步骤", null]]);
   // 改「名称」：它上面没有来源，不提醒；新给的与原来同一句摘录，合成一条，支持整个条目。
   const outcome = saveRevision(callIn(dir), {
     operations: [{ op: "update", item: "UC-001", base_revision: 3, fields: { 名称: "账号登录" }, sources: [{ ...SOURCE, supports: [] }] }],
   });
-  assert.deepEqual(pairs(4), [["执行者补充", "步骤", 1], ["文档原文", null, null]]);
+  assert.deepEqual(pairs(4), [["助手补充", "步骤", 1], ["文档原文", null, null]]);
   assert.doesNotMatch(outcome.text, /提醒/);
 });
 
@@ -206,7 +206,7 @@ test("加入第四种来源之前建的库：与新库同样处理，改字段�
   db.close();
   const result = op(dir, { kind: "edit_fields", targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 名称: "用口令登录" } });
   assert.equal(result.results[0].revision_no, 2);
-  assert.deepEqual(sourcesOf(dir, "UC-001", 2).map((row) => [row.kind, row.field, row.field_index]), [["执行者补充", "步骤", 1]]);
+  assert.deepEqual(sourcesOf(dir, "UC-001", 2).map((row) => [row.kind, row.field, row.field_index]), [["助手补充", "步骤", 1]]);
   assert.ok(count(dir, "event") >= 3);
 });
 

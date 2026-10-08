@@ -1,5 +1,5 @@
 /**
- * 「回复」给建议值时的依据：与「保存修订」的来源同一套逐字核对（文档原文、用户的话、领域说明，Word 材料按段落号），
+ * 「回复」给建议值时的依据：与「保存修订」的来源同一套逐字核对（文档原文、用户的话、条目，Word 材料按段落号），
  * 同一套拒绝文字，事实与指引两层；核对后的依据写进送达的回复；被拒时拒绝记录入库。
  */
 
@@ -27,7 +27,7 @@ function workspace(): string {
   saveRevision(callIn(dir), { operations: [
     { op: "add", collection: "用例", fields: { 名称: "退款", 步骤: ["申请退款"] }, sources: [SOURCE] },
     { op: "add", collection: "领域说明", fields: { 标题: "口令", 内容: "口令是登录时输入的一串字符，区分大小写。" },
-      sources: [{ kind: "执行者补充", locator: "执行者补充", excerpt: "口令的意思" }] },
+      sources: [{ kind: "助手补充", locator: "助手补充", excerpt: "口令的意思" }] },
   ] });
   return dir;
 }
@@ -75,14 +75,16 @@ test("用户的话：出处由工具代填成「会话编号#会话条目编号�
   assert.match(error.message, /act\.basis 的第 1 条引用的用户的话「五天内办完」在对话里没有找到。\n   怎么办：请逐字摘录用户说过的原话。/);
 });
 
-test("领域说明：摘录逐字出自那条还在的说明；摘录不在其中、出处不是领域说明，都拒绝", () => {
+test("条目：摘录逐字出自那个还在的条目；早期版本的名字「领域说明」照收；摘录不在其中、条目不存在，都拒绝", () => {
   const dir = workspace();
-  const ok = checkReply(suggest([{ kind: "领域说明", locator: "DN-001", excerpt: "区分大小写" }]), facts(dir));
-  assert.deepEqual(ok.act?.basis, [{ kind: "领域说明", locator: "DN-001", excerpt: "区分大小写" }]);
-  const error = rejection(dir, [{ kind: "领域说明", locator: "DN-001", excerpt: "不区分大小写" },
-    { kind: "领域说明", locator: "UC-001", excerpt: "退款" }]);
+  const ok = checkReply(suggest([{ kind: "条目", locator: "DN-001", excerpt: "区分大小写" }]), facts(dir));
+  assert.deepEqual(ok.act?.basis, [{ kind: "条目", locator: "DN-001", excerpt: "区分大小写" }]);
+  const old = checkReply(suggest([{ kind: "领域说明", locator: "DN-001", excerpt: "区分大小写" }]), facts(dir));
+  assert.deepEqual(old.act?.basis, [{ kind: "条目", locator: "DN-001", excerpt: "区分大小写" }]);
+  const error = rejection(dir, [{ kind: "条目", locator: "DN-001", excerpt: "不区分大小写" },
+    { kind: "条目", locator: "UC-009", excerpt: "退款" }]);
   assert.match(error.message, /act\.basis 的第 1 条的摘录「不区分大小写」在 DN-001 的当前修订里找不到/);
-  assert.match(error.message, /act\.basis 的第 2 条的种类是「领域说明」，出处 UC-001 不是这个任务里「领域说明」集合的条目编号/);
+  assert.match(error.message, /act\.basis 的第 2 条的种类是「条目」，出处 UC-009 指向的条目在这个任务里不存在/);
 });
 
 test("Word 材料：出处写段落号，摘录在那一段里送达；写错段落号时拒绝并指出它在哪一段", () => {
@@ -93,12 +95,12 @@ test("Word 材料：出处写段落号，摘录在那一段里送达；写错段
   assert.match(error.message, /act\.basis 的第 1 条的摘录「逾期的每本每天罚款一角」在 requirements-styled\.docx 第 91 段·表 3 行 2 列 2里找不到，它在第 76 段。\n   怎么办：出处改写成 inputs\/requirements-styled\.docx#p76。/);
 });
 
-test("执行者补充不核对摘录；种类不在四种之内、缺摘录，按保存修订的原话拒绝", () => {
+test("助手补充不核对摘录；种类不在四种之内、缺摘录，按保存修订的原话拒绝", () => {
   const dir = workspace();
-  const ok = checkReply(suggest([{ kind: "执行者补充", locator: "执行者补充", excerpt: "行业惯例是七天" }]), facts(dir));
+  const ok = checkReply(suggest([{ kind: "助手补充", locator: "助手补充", excerpt: "行业惯例是七天" }]), facts(dir));
   assert.equal(ok.act?.basis?.[0].excerpt, "行业惯例是七天");
   const error = rejection(dir, [{ kind: "猜的", locator: "x", excerpt: "" }]);
-  assert.match(error.message, /act\.basis 的第 1 条的 kind 写的是 "猜的"，只能是「文档原文」、「用户的话」、「执行者补充」、「领域说明」之一/);
+  assert.match(error.message, /act\.basis 的第 1 条的 kind 写的是 "猜的"，只能是「文档原文」、「用户的话」、「助手补充」、「条目」之一/);
   assert.match(error.message, /act\.basis 的第 1 条缺少 excerpt（摘录的原文）/);
 });
 

@@ -28,7 +28,7 @@ const src = (excerpt, supports = []) => ({ kind: "文档原文", locator: "input
 saveRevision({ workspaceDir: dir, sessionId: "s", callId: "ui-op-1", actor: "user" }, { operations: [
   { op: "add", collection: "功能用例", fields: { 用例名称: "借书、还书与续借", 用例功能: "读者借书、还书，每本书可以续借一次。",
     参与者: ["读者"], 基本流程: ["读者出示借书证", "系统登记借书"] }, sources: [src("读者凭借书证借书，每本书可以续借一次。"),
-    { kind: "执行者补充", locator: "执行者补充", excerpt: "按常识补了出示借书证这一步" }] },
+    { kind: "助手补充", excerpt: "按常识补了出示借书证这一步" }] },
   { op: "add", collection: "约束", fields: { 类别: "时限", 句式类型: "普遍型", 需求语句: "寒暑假期间借出的图书，借期应当顺延到开学后第一周的周五。" },
     sources: [{ kind: "用户的话", locator: "s#e1", excerpt: "寒暑假借的书顺延到开学第一周周五" }] },
   { op: "add", collection: "问题", fields: { 事项: "遗失的图书怎样处理", 种类: "待澄清", 状态: "未解决" },

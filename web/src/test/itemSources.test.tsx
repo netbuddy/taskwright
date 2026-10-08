@@ -49,7 +49,7 @@ describe("条目详情里的来源", () => {
     render(<OpenItem t={sourcesTask([
       src("文档原文", "inputs/借阅说明.md", "读者可以借书。", "参与者"),
       src("用户的话", "S#u1", "读者就是持证的人", "参与者"),
-      src("执行者补充", "", "补了一个参与者"),
+      src("助手补充", "", "补了一个参与者"),
     ])} />);
     const detail = screen.getByTestId("item-detail");
     for (const field of detail.querySelectorAll(".fld")) {
@@ -59,6 +59,48 @@ describe("条目详情里的来源", () => {
     expect(within(detail).getByText("来源", { selector: ".sec-h" })).toBeTruthy();
     expect([...detail.querySelectorAll(".srcbox .chip")].map((c) => c.textContent)).toEqual(["材料原文", "用户的话", "助手补充"]);
     expect(within(detail).getByText("出处：借阅说明.md（点一下看原文）")).toBeTruthy();
+  });
+
+  it("助手补充的摘录是理由，前面写「理由：」；依据另一个条目的来源标签写「条目」，编号点一下打开那个条目", () => {
+    const t = sourcesTask([src("助手补充", "助手补充", "登录总要输入口令"), { ...src("条目", "UC-002", "读者凭证借书", "参与者"), depends_revision: 3, current_revision: 3, stale: null }]);
+    t.items.push({ ...t.items[0], item_id: "UC-002", title: "办理借书证", sources: [], depended_by: [{ element_kind: "条目", id: "UC-001", revision_no: 1 }] } as unknown as Item);
+    render(<OpenItem t={t} />);
+    const detail = screen.getByTestId("item-detail");
+    const boxes = [...detail.querySelectorAll(".srcbox")];
+    expect(boxes.map((b) => b.querySelector(".chip")!.textContent)).toEqual(["助手补充", "条目"]);
+    expect(boxes[0].querySelector(".quote")!.textContent).toBe("理由：登录总要输入口令");
+    expect(boxes[1].querySelector(".quote")!.textContent).toBe("「读者凭证借书」");
+    expect(boxes[1].querySelector(".sh")!.textContent).toContain("UC-002 办理借书证");
+    expect(detail.querySelector(".basis-stale, .srcbox.stale")).toBeNull();
+    // 这个条目没有被别的条目依据：没有「被谁依据」一行。
+    expect(within(detail).queryByTestId("depended-by")).toBeNull();
+    fireEvent.click(within(detail).getByTestId("note-source-UC-002"));
+    // 打开的 UC-002 被 UC-001 依据：有「被谁依据」一行，编号点一下回到 UC-001。
+    const other = screen.getByTestId("item-detail");
+    expect(within(other).getByTestId("depended-by").textContent).toBe("被谁依据：UC-001 借阅图书");
+    fireEvent.click(within(other).getByTestId("depended-by-UC-001"));
+    expect(within(screen.getByTestId("item-detail")).getByTestId("note-source-UC-002")).toBeTruthy();
+  });
+
+  it("依据已变：被依据的条目在引用之后改过，来源旁写明引用时与现在各是修订几；它已经删除时写「已经删除」，编号不可点", () => {
+    const t = sourcesTask([
+      { ...src("条目", "UC-002", "读者凭证借书"), depends_revision: 2, current_revision: 5, stale: "changed" },
+      { ...src("条目", "UC-009", "早先的一句"), depends_revision: 1, current_revision: null, stale: "deleted" },
+    ]);
+    t.items.push({ ...t.items[0], item_id: "UC-002", title: "办理借书证", sources: [] } as unknown as Item);
+    render(<OpenItem t={t} />);
+    const detail = screen.getByTestId("item-detail");
+    expect(within(detail).getByTestId("basis-stale-UC-002").textContent).toBe("依据已变：UC-002 在这之后改过（引用时是修订 2，现在是修订 5）");
+    expect(within(detail).getByTestId("basis-deleted-UC-009").textContent).toBe("UC-009 已经删除");
+    expect(within(detail).queryByTestId("note-source-UC-009")).toBeNull();
+    expect(within(detail).queryByTestId("basis-stale-UC-009")).toBeNull();
+    expect([...detail.querySelectorAll(".srcbox")].map((b) => b.classList.contains("stale"))).toEqual([true, true]);
+  });
+
+  it("依据图的来源有自己的标签样式", () => {
+    render(<OpenItem t={sourcesTask([{ ...src("图", "FIG-001", "借阅流程"), depends_revision: 1, current_revision: null, stale: null }])} />);
+    const chip = screen.getByTestId("item-detail").querySelector(".srcbox .chip")!;
+    expect([chip.textContent, chip.classList.contains("fig")]).toEqual(["图", true]);
   });
 
   it("底部来源里材料原文的出处点一下，照旧交给材料区定位", () => {

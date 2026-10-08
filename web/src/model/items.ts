@@ -182,8 +182,21 @@ export function confirmState(item: Item): ConfirmState {
   return "confirmed";
 }
 
+/** 来源种类里页面要按名字分支的三种。 */
+export const SOURCE_SUPPLEMENT = "助手补充";
+export const SOURCE_ITEM = "条目";
+export const SOURCE_FIGURE = "图";
+
+/**
+ * 一个种类名现在叫什么。条目的来源由后端换好了名字；对话里早先记下的建议依据是历史记录，里面还是早期版本的名字
+ * （「执行者补充」「领域说明」），显示时在这里换成现在的。
+ */
+export function sourceKindNow(kind: string): string {
+  return kind === "执行者补充" ? SOURCE_SUPPLEMENT : kind === "领域说明" ? SOURCE_ITEM : kind;
+}
+
 export function hasExecutorSupplement(item: Item): boolean {
-  return item.sources.some((s) => s.kind === "执行者补充");
+  return item.sources.some((s) => s.kind === SOURCE_SUPPLEMENT);
 }
 
 /** 用户看过这个条目当前所在的修订：当前修订上最近一条确认标记是接受。 */

@@ -124,7 +124,9 @@ describe("软件需求规格说明模板里的领域说明", () => {
     typed = makeTypedTask(join(tmp, "typed"), "srs-authoring", { "材料.md": "读者凭口令登录。管理员在服务台办理借还。" }, [
       [note("口令", "术语", "读者登录时输入的一串字符"), note("管理员", "角色", "在服务台办理借还的工作人员"), note("开学第一周", "背景", "借还量最大的一周"), note("借阅", "术语", "读者把书借走")],
       [{ op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] },
-        sources: [SOURCE, { kind: "领域说明", locator: "DN-001", excerpt: "读者登录时输入的一串字符", supports: [{ field: "基本流程", index: 0 }] }] }],
+        sources: [SOURCE, { kind: "条目", locator: "DN-001", excerpt: "读者登录时输入的一串字符", supports: [{ field: "基本流程", index: 0 }] }] }],
+      [{ op: "add", collection: "约束", fields: { 类别: "安全", 句式类型: "普遍型", 需求语句: "口令输错三次后锁定账号。" },
+        sources: [{ kind: "条目", locator: "UC-001", excerpt: "读者登录系统。" }, { kind: "助手补充", excerpt: "输错多次后锁定是通行的做法" }] }],
     ]);
     text = render.render(typed, library.libraryOf(typed));
   });
@@ -157,10 +159,12 @@ describe("软件需求规格说明模板里的领域说明", () => {
     assert.equal(view.find((c) => c.name === "功能用例")!.display, null);
     assert.equal(notes.needs_review, false);
   });
-  test("领域说明作来源写成编号加摘录", () => {
+  test("依据另一个条目的来源写成它所在的集合名、编号加摘录；助手补充写理由、不写出处", () => {
     const uc = section("3 功能需求");
     assert.ok(uc.includes("领域说明 DN-001（「读者登录时输入的一串字符」）"));
     assert.ok(!uc.includes("出处 DN-001"));
+    const constraints = section("5 约束");
+    assert.ok(constraints.includes("来源：功能用例 UC-001（「读者登录系统。」）；助手补充（「输错多次后锁定是通行的做法」）"), constraints);
   });
 });
 

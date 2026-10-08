@@ -319,23 +319,49 @@ def split_user_words_locator(locator: str) -> tuple[str, str] | None:
     return (session_id, entry_id) if session_id and entry_id else None
 
 
+#: 来源种类早期版本的两个名字与现在的名字，与 agent/src/lib/schema.ts 的 LEGACY_SOURCE_KINDS 一致。
+LEGACY_SOURCE_KINDS = {"执行者补充": "助手补充", "领域说明": "条目"}
+#: 依据方是任务里的要素的两种来源：另一个条目，或者一张图。这两种另记引用时对方的修订号。
+ELEMENT_SOURCE_KINDS = ("条目", "图")
+
+
+def source_kind_now(kind: str) -> str:
+    """一个来源种类现在叫什么：早期版本的名字换成现在的，别的照原样。"""
+    return LEGACY_SOURCE_KINDS.get(kind, kind)
+
+
 def read_sources(conn: sqlite3.Connection, task_id: str) -> dict[tuple[str, int], list[dict]]:
     """按（条目编号, 修订号）取条目在每次修订下的来源。
 
     库里一条来源支持几处字段就展开成几行（support_no 从 1 起），这里按「第几条」合回一条，
     所支持的字段放进「支持」列表：每项是字段名与列表里的第几项（从 0 起，为空表示整个字段）；
     列表为空表示这条来源支持整个条目。最早格式的库没有这几列，读出来「支持」一律为空列表。
+
+    读出的种类一律是现在的名字。来源表的迁移只在这个库下一次被写入时发生，在那之前库里还是早期版本的样子，这里照迁移的
+    规矩现算（与 agent/src/lib/task_read.ts 的 readSources 同一个做法）：「执行者补充」读成「助手补充」，出处正好是
+    「执行者补充」的也读成「助手补充」；「领域说明」读成「条目」。种类是「条目」或「图」的来源另带「依据的修订」：
+    引用那一刻对方的修订号；没有迁过的库里取被引用的条目在这条来源所在修订当时的最新修订号。
     """
     columns = {row[1] for row in conn.execute("PRAGMA table_info(item_source)")}
     field_level = {"support_no", "field", "field_index"} <= columns
     order = "item_id, revision_no, position" + (", support_no" if field_level else "")
+    migrated = "depends_revision" in columns
     grouped: dict[tuple[str, int], list[dict]] = {}
     for row in conn.execute(f"SELECT * FROM item_source WHERE task_id = ? ORDER BY {order}", (task_id,)):
         key = (row["item_id"], row["revision_no"])
         bucket = grouped.setdefault(key, [])
         if not bucket or bucket[-1]["第几条"] != row["position"]:
-            one = {"种类": row["kind"], "出处": row["locator"], "摘录": row["excerpt"],
+            kind = source_kind_now(row["kind"])
+            locator = kind if row["kind"] in LEGACY_SOURCE_KINDS and kind == "助手补充" and row["locator"] == row["kind"] else row["locator"]
+            one = {"种类": kind, "出处": locator, "摘录": row["excerpt"],
                    "第几条": row["position"], "事件序号": row["event_seq"], "支持": []}
+            if kind in ELEMENT_SOURCE_KINDS:
+                if migrated:
+                    one["依据的修订"] = row["depends_revision"]
+                else:
+                    one["依据的修订"] = conn.execute(
+                        "SELECT MAX(revision_no) FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no <= ?",
+                        (task_id, str(row["locator"]).strip(), row["revision_no"])).fetchone()[0]
             if row["kind"] == "用户的话":
                 split = split_user_words_locator(row["locator"])
                 one["对话出处"] = {"会话编号": split[0], "条目编号": split[1]} if split else None

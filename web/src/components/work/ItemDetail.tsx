@@ -41,13 +41,13 @@ import { chapterOf } from "../../../../agent/src/lib/docx_locations";
 import { TaskIdContext, useDocx } from "../../state/docxStore";
 import { KnowledgeContext } from "../../state/knowledge";
 import { isKnowledgeLocator, knowledgePlace } from "../../model/knowledge";
-import { BUSY_TEXT, batchNo, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, itemVerdict, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, writeOffReason } from "../../model/items";
+import { BUSY_TEXT, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, batchNo, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, itemVerdict, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, writeOffReason } from "../../model/items";
 import { baselineRevision, confirmedRevision } from "../../model/revisions";
 import { formatTime } from "../../model/format";
 import { rejectedText } from "./errors";
 import { useToast } from "../Toasts";
 import { StatusBadges } from "./ItemStatus";
-import { citationsOf, displayOf, liveOwnRefs, SOURCE_DOMAIN_NOTE } from "../../model/domainNotes";
+import { citationsOf, displayOf, liveOwnRefs } from "../../model/domainNotes";
 import { FindingLine } from "./FindingLine";
 import { PassNote } from "./PassNote";
 
@@ -173,7 +173,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   const everConfirmed = seen.everConfirmed;
   /** 画线的比较对象：看旧修订时是它的上一次改动；有修订标识时是上次确认的修订；点了「比对」时是上一次改动。 */
   const beforeFields = old ? previous : showMarks ? baseFields : compare ? previous : null;
-  const supplements = sources.filter((s) => s.kind === "执行者补充");
+  const supplements = sources.filter((s) => s.kind === SOURCE_SUPPLEMENT);
   // 当前所在的修订上评审结论依据的那条记录的发现（通过时也可能有建议）；看旧修订时不标。
   const verdict = itemVerdict(item, task);
   const current = old ? undefined : verdict.basis ?? undefined;
@@ -322,6 +322,15 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           {sources.length > 0 && <div className="sec-h">来源</div>}
           {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} />)}
           {display && <CitedBy task={task} item={item} onOpenItem={onOpenItem} />}
+          {/* 被谁依据：把这一条写成来源的别的条目。领域说明一类的集合上面已经有「被哪些条目引用」一节，不再重复这一行。 */}
+          {!display && (item.depended_by ?? []).length > 0 && (
+            <div className="depended" data-testid="depended-by">
+              被谁依据：{(item.depended_by ?? []).map((one, i) => (
+                <span key={one.id}>{i > 0 && "、"}<span className="ref" role="button" data-testid={`depended-by-${one.id}`} onClick={() => onOpenItem?.(one.id)}>{one.id}</span>
+                  {titleOf?.(one.id) ? ` ${titleOf(one.id)}` : ""}</span>
+              ))}
+            </div>
+          )}
 
           {item.reviews.length > 0 && (
             <div className="muted small" style={{ marginTop: "0.571rem" }} data-testid="review-records">
@@ -495,7 +504,9 @@ function FieldRow({ def, value, before, marked, findings, ruleOf, onFix, fixOff,
 }
 
 /**
- * 底部「来源」一节的一条来源：种类标签、出处（材料原文可点，点了材料区滚到那里；领域说明的编号点了打开它）、摘录与支持的字段。
+ * 底部「来源」一节的一条来源：种类标签、出处（材料原文可点，点了材料区滚到那里；依据另一个条目时编号点了打开它）、摘录与支持的字段。
+ * 依据另一个条目的来源：那个条目在引用之后改过，编号后面标「依据已变」并写明引用时与现在各是修订几；它已经删除时写「已经删除」，
+ * 编号不可点。助手补充的摘录是理由，前面写「理由：」。
  * 出自知识库文档的来源，种类仍是「文档原文」，出处以 knowledge/ 开头：标签写「知识库」（紫红色），出处写「知识库名 / 文档名」，
  * 点了打开那份文档的正文；文档已经不在知识库的清单里时出处不可点，旁边灰字写明。
  */
@@ -507,13 +518,16 @@ export function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
   // 知识库来源不去读材料（它不是材料），出处由知识库清单得出。
   const place = useSourcePlace(source, !!kb);
   const kinds: Record<string, [string, string]> = {
-    文档原文: ["src", "材料原文"], 执行者补充: ["warn", "助手补充"], 用户的话: ["teal", "用户的话"],
-    [SOURCE_DOMAIN_NOTE]: ["note", SOURCE_DOMAIN_NOTE],
+    文档原文: ["src", "材料原文"], [SOURCE_SUPPLEMENT]: ["warn", SOURCE_SUPPLEMENT], 用户的话: ["teal", "用户的话"],
+    [SOURCE_ITEM]: ["note", SOURCE_ITEM], [SOURCE_FIGURE]: ["fig", SOURCE_FIGURE],
   };
+  const onElement = source.kind === SOURCE_ITEM || source.kind === SOURCE_FIGURE;
+  const then = source.depends_revision ?? null;
+  const now = source.current_revision ?? null;
   const [cls, name] = kb ? ["src kb", "知识库"] : kinds[source.kind] ?? ["on", source.kind];
   const supports = source.supports ?? [];
   return (
-    <div className={`srcbox${source.kind === "执行者补充" ? " added" : ""}`}>
+    <div className={`srcbox${source.kind === SOURCE_SUPPLEMENT ? " added" : ""}${source.stale ? " stale" : ""}`}>
       <div className="sh">
         <span className={`chip ${cls}`}>{name}</span>
         {source.kind === "文档原文" && !kb && (
@@ -523,11 +537,20 @@ export function SourceBox({ source, onLocate, onOpenItem, titleOf }: {
           <span className="evi" role="button" data-testid="kb-source" onClick={() => onLocate?.(source.excerpt, source.locator)}>出处：{kb.label}（点一下看原文）</span>
         )}
         {kb && kb.gone && <><span className="evi off">出处：{kb.label}</span><span className="gone" data-testid="kb-doc-gone">这份文档已经不在知识库里</span></>}
-        {source.kind === SOURCE_DOMAIN_NOTE && (
+        {onElement && source.stale !== "deleted" && (
           <> <span className="ref" role="button" data-testid={`note-source-${source.locator}`} onClick={() => onOpenItem?.(source.locator)}>{source.locator}</span> {titleOf?.(source.locator)}</>
         )}
+        {onElement && source.stale === "deleted" && <span className="gone" data-testid={`basis-deleted-${source.locator}`}>{source.locator} 已经删除</span>}
+        {source.stale === "changed" && (
+          <span className="basis-stale" data-testid={`basis-stale-${source.locator}`}>
+            依据已变：{source.locator} 在这之后改过{then !== null && now !== null ? `（引用时是修订 ${then}，现在是修订 ${now}）` : ""}
+          </span>
+        )}
       </div>
-      <div className={`quote${source.kind === "用户的话" ? " said" : ""}`}>{source.kind === "文档原文" || source.kind === "用户的话" || source.kind === SOURCE_DOMAIN_NOTE ? `「${source.excerpt}」` : source.excerpt}</div>
+      <div className={`quote${source.kind === "用户的话" ? " said" : ""}`}>
+        {source.kind === SOURCE_SUPPLEMENT ? <><span className="why">理由：</span>{source.excerpt}</>
+          : source.kind === "文档原文" || source.kind === "用户的话" || onElement ? `「${source.excerpt}」` : source.excerpt}
+      </div>
       <div className="fields">
         {supports.length
           ? <>支持这几处：<b>{supports.map((x) => (x.index != null ? `${x.field}第 ${x.index + 1} 条` : x.field)).join("、")}</b></>
