@@ -10,6 +10,8 @@ import { api, ApiError } from "../api/client";
 import { MaterialPane, PDF_HINT, type LocateRequest } from "../components/work/MaterialPane";
 import { MaterialsCard, pdfSummary } from "../components/task/MaterialsCard";
 import { PdfOutline } from "../components/work/PdfOutline";
+import { ToastProvider } from "../components/Toasts";
+import { pdfUploadingText } from "../model/upload";
 import { chapterOfPage, headingOfPage } from "../model/pdfView";
 import { resetPdfStore } from "../state/pdfStore";
 import { ItemsPanel } from "../components/work/ItemsPanel";
@@ -226,6 +228,35 @@ describe("来源标签与任务页材料卡", () => {
     render(<OpenItem sources={[{ kind: "文档原文", locator: `${PDF}#p3-2`, excerpt: "学生一次最多借 5 本。", supports: [] }]} />);
     await waitFor(() => expect(api.materialContent).toHaveBeenCalled());
     await waitFor(() => expect(document.querySelector(".srcbox .evi")!.textContent).toBe("出处：借阅管理办法.pdf · 第 3 页（点一下看原文）"));
+  });
+
+  it("上传 PDF 时先说一句「正在上传……要多等一会儿」，传完（或没有传成）这一句原地换成结果；别的文件不说", async () => {
+    expect(pdfUploadingText("办法.PDF")).toBe("正在上传 办法.PDF。PDF 要先读出各页的文字，页数多的要多等一会儿。");
+    expect([pdfUploadingText("说明.md"), pdfUploadingText("规范.docx")]).toEqual([null, null]);
+    let finish: (value: { path: string }) => void = () => {};
+    const sent = vi.spyOn(api, "uploadMaterial").mockImplementation(() => new Promise((ok) => { finish = ok; }));
+    const onChanged = vi.fn();
+    render(<Wrap><ToastProvider><MaterialsCard taskId="TASK-1" materials={[]} closed={false} info={null} onView={() => {}} onChanged={onChanged} /></ToastProvider></Wrap>);
+    // 每传一次，上传框会换一个新的文件输入框，所以每次现找。
+    const choose = (file: File) => fireEvent.change(document.querySelector("input[type=file]") as HTMLInputElement, { target: { files: [file] } });
+    choose(new File(["%PDF"], "办法.pdf", { type: "application/pdf" }));
+    expect(await screen.findByText("正在上传 办法.pdf。PDF 要先读出各页的文字，页数多的要多等一会儿。")).toBeTruthy();
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(onChanged).not.toHaveBeenCalled();
+    finish({ path: "inputs/办法.pdf" });
+    expect(await screen.findByText("已上传：inputs/办法.pdf")).toBeTruthy();
+    expect(screen.queryByText(/^正在上传/)).toBeNull();
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    // 没有传成：那一句同样换成任务服务给的话。
+    sent.mockRejectedValueOnce(new ApiError("bad_request", "这份 PDF 打不开。", 400));
+    choose(new File(["x"], "坏的.pdf", { type: "application/pdf" }));
+    expect(await screen.findByText("这份 PDF 打不开。")).toBeTruthy();
+    expect(screen.queryByText(/^正在上传/)).toBeNull();
+    // 文本材料：不说那一句。
+    sent.mockResolvedValueOnce({ path: "inputs/说明.md" });
+    choose(new File(["x"], "说明.md", { type: "text/markdown" }));
+    expect(await screen.findByText("已上传：inputs/说明.md")).toBeTruthy();
+    expect(screen.queryByText(/^正在上传/)).toBeNull();
   });
 
   it("任务页的材料卡：PDF 材料名字后面写页数，有没有读出文字的页时写有几页", () => {

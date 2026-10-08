@@ -9,7 +9,7 @@ import { FileTextOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined } f
 import { api, ApiError } from "../../api/client";
 import type { Material, ServiceInfo } from "../../api/types";
 import { formatBytes, formatTimeShort } from "../../model/format";
-import { tooLargeText, unsupportedTypeText, uploadAccept, uploadLimitText, uploadTypesText } from "../../model/upload";
+import { pdfUploadingText, tooLargeText, unsupportedTypeText, uploadAccept, uploadLimitText, uploadTypesText } from "../../model/upload";
 import { forgetDocx } from "../../state/docxStore";
 import { useToast } from "../Toasts";
 
@@ -147,13 +147,17 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
                 onError?.(new Error(refused));
                 return;
               }
+              // PDF 要等一会儿：先说一句，结果出来时原地换成结果（同一个 key）。
+              const waiting = pdfUploadingText((file as File).name);
+              const same = waiting ? { key: `upload:${(file as File).name}` } : undefined;
+              if (waiting && same) toast.running(same.key, waiting);
               try {
                 const r = await api.uploadMaterial(taskId, file as File);
-                toast.success(`已上传：${r.path}`);
+                toast.success(`已上传：${r.path}`, same);
                 onSuccess?.({});
                 onChanged();
               } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : "上传没有成功。");
+                toast.error(e instanceof ApiError ? e.message : "上传没有成功。", same);
                 onError?.(e as Error);
               }
             }}

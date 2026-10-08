@@ -31,7 +31,7 @@ import { go, href, openSettings } from "../router";
 import { useToast } from "../components/Toasts";
 import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
-import { tooLargeText, unsupportedTypeText } from "../model/upload";
+import { pdfUploadingText, tooLargeText, unsupportedTypeText } from "../model/upload";
 import { executorHint } from "../components/work/executorHint";
 import { KnowledgeContext } from "../state/knowledge";
 import { KnowledgeDocModal, type KnowledgeDocRequest } from "../components/work/KnowledgeDocModal";
@@ -207,12 +207,16 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       toast.error(refused);
       return;
     }
+    // PDF 要等一会儿：先说一句，结果出来时原地换成结果（同一个 key）。
+    const waiting = pdfUploadingText(file.name);
+    const same = waiting ? { key: `upload:${file.name}` } : undefined;
+    if (waiting && same) toast.running(same.key, waiting);
     try {
       const r = await api.uploadMaterial(taskId, file, sessionId);
       setAttachments((a) => [...a, r.path]);
-      toast.success(`已上传：${r.path}。它会随你的下一句话一起交给助手。`);
+      toast.success(`已上传：${r.path}。它会随你的下一句话一起交给助手。`, same);
     } catch (e) {
-      toast.error(e instanceof ApiError ? errorText(e) : "上传没有成功。");
+      toast.error(e instanceof ApiError ? errorText(e) : "上传没有成功。", same);
     }
   };
 
