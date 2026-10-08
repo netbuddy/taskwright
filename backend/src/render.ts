@@ -140,6 +140,39 @@ export function sourcesText(lib: Library, itemId: string, revisionNo: number, wo
   return parts.join("；") || NO_SOURCES_TEXT;
 }
 
+/** 一条来源分成三项：种类（给读者看的叫法）、出处（没有出处时是空的）、摘录。 */
+export interface SourceEntry { kind: string; where: string; excerpt: string }
+
+/**
+ * 条目的来源逐条分成种类、出处、摘录三项，导出 Word 时一条来源写一行用。种类与出处的叫法与 sourcesText 相同
+ * （知识库、助手补充、用户的话换成读者看得懂的出处、Word 材料不写段落号），只是不连成一句话；改其中一个时要对着另一个改。
+ */
+export function sourceEntries(lib: Library, itemId: string, revisionNo: number, wordsLocator: Locate | null = null, libraryName: LibraryName | null = null): SourceEntry[] {
+  const out: SourceEntry[] = [];
+  for (const s of lib.sourcesOf(itemId, revisionNo)) {
+    if (s.kind === USER_EDIT) continue;
+    const excerpt = truthy(s.excerpt) ? str(s.excerpt) : "";
+    if (s.kind === DOMAIN_NOTE) {
+      out.push({ kind: DOMAIN_NOTE, where: truthy(s.locator) ? str(s.locator) : "", excerpt });
+      continue;
+    }
+    if (s.kind === USER_WORDS) {
+      const readable = wordsLocator && truthy(s.locator) ? wordsLocator(s.locator) : null;
+      out.push({ kind: USER_WORDS, where: readable || "对话里用户说的话", excerpt });
+      continue;
+    }
+    const inKnowledge = s.kind === DOCUMENT ? parseKnowledgeLocator(String(or(s.locator, ""))) : null;
+    if (inKnowledge) {
+      const paragraph = inKnowledge.paragraph !== null ? ` 第 ${inKnowledge.paragraph} 段` : "";
+      out.push({ kind: KNOWLEDGE_WORD, where: `${libraryName?.(inKnowledge.library) ?? inKnowledge.library} / ${inKnowledge.name}${paragraph}`, excerpt });
+      continue;
+    }
+    const locator = String(or(s.locator, "")).replace(/(\.docx)#p\d+$/i, "$1");
+    out.push({ kind: KIND_WORDS[s.kind] ?? s.kind, where: s.kind !== EXECUTOR_SUPPLEMENT ? locator : "", excerpt });
+  }
+  return out;
+}
+
 /** 「集合名 字段=值 字段!=值」→ [集合名, [字段, 是否要相等, 值]]。值里不能有空格。 */
 export function parseSelector(text: string): [string, [string, boolean, string][]] {
   const [head, ...rest] = text.trim().split(/\s+/);

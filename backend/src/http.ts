@@ -10,6 +10,7 @@ import { extname } from "node:path";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
 import * as render from "./render.ts";
+import * as exportDocx from "./export_docx.ts";
 import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
@@ -453,11 +454,19 @@ const handlers: Record<string, Handler> = {
   documents: async (service, req) => {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
-    if (or(body.format, "markdown") !== "markdown") throw new ApiError("bad_request", "现在只支持 markdown。");
+    const format = or(body.format, "markdown");
+    if (format !== "markdown" && format !== "docx") throw new ApiError("bad_request", "format 要写 markdown 或 docx，不写是 markdown。");
     const lib = library.libraryOf(t.dir);
-    const [revisionNo, items] = render.documentRequest(body);
     // 知识库来源的出处在文档里写知识库的名字：名字取自现在的知识库清单，已经不在的写编号。
     const names = new Map((service.knowledge?.libraries() ?? []).map((one) => [one.id, one.name]));
+    if (format === "docx") {
+      // 选中的条目导出成 Word 文件：只能下载，导出的是每个条目最新的修订。
+      if (req.params.mode !== "download") throw new ApiError("bad_request", "Word 文件只能下载，不能预览。");
+      const [chosen, withSources] = exportDocx.docxRequest(body);
+      const file = await exportDocx.exportItemsDocx(lib, chosen, withSources, await wordsLocator(t, lib), (id) => names.get(id) ?? null);
+      return { status: 200, headers: { "Content-Type": exportDocx.DOCX_TYPE, "Content-Disposition": exportDocx.docxDisposition(file.fileName, t.taskId) }, body: file.data };
+    }
+    const [revisionNo, items] = render.documentRequest(body);
     const text = render.render(t.dir, lib, revisionNo, items, await wordsLocator(t, lib), (id) => names.get(id) ?? null);
     if (req.params.mode === "preview") return json(200, { ok: true, text });
     return {

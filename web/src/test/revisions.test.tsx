@@ -167,7 +167,8 @@ describe("单一写入者：执行者工作中", () => {
     cleanup();
     panel({ writesOff: true });
     expect(screen.getByTestId("busy-banner")).toHaveTextContent("助手正在工作，结束后你可以继续修改");
-    expect(within(screen.getByTestId("item-UC-001")).getByRole("checkbox")).toBeDisabled();
+    // 勾选框照常能勾：勾选还用来导出 Word，导出不改任何东西；「标为已读」在助手工作中不能点（见下面的 bulk-viewed）。
+    expect(within(screen.getByTestId("item-UC-001")).getByRole("checkbox")).toBeEnabled();
     cleanup();
     panel({ writesOff: true, selected: null });
     fireEvent.click(screen.getByText("问题"));

@@ -13,6 +13,9 @@
 // 后端核对通过就回应，评审在后台跑，进度与结果由全站提示条报（workToasts.ts）。进度汇总一行写待评审、评审不通过（不含保留的）各几条，
 // 有保留了写法的条目时另写「已保留写法 N」。点开进度看到的完成条件
 // 与任务页是同一个面板，评审那一条旁边有「评审这 N 条」与「打开 X」。
+// 导出 Word：顶上一行「生成文档」旁边的「导出 Word」导出列表里勾选的条目（全部页签里勾中的都算，不只当前页签），一个都没勾时灰；
+// 点了弹对话框（ExportDocxModal.tsx）。导出不改任何东西，所以勾选框在助手工作中、任务结束后也能勾；「标为已读」在这两种时候照旧不能用。
+// 卡片式的集合（问题条目）没有勾选框，导不了。
 // 问题跟着条目走（ItemIssues.tsx）：列表行的状态徽标里带「问题 N」（ItemStatus.tsx），详情顶部列出挂在这条上、还没了结的问题；从问题卡片上的「牵涉 UC-003」跳来时
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
@@ -28,6 +31,7 @@ import { submitQuestion } from "../../model/submit";
 import { unlinkedIds } from "../../model/domainNotes";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 import { errorText, rejectedText } from "./errors";
+import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
 import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
@@ -89,6 +93,7 @@ export function ItemsPanel({
     ?? (collections.some((c) => c.name === initialCollection) ? initialCollection! : collections[0]?.name ?? ""));
   const [filter, setFilter] = useState<ItemFilter>("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
   const [flash, setFlash] = useState<string[]>([]);
   const toast = useToast();
@@ -111,7 +116,6 @@ export function ItemsPanel({
   const [dirty, setDirty] = useState(false);
   const activeTab = selectedItem?.collection ?? tab;
   const hitIds = hit?.items ?? [];
-  const off = readOnly || writesOff;
   const offTitle = writeOffReason(task, { readOnly, writesOff });
 
   // 从卡片、修订页签点来的条目：切到它所在的集合、不让筛选挡住它。
@@ -149,6 +153,8 @@ export function ItemsPanel({
     return f && i.fields[f.name] === (f.values ?? [])[0];
   }).length;
   const checkedItems = items.filter((i) => checked.has(i.item_id));
+  // 导出 Word 用的：全部页签里勾中的条目（已经不在的编号不算）。
+  const exportItems = task.items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
   const hitsIn = (collection: string) => task.items.filter((i) => i.collection === collection && hitIds.includes(i.item_id)).length;
   const toReview = pendingReview(task);
@@ -198,6 +204,8 @@ export function ItemsPanel({
         ))}
         <span className="spacer" />
         <button type="button" className="btn sm" onClick={onGenerateDoc}>生成文档</button>
+        <button type="button" className="btn sm" disabled={!exportItems.length} title={exportItems.length ? undefined : EXPORT_DOCX_HINT} data-testid="export-docx"
+          onClick={() => setExporting(true)}>导出 Word{exportItems.length ? `（${exportItems.length}）` : ""}</button>
         {onReview && (
           <button type="button" className="btn sm pri" disabled={!!reviewOff} title={reviewOff} data-testid="review-all"
             onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
@@ -245,6 +253,7 @@ export function ItemsPanel({
           <button type="button" className="btn sm" onClick={() => setChecked(new Set())}>取消勾选</button>
         </div>
       ) : null)}
+      <ExportDocxModal open={exporting} task={task} items={exportItems} onClose={() => setExporting(false)} />
       <div className="items-body">
         {selectedItem && def ? (
           <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} writesOff={writesOff} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
@@ -279,7 +288,7 @@ export function ItemsPanel({
                 <div key={item.item_id}>
                   <div className={`lrow${checked.has(item.item_id) ? " sel" : ""}${flash.includes(item.item_id) ? " flash" : ""}${hitIds.includes(item.item_id) ? " sw-hit" : ""}${needsReading(task, item.collection) && isUnread(item) ? " unread" : ""}`}
                     onClick={() => onSelect(item.item_id)} data-testid={`item-${item.item_id}`}>
-                    <input type="checkbox" checked={checked.has(item.item_id)} disabled={off} onClick={(e) => e.stopPropagation()}
+                    <input type="checkbox" checked={checked.has(item.item_id)} onClick={(e) => e.stopPropagation()}
                       onChange={(e) => setChecked((s) => { const n = new Set(s); if (e.target.checked) n.add(item.item_id); else n.delete(item.item_id); return n; })} />
                     <span className="lid">{item.item_id}</span>
                     <span className="lname" title={item.title}>{item.title}</span>
