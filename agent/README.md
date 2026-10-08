@@ -13,11 +13,12 @@
 | `tools/reply.ts` | 「回复」（`reply`）：执行者对用户说的每一句话都经它发出；合格时结束本次运行，连续被拒到上限时放行纯文字回复并标 `degraded`。 |
 | `tools/get_item.ts` | 「查看条目」（`get_item`）：按编号看一个条目某一版的全部字段、来源、当前版本号、评审与确认状态。只读。 |
 | `tools/get_task_status.ts` | 「查询任务状态」（`get_task_status`）：各集合的条目、完成条件逐项、未解决的问题条目、未读清单（用户还没看过现在样子的条目）、最近一次修订。只读，输出与 `/tw-board` 同源。 |
-| `tools/search_knowledge.ts` | 「按意思查找知识库」（`search_knowledge`）：在任务选用的知识库里找与一句话意思最相近的几个片段，每个带相近程度、所在的知识库与文档、读原文用的路径与行号、正文。比远近由任务服务算（要调嵌入模型），核心逻辑在 `lib/knowledge_search.ts`。只读。 |
+| `tools/search_knowledge.ts` | 「查找知识库」（`search_knowledge`）：在任务选用的知识库里按意思与按字面两路找与一句话最相关的几个片段，每个带所在的知识库与文档、位置、它在两路里各排第几、出处的写法与逐字的原文，全部文字不超过 8192 字节。两路由任务服务算（按意思那一路要调嵌入模型），核心逻辑在 `lib/knowledge_search.ts`。只读。 |
 | `tools/complete_task.ts` | 「完成任务」：按任务定义的完成条件逐项核对，全部满足才把任务标为已完成。 |
 | **扩展点（`hooks/`）** | 挂在 pi 的事件上或登记成扩展命令，不写任务数据；扩展命令写库时调用与工具相同的核心函数。 |
 | `hooks/task_status.ts` | 打开会话时往会话里追加任务现状消息（`customType` 为 `taskwright-task-status`），并经状态栏同名的键报给后端。 |
 | `hooks/reply_fallback.ts` | 兜底：执行者没有经「回复」说话就停下时，追加一句固定的话要它改用「回复」，至多两次。 |
+| `hooks/tool_limits.ts` | 给自带工具的返回定量，不拦调用：`grep` 的返回超过 40 行或 6144 字节时截短并加一句话，经状态栏报一行；`read` 读知识库目录下的文件而没有写要读几行时按 120 行读。判断在 `lib/tool_limits.ts`。 |
 | `hooks/user_commands.ts` | 两个扩展命令：`/tw-user <JSON>` 是用户在界面上的直接操作（改字段、删条目、确认、撤回确认、标为先不管、撤销），不经模型写库；`/tw-ui <JSON>` 是卡片上需要执行者再出力的点击。结果经状态栏键 `taskwright-user-result`、`taskwright-ui-result` 回传。 |
 | `hooks/board_command.ts` | 扩展命令 `/tw-board`：打印交付物看板，`/tw-board UC-001` 打印一个条目的全部字段与来源。只读，执行者看不到。 |
 | `hooks/tui_render.ts` | 「回复」与「保存修订」在 pi 终端界面里的渲染器，只有交互模式调用，经 `withTuiRenderers` 并进工具定义。 |
