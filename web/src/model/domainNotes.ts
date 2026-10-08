@@ -1,12 +1,10 @@
 // 可被引作来源的解释性条目（需求规格任务里是「领域说明」集合）在界面上的几样派生：
 // 按任务定义「界面」一项的分组字段分组、谁引用了一个条目、一个条目与别的条目有没有联系。
-// 集合名、字段名都取自任务定义；只有来源种类的名字「领域说明」是固定的（它与集合名相同，agent 侧 lib/schema.ts 同名常量）。
+// 集合名、字段名都取自任务定义；引用它的来源种类是「条目」（出处写条目编号），与依据别的集合的条目是同一种。
 // 不另存任何关系：来源表与「条目引用」字段就是全部依据，与 agent 侧 lib/conditions.ts 的 unlinkedDomainNotes 同一口径。
 
 import type { CollectionDef, Item, Task } from "../api/types";
-
-/** 来源种类「领域说明」：出处是一条领域说明的条目编号。 */
-export const SOURCE_DOMAIN_NOTE = "领域说明";
+import { SOURCE_ITEM } from "./items";
 
 /** 分组字段空着时那一组的组名，与文档模板的归组一致。 */
 export const EMPTY_GROUP = "（未填）";
@@ -61,7 +59,7 @@ export function citationsOf(task: Task, itemId: string): Citation[] {
   for (const other of task.items) {
     if (other.item_id === itemId) continue;
     for (const s of other.sources) {
-      if (s.kind !== SOURCE_DOMAIN_NOTE || s.locator !== itemId) continue;
+      if (s.kind !== SOURCE_ITEM || s.locator !== itemId) continue;
       const supports = s.supports ?? [];
       out.push({ item: other, how: "source", excerpt: s.excerpt,
         where: supports.length ? supports.map((x) => (x.index != null ? `${x.field}第 ${x.index + 1} 条` : x.field)).join("、") : "整个条目" });

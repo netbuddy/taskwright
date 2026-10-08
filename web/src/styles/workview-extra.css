@@ -301,8 +301,15 @@
 .app .m.ai .mentioned { margin-top: .35rem; font-size: 0.857rem; color: #8a8a8a; }
 
 /* 领域说明一类的集合（任务定义「界面」一项）：条目行上的分组小标签与修订、来源数；页签下的一句白话；
-   种类为「领域说明」的来源框；详情里「被哪些条目引用」；右侧栏的分组清单。 */
+   依据条目的来源框；详情里「被哪些条目引用」；右侧栏的分组清单。 */
 .app .chip.note { color: var(--note); border: 1px solid var(--note-line); background: var(--note-bg); cursor: pointer; }
+/* 依据任务里的要素的来源：依据条目用上面这一种标签，依据图用下面这一种；依据已变的来源框加一道橙色的边并写明；
+   助手补充的摘录是理由；条目详情里「被谁依据」一行。 */
+.app .chip.fig { color: #2f5f8a; border: 1px solid #b9d0e6; background: #eef5fb; }
+.app .srcbox.stale { border-color: var(--amber-line); }
+.app .srcbox .basis-stale { font-size: .873rem; color: #7a4a06; background: var(--amber-bg); border: 1px solid var(--amber-line); border-radius: .4rem; padding: 0 .4rem; }
+.app .srcbox .quote .why { color: var(--mut); }
+.app .depended { font-size: .93rem; color: var(--mut); margin: .4rem 0 .2rem; line-height: 1.6; }
 .app .cat { font-size: .857rem; color: var(--note); border: 1px solid var(--note-line); background: var(--note-bg); border-radius: .4rem; padding: 0 .4rem; white-space: nowrap; }
 .app .nd.plain { color: var(--mut); }
 .app .dn-lead { margin: .4rem .9rem .2rem; font-size: .93rem; color: var(--mut); }

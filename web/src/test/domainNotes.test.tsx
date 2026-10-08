@@ -52,7 +52,7 @@ function task(over: Partial<Task> = {}): Task {
       { collection: "领域说明", name: "每个条目用户确认", met: false, state: "unmet", done: 0, total: 4, missing: ["DN-001"], note: "有 4 个条目用户还没看过。" }],
       hints: [HINT] } as Completion,
     items: [
-      uc("UC-001", "借阅图书", [src("领域说明", "DN-002", "借还台管理员的解释", "参与者", 1)]),
+      uc("UC-001", "借阅图书", [src("条目", "DN-002", "借还台管理员的解释", "参与者", 1)]),
       uc("UC-002", "续借图书"),
       dn("DN-001", "纸质登记", "背景", ["UC-002"]),
       dn("DN-002", "借还台管理员", "角色"),

@@ -93,7 +93,7 @@ describe("条目行上的徽标", () => {
   });
 
   it("修订、刚改、有助手补充的内容都是灰色小字，「刚改」加粗", () => {
-    const uc = item({ item_id: "UC-001", revisions: [1, 3], sources: [{ kind: "执行者补充", locator: "", excerpt: "核对条形码" }] as Item["sources"] });
+    const uc = item({ item_id: "UC-001", revisions: [1, 3], sources: [{ kind: "助手补充", locator: "", excerpt: "核对条形码" }] as Item["sources"] });
     render(<Wrap><ItemStatus task={task([uc])} item={uc} just row /></Wrap>);
     expect(screen.getByTestId("just-UC-001")).toHaveClass("gm", "strong");
     expect(screen.getByText("有助手补充的内容")).toHaveClass("gm");
@@ -126,7 +126,7 @@ describe("条目详情头部", () => {
     render(<Wrap><ItemDetail task={t} item={it} def={t.definition.collections[0]} readOnly={false} pending={false} submit={vi.fn(async () => null)} /></Wrap>);
 
   it("与行上同一组徽标，下面一行灰字写已读、修订与来源；横幅只有一条红色的评审不通过", () => {
-    const uc = item({ item_id: "UC-002", reviews: [failed], sources: [{ kind: "执行者补充", locator: "", excerpt: "核对条形码" }] as Item["sources"] });
+    const uc = item({ item_id: "UC-002", reviews: [failed], sources: [{ kind: "助手补充", locator: "", excerpt: "核对条形码" }] as Item["sources"] });
     detail(uc, task([uc, issue("TBD-001", "未解决", ["UC-002"])]));
     expect(screen.getByTestId("state-UC-002")).toHaveTextContent("评审不通过 2 处");
     expect(screen.getByTestId("issues-UC-002")).toHaveTextContent("问题 1");
