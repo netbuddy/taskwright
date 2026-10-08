@@ -1,7 +1,7 @@
 // 对话区：渲染 user_message、assistant_reply（act 为空显示成文字，不为空加一张卡片）、ui_action_noted、
 // system_note、过程摘要（work_summary），以及正在进行的工作（step 过程行）。
 // 结构与样式照设计原型：你的话是右对齐的灰底气泡，助手的话是白底卡片，过程是左边一条细线的灰色小字，
-// 系统说明是青色虚线框，界面操作留一行灰字；输入框在底部，Enter 发出、Shift+Enter 换行。
+// 系统说明是青色虚线框（其中每条会话开头写给助手看的任务状况消息默认折叠成一行要点，点开才是全文），界面操作留一行灰字；输入框在底部，Enter 发出、Shift+Enter 换行。
 //
 // 修订的呈现：对话区不放改动块；执行者回复底部一枚小标签「产生了修订 8、9」
 // （回复的元数据，不是执行者的话），点它右侧栏切到「修订」页签并滚到那几次修订。用户直接操作的「界面操作」说明保留。
@@ -9,9 +9,10 @@
 // 有未保存的条目编辑时发送键与卡片按钮灰化，输入框上方提示「先保存或取消正在编辑的条目」。
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { AssistantReply, ConversationMessage, CurrentWork, Inform, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
+import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SystemNote, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
+import { statusNoteLine } from "../../model/statusNote";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -206,6 +207,29 @@ function ItemLink({ id, onOpenItem }: { id: string; onOpenItem: (itemId: string)
   return <span className="ref" role="button" title={`打开 ${id}`} onClick={() => onOpenItem(id)} data-testid={`inform-item-${id}`}>{id}</span>;
 }
 
+/**
+ * 任务状况消息：默认只有一行要点（行尾 ▸），点这一行展开成「系统说明」加全文（行尾 ▾），再点收起。展开没展开只记在这个组件里，
+ * 重新打开会话又是折叠的。
+ */
+function StatusNote({ line, text }: { line: string; text: string }) {
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((now) => !now);
+  return (
+    <div className={`sysnote folding${open ? " open" : ""}`} data-testid="system-note">
+      <div className="sn-line" role="button" tabIndex={0} aria-expanded={open} title={open ? "点这里收起" : "点这里看全文"} onClick={toggle}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }} data-testid="system-note-line">
+        <span>{line}</span><span className="sn-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </div>
+      {open && (
+        <div className="sn-full" data-testid="system-note-full">
+          <div className="sh">系统说明</div>
+          <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
@@ -224,13 +248,16 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   revisionOf: (note: UiActionNoted) => number | null;
 }) {
   switch (message.type) {
-    case "system_note":
+    case "system_note": {
+      const line = statusNoteLine(message as SystemNote);
+      if (line !== null) return <StatusNote line={line} text={message.text} />;
       return (
         <div className="sysnote" data-testid="system-note">
           <div className="sh">系统说明</div>
           <div style={{ whiteSpace: "pre-wrap" }}>{message.text}</div>
         </div>
       );
+    }
     case "user_message": {
       const m = message as UserMessage;
       const from = m.origin === "card_choice" ? "点卡片发出的" : m.origin === "ui_request" ? "界面操作之后发给助手的" : null;
