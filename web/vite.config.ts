@@ -16,6 +16,9 @@ const target = process.env.TASKWRIGHT_API_TARGET || "http://127.0.0.1:8790";
 export default defineConfig({
   // pdfjsAssets：把 pdf.js 显示 PDF 材料时要另外取的字符映射表、标准字体等文件带进产物的 pdfjs/ 目录，开发服务器上也提供（pdfjs_assets.mjs）。
   plugins: [react(), pdfjsAssets()],
+  // 支持的浏览器下限：Chrome 或 Edge 125、Firefox 128、Safari 18（pdf.js 的 legacy 构建官方支持的下限；入口页 index.html 里
+  // 有一段检查，太旧的浏览器显示一句话）。构建时把比这更新的语法降到这几个版本能读的写法；它只管语法，不补方法。
+  build: { target: ["chrome125", "edge125", "firefox128", "safari18"] },
   // Word 文件当作静态资源：测试里以 ?inline 引入样本 .docx。
   assetsInclude: ["**/*.docx"],
   server: {
