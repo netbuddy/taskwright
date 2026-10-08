@@ -276,7 +276,7 @@ export interface Material {
   modified_at: string;
   /** 由哪份材料生成（Word 材料的投影 x.docx.md 写 x.docx 的路径）；界面不单独列出这类文件。原始材料为 null。 */
   derived_from?: string | null;
-  /** 现在能不能删除（只有任务详情里给）：任务进行中、不是派生文件、还没有进入对话（上传之后没有任何会话有过活动）。 */
+  /** 现在能不能删除（只有任务详情里给）：任务进行中、不是派生文件、还没有进入对话（上传之后没有任何会话有过活动）。能不能替换也看它。 */
   deletable?: boolean;
 }
 
@@ -652,6 +652,8 @@ export interface MaterialAdded {
   path: string;
   bytes: number;
   modified_at: string;
+  /** 这份材料是替换上来的：被它换掉的那份材料的路径（两份可以同名）。 */
+  replaces?: string;
 }
 
 /** 删除了一份材料（material_removed）：path 是那份材料；由它生成的文件一并删掉了，不另发。 */
@@ -659,6 +661,8 @@ export interface MaterialRemoved {
   session_id: string | null;
   at: string;
   path: string;
+  /** 这份材料是被替换掉的：换上来的那份材料的路径，紧接着有一条它的 material_added。 */
+  replaced_by?: string;
 }
 
 export interface Problem {

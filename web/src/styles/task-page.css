@@ -11,6 +11,7 @@
 .tp-lnk:hover { color: var(--blue); text-decoration: underline; text-underline-offset: 0.2em; }
 .tp-lnk.quiet { color: var(--mut); }
 .tp-lnk.quiet:hover { color: var(--blue); }
+.tp-lnk.off, .tp-lnk.off:hover { color: var(--mut); opacity: 0.55; cursor: not-allowed; text-decoration: none; }
 
 /* 1 面包屑 */
 .tp-crumb { font-size: 0.929rem; color: var(--mut); margin-bottom: 0.857rem; }

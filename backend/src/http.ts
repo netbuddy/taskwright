@@ -439,6 +439,12 @@ const handlers: Record<string, Handler> = {
     const body = bodyJson(req);
     return json(200, service.deleteMaterial(t, body.path, sessionParam(req, body)));
   },
+  // 替换一份材料：被替换的那份的路径在查询参数 path 里，新文件照上传的格式放在请求体里。
+  replace_material: async (service, req) => {
+    const t = service.task(req.params.task);
+    const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
+    return json(200, await service.replaceMaterial(t, req.query.path ?? "", name, data, sessionParam(req)));
+  },
   knowledge: (service) => json(200, { ok: true, libraries: service.knowledgeOverview(), embedding: service.knowledgeEmbedding() }),
   embed_knowledge: (service, req) => json(200, service.embedKnowledge(bodyJson(req))),
   search_knowledge: async (service, req) => json(200, await service.searchKnowledge(bodyJson(req), req.signal)),
@@ -541,6 +547,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/tasks/${T}/materials/raw`, "material_raw"],
   ["POST", `/api/v1/tasks/${T}/materials`, "upload"],
   ["POST", `/api/v1/tasks/${T}/materials/delete`, "delete_material"],
+  ["POST", `/api/v1/tasks/${T}/materials/replace`, "replace_material"],
   ["GET", `/api/v1/tasks/${T}/knowledge`, "task_knowledge"],
   ["POST", `/api/v1/tasks/${T}/knowledge`, "set_task_knowledge"],
   ["GET", "/api/v1/knowledge", "knowledge"],
@@ -626,9 +633,9 @@ export function makeServer(service: Service, options: ServerOptions = {}) {
       return;
     }
     const length = Number(incoming.headers["content-length"] ?? 0) || 0;
-    const upload = /^\/api\/v1\/tasks\/([^/]+)\/materials$/s.exec(path);
+    const upload = /^\/api\/v1\/tasks\/([^/]+)\/materials(?:\/replace)?$/s.exec(path);
     if (method === "POST" && length > MAX_BODY && upload) {
-      // 与大文件有关的只有上传：先认任务（任务不在时照常报 not_found），再不读请求体就以 too_large 拒绝，并关掉这条连接。
+      // 与大文件有关的只有上传与替换材料：先认任务（任务不在时照常报 not_found），再不读请求体就以 too_large 拒绝，并关掉这条连接。
       let reply: Reply;
       try {
         service.task(upload[1]);

@@ -6,9 +6,10 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
+import { MEDIA_SUFFIX } from "../../agent/src/lib/docx_markdown.ts";
 import { DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, parseDefinition } from "../../agent/src/lib/task_read.ts";
 import * as clock from "./clock.ts";
 import { FALLBACK_TEXT, USER_EDIT, baseMessages, branch, messages as conversationMessages, page as conversationPage, textOf } from "./conversation.ts";
@@ -61,9 +62,21 @@ const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex")
 export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
 /** 删除一份已经进入对话的材料时的拒绝说明。 */
 export const ENTERED_CONVERSATION_TEXT = "这份材料已经进入了对话，不能删除。";
+/** 替换一份已经进入对话的材料时的拒绝说明。 */
+export const ENTERED_CONVERSATION_REPLACE_TEXT = "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。";
+/** 替换时新文件与被替换的那份内容完全相同时的那句话（错误码 duplicate_content）。 */
+export const SAME_AS_REPLACED_TEXT = "新文件与这份材料内容完全相同，没有替换。";
+/** 替换材料时暂放旧文件的目录（在任务目录下，与材料目录在同一个盘上；新文件存好了就删掉，没存成就把旧文件移回去）。 */
+export const REPLACING_DIR = ".replacing";
 export const UPLOAD_TYPES = [".md", ".txt", ".docx", ".pdf"];
 /** 上传 PDF 时放它与派生文件的临时目录（在任务目录下，与材料目录在同一个盘上，生成好了才移进材料目录）。 */
 export const UPLOADING_DIR = ".uploading";
+/**
+ * 上传的这份文件是来替换一份材料的（replaceMaterial 给）：path 是被换掉的那份的路径；takeAway 把它连同由它生成的文件移出材料目录，
+ * 返回一个把它们原样移回去的函数。takeAway 由上传在新文件已经可以存的那一刻调（PDF 是解析好之后），调它与存新文件之间没有等待。
+ */
+export interface Replacing { path: string; takeAway: () => () => void }
+
 /** 扩展名给人看的叫法：表里有的写叫法，没有的直接写扩展名本身。前端不另存一份，叫法经服务信息的 upload.types_text 给出。 */
 const UPLOAD_TYPE_NAMES: Record<string, string> = { ".docx": "Word 的 .docx", ".pdf": "PDF" };
 
@@ -523,9 +536,10 @@ export class Service {
   /**
    * 与已有的材料重内容或者重名就拒绝。只与用户放进来的材料比（投影、分段清单这些派生文件不算，判断沿用材料清单的 derived_from）。
    * 先比内容，再比文件名：名字和内容都相同时报内容相同。摘要值（原始字节的 SHA-256）每次现算，不保存。
+   * except 是不参加比较的那一份的路径：替换材料时，被换掉的那份还在材料目录里的时候用。
    */
-  private refuseDuplicate(t: Task, filename: string, data: Buffer): void {
-    const own = library.materials(t.dir, t.definition()).filter((m) => m.derived_from === null);
+  private refuseDuplicate(t: Task, filename: string, data: Buffer, except: string | null = null): void {
+    const own = library.materials(t.dir, t.definition()).filter((m) => m.derived_from === null && m.path !== except);
     const digest = sha256(data);
     for (const m of own) {
       if (m.bytes !== data.length) continue; // 大小不同，内容必然不同，不必读
@@ -543,43 +557,65 @@ export class Service {
     if (same) throw new ApiError("name_taken", nameTakenText(basename(same.path)), { path: same.path });
   }
 
-  /** 上传一份材料。PDF 材料要另起一次运行生成派生文件，所以这一种是异步的（uploadPdf）；别的类型当场做完。 */
-  upload(t: Task, filename: string, data: Buffer, session: string | null = null): { ok: true; path: string } | Promise<{ ok: true; path: string }> {
+  /**
+   * 上传一份材料。PDF 材料要另起一次运行生成派生文件，所以这一种是异步的（uploadPdf）；别的类型当场做完。
+   * replacing 只在替换材料时给（见 Replacing）：新文件可以存的时候先把被换掉的那份移走，存好之后连同两条事件一起报出去；
+   * 移走之后新文件没有存成，就把它原样移回去。
+   */
+  upload(t: Task, filename: string, data: Buffer, session: string | null = null, replacing: Replacing | null = null): { ok: true; path: string } | Promise<{ ok: true; path: string }> {
     const { folderRel, folder } = this.checkUpload(t, filename, data);
-    if (filename.toLowerCase().endsWith(".pdf")) return this.uploadPdf(t, filename, data, session, folderRel, folder);
+    if (filename.toLowerCase().endsWith(".pdf")) return this.uploadPdf(t, filename, data, session, folderRel, folder, replacing);
     const isDocx = filename.toLowerCase().endsWith(".docx");
     // 从这里到写完文件都是同步的：同一个服务里两个上传请求不会在比较与写入之间交错；不同的服务不会同时接手一个任务（占用标记）。
-    this.refuseDuplicate(t, filename, data);
-    const target = join(folder, filename);
+    const putBack = replacing ? replacing.takeAway() : null;
     try {
-      // 排他创建：文件已经存在（文件系统认为同名）就不写，按同名拒绝，不覆盖。
-      writeFileSync(target, data, { flag: "wx" });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      throw new ApiError("name_taken", nameTakenText(filename), { path: `${folderRel}${filename}` });
-    }
-    const path = `${folderRel}${basename(target)}`;
-    if (isDocx) {
-      // Word 材料另生成一份 Markdown 投影（图片抽到旁边的目录），执行者读它，保存修订时核对摘录也对着它；
-      // 它不单独发 material_added。生成不了（不是合法的 .docx）时连同这份文件一起删掉。
+      this.refuseDuplicate(t, filename, data);
+      const target = join(folder, filename);
       try {
-        writeProjection(target, path, segmentParamsOf(this.profile));
+        // 排他创建：文件已经存在（文件系统认为同名）就不写，按同名拒绝，不覆盖。
+        writeFileSync(target, data, { flag: "wx" });
       } catch (error) {
-        if (!(error instanceof ProjectionError)) throw error;
-        try {
-          unlinkSync(target);
-        } catch {
-          // 已经不在了
-        }
-        removeProjection(target);
-        throw new ApiError("unsupported_type", `${error.message}，请用 Word 另存为 .docx 后再上传。`);
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        throw new ApiError("name_taken", nameTakenText(filename), { path: `${folderRel}${filename}` });
       }
+      const path = `${folderRel}${basename(target)}`;
+      if (isDocx) {
+        // Word 材料另生成一份 Markdown 投影（图片抽到旁边的目录），执行者读它，保存修订时核对摘录也对着它；
+        // 它不单独发 material_added。生成不了（不是合法的 .docx）时连同这份文件一起删掉。
+        try {
+          writeProjection(target, path, segmentParamsOf(this.profile));
+        } catch (error) {
+          if (!(error instanceof ProjectionError)) throw error;
+          try {
+            unlinkSync(target);
+          } catch {
+            // 已经不在了
+          }
+          removeProjection(target);
+          throw new ApiError("unsupported_type", `${error.message}，请用 Word 另存为 .docx 后再上传。`);
+        }
+      }
+      this.announceAdded(t, session, path, target, replacing);
+      return { ok: true, path };
+    } catch (error) {
+      putBack?.();
+      throw error;
     }
-    // 材料清单只在整份数据里读一次；上传之后推一条过程类事件，工作视图与任务页据此更新清单。
-    // 材料属于任务，session_id 只说明是从哪条会话上传的（可空），订阅了别的会话的页面也收得到。
+  }
+
+  /**
+   * 材料清单只在整份数据里读一次；上传之后推一条过程类事件 material_added，工作视图与任务页据此更新清单。
+   * 材料属于任务，session_id 只说明是从哪条会话上传的（可空），订阅了别的会话的页面也收得到。PDF 材料另带 pdf 一项。
+   * 替换材料时先说旧的那份没有了（replaced_by 是换上来的这份），再说新的这份（replaces 是被换掉的那份）：两份同名时页面也是先去掉再加上。
+   */
+  private announceAdded(t: Task, session: string | null, path: string, target: string, replacing: Replacing | null): void {
     const st = statSync(target, { bigint: true });
-    t.hub.emit("material_added", { session_id: session, at: clock.now(), path, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs) });
-    return { ok: true, path };
+    const facts = target.toLowerCase().endsWith(".pdf") ? pdfFacts(target) : null;
+    if (replacing) t.hub.emit("material_removed", { session_id: session, at: clock.now(), path: replacing.path, replaced_by: path });
+    t.hub.emit("material_added", {
+      session_id: session, at: clock.now(), path, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), ...(facts ? { pdf: facts } : {}),
+      ...(replacing ? { replaces: replacing.path } : {}),
+    });
   }
 
   /**
@@ -588,9 +624,11 @@ export class Service {
    * 2. 把 PDF 写进任务目录下的临时目录，在那里另起一次运行生成投影、分段清单与位置表（见 pdf_upload.ts）；整份没有可读的文字就拒绝；
    * 3. 等的这段时间里可能有别的上传进来，所以再比较一次，然后把四个文件一起移进材料目录（第 3 步是同步的，不会与别的上传交错）。
    * 哪一步不成都把临时目录删掉，材料目录里不留东西，也不发 material_added。
+   * replacing 的意思与 upload 的相同。被换掉的那份在第 1、2 步里一直留在材料目录里（比较时不算它），到第 3 步才移走，紧接着移进新的四个文件；
+   * 所以等解析的这段时间里它照旧在材料清单里、照旧可以查看，解析不成时材料目录从头到尾没有动过。
    */
-  private async uploadPdf(t: Task, filename: string, data: Buffer, session: string | null, folderRel: string, folder: string): Promise<{ ok: true; path: string }> {
-    this.refuseDuplicate(t, filename, data);
+  private async uploadPdf(t: Task, filename: string, data: Buffer, session: string | null, folderRel: string, folder: string, replacing: Replacing | null = null): Promise<{ ok: true; path: string }> {
+    this.refuseDuplicate(t, filename, data, replacing?.path ?? null);
     const path = `${folderRel}${filename}`;
     const holding = join(t.dir, UPLOADING_DIR);
     const staging = join(holding, randomUUID());
@@ -606,24 +644,28 @@ export class Service {
         throw new ApiError("unsupported_type", error.message);
       }
       if (parsed.units === 0) throw new ApiError("unsupported_type", PDF_NO_TEXT);
-      this.refuseDuplicate(t, filename, data);
       const target = join(folder, filename);
-      const names = [...PDF_DERIVED_SUFFIXES.map((suffix) => filename + suffix), filename];
-      // 文件系统认为同名的文件已经在了（例如只差大小写）：不覆盖，按同名拒绝。
-      if (names.some((name) => existsSync(join(folder, name)))) throw new ApiError("name_taken", nameTakenText(filename), { path });
-      const moved: string[] = [];
+      const putBack = replacing ? replacing.takeAway() : null;
       try {
-        for (const name of names) {
-          renameSync(join(staging, name), join(folder, name));
-          moved.push(name);
+        this.refuseDuplicate(t, filename, data);
+        const names = [...PDF_DERIVED_SUFFIXES.map((suffix) => filename + suffix), filename];
+        // 文件系统认为同名的文件已经在了（例如只差大小写）：不覆盖，按同名拒绝。
+        if (names.some((name) => existsSync(join(folder, name)))) throw new ApiError("name_taken", nameTakenText(filename), { path });
+        const moved: string[] = [];
+        try {
+          for (const name of names) {
+            renameSync(join(staging, name), join(folder, name));
+            moved.push(name);
+          }
+        } catch (error) {
+          for (const name of moved) rmSync(join(folder, name), { force: true });
+          throw error;
         }
       } catch (error) {
-        for (const name of moved) rmSync(join(folder, name), { force: true });
+        putBack?.();
         throw error;
       }
-      const st = statSync(target, { bigint: true });
-      const facts = pdfFacts(target);
-      t.hub.emit("material_added", { session_id: session, at: clock.now(), path, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), ...(facts ? { pdf: facts } : {}) });
+      this.announceAdded(t, session, path, target, replacing);
       return { ok: true, path };
     } finally {
       rmSync(staging, { recursive: true, force: true });
@@ -636,22 +678,28 @@ export class Service {
   }
 
   /**
-   * 删除一份材料：本体连同 Word 材料的投影、分段清单、位置表与图片目录一起删，PDF 材料连同它的投影、分段清单与位置表一起删。只接受用户放进来的材料（派生文件的路径不接受），
-   * 路径必须落在材料目录里；已经进入对话的材料不删（见 enteredConversation），所以被条目引用过的材料删不掉；助手正在工作时不删。
+   * 删除与替换共用的前提：只接受用户放进来的材料（派生文件的路径不接受），路径必须落在材料目录里；已经进入对话的材料不动
+   * （见 enteredConversation），所以被条目引用过的材料既删不掉也换不掉；助手正在工作时不动。verb 是「删除」或「替换」，写进说明里。
    */
-  deleteMaterial(t: Task, rel: unknown, session: string | null = null) {
+  private requireUntouched(t: Task, rel: unknown, verb: "删除" | "替换", enteredText: string): { path: string; target: string } {
     t.requireOpen();
     const path = typeof rel === "string" ? rel : "";
     const target = this.materialPath(t, path);
     const row = library.materials(t.dir, t.definition()).find((m) => m.path === path);
-    if (row && row.derived_from !== null) throw new ApiError("bad_request", "这是由别的材料生成的文件，不能单独删除。");
+    if (row && row.derived_from !== null) throw new ApiError("bad_request", `这是由别的材料生成的文件，不能单独${verb}。`);
     if (!row || !isFile(target)) throw new ApiError("not_found", `没有材料 ${path}。`);
     if (this.enteredConversation(target, t.executor.sessions.lastActivityMs())) {
-      throw new ApiError("rejected", ENTERED_CONVERSATION_TEXT, { path, reasons: [ENTERED_CONVERSATION_TEXT] });
+      throw new ApiError("rejected", enteredText, { path, reasons: [enteredText] });
     }
     if (t.executor.state === "working") {
-      throw new ApiError("session_busy", "助手正在工作，结束后才能删除材料。", { active_session: t.executor.activeSession, reason: "working" });
+      throw new ApiError("session_busy", `助手正在工作，结束后才能${verb}材料。`, { active_session: t.executor.activeSession, reason: "working" });
     }
+    return { path, target };
+  }
+
+  /** 删除一份材料：本体连同 Word 材料的投影、分段清单、位置表与图片目录一起删，PDF 材料连同它的投影、分段清单与位置表一起删。前提见 requireUntouched。 */
+  deleteMaterial(t: Task, rel: unknown, session: string | null = null) {
+    const { path, target } = this.requireUntouched(t, rel, "删除", ENTERED_CONVERSATION_TEXT);
     unlinkSync(target);
     if (target.toLowerCase().endsWith(".docx")) {
       removeProjection(target);
@@ -664,6 +712,64 @@ export class Service {
     if (target.toLowerCase().endsWith(".pdf")) removePdfProjection(target);
     t.hub.emit("material_removed", { session_id: session, at: clock.now(), path });
     return { ok: true, path };
+  }
+
+  /**
+   * 用另一个文件替换一份还没有进入对话的材料（前提与删除相同，见 requireUntouched）。新文件照上传的规矩收（类型、大小、留用的名字、
+   * 与别的材料重内容或重名、Word 材料与 PDF 材料生成派生文件），名字与类型可以和旧的不同；新文件与旧文件内容完全相同时不换。
+   *
+   * 做法：照常上传新文件，另交给上传一个「把旧材料移走」的函数（见 Replacing）。上传在新文件已经可以存的那一刻才调它：
+   * 把旧文件连同由它生成的文件移到任务目录下的暂放目录，紧接着存新文件，中间没有等待，别的请求插不进来；新文件没有存成就原样移回去
+   * （修改时刻不变），上传的错误原样报出去。新文件是 PDF 时要先等另起的那次运行把它解析好（见 uploadPdf），等的这段时间里旧材料
+   * 一直留在材料目录里；因为等过，移走之前把前提再查一遍（这段时间里它可能进入了对话、被删掉、被换掉，或者任务结束了）。
+   * 哪些文件是由旧材料生成的，取自材料清单的 derived_from，另加 Word 材料的图片目录（材料清单不列子目录）。
+   * 新文件的修改时刻是替换的这一刻，所以它照旧算没有进入对话，直到有会话活动。
+   */
+  async replaceMaterial(t: Task, rel: unknown, filename: string, data: Buffer, session: string | null = null) {
+    const { path, target } = this.requireUntouched(t, rel, "替换", ENTERED_CONVERSATION_REPLACE_TEXT);
+    if (sha256(readFileSync(target)) === sha256(data)) throw new ApiError("duplicate_content", SAME_AS_REPLACED_TEXT, { path });
+    const folder = dirname(target);
+    const holding = join(t.dir, REPLACING_DIR);
+    const aside = join(holding, randomUUID());
+    const moved: string[] = [];
+    const putBack = () => {
+      // 移回去本身出了错时 moved 里还剩着没移回的名字，暂放目录因此留着不删，旧文件还在里面。
+      while (moved.length) {
+        const name = moved[moved.length - 1];
+        renameSync(join(aside, name), join(folder, name));
+        moved.pop();
+      }
+    };
+    const takeAway = () => {
+      this.requireUntouched(t, path, "替换", ENTERED_CONVERSATION_REPLACE_TEXT);
+      const names = [basename(target), ...library.materials(t.dir, t.definition()).filter((m) => m.derived_from === path).map((m) => basename(m.path))];
+      if (existsSync(target + MEDIA_SUFFIX)) names.push(basename(target) + MEDIA_SUFFIX);
+      mkdirSync(aside, { recursive: true });
+      try {
+        for (const name of names) {
+          renameSync(join(folder, name), join(aside, name));
+          moved.push(name);
+        }
+      } catch (error) {
+        putBack();
+        throw error;
+      }
+      return putBack;
+    };
+    let stored = false;
+    try {
+      const added = await this.upload(t, filename, data, session, { path, takeAway });
+      stored = true;
+      return { ok: true, path: added.path, replaced: path };
+    } finally {
+      // 存好了：暂放的旧文件不要了。没存成而旧文件都移回去了（或者根本没移走过）：只剩空目录，或者目录还没建。
+      if (stored || moved.length === 0) rmSync(aside, { recursive: true, force: true });
+      try {
+        rmdirSync(holding); // 没有别的替换还在用它、里面也没有留下东西时才删得掉
+      } catch {
+        // 还有别的替换在用，或者已经不在了
+      }
+    }
   }
 
   // ───────────── 知识库 ─────────────

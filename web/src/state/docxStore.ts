@@ -1,4 +1,5 @@
 // Word 材料的原始字节、派生表与位置表，按「任务编号 + 材料路径」各读一次、缓存起来（材料上传后不再改：同名的文件再上传会被拒绝，不会覆盖）。
+// 例外是删除与替换：还没有进入对话的材料可以删掉、可以换成另一个文件（可以同名），做成之后由材料卡调 forgetDocx 丢掉这一项。
 // 条目区的来源标签要写「第几页 · 哪一节 · 页上中下」：页码与页内位置取自派生表（材料区不一定正显示这份材料，所以在页面外的元素里
 // 渲染一遍算出来），章节取自后端上传时写的位置表（x.docx.locations.json）。材料区显示时拿同一份字节另渲染一遍。
 
@@ -31,6 +32,11 @@ function set(key: string, entry: DocxEntry) {
   for (const l of listeners) l();
 }
 
+/** 读完了：只有缓存里还是开始读时放的那一项才写进去。读的过程中这一项被 forgetDocx 丢掉了（材料被删除或替换），读到的旧文件就不要了。 */
+function settle(key: string, started: DocxEntry, entry: DocxEntry) {
+  if (entries.get(key) === started) set(key, entry);
+}
+
 /** 位置表的文字 → 位置表；不是合法的位置表时为 null。 */
 export function parseLocations(text: string): LocationFile | null {
   try {
@@ -41,7 +47,7 @@ export function parseLocations(text: string): LocationFile | null {
   }
 }
 
-async function load(taskId: string, path: string, key: string) {
+async function load(taskId: string, path: string, key: string, started: DocxEntry) {
   // 位置表单独接住：读不到（例如位置表出现之前建的任务）时只是来源标签不写章节，不影响材料的显示与页码。
   // 两种失败分开：读不到文件时显示后端的说明；读到了但排版库画不出来时，页面只显示一句固定的中文说明，错误原文写进浏览器的控制台。
   // 两种情况都留着位置表，来源标签照样写章节；表格里的段落的位置取自投影，画不出来时也留着。
@@ -50,16 +56,16 @@ async function load(taskId: string, path: string, key: string) {
   try {
     [bytes, content] = await Promise.all([api.materialRaw(taskId, path), api.materialContent(taskId, path)]);
   } catch (e) {
-    set(key, { status: "error", error: e instanceof ApiError ? e.message : String(e), locations: await locations });
+    settle(key, started, { status: "error", error: e instanceof ApiError ? e.message : String(e), locations: await locations });
     return;
   }
   const tablePos = tablePositions(content.text);
   try {
     const table = tableOf(await renderDocx(bytes, document.createElement("div")));
-    set(key, { status: "ready", bytes, table, tablePos, locations: await locations });
+    settle(key, started, { status: "ready", bytes, table, tablePos, locations: await locations });
   } catch (e) {
     reportUnrenderable(path, e);
-    set(key, { status: "unrenderable", tablePos, locations: await locations });
+    settle(key, started, { status: "unrenderable", tablePos, locations: await locations });
   }
 }
 
@@ -75,7 +81,7 @@ export function docxEntry(taskId: string, path: string): DocxEntry {
   if (!entry) {
     entry = { status: "loading" };
     entries.set(key, entry);
-    void load(taskId, path, key);
+    void load(taskId, path, key, entry);
   }
   return entry;
 }
@@ -86,6 +92,11 @@ export function useDocx(taskId: string | null | undefined, path: string | null |
     (l) => { listeners.add(l); return () => listeners.delete(l); },
     () => (taskId && path ? docxEntry(taskId, path) : null),
   );
+}
+
+/** 这份材料被删除或者被替换了：丢掉它的缓存项，下次要显示时重新读，同名的新文件不会显示成旧的。不通知订阅者：正显示着它的地方不因此重读。 */
+export function forgetDocx(taskId: string, path: string): void {
+  entries.delete(keyOf(taskId, path));
 }
 
 /** 测试用：清空缓存。 */
