@@ -8,8 +8,10 @@
  * 助手是任务服务在同一台机器上起的，所以先连本机回环地址上的那个端口；连不上时再按标记里的主机名连一次
  * （任务服务只绑在某一块网卡上时，回环地址连不上）。两处都连不上，或者没有这份标记（不经任务服务直接起的助手），就说这一次没有做成。
  *
- * 这个工具从不让助手停下：知识库的文档还没有换算好、没有选嵌入模型、任务服务联系不上、模型服务出错，都回一句话说明原因，
- * 并请助手改用按字面查找；只有参数写错时抛异常（异常文字由 pi 交还模型）。
+ * 这个工具从不让助手停下：知识库的文档还没有换算好、没有选嵌入模型、任务服务联系不上、模型服务出错，都回一句话说明原因与
+ * 接下来怎么办；只有参数写错时抛异常（异常文字由 pi 交还模型）。还不能查（没有换算好、没有选嵌入模型）时请助手告诉用户去处理；
+ * 这一次没有做成（联系不上、模型服务出错）时请它再查一次，仍然不成就告诉用户并记问题条目。哪一种都不请它改用 grep：
+ * 知识库目录对 grep、find、ls 是关着的（lib/knowledge_gate.ts），查知识库只有这一个办法。
  *
  * 给助手的每个片段写着到哪里读原文（路径与行号）。Word 文档的片段存的是起止段落号，行号在这里现找：读由它生成的那份文字，
  * 找这两个段落号所在的行。引用时出处的写法不变：Word 文档要写摘录所在那一段的段落号，所以只告诉助手怎样写，不替它写一个段落号。
@@ -31,17 +33,21 @@ export const SEARCH_MAX_LIMIT = 10;
 /** 等任务服务回答最多等多久：它换算要找的那句话最多等模型服务 60 秒。 */
 export const SEARCH_TIMEOUT_MS = 70_000;
 
-export const USE_LITERAL_TEXT = "请改用按字面查找（grep）。";
+/** 这一次没有做成时接在原因后面的话。 */
+export const RETRY_TEXT = "可以再查一次；仍然不成时把这个原因告诉用户，这一处先保留材料的原话并记一条问题条目。";
 export const NO_KNOWLEDGE_TEXT = "这个任务没有知识库，没有可查的。";
 export const NO_DOCUMENTS_TEXT = "这个任务选用的知识库里没有文档，没有可查的。";
 export const NO_CHUNKS_TEXT = "这个任务选用的知识库里的文档没有可比较的文字，没有可查的。";
-export const UNREACHABLE_TEXT = `按意思查找这一次没有做成：联系不上系统里负责查找的那一部分。${USE_LITERAL_TEXT}`;
-export const CLOSING_TEXT = "引用之前先用 read 读原文核对；摘录逐字照抄原文里的那一句，规矩与按字面查到的相同。";
+export const UNREACHABLE_TEXT = `按意思查找这一次没有做成：联系不上系统里负责查找的那一部分。${RETRY_TEXT}`;
+export const CLOSING_TEXT = "摘录逐字照抄原文；引用之前按上面给的位置用 read 读原文核对，一次不超过 120 行。";
 
+/** 还有文档没有换算好：任务服务这时一个片段都不给（换算好的那些也不给），所以说整个知识库都还不能查。 */
 export const notReadyText = (pending: number) =>
-  `知识库按意思查找现在还不能用：这个任务选用的知识库里还有 ${pending} 份文档没有换算好。${USE_LITERAL_TEXT}`;
-export const notAvailableText = (reason: string) => `知识库按意思查找现在还不能用：${reason.replace(/[。.]$/, "")}。${USE_LITERAL_TEXT}`;
-export const failedText = (reason: string) => `按意思查找这一次没有做成：${reason.replace(/[。.]$/, "")}。${USE_LITERAL_TEXT}`;
+  `这个任务选用的知识库里还有 ${pending} 份文档没有换算好，现在整个知识库都还不能查。请告诉用户到知识库页面点「开始换算」，换算好之后再查。`;
+/** 没有选嵌入模型（任务服务以 rejected 拒绝，reason 是它给的那句话）。 */
+export const notAvailableText = (reason: string) =>
+  `知识库现在还不能查：${reason.replace(/[。.]$/, "")}。请告诉用户到设置里选嵌入模型，再到知识库页面点「开始换算」，换算好之后再查。`;
+export const failedText = (reason: string) => `按意思查找这一次没有做成：${reason.replace(/[。.]$/, "")}。${RETRY_TEXT}`;
 
 /** 工具的返回：给模型的一段文字，给读取一侧的结构化内容。 */
 export interface SearchOutcome {

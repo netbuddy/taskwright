@@ -5,12 +5,13 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   CLOSING_TEXT, LOCK_NAME, NO_CHUNKS_TEXT, NO_DOCUMENTS_TEXT, NO_KNOWLEDGE_TEXT, SEARCH_PATH, UNREACHABLE_TEXT, backendAddresses, failedText,
   notAvailableText, notReadyText, searchKnowledge, searchParams,
@@ -145,26 +146,26 @@ test("排版的几处细节：没有标题的片段不写标题；位置跨几�
   assert.ok(text.includes(`   读原文：${join(root, "lib-a1", "files", "需求说明.docx.md")}，第 90 段（每段前面方括号里的 p 加数字是段落号）\n`));
 });
 
-test("现在还不能用：文档没有都换算好，或者没有选嵌入模型，各回一句并请改用按字面查找，不抛异常", async () => {
+test("现在还不能查：文档没有都换算好，或者没有选嵌入模型，各回一句并请助手告诉用户去处理，不抛异常，不提 grep", async () => {
   const root = makeRoot();
   reply = () => ({ body: { ok: true, model: "svc/bge-m3", pending: 3, libraries: 2, ready: false, chunks: 0, hits: [] } });
   const waiting = await searchKnowledge(makeTask(), root, { query: "罚款" });
-  assert.equal(waiting.text, "知识库按意思查找现在还不能用：这个任务选用的知识库里还有 3 份文档没有换算好。请改用按字面查找（grep）。");
+  assert.equal(waiting.text, "这个任务选用的知识库里还有 3 份文档没有换算好，现在整个知识库都还不能查。请告诉用户到知识库页面点「开始换算」，换算好之后再查。");
   assert.equal(waiting.text, notReadyText(3));
   assert.deepEqual(waiting.details, { ok: true, ready: false, query: "罚款", limit: 5, model: "svc/bge-m3", pending: 3, hits: [] });
 
   reply = () => ({ status: 422, body: { ok: false, error: { code: "rejected", message: "还没有选嵌入模型。", data: {} } } });
   const none = await searchKnowledge(makeTask(), root, { query: "罚款" });
-  assert.equal(none.text, "知识库按意思查找现在还不能用：还没有选嵌入模型。请改用按字面查找（grep）。");
+  assert.equal(none.text, "知识库现在还不能查：还没有选嵌入模型。请告诉用户到设置里选嵌入模型，再到知识库页面点「开始换算」，换算好之后再查。");
   assert.equal(none.text, notAvailableText("还没有选嵌入模型。"));
   assert.deepEqual(none.details, { ok: false, ready: false, query: "罚款", limit: 5, reason: "rejected", hits: [] });
 });
 
-test("这一次没有做成：任务服务回答了错误时带上它的那句话；没有占用标记、标记里的端口连不上时说联系不上，都请改用按字面查找", async () => {
+test("这一次没有做成：任务服务回答了错误时带上它的那句话；没有占用标记、标记里的端口连不上时说联系不上；都请再查一次、仍然不成就告诉用户并记问题条目，不提 grep", async () => {
   const root = makeRoot();
   reply = () => ({ status: 502, body: { ok: false, error: { code: "embedding_failed", message: "模型服务回答了错误（HTTP 500）：model is loading", data: {} } } });
   const failed = await searchKnowledge(makeTask(), root, { query: "罚款" });
-  assert.equal(failed.text, "按意思查找这一次没有做成：模型服务回答了错误（HTTP 500）：model is loading。请改用按字面查找（grep）。");
+  assert.equal(failed.text, "按意思查找这一次没有做成：模型服务回答了错误（HTTP 500）：model is loading。可以再查一次；仍然不成时把这个原因告诉用户，这一处先保留材料的原话并记一条问题条目。");
   assert.equal(failed.details.reason, "embedding_failed");
   // 回答不是约定的样子（例如端口上是别的程序）：写状态码。
   reply = () => ({ status: 404, body: {} });
@@ -172,7 +173,7 @@ test("这一次没有做成：任务服务回答了错误时带上它的那句�
 
   const before = hits.length;
   const noLock = await searchKnowledge(makeTask(["general"], null), root, { query: "罚款" });
-  assert.equal(noLock.text, "按意思查找这一次没有做成：联系不上系统里负责查找的那一部分。请改用按字面查找（grep）。");
+  assert.equal(noLock.text, "按意思查找这一次没有做成：联系不上系统里负责查找的那一部分。可以再查一次；仍然不成时把这个原因告诉用户，这一处先保留材料的原话并记一条问题条目。");
   assert.equal(noLock.text, UNREACHABLE_TEXT);
   const closed = await searchKnowledge(makeTask(["general"], { port: closedPort, pid: 1 }), root, { query: "罚款" });
   assert.deepEqual([closed.text, closed.details.reason], [UNREACHABLE_TEXT, "unreachable"]);
@@ -228,4 +229,24 @@ test("参数写错时抛异常：要找的话是空的，要几个不是 1 到 1
     await assert.rejects(searchKnowledge(makeTask(), makeRoot(), { query: "罚款", limit }), /limit 要写 1 到 10 的整数，不写是 5。/);
   }
   assert.equal(hits.length, 0);
+});
+
+test("给助手的每一句话都不再请它改用 grep 或按字面查找；返回末尾写查到之后怎样核对", () => {
+  const texts = [NO_KNOWLEDGE_TEXT, NO_DOCUMENTS_TEXT, NO_CHUNKS_TEXT, UNREACHABLE_TEXT, CLOSING_TEXT, notReadyText(2), notAvailableText("还没有选嵌入模型。"), failedText("到时间没有回答")];
+  for (const text of texts) assert.doesNotMatch(text, /grep|find|按字面|检索|向量/, text);
+  assert.equal(CLOSING_TEXT, "摘录逐字照抄原文；引用之前按上面给的位置用 read 读原文核对，一次不超过 120 行。");
+});
+
+test("工具的说明：什么时候查、一次查一件事、查知识库只用它、查到后读原文核对；不再提按字面查找", () => {
+  // 工具的登记文件依赖 pi 带来的包，这里不导入它，只读它的文字。
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "tools", "search_knowledge.ts"), "utf-8");
+  const description = [...source.slice(source.indexOf("description:"), source.indexOf("promptSnippet:")).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
+  for (const words of [
+    "查知识库只用这一个工具：材料把具体规定指给了别的文档（例如「按公司规范执行」「见术语表」），或者不知道规范里这件事叫什么时就查。",
+    "一次查一件事，要查几件就分几次查。",
+    "知识库目录不能用 grep、find 搜，也不能用 ls 看，知识库文档不要整份读。",
+    "引用之前按返回的位置用 read 读原文核对，一次不超过 120 行",
+    "它会告诉你现在还不能查，这时请告诉用户先去换算。",
+  ]) assert.ok(description.includes(words), words);
+  assert.doesNotMatch(description, /按字面|改用|检索|向量/);
 });

@@ -1,7 +1,7 @@
-/** 任务现状消息与「查询任务状态」里的知识库一段：选用的知识库与文档清单，续接时只在变过之后重写。 */
+/** 任务现状消息与「查询任务状态」里的知识库一段：选用的知识库与文档清单（不给路径、不给正文），续接时只在变过之后重写。 */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -13,13 +13,20 @@ import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
 
 const FRESH = { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null };
 
-/** 知识库根目录：通用知识库里一份术语表，「行业规范」里一份 Word 规范（带投影），「空的」里没有文档。 */
+/** 文档本体里的一句话：任务现状消息不写文档的正文，测试据此查它没有漏进去。 */
+const BODY = "逾期每册每天罚款 0.5 元";
+
+/** 知识库根目录：通用知识库里一份术语表与一份几十 KB 的长文档，「行业规范」里一份 Word 规范（带由它生成的那份文字），「空的」里没有文档。 */
 function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
   writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用知识库" }, { id: "lib-a1", name: "行业规范" }, { id: "lib-e0", name: "空的" }] }));
   for (const id of ["general", "lib-a1", "lib-e0"]) mkdirSync(join(root, id, "files"), { recursive: true });
-  writeFileSync(join(root, "general", "documents.json"), JSON.stringify({ documents: [{ name: "术语.md", kind: "glossary", bytes: 64 }] }));
+  writeFileSync(join(root, "general", "documents.json"), JSON.stringify({ documents: [{ name: "术语.md", kind: "glossary", bytes: 64 }, { name: "长文.md", kind: "standard", bytes: 59392 }] }));
   writeFileSync(join(root, "lib-a1", "documents.json"), JSON.stringify({ documents: [{ name: "规范.docx", kind: "standard", bytes: 2048 }] }));
+  // 文档本体都在：小的、大的、Word 的那份文字。现状消息一个字都不该取自它们。
+  writeFileSync(join(root, "general", "files", "术语.md"), `${BODY}\n`);
+  writeFileSync(join(root, "general", "files", "长文.md"), `${BODY}\n`.repeat(2000));
+  writeFileSync(join(root, "lib-a1", "files", "规范.docx.md"), `[p1] ${BODY}\n`);
   return root;
 }
 
@@ -30,23 +37,36 @@ function makeTask(libraries: string[]): string {
   return dir;
 }
 
-const section = (root: string) => [
-  "这个任务选用的知识库（参考资料，不整理成条目；材料指向规范、术语表这类文档时必须到这里查出具体规定写进条目，查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：",
-  "知识库「通用知识库」有 1 份文档：",
-  `- 术语.md（术语表，64 字节）：读 ${join(root, "general", "files", "术语.md")}；出处写 knowledge/general/术语.md`,
+const SECTION = [
+  "这个任务选用的知识库（参考资料，不整理成条目；材料里把具体规定指给了别的文档时，必须到这里把那条规定查出来写进条目并记来源；查知识库只用 search_knowledge，知识库目录不能用 grep、find 搜，也不能用 ls 看，知识库文档不要整份读；查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：",
+  "知识库「通用知识库」有 2 份文档：",
+  "- 术语.md（术语表，64 字节）：用 search_knowledge 查；出处写 knowledge/general/术语.md",
+  "- 长文.md（规范，58.0 KB）：用 search_knowledge 查；出处写 knowledge/general/长文.md",
   "知识库「行业规范」有 1 份文档：",
-  `- 规范.docx（规范，2.0 KB）：这是 Word 文档，读由它生成的投影 ${join(root, "lib-a1", "files", "规范.docx.md")}（每段一行，段落号写在方括号里）；出处写 knowledge/lib-a1/规范.docx 加段落号，例如 knowledge/lib-a1/规范.docx#p12`,
+  "- 规范.docx（规范，2.0 KB）：用 search_knowledge 查；出处写 knowledge/lib-a1/规范.docx 加段落号，例如 knowledge/lib-a1/规范.docx#p12",
   "知识库「空的」现在没有文档。",
 ].join("\n");
 
-test("新会话的现状另起一行列出这个任务选用的知识库：每个知识库的名字与文档个数，每份文档的名字、种类、大小、可以读的绝对路径与出处的写法", () => {
+/** 一段文字里没有知识库的路径、没有文档的正文，也不提 Word 文档的那份文字。 */
+function assertNoPathNoBody(text: string, root: string): void {
+  for (const path of [root, realpathSync(root), join("general", "files"), "规范.docx.md"]) assert.ok(!text.includes(path), `不该出现路径 ${path}`);
+  assert.ok(!text.includes(BODY), "不该出现文档的正文");
+  assert.doesNotMatch(text, /投影|每段一行/);
+}
+
+test("新会话的现状另起一行列出这个任务选用的知识库：每个知识库的名字与文档个数，每份文档一行写名字、种类、大小与出处的写法，不给路径、不给正文，不分大小", () => {
   const root = makeRoot();
   const dir = makeTask(["general", "lib-a1", "lib-e0"]);
   const message = taskStatusMessage(dir, FRESH, "s", root)!;
   const without = taskStatusMessage(dir, FRESH, "s", null)!;
-  assert.equal(message.text.replace(/（\d\d:\d\d:\d\d）/, ""), `${without.text.replace(/（\d\d:\d\d:\d\d）/, "")}\n${section(root)}`);
+  assert.equal(message.text.replace(/（\d\d:\d\d:\d\d）/, ""), `${without.text.replace(/（\d\d:\d\d:\d\d）/, "")}\n${SECTION}`);
+  assertNoPathNoBody(message.text, root);
+  assertNoPathNoBody(JSON.stringify(message.details), root);
+  // 一份文档一行：消息的长短只随文档份数加，不随文档大小加。
+  assert.equal(message.text.split("\n").filter((line) => line.startsWith("- ")).length, 3);
   assert.deepEqual(message.details.knowledge, [
-    { id: "general", name: "通用知识库", documents: [{ name: "术语.md", kind: "术语表", bytes: 64, locator: "knowledge/general/术语.md" }] },
+    { id: "general", name: "通用知识库", documents: [{ name: "术语.md", kind: "术语表", bytes: 64, locator: "knowledge/general/术语.md" },
+      { name: "长文.md", kind: "规范", bytes: 59392, locator: "knowledge/general/长文.md" }] },
     { id: "lib-a1", name: "行业规范", documents: [{ name: "规范.docx", kind: "规范", bytes: 2048, locator: "knowledge/lib-a1/规范.docx" }] },
     { id: "lib-e0", name: "空的", documents: [] },
   ]);
@@ -81,8 +101,9 @@ test("续接：上次之后知识库没有变就不写；任务的选用或文�
   assert.equal(only.kind, "变化");
   assert.equal(only.text.replace(/（\d\d:\d\d:\d\d）/, "（时刻）"),
     "【执行者续接这条会话时（时刻）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。\n" +
-    `上次之后，这个任务选用的知识库或其中的文档有变化，现在是这样。${section(root)}`);
+    `上次之后，这个任务选用的知识库或其中的文档有变化，现在是这样。${SECTION}`);
   assert.equal((only.details.knowledge as unknown[]).length, 3);
+  assertNoPathNoBody(only.text, root);
   assert.deepEqual(only.details.added, []);
 
   while (Date.now() <= last + 2) { /* 等过这条会话最后一刻 */ }
@@ -131,8 +152,13 @@ test("「查询任务状态」也列出选用的知识库与文档，写法与�
   const root = makeRoot();
   const dir = makeTask(["general", "lib-a1", "lib-e0"]);
   const outcome = getTaskStatus(dir, undefined, root);
-  assert.ok(outcome.text.includes(`\n${section(root)}\n`));
+  assert.ok(outcome.text.includes(`\n${SECTION}\n`));
+  // 只看知识库这一段：前面材料的那几行另有自己的说法。
+  assertNoPathNoBody(outcome.text.slice(outcome.text.indexOf("这个任务选用的知识库")), root);
+  assertNoPathNoBody(JSON.stringify(outcome.details.knowledge), root);
   assert.equal((outcome.details.knowledge as unknown[]).length, 3);
+  // 开始、续接、查询状态三处是同一段文字。
+  assert.ok(taskStatusMessage(dir, FRESH, "s", root)!.text.endsWith(`\n${SECTION}`));
   const none = getTaskStatus(makeTask(["lib-e0"]), undefined, root);
   assert.doesNotMatch(none.text, /知识库/);
   assert.equal("knowledge" in none.details, false);

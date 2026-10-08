@@ -77,17 +77,23 @@ test("平台 skill 有评审一节：评审由用户发起，请求评审的工�
     "问题类发现照建议改", "建议类发现告诉用户，由用户定", "不得为通过评审删掉内容或来源"]) assert.ok(body.includes(words), words);
 });
 
-test("平台 skill 写明知识库什么时候必须查、怎样查（按字面与按意思两种办法）、来源怎样记", () => {
+test("平台 skill 写明知识库什么时候必须查、怎样查（只用按意思查找这一个办法）、查到之后怎样核对、来源怎样记", () => {
   const body = bodyOf(PLATFORM);
   // 什么时候必须查：材料把具体内容指给别的文档时，不以用户提没提知识库为条件；查不到就记问题条目，不编。
   for (const words of ["必须到知识库里把那条具体规定查出来，把规定本身写进条目", "这一条不看用户有没有提到知识库",
     "保存之前对照材料数一遍", "另外新增一条问题条目", "不要自己编一个规定填上"]) assert.ok(body.includes(words), words);
-  // 怎样查：小文档可以整份读，大文档先按字面找再按行读；要找的词不许是什么都能匹配的写法。
-  for (const words of ["不超过 4 KB 的文档可以用 read 整份读", "超过 4 KB 的不要整份读", "一次不超过 120 行",
-    "不得写 `.*`、`.`、空串这类什么都能匹配的写法", "一个词没有找到时换近义词再找"]) assert.ok(body.includes(words), words);
-  // 两种查法各在什么时候用；按意思查到的只是线索，要读原文核对过才引用；它说不能用时改用按字面查找；两种都没有找到才算没有。
-  for (const words of ["有两种办法：按字面查找（grep）与按意思查找（search_knowledge）", "几种说法都没有命中，再按意思查找一次", "不要只写一个词",
-    "排在第一的也可能不是你要的规定", "核对过才引用，摘录与出处的规矩不变", "改用按字面查找，不要反复再试", "两种办法都没有找到，才算知识库里没有"]) assert.ok(body.includes(words), words);
+  // 清单里不写路径，文档不分大小都经查找；查知识库只有一个办法，目录对 grep、find、ls 是关着的，文档不整份读。
+  for (const words of ["不写读它用的路径：知识库文档不分大小，一律用 search_knowledge 查", "查知识库只用 search_knowledge 这一个办法",
+    "知识库目录不能用 grep、find 搜，也不能用 ls 看，用了会被系统拦下；知识库文档不要用 read 整份读", "一次查一件事，要查几件就分几次查",
+    "不要只写一个词", "grep、find 与 ls 只在任务目录里用。"]) assert.ok(body.includes(words), words);
+  // 查到之后：只是线索，按给出的位置读原文核对过才引用；没找到换一种说法再查一次；还不能查时告诉用户，不改用 grep、find。
+  for (const words of ["排在第一的也可能不是你要的规定", "再用 read 按给出的路径与行号读原文核对（offset 写行号，limit 写要读的行数，一次不超过 120 行）",
+    "核对过才引用，摘录与出处的规矩不变", "没有找到时换一种说法再查一次；换了说法仍然没有，才算知识库里没有",
+    "把它说的原因告诉用户，请用户先去处理，不要反复再试，也不要改用 grep、find"]) assert.ok(body.includes(words), words);
+  // 这一批还没有的做法不能写：按字面一路、两路合并、小文档整份读、读清单给的路径、查到的片段直接引用。
+  for (const words of ["按字面查找", "两路", "排第几", "相邻片段", "相邻的前一个", "可以用 read 整份读", "清单给的绝对路径", "读清单里给的投影", "直接引用", "不必再读"]) {
+    assert.ok(!body.includes(words), words);
+  }
   // 来源怎样记：摘录从条号开始抄；每条知识库来源都写明支持哪一处，第四节同样要求。
   for (const words of ["文档里的规定带条号时，摘录从条号开始抄", "每条知识库来源都必须用 `supports` 写明它支持条目的哪个字段、哪一项",
     "条目有两条或更多来源时，每条来源都必须写 `supports`；出处指向知识库的来源一律必须写"]) assert.ok(body.includes(words), words);
@@ -157,4 +163,18 @@ test("系统提示先读平台 skill，且不提领域", () => {
   assert.ok(text.startsWith("你是 Taskwright 的执行者"));
   assert.ok(text.includes("先用 read 读 taskwright-executor 的正文，再读任务 skill 的正文"));
   assert.ok(!text.includes("需求工程"));
+});
+
+test("系统提示写明知识库的三条规矩：材料指向别的文档时必须查、查知识库只用按意思查找这一个工具、不一次整份读大文件", () => {
+  const text = readFileSync(join(ROOT, DEV_PROFILE.system_prompt_file), "utf-8");
+  for (const words of [
+    "7. 材料里把具体规定指给了别的文档（例如「按公司规范执行」「见术语表」）时，必须到知识库里把那条规定查出来写进条目，并记来源；查法见 taskwright-executor 第二节第 4 条。",
+    "8. 查知识库只用 search_knowledge 这一个工具；知识库目录不能用 grep、find 搜，也不能用 ls 看；知识库文档不要用 read 整份读，只按 search_knowledge 返回的位置读原文核对。",
+    "9. 不要一次整份读大文件：长材料照 taskwright-executor 第二节第 1 条按块读；知识库文档只按 search_knowledge 返回的位置读，一次不超过 120 行。",
+  ]) assert.ok(text.includes(words), words);
+  // 三条都写在「怎样工作」里，在「底线」之前。
+  assert.ok(text.indexOf("9. 不要一次整份读大文件") < text.indexOf("## 底线"));
+  // 一律说「知识库」，不简称「库」；不用这几个写给开发者看的词。
+  assert.doesNotMatch(text.replaceAll("知识库", ""), /库/);
+  for (const word of ["检索", "向量", "进程", "项目"]) assert.ok(!text.includes(word), word);
 });
