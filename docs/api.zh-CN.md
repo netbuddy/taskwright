@@ -53,6 +53,7 @@ data: {
 | 事件 | 发生时机 | `data` |
 |---|---|---|
 | `task_changed` | 任务被创建、完成或放弃时 | `seq`、`at`、`task_id`、`task_name`、`status_before`、`status_after`、`actor`、`completion` |
+| `diagram_changed` | 一张图被新画、修改或删除时 | `seq`、`at`、`task_id`、`actor`、`op_id`、`diagram_id`、`revision_no`（这张图自己改后的修订号）、`op`（`add`、`update`、`delete`）、`name`、`kind`。不带 Mermaid 文本与来源，要用时取图的详情 |
 | `review_recorded` | 评审者（reviewer）评完一个条目时；`verdict` 为 `合规` 或 `不合规`，由代码按发现所依据规则的级别算出 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`verdict`、`reason`、`findings`（每条有 `rule_id`、`level`（`必选` 或 `可选`）、`field`、`index`（从 0 起，指整个字段时为 null）、`problem`、`suggestion`）、`op_id`（用户在界面上发起的评审才有）、`completion` |
 | `review_unfinished` | 一个条目的评审没有完成（超时、调用失败、两次输出不合格、评审期间条目被改），不记合规与否 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`reason`、`op_id`、`completion` |
 | `review_progress` | 界面发起的一批评审（`request_review`）开始时（`done` 为 0），以及每评完一个条目时 | `seq`、`at`、`task_id`、`op_id`、`done`、`total`、`current`（此刻正在评的条目）、`item_id`（刚评完的条目，开始时为 null）、`completion` |
@@ -109,7 +110,7 @@ data: {
             "completion": { … 见第 4.2 节 … },
             "items": [ { "item_id": "UC-001", "collection": "功能用例", "title": "…", "revision_no": 5, "revision_by": "user",
                          "revision_at": "…", "revisions": [2, 5], "fields": { … }, "sources": [ … ],
-                         "depended_by": [ { "element_kind": "条目", "id": "CON-002", "revision_no": 4 } ],   // 被谁依据：把这个条目写成来源的别的条目与它们当前的修订号（只数还在的条目的当前修订）；没有时是空列表
+                         "depended_by": [ { "element_kind": "条目", "id": "CON-002", "revision_no": 4 }, { "element_kind": "图", "id": "D-001", "revision_no": 2 } ],   // 被谁依据：把这个条目写成来源的别的条目与图，带它们当前的修订号（图的是图自己的修订号；只数还在的条目与图的当前修订）；没有时是空列表
                          "reviews": [ { "revision_no": 5, "verdict": "不合规", "reason": "…", "at": "…", "batch_id": "ui-op-…", "rules_hash": "…", "forced": false, "seq": 41,
                                         "findings": [ { "rule_id": "UC-R7", "level": "必选", "field": "基本流程", "index": 1,
                                                         "problem": "…", "suggestion": "…" } ] } ],
@@ -157,6 +158,9 @@ data: {
 | `POST …/sessions` | 新建会话 | `{ok, session_id}`；执行者在别的会话里工作时返回 `session_busy` |
 | `GET …/items/{item_id}/revisions` | 条目在改动过它的每次修订下的内容 | `{ok, item_id, revisions: [{revision_no, by, at, fields, sources, reviews, confirmations}]}` |
 | `GET …/revisions` | 修订日志 | `{ok, latest_revision, revisions: [{revision_no, at, by, session_id, work_id, op_id, undo_of_revision, trigger, intent, operations}]}`，最新的在前。`work_id` 是智能体的那次工作（用户的修订为空）；`op_id` 是用户的那次直接操作。`trigger` 写触发这次修订的事：智能体的修订是 `{kind: "typed" \| "card_choice" \| "ui_request", text, message_id}`，即启动那次工作的那句话；用户的修订是 `{kind: "user_action", action, text}`，`text` 是「你把 TBD-003 标为先不管」这样的一句操作名；都找不到时是 `{kind: "none"}`。`intent` 是触发智能体这次修订的那项用户行为：智能体对你那句话写下的理解里有与这次修订对得上的一项时给出，`{act_id, function, function_name, summary}`（`act_id` 如 r13-2，`function` 是理解格式里九种用户功能之一，`function_name` 是它的中文名，如「纠正」）；用户自己的修订、没有理解记录的任务为空。每个操作有 `op`、`item_id`、`collection`、`title`、`revision_before`、`revision_after` 和 `fields_changed`（与条目上一次改动相比值不同的字段名；新增、删除、恢复时为空）。 |
+| `GET …/diagrams` | 任务里还在的图 | `{ok, diagrams: [{diagram_id, name, kind, kind_name, revision_no, revision_by, revision_at, created_at, source_count}]}`。`kind` 是 `use_case`、`class`、`state`、`sequence`、`flowchart` 之一，`kind_name` 是它的中文名（用例图、类图、状态图、时序图、流程图）；`revision_no` 是这张图自己的修订号，从 1 起，不占任务的修订序号。整份任务数据（第 4.1 节）里的 `diagrams` 与它同形 |
+| `GET …/diagrams/{diagram_id}` | 一张图的详情 | `{ok, diagram}`：列表里的各项，加 `deleted`、`mermaid`（Mermaid 文本）、`note`（说明）、`revisions`（它改动过的修订号）、`sources`（与条目的来源同形，依据条目的带 `depends_revision`、`current_revision`、`stale`；图的来源不带 `supports` 的内容）、`depended_by`（现在恒为空列表）、`drawn`（图里画了谁：从 Mermaid 文本里扫出来的条目编号，每项是 `{item_id, title, state}`，`state` 是 `live`、`deleted`、`missing` 之一；这是补充视图，不存库）。已经删除的图也取得到，带删除之前那一次的来源；没有这张图返回 `not_found` |
+| `POST …/diagrams/validate` `{kind, mermaid}` | 校验一段 Mermaid 文本的写法，不保存 | 写得对回 `{ok, valid: true}`；写得不对也回 200：`{ok, valid: false, reason, line, message}`，`reason` 是 `empty`、`too_long`（超过 20 KB）、`unknown_type`、`kind_mismatch`、`syntax`、`timeout`（2 秒没有算完）、`unavailable`（校验没有做成）之一，`line` 是出错的行号（没有时为 `null`），`message` 是给人看的一句话。用例图按流程图的写法校验。`kind` 写得不对返回 `rejected`，`data.field` 为 `kind` |
 | `GET …/materials/content?path=…` | 某份材料的正文 | `{ok, path, text}`；路径必须落在材料目录内。`.docx` 返回的是生成的 Markdown 投影（见第 5.1 节「材料」）；0.2 建的任务只有旧的 `文件名.docx.txt` 时返回那份 |
 | `GET …/materials/raw?path=…` | 材料文件的原样内容 | 文件的原始字节；`Content-Type` 按扩展名给：`.md` 为 `text/markdown; charset=utf-8`，`.txt` 为 `text/plain; charset=utf-8`，`.docx` 为 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`，其余为 `application/octet-stream`。路径限制与 `content` 相同；网页界面用它按原版式显示 Word 文件 |
 | `POST …/materials/delete` `{path}` | 删除一份还没有进入对话的材料 | `{ok, path}`；已经进入对话的返回 `rejected`；见第 5.1 节「删除材料」 |
