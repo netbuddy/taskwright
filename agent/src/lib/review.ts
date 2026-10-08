@@ -36,6 +36,7 @@ import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, databasePath, emit, wallClockText } from "./db.ts";
 import { SOURCE_DOCUMENT, SOURCE_ITEM, SOURCE_USER_EDIT, SOURCE_USER_WORDS, sourceKindNow, sourceLocatorNow, withTaskDatabase, ELEMENT_ITEM, elementClause } from "./schema.ts";
 import { DOCX_LOCATOR } from "./docx_source.ts";
+import { parsePdfLocator } from "./pdf_locations.ts";
 import { extractJson, type ModelCallRecord } from "./model_call.ts";
 import { type CollectionDef, FIELD_ITEM_REF, RULE_REQUIRED, type ReviewRule, effectiveRules, keepPendingField, validateDefinition } from "./definition.ts";
 import { currentReviews, rulesHash } from "./review_state.ts";
@@ -343,7 +344,7 @@ function liveItems(db: DatabaseSync, taskId: string, collections: CollectionDef[
 }
 
 /**
- * 一个条目的来源落在哪里，用来判断两个条目是否引用了同一处：「文档原文」出处带 #p 的 Word 材料记文件与段落号；
+ * 一个条目的来源落在哪里，用来判断两个条目是否引用了同一处：「文档原文」出处带 #p 的 Word 材料记文件与段落号，PDF 材料记文件、页与块；
  * 出处是 .md 或 .txt 材料的记摘录所在的自然段（paragraphsWith）；「用户的话」与「条目」记出处。
  * 出自知识库文档的来源（出处以 knowledge/ 开头）同样参与：Word 文档记出处与段落号，文本文档记摘录所在的自然段。
  */
@@ -354,6 +355,11 @@ function anchorsOf(item: TaskItem, materials: Materials): Set<string> {
       const docx = DOCX_LOCATOR.exec(s.locator);
       if (docx) {
         if (docx[2]) out.add(`段落\n${docx[1]}#p${docx[2]}`);
+        continue;
+      }
+      const pdf = parsePdfLocator(s.locator);
+      if (pdf) {
+        if (pdf.page !== null) out.add(`块\n${pdf.path}#p${pdf.page}-${pdf.block}`);
         continue;
       }
       const text = isKnowledgeLocator(s.locator)

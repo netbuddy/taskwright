@@ -130,17 +130,26 @@ export function sourcesText(lib: Library, itemId: string, revisionNo: number, wo
     } else {
       const inKnowledge = s.kind === DOCUMENT ? parseKnowledgeLocator(String(or(s.locator, ""))) : null;
       if (inKnowledge) {
-        const paragraph = inKnowledge.paragraph !== null ? ` 第 ${inKnowledge.paragraph} 段` : "";
+        const paragraph = inKnowledge.paragraph !== null ? ` 第 ${inKnowledge.paragraph} 段` : inKnowledge.page !== undefined ? ` 第 ${inKnowledge.page} 页` : "";
         parts.push(`${KNOWLEDGE_WORD}，出处 ${libraryName?.(inKnowledge.library) ?? inKnowledge.library} / ${inKnowledge.name}${paragraph}${quoted}`);
         continue;
       }
-      // Word 材料的出处在库里带段落号（inputs/x.docx#p37），段落号对读者没有用，文档里只写文件名。
-      const locator = String(or(s.locator, "")).replace(/(\.docx)#p\d+$/i, "$1");
+      // Word 材料的出处在库里带段落号、PDF 材料的带页与块，文档里的写法见 materialLocatorText。
+      const locator = materialLocatorText(String(or(s.locator, "")));
       where = locator && s.kind !== SUPPLEMENT ? `，出处 ${locator}` : "";
     }
     parts.push(`${s.kind}${where}${quoted}`);
   }
   return parts.join("；") || NO_SOURCES_TEXT;
+}
+
+/**
+ * 材料的出处写给读文档的人看：Word 材料在库里带段落号（inputs/x.docx#p37），段落号对读者没有用，只写文件名；
+ * PDF 材料在库里带页与块（inputs/x.pdf#p3-2），页码对读者有用，写成「inputs/x.pdf（第 3 页）」，不写块号。
+ */
+export function materialLocatorText(locator: string): string {
+  const pdf = /^(.+\.pdf)#p(\d+)-\d+$/i.exec(locator);
+  return pdf ? `${pdf[1]}（第 ${pdf[2]} 页）` : locator.replace(/(\.docx)#p\d+$/i, "$1");
 }
 
 /** 一条来源分成三项：种类（给读者看的叫法）、出处（没有出处时是空的）、摘录。 */
@@ -168,11 +177,11 @@ export function sourceEntries(lib: Library, itemId: string, revisionNo: number, 
     }
     const inKnowledge = s.kind === DOCUMENT ? parseKnowledgeLocator(String(or(s.locator, ""))) : null;
     if (inKnowledge) {
-      const paragraph = inKnowledge.paragraph !== null ? ` 第 ${inKnowledge.paragraph} 段` : "";
+      const paragraph = inKnowledge.paragraph !== null ? ` 第 ${inKnowledge.paragraph} 段` : inKnowledge.page !== undefined ? ` 第 ${inKnowledge.page} 页` : "";
       out.push({ kind: KNOWLEDGE_WORD, where: `${libraryName?.(inKnowledge.library) ?? inKnowledge.library} / ${inKnowledge.name}${paragraph}`, excerpt });
       continue;
     }
-    const locator = String(or(s.locator, "")).replace(/(\.docx)#p\d+$/i, "$1");
+    const locator = materialLocatorText(String(or(s.locator, "")));
     out.push({ kind: s.kind, where: s.kind !== SUPPLEMENT ? locator : "", excerpt });
   }
   return out;
