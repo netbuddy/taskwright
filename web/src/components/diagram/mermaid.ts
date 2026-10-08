@@ -57,6 +57,41 @@ export function sizedSvg(svg: string): { text: string; width: number; height: nu
   return { text: new XMLSerializer().serializeToString(root), width, height };
 }
 
+/**
+ * 页面上放大缩小用：把 SVG 改成填满它外面那一层（宽高都写 100%，去掉 mermaid 写的最大宽度），大小由外面那一层按比例定。
+ * 返回改过的 SVG 文本与图原始的宽高（取 viewBox 的大小）。
+ */
+export function scalableSvg(svg: string): { text: string; width: number; height: number } {
+  const { text, width, height } = sizedSvg(svg);
+  const root = new DOMParser().parseFromString(text, "image/svg+xml").documentElement;
+  if (!root.getAttribute("viewBox")) root.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  root.setAttribute("width", "100%");
+  root.setAttribute("height", "100%");
+  return { text: new XMLSerializer().serializeToString(root), width, height };
+}
+
+/** 页面上看图的比例：最小、最大、每按一次放大或缩小乘除的倍数；一打开时自动缩小最多缩到 AUTO_MIN_ZOOM，再大的图靠滚动看。 */
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 4;
+export const ZOOM_STEP = 1.25;
+export const AUTO_MIN_ZOOM = 0.5;
+
+const clampZoom = (zoom: number): number => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+
+/** 一打开时的比例：图不比容器宽就按原始大小；比容器宽就缩到容器宽度，但最多缩到 AUTO_MIN_ZOOM。量不到容器宽度时按原始大小。 */
+export function initialZoom(width: number, container: number): number {
+  if (!(container > 0) || width <= container) return 1;
+  return Math.max(AUTO_MIN_ZOOM, container / width);
+}
+
+/** 「适应宽度」的比例：正好与容器一样宽（不超过最小与最大）。量不到容器宽度时按原始大小。 */
+export function fitZoom(width: number, container: number): number {
+  return container > 0 && width > 0 ? clampZoom(container / width) : 1;
+}
+
+/** 放大或缩小一档。 */
+export const stepZoom = (zoom: number, direction: 1 | -1): number => clampZoom(direction > 0 ? zoom * ZOOM_STEP : zoom / ZOOM_STEP);
+
 /** 这么大的图导出时放大几倍：平常是 PNG_SCALE；放大后超过画布上限的，降到正好放得下。 */
 export function pngScale(width: number, height: number): number {
   return Math.min(PNG_SCALE, CANVAS_MAX_SIDE / width, CANVAS_MAX_SIDE / height, Math.sqrt(CANVAS_MAX_AREA / (width * height)));

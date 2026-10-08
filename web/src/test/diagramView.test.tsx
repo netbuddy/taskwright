@@ -138,3 +138,63 @@ describe("导出用到的三样计算", () => {
     expect(diagram.pngFileName("..隐藏")).toBe("隐藏.png");
   });
 });
+
+describe("放大、缩小与滚动", () => {
+  const sizeOf = () => { const box = screen.getByTestId("diagram-svg"); return [box.style.width, box.style.height]; };
+  const framed = (width: number) => vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width);
+
+  it("图放在可以滚动的框里，SVG 填满由比例定大小的那一层；四个按钮改比例，旁边写现在是百分之几", async () => {
+    const spy = framed(600);
+    render(<DiagramView text={GOOD} />);
+    await waitFor(() => expect(screen.getByTestId("diagram-svg").querySelector("svg")).not.toBeNull());
+    const svg = screen.getByTestId("diagram-svg").querySelector("svg")!;
+    expect([svg.getAttribute("width"), svg.getAttribute("height"), svg.getAttribute("viewBox"), svg.getAttribute("style")]).toEqual(["100%", "100%", "0 0 120 60", null]);
+    expect(screen.getByTestId("diagram-frame").style.overflow).toBe("auto");
+    // 图（120 宽）不比框（600）宽：按原始大小。
+    expect([sizeOf(), screen.getByTestId("diagram-zoom-now").textContent]).toEqual([["120px", "60px"], "100%"]);
+    fireEvent.click(screen.getByTestId("diagram-zoom-in"));
+    expect([sizeOf(), screen.getByTestId("diagram-zoom-now").textContent]).toEqual([["150px", "75px"], "125%"]);
+    fireEvent.click(screen.getByTestId("diagram-zoom-out"));
+    fireEvent.click(screen.getByTestId("diagram-zoom-out"));
+    expect([sizeOf(), screen.getByTestId("diagram-zoom-now").textContent]).toEqual([["96px", "48px"], "80%"]);
+    fireEvent.click(screen.getByTestId("diagram-zoom-fit"));
+    expect([sizeOf(), screen.getByTestId("diagram-zoom-now").textContent]).toEqual([["480px", "240px"], "400%"]);
+    fireEvent.click(screen.getByTestId("diagram-zoom-actual"));
+    expect(sizeOf()).toEqual(["120px", "60px"]);
+    spy.mockRestore();
+  });
+
+  it("一打开时比框宽的图缩到框的宽度，但最多缩到一半，再大的靠滚动；用户调过比例之后文本再变也不改比例", async () => {
+    const spy = framed(100);
+    const view = render(<DiagramView text={GOOD} />);
+    await waitFor(() => expect(screen.getByTestId("diagram-zoom-now").textContent).toBe("83%"));
+    expect(sizeOf()).toEqual(["100px", "50px"]);
+    view.unmount();
+    spy.mockReturnValue(30);
+    const second = render(<DiagramView text={GOOD} />);
+    await waitFor(() => expect(screen.getByTestId("diagram-zoom-now").textContent).toBe("50%"));
+    expect(sizeOf()).toEqual(["60px", "30px"]);
+    // 「适应宽度」是用户自己要的，可以缩到一半以下。
+    fireEvent.click(screen.getByTestId("diagram-zoom-fit"));
+    expect(screen.getByTestId("diagram-zoom-now").textContent).toBe("25%");
+    second.rerender(<DiagramView text={`${GOOD}\n  B --> C[退款]`} />);
+    await waitFor(() => expect(fakeRender).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.getByTestId("diagram-svg").querySelector("svg")).not.toBeNull());
+    expect(screen.getByTestId("diagram-zoom-now").textContent).toBe("25%");
+    spy.mockRestore();
+  });
+
+  it("比例的三样计算：一打开的、适应宽度的、放大缩小一档的（有上下限）；量不到框的宽度时按原始大小", () => {
+    expect([diagram.initialZoom(300, 600), diagram.initialZoom(600, 300), diagram.initialZoom(3000, 300), diagram.initialZoom(300, 0)]).toEqual([1, 0.5, 0.5, 1]);
+    expect(diagram.initialZoom(400, 300)).toBe(0.75);
+    expect([diagram.fitZoom(3000, 300), diagram.fitZoom(30000, 300), diagram.fitZoom(10, 300), diagram.fitZoom(300, 0)]).toEqual([0.1, 0.1, 4, 1]);
+    expect([diagram.stepZoom(1, 1), diagram.stepZoom(1, -1), diagram.stepZoom(4, 1), diagram.stepZoom(0.1, -1)]).toEqual([1.25, 0.8, 4, 0.1]);
+  });
+
+  it("给了现在不能导出的原因：「导出 PNG」灰掉，悬停显示这句话", async () => {
+    render(<DiagramView text={GOOD} exportOff="文本有没保存的改动" />);
+    await waitFor(() => expect(screen.getByTestId("diagram-svg").querySelector("svg")).not.toBeNull());
+    expect(screen.getByTestId("diagram-export")).toBeDisabled();
+    expect(screen.getByTestId("diagram-export").getAttribute("title")).toBe("文本有没保存的改动");
+  });
+});
