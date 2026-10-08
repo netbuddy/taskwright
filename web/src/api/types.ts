@@ -47,6 +47,24 @@ export interface DiagramRow {
   source_count: number;
 }
 
+/** 图里画的一个条目（从 Mermaid 文本里扫出来的条目编号）：live 还在，deleted 已经删除，missing 任务里没有这个编号。 */
+export interface DrawnItem {
+  item_id: string;
+  title: string | null;
+  state: "live" | "deleted" | "missing";
+}
+
+/** 一张图的详情（GET …/diagrams/{编号}）：列表里的各项，加 Mermaid 文本、说明、它改动过的修订号、来源、被谁依据（现在恒为空）与图里画了谁。 */
+export interface DiagramDetail extends DiagramRow {
+  deleted: boolean;
+  mermaid: string;
+  note: string;
+  revisions: number[];
+  sources: Source[];
+  depended_by: DependedBy[];
+  drawn: DrawnItem[];
+}
+
 /** 依据了某个条目的一个要素：种类（条目或图）、编号、它当前的修订号（图的是图自己的修订号）。 */
 export interface DependedBy {
   element_kind: string;
@@ -454,6 +472,21 @@ export interface DeliverableChanged {
   completion: Completion | null;
 }
 
+/** 一张图新增、修改或删除了一次。revision_no 是图自己改后的修订号；内容与来源由图的详情接口取。 */
+export interface DiagramChanged {
+  seq: number;
+  at: string;
+  task_id: string;
+  actor: Actor | string;
+  op_id?: string | null;
+  diagram_id: string;
+  revision_no: number;
+  op: "add" | "update" | "delete";
+  name: string;
+  kind: string;
+  kind_name: string | null;
+}
+
 export interface TaskChanged {
   seq: number;
   at: string;
@@ -588,11 +621,12 @@ export type LibraryEvent =
   | { event: "review_unwaived"; data: ReviewWaived }
   | { event: "review_rules_changed"; data: ReviewRulesChanged }
   | { event: "confirmation_recorded"; data: ConfirmationRecorded }
-  | { event: "item_viewed"; data: ItemViewed };
+  | { event: "item_viewed"; data: ItemViewed }
+  | { event: "diagram_changed"; data: DiagramChanged };
 
 export const LIBRARY_EVENTS = [
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
-  "review_batch", "review_waived", "review_unwaived", "review_rules_changed",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed",
 ] as const;
 
 export interface WorkStarted {
@@ -828,16 +862,16 @@ export interface MessageRequest {
 
 /** request_review：请评审者评审；targets 为空列表时评全部待评审的条目。后端核对通过就回应，评审在后台跑。 */
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
-  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable";
+  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram";
 
 export interface ActionRequest {
   client_id: string;
   kind: ActionKind;
   task_id: string;
-  /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。 */
-  targets: { item_id?: string; base_revision?: number; revision_no?: number }[];
-  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。 */
-  fields?: Fields | { revision_no: number };
+  /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
+  targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
+  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。 */
+  fields?: Fields | { revision_no: number } | { mermaid: string };
   notify_executor: boolean;
 }
 

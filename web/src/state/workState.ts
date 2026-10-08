@@ -16,6 +16,8 @@ import type {
   ConversationMessage,
   CurrentWork,
   DeliverableChanged,
+  DiagramChanged,
+  DiagramRow,
   ExecutorState,
   Item,
   ItemViewed,
@@ -292,6 +294,9 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
     case "confirmation_recorded":
       next = applyConfirmationRecorded(next, event.data as unknown as ConfirmationRecorded);
       break;
+    case "diagram_changed":
+      next = applyDiagramChanged(next, event.data as unknown as DiagramChanged);
+      break;
     case "item_viewed": {
       // 已读就是一条接受的确认标记，依据是 viewed；与撤回、界面修改走同一套应用。
       const data = event.data as unknown as ItemViewed;
@@ -359,6 +364,24 @@ function withCompletionOnly(state: WorkState, completion: Completion | null | un
 function staleOf(item: Item): boolean {
   const accepted = [...item.confirmations].reverse().find((c) => c.accepted);
   return !!accepted && accepted.revision_no !== item.revision_no;
+}
+
+/**
+ * 一张图新增、修改或删除了一次：更新任务里图的清单（task.diagrams）里的那一行。清单按编号排；删除的拿掉。
+ * 来源条数事件里没有带：新增的先记 0、修改的沿用原来的，准确的数在图的详情里。
+ */
+function applyDiagramChanged(state: WorkState, data: DiagramChanged): WorkState {
+  state = clearOp(state, data.op_id);
+  if (!state.task) return state;
+  const before = state.task.diagrams ?? [];
+  const old = before.find((one) => one.diagram_id === data.diagram_id);
+  const rest = before.filter((one) => one.diagram_id !== data.diagram_id);
+  if (data.op === "delete") return { ...state, task: { ...state.task, diagrams: rest } };
+  const row: DiagramRow = {
+    diagram_id: data.diagram_id, name: data.name, kind: data.kind, kind_name: data.kind_name ?? old?.kind_name ?? data.kind,
+    revision_no: data.revision_no, revision_by: data.actor, revision_at: data.at, created_at: old?.created_at ?? data.at, source_count: old?.source_count ?? 0,
+  };
+  return { ...state, task: { ...state.task, diagrams: [...rest, row].sort((a, b) => a.diagram_id.localeCompare(b.diagram_id, "en", { numeric: true })) } };
 }
 
 /** 按 op_id 消去「正在保存」。要在一切提前返回之前做：没消掉的话，那个条目的写入按钮会一直灰着。 */
