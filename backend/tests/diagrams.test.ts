@@ -9,7 +9,10 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { DIAGRAM_KINDS as AGENT_KINDS, drawnItemIds } from "../../agent/src/lib/diagram.ts";
-import { DIAGRAM_KINDS, validateDiagram } from "../src/diagram_validate.ts";
+import { type DiagramCheck, DIAGRAM_KINDS, validateDiagram } from "../src/diagram_validate.ts";
+import { ApiError } from "../src/errors.ts";
+import { DIAGRAM_NOT_SAVED_TEXT, DIAGRAM_UNCHECKED_TEXT, Executor, executorSettings } from "../src/executor.ts";
+import { Hub } from "../src/hub.ts";
 import { dispatch } from "../src/http.ts";
 import * as library from "../src/library.ts";
 import { Service } from "../src/service.ts";
@@ -97,7 +100,7 @@ test("条目的「被谁依据」里数上依据它的图（只数还在的图�
   assert.equal(library.taskSnapshot(ws)[1]!.latest_revision, 2);
 });
 
-test("图的事件写成接口事件 diagram_changed：是哪一张、它自己改后的修订号、做了什么、图名与种类", () => {
+test("图的事件写成接口事件 diagram_changed：是哪一张、它自己改后的修订号、做了什么、图名、种类与中文名", () => {
   const db = library.openRo(ws)!;
   let data;
   try {
@@ -107,13 +110,14 @@ test("图的事件写成接口事件 diagram_changed：是哪一张、它自己�
   }
   const lib = new library.Library(data);
   const views = data.events!.filter((e) => e.name === "DIAGRAM_SAVED").map((e) => library.eventPayload(lib, e)!);
-  assert.deepEqual(views.map(([name, body]) => [name, body.diagram_id, body.revision_no, body.op, body.name, body.kind, body.actor]), [
-    ["diagram_changed", "D-001", 1, "add", "读者用例", "use_case", "executor"],
-    ["diagram_changed", "D-002", 1, "add", "借书证", "class", "executor"],
-    ["diagram_changed", "D-001", 2, "update", "读者用例", "use_case", "executor"],
-    ["diagram_changed", "D-002", 2, "delete", "借书证", "class", "executor"],
-    ["diagram_changed", "D-003", 1, "add", "登录流程", "flowchart", "executor"],
+  assert.deepEqual(views.map(([name, body]) => [name, body.diagram_id, body.revision_no, body.op, body.name, body.kind, body.kind_name, body.actor]), [
+    ["diagram_changed", "D-001", 1, "add", "读者用例", "use_case", "用例图", "executor"],
+    ["diagram_changed", "D-002", 1, "add", "借书证", "class", "类图", "executor"],
+    ["diagram_changed", "D-001", 2, "update", "读者用例", "use_case", "用例图", "executor"],
+    ["diagram_changed", "D-002", 2, "delete", "借书证", "class", "类图", "executor"],
+    ["diagram_changed", "D-003", 1, "add", "登录流程", "flowchart", "流程图", "executor"],
   ]);
+  assert.ok(views.every(([, body]) => typeof body.at === "string" && typeof body.seq === "number"));
 });
 
 test("接口：图的列表、详情、没有这张图；校验通过、写错（回 200 与原因）、种类写错（拒绝）", async () => {
@@ -164,4 +168,85 @@ test("助手说明里教的写法（条目编号写在节点的文字里、节�
 
 test("后端校验模块与助手一侧的种类清单相同", () => {
   assert.deepEqual([...DIAGRAM_KINDS], [...AGENT_KINDS]);
+});
+
+/** 一个接着假 pi 的执行者：发给它的命令记下来，/tw-user 一律回报成功。校验换成 check。 */
+function editing(check: (kind: unknown, text: unknown) => Promise<DiagramCheck>) {
+  const executor = new Executor(library.libraryOf(ws).taskId, ws, join(tmp, "runs-edit"), {}, new Hub(ws));
+  const calls: string[] = [];
+  const asked: [unknown, unknown][] = [];
+  const pi = {
+    alive: () => true,
+    note() {},
+    async request(command: string, fields: Dict = {}) {
+      const message = String(fields.message ?? "");
+      if (command === "prompt" && message.startsWith("/tw-user ")) {
+        calls.push(message);
+        const body = JSON.parse(message.slice("/tw-user ".length));
+        setTimeout(() => void (executor as any).handle(this, { type: "界面请求", method: "setStatus", status_key: "taskwright-user-result", status_text: JSON.stringify({ op_id: body.op_id, ok: true }) }), 5);
+      }
+      if (command === "get_state") return { isCompacting: false, sessionName: "有名字" };
+      return {};
+    },
+    async getState() {
+      return this.request("get_state");
+    },
+  };
+  executor.pi = pi as any;
+  executor.state = "idle";
+  executor.activeSession = "S1";
+  const saved = executorSettings.validateDiagram;
+  executorSettings.validateDiagram = async (kind, text) => { asked.push([kind, text]); return check(kind, text); };
+  return { executor, calls, asked, restore: () => { executorSettings.validateDiagram = saved; } };
+}
+
+const edit = (id: string, mermaid: unknown, base = 2): Dict =>
+  ({ client_id: "c1", kind: "edit_diagram", task_id: "不核对", targets: [{ diagram_id: id, base_revision: base }], fields: { mermaid }, notify_executor: false });
+
+test("用户改图：任务服务先校验（种类用这张图现在的），通过了才转交助手一侧；转交的命令只带五个键与操作编号", async () => {
+  const { executor, calls, asked, restore } = editing(async () => ({ ok: true }));
+  try {
+    const text = `${MERMAID}\n  a --> b`;
+    const opId = await executor.action("S1", { ...edit("D-001", text), force: true });
+    assert.match(opId, /^ui-op-[0-9a-f]{12}$/);
+    assert.deepEqual(asked, [["use_case", text]]);
+    assert.deepEqual(calls.map((one) => JSON.parse(one.slice("/tw-user ".length))), [
+      { kind: "edit_diagram", task_id: "不核对", targets: [{ diagram_id: "D-001", base_revision: 2 }], fields: { mermaid: text }, notify_executor: false, op_id: opId },
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("用户改图：校验不过、校验没有做成，都拒绝并不转交；说明里是校验给的原话或者一句「程序这边的问题」", async () => {
+  const syntax: DiagramCheck = { ok: false, reason: "syntax", line: 2, message: "Mermaid 文本第 2 行附近写得不对，改了再存。解析时的原话：Parse error on line 2" };
+  const down: DiagramCheck = { ok: false, reason: "unavailable", line: null, message: "这一次没有办法校验 Mermaid 文本（校验引擎加载不了）。这是程序这边的问题，不是文本写错了，请告诉用户。" };
+  for (const [check, text] of [[syntax, `${DIAGRAM_NOT_SAVED_TEXT}${syntax.message}`], [down, DIAGRAM_UNCHECKED_TEXT]] as const) {
+    const { executor, calls, restore } = editing(async () => check);
+    try {
+      await assert.rejects(executor.action("S1", edit("D-001", "flowchart LR\n  a(")), (e: ApiError) => e.status === 422 && e.code === "rejected" && e.message === text
+        && (e.data as Dict).reason === check.reason && (e.data as Dict).line === check.line && (e.data as Dict).message === check.message);
+      assert.deepEqual(calls, []);
+    } finally {
+      restore();
+    }
+  }
+  assert.equal(DIAGRAM_UNCHECKED_TEXT, "这一次没有办法校验 Mermaid 文本，图没有保存。这是程序这边的问题，不是文本写错了。");
+});
+
+test("用户改图：没有这张图、图已经删除、请求写得不对，不校验也不转交；助手工作中先按单一写入者拒绝", async () => {
+  const { executor, calls, asked, restore } = editing(async () => ({ ok: true }));
+  try {
+    for (const id of ["D-009", "D-002"]) {
+      await assert.rejects(executor.action("S1", edit(id, "flowchart LR\n  a --> b")), (e: ApiError) => e.code === "rejected" && e.message === `图 ${id} 不存在或已经删除。`);
+    }
+    for (const body of [{ ...edit("D-001", 5) }, { ...edit("D-001", "x"), targets: [] }, { ...edit("D-001", "x"), targets: [{ item_id: "UC-001", base_revision: 1 }] }, { ...edit("D-001", "x"), fields: null }]) {
+      await assert.rejects(executor.action("S1", body), (e: ApiError) => e.status === 400 && e.code === "bad_request", JSON.stringify(body));
+    }
+    executor.state = "working";
+    await assert.rejects(executor.action("S1", edit("D-001", "flowchart LR\n  a --> b")), (e: ApiError) => e.code === "session_busy");
+    assert.deepEqual([calls, asked], [[], []]);
+  } finally {
+    restore();
+  }
 });
