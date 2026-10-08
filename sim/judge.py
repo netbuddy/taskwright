@@ -194,8 +194,10 @@ def criterion(rule: dict, items: list[dict], sources: list[dict]) -> tuple[bool,
         missing = [group for group in rule["关键词组"] if not any(k in text for k in group)]
         return not missing, ("三组关键词都找到了" if not missing else f"集合「{rule['集合']}」里找不到：" + "；".join("／".join(g) for g in missing))
     if kind == "某种来源的条数大于零":
-        count = sum(1 for s in sources if s["种类"] == rule["来源种类"])
-        return count > 0, f"最新内容里种类为「{rule['来源种类']}」的来源有 {count} 条"
+        # 判据里写的是早期版本的种类名时按现在的名字数。
+        wanted = taskdb.source_kind_now(rule["来源种类"])
+        count = sum(1 for s in sources if s["种类"] == wanted)
+        return count > 0, f"最新内容里种类为「{wanted}」的来源有 {count} 条"
     if kind == "关键词不在集合标题里而在另一集合里":
         titles = [i["条目编号"] for i in items if i["所属集合"] == rule["不在标题"] and rule["关键词"] in item_title(i)]
         elsewhere = [i["条目编号"] for i in items if i["所属集合"] == rule["要在集合"] and rule["关键词"] in item_text(i["当前内容"])]
@@ -250,8 +252,11 @@ def all_version_sources(db_dir: Path, kind: str) -> int:
     """条目在全部修订下某种来源的条数（同一条目同一修订同一位置的来源按一条算，不按支持的字段展开）。"""
     import sqlite3
     with sqlite3.connect(db_dir / taskdb.DB_NAME) as db:
-        return db.execute("SELECT COUNT(*) FROM (SELECT DISTINCT item_id, revision_no, position FROM item_source WHERE kind = ?)",
-                          (kind,)).fetchone()[0]
+        # 还没有迁过的库里种类是早期版本的名字，一并数上。
+        old = [name for name, now in taskdb.LEGACY_SOURCE_KINDS.items() if now == kind]
+        marks = ", ".join("?" for _ in [kind, *old])
+        return db.execute(f"SELECT COUNT(*) FROM (SELECT DISTINCT item_id, revision_no, position FROM item_source WHERE kind IN ({marks}))",
+                          (kind, *old)).fetchone()[0]
 
 
 def rejected_calls(sim: Path) -> list[dict]:
@@ -298,9 +303,9 @@ def layer2(data: dict) -> tuple[list[dict], dict]:
             bad_sources.append(f"{s['条目']} 的文档原文摘录在材料里找不到：「{s['摘录'][:60]}」")
         if s["种类"] == "用户的话" and not any(_norm(s["摘录"]) in _norm(t) for t in said):
             bad_sources.append(f"{s['条目']} 的「用户的话」摘录在执行者会话的用户消息里找不到：「{s['摘录'][:60]}」")
-    kinds = {k: sum(1 for s in sources if s["种类"] == k) for k in ("文档原文", "用户的话", "执行者补充")}
+    kinds = {k: sum(1 for s in sources if s["种类"] == k) for k in ("文档原文", "用户的话", "助手补充", "条目")}
     facts["来源种类"] = kinds
-    facts["执行者补充累计"] = all_version_sources(db_dir, "执行者补充")
+    facts["助手补充累计"] = all_version_sources(db_dir, "助手补充")
     facts["执行者读材料"] = materials_read(sim, sorted(data["materials"]))
     checks.append({"项": "来源逐字", "通过": not bad_sources, "说明": f"最新内容的来源 {len(sources)} 条：{kinds}。", "细节": bad_sources})
     facts["隐藏事实"] = []
@@ -377,7 +382,7 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
         lines.append(f"- {'通过' if c['通过'] else '不通过'}：{c['项']}。{c['说明']}" + (f" 细节：{json.dumps(c['细节'], ensure_ascii=False)}" if c.get("细节") else ""))
     lines += ["", "## 其他事实", "",
               f"- 各集合条目数：{facts.get('条目数')}", f"- 来源种类（最新内容）：{facts.get('来源种类')}",
-              f"- 「执行者补充」来源：最新内容 {(facts.get('来源种类') or {}).get('执行者补充')} 条，全部修订累计 {facts.get('执行者补充累计')} 条",
+              f"- 「助手补充」来源：最新内容 {(facts.get('来源种类') or {}).get('助手补充')} 条，全部修订累计 {facts.get('助手补充累计')} 条",
               f"- 执行者用 read 读材料的次数：{facts.get('执行者读材料')}",
               f"- 完成条件：{facts.get('完成条件')}（只说明离完成还差几项，不代表交付质量）",
               f"- 执行者被工具拒绝 {len(facts.get('被工具拒绝') or [])} 次：" + ("；".join(f"{r['工具']}：{r['原因']}" for r in facts.get("被工具拒绝") or []) or "没有"),
@@ -405,7 +410,7 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
                              "说出的轮次": f["用户 agent 说出的轮次"], "情形": f["情形"], "在作废轮次里": f["在作废轮次里"]}
                             for f in facts.get("隐藏事实") or []],
                "被工具拒绝次数": len(facts.get("被工具拒绝") or []), "来源种类": facts.get("来源种类"),
-               "执行者补充累计": facts.get("执行者补充累计"), "执行者读材料": facts.get("执行者读材料"), "重判": bool(persona_path)}
+               "助手补充累计": facts.get("助手补充累计"), "执行者读材料": facts.get("执行者读材料"), "重判": bool(persona_path)}
     (Path(sim) / "判定摘要.json").write_text(json.dumps(dict(summary, 第一层说明={c["项"]: c["说明"] for c in first},
                                                            第二层说明={c["项"]: c["说明"] for c in second}),
                                                       ensure_ascii=False, indent=1), encoding="utf-8")

@@ -16,7 +16,7 @@ SUMMARY = {"演练": "sim-004", "有效": True, "停止原因": "用户 agent �
            "第二层说明": {"隐藏事实被问出来：红冲＋线下＋客服": "没有一个条目里关键词组全部出现"},
            "隐藏事实": [{"写进了条目": ["CON-001"], "问出来了": True, "主动说出的轮次": None},
                         {"写进了条目": [], "问出来了": False, "主动说出的轮次": None}],
-           "被工具拒绝次数": 2, "来源种类": {"文档原文": 9}, "执行者补充累计": 3, "执行者读材料": {"需求.md": 2}}
+           "被工具拒绝次数": 2, "来源种类": {"文档原文": 9}, "助手补充累计": 3, "执行者读材料": {"需求.md": 2}}
 
 
 class BatchSummaryTest(unittest.TestCase):
@@ -35,7 +35,7 @@ class BatchSummaryTest(unittest.TestCase):
         self.assertIn("| sim-005 | | | 出错：RuntimeError：后端没起来 |", text)
         self.assertIn(f"- 记录目录：{ok}", text)
         self.assertIn("  - 不通过：隐藏事实被问出来：红冲＋线下＋客服。没有一个条目里关键词组全部出现", text)
-        self.assertIn("「执行者补充」全部修订累计 3 条", text)
+        self.assertIn("「助手补充」全部修订累计 3 条", text)
 
 
     def test_部分有效写明从第几轮起作废_用户主动补充列轮次(self):
