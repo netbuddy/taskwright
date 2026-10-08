@@ -14,8 +14,8 @@ import { getItem } from "../lib/task_query.ts";
 export const TOOL_NAME = "get_item";
 
 const parameters = Type.Object({
-  item_id: Type.String({ description: "条目编号，例如 UC-001、TBD-002。" }),
-  revision_no: Type.Optional(Type.Integer({ description: "要看这个条目截至哪次修订的内容。不写就是最新内容。" })),
+  item_id: Type.String({ description: "条目编号，例如 UC-001、TBD-002；也可以写图的编号，例如 D-001，看的就是那张图。" }),
+  revision_no: Type.Optional(Type.Integer({ description: "要看这个条目截至哪次修订的内容。不写就是最新内容。看图时写的是图自己的修订号。" })),
 });
 
 export function registerGetItem(pi: ExtensionAPI): void {
@@ -24,7 +24,8 @@ export function registerGetItem(pi: ExtensionAPI): void {
     label: "查看条目",
     description:
       "按条目编号查看一个条目的全部字段与来源（种类、出处、摘录、支持哪个字段），它当前所在的修订号、改动过的修订号，以及评审与确认状态。" +
-      "不写 revision_no 看最新内容。修改条目之前先用它看当前内容与修订号，再带着修订号去改。只读，不改任何东西。",
+      "不写 revision_no 看最新内容。修改条目之前先用它看当前内容与修订号，再带着修订号去改。" +
+      "写图的编号（D-001 这样）时看的是那张图：图名、种类、说明、Mermaid 文本、来源与它自己的修订号。只读，不改任何东西。",
     promptSnippet: "查看一个条目的全部字段、来源与当前所在的修订号（只读）",
     parameters,
     async execute(_toolCallId: string, params: { item_id?: unknown; revision_no?: unknown }, _signal, _onUpdate, ctx: ExtensionContext) {

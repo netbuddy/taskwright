@@ -21,7 +21,7 @@ import { checkCompletion, currentItems } from "./conditions.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
-import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, hasVersionColumns, sourceKindNow, sourceLocatorNow } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 
 /** 标题在看板的一行里最多显示这么多个字，更长的截短并加省略号；条目详情里不截短。 */
@@ -226,7 +226,7 @@ export function itemDetailLines(db: DatabaseSync, task: TaskRow, definition: Tas
     .prepare(
       // 早期版本写下的「用户直接修改」不读出。
       "SELECT position, kind, locator, excerpt, field, field_index FROM item_source " +
-        "WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ? ORDER BY position, support_no",
+        `WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause(db)} ORDER BY position, support_no`,
     )
     .all(task.task_id, itemId, chosen.revision_no, SOURCE_USER_EDIT) as {
     position: number;

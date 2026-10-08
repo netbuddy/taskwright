@@ -18,6 +18,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerSaveRevision } from "./tools/save_revision.ts";
+import { registerSaveDiagram } from "./tools/save_diagram.ts";
 import { registerBackendReports } from "./hooks/report_to_backend.ts";
 import { registerTaskStatus } from "./hooks/task_status.ts";
 import { registerReply } from "./tools/reply.ts";
@@ -35,6 +36,7 @@ import { registerToolLimits } from "./hooks/tool_limits.ts";
 
 export default function (pi: ExtensionAPI) {
   registerSaveRevision(withTuiRenderers(pi));
+  registerSaveDiagram(pi);
   registerGetItem(pi);
   registerGetTaskStatus(pi);
   registerSearchKnowledge(pi);

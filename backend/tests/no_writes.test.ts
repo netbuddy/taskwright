@@ -20,6 +20,8 @@ const ALLOWED: Record<string, string[]> = {
     "openReadonly", "parseDefinition", "readSources", "splitUserWordsLocator", "tableNames"],
   "conditions.ts": ["checkCompletion", "completionBrief", "completionHints"],
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
+  // 图：种类与编号的常量、从库里读图、从 Mermaid 文本里扫条目编号（只读与只做计算的函数，不写库）。
+  "diagram.ts": ["DIAGRAM_KINDS", "DiagramRecord", "drawnItemIds", "kindName", "latestVersion", "liveDiagrams", "readDiagrams"],
   "create_task.ts": ["createTask"],
   "docx_markdown.ts": ["docxProjection", "PROJECTION_SUFFIX", "MEDIA_SUFFIX"],
   // 分段清单：算清单、写成材料旁边的文件（与投影一样是文件，不是库）。

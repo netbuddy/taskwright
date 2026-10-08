@@ -28,7 +28,7 @@ export const USER_RESULT_KEY = "taskwright-user-result";
 export const UI_RESULT_KEY = "taskwright-ui-result";
 /** 界面发起的评审在后台跑，每记一条事件经这个状态栏键提示一次。 */
 export const REVIEW_STATUS_KEY = "taskwright-review";
-export const WRITE_TOOLS = new Set(["save_revision", "create_task", "complete_task", "request_review"]);
+export const WRITE_TOOLS = new Set(["save_revision", "save_diagram", "create_task", "complete_task", "request_review"]);
 export const REPLY_TOOL = "reply";
 /** 用户消息的 message_end 到达时它可能还没写进会话记录：查不到就隔一会儿再取，最多这么多次，合计约半秒。 */
 export const ENTRY_RETRIES = 10;

@@ -24,7 +24,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { load } from "./db.ts";
 import { titleOf } from "./tool_render.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
-import { DOMAIN_NOTE_COLLECTION, LEGACY_SOURCE_KINDS, SOURCE_ITEM } from "./schema.ts";
+import { DOMAIN_NOTE_COLLECTION, LEGACY_SOURCE_KINDS, SOURCE_ITEM, ELEMENT_ITEM, elementClause } from "./schema.ts";
 
 /** 一项条件的三种状态：已满足、还差、暂无条目（集合为空，这一条无从谈起）。 */
 export type ConditionState = "met" | "unmet" | "empty";
@@ -318,7 +318,7 @@ export function unlinkedDomainNotes(db: DatabaseSync, taskId: string): string[] 
     return (refFields.get(row.collection) ?? []).flatMap((name) => (Array.isArray(fields[name]) ? fields[name] as unknown[] : [])).map(String);
   };
   const cited = db.prepare(
-    "SELECT DISTINCT s.item_id, s.locator FROM item_source s WHERE s.task_id = ? AND s.kind IN (?, ?) AND s.revision_no = (SELECT MAX(revision_no) " +
+    `SELECT DISTINCT s.item_id, s.locator FROM item_source s WHERE s.task_id = ? AND s.kind IN (?, ?)${elementClause(db, ELEMENT_ITEM, "s.")} AND s.revision_no = (SELECT MAX(revision_no) ` +
       "FROM item_version w WHERE w.task_id = s.task_id AND w.item_id = s.item_id)",
   ).all(taskId, SOURCE_ITEM, LEGACY_ITEM_KIND) as { item_id: string; locator: string }[];
   const linked = new Set<string>();

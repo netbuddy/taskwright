@@ -34,7 +34,20 @@ export interface Source {
   stale?: "changed" | "deleted" | null;
 }
 
-/** 依据了某个条目的一个要素：种类（现在只有条目）、编号、它当前的修订号。 */
+/** 图的列表里的一项：编号、图名、种类与中文名、它自己现在的修订号、最近一次是谁在什么时候改的、有几条来源。 */
+export interface DiagramRow {
+  diagram_id: string;
+  name: string;
+  kind: string;
+  kind_name: string;
+  revision_no: number;
+  revision_by: Actor | string;
+  revision_at: string;
+  created_at: string;
+  source_count: number;
+}
+
+/** 依据了某个条目的一个要素：种类（条目或图）、编号、它当前的修订号（图的是图自己的修订号）。 */
 export interface DependedBy {
   element_kind: string;
   id: string;
@@ -233,6 +246,8 @@ export interface Task {
   items: Item[];
   /** 任务最新的修订号；还没有修订时是 0。 */
   latest_revision?: number;
+  /** 任务里还在的图（图是任务的另一种要素，不是条目；内容与来源另由图的接口取）。早先的后端不给这一项。 */
+  diagrams?: DiagramRow[];
   /** 评审批次，按先后；旧后端没有这一项。 */
   review_batches?: ReviewBatch[];
 }

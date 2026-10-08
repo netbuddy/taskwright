@@ -1,6 +1,7 @@
 {
   "create_task": "创建任务",
   "save_revision": "保存修订",
+  "save_diagram": "保存图",
   "save_version": "保存版本",
   "read": "读取",
   "ls": "列目录",

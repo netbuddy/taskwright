@@ -8,9 +8,9 @@
  *
  * 数什么（consecutiveRefusals，从会话当前分支的末尾往回数）：
  * - 「回复」的每一次被拒，不论原因：没有写理解、理解不合格、形式不对；
- * - 「保存修订」「完成任务」因为没有合格的理解而被拒（它们过的是同一道门）；这两个工具因为输入不合规被拒不算，
+ * - 「保存修订」「保存图」「完成任务」因为没有合格的理解而被拒（它们过的是同一道门）；这三个工具因为输入不合规被拒不算，
  *   那是正常的改正过程。
- * 数到哪里为止：一条用户消息（兜底扩展追加的那句固定的话不算，兜底之后的续跑仍是同一轮），或者这三个工具里任何一个
+ * 数到哪里为止：一条用户消息（兜底扩展追加的那句固定的话不算，兜底之后的续跑仍是同一轮），或者这四个工具里任何一个
  * 做成了的一次。别的工具调用不打断。
  *
  * 到了上限怎么停（stopAtLimit）：这一次仍要被拒、而且是连续的第 REJECTION_LIMIT 次时，工具不再抛异常，改为返回一个
@@ -29,8 +29,8 @@ import { ToolRejection } from "./tool_rejection.ts";
 /** 连续被拒到第几次就停下这次运行。 */
 export const REJECTION_LIMIT = 5;
 
-/** 与「回复」过同一道「先写理解」的门的另外两个工具。 */
-export const GATED_TOOL_NAMES: readonly string[] = ["save_revision", "complete_task"];
+/** 与「回复」过同一道「先写理解」的门的另外三个工具。 */
+export const GATED_TOOL_NAMES: readonly string[] = ["save_revision", "save_diagram", "complete_task"];
 
 /** 停下时接在拒绝原因后面的那句话。模型此后不会再被请求，这句话留在会话记录里给人看。 */
 export const STOPPED_TEXT = `这一轮已经连续 ${REJECTION_LIMIT} 次没有按规矩回答，这次运行到此停下。`;

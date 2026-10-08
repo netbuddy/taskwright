@@ -303,9 +303,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     const rows = db
       .prepare(
         "SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision FROM item_source " +
-          "WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY position, support_no",
+          "WHERE task_id = ? AND item_id = ? AND revision_no = ? AND element_kind = ? ORDER BY position, support_no",
       )
-      .all(taskId, itemId, revisionNo) as unknown as SourceRow[];
+      .all(taskId, itemId, revisionNo, ELEMENT_ITEM) as unknown as SourceRow[];
     const byPosition = new Map<number, Source>();
     for (const row of rows) {
       let source = byPosition.get(row.position);
@@ -578,6 +578,25 @@ function latestVersionOf(db: DatabaseSync, taskId: string): (itemId: string) => 
       "WHERE v.task_id = ? AND v.item_id = ? ORDER BY v.revision_no DESC LIMIT 1",
   );
   return (itemId) => statement.get(taskId, itemId) as unknown as VersionRow;
+}
+
+/**
+ * 图的来源的核对（lib/save_diagram.ts 用）：与条目的来源同一套种类与逐字核对，三处不同——图没有字段，来源不写 supports；
+ * 图依据条目时可以不写摘录；被依据的条目只认已经保存的（图单独保存，没有「同一批里排在前面」这回事）。
+ * previous 是这张图上一次修订的来源（修改时给），知识库文档读不到时凭它沿用同一句摘录。通过返回整理好的列表，不通过返回 null、原因进 errors。
+ */
+export function checkDiagramSources(
+  db: DatabaseSync,
+  taskId: string,
+  definition: TaskDefinition,
+  raw: unknown,
+  call: Pick<CallContext, "workspaceDir" | "sessionId" | "userMessages" | "actor" | "knowledgeRoot">,
+  errors: string[],
+  previous: readonly Source[] = [],
+): Source[] | null {
+  const lookups = itemSourceLookups(definition, itemsOf(db, taskId), latestVersionOf(db, taskId), { deletedHere: new Set(), addedAt: new Map(), written: new Map() }, 0, null);
+  return checkSources(raw, true, errors, call.sessionId, call.userMessages ?? [], call.actor, materialReader(call.workspaceDir, definition.materialsDir, call.knowledgeRoot ?? null),
+    lookups, undefined, previous, true);
 }
 
 /** 种类为「条目」的来源要用的三个查法（见 itemSourceLookups）。 */
@@ -944,6 +963,7 @@ function checkSources(
   itemSource?: ItemSourceLookups,
   whereOf: (index: number) => string = (index) => `第 ${index + 1} 条来源`,
   previous: readonly Source[] = [],
+  figure = false,
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push("缺少 sources，至少要有一条来源");
@@ -988,8 +1008,10 @@ function checkSources(
       ok = false;
       return;
     }
+    // 图依据条目时可以不写摘录：图依据的是条目整体，要紧的是记下引用时它的修订号。写了照样逐字核对。
+    const bareItem = figure && one.kind === SOURCE_ITEM && (typeof one.excerpt !== "string" || one.excerpt.trim() === "");
     if (!userWords && !supplement && (typeof one.locator !== "string" || one.locator.trim() === "")) missing.push("locator（出处）");
-    if (typeof one.excerpt !== "string" || one.excerpt.trim() === "") missing.push("excerpt（摘录的原文）");
+    if (!bareItem && (typeof one.excerpt !== "string" || one.excerpt.trim() === "")) missing.push("excerpt（摘录的原文）");
     if (missing.length > 0) {
       errors.push(`${where}缺少 ${missing.join("、")}`);
       ok = false;
@@ -1014,6 +1036,11 @@ function checkSources(
       ok = false;
       return;
     }
+    if (figure && supports.length > 0) {
+      errors.push(`${where}写了 supports；图没有字段，图的来源不写 supports`);
+      ok = false;
+      return;
+    }
     // 助手补充的出处由这里填；用户的操作交回的旧来源照它原来的出处。
     let locator = supplement && (actor !== ACTOR_USER || typeof one.locator !== "string" || one.locator.trim() === "") ? SOURCE_SUPPLEMENT : (one.locator as string);
     // 依据条目时引用那一刻对方的修订号。用户的操作（直接修改、撤销）交回的旧来源保留它原来记的号。
@@ -1028,8 +1055,8 @@ function checkSources(
         ok = false;
         return;
       }
-      const excerpt = (one.excerpt as string).trim();
-      if (!itemSource.text(locator).some((text) => text.includes(excerpt))) {
+      const excerpt = bareItem ? "" : (one.excerpt as string).trim();
+      if (excerpt !== "" && !itemSource.text(locator).some((text) => text.includes(excerpt))) {
         errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在 ${locator} 的当前修订里找不到`,
           `摘录必须逐字一致，包括标点，抄自这个条目某个字段里连续的一段`));
         ok = false;
@@ -1098,7 +1125,7 @@ function checkSources(
         return;
       }
     }
-    kept.push({ kind: one.kind as string, locator, excerpt: one.excerpt as string, supports, ...(normalized ? { normalized_value: normalized } : {}),
+    kept.push({ kind: one.kind as string, locator, excerpt: bareItem ? "" : one.excerpt as string, supports, ...(normalized ? { normalized_value: normalized } : {}),
       ...(depends !== undefined && depends !== null ? { depends_revision: depends } : {}) });
   });
   return ok ? kept : null;

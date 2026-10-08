@@ -20,10 +20,11 @@ import { REVIEW_CONDITION, findingText } from "./review.ts";
 import { batchNumber, currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
-import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, hasVersionColumns, sourceKindNow, sourceLocatorNow } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
 import { hasColumn } from "./dialogue_schema.ts";
+import { DIAGRAM_ID, type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "./diagram.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
 import { knowledgeDetails, knowledgeSection, listMaterials } from "./task_status.ts";
 import { envKnowledgeRoot, selectedKnowledge } from "./knowledge.ts";
@@ -52,8 +53,76 @@ function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRo
   }
 }
 
+/** 任务状态里说图的那一行：有几张，各是哪一张（图名、种类、它自己现在的修订号）。 */
+export function diagramsLine(diagrams: DiagramRecord[]): string {
+  const each = diagrams.map((one) => {
+    const now = latestVersion(one)!;
+    return `${one.diagram_id}「${now.name}」（${kindName(now.kind)}，修订 ${now.revision_no}）`;
+  });
+  return `图 ${diagrams.length} 张：${each.join("、")}。图不是条目，不评审，不算进完成条件；要看一张图的 Mermaid 文本，用 get_item 写它的编号。`;
+}
+
 /**
- * 「查看条目」：某个条目的全部字段、来源、评审与确认状态，以及它改动过的修订号列表。
+ * 「查看条目」看一张图时给的内容：图名、种类、说明、Mermaid 文本、来源、图里画了哪些条目，以及改它时 base_revision 写几。
+ * 修订号是图自己的；wanted 给了就看它在那一次修订下的内容，那张图没有那一次修订时说明它有哪几次。
+ */
+function diagramOutcome(db: DatabaseSync, taskId: string, definition: TaskDefinition, id: string, wanted: number | null): QueryOutcome {
+  const records = readDiagrams(db, taskId);
+  const record = records.find((one) => one.diagram_id === id);
+  const alive = liveDiagrams(records).map((one) => one.diagram_id);
+  if (!record || record.versions.length === 0) throw new Error(`这个任务里没有图 ${id}。现有的图是：${alive.length ? alive.join("、") : "（一张都没有）"}。`);
+  if (record.deleted_in_revision !== null) throw new Error(`图 ${id} 已经在它的修订 ${record.deleted_in_revision} 删除了。现有的图是：${alive.length ? alive.join("、") : "（一张都没有）"}。`);
+  const current = latestVersion(record)!;
+  const shown = wanted === null ? current : record.versions.find((one) => one.revision_no === wanted);
+  if (!shown) throw new Error(`图 ${id} 没有修订 ${wanted}；它有这些修订：${record.versions.map((one) => `修订 ${one.revision_no}`).join("、")}（图的修订号是图自己的）。`);
+  const sources = (db.prepare(
+    `SELECT kind, locator, excerpt, depends_revision FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ?${elementClause(db, ELEMENT_FIGURE)} ORDER BY position`,
+  ).all(taskId, id, shown.revision_no) as { kind: string; locator: string; excerpt: string; depends_revision: number | null }[]);
+  const itemNow = db.prepare(
+    "SELECT i.deleted_in_revision AS deleted, (SELECT MAX(revision_no) FROM item_version v WHERE v.task_id = i.task_id AND v.item_id = i.item_id) AS no " +
+      "FROM item i WHERE i.task_id = ? AND i.item_id = ?",
+  );
+  const sourceLines = sources.map((one, index) => {
+    const quote = one.excerpt ? `：「${one.excerpt}」` : "";
+    if (one.kind !== SOURCE_ITEM) return `  ${index + 1}. ${one.kind}${one.kind === "文档原文" ? `，出处 ${one.locator}` : ""}${quote}`;
+    const now = itemNow.get(taskId, one.locator) as { deleted: number | null; no: number | null } | undefined;
+    const state = !now || now.deleted !== null ? `${one.locator} 已经删除`
+      : one.depends_revision !== null && now.no !== null && now.no > one.depends_revision ? `依据已变：引用时 ${one.locator} 是修订 ${one.depends_revision}，现在是修订 ${now.no}`
+      : `引用时 ${one.locator} 是修订 ${one.depends_revision ?? "？"}，之后没有改过`;
+    return `  ${index + 1}. 条目，出处 ${one.locator}${quote}（${state}）`;
+  });
+  const drawn = drawnItemIds(shown.mermaid, definition.collections.map((one) => one.prefix));
+  const lines = [
+    `图 ${id}「${shown.name}」（${kindName(shown.kind)}），修订 ${shown.revision_no}${shown === current ? "，是最新内容" : "，是旧内容"}。图的修订号是图自己的，与条目的修订号无关。`,
+    `  改动过的修订：${record.versions.map((one) => `修订 ${one.revision_no}（发起方 ${one.actor}）`).join("、")}。`,
+    "",
+    `说明：${shown.note || "（没有写）"}`,
+    "Mermaid 文本：",
+    "<<<",
+    shown.mermaid,
+    ">>>",
+    "",
+    `来源（${sources.length} 条）：`,
+    ...(sourceLines.length ? sourceLines : ["  （这一次修订没有来源）"]),
+    drawn.length ? `图里画了 ${drawn.length} 个条目：${drawn.join("、")}。` : "图里没有写条目编号。",
+    "",
+    shown === current
+      ? `${id} 现在是修订 ${current.revision_no}。要修改或删除这张图时用 save_diagram，diagram 写 ${id}，base_revision 写 ${current.revision_no}；修改时只写要改的那几项。`
+      : `这是旧内容；${id} 现在是修订 ${current.revision_no}，要修改时先看最新内容，base_revision 写 ${current.revision_no}。`,
+  ];
+  return {
+    text: lines.join("\n"),
+    details: {
+      task_id: taskId, diagram_id: id, revision_no: shown.revision_no, current_revision: current.revision_no,
+      revisions: record.versions.map((one) => one.revision_no), name: shown.name, kind: shown.kind, mermaid: shown.mermaid, note: shown.note,
+      sources: sources.map((one) => ({ kind: one.kind, locator: one.locator, excerpt: one.excerpt, ...(one.depends_revision !== null ? { depends_revision: one.depends_revision } : {}) })),
+      drawn,
+    },
+  };
+}
+
+/**
+ * 「查看条目」：某个条目的全部字段、来源、评审与确认状态，以及它改动过的修订号列表。编号是图的编号时看的是那张图（diagramOutcome）。
  * 缺省看最新内容；给了 revision_no 时看条目截至那次修订的内容（修订号不大于它的最近一次改动）。
  */
 export function getItem(workspaceDir: string, params: { item_id?: unknown; revision_no?: unknown }, sessionId?: string): QueryOutcome {
@@ -67,6 +136,8 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     const item = db
       .prepare("SELECT collection, deleted_in_revision FROM item WHERE task_id = ? AND item_id = ?")
       .get(task.task_id, itemId) as { collection: string; deleted_in_revision: number | null } | undefined;
+    // 编号是图的编号（D-001 这样）而任务里没有同名的条目：看的是一张图。
+    if (!item && DIAGRAM_ID.test(itemId)) return diagramOutcome(db, task.task_id, definition, itemId, typeof wanted === "number" ? wanted : null);
     if (!item) {
       const alive = (db.prepare("SELECT item_id FROM item WHERE task_id = ? AND deleted_in_revision IS NULL ORDER BY rowid").all(task.task_id) as {
         item_id: string;
@@ -87,7 +158,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     const sources = (db
       .prepare(
         `SELECT position, kind, locator, excerpt, field, field_index, ${hasColumn(db, "item_source", "normalized_value") ? "normalized_value" : "NULL AS normalized_value"} ` +
-          "FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ? ORDER BY position, support_no",
+          `FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause(db)} ORDER BY position, support_no`,
       )
       .all(task.task_id, itemId, shown, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null }[])
       .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[]; normalized_value?: string }[]>((list, one) => {
@@ -150,6 +221,9 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
         if (fields["状态"] === "未解决") unresolved.push({ item_id: row.item_id, revision_no: row.revision_no, title: titleOf(fields, collection.fields[0]?.name) });
       }
     }
+    // 任务里的图（不是条目，不评审，不算进完成条件）：有几张、各是什么；一张都没有时不写这一行。
+    const diagrams = liveDiagrams(readDiagrams(db, task.task_id));
+    if (diagrams.length) lines.push(diagramsLine(diagrams));
     lines.push("", ...completionLines(db, task, definition, workspaceDir), "");
     lines.push(...reviewFindingLines(db, task.task_id, definition, workspaceDir), "");
     lines.push(
@@ -192,6 +266,7 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
         task_id: task.task_id,
         status: task.status,
         items: counts,
+        diagrams: diagrams.map((one) => ({ diagram_id: one.diagram_id, revision_no: latestVersion(one)!.revision_no })),
         conditions: checkCompletion(db, task.task_id, definition.completion, { workspaceDir }),
         unresolved,
         unread: unread.map((one) => ({ item_id: one.item_id, title: one.title, revision_no: one.revision_no })),

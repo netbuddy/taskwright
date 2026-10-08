@@ -174,6 +174,8 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   /** 画线的比较对象：看旧修订时是它的上一次改动；有修订标识时是上次确认的修订；点了「比对」时是上一次改动。 */
   const beforeFields = old ? previous : showMarks ? baseFields : compare ? previous : null;
   const supplements = sources.filter((s) => s.kind === SOURCE_SUPPLEMENT);
+  const dependedBy = (item.depended_by ?? []).filter((one) => !display || one.element_kind === SOURCE_FIGURE);
+  const diagramName = (id: string) => task.diagrams?.find((one) => one.diagram_id === id)?.name ?? "";
   // 当前所在的修订上评审结论依据的那条记录的发现（通过时也可能有建议）；看旧修订时不标。
   const verdict = itemVerdict(item, task);
   const current = old ? undefined : verdict.basis ?? undefined;
@@ -322,12 +324,15 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           {sources.length > 0 && <div className="sec-h">来源</div>}
           {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} />)}
           {display && <CitedBy task={task} item={item} onOpenItem={onOpenItem} />}
-          {/* 被谁依据：把这一条写成来源的别的条目。领域说明一类的集合上面已经有「被哪些条目引用」一节，不再重复这一行。 */}
-          {!display && (item.depended_by ?? []).length > 0 && (
+          {/* 被谁依据：把这一条写成来源的别的条目与图。领域说明一类的集合上面已经有「被哪些条目引用」一节，那里列了条目，这一行只补上图。
+              图的编号现在不能点（图表页签还没有做），后面写图名与「图」字。 */}
+          {dependedBy.length > 0 && (
             <div className="depended" data-testid="depended-by">
-              被谁依据：{(item.depended_by ?? []).map((one, i) => (
-                <span key={one.id}>{i > 0 && "、"}<span className="ref" role="button" data-testid={`depended-by-${one.id}`} onClick={() => onOpenItem?.(one.id)}>{one.id}</span>
-                  {titleOf?.(one.id) ? ` ${titleOf(one.id)}` : ""}</span>
+              被谁依据：{dependedBy.map((one, i) => (
+                <span key={`${one.element_kind}-${one.id}`}>{i > 0 && "、"}{one.element_kind === SOURCE_FIGURE
+                  ? <span data-testid={`depended-by-${one.id}`}>{one.id}{diagramName(one.id) ? ` ${diagramName(one.id)}` : ""}（图）</span>
+                  : <><span className="ref" role="button" data-testid={`depended-by-${one.id}`} onClick={() => onOpenItem?.(one.id)}>{one.id}</span>
+                    {titleOf?.(one.id) ? ` ${titleOf(one.id)}` : ""}</>}</span>
               ))}
             </div>
           )}

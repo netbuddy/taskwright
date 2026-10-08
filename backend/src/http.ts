@@ -11,6 +11,7 @@ import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
 import * as render from "./render.ts";
 import * as exportDocx from "./export_docx.ts";
+import { DIAGRAM_KINDS, validateDiagram } from "./diagram_validate.ts";
 import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
@@ -390,6 +391,23 @@ const handlers: Record<string, Handler> = {
     if (rows === null) throw new ApiError("not_found", `没有条目 ${req.params.item}。`);
     return json(200, { ok: true, item_id: req.params.item, revisions: rows });
   },
+  diagrams: (service, req) => json(200, { ok: true, diagrams: library.diagramList(service.task(req.params.task).dir) }),
+  diagram: (service, req) => {
+    const one = library.diagramDetail(service.task(req.params.task).dir, req.params.diagram);
+    if (one === null) throw new ApiError("not_found", `没有图 ${req.params.diagram}。`);
+    return json(200, { ok: true, diagram: one });
+  },
+  // 校验一段 Mermaid 文本的写法，不保存。助手的「保存图」工具保存之前来问（agent/src/lib/diagram_check.ts），页面改图时也可以问。
+  // 文本写得不对不是请求出错：回 200，valid 为假，reason、line、message 照校验模块原样。只有种类写错算请求不对。
+  validate_diagram: async (service, req) => {
+    service.task(req.params.task);
+    const body = bodyJson(req);
+    if (!(DIAGRAM_KINDS as readonly unknown[]).includes(body.kind)) {
+      throw new ApiError("rejected", `图的种类要写 ${DIAGRAM_KINDS.join("、")} 里的一个，收到的是 ${JSON.stringify(body.kind ?? null)}。`, { field: "kind" });
+    }
+    const check = await validateDiagram(body.kind, body.mermaid);
+    return json(200, check.ok ? { ok: true, valid: true } : { ok: true, valid: false, reason: check.reason, line: check.line, message: check.message });
+  },
   revision_log: async (service, req) => json(200, { ok: true, ...(await service.revisionLog(service.task(req.params.task))) }),
   material: (service, req) => {
     const t = service.task(req.params.task);
@@ -510,6 +528,9 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/tasks/${T}/snapshot`, "snapshot"],
   ["GET", `/api/v1/tasks/${T}/items/(?<item>[^/]+)/revisions`, "revisions"],
   ["GET", `/api/v1/tasks/${T}/revisions`, "revision_log"],
+  ["GET", `/api/v1/tasks/${T}/diagrams`, "diagrams"],
+  ["POST", `/api/v1/tasks/${T}/diagrams/validate`, "validate_diagram"],
+  ["GET", `/api/v1/tasks/${T}/diagrams/(?<diagram>[^/]+)`, "diagram"],
   ["GET", `/api/v1/tasks/${T}/materials/content`, "material"],
   ["GET", `/api/v1/tasks/${T}/materials/raw`, "material_raw"],
   ["POST", `/api/v1/tasks/${T}/materials`, "upload"],

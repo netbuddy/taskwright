@@ -11,6 +11,7 @@
     "grep",
     "find",
     "save_revision",
+    "save_diagram",
     "reply",
     "get_item",
     "get_task_status",
