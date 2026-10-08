@@ -3,7 +3,8 @@
  * （Word 材料重新生成派生文件），名字与类型可以不同；先发 material_removed（带 replaced_by）再发 material_added（带 replaces）。
  * 前提与删除相同：已经进入对话的材料、助手正在工作时、任务已结束时、派生文件的路径一律拒绝。
  * 新文件没有存成（类型不符、超过上限、与别的材料重名或重内容、不是合法的 Word 文件）时旧文件原样还在，一条事件也不发。
- * 新文件是 PDF 时上传要等另起的一次运行生成派生文件：等的这段时间旧材料在暂放目录里，不在材料清单里。
+ * 新文件是 PDF 时上传要等另起的一次运行把它解析好：等的这段时间旧材料一直留在材料目录里，解析好了才移走它、移进新文件；
+ * 解析不成时材料目录没有动过；解析好了但这段时间里旧材料进入了对话或者已经不在了，同样不换。
  * 会话文件在这里直接写出来，不起助手。
  */
 
@@ -265,26 +266,84 @@ test("把 PDF 材料替换成别的文件：PDF 的投影、分段清单与位�
   assert.deepEqual(files(t), ["办法.md", "补充.md"]);
 }));
 
-test("替换成一份读不出来的 PDF：旧材料原样还在，不发事件，两个临时目录都不留", () => withTask(async (service, t) => {
+const ownPaths = (service: Service, t: TaskOf) => service.taskPage(t).materials.filter((m: any) => m.derived_from === null).map((m: any) => m.path);
+const tempDirs = (t: { dir: string }) => readdirSync(t.dir).filter((name) => name === REPLACING_DIR || name === ".uploading");
+
+test("PDF 还在解析的时候旧材料一直在材料目录里：照旧在清单里、照旧可以查看，还没有移走；解析好了才换成新材料", () => withTask(async (service, t) => {
+  service.upload(t, "需求.md", Buffer.from("买家可以申请退货。"));
+  const before = stamps(t);
+  const [sub] = t.hub.subscribe(null, null);
+  const pending = service.replaceMaterial(t, "inputs/需求.md", "办法.pdf", PDF);
+  // 这时新文件在另起的那次运行里解析，还没有回来
+  assert.deepEqual(ownPaths(service, t), ["inputs/需求.md"]);
+  assert.deepEqual(stamps(t), before);
+  assert.equal(service.materialText(join(t.dir, "inputs", "需求.md"), "inputs/需求.md"), "买家可以申请退货。");
+  assert.equal(leftover(t), false);
+  assert.deepEqual(await materialEvents(sub), []);
+  assert.deepEqual(await pending, { ok: true, path: "inputs/办法.pdf", replaced: "inputs/需求.md" });
+  assert.deepEqual(ownPaths(service, t), ["inputs/办法.pdf"]);
+  assert.deepEqual((await materialEvents(sub)).map(([name, data]) => [name, data.path]), [["material_removed", "inputs/需求.md"], ["material_added", "inputs/办法.pdf"]]);
+  assert.deepEqual(tempDirs(t), []);
+}));
+
+test("替换成一份读不出来的 PDF：材料目录从头到尾没有动过，不发事件，两个临时目录都不留", () => withTask(async (service, t) => {
   service.upload(t, "需求.docx", readFileSync(SAMPLE));
   const before = stamps(t);
   const [sub] = t.hub.subscribe(null, null);
-  const broken = await rejected(service.replaceMaterial(t, "inputs/需求.docx", "坏的.pdf", Buffer.from("这不是一份 PDF")));
+  const pending = rejected(service.replaceMaterial(t, "inputs/需求.docx", "坏的.pdf", Buffer.from("这不是一份 PDF")));
+  assert.deepEqual(stamps(t), before);
+  assert.equal(leftover(t), false);
+  const broken = await pending;
   assert.equal(broken.code, "unsupported_type");
   assert.deepEqual(stamps(t), before);
   assert.deepEqual(await materialEvents(sub), []);
-  assert.deepEqual(readdirSync(t.dir).filter((name) => name.startsWith(".replacing") || name.startsWith(".uploading")), []);
+  assert.deepEqual(tempDirs(t), []);
 }));
 
-test("PDF 还在生成派生文件的时候：旧材料在暂放目录里、不在材料清单里；生成好了清单里是新材料", () => withTask(async (service, t) => {
+test("PDF 解析的这段时间里旧材料进入了对话：解析好了也不换，照已经进入对话拒绝，旧材料原样还在", () => withTask(async (service, t) => {
   service.upload(t, "需求.md", Buffer.from("买家可以申请退货。"));
-  const pending = service.replaceMaterial(t, "inputs/需求.md", "办法.pdf", PDF);
-  assert.deepEqual(service.taskPage(t).materials.map((m: any) => m.path), []);
-  assert.equal(leftover(t), true);
-  assert.equal((await rejected(service.replaceMaterial(t, "inputs/需求.md", "又一份.md", Buffer.from("x")))).code, "not_found");
-  await pending;
-  assert.deepEqual(service.taskPage(t).materials.filter((m: any) => m.derived_from === null).map((m: any) => m.path), ["inputs/办法.pdf"]);
-  assert.equal(leftover(t), false);
+  const before = stamps(t);
+  const [sub] = t.hub.subscribe(null, null);
+  const pending = rejected(service.replaceMaterial(t, "inputs/需求.md", "办法.pdf", PDF));
+  writeSession(t, "S1", new Date(Date.now() - 1000), [new Date(Date.now() + 1000)]);
+  const refused = await pending;
+  assert.deepEqual([refused.code, refused.message], ["rejected", ENTERED_CONVERSATION_REPLACE_TEXT]);
+  assert.deepEqual(stamps(t), before);
+  assert.deepEqual(await materialEvents(sub), []);
+  assert.deepEqual(tempDirs(t), []);
+}));
+
+test("PDF 解析的这段时间里旧材料先被另一个文件换掉了：后到的这次替换找不到它，先换上来的那份不受影响", () => withTask(async (service, t) => {
+  service.upload(t, "需求.md", Buffer.from("买家可以申请退货。"));
+  const slow = rejected(service.replaceMaterial(t, "inputs/需求.md", "办法.pdf", PDF));
+  await service.replaceMaterial(t, "inputs/需求.md", "需求第二版.md", Buffer.from("买家可以在七天内申请退货。"));
+  assert.equal((await slow).code, "not_found");
+  assert.deepEqual(files(t), ["需求第二版.md"]);
+  assert.equal(read(t, "需求第二版.md"), "买家可以在七天内申请退货。");
+  assert.deepEqual(tempDirs(t), []);
+}));
+
+test("PDF 解析好了、旧材料也移走了，新文件却移不进材料目录（那里已经有它要用的文件名）：旧材料原样移回去，不发事件", () => withTask(async (service, t) => {
+  service.upload(t, "需求.docx", readFileSync(SAMPLE));
+  const [sub] = t.hub.subscribe(null, null);
+  const pending = rejected(service.replaceMaterial(t, "inputs/需求.docx", "办法.pdf", PDF));
+  writeFileSync(join(t.dir, "inputs", "办法.pdf.md"), "解析的这段时间里别处放进来的文件", "utf-8");
+  const before = stamps(t);
+  const taken = await pending;
+  assert.equal(taken.code, "name_taken");
+  assert.deepEqual(stamps(t), before);
+  assert.deepEqual(await materialEvents(sub), []);
+  assert.deepEqual(tempDirs(t), []);
+}));
+
+test("用同名的 PDF 替换 PDF：解析的时候不因为与旧的那份同名被拒绝，换好之后派生文件是新的", () => withTask(async (service, t) => {
+  await service.upload(t, "办法.pdf", PDF);
+  const other = readFileSync(join(ROOT, "backend", "tests", "fixtures", "pdf", "scanned.pdf"));
+  assert.deepEqual(await service.replaceMaterial(t, "inputs/办法.pdf", "办法.pdf", other), { ok: true, path: "inputs/办法.pdf", replaced: "inputs/办法.pdf" });
+  assert.deepEqual(files(t), ["办法.pdf", "办法.pdf.locations.json", "办法.pdf.md", "办法.pdf.segments.json"]);
+  assert.deepEqual(readFileSync(join(t.dir, "inputs", "办法.pdf")), other);
+  assert.match(read(t, "办法.pdf.md"), /这一页没有文字/);
+  assert.deepEqual(tempDirs(t), []);
 }));
 
 function multipart(filename: string, data: Buffer): [Buffer, Record<string, string>] {
