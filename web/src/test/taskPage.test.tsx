@@ -12,8 +12,9 @@ import { NO_SESSION_TITLE } from "../components/task/CollectionCards";
 import { completionLines, completionScore, emptyLineText } from "../model/completionLines";
 import { formatTimeShort } from "../model/format";
 import { TaskPage } from "../pages/TaskPage";
+import { docxEntry, resetDocxStore } from "../state/docxStore";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); window.location.hash = ""; });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); resetDocxStore(); window.location.hash = ""; });
 
 const info: ServiceInfo = {
   ok: true, app: "taskwright", version: "0.4.1", mode: "server", pid: 1, port: 8950,
@@ -67,6 +68,7 @@ function page(task: TaskDetail = detail(), serviceInfo: ServiceInfo = info) {
     document: vi.spyOn(api, "uploadDocument").mockResolvedValue({ name: "a.md", kind: "other", bytes: 1, uploaded_at: "" }),
     select: vi.spyOn(api, "setTaskKnowledge").mockImplementation(async (_t, ids) => ids),
     remove: vi.spyOn(api, "deleteMaterial").mockResolvedValue({ ok: true, path: "inputs/借阅说明.md" }),
+    replace: vi.spyOn(api, "replaceMaterial").mockResolvedValue({ ok: true, path: "inputs/补充说明第二版.docx", replaced: "inputs/补充说明.docx" }),
     newSession: vi.spyOn(api, "createSession").mockResolvedValue({ session_id: "S-new" }),
   };
   vi.spyOn(api, "listTasks").mockResolvedValue([]);
@@ -103,7 +105,7 @@ describe("任务头", () => {
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
   });
 
-  it("任务已完成：状态是灰底，写明整页只读，没有「新建会话」、上传区、材料的「删除」与知识库的改选用", async () => {
+  it("任务已完成：状态是灰底，写明整页只读，没有「新建会话」、上传区、材料的「替换」与「删除」、知识库的改选用", async () => {
     page(detail({ status: "已完成", materials: [{ path: "inputs/借阅说明.md", bytes: 5, modified_at: "2026-09-28T17:50:00", derived_from: null, deletable: false }] }));
     await ready();
     expect(screen.getByTestId("task-status")).toHaveTextContent("已完成");
@@ -112,6 +114,9 @@ describe("任务头", () => {
     expect(screen.queryByRole("button", { name: /新建会话/ })).toBeNull();
     expect(screen.queryByTestId("upload-hint")).toBeNull();
     expect(screen.queryByTestId("material-delete")).toBeNull();
+    expect(screen.queryByTestId("material-replace")).toBeNull();
+    expect(screen.queryByTestId("material-replace-off")).toBeNull();
+    expect(screen.queryByTestId("material-replace-input")).toBeNull();
     await screen.findByTestId("kb-row-lib-cb");
     expect(screen.queryByTestId("kb-pick")).toBeNull();
     expect(screen.queryByText("不再选用")).toBeNull();
@@ -323,14 +328,14 @@ describe("材料", () => {
     { path: "inputs/补充说明.docx.md", bytes: 9, modified_at: "2026-09-28T17:52:00", derived_from: "inputs/补充说明.docx", deletable: false },
   ];
 
-  it("材料表列出名称、大小、上传时间与「查看」；只有 deletable 为真的那份另有「删除」；由 Word 材料生成的文件不列", async () => {
+  it("材料表列出名称、大小、上传时间与「查看」；deletable 为真的那份另有「替换」与「删除」，为假的那份只有灰色的「替换」；由 Word 材料生成的文件不列", async () => {
     page(detail({ materials }));
     await ready();
     expect(screen.getByTestId("material-count").textContent).toBe("2 份");
     const rows = screen.getAllByTestId("material-row");
     expect(rows.map((r) => [...r.querySelectorAll("td")].map(text))).toEqual([
-      ["借阅说明.md", "181 字节", "2026-09-28 17:49", "查看"],
-      ["补充说明.docx", "24.0 KB", "2026-09-28 17:52", "查看删除"],
+      ["借阅说明.md", "181 字节", "2026-09-28 17:49", "查看替换"],
+      ["补充说明.docx", "24.0 KB", "2026-09-28 17:52", "查看替换删除"],
     ]);
     expect(rows[0].querySelector(".anticon-file-text")).toBeTruthy();
     expect(rows[1].querySelector(".anticon-file-word")).toBeTruthy();
@@ -379,6 +384,139 @@ describe("材料", () => {
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
     expect(await screen.findByText("这份材料已经进入了对话，不能删除。")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByTestId("material-delete")).toBeNull());
+  });
+
+  const pickReplacement = async (file: File) => {
+    fireEvent.click(await screen.findByTestId("material-replace"));
+    fireEvent.change(screen.getByTestId("material-replace-input"), { target: { files: [file] } });
+  };
+  const newer = () => new File(["x".repeat(9)], "补充说明第二版.docx");
+
+  it("已经进入对话的材料：「替换」是灰的、点不动，鼠标停在上面说明请上传一份新材料并告诉助手以新的为准", async () => {
+    const calls = page(detail({ materials }));
+    await ready();
+    const off = screen.getAllByTestId("material-row")[0].querySelector("[data-testid=material-replace-off]")!;
+    expect(off).toHaveTextContent("替换");
+    expect(off).toHaveClass("off");
+    expect(off).toHaveAttribute("aria-disabled", "true");
+    expect(off).toHaveAttribute("title", "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。");
+    fireEvent.click(off);
+    expect(document.querySelector(".ant-modal")).toBeNull();
+    expect(calls.replace).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId("material-replace")).toHaveLength(1);
+    expect(screen.getAllByTestId("material-row")[1].querySelector("[data-testid=material-replace-off]")).toBeNull();
+  });
+
+  it("点「替换」选好文件后先弹确认，写明旧文件就没有了；确定之后调替换接口、提示把哪份换成了哪份并重读任务", async () => {
+    const calls = page(detail({ materials }));
+    const file = newer();
+    await pickReplacement(file);
+    expect(await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？")).toBeInTheDocument();
+    expect(screen.getByText("用新文件替换这份材料，旧文件就没有了；助手下次开始会话时看到的是新文件。")).toBeInTheDocument();
+    expect(calls.replace).not.toHaveBeenCalled();
+    fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
+    await waitFor(() => expect(calls.replace).toHaveBeenCalledWith("TASK-P", "inputs/补充说明.docx", file));
+    expect(await screen.findByText("已把材料《补充说明.docx》替换成《补充说明第二版.docx》。")).toBeInTheDocument();
+    await waitFor(() => expect(calls.get).toHaveBeenCalledTimes(2));
+    expect(calls.material).not.toHaveBeenCalled();
+  });
+
+  it("在确认框里点「取消」不调替换接口，也不重读任务", async () => {
+    const calls = page(detail({ materials }));
+    await pickReplacement(newer());
+    await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？");
+    fireEvent.click(document.querySelector(".ant-modal .ant-btn-default")!);
+    await new Promise((ok) => setTimeout(ok, 50));
+    expect(calls.replace).not.toHaveBeenCalled();
+    expect(calls.get).toHaveBeenCalledTimes(1);
+  });
+
+  it("用同名的文件替换时提示只写「已替换」", async () => {
+    const calls = page(detail({ materials }));
+    calls.replace.mockResolvedValue({ ok: true, path: "inputs/补充说明.docx", replaced: "inputs/补充说明.docx" });
+    await pickReplacement(new File(["y"], "补充说明.docx"));
+    await screen.findByText("用《补充说明.docx》替换材料《补充说明.docx》？");
+    fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
+    expect(await screen.findByText("已替换材料《补充说明.docx》。")).toBeInTheDocument();
+    expect(calls.replace).toHaveBeenCalledTimes(1);
+  });
+
+  it("替换时选的文件类型不符或者超过上限：直接报后端给的那句话，不弹确认框，不调接口", async () => {
+    const calls = page(detail({ materials }));
+    await pickReplacement(new File(["x"], "表格.xlsx"));
+    expect(await screen.findByText(info.upload!.unsupported_type_text!)).toBeInTheDocument();
+    const big = new File(["x"], "很大.md");
+    Object.defineProperty(big, "size", { value: info.upload!.max_bytes + 1 });
+    await pickReplacement(big);
+    expect(await screen.findByText(info.upload!.too_large_text)).toBeInTheDocument();
+    expect(document.querySelector(".ant-modal")).toBeNull();
+    expect(calls.replace).not.toHaveBeenCalled();
+  });
+
+  it("替换请求还没有回来时，确认框的「替换」转圈、「取消」不可点，再点不会发第二次请求", async () => {
+    const calls = page(detail({ materials }));
+    let finish: (value: { ok: true; path: string; replaced: string }) => void = () => {};
+    calls.replace.mockImplementation(() => new Promise((ok) => { finish = ok; }));
+    await pickReplacement(newer());
+    await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？");
+    const ok = () => document.querySelector(".ant-modal .ant-btn-primary") as HTMLButtonElement;
+    const cancel = () => document.querySelector(".ant-modal .ant-btn-default") as HTMLButtonElement;
+    fireEvent.click(ok());
+    await waitFor(() => expect(ok()).toHaveClass("ant-btn-loading"));
+    expect(cancel().disabled).toBe(true);
+    fireEvent.click(ok());
+    fireEvent.click(cancel());
+    expect(calls.replace).toHaveBeenCalledTimes(1);
+    finish({ ok: true, path: "inputs/补充说明第二版.docx", replaced: "inputs/补充说明.docx" });
+    expect(await screen.findByText("已把材料《补充说明.docx》替换成《补充说明第二版.docx》。")).toBeInTheDocument();
+    expect(calls.replace).toHaveBeenCalledTimes(1);
+  });
+
+  it("替换被后端拒绝（材料刚进入了对话）：红色提示照写后端的原话，并重读任务，「替换」随新的数据变灰", async () => {
+    const calls = page(detail({ materials }));
+    calls.replace.mockRejectedValue(new ApiError("rejected", "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。", 422));
+    await pickReplacement(newer());
+    await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？");
+    calls.get.mockResolvedValue(detail({ materials: materials.map((m) => ({ ...m, deletable: false })) }));
+    fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
+    expect(await screen.findByText("这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("material-replace")).toBeNull());
+    expect(screen.getAllByTestId("material-replace-off")).toHaveLength(2);
+  });
+
+  /** 先让页面把这份 Word 材料读进缓存（接口报读不到，缓存里记成 error），返回读原始字节的那个接口，供数它被调了几次。 */
+  const cached = async () => {
+    const raw = vi.spyOn(api, "materialRaw").mockRejectedValue(new ApiError("not_found", "没有材料。", 404));
+    vi.spyOn(api, "materialContent").mockRejectedValue(new ApiError("not_found", "没有材料。", 404));
+    await ready();
+    docxEntry("TASK-P", "inputs/补充说明.docx");
+    await waitFor(() => expect(docxEntry("TASK-P", "inputs/补充说明.docx").status).toBe("error"));
+    expect(docxEntry("TASK-P", "inputs/补充说明.docx").status).toBe("error");
+    expect(raw).toHaveBeenCalledTimes(1);
+    return raw;
+  };
+
+  it("用同名的文件替换成功之后丢掉这份 Word 材料在页面里的缓存，再显示它时重新读", async () => {
+    const calls = page(detail({ materials }));
+    calls.replace.mockResolvedValue({ ok: true, path: "inputs/补充说明.docx", replaced: "inputs/补充说明.docx" });
+    const raw = await cached();
+    await pickReplacement(new File(["y"], "补充说明.docx"));
+    await screen.findByText("用《补充说明.docx》替换材料《补充说明.docx》？");
+    fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
+    await screen.findByText("已替换材料《补充说明.docx》。");
+    expect(docxEntry("TASK-P", "inputs/补充说明.docx").status).toBe("loading");
+    await waitFor(() => expect(raw).toHaveBeenCalledTimes(2));
+  });
+
+  it("删除成功之后同样丢掉缓存：再上传同名的文件，显示时重新读", async () => {
+    page(detail({ materials }));
+    const raw = await cached();
+    fireEvent.click(await screen.findByTestId("material-delete"));
+    await screen.findByText("删除材料《补充说明.docx》？");
+    fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
+    await screen.findByText("已删除材料《补充说明.docx》。");
+    expect(docxEntry("TASK-P", "inputs/补充说明.docx").status).toBe("loading");
+    await waitFor(() => expect(raw).toHaveBeenCalledTimes(2));
   });
 
   it("选好文件直接调材料上传接口：不问去向，不碰知识库，传完重读任务", async () => {

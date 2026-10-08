@@ -230,6 +230,12 @@ export const api = {
     return request<{ path: string }>("POST", `${task(taskId)}/materials${query}`, form);
   },
   deleteMaterial: (taskId: string, path: string) => request<{ ok: true; path: string }>("POST", `${task(taskId)}/materials/delete`, { path }),
+  /** 用 file 替换 path 这份材料（只有还没有进入对话的材料换得掉）；返回新材料的路径与被换掉的那份的路径。 */
+  replaceMaterial: (taskId: string, path: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<{ ok: true; path: string; replaced: string }>("POST", `${task(taskId)}/materials/replace?path=${encodeURIComponent(path)}`, form);
+  },
   control: (taskId: string, sessionId: string, action: "stop") =>
     request<{ ok: true; cleared?: string[] }>("POST", `${task(taskId)}/control?session=${encodeURIComponent(sessionId)}`, { action }),
 
