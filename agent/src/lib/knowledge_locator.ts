@@ -25,6 +25,9 @@ export interface KnowledgeLocator {
   name: string;
   /** Word 文档的段落号；没写或不是 Word 文档时为 null。 */
   paragraph: number | null;
+  /** PDF 文档的页与块（出处写成 x.pdf#p页-块）；没写或不是 PDF 文档时没有这两项。 */
+  page?: number;
+  block?: number;
 }
 
 /** 这条出处是不是指向知识库里的文档。 */
@@ -54,7 +57,9 @@ export function parseKnowledgeLocator(locator: string): KnowledgeLocator | null 
     name = docx[1];
     paragraph = Number(docx[2]);
   }
+  const pdf = docx ? null : /^(.+\.pdf)#p(\d+)-(\d+)$/i.exec(name);
+  if (pdf) name = pdf[1];
   const bad = (part: string) => part === "" || part === "." || part === ".." || part.includes("/") || part.includes("\\");
   if (bad(library) || bad(name)) return null;
-  return { library, name, paragraph };
+  return { library, name, paragraph, ...(pdf ? { page: Number(pdf[2]), block: Number(pdf[3]) } : {}) };
 }

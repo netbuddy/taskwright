@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { projectionParagraphs } from "../../agent/src/lib/docx_source.ts";
 import { SEGMENT_DEFAULTS } from "../../agent/src/lib/segments.ts";
-import { chunkMarkdown, chunkPlain, chunkWord } from "../src/knowledge_chunks.ts";
+import { chunkDocument, chunkMarkdown, chunkPlain, chunkWord } from "../src/knowledge_chunks.ts";
 import { passageOf } from "../src/knowledge_passage.ts";
 
 const projectionOf = (total: number, body: string[]) => ["<!--", `段落总数：${total}。`, "-->", "", ...body].join("\n");
@@ -34,7 +34,7 @@ test("源文字与片段对不上（片段是按另一份内容切的）：退�
   const source = "第一段。\n\n第二段。\n";
   const [chunk] = chunkPlain(source);
   const other = "换了内容，长短也不同。\n\n第二段还在。\n";
-  assert.deepEqual(passageOf("说明.txt", chunk, other), { body: "第一段。\n第二段。", paragraphs: null, table: null, header: null, exact: false });
+  assert.deepEqual(passageOf("说明.txt", chunk, other), { body: "第一段。\n第二段。", units: null, paragraphs: null, table: null, header: null, exact: false });
   assert.equal(passageOf("说明.txt", chunk, source).body, "第一段。\n\n第二段。");
 });
 
@@ -63,5 +63,15 @@ test("Word 文档：逐段给并带段落号，文字与核对摘录用的段文
   // 没有表格的片段 table 是 null。
   const only = chunkWord(projectionOf(2, ["# 1 [p1] 规则", "", "[p2] 一段。", ""]), SEGMENT_DEFAULTS);
   assert.deepEqual(passageOf("规则.docx", only[0], projectionOf(2, ["# 1 [p1] 规则", "", "[p2] 一段。", ""])),
-    { body: null, paragraphs: [{ paragraph: 1, text: "规则" }, { paragraph: 2, text: "一段。" }], table: null, header: null, exact: true });
+    { body: null, units: null, paragraphs: [{ paragraph: 1, text: "规则" }, { paragraph: 2, text: "一段。" }], table: null, header: null, exact: true });
+});
+
+test("PDF 文档：逐块给并带页与块号，文字是投影里那一块的原样文字；源文字换过时 exact 为假", () => {
+  const projection = ["<!--", "由 规范.pdf 生成。页数：1。", "-->", "", "[p1-1] 第一条 读者凭借书证借书。", "", "[p1-2] 每次最多借五本  借期三十天", ""].join("\n");
+  const [chunk] = chunkDocument("规范.pdf", projection, SEGMENT_DEFAULTS);
+  assert.deepEqual(passageOf("规范.pdf", chunk, projection), {
+    body: null, units: [{ page: 1, block: 1, text: "第一条 读者凭借书证借书。" }, { page: 1, block: 2, text: "每次最多借五本  借期三十天" }],
+    paragraphs: null, table: null, header: null, exact: true,
+  });
+  assert.equal(passageOf("规范.pdf", chunk, projection.replace("借书证", "读者证之类的证件")).exact, false);
 });

@@ -106,6 +106,14 @@ test("早期版本写下的「用户直接修改」不写进文档；条目没�
   const only = { sourcesOf: () => [edit] } as any;
   assert.equal(render.sourcesText(only, "UC-001", 1), "（无）");
   assert.equal(render.sourcesText({ sourcesOf: () => [] } as any, "UC-001", 1), "（无）");
+  // PDF 材料的出处写文件名加页码，不写块号；Word 材料照旧只写文件名。知识库里的 PDF 文档写「第 N 页」。
+  assert.equal(render.materialLocatorText("inputs/办法.pdf#p3-2"), "inputs/办法.pdf（第 3 页）");
+  assert.equal(render.materialLocatorText("inputs/需求.docx#p37"), "inputs/需求.docx");
+  assert.equal(render.materialLocatorText("inputs/a.md"), "inputs/a.md");
+  const pdf = { sourcesOf: () => [{ kind: "文档原文", locator: "inputs/办法.pdf#p3-2", excerpt: "退款金额按原路退回" },
+    { kind: "文档原文", locator: "knowledge/general/规范.pdf#p12-4", excerpt: "七日内答复" }] } as any;
+  assert.equal(render.sourcesText(pdf, "UC-001", 1), "文档原文，出处 inputs/办法.pdf（第 3 页）（「退款金额按原路退回」）；知识库，出处 general / 规范.pdf 第 12 页（「七日内答复」）");
+  assert.deepEqual(render.sourceEntries(pdf, "UC-001", 1).map((one: { where: string }) => one.where), ["inputs/办法.pdf（第 3 页）", "general / 规范.pdf 第 12 页"]);
 });
 
 test("导出文档里 Word 材料的出处只写文件名", () => {

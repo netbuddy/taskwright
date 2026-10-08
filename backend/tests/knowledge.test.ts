@@ -153,7 +153,7 @@ test("上传文档：类型、20 MB、同名、同内容、种类五项检查；
   const service = fresh();
   const store = service.knowledge!;
   const files = () => readdirSync(store.filesDir(GENERAL)).sort();
-  assert.equal(rejected(() => store.upload(GENERAL, "规范.pdf", Buffer.from("x"), "standard")).code, "unsupported_type");
+  assert.equal(rejected(() => store.upload(GENERAL, "规范.pptx", Buffer.from("x"), "standard")).code, "unsupported_type");
   const big = rejected(() => store.upload(GENERAL, "大.md", Buffer.alloc(KNOWLEDGE_MAX_UPLOAD + 1, 0x41), "other"));
   assert.deepEqual([big.code, big.status, big.message], ["too_large", 413, "单个文件不能超过 20 MB。"]);
   const bad = rejected(() => store.upload(GENERAL, "术语.md", Buffer.from("x"), "dictionary"));

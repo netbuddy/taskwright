@@ -35,11 +35,15 @@ function resolveFile(from: string, spec: string): string {
   return base;
 }
 
+/** 写给页面用、页面还没有导入的文件：先照同样的规矩守着，页面接上的那一天不会才发现它用了 Node 的模块。 */
+const FOR_WEB = ["lib/pdf_source.ts"];
+
 /** 页面直接导入的 agent/src 文件，以及它们经相对导入牵进来的全部文件。 */
 function agentFilesUsedByWeb(): { files: Set<string>; problems: string[] } {
   const queue = sourceFiles(WEB_SRC).flatMap((file) =>
     specifiers(readFileSync(file, "utf-8")).filter((spec) => spec.startsWith(".")).map((spec) => resolveFile(file, spec))
       .filter((path) => path.startsWith(AGENT_SRC + "/")));
+  queue.push(...FOR_WEB.map((rel) => join(AGENT_SRC, rel)));
   const files = new Set<string>();
   const problems: string[] = [];
   while (queue.length) {
@@ -62,7 +66,8 @@ test("页面导入的助手一侧文件不导入 Node 的模块或别的包（�
   const { files, problems } = agentFilesUsedByWeb();
   const names = [...files].map((file) => relative(ROOT, file)).sort();
   // 先确认真的找到了页面导入的文件，免得守护因为找不到而一直通过。
-  for (const known of ["agent/src/lib/completion_consent.ts", "agent/src/lib/docx_locations.ts", "agent/src/lib/review_verdict.ts"]) {
+  for (const known of ["agent/src/lib/completion_consent.ts", "agent/src/lib/docx_locations.ts", "agent/src/lib/review_verdict.ts",
+    "agent/src/lib/pdf_source.ts", "agent/src/lib/pdf_normalize.ts", "agent/src/lib/pdf_locations.ts"]) {
     assert.ok(names.includes(known), `应当找到页面导入的 ${known}，找到的是：${names.join("、")}`);
   }
   assert.deepEqual(problems, [], "页面导入的文件要只用相对导入、不依赖任何模块；需要查库或读文件的函数放进页面不导入的文件");

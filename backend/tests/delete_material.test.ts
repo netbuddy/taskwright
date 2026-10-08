@@ -64,7 +64,7 @@ test("派生文件的路径、材料目录之外的路径、不存在的材料�
   service.upload(t, "需求.docx", readFileSync(SAMPLE));
   const before = files(t);
   const derived = rejected(() => service.deleteMaterial(t, "inputs/需求.docx.md"));
-  assert.deepEqual([derived.code, derived.message], ["bad_request", "这是由 Word 材料生成的文件，不能单独删除。"]);
+  assert.deepEqual([derived.code, derived.message], ["bad_request", "这是由别的材料生成的文件，不能单独删除。"]);
   const outside = rejected(() => service.deleteMaterial(t, "task.sqlite"));
   assert.deepEqual([outside.code, outside.message], ["bad_request", "路径 task.sqlite 不在材料目录 inputs/ 里。"]);
   assert.equal(rejected(() => service.deleteMaterial(t, "inputs/../task.sqlite")).code, "bad_request");

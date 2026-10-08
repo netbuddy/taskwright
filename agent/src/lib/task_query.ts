@@ -283,10 +283,19 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
 
 /** 材料的分段与引用情况，给「查询任务状态」的文字用。 */
 export function materialLines(materials: MaterialFacts[]): string[] {
-  const lines = ["材料的分段与引用情况（Word 材料按分段清单逐块列出；行号是投影文件里的行号，read 的 offset 用它）："];
+  const lines = ["材料的分段与引用情况（Word 材料按分段清单逐块列出，PDF 材料按分段清单逐段列出；行号是投影文件里的行号，read 的 offset 用它）："];
   for (const f of materials) {
     if (f.kind === "text") {
       lines.push(`  ${f.path}：被引用过 ${f.cited} 次。`);
+      continue;
+    }
+    if (f.kind === "pdf") {
+      lines.push(`  ${f.path}（读 ${f.projection}）：共 ${f.pages} 页、${f.units} 块${f.no_text_pages.length ? `，第 ${f.no_text_pages.join("、")} 页没有文字` : ""}，` +
+        (f.uncited === 0 ? "每块都有条目引用。" : `还有 ${f.uncited} 块没有被任何条目引用。`));
+      for (const b of f.blocks) {
+        lines.push(`    第 ${b.index} 段 第 ${b.first_page}–${b.last_page} 页（第 ${b.first_line}–${b.last_line} 行）${b.heading ? `「${b.heading}」` : ""}：` +
+          `${b.units} 块，被 ${b.items} 个条目引用${b.uncited ? `，${b.uncited} 块没有引用` : ""}。`);
+      }
       continue;
     }
     lines.push(`  ${f.path}（读 ${f.projection}）：共 ${f.text_paragraphs} 段有文字、${f.blocks.length} 块，` +

@@ -74,8 +74,8 @@ test("两路都做：每个片段带它在两路里各排第几、知识库、�
   assert.deepEqual(got.json.hits[0], {
     score: 1, score_kind: "semantic", rank_semantic: 1, rank_keyword: 1,
     library: GENERAL, library_name: "通用知识库", name: "借阅规范.md", kind: "standard", index: 2, title: "借阅规范 / 逾期", block: 2,
-    first_paragraph: null, last_paragraph: null, first_line: 5, last_line: 5, partial: false, text: "逾期每册每天罚款 0.5 元。", locator: "knowledge/general/借阅规范.md",
-    body: "逾期每册每天罚款 0.5 元。", paragraphs: null, table: null, header: null, exact: true,
+    first_paragraph: null, last_paragraph: null, first_line: 5, last_line: 5, first_unit: null, last_unit: null, partial: false, text: "逾期每册每天罚款 0.5 元。", locator: "knowledge/general/借阅规范.md",
+    body: "逾期每册每天罚款 0.5 元。", units: null, paragraphs: null, table: null, header: null, exact: true,
   });
   // 各阶段的耗时都记了，是不小于 0 的数。
   assert.deepEqual(Object.keys(got.json.timing), ["embed_query", "read_derived", "read_source", "chunk_now", "vector_compare", "tokenize", "keyword_score"]);

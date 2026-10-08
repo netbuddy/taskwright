@@ -175,7 +175,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
                 }
               }}>
               <span className="muted small" data-testid="kb-upload-hint">
-                把文件拖到这里，或者点这里选择文件，放进「{current.name}」{typesText && limitText ? `（只接受 ${typesText}，${limitText}；PDF 暂时不接受，下一版起支持）` : ""}。
+                把文件拖到这里，或者点这里选择文件，放进「{current.name}」{typesText && limitText ? `（只接受 ${typesText}，${limitText}）` : ""}。
               </span>
             </Upload.Dragger>
             {current.documents.length > 0 && (

@@ -29,7 +29,7 @@ import { type SegmentParams } from "../../agent/src/lib/segments.ts";
 import { EmbeddingError, type EmbeddingFailure, embed } from "./embedding.ts";
 import { ApiError } from "./errors.ts";
 import type { DocumentRow, Kind, KnowledgeStore } from "./knowledge.ts";
-import { type Chunk, chunkDocument } from "./knowledge_chunks.ts";
+import { type Chunk, type PdfPlace, chunkDocument } from "./knowledge_chunks.ts";
 import type { KnowledgeEmbedder } from "./knowledge_embedder.ts";
 import { isEmbedded, normalize, readEmbeddings } from "./knowledge_embeddings.ts";
 import { keywordIndex, keywordRanking } from "./knowledge_keywords.ts";
@@ -75,14 +75,17 @@ export interface SearchHit extends Passage {
   /** Word 文档的起止段落号；别的文档是 null。 */
   first_paragraph: number | null;
   last_paragraph: number | null;
-  /** Markdown 与纯文本的起止行号；Word 文档是 null。 */
+  /** Markdown 与纯文本的起止行号；Word 文档与 PDF 文档是 null。 */
   first_line: number | null;
   last_line: number | null;
+  /** PDF 文档起止的那两块（页与块号）；别的文档是 null。 */
+  first_unit: PdfPlace | null;
+  last_unit: PdfPlace | null;
   /** 这是很长的一段切出来的一截。 */
   partial: boolean;
   /** 片段里存的文字，页面显示用（各段用一个换行接起来；Word 表格的行是改写成带竖线的一行的文字）。照抄摘录要用原文，不用它。 */
   text: string;
-  /** 引用这份文档作来源时出处的写法；Word 文档还要加摘录所在那一段的段落号。 */
+  /** 引用这份文档作来源时出处的写法；Word 文档还要加摘录所在那一段的段落号，PDF 文档还要加摘录所在那一块的页与块。 */
   locator: string;
 }
 
@@ -322,6 +325,7 @@ export async function searchKnowledge(
       rank_semantic: semanticRank.get(i) ?? null, rank_keyword: keywordRank.get(i) ?? null,
       library: library.id, library_name: library.name, name: row.name, kind: row.kind, index: chunk.index, title: chunk.heading, block: chunk.block,
       first_paragraph: chunk.first_paragraph, last_paragraph: chunk.last_paragraph, first_line: chunk.first_line, last_line: chunk.last_line,
+      first_unit: chunk.first_unit ?? null, last_unit: chunk.last_unit ?? null,
       partial: chunk.partial === true, text: chunk.text, locator: knowledgeLocator(library.id, row.name),
       ...passageOf(row.name, chunk, source),
     }];

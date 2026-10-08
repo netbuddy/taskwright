@@ -25,6 +25,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { isLegacyProjection, placeExcerpt, projectionParagraphs } from "./docx_source.ts";
+import { parsePdfLocator } from "./pdf_locations.ts";
+import { PDF_SEGMENTS_SUFFIX, type PdfSegmentBlock, type PdfSegmentList } from "./pdf_segments.ts";
+import { pdfProjectionUnits, pdfUnitIndex, placePdfExcerpt } from "./pdf_source.ts";
 import { isKnowledgeLocator } from "./knowledge_locator.ts";
 
 /** 分段清单跟在 Word 文件路径后面的后缀：x.docx → x.docx.segments.json。 */
@@ -393,6 +396,25 @@ export interface WordMaterialFacts {
   blocks: (SegmentBlock & { items: number; uncited: number })[];
 }
 
+/** 一份 PDF 材料的页数、块数与引用情况（任务现状消息与「查询任务状态」用）。统计按块：块是投影里带定位符的一行。 */
+export interface PdfMaterialFacts {
+  kind: "pdf";
+  /** PDF 文件相对任务目录的路径。 */
+  path: string;
+  projection: string;
+  /** 分段清单文件相对任务目录的路径；文件不在时是 null。 */
+  segments_file: string | null;
+  pages: number;
+  /** 块的总数（块号 0 的那一行不算）。 */
+  units: number;
+  /** 没有文字的页。 */
+  no_text_pages: number[];
+  /** 没有被任何来源引用的块数。 */
+  uncited: number;
+  /** 分段清单的各段（按页分），各带被几个条目引用、还有几块没有引用；清单读不到时是空的。 */
+  blocks: (PdfSegmentBlock & { items: number; uncited: number })[];
+}
+
 /** 一份文本材料（.md、.txt）被引用的次数。 */
 export interface TextMaterialFacts {
   kind: "text";
@@ -400,13 +422,64 @@ export interface TextMaterialFacts {
   cited: number;
 }
 
-export type MaterialFacts = WordMaterialFacts | TextMaterialFacts;
+export type MaterialFacts = WordMaterialFacts | PdfMaterialFacts | TextMaterialFacts;
 
-const PROJECTION_OF = /\.docx\.(md|txt)$/i;
+const PROJECTION_OF = /\.docx\.(md|txt)$|\.pdf\.md$/i;
+
+/**
+ * 一份 PDF 材料的页数、块数与引用情况。rel 是 PDF 文件相对任务目录的路径，projectionText 是投影全文，list 是分段清单（读不到时给 null）。
+ * 一条来源引用了哪几块，照核对时的规则算（lib/pdf_source.ts 的 placePdfExcerpt）：摘录接到了后面的块，那几块都算引用过；
+ * 摘录对不上的（材料后来换过）只算出处写的那一块。
+ */
+export function pdfMaterialFacts(db: DatabaseSync, taskId: string, rel: string, projectionText: string, list: PdfSegmentList | null): Omit<PdfMaterialFacts, "kind" | "path" | "projection" | "segments_file"> {
+  const units = pdfProjectionUnits(projectionText);
+  const cited = new Map<number, Set<string>>();
+  for (const row of currentDocumentSources(db, taskId)) {
+    const at = parsePdfLocator(row.locator);
+    if (!at || at.page === null || at.block === null || !sameMaterial(at.path, rel)) continue;
+    const place = placePdfExcerpt(units, at.page, at.block, row.excerpt);
+    const indexes = place.kind === "in" || place.kind === "span" ? place.ranges.map((r) => r.index) : [pdfUnitIndex(units, at.page, at.block)];
+    for (const index of indexes) {
+      if (index < 0) continue;
+      if (!cited.has(index)) cited.set(index, new Set());
+      cited.get(index)!.add(row.item_id);
+    }
+  }
+  const real = units.map((unit, index) => ({ unit, index })).filter(({ unit }) => unit.block >= 1);
+  const blocks = (list?.blocks ?? []).map((b) => {
+    const items = new Set<string>();
+    let blank = 0;
+    for (const { unit, index } of real) {
+      if (unit.page < b.first_page || unit.page > b.last_page) continue;
+      const who = cited.get(index);
+      if (who) for (const one of who) items.add(one);
+      else blank++;
+    }
+    return { ...b, items: items.size, uncited: blank };
+  });
+  return {
+    pages: list?.pages ?? units.reduce((max, unit) => Math.max(max, unit.page), 0),
+    units: real.length,
+    no_text_pages: units.filter((unit) => unit.block === 0).map((unit) => unit.page),
+    uncited: real.filter(({ index }) => !cited.has(index)).length,
+    blocks,
+  };
+}
+
+/** 读一份 PDF 材料的分段清单（上传时写在材料旁边）；读不到或者不是清单的形状时是 null。 */
+function readPdfSegments(file: string): PdfSegmentList | null {
+  try {
+    const list = JSON.parse(readFileSync(file, "utf-8")) as PdfSegmentList;
+    return Array.isArray(list.blocks) && typeof list.pages === "number" ? list : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 材料目录里每份材料的分段与引用情况，按 paths 的顺序：旁边有投影的 .docx 给分段明细（readSegments，必要时重算清单并写回），
- * 不是投影的 .md、.txt 给被引用次数；别的文件（投影、分段清单、没有投影的 .docx）不列。paths 是相对任务目录的路径。
+ * 旁边有投影的 .pdf 给页数、块数与引用情况；不是投影的 .md、.txt 给被引用次数；别的文件（投影、分段清单、没有投影的 .docx 与 .pdf）不列。
+ * paths 是相对任务目录的路径。
  */
 export function materialFacts(db: DatabaseSync, taskId: string, workspaceDir: string, paths: string[], params: SegmentParams): MaterialFacts[] {
   const present = new Set(paths);
@@ -429,6 +502,13 @@ export function materialFacts(db: DatabaseSync, taskId: string, workspaceDir: st
         uncited: counts.uncited,
         blocks: list.blocks.map((b, i) => ({ ...b, items: counts.blocks[i].items, uncited: counts.blocks[i].uncited })),
       });
+    } else if (/\.pdf$/i.test(path)) {
+      const projection = `${path}.md`;
+      if (!present.has(projection)) continue;
+      const segments = `${path}${PDF_SEGMENTS_SUFFIX}`;
+      const list = present.has(segments) ? readPdfSegments(join(workspaceDir, segments)) : null;
+      const text = readFileSync(join(workspaceDir, projection), "utf-8").replace(/\r\n/g, "\n");
+      out.push({ kind: "pdf", path, projection, segments_file: list ? segments : null, ...pdfMaterialFacts(db, taskId, path, text, list) });
     } else if (/\.(md|txt)$/i.test(path) && !PROJECTION_OF.test(path)) {
       out.push({ kind: "text", path, cited: fileCitationCount(db, taskId, path) });
     }

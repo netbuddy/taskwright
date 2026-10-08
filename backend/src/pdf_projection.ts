@@ -30,11 +30,12 @@
 
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { type PdfBox, type PdfLocationFile, type PdfPageLocation, PDF_LOCATIONS_SUFFIX, pdfAnchor, pdfLocationFile, pdfLocationsJson } from "../../agent/src/lib/pdf_locations.ts";
 import { tidyPdfText } from "../../agent/src/lib/pdf_normalize.ts";
 import { PDF_SEGMENTS_SUFFIX, buildPdfSegments, writePdfSegments } from "../../agent/src/lib/pdf_segments.ts";
 import { SEGMENT_DEFAULTS, type SegmentParams } from "../../agent/src/lib/segments.ts";
+import { fromRoot } from "./paths.ts";
 
 /** 投影跟在 PDF 文件路径后面的后缀：x.pdf → x.pdf.md。 */
 export const PDF_PROJECTION_SUFFIX = ".md";
@@ -93,17 +94,29 @@ const WORKER = "pdfjs-dist/legacy/build/pdf.worker.min.mjs";
  */
 export const PDFJS_FILES: readonly string[] = ["package.json", "LICENSE", "legacy/build/pdf.min.mjs", "legacy/build/pdf.worker.min.mjs", "cmaps", "standard_fonts"];
 
+/** 安装包里放 pdfjs-dist 那几样文件的目录（相对仓根；构建时由 release/build.mjs 照 PDFJS_FILES 拷进去）。 */
+export const PDFJS_VENDOR_DIR = "backend/vendor/pdfjs-dist";
+
+/**
+ * 主库与解析库两个文件在哪里：安装包里没有 node_modules，用构建时放进随包目录的那一份；仓库里按包名从 node_modules 找。
+ * 包没有装上时抛 PdfProjectionError。
+ */
+export function pdfjsFiles(): { main: string; worker: string } {
+  const packed = fromRoot(`${PDFJS_VENDOR_DIR}/legacy/build/pdf.min.mjs`);
+  if (existsSync(packed)) return { main: packed, worker: join(dirname(packed), "pdf.worker.min.mjs") };
+  try {
+    return { main: fileURLToPath(import.meta.resolve(MAIN)), worker: fileURLToPath(import.meta.resolve(WORKER)) };
+  } catch {
+    throw new PdfProjectionError("解析 PDF 要用的 pdfjs-dist 没有装上。");
+  }
+}
+
 let loading: Promise<{ lib: Pdfjs; cmaps: string; fonts: string }> | undefined;
 
 /** 第一次用到时才加载 pdf.js（后端启动时不加载）。 */
 function loadPdfjs() {
   loading ??= (async () => {
-    let main: string;
-    try {
-      main = fileURLToPath(import.meta.resolve(MAIN));
-    } catch {
-      throw new PdfProjectionError("解析 PDF 要用的 pdfjs-dist 没有装上。");
-    }
+    const { main, worker } = pdfjsFiles();
     const root = join(dirname(main), "..", "..");
     const cmaps = join(root, "cmaps") + sep;
     const fonts = join(root, "standard_fonts") + sep;
@@ -114,13 +127,13 @@ function loadPdfjs() {
     console.warn = () => {};
     let lib: Pdfjs;
     try {
-      lib = await import(MAIN);
+      lib = await import(pathToFileURL(main).href);
     } finally {
       console.warn = warn;
     }
     if (lib.version !== PDFJS_VERSION) throw new PdfProjectionError(`pdfjs-dist 的版本是 ${lib.version}，应当是 ${PDFJS_VERSION}。`);
     // 压缩过的主库默认去找没压缩的解析库文件名，要明说。
-    lib.GlobalWorkerOptions.workerSrc = import.meta.resolve(WORKER);
+    lib.GlobalWorkerOptions.workerSrc = pathToFileURL(worker).href;
     return { lib, cmaps, fonts };
   })();
   loading.catch(() => { loading = undefined; });
@@ -381,7 +394,23 @@ function failure(error: unknown): PdfProjectionError {
  * .pdf 的字节 → 投影与位置表。rel 是这份 .pdf 相对任务目录的路径（写进开头的说明与位置表）。
  * 不是合法的 PDF、设了口令、超过上限时抛 PdfProjectionError，消息是给人看的一句中文。
  */
-export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLimits = PDF_LIMITS): Promise<PdfProjection> {
+/** 用了多少秒，写给人看：十秒以上写整数，不到十秒留一位小数。 */
+export function secondsText(ms: number): string {
+  const seconds = ms / 1000;
+  return seconds >= 10 ? String(Math.round(seconds)) : String(Math.round(seconds * 10) / 10);
+}
+
+/**
+ * 到时限没有做完时的那句话：用了多久、读到了第几页、一共几页。read 是已经读完的页数，total 是总页数；
+ * 一页都还没有读完、或者不知道总页数时不写括号里的那一截。
+ */
+export function tooSlowText(ms: number, read: number | null, total: number | null): string {
+  const where = read !== null && total !== null && read > 0 ? `（已读到第 ${read} 页，共 ${total} 页）` : total !== null ? `（共 ${total} 页，第 1 页还没有读完）` : "";
+  return `解析用了 ${secondsText(ms)} 秒仍没有完成${where}，这份文件太复杂，本版不支持`;
+}
+
+/** progress 在每读完一页之后调一次：已经读完几页、一共几页（上传时另起的那一次运行靠它把进度报给任务服务）。 */
+export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLimits = PDF_LIMITS, progress?: (read: number, total: number) => void): Promise<PdfProjection> {
   const started = performance.now();
   const expired = () => performance.now() - started > limits.seconds * 1000;
   const { lib, cmaps, fonts } = await loadPdfjs();
@@ -395,7 +424,7 @@ export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLi
     const pages: PageResult[] = [];
     let chars = 0;
     for (let n = 1; n <= doc.numPages; n++) {
-      if (expired()) throw new PdfProjectionError(`解析这份 PDF 超过了 ${limits.seconds} 秒，在第 ${n} 页停下了`);
+      if (expired()) throw new PdfProjectionError(tooSlowText(performance.now() - started, n - 1, doc.numPages));
       const page = await doc.getPage(n);
       const viewport = page.getViewport({ scale: 1 });
       const { items } = await page.getTextContent();
@@ -404,6 +433,7 @@ export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLi
       if (chars > limits.chars) throw new PdfProjectionError(`这份 PDF 的文字超过上限 ${limits.chars} 字，在第 ${n} 页停下了`);
       pages.push({ page: n, width: viewport.width, height: viewport.height, rotate: page.rotate, blocks: pageBlocks(items, viewport) });
       page.cleanup();
+      progress?.(n, doc.numPages);
     }
     markRunningHeads(pages);
     const headings = await outlineHeadings(doc, expired);
@@ -428,14 +458,15 @@ export interface WrittenPdfProjection { projection: string; segments: string; lo
  * 在 .pdf 旁边写投影、分段清单与位置表。pdf 是文件路径，rel 是它相对任务目录的路径。
  * 解析不了，或者三样里有一样没写成时抛 PdfProjectionError，已经写下的由 removePdfProjection 清掉。
  */
-export async function writePdfProjection(pdf: string, rel: string, segments: SegmentParams = SEGMENT_DEFAULTS, limits: PdfLimits = PDF_LIMITS): Promise<WrittenPdfProjection> {
+export async function writePdfProjection(pdf: string, rel: string, segments: SegmentParams = SEGMENT_DEFAULTS, limits: PdfLimits = PDF_LIMITS,
+  progress?: (read: number, total: number) => void): Promise<WrittenPdfProjection> {
   let data: Buffer;
   try {
     data = readFileSync(pdf);
   } catch {
     throw new PdfProjectionError(`读不到文件 ${pdf}。`);
   }
-  const result = await pdfProjection(data, rel, limits);
+  const result = await pdfProjection(data, rel, limits, progress);
   const out = { projection: pdf + PDF_PROJECTION_SUFFIX, segments: pdf + PDF_SEGMENTS_SUFFIX, locations: pdf + PDF_LOCATIONS_SUFFIX };
   try {
     try {

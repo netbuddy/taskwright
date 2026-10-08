@@ -71,6 +71,8 @@ import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } fro
 import {
   DOCX_LOCATOR, PROJECTION_SUFFIXES, SPAN_LIMIT, inTextBox, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
 } from "./docx_source.ts";
+import { parsePdfLocator } from "./pdf_locations.ts";
+import { PDF_SPAN_LIMIT, pdfProjectionUnits, pdfUnitIndex, pdfUnitsWith, placePdfExcerpt } from "./pdf_source.ts";
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, sourceKindNow, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
@@ -1079,8 +1081,12 @@ function checkSources(
       locator = userWordsLocator(sessionId, hit.entryId);
     }
     const docx = DOCX_LOCATOR.exec(locator);
+    // 出处是 PDF 材料：文件名以 .pdf 结尾，后面可以有 # 开头的一截（写得对不对在 checkPdfSource 里看）。
+    const pdf = docx ? null : PDF_FILE.exec(locator);
+    /** 出处里指文件的那一部分（去掉段落号或页与块）。 */
+    const filePart = docx ? docx[1] : pdf ? pdf[1] : locator;
     // 与这个条目当前修订里的某条来源是同一句摘录、而出处所指的知识库文档现在读不到：原样收下，不核对（见文件开头）。材料出处没有这个例外。
-    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && isKnowledgeLocator(locator) && materialText(docx ? docx[1] : locator) === null
+    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && isKnowledgeLocator(locator) && materialText(filePart) === null
       && previous.some((old) => sameQuote(old, { kind: one.kind as string, locator, excerpt: one.excerpt as string, supports }))) {
       kept.push({ kind: one.kind as string, locator, excerpt: one.excerpt as string, supports });
       return;
@@ -1094,8 +1100,14 @@ function checkSources(
       ok = false;
       return;
     }
+    if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.pdf\.md$/i.test(locator)) {
+      errors.push(withGuide(`${where}的出处 ${locator} 是由 PDF 文件生成的投影，不是${noun}本身`,
+        `出处写 PDF 文件加页与块，例如 ${locator.replace(/\.md$/i, "")}#p3-2`));
+      ok = false;
+      return;
+    }
     // 知识库出处读不到（没有知识库、写法不对、知识库没有选用或已经不在、文档找不到）：新写的来源拒绝，说明原因。
-    const problem = inKnowledge && actor !== ACTOR_USER && materialText ? materialText.knowledgeProblem(docx ? docx[1] : locator) : null;
+    const problem = inKnowledge && actor !== ACTOR_USER && materialText ? materialText.knowledgeProblem(filePart) : null;
     if (problem) {
       errors.push(withGuide(`${where}的出处 ${locator} ${problem[0]}`, problem[1]));
       ok = false;
@@ -1103,6 +1115,13 @@ function checkSources(
     }
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && docx) {
       const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors, noun);
+      if (found === null) {
+        ok = false;
+        return;
+      }
+      locator = found;
+    } else if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && pdf) {
+      const found = checkPdfSource(locator, pdf[1], one.excerpt as string, where, materialText, errors, noun);
       if (found === null) {
         ok = false;
         return;
@@ -1191,6 +1210,82 @@ function checkDocxSource(
   } else {
     errors.push(withGuide(head,
       `${exactExcerpt(noun)}；摘录必须逐字抄自那一段的正文（不带段落号、编号与 #、- 这些标记），不要跳句拼接或改字；${severalPlaces(noun)}，每条各写段落号`));
+  }
+  return null;
+}
+
+/** 出处的文件是 PDF：路径以 .pdf 结尾，后面可以跟 # 开头的一截。 */
+const PDF_FILE = /^(.+\.pdf)(#.*)?$/i;
+
+/**
+ * 核对一条出处是 PDF 材料的来源：出处要写页与块（x.pdf#p页-块），摘录要在那一块里，或者从那一块起、在同一页之内往后接相邻的至多
+ * PDF_SPAN_LIMIT 块；两边都过比较层的规范化再逐字比（lib/pdf_source.ts，页面标出摘录时用的是同一个函数）。摘录不能跨页。
+ * 不在那里就拒绝，并指出摘录其实在哪几块。通过时返回规范写法的出处，不通过时把原因记进 errors 并返回 null。
+ */
+function checkPdfSource(
+  locator: string,
+  path: string,
+  raw: string,
+  where: string,
+  materialText: (locator: string) => string | null,
+  errors: string[],
+  noun: Noun = "材料",
+): string | null {
+  const name = basename(path);
+  const pointer = `页与块见 ${name}.md 里每行开头方括号中的 p页-块（例如 [p3-2] 是第 3 页第 2 块）`;
+  const parsed = parsePdfLocator(locator);
+  if (!parsed || parsed.page === null || parsed.block === null) {
+    errors.push(withGuide(locator === path ? `${where}的出处 ${path} 没有写页与块` : `${where}的出处 ${locator} 里页与块的写法不对`,
+      `PDF ${noun}的出处要写页与块，例如 ${path}#p3-2；${pointer}`));
+    return null;
+  }
+  const projection = materialText(`${path}.md`);
+  if (projection === null) {
+    errors.push(noun === "文档"
+      ? withGuide(`${where}的出处 ${path} 在知识库里找不到由它生成的 ${name}.md，摘录无从核对`, COPY_KNOWLEDGE_LOCATOR)
+      : withGuide(`${where}的出处 ${path} 不是任务目录里能读到的 PDF 材料（找不到由它生成的 ${name}.md）`,
+        "出处要写材料目录里的 PDF 文件加页与块，例如 inputs/材料.pdf#p3-2"));
+    return null;
+  }
+  const { page, block } = parsed;
+  const units = pdfProjectionUnits(projection);
+  const labelOf = (one: { page: number; block: number }) => `第 ${one.page} 页第 ${one.block} 块`;
+  if (block === 0) {
+    errors.push(withGuide(`${where}的出处写的是第 ${page} 页的块 0，那一行只是说明这一页没有文字，不能作出处`, "请改引有文字的页；这一页是图片或扫描件时，不要把它当作来源"));
+    return null;
+  }
+  if (pdfUnitIndex(units, page, block) < 0) {
+    const onPage = units.filter((unit) => unit.page === page && unit.block >= 1).length;
+    const pages = units.reduce((max, unit) => Math.max(max, unit.page), 0);
+    errors.push(withGuide(page > pages
+      ? `${where}的出处写的是第 ${page} 页，${name} 一共只有 ${pages} 页`
+      : `${where}的出处写的是${labelOf(parsed as { page: number; block: number })}，${name} 的第 ${page} 页${onPage ? `只有 ${onPage} 块` : "没有可以作出处的块"}`, pointer));
+    return null;
+  }
+  const excerpt = raw.replace(/\r\n/g, "\n").trim();
+  const place = placePdfExcerpt(units, page, block, excerpt);
+  if (place.kind === "in" || place.kind === "span") return `${path}#p${page}-${block}`;
+  const head = `${where}的摘录「${quoteOf(excerpt)}」在 ${name} ${labelOf({ page, block })}里找不到`;
+  if (place.kind === "cross_page") {
+    errors.push(withGuide(`${where}的摘录从 ${name} ${labelOf({ page, block })}接到了后面的页，摘录不能跨页`, `一页写一条来源：把摘录在换页的地方分成两段，各写各的页与块`));
+    return null;
+  }
+  // 摘录在别处：只有一处时指给它；有好几处时不替模型挑，按离出处那一块的远近列出几处，请它按上下文确认。
+  const here = pdfUnitIndex(units, page, block);
+  const elsewhere = pdfUnitsWith(units, excerpt).filter((one) => !(one.page === page && one.block === block));
+  if (elsewhere.length === 1) {
+    errors.push(withGuide(`${head}，它在${labelOf(elsewhere[0])}`, `出处改写成 ${path}#p${elsewhere[0].page}-${elsewhere[0].block}`));
+  } else if (elsewhere.length > 1) {
+    const distance = (one: { page: number; block: number }) => Math.abs(pdfUnitIndex(units, one.page, one.block) - here);
+    const near = [...elsewhere].sort((a, b) => distance(a) - distance(b)).slice(0, NEARBY_LIMIT)
+      .sort((a, b) => pdfUnitIndex(units, a.page, a.block) - pdfUnitIndex(units, b.page, b.block));
+    const more = elsewhere.length > near.length ? `等 ${elsewhere.length} 处` : "";
+    errors.push(withGuide(`${head}；这段文字在${near.map(labelOf).join("、")}${more}都有`, "请按上下文确认是哪一块，出处写那一块的页与块"));
+  } else if (BLANK_LINE.test(excerpt)) {
+    errors.push(withGuide(`${where}的摘录在 ${name} 的${labelOf({ page, block })}及其后 ${PDF_SPAN_LIMIT} 块里不是连续的一段原文`, `${severalPlaces(noun)}，每条各写页与块`));
+  } else {
+    errors.push(withGuide(head,
+      `${exactExcerpt(noun)}；摘录必须逐字抄自那一块的文字（不带行首方括号里的页与块），不要跳句拼接或改字；${severalPlaces(noun)}，每条各写页与块`));
   }
   return null;
 }

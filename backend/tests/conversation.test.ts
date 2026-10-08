@@ -86,6 +86,13 @@ test("过程摘要：由 Word 文件生成的投影、分段清单与位置表�
   assert.deepEqual(docxDerived("退货说明.DOCX.txt"), { docx: "退货说明.DOCX", part: "text" });
   assert.deepEqual(docxDerived("退货说明.docx.segments.json"), { docx: "退货说明.docx", part: "outline" });
   assert.deepEqual(docxDerived("退货说明.docx.locations.json"), { docx: "退货说明.docx", part: "outline" });
+  // 由 PDF 材料生成的三个文件同样折回 PDF 文件的本名。
+  assert.deepEqual(docxDerived("办法.pdf.md"), { docx: "办法.pdf", part: "text" });
+  assert.deepEqual(docxDerived("办法.PDF.segments.json"), { docx: "办法.PDF", part: "outline" });
+  assert.deepEqual(docxDerived("办法.pdf.locations.json"), { docx: "办法.pdf", part: "outline" });
+  assert.equal(docxDerived("办法.pdf"), null);
+  assert.equal(stepText("read", { path: "inputs/办法.pdf.md" }, true, false, null, { 材料目录: "inputs/" }), "读了材料《办法.pdf》");
+  assert.equal(stepText("read", { path: "inputs/办法.pdf.segments.json" }, true, false, null, { 材料目录: "inputs/" }), "看了材料《办法.pdf》的分段清单");
   for (const name of ["退货说明.docx", "说明.md", "笔记.segments.json", "退货说明.docx.media"]) assert.equal(docxDerived(name), null, name);
 
   const definition = { 材料目录: "inputs/" };

@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { PDF_LOCATION_RULES_VERSION, pdfBlockBox, pdfChapterOf } from "../../agent/src/lib/pdf_locations.ts";
 import { comparablePdfText } from "../../agent/src/lib/pdf_normalize.ts";
 import { type PdfSegmentList, pdfProjectionUnits } from "../../agent/src/lib/pdf_segments.ts";
-import { NO_TEXT_LINE, PDFJS_VERSION, PDF_LIMITS, PdfProjectionError, pdfProjection, writePdfProjection } from "../src/pdf_projection.ts";
+import { NO_TEXT_LINE, PDFJS_VERSION, PDF_LIMITS, PdfProjectionError, pdfProjection, writePdfProjection, tooSlowText } from "../src/pdf_projection.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
 const FIXTURES = join(ROOT, "backend", "tests", "fixtures", "pdf");
@@ -135,7 +135,13 @@ test("三个上限：页数、字数、用时，超过任何一个都停下并�
   const data = sample("multipage");
   await assert.rejects(pdfProjection(data, "inputs/x.pdf", { ...PDF_LIMITS, pages: 2 }), (e: unknown) => e instanceof PdfProjectionError && e.message === "这份 PDF 有 3 页，超过上限 2 页");
   await assert.rejects(pdfProjection(data, "inputs/x.pdf", { ...PDF_LIMITS, chars: 200 }), (e: unknown) => e instanceof PdfProjectionError && e.message === "这份 PDF 的文字超过上限 200 字，在第 2 页停下了");
-  await assert.rejects(pdfProjection(data, "inputs/x.pdf", { ...PDF_LIMITS, seconds: 0 }), (e: unknown) => e instanceof PdfProjectionError && /^解析这份 PDF 超过了 0 秒，在第 1 页停下了$/.test(e.message));
+  await assert.rejects(pdfProjection(data, "inputs/x.pdf", { ...PDF_LIMITS, seconds: 0 }), (e: unknown) => e instanceof PdfProjectionError && /^解析用了 [\d.]+ 秒仍没有完成（共 3 页，第 1 页还没有读完），这份文件太复杂，本版不支持$/.test(e.message));
+  // 到时限的那句话：用了多久、读到第几页、一共几页；每读完一页报一次进度。
+  assert.equal(tooSlowText(60_400, 420, 1000), "解析用了 60 秒仍没有完成（已读到第 420 页，共 1000 页），这份文件太复杂，本版不支持");
+  assert.equal(tooSlowText(2_340, null, null), "解析用了 2.3 秒仍没有完成，这份文件太复杂，本版不支持");
+  const seen: [number, number][] = [];
+  await pdfProjection(data, "inputs/x.pdf", PDF_LIMITS, (read, total) => seen.push([read, total]));
+  assert.deepEqual(seen, [[1, 3], [2, 3], [3, 3]]);
   // 正好等于上限的不算超过
   assert.equal((await pdfProjection(data, "inputs/x.pdf", { ...PDF_LIMITS, pages: 3 })).pages, 3);
 });

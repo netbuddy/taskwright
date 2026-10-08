@@ -106,7 +106,7 @@ describe("知识库页面", () => {
     expect(cells.slice(0, 3)).toEqual(["公司术语表.md", "术语表", "2.0 KB"]);
     expect(within(pane).queryByText("改名")).toBeNull();
     expect(screen.queryByTestId("kb-delete-library")).toBeNull();
-    expect(screen.getByTestId("kb-upload-hint").textContent).toBe("把文件拖到这里，或者点这里选择文件，放进「通用知识库」（只接受 .md、.txt 与 Word 的 .docx，单个文件不超过 20 MB；PDF 暂时不接受，下一版起支持）。");
+    expect(screen.getByTestId("kb-upload-hint").textContent).toBe("把文件拖到这里，或者点这里选择文件，放进「通用知识库」（只接受 .md、.txt 与 Word 的 .docx，单个文件不超过 20 MB）。");
     expect(screen.getByText(/^文档没有版本：一份文档改了，就当作一份新文件上传。/)).toBeTruthy();
   });
 

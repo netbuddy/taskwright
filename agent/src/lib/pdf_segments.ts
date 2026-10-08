@@ -17,7 +17,7 @@
  */
 
 import { writeFileSync } from "node:fs";
-import { PDF_ANCHOR } from "./pdf_locations.ts";
+import { type PdfUnit, pdfProjectionUnits } from "./pdf_source.ts";
 import { type SegmentParams, paramsDigest } from "./segments.ts";
 
 /** 分段清单跟在 PDF 文件路径后面的后缀：x.pdf → x.pdf.segments.json。 */
@@ -58,27 +58,8 @@ export interface PdfSegmentList {
 
 const NOTE = "行号只对同目录里当前这份投影文件有效；units 只数有定位符、块号不是 0 的行。";
 
-/** 投影里的一块：页、块号、文字、在投影文件的第几行（从 1 起）。块号 0 是「这一页没有文字」那一行。 */
-export interface PdfUnit { page: number; block: number; text: string; line: number }
-
-/** 投影全文 → 各块，按文件里的先后。开头的说明注释、页眉页脚行（以「>」开头）、没有定位符的行不算。 */
-export function pdfProjectionUnits(text: string): PdfUnit[] {
-  const out: PdfUnit[] = [];
-  let inComment = false;
-  text.split("\n").forEach((line, i) => {
-    if (inComment) {
-      if (line.includes("-->")) inComment = false;
-      return;
-    }
-    if (line.trimStart().startsWith("<!--")) {
-      if (!line.includes("-->")) inComment = true;
-      return;
-    }
-    const m = PDF_ANCHOR.exec(line);
-    if (m) out.push({ page: Number(m[1]), block: Number(m[2]), text: line.slice(m[0].length), line: i + 1 });
-  });
-  return out;
-}
+// 投影全文 → 各块的取法在 lib/pdf_source.ts（页面也用它，那个文件不导入 Node 的模块）；这里照原来的名字再导出。
+export { type PdfUnit, pdfProjectionUnits };
 
 /** 投影开头说明里写的页数；没有写时是 0。 */
 export const pdfProjectionPages = (text: string) => Number(/页数：(\d+)/.exec(/<!--[\s\S]*?-->/.exec(text)?.[0] ?? "")?.[1] ?? 0);
