@@ -350,7 +350,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
           </div>
         );
       }
-      if (m.kind === STOP_RUN_KIND) return <div className="selfnote" data-testid="stop-note">{STOP_NOTE_TEXT}</div>;
+      if (m.kind === STOP_RUN_KIND) return <div className="selfnote stop" data-testid="stop-note">{STOP_NOTE_TEXT}</div>;
       const revision = m.undoable ? revisionOf(m) : null;
       return (
         <div className="selfnote" data-testid="ui-action">

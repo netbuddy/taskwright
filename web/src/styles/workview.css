@@ -73,7 +73,9 @@
 .app .proc-fold:hover .pexp{text-decoration:underline}
 /* 一轮被用户停下或出错停下：摘要行下面那一行说明用琥珀色（Conversation.tsx 的 WorkSummaryLine） */
 .app .proc.stopnote .pline{color:var(--amber)}
-.app .selfnote{font-size:0.881rem;color:var(--mut);border-left:0.143rem solid var(--line2);padding:.1rem 0 .1rem .6rem;margin-left:.15rem}
+/* 界面操作留下的记号、评审完成一行、停止通知：居中的一行小字，不进框；停止通知用琥珀色 */
+.app .selfnote{align-self:center;text-align:center;font-size:0.857rem;color:var(--text3);padding:.05rem .6rem}
+.app .selfnote.stop{color:var(--amber)}
 /* 系统写进对话的说明（开场的任务状况等）：安静的内嵌块，没有边框；要点里的数用深一级的字 */
 .app .sysnote{background:var(--quote);border-radius:.6rem;
   padding:.45rem .7rem;font-size:0.857rem;color:var(--text2);line-height:1.6}
@@ -300,7 +302,8 @@
 .app .act .prev .pvrow .mk{flex:none;width:1rem;text-align:center}
 .app .act .prev .pvrow.out{color:var(--gap)}
 .app .act .prev .pvrow.inn{color:var(--ok)}
-.app .selfnote .undo{color:var(--blue);text-decoration:underline;cursor:pointer;margin-left:.4rem}
+.app .selfnote .undo{color:var(--blue);cursor:pointer;margin-left:.4rem}
+.app .selfnote .undo:hover{text-decoration:underline}
 .app .blank{flex:1;display:flex;align-items:center;justify-content:center;padding:2rem;text-align:center}
 .app .blank .inner{max-width:26rem}
 .app .blank h2{font-size:0.992rem;margin-bottom:.4rem}
