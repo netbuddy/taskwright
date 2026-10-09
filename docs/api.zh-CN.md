@@ -78,14 +78,14 @@ data: {
 | `step` | 一次工具调用（tool call）开始，以及本轮结束时补发的一行修正 | `work_id`、`step_key`、`text`、`in_progress`、`failed` |
 | `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`card`、`queued` |
 | `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节） |
-| `ui_action_noted` | 一次直接操作完成 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`） |
+| `ui_action_noted` | 一次直接操作完成，或者用户停止了智能体的一次工作 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类；用户停止了智能体的一次工作之后留的那一条是 `stop_run`，见第 5.5 节：它没有库事件、没有修订、不能撤销，`text` 是写给智能体看的，页面另写一句自己的话）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`） |
 | `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at`；这份材料是替换上来的时候另带 `replaces`，值是被换掉的那份材料的路径（第 5.1 节「替换材料」） |
 | `material_removed` | 删除了一份材料，或者一份材料被替换掉了（第 5.1 节） | `at`、`path`；由 Word 材料、PDF 材料生成的文件随它一起删掉，不另发事件。被替换掉的时候另带 `replaced_by`，值是换上来的那份材料的路径，紧接着有一条那份材料的 `material_added` |
 | `work_summary` | 一个工作单元结束后 | `work_id`、`at`、`seconds`、`step_count`、`stages`（每项带 `text`）、`outcome`（这个工作单元怎样结束，取值与 `work_ended` 相同；刷新后读到的对话里的 `work_summary` 消息带同样的值） |
 | `work_ended` | 智能体这一轮工作稳定下来 | `work_id`、`at`、`seconds`、`step_count`（与 `work_summary` 的相同，由会话记录算出，被停下时一条消息里没有开始执行的工具调用也算在内；会话记录读不出这次工作时用本轮记下的计数）、`outcome`（`replied`、`no_reply`、`stopped_by_user`、`failed`、`stopped_by_limit`；前四种按这个工作单元最后一条助手消息判断，所以调用模型出错、随后自动重试成功的工作单元是 `replied` 或 `no_reply`，不是 `failed`；`stopped_by_limit` 是智能体这一轮连续被拒到上限、由工具停下的，见本节末尾「连续被拒的上限」） |
 | `problem` | 需要让用户知道的问题（见第 5.5 节） | `code`、`text`、`retry` |
 | `executor_state` | 执行者的可用状态发生变化 | `state`（`not_started`、`starting`、`idle`、`working`、`exited`、`failed_to_start`）、`text`、`active_session`；续接失败（`session_resume_failed`）之后 `state` 为 `not_started`，`text` 写明助手没有接上这条会话 |
-| `system_note` | 会话开始时的任务状态消息，或固定的兜底提示句 | `message_id`、`at`、`text`、`kind`（`task_status` 或 `reply_fallback`）；任务状态消息的 `text` 是页面上的写法：开头是「这条会话开始时（时刻）的任务状况：」或「接着这条会话继续时（时刻），上次之后交付物的变化：」，只写给助手看的那一行（还在等回应的助手行为）不带；助手看到的原文不变，刷新之后从对话记录读回的也是页面上的写法。任务状态消息另带 `details`（兜底提示句没有这一项）：助手一侧写这条消息时记下的事实，页面拿它把这条消息折叠成一行要点。会话开始时的那一种，`details.kind` 为 `现状`，有 `conditions_total`、`conditions_met`、`conditions_unmet`、`conditions_empty`（完成条件共几条、已满足、还差、所在集合还没有条目而暂时不用核对的各几条）、`unresolved`（未解决的问题条数）、`items`（各集合的条目数）、`materials.files`（材料目录里的文件，每项有 `path`、`bytes` 与 `derived_from`：由同一清单里哪个文件生成，判法与任务页接口的材料清单相同，不是生成的文件为 `null`），任务选用的知识库里有文档时另有 `knowledge`（每个知识库的 `id`、`name` 与 `documents`）。续接时的那一种，`details.kind` 为 `变化`，有 `added`、`updated`、`deleted`（上次之后新增、修改、删除的条目）、`new_materials`（上次之后放进材料目录的文件的路径，其中也有生成的文件）与 `materials`，选用的知识库或其中的文档变过时另有 `knowledge`。只写给助手看的 `open_acts` 不带。消息没有记下这些事实时 `details` 为 `null` |
+| `system_note` | 会话开始时的任务状态消息，或固定的兜底提示句 | `message_id`、`at`、`text`、`kind`（`task_status` 或 `reply_fallback`）；任务状态消息的 `text` 是页面上的写法：开头是「这条会话开始时（时刻）的任务状况：」或「接着这条会话继续时（时刻），上次之后交付物的变化：」，只写给助手看的那一行（还在等回应的助手行为）不带；助手看到的原文不变，刷新之后从对话记录读回的也是页面上的写法。任务状态消息另带 `details`（兜底提示句没有这一项）：助手一侧写这条消息时记下的事实，页面拿它把这条消息折叠成一行要点。会话开始时的那一种，`details.kind` 为 `现状`，有 `conditions_total`、`conditions_met`、`conditions_unmet`、`conditions_empty`（完成条件共几条、已满足、还差、所在集合还没有条目而暂时不用核对的各几条）、`unresolved`（未解决的问题条数）、`items`（各集合的条目数）、`materials.files`（材料目录里的文件，每项有 `path`、`bytes` 与 `derived_from`：由同一清单里哪个文件生成，判法与任务页接口的材料清单相同，不是生成的文件为 `null`），任务选用的知识库里有文档时另有 `knowledge`（每个知识库的 `id`、`name` 与 `documents`）。续接时的那一种，`details.kind` 为 `变化`，有 `added`、`updated`、`deleted`（上次之后新增、修改、删除的条目）、`new_materials`（上次之后放进材料目录的文件的路径，其中也有生成的文件）与 `materials`，选用的知识库或其中的文档变过时另有 `knowledge`。这条会话里上一次运行是被用户停止的、此后用户还没有再说话时，`last_run_stopped` 为 `true`，文字里有一句「上一次运行被用户停止，没有做完。」；这种情形下别的都没有变化也写一条，其余情形不带这个键。只写给助手看的 `open_acts` 不带。消息没有记下这些事实时 `details` 为 `null` |
 | `service_exiting` | 服务即将停止：页面上请求退出、收到 SIGINT 或 SIGTERM、收到 SIGHUP（Windows 另有 SIGBREAK）；在关掉各任务的 pi、结束事件流之前发出 | `mode`（`desktop` 或 `server`）、`at`。页面收到后应显示服务已经停止，并且不再重连。 |
 
 ## 4 读取
@@ -236,7 +236,7 @@ data: {
 
 ### 5.5 智能体工作期间
 
-新的说话与直接操作都会被拒绝，错误码 `session_busy`（见第 5.1 节）；唯一的例外是不带 `notify_executor` 的 `mark_viewed`（打开条目详情），它不改交付物，执行者工作中照样接受。`POST …/control?session=…`，请求体为 `{"action": "stop"}`，会中止本次工作；已经保存的写入不受影响。返回 `{"ok": true, "cleared": […]}`：`cleared` 是随之清掉的、还排着队没交给智能体的话；对话严格轮替之后，智能体工作期间不再接受新的话，所以它总是空列表。模型服务不可用时，pi 会重试，服务器发送代码为 `model_unavailable` 的 `problem`。
+新的说话与直接操作都会被拒绝，错误码 `session_busy`（见第 5.1 节）；唯一的例外是不带 `notify_executor` 的 `mark_viewed`（打开条目详情），它不改交付物，执行者工作中照样接受。`POST …/control?session=…`，请求体为 `{"action": "stop"}`，会中止本次工作；已经保存的写入不受影响。返回 `{"ok": true, "cleared": […]}`：`cleared` 是随之清掉的、还排着队没交给智能体的话；对话严格轮替之后，智能体工作期间不再接受新的话，所以它总是空列表。停下的时候确有一次工作在进行，会话里另留一条通知：服务器在 `work_ended` 之后发送 `kind` 为 `stop_run` 的 `ui_action_noted`，刷新之后读回的对话记录里它排在那次工作的摘要后面。智能体下一次运行时读到这条通知，由此知道上一次没有做完；被中止的那条助手消息本身 pi 不发给模型。通知写好之后请求才返回；通知没有写成不算停止失败。智能体空闲或没有在运行时停止，什么都不留。直接操作的接口不接受 `stop_run`，返回 `bad_request`。模型服务不可用时，pi 会重试，服务器发送代码为 `model_unavailable` 的 `problem`。
 
 ### 5.6 谁来启动智能体
 
