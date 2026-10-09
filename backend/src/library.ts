@@ -15,6 +15,7 @@ import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { pdfFacts, pdfSourceName } from "./projection.ts";
+import { OVERALL_COLLECTION, type PlainItem, basisPending, isSupplement, mentionsOf, pendingVerification } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -670,6 +671,25 @@ export class Library {
       (order.get(a.collection) ?? 99) - (order.get(b.collection) ?? 99) || (a.serial < b.serial ? -1 : a.serial > b.serial ? 1 : 0));
     const items = [];
     const dependedBy = this.dependedBy(sorted);
+    // 待核实、因依据而待核实、提到：从这里读出的事实交给 agent/src/lib/overall_analysis.ts 去算，与助手一侧同一组函数。
+    const live = sorted.filter((i) => i.deleted_in_revision === null);
+    const plain: PlainItem[] = live.map((i) => {
+      const no = this.currentRevision(i.item_id)!;
+      return { item_id: i.item_id, collection: i.collection, revision_no: no, fields: or(jsonOrText(this.contents.get(itemKey(i.item_id, no))!.fields), {}) as Record<string, any> };
+    });
+    const mentions = mentionsOf(this.definition["集合"].map((c) => ({ name: c["名称"], fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"] })) })), plain);
+    const withOverall = this.collections.has(OVERALL_COLLECTION);
+    const pendingOf = new Map<string, { pending_verification: boolean; pending_sources: number }>();
+    for (const one of plain) {
+      const sources = this.sourcesOf(one.item_id, one.revision_no);
+      const onCurrent = this.confirmationsOf(one.item_id, one.revision_no);
+      pendingOf.set(one.item_id, pendingVerification(sources.filter((s) => isSupplement(s.kind)).length, onCurrent.length > 0 && onCurrent[onCurrent.length - 1].accepted));
+    }
+    const plainOf = new Map(plain.map((one) => [one.item_id, one]));
+    const citedPage = (id: string) => {
+      const page = plainOf.get(id);
+      return page ? { collection: page.collection, fields: page.fields, pending: pendingOf.get(id)!.pending_verification } : null;
+    };
     for (const i of sorted) {
       if (i.deleted_in_revision !== null) continue;
       const no = this.currentRevision(i.item_id);
@@ -696,6 +716,12 @@ export class Library {
         viewed: accepted.length > 0,
         confirmation_basis: currentOk ? latestForCurrent[latestForCurrent.length - 1].basis
           : accepted.length ? accepted[accepted.length - 1].basis : null,
+        // 待核实：当前修订上有助手补充的来源，而用户还没有在这个修订上确认过（看过、亲手改过都算确认）；pending_sources 是这样的来源有几条。
+        ...pendingOf.get(i.item_id)!,
+        // 因依据而待核实：它依据的总体分析的一页待核实（reason 是 pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。
+        basis_pending: basisPending(this.sourcesOf(i.item_id, no), citedPage),
+        // 总体分析的页：别的页与别的条目的文字里提到它的地方；一处都没有是空列表。别的集合的条目与没有总体分析集合的任务不带这一项。
+        ...(withOverall && i.collection === OVERALL_COLLECTION ? { mentioned_by: mentions.get(i.item_id) ?? [] } : {}),
       });
     }
     return {

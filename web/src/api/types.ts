@@ -255,6 +255,25 @@ export interface Item {
   viewed?: boolean;
   /** 已读的依据：当前修订上最近一条标记是接受时取它的依据，否则取最近一条接受的标记的依据；未读时为空。 */
   confirmation_basis?: ConfirmationBasis | string | null;
+  /** 待核实：当前修订上有助手补充的来源，而用户还没有在这个修订上确认过（看过、亲手改过都算确认）。 */
+  pending_verification?: boolean;
+  /** 还待核实的助手补充来源有几条；不待核实时是 0。 */
+  pending_sources?: number;
+  /** 因依据而待核实：它依据的总体分析的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
+  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see: string | null } | null;
+  /** 只有总体分析的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */
+  mentioned_by?: Mention[];
+}
+
+/** 一条提到：哪个条目的哪个字段（列表字段的第几项，从 0 起）在哪句话里用哪个词提到了一页；revision_no 是被提到的那一页现在的修订号。 */
+export interface Mention {
+  item_id: string;
+  collection: string;
+  field: string;
+  index: number | null;
+  word: string;
+  sentence: string;
+  revision_no: number;
 }
 
 export interface Task {
