@@ -447,6 +447,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER) {
         for (const [fact, guidance] of pageProblems(fields, sources)) errors.push(withGuide(fact, guidance));
       }
+      if (sources && call.actor !== ACTOR_USER && keepPendingField(collection) === null) {
+        for (const [fact, guidance] of quotedProblems(fields, sources)) errors.push(withGuide(fact, guidance));
+      }
       if (errors.length > 0) {
         problems.push(reasonOf(label, `新增到「${collection.name}」的条目`, errors));
         return;
@@ -557,6 +560,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
     if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER && op !== "restore") {
       for (const [fact, guidance] of pageProblems(merged, sources)) errors.push(withGuide(fact, guidance));
+    }
+    // 只核对这次新给的来源；沿用下来的不重新核对。
+    if (given && call.actor !== ACTOR_USER && op !== "restore" && keepPendingField(collection) === null) {
+      for (const [fact, guidance] of quotedProblems(merged, given)) errors.push(withGuide(fact, guidance));
     }
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
       errors.push(withGuide(`助手对 ${itemId} 的修改与它在修订 ${current.revision_no} 的内容和来源完全一样，没有改动任何东西`, "不需要改就去掉这个操作"));
@@ -740,6 +747,35 @@ export function splitGuide(one: string): { fact: string; guidance: string } {
 /** 集合里列表型字段（文本列表、条目引用）的名字：来源可以指到其中一项。 */
 function listFieldsOf(collection: CollectionDef): Set<string> {
   return new Set(collection.fields.filter((one) => one.type === FIELD_TEXT_LIST || one.type === FIELD_ITEM_REF).map((one) => one.name));
+}
+
+/** 理由里用直角引号引出的各段字；空的不算。 */
+const QUOTED = /「([^「」]+)」/g;
+
+/**
+ * 助手补充的来源，理由里用直角引号引出的字要逐字出现在它支持的那几处正文里（没有写支持哪几处时，在这个条目任何一个字段的文字里）：
+ * 页面靠这几个字在正文里标出哪里是助手补的，引的与正文不一样就标不出来。理由里没有直角引号的不核对。
+ * 问题条目不核对（那里的助手补充写的是发现了什么，不是补进正文的字），由调用方跳过。返回不对的地方，每处是 [事实, 怎么办]。
+ */
+export function quotedProblems(fields: Fields, sources: readonly Source[]): [string, string][] {
+  const textsOf = (value: unknown): string[] =>
+    typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : [];
+  const out: [string, string][] = [];
+  for (const source of sources) {
+    if (source.kind !== SOURCE_SUPPLEMENT) continue;
+    const places = source.supports.length === 0 ? Object.values(fields).flatMap(textsOf)
+      : source.supports.flatMap((at) => {
+        const value = fields[at.field];
+        return at.index === undefined || !Array.isArray(value) ? textsOf(value) : textsOf(value[at.index]);
+      });
+    const where = source.supports.length === 0 ? "这个条目的正文" : "它支持的那几处正文";
+    for (const [, quoted] of source.excerpt.matchAll(QUOTED)) {
+      if (places.some((text) => text.includes(quoted))) continue;
+      out.push([`${quoteLabel(source)}的理由里用直角引号引出的「${quoted}」不在${where}里`,
+        "理由里的直角引号只用来逐字引出你补进正文的那几个字：照正文一字不差地引，并在 supports 里写对是哪个字段的第几项；理由里要提到别的词时不要用直角引号"]);
+    }
+  }
+  return out;
 }
 
 /** 结果里说到一条来源：摘录（长的只引前 30 字）加种类。 */
