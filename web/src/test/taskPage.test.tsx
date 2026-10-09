@@ -11,7 +11,7 @@ import { ToastProvider } from "../components/Toasts";
 import { NO_SESSION_TITLE } from "../components/task/CollectionCards";
 import { completionLines, completionScore, emptyLineText } from "../model/completionLines";
 import { formatTimeShort } from "../model/format";
-import { TaskPage } from "../pages/TaskPage";
+import { TaskPage, taskTypeVersionNote } from "../pages/TaskPage";
 import { docxEntry, resetDocxStore } from "../state/docxStore";
 import { pdfBytesEntry, resetPdfStore } from "../state/pdfStore";
 
@@ -95,6 +95,20 @@ describe("任务头", () => {
     expect(screen.getByTestId("task-meta").textContent).toBe("创建于 2026-09-28 17:49，最近一次活动在 2026-09-29 10:02。");
     expect(screen.getByRole("button", { name: "生成文档" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /新建会话/ })).toBeInTheDocument();
+  });
+
+  it("任务类型说明的版本与产品自带的不同时，在创建时刻后面写一句；相同、或者有一个没有记时不写", async () => {
+    expect(taskTypeVersionNote({ copied: 1, current: 2 })).toBe("任务类型说明是 1 版，当前产品自带的是 2 版。");
+    for (const same of [undefined, { copied: 1, current: 1 }, { copied: null, current: 2 }, { copied: 1, current: null }]) expect(taskTypeVersionNote(same)).toBeNull();
+    page(detail({ task_type_versions: { copied: 1, current: 2 } }));
+    await ready();
+    expect(screen.getByTestId("task-type-version")).toHaveTextContent("任务类型说明是 1 版，当前产品自带的是 2 版。");
+    expect(screen.getByTestId("task-meta").textContent).toBe("创建于 2026-09-28 17:49。任务类型说明是 1 版，当前产品自带的是 2 版。");
+    cleanup();
+    page(detail({ task_type_versions: { copied: 1, current: 1 } }));
+    await ready();
+    expect(screen.queryByTestId("task-type-version")).toBeNull();
+    expect(screen.getByTestId("task-meta").textContent).toBe("创建于 2026-09-28 17:49。");
   });
 
   it("还没有会话时只写创建时刻；点「新建会话」调新建接口并进入那条会话的工作视图", async () => {

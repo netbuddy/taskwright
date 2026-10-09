@@ -62,6 +62,10 @@ test("建任务：任务目录里写 task.json，任务库是现在的格式版�
     const row = service.registry!.task(id)!;
     assert.deepEqual([row.name, row.owner, row.status, row.task_type, row.dir, row.upgrade_error], ["借阅系统", "local", "进行中", "srs-authoring", id, null]);
     assert.ok(row.created_at);
+    // 任务页给出任务类型说明的两个版本：建任务时复制进来的与产品自带的现在这一版。
+    assert.deepEqual((service.taskPage(service.task(id)) as Record<string, any>).task_type_versions, { copied: 1, current: 1 });
+    assert.equal(taskTypeVersion("srs-authoring"), 1);
+    assert.equal(taskTypeVersion("没有这种类型"), null);
   } finally {
     await service.close();
   }

@@ -495,7 +495,11 @@ export class Service {
     const materials = library.materials(t.dir, t.definition()).map((m) => ({
       ...m, deletable: open && m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
     }));
-    return { ...view, materials, sessions, knowledge_libraries: selectedLibraries(t.dir) };
+    // 任务类型说明的版本：这个任务建的时候复制进来的是第几版（task.json 记着），产品自带的现在是第几版。说明不随升级更新，
+    // 页面在两个数不同时写一句。上一版建的任务没有记，copied 是 null。
+    const meta = readTaskJson(t.dir);
+    const taskTypeVersions = { copied: meta?.task_type_version ?? null, current: meta?.task_type ? taskTypeVersion(meta.task_type) : null };
+    return { ...view, materials, sessions, knowledge_libraries: selectedLibraries(t.dir), task_type_versions: taskTypeVersions };
   }
 
   /** 会话清单，每条另带 revision_count：这条会话产生了几次修订（修订表按会话编号计数，没有时为 0）。 */

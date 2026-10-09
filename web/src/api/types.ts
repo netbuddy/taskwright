@@ -715,6 +715,11 @@ export interface TaskDetail extends Task {
   sessions: SessionListEntry[];
   /** 这个任务选用的库的编号；没有知识库的旧后端不给。 */
   knowledge_libraries?: string[];
+  /**
+   * 任务类型说明的版本：copied 是这个任务建的时候复制进任务目录的那一版，current 是产品自带的现在这一版。
+   * 说明不随程序升级更新，两个数都有而且不同时任务页写一句。上一版建的任务没有记，copied 是 null。
+   */
+  task_type_versions?: { copied: number | null; current: number | null };
 }
 
 /** 知识库文档的种类：只是标签，不决定用法。 */
