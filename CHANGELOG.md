@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.3] - 2026-10-XX
+## [0.4.3] - 2026-10-08
 
 0.4.3 takes PDF files as materials and as knowledge base documents. The assistant cites a PDF by page and block; the page shows the file page by page, scrolls to the page a source points to, frames the block and marks the excerpt. A material that has not entered the conversation can be replaced with another file. The task status note at the top of a conversation is folded into one line. The page now names the browsers it supports and says so in a browser that is too old.
 
