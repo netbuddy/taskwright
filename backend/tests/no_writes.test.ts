@@ -26,7 +26,11 @@ const ALLOWED: Record<string, string[]> = {
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 图：种类与编号的常量、从库里读图、从 Mermaid 文本里扫条目编号（只读与只做计算的函数，不写库）。
   "diagram.ts": ["DIAGRAM_KINDS", "DiagramRecord", "drawnItemIds", "kindName", "latestVersion", "liveDiagrams", "readDiagrams"],
-  "create_task.ts": ["createTask"],
+  // TASK_ID_PATTERN 是任务编号的写法（一个正则），数据包导入时用它核对包里写的编号。
+  "create_task.ts": ["createTask", "TASK_ID_PATTERN"],
+  // renumberTask 是写入：把一个任务库里的任务编号换成新的。它只许在数据包的导入里调（src/data_pack.ts，导入的任务与已有的任务
+  // 编号相同而用户选了改编号时），换的是还在暂存位置、没有进到任务根目录的那份副本；下面另有一条测试守着别的文件不导入它。
+  "renumber_task.ts": ["renumberTask"],
   "docx_markdown.ts": ["docxProjection", "PROJECTION_SUFFIX", "MEDIA_SUFFIX"],
   // 分段清单：算清单、写成材料旁边的文件（与投影一样是文件，不是库）。
   "segments.ts": ["SEGMENTS_ENV", "SEGMENTS_SUFFIX", "SEGMENT_DEFAULTS", "SegmentParams", "buildSegments", "segmentParams", "writeSegments"],
@@ -143,6 +147,11 @@ test("backend/src 的源码里没有写库的 SQL（服务级库的数据模块�
 test("改任务库的 upgradeTaskDatabase 只有数据升级模块导入", () => {
   const importers = files(join(BACKEND, "src")).filter((file) => agentImports(readFileSync(file, "utf-8")).some(([module, name]) => module === "schema.ts" && name === "upgradeTaskDatabase"));
   assert.deepEqual(importers.map((file) => relative(join(BACKEND, "src"), file)), ["data_upgrade.ts"]);
+});
+
+test("给任务换编号的 renumberTask 只有数据包模块导入", () => {
+  const importers = files(join(BACKEND, "src")).filter((file) => agentImports(readFileSync(file, "utf-8")).some(([module, name]) => module === "renumber_task.ts" && name === "renumberTask"));
+  assert.deepEqual(importers.map((file) => relative(join(BACKEND, "src"), file)).filter((name) => name !== "data_pack.ts"), []);
 });
 
 test("服务级库只经它的数据模块读写：别的文件不导入 node:sqlite，也不出现它的文件名", () => {
