@@ -294,9 +294,9 @@ const handlers: Record<string, Handler> = {
   service_info: (service, req) => json(200, serviceInfo(service, req.remote ?? null)),
   // 数据升级：看要升级什么、做到哪里了、做完后的报告。没有要做的升级（多数时候）时 upgrade 是 null。
   service_upgrade: (service) => json(200, { ok: true, upgrade: service.upgrade ? service.upgrade.view() : null }),
-  // 开始数据升级：立刻返回，页面随后用上面的接口看进度。与退出服务一样只接受本机来的请求。
-  service_upgrade_start: (service, req) => {
-    if (!LOOPBACK.has(req.remote ?? "")) throw new ApiError("forbidden", "数据升级只能在运行服务的这台电脑上开始。");
+  // 开始数据升级：立刻返回，页面随后用上面的接口看进度。能打开页面的人就能开始，不限本机（升级之前有备份，升级不改任务的内容；
+  // 与退出服务不同，那个接口只接受本机来的请求）。
+  service_upgrade_start: (service) => {
     if (!service.upgrade) throw new ApiError("rejected", "现在没有要做的数据升级。");
     const started = service.upgrade.start();
     return json(200, { ok: true, started, upgrade: service.upgrade.view() });

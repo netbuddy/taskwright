@@ -1,7 +1,7 @@
 /**
  * 数据升级经接口：桌面形态有上一版留下的任务时，服务信息里 upgrade_pending 为真，别的接口一律答 503 upgrade_pending；
  * 升级的两个接口看得到要升级什么、点了开始之后的进度与做完的报告；做完之后放开，任务列表读得出来。
- * 没有要做的升级时这两个接口的表现；开始升级只接受本机来的请求。
+ * 没有要做的升级时这两个接口的表现；从别的电脑打开页面也能开始升级。
  */
 
 import assert from "node:assert/strict";
@@ -63,9 +63,29 @@ test("桌面形态：待升级时只有服务信息、升级与退出几个接�
     assert.deepEqual([tasks.status, tasks.body.tasks.map((t: Dict) => [t.task_id, t.supported]).sort()], [200, [["TASK-SAMPLE-041", true], ["TASK-SAMPLE-043", true]]]);
     const again = await http(port, "POST", "/api/v1/service/upgrade");
     assert.deepEqual([again.status, again.body.started, again.body.upgrade.state], [200, false, "done"], "做完之后再点不重复做，报告还看得到");
-    // 开始升级只接受本机来的请求（经分发函数直接验，来源写成别的电脑）。
-    const remote = (await dispatch(started.service, { method: "POST", path: "/api/v1/service/upgrade", query: {}, headers: {}, body: Buffer.alloc(0), remote: "192.0.2.7" })) as Dict;
-    assert.deepEqual([remote.status, JSON.parse(remote.body.toString("utf-8")).error.code], [403, "forbidden"]);
+  } finally {
+    await started.stop();
+  }
+});
+
+test("从别的电脑打开页面也能开始升级：开始升级的接口不限来源（退出服务仍然只接受本机来的请求）", async () => {
+  const data = join(tmp, "remote");
+  mkdirSync(join(data, "tasks"), { recursive: true });
+  cpSync(join(SAMPLES, "0.4.2"), join(data, "tasks", "TASK-A"), { recursive: true });
+  const started = await startService({ port: 0, mode: "desktop", host: "127.0.0.1", profile: "fake", ownProcess: false, data });
+  try {
+    // 经分发函数直接验，来源写成别的电脑。
+    const from = (method: string, path: string) => dispatch(started.service, { method, path, query: {}, headers: {}, body: Buffer.alloc(0), remote: "192.0.2.7" }) as Promise<Dict>;
+    const body = (reply: Dict) => JSON.parse(reply.body.toString("utf-8"));
+    const exit = await from("POST", "/api/v1/service/exit");
+    assert.deepEqual([exit.status, body(exit).error.code], [403, "forbidden"]);
+    const begun = await from("POST", "/api/v1/service/upgrade");
+    assert.deepEqual([begun.status, body(begun).started, body(begun).upgrade.state], [200, true, "running"]);
+    for (const end = Date.now() + 20000; started.service.upgrade!.state === "running";) {
+      if (Date.now() > end) throw new Error("升级没有做完");
+      await sleep(10);
+    }
+    assert.deepEqual([started.service.upgrade!.state, started.service.upgrade!.report?.succeeded], ["done", 1]);
   } finally {
     await started.stop();
   }
