@@ -117,6 +117,8 @@ describe("停下之后的界面操作通知与折叠行", () => {
     const messages = [{ type: "ui_action_noted", message_id: "n1", at: "", text: raw, event_seq: null, undoable: false, revision_no: null, kind: "stop_run" }] as ConversationMessage[];
     render(conversation({ working: false, currentWork: null, messages }));
     expect(screen.getByTestId("stop-note").textContent).toBe(STOP_NOTE_TEXT);
+    // 停止通知与别的界面操作记号同是居中的一行小字，另带 stop 这个类名，样式里给它琥珀色。
+    expect(screen.getByTestId("stop-note")).toHaveClass("selfnote", "stop");
     expect(STOP_NOTE_TEXT).toBe("你停止了助手这一次的工作");
     expect(document.body.textContent).not.toContain("不是用户打的字");
     expect(screen.queryByTestId("undo-link")).toBeNull();

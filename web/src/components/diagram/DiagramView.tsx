@@ -150,16 +150,16 @@ export function DiagramView({ text, fileName = "图", exportOff = null }: {
             <Button size="small" onClick={() => zoomBy((zoom) => stepZoom(zoom, 1))} data-testid="diagram-zoom-in">放大</Button>
             <Button size="small" onClick={() => place(fitZoom(sized.width, room().width))} data-testid="diagram-zoom-fit">适应宽度</Button>
             <Button size="small" onClick={() => place(1)} data-testid="diagram-zoom-actual">原始大小</Button>
-            <span data-testid="diagram-zoom-now" style={{ fontSize: "0.8125rem", color: "#8c8c8c", fontVariantNumeric: "tabular-nums" }}>{Math.round(shown.zoom * 100)}%</span>
+            <span data-testid="diagram-zoom-now" style={{ fontSize: "0.8125rem", color: "var(--mut)", fontVariantNumeric: "tabular-nums" }}>{Math.round(shown.zoom * 100)}%</span>
           </span>
         )}
-        {note && <span data-testid="diagram-note" style={{ fontSize: "0.8125rem", color: "#8c8c8c" }}>{note}</span>}
+        {note && <span data-testid="diagram-note" style={{ fontSize: "0.8125rem", color: "var(--mut)" }}>{note}</span>}
       </div>
-      {drawn.state === "empty" && <div data-testid="diagram-empty" style={{ color: "#8c8c8c" }}>{DIAGRAM_EMPTY_TEXT}</div>}
-      {drawn.state === "drawing" && <div data-testid="diagram-drawing" style={{ color: "#8c8c8c" }}>{DIAGRAM_DRAWING_TEXT}</div>}
+      {drawn.state === "empty" && <div data-testid="diagram-empty" style={{ color: "var(--mut)" }}>{DIAGRAM_EMPTY_TEXT}</div>}
+      {drawn.state === "drawing" && <div data-testid="diagram-drawing" style={{ color: "var(--mut)" }}>{DIAGRAM_DRAWING_TEXT}</div>}
       {drawn.state === "failed" && (
         <div data-testid="diagram-error" role="alert">
-          <div style={{ color: "#cf1322" }}>{DIAGRAM_FAILED_TEXT}</div>
+          <div style={{ color: "var(--gap)" }}>{DIAGRAM_FAILED_TEXT}</div>
           <pre style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: "0.8125rem" }}>{drawn.reason}</pre>
         </div>
       )}

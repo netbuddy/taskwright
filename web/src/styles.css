@@ -1,7 +1,12 @@
-/* 全局样式。:root 里的变量原样取自设计原型的模板，是整个前端配色、栏宽的唯一来源；
- * Ant Design 的主题令牌（App.tsx）对到同一套值。工作视图的组件样式在 styles/workview.css（逐字照搬原型），
- * 原型里没有、前端补的在 styles/workview-extra.css。 */
-:root{
+/* 全局样式。开头两个令牌块是整个前端配色、字体、栏宽的唯一来源，别的样式文件与页面代码里不写颜色的字面量
+ * （守护测试 test/styleTokens.test.ts）。界面风格有两种，各占一个令牌块，改一种不动另一种：
+ *   素白（plain）：第一个块，黑白灰加几种状态色。
+ *   暖纸（paper）：第二个块，米色纸面、深灰蓝的字、标题用衬线字体；没有选过时用它。
+ * 当前的风格写在 html 的 data-theme 上（model/theme.ts，入口页 index.html 在画页面之前先套上）；页面里某一块也可以自己带
+ * data-theme，在局部用另一种风格（设置页的两张风格卡这样画预览）。两个块里的令牌要一一对应：加一个令牌，两处都要给值。
+ * 风格只换这些令牌的值，不改结构、图标、布局、间距。Ant Design 的主题令牌（App.tsx）从这里读同一套值。
+ * 工作视图的组件样式在 styles/workview.css，前端补的在 styles/workview-extra.css。 */
+:root, [data-theme="plain"]{
   --paper:#f3f3f3; --stage:#fafafa; --card:#ffffff; --ink:#0d0d0d; --mut:#8f8f8f;
   --line:#ececec; --line2:#dcdcdc; --dark:#f7f7f8; --dark3:#ececec;
   --amber:#b45309; --amber-bg:#fdf3e0; --amber-line:#e5c890;
@@ -13,9 +18,58 @@
   --ai:#4f46e5; --ai-bg:#eff0fd; --ai-line:#c6c9f4;
   /* 可被引作来源的解释性条目（领域说明）：石板灰，与材料蓝、用户的话青绿、助手补充琥珀、助手做事靛蓝都不相混 */
   --note:#475569; --note-bg:#eef2f6; --note-line:#c5ced9;
-  /* 次一级的正文色：比 --ink 浅、比 --mut 深 */
-  --text2:#4a4a4a;
+  /* 文字由深到浅：--ink、--text1、--text2、--text3、--mut、--faint。--text1 比墨色浅一级，--text3 介于次级文字与淡文字之间，
+   * --faint 是停用、「还没有」一类最淡的字 */
+  --text1:#333333; --text2:#4a4a4a; --text3:#6f6f6f; --faint:#b0b0b0;
+  /* 压在墨色、绿色、红色实底上的文字；对话区里用户那句话的底；比 --line2 深一级的线、停用按钮的底、空心圆点 */
+  --on-ink:#ffffff; --user-bg:#e6e6e6; --line3:#c8c8c8;
+  /* 对话区：用户那句话的字；任务状况那一块与复述段的底；助手的话那张卡片的阴影（存一整条，两种风格的层数不同） */
+  --user-ink:#0d0d0d; --quote:#f0f0f0; --card-shadow:0 1px 2px rgba(0,0,0,.06);
+  /* 各色底上的深色字，琥珀提示里淡一级的说明字，更浅一级的琥珀底与蓝底 */
+  --amber-ink:#7a4a06; --amber-mut:#8a6a2a; --amber-bg2:#fffaf0;
+  --ok-ink:#14602f; --teal-ink:#17534d; --gap-ink:#8c1c1c; --blue-bg2:#f4f8ff;
+  /* 搜索命中与定位的黄色高亮：底、记号的边线、段落左侧的色边、记号上的字、PDF 上圈出一块内容的半透明底与框线 */
+  --hit-bg:#fff4c2; --hit-line:#e6c64a; --hit-edge:#d9a400; --hit-ink:#6b5200; --hit-wash:rgba(255,212,59,.16); --mark-line:#e8590c;
+  /* 被引用的文字闪一下与悬停时的蓝底，PDF 文字层上「被引用」的半透明蓝底，选中与命中文字的半透明蓝 */
+  --blue-hit:#cfe0ff; --blue-wash:rgba(37,99,235,.09); --blue-veil:rgba(37,99,235,.28);
+  /* 「配图」小标签与来源是知识库时的小标签，各是字、底、边三个 */
+  --fig:#2f5f8a; --fig-bg:#eef5fb; --fig-line:#b9d0e6;
+  --kb:#8b2a8e; --kb-bg:#f8eef8; --kb-line:#dcb7de;
+  /* 阴影的颜色由轻到重四级（位置与大小各处自己写）；命中文字外面的一圈深色描边；墨色一成的半透明细线与遮罩；浮动工具条的半透明底 */
+  --shadow-1:rgba(0,0,0,.06); --shadow-2:rgba(0,0,0,.10); --shadow-3:rgba(0,0,0,.16); --shadow-4:rgba(0,0,0,.25);
+  --ink-ring:rgba(13,13,13,.45); --hair:rgba(13,13,13,.10); --glass:rgba(255,255,255,.72);
+  /* 字体：正文、按钮、表格用 --font-body；各页的一级标题、分区标题与工作视图顶栏的任务名用 --font-title */
+  --font-body:-apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-title:var(--font-body);
   --w-rail:clamp(2.6rem,3vw,3.2rem); --w-chat:clamp(18rem,24%,26rem); --w-handle:2rem;
+}
+
+[data-theme="paper"]{
+  --paper:#f7f5ef; --stage:#fbf9f4; --card:#fffdf9; --ink:#22272e; --mut:#8a919b;
+  --line:#efebe2; --line2:#e6e1d6; --dark:#f7f4ed; --dark3:#ebe6da;
+  --amber:#9a6412; --amber-bg:#fbf3e3; --amber-line:#e6cf9c;
+  --blue:#2d5d8f; --blue-bg:#e9eff6; --blue-line:#b7c9dd;
+  /* 这一套的绿本身偏青，所以青绿往青色挪了一些，免得两种相混 */
+  --teal:#237680; --teal-bg:#e5f1f2; --teal-line:#a8ccd0;
+  --ok:#2f6f5e; --ok-bg:#eaf3ef; --ok-line:#b3d3c8;
+  --gap:#a23b32; --gap-bg:#f9ecea; --gap-line:#e0b8b3; --sel:#f3efe6;
+  --ai:#6b5fb0; --ai-bg:#efedf8; --ai-line:#cbc5e6;
+  --note:#4a5a6e; --note-bg:#eef0f1; --note-line:#c6cdd6;
+  --text1:#3a4049; --text2:#5b6470; --text3:#717985; --faint:#b4b8bd;
+  --on-ink:#fffdf9; --user-bg:#ece5d6; --line3:#cfc8b9;
+  --user-ink:#2a2419; --quote:#f3efe6; --card-shadow:0 1px 2px rgba(34,39,46,.04), 0 6px 18px rgba(34,39,46,.05);
+  --amber-ink:#74500f; --amber-mut:#92763c; --amber-bg2:#fdf8ee;
+  --ok-ink:#24574a; --teal-ink:#1c5a62; --gap-ink:#7e2c25; --blue-bg2:#f1f5f9;
+  --hit-bg:#f9edb8; --hit-line:#dcc15a; --hit-edge:#c99a12; --hit-ink:#66500a; --hit-wash:rgba(230,190,60,.18); --mark-line:#c8621f;
+  --blue-hit:#cfdcea; --blue-wash:rgba(45,93,143,.10); --blue-veil:rgba(45,93,143,.28);
+  /* 「配图」小标签在素白里是钢蓝，与这一套的链接蓝几乎同色，所以这里用橄榄色 */
+  --fig:#66602a; --fig-bg:#f2f0e0; --fig-line:#d3cea4;
+  --kb:#7f3d82; --kb-bg:#f4ecf3; --kb-line:#d8bdd9;
+  --shadow-1:rgba(34,39,46,.05); --shadow-2:rgba(34,39,46,.08); --shadow-3:rgba(34,39,46,.13); --shadow-4:rgba(34,39,46,.20);
+  --ink-ring:rgba(34,39,46,.45); --hair:rgba(34,39,46,.10); --glass:rgba(255,253,249,.78);
+  --font-body:-apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  /* 衬线标题字：Linux 上是思源宋体（两种注册名），macOS 上是宋体-简，都没有时退到系统的衬线字体 */
+  --font-title:"Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif;
 }
 
 /* 根字号随视口流动：全站尺寸都写 rem，跟着它等比缩放；允许写 px 的只有 1px 描边与下面三档的 clamp 边界。
@@ -29,8 +83,14 @@ html.fs-l { font-size: clamp(15px, 1.15vw, 21px); }
 html, body, #root, .ant-app { height: 100%; margin: 0; }
 body {
   background: var(--paper); color: var(--ink); line-height: 1.65;
-  font-family: -apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-body);
 }
+
+/* 用标题字体的标题只有这几样：各页的一级标题、任务页与知识库页与设置页的分区标题、工作视图顶栏的任务名。
+ * 正文、按钮、表格、页签、详情里的小节标题都用正文字体：衬线字体在小字号下笔画细，不好认。
+ * 标题之外用它的另有三处，各写在自己的样式文件里：对话区里助手复述的那一段与卡片里问题那一句（styles/workview.css）、
+ * 设置页风格卡预览里的顶栏（styles/settings.css）。再加一处要改 test/theme.test.ts 里的清单。 */
+.page-title h1, .tp-head h1, .tp-sec-h h2, .kbhead h2, .settings .dhead h2, .app .topbar .tname { font-family: var(--font-title); }
 
 .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.943rem; }
 .muted { color: var(--mut); }
@@ -47,26 +107,26 @@ body {
 .sider-task:hover { background: var(--dark3); }
 .sider-task.on { background: var(--dark3); font-weight: 600; }
 .sider-task .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sider-session { display: flex; align-items: center; gap: 0.429rem; padding: 0.357rem 0.571rem 0.357rem 1.857rem; font-size: 0.972rem; color: #4a4a4a; cursor: pointer; border-radius: 0.429rem; }
+.sider-session { display: flex; align-items: center; gap: 0.429rem; padding: 0.357rem 0.571rem 0.357rem 1.857rem; font-size: 0.972rem; color: var(--text2); cursor: pointer; border-radius: 0.429rem; }
 .sider-session:hover { background: var(--dark3); }
-.sider-foot { border-top: 1px solid var(--line); padding: 0.857rem; font-size: 0.972rem; color: #4a4a4a; display: flex; align-items: center; }
+.sider-foot { border-top: 1px solid var(--line); padding: 0.857rem; font-size: 0.972rem; color: var(--text2); display: flex; align-items: center; }
 /* 侧栏底部「本机用户」右边的「设置」入口 */
-.set-link { margin-left: auto; display: inline-flex; align-items: center; gap: 0.3rem; color: #4a4a4a; cursor: pointer; font-size: 0.93rem; }
+.set-link { margin-left: auto; display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text2); cursor: pointer; font-size: 0.93rem; }
 .set-link:hover { color: var(--ink); }
 .main { flex: 1; min-width: 0; overflow: auto; padding: 1.429rem 2.571rem 2.286rem; }
 .page-title { display: flex; align-items: center; gap: 0.714rem; flex-wrap: wrap; }
 .page-title h1 { font-size: 1.357rem; margin: 0; }
-.lede { color: #4a4a4a; font-size: 0.972rem; margin: 0.429rem 0 1.286rem; }
+.lede { color: var(--text2); font-size: 0.972rem; margin: 0.429rem 0 1.286rem; }
 .section-title { color: var(--mut); font-size: 0.957rem; font-weight: 600; margin: 1.571rem 0 0.571rem; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; padding: 1rem 1.143rem; }
 
-.chip { font-size: 0.943rem; border-radius: 71.357rem; padding: 0.071rem 0.643rem; border: 1px solid var(--line); color: #4a4a4a; background: var(--dark); white-space: nowrap; }
+.chip { font-size: 0.943rem; border-radius: 71.357rem; padding: 0.071rem 0.643rem; border: 1px solid var(--line); color: var(--text2); background: var(--dark); white-space: nowrap; }
 .chip.ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
 .chip.bad { color: var(--gap); background: var(--gap-bg); border-color: var(--gap-line); }
 .chip.warn { color: var(--amber); background: var(--amber-bg); border-color: var(--amber-line); }
-.chip.dark { color: #fff; background: var(--ink); border-color: var(--ink); }
+.chip.dark { color: var(--on-ink); background: var(--ink); border-color: var(--ink); }
 .cond-group { margin: 0.714rem 0 0.286rem; font-weight: 600; font-size: 0.972rem; }
-.cond { display: flex; gap: 0.571rem; font-size: 0.972rem; padding: 0.214rem 0; color: #4a4a4a; }
+.cond { display: flex; gap: 0.571rem; font-size: 0.972rem; padding: 0.214rem 0; color: var(--text2); }
 .cond .tick { width: 1rem; flex: none; }
 .cond.met .tick { color: var(--ok); }
 .cond.empty { color: var(--mut); }
@@ -81,16 +141,16 @@ body {
 .shell { flex-direction: column; }
 .shell > .shell-card { min-height: 0; }
 .svc-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; flex: none; background: var(--amber-bg); border: 1px solid var(--amber-line);
-  color: #7a4b00; border-radius: 0.6rem; padding: 0.45rem 0.9rem; margin: 0 0 0.5rem; font-size: 0.95rem; }
+  color: var(--amber-ink); border-radius: 0.6rem; padding: 0.45rem 0.9rem; margin: 0 0 0.5rem; font-size: 0.95rem; }
 .svc-banner a { color: var(--blue); cursor: pointer; }
-.svc-banner .why { flex-basis: 100%; color: #8a6a2a; font-size: 0.86rem; }
+.svc-banner .why { flex-basis: 100%; color: var(--amber-mut); font-size: 0.86rem; }
 .svc-banner .sp { flex: 1; }
 .svc-user-wrap { position: relative; }
 .svc-user { cursor: pointer; }
 .svc-user.at-topbar { border: 1px solid var(--line2); background: var(--card); white-space: nowrap; border-radius: 0.5rem; padding: 0.12rem 0.6rem; font-size: 0.897rem; }
 .svc-user.at-topbar:hover { border-color: var(--ink); }
 .svc-menu { position: absolute; z-index: 90; background: var(--card); border: 1px solid var(--line2); border-radius: 0.6rem; width: 15rem; padding: 0.35rem;
-  box-shadow: 0 0.714rem 1.857rem #00000029; }
+  box-shadow: 0 0.714rem 1.857rem var(--shadow-3); }
 .svc-menu.at-sider { left: 0; bottom: calc(100% + 0.6rem); }
 .svc-menu.at-topbar { right: 0; top: calc(100% + 0.4rem); }
 .svc-menu .svc-mh { color: var(--mut); padding: 0.2rem 0.5rem 0.3rem; font-size: 0.86rem; }
@@ -106,33 +166,33 @@ body {
 .upg .upg-what { margin: 0.4rem 0 1.1rem; padding-left: 1.2rem; line-height: 1.8; }
 .upg .upg-what code { font-size: 0.92rem; word-break: break-all; }
 .upg .upg-report { background: var(--paper); border: 1px solid var(--line); border-radius: 0.4rem; padding: 0.7rem 0.9rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-all; margin: 0.6rem 0 1rem; }
-.upg .upg-err { color: #b42318; }
+.upg .upg-err { color: var(--gap); }
 
 /* 左侧栏的「任务」「知识库」两个入口 */
 .sider-nav { padding: 0.6rem 0.571rem 0; display: flex; flex-direction: column; gap: 0.1rem; }
-.nav-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.42rem 0.571rem; border-radius: 0.429rem; font-size: 0.972rem; cursor: pointer; color: #333; }
+.nav-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.42rem 0.571rem; border-radius: 0.429rem; font-size: 0.972rem; cursor: pointer; color: var(--text1); }
 .nav-item:hover { background: var(--dark3); }
 .nav-item.on { background: var(--dark3); font-weight: 600; color: var(--ink); }
 .nav-item .ic { width: 1.1rem; color: var(--mut); }
 .nav-item .cnt { margin-left: auto; color: var(--mut); font-size: 0.88rem; font-weight: 400; }
 
 /* 小字标签与单选的圆角按钮组（知识库页面的上传框、设置页面的表单用） */
-.flabel { font-size: 0.92rem; color: #4a4a4a; margin-bottom: 0.25rem; }
+.flabel { font-size: 0.92rem; color: var(--text2); margin-bottom: 0.25rem; }
 .updest-seg { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.updest-seg label { border: 1px solid var(--line2); border-radius: 1rem; padding: 0.08rem 0.7rem; font-size: 0.92rem; cursor: pointer; background: #fff; }
+.updest-seg label { border: 1px solid var(--line2); border-radius: 1rem; padding: 0.08rem 0.7rem; font-size: 0.92rem; cursor: pointer; background: var(--card); }
 .updest-seg input { display: none; }
-.updest-seg label.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.updest-seg label.on { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
 
 /* 任务页「选用别的知识库」的勾选框列表（任务页别的样式在 styles/task-page.css） */
 .kbpick { width: min(24rem, 86vw); }
-.kbpick .ph { font-size: 0.9rem; color: #4a4a4a; margin-bottom: 0.4rem; }
+.kbpick .ph { font-size: 0.9rem; color: var(--text2); margin-bottom: 0.4rem; }
 .kbpick-row { padding: 0.2rem 0; }
 .kbpick .pm { margin-left: 0.4rem; color: var(--mut); font-size: 0.86rem; }
 .kbpick .pf { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.5rem; }
 
 /* 点知识库来源的出处看原文的只读对话框：正文按原样换行，摘录高亮 */
 .kbdoc-text { white-space: pre-wrap; max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.8rem 1rem; line-height: 1.8; }
-.kbdoc-text mark.hit { background: #cfe0ff; border-radius: 0.2rem; color: inherit; }
+.kbdoc-text mark.hit { background: var(--blue-hit); border-radius: 0.2rem; color: inherit; }
 .kbdoc-note { color: var(--mut); font-size: 0.93rem; margin-bottom: 0.5rem; }
 
 /* 知识库页面：左边库的清单，右边文档表格 */
@@ -144,22 +204,22 @@ body {
 .kblib.on { background: var(--dark3); }
 .kblib .ln { font-weight: 600; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .kblib .lm { color: var(--mut); font-size: 0.9rem; }
-.chip.def { font-size: 0.82rem; padding: 0 0.45rem; color: var(--ink); background: #fff; border-color: var(--line2); font-weight: 600; }
+.chip.def { font-size: 0.82rem; padding: 0 0.45rem; color: var(--ink); background: var(--card); border-color: var(--line2); font-weight: 600; }
 .kbhead { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
 .kbhead h2 { font-size: 1.12rem; margin: 0; }
 .kbhead .sp { flex: 1; }
-.kbmeta { color: #4a4a4a; font-size: 0.93rem; margin-bottom: 0.7rem; }
+.kbmeta { color: var(--text2); font-size: 0.93rem; margin-bottom: 0.7rem; }
 .kbtable { width: 100%; border-collapse: collapse; font-size: 0.93rem; margin-top: 0.8rem; }
-.kbtable th { background: #fafafa; color: #4a4a4a; font-weight: 600; text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.kbtable th { background: var(--stage); color: var(--text2); font-weight: 600; text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .kbtable td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 .kbtable .dn { font-weight: 600; word-break: break-all; }
 .kbfoot { font-size: 0.88rem; color: var(--mut); margin-top: 0.55rem; }
 /* 这个知识库的文档换算了多少：一行里是「已换算 N / M」、进度条、用的嵌入模型、「开始换算」与停下的原因 */
-.kbembed { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; font-size: 0.93rem; color: #4a4a4a; margin-top: 0.8rem; }
+.kbembed { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; font-size: 0.93rem; color: var(--text2); margin-top: 0.8rem; }
 .kbembed .en { font-weight: 600; color: var(--ink); white-space: nowrap; }
 .kbembed .em { color: var(--mut); }
 .kbembed .es { color: var(--gap); flex-basis: 100%; }
-.kbbar { flex: 0 1 12rem; min-width: 6rem; height: 0.5rem; border-radius: 0.25rem; background: #ececec; overflow: hidden; }
+.kbbar { flex: 0 1 12rem; min-width: 6rem; height: 0.5rem; border-radius: 0.25rem; background: var(--dark3); overflow: hidden; }
 .kbbar > span { display: block; height: 100%; background: var(--ok); transition: width 0.3s; }
 .kbtable .de { white-space: nowrap; }
 .kbtable .de.failed { color: var(--gap); }
@@ -173,12 +233,12 @@ body {
 .kbsearch .row { display: flex; gap: 0.5rem; margin-top: 0.35rem; }
 .kbsearch .hint { font-size: 0.88rem; color: var(--mut); margin-top: 0.35rem; }
 .kbsearch .hits { margin-top: 0.7rem; }
-.kbsearch .cap, .kbsearch .none { font-size: 0.9rem; color: #4a4a4a; }
+.kbsearch .cap, .kbsearch .none { font-size: 0.9rem; color: var(--text2); }
 .kbsearch .hit { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.55rem 0.7rem; margin-top: 0.5rem; }
 .kbsearch .hh { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; align-items: baseline; font-size: 0.9rem; }
 .kbsearch .sc { font-weight: 600; color: var(--ink); white-space: nowrap; }
 .kbsearch .hh .dn { font-weight: 600; word-break: break-all; }
-.kbsearch .ht { color: #4a4a4a; }
+.kbsearch .ht { color: var(--text2); }
 .kbsearch .hp { color: var(--mut); white-space: nowrap; }
 .kbsearch .hx { font-size: 0.92rem; margin-top: 0.35rem; white-space: pre-wrap; word-break: break-word; }
 @media (max-width: 60rem) { .kbgrid { grid-template-columns: minmax(0, 1fr); } }

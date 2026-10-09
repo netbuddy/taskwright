@@ -11,24 +11,24 @@
 .app .chip.teal{color:var(--teal);border-color:var(--teal-line);background:var(--teal-bg)}
 .app .btn{display:inline-flex;align-items:center;gap:.3rem;border:1px solid var(--ink);border-radius:.5rem;
   padding:.16rem .65rem;font-size:0.905rem;background:var(--card);cursor:pointer;font-family:inherit;white-space:nowrap}
-.app .btn.pri{background:var(--ink);color:#fff;font-weight:600}
+.app .btn.pri{background:var(--ink);color:var(--on-ink);font-weight:600}
 .app .btn.sm{font-size:0.873rem;padding:.05rem .5rem;border-color:var(--line2)}
 .app .btn.ghost{border-style:dashed;border-color:var(--line2);color:var(--mut)}
 .app .btn.link{border:0;background:none;color:var(--blue);padding:0;text-decoration:underline;font-size:inherit}
 .app .row{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
 .app{border:1px solid var(--line2);border-radius:.9rem;background:var(--stage);overflow:visible;
-  box-shadow:0 0.714rem 2.143rem rgba(43,41,37,.10);display:flex;flex-direction:column;flex:1;min-height:0}
+  box-shadow:0 0.714rem 2.143rem var(--shadow-2);display:flex;flex-direction:column;flex:1;min-height:0}
 .app-body{display:flex;flex:1;min-height:0;overflow:hidden;border-radius:0 0 .9rem .9rem}
 .app .topbar{flex:none;display:flex;align-items:center;gap:.5rem;padding:.4rem .8rem;background:var(--card);
   border-bottom:1px solid var(--line);border-radius:.9rem .9rem 0 0;position:relative}
 .app .topbar .tname{font-size:0.96rem;font-weight:700}
 .app .topbar .tsep{color:var(--line2);font-size:0.96rem}
-.app .topbar .sname{font-size:0.936rem;color:#4a4a4a}
+.app .topbar .sname{font-size:0.936rem;color:var(--text2)}
 .app .topbar .smenu-btn{margin-left:auto;border:1px solid var(--line2);border-radius:.5rem;background:var(--card);
   font-size:0.897rem;padding:.12rem .6rem;cursor:pointer;white-space:nowrap}
 .app .topbar .smenu-btn:hover{border-color:var(--ink)}
 .app .smenu{position:absolute;right:.8rem;top:calc(100% + .25rem);z-index:80;width:22rem;background:var(--card);
-  border:1px solid var(--line2);border-radius:.6rem;box-shadow:0 0.714rem 1.857rem rgba(0,0,0,.16);padding:.35rem;display:none}
+  border:1px solid var(--line2);border-radius:.6rem;box-shadow:0 0.714rem 1.857rem var(--shadow-3);padding:.35rem;display:none}
 .app .smenu.show{display:block}
 .app .smenu .mh{font-size:0.881rem;color:var(--mut);padding:.2rem .5rem .3rem}
 .app .smenu .srow{display:flex;align-items:center;gap:.4rem;padding:.3rem .5rem;border-radius:.45rem;
@@ -50,80 +50,100 @@
 .app .chat-h b{font-size:0.936rem}
 .app .msgs{flex:1;overflow-y:auto;padding:.7rem .8rem .4rem;display:flex;flex-direction:column;gap:.55rem}
 .app .m{max-width:97%;font-size:0.928rem;line-height:1.62}
-.app .m.user{margin-left:auto;background:#e6e6e6;border-radius:1.1rem;padding:.42rem .8rem}
-.app .m.user .from-ui{display:block;font-size:0.865rem;color:#7a7a7a;margin-top:.15rem}
-.app .m.ai{background:var(--card);border:1px solid var(--line);border-radius:1rem;padding:.55rem .75rem}
+/* 用户的话靠右：没有边线，右下角收小。助手的话靠左：细线加轻影，左上角收小。两种界面风格形状相同，颜色各用各的令牌 */
+.app .m.user{margin-left:auto;max-width:86%;background:var(--user-bg);color:var(--user-ink);border-radius:1rem 1rem .3rem 1rem;padding:.42rem .8rem}
+.app .m.user .from-ui{display:block;font-size:0.865rem;color:var(--text3);margin-top:.15rem}
+.app .m.ai{max-width:92%;background:var(--card);border:1px solid var(--line);border-radius:.3rem 1rem 1rem 1rem;padding:.55rem .75rem;
+  box-shadow:var(--card-shadow)}
 .app .m.ai p{margin-bottom:.35rem}
 .app .m.ai p:last-child{margin-bottom:0}
 .app .m.ai ul{margin:.1rem 0 .35rem 1.05rem}
+/* 助手把到现在的理解讲成一段话时用的样子：安静的底、标题字体、行距宽一些；里面标出的词句有两种，
+ * .hl 是助手补的、还没有核实的（琥珀底），.fix 是照用户刚说的改过的（淡紫底）。现在还没有回复用到它，先备着 */
+.app .m.ai .story{margin-top:.45rem;background:var(--quote);border-radius:.7rem;padding:.6rem .85rem;font-family:var(--font-title);
+  font-size:0.96rem;line-height:1.85}
+.app .m.ai .story .hl{background:var(--amber-bg);border-bottom:0.1rem solid var(--amber);border-radius:.15rem;padding:0 .12rem}
+.app .m.ai .story .fix{background:var(--ai-bg);border-bottom:0.1rem solid var(--ai);border-radius:.15rem;padding:0 .12rem}
 .app .m.ai li{font-size:0.917rem}
-.app .proc{border-left:0.143rem solid var(--line2);padding:.15rem 0 .15rem .6rem;margin-left:.15rem;
-  display:flex;flex-direction:column;gap:.1rem}
-.app .proc .pline{font-size:0.881rem;color:#9a9a9a;letter-spacing:.01em;display:flex;align-items:baseline;gap:.35rem}
-.app .proc .pline .ptime{font-size:0.857rem;color:#bdbdbd;flex:none;font-variant-numeric:tabular-nums}
-.app .proc .pline.doing{color:#6f6f6f}
+/* 助手的过程（「理解为」、做了几步、正在做的一步）：不进框，一行小字；展开出来的各步与各条原因往里缩一点 */
+.app .proc{padding:0 .2rem;display:flex;flex-direction:column;gap:.1rem}
+.app .proc .proc,.app .proc-fold + .proc{padding-left:.9rem}
+.app .proc .pline{font-size:0.857rem;color:var(--text3);letter-spacing:.01em;display:flex;align-items:baseline;gap:.35rem}
+.app .proc .pline .ptime{font-size:0.857rem;color:var(--faint);flex:none;font-variant-numeric:tabular-nums}
+.app .proc .pline.doing{color:var(--text2);font-weight:500}
 .app .proc .pline.doing .ptxt::after{content:"";display:inline-block;width:.32rem;height:.32rem;border-radius:50%;
-  background:#9a9a9a;margin-left:.35rem;vertical-align:middle;animation:breathe 1.5s ease-in-out infinite}
+  background:var(--mut);margin-left:.35rem;vertical-align:middle;animation:breathe 1.5s ease-in-out infinite}
 @keyframes breathe{0%,100%{opacity:.25}50%{opacity:1}}
-.app .proc-fold{font-size:0.881rem;color:#9a9a9a;border-left:0.143rem solid var(--line2);padding:.1rem 0 .1rem .6rem;
-  margin-left:.15rem;cursor:pointer}
-.app .proc-fold:hover{color:#6f6f6f;text-decoration:underline}
+.app .proc-fold{font-size:0.857rem;color:var(--text3);padding:0 .2rem;cursor:pointer}
+.app .proc-fold .pexp{color:var(--blue)}
+.app .proc-fold:hover .pexp{text-decoration:underline}
 /* 一轮被用户停下或出错停下：摘要行下面那一行说明用琥珀色（Conversation.tsx 的 WorkSummaryLine） */
-.app .proc.stopnote{border-left-color:var(--amber-line)}
 .app .proc.stopnote .pline{color:var(--amber)}
-.app .selfnote{font-size:0.881rem;color:#9a9a9a;border-left:0.143rem solid var(--line2);padding:.1rem 0 .1rem .6rem;margin-left:.15rem}
-.app .sysnote{background:var(--teal-bg);border:1px dashed var(--teal-line);border-radius:.6rem;
-  padding:.45rem .65rem;font-size:0.905rem;color:#17534d;line-height:1.6}
-.app .sysnote .sh{font-size:0.865rem;font-weight:700;letter-spacing:.06em;color:var(--teal);margin-bottom:.2rem}
+/* 界面操作留下的记号、评审完成一行、停止通知：居中的一行小字，不进框；停止通知用琥珀色 */
+.app .selfnote{align-self:center;text-align:center;font-size:0.857rem;color:var(--text3);padding:.05rem .6rem}
+.app .selfnote.stop{color:var(--amber)}
+/* 系统写进对话的说明（开场的任务状况等）：安静的内嵌块，没有边框；要点里的数用深一级的字 */
+.app .sysnote{background:var(--quote);border-radius:.6rem;
+  padding:.45rem .7rem;font-size:0.857rem;color:var(--text2);line-height:1.6}
+.app .sysnote .n{color:var(--ink);font-weight:500}
+.app .sysnote .sh{font-size:0.857rem;font-weight:700;letter-spacing:.06em;color:var(--text3);margin-bottom:.2rem}
 .app .sysnote ul{margin:.2rem 0 .1rem 1.05rem}
-.app .sysnote li{font-size:0.901rem}
-.app .sysnote .demo{display:block;margin-top:.3rem;font-size:0.873rem;color:#4b6f6b}
+.app .sysnote li{font-size:0.857rem}
+.app .sysnote .demo{display:block;margin-top:.3rem;font-size:0.857rem;color:var(--text2)}
 /* 说明里可能有不带空格的长串（文件路径、环境变量名）：overflow-wrap:anywhere 让它在框内任意处折行，否则会顶出框的右边被截掉 */
 .app .busybar{display:none;align-items:center;gap:.4rem;background:var(--amber-bg);border:1px solid var(--amber-line);
-  border-radius:.5rem;padding:.3rem .55rem;font-size:0.897rem;color:#7a4a06;margin-bottom:.4rem;overflow-wrap:anywhere}
+  border-radius:.5rem;padding:.3rem .55rem;font-size:0.897rem;color:var(--amber-ink);margin-bottom:.4rem;overflow-wrap:anywhere}
 .app .busybar.show{display:flex}
 /* 不拦住操作的提示（助手已经退出、正在启动、还没启动）：蓝色，与拦住操作的琥珀色提示条区分开 */
 .app .busybar.info{background:var(--blue-bg);border-color:var(--blue-line);color:var(--ink)}
 .app .chat-in.busy .inbox{opacity:.55}
-.app .chat-in.busy textarea{background:#f0f0f0;cursor:not-allowed}
+.app .chat-in.busy textarea{background:var(--sel);cursor:not-allowed}
 .app .steps{border:1px solid var(--line);border-radius:.45rem;overflow:hidden;background:var(--card)}
 .app .steps .strow{display:flex;gap:.45rem;padding:.22rem .45rem;border-bottom:1px solid var(--line);font-size:0.897rem}
 .app .steps .strow:last-child{border-bottom:0}
 .app .steps .strow .no{flex:none;width:3.4rem;color:var(--mut);font-size:0.873rem}
 .app .steps .strow .tx{flex:1;min-width:0}
-.app .steps .strow.same{color:#8f8f8f}
-.app .steps .strow.changed{background:#fffaf0}
+.app .steps .strow.same{color:var(--mut)}
+.app .steps .strow.changed{background:var(--amber-bg2)}
 .app .steps .strow.added{background:var(--ok-bg)}
 .app .steps .strow.removed{background:var(--gap-bg)}
 .app .steps .strow .tag{flex:none;font-size:0.865rem;color:var(--mut)}
-.app .act{border:1px solid var(--line2);background:var(--stage);border-radius:.6rem;padding:.5rem .6rem;
+/* 助手请用户定的卡片（提问、请确认、给建议值、请选择、提议）：淡紫底、没有边线；顶上一行是种类，问题那一句用标题字体；
+ * 按钮是两头全圆的小按钮，主要的那一个是紫底。停用的按钮仍是全站停用按钮的样子，所以下面两条只管没有停用的 */
+.app .act{background:var(--ai-bg);border-radius:.7rem;padding:.55rem .75rem .6rem;
   margin-top:.45rem;font-size:0.913rem}
-.app .act .tt{font-size:0.865rem;font-weight:700;letter-spacing:.06em;color:var(--mut);margin-bottom:.3rem}
-.app .act .fk{color:var(--mut);display:inline-block;min-width:3rem}
-.app .act .val{font-weight:600}
+.app .act .tt{font-size:0.857rem;font-weight:500;letter-spacing:.08em;color:var(--ai);margin-bottom:.25rem}
+.app .act .fk{color:var(--text3);display:inline-block;min-width:3rem}
+.app .act .val{font-family:var(--font-title);font-size:0.98rem;font-weight:500}
+.app .act .actions .btn{border-radius:71rem}
+.app .act .actions .btn:not(:disabled){background:var(--card);border-color:var(--ai-line);color:var(--ai)}
+.app .act .actions .btn.pri:not(:disabled){background:var(--ai);border-color:var(--ai);color:var(--on-ink)}
 .app .act .actions{margin-top:.45rem;display:flex;gap:.3rem;flex-wrap:wrap}
 .app .act .done{margin-top:.35rem;color:var(--ok);font-size:0.897rem;font-weight:600}
 .app .act .done.pale{color:var(--mut);font-weight:400}
-.app .quickreply{margin-top:.45rem;display:flex;gap:.3rem;align-items:center;border-top:1px dotted var(--line2);padding-top:.4rem}
-.app .quickreply input{flex:1;border:1px solid var(--line2);border-radius:1rem;padding:.2rem .6rem;font-size:0.897rem;
+.app .quickreply{margin-top:.45rem;display:flex;gap:.3rem;align-items:center;border-top:1px dotted var(--ai-line);padding-top:.4rem}
+.app .quickreply input{flex:1;border:1px solid var(--ai-line);border-radius:1rem;padding:.2rem .6rem;font-size:0.897rem;
   font-family:inherit;background:var(--card);min-width:0}
-.app .qr-send{flex:none;width:1.4rem;height:1.4rem;border-radius:50%;background:var(--ink);color:#fff;
+.app .qr-send{flex:none;width:1.4rem;height:1.4rem;border-radius:50%;background:var(--ink);color:var(--on-ink);
   display:inline-flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;font-size:0.881rem}
 .app .ref{display:inline-block;font-size:0.865rem;color:var(--blue);border:1px solid var(--blue-line);background:var(--blue-bg);
   border-radius:.6rem;padding:0 .4rem;cursor:pointer;font-family:ui-monospace,Menlo,monospace}
-.app .ref:hover{background:#dbe6fb}
+.app .ref:hover{background:var(--blue-hit)}
 .app .evi{display:inline-block;font-size:0.865rem;color:var(--blue);border:1px solid var(--blue-line);background:var(--blue-bg);
   border-radius:.6rem;padding:0 .45rem;cursor:pointer;margin-top:.1rem}
 .app .chat-in{flex:none;padding:.55rem .8rem .65rem;border-top:1px solid var(--line)}
-.app .inbox{border:1px solid var(--line2);border-radius:1.1rem;background:var(--card);padding:.45rem .7rem}
+.app .inbox{border:1px solid var(--line);border-radius:.8rem;background:var(--card);padding:.45rem .7rem}
+.app .inbox textarea::placeholder{color:var(--text3)}
+/* 输入框下面一行里的「附一份材料」与已附上的文件：两头全圆的小标 */
+.app .inrow .chip{color:var(--text2);border-color:var(--line);border-radius:71rem}
 .app .inbox textarea{width:100%;border:0;outline:none;resize:none;font-family:inherit;font-size:0.921rem;
   line-height:1.5;min-height:2.2rem;background:transparent;color:var(--ink)}
 .app .inrow{display:flex;align-items:center;gap:.4rem;margin-top:.25rem}
-.app .send{margin-left:auto;width:1.6rem;height:1.6rem;border-radius:50%;background:var(--ink);color:#fff;
+.app .send{margin-left:auto;width:1.6rem;height:1.6rem;border-radius:50%;background:var(--ink);color:var(--on-ink);
   display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:none;cursor:pointer}
 /* 助手工作时发送键换成的停止键：同一位置、同样大小，中间一个实心小方块；点了之后变淡并脉动，不能再点（Conversation.tsx） */
-.app .send.stop i{display:block;width:.55rem;height:.55rem;border-radius:.1rem;background:#fff}
-.app .send.stop.stopping{background:#9a9a9a;pointer-events:none;cursor:default}
+.app .send.stop i{display:block;width:.55rem;height:.55rem;border-radius:.1rem;background:var(--card)}
+.app .send.stop.stopping{background:var(--mut);pointer-events:none;cursor:default}
 .app .send.stop.stopping i{animation:breathe 1.2s ease-in-out infinite}
 .app .stage-col{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
 .app .work{flex:1;min-height:0;display:flex}
@@ -139,7 +159,7 @@
 .app .itab{display:inline-flex;align-items:baseline;gap:.3rem;border-radius:.5rem;padding:.16rem .65rem;
   font-size:0.921rem;color:var(--mut);cursor:pointer}
 .app .itab:hover{background:var(--sel)}
-.app .itab.on{background:#ececec;color:var(--ink);font-weight:600}
+.app .itab.on{background:var(--dark3);color:var(--ink);font-weight:600}
 .app .itab .cnt{font-size:0.881rem;font-variant-numeric:tabular-nums}
 .app .itabs .spacer{flex:1}
 .app .filters{display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;padding:.4rem .7rem;
@@ -147,14 +167,14 @@
 .app .filt{border:1px solid var(--line2);border-radius:.7rem;padding:.08rem .55rem;font-size:0.889rem;color:var(--mut);
   cursor:pointer;background:var(--card);white-space:nowrap}
 .app .filt:hover{border-color:var(--ink);color:var(--ink)}
-.app .filt.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.app .filt.on{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
 .app .filt.warn{color:var(--gap);border-color:var(--gap-line)}
-.app .filt.warn.on{background:var(--gap);color:#fff;border-color:var(--gap)}
+.app .filt.warn.on{background:var(--gap);color:var(--on-ink);border-color:var(--gap)}
 .app .prog{margin-left:auto;font-size:0.889rem;color:var(--mut);border:1px solid var(--line2);border-radius:.7rem;
   padding:.08rem .6rem;cursor:pointer;background:var(--stage);white-space:nowrap}
 .app .prog:hover{border-color:var(--ink);color:var(--ink)}
 .app .prog-detail{display:none;padding:.45rem .8rem .55rem;background:var(--stage);border-bottom:1px solid var(--line);
-  font-size:0.897rem;color:#555;flex:none}
+  font-size:0.897rem;color:var(--text2);flex:none}
 .app .prog-detail.show{display:block}
 .app .prog-detail li{margin:.12rem 0 .12rem 1.1rem}
 .app .prog-detail .g-ok{color:var(--ok)}
@@ -179,10 +199,10 @@
   padding:.05rem .35rem;background:var(--card);color:var(--ink);max-width:16rem}
 .app .banner-line{border-radius:.5rem;padding:.3rem .6rem;font-size:0.901rem;margin-bottom:.5rem;display:flex;
   align-items:center;gap:.4rem;flex-wrap:wrap}
-.app .banner-line.gap{background:var(--gap-bg);border:1px solid var(--gap-line);color:#8c1c1c}
-.app .banner-line.amber{background:var(--amber-bg);border:1px dashed var(--amber-line);color:#7a4a06}
-.app .banner-line.ok{background:var(--ok-bg);border:1px solid var(--ok-line);color:#14602f}
-.app .banner-line.diff{background:var(--dark);border:1px solid var(--line2);color:#555}
+.app .banner-line.gap{background:var(--gap-bg);border:1px solid var(--gap-line);color:var(--gap-ink)}
+.app .banner-line.amber{background:var(--amber-bg);border:1px dashed var(--amber-line);color:var(--amber-ink)}
+.app .banner-line.ok{background:var(--ok-bg);border:1px solid var(--ok-line);color:var(--ok-ink)}
+.app .banner-line.diff{background:var(--dark);border:1px solid var(--line2);color:var(--text2)}
 .app .fld{display:grid;grid-template-columns:clamp(4.6rem,18%,6.6rem) minmax(0,1fr);gap:.25rem .55rem;
   font-size:0.921rem;margin-bottom:.4rem}
 .app .fld .k{color:var(--mut);font-size:0.897rem;padding-top:.2rem}
@@ -196,7 +216,7 @@
 .app .srcmark.quote{color:var(--blue);border:1px solid var(--blue-line);background:var(--blue-bg)}
 .app .srcmark.said{color:var(--teal);border:1px solid var(--teal-line);background:var(--teal-bg)}
 .app .srcmark.added{color:var(--amber);border:1px solid var(--amber-line);background:var(--amber-bg);font-weight:600}
-.app .srcmark.none{color:#9a9a9a;border:1px dashed #cfcfcf;background:#f6f6f6}
+.app .srcmark.none{color:var(--mut);border:1px dashed var(--line3);background:var(--dark)}
 .app .tagflag{font-size:0.857rem;border-radius:.4rem;padding:0 .35rem;margin-left:.3rem;display:inline-block}
 .app .tagflag.req{color:var(--gap);background:var(--gap-bg)}
 .app .stepline{display:flex;align-items:flex-start;gap:.35rem;flex-wrap:wrap;padding:.08rem 0}
@@ -204,11 +224,11 @@
 .app .stepline .st{min-width:0;flex:1}
 .app .finding{font-size:0.857rem;border-radius:.4rem;padding:0 .35rem;color:var(--gap);background:var(--gap-bg);
   margin-left:.3rem;display:inline-block}
-.app .wasadded{font-size:0.889rem;color:#7a4a06;background:var(--amber-bg);border:1px dashed var(--amber-line);
+.app .wasadded{font-size:0.889rem;color:var(--amber-ink);background:var(--amber-bg);border:1px dashed var(--amber-line);
   border-radius:.5rem;padding:.2rem .55rem;margin:.1rem 0 .45rem}
-.app .diff-old{color:#9a9a9a;text-decoration:line-through;margin-right:.35rem}
+.app .diff-old{color:var(--mut);text-decoration:line-through;margin-right:.35rem}
 .app .diff-new{box-shadow:inset 0 -2px 0 var(--ok-line);border-radius:.2rem}
-.app .diff-note{font-size:0.881rem;color:#9a9a9a;margin-top:.1rem}
+.app .diff-note{font-size:0.881rem;color:var(--mut);margin-top:.1rem}
 .app .sec-h{font-size:0.889rem;font-weight:700;color:var(--mut);letter-spacing:.05em;margin:.7rem 0 .3rem;
   border-top:1px solid var(--line);padding-top:.5rem}
 .app .stmt{font-size:1rem;line-height:1.7;border:1px solid var(--line);border-radius:.6rem;padding:.45rem .7rem;
@@ -216,14 +236,14 @@
 .app .dfoot{display:flex;gap:.4rem;align-items:center;margin-top:.7rem;flex-wrap:wrap}
 .app .dfoot .btn.pri{margin-left:auto}
 .app input.ed,.app textarea.ed{width:100%;font-family:inherit;font-size:0.921rem;border:1px solid var(--ink);border-radius:.4rem;
-  padding:.15rem .4rem;background:#fff;color:var(--ink);line-height:1.5}
+  padding:.15rem .4rem;background:var(--card);color:var(--ink);line-height:1.5}
 .app textarea.ed{resize:vertical;min-height:3.2rem}
 .app .edrow{display:flex;gap:.3rem;margin-top:.3rem}
 .app .tbd{border:1px solid var(--line);border-radius:.6rem;padding:.5rem .7rem;margin-bottom:.5rem;background:var(--card)}
 .app .tbd .th{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.25rem}
 .app .tbd .tid{font-family:ui-monospace,Menlo,monospace;font-size:0.889rem;color:var(--mut)}
 .app .tbd .item-text{font-size:0.928rem;margin-bottom:.25rem}
-.app .tbd .sug{font-size:0.905rem;color:#555;margin-bottom:.3rem}
+.app .tbd .sug{font-size:0.905rem;color:var(--text2);margin-bottom:.3rem}
 .app .tbd .sug b{color:var(--ink);font-weight:600}
 .app .tbd .tfoot{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap}
 .app .doc-h{padding:.45rem .8rem .4rem;border-bottom:1px solid var(--line);background:var(--card);display:flex;
@@ -234,10 +254,10 @@
 .app .paper{background:var(--card);border:1px solid var(--line);border-radius:.7rem;padding:.9rem 6% 1rem;
   font-size:0.936rem;line-height:1.95}
 .app .paper p{margin-bottom:.7rem;position:relative}
-.app .cited{background:#eef3fd;box-shadow:inset 0 -2px 0 #cdd9f2;border-radius:.2rem;padding:0 .05rem;cursor:pointer}
+.app .cited{background:var(--blue-bg2);box-shadow:inset 0 -2px 0 var(--blue-line);border-radius:.2rem;padding:0 .05rem;cursor:pointer}
 .app .cited:hover{background:var(--blue-bg);box-shadow:inset 0 -2px 0 var(--blue-line)}
-.app .cited.flash{outline:0.143rem solid var(--ink);outline-offset:0.143rem;background:#cfe0ff}
-.app .nocite{font-size:0.873rem;color:#b0b0b0;border-left:0.143rem solid var(--line2);padding-left:.4rem;
+.app .cited.flash{outline:0.143rem solid var(--ink);outline-offset:0.143rem;background:var(--blue-hit)}
+.app .nocite{font-size:0.873rem;color:var(--faint);border-left:0.143rem solid var(--line2);padding-left:.4rem;
   margin:.15rem 0 .35rem;display:block}
 .app .handle{display:none;border-left:1px solid var(--line);background:var(--card);cursor:pointer;flex-direction:column;
   align-items:center;justify-content:flex-start;writing-mode:vertical-rl;font-size:0.881rem;color:var(--mut);
@@ -247,15 +267,15 @@
 .app .st2{display:inline-flex;align-items:center;gap:.3rem;font-size:0.865rem;flex-wrap:wrap;vertical-align:middle}
 .app .st2 .nd{display:inline-flex;align-items:center;gap:.22rem;border:1px solid var(--line2);background:var(--card);
   color:var(--mut);padding:0 .5rem;line-height:1.55;border-radius:.9rem;white-space:nowrap}
-.app .st2 .dot{width:.4rem;height:.4rem;border-radius:50%;background:#d2d2d2;flex:none}
+.app .st2 .dot{width:.4rem;height:.4rem;border-radius:50%;background:var(--line3);flex:none}
 .app .st2 .nd.ok{color:var(--ok);border-color:var(--ok-line);background:var(--ok-bg)}
 .app .st2 .nd.ok .dot{background:var(--ok)}
 .app .st2 .nd.bad{color:var(--gap);border-color:var(--gap-line);background:var(--gap-bg);font-weight:600}
 .app .st2 .nd.bad .dot{background:var(--gap)}
-.app .st2 .nd.wait{color:#8a8a8a}
-.app .st2 .stnote{color:#9a9a9a;font-size:0.865rem;white-space:nowrap}
+.app .st2 .nd.wait{color:var(--mut)}
+.app .st2 .stnote{color:var(--mut);font-size:0.865rem;white-space:nowrap}
 .app .staleblock{background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:.6rem;
-  padding:.45rem .65rem;margin:.15rem 0 .5rem;font-size:0.901rem;color:#7a4a06}
+  padding:.45rem .65rem;margin:.15rem 0 .5rem;font-size:0.901rem;color:var(--amber-ink)}
 .app .staleblock .sbh{margin-bottom:.3rem}
 .app .staleblock .sbrow{background:var(--card);border:1px solid var(--line);border-radius:.45rem;
   padding:.25rem .5rem;margin-bottom:.25rem;color:var(--ink)}
@@ -271,27 +291,28 @@
 .app .aibtn:hover{border-style:solid}
 .app .aibtn::before{content:"";width:.45rem;height:.45rem;border-radius:50%;background:var(--ai);flex:none}
 .app .aihint{font-size:0.873rem;color:var(--ai);opacity:.85}
-.app .qmark{color:#a9bde4;font-size:0.913rem;margin-left:.3rem;cursor:pointer;vertical-align:baseline}
+.app .qmark{color:var(--blue-line);font-size:0.913rem;margin-left:.3rem;cursor:pointer;vertical-align:baseline}
 .app .qmark:hover{color:var(--blue)}
-.app .fld .v.litfield{background:#f4f8ff;box-shadow:inset 0 0 0 1px var(--blue-line)}
+.app .fld .v.litfield{background:var(--blue-bg2);box-shadow:inset 0 0 0 1px var(--blue-line)}
 .app .srcbox{border:1px solid var(--line);border-radius:.6rem;padding:.45rem .65rem;margin-bottom:.4rem;background:var(--card)}
 .app .srcbox.added{background:var(--amber-bg);border-color:var(--amber-line)}
 .app .srcbox .sh{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.2rem}
-.app .srcbox .quote{font-size:0.913rem;color:#444;margin-bottom:.2rem}
+.app .srcbox .quote{font-size:0.913rem;color:var(--text1);margin-bottom:.2rem}
 .app .srcbox .fields{font-size:0.889rem;color:var(--mut)}
 .app .srcbox .fields b{color:var(--ink);font-weight:500}
 .app .lrow input[type=checkbox]{flex:none;margin:0}
 .app .bulkbar{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;padding:.35rem .7rem;
-  border-bottom:1px solid var(--line);background:var(--dark);font-size:0.901rem;color:#555;flex:none}
+  border-bottom:1px solid var(--line);background:var(--dark);font-size:0.901rem;color:var(--text2);flex:none}
 .app .alertbar{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;padding:.32rem .7rem;font-size:0.901rem;
-  background:var(--amber-bg);border-bottom:1px solid var(--amber-line);color:#7a4a06;flex:none}
-.app .act .prev{border:1px dashed var(--line2);background:var(--card);border-radius:.5rem;padding:.4rem .55rem;margin-top:.4rem}
+  background:var(--amber-bg);border-bottom:1px solid var(--amber-line);color:var(--amber-ink);flex:none}
+.app .act .prev{border:1px solid var(--ai-line);background:var(--card);border-radius:.5rem;padding:.4rem .55rem;margin-top:.4rem}
 .app .act .prev .pvh{font-size:0.873rem;font-weight:700;color:var(--mut);letter-spacing:.05em;margin-bottom:.25rem}
 .app .act .prev .pvrow{font-size:0.901rem;display:flex;gap:.35rem;margin-bottom:.15rem}
 .app .act .prev .pvrow .mk{flex:none;width:1rem;text-align:center}
 .app .act .prev .pvrow.out{color:var(--gap)}
 .app .act .prev .pvrow.inn{color:var(--ok)}
-.app .selfnote .undo{color:var(--blue);text-decoration:underline;cursor:pointer;margin-left:.4rem}
+.app .selfnote .undo{color:var(--blue);cursor:pointer;margin-left:.4rem}
+.app .selfnote .undo:hover{text-decoration:underline}
 .app .blank{flex:1;display:flex;align-items:center;justify-content:center;padding:2rem;text-align:center}
 .app .blank .inner{max-width:26rem}
 .app .blank h2{font-size:0.992rem;margin-bottom:.4rem}

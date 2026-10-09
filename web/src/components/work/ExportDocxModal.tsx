@@ -49,7 +49,7 @@ export function ExportDocxModal({ open, task, items, onClose }: { open: boolean;
       <p data-testid="export-docx-summary">{exportSummary(items)}</p>
       <p className="muted small">每个条目一张表，按集合分段；条目之后又改过的，导出的是改过之后的内容。</p>
       <Checkbox checked={withSources} onChange={(e) => setWithSources(e.target.checked)} data-testid="export-docx-sources">带上来源</Checkbox>
-      {error && <p role="alert" style={{ color: "#cf1322", marginTop: "0.75rem" }} data-testid="export-docx-error">{EXPORT_FAILED_TEXT}{error}</p>}
+      {error && <p role="alert" style={{ color: "var(--gap)", marginTop: "0.75rem" }} data-testid="export-docx-error">{EXPORT_FAILED_TEXT}{error}</p>}
     </Modal>
   );
 }
