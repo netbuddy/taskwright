@@ -43,3 +43,11 @@ export function uploadTypesText(info: ServiceInfo | null): string | null {
   const text = info?.upload?.types_text;
   return text ? `只收 ${text}` : null;
 }
+
+/**
+ * 上传 PDF 时先显示的那句话；别的文件不显示（返回 null）。
+ * PDF 要等任务服务读出各页的文字才算上传完，页数多的要等几秒到几十秒，这期间不说一句，看上去像没有反应。
+ */
+export function pdfUploadingText(name: string): string | null {
+  return /\.pdf$/i.test(name) ? `正在上传 ${name}。PDF 要先读出各页的文字，页数多的要多等一会儿。` : null;
+}

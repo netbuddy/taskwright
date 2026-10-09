@@ -39,6 +39,9 @@ import { alignSteps } from "../../model/diff";
 import { docxLocator, pageAndPosition, placeText } from "../../model/docx";
 import { chapterOf } from "../../../../agent/src/lib/docx_locations";
 import { TaskIdContext, useDocx } from "../../state/docxStore";
+import { usePdfLocations } from "../../state/pdfStore";
+import { parsePdfLocator } from "../../../../agent/src/lib/pdf_locations";
+import { chapterOfPage } from "../../model/pdfView";
 import { KnowledgeContext } from "../../state/knowledge";
 import { isKnowledgeLocator, knowledgePlace } from "../../model/knowledge";
 import { BUSY_TEXT, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, batchNo, findingStatus, type FindingStatus, isEmptyValue, isListField, isProblem, isUnread, itemVerdict, keepPendingField, KEEP_PENDING_VALUE, needsReading, needsReview, reviewState, ruleOf, seenCurrent, writeOffReason } from "../../model/items";
@@ -422,7 +425,15 @@ function useSourcePlace(source: Source, inKnowledge = false): { label: string; t
   const loc = source.kind === "文档原文" ? docxLocator(source.locator) : null;
   // 出处是知识库里的文档时不按材料去读（它不是材料），只写文件名。
   const entry = useDocx(taskId, inKnowledge ? null : loc?.path ?? null);
-  const name = fileName(loc?.path ?? source.locator);
+  // PDF 材料：页就在出处里（「x.pdf#p3-2」是第 3 页），章节取位置表里的书签目录；没有书签目录、或者这一页上有不止一个书签
+  // （分不出这一块属于哪一项）时只写到页。
+  const pdf = source.kind === "文档原文" && !loc ? parsePdfLocator(source.locator) : null;
+  const pdfTable = usePdfLocations(taskId, inKnowledge || !pdf?.page ? null : pdf.path)?.locations ?? null;
+  if (pdf?.page) {
+    const chapter = pdfTable ? chapterOfPage(pdfTable.headings, pdf.page) : null;
+    return { label: [fileName(pdf.path), `第 ${pdf.page} 页`, ...(chapter ? [chapter] : [])].join(" · "), tablePos: "" };
+  }
+  const name = fileName(loc?.path ?? pdf?.path ?? source.locator);
   if (!loc?.paragraph || !entry || entry.status === "loading") return { label: name, tablePos: "" };
   const chapter = entry.locations ? chapterOf(entry.locations, loc.paragraph) : null;
   // 材料显示不出来（读不到或画不出来）时没有派生表，页码与页内位置写不了，章节照写。

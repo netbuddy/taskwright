@@ -106,6 +106,9 @@ describe("出处的写法与摘录在正文里的位置", () => {
   it("knowledgePlace：编号换成名字；写法不对的出处原样写出并算作不在", () => {
     expect(knowledgePlace("knowledge/lib-a1/规范.docx#p12", LIBRARIES)).toEqual(
       { library: "lib-a1", name: "规范.docx", paragraph: 12, title: "行业规范 / 规范.docx", label: "行业规范 / 规范.docx · 第 12 段", gone: false });
+    // PDF 文档的出处带页与块：标签写到页。
+    expect(knowledgePlace("knowledge/lib-a1/办法.pdf#p3-12", LIBRARIES).label).toBe("行业规范 / 办法.pdf · 第 3 页");
+    expect(knowledgePlace("knowledge/lib-a1/办法.pdf", LIBRARIES).label).toBe("行业规范 / 办法.pdf");
     expect(knowledgePlace("knowledge/general/术语.md", LIBRARIES).gone).toBe(false);
     expect(knowledgePlace("knowledge/general/没有.md", LIBRARIES).gone).toBe(true);
     expect(knowledgePlace("knowledge/坏的写法", LIBRARIES)).toEqual({ library: "", name: "knowledge/坏的写法", paragraph: null, title: "knowledge/坏的写法", label: "knowledge/坏的写法", gone: true });

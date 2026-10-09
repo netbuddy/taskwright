@@ -5,12 +5,13 @@
 
 import { useRef, useState } from "react";
 import { Modal, Upload } from "antd";
-import { FileTextOutlined, FileWordOutlined, UploadOutlined } from "@ant-design/icons";
+import { FileTextOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../../api/client";
 import type { Material, ServiceInfo } from "../../api/types";
 import { formatBytes, formatTimeShort } from "../../model/format";
-import { tooLargeText, unsupportedTypeText, uploadAccept, uploadLimitText, uploadTypesText } from "../../model/upload";
+import { pdfUploadingText, tooLargeText, unsupportedTypeText, uploadAccept, uploadLimitText, uploadTypesText } from "../../model/upload";
 import { forgetDocx } from "../../state/docxStore";
+import { forgetPdf } from "../../state/pdfStore";
 import { useToast } from "../Toasts";
 
 const fileName = (path: string) => path.split("/").pop() ?? path;
@@ -22,6 +23,11 @@ export const ENTERED_REPLACE_HINT = "这份材料已经进入了对话，不能�
 export function uploadHintText(info: ServiceInfo | null): string {
   const parts = [uploadTypesText(info), uploadLimitText(info)].filter(Boolean);
   return `把文件拖到这里，或者点这里选择文件。${parts.length ? `${parts.join("，")}。` : ""}`;
+}
+
+/** PDF 材料名字后面的那句：共几页，有几页没有可读的文字（都读出了文字时不写后半句）。 */
+export function pdfSummary(pdf: { pages: number; no_text_pages: number[] }): string {
+  return `${pdf.pages} 页${pdf.no_text_pages.length > 0 ? `，其中 ${pdf.no_text_pages.length} 页没有可读的文字` : ""}`;
 }
 
 export function MaterialsCard({ taskId, materials, closed, info, onView, onChanged }: {
@@ -47,6 +53,7 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
     try {
       await api.deleteMaterial(taskId, path);
       forgetDocx(taskId, path);
+      forgetPdf(taskId, path);
       toast.success(`已删除材料《${fileName(path)}》。`);
       onChanged();
     } catch (e) {
@@ -89,6 +96,8 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
       const r = await api.replaceMaterial(taskId, path, file);
       forgetDocx(taskId, path);
       forgetDocx(taskId, r.path);
+      forgetPdf(taskId, path);
+      forgetPdf(taskId, r.path);
       const [was, now] = [fileName(path), fileName(r.path)];
       toast.success(was === now ? `已替换材料《${was}》。` : `已把材料《${was}》替换成《${now}》。`);
       onChanged();
@@ -111,7 +120,10 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
           <tbody>
             {materials.map((m) => (
               <tr key={m.path} data-testid="material-row">
-                <td className="nm">{/\.docx$/i.test(m.path) ? <FileWordOutlined className="fic" /> : <FileTextOutlined className="fic" />}{fileName(m.path)}</td>
+                <td className="nm">
+                  {/\.docx$/i.test(m.path) ? <FileWordOutlined className="fic" /> : /\.pdf$/i.test(m.path) ? <FilePdfOutlined className="fic" /> : <FileTextOutlined className="fic" />}{fileName(m.path)}
+                  {m.pdf && <span className="tp-mnote" data-testid="material-pdf">{pdfSummary(m.pdf)}</span>}
+                </td>
                 <td className="num">{formatBytes(m.bytes)}</td>
                 <td className="num">{formatTimeShort(m.modified_at)}</td>
                 <td>
@@ -139,13 +151,17 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
                 onError?.(new Error(refused));
                 return;
               }
+              // PDF 要等一会儿：先说一句，结果出来时原地换成结果（同一个 key）。
+              const waiting = pdfUploadingText((file as File).name);
+              const same = waiting ? { key: `upload:${(file as File).name}` } : undefined;
+              if (waiting && same) toast.running(same.key, waiting);
               try {
                 const r = await api.uploadMaterial(taskId, file as File);
-                toast.success(`已上传：${r.path}`);
+                toast.success(`已上传：${r.path}`, same);
                 onSuccess?.({});
                 onChanged();
               } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : "上传没有成功。");
+                toast.error(e instanceof ApiError ? e.message : "上传没有成功。", same);
                 onError?.(e as Error);
               }
             }}

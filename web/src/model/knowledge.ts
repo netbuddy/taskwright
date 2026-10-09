@@ -83,7 +83,7 @@ export interface KnowledgePlace {
   name: string;
   /** Word 文档的段落号；没有时为 null。 */
   paragraph: number | null;
-  /** 「知识库名 / 文档名」，Word 文档再写第几段。知识库已经不在清单里时写它的编号。 */
+  /** 「知识库名 / 文档名」，Word 文档再写第几段，PDF 文档再写第几页。知识库已经不在清单里时写它的编号。 */
   label: string;
   /** 「知识库名 / 文档名」，不带段落号。 */
   title: string;
@@ -97,9 +97,11 @@ export function knowledgePlace(locator: string, libraries: KnowledgeLibrary[] | 
   if (!parsed) return { library: "", name: locator, paragraph: null, label: locator, title: locator, gone: libraries !== null };
   const library = libraries?.find((one) => one.id === parsed.library);
   const title = `${library?.name ?? parsed.library} / ${parsed.name}`;
+  // PDF 文档的出处以「#p页-块」结尾，页就在里面。
+  const page = /\.pdf#p(\d+)-\d+$/i.exec(locator)?.[1] ?? null;
   return {
     ...parsed, title,
-    label: parsed.paragraph !== null ? `${title} · 第 ${parsed.paragraph} 段` : title,
+    label: parsed.paragraph !== null ? `${title} · 第 ${parsed.paragraph} 段` : page !== null ? `${title} · 第 ${Number(page)} 页` : title,
     gone: libraries !== null && !library?.documents.some((doc) => doc.name === parsed.name),
   };
 }

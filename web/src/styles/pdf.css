@@ -1,0 +1,61 @@
+/* 材料区里的 PDF 材料（components/work/PdfPaper.tsx、PdfOutline.tsx）。
+ * 文字层的几条规则取自 pdf.js 自带样式里与文字层有关的那一段（pdfjs-dist/web/pdf_viewer.css），只留显示与选字要用的；
+ * 完整的查看器样式不用。文字层是叠在页面图像上的一层透明文字：字本身不显示，选中时的底色、高亮与底线显示在图像上面。 */
+
+/* PDF 材料把原文区的内边距收掉，页面自己留边；工具条粘在原文区的顶上。 */
+.app .doc-b:has(> .pdf-paper), .ant-modal .doc-b:has(> .pdf-paper) { padding: 0; background: var(--paper); overflow-x: auto; }
+.pdf-paper { position: relative; min-height: 100%; }
+.pdf-bar { position: sticky; top: 0; left: 0; z-index: 5; display: flex; align-items: center; gap: .35rem; padding: .25rem .7rem;
+  background: var(--card); border-bottom: 1px solid var(--line); font-size: .873rem; color: var(--text2); }
+.pdf-bar .sp { flex: 1; }
+.pdf-bar .pct { min-width: 2.6rem; text-align: right; font-variant-numeric: tabular-nums; }
+.pdf-bar .btn.sm { padding: 0 .5rem; }
+.pdf-pages { position: relative; margin: .7rem 0 1.2rem; }
+.pdf-page { position: absolute; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); overflow: hidden; }
+.pdf-page .pdf-drawn { position: absolute; inset: 0; }
+.pdf-page .pdf-drawn canvas { display: block; }
+.pdf-page .pdf-no { position: absolute; right: .4rem; top: .2rem; z-index: 2; font-size: .786rem; color: #9a9a9a; pointer-events: none; }
+.pdf-page .pdf-notext { position: absolute; left: 0; right: 0; top: 0; z-index: 3; padding: .3rem 4rem .3rem .7rem; background: var(--amber-bg);
+  border-bottom: 1px solid var(--amber-line); color: var(--amber); font-size: .873rem; line-height: 1.5; }
+/* 点来源之后框出的那一块 */
+.pdf-page .pdf-blockbox { position: absolute; z-index: 2; border: 2px solid #e8590c; background: rgba(255, 212, 59, .16); border-radius: 2px; pointer-events: none; }
+
+/* 文字层 */
+.pdf-page .textLayer { position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; letter-spacing: normal; word-spacing: normal;
+  text-align: initial; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; z-index: 1;
+  --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size)); }
+.pdf-page .textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; }
+.pdf-page .textLayer > :not(.markedContent), .pdf-page .textLayer .markedContent span:not(.markedContent):not(.cited) {
+  z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height)); --scale-x: 1; --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
+.pdf-page .textLayer .markedContent { display: contents; }
+.pdf-page .textLayer span[role="img"] { user-select: none; cursor: default; }
+.pdf-page .textLayer ::selection { background: rgba(37, 99, 235, .28); color: transparent; }
+.pdf-page .textLayer br::selection { background: transparent; }
+.pdf-page .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+/* 标在文字层里的两样：被条目引用的句子（浅蓝底线，可点）与定位时的摘录（蓝底黑框）。它们是文字元素里面的一截，跟着那个元素排，不另外定位。 */
+.pdf-page .textLayer span.cited, .pdf-page .textLayer mark.hit { position: static; color: transparent; font-size: inherit; transform: none; padding: 0; border-radius: 2px; }
+.pdf-page .textLayer span.cited { background: rgba(37, 99, 235, .09); box-shadow: inset 0 -2px 0 #9db5ea; cursor: pointer; }
+/* 一段摘录在文字层里常常分在好几个元素上，每个都描粗黑框会糊成一片，所以只用底色加一圈细线。 */
+.pdf-page .textLayer mark.hit { background: rgba(37, 99, 235, .32); box-shadow: 0 0 0 1px rgba(13, 13, 13, .45); }
+
+/* 目录：文件名下面一行，默认收起；点开是一列，点一项跳到那一页。 */
+.app .pdf-toc { border-bottom: 1px solid var(--line); background: var(--card); }
+.app .pdf-toc .toc-list { max-height: 14rem; overflow-y: auto; border-top: 1px solid var(--line); }
+.app .pdf-toc .toc-row { display: flex; gap: .6rem; align-items: baseline; padding: .22rem .8rem .22rem 1.8rem; border-bottom: 1px solid var(--line); cursor: pointer; font-size: .901rem; }
+.app .pdf-toc .toc-row:hover { background: var(--sel); }
+.app .pdf-toc .toc-row.cur { background: var(--blue-bg); }
+.app .pdf-toc .toc-row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .pdf-toc .toc-row .pg { margin-left: auto; color: var(--mut); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.app .pdf-toc .toc-none { padding: .3rem .8rem .3rem 1.8rem; color: var(--mut); font-size: .901rem; border-bottom: 1px solid var(--line); }
+
+/* 任务页材料卡：PDF 材料名字后面的页数；「查看」PDF 时对话框里的原文区自己滚动。 */
+.tp-mtable td.nm .tp-mnote { margin-left: .5rem; color: var(--mut); font-size: .857rem; white-space: nowrap; }
+.ant-modal .doc-b.pdf-modal-b { height: min(44rem, 72vh); overflow-y: auto; }
+.app .sw-subh .chip.warn { color: var(--amber); border-color: var(--amber-line); background: var(--amber-bg); }
+
+/* 退路：pdf.js 打不开或画不出来时，用浏览器自带的查看器（iframe）显示，占满材料区，由它自己滚动。 */
+.app .doc-b:has(> .pdf-fallback), .ant-modal .doc-b:has(> .pdf-fallback) { display: flex; flex-direction: column; overflow: hidden; }
+.pdf-fallback { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pdf-fallback-note { flex: none; padding: .35rem .8rem; font-size: .857rem; color: var(--amber, #8a5a00); background: var(--amber-bg, #fff7e6); border-bottom: 1px solid var(--line); }
+.pdf-fallback iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--paper); }

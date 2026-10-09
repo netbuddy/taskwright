@@ -13,6 +13,7 @@ import { completionLines, completionScore, emptyLineText } from "../model/comple
 import { formatTimeShort } from "../model/format";
 import { TaskPage } from "../pages/TaskPage";
 import { docxEntry, resetDocxStore } from "../state/docxStore";
+import { pdfBytesEntry, resetPdfStore } from "../state/pdfStore";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); resetDocxStore(); window.location.hash = ""; });
 
@@ -517,6 +518,39 @@ describe("材料", () => {
     await screen.findByText("已删除材料《补充说明.docx》。");
     expect(docxEntry("TASK-P", "inputs/补充说明.docx").status).toBe("loading");
     await waitFor(() => expect(raw).toHaveBeenCalledTimes(2));
+  });
+
+  it("PDF 材料读过的那一份同样丢掉：替换成功之后，被替换的与换上来的两个路径上的都丢", async () => {
+    // 缓存按「任务加路径」记，不看扩展名，材料卡也不分类型都丢；这里沿用上面 Word 的那两个路径。
+    const calls = page(detail({ materials }));
+    calls.replace.mockResolvedValue({ ok: true, path: "inputs/补充说明第二版.docx", replaced: "inputs/补充说明.docx" });
+    vi.spyOn(api, "materialRaw").mockResolvedValue(new ArrayBuffer(4));
+    await ready();
+    const paths = ["inputs/补充说明.docx", "inputs/补充说明第二版.docx", "inputs/不相干.pdf"];
+    paths.forEach((path) => pdfBytesEntry("TASK-P", path));
+    await waitFor(() => expect(paths.map((path) => pdfBytesEntry("TASK-P", path).status)).toEqual(["ready", "ready", "ready"]));
+    const before = paths.map((path) => pdfBytesEntry("TASK-P", path));
+    await pickReplacement(newer());
+    await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？");
+    fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
+    await screen.findByText("已把材料《补充说明.docx》替换成《补充说明第二版.docx》。");
+    const after = paths.map((path) => pdfBytesEntry("TASK-P", path));
+    expect(after.map((entry, i) => entry === before[i])).toEqual([false, false, true]);
+    resetPdfStore();
+  });
+
+  it("PDF 材料读过的那一份同样丢掉：删除成功之后那一份丢", async () => {
+    page(detail({ materials }));
+    vi.spyOn(api, "materialRaw").mockResolvedValue(new ArrayBuffer(4));
+    await ready();
+    pdfBytesEntry("TASK-P", "inputs/补充说明.docx");
+    await waitFor(() => expect(pdfBytesEntry("TASK-P", "inputs/补充说明.docx").status).toBe("ready"));
+    fireEvent.click(await screen.findByTestId("material-delete"));
+    await screen.findByText("删除材料《补充说明.docx》？");
+    fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
+    await screen.findByText("已删除材料《补充说明.docx》。");
+    expect(pdfBytesEntry("TASK-P", "inputs/补充说明.docx").status).toBe("loading");
+    resetPdfStore();
   });
 
   it("选好文件直接调材料上传接口：不问去向，不碰知识库，传完重读任务", async () => {

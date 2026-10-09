@@ -8,12 +8,16 @@ import "./styles/workview-extra.css";
 import "./styles/issues.css";
 import "./styles/status.css";
 import "./styles/docx.css";
+import "./styles/pdf.css";
 
-// 上次选的字号档位（存在浏览器本地）先套上，再画页面，免得先按中档画一遍再跳。
-applyFontTier(readFontTier());
+// 浏览器太旧时入口页（index.html）里的检查已经在页面上写了一句话，这里就不画页面了。
+if (!(window as { __taskwrightUnsupportedBrowser?: boolean }).__taskwrightUnsupportedBrowser) {
+  // 上次选的字号档位（存在浏览器本地）先套上，再画页面，免得先按中档画一遍再跳。
+  applyFontTier(readFontTier());
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
