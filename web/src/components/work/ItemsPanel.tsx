@@ -313,7 +313,8 @@ export function ItemsPanel({
         ) : onOverall ? (
           <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect}
             page={selectedItem && !rawTopic ? (
-              <TopicPage task={task} item={selectedItem} readOnly={readOnly} writesOff={writesOff} submit={submit} onSend={onSend} onAnswer={onAnswer}
+              <TopicPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} readOnly={readOnly} writesOff={writesOff} submit={submit}
+                onSend={onSend} onAnswer={onAnswer} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
                 onOpen={(id) => openItem(id)} onBack={() => onSelect(null)} onLocate={onLocate} onRaw={() => setRawTopic(true)}
                 onPrev={topicPos > 0 ? () => onSelect(topics[topicPos - 1].item_id) : null}
                 onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null} />

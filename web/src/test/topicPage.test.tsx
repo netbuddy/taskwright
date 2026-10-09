@@ -41,14 +41,15 @@ describe("主题页的顶部", () => {
   it("标签、几处待核实、几个条目依据它与被几处提到", () => {
     render(<Panel t={overallTask()} />);
     const meta = screen.getByTestId("topic-meta");
-    expect([...meta.querySelectorAll(".oa-tag")].map((t) => t.textContent)).toEqual(["概念", "流程"]);
+    expect([...meta.querySelectorAll(".oa-tag:not(.add)")].map((t) => t.textContent)).toEqual(["概念", "流程"]);
+    expect(screen.getByTestId("topic-add-label")).toHaveTextContent("＋ 标签");
     expect(screen.getByTestId("topic-pending")).toHaveTextContent("1 处待核实");
     expect(screen.getByTestId("topic-counts")).toHaveTextContent("2 个条目依据它 · 被 3 处提到");
   });
 
   it("没有贴标签的页写「未归类」；不待核实的页不写待核实", () => {
     render(<Panel t={overallTask()} first="OA-008" />);
-    expect([...screen.getByTestId("topic-meta").querySelectorAll(".oa-tag")].map((t) => t.textContent)).toEqual(["未归类"]);
+    expect([...screen.getByTestId("topic-meta").querySelectorAll(".oa-tag:not(.add)")].map((t) => t.textContent)).toEqual(["未归类"]);
     expect(screen.queryByTestId("topic-pending")).toBeNull();
     expect(screen.getByTestId("topic-counts")).toHaveTextContent("0 个条目依据它 · 被 0 处提到");
   });
@@ -201,6 +202,88 @@ describe("确认待核实", () => {
     render(<Panel t={change(overallTask(), "OA-003", (p) => { p.pending_sources = 2; })} />);
     expect(screen.getByTestId("topic-confirm")).toHaveTextContent("确认待核实的 2 处");
     expect(screen.queryByTestId("topic-settled-ok-3")).toBeNull();
+  });
+});
+
+describe("修改与贴标签", () => {
+  const field = (name: string) => screen.getByTestId("topic-edit").querySelector(`[data-f="${name}"]`)!;
+
+  it("点「修改」四块换成一张表，各个字段都能改；没有改动时「保存」是灰的；保存只带改过的字段，作为直接修改发出去", async () => {
+    const submit = vi.fn(async () => null);
+    render(<Panel t={overallTask()} spies={{ submit }} />);
+    fireEvent.click(screen.getByTestId("topic-edit-open"));
+    expect(screen.queryByTestId("topic-what")).toBeNull();
+    expect([...screen.getByTestId("topic-edit").querySelectorAll(".fld .k")].map((k) => k.textContent!.replace(" *", "")))
+      .toEqual(["标题", "别名", "它是什么", "例子", "已经定下的", "标签", "上级主题", "状态", "改看"]);
+    expect(screen.getByTestId("topic-save")).toBeDisabled();
+    // 已经定下的逐项编辑：四条各一个框。
+    const settled = [...field("已经定下的").querySelectorAll("textarea")] as HTMLTextAreaElement[];
+    expect(settled.map((t) => t.value)).toEqual(["只有在架的书才能预约取书。", "一本书同一时间只能被一个人预约。", "保留期内这本书不能被别人借走，也不能续借给原借阅人。", "保留期是 3 天。"]);
+    fireEvent.change(settled[3], { target: { value: "保留期是 5 天。" } });
+    fireEvent.change(field("标题").querySelector("textarea")!, { target: { value: "预约取书 " } });
+    expect(screen.getByTestId("topic-save")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("topic-save"));
+    expect(submit).toHaveBeenCalledWith({
+      kind: "edit_fields", targets: [{ item_id: "OA-003", base_revision: 12 }], notify_executor: false,
+      fields: { 标题: "预约取书 ", 已经定下的: ["只有在架的书才能预约取书。", "一本书同一时间只能被一个人预约。", "保留期内这本书不能被别人借走，也不能续借给原借阅人。", "保留期是 5 天。"] },
+    }, "修改 OA-003 的标题、已经定下的");
+    // 保存成了：回到主题页（内容等库事件到了才变）。
+    expect(await screen.findByTestId("topic-what")).toBeInTheDocument();
+  });
+
+  it("取消回到主题页，什么都不发；每条已定旁边的「改」也进到修改", () => {
+    const submit = vi.fn(async () => null);
+    render(<Panel t={overallTask()} spies={{ submit }} />);
+    fireEvent.click(screen.getByTestId("topic-settled-edit-0"));
+    expect(screen.getByTestId("topic-edit")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("topic-cancel"));
+    expect(screen.getByTestId("topic-what")).toBeInTheDocument();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("修改里的「标签」是一组可以多选的小标签，取值来自任务定义", () => {
+    const submit = vi.fn(async () => null);
+    render(<Panel t={overallTask()} spies={{ submit }} />);
+    fireEvent.click(screen.getByTestId("topic-edit-open"));
+    const chips = [...field("标签").querySelectorAll(".sw-pick .chip")];
+    expect(chips.map((c) => c.textContent)).toEqual(["概念", "角色", "流程", "场景", "目标", "范围", "假设", "决定"]);
+    expect(chips.filter((c) => c.getAttribute("aria-checked") === "true").map((c) => c.textContent)).toEqual(["概念", "流程"]);
+    fireEvent.click(screen.getByTestId("pick-标签-流程"));
+    fireEvent.click(screen.getByTestId("topic-save"));
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ kind: "edit_fields", fields: { 标签: ["概念"] } }), "修改 OA-003 的标签");
+  });
+
+  it("「＋ 标签」在标题下面打开一行小标签，选好点保存：只改标签这一个字段，次序照任务定义里取值的先后", async () => {
+    const submit = vi.fn(async () => null);
+    render(<Panel t={overallTask()} first="OA-008" spies={{ submit }} />);
+    expect(screen.queryByTestId("topic-label-pick")).toBeNull();
+    fireEvent.click(screen.getByTestId("topic-add-label"));
+    expect(screen.getByTestId("topic-label-save")).toBeDisabled(); // 还没有改动
+    fireEvent.click(screen.getByTestId("pick-标签-假设"));
+    fireEvent.click(screen.getByTestId("pick-标签-概念"));
+    fireEvent.click(screen.getByTestId("topic-label-save"));
+    expect(submit).toHaveBeenCalledWith(
+      { kind: "edit_fields", targets: [{ item_id: "OA-008", base_revision: 1 }], fields: { 标签: ["概念", "假设"] }, notify_executor: false }, "修改 OA-008 的标签");
+    await vi.waitFor(() => expect(screen.queryByTestId("topic-label-pick")).toBeNull());
+  });
+
+  it("助手工作中、任务不能写时，「修改」「＋ 标签」「改」都是灰的", () => {
+    render(<Panel t={overallTask()} writesOff />);
+    expect(screen.getByTestId("topic-edit-open")).toBeDisabled();
+    expect(screen.getByTestId("topic-add-label")).toBeDisabled();
+    expect(screen.getByTestId("topic-settled-edit-0")).toBeDisabled();
+  });
+
+  it("被后端拒绝时留在修改里，改的东西还在", async () => {
+    const { ApiError } = await import("../api/client");
+    const submit = vi.fn(async () => new ApiError("stale_revision", "修订过期"));
+    render(<Panel t={overallTask()} spies={{ submit }} />);
+    fireEvent.click(screen.getByTestId("topic-edit-open"));
+    fireEvent.change(field("它是什么").querySelector("textarea")!, { target: { value: "改过的说明。" } });
+    fireEvent.click(screen.getByTestId("topic-save"));
+    await vi.waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("topic-edit")).toBeInTheDocument();
+    expect((field("它是什么").querySelector("textarea") as HTMLTextAreaElement).value).toBe("改过的说明。");
   });
 });
 

@@ -135,3 +135,14 @@
 /* 标题下面那一行靠右的按钮（确认、修改），与每条已定右边的小字操作 */
 .app .oa-meta .oa-acts { margin-left: auto; display: inline-flex; gap: .4rem; }
 .app .oa-rules .act { display: inline-flex; gap: .2rem; white-space: nowrap; }
+
+/* 贴标签与修改 */
+.app button.oa-tag.add { font: inherit; font-size: 0.857rem; border-style: dashed; color: var(--text3); cursor: pointer; }
+.app button.oa-tag.add:hover:not(:disabled) { color: var(--ink); border-color: var(--line3); }
+.app button.oa-tag.add:disabled { cursor: not-allowed; opacity: .6; }
+.app .oa-tagpick { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin: -.8rem 0 1.3rem; padding: .5rem .7rem; background: var(--quote); border-radius: .6rem; }
+.app .sw-pick { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
+.app .sw-pick .chip { cursor: pointer; user-select: none; }
+.app .oa-edit { max-width: 52rem; }
+.app .oa-edit .oa-req { color: var(--gap); }
+.app .oa-edit .oa-hint { font-size: 0.857rem; color: var(--text3); margin-top: .2rem; }

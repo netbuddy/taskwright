@@ -11,13 +11,14 @@
 // 这里只画；数由 model/overall.ts 算，写入一律走条目区交进来的直接操作与发送。
 
 import { useState } from "react";
-import type { Item, Source, Task } from "../../../api/types";
+import type { CollectionDef, Item, Source, Task } from "../../../api/types";
 import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
 import {
   TOPIC, confirmAction, dependents, exampleParts, examplesOf, isOverall, isPending, labelsOf, markSupplemented, mentionRows, openQuestions, pendingCount, questionReason, settledOf,
   sourcesFor, splitByWord, supplemented, titleOf, trail, whatOf, type OverallItem,
 } from "../../../model/overall";
-import type { SubmitAction } from "../ItemDetail";
+import { FieldEditor, type SubmitAction } from "../ItemDetail";
+import { TopicEdit } from "./TopicEdit";
 import { rejectedText } from "../errors";
 import { useToast } from "../../Toasts";
 
@@ -50,9 +51,13 @@ function SourceLine({ sources, onLocate }: { sources: Source[]; onLocate?: (exce
   );
 }
 
-export function TopicPage({ task, item, readOnly, writesOff = false, submit, onSend, onAnswer, onOpen, onBack, onPrev, onNext, onRaw, onLocate }: {
+export function TopicPage({ task, item, def, readOnly, writesOff = false, submit, onSend, onAnswer, onOpen, onBack, onPrev, onNext, onRaw, onLocate, onDirty }: {
   task: Task;
   item: OverallItem;
+  /** 总体分析这个集合的定义（字段与「标签」的取值从这里来）。 */
+  def: CollectionDef;
+  /** 正在修改、有没保存的改动时告诉条目区（那时对话区的卡片先不让发）。 */
+  onDirty?: (dirty: boolean) => void;
   /** 任务已结束或助手不可用：一切写入都不能做。 */
   readOnly: boolean;
   /** 助手正在工作：写入与发送都先不能做。 */
@@ -95,6 +100,17 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
     if (e) toast.error(rejectedText(label, e, item.item_id));
   };
   const confirmOff = writeOffReason(task, { readOnly });
+  // 修改整页，或者只贴标签。两样都作为用户的直接修改保存。
+  const [editing, setEditing] = useState(false);
+  const [tagging, setTagging] = useState<string[] | null>(null);
+  const labelField = def.fields.find((f) => f.name === TOPIC.labels) ?? null;
+  const saveLabels = async () => {
+    if (!tagging) return;
+    const label = `修改 ${item.item_id} 的${TOPIC.labels}`;
+    const e = await submit({ kind: "edit_fields", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], fields: { [TOPIC.labels]: tagging }, notify_executor: false }, label);
+    if (e) toast.error(rejectedText(label, e, item.item_id));
+    else setTagging(null);
+  };
 
   return (
     <div className="oa-page" data-testid="topic-page">
@@ -113,12 +129,19 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
       <div className="oa-meta" data-testid="topic-meta">
         {labels.length === 0 && <span className="oa-tag none">未归类</span>}
         {labels.map((name) => <span key={name} className="oa-tag">{name}</span>)}
+        {labelField && !editing && (
+          <button type="button" className="oa-tag add" disabled={!!offTitle} title={offTitle ?? "给这一页加标签、换标签或者去掉标签"}
+            onClick={() => setTagging(tagging ? null : labels)} data-testid="topic-add-label">＋ 标签</button>
+        )}
         {isPending(item) && (
           <><span className="sep" /><span className="oa-st pending" data-testid="topic-pending"><i className="oa-dot pending" />{pending} 处待核实</span></>
         )}
         <span className="sep" />
         <span data-testid="topic-counts">{basisCount} 个条目依据它 · 被 {mentionCount} 处提到</span>
         <span className="oa-acts">
+          {!editing && (
+            <button type="button" className="btn sm" disabled={!!offTitle} title={offTitle} onClick={() => { setTagging(null); setEditing(true); }} data-testid="topic-edit-open">修改</button>
+          )}
           {isPending(item) && (
             <button type="button" className="btn sm pri" disabled={!!confirmOff} title={confirmOff ?? "助手补的这几处你都看过、认可了，就点这里；点了之后这一页不再待核实"}
               onClick={() => void confirm()} data-testid="topic-confirm">确认待核实的 {pending} 处</button>
@@ -126,6 +149,16 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
         </span>
       </div>
 
+      {tagging && labelField && (
+        <div className="oa-tagpick" data-testid="topic-label-pick">
+          <FieldEditor def={labelField} value={tagging} task={task} onChange={(v) => setTagging(Array.isArray(v) ? v : [])} />
+          <button type="button" className="btn sm pri" disabled={!!offTitle || JSON.stringify(tagging) === JSON.stringify(labels)} onClick={() => void saveLabels()} data-testid="topic-label-save">保存</button>
+          <button type="button" className="btn sm" onClick={() => setTagging(null)}>取消</button>
+        </div>
+      )}
+      {editing ? (
+        <TopicEdit task={task} item={item} def={def} readOnly={readOnly} writesOff={writesOff} submit={submit} onDone={() => setEditing(false)} onDirty={onDirty} />
+      ) : (<>
       <section className="oa-blk" data-testid="topic-what">
         <h3>它是什么</h3>
         <div className={`oa-prose${whatUnmarked ? " pending" : ""}`}>
@@ -170,6 +203,8 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
                   <button type="button" className="linkbtn" disabled={!!confirmOff} title={confirmOff ?? "这一条是对的：确认"} onClick={() => void confirm()}
                     data-testid={`topic-settled-ok-${i}`}>对</button>
                 )}
+                <button type="button" className="linkbtn" disabled={!!offTitle} title={offTitle ?? "改这一页"} onClick={() => setEditing(true)}
+                  data-testid={`topic-settled-edit-${i}`}>改</button>
               </span>
             </li>
           ))}
@@ -211,6 +246,7 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
       </section>
 
       <div className="oa-rawlink"><span role="button" onClick={onRaw} data-testid="topic-raw">看修订与全部来源</span></div>
+      </>)}
     </div>
   );
 }
