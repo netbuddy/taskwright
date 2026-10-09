@@ -66,6 +66,10 @@ export const MANIFEST_NAME = "manifest.json";
 export const PACK_LIBRARIES = "knowledge/libraries.json";
 export const PACK_REGISTER = "service/tasks.json";
 
+/** 经服务的接口上传数据包时的上限（更大的包用命令行导入），与超过时的那句话。 */
+export const PACK_MAX_UPLOAD = 1024 * 1024 * 1024;
+export const PACK_UPLOAD_TOO_LARGE_TEXT = `在这里导入的数据包不能超过 ${PACK_MAX_UPLOAD / 1024 / 1024 / 1024} GB。更大的数据包请用命令行导入。`;
+
 /** 知识库编号的写法：通用知识库，或者 lib- 加十六进制数字。 */
 export const LIBRARY_ID_PATTERN = /^(general|lib-[0-9a-f]{1,32})$/;
 
@@ -658,6 +662,8 @@ export interface ImportReport {
 export interface ImportOptions {
   /** 数据包文件。 */
   file: string;
+  /** 报告里怎样称呼这个包；不给时写文件的路径（接口收到的包存在一个临时文件里，报告里不写那个路径）。 */
+  label?: string;
   /** 目标里已经有同编号的任务时：skip 跳过（缺省），renumber 改成新编号导入。对知识库不起作用。 */
   onConflict?: "skip" | "renumber";
   /** 只接受这个范围的包（服务的接口只收单个任务、单个知识库的包）；不给时都接受。 */
@@ -812,14 +818,14 @@ export async function importPack(where: PackLocations, options: ImportOptions): 
   const started = now();
   const report: ImportReport = {
     product_version: options.productVersion ?? appVersion(), started_at: clock.now(), finished_at: "", data_dir: where.dataDir,
-    pack: { file: options.file, scope: null, product_version: null, exported_at: null }, tasks: [], libraries: [], fatal: null, file: null,
+    pack: { file: options.label ?? options.file, scope: null, product_version: null, exported_at: null }, tasks: [], libraries: [], fatal: null, file: null,
   };
   let pack: OpenedPack | null = null;
   let staging: Staging | null = null;
   try {
     pack = openPack(options.file);
     const manifest = pack.manifest;
-    report.pack = { file: options.file, scope: manifest.scope, product_version: manifest.product_version, exported_at: manifest.exported_at || null };
+    report.pack = { file: options.label ?? options.file, scope: manifest.scope, product_version: manifest.product_version, exported_at: manifest.exported_at || null };
     if (options.only && manifest.scope !== options.only) {
       throw new PackError("refused", `这里只能导入范围是${SCOPE_NAMES[options.only]}的数据包，这个包的范围是${SCOPE_NAMES[manifest.scope]}。范围是整套的包请用命令行导入。`);
     }

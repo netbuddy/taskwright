@@ -138,7 +138,7 @@ export async function startService(options: StartOptions): Promise<Started> {
       throw error;
     }
   }
-  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry });
+  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry, dataDir });
   if (pending) {
     service.upgrade = new PendingUpgrade(plan, (opened) => service.attachRegistry(opened));
     console.log(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${plan.tasks.length} 个任务）：服务已经起来，等页面上点「开始升级」。`);

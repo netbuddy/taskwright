@@ -5,8 +5,11 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
-import { readFileSync, statSync } from "node:fs";
-import { extname } from "node:path";
+import { createReadStream, createWriteStream, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
 import * as render from "./render.ts";
@@ -275,6 +278,8 @@ export function serviceInfo(service: Service, remote: string | null = null) {
     // extensions 是允许上传的扩展名，前端据此过滤可选的文件、在发送之前拦下类型不符的文件；types_text 是这些类型给人看的一串，
     // 前端写上传框的说明用；unsupported_type_text 是类型不符时的那句话。叫法只在后端有一份。
     upload: { max_bytes: MAX_UPLOAD, too_large_text: TOO_LARGE_TEXT, extensions: [...UPLOAD_TYPES], types_text: uploadTypesText(), unsupported_type_text: unsupportedTypeText() },
+    // 在页面上导入数据包时的上限与超过时的那句话（更大的包用命令行导入）。
+    pack_upload: { max_bytes: PACK_MAX_UPLOAD, too_large_text: PACK_UPLOAD_TOO_LARGE_TEXT },
     // 知识库文档的上传：类型与材料相同，上限另算（20 MB）；kinds 是文档种类的取值与中文叫法。没有知识库时不给。
     ...(service.knowledge !== null ? {
       knowledge_upload: {
@@ -290,7 +295,44 @@ function modelContext(service: Service): modelConfig.Context {
   return { env: process.env, profile: service.profile };
 }
 
+/**
+ * 导出一个数据包并作为下载发出去：先在系统临时目录里打成一个文件（这一步出错还能照常答一个错误），再带着长度发出，发完删掉。
+ * 导出不改原数据，助手正在工作的任务也可以导（清单文件里记着）。
+ */
+async function packDownload(service: Service, options: Omit<ExportOptions, "to">, name: string): Promise<Stream> {
+  const dir = mkdtempSync(join(tmpdir(), "taskwright-export-"));
+  const file = join(dir, name);
+  let bytes: number;
+  try {
+    bytes = (await exportPack(service.packLocations(), { ...options, to: file })).bytes;
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    if (error instanceof PackError) throw new ApiError(error.code === "not_found" ? "not_found" : "rejected", error.message);
+    throw error;
+  }
+  return {
+    stream: async (res) => {
+      try {
+        res.writeHead(200, { "Content-Type": "application/zip", "Content-Length": bytes, "Content-Disposition": `attachment; filename="${name}"` });
+        await pipeline(createReadStream(file), res);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  };
+}
+
 const handlers: Record<string, Handler> = {
+  // 把一个任务导出成数据包（任务目录与它的归档），回一个 zip 文件。
+  export_task: (service, req) => {
+    const t = service.task(req.params.task);
+    return packDownload(service, { scope: "task", taskId: t.taskId, working: () => t.executor.state === "working" }, `${t.taskId}${PACK_SUFFIX}`);
+  },
+  // 把一个知识库导出成数据包。
+  export_library: (service, req) => {
+    const row = service.requireKnowledge().library(req.params.lib);
+    return packDownload(service, { scope: "library", libraryId: row.id }, `${row.id}${PACK_SUFFIX}`);
+  },
   service_info: (service, req) => json(200, serviceInfo(service, req.remote ?? null)),
   // 数据升级：看要升级什么、做到哪里了、做完后的报告。没有要做的升级（多数时候）时 upgrade 是 null。
   service_upgrade: (service) => json(200, { ok: true, upgrade: service.upgrade ? service.upgrade.view() : null }),
@@ -547,6 +589,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", "/api/v1/task-types", "list_task_types"],
   ["POST", "/api/v1/tasks", "create_task"],
   ["GET", `/api/v1/tasks/${T}`, "get_task"],
+  ["GET", `/api/v1/tasks/${T}/export`, "export_task"],
   ["GET", `/api/v1/tasks/${T}/sessions`, "list_sessions"],
   ["POST", `/api/v1/tasks/${T}/sessions`, "new_session"],
   ["GET", `/api/v1/tasks/${T}/events`, "events"],
@@ -569,6 +612,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", "/api/v1/knowledge/libraries", "create_library"],
   ["POST", `/api/v1/knowledge/libraries/${L}`, "rename_library"],
   ["POST", `/api/v1/knowledge/libraries/${L}/delete`, "delete_library"],
+  ["GET", `/api/v1/knowledge/libraries/${L}/export`, "export_library"],
   ["POST", `/api/v1/knowledge/libraries/${L}/documents`, "upload_document"],
   ["POST", `/api/v1/knowledge/libraries/${L}/documents/delete`, "delete_document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/content`, "document"],
@@ -629,9 +673,75 @@ const MAX_BODY = MAX_UPLOAD + 64 * 1024;
 /** 知识库文档上传请求体的上限：文件 20 MB 加 multipart 的包装。 */
 const KNOWLEDGE_MAX_BODY = KNOWLEDGE_MAX_UPLOAD + 64 * 1024;
 
+/** 导入数据包的两个接口与各自只收哪种范围的包。它们的请求体不经下面「整个读进内存」的那一套，见 receivePack。 */
+const PACK_IMPORTS: Record<string, "task" | "library"> = { "/api/v1/tasks/import": "task", "/api/v1/knowledge/import": "library" };
+
+/**
+ * 导入数据包：POST /api/v1/tasks/import（范围是一个任务的包）与 POST /api/v1/knowledge/import（范围是一个知识库的包）。
+ * 请求体就是 zip 文件的字节（Content-Type: application/zip），不用表单的包装。数据包可以有几百 MB，所以边收边写进任务根目录
+ * （知识库是知识库根目录）下的一个暂存目录里，不进内存；请求头里的长度超过上限就不收，没有写长度而实际收到的超过上限就停下，
+ * 都以 too_large 拒绝并关掉连接。查询参数 renumber=1 是「改编号导入」。收完交给 data_pack.ts 的 importPack，做完让服务扫描一遍
+ * 接手新任务。整个包被拒绝时答 rejected（422），data.report 里是报告；否则答 200 与报告（报告里可以有个别没有导入成的项）。
+ * 数据升级还没有做完时与别的接口一样答 upgrade_pending，不收请求体。
+ */
+async function receivePack(service: Service, incoming: IncomingMessage, res: ServerResponse, only: "task" | "library", query: Record<string, string>, length: number,
+  limit: number): Promise<void> {
+  const refuse = (error: ApiError) => {
+    send(res, { ...json(error.status, error.body()), close: true });
+    incoming.resume();
+  };
+  if (service.upgrade?.blocking) return refuse(new ApiError("upgrade_pending", UPGRADE_PENDING_TEXT));
+  let root: string;
+  try {
+    root = only === "task" ? service.tasksDir : service.requireKnowledge().root;
+  } catch (error) {
+    return refuse(error as ApiError);
+  }
+  if (length > limit) return refuse(new ApiError("too_large", PACK_UPLOAD_TOO_LARGE_TEXT));
+  const dir = join(root, importingName());
+  const file = join(dir, "upload.zip");
+  try {
+    mkdirSync(dir, { recursive: true });
+    const out = createWriteStream(file);
+    let received = 0;
+    const over = await new Promise<boolean>((done, fail) => {
+      incoming.on("data", (chunk: Buffer) => {
+        received += chunk.length;
+        if (received > limit) {
+          // 超过上限：后面的不再写，照常读完丢掉。
+          incoming.removeAllListeners("data");
+          incoming.resume();
+          out.destroy();
+          done(true);
+        } else if (!out.write(chunk)) {
+          incoming.pause();
+          out.once("drain", () => incoming.resume());
+        }
+      });
+      incoming.on("end", () => out.end(() => done(false)));
+      incoming.on("error", fail);
+      out.on("error", fail);
+    });
+    if (over) return send(res, { ...json(413, new ApiError("too_large", PACK_UPLOAD_TOO_LARGE_TEXT).body()), close: true });
+    const report = await importPack(service.packLocations(), { file, label: "上传的数据包", only, onConflict: query.renumber === "1" ? "renumber" : "skip", registry: service.registry });
+    // 新任务由扫描接手（占用标记、任务登记都在那里做）。
+    service.scan();
+    const body = { ...report, text: importText(report) };
+    if (!res.destroyed) send(res, report.fatal ? json(422, new ApiError("rejected", report.fatal, { report: body }).body()) : json(200, { ok: true, report: body }));
+  } catch (error) {
+    console.error(error);
+    if (!res.destroyed && !res.headersSent) send(res, json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String((error as Error)?.message ?? error) } } }));
+    else res.destroy();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export interface ServerOptions {
   /** 网页静态文件所在的目录；null 时不出页面，所有路径都归接口（与没有这个选项时相同）。 */
   webDir?: string | null;
+  /** 导入数据包的接口收多大的请求体（字节）；不给时是 PACK_MAX_UPLOAD。只有测试另给。 */
+  packMaxUpload?: number;
 }
 
 export function makeServer(service: Service, options: ServerOptions = {}) {
@@ -653,6 +763,10 @@ export function makeServer(service: Service, options: ServerOptions = {}) {
       return;
     }
     const length = Number(incoming.headers["content-length"] ?? 0) || 0;
+    if (method === "POST" && Object.hasOwn(PACK_IMPORTS, path)) {
+      void receivePack(service, incoming, res, PACK_IMPORTS[path], query, length, options.packMaxUpload ?? PACK_MAX_UPLOAD);
+      return;
+    }
     const upload = /^\/api\/v1\/tasks\/([^/]+)\/materials(?:\/replace)?$/s.exec(path);
     if (method === "POST" && length > MAX_BODY && upload) {
       // 与大文件有关的只有上传与替换材料：先认任务（任务不在时照常报 not_found），再不读请求体就以 too_large 拒绝，并关掉这条连接。
