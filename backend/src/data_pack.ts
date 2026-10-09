@@ -662,8 +662,8 @@ export interface ImportOptions {
   onConflict?: "skip" | "renumber";
   /** 只接受这个范围的包（服务的接口只收单个任务、单个知识库的包）；不给时都接受。 */
   only?: "task" | "library";
-  /** 任务登记表；给了就把导入的任务记进去。由调用方打开与关闭。 */
-  registry?: ServiceDb | null;
+  /** 任务登记表（只用它的 putTask）；给了就把导入的任务记进去。由调用方打开与关闭。 */
+  registry?: Pick<ServiceDb, "putTask"> | null;
   productVersion?: string;
   now?: () => Date;
 }

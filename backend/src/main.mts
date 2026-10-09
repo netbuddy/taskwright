@@ -15,8 +15,9 @@
  * 环境变量 TASKWRIGHT_LOG_DIR 改。收到 SIGTERM、SIGINT 或 SIGHUP（Windows 另有 SIGBREAK）、或者桌面形态下收到退出请求时，
  * 停止接新连接、关掉各任务的 pi、删掉本服务写的占用标记，然后退出。
  *
- * 另有一个不起服务的命令：node backend/src/main.mts data upgrade [--data <数据目录>]，把上一版留下的数据升到这个程序的格式
- * （见 data_command.ts）。服务器形态启动时发现有数据要升级会拒绝启动，并提示先运行它。
+ * 另有几个不起服务的数据命令（见 data_command.ts）：node backend/src/main.mts data upgrade [--data <数据目录>] 把上一版留下的数据
+ * 升到这个程序的格式（服务器形态启动时发现有数据要升级会拒绝启动，并提示先运行它）；data export 导出一个数据包，data import 导入一个
+ * 数据包，data upgrade --pack 把一个旧版本导出的数据包升成新的包。
  *
  * 本文件只是命令行外壳：检查参数后调 start.ts 的 startService；打包后的启动程序直接调 startService。
  */

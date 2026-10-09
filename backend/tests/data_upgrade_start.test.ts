@@ -108,8 +108,8 @@ test("命令行 data upgrade：有服务正在用这个数据目录时不做，�
   assert.match(retry.out, /合计：1 个任务，成功 0 个，没有做成 1 个。/, "命令行每次都再试记着失败的任务");
 });
 
-test("命令行：data 后面不是 upgrade、或者带了不认识的参数，退出码 2 并给出用法；起服务的参数照旧检查", () => {
-  for (const args of [["data"], ["data", "export"], ["data", "upgrade", "--port", "1"]]) {
+test("命令行：data 后面不是认得的命令、或者带了不认识的参数，退出码 2 并给出用法；起服务的参数照旧检查", () => {
+  for (const args of [["data"], ["data", "restore"], ["data", "upgrade", "--port", "1"]]) {
     const done = run(args);
     assert.equal(done.status, 2, args.join(" "));
     assert.match(done.err, /用法：taskwright data upgrade \[--data <数据目录>\]/);
