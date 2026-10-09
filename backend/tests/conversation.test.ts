@@ -54,6 +54,8 @@ test("兜底追加的那句固定文字显示成系统说明，不结束这一�
   ], "S");
   assert.deepEqual(out.map((m) => [m.type, m.message_id]), [["user_message", "u1"], ["assistant_reply", "a1"], ["system_note", "f1"]]);
   assert.match(out[2].text, /这句不是你说的/);
+  assert.equal(out[2].kind, "reply_fallback");
+  assert.ok(!("details" in out[2]), "兜底句没有 details");
 });
 
 test("过程摘要：相邻同类合并，用时与工作编号，回复所在的条目", () => {

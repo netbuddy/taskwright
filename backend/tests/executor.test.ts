@@ -139,7 +139,7 @@ test("系统说明、模型服务不可用、保存修订被拒的原因、模�
   await feed({ type: "system_note", custom_type: "taskwright-task-status", text: "任务现状", entry_id: "e1", session_id: "S1" },
     { type: "system_note", custom_type: "taskwright-user-edit", text: "不算" });
   let got = await drain();
-  assert.deepEqual(got.map(([n, d]) => [n, d.message_id, d.text]), [["system_note", "e1", "任务现状"]]);
+  assert.deepEqual(got.map(([n, d]) => [n, d.message_id, d.text, d.kind]), [["system_note", "e1", "任务现状", "task_status"]]);
   await feed({ type: "agent_start" }, { type: "message_end", message: { role: "user", content: "整理" } });
   entries.push(user("f1", "u1", "请用 reply 工具把要对用户说的话发出来"));
   await feed({ type: "message_end", message: { role: "user", content: "请用 reply 工具把要对用户说的话发出来" } },
@@ -151,6 +151,8 @@ test("系统说明、模型服务不可用、保存修订被拒的原因、模�
   got = await drain();
   const fallback = got.find(([n, d]) => n === "system_note" && d.message_id === "f1")!;
   assert.match(fallback[1].text, /系统自动提醒了它一句：「请用 reply 工具把要对用户说的话发出来」。这句不是你说的。/);
+  assert.equal(fallback[1].kind, "reply_fallback");
+  assert.ok(!("details" in fallback[1]), "兜底句没有 details");
   assert.equal(got.filter(([n]) => n === "user_message").length, 1, "兜底句不算用户的话");
   assert.deepEqual(got.find(([n]) => n === "problem")![1], { session_id: "S1", code: "model_unavailable", text: "模型服务暂时不可用，正在第 2 次重试。", retry: { attempt: 2, delay_ms: 2000 } });
   const steps = got.filter(([n]) => n === "step").map(([, d]) => [d.text, d.failed]);

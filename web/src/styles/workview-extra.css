@@ -59,6 +59,12 @@
 .app .chip.src.kb { color: #8b2a8e; border-color: #dcb7de; background: #f8eef8; }
 /* 系统写进对话的说明（任务现状消息等）里有很长的绝对路径，中间没有空格；不许它在任意处断行，就会把框撑出去 */
 .app .sysnote { overflow-wrap: anywhere; }
+/* 任务状况消息折叠成的一行：整行可点，行尾一个小三角；展开后全文在这一行下面 */
+.app .sysnote.folding .sn-line { display: flex; align-items: baseline; gap: 0.4rem; cursor: pointer; }
+.app .sysnote.folding .sn-line:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+.app .sysnote.folding .sn-line:focus-visible { outline: 0.143rem solid var(--teal-line); outline-offset: 0.143rem; border-radius: 0.3rem; }
+.app .sysnote.folding .sn-caret { flex: none; color: var(--teal); }
+.app .sysnote.folding .sn-full { margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px dashed var(--teal-line); }
 .app .confirms { font-size: 0.897rem; color: #555; }
 .app .confirms div { margin-bottom: .15rem; }
 

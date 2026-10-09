@@ -383,6 +383,10 @@ export interface SystemNote {
   message_id: string;
   at: string;
   text: string;
+  /** task_status：每条会话开头写给助手看的任务状况消息；reply_fallback：助手没有用回复工具说话时系统提醒它的那一句。旧数据里没有这一项。 */
+  kind?: "task_status" | "reply_fallback" | string;
+  /** 任务状况消息的事实（材料清单、知识库清单、完成条件的几个数、未解决的问题条数；续接时是新增、修改、删除的条目与新材料）。对话区拿它写折叠起来的那一行，见 model/statusNote.ts。 */
+  details?: Record<string, unknown> | null;
 }
 
 /** 每次工作的过程摘要（4.1 节）：做了几步、用了多久、合并后的阶段。 */

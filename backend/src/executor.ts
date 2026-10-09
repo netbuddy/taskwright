@@ -699,7 +699,8 @@ export class Executor {
       // 只有任务现状消息算系统说明；界面操作的通知已经在 message_end 里转成 ui_action_noted。
       if (event.custom_type !== conversation.TASK_STATUS) return;
       this.hub.emit("system_note", { session_id: event.session_id || sid, message_id: event.entry_id ?? null, at: clock.now(),
-        text: conversation.taskStatusDisplayText(event.text ?? "") });
+        kind: conversation.NOTE_TASK_STATUS, text: conversation.taskStatusDisplayText(event.text ?? ""),
+        details: conversation.taskStatusDisplayDetails(event.details ?? null) });
       return;
     }
     if (kind === "界面请求" && event.method === "setStatus") {
@@ -741,7 +742,8 @@ export class Executor {
       const raw = conversation.FALLBACK_TEXT;
       const entries = await this.fetchNewEntries(pi);
       const hit = Executor.userEntry(entries, raw);
-      this.hub.emit("system_note", { session_id: sid, message_id: hit ? hit.id ?? null : null, at: clock.now(), text: conversation.fallbackNoteText(raw) });
+      this.hub.emit("system_note", { session_id: sid, message_id: hit ? hit.id ?? null : null, at: clock.now(),
+        kind: conversation.NOTE_REPLY_FALLBACK, text: conversation.fallbackNoteText(raw) });
       return;
     }
     if (role === "user") {
