@@ -19,7 +19,13 @@ import { ServiceProvider } from "./components/ServiceControls";
 // 字号是 0.929rem（根字号最小的 14px 时正好是原来的 13px），控件高度 2rem 与 1.571rem（14px 时是原来的 28 与 22）。
 // 根字号随窗口大小与「字号 小 中 大」三档变化，useRootPx 跟着它重算；主题对象每次都传，不会让 Ant Design 重新挂载。
 const TOKEN_FROM: [string, string][] = [
+  // 这两项是 Ant Design 推算其余中性色的起点：没有在下面单独对上的边线、停用的底与字、各级填充，都从它们算出来，
+  // 所以停用的按钮、上传区这些地方的灰跟着界面风格走，不会留下一块与纸面不合的灰白
+  ["colorTextBase", "--ink"],
+  ["colorBgBase", "--card"],
   ["colorPrimary", "--ink"],
+  // 主按钮这类实底上的字
+  ["colorTextLightSolid", "--on-ink"],
   ["colorText", "--ink"],
   ["colorTextSecondary", "--mut"],
   ["colorTextTertiary", "--mut"],

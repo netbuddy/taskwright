@@ -23,9 +23,9 @@ describe("Ant Design 的令牌取自界面风格", () => {
 
   it("读得到的变量对到各自的令牌，前后的空白去掉", () => {
     setVars({ "--ink": " #22272e", "--mut": "#8a919b", "--line2": "#e6e1d6", "--line": "#efebe2", "--paper": "#f7f5ef", "--card": "#fffdf9",
-      "--sel": "#f3efe6", "--blue": "#2d5d8f", "--ok": "#2f6f5e", "--amber": "#b7791f", "--gap": "#a23b32", "--font-body": "sans-serif" });
+      "--sel": "#f3efe6", "--blue": "#2d5d8f", "--ok": "#2f6f5e", "--amber": "#b7791f", "--gap": "#a23b32", "--on-ink": "#fffdf9", "--font-body": "sans-serif" });
     expect(themeTokens()).toEqual({
-      colorPrimary: "#22272e", colorText: "#22272e", colorTextSecondary: "#8a919b", colorTextTertiary: "#8a919b",
+      colorTextBase: "#22272e", colorBgBase: "#fffdf9", colorPrimary: "#22272e", colorTextLightSolid: "#fffdf9", colorText: "#22272e", colorTextSecondary: "#8a919b", colorTextTertiary: "#8a919b",
       colorBorder: "#e6e1d6", colorBorderSecondary: "#efebe2", colorBgLayout: "#f7f5ef", colorBgContainer: "#fffdf9", colorBgElevated: "#fffdf9",
       colorFillSecondary: "#f3efe6", colorLink: "#2d5d8f", colorSuccess: "#2f6f5e", colorWarning: "#b7791f", colorError: "#a23b32", colorInfo: "#2d5d8f",
       fontFamily: "sans-serif",
