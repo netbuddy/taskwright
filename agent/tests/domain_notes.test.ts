@@ -242,7 +242,7 @@ test("平台 skill 与任务 skill 写了总体分析的做法；平台 skill �
   for (const head of ["1. **抓没说清的词。**", "2. **逐条要例子、问例外。**", "3. **找冲突。**", "4. **复述。**", "5. **问为什么。**", "6. **记决定与假设。**",
     "7. **建议标签与上级主题。**", "8. **条目晚于理解。**", "9. **两种节奏。**"]) assert.ok(section.includes(head), head);
   assert.match(section, /先给一个候选的「它是什么」与一个候选的例子/);
-  assert.match(section, /选项固定三个：`right`「这段对，记下」、`wrong`「有一处不对」、`another`「换一个人物再讲」/);
+  assert.match(section, /`story_ok`「这段对，记下」、`story_fix`「有一处不对」、`story_again`「换一个人物再讲」/);
   assert.match(section, /种类写「用户的话」，摘录就是「这段对，记下」/);
   assert.match(section, /总体分析里要已经有至少一页在用的主题贴了标签、写了例子、又不待核实/);
   assert.match(section, /`supports` 写 `\{"field": "已经定下的", "index": 2\}`/);
