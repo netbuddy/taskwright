@@ -110,8 +110,8 @@ test("现造的文件：图表与 SmartArt 写占位；格子里的竖线转义�
   assert.equal(lineOf(md, "[p2]"), "   - (a) [p2] 子项");
   assert.equal(lineOf(md, "[p3]"), "- 二、 [p3] 第二条");
   assert.equal(lineOf(md, "[p4]"), "[p4] 不编号");
-  assert.match(md, /\[p5\] 图表如下\n\n（这里有一个 Word 图表，投影里没有转出）\n/);
-  assert.match(md, /\n（这里有一个 SmartArt 图示，投影里没有转出）\n/);
+  assert.match(md, /\[p5\] 图表如下\n\n（这里有一个 Word 图表，文字版里没有转出）\n/);
+  assert.match(md, /\n（这里有一个 SmartArt 图示，文字版里没有转出）\n/);
   assert.doesNotMatch(md, /\[p6\]/);
   assert.match(md, /\[p7\] 锚着文本框\n\n> （文本框）框里的字\n/);
   assert.match(md, /\| \[p8\] a\\\|b \| \[p9\] c \|/);

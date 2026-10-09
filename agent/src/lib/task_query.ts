@@ -283,7 +283,7 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
 
 /** 材料的分段与引用情况，给「查询任务状态」的文字用。 */
 export function materialLines(materials: MaterialFacts[]): string[] {
-  const lines = ["材料的分段与引用情况（Word 材料按分段清单逐块列出，PDF 材料按分段清单逐段列出；行号是投影文件里的行号，read 的 offset 用它）："];
+  const lines = ["材料的分段与引用情况（Word 材料按分段清单逐块列出，PDF 材料按分段清单逐段列出；行号是文字版文件里的行号，read 的 offset 用它）："];
   for (const f of materials) {
     if (f.kind === "text") {
       lines.push(`  ${f.path}：被引用过 ${f.cited} 次。`);

@@ -51,7 +51,7 @@ export interface LocationFile {
 }
 
 const NOTE = "Word 材料的位置表：由段落号得出来源标签里的章节；规则见 agent/src/lib/docx_locations.ts。"
-  + "headings 列出投影里写成标题行的段落，level 1 是一级标题，title 与投影的标题行相同（编号加标题文字）；一段的章节是它（含）之前最近的标题。不含正文的文字。";
+  + "headings 列出文字版里写成标题行的段落，level 1 是一级标题，title 与文字版的标题行相同（编号加标题文字）；一段的章节是它（含）之前最近的标题。不含正文的文字。";
 
 /** 写成位置表文件的内容。headings 是投影算出的标题段（docxProjection 的 headings）。 */
 export function locationFile(meta: { source: string; paragraphs: number; application: string; page_marks: number; headings: LocationFile["headings"] }): LocationFile {

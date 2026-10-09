@@ -60,7 +60,7 @@ test("Word 文档照材料的办法按段落号核对：带段落号通过；不
   assert.throws(() => save(dir, root, add({ ...WORD, locator: "knowledge/lib-a1/规范.docx" })),
     /出处 knowledge\/lib-a1\/规范\.docx 没有写段落号。\n\s*怎么办：Word 文档的出处要写段落号，例如 knowledge\/lib-a1\/规范\.docx#p12/);
   assert.throws(() => save(dir, root, add({ ...WORD, locator: "knowledge/lib-a1/规范.docx.md" })),
-    /出处 knowledge\/lib-a1\/规范\.docx\.md 是由 Word 文件生成的投影，不是文档本身。\n\s*怎么办：出处写 Word 文件加段落号，例如 knowledge\/lib-a1\/规范\.docx#p12/);
+    /出处 knowledge\/lib-a1\/规范\.docx\.md 是由 Word 文件生成的文字版，不是文档本身。\n\s*怎么办：出处写 Word 文件加段落号，例如 knowledge\/lib-a1\/规范\.docx#p12/);
   assert.throws(() => save(dir, root, add({ ...WORD, locator: "knowledge/lib-a1/规范.docx#p1" })), /摘录「逾期的每本每天罚款一角」在 规范\.docx 第 1 段里找不到/);
   assert.deepEqual(snapshot(dir), before);
 });

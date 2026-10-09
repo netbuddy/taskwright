@@ -128,9 +128,9 @@ test("材料清单里有 Word 文件与它的投影时，另加一句：读投�
   ];
   assert.equal(materialsSentence({ dir: "inputs/", files }),
     "材料目录 inputs/ 里有 3 个文件：inputs/需求.docx（2.0 KB）、inputs/需求.docx.md（100 字节）、inputs/补充.md（3 字节）。" +
-    "其中 inputs/需求.docx 是 Word 文件，请读由它生成的投影 inputs/需求.docx.md（每段一行，段落号写在方括号里）；引用它作来源时，出处写 Word 文件加段落号，例如 inputs/需求.docx#p12。");
+    "其中 inputs/需求.docx 是 Word 文件，请读由它生成的文字版 inputs/需求.docx.md（每段一行，段落号写在方括号里）；引用它作来源时，出处写 Word 文件加段落号，例如 inputs/需求.docx#p12。");
   const legacy = [files[0], { path: "inputs/需求.docx.txt", bytes: 100, modifiedAt: 0 }];
-  assert.match(materialsSentence({ dir: "inputs/", files: legacy }), /请读由它生成的投影 inputs\/需求\.docx\.txt（/);
+  assert.match(materialsSentence({ dir: "inputs/", files: legacy }), /请读由它生成的文字版 inputs\/需求\.docx\.txt（/);
   // 没有投影的 .docx 不加这一句
   assert.doesNotMatch(materialsSentence({ dir: "inputs/", files: files.slice(0, 1) }), /Word 文件/);
 });

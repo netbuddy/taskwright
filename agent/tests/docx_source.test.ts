@@ -77,8 +77,8 @@ test("出处不带段落号、段落号越界、写成投影文件、摘录不�
   // 拒绝的文字先逐条列出哪里不对，再在「怎么办」里逐条写改法
   assert.match(message, /第 1 条来源的出处 inputs\/requirements-styled\.docx 没有写段落号；/);
   assert.match(message, /第 2 条来源的出处写的是第 999 段，requirements-styled\.docx 一共只有 114 段；/);
-  assert.match(message, /第 3 条来源的出处 inputs\/requirements-styled\.docx\.md 是由 Word 文件生成的投影，不是材料本身；/);
-  assert.match(message, /第 6 条来源的出处 inputs\/requirements-styled\.docx\.txt 是由 Word 文件生成的投影，不是材料本身。/);
+  assert.match(message, /第 3 条来源的出处 inputs\/requirements-styled\.docx\.md 是由 Word 文件生成的文字版，不是材料本身；/);
+  assert.match(message, /第 6 条来源的出处 inputs\/requirements-styled\.docx\.txt 是由 Word 文件生成的文字版，不是材料本身。/);
   assert.match(message, /第 4 条来源的摘录「名下有逾期未还图书的，不能再借」在 requirements-styled\.docx 第 37 段·表 1 行 1 列 2里找不到，它在第 28 段；/);
   assert.match(message, /第 5 条来源的摘录「逾期的每本每天罚款两角」在 requirements-styled\.docx 第 76 段里找不到；/);
   assert.match(message, /怎么办：Word 材料的出处要写段落号，例如 inputs\/requirements-styled\.docx#p12；段落号见 requirements-styled\.docx\.md 里每段前面方括号中的 p 加数字（例如 \[p12\]）/);

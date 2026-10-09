@@ -1,6 +1,7 @@
 /**
  * Word 材料（.docx）的 Markdown 投影：上传 .docx 时在同一目录生成「文件名.docx.md」，执行者读它，保存修订时逐字核对也对着它。
  * 文件里的图片抽到「文件名.docx.media/」下，投影里写成图片链接。后端经 cli/docx_projection.mts 调用这里。
+ * 用户与助手看到的叫法是「文字版」（text version）；「投影」与 projection 只是代码里的名字。
  *
  * 段落号的计数规则与 scripts/docx_paragraphs.mjs、材料区渲染后的回填相同，三处必须一致：
  * - 数 word/document.xml 里 w:body 下的每个 w:p，表格与嵌套表格里的段落也数，纵向合并续格里的空段落照数；
@@ -323,7 +324,7 @@ function headingTitle(p: Para): { label: string; text: string } {
 
 const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 const hasImage = (p: Para) => p.pieces.some((x) => "image" in x);
-const charts = (p: Para) => p.pieces.filter((x): x is { chart: string } => "chart" in x).map((x) => `（这里有一个 ${x.chart}，投影里没有转出）`);
+const charts = (p: Para) => p.pieces.filter((x): x is { chart: string } => "chart" in x).map((x) => `（这里有一个 ${x.chart}，文字版里没有转出）`);
 
 /** 一段写成「编号 [pN] 正文」；空段落（没有文字也没有图片）返回 null。 */
 function paraLine(p: Para, media: string, cell: boolean, where = ""): string | null {
@@ -381,7 +382,7 @@ export interface DocxProjection {
 }
 
 /**
- * .docx 的字节 → Markdown 投影。rel 是这份 .docx 相对任务目录的路径（写进开头的说明与图片链接）。
+ * .docx 的字节 → Markdown 投影（用户与助手看到的叫法是「文字版」）。rel 是这份 .docx 相对任务目录的路径（写进开头的说明与图片链接）。
  * 不是合法的 .docx 时抛错，消息是给人看的一句中文。
  */
 export function docxProjection(data: Buffer, rel: string): DocxProjection {

@@ -51,7 +51,7 @@ const SECTION = [
 function assertNoPathNoBody(text: string, root: string): void {
   for (const path of [root, realpathSync(root), join("general", "files"), "规范.docx.md"]) assert.ok(!text.includes(path), `不该出现路径 ${path}`);
   assert.ok(!text.includes(BODY), "不该出现文档的正文");
-  assert.doesNotMatch(text, /投影|每段一行/);
+  assert.doesNotMatch(text, /投影|文字版|每段一行/);
 }
 
 test("新会话的现状另起一行列出这个任务选用的知识库：每个知识库的名字与文档个数，每份文档一行写名字、种类、大小与出处的写法，不给路径、不给正文，不分大小", () => {

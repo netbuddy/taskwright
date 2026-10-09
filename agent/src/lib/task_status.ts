@@ -213,11 +213,11 @@ export function materialsSentence(materials: Materials): string {
   const words = materials.files.filter((f) => /\.docx$/i.test(f.path) && (paths.has(`${f.path}.md`) || paths.has(`${f.path}.txt`))).map((f) => f.path);
   const projections = words.map((w) => (paths.has(`${w}.md`) ? `${w}.md` : `${w}.txt`));
   const note = words.length
-    ? `其中 ${words.join("、")} 是 Word 文件，请读由它生成的投影 ${projections.join("、")}（每段一行，段落号写在方括号里）；引用它作来源时，出处写 Word 文件加段落号，例如 ${words[0]}#p12。`
+    ? `其中 ${words.join("、")} 是 Word 文件，请读由它生成的文字版 ${projections.join("、")}（每段一行，段落号写在方括号里）；引用它作来源时，出处写 Word 文件加段落号，例如 ${words[0]}#p12。`
     : "";
   const pdfs = materials.files.filter((f) => /\.pdf$/i.test(f.path) && paths.has(`${f.path}.md`)).map((f) => f.path);
   const pdfNote = pdfs.length
-    ? `${words.length ? "" : "其中 "}${pdfs.join("、")} 是 PDF 文件，请读由它生成的投影 ${pdfs.map((p) => `${p}.md`).join("、")}（每块一行，行首方括号里是页与块）；`
+    ? `${words.length ? "" : "其中 "}${pdfs.join("、")} 是 PDF 文件，请读由它生成的文字版 ${pdfs.map((p) => `${p}.md`).join("、")}（每块一行，行首方括号里是页与块）；`
       + `引用它作来源时，出处写 PDF 文件加页与块，例如 ${pdfs[0]}#p3-2。`
     : "";
   const segments = (materials.facts ?? []).flatMap((f) => (f.kind === "word"

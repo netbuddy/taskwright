@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Knowledge base
 
-- The text generated from a Word or PDF document of a knowledge base told the assistant, in the note at its top, to cite the document as `<library id>/files/<name>#…`, which is not accepted when a source is checked. The note now gives the accepted form, `knowledge/<library id>/<name>#…`. Sources the assistant took from a knowledge base search were always written correctly; only an assistant that read the generated text directly and copied the note was refused. Documents uploaded before this version keep the old note until they are uploaded again.
+- The text version of a Word or PDF document of a knowledge base told the assistant, in the note at its top, to cite the document as `<library id>/files/<name>#…`, which is not accepted when a source is checked. The note now gives the accepted form, `knowledge/<library id>/<name>#…`. Sources the assistant took from a knowledge base search were always written correctly; only an assistant that read the text version directly and copied the note was refused. Documents uploaded before this version keep the old note until they are uploaded again.
+
+### Wording
+
+- The text file that is made from a Word or PDF file for the assistant to read is now called its **文字版** ("text version") wherever a user or the assistant reads about it: the assistant's instructions, the task status message, the reasons given for a refusal, error messages and the documentation. It used to be called 投影 ("projection"). Only the word changes: the files, their names and the interface are the same. Files generated before this version keep the old word in the notes written into them.
 
 ## [0.4.3] - 2026-10-08
 

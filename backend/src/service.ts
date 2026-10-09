@@ -887,7 +887,7 @@ export class Service {
   materialText(target: string, rel: string): string {
     if (target.toLowerCase().endsWith(".pdf")) {
       const projection = target + PDF_PROJECTION_SUFFIX;
-      if (!isFile(projection)) throw new ApiError("not_found", `没有由 ${rel} 生成的投影。`);
+      if (!isFile(projection)) throw new ApiError("not_found", `没有由 ${rel} 生成的文字版。`);
       return readTextFile(projection);
     }
     if (target.toLowerCase().endsWith(".docx")) {

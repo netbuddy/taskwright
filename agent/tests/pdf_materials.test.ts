@@ -90,7 +90,7 @@ test("PDF 来源核对：改了字、块不对、跨页、块 0、没有写页�
   assert.match(refused(dir, "inputs/办法.pdf#p3-0", "这一页没有文字"), /第 3 页的块 0，那一行只是说明这一页没有文字，不能作出处/);
   assert.match(refused(dir, "inputs/办法.pdf", "退款金额按原路退回"), /出处 inputs\/办法\.pdf 没有写页与块[\s\S]*例如 inputs\/办法\.pdf#p3-2[\s\S]*\[p3-2\] 是第 3 页第 2 块/);
   assert.match(refused(dir, "inputs/办法.pdf#p12", "退款金额按原路退回"), /出处 inputs\/办法\.pdf#p12 里页与块的写法不对/);
-  assert.match(refused(dir, "inputs/办法.pdf.md", "退款金额按原路退回"), /是由 PDF 文件生成的投影，不是材料本身[\s\S]*例如 inputs\/办法\.pdf#p3-2/);
+  assert.match(refused(dir, "inputs/办法.pdf.md", "退款金额按原路退回"), /是由 PDF 文件生成的文字版，不是材料本身[\s\S]*例如 inputs\/办法\.pdf#p3-2/);
   assert.match(refused(dir, "inputs/办法.pdf#p9-1", "退款"), /出处写的是第 9 页，办法\.pdf 一共只有 4 页/);
   assert.match(refused(dir, "inputs/办法.pdf#p2-7", "退款"), /出处写的是第 2 页第 7 块，办法\.pdf 的第 2 页只有 2 块/);
   assert.match(refused(dir, "inputs/没有.pdf#p1-1", "退款"), /不是任务目录里能读到的 PDF 材料（找不到由它生成的 没有\.pdf\.md）/);
@@ -102,7 +102,7 @@ test("任务现状消息与查询任务状态：PDF 材料列页数、块数、�
   const files = listMaterials(dir, "inputs/").files.map((f) => f.path);
   assert.deepEqual(files, ["inputs/办法.pdf", "inputs/办法.pdf.md", "inputs/办法.pdf.segments.json"], "位置表不列");
   const fresh = taskStatusMessage(dir, { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null }, "s")!;
-  assert.match(fresh.text, /其中 inputs\/办法\.pdf 是 PDF 文件，请读由它生成的投影 inputs\/办法\.pdf\.md（每块一行，行首方括号里是页与块）；引用它作来源时，出处写 PDF 文件加页与块，例如 inputs\/办法\.pdf#p3-2。/);
+  assert.match(fresh.text, /其中 inputs\/办法\.pdf 是 PDF 文件，请读由它生成的文字版 inputs\/办法\.pdf\.md（每块一行，行首方括号里是页与块）；引用它作来源时，出处写 PDF 文件加页与块，例如 inputs\/办法\.pdf#p3-2。/);
   assert.match(fresh.text, /inputs\/办法\.pdf 共 4 页、6 块，其中第 3 页没有文字，分段清单按页，见 inputs\/办法\.pdf\.segments\.json。/);
   assert.deepEqual((fresh.details.materials as { citations: unknown[] }).citations, [{ path: "inputs/办法.pdf", pages: 4, units: 6, no_text_pages: [3], uncited: 6 }]);
   assert.doesNotMatch(materialsSentence({ dir: "inputs/", files: [{ path: "inputs/a.md", bytes: 3, modifiedAt: 0 }] }), /PDF/);

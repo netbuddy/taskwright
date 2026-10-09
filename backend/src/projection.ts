@@ -1,5 +1,6 @@
 /**
  * Word 材料（.docx）的 Markdown 投影：上传 .docx 时在同一目录生成「文件名.docx.md」，文件里的图片抽到「文件名.docx.media/」。
+ * 用户与助手看到的叫法是「文字版」（text version）；「投影」与 projection 只是代码里的名字。
  * 执行者读投影，保存修订时逐字核对也对着它。投影怎样写只在 agent 的 agent/src/lib/docx_markdown.ts 里写一份，这里在同一进程里调用它
  * （与命令行入口 agent/src/cli/docx_projection.mts 调用的是同一个函数，写文件的做法也与它相同）。
  *
@@ -56,7 +57,7 @@ export function isReserved(name: string): boolean {
 export const reservedNameText = (noun: string) =>
   `以 .docx.md、.docx.txt 或 .pdf.md 这类写法结尾的文件名留给由 Word、PDF ${noun}生成的文件用，请改个名字再上传。`;
 
-/** 这份 .docx 的投影：有 Markdown 投影用它，只有 0.2 的纯文本投影时用那个，都没有时是 Markdown 投影该在的位置。 */
+/** 这份 .docx 的投影：有 Markdown 投影用它，只有 0.2 的纯文本投影时用那个，都没有时是 Markdown 投影该在的位置。用户与助手看到的叫法是「文字版」。 */
 export function projectionPath(docx: string): string {
   const md = docx + SUFFIX;
   const legacy = docx + LEGACY_SUFFIX;
@@ -80,7 +81,7 @@ function project(data: Buffer, rel: string) {
 }
 
 /**
- * 在 .docx 旁边写投影（有图片时连同图片目录，先清空这个目录）、分段清单与位置表，返回投影的路径。
+ * 在 .docx 旁边写投影（用户与助手看到的叫法是「文字版」；有图片时连同图片目录，先清空这个目录）、分段清单与位置表，返回投影的路径。
  * 不是合法的 .docx，或者三样里有一样没写成时抛 ProjectionError（上传因此被拒绝，已写的由 removeProjection 清掉）。
  */
 export function writeProjection(docx: string, rel: string, segments: SegmentParams = SEGMENT_DEFAULTS): string {
@@ -96,7 +97,7 @@ export function writeProjection(docx: string, rel: string, segments: SegmentPara
     }
     writeFileSync(projection, result.markdown, "utf-8");
   } catch (error) {
-    throw new ProjectionError(`投影没有写成：${(error as Error).message}`);
+    throw new ProjectionError(`文字版没有写成：${(error as Error).message}`);
   }
   try {
     writeSegments(docx + SEGMENTS_SUFFIX, buildSegments(result.markdown, segments, rel, rel + SUFFIX));
@@ -111,7 +112,7 @@ export function writeProjection(docx: string, rel: string, segments: SegmentPara
   return projection;
 }
 
-/** 不写文件，只算出投影全文（投影文件缺失时材料内容接口用）。 */
+/** 不写文件，只算出投影全文（投影文件缺失时材料内容接口用）。用户与助手看到的叫法是「文字版」。 */
 export function projectionText(docx: string, rel: string): string {
   return project(read(docx), rel).markdown;
 }
