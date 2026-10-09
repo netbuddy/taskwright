@@ -53,8 +53,9 @@ const ALLOWED: Record<string, string[]> = {
   "pdf_segments.ts": ["PDF_SEGMENTS_SUFFIX", "PdfSegmentList", "buildPdfSegments", "pdfProjectionUnits", "writePdfSegments"],
   // PDF 材料的来源：从投影取各块（只做计算，页面也用它）；知识库切片段时用。
   "pdf_source.ts": ["pdfProjectionUnits"],
-  // 任务库的格式版本一侧：拒绝比程序新的数据时的那句话（纯函数，不碰库），数据目录比程序新时后端也用这一句。
-  "schema.ts": ["newerDataText"],
+  // 任务库的格式版本一侧：现在的版本号与 task.json 的文件名（常量）、拒绝比程序新的数据时的那句话（纯函数，不碰库；数据目录比程序新时
+  // 后端也用这一句）、从 task.json 读出是哪个版本写的（只读一个小文件）。
+  "schema.ts": ["TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],
 };

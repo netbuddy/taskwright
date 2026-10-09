@@ -12,6 +12,7 @@ export const STATUS: Record<string, number> = {
   no_task: 409,
   session_busy: 409,
   task_occupied: 409,
+  task_unavailable: 409,
   forbidden: 403,
   executor_starting: 503,
   executor_unavailable: 503,

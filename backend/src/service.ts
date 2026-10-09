@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameS
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
+import { TASK_DB_VERSION, newerDataText, taskWrittenBy } from "../../agent/src/lib/schema.ts";
 import { MEDIA_SUFFIX } from "../../agent/src/lib/docx_markdown.ts";
 import { DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, parseDefinition } from "../../agent/src/lib/task_read.ts";
 import * as clock from "./clock.ts";
@@ -26,7 +27,8 @@ import { Hub } from "./hub.ts";
 import { PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
-import { TASK_TYPES_DIR } from "./paths.ts";
+import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
+import { readTaskJson, writeTaskJson } from "./task_json.ts";
 import type { ServiceDb } from "./service_db.ts";
 import { GENERAL, KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
 import { KnowledgeEmbedder } from "./knowledge_embedder.ts";
@@ -171,6 +173,16 @@ export interface ServiceOptions {
   registry?: ServiceDb | null;
 }
 
+/** 产品自带的这种任务类型的说明现在是第几版（任务定义里的「版本」）；定义读不出来或者没有写版本时是 null。 */
+export function taskTypeVersion(taskType: string): number | null {
+  try {
+    const version = JSON.parse(readTextFileLenient(join(TASK_TYPES_DIR, taskType, "docs", "task-definitions", `${taskType}.json`)))["版本"];
+    return Number.isInteger(version) ? version : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 按码位排好的目录项。 */
 function sortedEntries(dir: string): string[] {
   return readdirSync(dir).sort(library.byCodePoint);
@@ -215,6 +227,11 @@ export class Service {
   /** 正被别的服务占用、本服务没有接手的任务：任务编号 → {lock, dir}。 */
   readonly occupied = new Map<string, { lock: occupancy.Lock; dir: string }>();
   readonly skipped = new Set<string>();
+  /**
+   * 数据格式与这个程序对不上、所以没有接手的任务，按目录名记：上一版建的、数据还没有升级（「需要升级」），升级过但没有做成
+   * （「需要处理」），或者是更新的版本写的（「需要更新的程序」）。列表里照样列出并写明原因，打不开。每次扫描重算。
+   */
+  readonly unavailable = new Map<string, { status: string; note: string }>();
   /** 知识库；启动时没给根目录就是 null。 */
   readonly knowledge: KnowledgeStore | null;
   readonly registry: ServiceDb | null;
@@ -245,12 +262,35 @@ export class Service {
       : null;
   }
 
+  /** 数据格式与这个程序对不上的任务：为什么不接手（状态与给用户看的一句话）；对得上时是 null。 */
+  private formatProblem(name: string, dir: string): { status: string; note: string } | null {
+    const version = library.taskDbVersion(dir);
+    if (version === null || version === TASK_DB_VERSION) return null;
+    if (version > TASK_DB_VERSION) return { status: "需要更新的程序", note: newerDataText(taskWrittenBy(dir)) };
+    const failed = this.registry?.taskByDir(name) ?? null;
+    if (failed?.upgrade_error) return { status: "需要处理", note: `这个任务的数据升级没有做成：${failed.upgrade_error}` };
+    const how = this.mode === "desktop" ? "重新启动程序后升级。" : "请停下服务后运行 taskwright data upgrade。";
+    return { status: "需要升级", note: `这个任务是上一版建的，数据还没有升级。${how}` };
+  }
+
+  /** 把一个接手了的任务记进登记表（没有服务级库时不记）。名字、状态与建立时刻取自任务库，任务类型取任务定义文件的名字。 */
+  private register(name: string, row: Row): void {
+    if (!this.registry) return;
+    const definition = typeof row.definition_path === "string" ? basename(row.definition_path).replace(/\.json$/i, "") : null;
+    this.registry.putTask({
+      task_id: row.task_id, name: truthy(row.task_name) ? row.task_name : null, owner: readTaskJson(join(this.tasksDir, name))?.owner ?? "local",
+      status: row.status ?? null, task_type: definition || null, created_at: row.started_at ?? null, dir: name,
+    });
+  }
+
   scan(): void {
+    this.unavailable.clear();
     for (const name of sortedEntries(this.tasksDir)) {
       const d = join(this.tasksDir, name);
       if (!isFile(join(d, DB_NAME))) continue;
       const db = library.openRo(d);
       let taskId: string | null = null;
+      let row: Row | undefined;
       try {
         if (db !== null && library.isPreRevision(db)) {
           // 修订统一之前建的任务：本版本不支持，不接手（库表改动不做迁移）。
@@ -259,13 +299,21 @@ export class Service {
             console.log(`跳过任务目录 ${name}：${library.OLD_FORMAT_TEXT}`);
           }
         } else if (db !== null) {
-          const row = db.prepare("SELECT task_id FROM task LIMIT 1").get() as Row | undefined;
+          row = db.prepare("SELECT task_id, task_name, status, definition_path, started_at FROM task LIMIT 1").get() as Row | undefined;
           taskId = row ? row.task_id : null;
         }
       } catch {
         taskId = null;
       } finally {
         db?.close();
+      }
+      // 数据格式对不上的不接手（已经接手的任务是对得上的，不再看）。
+      if (taskId && !this.tasks.has(taskId)) {
+        const problem = this.formatProblem(name, d);
+        if (problem) {
+          this.unavailable.set(name, problem);
+          continue;
+        }
       }
       if (taskId && !this.tasks.has(taskId)) {
         const taken = this.claim(d, this.port, this.mode);
@@ -281,6 +329,7 @@ export class Service {
         }
         this.occupied.delete(taskId);
         this.tasks.set(taskId, new Task(taskId, d, this.runsDir, this.profile, this.knowledge?.root ?? null));
+        this.register(name, row!);
       }
     }
   }
@@ -293,7 +342,11 @@ export class Service {
       throw new ApiError("task_occupied", occupancy.occupiedText(lock), { port: lock.port ?? null, pid: lock.pid ?? null, host: lock.host ?? null });
     }
     const task = this.tasks.get(taskId);
-    if (!task) throw new ApiError("not_found", `没有任务 ${taskId}。`);
+    if (!task) {
+      const problem = this.unavailable.get(taskId);
+      if (problem) throw new ApiError("task_unavailable", problem.note, { status: problem.status });
+      throw new ApiError("not_found", `没有任务 ${taskId}。`);
+    }
     return task;
   }
 
@@ -358,6 +411,26 @@ export class Service {
         note: occupancy.occupiedText(lock),
       });
     }
+    // 数据格式与这个程序对不上的任务（需要升级、需要处理、需要更新的程序）：照样列出来，写明原因，打不开。
+    for (const [name, problem] of [...this.unavailable].sort((a, b) => library.byCodePoint(a[0], b[0]))) {
+      const folder = join(this.tasksDir, name);
+      let title: unknown = name;
+      const db = library.openRo(folder);
+      try {
+        const got = db ? (db.prepare("SELECT task_name FROM task LIMIT 1").get() as Row | undefined) : undefined;
+        title = got && truthy(got.task_name) ? got.task_name : name;
+      } catch {
+        // 读不出名字就用目录名
+      } finally {
+        db?.close();
+      }
+      out.push({
+        task_id: name, task_name: title, task_type: null, domain_tag: null, status: problem.status,
+        item_count: null, completion_met: null, completion_total: null, completion_unmet: null,
+        last_active_at: existsSync(folder) ? clock.fromEpochNs(statSync(folder, { bigint: true }).mtimeNs) : null,
+        session_count: null, supported: false, note: problem.note,
+      });
+    }
     // 修订统一之前建的任务：本版本打不开，照样列出来并标明不支持，免得用户以为任务丢了。
     for (const name of [...this.skipped].sort(library.byCodePoint)) {
       const folder = join(this.tasksDir, name);
@@ -390,6 +463,11 @@ export class Service {
     }
     // 新任务只选用通用知识库。
     writeFileSync(join(result.任务目录, SELECTION_FILE), JSON.stringify(initialSelection(), null, 2) + "\n", "utf-8");
+    // 记下这个任务是哪个产品版本建的、任务类型说明是第几版（见 task_json.ts）。登记表在下面的扫描接手它时写。
+    writeTaskJson(result.任务目录, {
+      created_by_version: appVersion(), task_type: taskType, task_type_version: taskTypeVersion(taskType), owner: "local",
+      created_at: clock.now(), upgraded_by_version: null, upgraded_at: null,
+    });
     this.scan();
     return { ok: true, task_id: result.task_id };
   }

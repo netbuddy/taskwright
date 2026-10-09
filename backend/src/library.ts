@@ -44,6 +44,23 @@ export function openRo(taskDir: string): DatabaseSync | null {
   return openReadonly(path);
 }
 
+/**
+ * 只读看任务库的格式版本（库文件自己的 user_version）：不建表、不升级、不改任何东西。没有库文件或者读不出来时是 null。
+ * 0 是没有编过版本号的库（上一版及更早建的）。
+ */
+export function taskDbVersion(taskDir: string): number | null {
+  let db: DatabaseSync | null = null;
+  try {
+    db = openRo(taskDir);
+    if (db === null) return null;
+    return Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
+}
+
 /** 库里的发起方写法换成接口的写法：最早格式里的「模型」算执行者。 */
 export function actorWord(actor: unknown): string {
   return actor === ACTOR_USER ? ACTOR_USER : "executor";
