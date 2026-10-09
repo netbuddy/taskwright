@@ -32,6 +32,7 @@ import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
 import { submitQuestion } from "../../model/submit";
 import { unlinkedIds } from "../../model/domainNotes";
+import { DIAGRAMS_TAB, initialTab, saveTab, tabOrder } from "../../model/itemsTab";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
@@ -96,13 +97,15 @@ export function ItemsPanel({
   /** 显示提交交付物的提示条（model/submit.ts 的 showSubmitBar 算好交进来）。 */
   submitBar?: boolean;
 }) {
-  const collections = task.definition.collections;
+  // 页签的次序：有总体分析集合时它排最前（model/itemsTab.ts）。
+  const collections = useMemo(() => tabOrder(task.definition.collections), [task.definition.collections]);
   const selectedItem = task.items.find((i) => i.item_id === selected);
-  // 页签的初值：选中的条目所在的集合；没有选中条目时用地址里带的集合（要是这个任务确有的集合），再不然是第一个集合。
-  const [tab, setTab] = useState<string>(selectedItem?.collection
-    ?? (collections.some((c) => c.name === initialCollection) ? initialCollection! : collections[0]?.name ?? ""));
+  // 页签的初值：选中的条目所在的集合；地址里带的集合或图表页签；这个任务上次停的页签；都没有时，
+  // 任务里只有总体分析有内容就停在总体分析，否则停在它之外的第一个集合。
+  const [opened] = useState(() => initialTab(task, { selected, collection: initialCollection, diagrams: initialDiagrams || !!initialDiagram }));
+  const [tab, setTab] = useState<string>(opened.tab);
   // 图表页签：是不是停在它上面、打开着哪一张图。选中了条目时不算停在图表页签。
-  const [showDiagrams, setShowDiagrams] = useState(initialDiagrams || !!initialDiagram);
+  const [showDiagrams, setShowDiagrams] = useState(opened.diagrams);
   const [diagram, setDiagram] = useState<string | null>(initialDiagram);
   const [filter, setFilter] = useState<ItemFilter>("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -129,6 +132,8 @@ export function ItemsPanel({
   const [dirty, setDirty] = useState(false);
   const onDiagrams = !selectedItem && showDiagrams;
   const activeTab = selectedItem?.collection ?? tab;
+  // 记住这个任务停在哪个页签（存在浏览器本地），下次打开这个任务回到这里。
+  useEffect(() => { saveTab(task.task_id, onDiagrams ? DIAGRAMS_TAB : activeTab); }, [task.task_id, onDiagrams, activeTab]);
   const diagramCount = (task.diagrams ?? []).length;
   /** 打开一张图（null 是图的列表）：取消选中的条目，切到图表页签。 */
   const openDiagram = (diagramId: string | null) => { onSelect(null); setShowDiagrams(true); setDiagram(diagramId); };
