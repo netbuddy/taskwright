@@ -1,5 +1,5 @@
-// 测试夹具：用 agent 里真实的核心函数写出几种任务现状消息（开始会话、续接有变化、续接只有新材料、末尾列出还在等回应的行为），
-// 以 JSON 打到标准输出：{start, changed, materialsOnly, openActs}。后端（backend/tests/task_status_display.test.ts）经子进程调用它，
+// 测试夹具：用 agent 里真实的核心函数写出几种任务现状消息（开始会话、续接有变化、续接只有新材料、末尾列出还在等回应的行为、
+// 续接时上一次运行被用户停止），以 JSON 打到标准输出：{start, changed, materialsOnly, openActs, stopped}。后端（backend/tests/task_status_display.test.ts）经子进程调用它，
 // 用助手一侧实际生成的文字核对页面上的写法；后端自己不导入任何写入函数。建的临时任务目录用完即删。
 // 用法：node task_status_texts.mts
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
@@ -73,8 +73,17 @@ function openActsMessage(): string {
   return taskStatusMessage(dir, { hasUserMessage: true, hasStatusMessage: true, lastMessageAt: 0 }, SESSION)!.text;
 }
 
+/** 续接时交付物没有变化，上一次运行是被用户停止的。 */
+function stoppedMessage(): string {
+  const dir = workspace();
+  createTask(callIn(dir, SESSION), { definition_path: DEFINITION_PATH });
+  saveRevision(callIn(dir, SESSION), { operations: [addUseCase("登录")] });
+  return taskStatusMessage(dir, { hasUserMessage: true, hasStatusMessage: true, lastMessageAt: Date.now() + 5, lastRunStopped: true }, SESSION)!.text;
+}
+
 try {
-  process.stdout.write(JSON.stringify({ start: startMessage(), changed: changedMessage(), materialsOnly: materialsOnlyMessage(), openActs: openActsMessage() }));
+  process.stdout.write(JSON.stringify({ start: startMessage(), changed: changedMessage(), materialsOnly: materialsOnlyMessage(), openActs: openActsMessage(),
+    stopped: stoppedMessage() }));
 } finally {
   for (const dir of made) rmSync(dir, { recursive: true, force: true });
 }

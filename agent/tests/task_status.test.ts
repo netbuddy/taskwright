@@ -78,8 +78,44 @@ test("会话事实：有没有用户消息、有没有写过现状消息、最�
     { type: "message", message: { role: "assistant" }, timestamp: "2026-09-22T01:00:02.000Z" },
     { type: "thinking_level_change", timestamp: "2026-09-22T01:00:10.000Z" },
   ]);
-  assert.deepEqual(facts, { hasUserMessage: true, hasStatusMessage: true, lastMessageAt: Date.parse("2026-09-22T01:00:02.000Z") });
-  assert.deepEqual(sessionFacts([{ type: "model_change", timestamp: "2026-09-22T01:00:09.000Z" }]), FRESH);
+  assert.deepEqual(facts, { hasUserMessage: true, hasStatusMessage: true, lastMessageAt: Date.parse("2026-09-22T01:00:02.000Z"), lastRunStopped: false });
+  assert.deepEqual(sessionFacts([{ type: "model_change", timestamp: "2026-09-22T01:00:09.000Z" }]), { ...FRESH, lastRunStopped: false });
+});
+
+test("会话事实：上一次运行被用户停止，看最后一条助手消息是不是 aborted；之后用户又说了话、或者已经写过现状消息就不再算", () => {
+  const user = { type: "message", message: { role: "user" } };
+  const assistant = (stopReason: string) => ({ type: "message", message: { role: "assistant", stopReason } });
+  const stopNote = { type: "custom_message", customType: "taskwright-user-edit" };
+  const status = { type: "custom_message", customType: "taskwright-task-status" };
+  const stopped = (branch: object[]) => sessionFacts(branch as never).lastRunStopped;
+  assert.equal(stopped([user, assistant("toolUse"), assistant("aborted")]), true);
+  assert.equal(stopped([user, assistant("aborted"), stopNote]), true, "停止时留下的界面操作通知不改变这件事");
+  assert.equal(stopped([user, assistant("aborted"), stopNote, user, assistant("stop")]), false, "之后的一次运行正常做完");
+  assert.equal(stopped([user, assistant("aborted"), stopNote, user]), false, "用户已经又说了话");
+  assert.equal(stopped([user, assistant("aborted"), stopNote, status]), false, "已经有一条现状消息说过了");
+  assert.equal(stopped([user, assistant("error")]), false, "出错停下不算用户停止");
+});
+
+test("续接：上一次运行被用户停止时加一句并记 last_run_stopped；交付物没有变化也写一条，没有被停止时照旧不写", () => {
+  const dir = makeWorkspace();
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  saveRevision(callIn(dir), { operations: [addUseCase("登录")] });
+  const last = Date.now() + 5;
+  const facts = { hasUserMessage: true, hasStatusMessage: true, lastMessageAt: last };
+  assert.equal(taskStatusMessage(dir, { ...facts, lastRunStopped: false }, "s"), null);
+  const quiet = taskStatusMessage(dir, { ...facts, lastRunStopped: true }, "s")!;
+  assert.equal(quiet.text.replace(/（\d\d:\d\d:\d\d）/, "（时刻）"),
+    "【执行者续接这条会话时（时刻）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。上一次运行被用户停止，没有做完。");
+  assert.equal(quiet.details.last_run_stopped, true);
+  assert.deepEqual([quiet.details.added, quiet.details.new_materials], [[], []]);
+
+  while (Date.now() <= last + 2) { /* 等过这条会话最后一刻，让之后的事件时刻一定更晚 */ }
+  saveRevision({ ...callIn(dir), callId: "ui-op-2", actor: ACTOR_USER },
+    { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "用口令登录" } }] });
+  const changed = taskStatusMessage(dir, { ...facts, lastRunStopped: true }, "s")!;
+  assert.match(changed.text, /修改 1 个（UC-001 修订 1 → 修订 2）。.*材料的引用情况：[^。]*。上一次运行被用户停止，没有做完。$/);
+  assert.equal(changed.details.last_run_stopped, true);
+  assert.equal("last_run_stopped" in taskStatusMessage(dir, facts, "s")!.details, false, "没有被停止时不带这个字段");
 });
 
 test("新会话的现状列出材料目录里的文件名与大小，不列隐藏文件与子目录；没有文件也明说", () => {
