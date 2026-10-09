@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The page is built for Chrome 125, Edge 125, Firefox 128 and Safari 18 and newer; these are the versions the legacy build of pdf.js supports.
 - A browser that is too old no longer gets a blank page: the page says **这个浏览器版本太旧，请更新到两年内的版本（Chrome 或 Edge 125、Firefox 128、Safari 18 以上）。** The check looks for what the page cannot do without (`Object.hasOwn`, `structuredClone`, and `:has()`, `color-mix()` and container queries in the style sheets), not for a version number.
 
+### Work view and conversation
+
+- The task status message at the top of a conversation is folded into one line. The message is written for the assistant (the state of the task, the list of materials and knowledge bases, how to cite them) and used to fill the top of the conversation with several hundred characters. The line gives the gist, for example **助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决** ("the task as the assistant saw it when it started this session: 2 materials, 2 knowledge bases with 6 documents, completion conditions 1/3, 0 open issues"); for a resumed session it reads **助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新材料 1 份** ("what had changed when the assistant resumed this session"). Click the line to see the full text, click again to fold it. The one-sentence note shown when the assistant did not use the reply tool, and the notes about what you did on the page, are shown as before.
+- In the interface, `system_note` now carries `kind` (`task_status` or `reply_fallback`), which the documentation already listed but the service did not send, and a task status message carries `details`, the facts the line is written from.
+
 ## [0.4.2] - 2026-10-08
 
 0.4.2 lets the assistant draw diagrams and lets you take chosen items out as a Word file. A source now says which element of the task an item rests on: an item can cite any other item, and a basis that was changed or deleted afterwards is marked. Diagrams are a second kind of task element beside items, with their own tab in the work view.
