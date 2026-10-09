@@ -56,10 +56,10 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
     if (one.field !== null) source.supports.push({ field: one.field, index: one.field_index });
     sources.set(one.item_id, list);
   }
-  // 每个条目的各次修订：那时的字段内容，与是不是用户亲手改出来的（记下那次修订的事件的发起方是用户）。
+  // 每个条目的各次修订是不是用户亲手改出来的（记下那次修订的事件的发起方是用户）。
   const versionRows = db.prepare(
-    "SELECT v.item_id, v.revision_no, v.fields, e.actor FROM item_version v LEFT JOIN event e ON e.seq = v.event_seq WHERE v.task_id = ? ORDER BY v.item_id, v.revision_no",
-  ).all(taskId) as { item_id: string; revision_no: number; fields: string; actor: string | null }[];
+    "SELECT v.item_id, v.revision_no, e.actor FROM item_version v LEFT JOIN event e ON e.seq = v.event_seq WHERE v.task_id = ? ORDER BY v.item_id, v.revision_no",
+  ).all(taskId) as { item_id: string; revision_no: number; actor: string | null }[];
   // 用户在哪些修订上看过或点过确认：那次修订上依据不是「界面修改」的确认标记里，最近一条的态度是接受。
   const marks = db.prepare(
     "SELECT ji.item_id, ji.revision_no, ji.attitude, j.basis FROM judgement_item ji JOIN judgement j ON j.judgement_id = ji.judgement_id " +
@@ -74,8 +74,7 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
   const history = new Map<string, RevisionFacts[]>();
   for (const row of versionRows) {
     const list = history.get(row.item_id) ?? [];
-    list.push({ fields: (jsonOrText(row.fields) ?? {}) as Record<string, unknown>, byUser: row.actor === ACTOR_USER,
-      viewed: viewedAt.get(`${row.item_id}\u0000${row.revision_no}`) === true });
+    list.push({ byUser: row.actor === ACTOR_USER, viewed: viewedAt.get(`${row.item_id}\u0000${row.revision_no}`) === true });
     history.set(row.item_id, list);
   }
   const own = new Map<string, Verification>();

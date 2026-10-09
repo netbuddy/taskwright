@@ -682,12 +682,11 @@ export class Library {
     const pendingOf = new Map<string, Verification>();
     for (const one of plain) {
       const supplements = this.sourcesOf(one.item_id, one.revision_no).filter((s) => isSupplement(s.kind)).map((s) => s.supports ?? []);
-      // 这个条目的各次修订：那时的内容、是不是用户亲手改出来的、用户有没有在那次修订上看过（依据不是用户修改的确认里最近一条是接受）。
+      // 这个条目的各次修订：是不是用户亲手改出来的、用户有没有在那次修订上看过（依据不是用户修改的确认里最近一条是接受）。
       const history: RevisionFacts[] = this.itemRevisions(one.item_id).map((no) => {
         const v = this.contents.get(itemKey(one.item_id, no))!;
         const seen = this.confirmationsOf(one.item_id, no).filter((c) => c.basis !== "ui_edit");
         return {
-          fields: or(jsonOrText(v.fields), {}) as Record<string, any>,
           byUser: actorWord((this.data.event_meta?.get(v.event_seq) ?? ({} as Record<string, any>)).actor ?? "") === ACTOR_USER,
           viewed: seen.length > 0 && seen[seen.length - 1].accepted,
         };
@@ -730,7 +729,8 @@ export class Library {
         viewed: accepted.length > 0,
         confirmation_basis: currentOk ? latestForCurrent[latestForCurrent.length - 1].basis
           : accepted.length ? accepted[accepted.length - 1].basis : null,
-        // 待核实：当前修订上有助手补充的来源，而用户还没有确认过。用户看过（或点了确认）是确认整个条目；用户亲手改只确认他改到的那几处。
+        // 待核实：当前修订上有助手补充的来源，而用户还没有确认过。用户看过（或点了确认）是确认整个条目；用户亲手改只确认他改到的那几处
+        // （保存时他改写的那几处已经从来源里去掉，所以当前修订上还在的助手补充都是他没有改到的）。
         // pending_sources 是还待核实的来源有几条，pending_places 是还待核实的各处（字段与第几项；field 为 null 指整个条目）。
         ...pendingOf.get(i.item_id)!,
         // 因依据而待核实：它依据的总体分析的一页待核实（reason 是 pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。

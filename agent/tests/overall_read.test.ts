@@ -74,6 +74,25 @@ test("待核实：助手补充未确认；用户看过之后；助手再改之�
   assert.deepEqual(pendingOf(dir, "OA-001"), [false, 0]);
 });
 
+test("待核实：用户删掉列表里别的一项，助手补的那一项仍待核实、位置号跟着变；用户撤销一次修订不算确认", () => {
+  const dir = workspace();
+  saveRevision(callIn(dir), { operations: [
+    page({ 已经定下的: ["只有在架的书才能预约取书。", "保留期是 3 天。"] },
+      [{ ...SOURCE, supports: [{ field: "它是什么" }, { field: "已经定下的", index: 0 }] }, SUPPLEMENT([{ field: "已经定下的", index: 1 }])]),
+  ] });
+  const places = () => stateOf(dir).verification.get("OA-001")!.pending_places;
+  assert.deepEqual([pendingOf(dir, "OA-001"), places()], [[true, 1], [{ field: "已经定下的", index: 1 }]]);
+  // 用户删掉了第 1 条（不是助手补的那一条）：助手补的那一条挪到了第 1 条的位置，他没有改它，仍待核实。
+  ui(dir, { kind: "edit_fields", targets: [{ item_id: "OA-001", base_revision: 1 }], fields: { 已经定下的: ["保留期是 3 天。"] } });
+  assert.deepEqual([pendingOf(dir, "OA-001"), places()], [[true, 1], [{ field: "已经定下的", index: 0 }]]);
+  // 用户亲手改写了这一条：这一处确认了。
+  const edit = ui(dir, { kind: "edit_fields", targets: [{ item_id: "OA-001", base_revision: 2 }], fields: { 已经定下的: ["保留期是 5 天。"] } });
+  assert.deepEqual([pendingOf(dir, "OA-001"), places()], [[false, 0], []]);
+  // 用户撤销了刚才那次修改：内容回到助手补的那句话，来源也回来；撤销不是确认，仍待核实。
+  ui(dir, { kind: "undo", targets: [{ revision_no: edit.revision_no }] });
+  assert.deepEqual([pendingOf(dir, "OA-001"), places()], [[true, 1], [{ field: "已经定下的", index: 0 }]]);
+});
+
 test("因依据而待核实：条目依据的那一页待核实或已废弃；那一页确认之后就不是了；只看一层", () => {
   const dir = workspace();
   saveRevision(callIn(dir), { operations: [

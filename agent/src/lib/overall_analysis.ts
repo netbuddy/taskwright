@@ -75,9 +75,8 @@ export function isSupplement(kind: unknown): boolean {
 /** 助手补充的一条来源支持哪几处：一处写字段名，指到列表字段的某一项时另写第几项（从 0 起）；空列表是支持整个条目。 */
 export type SupportPlaces = readonly { field: string; index?: number | null }[];
 
-/** 条目的一次修订里算待核实要的三样：那时的字段内容、是不是用户亲手改出来的、用户有没有在这次修订上看过（或点过确认）。 */
+/** 条目的一次修订里算待核实要的两样：是不是用户亲手改出来的、用户有没有在这次修订上看过（或点过确认）。 */
 export interface RevisionFacts {
-  fields: Fields;
   /** 这次修订是用户在界面上亲手改出来的（直接修改、撤销），不是助手保存的。 */
   byUser: boolean;
   /** 用户在这次修订上打开看过或点过确认：这次修订上依据不是「界面修改」的确认标记里，最近一条的态度是接受。 */
@@ -99,39 +98,26 @@ export interface Verification {
   pending_places: PendingPlace[];
 }
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-
 /**
  * 一个条目待不待核实，还有哪几处待核实。
  * supplements 是它当前所在修订上助手补充的各条来源支持哪几处。chain 是它的修订里从「最近一次不是用户亲手改出来的修订」起、
  * 到当前修订为止的一段，按先后（只有一次修订时就是那一次；助手保存的修订之后跟着用户亲手改的几次）。规矩：
  * - 这一段里有一次修订用户看过（或点过确认）：整个条目都确认了，不待核实。之后用户自己再改，不会把确认弄丢。
- * - 否则，用户亲手改到的地方算确认了那几处：一条助手补充的来源指到的每一处（字段，或列表字段的那一项）都被用户改过，这条来源
- *   就不再待核实；有一处没被改过就仍待核实。没有写支持哪几处的来源指整个条目，用户改哪里都不算确认它。
- *   所以用户只改标签、只改上级主题，不会把别处助手补充的内容当成确认过。
+ * - 否则，当前修订上还在的助手补充都待核实。用户亲手改只确认他改到的那几处，这件事在保存那一侧就做了：用户改字段时，
+ *   他改写的那几处从原来的来源里去掉，什么都不支持了的来源整条去掉；他没有动的内容，来源照旧留着，列表里别的项被删、
+ *   被插入之后序号也跟着改指原来那一项（lib/source_carry.ts）。所以这里不再比较前后的字段内容：用户只改标签、只改上级主题，
+ *   或者删掉列表里别的一项，助手补充的来源都还在，都仍待核实；用户撤销一次修订也不算确认。
+ *   没有写支持哪几处的助手补充指整个条目，用户改哪里它都留着，只有看过才算确认。
  * 助手再保存出新的修订时，这一段从那次修订重新算起，上面的助手补充又都待核实。
  */
 export function verificationOf(supplements: readonly SupportPlaces[], chain: readonly RevisionFacts[]): Verification {
-  const clear: Verification = { pending_verification: false, pending_sources: 0, pending_places: [] };
-  if (supplements.length === 0 || chain.some((one) => one.viewed)) return clear;
-  // 用户亲手改的每一次，与它前一次修订相比哪些字段不同。
-  const edits = chain.flatMap((one, n) => (n > 0 && one.byUser ? [[chain[n - 1].fields, one.fields] as const] : []));
-  const touched = (field: string, index: number | null) => edits.some(([before, after]) => {
-    if (index === null) return !same(before[field], after[field]);
-    const was = Array.isArray(before[field]) ? (before[field] as unknown[])[index] : undefined;
-    const now = Array.isArray(after[field]) ? (after[field] as unknown[])[index] : undefined;
-    return !same(was, now);
-  });
+  if (supplements.length === 0 || chain.some((one) => one.viewed)) return { pending_verification: false, pending_sources: 0, pending_places: [] };
   const places: PendingPlace[] = [];
-  let sources = 0;
   for (const supports of supplements) {
-    const open: PendingPlace[] = supports.length === 0 ? [{ field: null, index: null }]
-      : supports.map((at) => ({ field: at.field, index: at.index ?? null })).filter((at) => !touched(at.field!, at.index));
-    if (open.length === 0) continue;
-    sources += 1;
+    const open: PendingPlace[] = supports.length === 0 ? [{ field: null, index: null }] : supports.map((at) => ({ field: at.field, index: at.index ?? null }));
     for (const at of open) if (!places.some((have) => have.field === at.field && have.index === at.index)) places.push(at);
   }
-  return sources === 0 ? clear : { pending_verification: true, pending_sources: sources, pending_places: places };
+  return { pending_verification: true, pending_sources: supplements.length, pending_places: places };
 }
 
 /** 被一个条目写成来源的那一页现在的样子：在哪个集合、字段内容、待不待核实。 */
