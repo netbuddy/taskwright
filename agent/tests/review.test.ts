@@ -288,6 +288,7 @@ test("0.1 建的库：评审发现表缺规则编号与级别两列，写入一�
   const dir = withTwoItems(reviewWorkspace());
   const db = new DatabaseSync(databasePath(dir));
   db.exec("DROP TABLE review_finding; CREATE TABLE review_finding (review_id INTEGER NOT NULL, task_id TEXT NOT NULL, ordinal INTEGER NOT NULL, field TEXT NOT NULL, item_index INTEGER, problem TEXT NOT NULL, suggestion TEXT, PRIMARY KEY (review_id, ordinal))");
+  db.exec("PRAGMA user_version = 0");
   db.close();
   withTaskDatabase(dir, { createIfMissing: false }, () => undefined);
   const columns = query<{ name: string }>(dir, "PRAGMA table_info(review_finding)").map((r) => r.name);

@@ -97,7 +97,7 @@ test("库上有按任务与调用编号的唯一索引：同一编号的第二�
 test("旧库没有这个索引：第一次被写入一侧打开时补上，此后重放不再重写", () => {
   const dir = workspaceWithTask();
   saveRevision(call(dir, "call-old"), addUseCase());
-  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.exec(`DROP INDEX ${REVISION_CALL_INDEX}`));
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.exec(`DROP INDEX ${REVISION_CALL_INDEX}; PRAGMA user_version = 0`));
   assert.ok(!indexes(dir).includes(REVISION_CALL_INDEX));
   withTaskDatabase(dir, { createIfMissing: false }, () => null);
   assert.ok(indexes(dir).includes(REVISION_CALL_INDEX));
@@ -111,7 +111,7 @@ test("旧库里已经有同一调用编号的两次修订：唯一索引建不�
   saveRevision(call(dir, "call-dup-2"), addUseCase("注销"));
   // 造一个补索引之前重放过的旧库：去掉索引，库里留下同一编号的两次修订。
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
-    db.exec(`DROP INDEX ${REVISION_CALL_INDEX}`);
+    db.exec(`DROP INDEX ${REVISION_CALL_INDEX}; PRAGMA user_version = 0`);
     db.exec("UPDATE revision SET call_id = 'call-dup' WHERE revision_no = 2");
   });
   withTaskDatabase(dir, { createIfMissing: false }, () => null);
