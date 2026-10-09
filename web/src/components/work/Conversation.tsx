@@ -441,7 +441,7 @@ export function WorkSummaryLine({ summary, revisions = [], onRevisionTag }: {
         </div>
       )}
       <div className="proc-fold" role="button" onClick={() => setOpen(!open)} data-testid="work-summary">
-        {head} {open ? "▾ 收起" : "▸ 展开看做了什么"}
+        {head} <span className="pexp">{open ? "▾ 收起" : "▸ 展开看做了什么"}</span>
       </div>
       {open && (
         <div className="proc" data-testid="work-summary-stages">

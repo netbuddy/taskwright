@@ -59,19 +59,19 @@
 .app .m.ai p:last-child{margin-bottom:0}
 .app .m.ai ul{margin:.1rem 0 .35rem 1.05rem}
 .app .m.ai li{font-size:0.917rem}
-.app .proc{border-left:0.143rem solid var(--line2);padding:.15rem 0 .15rem .6rem;margin-left:.15rem;
-  display:flex;flex-direction:column;gap:.1rem}
-.app .proc .pline{font-size:0.881rem;color:var(--mut);letter-spacing:.01em;display:flex;align-items:baseline;gap:.35rem}
+/* 助手的过程（「理解为」、做了几步、正在做的一步）：不进框，一行小字；展开出来的各步与各条原因往里缩一点 */
+.app .proc{padding:0 .2rem;display:flex;flex-direction:column;gap:.1rem}
+.app .proc .proc,.app .proc-fold + .proc{padding-left:.9rem}
+.app .proc .pline{font-size:0.857rem;color:var(--text3);letter-spacing:.01em;display:flex;align-items:baseline;gap:.35rem}
 .app .proc .pline .ptime{font-size:0.857rem;color:var(--faint);flex:none;font-variant-numeric:tabular-nums}
-.app .proc .pline.doing{color:var(--text3)}
+.app .proc .pline.doing{color:var(--text2);font-weight:500}
 .app .proc .pline.doing .ptxt::after{content:"";display:inline-block;width:.32rem;height:.32rem;border-radius:50%;
   background:var(--mut);margin-left:.35rem;vertical-align:middle;animation:breathe 1.5s ease-in-out infinite}
 @keyframes breathe{0%,100%{opacity:.25}50%{opacity:1}}
-.app .proc-fold{font-size:0.881rem;color:var(--mut);border-left:0.143rem solid var(--line2);padding:.1rem 0 .1rem .6rem;
-  margin-left:.15rem;cursor:pointer}
-.app .proc-fold:hover{color:var(--text3);text-decoration:underline}
+.app .proc-fold{font-size:0.857rem;color:var(--text3);padding:0 .2rem;cursor:pointer}
+.app .proc-fold .pexp{color:var(--blue)}
+.app .proc-fold:hover .pexp{text-decoration:underline}
 /* 一轮被用户停下或出错停下：摘要行下面那一行说明用琥珀色（Conversation.tsx 的 WorkSummaryLine） */
-.app .proc.stopnote{border-left-color:var(--amber-line)}
 .app .proc.stopnote .pline{color:var(--amber)}
 .app .selfnote{font-size:0.881rem;color:var(--mut);border-left:0.143rem solid var(--line2);padding:.1rem 0 .1rem .6rem;margin-left:.15rem}
 .app .sysnote{background:var(--teal-bg);border:1px dashed var(--teal-line);border-radius:.6rem;
