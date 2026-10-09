@@ -98,8 +98,8 @@ test("真实的任务类型：三个集合的规则文件都能读，问题集�
   assert.deepEqual(definition.collections.map((c) => c.reviewRules?.file ?? null),
     ["docs/review-rules/use-case.json", "docs/review-rules/ears.json", "docs/review-rules/ears.json", null, null]);
   const count = (file: string) => (JSON.parse(readFileSync(join(typeDir, file), "utf-8")) as unknown[]).length;
-  assert.equal(count("docs/review-rules/use-case.json"), 14);
-  assert.equal(count("docs/review-rules/ears.json"), 10);
+  assert.equal(count("docs/review-rules/use-case.json"), 15);
+  assert.equal(count("docs/review-rules/ears.json"), 11);
   // UC-R10（不把材料里没有的功能写进去）已去掉，编号不再使用；核对来源是否支持内容的是 UC-R15 与 EARS-R10。
   const ids = (file: string) => (JSON.parse(readFileSync(join(typeDir, file), "utf-8")) as { 编号: string }[]).map((r) => r.编号);
   assert.ok(!ids("docs/review-rules/use-case.json").includes("UC-R10"));
@@ -119,10 +119,10 @@ test("真实的任务类型：UC-R15 与 EARS-R10 是可选规则，默认写在
   assert.deepEqual(byName["非功能需求"]?.off, ["EARS-R10"]);
   assert.deepEqual(byName["约束"]?.off, ["EARS-R10"]);
   const effective = (name: string) => effectiveRules(typeDir, byName[name]!).map((r) => r.编号);
-  assert.equal(effective("功能用例").length, 13);
+  assert.equal(effective("功能用例").length, 14);
   assert.ok(!effective("功能用例").includes("UC-R15"));
   for (const name of ["非功能需求", "约束"]) {
-    assert.equal(effective(name).length, 9, name);
+    assert.equal(effective(name).length, 10, name);
     assert.ok(!effective(name).includes("EARS-R10"), name);
   }
 });

@@ -16,7 +16,7 @@ import { Hub } from "../src/hub.ts";
 import { dispatch } from "../src/http.ts";
 import * as library from "../src/library.ts";
 import { Service } from "../src/service.ts";
-import { captureConsole, makeTypedTask, tempDir } from "./helpers.ts";
+import { captureConsole, makeLegacyTask, tempDir } from "./helpers.ts";
 
 captureConsole();
 
@@ -33,7 +33,7 @@ let ws: string;
 before(() => {
   tmp = tempDir();
   root = join(tmp, "service");
-  ws = makeTypedTask(join(root, "tasks"), "srs-authoring", { "材料.md": "读者凭口令登录。" }, [
+  ws = makeLegacyTask(join(root, "tasks"), { "材料.md": "读者凭口令登录。" }, [
     // 任务修订 1：三个用例。
     [useCase("登录", "读者登录系统。"), useCase("办证", "读者办借书证。"), useCase("挂失", "读者挂失借书证。")],
     // D-001 修订 1：画了三个用例，依据用户的话与三个用例。

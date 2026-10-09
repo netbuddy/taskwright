@@ -11,7 +11,7 @@ import { ApiError } from "../src/errors.ts";
 import * as library from "../src/library.ts";
 import * as render from "../src/render.ts";
 import { type Task, wordsLocator } from "../src/service.ts";
-import { makeTypedTask, makeWorkspace, tempDir } from "./helpers.ts";
+import { makeLegacyTask, makeWorkspace, tempDir } from "./helpers.ts";
 
 let tmp: string;
 let ws: string;
@@ -129,7 +129,7 @@ describe("软件需求规格说明模板里的领域说明", () => {
   let text: string;
   let typed: string;
   before(() => {
-    typed = makeTypedTask(join(tmp, "typed"), "srs-authoring", { "材料.md": "读者凭口令登录。管理员在服务台办理借还。" }, [
+    typed = makeLegacyTask(join(tmp, "typed"), { "材料.md": "读者凭口令登录。管理员在服务台办理借还。" }, [
       [note("口令", "术语", "读者登录时输入的一串字符"), note("管理员", "角色", "在服务台办理借还的工作人员"), note("开学第一周", "背景", "借还量最大的一周"), note("借阅", "术语", "读者把书借走")],
       [{ op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] },
         sources: [SOURCE, { kind: "条目", locator: "DN-001", excerpt: "读者登录时输入的一串字符", supports: [{ field: "基本流程", index: 0 }] }] }],

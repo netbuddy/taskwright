@@ -98,12 +98,13 @@ export interface Completion {
   /** 一句话概括，与执行者看到的说法相同。 */
   brief?: string;
   conditions: CompletionCondition[];
-  /** 完成条件之外的提示，不是门禁。kind 为 unlinked_domain_notes：还没有和任何条目关联的领域说明。 */
+  /** 完成条件之外的提示，不是门禁。kind 为 unlinked_domain_notes：还没有和任何条目关联的领域说明（0.4 建的任务）；
+   *  untagged_overall_pages：总体分析里在用而还没有贴标签的主题。 */
   hints?: CompletionHint[];
 }
 
 export interface CompletionHint {
-  kind: "unlinked_domain_notes";
+  kind: "unlinked_domain_notes" | "untagged_overall_pages" | string;
   collection: string;
   items: string[];
   /** 一句完整的话，例如「有 2 条领域说明还没有和任何条目关联：DN-003、DN-004。」 */
@@ -116,7 +117,12 @@ export interface FieldDef {
   name: string;
   type: "文本" | "文本列表" | "枚举" | "条目引用" | string;
   required: boolean;
+  /** 枚举的取值；文本列表也可以有取值，这时列表里的每一项只能是其中之一（可以选好几个）。 */
   values: string[] | null;
+  /** 条目引用字段：只能指向同一个集合里的条目。 */
+  same_collection?: boolean;
+  /** 条目引用字段：最多写一个条目编号。 */
+  single?: boolean;
 }
 
 /** 评审规则清单里的一条（关闭与升为必选之后的）：必选规则违反了即评审不通过，可选规则只给建议。 */
@@ -249,6 +255,27 @@ export interface Item {
   viewed?: boolean;
   /** 已读的依据：当前修订上最近一条标记是接受时取它的依据，否则取最近一条接受的标记的依据；未读时为空。 */
   confirmation_basis?: ConfirmationBasis | string | null;
+  /** 待核实：当前修订上有助手补充的来源，而用户还没有确认过。看过（或点了确认）是确认整个条目；亲手改只确认改到的那几处。 */
+  pending_verification?: boolean;
+  /** 还待核实的助手补充来源有几条；不待核实时是 0。 */
+  pending_sources?: number;
+  /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
+  pending_places?: { field: string | null; index: number | null }[];
+  /** 因依据而待核实：它依据的总体分析的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
+  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see: string | null } | null;
+  /** 只有总体分析的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */
+  mentioned_by?: Mention[];
+}
+
+/** 一条提到：哪个条目的哪个字段（列表字段的第几项，从 0 起）在哪句话里用哪个词提到了一页；revision_no 是被提到的那一页现在的修订号。 */
+export interface Mention {
+  item_id: string;
+  collection: string;
+  field: string;
+  index: number | null;
+  word: string;
+  sentence: string;
+  revision_no: number;
 }
 
 export interface Task {

@@ -44,7 +44,7 @@ import { DefinitionError, FIELD_ITEM_REF, FIELD_TEXT_LIST, KEEP_PENDING_STATUS, 
 import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
 import { SaveRejected, type Source, type Support, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { carrySources } from "./source_carry.ts";
-import { NoDatabaseYet, SOURCE_USER_EDIT, TASK_ACTIVE, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
+import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 
@@ -465,14 +465,31 @@ function acceptedAt(db: DatabaseSync, itemId: string, revisionNo: number): boole
 }
 
 /**
+ * 条目在这次修订上的接受标记都只是「用户亲手改」带来的，而这次修订上还有助手补充的来源：用户亲手改只确认他改到的那几处
+ * （lib/overall_analysis.ts 的 verificationOf），别处助手补充的内容要等用户看过才算确认，所以这时「标为已读」仍要记一条。
+ */
+function editedOnlyWithSupplements(db: DatabaseSync, itemId: string, revisionNo: number): boolean {
+  const marks = db.prepare(
+    "SELECT ji.attitude, j.basis FROM judgement_item ji JOIN judgement j ON j.judgement_id = ji.judgement_id WHERE ji.item_id = ? AND ji.revision_no = ? ORDER BY ji.judgement_id",
+  ).all(itemId, revisionNo) as { attitude: string; basis: string }[];
+  const seen = marks.filter((one) => !one.basis.includes(`"${CONFIRMATION_BASIS.ui_edit}"`));
+  if (seen.length > 0 && seen[seen.length - 1].attitude === "接受") return false;
+  const supplement = db.prepare(
+    `SELECT 1 FROM item_source WHERE item_id = ? AND revision_no = ? AND kind IN (?, ?)${elementClause(db)} LIMIT 1`,
+  ).get(itemId, revisionNo, SOURCE_SUPPLEMENT, "执行者补充");
+  return supplement !== undefined;
+}
+
+/**
  * 标为已读：条目在给定修订上最近一条标记已经是接受的跳过（幂等），其余写一次已读标记。都跳过时什么都不写、不记事件。
+ * 一种情形不跳过：那次修订上的接受只是用户亲手改带来的，而上面还有助手补充的来源（见 editedOnlyWithSupplements）。
  * notify_executor 为真（卡片上点「这几条都看过了」）时追加一条界面操作说明，并按固定模板告诉执行者；
  * 为假（打开详情）时不往会话里追加任何东西。
  */
 function markViewed(ctx: Ctx, opId: string, targets: Target[], notify: boolean): UserOpResult {
   const items = targets.map((t) => ({ item_id: t.item_id, revision_no: t.base_revision }));
   const seq = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db: DatabaseSync) => {
-    const fresh = items.filter((t) => !acceptedAt(db, t.item_id, t.revision_no));
+    const fresh = items.filter((t) => !acceptedAt(db, t.item_id, t.revision_no) || editedOnlyWithSupplements(db, t.item_id, t.revision_no));
     return fresh.length === 0 ? null : recordMark(db, ctx, opId, fresh, true, "viewed");
   });
   const list = items.map((t) => `${t.item_id}（修订 ${t.revision_no}）`);

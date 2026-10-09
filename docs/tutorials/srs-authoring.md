@@ -1,5 +1,7 @@
 # Tutorial: writing a requirements specification with Taskwright
 
+> The steps and screenshots of this tutorial show version 0.4. From this version on, in a new requirements task the assistant first writes a few topic pages in the overall analysis (总体分析: what each concept, role and process of the matter is, with an example) and asks you to read them before it starts on use cases, requirements and constraints; the former domain notes (领域说明) are now the overall analysis. The first reply and the ids and revision numbers of the items therefore differ from what follows; everything else works the same. See section 2 of the user guide for the overall analysis.
+
 Suppose you run the systems of a school library, and you have a short, informal description of what you need: how readers borrow and return books, how fines work, whether a book that is out can be reserved. You want to turn it into a software requirements specification you can hand to a development team, where every statement can be traced to its source and every statement has been accepted by you.
 
 This tutorial follows that goal in six acts:

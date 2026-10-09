@@ -78,6 +78,8 @@ import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
+import { GATE_GUIDANCE, OVERALL_COLLECTION, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
+import { overallState } from "./overall_read.ts";
 import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
@@ -353,6 +355,12 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   // 这一批里已经通过核对的新增与修改将要保存的内容：后面的操作把它们当作依据时，摘录对着这里核对，修订号是这一次的。
   const written = new Map<string, { collection: string; fields: Record<string, unknown> }>();
   const itemSources = (number: number, self: string | null) => itemSourceLookups(definition, items, latestVersion, { deletedHere, addedAt, written }, number, self);
+  // 这一批里新增的条目各在哪个集合里（条目引用字段「只许本集合」的核对要查）。
+  const addedIn = new Map<string, string>();
+  const refs: RefLookups = {
+    collectionOf: (itemId) => items.get(itemId)?.collection ?? addedIn.get(itemId) ?? null,
+    fieldsOf: (itemId) => written.get(itemId)?.fields ?? (items.has(itemId) ? (JSON.parse(latestVersion(itemId).fields) as Record<string, unknown>) : null),
+  };
   {
     const serialOf = new Map<string, number>();
     for (const row of items.values()) {
@@ -365,8 +373,13 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       const serial = (serialOf.get(collection.name) ?? 0) + 1;
       serialOf.set(collection.name, serial);
       addedAt.set(`${collection.prefix}-${String(serial).padStart(3, "0")}`, index + 1);
+      addedIn.set(`${collection.prefix}-${String(serial).padStart(3, "0")}`, collection.name);
     });
   }
+
+  // 最低门（任务定义里有总体分析集合时才设）：助手往总体分析与问题集合之外的集合里新增条目之前，任务里要已经有一页
+  // 在用的主题贴了标签、有例子、又不待核实。只看这次保存之前库里已有的页：同一批里才新增的页用户还没有看过。
+  const gate = call.actor !== ACTOR_USER && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
 
   const problems: RejectReason[] = [];
   const planned: Planned[] = [];
@@ -411,11 +424,12 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
           guidance: `可用的集合是：${definition.collections.map((one) => `「${one.name}」`).join("、")}` });
         return;
       }
+      if (gate !== null && collection.name !== OVERALL_COLLECTION && keepPendingField(collection) === null) errors.push(withGuide(gate, GATE_GUIDANCE));
       if (raw.item !== undefined) errors.push("新增时不要写 item，条目编号由工具生成");
       if (!isObject(raw.fields)) {
         errors.push("fields 应当是一个对象，键是字段名，值是字段内容");
       } else {
-        checkFields(collection, raw.fields, checkRef, errors);
+        checkFields(collection, raw.fields, checkRef, errors, refs, [...addedAt].find(([, at]) => at === number)?.[0] ?? null);
         const status = keepPendingField(collection);
         const refusal = status && call.actor !== ACTOR_USER
           ? newProblemStatus(raw.fields[status.name], (status.values ?? []).find((value) => !Object.hasOwn(CONSENT_OPTION, value)) ?? null) : null;
@@ -430,6 +444,12 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, null));
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
+      if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER) {
+        for (const [fact, guidance] of pageProblems(fields, sources)) errors.push(withGuide(fact, guidance));
+      }
+      if (sources && call.actor !== ACTOR_USER && keepPendingField(collection) === null) {
+        for (const [fact, guidance] of quotedProblems(fields, sources)) errors.push(withGuide(fact, guidance));
+      }
       if (errors.length > 0) {
         problems.push(reasonOf(label, `新增到「${collection.name}」的条目`, errors));
         return;
@@ -501,7 +521,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (raw.fields !== undefined && !isObject(raw.fields)) {
       errors.push("fields 应当是一个对象，只写要改的字段");
     } else if (isObject(raw.fields)) {
-      checkFields(collection, raw.fields, checkRef, errors);
+      checkFields(collection, raw.fields, checkRef, errors, refs, itemId);
       if (call.actor !== ACTOR_USER) {
         checkProblemUpdate(collection, itemId, before, raw.fields, errors);
         checkProblemStatus(collection, itemId, before, raw.fields, changedHere, problemFacts, errors);
@@ -538,6 +558,13 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (removed.length) notes.push(`这次重新标注了 ${itemId} 的来源，去掉了原来的 ${removed.length} 条：${removed.map(quoteLabel).join("、")}。`);
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
+    if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER && op !== "restore") {
+      for (const [fact, guidance] of pageProblems(merged, sources)) errors.push(withGuide(fact, guidance));
+    }
+    // 只核对这次新给的来源；沿用下来的不重新核对。
+    if (given && call.actor !== ACTOR_USER && op !== "restore" && keepPendingField(collection) === null) {
+      for (const [fact, guidance] of quotedProblems(merged, given)) errors.push(withGuide(fact, guidance));
+    }
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
       errors.push(withGuide(`助手对 ${itemId} 的修改与它在修订 ${current.revision_no} 的内容和来源完全一样，没有改动任何东西`, "不需要改就去掉这个操作"));
     }
@@ -637,6 +664,14 @@ function itemSourceLookups(
     }
     if (row.deleted_in_revision !== null) return `指向的条目已在修订 ${row.deleted_in_revision} 删除`;
     if (batch.deletedHere.has(locator)) return "指向的条目在这次调用里被删除";
+    // 总体分析里已废弃的页不能再作依据：写了改看的指给助手看。这一批里刚把它改成已废弃的也算。
+    if (row.collection === OVERALL_COLLECTION) {
+      const fields = batch.written.get(locator)?.fields ?? (JSON.parse(latestVersion(locator).fields) as Record<string, unknown>);
+      if (isDeprecated(fields)) {
+        const see = seeAlsoOf(fields);
+        return withGuide(`指向的主题 ${locator} 已废弃`, see ? `改看 ${see}：把出处改成 ${see}，摘录照它现在的内容抄` : "请改成依据现在在用的主题");
+      }
+    }
     return null;
   };
   const text = (locator: string): string[] => {
@@ -714,6 +749,35 @@ function listFieldsOf(collection: CollectionDef): Set<string> {
   return new Set(collection.fields.filter((one) => one.type === FIELD_TEXT_LIST || one.type === FIELD_ITEM_REF).map((one) => one.name));
 }
 
+/** 理由里用直角引号引出的各段字；空的不算。 */
+const QUOTED = /「([^「」]+)」/g;
+
+/**
+ * 助手补充的来源，理由里用直角引号引出的字要逐字出现在它支持的那几处正文里（没有写支持哪几处时，在这个条目任何一个字段的文字里）：
+ * 页面靠这几个字在正文里标出哪里是助手补的，引的与正文不一样就标不出来。理由里没有直角引号的不核对。
+ * 问题条目不核对（那里的助手补充写的是发现了什么，不是补进正文的字），由调用方跳过。返回不对的地方，每处是 [事实, 怎么办]。
+ */
+export function quotedProblems(fields: Fields, sources: readonly Source[]): [string, string][] {
+  const textsOf = (value: unknown): string[] =>
+    typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : [];
+  const out: [string, string][] = [];
+  for (const source of sources) {
+    if (source.kind !== SOURCE_SUPPLEMENT) continue;
+    const places = source.supports.length === 0 ? Object.values(fields).flatMap(textsOf)
+      : source.supports.flatMap((at) => {
+        const value = fields[at.field];
+        return at.index === undefined || !Array.isArray(value) ? textsOf(value) : textsOf(value[at.index]);
+      });
+    const where = source.supports.length === 0 ? "这个条目的正文" : "它支持的那几处正文";
+    for (const [, quoted] of source.excerpt.matchAll(QUOTED)) {
+      if (places.some((text) => text.includes(quoted))) continue;
+      out.push([`${quoteLabel(source)}的理由里用直角引号引出的「${quoted}」不在${where}里`,
+        "理由里的直角引号只用来逐字引出你补进正文的那几个字：照正文一字不差地引，并在 supports 里写对是哪个字段的第几项；理由里要提到别的词时不要用直角引号"]);
+    }
+  }
+  return out;
+}
+
 /** 结果里说到一条来源：摘录（长的只引前 30 字）加种类。 */
 function quoteLabel(source: Source): string {
   return `「${quoteOf(source.excerpt)}」（${source.kind}）`;
@@ -780,12 +844,24 @@ function deletedAfter(db: DatabaseSync, taskId: string, itemId: string, seq: num
   return !!row && row.deleted_event_seq !== null && Number(row.deleted_event_seq) > seq;
 }
 
-/** 核对一组字段：字段名都在集合的声明里，值的类型对得上。 */
+/** 核对条目引用字段时要查的两样：一个条目在哪个集合里（不存在是 null）、它现在的字段内容（这一批里改过的取改后的）。 */
+interface RefLookups {
+  collectionOf: (itemId: string) => string | null;
+  fieldsOf: (itemId: string) => Record<string, unknown> | null;
+}
+
+/**
+ * 核对一组字段：字段名都在集合的声明里，值的类型对得上；文本列表写了取值的，每一项都在取值里、不重复；
+ * 条目引用字段写了「至多一个」「只许本集合」的照着核对，两样都写了的不许顺着它绕回自己。
+ * self 是正在核对的条目的编号（新增时是它将要拿到的编号，拿不到时为 null）。
+ */
 function checkFields(
   collection: CollectionDef,
   fields: Record<string, unknown>,
   checkRef: (itemId: unknown) => string | null,
   errors: string[],
+  refs: RefLookups | null = null,
+  self: string | null = null,
 ): void {
   const declared = new Map<string, FieldDef>(collection.fields.map((one) => [one.name, one]));
   for (const [name, value] of Object.entries(fields)) {
@@ -805,9 +881,40 @@ function checkFields(
         );
         continue;
       }
+      if (field.single && value.length > 1) {
+        errors.push(withGuide(`字段「${name}」最多写一个条目编号，现在写了 ${value.length} 个`, "只留一个"));
+      }
       value.forEach((one, index) => {
         const reason = typeof one === "string" ? checkRef(one) : "应当写一个条目编号";
-        if (reason) errors.push(`字段「${name}」是条目引用类型，第 ${index + 1} 个编号 ${JSON.stringify(one)} ${reason}`);
+        if (reason) {
+          errors.push(`字段「${name}」是条目引用类型，第 ${index + 1} 个编号 ${JSON.stringify(one)} ${reason}`);
+          return;
+        }
+        if (typeof one !== "string" || !refs) return;
+        if (self !== null && one === self) {
+          errors.push(`字段「${name}」的第 ${index + 1} 个编号 ${one} 指的就是这个条目自己`);
+          return;
+        }
+        if (field.sameCollection) {
+          const target = refs.collectionOf(one);
+          if (target !== null && target !== collection.name) {
+            errors.push(withGuide(`字段「${name}」只能指向「${collection.name}」里的条目，${one} 是「${target}」里的`, `请写「${collection.name}」里的一个条目编号，或者不写`));
+            return;
+          }
+        }
+        if (field.single && field.sameCollection && self !== null) {
+          // 顺着这个字段一路走下去，不许回到自己（甲的上级是乙，乙的上级又是甲）。
+          const seen = new Set<string>();
+          for (let at: string | null = one; at !== null && !seen.has(at); ) {
+            seen.add(at);
+            const next: unknown = (refs.fieldsOf(at)?.[name] as unknown[] | undefined)?.[0];
+            at = typeof next === "string" ? next : null;
+            if (at === self) {
+              errors.push(withGuide(`字段「${name}」写成 ${one} 之后会绕回这个条目自己（${[...seen].join(" → ")} → ${self}）`, "请换一个不在这条线上的条目，或者不写"));
+              break;
+            }
+          }
+        }
       });
       continue;
     }
@@ -817,6 +924,12 @@ function checkFields(
     } else if (field.type === FIELD_TEXT_LIST) {
       if (!Array.isArray(value) || !value.every((one) => typeof one === "string")) {
         errors.push(`字段「${name}」是文本列表类型，应当写一个字符串数组，一步或一条一项`);
+      } else if (field.values) {
+        const allowed = `只能从${field.values.map((one) => `「${one}」`).join("、")}里选，可以选几个`;
+        (value as string[]).forEach((one, index) => {
+          if (!field.values!.includes(one)) errors.push(withGuide(`字段「${name}」的第 ${index + 1} 项写的是 ${JSON.stringify(one)}，不在可以选的值里`, allowed));
+          else if ((value as string[]).indexOf(one) !== index) errors.push(withGuide(`字段「${name}」里「${one}」写了两次`, "同一个值只写一次"));
+        });
       }
     } else if (field.type === FIELD_ENUM) {
       if (typeof value !== "string" || !(field.values ?? []).includes(value)) {
@@ -1052,8 +1165,10 @@ function checkSources(
       locator = locator.trim();
       const reason = itemSource.ref(locator);
       if (reason) {
-        errors.push(withGuide(`${where}的种类是「${SOURCE_ITEM}」，出处 ${locator} ${reason}`,
-          `出处写一个还在的条目的编号，例如 DN-001、UC-003；要引用的条目还没有记下，先新增它（排在前面），再引用`));
+        // 原因自己带着「怎么办」的（指向已废弃的主题时写改看哪一页），用它自己的；否则用通用的那一句。
+        const own = splitGuide(reason);
+        errors.push(withGuide(`${where}的种类是「${SOURCE_ITEM}」，出处 ${locator} ${own.fact}`,
+          own.guidance || `出处写一个还在的条目的编号，例如 OA-001、UC-003；要引用的条目还没有记下，先新增它（排在前面），再引用`));
         ok = false;
         return;
       }

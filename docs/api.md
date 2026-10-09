@@ -99,7 +99,7 @@ All carry `session_id` except `service_exiting`, which goes to every open stream
   "task": { "task_id": "…", "task_name": "…", "task_type": "srs-authoring", "domain_tag": null, "status": "进行中",
             "started_at": "…", "ended_at": null,
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
-                            "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],
+                            "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],   // an item-reference field also has "same_collection" (it may only point at items of its own collection) and "single" (at most one id); for a text list that declares its values, values holds them
                             "display": null,
                             "needs_review": true,
                             "review_rules": [ { "id": "UC-R1", "level": "必选", "text": "…", "counter_example": "…", "example": "…" }, … ],
@@ -114,13 +114,22 @@ All carry `session_id` except `service_exiting`, which goes to every open stream
                                                         "problem": "…", "suggestion": "…" } ] } ],
                          "confirmations": [ { "revision_no": 5, "accepted": true, "at": "…", "basis": "viewed" } ],
                          "waivers": [ { "revision_no": 5, "reason": "…", "source": "panel", "at": "…", "revoked": false, "seq": 44 } ],
-                         "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed" } ],
+                         "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed",
+                         "pending_verification": true, "pending_sources": 1, "pending_places": [ { "field": "已经定下的", "index": 1 } ],   // waiting to be verified, see below
+                         "basis_pending": { "item_id": "OA-002", "reason": "pending", "see": null },   // waiting because of its basis; null when it is not
+                         "mentioned_by": [ { "item_id": "UC-001", "collection": "功能用例", "field": "基本流程", "index": 2, "word": "预约取书", "sentence": "…", "revision_no": 5 } ] } ],   // only on items of the overall analysis
             "review_batches": [ { "no": 1, "batch_id": "ui-op-…", "at": "…", "started_by": "user", "scope": "pending", "total": 16, "passed": 12, "failed": 4, … } ] },
   "materials": [ { "path": "inputs/requirements.md", "bytes": 1234, "modified_at": "…", "derived_from": null } ],   // derived_from: see Materials in 5.1
   "conversation": { "messages": [ … the latest 100, each with "type" … ], "has_earlier": false, "earliest_id": "…" },
   "current_work": null,
   "review_in_progress": null }         // or { "op_id": "ui-op-…", "done": 1, "total": 4, "current": ["UC-002"] }
 ```
+
+Every item also carries a few facts that are worked out when the snapshot is read and are not stored:
+
+- `pending_verification`, `pending_sources`, `pending_places` (**waiting to be verified**, 待核实). `pending_verification` is true when the item's current revision has sources of the kind `助手补充` (added by the assistant) that the user has not confirmed. Opening and reading the item, or pressing confirm (an acceptance whose `basis` is not `ui_edit`), confirms the whole item; an edit by the user (`ui_edit`) confirms only the places it rewrote: on saving, those places are taken out of the `supports` of the sources added by the assistant, and a source whose places were all rewritten is no longer on the new revision; a source without `supports` stays whatever is edited and is confirmed only by reading. Editing other fields, deleting another entry of a list or undoing a revision confirms nothing. When the assistant changes the item again, this starts over. `pending_sources` is the number of sources still waiting; `pending_places` lists the places those sources support that the user has not changed, where `field` is the field name and `index` the position in a list field (from 0; null for a field that is not a list or for the whole field), and a `field` of null means the whole item. When nothing waits they are `false`, `0` and `[]`.
+- `basis_pending` (**waiting because of its basis**). When the item has a source of the kind `条目` that points at a topic page of the overall analysis which is waiting to be verified or is retired, this is `{ "item_id", "reason", "see" }`: `reason` is `pending` (the page waits to be verified) or `deprecated` (the page is retired, and `see` is the page its 改看 field names, or null); with several such sources the first one in the order of the sources is given. This goes one step only: what the cited page itself rests on is not followed. It is null otherwise.
+- `mentioned_by` (**mentions**, 提到; only on items of the overall analysis collection). The titles and aliases of the labelled topic pages in use are the word list; each place where the current text of another page or another item contains a word of this page is one entry: `item_id` and `collection` say which item, `field` and `index` which field and which entry of it, `word` is the word that was found, `sentence` the sentence it stands in, and `revision_no` is the current revision of the page that is mentioned (a page can use it to remember at which revision of that page the user saw the mention, and to remind the user when the page has changed since). At one position the longest word of the list wins; a sentence counts once per page; a page does not mention itself; when two pages share a title or an alias, both get an entry. A page without a label and a retired page have an empty list.
 
 `review_in_progress` is the review started from the interface that is running now, shaped like `op_id`, `done`, `total` and `current` of the `review_progress` event and taken from the last review progress in the task database. It is null when that review is over, when the agent is not running, or when the progress was written before the agent's current start (the agent exited during the review). The page uses it to show 评审中 ("reviewing") right after a reload; when it is null and the page still has an unfinished review, the page clears it.
 
@@ -137,10 +146,12 @@ When a task is completed or abandoned, `task` is still returned, messages and di
   { "collection": "功能用例", "name": "每个条目评审通过", "met": false, "state": "unmet", "done": 0, "total": 7,
     "missing": ["UC-001", …], "note": "…" } ],
   "hints": [ { "kind": "unlinked_domain_notes", "collection": "领域说明", "items": ["DN-001"],
-    "summary": "有 1 条领域说明还没有和任何条目关联：DN-001。" } ] }
+    "summary": "有 1 条领域说明还没有和任何条目关联：DN-001。" },
+             { "kind": "untagged_overall_pages", "collection": "总体分析", "items": ["OA-003"],
+    "summary": "有 1 页主题还没有贴标签：OA-003。贴了标签的主题才会进文档，评审也只认贴了标签的主题。" } ] }
 ```
 
-`hints` lists facts that are shown next to the conditions but never block completion; it is an empty list when there are none. The only kind so far is `unlinked_domain_notes`: domain notes that no live item cites as a source or lists in an item-reference field, and whose own item-reference field points at no live item.
+`hints` lists facts that are shown next to the conditions but never block completion; it is an empty list when there are none. There are two kinds, and a task only ever has one of them. `untagged_overall_pages` (tasks with the overall analysis collection, 总体分析): topic pages in use that have no label yet. `unlinked_domain_notes` (tasks created by 0.4, whose collection is still the domain notes, 领域说明): domain notes that no live item cites as a source or lists in an item-reference field, and whose own item-reference field points at no live item.
 
 Each condition has one of three states. `met`: the collection has items and all of them meet the condition. `unmet`: some item does not, or "at least one item" finds none. `empty`: the collection has no items, so a condition over "every item" has nothing to check. `empty` still counts as met for completing the task (`met` stays `true`, so optional collections may stay empty), but it must not be shown as progress: report how many conditions are still `unmet` (`unmet_count`), not how many are met. `brief` is the one-sentence summary the agent itself sees; use it, or the same wording, everywhere.
 

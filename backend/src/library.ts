@@ -15,6 +15,7 @@ import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { pdfFacts, pdfSourceName } from "./projection.ts";
+import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -200,7 +201,9 @@ export function definitionView(definition: ParsedDefinition, definitionText: unk
   return {
     collections: definition["集合"].map((c) => ({
       name: c["名称"], prefix: c["编号前缀"],
-      fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"], required: Boolean(f["必填"]), values: f["取值"] ?? null })),
+      // values：枚举的取值，或者文本列表的取值（列表里每一项只能是其中之一）；same_collection 与 single 只有条目引用字段可能为真。
+      fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"], required: Boolean(f["必填"]), values: f["取值"] ?? null,
+        same_collection: f["只许本集合"] === true, single: f["至多一个"] === true })),
       display: displayView(c["界面"]),
       ...collectionReviewView(definition, c["名称"], definitionText, taskDir),
     })),
@@ -668,6 +671,38 @@ export class Library {
       (order.get(a.collection) ?? 99) - (order.get(b.collection) ?? 99) || (a.serial < b.serial ? -1 : a.serial > b.serial ? 1 : 0));
     const items = [];
     const dependedBy = this.dependedBy(sorted);
+    // 待核实、因依据而待核实、提到：从这里读出的事实交给 agent/src/lib/overall_analysis.ts 去算，与助手一侧同一组函数。
+    const live = sorted.filter((i) => i.deleted_in_revision === null);
+    const plain: PlainItem[] = live.map((i) => {
+      const no = this.currentRevision(i.item_id)!;
+      return { item_id: i.item_id, collection: i.collection, revision_no: no, fields: or(jsonOrText(this.contents.get(itemKey(i.item_id, no))!.fields), {}) as Record<string, any> };
+    });
+    const mentions = mentionsOf(this.definition["集合"].map((c) => ({ name: c["名称"], fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"] })) })), plain);
+    const withOverall = this.collections.has(OVERALL_COLLECTION);
+    const pendingOf = new Map<string, Verification>();
+    for (const one of plain) {
+      const supplements = this.sourcesOf(one.item_id, one.revision_no).filter((s) => isSupplement(s.kind)).map((s) => s.supports ?? []);
+      // 这个条目的各次修订：是不是用户亲手改出来的、用户有没有在那次修订上看过（依据不是用户修改的确认里最近一条是接受）。
+      const history: RevisionFacts[] = this.itemRevisions(one.item_id).map((no) => {
+        const v = this.contents.get(itemKey(one.item_id, no))!;
+        const seen = this.confirmationsOf(one.item_id, no).filter((c) => c.basis !== "ui_edit");
+        return {
+          byUser: actorWord((this.data.event_meta?.get(v.event_seq) ?? ({} as Record<string, any>)).actor ?? "") === ACTOR_USER,
+          viewed: seen.length > 0 && seen[seen.length - 1].accepted,
+        };
+      });
+      // 从最近一次不是用户亲手改出来的修订起算（与助手一侧 lib/overall_read.ts 的 chainOf 同一个规矩）。
+      let from = 0;
+      history.forEach((rev, n) => {
+        if (!rev.byUser) from = n;
+      });
+      pendingOf.set(one.item_id, verificationOf(supplements, history.slice(from)));
+    }
+    const plainOf = new Map(plain.map((one) => [one.item_id, one]));
+    const citedPage = (id: string) => {
+      const page = plainOf.get(id);
+      return page ? { collection: page.collection, fields: page.fields, pending: pendingOf.get(id)!.pending_verification } : null;
+    };
     for (const i of sorted) {
       if (i.deleted_in_revision !== null) continue;
       const no = this.currentRevision(i.item_id);
@@ -694,6 +729,14 @@ export class Library {
         viewed: accepted.length > 0,
         confirmation_basis: currentOk ? latestForCurrent[latestForCurrent.length - 1].basis
           : accepted.length ? accepted[accepted.length - 1].basis : null,
+        // 待核实：当前修订上有助手补充的来源，而用户还没有确认过。用户看过（或点了确认）是确认整个条目；用户亲手改只确认他改到的那几处
+        // （保存时他改写的那几处已经从来源里去掉，所以当前修订上还在的助手补充都是他没有改到的）。
+        // pending_sources 是还待核实的来源有几条，pending_places 是还待核实的各处（字段与第几项；field 为 null 指整个条目）。
+        ...pendingOf.get(i.item_id)!,
+        // 因依据而待核实：它依据的总体分析的一页待核实（reason 是 pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。
+        basis_pending: basisPending(this.sourcesOf(i.item_id, no), citedPage),
+        // 总体分析的页：别的页与别的条目的文字里提到它的地方；一处都没有是空列表。别的集合的条目与没有总体分析集合的任务不带这一项。
+        ...(withOverall && i.collection === OVERALL_COLLECTION ? { mentioned_by: mentions.get(i.item_id) ?? [] } : {}),
       });
     }
     return {

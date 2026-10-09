@@ -20,6 +20,7 @@ import { REVIEW_CONDITION, findingText } from "./review.ts";
 import { batchNumber, currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
+import { mentionLines, overallState, pendingSummary, verificationLines } from "./overall_read.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
@@ -174,6 +175,12 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
       // 早期版本写下的「用户直接修改」不读出，它的位置号留下的空位去掉。
       .filter(Boolean);
     const lines = itemDetailLines(db, task, definition, itemId, typeof wanted === "number" ? wanted : undefined, workspaceDir);
+    // 待核实与（总体分析的页）被提到的地方：都按条目现在的内容算，看旧内容时不写。
+    const overall = shown === current ? overallState(db, task.task_id, definition) : null;
+    const verification = overall?.verification.get(itemId) ?? null;
+    const mentioned = overall?.mentions.get(itemId) ?? [];
+    if (verification) lines.push(...verificationLines(itemId, verification));
+    lines.push(...mentionLines(itemId, mentioned));
     lines.push(
       "",
       shown === current
@@ -198,6 +205,9 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
         review: reviewState(db, task.task_id, itemId, shown, workspaceDir),
         confirm: confirmState(db, task.task_id, itemId, shown),
         dialogue,
+        ...(verification ? { pending_verification: verification.pending_verification, pending_sources: verification.pending_sources,
+          pending_places: verification.pending_places, basis_pending: verification.basis_pending } : {}),
+        ...(mentioned.length ? { mentioned_by: mentioned } : {}),
       },
     };
   });
@@ -238,7 +248,10 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
         ? "未读的条目：没有，每个条目用户都看过。"
         : `未读的条目 ${unread.length} 条（用户从没打开看过它们；问用户要不要完成任务之前，先告诉用户还有几条没看）：${unreadList(unread)}。`,
     );
-    // 完成条件之外的提示，不挡完成任务，例如还没有和任何条目关联的领域说明。
+    // 待核实的条目：有助手补充而用户还没有确认的，或者依据的主题待核实、已废弃的。一个都没有时不写。
+    const pending = pendingSummary(overallState(db, task.task_id, definition));
+    if (pending) lines.push(pending);
+    // 完成条件之外的提示，不挡完成任务，例如还没有贴标签的主题。
     const hints = completionHints(db, task.task_id, definition.completion);
     for (const hint of hints) lines.push(`提示（不挡完成任务）：${hint.summary}`);
     // 材料的分段与引用情况写在修订与事件序号之前，末行仍与看板相同。

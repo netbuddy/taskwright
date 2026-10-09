@@ -24,6 +24,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { load } from "./db.ts";
 import { titleOf } from "./tool_render.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
+import { OVERALL_COLLECTION, isDeprecated, tagsOf } from "./overall_analysis.ts";
 import { DOMAIN_NOTE_COLLECTION, LEGACY_SOURCE_KINDS, SOURCE_ITEM, ELEMENT_ITEM, elementClause } from "./schema.ts";
 
 /** 一项条件的三种状态：已满足、还差、暂无条目（集合为空，这一条无从谈起）。 */
@@ -267,16 +268,25 @@ export function completionBrief(results: ConditionResult[], listAtMost = 6): str
 // ───────────── 提示（不是门禁） ─────────────
 
 /**
- * 完成条件之外的提示：由事实算出来给人看，不挡完成任务。现在只有一种 unlinked_domain_notes：
- * 「领域说明」集合里还没有和任何条目关联的说明。
+ * 完成条件之外的提示：由事实算出来给人看，不挡完成任务。两种，一个任务只会有其中一种：
+ * - unlinked_domain_notes：「领域说明」集合（0.4 建的任务）里还没有和任何条目关联的说明；
+ * - untagged_overall_pages：「总体分析」集合里在用而还没有贴标签的主题。
  */
 export interface CompletionHint {
-  kind: "unlinked_domain_notes";
+  kind: "unlinked_domain_notes" | "untagged_overall_pages";
   collection: string;
   /** 涉及的条目编号，按流水号排。 */
   items: string[];
   /** 一句完整的中文，例如「有 2 条领域说明还没有和任何条目关联：DN-003、DN-004。」 */
   summary: string;
+}
+
+/** 总体分析里在用而还没有贴标签的主题，按流水号排。任务没有这个集合、或者里面没有条目时是空的。 */
+export function untaggedPages(db: DatabaseSync, taskId: string): string[] {
+  return currentItems(db, taskId, OVERALL_COLLECTION).filter((row) => {
+    const fields = load(row.fields) as Record<string, unknown>;
+    return !isDeprecated(fields) && tagsOf(fields).length === 0;
+  }).map((row) => row.item_id);
 }
 
 /** 任务定义快照里每个集合的条目引用字段名；读不出来时为空。 */
@@ -331,15 +341,32 @@ export function unlinkedDomainNotes(db: DatabaseSync, taskId: string): string[] 
   return notes.map((row) => row.item_id).filter((id) => !linked.has(id));
 }
 
-/** 完成条件面板另列的提示。完成条件里有「领域说明」集合时才算未关联的领域说明。 */
+/**
+ * 完成条件面板另列的提示。完成条件里有「领域说明」集合时算未关联的领域说明；有「总体分析」集合时算还没有贴标签的主题。
+ */
 export function completionHints(db: DatabaseSync, taskId: string, completion: Record<string, string[]>): CompletionHint[] {
-  if (!(DOMAIN_NOTE_COLLECTION in completion)) return [];
-  const items = unlinkedDomainNotes(db, taskId);
-  if (items.length === 0) return [];
-  return [{
-    kind: "unlinked_domain_notes",
-    collection: DOMAIN_NOTE_COLLECTION,
-    items,
-    summary: `有 ${items.length} 条领域说明还没有和任何条目关联：${idsPhrase(items)}。`,
-  }];
+  const out: CompletionHint[] = [];
+  if (DOMAIN_NOTE_COLLECTION in completion) {
+    const items = unlinkedDomainNotes(db, taskId);
+    if (items.length > 0) {
+      out.push({
+        kind: "unlinked_domain_notes",
+        collection: DOMAIN_NOTE_COLLECTION,
+        items,
+        summary: `有 ${items.length} 条领域说明还没有和任何条目关联：${idsPhrase(items)}。`,
+      });
+    }
+  }
+  if (OVERALL_COLLECTION in completion) {
+    const items = untaggedPages(db, taskId);
+    if (items.length > 0) {
+      out.push({
+        kind: "untagged_overall_pages",
+        collection: OVERALL_COLLECTION,
+        items,
+        summary: `有 ${items.length} 页主题还没有贴标签：${idsPhrase(items)}。贴了标签的主题才会进文档，评审也只认贴了标签的主题。`,
+      });
+    }
+  }
+  return out;
 }

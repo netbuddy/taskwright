@@ -39,14 +39,20 @@ const USE_CASE = [{ op: "add", collection: "功能用例",
   fields: { 用例名称: "缴纳罚款", 用例功能: "读者缴纳逾期罚款。", 参与者: ["读者"], 基本流程: ["读者查看罚款", "读者缴费"] },
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。", supports: [{ field: "用例功能" }] }] }];
 
+/** 一页合格的主题（贴了标签、有例子、全部照抄材料所以不待核实）：新建的任务里要先有它，才能写用例。 */
+const TOPIC = [{ op: "add", collection: "总体分析",
+  fields: { 标题: "逾期罚款", 它是什么: "逾期不还的，按馆里的规定罚款。", 例子: ["读者凭借书证借书。"], 标签: ["概念"], 状态: "在用" },
+  sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。", supports: [{ field: "它是什么" }] },
+    { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭借书证借书。", supports: [{ field: "例子", index: 0 }] }] }];
 const ANOTHER = [{ ...USE_CASE[0], fields: { ...USE_CASE[0].fields, 用例名称: "查询罚款", 用例功能: "读者查询逾期罚款。" } }];
 
 /**
- * 经子进程调助手一侧真实的保存函数，在一个任务里存修订；返回各次存成的修订号。保存是按调用编号判重的：那个脚本头一组操作的
- * 调用编号总是同一个，所以对一个存过一次的任务再调，头一组得到的是原来那次修订（1），后一组才是新的一次。again 为真时带上后一组。
+ * 经子进程调助手一侧真实的保存函数，在一个任务里存修订：先立一页主题，再写一个用例；返回各次存成的修订号。保存是按调用编号判重的：
+ * 那个脚本各组操作的调用编号按先后固定，所以对一个存过这两次的任务再调，这两组得到的是原来的修订（1、2），再往后的一组才是新的一次。
+ * again 为真时带上那新的一组。
  */
 function saveMore(where: PackLocations, id: string, again = false): number[] {
-  const more = spawnSync(process.execPath, [SAVE_MORE, join(where.tasksDir, id), JSON.stringify(again ? [USE_CASE, ANOTHER] : [USE_CASE])],
+  const more = spawnSync(process.execPath, [SAVE_MORE, join(where.tasksDir, id), JSON.stringify(again ? [TOPIC, USE_CASE, ANOTHER] : [TOPIC, USE_CASE])],
     { encoding: "utf-8", env: { ...process.env, [TASKS_ROOT_ENV]: where.tasksDir } });
   assert.equal(more.status, 0, more.stderr);
   return JSON.parse(more.stdout);
@@ -57,7 +63,7 @@ async function sampleData() {
   const where = await dataWith(fresh("data"), ["甲", "乙"]);
   const [a, b] = where.ids;
   put(join(where.tasksDir, a, "inputs", "材料.md"), MATERIAL, MATERIAL_AT);
-  assert.deepEqual(saveMore(where, a), [1]);
+  assert.deepEqual(saveMore(where, a), [1, 2]);
   putArchive(where, a);
   mkdirSync(join(where.tasksDir, b, "inputs", "空目录"), { recursive: true });
   const store = new KnowledgeStore(where.knowledgeDir);
@@ -113,7 +119,7 @@ test("往返：整套导出再导入到一个空的数据目录，任务、归�
     assert.deepEqual(without(tree(join(target.tasksDir, id))), without(tree(join(where.tasksDir, id))), id);
     assert.deepEqual(facts(join(target.tasksDir, id)), facts(join(where.tasksDir, id)), id);
   }
-  assert.deepEqual([facts(join(target.tasksDir, a)).revisions, facts(join(target.tasksDir, a)).items, facts(join(target.tasksDir, a)).sources], [1, 1, 1]);
+  assert.deepEqual([facts(join(target.tasksDir, a)).revisions, facts(join(target.tasksDir, a)).items, facts(join(target.tasksDir, a)).sources], [2, 2, 3]);
   assert.deepEqual(tree(join(target.runsDir, a)), tree(join(where.runsDir, a)));
   assert.equal(Object.keys(tree(join(target.runsDir, a))).length, 4);
   assert.equal(existsSync(join(target.runsDir, b)), false, "没有归档的任务不建空的归档目录");
@@ -136,11 +142,11 @@ test("往返：整套导出再导入到一个空的数据目录，任务、归�
   const deletable = (service: Service) => (service.taskPage(service.task(a)) as Record<string, any>).materials.map((m: any) => [m.path, m.deletable]);
   assert.deepEqual(await withService(where, deletable), [["inputs/材料.md", false]]);
   await withService(target, (service) => {
-    assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.task_name, t.supported, t.item_count, t.session_count]).sort(), [[a, "甲", true, 1, 1], [b, "乙", true, 0, 0]].sort());
+    assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.task_name, t.supported, t.item_count, t.session_count]).sort(), [[a, "甲", true, 2, 1], [b, "乙", true, 0, 0]].sort());
     assert.deepEqual(deletable(service), [["inputs/材料.md", false]]);
   });
   // 导入的任务照常再存一次修订。
-  assert.deepEqual(saveMore(target, a, true), [1, 2]);
+  assert.deepEqual(saveMore(target, a, true), [1, 2, 3]);
 });
 
 test("编号已经有任务在用：缺省跳过并写明；改编号导入后两个任务并存，新编号的任务服务接手得了、能再存修订，归档原样", async () => {
@@ -180,14 +186,14 @@ test("编号已经有任务在用：缺省跳过并写明；改编号导入后�
       const task = service.task(id);
       assert.deepEqual([task.dir, task.executor.sessions.dir], [join(where.tasksDir, id), join(where.runsDir, id, "pi-sessions", "service")]);
       assert.deepEqual(service.listTasks().filter((t) => t.task_name === "甲").map((t) => [t.task_id, t.supported, t.item_count, t.session_count]).sort(),
-        [[a, true, 1, 1], [id, true, 1, 1]].sort());
+        [[a, true, 2, 1], [id, true, 2, 1]].sort());
     });
     // 续接这条会话之前服务会核对第一行并改成现在的任务目录（这里直接调那个核对，不起助手）。
     assert.equal(rebaseSessionCwd(session, join(where.tasksDir, id))?.[0], join(where.tasksDir, a));
     assert.equal(JSON.parse(readFileSync(session, "utf-8").split("\n")[0]).cwd, join(where.tasksDir, id));
     // 新编号的任务照常再存一次修订，原来的任务不受影响。
-    assert.deepEqual(saveMore(where, id, true), [1, 2]);
-    assert.deepEqual([facts(join(where.tasksDir, id)).revisions, facts(join(where.tasksDir, a)).revisions], [2, 1]);
+    assert.deepEqual(saveMore(where, id, true), [1, 2, 3]);
+    assert.deepEqual([facts(join(where.tasksDir, id)).revisions, facts(join(where.tasksDir, a)).revisions], [3, 2]);
   } finally {
     registry.close();
   }

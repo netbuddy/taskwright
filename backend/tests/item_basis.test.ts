@@ -8,7 +8,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import * as library from "../src/library.ts";
-import { makeTypedTask, tempDir } from "./helpers.ts";
+import { makeLegacyTask, tempDir } from "./helpers.ts";
 
 const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭口令登录。" };
 const note = (title: string, content: string) => ({ op: "add", collection: "领域说明", fields: { 标题: title, 内容: content, 类别: "术语" }, sources: [SOURCE] });
@@ -18,7 +18,7 @@ let tmp: string;
 let ws: string;
 before(() => {
   tmp = tempDir();
-  ws = makeTypedTask(join(tmp, "basis"), "srs-authoring", { "材料.md": "读者凭口令登录。" }, [
+  ws = makeLegacyTask(join(tmp, "basis"), { "材料.md": "读者凭口令登录。" }, [
     // 修订 1：三条领域说明。
     [note("口令", "读者登录时输入的一串字符"), note("读者", "办了借书证的人"), note("借书证", "读者的凭证")],
     // 修订 2：UC-001 依据 DN-001（两条来源都指它）与 DN-002；UC-002 依据 DN-003。

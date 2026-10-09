@@ -15,7 +15,7 @@ import { dispatch } from "../src/http.ts";
 import * as library from "../src/library.ts";
 import { sourceEntries, sourcesText } from "../src/render.ts";
 import { Service } from "../src/service.ts";
-import { captureConsole, makeTypedTask, sqlRun, tempDir } from "./helpers.ts";
+import { captureConsole, makeLegacyTask, sqlRun, tempDir } from "./helpers.ts";
 
 captureConsole();
 
@@ -39,7 +39,7 @@ const BATCHES = [
 let ws: string;
 let lib: library.Library;
 before(() => {
-  ws = makeTypedTask(tmp, "srs-authoring", { "材料.md": "读者凭口令登录。管理员在服务台办理借还。" }, BATCHES);
+  ws = makeLegacyTask(tmp, { "材料.md": "读者凭口令登录。管理员在服务台办理借还。" }, BATCHES);
   lib = library.libraryOf(ws);
 });
 
@@ -171,7 +171,7 @@ test("已删除的条目不导出；选中的都删了、交付物里没有过�
 });
 
 test("导出的是最新的修订：条目改过之后导出的是改后的内容", async () => {
-  const copy = makeTypedTask(join(tmp, "newer"), "srs-authoring", { "材料.md": "读者凭口令登录。" }, [
+  const copy = makeLegacyTask(join(tmp, "newer"), { "材料.md": "读者凭口令登录。" }, [
     [{ op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "旧的写法。", 参与者: ["读者"], 基本流程: ["输入口令"] }, sources: [SOURCE] }],
     [{ op: "update", item: "UC-001", base_revision: 1, fields: { 用例名称: "读者登录", 用例功能: "新的写法。" }, sources: [SOURCE] }],
   ]);
@@ -209,7 +209,7 @@ test("请求体与文件名", () => {
 test("下载接口：format 写 docx 回 Word 文件与文件名；只能下载不能预览；别的格式拒绝；markdown 那一路照旧", async () => {
   // 后端不写库：任务与条目由夹具在任务根目录里建好，任务服务只读它；任务编号从这个任务的库里读。
   const root = join(tmp, "service");
-  const dir = makeTypedTask(join(root, "tasks"), "srs-authoring", { "材料.md": "读者凭口令登录。" }, [[
+  const dir = makeLegacyTask(join(root, "tasks"), { "材料.md": "读者凭口令登录。" }, [[
     { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] }, sources: [{ kind: "助手补充", excerpt: "试验用。" }] },
   ]]);
   sqlRun(dir, [["UPDATE task SET task_name = ?", "图书馆借还"]]);   // 夹具不另起任务名，这里给它起一个
