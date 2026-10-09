@@ -1,5 +1,6 @@
 // 对话区里的任务状况消息默认折叠成一行要点：要点取自后端随消息给的 details，取不到的项不写；点这一行展开全文，再点收起。
-// 「回复」工具兜底提醒的那一句、界面操作的通知不折叠。没有 kind 的旧数据按文字的开头认。
+// 助手没有用回复工具说话时系统提醒它的那一句，对话区不画；没有 kind 的旧数据里的这一句照旧整句显示。界面操作的通知不折叠。
+// 任务状况消息没有 kind 时按文字的开头认。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -142,13 +143,30 @@ describe("对话区里的任务状况消息", () => {
     expect(lines[0]).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("不折叠的照旧：兜底提醒那一句整句显示在「系统说明」框里，界面操作的通知是一行灰字，都没有可点开的那一行", () => {
+  it("助手没有用回复工具说话时系统提醒它的那一句不画：对话里只有它时对话区是空的；夹在别的消息中间时别的照旧", () => {
+    show([note({ message_id: "f1", kind: "reply_fallback", text: FALLBACK_TEXT })]);
+    expect(screen.queryByTestId("system-note")).toBeNull();
+    expect(screen.queryByText("系统说明")).toBeNull();
+    expect(screen.queryByText(/没有用回复工具说话/)).toBeNull();
+    expect(screen.getByTestId("conversation").children).toHaveLength(0);
+    cleanup();
+
     show([
+      note({ details: START_DETAILS }),
       note({ message_id: "f1", kind: "reply_fallback", text: FALLBACK_TEXT }),
       { type: "ui_action_noted", message_id: "e1", at: "", text: "【界面操作：不是用户打的字】用户在界面上把 UC-001 标为看过了。", undoable: false } as unknown as ConversationMessage,
+      note({ message_id: "f2", kind: "reply_fallback", text: FALLBACK_TEXT }),
     ]);
+    expect(screen.getAllByTestId("system-note")).toHaveLength(1);
+    expect(screen.getByTestId("system-note-line").textContent).toMatch(/^助手开始这条会话时看到的任务状况：/);
+    expect(screen.queryByText(/没有用回复工具说话/)).toBeNull();
+    expect(screen.getByText(/UC-001 标为看过了/)).toBeInTheDocument();
+    expect(screen.getByTestId("conversation").children).toHaveLength(2);
+  });
+
+  it("没有 kind 的旧数据里的这一句照旧整句显示在「系统说明」框里，没有可点开的那一行", () => {
+    show([note({ message_id: "f1", kind: undefined, text: FALLBACK_TEXT })]);
     expect(screen.queryByTestId("system-note-line")).toBeNull();
     expect(screen.getByTestId("system-note").textContent).toBe(`系统说明${FALLBACK_TEXT}`);
-    expect(screen.getByText(/UC-001 标为看过了/)).toBeInTheDocument();
   });
 });

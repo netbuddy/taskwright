@@ -249,6 +249,8 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
 }) {
   switch (message.type) {
     case "system_note": {
+      // 助手没有用回复工具说话时系统提醒它的那一句不画：那是助手与系统之间的纠正，不是给用户看的。只按 kind 认，没有 kind 的旧数据照旧显示。
+      if ((message as SystemNote).kind === "reply_fallback") return null;
       const line = statusNoteLine(message as SystemNote);
       if (line !== null) return <StatusNote line={line} text={message.text} />;
       return (
