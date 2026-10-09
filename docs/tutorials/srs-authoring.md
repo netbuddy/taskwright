@@ -60,7 +60,7 @@ Click **新建会话** (New session) at the top right of the task page. The work
 
 ![Work view](images/srs-authoring/04-work-view.png)
 
-- **On the left is the conversation.** The first message, marked 系统说明 (system note), tells the assistant what the task looks like and which materials there are. The software writes it; you did not type it.
+- **On the left is the conversation.** The line at the top, the status of the task folded into one line, tells the assistant what the task looks like and which materials there are; click it to see the full text under the heading 系统说明 (system note). The software writes it; you did not type it.
 - **In the middle are the items.** There is one tab per collection: use cases, non-functional requirements, constraints, and open and out-of-scope issues. Below them are filters and a summary line.
 - **On the right is the side panel, with three tabs: 材料 (Materials), 文档 (Document) and 修订 (Revisions).** Materials shows the original text you uploaded, marked 外来 · 只读 (external, read-only); Document is where documents are generated; Revisions is the log of revisions of the deliverable. **收起** (Collapse) at the top right folds it into a narrow strip; on narrow windows it starts folded.
 - **At the right of the top bar is 字号 小 中 大 (font size small, medium, large)**; step 33 uses it.
