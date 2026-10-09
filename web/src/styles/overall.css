@@ -12,8 +12,9 @@
 .app .oa-handle:hover { background: var(--sel); color: var(--ink); }
 .app .oa-handle .harrow { writing-mode: horizontal-tb; letter-spacing: 0; }
 .app .oa-pane.closed .oa-handle { display: flex; }
-@container items (max-width: 44rem) {
-  /* 条目区很窄：提纲缺省收着；点开时盖在主题页上面，不把主题页挤窄 */
+@container items (max-width: 48rem) {
+  /* 条目区不到 48rem 宽（例如 1900 宽、右侧栏展开时约 45rem）：提纲缺省收着，主题页用整个条目区；
+   * 点把手展开时提纲盖在主题页上面，不把主题页挤窄 */
   .app .oa-pane.auto .oa-outline { display: none; }
   .app .oa-pane.auto .oa-handle { display: flex; }
   .app .oa-pane.open .oa-outline { position: absolute; z-index: 5; top: 0; bottom: 0; left: 0; width: 16rem; box-shadow: 0 0 1.2rem var(--shadow-3); }
