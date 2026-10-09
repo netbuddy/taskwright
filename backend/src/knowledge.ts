@@ -346,7 +346,7 @@ export class KnowledgeStore {
     const target = this.filePath(id, name);
     if (target.toLowerCase().endsWith(".pdf")) {
       const projection = target + PDF_PROJECTION_SUFFIX;
-      if (!isFile(projection)) throw new ApiError("not_found", `没有由《${name}》生成的投影。`);
+      if (!isFile(projection)) throw new ApiError("not_found", `没有由《${name}》生成的文字版。`);
       return readTextFile(projection);
     }
     if (target.toLowerCase().endsWith(".docx")) {

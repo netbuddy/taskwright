@@ -323,7 +323,7 @@ function headingTitle(p: Para): { label: string; text: string } {
 
 const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 const hasImage = (p: Para) => p.pieces.some((x) => "image" in x);
-const charts = (p: Para) => p.pieces.filter((x): x is { chart: string } => "chart" in x).map((x) => `（这里有一个 ${x.chart}，投影里没有转出）`);
+const charts = (p: Para) => p.pieces.filter((x): x is { chart: string } => "chart" in x).map((x) => `（这里有一个 ${x.chart}，文字版里没有转出）`);
 
 /** 一段写成「编号 [pN] 正文」；空段落（没有文字也没有图片）返回 null。 */
 function paraLine(p: Para, media: string, cell: boolean, where = ""): string | null {

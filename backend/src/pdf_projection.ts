@@ -472,7 +472,7 @@ export async function writePdfProjection(pdf: string, rel: string, segments: Seg
     try {
       writeFileSync(out.projection, result.markdown, "utf-8");
     } catch (error) {
-      throw new PdfProjectionError(`投影没有写成：${(error as Error).message}`);
+      throw new PdfProjectionError(`文字版没有写成：${(error as Error).message}`);
     }
     try {
       writePdfSegments(out.segments, buildPdfSegments(result.markdown, segments, rel, rel + PDF_PROJECTION_SUFFIX, result.locations.headings));

@@ -78,7 +78,7 @@ export interface SegmentList {
   blocks: SegmentBlock[];
 }
 
-const NOTE = "行号只对同目录里当前这份投影文件有效；块里的 paragraphs 只数有文字的段。";
+const NOTE = "行号只对同目录里当前这份文字版文件有效；块里的 paragraphs 只数有文字的段。";
 
 /** 把一段参数（JSON 文字或对象）整理成完整的参数：没写的一项用默认值；写了但不是正整数时抛异常。 */
 export function segmentParams(raw?: string | Partial<SegmentParams> | null): SegmentParams {

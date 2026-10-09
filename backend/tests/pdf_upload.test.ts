@@ -181,10 +181,10 @@ test("删除 PDF 材料：投影、分段清单与位置表一起删；派生文
 
 test("用户附了 PDF 材料：给助手的那句话写明读哪份投影、出处怎么写", () => {
   assert.equal(withAttachments("看看这份", ["inputs/办法.pdf"]),
-    "看看这份\n（我上传了材料：inputs/办法.pdf；其中 PDF 文件请读同名的 .md 投影（inputs/办法.pdf.md），引用时出处写 PDF 文件加页与块，例如 inputs/办法.pdf#p3-2）");
+    "看看这份\n（我上传了材料：inputs/办法.pdf；其中 PDF 文件请读同名加 .md 的文字版（inputs/办法.pdf.md），引用时出处写 PDF 文件加页与块，例如 inputs/办法.pdf#p3-2）");
   assert.equal(withAttachments("看看", ["inputs/a.docx", "inputs/b.pdf", "inputs/c.md"]),
-    "看看\n（我上传了材料：inputs/a.docx、inputs/b.pdf、inputs/c.md；其中 Word 文件请读同名的 .md 投影（inputs/a.docx.md），引用时出处写 Word 文件加段落号；"
-    + "PDF 文件请读同名的 .md 投影（inputs/b.pdf.md），引用时出处写 PDF 文件加页与块，例如 inputs/b.pdf#p3-2）");
+    "看看\n（我上传了材料：inputs/a.docx、inputs/b.pdf、inputs/c.md；其中 Word 文件请读同名加 .md 的文字版（inputs/a.docx.md），引用时出处写 Word 文件加段落号；"
+    + "PDF 文件请读同名加 .md 的文字版（inputs/b.pdf.md），引用时出处写 PDF 文件加页与块，例如 inputs/b.pdf#p3-2）");
   assert.equal(withAttachments("看看", ["inputs/c.md"]), "看看\n（我上传了材料：inputs/c.md）");
 });
 

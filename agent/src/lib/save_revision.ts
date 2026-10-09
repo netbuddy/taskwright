@@ -1095,13 +1095,13 @@ function checkSources(
     const inKnowledge = one.kind === SOURCE_DOCUMENT && isKnowledgeLocator(locator);
     const noun: Noun = inKnowledge ? "文档" : "材料";
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.docx\.(txt|md)$/i.test(locator)) {
-      errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的投影，不是${noun}本身`,
+      errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的文字版，不是${noun}本身`,
         `出处写 Word 文件加段落号，例如 ${locator.replace(/\.(txt|md)$/i, "")}#p12`));
       ok = false;
       return;
     }
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.pdf\.md$/i.test(locator)) {
-      errors.push(withGuide(`${where}的出处 ${locator} 是由 PDF 文件生成的投影，不是${noun}本身`,
+      errors.push(withGuide(`${where}的出处 ${locator} 是由 PDF 文件生成的文字版，不是${noun}本身`,
         `出处写 PDF 文件加页与块，例如 ${locator.replace(/\.md$/i, "")}#p3-2`));
       ok = false;
       return;

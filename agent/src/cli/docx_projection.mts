@@ -64,7 +64,7 @@ try {
   }
   writeFileSync(projection, result.markdown, "utf-8");
 } catch (e) {
-  fail(`投影没有写成：${(e as Error).message}`);
+  fail(`文字版没有写成：${(e as Error).message}`);
 }
 const segments = values.docx + SEGMENTS_SUFFIX;
 try {

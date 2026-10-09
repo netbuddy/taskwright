@@ -56,7 +56,7 @@ export interface PdfSegmentList {
   blocks: PdfSegmentBlock[];
 }
 
-const NOTE = "行号只对同目录里当前这份投影文件有效；units 只数有定位符、块号不是 0 的行。";
+const NOTE = "行号只对同目录里当前这份文字版文件有效；units 只数有定位符、块号不是 0 的行。";
 
 // 投影全文 → 各块的取法在 lib/pdf_source.ts（页面也用它，那个文件不导入 Node 的模块）；这里照原来的名字再导出。
 export { type PdfUnit, pdfProjectionUnits };

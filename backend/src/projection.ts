@@ -96,7 +96,7 @@ export function writeProjection(docx: string, rel: string, segments: SegmentPara
     }
     writeFileSync(projection, result.markdown, "utf-8");
   } catch (error) {
-    throw new ProjectionError(`投影没有写成：${(error as Error).message}`);
+    throw new ProjectionError(`文字版没有写成：${(error as Error).message}`);
   }
   try {
     writeSegments(docx + SEGMENTS_SUFFIX, buildSegments(result.markdown, segments, rel, rel + SUFFIX));

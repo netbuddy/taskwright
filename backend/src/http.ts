@@ -201,8 +201,8 @@ export function withAttachments(text: string, paths: string[]): string {
   const words = paths.filter((p) => p.toLowerCase().endsWith(".docx"));
   const pdfs = paths.filter((p) => p.toLowerCase().endsWith(".pdf"));
   const notes = [
-    ...(words.length ? [`其中 Word 文件请读同名的 .md 投影（${words.map((p) => p + ".md").join("、")}），引用时出处写 Word 文件加段落号`] : []),
-    ...(pdfs.length ? [`${words.length ? "" : "其中 "}PDF 文件请读同名的 .md 投影（${pdfs.map((p) => p + ".md").join("、")}），引用时出处写 PDF 文件加页与块，例如 ${pdfs[0]}#p3-2`] : []),
+    ...(words.length ? [`其中 Word 文件请读同名加 .md 的文字版（${words.map((p) => p + ".md").join("、")}），引用时出处写 Word 文件加段落号`] : []),
+    ...(pdfs.length ? [`${words.length ? "" : "其中 "}PDF 文件请读同名加 .md 的文字版（${pdfs.map((p) => p + ".md").join("、")}），引用时出处写 PDF 文件加页与块，例如 ${pdfs[0]}#p3-2`] : []),
   ];
   return `${text}\n（我上传了材料：${paths.join("、")}${notes.length ? "；" + notes.join("；") : ""}）`;
 }
