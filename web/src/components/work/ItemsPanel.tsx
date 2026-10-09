@@ -37,6 +37,8 @@ import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
 import { DiagramsPane } from "./DiagramsPane";
+import { OverallPane } from "./overall/OverallPane";
+import { isOverall } from "../../model/overall";
 import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
@@ -132,6 +134,9 @@ export function ItemsPanel({
   const [dirty, setDirty] = useState(false);
   const onDiagrams = !selectedItem && showDiagrams;
   const activeTab = selectedItem?.collection ?? tab;
+  // 停在「总体分析」页签：主体不是列表，是提纲加主题页（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
+  const onOverall = !onDiagrams && isOverall(activeTab);
+  const noList = onDiagrams || onOverall;
   // 记住这个任务停在哪个页签（存在浏览器本地），下次打开这个任务回到这里。
   useEffect(() => { saveTab(task.task_id, onDiagrams ? DIAGRAMS_TAB : activeTab); }, [task.task_id, onDiagrams, activeTab]);
   const diagramCount = (task.diagrams ?? []).length;
@@ -213,6 +218,21 @@ export function ItemsPanel({
     if (e) toast.error(rejectedText(label, e, item.item_id));
   };
 
+  /** 打开着的条目的详情；没有打开条目时为 null。 */
+  const detail = selectedItem && def ? (
+    <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} writesOff={writesOff} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
+      reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
+      onReview={onReview ? () => reviewItems([selectedItem], `评审 ${selectedItem.item_id}`) : undefined} onPrefill={onPrefill}
+      marked={marks[selectedItem.item_id] ?? []} just={just.has(selectedItem.item_id)} onBack={() => onSelect(null)}
+      onPrev={pos > 0 ? () => onSelect(items[pos - 1].item_id) : null}
+      onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
+      onLocate={onLocate} onOpenItem={onSelect} onOpenDiagram={openDiagram} onAskAssistant={onAskAssistant}
+      view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
+      crumb={fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
+      top={<ItemIssues task={task} itemId={selectedItem.item_id} readOnly={readOnly} writesOff={writesOff} hold={dirty} pendingItems={pendingItems}
+        submit={submit} onSend={onSend} onPrefill={onAnswer} fromIssue={fromIssue?.issueId ?? null} />} />
+  ) : null;
+
   return (
     <div className="pane-items" data-testid="items-panel">
       {writesOff && <div className="sw-busy-banner" data-testid="busy-banner"><span className="spin" />{BUSY_TEXT}</div>}
@@ -237,11 +257,11 @@ export function ItemsPanel({
         )}
       </div>
       <div className="filters">
-        {!onDiagrams && FILTERS.map((f) => (
+        {!noList && FILTERS.map((f) => (
           <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : f.key === "review_passed" || f.key === "review_kept" ? " okf" : ""}`}
             role="button" onClick={() => { setFilter(f.key); onSelect(null); }}>{f.label}</span>
         ))}
-        {!onDiagrams && hit && hitIds.length > 0 && (
+        {!noList && hit && hitIds.length > 0 && (
           <span className="sw-hitnote" role="button" title="点一下取消高亮" onClick={onClearHit} data-testid="hit-note">修订 {hit.revision} 碰到的条目 ✕</span>
         )}
         <span className="prog" role="button" onClick={() => setShowProgress(!showProgress)} data-testid="progress">
@@ -265,13 +285,13 @@ export function ItemsPanel({
         confirmLoading={submitting} destroyOnHidden>
         提交之后这个任务变成只读，交付物不能再改，仍然可以生成文档。确定提交吗？
       </Modal>
-      {!onDiagrams && unread.length > 0 && filter !== "unread" && (
+      {!noList && unread.length > 0 && filter !== "unread" && (
         <div className="alertbar" data-testid="unread-bar">
           还有 {unread.length} 条未读 ·
           <button type="button" className="btn sm" onClick={() => { setFilter("unread"); onSelect(null); }}>筛出来看</button>
         </div>
       )}
-      {!onDiagrams && !selectedItem && !readOnly && !statusField && (checkedItems.length > 0 ? (
+      {!noList && !selectedItem && !readOnly && !statusField && (checkedItems.length > 0 ? (
         <div className="bulkbar">
           已勾选 {checkedItems.length} 个条目。
           <button type="button" className="btn sm pri" disabled={writesOff} title={offTitle} onClick={() => void markMany(checkedItems)} data-testid="bulk-viewed">把选中的这几条标为已读</button>
@@ -279,23 +299,13 @@ export function ItemsPanel({
         </div>
       ) : null)}
       <ExportDocxModal open={exporting} task={task} items={exportItems} onClose={() => setExporting(false)} />
-      <div className="items-body">
+      <div className={`items-body${onOverall ? " oa-body" : ""}`}>
         {onDiagrams ? (
           <DiagramsPane task={task} selected={diagram} onSelect={setDiagram} readOnly={readOnly} writesOff={writesOff} latestRevision={latestRevision}
             submit={submit} onLocate={onLocate} onOpenItem={(id) => openItem(id)} onDirty={onDiagramDirty} />
-        ) : selectedItem && def ? (
-          <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} writesOff={writesOff} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
-            reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
-            onReview={onReview ? () => reviewItems([selectedItem], `评审 ${selectedItem.item_id}`) : undefined} onPrefill={onPrefill}
-            marked={marks[selectedItem.item_id] ?? []} just={just.has(selectedItem.item_id)} onBack={() => onSelect(null)}
-            onPrev={pos > 0 ? () => onSelect(items[pos - 1].item_id) : null}
-            onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
-            onLocate={onLocate} onOpenItem={onSelect} onOpenDiagram={openDiagram} onAskAssistant={onAskAssistant}
-            view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
-            crumb={fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
-            top={<ItemIssues task={task} itemId={selectedItem.item_id} readOnly={readOnly} writesOff={writesOff} hold={dirty} pendingItems={pendingItems}
-              submit={submit} onSend={onSend} onPrefill={onAnswer} fromIssue={fromIssue?.issueId ?? null} />} />
-        ) : items.length === 0 ? (
+        ) : onOverall ? (
+          <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect} page={detail} />
+        ) : detail ? detail : items.length === 0 ? (
           <div className="empty">这个筛选下没有条目。换一个筛选试试。</div>
         ) : statusField && def ? (
           <div className="list">

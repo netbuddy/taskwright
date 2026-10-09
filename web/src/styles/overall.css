@@ -1,0 +1,59 @@
+/* 条目区的「总体分析」页签（components/work/overall/）：左边提纲、右边主题页。类名都以 oa- 开头，
+ * 颜色只用 styles.css 里的令牌，尺寸写 rem；两种界面风格结构相同。最小的字是 0.857rem。
+ * 条目区（.items-body）本来是整块上下滚动；停在这个页签时它不滚，提纲与主题页各滚各的。 */
+.app .items-body.oa-body { overflow: hidden; display: flex; }
+.app .oa-pane { flex: 1; min-width: 0; min-height: 0; display: flex; position: relative; }
+
+/* 提纲一栏：16rem 宽。没有动过时（auto）够宽就在、窄就收着；open 与 closed 是用户点出来的 */
+.app .oa-outline { flex: 0 0 16rem; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--card); border-right: 1px solid var(--line); }
+.app .oa-pane.closed .oa-outline { display: none; }
+.app .oa-handle { display: none; flex: 0 0 var(--w-handle); flex-direction: column; align-items: center; gap: .5rem; padding-top: .7rem; cursor: pointer;
+  border-right: 1px solid var(--line); background: var(--card); color: var(--text3); font-size: 0.857rem; writing-mode: vertical-rl; letter-spacing: .2em; }
+.app .oa-handle:hover { background: var(--sel); color: var(--ink); }
+.app .oa-handle .harrow { writing-mode: horizontal-tb; letter-spacing: 0; }
+.app .oa-pane.closed .oa-handle { display: flex; }
+@container items (max-width: 44rem) {
+  /* 条目区很窄：提纲缺省收着；点开时盖在主题页上面，不把主题页挤窄 */
+  .app .oa-pane.auto .oa-outline { display: none; }
+  .app .oa-pane.auto .oa-handle { display: flex; }
+  .app .oa-pane.open .oa-outline { position: absolute; z-index: 5; top: 0; bottom: 0; left: 0; width: 16rem; box-shadow: 0 0 1.2rem var(--shadow-3); }
+}
+.app .oa-outline-h { flex: none; display: flex; align-items: center; gap: .5rem; padding: .5rem .7rem .4rem; border-bottom: 1px solid var(--line); }
+.app .oa-outline-h b { font-family: var(--font-title); font-size: 0.96rem; letter-spacing: .06em; }
+.app .oa-outline-h .btn { margin-left: auto; }
+.app .oa-outline-body { flex: 1; min-height: 0; overflow-y: auto; padding: .6rem .6rem .8rem; }
+.app .oa-none { color: var(--text3); font-size: 0.9rem; padding: .3rem .3rem .6rem; }
+
+/* 树：一页一行；下级往里缩，左边一条细线 */
+.app .oa-tree, .app .oa-tree ul { list-style: none; margin: 0; padding: 0; }
+.app .oa-tree ul { margin-left: .75rem; padding-left: .45rem; border-left: 1px solid var(--line); }
+.app .oa-tree li { margin: .08rem 0; }
+.app .oa-row { display: flex; align-items: center; gap: .4rem; padding: .24rem .45rem; border-radius: .4rem; color: var(--text2); font-size: 0.93rem; cursor: pointer; }
+.app .oa-row:hover { background: var(--sel); }
+.app .oa-row.cur { background: var(--ink); color: var(--on-ink); }
+.app .oa-row.gone .oa-name { text-decoration: line-through; color: var(--faint); }
+.app .oa-row.cur.gone .oa-name { color: var(--on-ink); }
+.app .oa-caret { flex: none; width: .9rem; text-align: center; font-size: 0.857rem; color: var(--text3); }
+.app .oa-row.cur .oa-caret, .app .oa-row.cur .oa-n { color: var(--on-ink); opacity: .75; }
+.app .oa-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .oa-n { flex: none; font-size: 0.857rem; color: var(--text3); font-variant-numeric: tabular-nums; }
+
+/* 状态点：说清了是绿，有助手补的待核实是琥珀，还有没定的是紫，没归类与已废弃是灰 */
+.app .oa-dot { flex: none; display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: var(--line3); }
+.app .oa-dot.settled { background: var(--ok); }
+.app .oa-dot.pending { background: var(--amber); }
+.app .oa-dot.open { background: var(--ai); }
+.app .oa-dot.unsorted { background: var(--line3); }
+.app .oa-dot.deprecated { background: var(--faint); }
+
+.app .oa-legend { margin-top: 1rem; padding-top: .7rem; border-top: 1px solid var(--line); display: grid; gap: .25rem; font-size: 0.857rem; color: var(--text3); }
+.app .oa-legend span { display: flex; align-items: center; gap: .45rem; }
+.app .oa-foot { margin-top: .8rem; font-size: 0.857rem; color: var(--text3); }
+.app .oa-foot b { color: var(--text2); font-weight: 500; }
+
+/* 右边：一页主题，自己上下滚 */
+.app .oa-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+.app .oa-intro { max-width: 46rem; padding: 1.6rem 1.8rem; color: var(--text2); }
+.app .oa-intro p { margin: 0 0 .7rem; }
+.app .oa-intro-note { font-family: var(--font-title); font-size: 1.05rem; color: var(--ink); }
+.app .oa-intro-hint { color: var(--text3); font-size: 0.93rem; }
