@@ -159,6 +159,18 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     }
   };
 
+  /** 停止助手正在进行的这一次工作。返回真＝请求做成了（这次工作随后结束，对话区留一条通知）；假＝没有做成，另报一条失败提示。 */
+  const stop = async (): Promise<boolean> => {
+    try {
+      await api.control(taskId, sessionId, "stop");
+      return true;
+    } catch (e) {
+      const error = e instanceof ApiError ? e : new ApiError("network", String(e));
+      toast.error(`没有停下来：${errorText(error)}`);
+      return false;
+    }
+  };
+
   const submit = async (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string): Promise<ApiError | null> => {
     try {
       const r = await api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, ...req });
@@ -366,7 +378,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}
                 disabled={!!disabledReason} disabledReason={disabledReason} handlers={cardHandlers}
                 hold={dirty || diagramDirty} holdText={diagramDirty && !dirty ? DIAGRAM_HOLD_TEXT : undefined} working={working} hint={hint} starting={executor?.state === "starting"}
-                onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews}
+                onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews} onStop={busyElsewhere ? undefined : stop}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}

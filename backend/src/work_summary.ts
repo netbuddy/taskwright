@@ -228,6 +228,42 @@ export const UNFINISHED_TEXT = {
 export interface CallFacts {
   revision(callId: string): Dict | null;
   completed(callId: string): boolean;
+  /** 保存图的那次调用给哪张图写了它自己的第几次修订（diagram_id、revision_no、op、name、kind）；没有写进去为 null。 */
+  diagram?(callId: string): Dict | null;
+}
+
+/**
+ * 被用户停下的那次工作实际保存了什么，按任务库里的事实算，不按会话里有没有工具结果：中止到达时保存可能已经写进了库、
+ * 结果却没来得及回到会话里。revisions 是这次工作保存的任务修订号，从小到大；items 是这些修订碰到的条目个数（同一个条目只数一次）；
+ * diagrams 是保存过的图的张数（图的修订号各算各的，不在 revisions 里）。
+ */
+export interface SavedFacts {
+  revisions: number[];
+  items: number;
+  diagrams: number;
+}
+
+/**
+ * 一次工作的全部工具调用在任务库里留下了什么。一个调用都没有时不查任务库，直接是「什么都没有保存」；
+ * 有调用却没法查（没有给 CallFacts）时为 null，页面那时按修订日志写。
+ */
+export function savedFacts(callIds: (string | null)[], facts: CallFacts | null): SavedFacts | null {
+  const ids = callIds.filter((id): id is string => typeof id === "string" && id !== "");
+  if (ids.length === 0) return { revisions: [], items: 0, diagrams: 0 };
+  if (facts === null) return null;
+  const revisions = new Set<number>();
+  const items = new Set<string>();
+  const diagrams = new Set<string>();
+  for (const id of ids) {
+    const revision = facts.revision(id);
+    if (revision) {
+      revisions.add(Number(revision.revision_no));
+      for (const op of or(revision.operations, []) as Dict[]) if (op.item) items.add(String(op.item));
+    }
+    const diagram = facts.diagram ? facts.diagram(id) : null;
+    if (diagram) diagrams.add(String(diagram.diagram_id));
+  }
+  return { revisions: [...revisions].sort((a, b) => a - b), items: items.size, diagrams: diagrams.size };
 }
 
 /**
@@ -252,7 +288,10 @@ export function unfinishedText(tool: string, args: Dict, callId: string | null, 
   if (tool === "get_item") return UNFINISHED_TEXT.get_item(String(or(args.item_id, "")));
   if (tool === "get_task_status") return UNFINISHED_TEXT.get_task_status;
   if (tool === "search_knowledge") return UNFINISHED_TEXT.search_knowledge;
-  if (tool === "save_diagram") return UNFINISHED_TEXT.save_diagram;
+  if (tool === "save_diagram") {
+    const found = facts !== null && callId && facts.diagram ? facts.diagram(callId) : null;
+    return found ? stepText(tool, args, true, false, found, definition) : UNFINISHED_TEXT.save_diagram;
+  }
   if (tool === "request_review") return UNFINISHED_TEXT.request_review;
   if (tool === REPLY_TOOL) return UNFINISHED_TEXT.reply;
   return UNFINISHED_TEXT.other(tool);
@@ -465,6 +504,8 @@ export interface Work {
   step_count: number;
   stages: Dict[];
   outcome: WorkOutcome;
+  /** 只有被用户停下的那次工作有：它实际保存了什么（savedFacts）；没法查时为 null。 */
+  saved?: SavedFacts | null;
 }
 
 /**
@@ -491,6 +532,7 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
         step_count: current.calls.length, stages: stages(current.calls, definition),
         // 连续被拒到上限、由工具停下：这一轮最后是带 stopped 标记的工具结果，之后没有成功的回复。
         outcome: ended ?? (truthy(current.limit_stopped) ? "stopped_by_limit" : current.reply_ids.length ? "replied" : "no_reply"),
+        ...(ended === "stopped_by_user" ? { saved: savedFacts(current.call_ids, facts) } : {}),
       });
     }
   };

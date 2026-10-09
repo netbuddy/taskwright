@@ -515,6 +515,8 @@ export class Executor {
     // 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
     const viewing = body.kind === "mark_viewed" && !truthy(body.notify_executor);
     if (!viewing) await this.lock.run(() => this.turnCheck("action"));
+    // 停止通知只由 stop 在真的停下一次工作之后发；直接操作的接口不收，免得没有停下什么却留下一条通知。
+    if (body.kind === conversation.STOP_RUN) throw new ApiError("bad_request", "stop_run 不是直接操作，要停下助手请用 control 接口。");
     if (body.kind === EDIT_DIAGRAM) await this.checkDiagramEdit(body);
     const opId = newId("ui-op-");
     const command: Dict = {};
@@ -579,21 +581,45 @@ export class Executor {
     }
   }
 
-  /** 让助手停下：先清掉排队的话（还给前端），标记本轮是用户让停的，再中止。返回被清掉的话。 */
+  /**
+   * 让助手停下：先清掉排队的话（还给前端），标记本轮是用户让停的，再中止。返回被清掉的话。
+   * 停下的时候确有一次工作在进行，中止之后再让扩展往会话里留一条界面操作通知（noteStop）；助手空闲或不在时不留。
+   */
   async stop(sessionId: string | null): Promise<string[]> {
+    let interrupted = false;
     const cleared = await this.lock.run(async () => {
       if (!this.running()) return null;
       if (sessionId && sessionId !== this.activeSession) {
         throw new ApiError("session_busy", "助手正在另一条会话里工作。", { active_session: this.activeSession });
       }
       const data = or(await this.pi!.request("clear_queue"), {}) as Dict;
-      if (this.work !== null) this.work.stopped = true;
+      if (this.work !== null) {
+        this.work.stopped = true;
+        interrupted = true;
+      }
       await this.pi!.request("abort");
       return data;
     });
     if (cleared === null) return [];
+    if (interrupted) await this.noteStop();
     const texts = [...(or(cleared.steering, []) as string[]), ...(or(cleared.followUp, []) as string[])];
     return texts.map((t) => conversation.displayText(t));
+  }
+
+  /**
+   * 停下之后往会话里留一条界面操作通知（扩展命令 /tw-user 的 stop_run，不写库）：页面上是「你停止了助手这一次的工作」，
+   * 助手下一次运行时据此知道上一次没有做完（pi 不把被停下的那条助手消息发给模型）。中止请求返回时这次运行已经结束，
+   * 通知立即加进会话。没有写成不算停下失败：运行已经停了，只记进后端补记。
+   */
+  private async noteStop(): Promise<void> {
+    const opId = newId("ui-op-");
+    try {
+      const result = await this.command("/tw-user", { op_id: opId, kind: conversation.STOP_RUN }, opId);
+      if (!truthy(result.ok)) this.pi?.note("停止通知没有写成", { 操作编号: opId, 结果: result });
+    } catch (error) {
+      if (!(error instanceof ApiError || error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
+      this.pi?.note("停止通知没有写成", { 操作编号: opId, 原因: error instanceof ApiError ? error.message : technicalOf(error) });
+    }
   }
 
   // ───────────── 对话记录 ─────────────
@@ -873,7 +899,7 @@ export class Executor {
     if (!found) return null;
     const understanding = sid ? workSummary.understandingLines(this.taskDir, sid).get(userId) ?? null : null;
     this.hub.emit("work_summary", { session_id: sid, work_id: work.work_id, at: found.at, seconds: found.seconds, step_count: found.step_count,
-      stages: found.stages, understanding, outcome: found.outcome });
+      stages: found.stages, understanding, outcome: found.outcome, ...(found.saved !== undefined ? { saved: found.saved } : {}) });
     return found;
   }
 

@@ -6,14 +6,15 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { Executor } from "../src/executor.ts";
 import { Hub } from "../src/hub.ts";
 import { callFacts } from "../src/library.ts";
-import { type CallFacts, UNFINISHED_TEXT, worksFromEntries } from "../src/work_summary.ts";
-import { captureConsole, makeWorkspace, tempDir } from "./helpers.ts";
+import { DatabaseSync } from "node:sqlite";
+import { type CallFacts, UNFINISHED_TEXT, savedFacts, unfinishedText, worksFromEntries } from "../src/work_summary.ts";
+import { captureConsole, makeTypedTask, makeWorkspace, tempDir } from "./helpers.ts";
 
 // 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
 captureConsole();
@@ -71,6 +72,69 @@ test("callFacts 从任务库按调用编号查出修订号与碰到的条目；�
   const empty = join(tmp, "empty");
   mkdirSync(empty, { recursive: true });
   assert.equal(callFacts(empty).revision("call-r1"), null);
+});
+
+// ───────────── 被用户停下的那次工作实际保存了什么 ─────────────
+
+test("被停下的工作保存了什么按任务库算：保存已经写进库、结果没回到会话的那一次也算；一个工具调用都没有时不查任务库", () => {
+  // 保存修订的调用没有结果（中止到达时结果没来得及回到会话），任务库里查得到这次调用写的修订 1，碰到两个条目。
+  const committed = worksFromEntries([userEntry, aborted(call("call-r1", "save_revision", {}))], {}, "（兜底）", () => "", callFacts(ws))[0];
+  assert.deepEqual([committed.outcome, committed.saved], ["stopped_by_user", { revisions: [1], items: 2, diagrams: 0 }]);
+  // 调用发出了、库里没有：什么都没有保存。
+  const lost = worksFromEntries([userEntry, aborted(call("call-没写进去", "save_revision", {}))], {}, "（兜底）", () => "", callFacts(ws))[0];
+  assert.deepEqual(lost.saved, { revisions: [], items: 0, diagrams: 0 });
+  // 一个工具调用都没有：不问任务库（这里的查法一问就抛错），直接是什么都没有保存。
+  const never: CallFacts = { revision: () => { throw new Error("不该查任务库"); }, completed: () => { throw new Error("不该查任务库"); },
+    diagram: () => { throw new Error("不该查任务库"); } };
+  const idle = worksFromEntries([userEntry, aborted()], {}, "（兜底）", () => "", never)[0];
+  assert.deepEqual([idle.outcome, idle.saved], ["stopped_by_user", { revisions: [], items: 0, diagrams: 0 }]);
+  // 有调用却没法查：null，页面那时按修订日志写。
+  assert.equal(worksFromEntries([userEntry, aborted(call("call-r1", "save_revision", {}))], {}, "（兜底）", () => "", null)[0].saved, null);
+});
+
+test("callFacts 到第一次查的时候才读任务库：建出来之后才出现的任务库照样查得到，一次也不查就不读", () => {
+  const late = join(tmp, "late");
+  mkdirSync(late, { recursive: true });
+  const facts = callFacts(late);
+  cpSync(join(ws, "task.sqlite"), join(late, "task.sqlite"));
+  assert.equal(facts.revision("call-r1")?.revision_no, 1, "建的时候没有读；读得早的话这里是 null");
+});
+
+test("保存了什么：几次修订从小到大、同一个条目只数一次、图按张数另算；正常做完的工作不带这一项", () => {
+  const facts: CallFacts = {
+    revision: (id) => ({ "c-2": { revision_no: 5, operations: [{ op: "update", item: "UC-001" }, { op: "add", item: "UC-003" }] },
+      "c-1": { revision_no: 4, operations: [{ op: "add", item: "UC-001" }] } } as Dict)[id] ?? null,
+    completed: () => false,
+    diagram: (id) => ({ "c-3": { diagram_id: "D-001", revision_no: 1 }, "c-4": { diagram_id: "D-001", revision_no: 2 } } as Dict)[id] ?? null,
+  };
+  assert.deepEqual(savedFacts(["c-2", "c-1", "c-3", "c-4", "c-读文件", null], facts), { revisions: [4, 5], items: 2, diagrams: 1 });
+  assert.deepEqual(savedFacts([], facts), { revisions: [], items: 0, diagrams: 0 });
+  assert.deepEqual(savedFacts([], null), { revisions: [], items: 0, diagrams: 0 }, "一个调用都没有：没法查也知道什么都没有保存");
+  assert.equal(savedFacts(["c-1"], null), null);
+  const done = { type: "message", id: "a1", parentId: "u1", timestamp: ts(5), message: { role: "assistant", stopReason: "stop", content: [call("c-1", "save_revision", {})] } };
+  const result = { type: "message", id: "t1", parentId: "a1", timestamp: ts(6), message: { role: "toolResult", toolCallId: "c-1", details: { revision_no: 4, operations: [] } } };
+  assert.equal("saved" in worksFromEntries([userEntry, done, result], {}, "（兜底）", () => "", facts)[0], false);
+});
+
+test("保存图的调用没有结果：任务库里查得到那次调用写的图时照常写保存了图，算进张数；查不到仍写「保存图没有做完」", () => {
+  const typed = makeTypedTask(join(tmp, "typed"), "srs-authoring", { "材料.md": "读者凭口令登录。" }, [
+    [{ op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["开始"] },
+      sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭口令登录。" }] }],
+    { said: "画一张用例图", diagram: { name: "读者用例", kind: "use_case", mermaid: 'flowchart LR\n  reader(["读者"])\n  a(["UC-001 登录"])\n  reader --> a',
+      sources: [{ kind: "用户的话", excerpt: "画一张用例图" }, { kind: "条目", locator: "UC-001" }] } },
+  ]);
+  const db = new DatabaseSync(join(typed, "task.sqlite"), { readOnly: true });
+  const callId = String((db.prepare("SELECT call_id FROM diagram_version WHERE diagram_id = 'D-001' AND revision_no = 1").get() as Dict).call_id);
+  db.close();
+  const facts = callFacts(typed);
+  assert.deepEqual(facts.diagram(callId), { diagram_id: "D-001", revision_no: 1, op: "add", name: "读者用例", kind: "use_case" });
+  assert.equal(facts.diagram("没有这个调用"), null);
+  assert.equal(unfinishedText("save_diagram", {}, callId, facts, {}), "保存了图 D-001（用例图：读者用例）");
+  assert.equal(unfinishedText("save_diagram", {}, "没有这个调用", facts, {}), UNFINISHED_TEXT.save_diagram);
+  assert.equal(unfinishedText("save_diagram", {}, callId, null, {}), UNFINISHED_TEXT.save_diagram);
+  const stopped = worksFromEntries([userEntry, aborted(call(callId, "save_diagram", {}))], {}, "（兜底）", () => "", facts)[0];
+  assert.deepEqual(stopped.saved, { revisions: [], items: 0, diagrams: 1 });
+  assert.equal(callFacts(ws).diagram(callId), null, "没有保存过图的任务库：当作没有图");
 });
 
 /** 假的 pi：get_entries 回给定的条目，get_state 回空闲。 */

@@ -372,7 +372,7 @@ export interface UiActionNoted {
   /** 与后端对齐后新增：撤销要用的修订序号；已读这类不产生修订的操作为 null。 */
   revision_no?: number | null;
   op_id?: string | null;
-  /** 界面操作的种类；评审结束的那条是 request_review，另带 review 计数。 */
+  /** 界面操作的种类；评审结束的那条是 request_review，另带 review 计数；用户停止了助手一次工作之后留的那条是 stop_run。 */
   kind?: string | null;
   review?: { total: number; passed: number; failed: number; unfinished: number; problems: number; advice: number } | null;
 }
@@ -409,6 +409,17 @@ export interface WorkSummary {
    * （stopped_by_limit）时摘要行下面加一行说明。旧数据没有这个字段。
    */
   outcome?: WorkEnded["outcome"] | null;
+  /**
+   * 只有被用户停下的那次工作有：它实际保存了什么，后端停下之后按任务库算（不看会话里有没有工具结果）。revisions 是保存的任务修订号，
+   * 从小到大；items 是这些修订碰到的条目个数；diagrams 是保存过的图的张数（图的修订号各算各的）。后端没法查时为 null，旧数据没有这个字段。
+   */
+  saved?: SavedFacts | null;
+}
+
+export interface SavedFacts {
+  revisions: number[];
+  items: number;
+  diagrams: number;
 }
 
 export type ConversationMessage = UserMessage | AssistantReply | UiActionNoted | SystemNote | WorkSummary;

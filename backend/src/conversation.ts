@@ -27,6 +27,8 @@ export const REPLY_TOOL = "reply";
 export const NOTIFY_PREFIXES = ["我已经看过了：", "我已经在界面上确认了："];
 /** 会带那句话的直接操作种类：现在是 mark_viewed，早期版本是 confirm。 */
 export const NOTIFY_KINDS = ["mark_viewed", "confirm"];
+/** 用户在界面上停止了助手一次运行之后留在会话里的那条界面操作通知的种类（agent/src/lib/user_ops.ts 的 STOP_RUN_KIND）。 */
+export const STOP_RUN = "stop_run";
 /** 「回复」工具的兜底扩展追加的那句固定文字（agent/src/hooks/reply_fallback.ts 的 FALLBACK_TEXT），不是用户说的。 */
 export const FALLBACK_TEXT = "请用 reply 工具把要对用户说的话发出来";
 
@@ -140,7 +142,10 @@ export function messages(entries: Entry[], sessionId: string, definition: Record
   return withWorkSummaries(messagesOfPath(path, sessionId), path, sessionId, definition, taskDir);
 }
 
-/** 把从会话条目算出的过程摘要插进对话记录：放在这次工作第一条回复之前；这次工作没有回复时，放在下一句用户的话之前。 */
+/**
+ * 把从会话条目算出的过程摘要插进对话记录：放在这次工作第一条回复之前；这次工作没有回复时，放在下一句用户的话之前，
+ * 被用户停止的那一次放在停止通知之前（实时推送时摘要先到、通知后到，刷新之后次序相同）。
+ */
 export function withWorkSummaries(out: Record<string, any>[], path: Entry[], sessionId: string, definition: Record<string, any>, taskDir: string | null = null) {
   const understandings = understandingLines(taskDir, sessionId);
   // 给了任务目录时按任务库补上没有结果的调用的事实（保存修订、完成任务是否真的写进了库）。
@@ -150,13 +155,13 @@ export function withWorkSummaries(out: Record<string, any>[], path: Entry[], ses
     const summary = {
       type: "work_summary", session_id: sessionId, message_id: `summary-${work.user_message_id}`, work_id: work.work_id, at: work.at,
       seconds: work.seconds, step_count: work.step_count, stages: work.stages, understanding: understandings.get(work.user_message_id) ?? null,
-      outcome: work.outcome,
+      outcome: work.outcome, ...(work.saved !== undefined ? { saved: work.saved } : {}),
     };
     const ids = out.map((m) => m.message_id ?? null);
     let first = out.findIndex((m) => m.type === "assistant_reply" && replies.has(m.message_id));
     if (first < 0) {
       const start = ids.includes(work.user_message_id) ? ids.indexOf(work.user_message_id) : out.length - 1;
-      first = out.findIndex((m, i) => i > start && m.type === "user_message");
+      first = out.findIndex((m, i) => i > start && (m.type === "user_message" || (m.type === "ui_action_noted" && m.kind === STOP_RUN)));
       if (first < 0) first = out.length;
     }
     out.splice(first, 0, summary);

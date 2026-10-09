@@ -113,6 +113,20 @@ function actorWord(actor: string): string {
 /** 用户在界面上发起评审的操作种类。它不在 USER_OP_KINDS 里：不写修订、不经 runUserOperation。 */
 export const REVIEW_OP_KIND = "request_review";
 
+/** 用户在界面上停止了助手正在进行的这一次运行。它不在 USER_OP_KINDS 里：不写库、不经 runUserOperation，只往会话里留一条通知。 */
+export const STOP_RUN_KIND = "stop_run";
+
+/**
+ * 停止之后留在会话里的那句话。pi 把被停下的那条助手消息从发给模型的上下文里整条去掉，没有这句话，助手下一次运行时
+ * 不知道上一次没有做完。页面按种类另写一句给用户看的话，不显示这一句。
+ */
+export const STOP_RUN_NOTE = "界面操作（不是用户打的字）：用户在界面上停止了你这一次的工作，停下时正在做的那一步没有做完。";
+
+/** 停止通知那条自定义消息的 details：形状与别的界面操作通知相同，没有库事件，不能撤销。 */
+export function stopRunDetails(opId: string | null) {
+  return { op_id: opId, kind: STOP_RUN_KIND, event_seqs: [] as number[], results: [] as unknown[], revision_no: null, undoable: false };
+}
+
 /**
  * request_review 的核对：操作编号、任务在不在、是不是进行中、targets 的形状。targets 为空列表时返回 null（评全部待评审的条目），
  * 否则返回点名的条目与各自的修订号（base_revision）。条目在不在、所在集合要不要评审、修订号对不对，由 prepareReviews 核对。

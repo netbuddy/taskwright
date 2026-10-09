@@ -23,22 +23,32 @@ export const TASK_STATUS_ERROR_KEY = "taskwright-task-status-error";
 /** 把追加的现状消息报给后端用的状态栏键名。与 backend/src/pi_session.ts 里的同名常量是一份约定。 */
 export const TASK_STATUS_REPORT_KEY = "taskwright-task-status";
 
-type Entry = { type: string; timestamp?: string; customType?: string; message?: { role?: string } };
+type Entry = { type: string; timestamp?: string; customType?: string; message?: { role?: string; stopReason?: string } };
 
 /** 从当前分支读出本模块要的几样事实。 */
 export function sessionFacts(branch: Entry[]): SessionFacts {
   let hasUserMessage = false;
   let hasStatusMessage = false;
   let lastMessageAt: number | null = null;
+  // 上一次运行是不是被用户停止的：pi 把被停下的助手消息记为 aborted。之后用户又说过话（有了新的运行）、
+  // 或者已经写过一条现状消息（那一条已经说过了）就不再算，免得来回切换会话时重复写。
+  let lastRunStopped = false;
   for (const entry of branch) {
-    if (entry.type === "message" && entry.message?.role === "user") hasUserMessage = true;
-    if (entry.type === "custom_message" && entry.customType === TASK_STATUS_CUSTOM_TYPE) hasStatusMessage = true;
+    if (entry.type === "message" && entry.message?.role === "user") {
+      hasUserMessage = true;
+      lastRunStopped = false;
+    }
+    if (entry.type === "message" && entry.message?.role === "assistant") lastRunStopped = entry.message.stopReason === "aborted";
+    if (entry.type === "custom_message" && entry.customType === TASK_STATUS_CUSTOM_TYPE) {
+      hasStatusMessage = true;
+      lastRunStopped = false;
+    }
     if ((entry.type === "message" || entry.type === "custom_message") && entry.timestamp) {
       const at = Date.parse(entry.timestamp);
       if (!Number.isNaN(at)) lastMessageAt = at;
     }
   }
-  return { hasUserMessage, hasStatusMessage, lastMessageAt };
+  return { hasUserMessage, hasStatusMessage, lastMessageAt, lastRunStopped };
 }
 
 export function registerTaskStatus(pi: ExtensionAPI): void {

@@ -18,6 +18,8 @@
  * 界面上看评审页签。不另外发话引出一次运行。点名的条目在当前修订、当前规则下已经评过时整批拒绝（同一次修订只评审一次）。
  * 另一个例外是改图（kind 为 edit_diagram）：用户在页面上改了一张图的 Mermaid 文本，写的是图自己的一次新修订，走 lib/user_diagram.ts；
  * 结果里 results 是 [{diagram_id, revision_no}]（图自己的修订号），revision_no 为 null，追加的那条自定义消息不可撤销。
+ * 还有一个例外是停止（kind 为 stop_run）：用户在界面上停止了助手这一次运行，后端等运行停下之后发来。它不写库，只追加一条
+ * taskwright-user-edit 自定义消息（正文是 lib/user_ops.ts 的 STOP_RUN_NOTE），助手下一次运行时据此知道上一次没有做完。
  * 状态栏是给后端读的，交互模式下只显示成底部一行截短的 JSON；所以交互模式里被拒时另外用 notify 把完整的拒绝原因
  * 发给人看（rejectionText），RPC 模式不发，后端照旧只读状态栏。
  *
@@ -31,7 +33,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { REVIEW_OP_KIND, UserOpError, checkReviewRequest, runUserOperation } from "../lib/user_ops.ts";
+import { REVIEW_OP_KIND, STOP_RUN_KIND, STOP_RUN_NOTE, UserOpError, checkReviewRequest, runUserOperation, stopRunDetails } from "../lib/user_ops.ts";
 import { ReviewError } from "../lib/review.ts";
 import { piComplete, startReview } from "../lib/review_ui.ts";
 import { batchCounts } from "../lib/review_run.ts";
@@ -81,6 +83,12 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       }
       if (request.kind === REVIEW_OP_KIND) {
         startUiReview(pi, ctx, request, opId, report);
+        return;
+      }
+      if (request.kind === STOP_RUN_KIND) {
+        // 用户在界面上停止了这一次运行：后端在运行停下之后发来，这里只留一条通知，不写库。
+        pi.sendMessage({ customType: USER_EDIT_CUSTOM_TYPE, content: STOP_RUN_NOTE, display: true, details: stopRunDetails(opId) });
+        report({ ok: true, event_seqs: [], results: [], revision_no: null });
         return;
       }
       if (request.kind === DIAGRAM_OP_KIND) {

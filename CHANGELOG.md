@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Work view and conversation
+
+- A piece of work in progress can be stopped from the work view. While the assistant works in the session you are in, the send key to the right of the input box becomes a stop key, a small solid square in the same place. A click stops that piece of work; what the assistant already saved stays. The square fades and pulses until the work has ended, and then the key is the send key again. Pressing Enter does not stop the assistant. Until now a run could be stopped only through the HTTP API.
+- The amber line under the summary of a stopped piece of work now says what that work actually saved, looked up in the task database after the stop: the revisions (as a range), the number of items they touched and the number of diagrams, for example **这一次工作保存了修订 3 到 5（4 个条目、1 张图），都保留着；停下时正在做的那一步没有完成。要撤销其中某条，到右侧「修订」页签逐条撤销。** A save that was being written at the moment of the stop is counted, and so is a diagram saved that way, which the steps used to report as not finished. When nothing was saved the line is **这一次工作没有保存任何东西。** A stop rolls nothing back; undoing stays with you, in the Revisions tab. In the API the `work_summary` of such a work carries `saved`.
+- After a stop the conversation keeps one more line, **你停止了助手这一次的工作** ("you stopped this piece of the assistant's work"), under the amber line that says what was saved. The same note stays in the session for the assistant, which until now could not tell at its next run that the last one had been cut short. When the session is opened again before anything more is said, the task status note has the sentence 上一次运行被用户停止，没有做完。 and its folded line starts with **上次被停止**. In the API the note is a `ui_action_noted` event with `kind` `stop_run`, and the task status note carries `last_run_stopped` in its `details`.
+
 ### Knowledge base
 
 - The text version of a Word or PDF document of a knowledge base told the assistant, in the note at its top, to cite the document as `<library id>/files/<name>#…`, which is not accepted when a source is checked. The note now gives the accepted form, `knowledge/<library id>/<name>#…`. Sources the assistant took from a knowledge base search were always written correctly; only an assistant that read the text version directly and copied the note was refused. Documents uploaded before this version keep the old note until they are uploaded again.

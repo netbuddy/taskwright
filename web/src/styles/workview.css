@@ -121,6 +121,10 @@
 .app .inrow{display:flex;align-items:center;gap:.4rem;margin-top:.25rem}
 .app .send{margin-left:auto;width:1.6rem;height:1.6rem;border-radius:50%;background:var(--ink);color:#fff;
   display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:none;cursor:pointer}
+/* 助手工作时发送键换成的停止键：同一位置、同样大小，中间一个实心小方块；点了之后变淡并脉动，不能再点（Conversation.tsx） */
+.app .send.stop i{display:block;width:.55rem;height:.55rem;border-radius:.1rem;background:#fff}
+.app .send.stop.stopping{background:#9a9a9a;pointer-events:none;cursor:default}
+.app .send.stop.stopping i{animation:breathe 1.2s ease-in-out infinite}
 .app .stage-col{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
 .app .work{flex:1;min-height:0;display:flex}
 .app .pane-items{min-width:0;min-height:0;border-right:1px solid var(--line);display:flex;flex-direction:column;

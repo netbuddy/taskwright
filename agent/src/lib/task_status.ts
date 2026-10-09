@@ -21,6 +21,10 @@
  * （search_knowledge），原文由查找的结果逐字给出。选用的知识库里一份文档都没有、或者没有知识库时不写这一段。续接时，只在上次之后任务的选用或选用的知识库的文档清单变过时写这一段（按这两种文件的修改时刻判断，
  * 整段重写；与任务无关的知识库新建、改名、删除不算）。
  *
+ * 被停止的运行：这条会话里上一次运行是被用户停止的、此后用户还没有再说话时，续接的那一条另写一句「上一次运行被用户停止，没有做完。」，
+ * details.last_run_stopped 为真；交付物、材料、知识库都没有变化时也为这一句写一条。用户停止之后不关会话接着说话时不经过这里，
+ * 那时助手靠停止时留在会话里的界面操作通知知道（lib/user_ops.ts 的 STOP_RUN_NOTE）。
+ *
  * 对话理解：这条会话里还有在等回应的执行者行为（你问过、用户还没回应的，见 lib/dialogue_acts.ts）时，消息末尾另列一行，
  * details.open_acts 是同一份清单。新会话里还没有对话行为，这一行只在续接时出现。
  *
@@ -53,7 +57,12 @@ export interface SessionFacts {
   hasStatusMessage: boolean;
   /** 当前分支上最后一条消息（消息或自定义消息）的时刻，毫秒；一条都没有为 null。 */
   lastMessageAt: number | null;
+  /** 上一次运行被用户停止，此后用户没有再说话，也还没有写过现状消息。不给当作假。 */
+  lastRunStopped?: boolean;
 }
+
+/** 续接时上一次运行是被用户停止的，现状消息里加的那一句。页面照原样显示这一句（backend/src/conversation.ts 不改它）。 */
+export const LAST_RUN_STOPPED_SENTENCE = "上一次运行被用户停止，没有做完。";
 
 export interface TaskStatusMessage {
   kind: "现状" | "变化";
@@ -100,7 +109,7 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
       ? withKnowledge(statusNow(db, task, definition, materials, workspaceDir), libraries, "")
       // 续接：上次之后任务的选用或知识库的文档清单变过，才把知识库一段再写一遍。
       : changesSince(db, task, facts.lastMessageAt, sessionId, materials,
-        knowledgeChangedAt(workspaceDir, knowledgeRoot) > facts.lastMessageAt ? libraries : null);
+        knowledgeChangedAt(workspaceDir, knowledgeRoot) > facts.lastMessageAt ? libraries : null, facts.lastRunStopped === true);
     return withOpenActs(db, task.task_id, sessionId, message);
   } finally {
     db.close();
@@ -302,7 +311,7 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
   };
 }
 
-/** 上次这条会话结束之后的变化（交付物、材料、知识库）；都没有变化返回 null。 */
+/** 上次这条会话结束之后的变化（交付物、材料、知识库），以及上一次运行是不是被用户停止的；都没有返回 null。 */
 function changesSince(
   db: DatabaseSync,
   task: TaskRow,
@@ -311,17 +320,22 @@ function changesSince(
   materials: Materials,
   /** 上次之后知识库变过时，是现在选用的知识库；没变过为 null。 */
   knowledge: SelectedLibrary[] | null,
+  lastRunStopped: boolean,
 ): TaskStatusMessage | null {
   const changed = changesInItems(db, task, lastMessageAt, sessionId, materials);
-  if (knowledge === null) return changed;
+  if (knowledge === null && !lastRunStopped) return changed;
   const cutoff = wallClockText(new Date(lastMessageAt));
-  // 交付物与材料都没有变、只有知识库变了：照「只有新材料」的样子写一条，材料清单不重复。
-  return withKnowledgeChange(changed ?? {
+  // 交付物与材料都没有变、只有知识库变了或者只有上一次运行被停止这件事：照「只有新材料」的样子写一条，材料清单不重复。
+  const base: TaskStatusMessage = changed ?? {
     kind: "变化",
     text: `【执行者续接这条会话时（${clock()}）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。`,
     details: { kind: "变化", task_id: task.task_id, since: cutoff, session_id: sessionId, added: [], updated: [], deleted: [], event_seqs: [],
       materials: materialsDetails(materials), new_materials: [] },
-  }, knowledge);
+  };
+  const told = lastRunStopped
+    ? { ...base, text: `${base.text}${LAST_RUN_STOPPED_SENTENCE}`, details: { ...base.details, last_run_stopped: true } }
+    : base;
+  return knowledge === null ? told : withKnowledgeChange(told, knowledge);
 }
 
 /** 上次之后交付物与材料的变化；都没有变返回 null。 */

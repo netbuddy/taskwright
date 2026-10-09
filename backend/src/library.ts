@@ -891,19 +891,28 @@ export function changedFields(before: Record<string, any> | null, after: Record<
 /**
  * 按调用编号查一次调用在任务库里留下的事实，给过程摘要用：保存修订形成的修订（修订号与碰到的条目，条目取自那次修订的
  * REVISION_SAVED 事件），以及哪些调用把任务标为了已完成（TASK_COMPLETED 事件）。用户让助手停下时，工具可能已经写进了库、
- * 只是结果没来得及回到会话里，摘要据此如实写「保存了修订 N」「把任务标为已完成」。只读；库不在或读不出时两样都是空的。
+ * 只是结果没来得及回到会话里，摘要据此如实写「保存了修订 N」「把任务标为已完成」。保存图同样按调用编号查：助手那一次调用给哪张图
+ * 写了它自己的第几次修订（图的修订号各算各的，不在任务的修订号里）。只读；库不在或读不出时都是空的。
+ * 第一次查的时候才打开任务库，读一遍记下；一次也不查就不碰任务库（被停下的那次工作一个工具调用都没有时就是这样）。
  */
-export function callFacts(taskDir: string | null): { revision: (callId: string) => Record<string, any> | null; completed: (callId: string) => boolean } {
+export function callFacts(taskDir: string | null): {
+  revision: (callId: string) => Record<string, any> | null; completed: (callId: string) => boolean; diagram: (callId: string) => Record<string, any> | null;
+} {
   const revisions = new Map<string, Record<string, any>>();
   const completed = new Set<string>();
-  const db = (() => {
-    try {
-      return taskDir === null ? null : openRo(taskDir);
-    } catch {
-      return null;
-    }
-  })();
-  if (db !== null) {
+  const diagrams = new Map<string, Record<string, any>>();
+  let loaded = false;
+  const load = () => {
+    if (loaded) return;
+    loaded = true;
+    const db = (() => {
+      try {
+        return taskDir === null ? null : openRo(taskDir);
+      } catch {
+        return null;
+      }
+    })();
+    if (db === null) return;
     try {
       inReadTransaction(db, () => {
         const events = new Map(all(db, "SELECT seq, payload FROM event WHERE name = 'REVISION_SAVED'").map((x) => [x.seq as number, x]));
@@ -913,14 +922,25 @@ export function callFacts(taskDir: string | null): { revision: (callId: string) 
           revisions.set(String(row.call_id), { revision_no: row.revision_no, operations: or(payload.operations, []) });
         }
         for (const row of all(db, "SELECT call_id FROM event WHERE name = 'TASK_COMPLETED'")) if (row.call_id) completed.add(String(row.call_id));
+        try {
+          for (const row of all(db, "SELECT diagram_id, revision_no, op, name, kind, call_id FROM diagram_version WHERE actor = 'executor'")) {
+            if (row.call_id) diagrams.set(String(row.call_id), { diagram_id: row.diagram_id, revision_no: row.revision_no, op: row.op, name: row.name, kind: row.kind });
+          }
+        } catch {
+          // 还没有图的两张表（没有保存过图的旧任务库）：当作没有图
+        }
       });
     } catch {
       // 旧格式或读不出：当作查不到
     } finally {
       db.close();
     }
-  }
-  return { revision: (callId) => revisions.get(callId) ?? null, completed: (callId) => completed.has(callId) };
+  };
+  return {
+    revision: (callId) => (load(), revisions.get(callId) ?? null),
+    completed: (callId) => (load(), completed.has(callId)),
+    diagram: (callId) => (load(), diagrams.get(callId) ?? null),
+  };
 }
 
 /**
