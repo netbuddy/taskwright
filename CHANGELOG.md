@@ -7,49 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-XX
+
+0.4.3 takes PDF files as materials and as knowledge base documents. The assistant cites a PDF by page and block; the page shows the file page by page, scrolls to the page a source points to, frames the block and marks the excerpt. A material that has not entered the conversation can be replaced with another file. The task status note at the top of a conversation is folded into one line. The page now names the browsers it supports and says so in a browser that is too old.
+
+### Upgrading from 0.4.2
+
+- Existing tasks are not migrated and are not affected: the task databases are as they were, and a task created with 0.4.2 takes PDF materials like a new one. As before, back up the task directories before upgrading.
+- The desktop packages are larger by about 6.6 MB: they now carry the files of pdfjs-dist that the task service reads PDF files with (about 3.6 MB) and those the page shows them with (about 3 MB).
+- If you run Taskwright from a clone of the repository, install the dependencies again as usual (`make install`, or `npm ci`). The pages now use pdfjs-dist, the package the task service has declared since 0.4.2; a clone whose dependencies were installed for 0.4.2 already has it, and installing again changes nothing. A startup profile of your own needs no change: the new section **PDF 解析** has a default for every value.
+- Upgrade the page and the task service together. The page of 0.4.3 relies on what the task service of 0.4.3 sends with a system note; with a task service of 0.4.2 the reminder sentence is still shown in the conversation, and the folded line has no key facts.
+
 ### PDF materials and knowledge base documents
 
-- PDF files are accepted as materials and as knowledge base documents (up to 5 MB and 20 MB, as for other files). A PDF is parsed when it is uploaded, in a run of its own, into a text for the assistant in which every block of text is one line marked with its page and block, such as `[p3-2]`; running heads and feet are kept apart, and a table is read row by row, not cell by cell. Parsing takes under a second for most files.
+- PDF files are accepted as materials and as knowledge base documents (up to 5 MB and 20 MB, as for other files). A PDF is parsed when it is uploaded, which takes under a second for most files. Meanwhile the page says so (**正在上传……PDF 要先读出各页的文字，页数多的要多等一会儿。**), and the line turns into the result when the upload is done. The upload box of the knowledge base page no longer says that PDF files are not accepted yet.
 - A PDF without any readable text, most likely a scan, is refused with **这份 PDF 没有可读的文字（可能是扫描件），本版不支持。** ("this PDF has no readable text (it may be a scan); not supported in this version"); there is no text recognition. A PDF in which only some pages have no text is accepted, and the assistant is told which pages could not be read. Also refused: a PDF that needs a password, one over 1000 pages or 3 million characters, and one whose parsing is not finished after 60 seconds, with a message that says how long it took and which page it reached, such as **解析用了 60 秒仍没有完成（已读到第 420 页，共 1000 页），这份文件太复杂，本版不支持。** A refused upload leaves nothing behind.
+- The assistant reads a text made from the PDF, in which every block of text is one line marked with its page and block, such as `[p3-2]`. Running heads and feet are kept apart, and a table is read row by row, not cell by cell. The task status message and `get_task_status` give, for every PDF material, its number of pages and blocks and the pages without text, and count the blocks no item cites yet. The assistant's instructions say how to read a PDF material and how to cite it.
 - A source that cites a PDF names the page and the block: `inputs/a.pdf#p3-2`, or `knowledge/<library id>/a.pdf#p3-2` for a knowledge base document. The excerpt is checked verbatim against that block, or from that block into at most five following blocks of the same page; an excerpt cannot cross a page. Before the comparison both sides are normalised, because the text layer of a PDF often writes ordinary characters as look-alikes: radical characters become ordinary Han characters, full-width and half-width forms are unified, and whitespace and hyphens are dropped. This applies to PDF sources only.
-- The task status message and `get_task_status` give, for every PDF material, its number of pages and blocks and the pages without text, and count the blocks no item cites yet. The assistant's instructions say how to read a PDF material and how to cite it.
 - A knowledge base search returns PDF passages with their page and blocks, such as 第 3 页第 2 到 4 块 ("page 3, blocks 2 to 4"); PDF documents are split into chunks page by page.
 - Generated documents and the Word export write a PDF source as the file name and the page, such as inputs/a.pdf（第 3 页）. The work summary names a PDF material by its own name, as it does for Word materials.
-- Interface: `upload.extensions` and `knowledge_upload.extensions` of `GET /api/v1/service` include `.pdf`; a PDF in the list of materials and in the event `material_added` carries `pdf: {pages, units, no_text_pages}`, and the three files generated from it (`<name>.pdf.md`, `.pdf.segments.json`, `.pdf.locations.json`) carry `derived_from`; `GET …/materials/raw` answers a PDF with `application/pdf` and `GET …/materials/content` with its text; a search hit in a PDF document has `first_unit`, `last_unit` and `units`. See **PDF materials** in section 5.1 of the API reference.
-- The limits are in a new section **PDF 解析** of the startup profiles: `max_pages`, `max_chars`, `max_seconds` and `stop_after_seconds`, each with a default.
-- The desktop packages carry the files of [pdfjs-dist](https://github.com/mozilla/pdf.js) 6.4.299 (Apache-2.0) that the backend uses, in `backend/vendor/pdfjs-dist/`, about 3.6 MB; the build checks them by reading a PDF.
-- The upload box of the knowledge base page no longer says that PDF files are not accepted yet.
+- Interface: the upload extensions in `GET /api/v1/service` include `.pdf`; a PDF in the list of materials carries `pdf: {pages, units, no_text_pages}`, and the files generated from it carry `derived_from`; `GET …/materials/raw` answers a PDF with `application/pdf` and `GET …/materials/content` with its text; a search hit in a PDF document has `first_unit`, `last_unit` and `units`. See **PDF materials** in section 5.1 of the API reference. The limits on pages, characters and seconds are in a new section **PDF 解析** of the startup profiles, each with a default.
+- The desktop packages carry the files of [pdfjs-dist](https://github.com/mozilla/pdf.js) 6.4.299 (Apache-2.0) that the task service uses, in `backend/vendor/pdfjs-dist/`, with their licence files; the build checks them by reading a PDF.
 
-### Replacing a material
+### PDF materials in the page
 
-- A material that has not entered the conversation can be replaced with another file: on the task page such a material has **替换** ("replace") beside **删除**. You choose a file, confirm, and the material is the new file; the old file and the files generated from it are gone, and a Word or PDF file gets its generated files anew. The new file may have another name and another type, and is taken in by the rules of an upload. Once the material has entered the conversation, **替换** is grey and the request is refused with `rejected` and 这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。 ("this material has entered the conversation and cannot be replaced; upload a new material and tell the assistant to go by the new one"). The interface is `POST …/materials/replace?path=…`; open work views are updated by `material_removed` with `replaced_by` followed by `material_added` with `replaces`. When the new file cannot be stored, the old material stays as it was.
-- After a Word material is deleted or replaced on the task page, **查看** ("view") shows the file that is there now. Before, a file uploaded under the name of a deleted one was still shown with the old content until the page was reloaded.
-
-### PDF materials: in the page
-
-- A PDF material is shown in the Materials tab page by page, as it is, with a text layer for selecting. Only the pages in view are drawn, so a long file opens quickly. The bar above the pages shows the current page and the page count, with **缩小**, **放大** and **适应宽度** ("fit the width"); a file opens fitted to the width of the tab.
-- Clicking a source that comes from a PDF scrolls to its page, frames the block the source points to and marks the excerpt character by character. Which block, whether the excerpt runs on into the following blocks and whether it crosses a page is worked out by the same function that checks the source when it is saved. When the excerpt cannot be marked, the block is still framed and a line above says why.
+- A PDF material is shown in the Materials tab page by page, as it is, with a text layer for selecting. Only the pages in view are drawn, so a long file opens quickly. The bar above the pages shows the current page and the page count, with **缩小**, **放大** and **适应宽度** ("fit the width"); a file opens fitted to the width of the tab. **查看** ("view") on the task page shows a PDF page by page too.
+- Clicking a source that comes from a PDF scrolls to its page, frames the block the source points to and marks the excerpt character by character. The page works out which block it is, and whether the excerpt runs on into the following blocks, by the same rule that checks the source when it is saved. When the excerpt cannot be marked, the block is still framed and a line above says why.
 - A source from a PDF is labelled with the file name and 第 N 页 ("page N"), the page of the PDF itself. The chapter follows when the file has bookmarks and the page can be told to belong to one of them; when more than one bookmark points to the page, the label stops at the page.
 - The file's bookmarks are listed under **目录** ("contents") below the file name; a file without bookmarks says so and lists its pages instead.
 - Pages with no readable text (usually scanned images) carry a note, and the file name line and the task page's list of materials say how many such pages a file has. A line of small print says that tables in a PDF are read row by row, not cell by cell.
-- Sentences cited by an item are underlined in the PDF and open the item when clicked; selecting a passage brings up the same action bar as in other materials. **查看** on the task page shows a PDF page by page too.
-- The page uses the legacy build of pdf.js 6.4.299, the version and the build the task service already uses, loaded only when a PDF material is opened. The legacy build brings its own replacements for the newest JavaScript methods, so pages are drawn in browsers that lack them. Its character maps, standard fonts, colour profile and image decoders are part of the built page, under `pdfjs/6.4.299/` (about 3 MB).
-- While a PDF is being uploaded the page says so (**正在上传……PDF 要先读出各页的文字，页数多的要多等一会儿。**), and the line turns into the result when the upload is done.
+- Sentences cited by an item are underlined in the PDF and open the item when clicked; selecting a passage brings up the same action bar as in other materials.
 - A source that comes from a PDF document of a knowledge base is labelled with the library, the document and 第 N 页. Opening it still shows the text of the document; knowledge base documents are not shown page by page yet.
-- When a PDF material is removed or replaced, what the page had read of it is dropped, so a new file under the same name is not shown as the old one.
 - When the page cannot open a PDF or cannot draw one of its pages, it shows the file in the browser's own PDF viewer instead, with the line **这个浏览器里只能按页显示，不能标出摘录。** above it; clicking a source or an entry of the contents then only jumps to the page.
-- The materials card on the task page drops what the page had read of a PDF after a delete or a replace, as it does for Word materials.
+- The page draws a PDF with the legacy build of pdf.js 6.4.299, the version the task service uses, loaded only when a PDF material is opened. Its character maps, standard fonts, colour profile and image decoders are part of the built page (about 3 MB).
+
+### Replacing a material
+
+- A material that has not entered the conversation can be replaced with another file: on the task page such a material has **替换** ("replace") beside **删除**. You choose a file, confirm, and the material is the new file; the old file and the files generated from it are gone, and a Word or PDF file gets its generated files anew. The new file may have another name and another type, and is taken in by the rules of an upload. When the new file cannot be stored, the old material stays as it was.
+- Once the material has entered the conversation, **替换** is grey and the request is refused with 这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。 ("this material has entered the conversation and cannot be replaced; upload a new material and tell the assistant to go by the new one").
+- After a material is deleted or replaced on the task page, **查看** shows the file that is there now, for Word and PDF materials alike. Before, a Word file uploaded under the name of a deleted one was still shown with the old content until the page was reloaded. An open work view drops what it had read of a PDF material when the material is removed or replaced.
+- Interface: `POST …/materials/replace?path=…`; a refusal answers `rejected`; open work views are updated by `material_removed` with `replaced_by` followed by `material_added` with `replaces`.
+
+### Work view and conversation
+
+- The task status message at the top of a conversation is folded into one line. The message is written for the assistant (the state of the task, the list of materials and knowledge bases, how to cite them) and used to fill the top of the conversation. The line gives the gist, for example **助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决** ("the task as the assistant saw it when it started this session: 2 materials, 2 knowledge bases with 6 documents, completion conditions 1/3, 0 open issues"); for a resumed session it reads **助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新材料 1 份** ("what had changed when the assistant resumed this session"). Click the line to see the full text, click again to fold it. The notes about what you did on the page are shown as before.
+- The sentence with which the system reminds the assistant when it did not use the reply tool is no longer shown in the conversation. It is a correction between the assistant and the system, not something the user needs to read; the session record still has it.
+- In the interface, `system_note` now carries `kind` (`task_status` or `reply_fallback`), which the documentation already listed but the service did not send, and a task status message carries `details`, the facts the line is written from.
 
 ### Supported browsers
 
 - The page is built for Chrome 125, Edge 125, Firefox 128 and Safari 18 and newer; these are the versions the legacy build of pdf.js supports.
 - A browser that is too old no longer gets a blank page: the page says **这个浏览器版本太旧，请更新到两年内的版本（Chrome 或 Edge 125、Firefox 128、Safari 18 以上）。** The check looks for what the page cannot do without (`Object.hasOwn`, `structuredClone`, and `:has()`, `color-mix()` and container queries in the style sheets), not for a version number.
 
-### Work view and conversation
+### Known issues
 
-- The task status message at the top of a conversation is folded into one line. The message is written for the assistant (the state of the task, the list of materials and knowledge bases, how to cite them) and used to fill the top of the conversation with several hundred characters. The line gives the gist, for example **助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决** ("the task as the assistant saw it when it started this session: 2 materials, 2 knowledge bases with 6 documents, completion conditions 1/3, 0 open issues"); for a resumed session it reads **助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新材料 1 份** ("what had changed when the assistant resumed this session"). Click the line to see the full text, click again to fold it. The notes about what you did on the page are shown as before.
-- The sentence with which the system reminds the assistant when it did not use the reply tool is no longer shown in the conversation. It is a correction between the assistant and the system, not something the user needs to read; the session record still has it.
-- In the interface, `system_note` now carries `kind` (`task_status` or `reply_fallback`), which the documentation already listed but the service did not send, and a task status message carries `details`, the facts the line is written from.
+- A PDF without any readable text is refused; there is no text recognition. When only some pages have no text, the file is accepted and those pages are merely named: what is on them does not reach the assistant.
+- A table in a PDF is read row by row: the cells of a row come out as one line, and the assistant cannot tell the columns apart.
+- PDF files whose content is not stored in reading order, scans with a hidden text layer and vertical text have not been tried. How well a real model reads a PDF material and cites it has not been verified either.
+- The chapter in the label of a PDF source stops at the page when more than one bookmark points to that page.
+- The page fetches a PDF material in one piece. A file of several MB takes a moment before its first page appears.
+- The character-by-character marking of an excerpt in a PDF is drawn once. When you scroll away and come back more than two seconds after clicking the source, the marking is gone; the frame around the block stays.
+- In a window 1280 pixels wide the Materials tab is narrow, and a PDF fitted to its width is shown at about 57%. Word materials are as narrow there.
+- PDF documents of a knowledge base are not shown page by page: opening a source from one shows the text made from it, without pages and without the frame.
+- When a PDF is shown in the browser's own viewer, the list of contents does not fold by itself after you click an entry and keeps the upper half of the tab.
+- The oldest supported browsers have not been tried: the limits rest on a check of what the browser can do and on the browser's own PDF viewer as a way out. The check at the start only stops browsers older than Chrome 111, Firefox 121 and Safari 16.2.
+- The run that parses a PDF is limited in time but not in memory.
+- The observatory does not show PDF materials.
+- A material that has entered the conversation cannot be replaced: upload a new one and tell the assistant to go by it.
+- When the work view is open in another browser tab while a Word material is replaced by a file of the same name on the task page, the work view can show the old file until it is reloaded.
+- Deleting, replacing and uploading a material are not listed in the work summary.
+- When the task service is stopped by force in the middle of an upload or a replacement, a temporary directory (`.uploading` or `.replacing`) is left in the task directory and is not cleaned up at the next start; in the case of a replacement the old file is in it.
+- The folded line of the task status note takes three lines when the conversation column is narrow. Its numbers are those of the moment the session started and do not change afterwards, so they can differ from the numbers elsewhere on the page.
+- For a material of more than 20,000 characters the reviewer may not be given the passage a Word or PDF source points to. This was seen in the code and has not been tried.
+- A change to a diagram cannot be undone. The **修订** ("revisions") tab does not list the revisions of diagrams, and an earlier revision of a diagram cannot be looked at: its page shows the latest one only.
+- An item cannot rest on a diagram yet: the source kind `图` is refused, and the refusal says that the task has no diagrams even when it has.
+- Diagrams are not part of generated documents or the Word export, and the reviewer does not see them.
+- When you remove from a diagram's text a node that stands for an item, the diagram keeps its source for that item, because your changes leave the sources as they were. **依据已变** can therefore still appear for an item that is no longer drawn.
+- The reason shown when your change to a diagram's text is not saved was written for the assistant, and a few of its sentences read oddly when it is you who made the change.
+- Scaling a diagram with a touchpad can be too fast, because every wheel event scales by one step.
+- **适应宽度** ("fit to width") of a diagram does not go below 25%, so a very wide diagram still does not fit and has to be dragged.
+- In the items area the number on **导出 Word** counts the ticked items of all tabs, while the line 已勾选 N 个条目 above the list counts those of the current tab and filter, so the two numbers can differ.
+- In a knowledge base search the first two chunks by keyword always come into the result, whatever their score, so now and then a chunk that merely shares a few characters with the question takes the place of a closer one.
+- The keyword scores are computed anew at every search. With more than about ten thousand chunks in the knowledge bases a task uses, one search takes more than a second.
+- **试一试按意思查找** on the knowledge base page shows only the score by meaning and does not say when a chunk came in by keyword; it cannot be used while no embedding model is chosen or documents are still to be embedded, although the assistant can then still search by keyword.
+- The limit of five refusals in a row covers refused replies and refusals for a missing or invalid understanding. A revision refused for its content is not counted, and the number of rounds in one run has no limit.
+- Nothing is done about large materials: the assistant does not get through a material of several MB.
+- When one cell of a Word table is longer than 800 characters, a search returns the whole cell for each piece of it.
+- Without the programs rg and fd the assistant's `grep` and `find` tools do not work. The desktop package brings both; on a machine set up by hand they have to be installed, or downloaded by running `pi` once without `--offline`.
+- The assistant may still miss content in the materials, even in short ones. Statements in the materials that contradict each other may be written down as a settled rule, and the same rule may be written as two.
+- The review rules have not been verified one by one, so a review verdict is for reference only, and you can overrule it with **保留这种写法** ("keep this wording"). A task created earlier uses the review rules copied when it was created, and an upgrade does not update them.
+- When the package (AppImage) runs on a computer without FUSE, it leaves the files it unpacked in the system's temporary directory.
+- While a review is running, the progress note in the top right corner covers the top line of the Review tab.
+- The screenshots in the tutorial were taken from an earlier version. The task page, the Review tab and the item details look different now; the diagrams tab, the export to Word and PDF materials are not in them, and the task status note at the top of the conversation is shown in full where it is now one line. Where they differ, follow the text.
+- The Windows executable can be built with the same scripts but has not been verified.
+- Tasks from 0.4.2 need no migration, but upgrades do not yet promise in general that existing tasks keep working: a task keeps the instructions and the review rules copied when it was created. Back up the task directories before upgrading.
 
 ## [0.4.2] - 2026-10-08
 
@@ -451,6 +502,7 @@ First public release.
 - HTTP/SSE task service, terminal client, read-only observatory, and a simulated user for test runs.
 - Documentation in English and Chinese, and a GitHub Actions workflow for checks and tests.
 
+[0.4.3]: https://github.com/netbuddy/taskwright/releases/tag/v0.4.3
 [0.4.2]: https://github.com/netbuddy/taskwright/releases/tag/v0.4.2
 [0.4.1]: https://github.com/netbuddy/taskwright/releases/tag/v0.4.1
 [0.4.0]: https://github.com/netbuddy/taskwright/releases/tag/v0.4.0
