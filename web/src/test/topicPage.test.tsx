@@ -124,6 +124,15 @@ describe("主题页的四块", () => {
     expect(rules[3].querySelector(".oa-src .one")).toHaveClass("v");
   });
 
+  it("确认过之后，助手补的那几处的出处不再是琥珀字，写明「你确认过」；理由仍在", () => {
+    render(<Panel t={change(overallTask(), "OA-003", (p) => { p.pending_verification = false; p.pending_sources = 0; p.pending_places = []; })} />);
+    const line = screen.getByTestId("topic-settled-3").querySelector(".oa-src .one")!;
+    expect(line).not.toHaveClass("v");
+    expect(line.textContent).toBe("助手补的，你确认过 · 理由：「保留期是 3 天」是按高校图书馆常见做法补的，你只说了「留几天」，没有说几天。");
+    expect(screen.getByTestId("topic-settled-3")).not.toHaveClass("pending");
+    expect(screen.getByTestId("topic-what").querySelector(".oa-src .one.v")).toBeNull();
+  });
+
   it("出处是材料原文时点一下去右边的材料里看那句原文", () => {
     const locate = vi.fn();
     render(<Panel t={overallTask()} spies={{ locate }} />);

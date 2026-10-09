@@ -25,18 +25,19 @@ import { TopicEdit } from "./TopicEdit";
 import { rejectedText } from "../errors";
 import { useToast } from "../../Toasts";
 
-/** 出处的一句短话：谁说的或者哪份材料，后面跟原话（长的截短）。助手补充的写理由。 */
-function sourceText(source: Source): string {
+/** 出处的一句短话：谁说的或者哪份材料，后面跟原话（长的截短）。助手补充的写理由；用户已经确认过的写明「你确认过」。 */
+function sourceText(source: Source, pending: boolean): string {
   const kind = sourceKindNow(String(source.kind));
   const quote = source.excerpt.length > 36 ? `${source.excerpt.slice(0, 36)}…` : source.excerpt;
-  if (kind === SOURCE_SUPPLEMENT) return `助手补的 · 理由：${source.excerpt}`;
+  if (kind === SOURCE_SUPPLEMENT) return `${pending ? "助手补的" : "助手补的，你确认过"} · 理由：${source.excerpt}`;
   if (kind === "用户的话") return `你说的「${quote}」`;
   if (kind === "文档原文") return `材料 ${source.locator.split("/").pop() ?? source.locator}「${quote}」`;
   if (kind === "用户直接修改") return "你亲手改的";
   return `${kind} ${source.locator}`.trim();
 }
 
-function SourceLine({ sources, onLocate }: { sources: Source[]; onLocate?: (excerpt: string, locator: string) => void }) {
+/** 一处的出处。pending 为真是这一处还待核实：助手补充的那一条用琥珀字；确认过之后它与别的出处同色。 */
+function SourceLine({ sources, pending = false, onLocate }: { sources: Source[]; pending?: boolean; onLocate?: (excerpt: string, locator: string) => void }) {
   if (sources.length === 0) return null;
   return (
     <div className="oa-src">
@@ -44,9 +45,9 @@ function SourceLine({ sources, onLocate }: { sources: Source[]; onLocate?: (exce
         const supplement = sourceKindNow(String(s.kind)) === SOURCE_SUPPLEMENT;
         const canLocate = !supplement && sourceKindNow(String(s.kind)) === "文档原文" && !!onLocate;
         return (
-          <span key={i} className={`one${supplement ? " v" : ""}${canLocate ? " link" : ""}`} role={canLocate ? "button" : undefined}
+          <span key={i} className={`one${supplement && pending ? " v" : ""}${canLocate ? " link" : ""}`} role={canLocate ? "button" : undefined}
             title={canLocate ? "在右边的材料里看这句原文" : undefined} onClick={canLocate ? () => onLocate!(s.excerpt, s.locator) : undefined}>
-            {sourceText(s)}
+            {sourceText(s, pending)}
           </span>
         );
       })}
@@ -191,7 +192,7 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
               : <span key={k}>{part.text}</span>))}</p>
           ))}
         </div>
-        <SourceLine sources={sourcesFor(item, TOPIC.what)} onLocate={onLocate} />
+        <SourceLine sources={sourcesFor(item, TOPIC.what)} pending={whatPending} onLocate={onLocate} />
       </section>
 
       <section className="oa-blk" data-testid="topic-examples">
@@ -204,7 +205,7 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
               <div key={i} className={`oa-card${counter ? " neg" : ""}${marked.examples.has(i) ? " pending" : ""}`} data-testid={`topic-example-${i}`}>
                 <div className="k">{counter ? "这种不算" : `例子 ${i + 1}`}</div>
                 <p>{text}</p>
-                <SourceLine sources={sourcesFor(item, TOPIC.examples, i)} onLocate={onLocate} />
+                <SourceLine sources={sourcesFor(item, TOPIC.examples, i)} pending={marked.examples.has(i)} onLocate={onLocate} />
               </div>
             );
           })}
@@ -218,7 +219,7 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
           {settled.map((one, i) => (
             <li key={i} className={marked.settled.has(i) ? "pending" : undefined} data-testid={`topic-settled-${i}`}>
               <span className="mk" />
-              <div className="t">{one}<SourceLine sources={sourcesFor(item, TOPIC.settled, i)} onLocate={onLocate} /></div>
+              <div className="t">{one}<SourceLine sources={sourcesFor(item, TOPIC.settled, i)} pending={marked.settled.has(i)} onLocate={onLocate} /></div>
               <span className="oa-ract">
                 {/* 确认是按整页记的：整页只有这一处待核实时，这一条旁边的「对」才等于确认；多于一处时统一用顶部的按钮 */}
                 {marked.settled.has(i) && pending === 1 && (
