@@ -29,7 +29,7 @@ export function pdfCliPath(): string {
 const sentence = (text: string) => (/[。！？]$/.test(text) ? text : `${text}。`);
 
 /**
- * 在 pdf 旁边生成三个派生文件。rel 是这份 PDF 相对任务目录（或知识库根目录）的路径，写进派生文件里；limits 是启动配置
+ * 在 pdf 旁边生成三个派生文件：投影（用户与助手看到的叫法是「文字版」）、分段清单与位置表。rel 是这份 PDF 相对任务目录（或知识库根目录）的路径，写进派生文件里；limits 是启动配置
  * 「PDF 解析」一节的四个数（launch.ts 的 pdfLimitsOf）。
  * 生成不了（不是合法的 PDF、设了口令、超过上限、到时限没有结束）时抛 PdfUploadError；已经写出来的派生文件由调用的一方清理。
  * 到 stop_after_seconds 还没有结束就把那一次运行停掉；它每读完一页报一次进度，所以停掉时说得出读到了第几页。

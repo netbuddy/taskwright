@@ -3,6 +3,7 @@
  * 分段清单「文件名.pdf.segments.json」（agent/src/lib/pdf_segments.ts）与位置表「文件名.pdf.locations.json」
  * （agent/src/lib/pdf_locations.ts）。与 Word 材料的那三样是同一个用途，写法尽量相同；不同之处是 PDF 里没有文件自己声明的段落，
  * 块是这里按版面推出来的，定位符是「p页-块」。
+ * 用户与助手看到的叫法是「文字版」（text version）；「投影」与 projection 只是代码里的名字。
  *
  * 用 pdf.js（pdfjs-dist，版本固定为 PDFJS_VERSION）读每页的文字条目：每个条目有文字、位置与字号。只取文字，不画页面。
  *
@@ -409,7 +410,7 @@ export function tooSlowText(ms: number, read: number | null, total: number | nul
   return `解析用了 ${secondsText(ms)} 秒仍没有完成${where}，这份文件太复杂，本版不支持`;
 }
 
-/** progress 在每读完一页之后调一次：已经读完几页、一共几页（上传时另起的那一次运行靠它把进度报给任务服务）。 */
+/** 算出 PDF 的投影（用户与助手看到的叫法是「文字版」）与位置表。progress 在每读完一页之后调一次：已经读完几页、一共几页（上传时另起的那一次运行靠它把进度报给任务服务）。 */
 export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLimits = PDF_LIMITS, progress?: (read: number, total: number) => void): Promise<PdfProjection> {
   const started = performance.now();
   const expired = () => performance.now() - started > limits.seconds * 1000;
@@ -455,7 +456,7 @@ export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLi
 export interface WrittenPdfProjection { projection: string; segments: string; locations: string; pages: number; units: number; chars: number; no_text_pages: number[] }
 
 /**
- * 在 .pdf 旁边写投影、分段清单与位置表。pdf 是文件路径，rel 是它相对任务目录的路径。
+ * 在 .pdf 旁边写投影（用户与助手看到的叫法是「文字版」）、分段清单与位置表。pdf 是文件路径，rel 是它相对任务目录的路径。
  * 解析不了，或者三样里有一样没写成时抛 PdfProjectionError，已经写下的由 removePdfProjection 清掉。
  */
 export async function writePdfProjection(pdf: string, rel: string, segments: SegmentParams = SEGMENT_DEFAULTS, limits: PdfLimits = PDF_LIMITS,
