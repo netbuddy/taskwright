@@ -92,4 +92,6 @@ pi 这一侧用 `writeAgentDir(目录, fake.baseUrl)`（`agent_config.ts`）写�
 node tools/fake-model/main.mts --script 脚本.json --log 请求记录.jsonl --agent-dir /tmp/fake-agent
 ```
 
+`--agent-dir` 要给一个还不存在的目录，或者一个空目录。目录里已经有任何东西（文件、目录、软链接），或者这个路径本身是软链接时，假端点不启动，说明原因并以 2 退出：它会把 `auth.json` 写成空的，所以绝不能指到放着真的登录凭据的目录。用同一个目录重新起一次，先换一个新目录。
+
 启动后，终端会打印假端点的地址与配置目录。另开一个终端，用 `PI_CODING_AGENT_DIR=/tmp/fake-agent pi --model fake/fake-model ...` 启动 pi 即可。按 Ctrl+C 停掉假端点。

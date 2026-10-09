@@ -4,12 +4,12 @@
  */
 
 import assert from "node:assert/strict";
-import { type ChildProcess, spawn } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { Agent, request } from "node:http";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
+import { AgentDirRefused, writeAgentDir } from "../../tools/fake-model/agent_config.ts";
 import { FakeModel } from "../../tools/fake-model/server.ts";
 import { FAKE_MODEL } from "./fixtures/expected/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
@@ -135,6 +135,60 @@ test("pi 配置目录只登记假端点", () => {
   const models = JSON.parse(readFileSync(join(folder, "models.json"), "utf-8"));
   assert.deepEqual(Object.keys(models.providers), ["fake"]);
   assert.equal(models.providers.fake.baseUrl, "http://127.0.0.1:1/v1");
+});
+
+// ───────────── 配置目录只往新建的空目录里写 ─────────────
+
+const FILES = ["auth.json", "models.json", "settings.json"];
+
+test("配置目录：不存在的目录与空目录照常写三个文件", () => {
+  const missing = writeAgentDir(join(tmp, "agent-missing", "深一层"), "http://127.0.0.1:1/v1");
+  assert.deepEqual(readdirSync(missing).sort(), FILES);
+  mkdirSync(join(tmp, "agent-empty"));
+  assert.deepEqual(readdirSync(writeAgentDir(join(tmp, "agent-empty"), "http://127.0.0.1:1/v1")).sort(), FILES);
+  assert.equal(readFileSync(join(tmp, "agent-empty", "auth.json"), "utf-8"), "{}");
+});
+
+test("配置目录：里面已经有一个文件就拒绝，什么都不写，那个文件原样不动；写过一次的目录再写也拒绝", () => {
+  const dir = join(tmp, "agent-used");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "auth.json"), '{"openai": "真的凭据"}', "utf-8");
+  assert.throws(() => writeAgentDir(dir, "http://127.0.0.1:1/v1"),
+    (error: unknown) => error instanceof AgentDirRefused && /这个目录不是空的：.*（里面有 auth\.json）。假模型只往新建的空目录里写配置.*请换一个新的目录。/.test(error.message));
+  assert.deepEqual([readdirSync(dir), readFileSync(join(dir, "auth.json"), "utf-8")], [["auth.json"], '{"openai": "真的凭据"}']);
+  // 自己写过一次的目录也不是空的了：同一个目录不能重复用。
+  const once = writeAgentDir(join(tmp, "agent-once"), "http://127.0.0.1:1/v1");
+  assert.throws(() => writeAgentDir(once, "http://127.0.0.1:2/v1"), AgentDirRefused);
+  assert.match(readFileSync(join(once, "models.json"), "utf-8"), /127\.0\.0\.1:1\/v1/);
+});
+
+test("配置目录：里面有指向别处文件的软链接就拒绝，被指的文件内容与修改时刻都不变；目标路径本身是软链接也拒绝", () => {
+  const real = join(tmp, "real-credentials");
+  mkdirSync(real);
+  writeFileSync(join(real, "auth.json"), '{"openai": "真的凭据"}', "utf-8");
+  const before = statSync(join(real, "auth.json")).mtimeMs;
+  const dir = join(tmp, "agent-linked");
+  mkdirSync(dir);
+  symlinkSync(join(real, "auth.json"), join(dir, "auth.json"));
+  assert.throws(() => writeAgentDir(dir, "http://127.0.0.1:1/v1"), AgentDirRefused);
+  assert.deepEqual([readdirSync(dir), readFileSync(join(real, "auth.json"), "utf-8"), statSync(join(real, "auth.json")).mtimeMs], [["auth.json"], '{"openai": "真的凭据"}', before]);
+  // 目标路径本身是指向那个目录的软链接。
+  symlinkSync(real, join(tmp, "agent-is-link"));
+  assert.throws(() => writeAgentDir(join(tmp, "agent-is-link"), "http://127.0.0.1:1/v1"),
+    (error: unknown) => error instanceof AgentDirRefused && /这个路径是一个软链接/.test(error.message));
+  assert.deepEqual([readdirSync(real), readFileSync(join(real, "auth.json"), "utf-8"), statSync(join(real, "auth.json")).mtimeMs], [["auth.json"], '{"openai": "真的凭据"}', before]);
+});
+
+test("从命令行起：配置目录不能用时不启动，原因写到标准错误，以 2 退出，不写请求记录", () => {
+  const dir = join(tmp, "agent-cli-used");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "note.txt"), "别的东西", "utf-8");
+  const log = join(tmp, "cli-refused.jsonl");
+  const done = spawnSync(process.execPath, [join(ROOT, "tools", "fake-model", "main.mts"), "--log", log, "--port", "0", "--agent-dir", dir], { encoding: "utf-8", timeout: 20_000 });
+  assert.equal(done.status, 2, done.stderr);
+  assert.match(done.stderr, /--agent-dir 不能用：这个目录不是空的：.*（里面有 note\.txt）。/);
+  assert.equal(done.stdout, "");
+  assert.deepEqual([readdirSync(dir), existsSync(log)], [["note.txt"], false]);
 });
 
 // ───────────── 与期望值逐字对照 ─────────────

@@ -46,6 +46,8 @@ class Stack {
   readonly dir: string;
   readonly script: Dict;
   fake!: FakeModel;
+  /** 助手的配置目录：与假端点一样只在第一次启动时准备，后端停下再起时接着用（假端点只往新建的空目录里写配置）。 */
+  agentDir: string | null = null;
   child: ChildProcess | null = null;
   port = 0;
   constructor(name: string, script: Dict = SCRIPT) {
@@ -56,8 +58,8 @@ class Stack {
 
   async start(): Promise<void> {
     this.fake ??= await new FakeModel(this.script, join(this.dir, "fake.jsonl")).start();
-    const agentDir = writeAgentDir(join(this.dir, "pi-agent"), this.fake.baseUrl);
-    const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: agentDir, TASKWRIGHT_LOG_DIR: join(this.dir, "logs") };
+    this.agentDir ??= writeAgentDir(join(this.dir, "pi-agent"), this.fake.baseUrl);
+    const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: this.agentDir, TASKWRIGHT_LOG_DIR: join(this.dir, "logs") };
     for (const name of DROPPED_ENV) if (name !== "PI_CODING_AGENT_DIR") delete env[name];
     const { child, port } = await spawnBackend(["--tasks", "tasks", "--runs", "runs", "--profile", "fake", "--host", "127.0.0.1"], { cwd: this.dir, env });
     this.child = child;
