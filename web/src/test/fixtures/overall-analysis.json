@@ -1,0 +1,1327 @@
+{
+ "definition": {
+  "collections": [
+   {
+    "name": "功能用例",
+    "prefix": "UC",
+    "needs_review": true,
+    "fields": [
+     {
+      "name": "用例名称",
+      "type": "文本",
+      "required": true,
+      "values": null
+     },
+     {
+      "name": "用例功能",
+      "type": "文本",
+      "required": true,
+      "values": null
+     },
+     {
+      "name": "约束规则",
+      "type": "文本列表",
+      "required": false,
+      "values": null
+     }
+    ]
+   },
+   {
+    "name": "问题",
+    "prefix": "TBD",
+    "needs_review": false,
+    "fields": [
+     {
+      "name": "事项",
+      "type": "文本",
+      "required": true,
+      "values": null
+     },
+     {
+      "name": "种类",
+      "type": "枚举",
+      "required": true,
+      "values": [
+       "待澄清",
+       "范围外",
+       "后续迭代"
+      ]
+     },
+     {
+      "name": "建议的处理",
+      "type": "文本",
+      "required": false,
+      "values": null
+     },
+     {
+      "name": "状态",
+      "type": "枚举",
+      "required": true,
+      "values": [
+       "未解决",
+       "已解决",
+       "用户决定保留"
+      ]
+     },
+     {
+      "name": "处理结果",
+      "type": "文本",
+      "required": false,
+      "values": null
+     },
+     {
+      "name": "关联条目",
+      "type": "条目引用",
+      "required": false,
+      "values": null
+     }
+    ]
+   },
+   {
+    "name": "总体分析",
+    "prefix": "OA",
+    "needs_review": false,
+    "display": {
+     "side_tab": true,
+     "group_field": "标签",
+     "leading_groups": [
+      "概念"
+     ],
+     "note": "用这件事自己的话写下的主题：它是什么、例子、已经定下的。条目依据它写。"
+    },
+    "fields": [
+     {
+      "name": "标题",
+      "type": "文本",
+      "required": true,
+      "values": null
+     },
+     {
+      "name": "别名",
+      "type": "文本列表",
+      "required": false,
+      "values": null
+     },
+     {
+      "name": "它是什么",
+      "type": "文本",
+      "required": true,
+      "values": null
+     },
+     {
+      "name": "例子",
+      "type": "文本列表",
+      "required": false,
+      "values": null
+     },
+     {
+      "name": "已经定下的",
+      "type": "文本列表",
+      "required": false,
+      "values": null
+     },
+     {
+      "name": "标签",
+      "type": "文本列表",
+      "required": false,
+      "values": [
+       "概念",
+       "角色",
+       "流程",
+       "场景",
+       "目标",
+       "范围",
+       "假设",
+       "决定"
+      ]
+     },
+     {
+      "name": "上级主题",
+      "type": "条目引用",
+      "required": false,
+      "values": null,
+      "same_collection": true,
+      "single": true
+     },
+     {
+      "name": "状态",
+      "type": "枚举",
+      "required": true,
+      "values": [
+       "在用",
+       "已废弃"
+      ]
+     },
+     {
+      "name": "改看",
+      "type": "条目引用",
+      "required": false,
+      "values": null,
+      "same_collection": true,
+      "single": true
+     }
+    ]
+   }
+  ]
+ },
+ "items": [
+  {
+   "item_id": "OA-001",
+   "collection": "总体分析",
+   "title": "借阅",
+   "revision_no": 1,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:41:00+08:00",
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "标题": "借阅",
+    "别名": [],
+    "它是什么": "读者从图书馆把书借走、看完再还回来的整件事，包括借书与还书、续借、预约取书和逾期的处理。",
+    "例子": [],
+    "已经定下的": [],
+    "标签": [
+     "流程"
+    ],
+    "上级主题": [],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "用户的话",
+     "locator": "s1#u1",
+     "excerpt": "我们要把借书还书这一整套搬到系统里。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      }
+     ]
+    }
+   ],
+   "depended_by": [],
+   "reviews": [],
+   "confirmations": [
+    {
+     "revision_no": 1,
+     "accepted": true,
+     "basis": "已读"
+    }
+   ],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": []
+  },
+  {
+   "item_id": "OA-002",
+   "collection": "总体分析",
+   "title": "借书与还书",
+   "revision_no": 3,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:42:00+08:00",
+   "revisions": [
+    2,
+    3
+   ],
+   "fields": {
+    "标题": "借书与还书",
+    "别名": [],
+    "它是什么": "读者拿着书和借书证到自助借还机或服务台，系统核对借书证与还能借几本，登记借出和应还日期；还书时系统登记归还。读者也可以对在架的书办预约取书，馆员把书放到预留架。",
+    "例子": [
+     "学生小陈周三下午在自助借还机上借了两本书，应还日期是 30 天后的周五。"
+    ],
+    "已经定下的": [
+     "学生一次最多借 5 本。",
+     "教师一次最多借 10 本。",
+     "借期都是 30 天。",
+     "借书和还书都可以在自助借还机上办，也可以到服务台办。",
+     "名下有逾期未还图书的读者不能再借。"
+    ],
+    "标签": [
+     "流程"
+    ],
+    "上级主题": [
+     "OA-001"
+    ],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "文档原文",
+     "locator": "inputs/借阅规则.md",
+     "excerpt": "学生一次最多借 5 本，教师一次最多借 10 本，借期都是 30 天。",
+     "supports": [
+      {
+       "field": "已经定下的",
+       "index": 0
+      },
+      {
+       "field": "已经定下的",
+       "index": 1
+      },
+      {
+       "field": "已经定下的",
+       "index": 2
+      }
+     ]
+    },
+    {
+     "kind": "文档原文",
+     "locator": "inputs/借阅规则.md",
+     "excerpt": "借书和还书都可以在自助借还机上办理，也可以到服务台办理。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      },
+      {
+       "field": "已经定下的",
+       "index": 3
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u2",
+     "excerpt": "有逾期没还的就不让再借了。",
+     "supports": [
+      {
+       "field": "已经定下的",
+       "index": 4
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u3",
+     "excerpt": "小陈周三借了两本。",
+     "supports": [
+      {
+       "field": "例子",
+       "index": 0
+      }
+     ]
+    }
+   ],
+   "depended_by": [],
+   "reviews": [],
+   "confirmations": [
+    {
+     "revision_no": 3,
+     "accepted": true,
+     "basis": "已读"
+    }
+   ],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": []
+  },
+  {
+   "item_id": "OA-003",
+   "collection": "总体分析",
+   "title": "预约取书",
+   "revision_no": 12,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:43:00+08:00",
+   "revisions": [
+    9,
+    12
+   ],
+   "fields": {
+    "标题": "预约取书",
+    "别名": [
+     "预约"
+    ],
+    "它是什么": "读者对一本在架的书办预约，馆员把这本书从书架取下，放到预留架上等读者来取。书放在预留架的这段时间叫保留期，保留期是 3 天，过了没来取，书放回书架，让给下一位。\n\n它与排队等书不是一回事：书还在别人手上时，读者登记的是排队，等书还回来才转成预约取书。",
+    "例子": [
+     "小王周六在家预约了《算法导论》，当时书在架上。周一馆员把书放到预留架，小王周二来取，办了借阅。",
+     "反例：小李想借的《深入理解计算机系统》还在别人手上，他登记的是排队等书，不是预约取书。"
+    ],
+    "已经定下的": [
+     "只有在架的书才能预约取书。",
+     "一本书同一时间只能被一个人预约。",
+     "保留期内这本书不能被别人借走，也不能续借给原借阅人。",
+     "保留期是 3 天。"
+    ],
+    "标签": [
+     "概念",
+     "流程"
+    ],
+    "上级主题": [
+     "OA-001"
+    ],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "用户的话",
+     "locator": "s1#u4",
+     "excerpt": "读者可以预约在架上的书，馆员先帮他拿下来放到预留架，过期不取就让给下一位。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      },
+      {
+       "field": "已经定下的",
+       "index": 0
+      },
+      {
+       "field": "例子",
+       "index": 0
+      }
+     ]
+    },
+    {
+     "kind": "文档原文",
+     "locator": "inputs/借阅规则.md",
+     "excerpt": "同一册图书同一时间只接受一位读者的预约。",
+     "supports": [
+      {
+       "field": "已经定下的",
+       "index": 1
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u5",
+     "excerpt": "有人预约的书不能续借。",
+     "supports": [
+      {
+       "field": "已经定下的",
+       "index": 2
+      },
+      {
+       "field": "例子",
+       "index": 1
+      }
+     ]
+    },
+    {
+     "kind": "助手补充",
+     "locator": "",
+     "excerpt": "「保留期是 3 天」是按高校图书馆常见做法补的，你只说了「留几天」，没有说几天。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      },
+      {
+       "field": "已经定下的",
+       "index": 3
+      }
+     ]
+    }
+   ],
+   "depended_by": [
+    {
+     "element_kind": "条目",
+     "id": "UC-003",
+     "revision_no": 2
+    },
+    {
+     "element_kind": "条目",
+     "id": "UC-002",
+     "revision_no": 1
+    }
+   ],
+   "reviews": [],
+   "confirmations": [
+    {
+     "revision_no": 9,
+     "accepted": true,
+     "basis": "已读"
+    }
+   ],
+   "confirmation_stale": false,
+   "pending_verification": true,
+   "pending_sources": 1,
+   "basis_pending": null,
+   "mentioned_by": [
+    {
+     "item_id": "OA-002",
+     "collection": "总体分析",
+     "field": "它是什么",
+     "index": null,
+     "word": "预约取书",
+     "sentence": "读者也可以对在架的书办预约取书，馆员把书放到预留架。",
+     "revision_no": 12
+    },
+    {
+     "item_id": "OA-006",
+     "collection": "总体分析",
+     "field": "已经定下的",
+     "index": 1,
+     "word": "预约",
+     "sentence": "有人预约的书不能续借。",
+     "revision_no": 12
+    },
+    {
+     "item_id": "UC-002",
+     "collection": "功能用例",
+     "field": "约束规则",
+     "index": 0,
+     "word": "预约",
+     "sentence": "有人预约的书不能续借",
+     "revision_no": 12
+    }
+   ]
+  },
+  {
+   "item_id": "OA-004",
+   "collection": "总体分析",
+   "title": "闭馆日怎么算",
+   "revision_no": 2,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:44:00+08:00",
+   "revisions": [
+    1,
+    2
+   ],
+   "fields": {
+    "标题": "闭馆日怎么算",
+    "别名": [],
+    "它是什么": "图书馆闭馆的日子（每周日和法定节假日）算不算在各种按天计的期限里。",
+    "例子": [],
+    "已经定下的": [],
+    "标签": [
+     "假设"
+    ],
+    "上级主题": [
+     "OA-003"
+    ],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "用户的话",
+     "locator": "s1#u6",
+     "excerpt": "周日是闭馆的。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      }
+     ]
+    }
+   ],
+   "depended_by": [],
+   "reviews": [],
+   "confirmations": [
+    {
+     "revision_no": 2,
+     "accepted": true,
+     "basis": "已读"
+    }
+   ],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": []
+  },
+  {
+   "item_id": "OA-005",
+   "collection": "总体分析",
+   "title": "逾期与罚款",
+   "revision_no": 4,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:45:00+08:00",
+   "revisions": [
+    3,
+    4
+   ],
+   "fields": {
+    "标题": "逾期与罚款",
+    "别名": [
+     "逾期"
+    ],
+    "它是什么": "过了应还日期还没有归还就是逾期。逾期的每本每天罚款一角，罚款最多不超过这本书的定价。",
+    "例子": [],
+    "已经定下的": [],
+    "标签": [
+     "概念"
+    ],
+    "上级主题": [
+     "OA-001"
+    ],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "用户的话",
+     "locator": "s1#u7",
+     "excerpt": "逾期的每本每天罚款一角，罚款最多不超过这本书的定价。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      }
+     ]
+    },
+    {
+     "kind": "助手补充",
+     "locator": "",
+     "excerpt": "「过了应还日期还没有归还就是逾期」是按字面补的，从哪一天算起你还没有说。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      }
+     ]
+    }
+   ],
+   "depended_by": [
+    {
+     "element_kind": "条目",
+     "id": "UC-001",
+     "revision_no": 1
+    }
+   ],
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "pending_verification": true,
+   "pending_sources": 1,
+   "basis_pending": null,
+   "mentioned_by": [
+    {
+     "item_id": "OA-002",
+     "collection": "总体分析",
+     "field": "已经定下的",
+     "index": 4,
+     "word": "逾期",
+     "sentence": "名下有逾期未还图书的读者不能再借。",
+     "revision_no": 4
+    },
+    {
+     "item_id": "OA-001",
+     "collection": "总体分析",
+     "field": "它是什么",
+     "index": null,
+     "word": "逾期",
+     "sentence": "读者从图书馆把书借走、看完再还回来的整件事，包括借书与还书、续借、预约取书和逾期的处理。",
+     "revision_no": 4
+    }
+   ]
+  },
+  {
+   "item_id": "OA-006",
+   "collection": "总体分析",
+   "title": "续借",
+   "revision_no": 2,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:46:00+08:00",
+   "revisions": [
+    1,
+    2
+   ],
+   "fields": {
+    "标题": "续借",
+    "别名": [],
+    "它是什么": "读者在借期内把一本书再多借一段时间，不用把书拿回图书馆。",
+    "例子": [
+     "教师李老师借的《数据库系统概念》快到期了，他在自助借还机上办了续借，应还日期往后推了 15 天。"
+    ],
+    "已经定下的": [
+     "每本书只能续借一次，续借一次再延长 15 天。",
+     "有人预约的书不能续借。"
+    ],
+    "标签": [
+     "流程"
+    ],
+    "上级主题": [
+     "OA-001"
+    ],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "文档原文",
+     "locator": "inputs/借阅规则.md",
+     "excerpt": "每册图书可续借一次，续借期 15 天。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      },
+      {
+       "field": "已经定下的",
+       "index": 0
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u5",
+     "excerpt": "有人预约的书不能续借。",
+     "supports": [
+      {
+       "field": "已经定下的",
+       "index": 1
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u8",
+     "excerpt": "李老师那本书续借过。",
+     "supports": [
+      {
+       "field": "例子",
+       "index": 0
+      }
+     ]
+    }
+   ],
+   "depended_by": [],
+   "reviews": [],
+   "confirmations": [
+    {
+     "revision_no": 2,
+     "accepted": true,
+     "basis": "已读"
+    }
+   ],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": []
+  },
+  {
+   "item_id": "OA-007",
+   "collection": "总体分析",
+   "title": "读者",
+   "revision_no": 2,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:47:00+08:00",
+   "revisions": [
+    1,
+    2
+   ],
+   "fields": {
+    "标题": "读者",
+    "别名": [],
+    "它是什么": "持有有效借书证、可以借书的人，分学生与教师两类。",
+    "例子": [
+     "小王是计算机系二年级的学生，凭校园里发的借书证借书。"
+    ],
+    "已经定下的": [
+     "读者分学生与教师两类，两类能借的本数不同。",
+     "借书证一人一张，不外借。"
+    ],
+    "标签": [
+     "概念",
+     "角色"
+    ],
+    "上级主题": [],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "文档原文",
+     "locator": "inputs/借阅规则.md",
+     "excerpt": "读者分为学生与教师。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      },
+      {
+       "field": "已经定下的",
+       "index": 0
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u9",
+     "excerpt": "借书证一人一张，不能借给别人用。",
+     "supports": [
+      {
+       "field": "已经定下的",
+       "index": 1
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u10",
+     "excerpt": "比如小王，二年级的。",
+     "supports": [
+      {
+       "field": "例子",
+       "index": 0
+      }
+     ]
+    }
+   ],
+   "depended_by": [
+    {
+     "element_kind": "条目",
+     "id": "UC-001",
+     "revision_no": 1
+    },
+    {
+     "element_kind": "条目",
+     "id": "UC-002",
+     "revision_no": 1
+    },
+    {
+     "element_kind": "条目",
+     "id": "UC-003",
+     "revision_no": 2
+    }
+   ],
+   "reviews": [],
+   "confirmations": [
+    {
+     "revision_no": 2,
+     "accepted": true,
+     "basis": "已读"
+    }
+   ],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": [
+    {
+     "item_id": "OA-001",
+     "collection": "总体分析",
+     "field": "它是什么",
+     "index": null,
+     "word": "读者",
+     "sentence": "读者从图书馆把书借走、看完再还回来的整件事，包括借书与还书、续借、预约取书和逾期的处理。",
+     "revision_no": 2
+    }
+   ]
+  },
+  {
+   "item_id": "OA-008",
+   "collection": "总体分析",
+   "title": "借书证的有效期",
+   "revision_no": 1,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:48:00+08:00",
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "标题": "借书证的有效期",
+    "别名": [],
+    "它是什么": "借书证要不要有有效期，过期了怎么办。",
+    "例子": [],
+    "已经定下的": [],
+    "标签": [],
+    "上级主题": [
+     "OA-007"
+    ],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "用户的话",
+     "locator": "s1#u11",
+     "excerpt": "借书证要不要有有效期也还没想好。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      }
+     ]
+    }
+   ],
+   "depended_by": [],
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": []
+  },
+  {
+   "item_id": "OA-009",
+   "collection": "总体分析",
+   "title": "馆员",
+   "revision_no": 1,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:49:00+08:00",
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "标题": "馆员",
+    "别名": [],
+    "它是什么": "在服务台替读者办借还、处理自助借还机办不了的情况的人。",
+    "例子": [],
+    "已经定下的": [
+     "自助借还机办不了的情况都到服务台找馆员。"
+    ],
+    "标签": [
+     "角色"
+    ],
+    "上级主题": [],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "用户的话",
+     "locator": "s1#u12",
+     "excerpt": "机器办不了的就去服务台找馆员。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      },
+      {
+       "field": "已经定下的",
+       "index": 0
+      }
+     ]
+    }
+   ],
+   "depended_by": [],
+   "reviews": [],
+   "confirmations": [
+    {
+     "revision_no": 1,
+     "accepted": true,
+     "basis": "已读"
+    }
+   ],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": []
+  },
+  {
+   "item_id": "OA-010",
+   "collection": "总体分析",
+   "title": "馆藏",
+   "revision_no": 2,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:40:00+08:00",
+   "revisions": [
+    1,
+    2
+   ],
+   "fields": {
+    "标题": "馆藏",
+    "别名": [
+     "藏书"
+    ],
+    "它是什么": "图书馆登记在册的每一本实体书，一本一个条码。",
+    "例子": [
+     "同一种书《算法导论》馆里有三本，就是三条馆藏。"
+    ],
+    "已经定下的": [
+     "一本书此刻只能是在架、借出、预留三种情况里的一种。"
+    ],
+    "标签": [
+     "概念"
+    ],
+    "上级主题": [],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "文档原文",
+     "locator": "inputs/借阅规则.md",
+     "excerpt": "每册图书有唯一条码。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u13",
+     "excerpt": "一本书要么在架上，要么借出去了，要么给人留着。",
+     "supports": [
+      {
+       "field": "已经定下的",
+       "index": 0
+      }
+     ]
+    },
+    {
+     "kind": "用户的话",
+     "locator": "s1#u14",
+     "excerpt": "算法导论有三本。",
+     "supports": [
+      {
+       "field": "例子",
+       "index": 0
+      }
+     ]
+    }
+   ],
+   "depended_by": [],
+   "reviews": [],
+   "confirmations": [
+    {
+     "revision_no": 2,
+     "accepted": true,
+     "basis": "已读"
+    }
+   ],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": []
+  },
+  {
+   "item_id": "OA-011",
+   "collection": "总体分析",
+   "title": "和校园卡打通",
+   "revision_no": 1,
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:41:00+08:00",
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "标题": "和校园卡打通",
+    "别名": [],
+    "它是什么": "以后借书证可能和校园卡合成一张卡，现在还没有定。",
+    "例子": [],
+    "已经定下的": [],
+    "标签": [],
+    "上级主题": [],
+    "状态": "在用",
+    "改看": []
+   },
+   "sources": [
+    {
+     "kind": "用户的话",
+     "locator": "s1#u15",
+     "excerpt": "以后可能要和校园卡打通。",
+     "supports": [
+      {
+       "field": "它是什么",
+       "index": null
+      }
+     ]
+    }
+   ],
+   "depended_by": [],
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "mentioned_by": []
+  },
+  {
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:49:00+08:00",
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "depended_by": [],
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": {
+    "item_id": "OA-005",
+    "reason": "pending"
+   },
+   "item_id": "UC-001",
+   "collection": "功能用例",
+   "title": "借书",
+   "revision_no": 1,
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "用例名称": "借书",
+    "用例功能": "读者凭借书证借书，学生最多借 5 本、教师最多借 10 本，借期 30 天。",
+    "约束规则": [
+     "名下有逾期未还图书的读者不能再借"
+    ]
+   },
+   "sources": [
+    {
+     "kind": "条目",
+     "locator": "OA-007",
+     "excerpt": "持有有效借书证、可以借书的人，分学生与教师两类。",
+     "supports": [],
+     "depends_revision": 2,
+     "current_revision": 2,
+     "stale": null
+    },
+    {
+     "kind": "条目",
+     "locator": "OA-005",
+     "excerpt": "过了应还日期还没有归还就是逾期。",
+     "supports": [],
+     "depends_revision": 4,
+     "current_revision": 4,
+     "stale": null
+    }
+   ]
+  },
+  {
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:49:00+08:00",
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "depended_by": [],
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": {
+    "item_id": "OA-003",
+    "reason": "pending"
+   },
+   "item_id": "UC-002",
+   "collection": "功能用例",
+   "title": "续借",
+   "revision_no": 1,
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "用例名称": "续借",
+    "用例功能": "读者在借期内续借一次，借期延长 15 天。",
+    "约束规则": [
+     "有人预约的书不能续借"
+    ]
+   },
+   "sources": [
+    {
+     "kind": "条目",
+     "locator": "OA-007",
+     "excerpt": "持有有效借书证、可以借书的人，分学生与教师两类。",
+     "supports": [],
+     "depends_revision": 2,
+     "current_revision": 2,
+     "stale": null
+    },
+    {
+     "kind": "条目",
+     "locator": "OA-003",
+     "excerpt": "保留期内这本书不能被别人借走，也不能续借给原借阅人。",
+     "supports": [],
+     "depends_revision": 12,
+     "current_revision": 12,
+     "stale": null
+    }
+   ]
+  },
+  {
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:49:00+08:00",
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "depended_by": [],
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": {
+    "item_id": "OA-003",
+    "reason": "pending"
+   },
+   "item_id": "UC-003",
+   "collection": "功能用例",
+   "title": "预约图书",
+   "revision_no": 2,
+   "revisions": [
+    1,
+    2
+   ],
+   "fields": {
+    "用例名称": "预约图书",
+    "用例功能": "系统为读者预留图书。",
+    "约束规则": []
+   },
+   "sources": [
+    {
+     "kind": "条目",
+     "locator": "OA-007",
+     "excerpt": "持有有效借书证、可以借书的人，分学生与教师两类。",
+     "supports": [],
+     "depends_revision": 2,
+     "current_revision": 2,
+     "stale": null
+    },
+    {
+     "kind": "条目",
+     "locator": "OA-003",
+     "excerpt": "读者对一本在架的书办预约，馆员把这本书从书架取下，放到预留架上等读者来取。",
+     "supports": [],
+     "depends_revision": 9,
+     "current_revision": 12,
+     "stale": "changed"
+    }
+   ]
+  },
+  {
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:49:00+08:00",
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "depended_by": [],
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "item_id": "TBD-001",
+   "collection": "问题",
+   "title": "保留的 3 天里遇到闭馆日，算不算在内？",
+   "revision_no": 1,
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "事项": "保留的 3 天里遇到闭馆日，算不算在内？",
+    "种类": "待澄清",
+    "建议的处理": "小王周六预约、周一到架，如果周日闭馆而且算在 3 天里，他周二来取就只剩一天了。",
+    "状态": "未解决",
+    "处理结果": null,
+    "关联条目": [
+     "OA-003"
+    ]
+   },
+   "sources": [
+    {
+     "kind": "助手补充",
+     "locator": "",
+     "excerpt": "材料与对话里都没有说到。",
+     "supports": []
+    }
+   ]
+  },
+  {
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:49:00+08:00",
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "depended_by": [],
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "item_id": "TBD-002",
+   "collection": "问题",
+   "title": "法定节假日闭馆与每周日闭馆，算法是不是一样？",
+   "revision_no": 1,
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "事项": "法定节假日闭馆与每周日闭馆，算法是不是一样？",
+    "种类": "待澄清",
+    "建议的处理": "寒暑假里连着闭馆好几天，按同一种算法保留期可能整个落在闭馆期间。",
+    "状态": "未解决",
+    "处理结果": null,
+    "关联条目": [
+     "OA-004"
+    ]
+   },
+   "sources": [
+    {
+     "kind": "助手补充",
+     "locator": "",
+     "excerpt": "材料与对话里都没有说到。",
+     "supports": []
+    }
+   ]
+  },
+  {
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:49:00+08:00",
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "depended_by": [],
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "item_id": "TBD-003",
+   "collection": "问题",
+   "title": "逾期从哪一天算起？",
+   "revision_no": 1,
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "事项": "逾期从哪一天算起？",
+    "种类": "待澄清",
+    "建议的处理": "应还日期当天闭馆以后算，还是第二天算，罚款会差一天。",
+    "状态": "未解决",
+    "处理结果": null,
+    "关联条目": [
+     "OA-005"
+    ]
+   },
+   "sources": [
+    {
+     "kind": "助手补充",
+     "locator": "",
+     "excerpt": "材料与对话里都没有说到。",
+     "supports": []
+    }
+   ]
+  },
+  {
+   "revision_by": "executor",
+   "revision_at": "2026-10-08T10:49:00+08:00",
+   "reviews": [],
+   "confirmations": [],
+   "confirmation_stale": false,
+   "depended_by": [],
+   "pending_verification": false,
+   "pending_sources": 0,
+   "basis_pending": null,
+   "item_id": "TBD-004",
+   "collection": "问题",
+   "title": "罚款怎样缴纳？",
+   "revision_no": 1,
+   "revisions": [
+    1
+   ],
+   "fields": {
+    "事项": "罚款怎样缴纳？",
+    "种类": "待澄清",
+    "建议的处理": "材料只说了金额，没有说在哪里交。",
+    "状态": "已解决",
+    "处理结果": null,
+    "关联条目": [
+     "UC-001"
+    ]
+   },
+   "sources": [
+    {
+     "kind": "助手补充",
+     "locator": "",
+     "excerpt": "材料与对话里都没有说到。",
+     "supports": []
+    }
+   ]
+  }
+ ]
+}
