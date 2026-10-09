@@ -104,13 +104,13 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 
 | 服务 | 命令 | 默认端口 |
 |---|---|---|
-| 任务服务（HTTP/SSE 接口） | `node backend/src/main.mts --tasks <dir> --runs <dir> [--knowledge <dir>] --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | 无默认值，需自行指定 |
+| 任务服务（HTTP/SSE 接口） | `node backend/src/main.mts [--data <dir>] --tasks <dir> --runs <dir> [--knowledge <dir>] --port <port> [--mode desktop\|server] [--host <address>] [--profile <name>] [--web <dir>]` | 无默认值，需自行指定 |
 | 网页界面（开发服务器） | `TASKWRIGHT_API_TARGET=http://127.0.0.1:<api port> npm run dev -w web` | 5680（`TASKWRIGHT_WEB_PORT`） |
 | 两者一起启动 | `scripts/dev.sh`（或 `make dev`） | API 8790，web 5680 |
 | 两者一起启动，用假模型并建好演示任务 | `scripts/dev.sh --demo` | API 8790，web 5680 |
 | 观测台 | `python3 -m taskwright_observatory --runs <archive dir> --workspaces <tasks dir>` | 8770 |
 
-- `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。`--knowledge` 是知识库的根目录：各任务选用的参考资料库（接口文档第 11 节）。三者不给时都放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`），分别是 `tasks/`、`runs/` 与 `knowledge/`。
+- `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。`--knowledge` 是知识库的根目录：各任务选用的参考资料库（接口文档第 11 节）。三者不给时都放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`），分别是 `tasks/`、`runs/` 与 `knowledge/`；给了 `--data <dir>` 或环境变量 `TASKWRIGHT_DATA_DIR` 时放在那个目录下。任务登记 `service.sqlite`、升级前的备份 `backups/` 与升级报告也在数据目录下（数据目录怎样定、怎样升级见第 8.1 节）。
 - 各服务默认绑定 `0.0.0.0`（可用 `--host` 更改）。唯一的例外是以 `--mode desktop` 启动的任务服务，它默认绑定 `127.0.0.1`。
 - 任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是用户数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。只有在本机打开的页面才有退出的入口；服务按请求的来源地址判断是不是本机，所以桌面形态不要放在反向代理后面（否则服务看到的是代理的地址）。
 - **任何能打开页面的人都能修改模型配置。** 在加登录之前，任何能打开这个网址的人都能在网页界面上修改模型配置，包括换掉 API 密钥、删除模型服务。以 `--mode server` 启动的任务服务，只在可信的内网里部署。
@@ -135,6 +135,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 | `TASKWRIGHT_LANGFUSE_ENV_FILE` | 任务服务、`scripts/tui.sh`、observatory | 保存 Langfuse 地址与密钥的文件。 |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse 项目编号，用于生成直达链接。 |
 | `TASKWRIGHT_SIM_MATERIALS_DIR` | simulator | 存放模拟用户画像所用材料的目录。 |
+| `TASKWRIGHT_DATA_DIR` | 任务服务、桌面包的启动程序 | 数据目录：任务登记、升级前的备份与升级报告放在这里；任务目录、归档目录与知识库目录没有另给时也在它下面。命令行的 `--data` 优先于它（见第 8.1 节）。 |
 | `TASKWRIGHT_SETTINGS_FILE` | 任务服务 | 产品自己的设置文件：在网页界面上选定的模型与登记的模型服务（缺省是用户数据目录下的 `settings.json`）。测试与试用环境把它指到临时文件。 |
 | `OPENAI_API_KEY` 等服务商变量 | pi | 模型凭据，见第 3.2 节。 |
 
@@ -175,6 +176,33 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 **知识库。** 知识库根目录下有 `libraries.json`，每个知识库一个目录，里面是 `documents.json` 与放文档本体的 `files/`（Word 文档旁边还有文字版等生成的文件）。备份时把整个目录一起复制。两个 JSON 文件每次都整份替换（先写临时文件再改名），所以服务在跑时复制下来的要么是旧清单、要么是新清单；恰好在那一刻上传的文档可能已经在 `files/` 里、还不在清单里。任务选用了哪些库记在任务目录的 `knowledge.json` 里，随任务一起备份。
 
+### 8.1 升级到新版本
+
+新版本的程序遇到上一版留下的数据，会把它升到现在的格式，任务的内容不变。0.4.0 及以后的版本建的任务都能这样升级；更早的任务仍然打不开，任务列表里标「旧格式」。
+
+**数据的版本记在哪里。** 每个任务库记着自己的格式版本；任务目录里的 `task.json` 记着这个任务是哪个产品版本建的、最近一次是哪个版本升级的；数据目录下的 `service.sqlite`（任务登记）记着数据目录的格式版本与最近写它的产品版本。数据目录是 `--data` 给的目录，没有给时看环境变量 `TASKWRIGHT_DATA_DIR`，再没有时取 `--tasks` 的上一级目录，都没有就是用户数据目录。
+
+**升级走哪条路，看运行形态。**
+
+- **桌面形态（`--mode desktop`，桌面包就是这样）。** 启动时发现有上一版留下的任务，程序照常起来，但页面整屏显示「数据升级」：要升级几个任务、备份放在哪里。点「开始升级」后一个任务一个任务地做，页面显示做到第几项。都做成了，页面自动进入正常界面；有任务没有做成时，页面停在这里显示报告，点「继续使用」进入正常界面。升级做完之前，别的功能都不能用。
+- **服务器形态（`--mode server`）。** 启动时发现有上一版留下的任务，服务不启动，日志与标准错误里写明原因，退出码是 1。管理员先运行下面的命令，做完再启动服务。这样不会有人访问到升级了一半的数据。
+
+```bash
+node backend/src/main.mts data upgrade --data <数据目录>     # 桌面包：taskwright-x86_64.AppImage data upgrade [--data <数据目录>]
+```
+
+这条命令不起服务。有服务正在用这个数据目录时它不做（任务目录里有活着的占用标记），先停下那个服务。它的退出码：0 是都升级成了，或者本来就没有要升级的；1 是有任务没有做成，或者整体没有做成；2 是没有做（参数不对、有服务在用、数据比这个程序新）。桌面形态也可以用这条命令代替页面上的升级。
+
+**备份。** 升级之前，程序把要改的文件复制到数据目录下的 `backups/<年月日-时分秒>-<旧产品版本>/`：每个要升级的任务的任务库（`tasks/<任务目录名>/task.sqlite`，是完整的副本）与它的 `task.json`、任务登记 `service.sqlite`、产品设置文件 `settings.json`、知识库清单 `knowledge/libraries.json`。有一样复制不成，就一个任务都不升级。备份不会自动删除，确认新版本用着没有问题之后可以手工删掉。
+
+**报告。** 每次升级写一份报告到数据目录下的 `logs/upgrade-<年月日-时分秒>.txt`，页面与命令行显示的是同一份：每个任务从哪个格式升到哪个格式、成功还是没有做成与原因、用了多久，合计，以及备份的位置与大小。
+
+**一个任务没有做成。** 它原样不动，别的任务照常升级。服务起来之后，它在任务列表里标「需要处理」并写着原因，打不开；下次启动不再自动重试它。原因去掉之后（例如占着它的另一个服务停了），运行上面的命令，命令每次都把没有做成的任务再试一遍。
+
+**回到旧版本。** 新版本升级过的数据，旧版本的程序不打开，会提示「这份数据由 x 写入，请用 x 或更新的版本打开」。要退回去：停下服务，装回旧版本的程序，把备份里的文件复制回原来的位置（任务库复制回各任务目录，并删掉任务目录里新版本写的 `task.json` 与数据目录下的 `service.sqlite`），再启动。升级之后在新版本里做的改动不在备份里。
+
+**任务类型的说明不随升级更新。** 任务目录里的说明与评审规则是建任务时复制进来的，升级不改它们。任务类型的说明有版本号；一个任务用的那一版与产品自带的不同时，任务页上写「任务类型说明是 x 版，当前产品自带的是 y 版」。
+
 ## 9 常见故障
 
 **助手启动不起来。** 工作视图整页只读，输入框上方的提示条在「助手现在不可用：助手没有启动起来，」后面写明原因。PATH 里找不到 pi，或者 pi 脚本开头指定的解释器不存在时，写「找不到助手的程序（pi），请检查安装。」。系统拒绝启动时只写系统给的英文代号：文件没有执行权限时是「系统原因：EACCES」，命令行太长时（系统提示整份放在命令行里）是「系统原因：E2BIG」，打开的文件数、内存或进程数到了上限时是「系统原因：EMFILE」「ENFILE」「ENOMEM」或「EAGAIN」。启动配置或环境变量写错（系统提示文件、扩展、密钥文件不存在等）时照原样写出是哪一项。另有三种情形，提示条整句是固定的：助手的程序启动之后立刻退出时写「助手现在不可用：助手启动之后立刻退出了。请把这个页面的地址告诉管理员。」；启动之前任务服务没能建好归档目录、打开归档文件或备份并改写要续接的会话文件（没有写权限、磁盘满）时写「助手现在不可用：启动助手之前，任务服务没能写入它要用的文件，系统原因：EACCES。请把这个页面的地址告诉管理员。」，系统原因取不到时写「系统原因：未知」；其他没有预料到的错误写「助手现在不可用：助手没有启动起来。请把这个页面的地址告诉管理员。」。这几种情形下页面上不出现助手的程序写到错误输出里的原文，也不出现文件路径。系统给的原话（带程序的路径）与助手的程序写到错误输出里的原文写在后端日志里（「任务 <任务编号> 的助手没有启动起来：…」），也放在 `executor_unavailable` 错误的 `data.detail` 里。
@@ -204,7 +232,7 @@ python3 -c "import sqlite3; sqlite3.connect('<task dir>/task.sqlite').execute('P
 
 ### 10.2 数据与日志
 
-任务目录、归档目录与知识库放在用户数据目录下：Linux 是 `~/.local/share/taskwright/tasks/`、`runs/` 与 `knowledge/`，Windows 是 `%LOCALAPPDATA%\Taskwright\tasks\`、`runs\` 与 `knowledge\`。日志写到同一目录下的 `logs/backend-<日期>.log`。设了环境变量 `TASKWRIGHT_DATA_DIR` 时，这四样一起放到它指定的目录下。备份方法同第 8 节。
+任务目录、归档目录与知识库放在用户数据目录下：Linux 是 `~/.local/share/taskwright/tasks/`、`runs/` 与 `knowledge/`，Windows 是 `%LOCALAPPDATA%\Taskwright\tasks\`、`runs\` 与 `knowledge\`。日志写到同一目录下的 `logs/backend-<日期>.log`。设了环境变量 `TASKWRIGHT_DATA_DIR`（或者启动时给了 `--data <目录>`）时，这四样一起放到它指定的目录下。任务登记 `service.sqlite`、升级之前的备份 `backups/` 与升级报告也在这个目录里。备份方法同第 8 节；装了新版本之后第一次启动，页面会先显示「数据升级」，见第 8.1 节。
 
 ### 10.3 退出
 
