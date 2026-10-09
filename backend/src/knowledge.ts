@@ -26,7 +26,7 @@ import { PDF_NO_TEXT, PdfUploadError, runPdfProjection } from "./pdf_upload.ts";
 import { PDF_DERIVED_SUFFIXES, ProjectionError, isReserved, projectionPath, projectionText, removeProjection, reservedNameText, writeProjection } from "./projection.ts";
 import { SEGMENT_DEFAULTS, type SegmentParams } from "../../agent/src/lib/segments.ts";
 import { SELECTION_FILE } from "../../agent/src/lib/knowledge.ts";
-import { GENERAL, KINDS, KIND_NAMES, type Kind } from "../../agent/src/lib/knowledge_locator.ts";
+import { GENERAL, KINDS, KIND_NAMES, type Kind, knowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
 import { UPLOADING_DIR, UPLOAD_TYPES, resolvePath, sameMaterialName, unsupportedTypeText } from "./service.ts";
 
 // 编号、种类与任务目录里记选用的文件名，助手一侧也要用，定义在 agent/src/lib 下，这里原样交出去。
@@ -209,7 +209,8 @@ export class KnowledgeStore {
 
   /**
    * 上传一份文档：文件名、类型、大小、同内容、同名依次检查（规则与上传材料相同，上限 20 MB）；同内容与同名只在同一个库里比。
-   * Word 文档另生成投影、分段清单与位置表，路径写成相对知识库根目录的「库编号/files/文件名」；生成不了时连同文件一起删掉。
+   * Word 文档另生成投影、分段清单与位置表，里面写的是引用这份文档时出处的写法「knowledge/库编号/文件名」（knowledgeLocator），不是磁盘路径：
+   * 投影开头教助手怎样写出处，写的必须是保存修订核对时接受的那一种；生成不了时连同文件一起删掉。
    * PDF 文档要另起一次运行生成这三样，所以这一种是异步的（uploadPdf）；别的类型当场做完。
    */
   upload(id: string, filename: string, data: Buffer, kind: unknown, segments?: SegmentParams, pdf?: PdfRunLimits): DocumentRow | Promise<DocumentRow> {
@@ -239,7 +240,7 @@ export class KnowledgeStore {
     removeEmbeddings(target);
     if (filename.toLowerCase().endsWith(".docx")) {
       try {
-        writeProjection(target, `${id}/files/${filename}`, segments);
+        writeProjection(target, knowledgeLocator(id, filename), segments);
       } catch (error) {
         if (!(error instanceof ProjectionError)) throw error;
         try {
@@ -270,7 +271,7 @@ export class KnowledgeStore {
       writeFileSync(staged, data);
       let parsed;
       try {
-        parsed = await runPdfProjection(staged, `${id}/files/${filename}`, segments ?? SEGMENT_DEFAULTS, limits);
+        parsed = await runPdfProjection(staged, knowledgeLocator(id, filename), segments ?? SEGMENT_DEFAULTS, limits);
       } catch (error) {
         if (!(error instanceof PdfUploadError)) throw error;
         throw new ApiError("unsupported_type", error.message);
@@ -351,7 +352,7 @@ export class KnowledgeStore {
     if (target.toLowerCase().endsWith(".docx")) {
       const projection = projectionPath(target);
       try {
-        return isFile(projection) ? readTextFile(projection) : projectionText(target, `${id}/files/${name}`);
+        return isFile(projection) ? readTextFile(projection) : projectionText(target, knowledgeLocator(id, name));
       } catch (error) {
         if (error instanceof ProjectionError || error instanceof TypeError) throw new ApiError("unsupported_type", `${(error as Error).message}。`);
         throw error;

@@ -13,11 +13,13 @@ import { ApiError } from "../src/errors.ts";
 import { dispatch, makeServer, serviceInfo } from "../src/http.ts";
 import { GENERAL, KNOWLEDGE_MAX_UPLOAD, docDuplicateText, docNameTakenText } from "../src/knowledge.ts";
 import { Service } from "../src/service.ts";
+import { parseKnowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
 import { ROOT, captureConsole, tempDir } from "./helpers.ts";
 
 captureConsole();
 
 const SAMPLE = join(ROOT, "examples", "library-lending", "requirements-styled.docx");
+const PDF_SAMPLE = join(ROOT, "backend", "tests", "fixtures", "pdf", "multipage.pdf");
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 let n = 0;
@@ -183,11 +185,35 @@ test("Word 文档生成投影、分段清单与位置表；派生文件不列在
   assert.deepEqual(store.documents(GENERAL).map((d) => d.name), ["编写指南.docx"]);
   assert.match(store.text(GENERAL, "编写指南.docx"), /\[p1\]/);
   const segments = JSON.parse(readFileSync(join(store.filesDir(GENERAL), "编写指南.docx.segments.json"), "utf-8"));
-  assert.match(JSON.stringify(segments), /general\/files\/编写指南\.docx/);
+  assert.match(JSON.stringify(segments), /knowledge\/general\/编写指南\.docx/);
   store.removeDocument(GENERAL, "编写指南.docx");
   assert.deepEqual(readdirSync(store.filesDir(GENERAL)), []);
   assert.deepEqual(store.documents(GENERAL), []);
   assert.equal(rejected(() => store.removeDocument(GENERAL, "编写指南.docx")).code, "not_found");
+  await service.close();
+});
+
+test("知识库文档的投影开头教的出处写法，就是保存修订核对时接受的写法", async () => {
+  const service = fresh();
+  const store = service.knowledge!;
+  const id = store.create("规范").id;
+  await service.uploadDocument(id, "编写指南.docx", readFileSync(SAMPLE), "standard");
+  await service.uploadDocument(id, "办法.pdf", readFileSync(PDF_SAMPLE), "standard");
+  /** 投影开头那句「出处写 X#p…（例如 Y）」里的 X 与 Y。 */
+  const taught = (text: string) => {
+    const m = /出处写 (\S+?)#p\S*（例如 (\S+?)）/.exec(/<!--[\s\S]*?-->/.exec(text)?.[0] ?? "");
+    assert.ok(m, "投影开头没有写出处的写法");
+    return { locator: m[1], example: m[2] };
+  };
+  for (const name of ["编写指南.docx", "办法.pdf"]) {
+    const head = taught(readFileSync(join(store.filesDir(id), `${name}.md`), "utf-8"));
+    assert.equal(head.locator, `knowledge/${id}/${name}`, name);
+    const parsed = parseKnowledgeLocator(head.example);
+    assert.deepEqual([parsed?.library, parsed?.name], [id, name], `开头举的例子 ${head.example} 应当拆得出这一份文档`);
+  }
+  // 投影文件不在时现算的那一份，开头写的也是同一种写法。
+  unlinkSync(join(store.filesDir(id), "编写指南.docx.md"));
+  assert.equal(taught(store.text(id, "编写指南.docx")).locator, `knowledge/${id}/编写指南.docx`);
   await service.close();
 });
 

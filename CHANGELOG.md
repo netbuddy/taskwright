@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Knowledge base
+
+- The text generated from a Word or PDF document of a knowledge base told the assistant, in the note at its top, to cite the document as `<library id>/files/<name>#…`, which is not accepted when a source is checked. The note now gives the accepted form, `knowledge/<library id>/<name>#…`. Sources the assistant took from a knowledge base search were always written correctly; only an assistant that read the generated text directly and copied the note was refused. Documents uploaded before this version keep the old note until they are uploaded again.
+
 ## [0.4.3] - 2026-10-08
 
 0.4.3 takes PDF files as materials and as knowledge base documents. The assistant cites a PDF by page and block; the page shows the file page by page, scrolls to the page a source points to, frames the block and marks the excerpt. A material that has not entered the conversation can be replaced with another file. The task status note at the top of a conversation is folded into one line. The page now names the browsers it supports and says so in a browser that is too old.

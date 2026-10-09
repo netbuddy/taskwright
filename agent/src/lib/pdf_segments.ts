@@ -45,7 +45,7 @@ export interface PdfSegmentList {
   version: number;
   说明: string;
   params_digest: string;
-  /** PDF 文件相对任务目录的路径，例如 inputs/x.pdf。 */
+  /** PDF 文件相对任务目录的路径，例如 inputs/x.pdf。知识库文档这里写的是引用它时出处的写法 knowledge/库编号/文件名，不是磁盘路径。 */
   source: string;
   /** 投影相对任务目录的路径，例如 inputs/x.pdf.md。 */
   projection: string;
