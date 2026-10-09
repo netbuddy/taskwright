@@ -25,6 +25,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A material that has not entered the conversation can be replaced with another file: on the task page such a material has **替换** ("replace") beside **删除**. You choose a file, confirm, and the material is the new file; the old file and the files generated from it are gone, and a Word or PDF file gets its generated files anew. The new file may have another name and another type, and is taken in by the rules of an upload. Once the material has entered the conversation, **替换** is grey and the request is refused with `rejected` and 这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。 ("this material has entered the conversation and cannot be replaced; upload a new material and tell the assistant to go by the new one"). The interface is `POST …/materials/replace?path=…`; open work views are updated by `material_removed` with `replaced_by` followed by `material_added` with `replaces`. When the new file cannot be stored, the old material stays as it was.
 - After a Word material is deleted or replaced on the task page, **查看** ("view") shows the file that is there now. Before, a file uploaded under the name of a deleted one was still shown with the old content until the page was reloaded.
 
+### PDF materials: in the page
+
+- A PDF material is shown in the Materials tab page by page, as it is, with a text layer for selecting. Only the pages in view are drawn, so a long file opens quickly. The bar above the pages shows the current page and the page count, with **缩小**, **放大** and **适应宽度** ("fit the width"); a file opens fitted to the width of the tab.
+- Clicking a source that comes from a PDF scrolls to its page, frames the block the source points to and marks the excerpt character by character. Which block, whether the excerpt runs on into the following blocks and whether it crosses a page is worked out by the same function that checks the source when it is saved. When the excerpt cannot be marked, the block is still framed and a line above says why.
+- A source from a PDF is labelled with the file name and 第 N 页 ("page N"), the page of the PDF itself. The chapter follows when the file has bookmarks and the page can be told to belong to one of them; when more than one bookmark points to the page, the label stops at the page.
+- The file's bookmarks are listed under **目录** ("contents") below the file name; a file without bookmarks says so and lists its pages instead.
+- Pages with no readable text (usually scanned images) carry a note, and the file name line and the task page's list of materials say how many such pages a file has. A line of small print says that tables in a PDF are read row by row, not cell by cell.
+- Sentences cited by an item are underlined in the PDF and open the item when clicked; selecting a passage brings up the same action bar as in other materials. **查看** on the task page shows a PDF page by page too.
+- The page uses the legacy build of pdf.js 6.4.299, the version and the build the task service already uses, loaded only when a PDF material is opened. The legacy build brings its own replacements for the newest JavaScript methods, so pages are drawn in browsers that lack them. Its character maps, standard fonts, colour profile and image decoders are part of the built page, under `pdfjs/6.4.299/` (about 3 MB).
+- While a PDF is being uploaded the page says so (**正在上传……PDF 要先读出各页的文字，页数多的要多等一会儿。**), and the line turns into the result when the upload is done.
+- A source that comes from a PDF document of a knowledge base is labelled with the library, the document and 第 N 页. Opening it still shows the text of the document; knowledge base documents are not shown page by page yet.
+- When a PDF material is removed or replaced, what the page had read of it is dropped, so a new file under the same name is not shown as the old one.
+- When the page cannot open a PDF or cannot draw one of its pages, it shows the file in the browser's own PDF viewer instead, with the line **这个浏览器里只能按页显示，不能标出摘录。** above it; clicking a source or an entry of the contents then only jumps to the page.
+- The materials card on the task page drops what the page had read of a PDF after a delete or a replace, as it does for Word materials.
+
+### Supported browsers
+
+- The page is built for Chrome 125, Edge 125, Firefox 128 and Safari 18 and newer; these are the versions the legacy build of pdf.js supports.
+- A browser that is too old no longer gets a blank page: the page says **这个浏览器版本太旧，请更新到两年内的版本（Chrome 或 Edge 125、Firefox 128、Safari 18 以上）。** The check looks for what the page cannot do without (`Object.hasOwn`, `structuredClone`, and `:has()`, `color-mix()` and container queries in the style sheets), not for a version number.
+
 ## [0.4.2] - 2026-10-08
 
 0.4.2 lets the assistant draw diagrams and lets you take chosen items out as a Word file. A source now says which element of the task an item rests on: an item can cite any other item, and a basis that was changed or deleted afterwards is marked. Diagrams are a second kind of task element beside items, with their own tab in the work view.
