@@ -11,7 +11,7 @@ import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { MANIFEST_NAME, type Manifest, type PackLocations } from "../src/data_pack.ts";
 import { Service } from "../src/service.ts";
 import { ServiceDb } from "../src/service_db.ts";
-import { ZipReader } from "../src/zip.ts";
+import { ZipReader, ZipWriter } from "../src/zip.ts";
 
 export const sha256 = (data: Buffer | string) => createHash("sha256").update(data).digest("hex");
 
@@ -95,4 +95,18 @@ export function readPack(file: string): { manifest: Manifest; names: string[]; c
   } finally {
     reader.close();
   }
+}
+
+/**
+ * 照一个已有的包另写一个包：change 可以改清单文件与各条目的内容（contents 的键是包里的路径，增删改都行）。
+ * 清单文件照改过的样子原样写进去，不重算摘要——用来做与清单文件对不上的包。
+ */
+export async function repack(from: string, to: string, change: (manifest: Manifest, contents: Map<string, Buffer>) => void): Promise<void> {
+  const { manifest, names, content } = readPack(from);
+  const contents = new Map(names.map((name) => [name, content(name)]));
+  change(manifest, contents);
+  const writer = ZipWriter.create(to);
+  for (const [name, data] of contents) await writer.addBuffer(name, data);
+  await writer.addBuffer(MANIFEST_NAME, Buffer.from(JSON.stringify(manifest), "utf-8"));
+  writer.finish();
 }
