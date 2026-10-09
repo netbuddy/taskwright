@@ -142,6 +142,7 @@ export type WorkAction =
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "sse"; event: string; data: unknown }
   | { type: "resync" }
+  | { type: "facts"; items: Item[] }
   | { type: "outgoing"; message: OutgoingMessage }
   | { type: "outgoing_update"; client_id: string; patch: Partial<OutgoingMessage> }
   | { type: "op_pending"; op_id: string; label: string; items: string[] }
@@ -156,6 +157,8 @@ export function workReducer(state: WorkState, action: WorkAction): WorkState {
   switch (action.type) {
     case "snapshot":
       return applySnapshot(state, action.snapshot);
+    case "facts":
+      return applyFacts(state, action.items);
     case "resync":
       return { ...state, phase: "waiting_snapshot", seq: null, buffered: [] };
     case "sse":
@@ -185,6 +188,32 @@ export function workReducer(state: WorkState, action: WorkAction): WorkState {
     case "dismiss_problem":
       return { ...state, problems: state.problems.filter((_, i) => i !== action.index) };
   }
+}
+
+/**
+ * 后端按任务里的事实现算、只随整份数据给出的几项：待核实（pending_verification、pending_sources、pending_places）、
+ * 依据的主题待核实或已废弃（basis_pending）、别处提到它的句子（mentioned_by）。库事件里不带它们，所以确认、修改、
+ * 助手保存之后，页面另取一次任务详情，把这几项按条目并进来（pages/WorkViewPage.tsx）。别的内容仍只由库事件改。
+ * 只并修订号对得上的条目：取回来的比页面旧或者新的，等下一次再并。
+ */
+const FACT_KEYS = ["pending_verification", "pending_sources", "pending_places", "basis_pending", "mentioned_by"] as const;
+
+function applyFacts(state: WorkState, fresh: Item[]): WorkState {
+  if (!state.task) return state;
+  const byId = new Map(fresh.map((i) => [i.item_id, i]));
+  let changed = false;
+  const items = state.task.items.map((item) => {
+    const now = byId.get(item.item_id);
+    if (!now || now.revision_no !== item.revision_no) return item;
+    const patch: Partial<Item> = {};
+    for (const key of FACT_KEYS) {
+      if (key in now && JSON.stringify(now[key]) !== JSON.stringify(item[key])) (patch as Record<string, unknown>)[key] = now[key];
+    }
+    if (Object.keys(patch).length === 0) return item;
+    changed = true;
+    return { ...item, ...patch };
+  });
+  return changed ? { ...state, task: { ...state.task, items } } : state;
 }
 
 function applySnapshot(state: WorkState, snapshot: Snapshot): WorkState {

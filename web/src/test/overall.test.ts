@@ -2,7 +2,7 @@
 // 哪几处是助手补的、提到它的地方与依据它的条目、复述要发的话、复述卡片怎样认。数据是图书馆借阅的夹具。
 import { describe, expect, it } from "vitest";
 import {
-  STORY_KEYS, confirmAction, countsText, dependents, exampleParts, firstParagraph, glossary, isStoryOptions, markSupplemented, mentionRows, openQuestions, outline, outlineOrder,
+  STORY_KEYS, confirmAction, countsText, dependents, factsKey, exampleParts, firstParagraph, glossary, isStoryOptions, markSupplemented, mentionRows, openQuestions, outline, outlineOrder,
   overallDef, pagesOf, pendingCount, questionReason, retellText, settledCount, sourcesFor, splitByWord, storyPlace, supplemented, topicState, totals, trail, withBelow,
   viewOnOpen, type OutlineNode,
 } from "../model/overall";
@@ -185,6 +185,28 @@ describe("总体分析：确认待核实", () => {
 
   it("「确认待核实的 N 处」记的是这一页现在所在的修订，不通知助手", () => {
     expect(confirmAction(itemOf(overallTask(), "OA-003"))).toEqual({ kind: "mark_viewed", targets: [{ item_id: "OA-003", base_revision: 12 }], notify_executor: false });
+  });
+});
+
+describe("总体分析：该不该另取一次待核实与提到", () => {
+  it("修订号变了、有条目被确认了、条目多了或少了，记号都变；什么都没有发生时不变", () => {
+    const task = overallTask();
+    const key = factsKey(task, 12);
+    expect(key).not.toBeNull();
+    expect(factsKey(task, 12)).toBe(key);
+    expect(factsKey(task, 13)).not.toBe(key);
+    change(task, "OA-003", (p) => { p.confirmations.push({ revision_no: 12, accepted: true, basis: "viewed" }); });
+    expect(factsKey(task, 12)).not.toBe(key);
+    const fewer = overallTask();
+    fewer.items = fewer.items.slice(1);
+    expect(factsKey(fewer, 12)).not.toBe(key);
+  });
+
+  it("没有总体分析的早先任务、任务还没有读到时，不用取", () => {
+    const old = overallTask();
+    old.definition.collections = old.definition.collections.filter((c) => c.name !== "总体分析");
+    expect(factsKey(old, 12)).toBeNull();
+    expect(factsKey(null, 0)).toBeNull();
   });
 });
 
