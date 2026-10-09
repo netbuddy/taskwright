@@ -106,8 +106,24 @@ describe("总体分析：一页里的内容", () => {
 
   it("助手补充的来源没有指明哪一处时，整页都要看", () => {
     const task = overallTask();
-    const page = change(task, "OA-005", (p) => { p.sources[1].supports = []; }) && itemOf(task, "OA-005");
+    const page = change(task, "OA-005", (p) => { p.pending_places = [{ field: null, index: null }]; }) && itemOf(task, "OA-005");
     expect(supplemented(page).whole).toBe(true);
+    // 早先的后端不给 pending_places：从助手补充的来源自己看，来源什么都没有指时同样是整页。
+    delete page.pending_places;
+    page.sources[1].supports = [];
+    expect(supplemented(page).whole).toBe(true);
+  });
+
+  it("用户亲手改过的那一处不再待核实：以后端给的 pending_places 为准，它可以比助手补充来源支持的地方少", () => {
+    const task = overallTask();
+    // 助手补的原来有两处（它是什么、已定第 4 条）；用户改写了「它是什么」，只剩已定那一条还待核实。
+    const page = change(task, "OA-003", (p) => { p.pending_places = [{ field: "已经定下的", index: 3 }]; }) && itemOf(task, "OA-003");
+    const got = supplemented(page);
+    expect([...got.fields]).toEqual([]);
+    expect([...got.settled]).toEqual([3]);
+    // 没有给 pending_places 时退回到看来源：两处都算。
+    delete page.pending_places;
+    expect([...supplemented(page).fields]).toEqual(["它是什么"]);
   });
 
   it("「它是什么」里标出理由引到的那几个字；理由没有引原文、或者引的字不在正文里时不标", () => {

@@ -37,16 +37,23 @@ export interface Mention {
 
 /**
  * 任务快照里条目另带的几项（后端按任务里的事实现算）：
- * pending_verification 待核实（当前修订有助手补充的来源、用户还没有确认），pending_sources 有几处；
- * basis_pending 它依据的主题待核实或已废弃；mentioned_by 别处提到它的句子（只有总体分析的页有）。
+ * pending_verification 待核实（有助手补充的来源、用户还没有确认）；pending_sources 还待核实的助手补充来源有几条；
+ * pending_places 这些来源支持的各处（字段名与列表字段的第几项，从 0 起；field 为 null 是没有指明哪一处，整页都要看）。
+ *   用户亲手改过的那一处不再待核实，所以它可能比这一页全部助手补充来源支持的地方少。
+ * basis_pending 它依据的主题待核实或已废弃（已废弃时 see 是改看哪一页）；mentioned_by 别处提到它的句子（只有总体分析的页有）。
+ * 条目的 viewed（看过）不等于不待核实：用户亲手改过的页算看过，别处助手补的仍可能待核实。
  * 早先的后端不给这几项，这时按「没有待核实、没有被提到」处理。
  */
 export type OverallItem = Item & {
   pending_verification?: boolean;
   pending_sources?: number;
-  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string } | null;
+  pending_places?: { field: string | null; index: number | null }[];
+  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see?: string | null } | null;
   mentioned_by?: Mention[];
 };
+
+/** 字段声明另带的两项（只有「条目引用」字段有）：只许指向同一个集合的条目、至多选一个。 */
+export type TopicFieldDef = CollectionDef["fields"][number] & { same_collection?: boolean; single?: boolean };
 
 const byId = (a: Item, b: Item) => a.item_id.localeCompare(b.item_id, undefined, { numeric: true });
 const listOf = (item: Item, field: string): string[] => {
@@ -128,15 +135,17 @@ export function sourcesFor(item: Item, field: string, index: number | null = nul
 export function supplemented(item: OverallItem): { whole: boolean; fields: Set<string>; settled: Set<number>; examples: Set<number>; reasons: string[] } {
   const out = { whole: false, fields: new Set<string>(), settled: new Set<number>(), examples: new Set<number>(), reasons: [] as string[] };
   if (!isPending(item)) return out;
-  for (const source of item.sources.filter((s) => sourceKindNow(String(s.kind)) === SOURCE_SUPPLEMENT)) {
-    if (source.excerpt.trim()) out.reasons.push(source.excerpt.trim());
-    const supports = source.supports ?? [];
-    if (supports.length === 0) out.whole = true;
-    for (const p of supports) {
-      if (p.field === TOPIC.settled && p.index != null) out.settled.add(p.index);
-      else if (p.field === TOPIC.examples && p.index != null) out.examples.add(p.index);
-      else out.fields.add(p.field);
-    }
+  const supplements = item.sources.filter((s) => sourceKindNow(String(s.kind)) === SOURCE_SUPPLEMENT);
+  out.reasons = supplements.map((s) => s.excerpt.trim()).filter(Boolean);
+  // 哪几处：后端给了 pending_places 就照它（它已经去掉了用户亲手改过的地方）；没有给时从助手补充的来源自己看。
+  type Place = { field: string | null; index?: number | null };
+  const places: Place[] = item.pending_places
+    ?? supplements.flatMap((s): Place[] => ((s.supports ?? []).length === 0 ? [{ field: null, index: null }] : s.supports!));
+  for (const p of places) {
+    if (p.field === null) out.whole = true;
+    else if (p.field === TOPIC.settled && p.index != null) out.settled.add(p.index);
+    else if (p.field === TOPIC.examples && p.index != null) out.examples.add(p.index);
+    else out.fields.add(p.field);
   }
   return out;
 }

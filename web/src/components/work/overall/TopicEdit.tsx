@@ -1,11 +1,12 @@
 // 修改一页主题：把这一页的各个字段摆成一张表来改（标题、别名、它是什么、例子、已经定下的、标签、上级主题、状态、改看），
 // 用的是条目详情里同一套字段编辑框。保存只带改过的字段，作为用户的直接修改发出去；界面上的变化等库事件到了才发生。
-// 「上级主题」「改看」只能从总体分析别的页里选，至多选一个。
+// 字段声明里写了「只许本集合」的条目引用（上级主题、改看）只能从总体分析别的页里选，写了「至多一个」的至多选一个；
+// 不照着限制的话保存会被后端拒绝。
 
 import { useEffect, useState } from "react";
 import type { CollectionDef, Fields, Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
-import { TOPIC, isDeprecated, pagesOf, titleOf, type OverallItem } from "../../../model/overall";
+import { TOPIC, isDeprecated, pagesOf, titleOf, type OverallItem, type TopicFieldDef } from "../../../model/overall";
 import { FieldEditor, normalize, type SubmitAction } from "../ItemDetail";
 import { rejectedText } from "../errors";
 import { useToast } from "../../Toasts";
@@ -56,12 +57,12 @@ export function TopicEdit({ task, item, def, readOnly, writesOff = false, submit
 
   return (
     <div className="oa-edit" data-testid="topic-edit">
-      {def.fields.map((f) => (
+      {(def.fields as TopicFieldDef[]).map((f) => (
         <div className="fld" key={f.name} data-f={f.name}>
           <div className="k">{f.name}{f.required && <span className="oa-req"> *</span>}</div>
           <div className="v editing">
             <FieldEditor def={f} value={draft[f.name] ?? null} task={task} onChange={(v) => setDraft((d) => ({ ...d, [f.name]: v }))}
-              choices={f.name === TOPIC.parent || f.name === TOPIC.see ? others : undefined} single={f.name === TOPIC.parent || f.name === TOPIC.see} />
+              choices={f.same_collection ? others : undefined} single={f.single === true} />
             {HINT[f.name] && <div className="oa-hint">{HINT[f.name]}</div>}
           </div>
         </div>
