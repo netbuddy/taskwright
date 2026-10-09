@@ -13,7 +13,7 @@ This version is meant for a single machine or a trusted local network. There is 
 | pi coding agent | `@earendil-works/pi-coding-agent` 1.0.4 | runs the executor and the simulated user |
 | A model reachable from pi | any provider pi supports (see section 3) | the executor |
 
-The task service runs directly on Node.js and has two third-party packages of its own: docx, used when chosen items are exported as a Word file, and pdfjs-dist, which prepares PDF materials for 0.4.3 and is not used yet. To check the Mermaid text of a diagram it uses the mermaid package installed for the pages. `make install` installs all three. The observatory needs only the Python standard library. Running the tests needs pytest, which comes with the `[test]` extra of the `observatory` package.
+The task service runs directly on Node.js and has two third-party packages of its own: docx, used when chosen items are exported as a Word file, and pdfjs-dist, used to read the text of uploaded PDF files. To check the Mermaid text of a diagram it uses the mermaid package installed for the pages. `make install` installs all three. The observatory needs only the Python standard library. Running the tests needs pytest, which comes with the `[test]` extra of the `observatory` package.
 
 ## 2 Installation
 
