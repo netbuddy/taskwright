@@ -50,9 +50,11 @@
 .app .chat-h b{font-size:0.936rem}
 .app .msgs{flex:1;overflow-y:auto;padding:.7rem .8rem .4rem;display:flex;flex-direction:column;gap:.55rem}
 .app .m{max-width:97%;font-size:0.928rem;line-height:1.62}
-.app .m.user{margin-left:auto;background:var(--user-bg);border-radius:1.1rem;padding:.42rem .8rem}
+/* 用户的话靠右：没有边线，右下角收小。助手的话靠左：细线加轻影，左上角收小。两种界面风格形状相同，颜色各用各的令牌 */
+.app .m.user{margin-left:auto;max-width:86%;background:var(--user-bg);color:var(--user-ink);border-radius:1rem 1rem .3rem 1rem;padding:.42rem .8rem}
 .app .m.user .from-ui{display:block;font-size:0.865rem;color:var(--text3);margin-top:.15rem}
-.app .m.ai{background:var(--card);border:1px solid var(--line);border-radius:1rem;padding:.55rem .75rem}
+.app .m.ai{max-width:92%;background:var(--card);border:1px solid var(--line);border-radius:.3rem 1rem 1rem 1rem;padding:.55rem .75rem;
+  box-shadow:var(--card-shadow)}
 .app .m.ai p{margin-bottom:.35rem}
 .app .m.ai p:last-child{margin-bottom:0}
 .app .m.ai ul{margin:.1rem 0 .35rem 1.05rem}

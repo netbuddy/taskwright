@@ -140,10 +140,10 @@
 .app .fld.sw-revmark .v { border-color: var(--amber-line); border-left: .22rem solid var(--amber); background: var(--amber-bg); }
 .app .sw-docempty { padding: 1rem .9rem; color: var(--mut); font-size: 0.929rem; line-height: 1.7; }
 .app .sw-docempty .btn { margin-top: .5rem; }
-/* 执行者回复气泡底部的修订指针：回复的元数据，字号与颜色同「助手做了 N 步」那一行 */
-.app .sw-revtag { display: inline-block; margin-top: .4rem; font-size: 0.857rem; color: var(--mut); border: 1px solid var(--line2); border-radius: .35rem;
-  padding: 0 .4rem; cursor: pointer; background: var(--dark); }
-.app .sw-revtag:hover { color: var(--ink); border-color: var(--line3); }
+/* 助手的话底部的修订指针「产生了修订 N」：绿底、没有边线的小圆标，表示这一次确实存下了东西 */
+.app .sw-revtag { display: inline-block; margin-top: .4rem; font-size: 0.857rem; color: var(--ok); border-radius: 71rem;
+  padding: 0 .55rem; cursor: pointer; background: var(--ok-bg); }
+.app .sw-revtag:hover { color: var(--ok-ink); text-decoration: underline; }
 /* 选中某次修订时，条目区高亮它碰到的条目；集合页签上标出这个页签里被碰到几个 */
 .app .lrow.sw-hit, .app .tbd.sw-hit { background: var(--hit-bg); box-shadow: inset .2rem 0 0 var(--hit-edge); }
 .app .itab .sw-hitn { margin-left: .25rem; font-size: 0.857rem; background: var(--hit-bg); border: 1px solid var(--hit-line); color: var(--hit-ink); border-radius: .6rem; padding: 0 .3rem; }
