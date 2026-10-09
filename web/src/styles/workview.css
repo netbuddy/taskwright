@@ -100,16 +100,21 @@
 .app .steps .strow.added{background:var(--ok-bg)}
 .app .steps .strow.removed{background:var(--gap-bg)}
 .app .steps .strow .tag{flex:none;font-size:0.865rem;color:var(--mut)}
-.app .act{border:1px solid var(--line2);background:var(--stage);border-radius:.6rem;padding:.5rem .6rem;
+/* 助手请用户定的卡片（提问、请确认、给建议值、请选择、提议）：淡紫底、没有边线；顶上一行是种类，问题那一句用标题字体；
+ * 按钮是两头全圆的小按钮，主要的那一个是紫底。停用的按钮仍是全站停用按钮的样子，所以下面两条只管没有停用的 */
+.app .act{background:var(--ai-bg);border-radius:.7rem;padding:.55rem .75rem .6rem;
   margin-top:.45rem;font-size:0.913rem}
-.app .act .tt{font-size:0.865rem;font-weight:700;letter-spacing:.06em;color:var(--mut);margin-bottom:.3rem}
-.app .act .fk{color:var(--mut);display:inline-block;min-width:3rem}
-.app .act .val{font-weight:600}
+.app .act .tt{font-size:0.857rem;font-weight:500;letter-spacing:.08em;color:var(--ai);margin-bottom:.25rem}
+.app .act .fk{color:var(--text3);display:inline-block;min-width:3rem}
+.app .act .val{font-family:var(--font-title);font-size:0.98rem;font-weight:500}
+.app .act .actions .btn{border-radius:71rem}
+.app .act .actions .btn:not(:disabled){background:var(--card);border-color:var(--ai-line);color:var(--ai)}
+.app .act .actions .btn.pri:not(:disabled){background:var(--ai);border-color:var(--ai);color:var(--on-ink)}
 .app .act .actions{margin-top:.45rem;display:flex;gap:.3rem;flex-wrap:wrap}
 .app .act .done{margin-top:.35rem;color:var(--ok);font-size:0.897rem;font-weight:600}
 .app .act .done.pale{color:var(--mut);font-weight:400}
-.app .quickreply{margin-top:.45rem;display:flex;gap:.3rem;align-items:center;border-top:1px dotted var(--line2);padding-top:.4rem}
-.app .quickreply input{flex:1;border:1px solid var(--line2);border-radius:1rem;padding:.2rem .6rem;font-size:0.897rem;
+.app .quickreply{margin-top:.45rem;display:flex;gap:.3rem;align-items:center;border-top:1px dotted var(--ai-line);padding-top:.4rem}
+.app .quickreply input{flex:1;border:1px solid var(--ai-line);border-radius:1rem;padding:.2rem .6rem;font-size:0.897rem;
   font-family:inherit;background:var(--card);min-width:0}
 .app .qr-send{flex:none;width:1.4rem;height:1.4rem;border-radius:50%;background:var(--ink);color:var(--on-ink);
   display:inline-flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;font-size:0.881rem}
@@ -289,7 +294,7 @@
   border-bottom:1px solid var(--line);background:var(--dark);font-size:0.901rem;color:var(--text2);flex:none}
 .app .alertbar{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;padding:.32rem .7rem;font-size:0.901rem;
   background:var(--amber-bg);border-bottom:1px solid var(--amber-line);color:var(--amber-ink);flex:none}
-.app .act .prev{border:1px dashed var(--line2);background:var(--card);border-radius:.5rem;padding:.4rem .55rem;margin-top:.4rem}
+.app .act .prev{border:1px solid var(--ai-line);background:var(--card);border-radius:.5rem;padding:.4rem .55rem;margin-top:.4rem}
 .app .act .prev .pvh{font-size:0.873rem;font-weight:700;color:var(--mut);letter-spacing:.05em;margin-bottom:.25rem}
 .app .act .prev .pvrow{font-size:0.901rem;display:flex;gap:.35rem;margin-bottom:.15rem}
 .app .act .prev .pvrow .mk{flex:none;width:1rem;text-align:center}
