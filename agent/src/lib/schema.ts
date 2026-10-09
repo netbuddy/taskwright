@@ -89,7 +89,10 @@ export const sourceKindNow = (kind: string): string => LEGACY_SOURCE_KINDS[kind]
  */
 export const sourceLocatorNow = (kind: string, locator: string): string =>
   kind in LEGACY_SOURCE_KINDS && LEGACY_SOURCE_KINDS[kind] === SOURCE_SUPPLEMENT && locator === kind ? SOURCE_SUPPLEMENT : locator;
-/** 「领域说明」集合的名字：助手记下领域里的说法与规矩的那个集合。引用它里面的条目，种类是「条目」。 */
+/**
+ * 「领域说明」集合的名字：0.4 建的任务里助手记下领域里的说法与规矩的那个集合，这些任务照旧用它。引用它里面的条目，种类是「条目」。
+ * 之后建的任务里这个位置上是「总体分析」集合（lib/overall_analysis.ts 的 OVERALL_COLLECTION），一个任务只会有其中一个。
+ */
 export const DOMAIN_NOTE_COLLECTION = "领域说明";
 
 /** 产出方是哪种要素（来源表的 element_kind 列）：条目，或者图。 */

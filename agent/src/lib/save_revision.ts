@@ -78,6 +78,7 @@ import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
+import { OVERALL_COLLECTION, pageProblems } from "./overall_analysis.ts";
 import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
@@ -437,6 +438,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, null));
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
+      if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER) {
+        for (const [fact, guidance] of pageProblems(fields, sources)) errors.push(withGuide(fact, guidance));
+      }
       if (errors.length > 0) {
         problems.push(reasonOf(label, `新增到「${collection.name}」的条目`, errors));
         return;
@@ -545,6 +549,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (removed.length) notes.push(`这次重新标注了 ${itemId} 的来源，去掉了原来的 ${removed.length} 条：${removed.map(quoteLabel).join("、")}。`);
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
+    if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER && op !== "restore") {
+      for (const [fact, guidance] of pageProblems(merged, sources)) errors.push(withGuide(fact, guidance));
+    }
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
       errors.push(withGuide(`助手对 ${itemId} 的修改与它在修订 ${current.revision_no} 的内容和来源完全一样，没有改动任何东西`, "不需要改就去掉这个操作"));
     }

@@ -228,6 +228,35 @@ export function mentionsOf(collections: readonly CollectionShape[], items: reado
   return out;
 }
 
+// ───────────── 保存一页时的两条核对 ─────────────
+
+/** 一条来源支持哪几处：一处写字段名，指到列表字段的某一项时另写第几项（从 0 起）。空列表是支持整个条目。 */
+type Supports = readonly { field: string; index?: number }[];
+
+/**
+ * 保存总体分析的一页时另外核对的两条，对的是改完之后的字段内容与来源。返回不对的地方，每处是 [事实, 怎么办]：
+ * - 「改看」只在这一页已废弃时写：它指向取代这一页的那一页。
+ * - 「已经定下的」每一条都要有出处：至少一条来源指到它（来源的 supports 里写这个字段与第几条；指到整个字段、
+ *   或者不写 supports 表示整个条目都出自这条来源的，也算）。
+ */
+export function pageProblems(fields: Fields, sources: readonly { supports: Supports }[]): [string, string][] {
+  const out: [string, string][] = [];
+  const see = seeAlsoOf(fields);
+  if (see !== null && !isDeprecated(fields)) {
+    out.push([`「${OVERALL_FIELDS.seeAlso}」写了 ${see}，但这一页的${OVERALL_FIELDS.status}不是${STATUS_DEPRECATED}`,
+      `「${OVERALL_FIELDS.seeAlso}」只在这一页不再用、由另一页取代时写：把${OVERALL_FIELDS.status}改成${STATUS_DEPRECATED}，或者去掉「${OVERALL_FIELDS.seeAlso}」`]);
+  }
+  const settled = texts(fields[OVERALL_FIELDS.settled]);
+  const whole = sources.some((one) => one.supports.length === 0);
+  settled.forEach((text, n) => {
+    if (whole || sources.some((one) => one.supports.some((at) => at.field === OVERALL_FIELDS.settled && (at.index === undefined || at.index === n)))) return;
+    const quoted = text.length > 20 ? `${text.slice(0, 20)}…` : text;
+    out.push([`「${OVERALL_FIELDS.settled}」的第 ${n + 1} 条「${quoted}」没有出处`,
+      `每一条已经定下的都要有出处：在它出自的那条来源的 supports 里写 {"field": "${OVERALL_FIELDS.settled}", "index": ${n}}；是你补的就加一条助手补充的来源并写理由`]);
+  });
+  return out;
+}
+
 // ───────────── 最低门 ─────────────
 
 /** 最低门看一页的这几样：编号、贴没贴标签、在不在用、有几条例子、待不待核实。 */
