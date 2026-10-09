@@ -93,6 +93,19 @@ describe("入口页里先套风格的脚本", () => {
   });
 });
 
+describe("标题字体", () => {
+  it("只有各页的一级标题、分区标题与工作视图顶栏的任务名用标题字体，别处都不用", () => {
+    const sheets = [GLOBAL_CSS, ...["workview.css", "workview-extra.css", "settings.css", "task-page.css", "status.css", "issues.css", "pdf.css", "docx.css"]
+      .map((name) => readFileSync(decodeURIComponent(new URL(`../styles/${name}`, here).pathname), "utf-8").replace(/\/\*[\s\S]*?\*\//g, ""))];
+    const users = sheets.flatMap((css) => [...css.matchAll(/([^{}]+)\{[^{}]*var\(--font-title\)[^{}]*\}/g)].map((m) => m[1].trim()));
+    expect(users).toEqual([".page-title h1, .tp-head h1, .tp-sec-h h2, .kbhead h2, .settings .dhead h2, .app .topbar .tname"]);
+  });
+
+  it("正文用正文字体", () => {
+    expect(GLOBAL_CSS).toMatch(/body\s*\{[^}]*font-family:\s*var\(--font-body\)/);
+  });
+});
+
 describe("两种风格的令牌块", () => {
   const block = (selector: string) => {
     const start = GLOBAL_CSS.indexOf(`${selector}{`);
