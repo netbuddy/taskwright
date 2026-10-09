@@ -1,16 +1,16 @@
 /**
  * 数据包的导入（src/data_pack.ts）：导出再导入到空的数据目录，内容逐项一致、修改时刻照原样；编号已经有任务在用时跳过或改编号；
- * 知识库不改编号的四种情形；整个包有一处不对就什么都不导入；一项出错不挡别的；暂存目录不被当成任务，遗留的在服务启动时清掉。
+ * 知识库不改编号的四种情形；整个包有一处不对就什么都不导入；一项出错不挡别的；暂存目录不被当成任务，留了一小时以上的在服务启动时清掉。
  */
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { TASKS_ROOT_ENV, TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
-import { IMPORTING_PREFIX, PACK_FORMAT, PACK_LIBRARIES, type PackLocations, exportPack, importPack, importText, sweepImportLeftovers } from "../src/data_pack.ts";
+import { IMPORTING_PREFIX, IMPORT_LEFTOVER_MS, PACK_FORMAT, PACK_LIBRARIES, type PackLocations, exportPack, importPack, importText, sweepImportLeftovers } from "../src/data_pack.ts";
 import { planUpgrade } from "../src/data_upgrade.ts";
 import { KnowledgeStore } from "../src/knowledge.ts";
 import { rebaseSessionCwd } from "../src/pi_session.ts";
@@ -329,7 +329,7 @@ test("一个任务没有导入成不挡别的：它的任务库与清单文件�
   assert.match(importText(report), /没有做成 1 项。/);
 });
 
-test("暂存目录不被当成任务；上一次导入没有做完留下的暂存目录在服务启动时清掉，别的名字不碰", async () => {
+test("暂存目录不被当成任务；留了一小时以上的遗留暂存目录在服务启动时清掉，刚建的（可能是正在进行的导入）与别的名字不碰", async () => {
   const { where, a } = await sampleData();
   // 造出导入到一半的样子：三个根目录下各一个暂存目录，任务的那个里面有一个完整的任务目录。
   const name = `${IMPORTING_PREFIX}20261009-101500-abc123`;
@@ -340,22 +340,45 @@ test("暂存目录不被当成任务；上一次导入没有做完留下的暂�
   mkdirSync(join(where.knowledgeDir, name, "lib-00000000"), { recursive: true });
   await withService(where, (service) => assert.ok(!service.listTasks().some((t) => String(t.task_id).includes("HALF") || String(t.task_id).startsWith("."))));
   assert.deepEqual(planUpgrade(where).tasks, []);
+  const staged = [join(where.tasksDir, name), join(where.runsDir, name), join(where.knowledgeDir, name)];
 
-  // 名字像而不是目录的、名字不是这个开头的，都不碰。
-  writeFileSync(join(where.tasksDir, `${IMPORTING_PREFIX}file`), "x");
-  mkdirSync(join(where.tasksDir, ".other"));
+  // 刚建的：可能是命令行正在做的一次导入，不清。
   const copy = { ...where };
-  assert.deepEqual(sweepImportLeftovers(copy).sort(), [join(where.tasksDir, name), join(where.runsDir, name), join(where.knowledgeDir, name)].sort());
+  assert.deepEqual(sweepImportLeftovers(copy), []);
+  assert.ok(staged.every((dir) => existsSync(dir)));
+  // 暂存目录自己是两小时之前的，但里面第一层有刚动过的东西：还在用，也不清。
+  const old = (Date.now() - 2 * 60 * 60 * 1000) / 1000;
+  for (const dir of staged) utimesSync(dir, old, old);
+  assert.deepEqual(sweepImportLeftovers(copy), []);
+  // 连里面第一层也都是两小时之前的：是遗留的，清掉。名字像而不是目录的、名字不是这个开头的，都不碰。
+  for (const dir of staged) for (const inner of readdirSync(dir)) utimesSync(join(dir, inner), old, old);
+  for (const dir of staged) utimesSync(dir, old, old);
+  writeFileSync(join(where.tasksDir, `${IMPORTING_PREFIX}file`), "x");
+  utimesSync(join(where.tasksDir, `${IMPORTING_PREFIX}file`), old, old);
+  mkdirSync(join(where.tasksDir, ".other"));
+  utimesSync(join(where.tasksDir, ".other"), old, old);
+  assert.deepEqual(sweepImportLeftovers(copy).sort(), [...staged].sort());
   assert.deepEqual(readdirSync(where.tasksDir).filter((one) => one.startsWith(".")).sort(), [`${IMPORTING_PREFIX}file`, ".other"].sort());
   assert.ok(existsSync(join(where.tasksDir, a, DB_NAME)));
   assert.deepEqual(sweepImportLeftovers(copy), []);
+  // 界线是一小时：差一秒不到一小时的不清，过了一小时的清。
+  const edge = join(where.runsDir, `${IMPORTING_PREFIX}edge`);
+  mkdirSync(edge);
+  const made = statSync(edge).mtimeMs;
+  assert.deepEqual(sweepImportLeftovers(copy, made + IMPORT_LEFTOVER_MS - 1000), []);
+  assert.deepEqual(sweepImportLeftovers(copy, made + IMPORT_LEFTOVER_MS + 1000), [edge]);
 
-  // 服务启动时做这一步，并在日志里写一句。
-  mkdirSync(join(where.runsDir, name));
+  // 服务启动时做这一步，并在日志里写一句；刚建的那个留着。
+  const stale = join(where.runsDir, name);
+  const recent = join(where.runsDir, `${IMPORTING_PREFIX}recent`);
+  mkdirSync(stale);
+  utimesSync(stale, old, old);
+  mkdirSync(recent);
   const started = await startService({ port: 0, mode: "server", host: "127.0.0.1", profile: "fake", ownProcess: false, data: where.dataDir });
   try {
-    assert.equal(existsSync(join(where.runsDir, name)), false);
-    assert.ok(logged.some((line) => line.includes("清掉了上一次导入数据包没有做完留下的暂存目录") && line.includes(name)));
+    assert.deepEqual([existsSync(stale), existsSync(recent)], [false, true]);
+    assert.ok(logged.some((line) => line.includes("清掉了以前导入数据包没有做完留下的暂存目录") && line.includes(name)));
+    assert.ok(!logged.some((line) => line.includes("recent")));
   } finally {
     await started.stop();
   }

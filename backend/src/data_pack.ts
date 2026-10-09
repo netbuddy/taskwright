@@ -947,11 +947,15 @@ export function upgradePackText(result: PackUpgradeResult): string {
   return lines.join("\n") + "\n" + exportText(result.written);
 }
 
+/** 暂存目录留了多久才算是遗留的：比这新的可能是一次正在进行的导入（命令行导入不被一个刚启动、还没有接手任务的服务挡住）。 */
+export const IMPORT_LEFTOVER_MS = 60 * 60 * 1000;
+
 /**
- * 清掉上一次导入没有做完留下的暂存目录（服务被强行停掉时会留下）：任务根目录、归档根目录、知识库根目录下名字以 .importing- 开头的目录。
+ * 清掉以前的导入没有做完留下的暂存目录（服务被强行停掉时会留下）：任务根目录、归档根目录、知识库根目录下名字以 .importing- 开头、
+ * 而且它自己与它第一层里的东西的修改时刻都早于一小时之前的目录。刚建的不清：那可能是命令行正在做的一次导入。
  * 只在服务启动时调；别的名字一概不碰。返回清掉的目录。
  */
-export function sweepImportLeftovers(where: PackLocations): string[] {
+export function sweepImportLeftovers(where: PackLocations, now: number = Date.now()): string[] {
   const removed: string[] = [];
   for (const root of [where.tasksDir, where.runsDir, where.knowledgeDir]) {
     if (!root) continue;
@@ -965,7 +969,11 @@ export function sweepImportLeftovers(where: PackLocations): string[] {
       if (!name.startsWith(IMPORTING_PREFIX)) continue;
       const path = join(root, name);
       try {
-        if (!lstatSync(path).isDirectory()) continue;
+        const st = lstatSync(path);
+        if (!st.isDirectory()) continue;
+        // 最近一次动它是什么时候：它自己，或者它第一层里的哪一项。
+        const touched = Math.max(st.mtimeMs, ...readdirSync(path).map((inner) => lstatSync(join(path, inner)).mtimeMs));
+        if (now - touched < IMPORT_LEFTOVER_MS) continue;
         rmSync(path, { recursive: true, force: true });
         removed.push(path);
       } catch {

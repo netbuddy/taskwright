@@ -118,8 +118,9 @@ export async function startService(options: StartOptions): Promise<Started> {
 
   teeLogs();
   const { dataDir, tasksDir, runsDir, knowledgeDir } = locate(options);
-  // 上一次导入数据包没有做完（服务被强行停掉）留下的暂存目录先清掉：它们里面是没有进位的半成品。
-  for (const left of sweepImportLeftovers({ dataDir, tasksDir, runsDir, knowledgeDir })) console.log(`清掉了上一次导入数据包没有做完留下的暂存目录 ${left}。`);
+  // 以前导入数据包没有做完（服务被强行停掉）留下的暂存目录先清掉：它们里面是没有进位的半成品。留了不到一小时的不清，
+  // 那可能是命令行正在做的一次导入。
+  for (const left of sweepImportLeftovers({ dataDir, tasksDir, runsDir, knowledgeDir })) console.log(`清掉了以前导入数据包没有做完留下的暂存目录 ${left}。`);
   // 先只读地看一遍数据目录：比这个程序新就不启动；有上一版留下的数据要升级时，服务器形态不启动（由管理员先在命令行升级），
   // 桌面形态先起来、等用户在页面上点「开始升级」，在那之前不对外提供别的功能（见 data_upgrade.ts 的 PendingUpgrade）。
   const plan = planUpgrade({ dataDir, tasksDir, knowledgeDir });
