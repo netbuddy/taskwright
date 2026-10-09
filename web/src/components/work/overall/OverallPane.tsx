@@ -5,13 +5,18 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import type { Task } from "../../../api/types";
-import { overallDef, totals } from "../../../model/overall";
+import { writeOffReason } from "../../../model/items";
+import { overallDef, retellText, titleOf, totals } from "../../../model/overall";
 import { Outline } from "./Outline";
 
 /** 提纲展开没有：auto 是没有动过，够宽就展开、窄就收着；open 与 closed 是用户点出来的。 */
 type OutlineShown = "auto" | "open" | "closed";
 
-export function OverallPane({ task, selected, onSelect, page }: {
+export function OverallPane({ task, selected, onSelect, page, readOnly = false, writesOff = false, onSend }: {
+  readOnly?: boolean;
+  writesOff?: boolean;
+  /** 把一句话发给助手（「复述一遍」用）。 */
+  onSend?: (text: string) => void;
   task: Task;
   /** 打开着的那一页的编号；没有打开时是 null。 */
   selected: string | null;
@@ -23,6 +28,10 @@ export function OverallPane({ task, selected, onSelect, page }: {
   const side = useRef<HTMLDivElement>(null);
   const def = overallDef(task);
   const sum = totals(task);
+  // 复述一遍：打开着一页就讲它与它下面的主题，没有打开就讲整个总体分析。
+  const current = task.items.find((i) => i.item_id === selected) ?? null;
+  const retell = onSend ? () => onSend(retellText(current ? titleOf(current) : null)) : undefined;
+  const retellOff = writeOffReason(task, { readOnly, writesOff });
   // 展开或收起。用户点过之后就在展开与收起之间来回；还没有动过时它看不看得见由样式按宽度定，先量一下再反过来。
   const toggle = () => {
     const visible = shown === "auto" ? !!side.current && getComputedStyle(side.current).display !== "none" : shown === "open";
@@ -39,7 +48,7 @@ export function OverallPane({ task, selected, onSelect, page }: {
           <b>提纲</b>
           <span className="btn sm" role="button" onClick={toggle} data-testid="outline-collapse">⇤ 收起</span>
         </div>
-        <Outline task={task} current={selected} onOpen={open} />
+        <Outline task={task} current={selected} onOpen={open} onRetell={retell} retellOff={retellOff} />
       </aside>
       <div className="oa-main" data-testid="overall-main">
         {page ?? (
@@ -47,6 +56,10 @@ export function OverallPane({ task, selected, onSelect, page }: {
             <p className="oa-intro-note">{def?.display?.note ?? "用这件事自己的话写下的主题。"}</p>
             <p className="oa-intro-sum">现在有 {sum.pages} 个主题，{sum.settled} 条已经定下，{sum.open} 条还没定，{sum.pending} 处是助手补的、等你核实。</p>
             <p className="oa-intro-hint">在左边的提纲里点一个主题，看它是什么、有哪些例子、定下了什么、还有什么没定。</p>
+            {retell && sum.pages > 0 && (
+              <p><button type="button" className="aibtn" disabled={!!retellOff} title={retellOff ?? "请助手把对各个主题的理解讲成一段故事，你看哪里不对"}
+                onClick={retell} data-testid="intro-retell">复述一遍</button></p>
+            )}
           </div>
         )}
       </div>

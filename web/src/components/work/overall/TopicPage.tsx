@@ -7,6 +7,9 @@
 //                「这件事先放着」把这个问题标为先不管。
 // 四块之后是「提到它的地方」：别处的文字里出现它的标题或别名的那些句子（命中的词上色），以及依据它写的条目；
 // 条目依据的是它早先的样子、它后来改过时，那一行带「依据已变」。点一行的出处打开那一页或那个条目。
+// 底部一排动作：「修改」；「让助手照这条改条目」只往对话区的输入框里预填一句话；「标为已废弃」先问一句再保存；
+// 「复述一遍」发一句固定的话，请助手把对这一页及其下面主题的理解讲成一段故事（故事在对话区回来）。
+// 已废弃的页：标题划掉，顶上一句「这一页已废弃，改看 OA-m」。
 // 最底下一行小字「看修订与全部来源」换成条目详情的样子看同一页（修订下拉、与上一次的比对、每条来源、删除都在那里）。
 // 这里只画；数由 model/overall.ts 算，写入一律走条目区交进来的直接操作与发送。
 
@@ -14,8 +17,8 @@ import { useState } from "react";
 import type { CollectionDef, Item, Source, Task } from "../../../api/types";
 import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
 import {
-  TOPIC, confirmAction, dependents, exampleParts, examplesOf, isOverall, isPending, labelsOf, markSupplemented, mentionRows, openQuestions, pendingCount, questionReason, settledOf,
-  sourcesFor, splitByWord, supplemented, titleOf, trail, whatOf, type OverallItem,
+  DEPRECATED, TOPIC, confirmAction, dependents, exampleParts, examplesOf, isDeprecated, isOverall, isPending, labelsOf, markSupplemented, mentionRows, openQuestions, pendingCount, questionReason, settledOf,
+  retellText, reviseDependentsText, seeInstead, sourcesFor, splitByWord, supplemented, titleOf, trail, whatOf, type OverallItem,
 } from "../../../model/overall";
 import { FieldEditor, type SubmitAction } from "../ItemDetail";
 import { TopicEdit } from "./TopicEdit";
@@ -51,7 +54,9 @@ function SourceLine({ sources, onLocate }: { sources: Source[]; onLocate?: (exce
   );
 }
 
-export function TopicPage({ task, item, def, readOnly, writesOff = false, submit, onSend, onAnswer, onOpen, onBack, onPrev, onNext, onRaw, onLocate, onDirty }: {
+export function TopicPage({ task, item, def, readOnly, writesOff = false, submit, onSend, onAnswer, onPrefill, onOpen, onBack, onPrev, onNext, onRaw, onLocate, onDirty }: {
+  /** 往对话区的输入框里预填一句话，不发送。 */
+  onPrefill?: (text: string) => void;
   task: Task;
   item: OverallItem;
   /** 总体分析这个集合的定义（字段与「标签」的取值从这里来）。 */
@@ -100,6 +105,16 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
     if (e) toast.error(rejectedText(label, e, item.item_id));
   };
   const confirmOff = writeOffReason(task, { readOnly });
+  const gone = isDeprecated(item);
+  const instead = task.items.find((i) => i.item_id === seeInstead(item)) ?? null;
+  // 标为已废弃：先问一句。这一页留着、划掉；依据它写的条目会显示待核实。
+  const [retiring, setRetiring] = useState(false);
+  const retire = async () => {
+    const label = `把 ${item.item_id} 标为已废弃`;
+    const e = await submit({ kind: "edit_fields", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], fields: { [TOPIC.status]: DEPRECATED }, notify_executor: false }, label);
+    if (e) toast.error(rejectedText(label, e, item.item_id));
+    setRetiring(false);
+  };
   // 修改整页，或者只贴标签。两样都作为用户的直接修改保存。
   const [editing, setEditing] = useState(false);
   const [tagging, setTagging] = useState<string[] | null>(null);
@@ -125,7 +140,14 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
           <button type="button" className="btn sm" disabled={!onNext} onClick={onNext ?? undefined} data-testid="topic-next">下一条 ›</button>
         </span>
       </div>
-      <div className="oa-title" role="heading" aria-level={2} data-testid="topic-title"><span className="oa-id">{item.item_id}</span>{titleOf(item)}</div>
+      {gone && (
+        <div className="oa-gone" data-testid="topic-gone">
+          这一页已废弃。{instead
+            ? <>改看 <span className="see" role="button" onClick={() => onOpen(instead.item_id)} data-testid="topic-see">{instead.item_id} {titleOf(instead)}</span>。</>
+            : "没有写改看哪一页。"}
+        </div>
+      )}
+      <div className={`oa-title${gone ? " gone" : ""}`} role="heading" aria-level={2} data-testid="topic-title"><span className="oa-id">{item.item_id}</span>{titleOf(item)}</div>
       <div className="oa-meta" data-testid="topic-meta">
         {labels.length === 0 && <span className="oa-tag none">未归类</span>}
         {labels.map((name) => <span key={name} className="oa-tag">{name}</span>)}
@@ -245,6 +267,21 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
         </ul>
       </section>
 
+      <div className="dfoot oa-foot-acts" data-testid="topic-actions">
+        <button type="button" className="btn" disabled={!!offTitle} title={offTitle} onClick={() => { setTagging(null); setEditing(true); }} data-testid="topic-edit-bottom">修改</button>
+        <button type="button" className="aibtn" disabled={readOnly} title="往对话区的输入框里预填一句话，由你发出"
+          onClick={() => onPrefill?.(reviseDependentsText(item))} data-testid="topic-revise">让助手照这条改条目</button>
+        {!gone && <button type="button" className="btn" disabled={!!offTitle} title={offTitle} onClick={() => setRetiring(true)} data-testid="topic-retire">标为已废弃</button>}
+        <button type="button" className="aibtn" disabled={!!offTitle} title={offTitle ?? "请助手把对这一页及其下面主题的理解讲成一段故事，你看哪里不对"}
+          onClick={() => onSend?.(retellText(titleOf(item)))} data-testid="topic-retell">复述一遍</button>
+      </div>
+      {retiring && (
+        <div className="oa-ask" data-testid="topic-retire-ask">
+          标为已废弃之后，这一页还留着、在提纲里划掉；依据它写的 {basisCount} 个条目会显示待核实，要改依据到别的主题。确定吗？
+          <button type="button" className="btn sm pri" onClick={() => void retire()} data-testid="topic-retire-yes">标为已废弃</button>
+          <button type="button" className="btn sm" onClick={() => setRetiring(false)}>取消</button>
+        </div>
+      )}
       <div className="oa-rawlink"><span role="button" onClick={onRaw} data-testid="topic-raw">看修订与全部来源</span></div>
       </>)}
     </div>

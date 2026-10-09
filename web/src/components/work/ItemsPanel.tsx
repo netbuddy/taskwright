@@ -311,10 +311,10 @@ export function ItemsPanel({
           <DiagramsPane task={task} selected={diagram} onSelect={setDiagram} readOnly={readOnly} writesOff={writesOff} latestRevision={latestRevision}
             submit={submit} onLocate={onLocate} onOpenItem={(id) => openItem(id)} onDirty={onDiagramDirty} />
         ) : onOverall ? (
-          <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect}
+          <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
             page={selectedItem && !rawTopic ? (
               <TopicPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} readOnly={readOnly} writesOff={writesOff} submit={submit}
-                onSend={onSend} onAnswer={onAnswer} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
+                onSend={onSend} onAnswer={onAnswer} onPrefill={onPrefill} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
                 onOpen={(id) => openItem(id)} onBack={() => onSelect(null)} onLocate={onLocate} onRaw={() => setRawTopic(true)}
                 onPrev={topicPos > 0 ? () => onSelect(topics[topicPos - 1].item_id) : null}
                 onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null} />

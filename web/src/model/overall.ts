@@ -344,6 +344,11 @@ export function retellText(title: string | null): string {
   return title ? `请把现在对「${title}」及其下面主题的理解讲成一段故事` : "请把现在对总体分析里各个主题的理解讲成一段故事";
 }
 
+/** 「让助手照这条改条目」预填进对话区输入框的那句话，用户可以接着写。 */
+export function reviseDependentsText(item: Item): string {
+  return `请照 ${item.item_id}「${titleOf(item)}」现在的内容，把依据它写的条目改过来：`;
+}
+
 /** 助手复述时那张请选择卡片的三个选项的键；早先没有写死键的回复，按第一个选项的文字以「这段对」开头来认。 */
 export const STORY_KEYS = ["story_ok", "story_fix", "story_again"] as const;
 

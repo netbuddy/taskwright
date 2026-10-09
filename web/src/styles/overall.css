@@ -146,3 +146,13 @@
 .app .oa-edit { max-width: 52rem; }
 .app .oa-edit .oa-req { color: var(--gap); }
 .app .oa-edit .oa-hint { font-size: 0.857rem; color: var(--text3); margin-top: .2rem; }
+
+/* 底部一排动作、标为已废弃前问的那一句、已废弃的页 */
+.app .oa-foot-acts { margin: .2rem 0 .8rem; padding-top: .8rem; border-top: 1px solid var(--line); }
+.app .oa-ask { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin: 0 0 .8rem; padding: .5rem .75rem; font-size: 0.93rem;
+  background: var(--amber-bg); border: 1px solid var(--amber-line); border-radius: .6rem; color: var(--amber-ink); }
+.app .oa-gone { margin-bottom: .5rem; padding: .35rem .7rem; font-size: 0.93rem; color: var(--text2); background: var(--quote); border-radius: .5rem; }
+.app .oa-gone .see { color: var(--blue); cursor: pointer; }
+.app .oa-gone .see:hover { text-decoration: underline; }
+.app .oa-title.gone { text-decoration: line-through; color: var(--faint); }
+.app .oa-retell { margin-top: .8rem; }

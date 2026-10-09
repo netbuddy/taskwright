@@ -8,7 +8,13 @@ import { STATE_TEXT, countsText, isDeprecated, outline, titleOf, topicState, tot
 
 const LEGEND: TopicState[] = ["settled", "pending", "open", "unsorted"];
 
-export function Outline({ task, current, onOpen }: { task: Task; current: string | null; onOpen: (itemId: string) => void }) {
+export function Outline({ task, current, onOpen, onRetell, retellOff }: {
+  task: Task; current: string | null; onOpen: (itemId: string) => void;
+  /** 「复述一遍」：请助手把现在的理解讲成一段故事；不给就不画这个按钮。 */
+  onRetell?: () => void;
+  /** 现在不能发给助手的原因（任务结束、助手正在工作）；能发时不给。 */
+  retellOff?: string;
+}) {
   // 收起了下级的那几页。缺省全部展开：提纲不长，先让人看到全貌。
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setFolded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -49,6 +55,11 @@ export function Outline({ task, current, onOpen }: { task: Task; current: string
       <div className="oa-foot" data-testid="outline-totals">
         {sum.pages} 个主题 · <b>{sum.settled}</b> 条已定 · <b>{sum.open}</b> 条待问 · <b>{sum.pending}</b> 处待核实
       </div>
+      {onRetell && roots.length > 0 && (
+        <button type="button" className="aibtn oa-retell" disabled={!!retellOff}
+          title={retellOff ?? (current ? "请助手把对打开着的这一页及其下面主题的理解讲成一段故事" : "请助手把对各个主题的理解讲成一段故事")}
+          onClick={onRetell} data-testid="outline-retell">复述一遍</button>
+      )}
     </div>
   );
 }

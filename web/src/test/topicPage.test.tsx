@@ -16,14 +16,14 @@ Element.prototype.scrollTo ??= function () {};
 const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp><ToastProvider>{children}</ToastProvider></AntApp></ConfigProvider>
 );
-type Spies = { submit?: ReturnType<typeof vi.fn>; send?: ReturnType<typeof vi.fn>; answer?: ReturnType<typeof vi.fn>; locate?: ReturnType<typeof vi.fn> };
+type Spies = { submit?: ReturnType<typeof vi.fn>; send?: ReturnType<typeof vi.fn>; answer?: ReturnType<typeof vi.fn>; locate?: ReturnType<typeof vi.fn>; prefill?: ReturnType<typeof vi.fn> };
 function Panel({ t, first = "OA-003", readOnly = false, writesOff = false, spies = {} }: { t: Task; first?: string | null; readOnly?: boolean; writesOff?: boolean; spies?: Spies }) {
   const [selected, setSelected] = useState<string | null>(first);
   return (
     <Wrap><div className="app">
       <ItemsPanel task={t} initialCollection="总体分析" readOnly={readOnly} writesOff={writesOff} recentlyChanged={[]} pendingItems={new Set()}
         selected={selected} onSelect={setSelected} submit={(spies.submit ?? vi.fn(async () => null)) as never} onGenerateDoc={() => {}}
-        onSend={spies.send as never} onAnswer={spies.answer as never} onLocate={spies.locate as never} />
+        onSend={spies.send as never} onAnswer={spies.answer as never} onLocate={spies.locate as never} onPrefill={spies.prefill as never} />
     </div></Wrap>
   );
 }
@@ -284,6 +284,84 @@ describe("修改与贴标签", () => {
     await vi.waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId("topic-edit")).toBeInTheDocument();
     expect((field("它是什么").querySelector("textarea") as HTMLTextAreaElement).value).toBe("改过的说明。");
+  });
+});
+
+describe("底部的动作与复述", () => {
+  it("底部一排是「修改」「让助手照这条改条目」「标为已废弃」「复述一遍」", () => {
+    render(<Panel t={overallTask()} />);
+    expect([...screen.getByTestId("topic-actions").querySelectorAll("button")].map((b) => b.textContent)).toEqual(["修改", "让助手照这条改条目", "标为已废弃", "复述一遍"]);
+    fireEvent.click(screen.getByTestId("topic-edit-bottom"));
+    expect(screen.getByTestId("topic-edit")).toBeInTheDocument();
+  });
+
+  it("「复述一遍」把一句固定的话发给助手：讲这一页与它下面的主题", () => {
+    const send = vi.fn();
+    render(<Panel t={overallTask()} spies={{ send }} />);
+    fireEvent.click(screen.getByTestId("topic-retell"));
+    expect(send).toHaveBeenCalledWith("请把现在对「预约取书」及其下面主题的理解讲成一段故事");
+  });
+
+  it("提纲底部也有「复述一遍」：打开着一页就讲这一页，没有打开讲整个总体分析；未选主题时右边也有一个", () => {
+    const send = vi.fn();
+    render(<Panel t={overallTask()} first={null} spies={{ send }} />);
+    fireEvent.click(screen.getByTestId("outline-retell"));
+    expect(send).toHaveBeenLastCalledWith("请把现在对总体分析里各个主题的理解讲成一段故事");
+    fireEvent.click(screen.getByTestId("intro-retell"));
+    expect(send).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByTestId("outline-OA-006"));
+    fireEvent.click(screen.getByTestId("outline-retell"));
+    expect(send).toHaveBeenLastCalledWith("请把现在对「续借」及其下面主题的理解讲成一段故事");
+  });
+
+  it("「让助手照这条改条目」只往对话区的输入框里预填一句话，不发送、不写库", () => {
+    const send = vi.fn();
+    const prefill = vi.fn();
+    const submit = vi.fn(async () => null);
+    render(<Panel t={overallTask()} spies={{ send, prefill, submit }} />);
+    fireEvent.click(screen.getByTestId("topic-revise"));
+    expect(prefill).toHaveBeenCalledWith("请照 OA-003「预约取书」现在的内容，把依据它写的条目改过来：");
+    expect(send).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("「标为已废弃」先问一句、写明有几个条目依据它；点确定才作为直接修改保存，取消就什么都不发", async () => {
+    const submit = vi.fn(async () => null);
+    render(<Panel t={overallTask()} spies={{ submit }} />);
+    fireEvent.click(screen.getByTestId("topic-retire"));
+    expect(screen.getByTestId("topic-retire-ask")).toHaveTextContent("依据它写的 2 个条目会显示待核实");
+    fireEvent.click(within(screen.getByTestId("topic-retire-ask")).getByText("取消"));
+    expect(screen.queryByTestId("topic-retire-ask")).toBeNull();
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("topic-retire"));
+    fireEvent.click(screen.getByTestId("topic-retire-yes"));
+    expect(submit).toHaveBeenCalledWith(
+      { kind: "edit_fields", targets: [{ item_id: "OA-003", base_revision: 12 }], fields: { 状态: "已废弃" }, notify_executor: false }, "把 OA-003 标为已废弃");
+    await vi.waitFor(() => expect(screen.queryByTestId("topic-retire-ask")).toBeNull());
+  });
+
+  it("助手工作中不能复述、不能标为已废弃；预填那一个照常可用", () => {
+    render(<Panel t={overallTask()} writesOff spies={{ send: vi.fn() }} />);
+    expect(screen.getByTestId("topic-retell")).toBeDisabled();
+    expect(screen.getByTestId("outline-retell")).toBeDisabled();
+    expect(screen.getByTestId("topic-retire")).toBeDisabled();
+    expect(screen.getByTestId("topic-revise")).not.toBeDisabled();
+  });
+
+  it("已废弃的页：顶上一句「这一页已废弃，改看 OA-m」，点它打开那一页；标题划掉，底部没有「标为已废弃」", () => {
+    const t = change(overallTask(), "OA-011", (p) => { p.fields.状态 = "已废弃"; p.fields.改看 = ["OA-007"]; });
+    render(<Panel t={t} first="OA-011" />);
+    expect(text(screen.getByTestId("topic-gone"))).toBe("这一页已废弃。改看 OA-007 读者。");
+    expect(screen.getByTestId("topic-title")).toHaveClass("gone");
+    expect(screen.queryByTestId("topic-retire")).toBeNull();
+    fireEvent.click(screen.getByTestId("topic-see"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("OA-007读者");
+    expect(screen.queryByTestId("topic-gone")).toBeNull();
+  });
+
+  it("已废弃而没有写改看哪一页的，照实说", () => {
+    render(<Panel t={change(overallTask(), "OA-011", (p) => { p.fields.状态 = "已废弃"; })} first="OA-011" />);
+    expect(text(screen.getByTestId("topic-gone"))).toBe("这一页已废弃。没有写改看哪一页。");
   });
 });
 
