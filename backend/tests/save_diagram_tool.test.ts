@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, reply, withStack, TOPIC_CALL } from "./consent_stack.ts";
 
 captureConsole();
 
@@ -26,7 +26,8 @@ const BAD = 'flowchart LR\n  reader(["读者"]\n  reader --> borrow';
 const SOURCES = [{ kind: "用户的话", excerpt: ASK }, { kind: "条目", locator: "UC-001" }];
 const SCRIPT = {
   sequence: [
-    { tool_calls: [{ id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
+    // 先立一页主题（任务的修订 1），用例在同一个回答的第二次保存里（任务的修订 2）。
+    { tool_calls: [TOPIC_CALL, { id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
       sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
       fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } }] } }] },
     reply("整理好了一个用例。", "call-r1"),
@@ -80,11 +81,11 @@ test("助手画图：写错的 Mermaid 文本被校验退回，改对之后存�
     assert.deepEqual(db("SELECT diagram_id, revision_no, op, name, kind, actor, call_id FROM diagram_version"),
       [{ diagram_id: "D-001", revision_no: 1, op: "add", name: "读者用例", kind: "use_case", actor: "executor", call_id: "call-d2" }]);
     const sources = db("SELECT kind, locator, excerpt, depends_revision FROM item_source WHERE element_kind = '图' ORDER BY position");
-    assert.deepEqual(sources.map((one) => [one.kind, one.excerpt, one.depends_revision]), [["用户的话", ASK, null], ["条目", "", 1]]);
+    assert.deepEqual(sources.map((one) => [one.kind, one.excerpt, one.depends_revision]), [["用户的话", ASK, null], ["条目", "", 2]]);
     assert.ok(String(sources[0].locator).startsWith(`${session}#`), sources[0].locator);
     assert.equal(sources[1].locator, "UC-001");
     // 图不占任务的修订序号。
-    assert.deepEqual(db("SELECT revision_no FROM revision"), [{ revision_no: 1 }]);
+    assert.deepEqual(db("SELECT revision_no FROM revision"), [{ revision_no: 1 }, { revision_no: 2 }]);
     const list = (await call("GET", `/api/v1/tasks/${taskId}/diagrams`)).body.diagrams;
     assert.deepEqual(list.map((one: Dict) => [one.diagram_id, one.name, one.kind_name, one.revision_no, one.source_count]), [["D-001", "读者用例", "用例图", 1, 2]]);
 
@@ -97,7 +98,7 @@ test("助手画图：写错的 Mermaid 文本被校验退回，改对之后存�
     assert.match(resultOf(requests(), "call-d3"), /已修改图 D-001「读者借书」（用例图），现在是修订 2。/);
     const detail = (await call("GET", `/api/v1/tasks/${taskId}/diagrams/D-001`)).body.diagram;
     assert.deepEqual([detail.name, detail.revision_no, detail.revisions, detail.mermaid, detail.drawn], ["读者借书", 2, [1, 2], GOOD, [{ item_id: "UC-001", title: "借书", state: "live" }]]);
-    assert.deepEqual(detail.sources.map((one: Dict) => [one.kind, one.depends_revision ?? null, one.stale ?? null]), [["用户的话", null, null], ["条目", 1, null]]);
+    assert.deepEqual(detail.sources.map((one: Dict) => [one.kind, one.depends_revision ?? null, one.stale ?? null]), [["用户的话", null, null], ["条目", 2, null]]);
     // 整份任务数据里条目的「被谁依据」数上了这张图。
     const item = (await call("GET", `/api/v1/tasks/${taskId}/snapshot`)).body.task.items[0];
     assert.deepEqual(item.depended_by, [{ element_kind: "图", id: "D-001", revision_no: 2 }]);
@@ -115,7 +116,7 @@ test("助手画图：写错的 Mermaid 文本被校验退回，改对之后存�
     assert.deepEqual(db("SELECT revision_no, op, name, actor, call_id FROM diagram_version WHERE revision_no = 3"),
       [{ revision_no: 3, op: "update", name: "读者借书", actor: "user", call_id: done.body.op_id }]);
     assert.equal(db("SELECT COUNT(*) AS n FROM item_source WHERE element_kind = '图' AND revision_no = 3")[0].n, 2);
-    assert.deepEqual(db("SELECT revision_no FROM revision"), [{ revision_no: 1 }]);
+    assert.deepEqual(db("SELECT revision_no FROM revision"), [{ revision_no: 1 }, { revision_no: 2 }]);
     const edited = (await call("GET", `/api/v1/tasks/${taskId}/diagrams/D-001`)).body.diagram;
     assert.deepEqual([edited.revision_no, edited.revision_by, edited.mermaid], [3, "user", mine]);
     assert.deepEqual(edited.drawn, [{ item_id: "UC-001", title: "借书", state: "live" }, { item_id: "UC-404", title: null, state: "missing" }]);

@@ -19,7 +19,7 @@ import { request } from "node:http";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, sleep, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, TOPIC_CALL, reply, sleep, withStack } from "./consent_stack.ts";
 
 captureConsole();
 // 助手的程序不出网查模型目录
@@ -29,7 +29,11 @@ const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const source = { kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL };
-const save = (id: string, name: string) => ({ tool_calls: [{ id, name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
+/**
+ * 助手保存一个用例的一步。一个任务里头一次保存条目之前要先有一页主题，所以缺省在同一个回答里先立一页（它是任务的修订 1，用例是修订 2）；
+ * 任务里已经有主题页之后的保存给 topic: false。
+ */
+const save = (id: string, name: string, { topic = true } = {}) => ({ tool_calls: [...(topic ? [TOPIC_CALL] : []), { id, name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
   sources: [source], fields: { 用例名称: name, 用例功能: `读者${name}。`, 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } }] } }] });
 
 /** 订阅一条事件连接，把收到的事件按先后收进 events（每项是 {event, data}）。 */
@@ -90,12 +94,12 @@ test("两个任务同时各开一个助手：各自的事件连接只收到本�
         assert.deepEqual([...sessions(second.events)], [otherSession], "另一个任务的连接只收到本任务会话的过程事件");
 
         assert.deepEqual(db("SELECT DISTINCT task_id FROM event").map((r: Dict) => r.task_id), [taskId]);
-        assert.deepEqual(db("SELECT call_id FROM revision").map((r: Dict) => r.call_id), ["call-a"], "第一个任务的库只有自己那次保存");
+        assert.deepEqual(db("SELECT call_id FROM revision").map((r: Dict) => r.call_id), ["call-topic", "call-a"], "第一个任务的库只有自己的两次保存");
         const otherDb = JSON.parse(spawnSync(process.execPath, ["-e",
           `const {DatabaseSync}=require("node:sqlite");const db=new DatabaseSync(process.argv[1],{readOnly:true});` +
           `console.log(JSON.stringify(db.prepare("SELECT call_id, task_id FROM revision").all()))`,
           join(tmp, "two-tasks", "tasks", other, "task.sqlite")], { encoding: "utf-8" }).stdout);
-        assert.deepEqual(otherDb, [{ call_id: "call-b", task_id: other }], "另一个任务的库只有自己那次保存");
+        assert.deepEqual(otherDb, [{ call_id: "call-topic", task_id: other }, { call_id: "call-b", task_id: other }], "另一个任务的库只有自己的两次保存");
       } finally {
         first.close();
         second.close();
@@ -117,7 +121,8 @@ test("评审不合规之后保留写法、撤销保留、改评审规则、再�
   }, async ({ port, session, taskId, db, send, action }) => {
     await send({ text: "把材料整理成用例。", client_id: "c-1" });
     const stream = subscribe(port, `/api/v1/tasks/${taskId}/events?session=${session}`);
-    const target = [{ item_id: "UC-001", base_revision: 1 }];
+    // 主题页是修订 1，用例是修订 2。
+    const target = [{ item_id: "UC-001", base_revision: 2 }];
     const finished = () => stream.events.filter((e) => e.event === "review_finished").length;
     try {
       await sleep(300);
@@ -145,7 +150,7 @@ test("评审不合规之后保留写法、撤销保留、改评审规则、再�
       }
       const recorded = stream.events.filter((e) => e.event === "review_recorded").map((e) => e.data.verdict);
       assert.deepEqual(recorded, ["不合规", "合规"]);
-      assert.deepEqual(stream.events.find((e) => e.event === "review_waived")!.data.items, [{ item_id: "UC-001", revision_no: 1 }]);
+      assert.deepEqual(stream.events.find((e) => e.event === "review_waived")!.data.items, [{ item_id: "UC-001", revision_no: 2 }]);
       assert.deepEqual(stream.events.find((e) => e.event === "review_rules_changed")!.data.off, ["UC-R2"]);
       assert.deepEqual(stream.events.filter((e) => e.event === "ui_action_noted").map((e) => e.data.kind),
         ["request_review", "waive_review", "unwaive_review", "set_review_rules", "request_review"]);
@@ -155,15 +160,16 @@ test("评审不合规之后保留写法、撤销保留、改评审规则、再�
     }
   }));
 
-test("助手保存过一次修订之后中途让它停下：返回的 cleared 是空的，这一轮的摘要与结束消息都是 stopped_by_user，步数相同，摘要写明实际保存了修订 1；之后留一条界面操作通知，切走再切回来的现状消息与下一次运行的上下文里都有这件事", { skip: NO_PI, timeout: 180000 }, () =>
-  withStack(tmp, "stop", { sequence: [save("call-save", "借书"), { ...save("call-save-2", "还书"), delay: 8 }, reply("知道了。", "call-after")] }, async ({ call, port, session, taskId, send, requests, db }) => {
+test("助手保存过一次修订之后中途让它停下：返回的 cleared 是空的，这一轮的摘要与结束消息都是 stopped_by_user，步数相同，摘要写明实际保存了修订 1 到 2；之后留一条界面操作通知，切走再切回来的现状消息与下一次运行的上下文里都有这件事", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "stop", { sequence: [save("call-save", "借书"), { ...save("call-save-2", "还书", { topic: false }), delay: 8 }, reply("知道了。", "call-after")] }, async ({ call, port, session, taskId, send, requests, db }) => {
     const stream = subscribe(port, `/api/v1/tasks/${taskId}/events?session=${session}`);
     try {
       await sleep(300);
       assert.equal((await call("POST", `/api/v1/tasks/${taskId}/messages?session=${session}`, { text: "把材料整理成用例。", client_id: "c-1" })).status, 200);
       await until("助手开始工作", () => stream.events.some((e) => e.event === "executor_state" && e.data.state === "working"));
-      // 等头一次保存做完再停：这时助手正等模型回下一步（假语言模型隔 8 秒才回），停下之后任务库里只有修订 1。
-      await until("头一次保存做完", () => stream.events.some((e) => e.event === "step" && /保存了修订 1/.test(String(e.data.text))));
+      // 等头一个回答里的两次保存（主题页是修订 1、用例是修订 2）做完再停：这时助手正等模型回下一步（假语言模型隔 8 秒才回），
+      // 停下之后任务库里只有这两次修订。
+      await until("头一次保存做完", () => stream.events.some((e) => e.event === "step" && /保存了修订 2/.test(String(e.data.text))));
       const stopped = await call("POST", `/api/v1/tasks/${taskId}/control?session=${session}`, { action: "stop" });
       assert.deepEqual(stopped, { status: 200, body: { ok: true, cleared: [] } });
       await until("这一轮结束", () => stream.events.some((e) => e.event === "work_ended"));
@@ -171,8 +177,8 @@ test("助手保存过一次修订之后中途让它停下：返回的 cleared �
       const ended = stream.events.find((e) => e.event === "work_ended")!.data;
       assert.deepEqual([summary.outcome, ended.outcome], ["stopped_by_user", "stopped_by_user"]);
       assert.equal(ended.step_count, summary.step_count);
-      assert.deepEqual(summary.saved, { revisions: [1], items: 1, diagrams: 0 }, "保存了什么按任务库算");
-      assert.deepEqual(db("SELECT revision_no, call_id FROM revision"), [{ revision_no: 1, call_id: "call-save" }]);
+      assert.deepEqual(summary.saved, { revisions: [1, 2], items: 2, diagrams: 0 }, "保存了什么按任务库算");
+      assert.deepEqual(db("SELECT revision_no, call_id FROM revision"), [{ revision_no: 1, call_id: "call-topic" }, { revision_no: 2, call_id: "call-save" }]);
       assert.equal(stream.events.filter((e) => e.event === "problem").length, 0, "被停下时不提示");
 
       // 停下之后留一条界面操作通知：实时推送在这一轮结束之后，刷新读回时在这一轮的摘要之后。
@@ -247,7 +253,7 @@ test("理解的门禁：没写理解就调回复被拒，查看类工具不拦�
 
 test("理解的门禁：理解写错被拒，拒绝理由附上解析失败的原因；重写之后保存通过，修订带上这份理解的编号，不记失败", { skip: NO_PI, timeout: 180000 }, () =>
   withStack(tmp, "intent-rewrite", { sequence: [
-    { text: understanding({ function: "agree", confidence: "high", summary: "整理" }), ...save("call-save-1", "借书") },
+    { text: understanding({ function: "agree", confidence: "high", summary: "整理" }), ...save("call-save-1", "借书", { topic: false }) },
     { text: understanding(REQUEST), ...save("call-save-2", "借书") },
     { tool_calls: [replyCall("call-reply", "存好了。")] },
   ] }, async ({ db, send }) => {
@@ -256,7 +262,7 @@ test("理解的门禁：理解写错被拒，拒绝理由附上解析失败的�
     assert.ok(refused.get("call-save-1")?.includes(GATE));
     assert.ok(refused.get("call-save-1")?.includes('function 写的是 "agree"'), "拒绝理由附上解析失败的原因");
     assert.ok(!refused.has("call-save-2") && !refused.has("call-reply"));
-    assert.deepEqual(db("SELECT revision_no, call_id, intent_act_id FROM revision"), [{ revision_no: 1, call_id: "call-save-2", intent_act_id: "r1-1" }]);
+    assert.deepEqual(db("SELECT revision_no, call_id, intent_act_id FROM revision"), [{ revision_no: 1, call_id: "call-topic", intent_act_id: "r1-1" }, { revision_no: 2, call_id: "call-save-2", intent_act_id: "r1-1" }]);
     assert.deepEqual(db("SELECT name FROM event WHERE name IN ('USER_INTENT_INVALID', 'USER_INTENT_MISSING')"), [], "重写之后这一轮有了理解，不记失败");
   }, { autoIntent: false }));
 
@@ -264,7 +270,7 @@ test("理解的门禁：卡片点击合成的那句话不需要理解，点击�
   withStack(tmp, "intent-card", { sequence: [
     { text: understanding(REQUEST), ...save("call-save", "借书") },
     { tool_calls: [replyCall("call-choose", "逾期的读者能不能续借？", { kind: "choose", text: "逾期的读者能不能续借？",
-      items: [{ item_id: "UC-001", revision_no: 1 }], options: [{ key: "allow", text: "允许续借" }, { key: "deny", text: "不允许续借" }] })] },
+      items: [{ item_id: "UC-001", revision_no: 2 }], options: [{ key: "allow", text: "允许续借" }, { key: "deny", text: "不允许续借" }] })] },
     { tool_calls: [replyCall("call-after-click", "记下了，逾期的读者不能续借。")] },
   ] }, async ({ call, taskId, session, db, send, entryOfCall }) => {
     await send({ text: "整理一下，有不清楚的问我", client_id: "c-1" });

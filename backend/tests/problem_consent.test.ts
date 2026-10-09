@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, reply, withStack, TOPIC_CALL } from "./consent_stack.ts";
 
 captureConsole();
 
@@ -17,12 +17,13 @@ const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL };
-const RESOLVE = { operations: [{ op: "update", item: "TBD-001", base_revision: 1, fields: { 状态: "已解决", 处理结果: "用户确认：借书前不检查逾期。" } }] };
-const CARD = { kind: "choose", text: "TBD-001 这个问题是否已解决？", items: [{ item_id: "TBD-001", revision_no: 1 }],
+const RESOLVE = { operations: [{ op: "update", item: "TBD-001", base_revision: 2, fields: { 状态: "已解决", 处理结果: "用户确认：借书前不检查逾期。" } }] };
+const CARD = { kind: "choose", text: "TBD-001 这个问题是否已解决？", items: [{ item_id: "TBD-001", revision_no: 2 }],
   options: [{ key: "a", text: "已解决" }, { key: "b", text: "还没解决，继续改" }, { key: "c", text: "先不管，保留" }] };
 const SCRIPT = {
   sequence: [
-    { tool_calls: [{ id: "call-save", name: "save_revision", arguments: { operations: [
+    // 先立一页主题（修订 1），用例与问题在同一个回答的第二次保存里（修订 2）。
+    { tool_calls: [TOPIC_CALL, { id: "call-save", name: "save_revision", arguments: { operations: [
       { op: "add", collection: "功能用例", sources: [SOURCE],
         fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } },
       { op: "add", collection: "问题", sources: [SOURCE],
@@ -53,5 +54,5 @@ test("助手不问就把问题标为已解决被拒；发卡片、用户点「�
     await send({ text: "我选：已解决", client_id: "c-3", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "a" } });
     assert.deepEqual(db("SELECT call_id FROM tool_rejection WHERE tool_name = 'save_revision'").map((r: Dict) => r.call_id), ["call-resolve-early"]);
     assert.equal(status(), "已解决");
-    assert.deepEqual(db("SELECT call_id FROM revision ORDER BY revision_no").map((r: Dict) => r.call_id), ["call-save", "call-resolve"]);
+    assert.deepEqual(db("SELECT call_id FROM revision ORDER BY revision_no").map((r: Dict) => r.call_id), ["call-topic", "call-save", "call-resolve"]);
   }));

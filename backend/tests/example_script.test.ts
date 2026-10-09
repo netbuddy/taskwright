@@ -36,7 +36,7 @@ function run(cmd: string, args: string[], cwd: string, env: Dict): Promise<{ cod
   });
 }
 
-test("示例脚本从建任务到生成文档跑通：退出码 0，文档写明按修订 1 生成，里面有保存的用例与问题", { skip: SKIP, timeout: 180_000 }, async () => {
+test("示例脚本从建任务到生成文档跑通：退出码 0，文档写明按修订 2 生成，里面有主题页、保存的用例与问题", { skip: SKIP, timeout: 180_000 }, async () => {
   const fake = await new FakeModel(MODEL_SCRIPT).start();
   const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(tmp, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(tmp, "logs") };
   for (const name of DROPPED_ENV) delete env[name];
@@ -52,7 +52,7 @@ test("示例脚本从建任务到生成文档跑通：退出码 0，文档写明
     const written = readdirSync(work).filter((n) => /^srs-TASK-.+\.md$/.test(n));
     assert.equal(written.length, 1, done.out);
     const doc = readFileSync(join(work, written[0]), "utf-8");
-    assert.match(doc.split("\n").slice(0, 5).join("\n"), /本文档按交付物的修订 1 生成/);
+    assert.match(doc.split("\n").slice(0, 5).join("\n"), /本文档按交付物的修订 2 生成/);
     assert.match(doc, /借书/);
     assert.match(doc, /罚款怎样缴纳/);
   } finally {

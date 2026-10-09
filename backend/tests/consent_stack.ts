@@ -21,6 +21,14 @@ const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE
 
 export const MATERIAL = "读者凭借书证在自助机上借书。";
 
+/**
+ * 助手先立一页主题的那次工具调用：贴了标签、有例子、全部照抄材料所以不待核实。新建的任务里要先有这样一页，助手才能往别的集合里
+ * 新增条目，所以各份脚本里头一次保存条目的那一步，把它放在同一个回答的前面（它存成修订 1，随后保存的条目是修订 2）。
+ */
+export const TOPIC_CALL = { id: "call-topic", name: "save_revision", arguments: { operations: [{ op: "add", collection: "总体分析",
+  sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
+  fields: { 标题: "自助借书", 它是什么: MATERIAL, 例子: [MATERIAL], 标签: ["流程"], 状态: "在用" } }] } };
+
 /** 假端点的一步：助手经「回复」说一段话，act 是向用户要的回应。 */
 export const reply = (text: string, id: string, act: Dict | null = null) => ({ tool_calls: [{ id, name: "reply", arguments: { informs: [], act, text } }] });
 

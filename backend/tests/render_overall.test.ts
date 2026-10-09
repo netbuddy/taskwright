@@ -10,7 +10,7 @@ import { after, before, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
 import * as library from "../src/library.ts";
 import * as render from "../src/render.ts";
-import { tempDir } from "./helpers.ts";
+import { makeTypedTask, tempDir } from "./helpers.ts";
 import { DEFINITION, READY, build, page } from "./overall_stack.ts";
 
 let tmp: string;
@@ -112,4 +112,33 @@ test("几种写法合在一起：术语表一节与按标签归组的总体描�
     "- 例：《算法导论》在三楼科技书库。",
     "",
   ].join("\n"));
+});
+
+test("产品的任务类型：新建的任务按模板生成文档，术语与定义取标签含概念的主题，总体描述按别的标签归组，没有标签与已废弃的不进文档", () => {
+  const material = "被借走的书可以预约。书还回来以后，系统通知预约的读者，这本书为他保留 3 天。读者凭借书证借书。";
+  const source = (excerpt: string, supports?: unknown[]) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt, ...(supports ? { supports } : {}) });
+  const topic = (fields: Record<string, unknown>, sources: unknown[]) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources });
+  const typed = makeTypedTask(join(tmp, "typed"), "srs-authoring", { "材料.md": material }, [
+    [
+      topic({ 标题: "预约", 别名: ["预约取书"], 标签: ["概念", "流程"], 它是什么: "被借走的书可以预约。", 例子: ["书还回来以后，系统通知预约的读者"],
+        已经定下的: ["这本书为他保留 3 天。"] }, [source("被借走的书可以预约。", [{ field: "它是什么" }]), source("书还回来以后，系统通知预约的读者", [{ field: "例子", index: 0 }]),
+        source("这本书为他保留 3 天。", [{ field: "已经定下的", index: 0 }])]),
+      topic({ 标题: "读者", 标签: ["角色"], 它是什么: "读者凭借书证借书。" }, [source("读者凭借书证借书。")]),
+      topic({ 标题: "草稿", 它是什么: "读者凭借书证借书。" }, [source("读者凭借书证借书。")]),
+    ],
+    [{ op: "add", collection: "功能用例", fields: { 用例名称: "预约图书", 用例功能: "读者预约被借走的书。", 参与者: ["读者"], 基本流程: ["读者选书", "系统登记预约"] },
+      sources: [{ kind: "条目", locator: "OA-001", excerpt: "被借走的书可以预约。" }] }],
+  ]);
+  const text = render.render(typed, library.libraryOf(typed));
+  const section = (from: string, to: string) => text.slice(text.indexOf(from), text.indexOf(to));
+  assert.equal(section("## 1 术语与定义", "## 2 总体描述").trim(),
+    "## 1 术语与定义\n\n- **预约**（OA-001），又叫预约取书：被借走的书可以预约。 ［修订 1 · 未确认］");
+  const overall = section("## 2 总体描述", "## 3 功能需求");
+  // 概念那一组不在总体描述里；取值的次序里角色在流程前面。
+  assert.deepEqual([...overall.matchAll(/^### (.+)$/gm)].map((m) => m[1]), ["角色", "流程"]);
+  assert.match(overall, /### 角色\n\n\*\*OA-002 读者\*\* ［修订 1 · 未确认］\n\n读者凭借书证借书。\n\n来源：文档原文，出处 inputs\/材料\.md（「读者凭借书证借书。」）/);
+  assert.match(overall, /### 流程\n\n\*\*OA-001 预约\*\* ［修订 1 · 未确认］\n\n被借走的书可以预约。\n\n例子：\n\n- 书还回来以后，系统通知预约的读者\n\n已经定下的：\n\n1\. 这本书为他保留 3 天。\n\n来源：/);
+  assert.doesNotMatch(text, /草稿/);
+  // 依据主题的用例，来源写成集合名加编号。
+  assert.match(section("## 3 功能需求", "## 4 非功能需求"), /来源：总体分析 OA-001（「被借走的书可以预约。」）/);
 });

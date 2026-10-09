@@ -66,15 +66,21 @@ const itemRows = (dir: string, item: string, revisionNo: number) =>
   query<any>(dir, "SELECT element_kind, kind, locator, excerpt, field, depends_revision FROM item_source WHERE item_id = ? AND revision_no = ? AND kind = '条目' ORDER BY position", item, revisionNo)
     .map((row) => ({ ...row }));
 
-test("真实的任务类型：有「领域说明」集合（DN，四个字段，不评审），完成条件是每个条目用户确认", () => {
+test("真实的任务类型：这个位置上现在是「总体分析」集合（OA，九个字段，不评审），完成条件是每个条目用户确认；没有「领域说明」集合了", () => {
   const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
   const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
-  const notes = definition.collections.find((c) => c.name === "领域说明")!;
-  assert.equal(notes.prefix, "DN");
-  assert.deepEqual(notes.fields.map((f) => [f.name, f.type, f.required]),
-    [["标题", "文本", true], ["内容", "文本", true], ["类别", "文本", true], ["关联条目", "条目引用", false]]);
-  assert.equal(notes.reviewRules ?? null, null);
-  assert.deepEqual(definition.completion.领域说明, ["每个条目用户确认"]);
+  assert.equal(definition.collections.some((c) => c.name === "领域说明"), false);
+  const pages = definition.collections.find((c) => c.name === "总体分析")!;
+  assert.equal(pages.prefix, "OA");
+  assert.deepEqual(pages.fields.map((f) => [f.name, f.type, f.required]), [
+    ["标题", "文本", true], ["别名", "文本列表", false], ["它是什么", "文本", true], ["例子", "文本列表", false], ["已经定下的", "文本列表", false],
+    ["标签", "文本列表", false], ["上级主题", "条目引用", false], ["状态", "枚举", true], ["改看", "条目引用", false],
+  ]);
+  assert.deepEqual(pages.fields.find((f) => f.name === "标签")!.values, ["概念", "角色", "流程", "场景", "目标", "范围", "假设", "决定"]);
+  assert.deepEqual(pages.fields.filter((f) => f.sameCollection && f.single).map((f) => f.name), ["上级主题", "改看"]);
+  assert.equal(pages.reviewRules ?? null, null);
+  assert.deepEqual(definition.completion.总体分析, ["每个条目用户确认"]);
+  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/srs-authoring.json"), "utf-8")).版本, 2);
 });
 
 test("来源种类「条目」：出处是还在的条目时保存，记下引用时它的修订号；出处去掉首尾空白；产出方记作条目", () => {
@@ -228,26 +234,46 @@ test("提示：还没有和任何条目关联的领域说明——来源引用�
   assert.deepEqual(out.hints.map((h: any) => h.items), [["DN-004", "DN-005"]]);
 });
 
-test("平台 skill 与任务 skill 写了领域说明的做法：记下并说出落点、只收解释性内容、拆两条两边都写、引用的写法", () => {
+test("平台 skill 与任务 skill 写了总体分析的做法；平台 skill 末尾留着老任务（领域说明）的三条", () => {
   const platform = readFileSync(resolve(import.meta.dirname, "../prompts/skills/taskwright-executor/SKILL.md"), "utf-8");
-  assert.match(platform, /## 十、领域说明（任务定义里有「领域说明」集合时）/);
-  assert.match(platform, /我把「借还台管理员」记到领域说明了（DN-002）/);
-  assert.match(platform, /来源种类写「条目」（见第四节），locator 写它的条目编号/);
+  const section = platform.slice(platform.indexOf("## 十、总体分析（任务定义里有「总体分析」集合时）"), platform.indexOf("## 十一、画图"));
+  assert.ok(section.length > 0);
+  // 九件事各有一条。
+  for (const head of ["1. **抓没说清的词。**", "2. **逐条要例子、问例外。**", "3. **找冲突。**", "4. **复述。**", "5. **问为什么。**", "6. **记决定与假设。**",
+    "7. **建议标签与上级主题。**", "8. **条目晚于理解。**", "9. **两种节奏。**"]) assert.ok(section.includes(head), head);
+  assert.match(section, /先给一个候选的「它是什么」与一个候选的例子/);
+  assert.match(section, /选项固定三个：`right`「这段对，记下」、`wrong`「有一处不对」、`another`「换一个人物再讲」/);
+  assert.match(section, /种类写「用户的话」，摘录就是「这段对，记下」/);
+  assert.match(section, /总体分析里要已经有至少一页在用的主题贴了标签、写了例子、又不待核实/);
+  assert.match(section, /`supports` 写 `\{"field": "已经定下的", "index": 2\}`/);
+  // 老任务的三条原样留着。
+  const legacy = section.slice(section.indexOf("### 老任务（任务定义里的集合叫「领域说明」时）"));
+  assert.match(legacy, /我把「借还台管理员」记到领域说明了（DN-002）/);
+  assert.match(legacy, /来源种类写「条目」（见第四节），locator 写它的条目编号/);
+  assert.match(legacy, /领域说明只写解释那一半，规则那一半按任务 skill 的分拣放到该放的地方/);
+  assert.match(legacy, /excerpt 逐字照抄那条说明的标题或内容里你引用的那一段，包括标点/);
+  // 这一节（老任务小节除外）与任务 skill 里不出现这几个词。
   const task = readFileSync(resolve(import.meta.dirname, "../../task-types/srs-authoring/.pi/skills/srs-authoring/SKILL.md"), "utf-8");
-  assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、领域说明/);
-  assert.match(task, /材料里的术语定义段落也整理成领域说明，类别写「术语」/);
-  assert.match(task, /领域说明只写解释那一半；规则那一半按上面第 2 条的分拣走/);
-  assert.match(platform, /领域说明只写解释那一半，规则那一半按任务 skill 的分拣放到该放的地方/);
-  assert.match(task, /「一批最多写 4 个条目」同样适用于领域说明/);
-  assert.match(task, /例如用户说「我们说的预约保留期[\s\S]*内容只写到「书到馆后替预约的读者留着的那几天」为止[\s\S]*在「约束规则」里加一项「过了保留期还没来取，预约就自动取消」/);
-  assert.match(platform, /excerpt 逐字照抄那条说明的标题或内容里你引用的那一段，包括标点/);
+  for (const word of ["节点", "联系", "要素", "依据门", "派生", "投影", "schema"]) {
+    assert.ok(!section.slice(0, section.indexOf("### 老任务")).includes(word), `平台 skill 第十节里有「${word}」`);
+    assert.ok(!task.includes(word), `任务 skill 里有「${word}」`);
+  }
+  assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、总体分析/);
+  assert.doesNotMatch(task, /领域说明/);
+  assert.match(task, /各立成总体分析的一页主题（怎样填见第 8 条）；材料里的术语定义段落也立成主题，标签贴「概念」/);
+  assert.match(task, /8\. \*\*总体分析怎样写。\*\*/);
+  for (const piece of ["一页一个主题", "「标题」写短", "「它是什么」用这件事自己的话写一两段", "有名字的人、具体的东西、具体的日子", "这种不算的例子以「反例：」开头",
+    "「已经定下的」一句一条", "「标签」从概念、角色、流程、场景、目标、范围、假设、决定里选", "「上级主题」写它在哪一页之下讨论", "「一批最多写 4 个条目」同样适用于主题页"]) {
+    assert.ok(task.includes(piece), piece);
+  }
+  assert.match(task, /例如用户说「我们说的预约保留期[\s\S]*「它是什么」只写到「书到馆后替预约的读者留着的那几天」为止[\s\S]*在「约束规则」里加上「过了保留期还没来取，预约自动取消」/);
 });
 
-test("任务定义的「界面」一项：真实任务类型的领域说明写了右侧栏页签、分组字段、靠前的组与说明；写错时逐条报出", () => {
+test("任务定义的「界面」一项：真实任务类型的总体分析写了右侧栏页签、分组字段、靠前的组与说明；写错时逐条报出", () => {
   const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
   const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
-  assert.deepEqual(definition.collections.find((c) => c.name === "领域说明")!.display,
-    { note: "材料里或你说明过的背景、术语、角色，供条目引用。", sideTab: true, groupField: "类别", leadingGroups: ["术语"] });
+  assert.deepEqual(definition.collections.find((c) => c.name === "总体分析")!.display,
+    { note: "用这件事自己的话写下的主题：它是什么、例子、已经定下的。条目依据它写。", sideTab: true, groupField: "标签", leadingGroups: ["概念"] });
   assert.equal(definition.collections.find((c) => c.name === "功能用例")!.display, null);
   const withDisplay = (display: unknown) => {
     const def = definitionWithNotes();

@@ -100,6 +100,21 @@ export function makeTypedTask(root: string, taskType: string, materials: Record<
   return ws;
 }
 
+/**
+ * 用 0.4.3 的任务类型文件（tests/fixtures/task_dirs/0.4.3/docs：任务定义、模板、评审规则，集合里是「领域说明」）建一个任务目录，
+ * 用法与 makeTypedTask 相同。0.4 建的任务不迁移、照旧能用，测它们的，以及只测与任务类型无关的机制（图、导出、依据已变）的，用它：
+ * 这样的任务没有「总体分析」集合，也就没有「先有一页想清楚的主题才能写条目」那道门。
+ */
+export function makeLegacyTask(root: string, materials: Record<string, string>, batches: unknown[]): string {
+  const ws = join(root, "task");
+  mkdirSync(ws, { recursive: true });
+  cpSync(join(ROOT, "backend", "tests", "fixtures", "task_dirs", "0.4.3", "docs"), join(ws, "docs"), { recursive: true });
+  mkdirSync(join(ws, "inputs"), { recursive: true });
+  for (const [name, text] of Object.entries(materials)) writeFileSync(join(ws, "inputs", name), text, "utf-8");
+  node([join(FIXTURES, "build_task_db.mts"), ws, "docs/task-definitions/srs-authoring.json", JSON.stringify(batches)]);
+  return ws;
+}
+
 /** 把夹具目录复制一份，给要改库的测试用。 */
 export function copyWorkspace(ws: string, to: string): string {
   cpSync(ws, to, { recursive: true });

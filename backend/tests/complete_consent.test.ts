@@ -13,7 +13,7 @@ import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, type Stack, reply, sleep, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, reply, sleep, type Stack, TOPIC_CALL, withStack } from "./consent_stack.ts";
 
 captureConsole();
 
@@ -26,7 +26,7 @@ const CARD = { kind: "choose", text: "功能用例一共 1 个条目，已经评
 const SCRIPT = {
   rules: [{ when: { any_contains: "你是评审者" }, reply: { text: JSON.stringify({ 发现: [] }) } }],
   sequence: [
-    { tool_calls: [{ id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
+    { tool_calls: [TOPIC_CALL, { id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
       sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
       fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } }] } }] },
     reply("整理好了一个用例。", "call-done-1"),
@@ -37,10 +37,10 @@ const SCRIPT = {
   ],
 };
 
-/** 保存一个用例、用户打开看过、发起评审并等它做完：完成条件全部满足。 */
+/** 先立一页主题（修订 1）、保存一个用例（修订 2），用户把两个都打开看过，发起评审并等它做完：完成条件全部满足。 */
 async function ready({ send, action, db }: Stack): Promise<void> {
   await send({ text: "把材料整理成需求规格说明。", client_id: "c-1" });
-  assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] })).status, 200);
+  assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }, { item_id: "UC-001", base_revision: 2 }] })).status, 200);
   assert.equal((await action({ kind: "request_review", targets: [] })).status, 200);
   for (const end = Date.now() + 30000; db("SELECT 1 FROM event WHERE name = 'REVIEW_FINISHED'").length === 0;) {
     if (Date.now() > end) throw new Error("评审没有做完");
@@ -71,7 +71,7 @@ test("打字说完成被拒；助手发了是否已经完成的卡片、用户�
 
     // 提交之后整个任务只读：改字段与说话都返回 409 task_closed。
     const edit = await call("POST", `/api/v1/tasks/${taskId}/actions?session=${session}`, { client_id: "a-edit", task_id: taskId, kind: "edit_fields",
-      targets: [{ item_id: "UC-001", base_revision: 1 }], fields: { 用例名称: "借阅" }, notify_executor: false });
+      targets: [{ item_id: "UC-001", base_revision: 2 }], fields: { 用例名称: "借阅" }, notify_executor: false });
     assert.deepEqual([edit.status, edit.body.error.code], [409, "task_closed"]);
     const said = await call("POST", `/api/v1/tasks/${taskId}/messages?session=${session}`, { text: "再改改", client_id: "c-4" });
     assert.deepEqual([said.status, said.body.error.code], [409, "task_closed"]);
@@ -82,10 +82,10 @@ test("页面提交：看到的修订号不是现在的被拒；带着现在的�
     const { taskId, session, dir, db, action } = stack;
     await ready(stack);
     const stale = await action({ kind: "submit_deliverable", targets: [], fields: { revision_no: 0 }, notify_executor: false });
-    assert.deepEqual([stale.body.error.code, stale.body.error.message], ["rejected", "这次没有提交：你看到的是修订 0，交付物现在已经是修订 1。请看过现在的内容再提交。"]);
+    assert.deepEqual([stale.body.error.code, stale.body.error.message], ["rejected", "这次没有提交：你看到的是修订 0，交付物现在已经是修订 2。请看过现在的内容再提交。"]);
     assert.equal(db("SELECT status FROM task")[0].status, "进行中");
 
-    const done = await action({ kind: "submit_deliverable", targets: [], fields: { revision_no: 1 }, notify_executor: false });
+    const done = await action({ kind: "submit_deliverable", targets: [], fields: { revision_no: 2 }, notify_executor: false });
     assert.equal(done.status, 200);
     assert.equal(db("SELECT status FROM task")[0].status, "已完成");
     assert.deepEqual(db("SELECT actor, call_id FROM event WHERE name = 'TASK_COMPLETED'").map((r: Dict) => [r.actor, r.call_id]), [["user", done.body.op_id]]);
@@ -94,6 +94,6 @@ test("页面提交：看到的修订号不是现在的被拒；带着现在的�
     const entries = readFileSync(file, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
     const note = entries.filter((e) => e.type === "custom_message" && e.details?.kind === "submit_deliverable");
     assert.equal(note.length, 1);
-    assert.match(note[0].content, /^界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 1）。/);
+    assert.match(note[0].content, /^界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 2）。/);
     assert.equal(entries.at(-1).type, "custom_message", "说明之后没有助手的运行");
   }));
