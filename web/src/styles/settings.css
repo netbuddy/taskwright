@@ -153,3 +153,22 @@
 .settings-pick .fold a[role="button"] { cursor: pointer; }
 .pick-foot { display: flex; justify-content: flex-end; gap: .5rem; align-items: center; flex-wrap: wrap; }
 .pick-foot .fnote { margin-right: auto; font-size: .86rem; color: var(--mut); flex: 1 1 12rem; text-align: left; }
+
+/* 「外观」一栏的两张界面风格卡（components/settings/AppearanceSettings.tsx）。卡上面的预览 .pv 自己带 data-theme，
+ * 所以这里给它写的颜色与字体取的是那一种风格的值：纸色的底、卡片色的顶栏、一句正文、一条分隔线、一个主按钮。 */
+.settings .style-cards { display: flex; gap: .9rem; flex-wrap: wrap; }
+.settings .style-card { flex: 0 1 17rem; min-width: 13rem; display: flex; flex-direction: column; gap: .35rem; text-align: left; font: inherit; color: inherit;
+  cursor: pointer; padding: .55rem .55rem .6rem; border: 1px solid var(--line2); border-radius: .6rem; background: var(--card); }
+.settings .style-card:hover { border-color: var(--mut); }
+.settings .style-card.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.settings .style-card .pv { display: block; border: 1px solid var(--line2); border-radius: .4rem; overflow: hidden; background: var(--paper); color: var(--ink);
+  font-family: var(--font-body); line-height: 1.65; }
+.settings .style-card .pv-top { display: block; padding: .3rem .65rem; background: var(--card); border-bottom: 1px solid var(--line);
+  font-family: var(--font-title); font-weight: 700; font-size: .93rem; }
+.settings .style-card .pv-body { display: block; padding: .5rem .65rem .65rem; }
+.settings .style-card .pv-text { display: block; font-size: .9rem; color: var(--text2); }
+.settings .style-card .pv-rule { display: block; height: 1px; background: var(--line2); margin: .45rem 0; }
+.settings .style-card .pv-btn { display: inline-block; background: var(--ink); color: var(--on-ink); border-radius: .4rem; padding: .05rem .7rem; font-size: .86rem; }
+.settings .style-card .sc-name { display: flex; align-items: center; gap: .5rem; font-weight: 600; font-size: .97rem; padding: 0 .1rem; }
+.settings .style-card .sc-name .ck { display: inline-flex; align-items: center; gap: .25rem; font-weight: 400; font-size: .86rem; color: var(--ok); }
+.settings .style-card .sc-note { color: var(--text2); font-size: .9rem; padding: 0 .1rem; }
