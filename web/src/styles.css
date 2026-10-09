@@ -24,7 +24,7 @@
   /* 压在墨色、绿色、红色实底上的文字；对话区里用户那句话的底；比 --line2 深一级的线、停用按钮的底、空心圆点 */
   --on-ink:#ffffff; --user-bg:#e6e6e6; --line3:#c8c8c8;
   /* 对话区：用户那句话的字；任务状况那一块与复述段的底；助手的话那张卡片的阴影（存一整条，两种风格的层数不同） */
-  --user-ink:#0d0d0d; --quote:#f7f7f8; --card-shadow:0 1px 2px rgba(0,0,0,.06);
+  --user-ink:#0d0d0d; --quote:#f0f0f0; --card-shadow:0 1px 2px rgba(0,0,0,.06);
   /* 各色底上的深色字，琥珀提示里淡一级的说明字，更浅一级的琥珀底与蓝底 */
   --amber-ink:#7a4a06; --amber-mut:#8a6a2a; --amber-bg2:#fffaf0;
   --ok-ink:#14602f; --teal-ink:#17534d; --gap-ink:#8c1c1c; --blue-bg2:#f4f8ff;
