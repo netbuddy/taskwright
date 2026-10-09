@@ -155,13 +155,15 @@ test("评审不合规之后保留写法、撤销保留、改评审规则、再�
     }
   }));
 
-test("助手工作中途让它停下：返回的 cleared 是空的，这一轮的摘要与结束消息都是 stopped_by_user，步数相同；之后留一条界面操作通知，切走再切回来的现状消息与下一次运行的上下文里都有这件事", { skip: NO_PI, timeout: 180000 }, () =>
-  withStack(tmp, "stop", { sequence: [{ ...save("call-save", "借书"), delay: 8 }, reply("知道了。", "call-after")] }, async ({ call, port, session, taskId, send, requests }) => {
+test("助手保存过一次修订之后中途让它停下：返回的 cleared 是空的，这一轮的摘要与结束消息都是 stopped_by_user，步数相同，摘要写明实际保存了修订 1；之后留一条界面操作通知，切走再切回来的现状消息与下一次运行的上下文里都有这件事", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "stop", { sequence: [save("call-save", "借书"), { ...save("call-save-2", "还书"), delay: 8 }, reply("知道了。", "call-after")] }, async ({ call, port, session, taskId, send, requests, db }) => {
     const stream = subscribe(port, `/api/v1/tasks/${taskId}/events?session=${session}`);
     try {
       await sleep(300);
       assert.equal((await call("POST", `/api/v1/tasks/${taskId}/messages?session=${session}`, { text: "把材料整理成用例。", client_id: "c-1" })).status, 200);
       await until("助手开始工作", () => stream.events.some((e) => e.event === "executor_state" && e.data.state === "working"));
+      // 等头一次保存做完再停：这时助手正等模型回下一步（假语言模型隔 8 秒才回），停下之后任务库里只有修订 1。
+      await until("头一次保存做完", () => stream.events.some((e) => e.event === "step" && /保存了修订 1/.test(String(e.data.text))));
       const stopped = await call("POST", `/api/v1/tasks/${taskId}/control?session=${session}`, { action: "stop" });
       assert.deepEqual(stopped, { status: 200, body: { ok: true, cleared: [] } });
       await until("这一轮结束", () => stream.events.some((e) => e.event === "work_ended"));
@@ -169,6 +171,8 @@ test("助手工作中途让它停下：返回的 cleared 是空的，这一轮�
       const ended = stream.events.find((e) => e.event === "work_ended")!.data;
       assert.deepEqual([summary.outcome, ended.outcome], ["stopped_by_user", "stopped_by_user"]);
       assert.equal(ended.step_count, summary.step_count);
+      assert.deepEqual(summary.saved, { revisions: [1], items: 1, diagrams: 0 }, "保存了什么按任务库算");
+      assert.deepEqual(db("SELECT revision_no, call_id FROM revision"), [{ revision_no: 1, call_id: "call-save" }]);
       assert.equal(stream.events.filter((e) => e.event === "problem").length, 0, "被停下时不提示");
 
       // 停下之后留一条界面操作通知：实时推送在这一轮结束之后，刷新读回时在这一轮的摘要之后。
@@ -180,6 +184,7 @@ test("助手工作中途让它停下：返回的 cleared 是空的，这一轮�
       assert.deepEqual([note.text, note.undoable, note.revision_no], [STOP_NOTE, false, null]);
       const read = async () => (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[];
       assert.deepEqual((await read()).map((m) => (m.type === "ui_action_noted" ? m.kind : m.type)), ["system_note", "user_message", "work_summary", "stop_run"]);
+      assert.deepEqual((await read()).find((m) => m.type === "work_summary")!.saved, summary.saved, "刷新读回的与实时推送的相同");
 
       // 没有工作在进行时再停一次：什么都不留。
       assert.deepEqual(await call("POST", `/api/v1/tasks/${taskId}/control?session=${session}`, { action: "stop" }), { status: 200, body: { ok: true, cleared: [] } });
@@ -200,7 +205,8 @@ test("助手工作中途让它停下：返回的 cleared 是空的，这一轮�
       const seen = JSON.stringify(requests().at(-1)!["请求体"].messages);
       assert.ok(seen.includes(STOP_NOTE), "下一次运行看得到停止通知");
       assert.ok(seen.includes("上一次运行被用户停止，没有做完。"));
-      assert.deepEqual((await read()).map((m) => m.outcome).filter(Boolean), ["stopped_by_user", "replied"]);
+      const summaries = (await read()).filter((m) => m.type === "work_summary");
+      assert.deepEqual(summaries.map((m) => [m.outcome, "saved" in m]), [["stopped_by_user", true], ["replied", false]], "正常做完的那一轮不带保存了什么");
     } finally {
       stream.close();
     }

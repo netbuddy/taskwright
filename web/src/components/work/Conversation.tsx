@@ -12,7 +12,7 @@
 // 工作中按回车不会停止，只有点方块才停。停下之后会话里留一条界面操作通知（种类 stop_run），对话区画成「你停止了助手这一次的工作」。
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SystemNote, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
+import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SavedFacts, SystemNote, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
@@ -396,10 +396,27 @@ export const LIMIT_NOTE = "这一轮助手一直没有按规矩回答，系统�
 /** 出错停下的那一轮，摘要行下面的说明。这一轮没有保存修订时「已经保存的修订」指此前各轮保存的，照样成立。 */
 export const FAILED_NOTE = "这一轮因为出错停下了，助手没有做完。已经保存的修订保留着；你可以再说一句，让它接着做。";
 
-/** 被用户停下的那一轮，摘要行下面的说明：这一轮保存过的修订都列上，一次也没保存时换成「这一轮还没有保存任何修订」。 */
-export function stoppedNote(revisions: number[]): string {
-  const saved = revisions.length ? `已经保存的修订 ${revisions.join("、")} 保留着` : "这一轮还没有保存任何修订";
-  return `这一轮是你让助手停下的。${saved}；停下时它正在做的那一步没有做完，没有保存。`;
+/** 被用户停下的那次工作什么都没有保存时，摘要行下面的说明。 */
+export const NOTHING_SAVED_NOTE = "这一次工作没有保存任何东西。";
+
+/**
+ * 被用户停下的那次工作，摘要行下面的说明，按事实写：保存了哪几次修订（连着的写成「修订 N 到 M」）、碰到几个条目、几张图，都保留着；
+ * 怎样撤销。不做任何自动回滚，撤销只由用户在「修订」页签里手工做；图的改动页面上不能撤销，所以有图时另说一句。
+ * saved 是后端停下之后按任务库算出的（摘要的 saved）；没有这一项时（旧数据、后端没法查）按修订日志里归到这次工作的修订写，不写个数。
+ */
+export function stoppedNote(saved: SavedFacts | null | undefined, logRevisions: number[] = []): string {
+  const revisions = saved ? saved.revisions : logRevisions;
+  const [items, diagrams] = saved ? [saved.items, saved.diagrams] : [0, 0];
+  if (revisions.length === 0 && diagrams === 0) return NOTHING_SAVED_NOTE;
+  const contiguous = revisions.every((r, i) => i === 0 || r === revisions[i - 1] + 1);
+  const range = revisions.length === 0 ? "" : revisions.length === 1 ? `修订 ${revisions[0]}`
+    : contiguous ? `修订 ${revisions[0]} 到 ${revisions[revisions.length - 1]}` : `修订 ${revisions.join("、")}`;
+  const counts = [items > 0 ? `${items} 个条目` : "", range && diagrams > 0 ? `${diagrams} 张图` : ""].filter(Boolean);
+  const what = range ? `${range}${counts.length ? `（${counts.join("、")}）` : ""}` : ` ${diagrams} 张图`;
+  const kept = revisions.length + diagrams > 1 ? "都保留着" : "保留着";
+  const undo = revisions.length > 1 ? "要撤销其中某条，到右侧「修订」页签逐条撤销。" : revisions.length === 1 ? "要撤销它，到右侧「修订」页签撤销。" : "";
+  const diagramNote = diagrams > 0 ? "图的改动不能撤销，可以让助手改回去。" : "";
+  return `这一次工作保存了${what}，${kept}；停下时正在做的那一步没有完成。${undo}${diagramNote}`;
 }
 
 /**
@@ -414,7 +431,7 @@ export function WorkSummaryLine({ summary, revisions = [], onRevisionTag }: {
 }) {
   const [open, setOpen] = useState(false);
   const head = `助手做了 ${summary.step_count} 步，用了 ${formatSeconds(summary.seconds)}`;
-  const endNote = summary.outcome === "stopped_by_user" ? stoppedNote(revisions) : summary.outcome === "failed" ? FAILED_NOTE
+  const endNote = summary.outcome === "stopped_by_user" ? stoppedNote(summary.saved, revisions) : summary.outcome === "failed" ? FAILED_NOTE
     : summary.outcome === "stopped_by_limit" ? LIMIT_NOTE : null;
   return (
     <>

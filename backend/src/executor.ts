@@ -899,7 +899,7 @@ export class Executor {
     if (!found) return null;
     const understanding = sid ? workSummary.understandingLines(this.taskDir, sid).get(userId) ?? null : null;
     this.hub.emit("work_summary", { session_id: sid, work_id: work.work_id, at: found.at, seconds: found.seconds, step_count: found.step_count,
-      stages: found.stages, understanding, outcome: found.outcome });
+      stages: found.stages, understanding, outcome: found.outcome, ...(found.saved !== undefined ? { saved: found.saved } : {}) });
     return found;
   }
 
