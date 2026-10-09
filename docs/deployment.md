@@ -201,6 +201,56 @@ The command does not start a service. It does nothing while a service is using t
 
 **The instructions of a task type are not updated by an upgrade.** The instructions and review rules in a task directory were copied when the task was created, and an upgrade leaves them alone. The instructions of a task type carry a version; when the version a task uses differs from the one the product ships, the task page says 任务类型说明是 x 版，当前产品自带的是 y 版 ("the task type instructions are version x; the product now ships version y").
 
+### 8.2 Exporting and importing
+
+A **data pack** is a zip file (its name ends in `.taskwright.zip`) with a copy of tasks and knowledge libraries. Use it to move to another machine, to bring the data of a single machine to a server, or to keep a copy before an upgrade. Exporting does not change the data it reads.
+
+**Three scopes.** Everything (all tasks and knowledge libraries of a data directory), one task, or one knowledge library. Everything can only be exported and imported from the command line; one task or one knowledge library can also go through the service's interface (section 12 of the API reference).
+
+**Commands.** None of them starts the service. With a desktop package, write the package's file name in place of `node backend/src/main.mts`, for example `taskwright-x86_64.AppImage data export …`.
+
+```bash
+node backend/src/main.mts data export --data <data directory> --to <pack>                        # everything
+node backend/src/main.mts data export --data <data directory> --task <task id> --to <pack>       # one task
+node backend/src/main.mts data export --data <data directory> --library <library id> --to <pack> # one knowledge library
+node backend/src/main.mts data import --data <data directory> --from <pack> [--renumber]
+node backend/src/main.mts data upgrade --pack <pack> --to <new pack>
+```
+
+- `data export`: works while the service is running; a task in use is exported too (the pack records that it was in use). A data directory that has not been upgraded yet can be exported. A file that already exists at `--to` is not overwritten.
+- `data import`: does nothing while a service is using the data directory; stop it first (or import through the service's interface). It also does nothing while the data directory itself has data of an earlier version that is not upgraded; run `data upgrade` first. The target may be an empty directory.
+- `data upgrade --pack`: upgrades a pack exported from data of an earlier version to the current format and writes a new pack; the original pack is left as it is, and no data directory is needed. Importing upgrades such a pack by itself, so this command is only for getting a pack in the new format.
+- Exit codes: 0 when everything was done (a task skipped on import because it already exists does not count as a failure); 1 when a task or a knowledge library failed, or when an export left a task directory out; 2 when nothing was done (wrong arguments, the data directory is in use by a service, the pack is wrong or newer than this program, the target file already exists).
+
+**What a pack holds.**
+
+| Path in the pack | Content |
+|---|---|
+| `tasks/<task id>/` | the task directory: the task database (a complete copy), `docs/`, `inputs/`, `task.json`, the selected knowledge libraries, and the settings and instructions put there when the task was created |
+| `runs/<task id>/` | the task's archive: the conversation records and the event records, unchanged. A task that never had a conversation has none |
+| `knowledge/<library id>/` | the knowledge library's directory, unchanged: documents, text versions, passages and the computed vectors |
+| `knowledge/libraries.json` | the entries of these libraries in the list of knowledge libraries |
+| `service/tasks.json` | the rows of these tasks in the task register |
+| the list file (`manifest.json` in the pack) | the pack's format version, the product version that exported it, the data format versions, the time of the export, the scope, the tasks and libraries, and for every file its path, size, SHA-256 and modification time |
+
+**A pack does not hold** the product settings, the model configuration or any keys, so the model service has to be set up again on the new machine (section 3). It does not hold lock files, the log files beside a task database or temporary files either.
+
+**How an import goes.** The whole pack is checked first: the list file can be read, the pack is not newer than this program, the files in the pack are exactly the files in the list, and every file has the SHA-256 the list gives. If anything is wrong, nothing is imported and the data directory is left as it was. After that the tasks and libraries are imported one by one, and one that fails does not stop the others. Modification times are restored as they were at the export, so a material that had entered the conversation still cannot be deleted or replaced after the import.
+
+- **The task id is already in use.** By default the task is skipped and the report says so. With `--renumber` (`?renumber=1` in the interface) it is imported under a new id and both tasks exist: the task database, the task directory, the archive directory and the task register use the new id; the content of the archive is unchanged, and the old id that appears in it stays.
+- **Knowledge libraries keep their ids**; `--renumber` does not apply to them. A library's id is written in the text versions of its documents and in the locators of task sources, which would point at the wrong library if the id changed. A library whose id is not in the data directory is imported as usual; when the id exists and that library is empty, the library is imported in its place (this is how the general library reaches a new data directory); when it exists and has documents, the library is skipped and the report says so, and its documents have to be uploaded on the knowledge base page. A library with a different id but the name of an existing library gets 「（导入）」 added to its name.
+- **Data of an earlier version.** A task in the pack that is in the earlier format is upgraded to the current format before it is imported (the same code as the upgrade of section 8.1), without a separate backup: the pack is the backup. A task that cannot be upgraded is not imported, and the report gives the reason.
+- **A pack newer than this program** is not imported; the message is 这份数据由 x 写入，请用 x 或更新的版本打开 ("this data was written by x; open it with x or a newer version").
+- **The report.** Every import writes a report to `logs/import-<date and time>.txt` in the data directory, and the command prints the same text: what was imported, what was skipped and why, which ids were changed, and which tasks were upgraded first.
+
+**Moving to another machine.** On the old machine run `data export --data <data directory> --to all.taskwright.zip`; take the file to the new machine; install the program there and run `data import --data <data directory> --from all.taskwright.zip`; set up the model service and start.
+
+**Bringing the data of a single machine to a server.** The same way: export everything (or task by task) on the single machine, stop the service on the server, import with `data import`, and start the service again. For one or two tasks the service can keep running and the packs can be imported through the interface. Tasks whose ids already exist on the server are handled as described above.
+
+**Limits.** A data pack cannot be larger than 4 GB, hold more than 65534 files, or hold a file larger than 4 GB; an export that would go over is refused with that explanation, and the data is then exported task by task and library by library. A pack imported through the interface cannot be larger than 1 GB; use the command line for a larger one. When the service is stopped by force, an import that was not finished leaves directories whose names start with `.importing-` under the task, archive and knowledge base directories; they are removed at the next start.
+
+**Keeping packs safe.** A data pack holds copies of materials, items and conversation records and is not encrypted: whoever has the pack can read all of it. Where a pack is kept and who gets it follow the confidentiality that applies to those materials; delete a pack that is no longer needed.
+
 ## 9 Common problems
 
 **The assistant cannot be started.** The work view turns read-only and the note above the input box says why, after 助手现在不可用：助手没有启动起来，. When pi is not on `PATH`, or the interpreter its script names is missing, it says 找不到助手的程序（pi），请检查安装。. When the system refuses to start it, it gives only the system's error code: 系统原因：EACCES when the file is not executable, 系统原因：E2BIG when the command line is too long (it carries the whole system prompt), 系统原因：EMFILE, ENFILE, ENOMEM or EAGAIN when the machine is out of open files, memory or processes. A mistake in the startup profile or in an environment variable (a missing system prompt file, extension or key file) is named as it is. In three more cases the whole note is fixed: when the assistant's program exits right after starting, it reads 助手现在不可用：助手启动之后立刻退出了。请把这个页面的地址告诉管理员。 ("the assistant exited right after it started; tell your administrator the address of this page"); when the task service cannot create the archive directory, open the archive files or back up and rewrite the session file it is resuming (no write permission, disk full), it reads 助手现在不可用：启动助手之前，任务服务没能写入它要用的文件，系统原因：EACCES。请把这个页面的地址告诉管理员。 ("before starting the assistant, the task service could not write the files it needs, system reason: EACCES"), with 系统原因：未知 ("unknown") when there is no code; any other unexpected error reads 助手现在不可用：助手没有启动起来。请把这个页面的地址告诉管理员。 ("the assistant did not start"). In these cases the page shows neither what the assistant's program wrote to its error output nor any file path. The system's own message, with the path of the program, and what the assistant's program wrote to its error output are in the backend log (任务 <task> 的助手没有启动起来：…) and in `data.detail` of the `executor_unavailable` error.

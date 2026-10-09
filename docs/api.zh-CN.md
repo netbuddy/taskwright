@@ -327,6 +327,7 @@ data: {
    - `capabilities.model` 是模型探测的结果：服务起 pi 时要用的模型「服务商/模型」（`model.name`；在模型配置里选定了语言模型时就是它，见第 10 节），在 pi 配置目录的 `models.json` 里登记了、或者这个服务商在 `auth.json` 里有一项，就是 `true`。`model.reason` 是一句说明：以 `--mode desktop` 启动时写明查过的两个文件的完整路径，以 `--mode server` 启动时只写文件名，不带出服务器上的目录。探测在每次请求时现查，只读这两个文件，不启动 pi；服务商的密钥只放在环境变量里的情形识别不了，这时是 `false`。以 `--mode desktop` 启动时，`model.name` 可能来自 pi 的 `settings.json`（见部署文档第 10.4 节）。
    - `capabilities.knowledge` 在服务有知识库时为 `true`（第 11 节）。这时回答里另有 `knowledge_upload`：知识库文档的上传，五项与 `upload` 相同（上限是 20 MB，`too_large_text` 是「单个文件不能超过 20 MB。」），另加 `kinds`：文档的种类与中文叫法，`[{kind, name}]`。网页界面只在 `capabilities.knowledge` 为 `true` 时显示「知识库」入口、上传时先问去向。
    - `POST /api/v1/service/exit` 只在以 `--mode desktop` 启动时存在，以 `--mode server` 启动时返回 `not_found`。它只接受来自本机回环地址（`127.0.0.1` 或 `::1`；`::ffff:127.0.0.1` 是 IPv4 回环地址在 IPv6 套接字上的写法，也算本机）的请求，其他来源一律返回 `forbidden`（403）。它先回答 `{ "ok": true }`，再照收到 SIGTERM 时的做法收尾：停止接收新连接、向每一条打开着的事件流发 `service_exiting`、关掉各任务的 pi、删掉本服务写的占用标记，然后退出进程。它只供 0.3 的过渡安装包使用（这种包由服务自己打开浏览器，没有桌面外壳）；最终的桌面版由外壳停止服务，这个接口不承诺长期保留。
+   - 回答里另有 `pack_upload`：经接口导入数据包时的上限，`{ "max_bytes": 1073741824, "too_large_text": "在这里导入的数据包不能超过 1 GB。更大的数据包请用命令行导入。" }`（第 12 节）。
    - `GET /api/v1/service/upgrade` 返回 `{ "ok": true, "upgrade": … }`。没有要做的数据升级时 `upgrade` 是 `null`。有时它是 `{state, data_dir, backup_dir, tasks: [{task_id, name}], service, knowledge, progress, report}`：`state` 是 `pending`（等着开始）、`running`（正在做）、`done`（做完了，个别任务没有做成也算）或 `failed`（整体没有做成，一个任务都没有动，可以再试）；`backup_dir` 是升级之前的备份会放进去的目录；`tasks` 是要升级的任务；`service` 与 `knowledge` 说任务登记与知识库要不要升级（知识库现在恒为假）；`progress` 是 `{total, done, current}`（一共几项、做完了几项、正在做的那一项的一句话），还没有开始时是 `null`；`report` 在做完或整体没有做成之后有，是 `{product_version, started_at, finished_at, data_dir, backup: {dir, bytes, files} | null, service, tasks: [{dir, task_id, name, from, to, ok, error, ms}], succeeded, failed, fatal, file, text}`，其中 `fatal` 是整体没有做成的原因，`file` 是报告写进的文件，`text` 是给人看的整段文字（页面原样显示）。`POST /api/v1/service/upgrade` 开始升级（`state` 是 `failed` 时是再试一次），立刻返回 `{ "ok": true, "started": true | false, "upgrade": … }`，升级在后面做，进度用前一个接口取（页面每半秒取一次）；正在做或已经做完时 `started` 为假。它不限来源，能打开页面的人就能开始（升级之前有备份，升级不改任务的内容）；没有要做的升级时返回 `rejected`。数据升级怎样做、备份与报告在哪里，见部署说明第 8.1 节。
    - 运行形态（`--mode desktop|server`，缺省 `server`）决定默认绑定地址（`desktop` 为 `127.0.0.1`，`server` 为 `0.0.0.0`，两种形态下 `--host` 都优先）以及退出接口是否存在；其余行为两种形态完全相同。运行形态会写进启动日志和各任务的占用标记（`service.lock` 里的 `mode` 一项）。
 
@@ -463,3 +464,28 @@ data: {
 评审时，出自知识库文档的来源与材料的来源一样参与「两个条目是否引用了同一处」的判断；知识库文档不放进给评审者的材料里。生成的文档里，知识库来源写成「知识库，出处 <知识库名> / <文档名>」，Word 文档再写「第 N 段」，知识库已经不在时写它的编号。
 
 网页界面里，知识库来源的标签写「知识库」，出处写「知识库名 / 文档名」，点它在只读对话框里看那份文档的正文（上表的 `documents/content`）；文档已经不在那个知识库的清单里时出处不可点，旁边写「这份文档已经不在知识库里」。工作视图在打开时与浏览器窗口重新得到焦点时各取一次知识库清单（`GET /api/v1/knowledge`），知识库的增删不推送事件。知识库页面取的是同一个接口的全部内容，每份文档写着换算状态；有文档在等待换算或者换算中（顶层 `embedding.running` 为真）时每 2 秒再取一次，都停了就不再取。设置页面在更换或者第一次选定嵌入模型、而且知识库里已经有文档（顶层 `embedding.total` 大于 0）时先问一句，确定之后先调 `POST /api/v1/model-config/selection`，再调 `POST /api/v1/knowledge/embed`。知识库页面的文档表格下面有「试一试按意思查找」，调上面的 `POST /api/v1/knowledge/search`，`libraries` 只给选中的那一个知识库。
+
+## 12 数据包的导出与导入
+
+数据包是一个 zip 文件，里面是一个任务或一个知识库的副本（范围是整套的包只能用命令行导出与导入）。包里有什么、导入怎样处理编号相同的任务与知识库、限制与保管，见部署说明第 8.2 节。数据升级还没有做完时，这四个接口与别的接口一样返回 `upgrade_pending`。
+
+| 接口 | 作用 | 返回 |
+|---|---|---|
+| `GET /api/v1/tasks/{task_id}/export` | 把一个任务（任务目录与它的归档）导出成数据包 | zip 文件的字节，`Content-Type: application/zip`，`Content-Disposition: attachment; filename="<任务编号>.taskwright.zip"`，带 `Content-Length`。没有这个任务是 `not_found` |
+| `GET /api/v1/knowledge/libraries/{id}/export` | 把一个知识库导出成数据包 | 同上，文件名是 `<知识库编号>.taskwright.zip`。没有这个知识库是 `not_found` |
+| `POST /api/v1/tasks/import` | 导入一个范围是一个任务的数据包 | `{ "ok": true, "report": … }` |
+| `POST /api/v1/knowledge/import` | 导入一个范围是一个知识库的数据包 | 同上 |
+
+**导出。** 导出不改任务的数据，助手正在工作时也可以导出（包里记着）。服务先把包打成一个临时文件再发出，所以大的任务要等一会儿才开始下载。
+
+**导入。** 请求体就是数据包文件的字节（`Content-Type: application/zip`），不用表单的包装。服务边收边把它写进磁盘，不放进内存。请求体超过 `pack_upload.max_bytes`（1 GB）时返回 `too_large`（413）并关掉连接，更大的包用命令行导入。查询参数 `renumber=1` 是「改编号导入」：包里任务的编号已经有任务在用时，改成一个新编号导入；不写时跳过那个任务。它对知识库不起作用，知识库不改编号。
+
+导入的回答里 `report` 是 `{product_version, started_at, finished_at, data_dir, pack: {file, scope, product_version, exported_at}, tasks: [{task_id, name, outcome, new_id, upgraded_from, reason, notes}], libraries: [{id, name, outcome, new_name, reason}], fatal, file, text}`：
+
+- `outcome` 是 `imported`（导入了）、`skipped`（因为已经存在而没有导入）或 `failed`（没有导入成），后两种的原因在 `reason` 里。
+- 任务的 `new_id` 是改编号之后的新编号（没有改是 `null`）；`upgraded_from` 是导入之前先做了数据升级时升级之前的格式版本（不用升级是 `null`）；`notes` 是另外要告诉用户的话，例如它选用的知识库不在这个数据目录里。
+- 知识库的 `new_name` 是因为与已有的库重名而改成的名字（没有改是 `null`）。
+- `pack` 是从包里读出的：范围（`task` 或 `library`）、导出它的产品版本与导出时刻。
+- `file` 是报告写进的文件（数据目录的 `logs/` 下），`text` 是给人看的整段文字。
+
+回答是 200 不等于每一项都导入了：个别项没有导入成时仍是 200，看各项的 `outcome`。整个包被拒绝时（不是数据包、比这个程序新、包里的文件与清单文件对不上或校验值不符、范围不是这个接口收的那一种）返回 `rejected`（422），`error.message` 是原因，`error.data.report` 是同一份报告（`fatal` 就是这个原因），这时数据没有任何改变。导入的任务由服务当场接手，随后的 `GET /api/v1/tasks` 里就有它。

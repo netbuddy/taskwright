@@ -73,6 +73,8 @@ Data left by an earlier version is upgraded in place. When the package starts an
 
 It refuses to work on a data directory that a running service is using, copies what it is about to change to `backups/<date and time>-<earlier version>/` in the data directory, upgrades task by task and prints a report, which it also writes to `logs/upgrade-<date and time>.txt`. The exit code is 0 when everything was upgraded (or nothing had to be), 1 when a task or the whole upgrade failed, 2 when nothing was done. See **Upgrading** in the deployment guide.
 
+The data commands for data packs work the same way from a package, without starting the service: `data export [--data <dir>] [--task <id> | --library <id>] --to <pack>` writes tasks and knowledge libraries into a zip file, `data import [--data <dir>] --from <pack> [--renumber]` reads one into a data directory, and `data upgrade --pack <pack> --to <new pack>` upgrades a pack written from data of an earlier version. See **Exporting and importing** in the deployment guide.
+
 Environment variables read by the launcher: `TASKWRIGHT_PORT` (first port), `TASKWRIGHT_DATA_DIR` (the data directory: tasks, archives, the knowledge base, logs, the service database and the backups in one directory; `--data <dir>` on the command line does the same and wins), `TASKWRIGHT_CACHE_DIR` (the extracted payload and the AppImage's copy of `agent/`), `TASKWRIGHT_NO_BROWSER=1`, `TASKWRIGHT_OPEN_WITH` (a command run with the URL instead of the browser).
 
 Measuring (Linux; the browser is replaced by a script that notes the time and loads the page):
