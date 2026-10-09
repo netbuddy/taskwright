@@ -94,11 +94,12 @@ describe("入口页里先套风格的脚本", () => {
 });
 
 describe("标题字体", () => {
-  it("只有各页的一级标题、分区标题与工作视图顶栏的任务名用标题字体，别处都不用", () => {
+  it("只有各页的一级标题、分区标题、工作视图顶栏的任务名与风格卡预览里的顶栏用标题字体，别处都不用", () => {
     const sheets = [GLOBAL_CSS, ...["workview.css", "workview-extra.css", "settings.css", "task-page.css", "status.css", "issues.css", "pdf.css", "docx.css"]
       .map((name) => readFileSync(decodeURIComponent(new URL(`../styles/${name}`, here).pathname), "utf-8").replace(/\/\*[\s\S]*?\*\//g, ""))];
     const users = sheets.flatMap((css) => [...css.matchAll(/([^{}]+)\{[^{}]*var\(--font-title\)[^{}]*\}/g)].map((m) => m[1].trim()));
-    expect(users).toEqual([".page-title h1, .tp-head h1, .tp-sec-h h2, .kbhead h2, .settings .dhead h2, .app .topbar .tname"]);
+    // 设置页风格卡的预览里画了一条顶栏，它照顶栏任务名的样子用标题字体。
+    expect(users).toEqual([".page-title h1, .tp-head h1, .tp-sec-h h2, .kbhead h2, .settings .dhead h2, .app .topbar .tname", ".settings .style-card .pv-top"]);
   });
 
   it("正文用正文字体", () => {
