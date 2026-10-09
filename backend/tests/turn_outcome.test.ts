@@ -82,6 +82,18 @@ test("刷新后的对话记录：摘要带结束原因；出错的那一轮刷�
     [["user_message", null], ["work_summary", "failed"], ["user_message", null], ["work_summary", "stopped_by_user"]]);
 });
 
+test("刷新后的对话记录：被用户停止的那一轮，摘要放在停止通知之前，与实时推送的先后相同；别的界面操作通知不影响摘要的位置", () => {
+  const u1 = user("第一句");
+  const u2 = user("第二句");
+  const path = [u1, assistant("aborted"), u2, assistant("toolUse", call("r1", "reply", { text: "好" })), result("r1", "回复已送达"), assistant("stop")];
+  const out: Dict[] = [{ type: "user_message", message_id: u1.id }, { type: "ui_action_noted", message_id: "n-edit", kind: "edit_fields" },
+    { type: "ui_action_noted", message_id: "n-stop", kind: "stop_run" }, { type: "user_message", message_id: u2.id }];
+  const msgs = withWorkSummaries(out, path as any, "S1", {});
+  assert.deepEqual(msgs.map((m) => [m.type, m.kind ?? m.outcome ?? null]),
+    [["user_message", null], ["ui_action_noted", "edit_fields"], ["work_summary", "stopped_by_user"], ["ui_action_noted", "stop_run"],
+      ["user_message", null], ["work_summary", "replied"]]);
+});
+
 /** 假的 pi：get_entries 回给定的条目，get_state 回空闲。 */
 function fakePi(entries: Dict[]) {
   return {

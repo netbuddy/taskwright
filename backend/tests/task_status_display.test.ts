@@ -35,7 +35,7 @@ const INTERNAL = /执行者|扩展/;
 const CLOCK = /（\d\d:\d\d:\d\d）/;
 
 /** 助手一侧实际生成的四种消息，一次写出。 */
-const TEXTS: { start: string; changed: string; materialsOnly: string; openActs: string } = (() => {
+const TEXTS: { start: string; changed: string; materialsOnly: string; openActs: string; stopped: string } = (() => {
   const done = spawnSync(process.execPath, [join(ROOT, "agent", "tests", "fixtures", "task_status_texts.mts")], { encoding: "utf-8" });
   if (done.status !== 0) throw new Error(`夹具脚本失败：${done.stderr}`);
   return JSON.parse(done.stdout);
@@ -67,6 +67,13 @@ test("续接只有新材料：同一个开头", () => {
   const shown = taskStatusDisplayText(materialsOnlyMessage());
   assert.match(shown, /^接着这条会话继续时（\d\d:\d\d:\d\d），上次之后交付物的变化：交付物没有变化。/);
   assert.doesNotMatch(shown, INTERNAL);
+});
+
+test("续接时上一次运行被用户停止：那一句照原样给页面，details 里的 last_run_stopped 照原样带上", () => {
+  const shown = taskStatusDisplayText(TEXTS.stopped);
+  assert.match(shown, /^接着这条会话继续时（\d\d:\d\d:\d\d），上次之后交付物的变化：交付物没有变化。上一次运行被用户停止，没有做完。$/);
+  assert.doesNotMatch(shown, INTERNAL);
+  assert.deepEqual(taskStatusDisplayDetails({ kind: "变化", last_run_stopped: true, open_acts: [] }), { kind: "变化", last_run_stopped: true });
 });
 
 test("末尾列出还在等回应的行为：那一行是对助手说的，页面上整行不显示，前面的正文照旧", () => {

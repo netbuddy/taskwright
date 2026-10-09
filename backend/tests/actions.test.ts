@@ -1,7 +1,7 @@
 /**
  * 直接操作、卡片点击与让助手停下：用一个假的 pi（记下发给它的命令，按需经状态栏回报扩展命令的结果）驱动执行者看护。
  * 覆盖：十种直接操作的请求体与期望值逐字一致；扩展命令的等待与超时；打开详情写已读在工作中的例外；
- * 「先不管这条」之后的固定句；卡片标注的计算与期望值逐字一致；停下的三种分支与 stopped_by_user。
+ * 「先不管这条」之后的固定句；卡片标注的计算与期望值逐字一致；停下的三种分支与 stopped_by_user；停下之后留的界面操作通知。
  */
 
 import assert from "node:assert/strict";
@@ -155,13 +155,15 @@ test("卡片标注：annotation 原样用；card 写法按回复里的选项查�
   assert.deepEqual(ts, expected("card_annotations.json").annotations);
 });
 
-test("停下：pi 不在时什么都不做；对另一条会话是 session_busy；否则清队列、标记用户让停、中止，work_ended 为 stopped_by_user", async () => {
+test("停下：pi 不在时什么都不做；对另一条会话是 session_busy；否则清队列、标记用户让停、中止，再让扩展留一条通知，work_ended 为 stopped_by_user", async () => {
   const { executor, pi, drain } = setup();
   assert.deepEqual(await executor.stop("S2").catch((e: ApiError) => [e.code, e.message, e.data]),
     ["session_busy", "助手正在另一条会话里工作。", { active_session: "S1" }]);
   await (executor as any).handle(pi, { type: "agent_start" });
   assert.deepEqual(await executor.stop("S1"), ["先停一下", "/再看看"], "清掉的话还给前端，斜杠改写的前缀去掉");
-  assert.deepEqual(pi.calls.map(([c]) => c), ["clear_queue", "abort"]);
+  assert.deepEqual(pi.calls.map(([c]) => c), ["clear_queue", "abort", "prompt"]);
+  assert.match(pi.calls[2][1].message, /^\/tw-user \{"op_id": "ui-op-[0-9a-f]{12}", "kind": "stop_run"\}$/, "中止之后才发，只带操作编号与种类");
+  assert.equal(executor.waiters.size, 0);
   assert.equal(executor.work!.stopped, true);
   await drain();
   await (executor as any).handle(pi, { type: "agent_settled" });
@@ -170,4 +172,35 @@ test("停下：pi 不在时什么都不做；对另一条会话是 session_busy�
   assert.equal(events.find(([n]) => n === "work_ended")![1].outcome, "stopped_by_user");
   executor.pi = null;
   assert.deepEqual(await executor.stop(null), []);
+});
+
+test("停下之后的通知：助手空闲时不留；扩展没有写成时停下照样成功，只记进后端补记；直接操作的接口不收 stop_run", async () => {
+  const idle = setup();
+  assert.deepEqual(await idle.executor.stop("S1"), ["先停一下", "/再看看"]);
+  assert.deepEqual(idle.pi.calls.map(([c]) => c), ["clear_queue", "abort"], "没有工作在进行，不留通知");
+
+  const refused = setup(() => ({ ok: false, error: { code: "rejected", message: "没有写成" } }));
+  const notes: [string, Dict][] = [];
+  refused.pi.note = ((name: string, data: Dict) => void notes.push([name, data])) as any;
+  await (refused.executor as any).handle(refused.pi, { type: "agent_start" });
+  assert.deepEqual(await refused.executor.stop("S1"), ["先停一下", "/再看看"]);
+  assert.equal(refused.executor.work!.stopped, true);
+  assert.deepEqual(notes.map(([name]) => name), ["停止通知没有写成"]);
+
+  const saved = executorSettings.actionTimeout;
+  executorSettings.actionTimeout = 50;
+  try {
+    const silent = setup(() => null);
+    silent.pi.note = ((name: string, data: Dict) => void notes.push([name, data])) as any;
+    await (silent.executor as any).handle(silent.pi, { type: "agent_start" });
+    assert.deepEqual(await silent.executor.stop("S1"), ["先停一下", "/再看看"], "扩展到时没有回报，停下照样成功");
+    assert.equal(notes.length, 2);
+  } finally {
+    executorSettings.actionTimeout = saved;
+  }
+
+  const direct = setup();
+  await assert.rejects(direct.executor.action("S1", { kind: "stop_run" }), (e: ApiError) => e.code === "bad_request"
+    && e.message === "stop_run 不是直接操作，要停下助手请用 control 接口。");
+  assert.deepEqual(direct.pi.calls, []);
 });
