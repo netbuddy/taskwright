@@ -106,11 +106,12 @@ describe("标题字体", () => {
       ".app .act .val",
       ".settings .style-card .pv-top",
       // 总体分析：提纲与主题页是用领域的话写成的文字，栏头、主题的标题、各块的小标题与问题那一句用标题字体。
-      ".app .oa-outline-h b",
+      ".app .oa-outline-h .oa-seg a.on",
       ".app .oa-intro-note",
       ".app .oa-title",
       ".app .oa-blk h3",
       ".app .oa-open .q",
+      ".app .oa-gloss-h",
     ]);
   });
 

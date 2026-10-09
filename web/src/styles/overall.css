@@ -19,7 +19,11 @@
   .app .oa-pane.open .oa-outline { position: absolute; z-index: 5; top: 0; bottom: 0; left: 0; width: 16rem; box-shadow: 0 0 1.2rem var(--shadow-3); }
 }
 .app .oa-outline-h { flex: none; display: flex; align-items: center; gap: .5rem; padding: .5rem .7rem .4rem; border-bottom: 1px solid var(--line); }
-.app .oa-outline-h b { font-family: var(--font-title); font-size: 0.96rem; letter-spacing: .06em; }
+/* 栏头的切换：提纲、术语表。当前的一个用标题字体、下面一道墨色的线 */
+.app .oa-outline-h .oa-seg { display: inline-flex; gap: .9rem; }
+.app .oa-outline-h .oa-seg a { font-size: 0.93rem; color: var(--text3); cursor: pointer; padding-bottom: .1rem; border-bottom: .12rem solid transparent; }
+.app .oa-outline-h .oa-seg a:hover { color: var(--ink); }
+.app .oa-outline-h .oa-seg a.on { font-family: var(--font-title); font-weight: 600; letter-spacing: .06em; color: var(--ink); border-bottom-color: var(--ink); }
 .app .oa-outline-h .btn { margin-left: auto; }
 .app .oa-outline-body { flex: 1; min-height: 0; overflow-y: auto; padding: .6rem .6rem .8rem; }
 .app .oa-none { color: var(--text3); font-size: 0.9rem; padding: .3rem .3rem .6rem; }
@@ -156,3 +160,18 @@
 .app .oa-gone .see:hover { text-decoration: underline; }
 .app .oa-title.gone { text-decoration: line-through; color: var(--faint); }
 .app .oa-retell { margin-top: .8rem; }
+
+/* 术语表：两列，点一行打开那一页 */
+.app .oa-gloss { max-width: 52rem; padding: 1rem 1.6rem 2rem; }
+.app .oa-gloss-h { font-family: var(--font-title); font-weight: 600; font-size: 1.2rem; margin-bottom: .7rem; display: flex; align-items: baseline; gap: .6rem; }
+.app .oa-gloss-h small { font-family: var(--font-body); font-weight: 400; font-size: 0.857rem; color: var(--text3); }
+.app .oa-table { width: 100%; border-collapse: collapse; font-size: 0.943rem; }
+.app .oa-table th { text-align: left; font-size: 0.857rem; color: var(--text3); font-weight: 600; padding: .3rem .5rem; border-bottom: 1px solid var(--line2); }
+.app .oa-table td { padding: .5rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.app .oa-table td.n { width: 13rem; }
+.app .oa-table td.n .alias { display: block; color: var(--text3); font-size: 0.857rem; }
+.app .oa-table tbody tr { cursor: pointer; }
+.app .oa-table tbody tr:hover { background: var(--sel); }
+.app .oa-gloss-note { margin-top: .8rem; font-size: 0.889rem; color: var(--text2); background: var(--quote); border-radius: .5rem; padding: .45rem .7rem; }
+.app .oa-gloss-note .see { color: var(--blue); cursor: pointer; }
+.app .oa-gloss-note .see:hover { text-decoration: underline; }

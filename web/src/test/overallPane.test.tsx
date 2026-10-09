@@ -146,3 +146,45 @@ describe("提纲收成把手", () => {
     expect(pane).toHaveClass("auto");
   });
 });
+
+describe("术语表", () => {
+  it("提纲栏顶上切到「术语表」：右边是两列的表，只收标签含概念、不待核实的页；表下面写明哪几页还待核实", () => {
+    render(<Panel t={overallTask()} />);
+    expect(screen.getByTestId("view-outline")).toHaveClass("on");
+    fireEvent.click(screen.getByTestId("view-glossary"));
+    expect(screen.getByTestId("view-glossary")).toHaveClass("on");
+    expect(screen.queryByTestId("overall-intro")).toBeNull();
+    const table = screen.getByTestId("glossary");
+    expect([...table.querySelectorAll("th")].map((th) => th.textContent)).toEqual(["标题与别名", "它是什么"]);
+    expect([...table.querySelectorAll("tbody tr")].map((tr) => tr.querySelector("b")!.textContent)).toEqual(["读者", "馆藏"]);
+    expect(screen.getByTestId("glossary-OA-010")).toHaveTextContent("馆藏又叫：藏书图书馆登记在册的每一本实体书，一本一个条码。");
+    expect(screen.getByTestId("glossary-note").textContent).toBe("待核实的概念确认后才会进文档。现在有 2 页还待核实，没有收进来：预约取书、逾期与罚款。");
+    // 提纲还在左边。
+    expect(screen.getByTestId("outline")).toBeInTheDocument();
+  });
+
+  it("点术语表里的一行、点还待核实的那一页、或者点提纲里的一行，都打开那一页并回到主题页", () => {
+    const opened = vi.fn();
+    render(<Panel t={overallTask()} opened={opened} />);
+    fireEvent.click(screen.getByTestId("view-glossary"));
+    fireEvent.click(screen.getByTestId("glossary-OA-007"));
+    expect(opened).toHaveBeenLastCalledWith("OA-007");
+    expect(screen.queryByTestId("glossary")).toBeNull();
+    expect(screen.getByTestId("view-outline")).toHaveClass("on");
+    fireEvent.click(screen.getByTestId("view-glossary"));
+    fireEvent.click(within(screen.getByTestId("glossary-note")).getByText("逾期与罚款"));
+    expect(opened).toHaveBeenLastCalledWith("OA-005");
+    fireEvent.click(screen.getByTestId("view-glossary"));
+    fireEvent.click(row("OA-002"));
+    expect(screen.queryByTestId("glossary")).toBeNull();
+  });
+
+  it("没有可以进术语表的主题时写一句话；都核实过了就不写「还待核实」那半句", () => {
+    const t = overallTask();
+    for (const item of t.items) if (item.collection === "总体分析") item.fields.标签 = [];
+    render(<Panel t={t} />);
+    fireEvent.click(screen.getByTestId("view-glossary"));
+    expect(screen.getByTestId("glossary")).toHaveTextContent("还没有可以进术语表的主题");
+    expect(screen.getByTestId("glossary-note").textContent).toBe("待核实的概念确认后才会进文档。");
+  });
+});
