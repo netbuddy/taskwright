@@ -62,6 +62,8 @@ export function demoDefinition(): Record<string, unknown> {
  */
 export function overallDefinition(): Record<string, any> {
   const raw = demoDefinition() as Record<string, any>;
+  // 问题集合照产品的任务类型：状态里有「用户决定保留」（程序靠这个取值认问题集合）。
+  raw.交付物.条目集合[1].字段[1].取值 = ["未解决", "已解决", "用户决定保留"];
   raw.交付物.条目集合.push({
     名称: "总体分析", 编号前缀: "OA",
     界面: { 右侧栏页签: true, 分组字段: "标签", 靠前的组: ["概念"] },
@@ -80,6 +82,16 @@ export function overallDefinition(): Record<string, any> {
   raw.完成条件.总体分析 = ["每个条目用户确认"];
   return raw;
 }
+
+/**
+ * 一页合格的主题（贴了标签、有例子、来源是材料原文所以不待核实）：有总体分析集合的任务里，助手要先有这样一页才能往别的集合里
+ * 新增条目（最低门）。不是测最低门的测试先保存它。它的文字里没有别的测试用到的词，不会多出「提到」。
+ */
+export const READY_PAGE = {
+  op: "add", collection: "总体分析",
+  fields: { 标题: "馆藏范围", 它是什么: "本馆全部可以外借的纸质图书。", 例子: ["《算法导论》在三楼科技书库。"], 标签: ["范围"], 状态: "在用" },
+  sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。" }],
+};
 
 /**
  * 夹具里的材料全文。种类为「文档原文」的来源，摘录必须逐字出自出处所指的材料文件，

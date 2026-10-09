@@ -60,6 +60,10 @@ function confirm(ws: string, itemId: string, revisionNo: number): void {
   ]);
 }
 
+/** 一页合格的主题（贴了标签、有例子、不待核实）：有了它，助手才能往别的集合里新增条目。它的文字里没有别的页的词。 */
+const READY = { op: "add", collection: "总体分析",
+  fields: { 标题: "馆藏范围", 它是什么: "本馆全部可以外借的纸质图书。", 例子: ["《算法导论》在三楼科技书库。"], 标签: ["范围"], 状态: "在用" }, sources: [SOURCE] };
+
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
   ({ op: "add", collection: "总体分析", fields: { 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
 
@@ -68,6 +72,7 @@ test("整份数据带待核实、因依据而待核实与提到；用户确认�
     page({ 标题: "预约取书", 别名: ["预约"], 标签: ["流程"], 已经定下的: ["保留期是 3 天。"] },
       [{ ...SOURCE, supports: [{ field: "它是什么" }] }, SUPPLEMENT([{ field: "已经定下的", index: 0 }])]),
     page({ 标题: "保留期", 它是什么: "预约取书的书在预留架上留着的那几天。" }, [SUPPLEMENT([])]),
+  ], [READY], [
     { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["读者选一本在架的书", "读者办预约取书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] },
   ]]);
   const [, task] = library.taskSnapshot(ws);
@@ -98,8 +103,8 @@ test("整份数据带待核实、因依据而待核实与提到；用户确认�
 
 test("被依据的那一页已废弃：依据它的条目带 basis_pending，reason 是 deprecated，see 是它写的改看", () => {
   const ws = build("deprecated", DEFINITION, [
-    [page({ 标题: "预约" }), page({ 标题: "预约取书" }),
-      { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] }],
+    [page({ 标题: "预约" }), page({ 标题: "预约取书" })], [READY],
+    [{ op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] }],
     [{ op: "update", item: "OA-001", base_revision: 1, fields: { 状态: "已废弃", 改看: ["OA-002"] } }],
   ]);
   const [, task] = library.taskSnapshot(ws);

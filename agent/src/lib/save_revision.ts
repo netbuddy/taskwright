@@ -78,7 +78,8 @@ import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
-import { OVERALL_COLLECTION, pageProblems } from "./overall_analysis.ts";
+import { GATE_GUIDANCE, OVERALL_COLLECTION, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
+import { overallState } from "./overall_read.ts";
 import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
@@ -376,6 +377,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     });
   }
 
+  // 最低门（任务定义里有总体分析集合时才设）：助手往总体分析与问题集合之外的集合里新增条目之前，任务里要已经有一页
+  // 在用的主题贴了标签、有例子、又不待核实。只看这次保存之前库里已有的页：同一批里才新增的页用户还没有看过。
+  const gate = call.actor !== ACTOR_USER && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
+
   const problems: RejectReason[] = [];
   const planned: Planned[] = [];
 
@@ -419,6 +424,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
           guidance: `可用的集合是：${definition.collections.map((one) => `「${one.name}」`).join("、")}` });
         return;
       }
+      if (gate !== null && collection.name !== OVERALL_COLLECTION && keepPendingField(collection) === null) errors.push(withGuide(gate, GATE_GUIDANCE));
       if (raw.item !== undefined) errors.push("新增时不要写 item，条目编号由工具生成");
       if (!isObject(raw.fields)) {
         errors.push("fields 应当是一个对象，键是字段名，值是字段内容");
@@ -651,6 +657,14 @@ function itemSourceLookups(
     }
     if (row.deleted_in_revision !== null) return `指向的条目已在修订 ${row.deleted_in_revision} 删除`;
     if (batch.deletedHere.has(locator)) return "指向的条目在这次调用里被删除";
+    // 总体分析里已废弃的页不能再作依据：写了改看的指给助手看。这一批里刚把它改成已废弃的也算。
+    if (row.collection === OVERALL_COLLECTION) {
+      const fields = batch.written.get(locator)?.fields ?? (JSON.parse(latestVersion(locator).fields) as Record<string, unknown>);
+      if (isDeprecated(fields)) {
+        const see = seeAlsoOf(fields);
+        return withGuide(`指向的主题 ${locator} 已废弃`, see ? `改看 ${see}：把出处改成 ${see}，摘录照它现在的内容抄` : "请改成依据现在在用的主题");
+      }
+    }
     return null;
   };
   const text = (locator: string): string[] => {
@@ -1115,8 +1129,10 @@ function checkSources(
       locator = locator.trim();
       const reason = itemSource.ref(locator);
       if (reason) {
-        errors.push(withGuide(`${where}的种类是「${SOURCE_ITEM}」，出处 ${locator} ${reason}`,
-          `出处写一个还在的条目的编号，例如 DN-001、UC-003；要引用的条目还没有记下，先新增它（排在前面），再引用`));
+        // 原因自己带着「怎么办」的（指向已废弃的主题时写改看哪一页），用它自己的；否则用通用的那一句。
+        const own = splitGuide(reason);
+        errors.push(withGuide(`${where}的种类是「${SOURCE_ITEM}」，出处 ${locator} ${own.fact}`,
+          own.guidance || `出处写一个还在的条目的编号，例如 OA-001、UC-003；要引用的条目还没有记下，先新增它（排在前面），再引用`));
         ok = false;
         return;
       }

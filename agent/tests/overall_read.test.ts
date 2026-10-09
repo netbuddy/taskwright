@@ -14,7 +14,7 @@ import { overallState } from "../src/lib/overall_read.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getItem, getTaskStatus } from "../src/lib/task_query.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
@@ -66,6 +66,10 @@ test("因依据而待核实：条目依据的那一页待核实或已废弃；�
   saveRevision(callIn(dir), { operations: [
     page({ 标题: "预约取书", 已经定下的: ["保留期是 3 天。"] }, [{ ...SOURCE, supports: [{ field: "它是什么" }] }, SUPPLEMENT([{ field: "已经定下的", index: 0 }])]),
     page({ 标题: "保留期", 它是什么: "保留期是 3 天。" }, [{ kind: "条目", locator: "OA-001", excerpt: "保留期是 3 天。" }]),
+  ] });
+  // 先有一页合格的主题（OA-003），别的集合才能新增条目。
+  saveRevision(callIn(dir), { operations: [READY_PAGE] });
+  saveRevision(callIn(dir), { operations: [
     { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书", "预约，保留期是 3 天。"] }, sources: [{ kind: "条目", locator: "OA-002", excerpt: "保留期是 3 天。" }] },
   ] });
   const basis = (id: string) => stateOf(dir).verification.get(id)!.basis_pending;
@@ -84,6 +88,9 @@ test("助手读到的说法：查看条目写待核实与提到它的地方，�
     page({ 标题: "预约取书", 别名: ["预约"], 标签: ["流程"], 已经定下的: ["保留期是 3 天。"] },
       [{ ...SOURCE, supports: [{ field: "它是什么" }] }, SUPPLEMENT([{ field: "已经定下的", index: 0 }])]),
     page({ 标题: "保留期", 标签: ["概念"], 它是什么: "预约取书的书在预留架上留着的那几天。" }),
+  ] });
+  saveRevision(callIn(dir), { operations: [READY_PAGE] });
+  saveRevision(callIn(dir), { operations: [
     { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["读者选一本在架的书", "读者办预约取书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] },
   ] });
   const item = getItem(dir, { item_id: "OA-001" });

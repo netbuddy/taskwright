@@ -11,7 +11,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 function workspace(definition: unknown = overallDefinition()): string {
   const dir = makeWorkspace(definition);
@@ -83,7 +83,8 @@ test("已经定下的每一条都要有出处：来源指到那一条、指到�
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-002", base_revision: 2, fields: { 已经定下的: more },
     sources: [{ kind: "助手补充", excerpt: "由「保留」的意思推出来的，等用户确认。", supports: [{ field: "已经定下的", index: 2 }] }] }] });
   assert.equal(fieldsOf(dir, "OA-002").已经定下的.length, 3);
-  // 别的集合的列表字段没有这条要求。
+  // 别的集合的列表字段没有这条要求（先有一页合格的主题，别的集合才能新增条目）。
+  saveRevision(callIn(dir), { operations: [READY_PAGE] });
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书", "预约"] },
     sources: [{ ...SOURCE, supports: [{ field: "名称" }] }, SUPPLEMENT([{ field: "步骤", index: 0 }])] }] });
 });
