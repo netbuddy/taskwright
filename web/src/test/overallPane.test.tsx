@@ -7,7 +7,7 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { useState, type ReactNode } from "react";
 import type { Task } from "../api/types";
 import { ItemsPanel } from "../components/work/ItemsPanel";
-import { overallTask } from "./fixtures/overallTask";
+import { change, overallTask } from "./fixtures/overallTask";
 
 afterEach(cleanup);
 Element.prototype.scrollTo ??= function () {};
@@ -186,5 +186,22 @@ describe("术语表", () => {
     fireEvent.click(screen.getByTestId("view-glossary"));
     expect(screen.getByTestId("glossary")).toHaveTextContent("还没有可以进术语表的主题");
     expect(screen.getByTestId("glossary-note").textContent).toBe("待核实的概念确认后才会进文档。");
+  });
+});
+
+describe("依据的主题待核实或已废弃的条目", () => {
+  it("条目行上有一枚琥珀色小标签，悬停说明是哪一页、怎么办；依据没有问题的条目没有", () => {
+    const t = overallTask();
+    change(t, "UC-003", (i) => { i.basis_pending = { item_id: "OA-003", reason: "deprecated", see: "OA-006" }; });
+    change(t, "UC-002", (i) => { i.basis_pending = null; });
+    render(<Wrap><div className="app"><ItemsPanel task={t} initialCollection="功能用例" readOnly={false} recentlyChanged={[]} pendingItems={new Set()}
+      selected={null} onSelect={() => {}} submit={vi.fn(async () => null)} onGenerateDoc={() => {}} /></div></Wrap>);
+    const pending = screen.getByTestId("basis-pending-UC-001");
+    expect(pending).toHaveTextContent("依据的主题待核实");
+    expect(pending.getAttribute("title")).toBe("它依据的主题 OA-005「逾期与罚款」里有助手补的内容还没有确认；到总体分析里确认那一页，这里就消掉。");
+    const gone = screen.getByTestId("basis-pending-UC-003");
+    expect(gone).toHaveTextContent("依据的主题已废弃");
+    expect(gone.getAttribute("title")).toBe("它依据的主题 OA-003「预约取书」已废弃，改看 OA-006「续借」。把依据改到还在用的主题上。");
+    expect(screen.queryByTestId("basis-pending-UC-002")).toBeNull();
   });
 });

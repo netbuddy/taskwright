@@ -304,6 +304,20 @@ export function glossary(task: Task): { rows: { item: OverallItem; aliases: stri
   };
 }
 
+/**
+ * 一个条目依据的主题待核实或已废弃时，条目行上那枚小标签的字与悬停说明；没有这回事时为 null。
+ * 它不是条目自己的毛病：那一页确认了（或者把依据改到别的主题），标签就消掉。
+ */
+export function basisNote(task: Task, item: OverallItem): { text: string; title: string } | null {
+  const basis = item.basis_pending;
+  if (!basis) return null;
+  const name = (id: string) => { const page = task.items.find((i) => i.item_id === id); return page ? `${id}「${titleOf(page)}」` : id; };
+  if (basis.reason === "deprecated") {
+    return { text: "依据的主题已废弃", title: `它依据的主题 ${name(basis.item_id)}已废弃${basis.see ? `，改看 ${name(basis.see)}` : ""}。把依据改到还在用的主题上。` };
+  }
+  return { text: "依据的主题待核实", title: `它依据的主题 ${name(basis.item_id)}里有助手补的内容还没有确认；到总体分析里确认那一页，这里就消掉。` };
+}
+
 /** 右侧栏窄提纲里一页下面那行小字：「3 定 · 1 问」，待核实的后面加「待核实」；什么都没有时写「说清了」。 */
 export function sideLine(task: Task, item: OverallItem): string {
   const counts = countsText(task, item);
