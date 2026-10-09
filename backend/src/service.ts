@@ -29,6 +29,7 @@ import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
 import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
 import { readTaskJson, writeTaskJson } from "./task_json.ts";
+import type { PendingUpgrade } from "./data_upgrade.ts";
 import type { ServiceDb } from "./service_db.ts";
 import { GENERAL, KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
 import { KnowledgeEmbedder } from "./knowledge_embedder.ts";
@@ -234,7 +235,12 @@ export class Service {
   readonly unavailable = new Map<string, { status: string; note: string }>();
   /** 知识库；启动时没给根目录就是 null。 */
   readonly knowledge: KnowledgeStore | null;
-  readonly registry: ServiceDb | null;
+  registry: ServiceDb | null;
+  /**
+   * 启动时发现要先做数据升级（桌面形态）时在这里：升级做完之前这个服务不扫描、不接手任何任务，别的接口也不给用。
+   * 没有要升级的，或者不是经 startService 起的，是 null。
+   */
+  upgrade: PendingUpgrade | null = null;
   /** 知识库文档的后台换算；没有知识库时是 null。 */
   readonly embedder: KnowledgeEmbedder | null;
   private readonly claim: Claim;
@@ -283,7 +289,14 @@ export class Service {
     });
   }
 
+  /** 数据升级做完之后把打开着的服务级库接上（升级之前没有打开它）。 */
+  attachRegistry(registry: ServiceDb): void {
+    this.registry = registry;
+  }
+
   scan(): void {
+    // 数据升级做完之前不碰任何任务。
+    if (this.upgrade?.blocking) return;
     this.unavailable.clear();
     for (const name of sortedEntries(this.tasksDir)) {
       const d = join(this.tasksDir, name);

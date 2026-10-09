@@ -15,13 +15,20 @@
  * 环境变量 TASKWRIGHT_LOG_DIR 改。收到 SIGTERM、SIGINT 或 SIGHUP（Windows 另有 SIGBREAK）、或者桌面形态下收到退出请求时，
  * 停止接新连接、关掉各任务的 pi、删掉本服务写的占用标记，然后退出。
  *
+ * 另有一个不起服务的命令：node backend/src/main.mts data upgrade [--data <数据目录>]，把上一版留下的数据升到这个程序的格式
+ * （见 data_command.ts）。服务器形态启动时发现有数据要升级会拒绝启动，并提示先运行它。
+ *
  * 本文件只是命令行外壳：检查参数后调 start.ts 的 startService；打包后的启动程序直接调 startService。
  */
 
 import { parseArgs } from "node:util";
+import { dataCommand } from "./data_command.ts";
 import { NoFreePort } from "./listen.ts";
 import { MODES, type Mode } from "./service.ts";
 import { startService } from "./start.ts";
+
+// 第一个参数是 data：数据命令，不起服务。它有自己的参数，不经下面起服务的那一套检查。
+if (process.argv[2] === "data") process.exit(await dataCommand(process.argv.slice(3)));
 
 const { values } = parseArgs({
   options: {

@@ -14,10 +14,11 @@ import type { Server } from "node:http";
 import { join } from "node:path";
 import { format } from "node:util";
 import { makeServer } from "./http.ts";
-import { expandUser, loadProfile } from "./launch.ts";
+import { loadProfile } from "./launch.ts";
 import { migrateProviderPurposes } from "./model_config.ts";
 import { defaultHost, listenFrom } from "./listen.ts";
-import { ENV_DATA_DIR, appVersion, dataDirectory, logDir, userDataDir } from "./paths.ts";
+import { PendingUpgrade, locate, planUpgrade, upgradeNeeded } from "./data_upgrade.ts";
+import { appVersion, logDir } from "./paths.ts";
 import { MODES, type Mode, Service } from "./service.ts";
 import { NewerDataDirectory, ServiceDb } from "./service_db.ts";
 import { newerDataText } from "../../agent/src/lib/schema.ts";
@@ -115,20 +116,30 @@ export async function startService(options: StartOptions): Promise<Started> {
   const ownProcess = options.ownProcess ?? true;
 
   teeLogs();
-  // 三个目录没有另给时：明说了数据目录（参数或环境变量）就在它下面，否则照旧在用户数据目录下。
-  const base = options.data ? expandUser(options.data) : process.env[ENV_DATA_DIR] || userDataDir();
-  const tasksDir = expandUser(options.tasks ?? join(base, "tasks"));
-  const runsDir = expandUser(options.runs ?? join(base, "runs"));
-  const knowledgeDir = expandUser(options.knowledge ?? join(base, "knowledge"));
-  const dataDir = dataDirectory(options.data ? expandUser(options.data) : null, options.tasks ? tasksDir : null);
-  let registry: ServiceDb;
-  try {
-    registry = ServiceDb.open(dataDir, appVersion());
-  } catch (error) {
-    if (error instanceof NewerDataDirectory) throw new StartError(`数据目录 ${dataDir} 打不开：${newerDataText(error.writtenBy)}`);
-    throw error;
+  const { dataDir, tasksDir, runsDir, knowledgeDir } = locate(options);
+  // 先只读地看一遍数据目录：比这个程序新就不启动；有上一版留下的数据要升级时，服务器形态不启动（由管理员先在命令行升级），
+  // 桌面形态先起来、等用户在页面上点「开始升级」，在那之前不对外提供别的功能（见 data_upgrade.ts 的 PendingUpgrade）。
+  const plan = planUpgrade({ dataDir, tasksDir, knowledgeDir });
+  if (plan.service.state === "newer") throw new StartError(`数据目录 ${dataDir} 打不开：${newerDataText(plan.service.written_by)}`);
+  const pending = upgradeNeeded(plan);
+  if (pending && mode === "server") {
+    const what = [plan.tasks.length ? `${plan.tasks.length} 个任务` : "", plan.service.state === "outdated" ? "任务登记" : ""].filter(Boolean).join("与");
+    throw new StartError(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${what}）。请先运行 taskwright data upgrade --data ${dataDir}，做完再启动服务。`);
+  }
+  let registry: ServiceDb | null = null;
+  if (!pending) {
+    try {
+      registry = ServiceDb.open(dataDir, appVersion());
+    } catch (error) {
+      if (error instanceof NewerDataDirectory) throw new StartError(`数据目录 ${dataDir} 打不开：${newerDataText(error.writtenBy)}`);
+      throw error;
+    }
   }
   const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry });
+  if (pending) {
+    service.upgrade = new PendingUpgrade(plan, (opened) => service.attachRegistry(opened));
+    console.log(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${plan.tasks.length} 个任务）：服务已经起来，等页面上点「开始升级」。`);
+  }
   // 设置文件里还没定用途的模型服务（上一版留下的）先定用途。做不成不拦着服务起来，日志里写明原因。
   try {
     for (const note of await migrateProviderPurposes({ env: process.env, profile: service.profile })) console.log(note);

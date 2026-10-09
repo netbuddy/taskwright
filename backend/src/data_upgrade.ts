@@ -19,7 +19,8 @@ import { TASKS_ROOT_ENV, TASK_DB_VERSION, newerDataText, taskWrittenBy, upgradeT
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 import * as occupancy from "./occupancy.ts";
-import { appVersion } from "./paths.ts";
+import { expandUser } from "./launch.ts";
+import { ENV_DATA_DIR, appVersion, dataDirectory, userDataDir } from "./paths.ts";
 import { settingsFile } from "./product_settings.ts";
 import { DATA_FORMAT, NewerDataDirectory, SERVICE_DB_NAME, ServiceDb, backupServiceDb, peekDataDirectory } from "./service_db.ts";
 import { readTaskJson, taskJsonPath, writeTaskJson } from "./task_json.ts";
@@ -30,6 +31,21 @@ export interface DataLocations {
   tasksDir: string;
   /** 知识库根目录；没有知识库时是 null。 */
   knowledgeDir: string | null;
+}
+
+/**
+ * 由命令行给的几个目录定出各自的位置（服务启动与命令行升级用同一个定法）。任务目录、归档目录、知识库目录没有另给时：
+ * 明说了数据目录（--data 或环境变量 TASKWRIGHT_DATA_DIR）就在它下面，否则照旧在用户数据目录下。数据目录自己怎样定见
+ * paths.ts 的 dataDirectory。
+ */
+export function locate(given: { data?: string; tasks?: string; runs?: string; knowledge?: string }, env: NodeJS.ProcessEnv = process.env):
+  DataLocations & { knowledgeDir: string; runsDir: string } {
+  const base = given.data ? expandUser(given.data) : env[ENV_DATA_DIR] || userDataDir();
+  const tasksDir = expandUser(given.tasks ?? join(base, "tasks"));
+  return {
+    dataDir: dataDirectory(given.data ? expandUser(given.data) : null, given.tasks ? tasksDir : null, env), tasksDir,
+    runsDir: expandUser(given.runs ?? join(base, "runs")), knowledgeDir: expandUser(given.knowledge ?? join(base, "knowledge")),
+  };
 }
 
 /** 一个要升级（或者升不了）的任务。 */
@@ -376,4 +392,67 @@ export function reportText(report: UpgradeReport): string {
   lines.push(`合计：${report.tasks.length} 个任务，成功 ${report.succeeded} 个，没有做成 ${report.failed} 个。`);
   if (report.failed > 0 && report.backup?.files) lines.push(`没有做成的任务原样没动；要回到升级之前，把备份里的文件复制回去：${report.backup.dir}`);
   return lines.join("\n") + "\n";
+}
+
+/**
+ * 服务启动时发现要先做数据升级（桌面形态）：服务起来了，但在升级做完之前不对外提供别的功能。页面上显示要升级什么，
+ * 用户点「开始升级」才做（start）。状态：pending 还没有开始；running 正在做；done 做完了（个别任务没有做成也算做完，
+ * 报告里写着）；failed 整体没有做成（备份不成、数据目录打不开），一个任务都没有动，可以再试。
+ */
+export class PendingUpgrade {
+  plan: UpgradePlan;
+  state: "pending" | "running" | "done" | "failed" = "pending";
+  progress: UpgradeProgress | null = null;
+  report: UpgradeReport | null = null;
+  /** 做完时把打开着的服务级库交出去（交给服务对象）。 */
+  private readonly onDone: (registry: ServiceDb) => void;
+  private readonly options: RunOptions;
+
+  constructor(plan: UpgradePlan, onDone: (registry: ServiceDb) => void, options: RunOptions = {}) {
+    this.plan = plan;
+    this.onDone = onDone;
+    this.options = options;
+  }
+
+  /** 服务是不是还在等升级（等着、正在做、或者整体没有做成）：这段时间别的接口都不给用。 */
+  get blocking(): boolean {
+    return this.state !== "done";
+  }
+
+  /** 给页面看的：状态、要升级什么、备份会放在哪里、进度与报告（连同给人看的那段文字）。 */
+  view() {
+    return {
+      state: this.state, data_dir: this.plan.dataDir, backup_dir: join(this.plan.dataDir, "backups"),
+      tasks: this.plan.tasks.map((t) => ({ task_id: t.task_id ?? t.dir, name: t.name })),
+      service: this.plan.service.state === "outdated", knowledge: false,
+      progress: this.progress, report: this.report ? { ...this.report, text: reportText(this.report) } : null,
+    };
+  }
+
+  /**
+   * 开始升级；立刻返回，升级在后面做，进度与结果经 view 看。正在做或者已经做完时什么都不做，返回假。
+   * 整体没有做成之后再调是再试一次：重新看一遍数据目录再做。
+   */
+  start(): boolean {
+    if (this.state === "running" || this.state === "done") return false;
+    if (this.state === "failed") this.plan = planUpgrade(this.plan);
+    this.state = "running";
+    this.report = null;
+    this.progress = { total: this.plan.tasks.length + 2, done: 0, current: null };
+    void runUpgrade(this.plan, { ...this.options, onProgress: (progress) => (this.progress = progress) }).then(({ report, registry }) => {
+      this.report = report;
+      if (registry === null) {
+        this.state = "failed";
+        return;
+      }
+      this.onDone(registry);
+      this.state = "done";
+    }, (error: Error) => {
+      // runUpgrade 自己把错都写进报告里；到这里是意料之外的错，照整体没有做成算。
+      this.report = { product_version: this.options.productVersion ?? appVersion(), started_at: clock.now(), finished_at: clock.now(), data_dir: this.plan.dataDir,
+        backup: null, service: null, tasks: [], succeeded: 0, failed: 0, fatal: error.message, file: null };
+      this.state = "failed";
+    });
+    return true;
+  }
 }
