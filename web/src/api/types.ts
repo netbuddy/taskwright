@@ -255,10 +255,12 @@ export interface Item {
   viewed?: boolean;
   /** 已读的依据：当前修订上最近一条标记是接受时取它的依据，否则取最近一条接受的标记的依据；未读时为空。 */
   confirmation_basis?: ConfirmationBasis | string | null;
-  /** 待核实：当前修订上有助手补充的来源，而用户还没有在这个修订上确认过（看过、亲手改过都算确认）。 */
+  /** 待核实：当前修订上有助手补充的来源，而用户还没有确认过。看过（或点了确认）是确认整个条目；亲手改只确认改到的那几处。 */
   pending_verification?: boolean;
   /** 还待核实的助手补充来源有几条；不待核实时是 0。 */
   pending_sources?: number;
+  /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
+  pending_places?: { field: string | null; index: number | null }[];
   /** 因依据而待核实：它依据的总体分析的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
   basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see: string | null } | null;
   /** 只有总体分析的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */

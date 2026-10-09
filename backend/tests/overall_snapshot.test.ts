@@ -26,9 +26,12 @@ test("整份数据带待核实、因依据而待核实与提到；用户确认�
   ]]);
   const [, task] = library.taskSnapshot(ws);
   const item = (id: string) => task!.items.find((i) => i.item_id === id)! as Record<string, any>;
-  assert.deepEqual([item("OA-001").pending_verification, item("OA-001").pending_sources, item("OA-001").basis_pending], [true, 1, null]);
-  assert.deepEqual([item("OA-002").pending_verification, item("OA-002").pending_sources], [true, 1]);
-  assert.deepEqual([item("UC-001").pending_verification, item("UC-001").pending_sources, item("UC-001").basis_pending], [false, 0, { item_id: "OA-001", reason: "pending", see: null }]);
+  assert.deepEqual([item("OA-001").pending_verification, item("OA-001").pending_sources, item("OA-001").pending_places, item("OA-001").basis_pending],
+    [true, 1, [{ field: "已经定下的", index: 0 }], null]);
+  // OA-002 的助手补充没有写支持哪几处：指整个条目。
+  assert.deepEqual([item("OA-002").pending_verification, item("OA-002").pending_sources, item("OA-002").pending_places], [true, 1, [{ field: null, index: null }]]);
+  assert.deepEqual([item("UC-001").pending_verification, item("UC-001").pending_sources, item("UC-001").pending_places, item("UC-001").basis_pending],
+    [false, 0, [], { item_id: "OA-001", reason: "pending", see: null }]);
   // 提到：OA-001 贴了标签，被 OA-002 与用例提到；OA-002 没有贴标签，不进词表，mentioned_by 是空列表；用例不带这一项。
   assert.deepEqual(item("OA-001").mentioned_by, [
     { item_id: "UC-001", collection: "用例", field: "名称", index: null, word: "预约", sentence: "预约图书", revision_no: 1 },
@@ -67,7 +70,8 @@ test("没有总体分析集合的任务：待核实照样算，条目不带 ment
   const ws = makeWorkspace(tmp, "old", true);
   const [, task] = library.taskSnapshot(ws);
   for (const item of task!.items as Record<string, any>[]) {
-    assert.deepEqual([typeof item.pending_verification, typeof item.pending_sources, item.basis_pending, "mentioned_by" in item], ["boolean", "number", null, false], item.item_id);
+    assert.deepEqual([typeof item.pending_verification, typeof item.pending_sources, Array.isArray(item.pending_places), item.basis_pending, "mentioned_by" in item],
+      ["boolean", "number", true, null, false], item.item_id);
   }
   assert.deepEqual(task!.completion!.hints, []);
 });

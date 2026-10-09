@@ -3,8 +3,9 @@
  * 已经定下的、标签、上级主题、状态（在用或已废弃）、改看。条目依据它写。
  *
  * 本文件是由事实算出来的几样东西，都只算、不读库：
- * - 待核实：一个条目当前所在的修订上有助手补充的来源，而用户还没有在这个修订上确认过（打开看过、亲手改过都算确认）。
- *   用户确认之后不再待核实；助手之后又改出新的修订、上面仍有助手补充的来源，就又待核实。任何集合的条目都这样算。
+ * - 待核实：一个条目当前所在的修订上有助手补充的来源，而用户还没有确认过。用户打开看过（或点了确认）是确认整个条目；
+ *   用户亲手改，只确认他改到的那几处（助手补充的来源指到的字段与项），只改别的地方不算确认。助手之后又改出新的修订、
+ *   上面仍有助手补充的来源，就又待核实。任何集合的条目都这样算。
  * - 因依据而待核实：一个条目把总体分析里的一页写成了来源（种类「条目」），而那一页待核实或已废弃。只看一层。
  * - 提到：贴了标签、在用的页的标题与别名是词表；别的页与别的条目的文字里出现了词表里的词，就是提到了那一页。
  *   读的时候现算，不存库。
@@ -71,13 +72,66 @@ export function isSupplement(kind: unknown): boolean {
   return typeof kind === "string" && SUPPLEMENT_KINDS.includes(kind);
 }
 
+/** 助手补充的一条来源支持哪几处：一处写字段名，指到列表字段的某一项时另写第几项（从 0 起）；空列表是支持整个条目。 */
+export type SupportPlaces = readonly { field: string; index?: number | null }[];
+
+/** 条目的一次修订里算待核实要的三样：那时的字段内容、是不是用户亲手改出来的、用户有没有在这次修订上看过（或点过确认）。 */
+export interface RevisionFacts {
+  fields: Fields;
+  /** 这次修订是用户在界面上亲手改出来的（直接修改、撤销），不是助手保存的。 */
+  byUser: boolean;
+  /** 用户在这次修订上打开看过或点过确认：这次修订上依据不是「界面修改」的确认标记里，最近一条的态度是接受。 */
+  viewed: boolean;
+}
+
+/** 还待核实的一处：字段与（列表字段的）第几项；助手补充的来源没有写支持哪几处时，字段是 null，指整个条目。 */
+export interface PendingPlace {
+  field: string | null;
+  index: number | null;
+}
+
+export interface Verification {
+  /** 这个条目还有没有待核实的地方。 */
+  pending_verification: boolean;
+  /** 还待核实的助手补充来源有几条。 */
+  pending_sources: number;
+  /** 还待核实的各处，按来源的先后；同一处只列一次。 */
+  pending_places: PendingPlace[];
+}
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
 /**
- * 一个条目待不待核实。supplements 是它当前所在修订上助手补充的来源有几条；confirmed 是用户有没有在这个修订上确认过
- * （这个修订上最近一条确认标记的态度是接受：打开看过、亲手改过都算）。pending_sources 是还待核实的来源条数。
+ * 一个条目待不待核实，还有哪几处待核实。
+ * supplements 是它当前所在修订上助手补充的各条来源支持哪几处。chain 是它的修订里从「最近一次不是用户亲手改出来的修订」起、
+ * 到当前修订为止的一段，按先后（只有一次修订时就是那一次；助手保存的修订之后跟着用户亲手改的几次）。规矩：
+ * - 这一段里有一次修订用户看过（或点过确认）：整个条目都确认了，不待核实。之后用户自己再改，不会把确认弄丢。
+ * - 否则，用户亲手改到的地方算确认了那几处：一条助手补充的来源指到的每一处（字段，或列表字段的那一项）都被用户改过，这条来源
+ *   就不再待核实；有一处没被改过就仍待核实。没有写支持哪几处的来源指整个条目，用户改哪里都不算确认它。
+ *   所以用户只改标签、只改上级主题，不会把别处助手补充的内容当成确认过。
+ * 助手再保存出新的修订时，这一段从那次修订重新算起，上面的助手补充又都待核实。
  */
-export function pendingVerification(supplements: number, confirmed: boolean): { pending_verification: boolean; pending_sources: number } {
-  const pending = supplements > 0 && !confirmed;
-  return { pending_verification: pending, pending_sources: pending ? supplements : 0 };
+export function verificationOf(supplements: readonly SupportPlaces[], chain: readonly RevisionFacts[]): Verification {
+  const clear: Verification = { pending_verification: false, pending_sources: 0, pending_places: [] };
+  if (supplements.length === 0 || chain.some((one) => one.viewed)) return clear;
+  // 用户亲手改的每一次，与它前一次修订相比哪些字段不同。
+  const edits = chain.flatMap((one, n) => (n > 0 && one.byUser ? [[chain[n - 1].fields, one.fields] as const] : []));
+  const touched = (field: string, index: number | null) => edits.some(([before, after]) => {
+    if (index === null) return !same(before[field], after[field]);
+    const was = Array.isArray(before[field]) ? (before[field] as unknown[])[index] : undefined;
+    const now = Array.isArray(after[field]) ? (after[field] as unknown[])[index] : undefined;
+    return !same(was, now);
+  });
+  const places: PendingPlace[] = [];
+  let sources = 0;
+  for (const supports of supplements) {
+    const open: PendingPlace[] = supports.length === 0 ? [{ field: null, index: null }]
+      : supports.map((at) => ({ field: at.field, index: at.index ?? null })).filter((at) => !touched(at.field!, at.index));
+    if (open.length === 0) continue;
+    sources += 1;
+    for (const at of open) if (!places.some((have) => have.field === at.field && have.index === at.index)) places.push(at);
+  }
+  return sources === 0 ? clear : { pending_verification: true, pending_sources: sources, pending_places: places };
 }
 
 /** 被一个条目写成来源的那一页现在的样子：在哪个集合、字段内容、待不待核实。 */
@@ -256,16 +310,13 @@ export function topicLines(collections: readonly { name: string }[], items: read
 
 // ───────────── 保存一页时的两条核对 ─────────────
 
-/** 一条来源支持哪几处：一处写字段名，指到列表字段的某一项时另写第几项（从 0 起）。空列表是支持整个条目。 */
-type Supports = readonly { field: string; index?: number }[];
-
 /**
  * 保存总体分析的一页时另外核对的两条，对的是改完之后的字段内容与来源。返回不对的地方，每处是 [事实, 怎么办]：
  * - 「改看」只在这一页已废弃时写：它指向取代这一页的那一页。
  * - 「已经定下的」每一条都要有出处：至少一条来源指到它（来源的 supports 里写这个字段与第几条；指到整个字段、
  *   或者不写 supports 表示整个条目都出自这条来源的，也算）。
  */
-export function pageProblems(fields: Fields, sources: readonly { supports: Supports }[]): [string, string][] {
+export function pageProblems(fields: Fields, sources: readonly { supports: SupportPlaces }[]): [string, string][] {
   const out: [string, string][] = [];
   const see = seeAlsoOf(fields);
   if (see !== null && !isDeprecated(fields)) {
@@ -275,7 +326,7 @@ export function pageProblems(fields: Fields, sources: readonly { supports: Suppo
   const settled = texts(fields[OVERALL_FIELDS.settled]);
   const whole = sources.some((one) => one.supports.length === 0);
   settled.forEach((text, n) => {
-    if (whole || sources.some((one) => one.supports.some((at) => at.field === OVERALL_FIELDS.settled && (at.index === undefined || at.index === n)))) return;
+    if (whole || sources.some((one) => one.supports.some((at) => at.field === OVERALL_FIELDS.settled && (at.index === undefined || at.index === null || at.index === n)))) return;
     const quoted = text.length > 20 ? `${text.slice(0, 20)}…` : text;
     out.push([`「${OVERALL_FIELDS.settled}」的第 ${n + 1} 条「${quoted}」没有出处`,
       `每一条已经定下的都要有出处：在它出自的那条来源的 supports 里写 {"field": "${OVERALL_FIELDS.settled}", "index": ${n}}；是你补的就加一条助手补充的来源并写理由`]);

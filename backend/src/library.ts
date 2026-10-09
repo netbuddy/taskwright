@@ -15,7 +15,7 @@ import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { pdfFacts, pdfSourceName } from "./projection.ts";
-import { OVERALL_COLLECTION, type PlainItem, basisPending, isSupplement, mentionsOf, pendingVerification } from "../../agent/src/lib/overall_analysis.ts";
+import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -679,11 +679,25 @@ export class Library {
     });
     const mentions = mentionsOf(this.definition["集合"].map((c) => ({ name: c["名称"], fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"] })) })), plain);
     const withOverall = this.collections.has(OVERALL_COLLECTION);
-    const pendingOf = new Map<string, { pending_verification: boolean; pending_sources: number }>();
+    const pendingOf = new Map<string, Verification>();
     for (const one of plain) {
-      const sources = this.sourcesOf(one.item_id, one.revision_no);
-      const onCurrent = this.confirmationsOf(one.item_id, one.revision_no);
-      pendingOf.set(one.item_id, pendingVerification(sources.filter((s) => isSupplement(s.kind)).length, onCurrent.length > 0 && onCurrent[onCurrent.length - 1].accepted));
+      const supplements = this.sourcesOf(one.item_id, one.revision_no).filter((s) => isSupplement(s.kind)).map((s) => s.supports ?? []);
+      // 这个条目的各次修订：那时的内容、是不是用户亲手改出来的、用户有没有在那次修订上看过（依据不是用户修改的确认里最近一条是接受）。
+      const history: RevisionFacts[] = this.itemRevisions(one.item_id).map((no) => {
+        const v = this.contents.get(itemKey(one.item_id, no))!;
+        const seen = this.confirmationsOf(one.item_id, no).filter((c) => c.basis !== "ui_edit");
+        return {
+          fields: or(jsonOrText(v.fields), {}) as Record<string, any>,
+          byUser: actorWord((this.data.event_meta?.get(v.event_seq) ?? ({} as Record<string, any>)).actor ?? "") === ACTOR_USER,
+          viewed: seen.length > 0 && seen[seen.length - 1].accepted,
+        };
+      });
+      // 从最近一次不是用户亲手改出来的修订起算（与助手一侧 lib/overall_read.ts 的 chainOf 同一个规矩）。
+      let from = 0;
+      history.forEach((rev, n) => {
+        if (!rev.byUser) from = n;
+      });
+      pendingOf.set(one.item_id, verificationOf(supplements, history.slice(from)));
     }
     const plainOf = new Map(plain.map((one) => [one.item_id, one]));
     const citedPage = (id: string) => {
@@ -716,7 +730,8 @@ export class Library {
         viewed: accepted.length > 0,
         confirmation_basis: currentOk ? latestForCurrent[latestForCurrent.length - 1].basis
           : accepted.length ? accepted[accepted.length - 1].basis : null,
-        // 待核实：当前修订上有助手补充的来源，而用户还没有在这个修订上确认过（看过、亲手改过都算确认）；pending_sources 是这样的来源有几条。
+        // 待核实：当前修订上有助手补充的来源，而用户还没有确认过。用户看过（或点了确认）是确认整个条目；用户亲手改只确认他改到的那几处。
+        // pending_sources 是还待核实的来源有几条，pending_places 是还待核实的各处（字段与第几项；field 为 null 指整个条目）。
         ...pendingOf.get(i.item_id)!,
         // 因依据而待核实：它依据的总体分析的一页待核实（reason 是 pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。
         basis_pending: basisPending(this.sourcesOf(i.item_id, no), citedPage),

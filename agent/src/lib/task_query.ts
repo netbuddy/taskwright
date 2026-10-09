@@ -205,7 +205,8 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
         review: reviewState(db, task.task_id, itemId, shown, workspaceDir),
         confirm: confirmState(db, task.task_id, itemId, shown),
         dialogue,
-        ...(verification ? { pending_verification: verification.pending_verification, pending_sources: verification.pending_sources, basis_pending: verification.basis_pending } : {}),
+        ...(verification ? { pending_verification: verification.pending_verification, pending_sources: verification.pending_sources,
+          pending_places: verification.pending_places, basis_pending: verification.basis_pending } : {}),
         ...(mentioned.length ? { mentioned_by: mentioned } : {}),
       },
     };

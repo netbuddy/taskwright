@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   GATE_GUIDANCE, OVERALL_COLLECTION, type PlainItem, basisPending, gateFact, hasOverall, isSupplement, isUsable, mentionedIn, mentionsOf,
-  pageFacts, pendingVerification, sentencesOf, topicWords,
+  pageFacts, sentencesOf, topicWords, verificationOf,
 } from "../src/lib/overall_analysis.ts";
 
 const COLLECTIONS = [
@@ -18,16 +18,47 @@ const page = (id: string, fields: Record<string, unknown>, revision = 1): PlainI
   ({ item_id: id, collection: OVERALL_COLLECTION, revision_no: revision, fields: { 状态: "在用", ...fields } });
 const useCase = (id: string, fields: Record<string, unknown>): PlainItem => ({ item_id: id, collection: "功能用例", revision_no: 1, fields });
 
-test("待核实：有助手补充的来源而用户没有在这个修订上确认过；确认之后不再是；助手再改出新修订又是；用户亲手改的不是", () => {
+test("待核实：有助手补充的来源而用户没有确认过；看过是确认整个条目；助手再改出新修订又待核实", () => {
   assert.deepEqual([isSupplement("助手补充"), isSupplement("执行者补充"), isSupplement("用户的话"), isSupplement(null)], [true, true, false, false]);
-  // 助手补充了两处，用户还没有确认。
-  assert.deepEqual(pendingVerification(2, false), { pending_verification: true, pending_sources: 2 });
-  // 用户在这个修订上确认了（打开看过，或者亲手改的那个修订本身就记着确认）。
-  assert.deepEqual(pendingVerification(2, true), { pending_verification: false, pending_sources: 0 });
-  // 助手之后又改：新修订上没有确认，沿用下来的助手补充又待核实。
-  assert.deepEqual(pendingVerification(1, false), { pending_verification: true, pending_sources: 1 });
-  // 没有助手补充的来源：确认没确认都不待核实。
-  assert.deepEqual(pendingVerification(0, false), { pending_verification: false, pending_sources: 0 });
+  const fields = { 它是什么: "读者对在架的书办预约。", 已经定下的: ["只有在架的书才能预约取书。", "保留期是 3 天。"], 例子: ["小王周六预约了一本书。"] };
+  const saved = (viewed = false) => ({ fields, byUser: false, viewed });
+  const supplements = [[{ field: "已经定下的", index: 1 }], [{ field: "例子", index: 0 }, { field: "它是什么" }]];
+  // 助手补充了两条，用户还没有确认：两条都待核实，各处都列出来。
+  assert.deepEqual(verificationOf(supplements, [saved()]), { pending_verification: true, pending_sources: 2,
+    pending_places: [{ field: "已经定下的", index: 1 }, { field: "例子", index: 0 }, { field: "它是什么", index: null }] });
+  // 用户在这次修订上看过（或点了确认）：整个条目都确认了。
+  assert.deepEqual(verificationOf(supplements, [saved(true)]), { pending_verification: false, pending_sources: 0, pending_places: [] });
+  // 没有助手补充的来源：看没看过都不待核实。
+  assert.deepEqual(verificationOf([], [saved()]), { pending_verification: false, pending_sources: 0, pending_places: [] });
+  // 没有写支持哪几处的助手补充指整个条目。
+  assert.deepEqual(verificationOf([[]], [saved()]), { pending_verification: true, pending_sources: 1, pending_places: [{ field: null, index: null }] });
+  // 两条来源指到同一处：那一处只列一次，来源仍是两条。
+  assert.deepEqual(verificationOf([[{ field: "例子", index: 0 }], [{ field: "例子", index: 0 }]], [saved()]),
+    { pending_verification: true, pending_sources: 2, pending_places: [{ field: "例子", index: 0 }] });
+});
+
+test("待核实：用户亲手改只确认他改到的那几处；只改标签或上级主题不算确认；先看过再自己改，确认不丢", () => {
+  const before = { 它是什么: "读者对在架的书办预约。", 已经定下的: ["只有在架的书才能预约取书。", "保留期是 3 天。"], 例子: ["小王周六预约了一本书。"] };
+  const supplements = [[{ field: "已经定下的", index: 1 }], [{ field: "例子", index: 0 }, { field: "它是什么" }], []];
+  const saved = { fields: before, byUser: false, viewed: false };
+  const edited = (fields: Record<string, unknown>, viewed = false) => ({ fields: { ...before, ...fields }, byUser: true, viewed });
+  const places = (chain: Parameters<typeof verificationOf>[1]) => verificationOf(supplements, chain).pending_places.map((at) => `${at.field ?? "整个条目"}${at.index ?? ""}`);
+  // 只贴了标签、只改了上级主题：哪一处都没有确认。
+  assert.deepEqual(places([saved, edited({ 标签: ["概念"], 上级主题: ["OA-001"] })]), ["已经定下的1", "例子0", "它是什么", "整个条目"]);
+  // 改了「已经定下的」的第 2 条：那一条确认了；第 1 条没动，别的照旧。指整个条目的那条来源，改哪里都不算确认它。
+  const settled = edited({ 已经定下的: ["只有在架的书才能预约取书。", "保留期是 5 天。"] });
+  assert.deepEqual(places([saved, settled]), ["例子0", "它是什么", "整个条目"]);
+  assert.equal(verificationOf(supplements, [saved, settled]).pending_sources, 2);
+  // 改的是第 1 条：助手补的第 2 条没有被改到，仍待核实。
+  assert.deepEqual(places([saved, edited({ 已经定下的: ["只有借出的书才能预约。", "保留期是 3 天。"] })]), ["已经定下的1", "例子0", "它是什么", "整个条目"]);
+  // 一条来源指到两处：只改了其中一处，另一处仍待核实；接着再改另一处，这条来源就确认了。
+  const example = edited({ 例子: ["小李周一预约了一本书。"] });
+  assert.deepEqual(places([saved, example]), ["已经定下的1", "它是什么", "整个条目"]);
+  const both = { fields: { ...example.fields, 它是什么: "读者对一本在架的书办预约。" }, byUser: true, viewed: false };
+  assert.deepEqual(places([saved, example, both]), ["已经定下的1", "整个条目"]);
+  // 这一段里有一次看过：整个条目都确认了，之后用户自己再改也不丢。
+  assert.deepEqual(places([{ ...saved, viewed: true }, edited({ 标签: ["概念"] })]), []);
+  assert.deepEqual(places([saved, edited({ 标签: ["概念"] }, true)]), []);
 });
 
 test("因依据而待核实：依据的那一页待核实或已废弃；只看总体分析的页，只看一层，没有的是 null", () => {
