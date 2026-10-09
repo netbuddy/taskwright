@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Upgrading from 0.4.2
 
 - Existing tasks are not migrated and are not affected: the task databases are as they were, and a task created with 0.4.2 takes PDF materials like a new one. As before, back up the task directories before upgrading.
-- The desktop packages are larger by about 6.6 MB: they now carry the files of pdfjs-dist that the task service reads PDF files with (about 3.6 MB) and those the page shows them with (about 3 MB).
+- The desktop packages are larger by 2 to 3 MB (the AppImage by about 2.2 MB, the plain executable by about 3 MB): they now carry the files of pdfjs-dist that the task service reads PDF files with (about 3.8 MB uncompressed) and those the page shows them with (about 3 MB uncompressed).
 - If you run Taskwright from a clone of the repository, install the dependencies again as usual (`make install`, or `npm ci`). The pages now use pdfjs-dist, the package the task service has declared since 0.4.2; a clone whose dependencies were installed for 0.4.2 already has it, and installing again changes nothing. A startup profile of your own needs no change: the new section **PDF 解析** has a default for every value.
 - Upgrade the page and the task service together. The page of 0.4.3 relies on what the task service of 0.4.3 sends with a system note; with a task service of 0.4.2 the reminder sentence is still shown in the conversation, and the folded line has no key facts.
 
