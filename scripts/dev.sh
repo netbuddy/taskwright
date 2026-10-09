@@ -11,6 +11,8 @@
 # removed on exit, and examples/library-lending/run.sh creates a demo task with the example material, a session and a
 # few items, so the pages have something to show. The fake model answers from examples/library-lending/fake-model.json.
 # It needs pi on PATH, like the real backend, but no model service and no key.
+# --demo only shows what the pages look like: the fake model answers from a fixed script, so it is not a walkthrough
+# of the product; for that, start without --demo and connect a real model.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

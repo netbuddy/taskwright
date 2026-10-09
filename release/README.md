@@ -17,7 +17,7 @@ The payload repeats the repository's layout, so the backend finds its resources 
 | Path in the payload | What it is |
 |---|---|
 | `app/main.mjs` | The launcher (`app/main.ts` with its types removed). |
-| `backend/src/*.js`, `backend/package.json` | The task service. Every file it imports has its types removed and its `.ts` imports rewritten to `.js`; the backend's tests, comparison scripts and fake model endpoint are left out. |
+| `backend/src/*.js`, `backend/package.json` | The task service. Every file it imports has its types removed and its `.ts` imports rewritten to `.js`; the backend's tests and comparison scripts are left out. The fake model endpoint for the tests lives in `tools/` at the top of the repository, which the build takes nothing from; a test keeps the product from importing anything there. |
 | `agent/` | The pi extension and its prompts (`src/`, `prompts/`, `package.json`). The library files the backend imports are there twice: `.ts` for pi, which loads the extension through jiti, and `.js` for the backend. |
 | `task-types/` | The task type templates. |
 | `backend/vendor/mermaid/` | The diagram check engine: `backend/src/diagram_engine.mjs` bundled with the mermaid package into files Node loads without `node_modules`, reduced to the files the five kinds of diagram use (about 1 MB), and in `licenses/` the licence files of mermaid and of the packages whose code is in those files, listed in `licenses/PACKAGES.txt` (a package that ships no licence file and states MIT in its `package.json` gets the standard MIT text, written from that file). In the repository this directory does not exist and the backend loads mermaid from `node_modules`. |

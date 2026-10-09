@@ -39,7 +39,7 @@ Requirements, model setup, ports and troubleshooting are in [docs/deployment.md]
 
 ```
 agent/         pi tools, extensions, command-line entry points (src/), prompts, tests
-backend/       task service (HTTP/SSE API), fake model endpoint, tests
+backend/       task service (HTTP/SSE API), tests
 observatory/   taskwright_observatory: read-only web app and database readers; archive-format.md
 web/           browser interface
 sim/           simulated user, run driver, judge, example persona
@@ -47,6 +47,7 @@ task-types/    srs-authoring: task definition, skill, domain rules, document tem
 examples/      library-lending: example material and a scripted run
 docs/          capabilities, deployment, user guide, tutorial, API reference, architecture
 scripts/       check-public.sh, dev.sh, test-all.sh, tui.sh
+tools/         fake-model: a scripted model endpoint for the automated tests; not part of the product
 ```
 
 ## Documentation

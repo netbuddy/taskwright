@@ -65,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The text version of a Word or PDF document of a knowledge base told the assistant, in the note at its top, to cite the document as `<library id>/files/<name>#…`, which is not accepted when a source is checked. The note now gives the accepted form, `knowledge/<library id>/<name>#…`. Sources the assistant took from a knowledge base search were always written correctly; only an assistant that read the text version directly and copied the note was refused. Documents uploaded before this version keep the old note until they are uploaded again.
 
+### Development and tests
+
+- The fake model endpoint that the automated tests use has moved out of the backend directory to `tools/fake-model/` at the top of the repository; `backend/` now holds only the task service and its tests. Nothing in the packages changes: the endpoint was never part of them, and a new test keeps the product code, prompts, task type files, web sources and the build script from using anything under `tools/`.
+- The endpoint writes its configuration directory for the assistant only into a directory that does not exist yet or is empty. A directory that holds anything (a file, a directory, a symbolic link), or a path that is itself a symbolic link, is refused and left untouched; started from the command line it then exits with code 2 before listening. It used to overwrite `auth.json` there with an empty file, which could wipe real credentials when the directory was not a fresh one.
+- `scripts/dev.sh --demo` still shows the pages on the fake model, and its description now says that this is not a walkthrough of the product.
+
 ### Wording
 
 - The text file that is made from a Word or PDF file for the assistant to read is now called its **文字版** ("text version") wherever a user or the assistant reads about it: the assistant's instructions, the task status message, the reasons given for a refusal, error messages and the documentation. It used to be called 投影 ("projection"). Only the word changes: the files, their names and the interface are the same. Files generated before this version keep the old word in the notes written into them.

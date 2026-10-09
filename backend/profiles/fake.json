@@ -1,5 +1,5 @@
 {
-  "说明": "测试用的启动配置：与 dev 相同，只是模型换成仓内的假模型端点（fake/fake-model），不加载 Langfuse 插件，也不透传任何密钥。用它启动时要设 PI_CODING_AGENT_DIR 指向只登记了假端点的配置目录（node backend/fake_model/main.mts --agent-dir 会写好）。",
+  "说明": "测试用的启动配置：与 dev 相同，只是模型换成仓内的假模型端点（fake/fake-model），不加载 Langfuse 插件，也不透传任何密钥。用它启动时要设 PI_CODING_AGENT_DIR 指向只登记了假端点的配置目录（node tools/fake-model/main.mts --agent-dir 会写好，要给一个新建的空目录）。",
   "executable": "pi",
   "mode": "rpc",
   "model": "fake/fake-model",
