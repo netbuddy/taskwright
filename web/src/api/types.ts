@@ -116,7 +116,12 @@ export interface FieldDef {
   name: string;
   type: "文本" | "文本列表" | "枚举" | "条目引用" | string;
   required: boolean;
+  /** 枚举的取值；文本列表也可以有取值，这时列表里的每一项只能是其中之一（可以选好几个）。 */
   values: string[] | null;
+  /** 条目引用字段：只能指向同一个集合里的条目。 */
+  same_collection?: boolean;
+  /** 条目引用字段：最多写一个条目编号。 */
+  single?: boolean;
 }
 
 /** 评审规则清单里的一条（关闭与升为必选之后的）：必选规则违反了即评审不通过，可选规则只给建议。 */

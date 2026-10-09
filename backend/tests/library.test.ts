@@ -31,7 +31,7 @@ test("整份数据的序号与各表同一时刻，删掉的条目不在里面�
   const uc = task!.items[0];
   assert.deepEqual([uc.revision_no, uc.revisions, uc.revision_by, uc.reviews, uc.confirmations, uc.confirmation_stale], [2, [1, 2], "executor", [], [], false]);
   assert.ok(!Object.keys(uc).some((k) => k.startsWith("version_")), "修订统一之后不再带旧键名");
-  assert.deepEqual(task!.definition.collections[0].fields[0], { name: "名称", type: "文本", required: true, values: null });
+  assert.deepEqual(task!.definition.collections[0].fields[0], { name: "名称", type: "文本", required: true, values: null, same_collection: false, single: false });
   const comp = task!.completion!;
   assert.deepEqual(Object.keys(comp).sort(), ["all_met", "brief", "conditions", "hints", "unmet_count"]);
   assert.deepEqual(comp.hints, [], "这个任务没有领域说明集合，没有提示");

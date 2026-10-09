@@ -73,7 +73,7 @@ export function materialsDir(raw: unknown): string {
 export interface ParsedDefinition {
   任务名: any;
   交付物名称: any;
-  集合: { 名称: any; 编号前缀: any; 字段: { 名: any; 类型: any; 必填: boolean; 取值: any }[]; 界面: Record<string, any> }[];
+  集合: { 名称: any; 编号前缀: any; 字段: { 名: any; 类型: any; 必填: boolean; 取值: any; 只许本集合: boolean; 至多一个: boolean }[]; 界面: Record<string, any> }[];
   完成条件: Record<string, any>;
   执行方法: any;
   领域规矩: any;
@@ -98,6 +98,7 @@ export function parseDefinition(text: unknown): ParsedDefinition {
       编号前缀: "编号前缀" in entry ? entry["编号前缀"] : "",
       字段: ((entry["字段"] || []) as unknown[]).filter(isPlainObject).map((f) => ({
         名: "名" in f ? f["名"] : "", 类型: "类型" in f ? f["类型"] : "", 必填: Boolean(f["必填"]), 取值: f["取值"] ?? null,
+        只许本集合: f["只许本集合"] === true, 至多一个: f["至多一个"] === true,
       })),
       界面: isPlainObject(entry["界面"]) ? entry["界面"] : {},
     });

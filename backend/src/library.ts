@@ -200,7 +200,9 @@ export function definitionView(definition: ParsedDefinition, definitionText: unk
   return {
     collections: definition["集合"].map((c) => ({
       name: c["名称"], prefix: c["编号前缀"],
-      fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"], required: Boolean(f["必填"]), values: f["取值"] ?? null })),
+      // values：枚举的取值，或者文本列表的取值（列表里每一项只能是其中之一）；same_collection 与 single 只有条目引用字段可能为真。
+      fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"], required: Boolean(f["必填"]), values: f["取值"] ?? null,
+        same_collection: f["只许本集合"] === true, single: f["至多一个"] === true })),
       display: displayView(c["界面"]),
       ...collectionReviewView(definition, c["名称"], definitionText, taskDir),
     })),

@@ -261,5 +261,5 @@ test("任务定义的「界面」一项：真实任务类型的领域说明写�
       "多了「颜色」这一项", "「说明」应当是一段不为空的文字"]) assert.match(error.message, new RegExp(piece));
     return true;
   });
-  assert.throws(() => validateDefinition(withDisplay({ 分组字段: "关联条目" })), /「分组字段」「关联条目」应当是文本或枚举字段/);
+  assert.throws(() => validateDefinition(withDisplay({ 分组字段: "关联条目" })), /「分组字段」「关联条目」应当是文本字段、枚举字段，或者写了「取值」的文本列表字段/);
 });

@@ -353,6 +353,12 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   // 这一批里已经通过核对的新增与修改将要保存的内容：后面的操作把它们当作依据时，摘录对着这里核对，修订号是这一次的。
   const written = new Map<string, { collection: string; fields: Record<string, unknown> }>();
   const itemSources = (number: number, self: string | null) => itemSourceLookups(definition, items, latestVersion, { deletedHere, addedAt, written }, number, self);
+  // 这一批里新增的条目各在哪个集合里（条目引用字段「只许本集合」的核对要查）。
+  const addedIn = new Map<string, string>();
+  const refs: RefLookups = {
+    collectionOf: (itemId) => items.get(itemId)?.collection ?? addedIn.get(itemId) ?? null,
+    fieldsOf: (itemId) => written.get(itemId)?.fields ?? (items.has(itemId) ? (JSON.parse(latestVersion(itemId).fields) as Record<string, unknown>) : null),
+  };
   {
     const serialOf = new Map<string, number>();
     for (const row of items.values()) {
@@ -365,6 +371,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       const serial = (serialOf.get(collection.name) ?? 0) + 1;
       serialOf.set(collection.name, serial);
       addedAt.set(`${collection.prefix}-${String(serial).padStart(3, "0")}`, index + 1);
+      addedIn.set(`${collection.prefix}-${String(serial).padStart(3, "0")}`, collection.name);
     });
   }
 
@@ -415,7 +422,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (!isObject(raw.fields)) {
         errors.push("fields 应当是一个对象，键是字段名，值是字段内容");
       } else {
-        checkFields(collection, raw.fields, checkRef, errors);
+        checkFields(collection, raw.fields, checkRef, errors, refs, [...addedAt].find(([, at]) => at === number)?.[0] ?? null);
         const status = keepPendingField(collection);
         const refusal = status && call.actor !== ACTOR_USER
           ? newProblemStatus(raw.fields[status.name], (status.values ?? []).find((value) => !Object.hasOwn(CONSENT_OPTION, value)) ?? null) : null;
@@ -501,7 +508,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (raw.fields !== undefined && !isObject(raw.fields)) {
       errors.push("fields 应当是一个对象，只写要改的字段");
     } else if (isObject(raw.fields)) {
-      checkFields(collection, raw.fields, checkRef, errors);
+      checkFields(collection, raw.fields, checkRef, errors, refs, itemId);
       if (call.actor !== ACTOR_USER) {
         checkProblemUpdate(collection, itemId, before, raw.fields, errors);
         checkProblemStatus(collection, itemId, before, raw.fields, changedHere, problemFacts, errors);
@@ -780,12 +787,24 @@ function deletedAfter(db: DatabaseSync, taskId: string, itemId: string, seq: num
   return !!row && row.deleted_event_seq !== null && Number(row.deleted_event_seq) > seq;
 }
 
-/** 核对一组字段：字段名都在集合的声明里，值的类型对得上。 */
+/** 核对条目引用字段时要查的两样：一个条目在哪个集合里（不存在是 null）、它现在的字段内容（这一批里改过的取改后的）。 */
+interface RefLookups {
+  collectionOf: (itemId: string) => string | null;
+  fieldsOf: (itemId: string) => Record<string, unknown> | null;
+}
+
+/**
+ * 核对一组字段：字段名都在集合的声明里，值的类型对得上；文本列表写了取值的，每一项都在取值里、不重复；
+ * 条目引用字段写了「至多一个」「只许本集合」的照着核对，两样都写了的不许顺着它绕回自己。
+ * self 是正在核对的条目的编号（新增时是它将要拿到的编号，拿不到时为 null）。
+ */
 function checkFields(
   collection: CollectionDef,
   fields: Record<string, unknown>,
   checkRef: (itemId: unknown) => string | null,
   errors: string[],
+  refs: RefLookups | null = null,
+  self: string | null = null,
 ): void {
   const declared = new Map<string, FieldDef>(collection.fields.map((one) => [one.name, one]));
   for (const [name, value] of Object.entries(fields)) {
@@ -805,9 +824,40 @@ function checkFields(
         );
         continue;
       }
+      if (field.single && value.length > 1) {
+        errors.push(withGuide(`字段「${name}」最多写一个条目编号，现在写了 ${value.length} 个`, "只留一个"));
+      }
       value.forEach((one, index) => {
         const reason = typeof one === "string" ? checkRef(one) : "应当写一个条目编号";
-        if (reason) errors.push(`字段「${name}」是条目引用类型，第 ${index + 1} 个编号 ${JSON.stringify(one)} ${reason}`);
+        if (reason) {
+          errors.push(`字段「${name}」是条目引用类型，第 ${index + 1} 个编号 ${JSON.stringify(one)} ${reason}`);
+          return;
+        }
+        if (typeof one !== "string" || !refs) return;
+        if (self !== null && one === self) {
+          errors.push(`字段「${name}」的第 ${index + 1} 个编号 ${one} 指的就是这个条目自己`);
+          return;
+        }
+        if (field.sameCollection) {
+          const target = refs.collectionOf(one);
+          if (target !== null && target !== collection.name) {
+            errors.push(withGuide(`字段「${name}」只能指向「${collection.name}」里的条目，${one} 是「${target}」里的`, `请写「${collection.name}」里的一个条目编号，或者不写`));
+            return;
+          }
+        }
+        if (field.single && field.sameCollection && self !== null) {
+          // 顺着这个字段一路走下去，不许回到自己（甲的上级是乙，乙的上级又是甲）。
+          const seen = new Set<string>();
+          for (let at: string | null = one; at !== null && !seen.has(at); ) {
+            seen.add(at);
+            const next: unknown = (refs.fieldsOf(at)?.[name] as unknown[] | undefined)?.[0];
+            at = typeof next === "string" ? next : null;
+            if (at === self) {
+              errors.push(withGuide(`字段「${name}」写成 ${one} 之后会绕回这个条目自己（${[...seen].join(" → ")} → ${self}）`, "请换一个不在这条线上的条目，或者不写"));
+              break;
+            }
+          }
+        }
       });
       continue;
     }
@@ -817,6 +867,12 @@ function checkFields(
     } else if (field.type === FIELD_TEXT_LIST) {
       if (!Array.isArray(value) || !value.every((one) => typeof one === "string")) {
         errors.push(`字段「${name}」是文本列表类型，应当写一个字符串数组，一步或一条一项`);
+      } else if (field.values) {
+        const allowed = `只能从${field.values.map((one) => `「${one}」`).join("、")}里选，可以选几个`;
+        (value as string[]).forEach((one, index) => {
+          if (!field.values!.includes(one)) errors.push(withGuide(`字段「${name}」的第 ${index + 1} 项写的是 ${JSON.stringify(one)}，不在可以选的值里`, allowed));
+          else if ((value as string[]).indexOf(one) !== index) errors.push(withGuide(`字段「${name}」里「${one}」写了两次`, "同一个值只写一次"));
+        });
       }
     } else if (field.type === FIELD_ENUM) {
       if (typeof value !== "string" || !(field.values ?? []).includes(value)) {

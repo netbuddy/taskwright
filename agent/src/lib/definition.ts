@@ -20,9 +20,20 @@ export interface FieldDef {
   name: string;
   type: string;
   required: boolean;
-  /** 只有枚举类型才有。 */
+  /**
+   * 「取值」：枚举类型必须有，值只能是其中之一；文本列表类型可以有，有的话列表里的每一项都只能是其中之一（可以选好几个，不重复）。
+   * 别的类型没有。
+   */
   values?: string[];
+  /** 只给条目引用类型（任务定义里的键「只许本集合」）：为真时只能指向同一个集合里的条目。 */
+  sameCollection?: boolean;
+  /** 只给条目引用类型（任务定义里的键「至多一个」）：为真时最多写一个条目编号。 */
+  single?: boolean;
 }
+
+/** 条目引用字段上两个可选的键在任务定义里的名字。 */
+export const FIELD_SAME_COLLECTION = "只许本集合";
+export const FIELD_SINGLE = "至多一个";
 
 export interface CollectionDef {
   name: string;
@@ -274,7 +285,10 @@ export function validateDefinition(raw: unknown, path = "（未给出路径）",
   };
 }
 
-/** 核对一个集合的「界面」一项：三个键都可以不写；分组字段要是这个集合里的文本或枚举字段。形状不对时返回 null。 */
+/**
+ * 核对一个集合的「界面」一项：几个键都可以不写；分组字段要是这个集合里的文本字段、枚举字段，或者写了「取值」的文本列表字段
+ * （按列表里的每个值分组，一个条目有几个值就在几个组里，没有值的归「未归类」）。形状不对时返回 null。
+ */
 function validateDisplay(raw: unknown, label: string, fields: FieldDef[], reasons: string[]): CollectionDisplay | null {
   const where = `${label}的「界面」`;
   if (!isObject(raw)) {
@@ -289,7 +303,9 @@ function validateDisplay(raw: unknown, label: string, fields: FieldDef[], reason
   if (groupField !== null) {
     const field = fields.find((one) => one.name === groupField);
     if (!field) reasons.push(`${where}的「分组字段」是「${String(groupField)}」，这个集合没有这个字段。`);
-    else if (field.type !== FIELD_TEXT && field.type !== FIELD_ENUM) reasons.push(`${where}的「分组字段」「${field.name}」应当是文本或枚举字段。`);
+    else if (field.type !== FIELD_TEXT && field.type !== FIELD_ENUM && !(field.type === FIELD_TEXT_LIST && field.values)) {
+      reasons.push(`${where}的「分组字段」「${field.name}」应当是文本字段、枚举字段，或者写了「取值」的文本列表字段。`);
+    }
   }
   const leading = raw["靠前的组"] ?? [];
   if (!Array.isArray(leading) || !leading.every((one) => typeof one === "string")) reasons.push(`${where}的「靠前的组」应当是文字的列表。`);
@@ -434,6 +450,22 @@ function validateFields(raw: unknown, label: string, reasons: string[]): FieldDe
       } else {
         field.values = values as string[];
       }
+    } else if (type === FIELD_TEXT_LIST && "取值" in entry) {
+      // 文本列表可以写「取值」：写了，列表里的每一项都只能是其中之一。
+      const values = entry["取值"];
+      if (!Array.isArray(values) || values.length === 0 || !values.every(isNonEmptyString) || new Set(values).size !== values.length) {
+        reasons.push(`${fieldLabel}的「取值」应当是一个不为空、不重复的文字列表；不限制取值就不写这一项。`);
+      } else {
+        field.values = values as string[];
+      }
+    } else if ("取值" in entry) {
+      reasons.push(`${fieldLabel}写了「取值」，只有枚举与文本列表类型的字段能写。`);
+    }
+    for (const [key, set] of [[FIELD_SAME_COLLECTION, (on: boolean) => (field.sameCollection = on)], [FIELD_SINGLE, (on: boolean) => (field.single = on)]] as const) {
+      if (!(key in entry)) continue;
+      if (type !== FIELD_ITEM_REF) reasons.push(`${fieldLabel}写了「${key}」，只有条目引用类型的字段能写。`);
+      else if (typeof entry[key] !== "boolean") reasons.push(`${fieldLabel}的「${key}」应当写 true 或 false。`);
+      else if (entry[key]) set(true);
     }
     fields.push(field);
   });
