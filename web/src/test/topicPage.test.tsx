@@ -172,6 +172,38 @@ describe("主题页的四块", () => {
   });
 });
 
+describe("确认待核实", () => {
+  it("待核实的页顶部有「确认待核实的 N 处」，点了在这一页现在的修订上记一条已读；助手工作中也能点", () => {
+    const submit = vi.fn(async () => null);
+    render(<Panel t={overallTask()} writesOff spies={{ submit }} />);
+    const button = screen.getByTestId("topic-confirm");
+    expect(button).toHaveTextContent("确认待核实的 1 处");
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+    expect(submit).toHaveBeenCalledWith({ kind: "mark_viewed", targets: [{ item_id: "OA-003", base_revision: 12 }], notify_executor: false }, "确认 OA-003 待核实的 1 处");
+  });
+
+  it("不待核实的页没有这个按钮；任务不能写时按钮是灰的", () => {
+    render(<Panel t={overallTask()} first="OA-002" />);
+    expect(screen.queryByTestId("topic-confirm")).toBeNull();
+    cleanup();
+    render(<Panel t={overallTask()} readOnly />);
+    expect(screen.getByTestId("topic-confirm")).toBeDisabled();
+  });
+
+  it("整页只有一处待核实时，助手补的那一条旁边有「对」，点了等于确认；多于一处时那里没有「对」，统一用顶部的按钮", () => {
+    const submit = vi.fn(async () => null);
+    render(<Panel t={overallTask()} spies={{ submit }} />);
+    fireEvent.click(screen.getByTestId("topic-settled-ok-3"));
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ kind: "mark_viewed", targets: [{ item_id: "OA-003", base_revision: 12 }] }), expect.any(String));
+    expect(screen.queryByTestId("topic-settled-ok-0")).toBeNull();
+    cleanup();
+    render(<Panel t={change(overallTask(), "OA-003", (p) => { p.pending_sources = 2; })} />);
+    expect(screen.getByTestId("topic-confirm")).toHaveTextContent("确认待核实的 2 处");
+    expect(screen.queryByTestId("topic-settled-ok-3")).toBeNull();
+  });
+});
+
 describe("提到它的地方", () => {
   it("别处说到它的句子在前，命中的词上色；依据它写的条目在后，依据在那之后改过的带「依据已变」", () => {
     render(<Panel t={overallTask()} />);

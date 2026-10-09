@@ -131,3 +131,7 @@
 .app .oa-mentions q { quotes: "「" "」"; }
 .app .oa-mentions q mark { background: transparent; color: var(--blue); font-weight: 500; }
 .app .oa-mentions .stale { font-size: 0.857rem; color: var(--amber); margin-left: .5rem; white-space: nowrap; }
+
+/* 标题下面那一行靠右的按钮（确认、修改），与每条已定右边的小字操作 */
+.app .oa-meta .oa-acts { margin-left: auto; display: inline-flex; gap: .4rem; }
+.app .oa-rules .act { display: inline-flex; gap: .2rem; white-space: nowrap; }

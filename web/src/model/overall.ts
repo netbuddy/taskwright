@@ -9,7 +9,7 @@
 // 集合名叫「领域说明」的早先任务不走这里，照旧用 model/domainNotes.ts。
 
 import type { CollectionDef, Item, Source, Task } from "../api/types";
-import { SOURCE_ITEM, SOURCE_SUPPLEMENT, sourceKindNow, unresolvedIssuesOf } from "./items";
+import { SOURCE_ITEM, SOURCE_SUPPLEMENT, sourceKindNow, unresolvedIssuesOf, viewTarget } from "./items";
 
 export const OVERALL_COLLECTION = "总体分析";
 
@@ -86,6 +86,22 @@ export const isPending = (item: OverallItem): boolean => item.pending_verificati
 /** 这一页有几处待核实；不待核实时是 0。 */
 export function pendingCount(item: OverallItem): number {
   return isPending(item) ? Math.max(1, item.pending_sources ?? 1) : 0;
+}
+
+/**
+ * 用户打开一个条目时要不要顺手记为已读（返回要记的目标，不记时为 null）。别的条目照旧：打开就记（model/items.ts 的 viewTarget）。
+ * 总体分析里待核实的页不在打开时记：记了它就不再待核实，而助手补的那几处用户也许还没有看；
+ * 这种页由主题页上的「确认待核实的 N 处」来记。
+ */
+export function viewOnOpen(task: Task | null, itemId: string | null): { item_id: string; base_revision: number } | null {
+  const item = task?.items.find((i) => i.item_id === itemId) as OverallItem | undefined;
+  if (item && isOverall(item.collection) && isPending(item)) return null;
+  return viewTarget(task, itemId);
+}
+
+/** 「确认待核实的 N 处」：在这一页现在所在的修订上记一条已读，助手补的那几处就算用户确认过了。 */
+export function confirmAction(item: Item): { kind: "mark_viewed"; targets: { item_id: string; base_revision: number }[]; notify_executor: false } {
+  return { kind: "mark_viewed", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], notify_executor: false };
 }
 
 /** 一条例子是不是反例，以及去掉「反例：」之后的正文。 */

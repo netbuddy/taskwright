@@ -2,9 +2,9 @@
 // 哪几处是助手补的、提到它的地方与依据它的条目、复述要发的话、复述卡片怎样认。数据是图书馆借阅的夹具。
 import { describe, expect, it } from "vitest";
 import {
-  STORY_KEYS, countsText, dependents, exampleParts, firstParagraph, glossary, isStoryOptions, markSupplemented, mentionRows, openQuestions, outline, outlineOrder,
+  STORY_KEYS, confirmAction, countsText, dependents, exampleParts, firstParagraph, glossary, isStoryOptions, markSupplemented, mentionRows, openQuestions, outline, outlineOrder,
   overallDef, pagesOf, pendingCount, questionReason, retellText, settledCount, sourcesFor, splitByWord, supplemented, topicState, totals, trail, withBelow,
-  type OutlineNode,
+  viewOnOpen, type OutlineNode,
 } from "../model/overall";
 import { change, itemOf, overallTask } from "./fixtures/overallTask";
 
@@ -146,6 +146,29 @@ describe("总体分析：一页里的内容", () => {
     expect(openQuestions(task, itemOf(task, "OA-003"))).toEqual([]);
     change(task, "TBD-002", (q) => { q.fields.建议的处理 = null; });
     expect(questionReason(task, itemOf(task, "TBD-002"))).toBe("");
+  });
+});
+
+describe("总体分析：确认待核实", () => {
+  // 夹具里总体分析是要求用户看过的集合（没有给完成条件时，不是问题条目一类的集合都算），所以别的页打开就会记已读。
+  const needsViewing = () => overallTask();
+
+  it("打开待核实的页不记已读；不待核实、还没有看过的页照旧一打开就记", () => {
+    const task = needsViewing();
+    expect(viewOnOpen(task, "OA-003")).toBeNull(); // 待核实
+    expect(viewOnOpen(task, "OA-008")).toEqual({ item_id: "OA-008", base_revision: 1 }); // 没看过、不待核实
+    expect(viewOnOpen(task, "OA-002")).toBeNull(); // 已经看过当前的修订
+    expect(viewOnOpen(task, null)).toBeNull();
+    expect(viewOnOpen(null, "OA-003")).toBeNull();
+  });
+
+  it("确认之后（不再待核实）又被助手改了、当前修订还没有看过的页，打开照旧记", () => {
+    const task = change(needsViewing(), "OA-003", (p) => { p.pending_verification = false; });
+    expect(viewOnOpen(task, "OA-003")).toEqual({ item_id: "OA-003", base_revision: 12 });
+  });
+
+  it("「确认待核实的 N 处」记的是这一页现在所在的修订，不通知助手", () => {
+    expect(confirmAction(itemOf(overallTask(), "OA-003"))).toEqual({ kind: "mark_viewed", targets: [{ item_id: "OA-003", base_revision: 12 }], notify_executor: false });
   });
 });
 

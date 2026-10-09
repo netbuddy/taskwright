@@ -25,7 +25,8 @@ import { errorText } from "../components/work/errors";
 import { formatTime } from "../model/format";
 import { FONT_TIERS, narrowViewport, readFontTier, saveFontTier, type FontTier } from "../model/fontScale";
 import { justChangedItems, marksByItem, revisionsOfReply, revisionsOfWork, touchedItems } from "../model/revisions";
-import { openProblems, viewTarget } from "../model/items";
+import { openProblems } from "../model/items";
+import { viewOnOpen } from "../model/overall";
 import { showSubmitBar } from "../model/submit";
 import { go, href, openSettings } from "../router";
 import { useToast } from "../components/Toasts";
@@ -189,11 +190,11 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   /**
    * 用户打开一个条目的详情（列表、上一条下一条、对话与卡片里的条目、修订页签的查看差异，都是用户点的）：
    * 要求看过的集合里还是未读的，就在它当前所在的修订上记为已读。不显示「正在保存」，不报错：
-   * 没记上时条目照旧显示未读，再打开一次就会重记。
+   * 没记上时条目照旧显示未读，再打开一次就会重记。总体分析里待核实的页打开时不记，由主题页上的「确认」来记（model/overall.ts）。
    */
   const openItem = (itemId: string | null) => {
     setSelected(itemId);
-    const target = viewTarget(state.task, itemId);
+    const target = viewOnOpen(state.task, itemId);
     if (!target) return;
     void api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, kind: "mark_viewed", targets: [target], notify_executor: false })
       .catch(() => undefined);

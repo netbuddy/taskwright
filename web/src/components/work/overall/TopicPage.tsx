@@ -14,7 +14,7 @@ import { useState } from "react";
 import type { Item, Source, Task } from "../../../api/types";
 import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
 import {
-  TOPIC, dependents, exampleParts, examplesOf, isOverall, isPending, labelsOf, markSupplemented, mentionRows, openQuestions, pendingCount, questionReason, settledOf,
+  TOPIC, confirmAction, dependents, exampleParts, examplesOf, isOverall, isPending, labelsOf, markSupplemented, mentionRows, openQuestions, pendingCount, questionReason, settledOf,
   sourcesFor, splitByWord, supplemented, titleOf, trail, whatOf, type OverallItem,
 } from "../../../model/overall";
 import type { SubmitAction } from "../ItemDetail";
@@ -88,6 +88,13 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
   const mentionCount = (item.mentioned_by ?? []).length;
   const mentions = mentionRows(task, item);
   const offTitle = writeOffReason(task, { readOnly, writesOff });
+  // 确认：在这一页现在的修订上记一条已读。它不改内容，所以助手工作中也能点；任务结束、助手不可用时不能。
+  const confirm = async () => {
+    const label = `确认 ${item.item_id} 待核实的 ${pending} 处`;
+    const e = await submit(confirmAction(item), label);
+    if (e) toast.error(rejectedText(label, e, item.item_id));
+  };
+  const confirmOff = writeOffReason(task, { readOnly });
 
   return (
     <div className="oa-page" data-testid="topic-page">
@@ -111,6 +118,12 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
         )}
         <span className="sep" />
         <span data-testid="topic-counts">{basisCount} 个条目依据它 · 被 {mentionCount} 处提到</span>
+        <span className="oa-acts">
+          {isPending(item) && (
+            <button type="button" className="btn sm pri" disabled={!!confirmOff} title={confirmOff ?? "助手补的这几处你都看过、认可了，就点这里；点了之后这一页不再待核实"}
+              onClick={() => void confirm()} data-testid="topic-confirm">确认待核实的 {pending} 处</button>
+          )}
+        </span>
       </div>
 
       <section className="oa-blk" data-testid="topic-what">
@@ -151,6 +164,13 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
             <li key={i} className={marked.settled.has(i) ? "pending" : undefined} data-testid={`topic-settled-${i}`}>
               <span className="mk" />
               <div className="t">{one}<SourceLine sources={sourcesFor(item, TOPIC.settled, i)} onLocate={onLocate} /></div>
+              <span className="act">
+                {/* 确认是按整页记的：整页只有这一处待核实时，这一条旁边的「对」才等于确认；多于一处时统一用顶部的按钮 */}
+                {marked.settled.has(i) && pending === 1 && (
+                  <button type="button" className="linkbtn" disabled={!!confirmOff} title={confirmOff ?? "这一条是对的：确认"} onClick={() => void confirm()}
+                    data-testid={`topic-settled-ok-${i}`}>对</button>
+                )}
+              </span>
             </li>
           ))}
         </ul>
