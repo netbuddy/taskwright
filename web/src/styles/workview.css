@@ -126,7 +126,10 @@
 .app .evi{display:inline-block;font-size:0.865rem;color:var(--blue);border:1px solid var(--blue-line);background:var(--blue-bg);
   border-radius:.6rem;padding:0 .45rem;cursor:pointer;margin-top:.1rem}
 .app .chat-in{flex:none;padding:.55rem .8rem .65rem;border-top:1px solid var(--line)}
-.app .inbox{border:1px solid var(--line2);border-radius:1.1rem;background:var(--card);padding:.45rem .7rem}
+.app .inbox{border:1px solid var(--line);border-radius:.8rem;background:var(--card);padding:.45rem .7rem}
+.app .inbox textarea::placeholder{color:var(--text3)}
+/* 输入框下面一行里的「附一份材料」与已附上的文件：两头全圆的小标 */
+.app .inrow .chip{color:var(--text2);border-color:var(--line);border-radius:71rem}
 .app .inbox textarea{width:100%;border:0;outline:none;resize:none;font-family:inherit;font-size:0.921rem;
   line-height:1.5;min-height:2.2rem;background:transparent;color:var(--ink)}
 .app .inrow{display:flex;align-items:center;gap:.4rem;margin-top:.25rem}
