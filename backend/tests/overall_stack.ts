@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { DEMO_DEFINITION, ROOT, sqlGet, sqlRun } from "./helpers.ts";
 
 const BUILD = join(ROOT, "agent", "tests", "fixtures", "build_task_db.mts");
+const USER_OPS = join(ROOT, "agent", "tests", "fixtures", "user_ops.mts");
 export const MATERIAL = "读者对在架的书办预约。只有在架的书才能预约取书。\n";
 export const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者对在架的书办预约。" };
 export const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
@@ -52,6 +53,15 @@ export function confirm(ws: string, itemId: string, revisionNo: number): void {
     ["INSERT INTO judgement (judgement_id, task_id, basis, call_id, event_seq, created_at) VALUES (?, ?, ?, ?, ?, '2026-10-09 10:00:00')", id, taskId, JSON.stringify([{ 依据: "已读", 操作编号: `ui-op-${id}` }]), `ui-op-${id}`, seq],
     ["INSERT INTO judgement_item (judgement_id, task_id, item_id, revision_no, attitude, event_seq) VALUES (?, ?, ?, ?, '接受', ?)", id, taskId, itemId, revisionNo, seq],
   ]);
+}
+
+/** 经子进程里助手一侧真实的界面操作函数，做几次用户的界面操作（改字段、标为已读）；返回各次产生的修订号。 */
+let opNo = 0;
+export function userOps(ws: string, requests: Record<string, unknown>[]): (number | null)[] {
+  const numbered = requests.map((one) => ({ op_id: `ui-op-fixture-${++opNo}`, ...one }));
+  const done = spawnSync(process.execPath, [USER_OPS, ws, JSON.stringify(numbered)], { encoding: "utf-8" });
+  assert.equal(done.status, 0, done.stderr);
+  return JSON.parse(done.stdout);
 }
 
 /** 一页合格的主题（贴了标签、有例子、不待核实）：有了它，助手才能往别的集合里新增条目。它的文字里没有别的页的词。 */

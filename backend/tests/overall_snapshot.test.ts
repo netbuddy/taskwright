@@ -9,7 +9,7 @@ import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import * as library from "../src/library.ts";
 import { makeWorkspace, tempDir } from "./helpers.ts";
-import { DEFINITION, READY, SOURCE, SUPPLEMENT, build as buildIn, confirm, page } from "./overall_stack.ts";
+import { DEFINITION, READY, SOURCE, SUPPLEMENT, build as buildIn, confirm, page, userOps } from "./overall_stack.ts";
 
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -51,6 +51,31 @@ test("整份数据带待核实、因依据而待核实与提到；用户确认�
   const [, after] = library.taskSnapshot(ws);
   const now = (id: string) => after!.items.find((i) => i.item_id === id)! as Record<string, any>;
   assert.deepEqual([now("OA-001").pending_verification, now("OA-001").pending_sources, now("UC-001").basis_pending, now("OA-002").pending_verification], [false, 0, null, true]);
+});
+
+test("用户亲手改只确认他改到的那几处：只贴标签不算；改到助手补充的那一处才消；打开看过之后整页确认，之后再改也不丢", () => {
+  const ws = build("by-place", DEFINITION, [[
+    page({ 标题: "预约取书", 已经定下的: ["只有在架的书才能预约取书。", "保留期是 3 天。"], 例子: ["小王周六预约了一本书。"] },
+      [{ ...SOURCE, supports: [{ field: "它是什么" }] }, { kind: "文档原文", locator: "inputs/材料.md", excerpt: "只有在架的书才能预约取书。", supports: [{ field: "已经定下的", index: 0 }] },
+        SUPPLEMENT([{ field: "已经定下的", index: 1 }]), { kind: "助手补充", excerpt: "照材料里的做法举的例子，等用户确认。", supports: [{ field: "例子", index: 0 }] }]),
+  ]]);
+  const pending = () => {
+    const item = library.taskSnapshot(ws)[1]!.items.find((i) => i.item_id === "OA-001")! as Record<string, any>;
+    return [item.revision_no, item.pending_verification, item.pending_sources, item.pending_places];
+  };
+  assert.deepEqual(pending(), [1, true, 2, [{ field: "已经定下的", index: 1 }, { field: "例子", index: 0 }]]);
+  // 用户只贴了标签：产生修订 2，这次修订上记着用户修改带来的确认，但助手补充的两处他都没有改到，仍待核实。
+  userOps(ws, [{ kind: "edit_fields", targets: [{ item_id: "OA-001", base_revision: 1 }], fields: { 标签: ["流程"] } }]);
+  assert.deepEqual(pending(), [2, true, 2, [{ field: "已经定下的", index: 1 }, { field: "例子", index: 0 }]]);
+  // 用户亲手改了例子：例子那一处确认了，剩下已经定下的第 2 条。
+  userOps(ws, [{ kind: "edit_fields", targets: [{ item_id: "OA-001", base_revision: 2 }], fields: { 例子: ["小李周一预约了《算法导论》。"] } }]);
+  assert.deepEqual(pending(), [3, true, 1, [{ field: "已经定下的", index: 1 }]]);
+  // 用户打开看过现在这一次修订（这次修订上已经有用户修改带来的接受，已读仍要记下）：整页确认。
+  userOps(ws, [{ kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 3 }] }]);
+  assert.deepEqual(pending(), [3, false, 0, []]);
+  // 看过之后用户自己再改别处：确认不丢。
+  userOps(ws, [{ kind: "edit_fields", targets: [{ item_id: "OA-001", base_revision: 3 }], fields: { 别名: ["预约"] } }]);
+  assert.deepEqual(pending(), [4, false, 0, []]);
 });
 
 test("被依据的那一页已废弃：依据它的条目带 basis_pending，reason 是 deprecated，see 是它写的改看", () => {
