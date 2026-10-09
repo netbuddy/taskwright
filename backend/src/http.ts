@@ -267,6 +267,8 @@ export function serviceInfo(service: Service, remote: string | null = null) {
   const model = probeModel(service.profile, process.env, { paths: service.mode === "desktop" });
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
+    // 启动时发现有上一版留下的数据要先升级、而升级还没有做完：页面据此整屏显示数据升级页，别的接口这时一律答 upgrade_pending。
+    upgrade_pending: service.upgrade?.blocking ?? false,
     capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available, model_config: true, model_test: true, knowledge: service.knowledge !== null },
     model: { name: model.name, reason: model.reason },
     // 上传上限与超过时的那句话：前端在发送之前按它拦下过大的文件（经开发服务器的代理上传过大文件时，代理可能回 502）。
@@ -290,6 +292,15 @@ function modelContext(service: Service): modelConfig.Context {
 
 const handlers: Record<string, Handler> = {
   service_info: (service, req) => json(200, serviceInfo(service, req.remote ?? null)),
+  // 数据升级：看要升级什么、做到哪里了、做完后的报告。没有要做的升级（多数时候）时 upgrade 是 null。
+  service_upgrade: (service) => json(200, { ok: true, upgrade: service.upgrade ? service.upgrade.view() : null }),
+  // 开始数据升级：立刻返回，页面随后用上面的接口看进度。能打开页面的人就能开始，不限本机（升级之前有备份，升级不改任务的内容；
+  // 与退出服务不同，那个接口只接受本机来的请求）。
+  service_upgrade_start: (service) => {
+    if (!service.upgrade) throw new ApiError("rejected", "现在没有要做的数据升级。");
+    const started = service.upgrade.start();
+    return json(200, { ok: true, started, upgrade: service.upgrade.view() });
+  },
   model_config: (service, req) => json(200, modelConfig.view(modelContext(service))),
   model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
   model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service), req.params.provider, bodyJson(req))),
@@ -520,6 +531,8 @@ const L = "(?<lib>[^/]+)";
 export const ROUTES: [string, RegExp, string][] = ([
   ["GET", "/api/v1/service", "service_info"],
   ["POST", "/api/v1/service/exit", "service_exit"],
+  ["GET", "/api/v1/service/upgrade", "service_upgrade"],
+  ["POST", "/api/v1/service/upgrade", "service_upgrade_start"],
   ["GET", "/api/v1/model-config", "model_config"],
   ["POST", "/api/v1/model-config/providers", "model_provider_add"],
   ["POST", "/api/v1/model-config/providers/(?<provider>[^/]+)", "model_provider_update"],
@@ -568,11 +581,18 @@ export const ROUTES: [string, RegExp, string][] = ([
 ] as const).map(([m, p, n]) => [m, new RegExp(`^${p}$`, "s"), n]);
 
 /** 路由分派：找到方法与路径都对得上的第一个接口，交给它；找不到是 not_found；接口抛的 ApiError 按错误形状回答。 */
+/** 数据升级做完之前仍然可用的接口：服务信息、看升级与开始升级、退出服务。页面的静态文件不经这里，照常给。 */
+const OPEN_DURING_UPGRADE = new Set(["service_info", "service_upgrade", "service_upgrade_start", "service_exit"]);
+export const UPGRADE_PENDING_TEXT = "数据升级还没有做完，做完之前别的功能暂时不能用。";
+
 export async function dispatch(service: Service, req: Omit<Request, "params">): Promise<Reply | Stream> {
   try {
     for (const [method, pattern, name] of ROUTES) {
       const match = pattern.exec(req.path);
-      if (method === req.method && match) return await handlers[name](service, { ...req, params: { ...(match.groups ?? {}) } });
+      if (method !== req.method || !match) continue;
+      // 数据升级做完之前只放行这几个接口：别的都会去读任务或知识库，那些数据可能还是上一版的格式。
+      if (service.upgrade?.blocking && !OPEN_DURING_UPGRADE.has(name)) throw new ApiError("upgrade_pending", UPGRADE_PENDING_TEXT);
+      return await handlers[name](service, { ...req, params: { ...(match.groups ?? {}) } });
     }
     throw new ApiError("not_found", `没有这个接口：${req.method} ${req.path}`);
   } catch (error) {

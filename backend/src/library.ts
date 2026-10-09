@@ -7,9 +7,9 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, backup } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
@@ -42,6 +42,39 @@ export function openRo(taskDir: string): DatabaseSync | null {
     return null;
   }
   return openReadonly(path);
+}
+
+/**
+ * 只读看任务库的格式版本（库文件自己的 user_version）：不建表、不升级、不改任何东西。没有库文件或者读不出来时是 null。
+ * 0 是没有编过版本号的库（上一版及更早建的）。
+ */
+export function taskDbVersion(taskDir: string): number | null {
+  let db: DatabaseSync | null = null;
+  try {
+    db = openRo(taskDir);
+    if (db === null) return null;
+    return Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
+}
+
+/**
+ * 把任务库完整地复制一份到 target（数据升级之前的备份），返回副本的字节数。用数据库自带的备份办法，不是复制文件：
+ * 任务库是写入日志模式，最新的改动可能还只在旁边的日志文件里，只复制主文件得到的副本会缺东西；这个办法读的是库的当前内容，
+ * 源库只读打开，别的连接开着也不妨碍。target 所在的目录不在就建出来。
+ */
+export async function backupTaskDb(taskDir: string, target: string): Promise<number> {
+  mkdirSync(dirname(target), { recursive: true });
+  const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+  try {
+    await backup(db, target);
+  } finally {
+    db.close();
+  }
+  return statSync(target).size;
 }
 
 /** 库里的发起方写法换成接口的写法：最早格式里的「模型」算执行者。 */

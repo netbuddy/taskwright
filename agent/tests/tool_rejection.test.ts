@@ -134,7 +134,7 @@ test("任务目录里还没有库时不记，也不建库", () => {
 
 test("旧库没有工具拒绝表：第一次被写入一侧打开时补上，之后能记", () => {
   const dir = workspaceWithTask();
-  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.exec("DROP TABLE tool_rejection"));
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.exec("DROP TABLE tool_rejection; PRAGMA user_version = 0"));
   const id = recordRejection({ workspaceDir: dir, sessionId: SESSION, callId: "c-old", toolName: "reply" }, new Error("不对"), { a: 1 });
   assert.equal(id, 1);
   assert.equal(rejections(dir)[0].fact, "不对");

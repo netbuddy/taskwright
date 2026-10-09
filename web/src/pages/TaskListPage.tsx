@@ -16,6 +16,8 @@ export function statusTag(status: string) {
 
 /** 修订统一之前建的旧格式任务，或者正被别的服务占用的任务：列出来，灰显，打不开。 */
 const unsupported = (t: TaskListEntry) => t.supported === false;
+/** 数据格式与这个程序对不上的三种状态（后端给的字样）：上一版的数据还没有升级、升级没有做成、是更新的版本写的。原因在 note 里。 */
+const FORMAT_STATES = ["需要升级", "需要处理", "需要更新的程序"];
 const occupiedText = (t: TaskListEntry) => (t.occupied?.port ? `正被端口 ${t.occupied.port} 的服务占用` : "正被另一个服务占用");
 
 export function TaskListPage() {
@@ -28,7 +30,9 @@ export function TaskListPage() {
   }, []);
 
   const running = tasks?.filter((t) => t.status === "进行中").length ?? 0;
-  const old = tasks?.filter((t) => unsupported(t) && !t.occupied).length ?? 0;
+  // 数据格式与这个程序对不上的任务（需要升级、需要处理、需要更新的程序）：后端在状态里写明是哪一种。
+  const mismatched = tasks?.filter((t) => unsupported(t) && FORMAT_STATES.includes(t.status)).length ?? 0;
+  const old = tasks?.filter((t) => unsupported(t) && !t.occupied && !FORMAT_STATES.includes(t.status)).length ?? 0;
   const taken = tasks?.filter((t) => !!t.occupied).length ?? 0;
   return (
     <Shell>
@@ -37,7 +41,7 @@ export function TaskListPage() {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>新建任务</Button>
       </div>
       <p className="lede">
-        {tasks ? `一共 ${tasks.length} 个任务，其中 ${running} 个进行中${old ? `，${old} 个是旧格式、现在的程序打不开` : ""}${taken ? `，${taken} 个正被别的服务占用、这里打不开` : ""}。` : "正在读取任务列表。"}一个任务一份交付物，任务里的所有会话共用这份交付物。
+        {tasks ? `一共 ${tasks.length} 个任务，其中 ${running} 个进行中${old ? `，${old} 个是旧格式、现在的程序打不开` : ""}${mismatched ? `，${mismatched} 个的数据要先处理才能打开` : ""}${taken ? `，${taken} 个正被别的服务占用、这里打不开` : ""}。` : "正在读取任务列表。"}一个任务一份交付物，任务里的所有会话共用这份交付物。
       </p>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: "0.857rem" }} />}
       <Table<TaskListEntry>
@@ -51,6 +55,7 @@ export function TaskListPage() {
           { title: "任务名", dataIndex: "task_name", render: (v: string, t) => (<><b>{v}</b>{t.domain_tag && <div className="muted small">{t.domain_tag}</div>}</>) },
           { title: "任务类型", dataIndex: "task_type" },
           { title: "状态", dataIndex: "status", render: (v: string, t) => (t.occupied ? <Tag data-testid="task-occupied">{occupiedText(t)}</Tag>
+            : unsupported(t) && FORMAT_STATES.includes(v) ? <Tag data-testid="task-format">{v}</Tag>
             : unsupported(t) ? <Tag data-testid="task-unsupported">旧格式，不支持</Tag> : statusTag(v)) },
           { title: "条目数", dataIndex: "item_count" },
           {

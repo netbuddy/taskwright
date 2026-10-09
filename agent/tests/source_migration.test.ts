@@ -53,7 +53,7 @@ function oldWorkspace(check = true): string {
     CASE kind WHEN '助手补充' THEN '执行者补充' WHEN '条目' THEN '领域说明' ELSE kind END,
     CASE WHEN kind = '助手补充' THEN '执行者补充' ELSE locator END, excerpt, field, field_index, event_seq, normalized_value FROM item_source_now`);
   db.exec(`INSERT INTO item_source (${OLD_COLUMNS}) SELECT task_id, 'UC-002', 5, 9, 1, '用户直接修改', 'op-1', '用户改的', '名称', NULL, 1, NULL FROM task`);
-  db.exec("DROP TABLE item_source_now");
+  db.exec("DROP TABLE item_source_now; PRAGMA user_version = 0");
   db.close();
   return dir;
 }
@@ -117,6 +117,7 @@ test("迁移：中途出错整体回退，库还是早期版本的样子，一�
   assert.ok(!columnsOf(dir).includes("element_kind"));
   assert.deepEqual(rows(dir), before);
   assert.equal(query(dir, "SELECT 1 FROM sqlite_master WHERE name = 'item_source_new'").length, 0);
+  assert.equal(query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version, 0, "版本号与库一起回退");
 });
 
 test("迁移之前：只读的一侧读到的种类已经是现在的名字，依据的修订照迁移的规矩现算，与迁过之后读到的一样", () => {

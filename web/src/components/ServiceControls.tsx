@@ -1,3 +1,4 @@
+// 数据升级页（UpgradeScreen.tsx）也挂在这里：服务信息里 upgrade_pending 为真时整屏换成它。
 // 与运行形态有关的三样界面：没有模型时页面顶部的白话提示（带「去配置模型」）、「本机用户」菜单里的「退出服务」、退出之后的整屏。
 // 都按服务信息接口（GET /api/v1/service）的能力清单显示：capabilities.model 为 false 才出提示，capabilities.exit 为 true
 // 才有「退出服务」（只有桌面形态有）。取不到服务信息时（例如开发时的假服务没有这个接口）两样都不显示，页面照旧。
@@ -8,6 +9,7 @@ import { api, ApiError } from "../api/client";
 import type { ServiceInfo } from "../api/types";
 import { openSettings } from "../router";
 import { useToast } from "./Toasts";
+import { UpgradeScreen } from "./UpgradeScreen";
 
 type Mode = ServiceInfo["mode"];
 
@@ -35,7 +37,15 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
     setExited((was) => was ?? mode ?? info?.mode ?? "desktop");
     toast.clear();
   }, [info?.mode, toast]);
-  return <ServiceContext.Provider value={{ info, exited: exited !== null, markExited, refresh }}>{exited ? <ExitedScreen mode={exited} /> : children}</ServiceContext.Provider>;
+  // 有上一版留下的数据要先升级：整屏换成数据升级页，别的都不画（这时别的接口都不给用）。升级做完、或者有任务没有做成而用户点了
+  // 「继续使用」之后，先取一次新的服务信息再回到正常界面。
+  const [upgrading, setUpgrading] = useState(false);
+  useEffect(() => { if (info?.upgrade_pending) setUpgrading(true); }, [info?.upgrade_pending]);
+  const leaveUpgrade = useCallback(() => {
+    api.serviceInfo().then(setInfo).catch(() => setInfo(null)).finally(() => setUpgrading(false));
+  }, []);
+  const screen = exited ? <ExitedScreen mode={exited} /> : upgrading || info?.upgrade_pending ? <UpgradeScreen onContinue={leaveUpgrade} /> : children;
+  return <ServiceContext.Provider value={{ info, exited: exited !== null, markExited, refresh }}>{screen}</ServiceContext.Provider>;
 }
 
 export function useService(): ServiceState {

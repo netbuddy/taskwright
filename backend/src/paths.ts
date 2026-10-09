@@ -42,6 +42,21 @@ export function userDataDir(): string {
   return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "taskwright");
 }
 
+/** 指定数据目录的环境变量：桌面包的启动程序与任务服务都认它。 */
+export const ENV_DATA_DIR = "TASKWRIGHT_DATA_DIR";
+
+/**
+ * 数据目录：服务级库（service_db.ts）、数据升级前的备份 backups/ 与升级报告放在这里；任务目录、归档目录、知识库目录没有另给时
+ * 也在它下面（tasks、runs、knowledge）。按这个次序定：命令行给的 --data；环境变量 TASKWRIGHT_DATA_DIR；给了 --tasks 时取它的
+ * 上一级目录；都没有才是用户数据目录。第三条是为了只给 --tasks 的用法（开发与测试）：那时不把服务级库写到用户本人的数据目录里去。
+ */
+export function dataDirectory(given?: string | null, tasks?: string | null, env: NodeJS.ProcessEnv = process.env): string {
+  if (given) return resolve(given);
+  if (env[ENV_DATA_DIR]) return resolve(env[ENV_DATA_DIR]!);
+  if (tasks) return dirname(resolve(tasks));
+  return userDataDir();
+}
+
 /** 日志目录：服务的日志除了写标准输出，也写一份到这里（双击启动时没有终端）。 */
 export function logDir(): string {
   return join(userDataDir(), "logs");

@@ -4,6 +4,10 @@
  * 1. backend/ 下的任何文件（源码、测试）从 agent/src/lib 导入的名字都必须在下面的白名单里：只读函数、常量，
  *    以及唯一允许的写入——建任务的 createTask。保存修订、界面操作、评审等写入函数一律不许导入；也不许整个模块导入或动态导入。
  * 2. backend/src 下的源码里不出现写库的 SQL（INSERT、UPDATE、DELETE、REPLACE、CREATE、DROP、ALTER）。
+ *    唯一的例外是服务级库的数据模块 src/service_db.ts：服务级库（数据目录下的 service.sqlite）是后端自己的库，它的每一句 SQL
+ *    都只许写在那一个文件里。
+ * 3. backend/src 下只有两个文件直接用数据库：library.ts（只读打开任务库）与 service_db.ts（服务级库）。别的文件不导入
+ *    node:sqlite，也不出现 service.sqlite 这个文件名，要读写服务级库就调 service_db.ts 的取存函数。
  */
 
 import assert from "node:assert/strict";
@@ -49,6 +53,11 @@ const ALLOWED: Record<string, string[]> = {
   "pdf_segments.ts": ["PDF_SEGMENTS_SUFFIX", "PdfSegmentList", "buildPdfSegments", "pdfProjectionUnits", "writePdfSegments"],
   // PDF 材料的来源：从投影取各块（只做计算，页面也用它）；知识库切片段时用。
   "pdf_source.ts": ["pdfProjectionUnits"],
+  // 任务库的格式版本一侧：现在的版本号与 task.json 的文件名（常量）、拒绝比程序新的数据时的那句话（纯函数，不碰库；数据目录比程序新时
+  // 后端也用这一句）、从 task.json 读出是哪个版本写的（只读一个小文件）、任务根目录的环境变量名（常量）。
+  // upgradeTaskDatabase 是写入：把一个任务库升到现在的格式。它只许在数据升级里调（src/data_upgrade.ts，服务启动时的升级与命令行的
+  // 升级都经那里），走的是助手写库时用的同一张步骤表；下面另有一条测试守着别的文件不导入它。
+  "schema.ts": ["TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],
 };
@@ -98,9 +107,16 @@ test("扫描规则本身：认得出具名导入、类型导入、改名导入�
     ["save_revision.ts", "*"], ["user_ops.ts", "*"], ["review.ts", "*"]]);
 });
 
+/**
+ * 生成旧版本样本任务目录的脚本不在这条规则里：它里面的导入语句是一段种子脚本的文字，那段脚本交给取出来的旧版本代码
+ * 在临时目录里运行（用旧版本自己的保存修订函数写样本），不是后端的代码，后端与测试都不导入它。
+ */
+const SAMPLE_BUILDER = join("tests", "fixtures", "task_dirs", "build.mjs");
+
 test("backend/ 下的文件不导入 agent 的写入函数（建任务的 createTask 除外）", () => {
   const bad: string[] = [];
   for (const file of files(BACKEND)) {
+    if (relative(BACKEND, file) === SAMPLE_BUILDER) continue;
     for (const [module, name] of agentImports(readFileSync(file, "utf-8"))) {
       if (!(ALLOWED[module] ?? []).includes(name)) bad.push(`${relative(BACKEND, file)}：${module} 的 ${name}`);
     }
@@ -108,12 +124,38 @@ test("backend/ 下的文件不导入 agent 的写入函数（建任务的 create
   assert.deepEqual(bad, [], "不在白名单里的导入");
 });
 
-test("backend/src 的源码里没有写库的 SQL", () => {
+/** 服务级库的数据模块：后端里唯一可以写 SQL 的文件。 */
+const SERVICE_DB_MODULE = "service_db.ts";
+/** 直接用数据库的两个文件。 */
+const DATABASE_MODULES = ["library.ts", SERVICE_DB_MODULE];
+
+test("backend/src 的源码里没有写库的 SQL（服务级库的数据模块除外）", () => {
   const bad: string[] = [];
   for (const file of files(join(BACKEND, "src"))) {
+    if (relative(join(BACKEND, "src"), file) === SERVICE_DB_MODULE) continue;
     readFileSync(file, "utf-8").split("\n").forEach((line, n) => {
       if (/["'`]\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\s/i.test(line)) bad.push(`${relative(BACKEND, file)}:${n + 1}`);
     });
   }
   assert.deepEqual(bad, []);
+});
+
+test("改任务库的 upgradeTaskDatabase 只有数据升级模块导入", () => {
+  const importers = files(join(BACKEND, "src")).filter((file) => agentImports(readFileSync(file, "utf-8")).some(([module, name]) => module === "schema.ts" && name === "upgradeTaskDatabase"));
+  assert.deepEqual(importers.map((file) => relative(join(BACKEND, "src"), file)), ["data_upgrade.ts"]);
+});
+
+test("服务级库只经它的数据模块读写：别的文件不导入 node:sqlite，也不出现它的文件名", () => {
+  const bad: string[] = [];
+  const src = join(BACKEND, "src");
+  for (const file of files(src)) {
+    const name = relative(src, file);
+    if (DATABASE_MODULES.includes(name)) continue;
+    readFileSync(file, "utf-8").split("\n").forEach((line, n) => {
+      if (/["']node:sqlite["']/.test(line) || /service\.sqlite/.test(line)) bad.push(`${name}:${n + 1}`);
+    });
+  }
+  assert.deepEqual(bad, []);
+  // 数据模块自己确实有写库的 SQL：这条规则守着的东西是存在的。
+  assert.match(readFileSync(join(src, SERVICE_DB_MODULE), "utf-8"), /CREATE TABLE IF NOT EXISTS tasks/);
 });

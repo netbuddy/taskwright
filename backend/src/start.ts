@@ -14,11 +14,14 @@ import type { Server } from "node:http";
 import { join } from "node:path";
 import { format } from "node:util";
 import { makeServer } from "./http.ts";
-import { expandUser, loadProfile } from "./launch.ts";
+import { loadProfile } from "./launch.ts";
 import { migrateProviderPurposes } from "./model_config.ts";
 import { defaultHost, listenFrom } from "./listen.ts";
-import { logDir, userDataDir } from "./paths.ts";
+import { PendingUpgrade, locate, planUpgrade, upgradeNeeded } from "./data_upgrade.ts";
+import { appVersion, logDir } from "./paths.ts";
 import { MODES, type Mode, Service } from "./service.ts";
+import { NewerDataDirectory, ServiceDb } from "./service_db.ts";
+import { newerDataText } from "../../agent/src/lib/schema.ts";
 
 export interface StartOptions {
   /** 起始端口：被占时依次试后面的，最多 10 个。 */
@@ -27,7 +30,12 @@ export interface StartOptions {
   mode?: Mode;
   /** 绑定地址；不给时按运行形态定（desktop 是 127.0.0.1，server 是 0.0.0.0）。 */
   host?: string;
-  /** 放任务目录的上级目录；不给时在用户数据目录下。 */
+  /**
+   * 数据目录：服务级库、数据升级前的备份与升级报告放在这里；给了它（或者设了环境变量 TASKWRIGHT_DATA_DIR），没有另给的任务目录、
+   * 归档目录与知识库目录也在它下面。不给时怎样定见 paths.ts 的 dataDirectory。
+   */
+  data?: string;
+  /** 放任务目录的上级目录；不给时在数据目录（给了的话）或用户数据目录下。 */
   tasks?: string;
   /** 归档目录；不给时在用户数据目录下。 */
   runs?: string;
@@ -50,6 +58,7 @@ export interface Started {
   tasksDir: string;
   runsDir: string;
   knowledgeDir: string;
+  dataDir: string;
   /** 停止接新连接、关掉各任务的 pi、删掉占用标记；不退出进程。重复调用只做一次。 */
   stop: () => Promise<void>;
 }
@@ -107,10 +116,30 @@ export async function startService(options: StartOptions): Promise<Started> {
   const ownProcess = options.ownProcess ?? true;
 
   teeLogs();
-  const tasksDir = expandUser(options.tasks ?? join(userDataDir(), "tasks"));
-  const runsDir = expandUser(options.runs ?? join(userDataDir(), "runs"));
-  const knowledgeDir = expandUser(options.knowledge ?? join(userDataDir(), "knowledge"));
-  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir });
+  const { dataDir, tasksDir, runsDir, knowledgeDir } = locate(options);
+  // 先只读地看一遍数据目录：比这个程序新就不启动；有上一版留下的数据要升级时，服务器形态不启动（由管理员先在命令行升级），
+  // 桌面形态先起来、等用户在页面上点「开始升级」，在那之前不对外提供别的功能（见 data_upgrade.ts 的 PendingUpgrade）。
+  const plan = planUpgrade({ dataDir, tasksDir, knowledgeDir });
+  if (plan.service.state === "newer") throw new StartError(`数据目录 ${dataDir} 打不开：${newerDataText(plan.service.written_by)}`);
+  const pending = upgradeNeeded(plan);
+  if (pending && mode === "server") {
+    const what = [plan.tasks.length ? `${plan.tasks.length} 个任务` : "", plan.service.state === "outdated" ? "任务登记" : ""].filter(Boolean).join("与");
+    throw new StartError(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${what}）。请先运行 taskwright data upgrade --data ${dataDir}，做完再启动服务。`);
+  }
+  let registry: ServiceDb | null = null;
+  if (!pending) {
+    try {
+      registry = ServiceDb.open(dataDir, appVersion());
+    } catch (error) {
+      if (error instanceof NewerDataDirectory) throw new StartError(`数据目录 ${dataDir} 打不开：${newerDataText(error.writtenBy)}`);
+      throw error;
+    }
+  }
+  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry });
+  if (pending) {
+    service.upgrade = new PendingUpgrade(plan, (opened) => service.attachRegistry(opened));
+    console.log(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${plan.tasks.length} 个任务）：服务已经起来，等页面上点「开始升级」。`);
+  }
   // 设置文件里还没定用途的模型服务（上一版留下的）先定用途。做不成不拦着服务起来，日志里写明原因。
   try {
     for (const note of await migrateProviderPurposes({ env: process.env, profile: service.profile })) console.log(note);
@@ -150,5 +179,5 @@ export async function startService(options: StartOptions): Promise<Started> {
   if (options.port !== 0 && port !== options.port) console.log(`端口 ${options.port} 被占用，改用端口 ${port}。`);
   const web = options.web ? `，网页 ${options.web}` : "";
   console.log(`任务服务在 http://${host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}，知识库 ${service.knowledge!.root}，运行形态 ${mode}${web}`);
-  return { service, server, port, host, tasksDir, runsDir, knowledgeDir: service.knowledge!.root, stop };
+  return { service, server, port, host, tasksDir, runsDir, knowledgeDir: service.knowledge!.root, dataDir, stop };
 }

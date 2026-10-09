@@ -1,5 +1,5 @@
 /**
- * 建表语句与「确保库已建好」的函数。全部代码里建表语句只有这一份。
+ * 建表语句与「确保库已建好」的函数。全部代码里建表语句只有这一份；库的格式版本与升级步骤表（UPGRADE_STEPS）也在这里。
  *
  * 为什么建库放在写入工具里、不放在后端或事件钩子里：建库也是写库，写库的入口只能是工具；
  * 事件钩子里出错 pi 只记一行日志就放行，工具的执行函数里出错会当场变成工具的拒绝并带着原因。
@@ -13,8 +13,8 @@
  * 因为设计里把它列为这两张表的主要列。
  */
 
-import { existsSync, realpathSync, statSync, unlinkSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { existsSync, readFileSync, realpathSync, statSync, unlinkSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath, inImmediateTransaction } from "./db.ts";
 import { ensureDialogueSchema } from "./dialogue_schema.ts";
@@ -409,11 +409,72 @@ export function existingTables(db: DatabaseSync): string[] {
 }
 
 /**
- * 确保库已建好：一张表都没有就建齐九张；九张都在就什么都不做；是旧库表（有 slot 表）就拒绝；
- * 只有一部分表时也拒绝，因为那不是本代码建出来的样子，贸然补建会掩盖问题。
- * 必须在调用方已经开好的事务里调用，好让建表与随后的写入一起提交或一起回退。
+ * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。0 是没有编过版本号的库：0.4.x 及更早的版本建的，或者一张表都没有的空库。
+ * 以后每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。
  */
-export function ensureSchema(db: DatabaseSync): void {
+export const TASK_DB_VERSION = 1;
+
+/** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
+export const TASK_JSON = "task.json";
+
+/** 库的格式版本比这个程序认识的新时抛的错：旧程序不打开新数据，也不做降级。 */
+export class NewerTaskDatabase extends Error {}
+
+/** 库里记的格式版本。 */
+export function taskDbVersion(db: DatabaseSync): number {
+  return Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+}
+
+/** 拒绝比自己新的数据时的那句话；writtenBy 是写它的产品版本，不知道时给 null。任务库与数据目录都用这一句。 */
+export function newerDataText(writtenBy: string | null): string {
+  return writtenBy ? `这份数据由 ${writtenBy} 写入，请用 ${writtenBy} 或更新的版本打开。` : "这份数据由更新的版本写入，请用更新的版本打开。";
+}
+
+/** 任务目录的 task.json 里记的、最近写这个任务的产品版本（升级过的取升级时的，否则取建任务时的）；读不到时是 null。 */
+export function taskWrittenBy(workspaceDir: string): string | null {
+  try {
+    const meta = JSON.parse(readFileSync(join(workspaceDir, TASK_JSON), "utf-8")) as Record<string, unknown>;
+    const version = meta.upgraded_by_version ?? meta.created_by_version;
+    return typeof version === "string" && version ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 升级步骤表：把库从一个格式版本升到下一个。这是改任务库结构的唯一入口，三条路都走它——助手写库（withTaskDatabase）、
+ * 服务启动时的数据升级、命令行的数据升级（后两条经 upgradeTaskDatabase）。
+ * 每一步可以重复做（做过的部分再做一遍不出错、不改数据），整张表在调用方开好的一个立即事务里走完，版本号也在这个事务里写：
+ * 中途出错整体回退，库与版本号都还是升级之前的样子。
+ */
+const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void }[] = [
+  { from: 0, to: 1, run: fromUnversioned },
+];
+
+/**
+ * 确保库是现在的格式：照 UPGRADE_STEPS 从库里记的版本一步步升到 TASK_DB_VERSION。已经是现在的版本就什么都不做，不再逐张表去看；
+ * 比现在的版本新就拒绝（NewerTaskDatabase）。必须在调用方已经开好的事务里调用，好让建表、升级与随后的写入一起提交或一起回退。
+ * 返回升级之前与之后的版本。
+ */
+export function ensureSchema(db: DatabaseSync): { from: number; to: number } {
+  const from = taskDbVersion(db);
+  if (from > TASK_DB_VERSION) throw new NewerTaskDatabase(newerDataText(null));
+  let version = from;
+  for (const step of UPGRADE_STEPS) {
+    if (step.from !== version) continue;
+    step.run(db);
+    db.exec(`PRAGMA user_version = ${step.to}`);
+    version = step.to;
+  }
+  return { from, to: version };
+}
+
+/**
+ * 第 0 到 1 步：没有编过版本号的库。一张表都没有就建齐全套；是旧库表（有 slot 表）就拒绝；别的库把后来加的表、列与索引补上，
+ * 来源表还是早期样子的迁到要素层。只有一部分表、或者缺早已不支持的列时也拒绝，因为那不是 0.4.0 及以后的版本建出来的样子，
+ * 贸然补建会掩盖问题。五处拒绝都在改动之前或者同一个事务里，被拒的库原样不动。
+ */
+function fromUnversioned(db: DatabaseSync): void {
   const tables = existingTables(db);
   if (tables.includes(LEGACY_TABLE)) {
     throw new Error("这个任务目录的库是旧格式，请换一个新的任务目录。旧格式的库里有 slot 表，本工具不认识它，也不会去改它。");
@@ -592,6 +653,7 @@ export function withTaskDatabase<T>(
   const db = new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS });
   let succeeded = false;
   try {
+    refuseNewer(db, workspaceDir);
     useWriteAheadLog(db);
     const result = inImmediateTransaction(db, () => {
       ensureSchema(db);
@@ -607,6 +669,30 @@ export function withTaskDatabase<T>(
         if (existsSync(one)) unlinkSync(one);
       }
     }
+  }
+}
+
+/** 库比这个程序新就拒绝，话里写上是哪个版本写的（取任务目录的 task.json）。在切日志模式与开事务之前调：新库一个字节都不动。 */
+function refuseNewer(db: DatabaseSync, workspaceDir: string): void {
+  if (taskDbVersion(db) > TASK_DB_VERSION) throw new NewerTaskDatabase(newerDataText(taskWrittenBy(workspaceDir)));
+}
+
+/**
+ * 把一个任务目录的库升到现在的格式，返回升级之前与之后的版本（相同就是不用升）。只给数据升级用：服务启动时的升级与命令行的升级
+ * 都经后端调这里，走的是与助手写库同一张步骤表（ensureSchema）。库文件不存在抛 NoDatabaseYet，比这个程序新抛 NewerTaskDatabase，
+ * 步骤表拒绝的旧库照原话抛错；出错时库原样不动。
+ */
+export function upgradeTaskDatabase(workspaceDir: string): { from: number; to: number } {
+  checkUnderTasksRoot(workspaceDir);
+  const path = databasePath(workspaceDir);
+  if (!(existsSync(path) && statSync(path).size > 0)) throw new NoDatabaseYet(path);
+  const db = new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS });
+  try {
+    refuseNewer(db, workspaceDir);
+    useWriteAheadLog(db);
+    return inImmediateTransaction(db, () => ensureSchema(db));
+  } finally {
+    db.close();
   }
 }
 

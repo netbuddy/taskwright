@@ -28,6 +28,15 @@ import { SessionList, byRecentActivity } from "../components/task/SessionList";
 import { MaterialsCard } from "../components/task/MaterialsCard";
 import "../styles/task-page.css";
 
+/**
+ * 任务类型说明的版本与产品自带的不同时的那一句；两个数有一个没有记、或者相同，就不写（返回 null）。
+ * 说明是建任务时复制进任务目录的，不随程序升级更新，所以旧任务用的可能是旧的一版。
+ */
+export function taskTypeVersionNote(versions: { copied: number | null; current: number | null } | undefined): string | null {
+  if (!versions || versions.copied === null || versions.current === null || versions.copied === versions.current) return null;
+  return `任务类型说明是 ${versions.copied} 版，当前产品自带的是 ${versions.current} 版。`;
+}
+
 export function TaskPage({ taskId }: { taskId: string }) {
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +132,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
             </div>
             <div className="tp-head-meta" data-testid="task-meta">
               创建于 {formatTime(task.started_at)}{lastActive ? `，最近一次活动在 ${formatTimeShort(lastActive)}` : ""}。
+              {taskTypeVersionNote(task.task_type_versions) && <span data-testid="task-type-version">{taskTypeVersionNote(task.task_type_versions)}</span>}
             </div>
           </div>
           <div className="tp-head-r">

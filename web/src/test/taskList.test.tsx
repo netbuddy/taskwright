@@ -24,4 +24,20 @@ describe("任务列表", () => {
     expect(screen.getByText(/1 个是旧格式、现在的程序打不开，1 个正被别的服务占用、这里打不开/)).toBeTruthy();
     expect(screen.queryAllByRole("button", { name: "打开" })).toHaveLength(0);
   });
+
+  it("数据格式与这个程序对不上的任务：状态照后端给的字样写（需要升级、需要处理、需要更新的程序），原因写在完成条件一栏，打不开", async () => {
+    const row = (id: string, status: string, note: string) => ({ ...base, task_id: id, task_name: id, status, supported: false, note });
+    vi.spyOn(api, "listTasks").mockResolvedValue([
+      row("T1", "需要升级", "这个任务是上一版建的，数据还没有升级。重新启动程序后升级。"),
+      row("T2", "需要处理", "这个任务的数据升级没有做成：任务库读不出来"),
+      row("T3", "需要更新的程序", "这份数据由 0.7.0 写入，请用 0.7.0 或更新的版本打开。"),
+      { ...base, task_id: "TASK-OLD", task_name: "TASK-OLD", status: "旧格式", supported: false, note: "旧格式" },
+    ]);
+    render(<ConfigProvider><AntApp><TaskListPage /></AntApp></ConfigProvider>);
+    await screen.findByTestId("task-unsupported");
+    expect(screen.getAllByTestId("task-format").map((el) => el.textContent)).toEqual(["需要升级", "需要处理", "需要更新的程序"]);
+    expect(screen.getByText("这个任务的数据升级没有做成：任务库读不出来")).toBeTruthy();
+    expect(screen.getByText(/一共 4 个任务，其中 0 个进行中，1 个是旧格式、现在的程序打不开，3 个的数据要先处理才能打开。/)).toBeTruthy();
+    expect(screen.queryAllByRole("button", { name: "打开" })).toHaveLength(0);
+  });
 });

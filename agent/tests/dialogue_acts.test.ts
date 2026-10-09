@@ -568,7 +568,7 @@ test("续接会话时，任务现状消息列出还在等回应的执行者行�
 test("对话理解之前建的库：打开时补建对话行为表、给修订表与来源表补列，原有的行都在", () => {
   const dir = workspaceWithItems();
   const db = new DatabaseSync(databasePath(dir));
-  db.exec("DROP TABLE dialogue_act; ALTER TABLE revision DROP COLUMN intent_act_id; ALTER TABLE item_source DROP COLUMN normalized_value;");
+  db.exec("DROP TABLE dialogue_act; ALTER TABLE revision DROP COLUMN intent_act_id; ALTER TABLE item_source DROP COLUMN normalized_value; PRAGMA user_version = 0;");
   db.close();
   withTaskDatabase(dir, { createIfMissing: false }, () => null);
   const columns = (table: string) => query<{ name: string }>(dir, `PRAGMA table_info(${table})`).map((r) => r.name);

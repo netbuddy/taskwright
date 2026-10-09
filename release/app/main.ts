@@ -102,7 +102,7 @@ function runningInstance(port: number): Promise<boolean> {
   });
 }
 
-type Options = { port: string; mode: string; profile: string; web: string; host?: string; tasks?: string; runs?: string; knowledge?: string };
+type Options = { port: string; mode: string; profile: string; web: string; host?: string; data?: string; tasks?: string; runs?: string; knowledge?: string };
 
 // The package's defaults, then the user's own arguments, which win. Unknown arguments are refused with a sentence.
 function options(argv: string[]): Options {
@@ -110,7 +110,7 @@ function options(argv: string[]): Options {
     args: argv,
     options: {
       port: { type: "string" }, host: { type: "string" }, mode: { type: "string" }, profile: { type: "string" },
-      web: { type: "string" }, tasks: { type: "string" }, runs: { type: "string" }, knowledge: { type: "string" },
+      web: { type: "string" }, data: { type: "string" }, tasks: { type: "string" }, runs: { type: "string" }, knowledge: { type: "string" },
     },
     strict: true,
   });
@@ -124,6 +124,14 @@ function options(argv: string[]): Options {
 
 async function main(): Promise<void> {
   timing("main_entered");
+  // `taskwright data upgrade [--data <dir>]`: no service is started and no browser is opened. The backend's data
+  // command looks at the data directory, backs it up, upgrades what an earlier version left there and prints the
+  // report; its return value is the exit code. This comes before the look for a running instance: the command
+  // itself refuses to work on a data directory that a running service is using.
+  if (process.argv[2] === "data") {
+    const { dataCommand } = await import(pathToFileURL(path.join(ROOT, "backend", "src", "data_command.js")).href);
+    process.exit(await dataCommand(process.argv.slice(3)));
+  }
   let chosen: Options;
   try {
     // In a single executable process.argv[1] repeats the executable; with node it is this script. Either way the
@@ -144,7 +152,9 @@ async function main(): Promise<void> {
   }
 
   process.env.TASKWRIGHT_PI_ENTRY ||= PI_ENTRY;
-  if (process.env.TASKWRIGHT_DATA_DIR) process.env.TASKWRIGHT_LOG_DIR ||= path.join(process.env.TASKWRIGHT_DATA_DIR, "logs");
+  // The data directory, when one is named (--data wins over the environment variable), also holds the logs.
+  const dataRoot = chosen.data ?? process.env.TASKWRIGHT_DATA_DIR;
+  if (dataRoot) process.env.TASKWRIGHT_LOG_DIR ||= path.join(dataRoot, "logs");
   if (fs.existsSync(TOOLS_DIR)) process.env.PATH = `${TOOLS_DIR}${path.delimiter}${process.env.PATH ?? ""}`;
   const agent = agentDir();
   if (agent) process.env.TASKWRIGHT_AGENT_DIR = agent;
@@ -153,7 +163,7 @@ async function main(): Promise<void> {
   let started;
   try {
     started = await startService({
-      port: first, mode: chosen.mode, host: chosen.host, profile: chosen.profile, web: chosen.web, tasks: chosen.tasks, runs: chosen.runs, knowledge: chosen.knowledge,
+      port: first, mode: chosen.mode, host: chosen.host, profile: chosen.profile, web: chosen.web, data: chosen.data, tasks: chosen.tasks, runs: chosen.runs, knowledge: chosen.knowledge,
     });
   } catch (error) {
     console.error(`服务没有起来：${(error as Error).message}`);
@@ -163,7 +173,7 @@ async function main(): Promise<void> {
   const url = `http://127.0.0.1:${started.port}/`;
   console.log("");
   console.log(`Taskwright 已启动：${url}`);
-  console.log(`数据在 ${path.dirname(started.tasksDir)}。关闭这个窗口或按 Ctrl+C 即退出服务；也可以在页面上点「退出服务」。`);
+  console.log(`数据在 ${started.dataDir}。关闭这个窗口或按 Ctrl+C 即退出服务；也可以在页面上点「退出服务」。`);
   console.log("");
   openBrowser(url);
 }

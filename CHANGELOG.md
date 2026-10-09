@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading
+
+- From this version on, tasks keep working across upgrades. Tasks created by 0.4.0 or later are upgraded in place the first time the new version starts; their content does not change. Tasks older than that still cannot be opened and are marked 旧格式 ("old format").
+- **Desktop packages and `--mode desktop`:** the first start after the upgrade shows **数据升级** ("data upgrade") in place of everything else, with the number of tasks, where the backup goes and a button **开始升级** ("start the upgrade"). Nothing else can be used until it is done; it usually takes less than a minute.
+- **Servers (`--mode server`):** a service that finds tasks left by an earlier version does not start; the log and standard error say so and the exit code is 1. Run `node backend/src/main.mts data upgrade --data <data directory>` first (for a desktop package: `taskwright-x86_64.AppImage data upgrade`), then start the service. The command refuses to work while a service is using the data directory.
+- Before anything is changed, the files about to be changed are copied to `backups/<date and time>-<earlier version>/` in the data directory; if that copy fails, nothing is upgraded. Backups are not removed automatically. To go back to the earlier version, install it again and copy the backup back (see **Upgrading to a new version** in section 8 of the deployment guide).
+- Data upgraded by this version cannot be opened by an earlier version, which says 这份数据由 x 写入，请用 x 或更新的版本打开 ("this data was written by x; open it with x or a newer version"). Versions before this one do not know that sentence and will try to use the data, so do not point an earlier version at upgraded data without restoring the backup.
+- The data directory now holds two new things: `service.sqlite` (the task register) and, in every task directory, `task.json`. Include them in backups. The task service takes `--data <dir>` and the environment variable `TASKWRIGHT_DATA_DIR` for the data directory; without them, the parent of the `--tasks` directory is used, and otherwise the user data directory. Where tasks, archives and the knowledge base go when they are not given has not changed.
+
+### Data versions and upgrades
+
+- Every task database records its format version, and one table of upgrade steps is the only way its structure changes: the assistant's writes, the upgrade at startup and the upgrade from the command line all go through it. A task that fails to upgrade is left as it was and does not hold up the others; it is marked **需要处理** ("needs attention") in the task list with the reason, and `data upgrade` retries it every time it is run.
+- Every upgrade writes a report to `logs/upgrade-<date and time>.txt` in the data directory: each task with the format it was upgraded from and to, the result and the time it took, the totals, and where the backup is and how large. The page and the command show the same text.
+- A task whose data format does not match the running program is listed and cannot be opened: **需要升级** ("needs upgrading": an earlier task that was put into the task directory while the program was running; it is upgraded after a restart, or with the command on a server), **需要处理**, or **需要更新的程序** ("needs a newer program": written by a newer version). Requests for such a task answer `task_unavailable` (409).
+- Interface: `upgrade_pending` in `GET /api/v1/service`; `GET /api/v1/service/upgrade` (what is to be upgraded, the progress, the report) and `POST /api/v1/service/upgrade` (start, or try again). While an upgrade is pending every other endpoint answers `upgrade_pending` (503). See section 9 of the API reference.
+- Task type definitions carry a version (`版本`), recorded in `task.json` when a task is created. The instructions and review rules in a task directory are still not updated by an upgrade; when the version a task uses differs from the one the product ships, the task page says 任务类型说明是 x 版，当前产品自带的是 y 版 ("the task type instructions are version x; the product now ships version y"). `GET /api/v1/tasks/{task_id}` gives both numbers in `task_type_versions`.
+
 ### Work view and conversation
 
 - A piece of work in progress can be stopped from the work view. While the assistant works in the session you are in, the send key to the right of the input box becomes a stop key, a small solid square in the same place. A click stops that piece of work; what the assistant already saved stays. The square fades and pulses until the work has ended, and then the key is the send key again. Pressing Enter does not stop the assistant. Until now a run could be stopped only through the HTTP API.
