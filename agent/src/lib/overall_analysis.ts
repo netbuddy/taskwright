@@ -228,6 +228,32 @@ export function mentionsOf(collections: readonly CollectionShape[], items: reado
   return out;
 }
 
+/** 给评审看的主题清单最长多少个字符（按 UTF-16 码元计）；超过时从末尾省去，并写明还有几页没有列出。 */
+export const TOPICS_LIMIT = 3000;
+
+/**
+ * 给评审者的【总体分析的主题】一节：贴了标签、在用的页，一行一页，写编号、标题与别名。评审拿它判断「条目里的专门名词有没有主题页」。
+ * 任务定义里没有总体分析集合时不给这一节（返回空列表）。
+ */
+export function topicLines(collections: readonly { name: string }[], items: readonly PlainItem[], limit = TOPICS_LIMIT): string[] {
+  if (!hasOverall(collections)) return [];
+  const head = "【总体分析的主题】贴了标签、在用的主题，一行一页（标题，括号里是别名）：";
+  const rows = items.filter((one) => one.collection === OVERALL_COLLECTION && isUsable(one.fields)).map((one) => {
+    const title = typeof one.fields[OVERALL_FIELDS.title] === "string" ? (one.fields[OVERALL_FIELDS.title] as string).trim() : "";
+    const aliases = texts(one.fields[OVERALL_FIELDS.aliases]).map((alias) => alias.trim());
+    return `- ${one.item_id} ${title}${aliases.length ? `（又叫：${aliases.join("、")}）` : ""}`;
+  });
+  if (rows.length === 0) return [head, "（还没有贴了标签的主题。）"];
+  const kept: string[] = [];
+  let used = 0;
+  for (const row of rows) {
+    if (used + row.length + 1 > limit) break;
+    kept.push(row);
+    used += row.length + 1;
+  }
+  return [head, ...kept, ...(kept.length < rows.length ? [`（还有 ${rows.length - kept.length} 页没有列出。）`] : [])];
+}
+
 // ───────────── 保存一页时的两条核对 ─────────────
 
 /** 一条来源支持哪几处：一处写字段名，指到列表字段的某一项时另写第几项（从 0 起）。空列表是支持整个条目。 */

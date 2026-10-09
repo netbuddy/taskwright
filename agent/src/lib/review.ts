@@ -34,6 +34,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, databasePath, emit, wallClockText } from "./db.ts";
+import { topicLines } from "./overall_analysis.ts";
 import { SOURCE_DOCUMENT, SOURCE_ITEM, SOURCE_USER_EDIT, SOURCE_USER_WORDS, sourceKindNow, sourceLocatorNow, withTaskDatabase, ELEMENT_ITEM, elementClause } from "./schema.ts";
 import { DOCX_LOCATOR } from "./docx_source.ts";
 import { parsePdfLocator } from "./pdf_locations.ts";
@@ -49,6 +50,8 @@ export const MATERIAL_FULL_LIMIT = 20000;
 
 /**
  * 同一个任务里别的条目交给评审时分两节（otherItemsLines）：【相关的条目】写全部字段，【其余条目】每个一行简述。
+ * 任务定义里有「总体分析」集合时另给一节【总体分析的主题】（lib/overall_analysis.ts 的 topicLines）：贴了标签、在用的主题的标题与别名，
+ * 一行一页，另有自己的字数上限（TOPICS_LIMIT），评审拿它判断「条目里的专门名词有没有主题页」这条规则。
  * 两节合起来的上限，按整段文字的字符数算（Unicode 字符，一个汉字算 1，与材料全文的计法相同）。它只是保险：
  * 材料全文最多已有 MATERIAL_FULL_LIMIT（20000）字，这两节再取它的一半，一次评审请求连同规则清单大约不超过 35000 字，
  * 上下文窗口小的模型（例如 32768 个 token）也放得下。超过时从【其余条目】的末尾往前省去条目，省完了还超过再省【相关的条目】，
@@ -187,6 +190,9 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
     }
     const materials = materialsFor(workspaceDir, definition.materialsDir);
     const live = liveItems(db, task.task_id, definition.collections);
+    // 【总体分析的主题】一节：贴了标签、在用的主题的标题与别名，接在【其余条目】之后；任务定义里没有总体分析集合时没有这一节。
+    const topicRows = topicLines(definition.collections, live.map((one) => ({ item_id: one.item_id, collection: one.collection, revision_no: 0, fields: one.fields })));
+    const topics = topicRows.length ? ["", ...topicRows] : [];
 
     const items: PreparedReview[] = [];
     const rulesOf = new Map<string, ReviewRule[]>();
@@ -214,7 +220,7 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         ...want, collection: row.collection, fields, decls, rules, rulesPath: decl?.reviewRules?.file ?? null,
         rulesDigest: digest(JSON.stringify(rules) + "\n" + JSON.stringify(decls)),
         rulesHash: hash(row.collection), reviewerVersion: digest(system),
-        system, user: assembleUser(want, row.collection, fields, decls, rules, sources, othersLines(live, want.item_id, materials), materials),
+        system, user: assembleUser(want, row.collection, fields, decls, rules, sources, [...othersLines(live, want.item_id, materials), ...topics], materials),
       });
     }
     if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
