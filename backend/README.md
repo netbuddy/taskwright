@@ -7,7 +7,7 @@
 
 它**不写任务数据库**：库只由 pi 进程里的工具与扩展命令写。唯一的例外是建任务，而且也不在这里写，是调用 agent 侧的
 `createTask` 核心函数。`tests/no_writes.test.ts` 扫描本目录全部文件，从 `agent/src/lib` 导入的名字必须在白名单里。
-白名单只收只读函数、常量、写材料旁边文件的函数（Word 文本投影与分段清单，写的是文件不是库）和 `createTask`；写库的函数不能加进去。
+白名单只收只读函数、常量、写材料旁边文件的函数（Word 材料的文字版与分段清单，写的是文件不是库）和 `createTask`；写库的函数不能加进去。
 
 ## 接口
 
@@ -22,7 +22,7 @@
 | `POST …/actions` | 直接操作：经扩展命令 `/tw-user` 写库，等结果 10 秒。 |
 | `POST …/control` | 让助手停下（`action` 只能是 `stop`）：清掉排队的话、中止这一轮。 |
 | `GET …/items/{i}/revisions`、`GET …/revisions` | 条目修订史、修订日志。 |
-| `GET …/materials/content`、`GET …/materials/raw`、`POST …/materials` | 材料原文、原样取回、上传（Word 材料另生成文本投影）。 |
+| `GET …/materials/content`、`GET …/materials/raw`、`POST …/materials` | 材料原文、原样取回、上传（Word 材料另生成文字版）。 |
 | `POST …/documents/preview`、`POST …/documents/download` | 按某次修订生成文档。 |
 | `GET /api/v1/service` | 服务信息：`{ok, app, version, mode, pid, port, capabilities: {exit, model}, model: {name, reason}}`，不需要任务。`capabilities.model` 是模型探测的结果（见下文「模型探测」），`model.reason` 是一句写明查过哪两个文件的原因。 |
 | `POST /api/v1/service/exit` | 退出服务：只在 `--mode desktop` 下有，只接受本机回环地址的请求（别处来的回 403 `forbidden`）；先回 `{ok: true}` 再收尾退出。 |
@@ -48,7 +48,7 @@
 | `src/sessions.ts` | 一个任务的会话文件：会话列表与会话条目。 |
 | `src/workspace.ts` | 建任务：复制起始文件、写 pi 项目设置、调用 `createTask`，失败时整体清理。 |
 | `src/occupancy.ts` | 任务占用标记 `service.lock`。 |
-| `src/projection.ts` | Word 材料文本投影的薄适配：投影只有一份实现，这里只负责调用它。 |
+| `src/projection.ts` | Word 材料文字版（代码里叫 projection）的薄适配：文字版只有一份实现，这里只负责调用它。 |
 | `src/paths.ts` | 仓根目录与各资源的位置（只在这一处从自身文件位置推出仓根），以及用户数据目录。 |
 | `profiles/` | 启动配置：`dev.json` 开发与服务器用，`desktop.json` 桌面包用（除 Langfuse 环境标签外与 dev 相同），`fake.json` 测试用（模型换成假模型端点）。 |
 | `prompts/executor_system_prompt.md` | 执行者的系统提示，启动配置的 `system_prompt_file` 指向它。 |
