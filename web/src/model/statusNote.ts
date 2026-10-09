@@ -42,9 +42,10 @@ function startPoints(details: Dict): string[] {
   return points;
 }
 
-/** 续接那一种的要点：只写不为零的项；带了知识库清单就是选用的知识库变过。 */
+/** 续接那一种的要点：只写不为零的项；带了知识库清单就是选用的知识库变过；上一次工作被用户停止的写在最前面。 */
 function resumePoints(details: Dict): string[] {
   const points: string[] = [];
+  if (details.last_run_stopped === true) points.push("上次被停止");
   const add = (value: unknown, text: (n: number) => string) => {
     const n = list(value)?.length ?? 0;
     if (n > 0) points.push(text(n));

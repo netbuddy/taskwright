@@ -372,7 +372,7 @@ export interface UiActionNoted {
   /** 与后端对齐后新增：撤销要用的修订序号；已读这类不产生修订的操作为 null。 */
   revision_no?: number | null;
   op_id?: string | null;
-  /** 界面操作的种类；评审结束的那条是 request_review，另带 review 计数。 */
+  /** 界面操作的种类；评审结束的那条是 request_review，另带 review 计数；用户停止了助手一次工作之后留的那条是 stop_run。 */
   kind?: string | null;
   review?: { total: number; passed: number; failed: number; unfinished: number; problems: number; advice: number } | null;
 }

@@ -7,6 +7,9 @@
 // （回复的元数据，不是执行者的话），点它右侧栏切到「修订」页签并滚到那几次修订。用户直接操作的「界面操作」说明保留。
 // 发送（第 2、2B 节）：执行者工作中发送键灰化，输入框照常能打字、草稿留到运行结束（对话严格轮替，一句话对应一次运行）；
 // 有未保存的条目编辑时发送键与卡片按钮灰化，输入框上方提示「先保存或取消正在编辑的条目」。
+// 停止：助手在这条会话里工作时，输入框右边的发送键换成同一位置、同样大小的停止键（一个实心小方块）；点了之后进入「正在停止」
+// （方块变淡并脉动，不能再点），这次工作结束时换回发送键。发送与停止互斥：工作中本来就不能发送。停止不受未保存的条目编辑影响；
+// 工作中按回车不会停止，只有点方块才停。停下之后会话里留一条界面操作通知（种类 stop_run），对话区画成「你停止了助手这一次的工作」。
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SystemNote, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
@@ -30,13 +33,21 @@ export const DISABLED_PLACEHOLDER = "现在不能在这里输入，原因见上�
 /** 输入框整个停用、或有没保存的条目编辑时，发送键的悬停提示：原因已经写在上方的提示条里，这里只说一句短的，不重复整句。 */
 export const SEND_OFF_TITLE = "现在不能发送，原因见上方。";
 
+/** 用户停止了助手一次工作之后，对话区那条界面操作通知的写法。会话里的原文是写给助手看的，不显示。 */
+export const STOP_NOTE_TEXT = "你停止了助手这一次的工作";
+/** 停止键的悬停提示，与点了之后等这次工作结束期间的提示。 */
+export const STOP_TITLE = "停止助手这一次的工作";
+export const STOPPING_TITLE = "正在停止";
+/** 界面操作通知的种类：用户停止了助手一次工作（后端 conversation.ts 的 STOP_RUN）。 */
+export const STOP_RUN_KIND = "stop_run";
+
 /** 执行者工作中，发送键为什么不能用。 */
 export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句；你可以先把话打好";
 
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews,
+  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onStop,
 }: {
   messages: ConversationMessage[];
   currentWork: CurrentWork | null;
@@ -67,6 +78,11 @@ export function Conversation({
   holdText?: string;
   /** 执行者正在工作：发送与卡片按钮灰化，输入框照常能打字；撤销修订也不能点。 */
   working?: boolean;
+  /**
+   * 停止助手正在进行的这一次工作。只在助手是在这条会话里工作时给；给了并且 working 为真，发送键就换成停止键。
+   * 返回真＝停止的请求做成了；假＝没有做成（原因由页面另行提示），停止键恢复成可以再点。
+   */
+  onStop?: () => Promise<boolean>;
   /** 不拦住操作的提示（助手已经退出、正在启动、还没启动），显示成输入框上方的蓝色提示条；见 executorHint.ts。 */
   hint?: string | null;
   /** 助手正在启动：发送按钮暂不可用，输入框照常可以打字。 */
@@ -90,6 +106,15 @@ export function Conversation({
     const el = box.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, currentWork?.steps.length, outgoing.length]);
+  // 停止：点了之后到这次工作结束之前是「正在停止」；请求没有做成时恢复。工作结束（working 变假）时复位，下一次工作又是可以点的停止键。
+  const canStop = working && !!onStop;
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => { if (!working) setStopping(false); }, [working]);
+  const stop = () => {
+    if (!onStop || stopping) return;
+    setStopping(true);
+    void onStop().then((ok) => { if (!ok) setStopping(false); });
+  };
   // 修订小标签要等修订日志读回来才画出，那时上面这一下已经滚过了，内容又长高一截，刷新之后对话区会停在最上面、最后一行被输入框挡住。
   // 所以修订日志变了时再滚一次到底，但只在用户停在最底部时滚：用户自己往上翻着看的时候不把他拽回去。
   const atBottom = useRef(true);
@@ -159,7 +184,12 @@ export function Conversation({
             <span className="chip" style={{ cursor: disabled ? "not-allowed" : "pointer" }} role="button"
               onClick={() => !disabled && fileInput.current?.click()}>📎 附一份材料</span>
             {attachments.map((a) => <span key={a} className="chip on">附件：{a.split("/").pop()}</span>)}
-            <span className={`send${sendOff ? " off" : ""}`} role="button" aria-label="发送" title={sendTitle} onClick={send} data-testid="send">↑</span>
+            {canStop ? (
+              <span className={`send stop${stopping ? " stopping" : ""}`} role="button" aria-label={stopping ? STOPPING_TITLE : "停止"} aria-disabled={stopping}
+                title={stopping ? STOPPING_TITLE : STOP_TITLE} onClick={stop} data-testid="stop-run"><i /></span>
+            ) : (
+              <span className={`send${sendOff ? " off" : ""}`} role="button" aria-label="发送" title={sendTitle} onClick={send} data-testid="send">↑</span>
+            )}
           </div>
         </div>
         <input ref={fileInput} type="file" accept={uploadAccept(service.info)} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onAttach(f); e.target.value = ""; }} />
@@ -318,6 +348,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
           </div>
         );
       }
+      if (m.kind === STOP_RUN_KIND) return <div className="selfnote" data-testid="stop-note">{STOP_NOTE_TEXT}</div>;
       const revision = m.undoable ? revisionOf(m) : null;
       return (
         <div className="selfnote" data-testid="ui-action">
