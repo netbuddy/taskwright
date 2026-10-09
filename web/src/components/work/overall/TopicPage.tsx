@@ -18,7 +18,7 @@ import type { CollectionDef, Item, Source, Task } from "../../../api/types";
 import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
 import {
   DEPRECATED, TOPIC, confirmAction, dependents, exampleParts, examplesOf, isDeprecated, isOverall, isPending, labelsOf, markSupplemented, mentionRows, openQuestions, pendingCount, questionReason, settledOf,
-  retellText, reviseDependentsText, seeInstead, sourcesFor, splitByWord, supplemented, titleOf, trail, whatOf, type OverallItem,
+  retellText, reviseDependentsText, seeInstead, sourcesFor, splitByWord, supplemented, titleOf, trail, whatOf,
 } from "../../../model/overall";
 import { FieldEditor, type SubmitAction } from "../ItemDetail";
 import { TopicEdit } from "./TopicEdit";
@@ -58,7 +58,7 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
   /** 往对话区的输入框里预填一句话，不发送。 */
   onPrefill?: (text: string) => void;
   task: Task;
-  item: OverallItem;
+  item: Item;
   /** 总体分析这个集合的定义（字段与「标签」的取值从这里来）。 */
   def: CollectionDef;
   /** 正在修改、有没保存的改动时告诉条目区（那时对话区的卡片先不让发）。 */

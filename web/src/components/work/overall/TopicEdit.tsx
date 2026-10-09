@@ -4,9 +4,9 @@
 // 不照着限制的话保存会被后端拒绝。
 
 import { useEffect, useState } from "react";
-import type { CollectionDef, Fields, Task } from "../../../api/types";
+import type { CollectionDef, Fields, Item, Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
-import { TOPIC, isDeprecated, pagesOf, titleOf, type OverallItem, type TopicFieldDef } from "../../../model/overall";
+import { TOPIC, isDeprecated, pagesOf, titleOf } from "../../../model/overall";
 import { FieldEditor, normalize, type SubmitAction } from "../ItemDetail";
 import { rejectedText } from "../errors";
 import { useToast } from "../../Toasts";
@@ -21,7 +21,7 @@ const HINT: Record<string, string> = {
 };
 
 export function TopicEdit({ task, item, def, readOnly, writesOff = false, submit, onDone, onDirty }: {
-  task: Task; item: OverallItem; def: CollectionDef; readOnly: boolean; writesOff?: boolean; submit: SubmitAction;
+  task: Task; item: Item; def: CollectionDef; readOnly: boolean; writesOff?: boolean; submit: SubmitAction;
   /** 保存成了或者取消了。 */
   onDone: () => void;
   onDirty?: (dirty: boolean) => void;
@@ -57,7 +57,7 @@ export function TopicEdit({ task, item, def, readOnly, writesOff = false, submit
 
   return (
     <div className="oa-edit" data-testid="topic-edit">
-      {(def.fields as TopicFieldDef[]).map((f) => (
+      {def.fields.map((f) => (
         <div className="fld" key={f.name} data-f={f.name}>
           <div className="k">{f.name}{f.required && <span className="oa-req"> *</span>}</div>
           <div className="v editing">

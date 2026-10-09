@@ -8,52 +8,28 @@
 // 「还没定的」不另存：就是问题集合里挂在这一页、还没有了结的条目（model/items.ts 的 unresolvedIssuesOf）。
 // 集合名叫「领域说明」的早先任务不走这里，照旧用 model/domainNotes.ts。
 
-import type { CollectionDef, Item, Source, Task } from "../api/types";
+import type { CollectionDef, Item, Mention, Source, Task } from "../api/types";
+// 集合名、字段名、状态的取值与「反例：」这几个字，助手一侧与后端也用，只在那边的一个文件里写一遍（它不碰 Node 模块，页面可以直接导入）。
+import { COUNTER_EXAMPLE_PREFIX, OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED } from "../../../agent/src/lib/overall_analysis.ts";
 import { SOURCE_ITEM, SOURCE_SUPPLEMENT, sourceKindNow, unresolvedIssuesOf, viewTarget } from "./items";
 
-export const OVERALL_COLLECTION = "总体分析";
+export { OVERALL_COLLECTION };
 
 /** 一页主题的各个字段的名字（任务定义里的写法）。 */
 export const TOPIC = {
-  title: "标题", alias: "别名", what: "它是什么", examples: "例子", settled: "已经定下的",
-  labels: "标签", parent: "上级主题", status: "状态", see: "改看",
+  title: OVERALL_FIELDS.title, alias: OVERALL_FIELDS.aliases, what: OVERALL_FIELDS.what, examples: OVERALL_FIELDS.examples, settled: OVERALL_FIELDS.settled,
+  labels: OVERALL_FIELDS.tags, parent: OVERALL_FIELDS.parent, status: OVERALL_FIELDS.status, see: OVERALL_FIELDS.seeAlso,
 } as const;
-export const DEPRECATED = "已废弃";
+export const DEPRECATED = STATUS_DEPRECATED;
 /** 「例子」里以这几个字开头的一项是反例。 */
-export const COUNTER_PREFIX = "反例：";
+export const COUNTER_PREFIX = COUNTER_EXAMPLE_PREFIX;
 /** 进术语表的标签。 */
 export const CONCEPT_LABEL = "概念";
 
-/** 别处提到这一页的一句话：起点条目、哪个字段的第几项（文本字段没有第几项）、命中的词、原句、这一页当时的修订号。 */
-export interface Mention {
-  item_id: string;
-  collection: string;
-  field: string;
-  index: number | null;
-  word: string;
-  sentence: string;
-  revision_no: number;
-}
-
-/**
- * 任务快照里条目另带的几项（后端按任务里的事实现算）：
- * pending_verification 待核实（有助手补充的来源、用户还没有确认）；pending_sources 还待核实的助手补充来源有几条；
- * pending_places 这些来源支持的各处（字段名与列表字段的第几项，从 0 起；field 为 null 是没有指明哪一处，整页都要看）。
- *   用户亲手改过的那一处不再待核实，所以它可能比这一页全部助手补充来源支持的地方少。
- * basis_pending 它依据的主题待核实或已废弃（已废弃时 see 是改看哪一页）；mentioned_by 别处提到它的句子（只有总体分析的页有）。
- * 条目的 viewed（看过）不等于不待核实：用户亲手改过的页算看过，别处助手补的仍可能待核实。
- * 早先的后端不给这几项，这时按「没有待核实、没有被提到」处理。
- */
-export type OverallItem = Item & {
-  pending_verification?: boolean;
-  pending_sources?: number;
-  pending_places?: { field: string | null; index: number | null }[];
-  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see?: string | null } | null;
-  mentioned_by?: Mention[];
-};
-
-/** 字段声明另带的两项（只有「条目引用」字段有）：只许指向同一个集合的条目、至多选一个。 */
-export type TopicFieldDef = CollectionDef["fields"][number] & { same_collection?: boolean; single?: boolean };
+// 任务快照里条目另带的几项（api/types.ts 的 Item）：pending_verification 待核实，pending_sources 还待核实的助手补充来源有几条，
+// pending_places 这些来源支持的各处（用户亲手改过的那一处已经不在里面），basis_pending 它依据的主题待核实或已废弃，
+// mentioned_by 别处提到它的句子（只有总体分析的页有）。条目的 viewed（看过）不等于不待核实：用户亲手改过的页算看过，
+// 别处助手补的仍可能待核实。早先的后端不给这几项，这时按「没有待核实、没有被提到」处理。
 
 const byId = (a: Item, b: Item) => a.item_id.localeCompare(b.item_id, undefined, { numeric: true });
 const listOf = (item: Item, field: string): string[] => {
@@ -75,7 +51,7 @@ export function isOverall(collection: string | null | undefined): boolean {
 }
 
 /** 总体分析的全部页，按编号。 */
-export function pagesOf(task: Task): OverallItem[] {
+export function pagesOf(task: Task): Item[] {
   return task.items.filter((i) => isOverall(i.collection)).sort(byId);
 }
 
@@ -88,10 +64,10 @@ export const labelsOf = (item: Item): string[] => listOf(item, TOPIC.labels);
 export const parentOf = (item: Item): string | null => listOf(item, TOPIC.parent)[0] ?? null;
 export const seeInstead = (item: Item): string | null => listOf(item, TOPIC.see)[0] ?? null;
 export const isDeprecated = (item: Item): boolean => item.fields[TOPIC.status] === DEPRECATED;
-export const isPending = (item: OverallItem): boolean => item.pending_verification === true;
+export const isPending = (item: Item): boolean => item.pending_verification === true;
 
 /** 这一页有几处待核实；不待核实时是 0。 */
-export function pendingCount(item: OverallItem): number {
+export function pendingCount(item: Item): number {
   return isPending(item) ? Math.max(1, item.pending_sources ?? 1) : 0;
 }
 
@@ -101,7 +77,7 @@ export function pendingCount(item: OverallItem): number {
  * 这种页由主题页上的「确认待核实的 N 处」来记。
  */
 export function viewOnOpen(task: Task | null, itemId: string | null): { item_id: string; base_revision: number } | null {
-  const item = task?.items.find((i) => i.item_id === itemId) as OverallItem | undefined;
+  const item = task?.items.find((i) => i.item_id === itemId) as Item | undefined;
   if (item && isOverall(item.collection) && isPending(item)) return null;
   return viewTarget(task, itemId);
 }
@@ -132,7 +108,7 @@ export function sourcesFor(item: Item, field: string, index: number | null = nul
  * whole 是有助手补充的来源没有指明哪一处（整页都要看）；fields 是被指到的文本字段；
  * settled、examples 是「已经定下的」「例子」里被指到的那几项；reasons 是助手写的理由。
  */
-export function supplemented(item: OverallItem): { whole: boolean; fields: Set<string>; settled: Set<number>; examples: Set<number>; reasons: string[] } {
+export function supplemented(item: Item): { whole: boolean; fields: Set<string>; settled: Set<number>; examples: Set<number>; reasons: string[] } {
   const out = { whole: false, fields: new Set<string>(), settled: new Set<number>(), examples: new Set<number>(), reasons: [] as string[] };
   if (!isPending(item)) return out;
   const supplements = item.sources.filter((s) => sourceKindNow(String(s.kind)) === SOURCE_SUPPLEMENT);
@@ -172,7 +148,7 @@ export function markSupplemented(text: string, reasons: string[]): { text: strin
 }
 
 /** 「已经定下的」里算数的条数：助手补的、还没有确认的那几条不算。 */
-export function settledCount(item: OverallItem): number {
+export function settledCount(item: Item): number {
   const pending = supplemented(item).settled;
   return settledOf(item).filter((_, i) => !pending.has(i)).length;
 }
@@ -195,7 +171,7 @@ export function questionReason(task: Task, question: Item): string {
  */
 export type TopicState = "deprecated" | "pending" | "open" | "unsorted" | "settled";
 
-export function topicState(task: Task, item: OverallItem): TopicState {
+export function topicState(task: Task, item: Item): TopicState {
   if (isDeprecated(item)) return "deprecated";
   if (isPending(item)) return "pending";
   if (openQuestions(task, item).length > 0) return "open";
@@ -208,7 +184,7 @@ export const STATE_TEXT: Record<TopicState, string> = {
 };
 
 /** 提纲一行末尾的计数：「3 定 · 1 问」，没有的那一半不写；两样都没有时写状态（待核实、未归类、已废弃），说清了的不写。 */
-export function countsText(task: Task, item: OverallItem): string {
+export function countsText(task: Task, item: Item): string {
   const settled = settledCount(item);
   const open = openQuestions(task, item).length;
   const parts = [settled > 0 ? `${settled} 定` : "", open > 0 ? `${open} 问` : ""].filter(Boolean);
@@ -218,7 +194,7 @@ export function countsText(task: Task, item: OverallItem): string {
 }
 
 export interface OutlineNode {
-  item: OverallItem;
+  item: Item;
   children: OutlineNode[];
 }
 
@@ -229,12 +205,12 @@ export interface OutlineNode {
 export function outline(task: Task): OutlineNode[] {
   const pages = pagesOf(task);
   const known = new Map(pages.map((p) => [p.item_id, p]));
-  const up = (page: OverallItem): string | null => {
+  const up = (page: Item): string | null => {
     const id = parentOf(page);
     return id && id !== page.item_id && known.has(id) ? id : null;
   };
   // 顺着上级一路往上走又回到这一页，就是绕圈：当它没有上级。上面的页自己绕圈不关它的事。
-  const parent = (page: OverallItem): string | null => {
+  const parent = (page: Item): string | null => {
     const seen = new Set<string>();
     for (let at = up(page); at && !seen.has(at); at = up(known.get(at)!)) {
       if (at === page.item_id) return null;
@@ -253,13 +229,13 @@ export function outline(task: Task): OutlineNode[] {
 }
 
 /** 提纲从上到下的次序（先自己、再下面的各页）；「上一条」「下一条」照它走。 */
-export function outlineOrder(nodes: OutlineNode[]): OverallItem[] {
+export function outlineOrder(nodes: OutlineNode[]): Item[] {
   return nodes.flatMap((n) => [n.item, ...outlineOrder(n.children)]);
 }
 
 /** 面包屑：这一页上面的各级主题，从最上面一级到它的上级；它自己不在里面。 */
-export function trail(task: Task, item: Item): OverallItem[] {
-  const path = (nodes: OutlineNode[], above: OverallItem[]): OverallItem[] | null => {
+export function trail(task: Task, item: Item): Item[] {
+  const path = (nodes: OutlineNode[], above: Item[]): Item[] | null => {
     for (const n of nodes) {
       if (n.item.item_id === item.item_id) return above;
       const found = path(n.children, [...above, n.item]);
@@ -271,7 +247,7 @@ export function trail(task: Task, item: Item): OverallItem[] {
 }
 
 /** 这一页与它下面各级的页（复述时讲的范围）。 */
-export function withBelow(task: Task, itemId: string): OverallItem[] {
+export function withBelow(task: Task, itemId: string): Item[] {
   const find = (nodes: OutlineNode[]): OutlineNode | null => {
     for (const n of nodes) {
       if (n.item.item_id === itemId) return n;
@@ -296,7 +272,7 @@ export function totals(task: Task): { pages: number; settled: number; open: numb
 }
 
 /** 术语表：标签含「概念」、在用、不待核实的页，按编号；每行是标题、别名与「它是什么」的首段。waiting 是标签含概念但还待核实的页。 */
-export function glossary(task: Task): { rows: { item: OverallItem; aliases: string[]; first: string }[]; waiting: OverallItem[] } {
+export function glossary(task: Task): { rows: { item: Item; aliases: string[]; first: string }[]; waiting: Item[] } {
   const concepts = pagesOf(task).filter((p) => !isDeprecated(p) && labelsOf(p).includes(CONCEPT_LABEL));
   return {
     rows: concepts.filter((p) => !isPending(p)).map((p) => ({ item: p, aliases: aliasesOf(p), first: firstParagraph(whatOf(p)) })),
@@ -308,7 +284,7 @@ export function glossary(task: Task): { rows: { item: OverallItem; aliases: stri
  * 一个条目依据的主题待核实或已废弃时，条目行上那枚小标签的字与悬停说明；没有这回事时为 null。
  * 它不是条目自己的毛病：那一页确认了（或者把依据改到别的主题），标签就消掉。
  */
-export function basisNote(task: Task, item: OverallItem): { text: string; title: string } | null {
+export function basisNote(task: Task, item: Item): { text: string; title: string } | null {
   const basis = item.basis_pending;
   if (!basis) return null;
   const name = (id: string) => { const page = task.items.find((i) => i.item_id === id); return page ? `${id}「${titleOf(page)}」` : id; };
@@ -319,7 +295,7 @@ export function basisNote(task: Task, item: OverallItem): { text: string; title:
 }
 
 /** 右侧栏窄提纲里一页下面那行小字：「3 定 · 1 问」，待核实的后面加「待核实」；什么都没有时写「说清了」。 */
-export function sideLine(task: Task, item: OverallItem): string {
+export function sideLine(task: Task, item: Item): string {
   const counts = countsText(task, item);
   const pending = isPending(item) && counts !== "待核实" ? "待核实" : "";
   return [counts, pending].filter(Boolean).join(" · ") || STATE_TEXT.settled;
@@ -346,7 +322,7 @@ export interface MentionRow {
   stale: boolean;
 }
 
-export function mentionRows(task: Task, item: OverallItem): MentionRow[] {
+export function mentionRows(task: Task, item: Item): MentionRow[] {
   const find = (id: string) => task.items.find((i) => i.item_id === id) ?? null;
   const where = (m: Mention) => {
     const part = m.index == null ? m.field : `${m.field}第 ${m.index + 1} 条`;
