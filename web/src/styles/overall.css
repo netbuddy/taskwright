@@ -57,3 +57,65 @@
 .app .oa-intro p { margin: 0 0 .7rem; }
 .app .oa-intro-note { font-family: var(--font-title); font-size: 1.05rem; color: var(--ink); }
 .app .oa-intro-hint { color: var(--text3); font-size: 0.93rem; }
+
+/* ───── 一页主题（overall/TopicPage.tsx）：正文最宽 46rem ───── */
+.app .oa-page { max-width: 52rem; padding: 1rem 1.6rem 2rem; }
+.app .oa-crumb { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem .3rem; font-size: 0.857rem; color: var(--text3); margin-bottom: .5rem; }
+.app .oa-crumb .back, .app .oa-crumb .up { cursor: pointer; }
+.app .oa-crumb .back { color: var(--blue); margin-right: .6rem; }
+.app .oa-crumb .back:hover, .app .oa-crumb .up:hover { text-decoration: underline; }
+.app .oa-crumb i { font-style: normal; margin: 0 .3rem; opacity: .6; }
+.app .oa-crumb .here { color: var(--text2); }
+.app .oa-nav { margin-left: auto; display: inline-flex; gap: .3rem; }
+.app .oa-title { font-family: var(--font-title); font-weight: 600; font-size: 1.6rem; line-height: 1.3; letter-spacing: .01em; overflow-wrap: anywhere; }
+.app .oa-title .oa-id { font-family: ui-monospace, Menlo, monospace; font-weight: 400; font-size: 0.889rem; color: var(--text3); margin-right: .6rem; vertical-align: middle; }
+.app .oa-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .7rem; margin: .55rem 0 1.5rem; font-size: 0.889rem; color: var(--text2); }
+.app .oa-meta .sep { width: 1px; height: .9rem; background: var(--line2); }
+.app .oa-tag { padding: .05rem .55rem; border: 1px solid var(--line2); border-radius: 71rem; background: var(--card); font-size: 0.857rem; }
+.app .oa-tag.none { border-style: dashed; color: var(--text3); }
+.app .oa-st { display: inline-flex; align-items: center; gap: .35rem; }
+.app .oa-st.pending { color: var(--amber); font-weight: 500; }
+
+.app .oa-blk { margin: 0 0 1.7rem; }
+.app .oa-blk h3 { font-family: var(--font-title); font-weight: 600; font-size: 1.05rem; letter-spacing: .04em; margin: 0 0 .6rem; display: flex; align-items: baseline; gap: .6rem; }
+.app .oa-blk h3 small { font-family: var(--font-body); font-weight: 400; font-size: 0.857rem; color: var(--text3); letter-spacing: 0; }
+.app .oa-empty { color: var(--text3); font-size: 0.9rem; }
+.app .oa-prose { max-width: 46rem; font-size: 1rem; }
+.app .oa-prose p { margin: 0 0 .55rem; }
+.app .oa-prose.pending { border-left: .2rem solid var(--amber-line); padding-left: .7rem; }
+.app .oa-hl { background: var(--amber-bg); border-bottom: .1rem solid var(--amber); border-radius: .15rem; padding: 0 .15rem; }
+/* 出处：一行小字，几条之间用间隔号；助手补的那一条是琥珀字 */
+.app .oa-src { font-size: 0.857rem; color: var(--text3); margin-top: .2rem; }
+.app .oa-src .one + .one::before { content: " · "; color: var(--text3); }
+.app .oa-src .one.v { color: var(--amber); }
+.app .oa-src .one.link { cursor: pointer; }
+.app .oa-src .one.link:hover { color: var(--blue); }
+
+.app .oa-ex { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .8rem; max-width: 52rem; }
+.app .oa-card { background: var(--card); border: 1px solid var(--line); border-radius: .7rem; padding: .8rem 1rem; box-shadow: var(--card-shadow); }
+.app .oa-card .k { font-size: 0.857rem; color: var(--ok); letter-spacing: .06em; margin-bottom: .3rem; }
+.app .oa-card p { margin: 0; font-size: 0.943rem; }
+.app .oa-card.neg { background: var(--stage); box-shadow: none; color: var(--text2); }
+.app .oa-card.neg .k { color: var(--text2); }
+.app .oa-card.pending { border-color: var(--amber-line); }
+
+.app .oa-rules { list-style: none; margin: 0; padding: 0; max-width: 52rem; }
+.app .oa-rules li { display: grid; grid-template-columns: 1.1rem 1fr auto; gap: .6rem; align-items: start; padding: .55rem 0; border-top: 1px solid var(--line); }
+.app .oa-rules li:first-child { border-top: 0; }
+.app .oa-rules .mk { margin-top: .55rem; width: .5rem; height: .5rem; border-radius: 50%; background: var(--ok); justify-self: center; }
+.app .oa-rules li.pending .mk { background: var(--amber); }
+.app .oa-rules .t { font-size: 0.97rem; min-width: 0; }
+
+.app .oa-open { list-style: none; margin: 0; padding: 0; max-width: 52rem; }
+.app .oa-open li { background: var(--ai-bg); border-radius: .7rem; padding: .75rem .95rem; margin-bottom: .6rem; }
+.app .oa-open .q { font-family: var(--font-title); font-size: 1rem; }
+.app .oa-open .q .ref { margin-right: .5rem; vertical-align: middle; }
+.app .oa-open .why { font-size: 0.857rem; color: var(--text2); margin: .2rem 0 .5rem; }
+.app .oa-open .ans { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.app .oa-open .ans input { flex: 1 1 14rem; min-width: 8rem; font: inherit; font-size: 0.905rem; padding: .3rem .65rem; border: 1px solid var(--ai-line); border-radius: .45rem;
+  background: var(--card); color: var(--ink); }
+.app .oa-open .ans input::placeholder { color: var(--text3); }
+.app .oa-open .ans input:disabled { background: var(--dark); cursor: not-allowed; }
+.app .oa-rawlink { margin-top: .4rem; font-size: 0.857rem; color: var(--text3); }
+.app .oa-rawlink span { cursor: pointer; text-decoration: underline; text-underline-offset: .2em; }
+.app .oa-rawlink span:hover { color: var(--blue); }

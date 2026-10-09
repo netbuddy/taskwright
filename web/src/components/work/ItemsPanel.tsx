@@ -38,7 +38,8 @@ import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
 import { DiagramsPane } from "./DiagramsPane";
 import { OverallPane } from "./overall/OverallPane";
-import { isOverall } from "../../model/overall";
+import { TopicPage } from "./overall/TopicPage";
+import { isOverall, outline, outlineOrder } from "../../model/overall";
 import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
@@ -183,6 +184,11 @@ export function ItemsPanel({
   // 导出 Word 用的：全部页签里勾中的条目（已经不在的编号不算）。
   const exportItems = task.items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
+  // 总体分析的页：「上一条」「下一条」照提纲从上到下的次序走；看主题页还是按条目的样子看（修订与全部来源），换一页就回到主题页。
+  const topics = useMemo(() => (onOverall ? outlineOrder(outline(task)) : []), [task, onOverall]);
+  const topicPos = selectedItem ? topics.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
+  const [rawTopic, setRawTopic] = useState(false);
+  useEffect(() => { setRawTopic(false); }, [selected]);
   const hitsIn = (collection: string) => task.items.filter((i) => i.collection === collection && hitIds.includes(i.item_id)).length;
   const toReview = pendingReview(task);
   const failed = failedReview(task);
@@ -228,7 +234,8 @@ export function ItemsPanel({
       onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
       onLocate={onLocate} onOpenItem={onSelect} onOpenDiagram={openDiagram} onAskAssistant={onAskAssistant}
       view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
-      crumb={fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
+      crumb={onOverall ? <span className="crumb" role="button" onClick={() => setRawTopic(false)} data-testid="back-to-topic">‹ 回到主题页</span>
+        : fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
       top={<ItemIssues task={task} itemId={selectedItem.item_id} readOnly={readOnly} writesOff={writesOff} hold={dirty} pendingItems={pendingItems}
         submit={submit} onSend={onSend} onPrefill={onAnswer} fromIssue={fromIssue?.issueId ?? null} />} />
   ) : null;
@@ -304,7 +311,13 @@ export function ItemsPanel({
           <DiagramsPane task={task} selected={diagram} onSelect={setDiagram} readOnly={readOnly} writesOff={writesOff} latestRevision={latestRevision}
             submit={submit} onLocate={onLocate} onOpenItem={(id) => openItem(id)} onDirty={onDiagramDirty} />
         ) : onOverall ? (
-          <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect} page={detail} />
+          <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect}
+            page={selectedItem && !rawTopic ? (
+              <TopicPage task={task} item={selectedItem} readOnly={readOnly} writesOff={writesOff} submit={submit} onSend={onSend} onAnswer={onAnswer}
+                onOpen={(id) => openItem(id)} onBack={() => onSelect(null)} onLocate={onLocate} onRaw={() => setRawTopic(true)}
+                onPrev={topicPos > 0 ? () => onSelect(topics[topicPos - 1].item_id) : null}
+                onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null} />
+            ) : detail} />
         ) : detail ? detail : items.length === 0 ? (
           <div className="empty">这个筛选下没有条目。换一个筛选试试。</div>
         ) : statusField && def ? (
