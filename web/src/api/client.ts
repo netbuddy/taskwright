@@ -29,7 +29,7 @@ import type {
   SessionListEntry,
   Snapshot,
   TaskDetail,
-  TaskListEntry,
+  TaskListEntry, UpgradeView,
 } from "./types";
 
 export class ApiError extends Error {
@@ -138,6 +138,10 @@ export const api = {
   // 服务信息与退出（退出只在桌面形态有）
   serviceInfo: () => request<ServiceInfo>("GET", "/service", undefined, 5_000),
   exitService: () => request<{ ok: true }>("POST", "/service/exit", {}, 10_000),
+  /** 数据升级的现状；没有要做的升级时 upgrade 是 null。 */
+  upgradeState: () => request<{ ok: true; upgrade: UpgradeView | null }>("GET", "/service/upgrade", undefined, 10_000),
+  /** 开始（或者整体没有做成之后再试一次）数据升级：立刻返回，之后用 upgradeState 看进度。 */
+  startUpgrade: () => request<{ ok: true; started: boolean; upgrade: UpgradeView }>("POST", "/service/upgrade", {}, 10_000),
 
   // 模型配置（接口文档第 10 节）：从哪台电脑打开页面都可以读、可以改。
   modelConfig: () => request<ModelConfig>("GET", "/model-config"),

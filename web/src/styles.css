@@ -101,6 +101,12 @@ body {
 .svc-gone .box { background: var(--card); border: 1px solid var(--line); border-radius: 0.9rem; padding: 2rem 2.6rem; text-align: center; }
 .svc-gone .box b { font-size: 1.2rem; display: block; margin-bottom: 0.5rem; }
 .svc-gone .box span { color: var(--mut); }
+/* 数据升级页：同一个整屏，盒子宽一些、靠左排，放得下要升级什么与做完后的报告 */
+.svc-gone.upg .box { text-align: left; max-width: 46rem; width: calc(100% - 4rem); max-height: calc(100% - 4rem); overflow: auto; }
+.upg .upg-what { margin: 0.4rem 0 1.1rem; padding-left: 1.2rem; line-height: 1.8; }
+.upg .upg-what code { font-size: 0.92rem; word-break: break-all; }
+.upg .upg-report { background: var(--paper); border: 1px solid var(--line); border-radius: 0.4rem; padding: 0.7rem 0.9rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-all; margin: 0.6rem 0 1rem; }
+.upg .upg-err { color: #b42318; }
 
 /* 左侧栏的「任务」「知识库」两个入口 */
 .sider-nav { padding: 0.6rem 0.571rem 0; display: flex; flex-direction: column; gap: 0.1rem; }

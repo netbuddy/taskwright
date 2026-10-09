@@ -936,6 +936,40 @@ export interface ApiErrorBody {
 }
 
 /** 服务信息（GET /api/v1/service）：运行形态与能力清单，前端按能力显示或隐藏「退出服务」与无模型提示。 */
+/** 数据升级的报告（GET /api/v1/service/upgrade 的 upgrade.report）。text 是给人看的整段文字，页面原样显示。 */
+export interface UpgradeReport {
+  product_version: string;
+  started_at: string;
+  finished_at: string;
+  data_dir: string;
+  backup: { dir: string; bytes: number; files: number } | null;
+  service: "created" | "upgraded" | "current" | null;
+  tasks: { dir: string; task_id: string | null; name: string | null; from: number; to: number; ok: boolean; error: string | null; ms: number }[];
+  succeeded: number;
+  failed: number;
+  /** 整体没有做成的原因；这时一个任务都没有动。 */
+  fatal: string | null;
+  file: string | null;
+  text: string;
+}
+
+/**
+ * 数据升级的现状：pending 等着人点开始；running 正在做；done 做完了（个别任务没有做成也算，报告里写着）；
+ * failed 整体没有做成，可以再试。
+ */
+export interface UpgradeView {
+  state: "pending" | "running" | "done" | "failed";
+  data_dir: string;
+  /** 升级之前的备份会放在哪个目录下。 */
+  backup_dir: string;
+  tasks: { task_id: string; name: string | null }[];
+  /** 任务登记要不要升级；知识库要不要升级（现在恒为假）。 */
+  service: boolean;
+  knowledge: boolean;
+  progress: { total: number; done: number; current: string | null } | null;
+  report: UpgradeReport | null;
+}
+
 export interface ServiceInfo {
   ok: true;
   app: string;
@@ -943,6 +977,8 @@ export interface ServiceInfo {
   mode: "desktop" | "server";
   pid: number;
   port: number | null;
+  /** 启动时发现有上一版留下的数据要先升级、而升级还没有做完：页面整屏显示数据升级页。较早的后端没有这一项，等于假。 */
+  upgrade_pending?: boolean;
   /** model_config：这个页面能不能改模型配置；现在的后端恒为 true，较早的后端没有这一项。model_test：后端有测试模型的接口（语言模型与嵌入模型）。 */
   capabilities: { exit: boolean; model?: boolean; model_config?: boolean; model_test?: boolean; knowledge?: boolean };
   model?: { name: string; reason: string };
