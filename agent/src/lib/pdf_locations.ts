@@ -61,7 +61,7 @@ export interface PdfLocationFile {
   version: number;
   rules_version: number;
   说明: string;
-  /** 来源文件相对任务目录的路径。 */
+  /** 来源文件相对任务目录的路径。知识库文档这里写的是引用它时出处的写法 knowledge/库编号/文件名，不是磁盘路径。 */
   source: string;
   /** 解析用的库与版本。只作记录。 */
   engine: string;

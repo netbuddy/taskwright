@@ -198,7 +198,7 @@ test("知识库上传 PDF 文档：同样四个文件一起进文档目录、整
   assert.equal(existsSync(join(store.filesDir(GENERAL), "..", UPLOADING_DIR)), false);
   const projection = readFileSync(join(store.filesDir(GENERAL), "办法.pdf.md"), "utf-8");
   assert.equal(store.text(GENERAL, "办法.pdf"), projection);
-  assert.equal(JSON.parse(readFileSync(join(store.filesDir(GENERAL), "办法.pdf.locations.json"), "utf-8")).source, `${GENERAL}/files/办法.pdf`);
+  assert.equal(JSON.parse(readFileSync(join(store.filesDir(GENERAL), "办法.pdf.locations.json"), "utf-8")).source, `knowledge/${GENERAL}/办法.pdf`);
   const blank = await rejected(service.uploadDocument(GENERAL, "空白.pdf", BLANK, "other"));
   assert.deepEqual([blank.code, blank.message], ["unsupported_type", PDF_NO_TEXT]);
   assert.equal((await rejected(service.uploadDocument(GENERAL, "又一份.pdf", sample("multipage.pdf"), "other"))).code, "duplicate_content");
