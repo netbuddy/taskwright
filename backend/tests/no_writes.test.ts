@@ -54,8 +54,10 @@ const ALLOWED: Record<string, string[]> = {
   // PDF 材料的来源：从投影取各块（只做计算，页面也用它）；知识库切片段时用。
   "pdf_source.ts": ["pdfProjectionUnits"],
   // 任务库的格式版本一侧：现在的版本号与 task.json 的文件名（常量）、拒绝比程序新的数据时的那句话（纯函数，不碰库；数据目录比程序新时
-  // 后端也用这一句）、从 task.json 读出是哪个版本写的（只读一个小文件）。
-  "schema.ts": ["TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy"],
+  // 后端也用这一句）、从 task.json 读出是哪个版本写的（只读一个小文件）、任务根目录的环境变量名（常量）。
+  // upgradeTaskDatabase 是写入：把一个任务库升到现在的格式。它只许在数据升级里调（src/data_upgrade.ts，服务启动时的升级与命令行的
+  // 升级都经那里），走的是助手写库时用的同一张步骤表；下面另有一条测试守着别的文件不导入它。
+  "schema.ts": ["TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],
 };
@@ -129,6 +131,11 @@ test("backend/src 的源码里没有写库的 SQL（服务级库的数据模块�
     });
   }
   assert.deepEqual(bad, []);
+});
+
+test("改任务库的 upgradeTaskDatabase 只有数据升级模块导入", () => {
+  const importers = files(join(BACKEND, "src")).filter((file) => agentImports(readFileSync(file, "utf-8")).some(([module, name]) => module === "schema.ts" && name === "upgradeTaskDatabase"));
+  assert.deepEqual(importers.map((file) => relative(join(BACKEND, "src"), file)), ["data_upgrade.ts"]);
 });
 
 test("服务级库只经它的数据模块读写：别的文件不导入 node:sqlite，也不出现它的文件名", () => {

@@ -14,9 +14,9 @@
  * 现在读登记表的只有数据升级（看哪些任务升级失败过）；任务列表仍然按任务目录扫描、读各任务库。
  */
 
-import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { DatabaseSync, backup } from "node:sqlite";
 
 export const SERVICE_DB_NAME = "service.sqlite";
 
@@ -111,11 +111,35 @@ export function peekDataDirectory(dataDir: string): DataDirectoryState | null {
   }
 }
 
+/**
+ * 把数据目录的服务级库完整地复制一份到 target（数据升级之前的备份），返回副本的字节数；服务级库还不存在时什么都不做，返回 null。
+ * 用数据库自带的备份办法，不是复制文件（理由同任务库的备份，见 library.ts 的 backupTaskDb）。
+ */
+export async function backupServiceDb(dataDir: string, target: string): Promise<number | null> {
+  const path = serviceDbPath(dataDir);
+  if (!existsSync(path)) return null;
+  mkdirSync(dirname(target), { recursive: true });
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    await backup(db, target);
+  } finally {
+    db.close();
+  }
+  return statSync(target).size;
+}
+
 export class ServiceDb {
   private readonly db: DatabaseSync;
 
   private constructor(db: DatabaseSync) {
     this.db = db;
+  }
+
+  /** 只读打开数据目录的服务级库（只用取的那几个函数）；库文件不存在时是 null。不建文件、不升级。 */
+  static read(dataDir: string): ServiceDb | null {
+    const path = serviceDbPath(dataDir);
+    if (!existsSync(path)) return null;
+    return new ServiceDb(new DatabaseSync(path, { readOnly: true }));
   }
 
   /**
