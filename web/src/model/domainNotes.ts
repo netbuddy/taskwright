@@ -23,16 +23,28 @@ export function groupOf(item: Item, display: Display | null): string {
   return Array.isArray(v) ? v.join("、") : String(v ?? "").trim();
 }
 
-/** 按分组字段把一个集合的条目分组：靠前的组按给定顺序排最前，其余按每组第一个条目在列表里的先后；组内保持原顺序。 */
+/** 一个条目在分组字段上的各个值：字段是列表时一项一个（一页贴了两个标签就有两个），不是列表时至多一个；空着时没有。 */
+export function groupsOf(item: Item, display: Display | null): string[] {
+  if (!display?.group_field) return [];
+  const v = item.fields[display.group_field];
+  return (Array.isArray(v) ? v.map(String) : [String(v ?? "")]).map((one) => one.trim()).filter(Boolean);
+}
+
+/**
+ * 按分组字段把一个集合的条目分组；组内保持原顺序。分组字段是列表时，一个条目有几个值就进几个组；空着的归「（未填）」一组。
+ * 组的先后：靠前的组按给定顺序排最前；其余的，分组字段声明了取值就照取值的先后，没有声明就按每组第一个条目在列表里的先后。
+ */
 export function groupItems(task: Task, collection: string): { name: string; items: Item[] }[] {
   const display = displayOf(task, collection);
   const groups = new Map<string, Item[]>();
   for (const item of task.items.filter((i) => i.collection === collection)) {
-    const name = groupOf(item, display) || EMPTY_GROUP;
-    groups.set(name, [...(groups.get(name) ?? []), item]);
+    const names = groupsOf(item, display);
+    for (const name of names.length ? names : [EMPTY_GROUP]) groups.set(name, [...(groups.get(name) ?? []), item]);
   }
   const leading = display?.leading_groups ?? [];
-  const rank = (name: string) => (leading.includes(name) ? leading.indexOf(name) : leading.length);
+  const declared = task.definition.collections.find((c) => c.name === collection)?.fields.find((f) => f.name === display?.group_field)?.values ?? [];
+  const rank = (name: string) => (leading.includes(name) ? leading.indexOf(name)
+    : declared.includes(name) ? leading.length + declared.indexOf(name) : leading.length + declared.length);
   return [...groups.entries()].map(([name, items]) => ({ name, items }))
     .sort((a, b) => rank(a.name) - rank(b.name));
 }

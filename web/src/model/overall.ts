@@ -304,6 +304,13 @@ export function glossary(task: Task): { rows: { item: OverallItem; aliases: stri
   };
 }
 
+/** 右侧栏窄提纲里一页下面那行小字：「3 定 · 1 问」，待核实的后面加「待核实」；什么都没有时写「说清了」。 */
+export function sideLine(task: Task, item: OverallItem): string {
+  const counts = countsText(task, item);
+  const pending = isPending(item) && counts !== "待核实" ? "待核实" : "";
+  return [counts, pending].filter(Boolean).join(" · ") || STATE_TEXT.settled;
+}
+
 /** 依据这一页写的条目（把它写成「条目」来源的别的条目），按编号。 */
 export function dependents(task: Task, item: Item): Item[] {
   const ids = new Set((item.depended_by ?? []).filter((d) => d.element_kind === SOURCE_ITEM).map((d) => d.id));
