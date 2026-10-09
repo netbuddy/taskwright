@@ -124,10 +124,11 @@ function options(argv: string[]): Options {
 
 async function main(): Promise<void> {
   timing("main_entered");
-  // `taskwright data upgrade [--data <dir>]`: no service is started and no browser is opened. The backend's data
-  // command looks at the data directory, backs it up, upgrades what an earlier version left there and prints the
-  // report; its return value is the exit code. This comes before the look for a running instance: the command
-  // itself refuses to work on a data directory that a running service is using.
+  // `taskwright data upgrade | export | import ...`: no service is started and no browser is opened. The backend's
+  // data command does the work (upgrade: look at the data directory, back it up, upgrade what an earlier version
+  // left there and print the report; export and import: write and read a data pack; upgrade --pack: upgrade a pack
+  // into a new pack); its return value is the exit code. This comes before the look for a running instance: upgrade
+  // and import themselves refuse to work on a data directory that a running service is using.
   if (process.argv[2] === "data") {
     const { dataCommand } = await import(pathToFileURL(path.join(ROOT, "backend", "src", "data_command.js")).href);
     process.exit(await dataCommand(process.argv.slice(3)));

@@ -146,8 +146,8 @@ export interface CreateTaskParams {
   task_id?: string | null;
 }
 
-/** 交进来的任务编号的写法。 */
-const TASK_ID_PATTERN = /^TASK-[A-Z0-9-]{1,40}$/;
+/** 任务编号的写法：以 TASK- 开头，后面只用大写字母、数字与短横线。交进来的编号、换成的新编号都照它核对。 */
+export const TASK_ID_PATTERN = /^TASK-[A-Z0-9-]{1,40}$/;
 
 export function createTask(call: CallContext, params: CreateTaskParams): ToolOutcome {
   return withTaskDatabase(call.workspaceDir, { createIfMissing: true }, (db) => {

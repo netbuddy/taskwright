@@ -172,6 +172,8 @@ export interface ServiceOptions {
   knowledgeDir?: string | null;
   /** 已经打开的服务级库（service_db.ts）；不给时这个服务没有任务登记表（直接建服务对象的测试）。服务收尾时关掉它。 */
   registry?: ServiceDb | null;
+  /** 数据目录（服务级库、日志与各种报告所在的目录）；不给时取任务根目录的上一级。 */
+  dataDir?: string | null;
 }
 
 /** 产品自带的这种任务类型的说明现在是第几版（任务定义里的「版本」）；定义读不出来或者没有写版本时是 null。 */
@@ -218,6 +220,8 @@ export function resolvePath(path: string): string {
 export class Service {
   readonly tasksDir: string;
   readonly runsDir: string;
+  /** 数据目录：数据包导入的报告写在它的 logs/ 下，导出时从它读任务登记。 */
+  readonly dataDir: string;
   readonly profile: Profile;
   /** 实际监听的端口：启动层在监听成功之后填上（命令行给的端口被占时会换到后面的端口）。 */
   port: number | null;
@@ -251,6 +255,7 @@ export class Service {
     // 要是相对的，它会按任务目录去解析，找不到文件就悄悄新开一条会话；本服务内部从这里起只用绝对路径。
     this.tasksDir = resolve(tasksDir);
     this.runsDir = resolve(runsDir);
+    this.dataDir = options.dataDir ? resolve(options.dataDir) : dirname(this.tasksDir);
     // 桌面形态：模型可以由 pi 的设置文件指定（见 launch.ts 的 PI_SETTINGS_MODEL）。标记只加在内存里的这份启动配置上。
     this.profile = options.mode === "desktop" ? { ...profile, [PI_SETTINGS_MODEL]: true } : profile;
     this.port = options.port ?? null;
@@ -287,6 +292,11 @@ export class Service {
       task_id: row.task_id, name: truthy(row.task_name) ? row.task_name : null, owner: readTaskJson(join(this.tasksDir, name))?.owner ?? "local",
       status: row.status ?? null, task_type: definition || null, created_at: row.started_at ?? null, dir: name,
     });
+  }
+
+  /** 数据包的导出与导入要的几个位置（data_pack.ts 的 PackLocations）。 */
+  packLocations(): { dataDir: string; tasksDir: string; runsDir: string; knowledgeDir: string | null } {
+    return { dataDir: this.dataDir, tasksDir: this.tasksDir, runsDir: this.runsDir, knowledgeDir: this.knowledge?.root ?? null };
   }
 
   /** 数据升级做完之后把打开着的服务级库接上（升级之前没有打开它）。 */

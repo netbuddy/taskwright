@@ -14,7 +14,7 @@
  */
 
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import * as clock from "./clock.ts";
 import { ApiError } from "./errors.ts";
@@ -177,6 +177,38 @@ export class KnowledgeStore {
     mkdirSync(this.filesDir(id), { recursive: true });
     this.saveLibraries([...rows, row]);
     return row;
+  }
+
+  /** 这个库是不是空的：文档清单里没有文档，文件目录里也没有文件。清单里没有这个库、目录也不在时同样算空的。 */
+  isEmpty(id: string): boolean {
+    if (this.documents(id).length > 0) return false;
+    try {
+      return readdirSync(this.filesDir(id)).length === 0;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * 把一个从数据包导入的库记进清单；库的目录由调用方事先放到位（data_pack.ts 的导入）。清单里已经有这个编号时换成这一条
+   * （调用方只在原来那个库是空的时才这样做）。名字与别的库重名时在后面加「（导入）」，还重名就再加序号；通用知识库的名字不变。
+   * 返回记进清单的那一条。
+   */
+  adopt(row: LibraryRow): LibraryRow {
+    const others = this.libraries().filter((one) => one.id !== row.id);
+    const taken = (name: string) => others.some((one) => sameMaterialName(name, one.name));
+    let name = row.id === GENERAL ? GENERAL_NAME : row.name.trim() || row.id;
+    if (row.id !== GENERAL && taken(name)) {
+      const base = `${name}（导入）`;
+      name = base;
+      for (let n = 2; taken(name); n++) name = `${base}${n}`;
+    }
+    const adopted = { id: row.id, name, created_at: row.created_at };
+    mkdirSync(this.filesDir(row.id), { recursive: true });
+    // 位置不变：原来在清单里就换掉那一条，不在就排到最后。
+    const rows = this.libraries();
+    this.saveLibraries(rows.some((one) => one.id === row.id) ? rows.map((one) => (one.id === row.id ? adopted : one)) : [...rows, adopted]);
+    return adopted;
   }
 
   rename(id: string, name: unknown): LibraryRow {

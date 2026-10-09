@@ -17,6 +17,7 @@ import { makeServer } from "./http.ts";
 import { loadProfile } from "./launch.ts";
 import { migrateProviderPurposes } from "./model_config.ts";
 import { defaultHost, listenFrom } from "./listen.ts";
+import { sweepImportLeftovers } from "./data_pack.ts";
 import { PendingUpgrade, locate, planUpgrade, upgradeNeeded } from "./data_upgrade.ts";
 import { appVersion, logDir } from "./paths.ts";
 import { MODES, type Mode, Service } from "./service.ts";
@@ -117,6 +118,9 @@ export async function startService(options: StartOptions): Promise<Started> {
 
   teeLogs();
   const { dataDir, tasksDir, runsDir, knowledgeDir } = locate(options);
+  // 以前导入数据包没有做完（服务被强行停掉）留下的暂存目录先清掉：它们里面是没有进位的半成品。留了不到一小时的不清，
+  // 那可能是命令行正在做的一次导入。
+  for (const left of sweepImportLeftovers({ dataDir, tasksDir, runsDir, knowledgeDir })) console.log(`清掉了以前导入数据包没有做完留下的暂存目录 ${left}。`);
   // 先只读地看一遍数据目录：比这个程序新就不启动；有上一版留下的数据要升级时，服务器形态不启动（由管理员先在命令行升级），
   // 桌面形态先起来、等用户在页面上点「开始升级」，在那之前不对外提供别的功能（见 data_upgrade.ts 的 PendingUpgrade）。
   const plan = planUpgrade({ dataDir, tasksDir, knowledgeDir });
@@ -135,7 +139,7 @@ export async function startService(options: StartOptions): Promise<Started> {
       throw error;
     }
   }
-  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry });
+  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry, dataDir });
   if (pending) {
     service.upgrade = new PendingUpgrade(plan, (opened) => service.attachRegistry(opened));
     console.log(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${plan.tasks.length} 个任务）：服务已经起来，等页面上点「开始升级」。`);
