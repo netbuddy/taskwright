@@ -138,7 +138,8 @@
 
 /* 标题下面那一行靠右的按钮（确认、修改），与每条已定右边的小字操作 */
 .app .oa-meta .oa-acts { margin-left: auto; display: inline-flex; gap: .4rem; }
-.app .oa-rules .act { display: inline-flex; gap: .2rem; white-space: nowrap; }
+/* 这一格不能叫 act：那是对话区里助手卡片的类名，会带上卡片的淡紫底 */
+.app .oa-rules .oa-ract { display: inline-flex; gap: .2rem; white-space: nowrap; }
 
 /* 贴标签与修改 */
 .app button.oa-tag.add { font: inherit; font-size: 0.857rem; border-style: dashed; color: var(--text3); cursor: pointer; }

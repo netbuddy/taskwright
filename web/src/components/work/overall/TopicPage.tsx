@@ -219,7 +219,7 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
             <li key={i} className={marked.settled.has(i) ? "pending" : undefined} data-testid={`topic-settled-${i}`}>
               <span className="mk" />
               <div className="t">{one}<SourceLine sources={sourcesFor(item, TOPIC.settled, i)} onLocate={onLocate} /></div>
-              <span className="act">
+              <span className="oa-ract">
                 {/* 确认是按整页记的：整页只有这一处待核实时，这一条旁边的「对」才等于确认；多于一处时统一用顶部的按钮 */}
                 {marked.settled.has(i) && pending === 1 && (
                   <button type="button" className="linkbtn" disabled={!!confirmOff} title={confirmOff ?? "这一条是对的：确认"} onClick={() => void confirm()}

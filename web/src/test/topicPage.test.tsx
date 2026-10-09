@@ -231,6 +231,12 @@ describe("修改与贴标签", () => {
     expect(await screen.findByTestId("topic-what")).toBeInTheDocument();
   });
 
+  it("每条已定右边的小字操作不借用对话区卡片的类名（否则会带上卡片的底色）", () => {
+    render(<Panel t={overallTask()} />);
+    expect(screen.getByTestId("topic-page").querySelector(".act")).toBeNull();
+    expect(screen.getByTestId("topic-settled-edit-0").parentElement).toHaveClass("oa-ract");
+  });
+
   it("取消回到主题页，什么都不发；每条已定旁边的「改」也进到修改", () => {
     const submit = vi.fn(async () => null);
     render(<Panel t={overallTask()} spies={{ submit }} />);
