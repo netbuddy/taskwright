@@ -20,8 +20,10 @@ describe("任务页的样式文件", () => {
     expect(rules.match(/\b(rgb|rgba|hsl|hsla)\(/g) ?? []).toEqual([]);
   });
 
-  it("引用的每个变量都在 styles.css 的 :root 里定义过（集合卡自己的 --c 除外）", () => {
-    const root = GLOBAL_CSS.slice(GLOBAL_CSS.indexOf(":root{"), GLOBAL_CSS.indexOf("}", GLOBAL_CSS.indexOf(":root{")));
+  it("引用的每个变量都在 styles.css 的第一个令牌块里定义过（集合卡自己的 --c 除外）", () => {
+    const start = GLOBAL_CSS.indexOf(":root, [data-theme=\"plain\"]{");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const root = GLOBAL_CSS.slice(start, GLOBAL_CSS.indexOf("\n}", start));
     const defined = new Set([...root.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));
     const used = new Set([...rules.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((m) => m[1]));
     used.delete("--c");

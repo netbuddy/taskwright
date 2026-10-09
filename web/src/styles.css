@@ -1,7 +1,12 @@
-/* 全局样式。:root 里的变量是整个前端配色、字体、栏宽的唯一来源，别的样式文件与页面代码里不写颜色的字面量；
- * Ant Design 的主题令牌（App.tsx）对到同一套值。工作视图的组件样式在 styles/workview.css（逐字照搬原型），
- * 原型里没有、前端补的在 styles/workview-extra.css。 */
-:root{
+/* 全局样式。开头两个令牌块是整个前端配色、字体、栏宽的唯一来源，别的样式文件与页面代码里不写颜色的字面量
+ * （守护测试 test/styleTokens.test.ts）。界面风格有两种，各占一个令牌块，改一种不动另一种：
+ *   素白（plain）：第一个块，黑白灰加几种状态色。
+ *   暖纸（paper）：第二个块，米色纸面、深灰蓝的字、标题用衬线字体；没有选过时用它。
+ * 当前的风格写在 html 的 data-theme 上（model/theme.ts，入口页 index.html 在画页面之前先套上）；页面里某一块也可以自己带
+ * data-theme，在局部用另一种风格（设置页的两张风格卡这样画预览）。两个块里的令牌要一一对应：加一个令牌，两处都要给值。
+ * 风格只换这些令牌的值，不改结构、图标、布局、间距。Ant Design 的主题令牌（App.tsx）从这里读同一套值。
+ * 工作视图的组件样式在 styles/workview.css，前端补的在 styles/workview-extra.css。 */
+:root, [data-theme="plain"]{
   --paper:#f3f3f3; --stage:#fafafa; --card:#ffffff; --ink:#0d0d0d; --mut:#8f8f8f;
   --line:#ececec; --line2:#dcdcdc; --dark:#f7f7f8; --dark3:#ececec;
   --amber:#b45309; --amber-bg:#fdf3e0; --amber-line:#e5c890;
@@ -35,6 +40,33 @@
   --font-body:-apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-title:var(--font-body);
   --w-rail:clamp(2.6rem,3vw,3.2rem); --w-chat:clamp(18rem,24%,26rem); --w-handle:2rem;
+}
+
+[data-theme="paper"]{
+  --paper:#f7f5ef; --stage:#fbf9f4; --card:#fffdf9; --ink:#22272e; --mut:#8a919b;
+  --line:#efebe2; --line2:#e6e1d6; --dark:#f7f4ed; --dark3:#ebe6da;
+  --amber:#b7791f; --amber-bg:#fbf3e3; --amber-line:#e6cf9c;
+  --blue:#2d5d8f; --blue-bg:#e9eff6; --blue-line:#b7c9dd;
+  /* 这一套的绿本身偏青，所以青绿往青色挪了一些，免得两种相混 */
+  --teal:#237680; --teal-bg:#e5f1f2; --teal-line:#a8ccd0;
+  --ok:#2f6f5e; --ok-bg:#eaf3ef; --ok-line:#b3d3c8;
+  --gap:#a23b32; --gap-bg:#f9ecea; --gap-line:#e0b8b3; --sel:#f3efe6;
+  --ai:#6b5fb0; --ai-bg:#efedf8; --ai-line:#cbc5e6;
+  --note:#4a5a6e; --note-bg:#eef0f1; --note-line:#c6cdd6;
+  --text1:#3a4049; --text2:#5b6470; --text3:#717985; --faint:#b4b8bd;
+  --on-ink:#fffdf9; --user-bg:#ece7dc; --line3:#cfc8b9;
+  --amber-ink:#74500f; --amber-mut:#92763c; --amber-bg2:#fdf8ee;
+  --ok-ink:#24574a; --teal-ink:#1c5a62; --gap-ink:#7e2c25; --blue-bg2:#f1f5f9;
+  --hit-bg:#f9edb8; --hit-line:#dcc15a; --hit-edge:#c99a12; --hit-ink:#66500a; --hit-wash:rgba(230,190,60,.18); --mark-line:#c8621f;
+  --blue-hit:#cfdcea; --blue-wash:rgba(45,93,143,.10); --blue-veil:rgba(45,93,143,.28);
+  /* 「配图」小标签在素白里是钢蓝，与这一套的链接蓝几乎同色，所以这里用橄榄色 */
+  --fig:#66602a; --fig-bg:#f2f0e0; --fig-line:#d3cea4;
+  --kb:#7f3d82; --kb-bg:#f4ecf3; --kb-line:#d8bdd9;
+  --shadow-1:rgba(34,39,46,.05); --shadow-2:rgba(34,39,46,.08); --shadow-3:rgba(34,39,46,.13); --shadow-4:rgba(34,39,46,.20);
+  --ink-ring:rgba(34,39,46,.45); --hair:rgba(34,39,46,.10); --glass:rgba(255,253,249,.78);
+  --font-body:-apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  /* 衬线标题字：Linux 上是思源宋体（两种注册名），macOS 上是宋体-简，都没有时退到系统的衬线字体 */
+  --font-title:"Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif;
 }
 
 /* 根字号随视口流动：全站尺寸都写 rem，跟着它等比缩放；允许写 px 的只有 1px 描边与下面三档的 clamp 边界。

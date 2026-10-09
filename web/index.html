@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>需求工作台</title>
+    <!--
+      界面风格（暖纸、素白）先套上：把存在浏览器本地的选择写到 html 的 data-theme 上，没有选过或者读不了就是暖纸。
+      它排在样式之前、是一段只用很旧写法的普通脚本，所以页面的第一帧就是对的底色，不会先按一种风格画出来再变成另一种。
+      键名与取值同 src/model/theme.ts。
+    -->
+    <script data-purpose="theme">
+      (function () {
+        var theme = "paper";
+        try {
+          if (window.localStorage.getItem("taskwright.theme") === "plain") theme = "plain";
+        } catch (e) {
+          theme = "paper";
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
