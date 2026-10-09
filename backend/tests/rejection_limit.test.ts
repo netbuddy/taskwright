@@ -1,5 +1,5 @@
 /**
- * 一轮里连续被拒的上限，从头到尾走一遍：真的后端进程、真的 pi、假的语言模型（backend/fake_model）。
+ * 一轮里连续被拒的上限，从头到尾走一遍：真的后端进程、真的 pi、假的语言模型（tools/fake-model）。
  * 假语言模型头几次只回一个不带理解的工具调用，工具每次都因为「这一轮还没有写理解」拒绝；到第 5 次产品停下这次运行，
  * 不再请求模型，页面收到「已经停下」的提示，这一轮的结束原因是 stopped_by_limit；用户再说一句，助手照常回复。
  * 「回复」与「保存修订」各走一遍（它们过的是同一道门）。这里验的是工具在 pi 里的接线，计数的细则在 agent 的单元测试里。
@@ -91,7 +91,7 @@ async function withStack(name: string, script: Dict, body: (stack: { say: (text:
   const scriptFile = join(tmp, `${name}.json`);
   writeFileSync(scriptFile, JSON.stringify(script), "utf-8");
   const log = join(tmp, `${name}.jsonl`);
-  const fake = spawn(process.execPath, [join(ROOT, "backend", "fake_model", "main.mts"), "--script", scriptFile, "--log", log, "--port", "0", "--agent-dir", join(root, "pi-agent")], { env });
+  const fake = spawn(process.execPath, [join(ROOT, "tools", "fake-model", "main.mts"), "--script", scriptFile, "--log", log, "--port", "0", "--agent-dir", join(root, "pi-agent")], { env });
   let out = "";
   fake.stdout!.on("data", (c) => (out += c));
   for (let end = Date.now() + 15000; !out.includes("pi 配置目录已写好"); await sleep(30)) {

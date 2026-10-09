@@ -55,7 +55,7 @@ pi 实测用的是流式请求（请求体里 `stream` 为真），假端点按 
 在代码里用，脚本直接写成对象或列表传给 `new FakeModel(脚本, 请求记录路径, { autoIntent })`；写成 JSON 文件，是给手工启动用的：
 
 ```
-node backend/fake_model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
+node tools/fake-model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
 ```
 
 `autoIntent` 为真时，用户说话之后第一个只有工具调用、没有文字的回答，前面自动补一段理解；命令行起的假端点不补。
@@ -89,7 +89,7 @@ pi 这一侧用 `writeAgentDir(目录, fake.baseUrl)`（`agent_config.ts`）写�
 ## 手工起一个假端点
 
 ```bash
-node backend/fake_model/main.mts --script 脚本.json --log 请求记录.jsonl --agent-dir /tmp/fake-agent
+node tools/fake-model/main.mts --script 脚本.json --log 请求记录.jsonl --agent-dir /tmp/fake-agent
 ```
 
 启动后，终端会打印假端点的地址与配置目录。另开一个终端，用 `PI_CODING_AGENT_DIR=/tmp/fake-agent pi --model fake/fake-model ...` 启动 pi 即可。按 Ctrl+C 停掉假端点。

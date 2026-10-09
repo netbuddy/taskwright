@@ -9,8 +9,8 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { Agent, request } from "node:http";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { writeAgentDir } from "../fake_model/agent_config.ts";
-import { FakeModel } from "../fake_model/server.ts";
+import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
+import { FakeModel } from "../../tools/fake-model/server.ts";
 import { FAKE_MODEL } from "./fixtures/expected/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
@@ -142,7 +142,7 @@ test("pi 配置目录只登记假端点", () => {
 /** 起一个命令行假端点，等它打印出地址与 pi 配置目录。 */
 async function startCli(dir: string, script: unknown): Promise<{ child: ChildProcess; baseUrl: string }> {
   writeFileSync(join(dir + "-script.json"), JSON.stringify(script), "utf-8");
-  const child = spawn(process.execPath, [join(ROOT, "backend", "fake_model", "main.mts"), "--script", dir + "-script.json", "--log", join(dir, "requests.jsonl"),
+  const child = spawn(process.execPath, [join(ROOT, "tools", "fake-model", "main.mts"), "--script", dir + "-script.json", "--log", join(dir, "requests.jsonl"),
     "--port", "0", "--agent-dir", join(dir, "pi-agent")]);
   let out = "";
   child.stdout!.on("data", (c) => (out += c));

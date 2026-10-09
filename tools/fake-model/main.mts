@@ -1,7 +1,7 @@
 /**
  * 手工起一个假端点：
  *
- *   node backend/fake_model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
+ *   node tools/fake-model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
  *
  * --port 不写或写 0 时由操作系统挑空闲端口，启动后把端口打印出来。给了 --agent-dir 就顺手在那里写好
  * 只认这个假端点的 pi 配置目录，之后用 PI_CODING_AGENT_DIR=<那个目录> 启动 pi 即可。按 Ctrl+C 停。

@@ -22,7 +22,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from "node:http";
 import { dirname } from "node:path";
-import { pyDumps, truthy } from "../src/py.ts";
+import { pyDumps, truthy } from "../../backend/src/py.ts";
 
 type Dict = Record<string, any>;
 

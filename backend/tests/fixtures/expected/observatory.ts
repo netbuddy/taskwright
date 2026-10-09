@@ -66,7 +66,7 @@ export async function runConversation(root: string): Promise<[string, string]> {
   for (const name of DROPPED_ENV) delete env[name];
   const scriptFile = join(root, "script.json");
   writeFileSync(scriptFile, JSON.stringify(SCRIPT), "utf-8");
-  const fake = spawn(process.execPath, [join(ROOT, "backend", "fake_model", "main.mts"), "--script", scriptFile, "--log", join(root, "fake.jsonl"),
+  const fake = spawn(process.execPath, [join(ROOT, "tools", "fake-model", "main.mts"), "--script", scriptFile, "--log", join(root, "fake.jsonl"),
     "--port", "0", "--agent-dir", join(root, "pi-agent")], { env });
   let out = "";
   fake.stdout!.on("data", (c) => (out += c));
