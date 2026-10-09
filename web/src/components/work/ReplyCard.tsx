@@ -18,6 +18,7 @@ import { useRef, useState } from "react";
 import { Popconfirm } from "antd";
 import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../api/types";
 import { CONFIRM_CONDITION, SOURCE_ITEM, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, sourceKindNow, unreadItems } from "../../model/items";
+import { storyPlace } from "../../model/overall";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { isKnowledgeLocator } from "../../model/knowledge";
 
@@ -58,7 +59,9 @@ function onlyUnreadLeft(task: Task | null): boolean {
   return unmet.length > 0 && unmet.every((c) => c.name === CONFIRM_CONDITION);
 }
 
-export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, handlers, onOpenItem, onLocate }: {
+export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, handlers, onOpenItem, onLocate }: {
+  /** 这张卡片所在的那条回复的正文；复述的卡片据它判断故事写在卡片里还是写在回复里。 */
+  replyText?: string;
   act: Act;
   replyMessageId: string;
   task: Task | null;
@@ -140,9 +143,12 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, h
   const unread = task ? unreadItems(task) : [];
   const showUnread = !done && !disabled && unread.length > 0 && onlyUnreadLeft(task);
 
+  // 助手复述的卡片（请选择，三个选项是「这段对，记下」「有一处不对」「换一个人物再讲」）：故事画成故事的样子，卡片本身不要底色。
+  const story = storyPlace(act, replyText);
+
   return (
-    <div className="act" data-kind={act.kind} data-testid={`act-${act.kind}`}>
-      <div className="tt">{KIND_LABEL[act.kind] ?? act.kind}</div>
+    <div className={`act${story ? " retell" : ""}`} data-kind={act.kind} data-testid={`act-${act.kind}`} data-story={story ?? undefined}>
+      <div className="tt">{story ? "复述 · 你看哪里不对" : KIND_LABEL[act.kind] ?? act.kind}</div>
       {contexts.length > 0 && (
         <div data-testid="card-context">
           {contexts.map((c, i) => (
@@ -157,7 +163,13 @@ export function ReplyCard({ act, replyMessageId, task, disabled, hold = false, h
           ))}
         </div>
       )}
-      <div>{TEXT_LABEL[act.kind] && <span className="fk">{TEXT_LABEL[act.kind]}</span>}<span className="val">{act.text}</span></div>
+      {story === "card" ? (
+        <div className="story" data-testid="card-story">
+          {act.text.split(/\n+/).map((p) => p.trim()).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}
+        </div>
+      ) : (
+        <div>{!story && TEXT_LABEL[act.kind] && <span className="fk">{TEXT_LABEL[act.kind]}</span>}<span className="val">{act.text}</span></div>
+      )}
 
       {act.kind === "suggest" && (
         <>

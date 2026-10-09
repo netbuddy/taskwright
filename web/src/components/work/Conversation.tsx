@@ -16,6 +16,7 @@ import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SavedFac
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
+import { storyPlace } from "../../model/overall";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -317,7 +318,10 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
                   ))}
                 </ul>
               )}
-              <Markdown text={m.text} />
+              {/* 助手复述、故事写在回复正文里时（卡片只是一句问话加三个选项），正文画成故事的样子 */}
+              {m.act && storyPlace(m.act, m.text) === "reply"
+                ? <div className="story" data-testid="reply-story"><Markdown text={m.text} /></div>
+                : <Markdown text={m.text} />}
               {!m.act && itemIds(m.informs).length > 0 && (
                 <div className="mentioned" data-testid="mentioned-items">
                   提到的条目：{itemIds(m.informs).map((id, i) => <span key={id}>{i > 0 && "、"}<ItemLink id={id} onOpenItem={onOpenItem} /></span>)}
@@ -326,7 +330,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </>
           )}
           {m.act && !m.degraded && (
-            <ReplyCard act={m.act} replyMessageId={m.message_id} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered}
+            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}
           {revisions.length > 0 && (

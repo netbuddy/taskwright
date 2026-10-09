@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   STORY_KEYS, confirmAction, countsText, dependents, exampleParts, firstParagraph, glossary, isStoryOptions, markSupplemented, mentionRows, openQuestions, outline, outlineOrder,
-  overallDef, pagesOf, pendingCount, questionReason, retellText, settledCount, sourcesFor, splitByWord, supplemented, topicState, totals, trail, withBelow,
+  overallDef, pagesOf, pendingCount, questionReason, retellText, settledCount, sourcesFor, splitByWord, storyPlace, supplemented, topicState, totals, trail, withBelow,
   viewOnOpen, type OutlineNode,
 } from "../model/overall";
 import { change, itemOf, overallTask } from "./fixtures/overallTask";
@@ -246,5 +246,15 @@ describe("总体分析：复述", () => {
     expect(isStoryOptions([{ key: "x", text: "别的话" }, { key: "story_again", text: "再讲一遍" }])).toBe(true);
     expect(isStoryOptions([])).toBe(false);
     expect(isStoryOptions(undefined)).toBe(false);
+  });
+
+  it("故事写在哪里：卡片正文与回复正文哪个长哪个是故事；不是请选择、或者选项不是那三个的，不算复述", () => {
+    const options = STORY_KEYS.map((key) => ({ key, text: key }));
+    const story = "周六上午，小王在家里预约了《算法导论》。周一馆员把书放到预留架。";
+    expect(storyPlace({ kind: "choose", text: story, options }, "我把到现在的理解讲成一段：")).toBe("card");
+    expect(storyPlace({ kind: "choose", text: "你看这段对不对？", options }, story)).toBe("reply");
+    expect(storyPlace({ kind: "choose", text: story, options })).toBe("card"); // 没有回复正文
+    expect(storyPlace({ kind: "ask", text: story, options })).toBeNull();
+    expect(storyPlace({ kind: "choose", text: story, options: [{ key: "a", text: "按自然日" }, { key: "b", text: "顺延" }] })).toBeNull();
   });
 });

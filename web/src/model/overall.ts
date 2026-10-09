@@ -352,6 +352,15 @@ export function reviseDependentsText(item: Item): string {
 /** 助手复述时那张请选择卡片的三个选项的键；早先没有写死键的回复，按第一个选项的文字以「这段对」开头来认。 */
 export const STORY_KEYS = ["story_ok", "story_fix", "story_again"] as const;
 
+/**
+ * 助手复述的那张卡片，故事写在哪里：卡片的正文与这条回复的正文，哪个长哪个就是故事（另一个是一句引子或问话）。
+ * card 是写在卡片的正文里，reply 是写在回复的正文里；不是复述卡片时为 null。
+ */
+export function storyPlace(act: { kind: string; text: string; options?: { key: string; text: string }[] }, replyText = ""): "card" | "reply" | null {
+  if (act.kind !== "choose" || !isStoryOptions(act.options)) return null;
+  return act.text.trim().length >= replyText.trim().length ? "card" : "reply";
+}
+
 export function isStoryOptions(options: { key: string; text: string }[] | undefined): boolean {
   if (!options || options.length === 0) return false;
   if (options.some((o) => (STORY_KEYS as readonly string[]).includes(o.key))) return true;
