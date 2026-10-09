@@ -39,11 +39,11 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [x] Diagrams: the assistant draws use case, class, state and sequence diagrams and flowcharts as Mermaid text, checked before they are saved; a diagrams tab in the work view shows them, lets you move, scale and change them, and exports PNG
 - [x] Export chosen items to Word: tick items in the list and download a .docx in which each item is a table, to paste into your own specification
 
-## 0.4.3 PDF
+## 0.4.3 PDF materials and replacing a material
 
-- [ ] PDF materials and knowledge base documents (the parsing module is on the main branch)
-- [ ] Word materials shown as PDF, so that pages match what Word shows
-- [ ] Replace a material
+- [x] PDF materials and knowledge base documents
+- [x] Replace a material
+- [x] The task status note at the top of a conversation folded into one line
 
 ## 0.5 Several users
 
