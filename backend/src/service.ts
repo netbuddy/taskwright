@@ -27,6 +27,7 @@ import { PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from ".
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
 import { TASK_TYPES_DIR } from "./paths.ts";
+import type { ServiceDb } from "./service_db.ts";
 import { GENERAL, KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
 import { KnowledgeEmbedder } from "./knowledge_embedder.ts";
 import { searchKnowledge, searchRequest } from "./knowledge_search.ts";
@@ -166,6 +167,8 @@ export interface ServiceOptions {
   createTasksDir?: boolean;
   /** 知识库根目录；不给时这个服务没有知识库（服务信息里 capabilities.knowledge 为假，知识库的接口一律 not_found）。 */
   knowledgeDir?: string | null;
+  /** 已经打开的服务级库（service_db.ts）；不给时这个服务没有任务登记表（直接建服务对象的测试）。服务收尾时关掉它。 */
+  registry?: ServiceDb | null;
 }
 
 /** 按码位排好的目录项。 */
@@ -214,6 +217,7 @@ export class Service {
   readonly skipped = new Set<string>();
   /** 知识库；启动时没给根目录就是 null。 */
   readonly knowledge: KnowledgeStore | null;
+  readonly registry: ServiceDb | null;
   /** 知识库文档的后台换算；没有知识库时是 null。 */
   readonly embedder: KnowledgeEmbedder | null;
   private readonly claim: Claim;
@@ -230,6 +234,7 @@ export class Service {
     this.mode = options.mode ?? "server";
     this.claim = options.claim ?? occupancy.claim;
     this.releaseLock = options.release ?? occupancy.release;
+    this.registry = options.registry ?? null;
     if (options.createTasksDir !== false) mkdirSync(this.tasksDir, { recursive: true });
     // 知识库根目录同样转成绝对路径；第一次启动、还没有知识库的清单时建出通用知识库。
     this.knowledge = options.knowledgeDir ? new KnowledgeStore(resolve(options.knowledgeDir)) : null;
@@ -307,6 +312,7 @@ export class Service {
       this.releaseLock(t.dir);
     }
     for (const t of this.tasks.values()) t.hub.close();
+    this.registry?.close();
   }
 
   // ───────────── 任务与会话 ─────────────

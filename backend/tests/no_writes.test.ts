@@ -4,6 +4,10 @@
  * 1. backend/ 下的任何文件（源码、测试）从 agent/src/lib 导入的名字都必须在下面的白名单里：只读函数、常量，
  *    以及唯一允许的写入——建任务的 createTask。保存修订、界面操作、评审等写入函数一律不许导入；也不许整个模块导入或动态导入。
  * 2. backend/src 下的源码里不出现写库的 SQL（INSERT、UPDATE、DELETE、REPLACE、CREATE、DROP、ALTER）。
+ *    唯一的例外是服务级库的数据模块 src/service_db.ts：服务级库（数据目录下的 service.sqlite）是后端自己的库，它的每一句 SQL
+ *    都只许写在那一个文件里。
+ * 3. backend/src 下只有两个文件直接用数据库：library.ts（只读打开任务库）与 service_db.ts（服务级库）。别的文件不导入
+ *    node:sqlite，也不出现 service.sqlite 这个文件名，要读写服务级库就调 service_db.ts 的取存函数。
  */
 
 import assert from "node:assert/strict";
@@ -49,6 +53,8 @@ const ALLOWED: Record<string, string[]> = {
   "pdf_segments.ts": ["PDF_SEGMENTS_SUFFIX", "PdfSegmentList", "buildPdfSegments", "pdfProjectionUnits", "writePdfSegments"],
   // PDF 材料的来源：从投影取各块（只做计算，页面也用它）；知识库切片段时用。
   "pdf_source.ts": ["pdfProjectionUnits"],
+  // 任务库的格式版本一侧：拒绝比程序新的数据时的那句话（纯函数，不碰库），数据目录比程序新时后端也用这一句。
+  "schema.ts": ["newerDataText"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],
 };
@@ -108,12 +114,33 @@ test("backend/ 下的文件不导入 agent 的写入函数（建任务的 create
   assert.deepEqual(bad, [], "不在白名单里的导入");
 });
 
-test("backend/src 的源码里没有写库的 SQL", () => {
+/** 服务级库的数据模块：后端里唯一可以写 SQL 的文件。 */
+const SERVICE_DB_MODULE = "service_db.ts";
+/** 直接用数据库的两个文件。 */
+const DATABASE_MODULES = ["library.ts", SERVICE_DB_MODULE];
+
+test("backend/src 的源码里没有写库的 SQL（服务级库的数据模块除外）", () => {
   const bad: string[] = [];
   for (const file of files(join(BACKEND, "src"))) {
+    if (relative(join(BACKEND, "src"), file) === SERVICE_DB_MODULE) continue;
     readFileSync(file, "utf-8").split("\n").forEach((line, n) => {
       if (/["'`]\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\s/i.test(line)) bad.push(`${relative(BACKEND, file)}:${n + 1}`);
     });
   }
   assert.deepEqual(bad, []);
+});
+
+test("服务级库只经它的数据模块读写：别的文件不导入 node:sqlite，也不出现它的文件名", () => {
+  const bad: string[] = [];
+  const src = join(BACKEND, "src");
+  for (const file of files(src)) {
+    const name = relative(src, file);
+    if (DATABASE_MODULES.includes(name)) continue;
+    readFileSync(file, "utf-8").split("\n").forEach((line, n) => {
+      if (/["']node:sqlite["']/.test(line) || /service\.sqlite/.test(line)) bad.push(`${name}:${n + 1}`);
+    });
+  }
+  assert.deepEqual(bad, []);
+  // 数据模块自己确实有写库的 SQL：这条规则守着的东西是存在的。
+  assert.match(readFileSync(join(src, SERVICE_DB_MODULE), "utf-8"), /CREATE TABLE IF NOT EXISTS tasks/);
 });
