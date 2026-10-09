@@ -725,6 +725,10 @@ function importLibrary(where: PackLocations, staging: Staging, one: PackLibrary,
       return { ...out, outcome: "skipped", reason };
     }
     const staged = join(staging.knowledge, one.id);
+    // 目标里有同编号的库，它是空的，包里这个库也是空的（两个全新数据目录的通用知识库就是这样）：没有东西可导入，照实写。
+    if ((store.has(one.id) || existsSync(target)) && stagedDocumentCount(staging, one.id) === 0 && walk(join(staged, "files"), new Set(), "", []).files.length === 0) {
+      return { ...out, outcome: "skipped", reason: "两边都是空的，没有要导入的" };
+    }
     if (existsSync(staged)) {
       // 原来那个同编号的库是空的：它的空目录让位。
       rmSync(target, { recursive: true, force: true });

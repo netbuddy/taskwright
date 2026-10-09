@@ -62,7 +62,9 @@ test("导出整套再导入到一个空的数据目录：两个命令都退出 0
   const imported = run(["data", "import", "--data", target, "--from", file]);
   assert.equal(imported.status, 0, imported.err + imported.out);
   assert.match(imported.out, /^数据包导入报告（/);
-  assert.match(imported.out, /合计：导入了 2 个任务、1 个知识库；因为已经存在而跳过 0 项；没有做成 0 项。/);
+  // 通用知识库两边都是空的：没有要导入的，照实写。
+  assert.match(imported.out, /知识库 general「通用知识库」：没有导入（两边都是空的，没有要导入的）/);
+  assert.match(imported.out, /合计：导入了 2 个任务、0 个知识库；因为已经存在而跳过 1 项；没有做成 0 项。/);
   assert.match(imported.out, /这份报告也写在 .*logs.import-\d{8}-\d{6}\.txt/);
   assert.deepEqual(registered(target)?.sort(), [[a, "甲", a], [b, "乙", b]].sort(), "导入时建出了任务登记");
   assert.deepEqual(tree(join(target, "runs", a)), tree(join(where.runsDir, a)));
@@ -70,8 +72,7 @@ test("导出整套再导入到一个空的数据目录：两个命令都退出 0
 
   const again = run(["data", "import", "--data", target, "--from", file]);
   assert.equal(again.status, 0, "因为已经存在而跳过不算没有做成");
-  // 两个任务已经在了，跳过；通用知识库两边都是空的，照「同编号而空」的情形又导入了一次（什么都没有变）。
-  assert.match(again.out, /合计：导入了 0 个任务、1 个知识库；因为已经存在而跳过 2 项；没有做成 0 项。/);
+  assert.match(again.out, /合计：导入了 0 个任务、0 个知识库；因为已经存在而跳过 3 项；没有做成 0 项。/);
   assert.deepEqual(readdirSync(join(target, "tasks")).sort(), [a, b].sort());
 
   const renumbered = run(["data", "import", "--data", target, "--from", file, "--renumber"]);
