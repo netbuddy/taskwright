@@ -107,9 +107,16 @@ test("扫描规则本身：认得出具名导入、类型导入、改名导入�
     ["save_revision.ts", "*"], ["user_ops.ts", "*"], ["review.ts", "*"]]);
 });
 
+/**
+ * 生成旧版本样本任务目录的脚本不在这条规则里：它里面的导入语句是一段种子脚本的文字，那段脚本交给取出来的旧版本代码
+ * 在临时目录里运行（用旧版本自己的保存修订函数写样本），不是后端的代码，后端与测试都不导入它。
+ */
+const SAMPLE_BUILDER = join("tests", "fixtures", "task_dirs", "build.mjs");
+
 test("backend/ 下的文件不导入 agent 的写入函数（建任务的 createTask 除外）", () => {
   const bad: string[] = [];
   for (const file of files(BACKEND)) {
+    if (relative(BACKEND, file) === SAMPLE_BUILDER) continue;
     for (const [module, name] of agentImports(readFileSync(file, "utf-8"))) {
       if (!(ALLOWED[module] ?? []).includes(name)) bad.push(`${relative(BACKEND, file)}：${module} 的 ${name}`);
     }

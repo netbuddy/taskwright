@@ -8,6 +8,8 @@ __pycache__/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+# The sample task directories of earlier releases, which the data upgrade tests use, are committed.
+!backend/tests/fixtures/task_dirs/*/task.sqlite
 .env
 # run output of the example, the dev script and the simulator (repository root only)
 /runs/
