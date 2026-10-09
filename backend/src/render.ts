@@ -12,7 +12,15 @@
  * - 按字段归组：{{#按 字段 归组 集合名 条件…}} … {{/按}}：按这个字段的值把条目分组，每组把中间那段渲染一遍，
  *   {{组名}} 是这一组的值（空值写「（未填）」），{{#组内每个}} … {{/组内每个}} 对组里每个条目各渲染一遍。
  *   组的先后按每组第一个条目的编号，组内按编号排；一个条目都没有时整段不输出；
+ * - 按列表字段的每个值归组：{{#按 字段 逐值归组 集合名 条件…}} … {{/按}}，里面的写法与上一条相同。一个条目的这个字段有几个值就进几个组，
+ *   没有值的条目不进任何组；组的先后按这个字段在任务定义里「取值」的次序（没有声明取值的按出现的先后）。条件里可以另写
+ *   「组!=某个值」去掉某一组、「组=某个值」只要某一组；
  * - 每个条目里：{{编号}}、{{修订号}}、{{评审状态}}、{{确认状态}}、{{来源}}，以及任意字段名 {{字段名}}；
+ * - 每个条目里，列表字段一项一项地写：{{#逐项 字段}} … {{/逐项}}，对这个字段的每一项把中间那段渲染一遍，{{项}} 是这一项的文字，
+ *   {{序号}} 从 1 起；字段是空的时整段不输出；
+ * - 每个条目里，字段有内容才写的一段：{{#有 字段}} … {{/有}}；
+ * - 字段名后面可以跟一种取法：{{字段|首段}} 取文本字段的第一段（到第一个空行为止），{{字段|顿号}} 把列表字段用顿号连成一句
+ *   （空的时候什么都不写）；
  * - 模板任何地方：{{文档修订号}}（这份文档按修订 N 生成）。
  *
  * 没有评审通过或没有确认标记的条目不拦，如实写进「评审状态」「确认状态」两处。
@@ -30,7 +38,11 @@ import { or, truthy } from "./py.ts";
 import { parseKnowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
 
 const EACH = /\{\{#每个 (.+?)\}\}\n?(.*?)\{\{\/每个\}\}\n?/gs;
-const GROUP = /\{\{#按 (\S+) 归组 (.+?)\}\}\n?(.*?)\{\{\/按\}\}\n?/gs;
+const GROUP = /\{\{#按 (\S+) (逐值归组|归组) (.+?)\}\}\n?(.*?)\{\{\/按\}\}\n?/gs;
+// 「逐项」与「有」两种段可以各占几行（开头的标记后面换行），也可以写在一行中间。各占几行时，开头与结尾两个标记后面的换行都不算内容；
+// 写在一行中间时，结尾标记后面的换行是这一行自己的，留着。
+const ENTRIES = /\{\{#逐项 (.+?)\}\}(\n?)(.*?)\{\{\/逐项\}\}(\n?)/gs;
+const HAS = /\{\{#有 (.+?)\}\}(\n?)(.*?)\{\{\/有\}\}(\n?)/gs;
 const IN_GROUP = /\{\{#组内每个\}\}\n?(.*?)\{\{\/组内每个\}\}\n?/gs;
 const NONE = /\{\{#没有 (.+?)\}\}\n?(.*?)\{\{\/没有\}\}\n?/gs;
 const FIELD = /\{\{([^\n]+?)\}\}/g;
@@ -96,6 +108,15 @@ const USER_EDIT = "用户直接修改";
 const ITEM = "条目";
 /** 按字段归组时空值那一组的组名。 */
 const EMPTY_GROUP = "（未填）";
+/** 归组语句的条件里指组名的那个词：「组!=概念」去掉概念这一组。 */
+const GROUP_WORD = "组";
+/** 字段名后面可以跟的两种取法。 */
+const FIRST_PARAGRAPH = "首段";
+const JOINED = "顿号";
+
+const blank = (value: unknown) => value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
+/** 列表字段里有内容的各项，写成文字。 */
+const entriesOf = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v) => v !== null && v !== undefined && v !== "").map(str) : []);
 /** 助手补充：摘录是理由，文档里不写出处。 */
 const SUPPLEMENT = "助手补充";
 
@@ -274,10 +295,26 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
         编号: itemId, 修订号: String(no), 内容版本号: String(no), 评审状态: reviewState(lib, itemId, no),
         确认状态: confirmState(lib, itemId, no), 来源: sourcesText(lib, itemId, no, wordsLocator, libraryName),
       };
-      return body.replace(FIELD, (_m, raw: string) => {
-        const key = raw.trim();
-        return key in special ? special[key] : valueText(fields[key], types[key] ?? "文本");
+      /** 把一段里的 {{…}} 换成值；extra 是「逐项」里这一项的文字与序号。 */
+      const fill = (text: string, extra: Record<string, string> = {}) => text.replace(FIELD, (_m, raw: string) => {
+        const [key, how] = raw.split("|").map((one) => one.trim());
+        if (how === undefined) return key in extra ? extra[key] : key in special ? special[key] : valueText(fields[key], types[key] ?? "文本");
+        const value = fields[key];
+        if (how === FIRST_PARAGRAPH) return blank(value) ? "（空）" : str(value).trim().split(/\n\s*\n/)[0].replaceAll("\n", " ");
+        if (how === JOINED) return (Array.isArray(value) ? entriesOf(value) : blank(value) ? [] : [str(value)]).join("、");
+        throw new ApiError("bad_request", `文档模板里的「${raw.trim()}」写得不对：字段名后面只能跟「${FIRST_PARAGRAPH}」或「${JOINED}」。`);
       });
+      // 先定下「有内容才写」的各段，再把「逐项」的各段按项展开，最后填别的字段。
+      const kept = body.replace(HAS, (_m, name: string, opened: string, inner: string, closed: string) =>
+        (blank(fields[name.trim()]) ? "" : inner) + (opened ? "" : closed));
+      let out = "";
+      let at = 0;
+      for (const m of kept.matchAll(ENTRIES)) {
+        out += fill(kept.slice(at, m.index));
+        out += entriesOf(fields[m[1].trim()]).map((entry, n) => fill(m[3], { 项: entry, 序号: String(n + 1) })).join("") + (m[2] ? "" : m[4]);
+        at = m.index! + m[0].length;
+      }
+      return out + fill(kept.slice(at));
     }).join("");
   };
 
@@ -286,20 +323,39 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
     return renderItems(collection, rows, body);
   };
 
-  const group = (_m: string, fieldRaw: string, selector: string, body: string) => {
+  const group = (_m: string, fieldRaw: string, mode: string, selectorRaw: string, body: string) => {
     const field = fieldRaw.trim();
+    // 条件里指组名的（「组!=概念」）另取出来，剩下的照常筛条目。
+    const [head, allConditions] = parseSelector(selectorRaw);
+    const groupConditions = allConditions.filter(([name]) => name === GROUP_WORD);
+    const selector = [head, ...allConditions.filter(([name]) => name !== GROUP_WORD).map(([name, equal, value]) => `${name}${equal ? "=" : "!="}${value}`)].join(" ");
     const [collection, rows] = selected(selector);
     const groups = new Map<string, Chosen>();
-    for (const row of rows) {
-      const value = row[2][field];
-      // 分组名：列表里的空项跳过（库数据异常时的兜底），整个为空时归到 EMPTY_GROUP。
-      const key = Array.isArray(value) ? value.filter((v) => v !== null && v !== undefined && v !== "").map(str).join("、") : str(or(value, "")).trim();
-      const name = key || EMPTY_GROUP;
+    const put = (name: string, row: Chosen[number]) => {
       if (!groups.has(name)) groups.set(name, []);
       groups.get(name)!.push(row);
+    };
+    for (const row of rows) {
+      const value = row[2][field];
+      if (mode === "逐值归组") {
+        // 这个字段有几个值就进几个组；没有值的条目不进任何组。
+        for (const one of new Set(Array.isArray(value) ? entriesOf(value) : blank(value) ? [] : [str(value).trim()])) put(one, row);
+        continue;
+      }
+      // 分组名：列表里的空项跳过（库数据异常时的兜底），整个为空时归到 EMPTY_GROUP。
+      const key = Array.isArray(value) ? value.filter((v) => v !== null && v !== undefined && v !== "").map(str).join("、") : str(or(value, "")).trim();
+      put(key || EMPTY_GROUP, row);
     }
-    return [...groups].map(([name, members]) =>
-      body.replace(IN_GROUP, (_x, inner: string) => renderItems(collection, members, inner)).replaceAll("{{组名}}", () => name)).join("");
+    let names = [...groups.keys()];
+    if (mode === "逐值归组") {
+      // 组的先后按字段声明的取值；没有声明的排在后面，按出现的先后。
+      const declared = ((lib.collections.get(collection)?.["字段"] ?? []).find((f) => f["名"] === field)?.["取值"] ?? []) as unknown[];
+      const rank = (name: string) => (declared.includes(name) ? declared.indexOf(name) : declared.length);
+      names = names.map((name, n) => [name, n] as const).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([name]) => name);
+    }
+    names = names.filter((name) => groupConditions.every(([, equal, value]) => (name === value) === equal));
+    return names.map((name) =>
+      body.replace(IN_GROUP, (_x, inner: string) => renderItems(collection, groups.get(name)!, inner)).replaceAll("{{组名}}", () => name)).join("");
   };
 
   const none = (_m: string, selector: string, body: string) => (selected(selector)[1].length ? "" : body);

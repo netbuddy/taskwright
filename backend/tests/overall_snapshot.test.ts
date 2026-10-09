@@ -5,67 +5,16 @@
  */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import * as library from "../src/library.ts";
-import { DEMO_DEFINITION, ROOT, makeWorkspace, sqlGet, sqlRun, tempDir } from "./helpers.ts";
+import { makeWorkspace, tempDir } from "./helpers.ts";
+import { DEFINITION, READY, SOURCE, SUPPLEMENT, build as buildIn, confirm, page } from "./overall_stack.ts";
 
-const BUILD = join(ROOT, "agent", "tests", "fixtures", "build_task_db.mts");
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
+const build = (name: string, definition: unknown, batches: unknown[]) => buildIn(tmp, name, definition, batches);
 
-const MATERIAL = "读者对在架的书办预约。只有在架的书才能预约取书。\n";
-const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者对在架的书办预约。" };
-const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
-
-/** 演示任务定义加一个总体分析集合（字段照产品的任务类型）。 */
-const DEFINITION = {
-  ...DEMO_DEFINITION,
-  交付物: { ...DEMO_DEFINITION.交付物, 条目集合: [...DEMO_DEFINITION.交付物.条目集合, {
-    名称: "总体分析", 编号前缀: "OA", 界面: { 右侧栏页签: true, 分组字段: "标签", 靠前的组: ["概念"] },
-    字段: [
-      { 名: "标题", 类型: "文本", 必填: true }, { 名: "别名", 类型: "文本列表", 必填: false }, { 名: "它是什么", 类型: "文本", 必填: true },
-      { 名: "例子", 类型: "文本列表", 必填: false }, { 名: "已经定下的", 类型: "文本列表", 必填: false },
-      { 名: "标签", 类型: "文本列表", 必填: false, 取值: ["概念", "角色", "流程", "场景", "目标", "范围", "假设", "决定"] },
-      { 名: "上级主题", 类型: "条目引用", 必填: false, 只许本集合: true, 至多一个: true },
-      { 名: "状态", 类型: "枚举", 必填: true, 取值: ["在用", "已废弃"] },
-      { 名: "改看", 类型: "条目引用", 必填: false, 只许本集合: true, 至多一个: true },
-    ],
-  }] },
-  完成条件: { ...DEMO_DEFINITION.完成条件, 总体分析: ["每个条目用户确认"] },
-};
-
-/** 建一个任务目录并按几批保存。 */
-function build(name: string, definition: unknown, batches: unknown[]): string {
-  const ws = join(tmp, name);
-  mkdirSync(join(ws, "docs", "task-definitions"), { recursive: true });
-  mkdirSync(join(ws, "inputs"), { recursive: true });
-  writeFileSync(join(ws, "docs", "task-definitions", "demo.json"), JSON.stringify(definition), "utf-8");
-  writeFileSync(join(ws, "inputs", "材料.md"), MATERIAL, "utf-8");
-  const done = spawnSync(process.execPath, [BUILD, ws, "docs/task-definitions/demo.json", JSON.stringify(batches)], { encoding: "utf-8" });
-  assert.equal(done.status, 0, done.stderr);
-  return ws;
-}
-
-/** 记一条用户在某个条目的某次修订上的确认（已读）。 */
-function confirm(ws: string, itemId: string, revisionNo: number): void {
-  const taskId = sqlGet(ws, "SELECT task_id FROM task")!.task_id;
-  const seq = Number(sqlGet(ws, "SELECT MAX(seq) AS seq FROM event")!.seq);
-  const id = Number(sqlGet(ws, "SELECT COALESCE(MAX(judgement_id), 0) + 1 AS id FROM judgement")!.id);
-  sqlRun(ws, [
-    ["INSERT INTO judgement (judgement_id, task_id, basis, call_id, event_seq, created_at) VALUES (?, ?, ?, ?, ?, '2026-10-09 10:00:00')", id, taskId, JSON.stringify([{ 依据: "已读", 操作编号: `ui-op-${id}` }]), `ui-op-${id}`, seq],
-    ["INSERT INTO judgement_item (judgement_id, task_id, item_id, revision_no, attitude, event_seq) VALUES (?, ?, ?, ?, '接受', ?)", id, taskId, itemId, revisionNo, seq],
-  ]);
-}
-
-/** 一页合格的主题（贴了标签、有例子、不待核实）：有了它，助手才能往别的集合里新增条目。它的文字里没有别的页的词。 */
-const READY = { op: "add", collection: "总体分析",
-  fields: { 标题: "馆藏范围", 它是什么: "本馆全部可以外借的纸质图书。", 例子: ["《算法导论》在三楼科技书库。"], 标签: ["范围"], 状态: "在用" }, sources: [SOURCE] };
-
-const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
-  ({ op: "add", collection: "总体分析", fields: { 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
 
 test("整份数据带待核实、因依据而待核实与提到；用户确认之后待核实消掉；提示里有还没有贴标签的主题", () => {
   const ws = build("overall", DEFINITION, [[
