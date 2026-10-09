@@ -2,7 +2,7 @@
 
 这个目录是任务服务：给页面的 HTTP 接口，并启动、看护每个任务的助手程序（pi）。接口的写法见 `docs/api.md`。
 
-代码由 Node 24 直接运行（去掉类型标注即可执行，不经构建）：HTTP 用 `node:http`，SQLite 用 `node:sqlite`。自己的第三方包有两个，版本都固定、头一次用到时才加载：docx（把选中的条目导出成 Word 文件时用）与 pdfjs-dist（为 0.4.3 的 PDF 材料准备，现在还没有用到）；校验图的 Mermaid 文本时用仓根 `node_modules` 里的 mermaid。
+代码由 Node 24 直接运行（去掉类型标注即可执行，不经构建）：HTTP 用 `node:http`，SQLite 用 `node:sqlite`。自己的第三方包有两个，版本都固定、头一次用到时才加载：docx（把选中的条目导出成 Word 文件时用）与 pdfjs-dist（读出上传的 PDF 文件里的文字时用）；校验图的 Mermaid 文本时用仓根 `node_modules` 里的 mermaid。
 完成条件的核对与建任务直接在同一进程里调用 `agent/src/lib` 的函数，与 pi 进程里的工具用的是同一份代码。
 
 它**不写任务数据库**：库只由 pi 进程里的工具与扩展命令写。唯一的例外是建任务，而且也不在这里写，是调用 agent 侧的
