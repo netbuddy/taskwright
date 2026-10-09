@@ -11,7 +11,7 @@
 // （方块变淡并脉动，不能再点），这次工作结束时换回发送键。发送与停止互斥：工作中本来就不能发送。停止不受未保存的条目编辑影响；
 // 工作中按回车不会停止，只有点方块才停。停下之后会话里留一条界面操作通知（种类 stop_run），对话区画成「你停止了助手这一次的工作」。
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SavedFacts, SystemNote, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
@@ -242,13 +242,15 @@ function ItemLink({ id, onOpenItem }: { id: string; onOpenItem: (itemId: string)
  * 重新打开会话又是折叠的。
  */
 function StatusNote({ line, text }: { line: string; text: string }) {
+  // 要点里的数（「2 份」「1/3」「0 条」）单独包起来，样式给它深一级的字；整行的文字不变。
+  const parts: ReactNode[] = line.split(/(\d+(?:\/\d+)?(?: [份条个])?)/).map((part, i) => (i % 2 ? <b key={i} className="n">{part}</b> : part));
   const [open, setOpen] = useState(false);
   const toggle = () => setOpen((now) => !now);
   return (
     <div className={`sysnote folding${open ? " open" : ""}`} data-testid="system-note">
       <div className="sn-line" role="button" tabIndex={0} aria-expanded={open} title={open ? "点这里收起" : "点这里看全文"} onClick={toggle}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }} data-testid="system-note-line">
-        <span>{line}</span><span className="sn-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <span>{parts}</span><span className="sn-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
       </div>
       {open && (
         <div className="sn-full" data-testid="system-note-full">

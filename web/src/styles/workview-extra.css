@@ -62,9 +62,9 @@
 /* 任务状况消息折叠成的一行：整行可点，行尾一个小三角；展开后全文在这一行下面 */
 .app .sysnote.folding .sn-line { display: flex; align-items: baseline; gap: 0.4rem; cursor: pointer; }
 .app .sysnote.folding .sn-line:hover { text-decoration: underline; text-underline-offset: 0.2em; }
-.app .sysnote.folding .sn-line:focus-visible { outline: 0.143rem solid var(--teal-line); outline-offset: 0.143rem; border-radius: 0.3rem; }
-.app .sysnote.folding .sn-caret { flex: none; color: var(--teal); }
-.app .sysnote.folding .sn-full { margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px dashed var(--teal-line); }
+.app .sysnote.folding .sn-line:focus-visible { outline: 0.143rem solid var(--line3); outline-offset: 0.143rem; border-radius: 0.3rem; }
+.app .sysnote.folding .sn-caret { flex: none; color: var(--text3); }
+.app .sysnote.folding .sn-full { margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--line2); }
 .app .confirms { font-size: 0.897rem; color: var(--text2); }
 .app .confirms div { margin-bottom: .15rem; }
 
