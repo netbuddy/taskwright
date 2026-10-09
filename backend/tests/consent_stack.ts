@@ -10,7 +10,7 @@ import { request } from "node:http";
 import { join } from "node:path";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
-import { ROOT, spawnBackend } from "./helpers.ts";
+import { ROOT, sendAndWaitTurn, spawnBackend } from "./helpers.ts";
 
 export type Dict = Record<string, any>;
 export const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
@@ -71,18 +71,10 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
       `const {DatabaseSync}=require("node:sqlite");const db=new DatabaseSync(process.argv[1],{readOnly:true});` +
       `console.log(JSON.stringify(db.prepare(process.argv[2]).all(...process.argv.slice(3))))`,
       join(dir, "tasks", taskId, "task.sqlite"), sql, ...args], { encoding: "utf-8" }).stdout || "[]");
-    const messages = async () => (await call("GET", `/api/v1/tasks/${taskId}/sessions`)).body.sessions.find((s: Dict) => s.session_id === session)?.message_count ?? 0;
-    /** 发一句话（或一次卡片点击），等这一轮做完：这条会话的消息数变多、执行者回到空闲。 */
-    const send = async (body: Dict) => {
-      const before = await messages();
+    /** 发一句话（或一次卡片点击），等这一轮做完（helpers.ts 的 sendAndWaitTurn：等这条会话的 work_ended 事件）。 */
+    const send = (body: Dict) => sendAndWaitTurn(port, taskId, session, async () => {
       assert.equal((await call("POST", `/api/v1/tasks/${taskId}/messages?session=${session}`, body)).status, 200);
-      for (const end = Date.now() + 60000; ;) {
-        const state = (await call("GET", `/api/v1/tasks/${taskId}/snapshot`)).body.executor.state;
-        if ((await messages()) > before && state === "idle") return;
-        if (Date.now() > end) throw new Error(`等这一轮做完超时，执行者 ${state}`);
-        await sleep(100);
-      }
-    };
+    });
     const action = (body: Dict) => call("POST", `/api/v1/tasks/${taskId}/actions?session=${session}`, { client_id: `a-${body.kind}`, task_id: taskId, ...body });
     const entryOfCall = (callId: string): string => {
       const sessionDir = join(dir, "runs", taskId, "pi-sessions", "service");

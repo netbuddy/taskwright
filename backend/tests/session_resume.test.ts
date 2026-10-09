@@ -19,7 +19,7 @@ import { after, test } from "node:test";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
 import { RESUME_FAILED_STATE_TEXT, RESUME_FAILED_TEXT } from "../src/executor.ts";
-import { captureConsole, ROOT, spawnBackend, tempDir } from "./helpers.ts";
+import { captureConsole, ROOT, sendAndWaitTurn, spawnBackend, tempDir } from "./helpers.ts";
 
 // 后端在子进程里运行，它的输出接到管道上；测试进程里另有假模型端点与本文件的代码。以防它们日后写日志，
 // console 的输出一律收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
@@ -110,18 +110,11 @@ class Stack {
     return (await this.call("POST", `/api/v1/tasks/${taskId}/sessions`)).body.session_id;
   }
 
-  /** 在一条会话里说一句话，等这一轮做完：会话列表里这条会话的消息数变多、执行者回到空闲（会话文件在这一轮里写到磁盘上）。 */
+  /** 在一条会话里说一句话，等这一轮做完（helpers.ts 的 sendAndWaitTurn：等这条会话的 work_ended 事件；会话文件在这一轮里写到磁盘上）。 */
   async sayAndWait(taskId: string, sessionId: string, text: string): Promise<void> {
-    const count = async () => (await this.sessions(taskId)).find((s) => s.session_id === sessionId)?.message_count ?? 0;
-    const before = await count();
-    assert.equal((await this.call("POST", `/api/v1/tasks/${taskId}/messages?session=${sessionId}`, { text, client_id: `c-${text}` })).status, 200);
-    const end = Date.now() + 60000;
-    for (;;) {
-      const state = (await this.call("GET", `/api/v1/tasks/${taskId}/snapshot`)).body.executor.state;
-      if ((await count()) > before && state === "idle") return;
-      if (Date.now() > end) throw new Error(`等这一轮做完超时，执行者 ${state}`);
-      await sleep(100);
-    }
+    await sendAndWaitTurn(this.port, taskId, sessionId, async () => {
+      assert.equal((await this.call("POST", `/api/v1/tasks/${taskId}/messages?session=${sessionId}`, { text, client_id: `c-${text}` })).status, 200);
+    });
   }
 
   /** 建任务、开第一条会话、说一句话并等这一轮做完。返回任务编号与会话编号。 */

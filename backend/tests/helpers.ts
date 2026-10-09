@@ -6,6 +6,7 @@
 
 import { type ChildProcess, type SpawnOptions, spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -152,5 +153,50 @@ export async function spawnBackend(args: string[], options: Omit<SpawnOptions, "
       throw new Error(`后端没有起来：${gone ? `进程已经退出（退出码 ${child.exitCode}，信号 ${child.signalCode}）` : `${ms / 1000} 秒内没有打印监听地址`}。它的输出：${out}`);
     }
     await new Promise((ok) => setTimeout(ok, 50));
+  }
+}
+
+/**
+ * 发一句话并等助手把这一轮做完。send 去发话（发话接口返回就算发完）；这里先订阅这个任务的事件连接，连上了才发，
+ * 然后等这条会话的 work_ended 事件：后端在一轮结束时推这个事件，紧接着把执行者置回空闲。
+ *
+ * 不能用「这条会话的消息数变多、执行者是空闲」来判断这一轮做完了。后端要等收到助手程序的 agent_start 事件才把执行者改成工作中，
+ * 而用户的那句话在这之前就已经写进会话文件、算进了消息数，所以刚发完话的一小段时间里这个条件已经成立。机器忙的时候
+ * （整套测试并行跑时）这一小段时间足够长，调用方会在助手还没有开始的时候就往下走。
+ */
+export async function sendAndWaitTurn(port: number, taskId: string, sessionId: string, send: () => Promise<void>, ms = 60_000): Promise<void> {
+  const events: { event: string; data: Record<string, any> }[] = [];
+  let buffer = "";
+  const req = request({ host: "127.0.0.1", port, path: `/api/v1/tasks/${taskId}/events` });
+  // 后端先登记订阅者再写响应头，所以收到响应时已经订阅上了，之后的事件不会漏。
+  const connected = new Promise<void>((ok, fail) => {
+    req.on("response", (res) => {
+      res.setEncoding("utf-8");
+      res.on("data", (chunk: string) => {
+        buffer += chunk;
+        for (let cut = buffer.indexOf("\n\n"); cut >= 0; cut = buffer.indexOf("\n\n")) {
+          const block = buffer.slice(0, cut);
+          buffer = buffer.slice(cut + 2);
+          const event = /^event: (.*)$/m.exec(block)?.[1];
+          const data = /^data: (.*)$/m.exec(block)?.[1];
+          if (event && data) events.push({ event, data: JSON.parse(data) });
+        }
+      });
+      res.on("error", () => {});
+      if (res.statusCode === 200) ok();
+      else fail(new Error(`事件连接没有连上，状态码 ${res.statusCode}`));
+    });
+    req.on("error", fail);
+  });
+  req.end();
+  try {
+    await connected;
+    await send();
+    for (const end = Date.now() + ms; !events.some((e) => e.event === "work_ended" && e.data.session_id === sessionId);) {
+      if (Date.now() > end) throw new Error(`等这一轮做完超时：${ms / 1000} 秒内没有收到这条会话的 work_ended 事件`);
+      await new Promise((ok) => setTimeout(ok, 50));
+    }
+  } finally {
+    req.destroy();
   }
 }

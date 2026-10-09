@@ -14,14 +14,13 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { writeAgentDir } from "../fake_model/agent_config.ts";
 import { FakeModel } from "../fake_model/server.ts";
-import { captureConsole, spawnBackend, tempDir } from "./helpers.ts";
+import { captureConsole, sendAndWaitTurn, spawnBackend, tempDir } from "./helpers.ts";
 
 captureConsole();
 
 type Dict = Record<string, any>;
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
-const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 const NO_PI = spawnSync("pi", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 pi" : false;
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "TASKWRIGHT_TASKS_ROOT",
@@ -56,20 +55,11 @@ test("选定的模型在新建会话与切回旧会话时生效；换不过去�
       req.on("timeout", () => req.destroy(new Error("超时")));
       req.end(data);
     });
-    const sessions = async (taskId: string) => (await call("GET", `/api/v1/tasks/${taskId}/sessions`)).body.sessions as Dict[];
-    const say = async (taskId: string, sessionId: string, text: string) => {
-      const count = async () => (await sessions(taskId)).find((s) => s.session_id === sessionId)?.message_count ?? 0;
-      const before = await count();
+    /** 说一句话，等这一轮做完（helpers.ts 的 sendAndWaitTurn：等这条会话的 work_ended 事件）。 */
+    const say = (taskId: string, sessionId: string, text: string) => sendAndWaitTurn(started.port, taskId, sessionId, async () => {
       const sent = await call("POST", `/api/v1/tasks/${taskId}/messages?session=${sessionId}`, { text, client_id: `c-${text}` });
       assert.equal(sent.status, 200, JSON.stringify(sent.body));
-      const end = Date.now() + 60000;
-      for (;;) {
-        const state = (await call("GET", `/api/v1/tasks/${taskId}/snapshot`)).body.executor.state;
-        if ((await count()) > before && state === "idle") return;
-        if (Date.now() > end) throw new Error(`等这一轮做完超时，执行者 ${state}`);
-        await sleep(100);
-      }
-    };
+    });
     /** 假端点最近一次收到的请求里的模型名。 */
     const lastModel = () => fake.requests().at(-1)?.请求体?.model;
 
