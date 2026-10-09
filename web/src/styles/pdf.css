@@ -11,14 +11,14 @@
 .pdf-bar .pct { min-width: 2.6rem; text-align: right; font-variant-numeric: tabular-nums; }
 .pdf-bar .btn.sm { padding: 0 .5rem; }
 .pdf-pages { position: relative; margin: .7rem 0 1.2rem; }
-.pdf-page { position: absolute; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); overflow: hidden; }
+.pdf-page { position: absolute; background: var(--card); box-shadow: 0 1px 4px var(--shadow-4); overflow: hidden; }
 .pdf-page .pdf-drawn { position: absolute; inset: 0; }
 .pdf-page .pdf-drawn canvas { display: block; }
-.pdf-page .pdf-no { position: absolute; right: .4rem; top: .2rem; z-index: 2; font-size: .786rem; color: #9a9a9a; pointer-events: none; }
+.pdf-page .pdf-no { position: absolute; right: .4rem; top: .2rem; z-index: 2; font-size: .786rem; color: var(--mut); pointer-events: none; }
 .pdf-page .pdf-notext { position: absolute; left: 0; right: 0; top: 0; z-index: 3; padding: .3rem 4rem .3rem .7rem; background: var(--amber-bg);
   border-bottom: 1px solid var(--amber-line); color: var(--amber); font-size: .873rem; line-height: 1.5; }
 /* 点来源之后框出的那一块 */
-.pdf-page .pdf-blockbox { position: absolute; z-index: 2; border: 2px solid #e8590c; background: rgba(255, 212, 59, .16); border-radius: 2px; pointer-events: none; }
+.pdf-page .pdf-blockbox { position: absolute; z-index: 2; border: 2px solid var(--mark-line); background: var(--hit-wash); border-radius: 2px; pointer-events: none; }
 
 /* 文字层 */
 .pdf-page .textLayer { position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; letter-spacing: normal; word-spacing: normal;
@@ -30,14 +30,14 @@
   transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
 .pdf-page .textLayer .markedContent { display: contents; }
 .pdf-page .textLayer span[role="img"] { user-select: none; cursor: default; }
-.pdf-page .textLayer ::selection { background: rgba(37, 99, 235, .28); color: transparent; }
+.pdf-page .textLayer ::selection { background: var(--blue-veil); color: transparent; }
 .pdf-page .textLayer br::selection { background: transparent; }
 .pdf-page .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
 /* 标在文字层里的两样：被条目引用的句子（浅蓝底线，可点）与定位时的摘录（蓝底黑框）。它们是文字元素里面的一截，跟着那个元素排，不另外定位。 */
 .pdf-page .textLayer span.cited, .pdf-page .textLayer mark.hit { position: static; color: transparent; font-size: inherit; transform: none; padding: 0; border-radius: 2px; }
-.pdf-page .textLayer span.cited { background: rgba(37, 99, 235, .09); box-shadow: inset 0 -2px 0 #9db5ea; cursor: pointer; }
+.pdf-page .textLayer span.cited { background: var(--blue-wash); box-shadow: inset 0 -2px 0 var(--blue-line); cursor: pointer; }
 /* 一段摘录在文字层里常常分在好几个元素上，每个都描粗黑框会糊成一片，所以只用底色加一圈细线。 */
-.pdf-page .textLayer mark.hit { background: rgba(37, 99, 235, .32); box-shadow: 0 0 0 1px rgba(13, 13, 13, .45); }
+.pdf-page .textLayer mark.hit { background: var(--blue-veil); box-shadow: 0 0 0 1px var(--ink-ring); }
 
 /* 目录：文件名下面一行，默认收起；点开是一列，点一项跳到那一页。 */
 .app .pdf-toc { border-bottom: 1px solid var(--line); background: var(--card); }
@@ -57,5 +57,5 @@
 /* 退路：pdf.js 打不开或画不出来时，用浏览器自带的查看器（iframe）显示，占满材料区，由它自己滚动。 */
 .app .doc-b:has(> .pdf-fallback), .ant-modal .doc-b:has(> .pdf-fallback) { display: flex; flex-direction: column; overflow: hidden; }
 .pdf-fallback { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.pdf-fallback-note { flex: none; padding: .35rem .8rem; font-size: .857rem; color: var(--amber, #8a5a00); background: var(--amber-bg, #fff7e6); border-bottom: 1px solid var(--line); }
+.pdf-fallback-note { flex: none; padding: .35rem .8rem; font-size: .857rem; color: var(--amber, var(--amber-ink)); background: var(--amber-bg, var(--amber-bg2)); border-bottom: 1px solid var(--line); }
 .pdf-fallback iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--paper); }
