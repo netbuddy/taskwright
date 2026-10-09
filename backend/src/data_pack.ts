@@ -49,6 +49,7 @@ import * as clock from "./clock.ts";
 import { GENERAL, KnowledgeStore, type LibraryRow, selectedLibraries } from "./knowledge.ts";
 import * as library from "./library.ts";
 import * as occupancy from "./occupancy.ts";
+import { type TaskOutcome, type UpgradeReport, planUpgrade, runUpgrade } from "./data_upgrade.ts";
 import { appVersion } from "./paths.ts";
 import { UPLOADING_DIR, newTaskId } from "./service.ts";
 import { DATA_FORMAT, ServiceDb, type TaskEntry, peekDataDirectory } from "./service_db.ts";
@@ -550,6 +551,8 @@ interface Staging {
   knowledge: string;
   /** 包里任务登记表那个文件解出来的位置。 */
   register: string;
+  /** 把暂存的任务当成一个数据目录来升级时，那个数据目录的位置（升级时建的服务级库与报告放在这里，随暂存目录一起删）。 */
+  data: string;
   /** 做完要删的几个目录。 */
   roots: string[];
 }
@@ -567,7 +570,19 @@ function stagingIn(where: PackLocations, name: string): Staging {
   const tasksRoot = join(where.tasksDir, name);
   const runsRoot = join(where.runsDir, name);
   const knowledgeRoot = where.knowledgeDir ? join(where.knowledgeDir, name) : join(tasksRoot, "knowledge");
-  return { tasks: join(tasksRoot, "tasks"), runs: runsRoot, knowledge: knowledgeRoot, register: join(tasksRoot, "service", "tasks.json"), roots: [tasksRoot, runsRoot, knowledgeRoot] };
+  return { tasks: join(tasksRoot, "tasks"), runs: runsRoot, knowledge: knowledgeRoot, register: join(tasksRoot, "service", "tasks.json"), data: tasksRoot, roots: [tasksRoot, runsRoot, knowledgeRoot] };
+}
+
+/**
+ * 暂存位置里有比现在旧的任务库时，把它们升到现在的格式：把暂存位置当成一个数据目录，走数据升级的同一段代码（data_upgrade.ts 的
+ * runUpgrade，不做备份——暂存的本来就是副本）。返回升级的报告；没有要升级的是 null。导入旧的数据包与「数据包升级」都经这里。
+ */
+async function upgradeStaged(staging: Staging, productVersion: string): Promise<UpgradeReport | null> {
+  const plan = planUpgrade({ dataDir: staging.data, tasksDir: staging.tasks, knowledgeDir: null });
+  if (plan.tasks.length === 0 && plan.failed.length === 0) return null;
+  const { report, registry } = await runUpgrade(plan, { backup: false, retryFailed: true, productVersion });
+  registry?.close();
+  return report;
 }
 
 /** 包里的一个路径解到暂存位置的哪里。 */
@@ -607,6 +622,8 @@ export interface ImportedTask {
   outcome: "imported" | "skipped" | "failed";
   /** 改了编号时的新编号；没有改是 null。 */
   new_id: string | null;
+  /** 包里它的任务库是上一版的格式、导入之前先升级过时，升级之前的格式版本；不用升级是 null。 */
+  upgraded_from: number | null;
   /** 跳过或没有做成的原因。 */
   reason: string | null;
   /** 另外要告诉用户的话（例如它选用的知识库不在这个数据目录里）。 */
@@ -718,8 +735,9 @@ function importLibrary(where: PackLocations, staging: Staging, one: PackLibrary,
 }
 
 /** 导入一个任务：判编号有没有被占，需要时改编号，归档与任务目录改名进位，记进登记表。 */
-function importTask(where: PackLocations, staging: Staging, one: PackTask, options: ImportOptions, register: Map<string, Record<string, any>>): ImportedTask {
-  const out: ImportedTask = { task_id: one.task_id, name: one.name, outcome: "failed", new_id: null, reason: null, notes: [] };
+function importTask(where: PackLocations, staging: Staging, one: PackTask, options: ImportOptions, register: Map<string, Record<string, any>>,
+  upgraded: TaskOutcome | null): ImportedTask {
+  const out: ImportedTask = { task_id: one.task_id, name: one.name, outcome: "failed", new_id: null, upgraded_from: upgraded?.ok ? upgraded.from : null, reason: null, notes: [] };
   let staged = join(staging.tasks, one.task_id);
   let stagedRuns = join(staging.runs, one.task_id);
   const placed: string[] = [];
@@ -728,7 +746,10 @@ function importTask(where: PackLocations, staging: Staging, one: PackTask, optio
     if (!row || row.task_id !== one.task_id) return { ...out, reason: "数据包里这个任务的任务库与清单文件对不上" };
     const version = library.taskDbVersion(staged);
     if (version === null || version > TASK_DB_VERSION) return { ...out, reason: newerDataText(readTaskJson(staged)?.upgraded_by_version ?? null) };
-    if (version < TASK_DB_VERSION) return { ...out, reason: "这个任务的数据是上一版的格式，还没有升级" };
+    if (version < TASK_DB_VERSION) {
+      // 升级没有做成（原因在升级的报告里），或者是这个程序升不了的更早的格式。
+      return { ...out, reason: upgraded?.error ? `这个任务的数据是上一版的格式，升级没有做成：${upgraded.error}` : "这个任务的数据是更早的格式，这个程序升不了它" };
+    }
     // 这个编号在目标里有没有被占：有同名的任务目录或归档目录，或者有任务库里编号相同的任务。
     const used = new Set(tasksIn(where.tasksDir).map((t) => t.row?.task_id).filter((id): id is string => typeof id === "string"));
     const taken = (id: string) => used.has(id) || existsSync(join(where.tasksDir, id)) || existsSync(join(where.runsDir, id));
@@ -810,8 +831,12 @@ export async function importPack(where: PackLocations, options: ImportOptions): 
     // 知识库先做，任务后做（任务的说明里要写它选用的库在不在）。
     const rows = stagedLibraries(staging);
     for (const one of manifest.libraries) report.libraries.push(importLibrary(where, staging, one, rows));
+    // 包里有上一版格式的任务库：先在暂存位置里升级，再进位。
+    const upgrade = await upgradeStaged(staging, report.product_version);
+    if (upgrade?.fatal) throw new PackError("refused", `数据包里有上一版格式的任务，升级没有做成：${upgrade.fatal}`);
+    const outcomes = new Map((upgrade?.tasks ?? []).map((t) => [t.dir, t]));
     const register = stagedRegister(staging);
-    for (const one of manifest.tasks) report.tasks.push(importTask(where, staging, one, options, register));
+    for (const one of manifest.tasks) report.tasks.push(importTask(where, staging, one, options, register, outcomes.get(one.task_id) ?? null));
   } catch (error) {
     if (!(error instanceof PackError)) throw error;
     report.fatal = error.message;
@@ -849,7 +874,10 @@ export function importText(report: ImportReport): string {
   }
   for (const one of report.tasks) {
     const head = `任务 ${label(one.task_id, one.name)}`;
-    if (one.outcome === "imported") lines.push(`${head}：已导入${one.new_id ? `，编号改成了 ${one.new_id}（原来的编号已经有任务在用）` : ""}`);
+    if (one.outcome === "imported") {
+      const upgraded = one.upgraded_from !== null ? `，导入之前先把它的数据从格式 ${one.upgraded_from} 升到了现在的格式` : "";
+      lines.push(`${head}：已导入${upgraded}${one.new_id ? `，编号改成了 ${one.new_id}（原来的编号已经有任务在用）` : ""}`);
+    }
     else lines.push(`${head}：${one.outcome === "skipped" ? "没有导入" : "没有导入成"}（${one.reason}）`);
     for (const note of one.notes) lines.push(`  ${note}`);
   }
@@ -859,6 +887,54 @@ export function importText(report: ImportReport): string {
   lines.push(`合计：导入了 ${done(report.tasks)} 个任务、${done(report.libraries)} 个知识库；因为已经存在而跳过 ${count("skipped")} 项；没有做成 ${count("failed")} 项。`);
   if (report.libraries.length > 0) lines.push("知识库不改编号：编号已经存在而且里面有文档的知识库不会导入，「改编号导入」只对任务起作用。");
   return lines.join("\n") + "\n";
+}
+
+// ───────────── 数据包升级 ─────────────
+
+export interface PackUpgradeResult {
+  /** 新写出的包。 */
+  written: ExportResult;
+  /** 原来的包是哪个产品版本导出的。 */
+  from_version: string;
+  /** 各个任务升级的结果；原来的包里没有要升级的任务时是空的。 */
+  tasks: TaskOutcome[];
+}
+
+/**
+ * 数据包升级：把一个旧版本导出的包升到现在的格式，写成一个新的包（to），原来的包不动。不需要数据目录，也不起服务：
+ * 把包解到系统临时目录下的一个暂存数据目录里（核对与导入相同），升级里面的任务库，再照原来的范围导出。
+ * 包比这个程序新、文件与清单文件对不上时抛 PackError（refused）；to 已经在时抛 exists。升不成的任务仍然带进新包（保持旧格式），
+ * 结果里写着原因。包里没有要升级的任务时照样写出新包。
+ */
+export async function upgradePack(file: string, to: string, options: { productVersion?: string } = {}): Promise<PackUpgradeResult> {
+  if (existsSync(to)) throw new PackError("exists", `文件 ${to} 已经在了，没有覆盖它。请换一个文件名。`);
+  const pack = openPack(file);
+  const scratch = mkdtempSync(join(tmpdir(), "taskwright-pack-upgrade-"));
+  try {
+    const where: PackLocations = { dataDir: scratch, tasksDir: join(scratch, "tasks"), runsDir: join(scratch, "runs"), knowledgeDir: join(scratch, "knowledge") };
+    const staging: Staging = { tasks: where.tasksDir, runs: where.runsDir, knowledge: where.knowledgeDir!, register: join(scratch, "service", "tasks.json"), data: scratch, roots: [scratch] };
+    const manifest = pack.manifest;
+    await extractPack(pack, staging);
+    pack.reader.close();
+    const upgrade = await upgradeStaged(staging, options.productVersion ?? appVersion());
+    if (upgrade?.fatal) throw new PackError("refused", `数据包没有升级成：${upgrade.fatal}`);
+    const written = await exportPack(where, { scope: manifest.scope, taskId: manifest.tasks[0]?.task_id, libraryId: manifest.libraries[0]?.id, to, productVersion: options.productVersion });
+    return { written, from_version: manifest.product_version, tasks: upgrade?.tasks ?? [] };
+  } finally {
+    pack.reader.close();
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/** 数据包升级的结果写成给人看的几行。 */
+export function upgradePackText(result: PackUpgradeResult): string {
+  const lines = [`数据包升级（原来的包由 ${result.from_version} 导出）`];
+  if (result.tasks.length === 0) lines.push("任务：没有要升级的，新的包与原来的内容相同");
+  for (const t of result.tasks) {
+    const label = `${t.task_id ?? t.dir}${t.name ? `「${t.name}」` : ""}`;
+    lines.push(t.ok ? `任务 ${label}：格式 ${t.from} 升到 ${t.to}，成功` : `任务 ${label}：格式 ${t.from}，没有升级成（${t.error}），原样带进了新的包`);
+  }
+  return lines.join("\n") + "\n" + exportText(result.written);
 }
 
 /**

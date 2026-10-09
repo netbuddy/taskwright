@@ -182,7 +182,7 @@ export interface UpgradeReport {
   started_at: string;
   finished_at: string;
   data_dir: string;
-  /** 备份放在哪里、一共多少字节、里面有几个文件；没有东西要备份时文件数是 0。备份没有做成时是 null。 */
+  /** 备份放在哪里、一共多少字节、里面有几个文件；没有东西要备份时文件数是 0。备份没有做成、或者这一次不做备份时是 null。 */
   backup: { dir: string; bytes: number; files: number } | null;
   /** 服务级库这一次是新建的（created）、升级的（upgraded）还是本来就是现在的格式（current）；整体没有做成时是 null。 */
   service: "created" | "upgraded" | "current" | null;
@@ -205,6 +205,11 @@ export interface UpgradeProgress {
 export interface RunOptions {
   /** 记着升级失败的任务也再试一次（命令行每次都试；启动时的升级不试）。 */
   retryFailed?: boolean;
+  /**
+   * 给假时不做升级之前的备份：只给数据包用（data_pack.ts 把包解到一个暂存的数据目录里再升级，那个目录本身就是副本）。
+   * 对真正的数据目录一律要备份，所以缺省是做。
+   */
+  backup?: boolean;
   onProgress?: (progress: UpgradeProgress) => void;
   /** 时刻与产品版本可以由测试给定。 */
   now?: () => Date;
@@ -307,11 +312,13 @@ export async function runUpgrade(plan: UpgradePlan, options: RunOptions = {}): P
   let registry: ServiceDb | null = null;
   try {
     if (plan.service.state === "newer") throw new Error(newerDataText(plan.service.written_by));
-    progress("正在备份");
-    try {
-      report.backup = await backupBeforeUpgrade(plan, tasks, started, env);
-    } catch (error) {
-      throw new Error(`升级之前的备份没有做成，所以没有升级：${(error as Error).message}`);
+    if (options.backup !== false) {
+      progress("正在备份");
+      try {
+        report.backup = await backupBeforeUpgrade(plan, tasks, started, env);
+      } catch (error) {
+        throw new Error(`升级之前的备份没有做成，所以没有升级：${(error as Error).message}`);
+      }
     }
     done += 1;
     progress("正在准备数据目录");
