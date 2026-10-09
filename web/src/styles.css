@@ -45,7 +45,7 @@
 [data-theme="paper"]{
   --paper:#f7f5ef; --stage:#fbf9f4; --card:#fffdf9; --ink:#22272e; --mut:#8a919b;
   --line:#efebe2; --line2:#e6e1d6; --dark:#f7f4ed; --dark3:#ebe6da;
-  --amber:#b7791f; --amber-bg:#fbf3e3; --amber-line:#e6cf9c;
+  --amber:#9a6412; --amber-bg:#fbf3e3; --amber-line:#e6cf9c;
   --blue:#2d5d8f; --blue-bg:#e9eff6; --blue-line:#b7c9dd;
   /* 这一套的绿本身偏青，所以青绿往青色挪了一些，免得两种相混 */
   --teal:#237680; --teal-bg:#e5f1f2; --teal-line:#a8ccd0;
