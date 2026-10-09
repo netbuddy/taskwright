@@ -5,6 +5,8 @@
 //   已经定下的 ── 一句一条，每条下面一行出处；助手补的那一条前面是琥珀点。
 //   还没定的 ── 问题集合里挂在这一页、还没有了结的问题，带「助手为什么问」；在这里写一句回答点「记下」就发给助手，
 //                「这件事先放着」把这个问题标为先不管。
+// 四块之后是「提到它的地方」：别处的文字里出现它的标题或别名的那些句子（命中的词上色），以及依据它写的条目；
+// 条目依据的是它早先的样子、它后来改过时，那一行带「依据已变」。点一行的出处打开那一页或那个条目。
 // 最底下一行小字「看修订与全部来源」换成条目详情的样子看同一页（修订下拉、与上一次的比对、每条来源、删除都在那里）。
 // 这里只画；数由 model/overall.ts 算，写入一律走条目区交进来的直接操作与发送。
 
@@ -12,8 +14,8 @@ import { useState } from "react";
 import type { Item, Source, Task } from "../../../api/types";
 import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
 import {
-  TOPIC, dependents, exampleParts, examplesOf, isPending, labelsOf, markSupplemented, openQuestions, pendingCount, questionReason, settledOf, sourcesFor,
-  supplemented, titleOf, trail, whatOf, type OverallItem,
+  TOPIC, dependents, exampleParts, examplesOf, isOverall, isPending, labelsOf, markSupplemented, mentionRows, openQuestions, pendingCount, questionReason, settledOf,
+  sourcesFor, splitByWord, supplemented, titleOf, trail, whatOf, type OverallItem,
 } from "../../../model/overall";
 import type { SubmitAction } from "../ItemDetail";
 import { rejectedText } from "../errors";
@@ -84,6 +86,7 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
   const questions = openQuestions(task, item);
   const basisCount = dependents(task, item).length;
   const mentionCount = (item.mentioned_by ?? []).length;
+  const mentions = mentionRows(task, item);
   const offTitle = writeOffReason(task, { readOnly, writesOff });
 
   return (
@@ -164,6 +167,26 @@ export function TopicPage({ task, item, readOnly, writesOff = false, submit, onS
               const e = await submit({ kind: "keep_pending", targets: [{ item_id: q.item_id, base_revision: q.revision_no }], notify_executor: false }, label);
               if (e) toast.error(rejectedText(label, e, q.item_id));
             }} />)}
+        </ul>
+      </section>
+
+      <section className="oa-blk" data-testid="topic-mentions">
+        <h3>提到它的地方 <small>别处说到它的句子，与依据它写的条目</small></h3>
+        {mentions.length === 0 && <div className="oa-empty">还没有别处提到它，也没有条目依据它。</div>}
+        <ul className="oa-mentions">
+          {mentions.map((row, i) => (
+            <li key={i} data-testid={`topic-mention-${i}`} data-kind={row.kind}>
+              <div className={`from${row.from ? " link" : ""}`} role={row.from ? "button" : undefined} title={row.from ? `打开 ${row.id}` : undefined}
+                onClick={row.from ? () => onOpen(row.id) : undefined}>
+                {row.from ? (isOverall(row.from.collection) ? titleOf(row.from) : `${row.id} ${row.from.title}`) : `${row.id}（已经不在了）`}
+                <small>{row.place}</small>
+              </div>
+              <div>
+                {row.sentence && <q>{splitByWord(row.sentence, row.word).map((part, k) => (part.hit ? <mark key={k}>{part.text}</mark> : <span key={k}>{part.text}</span>))}</q>}
+                {row.stale && <span className="stale" title="这个条目依据的是这一页早先的样子，这一页后来改过" data-testid={`topic-stale-${row.id}`}>依据已变</span>}
+              </div>
+            </li>
+          ))}
         </ul>
       </section>
 

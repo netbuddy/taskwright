@@ -119,3 +119,15 @@
 .app .oa-rawlink { margin-top: .4rem; font-size: 0.857rem; color: var(--text3); }
 .app .oa-rawlink span { cursor: pointer; text-decoration: underline; text-underline-offset: .2em; }
 .app .oa-rawlink span:hover { color: var(--blue); }
+
+/* 提到它的地方：左边是出处（哪一页、哪个条目的哪一处），右边是原句；命中的词用蓝色，依据已变用琥珀色 */
+.app .oa-mentions { list-style: none; margin: 0; padding: 0; max-width: 52rem; }
+.app .oa-mentions li { padding: .5rem 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 11rem 1fr; gap: 1rem; font-size: 0.93rem; }
+.app .oa-mentions li:first-child { border-top: 0; }
+.app .oa-mentions .from { color: var(--text2); min-width: 0; overflow-wrap: anywhere; }
+.app .oa-mentions .from.link { cursor: pointer; }
+.app .oa-mentions .from.link:hover { color: var(--blue); }
+.app .oa-mentions .from small { display: block; color: var(--text3); font-size: 0.857rem; }
+.app .oa-mentions q { quotes: "「" "」"; }
+.app .oa-mentions q mark { background: transparent; color: var(--blue); font-weight: 500; }
+.app .oa-mentions .stale { font-size: 0.857rem; color: var(--amber); margin-left: .5rem; white-space: nowrap; }

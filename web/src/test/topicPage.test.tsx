@@ -172,6 +172,42 @@ describe("主题页的四块", () => {
   });
 });
 
+describe("提到它的地方", () => {
+  it("别处说到它的句子在前，命中的词上色；依据它写的条目在后，依据在那之后改过的带「依据已变」", () => {
+    render(<Panel t={overallTask()} />);
+    const rows = [...screen.getByTestId("topic-mentions").querySelectorAll(".oa-mentions li")];
+    expect(rows.map((li) => `${li.getAttribute("data-kind")}｜${text(li.querySelector(".from"))}`)).toEqual([
+      "mention｜借书与还书主题 · 它是什么",
+      "mention｜续借主题 · 已经定下的第 2 条",
+      "mention｜UC-002 续借功能用例 · 约束规则第 1 条",
+      "basis｜UC-002 续借功能用例 · 依据它",
+      "basis｜UC-003 预约图书功能用例 · 依据它",
+    ]);
+    expect(rows[0].querySelector("mark")!.textContent).toBe("预约取书");
+    expect(rows[1].querySelector("q")!.textContent).toBe("有人预约的书不能续借。");
+    expect(rows[1].querySelector("mark")!.textContent).toBe("预约");
+    expect(rows[3].querySelector("mark")).toBeNull();
+    expect(screen.getByTestId("topic-stale-UC-003")).toHaveTextContent("依据已变");
+    expect(screen.queryByTestId("topic-stale-UC-002")).toBeNull();
+  });
+
+  it("点出处打开那一页主题；点条目的出处切到它所在的页签并打开它", () => {
+    render(<Panel t={overallTask()} />);
+    fireEvent.click(screen.getByTestId("topic-mention-1").querySelector(".from")!);
+    expect(text(screen.getByTestId("topic-title"))).toBe("OA-006续借");
+    fireEvent.click(screen.getByTestId("outline-OA-003"));
+    fireEvent.click(screen.getByTestId("topic-mention-4").querySelector(".from")!);
+    expect(screen.queryByTestId("overall-pane")).toBeNull();
+    expect(document.querySelector(".itab.on")!.textContent).toBe("功能用例3");
+    expect(screen.getByTestId("item-detail")).toHaveTextContent("UC-003");
+  });
+
+  it("没有别处提到、也没有条目依据的页写一句话", () => {
+    render(<Panel t={overallTask()} first="OA-011" />);
+    expect(screen.getByTestId("topic-mentions")).toHaveTextContent("还没有别处提到它，也没有条目依据它。");
+  });
+});
+
 describe("按条目的样子看", () => {
   it("点「看修订与全部来源」换成条目详情，上面有「回到主题页」；换一页又是主题页", () => {
     render(<Panel t={overallTask()} />);
