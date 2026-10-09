@@ -101,7 +101,7 @@ data: {
   "task": { "task_id": "…", "task_name": "…", "task_type": "srs-authoring", "domain_tag": null, "status": "进行中",
             "started_at": "…", "ended_at": null,
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
-                            "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],
+                            "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],   // 条目引用字段另带 "same_collection"（只许指向本集合的条目）与 "single"（至多一个编号）；写了取值的文本列表字段的 values 是取值
                             "display": null,
                             "needs_review": true,
                             "review_rules": [ { "id": "UC-R1", "level": "必选", "text": "…", "counter_example": "…", "example": "…" }, … ],
@@ -116,13 +116,22 @@ data: {
                                                         "problem": "…", "suggestion": "…" } ] } ],
                          "confirmations": [ { "revision_no": 5, "accepted": true, "at": "…", "basis": "viewed" } ],
                          "waivers": [ { "revision_no": 5, "reason": "…", "source": "panel", "at": "…", "revoked": false, "seq": 44 } ],
-                         "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed" } ],
+                         "confirmation_stale": false, "viewed": true, "confirmation_basis": "viewed",
+                         "pending_verification": true, "pending_sources": 1, "pending_places": [ { "field": "已经定下的", "index": 1 } ],   // 待核实，见下文
+                         "basis_pending": { "item_id": "OA-002", "reason": "pending", "see": null },   // 因依据而待核实；没有时是 null
+                         "mentioned_by": [ { "item_id": "UC-001", "collection": "功能用例", "field": "基本流程", "index": 2, "word": "预约取书", "sentence": "…", "revision_no": 5 } ] } ],   // 只有总体分析的条目带这一项
             "review_batches": [ { "no": 1, "batch_id": "ui-op-…", "at": "…", "started_by": "user", "scope": "pending", "total": 16, "passed": 12, "failed": 4, … } ] },
   "materials": [ { "path": "inputs/requirements.md", "bytes": 1234, "modified_at": "…", "derived_from": null } ],   // derived_from 见第 5.1 节「材料」
   "conversation": { "messages": [ … 最近的 100 条，每条都带 "type" … ], "has_earlier": false, "earliest_id": "…" },
   "current_work": null,
   "review_in_progress": null }         // 或 { "op_id": "ui-op-…", "done": 1, "total": 4, "current": ["UC-002"] }
 ```
+
+每个条目另有几项读的时候现算的事实，不存库：
+
+- `pending_verification`、`pending_sources`、`pending_places`（**待核实**）。条目当前所在的修订上有 `助手补充` 的来源、而用户还没有确认过时，`pending_verification` 为真。用户打开看过或点了确认（一条 `basis` 不是 `ui_edit` 的接受）是确认整个条目；用户亲手改（`ui_edit`）只确认他改到的那几处：一条助手补充的来源所支持的每一处（它的 `supports`）都被用户改过，这条来源才算确认，没有写 `supports` 的来源只有看过才算确认。助手之后又改了条目，重新算起。`pending_sources` 是还待核实的来源有几条；`pending_places` 是这些来源支持的、用户还没有改到的各处，`field` 是字段名，`index` 是列表字段的第几项（从 0 起，不是列表字段或者指整个字段时是 null），`field` 为 null 指整个条目。不待核实时是 `false`、`0`、`[]`。
+- `basis_pending`（**因依据而待核实**）。条目有一条种类为 `条目` 的来源，指向总体分析里一页待核实或已废弃的主题时，给出 `{ "item_id", "reason", "see" }`：`reason` 是 `pending`（那一页待核实）或 `deprecated`（那一页已废弃，`see` 是它的「改看」写的那一页，没有写时是 null）；几条来源都这样时，按来源的先后取头一条。只看一层：被依据的那一页自己依据了谁不往下追。没有时是 null。
+- `mentioned_by`（**提到**；只有「总体分析」集合的条目带这一项）。贴了标签、在用的主题的标题与别名是词表；别的页与别的条目当前修订的文字里出现了这一页的词，就各记一条：`item_id` 与 `collection` 是出现在哪个条目里，`field` 与 `index` 是哪个字段的第几项，`word` 是认出来的词，`sentence` 是那一句原话，`revision_no` 是被提到的这一页现在的修订号（页面可以拿它记住用户看到这条提到时那一页是哪次修订，那一页之后又改了就能提醒）。一个位置上取词表里最长的词；一句话里同一页只记一次；一页不记自己提到自己；两页的标题或别名相同时两页各记一条。没有贴标签的页与已废弃的页是空列表。
 
 `review_in_progress` 是正在进行的一批界面发起的评审，形状与 `review_progress` 事件里的 `op_id`、`done`、`total`、`current` 相同，取自任务库里最后一条评审进度。这一批已经结束、助手现在没有在运行、或者这条进度写于助手这一次启动之前（助手在评审中途退出过）时为 null。页面据此在刷新之后立刻显示「评审中」；为 null 而页面上还有没结束的评审时，页面把它清掉。
 
@@ -139,10 +148,12 @@ data: {
   { "collection": "功能用例", "name": "每个条目评审通过", "met": false, "state": "unmet", "done": 0, "total": 7,
     "missing": ["UC-001", …], "note": "…" } ],
   "hints": [ { "kind": "unlinked_domain_notes", "collection": "领域说明", "items": ["DN-001"],
-    "summary": "有 1 条领域说明还没有和任何条目关联：DN-001。" } ] }
+    "summary": "有 1 条领域说明还没有和任何条目关联：DN-001。" },
+             { "kind": "untagged_overall_pages", "collection": "总体分析", "items": ["OA-003"],
+    "summary": "有 1 页主题还没有贴标签：OA-003。贴了标签的主题才会进文档，评审也只认贴了标签的主题。" } ] }
 ```
 
-`hints`（提示）列出显示在完成条件旁边、但不挡完成任务的事实；没有时是空列表。目前只有一种 `unlinked_domain_notes`：没有还在的条目把它写成来源、也没有还在的条目在条目引用字段里写它、它自己的条目引用字段也没有指向还在的条目的领域说明。
+`hints`（提示）列出显示在完成条件旁边、但不挡完成任务的事实；没有时是空列表。有两种，一个任务里只会出现其中一种。`untagged_overall_pages`（有「总体分析」集合的任务）：在用而还没有贴标签的主题。`unlinked_domain_notes`（0.4 建的任务，集合还叫「领域说明」）：没有还在的条目把它写成来源、也没有还在的条目在条目引用字段里写它、它自己的条目引用字段也没有指向还在的条目的领域说明。
 
 每条完成条件处于三种状态之一。`met`：该集合有条目，且全部满足条件。`unmet`：有条目不满足，或者「至少一条」这类条件一条也没找到。`empty`：该集合没有条目，因此「每个条目都要满足」这类条件无从检查。`empty` 在判断任务是否可以完成时仍算满足（`met` 仍为 `true`，所以可选集合可以保持空），但绝不能把它当作进度展示：应当汇报还有多少条条件处于 `unmet`（`unmet_count`），而不是有多少条已满足。`brief` 是智能体自己看到的那句一句话摘要；到处都应沿用这句话或同样的措辞。
 

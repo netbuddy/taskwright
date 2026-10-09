@@ -53,6 +53,7 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [ ] Limits on how many assistants run at once, with idle shutdown and a queue
 - [x] Upgrades that keep existing tasks
 - [x] Export and import of tasks and knowledge libraries as data packs
+- [ ] Overall analysis: topic pages in the matter's own words that items are written from (data, rules and assistant instructions done; the page is next)
 
 ## 0.6 First public release
 
