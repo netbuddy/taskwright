@@ -612,12 +612,20 @@ function CitedBy({ task, item, onOpenItem }: { task: Task; item: Item; onOpenIte
   );
 }
 
-function normalize(def: FieldDef, value: FieldValue): FieldValue {
+/** 把编辑框里的值收拾成要保存的样子：列表去掉空项与首尾空白，别的转成文字。 */
+export function normalize(def: FieldDef, value: FieldValue): FieldValue {
   if (isListField(def)) return (Array.isArray(value) ? value : []).map((s) => String(s).trim()).filter(Boolean);
   return value == null ? "" : String(value);
 }
 
-function FieldEditor({ def, value, task, onChange }: { def: FieldDef; value: FieldValue; task: Task; onChange: (v: FieldValue) => void }) {
+/**
+ * 一个字段的编辑框，按字段的类型画：枚举是下拉；条目引用是可以搜的多选（choices 给了就只能从这几个里选，single 为真时至多选一个）；
+ * 文本列表逐项编辑，声明了取值的文本列表（例如总体分析的「标签」）是一组可以多选的小标签；别的是文本框。
+ */
+export function FieldEditor({ def, value, task, onChange, choices, single = false }: {
+  def: FieldDef; value: FieldValue; task: Task; onChange: (v: FieldValue) => void;
+  choices?: { value: string; label: string }[]; single?: boolean;
+}) {
   if (def.type === "枚举") {
     return (
       <select className="vsel" value={value == null ? "" : String(value)} onChange={(e) => onChange(e.target.value)}>
@@ -627,8 +635,23 @@ function FieldEditor({ def, value, task, onChange }: { def: FieldDef; value: Fie
     );
   }
   if (def.type === "条目引用") {
-    return <Select size="small" mode="multiple" style={{ width: "100%" }} value={Array.isArray(value) ? value : []} onChange={onChange}
-      options={task.items.map((i) => ({ value: i.item_id, label: `${i.item_id} ${i.title}` }))} />;
+    const picked = Array.isArray(value) ? value : [];
+    return <Select size="small" mode="multiple" style={{ width: "100%" }} value={picked} allowClear
+      onChange={(next: string[]) => onChange(single ? next.slice(-1) : next)}
+      options={choices ?? task.items.map((i) => ({ value: i.item_id, label: `${i.item_id} ${i.title}` }))} />;
+  }
+  if (def.type === "文本列表" && def.values && def.values.length > 0) {
+    const picked = Array.isArray(value) ? value : [];
+    const toggle = (v: string) => onChange(picked.includes(v) ? picked.filter((x) => x !== v) : (def.values ?? []).filter((x) => x === v || picked.includes(x)));
+    return (
+      <div className="sw-pick" role="group" aria-label={def.name}>
+        {def.values.map((v) => (
+          <span key={v} className={`chip${picked.includes(v) ? " on" : ""}`} role="checkbox" aria-checked={picked.includes(v)} tabIndex={0}
+            onClick={() => toggle(v)} onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(v); } }}
+            data-testid={`pick-${def.name}-${v}`}>{v}</span>
+        ))}
+      </div>
+    );
   }
   if (def.type === "文本列表") {
     const list = Array.isArray(value) ? value : [];

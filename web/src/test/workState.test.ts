@@ -271,3 +271,46 @@ describe("列表型字段按步骤对齐", () => {
     expect(alignSteps(["甲", "乙"], ["乙"])).toEqual([{ kind: "removed", before: "甲" }, { kind: "same", index: 0, text: "乙" }]);
   });
 });
+
+describe("只随整份数据来的几项（待核实、依据待核实、提到）", () => {
+  const ready = () => run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(1) });
+  const fresh = (over: Record<string, unknown>) => [{ ...task().items[0], ...over }] as Task["items"];
+
+  it("另取回来的任务详情里，修订号对得上的条目把这几项并进来；别的内容不动", () => {
+    const before = ready();
+    const after = workReducer(before, { type: "facts", items: fresh({
+      title: "别处的标题不该进来", pending_verification: true, pending_sources: 1, pending_places: [{ field: "步骤", index: 0 }],
+      basis_pending: { item_id: "OA-001", reason: "pending", see: null }, mentioned_by: [],
+    }) });
+    const item = after.task!.items[0];
+    expect(item.pending_verification).toBe(true);
+    expect(item.pending_sources).toBe(1);
+    expect(item.pending_places).toEqual([{ field: "步骤", index: 0 }]);
+    expect(item.basis_pending).toEqual({ item_id: "OA-001", reason: "pending", see: null });
+    expect(item.title).toBe("登录");
+    expect(item.fields).toEqual(before.task!.items[0].fields);
+    // 再并一次同样的：什么都没有变，状态还是原来那一个对象（不会引起多余的重画）。
+    expect(workReducer(after, { type: "facts", items: fresh({ pending_verification: true, pending_sources: 1, pending_places: [{ field: "步骤", index: 0 }],
+      basis_pending: { item_id: "OA-001", reason: "pending", see: null }, mentioned_by: [] }) })).toBe(after);
+  });
+
+  it("确认之后再取：待核实消掉", () => {
+    const pending = workReducer(ready(), { type: "facts", items: fresh({ pending_verification: true, pending_sources: 2, pending_places: [{ field: null, index: null }] }) });
+    const cleared = workReducer(pending, { type: "facts", items: fresh({ pending_verification: false, pending_sources: 0, pending_places: [] }) });
+    expect(cleared.task!.items[0]).toMatchObject({ pending_verification: false, pending_sources: 0, pending_places: [] });
+  });
+
+  it("修订号对不上的条目不并（取回来的比页面旧或者新，等下一次）；任务里没有的条目不理会", () => {
+    const before = ready();
+    expect(workReducer(before, { type: "facts", items: fresh({ revision_no: 2, pending_verification: true }) })).toBe(before);
+    expect(workReducer(before, { type: "facts", items: fresh({ item_id: "UC-999", pending_verification: true }) })).toBe(before);
+    // 页面这边先收到了新修订的库事件，取回来的还是旧修订：同样不并。
+    const moved = run(before, changed(2, 2));
+    expect(workReducer(moved, { type: "facts", items: fresh({ revision_no: 1, pending_verification: true }) })).toBe(moved);
+  });
+
+  it("早先的后端不给这几项时，什么都不变", () => {
+    const before = ready();
+    expect(workReducer(before, { type: "facts", items: fresh({}) })).toBe(before);
+  });
+});

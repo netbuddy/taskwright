@@ -11,3 +11,9 @@ class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
 Element.prototype.scrollIntoView ??= function () {};
 // docx-preview 画文本框时在下一帧量 SVG 的外框；jsdom 没有 getBBox，给一个全零的。
 (Element.prototype as unknown as { getBBox?: () => DOMRect }).getBBox ??= () => ({ x: 0, y: 0, width: 0, height: 0 }) as DOMRect;
+
+// 页面把几样选择存在浏览器本地（字号档位、界面风格、每个任务上次停的页签）。一个测试文件里的各个用例共用同一个 jsdom，
+// 不清掉的话前一个用例记下的东西会带到后一个用例里。
+afterEach(() => {
+  try { window.localStorage.clear(); } catch { /* 用例里把读写换成了会抛错的假实现时，清不掉也无妨 */ }
+});

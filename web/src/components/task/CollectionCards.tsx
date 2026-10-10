@@ -17,6 +17,8 @@ const KNOWN: Record<string, { icon: ReactNode; color: string }> = {
   约束: { icon: <LockOutlined />, color: "c3" },
   问题: { icon: <QuestionCircleOutlined />, color: "c4" },
   领域说明: { icon: <ReadOutlined />, color: "c5" },
+  // 总体分析接替了领域说明（早先的任务仍叫领域说明），用同一个图标与颜色。
+  总体分析: { icon: <ReadOutlined />, color: "c5" },
 };
 /** 一个集合的图标与颜色；不认识的集合用通用的清单图标，颜色按它在任务定义里的先后轮换。 */
 export function collectionLook(name: string, index: number): { icon: ReactNode; color: string } {

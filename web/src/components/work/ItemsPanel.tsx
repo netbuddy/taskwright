@@ -32,10 +32,14 @@ import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
 import { submitQuestion } from "../../model/submit";
 import { unlinkedIds } from "../../model/domainNotes";
+import { DIAGRAMS_TAB, initialTab, saveTab, tabOrder } from "../../model/itemsTab";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
 import { DiagramsPane } from "./DiagramsPane";
+import { OverallPane } from "./overall/OverallPane";
+import { TopicPage } from "./overall/TopicPage";
+import { isOverall, outline, outlineOrder } from "../../model/overall";
 import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
@@ -96,13 +100,15 @@ export function ItemsPanel({
   /** 显示提交交付物的提示条（model/submit.ts 的 showSubmitBar 算好交进来）。 */
   submitBar?: boolean;
 }) {
-  const collections = task.definition.collections;
+  // 页签的次序：有总体分析集合时它排最前（model/itemsTab.ts）。
+  const collections = useMemo(() => tabOrder(task.definition.collections), [task.definition.collections]);
   const selectedItem = task.items.find((i) => i.item_id === selected);
-  // 页签的初值：选中的条目所在的集合；没有选中条目时用地址里带的集合（要是这个任务确有的集合），再不然是第一个集合。
-  const [tab, setTab] = useState<string>(selectedItem?.collection
-    ?? (collections.some((c) => c.name === initialCollection) ? initialCollection! : collections[0]?.name ?? ""));
+  // 页签的初值：选中的条目所在的集合；地址里带的集合或图表页签；这个任务上次停的页签；都没有时，
+  // 任务里只有总体分析有内容就停在总体分析，否则停在它之外的第一个集合。
+  const [opened] = useState(() => initialTab(task, { selected, collection: initialCollection, diagrams: initialDiagrams || !!initialDiagram }));
+  const [tab, setTab] = useState<string>(opened.tab);
   // 图表页签：是不是停在它上面、打开着哪一张图。选中了条目时不算停在图表页签。
-  const [showDiagrams, setShowDiagrams] = useState(initialDiagrams || !!initialDiagram);
+  const [showDiagrams, setShowDiagrams] = useState(opened.diagrams);
   const [diagram, setDiagram] = useState<string | null>(initialDiagram);
   const [filter, setFilter] = useState<ItemFilter>("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -129,6 +135,11 @@ export function ItemsPanel({
   const [dirty, setDirty] = useState(false);
   const onDiagrams = !selectedItem && showDiagrams;
   const activeTab = selectedItem?.collection ?? tab;
+  // 停在「总体分析」页签：主体不是列表，是提纲加主题页（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
+  const onOverall = !onDiagrams && isOverall(activeTab);
+  const noList = onDiagrams || onOverall;
+  // 记住这个任务停在哪个页签（存在浏览器本地），下次打开这个任务回到这里。
+  useEffect(() => { saveTab(task.task_id, onDiagrams ? DIAGRAMS_TAB : activeTab); }, [task.task_id, onDiagrams, activeTab]);
   const diagramCount = (task.diagrams ?? []).length;
   /** 打开一张图（null 是图的列表）：取消选中的条目，切到图表页签。 */
   const openDiagram = (diagramId: string | null) => { onSelect(null); setShowDiagrams(true); setDiagram(diagramId); };
@@ -173,6 +184,11 @@ export function ItemsPanel({
   // 导出 Word 用的：全部页签里勾中的条目（已经不在的编号不算）。
   const exportItems = task.items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
+  // 总体分析的页：「上一条」「下一条」照提纲从上到下的次序走；看主题页还是按条目的样子看（修订与全部来源），换一页就回到主题页。
+  const topics = useMemo(() => (onOverall ? outlineOrder(outline(task)) : []), [task, onOverall]);
+  const topicPos = selectedItem ? topics.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
+  const [rawTopic, setRawTopic] = useState(false);
+  useEffect(() => { setRawTopic(false); }, [selected]);
   const hitsIn = (collection: string) => task.items.filter((i) => i.collection === collection && hitIds.includes(i.item_id)).length;
   const toReview = pendingReview(task);
   const failed = failedReview(task);
@@ -208,6 +224,22 @@ export function ItemsPanel({
     if (e) toast.error(rejectedText(label, e, item.item_id));
   };
 
+  /** 打开着的条目的详情；没有打开条目时为 null。 */
+  const detail = selectedItem && def ? (
+    <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} writesOff={writesOff} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
+      reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
+      onReview={onReview ? () => reviewItems([selectedItem], `评审 ${selectedItem.item_id}`) : undefined} onPrefill={onPrefill}
+      marked={marks[selectedItem.item_id] ?? []} just={just.has(selectedItem.item_id)} onBack={() => onSelect(null)}
+      onPrev={pos > 0 ? () => onSelect(items[pos - 1].item_id) : null}
+      onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
+      onLocate={onLocate} onOpenItem={onSelect} onOpenDiagram={openDiagram} onAskAssistant={onAskAssistant}
+      view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
+      crumb={onOverall ? <span className="crumb" role="button" onClick={() => setRawTopic(false)} data-testid="back-to-topic">‹ 回到主题页</span>
+        : fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
+      top={<ItemIssues task={task} itemId={selectedItem.item_id} readOnly={readOnly} writesOff={writesOff} hold={dirty} pendingItems={pendingItems}
+        submit={submit} onSend={onSend} onPrefill={onAnswer} fromIssue={fromIssue?.issueId ?? null} />} />
+  ) : null;
+
   return (
     <div className="pane-items" data-testid="items-panel">
       {writesOff && <div className="sw-busy-banner" data-testid="busy-banner"><span className="spin" />{BUSY_TEXT}</div>}
@@ -232,11 +264,11 @@ export function ItemsPanel({
         )}
       </div>
       <div className="filters">
-        {!onDiagrams && FILTERS.map((f) => (
+        {!noList && FILTERS.map((f) => (
           <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : f.key === "review_passed" || f.key === "review_kept" ? " okf" : ""}`}
             role="button" onClick={() => { setFilter(f.key); onSelect(null); }}>{f.label}</span>
         ))}
-        {!onDiagrams && hit && hitIds.length > 0 && (
+        {!noList && hit && hitIds.length > 0 && (
           <span className="sw-hitnote" role="button" title="点一下取消高亮" onClick={onClearHit} data-testid="hit-note">修订 {hit.revision} 碰到的条目 ✕</span>
         )}
         <span className="prog" role="button" onClick={() => setShowProgress(!showProgress)} data-testid="progress">
@@ -260,13 +292,13 @@ export function ItemsPanel({
         confirmLoading={submitting} destroyOnHidden>
         提交之后这个任务变成只读，交付物不能再改，仍然可以生成文档。确定提交吗？
       </Modal>
-      {!onDiagrams && unread.length > 0 && filter !== "unread" && (
+      {!noList && unread.length > 0 && filter !== "unread" && (
         <div className="alertbar" data-testid="unread-bar">
           还有 {unread.length} 条未读 ·
           <button type="button" className="btn sm" onClick={() => { setFilter("unread"); onSelect(null); }}>筛出来看</button>
         </div>
       )}
-      {!onDiagrams && !selectedItem && !readOnly && !statusField && (checkedItems.length > 0 ? (
+      {!noList && !selectedItem && !readOnly && !statusField && (checkedItems.length > 0 ? (
         <div className="bulkbar">
           已勾选 {checkedItems.length} 个条目。
           <button type="button" className="btn sm pri" disabled={writesOff} title={offTitle} onClick={() => void markMany(checkedItems)} data-testid="bulk-viewed">把选中的这几条标为已读</button>
@@ -274,23 +306,20 @@ export function ItemsPanel({
         </div>
       ) : null)}
       <ExportDocxModal open={exporting} task={task} items={exportItems} onClose={() => setExporting(false)} />
-      <div className="items-body">
+      <div className={`items-body${onOverall ? " oa-body" : ""}`}>
         {onDiagrams ? (
           <DiagramsPane task={task} selected={diagram} onSelect={setDiagram} readOnly={readOnly} writesOff={writesOff} latestRevision={latestRevision}
             submit={submit} onLocate={onLocate} onOpenItem={(id) => openItem(id)} onDirty={onDiagramDirty} />
-        ) : selectedItem && def ? (
-          <ItemDetail task={task} item={selectedItem} def={def} readOnly={readOnly} writesOff={writesOff} pending={pendingItems.has(selectedItem.item_id)} submit={submit}
-            reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
-            onReview={onReview ? () => reviewItems([selectedItem], `评审 ${selectedItem.item_id}`) : undefined} onPrefill={onPrefill}
-            marked={marks[selectedItem.item_id] ?? []} just={just.has(selectedItem.item_id)} onBack={() => onSelect(null)}
-            onPrev={pos > 0 ? () => onSelect(items[pos - 1].item_id) : null}
-            onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
-            onLocate={onLocate} onOpenItem={onSelect} onOpenDiagram={openDiagram} onAskAssistant={onAskAssistant}
-            view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
-            crumb={fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
-            top={<ItemIssues task={task} itemId={selectedItem.item_id} readOnly={readOnly} writesOff={writesOff} hold={dirty} pendingItems={pendingItems}
-              submit={submit} onSend={onSend} onPrefill={onAnswer} fromIssue={fromIssue?.issueId ?? null} />} />
-        ) : items.length === 0 ? (
+        ) : onOverall ? (
+          <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
+            page={selectedItem && !rawTopic ? (
+              <TopicPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} readOnly={readOnly} writesOff={writesOff} submit={submit}
+                onSend={onSend} onAnswer={onAnswer} onPrefill={onPrefill} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
+                onOpen={(id) => openItem(id)} onBack={() => onSelect(null)} onLocate={onLocate} onRaw={() => setRawTopic(true)}
+                onPrev={topicPos > 0 ? () => onSelect(topics[topicPos - 1].item_id) : null}
+                onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null} />
+            ) : detail} />
+        ) : detail ? detail : items.length === 0 ? (
           <div className="empty">这个筛选下没有条目。换一个筛选试试。</div>
         ) : statusField && def ? (
           <div className="list">

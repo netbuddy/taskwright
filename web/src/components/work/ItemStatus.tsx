@@ -9,6 +9,7 @@
 
 import type { Item, Task } from "../../api/types";
 import { displayOf, groupOf, unlinkedIds } from "../../model/domainNotes";
+import { basisNote } from "../../model/overall";
 import { hasExecutorSupplement, KEEP_PENDING_VALUE, keepPendingField, mainStatus, mainStatusDetail, mainStatusText, RESOLVED_VALUE } from "../../model/items";
 
 /** 列表行与详情头部上的有色徽标：主状态一枚，必要时再加「问题 N」。问题条目只写它自己的状态。 */
@@ -52,6 +53,8 @@ export function ItemMeta({ task, item, just, pending, row = false }: { task: Tas
     return <>{others.map((f) => <span key={f.name} className="chip">{String(item.fields[f.name])}</span>)}{revision}{saving}</>;
   }
   const unlinked = !!display && row && unlinkedIds(task, item.collection).includes(item.item_id);
+  // 它依据的总体分析主题待核实或已废弃：琥珀色小标签，悬停说明是哪一页、该怎么办（model/overall.ts）。
+  const basis = basisNote(task, item);
   return (
     <span className="gms">
       {group && <span className="gm" data-testid={`group-${item.item_id}`}>{group}</span>}
@@ -59,6 +62,7 @@ export function ItemMeta({ task, item, just, pending, row = false }: { task: Tas
       {display && row && <span className="gm" data-testid={`source-count-${item.item_id}`}>来源 {item.sources.length}</span>}
       {hasExecutorSupplement(item) && <span className="gm">有助手补充的内容</span>}
       {unlinked && <span className="chip warn sm" data-testid={`unlinked-${item.item_id}`}>还没和任何条目关联</span>}
+      {basis && <span className="chip warn sm" title={basis.title} data-testid={`basis-pending-${item.item_id}`}>{basis.text}</span>}
       {saving}
     </span>
   );
