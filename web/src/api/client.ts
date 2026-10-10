@@ -13,6 +13,7 @@ import type {
   ModelSelection,
   ModelTestResult,
   ModelType,
+  PromptDirView,
   Provider,
   ProviderKind,
   ItemRevision,
@@ -142,6 +143,11 @@ export const api = {
   upgradeState: () => request<{ ok: true; upgrade: UpgradeView | null }>("GET", "/service/upgrade", undefined, 10_000),
   /** 开始（或者整体没有做成之后再试一次）数据升级：立刻返回，之后用 upgradeState 看进度。 */
   startUpgrade: () => request<{ ok: true; started: boolean; upgrade: UpgradeView }>("POST", "/service/upgrade", {}, 10_000),
+
+  // 调试模式（服务带 --debug 启动时才有，否则这两个接口答 not_found）：设置里的提示词目录。
+  promptDir: () => request<PromptDirView>("GET", "/debug/prompt-dir"),
+  /** 设提示词目录；path 写空串是清掉。 */
+  setPromptDir: (path: string) => request<PromptDirView>("POST", "/debug/prompt-dir", { path }),
 
   // 模型配置（接口文档第 10 节）：从哪台电脑打开页面都可以读、可以改。
   modelConfig: () => request<ModelConfig>("GET", "/model-config"),
