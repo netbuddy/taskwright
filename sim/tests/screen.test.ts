@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buttonsOf, pendingCount, planRespond, renderItems, renderMessages, renderReply, viewOnLook, viewedNow } from "../lib/screen.ts";
+import { buttonLabels, buttonsOf, optionKeyOf, pendingCount, planRespond, renderItems, renderMessages, renderReply, viewOnLook, viewedNow } from "../lib/screen.ts";
 
 const confirmReply = {
   type: "assistant_reply", message_id: "a1", text: "三个用例整理好了，请看看。", informs: ["存了 3 个用例。"],
@@ -17,7 +17,7 @@ test("回复渲染成用户看到的样子：告知、正文、卡片与可以�
   assert.equal(renderReply(confirmReply),
     "助手告诉你：存了 3 个用例。\n助手说：三个用例整理好了，请看看。\n【卡片：请确认】请确认这三个用例\n" +
     "涉及的条目：UC-001（修订 1）、UC-002（修订 2）\n可以点：这几条都看过了／不对（也可以直接回一句话）");
-  assert.match(renderReply(chooseReply), /选项 a：借书\n选项 b：还书\n可以点：a／b/);
+  assert.match(renderReply(chooseReply), /选项 a：借书\n选项 b：还书\n可以点：借书／还书（写选项的文字或者它前面的键都行；也可以直接回一句话）/);
   assert.equal(renderReply({ type: "assistant_reply", message_id: "x", text: "好的。", act: null }), "助手说：好的。");
   assert.deepEqual(buttonsOf({ kind: "suggest", text: "t" }), ["采纳", "换一个"]);
   assert.deepEqual(buttonsOf({ kind: "ask", text: "t" }), []);
@@ -63,7 +63,7 @@ test("回应的形式核对：逐条说明哪里不对", () => {
   assert.throws(() => planRespond({}, null, "c"), /要么写 text 说一句话/);
   assert.throws(() => planRespond({ give_up: true }, null, "c"), /give_up 要配一句 reason/);
   assert.throws(() => planRespond({ done: true, give_up: true, reason: "烦" }, null, "c"), /done 与 give_up 不能同时为真/);
-  assert.throws(() => planRespond({ click: "这几条都看过了" }, chooseReply, "c"), /没有「这几条都看过了」这个按钮，可以点的是：a／b/);
+  assert.throws(() => planRespond({ click: "这几条都看过了" }, chooseReply, "c"), /没有「这几条都看过了」这个按钮，可以点的是：借书／还书/);
   assert.throws(() => planRespond({ click: "这几条都看过了" }, null, "c"), /没有可以点的按钮/);
   assert.throws(() => planRespond({ click: "确认", text: "好" }, confirmReply, "c"), /点这个按钮时不要同时写 text/);
 });
@@ -183,4 +183,20 @@ test("打开一个条目记不记已读与网页同一个规矩：待核实的�
   assert.match(confirmed, /修订 2（你正在看它现在的内容，并确认了助手补的 2 处）：/);
   assert.doesNotMatch(confirmed, /还没有确认/);
   assert.match(renderItems(task, "OA-001", true), /修订 2（你正在看它现在的内容，看过就算确认）：/);
+});
+
+test("请选择卡片的选项按键点或按文字点都行，发出去的请求相同；别的卡片的按钮名不受影响", () => {
+  const startReply = { type: "assistant_reply", message_id: "a9", text: "现在开始写条目吗？",
+    act: { kind: "choose" as const, text: "这几页你看过之后，现在开始写条目吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
+      options: [{ key: "start_items", text: "开始写条目" }, { key: "continue_clarify", text: "继续澄清" }] } };
+  const byKey = planRespond({ click: "start_items" }, startReply, "c1");
+  assert.deepEqual(byKey, { kind: "message", body: { text: "我选：开始写条目", client_id: "c1", origin: "card_choice",
+    card: { reply_message_id: "a9", kind: "choose", choice: "start_items" } } });
+  assert.deepEqual(planRespond({ click: "开始写条目" }, startReply, "c1"), byKey);
+  assert.equal((planRespond({ click: " 继续澄清 " }, startReply, "c2") as any).body.card.choice, "continue_clarify");
+  assert.throws(() => planRespond({ click: "先看看再说" }, startReply, "c"), /没有「先看看再说」这个按钮，可以点的是：开始写条目／继续澄清/);
+  assert.deepEqual([optionKeyOf(startReply.act, "开始写条目"), optionKeyOf(confirmReply.act, "不对"), optionKeyOf(null, "x")], ["start_items", "不对", "x"]);
+  assert.deepEqual([buttonLabels(startReply.act), buttonLabels(confirmReply.act)], [["开始写条目", "继续澄清"], ["这几条都看过了", "不对"]]);
+  // 请确认卡片照旧。
+  assert.equal((planRespond({ click: "这几条都看过了" }, confirmReply, "c3") as any).body.kind, "mark_viewed");
 });

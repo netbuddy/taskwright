@@ -74,6 +74,22 @@ export function buttonsOf(act: Act | null | undefined, task?: TaskView | null): 
   return [];
 }
 
+/**
+ * 请选择卡片上点的是哪个选项：写选项的键或者选项的文字都认，返回选项的键；都对不上时原样返回。
+ * 界面上人看到的是选项的文字（例如「开始写条目」），键是给程序认的（start_items），所以两种写法都收。
+ */
+export function optionKeyOf(act: Act | null | undefined, click: string): string {
+  if (!act || act.kind !== "choose") return click;
+  const options = act.options ?? [];
+  return (options.find((o) => o.key === click) ?? options.find((o) => o.text.trim() === click))?.key ?? click;
+}
+
+/** 卡片上的按钮给人看的名字：请选择卡片写选项的文字，其余就是按钮名。 */
+export function buttonLabels(act: Act | null | undefined, task?: TaskView | null): string[] {
+  if (act?.kind === "choose") return (act.options ?? []).map((o) => o.text);
+  return buttonsOf(act, task);
+}
+
 /** 「请确认」卡片上的按钮：点一次把卡片点名的条目标为已读（已读就算确认）。 */
 export const SEEN = "这几条都看过了";
 
@@ -100,8 +116,9 @@ export function renderReply(m: Message, task?: TaskView | null): string {
       for (const b of act.basis ?? []) lines.push(`依据（${b.kind}）：${b.excerpt}`);
     }
     if (act.kind === "propose") for (const p of act.preview ?? []) lines.push(`这样做会${EFFECT_WORD[p.effect] ?? p.effect}：${p.text}`);
-    const buttons = buttonsOf(act, task);
-    lines.push(buttons.length ? `可以点：${buttons.join("／")}（也可以直接回一句话）` : "这张卡片没有按钮，直接回一句话。");
+    const buttons = buttonLabels(act, task);
+    const how = act.kind === "choose" ? "写选项的文字或者它前面的键都行；也可以直接回一句话" : "也可以直接回一句话";
+    lines.push(buttons.length ? `可以点：${buttons.join("／")}（${how}）` : "这张卡片没有按钮，直接回一句话。");
   }
   return lines.join("\n");
 }
@@ -256,16 +273,17 @@ const CLICK_TEXT: Record<string, string> = { 不对: "这个不对。", 采纳: 
 export function planRespond(params: RespondParams, lastReply: Message | null, clientId: string, task?: TaskView | null): Plan {
   const p = params ?? {};
   const text = typeof p.text === "string" ? p.text.trim() : "";
-  const click = typeof p.click === "string" ? p.click.trim() : "";
+  const act = cardOf(lastReply);
+  const clicked = typeof p.click === "string" ? p.click.trim() : "";
+  const click = clicked ? optionKeyOf(act, clicked) : "";
   const errors: string[] = [];
   if (p.done && p.give_up) errors.push("done 与 give_up 不能同时为真");
   if (p.give_up && (typeof p.reason !== "string" || !p.reason.trim())) errors.push("give_up 要配一句 reason，说明为什么放弃");
   if (!text && !click && !p.done && !p.give_up) errors.push("要么写 text 说一句话，要么写 click 点一个按钮，要么用 done 或 give_up 结束");
-  const act = cardOf(lastReply);
   if (click) {
     const buttons = buttonsOf(act, task);
     if (!buttons.length) errors.push("助手最近一条话没有可以点的按钮，请用 text 直接说");
-    else if (!buttons.includes(click)) errors.push(`没有「${click}」这个按钮，可以点的是：${buttons.join("／")}`);
+    else if (!buttons.includes(click)) errors.push(`没有「${clicked}」这个按钮，可以点的是：${buttonLabels(act, task).join("／")}`);
     if (text && click !== "不对") errors.push("点这个按钮时不要同时写 text；要说话就另外回一次");
   }
   if (errors.length) throw new Error(`这次回应的形式不对，没有发出去：${errors.join("；")}。`);
