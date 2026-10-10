@@ -2,7 +2,12 @@
 
 一个扮演用户的 agent，按一份用户画像（user persona）与执行者多轮对话，用来积累执行者的失败样本。它用 pi 以 RPC 方式跑，
 只有两个工具：「看界面」（look）与「回应」（respond），两个工具都走后端任务服务的 HTTP 接口，与网页前端走同一条路。
-演练结束后由代码做第一层（用户 agent 有没有按画像演）与第二层（库里的事实）判定。
+它能做的事与一个坐在工作视图前的人相同：看助手说了什么；看条目区，其中总体分析写成提纲（每页的标签、它现在这一版看没看过、
+有没有助手补的内容等着确认）；打开一个条目或一页主题（打开就记已读，待核实的主题页除外）；确认一页主题上助手补的内容
+（`look` 带 `confirm`，与页面上「确认待核实的 N 处」是同一个请求）；说一句话；点卡片上的按钮或选项（选项写它的文字或键都行，
+例如助手提议进入写条目时点「开始写条目」）。
+演练结束后由代码做第一层（用户 agent 有没有按画像演）与第二层（库里的事实）判定。第一层查三项：没问到就说出隐藏事实、
+没看内容就点「这几条都看过了」、没打开卡片点名的主题页就点「开始写条目」。
 
 ## 目录
 
@@ -10,7 +15,7 @@
 |---|---|
 | `extension.ts` | 用户 agent 的扩展入口，只登记 look 与 respond。 |
 | `tools/look.ts`、`tools/respond.ts` | 两个工具。respond 的「单独调用、合格即结束本轮」骨架引用 `agent/src/lib/speak.ts`。 |
-| `lib/screen.ts` | 界面渲染与回应翻译的纯函数（执行者的话怎样显示、按钮走 actions 还是 messages）。 |
+| `lib/screen.ts` | 界面渲染与回应翻译的纯函数（执行者的话怎样显示、总体分析的提纲、打开一个条目记不记已读、按钮走 actions 还是 messages）。 |
 | `lib/backend.ts` | 两个工具访问后端的小函数（Node 自带 fetch），后端地址等从环境变量取。 |
 | `profiles/user_agent.json` | 用户 agent 的启动配置（模型 gpt-6-luna、思考档位 medium、工具只有 look,respond）。 |
 | `prompts/user_agent_system_prompt.md` | 用户 agent 的系统提示；`{{用户画像}}` 处由 `launch_user.py` 填入画像里给扮演者读的部分。 |
@@ -85,7 +90,9 @@ python3 -m sim.evals compare <前一次的标签> <后一次的标签>
 详情里每一格都能点到那一遍演练的任务页。
 
 不接真模型试一遍：先起假模型端点（`tools/fake-model/`，`--agent-dir` 给一个新建的空目录），把 `PI_CODING_AGENT_DIR` 设成那个目录，
-`run` 时加 `--profile fake --user-model fake/fake-model`。`tests/test_evals.py` 里有一份让助手与模拟用户各走两轮的脚本。
+`run` 时加 `--profile fake --user-model fake/fake-model`。`tests/test_evals.py` 里有一份让助手与模拟用户各走两轮的脚本；
+`tests/test_view_pages.py` 的脚本让模拟用户打开两页主题并确认其中待核实的一页；`tests/test_stage_run.py` 的脚本从核读材料一直走到完成任务
+（模拟用户看过主题页、点「开始写条目」、看过用例、点完成），产品有了工作的阶段之后才跑。
 
 ## 测试
 
