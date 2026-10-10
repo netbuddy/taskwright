@@ -262,17 +262,19 @@ test("平台 skill 与任务 skill 写了总体分析的做法；平台 skill �
   assert.match(legacy, /领域说明只写解释那一半，规则那一半按任务 skill 的分拣放到该放的地方/);
   assert.match(legacy, /excerpt 逐字照抄那条说明的标题或内容里你引用的那一段，包括标点/);
   // 这一节（老任务小节除外）与任务 skill 里不出现这几个词。
-  const task = readFileSync(resolve(import.meta.dirname, "../../task-types/srs-authoring/.pi/skills/srs-authoring/SKILL.md"), "utf-8");
+  // 任务 skill 的文字分三份：每个阶段都要用的在 SKILL.md，核读材料与写条目各有一段在旁边的 stages/ 目录里。
+  const taskDir = resolve(import.meta.dirname, "../../task-types/srs-authoring/.pi/skills/srs-authoring");
+  const task = ["SKILL.md", "stages/reading.md", "stages/writing.md"].map((name) => readFileSync(resolve(taskDir, name), "utf-8")).join("\n");
   for (const word of ["节点", "联系", "要素", "依据门", "派生", "投影", "schema"]) {
     assert.ok(!section.slice(0, section.indexOf("### 老任务")).includes(word), `平台 skill 第十节里有「${word}」`);
     assert.ok(!task.includes(word), `任务 skill 里有「${word}」`);
   }
   assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、总体分析/);
   assert.doesNotMatch(task, /领域说明/);
-  assert.match(task, /各立成总体分析的一页主题（怎样填见第 8 条）；材料里的术语定义段落也立成主题，标签贴「概念」/);
-  assert.match(task, /8\. \*\*总体分析怎样写。\*\*/);
+  assert.match(task, /各立成总体分析的一页主题（每一块怎样填见上文第 6 条）；材料里的术语定义段落也立成主题，标签贴「概念」/);
+  assert.match(task, /6\. \*\*总体分析的每一页怎样填。\*\*/);
   for (const piece of ["一页一个主题", "「标题」写短", "「它是什么」用这件事自己的话写一两段", "有名字的人、具体的东西、具体的日子", "这种不算的例子以「反例：」开头",
-    "「已经定下的」一句一条", "「标签」从概念、角色、流程、场景、目标、范围、假设、决定里选", "「上级主题」写它在哪一页之下讨论", "「一批最多写 4 个条目」同样适用于主题页"]) {
+    "「已经定下的」一句一条", "「标签」从概念、角色、流程、场景、目标、范围、假设、决定里选", "「上级主题」写它在哪一页之下讨论", "一次保存最多写 4 页主题"]) {
     assert.ok(task.includes(piece), piece);
   }
   assert.match(task, /例如用户说「我们说的预约保留期[\s\S]*「它是什么」只写到「书到馆后替预约的读者留着的那几天」为止[\s\S]*在「约束规则」里加上「过了保留期还没来取，预约自动取消」/);

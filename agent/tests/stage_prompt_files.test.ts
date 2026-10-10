@@ -8,7 +8,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -201,4 +201,30 @@ test("写条目与评审确认两段：依据用户看过的页、写完移到�
 
 test("共用部分第五节新加的那个反例标明了它是错的写法", () => {
   assert.ok(read("common.md").includes("是错的：提问的卡片上没有可点的选项"));
+});
+
+// ───────────── 任务类型一级：需求规格任务 ─────────────
+
+const SRS_SKILL = join(ROOT, "task-types", "srs-authoring", ".pi", "skills", "srs-authoring");
+
+test("需求规格任务的说明拆成三份：SKILL.md 只留每个阶段都要用的，核读材料与写条目各有一段，别的阶段没有文件", () => {
+  const common = body(readFileSync(join(SRS_SKILL, "SKILL.md"), "utf-8"));
+  // 「材料里的内容都要整理进条目」这句只在写条目那一段里：核读材料与澄清阶段不该有写条目的要求。
+  assert.doesNotMatch(common, /都要整理进条目/);
+  assert.doesNotMatch(common, /分拣成/);
+  assert.doesNotMatch(common, /一批最多写 4 个条目/);
+  for (const head of ["1. **材料没按块读完不要动笔。**", "2. **含糊的地方不要自己定。**", "3. **问用户与记下答复。**", "4. **「用户决定保留」只认对话里的用户。**",
+    "5. **用户的说法与材料原文对不上时**", "6. **总体分析的每一页怎样填。**"]) assert.ok(common.includes(head), head);
+  assert.deepEqual(readdirSync(join(SRS_SKILL, "stages")).sort(), ["reading.md", "writing.md"]);
+  const reading = readFileSync(join(SRS_SKILL, "stages", "reading.md"), "utf-8");
+  assert.ok(reading.startsWith("## 这类任务在核读材料阶段\n"));
+  assert.ok(reading.includes("一轮最多 12 页"));
+  assert.ok(reading.includes("这几批里不要夹着用例、需求或约束"));
+  const writing = readFileSync(join(SRS_SKILL, "stages", "writing.md"), "utf-8");
+  assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
+  for (const head of ["总体分析与材料里的内容都要整理进条目", "1. **把内容分拣成四类。**", "2. **一批最多写 4 个条目，问题条目放最后一批。**", "3. **一句话既是解释又是规则时。**", "4. **写完对用户说话。**"]) {
+    assert.ok(writing.includes(head), head);
+  }
+  // 任务类型的文件名也只用阶段的键。
+  for (const name of readdirSync(join(SRS_SKILL, "stages"))) assert.ok((STAGES as readonly string[]).includes(name.replace(/\.md$/, "")), name);
 });
