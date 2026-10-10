@@ -1,0 +1,256 @@
+/**
+ * 有阶段的任务的系统提示怎样拼（src/lib/stage_prompt.ts）：五个阶段各拼出什么、早先的任务不拼、没有记录时按缺省的阶段、
+ * 早先复制进任务目录的整份任务 skill 怎样读、pi 接在后面的那一截怎样取。用的是仓里真实的那几份说明文件。
+ */
+
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { after, test } from "node:test";
+import { createTask } from "../src/lib/create_task.ts";
+import { STAGES, STAGE_NAMES } from "../src/lib/stage.ts";
+import {
+  COMMON_FILE, HOW_NAMES, NODE_IO, PART_NAMES, PLATFORM_SKILL_DIR, PLATFORM_STAGES_DIR, type PromptIo, SYSTEM_FILE, StagePromptCache, composeStagePrompt, digestOf,
+  partFact, piTail, skillBody, stageFile, stageInWorkspace, taskSkills,
+} from "../src/lib/stage_prompt.ts";
+import { DEFINITION_PATH, callIn, demoDefinition, enterStage, makeWorkspace, overallDefinition } from "./helpers.ts";
+
+const ROOT = resolve(import.meta.dirname, "..", "..");
+const SRS_TYPE = join(ROOT, "task-types", "srs-authoring");
+const SRS_SKILL = { name: "srs-authoring", filePath: join(SRS_TYPE, ".pi", "skills", "srs-authoring", "SKILL.md") };
+const PLATFORM_SKILL = { name: "taskwright-executor", filePath: join(PLATFORM_SKILL_DIR, "SKILL.md") };
+const TAIL = "<cwd>\n/somewhere/task\n</cwd>";
+
+const temps: string[] = [];
+after(() => { for (const one of temps) rmSync(one, { recursive: true, force: true }); });
+function tempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "stage-prompt-"));
+  temps.push(dir);
+  return dir;
+}
+
+const compose = (stage: (typeof STAGES)[number]) => composeStagePrompt({ stage, workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL });
+
+for (const stage of STAGES) {
+  test(`${STAGE_NAMES[stage]}阶段拼出的系统提示：系统提示、两份共用部分、这个阶段的那一段，最后是工作目录；没有别的四个阶段的段落`, () => {
+    const prompt = compose(stage);
+    assert.equal(prompt.stage, stage);
+    const hasTaskStage = stage === "reading" || stage === "writing";
+    assert.deepEqual(prompt.parts.map((one) => one.part),
+      ["system", "platform_common", "task_common", "platform_stage", ...(hasTaskStage ? ["task_stage"] : []), "tail"]);
+    assert.deepEqual(prompt.parts.map((one) => one.from), ["builtin", "builtin", "task", "builtin", ...(hasTaskStage ? ["task"] : []), "pi"]);
+    assert.deepEqual(prompt.parts.map((one) => one.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/srs-authoring/SKILL.md",
+      `agent/prompts/stages/${stage}.md`, ...(hasTaskStage ? [`.pi/skills/srs-authoring/stages/${stage}.md`] : []), null]);
+    // 整份文字就是各部分用一个空行接起来。
+    assert.equal(prompt.text, prompt.parts.map((one) => one.text).join("\n\n"));
+    assert.ok(prompt.text.startsWith("你是 Taskwright 的执行者"));
+    assert.ok(prompt.text.endsWith(TAIL));
+    // 只有这个阶段的那一段。
+    for (const other of STAGES) {
+      assert.equal(prompt.text.includes(`# 现在这个阶段：${STAGE_NAMES[other]}\n`), other === stage, STAGE_NAMES[other]);
+    }
+    assert.equal(prompt.text.includes("## 这类任务在核读材料阶段"), stage === "reading");
+    assert.equal(prompt.text.includes("## 这类任务在写条目阶段"), stage === "writing");
+    // 任务 skill 的 frontmatter 不进系统提示；pi 的 skill 清单不接回去；早先的任务用的那一份平台说明不在里面。
+    assert.doesNotMatch(prompt.text, /^---$/m);
+    assert.doesNotMatch(prompt.text, /<skills>|<available_skills>/);
+    assert.doesNotMatch(prompt.text, /### 老任务/);
+    assert.ok(prompt.text.includes("# 软件需求规格说明编制"));
+  });
+}
+
+test("「材料里的内容都要整理进条目」只出现在写条目阶段的系统提示里", () => {
+  for (const stage of STAGES) assert.equal(compose(stage).text.includes("都要整理进条目"), stage === "writing", stage);
+});
+
+test("换阶段时，按阶段的那一段之前的文字一字不变", () => {
+  const before = (stage: (typeof STAGES)[number]) => {
+    const prompt = compose(stage);
+    const at = prompt.parts.findIndex((one) => one.part === "platform_stage");
+    return prompt.parts.slice(0, at).map((one) => one.text).join("\n\n");
+  };
+  for (const stage of STAGES) assert.equal(before(stage), before("reading"), stage);
+});
+
+test("早先的任务没有阶段，不拼；任务库不在或还没有任务时也不拼", () => {
+  const old = makeWorkspace(demoDefinition());
+  createTask(callIn(old), { definition_path: DEFINITION_PATH });
+  assert.equal(stageInWorkspace(old), null);
+  assert.equal(stageInWorkspace(tempDir()), null);
+  const empty = makeWorkspace(overallDefinition());
+  assert.equal(stageInWorkspace(empty), null);
+});
+
+test("没有阶段记录时按缺省的阶段：有材料是核读材料，没有材料是澄清；有了记录看最近一条", () => {
+  const withMaterial = makeWorkspace(overallDefinition(), { material: true });
+  createTask(callIn(withMaterial), { definition_path: DEFINITION_PATH });
+  assert.equal(stageInWorkspace(withMaterial), "reading");
+  const noMaterial = makeWorkspace(overallDefinition(), { material: false });
+  createTask(callIn(noMaterial), { definition_path: DEFINITION_PATH });
+  assert.equal(stageInWorkspace(noMaterial), "clarifying");
+  enterStage(withMaterial, "modeling");
+  assert.equal(stageInWorkspace(withMaterial), "modeling");
+  enterStage(withMaterial, "clarifying");
+  assert.equal(stageInWorkspace(withMaterial), "clarifying");
+});
+
+test("早先复制进任务目录的整份任务 skill（没有 stages 目录）：整份正文当共用部分，按阶段的那一段为空", () => {
+  const task = tempDir();
+  const skillDir = join(task, ".pi", "skills", "old-type");
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), "---\nname: old-type\ndescription: 早先的整份说明\n---\n\n# 早先的整份说明\n\n1. 读材料。\n2. 分拣。\n", "utf-8");
+  const prompt = composeStagePrompt({ stage: "writing", workspaceDir: task, skills: [PLATFORM_SKILL, { name: "old-type", filePath: join(skillDir, "SKILL.md") }], tail: "" });
+  assert.deepEqual(prompt.parts.map((one) => one.part), ["system", "platform_common", "task_common", "platform_stage"]);
+  assert.equal(prompt.parts[2].text, "# 早先的整份说明\n\n1. 读材料。\n2. 分拣。");
+  assert.equal(prompt.parts[2].file, ".pi/skills/old-type/SKILL.md");
+});
+
+test("任务 skill 只认平台 skill 之外的；一个任务 skill 都没有、或者它的文件不在时，只拼平台一级的三份", () => {
+  assert.deepEqual(taskSkills([PLATFORM_SKILL, SRS_SKILL]), [SRS_SKILL]);
+  for (const skills of [[PLATFORM_SKILL], [PLATFORM_SKILL, { name: "gone", filePath: join(tempDir(), "SKILL.md") }]]) {
+    const prompt = composeStagePrompt({ stage: "clarifying", workspaceDir: tempDir(), skills, tail: TAIL });
+    assert.deepEqual(prompt.parts.map((one) => one.part), ["system", "platform_common", "platform_stage", "tail"]);
+  }
+});
+
+test("平台一级的文件缺了一份就抛错，说明缺的是哪一份", () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, SYSTEM_FILE), "系统提示", "utf-8");
+  writeFileSync(join(dir, COMMON_FILE), "共用部分", "utf-8");
+  assert.throws(() => composeStagePrompt({ stage: "reading", workspaceDir: dir, skills: [], tail: "", platformDir: dir }), /拼系统提示要用的文件不在：.*reading\.md/);
+  writeFileSync(join(dir, stageFile("reading")), "核读材料那一段\n\n", "utf-8");
+  assert.equal(composeStagePrompt({ stage: "reading", workspaceDir: dir, skills: [], tail: "", platformDir: dir }).text, "系统提示\n\n共用部分\n\n核读材料那一段");
+});
+
+test("pi 接在后面的那一截：去掉启动参数给的那一段与 skill 清单，留下工作目录与上下文文件", () => {
+  const skills = "<skills>\nThe following skills provide specialized instructions.\n\n<available_skills>\n  <skill>\n    <name>x</name>\n  </skill>\n</available_skills>\n</skills>";
+  const cwd = "<cwd>\n/tasks/TASK-1\n</cwd>";
+  // 实测的样子：原文、skill 清单、工作目录，各隔一个空行。
+  assert.equal(piTail(`原文\n\n${skills}\n\n${cwd}`, "原文"), cwd);
+  // 有上下文文件时它在 skill 清单前面或后面，都原样留下。
+  assert.equal(piTail(`原文\n\n<project_context>\n规矩\n</project_context>\n\n${skills}\n\n${cwd}`, "原文"), `<project_context>\n规矩\n</project_context>\n\n${cwd}`);
+  // 没有 skill 清单时。
+  assert.equal(piTail(`原文\n\n${cwd}`, "原文"), cwd);
+  // 当前的系统提示不是以启动参数给的那一段开头（别的扩展先改过）：只取工作目录；取不到就是空的。
+  assert.equal(piTail(`别的开头\n\n${skills}\n\n${cwd}`, "原文"), cwd);
+  assert.equal(piTail("别的开头", "原文"), "");
+  assert.equal(piTail(`原文\n\n${cwd}`, ""), cwd);
+});
+
+test("任务 skill 的正文去掉 frontmatter；每一部分不带文字的几样事实；每一部分都有给人看的名字", () => {
+  assert.equal(skillBody("---\nname: a\n---\n\n# 标题\n正文\n"), "# 标题\n正文\n");
+  assert.equal(skillBody("# 没有 frontmatter\n"), "# 没有 frontmatter\n");
+  const prompt = compose("reading");
+  const facts = prompt.parts.map(partFact);
+  assert.deepEqual(Object.keys(facts[0]), ["part", "from", "file", "bytes", "lines", "digest"]);
+  for (const [i, fact] of facts.entries()) {
+    assert.equal(fact.bytes, Buffer.byteLength(prompt.parts[i].text, "utf-8"));
+    assert.equal(fact.digest, digestOf(prompt.parts[i].text));
+    assert.match(fact.digest, /^[0-9a-f]{16}$/);
+    assert.ok(PART_NAMES[fact.part]);
+  }
+  assert.equal(facts[facts.length - 1].lines, 3);
+  assert.ok(PLATFORM_STAGES_DIR.endsWith(join("agent", "prompts", "stages")));
+});
+
+// ───────────── 不是每次都重读重拼 ─────────────
+
+/** 记次数的读文件动作：读了几份文件的内容、查了几次文件的属性。 */
+function countingIo(): PromptIo & { reads: string[]; stamps: number } {
+  const io = {
+    reads: [] as string[],
+    stamps: 0,
+    stamp(path: string) { io.stamps += 1; return NODE_IO.stamp(path); },
+    read(path: string) { io.reads.push(path); return NODE_IO.read(path); },
+  };
+  return io;
+}
+
+/** 一套放在临时目录里的平台一级文件，测试可以随意改。 */
+function platformCopy(): string {
+  const dir = tempDir();
+  writeFileSync(join(dir, SYSTEM_FILE), "系统提示", "utf-8");
+  writeFileSync(join(dir, COMMON_FILE), "共用部分", "utf-8");
+  for (const stage of STAGES) writeFileSync(join(dir, stageFile(stage)), `${STAGE_NAMES[stage]}那一段`, "utf-8");
+  return dir;
+}
+
+test("连续两次运行阶段不变：第二次沿用上一份，没有读任何文件的内容", () => {
+  const io = countingIo();
+  const cache = new StagePromptCache(io);
+  const input = { stage: "clarifying" as const, workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL };
+  const first = cache.get(input);
+  assert.equal(first.how, "recomposed");
+  // 第一次读了四份：系统提示、平台共用、任务类型共用、澄清那一段（这类任务在澄清阶段没有自己的一段）。
+  assert.equal(io.reads.length, 4);
+  io.reads.length = 0;
+  const second = cache.get({ ...input });
+  assert.equal(second.how, "reused");
+  assert.deepEqual(io.reads, []);
+  assert.equal(second.prompt, first.prompt);
+  assert.equal(second.prompt.text, composeStagePrompt(input).text);
+});
+
+test("阶段变了才重拼；移回原来的阶段也是重拼（只记着上一份）", () => {
+  const io = countingIo();
+  const cache = new StagePromptCache(io);
+  const at = (stage: (typeof STAGES)[number]) => cache.get({ stage, workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL });
+  assert.equal(at("clarifying").how, "recomposed");
+  assert.equal(at("clarifying").how, "reused");
+  io.reads.length = 0;
+  const moved = at("writing");
+  assert.equal(moved.how, "recomposed");
+  assert.equal(io.reads.length, 5);
+  assert.ok(moved.prompt.text.includes("# 现在这个阶段：写条目\n"));
+  assert.ok(!moved.prompt.text.includes("# 现在这个阶段：澄清\n"));
+  assert.equal(at("writing").how, "reused");
+  assert.equal(at("clarifying").how, "recomposed");
+});
+
+test("文件改了（修改时刻或大小变了）、任务目录里多了这个阶段的一段、pi 接的那一截变了，都重拼", () => {
+  const dir = platformCopy();
+  const task = tempDir();
+  const skillDir = join(task, ".pi", "skills", "some-type");
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), "任务类型共用", "utf-8");
+  const cache = new StagePromptCache();
+  const input = { stage: "reading" as const, workspaceDir: task, skills: [{ name: "some-type", filePath: join(skillDir, "SKILL.md") }], tail: TAIL, platformDir: dir };
+  assert.equal(cache.get(input).prompt.text, `系统提示\n\n共用部分\n\n任务类型共用\n\n核读材料那一段\n\n${TAIL}`);
+  assert.equal(cache.get(input).how, "reused");
+  // 改一句：大小变了。
+  writeFileSync(join(dir, stageFile("reading")), "核读材料那一段，改过", "utf-8");
+  const edited = cache.get(input);
+  assert.equal(edited.how, "recomposed");
+  assert.ok(edited.prompt.text.includes("核读材料那一段，改过"));
+  // 大小没变、修改时刻变了。
+  writeFileSync(join(dir, COMMON_FILE), "共用部份", "utf-8");
+  utimesSync(join(dir, COMMON_FILE), new Date(), new Date(Date.now() + 5000));
+  assert.equal(cache.get(input).how, "recomposed");
+  assert.equal(cache.get(input).how, "reused");
+  // 任务目录里多了这个阶段的一段。
+  mkdirSync(join(skillDir, "stages"));
+  writeFileSync(join(skillDir, "stages", stageFile("reading")), "这类任务在核读材料阶段", "utf-8");
+  const more = cache.get(input);
+  assert.equal(more.how, "recomposed");
+  assert.deepEqual(more.prompt.parts.map((one) => one.part), ["system", "platform_common", "task_common", "platform_stage", "task_stage", "tail"]);
+  // pi 接的那一截变了。
+  assert.equal(cache.get({ ...input, tail: "<cwd>\n/elsewhere\n</cwd>" }).how, "recomposed");
+});
+
+test("重拼出错时沿用上一份并带上原因；手里什么都没有时把错抛出来", () => {
+  const dir = platformCopy();
+  const cache = new StagePromptCache();
+  const input = (stage: (typeof STAGES)[number]) => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir });
+  const good = cache.get(input("reading"));
+  rmSync(join(dir, stageFile("clarifying")));
+  const kept = cache.get(input("clarifying"));
+  assert.equal(kept.how, "kept_after_error");
+  assert.equal(kept.prompt, good.prompt);
+  assert.match(kept.error!, /拼系统提示要用的文件不在：.*clarifying\.md/);
+  // 文件补回来之后照常重拼。
+  writeFileSync(join(dir, stageFile("clarifying")), "澄清那一段", "utf-8");
+  assert.equal(cache.get(input("clarifying")).how, "recomposed");
+  assert.throws(() => new StagePromptCache().get({ ...input("reading"), platformDir: tempDir() }), /拼系统提示要用的文件不在/);
+  assert.deepEqual(Object.keys(HOW_NAMES).sort(), ["kept_after_error", "recomposed", "reused"]);
+});
