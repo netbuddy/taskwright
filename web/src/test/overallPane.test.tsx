@@ -112,12 +112,17 @@ describe("提纲", () => {
     expect(document.querySelector(".itab.on")!.textContent).toBe("总体分析11");
   });
 
-  it("已废弃的页在提纲里划掉，不进总计", () => {
+  it("已废弃的页在提纲里划掉，不进总计；行末写「已废弃」，不再写它定了几条、挂着几个问题", () => {
     const t = overallTask();
     t.items.find((i) => i.item_id === "OA-011")!.fields.状态 = "已废弃";
+    t.items.find((i) => i.item_id === "OA-003")!.fields.状态 = "已废弃";      // 这一页原来写「3 定 · 1 问」
     render(<Panel t={t} />);
     expect(row("OA-011")).toHaveClass("gone");
-    expect(screen.getByTestId("outline-totals").textContent).toMatch(/^10 个主题/);
+    expect(row("OA-003")).toHaveClass("gone");
+    expect(screen.getByTestId("outline-count-OA-003")).toHaveTextContent(/^已废弃$/);
+    expect(screen.getByTestId("outline-count-OA-011")).toHaveTextContent(/^已废弃$/);
+    expect(screen.getByTestId("outline-count-OA-002")).toHaveTextContent("5 定");
+    expect(screen.getByTestId("outline-totals").textContent).toMatch(/^9 个主题/);
   });
 
   it("一页主题都没有时写一句话", () => {

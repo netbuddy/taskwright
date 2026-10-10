@@ -2,7 +2,7 @@
 // 哪几处是助手补的、提到它的地方与依据它的条目、复述要发的话、复述卡片怎样认。数据是图书馆借阅的夹具。
 import { describe, expect, it } from "vitest";
 import {
-  STORY_KEYS, confirmAction, countsText, dependents, factsKey, exampleParts, firstParagraph, glossary, isStoryOptions, markSupplemented, mentionRows, openQuestions, outline, outlineOrder,
+  STORY_KEYS, confirmAction, countsText, sideLine, dependents, factsKey, exampleParts, firstParagraph, glossary, isStoryOptions, markSupplemented, mentionRows, openQuestions, outline, outlineOrder,
   overallDef, pagesOf, pendingCount, questionReason, retellText, settledCount, sourcesFor, splitByWord, storyPlace, supplemented, topicState, totals, trail, withBelow,
   viewOnOpen, type OutlineNode,
 } from "../model/overall";
@@ -73,6 +73,18 @@ describe("总体分析：提纲", () => {
     change(task, "OA-005", (p) => { p.fields.别名 = []; });
     task.items = task.items.filter((i) => i.item_id !== "TBD-003");
     expect(text("OA-005")).toBe("待核实");
+  });
+
+  it("已废弃的页只写「已废弃」，不数已定与待问；右侧栏那行小字也只写「已废弃」，不接「待核实」", () => {
+    const task = overallTask();
+    const page = itemOf(task, "OA-003");
+    expect([countsText(task, page), sideLine(task, page)]).toEqual(["3 定 · 1 问", "3 定 · 1 问 · 待核实"]);
+    change(task, "OA-003", (p) => { p.fields.状态 = "已废弃"; });
+    expect([countsText(task, itemOf(task, "OA-003")), sideLine(task, itemOf(task, "OA-003"))]).toEqual(["已废弃", "已废弃"]);
+    // 没有计数的页废弃之后照旧写「已废弃」；别的页不受影响。
+    change(task, "OA-001", (p) => { p.fields.状态 = "已废弃"; });
+    expect(countsText(task, itemOf(task, "OA-001"))).toBe("已废弃");
+    expect(countsText(task, itemOf(task, "OA-002"))).toBe("5 定");
   });
 
   it("底部总计：11 个主题、14 条已定、3 条待问、2 处待核实；已废弃的页不算", () => {
@@ -278,7 +290,11 @@ describe("总体分析：复述", () => {
 
   it("复述卡片：选项里有写死的键就是；没有键的，第一个选项以「这段对」开头也算；别的请选择卡片不算", () => {
     expect(STORY_KEYS).toEqual(["story_ok", "story_fix", "story_again"]);
-    expect(isStoryOptions([{ key: "story_ok", text: "这段对，记下" }, { key: "story_fix", text: "有一处不对" }, { key: "story_again", text: "换一个人物再讲" }])).toBe(true);
+    expect(isStoryOptions([{ key: "story_ok", text: "采纳为例子" }, { key: "story_fix", text: "有误，需修改" }, { key: "story_again", text: "换一个例子重述" }])).toBe(true);
+    // 早先的回复：选项还是原来的文字、没有写死的键，靠第一个选项的文字认。
+    expect(isStoryOptions([{ key: "a", text: "这段对，记下" }, { key: "b", text: "有一处不对" }, { key: "c", text: "换一个人物再讲" }])).toBe(true);
+    // 现在的文字而没有写死的键：认不出，所以助手的说明要求键照写。
+    expect(isStoryOptions([{ key: "a", text: "采纳为例子" }, { key: "b", text: "有误，需修改" }])).toBe(false);
     expect(isStoryOptions([{ key: "a", text: "这段对，记下" }, { key: "b", text: "有一处不对" }])).toBe(true);
     expect(isStoryOptions([{ key: "a", text: "闭馆日不算，顺延" }, { key: "b", text: "这段对，记下" }])).toBe(false);
     expect(isStoryOptions([{ key: "x", text: "别的话" }, { key: "story_again", text: "再讲一遍" }])).toBe(true);

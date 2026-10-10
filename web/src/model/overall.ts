@@ -193,14 +193,18 @@ export const STATE_TEXT: Record<TopicState, string> = {
   deprecated: "已废弃", pending: "有助手补的，待核实", open: "还有没定的", unsorted: "记下了，还没归类", settled: "说清了",
 };
 
-/** 提纲一行末尾的计数：「3 定 · 1 问」，没有的那一半不写；两样都没有时写状态（待核实、未归类、已废弃），说清了的不写。 */
+/**
+ * 提纲一行末尾的计数：「3 定 · 1 问」，没有的那一半不写；两样都没有时写状态（待核实、未归类），说清了的不写。
+ * 已废弃的页只写「已废弃」，不数：这一页不再用了，它定了几条、挂着几个问题不必再提示。
+ */
 export function countsText(task: Task, item: Item): string {
+  if (isDeprecated(item)) return STATE_TEXT.deprecated;
   const settled = settledCount(item);
   const open = openQuestions(task, item).length;
   const parts = [settled > 0 ? `${settled} 定` : "", open > 0 ? `${open} 问` : ""].filter(Boolean);
   if (parts.length > 0) return parts.join(" · ");
   const state = topicState(task, item);
-  return state === "pending" ? "待核实" : state === "unsorted" ? "未归类" : state === "deprecated" ? "已废弃" : "";
+  return state === "pending" ? "待核实" : state === "unsorted" ? "未归类" : "";
 }
 
 export interface OutlineNode {
@@ -304,8 +308,9 @@ export function basisNote(task: Task, item: Item): { text: string; title: string
   return { text: "依据的主题待核实", title: `它依据的主题 ${name(basis.item_id)}里有助手补的内容还没有确认；到总体分析里确认那一页，这里就消掉。` };
 }
 
-/** 右侧栏窄提纲里一页下面那行小字：「3 定 · 1 问」，待核实的后面加「待核实」；什么都没有时写「说清了」。 */
+/** 右侧栏窄提纲里一页下面那行小字：「3 定 · 1 问」，待核实的后面加「待核实」；什么都没有时写「说清了」；已废弃的页只写「已废弃」。 */
 export function sideLine(task: Task, item: Item): string {
+  if (isDeprecated(item)) return STATE_TEXT.deprecated;
   const counts = countsText(task, item);
   const pending = isPending(item) && counts !== "待核实" ? "待核实" : "";
   return [counts, pending].filter(Boolean).join(" · ") || STATE_TEXT.settled;
@@ -365,7 +370,10 @@ export function reviseDependentsText(item: Item): string {
   return `请照 ${item.item_id}「${titleOf(item)}」现在的内容，把依据它写的条目改过来：`;
 }
 
-/** 助手复述时那张请选择卡片的三个选项的键；早先没有写死键的回复，按第一个选项的文字以「这段对」开头来认。 */
+/**
+ * 助手复述时那张请选择卡片的三个选项的键（文字是「采纳为例子」「有误，需修改」「换一个例子重述」，由助手照它的说明写）。
+ * 早先没有写死键的回复，选项还是原来的文字，按第一个选项以「这段对」开头来认。
+ */
 export const STORY_KEYS = ["story_ok", "story_fix", "story_again"] as const;
 
 /**

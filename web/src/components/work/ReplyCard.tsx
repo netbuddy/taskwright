@@ -3,11 +3,12 @@
 // 按钮走哪里，判据是：结果要写进库的走 actions，需要执行者再出力的走 messages。
 //   confirm 「这几条都看过了」→ actions（mark_viewed，条目与修订号取自卡片，notify_executor 为真），点一次把点名条目标为已读；「不对」→ messages
 //   choose  某个选项 → messages；suggest「采纳」「换一个」→ messages；propose「就这样做」「不要」→ messages
-//   ask     没有按钮，只有输入框
+//   ask     挂在条目上：能标为先不管的条目各一个「先不管」→ actions（keep_pending），「我不知道，你按常识补」→ messages；
+//           没挂条目（scope 为 general，或者没有写 items）：「我不知道，你按常识补」「先放着」→ messages
 // 发给执行者的话只用第 7 节的固定模板。卡片里始终有「或者直接告诉我你的想法」的输入框。
 // 评审没有通过的条目也可以标为看过，不拦，点的时候提示一句（第 6 节规则 4）。
 // 样式与结构照设计原型的 .act 卡片：标题小字、「标签＋值」几行、深色主按钮加浅色次按钮、卡片内输入框；
-// 关联条目写成一行「条目编号小标签＋标题＋修订 N」，请确认卡片再写看过与否：现在的修订看过写「修订 9（已读）」，
+// 关联条目写成一行「条目编号小标签＋标题＋修订 N」，请过目卡片（confirm）再写看过与否：现在的修订看过写「修订 9（已读）」，
 // 从没看过写「修订 9（未读）」，看过更早的修订写「修订 9（已读 · 你看过修订 4，之后又改过）」——已读是条目级、单向的。
 // 完成前还有未读时（除了未读与这一版还没有工具的评审，完成条件都已满足），还没结掉的卡片下面提示「还有 N 条未读」，点它条目区筛出未读。
 // 依据写成「依据：…」小标签。
@@ -37,11 +38,19 @@ export const TEMPLATES = {
   proposeNo: "不要这样做。",
   /** 提问卡片「我不知道，你按常识补」。 */
   dontKnow: (itemIds: string) => `关于 ${itemIds}，我不知道，你按常识补上并标明是你补的。`,
+  /** 没挂条目的提问卡片「我不知道，你按常识补」：没有条目可点名，说的是这一问。 */
+  dontKnowGeneral: "这个我不知道，你按常识补上并标明是你补的。",
+  /** 没挂条目的提问卡片「先放着」。 */
+  setAside: "这个问题先放着，接着往下做。",
 };
 // 「先不管这条」发给执行者的那句「我先不管 {条目编号}，请接着往下做。」由后端在直接操作成功后发，
 // 见 backend/src/executor.ts 的 keepPendingNotice；前端只发直接操作。
 
-const KIND_LABEL: Record<ActKind, string> = { ask: "提问", confirm: "请确认", suggest: "给建议值", choose: "请选择", propose: "提议" };
+/**
+ * 卡片顶上那行小字。confirm 这种卡片请用户看几个条目现在的内容，叫「请过目」，不叫「请确认」：「确认」容易被读成征求同意，
+ * 而征求同意的是提议。助手一侧的说明、回复工具的返回里仍把这种行为写作「请确认」，指的是同一种。
+ */
+const KIND_LABEL: Record<ActKind, string> = { ask: "提问", confirm: "请过目", suggest: "给建议值", choose: "请选择", propose: "提议" };
 /** 卡片正文那一行左边的小标签，照原型的写法。 */
 const TEXT_LABEL: Record<ActKind, string> = { ask: "问题", confirm: "", suggest: "要定的事", choose: "要定的事", propose: "我的提议" };
 
@@ -91,8 +100,9 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   };
   const refs = act.items ?? [];
   const contexts = refs.map((r) => itemContext(task, r.item_id));
-  // 提问挂在条目上时才有两个固定按钮；scope 为 general 的提问、没有挂条目的提问只有输入框。
+  // 提问挂在条目上时是「先不管」与「我不知道，你按常识补」；scope 为 general 的提问、没有挂条目的提问是「我不知道，你按常识补」与「先放着」。
   const askOnItems = act.kind === "ask" && act.scope !== "general" && refs.length > 0;
+  const askGeneral = act.kind === "ask" && !askOnItems;
   const pendingRefs = askOnItems ? refs.filter((r, i) => contexts[i].pending) : [];
   const keepPending = (ref: { item_id: string; revision_no?: number }) => {
     setChosen(`先不管 ${ref.item_id}`);
@@ -118,7 +128,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
     setDraft("");
     restoreOnFailure(handlers.onMessage(original.trim()), original, () => latestDraft.current, setDraft);
   };
-  /** 条目行末尾的修订说明：请确认卡片写上次确认的修订，其余卡片只写修订号。 */
+  /** 条目行末尾的修订说明：请过目卡片写上次看过的修订，其余卡片只写修订号。 */
   const revisionNote = (itemId: string, revision: number) => {
     if (act.kind !== "confirm") return `修订 ${revision}`;
     const item = task?.items.find((i) => i.item_id === itemId);
@@ -143,12 +153,13 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   const unread = task ? unreadItems(task) : [];
   const showUnread = !done && !disabled && unread.length > 0 && onlyUnreadLeft(task);
 
-  // 助手复述的卡片（请选择，三个选项是「这段对，记下」「有一处不对」「换一个人物再讲」）：故事画成故事的样子，卡片本身不要底色。
+  // 助手复述的卡片（请选择，三个选项是「采纳为例子」「有误，需修改」「换一个例子重述」，键是 story_ok、story_fix、story_again）：
+  // 故事画成故事的样子，卡片本身不要底色。
   const story = storyPlace(act, replyText);
 
   return (
     <div className={`act${story ? " retell" : ""}`} data-kind={act.kind} data-testid={`act-${act.kind}`} data-story={story ?? undefined}>
-      <div className="tt">{story ? "复述 · 你看哪里不对" : KIND_LABEL[act.kind] ?? act.kind}</div>
+      <div className="tt">{story ? "复述 · 请核对" : KIND_LABEL[act.kind] ?? act.kind}</div>
       {contexts.length > 0 && (
         <div data-testid="card-context">
           {contexts.map((c, i) => (
@@ -246,6 +257,19 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
               <button type="button" className="btn sm" disabled={off} title={offTitle} data-testid="card-dont-know"
                 onClick={() => say(TEMPLATES.dontKnow(refs.map((r) => r.item_id).join("、")), "不知道", "我不知道，你按常识补")}>
                 我不知道，你按常识补
+              </button>
+            </div>
+          )}
+
+          {askGeneral && (
+            <div className="actions">
+              <button type="button" className="btn sm" disabled={off} title={offTitle} data-testid="card-dont-know-general"
+                onClick={() => say(TEMPLATES.dontKnowGeneral, "不知道", "我不知道，你按常识补")}>
+                我不知道，你按常识补
+              </button>
+              <button type="button" className="btn sm" disabled={off} title={offTitle} data-testid="card-set-aside"
+                onClick={() => say(TEMPLATES.setAside, "先放着")}>
+                先放着
               </button>
             </div>
           )}

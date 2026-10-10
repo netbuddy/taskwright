@@ -15,7 +15,7 @@ const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
 );
 const noop = () => {};
-const OPTIONS = [{ key: "story_ok", text: "这段对，记下" }, { key: "story_fix", text: "有一处不对" }, { key: "story_again", text: "换一个人物再讲" }];
+const OPTIONS = [{ key: "story_ok", text: "采纳为例子" }, { key: "story_fix", text: "有误，需修改" }, { key: "story_again", text: "换一个例子重述" }];
 const STORY = "周六上午，小王在家里预约了《算法导论》。周一馆员把书放到预留架，系统通知小王。\n书为他保留 3 天，周日闭馆那天不算。周二下午小王来取，办了借阅。";
 
 function card(act: Act) {
@@ -30,24 +30,25 @@ const reply = (over: Record<string, unknown>) => render(<Wrap><Conversation
   hasEarlier={false} onLoadEarlier={noop} revisionOf={() => null} attachments={[]} /></Wrap>);
 
 describe("复述的卡片", () => {
-  it("故事写在卡片正文里：一段一段画成故事，卡片不铺底色，顶上写「复述 · 你看哪里不对」，下面是三个选项", () => {
+  it("故事写在卡片正文里：一段一段画成故事，卡片不铺底色，顶上写「复述 · 请核对」，下面是三个选项", () => {
     card({ kind: "choose", text: STORY, options: OPTIONS });
     const act = screen.getByTestId("act-choose");
     expect(act).toHaveClass("retell");
-    expect(act.querySelector(".tt")).toHaveTextContent("复述 · 你看哪里不对");
+    expect(act.querySelector(".tt")).toHaveTextContent("复述 · 请核对");
     expect([...screen.getByTestId("card-story").querySelectorAll("p")].map((p) => p.textContent)).toEqual(STORY.split("\n"));
     expect(act.querySelector(".fk")).toBeNull();
-    expect(OPTIONS.map((o) => screen.getByTestId(`card-option-${o.key}`).textContent)).toEqual(["这段对，记下", "有一处不对", "换一个人物再讲"]);
+    expect(OPTIONS.map((o) => screen.getByTestId(`card-option-${o.key}`).textContent)).toEqual(["采纳为例子", "有误，需修改", "换一个例子重述"]);
   });
 
   it("点一个选项照现有的做法：替用户发一句与选项相同的话", () => {
     const handlers = card({ kind: "choose", text: STORY, options: OPTIONS });
     fireEvent.click(screen.getByTestId("card-option-story_ok"));
     expect(handlers.onMessage).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(handlers.onMessage.mock.calls[0])).toContain("这段对，记下");
+    // 发出去的是「我选：采纳为例子」，助手把这段故事记成例子时摘录的就是这几个字。
+    expect(handlers.onMessage.mock.calls[0]).toEqual(["我选：采纳为例子", { reply_message_id: "msg-1", kind: "choose", choice: "story_ok" }]);
   });
 
-  it("没有写死的键、第一个选项以「这段对」开头的，也认作复述", () => {
+  it("早先的回复没有写死的键、选项还是原来的文字（第一个以「这段对」开头）的，也认作复述", () => {
     card({ kind: "choose", text: STORY, options: [{ key: "a", text: "这段对，记下" }, { key: "b", text: "有一处不对" }] });
     expect(screen.getByTestId("card-story")).toBeInTheDocument();
   });

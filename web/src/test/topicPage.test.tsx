@@ -313,6 +313,8 @@ describe("底部的动作与复述", () => {
   it("「复述一遍」把一句固定的话发给助手：讲这一页与它下面的主题", () => {
     const send = vi.fn();
     render(<Panel t={overallTask()} spies={{ send }} />);
+    // 悬停提示说清点了之后会怎样：助手讲成一段故事，请用户核对。
+    expect(screen.getByTestId("topic-retell")).toHaveAttribute("title", "请助手把对这一页及其下面主题的理解讲成一段故事，请核对这段复述");
     fireEvent.click(screen.getByTestId("topic-retell"));
     expect(send).toHaveBeenCalledWith("请把现在对「预约取书」及其下面主题的理解讲成一段故事");
   });
@@ -322,6 +324,7 @@ describe("底部的动作与复述", () => {
     render(<Panel t={overallTask()} first={null} spies={{ send }} />);
     fireEvent.click(screen.getByTestId("outline-retell"));
     expect(send).toHaveBeenLastCalledWith("请把现在对总体分析里各个主题的理解讲成一段故事");
+    expect(screen.getByTestId("intro-retell")).toHaveAttribute("title", "请助手把对各个主题的理解讲成一段故事，请核对这段复述");
     fireEvent.click(screen.getByTestId("intro-retell"));
     expect(send).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByTestId("outline-OA-006"));
