@@ -28,3 +28,6 @@
 
 /* 助手提议进入下一个阶段的卡片：点名的条目前面那一句「请先看：」 */
 .app .act .ctxh { color: var(--text3); font-size: 0.881rem; margin-bottom: .1rem; }
+
+/* 总体分析还没有一页主题时的两个开头 */
+.app .oa-start-acts { display: flex; gap: .6rem; flex-wrap: wrap; }

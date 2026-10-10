@@ -70,3 +70,16 @@ export function stageMoveLine(move: StageMove): string {
   }
   return `界面操作：用户把任务从${STAGE_NAMES[move.from] ?? move.from}移到${to}。`;
 }
+
+/**
+ * 总体分析还没有一页主题时的两个开头：按钮上的字、先把任务移到哪个阶段（界面操作 move_stage 的 stage 写阶段的名字）、
+ * 再替用户发给助手的那句固定的话。
+ */
+export const STAGE_STARTS = {
+  reading: { key: "reading", label: "通读材料起草", stage: STAGE_NAMES.reading, text: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。" },
+  clarifying: { key: "clarifying", label: "逐项澄清", stage: STAGE_NAMES.clarifying, text: "请逐项澄清：一次只问一件事，先给出候选再问。" },
+} as const;
+export type StageStart = (typeof STAGE_STARTS)[keyof typeof STAGE_STARTS];
+
+/** 任务还没有材料时「通读材料起草」不可用的原因。 */
+export const NO_MATERIALS_TEXT = "这个任务还没有材料，先在右侧栏上传材料。";
