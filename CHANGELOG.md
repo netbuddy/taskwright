@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Replies
 
-- The reply tool's parameter notes say which kind of request to use: a choice for a yes-or-no question, a proposal for asking consent or what to do next, and a question only for something the user has to say in their own words. A reply of the kind `ask` whose text ends with 吗, 是否, 能不能, 要不要, 可以吗 or 对吗, or begins with 是否, is refused with that advice. The rule looks at the wording only.
+- The reply tool's parameter notes say which kind of request to use: a choice for a yes-or-no question, a proposal for asking consent or what to do next, and a question only for something the user has to say in their own words. A reply of the kind `ask` whose text contains 是否, 能不能, 要不要, 可不可以, 对不对 or 行不行 anywhere, or ends with 吗, is refused with that advice; a question that really is open goes through once it is reworded without these words. The rule looks at the wording only.
 - When a tool refuses because the assistant has not written its understanding of the user's message yet, the refusal now quotes that message. An understanding written about the system's reminder to use the reply tool, instead of the user's words, is no longer accepted.
 
 ### Overall analysis
