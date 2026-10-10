@@ -17,6 +17,7 @@ import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
+import { stageMoveLine } from "../../model/stage";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -296,11 +297,17 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
     case "user_message": {
       const m = message as UserMessage;
       const from = m.origin === "card_choice" ? "点卡片发出的" : m.origin === "ui_request" ? "界面操作之后发给助手的" : null;
-      return <div className="m user">{m.text}{from && <span className="from-ui">{from}</span>}</div>;
+      const bubble = <div className="m user">{m.text}{from && <span className="from-ui">{from}</span>}</div>;
+      // 这次点击替用户记了一次阶段移动：在那句话下面写一行，与界面操作记号同款。
+      if (!m.stage_move) return bubble;
+      return <>{bubble}<div className="selfnote" data-testid="stage-move-user">{stageMoveLine(m.stage_move)}</div></>;
     }
     case "assistant_reply": {
       const m = message as AssistantReply;
       return (
+        <>
+        {/* 助手在这条回复里把任务退回了前面的阶段：在回复上面写一行，与助手的过程行同款 */}
+        {m.stage_move && <div className="proc"><div className="pline" data-testid="stage-move-assistant"><span className="ptxt">{stageMoveLine(m.stage_move)}</span></div></div>}
         <div className="m ai" data-testid="assistant-reply">
           {m.degraded ? (
             <>
@@ -340,6 +347,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </div>
           )}
         </div>
+        </>
       );
     }
     case "ui_action_noted": {

@@ -3,7 +3,7 @@
 // 阶段的名字、次序与卡片上「进入下一段」的选项键取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
 import { ENTER_OPTIONS, STAGES, STAGE_NAMES } from "../../../agent/src/lib/stage";
-import type { Item, StageKey, StageLamp, StageView } from "../api/types";
+import type { Item, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
 export { STAGES, STAGE_NAMES };
 
@@ -57,3 +57,16 @@ export function lampTarget(lamp: StageLamp, items: readonly Item[]): { kind: "it
 export const ENTER_KEYS: Record<string, StageKey> = Object.fromEntries(
   (Object.keys(ENTER_OPTIONS) as (keyof typeof ENTER_OPTIONS)[]).map((stage) => [ENTER_OPTIONS[stage].key, stage]),
 );
+
+/**
+ * 对话区里说一次阶段移动的那一行。助手只会把任务退回前面的阶段，写「助手把任务退回澄清：理由」；
+ * 用户在卡片上点了进入下一段，写「界面操作：用户把任务从核读材料移到澄清。」，与别的界面操作记号是同一种说法。
+ */
+export function stageMoveLine(move: StageMove): string {
+  const to = STAGE_NAMES[move.to] ?? move.to;
+  if (move.actor === "executor") {
+    const reason = (move.reason ?? "").trim();
+    return reason ? `助手把任务退回${to}：${reason}` : `助手把任务退回${to}。`;
+  }
+  return `界面操作：用户把任务从${STAGE_NAMES[move.from] ?? move.from}移到${to}。`;
+}
