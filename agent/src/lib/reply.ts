@@ -239,6 +239,23 @@ function checkInform(one: unknown, index: number, facts: ReplyFacts, errors: str
 }
 
 /** 卡片上的话只是把刚说过的话再说一遍时的拒绝理由。 */
+/** 提问写成了是非题或征求同意的话时「怎么办」那一句。 */
+export const CLOSED_QUESTION_GUIDANCE = "是非题用请选择，征求同意用提议，把答案写成按钮；提问只给开放问题";
+
+/** 是非题或征求同意的话常见的收尾。 */
+const CLOSED_ENDINGS = ["吗", "是否", "能不能", "要不要", "可以吗", "对吗"];
+
+/**
+ * 一句话是不是是非题或者征求同意的话。只看字面：去掉首尾空白与结尾的标点（问号、句号、叹号、右引号、右括号）之后，
+ * 以「吗」「是否」「能不能」「要不要」「可以吗」「对吗」收尾，或者以「是否」开头。
+ * 字面规则有误伤：「罚款的上限是多少，你那边有规定吗」问的是要用户说出内容的事，也会被认成是非题，改个问法或者改成请选择就过；
+ * 也有漏掉的：这几个词不在句尾的（「读者能不能续借」）与「A 还是 B」这种选择问句认不出。
+ */
+export function closedQuestion(text: string): boolean {
+  const bare = text.trim().replace(/[？?。.！!」』”"'’）)\s]+$/u, "");
+  return bare.startsWith("是否") || CLOSED_ENDINGS.some((ending) => bare.endsWith(ending));
+}
+
 export const ECHO_TEXT =
   "卡片里写的是你刚说过的话，不是要用户回应的东西；不需要用户回应就把 act 写 null，要回应就把要用户回答的那句话写进 act";
 
@@ -287,6 +304,11 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
     }
   }
   if (isBlank(raw.text)) errors.push(`act.text 是空的；${name}要写明问的、请确认的、建议的或提议的是什么`);
+  // 提问只给开放问题：写成了是非题或者征求同意的话就拒绝（字面规则，见 closedQuestion）。
+  if (k === "ask" && typeof raw.text === "string" && closedQuestion(raw.text)) {
+    const said = raw.text.trim();
+    errors.push(withGuide(`提问（ask）写的是一句是非题或者征求同意的话：「${[...said].length > 40 ? `${[...said].slice(0, 40).join("")}…` : said}」`, CLOSED_QUESTION_GUIDANCE));
+  }
 
   // scope 只有一个取值；写了 general 就表示与条目无关，不要再点名条目。
   const general = raw.scope === SCOPE_GENERAL;
