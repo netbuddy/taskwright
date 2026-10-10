@@ -3,6 +3,10 @@
 它只回应 GET 请求，没有任何写入的路径。数据每次都从磁盘重读一遍，不过会看一眼文件的修改时刻，
 没变就用上一次读好的，免得每点一下都把几十个文件再扫一遍。命令行给的是上一级目录时，每次读取前重新把它展开成
 下面的各个归档目录（只列目录，不读文件），所以观测台启动之后新建的任务也看得到，不用重启。
+
+给了模拟器的演练根目录（--sim-root）时，它下面每一遍演练（sim-001、sim-002……）的归档与任务目录也收进来：一遍演练的归档在
+`sim-<序号>/backend/<任务目录>/pi-events`，任务目录在 `sim-<序号>/tasks/<任务目录>`。同样每次读取前重新展开，评测跑到一半
+新出的那一遍也看得到。模拟用户自己的归档（`sim-<序号>/user-agent`）不收，免得会话列表里混进模拟用户的会话。
 """
 
 from __future__ import annotations
@@ -36,6 +40,14 @@ def expand_archive_dirs(given: list[Path]) -> list[Path]:
     return found
 
 
+def expand_sim_root(sim_root: Path | None) -> tuple[list[Path], list[Path]]:
+    """演练根目录下每一遍演练的两处：（各遍的 backend 目录，各遍的 tasks 目录），按演练的名字排。没有给时两个都是空的。"""
+    if sim_root is None or not Path(sim_root).is_dir():
+        return [], []
+    sims = sorted(p for p in Path(sim_root).iterdir() if p.is_dir() and p.name.startswith("sim-"))
+    return [s / "backend" for s in sims if (s / "backend").is_dir()], [s / "tasks" for s in sims if (s / "tasks").is_dir()]
+
+
 def directory_signature(*directories: Path) -> tuple:
     """给几个目录算一个「有没有变过」的指纹：文件路径、大小与修改时刻。"""
     marks = []
@@ -56,11 +68,12 @@ def directory_signature(*directories: Path) -> tuple:
 class IndexCache:
     """读一次留着用，文件变了、或者展开出来的归档目录变了（新建了任务）再读。"""
 
-    def __init__(self, given_dirs: list[Path], workspaces_dir: Path,
-                 langfuse_base: str, langfuse_project: str):
+    def __init__(self, given_dirs: list[Path], workspaces_dir: Path | None,
+                 langfuse_base: str, langfuse_project: str, sim_root: Path | None = None):
         # 命令行给的目录，不是展开后的归档目录：每次读取前重新展开。
         self.given_dirs = [Path(d) for d in given_dirs]
-        self.workspaces_dir = Path(workspaces_dir)
+        self.workspaces_dir = Path(workspaces_dir) if workspaces_dir is not None else None
+        self.sim_root = Path(sim_root) if sim_root is not None else None
         # 链接对象只建一次：它内存里那份 Langfuse 读取结果的缓存，不该随数据重读而丢。
         self.links = LangfuseLinks(langfuse_base, langfuse_project)
         self._lock = threading.Lock()
@@ -68,12 +81,17 @@ class IndexCache:
         self._index: Index | None = None
 
     def get(self) -> Index:
+        sim_backends, sim_tasks = expand_sim_root(self.sim_root)
+        # 演练的 backend 目录下还没有归档时不收：它不是归档目录，照「给的目录本身」收进去会多出一个读不出东西的归档目录。
         archive_dirs = expand_archive_dirs(self.given_dirs)
+        archive_dirs += [d for d in expand_archive_dirs(sim_backends) if (d / "pi-events").is_dir() and d not in archive_dirs]
+        workspace_dirs = ([self.workspaces_dir] if self.workspaces_dir is not None else []) + sim_tasks
         # 展开结果本身也放进指纹：新建的任务目录还没有文件时，也算变了。
-        signature = (tuple(str(d) for d in archive_dirs), directory_signature(*archive_dirs, self.workspaces_dir))
+        signature = (tuple(str(d) for d in archive_dirs), tuple(str(d) for d in workspace_dirs),
+                     directory_signature(*archive_dirs, *workspace_dirs))
         with self._lock:
             if self._index is None or signature != self._signature:
-                self._index = Index(archive_dirs, self.workspaces_dir, links=self.links)
+                self._index = Index(archive_dirs, workspace_dirs, links=self.links)
                 self._signature = signature
             return self._index
 
@@ -175,15 +193,18 @@ def make_handler(cache: IndexCache):
     return Handler
 
 
-def serve(given_dirs: list[Path], workspaces_dir: Path, port: int, host: str,
-          langfuse_base: str, langfuse_project: str) -> None:
-    """given_dirs 是命令行给的目录（归档目录，或者它们的上一级目录），每次读取前重新展开。"""
-    cache = IndexCache(given_dirs, workspaces_dir, langfuse_base, langfuse_project)
+def serve(given_dirs: list[Path], workspaces_dir: Path | None, port: int, host: str,
+          langfuse_base: str, langfuse_project: str, sim_root: Path | None = None) -> None:
+    """given_dirs 是命令行给的目录（归档目录，或者它们的上一级目录），每次读取前重新展开。sim_root 是模拟器的演练根目录，可以不给。"""
+    cache = IndexCache(given_dirs, workspaces_dir, langfuse_base, langfuse_project, sim_root)
     cache.get()                                   # 先读一遍，启动时就能暴露路径写错之类的问题
     httpd = ThreadingHTTPServer((host, port), make_handler(cache))
     print(f"观测台已经起来了，用浏览器打开 http://127.0.0.1:{port}/ 就能看。")
-    print(f"  归档目录是 {'、'.join(str(d) for d in given_dirs)}（上一级目录下新建的任务随时收进来）")
-    print(f"  任务目录所在目录是 {workspaces_dir}")
+    if given_dirs:
+        print(f"  归档目录是 {'、'.join(str(d) for d in given_dirs)}（上一级目录下新建的任务随时收进来）")
+        print(f"  任务目录所在目录是 {workspaces_dir}")
+    if sim_root is not None:
+        print(f"  演练根目录是 {sim_root}（它下面每一遍演练的归档与任务随时收进来）")
     print("  按 Ctrl+C 停掉它。")
     try:
         httpd.serve_forever()

@@ -38,21 +38,24 @@ def task_key(workspace_name: str, task_id: str) -> str:
 class Index:
     """一次读取：把归档目录与任务目录都扫一遍，建好互相对照要用的几张表。"""
 
-    def __init__(self, archive_dir: Path | list[Path], workspaces_dir: Path,
+    def __init__(self, archive_dir: Path | list[Path], workspaces_dir: Path | list[Path],
                  langfuse_base: str = "", langfuse_project: str = "",
                  links: LangfuseLinks | None = None):
         # 归档目录可以给一个，也可以给好几个（例如同一台机器上几次试跑的归档一起看），会话按开始时刻合在一起排。
         dirs = archive_dir if isinstance(archive_dir, (list, tuple)) else [archive_dir]
         self.archive_dirs = [Path(d) for d in dirs]
-        self.archive_dir = self.archive_dirs[0]
-        self.workspaces_dir = Path(workspaces_dir)
+        self.archive_dir = self.archive_dirs[0] if self.archive_dirs else None
+        # 任务目录所在目录也可以给好几个（模拟器的演练根目录下每一遍演练各有一个），逐个扫完合在一起。
+        many = workspaces_dir if isinstance(workspaces_dir, (list, tuple)) else [workspaces_dir]
+        self.workspaces_dirs = [Path(d) for d in many]
+        self.workspaces_dir = self.workspaces_dirs[0] if self.workspaces_dirs else None
         # 链接对象由服务层建一次传进来，好让它内存里那份缓存不随本对象重建而丢。
         self.links = links or LangfuseLinks(langfuse_base, langfuse_project)
         self.tool_names = load_tool_names()
 
         self.sessions = sorted((s for d in self.archive_dirs for s in runs.build_sessions(d)),
                                key=lambda s: (s["开始时刻"] or 0.0))
-        self.workspaces = workspaces_module.scan_workspaces(self.workspaces_dir)
+        self.workspaces = [w for d in self.workspaces_dirs for w in workspaces_module.scan_workspaces(d)]
         self.workspace_names = {w["任务目录"] for w in self.workspaces}
         self.events_by_call = workspaces_module.index_by_call_id(self.workspaces)
         self.model_calls_by_call = workspaces_module.model_calls_by_tool_call(self.workspaces)
@@ -333,7 +336,7 @@ class Index:
         real = [s for s in self.sessions if not s["启动失败"]]
         return {
             "归档目录": self.archive_dirs_text(),
-            "任务目录所在目录": str(self.workspaces_dir),
+            "任务目录所在目录": "、".join(str(d) for d in self.workspaces_dirs),
             "会话数": len(real),
             "启动失败次数": len(self.sessions) - len(real),
             "任务目录数": len(self.workspaces),
