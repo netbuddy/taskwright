@@ -117,7 +117,7 @@ describe("卡片五种主行为", () => {
     expect(h.onAction).not.toHaveBeenCalled();
   });
 
-  it("提问：没有按钮，只有输入框；输入框发出的话是普通的一句话，不带卡片标注", () => {
+  it("提问：输入框发出的话是普通的一句话，不带卡片标注", () => {
     const h = card({ kind: "ask", text: "退款由谁审批？" });
     expect(screen.queryByTestId("card-confirm")).toBeNull();
     expect(screen.queryByTestId("card-adopt")).toBeNull();
@@ -157,15 +157,53 @@ describe("提问挂在条目上", () => {
       { reply_message_id: "msg-7", kind: "ask", choice: "不知道" });
   });
 
-  it("挂在功能用例上的提问没有「先不管这条」；scope 为 general 或没有挂条目的提问只有输入框", () => {
+  it("挂在功能用例上的提问没有「先不管这条」，也没有没挂条目时的那两个按钮", () => {
     card({ kind: "ask", text: "UC-001 的步骤够吗？", items: [{ item_id: "UC-001", revision_no: 2 }] });
     expect(screen.queryByText("先不管这条")).toBeNull();
     expect(screen.getByTestId("card-dont-know")).toBeInTheDocument();
-    cleanup();
+    expect(screen.queryByTestId("card-dont-know-general")).toBeNull();
+    expect(screen.queryByTestId("card-set-aside")).toBeNull();
+  });
+});
+
+describe("没挂条目的提问", () => {
+  const actions = () => [...screen.getByTestId("act-ask").querySelectorAll(".actions button")].map((b) => b.textContent);
+
+  it("scope 为 general 或者没有写 items 的提问有两个按钮「我不知道，你按常识补」「先放着」，输入框照旧，不列条目", () => {
     card({ kind: "ask", text: "你们用哪种支付渠道？", scope: "general" });
-    expect(screen.queryByTestId("card-dont-know")).toBeNull();
+    expect(actions()).toEqual(["我不知道，你按常识补", "先放着"]);
+    expect(screen.queryByTestId("card-dont-know")).toBeNull();          // 挂了条目时的那个按钮不在
     expect(screen.queryByTestId("card-context")).toBeNull();
     expect(screen.getByTestId("card-input")).toBeInTheDocument();
+    cleanup();
+    card({ kind: "ask", text: "退款由谁审批？" });
+    expect(actions()).toEqual(["我不知道，你按常识补", "先放着"]);
+  });
+
+  it("「我不知道，你按常识补」发固定的一句，标注与挂了条目的那个按钮相同；点过之后卡片收成一句", () => {
+    const h = card({ kind: "ask", text: "你们用哪种支付渠道？", scope: "general" });
+    fireEvent.click(screen.getByTestId("card-dont-know-general"));
+    expect(h.onMessage).toHaveBeenCalledTimes(1);
+    expect(h.onMessage).toHaveBeenCalledWith("这个我不知道，你按常识补上并标明是你补的。", { reply_message_id: "msg-7", kind: "ask", choice: "不知道" });
+    expect(h.onAction).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("card-set-aside")).toBeNull();
+    expect(screen.getByTestId("act-ask").querySelector(".done")).toHaveTextContent("我不知道，你按常识补");
+  });
+
+  it("「先放着」发固定的一句，标注写先放着", () => {
+    const h = card({ kind: "ask", text: "你们用哪种支付渠道？", scope: "general" });
+    fireEvent.click(screen.getByTestId("card-set-aside"));
+    expect(h.onMessage).toHaveBeenCalledWith("这个问题先放着，接着往下做。", { reply_message_id: "msg-7", kind: "ask", choice: "先放着" });
+    expect(h.onAction).not.toHaveBeenCalled();
+  });
+
+  it("有未保存的条目编辑或者助手正在工作时，两个按钮与别的卡片按钮一样不能点", () => {
+    const handlers = { onAction: vi.fn(), onMessage: vi.fn() };
+    render(<Wrap><ReplyCard act={{ kind: "ask", text: "你们用哪种支付渠道？", scope: "general" }} replyMessageId="msg-7" task={task()} handlers={handlers} hold /></Wrap>);
+    expect(screen.getByTestId("card-dont-know-general")).toBeDisabled();
+    expect(screen.getByTestId("card-set-aside")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("card-set-aside"));
+    expect(handlers.onMessage).not.toHaveBeenCalled();
   });
 });
 

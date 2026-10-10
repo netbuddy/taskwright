@@ -3,7 +3,8 @@
 // 按钮走哪里，判据是：结果要写进库的走 actions，需要执行者再出力的走 messages。
 //   confirm 「这几条都看过了」→ actions（mark_viewed，条目与修订号取自卡片，notify_executor 为真），点一次把点名条目标为已读；「不对」→ messages
 //   choose  某个选项 → messages；suggest「采纳」「换一个」→ messages；propose「就这样做」「不要」→ messages
-//   ask     没有按钮，只有输入框
+//   ask     挂在条目上：能标为先不管的条目各一个「先不管」→ actions（keep_pending），「我不知道，你按常识补」→ messages；
+//           没挂条目（scope 为 general，或者没有写 items）：「我不知道，你按常识补」「先放着」→ messages
 // 发给执行者的话只用第 7 节的固定模板。卡片里始终有「或者直接告诉我你的想法」的输入框。
 // 评审没有通过的条目也可以标为看过，不拦，点的时候提示一句（第 6 节规则 4）。
 // 样式与结构照设计原型的 .act 卡片：标题小字、「标签＋值」几行、深色主按钮加浅色次按钮、卡片内输入框；
@@ -37,6 +38,10 @@ export const TEMPLATES = {
   proposeNo: "不要这样做。",
   /** 提问卡片「我不知道，你按常识补」。 */
   dontKnow: (itemIds: string) => `关于 ${itemIds}，我不知道，你按常识补上并标明是你补的。`,
+  /** 没挂条目的提问卡片「我不知道，你按常识补」：没有条目可点名，说的是这一问。 */
+  dontKnowGeneral: "这个我不知道，你按常识补上并标明是你补的。",
+  /** 没挂条目的提问卡片「先放着」。 */
+  setAside: "这个问题先放着，接着往下做。",
 };
 // 「先不管这条」发给执行者的那句「我先不管 {条目编号}，请接着往下做。」由后端在直接操作成功后发，
 // 见 backend/src/executor.ts 的 keepPendingNotice；前端只发直接操作。
@@ -95,8 +100,9 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   };
   const refs = act.items ?? [];
   const contexts = refs.map((r) => itemContext(task, r.item_id));
-  // 提问挂在条目上时才有两个固定按钮；scope 为 general 的提问、没有挂条目的提问只有输入框。
+  // 提问挂在条目上时是「先不管」与「我不知道，你按常识补」；scope 为 general 的提问、没有挂条目的提问是「我不知道，你按常识补」与「先放着」。
   const askOnItems = act.kind === "ask" && act.scope !== "general" && refs.length > 0;
+  const askGeneral = act.kind === "ask" && !askOnItems;
   const pendingRefs = askOnItems ? refs.filter((r, i) => contexts[i].pending) : [];
   const keepPending = (ref: { item_id: string; revision_no?: number }) => {
     setChosen(`先不管 ${ref.item_id}`);
@@ -251,6 +257,19 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
               <button type="button" className="btn sm" disabled={off} title={offTitle} data-testid="card-dont-know"
                 onClick={() => say(TEMPLATES.dontKnow(refs.map((r) => r.item_id).join("、")), "不知道", "我不知道，你按常识补")}>
                 我不知道，你按常识补
+              </button>
+            </div>
+          )}
+
+          {askGeneral && (
+            <div className="actions">
+              <button type="button" className="btn sm" disabled={off} title={offTitle} data-testid="card-dont-know-general"
+                onClick={() => say(TEMPLATES.dontKnowGeneral, "不知道", "我不知道，你按常识补")}>
+                我不知道，你按常识补
+              </button>
+              <button type="button" className="btn sm" disabled={off} title={offTitle} data-testid="card-set-aside"
+                onClick={() => say(TEMPLATES.setAside, "先放着")}>
+                先放着
               </button>
             </div>
           )}
