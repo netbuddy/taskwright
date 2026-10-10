@@ -156,6 +156,25 @@ export function viewedNow(item: Item): boolean {
   return marks.length > 0 && marks[marks.length - 1].accepted;
 }
 
+/**
+ * 用户打开一个条目时要不要记为已读（返回要记的目标，不记时为 null），与网页同一个规矩（web/src/model/overall.ts 的 viewOnOpen）：
+ * 别的条目打开就记；总体分析里待核实的页打开时不记——记了它就不再待核实，而助手补的那几处用户也许还没有看。
+ * confirm 为真相当于在那一页上点了「确认待核实的 N 处」（网页的 confirmAction）：在它现在所在的修订上记一条已读。
+ */
+export function viewOnLook(task: TaskView | null | undefined, itemId: string, confirm = false): { item_id: string; base_revision: number } | null {
+  const item = task?.items.find((i) => i.item_id === itemId);
+  if (!item) return null;
+  if (item.collection === OVERALL && pendingCount(item) > 0 && !confirm) return null;
+  return { item_id: item.item_id, base_revision: item.revision_no };
+}
+
+/** 还待核实的各处写成一句：「例子」第 1 项、「它是什么」；指整个条目的写「整页」。 */
+function placesText(item: Item): string {
+  const places = item.pending_places ?? [];
+  if (!places.length) return "";
+  return places.map((at) => (at.field === null ? "整页" : `「${at.field}」${at.index !== null ? `第 ${at.index + 1} 项` : ""}`)).join("、");
+}
+
 /** 提纲里一页的那一行：编号、标题、标签，以及四种状态之一。 */
 function outlineLine(item: Item): string {
   const tags = Array.isArray(item.fields[TAGS_FIELD]) ? (item.fields[TAGS_FIELD] as unknown[]).filter((t): t is string => typeof t === "string" && t.trim() !== "") : [];
@@ -177,17 +196,27 @@ function valueText(value: unknown): string {
   return String(value);
 }
 
-/** 条目区：各集合几个条目、每个条目的编号与标题；给了编号就只看这一个条目的字段。 */
-export function renderItems(task: TaskView | null, itemId?: string): string {
+/**
+ * 条目区：各集合几个条目、每个条目的编号与标题；给了编号就只看这一个条目的字段。
+ * confirm 只对总体分析里待核实的页有意义：为真是确认这一页上助手补的几处，为假时只是看，并写明还有哪几处等着确认。
+ */
+export function renderItems(task: TaskView | null, itemId?: string, confirm = false): string {
   if (!task) return "条目区：还没有任务。";
   if (itemId) {
     const item = task.items.find((i) => i.item_id === itemId);
     if (!item) return `条目区里没有 ${itemId}。`;
     const declared = task.definition.collections.find((c) => c.name === item.collection)?.fields.map((f) => f.name) ?? Object.keys(item.fields);
-    // 打开一个条目看它现在的内容就算看过（已读），「看界面」带条目编号时工具会替你记下。
-    const mark = "（你正在看它现在的内容，看过就算确认）";
-    return [`${item.item_id}「${item.title}」，集合「${item.collection}」，修订 ${item.revision_no}${mark}：`,
-      ...declared.map((name) => `  ${name}：${valueText(item.fields[name])}`)].join("\n");
+    const pending = item.collection === OVERALL ? pendingCount(item) : 0;
+    // 打开一个条目看它现在的内容就算看过（已读），「看界面」带条目编号时工具会替你记下；待核实的主题页要另外确认。
+    const mark = !pending ? "（你正在看它现在的内容，看过就算确认）"
+      : confirm ? `（你正在看它现在的内容，并确认了助手补的 ${pending} 处）` : "（你正在看它现在的内容）";
+    const lines = [`${item.item_id}「${item.title}」，集合「${item.collection}」，修订 ${item.revision_no}${mark}：`,
+      ...declared.map((name) => `  ${name}：${valueText(item.fields[name])}`)];
+    if (pending && !confirm) {
+      const where = placesText(item);
+      lines.push(`这一页有 ${pending} 处是助手补的，还没有确认${where ? `：${where}` : ""}。你看了觉得对，就再看一次这一页并把 confirm 设为 true；觉得不对，直接说哪里不对。`);
+    }
+    return lines.join("\n");
   }
   const lines = ["条目区："];
   for (const c of task.definition.collections) {

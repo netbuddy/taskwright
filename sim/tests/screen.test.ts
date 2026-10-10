@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buttonsOf, pendingCount, planRespond, renderItems, renderMessages, renderReply, viewedNow } from "../lib/screen.ts";
+import { buttonsOf, pendingCount, planRespond, renderItems, renderMessages, renderReply, viewOnLook, viewedNow } from "../lib/screen.ts";
 
 const confirmReply = {
   type: "assistant_reply", message_id: "a1", text: "三个用例整理好了，请看看。", informs: ["存了 3 个用例。"],
@@ -159,4 +159,28 @@ test("看没看过现在这一版：只看当前修订上最近一条不是亲�
   assert.equal(viewedNow(item([])), false);
   assert.deepEqual([pendingCount(page("OA-001", "借书")), pendingCount(page("OA-001", "借书", { pending_verification: true })),
     pendingCount(page("OA-001", "借书", { pending_verification: true, pending_sources: 3 }))], [0, 1, 3]);
+});
+
+test("打开一个条目记不记已读与网页同一个规矩：待核实的主题页打开不记，带确认才记；别的照旧打开就记", () => {
+  const task = overallTask([
+    page("OA-001", "借书"),
+    page("OA-002", "预约保留期", { fields: { 标题: "预约保留期", 标签: ["概念"], 状态: "在用", 例子: ["保留 3 天"], 它是什么: "书为预约的人留着的那段时间。" },
+      pending_verification: true, pending_sources: 2, pending_places: [{ field: "例子", index: 0 }, { field: "它是什么", index: null }] }),
+  ]);
+  task.definition.collections[1].fields.push({ name: "它是什么" }, { name: "例子" });
+  task.items[0].pending_verification = true;      // 用例上有助手补的内容：不是主题页，照旧打开就记
+  assert.deepEqual(viewOnLook(task, "OA-001"), { item_id: "OA-001", base_revision: 2 });
+  assert.equal(viewOnLook(task, "OA-002"), null);
+  assert.deepEqual(viewOnLook(task, "OA-002", true), { item_id: "OA-002", base_revision: 2 });
+  assert.deepEqual(viewOnLook(task, "OA-001", true), { item_id: "OA-001", base_revision: 2 });      // 不待核实的页带了确认：照普通的看
+  assert.deepEqual(viewOnLook(task, "UC-001"), { item_id: "UC-001", base_revision: 1 });
+  assert.equal(viewOnLook(task, "OA-009"), null);
+  // 看到的文字：待核实的页写明还有哪几处等确认、怎样确认；确认之后写确认了几处。
+  const looked = renderItems(task, "OA-002");
+  assert.match(looked, /^OA-002「预约保留期」，集合「总体分析」，修订 2（你正在看它现在的内容）：/);
+  assert.match(looked, /\n这一页有 2 处是助手补的，还没有确认：「例子」第 1 项、「它是什么」。你看了觉得对，就再看一次这一页并把 confirm 设为 true；觉得不对，直接说哪里不对。$/);
+  const confirmed = renderItems(task, "OA-002", true);
+  assert.match(confirmed, /修订 2（你正在看它现在的内容，并确认了助手补的 2 处）：/);
+  assert.doesNotMatch(confirmed, /还没有确认/);
+  assert.match(renderItems(task, "OA-001", true), /修订 2（你正在看它现在的内容，看过就算确认）：/);
 });

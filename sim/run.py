@@ -132,12 +132,15 @@ def upload(backend: Backend, task_id: str, path: Path) -> str:
 
 
 def user_turn(events: list[dict]) -> dict:
-    """用户 agent 这一次运行里做了什么：看了几次界面（看了哪些条目）、回应了什么。"""
-    looks, respond, rejected, text = [], None, [], ""
+    """用户 agent 这一次运行里做了什么：看了几次界面（看了哪些条目，其中哪几页主题是带着确认看的）、回应了什么。"""
+    looks, confirms, respond, rejected, text = [], [], None, [], ""
     for e in events:
         kind = e.get("type")
         if kind == "tool_execution_start" and e.get("toolName") == "look":
-            looks.append((e.get("args") or {}).get("item_id"))
+            args = e.get("args") or {}
+            looks.append(args.get("item_id"))
+            if args.get("item_id") and args.get("confirm") is True:
+                confirms.append(args["item_id"])
         if kind == "tool_execution_end" and e.get("toolName") == "respond":
             result = e.get("result") or {}
             if e.get("isError"):
@@ -147,7 +150,7 @@ def user_turn(events: list[dict]) -> dict:
         if kind == "message_end" and (e.get("message") or {}).get("role") == "assistant":
             parts = (e.get("message") or {}).get("content") or []
             text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and p.get("type") == "text") or text
-    return {"looks": looks, "respond": respond, "respond_rejected": rejected, "other_text": text.strip()}
+    return {"looks": looks, "confirms": confirms, "respond": respond, "respond_rejected": rejected, "other_text": text.strip()}
 
 
 def executor_turn(events: list[dict]) -> dict:

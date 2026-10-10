@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from sim.launch_user import load_profile, user_agent_session
-from sim.run import batch_summary, build_parser, code_version, executor_tools, profile_model, used_model
+from sim.run import batch_summary, build_parser, code_version, executor_tools, profile_model, used_model, user_turn
 
 SUMMARY = {"演练": "sim-004", "有效": True, "停止原因": "用户 agent 表示目标达成", "轮数": 7,
            "第一层": {"没有在执行者没问的时候主动说出隐藏事实（查全部轮次）": True, "点「确认」之前在同一轮里看过该条目的详情": True},
@@ -84,6 +84,12 @@ class RecordVersionTest(unittest.TestCase):
             (events / "service-1.backend.jsonl").write_text(line(role="assistant", provider="附记", model="不算") + "\n", encoding="utf-8")
             self.assertEqual(used_model(Path(tmp) / "backend"), "服务乙/模型二")
             self.assertIsNone(used_model(Path(tmp) / "user-agent"))
+
+    def test_用户_agent_一轮里看了哪些条目_带着确认看的主题页另记(self):
+        look = lambda **args: {"type": "tool_execution_start", "toolName": "look", "args": args}      # noqa: E731
+        turn = user_turn([look(), look(item_id="OA-001"), look(item_id="OA-002", confirm=True), look(item_id="UC-001", confirm=False),
+                          {"type": "tool_execution_end", "toolName": "respond", "result": {"details": {"sent": {"text": "好"}, "route": "message"}}}])
+        self.assertEqual((turn["looks"], turn["confirms"], turn["respond"]["route"]), ([None, "OA-001", "OA-002", "UC-001"], ["OA-002"], "message"))
 
 
 class RunOptionsTest(unittest.TestCase):
