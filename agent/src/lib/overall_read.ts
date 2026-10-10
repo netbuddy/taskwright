@@ -33,6 +33,8 @@ export interface OverallState {
   pages: PageFacts[];
   /** 条目编号 → 用户看没看过它现在的内容（lib/overall_analysis.ts 的 viewedIn）。 */
   viewed: Map<string, boolean>;
+  /** 条目编号 → 它当前修订上的各条来源的种类与出处，按位置的先后。 */
+  sources: Map<string, { kind: string; locator: string }[]>;
 }
 
 /** 读出一个任务现在的全部条目并算出上面几样。 */
@@ -101,7 +103,7 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
   const shapes = definition.collections.map((one) => ({ name: one.name, fields: one.fields.map((f) => ({ name: f.name, type: f.type })) }));
   const pages = items.filter((one) => one.collection === OVERALL_COLLECTION)
     .map((one) => pageFacts(one.item_id, one.fields, own.get(one.item_id)!.pending_verification, viewed.get(one.item_id) === true));
-  return { items, verification, mentions: mentionsOf(shapes, items), pages, viewed };
+  return { items, verification, mentions: mentionsOf(shapes, items), pages, viewed, sources };
 }
 
 /** 算待核实要看的那一段修订：从最近一次不是用户亲手改出来的修订起，到当前修订为止。 */

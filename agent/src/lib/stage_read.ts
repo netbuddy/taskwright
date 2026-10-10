@@ -10,11 +10,17 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { type Entry, chooseActOf } from "./completion_consent.ts";
+import { checkCompletion } from "./conditions.ts";
 import { emit, wallClockText } from "./db.ts";
-import { type TaskDefinition, validateDefinition } from "./definition.ts";
-import { hasOverall } from "./overall_analysis.ts";
-import { NoDatabaseYet, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
-import { NO_STAGES_TEXT, START_ITEMS_KEY, START_ITEMS_TEXT, type Stage, type StageActor, defaultStage, isStage, judgeMove, moveText } from "./stage.ts";
+import { type TaskDefinition, keepPendingField, validateDefinition } from "./definition.ts";
+import { OVERALL_COLLECTION, hasOverall } from "./overall_analysis.ts";
+import { overallState } from "./overall_read.ts";
+import { currentRulesHash, verdictAt } from "./review_state.ts";
+import { NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_ITEM, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
+import {
+  type Lamp, type LampInput, NO_STAGES_TEXT, START_ITEMS_KEY, START_ITEMS_TEXT, type Stage, type StageActor, defaultStage, isStage, judgeMove, lampPage,
+  lampQuestion, moveText, stageLamps,
+} from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
 /** 记下一次移动的事件名。 */
@@ -166,4 +172,91 @@ export function recordStartItemsClick(workspaceDir: string, sessionId: string, b
     if (error instanceof NoDatabaseYet) return null;
     throw error;
   }
+}
+
+// ───────────── 现在在哪个阶段、每个阶段还差什么 ─────────────
+
+/** 完成条件里要求评审的那一条的名字（与 lib/review.ts 的 REVIEW_CONDITION 同一个；这里不从它导入，免得两个文件互相导入）。 */
+const REVIEWED_CONDITION = "每个条目评审通过";
+
+/**
+ * 材料清单里不是由别的文件生成的那几个。由 Word 或 PDF 材料生成的文字版（x.docx.md、早先的 x.docx.txt、x.pdf.md）与分段清单
+ * （x.docx.segments.json、x.pdf.segments.json）旁边有那份原件时是生成出来的，不算一份材料。paths 是 listMaterials 列出的路径。
+ */
+export function sourceMaterials(paths: readonly string[]): string[] {
+  const present = new Set(paths);
+  const derived = (path: string): boolean => [".segments.json", ".md", ".txt"].some((suffix) => {
+    if (!path.toLowerCase().endsWith(suffix)) return false;
+    const stem = path.slice(0, -suffix.length);
+    return /\.(docx|pdf)$/i.test(stem) && present.has(stem);
+  });
+  return paths.filter((one) => !derived(one));
+}
+
+/** 任务现在的阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），以及五个阶段各自的几盏灯。 */
+export interface StageSummary {
+  current: Stage;
+  moved_by: StageActor | null;
+  /** 最近一次移动的时刻（库里的本地时间写法）。 */
+  moved_at: string | null;
+  reason: string | null;
+  lamps: Record<Stage, Lamp[]>;
+}
+
+/** 从任务库里读出算灯要的全部事实（lib/stage.ts 的 LampInput）。只读。 */
+export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): LampInput {
+  const state = overallState(db, taskId, definition);
+  const statusFieldOf = new Map(definition.collections.flatMap((one) => {
+    const field = keepPendingField(one);
+    return field ? [[one.name, field.name] as [string, string]] : [];
+  }));
+  const sourcesOf = (itemId: string) => state.sources.get(itemId) ?? [];
+  const pages = state.items.filter((one) => one.collection === OVERALL_COLLECTION);
+  const others = state.items.filter((one) => one.collection !== OVERALL_COLLECTION);
+  const questions = others.filter((one) => statusFieldOf.has(one.collection));
+  const reviewed = new Set(Object.entries(definition.completion).filter(([, names]) => names.includes(REVIEWED_CONDITION)).map(([name]) => name));
+  const hashOf = new Map<string, string | null>();
+  const failing = others.filter((one) => {
+    if (!reviewed.has(one.collection)) return false;
+    if (!hashOf.has(one.collection)) hashOf.set(one.collection, currentRulesHash(db, workspaceDir, one.collection));
+    return verdictAt(db, taskId, one.item_id, one.revision_no, hashOf.get(one.collection)!).state === "failed";
+  }).map((one) => one.item_id);
+  const completion = checkCompletion(db, taskId, definition.completion, { workspaceDir });
+  return {
+    pages: pages.map((one) => lampPage(one.item_id, one.fields, state.viewed.get(one.item_id) === true)),
+    items: others.map((one) => {
+      const verification = state.verification.get(one.item_id)!;
+      return {
+        item_id: one.item_id, collection: one.collection,
+        cites: sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_ITEM).map((s) => s.locator),
+        pending: verification.pending_verification || verification.basis_pending !== null,
+      };
+    }),
+    questions: questions.map((one) => lampQuestion(one.item_id, one.fields, statusFieldOf.get(one.collection)!)),
+    collections: definition.collections.map((one) => one.name),
+    materials: sourceMaterials(listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path)),
+    citedDocuments: [...pages, ...questions].flatMap((one) => sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_DOCUMENT).map((s) => s.locator)),
+    mentions: state.mentions,
+    review: { failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined },
+    completion: {
+      satisfied: completion.every((one) => one.satisfied),
+      unmet: completion.filter((one) => !one.satisfied).map((one) => `「${one.collection}」${one.condition}：${one.summary}`),
+    },
+  };
+}
+
+/**
+ * 任务现在的阶段与每个阶段的几盏灯。早先建的任务（没有「总体分析」集合）没有阶段，返回 null。只读：
+ * 助手的查询任务状态与后端的整份数据都经这里，所以两侧说的是同一回事。
+ */
+export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): StageSummary | null {
+  if (!hasOverall(definition.collections)) return null;
+  const last = lastStageRecord(db, taskId);
+  return {
+    current: last?.stage ?? defaultStage(taskHasMaterials(workspaceDir, definition.materialsDir)),
+    moved_by: last?.actor ?? null,
+    moved_at: last?.created_at ?? null,
+    reason: last ? last.reason : null,
+    lamps: stageLamps(lampInput(db, workspaceDir, taskId, definition)),
+  };
 }
