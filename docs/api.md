@@ -77,8 +77,8 @@ All carry `session_id` except `service_exiting`, which goes to every open stream
 |---|---|---|
 | `work_started` | the agent starts working | `work_id`, `at`, `triggered_by` (message id) |
 | `step` | a tool call starts, and a corrected line when the turn ends | `work_id`, `step_key`, `text`, `in_progress`, `failed` |
-| `user_message` | pi accepted a user message | `message_id` (the session entry id; may be empty in the rare case the entry cannot be found in time), `client_id`, `at`, `text`, `origin` (`typed`, `card_choice`, `ui_request`), `card`, `queued` |
-| `assistant_reply` | the agent replied | `message_id`, `at`, `work_id`, `via_reply_tool`, `informs`, `act`, `text`, `degraded` (see 5.3) |
+| `user_message` | pi accepted a user message | `message_id` (the session entry id; may be empty in the rare case the entry cannot be found in time), `client_id`, `at`, `text`, `origin` (`typed`, `card_choice`, `ui_request`), `card`, `queued`; when the user chose on a card to enter the next stage and the service recorded the move, also `stage_move` (`from`, `to`, `actor` `user`); when the chosen option enters a stage but the stage did not change (out of order, or the task was already there), also `stage_unmoved` (`at`, the stage the task was in) |
+| `assistant_reply` | the agent replied | `message_id`, `at`, `work_id`, `via_reply_tool`, `informs`, `act`, `text`, `degraded` (see 5.3); when the agent moved the task back to an earlier stage in this reply, also `stage_move` (`from`, `to`, `actor` `executor`, `reason`) |
 | `ui_action_noted` | a direct operation completed, or the user stopped the agent's work | `message_id`, `at`, `text`, `event_seq`, `op_id`, `revision_no`, `undoable`, `kind` (the operation kind; `stop_run` for the note left when the user stopped the agent's work, see 5.5: it has no library event and no revision and cannot be undone, and its `text` is worded for the agent, so the page shows a sentence of its own), `review` (for the note at the end of a review: `total`, `passed`, `failed`, `unfinished`, `problems`, `advice`) |
 | `material_added` | a material was uploaded | `at`, `path`, `bytes`, `modified_at`; when the material replaced another one, also `replaces`, the path of the material it replaced (**Replacing a material** in section 5.1) |
 | `material_removed` | a material was deleted, or was replaced by another file (section 5.1) | `at`, `path`; the files generated from a Word or PDF material were deleted with it and get no event of their own. When the material was replaced, also `replaced_by`, the path of the material that took its place; the `material_added` of that material follows directly |
@@ -532,7 +532,7 @@ An answer of 200 does not mean that every part was imported: when single parts f
 
 ## 13 Debug mode
 
-The three requests below exist only when the service is started with `--debug` (off unless given); otherwise each returns `not_found` (404) with the text 这个接口只在调试模式下可用：启动服务时加上 --debug。 ("this request is available in debug mode only: start the service with --debug"). `debug` in `GET /api/v1/service` says whether it is on. Debug mode is for people who tune the instruction text; these requests have no access control of their own, so switch it on only on your own machine.
+The requests of this section exist only when the service is started with `--debug` (off unless given); otherwise each returns `not_found` (404) with the text 这个接口只在调试模式下可用：启动服务时加上 --debug。 ("this request is available in debug mode only: start the service with --debug"). `debug` in `GET /api/v1/service` says whether it is on. Debug mode is for people who tune the instruction text; these requests have no access control of their own, so switch it on only on your own machine.
 
 In a task that has stages (its task definition has the collection 总体分析, "overall analysis") the system prompt of every run is put together from several files, in this order: the system prompt, the shared part of the platform instructions, the shared part of the task type's instructions, the platform's section for the current stage, the task type's section for the current stage, and at the end what the assistant program appends itself (the working directory). In debug mode a file in a "prompt directory" can replace any of them.
 
@@ -557,6 +557,23 @@ In a task that has stages (its task definition has the collection 总体分析, 
 - `how` says whether this text was put together from the files again (`recomposed`), is the previous one (`reused`: neither the stage nor a file had changed), or is the previous one because putting it together failed (`kept_after_error`, with the reason in `error`). `notes` holds one sentence for each reason the prompt directory could not be used or a file in it was not used. `digest` is the digest of the instruction text without what the assistant program appends.
 - For a task without stages (a task created by an earlier version) `replaced` is `false` and `parts` has one entry whose `part` is `launch`: the whole system prompt given at start-up.
 - When the task has not run since the service started, the answer is `{ "available": false, "note": text, "parts": [], "text": "" }`. This data is kept in memory only and is not archived.
+
+### 13.3 Stage moves and refused tool calls
+
+`GET /api/v1/tasks/{task_id}/debug/stage` returns `{ "records": [ … ], "rejections": [ … ], "latest_work_id": … }`.
+
+- `records` holds all stage moves of the task in order: `from`, `to` (the stage keys), `from_name`, `to_name` (the stage names), `actor` (`user` or `executor`), `reason` (an empty string when none was given), `run_id` (the run when the agent moved, `null` when the user did), `session_id`, `at`.
+- `rejections` holds the most recent refused tool calls, newest first, at most 200: `tool`, `kind` (`input` or `gate`), `fact` (what was wrong), `guidance` (what to do next, or `null`), `work_id` (the piece of work it belongs to), `session_id`, `call_id`, `at`. `latest_work_id` is the piece of work of the latest refusal, or `null` when there is none.
+- Read-only. Both lists are empty when the task database cannot be read.
+
+### 13.4 A draft persona
+
+`GET /api/v1/tasks/{task_id}/debug/persona-draft` turns what the user said in this task into a draft persona for the simulator and returns `{ "file_name": "persona-<task id>.json", "persona": { … }, "sessions": number of sessions, "facts": number of facts, "skipped": [ ids of sessions that could not be read ] }`.
+
+- `persona` has the keys of the persona files under `sim/personas/`: 名字, 说明, 人设, 目标, 答不上的说法, 材料, 熟悉的材料, 材料说明, 隐藏事实, 接受底线. Only 隐藏事实 (the hidden facts) and the two lists of materials are filled in; the name, the character and the goal are empty strings for a person to fill.
+- The hidden facts follow the order of the sessions and, within a session, the order of speaking: every sentence the user typed is one fact, in the user's own words; every choice on a card is one fact, written as 问：the card's question　答：the chosen option. The three keyword fields of each fact are empty.
+- Left out: the fixed sentences the service sends for the user (`origin` `ui_request`), the two sentences sent by the two starting buttons of the overall analysis, and the card choices that enter or stay in a stage.
+- Read-only; nothing is written. The page saves what it receives as a file.
 
 
 [中文版](api.zh-CN.md)

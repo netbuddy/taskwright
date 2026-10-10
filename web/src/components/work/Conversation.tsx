@@ -17,6 +17,7 @@ import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
+import { stageMoveLine } from "../../model/stage";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -151,6 +152,7 @@ export function Conversation({
           <MessageView key={(m as { message_id?: string }).message_id ?? `${m.type}-${index}`} message={m} task={task} handlers={handlers}
             disabled={disabled} hold={hold} holdText={holdText} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
+            unmovedAt={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmoved(messages, index) : null}
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
               : m.type === "work_summary" && revisionsOfWork ? revisionsOfWork((m as WorkSummary).work_id) : []} onRevisionTag={onRevisionTag}
@@ -228,6 +230,19 @@ export function answeredText(messages: ConversationMessage[], index: number): st
   return null;
 }
 
+/**
+ * 答这张卡片的那次点击是「进入」某个阶段而阶段没有移动时，任务当时所在的阶段；别的情形是 null。
+ * 与 answeredText 看的是同一句话：这条回复之后用户说的第一句。
+ */
+export function answeredUnmoved(messages: ConversationMessage[], index: number): string | null {
+  for (let i = index + 1; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.type === "assistant_reply") return null;
+    if (m.type === "user_message") return (m as UserMessage).origin === "card_choice" ? (m as UserMessage).stage_unmoved?.at ?? null : null;
+  }
+  return null;
+}
+
 /** 告知里点名的条目编号，按出现的先后，同一个条目只列一次。 */
 function itemIds(informs: Inform[]): string[] {
   return [...new Set(informs.flatMap((one) => (one.items ?? []).map((ref) => ref.item_id)))];
@@ -263,7 +278,7 @@ function StatusNote({ line, text }: { line: string; text: string }) {
   );
 }
 
-function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, unmovedAt, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -275,6 +290,8 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   onRevisionTag?: (revisions: number[]) => void;
   onShowReviews?: () => void;
   answered: string | null;
+  /** 答这张卡片的那次点击没有让阶段移动时，任务当时所在的阶段。 */
+  unmovedAt: string | null;
   onUndo: (revisionNo: number) => void;
   onOpenItem: (itemId: string) => void;
   onLocate?: (excerpt: string, locator?: string) => void;
@@ -296,11 +313,17 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
     case "user_message": {
       const m = message as UserMessage;
       const from = m.origin === "card_choice" ? "点卡片发出的" : m.origin === "ui_request" ? "界面操作之后发给助手的" : null;
-      return <div className="m user">{m.text}{from && <span className="from-ui">{from}</span>}</div>;
+      const bubble = <div className="m user">{m.text}{from && <span className="from-ui">{from}</span>}</div>;
+      // 这次点击替用户记了一次阶段移动：在那句话下面写一行，与界面操作记号同款。
+      if (!m.stage_move) return bubble;
+      return <>{bubble}<div className="selfnote" data-testid="stage-move-user">{stageMoveLine(m.stage_move)}</div></>;
     }
     case "assistant_reply": {
       const m = message as AssistantReply;
       return (
+        <>
+        {/* 助手在这条回复里把任务退回了前面的阶段：在回复上面写一行，与助手的过程行同款 */}
+        {m.stage_move && <div className="proc"><div className="pline" data-testid="stage-move-assistant"><span className="ptxt">{stageMoveLine(m.stage_move)}</span></div></div>}
         <div className="m ai" data-testid="assistant-reply">
           {m.degraded ? (
             <>
@@ -330,7 +353,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </>
           )}
           {m.act && !m.degraded && (
-            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered}
+            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} unmovedAt={unmovedAt}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}
           {revisions.length > 0 && (
@@ -340,6 +363,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </div>
           )}
         </div>
+        </>
       );
     }
     case "ui_action_noted": {

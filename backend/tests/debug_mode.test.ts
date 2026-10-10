@@ -88,12 +88,13 @@ async function withSettings(file: string, body: () => Promise<void>): Promise<vo
   }
 }
 
-test("不是调试模式时，调试用的三个接口都答 not_found，并说明要用 --debug 启动；设置文件不动", async () => {
+test("不是调试模式时，调试用的几个接口都答 not_found，并说明要用 --debug 启动；设置文件不动", async () => {
   const settings = join(tmp, "plain-settings.json");
   await withSettings(settings, async () => {
     const service = new Service(join(tmp, "n1", "tasks"), join(tmp, "n1", "runs"), {});
     try {
-      for (const [method, path, body] of [["GET", "/api/v1/debug/prompt-dir"], ["POST", "/api/v1/debug/prompt-dir", { path: tmp }], ["GET", "/api/v1/tasks/TASK-X/debug/system-prompt"]] as const) {
+      for (const [method, path, body] of [["GET", "/api/v1/debug/prompt-dir"], ["POST", "/api/v1/debug/prompt-dir", { path: tmp }], ["GET", "/api/v1/tasks/TASK-X/debug/system-prompt"],
+        ["GET", "/api/v1/tasks/TASK-X/debug/stage"]] as const) {
         const answer = await go(service, method, path, body);
         assert.deepEqual([answer.status, answer.body.error.code, answer.body.error.message], [404, "not_found", DEBUG_ONLY_TEXT], path);
       }
@@ -209,4 +210,45 @@ test("调试模式下真的跑一遍：提示词目录里改一句，再问一�
     assert.deepEqual([fourth.how, fourth.text], ["reused", third.text]);
     assert.equal(systemText(requests()[3]), third.text);
   }, { seed: false, args: ["--debug"], env: { TASKWRIGHT_SETTINGS_FILE: settings } });
+});
+
+const USE_CASE = { op: "add", collection: "功能用例", sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭借书证在自助机上借书。" }],
+  fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } };
+const REJECT_SCRIPT = {
+  sequence: [
+    // 核读材料阶段就想写用例：被拦。
+    { tool_calls: [{ id: "call-early", name: "save_revision", arguments: { operations: [USE_CASE] } }] },
+    { tool_calls: [{ id: "call-say", name: "reply", arguments: { informs: [], act: null, text: "这个阶段还不能写用例。" } }] },
+    { tool_calls: [{ id: "call-say-2", name: "reply", arguments: { informs: [], act: null, text: "好的。" } }] },
+  ],
+};
+
+test("调试模式下的阶段记录流水与被拒的工具调用：谁在什么时候把任务从哪移到哪、理由；被拒的调用带工具名、事实、指引与它所属的那次工作", { skip: NO_PI, timeout: 180000 }, async () => {
+  await withStack(tmp, "debug-stage", REJECT_SCRIPT, async ({ call, taskId, session, send, action }) => {
+    // 一开始：没有移动，也没有被拒的调用。
+    const fresh = (await call("GET", `/api/v1/tasks/${taskId}/debug/stage`)).body;
+    assert.deepEqual(fresh, { records: [], rejections: [], latest_work_id: null });
+
+    await send({ text: "直接写用例吧。", client_id: "c-1" });
+    assert.equal((await action({ kind: "move_stage", targets: [], fields: { stage: "澄清", reason: "材料看过了。" } })).status, 200);
+    assert.equal((await action({ kind: "move_stage", targets: [], fields: { stage: "整理建模" } })).status, 200);
+    await send({ text: "再说一句。", client_id: "c-2" });
+
+    const view = (await call("GET", `/api/v1/tasks/${taskId}/debug/stage`)).body;
+    assert.deepEqual(view.records.map((one: Dict) => [one.from, one.from_name, one.to, one.to_name, one.actor, one.reason, one.run_id]), [
+      ["reading", "核读材料", "clarifying", "澄清", "user", "材料看过了。", null],
+      ["clarifying", "澄清", "modeling", "整理建模", "user", "", null],
+    ]);
+    for (const one of view.records) {
+      assert.match(one.at, /^\d{4}-\d{2}-\d{2}T/);
+      assert.equal(typeof one.session_id, "string");
+    }
+    assert.equal(view.rejections.length, 1);
+    const refused = view.rejections[0];
+    assert.deepEqual([refused.tool, refused.kind, refused.call_id, refused.session_id], ["save_revision", "input", "call-early", session]);
+    assert.match(refused.fact, /任务现在在核读材料阶段，这个阶段不能新增「功能用例」的条目/);
+    assert.match(refused.guidance, /进入写条目要由用户在卡片上选「开始写条目」/);
+    assert.match(refused.work_id, /^w-/);
+    assert.equal(view.latest_work_id, refused.work_id);
+  }, { seed: false, args: ["--debug"], env: { TASKWRIGHT_SETTINGS_FILE: join(tmp, "stage-settings.json") } });
 });

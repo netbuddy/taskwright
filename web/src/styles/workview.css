@@ -118,7 +118,8 @@
 .app .act{background:var(--ai-bg);border-radius:.7rem;padding:.55rem .75rem .6rem;
   margin-top:.45rem;font-size:0.913rem}
 .app .act .tt{font-size:0.857rem;font-weight:500;letter-spacing:.08em;color:var(--ai);margin-bottom:.25rem}
-.app .act .fk{color:var(--text3);display:inline-block;min-width:3rem}
+/* 标签与后面的值之间留一个空隙：两个字的标签仍占三个字宽，四个字的标签（「要定的事」「我的提议」）不再与值挤在一起 */
+.app .act .fk{color:var(--text3);display:inline-block;min-width:3rem;padding-right:.5rem}
 .app .act .val{font-family:var(--font-title);font-size:0.98rem;font-weight:500}
 .app .act .actions .btn{border-radius:71rem}
 .app .act .actions .btn:not(:disabled){background:var(--card);border-color:var(--ai-line);color:var(--ai)}

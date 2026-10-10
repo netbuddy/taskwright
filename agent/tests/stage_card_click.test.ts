@@ -88,14 +88,15 @@ test("次序不对的点击不记：进入澄清、进入整理建模、进入�
   const click = (dir: string, to: Exclude<Stage, "reading">) => recordStageCardClick(dir, SESSION, cardFor(to), { opId: `ui-op-${to}`, replyEntry: "a-1", optionKey: ENTER_OPTIONS[to].key });
   // 任务在核读材料：点「进入整理建模」「进入评审确认」都不记（点的是一张早先的或者不该出现的卡片）。
   const reading = workspace();
-  assert.equal(click(reading, "modeling"), null);
-  assert.equal(click(reading, "reviewing"), null);
+  // 结果里写明没有移、为什么、任务现在在哪里（卡片点击的标注据此写 stage_unmoved）。
+  assert.deepEqual(click(reading, "modeling"), { requested: "modeling", from: "reading", moved: false, why: "not_next", event_seq: null });
+  assert.deepEqual(click(reading, "reviewing"), { requested: "reviewing", from: "reading", moved: false, why: "not_next", event_seq: null });
   assert.equal(count(reading, "stage_record"), 0);
   // 任务已经在整理建模：再点一张早先的「进入澄清」不会把任务退回去。
   const modeling = workspace();
   enterStage(modeling, "modeling");
-  assert.equal(click(modeling, "clarifying"), null);
-  assert.equal(click(modeling, "reviewing"), null);
+  assert.deepEqual([click(modeling, "clarifying")?.moved, click(modeling, "clarifying")?.why, click(modeling, "clarifying")?.from], [false, "not_next", "modeling"]);
+  assert.deepEqual([click(modeling, "reviewing")?.moved, click(modeling, "reviewing")?.why], [false, "not_next"]);
   assert.equal(count(modeling, "stage_record"), 1);
   // 开始写条目：核读材料、澄清、整理建模三段里点都算，用户可以跳过中间的阶段。
   for (const from of ["reading", "clarifying", "modeling"] as const) {
@@ -132,6 +133,8 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   assert.deepEqual(JSON.parse(status[UI_RESULT_KEY]), { op_id: "ui-op-41", ok: true, idle: true, stage_event_seq: seq });
   assert.deepEqual(sent.map(([kind]) => kind), ["custom", "user"]);
   assert.equal(sent[0][1].details.stage_event_seq, seq);
+  // 标注里另写这次移动从哪个阶段到哪个阶段：对话区据此在用户那句话下面写一行。
+  assert.deepEqual(sent[0][1].details.stage_move, { from: "reading", to: "writing" });
   assert.equal(sent[1][1], "我选：开始写条目");
   assert.deepEqual(records(dir).map((r) => [r.stage, r.actor, r.call_id]), [["writing", "user", "ui-op-41"]]);
 
@@ -140,6 +143,19 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   await handler(JSON.stringify({ op_id: "ui-op-42", reply_entry: "a-1", option_key: CONTINUE_CLARIFY_KEY, option_text: CONTINUE_CLARIFY_TEXT, text: "我选：继续澄清" }), other.ctx);
   assert.deepEqual(JSON.parse(other.status[UI_RESULT_KEY]), { op_id: "ui-op-42", ok: true, idle: true });
   assert.equal("stage_event_seq" in sent[2][1].details, false);
+  assert.equal("stage_move" in sent[2][1].details, false);
+  assert.equal("stage_unmoved" in sent[2][1].details, false);
+  assert.equal("stage_unmoved" in sent[0][1].details, false);
+  assert.equal(count(dir, "stage_record"), 1);
+
+  // 任务已经在写条目，再点一次那张卡片上的「开始写条目」：照常发那两条，不记移动；标注里写任务当时在哪个阶段，
+  // 卡片上据此告诉用户这次点击没有改变阶段。
+  const again = fakeCtx(dir);
+  await handler(JSON.stringify({ op_id: "ui-op-43", reply_entry: "a-1", option_key: START_ITEMS_KEY, option_text: START_ITEMS_TEXT, text: "我选：开始写条目" }), again.ctx);
+  assert.deepEqual(JSON.parse(again.status[UI_RESULT_KEY]), { op_id: "ui-op-43", ok: true, idle: true });
+  assert.deepEqual(sent.slice(4).map(([kind]) => kind), ["custom", "user"]);
+  assert.deepEqual(sent[4][1].details.stage_unmoved, { at: "writing" });
+  assert.equal("stage_move" in sent[4][1].details, false);
   assert.equal(count(dir, "stage_record"), 1);
 });
 

@@ -17,7 +17,7 @@ import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_loca
 import { pdfFacts, pdfSourceName } from "./projection.ts";
 import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
-import { stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
+import { stageRecords, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -314,6 +314,37 @@ export function stageView(taskDir: string) {
     }
   } catch {
     return null;
+  }
+}
+
+/**
+ * 调试用：任务的全部阶段记录（按先后）与最近被拒的工具调用（新的在前，最多 limit 条）。库另开一个只读连接；
+ * 还没有库、或者读不出来时两样都是空的。阶段记录每条写 { from, to, actor, reason, run_id, session_id, at }；
+ * 被拒的调用每条写 { work_id, session_id, call_id, tool, kind, fact, guidance, at }，work_id 是它所属的那次工作。
+ */
+export function stageDebugView(taskDir: string, limit = 200) {
+  const empty = { records: [] as Record<string, unknown>[], rejections: [] as Record<string, unknown>[] };
+  try {
+    const dbPath = dbFile(taskDir);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
+      if (!task) return empty;
+      const records = stageRecords(db, task.task_id).map((one) => ({
+        from: one.from_stage, to: one.stage, actor: one.actor, reason: one.reason, run_id: one.run_id, session_id: one.session_id, at: clock.fromLocalText(one.created_at),
+      }));
+      const rejections = tableNames(db).has("tool_rejection") ? (db.prepare(
+        "SELECT work_id, session_id, call_id, tool_name, reason_kind, fact, guidance, created_at FROM tool_rejection ORDER BY rejection_id DESC LIMIT ?",
+      ).all(limit) as Record<string, any>[]).map((row) => ({
+        work_id: row.work_id ?? null, session_id: row.session_id, call_id: row.call_id, tool: row.tool_name, kind: row.reason_kind,
+        fact: row.fact, guidance: row.guidance ?? null, at: clock.fromLocalText(row.created_at),
+      })) : [];
+      return { records, rejections };
+    } finally {
+      db.close();
+    }
+  } catch {
+    return empty;
   }
 }
 

@@ -79,6 +79,15 @@ export const STAY_OPTIONS: Record<Exclude<Stage, "reviewing">, CardOption> = {
   writing: { key: "continue_writing", text: "继续写条目" },
 };
 
+/**
+ * 总体分析还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
+ * 页面点了按钮先把任务移到那个阶段、再发这一句；它们不是用户自己打的字，整理用户说过的话时要认出来。
+ */
+export const STAGE_START_TEXTS = {
+  reading: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。",
+  clarifying: "请逐项澄清：一次只问一件事，先给出候选再问。",
+} as const;
+
 /** 某个阶段的下一段；评审确认之后没有。 */
 export function nextStage(stage: Stage): Stage | null {
   return STAGES[STAGES.indexOf(stage) + 1] ?? null;

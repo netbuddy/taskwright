@@ -822,8 +822,10 @@ export class Executor {
         origin = "ui_request";
       }
       const messageId = hit ? hit.id ?? null : null;
+      const clickMove = click !== null ? conversation.clickStageMove(click.details || {}) : null;
+      const clickUnmoved = click !== null ? conversation.clickStageUnmoved(click.details || {}) : null;
       this.hub.emit("user_message", { session_id: sid, message_id: messageId, at: clock.now(), text: conversation.displayText(raw), origin, annotation,
-        queued: false, client_id: clientId });
+        queued: false, client_id: clientId, ...(clickMove ? { stage_move: clickMove } : {}), ...(clickUnmoved ? { stage_unmoved: clickUnmoved } : {}) });
       const work = this.work;
       if (work !== null) {
         if (work.triggered_by === null) {
@@ -982,13 +984,15 @@ export class Executor {
     if (WRITE_TOOLS.has(tool) && !failed) this.hub.trigger();
     if (tool === REPLY_TOOL && !failed) {
       const reply = details.reply || {};
+      // 助手在这条回复里把任务退回了前面的阶段：消息里带上从哪到哪与理由（回复对象里的 stage 是 { to, reason }）。
+      const replyMove = conversation.replyStageMove(details, (reply.stage || {}).reason);
       if (work !== null) {
         work.replied = true;
         work.replied_since_user = true;
       }
       this.hub.emit("assistant_reply", { session_id: sid, message_id: details.message_id ?? null, at: clock.now(), work_id: work ? work.work_id : null,
         via_reply_tool: true, informs: conversation.normalizeInforms(reply.informs ?? null), act: reply.act ?? null, text: or(reply.text, ""),
-        degraded: truthy(details.degraded) });
+        degraded: truthy(details.degraded), ...(replyMove ? { stage_move: replyMove } : {}) });
     }
   }
 

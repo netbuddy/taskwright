@@ -8,15 +8,23 @@ import { useRef, useState, type ReactNode } from "react";
 import type { Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
 import { overallDef, retellText, titleOf, totals } from "../../../model/overall";
+import { NO_MATERIALS_TEXT, STAGE_STARTS, type StageStart } from "../../../model/stage";
 import { Outline } from "./Outline";
 import { Glossary } from "./Glossary";
 
 /** 提纲展开没有：auto 是没有动过，够宽就展开、窄就收着；open 与 closed 是用户点出来的。 */
 type OutlineShown = "auto" | "open" | "closed";
 
-export function OverallPane({ task, selected, onSelect, page, readOnly = false, writesOff = false, onSend }: {
+export function OverallPane({ task, selected, onSelect, page, readOnly = false, writesOff = false, onSend, onStart, materialCount = 0 }: {
   readOnly?: boolean;
   writesOff?: boolean;
+  /**
+   * 还没有一页主题时的两个开头（「通读材料起草」「逐项澄清」）：先把任务移到那个阶段，再替用户发那句固定的话。
+   * 不给时不显示这两个按钮（任务没有阶段时）。
+   */
+  onStart?: (start: StageStart) => void;
+  /** 任务现在有几份材料（不算由别的材料生成的）；一份都没有时「通读材料起草」不可用。 */
+  materialCount?: number;
   /** 把一句话发给助手（「复述一遍」用）。 */
   onSend?: (text: string) => void;
   task: Task;
@@ -61,7 +69,19 @@ export function OverallPane({ task, selected, onSelect, page, readOnly = false, 
           <div className="oa-intro" data-testid="overall-intro">
             <p className="oa-intro-note">{def?.display?.note ?? "用这件事自己的话写下的主题。"}</p>
             <p className="oa-intro-sum">现在有 {sum.pages} 个主题，{sum.settled} 条已经定下，{sum.open} 条还没定，{sum.pending} 处是助手补的、等你核实。</p>
-            <p className="oa-intro-hint">在左边的提纲里点一个主题，看它是什么、有哪些例子、定下了什么、还有什么没定。</p>
+            {sum.pages === 0 && onStart && task.stage ? (
+              <div className="oa-start" data-testid="overall-start">
+                <p className="oa-intro-hint">这件事还没有一页主题。可以让助手先通读材料、把材料里已经写明的东西立成主题，也可以直接从逐项澄清开始。</p>
+                <p className="oa-start-acts">
+                  <button type="button" className="btn pri" disabled={!!retellOff || materialCount === 0} title={retellOff ?? (materialCount === 0 ? NO_MATERIALS_TEXT : undefined)}
+                    onClick={() => onStart(STAGE_STARTS.reading)} data-testid="start-reading">{STAGE_STARTS.reading.label}</button>
+                  <button type="button" className="btn" disabled={!!retellOff} title={retellOff}
+                    onClick={() => onStart(STAGE_STARTS.clarifying)} data-testid="start-clarifying">{STAGE_STARTS.clarifying.label}</button>
+                </p>
+              </div>
+            ) : (
+              <p className="oa-intro-hint">在左边的提纲里点一个主题，看它是什么、有哪些例子、定下了什么、还有什么没定。</p>
+            )}
             {retell && sum.pages > 0 && (
               <p><button type="button" className="aibtn" disabled={!!retellOff} title={retellOff ?? "请助手把对各个主题的理解讲成一段故事，请核对这段复述"}
                 onClick={retell} data-testid="intro-retell">复述一遍</button></p>

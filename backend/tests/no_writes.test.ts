@@ -25,7 +25,7 @@ const ALLOWED: Record<string, string[]> = {
   "conditions.ts": ["checkCompletion", "completionBrief", "completionHints"],
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
-  "stage.ts": ["STAGE_NAMES"],
+  "stage.ts": ["STAGE_NAMES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS"],
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
   "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames"],
@@ -69,7 +69,7 @@ const ALLOWED: Record<string, string[]> = {
   // upgradeTaskDatabase 是写入：把一个任务库升到现在的格式。它只许在数据升级里调（src/data_upgrade.ts，服务启动时的升级与命令行的
   // 升级都经那里），走的是助手写库时用的同一张步骤表；下面另有一条测试守着别的文件不导入它。
   // 工作的阶段：从任务库读出任务现在的阶段与每个阶段的几盏灯（只读函数，不写库）。
-  "stage_read.ts": ["stageSummaryOf"],
+  "stage_read.ts": ["stageSummaryOf", "stageRecords"],
   "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],

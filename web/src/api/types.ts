@@ -299,6 +299,14 @@ export interface Task {
   stage?: StageView | null;
 }
 
+/** 一条对话消息带着的阶段移动：助手在回复里退回（actor 为 executor，带理由），或者用户在卡片上点了进入下一段（actor 为 user）。 */
+export interface StageMove {
+  from: StageKey;
+  to: StageKey;
+  actor: "executor" | "user";
+  reason?: string;
+}
+
 /** 工作的五个阶段：核读材料、澄清、整理建模、写条目、评审确认。 */
 export type StageKey = "reading" | "clarifying" | "modeling" | "writing" | "reviewing";
 
@@ -393,6 +401,10 @@ export interface UserMessage {
   annotation: unknown | null;
   queued: boolean;
   client_id?: string;
+  /** 用户在卡片上点了进入下一段、系统替用户记了移动时才有：从哪个阶段、到哪个阶段。 */
+  stage_move?: StageMove;
+  /** 用户点了一张进入某个阶段的卡片而阶段没有移动时才有（次序不对，或者任务本来就在那个阶段）：任务当时在哪个阶段。 */
+  stage_unmoved?: { at: string };
 }
 
 export interface AssistantReply {
@@ -408,6 +420,8 @@ export interface AssistantReply {
   text: string;
   /** 连续被拒到上限后放行的纯文字回复；为真时照普通文字显示并加一行说明。 */
   degraded?: boolean;
+  /** 助手在这条回复里把任务退回了前面的阶段时才有：从哪个阶段、到哪个阶段、理由。 */
+  stage_move?: StageMove;
 }
 
 export interface UiActionNoted {
@@ -958,7 +972,7 @@ export interface MessageRequest {
 
 /** request_review：请评审者评审；targets 为空列表时评全部待评审的条目。后端核对通过就回应，评审在后台跑。 */
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
-  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram";
+  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "move_stage";
 
 export interface ActionRequest {
   client_id: string;
@@ -966,7 +980,7 @@ export interface ActionRequest {
   task_id: string;
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
   targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
-  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。 */
+  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。 */
   fields?: Fields | { revision_no: number } | { mermaid: string };
   notify_executor: boolean;
 }
@@ -1035,6 +1049,32 @@ export interface UpgradeView {
   knowledge: boolean;
   progress: { total: number; done: number; current: string | null } | null;
   report: UpgradeReport | null;
+}
+
+/** 调试模式：某个任务最近一次运行实际发给模型的系统提示，按部分列出（后端 debug_prompt.ts）。还没有运行过时 available 为假。 */
+export interface DebugSystemPrompt {
+  available: boolean;
+  note: string | null;
+  session_id?: string | null;
+  at?: string;
+  replaced?: boolean;
+  stage?: StageKey | null;
+  stage_name?: string | null;
+  /** recomposed 重新读文件拼的；reused 沿用上一次的；kept_after_error 重拼出错而沿用上一次的。 */
+  how?: "recomposed" | "reused" | "kept_after_error" | null;
+  error?: string | null;
+  prompt_dir?: string | null;
+  notes?: string[];
+  digest?: string | null;
+  parts: { part: string; part_name: string; from: string; from_name: string; file: string | null; lines: number; bytes: number; text: string }[];
+  text: string;
+}
+
+/** 调试模式：某个任务的阶段记录流水与被拒的工具调用。rejections 新的在前；latest_work_id 是最近一次被拒所在的那次工作。 */
+export interface DebugStage {
+  records: { from: StageKey; from_name: string; to: StageKey; to_name: string; actor: "executor" | "user"; reason: string; run_id: string | null; session_id: string; at: string }[];
+  rejections: { work_id: string | null; session_id: string; call_id: string; tool: string; kind: string; fact: string; guidance: string | null; at: string }[];
+  latest_work_id: string | null;
 }
 
 /** 调试模式的提示词目录：现在设的是什么，以及固定的十三个文件名各自在目录里的情形。 */

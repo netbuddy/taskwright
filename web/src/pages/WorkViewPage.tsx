@@ -19,6 +19,9 @@ import { DIAGRAM_HOLD_TEXT } from "../components/work/ReplyCard";
 import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
+import { StageBar } from "../components/work/StageBar";
+import { DebugPane } from "../components/work/DebugPane";
+import type { StageStart } from "../model/stage";
 import { ReviewPanel } from "../components/work/ReviewPanel";
 import { DocumentModal } from "../components/DocumentModal";
 import { errorText } from "../components/work/errors";
@@ -194,7 +197,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       // 评审也不改内容，进度与结果另有 review_progress、review_finished 两种事件，同样不登记。
       // 提交交付物也不登记：任务变为已完成的事件不带操作编号，挂着的话同样等不到；提交之后任务只读，提示条随之消失。
       // 改图（edit_diagram）照常登记：图的事件 diagram_changed 带操作编号，到了就消去。
-      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
+      // 移动阶段也不登记：任务本来就在那个阶段时后端什么都不记、没有库事件，挂着的话会一直等不到。
+      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable" && req.kind !== "move_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
       return null;
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
@@ -284,6 +288,22 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     setDocCollapsed(false);
     setSide("material");
     setLocate((l) => ({ excerpt, locator, nonce: (l?.nonce ?? 0) + 1 }));
+  };
+  /**
+   * 总体分析还没有主题时的两个开头（「通读材料起草」「逐项澄清」）：先把任务移到那个阶段，移成了（或者本来就在那里）再替用户发那句固定的话；
+   * 没移成（例如助手正在工作）就报一条失败提示，不发话。
+   */
+  const startStage = (start: StageStart) => {
+    void submit({ kind: "move_stage", targets: [], fields: { stage: start.stage }, notify_executor: false }, `把任务移到${start.stage}`).then((error) => {
+      if (error) { toast.error(errorText(error)); return; }
+      void send(start.text);
+    });
+  };
+  /** 阶段条上点了一盏说材料还没有被引用的灯：展开右侧栏、切到材料页签，由材料页签选中那份材料。 */
+  const openMaterial = (path: string) => {
+    toggleDoc(false);
+    setSide("material");
+    dispatch({ type: "focus_material", path });
   };
   /** 回复底部「产生了修订 N」：右侧栏展开并切到修订页签，选中其中最新的一次，滚到那里。 */
   /** 评审页签里点一条发现：打开条目详情，滚到那个字段并高亮一会儿。 */
@@ -378,6 +398,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
             {!closed && <div className="srow newrow" role="button" onClick={() => void newSession()}>＋ 新建会话（让助手从干净的上下文开始，交付物还是这一份）</div>}
           </div>
         </div>
+        <StageBar stage={task?.stage} items={task?.items ?? []} onOpenItem={openItem} onOpenMaterial={openMaterial} />
         <div className="app-body">
           <div className="rail">
             <div className="ico" title="全局查找（还没有做）">⌕</div>
@@ -414,6 +435,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                 <ItemsPanel task={task} initialCollection={collection} initialDiagrams={diagrams} initialDiagram={diagram} readOnly={readOnly} writesOff={working} recentlyChanged={state.recentlyChanged} marks={marks} just={just}
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
+                  onStartStage={startStage} materialCount={state.materials.filter((m) => !m.derived_from).length}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} />
@@ -430,7 +452,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                     <ReviewPanel task={task} review={state.review} readOnly={readOnly} writesOff={working} onReview={review} submit={submit}
                       onOpenFinding={openFinding} onPrefill={prefill} />
                   ) : undefined}
-                  reviewCount={task ? openProblems(task) : 0} task={task ?? undefined} />
+                  reviewCount={task ? openProblems(task) : 0} task={task ?? undefined}
+                  debug={service.info?.debug ? <DebugPane taskId={taskId} stage={task?.stage ?? null} working={!!working} onOpenItem={openItem} /> : undefined} />
               </div>
             </div>
           </div>
