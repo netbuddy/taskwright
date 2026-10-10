@@ -20,6 +20,7 @@ import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
 import { appVersion } from "./paths.ts";
+import * as debugPrompt from "./debug_prompt.ts";
 import * as modelConfig from "./model_config.ts";
 import * as modelTest from "./model_test.ts";
 import { probeModel } from "./model_probe.ts";
@@ -346,6 +347,10 @@ const handlers: Record<string, Handler> = {
     return json(200, { ok: true, started, upgrade: service.upgrade.view() });
   },
   model_config: (service, req) => json(200, modelConfig.view(modelContext(service))),
+  // 调试模式的三个接口（debug_prompt.ts）；不是调试模式时都答 not_found。
+  debug_prompt_dir: (service) => json(200, debugPrompt.promptDirView(service)),
+  debug_prompt_dir_set: async (service, req) => json(200, await debugPrompt.setPromptDir(service, bodyJson(req))),
+  debug_system_prompt: (service, req) => json(200, debugPrompt.lastSystemPrompt(service, req.params.task)),
   model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
   model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service), req.params.provider, bodyJson(req))),
   model_provider_delete: async (service, req) => json(200, await modelConfig.deleteProvider(modelContext(service), req.params.provider)),
@@ -587,6 +592,8 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", "/api/v1/model-config/providers/(?<provider>[^/]+)/context-window", "model_provider_context"],
   ["POST", "/api/v1/model-config/selection", "model_selection"],
   ["POST", "/api/v1/model-config/test", "model_test"],
+  ["GET", "/api/v1/debug/prompt-dir", "debug_prompt_dir"],
+  ["POST", "/api/v1/debug/prompt-dir", "debug_prompt_dir_set"],
   ["GET", "/api/v1/tasks", "list_tasks"],
   ["GET", "/api/v1/task-types", "list_task_types"],
   ["POST", "/api/v1/tasks", "create_task"],
@@ -619,6 +626,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", `/api/v1/knowledge/libraries/${L}/documents/delete`, "delete_document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/content`, "document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/raw`, "document_raw"],
+  ["GET", `/api/v1/tasks/${T}/debug/system-prompt`, "debug_system_prompt"],
   ["GET", `/api/v1/tasks/${T}/conversation`, "conversation"],
   ["POST", `/api/v1/tasks/${T}/messages`, "messages"],
   ["POST", `/api/v1/tasks/${T}/actions`, "actions"],

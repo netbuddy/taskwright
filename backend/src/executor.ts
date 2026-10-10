@@ -189,6 +189,8 @@ export class Executor {
   readonly knowledgeRoot: string | null;
   readonly sessions: Sessions;
   pi: PiSession | null = null;
+  /** 最近一次运行开始时扩展报来的「这次运行的系统提示」，连同是哪条会话、什么时候；这次启动以来还没有运行过时是 null。 */
+  lastStagePrompt: { report: Dict; session_id: string | null; at: string } | null = null;
   state = "not_started";
   detail = "";
   /** 最近一次续接或切换没有接上：执行者状态的文字换成 RESUME_FAILED_STATE_TEXT，直到状态再变。 */
@@ -698,6 +700,11 @@ export class Executor {
           step_count: 0, turn: 0, turn_tools: [], replied: false, stopped: false, limit_stopped: false, failed: false, last_text: null, last_user_id: null, replied_since_user: true };
         this.setState("working");
       }
+      return;
+    }
+    if (kind === "系统提示") {
+      // 扩展按阶段换系统提示时报的那一行：按任务留最近一份（带文字的那一份在会话对象上，调试模式下才有文字），给调试接口用。
+      if (pi.lastStagePrompt !== null) this.lastStagePrompt = { report: pi.lastStagePrompt, session_id: sid, at: clock.now() };
       return;
     }
     if (kind === "本轮事实") {

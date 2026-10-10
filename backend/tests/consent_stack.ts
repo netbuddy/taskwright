@@ -58,14 +58,16 @@ export type Stack = {
  * 起一套验证栈（假端点、真后端、真 pi），建任务与会话，交给 body；结束时停掉。
  * autoIntent 为真（缺省）时假端点在用户说话之后第一个只有工具调用的回答前面自动补一段理解；测理解门禁时关掉，由脚本自己写。
  * seed 为真（缺省）时在开会话之前把任务备到可以写条目的样子（见 TOPIC_CALL 的说明）；为假时任务停在刚建好的样子。
+ * args 是另加给后端的命令行参数（例如 --debug），env 是另加给后端的环境变量。
  */
-export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>, { autoIntent = true, seed = true } = {}): Promise<void> {
+export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>,
+  { autoIntent = true, seed = true, args = [] as string[], env: extraEnv = {} as Record<string, string> } = {}): Promise<void> {
   const dir = join(tmp, name);
   mkdirSync(dir, { recursive: true });
   const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent }).start();
-  const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(dir, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(dir, "logs") };
+  const env: Dict = { ...process.env, PI_CODING_AGENT_DIR: writeAgentDir(join(dir, "pi-agent"), fake.baseUrl), TASKWRIGHT_LOG_DIR: join(dir, "logs"), ...extraEnv };
   for (const name of DROPPED_ENV) delete env[name];
-  const { child, port } = await spawnBackend(["--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--host", "127.0.0.1"],
+  const { child, port } = await spawnBackend(["--tasks", join(dir, "tasks"), "--runs", join(dir, "runs"), "--profile", "fake", "--host", "127.0.0.1", ...args],
     { cwd: dir, env });
   try {
     const call = (method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> => new Promise((ok, fail) => {
