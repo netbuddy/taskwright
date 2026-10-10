@@ -93,7 +93,7 @@ test("数据包升级：四个版本的样本在一个旧包里，升成一个�
   assert.ok(!names.some((name) => name.includes("backups") || name.includes("service.sqlite") || name.startsWith("logs/")), "升级时用的东西不进新包");
 
   const text = upgradePackText(result);
-  assert.match(text, /^数据包升级（原来的包由 0\.5\.0 导出）\n任务 TASK-SAMPLE-040「图书借阅（样本）」：格式 0 升到 1，成功\n/);
+  assert.match(text, new RegExp(`^数据包升级（原来的包由 0\\.5\\.0 导出）\\n任务 TASK-SAMPLE-040「图书借阅（样本）」：格式 0 升到 ${TASK_DB_VERSION}，成功\\n`));
   assert.match(text, /数据包已经写好：.*new\.taskwright\.zip/);
 
   const target = locations(fresh("target"));

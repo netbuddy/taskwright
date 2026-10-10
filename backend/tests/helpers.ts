@@ -90,13 +90,16 @@ export function makeWorkspace(root: string, name: string, withDb: boolean): stri
   return ws;
 }
 
-/** 用真实任务类型的起始文件建一个任务目录，按几批各写一次：一批是操作列表时保存一次修订，是 { diagram, said } 时保存一张图。 */
+/**
+ * 用真实任务类型的起始文件建一个任务目录，按几批各写一次：一批是操作列表时保存一次修订，是 { diagram, said } 时保存一张图。
+ * 任务一建好就由用户移到写条目阶段（夹具里的 { stage }），这样各批里助手可以直接写用例；测工作阶段的测试不用它。
+ */
 export function makeTypedTask(root: string, taskType: string, materials: Record<string, string>, batches: unknown[]): string {
   const ws = join(root, "task");
   cpSync(join(ROOT, "task-types", taskType), ws, { recursive: true });
   mkdirSync(join(ws, "inputs"), { recursive: true });
   for (const [name, text] of Object.entries(materials)) writeFileSync(join(ws, "inputs", name), text, "utf-8");
-  node([join(FIXTURES, "build_task_db.mts"), ws, `docs/task-definitions/${taskType}.json`, JSON.stringify(batches)]);
+  node([join(FIXTURES, "build_task_db.mts"), ws, `docs/task-definitions/${taskType}.json`, JSON.stringify([{ stage: "写条目" }, ...batches])]);
   return ws;
 }
 

@@ -73,12 +73,13 @@ The model pi is started with comes from `resolveModel` in `backend/src/launch.ts
 | `model_call` | one model call made by a judge: prompt, raw output, model, duration, usage. A process record, not a domain fact. |
 | `dialogue_act` | one dialogue act of the user or the assistant in a session (for example request, correct, question; the assistant's inform, ask, confirm), numbered rN-M where rN is which user message of the session it belongs to. |
 | `tool_rejection` | one refused tool call of the assistant: tool, call id, unit of work, kind of reason (input, or a missing step), the fact and guidance layers of the refusal, the first 2,000 characters of the refused input. A process record, not a domain fact; no event is written. |
+| `stage_record` | one move of the task from one stage of work to another: the stage it moved to, the stage it came from, who moved it (the assistant or the user), the reason, and the run number when the assistant moved it. The stage a task is in is the latest row; with no row at all it follows from whether the task has materials, and that default is not stored. Added in format version 2 of the task database. |
 
 **How the assistant's understanding of each user message is recorded.** For every user message the assistant writes an understanding: a JSON object in its text output, in the format of `agent/prompts/schemas/user_intent.schema.json` (the platform skill's description of the format is generated from the same file). The extension scans every text part of every assistant message of the turn, takes out the JSON fragments (fenced or bare) and matches each against the registered schemas (`agent/src/lib/registered_outputs.ts`; today only the understanding is registered). Four events record the outcome:
 
 | Event | Written when | A failure? |
 |---|---|---|
-| `USER_INTENT_RECORDED` | a fragment matches the schema and passes the fact check (the act it answers exists and is still unanswered; the items it names exist); its acts go into `dialogue_act` | no |
+| `USER_INTENT_RECORDED` | a fragment matches the schema and passes the fact check (the act it answers exists and is still unanswered; the items it names exist; its summary is not about the system's reminder to send the reply with the reply tool); its acts go into `dialogue_act` | no |
 | `USER_INTENT_INVALID` | a fragment matches the schema but fails the fact check | no; the assistant rewrites it |
 | `USER_INTENT_MISSING` | the turn has ended (pi's `agent_settled`: after automatic retries and queued continuations) and the user message still has no valid understanding | yes, the only failure |
 | `STRUCTURED_OUTPUT_UNMATCHED` | a message holds fragments that match no registered schema or cannot be parsed (for example tool arguments leaked into the text); lists each fragment with its errors | no, a diagnostic |

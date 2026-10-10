@@ -9,7 +9,7 @@ import type { TaskDefinition } from "./definition.ts";
 import { ACTOR_USER } from "./db.ts";
 import {
   type BasisPending, type Mention, OVERALL_COLLECTION, type PageFacts, type PlainItem, type RevisionFacts, type SupportPlaces, type Verification,
-  basisPending, isSupplement, mentionsOf, pageFacts, verificationOf,
+  basisPending, isSupplement, mentionsOf, pageFacts, verificationOf, viewedIn,
 } from "./overall_analysis.ts";
 import { ELEMENT_ITEM, SOURCE_ITEM, elementClause } from "./schema.ts";
 import { jsonOrText } from "./task_read.ts";
@@ -31,6 +31,10 @@ export interface OverallState {
   mentions: Map<string, Mention[]>;
   /** 总体分析的各页在最低门里要看的几样。 */
   pages: PageFacts[];
+  /** 条目编号 → 用户看没看过它现在的内容（lib/overall_analysis.ts 的 viewedIn）。 */
+  viewed: Map<string, boolean>;
+  /** 条目编号 → 它当前修订上的各条来源的种类与出处，按位置的先后。 */
+  sources: Map<string, { kind: string; locator: string }[]>;
 }
 
 /** 读出一个任务现在的全部条目并算出上面几样。 */
@@ -78,14 +82,17 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
     history.set(row.item_id, list);
   }
   const own = new Map<string, Verification>();
+  const viewed = new Map<string, boolean>();
   for (const item of items) {
     const supplements: SupportPlaces[] = (sources.get(item.item_id) ?? []).filter((one) => isSupplement(one.kind)).map((one) => one.supports);
-    own.set(item.item_id, verificationOf(supplements, chainOf(history.get(item.item_id) ?? [])));
+    const chain = chainOf(history.get(item.item_id) ?? []);
+    own.set(item.item_id, verificationOf(supplements, chain));
+    viewed.set(item.item_id, viewedIn(chain));
   }
   const byId = new Map(items.map((one) => [one.item_id, one]));
   const cited = (itemId: string) => {
     const page = byId.get(itemId);
-    return page ? { collection: page.collection, fields: page.fields, pending: own.get(itemId)!.pending_verification } : null;
+    return page ? { collection: page.collection, fields: page.fields, pending: own.get(itemId)!.pending_verification, viewed: viewed.get(itemId) === true } : null;
   };
   const verification = new Map<string, ItemVerification>();
   for (const item of items) {
@@ -94,8 +101,9 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
     verification.set(item.item_id, { ...own.get(item.item_id)!, basis_pending: basis });
   }
   const shapes = definition.collections.map((one) => ({ name: one.name, fields: one.fields.map((f) => ({ name: f.name, type: f.type })) }));
-  const pages = items.filter((one) => one.collection === OVERALL_COLLECTION).map((one) => pageFacts(one.item_id, one.fields, own.get(one.item_id)!.pending_verification));
-  return { items, verification, mentions: mentionsOf(shapes, items), pages };
+  const pages = items.filter((one) => one.collection === OVERALL_COLLECTION)
+    .map((one) => pageFacts(one.item_id, one.fields, own.get(one.item_id)!.pending_verification, viewed.get(one.item_id) === true));
+  return { items, verification, mentions: mentionsOf(shapes, items), pages, viewed, sources };
 }
 
 /** 算待核实要看的那一段修订：从最近一次不是用户亲手改出来的修订起，到当前修订为止。 */
@@ -116,6 +124,7 @@ export function verificationLines(itemId: string, state: ItemVerification): stri
   }
   const basis = state.basis_pending;
   if (basis?.reason === "pending") lines.push(`待核实：它依据的主题 ${basis.item_id} 还待核实（那一页有助手补充而用户没有确认的内容）。`);
+  if (basis?.reason === "unviewed") lines.push(`待核实：它依据的主题 ${basis.item_id} 用户还没有看过。请用户打开那一页看一眼（看过就算确认）。`);
   if (basis?.reason === "deprecated") lines.push(`待核实：它依据的主题 ${basis.item_id} 已废弃${basis.see ? `，改看 ${basis.see}` : ""}；请改成依据现在在用的主题。`);
   return lines;
 }
@@ -127,7 +136,7 @@ export function pendingSummary(state: OverallState): string | null {
   if (own.length === 0 && byBasis.length === 0) return null;
   const parts = [
     ...(own.length ? [`有助手补充而用户还没有确认的 ${own.length} 个：${own.join("、")}`] : []),
-    ...(byBasis.length ? [`依据的主题待核实或已废弃的 ${byBasis.length} 个：${byBasis.join("、")}`] : []),
+    ...(byBasis.length ? [`依据的主题待核实、用户还没有看过或已废弃的 ${byBasis.length} 个：${byBasis.join("、")}`] : []),
   ];
   return `待核实的条目：${parts.join("；")}。`;
 }

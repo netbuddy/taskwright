@@ -295,6 +295,28 @@ export interface Task {
   diagrams?: DiagramRow[];
   /** 评审批次，按先后；旧后端没有这一项。 */
   review_batches?: ReviewBatch[];
+  /** 任务现在的工作阶段与每个阶段的几盏灯；早先建的任务（没有「总体分析」集合）没有阶段，是 null；旧后端没有这一项。 */
+  stage?: StageView | null;
+}
+
+/** 工作的五个阶段：核读材料、澄清、整理建模、写条目、评审确认。 */
+export type StageKey = "reading" | "clarifying" | "modeling" | "writing" | "reviewing";
+
+/** 一盏灯：某个阶段「做到什么算够」的一条判据。ok 为 null 是不适用；items 是差的页、条目或材料。灯只提示，不拦操作。 */
+export interface StageLamp {
+  key: string;
+  summary: string;
+  ok: boolean | null;
+  items: string[];
+}
+
+/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），以及五个阶段各自的灯。 */
+export interface StageView {
+  current: StageKey;
+  moved_by: "executor" | "user" | null;
+  moved_at: string | null;
+  reason: string | null;
+  lamps: Record<StageKey, StageLamp[]>;
 }
 
 export interface Material {
@@ -652,7 +674,24 @@ export interface ItemViewed {
   completion: Completion | null;
 }
 
-/** 库事件：有序号（SSE 的 id 行），可补发。 */
+/** 任务从一个工作阶段移到了另一个：到了哪个阶段、从哪个阶段来、谁移的、理由；助手移的带运行号，用户移的带操作编号。 */
+export interface StageChanged {
+  seq: number;
+  at: string;
+  task_id: string;
+  to: StageKey;
+  from: StageKey;
+  actor: "executor" | "user" | string;
+  reason: string;
+  run_id: string | null;
+  op_id?: string | null;
+  completion: Completion | null;
+}
+
+/**
+ * 库事件：有序号（SSE 的 id 行），可补发。有阶段的任务，每一批最后一条库事件（不论哪一种）另带 stage：
+ * 现在的阶段与灯，与整份数据里 task.stage 同一个形状。
+ */
 export type LibraryEvent =
   | { event: "deliverable_changed"; data: DeliverableChanged }
   | { event: "task_changed"; data: TaskChanged }
@@ -666,11 +705,12 @@ export type LibraryEvent =
   | { event: "review_rules_changed"; data: ReviewRulesChanged }
   | { event: "confirmation_recorded"; data: ConfirmationRecorded }
   | { event: "item_viewed"; data: ItemViewed }
-  | { event: "diagram_changed"; data: DiagramChanged };
+  | { event: "diagram_changed"; data: DiagramChanged }
+  | { event: "stage_changed"; data: StageChanged };
 
 export const LIBRARY_EVENTS = [
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
-  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "stage_changed",
 ] as const;
 
 export interface WorkStarted {

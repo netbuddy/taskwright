@@ -15,8 +15,9 @@ import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { pdfFacts, pdfSourceName } from "./projection.ts";
-import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf } from "../../agent/src/lib/overall_analysis.ts";
+import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
+import { stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -291,6 +292,29 @@ export function completion(taskDir: string, taskId: string, definition: ParsedDe
     all_met: conditions.every((c: any) => c.met), unmet_count: conditions.filter((c: any) => c.state === "unmet").length,
     brief: "brief" in out ? out.brief : "", conditions, hints,
   };
+}
+
+/**
+ * 任务现在的工作阶段与每个阶段的几盏灯，给接口的 stage 形状：{ current, moved_by, moved_at, reason, lamps }。
+ * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）；moved_by 是最近一次移动由谁做的（executor 或 user），
+ * 一次都没有移过时与 moved_at、reason 一起为 null；lamps 按阶段给出各盏灯 { key, summary, ok, items }，ok 为 null 是不适用。
+ * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，返回 null；算不出来时也返回 null。
+ * 与完成条件一样，在同一进程里调用 agent 的读取函数（lib/stage_read.ts 的 stageSummaryOf），库另开一个只读连接，
+ * 所以助手查询任务状态时读到的与这里给页面的是同一回事。
+ */
+export function stageView(taskDir: string) {
+  try {
+    const dbPath = dbFile(taskDir);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const summary = stageSummaryOf(db, dirname(resolve(dbPath)));
+      return summary === null ? null : { ...summary, moved_at: clock.fromLocalText(summary.moved_at) };
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -680,6 +704,8 @@ export class Library {
     const mentions = mentionsOf(this.definition["集合"].map((c) => ({ name: c["名称"], fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"] })) })), plain);
     const withOverall = this.collections.has(OVERALL_COLLECTION);
     const pendingOf = new Map<string, Verification>();
+    // 用户看没看过每个条目现在的内容（与待核实看的是同一段修订，agent/src/lib/overall_analysis.ts 的 viewedIn）。
+    const viewedOf = new Map<string, boolean>();
     for (const one of plain) {
       const supplements = this.sourcesOf(one.item_id, one.revision_no).filter((s) => isSupplement(s.kind)).map((s) => s.supports ?? []);
       // 这个条目的各次修订：是不是用户亲手改出来的、用户有没有在那次修订上看过（依据不是用户修改的确认里最近一条是接受）。
@@ -697,11 +723,12 @@ export class Library {
         if (!rev.byUser) from = n;
       });
       pendingOf.set(one.item_id, verificationOf(supplements, history.slice(from)));
+      viewedOf.set(one.item_id, viewedIn(history.slice(from)));
     }
     const plainOf = new Map(plain.map((one) => [one.item_id, one]));
     const citedPage = (id: string) => {
       const page = plainOf.get(id);
-      return page ? { collection: page.collection, fields: page.fields, pending: pendingOf.get(id)!.pending_verification } : null;
+      return page ? { collection: page.collection, fields: page.fields, pending: pendingOf.get(id)!.pending_verification, viewed: viewedOf.get(id) === true } : null;
     };
     for (const i of sorted) {
       if (i.deleted_in_revision !== null) continue;
@@ -749,6 +776,8 @@ export class Library {
       ended_at: clock.fromLocalText(task.ended_at),
       definition: definitionView(this.definition, task.definition_text ?? null, this.data.task_dir ?? null),
       completion: null as any,
+      // 工作的阶段与灯：与完成条件一样在读事务提交之后另算（taskSnapshot），这里先占位。
+      stage: null as ReturnType<typeof stageView>,
       items,
       diagrams: this.diagramsView(),
       latest_revision: this.latestRevision(),
@@ -851,13 +880,19 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
     return ["review_rules_changed", { ...base, collection: name, off: or(payload.off, []), promote: or(payload.promote, []), op_id: opId, completion: null,
       ...collectionReviewView(lib.definition, name, lib.data.task!.definition_text ?? null, lib.data.task_dir ?? null) }];
   }
+  if (e.name === "STAGE_MOVED") {
+    // 任务从一个工作阶段移到了另一个：到了哪个阶段（to）、从哪个阶段来（from）、谁移的、理由；助手移的带运行号，用户移的带操作编号。
+    // 到了哪个阶段不叫 stage：这一批最后一条事件上的 stage 是现在的阶段与灯（见 libraryEvents），两样不能撞名。
+    return ["stage_changed", { ...base, to: payload.stage ?? null, from: payload.from ?? null, actor, reason: payload.reason ?? "",
+      run_id: payload.run_id ?? null, op_id: opId, completion: null }];
+  }
   if (e.name === "CONFIRMATION_RECORDED") {
     return ["confirmation_recorded", { ...base, items: or(payload.items, []), basis: or(payload.basis, "ui_click"), op_id: opId, completion: null }];
   }
   return null;
 }
 
-/** 取 afterSeq 之后的全部事件并拼好；完成条件算一次，附在最后一条上。返回 [事件列表, 当前最大序号]。 */
+/** 取 afterSeq 之后的全部事件并拼好；完成条件算一次，附在最后一条上（有阶段的任务另附现在的阶段与灯）。返回 [事件列表, 当前最大序号]。 */
 export function libraryEvents(taskDir: string, afterSeq: number): [[string, Record<string, any>][], number] {
   const db = openRo(taskDir);
   if (db === null) return [[], 0];
@@ -871,7 +906,12 @@ export function libraryEvents(taskDir: string, afterSeq: number): [[string, Reco
   data.task_dir = taskDir;
   const lib = new Library(data);
   const out = (data.events || []).map((e) => eventPayload(lib, e)).filter((p): p is [string, Record<string, any>] => p !== null);
-  if (out.length) out[out.length - 1][1].completion = completion(taskDir, lib.taskId, lib.definition, lib.totals());
+  if (out.length) {
+    out[out.length - 1][1].completion = completion(taskDir, lib.taskId, lib.definition, lib.totals());
+    // 有阶段的任务：这一批最后一条事件另带现在的阶段与灯（与整份数据里的 stage 同一个形状），页面据此刷新；没有阶段的任务不带这一项。
+    const stage = stageView(taskDir);
+    if (stage !== null) out[out.length - 1][1].stage = stage;
+  }
   return [out, data.seq];
 }
 
@@ -912,6 +952,7 @@ export function taskSnapshot(taskDir: string, reviewSince: number | null = null)
   const lib = new Library(data);
   const view = lib.taskView();
   view.completion = completion(taskDir, lib.taskId, lib.definition, lib.totals());
+  view.stage = stageView(taskDir);
   return [data.seq, view, reviewInProgress(data, reviewSince)];
 }
 

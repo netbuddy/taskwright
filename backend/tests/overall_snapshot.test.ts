@@ -21,7 +21,7 @@ test("整份数据带待核实、因依据而待核实与提到；用户确认�
     page({ 标题: "预约取书", 别名: ["预约"], 标签: ["流程"], 已经定下的: ["保留期是 3 天。"] },
       [{ ...SOURCE, supports: [{ field: "它是什么" }] }, SUPPLEMENT([{ field: "已经定下的", index: 0 }])]),
     page({ 标题: "保留期", 它是什么: "预约取书的书在预留架上留着的那几天。" }, [SUPPLEMENT([])]),
-  ], [READY], [
+  ], [READY], { view: ["OA-003"] }, [
     { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["读者选一本在架的书", "读者办预约取书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] },
   ]]);
   const [, task] = library.taskSnapshot(ws);
@@ -80,7 +80,7 @@ test("用户亲手改只确认他改到的那几处：只贴标签不算；改�
 
 test("被依据的那一页已废弃：依据它的条目带 basis_pending，reason 是 deprecated，see 是它写的改看", () => {
   const ws = build("deprecated", DEFINITION, [
-    [page({ 标题: "预约" }), page({ 标题: "预约取书" })], [READY],
+    [page({ 标题: "预约" }), page({ 标题: "预约取书" })], [READY], { view: ["OA-003"] },
     [{ op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] }],
     [{ op: "update", item: "OA-001", base_revision: 1, fields: { 状态: "已废弃", 改看: ["OA-002"] } }],
   ]);
@@ -99,4 +99,16 @@ test("没有总体分析集合的任务：待核实照样算，条目不带 ment
       ["boolean", "number", true, null, false], item.item_id);
   }
   assert.deepEqual(task!.completion!.hints, []);
+});
+
+test("被依据的那一页没有待核实的内容、但用户还没有看过：依据它的条目带 basis_pending，reason 是 unviewed；用户看过之后消掉", () => {
+  const ws = build("unviewed", DEFINITION, [
+    [page({ 标题: "预约" })], [READY], { view: ["OA-002"] },
+    [{ op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] }],
+  ]);
+  const basisOf = () => (library.taskSnapshot(ws)[1]!.items.find((i) => i.item_id === "UC-001")! as Record<string, any>).basis_pending;
+  // OA-001 全部照抄材料，不待核实；用户看过的是另一页（OA-002）。
+  assert.deepEqual(basisOf(), { item_id: "OA-001", reason: "unviewed", see: null });
+  confirm(ws, "OA-001", 1);
+  assert.equal(basisOf(), null);
 });

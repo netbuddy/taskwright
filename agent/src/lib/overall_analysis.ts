@@ -6,10 +6,10 @@
  * - 待核实：一个条目当前所在的修订上有助手补充的来源，而用户还没有确认过。用户打开看过（或点了确认）是确认整个条目；
  *   用户亲手改，只确认他改到的那几处（助手补充的来源指到的字段与项），只改别的地方不算确认。助手之后又改出新的修订、
  *   上面仍有助手补充的来源，就又待核实。任何集合的条目都这样算。
- * - 因依据而待核实：一个条目把总体分析里的一页写成了来源（种类「条目」），而那一页待核实或已废弃。只看一层。
+ * - 因依据而待核实：一个条目把总体分析里的一页写成了来源（种类「条目」），而那一页已废弃、待核实，或者用户还没有看过。只看一层。
  * - 提到：贴了标签、在用的页的标题与别名是词表；别的页与别的条目的文字里出现了词表里的词，就是提到了那一页。
  *   读的时候现算，不存库。
- * - 最低门要看的事实：任务里有没有一页贴了标签、有例子、又不待核实的主题。
+ * - 最低门要看的事实：任务里有没有一页贴了标签、有例子、用户又看过的主题。
  *
  * 0.4 建的任务没有这个集合（它们的集合叫「领域说明」，照旧）：没有词表，没有提到，也没有最低门；待核实照样算。
  *
@@ -31,6 +31,9 @@ export const STATUS_DEPRECATED = "已废弃";
 
 /** 「例子」里一项以它开头的是反例（这种不算）。 */
 export const COUNTER_EXAMPLE_PREFIX = "反例：";
+
+/** 「例子」里一项以它开头的是例外（流程走不通、要另行处理的情形），与反例并列的另一种写法。 */
+export const EXCEPTION_EXAMPLE_PREFIX = "例外：";
 
 /** 来源种类里的「助手补充」与它在早期版本里的名字，以及依据另一个条目的种类「条目」。本文件不导入别的模块，所以写在这里。 */
 const SUPPLEMENT_KINDS: readonly string[] = ["助手补充", "执行者补充"];
@@ -120,22 +123,27 @@ export function verificationOf(supplements: readonly SupportPlaces[], chain: rea
   return { pending_verification: true, pending_sources: supplements.length, pending_places: places };
 }
 
-/** 被一个条目写成来源的那一页现在的样子：在哪个集合、字段内容、待不待核实。 */
+/** 被一个条目写成来源的那一页现在的样子：在哪个集合、字段内容、待不待核实、用户看没看过（viewedIn）。 */
 export interface CitedPage {
   collection: string;
   fields: Fields;
   pending: boolean;
+  viewed: boolean;
 }
 
-/** 因依据而待核实：依据的是哪一页，是因为它待核实（pending）还是已废弃（deprecated）；已废弃而写了改看时 see 是改看的那一页。 */
+/**
+ * 因依据而待核实：依据的是哪一页，是因为它已废弃（deprecated）、待核实（pending：有助手补充而用户没有确认的内容），
+ * 还是用户还没有看过（unviewed：没有待核实的内容，但用户没有打开看过或点过确认）；已废弃而写了改看时 see 是改看的那一页。
+ */
 export interface BasisPending {
   item_id: string;
-  reason: "pending" | "deprecated";
+  reason: "pending" | "deprecated" | "unviewed";
   see: string | null;
 }
 
 /**
- * 一个条目当前修订上的来源里，种类为「条目」、指向总体分析里一页的：那一页已废弃或待核实时，返回头一处；都没有是 null。
+ * 一个条目当前修订上的来源里，种类为「条目」、指向总体分析里一页的：那一页已废弃、待核实或者用户还没有看过时，返回头一处；都没有是 null。
+ * 一页同时有几样时报最重的一样：已废弃先于待核实，待核实先于没看过。
  * 只看一层：被指的那一页自己依据了谁不往下追。page 按编号给出那一页现在的样子，不存在或已经删除时给 null。
  */
 export function basisPending(sources: readonly { kind: unknown; locator: unknown }[], page: (itemId: string) => CitedPage | null): BasisPending | null {
@@ -145,6 +153,7 @@ export function basisPending(sources: readonly { kind: unknown; locator: unknown
     if (!cited || cited.collection !== OVERALL_COLLECTION) continue;
     if (isDeprecated(cited.fields)) return { item_id: one.locator, reason: "deprecated", see: seeAlsoOf(cited.fields) };
     if (cited.pending) return { item_id: one.locator, reason: "pending", see: null };
+    if (!cited.viewed) return { item_id: one.locator, reason: "unviewed", see: null };
   }
   return null;
 }
@@ -322,34 +331,45 @@ export function pageProblems(fields: Fields, sources: readonly { supports: Suppo
 
 // ───────────── 最低门 ─────────────
 
-/** 最低门看一页的这几样：编号、贴没贴标签、在不在用、有几条例子、待不待核实。 */
+/**
+ * 用户看没看过一个条目现在的内容：从最近一次不是用户亲手改出来的修订起、到当前修订为止的这一段里（与算待核实用的是同一段，
+ * 见 verificationOf 的 chain），有一次修订上用户打开看过或点过确认。用户看过之后自己再改，仍算看过；助手又保存出新的修订，
+ * 就要再看一次。用户亲手改不等于看过整条，不算。
+ */
+export function viewedIn(chain: readonly RevisionFacts[]): boolean {
+  return chain.some((one) => one.viewed);
+}
+
+/** 最低门看一页的这几样：编号、贴没贴标签、在不在用、有几条例子、待不待核实、用户看没看过。 */
 export interface PageFacts {
   item_id: string;
   tagged: boolean;
   deprecated: boolean;
   examples: number;
   pending: boolean;
+  viewed: boolean;
 }
 
-/** 从一页的字段内容与它待不待核实，取出最低门要看的几样。 */
-export function pageFacts(itemId: string, fields: Fields, pending: boolean): PageFacts {
-  return { item_id: itemId, tagged: tagsOf(fields).length > 0, deprecated: isDeprecated(fields), examples: texts(fields[OVERALL_FIELDS.examples]).length, pending };
+/** 从一页的字段内容、它待不待核实与用户看没看过，取出最低门要看的几样。 */
+export function pageFacts(itemId: string, fields: Fields, pending: boolean, viewed: boolean): PageFacts {
+  return { item_id: itemId, tagged: tagsOf(fields).length > 0, deprecated: isDeprecated(fields), examples: texts(fields[OVERALL_FIELDS.examples]).length, pending, viewed };
 }
 
 /**
- * 最低门：任务里至少要有一页在用的主题贴了标签、有例子、又不待核实，才能往别的集合里新增条目。
+ * 最低门：任务里至少要有一页在用的主题贴了标签、有例子、用户又看过，才能往别的集合里新增条目。
+ * 待不待核实不在这道门里：用户看过就是确认了整页，助手补的内容也随之确认；没有助手补充的页同样要用户看过才算。
  * 过得去返回 null；过不去返回一句事实，写明现在差的是什么（一页都没有，或者最接近的那一页差哪几样）。
  */
 export function gateFact(pages: readonly PageFacts[]): string | null {
   const live = pages.filter((one) => !one.deprecated);
-  if (live.some((one) => one.tagged && one.examples > 0 && !one.pending)) return null;
-  const head = "还没有想清楚的主题";
+  if (live.some((one) => one.tagged && one.examples > 0 && one.viewed)) return null;
+  const head = "还没有用户看过的主题";
   if (live.length === 0) return `${head}：总体分析里还没有一页主题`;
   // 最接近的一页：差得最少的，一样少时取编号在前的。
-  const missing = (one: PageFacts) => [...(one.tagged ? [] : ["还没有贴标签"]), ...(one.examples > 0 ? [] : ["还没有例子"]), ...(one.pending ? ["还待核实"] : [])];
+  const missing = (one: PageFacts) => [...(one.tagged ? [] : ["还没有贴标签"]), ...(one.examples > 0 ? [] : ["还没有例子"]), ...(one.viewed ? [] : ["用户还没有看过"])];
   const closest = [...live].sort((a, b) => missing(a).length - missing(b).length)[0];
-  return `${head}：总体分析里还没有一页贴了标签、写了例子、又不待核实的主题（最接近的是 ${closest.item_id}，它${missing(closest).join("、")}）`;
+  return `${head}：总体分析里还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 ${closest.item_id}，它${missing(closest).join("、")}）`;
 }
 
 /** 最低门过不去时「怎么办」那一句。 */
-export const GATE_GUIDANCE = "先在总体分析里立一页主题，写一个例子并确认，再写条目";
+export const GATE_GUIDANCE = "先在总体分析里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目";

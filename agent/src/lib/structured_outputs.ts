@@ -37,6 +37,8 @@ export interface Turn {
   sessionId: string;
   runId: string;
   userEntryId: string;
+  /** 引出这一轮的那句用户的话的原文；调用方手里没有时不给。 */
+  userText?: string;
 }
 
 /** 一种登记的结构化输出。 */

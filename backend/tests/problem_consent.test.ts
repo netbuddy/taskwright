@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, withStack, TOPIC_CALL } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
 
 captureConsole();
 
@@ -23,7 +23,7 @@ const CARD = { kind: "choose", text: "TBD-001 这个问题是否已解决？", i
 const SCRIPT = {
   sequence: [
     // 先立一页主题（修订 1），用例与问题在同一个回答的第二次保存里（修订 2）。
-    { tool_calls: [TOPIC_CALL, { id: "call-save", name: "save_revision", arguments: { operations: [
+    { tool_calls: [{ id: "call-save", name: "save_revision", arguments: { operations: [
       { op: "add", collection: "功能用例", sources: [SOURCE],
         fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } },
       { op: "add", collection: "问题", sources: [SOURCE],

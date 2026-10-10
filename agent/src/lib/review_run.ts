@@ -159,7 +159,8 @@ function recordBatch(call: CallContext, prepared: PreparedReviews, results: Item
 
 /** 整个流程：核对、分批并行评审、写库、拼给调用方的文字。核对不通过时抛 ReviewError，什么都不评。 */
 export async function runReviews(call: CallContext, requested: RequestedItem[] | null, opts: RunOptions): Promise<RunOutcome> {
-  return runPrepared(call, prepareReviews(call.workspaceDir, requested), opts);
+  // 这条路只有助手的「请求评审」工具走：评审之前按任务所在的工作阶段核对（用户在页面上发起的走 lib/review_ui.ts，不看阶段）。
+  return runPrepared(call, prepareReviews(call.workspaceDir, requested, "executor"), opts);
 }
 
 /** 一条结果的结论说法：「合规」「合规（建议 M 条）」「不合规（问题 N 处，建议 M 条）」。 */

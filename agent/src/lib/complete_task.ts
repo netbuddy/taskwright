@@ -10,7 +10,9 @@
  * 本模块不依赖 pi，单元测试可以直接调用。
  */
 
-import { ACTOR_EXECUTOR, emit, wallClockText } from "./db.ts";
+import { ACTOR_EXECUTOR, ACTOR_USER, emit, wallClockText } from "./db.ts";
+import { completeRefusal } from "./stage.ts";
+import { stageOf } from "./stage_read.ts";
 import { CONFIRM_CONDITION, checkCompletion, type ConditionResult, unreadItems, unreadList } from "./conditions.ts";
 import { NoDatabaseYet, TASK_ACTIVE, TASK_DONE, withTaskDatabase } from "./schema.ts";
 import { validateDefinition } from "./definition.ts";
@@ -69,6 +71,15 @@ export function completeTask(call: CompleteCall): CompleteOutcome {
       if (!task) throw new Error("库里还没有任务，没有可以完成的任务。");
       if (task.status !== TASK_ACTIVE) throw new Error(`这个任务的状态是「${task.status}」，不能再完成一次。`);
       const definition = validateDefinition(JSON.parse(task.definition_text));
+      // 工作的阶段（lib/stage.ts）：助手只有在评审确认阶段才能完成任务，先于完成条件核对。用户在页面上提交不看阶段；早先建的任务没有阶段。
+      if ((call.actor ?? ACTOR_EXECUTOR) !== ACTOR_USER) {
+        const stage = stageOf(db, call.workspaceDir, task.task_id, definition);
+        const refusal = stage ? completeRefusal(stage) : null;
+        if (refusal) {
+          const fact = `任务没有标为已完成：${refusal[0]}。`;
+          throw new ToolRejection(`${fact}\n${refusal[1]}。`, fact, `${refusal[1]}。`);
+        }
+      }
       const results = checkCompletion(db, task.task_id, definition.completion, { workspaceDir: call.workspaceDir });
       const unmet = results.filter((r) => !r.satisfied);
       if (unmet.length) {

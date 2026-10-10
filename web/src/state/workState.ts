@@ -34,6 +34,8 @@ import type {
   ReviewWaived,
   SessionInfo,
   Snapshot,
+  StageChanged,
+  StageView,
   Step,
   SystemNote,
   Task,
@@ -332,7 +334,13 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
       next = applyConfirmationRecorded(next, { ...data, basis: "viewed", items: data.items.map((i) => ({ ...i, accepted: true })) });
       break;
     }
+    case "stage_changed":
+      next = applyStageChanged(next, event.data as unknown as StageChanged);
+      break;
   }
+  // 有阶段的任务：这一批最后一条库事件带着现在的阶段与灯（不论是哪一种事件），照它换掉。
+  const stage = (event.data as { stage?: StageView | null }).stage;
+  if (stage && typeof stage === "object" && next.task) next = { ...next, task: { ...next.task, stage } };
   return next;
 }
 
@@ -386,6 +394,18 @@ function applyRulesChanged(state: WorkState, data: ReviewRulesChanged): WorkStat
 }
 
 /** 只带完成条件的库事件：有就换上。 */
+/**
+ * 任务移到了另一个工作阶段：把任务上记的现在的阶段、谁移的、什么时候、理由换成这一次的；灯不在这条事件里，
+ * 由这一批最后一条事件带来的整份阶段数据换（见 applyLibrary 末尾）。任务没有阶段数据时（旧后端）不凭空造一份。
+ */
+function applyStageChanged(state: WorkState, data: StageChanged): WorkState {
+  const next = withCompletionOnly(state, data.completion);
+  const stage = next.task?.stage;
+  if (!next.task || !stage) return next;
+  const by = data.actor === "user" || data.actor === "executor" ? data.actor : stage.moved_by;
+  return { ...next, task: { ...next.task, stage: { ...stage, current: data.to, moved_by: by, moved_at: data.at, reason: data.reason } } };
+}
+
 function withCompletionOnly(state: WorkState, completion: Completion | null | undefined): WorkState {
   return state.task ? { ...state, task: withCompletion(state.task, completion) } : state;
 }

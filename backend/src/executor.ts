@@ -500,6 +500,8 @@ export class Executor {
       const error = or(result.error, {}) as Dict;
       throw new ApiError(get(error, "code", "bad_request"), get(error, "message", "卡片点击没有转交成功。"), or(error.data, {}));
     }
+    // 点的是「开始写条目」时扩展命令替用户记了一次阶段移动：库里多了一条事件，去查并转发给页面。
+    if (result.stage_event_seq !== undefined && result.stage_event_seq !== null) this.hub.trigger();
     return false;
   }
 

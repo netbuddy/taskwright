@@ -32,6 +32,10 @@
  * fields 写页面当时看到的修订号 revision_no；与执行者的「完成任务」同一个核心函数 completeTask 核对（先完成条件，再同意：
  * 这次点击就是同意，修订号要是现在的），发起方记用户。任务标为已完成，往会话里追加一句说明，不引出执行者的运行。
  *
+ * 移动阶段（move_stage）：用户把任务移到另一个工作阶段（lib/stage.ts）。fields 写 { stage, reason }：stage 是五个阶段名之一，reason 可以不写。
+ * 用户想移到哪个阶段都可以；记一条阶段记录，往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行。任务本来就在那个阶段时
+ * 什么都不记、也不追加说明。早先建的任务没有阶段，拒绝。
+ *
  * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_revision、undo_conflict、
  * task_closed、no_task、rejected、bad_request）和给人看的一句中文，data 里放细节。本模块不依赖 pi。
  */
@@ -47,6 +51,8 @@ import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
+import { STAGES, STAGE_NAMES, stageByName } from "./stage.ts";
+import { moveStage } from "./stage_read.ts";
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
 export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
@@ -54,7 +60,7 @@ export const EVENT_REVIEW_WAIVED = "REVIEW_WAIVED";
 export const EVENT_REVIEW_UNWAIVED = "REVIEW_UNWAIVED";
 export const EVENT_REVIEW_RULES_CHANGED = "REVIEW_RULES_CHANGED";
 export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules",
-  "submit_deliverable"] as const;
+  "submit_deliverable", "move_stage"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
 export { KEEP_PENDING_STATUS };
@@ -170,6 +176,7 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
   }
   if (kind === "set_review_rules") return setReviewRules(ctx, opId, request);
   if (kind === "submit_deliverable") return submitDeliverable(ctx, opId, request);
+  if (kind === "move_stage") return moveStageByUser(ctx, opId, request);
   if (!Array.isArray(request.targets) || request.targets.length === 0) {
     throw new UserOpError("bad_request", "targets 应当是一个不为空的列表。");
   }
@@ -669,6 +676,43 @@ function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult 
   return {
     op_id: opId, kind: "unwaive_review", event_seqs: [seq], results: items, revision_no: null,
     note: `界面操作（不是用户打的字）：用户撤销了对 ${itemsPhrase(items)} 的保留，这些条目重新算作评审不通过。`,
+    notify_text: null, undoable: false,
+  };
+}
+
+/** 用户移动之后追加进会话的那句话。 */
+export function stageMoveNote(from: string, to: string, reason: string): string {
+  return `界面操作（不是用户打的字）：用户把任务从${from}移到${to}。${reason ? `理由：${reason}` : ""}`;
+}
+
+/** 移动阶段：见文件头。fields 写 { stage, reason }。 */
+function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
+  const fields = isObject(request.fields) ? request.fields : {};
+  const to = stageByName(fields.stage);
+  if (to === null) {
+    throw new UserOpError("bad_request", `move_stage 要在 fields 里写 stage：${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一；可以另写一句 reason。`);
+  }
+  const reason = typeof fields.reason === "string" ? fields.reason.trim() : "";
+  let outcome;
+  try {
+    outcome = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
+      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+      if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+      if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
+        throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
+      }
+      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再移动阶段。`, { status: task.status });
+      return moveStage(db, ctx.workspaceDir, { taskId: task.task_id, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, reason);
+    });
+  } catch (error) {
+    if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+    throw error;
+  }
+  if (outcome.from === null) throw new UserOpError("rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] });
+  return {
+    op_id: opId, kind: "move_stage", event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
+    // 本来就在那个阶段：什么都没有记，也不往会话里追加说明。
+    note: outcome.moved ? stageMoveNote(STAGE_NAMES[outcome.from], STAGE_NAMES[to], reason) : "",
     notify_text: null, undoable: false,
   };
 }

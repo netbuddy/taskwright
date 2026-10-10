@@ -167,7 +167,7 @@ test("数据包升级：旧包升成新包并能导入；参数不对、比这�
   const to = join(dir, "new.taskwright.zip");
   const upgraded = run(["data", "upgrade", "--pack", pack, "--to", to]);
   assert.equal(upgraded.status, 0, upgraded.err + upgraded.out);
-  assert.match(upgraded.out, /^数据包升级（原来的包由 .* 导出）\n任务 TASK-SAMPLE-040「图书借阅（样本）」：格式 0 升到 1，成功\n任务 TASK-SAMPLE-043/);
+  assert.match(upgraded.out, new RegExp(`^数据包升级（原来的包由 .* 导出）\\n任务 TASK-SAMPLE-040「图书借阅（样本）」：格式 0 升到 ${TASK_DB_VERSION}，成功\\n任务 TASK-SAMPLE-043`));
   assert.match(upgraded.out, /数据包已经写好：.*new\.taskwright\.zip/);
   assert.deepEqual(readPack(to).manifest.tasks.map((t) => [t.task_id, t.task_db_version]), [["TASK-SAMPLE-040", TASK_DB_VERSION], ["TASK-SAMPLE-043", TASK_DB_VERSION]]);
   assert.deepEqual(readFileSync(pack), before, "原来的包原样");

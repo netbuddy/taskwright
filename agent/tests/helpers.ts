@@ -13,6 +13,10 @@ import { docxProjection } from "../src/lib/docx_markdown.ts";
 import { recordAtSettle } from "../src/lib/dialogue_acts.ts";
 import { type ProblemClick, problemClicks } from "../src/lib/problem_consent.ts";
 import { REGISTERED_OUTPUTS } from "../src/lib/registered_outputs.ts";
+import { withTaskDatabase } from "../src/lib/schema.ts";
+import type { Stage } from "../src/lib/stage.ts";
+import { moveStage } from "../src/lib/stage_read.ts";
+import { runUserOperation } from "../src/lib/user_ops.ts";
 // 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
 import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
 
@@ -84,14 +88,32 @@ export function overallDefinition(): Record<string, any> {
 }
 
 /**
- * 一页合格的主题（贴了标签、有例子、来源是材料原文所以不待核实）：有总体分析集合的任务里，助手要先有这样一页才能往别的集合里
- * 新增条目（最低门）。不是测最低门的测试先保存它。它的文字里没有别的测试用到的词，不会多出「提到」。
+ * 一页合格的主题（贴了标签、有例子、来源是材料原文）：有总体分析集合的任务里，助手要先有这样一页、用户又看过它，才能往别的集合里
+ * 新增条目（最低门）。不是测最低门的测试先保存它，再调 viewReadyPage。它的文字里没有别的测试用到的词，不会多出「提到」。
  */
 export const READY_PAGE = {
   op: "add", collection: "总体分析",
   fields: { 标题: "馆藏范围", 它是什么: "本馆全部可以外借的纸质图书。", 例子: ["《算法导论》在三楼科技书库。"], 标签: ["范围"], 状态: "在用" },
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。" }],
 };
+
+let viewOps = 0;
+/**
+ * 用户看过那一页合格的主题（READY_PAGE）现在的内容。最低门要的是一页贴了标签、有例子、用户又看过的主题，
+ * 所以测试保存了 READY_PAGE 之后调它，助手才能往别的集合里新增条目。
+ */
+export function viewReadyPage(workspaceDir: string): void {
+  const db = new DatabaseSync(databasePath(workspaceDir), { readOnly: true });
+  let target: { item_id: string; revision_no: number } | undefined;
+  try {
+    target = (db.prepare("SELECT item_id, revision_no, fields FROM item_version ORDER BY revision_no DESC").all() as { item_id: string; revision_no: number; fields: string }[])
+      .find((row) => JSON.parse(row.fields)?.标题 === READY_PAGE.fields.标题);
+  } finally {
+    db.close();
+  }
+  if (!target) throw new Error("任务里还没有那一页合格的主题");
+  runUserOperation({ workspaceDir, sessionId: "sess-ui" }, { op_id: `ui-op-view-${++viewOps}`, kind: "mark_viewed", targets: [{ item_id: target.item_id, base_revision: target.revision_no }] });
+}
 
 /**
  * 夹具里的材料全文。种类为「文档原文」的来源，摘录必须逐字出自出处所指的材料文件，
@@ -118,6 +140,23 @@ export function makeWorkspace(definition: unknown = demoDefinition(), { material
     writeFileSync(join(dir, "inputs/材料.md"), MATERIAL_TEXT, "utf-8");
   }
   return dir;
+}
+
+let stageOps = 0;
+/** 把任务放到某个工作阶段（当作用户在界面上移过去的）。早先建的任务没有阶段，调了什么都不做。 */
+export function enterStage(workspaceDir: string, stage: Stage): void {
+  withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
+    const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
+    moveStage(db, workspaceDir, { taskId: task.task_id, sessionId: "sess-ui", runId: null, callId: `ui-op-stage-${++stageOps}`, actor: "user" }, stage, "");
+  });
+}
+
+/**
+ * 把任务放到写条目阶段。有总体分析集合的任务，助手要到写条目阶段才能写别的集合的条目（lib/stage.ts）；
+ * 不是测阶段的测试，建好任务之后先调它。
+ */
+export function startWriting(workspaceDir: string): void {
+  enterStage(workspaceDir, "writing");
 }
 
 let counter = 0;

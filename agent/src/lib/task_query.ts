@@ -21,6 +21,7 @@ import { batchNumber, currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { mentionLines, overallState, pendingSummary, verificationLines } from "./overall_read.ts";
+import { stageLines, stageSummary } from "./stage_read.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
@@ -273,11 +274,15 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
     const dialogue = sessionId ? dialogueFacts(db, task.task_id, sessionId) : null;
     const factLines = dialogue ? dialogueFactLines(dialogue) : [];
     if (factLines.length > 0) lines.push("", ...factLines);
+    // 工作的阶段（任务定义里有总体分析集合时才有）：现在在哪个阶段、这一段还差什么，写在最后。
+    const stage = stageSummary(db, workspaceDir, task.task_id, definition);
+    if (stage) lines.push("", ...stageLines(stage));
     return {
       text: lines.join("\n"),
       details: {
         task_id: task.task_id,
         status: task.status,
+        ...(stage ? { stage } : {}),
         items: counts,
         diagrams: diagrams.map((one) => ({ diagram_id: one.diagram_id, revision_no: latestVersion(one)!.revision_no })),
         conditions: checkCompletion(db, task.task_id, definition.completion, { workspaceDir }),

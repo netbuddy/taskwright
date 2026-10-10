@@ -39,20 +39,22 @@ const USE_CASE = [{ op: "add", collection: "功能用例",
   fields: { 用例名称: "缴纳罚款", 用例功能: "读者缴纳逾期罚款。", 参与者: ["读者"], 基本流程: ["读者查看罚款", "读者缴费"] },
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。", supports: [{ field: "用例功能" }] }] }];
 
-/** 一页合格的主题（贴了标签、有例子、全部照抄材料所以不待核实）：新建的任务里要先有它，才能写用例。 */
+/** 一页合格的主题（贴了标签、有例子、全部照抄材料）：新建的任务里要先有它、用户看过它、任务又移到了写条目阶段，才能写用例。 */
 const TOPIC = [{ op: "add", collection: "总体分析",
   fields: { 标题: "逾期罚款", 它是什么: "逾期不还的，按馆里的规定罚款。", 例子: ["读者凭借书证借书。"], 标签: ["概念"], 状态: "在用" },
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。", supports: [{ field: "它是什么" }] },
     { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭借书证借书。", supports: [{ field: "例子", index: 0 }] }] }];
+/** 用户看过那一页、把任务移到写条目阶段（agent/tests/fixtures/user_steps.mts 认的两种）。 */
+const READY_TO_WRITE = { view: { view: ["OA-001"] }, stage: { stage: "写条目" } };
 const ANOTHER = [{ ...USE_CASE[0], fields: { ...USE_CASE[0].fields, 用例名称: "查询罚款", 用例功能: "读者查询逾期罚款。" } }];
 
 /**
- * 经子进程调助手一侧真实的保存函数，在一个任务里存修订：先立一页主题，再写一个用例；返回各次存成的修订号。保存是按调用编号判重的：
+ * 经子进程调助手一侧真实的保存函数，在一个任务里存修订：先立一页主题，用户看过它并把任务移到写条目阶段，再写一个用例；返回各次存成的修订号。保存是按调用编号判重的：
  * 那个脚本各组操作的调用编号按先后固定，所以对一个存过这两次的任务再调，这两组得到的是原来的修订（1、2），再往后的一组才是新的一次。
  * again 为真时带上那新的一组。
  */
 function saveMore(where: PackLocations, id: string, again = false): number[] {
-  const more = spawnSync(process.execPath, [SAVE_MORE, join(where.tasksDir, id), JSON.stringify(again ? [TOPIC, USE_CASE, ANOTHER] : [TOPIC, USE_CASE])],
+  const more = spawnSync(process.execPath, [SAVE_MORE, join(where.tasksDir, id), JSON.stringify([TOPIC, READY_TO_WRITE.view, READY_TO_WRITE.stage, USE_CASE, ...(again ? [ANOTHER] : [])])],
     { encoding: "utf-8", env: { ...process.env, [TASKS_ROOT_ENV]: where.tasksDir } });
   assert.equal(more.status, 0, more.stderr);
   return JSON.parse(more.stdout);

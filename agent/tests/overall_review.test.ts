@@ -12,7 +12,7 @@ import { effectiveRules, validateDefinition } from "../src/lib/definition.ts";
 import { OVERALL_COLLECTION, TOPICS_LIMIT, topicLines } from "../src/lib/overall_analysis.ts";
 import { prepareReviews } from "../src/lib/review.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition } from "./helpers.ts";
+import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, startWriting, viewReadyPage } from "./helpers.ts";
 
 const TASK_TYPE = join(import.meta.dirname, "..", "..", "task-types", "srs-authoring");
 const page = (fields: Record<string, unknown>) =>
@@ -22,6 +22,7 @@ const useCase = { op: "add", collection: "用例", fields: { 名称: "预约图�
 function workspace(definition: unknown): string {
   const dir = makeWorkspace(definition);
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  startWriting(dir);
   return dir;
 }
 
@@ -33,6 +34,7 @@ test("评审提示带【总体分析的主题】：只列贴了标签、在用�
     page({ 标题: "排队等书" }),                                     // 没有贴标签
     page({ 标题: "旧说法", 标签: ["概念"], 状态: "已废弃" }),
   ] });
+  viewReadyPage(dir);
   saveRevision(callIn(dir), { operations: [useCase] });
   const prompt = prepareReviews(dir, null).items.find((one) => one.item_id === "UC-001")!.user;
   // 这一节自己的几行：没有贴标签的 OA-003 与已废弃的 OA-004 不在里面。

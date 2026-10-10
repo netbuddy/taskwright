@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, withStack, TOPIC_CALL } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
 
 captureConsole();
 
@@ -27,7 +27,7 @@ const SOURCES = [{ kind: "用户的话", excerpt: ASK }, { kind: "条目", locat
 const SCRIPT = {
   sequence: [
     // 先立一页主题（任务的修订 1），用例在同一个回答的第二次保存里（任务的修订 2）。
-    { tool_calls: [TOPIC_CALL, { id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
+    { tool_calls: [{ id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
       sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
       fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } }] } }] },
     reply("整理好了一个用例。", "call-r1"),

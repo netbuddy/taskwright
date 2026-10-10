@@ -24,27 +24,56 @@ echo "4. ask the agent to work"
 curl -sf -X POST "$API/tasks/$TASK/messages?session=$SESSION" -H 'Content-Type: application/json' \
   -d '{"text": "请读 inputs 里的材料，整理成需求规格说明。", "client_id": "example-1"}' > /dev/null
 
-echo "5. wait until the agent has replied and is idle (usually a few minutes; progress every 5 seconds)"
-STATE=busy
-for _ in $(seq 1 360); do
-  LINE=$(curl -s "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
-    '" ".join([("done" if d["executor"]["state"] == "idle" and any(m.get("type") == "assistant_reply" for m in d["conversation"]["messages"]) else d["executor"]["state"]),
-               str(len((d.get("task") or {}).get("items") or [])),
-               ((d.get("current_work") or {}).get("steps") or [{}])[-1].get("text", "")])' 2>/dev/null || echo "unreachable 0")
-  STATE=${LINE%% *}
-  printf '\r   %-8s items: %-3s %-60.60s' "$STATE" "$(echo "$LINE" | cut -d' ' -f2)" "$(echo "$LINE" | cut -d' ' -f3-)"
-  case "$STATE" in
-    done) break ;;
-    exited|failed_to_start) echo; echo "   the agent stopped ($STATE); see the server log and <runs>/$TASK/pi-events/" >&2; exit 1 ;;
-  esac
-  sleep 5
-done
-echo
-[ "$STATE" = done ] || { echo "   gave up after 30 minutes; the agent is still working (state: $STATE)" >&2; exit 1; }
-curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
-  '"\n".join("   agent: " + m.get("text", "") for m in d["conversation"]["messages"] if m.get("type") == "assistant_reply")'
+# Waits until the agent is idle and has sent at least $1 replies in this session; prints the progress every 5 seconds.
+wait_for_replies() {
+  local want="$1" STATE=busy LINE
+  for _ in $(seq 1 360); do
+    LINE=$(curl -s "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
+      '" ".join([("done" if d["executor"]["state"] == "idle" and sum(1 for m in d["conversation"]["messages"] if m.get("type") == "assistant_reply") >= '"$want"' else d["executor"]["state"]),
+                 str(len((d.get("task") or {}).get("items") or [])),
+                 ((d.get("current_work") or {}).get("steps") or [{}])[-1].get("text", "")])' 2>/dev/null || echo "unreachable 0")
+    STATE=${LINE%% *}
+    printf '\r   %-8s items: %-3s %-60.60s' "$STATE" "$(echo "$LINE" | cut -d' ' -f2)" "$(echo "$LINE" | cut -d' ' -f3-)"
+    case "$STATE" in
+      done) break ;;
+      exited|failed_to_start) echo; echo "   the agent stopped ($STATE); see the server log and <runs>/$TASK/pi-events/" >&2; exit 1 ;;
+    esac
+    sleep 5
+  done
+  echo
+  [ "$STATE" = done ] || { echo "   gave up after 30 minutes; the agent is still working (state: $STATE)" >&2; exit 1; }
+}
+last_reply() {
+  curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
+    '"   agent: " + [m.get("text", "") for m in d["conversation"]["messages"] if m.get("type") == "assistant_reply"][-1]'
+}
 
-echo "6. generate the document from the latest revision of the whole deliverable"
+echo "5. wait until the agent has read the material and replied (usually a few minutes; progress every 5 seconds)"
+# A new task starts in the reading stage: the agent reads the material and writes topic pages in the overall analysis,
+# and may ask questions. It does not write use cases or requirements yet.
+wait_for_replies 1
+last_reply
+
+echo "6. look at the topic pages, then let the agent start writing items"
+# Writing items is the user's decision. In the web interface you open the topic pages and choose "开始写条目" on the
+# agent's card; here the same two things are done through the API: mark every topic page as viewed, and move the task
+# to the writing stage.
+PAGES=$(curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
+  'json.dumps([{"item_id": i["item_id"], "base_revision": i["revision_no"]} for i in d["task"]["items"] if i["collection"] == "总体分析"])')
+if [ "$PAGES" != "[]" ]; then
+  curl -sf -X POST "$API/tasks/$TASK/actions?session=$SESSION" -H 'Content-Type: application/json' \
+    -d "{\"client_id\": \"example-viewed\", \"kind\": \"mark_viewed\", \"targets\": $PAGES}" > /dev/null
+fi
+curl -sf -X POST "$API/tasks/$TASK/actions?session=$SESSION" -H 'Content-Type: application/json' \
+  -d '{"client_id": "example-stage", "kind": "move_stage", "fields": {"stage": "写条目"}}' > /dev/null
+curl -sf -X POST "$API/tasks/$TASK/messages?session=$SESSION" -H 'Content-Type: application/json' \
+  -d '{"text": "总体分析我看过了，请开始写条目。", "client_id": "example-2"}' > /dev/null
+
+echo "7. wait until the agent has written the items and replied"
+wait_for_replies 2
+last_reply
+
+echo "8. generate the document from the latest revision of the whole deliverable"
 # Without revision_no and items the document covers every item at the latest revision. To generate it as of an earlier
 # revision, or only for some items, name them in the request body, for example:
 #   -d '{"revision_no": 3, "items": ["UC-001", "UC-002"], "format": "markdown"}'

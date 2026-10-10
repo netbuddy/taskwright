@@ -13,7 +13,7 @@ import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, sleep, type Stack, TOPIC_CALL, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, reply, sleep, type Stack, withStack } from "./consent_stack.ts";
 
 captureConsole();
 
@@ -26,7 +26,7 @@ const CARD = { kind: "choose", text: "功能用例一共 1 个条目，已经评
 const SCRIPT = {
   rules: [{ when: { any_contains: "你是评审者" }, reply: { text: JSON.stringify({ 发现: [] }) } }],
   sequence: [
-    { tool_calls: [TOPIC_CALL, { id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
+    { tool_calls: [{ id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
       sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
       fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } }] } }] },
     reply("整理好了一个用例。", "call-done-1"),
@@ -37,7 +37,7 @@ const SCRIPT = {
   ],
 };
 
-/** 先立一页主题（修订 1）、保存一个用例（修订 2），用户把两个都打开看过，发起评审并等它做完：完成条件全部满足。 */
+/** 主题页是开会话之前备好的（修订 1）；保存一个用例（修订 2），用户把两个都打开看过，发起评审并等它做完，再把任务移到评审确认：完成条件全部满足。 */
 async function ready({ send, action, db }: Stack): Promise<void> {
   await send({ text: "把材料整理成需求规格说明。", client_id: "c-1" });
   assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }, { item_id: "UC-001", base_revision: 2 }] })).status, 200);
@@ -46,6 +46,8 @@ async function ready({ send, action, db }: Stack): Promise<void> {
     if (Date.now() > end) throw new Error("评审没有做完");
     await sleep(100);
   }
+  // 助手只有在评审确认阶段才能完成任务：用户把任务移过去（任务开会话之前已经备到写条目阶段）。
+  assert.equal((await action({ kind: "move_stage", fields: { stage: "评审确认" } })).status, 200);
 }
 
 test("打字说完成被拒；助手发了是否已经完成的卡片、用户点「已完成，提交交付物」之后，任务变为已完成", { skip: NO_PI, timeout: 120000 }, () =>

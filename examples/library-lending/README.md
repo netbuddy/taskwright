@@ -2,7 +2,7 @@
 
 `requirements.md` is a short, fictional requirements description (in Chinese, like the bundled task type). It deliberately leaves a few things open, so the agent has something to ask about: holiday loan periods, how fines are paid, what "smart recommendations" means.
 
-`fake-model.json` is a script for the fake model endpoint (`tools/fake-model/`): after the first message it saves a few items whose excerpts are taken from `requirements.md`, then replies. `scripts/dev.sh --demo` and a backend test use it, so the pages and `run.sh` can be tried without a model service.
+`fake-model.json` is a script for the fake model endpoint (`tools/fake-model/`): after the first message it writes one topic page of the overall analysis, moves the task from reading to clarifying and asks on a card whether to start writing items; after the next message it saves a few items whose excerpts are taken from `requirements.md`, then replies. Items can only be written once the user has looked at a topic page and moved the task to the writing stage; `run.sh` does both through the API. `scripts/dev.sh --demo` and a backend test use it, so the pages and `run.sh` can be tried without a model service.
 
 See [section 5 of the user guide](../../docs/user-guide.md#5-try-the-example) for how to run `run.sh`, and the rest of the [user guide](../../docs/user-guide.md) for the same flow in the web interface. Installation and model setup are in [docs/deployment.md](../../docs/deployment.md).
 
