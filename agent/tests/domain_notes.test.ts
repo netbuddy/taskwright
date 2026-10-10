@@ -240,13 +240,14 @@ test("平台 skill 与任务 skill 写了总体分析的做法；平台 skill �
   assert.ok(section.length > 0);
   // 十一件事各有一条。
   for (const head of ["1. **抓没说清的词。**", "2. **逐条要例子、问例外。**", "3. **找冲突。**", "4. **复述。**", "5. **问为什么。**", "6. **记决定与假设。**",
-    "7. **建议标签与上级主题。**", "8. **条目晚于理解。**", "9. **两种节奏。**", "10. **工作的阶段。**", "11. **进入写条目要由用户决定。**"]) assert.ok(section.includes(head), head);
+    "7. **建议标签与上级主题。**", "8. **条目晚于理解。**", "9. **两种节奏。**", "10. **工作的阶段。**", "11. **往前进入下一个阶段要由用户决定。**"]) assert.ok(section.includes(head), head);
   assert.match(section, /你要做的是下面十一件事。/);
-  // 工作的阶段：五个阶段的名字、哪些移动可以自己做、进入写条目用卡片提议（两个固定的选项）。
+  // 工作的阶段：五个阶段的名字、自己只能退回前面的阶段、往前走用卡片提议（四张卡片各两个固定的选项）。
   assert.match(section, /工作分五个阶段：核读材料、澄清、整理建模、写条目、评审确认/);
-  assert.match(section, /在回复里另写 `stage`（阶段的名字）与 `reason`（一句话，说明为什么现在移过去）/);
-  assert.match(section, /核读材料到澄清、澄清到整理建模、写条目到评审确认，\s*以及退回前面的任何阶段/);
-  assert.match(section, /`start_items`「开始写条目」、`continue_clarify`「继续澄清」/);
+  assert.match(section, /你自己只能把任务退回前面的阶段[^]*在回复里另写 `stage`（阶段的名字）与 `reason`（一句话，说明为什么现在退回去）/);
+  assert.match(section, /你不能自己把任务往前移。/);
+  for (const pair of ["`enter_clarify`「进入澄清」、`continue_reading`「再核读一遍」", "`enter_consolidate`「进入整理建模」、`continue_clarify`「继续澄清」",
+    "`start_items`「开始写条目」、`continue_consolidate`「再整理一遍」", "`enter_review`「进入评审确认」、`continue_writing`「继续写条目」"]) assert.ok(section.includes(pair), pair);
   assert.match(section, /以「例外：」开头的例子/);
   assert.match(section, /先给一个候选的「它是什么」与一个候选的例子/);
   assert.match(section, /`story_ok`「这段对，记下」、`story_fix`「有一处不对」、`story_again`「换一个人物再讲」/);
