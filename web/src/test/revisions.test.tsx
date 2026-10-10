@@ -277,7 +277,7 @@ describe("单一写入者：空闲但有未保存的条目编辑", () => {
     expect(screen.getByTestId("card-input")).toBeEnabled();
   });
 
-  it("请确认卡片的条目行写已读与否：看过更早的修订仍是已读，写明看过哪次；从没看过写未读", () => {
+  it("请过目卡片的条目行写已读与否：看过更早的修订仍是已读，写明看过哪次；从没看过写未读", () => {
     const card = (it: Item) => render(<Wrap><ReplyCard act={{ kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", revision_no: 4 }] }} replyMessageId="r1"
       task={task([it])} handlers={{ onAction: noop, onMessage: noop }} /></Wrap>);
     card({ ...UC1, confirmations: [{ revision_no: 1, accepted: true }] });
