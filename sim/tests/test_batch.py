@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from sim.launch_user import load_profile, user_agent_session
-from sim.run import batch_summary, build_parser, code_version, executor_tools, profile_model
+from sim.run import batch_summary, build_parser, code_version, executor_tools, profile_model, used_model
 
 SUMMARY = {"演练": "sim-004", "有效": True, "停止原因": "用户 agent 表示目标达成", "轮数": 7,
            "第一层": {"没有在执行者没问的时候主动说出隐藏事实（查全部轮次）": True, "点「确认」之前在同一轮里看过该条目的详情": True},
@@ -72,6 +72,18 @@ class RecordVersionTest(unittest.TestCase):
         if version["提交号"] is not None:
             self.assertRegex(version["提交号"], r"^[0-9a-f]{40}$")
         self.assertIsInstance(version["未提交的改动"], list)
+
+    def test_实际用的模型取事件流里最后一条助手消息上写的_后端附记与时刻索引不算(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            events = Path(tmp) / "backend" / "TASK-1" / "pi-events"
+            events.mkdir(parents=True)
+            line = lambda **message: json.dumps({"type": "message_end", "message": message}, ensure_ascii=False)      # noqa: E731
+            (events / "service-1.jsonl").write_text("\n".join([
+                line(role="user", content="整理需求"), line(role="assistant", provider="服务甲", model="模型一"), "这一行不是 JSON",
+                line(role="assistant", provider="服务乙", model="模型二")]) + "\n", encoding="utf-8")
+            (events / "service-1.backend.jsonl").write_text(line(role="assistant", provider="附记", model="不算") + "\n", encoding="utf-8")
+            self.assertEqual(used_model(Path(tmp) / "backend"), "服务乙/模型二")
+            self.assertIsNone(used_model(Path(tmp) / "user-agent"))
 
 
 class RunOptionsTest(unittest.TestCase):

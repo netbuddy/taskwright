@@ -7,6 +7,7 @@
                            [--profile dev] [--user-model <服务名/模型编号>]
 （--materials-dir 不给时取环境变量 TASKWRIGHT_SIM_MATERIALS_DIR，两者都没有就报错）
 
+record.json 里另记「轮数上限」与两边的模型（「执行者模型」「用户 agent 模型」）：开头按启动配置记，结束时换成事件流里实际用的。
 --profile 是自己起后端时用的启动配置（backend/profiles/ 下的名字），缺省 dev；--user-model 换掉用户 agent 的模型，缺省用
 sim/profiles/user_agent.json 里写的。两样都是给不接真模型的测试用的：--profile fake --user-model fake/fake-model。
 
@@ -183,6 +184,23 @@ def executor_tools(sim: Path) -> list[str] | None:
             if isinstance(e, dict) and isinstance(e.get("工具"), list) and "实际工具清单" in json.dumps(e, ensure_ascii=False):
                 tools = e["工具"]
     return tools
+
+
+def used_model(archive: Path) -> str | None:
+    """一个归档目录下 pi 实际用的模型（服务名/模型编号）：取事件流里最后一条助手消息上写的。读不到时为空。
+    后端的设置里选定了语言模型时，助手实际用的可以与启动配置里写的不同，所以演练记录以事件流里的为准。"""
+    found = None
+    for path in sorted(Path(archive).glob("**/pi-events/*.jsonl")):
+        if path.name.endswith((".backend.jsonl", ".times.jsonl")):
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                message = (json.loads(line) or {}).get("message") or {}
+            except (json.JSONDecodeError, AttributeError):
+                continue
+            if isinstance(message, dict) and message.get("role") == "assistant" and message.get("provider") and message.get("model"):
+                found = f"{message['provider']}/{message['model']}"
+    return found
 
 
 def batch_summary(root: Path, sims: list[Path], errors: dict[str, str], persona_name: str) -> Path:
@@ -396,6 +414,9 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
                 service.kill()
         record["结束"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         record["执行者工具清单"] = executor_tools(sim)
+        # 两边实际用的模型以事件流里写的为准；一条助手消息都没有时留着开头按启动配置记的。
+        record["执行者模型"] = used_model(sim / "backend") or record["执行者模型"]
+        record["用户 agent 模型"] = used_model(sim / "user-agent") or record["用户 agent 模型"]
         (sim / "record.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
     # 库副本：pi 与后端都已退出，三个文件一起复制。
     task_dir = sim / "tasks" / record.get("任务编号", "")

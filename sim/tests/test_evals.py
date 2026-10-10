@@ -219,6 +219,7 @@ class EvalRunTest(unittest.TestCase):
             # 模拟用户说要去问教务处：上一轮问的是寒暑假借期，画像的隐藏事实里有这件事，所以列在「画像里可能已有」。
             stuck = one["模拟用户答不上的问题"]
             self.assertEqual((stuck["待人答"], [(x["轮"], x["命中的说法"]) for x in stuck["画像里可能已有"]]), ([], [(2, "得问一下教务处")]))
+        # 两边的模型是从各自的事件流里读出来的实际用的那个。
         self.assertEqual((summary["遍数"], summary["模型"], summary["模拟用户的模型"], summary["材料"], summary["画像"], summary["清单"], summary["轮数上限"]),
                          (2, "fake/fake-model", "fake/fake-model", ["requirements.md"], "library-short.json", "library-short.json", 4))
         self.assertEqual([r["任务的键"] for r in summary["各遍"]], [f"{one['任务编号']}/{one['任务编号']}" for one in runs])
