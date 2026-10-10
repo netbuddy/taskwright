@@ -24,7 +24,7 @@ import { PDF_DERIVED_SUFFIXES, ProjectionError, isReserved, pdfFacts, projection
 import { or, pyStr, truthy } from "./py.ts";
 import { Executor } from "./executor.ts";
 import { Hub } from "./hub.ts";
-import { PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from "./launch.ts";
+import { DEBUG_MODE, PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
 import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
@@ -174,6 +174,11 @@ export interface ServiceOptions {
   registry?: ServiceDb | null;
   /** 数据目录（服务级库、日志与各种报告所在的目录）；不给时取任务根目录的上一级。 */
   dataDir?: string | null;
+  /**
+   * 调试模式（命令行的 --debug），缺省关，不写进任何设置文件。开着时：服务信息里 debug 为真；起助手的程序时多给一个环境变量，
+   * 助手一侧的扩展见到它才读「提示词目录」、才把整份系统提示报回来（launch.ts 的 DEBUG_MODE）；调试用的几个接口才可用。
+   */
+  debug?: boolean;
 }
 
 /** 产品自带的这种任务类型的说明现在是第几版（任务定义里的「版本」）；定义读不出来或者没有写版本时是 null。 */
@@ -226,6 +231,8 @@ export class Service {
   /** 实际监听的端口：启动层在监听成功之后填上（命令行给的端口被占时会换到后面的端口）。 */
   port: number | null;
   readonly mode: Mode;
+  /** 调试模式开没开（见 ServiceOptions.debug）。 */
+  readonly debug: boolean;
   /** 退出接口收到请求、回答发出之后调它：由启动层给，做与收到 SIGTERM 相同的收尾。 */
   exitHandler: (() => void) | null = null;
   readonly tasks = new Map<string, Task>();
@@ -257,7 +264,10 @@ export class Service {
     this.runsDir = resolve(runsDir);
     this.dataDir = options.dataDir ? resolve(options.dataDir) : dirname(this.tasksDir);
     // 桌面形态：模型可以由 pi 的设置文件指定（见 launch.ts 的 PI_SETTINGS_MODEL）。标记只加在内存里的这份启动配置上。
-    this.profile = options.mode === "desktop" ? { ...profile, [PI_SETTINGS_MODEL]: true } : profile;
+    this.debug = options.debug === true;
+    // 两个运行时标记都不用加时，就用传进来的那一份启动配置本身，不复制。
+    const marks = { ...(options.mode === "desktop" ? { [PI_SETTINGS_MODEL]: true } : {}), ...(this.debug ? { [DEBUG_MODE]: true } : {}) };
+    this.profile = Object.keys(marks).length > 0 ? { ...profile, ...marks } : profile;
     this.port = options.port ?? null;
     this.mode = options.mode ?? "server";
     this.claim = options.claim ?? occupancy.claim;

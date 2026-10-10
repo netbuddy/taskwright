@@ -240,4 +240,25 @@ Each style has a card with a small preview (the paper colour, a top bar, a line 
 
 A style changes colours and the typeface of titles only; nothing on a page moves or changes size. It is independent of **Font size** (字号 小 中 大) in the top bar, and you can set each on its own. The choice is kept in this browser: in another browser, on another computer, or after the data this site keeps in the browser has been cleared, choose again. It does not affect generated documents, exported Word files or exported pictures. Serif titles are drawn with Source Han Serif (Noto Serif CJK) or the system's Songti where one is installed; elsewhere the system picks a serif typeface for them.
 
+## 12 The stages of work
+
+In a task with an overall analysis (总体分析) - the requirements task is one - the assistant works in five stages. The stages are there so that the matter is thought through before use cases, requirements and constraints are written. To learn which stage the task is in, ask the assistant where things stand and what is still missing; it answers from the task's actual state.
+
+| Stage | Whose pace | What the assistant does | What counts as enough |
+|---|---|---|---|
+| 核读材料 (reading the materials) | the assistant, in one go | reads all the materials and writes one topic page for each term, role, flow and goal the materials state, copying their words; records one problem for each place where the materials disagree; then says in a short paragraph what business the materials are about, what is to change and what the biggest uncertainty is | every material is cited by at least one topic page or problem |
+| 澄清 (clarifying) | yours, one question at a time | asks only the one thing that affects most of the rest; offers a candidate before asking; records your answers on the topic pages and turns what you decide into a page labelled 决定 ("decision") | no labelled page has an open question waiting on it; every decision has its reason |
+| 整理建模 (putting the topics in order) | the assistant, in one go | reads through all topic pages: finds contradictions between pages, adds to every flow page an example that begins with 例外： ("exception:"), suggests labels and parent topics, draws diagrams when useful, and retells a topic as a story for you to check | every flow page has an exception example; every role is mentioned by a flow or scene page; no two pages share a name; no page is without a label |
+| 写条目 (writing items) | the assistant in one go, you item by item | writes use cases, non-functional requirements and constraints from the topic pages you have looked at | every flow and scene page has a use case based on it; you have looked at every page an item is based on; no item waits to be verified |
+| 评审确认 (review and confirmation) | yours, item by item | changes items as the review says; when the completion conditions are met, asks whether to complete the task | the review has no finding left open; all completion conditions are met |
+
+**How the stage moves.** A new task starts in the reading stage when it has materials and in the clarifying stage when it has none. Every step forward is yours to decide: when the assistant has finished a stage it sends a card that says how far the stage got and what the next stage will do, with two options, one that enters the next stage (进入澄清 "enter clarifying", 进入整理建模 "enter putting the topics in order", 开始写条目 "start writing items", 进入评审确认 "enter review and confirmation") and one that stays (再核读一遍 "read once more", 继续澄清 "keep clarifying", 再整理一遍 "go through the topics once more", 继续写条目 "keep writing items"). When you choose the first, the assistant starts on the next stage at once; when you choose the other, it carries on in the same stage. By itself the assistant can only move a task back to an earlier stage (for example, back to clarifying to ask you about a term that turned out to be unclear), and it says why in its reply. Every move is recorded.
+
+**Look at the topic pages before items are written.** The card with 开始写条目 lists the topic pages the assistant asks you to look at first. Items can only be based on topic pages you have opened, so look at those pages before you click. If you type that it may start, the assistant still sends the card for you to click. To skip the stages in between, tell the assistant to write the items now; it then sends the card with 开始写条目 directly.
+
+**When you ask for something that belongs to another stage.** For example, when you say "just write the use cases" while the assistant is reading the materials, it does not do so, and it does not repeat your words back to ask whether you agree. It tells you which stage the task is in and in which stage that can be done, and sends the card for you to click.
+
+**Tasks created earlier have no stages.** A task created by 0.4 (which has 领域说明, "domain notes", in this place) is not divided into stages and works as before.
+
+
 [中文版](user-guide.zh-CN.md)

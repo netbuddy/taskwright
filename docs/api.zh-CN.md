@@ -365,7 +365,7 @@ data: {
 3. 路径带着版本号 `v1`；字段只会新增，含义不会改变；客户端应忽略未知的事件与字段。
 4. 本版本尚不支持：多用户并发、身份认证、流式回复文本。
 5. **服务信息与运行形态。** 下面两个接口不需要任务。
-   - `GET /api/v1/service` 返回 `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "upgrade_pending": true | false, "capabilities": { "exit": true | false, "model": true | false, "model_config": true | false, "model_test": true | false, "knowledge": true | false }, "model": { "name": …, "reason": … }, "upload": { "max_bytes": 5242880, "too_large_text": "单个文件不能超过 5 MB。", "extensions": [".md", ".txt", ".docx", ".pdf"], "types_text": ".md、.txt、Word 的 .docx 与 PDF", "unsupported_type_text": "只接受 .md、.txt、Word 的 .docx 与 PDF 文件。" } }`，其中 `port` 是服务实际监听的端口；`upload` 给出上传上限（字节）、超过时给用户看的那句话（与 `too_large` 拒绝里的是同一句）、允许上传的扩展名、这些类型给人看的写法（`types_text`）与 `unsupported_type` 拒绝里的那句话（`unsupported_type_text`），后两项由扩展名拼出。网页界面按上限与扩展名在发送之前就拦下过大或类型不符的文件，显示对应的那句话；按扩展名过滤可选的文件，按 `types_text` 写上传框的说明。它有三种用途：打包后的启动程序用它认出某个端口上跑的是不是自己；部署与监控用它探活；客户端按 `capabilities` 决定显示还是隐藏相应的按钮或提示。`capabilities.exit` 只在以 `--mode desktop` 启动、并且这次请求来自本机回环地址时为 `true`（与退出接口的判断相同）；从别的电脑打开页面时为 `false`，页面也就不显示退出的入口。经反向代理访问时，服务看到的来源是代理的地址，所以桌面形态不应放在反向代理后面。`capabilities.model_config` 是页面能不能修改模型配置（见第 10 节）；现在从哪台电脑打开都能改，恒为 `true`，这个字段留给以后加登录时用。 `upgrade_pending` 为真表示启动时发现有上一版留下的数据要先升级、而升级还没有做完：这时除了本接口、下面升级的两个接口与退出接口，别的接口一律返回 `upgrade_pending`（503），页面整屏显示数据升级页。
+   - `GET /api/v1/service` 返回 `{ "ok": true, "app": "taskwright", "version": …, "mode": "desktop" | "server", "pid": …, "port": …, "debug": true | false, "upgrade_pending": true | false, "capabilities": { "exit": true | false, "model": true | false, "model_config": true | false, "model_test": true | false, "knowledge": true | false }, "model": { "name": …, "reason": … }, "upload": { "max_bytes": 5242880, "too_large_text": "单个文件不能超过 5 MB。", "extensions": [".md", ".txt", ".docx", ".pdf"], "types_text": ".md、.txt、Word 的 .docx 与 PDF", "unsupported_type_text": "只接受 .md、.txt、Word 的 .docx 与 PDF 文件。" } }`，其中 `port` 是服务实际监听的端口；`debug` 是调试模式开没开（见第 13 节）；`upload` 给出上传上限（字节）、超过时给用户看的那句话（与 `too_large` 拒绝里的是同一句）、允许上传的扩展名、这些类型给人看的写法（`types_text`）与 `unsupported_type` 拒绝里的那句话（`unsupported_type_text`），后两项由扩展名拼出。网页界面按上限与扩展名在发送之前就拦下过大或类型不符的文件，显示对应的那句话；按扩展名过滤可选的文件，按 `types_text` 写上传框的说明。它有三种用途：打包后的启动程序用它认出某个端口上跑的是不是自己；部署与监控用它探活；客户端按 `capabilities` 决定显示还是隐藏相应的按钮或提示。`capabilities.exit` 只在以 `--mode desktop` 启动、并且这次请求来自本机回环地址时为 `true`（与退出接口的判断相同）；从别的电脑打开页面时为 `false`，页面也就不显示退出的入口。经反向代理访问时，服务看到的来源是代理的地址，所以桌面形态不应放在反向代理后面。`capabilities.model_config` 是页面能不能修改模型配置（见第 10 节）；现在从哪台电脑打开都能改，恒为 `true`，这个字段留给以后加登录时用。 `upgrade_pending` 为真表示启动时发现有上一版留下的数据要先升级、而升级还没有做完：这时除了本接口、下面升级的两个接口与退出接口，别的接口一律返回 `upgrade_pending`（503），页面整屏显示数据升级页。
    - `capabilities.model` 是模型探测的结果：服务起 pi 时要用的模型「服务商/模型」（`model.name`；在模型配置里选定了语言模型时就是它，见第 10 节），在 pi 配置目录的 `models.json` 里登记了、或者这个服务商在 `auth.json` 里有一项，就是 `true`。`model.reason` 是一句说明：以 `--mode desktop` 启动时写明查过的两个文件的完整路径，以 `--mode server` 启动时只写文件名，不带出服务器上的目录。探测在每次请求时现查，只读这两个文件，不启动 pi；服务商的密钥只放在环境变量里的情形识别不了，这时是 `false`。以 `--mode desktop` 启动时，`model.name` 可能来自 pi 的 `settings.json`（见部署文档第 10.4 节）。
    - `capabilities.knowledge` 在服务有知识库时为 `true`（第 11 节）。这时回答里另有 `knowledge_upload`：知识库文档的上传，五项与 `upload` 相同（上限是 20 MB，`too_large_text` 是「单个文件不能超过 20 MB。」），另加 `kinds`：文档的种类与中文叫法，`[{kind, name}]`。网页界面只在 `capabilities.knowledge` 为 `true` 时显示「知识库」入口、上传时先问去向。
    - `POST /api/v1/service/exit` 只在以 `--mode desktop` 启动时存在，以 `--mode server` 启动时返回 `not_found`。它只接受来自本机回环地址（`127.0.0.1` 或 `::1`；`::ffff:127.0.0.1` 是 IPv4 回环地址在 IPv6 套接字上的写法，也算本机）的请求，其他来源一律返回 `forbidden`（403）。它先回答 `{ "ok": true }`，再照收到 SIGTERM 时的做法收尾：停止接收新连接、向每一条打开着的事件流发 `service_exiting`、关掉各任务的 pi、删掉本服务写的占用标记，然后退出进程。它只供 0.3 的过渡安装包使用（这种包由服务自己打开浏览器，没有桌面外壳）；最终的桌面版由外壳停止服务，这个接口不承诺长期保留。
@@ -531,3 +531,31 @@ data: {
 - `file` 是报告写进的文件（数据目录的 `logs/` 下），`text` 是给人看的整段文字。
 
 回答是 200 不等于每一项都导入了：个别项没有导入成时仍是 200，看各项的 `outcome`。整个包被拒绝时（不是数据包、比这个程序新、包里的文件与清单文件对不上或校验值不符、范围不是这个接口收的那一种）返回 `rejected`（422），`error.message` 是原因，`error.data.report` 是同一份报告（`fatal` 就是这个原因），这时数据没有任何改变。导入的任务由服务当场接手，随后的 `GET /api/v1/tasks` 里就有它。
+
+## 13 调试模式
+
+服务带 `--debug` 启动时（缺省不带）才有下面三个接口；不是调试模式时它们都返回 `not_found`（404），文字是「这个接口只在调试模式下可用：启动服务时加上 --debug。」。`GET /api/v1/service` 的 `debug` 说明现在开没开。调试模式给调说明文字的人用，这三个接口没有另外的访问控制，请只在自己的机器上开。
+
+有阶段的任务（任务定义里有「总体分析」集合）每次运行开始时，系统提示由几份文件拼成，按这个次序：系统提示、平台说明的共用部分、任务类型说明的共用部分、平台说明里现在这个阶段的那一段、任务类型说明里现在这个阶段的那一段，最后是助手的程序自己接的工作目录等。调试模式下可以用一个「提示词目录」里的文件代替其中的任何一份。
+
+### 13.1 提示词目录
+
+- `GET /api/v1/debug/prompt-dir` 返回 `{ "prompt_dir": 目录或 null, "usable": true | false | null, "note": 说明或 null, "files": [ { "name", "state", "reason" } ] }`。`usable` 在没有设目录时是 `null`，设了的目录已经不在或者不是目录时是 `false`，这时 `note` 写着原因，每次运行用的都是原来的文字。
+- `files` 固定十三项，是目录里认的全部文件名：`system.md`、`common.md`、`reading.md`、`clarifying.md`、`modeling.md`、`writing.md`、`reviewing.md`，以及 `task-type/` 下的 `common.md` 与五个阶段各一份。`state` 是 `used`（目录里有，下一次运行用它代替原来的那一份）、`absent`（目录里没有，用原来的）或 `refused`（目录里有而不用，`reason` 写着原因：它是软链接、不是普通文件，或者超过 262144 字节）。别的文件名一概不读。不是合法 UTF-8 的文件要到读的时候才认得出，那时照旧用原来的那一份，原因写在 13.2 的 `notes` 里。一份空文件的意思是这一部分不要。
+- `POST /api/v1/debug/prompt-dir`，请求体 `{ "path": "目录的绝对路径" }`，返回与上面相同。`path` 写空串或 `null` 是清掉。不是绝对路径、目录不存在或者不是目录时返回 `bad_request`（400），什么都不改。值存在产品设置文件顶层的 `debug.prompt_dir`。
+- 助手的程序每次运行开始时重读设置与目录（只查文件的修改时刻与大小，变了才重读内容），所以换了目录、改了文件，下一句话就生效，不用重启。产品只读这个目录，不往里写。
+
+### 13.2 最近一次运行的系统提示
+
+`GET /api/v1/tasks/{task_id}/debug/system-prompt` 返回这个任务最近一次运行实际发给模型的系统提示：
+
+```
+{ "available": true, "note": null, "session_id": …, "at": …, "replaced": true, "stage": "clarifying", "stage_name": "澄清",
+  "how": "recomposed" | "reused" | "kept_after_error", "error": null, "prompt_dir": 目录或 null, "notes": [ … ], "digest": …,
+  "parts": [ { "part", "part_name", "from", "from_name", "file", "lines", "bytes", "text" } ], "text": 整份文字 }
+```
+
+- `parts` 按先后列出每一部分，`text` 是各部分用一个空行接起来的整份，与模型收到的逐字相同。`part` 是 `system`、`platform_common`、`task_common`、`platform_stage`、`task_stage`、`tail` 之一，`part_name` 是它给人看的名字；`from` 是 `builtin`（产品自带）、`task`（任务目录）、`prompt_dir`（提示词目录）或 `pi`（助手的程序），`from_name` 是给人看的名字；`file` 是文件的路径（产品自带的相对代码仓根目录，任务目录里的相对任务目录，提示词目录里的相对那个目录），助手的程序接的那一截没有文件，是 `null`。
+- `how` 说这一次的文字是重新读文件拼的（`recomposed`）、沿用上一次的（`reused`，阶段与文件都没有变），还是重拼出错而沿用上一次的（`kept_after_error`，原因在 `error`）。`notes` 是提示词目录不能用、或者里面有文件没有用上时的原因，各一句。`digest` 是说明文字（不含助手的程序接的那一截）的摘要值。
+- 任务没有阶段（早先建的任务）时 `replaced` 是 `false`，`parts` 只有一项，`part` 是 `launch`，就是启动时给的整份系统提示。
+- 服务这次启动以来这个任务还没有运行过时，返回 `{ "available": false, "note": 说明, "parts": [], "text": "" }`。这份数据只在内存里，不写进归档。

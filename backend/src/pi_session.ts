@@ -26,6 +26,8 @@ export const DIALOG_METHODS = ["select", "confirm", "input", "editor"];
 /** 进程内那个只读小扩展往外报事实时用的两个状态栏键名（agent/src/hooks/report_to_backend.ts）。 */
 export const ACTIVE_TOOLS_STATUS_KEY = "taskwright-active-tools";
 export const TURN_STATUS_KEY = "taskwright-turn";
+/** 扩展每次按阶段换系统提示时报的那一行事实的键名。与 agent/src/hooks/stage_prompt.ts 里的同名常量是一份约定。 */
+export const STAGE_PROMPT_STATUS_KEY = "taskwright-stage-prompt";
 /** 打开会话时扩展追加的任务现状消息的类型名，以及它经状态栏报给后端用的键名。 */
 export const TASK_STATUS_CUSTOM_TYPE = "taskwright-task-status";
 export const TASK_STATUS_REPORT_KEY = "taskwright-task-status";
@@ -231,6 +233,8 @@ export class PiSession {
   readonly badLines: string[] = [];
   /** 扩展写进会话的自定义消息转成的系统说明事件，按先后排。 */
   readonly systemNotes: PiEvent[] = [];
+  /** 扩展最近一次报来的「这次运行的系统提示」那一行事实（任务有阶段时每次运行报一次；调试模式下带每一部分的文字）；还没有报过时是 null。 */
+  lastStagePrompt: PiEvent | null = null;
   private events = new EventQueue<PiEvent | null>();
   private responses = new Map<string, (message: PiEvent | null) => void>();
   private stderrLines: string[] = [];
@@ -551,7 +555,7 @@ export class PiSession {
     const method = String(message.method ?? "");
     const title = String(message.title ?? "");
     const statusKey = method === "setStatus" ? String(message.statusKey ?? "") : "";
-    if (statusKey === TURN_STATUS_KEY || statusKey === ACTIVE_TOOLS_STATUS_KEY) {
+    if (statusKey === TURN_STATUS_KEY || statusKey === ACTIVE_TOOLS_STATUS_KEY || statusKey === STAGE_PROMPT_STATUS_KEY) {
       const raw = String(message.statusText ?? "");
       let fact: unknown = null;
       try {
@@ -562,6 +566,13 @@ export class PiSession {
       if (statusKey === TURN_STATUS_KEY) {
         this.note("本轮事实", { 内容: fact, 原文: raw });
         this.events.put({ type: "本轮事实", 内容: fact });
+      } else if (statusKey === STAGE_PROMPT_STATUS_KEY) {
+        // 调试模式下这一行带着每一部分的文字（texts）：只留在内存里给调试接口用，不写进归档，也不放进事件。
+        const whole = fact !== null && typeof fact === "object" ? (fact as PiEvent) : null;
+        this.lastStagePrompt = whole;
+        const light = whole === null ? null : Object.fromEntries(Object.entries(whole).filter(([key]) => key !== "texts"));
+        this.note("系统提示", light === null ? { 内容: null, 原文: raw } : { 内容: light });
+        this.events.put({ type: "系统提示", 内容: light });
       } else {
         this.note("实际工具清单", { 工具: fact, 原文: raw });
         this.events.put({ type: "实际工具清单", 工具: fact });

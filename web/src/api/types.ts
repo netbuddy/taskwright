@@ -1037,6 +1037,18 @@ export interface UpgradeView {
   report: UpgradeReport | null;
 }
 
+/** 调试模式的提示词目录：现在设的是什么，以及固定的十三个文件名各自在目录里的情形。 */
+export interface PromptDirView {
+  /** 设置里写的目录；没有设时是 null。 */
+  prompt_dir: string | null;
+  /** 设了的目录现在能不能用；没有设时是 null。 */
+  usable: boolean | null;
+  /** 设了而不能用时的原因。 */
+  note: string | null;
+  /** used：这一份会代替原来的；absent：目录里没有，用原来的；refused：目录里有而不用，reason 写着原因。 */
+  files: { name: string; state: "used" | "absent" | "refused"; reason: string | null }[];
+}
+
 export interface ServiceInfo {
   ok: true;
   app: string;
@@ -1044,6 +1056,8 @@ export interface ServiceInfo {
   mode: "desktop" | "server";
   pid: number;
   port: number | null;
+  /** 调试模式开没开（服务带 --debug 启动）：开着时设置页面多一栏「调试」。较早的后端没有这一项，等于假。 */
+  debug?: boolean;
   /** 启动时发现有上一版留下的数据要先升级、而升级还没有做完：页面整屏显示数据升级页。较早的后端没有这一项，等于假。 */
   upgrade_pending?: boolean;
   /** model_config：这个页面能不能改模型配置；现在的后端恒为 true，较早的后端没有这一项。model_test：后端有测试模型的接口（语言模型与嵌入模型）。 */

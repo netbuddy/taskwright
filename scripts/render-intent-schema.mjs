@@ -22,7 +22,7 @@ const BEGIN = /（理解格式说明开始，由 (\S+) 生成，不要手改）\
 const END = "（理解格式说明结束）";
 
 /** The documents that carry a generated region. */
-export const DOCUMENTS = ["agent/prompts/skills/taskwright-executor/SKILL.md"];
+export const DOCUMENTS = ["agent/prompts/skills/taskwright-executor/SKILL.md", "agent/prompts/stages/common.md"];
 
 /** One act of an example on one line, the way the schema's example is meant to be read. */
 function exampleJson(value) {

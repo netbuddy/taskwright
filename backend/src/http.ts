@@ -20,6 +20,7 @@ import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
 import { appVersion } from "./paths.ts";
+import * as debugPrompt from "./debug_prompt.ts";
 import * as modelConfig from "./model_config.ts";
 import * as modelTest from "./model_test.ts";
 import { probeModel } from "./model_probe.ts";
@@ -270,6 +271,8 @@ export function serviceInfo(service: Service, remote: string | null = null) {
   const model = probeModel(service.profile, process.env, { paths: service.mode === "desktop" });
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
+    // 调试模式开没开（启动参数 --debug）：页面据此显示设置里的「提示词目录」与调试用的面板。
+    debug: service.debug,
     // 启动时发现有上一版留下的数据要先升级、而升级还没有做完：页面据此整屏显示数据升级页，别的接口这时一律答 upgrade_pending。
     upgrade_pending: service.upgrade?.blocking ?? false,
     capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available, model_config: true, model_test: true, knowledge: service.knowledge !== null },
@@ -344,6 +347,10 @@ const handlers: Record<string, Handler> = {
     return json(200, { ok: true, started, upgrade: service.upgrade.view() });
   },
   model_config: (service, req) => json(200, modelConfig.view(modelContext(service))),
+  // 调试模式的三个接口（debug_prompt.ts）；不是调试模式时都答 not_found。
+  debug_prompt_dir: (service) => json(200, debugPrompt.promptDirView(service)),
+  debug_prompt_dir_set: async (service, req) => json(200, await debugPrompt.setPromptDir(service, bodyJson(req))),
+  debug_system_prompt: (service, req) => json(200, debugPrompt.lastSystemPrompt(service, req.params.task)),
   model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
   model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service), req.params.provider, bodyJson(req))),
   model_provider_delete: async (service, req) => json(200, await modelConfig.deleteProvider(modelContext(service), req.params.provider)),
@@ -585,6 +592,8 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", "/api/v1/model-config/providers/(?<provider>[^/]+)/context-window", "model_provider_context"],
   ["POST", "/api/v1/model-config/selection", "model_selection"],
   ["POST", "/api/v1/model-config/test", "model_test"],
+  ["GET", "/api/v1/debug/prompt-dir", "debug_prompt_dir"],
+  ["POST", "/api/v1/debug/prompt-dir", "debug_prompt_dir_set"],
   ["GET", "/api/v1/tasks", "list_tasks"],
   ["GET", "/api/v1/task-types", "list_task_types"],
   ["POST", "/api/v1/tasks", "create_task"],
@@ -617,6 +626,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", `/api/v1/knowledge/libraries/${L}/documents/delete`, "delete_document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/content`, "document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/raw`, "document_raw"],
+  ["GET", `/api/v1/tasks/${T}/debug/system-prompt`, "debug_system_prompt"],
   ["GET", `/api/v1/tasks/${T}/conversation`, "conversation"],
   ["POST", `/api/v1/tasks/${T}/messages`, "messages"],
   ["POST", `/api/v1/tasks/${T}/actions`, "actions"],

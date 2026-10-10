@@ -1,9 +1,10 @@
 /**
- * 工作的阶段从头走一遍（真的后端进程与真的 pi，模型换成进程内的假端点）。往前的每一步都由用户在卡片上点：
- * 核读材料时助手立页、想写用例被拦，发「进入澄清」的卡片 → 用户点了，助手发「开始写条目」的卡片 → 用户看过那一页、点了，
- * 助手写用例，想在回复里自己移到评审确认（被退回，回复照常送达），同一条回复带着「进入评审确认」的卡片 → 用户点了 →
+ * 工作的阶段从头走一遍，五个阶段各有一次运行（真的后端进程与真的 pi，模型换成进程内的假端点）。往前的每一步都由用户在卡片上点：
+ * 核读材料时助手立页、想写用例被拦，发「进入澄清」的卡片 → 用户点了，助手发「进入整理建模」的卡片 → 用户点了，助手发「开始写条目」的卡片 →
+ * 用户看过那一页、点了，助手写用例，想在回复里自己移到评审确认（被退回，回复照常送达），同一条回复带着「进入评审确认」的卡片 → 用户点了 →
  * 用户看过用例、发起评审 → 助手发是否完成的卡片、用户点了之后完成任务。
- * 核对的是整条链路：库里的阶段记录、被拦的那次调用留下的原话、接口给的整份数据里的 stage、事件连接推出的 stage_changed。
+ * 核对的是整条链路：库里的阶段记录、被拦的那次调用留下的原话、接口给的整份数据里的 stage、事件连接推出的 stage_changed，
+ * 以及每一次运行里模型收到的系统提示只有那个阶段的一段。
  */
 
 import assert from "node:assert/strict";
@@ -24,8 +25,10 @@ const USE_CASE = { op: "add", collection: "功能用例", sources: [{ kind: "条
 const save = (id: string, operations: unknown[]) => ({ tool_calls: [{ id, name: "save_revision", arguments: { operations } }] });
 const CLARIFY_CARD = { kind: "choose", text: "材料读完了，接下来我一件一件问你。现在进入澄清吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
   options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "continue_reading", text: "再核读一遍" }] };
+const MODEL_CARD = { kind: "choose", text: "要问的都问到了，接下来我把主题页通读一遍。现在进入整理建模吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
+  options: [{ key: "enter_consolidate", text: "进入整理建模" }, { key: "continue_clarify", text: "继续澄清" }] };
 const START_CARD = { kind: "choose", text: "这一页你看过之后，现在开始写条目吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
-  options: [{ key: "start_items", text: "开始写条目" }, { key: "continue_clarify", text: "继续澄清" }] };
+  options: [{ key: "start_items", text: "开始写条目" }, { key: "continue_consolidate", text: "再整理一遍" }] };
 const REVIEW_CARD = { kind: "choose", text: "用例写好了，接下来请你逐条看、发起评审。现在进入评审确认吗？", items: [{ item_id: "UC-001", revision_no: 2 }],
   options: [{ key: "enter_review", text: "进入评审确认" }, { key: "continue_writing", text: "继续写条目" }] };
 const DONE_CARD = { kind: "choose", text: "功能用例一共 1 个条目，已经评审通过，你也看过了。这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。",
@@ -37,8 +40,10 @@ const SCRIPT = {
     { tool_calls: [TOPIC_CALL] },
     save("call-early", [USE_CASE]),
     reply("材料读完了，我立了一页主题。现在进入澄清吗？", "call-clarify", CLARIFY_CARD),
-    // 用户点了「进入澄清」：发「开始写条目」的卡片。
-    reply("这一页你看过之后，现在开始写条目吗？", "call-start", START_CARD),
+    // 用户点了「进入澄清」：发「进入整理建模」的卡片。
+    reply("要问的都问到了。现在进入整理建模吗？", "call-model", MODEL_CARD),
+    // 用户点了「进入整理建模」：发「开始写条目」的卡片。
+    reply("主题页理好了。这一页你看过之后，现在开始写条目吗？", "call-start", START_CARD),
     // 用户点了「开始写条目」：写用例；想在回复里自己移到评审确认（被退回，回复照常送达），同一条回复带着「进入评审确认」的卡片。
     save("call-uc", [USE_CASE]),
     { tool_calls: [{ id: "call-wrote", name: "reply", arguments: { informs: [], act: REVIEW_CARD, text: "写好了一个用例。现在进入评审确认吗？", stage: "评审确认", reason: "条目写完了。" } }] },
@@ -73,8 +78,26 @@ function stageEvents(port: number, taskId: string): { events: Dict[]; close: () 
   return { events, close: () => req.destroy() };
 }
 
-test("从核读材料走到完成：往前的每一步都由用户在卡片上点，助手自己往前移被退回；被拦的写入、整份数据里的 stage 与推出的事件", { skip: NO_PI, timeout: 180000 }, () =>
-  withStack(tmp, "stages", SCRIPT, async ({ call, taskId, session, port, db, send, action, entryOfCall }) => {
+/** 一个请求里的系统消息的文字。 */
+function systemText(request: Dict): string {
+  const system = (request["请求体"].messages as Dict[]).find((m) => m.role === "system" || m.role === "developer");
+  if (!system) return "";
+  return typeof system.content === "string" ? system.content : (system.content as Dict[]).map((p) => p.text ?? "").join("");
+}
+const STAGE_HEADINGS = ["核读材料", "澄清", "整理建模", "写条目", "评审确认"].map((name) => `# 现在这个阶段：${name}\n`);
+
+test("五个阶段从头走到完成：往前的每一步都由用户在卡片上点，助手自己往前移被退回；被拦的写入、整份数据里的 stage 与推出的事件；每次运行的系统提示只有那个阶段的一段", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "stages", SCRIPT, async ({ call, taskId, session, port, db, send, action, entryOfCall, requests }) => {
+    let seen = 0;
+    /** 上次核对之后助手这一侧新发的请求（评审者的请求不算），每一个的系统提示里都只有 name 这个阶段的一段。 */
+    const promptsAre = (name: string, atLeast: number) => {
+      const fresh = requests().slice(seen).filter((one) => !systemText(one).includes("你是评审者"));
+      seen = requests().length;
+      assert.ok(fresh.length >= atLeast, `${name}：这次运行至少有 ${atLeast} 个请求，实际 ${fresh.length} 个`);
+      for (const one of fresh) {
+        assert.deepEqual(STAGE_HEADINGS.filter((heading) => systemText(one).includes(heading)), [`# 现在这个阶段：${name}\n`]);
+      }
+    };
     const stageNow = async () => (await call("GET", `/api/v1/tasks/${taskId}/snapshot?session=${session}`)).body.task.stage as Dict;
     const pushed = stageEvents(port, taskId);
     try {
@@ -89,16 +112,24 @@ test("从核读材料走到完成：往前的每一步都由用户在卡片上�
       assert.match(early[0].fact, /任务现在在核读材料阶段，这个阶段不能新增「功能用例」的条目/);
       assert.match(early[0].guidance, /进入写条目要由用户在卡片上选「开始写条目」/);
       assert.deepEqual(db("SELECT item_id FROM item").map((r: Dict) => r.item_id), ["OA-001"]);
-      // 助手发了卡片，任务还在核读材料：往前要等用户点。
+      // 助手发了卡片，任务还在核读材料：往前要等用户点。这次运行的三个请求拿到的都是核读材料的那一段。
       assert.equal((await stageNow()).current, "reading");
+      promptsAre("核读材料", 3);
 
       // 用户在卡片上点「进入澄清」：记一条用户的移动。
       await send({ text: "我选：进入澄清", client_id: "c-clarify", origin: "card_choice", card: { reply_message_id: entryOfCall("call-clarify"), kind: "choose", choice: "enter_clarify" } });
       const clarifying = await stageNow();
       assert.deepEqual([clarifying.current, clarifying.moved_by, clarifying.reason], ["clarifying", "user", "用户在卡片上选了「进入澄清」"]);
       assert.equal(clarifying.lamps.reading[0].ok, true, "材料被那一页引用了");
+      // 扩展先记移动、再代发那句固定的话：这句话引起的运行拿到的已经是澄清的那一段。
+      promptsAre("澄清", 1);
 
-      // 用户看过那一页，在卡片上点「开始写条目」（从澄清直接进入，跳过整理建模）：助手随后写出用例。
+      // 用户在卡片上点「进入整理建模」。
+      await send({ text: "我选：进入整理建模", client_id: "c-model", origin: "card_choice", card: { reply_message_id: entryOfCall("call-model"), kind: "choose", choice: "enter_consolidate" } });
+      assert.equal((await stageNow()).current, "modeling");
+      promptsAre("整理建模", 1);
+
+      // 用户看过那一页，在卡片上点「开始写条目」：助手随后写出用例。
       assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] })).status, 200);
       await send({ text: "我选：开始写条目", client_id: "c-2", origin: "card_choice", card: { reply_message_id: entryOfCall("call-start"), kind: "choose", choice: "start_items" } });
       assert.deepEqual(db("SELECT item_id FROM item ORDER BY rowid").map((r: Dict) => r.item_id), ["OA-001", "UC-001"]);
@@ -106,6 +137,7 @@ test("从核读材料走到完成：往前的每一步都由用户在卡片上�
       assert.equal((await stageNow()).current, "writing");
       const declined = db("SELECT payload FROM event WHERE name = 'EXECUTOR_ACTS_RECORDED' ORDER BY seq").map((r: Dict) => JSON.parse(r.payload).stage_declined).filter(Boolean);
       assert.deepEqual(declined, [{ stage: "reviewing", from: "writing", why: "user_only" }]);
+      promptsAre("写条目", 2);
 
       // 用户在卡片上点「进入评审确认」。
       await send({ text: "我选：进入评审确认", client_id: "c-review", origin: "card_choice", card: { reply_message_id: entryOfCall("call-wrote"), kind: "choose", choice: "enter_review" } });
@@ -113,7 +145,8 @@ test("从核读材料走到完成：往前的每一步都由用户在卡片上�
       assert.deepEqual([reviewing.current, reviewing.moved_by, reviewing.reason], ["reviewing", "user", "用户在卡片上选了「进入评审确认」"]);
       assert.deepEqual(db("SELECT from_stage, stage, actor, reason, run_id FROM stage_record ORDER BY event_seq"), [
         { from_stage: "reading", stage: "clarifying", actor: "user", reason: "用户在卡片上选了「进入澄清」", run_id: null },
-        { from_stage: "clarifying", stage: "writing", actor: "user", reason: "用户在卡片上选了「开始写条目」", run_id: null },
+        { from_stage: "clarifying", stage: "modeling", actor: "user", reason: "用户在卡片上选了「进入整理建模」", run_id: null },
+        { from_stage: "modeling", stage: "writing", actor: "user", reason: "用户在卡片上选了「开始写条目」", run_id: null },
         { from_stage: "writing", stage: "reviewing", actor: "user", reason: "用户在卡片上选了「进入评审确认」", run_id: null },
       ]);
 
@@ -127,11 +160,13 @@ test("从核读材料走到完成：往前的每一步都由用户在卡片上�
       await send({ text: "都看过了，完成吧。", client_id: "c-3" });
       await send({ text: "我选：已完成，提交交付物", client_id: "c-4", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "complete" } });
       assert.equal(db("SELECT status FROM task")[0].status, "已完成");
+      promptsAre("评审确认", 4);
       assert.deepEqual(db("SELECT tool_name FROM tool_rejection").map((r: Dict) => r.tool_name), ["save_revision"], "除了核读材料时那一次，没有别的调用被拦");
 
-      // 事件连接推出了三次移动，序号与库里的事件相同。
-      for (const end = Date.now() + 10000; pushed.events.length < 3 && Date.now() < end;) await sleep(100);
-      assert.deepEqual(pushed.events.map((e) => [e.from, e.to, e.actor]), [["reading", "clarifying", "user"], ["clarifying", "writing", "user"], ["writing", "reviewing", "user"]]);
+      // 事件连接推出了四次移动，序号与库里的事件相同。
+      for (const end = Date.now() + 10000; pushed.events.length < 4 && Date.now() < end;) await sleep(100);
+      assert.deepEqual(pushed.events.map((e) => [e.from, e.to, e.actor]),
+        [["reading", "clarifying", "user"], ["clarifying", "modeling", "user"], ["modeling", "writing", "user"], ["writing", "reviewing", "user"]]);
       assert.deepEqual(pushed.events.map((e) => e.seq), db("SELECT seq FROM event WHERE name = 'STAGE_MOVED' ORDER BY seq").map((r: Dict) => r.seq));
     } finally {
       pushed.close();

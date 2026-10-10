@@ -134,13 +134,23 @@ test("发话：逐条交出一次运行的事件，直到 agent_settled；扩展
     const seen = [];
     for await (const e of pi.send("你好")) seen.push(e.type);
     assert.deepEqual(seen.filter((t) => !["非JSON行", "实际工具清单", "界面请求", "debug_ui_answer"].includes(t)),
-      ["agent_start", "本轮事实", "turn_start", "message_end", "message_end", "system_note", "tool_execution_start", "tool_execution_end", "turn_end", "agent_settled"]);
+      ["系统提示", "agent_start", "本轮事实", "turn_start", "message_end", "message_end", "system_note", "tool_execution_start", "tool_execution_end", "turn_end", "agent_settled"]);
+    // 扩展按阶段换系统提示时报的那一行事实：留着最近一份。
+    // 调试模式下它带着每一部分的文字：留在内存里。
+    assert.deepEqual(pi.lastStagePrompt, { replaced: true, stage: "reading", how: "recomposed", digest: "0123456789abcdef",
+      texts: [{ part: "system", from: "builtin", file: "agent/prompts/stages/system.md", text: "整份文字" }] });
   } finally {
     await pi.close();
   }
   const notes = lines(pi.notesPath!).map((l) => JSON.parse(l));
   assert.ok(notes.some((n) => n["记录"] === "提示" && n["原文"] === "你好" && /^service-\d+$/.test(n["下一条请求编号"])));
   assert.ok(notes.some((n) => n["记录"] === "本轮事实" && n["内容"].turnIndex === 0));
+  const prompt = notes.filter((n) => n["记录"] === "系统提示");
+  assert.equal(prompt.length, 1);
+  assert.deepEqual([prompt[0]["内容"].stage, prompt[0]["内容"].how, "原文" in prompt[0]], ["reading", "recomposed", false]);
+  // 文字不写进归档。
+  assert.equal("texts" in prompt[0]["内容"], false);
+  assert.ok(!lines(pi.notesPath!).join("\n").includes("整份文字"));
 });
 
 test("系统提示太长、命令行超过系统上限时 spawn 当场报 E2BIG：启动报错，进程清掉，三个归档文件的句柄都关掉", async () => {

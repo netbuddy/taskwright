@@ -13,16 +13,23 @@
 # It needs pi on PATH, like the real backend, but no model service and no key.
 # --demo only shows what the pages look like: the fake model answers from a fixed script, so it is not a walkthrough
 # of the product; for that, start without --demo and connect a real model.
+#
+# scripts/dev.sh --debug starts the backend in debug mode (its --debug option): the settings page gets a prompt directory,
+# from which the stage system prompts are read at every run, and the service answers the debugging requests.
+# Use it on your own machine only. --demo and --debug can be given together.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 DEMO=""
-case "${1:-}" in
-  "") ;;
-  --demo) DEMO=1 ;;
-  *) echo "dev.sh: unknown option '$1' (the only option is --demo)" >&2; exit 2 ;;
-esac
+DEBUG=()
+for option in "$@"; do
+  case "$option" in
+    --demo) DEMO=1 ;;
+    --debug) DEBUG=(--debug) ;;
+    *) echo "dev.sh: unknown option '$option' (the options are --demo and --debug)" >&2; exit 2 ;;
+  esac
+done
 
 TASKS="${TASKWRIGHT_TASKS_DIR:-$ROOT/tasks}"
 RUNS="${TASKWRIGHT_RUNS_DIR:-$ROOT/runs}"
@@ -67,7 +74,7 @@ mkdir -p "$TASKS" "$RUNS" "$KNOWLEDGE"
 # line, so the web dev server never forwards to some other service that happens to hold API_PORT.
 LOG="$(mktemp)"
 CLEANUP+=("$LOG")
-node backend/src/main.mts --tasks "$TASKS" --runs "$RUNS" --knowledge "$KNOWLEDGE" --port "$API_PORT" "${PROFILE[@]}" > >(tee "$LOG") 2>&1 &
+node backend/src/main.mts --tasks "$TASKS" --runs "$RUNS" --knowledge "$KNOWLEDGE" --port "$API_PORT" "${PROFILE[@]}" "${DEBUG[@]}" > >(tee "$LOG") 2>&1 &
 PIDS+=($!)
 ACTUAL="$(wait_for "$LOG" 's|.*http://[^:]*:\([0-9][0-9]*\)/api/v1/tasks .*|\1|p' "${PIDS[-1]}" "the backend")"
 

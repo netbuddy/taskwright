@@ -209,6 +209,26 @@ export async function updatePiDirSettings<T>(agentDir: string, change: (dir: PiD
   return result;
 }
 
+/** 调试模式的提示词目录：设置文件顶层的 debug.prompt_dir；没有设时是 null。只读，不改文件。 */
+export function readPromptDir(env: NodeJS.ProcessEnv | Record<string, string> = process.env): string | null {
+  const file = settingsFile(env);
+  if (!existsSync(file)) return null;
+  const dir = readForView(file)?.debug?.prompt_dir;
+  return typeof dir === "string" && dir !== "" ? dir : null;
+}
+
+/** 在锁里设（dir 为 null 时清掉）调试模式的提示词目录并写回；文件里别的键原样保留。 */
+export async function writePromptDir(dir: string | null, env: NodeJS.ProcessEnv | Record<string, string> = process.env): Promise<void> {
+  await updateJsonFile(settingsFile(env), (value) => {
+    const debug = value.debug && typeof value.debug === "object" && !Array.isArray(value.debug) ? { ...value.debug } : {};
+    if (dir === null) delete debug.prompt_dir;
+    else debug.prompt_dir = dir;
+    if (Object.keys(debug).length > 0) value.debug = debug;
+    else delete value.debug;
+    return true;
+  });
+}
+
 /** 设置文件能不能写：读不出来时抛 config_unwritable（与写入时同样的检查），先于别的改动做。 */
 export function checkWritable(env: NodeJS.ProcessEnv | Record<string, string> = process.env): void {
   readForWrite(settingsFile(env));

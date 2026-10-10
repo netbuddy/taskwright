@@ -30,6 +30,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   else if (command.type === "prompt") {
     answer({});
     entries.push({ type: "message", id: "u0000001", parentId: null, timestamp: "2026-09-25T01:00:00.000Z", message: { role: "user", content: [{ type: "text", text: command.message }] } });
+    out({ type: "extension_ui_request", id: "u5", method: "setStatus", statusKey: "taskwright-stage-prompt", statusText: '{"replaced":true,"stage":"reading","how":"recomposed","digest":"0123456789abcdef","texts":[{"part":"system","from":"builtin","file":"agent/prompts/stages/system.md","text":"整份文字"}]}' });
     out({ type: "agent_start" });
     out({ type: "extension_ui_request", id: "u4", method: "setStatus", statusKey: "taskwright-turn", statusText: '{"turnIndex":0,"timestamp":1,"langfuseTraceId":""}' });
     out({ type: "turn_start" });

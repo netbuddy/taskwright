@@ -36,7 +36,7 @@ Every line has `"记录"` (the record kind) and `"时刻"` (local time, `YYYY-MM
 | `记录` | When | Fields |
 |---|---|---|
 | `续接工作目录` | before a resumed session file is handed to pi, when its first line records another working directory and the backend rewrites it (the original is kept as `<file>.cwd-<time>.bak`) | `会话文件`, `会话文件记的工作目录`, `按本服务的任务目录续接`, `原文件备份`, `说明` |
-| `启动` | right after the process starts | `命令行` (argument list), `扩展` (list of `{名字, 解析到的文件, 文件在不在}`), `工具白名单`, `模型`, `环境标签`, `平台 skill` (`{有没有: true, 代码仓里的路径, 目录, 文件}` with the same file entries as below, or `{有没有: false, 说明}`), `任务目录`, `接回的会话文件` (empty for a new session), `是不是重启接回` (bool), `归档文件` (the raw stream's file name) |
+| `启动` | right after the process starts | `命令行` (argument list), `扩展` (list of `{名字, 解析到的文件, 文件在不在}`), `工具白名单`, `模型`, `环境标签`, `平台 skill` (`{有没有: true, 代码仓里的路径, 目录, 文件}` with the same file entries as below, or `{有没有: false, 说明}`), `按阶段的说明` (the files of `agent/prompts/stages/`, from which the system prompt of a task that has stages is put together, in the same shape as `平台 skill`), `任务目录`, `接回的会话文件` (empty for a new session), `是不是重启接回` (bool), `归档文件` (the raw stream's file name) |
 | `知识仓库摘要` | at start | `摘要算法`, `位置`, `文件` (for each file under the task directory's `.pi/skills/` and `docs/`: `{路径, 字节数, 摘要值}`, where `摘要值` is the first 16 hex digits of its SHA-256, plus `说明` when it could not be read; the platform skill's files follow with an absolute `路径`, `来自` and `代码仓里的路径`), `说明` |
 | `上下文文件` | at start | `取得到吗` (always false: pi does not report its own list), `为什么取不到`, `命令行关掉了上下文文件吗`, `照 pi 的发现规则在磁盘上查到的` (paths), `查了哪些目录`, `说明` |
 | `已加载的 skill` | at start | `取得到吗` (bool); if true, `取法` and `skill` (list of name, description, file path from pi's `get_commands`); if false, `为什么取不到` |
@@ -45,6 +45,7 @@ Every line has `"记录"` (the record kind) and `"时刻"` (local time, `YYYY-MM
 | `界面请求应答` | each `extension_ui_request` | `方法`, `标题`, `要不要应答` (bool), `回了什么` (dialogs are answered "no" or "cancel"; others are only recorded), `请求编号` |
 | `本轮事实` | each `taskwright-turn` report | `内容` (the parsed JSON, or null), `原文` |
 | `实际工具清单` | each `taskwright-active-tools` report | `工具` (list, or null), `原文` |
+| `系统提示` | each `taskwright-stage-prompt` report: once per run of a task that has stages, when the extension replaces the system prompt with the shared parts and the section of the current stage | `内容` (the parsed JSON: `replaced`, `stage`, `how` (`recomposed`, `reused` or `kept_after_error`), `error` if any, and `digest`, `bytes`, `lines`, `parts` of the instruction text without the working directory pi appends; each part has `part`, `from`, `file`, `bytes`, `lines`, `digest`), or `内容` null and `原文` when the report could not be parsed. In debug mode the report also has `debug`, `prompt_dir` and `notes`; the text of the prompt that the report carries in debug mode is not archived |
 | `扩展写入的消息` | a custom message written by an extension (for example the task-status message) | `类型`, `文字`, optionally `会话条目编号`, `会话编号` |
 | `标准错误` | each line pi wrote to standard error | `文字` |
 | `任务服务拼事件出错` | when the task service fails to turn one pi event into interface events (the event is skipped, the service keeps going) | `事件类型`, `原因` |

@@ -2,7 +2,7 @@
  * 启动任务服务。
  *
  * 用法：
- *   node backend/src/main.mts [--data <数据目录>] --tasks <任务目录的上级目录> --runs <归档目录> [--knowledge <知识库目录>] --port <端口> [--mode desktop|server] [--host 地址] [--profile dev] [--web 网页目录]
+ *   node backend/src/main.mts [--data <数据目录>] --tasks <任务目录的上级目录> --runs <归档目录> [--knowledge <知识库目录>] --port <端口> [--mode desktop|server] [--host 地址] [--profile dev] [--web 网页目录] [--debug]
  *
  * --tasks、--runs 与 --knowledge 不给时放在数据目录下（给了 --data 或环境变量 TASKWRIGHT_DATA_DIR 时），否则放在用户数据目录下
  * （见 paths.ts 的 userDataDir），不写进安装位置。服务级库、数据升级前的备份与升级报告放在数据目录下（见 paths.ts 的 dataDirectory）。
@@ -42,6 +42,7 @@ const { values } = parseArgs({
     mode: { type: "string", default: "server" },
     profile: { type: "string", default: "dev" },
     web: { type: "string" },
+    debug: { type: "boolean", default: false },
   },
   strict: true,
 });
@@ -62,6 +63,7 @@ if (!(MODES as readonly string[]).includes(values.mode!)) {
 try {
   await startService({
     port, mode: values.mode as Mode, host: values.host, data: values.data, tasks: values.tasks, runs: values.runs, knowledge: values.knowledge, profile: values.profile, web: values.web,
+    debug: values.debug,
   });
 } catch (error) {
   console.error(error instanceof NoFreePort ? error.message : `服务没有起来：${(error as Error).message}`);

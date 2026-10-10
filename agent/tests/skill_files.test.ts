@@ -39,6 +39,12 @@ function frontmatter(text: string): [Record<string, string>, string] {
 }
 const bodyOf = (path: string) => frontmatter(readFileSync(path, "utf-8"))[1];
 const shown = (path: string) => relative(ROOT, path);
+/** 一份任务 skill 的全部文字：SKILL.md 的正文，加上它旁边 stages/ 目录里按阶段分的几段（有的任务类型没有这个目录）。 */
+function taskSkillText(path: string): string {
+  const stages = join(dirname(path), "stages");
+  const parts = existsSync(stages) ? readdirSync(stages).sort().map((name) => readFileSync(join(stages, name), "utf-8")) : [];
+  return [bodyOf(path), ...parts].join("\n");
+}
 
 test("平台 skill 的文件存在，frontmatter 合 pi 的要求：name 与目录同名、只用小写字母数字与连字符、不超过 64 个字符；description 必填", () => {
   const [fields, body] = frontmatter(readFileSync(PLATFORM, "utf-8"));
@@ -175,7 +181,7 @@ test("同批引用：平台 skill 写明可以引用同一批里排在前面的�
   // 保存修订已经认同一批里排在前面的新增条目，这句旧说法与工具行为相反，不能再出现。
   for (const path of [PLATFORM, ...TASK_SKILLS]) assert.ok(!bodyOf(path).includes("同一批里新增的条目还没有编号"), shown(path));
   for (const path of TASK_SKILLS) {
-    assert.ok(bodyOf(path).includes("再把问题条目单独放在最后一批保存，不和别的条目放在同一批：每批内容少，出错时好改。"), shown(path));
+    assert.ok(taskSkillText(path).includes("再把问题条目单独放在最后一批保存，不和别的条目放在同一批：每批内容少，出错时好改。"), shown(path));
   }
 });
 
@@ -186,7 +192,7 @@ test("至少有一份任务 skill", () => {
 test("任务 skill 的正文不含平台层的词", () => {
   assert.ok(TASK_SKILLS.length > 0);
   for (const path of TASK_SKILLS) {
-    const body = bodyOf(path);
+    const body = taskSkillText(path);
     for (const word of PLATFORM_WORDS) {
       // 前后都不是英文字母或下划线才算这个词，免得 act 误中 action、contract 之类。
       assert.doesNotMatch(body, new RegExp(`(?<![A-Za-z_])${word}(?![A-Za-z_])`), `${shown(path)} 里出现了平台层的词 ${word}`);
