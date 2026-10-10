@@ -4,6 +4,7 @@
  *
  * 看到什么：执行者新说的话（回复的告知、主行为、成文正文，以及可以点的按钮）、
  * 条目区现状（各集合条目数、每个条目的编号与标题；给编号时看这个条目的字段）。不给完成条件、材料原文、条目改动过的修订。
+ * 总体分析这个集合在条目区里写成提纲：每页一行，写标题、标签，以及这一页现在的样子用户看没看过、有没有助手补的内容等着确认。
  */
 
 export interface Act {
@@ -73,6 +74,22 @@ export function buttonsOf(act: Act | null | undefined, task?: TaskView | null): 
   return [];
 }
 
+/**
+ * 请选择卡片上点的是哪个选项：写选项的键或者选项的文字都认，返回选项的键；都对不上时原样返回。
+ * 界面上人看到的是选项的文字（例如「开始写条目」），键是给程序认的（start_items），所以两种写法都收。
+ */
+export function optionKeyOf(act: Act | null | undefined, click: string): string {
+  if (!act || act.kind !== "choose") return click;
+  const options = act.options ?? [];
+  return (options.find((o) => o.key === click) ?? options.find((o) => o.text.trim() === click))?.key ?? click;
+}
+
+/** 卡片上的按钮给人看的名字：请选择卡片写选项的文字，其余就是按钮名。 */
+export function buttonLabels(act: Act | null | undefined, task?: TaskView | null): string[] {
+  if (act?.kind === "choose") return (act.options ?? []).map((o) => o.text);
+  return buttonsOf(act, task);
+}
+
 /** 「请确认」卡片上的按钮：点一次把卡片点名的条目标为已读（已读就算确认）。 */
 export const SEEN = "这几条都看过了";
 
@@ -99,8 +116,9 @@ export function renderReply(m: Message, task?: TaskView | null): string {
       for (const b of act.basis ?? []) lines.push(`依据（${b.kind}）：${b.excerpt}`);
     }
     if (act.kind === "propose") for (const p of act.preview ?? []) lines.push(`这样做会${EFFECT_WORD[p.effect] ?? p.effect}：${p.text}`);
-    const buttons = buttonsOf(act, task);
-    lines.push(buttons.length ? `可以点：${buttons.join("／")}（也可以直接回一句话）` : "这张卡片没有按钮，直接回一句话。");
+    const buttons = buttonLabels(act, task);
+    const how = act.kind === "choose" ? "写选项的文字或者它前面的键都行；也可以直接回一句话" : "也可以直接回一句话";
+    lines.push(buttons.length ? `可以点：${buttons.join("／")}（${how}）` : "这张卡片没有按钮，直接回一句话。");
   }
   return lines.join("\n");
 }
@@ -123,9 +141,65 @@ export interface Item {
   /** 条目当前所在的修订号。 */
   revision_no: number;
   fields: Record<string, unknown>;
-  confirmations?: { revision_no: number; accepted: boolean }[];
-  /** 当前修订上有没有接受的确认标记（已读、界面修改等）；没有就是未读。 */
+  /** 确认标记，按记下的先后；basis 是依据：viewed（已读）、ui_click、ui_edit（用户亲手改）、user_words。 */
+  confirmations?: { revision_no: number; accepted: boolean; basis?: string }[];
+  /** 条目在任何一次修订上有过接受的确认标记；没有就是未读。 */
   viewed?: boolean;
+  /** 待核实：当前修订上有助手补充的内容，而用户还没有确认过。 */
+  pending_verification?: boolean;
+  /** 还待核实的助手补充来源有几条。 */
+  pending_sources?: number;
+  /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
+  pending_places?: { field: string | null; index: number | null }[];
+}
+
+/** 总体分析这个集合的名字与它的几个字段名，与 agent/src/lib/overall_analysis.ts 一致。 */
+export const OVERALL = "总体分析";
+const TAGS_FIELD = "标签";
+const STATUS_FIELD = "状态";
+const DEPRECATED = "已废弃";
+
+/** 一页待不待核实、有几处：与网页的 pendingCount（web/src/model/overall.ts）同一个算法。 */
+export function pendingCount(item: Item): number {
+  return item.pending_verification ? Math.max(1, item.pending_sources ?? 1) : 0;
+}
+
+/**
+ * 一页现在这一版用户看没看过：它当前所在的修订上，依据不是用户亲手改的确认标记里，最近一条是接受。
+ * 用户 agent 不会亲手改字段，所以这与产品里「用户看过」的判法（从最近一次助手保存起的那一段修订）结果相同。
+ */
+export function viewedNow(item: Item): boolean {
+  const marks = (item.confirmations ?? []).filter((c) => c.revision_no === item.revision_no && c.basis !== "ui_edit");
+  return marks.length > 0 && marks[marks.length - 1].accepted;
+}
+
+/**
+ * 用户打开一个条目时要不要记为已读（返回要记的目标，不记时为 null），与网页同一个规矩（web/src/model/overall.ts 的 viewOnOpen）：
+ * 别的条目打开就记；总体分析里待核实的页打开时不记——记了它就不再待核实，而助手补的那几处用户也许还没有看。
+ * confirm 为真相当于在那一页上点了「确认待核实的 N 处」（网页的 confirmAction）：在它现在所在的修订上记一条已读。
+ */
+export function viewOnLook(task: TaskView | null | undefined, itemId: string, confirm = false): { item_id: string; base_revision: number } | null {
+  const item = task?.items.find((i) => i.item_id === itemId);
+  if (!item) return null;
+  if (item.collection === OVERALL && pendingCount(item) > 0 && !confirm) return null;
+  return { item_id: item.item_id, base_revision: item.revision_no };
+}
+
+/** 还待核实的各处写成一句：「例子」第 1 项、「它是什么」；指整个条目的写「整页」。 */
+function placesText(item: Item): string {
+  const places = item.pending_places ?? [];
+  if (!places.length) return "";
+  return places.map((at) => (at.field === null ? "整页" : `「${at.field}」${at.index !== null ? `第 ${at.index + 1} 项` : ""}`)).join("、");
+}
+
+/** 提纲里一页的那一行：编号、标题、标签，以及四种状态之一。 */
+function outlineLine(item: Item): string {
+  const tags = Array.isArray(item.fields[TAGS_FIELD]) ? (item.fields[TAGS_FIELD] as unknown[]).filter((t): t is string => typeof t === "string" && t.trim() !== "") : [];
+  const head = `${item.item_id}「${item.title}」${tags.length ? `〔${tags.join("、")}〕` : ""}`;
+  if (item.fields[STATUS_FIELD] === DEPRECATED) return `${head}：已废弃`;
+  const pending = pendingCount(item);
+  if (pending) return `${head}：有 ${pending} 处是助手补的，等你确认`;
+  return `${head}：${viewedNow(item) ? "你看过现在这一版了" : "你还没看过现在这一版"}`;
 }
 
 export interface TaskView {
@@ -139,21 +213,37 @@ function valueText(value: unknown): string {
   return String(value);
 }
 
-/** 条目区：各集合几个条目、每个条目的编号与标题；给了编号就只看这一个条目的字段。 */
-export function renderItems(task: TaskView | null, itemId?: string): string {
+/**
+ * 条目区：各集合几个条目、每个条目的编号与标题；给了编号就只看这一个条目的字段。
+ * confirm 只对总体分析里待核实的页有意义：为真是确认这一页上助手补的几处，为假时只是看，并写明还有哪几处等着确认。
+ */
+export function renderItems(task: TaskView | null, itemId?: string, confirm = false): string {
   if (!task) return "条目区：还没有任务。";
   if (itemId) {
     const item = task.items.find((i) => i.item_id === itemId);
     if (!item) return `条目区里没有 ${itemId}。`;
     const declared = task.definition.collections.find((c) => c.name === item.collection)?.fields.map((f) => f.name) ?? Object.keys(item.fields);
-    // 打开一个条目看它现在的内容就算看过（已读），「看界面」带条目编号时工具会替你记下。
-    const mark = "（你正在看它现在的内容，看过就算确认）";
-    return [`${item.item_id}「${item.title}」，集合「${item.collection}」，修订 ${item.revision_no}${mark}：`,
-      ...declared.map((name) => `  ${name}：${valueText(item.fields[name])}`)].join("\n");
+    const pending = item.collection === OVERALL ? pendingCount(item) : 0;
+    // 打开一个条目看它现在的内容就算看过（已读），「看界面」带条目编号时工具会替你记下；待核实的主题页要另外确认。
+    const mark = !pending ? "（你正在看它现在的内容，看过就算确认）"
+      : confirm ? `（你正在看它现在的内容，并确认了助手补的 ${pending} 处）` : "（你正在看它现在的内容）";
+    const lines = [`${item.item_id}「${item.title}」，集合「${item.collection}」，修订 ${item.revision_no}${mark}：`,
+      ...declared.map((name) => `  ${name}：${valueText(item.fields[name])}`)];
+    if (pending && !confirm) {
+      const where = placesText(item);
+      lines.push(`这一页有 ${pending} 处是助手补的，还没有确认${where ? `：${where}` : ""}。你看了觉得对，就再看一次这一页并把 confirm 设为 true；觉得不对，直接说哪里不对。`);
+    }
+    return lines.join("\n");
   }
   const lines = ["条目区："];
   for (const c of task.definition.collections) {
     const items = task.items.filter((i) => i.collection === c.name);
+    if (c.name === OVERALL) {
+      // 总体分析写成提纲：一页一行，让人知道有哪些页可以看、哪一页还等着确认。
+      lines.push(`  ${c.name} ${items.length} 页${items.length ? "：" : ""}`);
+      for (const item of items) lines.push(`    ${outlineLine(item)}`);
+      continue;
+    }
     lines.push(`  ${c.name} ${items.length} 个${items.length ? "：" + items.map((i) => `${i.item_id}「${i.title}」${i.viewed === false ? "（未读）" : ""}`).join("、") : ""}`);
   }
   return lines.join("\n");
@@ -183,16 +273,17 @@ const CLICK_TEXT: Record<string, string> = { 不对: "这个不对。", 采纳: 
 export function planRespond(params: RespondParams, lastReply: Message | null, clientId: string, task?: TaskView | null): Plan {
   const p = params ?? {};
   const text = typeof p.text === "string" ? p.text.trim() : "";
-  const click = typeof p.click === "string" ? p.click.trim() : "";
+  const act = cardOf(lastReply);
+  const clicked = typeof p.click === "string" ? p.click.trim() : "";
+  const click = clicked ? optionKeyOf(act, clicked) : "";
   const errors: string[] = [];
   if (p.done && p.give_up) errors.push("done 与 give_up 不能同时为真");
   if (p.give_up && (typeof p.reason !== "string" || !p.reason.trim())) errors.push("give_up 要配一句 reason，说明为什么放弃");
   if (!text && !click && !p.done && !p.give_up) errors.push("要么写 text 说一句话，要么写 click 点一个按钮，要么用 done 或 give_up 结束");
-  const act = cardOf(lastReply);
   if (click) {
     const buttons = buttonsOf(act, task);
     if (!buttons.length) errors.push("助手最近一条话没有可以点的按钮，请用 text 直接说");
-    else if (!buttons.includes(click)) errors.push(`没有「${click}」这个按钮，可以点的是：${buttons.join("／")}`);
+    else if (!buttons.includes(click)) errors.push(`没有「${clicked}」这个按钮，可以点的是：${buttonLabels(act, task).join("／")}`);
     if (text && click !== "不对") errors.push("点这个按钮时不要同时写 text；要说话就另外回一次");
   }
   if (errors.length) throw new Error(`这次回应的形式不对，没有发出去：${errors.join("；")}。`);

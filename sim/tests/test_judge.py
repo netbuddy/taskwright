@@ -94,7 +94,7 @@ class JudgeTest(unittest.TestCase):
             report = judge.judge(sim).read_text(encoding="utf-8")
             summary = json.loads((Path(tmp) / "sim-summary.jsonl").read_text(encoding="utf-8").splitlines()[-1])
         self.assertFalse(summary["有效"])
-        self.assertEqual(list(summary["第一层"].values()), [False, False])
+        self.assertEqual(list(summary["第一层"].values()), [False, False, True])
         self.assertIn("命中的关键词", report)
         self.assertIn("\"条目\": \"UC-001\"", report)
 
@@ -184,6 +184,59 @@ class JudgeTest(unittest.TestCase):
             report = judge.judge(sim, other, summary_line=False).read_text(encoding="utf-8")
             self.assertFalse((Path(tmp) / "sim-summary.jsonl").exists())
         self.assertIn("本次判定用的画像：新画像.json，是重判", report)
+
+
+
+START_CARD = {"kind": "choose", "text": "这两页你看过之后，现在开始写条目吗？", "items": [{"item_id": "OA-001", "revision_no": 1}, {"item_id": "OA-002", "revision_no": 1}],
+              "options": [{"key": "start_items", "text": "开始写条目"}, {"key": "continue_clarify", "text": "继续澄清"}]}
+
+
+def start_record(looks_2: list, looks_3: list, choice: str = "start_items", card: dict | None = START_CARD) -> dict:
+    """三轮：第 1 轮说要整理，助手发提议的卡片；第 2 轮看页并说一句；第 3 轮看页并在卡片上点一个选项。"""
+    said = lambda n, text, looks, sent=None: {"轮": n, "用户 agent": {"looks": looks, "respond": {"sent": sent or {"text": text}, "route": "message"}}}      # noqa: E731
+    reply = {"text": "我立了两页主题。", "message_id": "m-card", "act": card, "via_reply_tool": True}
+    click = {"text": "我选：开始写条目", "origin": "card_choice", "card": {"reply_message_id": "m-card", "kind": "choose", "choice": choice}}
+    return {"演练": "sim-001", "任务编号": "TASK-T", "轮": [
+        {**said(1, "帮我整理需求。", [None]), "执行者": {"replies": [reply]}},
+        {**said(2, "我先看看。", looks_2), "执行者": {"replies": [{"text": "好的。", "message_id": "m-2", "act": None}]}},
+        {**said(3, "", looks_3, click), "执行者": {"replies": []}}]}
+
+
+class StartItemsTest(unittest.TestCase):
+    def check(self, record: dict, sim: Path | None = None) -> dict:
+        with tempfile.TemporaryDirectory() as tmp:
+            return judge.layer1({"persona": {}, "record": record, "sim": sim or Path(tmp)})[2]
+
+    def test_之前各轮或同一轮打开过卡片点名的每一页_通过(self):
+        found = self.check(start_record([None, "OA-001"], [None, "OA-002"]))
+        self.assertEqual((found["项"], found["通过"], found["说明"], found["细节"]),
+                         ("点「开始写条目」之前打开过卡片点名的主题页", True, "一共点了 1 次「开始写条目」。", []))
+
+    def test_有一页从头到尾没打开过就点了_不通过_从那一轮起作废(self):
+        found = self.check(start_record([None, "OA-001"], [None, "UC-001"]))
+        self.assertEqual((found["通过"], found["细节"]), (False, [{"轮": 3, "没打开过的页": ["OA-002"], "卡片点名的页": ["OA-001", "OA-002"]}]))
+        self.assertEqual(judge.validity([found])["作废起始轮"], 3)
+
+    def test_没有点过_点的是继续澄清_卡片没有点名页_都通过(self):
+        never = {"演练": "sim-001", "轮": [{"轮": 1, "用户 agent": {"looks": [None], "respond": {"sent": {"text": "帮我整理。"}}}, "执行者": {"replies": []}}]}
+        self.assertEqual((self.check(never)["通过"], self.check(never)["说明"]), (True, "没有点过「开始写条目」。"))
+        self.assertEqual(self.check(start_record([None], [None], choice="continue_clarify"))["说明"], "没有点过「开始写条目」。")
+        no_items = self.check(start_record([None], [None], card={**START_CARD, "items": []}))
+        self.assertEqual((no_items["通过"], no_items["说明"]), (True, "一共点了 1 次「开始写条目」。"))
+
+    @unittest.skipUnless(shutil.which("node"), "本机没有 node")
+    def test_打开过但库里没有那一修订上看过的记录_不算演错_在说明里单独写出(self):
+        from sim.tests.test_lamps import CREATE, SAVE, VIEW, copy_db, node
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = Path(tmp) / "sim-001"
+            task_dir = Path(json.loads(node(CREATE, str(sim / "tasks" / "TASK-T")))["任务目录"])
+            node(SAVE, str(task_dir))           # 两页主题 OA-001、OA-002
+            node(VIEW, str(task_dir))           # 用户只在 OA-001 的修订 1 上记了看过
+            copy_db(task_dir, sim)
+            found = judge.layer1({"persona": {}, "record": start_record([None, "OA-001", "OA-002"], [None]), "sim": sim})[2]
+        self.assertTrue(found["通过"])
+        self.assertEqual(found["说明"], "一共点了 1 次「开始写条目」。打开过、但库里没有它在卡片所写修订上看过的记录的（这一页有助手补的内容而没有确认，"
+                         "或者那之后又改过），不算演错，列在这里：第 3 轮 OA-002。")
 
 
 if __name__ == "__main__":

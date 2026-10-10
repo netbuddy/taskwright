@@ -1,7 +1,9 @@
 """评测的命令：汇总怎样算（手写的几遍结果），以及用假模型端点接连演练两遍的一次完整评测。
 
 集成测试里一个假模型端点同时应付助手与模拟用户：模拟用户的每个请求里都有驾驭程序唤起它的头一句话，脚本靠这句话分清两边。
-助手第一轮立一页主题、写一个用例、提一个问题；模拟用户第二轮说要去问一下，并表示目标达成。本机没有 pi 或 node 时跳过。
+助手第一轮立一页主题、记一条待澄清的问题、提一个问题；模拟用户第二轮说要去问一下，并表示目标达成。助手在这一例里不写用例：
+产品有了工作的阶段之后，用例要等用户点了「开始写条目」才能写，主题页与问题条目则在哪个阶段都能写，所以这一例在有没有阶段的
+产品上都走得通（从核读一直走到完成的那一例在 test_stage_run.py）。本机没有 pi 或 node 时跳过。
 """
 
 from __future__ import annotations
@@ -138,15 +140,15 @@ SCRIPT = {"rules": [
      "reply": {"tool_calls": [{"name": "respond", "arguments": {"text": "这个我得问一下教务处。", "done": True}}]}},
     {"when": {"any_contains": FIRST_WAKE, "last_role": "tool"}, "reply": {"tool_calls": [{"name": "respond", "arguments": {"text": FIRST_WORDS}}]}},
     {"when": {"any_contains": FIRST_WAKE, "last_role": "user"}, "reply": {"tool_calls": [{"name": "look", "arguments": {}}]}},
-    # 助手：第一句话之后立一页主题、写一个用例；工具结果回来之后提问；用户说要去问之后回一句。
+    # 助手：第一句话之后立一页主题、记一条待澄清的问题；工具结果回来之后提问；用户说要去问之后回一句。
     {"when": {"last_role": "user", "last_contains": "帮我把这份需求整理"},
      "reply": {"text": intent("request", "把需求整理成规格说明"), "tool_calls": [
          {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "总体分析", "fields": {
              "标题": "借书", "它是什么": "读者凭借书证借书，每本书可以续借一次。", "例子": ["读者凭借书证借书"], "标签": ["流程"], "状态": "在用"},
              "sources": [source("读者凭借书证借书，每本书可以续借一次。")]}]}},
-         {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "功能用例", "fields": {
-             "用例名称": "借书", "用例功能": "读者凭借书证借书。", "参与者": ["读者"], "基本流程": ["读者出示借书证", "系统登记借出的图书"]},
-             "sources": [source("读者凭借书证借书，每本书可以续借一次。")]}]}}]}},
+         {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "问题", "fields": {
+             "事项": "寒暑假期间的借期怎样算", "种类": "待澄清", "状态": "未解决"},
+             "sources": [source("寒暑假期间的借期另行规定。")]}]}}]}},
     {"when": {"last_role": "user", "last_contains": "教务处"},
      "reply": {"text": intent("inform", "要去问教务处"), "tool_calls": [{"name": "reply", "arguments": {"informs": [], "act": None, "text": "好的，这件事先记着。"}}]}},
     {"when": {"last_role": "tool"},
@@ -192,7 +194,7 @@ class EvalRunTest(unittest.TestCase):
             again, complaint = quiet([*base, "--repeat", "1", "--label", "试跑"])
             # 换一份只有一组的清单重判第一遍：同一次评测的第二遍一并重算，汇总跟着重写。
             other = root / "另一份清单.json"
-            other.write_text(json.dumps({"功能用例": [["借书"]]}, ensure_ascii=False), encoding="utf-8")
+            other.write_text(json.dumps({"问题": [["寒暑假"]]}, ensure_ascii=False), encoding="utf-8")
             rejudged, _ = quiet(["judge", str(first), "--expect", str(other)])
             after = json.loads(evals.summary_path(sims_root, "试跑", "json").read_text(encoding="utf-8"))
             after_list = evals.listed(sims_root)
@@ -205,12 +207,12 @@ class EvalRunTest(unittest.TestCase):
                              ("试跑", f"sim-00{n + 1}", "用户 agent 表示目标达成", 2, 4, ""))
             self.assertRegex(one["任务编号"], r"^TASK-")
             states = {x["键"]: x["结果"] for x in one["灯"]}
-            # 立了一页流程主题并被引用；例子不以「例外：」开头；用例没有依据这一页；没有评审过。
+            # 立了一页流程主题并被引用；例子不以「例外：」开头；没有用例依据这一页；没有评审过。
             self.assertEqual((states["materials_cited"], states["flows_have_exception"], states["flows_backed_by_use_cases"],
                               states["no_untagged_pages"], states["roles_mentioned_by_flows"], states["reviews_no_open_findings"]),
                              ("通过", "未通过", "未通过", "通过", "不适用", "未通过"))
             hits = [(x["部分"], x["组"][0]) for x in one["至少应有"] if x["命中"]]
-            self.assertEqual(hits, [("总体分析·流程页", "借书"), ("功能用例", "借书")])
+            self.assertEqual(hits, [("总体分析·流程页", "借书"), ("问题", "寒暑假")])
             # 助手的问题取自任务库的对话行为，轮次靠演练记录对上。
             asked = one["助手问过的问题"]
             self.assertEqual((asked["怎样列的"], [(q["轮"], q["功能"], q["文字"]) for q in asked["问题"]]),

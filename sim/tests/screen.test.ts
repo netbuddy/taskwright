@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buttonsOf, planRespond, renderItems, renderMessages, renderReply } from "../lib/screen.ts";
+import { buttonLabels, buttonsOf, optionKeyOf, pendingCount, planRespond, renderItems, renderMessages, renderReply, viewOnLook, viewedNow } from "../lib/screen.ts";
 
 const confirmReply = {
   type: "assistant_reply", message_id: "a1", text: "三个用例整理好了，请看看。", informs: ["存了 3 个用例。"],
@@ -17,7 +17,7 @@ test("回复渲染成用户看到的样子：告知、正文、卡片与可以�
   assert.equal(renderReply(confirmReply),
     "助手告诉你：存了 3 个用例。\n助手说：三个用例整理好了，请看看。\n【卡片：请确认】请确认这三个用例\n" +
     "涉及的条目：UC-001（修订 1）、UC-002（修订 2）\n可以点：这几条都看过了／不对（也可以直接回一句话）");
-  assert.match(renderReply(chooseReply), /选项 a：借书\n选项 b：还书\n可以点：a／b/);
+  assert.match(renderReply(chooseReply), /选项 a：借书\n选项 b：还书\n可以点：借书／还书（写选项的文字或者它前面的键都行；也可以直接回一句话）/);
   assert.equal(renderReply({ type: "assistant_reply", message_id: "x", text: "好的。", act: null }), "助手说：好的。");
   assert.deepEqual(buttonsOf({ kind: "suggest", text: "t" }), ["采纳", "换一个"]);
   assert.deepEqual(buttonsOf({ kind: "ask", text: "t" }), []);
@@ -63,7 +63,7 @@ test("回应的形式核对：逐条说明哪里不对", () => {
   assert.throws(() => planRespond({}, null, "c"), /要么写 text 说一句话/);
   assert.throws(() => planRespond({ give_up: true }, null, "c"), /give_up 要配一句 reason/);
   assert.throws(() => planRespond({ done: true, give_up: true, reason: "烦" }, null, "c"), /done 与 give_up 不能同时为真/);
-  assert.throws(() => planRespond({ click: "这几条都看过了" }, chooseReply, "c"), /没有「这几条都看过了」这个按钮，可以点的是：a／b/);
+  assert.throws(() => planRespond({ click: "这几条都看过了" }, chooseReply, "c"), /没有「这几条都看过了」这个按钮，可以点的是：借书／还书/);
   assert.throws(() => planRespond({ click: "这几条都看过了" }, null, "c"), /没有可以点的按钮/);
   assert.throws(() => planRespond({ click: "确认", text: "好" }, confirmReply, "c"), /点这个按钮时不要同时写 text/);
 });
@@ -120,4 +120,83 @@ test("提问挂在条目上时与前端一样有「先不管」与「我不知�
   assert.deepEqual(buttonsOf(ask([{ item_id: "UC-001", revision_no: 2 }]).act, task), ["我不知道，你按常识补"]);
   assert.deepEqual(buttonsOf({ kind: "ask", text: "t", scope: "general" }, task), []);
   assert.throws(() => planRespond({ click: "先不管这条" }, ask([{ item_id: "UC-001", revision_no: 2 }]), "sim-4", task), /没有「先不管这条」这个按钮/);
+});
+
+const page = (id: string, title: string, more: Record<string, unknown> = {}) => ({
+  item_id: id, collection: "总体分析", title, revision_no: 2, fields: { 标题: title, 标签: [], 状态: "在用" }, ...more,
+});
+const overallTask = (items: ReturnType<typeof page>[]) => ({
+  definition: { collections: [{ name: "功能用例", fields: [{ name: "用例名称" }] }, { name: "总体分析", fields: [{ name: "标题" }, { name: "标签" }, { name: "状态" }] }] },
+  items: [{ item_id: "UC-001", collection: "功能用例", title: "借书", revision_no: 1, fields: { 用例名称: "借书" }, viewed: false }, ...items],
+});
+
+test("总体分析在条目区里写成提纲：每页一行，写标签与四种状态之一；别的集合照旧", () => {
+  const seen = { revision_no: 2, accepted: true, basis: "viewed" };
+  const text = renderItems(overallTask([
+    page("OA-001", "借书", { fields: { 标题: "借书", 标签: ["流程"], 状态: "在用" }, confirmations: [seen], viewed: true }),
+    page("OA-002", "读者", { fields: { 标题: "读者", 标签: ["角色", "概念"], 状态: "在用" }, confirmations: [{ ...seen, revision_no: 1 }], viewed: true }),
+    page("OA-003", "预约保留期", { pending_verification: true, pending_sources: 2, confirmations: [] }),
+    page("OA-004", "旧说法", { fields: { 标题: "旧说法", 标签: ["概念"], 状态: "已废弃" }, pending_verification: true }),
+  ]));
+  assert.equal(text, [
+    "条目区：",
+    "  功能用例 1 个：UC-001「借书」（未读）",
+    "  总体分析 4 页：",
+    "    OA-001「借书」〔流程〕：你看过现在这一版了",
+    "    OA-002「读者」〔角色、概念〕：你还没看过现在这一版",      // 看过的是修订 1，现在是修订 2
+    "    OA-003「预约保留期」：有 2 处是助手补的，等你确认",
+    "    OA-004「旧说法」〔概念〕：已废弃",
+  ].join("\n"));
+  assert.equal(renderItems(overallTask([])).split("\n")[2], "  总体分析 0 页");
+});
+
+test("看没看过现在这一版：只看当前修订上最近一条不是亲手改的标记；待核实的处数与网页同一个算法", () => {
+  const item = (confirmations: { revision_no: number; accepted: boolean; basis?: string }[]) => page("OA-001", "借书", { confirmations });
+  assert.equal(viewedNow(item([{ revision_no: 2, accepted: true, basis: "viewed" }])), true);
+  assert.equal(viewedNow(item([{ revision_no: 2, accepted: true, basis: "viewed" }, { revision_no: 2, accepted: false, basis: "ui_click" }])), false);   // 最近一条是撤回
+  assert.equal(viewedNow(item([{ revision_no: 2, accepted: true, basis: "ui_edit" }])), false);                                                        // 亲手改不算看过
+  assert.equal(viewedNow(item([{ revision_no: 1, accepted: true, basis: "viewed" }])), false);                                                         // 看的是旧修订
+  assert.equal(viewedNow(item([])), false);
+  assert.deepEqual([pendingCount(page("OA-001", "借书")), pendingCount(page("OA-001", "借书", { pending_verification: true })),
+    pendingCount(page("OA-001", "借书", { pending_verification: true, pending_sources: 3 }))], [0, 1, 3]);
+});
+
+test("打开一个条目记不记已读与网页同一个规矩：待核实的主题页打开不记，带确认才记；别的照旧打开就记", () => {
+  const task = overallTask([
+    page("OA-001", "借书"),
+    page("OA-002", "预约保留期", { fields: { 标题: "预约保留期", 标签: ["概念"], 状态: "在用", 例子: ["保留 3 天"], 它是什么: "书为预约的人留着的那段时间。" },
+      pending_verification: true, pending_sources: 2, pending_places: [{ field: "例子", index: 0 }, { field: "它是什么", index: null }] }),
+  ]);
+  task.definition.collections[1].fields.push({ name: "它是什么" }, { name: "例子" });
+  task.items[0].pending_verification = true;      // 用例上有助手补的内容：不是主题页，照旧打开就记
+  assert.deepEqual(viewOnLook(task, "OA-001"), { item_id: "OA-001", base_revision: 2 });
+  assert.equal(viewOnLook(task, "OA-002"), null);
+  assert.deepEqual(viewOnLook(task, "OA-002", true), { item_id: "OA-002", base_revision: 2 });
+  assert.deepEqual(viewOnLook(task, "OA-001", true), { item_id: "OA-001", base_revision: 2 });      // 不待核实的页带了确认：照普通的看
+  assert.deepEqual(viewOnLook(task, "UC-001"), { item_id: "UC-001", base_revision: 1 });
+  assert.equal(viewOnLook(task, "OA-009"), null);
+  // 看到的文字：待核实的页写明还有哪几处等确认、怎样确认；确认之后写确认了几处。
+  const looked = renderItems(task, "OA-002");
+  assert.match(looked, /^OA-002「预约保留期」，集合「总体分析」，修订 2（你正在看它现在的内容）：/);
+  assert.match(looked, /\n这一页有 2 处是助手补的，还没有确认：「例子」第 1 项、「它是什么」。你看了觉得对，就再看一次这一页并把 confirm 设为 true；觉得不对，直接说哪里不对。$/);
+  const confirmed = renderItems(task, "OA-002", true);
+  assert.match(confirmed, /修订 2（你正在看它现在的内容，并确认了助手补的 2 处）：/);
+  assert.doesNotMatch(confirmed, /还没有确认/);
+  assert.match(renderItems(task, "OA-001", true), /修订 2（你正在看它现在的内容，看过就算确认）：/);
+});
+
+test("请选择卡片的选项按键点或按文字点都行，发出去的请求相同；别的卡片的按钮名不受影响", () => {
+  const startReply = { type: "assistant_reply", message_id: "a9", text: "现在开始写条目吗？",
+    act: { kind: "choose" as const, text: "这几页你看过之后，现在开始写条目吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
+      options: [{ key: "start_items", text: "开始写条目" }, { key: "continue_clarify", text: "继续澄清" }] } };
+  const byKey = planRespond({ click: "start_items" }, startReply, "c1");
+  assert.deepEqual(byKey, { kind: "message", body: { text: "我选：开始写条目", client_id: "c1", origin: "card_choice",
+    card: { reply_message_id: "a9", kind: "choose", choice: "start_items" } } });
+  assert.deepEqual(planRespond({ click: "开始写条目" }, startReply, "c1"), byKey);
+  assert.equal((planRespond({ click: " 继续澄清 " }, startReply, "c2") as any).body.card.choice, "continue_clarify");
+  assert.throws(() => planRespond({ click: "先看看再说" }, startReply, "c"), /没有「先看看再说」这个按钮，可以点的是：开始写条目／继续澄清/);
+  assert.deepEqual([optionKeyOf(startReply.act, "开始写条目"), optionKeyOf(confirmReply.act, "不对"), optionKeyOf(null, "x")], ["start_items", "不对", "x"]);
+  assert.deepEqual([buttonLabels(startReply.act), buttonLabels(confirmReply.act)], [["开始写条目", "继续澄清"], ["这几条都看过了", "不对"]]);
+  // 请确认卡片照旧。
+  assert.equal((planRespond({ click: "这几条都看过了" }, confirmReply, "c3") as any).body.kind, "mark_viewed");
 });
