@@ -4,7 +4,11 @@
 
     python3 -m sim.run --persona sim/personas/librarian.json [--port 8791] [--backend <已起的后端地址>]
                            [--sim-root ./sim-runs] [--materials-dir <材料所在目录>] [--max-rounds 12] [--repeat N]
+                           [--profile dev] [--user-model <服务名/模型编号>]
 （--materials-dir 不给时取环境变量 TASKWRIGHT_SIM_MATERIALS_DIR，两者都没有就报错）
+
+--profile 是自己起后端时用的启动配置（backend/profiles/ 下的名字），缺省 dev；--user-model 换掉用户 agent 的模型，缺省用
+sim/profiles/user_agent.json 里写的。两样都是给不接真模型的测试用的：--profile fake --user-model fake/fake-model。
 
 批处理：--repeat N 用同一画像接连跑 N 次，编号连续；每次都各自起后端、各自判定，
 全部跑完在 <sim-root> 下写一份「批处理汇总_sim-起到止.md」，逐次列停止原因、第一层是否有效、第二层各项、
@@ -41,7 +45,7 @@ import uuid
 from pathlib import Path
 
 from sim import judge
-from sim.launch_user import UserAgentError, load_persona, user_agent_session
+from sim.launch_user import UserAgentError, load_persona, load_profile, user_agent_session
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIRST_WAKE = "开始，先把你想做的事告诉助手"
@@ -223,8 +227,17 @@ def batch_summary(root: Path, sims: list[Path], errors: dict[str, str], persona_
     return path
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="跑用户 agent 演练；--repeat N 接连跑 N 次并写汇总。")
+def profile_model(name: str) -> str | None:
+    """后端的一份启动配置里写的模型（服务名/模型编号）；读不到时为空。"""
+    try:
+        return json.loads((REPO_ROOT / "backend" / "profiles" / f"{name}.json").read_text(encoding="utf-8")).get("model")
+    except (OSError, ValueError):
+        return None
+
+
+def build_parser(description: str = "跑用户 agent 演练；--repeat N 接连跑 N 次并写汇总。") -> argparse.ArgumentParser:
+    """演练的命令行参数。评测的命令行（sim/evals.py）在它上面再加自己的几项。"""
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--persona", required=True)
     parser.add_argument("--sim-root", default=str(Path.cwd() / "sim-runs"))
     parser.add_argument("--materials-dir", default=os.environ.get("TASKWRIGHT_SIM_MATERIALS_DIR", ""),
@@ -234,6 +247,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-rounds", type=int, default=12)
     parser.add_argument("--goal", default=DEFAULT_GOAL)
     parser.add_argument("--repeat", type=int, default=1, help="同一画像接连跑几次（编号连续），大于 1 时结束后写批处理汇总")
+    parser.add_argument("--profile", default="dev", help="自己起后端时用的启动配置（backend/profiles/ 下的名字），缺省 dev")
+    parser.add_argument("--user-model", default="", help="用户 agent 的模型（服务名/模型编号）；不给就用 sim/profiles/user_agent.json 里写的")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     if not args.materials_dir:
@@ -270,7 +290,8 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
     os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = tag
     record = {"演练": tag, "演练目标": args.goal, "用户画像": persona_path.name, "Langfuse 环境标签": tag,
               "开始": time.strftime("%Y-%m-%dT%H:%M:%S"), "代码版本": code_version(), "执行者工具清单": None,
-              "轮": [], "停止原因": None}
+              "轮数上限": args.max_rounds, "执行者模型": None if args.backend else profile_model(args.profile),
+              "用户 agent 模型": args.user_model or load_profile().get("model"), "轮": [], "停止原因": None}
     print(f"演练 {tag}，用户画像 {persona_path.name}，记录在 {sim}", flush=True)
 
     service = None
@@ -283,7 +304,7 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
         # 三个目录都给，放在这一次演练的目录里：哪一个不给，后端就把它放到用户数据目录下，演练不该往那里写东西。
         service = subprocess.Popen([node, str(REPO_ROOT / "backend" / "src" / "main.mts"), "--tasks", str(sim / "tasks"),
                                     "--runs", str(sim / "backend"), "--knowledge", str(sim / "knowledge"),
-                                    "--port", str(args.port)], cwd=str(REPO_ROOT),
+                                    "--port", str(args.port), "--profile", args.profile], cwd=str(REPO_ROOT),
                                    stdout=open(sim / "backend.log", "w"), stderr=subprocess.STDOUT, env=dict(os.environ))
     backend = Backend(base, sim / "执行者事件流.txt")
     ua = None
@@ -302,7 +323,7 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
         record.update({"后端": base, "任务编号": task_id, "执行者会话": executor_session})
 
         os.environ.update({"TASKWRIGHT_SIM_BACKEND": base, "TASKWRIGHT_SIM_TASK": task_id, "TASKWRIGHT_SIM_SESSION": executor_session})
-        ua = user_agent_session(persona, sim, sim / "materials")
+        ua = user_agent_session(persona, sim, sim / "materials", args.user_model or None)
         ua.start()
         record["用户 agent 会话"] = ua.get_state().get("sessionId")
 

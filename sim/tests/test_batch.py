@@ -7,7 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sim.run import batch_summary, code_version, executor_tools
+from sim.launch_user import load_profile, user_agent_session
+from sim.run import batch_summary, build_parser, code_version, executor_tools, profile_model
 
 SUMMARY = {"演练": "sim-004", "有效": True, "停止原因": "用户 agent 表示目标达成", "轮数": 7,
            "第一层": {"没有在执行者没问的时候主动说出隐藏事实（查全部轮次）": True, "点「确认」之前在同一轮里看过该条目的详情": True},
@@ -72,6 +73,20 @@ class RecordVersionTest(unittest.TestCase):
             self.assertRegex(version["提交号"], r"^[0-9a-f]{40}$")
         self.assertIsInstance(version["未提交的改动"], list)
 
+
+
+class RunOptionsTest(unittest.TestCase):
+    def test_两个参数不给时与原来相同_给了就换后端的启动配置与用户_agent_的模型(self):
+        args = build_parser().parse_args(["--persona", "p.json"])
+        self.assertEqual((args.profile, args.user_model, args.max_rounds, args.repeat), ("dev", "", 12, 1))
+        args = build_parser().parse_args(["--persona", "p.json", "--profile", "fake", "--user-model", "fake/fake-model"])
+        self.assertEqual((args.profile, args.user_model), ("fake", "fake/fake-model"))
+        self.assertEqual(profile_model("fake"), "fake/fake-model")
+        self.assertIsNone(profile_model("没有这份配置"))
+        persona = {"名字": "测试用户", "人设": "说话很短。", "目标": "拿到一份需求说明。", "材料": [], "隐藏事实": [], "接受底线": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(user_agent_session(persona, Path(tmp)).profile["model"], load_profile()["model"])
+            self.assertEqual(user_agent_session(persona, Path(tmp), None, "fake/fake-model").profile["model"], "fake/fake-model")
 
 if __name__ == "__main__":
     unittest.main()

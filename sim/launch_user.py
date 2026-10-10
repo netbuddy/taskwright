@@ -201,14 +201,17 @@ class UserAgentProcess:
         return f"它最后写到标准错误的是：{' / '.join(tail)}" if tail else ""
 
 
-def user_agent_session(persona: dict, sim_dir: Path, materials_dir: Path | None = None) -> UserAgentProcess:
-    """准备好用户 agent：系统提示写进演练目录，工作目录是演练目录下一个空目录。调用方负责 start()。"""
+def user_agent_session(persona: dict, sim_dir: Path, materials_dir: Path | None = None, model: str | None = None) -> UserAgentProcess:
+    """准备好用户 agent：系统提示写进演练目录，工作目录是演练目录下一个空目录。调用方负责 start()。
+    model 给了就换掉启动配置里的模型（服务名/模型编号），给不接真模型的测试用。"""
     sim_dir = Path(sim_dir)
     prompt_file = sim_dir / "user_agent_system_prompt.md"
     prompt_file.write_text(system_prompt(persona, materials_dir), encoding="utf-8")
     profile = copy.deepcopy(json.loads(PROFILE.read_text(encoding="utf-8")))
     # 后端按代码仓根目录拼这个路径（backend/src/paths.ts 的 fromRoot），绝对路径也会被接在根目录下面，所以写成相对代码仓根目录的路径。
     profile["system_prompt_file"] = os.path.relpath(prompt_file.resolve(), REPO_ROOT)
+    if model:
+        profile["model"] = model
     cwd = sim_dir / "user-agent-cwd"
     cwd.mkdir(parents=True, exist_ok=True)
     return UserAgentProcess(profile, cwd, sim_dir / "user-agent", LABEL)
