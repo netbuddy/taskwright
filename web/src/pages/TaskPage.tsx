@@ -14,6 +14,7 @@ import type { KnowledgeLibrary, Material, RevisionLogEntry, TaskDetail } from ".
 import { Shell } from "../components/Shell";
 import { useToast } from "../components/Toasts";
 import { DocumentModal } from "../components/DocumentModal";
+import { saveBlob } from "../model/download";
 import { formatTime, formatTimeShort } from "../model/format";
 import { ownMaterials } from "../model/docx";
 import { DocxPaper } from "../components/work/DocxPaper";
@@ -103,6 +104,17 @@ export function TaskPage({ taskId }: { taskId: string }) {
     }
   };
 
+  /** 调试模式下的「导出为用户画像」：让后端把这个任务里用户说过的话整理成草稿，存成一份 JSON 文件。 */
+  const exportPersona = async () => {
+    try {
+      const draft = await api.personaDraft(taskId);
+      saveBlob(new Blob([`${JSON.stringify(draft.persona, null, 2)}\n`], { type: "application/json" }), draft.file_name);
+      toast.success(`已导出 ${draft.facts} 条，来自 ${draft.sessions} 条会话。关键词、人设与目标要你自己补。`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "没有导出成。");
+    }
+  };
+
   const newSession = async () => {
     try {
       const { session_id } = await api.createSession(taskId);
@@ -136,6 +148,10 @@ export function TaskPage({ taskId }: { taskId: string }) {
             </div>
           </div>
           <div className="tp-head-r">
+            {service.info?.debug && (
+              <Button onClick={() => void exportPersona()} title="把这个任务里你说过的话整理成模拟器用户画像的草稿，存成一份文件。只在调试模式下有。"
+                data-testid="export-persona">导出为用户画像</Button>
+            )}
             <Button onClick={() => setDocOpen(true)}>生成文档</Button>
             {!closed && <Button type="primary" icon={<PlusOutlined />} onClick={newSession}>新建会话</Button>}
           </div>

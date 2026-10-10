@@ -152,6 +152,9 @@ export const api = {
   debugSystemPrompt: (taskId: string) => request<DebugSystemPrompt>("GET", `/tasks/${encodeURIComponent(taskId)}/debug/system-prompt`),
   /** 某个任务的阶段记录流水与被拒的工具调用。 */
   debugStage: (taskId: string) => request<DebugStage>("GET", `/tasks/${encodeURIComponent(taskId)}/debug/stage`),
+  /** 把这个任务里用户说过的话整理成模拟器用户画像的草稿：persona 是要存成文件的内容，file_name 是文件名。 */
+  personaDraft: (taskId: string) => request<{ file_name: string; persona: Record<string, unknown>; sessions: number; facts: number; skipped: string[] }>(
+    "GET", `/tasks/${encodeURIComponent(taskId)}/debug/persona-draft`),
   /** 设提示词目录；path 写空串是清掉。 */
   setPromptDir: (path: string) => request<PromptDirView>("POST", "/debug/prompt-dir", { path }),
 
