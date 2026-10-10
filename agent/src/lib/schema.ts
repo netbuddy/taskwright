@@ -27,7 +27,7 @@ import { ensureDialogueSchema } from "./dialogue_schema.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十六张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version 是后来加的，
+/** 十七张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version、stage_record 是后来加的，
  *  旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。 */
 export const TABLE_NAMES = [
   "task",
@@ -46,10 +46,11 @@ export const TABLE_NAMES = [
   "tool_rejection",
   "diagram",
   "diagram_version",
+  "stage_record",
 ] as const;
 
 /** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version"];
+export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version", "stage_record"];
 
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
@@ -248,6 +249,28 @@ CREATE TABLE IF NOT EXISTS diagram_version (  -- 图在它自己的每次修订�
 `;
 
 /**
+ * 阶段记录表：任务从一个工作阶段移到另一个阶段，一次移动一行（lib/stage.ts 与 lib/stage_read.ts）。任务现在在哪个阶段看事件序号最大的一行；
+ * 一行都没有时按任务有没有材料定（有材料是核读材料，没有是澄清），这个缺省不落库。只有任务定义里有「总体分析」集合的任务才会有行。
+ * 阶段用英文写法存（reading、clarifying、modeling、writing、reviewing），与事件、接口里的写法相同。
+ * 格式版本 2 加的表：旧库由升级步骤表的「1 到 2」那一步补上；只读的一侧遇到还没有这张表的库，当作一条记录都没有。
+ */
+export const STAGE_RECORD_SQL = `
+CREATE TABLE IF NOT EXISTS stage_record (
+  record_id    INTEGER PRIMARY KEY,   -- 记录的编号
+  task_id      TEXT NOT NULL,         -- 所属任务的任务编号
+  session_id   TEXT NOT NULL,         -- 发生这次移动的那条 pi 会话的会话编号
+  run_id       TEXT,                  -- 助手移动时是运行号（这条会话当前分支上第几句用户的话，例如 r3）；用户移动时为空
+  call_id      TEXT NOT NULL,         -- 助手移动时是那次「回复」调用的调用编号；用户移动时是界面操作的操作编号
+  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),  -- 由谁：助手或用户
+  stage        TEXT NOT NULL CHECK (stage IN ('reading', 'clarifying', 'modeling', 'writing', 'reviewing')),       -- 移到了哪个阶段
+  from_stage   TEXT NOT NULL CHECK (from_stage IN ('reading', 'clarifying', 'modeling', 'writing', 'reviewing')),  -- 从哪个阶段移过来
+  reason       TEXT NOT NULL,         -- 理由：助手必须写一句；用户的可以是空文字
+  event_seq    INTEGER NOT NULL,      -- 记下这次移动的那条事件的序号
+  created_at   TEXT NOT NULL          -- 时刻（本地时间）
+);
+`;
+
+/**
  * 修订表上按调用编号判重的索引：同一任务里，同一次工具调用（同一个调用编号）只能形成一次修订。
  * 模型重试或 pi 重发同一次调用时，「保存修订」先按这个编号查到第一次的修订、原样返回，不再写一遍（见 save_revision.ts）；
  * 这个唯一索引是最后一道保险。调用编号为空文字的不算：模型服务没有给调用编号时，pi 交来的是空文字，这种调用无从判重。
@@ -400,6 +423,7 @@ ${REVIEW_FINDING_SQL}
 ${REVIEW_WAIVER_SQL}
 ${TOOL_REJECTION_SQL}
 ${DIAGRAM_SQL}
+${STAGE_RECORD_SQL}
 ${REVISION_CALL_INDEX_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
@@ -413,9 +437,9 @@ export function existingTables(db: DatabaseSync): string[] {
 
 /**
  * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。0 是没有编过版本号的库：0.4.x 及更早的版本建的，或者一张表都没有的空库。
- * 以后每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。
+ * 每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。1 是给库编上版本号的那一版；2 加了阶段记录表（stage_record）。
  */
-export const TASK_DB_VERSION = 1;
+export const TASK_DB_VERSION = 2;
 
 /** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
 export const TASK_JSON = "task.json";
@@ -452,6 +476,7 @@ export function taskWrittenBy(workspaceDir: string): string | null {
  */
 const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void }[] = [
   { from: 0, to: 1, run: fromUnversioned },
+  { from: 1, to: 2, run: addStageRecords },
 ];
 
 /**
@@ -470,6 +495,11 @@ export function ensureSchema(db: DatabaseSync): { from: number; to: number } {
     version = step.to;
   }
   return { from, to: version };
+}
+
+/** 第 1 到 2 步：加阶段记录表。只加表，不动已有的表与数据；新建的库在建表语句里已经带着它，这一步对它什么都不改。 */
+function addStageRecords(db: DatabaseSync): void {
+  db.exec(STAGE_RECORD_SQL);
 }
 
 /**

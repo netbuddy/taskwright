@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
-import { TASKS_ROOT_ENV, TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
+import { TABLE_NAMES, TASKS_ROOT_ENV, TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
 import { planUpgrade, runUpgrade } from "../src/data_upgrade.ts";
 import * as library from "../src/library.ts";
 import { Service } from "../src/service.ts";
@@ -68,7 +68,7 @@ for (const version of VERSIONS) {
       const now = facts(taskDir);
       assert.deepEqual([library.taskDbVersion(taskDir), now.revisions, now.items, now.sources], [TASK_DB_VERSION, 3, 4, 4]);
       assert.deepEqual(now.kinds, { 文档原文: 2, 助手补充: 1, 条目: 1 }, "来源的种类都是现在的名字");
-      assert.equal(now.tables, 16);
+      assert.equal(now.tables, TABLE_NAMES.length);
       assert.deepEqual([readTaskJson(taskDir)?.created_by_version, readTaskJson(taskDir)?.task_type, readTaskJson(taskDir)?.upgraded_by_version], [null, "srs-authoring", "0.5.0"]);
       assert.equal(library.taskDbVersion(join(report.backup!.dir, "tasks", id)), 0, "备份里是升级之前的库");
 
