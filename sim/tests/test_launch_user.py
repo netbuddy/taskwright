@@ -64,6 +64,12 @@ class SystemPromptTest(unittest.TestCase):
                 self.assertIn(fact["事实"], prompt)
             for key in ("问到的迹象", "必须同时出现", "判据", "答不上的说法"):
                 self.assertNotIn(key, prompt)
+            # 人设里的扮演规矩：逐页看主题、确认助手补的内容、在提议的卡片上点开始写条目或继续澄清。
+            self.assertIn("助手请你看几页主题时，你逐页打开看；页上有助手补的内容、你觉得对就点确认；助手提议开始写条目而你觉得理解够了就点『开始写条目』，"
+                          "不够就点『继续澄清』并说还差什么。", prompt)
+            # 系统提示里操作上的两句：主题页怎样看、怎样确认；选项按文字点。
+            self.assertIn("一页后面写着「有几处是助手补的，等你确认」时，打开只是看；你看了觉得对，就再 look 一次这一页并把 confirm 设为 true，这才算确认", prompt)
+            self.assertIn("卡片给了几个选项时，click 里写选项的文字", prompt)
 
 
 if __name__ == "__main__":
