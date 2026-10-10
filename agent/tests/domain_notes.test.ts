@@ -238,13 +238,21 @@ test("平台 skill 与任务 skill 写了总体分析的做法；平台 skill �
   const platform = readFileSync(resolve(import.meta.dirname, "../prompts/skills/taskwright-executor/SKILL.md"), "utf-8");
   const section = platform.slice(platform.indexOf("## 十、总体分析（任务定义里有「总体分析」集合时）"), platform.indexOf("## 十一、画图"));
   assert.ok(section.length > 0);
-  // 九件事各有一条。
+  // 十一件事各有一条。
   for (const head of ["1. **抓没说清的词。**", "2. **逐条要例子、问例外。**", "3. **找冲突。**", "4. **复述。**", "5. **问为什么。**", "6. **记决定与假设。**",
-    "7. **建议标签与上级主题。**", "8. **条目晚于理解。**", "9. **两种节奏。**"]) assert.ok(section.includes(head), head);
+    "7. **建议标签与上级主题。**", "8. **条目晚于理解。**", "9. **两种节奏。**", "10. **工作的阶段。**", "11. **进入写条目要由用户决定。**"]) assert.ok(section.includes(head), head);
+  assert.match(section, /你要做的是下面十一件事。/);
+  // 工作的阶段：五个阶段的名字、哪些移动可以自己做、进入写条目用卡片提议（两个固定的选项）。
+  assert.match(section, /工作分五个阶段：核读材料、澄清、整理建模、写条目、评审确认/);
+  assert.match(section, /在回复里另写 `stage`（阶段的名字）与 `reason`（一句话，说明为什么现在移过去）/);
+  assert.match(section, /核读材料到澄清、澄清到整理建模、写条目到评审确认，\s*以及退回前面的任何阶段/);
+  assert.match(section, /`start_items`「开始写条目」、`continue_clarify`「继续澄清」/);
+  assert.match(section, /以「例外：」开头的例子/);
   assert.match(section, /先给一个候选的「它是什么」与一个候选的例子/);
   assert.match(section, /`story_ok`「这段对，记下」、`story_fix`「有一处不对」、`story_again`「换一个人物再讲」/);
   assert.match(section, /种类写「用户的话」，摘录就是「这段对，记下」/);
-  assert.match(section, /总体分析里要已经有至少一页在用的主题贴了标签、写了例子、又不待核实/);
+  assert.match(section, /总体分析里还要已经有至少一页在用的主题贴了标签、写了例子、用户又看过/);
+  assert.doesNotMatch(section, /又不待核实/);
   assert.match(section, /`supports` 写 `\{"field": "已经定下的", "index": 2\}`/);
   // 老任务的三条原样留着。
   const legacy = section.slice(section.indexOf("### 老任务（任务定义里的集合叫「领域说明」时）"));
