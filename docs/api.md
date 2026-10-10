@@ -321,6 +321,8 @@ Response `{ok, client_id, op_id}`; the result arrives as events carrying the sam
 | after "I've read these" on a confirm card (`notify_executor`) | `我已经看过了：{item（修订 N）, …}。请接着往下做。` |
 | after "Keep pending" | `我先不管 {item id}，请接着往下做。` |
 | "I don't know" on an ask card | `关于 {item ids}，我不知道，你按常识补上并标明是你补的。` |
+| "I don't know, fill in from common sense" on an ask card that is not about any item (`card.choice` is `不知道`) | `这个我不知道，你按常识补上并标明是你补的。` |
+| "Set aside" on an ask card that is not about any item (`card.choice` is `先放着`) | `这个问题先放着，接着往下做。` |
 
 Direct operations also append a message to the session marked as an interface action, for example `界面操作（不是用户打的字）：用户改了 UC-002 的「基本流程」，产生修订 5，UC-002 现在是修订 5。`
 
