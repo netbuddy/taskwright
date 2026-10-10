@@ -33,9 +33,10 @@ def respond(**arguments) -> dict:
     return {"tool_calls": [{"name": "respond", "arguments": arguments}]}
 
 
-def user(reply: dict, **when) -> dict:
-    """用户 agent 的一条规则：它的每个请求里都有驾驭程序唤起它的头一句话。"""
-    return {"when": {"any_contains": FIRST_WAKE, **when}, "reply": reply}
+def user(reply: dict, max_uses: int | None = None, **when) -> dict:
+    """用户 agent 的一条规则：它的每个请求里都有驾驭程序唤起它的头一句话。max_uses 给了就只用这么多次。"""
+    rule = {"when": {"any_contains": FIRST_WAKE, **when}, "reply": reply}
+    return rule if max_uses is None else {**rule, "max_uses": max_uses}
 
 
 PAGES = [
@@ -52,7 +53,8 @@ SCRIPT = {"rules": [
     # 用户 agent 第二轮：带着确认看完第二页之后说一句并结束；看到第二页还有没确认的，就带着确认再看一次；
     # 看完第一页接着打开第二页；在提纲里看到有一页等着确认，先打开第一页。
     user(respond(text="两页都看过了。", done=True), last_role="tool", last_contains="并确认了助手补的"),
-    user(look(item_id="OA-002", confirm=True), last_role="tool", last_contains="还没有确认"),
+    # 这一条只用一次：确认要是没有生效，界面上仍会写着「还没有确认」，不限次数的话用户 agent 会一直重看下去。
+    user(look(item_id="OA-002", confirm=True), max_uses=1, last_role="tool", last_contains="还没有确认"),
     user(look(item_id="OA-002"), last_role="tool", last_contains="OA-001「借书」，集合"),
     user(look(item_id="OA-001"), last_role="tool", last_contains="等你确认"),
     # 用户 agent 第一轮：看一眼界面，说想做的事。
