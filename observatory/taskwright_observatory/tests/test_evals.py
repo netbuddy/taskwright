@@ -168,6 +168,20 @@ class EvalApiTest(unittest.TestCase):
         # 别的读取接口不受影响。
         self.assertEqual(self.get(base, "/api/tasklist"), (200, {"任务": []}))
 
+    def test_网页带着评测的页签与三个页面的脚本(self):
+        base = self.serve(self.root)
+        text = lambda path: urllib.request.urlopen(base + path).read().decode("utf-8")      # noqa: E731
+        main, page, api = text("/js/main.js"), text("/js/evals.js"), text("/js/api.js")
+        self.assertIn('{ id: "evals", name: "评测" }', main)
+        for name in ("renderEvalList", "renderEvalDetail", "renderEvalCompare"):
+            self.assertIn(f"export async function {name}(", page)
+            self.assertIn(name, main)
+        for route in ('get("/api/evals")', "/api/evals/${encodeURIComponent(label)}", "/api/evals/compare?a="):
+            self.assertIn(route, api)
+        # 页面只读：没有写回画像的按钮与输入框（补进画像留给以后）。
+        self.assertNotIn("<textarea", page)
+        self.assertNotIn("补进画像</button>", page)
+
 
 if __name__ == "__main__":
     unittest.main()

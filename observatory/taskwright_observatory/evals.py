@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from taskwright_observatory.shared import shorten_home
+
 LIST_FILE = "evals.jsonl"
 SUMMARY_PREFIX = "评测汇总_"
 
@@ -38,7 +40,7 @@ def read_list(root: Path | None) -> dict:
                     rows.append(json.loads(line))
                 except json.JSONDecodeError:
                     continue
-    return {"有没有演练根目录": True, "演练根目录": str(root), "说明": "", "评测": rows[::-1]}
+    return {"有没有演练根目录": True, "演练根目录": shorten_home(str(root)), "说明": "", "评测": rows[::-1]}
 
 
 def read_detail(root: Path | None, label: str) -> dict:

@@ -8,10 +8,12 @@ import { renderSession } from "./session.js";
 import { renderTask, renderTaskList } from "./task.js";
 import { renderHealth } from "./health.js";
 import { renderConcepts } from "./concepts.js";
+import { renderEvalCompare, renderEvalDetail, renderEvalList } from "./evals.js";
 
 const TABS = [
   { id: "sessions", name: "会话列表" },
   { id: "tasks", name: "任务" },
+  { id: "evals", name: "评测" },
   { id: "health", name: "系统健康" },
   { id: "concepts", name: "概念对照" },
 ];
@@ -43,6 +45,13 @@ async function route() {
   try {
     if (parts[0] === "health") { markTab("health"); await renderHealth(); }
     else if (parts[0] === "concepts") { markTab("concepts"); await renderConcepts(); }
+    else if (parts[0] === "evals") {
+      // 评测：#/evals 是列表，#/evals/<标签> 是一次评测的详情，#/evals/compare/<前一次>/<后一次> 是两次的对照。
+      markTab("evals");
+      if (parts[1] === "compare" && parts[2] && parts[3]) await renderEvalCompare(parts[2], parts[3]);
+      else if (parts[1]) await renderEvalDetail(parts[1]);
+      else await renderEvalList();
+    }
     else if (parts[0] === "session" && parts[1]) {
       markTab("sessions");
       await renderSession(parts[1], parts[2]);
