@@ -50,8 +50,10 @@ function card(act: Act, t = task()) {
 }
 
 describe("卡片五种主行为", () => {
-  it("请确认：「这几条都看过了」走 actions 的 mark_viewed（条目与修订号取自卡片，notify_executor 为真），不发话", () => {
-    const h = card({ kind: "confirm", text: "请确认 UC-001 修订 2。", items: [{ item_id: "UC-001", revision_no: 2 }] });
+  it("请过目（confirm）：卡片顶上写「请过目」；「这几条都看过了」走 actions 的 mark_viewed（条目与修订号取自卡片，notify_executor 为真），不发话", () => {
+    const h = card({ kind: "confirm", text: "请看一下 UC-001 修订 2。", items: [{ item_id: "UC-001", revision_no: 2 }] });
+    // 顶上那行小字：这张卡片请用户看条目，叫「请过目」；按钮的字不变。
+    expect(screen.getByTestId("act-confirm").querySelector(".tt")).toHaveTextContent(/^请过目$/);
     // 卡片头部的上下文：条目编号小标签、标题、修订号与已读与否（从没看过写「未读」）
     expect(screen.getByTestId("card-context-UC-001")).toHaveTextContent("UC-001买家申请退款修订 2（未读）");
     expect(screen.getByTestId("card-confirm")).toHaveTextContent("这几条都看过了");
@@ -61,14 +63,14 @@ describe("卡片五种主行为", () => {
     expect(h.onMessage).not.toHaveBeenCalled();
   });
 
-  it("请确认：「不对」走 messages，用固定模板，并带上是哪条回复的哪个选项", () => {
+  it("请过目：「不对」走 messages，用固定模板，并带上是哪条回复的哪个选项", () => {
     const h = card({ kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", revision_no: 2 }] });
     fireEvent.click(screen.getByTestId("card-wrong"));
     expect(h.onMessage).toHaveBeenCalledWith(TEMPLATES.confirmWrong, { reply_message_id: "msg-7", kind: "confirm", choice: "不对" });
     expect(h.onAction).not.toHaveBeenCalled();
   });
 
-  it("请确认：评审没有通过的条目点「这几条都看过了」时先提示，不拦，点「仍然标为看过」才走 actions", async () => {
+  it("请过目：评审没有通过的条目点「这几条都看过了」时先提示，不拦，点「仍然标为看过」才走 actions", async () => {
     const h = card({ kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", revision_no: 2 }] }, task("不合规"));
     fireEvent.click(screen.getByTestId("card-confirm"));
     expect(h.onAction).not.toHaveBeenCalled();

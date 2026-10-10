@@ -7,7 +7,7 @@
 // 发给执行者的话只用第 7 节的固定模板。卡片里始终有「或者直接告诉我你的想法」的输入框。
 // 评审没有通过的条目也可以标为看过，不拦，点的时候提示一句（第 6 节规则 4）。
 // 样式与结构照设计原型的 .act 卡片：标题小字、「标签＋值」几行、深色主按钮加浅色次按钮、卡片内输入框；
-// 关联条目写成一行「条目编号小标签＋标题＋修订 N」，请确认卡片再写看过与否：现在的修订看过写「修订 9（已读）」，
+// 关联条目写成一行「条目编号小标签＋标题＋修订 N」，请过目卡片（confirm）再写看过与否：现在的修订看过写「修订 9（已读）」，
 // 从没看过写「修订 9（未读）」，看过更早的修订写「修订 9（已读 · 你看过修订 4，之后又改过）」——已读是条目级、单向的。
 // 完成前还有未读时（除了未读与这一版还没有工具的评审，完成条件都已满足），还没结掉的卡片下面提示「还有 N 条未读」，点它条目区筛出未读。
 // 依据写成「依据：…」小标签。
@@ -41,7 +41,11 @@ export const TEMPLATES = {
 // 「先不管这条」发给执行者的那句「我先不管 {条目编号}，请接着往下做。」由后端在直接操作成功后发，
 // 见 backend/src/executor.ts 的 keepPendingNotice；前端只发直接操作。
 
-const KIND_LABEL: Record<ActKind, string> = { ask: "提问", confirm: "请确认", suggest: "给建议值", choose: "请选择", propose: "提议" };
+/**
+ * 卡片顶上那行小字。confirm 这种卡片请用户看几个条目现在的内容，叫「请过目」，不叫「请确认」：「确认」容易被读成征求同意，
+ * 而征求同意的是提议。助手一侧的说明、回复工具的返回里仍把这种行为写作「请确认」，指的是同一种。
+ */
+const KIND_LABEL: Record<ActKind, string> = { ask: "提问", confirm: "请过目", suggest: "给建议值", choose: "请选择", propose: "提议" };
 /** 卡片正文那一行左边的小标签，照原型的写法。 */
 const TEXT_LABEL: Record<ActKind, string> = { ask: "问题", confirm: "", suggest: "要定的事", choose: "要定的事", propose: "我的提议" };
 
@@ -118,7 +122,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
     setDraft("");
     restoreOnFailure(handlers.onMessage(original.trim()), original, () => latestDraft.current, setDraft);
   };
-  /** 条目行末尾的修订说明：请确认卡片写上次确认的修订，其余卡片只写修订号。 */
+  /** 条目行末尾的修订说明：请过目卡片写上次看过的修订，其余卡片只写修订号。 */
   const revisionNote = (itemId: string, revision: number) => {
     if (act.kind !== "confirm") return `修订 ${revision}`;
     const item = task?.items.find((i) => i.item_id === itemId);
