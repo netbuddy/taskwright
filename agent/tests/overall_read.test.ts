@@ -5,6 +5,8 @@
  */
 
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
@@ -150,4 +152,27 @@ test("没有总体分析集合的任务（0.4 建的）：待核实照样算，�
   const state = stateOf(dir, demoDefinition() as Record<string, any>);
   assert.deepEqual([state.verification.get("UC-001"), state.mentions.size, state.pages], [{ pending_verification: true, pending_sources: 1, pending_places: [{ field: "步骤", index: null }], basis_pending: null }, 0, []]);
   assert.match(getItem(dir, { item_id: "UC-001" }).text, /待核实：UC-001 有 1 处是助手补充的/);
+});
+
+test("命令行入口：给库文件与任务编号，打印的待核实、提到与各页的情况就是 overallState 算出来的；库里没有这个任务时退出码 1", () => {
+  const dir = workspace();
+  saveRevision(callIn(dir), { operations: [
+    page({ 标题: "预约取书", 别名: ["预约"], 标签: ["流程"], 已经定下的: ["保留期是 3 天。"] },
+      [{ ...SOURCE, supports: [{ field: "它是什么" }] }, SUPPLEMENT([{ field: "已经定下的", index: 0 }])]),
+    page({ 标题: "读者", 它是什么: "办了借书证的人，可以预约。", 标签: ["角色"] }),
+  ] });
+  const cli = resolve(import.meta.dirname, "../src/cli/overall_state.mts");
+  const taskId = query<{ task_id: string }>(dir, "SELECT task_id FROM task")[0].task_id;
+  const out = JSON.parse(execFileSync(process.execPath, [cli, databasePath(dir), taskId], { encoding: "utf-8" }));
+  const state = stateOf(dir);
+  assert.equal(out.has_overall, true);
+  assert.deepEqual(out.verification, JSON.parse(JSON.stringify(Object.fromEntries(state.verification))));
+  assert.deepEqual(out.mentions, JSON.parse(JSON.stringify(Object.fromEntries(state.mentions))));
+  assert.deepEqual(out.pages, state.pages);
+  // 具体的几样：第一页有一处助手补充待核实；第二页的「它是什么」用别名提到了第一页。
+  assert.deepEqual([out.verification["OA-001"].pending_verification, out.verification["OA-002"].pending_verification], [true, false]);
+  assert.deepEqual(out.mentions["OA-001"].map((one: any) => [one.item_id, one.field, one.word]), [["OA-002", "它是什么", "预约"]]);
+  const missing = spawnSync(process.execPath, [cli, databasePath(dir), "TASK-不存在"], { encoding: "utf-8" });
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /库里没有任务 TASK-不存在。/);
 });
