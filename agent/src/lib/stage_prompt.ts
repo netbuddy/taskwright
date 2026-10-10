@@ -16,17 +16,21 @@
  * 不是每次运行都重读重拼（StagePromptCache）：进程里记着上一次拼的那一份与它用到的每份文件的修改时刻和大小，
  * 下一次只看阶段与这些文件变没变（只查文件的属性，不读内容），没变就把上一份原样交回，变了才重读重拼；
  * 重拼出错时沿用上一份并把原因带出去。
+ *
+ * 调试模式下另有一个「提示词目录」（debugPromptDir）：目录里有哪一份，就用那一份代替产品自带的或任务目录里的，没有的照旧。
+ * 只认固定的十三个文件名（promptDirNames），软链接不跟、超过 PROMPT_DIR_MAX_BYTES 的不读、不是合法 UTF-8 的不用，
+ * 这几种情形那一份照旧用原来的，并在 notes 里写明原因。产品只读这个目录，不往里写。
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
-import { type Stage } from "./stage.ts";
+import { STAGES, type Stage } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
@@ -60,13 +64,16 @@ export const PART_NAMES: Record<PartKind, string> = {
   tail: "助手程序接在后面的工作目录等",
 };
 
-/** 一部分的文字出自哪里：产品自带的文件、任务目录里的文件、助手程序（pi）自己。 */
-export type PartOrigin = "builtin" | "task" | "pi";
+/** 一部分的文字出自哪里：产品自带的文件、任务目录里的文件、调试模式的提示词目录里的文件、助手程序（pi）自己。 */
+export type PartOrigin = "builtin" | "task" | "prompt_dir" | "pi";
+
+/** 出处给人看的名字。 */
+export const ORIGIN_NAMES: Record<PartOrigin, string> = { builtin: "产品自带", task: "任务目录", prompt_dir: "提示词目录", pi: "助手程序" };
 
 export interface PromptPart {
   part: PartKind;
   from: PartOrigin;
-  /** 文件的路径：产品自带的相对代码仓根目录，任务目录里的相对任务目录；不是文件的（pi 接的那一截）为 null。 */
+  /** 文件的路径：产品自带的相对代码仓根目录，任务目录里的相对任务目录，提示词目录里的相对那个目录；不是文件的（pi 接的那一截）为 null。 */
   file: string | null;
   text: string;
 }
@@ -76,6 +83,8 @@ export interface StagePrompt {
   /** 整份文字：各部分去掉末尾的空白之后用一个空行隔开。 */
   text: string;
   parts: PromptPart[];
+  /** 提示词目录里有而没有用上的文件，各一句原因；没有时是空的。 */
+  notes: string[];
 }
 
 /** pi 加载的一个 skill：名字与它的 SKILL.md 在哪里（before_agent_start 事件的 systemPromptOptions.skills 里就是这个样子）。 */
@@ -101,11 +110,21 @@ export interface FileStamp {
   size: number;
 }
 
-/** 读文件的两个动作。拼接与缓存都经它，测试里换成记次数的。 */
+/** 提示词目录里一份文件最大多少字节：超过的不读。 */
+export const PROMPT_DIR_MAX_BYTES = 256 * 1024;
+
+/** 提示词目录里的一个路径是什么：可以用的普通文件、不在、在但是不用（原因写在 reason 里）。不跟软链接。 */
+export type PlainState = ({ kind: "file" } & FileStamp) | { kind: "absent" } | { kind: "refused"; reason: string };
+
+/** 读文件的几个动作。拼接与缓存都经它，测试里换成记次数的。 */
 export interface PromptIo {
   /** 是普通文件时返回它的修改时刻与大小，不在或不是文件时返回 null。 */
   stamp(path: string): FileStamp | null;
   read(path: string): string;
+  /** 提示词目录里的文件用它看：不跟软链接，太大的不要。 */
+  plain(path: string): PlainState;
+  /** 提示词目录里的文件用它读：不是合法的 UTF-8 时返回 null。 */
+  readStrict(path: string): string | null;
 }
 
 export const NODE_IO: PromptIo = {
@@ -118,6 +137,21 @@ export const NODE_IO: PromptIo = {
     }
   },
   read: (path) => readFileSync(path, "utf-8"),
+  plain(path) {
+    const found = lstatSync(path, { throwIfNoEntry: false });
+    if (!found) return { kind: "absent" };
+    if (found.isSymbolicLink()) return { kind: "refused", reason: "它是一个软链接" };
+    if (!found.isFile()) return { kind: "refused", reason: "它不是普通文件" };
+    if (found.size > PROMPT_DIR_MAX_BYTES) return { kind: "refused", reason: `它有 ${found.size} 字节，超过了 ${PROMPT_DIR_MAX_BYTES} 字节的上限` };
+    return { kind: "file", mtimeMs: found.mtimeMs, size: found.size };
+  },
+  readStrict(path) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(path));
+    } catch {
+      return null;
+    }
+  },
 };
 
 /**
@@ -146,60 +180,126 @@ export interface ComposeInput {
   tail: string;
   /** 平台一级的文件所在的目录；缺省是产品自带的那一个，测试里换成别的。 */
   platformDir?: string;
+  /** 调试模式的提示词目录（绝对路径）；不给或为 null 时不看。 */
+  promptDir?: string | null;
+}
+
+/** 提示词目录里放任务类型一级的文件的子目录。 */
+export const PROMPT_DIR_TASK_SUBDIR = "task-type";
+
+/** 某一部分在提示词目录里对应的文件名（相对那个目录）。pi 接的那一截没有对应的文件。 */
+export function promptDirName(part: Exclude<PartKind, "tail">, stage: Stage): string {
+  if (part === "system") return SYSTEM_FILE;
+  if (part === "platform_common") return COMMON_FILE;
+  if (part === "platform_stage") return stageFile(stage);
+  return `${PROMPT_DIR_TASK_SUBDIR}/${part === "task_common" ? COMMON_FILE : stageFile(stage)}`;
+}
+
+/** 提示词目录里认的全部文件名：平台一级七份，任务类型一级六份。别的名字一概不读。 */
+export function promptDirNames(): string[] {
+  return [SYSTEM_FILE, COMMON_FILE, ...STAGES.map(stageFile), `${PROMPT_DIR_TASK_SUBDIR}/${COMMON_FILE}`, ...STAGES.map((one) => `${PROMPT_DIR_TASK_SUBDIR}/${stageFile(one)}`)];
 }
 
 /** 平台一级的文件写进 file 一项时相对的目录：代码仓根目录。 */
 const REPO_ROOT = resolve(PROMPTS_DIR, "..", "..");
 
-/** 拼的时候可能用到的一份文件：是哪一部分、在哪里、缺了行不行。 */
-interface Candidate {
+/** 拼的时候要读的一份文件。 */
+interface Source {
   part: PartKind;
   from: PartOrigin;
   /** 写进 PromptPart.file 的路径。 */
   file: string;
   path: string;
-  /** 平台一级的三份缺了就拼不成；任务类型一级的没有就跳过。 */
-  required: boolean;
 }
 
-/** 某个阶段要看的全部文件，按拼接的先后排。 */
-function candidates(input: ComposeInput): Candidate[] {
+/** 系统提示里的一个位置（五个位置按拼接的先后排）：这一次打算读哪几份文件，以及用来看它们变没变的属性。 */
+interface Slot {
+  part: Exclude<PartKind, "tail">;
+  /** 平台一级的三个位置缺了文件就拼不成；任务类型一级的没有就跳过。 */
+  required: boolean;
+  /** 原来的文件：产品自带的或任务目录里的，只列存在的。 */
+  own: Source[];
+  /** 原来的文件里应当有而没有的那一份的路径（只有平台一级的会有）。 */
+  missing: string | null;
+  /** 提示词目录里代替它们的那一份；没有或不能用时是 null。 */
+  override: Source | null;
+  /** 提示词目录里那一份在而不能用时的原因。 */
+  note: string | null;
+  /** 这个位置看过的每份文件的路径与属性。 */
+  stamps: unknown[];
+}
+
+/** 某个阶段的五个位置。只查文件的属性，不读内容。 */
+function slots(input: ComposeInput, io: PromptIo): Slot[] {
   const platformDir = input.platformDir ?? PLATFORM_STAGES_DIR;
-  const builtin = (part: PartKind, name: string): Candidate => {
+  const builtin = (part: PartKind, name: string): Source => {
     const path = join(platformDir, name);
-    return { part, from: "builtin", file: relative(REPO_ROOT, path), path, required: true };
+    return { part, from: "builtin", file: relative(REPO_ROOT, path), path };
   };
-  const inTask = (part: PartKind, path: string): Candidate => ({ part, from: "task", file: relative(resolve(input.workspaceDir), resolve(path)), path, required: false });
+  const inTask = (part: PartKind, path: string): Source => ({ part, from: "task", file: relative(resolve(input.workspaceDir), resolve(path)), path });
   const skills = taskSkills(input.skills);
-  return [
-    builtin("system", SYSTEM_FILE),
-    builtin("platform_common", COMMON_FILE),
-    ...skills.map((one) => inTask("task_common", one.filePath)),
-    builtin("platform_stage", stageFile(input.stage)),
-    ...skills.map((one) => inTask("task_stage", join(dirname(one.filePath), TASK_STAGES_SUBDIR, stageFile(input.stage)))),
+  const wanted: [Slot["part"], boolean, Source[]][] = [
+    ["system", true, [builtin("system", SYSTEM_FILE)]],
+    ["platform_common", true, [builtin("platform_common", COMMON_FILE)]],
+    ["task_common", false, skills.map((one) => inTask("task_common", one.filePath))],
+    ["platform_stage", true, [builtin("platform_stage", stageFile(input.stage))]],
+    ["task_stage", false, skills.map((one) => inTask("task_stage", join(dirname(one.filePath), TASK_STAGES_SUBDIR, stageFile(input.stage))))],
   ];
+  return wanted.map(([part, required, sources]) => {
+    const stamps: unknown[] = [];
+    const own: Source[] = [];
+    let missing: string | null = null;
+    for (const one of sources) {
+      const stamp = io.stamp(one.path);
+      stamps.push([one.path, stamp?.mtimeMs ?? null, stamp?.size ?? null]);
+      if (stamp !== null) own.push(one);
+      else if (required) missing ??= one.path;
+    }
+    let override: Source | null = null;
+    let note: string | null = null;
+    if (input.promptDir) {
+      const name = promptDirName(part, input.stage);
+      const path = join(input.promptDir, name);
+      const state = io.plain(path);
+      stamps.push([path, state.kind, state.kind === "file" ? state.mtimeMs : null, state.kind === "file" ? state.size : null]);
+      if (state.kind === "file") override = { part, from: "prompt_dir", file: name, path };
+      else if (state.kind === "refused") note = `提示词目录里的 ${name} 没有用上：${state.reason}。这一部分照旧用${own.length > 0 ? ORIGIN_NAMES[own[0].from] : "原来"}的。`;
+    }
+    return { part, required, own, missing, override, note, stamps };
+  });
+}
+
+/** 照五个位置读文件、拼出系统提示。 */
+function fromSlots(input: ComposeInput, all: readonly Slot[], io: PromptIo): StagePrompt {
+  const parts: PromptPart[] = [];
+  const notes: string[] = [];
+  const add = (source: Pick<Source, "part" | "from"> & { file: string | null }, text: string) => {
+    const body = (source.part === "task_common" ? skillBody(text) : text).replace(/\s+$/, "");
+    if (body) parts.push({ part: source.part, from: source.from, file: source.file, text: body });
+  };
+  for (const slot of all) {
+    if (slot.note) notes.push(slot.note);
+    if (slot.override) {
+      const text = io.readStrict(slot.override.path);
+      if (text !== null) {
+        add(slot.override, text);
+        continue;
+      }
+      notes.push(`提示词目录里的 ${slot.override.file} 没有用上：它不是合法的 UTF-8 文字。这一部分照旧用${slot.own.length > 0 ? ORIGIN_NAMES[slot.own[0].from] : "原来"}的。`);
+    }
+    if (slot.missing !== null) throw new Error(`拼系统提示要用的文件不在：${slot.missing}`);
+    for (const one of slot.own) add(one, io.read(one.path));
+  }
+  add({ part: "tail", from: "pi", file: null }, input.tail);
+  return { stage: input.stage, text: parts.map((one) => one.text).join("\n\n"), parts, notes };
 }
 
 /**
- * 拼出某个阶段的系统提示。平台一级的三份文件（系统提示、共用部分、这个阶段的那一段）缺了任何一份都抛错，
- * 调用方这时不换系统提示；任务类型一级的文件没有就跳过。
+ * 拼出某个阶段的系统提示。平台一级的三份文件（系统提示、共用部分、这个阶段的那一段）缺了任何一份而提示词目录里又没有代替它的，
+ * 就抛错，调用方这时不换系统提示；任务类型一级的文件没有就跳过。
  */
 export function composeStagePrompt(input: ComposeInput, io: PromptIo = NODE_IO): StagePrompt {
-  const parts: PromptPart[] = [];
-  const add = (part: PartKind, from: PartOrigin, file: string | null, text: string) => {
-    const trimmed = text.replace(/\s+$/, "");
-    if (trimmed) parts.push({ part, from, file, text: trimmed });
-  };
-  for (const one of candidates(input)) {
-    if (io.stamp(one.path) === null) {
-      if (one.required) throw new Error(`拼系统提示要用的文件不在：${one.path}`);
-      continue;
-    }
-    const text = io.read(one.path);
-    add(one.part, one.from, one.file, one.part === "task_common" ? skillBody(text) : text);
-  }
-  add("tail", "pi", null, input.tail);
-  return { stage: input.stage, text: parts.map((one) => one.text).join("\n\n"), parts };
+  return fromSlots(input, slots(input, io), io);
 }
 
 /** 这一次拿到的系统提示是怎样来的：重读重拼的、沿用上一份的、重拼出错而沿用上一份的。 */
@@ -228,19 +328,13 @@ export class StagePromptCache {
     this.io = io;
   }
 
-  /** 这一次的输入与文件现状合成的一把钥匙：与上一次相同就是没变。 */
-  private keyOf(input: ComposeInput): string {
-    return JSON.stringify([input.stage, input.tail, candidates(input).map((one) => {
-      const stamp = this.io.stamp(one.path);
-      return [one.path, stamp?.mtimeMs ?? null, stamp?.size ?? null];
-    })]);
-  }
-
   get(input: ComposeInput): CachedPrompt {
-    const key = this.keyOf(input);
+    // 这一次的输入与各份文件的属性合成一把钥匙：与上一次相同就是没变。
+    const all = slots(input, this.io);
+    const key = JSON.stringify([input.stage, input.tail, input.promptDir ?? null, all.map((one) => one.stamps)]);
     if (this.last && this.last.key === key) return { prompt: this.last.prompt, how: "reused" };
     try {
-      const prompt = composeStagePrompt(input, this.io);
+      const prompt = fromSlots(input, all, this.io);
       this.last = { key, prompt };
       return { prompt, how: "recomposed" };
     } catch (error) {
@@ -279,4 +373,41 @@ export function stageInWorkspace(workspaceDir: string): Stage | null {
   } finally {
     db.close();
   }
+}
+
+// ───────────── 调试模式的提示词目录 ─────────────
+
+/** 后端在调试模式下起 pi 时给的环境变量：值是产品设置文件的路径。与 backend/src/launch.ts 里的同名常量是一份约定。 */
+export const ENV_DEBUG_SETTINGS = "TASKWRIGHT_DEBUG_SETTINGS_FILE";
+
+export interface DebugPromptDir {
+  /** 是不是调试模式：后端给了那个环境变量才是。 */
+  debug: boolean;
+  /** 设置里写的提示词目录（可以用时）；没有设、或者设的不是一个存在的目录时是 null。 */
+  dir: string | null;
+  /** 设了而不能用时的原因。 */
+  note?: string;
+}
+
+/**
+ * 这一次运行的提示词目录，每次运行开始时现读（读一个小的 JSON 文件），所以在设置里换了目录不用重启。
+ * 不是调试模式时不读任何文件：设置文件里留着以前设的目录也不起作用。
+ */
+export function debugPromptDir(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): DebugPromptDir {
+  const settings = (env[ENV_DEBUG_SETTINGS] ?? "").trim();
+  if (!settings) return { debug: false, dir: null };
+  let dir: unknown;
+  try {
+    dir = JSON.parse(readFileSync(settings, "utf-8"))?.debug?.prompt_dir;
+  } catch {
+    return { debug: true, dir: null };
+  }
+  if (typeof dir !== "string" || dir === "") return { debug: true, dir: null };
+  if (!isAbsolute(dir)) return { debug: true, dir: null, note: `设置里的提示词目录不是绝对路径：${dir}。这次没有用它。` };
+  try {
+    if (statSync(dir).isDirectory()) return { debug: true, dir };
+  } catch {
+    // 不在：下面一并说明
+  }
+  return { debug: true, dir: null, note: `设置里的提示词目录不存在或者不是目录：${dir}。这次没有用它。` };
 }

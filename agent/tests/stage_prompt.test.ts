@@ -4,15 +4,15 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { STAGES, STAGE_NAMES } from "../src/lib/stage.ts";
 import {
-  COMMON_FILE, HOW_NAMES, NODE_IO, PART_NAMES, PLATFORM_SKILL_DIR, PLATFORM_STAGES_DIR, type PromptIo, SYSTEM_FILE, StagePromptCache, composeStagePrompt, digestOf,
-  partFact, piTail, skillBody, stageFile, stageInWorkspace, taskSkills,
+  COMMON_FILE, ENV_DEBUG_SETTINGS, HOW_NAMES, NODE_IO, ORIGIN_NAMES, PART_NAMES, PLATFORM_SKILL_DIR, PLATFORM_STAGES_DIR, PROMPT_DIR_MAX_BYTES, type PromptIo, SYSTEM_FILE,
+  StagePromptCache, composeStagePrompt, debugPromptDir, digestOf, partFact, piTail, promptDirNames, skillBody, stageFile, stageInWorkspace, taskSkills,
 } from "../src/lib/stage_prompt.ts";
 import { STAGE_PROMPT_STATUS_KEY, type StagePromptReport, stagePromptFor } from "../src/hooks/stage_prompt.ts";
 import { DEFINITION_PATH, callIn, demoDefinition, enterStage, makeWorkspace, overallDefinition } from "./helpers.ts";
@@ -164,6 +164,8 @@ function countingIo(): PromptIo & { reads: string[]; stamps: number } {
     stamps: 0,
     stamp(path: string) { io.stamps += 1; return NODE_IO.stamp(path); },
     read(path: string) { io.reads.push(path); return NODE_IO.read(path); },
+    plain(path: string) { io.stamps += 1; return NODE_IO.plain(path); },
+    readStrict(path: string) { io.reads.push(path); return NODE_IO.readStrict(path); },
   };
   return io;
 }
@@ -317,4 +319,173 @@ test("事件处理：早先的任务什么都不返回、什么都不报；任�
   assert.equal(failed.reports.length, 1);
   assert.equal(failed.reports[0][1].replaced, false);
   assert.match(failed.reports[0][1].error!, /^按阶段换系统提示没有做成，这次运行用启动时给的那一份：/);
+});
+
+// ───────────── 调试模式的提示词目录 ─────────────
+
+test("提示词目录只认十三个固定的文件名：平台一级七份，任务类型一级六份", () => {
+  assert.deepEqual(promptDirNames(), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md",
+    "task-type/common.md", "task-type/reading.md", "task-type/clarifying.md", "task-type/modeling.md", "task-type/writing.md", "task-type/reviewing.md"]);
+});
+
+test("提示词目录里有哪一份就用哪一份，没有的照旧；空目录的效果与没有设相同；别的文件名不读", () => {
+  const dir = tempDir();
+  const input = (stage: (typeof STAGES)[number]) => ({ stage, workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL, promptDir: dir });
+  // 空目录：与没有设一样。
+  assert.equal(composeStagePrompt(input("clarifying")).text, compose("clarifying").text);
+  // 只放澄清那一段：别的部分照旧。
+  writeFileSync(join(dir, "clarifying.md"), "# 现在这个阶段：澄清\n\n改过的一句。\n", "utf-8");
+  writeFileSync(join(dir, "不认识的名字.md"), "不该读到的文字", "utf-8");
+  const io = countingIo();
+  const one = composeStagePrompt(input("clarifying"), io);
+  assert.deepEqual(one.parts.map((p) => [p.part, p.from, p.file]), [
+    ["system", "builtin", "agent/prompts/stages/system.md"], ["platform_common", "builtin", "agent/prompts/stages/common.md"],
+    ["task_common", "task", ".pi/skills/srs-authoring/SKILL.md"], ["platform_stage", "prompt_dir", "clarifying.md"], ["tail", "pi", null]]);
+  assert.ok(one.text.includes("改过的一句。"));
+  assert.ok(!one.text.includes("问法有六种"));
+  assert.ok(!one.text.includes("不该读到的文字"));
+  assert.deepEqual(one.notes, []);
+  // 读内容的只有四份：三份原来的、一份目录里的；目录里别的文件名碰都没碰。产品自带的澄清那一段没有读。
+  assert.equal(io.reads.length, 4);
+  assert.ok(io.reads.every((path) => !path.includes("不认识的名字")));
+  assert.ok(!io.reads.includes(join(PLATFORM_STAGES_DIR, "clarifying.md")));
+  // 别的阶段不受这一份影响。
+  assert.equal(composeStagePrompt(input("modeling")).text, compose("modeling").text);
+  // 任务类型一级：目录里的共用部分代替任务目录里的；目录里可以给原来没有的阶段加一段。
+  mkdirSync(join(dir, "task-type"));
+  writeFileSync(join(dir, "task-type", "common.md"), "---\nname: x\n---\n\n# 改过的任务类型说明\n", "utf-8");
+  writeFileSync(join(dir, "task-type", "clarifying.md"), "## 这类任务在澄清阶段\n\n新加的一段。\n", "utf-8");
+  const two = composeStagePrompt(input("clarifying"));
+  assert.deepEqual(two.parts.map((p) => [p.part, p.from, p.file]), [
+    ["system", "builtin", "agent/prompts/stages/system.md"], ["platform_common", "builtin", "agent/prompts/stages/common.md"],
+    ["task_common", "prompt_dir", "task-type/common.md"], ["platform_stage", "prompt_dir", "clarifying.md"], ["task_stage", "prompt_dir", "task-type/clarifying.md"], ["tail", "pi", null]]);
+  assert.equal(two.parts[2].text, "# 改过的任务类型说明");
+  assert.ok(!two.text.includes("# 软件需求规格说明编制"));
+  // 一份空文件：这一部分就没有了。
+  writeFileSync(join(dir, "task-type", "clarifying.md"), "\n", "utf-8");
+  assert.ok(!composeStagePrompt(input("clarifying")).parts.some((p) => p.part === "task_stage"));
+  assert.deepEqual(Object.keys(ORIGIN_NAMES).sort(), ["builtin", "pi", "prompt_dir", "task"]);
+});
+
+test("提示词目录里不用的文件：软链接不跟、目录不读、太大的不读、不是合法 UTF-8 的不用；这一部分照旧用原来的，并写明原因", () => {
+  const dir = tempDir();
+  const secret = join(tempDir(), "别处的文件.md");
+  writeFileSync(secret, "别处的文字，不该进系统提示", "utf-8");
+  symlinkSync(secret, join(dir, "system.md"));
+  mkdirSync(join(dir, "common.md"));
+  writeFileSync(join(dir, "reading.md"), "字".repeat(Math.ceil(PROMPT_DIR_MAX_BYTES / 3) + 1), "utf-8");
+  mkdirSync(join(dir, "task-type"));
+  writeFileSync(join(dir, "task-type", "common.md"), Buffer.from([0xff, 0xfe, 0x00, 0x41]));
+  const io = countingIo();
+  const prompt = composeStagePrompt({ stage: "reading", workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL, promptDir: dir }, io);
+  // 拼出来的与没有设目录时完全相同。
+  assert.equal(prompt.text, compose("reading").text);
+  assert.ok(!prompt.text.includes("别处的文字"));
+  assert.ok(!io.reads.includes(join(dir, "system.md")), "软链接指向的文件没有读");
+  assert.ok(!io.reads.includes(join(dir, "reading.md")), "太大的文件没有读");
+  assert.equal(prompt.notes.length, 4);
+  assert.match(prompt.notes[0], /^提示词目录里的 system\.md 没有用上：它是一个软链接。这一部分照旧用产品自带的。$/);
+  assert.match(prompt.notes[1], /^提示词目录里的 common\.md 没有用上：它不是普通文件。这一部分照旧用产品自带的。$/);
+  assert.match(prompt.notes[2], /^提示词目录里的 task-type\/common\.md 没有用上：它不是合法的 UTF-8 文字。这一部分照旧用任务目录的。$/);
+  assert.match(prompt.notes[3], /^提示词目录里的 reading\.md 没有用上：它有 \d+ 字节，超过了 262144 字节的上限。这一部分照旧用产品自带的。$/);
+});
+
+test("提示词目录里改一句，下一次就重拼；目录没变就沿用；换一个目录也重拼", () => {
+  const dir = tempDir();
+  const cache = new StagePromptCache();
+  const input = (promptDir: string | null) => ({ stage: "clarifying" as const, workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL, promptDir });
+  assert.equal(cache.get(input(dir)).how, "recomposed");
+  assert.equal(cache.get(input(dir)).how, "reused");
+  writeFileSync(join(dir, "clarifying.md"), "起先的文字", "utf-8");
+  const first = cache.get(input(dir));
+  assert.equal(first.how, "recomposed");
+  assert.ok(first.prompt.text.includes("起先的文字"));
+  assert.equal(cache.get(input(dir)).how, "reused");
+  writeFileSync(join(dir, "clarifying.md"), "改过之后的文字，长一些", "utf-8");
+  const second = cache.get(input(dir));
+  assert.equal(second.how, "recomposed");
+  assert.ok(second.prompt.text.includes("改过之后的文字，长一些"));
+  rmSync(join(dir, "clarifying.md"));
+  assert.equal(cache.get(input(dir)).prompt.text, compose("clarifying").text);
+  assert.equal(cache.get(input(null)).how, "recomposed");
+  assert.equal(cache.get(input(null)).how, "reused");
+});
+
+test("这一次运行的提示词目录：不是调试模式时不读设置文件；调试模式下每次现读，设的不是一个存在的目录时不用并写明原因", () => {
+  const dir = tempDir();
+  const settings = join(tempDir(), "settings.json");
+  const env = (extra: Record<string, string> = {}) => ({ [ENV_DEBUG_SETTINGS]: settings, ...extra });
+  writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: dir } }), "utf-8");
+  // 没有那个环境变量：不是调试模式，设置文件里写着目录也不起作用。
+  assert.deepEqual(debugPromptDir({}), { debug: false, dir: null });
+  assert.deepEqual(debugPromptDir({ [ENV_DEBUG_SETTINGS]: "  " }), { debug: false, dir: null });
+  assert.deepEqual(debugPromptDir(env()), { debug: true, dir });
+  // 换了目录，下一次读到的就是新的。
+  const other = tempDir();
+  writeFileSync(settings, JSON.stringify({ version: 2, debug: { prompt_dir: other }, pi_dirs: {} }), "utf-8");
+  assert.deepEqual(debugPromptDir(env()), { debug: true, dir: other });
+  // 没有设、清掉了、设置文件不在或读不出：没有目录，不算出错。
+  for (const text of ["{}", JSON.stringify({ debug: {} }), JSON.stringify({ debug: { prompt_dir: "" } }), "这不是 JSON"]) {
+    writeFileSync(settings, text, "utf-8");
+    assert.deepEqual(debugPromptDir(env()), { debug: true, dir: null }, text);
+  }
+  assert.deepEqual(debugPromptDir({ [ENV_DEBUG_SETTINGS]: join(tempDir(), "没有这个文件.json") }), { debug: true, dir: null });
+  // 相对路径、不存在的目录、是一个文件：不用，写明原因。
+  writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: "relative/dir" } }), "utf-8");
+  assert.match(debugPromptDir(env()).note!, /^设置里的提示词目录不是绝对路径：relative\/dir。这次没有用它。$/);
+  for (const bad of [join(dir, "没有这个目录"), settings]) {
+    writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: bad } }), "utf-8");
+    const got = debugPromptDir(env());
+    assert.deepEqual([got.debug, got.dir], [true, null]);
+    assert.match(got.note!, /^设置里的提示词目录不存在或者不是目录：/);
+  }
+});
+
+test("事件处理，调试模式：从提示词目录读，报出去的那一行带每一部分的文字；早先的任务也报一行；不是调试模式时两样都没有", () => {
+  const dir = makeWorkspace(overallDefinition(), { material: false });
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  const promptDir = tempDir();
+  const settings = join(tempDir(), "settings.json");
+  writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: promptDir } }), "utf-8");
+  writeFileSync(join(promptDir, "clarifying.md"), "# 现在这个阶段：澄清\n\n调试时改的一句。", "utf-8");
+  const before = process.env[ENV_DEBUG_SETTINGS];
+  try {
+    process.env[ENV_DEBUG_SETTINGS] = settings;
+    const cache = new StagePromptCache();
+    const summaries = new WeakMap<object, any>();
+    const first = start(dir, cache, summaries);
+    assert.ok(first.result!.systemPrompt.includes("调试时改的一句。"));
+    const report = first.reports[0][1];
+    assert.deepEqual([report.replaced, report.stage, report.how, report.debug, report.prompt_dir, report.notes], [true, "clarifying", "recomposed", true, promptDir, []]);
+    assert.equal(report.texts!.map((one) => one.text).join("\n\n"), first.result!.systemPrompt);
+    // 这里的任务 skill 用的是仓里那一份，不在这个临时的任务目录里，所以只核对各部分是什么、出自哪里。
+    assert.deepEqual(report.texts!.map((one) => [one.part, one.from]),
+      [["system", "builtin"], ["platform_common", "builtin"], ["task_common", "task"], ["platform_stage", "prompt_dir"], ["tail", "pi"]]);
+    assert.equal(report.texts![3].file, "clarifying.md");
+    // 改一句再问一句：不用重启，下一次运行就是新的。
+    writeFileSync(join(promptDir, "clarifying.md"), "# 现在这个阶段：澄清\n\n调试时又改了一句，比上一句长。", "utf-8");
+    const second = start(dir, cache, summaries);
+    assert.ok(second.result!.systemPrompt.includes("调试时又改了一句，比上一句长。"));
+    assert.equal(second.reports[0][1].how, "recomposed");
+    assert.equal(start(dir, cache, summaries).reports[0][1].how, "reused");
+    // 设置里的目录不能用：照旧用原来的，原因在 notes 里。
+    writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: join(promptDir, "没有这个目录") } }), "utf-8");
+    const third = start(dir, cache, summaries);
+    assert.ok(!third.result!.systemPrompt.includes("调试时"));
+    assert.deepEqual([third.reports[0][1].prompt_dir, third.reports[0][1].notes!.length], [null, 1]);
+    // 早先的任务：系统提示不换，报一行，带启动时给的那一份。
+    const old = makeWorkspace(demoDefinition());
+    createTask(callIn(old), { definition_path: DEFINITION_PATH });
+    const legacy = start(old, new StagePromptCache(), new WeakMap());
+    assert.equal(legacy.result, undefined);
+    assert.deepEqual([legacy.reports[0][1].replaced, legacy.reports[0][1].debug, legacy.reports[0][1].texts!.length, legacy.reports[0][1].texts![0].part], [false, true, 1, "launch"]);
+    assert.ok(legacy.reports[0][1].texts![0].text.startsWith("启动参数给的系统提示"));
+  } finally {
+    if (before === undefined) delete process.env[ENV_DEBUG_SETTINGS];
+    else process.env[ENV_DEBUG_SETTINGS] = before;
+  }
+  // 不是调试模式：设置文件还在，目录里的文件不读，报出去的那一行不带文字。
+  const plain = start(dir, new StagePromptCache(), new WeakMap());
+  assert.ok(!plain.result!.systemPrompt.includes("调试时"));
+  assert.deepEqual(["debug" in plain.reports[0][1], "texts" in plain.reports[0][1], "prompt_dir" in plain.reports[0][1]], [false, false, false]);
 });

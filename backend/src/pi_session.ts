@@ -233,7 +233,7 @@ export class PiSession {
   readonly badLines: string[] = [];
   /** 扩展写进会话的自定义消息转成的系统说明事件，按先后排。 */
   readonly systemNotes: PiEvent[] = [];
-  /** 扩展最近一次报来的「这次运行的系统提示」那一行事实（任务有阶段时每次运行报一次）；还没有报过时是 null。 */
+  /** 扩展最近一次报来的「这次运行的系统提示」那一行事实（任务有阶段时每次运行报一次；调试模式下带每一部分的文字）；还没有报过时是 null。 */
   lastStagePrompt: PiEvent | null = null;
   private events = new EventQueue<PiEvent | null>();
   private responses = new Map<string, (message: PiEvent | null) => void>();
@@ -567,10 +567,12 @@ export class PiSession {
         this.note("本轮事实", { 内容: fact, 原文: raw });
         this.events.put({ type: "本轮事实", 内容: fact });
       } else if (statusKey === STAGE_PROMPT_STATUS_KEY) {
-        // 读得出来时不另存原文：调试模式下这一行带着整份文字，存两遍没有用。
-        this.lastStagePrompt = fact !== null && typeof fact === "object" ? (fact as PiEvent) : null;
-        this.note("系统提示", fact === null ? { 内容: null, 原文: raw } : { 内容: fact });
-        this.events.put({ type: "系统提示", 内容: fact });
+        // 调试模式下这一行带着每一部分的文字（texts）：只留在内存里给调试接口用，不写进归档，也不放进事件。
+        const whole = fact !== null && typeof fact === "object" ? (fact as PiEvent) : null;
+        this.lastStagePrompt = whole;
+        const light = whole === null ? null : Object.fromEntries(Object.entries(whole).filter(([key]) => key !== "texts"));
+        this.note("系统提示", light === null ? { 内容: null, 原文: raw } : { 内容: light });
+        this.events.put({ type: "系统提示", 内容: light });
       } else {
         this.note("实际工具清单", { 工具: fact, 原文: raw });
         this.events.put({ type: "实际工具清单", 工具: fact });
