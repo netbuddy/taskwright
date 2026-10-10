@@ -13,6 +13,9 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
+import { EXCEPTION_EXAMPLE_PREFIX } from "../src/lib/overall_analysis.ts";
+import { closedQuestion } from "../src/lib/reply.ts";
+import { STAGES, STAGE_NAMES, type WriteKind, canWrite } from "../src/lib/stage.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const LEGACY = join(ROOT, "agent", "prompts", "skills", "taskwright-executor", "SKILL.md");
@@ -123,4 +126,79 @@ test("有阶段的任务的系统提示：说明已在下文、不用再读 skil
   assert.doesNotMatch(system, /先用 read 读 taskwright-executor/);
   const bottom = (text: string) => text.slice(text.indexOf("## 底线")).trim();
   assert.equal(bottom(system), bottom(legacy));
+});
+
+// ───────────── 五个阶段各一段 ─────────────
+
+const STAGE_HEADINGS = ["这一段做什么", "这一段不做什么", "做到什么算够", "出口", "用户的话落在这一段之外时"];
+
+test("五个阶段各有一段：文件名是阶段的键，标题写阶段的名字，都按同样的五个小节写", () => {
+  for (const stage of STAGES) {
+    const text = read(`${stage}.md`);
+    assert.ok(text.startsWith(`# 现在这个阶段：${STAGE_NAMES[stage]}\n`), stage);
+    assert.ok(text.includes(`任务现在在${STAGE_NAMES[stage]}阶段`), stage);
+    assert.deepEqual([...sections(text).keys()], STAGE_HEADINGS, stage);
+    // 这一段的「算够」里说了去哪里看还差什么。
+    assert.ok(sections(text).get("做到什么算够")!.includes("查询任务状态的末尾写着这一段还差什么"), stage);
+  }
+});
+
+test("每一段都写明用户的话落在这一段之外时怎么办：不照办、不复述求同意，说明现在在哪一段与怎样过去", () => {
+  for (const stage of STAGES) {
+    const outside = sections(read(`${stage}.md`)).get("用户的话落在这一段之外时")!;
+    assert.ok(outside.includes("不要照办，也不要把用户的话复述一遍求同意"), stage);
+    assert.ok(outside.includes(`再在回复里说清任务现在在${STAGE_NAMES[stage]}阶段、那件事`), stage);
+  }
+  // 写条目之前的三段：用户要写条目时发那张卡片，由用户点。
+  for (const stage of ["reading", "clarifying", "modeling"] as const) {
+    assert.ok(sections(read(`${stage}.md`)).get("用户的话落在这一段之外时")!.includes("发「开始写条目」的卡片，由用户点"), stage);
+  }
+});
+
+test("每一段的「不做什么」与工具守的一致：这一段不能写的东西都写了", () => {
+  const WORDS: Record<Exclude<WriteKind, "page" | "problem">, string> = { diagram: "不画图", item: "不写别的集合的条目", review: "不请求评审", complete: "不完成任务" };
+  for (const stage of STAGES) {
+    const not = sections(read(`${stage}.md`)).get("这一段不做什么")!;
+    for (const [kind, word] of Object.entries(WORDS) as [WriteKind, string][]) {
+      assert.equal(not.includes(word), !canWrite(stage, kind), `${stage}：${word}`);
+    }
+  }
+  // 评审确认阶段主题页只能改两处。
+  assert.ok(sections(read("reviewing.md")).get("这一段不做什么")!.includes("只能改「状态」与「改看」两处"));
+});
+
+test("核读材料那一段：一轮最多 12 页，用一小段话说清材料讲的是什么，对不上的各记一条问题，立完页自己移到澄清并说出第一个要问的问题", () => {
+  const text = read("reading.md");
+  assert.ok(text.includes("一轮最多立 12 页"));
+  assert.ok(text.includes("用一小段话说清三件事：材料讲的是什么业务、要改变什么、最大的不确定是什么"));
+  assert.ok(text.includes("材料之间互相矛盾，或者材料与知识库里的规定对不上，每一处记一条问题条目"));
+  assert.ok(text.includes("就自己移到澄清：在同一次回复里写 `stage`「澄清」与 `reason`，并在成文的话里说出你要问的第一个问题"));
+  assert.ok(text.includes("不向用户提问。"));
+});
+
+test("澄清那一段：提问的优先次序与六种问法；举的提问例句都是开放问题，过得了回复工具的那条规则", () => {
+  const text = read("clarifying.md");
+  assert.ok(text.includes("目标之间的矛盾，先于谁负责什么、做到哪里为止，先于场景与例外，先于规则之间的冲突，先于指标（多快、多少），先于细节"));
+  for (const way of ["开放式", "因果追问", "具体情境", "边界反例", "对比选择", "复述确认"]) assert.ok(text.includes(`   - ${way}：`), way);
+  const examples = [...text.matchAll(/用提问。例如「([^」]+)」/g)].map((m) => m[1]);
+  assert.equal(examples.length, 4);
+  for (const one of examples) assert.equal(closedQuestion(one), false, one);
+});
+
+test("整理建模那一段：例外清单八种，例外的例子以「例外：」开头", () => {
+  const text = read("modeling.md");
+  assert.ok(text.includes("取消、重复、权限不足、无输入、输入冲突、超时、人工介入、外部依赖不可用"));
+  assert.ok(text.includes(`以「${EXCEPTION_EXAMPLE_PREFIX}」开头的例子`));
+});
+
+test("写条目与评审确认两段：依据用户看过的页、写完移到评审确认；评审确认阶段完成任务", () => {
+  const writing = read("writing.md");
+  assert.ok(writing.includes("只依据贴了标签、用户看过的页"));
+  assert.ok(writing.includes("自己移到评审确认，在同一次回复里写 `stage`「评审确认」与 `reason`"));
+  const reviewing = read("reviewing.md");
+  assert.ok(reviewing.includes("用户选了现在完成，再调用完成任务"));
+});
+
+test("共用部分第五节新加的那个反例标明了它是错的写法", () => {
+  assert.ok(read("common.md").includes("是错的：提问的卡片上没有可点的选项"));
 });
