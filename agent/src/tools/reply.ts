@@ -45,7 +45,8 @@ const act = Type.Object(
     kind: Type.Optional(Type.String({
       description:
         "向用户要的回应是哪一种，只能是五者之一：ask 是提问，confirm 是请用户确认某几个条目当前的内容，" +
-        "suggest 是给一个建议值，choose 是请用户从几个选项里选一个，propose 是提议下一步怎么做。必须写。",
+        "suggest 是给一个建议值，choose 是请用户从几个选项里选一个，propose 是提议下一步怎么做。必须写。" +
+        "是非题用 choose（把答案写成选项）、征求同意或下一步怎么做用 propose、ask 只给用户要自己说出内容的开放问题。",
     })),
     text: Type.Optional(Type.String({
       description: "要用户回应的那句话：你的问题、请用户确认的话、建议或提议，一句完整的话，不是你的答案。必须写。",
@@ -81,7 +82,7 @@ const act = Type.Object(
       Type.Array(Type.Object({ effect: Type.Optional(Type.String()), text: Type.Optional(Type.String()) }, { additionalProperties: true }), {
         description:
           "只有提议（propose）写：这个提议做下去之后条目会怎样变，每项是 { effect, text }，effect 是 remove、add、change 之一。" +
-          "提议会撤掉条目或大改条目时必须写。",
+          "做下去会改动条目时写，撤掉或大改时必须写。",
       }),
     ),
   },
