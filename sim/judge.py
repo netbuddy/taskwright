@@ -10,7 +10,9 @@
   针对它问；用户借机说出来。这不算用户 agent 演错，也不算问出，单独列出；
 - 泄底：执行者上一轮摆出的东西里根本没有这件事，用户 agent 自己说了出来。这是用户 agent 演错。
 
-第一层只做代码能查的两项：泄底（查全部轮次）；点「这几条都看过了」（早期版本是「确认」）之前没有在同一轮里用「看界面」看过该条目的详情（没看内容就接受）。
+第一层只做代码能查的三项：泄底（查全部轮次）；点「这几条都看过了」（早期版本是「确认」）之前没有在同一轮里用「看界面」看过该条目的详情（没看内容就接受）；
+在助手提议进入写条目的卡片上点「开始写条目」时，卡片点名的主题页里有从头到尾没有打开过的（没看就同意开始写）。第三项只算「没打开过」：
+打开过、但库里没有它在卡片所写修订上看过的记录的（这一页有助手补的内容而没有确认，或者那之后又改过），不算演错，在说明里单独写出。
 第一层按轮作废：出错的最早一轮是第 1 轮，整场无效；是之后的第 k 轮，第 1 到 k−1 轮有效、第 k 轮起作废，
 标「部分有效」。作废轮次里才说出的隐藏事实不算问出。第二层其余各项按演练结束时的库判定，部分有效时照样列出，但注明含作废
 轮次之后的改动、只作参考。评判者查的两项（说了画像与材料都没有的事实、违背人设）不在这里。
@@ -160,6 +162,51 @@ def validity(first: list[dict]) -> dict:
 
 #: 卡片上表示看过了的那一下点击：现在走 mark_viewed，早期版本的演练记录里是 confirm。
 SEEN_KINDS = ("mark_viewed", "confirm")
+#: 助手提议进入写条目的那张请选择卡片上「开始写条目」这个选项的键（agent 的 START_ITEMS_KEY）。
+START_ITEMS = "start_items"
+
+
+def card_items(record: dict, reply_message_id: str | None, before_round: int) -> list[dict]:
+    """用户 agent 点的那张卡片点名的条目（每项是条目编号与修订号）：按回复的编号在之前各轮助手的回复里找；
+    找不到时取这一轮之前最近一条带卡片的回复。"""
+    replies = [r for t in record.get("轮") or [] if t["轮"] < before_round for r in (t.get("执行者") or {}).get("replies") or [] if r.get("act")]
+    hit = next((r for r in replies if reply_message_id and r.get("message_id") == reply_message_id), None) or (replies[-1] if replies else None)
+    return [i for i in ((hit or {}).get("act") or {}).get("items") or [] if isinstance(i, dict) and i.get("item_id")]
+
+
+def viewed_marks(db_dir: Path) -> set[tuple[str, int]]:
+    """库里记着用户看过的（条目编号, 修订号）；没有库时是空的。"""
+    if not (Path(db_dir) / taskdb.DB_NAME).is_file():
+        return set()
+    tasks = taskdb.read_workspace(db_dir)["任务"]
+    return {(d["条目编号"], d["修订号"]) for mark in (tasks[0]["判读"] if tasks else []) for d in mark["明细"] if d["态度"] == "接受"}
+
+
+def start_clicks(data: dict) -> dict:
+    """第一层第三项：点「开始写条目」之前有没有打开过卡片点名的主题页。"""
+    record = data["record"]
+    opened: set[str] = set()
+    clicks, unopened, unmarked = 0, [], []
+    marks = None
+    for u in user_utterances(record):
+        opened |= {x for x in u["looks"] if x}
+        if ((u.get("card") or {}).get("choice")) != START_ITEMS:
+            continue
+        clicks += 1
+        items = card_items(record, (u["card"] or {}).get("reply_message_id"), u["轮"])
+        missing = [i["item_id"] for i in items if i["item_id"] not in opened]
+        if missing:
+            unopened.append({"轮": u["轮"], "没打开过的页": missing, "卡片点名的页": [i["item_id"] for i in items]})
+        if marks is None:
+            marks = viewed_marks(data["sim"] / "库副本")
+        if marks:
+            unmarked += [f"第 {u['轮']} 轮 {i['item_id']}" for i in items
+                         if i["item_id"] in opened and i.get("revision_no") is not None and (i["item_id"], i["revision_no"]) not in marks]
+    note = "没有点过「开始写条目」。" if not clicks else f"一共点了 {clicks} 次「开始写条目」。"
+    if unmarked:
+        note += ("打开过、但库里没有它在卡片所写修订上看过的记录的（这一页有助手补的内容而没有确认，或者那之后又改过），不算演错，列在这里："
+                 + "、".join(unmarked) + "。")
+    return {"项": "点「开始写条目」之前打开过卡片点名的主题页", "通过": not unopened, "说明": note, "细节": unopened}
 
 
 def layer1(data: dict) -> list[dict]:
@@ -180,6 +227,7 @@ def layer1(data: dict) -> list[dict]:
                 unseen.append({"轮": u["轮"], "条目": target["item_id"], "这一轮看过的条目": sorted(looked)})
     checks.append({"项": "点「这几条都看过了」之前在同一轮里看过该条目的详情", "通过": not unseen,
                    "说明": f"一共点了 {sum(1 for u in utterances if u['kind'] in SEEN_KINDS)} 次「这几条都看过了」。", "细节": unseen})
+    checks.append(start_clicks(data))
     return checks
 
 
@@ -370,7 +418,7 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
              f"- 执行者实际的工具清单：{'、'.join(record.get('执行者工具清单') or []) or '没有记'}",
              f"- Langfuse 环境标签：{record.get('Langfuse 环境标签')}", f"- 停止原因：{facts.get('停止原因')}；轮数：{facts.get('轮数')}",
              f"- {state['说明']}", "",
-             "## 第一层：用户 agent 有没有按画像演（代码能查的两项）", ""]
+             "## 第一层：用户 agent 有没有按画像演（代码能查的三项）", ""]
     for c in first:
         lines.append(f"- {'通过' if c['通过'] else '不通过'}：{c['项']}。{c['说明']}" + (f" 细节：{json.dumps(c['细节'], ensure_ascii=False)}" if c.get("细节") else ""))
     lines += ["", "## 用户主动补充（不算问出，也不算演错）", "",
