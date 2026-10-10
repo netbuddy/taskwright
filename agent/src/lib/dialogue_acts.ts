@@ -197,11 +197,27 @@ function answeredBy(db: DatabaseSync, taskId: string, sessionId: string, actId: 
   return row?.act_id ?? null;
 }
 
+/** 用户那句原话写进拒绝文字时的样子：去掉首尾空白，超过 60 个字截短加省略号。 */
+export function quotedUserText(text: string): string {
+  const chars = [...text.trim()];
+  return chars.length > 60 ? `${chars.slice(0, 60).join("")}…` : chars.join("");
+}
+
 /**
- * 核对一份已经符合 schema 的理解里的两样事实：responds_to 指向这条会话里有的执行者行为、
- * 那一条期待回应时还没有被回应过；targets 里的条目在这个任务里有（删掉的条目也算有）。返回逐条的问题。
+ * 一份理解的摘要说的是不是系统那句提醒（FALLBACK_TEXT「请用 reply 工具把要对用户说的话发出来」），不是用户的话。
+ * 那句提醒是系统以用户名义发的，不算一次新的运行，这一轮要写理解的仍是它之前用户的那句话；助手被拒几次之后有时会对着提醒写理解。
+ * 只看字面：摘要里出现「reply 工具」「回复工具」或「把要对用户说的话发出来」。
  */
-export function understandingFactErrors(db: DatabaseSync, taskId: string, sessionId: string, value: unknown): string[] {
+export function aboutReminder(summary: string): boolean {
+  return /reply\s*工具|回复工具|把要对用户说的话发出来/.test(summary);
+}
+
+/**
+ * 核对一份已经符合 schema 的理解里的几样事实：responds_to 指向这条会话里有的执行者行为、
+ * 那一条期待回应时还没有被回应过；targets 里的条目在这个任务里有（删掉的条目也算有）；摘要说的不是系统的那句提醒。
+ * userText 是这一轮用户的那句原话，给了就写进提醒那一条的说明里。返回逐条的问题。
+ */
+export function understandingFactErrors(db: DatabaseSync, taskId: string, sessionId: string, value: unknown, userText?: string): string[] {
   const errors: string[] = [];
   const acts = (value as { acts: UserAct[] }).acts;
   const itemExists = db.prepare("SELECT 1 FROM item WHERE task_id = ? AND item_id = ?");
@@ -216,6 +232,10 @@ export function understandingFactErrors(db: DatabaseSync, taskId: string, sessio
         const by = answeredBy(db, taskId, sessionId, act.responds_to);
         if (by) errors.push(`${where}.responds_to 写的是 ${act.responds_to}，它已经被 ${by} 回应过了；这句话不是在回应它时不写 responds_to`);
       }
+    }
+    if (typeof act.summary === "string" && aboutReminder(act.summary)) {
+      errors.push(`${where}.summary 说的是系统的那句提醒（「${FALLBACK_TEXT}」），那不是用户的话` +
+        (userText?.trim() ? `；这一轮要写理解的是用户这句：「${quotedUserText(userText)}」` : "；要写理解的是它之前用户的那句话"));
     }
     for (const target of act.targets ?? []) {
       if (!itemExists.get(taskId, target.item_id)) errors.push(`${where}.targets 里的 ${target.item_id} 在这个任务里没有；targets 只写已有的条目，说的不是某个条目时不写 targets`);
@@ -234,7 +254,7 @@ export const USER_INTENT_OUTPUT: StructuredOutput = {
   schema: INTENT_SCHEMA,
   invalidEvent: EVENT_USER_INTENT_INVALID,
   alreadyRecorded: (db, turn) => hasUserActs(db, turn.taskId, turn.sessionId, turn.userEntryId),
-  checkFacts: (db, turn, value) => understandingFactErrors(db, turn.taskId, turn.sessionId, value),
+  checkFacts: (db, turn, value) => understandingFactErrors(db, turn.taskId, turn.sessionId, value, turn.userText),
   record: (db, turn, value) => writeUnderstanding(db, turn, (value as { acts: UserAct[] }).acts),
   recordInvalid: (db, turn, written, errors) => writeInvalid(db, turn, errors.join("；"), written),
   requiredEachTurn: { recordMissing: (db, turn, nearest) => writeMissing(db, turn, nearest) },
@@ -253,7 +273,7 @@ function inTurn<T>(workspaceDir: string, sessionId: string, run: RunInfo, body: 
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const taskId = taskIdOf(db);
       if (!taskId) return { kind: "skipped", why: "库里还没有任务" } as const;
-      return body(db, { taskId, sessionId, runId: run.runId, userEntryId: run.userEntryId });
+      return body(db, { taskId, sessionId, runId: run.runId, userEntryId: run.userEntryId, userText: run.userText });
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return { kind: "skipped", why: "还没有任务库" };
@@ -424,7 +444,9 @@ export function requireUnderstanding(workspaceDir: string, sessionId: string, br
     ? GATE_MISSING_TEXT
     : `这一轮写了 ${problems.length} 个 JSON 片段，${GATE_INVALID_TEXT}。` +
       `${problems.length > shown.length ? `最近 ${shown.length} 个` : "各片段"}的问题：` + shown.map((one, i) => `（${i + 1}）${one}`).join("");
-  const fact = `${label}没有执行：${INTENT_GATE_TEXT}。${why}。`;
+  // 引出用户那句原话：助手被拒几次之后容易忘了要理解的是哪一句。
+  const said = run.userText.trim() ? `：「${quotedUserText(run.userText)}」` : "";
+  const fact = `${label}没有执行：${INTENT_GATE_TEXT}${said}。${why}。`;
   const guidance = "请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
     `写完接着调用 ${toolName}。`;
   throw new ToolRejection(`${fact}\n${guidance}`, fact, guidance, "gate");

@@ -16,7 +16,9 @@ import { databasePath } from "../src/lib/db.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import { EXECUTOR_FUNCTIONS, INTENT_SCHEMA, schemaErrors } from "../src/lib/intent_schema.ts";
 import {
+  aboutReminder,
   currentRun,
+  quotedUserText,
   readDialogueFacts,
   recordAtSettle,
   recordFromAssistantMessage,
@@ -396,7 +398,7 @@ test("门禁：这一轮没有合格理解时三个工具的拒绝理由相同�
   const dir = workspaceWithItems();
   const branch = [userEntry("整理一下", "u-1")];
   assert.throws(() => requireUnderstanding(dir, SESSION, branch, "保存修订", "save_revision"),
-    /^Error: 保存修订没有执行：先按 schema 写下你对用户这句话的理解。这一轮还没有写理解。\n请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，写完接着调用 save_revision。$/);
+    /^Error: 保存修订没有执行：先按 schema 写下你对用户这句话的理解：「整理一下」。这一轮还没有写理解。\n请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，写完接着调用 save_revision。$/);
   record(dir, branch, "我去整理。", ["save_revision"]);
   assert.throws(() => requireUnderstanding(dir, SESSION, branch, "完成任务", "complete_task"), /这一轮还没有写理解/);
   record(dir, branch, '{"acts": "整理"}', ["save_revision"]);
@@ -410,6 +412,34 @@ test("门禁：这一轮没有合格理解时三个工具的拒绝理由相同�
   assert.throws(() => requireUnderstanding(dir, SESSION, [...branch, userEntry("再改改")], "回复", "reply"), /先按 schema/);
   requireUnderstanding(makeWorkspace(), SESSION, [userEntry("你好")], "回复", "reply");
   requireUnderstanding(dir, SESSION, [], "回复", "reply");
+});
+
+test("门禁的拒绝文字引出用户那句原话，长的截短；系统的那句提醒不算用户的话，引的仍是它之前那一句", () => {
+  const dir = workspaceWithItems();
+  const long = "请读 inputs 里的材料，把说到的借书、还书、续借、预约、罚款这几件事各整理成一个功能用例，材料没有说清的地方记成问题条目，整理完告诉我一共几条";
+  const branch = [userEntry(long, "u-1")];
+  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "回复", "reply"),
+    /回复没有执行：先按 schema 写下你对用户这句话的理解：「请读 inputs 里的材料，把说到的借书、还书、续借、预约、罚款这几件事各整理成一个功能用例，材料没有说清的地方记成问…」。这一轮还没有写理解。/);
+  assert.throws(() => requireUnderstanding(dir, SESSION, [...branch, userEntry(FALLBACK_TEXT)], "回复", "reply"), /理解：「请读 inputs 里的材料，把说到的借书/);
+  assert.equal(quotedUserText("  整理一下\n"), "整理一下");
+});
+
+test("对着系统的那句提醒写的理解不算：记成不合格的一份，门禁说明要理解的是用户哪一句；照用户的话重写就过", () => {
+  const dir = workspaceWithItems();
+  const branch = [userEntry("把登录的步骤补全", "u-1"), assistantEntry("a-1"), userEntry(FALLBACK_TEXT, "u-2")];
+  for (const summary of ["用户要求用 reply 工具把话发出来", "按提醒使用回复工具回复用户", "把要对用户说的话发出来"]) assert.equal(aboutReminder(summary), true, summary);
+  for (const summary of ["补全登录的步骤", "回复用户关于口令长度的问题", "接受 UC-001"]) assert.equal(aboutReminder(summary), false, summary);
+  const wrong = record(dir, branch, fenced([{ function: "request", confidence: "high", summary: "用户要求用 reply 工具把要说的话发出来" }]), ["reply"]);
+  assert.deepEqual(recordedNames(wrong), [], "没有记下合格的理解");
+  assert.equal(events(dir, "USER_INTENT_INVALID").length, 1);
+  assert.equal(acts(dir).filter((one) => one.speaker === "user").length, 0, "没有记成用户的行为");
+  assert.match(payloads(dir, "USER_INTENT_INVALID")[0].reason,
+    /acts\[0\]\.summary 说的是系统的那句提醒（「请用 reply 工具把要对用户说的话发出来」），那不是用户的话；这一轮要写理解的是用户这句：「把登录的步骤补全」/);
+  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "回复", "reply"),
+    /理解：「把登录的步骤补全」。这一轮写了 1 个 JSON 片段，都不是合格的理解。各片段的问题：（1）acts\[0\]\.summary 说的是系统的那句提醒/);
+  record(dir, branch, fenced([{ function: "request", confidence: "high", summary: "补全登录的步骤" }]), ["reply"]);
+  requireUnderstanding(dir, SESSION, branch, "回复", "reply");
+  assert.deepEqual(acts(dir).filter((one) => one.speaker === "user").map((one) => [one.act_id, one.summary, one.source_entry]), [["r1-1", "补全登录的步骤", "u-1"]]);
 });
 
 test("门禁拒绝「回复」不算回复的形式被拒：连续被拒的计数跳过它", () => {
