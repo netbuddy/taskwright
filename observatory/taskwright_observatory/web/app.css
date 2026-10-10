@@ -126,3 +126,8 @@ section.conceptcard .kv{grid-template-columns:8.5em minmax(0,1fr)}
   border:1px solid var(--warn-line);color:var(--warn);font-size:12.5px}
 
 [hidden]{display:none !important}
+
+/* 评测：格子里的结果是到那一遍演练任务页的链接；对照里变差的差值标红 */
+a.evcell{text-decoration:none}
+a.evcell:hover .chip{outline:2px solid var(--accent-bg)}
+td.evworse{color:var(--bad);font-weight:600;background:var(--bad-soft)}

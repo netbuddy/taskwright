@@ -9,7 +9,7 @@ UserAgentProcess 把驱动程序作为子进程启动，经它的标准输入与
 隐藏事实的关键词与接受底线的判据是给判定程序用的，不给扮演者看。
 
 画像的「熟悉的材料」列出扮演者自己整理过的材料文件：启动时从材料目录读出全文，
-放进系统提示，扮演者就知道材料里写了什么。材料原文只在运行时读入，写进演练目录下的系统提示副本，
+放进系统提示，扮演者就知道材料里写了什么。Word 材料（.docx）读的是产品的文字版，也就是助手读到的那一份（sim/material_text.py）。材料原文只在运行时读入，写进演练目录下的系统提示副本，
 不写进画像文件，也不进代码仓。「看界面」照旧不返回材料。
 """
 
@@ -23,6 +23,8 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
+
+from sim.material_text import material_text
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
@@ -46,7 +48,7 @@ def familiar_materials(persona: dict, materials_dir: Path | None) -> dict[str, s
         path = Path(materials_dir) / name
         if not path.is_file():
             raise FileNotFoundError(f"用户画像「熟悉的材料」里的 {name} 在材料目录 {materials_dir} 里找不到。")
-        texts[name] = path.read_text(encoding="utf-8")
+        texts[name] = material_text(path)
     return texts
 
 
@@ -199,14 +201,17 @@ class UserAgentProcess:
         return f"它最后写到标准错误的是：{' / '.join(tail)}" if tail else ""
 
 
-def user_agent_session(persona: dict, sim_dir: Path, materials_dir: Path | None = None) -> UserAgentProcess:
-    """准备好用户 agent：系统提示写进演练目录，工作目录是演练目录下一个空目录。调用方负责 start()。"""
+def user_agent_session(persona: dict, sim_dir: Path, materials_dir: Path | None = None, model: str | None = None) -> UserAgentProcess:
+    """准备好用户 agent：系统提示写进演练目录，工作目录是演练目录下一个空目录。调用方负责 start()。
+    model 给了就换掉启动配置里的模型（服务名/模型编号），给不接真模型的测试用。"""
     sim_dir = Path(sim_dir)
     prompt_file = sim_dir / "user_agent_system_prompt.md"
     prompt_file.write_text(system_prompt(persona, materials_dir), encoding="utf-8")
     profile = copy.deepcopy(json.loads(PROFILE.read_text(encoding="utf-8")))
     # 后端按代码仓根目录拼这个路径（backend/src/paths.ts 的 fromRoot），绝对路径也会被接在根目录下面，所以写成相对代码仓根目录的路径。
     profile["system_prompt_file"] = os.path.relpath(prompt_file.resolve(), REPO_ROOT)
+    if model:
+        profile["model"] = model
     cwd = sim_dir / "user-agent-cwd"
     cwd.mkdir(parents=True, exist_ok=True)
     return UserAgentProcess(profile, cwd, sim_dir / "user-agent", LABEL)

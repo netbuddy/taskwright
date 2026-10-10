@@ -19,6 +19,9 @@ export const api = {
   health: (scope) => get(`/api/health?scope=${encodeURIComponent(scope || "all")}`),
   concepts: () => get("/api/concepts"),
   sessionOptions: () => get("/api/session-options"),
+  evals: () => get("/api/evals"),
+  evalDetail: (label) => get(`/api/evals/${encodeURIComponent(label)}`),
+  evalCompare: (first, second) => get(`/api/evals/compare?a=${encodeURIComponent(first)}&b=${encodeURIComponent(second)}`),
 };
 
 /** 工具的显示名。映射表里查不到就只显示英文标识，不编一个中文名出来。 */

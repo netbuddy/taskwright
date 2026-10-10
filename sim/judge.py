@@ -18,7 +18,7 @@
 隐藏事实的关键词组（画像里的「必须同时出现」）：一组里是同义的几种写法，出现一种就算这一组出现；所有组都出现
 才算说到了这件事。画像没写「必须同时出现」时，把「关键词」里每个词各当一组。
 
-第二层：check_db 全过、功能用例至少一个、必填齐、来源逐字（文档原文在材料里找得到，用户的话在执行者会话的用户消息里
+第二层：check_db 全过、功能用例至少一个、必填齐、来源逐字（文档原文在材料里找得到，Word 材料对着它的文字版里各段的正文找；用户的话在执行者会话的用户消息里
 找得到，其中包括界面操作之后后端代发的固定句子）、每条隐藏事实有没有被问出来（关键词组全部出现在同一个当前条目里，而且不是用户 agent 主动说出来的）、
 接受底线逐条按用户画像里写的判据查、执行者被工具拒绝的次数与原因、停止原因、完成条件（经观测台的 taskpage.check_completion 起 Node 子进程调 agent 的核对函数）。
 
@@ -33,6 +33,8 @@ from pathlib import Path
 
 from taskwright_observatory import check_db, taskdb, taskpage
 
+from sim.material_text import material_for_check, read_names
+
 
 def _norm(text: str) -> str:
     return re.sub(r"\s+", "", text or "")
@@ -42,7 +44,7 @@ def load(sim: Path, persona_path: Path | None = None) -> dict:
     sim = Path(sim)
     record = json.loads((sim / "record.json").read_text(encoding="utf-8"))
     persona = json.loads(Path(persona_path or sim / "用户画像.json").read_text(encoding="utf-8"))
-    materials = {p.name: p.read_text(encoding="utf-8") for p in (sim / "materials").glob("*")} if (sim / "materials").is_dir() else {}
+    materials = {p.name: material_for_check(p) for p in (sim / "materials").glob("*")} if (sim / "materials").is_dir() else {}
     return {"sim": sim, "record": record, "persona": persona, "materials": materials}
 
 
@@ -225,7 +227,7 @@ def executor_events(sim: Path):
 
 
 def materials_read(sim: Path, names: list[str]) -> dict[str, int]:
-    """执行者用 read 读每个材料文件的次数（按文件名认，读几次记几次）。"""
+    """执行者用 read 读每个材料文件的次数（按文件名认，读几次记几次；Word 材料读的是它的文字版，一样算）。"""
     counts = {name: 0 for name in names}
     for e in executor_events(sim):
         if e.get("type") == "tool_execution_start" and e.get("toolName") == "read":

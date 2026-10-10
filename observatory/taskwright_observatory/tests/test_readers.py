@@ -28,7 +28,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -36,8 +39,8 @@ import unittest
 from pathlib import Path
 
 from taskwright_observatory import runs as runs_module
-from taskwright_observatory.__main__ import default_workspaces_dir, expand_archive_dirs
-from taskwright_observatory.server import IndexCache
+from taskwright_observatory.__main__ import default_workspaces_dir, expand_archive_dirs, main as observatory_main, parse_args
+from taskwright_observatory.server import IndexCache, expand_sim_root
 from taskwright_observatory.api import Index
 from taskwright_observatory.langfuse import LangfuseLinks, count_input_messages
 
@@ -387,6 +390,45 @@ class FindSessionTests(unittest.TestCase):
         # 给的目录后来被删掉了：读出来是空的，不出错。
         shutil.rmtree(runs)
         self.assertEqual(sessions(cache), set())
+
+    def test_给演练根目录时_每一遍演练的归档与任务目录都收进来_模拟用户自己的归档不收(self):
+        sims = self.root / "sims"
+        first, second = sims / "sim-001", sims / "sim-002"
+        shutil.copytree(FIXTURE_RUNS, first / "backend" / "TASK-A")
+        shutil.copytree(FIXTURE_RUNS, first / "user-agent")              # 模拟用户自己的归档，结构与助手的一样
+        build_workspace(first / "tasks")
+        (sims / "别的目录" / "backend" / "TASK-X" / "pi-events").mkdir(parents=True)
+        # 夹具归档里另有一次没有会话编号的启动，这里只看有编号的会话。
+        sessions = lambda cache: {r["会话编号"] for r in cache.get().session_list()["会话"]} - {""}
+        cache = IndexCache([], None, "", "", sim_root=sims)
+        index = cache.get()
+        self.assertEqual([d.relative_to(sims).as_posix() for d in index.archive_dirs], ["sim-001/backend/TASK-A"])
+        self.assertEqual(sessions(cache), {SESSION_ID})
+        self.assertEqual(len(index.tasks), 1)
+        self.assertEqual([d.relative_to(sims).as_posix() for d in index.workspaces_dirs], ["sim-001/tasks"])
+        # 评测跑到一半新出的那一遍：不重启，下一次读取就收进来；它的 backend 下还没有归档时先不收。
+        (second / "backend").mkdir(parents=True)
+        (second / "tasks").mkdir()
+        self.assertEqual(len(cache.get().archive_dirs), 1)
+        shutil.copytree(TimelineTests.FIXTURE_PARALLEL, second / "backend" / "TASK-B")
+        self.assertEqual(sessions(cache), {SESSION_ID, TimelineTests.PARALLEL_SESSION})
+        self.assertEqual([d.relative_to(sims).as_posix() for d in cache.get().workspaces_dirs], ["sim-001/tasks", "sim-002/tasks"])
+        # 与 --runs 一起给：两边合在一起看，任务目录所在目录写出每一处。
+        runs = self.root / "runs"
+        shutil.copytree(TimelineTests.FIXTURE_PARALLEL, runs / "TASK-C")
+        both = IndexCache([runs], self.root / "tasks", "", "", sim_root=sims).get()
+        self.assertEqual([d.name for d in both.archive_dirs], ["TASK-C", "TASK-A", "TASK-B"])
+        self.assertEqual(both.overview()["任务目录所在目录"].count("、"), 2)
+        # 演练根目录还是空的、也没有给归档目录：读出来是空的，不出错。
+        empty = self.root / "空的"
+        empty.mkdir()
+        self.assertEqual((IndexCache([], None, "", "", sim_root=empty).get().session_list()["会话"], expand_sim_root(None)), ([], ([], [])))
+        # 启动入口：给了演练根目录就可以不给归档目录；两样都没给、或者演练根目录不存在时不启动。
+        self.assertEqual(parse_args(["--sim-root", str(sims)]).sim_root, str(sims))
+        with contextlib.redirect_stderr(io.StringIO()) as complaint:
+            self.assertEqual((observatory_main([]) if not os.environ.get("TASKWRIGHT_RUNS_DIR") and not os.environ.get("TASKWRIGHT_SIM_ROOT") else 2,
+                              observatory_main(["--sim-root", str(self.root / "没有这个目录")])), (2, 2))
+        self.assertIn("演练根目录不存在", complaint.getvalue())
 
 
 class TimelineTests(unittest.TestCase):

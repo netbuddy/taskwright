@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,22 @@ class SystemPromptTest(unittest.TestCase):
             self.assertIn(fact["事实"], text)
         self.assertNotIn("必须同时出现", text)
         self.assertNotIn("判据", text)
+
+    @unittest.skipUnless(shutil.which("node"), "本机没有 node")
+    def test_评测用的两份画像_材料在示例目录里_系统提示拼得出来_判定用的键不进提示(self):
+        examples = REPO / "examples" / "library-lending"
+        for name, material, opening in (("library-short.json", "requirements.md", "借书"),
+                                        ("library-long.json", "requirements-styled.docx", "[p7] 我们学校图书馆")):
+            persona = json.loads((REPO / "sim" / "personas" / name).read_text(encoding="utf-8"))
+            self.assertEqual(persona["熟悉的材料"], [material])
+            self.assertTrue(persona["答不上的说法"])
+            prompt = launch_user.system_prompt(persona, examples)
+            self.assertIn(f"#### 《{material}》", prompt)
+            self.assertIn(opening, prompt)
+            for fact in persona["隐藏事实"]:
+                self.assertIn(fact["事实"], prompt)
+            for key in ("问到的迹象", "必须同时出现", "判据", "答不上的说法"):
+                self.assertNotIn(key, prompt)
 
 
 if __name__ == "__main__":
