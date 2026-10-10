@@ -1,6 +1,7 @@
 // 助手提议进入下一个阶段的卡片（请选择，其中一个选项的键是 enter_clarify、enter_consolidate、start_items、enter_review 之一）：
 // 按键认出；标题写「进入下一阶段 · 请决定」；进入的那个选项是主按钮，另一个是普通按钮；点名的条目前面写「请先看：」并且可以点开；
 // 点了照现有的做法替用户发一句与选项相同的话，带上选项的键。别的请选择卡片与复述的卡片照旧。
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -83,5 +84,15 @@ describe("提议进入下一个阶段的卡片", () => {
     cleanup();
     card({ kind: "choose", text: "周六上午，小王预约了一本书。", options: [{ key: "story_ok", text: "采纳为例子" }, { key: "story_fix", text: "有误，需修改" }, { key: "story_again", text: "换一个例子重述" }] });
     expect(screen.getByTestId("act-choose").querySelector(".tt")).toHaveTextContent("复述 · 请核对");
+  });
+
+  it("卡片里的小标签与后面的值之间有空隙：四个字的标签（「要定的事」）不与问话挤在一起", () => {
+    // 样式不在测试环境里生效，这里只核对那条规则写了右边的内边距。
+    // 基准地址先放进变量：Vite 会改写 new URL(字面量, import.meta.url) 这种写法，测试里就读不到文件了。
+    const here = import.meta.url;
+    const css = readFileSync(decodeURIComponent(new URL("../styles/workview.css", here).pathname), "utf-8");
+    const rule = /\.app \.act \.fk\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/min-width:3rem/);
+    expect(rule).toMatch(/padding-right:\.5rem/);
   });
 });
