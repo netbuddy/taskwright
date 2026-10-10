@@ -5,6 +5,7 @@
     python3 -m sim.evals run --persona sim/personas/library-short.json --expect sim/expectations/library-short.json \
         --materials-dir examples/library-lending --repeat 3 --port 8791 --label <这一次评测的名字> [--max-rounds 30] [--sim-root ./sim-runs]
     python3 -m sim.evals judge <演练目录> [--expect <清单文件>] [--persona <画像文件>]
+    python3 -m sim.evals compare <前一次的标签> <后一次的标签> [--sim-root ./sim-runs]
 
 run：演练的参数与 sim.run 相同（内部调它的 run_once，每遍各自起后端、各自出判定报告）。每遍跑完算灯（sim/lamps.py）、核对清单
 （sim/expectations.py）、列出助手问过的问题与模拟用户答不上的问题（sim/questions.py），写进该遍目录的「评测.json」。
@@ -13,6 +14,9 @@ run：演练的参数与 sim.run 相同（内部调它的 run_once，每遍各�
 
 judge：对一遍跑过的演练重算「评测.json」（换了清单，或者往画像的「答不上的说法」里加了新说法之后用）。这一遍属于某次评测时，
 那次评测的另外几遍用同样的清单与画像一并重算，两份汇总与 evals.jsonl 里的那一行跟着重写。
+
+compare：两次评测的对照，打印一段 Markdown：每盏灯与清单的每一组各写两个数与差值，后一次比前一次低的标「变差」。
+对照怎样算在观测台的 taskwright_observatory/evals.py 里，观测台的对照页面用的是同一份。
 
 通过率怎样算：一盏灯的通过率是通过的遍数比上能算的遍数（结果是「通过」或「未通过」的遍），「不适用」与「算不了」不进分母；
 一次评测的灯通过率是各盏通过率的平均。清单命中率是命中的组数比上组数，各遍合在一起算。
@@ -27,14 +31,15 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from taskwright_observatory import taskdb
+from taskwright_observatory import evals as eval_files, taskdb
 
 from sim import expectations, lamps, questions, run
 from sim.launch_user import load_persona
 
 RUN_FILE = "评测.json"
-LIST_FILE = "evals.jsonl"
-SUMMARY_PREFIX = "评测汇总_"
+#: 演练根目录下的两种文件名，读它们的观测台与写它们的这里用同一份。
+LIST_FILE = eval_files.LIST_FILE
+SUMMARY_PREFIX = eval_files.SUMMARY_PREFIX
 
 
 def summary_path(root: Path, label: str, suffix: str) -> Path:
@@ -282,6 +287,16 @@ def command_judge(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_compare(args: argparse.Namespace) -> int:
+    root = Path(args.sim_root).expanduser()
+    try:
+        print(eval_files.compare_markdown(eval_files.compare(root, args.first, args.second)), end="")
+    except eval_files.EvalNotFound as error:
+        print(f"{error}（在 {root} 里找）", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python3 -m sim.evals", description="评测：多遍演练，每遍算灯与「至少应有」清单，合成汇总。")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -292,9 +307,15 @@ def main(argv: list[str] | None = None) -> int:
     judge_parser.add_argument("sim", help="演练目录")
     judge_parser.add_argument("--expect", default=None, help="换一份清单；不给就用这一遍上次用的")
     judge_parser.add_argument("--persona", default=None, help="换一份画像（改了「答不上的说法」之后用）；不给就用演练目录里的画像副本")
+    compare_parser = commands.add_parser("compare", help="两次评测的对照")
+    compare_parser.add_argument("first", help="前一次评测的标签")
+    compare_parser.add_argument("second", help="后一次评测的标签")
+    compare_parser.add_argument("--sim-root", default=str(Path.cwd() / "sim-runs"))
     args = parser.parse_args(argv)
     if args.command == "run":
         return command_run(args, run_parser)
+    if args.command == "compare":
+        return command_compare(args)
     return command_judge(args)
 
 

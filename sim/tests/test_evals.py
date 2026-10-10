@@ -93,6 +93,23 @@ class SummaryTest(unittest.TestCase):
                          (1, "甲", 3, 0.5, "评测汇总_甲.json"))
         self.assertEqual((len(again), again[0]["灯通过率"]), (1, 0.5))
 
+    def test_对照的命令行_打印两次评测的对照_找不到标签时说明并以_1_退出(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            groups = lambda hit: [group("功能用例", ["借书", "借阅"], True), group("问题", ["寒暑假"], hit)]      # noqa: E731
+            for label, first, states in (("甲", "sim-001", {"flows_have_exception": "未通过"}), ("乙", "sim-002", {"no_untagged_pages": "未通过"})):
+                sims = [write_run(root, first, states, groups(label == "甲"))]
+                evals.write_list(root, evals.summarize(root, label, sims, META))
+            code, printed = quiet(["compare", "甲", "乙", "--sim-root", str(root)])
+            missing, complaint = quiet(["compare", "甲", "丙", "--sim-root", str(root)])
+        self.assertEqual(code, 0)
+        for line in ("# 评测对照：甲 与 乙", "- 变差的灯有 1 盏，清单里变差的组有 1 组。",
+                     "| 整理建模 | 每个标签为「流程」的页至少有一条以「例外：」开头的例子。 | 0／1（0%） | 1／1（100%） | +100 个百分点 |",
+                     "| 问题 | 寒暑假 | 1／1（100%） | 0／1（0%） | −100 个百分点，**变差** |"):
+            self.assertIn(line, printed)
+        self.assertEqual(missing, 1)
+        self.assertIn("找不到评测「丙」。", complaint)
+
     def test_标签要能当文件名的一段(self):
         self.assertIsNone(evals.check_label("基线-短版"))
         for bad in ("", "  ", "a/b", ".隐藏", "两\n行"):
