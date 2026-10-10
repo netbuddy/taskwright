@@ -102,7 +102,7 @@ function runningInstance(port: number): Promise<boolean> {
   });
 }
 
-type Options = { port: string; mode: string; profile: string; web: string; host?: string; data?: string; tasks?: string; runs?: string; knowledge?: string };
+type Options = { port: string; mode: string; profile: string; web: string; host?: string; data?: string; tasks?: string; runs?: string; knowledge?: string; debug?: boolean };
 
 // The package's defaults, then the user's own arguments, which win. Unknown arguments are refused with a sentence.
 function options(argv: string[]): Options {
@@ -111,6 +111,8 @@ function options(argv: string[]): Options {
     options: {
       port: { type: "string" }, host: { type: "string" }, mode: { type: "string" }, profile: { type: "string" },
       web: { type: "string" }, data: { type: "string" }, tasks: { type: "string" }, runs: { type: "string" }, knowledge: { type: "string" },
+      // --debug: the backend's debug mode (a prompt directory in the settings, and the debugging requests). Off unless given.
+      debug: { type: "boolean" },
     },
     strict: true,
   });
@@ -165,6 +167,7 @@ async function main(): Promise<void> {
   try {
     started = await startService({
       port: first, mode: chosen.mode, host: chosen.host, profile: chosen.profile, web: chosen.web, data: chosen.data, tasks: chosen.tasks, runs: chosen.runs, knowledge: chosen.knowledge,
+      debug: chosen.debug === true,
     });
   } catch (error) {
     console.error(`服务没有起来：${(error as Error).message}`);
