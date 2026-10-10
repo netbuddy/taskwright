@@ -258,6 +258,12 @@ In a task with an overall analysis (总体分析) - the requirements task is one
 
 **When you ask for something that belongs to another stage.** For example, when you say "just write the use cases" while the assistant is reading the materials, it does not do so, and it does not repeat your words back to ask whether you agree. It tells you which stage the task is in and in which stage that can be done, and sends the card for you to click.
 
+**What you see on the page.** The row under the top bar of the work view is the stage bar: the names of the five stages from left to right, the current one marked and the earlier ones filled in. After the names comes what the current stage still lacks (这一段还差), one sentence each; click a sentence and the page opens the first topic page or item concerned, or the materials tab of the side panel when it is a material. What is already complete is summed up as 其余 N 项已齐 ("the other N are complete"), and when everything is complete the bar says 这一段的几项都齐了. These are hints and block nothing. The bar is only for looking: you cannot change the stage by clicking it.
+
+**Where to start.** While the overall analysis has no page yet, its tab shows two buttons: 通读材料起草 ("read the materials and draft") lets the assistant read all the materials first and write pages for what they state (it is off while the task has no materials); 逐项澄清 ("clarify item by item") lets the assistant ask you one thing at a time right away. You can also just talk to the assistant without using either button. Both buttons are off while the assistant is working.
+
+**Two kinds of lines in the conversation.** When you enter the next stage on a card, a line appears under your sentence: 界面操作：用户把任务从…移到…。 ("interface action: the user moved the task from … to …"). When the assistant moves the task back to an earlier stage, a line appears above its reply: 助手把任务退回…：理由 ("the assistant moved the task back to …: the reason").
+
 **Tasks created earlier have no stages.** A task created by 0.4 (which has 领域说明, "domain notes", in this place) is not divided into stages and works as before.
 
 

@@ -79,8 +79,8 @@ data: {
 |---|---|---|
 | `work_started` | 智能体开始工作 | `work_id`、`at`、`triggered_by`（消息编号） |
 | `step` | 一次工具调用（tool call）开始，以及本轮结束时补发的一行修正 | `work_id`、`step_key`、`text`、`in_progress`、`failed` |
-| `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`card`、`queued` |
-| `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节） |
+| `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`card`、`queued`；用户在卡片上点了进入下一个阶段、服务替用户记了移动时另有 `stage_move`（`from`、`to`、`actor` 为 `user`） |
+| `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节）；智能体在这条回复里把任务退回了前面的阶段时另有 `stage_move`（`from`、`to`、`actor` 为 `executor`、`reason`） |
 | `ui_action_noted` | 一次直接操作完成，或者用户停止了智能体的一次工作 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类；用户停止了智能体的一次工作之后留的那一条是 `stop_run`，见第 5.5 节：它没有库事件、没有修订、不能撤销，`text` 是写给智能体看的，页面另写一句自己的话）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`） |
 | `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at`；这份材料是替换上来的时候另带 `replaces`，值是被换掉的那份材料的路径（第 5.1 节「替换材料」） |
 | `material_removed` | 删除了一份材料，或者一份材料被替换掉了（第 5.1 节） | `at`、`path`；由 Word 材料、PDF 材料生成的文件随它一起删掉，不另发事件。被替换掉的时候另带 `replaced_by`，值是换上来的那份材料的路径，紧接着有一条那份材料的 `material_added` |
@@ -534,7 +534,7 @@ data: {
 
 ## 13 调试模式
 
-服务带 `--debug` 启动时（缺省不带）才有下面三个接口；不是调试模式时它们都返回 `not_found`（404），文字是「这个接口只在调试模式下可用：启动服务时加上 --debug。」。`GET /api/v1/service` 的 `debug` 说明现在开没开。调试模式给调说明文字的人用，这三个接口没有另外的访问控制，请只在自己的机器上开。
+服务带 `--debug` 启动时（缺省不带）才有本节的几个接口；不是调试模式时它们都返回 `not_found`（404），文字是「这个接口只在调试模式下可用：启动服务时加上 --debug。」。`GET /api/v1/service` 的 `debug` 说明现在开没开。调试模式给调说明文字的人用，这几个接口没有另外的访问控制，请只在自己的机器上开。
 
 有阶段的任务（任务定义里有「总体分析」集合）每次运行开始时，系统提示由几份文件拼成，按这个次序：系统提示、平台说明的共用部分、任务类型说明的共用部分、平台说明里现在这个阶段的那一段、任务类型说明里现在这个阶段的那一段，最后是助手的程序自己接的工作目录等。调试模式下可以用一个「提示词目录」里的文件代替其中的任何一份。
 
@@ -559,3 +559,20 @@ data: {
 - `how` 说这一次的文字是重新读文件拼的（`recomposed`）、沿用上一次的（`reused`，阶段与文件都没有变），还是重拼出错而沿用上一次的（`kept_after_error`，原因在 `error`）。`notes` 是提示词目录不能用、或者里面有文件没有用上时的原因，各一句。`digest` 是说明文字（不含助手的程序接的那一截）的摘要值。
 - 任务没有阶段（早先建的任务）时 `replaced` 是 `false`，`parts` 只有一项，`part` 是 `launch`，就是启动时给的整份系统提示。
 - 服务这次启动以来这个任务还没有运行过时，返回 `{ "available": false, "note": 说明, "parts": [], "text": "" }`。这份数据只在内存里，不写进归档。
+
+### 13.3 阶段记录与被拒的工具调用
+
+`GET /api/v1/tasks/{task_id}/debug/stage` 返回 `{ "records": [ … ], "rejections": [ … ], "latest_work_id": … }`。
+
+- `records` 是这个任务的全部阶段移动，按先后：`from`、`to`（阶段的写法）、`from_name`、`to_name`（阶段的名字）、`actor`（`user` 或 `executor`）、`reason`（没有写时是空串）、`run_id`（智能体移动时是运行号，用户移动时为 `null`）、`session_id`、`at`。
+- `rejections` 是最近被拒的工具调用，新的在前，最多 200 条：`tool`（工具名）、`kind`（`input` 或 `gate`）、`fact`（哪里不对）、`guidance`（接下来怎么做，没有时为 `null`）、`work_id`（它所属的那次工作）、`session_id`、`call_id`、`at`。`latest_work_id` 是最近一次被拒所在的那次工作，没有被拒过时为 `null`。
+- 只读。任务库读不出来时两样都是空的。
+
+### 13.4 用户画像的草稿
+
+`GET /api/v1/tasks/{task_id}/debug/persona-draft` 把这个任务里用户说过的话整理成模拟器用户画像的草稿，返回 `{ "file_name": "persona-<任务编号>.json", "persona": { … }, "sessions": 会话数, "facts": 事实条数, "skipped": [ 读不出来的会话编号 ] }`。
+
+- `persona` 的键与 `sim/personas/` 下的画像文件相同：名字、说明、人设、目标、答不上的说法、材料、熟悉的材料、材料说明、隐藏事实、接受底线。其中只有「隐藏事实」与两项材料是整理出来的，名字、人设、目标是空串，要人补。
+- 「隐藏事实」按会话的先后、会话里按说话的先后列出：用户自己打的每一句话是一条，「事实」就是原话；用户在卡片上的每一次选择是一条，「事实」写成「问：卡片上的问话　答：选的那一项」。每条的关键词、必须同时出现、问到的迹象三项是空的。
+- 不收的：服务替用户发的固定句（看过条目之后那一类，`origin` 为 `ui_request`）、总体分析的两个开头按钮发的两句、进入或留在某个阶段的卡片选择。
+- 只读，不写任何文件；页面拿到之后存成一份文件。
