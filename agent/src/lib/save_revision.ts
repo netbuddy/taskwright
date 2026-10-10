@@ -171,7 +171,7 @@ const OP_NAMES: Record<string, string> = { add: "新增", update: "修改", dele
 export interface RejectReason { label: string; fact: string; guidance: string }
 const GUIDE = "\u0000";
 export const GUIDANCE_PREFIX = "怎么办：";
-function withGuide(fact: string, guidance: string): string {
+export function withGuide(fact: string, guidance: string): string {
   return `${fact}${GUIDE}${guidance}`;
 }
 /** 一个操作的若干条错误拼成一条原因：事实用「；」接起来，指引也是。subject 是事实里没点到条目时补在前面的主语。 */

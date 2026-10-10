@@ -442,17 +442,29 @@ export interface ReplyForActs {
 }
 
 /**
+ * 回复里另带的一件事（现在只有移动工作阶段）在同一个事务里做完之后交回来的三样：text 接在给执行者看的那句话前面；
+ * payload 并进 EXECUTOR_ACTS_RECORDED 这条事件（没有就不并）；value 原样放进返回的 extra。
+ */
+export interface ReplyExtra<T> {
+  text: string;
+  payload?: Record<string, unknown>;
+  value: T;
+}
+
+/**
  * 「回复」合格时调用：每条告知记一条 inform（不期待回应，targets 取它点名的条目），向用户要的回应记一条对应功能（期待回应），
  * 记一条事件 EXECUTOR_ACTS_RECORDED。返回记下的编号与给执行者看的一句话。没有任务库时什么都不记，返回 null。
+ * also 给了时，在同一个事务里先调它（传任务编号与运行号），它的结果按 ReplyExtra 的说明并进来。
  */
-export function recordReplyActs(
+export function recordReplyActs<T = never>(
   workspaceDir: string,
   sessionId: string,
   branch: Entry[],
   reply: ReplyForActs,
   replyEntryId: string | null,
   toolCallId: string,
-): { acts: { act_id: string; function: string; summary: string; expects_response: boolean }[]; text: string; eventSeq: number | null } | null {
+  also?: (db: DatabaseSync, taskId: string, runId: string) => ReplyExtra<T>,
+): { acts: { act_id: string; function: string; summary: string; expects_response: boolean }[]; text: string; eventSeq: number | null; extra?: T | null } | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const run = currentRun(branch);
@@ -461,6 +473,7 @@ export function recordReplyActs(
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const taskId = taskIdOf(db);
       if (!taskId) return null;
+      const extra = also ? also(db, taskId, runId) : null;
       let serial = nextSerial(db, taskId, sessionId, runId);
       const rows: ActRow[] = [];
       const base = { run_id: runId, speaker: "executor", responds_to: null, confidence: null, source_entry: replyEntryId, origin: "reply" };
@@ -473,20 +486,23 @@ export function recordReplyActs(
         const targets = (reply.act.items ?? []).map((one) => ({ item_id: one.item_id }));
         rows.push({ ...base, act_id: `${runId}-${serial++}`, function: reply.act.kind, targets: dump(targets), expects_response: 1, summary: clip(reply.act.text) });
       }
-      if (rows.length === 0) return { acts: [], text: "", eventSeq: null };
+      // 没有告知也没有要的回应：不记这条事件，除非另带的那件事有话要留在事件里。
+      if (rows.length === 0 && !extra?.payload) return { acts: [], text: extra?.text ?? "", eventSeq: null, extra: extra?.value ?? null };
       const seq = emit(db, {
         taskId, sessionId, callId: toolCallId, name: EVENT_EXECUTOR_ACTS_RECORDED, actor: ACTOR_EXECUTOR,
-        payload: { run_id: runId, reply_entry: replyEntryId, acts: rows.map(payloadOf) },
+        payload: { run_id: runId, reply_entry: replyEntryId, acts: rows.map(payloadOf), ...(extra?.payload ?? {}) },
       });
       const at = wallClockText();
       for (const row of rows) insertAct(db, taskId, sessionId, row, seq, at);
       const describe = (row: ActRow) => `${row.act_id}（${FUNCTION_NAMES[row.function] ?? row.function}：${row.summary}）`;
       const main = rows.find((row) => row.expects_response === 1);
-      const text = `本轮记了 ${rows.map(describe).join("、")}。` + (main ? `用户回应时，你下一轮理解里的 responds_to 写 ${main.act_id}。` : "");
+      const text = (extra?.text ?? "") + (rows.length ? `本轮记了 ${rows.map(describe).join("、")}。` : "") +
+        (main ? `用户回应时，你下一轮理解里的 responds_to 写 ${main.act_id}。` : "");
       return {
         acts: rows.map((row) => ({ act_id: row.act_id, function: row.function, summary: row.summary, expects_response: row.expects_response === 1 })),
         text,
         eventSeq: seq,
+        extra: extra?.value ?? null,
       };
     });
   } catch (error) {

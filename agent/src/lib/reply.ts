@@ -29,7 +29,8 @@ import { databasePath } from "./db.ts";
 import { EXECUTOR_FUNCTIONS, INTENT_GATE_TEXT } from "./intent_schema.ts";
 import { type TurnCall, isBlank, isObject, lastAssistantTurn, requireAlone } from "./speak.ts";
 import { ToolRejection } from "./tool_rejection.ts";
-import { GUIDANCE_PREFIX, splitGuide } from "./save_revision.ts";
+import { GUIDANCE_PREFIX, splitGuide, withGuide } from "./save_revision.ts";
+import { STAGES, STAGE_NAMES, type Stage, stageByName } from "./stage.ts";
 import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT, sourceKindNow } from "./schema.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
@@ -112,6 +113,8 @@ export interface Reply {
   informs: Inform[];
   act: ReplyAct | null;
   text: string;
+  /** 助手想把任务移到哪个工作阶段、为什么（lib/stage.ts）；没有写时为 null。这里只核对形式，移不移得成由记录那一步判。 */
+  stage?: { to: Stage; reason: string } | null;
 }
 
 /** 某个条目在某次修订下在库里的情况。 */
@@ -155,8 +158,22 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
     throw new Error("回复的参数应当是一个对象，有 informs、act、text 三项。这次回复没有送达。");
   }
   for (const key of Object.keys(params)) {
-    if (!["informs", "act", "text"].includes(key)) {
-      errors.push(`多了「${key}」这一项，回复只有 informs、act、text 三项${brokenKeyHint(key)}`);
+    if (!["informs", "act", "text", "stage", "reason"].includes(key)) {
+      errors.push(`多了「${key}」这一项，回复只有 informs、act、text 三项（要移动工作阶段时另写 stage 与 reason）${brokenKeyHint(key)}`);
+    }
+  }
+
+  // stage 与 reason：都不写（或写 null、空白）就是不移动阶段。写了 stage 必须是五个阶段名之一，并写一句理由。
+  let stage: Reply["stage"] = null;
+  if (!isBlank(params.stage)) {
+    const to = stageByName(params.stage);
+    if (to === null) {
+      errors.push(withGuide(`stage 写的是 ${JSON.stringify(params.stage)}，不是阶段的名字`,
+        `stage 只能是${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一；不移动阶段时不要写 stage`));
+    } else if (isBlank(params.reason)) {
+      errors.push(withGuide("写了 stage 没有写 reason", "reason 写一句话，说明为什么现在移到这个阶段"));
+    } else {
+      stage = { to, reason: (params.reason as string).trim() };
     }
   }
 
@@ -195,7 +212,8 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
       ["请按这几处改好后重新单独调用 reply", ...guides].join("\n"),
     );
   }
-  return { informs, act, text: params.text as string };
+  // 没有写 stage 时不带这一项：回复的形状与原来相同。
+  return { informs, act, text: params.text as string, ...(stage ? { stage } : {}) };
 }
 
 function checkInform(one: unknown, index: number, facts: ReplyFacts, errors: string[]): Inform {

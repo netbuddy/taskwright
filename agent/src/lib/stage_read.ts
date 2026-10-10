@@ -10,9 +10,9 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { emit, wallClockText } from "./db.ts";
-import type { TaskDefinition } from "./definition.ts";
+import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { hasOverall } from "./overall_analysis.ts";
-import { type Stage, type StageActor, defaultStage, isStage } from "./stage.ts";
+import { NO_STAGES_TEXT, type Stage, type StageActor, defaultStage, isStage, judgeMove, moveText } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
 /** 记下一次移动的事件名。 */
@@ -98,4 +98,43 @@ export function recordStageMove(db: DatabaseSync, move: StageMove): number {
     `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(move.taskId, move.sessionId, move.runId, move.callId, move.actor, move.to, move.from, move.reason, seq, wallClockText());
   return seq;
+}
+
+/**
+ * 一次移动的结果。moved 为真是记下了；为假时 why 写原因：same 原地不动，user_only 进入写条目要由用户决定，
+ * skip 助手往后跳着移，no_stages 这个任务没有阶段（早先建的任务）。from 是移动之前所在的阶段，任务没有阶段时为 null。
+ */
+export interface StageMoveOutcome {
+  requested: Stage;
+  from: Stage | null;
+  moved: boolean;
+  why: "same" | "user_only" | "skip" | "no_stages" | null;
+  event_seq: number | null;
+}
+
+/**
+ * 想把任务移到某个阶段：先看任务有没有阶段、这次移动行不行（lib/stage.ts 的 judgeMove），行就记下。不行不抛错，原因写在结果里，
+ * 由调用方决定怎样告诉助手或用户。必须在调用方已经开好的写事务里调用。
+ */
+export function moveStage(db: DatabaseSync, workspaceDir: string, who: Omit<StageMove, "from" | "to" | "reason">, to: Stage, reason: string): StageMoveOutcome {
+  const task = db.prepare("SELECT definition_text FROM task WHERE task_id = ?").get(who.taskId) as { definition_text: string } | undefined;
+  const from = task ? stageOf(db, workspaceDir, who.taskId, validateDefinition(JSON.parse(task.definition_text))) : null;
+  if (from === null) return { requested: to, from: null, moved: false, why: "no_stages", event_seq: null };
+  const verdict = judgeMove(from, to, who.actor);
+  if (!verdict.ok) return { requested: to, from, moved: false, why: verdict.why, event_seq: null };
+  return { requested: to, from, moved: true, why: null, event_seq: recordStageMove(db, { ...who, from, to, reason }) };
+}
+
+/**
+ * 助手在回复里写了 stage：判并记这次移动，交回给「回复」工具的三样（lib/dialogue_acts.ts 的 ReplyExtra）——
+ * 接在「回复已送达。」后面的一句说明；移不成时留在回复那条事件里的 stage_declined（想移到哪里、为什么没移）；这次移动的结果。
+ * 回复照常送达，移不成不算被拒。
+ */
+export function replyStageMove(db: DatabaseSync, workspaceDir: string, who: { taskId: string; sessionId: string; runId: string; callId: string },
+  to: Stage, reason: string): { text: string; payload?: Record<string, unknown>; value: StageMoveOutcome } {
+  const outcome = moveStage(db, workspaceDir, { ...who, actor: "executor" }, to, reason);
+  if (outcome.from === null) return { text: NO_STAGES_TEXT, payload: { stage_declined: { stage: to, why: "no_stages" } }, value: outcome };
+  const verdict = outcome.moved ? { ok: true as const } : { ok: false as const, why: outcome.why as "same" | "user_only" | "skip" };
+  const text = moveText(outcome.from, to, verdict);
+  return outcome.moved ? { text, value: outcome } : { text, payload: { stage_declined: { stage: to, from: outcome.from, why: outcome.why } }, value: outcome };
 }
