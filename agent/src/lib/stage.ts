@@ -3,14 +3,14 @@
  * 阶段由用户或助手的动作移动，每次移动留一条记录；助手每次调用写入工具时能写什么，由最近一条记录决定。
  *
  * 本文件只放不读库的东西：五个阶段的名字与次序、谁能从哪里移到哪里、每个阶段助手能写什么与被拦时的原话、
- * 提议进入写条目的那张卡片的两个选项。读写库的在 lib/stage_read.ts。
+ * 提议进入写条目的那张卡片的两个选项，以及每个阶段「这一段还差什么」的几盏灯怎样算。读写库的在 lib/stage_read.ts。
  *
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，这里的一切对它们都不生效；判据是 overall_analysis.ts 的 hasOverall。
  *
  * 本文件除了 overall_analysis.ts 不导入别的模块：助手的工具、后端的快照都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
  */
 
-import { OVERALL_FIELDS } from "./overall_analysis.ts";
+import { EXCEPTION_EXAMPLE_PREFIX, type Mention, OVERALL_FIELDS, isDeprecated, tagsOf } from "./overall_analysis.ts";
 
 /** 五个阶段在库里与接口里的写法，按先后排。 */
 export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing"] as const;
@@ -185,4 +185,238 @@ export function completeRefusal(stage: Stage): Refusal | null {
       ? "条目写完之后，在回复里把任务移到评审确认，再完成任务"
       : `要先写条目、再移到评审确认，才能完成任务。${howToReachWriting(stage)}`,
   ];
+}
+
+// ───────────── 每个阶段还差什么：灯 ─────────────
+
+/**
+ * 灯：每个阶段「做到什么算够」的判据，程序从任务现有的内容算出来，给用户与助手看这一段还差什么。灯不拦任何操作。
+ * 下面几个名字出自需求规格这一类任务的定义（标签的取值、集合名、问题条目的字段），灯按它们认；别的任务类型里没有时，
+ * 相应的灯是「不适用」。
+ */
+export const TAG_FLOW = "流程";
+export const TAG_SCENE = "场景";
+export const TAG_ROLE = "角色";
+export const TAG_DECISION = "决定";
+export const TAG_GOAL = "目标";
+/** 功能用例所在的集合。 */
+export const USE_CASE_COLLECTION = "功能用例";
+/** 问题条目里说明它是哪一种的字段与「待澄清」这个取值；状态字段里表示还没解决的取值；指到相关条目的字段。 */
+export const QUESTION_KIND_FIELD = "种类";
+export const QUESTION_KIND_CLARIFY = "待澄清";
+export const QUESTION_OPEN_STATUS = "未解决";
+export const QUESTION_RELATED_FIELD = "关联条目";
+
+/** 一盏灯。ok 为真是通过，为假是不通过，为 null 是不适用（例如「每个流程页都……」而一页流程页都没有）。items 是差的页、条目或材料。 */
+export interface Lamp {
+  key: string;
+  summary: string;
+  ok: boolean | null;
+  items: string[];
+}
+
+/** 算灯要的一页主题。 */
+export interface LampPage {
+  item_id: string;
+  title: string;
+  aliases: string[];
+  tags: string[];
+  deprecated: boolean;
+  /** 上级主题的编号；没有写是 null。 */
+  parent: string | null;
+  examples: string[];
+  /** 用户看没看过它现在的内容。 */
+  viewed: boolean;
+}
+
+/** 算灯要的一个条目（总体分析以外的集合里的，含问题条目）。 */
+export interface LampItem {
+  item_id: string;
+  collection: string;
+  /** 它当前修订上种类为「条目」的来源指到的条目编号。 */
+  cites: string[];
+  /** 待核实：自己有助手补充而用户没有确认的内容，或者因依据的那一页而待核实。 */
+  pending: boolean;
+}
+
+/** 算灯要的一条问题条目。 */
+export interface LampQuestion {
+  item_id: string;
+  /** 是不是还没解决的待澄清问题。 */
+  open: boolean;
+  /** 它关联的条目的编号。 */
+  related: string[];
+}
+
+/** 算灯要的全部事实。助手一侧与后端各自从任务库里读出来填，算法只在这里。 */
+export interface LampInput {
+  /** 总体分析的全部页，含已废弃的。 */
+  pages: LampPage[];
+  /** 总体分析以外各集合的条目，含问题条目。 */
+  items: LampItem[];
+  questions: LampQuestion[];
+  /** 任务定义里的集合名。 */
+  collections: string[];
+  /** 材料清单里不是由别的文件生成的文件，写它在任务目录里的路径（例如 inputs/需求.md）。 */
+  materials: string[];
+  /** 总体分析的页与问题条目当前修订上「文档原文」来源的出处，原样（可以带 # 后面的位置）。 */
+  citedDocuments: string[];
+  /** 被提到的页的编号 → 提到它的各处（overall_analysis.ts 的 mentionsOf）。 */
+  mentions: ReadonlyMap<string, readonly Pick<Mention, "item_id">[]>;
+  /** 评审：当前修订在当前规则下评审不合规、又没有保留写法的条目；任务里有没有过评审记录。 */
+  review: { failing: string[]; any: boolean };
+  /** 完成条件：是不是全部满足；没满足的各条的说明。 */
+  completion: { satisfied: boolean; unmet: string[] };
+}
+
+const texts = (value: unknown): string[] => (Array.isArray(value) ? value.filter((one): one is string => typeof one === "string" && one.trim() !== "") : []);
+
+/** 从一页的字段内容与用户看没看过，取出算灯要的几样。 */
+export function lampPage(itemId: string, fields: Record<string, unknown>, viewed: boolean): LampPage {
+  const title = fields[OVERALL_FIELDS.title];
+  return {
+    item_id: itemId, title: typeof title === "string" ? title.trim() : "", aliases: texts(fields[OVERALL_FIELDS.aliases]).map((one) => one.trim()),
+    tags: tagsOf(fields), deprecated: isDeprecated(fields), parent: texts(fields[OVERALL_FIELDS.parent])[0] ?? null,
+    examples: texts(fields[OVERALL_FIELDS.examples]), viewed,
+  };
+}
+
+/**
+ * 从一条问题条目的字段内容取出算灯要的几样。statusField 是它的状态字段名（问题集合里取值含「用户决定保留」的那个字段）。
+ * 还没解决的待澄清问题：状态是未解决，种类是待澄清；集合没有「种类」这个字段时只看状态。
+ */
+export function lampQuestion(itemId: string, fields: Record<string, unknown>, statusField: string): LampQuestion {
+  const kind = fields[QUESTION_KIND_FIELD];
+  return {
+    item_id: itemId,
+    open: fields[statusField] === QUESTION_OPEN_STATUS && (kind === undefined || kind === QUESTION_KIND_CLARIFY),
+    related: texts(fields[QUESTION_RELATED_FIELD]),
+  };
+}
+
+const list = (ids: readonly string[]) => ids.join("、");
+const lamp = (key: string, ok: boolean | null, summary: string, items: string[] = []): Lamp => ({ key, summary, ok, items });
+
+/** 每个阶段的几盏灯，五个阶段都算。 */
+export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
+  const live = input.pages.filter((one) => !one.deprecated);
+  const byId = new Map(input.pages.map((one) => [one.item_id, one]));
+  const tagged = (tag: string) => live.filter((one) => one.tags.includes(tag));
+  const others = input.items;
+
+  // 核读材料：每份材料都被至少一页主题或一条问题引用。
+  const cited = new Set(input.citedDocuments.map((one) => one.split("#")[0]));
+  const uncited = input.materials.filter((one) => !cited.has(one));
+  const materialsCited = input.materials.length === 0 ? lamp("materials_cited", null, "任务里没有材料。")
+    : uncited.length === 0 ? lamp("materials_cited", true, "每份材料都被至少一页主题或一条问题引用了。")
+      : lamp("materials_cited", false, `有 ${uncited.length} 份材料还没有被任何一页主题或问题引用：${list(uncited)}。`, uncited);
+
+  // 澄清：贴了标签的页没有挂着未解决的待澄清问题。
+  const labelled = live.filter((one) => one.tags.length > 0);
+  const open = input.questions.filter((one) => one.open);
+  const asked = labelled.filter((page) => open.some((q) => q.related.includes(page.item_id)));
+  const noOpenQuestions = labelled.length === 0 ? lamp("tagged_pages_no_open_questions", null, "还没有贴了标签的主题。")
+    : asked.length === 0 ? lamp("tagged_pages_no_open_questions", true, "贴了标签的主题上没有挂着未解决的待澄清问题。")
+      : lamp("tagged_pages_no_open_questions", false,
+        `有 ${asked.length} 页贴了标签的主题还挂着未解决的待澄清问题：${asked.map((page) => `${page.item_id}（${list(open.filter((q) => q.related.includes(page.item_id)).map((q) => q.item_id))}）`).join("、")}。`,
+        asked.map((one) => one.item_id));
+
+  // 澄清：每个「决定」页有上级「目标」页。「它是什么」里写没写为什么，程序认不出，只看上级主题。
+  const decisions = tagged(TAG_DECISION);
+  const aimless = decisions.filter((one) => !(one.parent !== null && byId.get(one.parent)?.tags.includes(TAG_GOAL)));
+  const decisionsHaveGoal = decisions.length === 0 ? lamp("decisions_have_goal", null, `还没有标签为「${TAG_DECISION}」的主题。`)
+    : aimless.length === 0 ? lamp("decisions_have_goal", true, `每个标签为「${TAG_DECISION}」的主题都有一页标签为「${TAG_GOAL}」的上级主题。`)
+      : lamp("decisions_have_goal", false,
+        `有 ${aimless.length} 页标签为「${TAG_DECISION}」的主题没有标签为「${TAG_GOAL}」的上级主题：${list(aimless.map((one) => one.item_id))}。在「它是什么」里写了为什么的也算说清了，这一点程序认不出，要自己看。`,
+        aimless.map((one) => one.item_id));
+
+  // 整理建模：每个「流程」页至少有一条以「例外：」开头的例子。
+  const flows = tagged(TAG_FLOW);
+  const smooth = flows.filter((one) => !one.examples.some((example) => example.trim().startsWith(EXCEPTION_EXAMPLE_PREFIX)));
+  const flowsHaveException = flows.length === 0 ? lamp("flows_have_exception", null, `还没有标签为「${TAG_FLOW}」的主题。`)
+    : smooth.length === 0 ? lamp("flows_have_exception", true, `每个标签为「${TAG_FLOW}」的主题都有一条以「${EXCEPTION_EXAMPLE_PREFIX}」开头的例子。`)
+      : lamp("flows_have_exception", false,
+        `有 ${smooth.length} 页标签为「${TAG_FLOW}」的主题还没有以「${EXCEPTION_EXAMPLE_PREFIX}」开头的例子：${list(smooth.map((one) => one.item_id))}。`, smooth.map((one) => one.item_id));
+
+  // 整理建模：每个「角色」页被至少一个「流程」或「场景」页提到。
+  const roles = tagged(TAG_ROLE);
+  const acts = new Set(live.filter((one) => one.tags.includes(TAG_FLOW) || one.tags.includes(TAG_SCENE)).map((one) => one.item_id));
+  const idle = roles.filter((one) => !(input.mentions.get(one.item_id) ?? []).some((m) => acts.has(m.item_id)));
+  const rolesMentioned = roles.length === 0 ? lamp("roles_mentioned_by_flows", null, `还没有标签为「${TAG_ROLE}」的主题。`)
+    : idle.length === 0 ? lamp("roles_mentioned_by_flows", true, `每个标签为「${TAG_ROLE}」的主题都被标签为「${TAG_FLOW}」或「${TAG_SCENE}」的主题提到了。`)
+      : lamp("roles_mentioned_by_flows", false,
+        `有 ${idle.length} 页标签为「${TAG_ROLE}」的主题没有被任何标签为「${TAG_FLOW}」或「${TAG_SCENE}」的主题提到：${list(idle.map((one) => one.item_id))}。`, idle.map((one) => one.item_id));
+
+  // 整理建模：没有两页标题或别名相同。
+  const owners = new Map<string, string[]>();
+  for (const page of live) {
+    for (const word of new Set([page.title, ...page.aliases].filter(Boolean))) owners.set(word, [...(owners.get(word) ?? []), page.item_id]);
+  }
+  const clashes = [...owners].filter(([, ids]) => ids.length > 1);
+  const clashing = [...new Set(clashes.flatMap(([, ids]) => ids))];
+  const noDuplicates = live.length === 0 ? lamp("no_duplicate_titles", null, "总体分析里还没有主题。")
+    : clashes.length === 0 ? lamp("no_duplicate_titles", true, "没有两页主题的标题或别名相同。")
+      : lamp("no_duplicate_titles", false,
+        `有 ${clashes.length} 个标题或别名被两页以上的主题用了：${clashes.map(([word, ids]) => `「${word}」（${list(ids)}）`).join("、")}。`, clashing);
+
+  // 整理建模：没有未归类的页。用户明说先不归类的，程序认不出，只看标签。
+  const loose = live.filter((one) => one.tags.length === 0);
+  const noUntagged = live.length === 0 ? lamp("no_untagged_pages", null, "总体分析里还没有主题。")
+    : loose.length === 0 ? lamp("no_untagged_pages", true, "每页主题都贴了标签。")
+      : lamp("no_untagged_pages", false, `有 ${loose.length} 页主题还没有贴标签：${list(loose.map((one) => one.item_id))}。`, loose.map((one) => one.item_id));
+
+  // 写条目：每个「流程」与「场景」页被至少一条用例依据。
+  const toBack = live.filter((one) => one.tags.includes(TAG_FLOW) || one.tags.includes(TAG_SCENE));
+  const backedBy = new Set(others.filter((one) => one.collection === USE_CASE_COLLECTION).flatMap((one) => one.cites));
+  const unbacked = toBack.filter((one) => !backedBy.has(one.item_id));
+  const flowsBacked = !input.collections.includes(USE_CASE_COLLECTION) ? lamp("flows_backed_by_use_cases", null, `这个任务没有「${USE_CASE_COLLECTION}」这个集合。`)
+    : toBack.length === 0 ? lamp("flows_backed_by_use_cases", null, `还没有标签为「${TAG_FLOW}」或「${TAG_SCENE}」的主题。`)
+      : unbacked.length === 0 ? lamp("flows_backed_by_use_cases", true, `每个标签为「${TAG_FLOW}」或「${TAG_SCENE}」的主题都有用例依据它。`)
+        : lamp("flows_backed_by_use_cases", false,
+          `有 ${unbacked.length} 页标签为「${TAG_FLOW}」或「${TAG_SCENE}」的主题还没有用例依据它：${list(unbacked.map((one) => one.item_id))}。`, unbacked.map((one) => one.item_id));
+
+  // 写条目：每条条目依据的页都是用户看过的。
+  const basing = others.filter((one) => one.cites.some((id) => byId.has(id)));
+  const blind = basing.filter((one) => one.cites.some((id) => byId.has(id) && !byId.get(id)!.viewed));
+  const unseen = [...new Set(blind.flatMap((one) => one.cites.filter((id) => byId.has(id) && !byId.get(id)!.viewed)))];
+  const basisViewed = basing.length === 0 ? lamp("basis_pages_viewed", null, "还没有依据主题写的条目。")
+    : blind.length === 0 ? lamp("basis_pages_viewed", true, "条目依据的主题用户都看过了。")
+      : lamp("basis_pages_viewed", false,
+        `有 ${blind.length} 个条目依据的主题用户还没有看过：${list(blind.map((one) => one.item_id))}（没看过的主题是 ${list(unseen)}）。`, blind.map((one) => one.item_id));
+
+  // 写条目：没有待核实的条目。
+  const pending = others.filter((one) => one.pending);
+  const noPending = others.length === 0 ? lamp("no_pending_items", null, "总体分析以外还没有条目。")
+    : pending.length === 0 ? lamp("no_pending_items", true, "没有待核实的条目。")
+      : lamp("no_pending_items", false, `有 ${pending.length} 个条目待核实：${list(pending.map((one) => one.item_id))}。`, pending.map((one) => one.item_id));
+
+  // 评审确认：评审没有未处理的发现；完成条件全部满足。
+  const reviews = !input.review.any ? lamp("reviews_no_open_findings", false, "还没有评审过。")
+    : input.review.failing.length === 0 ? lamp("reviews_no_open_findings", true, "评审没有未处理的发现。")
+      : lamp("reviews_no_open_findings", false, `有 ${input.review.failing.length} 个条目评审不合规、还没有处理：${list(input.review.failing)}。`, input.review.failing);
+  const completion = input.completion.satisfied ? lamp("completion_met", true, "完成条件全部满足了。")
+    : lamp("completion_met", false, `还有 ${input.completion.unmet.length} 条完成条件没有满足：${input.completion.unmet.join("；")}`);
+
+  return {
+    reading: [materialsCited],
+    clarifying: [noOpenQuestions, decisionsHaveGoal],
+    modeling: [flowsHaveException, rolesMentioned, noDuplicates, noUntagged],
+    writing: [flowsBacked, basisViewed, noPending],
+    reviewing: [reviews, completion],
+  };
+}
+
+/** 全部灯的键，按阶段的先后。 */
+export const LAMP_KEYS = [
+  "materials_cited", "tagged_pages_no_open_questions", "decisions_have_goal", "flows_have_exception", "roles_mentioned_by_flows", "no_duplicate_titles",
+  "no_untagged_pages", "flows_backed_by_use_cases", "basis_pages_viewed", "no_pending_items", "reviews_no_open_findings", "completion_met",
+] as const;
+
+/**
+ * 「这一段还差什么」写成给助手看的一段话：不通过的灯各一句；都通过（或都不适用）时写一句「这一段的几项都齐了」。
+ */
+export function lampLines(stage: Stage, lamps: readonly Lamp[]): string[] {
+  const missing = lamps.filter((one) => one.ok === false);
+  if (missing.length === 0) return [`${STAGE_NAMES[stage]}这一段的几项都齐了。`];
+  return [`${STAGE_NAMES[stage]}这一段还差 ${missing.length} 项：`, ...missing.map((one) => `  - ${one.summary}`)];
 }
