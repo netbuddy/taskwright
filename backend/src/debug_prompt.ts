@@ -17,6 +17,7 @@ import { NODE_IO, ORIGIN_NAMES, PART_NAMES, promptDirNames } from "../../agent/s
 import { STAGE_NAMES } from "../../agent/src/lib/stage.ts";
 import { ApiError } from "./errors.ts";
 import { readPromptDir, writePromptDir } from "./product_settings.ts";
+import * as library from "./library.ts";
 import type { Service } from "./service.ts";
 
 export const DEBUG_ONLY_TEXT = "这个接口只在调试模式下可用：启动服务时加上 --debug。";
@@ -102,4 +103,20 @@ export function lastSystemPrompt(service: Service, taskId: string) {
     // 各部分用一个空行接起来，就是发给模型的整份。
     text: parts.map((one: { text: string }) => one.text).join("\n\n"),
   };
+}
+
+/**
+ * 某个任务的阶段记录流水与被拒的工具调用（调试面板的两块）。
+ * records 是全部阶段记录，按先后；rejections 是最近被拒的工具调用，新的在前，各带它所属的那次工作 work_id；
+ * latest_work_id 是最近一次被拒所在的那次工作，面板缺省只显示这一次工作里的。
+ */
+export function stageDebug(service: Service, taskId: string) {
+  requireDebug(service);
+  const view = library.stageDebugView(service.task(taskId).dir);
+  const records = view.records.map((one) => ({
+    ...one,
+    from_name: STAGE_NAMES[one.from as keyof typeof STAGE_NAMES] ?? String(one.from),
+    to_name: STAGE_NAMES[one.to as keyof typeof STAGE_NAMES] ?? String(one.to),
+  }));
+  return { records, rejections: view.rejections, latest_work_id: view.rejections.length > 0 ? view.rejections[0].work_id ?? null : null };
 }
