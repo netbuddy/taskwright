@@ -250,8 +250,8 @@ test("平台 skill 与任务 skill 写了总体分析的做法；平台 skill �
     "`start_items`「开始写条目」、`continue_consolidate`「再整理一遍」", "`enter_review`「进入评审确认」、`continue_writing`「继续写条目」"]) assert.ok(section.includes(pair), pair);
   assert.match(section, /以「例外：」开头的例子/);
   assert.match(section, /先给一个候选的「它是什么」与一个候选的例子/);
-  assert.match(section, /`story_ok`「这段对，记下」、`story_fix`「有一处不对」、`story_again`「换一个人物再讲」/);
-  assert.match(section, /种类写「用户的话」，摘录就是「这段对，记下」/);
+  assert.match(section, /`story_ok`「采纳为例子」、`story_fix`「有误，需修改」、`story_again`「换一个例子重述」/);
+  assert.match(section, /种类写「用户的话」，摘录就是「采纳为例子」/);
   assert.match(section, /总体分析里还要已经有至少一页在用的主题贴了标签、写了例子、用户又看过/);
   assert.doesNotMatch(section, /又不待核实/);
   assert.match(section, /`supports` 写 `\{"field": "已经定下的", "index": 2\}`/);

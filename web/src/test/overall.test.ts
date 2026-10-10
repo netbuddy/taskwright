@@ -278,7 +278,11 @@ describe("总体分析：复述", () => {
 
   it("复述卡片：选项里有写死的键就是；没有键的，第一个选项以「这段对」开头也算；别的请选择卡片不算", () => {
     expect(STORY_KEYS).toEqual(["story_ok", "story_fix", "story_again"]);
-    expect(isStoryOptions([{ key: "story_ok", text: "这段对，记下" }, { key: "story_fix", text: "有一处不对" }, { key: "story_again", text: "换一个人物再讲" }])).toBe(true);
+    expect(isStoryOptions([{ key: "story_ok", text: "采纳为例子" }, { key: "story_fix", text: "有误，需修改" }, { key: "story_again", text: "换一个例子重述" }])).toBe(true);
+    // 早先的回复：选项还是原来的文字、没有写死的键，靠第一个选项的文字认。
+    expect(isStoryOptions([{ key: "a", text: "这段对，记下" }, { key: "b", text: "有一处不对" }, { key: "c", text: "换一个人物再讲" }])).toBe(true);
+    // 现在的文字而没有写死的键：认不出，所以助手的说明要求键照写。
+    expect(isStoryOptions([{ key: "a", text: "采纳为例子" }, { key: "b", text: "有误，需修改" }])).toBe(false);
     expect(isStoryOptions([{ key: "a", text: "这段对，记下" }, { key: "b", text: "有一处不对" }])).toBe(true);
     expect(isStoryOptions([{ key: "a", text: "闭馆日不算，顺延" }, { key: "b", text: "这段对，记下" }])).toBe(false);
     expect(isStoryOptions([{ key: "x", text: "别的话" }, { key: "story_again", text: "再讲一遍" }])).toBe(true);

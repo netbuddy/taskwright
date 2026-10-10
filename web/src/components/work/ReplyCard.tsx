@@ -143,12 +143,13 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   const unread = task ? unreadItems(task) : [];
   const showUnread = !done && !disabled && unread.length > 0 && onlyUnreadLeft(task);
 
-  // 助手复述的卡片（请选择，三个选项是「这段对，记下」「有一处不对」「换一个人物再讲」）：故事画成故事的样子，卡片本身不要底色。
+  // 助手复述的卡片（请选择，三个选项是「采纳为例子」「有误，需修改」「换一个例子重述」，键是 story_ok、story_fix、story_again）：
+  // 故事画成故事的样子，卡片本身不要底色。
   const story = storyPlace(act, replyText);
 
   return (
     <div className={`act${story ? " retell" : ""}`} data-kind={act.kind} data-testid={`act-${act.kind}`} data-story={story ?? undefined}>
-      <div className="tt">{story ? "复述 · 你看哪里不对" : KIND_LABEL[act.kind] ?? act.kind}</div>
+      <div className="tt">{story ? "复述 · 请核对" : KIND_LABEL[act.kind] ?? act.kind}</div>
       {contexts.length > 0 && (
         <div data-testid="card-context">
           {contexts.map((c, i) => (

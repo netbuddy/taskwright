@@ -365,7 +365,10 @@ export function reviseDependentsText(item: Item): string {
   return `请照 ${item.item_id}「${titleOf(item)}」现在的内容，把依据它写的条目改过来：`;
 }
 
-/** 助手复述时那张请选择卡片的三个选项的键；早先没有写死键的回复，按第一个选项的文字以「这段对」开头来认。 */
+/**
+ * 助手复述时那张请选择卡片的三个选项的键（文字是「采纳为例子」「有误，需修改」「换一个例子重述」，由助手照它的说明写）。
+ * 早先没有写死键的回复，选项还是原来的文字，按第一个选项以「这段对」开头来认。
+ */
 export const STORY_KEYS = ["story_ok", "story_fix", "story_again"] as const;
 
 /**
