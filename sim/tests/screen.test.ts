@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buttonsOf, planRespond, renderItems, renderMessages, renderReply } from "../lib/screen.ts";
+import { buttonsOf, pendingCount, planRespond, renderItems, renderMessages, renderReply, viewedNow } from "../lib/screen.ts";
 
 const confirmReply = {
   type: "assistant_reply", message_id: "a1", text: "三个用例整理好了，请看看。", informs: ["存了 3 个用例。"],
@@ -120,4 +120,43 @@ test("提问挂在条目上时与前端一样有「先不管」与「我不知�
   assert.deepEqual(buttonsOf(ask([{ item_id: "UC-001", revision_no: 2 }]).act, task), ["我不知道，你按常识补"]);
   assert.deepEqual(buttonsOf({ kind: "ask", text: "t", scope: "general" }, task), []);
   assert.throws(() => planRespond({ click: "先不管这条" }, ask([{ item_id: "UC-001", revision_no: 2 }]), "sim-4", task), /没有「先不管这条」这个按钮/);
+});
+
+const page = (id: string, title: string, more: Record<string, unknown> = {}) => ({
+  item_id: id, collection: "总体分析", title, revision_no: 2, fields: { 标题: title, 标签: [], 状态: "在用" }, ...more,
+});
+const overallTask = (items: ReturnType<typeof page>[]) => ({
+  definition: { collections: [{ name: "功能用例", fields: [{ name: "用例名称" }] }, { name: "总体分析", fields: [{ name: "标题" }, { name: "标签" }, { name: "状态" }] }] },
+  items: [{ item_id: "UC-001", collection: "功能用例", title: "借书", revision_no: 1, fields: { 用例名称: "借书" }, viewed: false }, ...items],
+});
+
+test("总体分析在条目区里写成提纲：每页一行，写标签与四种状态之一；别的集合照旧", () => {
+  const seen = { revision_no: 2, accepted: true, basis: "viewed" };
+  const text = renderItems(overallTask([
+    page("OA-001", "借书", { fields: { 标题: "借书", 标签: ["流程"], 状态: "在用" }, confirmations: [seen], viewed: true }),
+    page("OA-002", "读者", { fields: { 标题: "读者", 标签: ["角色", "概念"], 状态: "在用" }, confirmations: [{ ...seen, revision_no: 1 }], viewed: true }),
+    page("OA-003", "预约保留期", { pending_verification: true, pending_sources: 2, confirmations: [] }),
+    page("OA-004", "旧说法", { fields: { 标题: "旧说法", 标签: ["概念"], 状态: "已废弃" }, pending_verification: true }),
+  ]));
+  assert.equal(text, [
+    "条目区：",
+    "  功能用例 1 个：UC-001「借书」（未读）",
+    "  总体分析 4 页：",
+    "    OA-001「借书」〔流程〕：你看过现在这一版了",
+    "    OA-002「读者」〔角色、概念〕：你还没看过现在这一版",      // 看过的是修订 1，现在是修订 2
+    "    OA-003「预约保留期」：有 2 处是助手补的，等你确认",
+    "    OA-004「旧说法」〔概念〕：已废弃",
+  ].join("\n"));
+  assert.equal(renderItems(overallTask([])).split("\n")[2], "  总体分析 0 页");
+});
+
+test("看没看过现在这一版：只看当前修订上最近一条不是亲手改的标记；待核实的处数与网页同一个算法", () => {
+  const item = (confirmations: { revision_no: number; accepted: boolean; basis?: string }[]) => page("OA-001", "借书", { confirmations });
+  assert.equal(viewedNow(item([{ revision_no: 2, accepted: true, basis: "viewed" }])), true);
+  assert.equal(viewedNow(item([{ revision_no: 2, accepted: true, basis: "viewed" }, { revision_no: 2, accepted: false, basis: "ui_click" }])), false);   // 最近一条是撤回
+  assert.equal(viewedNow(item([{ revision_no: 2, accepted: true, basis: "ui_edit" }])), false);                                                        // 亲手改不算看过
+  assert.equal(viewedNow(item([{ revision_no: 1, accepted: true, basis: "viewed" }])), false);                                                         // 看的是旧修订
+  assert.equal(viewedNow(item([])), false);
+  assert.deepEqual([pendingCount(page("OA-001", "借书")), pendingCount(page("OA-001", "借书", { pending_verification: true })),
+    pendingCount(page("OA-001", "借书", { pending_verification: true, pending_sources: 3 }))], [0, 1, 3]);
 });

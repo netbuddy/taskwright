@@ -4,6 +4,7 @@
  *
  * 看到什么：执行者新说的话（回复的告知、主行为、成文正文，以及可以点的按钮）、
  * 条目区现状（各集合条目数、每个条目的编号与标题；给编号时看这个条目的字段）。不给完成条件、材料原文、条目改动过的修订。
+ * 总体分析这个集合在条目区里写成提纲：每页一行，写标题、标签，以及这一页现在的样子用户看没看过、有没有助手补的内容等着确认。
  */
 
 export interface Act {
@@ -123,9 +124,46 @@ export interface Item {
   /** 条目当前所在的修订号。 */
   revision_no: number;
   fields: Record<string, unknown>;
-  confirmations?: { revision_no: number; accepted: boolean }[];
-  /** 当前修订上有没有接受的确认标记（已读、界面修改等）；没有就是未读。 */
+  /** 确认标记，按记下的先后；basis 是依据：viewed（已读）、ui_click、ui_edit（用户亲手改）、user_words。 */
+  confirmations?: { revision_no: number; accepted: boolean; basis?: string }[];
+  /** 条目在任何一次修订上有过接受的确认标记；没有就是未读。 */
   viewed?: boolean;
+  /** 待核实：当前修订上有助手补充的内容，而用户还没有确认过。 */
+  pending_verification?: boolean;
+  /** 还待核实的助手补充来源有几条。 */
+  pending_sources?: number;
+  /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
+  pending_places?: { field: string | null; index: number | null }[];
+}
+
+/** 总体分析这个集合的名字与它的几个字段名，与 agent/src/lib/overall_analysis.ts 一致。 */
+export const OVERALL = "总体分析";
+const TAGS_FIELD = "标签";
+const STATUS_FIELD = "状态";
+const DEPRECATED = "已废弃";
+
+/** 一页待不待核实、有几处：与网页的 pendingCount（web/src/model/overall.ts）同一个算法。 */
+export function pendingCount(item: Item): number {
+  return item.pending_verification ? Math.max(1, item.pending_sources ?? 1) : 0;
+}
+
+/**
+ * 一页现在这一版用户看没看过：它当前所在的修订上，依据不是用户亲手改的确认标记里，最近一条是接受。
+ * 用户 agent 不会亲手改字段，所以这与产品里「用户看过」的判法（从最近一次助手保存起的那一段修订）结果相同。
+ */
+export function viewedNow(item: Item): boolean {
+  const marks = (item.confirmations ?? []).filter((c) => c.revision_no === item.revision_no && c.basis !== "ui_edit");
+  return marks.length > 0 && marks[marks.length - 1].accepted;
+}
+
+/** 提纲里一页的那一行：编号、标题、标签，以及四种状态之一。 */
+function outlineLine(item: Item): string {
+  const tags = Array.isArray(item.fields[TAGS_FIELD]) ? (item.fields[TAGS_FIELD] as unknown[]).filter((t): t is string => typeof t === "string" && t.trim() !== "") : [];
+  const head = `${item.item_id}「${item.title}」${tags.length ? `〔${tags.join("、")}〕` : ""}`;
+  if (item.fields[STATUS_FIELD] === DEPRECATED) return `${head}：已废弃`;
+  const pending = pendingCount(item);
+  if (pending) return `${head}：有 ${pending} 处是助手补的，等你确认`;
+  return `${head}：${viewedNow(item) ? "你看过现在这一版了" : "你还没看过现在这一版"}`;
 }
 
 export interface TaskView {
@@ -154,6 +192,12 @@ export function renderItems(task: TaskView | null, itemId?: string): string {
   const lines = ["条目区："];
   for (const c of task.definition.collections) {
     const items = task.items.filter((i) => i.collection === c.name);
+    if (c.name === OVERALL) {
+      // 总体分析写成提纲：一页一行，让人知道有哪些页可以看、哪一页还等着确认。
+      lines.push(`  ${c.name} ${items.length} 页${items.length ? "：" : ""}`);
+      for (const item of items) lines.push(`    ${outlineLine(item)}`);
+      continue;
+    }
     lines.push(`  ${c.name} ${items.length} 个${items.length ? "：" + items.map((i) => `${i.item_id}「${i.title}」${i.viewed === false ? "（未读）" : ""}`).join("、") : ""}`);
   }
   return lines.join("\n");
