@@ -95,7 +95,7 @@
        "记录": "上下文文件",
        "说明": "下面这份是后端照 pi 的发现规则在启动那一刻查到的，不是 pi 报告的；要核实 pi 实际放进了什么，看 Langfuse 里第一条生成记录的系统提示有没有 <project_context> 一节。"
       },
-      "事件行数": 45,
+      "事件行数": 46,
       "会话文件": "<目录>/runs/<任务1>/pi-sessions/service/<时刻>_<会话1>.jsonl",
       "后端补记启动": {
        "任务目录": "<目录>/tasks/<任务1>",
@@ -411,6 +411,16 @@
         "状态键": "taskwright-task-status",
         "要不要应答": false,
         "请求编号": "<会话2>"
+       },
+       {
+        "归档文件": "service-<时刻>.jsonl",
+        "归档行号": "<归档行号>",
+        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"71b9ec16328ba9de\",\"bytes\":67912,\"lines\":302,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":54264,\"lines\":213,\"digest\":\"dc35f10f25767f33\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7572,\"lines\":30,\"digest\":\"b4560ff56510ef22\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":3602,\"lines\":32,\"digest\":\"cfa7020fdf5ce209\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
+        "方法": "setStatus",
+        "标题": "",
+        "状态键": "taskwright-stage-prompt",
+        "要不要应答": false,
+        "请求编号": "<会话4>"
        }
       ],
       "第二级链接": {

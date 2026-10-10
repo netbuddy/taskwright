@@ -14,6 +14,7 @@ import {
   COMMON_FILE, HOW_NAMES, NODE_IO, PART_NAMES, PLATFORM_SKILL_DIR, PLATFORM_STAGES_DIR, type PromptIo, SYSTEM_FILE, StagePromptCache, composeStagePrompt, digestOf,
   partFact, piTail, skillBody, stageFile, stageInWorkspace, taskSkills,
 } from "../src/lib/stage_prompt.ts";
+import { STAGE_PROMPT_STATUS_KEY, type StagePromptReport, stagePromptFor } from "../src/hooks/stage_prompt.ts";
 import { DEFINITION_PATH, callIn, demoDefinition, enterStage, makeWorkspace, overallDefinition } from "./helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
@@ -253,4 +254,67 @@ test("重拼出错时沿用上一份并带上原因；手里什么都没有时�
   assert.equal(cache.get(input("clarifying")).how, "recomposed");
   assert.throws(() => new StagePromptCache().get({ ...input("reading"), platformDir: tempDir() }), /拼系统提示要用的文件不在/);
   assert.deepEqual(Object.keys(HOW_NAMES).sort(), ["kept_after_error", "recomposed", "reused"]);
+});
+
+// ───────────── 挂在事件上的那一半（hooks/stage_prompt.ts） ─────────────
+
+/** 一次 before_agent_start：事件与上下文照 pi 给的样子搭，返回处理函数的返回值与它报出去的那一行。 */
+function start(workspaceDir: string, cache: StagePromptCache, summaries: WeakMap<object, any>, skills = [PLATFORM_SKILL, SRS_SKILL]) {
+  const reports: [string, StagePromptReport][] = [];
+  const custom = "启动参数给的系统提示";
+  const event = { systemPrompt: `${custom}\n\n<skills>\n清单\n</skills>\n\n<cwd>\n${workspaceDir}\n</cwd>`, systemPromptOptions: { customPrompt: custom, skills } };
+  const ctx = { cwd: workspaceDir, ui: { setStatus: (key: string, text: string) => { reports.push([key, JSON.parse(text)]); } } };
+  return { result: stagePromptFor(event, ctx, cache, summaries as any), reports };
+}
+
+test("事件处理：有阶段的任务返回拼好的系统提示并报一行事实；连续两次阶段不变，第二次报「沿用」；阶段变了报「重拼」", () => {
+  const dir = makeWorkspace(overallDefinition(), { material: true });
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  const cache = new StagePromptCache();
+  const summaries = new WeakMap<object, any>();
+  const first = start(dir, cache, summaries);
+  assert.ok(first.result!.systemPrompt.startsWith("你是 Taskwright 的执行者"));
+  assert.ok(first.result!.systemPrompt.includes("# 现在这个阶段：核读材料\n"));
+  assert.ok(first.result!.systemPrompt.endsWith(`<cwd>\n${dir}\n</cwd>`));
+  assert.doesNotMatch(first.result!.systemPrompt, /启动参数给的系统提示|<skills>/);
+  assert.equal(first.reports.length, 1);
+  const [key, report] = first.reports[0];
+  assert.equal(key, STAGE_PROMPT_STATUS_KEY);
+  assert.deepEqual([report.replaced, report.stage, report.how, report.error], [true, "reading", "recomposed", undefined]);
+  // 摘要值、字节数与各部分只算从文件来的说明文字，不算 pi 接在后面的工作目录那一截（那里面有任务目录的路径）。
+  const own = first.result!.systemPrompt.slice(0, -`\n\n<cwd>\n${dir}\n</cwd>`.length);
+  assert.equal(report.digest, digestOf(own));
+  assert.equal(report.bytes, Buffer.byteLength(own, "utf-8"));
+  assert.equal(report.lines, own.split("\n").length);
+  assert.deepEqual(report.parts!.map((one) => one.part), ["system", "platform_common", "task_common", "platform_stage", "task_stage"]);
+  assert.ok(!JSON.stringify(report).includes(dir));
+  // 报出去的那一行不带文字本身。
+  assert.ok(!JSON.stringify(report).includes("你是 Taskwright 的执行者"));
+
+  const second = start(dir, cache, summaries);
+  assert.equal(second.result!.systemPrompt, first.result!.systemPrompt);
+  assert.deepEqual([second.reports[0][1].how, second.reports[0][1].digest], ["reused", report.digest]);
+
+  enterStage(dir, "clarifying");
+  const third = start(dir, cache, summaries);
+  assert.ok(third.result!.systemPrompt.includes("# 现在这个阶段：澄清\n"));
+  assert.ok(!third.result!.systemPrompt.includes("# 现在这个阶段：核读材料\n"));
+  assert.deepEqual([third.reports[0][1].stage, third.reports[0][1].how], ["clarifying", "recomposed"]);
+  assert.notEqual(third.reports[0][1].digest, report.digest);
+});
+
+test("事件处理：早先的任务什么都不返回、什么都不报；任务库读不出时不换系统提示并报出原因", () => {
+  const old = makeWorkspace(demoDefinition());
+  createTask(callIn(old), { definition_path: DEFINITION_PATH });
+  const quiet = start(old, new StagePromptCache(), new WeakMap());
+  assert.equal(quiet.result, undefined);
+  assert.deepEqual(quiet.reports, []);
+
+  const broken = tempDir();
+  writeFileSync(join(broken, "task.sqlite"), "这不是一个数据库文件", "utf-8");
+  const failed = start(broken, new StagePromptCache(), new WeakMap());
+  assert.equal(failed.result, undefined);
+  assert.equal(failed.reports.length, 1);
+  assert.equal(failed.reports[0][1].replaced, false);
+  assert.match(failed.reports[0][1].error!, /^按阶段换系统提示没有做成，这次运行用启动时给的那一份：/);
 });
