@@ -167,28 +167,28 @@
           "路径": "README.md"
          },
          {
-          "字节数": 4625,
-          "摘要值": "387420c880cafa8e",
+          "字节数": 4982,
+          "摘要值": "c9239f1d0e737215",
           "路径": "clarifying.md"
          },
          {
-          "字节数": 54265,
-          "摘要值": "ffc0bf07d1d1c0ea",
+          "字节数": 54967,
+          "摘要值": "03c0deb6497e265f",
           "路径": "common.md"
          },
          {
-          "字节数": 3938,
-          "摘要值": "a91647d1ab9c4ddd",
+          "字节数": 4186,
+          "摘要值": "88a59a64dec07212",
           "路径": "modeling.md"
          },
          {
-          "字节数": 3603,
-          "摘要值": "fc886526aac43f3f",
+          "字节数": 4009,
+          "摘要值": "1281888d56d8911a",
           "路径": "reading.md"
          },
          {
-          "字节数": 2423,
-          "摘要值": "35a23a507948db8c",
+          "字节数": 2447,
+          "摘要值": "8c2677717550cf3d",
           "路径": "reviewing.md"
          },
          {
@@ -197,8 +197,8 @@
           "路径": "system.md"
          },
          {
-          "字节数": 3286,
-          "摘要值": "809ea0301a8333e4",
+          "字节数": 3630,
+          "摘要值": "0ae54eec96342071",
           "路径": "writing.md"
          }
         ],
@@ -462,7 +462,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"71b9ec16328ba9de\",\"bytes\":67912,\"lines\":302,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":54264,\"lines\":213,\"digest\":\"dc35f10f25767f33\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7572,\"lines\":30,\"digest\":\"b4560ff56510ef22\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":3602,\"lines\":32,\"digest\":\"cfa7020fdf5ce209\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"fed34f13681f695d\",\"bytes\":69020,\"lines\":302,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":54966,\"lines\":213,\"digest\":\"905f08cf18819339\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7572,\"lines\":30,\"digest\":\"b4560ff56510ef22\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4008,\"lines\":32,\"digest\":\"d3f1a6325b333f92\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

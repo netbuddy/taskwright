@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
 import { EXCEPTION_EXAMPLE_PREFIX } from "../src/lib/overall_analysis.ts";
 import { closedQuestion } from "../src/lib/reply.ts";
-import { STAGES, STAGE_NAMES, type WriteKind, canWrite } from "../src/lib/stage.ts";
+import { ENTER_OPTIONS, STAGES, STAGE_NAMES, STAY_OPTIONS, type Stage, type WriteKind, canWrite, nextStage } from "../src/lib/stage.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const LEGACY = join(ROOT, "agent", "prompts", "skills", "taskwright-executor", "SKILL.md");
@@ -109,10 +109,17 @@ test("共用部分不带 frontmatter，不提早先的任务，理解格式那�
   assert.equal(renderDocument(text), text, "common.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");
 });
 
-test("共用部分的第十节只写各阶段都要用的：五个阶段与怎样移动、两张卡片的写法、主题页的四件事", () => {
+test("共用部分的第十节只写各阶段都要用的：五个阶段、自己只能退回、往前的四张卡片与复述卡片的写法、主题页的四件事", () => {
   const ten = [...sections(read("common.md"))].find(([title]) => title.startsWith(SECTION_TEN))![1];
   for (const name of ["核读材料", "澄清", "整理建模", "写条目", "评审确认"]) assert.ok(ten.includes(name), name);
-  for (const word of ["`stage`", "`reason`", "`start_items`「开始写条目」", "`continue_clarify`「继续澄清」", "`story_ok`", "`story_fix`", "`story_again`"]) assert.ok(ten.includes(word), word);
+  for (const word of ["`stage`", "`reason`", "`story_ok`", "`story_fix`", "`story_again`"]) assert.ok(ten.includes(word), word);
+  assert.ok(ten.includes("**你自己只能退回。**"));
+  assert.ok(ten.includes("往前进入下一个阶段你不能自己做"));
+  // 往前的四张卡片：进入下一段与留在这一段两个选项，键与文字同程序里的常量。
+  for (const from of ["reading", "clarifying", "modeling", "writing"] as const) {
+    const enter = ENTER_OPTIONS[nextStage(from) as Exclude<Stage, "reading">], stay = STAY_OPTIONS[from];
+    assert.ok(ten.includes(`\`${enter.key}\`「${enter.text}」、\`${stay.key}\`「${stay.text}」`), from);
+  }
   for (const word of ["**待核实。**", "**已经定下的每一条都要有出处。**", "**废弃一页。**", "**提到。**"]) assert.ok(ten.includes(word), word);
   // 各阶段各自的做法不在这里：它们在五段里，一次只给一段。
   for (const word of ["抓没说清的词", "问为什么", "例外清单", "两种节奏"]) assert.ok(!ten.includes(word), word);
@@ -155,6 +162,27 @@ test("每一段都写明用户的话落在这一段之外时怎么办：不照�
   }
 });
 
+test("每一段的「出口」：往前都是发卡片由用户点，两个选项的键与文字同程序里的常量；没有「自己往前移」的说法；回退仍可以自己做", () => {
+  for (const stage of ["reading", "clarifying", "modeling", "writing"] as const) {
+    const exit = sections(read(`${stage}.md`)).get("出口")!;
+    const enter = ENTER_OPTIONS[nextStage(stage) as Exclude<Stage, "reading">], stay = STAY_OPTIONS[stage];
+    assert.ok(exit.includes(`\`${enter.key}\`「${enter.text}」、\`${stay.key}\`「${stay.text}」`), stage);
+    assert.ok(exit.includes("用请选择提议进入"), stage);
+    assert.match(exit, /你不能自己把任务(移到|往前移)/, stage);
+  }
+  // 澄清那一段另有「开始写条目」的卡片：留在这一段的选项是继续澄清。
+  assert.ok(sections(read("clarifying.md")).get("出口")!.includes("`start_items`「开始写条目」、`continue_clarify`「继续澄清」"));
+  for (const stage of STAGES) {
+    const text = read(`${stage}.md`);
+    assert.doesNotMatch(text, /自己移到(澄清|整理建模|写条目|评审确认)[：，]/, stage);
+    // 往前的阶段名不出现在「写 stage」的句子里：能写进 stage 的只有前面的阶段。
+    for (const later of STAGES.slice(STAGES.indexOf(stage) + 1)) assert.ok(!text.includes(`\`stage\`「${STAGE_NAMES[later]}」`), `${stage}：${later}`);
+  }
+  // 回退：整理建模可以退回澄清，澄清可以退回核读材料。
+  assert.ok(read("modeling.md").includes("退回澄清，在同一次回复里写 `stage`「澄清」与 `reason`"));
+  assert.ok(read("clarifying.md").includes("退回核读材料，在回复里写 `stage`「核读材料」与 `reason`"));
+});
+
 test("每一段的「不做什么」与工具守的一致：这一段不能写的东西都写了", () => {
   const WORDS: Record<Exclude<WriteKind, "page" | "problem">, string> = { diagram: "不画图", item: "不写别的集合的条目", review: "不请求评审", complete: "不完成任务" };
   for (const stage of STAGES) {
@@ -167,12 +195,13 @@ test("每一段的「不做什么」与工具守的一致：这一段不能写�
   assert.ok(sections(read("reviewing.md")).get("这一段不做什么")!.includes("只能改「状态」与「改看」两处"));
 });
 
-test("核读材料那一段：一轮最多 12 页，用一小段话说清材料讲的是什么，对不上的各记一条问题，立完页自己移到澄清并说出第一个要问的问题", () => {
+test("核读材料那一段：一轮最多 12 页，用一小段话说清材料讲的是什么，对不上的各记一条问题，立完页发「进入澄清」的卡片并说出第一个要问的问题", () => {
   const text = read("reading.md");
   assert.ok(text.includes("一轮最多立 12 页"));
   assert.ok(text.includes("用一小段话说清三件事：材料讲的是什么业务、要改变什么、最大的不确定是什么"));
   assert.ok(text.includes("材料之间互相矛盾，或者材料与知识库里的规定对不上，每一处记一条问题条目"));
-  assert.ok(text.includes("就自己移到澄清：在同一次回复里写 `stage`「澄清」与 `reason`，并在成文的话里说出你要问的第一个问题"));
+  assert.ok(text.includes("再说进入澄清之后你要问的第一件事"));
+  assert.ok(text.includes("你不能自己把任务移到澄清。"));
   assert.ok(text.includes("不向用户提问。"));
 });
 
@@ -191,10 +220,10 @@ test("整理建模那一段：例外清单八种，例外的例子以「例外�
   assert.ok(text.includes(`以「${EXCEPTION_EXAMPLE_PREFIX}」开头的例子`));
 });
 
-test("写条目与评审确认两段：依据用户看过的页、写完移到评审确认；评审确认阶段完成任务", () => {
+test("写条目与评审确认两段：依据用户看过的页、写完发「进入评审确认」的卡片；评审确认阶段完成任务", () => {
   const writing = read("writing.md");
   assert.ok(writing.includes("只依据贴了标签、用户看过的页"));
-  assert.ok(writing.includes("自己移到评审确认，在同一次回复里写 `stage`「评审确认」与 `reason`"));
+  assert.ok(writing.includes("你不能自己把任务移到评审确认。"));
   const reviewing = read("reviewing.md");
   assert.ok(reviewing.includes("用户选了现在完成，再调用完成任务"));
 });
