@@ -1,0 +1,27 @@
+/* 阶段条：工作视图顶栏下面横跨整页的一行，只读。左边五个阶段名，右边当前阶段的灯；灯多了在阶段名右边折行，不截断。
+ * 颜色只用 styles.css 开头的令牌。 */
+.app .stagebar { flex: none; display: flex; align-items: flex-start; gap: .2rem 1.2rem; flex-wrap: wrap; padding: .35rem .9rem;
+  background: var(--stage); border-bottom: 1px solid var(--line2); font-size: 0.881rem; line-height: 1.6; }
+.app .stagebar .sb-stages { display: flex; align-items: center; flex: none; padding: .1rem 0; }
+.app .stagebar .sb-step { display: inline-flex; align-items: center; }
+.app .stagebar .sb-s { display: inline-flex; align-items: center; gap: .4rem; color: var(--mut); padding: 0 .25rem; white-space: nowrap; cursor: default; }
+.app .stagebar .sb-s .sb-d { width: .58rem; height: .58rem; border-radius: 50%; border: .1rem solid var(--line3); background: transparent; flex: none; }
+.app .stagebar .sb-s.done { color: var(--text2); }
+.app .stagebar .sb-s.done .sb-d { background: var(--text3); border-color: var(--text3); }
+.app .stagebar .sb-s.current { color: var(--ink); font-weight: 600; }
+.app .stagebar .sb-s.current .sb-d { background: var(--ink); border-color: var(--ink); box-shadow: 0 0 0 .14rem var(--stage), 0 0 0 .22rem var(--ink); }
+.app .stagebar .sb-ln { width: 1.8rem; height: 1px; background: var(--line2); margin: 0 .1rem; flex: none; }
+.app .stagebar .sb-ln.done { background: var(--text3); }
+.app .stagebar .sb-lamps { display: flex; align-items: baseline; gap: .1rem .5rem; flex: 1 1 24rem; min-width: 0; flex-wrap: wrap;
+  padding-left: 1.2rem; border-left: 1px solid var(--line2); }
+.app .stagebar .sb-lb { color: var(--mut); flex: none; }
+.app .stagebar .sb-lamp { display: inline-flex; align-items: baseline; gap: .4rem; padding: 0 .4rem; border-radius: .35rem; color: var(--text2); }
+.app .stagebar .sb-lamp .sb-d { width: .48rem; height: .48rem; border-radius: 50%; flex: none; align-self: center; }
+.app .stagebar .sb-lamp.no { color: var(--ink); }
+.app .stagebar .sb-lamp.no .sb-d { background: var(--amber); }
+.app .stagebar .sb-lamp.no b { font-weight: 600; color: var(--amber); }
+.app .stagebar .sb-lamp.go { cursor: pointer; }
+.app .stagebar .sb-lamp.go:hover, .app .stagebar .sb-lamp.go:focus-visible { background: var(--card); outline: none; }
+.app .stagebar .sb-lamp.ok { color: var(--text3); }
+.app .stagebar .sb-lamp.ok .sb-d { background: var(--ok); }
+.app .stagebar .sb-lamp.none { color: var(--mut); padding-left: 0; }

@@ -19,6 +19,7 @@ import { DIAGRAM_HOLD_TEXT } from "../components/work/ReplyCard";
 import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
+import { StageBar } from "../components/work/StageBar";
 import { ReviewPanel } from "../components/work/ReviewPanel";
 import { DocumentModal } from "../components/DocumentModal";
 import { errorText } from "../components/work/errors";
@@ -285,6 +286,12 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     setSide("material");
     setLocate((l) => ({ excerpt, locator, nonce: (l?.nonce ?? 0) + 1 }));
   };
+  /** 阶段条上点了一盏说材料还没有被引用的灯：展开右侧栏、切到材料页签，由材料页签选中那份材料。 */
+  const openMaterial = (path: string) => {
+    toggleDoc(false);
+    setSide("material");
+    dispatch({ type: "focus_material", path });
+  };
   /** 回复底部「产生了修订 N」：右侧栏展开并切到修订页签，选中其中最新的一次，滚到那里。 */
   /** 评审页签里点一条发现：打开条目详情，滚到那个字段并高亮一会儿。 */
   const openFinding = (itemId: string, field: string | null) => {
@@ -378,6 +385,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
             {!closed && <div className="srow newrow" role="button" onClick={() => void newSession()}>＋ 新建会话（让助手从干净的上下文开始，交付物还是这一份）</div>}
           </div>
         </div>
+        <StageBar stage={task?.stage} items={task?.items ?? []} onOpenItem={openItem} onOpenMaterial={openMaterial} />
         <div className="app-body">
           <div className="rail">
             <div className="ico" title="全局查找（还没有做）">⌕</div>
