@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
 import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from taskwright_observatory import evals
+from taskwright_observatory.server import IndexCache, make_handler
 
 
 def lamp(key: str, text: str, states: list[str], stage: str = "整理建模") -> dict:
@@ -109,6 +115,58 @@ class EvalReadTest(unittest.TestCase):
                      f"| 澄清 | {GOAL} | 0／0 | 1／1（100%） | 不比 |",
                      "| 约束 | 一角 | 0／3（0%） | 没有这一项 | 不比 |"):
             self.assertIn(line, text)
+
+
+class EvalApiTest(unittest.TestCase):
+    """三个页面各自的读取接口：起一个观测台服务，经 HTTP 取 JSON。"""
+
+    def setUp(self):
+        self._temp = tempfile.TemporaryDirectory()
+        self.root = Path(self._temp.name)
+        two_evals(self.root)
+
+    def tearDown(self):
+        self._temp.cleanup()
+
+    def serve(self, sim_root: Path | None):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(IndexCache([], None, "", "", sim_root=sim_root)))
+        server.RequestHandlerClass.log_message = lambda *args: None       # 测试里不打访问日志
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def get(self, base: str, path: str) -> tuple[int, dict]:
+        try:
+            with urllib.request.urlopen(base + urllib.parse.quote(path, safe="/?=&")) as response:
+                return response.status, json.loads(response.read())
+        except urllib.error.HTTPError as error:
+            return error.code, json.loads(error.read())
+
+    def test_评测列表的接口(self):
+        status, data = self.get(self.serve(self.root), "/api/evals")
+        self.assertEqual((status, data["有没有演练根目录"], [row["标签"] for row in data["评测"]]), (200, True, ["改了说明", "基线"]))
+        # 启动时没有给演练根目录：接口照常回，写明原因，页面据此显示一句话。
+        status, data = self.get(self.serve(None), "/api/evals")
+        self.assertEqual((status, data["有没有演练根目录"], data["说明"]), (200, False, evals.NO_ROOT))
+
+    def test_一次评测详情的接口(self):
+        base = self.serve(self.root)
+        status, data = self.get(base, "/api/evals/改了说明")
+        self.assertEqual((status, data["标签"], data["遍数"], data["灯"][0]["各遍"], data["各遍"][0]["任务的键"]),
+                         (200, "改了说明", 3, ["通过", "通过", "通过"], "TASK-1/TASK-1"))
+        status, data = self.get(base, "/api/evals/没有这一次")
+        self.assertEqual((status, data["出错了"]), (404, "找不到评测「没有这一次」。"))
+
+    def test_两次评测对照的接口(self):
+        base = self.serve(self.root)
+        status, data = self.get(base, "/api/evals/compare?a=基线&b=改了说明")
+        self.assertEqual((status, data["前"]["标签"], data["后"]["标签"], data["变差的灯"], data["变差的组"]), (200, "基线", "改了说明", 1, 1))
+        self.assertEqual([row["键"] for row in data["灯"] if row["变差"]], ["no_untagged_pages"])
+        self.assertEqual(self.get(base, "/api/evals/compare?a=基线")[0], 400)
+        self.assertEqual(self.get(base, "/api/evals/compare?a=基线&b=没有这一次")[0], 404)
+        # 别的读取接口不受影响。
+        self.assertEqual(self.get(base, "/api/tasklist"), (200, {"任务": []}))
 
 
 if __name__ == "__main__":

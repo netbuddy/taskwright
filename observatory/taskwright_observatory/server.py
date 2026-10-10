@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from taskwright_observatory.api import Index, NotFound
 from taskwright_observatory.langfuse import LangfuseLinks
-from taskwright_observatory import taskpage
+from taskwright_observatory import evals, taskpage
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -142,8 +142,11 @@ def make_handler(cache: IndexCache):
         do_HEAD = do_GET                          # noqa: N815 - 标准库的写法
 
         def _api(self, route: str, query: dict):
-            index = cache.get()
             parts = [p for p in route.split("/") if p]
+            if parts and parts[0] == "evals":
+                # 评测的三个读取接口只读演练根目录下的评测结果文件，不用扫归档。
+                return self._evals(parts[1:], query)
+            index = cache.get()
             if parts == ["overview"]:
                 return self._json(200, index.overview())
             if parts == ["sessions"]:
@@ -180,6 +183,21 @@ def make_handler(cache: IndexCache):
             if parts == ["session-options"]:
                 return self._json(200, {"会话": index.session_options()})
             return self._error(404, f"没有这个读取接口：/api/{route}")
+
+        def _evals(self, rest: list[str], query: dict):
+            try:
+                if not rest:
+                    return self._json(200, evals.read_list(cache.sim_root))
+                if rest == ["compare"]:
+                    first, second = (query.get("a") or [""])[0], (query.get("b") or [""])[0]
+                    if not first or not second:
+                        return self._error(400, "对照要给两次评测的标签：/api/evals/compare?a=前一次&b=后一次")
+                    return self._json(200, evals.compare(cache.sim_root, first, second))
+                if len(rest) == 1:
+                    return self._json(200, evals.read_detail(cache.sim_root, rest[0]))
+            except evals.EvalNotFound as error:
+                raise NotFound(str(error)) from None
+            return self._error(404, f"没有这个读取接口：/api/evals/{'/'.join(rest)}")
 
         def _static(self, path: str):
             name = "index.html" if path in ("/", "") else path.lstrip("/")

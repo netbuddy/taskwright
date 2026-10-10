@@ -52,6 +52,8 @@ def check_label(label: str) -> str | None:
         return "标签不能是空的。"
     if any(c in label for c in "/\\\n\r") or label.startswith("."):
         return "标签不能带斜线与换行，也不能以句点开头（它要写进文件名）。"
+    if label == "compare":
+        return "标签不能叫 compare：观测台的读取接口里这个名字留给两次评测的对照。"
     return None
 
 

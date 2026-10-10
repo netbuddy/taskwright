@@ -112,7 +112,7 @@ class SummaryTest(unittest.TestCase):
 
     def test_标签要能当文件名的一段(self):
         self.assertIsNone(evals.check_label("基线-短版"))
-        for bad in ("", "  ", "a/b", ".隐藏", "两\n行"):
+        for bad in ("", "  ", "a/b", ".隐藏", "两\n行", "compare"):
             self.assertIsNotNone(evals.check_label(bad), bad)
 
 
