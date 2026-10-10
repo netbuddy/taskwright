@@ -165,9 +165,10 @@ function askedSection(s) {
 
 function stuckItem(x, known) {
   const asked = x["上一轮的问题"].map((q) => q["文字"]).join("；") || "上一轮助手没有提问。";
+  const facts = x["画像里可能有的事实"].map((fact) => fact.replace(/。$/, "")).join("；");
   return `<li><span class="chip">第 ${esc(x["轮"])} 轮</span> 模拟用户说：「${esc(x["用户 agent 的话"])}」` +
     `<div>上一轮的问题：${esc(asked)}</div>` +
-    (known ? `<div class="miss">画像里可能已有这件事：${esc(x["画像里可能有的事实"].join("；"))}。请看是不是模拟用户演错了。</div>` : "") + `</li>`;
+    (known ? `<div class="miss">画像里可能已有这件事：${esc(facts)}。请看是不是模拟用户演错了。</div>` : "") + `</li>`;
 }
 
 function stuckSection(s) {

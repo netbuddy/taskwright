@@ -85,7 +85,7 @@ class SummaryTest(unittest.TestCase):
                      "| 整理建模 | 每个标签为「流程」的页至少有一条以「例外：」开头的例子。 | 未通过（差 OA-001） | 通过 | 算不了 | 1／2 |",
                      "| 问题 | 寒暑假 | 没有 | 命中（UC-001） | 没有核对 | 1／2 |",
                      "- 第 1 轮，提问：寒暑假借期怎么算？",
-                     "- 第 2 轮，模拟用户说：「这个我得问一下。」。上一轮的问题：寒暑假借期怎么算？"):
+                     "- 第 2 轮，模拟用户说：「这个我得问一下。」上一轮的问题：寒暑假借期怎么算？\n"):
             self.assertIn(line, text)
         self.assertIn("| 第 3 遍 | ", text)
         self.assertIn("| 7 分 5 秒 | RuntimeError：后端任务服务没有起来。 |", text)
@@ -228,6 +228,8 @@ class EvalRunTest(unittest.TestCase):
         self.assertAlmostEqual(summary["清单命中率"], 4 / 74)
         self.assertIn("# 评测汇总：试跑", text)
         self.assertIn(f"- 第 1 轮，提问：{QUESTION}", text)
+        self.assertIn(f"- 第 2 轮，模拟用户说：「这个我得问一下教务处。」上一轮的问题：{QUESTION}画像里可能已有这件事（寒暑假期间借出的书，借期一律顺延到开学后第一周的周五，"
+                      "这段时间不算逾期），请看是不是模拟用户演错了。", text)
         self.assertEqual((len(listed), listed[0]["标签"], listed[0]["遍数"], [Path(d).name for d in listed[0]["各遍目录"]]), (1, "试跑", 2, ["sim-001", "sim-002"]))
         self.assertEqual(again, 2)
         self.assertIn("标签「试跑」在", complaint)

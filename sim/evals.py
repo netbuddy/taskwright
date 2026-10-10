@@ -152,6 +152,11 @@ def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
     return summary
 
 
+def _closed(text: str) -> str:
+    """一句话的结尾：原话已经以句号、问号或叹号结束的不再加句号。"""
+    return text if text.rstrip().endswith(("。", "？", "！", "?", "!")) else text + "。"
+
+
 def percent(rate: float | None) -> str:
     return "没有能算的" if rate is None else f"{round(rate * 100)}%"
 
@@ -200,11 +205,12 @@ def summary_markdown(s: dict) -> str:
         lines.append(f"### 第 {i + 1} 遍（{one['演练']}）")
         for x in one["待人答"]:
             asked = "；".join(q["文字"] for q in x["上一轮的问题"]) or "上一轮助手没有提问"
-            lines.append(f"- 第 {x['轮']} 轮，模拟用户说：「{x['用户 agent 的话']}」。上一轮的问题：{asked}")
+            lines.append(f"- 第 {x['轮']} 轮，模拟用户说：「{x['用户 agent 的话']}」上一轮的问题：{_closed(asked)}")
         for x in one["画像里可能已有"]:
             asked = "；".join(q["文字"] for q in x["上一轮的问题"])
-            lines.append(f"- 第 {x['轮']} 轮，模拟用户说：「{x['用户 agent 的话']}」。上一轮的问题：{asked}。"
-                         f"画像里可能已有这件事（{'；'.join(x['画像里可能有的事实'])}），请看是不是模拟用户演错了。")
+            facts = "；".join(f.rstrip("。") for f in x["画像里可能有的事实"])
+            lines.append(f"- 第 {x['轮']} 轮，模拟用户说：「{x['用户 agent 的话']}」上一轮的问题：{_closed(asked)}"
+                         f"画像里可能已有这件事（{facts}），请看是不是模拟用户演错了。")
         if not one["待人答"] and not one["画像里可能已有"]:
             lines.append("- 没有。")
         lines.append("")
