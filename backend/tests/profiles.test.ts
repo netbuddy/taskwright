@@ -102,6 +102,12 @@ test("桌面形态下 pi 的设置文件的 defaultProvider 与 defaultModel 两
     assert.equal(record["模型"], "local/qwen");
     assert.equal(record["模型来自"], `助手程序的设置（${settings} 的 defaultProvider 与 defaultModel）`);
     assert.equal("模型来自" in startupRecord(server, serverArgv), false, "服务器形态的启动记录不加这一项");
+    // 有阶段的任务的系统提示用的那几份文件：启动记录里记着每份的字节数与摘要值。
+    const stageFiles = record["按阶段的说明"] as { 有没有: boolean; 代码仓里的路径: string; 文件: { 路径: string; 字节数: number; 摘要值: string }[] };
+    assert.deepEqual([stageFiles.有没有, stageFiles.代码仓里的路径], [true, "agent/prompts/stages"]);
+    assert.deepEqual(stageFiles.文件.map((one) => one.路径),
+      ["README.md", "clarifying.md", "common.md", "modeling.md", "reading.md", "reviewing.md", "system.md", "writing.md"]);
+    for (const one of stageFiles.文件) assert.match(one.摘要值, /^[0-9a-f]{16}$/);
 
     writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { local: { models: [{ id: "qwen" }] } } }));
     assert.deepEqual(probeModel(desktop, env), { name: "local/qwen", available: true,

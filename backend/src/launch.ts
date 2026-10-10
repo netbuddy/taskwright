@@ -331,6 +331,7 @@ export function startupRecord(profile: Profile, argv: string[]) {
     ...(profile[PI_SETTINGS_MODEL] || resolveModel(profile).from === "产品设置" ? { 模型来自: modelSource(profile) } : {}),
     环境标签: (profile.langfuse || {}).environment ?? "",
     "平台 skill": platformSkillRecord(profile),
+    按阶段的说明: stagePromptRecord(),
   };
 }
 
@@ -344,6 +345,16 @@ export function platformSkillRecord(profile: Profile) {
   const path = platformSkillDir(profile);
   if (path === null) return { 有没有: false, 说明: "启动配置里没有写 platform_skill，这次没有加载平台 skill。" };
   return { 有没有: true, 代码仓里的路径: profile.platform_skill, 目录: path, 文件: digestFiles(path, path) };
+}
+
+/** 有阶段的任务的系统提示用的那几份文件所在的目录，相对代码仓根目录（扩展在每次运行开始之前用它们拼系统提示，见 agent/src/hooks/stage_prompt.ts）。 */
+export const STAGE_PROMPTS_DIR = "agent/prompts/stages";
+
+/** 启动那一刻这个目录里每份文件的字节数与摘要值：两次启动之间哪一段说明改过，从这里看得出来。 */
+export function stagePromptRecord() {
+  const path = fromRoot(STAGE_PROMPTS_DIR);
+  if (!isDir(path)) return { 有没有: false, 说明: `代码仓里没有 ${STAGE_PROMPTS_DIR} 这个目录，有阶段的任务这次用的是启动参数给的系统提示。` };
+  return { 有没有: true, 代码仓里的路径: STAGE_PROMPTS_DIR, 目录: path, 文件: digestFiles(path, path) };
 }
 
 // ───────────── 启动那一刻的知识仓库与上下文文件 ─────────────
