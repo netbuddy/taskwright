@@ -7,10 +7,12 @@
 #   TASKWRIGHT_WEB_PORT    web dev server port           (default: 5680)
 #
 # scripts/dev.sh --demo starts the same two servers without a model service: the backend uses the fake model endpoint
-# (backend/fake_model/) with the launch profile `fake`, its tasks, archives and knowledge base go to a temporary directory that is
+# (tools/fake-model/) with the launch profile `fake`, its tasks, archives and knowledge base go to a temporary directory that is
 # removed on exit, and examples/library-lending/run.sh creates a demo task with the example material, a session and a
 # few items, so the pages have something to show. The fake model answers from examples/library-lending/fake-model.json.
 # It needs pi on PATH, like the real backend, but no model service and no key.
+# --demo only shows what the pages look like: the fake model answers from a fixed script, so it is not a walkthrough
+# of the product; for that, start without --demo and connect a real model.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -51,7 +53,7 @@ if [ -n "$DEMO" ]; then
   TASKS="$DEMO_DIR/tasks"
   RUNS="$DEMO_DIR/runs"
   KNOWLEDGE="$DEMO_DIR/knowledge"
-  node backend/fake_model/main.mts --script examples/library-lending/fake-model.json --log "$DEMO_DIR/fake-model.jsonl" \
+  node tools/fake-model/main.mts --script examples/library-lending/fake-model.json --log "$DEMO_DIR/fake-model.jsonl" \
     --agent-dir "$DEMO_DIR/pi-agent" > "$DEMO_DIR/fake-model.out" 2>&1 &
   PIDS+=($!)
   wait_for "$DEMO_DIR/fake-model.out" '/pi-agent/p' "${PIDS[-1]}" "the fake model endpoint" > /dev/null

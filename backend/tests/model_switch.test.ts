@@ -12,8 +12,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { writeAgentDir } from "../fake_model/agent_config.ts";
-import { FakeModel } from "../fake_model/server.ts";
+import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
+import { FakeModel } from "../../tools/fake-model/server.ts";
 import { captureConsole, sendAndWaitTurn, spawnBackend, tempDir } from "./helpers.ts";
 
 captureConsole();

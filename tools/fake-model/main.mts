@@ -1,16 +1,17 @@
 /**
  * 手工起一个假端点：
  *
- *   node backend/fake_model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
+ *   node tools/fake-model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
  *
  * --port 不写或写 0 时由操作系统挑空闲端口，启动后把端口打印出来。给了 --agent-dir 就顺手在那里写好
  * 只认这个假端点的 pi 配置目录，之后用 PI_CODING_AGENT_DIR=<那个目录> 启动 pi 即可。按 Ctrl+C 停。
+ * --agent-dir 要给一个还不存在的目录或者空目录：里面已经有东西、或者它是软链接时不启动，说明原因并以 2 退出。
  * 打印的两行字（地址与 pi 配置目录）是测试与脚本等它起来时认的，不要改。
  */
 
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { MODEL_ARG, writeAgentDir } from "./agent_config.ts";
+import { AgentDirRefused, MODEL_ARG, checkAgentDir, writeAgentDir } from "./agent_config.ts";
 import { FakeModel } from "./server.ts";
 
 const { values } = parseArgs({
@@ -25,6 +26,16 @@ const port = Number(values.port);
 if (!Number.isInteger(port)) {
   process.stderr.write(`--port 要写一个整数，现在是「${values.port}」。\n`);
   process.exit(2);
+}
+if (values["agent-dir"]) {
+  // 起端点之前先看配置目录能不能用，不能用就不启动。
+  try {
+    checkAgentDir(values["agent-dir"]);
+  } catch (error) {
+    if (!(error instanceof AgentDirRefused)) throw error;
+    process.stderr.write(`--agent-dir 不能用：${error.message}\n`);
+    process.exit(2);
+  }
 }
 const script = values.script ? JSON.parse(readFileSync(values.script, "utf-8")) : [];
 const fake = await new FakeModel(script, values.log).start(port);

@@ -9,8 +9,8 @@ import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { writeAgentDir } from "../fake_model/agent_config.ts";
-import { FakeModel } from "../fake_model/server.ts";
+import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
+import { FakeModel } from "../../tools/fake-model/server.ts";
 import { ROOT, spawnBackend, tempDir } from "./helpers.ts";
 
 type Dict = Record<string, any>;

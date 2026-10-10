@@ -50,9 +50,8 @@
 | `src/occupancy.ts` | 任务占用标记 `service.lock`。 |
 | `src/projection.ts` | Word 材料文字版（代码里叫 projection）的薄适配：文字版只有一份实现，这里只负责调用它。 |
 | `src/paths.ts` | 仓根目录与各资源的位置（只在这一处从自身文件位置推出仓根），以及用户数据目录。 |
-| `profiles/` | 启动配置：`dev.json` 开发与服务器用，`desktop.json` 桌面包用（除 Langfuse 环境标签外与 dev 相同），`fake.json` 测试用（模型换成假模型端点）。 |
+| `profiles/` | 启动配置：`dev.json` 开发与服务器用，`desktop.json` 桌面包用（除 Langfuse 环境标签外与 dev 相同），`fake.json` 测试用（模型换成假模型端点；假模型端点不在后端目录里，在仓根的 `tools/fake-model/`，说明见那里的 README.md）。 |
 | `prompts/executor_system_prompt.md` | 执行者的系统提示，启动配置的 `system_prompt_file` 指向它。 |
-| `fake_model/` | 假模型端点：按脚本回话的 OpenAI 兼容本地服务，给测试与手工验证用，说明见其中的 README.md。 |
 
 ## 起法
 

@@ -1,5 +1,5 @@
 """用户 agent 一轮：假模型端点驱动用户 agent 的 pi，两个工具经 HTTP 打一个按接口字段做的假后端。
-用户 agent 经 Node 驱动程序 sim/user_agent_driver.mts 启动（后端的会话类），假模型是后端的假端点 backend/fake_model/，以子进程运行。
+用户 agent 经 Node 驱动程序 sim/user_agent_driver.mts 启动（后端的会话类），假模型是后端的假端点 tools/fake-model/，以子进程运行。
 
 假模型的脚本：第一次请求调 look，第二次调 respond（说一句话）；第二轮：look、look(UC-001)、respond(点「这几条都看过了」)。
 断言假后端收到的请求：带会话编号的整份数据读取、messages 的话、细看条目时写已读的 actions（不带通知），
@@ -26,13 +26,13 @@ from urllib.parse import parse_qs, urlparse
 
 from sim.launch_user import DRIVER, REPO_ROOT, UserAgentError, UserAgentProcess, user_agent_session
 
-#: pi 的配置目录由这个环境变量指定；假端点在这个目录里登记的模型写作「fake/fake-model」（backend/fake_model/agent_config.ts）。
+#: pi 的配置目录由这个环境变量指定；假端点在这个目录里登记的模型写作「fake/fake-model」（tools/fake-model/agent_config.ts）。
 ENV_AGENT_DIR = "PI_CODING_AGENT_DIR"
 MODEL_ARG = "fake/fake-model"
 
 
 class FakeModel:
-    """后端的假模型端点（node backend/fake_model/main.mts），以子进程运行：按脚本回话，每个请求记一行进请求记录。"""
+    """后端的假模型端点（node tools/fake-model/main.mts），以子进程运行：按脚本回话，每个请求记一行进请求记录。"""
 
     def __init__(self, script: list, root: Path):
         self.root = Path(root)
@@ -43,7 +43,7 @@ class FakeModel:
         self.process: subprocess.Popen | None = None
 
     def start(self) -> None:
-        self.process = subprocess.Popen(["node", "backend/fake_model/main.mts", "--script", str(self.script), "--log", str(self.log),
+        self.process = subprocess.Popen(["node", "tools/fake-model/main.mts", "--script", str(self.script), "--log", str(self.log),
                                          "--agent-dir", str(self.agent_dir)], cwd=str(REPO_ROOT), stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT, text=True)
         end = time.time() + 30

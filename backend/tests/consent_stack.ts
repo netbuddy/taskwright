@@ -8,8 +8,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
-import { writeAgentDir } from "../fake_model/agent_config.ts";
-import { FakeModel } from "../fake_model/server.ts";
+import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
+import { FakeModel } from "../../tools/fake-model/server.ts";
 import { ROOT, sendAndWaitTurn, spawnBackend } from "./helpers.ts";
 
 export type Dict = Record<string, any>;

@@ -1,6 +1,6 @@
 # 假模型端点
 
-假模型端点是一个按脚本回固定内容的本地 HTTP 服务，接口与 OpenAI 的聊天接口兼容（`POST /v1/chat/completions`），只用 `node:http`，零依赖。它给测试与手工验证用：pi 以为自己在请求模型，实际每次拿到的回答都是测试事先写好的。这样，门禁拒绝、用户直接写入这类机制可以被确定性地测，不受真模型随机性的影响。
+假模型端点是一个按脚本回固定内容的本地 HTTP 服务，接口与 OpenAI 的聊天接口兼容（`POST /v1/chat/completions`），只用 `node:http`，不依赖任何 npm 包（写请求记录用到后端 `backend/src/py.ts` 里的两个函数）。它给自动化测试用，不属于产品，也不进安装包；亲手走查产品请接真的模型，假模型照固定的脚本回答，看不出产品实际好不好用。pi 以为自己在请求模型，实际每次拿到的回答都是测试事先写好的。这样，门禁拒绝、用户直接写入这类机制可以被确定性地测，不受真模型随机性的影响。
 
 脚本格式、命令行参数、请求记录的写法由测试固定：命令行起的假端点对一份脚本、一串请求给出的回答、请求记录与写出的 pi 配置目录，与 `backend/tests/fixtures/expected/fake_model_cli.json` 逐字比较（`backend/tests/fake_model.test.ts`）。改这些写法时要同时改那份期望值。
 
@@ -55,7 +55,7 @@ pi 实测用的是流式请求（请求体里 `stream` 为真），假端点按 
 在代码里用，脚本直接写成对象或列表传给 `new FakeModel(脚本, 请求记录路径, { autoIntent })`；写成 JSON 文件，是给手工启动用的：
 
 ```
-node backend/fake_model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
+node tools/fake-model/main.mts --script 脚本.json --log 请求记录.jsonl [--port 0] [--agent-dir 目录]
 ```
 
 `autoIntent` 为真时，用户说话之后第一个只有工具调用、没有文字的回答，前面自动补一段理解；命令行起的假端点不补。
@@ -89,7 +89,9 @@ pi 这一侧用 `writeAgentDir(目录, fake.baseUrl)`（`agent_config.ts`）写�
 ## 手工起一个假端点
 
 ```bash
-node backend/fake_model/main.mts --script 脚本.json --log 请求记录.jsonl --agent-dir /tmp/fake-agent
+node tools/fake-model/main.mts --script 脚本.json --log 请求记录.jsonl --agent-dir /tmp/fake-agent
 ```
+
+`--agent-dir` 要给一个还不存在的目录，或者一个空目录。目录里已经有任何东西（文件、目录、软链接），或者这个路径本身是软链接时，假端点不启动，说明原因并以 2 退出：它会把 `auth.json` 写成空的，所以绝不能指到放着真的登录凭据的目录。用同一个目录重新起一次，先换一个新目录。
 
 启动后，终端会打印假端点的地址与配置目录。另开一个终端，用 `PI_CODING_AGENT_DIR=/tmp/fake-agent pi --model fake/fake-model ...` 启动 pi 即可。按 Ctrl+C 停掉假端点。
