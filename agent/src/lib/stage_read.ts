@@ -260,3 +260,12 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
     lamps: stageLamps(lampInput(db, workspaceDir, taskId, definition)),
   };
 }
+
+/**
+ * 同上，但任务与它的定义由这里自己从库里取（库里的第一个任务）：给手里只有库连接与任务目录的调用方用（后端的整份数据）。
+ * 库里还没有任务时返回 null。
+ */
+export function stageSummaryOf(db: DatabaseSync, workspaceDir: string): StageSummary | null {
+  const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
+  return task ? stageSummary(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text))) : null;
+}

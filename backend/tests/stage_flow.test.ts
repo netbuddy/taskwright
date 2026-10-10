@@ -1,0 +1,120 @@
+/**
+ * 工作的阶段从头走一遍（真的后端进程与真的 pi，模型换成进程内的假端点）：
+ * 核读材料时助手立页、想写用例被拦 → 助手在回复里移到澄清并发提议的卡片 → 用户看过那一页、在卡片上点「开始写条目」→
+ * 助手写用例、在回复里移到评审确认 → 用户看过用例、发起评审 → 助手发是否完成的卡片、用户点了之后完成任务。
+ * 核对的是整条链路：库里的阶段记录、被拦的那次调用留下的原话、接口给的整份数据里的 stage、事件连接推出的 stage_changed。
+ */
+
+import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { request } from "node:http";
+import { after, test } from "node:test";
+import { captureConsole, tempDir } from "./helpers.ts";
+import { type Dict, MATERIAL, NO_PI, TOPIC_CALL, reply, sleep, withStack } from "./consent_stack.ts";
+
+captureConsole();
+process.env.PI_OFFLINE = "1";
+
+const tmp = tempDir();
+after(() => rmSync(tmp, { recursive: true, force: true }));
+
+const USE_CASE = { op: "add", collection: "功能用例", sources: [{ kind: "条目", locator: "OA-001", excerpt: MATERIAL }],
+  fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } };
+const save = (id: string, operations: unknown[]) => ({ tool_calls: [{ id, name: "save_revision", arguments: { operations } }] });
+const START_CARD = { kind: "choose", text: "这一页你看过之后，现在开始写条目吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
+  options: [{ key: "start_items", text: "开始写条目" }, { key: "continue_clarify", text: "继续澄清" }] };
+const DONE_CARD = { kind: "choose", text: "功能用例一共 1 个条目，已经评审通过，你也看过了。这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。",
+  options: [{ key: "complete", text: "已完成，提交交付物" }, { key: "continue", text: "还没完成，继续修改" }] };
+const SCRIPT = {
+  rules: [{ when: { any_contains: "你是评审者" }, reply: { text: JSON.stringify({ 发现: [] }) } }],
+  sequence: [
+    // 第一句话：立一页主题；接着想写用例（还在核读材料，被拦）；然后在回复里移到澄清，并发提议的卡片。
+    { tool_calls: [TOPIC_CALL] },
+    save("call-early", [USE_CASE]),
+    { tool_calls: [{ id: "call-move", name: "reply", arguments: { informs: [], act: START_CARD, text: "材料读完了，我立了一页主题。看过之后，现在开始写条目吗？",
+      stage: "澄清", reason: "材料读完了，主题页立好了。" } }] },
+    // 用户点了「开始写条目」：写用例，再在回复里移到评审确认。
+    save("call-uc", [USE_CASE]),
+    { tool_calls: [{ id: "call-wrote", name: "reply", arguments: { informs: [], act: null, text: "写好了一个用例。", stage: "评审确认", reason: "条目写完了。" } }] },
+    // 用户说完成：发是否完成的卡片；用户点了之后完成任务。
+    reply("完成条件都满足了，请在卡片上选。", "call-card", DONE_CARD),
+    { tool_calls: [{ id: "call-complete", name: "complete_task", arguments: {} }] },
+    reply("任务已经完成。", "call-done"),
+  ],
+};
+
+/** 订阅任务的事件连接，把收到的 stage_changed 事件收进来。 */
+function stageEvents(port: number, taskId: string): { events: Dict[]; close: () => void } {
+  const events: Dict[] = [];
+  let buffer = "";
+  const req = request({ host: "127.0.0.1", port, path: `/api/v1/tasks/${taskId}/events` }, (res) => {
+    res.setEncoding("utf-8");
+    res.on("data", (chunk: string) => {
+      buffer += chunk;
+      for (let cut = buffer.indexOf("\n\n"); cut >= 0; cut = buffer.indexOf("\n\n")) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const data = /^data: (.*)$/m.exec(block)?.[1];
+        if (/^event: stage_changed$/m.test(block) && data) events.push(JSON.parse(data));
+      }
+    });
+    res.on("error", () => {});
+  });
+  req.on("error", () => {});
+  req.end();
+  return { events, close: () => req.destroy() };
+}
+
+test("五个阶段从头走到完成：助手的移动、被拦的写入、卡片上的「开始写条目」、整份数据里的 stage 与推出的事件", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "stages", SCRIPT, async ({ call, taskId, session, port, db, send, action, entryOfCall }) => {
+    const stageNow = async () => (await call("GET", `/api/v1/tasks/${taskId}/snapshot?session=${session}`)).body.task.stage as Dict;
+    const pushed = stageEvents(port, taskId);
+    try {
+      // 刚建好、有材料：核读材料，没有人移过。
+      const fresh = await stageNow();
+      assert.deepEqual([fresh.current, fresh.moved_by, fresh.moved_at, fresh.reason], ["reading", null, null, null]);
+
+      await send({ text: "把材料整理成需求规格说明。", client_id: "c-1" });
+      // 核读材料阶段写用例被拦：整批没有写入，原话留在拒绝记录里。
+      const early = db("SELECT fact, guidance FROM tool_rejection WHERE call_id = 'call-early'");
+      assert.equal(early.length, 1);
+      assert.match(early[0].fact, /任务现在在核读材料阶段，这个阶段不能新增「功能用例」的条目/);
+      assert.match(early[0].guidance, /进入写条目要由用户在卡片上选「开始写条目」/);
+      assert.deepEqual(db("SELECT item_id FROM item").map((r: Dict) => r.item_id), ["OA-001"]);
+      // 助手在回复里移到了澄清。
+      const clarifying = await stageNow();
+      assert.deepEqual([clarifying.current, clarifying.moved_by, clarifying.reason], ["clarifying", "executor", "材料读完了，主题页立好了。"]);
+      assert.equal(clarifying.lamps.reading[0].ok, true, "材料被那一页引用了");
+
+      // 用户看过那一页，在卡片上点「开始写条目」：记一条用户的移动；助手随后写出用例，并移到评审确认。
+      assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] })).status, 200);
+      await send({ text: "我选：开始写条目", client_id: "c-2", origin: "card_choice", card: { reply_message_id: entryOfCall("call-move"), kind: "choose", choice: "start_items" } });
+      assert.deepEqual(db("SELECT item_id FROM item ORDER BY rowid").map((r: Dict) => r.item_id), ["OA-001", "UC-001"]);
+      const reviewing = await stageNow();
+      assert.deepEqual([reviewing.current, reviewing.moved_by, reviewing.reason], ["reviewing", "executor", "条目写完了。"]);
+      assert.deepEqual(db("SELECT from_stage, stage, actor, reason, run_id FROM stage_record ORDER BY event_seq"), [
+        { from_stage: "reading", stage: "clarifying", actor: "executor", reason: "材料读完了，主题页立好了。", run_id: "r1" },
+        { from_stage: "clarifying", stage: "writing", actor: "user", reason: "用户在卡片上选了「开始写条目」", run_id: null },
+        { from_stage: "writing", stage: "reviewing", actor: "executor", reason: "条目写完了。", run_id: "r2" },
+      ]);
+
+      // 用户看过用例、发起评审；评审做完之后说完成，在卡片上点同意：任务完成。
+      assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 2 }] })).status, 200);
+      assert.equal((await action({ kind: "request_review", targets: [] })).status, 200);
+      for (const end = Date.now() + 30000; db("SELECT 1 FROM event WHERE name = 'REVIEW_FINISHED'").length === 0;) {
+        if (Date.now() > end) throw new Error("评审没有做完");
+        await sleep(100);
+      }
+      await send({ text: "都看过了，完成吧。", client_id: "c-3" });
+      await send({ text: "我选：已完成，提交交付物", client_id: "c-4", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "complete" } });
+      assert.equal(db("SELECT status FROM task")[0].status, "已完成");
+      assert.deepEqual(db("SELECT tool_name FROM tool_rejection").map((r: Dict) => r.tool_name), ["save_revision"], "除了核读材料时那一次，没有别的调用被拦");
+
+      // 事件连接推出了三次移动，序号与库里的事件相同。
+      for (const end = Date.now() + 10000; pushed.events.length < 3 && Date.now() < end;) await sleep(100);
+      assert.deepEqual(pushed.events.map((e) => [e.from, e.to, e.actor]), [["reading", "clarifying", "executor"], ["clarifying", "writing", "user"], ["writing", "reviewing", "executor"]]);
+      assert.deepEqual(pushed.events.map((e) => e.seq), db("SELECT seq FROM event WHERE name = 'STAGE_MOVED' ORDER BY seq").map((r: Dict) => r.seq));
+    } finally {
+      pushed.close();
+    }
+  }, { seed: false }));

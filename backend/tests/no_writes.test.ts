@@ -63,6 +63,8 @@ const ALLOWED: Record<string, string[]> = {
   // 后端也用这一句）、从 task.json 读出是哪个版本写的（只读一个小文件）、任务根目录的环境变量名（常量）。
   // upgradeTaskDatabase 是写入：把一个任务库升到现在的格式。它只许在数据升级里调（src/data_upgrade.ts，服务启动时的升级与命令行的
   // 升级都经那里），走的是助手写库时用的同一张步骤表；下面另有一条测试守着别的文件不导入它。
+  // 工作的阶段：从任务库读出任务现在的阶段与每个阶段的几盏灯（只读函数，不写库）。
+  "stage_read.ts": ["stageSummaryOf"],
   "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],
