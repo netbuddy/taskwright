@@ -155,10 +155,13 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       }
       // 点的是「进入」某个阶段的选项：先替用户把任务移过去，再发下面两条，助手回应这次点击时从头就在新的阶段。
       let stageSeq: number | null = null;
+      let stageMove: { from: string; to: string } | null = null;
       try {
         const moved = recordStageCardClick(ctx.cwd, ctx.sessionManager.getSessionId(), ctx.sessionManager.getBranch() as never,
           { opId: opId ?? "", replyEntry: request.reply_entry, optionKey: request.option_key });
         stageSeq = moved?.event_seq ?? null;
+        // 记下了移动：标注里另写从哪个阶段到哪个阶段，对话区据此在用户那句话下面写一行。
+        if (moved?.moved && moved.from !== null) stageMove = { from: moved.from, to: moved.requested };
       } catch (error) {
         ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: false,
           error: { code: "rejected", message: `没有能把任务移到下一个阶段：${(error as Error).message}`, data: {} } }));
@@ -177,6 +180,7 @@ export function registerUserCommands(pi: ExtensionAPI): void {
             option_text: request.option_text ?? null,
             text,
             ...(stageSeq !== null ? { stage_event_seq: stageSeq } : {}),
+            ...(stageMove !== null ? { stage_move: stageMove } : {}),
           },
         },
         { deliverAs: "followUp" },

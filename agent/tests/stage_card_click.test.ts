@@ -132,6 +132,8 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   assert.deepEqual(JSON.parse(status[UI_RESULT_KEY]), { op_id: "ui-op-41", ok: true, idle: true, stage_event_seq: seq });
   assert.deepEqual(sent.map(([kind]) => kind), ["custom", "user"]);
   assert.equal(sent[0][1].details.stage_event_seq, seq);
+  // 标注里另写这次移动从哪个阶段到哪个阶段：对话区据此在用户那句话下面写一行。
+  assert.deepEqual(sent[0][1].details.stage_move, { from: "reading", to: "writing" });
   assert.equal(sent[1][1], "我选：开始写条目");
   assert.deepEqual(records(dir).map((r) => [r.stage, r.actor, r.call_id]), [["writing", "user", "ui-op-41"]]);
 
@@ -140,6 +142,7 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   await handler(JSON.stringify({ op_id: "ui-op-42", reply_entry: "a-1", option_key: CONTINUE_CLARIFY_KEY, option_text: CONTINUE_CLARIFY_TEXT, text: "我选：继续澄清" }), other.ctx);
   assert.deepEqual(JSON.parse(other.status[UI_RESULT_KEY]), { op_id: "ui-op-42", ok: true, idle: true });
   assert.equal("stage_event_seq" in sent[2][1].details, false);
+  assert.equal("stage_move" in sent[2][1].details, false);
   assert.equal(count(dir, "stage_record"), 1);
 });
 

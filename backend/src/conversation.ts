@@ -35,6 +35,30 @@ export const FALLBACK_TEXT = "请用 reply 工具把要对用户说的话发出�
 export type Entry = Record<string, any>;
 
 /** 回复里的告知一律整理成 {"text", "items"?}：旧会话里一条告知是一句纯文字，新的是带 items 的对象；认不出的丢掉。 */
+const STAGE_KEYS = ["reading", "clarifying", "modeling", "writing", "reviewing"];
+const isStageKey = (value: unknown): value is string => typeof value === "string" && STAGE_KEYS.includes(value);
+
+/**
+ * 助手在回复里把任务退回了前面的阶段时，那条回复带的一项：从哪个阶段、到哪个阶段、理由。
+ * details 是「回复」工具结果的 details（其中 stage 是这次移动的结果，移成了 moved 为真），reason 是助手写的理由。
+ * 没有写 stage、或者没有移成时为 null，消息里不带这一项。
+ */
+export function replyStageMove(details: Record<string, any>, reason: unknown): { from: string; to: string; actor: "executor"; reason: string } | null {
+  const move = details.stage;
+  if (!isObject(move) || move.moved !== true || !isStageKey(move.from) || !isStageKey(move.requested)) return null;
+  return { from: move.from, to: move.requested, actor: "executor", reason: typeof reason === "string" ? reason.trim() : "" };
+}
+
+/**
+ * 用户在卡片上点了「进入」某个阶段、系统替用户记了移动时，那句「我选：……」带的一项：从哪个阶段、到哪个阶段。
+ * details 是那条界面点击标注的 details（助手一侧在记下移动时写进 stage_move）。没有记移动时为 null。
+ */
+export function clickStageMove(details: Record<string, any>): { from: string; to: string; actor: "user" } | null {
+  const move = details.stage_move;
+  if (!isObject(move) || !isStageKey(move.from) || !isStageKey(move.to)) return null;
+  return { from: move.from, to: move.to, actor: "user" };
+}
+
 export function normalizeInforms(informs: unknown): Record<string, any>[] {
   const out = [];
   for (const one of (or(informs, []) as unknown[])) {
@@ -243,7 +267,9 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
       }
       pendingClick = null;
       lastConfirm = null;
-      out.push({ type: "user_message", session_id: sessionId, message_id: e.id, at, text: displayText(raw), origin, annotation, queued: false });
+      const clickMove = origin === "card_choice" ? clickStageMove(clickDetails) : null;
+      out.push({ type: "user_message", session_id: sessionId, message_id: e.id, at, text: displayText(raw), origin, annotation, queued: false,
+        ...(clickMove ? { stage_move: clickMove } : {}) });
     } else if (role === "assistant") {
       const calls = (or(m.content, []) as unknown[]).filter((p) => isObject(p) && p.type === "toolCall") as Record<string, any>[];
       for (const call of calls) {
@@ -257,9 +283,11 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
           const reply = or(details.reply, {}) as Record<string, any>;
           args = { informs: [], act: null, text: or(or(reply.text, args.text), "") };
         }
+        const replyMove = replyStageMove(details, (or(call.arguments, {}) as Record<string, any>).reason);
         out.push({
           type: "assistant_reply", session_id: sessionId, message_id: e.id, at, work_id: null, via_reply_tool: true,
           informs: normalizeInforms(args.informs ?? null), act: args.act ?? null, text: or(args.text, ""), degraded: truthy(details.degraded),
+          ...(replyMove ? { stage_move: replyMove } : {}),
         });
         segmentReplied = true;
       }
