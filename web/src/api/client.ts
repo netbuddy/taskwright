@@ -14,6 +14,8 @@ import type {
   ModelTestResult,
   ModelType,
   PromptDirView,
+  DebugStage,
+  DebugSystemPrompt,
   Provider,
   ProviderKind,
   ItemRevision,
@@ -146,6 +148,10 @@ export const api = {
 
   // 调试模式（服务带 --debug 启动时才有，否则这两个接口答 not_found）：设置里的提示词目录。
   promptDir: () => request<PromptDirView>("GET", "/debug/prompt-dir"),
+  /** 某个任务最近一次运行实际发给模型的系统提示，按部分列出。 */
+  debugSystemPrompt: (taskId: string) => request<DebugSystemPrompt>("GET", `/tasks/${encodeURIComponent(taskId)}/debug/system-prompt`),
+  /** 某个任务的阶段记录流水与被拒的工具调用。 */
+  debugStage: (taskId: string) => request<DebugStage>("GET", `/tasks/${encodeURIComponent(taskId)}/debug/stage`),
   /** 设提示词目录；path 写空串是清掉。 */
   setPromptDir: (path: string) => request<PromptDirView>("POST", "/debug/prompt-dir", { path }),
 

@@ -20,6 +20,7 @@ import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
 import { StageBar } from "../components/work/StageBar";
+import { DebugPane } from "../components/work/DebugPane";
 import type { StageStart } from "../model/stage";
 import { ReviewPanel } from "../components/work/ReviewPanel";
 import { DocumentModal } from "../components/DocumentModal";
@@ -451,7 +452,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                     <ReviewPanel task={task} review={state.review} readOnly={readOnly} writesOff={working} onReview={review} submit={submit}
                       onOpenFinding={openFinding} onPrefill={prefill} />
                   ) : undefined}
-                  reviewCount={task ? openProblems(task) : 0} task={task ?? undefined} />
+                  reviewCount={task ? openProblems(task) : 0} task={task ?? undefined}
+                  debug={service.info?.debug ? <DebugPane taskId={taskId} stage={task?.stage ?? null} working={!!working} onOpenItem={openItem} /> : undefined} />
               </div>
             </div>
           </div>

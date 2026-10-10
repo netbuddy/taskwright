@@ -1049,6 +1049,32 @@ export interface UpgradeView {
   report: UpgradeReport | null;
 }
 
+/** 调试模式：某个任务最近一次运行实际发给模型的系统提示，按部分列出（后端 debug_prompt.ts）。还没有运行过时 available 为假。 */
+export interface DebugSystemPrompt {
+  available: boolean;
+  note: string | null;
+  session_id?: string | null;
+  at?: string;
+  replaced?: boolean;
+  stage?: StageKey | null;
+  stage_name?: string | null;
+  /** recomposed 重新读文件拼的；reused 沿用上一次的；kept_after_error 重拼出错而沿用上一次的。 */
+  how?: "recomposed" | "reused" | "kept_after_error" | null;
+  error?: string | null;
+  prompt_dir?: string | null;
+  notes?: string[];
+  digest?: string | null;
+  parts: { part: string; part_name: string; from: string; from_name: string; file: string | null; lines: number; bytes: number; text: string }[];
+  text: string;
+}
+
+/** 调试模式：某个任务的阶段记录流水与被拒的工具调用。rejections 新的在前；latest_work_id 是最近一次被拒所在的那次工作。 */
+export interface DebugStage {
+  records: { from: StageKey; from_name: string; to: StageKey; to_name: string; actor: "executor" | "user"; reason: string; run_id: string | null; session_id: string; at: string }[];
+  rejections: { work_id: string | null; session_id: string; call_id: string; tool: string; kind: string; fact: string; guidance: string | null; at: string }[];
+  latest_work_id: string | null;
+}
+
 /** 调试模式的提示词目录：现在设的是什么，以及固定的十三个文件名各自在目录里的情形。 */
 export interface PromptDirView {
   /** 设置里写的目录；没有设时是 null。 */

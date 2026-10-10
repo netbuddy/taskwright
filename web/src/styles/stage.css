@@ -31,3 +31,34 @@
 
 /* 总体分析还没有一页主题时的两个开头 */
 .app .oa-start-acts { display: flex; gap: .6rem; flex-wrap: wrap; }
+
+/* 右侧栏的「调试」页签（调试模式才有）：四块，各有一个小标题 */
+.app .dbg-pane { padding: .6rem .8rem 1.2rem; font-size: 0.897rem; color: var(--text2); overflow-y: auto; height: 100%; }
+.app .dbg-pane section { margin-top: .9rem; }
+.app .dbg-top { display: flex; align-items: center; gap: .6rem; }
+.app .dbg-top .dbg-note { flex: 1; color: var(--mut); font-size: 0.857rem; }
+.app .dbg-h { display: flex; align-items: baseline; gap: .6rem; font-weight: 600; color: var(--ink); margin-bottom: .3rem; }
+.app .dbg-all { font-weight: 400; color: var(--text3); font-size: 0.857rem; display: inline-flex; align-items: center; gap: .25rem; cursor: pointer; }
+.app .dbg-none { color: var(--mut); }
+.app .dbg-err { color: var(--gap); margin: .2rem 0; overflow-wrap: anywhere; }
+.app .dbg-meta { color: var(--text3); margin-bottom: .3rem; overflow-wrap: anywhere; }
+.app .dbg-part { border: 1px solid var(--line2); border-radius: .4rem; margin-bottom: .3rem; background: var(--card); }
+.app .dbg-part summary { cursor: pointer; padding: .25rem .5rem; color: var(--text1); overflow-wrap: anywhere; }
+.app .dbg-part pre { margin: 0; padding: .5rem .6rem; border-top: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: ui-monospace, Menlo, monospace; font-size: 0.857rem; line-height: 1.55; max-height: 24rem; overflow-y: auto; color: var(--text1); }
+.app .dbg-table { border-collapse: collapse; width: 100%; }
+.app .dbg-table th { text-align: left; font-weight: 500; color: var(--mut); padding: .15rem .6rem .15rem 0; border-bottom: 1px solid var(--line2); white-space: nowrap; }
+.app .dbg-table td { padding: .2rem .6rem .2rem 0; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+.app .dbg-lamp { display: flex; align-items: baseline; gap: .15rem .5rem; flex-wrap: wrap; padding: .2rem 0; border-bottom: 1px solid var(--line); }
+.app .dbg-lamp .st { flex: none; font-size: 0.857rem; padding: 0 .4rem; border-radius: .3rem; border: 1px solid var(--line2); color: var(--text3); }
+.app .dbg-lamp.ok .st { color: var(--ok-ink); background: var(--ok-bg); border-color: var(--ok-line); }
+.app .dbg-lamp.no .st { color: var(--amber-ink); background: var(--amber-bg); border-color: var(--amber-line); }
+.app .dbg-lamp .sum { flex: 1 1 14rem; min-width: 0; }
+.app .dbg-lamp .ids { display: inline-flex; gap: .4rem; flex-wrap: wrap; }
+.app .dbg-lamp .ids a { color: var(--blue); cursor: pointer; font-family: ui-monospace, Menlo, monospace; font-size: 0.857rem; }
+.app .dbg-lamp .key { color: var(--faint); font-size: 0.8rem; }
+.app .dbg-rej { border: 1px solid var(--amber-line); background: var(--amber-bg2); border-radius: .4rem; padding: .35rem .55rem; margin-bottom: .35rem; }
+.app .dbg-rej .hd { display: flex; align-items: baseline; gap: .6rem; color: var(--text3); font-size: 0.857rem; }
+.app .dbg-rej .hd code { color: var(--amber-ink); font-family: ui-monospace, Menlo, monospace; }
+.app .dbg-rej .fact { color: var(--ink); margin-top: .15rem; overflow-wrap: anywhere; }
+.app .dbg-rej .guide { color: var(--text3); margin-top: .15rem; overflow-wrap: anywhere; }

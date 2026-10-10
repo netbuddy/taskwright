@@ -19,13 +19,13 @@ import { firstParagraph, isDeprecated, isOverall, isPending, sideLine, titleOf, 
 import { hhmm, triggerText, UNDO_BLOCKED_TEXT, undoBlocked } from "../../model/revisions";
 import { MaterialPane, type LocateRequest } from "./MaterialPane";
 
-export type SideTab = "material" | "doc" | "rev" | "review" | `coll:${string}`;
+export type SideTab = "material" | "doc" | "rev" | "review" | "debug" | `coll:${string}`;
 
 const OP: Record<string, [string, string]> = { add: ["add", "新增"], update: ["edit", "修改"], restore: ["add", "恢复"], delete: ["drop", "删除"] };
 
 export function SidePanel({
   side, onSide, onCollapse, onExpand, taskId, materials, focusPath, items, locate, currentItem, disabled, onOpenItem, onSend,
-  log, messages, selectedRevision, onSelectRevision, scrollNonce, onDiff, onUndo, onGenerate, writesOff, readOnly, review, reviewCount = 0, task,
+  log, messages, selectedRevision, onSelectRevision, scrollNonce, onDiff, onUndo, onGenerate, writesOff, readOnly, review, reviewCount = 0, task, debug,
 }: {
   side: SideTab;
   onSide: (side: SideTab) => void;
@@ -58,12 +58,15 @@ export function SidePanel({
   reviewCount?: number;
   /** 整份任务；给了才按任务定义开集合页签。 */
   task?: Task;
+  /** 调试页签的内容；不给就没有这个页签（服务没有开调试模式时）。 */
+  debug?: ReactNode;
 }) {
   const collTabs = (task?.definition.collections ?? []).filter((c) => c.display?.side_tab);
   const tabs: [SideTab, string, number | null][] = [["material", "材料", null],
     ...collTabs.map((c): [SideTab, string, number | null] => [`coll:${c.name}`, c.name, task!.items.filter((i) => i.collection === c.name).length]),
     ["doc", "文档", null], ["rev", "修订", log.length || null]];
   if (review) tabs.push(["review", "评审", reviewCount || null]);
+  if (debug) tabs.push(["debug", "调试", null]);
   return (
     <>
       <div className="doc-h">
@@ -89,6 +92,7 @@ export function SidePanel({
           </div>
         )}
         {side === "review" && review}
+        {side === "debug" && debug}
         {side.startsWith("coll:") && task && <CollectionSide task={task} collection={side.slice(5)} currentItem={currentItem} onOpenItem={onOpenItem} />}
         {side === "rev" && (
           <RevisionLogView log={log} messages={messages} selected={selectedRevision} onSelect={onSelectRevision} scrollNonce={scrollNonce}
