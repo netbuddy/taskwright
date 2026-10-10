@@ -63,7 +63,7 @@ export function OverallPane({ task, selected, onSelect, page, readOnly = false, 
             <p className="oa-intro-sum">现在有 {sum.pages} 个主题，{sum.settled} 条已经定下，{sum.open} 条还没定，{sum.pending} 处是助手补的、等你核实。</p>
             <p className="oa-intro-hint">在左边的提纲里点一个主题，看它是什么、有哪些例子、定下了什么、还有什么没定。</p>
             {retell && sum.pages > 0 && (
-              <p><button type="button" className="aibtn" disabled={!!retellOff} title={retellOff ?? "请助手把对各个主题的理解讲成一段故事，你看哪里不对"}
+              <p><button type="button" className="aibtn" disabled={!!retellOff} title={retellOff ?? "请助手把对各个主题的理解讲成一段故事，请核对这段复述"}
                 onClick={retell} data-testid="intro-retell">复述一遍</button></p>
             )}
           </div>

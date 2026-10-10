@@ -273,7 +273,7 @@ export function TopicPage({ task, item, def, readOnly, writesOff = false, submit
         <button type="button" className="aibtn" disabled={readOnly} title="往对话区的输入框里预填一句话，由你发出"
           onClick={() => onPrefill?.(reviseDependentsText(item))} data-testid="topic-revise">让助手照这条改条目</button>
         {!gone && <button type="button" className="btn" disabled={!!offTitle} title={offTitle} onClick={() => setRetiring(true)} data-testid="topic-retire">标为已废弃</button>}
-        <button type="button" className="aibtn" disabled={!!offTitle} title={offTitle ?? "请助手把对这一页及其下面主题的理解讲成一段故事，你看哪里不对"}
+        <button type="button" className="aibtn" disabled={!!offTitle} title={offTitle ?? "请助手把对这一页及其下面主题的理解讲成一段故事，请核对这段复述"}
           onClick={() => onSend?.(retellText(titleOf(item)))} data-testid="topic-retell">复述一遍</button>
       </div>
       {retiring && (
