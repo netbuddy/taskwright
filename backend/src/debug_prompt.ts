@@ -17,7 +17,9 @@ import { NODE_IO, ORIGIN_NAMES, PART_NAMES, promptDirNames } from "../../agent/s
 import { STAGE_NAMES } from "../../agent/src/lib/stage.ts";
 import { ApiError } from "./errors.ts";
 import { readPromptDir, writePromptDir } from "./product_settings.ts";
+import { baseMessages } from "./conversation.ts";
 import * as library from "./library.ts";
+import { personaDraft } from "./persona_draft.ts";
 import type { Service } from "./service.ts";
 
 export const DEBUG_ONLY_TEXT = "这个接口只在调试模式下可用：启动服务时加上 --debug。";
@@ -119,4 +121,28 @@ export function stageDebug(service: Service, taskId: string) {
     to_name: STAGE_NAMES[one.to as keyof typeof STAGE_NAMES] ?? String(one.to),
   }));
   return { records, rejections: view.rejections, latest_work_id: view.rejections.length > 0 ? view.rejections[0].work_id ?? null : null };
+}
+
+/**
+ * 把这个任务里用户说过的话整理成模拟器用户画像的草稿（persona_draft.ts）：遍历任务的全部会话，按会话开始的先后。
+ * 返回 { file_name, persona, sessions, facts }：页面把 persona 存成名为 file_name 的文件。只读，不写任何东西。
+ * 哪条会话的记录读不出来就跳过它，skipped 里写它的编号。
+ */
+export async function personaDraftOf(service: Service, taskId: string) {
+  requireDebug(service);
+  const t = service.task(taskId);
+  const row = t.row();
+  const rows = [...t.executor.listSessions()].sort((a, b) => String(a.started_at ?? "").localeCompare(String(b.started_at ?? "")));
+  const sessions: Record<string, any>[][] = [];
+  const skipped: string[] = [];
+  for (const one of rows) {
+    try {
+      sessions.push(baseMessages(await t.executor.entries(one.session_id), one.session_id));
+    } catch {
+      skipped.push(String(one.session_id));
+    }
+  }
+  const materials = library.materials(t.dir, t.definition()).filter((m: Record<string, any>) => !m.derived_from).map((m: Record<string, any>) => String(m.path));
+  const persona = personaDraft({ task_id: taskId, task_name: String(row?.task_name ?? taskId) }, materials, sessions);
+  return { file_name: `persona-${taskId}.json`, persona, sessions: sessions.length, facts: persona["隐藏事实"].length, skipped };
 }

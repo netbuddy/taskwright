@@ -25,7 +25,7 @@ const ALLOWED: Record<string, string[]> = {
   "conditions.ts": ["checkCompletion", "completionBrief", "completionHints"],
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
-  "stage.ts": ["STAGE_NAMES"],
+  "stage.ts": ["STAGE_NAMES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS"],
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
   "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames"],

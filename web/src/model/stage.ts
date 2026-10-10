@@ -2,7 +2,7 @@
 // 阶段与灯都随整份数据与库事件来（task.stage，见 state/workState.ts），这里只把它变成要画的样子，不另取数据。
 // 阶段的名字、次序与卡片上「进入下一段」的选项键取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
-import { ENTER_OPTIONS, STAGES, STAGE_NAMES } from "../../../agent/src/lib/stage";
+import { ENTER_OPTIONS, STAGES, STAGE_NAMES, STAGE_START_TEXTS } from "../../../agent/src/lib/stage";
 import type { Item, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
 export { STAGES, STAGE_NAMES };
@@ -76,8 +76,8 @@ export function stageMoveLine(move: StageMove): string {
  * 再替用户发给助手的那句固定的话。
  */
 export const STAGE_STARTS = {
-  reading: { key: "reading", label: "通读材料起草", stage: STAGE_NAMES.reading, text: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。" },
-  clarifying: { key: "clarifying", label: "逐项澄清", stage: STAGE_NAMES.clarifying, text: "请逐项澄清：一次只问一件事，先给出候选再问。" },
+  reading: { key: "reading", label: "通读材料起草", stage: STAGE_NAMES.reading, text: STAGE_START_TEXTS.reading },
+  clarifying: { key: "clarifying", label: "逐项澄清", stage: STAGE_NAMES.clarifying, text: STAGE_START_TEXTS.clarifying },
 } as const;
 export type StageStart = (typeof STAGE_STARTS)[keyof typeof STAGE_STARTS];
 
