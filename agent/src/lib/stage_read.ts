@@ -18,8 +18,8 @@ import { overallState } from "./overall_read.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_ITEM, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
 import {
-  type Lamp, type LampInput, NO_STAGES_TEXT, START_ITEMS_KEY, START_ITEMS_TEXT, type Stage, type StageActor, defaultStage, isStage, judgeMove, lampPage,
-  lampQuestion, moveText, stageLamps,
+  type Lamp, type LampInput, NO_STAGES_TEXT, STAGE_NAMES, START_ITEMS_KEY, START_ITEMS_TEXT, type Stage, type StageActor, defaultStage, isStage, judgeMove,
+  lampLines, lampPage, lampQuestion, moveText, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
@@ -268,4 +268,17 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
 export function stageSummaryOf(db: DatabaseSync, workspaceDir: string): StageSummary | null {
   const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
   return task ? stageSummary(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text))) : null;
+}
+
+/**
+ * 给助手看的一段：任务现在在哪个阶段、最近一次是谁在什么时候为什么移的，以及这一段还差什么（只说现在这个阶段的几盏灯）。
+ * 查询任务状态的返回末尾用它。
+ */
+export function stageLines(summary: StageSummary): string[] {
+  const name = STAGE_NAMES[summary.current];
+  const reason = (summary.reason ?? "").replace(/[。.\s]+$/, "");
+  const head = summary.moved_by === null
+    ? `任务现在在${name}阶段（任务建好之后还没有人移动过）。`
+    : `任务现在在${name}阶段（${summary.moved_by === "user" ? "用户" : "助手"}在 ${(summary.moved_at ?? "").slice(0, 16).replace("T", " ")} 移过来的${reason ? `，理由：${reason}` : ""}）。`;
+  return [head, ...lampLines(summary.current, summary.lamps[summary.current])];
 }
