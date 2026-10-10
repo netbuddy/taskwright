@@ -54,7 +54,7 @@ data: {
 |---|---|---|
 | `task_changed` | 任务被创建、完成或放弃时 | `seq`、`at`、`task_id`、`task_name`、`status_before`、`status_after`、`actor`、`completion` |
 | `diagram_changed` | 一张图被新画、修改或删除时 | `seq`、`at`、`task_id`、`actor`、`op_id`、`diagram_id`、`revision_no`（这张图自己改后的修订号）、`op`（`add`、`update`、`delete`）、`name`、`kind`、`kind_name`（种类的中文名，例如「用例图」）。不带 Mermaid 文本与来源，要用时取图的详情 |
-| `stage_changed` | 任务从一个工作阶段移到另一个阶段时：助手在回复里移的、用户用直接操作移的，或者用户在卡片上点了「开始写条目」 | `seq`、`at`、`task_id`、`to`（移到了哪个阶段）、`from`（从哪个阶段来）、`actor`（`executor` 或 `user`）、`reason`（助手必写；用户的可以是空文字）、`run_id`（助手移的是运行号，用户移的为 null）、`op_id`、`completion` |
+| `stage_changed` | 任务从一个工作阶段移到另一个阶段时：助手在回复里退回的、用户用直接操作移的，或者用户在卡片上点了进入下一个阶段的选项 | `seq`、`at`、`task_id`、`to`（移到了哪个阶段）、`from`（从哪个阶段来）、`actor`（`executor` 或 `user`）、`reason`（助手必写；用户的可以是空文字）、`run_id`（助手移的是运行号，用户移的为 null）、`op_id`、`completion` |
 | `review_recorded` | 评审者（reviewer）评完一个条目时；`verdict` 为 `合规` 或 `不合规`，由代码按发现所依据规则的级别算出 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`verdict`、`reason`、`findings`（每条有 `rule_id`、`level`（`必选` 或 `可选`）、`field`、`index`（从 0 起，指整个字段时为 null）、`problem`、`suggestion`）、`op_id`（用户在界面上发起的评审才有）、`completion` |
 | `review_unfinished` | 一个条目的评审没有完成（超时、调用失败、两次输出不合格、评审期间条目被改），不记合规与否 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`reason`、`op_id`、`completion` |
 | `review_progress` | 界面发起的一批评审（`request_review`）开始时（`done` 为 0），以及每评完一个条目时 | `seq`、`at`、`task_id`、`op_id`、`done`、`total`、`current`（此刻正在评的条目）、`item_id`（刚评完的条目，开始时为 null）、`completion` |
@@ -279,7 +279,7 @@ data: {
 
 续接或切换会话之后，服务核对 pi 报告的会话是不是请求的那一条。pi 报告的是别的会话（例如会话文件不在了，pi 没有报错而是新开了一条），或者 pi 拒绝切换时，服务不采纳那条会话：停掉这个任务的 pi，写一行日志（任务编号、请求的会话、pi 报告的会话），并返回 `session_resume_failed`。核对发生在把用户的话交给 pi 之前，所以这句话没有发出去，也没有进入任何会话；下一次请求时按平常的方式重新启动 pi。这种情况下快照照常返回，对话记录从会话文件读取，`executor.state` 为 `not_started`。会话文件整个不在时仍返回 `not_found`。服务启动时把 `--tasks` 与 `--runs` 转成绝对路径，交给 pi 的会话文件路径也一律是绝对路径。
 
-**移动工作阶段。** 智能体的「回复」另有两个可选参数 `stage`（五个阶段的名字之一，例如「澄清」）与 `reason`（写了 `stage` 就必须写一句）。智能体能自己做的移动是核读材料到澄清、澄清到整理建模、写条目到评审确认，以及退回前面的任何阶段；移成了记一条 `stage_changed`。移不成（想进入写条目、往后跳着移、本来就在那个阶段、任务没有阶段）时回复照常送达，只在工具的返回里说明原因。进入写条目要由用户决定：智能体用请选择卡片提议，两个选项的 `key` 固定为 `start_items`（文字「开始写条目」）与 `continue_clarify`（文字「继续澄清」）；用户点了前者，服务在转交这次点击时替用户记一次移到写条目（`stage_changed`，`actor` 为 `user`），然后才把那句固定的话发给智能体。
+**移动工作阶段。** 智能体的「回复」另有两个可选参数 `stage`（五个阶段的名字之一，例如「澄清」）与 `reason`（写了 `stage` 就必须写一句）。智能体自己只能把任务退回前面的任何阶段；移成了记一条 `stage_changed`。移不成（想往前移、本来就在那个阶段、任务没有阶段）时回复照常送达，只在工具的返回里说明原因。往前进入下一个阶段要由用户决定：智能体做完这一段，用请选择卡片提议，卡片上两个选项的 `key` 是固定的，一个进入下一段，一个留在这一段。进入的四个键是 `enter_clarify`（文字「进入澄清」）、`enter_consolidate`（「进入整理建模」）、`start_items`（「开始写条目」）、`enter_review`（「进入评审确认」）；留在这一段的四个键是 `continue_reading`（「再核读一遍」）、`continue_clarify`（「继续澄清」）、`continue_consolidate`（「再整理一遍」）、`continue_writing`（「继续写条目」）。用户点了进入的那一项，服务在转交这次点击时替用户记一次移动（`stage_changed`，`actor` 为 `user`），然后才把那句固定的话发给智能体，智能体回应这次点击时已经在新的阶段。`enter_clarify`、`enter_consolidate`、`enter_review` 只在任务正处在紧挨着的前一段时才记，次序不对的点击当普通选项处理；`start_items` 在写条目之前的哪一段点都记。
 
 **提问只给开放问题。** `kind` 为 `ask` 而 `text` 里任何位置出现「是否」「能不能」「要不要」「可不可以」「对不对」「行不行」，或者以「吗」收尾（不算结尾的标点）时，回复被拒，原因写明是非题用请选择、征求同意用提议；确是开放问题的，把问句改写成不带这些词的形式就能送达。这是只看字面的规则。
 
