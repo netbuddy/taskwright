@@ -25,3 +25,6 @@
 .app .stagebar .sb-lamp.ok { color: var(--text3); }
 .app .stagebar .sb-lamp.ok .sb-d { background: var(--ok); }
 .app .stagebar .sb-lamp.none { color: var(--mut); padding-left: 0; }
+
+/* 助手提议进入下一个阶段的卡片：点名的条目前面那一句「请先看：」 */
+.app .act .ctxh { color: var(--text3); font-size: 0.881rem; margin-bottom: .1rem; }

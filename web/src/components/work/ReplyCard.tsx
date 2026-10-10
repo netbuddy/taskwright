@@ -20,6 +20,7 @@ import { Popconfirm } from "antd";
 import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../api/types";
 import { CONFIRM_CONDITION, SOURCE_ITEM, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, sourceKindNow, unreadItems } from "../../model/items";
 import { storyPlace } from "../../model/overall";
+import { ENTER_KEYS } from "../../model/stage";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { isKnowledgeLocator } from "../../model/knowledge";
 
@@ -50,6 +51,9 @@ export const TEMPLATES = {
  * 卡片顶上那行小字。confirm 这种卡片请用户看几个条目现在的内容，叫「请过目」，不叫「请确认」：「确认」容易被读成征求同意，
  * 而征求同意的是提议。助手一侧的说明、回复工具的返回里仍把这种行为写作「请确认」，指的是同一种。
  */
+/** 助手提议进入下一个阶段的那张请选择卡片的标题。 */
+export const STAGE_CARD_TITLE = "进入下一阶段 · 请决定";
+
 const KIND_LABEL: Record<ActKind, string> = { ask: "提问", confirm: "请过目", suggest: "给建议值", choose: "请选择", propose: "提议" };
 /** 卡片正文那一行左边的小标签，照原型的写法。 */
 const TEXT_LABEL: Record<ActKind, string> = { ask: "问题", confirm: "", suggest: "要定的事", choose: "要定的事", propose: "我的提议" };
@@ -156,12 +160,17 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   // 助手复述的卡片（请选择，三个选项是「采纳为例子」「有误，需修改」「换一个例子重述」，键是 story_ok、story_fix、story_again）：
   // 故事画成故事的样子，卡片本身不要底色。
   const story = storyPlace(act, replyText);
+  // 助手提议往前走的卡片（请选择，其中一个选项的键是「进入」某个阶段的四个键之一）：标题写「进入下一阶段 · 请决定」，
+  // 进入的那个选项画成主按钮，点名的条目前面写「请先看：」。用户点了进入，系统替用户记移动，阶段条随库事件变。
+  const stageCard = !story && act.kind === "choose" && (act.options ?? []).some((o) => o.key in ENTER_KEYS);
 
   return (
-    <div className={`act${story ? " retell" : ""}`} data-kind={act.kind} data-testid={`act-${act.kind}`} data-story={story ?? undefined}>
-      <div className="tt">{story ? "复述 · 请核对" : KIND_LABEL[act.kind] ?? act.kind}</div>
+    <div className={`act${story ? " retell" : ""}`} data-kind={act.kind} data-testid={`act-${act.kind}`} data-story={story ?? undefined}
+      data-stage-card={stageCard ? "true" : undefined}>
+      <div className="tt">{story ? "复述 · 请核对" : stageCard ? STAGE_CARD_TITLE : KIND_LABEL[act.kind] ?? act.kind}</div>
       {contexts.length > 0 && (
         <div data-testid="card-context">
+          {stageCard && <div className="ctxh" data-testid="card-look-first">请先看：</div>}
           {contexts.map((c, i) => (
             <div key={c.itemId}>
               <div className="ctx" role="button" onClick={() => onOpenItem?.(c.itemId)} data-testid={`card-context-${c.itemId}`}>
@@ -212,7 +221,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
           {act.kind === "choose" && (
             <div className="actions opts">
               {(act.options ?? []).map((o) => (
-                <button type="button" key={o.key} className="btn sm" disabled={off} title={offTitle}
+                <button type="button" key={o.key} className={`btn sm${stageCard && o.key in ENTER_KEYS ? " pri" : ""}`} disabled={off} title={offTitle}
                   onClick={() => say(TEMPLATES.choose(o.text), o.key, o.text)} data-testid={`card-option-${o.key}`}>
                   {o.text}
                 </button>
