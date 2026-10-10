@@ -27,6 +27,8 @@
  * （标注点的是哪条回复的哪个选项），再 sendUserMessage 模板句；两条都传 deliverAs: "followUp"，执行者空闲时
  * 立即生效，正在运行时排到这次运行本该停下的时候，两条紧挨着并入（排队模式为 all，见任务目录的 .pi/settings.json）。
  * 结果经状态栏键 taskwright-ui-result 回传。
+ * 点的是助手提议进入写条目的那张卡片上的「开始写条目」（选项键 start_items）时，在发这两条之前先替用户记一次移到写条目
+ * （lib/stage_read.ts 的 recordStartItemsClick）；记下了的话，结果里的 stage_event_seq 是那条事件的序号，后端据此去查库转发。
  *
  * 处理函数里的写库是同步的（node:sqlite），从开事务到提交之间没有 await，与工具的执行函数不会交错。
  */
@@ -38,6 +40,7 @@ import { ReviewError } from "../lib/review.ts";
 import { piComplete, startReview } from "../lib/review_ui.ts";
 import { batchCounts } from "../lib/review_run.ts";
 import { DIAGRAM_OP_KIND, editDiagram } from "../lib/user_diagram.ts";
+import { recordStartItemsClick } from "../lib/stage_read.ts";
 
 export const USER_COMMAND = "tw-user";
 export const UI_COMMAND = "tw-ui";
@@ -149,6 +152,17 @@ export function registerUserCommands(pi: ExtensionAPI): void {
         ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: false, error: { code: "bad_request", message: "/tw-ui 的参数要有 text。", data: {} } }));
         return;
       }
+      // 点的是「开始写条目」：先替用户把任务移到写条目，再发下面两条，助手回应这次点击时从头就在写条目阶段。
+      let stageSeq: number | null = null;
+      try {
+        const moved = recordStartItemsClick(ctx.cwd, ctx.sessionManager.getSessionId(), ctx.sessionManager.getBranch() as never,
+          { opId: opId ?? "", replyEntry: request.reply_entry, optionKey: request.option_key });
+        stageSeq = moved?.event_seq ?? null;
+      } catch (error) {
+        ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: false,
+          error: { code: "rejected", message: `没有能把任务移到写条目：${(error as Error).message}`, data: {} } }));
+        return;
+      }
       const option = request.option_text ? `「${request.option_key ? `${request.option_key}. ` : ""}${request.option_text}」` : "";
       pi.sendMessage(
         {
@@ -161,12 +175,13 @@ export function registerUserCommands(pi: ExtensionAPI): void {
             option_key: request.option_key ?? null,
             option_text: request.option_text ?? null,
             text,
+            ...(stageSeq !== null ? { stage_event_seq: stageSeq } : {}),
           },
         },
         { deliverAs: "followUp" },
       );
       pi.sendUserMessage(text, { deliverAs: "followUp" });
-      ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: true, idle: ctx.isIdle() }));
+      ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: true, idle: ctx.isIdle(), ...(stageSeq !== null ? { stage_event_seq: stageSeq } : {}) }));
     },
   });
 }

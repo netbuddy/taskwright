@@ -9,10 +9,12 @@
  */
 
 import type { DatabaseSync } from "node:sqlite";
+import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { hasOverall } from "./overall_analysis.ts";
-import { NO_STAGES_TEXT, type Stage, type StageActor, defaultStage, isStage, judgeMove, moveText } from "./stage.ts";
+import { NoDatabaseYet, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
+import { NO_STAGES_TEXT, START_ITEMS_KEY, START_ITEMS_TEXT, type Stage, type StageActor, defaultStage, isStage, judgeMove, moveText } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
 /** 记下一次移动的事件名。 */
@@ -137,4 +139,31 @@ export function replyStageMove(db: DatabaseSync, workspaceDir: string, who: { ta
   const verdict = outcome.moved ? { ok: true as const } : { ok: false as const, why: outcome.why as "same" | "user_only" | "skip" };
   const text = moveText(outcome.from, to, verdict);
   return outcome.moved ? { text, value: outcome } : { text, payload: { stage_declined: { stage: to, from: outcome.from, why: outcome.why } }, value: outcome };
+}
+
+/** 用户在卡片上点了「开始写条目」时，那条阶段记录里写的理由。 */
+export const START_ITEMS_REASON = `用户在卡片上选了「${START_ITEMS_TEXT}」`;
+
+/**
+ * 用户点了一张卡片上的选项：点的是助手提议进入写条目的那张请选择卡片上的「开始写条目」时，替用户记一次移到写条目。
+ * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键；认不出就不记（返回 null），点击照常往下走。
+ * 任务没有阶段、任务不在进行中、任务本来就在写条目时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、发那句固定的话之前调用，
+ * 这样助手回应这次点击的那一次运行从头就在写条目阶段。
+ */
+export function recordStartItemsClick(workspaceDir: string, sessionId: string, branch: readonly Entry[],
+  click: { opId: string; replyEntry: unknown; optionKey: unknown }): StageMoveOutcome | null {
+  if (click.optionKey !== START_ITEMS_KEY || typeof click.replyEntry !== "string") return null;
+  const card = branch.find((entry) => entry.id === click.replyEntry);
+  const act = card ? chooseActOf(card) : null;
+  if (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === START_ITEMS_KEY)) return null;
+  try {
+    return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
+      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+      if (!task || task.status !== TASK_ACTIVE) return null;
+      return moveStage(db, workspaceDir, { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" }, "writing", START_ITEMS_REASON);
+    });
+  } catch (error) {
+    if (error instanceof NoDatabaseYet) return null;
+    throw error;
+  }
 }
