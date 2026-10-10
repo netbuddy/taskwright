@@ -43,18 +43,23 @@ test("待核实：当前修订上还在的助手补充都待核实；这一段�
     { pending_verification: true, pending_sources: 2, pending_places: [{ field: "例子", index: 0 }] });
 });
 
-test("因依据而待核实：依据的那一页待核实或已废弃；只看总体分析的页，只看一层，没有的是 null", () => {
-  const pages: Record<string, { collection: string; fields: Record<string, unknown>; pending: boolean }> = {
-    "OA-001": { collection: OVERALL_COLLECTION, fields: { 状态: "在用" }, pending: false },
-    "OA-002": { collection: OVERALL_COLLECTION, fields: { 状态: "在用" }, pending: true },
-    "OA-003": { collection: OVERALL_COLLECTION, fields: { 状态: "已废弃", 改看: ["OA-001"] }, pending: true },
-    "OA-004": { collection: OVERALL_COLLECTION, fields: { 状态: "已废弃" }, pending: false },
-    "UC-009": { collection: "功能用例", fields: {}, pending: true },
+test("因依据而待核实：依据的那一页已废弃、待核实或者用户还没有看过；只看总体分析的页，只看一层，没有的是 null", () => {
+  const pages: Record<string, { collection: string; fields: Record<string, unknown>; pending: boolean; viewed: boolean }> = {
+    "OA-001": { collection: OVERALL_COLLECTION, fields: { 状态: "在用" }, pending: false, viewed: true },
+    "OA-002": { collection: OVERALL_COLLECTION, fields: { 状态: "在用" }, pending: true, viewed: false },
+    "OA-003": { collection: OVERALL_COLLECTION, fields: { 状态: "已废弃", 改看: ["OA-001"] }, pending: true, viewed: false },
+    "OA-004": { collection: OVERALL_COLLECTION, fields: { 状态: "已废弃" }, pending: false, viewed: true },
+    "OA-005": { collection: OVERALL_COLLECTION, fields: { 状态: "在用" }, pending: false, viewed: false },
+    "UC-009": { collection: "功能用例", fields: {}, pending: true, viewed: false },
   };
   const at = (id: string) => pages[id] ?? null;
   const cite = (...ids: string[]) => ids.map((locator) => ({ kind: "条目", locator }));
   assert.equal(basisPending(cite("OA-001"), at), null);
   assert.deepEqual(basisPending(cite("OA-001", "OA-002"), at), { item_id: "OA-002", reason: "pending", see: null });
+  // 没有待核实的内容（全部照抄材料），但用户还没有看过：也算，原因另写一种。
+  assert.deepEqual(basisPending(cite("OA-001", "OA-005"), at), { item_id: "OA-005", reason: "unviewed", see: null });
+  // 一页同时待核实又没看过时报待核实；几条来源里按先后报头一处。
+  assert.deepEqual(basisPending(cite("OA-005", "OA-002"), at), { item_id: "OA-005", reason: "unviewed", see: null });
   // 已废弃排在待核实前面说：那一页不该再被依据了。
   assert.deepEqual(basisPending(cite("OA-003"), at), { item_id: "OA-003", reason: "deprecated", see: "OA-001" });
   assert.deepEqual(basisPending(cite("OA-004"), at), { item_id: "OA-004", reason: "deprecated", see: null });

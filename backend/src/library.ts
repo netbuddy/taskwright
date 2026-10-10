@@ -15,7 +15,7 @@ import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { pdfFacts, pdfSourceName } from "./projection.ts";
-import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf } from "../../agent/src/lib/overall_analysis.ts";
+import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -680,6 +680,8 @@ export class Library {
     const mentions = mentionsOf(this.definition["集合"].map((c) => ({ name: c["名称"], fields: c["字段"].map((f) => ({ name: f["名"], type: f["类型"] })) })), plain);
     const withOverall = this.collections.has(OVERALL_COLLECTION);
     const pendingOf = new Map<string, Verification>();
+    // 用户看没看过每个条目现在的内容（与待核实看的是同一段修订，agent/src/lib/overall_analysis.ts 的 viewedIn）。
+    const viewedOf = new Map<string, boolean>();
     for (const one of plain) {
       const supplements = this.sourcesOf(one.item_id, one.revision_no).filter((s) => isSupplement(s.kind)).map((s) => s.supports ?? []);
       // 这个条目的各次修订：是不是用户亲手改出来的、用户有没有在那次修订上看过（依据不是用户修改的确认里最近一条是接受）。
@@ -697,11 +699,12 @@ export class Library {
         if (!rev.byUser) from = n;
       });
       pendingOf.set(one.item_id, verificationOf(supplements, history.slice(from)));
+      viewedOf.set(one.item_id, viewedIn(history.slice(from)));
     }
     const plainOf = new Map(plain.map((one) => [one.item_id, one]));
     const citedPage = (id: string) => {
       const page = plainOf.get(id);
-      return page ? { collection: page.collection, fields: page.fields, pending: pendingOf.get(id)!.pending_verification } : null;
+      return page ? { collection: page.collection, fields: page.fields, pending: pendingOf.get(id)!.pending_verification, viewed: viewedOf.get(id) === true } : null;
     };
     for (const i of sorted) {
       if (i.deleted_in_revision !== null) continue;

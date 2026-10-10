@@ -6,7 +6,7 @@
  * - 待核实：一个条目当前所在的修订上有助手补充的来源，而用户还没有确认过。用户打开看过（或点了确认）是确认整个条目；
  *   用户亲手改，只确认他改到的那几处（助手补充的来源指到的字段与项），只改别的地方不算确认。助手之后又改出新的修订、
  *   上面仍有助手补充的来源，就又待核实。任何集合的条目都这样算。
- * - 因依据而待核实：一个条目把总体分析里的一页写成了来源（种类「条目」），而那一页待核实或已废弃。只看一层。
+ * - 因依据而待核实：一个条目把总体分析里的一页写成了来源（种类「条目」），而那一页已废弃、待核实，或者用户还没有看过。只看一层。
  * - 提到：贴了标签、在用的页的标题与别名是词表；别的页与别的条目的文字里出现了词表里的词，就是提到了那一页。
  *   读的时候现算，不存库。
  * - 最低门要看的事实：任务里有没有一页贴了标签、有例子、用户又看过的主题。
@@ -120,22 +120,27 @@ export function verificationOf(supplements: readonly SupportPlaces[], chain: rea
   return { pending_verification: true, pending_sources: supplements.length, pending_places: places };
 }
 
-/** 被一个条目写成来源的那一页现在的样子：在哪个集合、字段内容、待不待核实。 */
+/** 被一个条目写成来源的那一页现在的样子：在哪个集合、字段内容、待不待核实、用户看没看过（viewedIn）。 */
 export interface CitedPage {
   collection: string;
   fields: Fields;
   pending: boolean;
+  viewed: boolean;
 }
 
-/** 因依据而待核实：依据的是哪一页，是因为它待核实（pending）还是已废弃（deprecated）；已废弃而写了改看时 see 是改看的那一页。 */
+/**
+ * 因依据而待核实：依据的是哪一页，是因为它已废弃（deprecated）、待核实（pending：有助手补充而用户没有确认的内容），
+ * 还是用户还没有看过（unviewed：没有待核实的内容，但用户没有打开看过或点过确认）；已废弃而写了改看时 see 是改看的那一页。
+ */
 export interface BasisPending {
   item_id: string;
-  reason: "pending" | "deprecated";
+  reason: "pending" | "deprecated" | "unviewed";
   see: string | null;
 }
 
 /**
- * 一个条目当前修订上的来源里，种类为「条目」、指向总体分析里一页的：那一页已废弃或待核实时，返回头一处；都没有是 null。
+ * 一个条目当前修订上的来源里，种类为「条目」、指向总体分析里一页的：那一页已废弃、待核实或者用户还没有看过时，返回头一处；都没有是 null。
+ * 一页同时有几样时报最重的一样：已废弃先于待核实，待核实先于没看过。
  * 只看一层：被指的那一页自己依据了谁不往下追。page 按编号给出那一页现在的样子，不存在或已经删除时给 null。
  */
 export function basisPending(sources: readonly { kind: unknown; locator: unknown }[], page: (itemId: string) => CitedPage | null): BasisPending | null {
@@ -145,6 +150,7 @@ export function basisPending(sources: readonly { kind: unknown; locator: unknown
     if (!cited || cited.collection !== OVERALL_COLLECTION) continue;
     if (isDeprecated(cited.fields)) return { item_id: one.locator, reason: "deprecated", see: seeAlsoOf(cited.fields) };
     if (cited.pending) return { item_id: one.locator, reason: "pending", see: null };
+    if (!cited.viewed) return { item_id: one.locator, reason: "unviewed", see: null };
   }
   return null;
 }

@@ -90,7 +90,7 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
   const byId = new Map(items.map((one) => [one.item_id, one]));
   const cited = (itemId: string) => {
     const page = byId.get(itemId);
-    return page ? { collection: page.collection, fields: page.fields, pending: own.get(itemId)!.pending_verification } : null;
+    return page ? { collection: page.collection, fields: page.fields, pending: own.get(itemId)!.pending_verification, viewed: viewed.get(itemId) === true } : null;
   };
   const verification = new Map<string, ItemVerification>();
   for (const item of items) {
@@ -122,6 +122,7 @@ export function verificationLines(itemId: string, state: ItemVerification): stri
   }
   const basis = state.basis_pending;
   if (basis?.reason === "pending") lines.push(`待核实：它依据的主题 ${basis.item_id} 还待核实（那一页有助手补充而用户没有确认的内容）。`);
+  if (basis?.reason === "unviewed") lines.push(`待核实：它依据的主题 ${basis.item_id} 用户还没有看过。请用户打开那一页看一眼（看过就算确认）。`);
   if (basis?.reason === "deprecated") lines.push(`待核实：它依据的主题 ${basis.item_id} 已废弃${basis.see ? `，改看 ${basis.see}` : ""}；请改成依据现在在用的主题。`);
   return lines;
 }
@@ -133,7 +134,7 @@ export function pendingSummary(state: OverallState): string | null {
   if (own.length === 0 && byBasis.length === 0) return null;
   const parts = [
     ...(own.length ? [`有助手补充而用户还没有确认的 ${own.length} 个：${own.join("、")}`] : []),
-    ...(byBasis.length ? [`依据的主题待核实或已废弃的 ${byBasis.length} 个：${byBasis.join("、")}`] : []),
+    ...(byBasis.length ? [`依据的主题待核实、用户还没有看过或已废弃的 ${byBasis.length} 个：${byBasis.join("、")}`] : []),
   ];
   return `待核实的条目：${parts.join("；")}。`;
 }

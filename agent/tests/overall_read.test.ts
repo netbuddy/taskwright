@@ -10,7 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
-import { overallState } from "../src/lib/overall_read.ts";
+import { overallState, verificationLines } from "../src/lib/overall_read.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getItem, getTaskStatus } from "../src/lib/task_query.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
@@ -107,10 +107,16 @@ test("因依据而待核实：条目依据的那一页待核实或已废弃；�
     { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书", "预约，保留期是 3 天。"] }, sources: [{ kind: "条目", locator: "OA-002", excerpt: "保留期是 3 天。" }] },
   ] });
   const basis = (id: string) => stateOf(dir).verification.get(id)!.basis_pending;
-  // OA-002 依据 OA-001（待核实）；用例依据 OA-002，OA-002 自己没有助手补充，所以用例不受牵连（只看一层）。
-  assert.deepEqual([basis("OA-002"), basis("UC-001"), pendingOf(dir, "OA-002")], [{ item_id: "OA-001", reason: "pending", see: null }, null, [false, 0]]);
+  // OA-002 依据 OA-001（待核实）；用例依据 OA-002，OA-002 自己没有助手补充，不因 OA-001 而受牵连（只看一层），
+  // 但 OA-002 用户还没有看过，所以用例因此待核实，原因是没看过。
+  assert.deepEqual([basis("OA-002"), basis("UC-001"), pendingOf(dir, "OA-002")],
+    [{ item_id: "OA-001", reason: "pending", see: null }, { item_id: "OA-002", reason: "unviewed", see: null }, [false, 0]]);
   ui(dir, { kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] });
   assert.equal(basis("OA-002"), null);
+  assert.match(verificationLines("UC-001", stateOf(dir).verification.get("UC-001")!).join("\n"), /^待核实：它依据的主题 OA-002 用户还没有看过。请用户打开那一页看一眼（看过就算确认）。$/);
+  // 用户看过 OA-002 之后，用例不再因它而待核实。
+  ui(dir, { kind: "mark_viewed", targets: [{ item_id: "OA-002", base_revision: 1 }] });
+  assert.equal(basis("UC-001"), null);
   // 被依据的那一页废弃了并写了改看：依据它的条目因此待核实。
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-002", base_revision: 1, fields: { 状态: "已废弃", 改看: ["OA-001"] } }] });
   assert.deepEqual(basis("UC-001"), { item_id: "OA-002", reason: "deprecated", see: "OA-001" });
@@ -137,7 +143,7 @@ test("助手读到的说法：查看条目写待核实与提到它的地方，�
   assert.match(useCase.text, /待核实：它依据的主题 OA-001 还待核实/);
   assert.deepEqual((useCase.details as any).basis_pending, { item_id: "OA-001", reason: "pending", see: null });
   assert.equal("mentioned_by" in (useCase.details as any), false);
-  assert.match(getTaskStatus(dir).text, /待核实的条目：有助手补充而用户还没有确认的 1 个：OA-001；依据的主题待核实或已废弃的 1 个：UC-001。/);
+  assert.match(getTaskStatus(dir).text, /待核实的条目：有助手补充而用户还没有确认的 1 个：OA-001；依据的主题待核实、用户还没有看过或已废弃的 1 个：UC-001。/);
   // 用户看过之后这两句都没有了；废弃之后查看依据它的条目时写改看。
   ui(dir, { kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] });
   assert.doesNotMatch(getItem(dir, { item_id: "OA-001" }).text, /待核实/);
