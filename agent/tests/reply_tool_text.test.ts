@@ -18,9 +18,9 @@ test("kind 的说明写明是非题用请选择、征求同意用提议、提问
   assert.equal(SOURCE.includes("提议会撤掉条目或大改条目时必须写"), false);
 });
 
-test("stage 与 reason 的说明写明五个阶段名、哪些移动可以自己做、进入写条目要用卡片提议", () => {
+test("stage 与 reason 的说明写明五个阶段名、自己只能退回前面的阶段、往前要用卡片提议", () => {
   assert.ok(SOURCE.includes("写阶段的名字，「核读材料」「澄清」「整理建模」「写条目」「评审确认」之一。"));
-  assert.ok(SOURCE.includes("你可以自己做的移动：核读材料到澄清、澄清到整理建模、写条目到评审确认，以及退回前面的任何阶段。"));
-  assert.ok(SOURCE.includes("进入写条目要由用户决定：这时不要写 stage，改用请选择卡片提议。"));
-  assert.ok(SOURCE.includes("写了 stage 时必须写：一句话，说明为什么现在移到这个阶段。"));
+  assert.ok(SOURCE.includes("你自己只能把任务退回前面的阶段（例如整理时发现一个词没说清，退回澄清）。"));
+  assert.ok(SOURCE.includes("往前进入下一个阶段要由用户在卡片上点：这时不要写 stage，改用请选择卡片提议，说清下一段要做什么。"));
+  assert.ok(SOURCE.includes("写了 stage 时必须写：一句话，说明为什么现在退回这个阶段。"));
 });

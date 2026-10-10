@@ -1,16 +1,17 @@
 /**
- * 用户在助手提议进入写条目的那张卡片上点了「开始写条目」：系统替用户记一次移到写条目（lib/stage_read.ts 的 recordStartItemsClick），
- * 在卡片点击的处理函数（hooks/user_commands.ts 的 /tw-ui）里、发那句固定的话之前记。
+ * 用户在助手提议往前走的那张卡片上点了「进入」某个阶段的选项（进入澄清、进入整理建模、开始写条目、进入评审确认）：
+ * 系统替用户记一次移动（lib/stage_read.ts 的 recordStageCardClick），在卡片点击的处理函数（hooks/user_commands.ts 的 /tw-ui）里、
+ * 发那句固定的话之前记。
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { UI_COMMAND, UI_RESULT_KEY, registerUserCommands } from "../src/hooks/user_commands.ts";
-import { CONTINUE_CLARIFY_KEY, CONTINUE_CLARIFY_TEXT, START_ITEMS_KEY, START_ITEMS_TEXT } from "../src/lib/stage.ts";
-import { START_ITEMS_REASON, recordStartItemsClick } from "../src/lib/stage_read.ts";
+import { CONTINUE_CLARIFY_KEY, CONTINUE_CLARIFY_TEXT, ENTER_OPTIONS, STAGE_NAMES, START_ITEMS_KEY, START_ITEMS_TEXT, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
+import { START_ITEMS_REASON, enterReason, recordStageCardClick } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, callIn, count, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 const SESSION = "sess-ui";
 const OPTIONS = [{ key: START_ITEMS_KEY, text: START_ITEMS_TEXT }, { key: CONTINUE_CLARIFY_KEY, text: CONTINUE_CLARIFY_TEXT }];
@@ -32,14 +33,14 @@ const records = (dir: string) => query(dir, "SELECT stage, from_stage, actor, re
 
 test("点「开始写条目」：记一条用户的移动，理由写明是在卡片上选的；点「继续澄清」什么都不记", () => {
   const dir = workspace();
-  assert.equal(recordStartItemsClick(dir, SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: CONTINUE_CLARIFY_KEY }), null);
+  assert.equal(recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: CONTINUE_CLARIFY_KEY }), null);
   assert.equal(count(dir, "stage_record"), 0);
-  const moved = recordStartItemsClick(dir, SESSION, BRANCH, { opId: "ui-op-2", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
+  const moved = recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-2", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "reading", "writing"]);
   assert.equal(START_ITEMS_REASON, "用户在卡片上选了「开始写条目」");
   assert.deepEqual(records(dir), [{ stage: "writing", from_stage: "reading", actor: "user", reason: START_ITEMS_REASON, run_id: null, call_id: "ui-op-2", session_id: SESSION }]);
   // 已经在写条目了再点一次（例如点了一张更早的卡片）：原地不动，不再记。
-  const again = recordStartItemsClick(dir, SESSION, BRANCH, { opId: "ui-op-3", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
+  const again = recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-3", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
   assert.deepEqual([again.moved, again.why], [false, "same"]);
   assert.equal(count(dir, "stage_record"), 1);
 });
@@ -53,16 +54,56 @@ test("认不出那张卡片就不记：回复不在这条分支上、那条回�
     { replyEntry: "a-1", optionKey: "yes" },
     { replyEntry: null, optionKey: START_ITEMS_KEY },
   ];
-  for (const one of tries) assert.equal(recordStartItemsClick(dir, SESSION, BRANCH, { opId: "ui-op-1", ...one }), null);
+  for (const one of tries) assert.equal(recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-1", ...one }), null);
   assert.equal(count(dir, "stage_record"), 0);
 });
 
 test("早先建的任务没有阶段、已经不在进行中的任务：点了也不记", () => {
   const old = workspace(demoDefinition());
-  const none = recordStartItemsClick(old, SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
+  const none = recordStageCardClick(old, SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
   assert.deepEqual([none.moved, none.why, none.from], [false, "no_stages", null]);
   assert.equal(count(old, "stage_record"), 0);
-  assert.equal(recordStartItemsClick(makeWorkspace(), SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: START_ITEMS_KEY }), null, "还没有库");
+  assert.equal(recordStageCardClick(makeWorkspace(), SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: START_ITEMS_KEY }), null, "还没有库");
+});
+
+test("四张往前走的卡片：在紧挨着的前一段点「进入」才记移动；点「留在这一段」不记", () => {
+  const steps: [Stage, Exclude<Stage, "reading">][] = [["reading", "clarifying"], ["clarifying", "modeling"], ["modeling", "writing"], ["writing", "reviewing"]];
+  for (const [from, to] of steps) {
+    const dir = workspace();
+    if (from !== "reading") enterStage(dir, from);
+    const before = count(dir, "stage_record");
+    const options = [ENTER_OPTIONS[to], STAY_OPTIONS[from]];
+    const branch = [said("u-1", "读一下材料"), card("a-1", options)] as never;
+    assert.equal(recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-1", replyEntry: "a-1", optionKey: STAY_OPTIONS[from].key }), null, `${from}：留在这一段`);
+    assert.equal(count(dir, "stage_record"), before);
+    const moved = recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-2", replyEntry: "a-1", optionKey: ENTER_OPTIONS[to].key })!;
+    assert.deepEqual([moved.moved, moved.from, moved.requested], [true, from, to], `${from} 到 ${to}`);
+    assert.deepEqual(records(dir).at(-1), { stage: to, from_stage: from, actor: "user", reason: `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`, run_id: null, call_id: "ui-op-2", session_id: SESSION });
+    assert.equal(enterReason(to), `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`);
+  }
+});
+
+test("次序不对的点击不记：进入澄清、进入整理建模、进入评审确认只认紧挨着的前一段；开始写条目在写条目之前的哪一段点都算", () => {
+  const cardFor = (to: Exclude<Stage, "reading">) => [said("u-1", "读一下材料"), card("a-1", [ENTER_OPTIONS[to], { key: "stay", text: "先不" }])] as never;
+  const click = (dir: string, to: Exclude<Stage, "reading">) => recordStageCardClick(dir, SESSION, cardFor(to), { opId: `ui-op-${to}`, replyEntry: "a-1", optionKey: ENTER_OPTIONS[to].key });
+  // 任务在核读材料：点「进入整理建模」「进入评审确认」都不记（点的是一张早先的或者不该出现的卡片）。
+  const reading = workspace();
+  assert.equal(click(reading, "modeling"), null);
+  assert.equal(click(reading, "reviewing"), null);
+  assert.equal(count(reading, "stage_record"), 0);
+  // 任务已经在整理建模：再点一张早先的「进入澄清」不会把任务退回去。
+  const modeling = workspace();
+  enterStage(modeling, "modeling");
+  assert.equal(click(modeling, "clarifying"), null);
+  assert.equal(click(modeling, "reviewing"), null);
+  assert.equal(count(modeling, "stage_record"), 1);
+  // 开始写条目：核读材料、澄清、整理建模三段里点都算，用户可以跳过中间的阶段。
+  for (const from of ["reading", "clarifying", "modeling"] as const) {
+    const dir = workspace();
+    if (from !== "reading") enterStage(dir, from);
+    const moved = click(dir, "writing")!;
+    assert.deepEqual([moved.moved, moved.from, moved.requested], [true, from, "writing"], STAGE_NAMES[from]);
+  }
 });
 
 /** 登记两个扩展命令，取 /tw-ui 的处理函数；sent 按先后记下它往会话里发的东西。 */

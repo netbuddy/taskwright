@@ -117,7 +117,7 @@ test("阶段与最低门都过不去时两条原因都报；守门按调用那�
   // 没有任何记录、有材料：在核读材料。总体分析里一页都没有，最低门也过不去。
   const both = refusal(dir, [useCase("借书")])!;
   assert.ok(both.includes("任务现在在核读材料阶段，这个阶段不能新增「用例」的条目；还没有用户看过的主题：总体分析里还没有一页主题"), both);
-  assert.ok(both.includes("现在还在核读材料，读完先在回复里移到澄清"), both);
+  assert.ok(both.includes("进入写条目要由用户在卡片上选「开始写条目」"), both);
   // 用户把任务移到写条目：下一次调用就只剩最低门。
   enterStage(dir, "writing");
   const gateOnly = refusal(dir, [useCase("借书")])!;

@@ -50,56 +50,65 @@ test("形式：stage 写五个阶段名之一并带一句理由；名字不对�
   assert.throws(() => checkReply({ ...base, stages: "澄清" }, facts), /多了「stages」这一项，回复只有 informs、act、text 三项（要移动工作阶段时另写 stage 与 reason）/);
 });
 
-test("助手自己能做的移动：记一条阶段记录（带运行号与这次回复的调用编号），说明接在返回文字的前面；对话行为照常记", () => {
-  const { dir } = workspace();
-  const out = reply(dir, "clarifying");
-  assert.equal(out.text, "任务已从核读材料移到澄清。本轮记了 r1-1（告知：我立了两页。）。");
-  assert.deepEqual([out.extra!.moved, out.extra!.from, out.extra!.requested, out.extra!.why], [true, "reading", "clarifying", null]);
-  assert.deepEqual(query(dir, "SELECT stage, from_stage, actor, reason, run_id, call_id, session_id FROM stage_record").map((r) => ({ ...r })), [
-    { stage: "clarifying", from_stage: "reading", actor: "executor", reason: "材料读完了，先问借期。", run_id: "r1", call_id: `call-reply-${call}`, session_id: SESSION },
+test("助手自己能做的移动只有退回：记一条阶段记录（带运行号与这次回复的调用编号），说明接在返回文字的前面；对话行为照常记", () => {
+  const { dir, taskId } = workspace();
+  put(dir, taskId, "reading", "modeling");
+  const out = reply(dir, "clarifying", "「预约」这个词还没说清。");
+  assert.equal(out.text, "任务已从整理建模移到澄清。本轮记了 r1-1（告知：我立了两页。）。");
+  assert.deepEqual([out.extra!.moved, out.extra!.from, out.extra!.requested, out.extra!.why], [true, "modeling", "clarifying", null]);
+  assert.deepEqual(query(dir, "SELECT stage, from_stage, actor, reason, run_id, call_id, session_id FROM stage_record WHERE actor = 'executor'").map((r) => ({ ...r })), [
+    { stage: "clarifying", from_stage: "modeling", actor: "executor", reason: "「预约」这个词还没说清。", run_id: "r1", call_id: `call-reply-${call}`, session_id: SESSION },
   ]);
   const log = events(dir);
-  assert.deepEqual(log.map(([name]) => name), ["STAGE_MOVED", "EXECUTOR_ACTS_RECORDED"]);
-  assert.equal(out.extra!.event_seq, query<{ event_seq: number }>(dir, "SELECT event_seq FROM stage_record")[0].event_seq);
-  assert.equal("stage_declined" in log[1][1], false, "移成了，回复那条事件里不留退回的说明");
-  // 接着往后：澄清到整理建模可以；整理建模再退回澄清也可以。
-  assert.equal(reply(dir, "modeling", "借期与罚款都问清了。").extra!.moved, true);
-  assert.equal(reply(dir, "clarifying", "「预约」这个词还没说清。").text.startsWith("任务已从整理建模移到澄清。"), true);
-  assert.equal(count(dir, "stage_record"), 3);
+  assert.deepEqual(log.map(([name]) => name), ["STAGE_MOVED", "STAGE_MOVED", "EXECUTOR_ACTS_RECORDED"]);
+  assert.equal(out.extra!.event_seq, query<{ event_seq: number }>(dir, "SELECT event_seq FROM stage_record WHERE actor = 'executor'")[0].event_seq);
+  assert.equal("stage_declined" in log[2][1], false, "移成了，回复那条事件里不留退回的说明");
+  // 再退一段到核读材料也可以；从评审确认可以一下退回澄清。
+  assert.equal(reply(dir, "reading", "用户放进了新材料。").text.startsWith("任务已从澄清移到核读材料。"), true);
+  put(dir, taskId, "reading", "reviewing");
+  assert.equal(reply(dir, "clarifying", "评审发现一个词的意思不对。").extra!.moved, true);
+  assert.equal(count(dir, "stage_record"), 5);
 });
 
 test("助手不能自己做的移动：回复照常送达、对话行为照常记，阶段不动，原因写在返回文字与回复那条事件里", () => {
   const { dir, taskId } = workspace();
   put(dir, taskId, "reading", "modeling");
-  // 进入写条目：只能由用户。
+  // 往前一段（进入写条目）：要由用户在卡片上点。
   const writing = reply(dir, "writing", "主题都理清了。");
-  assert.equal(writing.text, "阶段没有移动：进入写条目要由用户决定。请用请选择卡片提议，两个选项的键与文字是 start_items「开始写条目」、continue_clarify「继续澄清」。" +
+  assert.equal(writing.text, "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 start_items「开始写条目」、continue_consolidate「再整理一遍」。" +
     "本轮记了 r1-1（告知：我立了两页。）。");
   assert.deepEqual([writing.extra!.moved, writing.extra!.why, writing.acts.length], [false, "user_only", 1]);
-  // 往后跳着移。
+  // 往前不止一段。
   const skip = reply(dir, "reviewing", "直接评审。");
-  assert.match(skip.text, /^阶段没有移动：任务现在在整理建模阶段，评审确认要先经过写条目/);
+  assert.match(skip.text, /^阶段没有移动：往前移动要由用户在卡片上点。一次只进入下一段，整理建模的下一段是写条目。/);
   // 原地不动。
   const same = reply(dir, "modeling", "还在整理。");
   assert.match(same.text, /^任务本来就在整理建模阶段，没有记移动。/);
   assert.equal(count(dir, "stage_record"), 1, "只有开头放过去的那一条");
   const declined = events(dir).filter(([name]) => name === "EXECUTOR_ACTS_RECORDED").map(([, payload]) => payload.stage_declined);
   assert.deepEqual(declined, [
-    { stage: "writing", from: "modeling", why: "user_only" }, { stage: "reviewing", from: "modeling", why: "skip" }, { stage: "modeling", from: "modeling", why: "same" },
+    { stage: "writing", from: "modeling", why: "user_only" }, { stage: "reviewing", from: "modeling", why: "user_only" }, { stage: "modeling", from: "modeling", why: "same" },
   ]);
-  // 写条目到评审确认助手可以自己移；从评审确认退回写条目也可以。
-  put(dir, taskId, "modeling", "writing");
-  assert.equal(reply(dir, "reviewing", "条目都写完了。").extra!.moved, true);
+  // 核读材料到澄清、澄清到整理建模、写条目到评审确认，助手也都不能自己移。
+  for (const [from, to] of [["reading", "clarifying"], ["clarifying", "modeling"], ["writing", "reviewing"]] as const) {
+    put(dir, taskId, "modeling", from);
+    const forward = reply(dir, to, "这一段做完了。");
+    assert.deepEqual([forward.extra!.moved, forward.extra!.why, forward.extra!.from], [false, "user_only", from], `${from} 到 ${to}`);
+    put(dir, taskId, from, "modeling");
+  }
+  // 从评审确认退回写条目可以。
+  put(dir, taskId, "modeling", "reviewing");
   assert.equal(reply(dir, "writing", "评审发现缺一条用例。").extra!.moved, true);
 });
 
 test("回复里没有告知也没有要的回应：移成了只记阶段那一条事件；移不成才为留下原因记一条回复的事件", () => {
-  const { dir } = workspace();
-  const moved = reply(dir, "clarifying", "材料只有一段，直接问。", []);
-  assert.deepEqual([moved.text, moved.acts, moved.eventSeq, moved.extra!.moved], ["任务已从核读材料移到澄清。", [], null, true]);
-  assert.deepEqual(events(dir).map(([name]) => name), ["STAGE_MOVED"]);
+  const { dir, taskId } = workspace();
+  put(dir, taskId, "reading", "modeling");
+  const moved = reply(dir, "clarifying", "还有一个词要问。", []);
+  assert.deepEqual([moved.text, moved.acts, moved.eventSeq, moved.extra!.moved], ["任务已从整理建模移到澄清。", [], null, true]);
+  assert.deepEqual(events(dir).map(([name]) => name), ["STAGE_MOVED", "STAGE_MOVED"]);
   const declined = reply(dir, "writing", "可以写了。", []);
-  assert.match(declined.text, /^阶段没有移动：进入写条目要由用户决定。/);
+  assert.match(declined.text, /^阶段没有移动：往前移动要由用户在卡片上点。/);
   assert.deepEqual(events(dir).map(([name, payload]) => [name, payload.acts, payload.stage_declined]).at(-1),
     ["EXECUTOR_ACTS_RECORDED", [], { stage: "writing", from: "clarifying", why: "user_only" }]);
   assert.equal(count(dir, "dialogue_act"), 0);

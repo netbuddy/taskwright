@@ -48,46 +48,80 @@ export function defaultStage(hasMaterials: boolean): Stage {
 
 // ───────────── 移动 ─────────────
 
-/** 提议进入写条目的那张请选择卡片的两个选项：键与文字都是固定的。用户点了「开始写条目」，系统替用户记一次移动。 */
+/**
+ * 往前进入下一个阶段要由用户在卡片上点：助手做完这一段，发一张请选择卡片说清下一段要做什么，卡片上固定两个选项，
+ * 「进入下一段」与「留在这一段」，键与文字都是固定的。用户点了「进入」，系统替用户记一次移动。
+ * 进入写条目的那个键沿用早先的名字 start_items。
+ */
 export const START_ITEMS_KEY = "start_items";
 export const START_ITEMS_TEXT = "开始写条目";
 export const CONTINUE_CLARIFY_KEY = "continue_clarify";
 export const CONTINUE_CLARIFY_TEXT = "继续澄清";
 
-/** 助手想进入写条目时告诉它怎么办的那一句。 */
-export const PROPOSE_WRITING_GUIDANCE =
-  `请用请选择卡片提议，两个选项的键与文字是 ${START_ITEMS_KEY}「${START_ITEMS_TEXT}」、${CONTINUE_CLARIFY_KEY}「${CONTINUE_CLARIFY_TEXT}」`;
+export interface CardOption {
+  key: string;
+  text: string;
+}
+
+/** 进入某个阶段的那个选项（核读材料是第一段，没有「进入」它的卡片）。 */
+export const ENTER_OPTIONS: Record<Exclude<Stage, "reading">, CardOption> = {
+  clarifying: { key: "enter_clarify", text: "进入澄清" },
+  modeling: { key: "enter_consolidate", text: "进入整理建模" },
+  writing: { key: START_ITEMS_KEY, text: START_ITEMS_TEXT },
+  reviewing: { key: "enter_review", text: "进入评审确认" },
+};
+
+/** 留在某个阶段的那个选项（评审确认是最后一段，没有往前的卡片）。 */
+export const STAY_OPTIONS: Record<Exclude<Stage, "reviewing">, CardOption> = {
+  reading: { key: "continue_reading", text: "再核读一遍" },
+  clarifying: { key: CONTINUE_CLARIFY_KEY, text: CONTINUE_CLARIFY_TEXT },
+  modeling: { key: "continue_consolidate", text: "再整理一遍" },
+  writing: { key: "continue_writing", text: "继续写条目" },
+};
+
+/** 某个阶段的下一段；评审确认之后没有。 */
+export function nextStage(stage: Stage): Stage | null {
+  return STAGES[STAGES.indexOf(stage) + 1] ?? null;
+}
+
+/** 卡片上的一个选项键是「进入」哪个阶段的；不是这样的键时返回 null。 */
+export function stageEnteredBy(key: unknown): Exclude<Stage, "reading"> | null {
+  const found = (Object.keys(ENTER_OPTIONS) as Exclude<Stage, "reading">[]).find((stage) => ENTER_OPTIONS[stage].key === key);
+  return found ?? null;
+}
+
+/**
+ * 在某个阶段怎样提议进入下一段：告诉助手用哪张卡片、两个选项怎样写。评审确认是最后一段，没有下一段，返回空串。
+ */
+export function forwardCardGuidance(from: Stage): string {
+  const next = nextStage(from);
+  if (next === null || from === "reviewing" || next === "reading") return "";
+  const enter = ENTER_OPTIONS[next], stay = STAY_OPTIONS[from];
+  return `请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 ${enter.key}「${enter.text}」、${stay.key}「${stay.text}」`;
+}
 
 /**
  * 一次移动行不行。
  * - same：目标就是现在所在的阶段，原地不动不算移动，不记。
- * - user_only：进入写条目要由用户决定，助手在前面哪个阶段都只能提议。
- * - skip：除此之外助手往后一次只能移一段（核读材料到澄清、澄清到整理建模、写条目到评审确认）；评审确认要先经过写条目。
+ * - user_only：往前移动（目标在现在这个阶段之后）要由用户在卡片上点，助手只能提议。
  * 用户的移动不设限；助手可以从任何阶段退回它前面的任何阶段。
  */
-export type MoveVerdict = { ok: true } | { ok: false; why: "same" | "user_only" | "skip" };
+export type MoveVerdict = { ok: true } | { ok: false; why: "same" | "user_only" };
 
 export function judgeMove(from: Stage, to: Stage, actor: StageActor): MoveVerdict {
   if (from === to) return { ok: false, why: "same" };
   if (actor === "user") return { ok: true };
-  const at = STAGES.indexOf(from);
-  const goal = STAGES.indexOf(to);
-  if (goal < at) return { ok: true };
-  if (to === "writing") return { ok: false, why: "user_only" };
-  if (goal > at + 1) return { ok: false, why: "skip" };
-  return { ok: true };
+  if (STAGES.indexOf(to) < STAGES.indexOf(from)) return { ok: true };
+  return { ok: false, why: "user_only" };
 }
 
 /** 助手在回复里写了 stage 之后，工具返回里说明结果的那一句（接在「回复已送达。」后面）。 */
 export function moveText(from: Stage, to: Stage, verdict: MoveVerdict): string {
   if (verdict.ok) return `任务已从${STAGE_NAMES[from]}移到${STAGE_NAMES[to]}。`;
   if (verdict.why === "same") return `任务本来就在${STAGE_NAMES[from]}阶段，没有记移动。`;
-  if (verdict.why === "user_only") return `阶段没有移动：进入写条目要由用户决定。${PROPOSE_WRITING_GUIDANCE}。`;
-  const next = STAGES[STAGES.indexOf(from) + 1];
-  if (next === "writing" || to === "reviewing") {
-    return `阶段没有移动：任务现在在${STAGE_NAMES[from]}阶段，评审确认要先经过写条目，进入写条目要由用户决定。${PROPOSE_WRITING_GUIDANCE}。`;
-  }
-  return `阶段没有移动：任务现在在${STAGE_NAMES[from]}阶段，一次只能往后移一段，请先移到${STAGE_NAMES[next]}。`;
+  const next = nextStage(from);
+  const oneStep = next !== null && to !== next ? `一次只进入下一段，${STAGE_NAMES[from]}的下一段是${STAGE_NAMES[next]}。` : "";
+  return `阶段没有移动：往前移动要由用户在卡片上点。${oneStep}${forwardCardGuidance(from)}。`;
 }
 
 /** 早先建的任务没有阶段，助手在回复里写了 stage 时的那一句。 */
@@ -123,9 +157,8 @@ export type Refusal = [fact: string, guidance: string];
 const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", delete: "删除" };
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
-function howToReachWriting(stage: Stage): string {
-  return `进入写条目要由用户在卡片上选「${START_ITEMS_TEXT}」：你可以先立页、请用户看，觉得理解够了就用请选择卡片提议` +
-    (stage === "reading" ? "（现在还在核读材料，读完先在回复里移到澄清）" : "");
+function howToReachWriting(): string {
+  return `进入写条目要由用户在卡片上选「${START_ITEMS_TEXT}」：你可以先立页、请用户看，觉得理解够了就用请选择卡片提议`;
 }
 
 /**
@@ -136,7 +169,7 @@ export function itemRefusal(stage: Stage, op: string, collection: string): Refus
   if (canWrite(stage, "item")) return null;
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`,
-    `「${collection}」的条目要到写条目阶段才能写。${howToReachWriting(stage)}`,
+    `「${collection}」的条目要到写条目阶段才能写。${howToReachWriting()}`,
   ];
 }
 
@@ -172,7 +205,7 @@ export function reviewRefusal(stage: Stage): Refusal | null {
   if (canWrite(stage, "review")) return null;
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，评审要到写条目阶段才能请求`,
-    `条目写出来之后再评审。${howToReachWriting(stage)}`,
+    `条目写出来之后再评审。${howToReachWriting()}`,
   ];
 }
 
@@ -182,8 +215,8 @@ export function completeRefusal(stage: Stage): Refusal | null {
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，完成任务要在评审确认阶段`,
     stage === "writing"
-      ? "条目写完之后，在回复里把任务移到评审确认，再完成任务"
-      : `要先写条目、再移到评审确认，才能完成任务。${howToReachWriting(stage)}`,
+      ? `条目写完之后，要由用户在卡片上选「${ENTER_OPTIONS.reviewing.text}」进入评审确认，再完成任务。${forwardCardGuidance("writing")}`
+      : `要先写条目、再由用户进入评审确认，才能完成任务。${howToReachWriting()}`,
   ];
 }
 

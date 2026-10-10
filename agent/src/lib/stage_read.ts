@@ -18,8 +18,8 @@ import { overallState } from "./overall_read.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_ITEM, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
 import {
-  type Lamp, type LampInput, NO_STAGES_TEXT, STAGE_NAMES, START_ITEMS_KEY, START_ITEMS_TEXT, type Stage, type StageActor, defaultStage, isStage, judgeMove,
-  lampLines, lampPage, lampQuestion, moveText, stageLamps,
+  ENTER_OPTIONS, type Lamp, type LampInput, NO_STAGES_TEXT, STAGE_NAMES, type Stage, type StageActor, defaultStage, isStage, judgeMove,
+  lampLines, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
@@ -109,14 +109,14 @@ export function recordStageMove(db: DatabaseSync, move: StageMove): number {
 }
 
 /**
- * 一次移动的结果。moved 为真是记下了；为假时 why 写原因：same 原地不动，user_only 进入写条目要由用户决定，
- * skip 助手往后跳着移，no_stages 这个任务没有阶段（早先建的任务）。from 是移动之前所在的阶段，任务没有阶段时为 null。
+ * 一次移动的结果。moved 为真是记下了；为假时 why 写原因：same 原地不动，user_only 往前移动要由用户在卡片上点，
+ * no_stages 这个任务没有阶段（早先建的任务）。from 是移动之前所在的阶段，任务没有阶段时为 null。
  */
 export interface StageMoveOutcome {
   requested: Stage;
   from: Stage | null;
   moved: boolean;
-  why: "same" | "user_only" | "skip" | "no_stages" | null;
+  why: "same" | "user_only" | "no_stages" | null;
   event_seq: number | null;
 }
 
@@ -142,31 +142,42 @@ export function replyStageMove(db: DatabaseSync, workspaceDir: string, who: { ta
   to: Stage, reason: string): { text: string; payload?: Record<string, unknown>; value: StageMoveOutcome } {
   const outcome = moveStage(db, workspaceDir, { ...who, actor: "executor" }, to, reason);
   if (outcome.from === null) return { text: NO_STAGES_TEXT, payload: { stage_declined: { stage: to, why: "no_stages" } }, value: outcome };
-  const verdict = outcome.moved ? { ok: true as const } : { ok: false as const, why: outcome.why as "same" | "user_only" | "skip" };
+  const verdict = outcome.moved ? { ok: true as const } : { ok: false as const, why: outcome.why as "same" | "user_only" };
   const text = moveText(outcome.from, to, verdict);
   return outcome.moved ? { text, value: outcome } : { text, payload: { stage_declined: { stage: to, from: outcome.from, why: outcome.why } }, value: outcome };
 }
 
-/** 用户在卡片上点了「开始写条目」时，那条阶段记录里写的理由。 */
-export const START_ITEMS_REASON = `用户在卡片上选了「${START_ITEMS_TEXT}」`;
+/** 用户在卡片上点了「进入某个阶段」时，那条阶段记录里写的理由。 */
+export function enterReason(to: Exclude<Stage, "reading">): string {
+  return `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`;
+}
+/** 点的是「开始写条目」时的理由。 */
+export const START_ITEMS_REASON = enterReason("writing");
 
 /**
- * 用户点了一张卡片上的选项：点的是助手提议进入写条目的那张请选择卡片上的「开始写条目」时，替用户记一次移到写条目。
+ * 用户点了一张卡片上的选项：点的是助手提议往前走的那张请选择卡片上「进入」某个阶段的选项时，替用户记一次移动。
+ * 四个键各进入一个阶段（lib/stage.ts 的 ENTER_OPTIONS）：进入澄清、进入整理建模、开始写条目、进入评审确认。
  * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键；认不出就不记（返回 null），点击照常往下走。
- * 任务没有阶段、任务不在进行中、任务本来就在写条目时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、发那句固定的话之前调用，
- * 这样助手回应这次点击的那一次运行从头就在写条目阶段。
+ * 次序不对的点击也不记：进入澄清、进入整理建模、进入评审确认只在任务正处在紧挨着的前一段时才算；
+ * 开始写条目在写条目之前的哪一段点都算（用户可以跳过中间的阶段），任务已经过了写条目时点它是退回写条目。
+ * 任务没有阶段、任务不在进行中、任务本来就在那个阶段时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
+ * 发那句固定的话之前调用，这样助手回应这次点击的那一次运行从头就在新的阶段。
  */
-export function recordStartItemsClick(workspaceDir: string, sessionId: string, branch: readonly Entry[],
+export function recordStageCardClick(workspaceDir: string, sessionId: string, branch: readonly Entry[],
   click: { opId: string; replyEntry: unknown; optionKey: unknown }): StageMoveOutcome | null {
-  if (click.optionKey !== START_ITEMS_KEY || typeof click.replyEntry !== "string") return null;
+  const to = stageEnteredBy(click.optionKey);
+  if (to === null || typeof click.replyEntry !== "string") return null;
   const card = branch.find((entry) => entry.id === click.replyEntry);
   const act = card ? chooseActOf(card) : null;
-  if (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === START_ITEMS_KEY)) return null;
+  if (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === click.optionKey)) return null;
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+      const task = db.prepare("SELECT task_id, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+        { task_id: string; status: string; definition_text: string } | undefined;
       if (!task || task.status !== TASK_ACTIVE) return null;
-      return moveStage(db, workspaceDir, { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" }, "writing", START_ITEMS_REASON);
+      const from = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
+      if (to !== "writing" && from !== null && nextStage(from) !== to) return null;
+      return moveStage(db, workspaceDir, { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" }, to, enterReason(to));
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return null;
