@@ -46,6 +46,8 @@ export interface StartOptions {
   profile?: string;
   /** 网页静态文件所在的目录；给了就由本服务出页面（不以 /api/ 开头的 GET 请求）。 */
   web?: string;
+  /** 调试模式（命令行的 --debug），缺省关：见 service.ts 的 ServiceOptions.debug。 */
+  debug?: boolean;
   /** 是否把进程交给这个服务（接信号、收到退出请求时退出进程），缺省是。 */
   ownProcess?: boolean;
 }
@@ -139,7 +141,7 @@ export async function startService(options: StartOptions): Promise<Started> {
       throw error;
     }
   }
-  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry, dataDir });
+  const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry, dataDir, debug: options.debug === true });
   if (pending) {
     service.upgrade = new PendingUpgrade(plan, (opened) => service.attachRegistry(opened));
     console.log(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${plan.tasks.length} 个任务）：服务已经起来，等页面上点「开始升级」。`);
@@ -182,6 +184,6 @@ export async function startService(options: StartOptions): Promise<Started> {
   service.port = port;
   if (options.port !== 0 && port !== options.port) console.log(`端口 ${options.port} 被占用，改用端口 ${port}。`);
   const web = options.web ? `，网页 ${options.web}` : "";
-  console.log(`任务服务在 http://${host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}，知识库 ${service.knowledge!.root}，运行形态 ${mode}${web}`);
+  console.log(`任务服务在 http://${host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}，知识库 ${service.knowledge!.root}，运行形态 ${mode}${web}${service.debug ? "，调试模式已打开（只在自己的机器上用）" : ""}`);
   return { service, server, port, host, tasksDir, runsDir, knowledgeDir: service.knowledge!.root, dataDir, stop };
 }

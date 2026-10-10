@@ -34,6 +34,15 @@ export type Profile = Record<string, any>;
  */
 export const PI_SETTINGS_MODEL = "pi_settings_model";
 
+/**
+ * 调试模式的运行时标记：服务带 --debug 启动时加在内存里的启动配置上（不写进任何配置文件）。带标记时，起 pi 的环境里多一个变量
+ * ENV_DEBUG_SETTINGS，值是产品设置文件的路径；助手一侧的扩展见到这个变量才算调试模式（每次运行从那份文件读「提示词目录」，
+ * 并把整份系统提示报回来）。不带标记时这个变量一定不在 pi 的环境里，即使服务自己的环境里有。
+ */
+export const DEBUG_MODE = "debug_mode";
+/** 与 agent/src/lib/prompt_dir.ts 里的同名常量是一份约定。 */
+export const ENV_DEBUG_SETTINGS = "TASKWRIGHT_DEBUG_SETTINGS_FILE";
+
 /** pi 的配置目录：与 pi 相同，PI_CODING_AGENT_DIR 优先（开头的 ~ 展开成主目录），否则是 ~/.pi/agent。 */
 export function piAgentDir(env: NodeJS.ProcessEnv | Record<string, string> = process.env): string {
   return expandUser(env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"));
@@ -215,6 +224,8 @@ export function buildEnvironment(profile: Profile): Record<string, string> {
   const tag = (profile.langfuse || {}).environment;
   if (tag) env[ENV_TRACING_ENVIRONMENT] = env[ENV_TRACING_ENVIRONMENT] || tag;
   env[SEGMENTS_ENV] = JSON.stringify(segmentParamsOf(profile));
+  if (profile[DEBUG_MODE]) env[ENV_DEBUG_SETTINGS] = settingsFile(process.env);
+  else delete env[ENV_DEBUG_SETTINGS];
   return env;
 }
 

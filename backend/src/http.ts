@@ -270,6 +270,8 @@ export function serviceInfo(service: Service, remote: string | null = null) {
   const model = probeModel(service.profile, process.env, { paths: service.mode === "desktop" });
   return {
     ok: true, app: "taskwright", version: appVersion(), mode: service.mode, pid: process.pid, port: service.port,
+    // 调试模式开没开（启动参数 --debug）：页面据此显示设置里的「提示词目录」与调试用的面板。
+    debug: service.debug,
     // 启动时发现有上一版留下的数据要先升级、而升级还没有做完：页面据此整屏显示数据升级页，别的接口这时一律答 upgrade_pending。
     upgrade_pending: service.upgrade?.blocking ?? false,
     capabilities: { exit: service.mode === "desktop" && LOOPBACK.has(remote ?? ""), model: model.available, model_config: true, model_test: true, knowledge: service.knowledge !== null },
