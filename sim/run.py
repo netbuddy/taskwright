@@ -235,9 +235,9 @@ def profile_model(name: str) -> str | None:
         return None
 
 
-def build_parser(description: str = "跑用户 agent 演练；--repeat N 接连跑 N 次并写汇总。") -> argparse.ArgumentParser:
-    """演练的命令行参数。评测的命令行（sim/evals.py）在它上面再加自己的几项。"""
-    parser = argparse.ArgumentParser(description=description)
+def build_parser(description: str = "跑用户 agent 演练；--repeat N 接连跑 N 次并写汇总。", add_help: bool = True) -> argparse.ArgumentParser:
+    """演练的命令行参数。评测的命令行（sim/evals.py）把它当底子（add_help 为假），再加自己的几项。"""
+    parser = argparse.ArgumentParser(description=description, add_help=add_help)
     parser.add_argument("--persona", required=True)
     parser.add_argument("--sim-root", default=str(Path.cwd() / "sim-runs"))
     parser.add_argument("--materials-dir", default=os.environ.get("TASKWRIGHT_SIM_MATERIALS_DIR", ""),

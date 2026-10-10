@@ -74,7 +74,6 @@ class RecordVersionTest(unittest.TestCase):
         self.assertIsInstance(version["未提交的改动"], list)
 
 
-
 class RunOptionsTest(unittest.TestCase):
     def test_两个参数不给时与原来相同_给了就换后端的启动配置与用户_agent_的模型(self):
         args = build_parser().parse_args(["--persona", "p.json"])
