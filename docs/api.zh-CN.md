@@ -54,6 +54,7 @@ data: {
 |---|---|---|
 | `task_changed` | 任务被创建、完成或放弃时 | `seq`、`at`、`task_id`、`task_name`、`status_before`、`status_after`、`actor`、`completion` |
 | `diagram_changed` | 一张图被新画、修改或删除时 | `seq`、`at`、`task_id`、`actor`、`op_id`、`diagram_id`、`revision_no`（这张图自己改后的修订号）、`op`（`add`、`update`、`delete`）、`name`、`kind`、`kind_name`（种类的中文名，例如「用例图」）。不带 Mermaid 文本与来源，要用时取图的详情 |
+| `stage_changed` | 任务从一个工作阶段移到另一个阶段时：助手在回复里移的、用户用直接操作移的，或者用户在卡片上点了「开始写条目」 | `seq`、`at`、`task_id`、`to`（移到了哪个阶段）、`from`（从哪个阶段来）、`actor`（`executor` 或 `user`）、`reason`（助手必写；用户的可以是空文字）、`run_id`（助手移的是运行号，用户移的为 null）、`op_id`、`completion` |
 | `review_recorded` | 评审者（reviewer）评完一个条目时；`verdict` 为 `合规` 或 `不合规`，由代码按发现所依据规则的级别算出 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`verdict`、`reason`、`findings`（每条有 `rule_id`、`level`（`必选` 或 `可选`）、`field`、`index`（从 0 起，指整个字段时为 null）、`problem`、`suggestion`）、`op_id`（用户在界面上发起的评审才有）、`completion` |
 | `review_unfinished` | 一个条目的评审没有完成（超时、调用失败、两次输出不合格、评审期间条目被改），不记合规与否 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`reason`、`op_id`、`completion` |
 | `review_progress` | 界面发起的一批评审（`request_review`）开始时（`done` 为 0），以及每评完一个条目时 | `seq`、`at`、`task_id`、`op_id`、`done`、`total`、`current`（此刻正在评的条目）、`item_id`（刚评完的条目，开始时为 null）、`completion` |
@@ -67,6 +68,8 @@ data: {
 | `resync`（无 id） | 需要重放的事件太多 | `{"reason": "gap_too_large"}` |
 
 数据库事件的序号可能跳号：任务库里有几种记录不推送。它们是助手对用户一句话的理解（`USER_INTENT_RECORDED`，以及理解没有写成的三种情形 `USER_INTENT_INVALID`、`USER_INTENT_MISSING`、`STRUCTURED_OUTPUT_UNMATCHED`）与助手回复时记下的行为（`EXECUTOR_ACTS_RECORDED`）。前几种的内容由后端合成「理解为」那一行，随 `step` 与 `work_summary` 送到页面；回复的内容由 `assistant_reply` 送到页面。页面见到跳号时重读一份快照。
+
+任务有工作阶段时（见第 4.1 节的 `stage`），每一批数据库事件的最后一条（不论是哪一种事件）另带 `stage`：现在的阶段与各阶段的灯，形状与快照里的 `task.stage` 相同，客户端照它换掉自己手里的那一份即可。没有阶段的任务不带这一项。
 
 ### 3.2 对话事件与进度事件（无编号，不参与重放）
 
@@ -108,6 +111,9 @@ data: {
                             "all_rules": [ { "id": "UC-R13", "level": "可选", "text": "…", "state": "off" }, … ],
                             "rule_switches": { "off": ["UC-R13"], "promote": [] }, "rules_hash": "…" }, … ] },
             "completion": { … 见第 4.2 节 … },
+            "stage": { "current": "clarifying", "moved_by": "executor", "moved_at": "…", "reason": "材料读完了，主题页立好了。",
+                       "lamps": { "reading": [ { "key": "materials_cited", "summary": "每份材料都被至少一页主题或一条问题引用了。", "ok": true, "items": [] } ],
+                                  "clarifying": [ … ], "modeling": [ … ], "writing": [ … ], "reviewing": [ … ] } },   // 工作的阶段与灯，见下文；没有阶段的任务是 null
             "items": [ { "item_id": "UC-001", "collection": "功能用例", "title": "…", "revision_no": 5, "revision_by": "user",
                          "revision_at": "…", "revisions": [2, 5], "fields": { … }, "sources": [ … ],
                          "depended_by": [ { "element_kind": "条目", "id": "CON-002", "revision_no": 4 }, { "element_kind": "图", "id": "D-001", "revision_no": 2 } ],   // 被谁依据：把这个条目写成来源的别的条目与图，带它们当前的修订号（图的是图自己的修订号；只数还在的条目与图的当前修订）；没有时是空列表
@@ -130,8 +136,26 @@ data: {
 每个条目另有几项读的时候现算的事实，不存库：
 
 - `pending_verification`、`pending_sources`、`pending_places`（**待核实**）。条目当前所在的修订上有 `助手补充` 的来源、而用户还没有确认过时，`pending_verification` 为真。用户打开看过或点了确认（一条 `basis` 不是 `ui_edit` 的接受）是确认整个条目；用户亲手改（`ui_edit`）只确认他改写的那几处：保存时这几处从助手补充来源的 `supports` 里去掉，一条来源支持的各处都被改写了，它就不再留在新修订上；没有写 `supports` 的来源改哪里都留着，只有看过才算确认。用户只改别的字段、删掉列表里别的一项、撤销一次修订，都不算确认。助手之后又改了条目，重新算起。`pending_sources` 是还待核实的来源有几条；`pending_places` 是这些来源支持的、用户还没有改到的各处，`field` 是字段名，`index` 是列表字段的第几项（从 0 起，不是列表字段或者指整个字段时是 null），`field` 为 null 指整个条目。不待核实时是 `false`、`0`、`[]`。
-- `basis_pending`（**因依据而待核实**）。条目有一条种类为 `条目` 的来源，指向总体分析里一页待核实或已废弃的主题时，给出 `{ "item_id", "reason", "see" }`：`reason` 是 `pending`（那一页待核实）或 `deprecated`（那一页已废弃，`see` 是它的「改看」写的那一页，没有写时是 null）；几条来源都这样时，按来源的先后取头一条。只看一层：被依据的那一页自己依据了谁不往下追。没有时是 null。
+- `basis_pending`（**因依据而待核实**）。条目有一条种类为 `条目` 的来源，指向总体分析里一页已废弃、待核实或者用户还没有看过的主题时，给出 `{ "item_id", "reason", "see" }`：`reason` 是 `pending`（那一页待核实）、`unviewed`（那一页没有待核实的内容，但用户还没有打开看过或点过确认）或 `deprecated`（那一页已废弃，`see` 是它的「改看」写的那一页，没有写时是 null）；几条来源都这样时，按来源的先后取头一条。只看一层：被依据的那一页自己依据了谁不往下追。没有时是 null。
 - `mentioned_by`（**提到**；只有「总体分析」集合的条目带这一项）。贴了标签、在用的主题的标题与别名是词表；别的页与别的条目当前修订的文字里出现了这一页的词，就各记一条：`item_id` 与 `collection` 是出现在哪个条目里，`field` 与 `index` 是哪个字段的第几项，`word` 是认出来的词，`sentence` 是那一句原话，`revision_no` 是被提到的这一页现在的修订号（页面可以拿它记住用户看到这条提到时那一页是哪次修订，那一页之后又改了就能提醒）。一个位置上取词表里最长的词；一句话里同一页只记一次；一页不记自己提到自己；两页的标题或别名相同时两页各记一条。没有贴标签的页与已废弃的页是空列表。
+
+
+`task.stage` 是**工作的阶段**。任务定义里有「总体分析」集合的任务，工作分五个阶段：`reading`（核读材料）、`clarifying`（澄清）、`modeling`（整理建模）、`writing`（写条目）、`reviewing`（评审确认）。`current` 是现在所在的阶段，取最近一次移动；一次都没有移过时，任务目录里有材料是 `reading`、没有材料是 `clarifying`，这时 `moved_by`、`moved_at`、`reason` 都是 null。`moved_by` 是 `executor` 或 `user`。阶段决定助手这一刻能写什么：总体分析的页与问题条目一直可以写；图从整理建模起；别的集合的条目与请求评审从写条目起；完成任务只在评审确认；评审确认阶段主题页只能改「状态」与「改看」。助手在不许的阶段调用写入工具会被拒绝，拒绝里写明现在在哪个阶段、要先做什么。用户的直接操作不看阶段。`lamps` 按阶段给出几盏**灯**，每盏是 `{ key, summary, ok, items }`：`summary` 是一句完整的话；`ok` 为 true 是通过、false 是不通过、null 是不适用（例如「每页流程都……」而一页流程都没有）；`items` 是差的页、条目或材料。灯是每个阶段「做到什么算够」的提示，从任务现有的内容现算，不拦任何操作。没有「总体分析」集合的任务（0.4 建的）没有阶段，`stage` 是 null。十二盏灯：
+
+| 阶段 | 键 | 判的是什么 |
+|---|---|---|
+| `reading` | `materials_cited` | 每份材料（不算由 Word、PDF 生成的文字版与分段清单）都被至少一页主题或一条问题的 `文档原文` 来源引用。 |
+| `clarifying` | `tagged_pages_no_open_questions` | 贴了标签的主题上没有挂着未解决的待澄清问题（问题条目的「关联条目」指到它）。 |
+| `clarifying` | `decisions_have_goal` | 每页标签为「决定」的主题，上级主题是一页标签为「目标」的主题。 |
+| `modeling` | `flows_have_exception` | 每页标签为「流程」的主题至少有一条以「例外：」开头的例子。 |
+| `modeling` | `roles_mentioned_by_flows` | 每页标签为「角色」的主题被至少一页标签为「流程」或「场景」的主题提到。 |
+| `modeling` | `no_duplicate_titles` | 没有两页在用的主题标题或别名相同。 |
+| `modeling` | `no_untagged_pages` | 没有还没贴标签的主题。 |
+| `writing` | `flows_backed_by_use_cases` | 每页标签为「流程」或「场景」的主题被「功能用例」集合里至少一个条目依据。 |
+| `writing` | `basis_pages_viewed` | 条目依据的主题页用户都看过。 |
+| `writing` | `no_pending_items` | 总体分析以外没有待核实的条目（含因依据而待核实的）。 |
+| `reviewing` | `reviews_no_open_findings` | 没有评审不合规而未处理的条目；任务还没有评审过时不通过。 |
+| `reviewing` | `completion_met` | 完成条件全部满足。 |
 
 `review_in_progress` 是正在进行的一批界面发起的评审，形状与 `review_progress` 事件里的 `op_id`、`done`、`total`、`current` 相同，取自任务库里最后一条评审进度。这一批已经结束、助手现在没有在运行、或者这条进度写于助手这一次启动之前（助手在评审中途退出过）时为 null。页面据此在刷新之后立刻显示「评审中」；为 null 而页面上还有没结束的评审时，页面把它清掉。
 
@@ -255,14 +279,18 @@ data: {
 
 续接或切换会话之后，服务核对 pi 报告的会话是不是请求的那一条。pi 报告的是别的会话（例如会话文件不在了，pi 没有报错而是新开了一条），或者 pi 拒绝切换时，服务不采纳那条会话：停掉这个任务的 pi，写一行日志（任务编号、请求的会话、pi 报告的会话），并返回 `session_resume_failed`。核对发生在把用户的话交给 pi 之前，所以这句话没有发出去，也没有进入任何会话；下一次请求时按平常的方式重新启动 pi。这种情况下快照照常返回，对话记录从会话文件读取，`executor.state` 为 `not_started`。会话文件整个不在时仍返回 `not_found`。服务启动时把 `--tasks` 与 `--runs` 转成绝对路径，交给 pi 的会话文件路径也一律是绝对路径。
 
+**移动工作阶段。** 智能体的「回复」另有两个可选参数 `stage`（五个阶段的名字之一，例如「澄清」）与 `reason`（写了 `stage` 就必须写一句）。智能体能自己做的移动是核读材料到澄清、澄清到整理建模、写条目到评审确认，以及退回前面的任何阶段；移成了记一条 `stage_changed`。移不成（想进入写条目、往后跳着移、本来就在那个阶段、任务没有阶段）时回复照常送达，只在工具的返回里说明原因。进入写条目要由用户决定：智能体用请选择卡片提议，两个选项的 `key` 固定为 `start_items`（文字「开始写条目」）与 `continue_clarify`（文字「继续澄清」）；用户点了前者，服务在转交这次点击时替用户记一次移到写条目（`stage_changed`，`actor` 为 `user`），然后才把那句固定的话发给智能体。
+
+**提问只给开放问题。** `kind` 为 `ask` 而 `text` 以「吗」「是否」「能不能」「要不要」「可以吗」「对吗」收尾（不算结尾的标点）或者以「是否」开头时，回复被拒，原因写明是非题用请选择、征求同意用提议。这是只看字面的规则。
+
 ## 6 直接操作
 
 `POST …/actions?session={session_id}`：
 
 ```
-{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review" | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram",
+{ "client_id": "…", "kind": "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review" | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "move_stage",
   "targets": [ { "item_id": "UC-002", "base_revision": 3 } ],  // 打开这个条目时它所在的修订号；undo 时用 "revision_no"；edit_diagram 时写 { "diagram_id", "base_revision" }
-  "fields": { "基本流程": ["…", "…"] },                          // edit_fields：给出完整的新值；submit_deliverable：{ "revision_no": N }；edit_diagram：{ "mermaid": "…" }
+  "fields": { "基本流程": ["…", "…"] },                          // edit_fields：给出完整的新值；submit_deliverable：{ "revision_no": N }；edit_diagram：{ "mermaid": "…" }；move_stage：{ "stage": "澄清", "reason": "…" }
   "notify_executor": false }
 ```
 
@@ -280,6 +308,7 @@ data: {
 10. 智能体工作期间，任何操作都返回 `session_busy`，`data.reason` 为 `working`；不带 `notify_executor` 的 `mark_viewed` 除外。
 11. `submit_deliverable` 由用户把任务标为已完成：用户在条目区顶部的绿色提示条上点「已完成，提交交付物」、再在确认框里点「提交」时，网页界面发出它。`targets` 为空列表，`fields` 写 `{ "revision_no": N }`，是页面当时看到的交付物最新修订号。它与智能体的 `complete_task` 做同一组核对，这次点击本身就是用户的同意。完成条件没有全部满足时返回 `rejected`，说明以「任务没有标为已完成。」开头，后面写缺什么。N 不是交付物现在的最新修订时返回 `rejected`，说明是「这次没有提交：你看到的是修订 N，交付物现在已经是修订 M。请看过现在的内容再提交。」。都通过时任务变为已完成：发出 `task_changed`，`actor` 为 `user`，不带 `op_id`；会话里追加一条界面操作说明（`kind` 为 `submit_deliverable`）：「界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 N）。任务已标为已完成，交付物不能再改，仍然可以生成文档。」它不引出智能体的工作，也不能撤销。客户端不要为它显示「正在保存」。界面只在任务进行中、`completion.all_met` 为真、智能体不在工作、而且这条会话里没有还没回应的、带 `key` 为 `complete` 选项的请选择卡片（见 5.4）时显示这条提示条。
 12. `edit_diagram` 把用户在页面上改过的 Mermaid 文本存成那张图的一次新修订，发起方是用户：`targets` 只写一项 `{ "diagram_id": "D-001", "base_revision": N }`，N 是页面看到的这张图自己的修订号；`fields` 只写 `{ "mermaid": "…" }`（图名、种类、说明与删除由智能体来改）。任务服务先校验这段文本，做法与 `POST …/diagrams/validate` 相同，种类用这张图现在的种类。没有通过的不保存：返回 `rejected`，说明以「这张图没有保存：」开头、后面是校验给的原话，`data` 里带 `reason`、`line` 与 `message`；校验本身没有做成时 `data.reason` 是 `unavailable`，说明写的是这是程序这边的问题、不是文本写错了。`base_revision` 已经不是这张图现在的修订号时返回 `stale_revision`，`data.diagrams` 列出这张图、它现在的修订号与是谁改的；文本没有改动、图不存在或已经删除，返回 `rejected`。与智能体的 `save_diagram` 不同：不核对文本里写的条目编号是不是现有的条目，也不要求画进图里的条目各有来源；来源沿用上一次修订的，「图里画了谁」按新文本重算。结果以带同一个 `op_id` 的 `diagram_changed` 事件到达；任务的修订序号不动，这一步不能撤销。会话里追加一行界面操作的说明「界面操作（不是用户打的字）：用户在界面上改了图 D-001「…」的 Mermaid 文本，D-001 现在是修订 N。要看现在的文本，用 get_item 写 D-001。」，不引出一次运行。
+13. `move_stage` 由用户把任务移到另一个工作阶段：不写 `targets`，`fields` 写 `{ "stage": 阶段的名字或写法, "reason": 可以不写 }`。用户想移到哪个阶段都可以；记一条 `stage_changed`，往会话里追加一句界面操作通知，不产生修订，不能撤销，不引出智能体的运行。任务本来就在那个阶段时什么都不记。没有阶段的任务返回 `rejected`。
 
 ## 7 发送给智能体的固定句式
 
