@@ -9,7 +9,7 @@ import type { TaskDefinition } from "./definition.ts";
 import { ACTOR_USER } from "./db.ts";
 import {
   type BasisPending, type Mention, OVERALL_COLLECTION, type PageFacts, type PlainItem, type RevisionFacts, type SupportPlaces, type Verification,
-  basisPending, isSupplement, mentionsOf, pageFacts, verificationOf,
+  basisPending, isSupplement, mentionsOf, pageFacts, verificationOf, viewedIn,
 } from "./overall_analysis.ts";
 import { ELEMENT_ITEM, SOURCE_ITEM, elementClause } from "./schema.ts";
 import { jsonOrText } from "./task_read.ts";
@@ -31,6 +31,8 @@ export interface OverallState {
   mentions: Map<string, Mention[]>;
   /** 总体分析的各页在最低门里要看的几样。 */
   pages: PageFacts[];
+  /** 条目编号 → 用户看没看过它现在的内容（lib/overall_analysis.ts 的 viewedIn）。 */
+  viewed: Map<string, boolean>;
 }
 
 /** 读出一个任务现在的全部条目并算出上面几样。 */
@@ -78,9 +80,12 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
     history.set(row.item_id, list);
   }
   const own = new Map<string, Verification>();
+  const viewed = new Map<string, boolean>();
   for (const item of items) {
     const supplements: SupportPlaces[] = (sources.get(item.item_id) ?? []).filter((one) => isSupplement(one.kind)).map((one) => one.supports);
-    own.set(item.item_id, verificationOf(supplements, chainOf(history.get(item.item_id) ?? [])));
+    const chain = chainOf(history.get(item.item_id) ?? []);
+    own.set(item.item_id, verificationOf(supplements, chain));
+    viewed.set(item.item_id, viewedIn(chain));
   }
   const byId = new Map(items.map((one) => [one.item_id, one]));
   const cited = (itemId: string) => {
@@ -94,8 +99,9 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
     verification.set(item.item_id, { ...own.get(item.item_id)!, basis_pending: basis });
   }
   const shapes = definition.collections.map((one) => ({ name: one.name, fields: one.fields.map((f) => ({ name: f.name, type: f.type })) }));
-  const pages = items.filter((one) => one.collection === OVERALL_COLLECTION).map((one) => pageFacts(one.item_id, one.fields, own.get(one.item_id)!.pending_verification));
-  return { items, verification, mentions: mentionsOf(shapes, items), pages };
+  const pages = items.filter((one) => one.collection === OVERALL_COLLECTION)
+    .map((one) => pageFacts(one.item_id, one.fields, own.get(one.item_id)!.pending_verification, viewed.get(one.item_id) === true));
+  return { items, verification, mentions: mentionsOf(shapes, items), pages, viewed };
 }
 
 /** 算待核实要看的那一段修订：从最近一次不是用户亲手改出来的修订起，到当前修订为止。 */

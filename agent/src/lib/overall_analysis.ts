@@ -9,7 +9,7 @@
  * - 因依据而待核实：一个条目把总体分析里的一页写成了来源（种类「条目」），而那一页待核实或已废弃。只看一层。
  * - 提到：贴了标签、在用的页的标题与别名是词表；别的页与别的条目的文字里出现了词表里的词，就是提到了那一页。
  *   读的时候现算，不存库。
- * - 最低门要看的事实：任务里有没有一页贴了标签、有例子、又不待核实的主题。
+ * - 最低门要看的事实：任务里有没有一页贴了标签、有例子、用户又看过的主题。
  *
  * 0.4 建的任务没有这个集合（它们的集合叫「领域说明」，照旧）：没有词表，没有提到，也没有最低门；待核实照样算。
  *
@@ -322,34 +322,45 @@ export function pageProblems(fields: Fields, sources: readonly { supports: Suppo
 
 // ───────────── 最低门 ─────────────
 
-/** 最低门看一页的这几样：编号、贴没贴标签、在不在用、有几条例子、待不待核实。 */
+/**
+ * 用户看没看过一个条目现在的内容：从最近一次不是用户亲手改出来的修订起、到当前修订为止的这一段里（与算待核实用的是同一段，
+ * 见 verificationOf 的 chain），有一次修订上用户打开看过或点过确认。用户看过之后自己再改，仍算看过；助手又保存出新的修订，
+ * 就要再看一次。用户亲手改不等于看过整条，不算。
+ */
+export function viewedIn(chain: readonly RevisionFacts[]): boolean {
+  return chain.some((one) => one.viewed);
+}
+
+/** 最低门看一页的这几样：编号、贴没贴标签、在不在用、有几条例子、待不待核实、用户看没看过。 */
 export interface PageFacts {
   item_id: string;
   tagged: boolean;
   deprecated: boolean;
   examples: number;
   pending: boolean;
+  viewed: boolean;
 }
 
-/** 从一页的字段内容与它待不待核实，取出最低门要看的几样。 */
-export function pageFacts(itemId: string, fields: Fields, pending: boolean): PageFacts {
-  return { item_id: itemId, tagged: tagsOf(fields).length > 0, deprecated: isDeprecated(fields), examples: texts(fields[OVERALL_FIELDS.examples]).length, pending };
+/** 从一页的字段内容、它待不待核实与用户看没看过，取出最低门要看的几样。 */
+export function pageFacts(itemId: string, fields: Fields, pending: boolean, viewed: boolean): PageFacts {
+  return { item_id: itemId, tagged: tagsOf(fields).length > 0, deprecated: isDeprecated(fields), examples: texts(fields[OVERALL_FIELDS.examples]).length, pending, viewed };
 }
 
 /**
- * 最低门：任务里至少要有一页在用的主题贴了标签、有例子、又不待核实，才能往别的集合里新增条目。
+ * 最低门：任务里至少要有一页在用的主题贴了标签、有例子、用户又看过，才能往别的集合里新增条目。
+ * 待不待核实不在这道门里：用户看过就是确认了整页，助手补的内容也随之确认；没有助手补充的页同样要用户看过才算。
  * 过得去返回 null；过不去返回一句事实，写明现在差的是什么（一页都没有，或者最接近的那一页差哪几样）。
  */
 export function gateFact(pages: readonly PageFacts[]): string | null {
   const live = pages.filter((one) => !one.deprecated);
-  if (live.some((one) => one.tagged && one.examples > 0 && !one.pending)) return null;
-  const head = "还没有想清楚的主题";
+  if (live.some((one) => one.tagged && one.examples > 0 && one.viewed)) return null;
+  const head = "还没有用户看过的主题";
   if (live.length === 0) return `${head}：总体分析里还没有一页主题`;
   // 最接近的一页：差得最少的，一样少时取编号在前的。
-  const missing = (one: PageFacts) => [...(one.tagged ? [] : ["还没有贴标签"]), ...(one.examples > 0 ? [] : ["还没有例子"]), ...(one.pending ? ["还待核实"] : [])];
+  const missing = (one: PageFacts) => [...(one.tagged ? [] : ["还没有贴标签"]), ...(one.examples > 0 ? [] : ["还没有例子"]), ...(one.viewed ? [] : ["用户还没有看过"])];
   const closest = [...live].sort((a, b) => missing(a).length - missing(b).length)[0];
-  return `${head}：总体分析里还没有一页贴了标签、写了例子、又不待核实的主题（最接近的是 ${closest.item_id}，它${missing(closest).join("、")}）`;
+  return `${head}：总体分析里还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 ${closest.item_id}，它${missing(closest).join("、")}）`;
 }
 
 /** 最低门过不去时「怎么办」那一句。 */
-export const GATE_GUIDANCE = "先在总体分析里立一页主题，写一个例子并确认，再写条目";
+export const GATE_GUIDANCE = "先在总体分析里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目";

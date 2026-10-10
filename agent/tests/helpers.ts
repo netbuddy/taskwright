@@ -16,6 +16,7 @@ import { REGISTERED_OUTPUTS } from "../src/lib/registered_outputs.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import type { Stage } from "../src/lib/stage.ts";
 import { moveStage } from "../src/lib/stage_read.ts";
+import { runUserOperation } from "../src/lib/user_ops.ts";
 // 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
 import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
 
@@ -87,14 +88,32 @@ export function overallDefinition(): Record<string, any> {
 }
 
 /**
- * 一页合格的主题（贴了标签、有例子、来源是材料原文所以不待核实）：有总体分析集合的任务里，助手要先有这样一页才能往别的集合里
- * 新增条目（最低门）。不是测最低门的测试先保存它。它的文字里没有别的测试用到的词，不会多出「提到」。
+ * 一页合格的主题（贴了标签、有例子、来源是材料原文）：有总体分析集合的任务里，助手要先有这样一页、用户又看过它，才能往别的集合里
+ * 新增条目（最低门）。不是测最低门的测试先保存它，再调 viewReadyPage。它的文字里没有别的测试用到的词，不会多出「提到」。
  */
 export const READY_PAGE = {
   op: "add", collection: "总体分析",
   fields: { 标题: "馆藏范围", 它是什么: "本馆全部可以外借的纸质图书。", 例子: ["《算法导论》在三楼科技书库。"], 标签: ["范围"], 状态: "在用" },
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。" }],
 };
+
+let viewOps = 0;
+/**
+ * 用户看过那一页合格的主题（READY_PAGE）现在的内容。最低门要的是一页贴了标签、有例子、用户又看过的主题，
+ * 所以测试保存了 READY_PAGE 之后调它，助手才能往别的集合里新增条目。
+ */
+export function viewReadyPage(workspaceDir: string): void {
+  const db = new DatabaseSync(databasePath(workspaceDir), { readOnly: true });
+  let target: { item_id: string; revision_no: number } | undefined;
+  try {
+    target = (db.prepare("SELECT item_id, revision_no, fields FROM item_version ORDER BY revision_no DESC").all() as { item_id: string; revision_no: number; fields: string }[])
+      .find((row) => JSON.parse(row.fields)?.标题 === READY_PAGE.fields.标题);
+  } finally {
+    db.close();
+  }
+  if (!target) throw new Error("任务里还没有那一页合格的主题");
+  runUserOperation({ workspaceDir, sessionId: "sess-ui" }, { op_id: `ui-op-view-${++viewOps}`, kind: "mark_viewed", targets: [{ item_id: target.item_id, base_revision: target.revision_no }] });
+}
 
 /**
  * 夹具里的材料全文。种类为「文档原文」的来源，摘录必须逐字出自出处所指的材料文件，
