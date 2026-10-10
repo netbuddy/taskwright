@@ -823,8 +823,9 @@ export class Executor {
       }
       const messageId = hit ? hit.id ?? null : null;
       const clickMove = click !== null ? conversation.clickStageMove(click.details || {}) : null;
+      const clickUnmoved = click !== null ? conversation.clickStageUnmoved(click.details || {}) : null;
       this.hub.emit("user_message", { session_id: sid, message_id: messageId, at: clock.now(), text: conversation.displayText(raw), origin, annotation,
-        queued: false, client_id: clientId, ...(clickMove ? { stage_move: clickMove } : {}) });
+        queued: false, client_id: clientId, ...(clickMove ? { stage_move: clickMove } : {}), ...(clickUnmoved ? { stage_unmoved: clickUnmoved } : {}) });
       const work = this.work;
       if (work !== null) {
         if (work.triggered_by === null) {

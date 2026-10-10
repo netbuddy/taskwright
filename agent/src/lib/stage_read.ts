@@ -116,7 +116,8 @@ export interface StageMoveOutcome {
   requested: Stage;
   from: Stage | null;
   moved: boolean;
-  why: "same" | "user_only" | "no_stages" | null;
+  /** 没有移成的原因；not_next 只出现在卡片点击上：点的那个阶段不是紧挨着的下一段。 */
+  why: "same" | "user_only" | "no_stages" | "not_next" | null;
   event_seq: number | null;
 }
 
@@ -158,7 +159,7 @@ export const START_ITEMS_REASON = enterReason("writing");
  * 用户点了一张卡片上的选项：点的是助手提议往前走的那张请选择卡片上「进入」某个阶段的选项时，替用户记一次移动。
  * 四个键各进入一个阶段（lib/stage.ts 的 ENTER_OPTIONS）：进入澄清、进入整理建模、开始写条目、进入评审确认。
  * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键；认不出就不记（返回 null），点击照常往下走。
- * 次序不对的点击也不记：进入澄清、进入整理建模、进入评审确认只在任务正处在紧挨着的前一段时才算；
+ * 次序不对的点击也不记（结果里 moved 为假、why 为 not_next、from 是任务现在的阶段）：进入澄清、进入整理建模、进入评审确认只在任务正处在紧挨着的前一段时才算；
  * 开始写条目在写条目之前的哪一段点都算（用户可以跳过中间的阶段），任务已经过了写条目时点它是退回写条目。
  * 任务没有阶段、任务不在进行中、任务本来就在那个阶段时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
  * 发那句固定的话之前调用，这样助手回应这次点击的那一次运行从头就在新的阶段。
@@ -176,7 +177,7 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
         { task_id: string; status: string; definition_text: string } | undefined;
       if (!task || task.status !== TASK_ACTIVE) return null;
       const from = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
-      if (to !== "writing" && from !== null && nextStage(from) !== to) return null;
+      if (to !== "writing" && from !== null && nextStage(from) !== to) return { requested: to, from, moved: false, why: "not_next" as const, event_seq: null };
       return moveStage(db, workspaceDir, { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" }, to, enterReason(to));
     });
   } catch (error) {

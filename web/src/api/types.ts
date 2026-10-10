@@ -403,6 +403,8 @@ export interface UserMessage {
   client_id?: string;
   /** 用户在卡片上点了进入下一段、系统替用户记了移动时才有：从哪个阶段、到哪个阶段。 */
   stage_move?: StageMove;
+  /** 用户点了一张进入某个阶段的卡片而阶段没有移动时才有（次序不对，或者任务本来就在那个阶段）：任务当时在哪个阶段。 */
+  stage_unmoved?: { at: string };
 }
 
 export interface AssistantReply {

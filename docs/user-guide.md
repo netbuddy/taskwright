@@ -262,7 +262,7 @@ In a task with an overall analysis (总体分析) - the requirements task is one
 
 **Where to start.** While the overall analysis has no page yet, its tab shows two buttons: 通读材料起草 ("read the materials and draft") lets the assistant read all the materials first and write pages for what they state (it is off while the task has no materials); 逐项澄清 ("clarify item by item") lets the assistant ask you one thing at a time right away. You can also just talk to the assistant without using either button. Both buttons are off while the assistant is working.
 
-**Two kinds of lines in the conversation.** When you enter the next stage on a card, a line appears under your sentence: 界面操作：用户把任务从…移到…。 ("interface action: the user moved the task from … to …"). When the assistant moves the task back to an earlier stage, a line appears above its reply: 助手把任务退回…：理由 ("the assistant moved the task back to …: the reason").
+**Two kinds of lines in the conversation.** When you enter the next stage on a card, a line appears under your sentence: 界面操作：用户把任务从…移到…。 ("interface action: the user moved the task from … to …"). When the assistant moves the task back to an earlier stage, a line appears above its reply: 助手把任务退回…：理由 ("the assistant moved the task back to …: the reason"). When you click a card left from earlier and the stage does not change, the card says so under your choice: 这次点击没有改变阶段：任务当时在…。 ("this click did not change the stage: the task was in …").
 
 **Tasks created earlier have no stages.** A task created by 0.4 (which has 领域说明, "domain notes", in this place) is not divided into stages and works as before.
 

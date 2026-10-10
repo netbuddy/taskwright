@@ -20,7 +20,7 @@ import { Popconfirm } from "antd";
 import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../api/types";
 import { CONFIRM_CONDITION, SOURCE_ITEM, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, sourceKindNow, unreadItems } from "../../model/items";
 import { storyPlace } from "../../model/overall";
-import { ENTER_KEYS } from "../../model/stage";
+import { ENTER_KEYS, stageUnmovedLine } from "../../model/stage";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { isKnowledgeLocator } from "../../model/knowledge";
 
@@ -72,7 +72,7 @@ function onlyUnreadLeft(task: Task | null): boolean {
   return unmet.length > 0 && unmet.every((c) => c.name === CONFIRM_CONDITION);
 }
 
-export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, handlers, onOpenItem, onLocate }: {
+export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, unmovedAt = null, handlers, onOpenItem, onLocate }: {
   /** 这张卡片所在的那条回复的正文；复述的卡片据它判断故事写在卡片里还是写在回复里。 */
   replyText?: string;
   act: Act;
@@ -88,6 +88,8 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   writesOff?: boolean;
   /** 这张卡片之后用户已经说过话时，写成「✓ 你选了…」一类的一句话，按钮与输入框收起（原型的「结掉卡片」）。 */
   answered?: string | null;
+  /** 答这张卡片的那次点击是「进入」某个阶段而阶段没有移动时，任务当时所在的阶段；「✓ 你选了…」下面据此多写一句小字。 */
+  unmovedAt?: string | null;
   handlers: CardHandlers;
   onOpenItem?: (itemId: string) => void;
   /** 点「依据：材料原文」小标签，文档区滚到这句原文。 */
@@ -292,6 +294,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
       )}
 
       {done && <div className="done">✓ {done}</div>}
+      {done && unmovedAt && <div className="done pale" data-testid="card-stage-unmoved">{stageUnmovedLine(unmovedAt)}</div>}
       {showUnread && (
         <div className="sw-unread-hint" data-testid="card-unread">
           还有 {unread.length} 条未读

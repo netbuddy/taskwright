@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { request } from "node:http";
 import { after, test } from "node:test";
-import { clickStageMove, replyStageMove } from "../src/conversation.ts";
+import { clickStageMove, clickStageUnmoved, replyStageMove } from "../src/conversation.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
 import { type Dict, NO_PI, TOPIC_CALL, reply, sleep, withStack } from "./consent_stack.ts";
 
@@ -27,6 +27,11 @@ test("两个取值的函数：移成了才有；阶段名不对、没有移成�
   assert.deepEqual(clickStageMove({ stage_move: { from: "reading", to: "clarifying" } }), { from: "reading", to: "clarifying", actor: "user" });
   assert.equal(clickStageMove({ stage_event_seq: 12 }), null);
   assert.equal(clickStageMove({ stage_move: { from: "reading", to: "别的" } }), null);
+  // 点了进入的卡片而阶段没有移动：带任务当时所在的阶段；记了移动的点击与早先版本留下的点击都没有这一项。
+  assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "reading" } }), { at: "reading" });
+  assert.equal(clickStageUnmoved({ stage_move: { from: "reading", to: "clarifying" } }), null);
+  assert.equal(clickStageUnmoved({ stage_event_seq: 12 }), null);
+  assert.equal(clickStageUnmoved({ stage_unmoved: { at: "别的" } }), null);
 });
 
 const MODEL_CARD = { kind: "choose", text: "要问的都问到了。现在进入整理建模吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
@@ -40,6 +45,8 @@ const SCRIPT = {
     reply("要问的都问到了。现在进入整理建模吗？", "call-card", MODEL_CARD),
     // 用户点了之后。
     reply("好，我开始通读主题页。", "call-go"),
+    // 用户又点了一次那张已经答过的卡片之后。
+    reply("任务已经在整理建模了，我接着通读。", "call-again"),
   ],
 };
 
@@ -66,7 +73,7 @@ function conversationEvents(port: number, taskId: string): { events: [string, Di
   return { events, close: () => req.destroy() };
 }
 
-test("助手退回阶段的那条回复、用户点卡片进入下一段的那句话，都带 stage_move；实时推的与重读的相同，别的消息不带", { skip: NO_PI, timeout: 180000 }, () =>
+test("助手退回阶段的那条回复、用户点卡片进入下一段的那句话，都带 stage_move；点了进入的卡片而阶段没有移动的那句话带 stage_unmoved；实时推的与重读的相同，别的消息不带", { skip: NO_PI, timeout: 180000 }, () =>
   withStack(tmp, "stage-conversation", SCRIPT, async ({ call, taskId, session, port, send, action, entryOfCall }) => {
     const pushed = conversationEvents(port, taskId);
     try {
@@ -74,7 +81,9 @@ test("助手退回阶段的那条回复、用户点卡片进入下一段的那�
       await send({ text: "自助机是什么？", client_id: "c-1" });
       await send({ text: "就是门口那台机器。", client_id: "c-2" });
       await send({ text: "我选：进入整理建模", client_id: "c-3", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "enter_consolidate" } });
-      for (const end = Date.now() + 10000; pushed.events.filter(([, data]) => data.session_id === session).length < 6 && Date.now() < end;) await sleep(100);
+      // 再点一次那张卡片：任务已经在整理建模，这次点击不记移动。
+      await send({ text: "我选：进入整理建模", client_id: "c-4", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "enter_consolidate" } });
+      for (const end = Date.now() + 10000; pushed.events.filter(([, data]) => data.session_id === session).length < 8 && Date.now() < end;) await sleep(100);
 
       const wanted = {
         back: { from: "modeling", to: "clarifying", actor: "executor", reason: "「自助机」这个词还没说清。" },
@@ -82,23 +91,26 @@ test("助手退回阶段的那条回复、用户点卡片进入下一段的那�
       };
       // 实时推的。
       const live = pushed.events.filter(([, data]) => data.session_id === session);
-      const liveMoves = live.map(([name, data]) => [name, data.text, data.stage_move ?? null]);
+      const liveMoves = live.map(([name, data]) => [name, data.text, data.stage_move ?? null, data.stage_unmoved ?? null]);
       assert.deepEqual(liveMoves, [
-        ["user_message", "自助机是什么？", null],
-        ["assistant_reply", "「自助机」这个词还没说清，先退回澄清。", wanted.back],
-        ["user_message", "就是门口那台机器。", null],
-        ["assistant_reply", "要问的都问到了。现在进入整理建模吗？", null],
-        ["user_message", "我选：进入整理建模", wanted.enter],
-        ["assistant_reply", "好，我开始通读主题页。", null],
+        ["user_message", "自助机是什么？", null, null],
+        ["assistant_reply", "「自助机」这个词还没说清，先退回澄清。", wanted.back, null],
+        ["user_message", "就是门口那台机器。", null, null],
+        ["assistant_reply", "要问的都问到了。现在进入整理建模吗？", null, null],
+        ["user_message", "我选：进入整理建模", wanted.enter, null],
+        ["assistant_reply", "好，我开始通读主题页。", null, null],
+        ["user_message", "我选：进入整理建模", null, { at: "modeling" }],
+        ["assistant_reply", "任务已经在整理建模了，我接着通读。", null, null],
       ]);
       // 没有移动的消息里没有这个键（不是写成 null）。
       assert.equal("stage_move" in live[0][1], false);
       assert.equal("stage_move" in live[3][1], false);
+      assert.equal("stage_unmoved" in live[4][1], false);
 
       // 重开页面时读的。
       const read = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[];
       const spoken = read.filter((m) => m.type === "user_message" || m.type === "assistant_reply");
-      assert.deepEqual(spoken.map((m) => [m.type, m.text, m.stage_move ?? null]), liveMoves);
+      assert.deepEqual(spoken.map((m) => [m.type, m.text, m.stage_move ?? null, m.stage_unmoved ?? null]), liveMoves);
       assert.equal("stage_move" in spoken[0], false);
     } finally {
       pushed.close();

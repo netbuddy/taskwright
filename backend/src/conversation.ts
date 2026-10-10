@@ -59,6 +59,17 @@ export function clickStageMove(details: Record<string, any>): { from: string; to
   return { from: move.from, to: move.to, actor: "user" };
 }
 
+/**
+ * 用户点了一张「进入」某个阶段的卡片而阶段没有移动时（次序不对，或者任务本来就在那个阶段），那句「我选：……」带的一项：
+ * 任务当时在哪个阶段。details 是那条界面点击标注的 details（助手一侧写进 stage_unmoved）。没有这一项时为 null：
+ * 记了移动的点击、不是进入阶段的点击、没有阶段的任务、早先版本留下的点击都没有。
+ */
+export function clickStageUnmoved(details: Record<string, any>): { at: string } | null {
+  const stay = details.stage_unmoved;
+  if (!isObject(stay) || !isStageKey(stay.at)) return null;
+  return { at: stay.at };
+}
+
 export function normalizeInforms(informs: unknown): Record<string, any>[] {
   const out = [];
   for (const one of (or(informs, []) as unknown[])) {
@@ -268,8 +279,9 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
       pendingClick = null;
       lastConfirm = null;
       const clickMove = origin === "card_choice" ? clickStageMove(clickDetails) : null;
+      const clickUnmoved = origin === "card_choice" ? clickStageUnmoved(clickDetails) : null;
       out.push({ type: "user_message", session_id: sessionId, message_id: e.id, at, text: displayText(raw), origin, annotation, queued: false,
-        ...(clickMove ? { stage_move: clickMove } : {}) });
+        ...(clickMove ? { stage_move: clickMove } : {}), ...(clickUnmoved ? { stage_unmoved: clickUnmoved } : {}) });
     } else if (role === "assistant") {
       const calls = (or(m.content, []) as unknown[]).filter((p) => isObject(p) && p.type === "toolCall") as Record<string, any>[];
       for (const call of calls) {

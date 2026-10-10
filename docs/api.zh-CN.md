@@ -79,7 +79,7 @@ data: {
 |---|---|---|
 | `work_started` | 智能体开始工作 | `work_id`、`at`、`triggered_by`（消息编号） |
 | `step` | 一次工具调用（tool call）开始，以及本轮结束时补发的一行修正 | `work_id`、`step_key`、`text`、`in_progress`、`failed` |
-| `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`card`、`queued`；用户在卡片上点了进入下一个阶段、服务替用户记了移动时另有 `stage_move`（`from`、`to`、`actor` 为 `user`） |
+| `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`card`、`queued`；用户在卡片上点了进入下一个阶段、服务替用户记了移动时另有 `stage_move`（`from`、`to`、`actor` 为 `user`）；点的是进入某个阶段的选项而阶段没有移动时（次序不对，或者任务本来就在那个阶段）另有 `stage_unmoved`（`at` 是任务当时所在的阶段） |
 | `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节）；智能体在这条回复里把任务退回了前面的阶段时另有 `stage_move`（`from`、`to`、`actor` 为 `executor`、`reason`） |
 | `ui_action_noted` | 一次直接操作完成，或者用户停止了智能体的一次工作 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类；用户停止了智能体的一次工作之后留的那一条是 `stop_run`，见第 5.5 节：它没有库事件、没有修订、不能撤销，`text` 是写给智能体看的，页面另写一句自己的话）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`） |
 | `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at`；这份材料是替换上来的时候另带 `replaces`，值是被换掉的那份材料的路径（第 5.1 节「替换材料」） |

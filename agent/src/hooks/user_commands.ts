@@ -156,12 +156,16 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       // 点的是「进入」某个阶段的选项：先替用户把任务移过去，再发下面两条，助手回应这次点击时从头就在新的阶段。
       let stageSeq: number | null = null;
       let stageMove: { from: string; to: string } | null = null;
+      let stageUnmoved: { at: string } | null = null;
       try {
         const moved = recordStageCardClick(ctx.cwd, ctx.sessionManager.getSessionId(), ctx.sessionManager.getBranch() as never,
           { opId: opId ?? "", replyEntry: request.reply_entry, optionKey: request.option_key });
         stageSeq = moved?.event_seq ?? null;
         // 记下了移动：标注里另写从哪个阶段到哪个阶段，对话区据此在用户那句话下面写一行。
         if (moved?.moved && moved.from !== null) stageMove = { from: moved.from, to: moved.requested };
+        // 认出了是进入某个阶段的卡片、任务也有阶段，但这次点击没有让阶段移动（次序不对，或者任务本来就在那里）：
+        // 标注里写下任务当时在哪个阶段，卡片上据此告诉用户这次点击没有改变阶段。
+        else if (moved && !moved.moved && moved.from !== null) stageUnmoved = { at: moved.from };
       } catch (error) {
         ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: false,
           error: { code: "rejected", message: `没有能把任务移到下一个阶段：${(error as Error).message}`, data: {} } }));
@@ -181,6 +185,7 @@ export function registerUserCommands(pi: ExtensionAPI): void {
             text,
             ...(stageSeq !== null ? { stage_event_seq: stageSeq } : {}),
             ...(stageMove !== null ? { stage_move: stageMove } : {}),
+            ...(stageUnmoved !== null ? { stage_unmoved: stageUnmoved } : {}),
           },
         },
         { deliverAs: "followUp" },
