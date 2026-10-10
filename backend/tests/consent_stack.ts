@@ -22,12 +22,20 @@ const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE
 export const MATERIAL = "读者凭借书证在自助机上借书。";
 
 /**
- * 助手先立一页主题的那次工具调用：贴了标签、有例子、全部照抄材料所以不待核实。新建的任务里要先有这样一页，助手才能往别的集合里
- * 新增条目，所以各份脚本里头一次保存条目的那一步，把它放在同一个回答的前面（它存成修订 1，随后保存的条目是修订 2）。
+ * 立一页主题的那次工具调用：贴了标签、有例子、全部照抄材料。新建的任务里要先有这样一页、用户看过它、任务又移到了写条目阶段，
+ * 助手才能往别的集合里新增条目。这三步由 withStack 在开会话之前备好（agent/tests/fixtures/seed_writing.mts：这一页存成修订 1，
+ * 调用编号就是这里的 call-topic），所以各份脚本直接从保存条目写起，头一次保存的条目是修订 2。测工作阶段本身的测试给 seed: false，自己走这几步。
  */
 export const TOPIC_CALL = { id: "call-topic", name: "save_revision", arguments: { operations: [{ op: "add", collection: "总体分析",
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
   fields: { 标题: "自助借书", 它是什么: MATERIAL, 例子: [MATERIAL], 标签: ["流程"], 状态: "在用" } }] } };
+
+/** 把一个刚建好、材料已经放好的任务备到可以写条目的样子（见 TOPIC_CALL 的说明）。测试里另建的任务要自己调它。 */
+export function seedWriting(taskDir: string): void {
+  const seeded = spawnSync(process.execPath, [join(ROOT, "agent", "tests", "fixtures", "seed_writing.mts"), taskDir,
+    JSON.stringify(TOPIC_CALL.arguments.operations)], { encoding: "utf-8" });
+  assert.equal(seeded.status, 0, seeded.stderr);
+}
 
 /** 假端点的一步：助手经「回复」说一段话，act 是向用户要的回应。 */
 export const reply = (text: string, id: string, act: Dict | null = null) => ({ tool_calls: [{ id, name: "reply", arguments: { informs: [], act, text } }] });
@@ -49,8 +57,9 @@ export type Stack = {
 /**
  * 起一套验证栈（假端点、真后端、真 pi），建任务与会话，交给 body；结束时停掉。
  * autoIntent 为真（缺省）时假端点在用户说话之后第一个只有工具调用的回答前面自动补一段理解；测理解门禁时关掉，由脚本自己写。
+ * seed 为真（缺省）时在开会话之前把任务备到可以写条目的样子（见 TOPIC_CALL 的说明）；为假时任务停在刚建好的样子。
  */
-export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>, { autoIntent = true } = {}): Promise<void> {
+export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>, { autoIntent = true, seed = true } = {}): Promise<void> {
   const dir = join(tmp, name);
   mkdirSync(dir, { recursive: true });
   const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent }).start();
@@ -73,6 +82,7 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
     });
     const taskId: string = (await call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: name })).body.task_id;
     writeFileSync(join(dir, "tasks", taskId, "inputs", "材料.md"), `${MATERIAL}\n`, "utf-8");
+    if (seed) seedWriting(join(dir, "tasks", taskId));
     const session: string = (await call("POST", `/api/v1/tasks/${taskId}/sessions`)).body.session_id;
     // 只读查库；评审正在写库时偶尔读不出（子进程没有输出），按空列表算：轮询接着等，断言处读不出也会因为对不上而失败。
     const db = (sql: string, ...args: string[]) => JSON.parse(spawnSync(process.execPath, ["-e",

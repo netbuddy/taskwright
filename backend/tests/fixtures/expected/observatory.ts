@@ -16,14 +16,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", 
 const PYTHON = process.env.TASKWRIGHT_PYTHON || "python3";
 const INTENT = '```json\n{"acts": [{"function": "request", "confidence": "high", "summary": "照用户说的做"}]}\n```';
 const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "买家可以申请退货。" };
-const UC = { 用例名称: "提交退货申请", 用例功能: "买家提交退货申请。", 参与者: ["买家"], 基本流程: ["买家打开订单", "系统记下申请"] };
-/** 一页合格的主题（贴了标签、有例子、照抄材料）：新建的任务里要先有它，助手才能写用例。 */
+/** 一页主题（贴了标签、有例子、照抄材料）。新建的任务在核读材料阶段，助手这时能写的就是主题页，所以这段对话只立这一页。 */
 const TOPIC = { 标题: "退货申请", 它是什么: "买家可以申请退货。", 例子: ["买家可以申请退货。"], 标签: ["流程"], 状态: "在用" };
 export const SCRIPT = [
-  // 一个回答里两次保存：先立主题页（修订 1），再写用例（修订 2）。
+  // 一个回答里一次保存：立主题页（修订 1）。
   { text: INTENT, tool_calls: [
     { name: "save_revision", arguments: { operations: [{ op: "add", collection: "总体分析", fields: TOPIC, sources: [SOURCE] }] } },
-    { name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例", fields: UC, sources: [SOURCE] }] } },
   ] },
   { tool_calls: [{ name: "reply", arguments: { informs: [], act: null, text: "存好了。" } }] },
 ];

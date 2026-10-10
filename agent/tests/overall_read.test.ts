@@ -14,7 +14,7 @@ import { overallState } from "../src/lib/overall_read.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getItem, getTaskStatus } from "../src/lib/task_query.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query, startWriting } from "./helpers.ts";
 
 const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
@@ -23,6 +23,7 @@ const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
 function workspace(definition: Record<string, any> = overallDefinition()): string {
   const dir = makeWorkspace(definition);
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  startWriting(dir);
   return dir;
 }
 let op = 0;

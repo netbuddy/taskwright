@@ -19,7 +19,7 @@ import { request } from "node:http";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, TOPIC_CALL, reply, sleep, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, reply, seedWriting, sleep, withStack } from "./consent_stack.ts";
 
 captureConsole();
 // 助手的程序不出网查模型目录
@@ -29,11 +29,8 @@ const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const source = { kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL };
-/**
- * 助手保存一个用例的一步。一个任务里头一次保存条目之前要先有一页主题，所以缺省在同一个回答里先立一页（它是任务的修订 1，用例是修订 2）；
- * 任务里已经有主题页之后的保存给 topic: false。
- */
-const save = (id: string, name: string, { topic = true } = {}) => ({ tool_calls: [...(topic ? [TOPIC_CALL] : []), { id, name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
+/** 助手保存一个用例的一步。任务在开会话之前已经备好一页用户看过的主题（修订 1）并移到了写条目阶段，所以头一次保存的用例是修订 2。 */
+const save = (id: string, name: string) => ({ tool_calls: [{ id, name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
   sources: [source], fields: { 用例名称: name, 用例功能: `读者${name}。`, 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } }] } }] });
 
 /** 订阅一条事件连接，把收到的事件按先后收进 events（每项是 {event, data}）。 */
@@ -71,6 +68,7 @@ test("两个任务同时各开一个助手：各自的事件连接只收到本�
     async ({ call, taskId, session, port, pid, db, send }) => {
       const other: string = (await call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "另一个任务" })).body.task_id;
       writeFileSync(join(tmp, "two-tasks", "tasks", other, "inputs", "材料.md"), `${MATERIAL}\n`, "utf-8");
+      seedWriting(join(tmp, "two-tasks", "tasks", other));
       const otherSession: string = (await call("POST", `/api/v1/tasks/${other}/sessions`)).body.session_id;
       const pis = spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf-8" }).stdout.split("\n").filter(Boolean);
       assert.equal(pis.length, 2, "两个任务各有一个助手的程序在运行");
@@ -161,7 +159,7 @@ test("评审不合规之后保留写法、撤销保留、改评审规则、再�
   }));
 
 test("助手保存过一次修订之后中途让它停下：返回的 cleared 是空的，这一轮的摘要与结束消息都是 stopped_by_user，步数相同，摘要写明实际保存了修订 1 到 2；之后留一条界面操作通知，切走再切回来的现状消息与下一次运行的上下文里都有这件事", { skip: NO_PI, timeout: 180000 }, () =>
-  withStack(tmp, "stop", { sequence: [save("call-save", "借书"), { ...save("call-save-2", "还书", { topic: false }), delay: 8 }, reply("知道了。", "call-after")] }, async ({ call, port, session, taskId, send, requests, db }) => {
+  withStack(tmp, "stop", { sequence: [save("call-save", "借书"), { ...save("call-save-2", "还书"), delay: 8 }, reply("知道了。", "call-after")] }, async ({ call, port, session, taskId, send, requests, db }) => {
     const stream = subscribe(port, `/api/v1/tasks/${taskId}/events?session=${session}`);
     try {
       await sleep(300);
@@ -177,7 +175,7 @@ test("助手保存过一次修订之后中途让它停下：返回的 cleared �
       const ended = stream.events.find((e) => e.event === "work_ended")!.data;
       assert.deepEqual([summary.outcome, ended.outcome], ["stopped_by_user", "stopped_by_user"]);
       assert.equal(ended.step_count, summary.step_count);
-      assert.deepEqual(summary.saved, { revisions: [1, 2], items: 2, diagrams: 0 }, "保存了什么按任务库算");
+      assert.deepEqual(summary.saved, { revisions: [2], items: 1, diagrams: 0 }, "保存了什么按任务库算（修订 1 是开会话之前备好的那一页，不算这一轮的）");
       assert.deepEqual(db("SELECT revision_no, call_id FROM revision"), [{ revision_no: 1, call_id: "call-topic" }, { revision_no: 2, call_id: "call-save" }]);
       assert.equal(stream.events.filter((e) => e.event === "problem").length, 0, "被停下时不提示");
 
@@ -253,7 +251,7 @@ test("理解的门禁：没写理解就调回复被拒，查看类工具不拦�
 
 test("理解的门禁：理解写错被拒，拒绝理由附上解析失败的原因；重写之后保存通过，修订带上这份理解的编号，不记失败", { skip: NO_PI, timeout: 180000 }, () =>
   withStack(tmp, "intent-rewrite", { sequence: [
-    { text: understanding({ function: "agree", confidence: "high", summary: "整理" }), ...save("call-save-1", "借书", { topic: false }) },
+    { text: understanding({ function: "agree", confidence: "high", summary: "整理" }), ...save("call-save-1", "借书") },
     { text: understanding(REQUEST), ...save("call-save-2", "借书") },
     { tool_calls: [replyCall("call-reply", "存好了。")] },
   ] }, async ({ db, send }) => {
@@ -262,7 +260,7 @@ test("理解的门禁：理解写错被拒，拒绝理由附上解析失败的�
     assert.ok(refused.get("call-save-1")?.includes(GATE));
     assert.ok(refused.get("call-save-1")?.includes('function 写的是 "agree"'), "拒绝理由附上解析失败的原因");
     assert.ok(!refused.has("call-save-2") && !refused.has("call-reply"));
-    assert.deepEqual(db("SELECT revision_no, call_id, intent_act_id FROM revision"), [{ revision_no: 1, call_id: "call-topic", intent_act_id: "r1-1" }, { revision_no: 2, call_id: "call-save-2", intent_act_id: "r1-1" }]);
+    assert.deepEqual(db("SELECT revision_no, call_id, intent_act_id FROM revision"), [{ revision_no: 1, call_id: "call-topic", intent_act_id: null }, { revision_no: 2, call_id: "call-save-2", intent_act_id: "r1-1" }]);
     assert.deepEqual(db("SELECT name FROM event WHERE name IN ('USER_INTENT_INVALID', 'USER_INTENT_MISSING')"), [], "重写之后这一轮有了理解，不记失败");
   }, { autoIntent: false }));
 

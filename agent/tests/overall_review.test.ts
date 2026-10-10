@@ -12,7 +12,7 @@ import { effectiveRules, validateDefinition } from "../src/lib/definition.ts";
 import { OVERALL_COLLECTION, TOPICS_LIMIT, topicLines } from "../src/lib/overall_analysis.ts";
 import { prepareReviews } from "../src/lib/review.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition } from "./helpers.ts";
+import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, startWriting } from "./helpers.ts";
 
 const TASK_TYPE = join(import.meta.dirname, "..", "..", "task-types", "srs-authoring");
 const page = (fields: Record<string, unknown>) =>
@@ -22,6 +22,7 @@ const useCase = { op: "add", collection: "用例", fields: { 名称: "预约图�
 function workspace(definition: unknown): string {
   const dir = makeWorkspace(definition);
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  startWriting(dir);
   return dir;
 }
 

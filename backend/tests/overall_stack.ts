@@ -32,14 +32,17 @@ export const DEFINITION = {
   完成条件: { ...DEMO_DEFINITION.完成条件, 总体分析: ["每个条目用户确认"] },
 };
 
-/** 建一个任务目录并按几批保存。 */
+/**
+ * 建一个任务目录并按几批保存。任务一建好就由用户移到写条目阶段（夹具里的 { stage }，早先建的任务没有阶段、这一步什么都不做），
+ * 这样各批里助手可以直接写别的集合的条目；这里的测试测的不是工作阶段。
+ */
 export function build(root: string, name: string, definition: unknown, batches: unknown[]): string {
   const ws = join(root, name);
   mkdirSync(join(ws, "docs", "task-definitions"), { recursive: true });
   mkdirSync(join(ws, "inputs"), { recursive: true });
   writeFileSync(join(ws, "docs", "task-definitions", "demo.json"), JSON.stringify(definition), "utf-8");
   writeFileSync(join(ws, "inputs", "材料.md"), MATERIAL, "utf-8");
-  const done = spawnSync(process.execPath, [BUILD, ws, "docs/task-definitions/demo.json", JSON.stringify(batches)], { encoding: "utf-8" });
+  const done = spawnSync(process.execPath, [BUILD, ws, "docs/task-definitions/demo.json", JSON.stringify([{ stage: "写条目" }, ...batches])], { encoding: "utf-8" });
   assert.equal(done.status, 0, done.stderr);
   return ws;
 }

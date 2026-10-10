@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { SaveRejected, saveRevision } from "../src/lib/save_revision.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, makeWorkspace, overallDefinition } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, makeWorkspace, overallDefinition, startWriting } from "./helpers.ts";
 
 const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
@@ -22,6 +22,7 @@ const EXAMPLE = "小王周六预约了《算法导论》，周二来取。";
 function workspace(definition: unknown = overallDefinition()): string {
   const dir = makeWorkspace(definition);
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  startWriting(dir);
   return dir;
 }
 let op = 0;

@@ -13,6 +13,9 @@ import { docxProjection } from "../src/lib/docx_markdown.ts";
 import { recordAtSettle } from "../src/lib/dialogue_acts.ts";
 import { type ProblemClick, problemClicks } from "../src/lib/problem_consent.ts";
 import { REGISTERED_OUTPUTS } from "../src/lib/registered_outputs.ts";
+import { withTaskDatabase } from "../src/lib/schema.ts";
+import type { Stage } from "../src/lib/stage.ts";
+import { moveStage } from "../src/lib/stage_read.ts";
 // 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
 import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
 
@@ -118,6 +121,23 @@ export function makeWorkspace(definition: unknown = demoDefinition(), { material
     writeFileSync(join(dir, "inputs/材料.md"), MATERIAL_TEXT, "utf-8");
   }
   return dir;
+}
+
+let stageOps = 0;
+/** 把任务放到某个工作阶段（当作用户在界面上移过去的）。早先建的任务没有阶段，调了什么都不做。 */
+export function enterStage(workspaceDir: string, stage: Stage): void {
+  withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
+    const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
+    moveStage(db, workspaceDir, { taskId: task.task_id, sessionId: "sess-ui", runId: null, callId: `ui-op-stage-${++stageOps}`, actor: "user" }, stage, "");
+  });
+}
+
+/**
+ * 把任务放到写条目阶段。有总体分析集合的任务，助手要到写条目阶段才能写别的集合的条目（lib/stage.ts）；
+ * 不是测阶段的测试，建好任务之后先调它。
+ */
+export function startWriting(workspaceDir: string): void {
+  enterStage(workspaceDir, "writing");
 }
 
 let counter = 0;

@@ -80,6 +80,8 @@ import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
 import { GATE_GUIDANCE, OVERALL_COLLECTION, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
+import { type Stage, itemRefusal, pageRefusal } from "./stage.ts";
+import { stageOf } from "./stage_read.ts";
 import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
@@ -380,6 +382,15 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   // 最低门（任务定义里有总体分析集合时才设）：助手往总体分析与问题集合之外的集合里新增条目之前，任务里要已经有一页
   // 在用的主题贴了标签、有例子、又不待核实。只看这次保存之前库里已有的页：同一批里才新增的页用户还没有看过。
   const gate = call.actor !== ACTOR_USER && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
+  // 工作的阶段（任务有总体分析集合时才有，lib/stage.ts）：助手这一刻能写什么看任务现在所在的阶段，取的是这次调用时最近的一条阶段记录。
+  // 用户在界面上的操作不看阶段。早先建的任务没有阶段，stage 是 null，下面几处都不拦。
+  const stage: Stage | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition) : null;
+  /** 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改总体分析的页时改动了的字段名。 */
+  const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = []) => {
+    if (stage === null) return null;
+    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed);
+    return keepPendingField(collection) === null ? itemRefusal(stage, kind, collection.name) : null;
+  };
 
   const problems: RejectReason[] = [];
   const planned: Planned[] = [];
@@ -424,6 +435,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
           guidance: `可用的集合是：${definition.collections.map((one) => `「${one.name}」`).join("、")}` });
         return;
       }
+      const staged = stageRefusal(collection, "add");
+      if (staged) errors.push(withGuide(...staged));
       if (gate !== null && collection.name !== OVERALL_COLLECTION && keepPendingField(collection) === null) errors.push(withGuide(gate, GATE_GUIDANCE));
       if (raw.item !== undefined) errors.push("新增时不要写 item，条目编号由工具生成");
       if (!isObject(raw.fields)) {
@@ -510,12 +523,17 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       return;
     }
 
+    const collection = definition.collections.find((one) => one.name === row.collection)!;
     if (op === "delete") {
+      const staged = stageRefusal(collection, "delete");
+      if (staged) {
+        problems.push({ label, fact: staged[0], guidance: staged[1] });
+        return;
+      }
       planned.push({ op: "delete", itemId, collection: row.collection, fromRevision: current.revision_no });
       return;
     }
 
-    const collection = definition.collections.find((one) => one.name === row.collection)!;
     const before = load(current.fields) as Fields;
     let merged: Fields = before;
     if (raw.fields !== undefined && !isObject(raw.fields)) {
@@ -532,6 +550,12 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
           errors.push(`必填字段「${field.name}」改完之后是空的，必填字段不能清空`);
         }
       }
+    }
+    if (op === "update") {
+      // 这个阶段能不能改它：别的集合的条目要到写条目阶段；评审确认阶段总体分析的页只能改状态与改看，所以要看这次改动了哪几个字段。
+      const changed = [...new Set([...Object.keys(before), ...Object.keys(merged)])].filter((name) => !sameJson(before[name], merged[name]));
+      const staged = stageRefusal(collection, "update", changed);
+      if (staged) errors.push(withGuide(...staged));
     }
     // 旧的「用户直接修改」当作不存在（见文件开头）。用户的操作（直接修改、撤销）都交来完整的来源，不经这里沿用，撤销照原样恢复。
     const previousSources = sourcesOf(itemId, current.revision_no).filter((one) => one.kind !== SOURCE_USER_EDIT);

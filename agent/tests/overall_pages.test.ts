@@ -11,11 +11,12 @@ import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query, startWriting } from "./helpers.ts";
 
 function workspace(definition: unknown = overallDefinition()): string {
   const dir = makeWorkspace(definition);
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  startWriting(dir);
   return dir;
 }
 

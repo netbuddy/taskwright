@@ -13,7 +13,7 @@ import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, sleep, type Stack, TOPIC_CALL, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, NO_PI, reply, sleep, type Stack, withStack } from "./consent_stack.ts";
 
 captureConsole();
 
@@ -26,7 +26,7 @@ const CARD = { kind: "choose", text: "功能用例一共 1 个条目，已经评
 const SCRIPT = {
   rules: [{ when: { any_contains: "你是评审者" }, reply: { text: JSON.stringify({ 发现: [] }) } }],
   sequence: [
-    { tool_calls: [TOPIC_CALL, { id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
+    { tool_calls: [{ id: "call-save", name: "save_revision", arguments: { operations: [{ op: "add", collection: "功能用例",
       sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
       fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } }] } }] },
     reply("整理好了一个用例。", "call-done-1"),
