@@ -120,7 +120,8 @@ function CollectionSide({ task, collection, currentItem, onOpenItem }: { task: T
   const left = overall ? task.items.filter((i) => i.collection === collection && !isIntroPage(i) && !groups.some((g) => g.items.includes(i))).length : 0;
   return (
     <div className="dn-side" data-testid={`side-collection-${collection}`}>
-      {def?.display?.note && <div className="dn-lead"><b>{collectionLabel(collection)}：{def.display.note}</b>{overall && " 这里只列贴了标签的主题，看条目时对照用。"}</div>}
+      {/* 说明那一句自己已经说出页面上的叫法时（新建任务的业务说明就是）不再在前面重复一遍。 */}
+      {def?.display?.note && <div className="dn-lead"><b>{def.display.note.includes(collectionLabel(collection)) ? "" : `${collectionLabel(collection)}：`}{def.display.note}</b>{overall && " 这里只列贴了标签的主题，看条目时对照用。"}</div>}
       {groups.length === 0 && <div className="citedby-empty">{overall && left > 0 ? "还没有贴了标签的主题。" : "这个集合还没有条目。"}</div>}
       {overall && left > 0 && <div className="citedby-empty" data-testid="side-overall-rest">另有 {left} 个主题没有贴标签或者已废弃，到条目区的「{OVERALL_LABEL}」页签看。</div>}
       {groups.map((g) => (

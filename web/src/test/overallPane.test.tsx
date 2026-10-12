@@ -49,7 +49,7 @@ describe("条目区的「业务说明」页签", () => {
     const opened = vi.fn();
     render(<Panel t={overallTask()} opened={opened} />);
     const intro = screen.getByTestId("overall-intro");
-    expect(intro).toHaveTextContent("用这件事自己的话写下的主题");
+    expect(intro).toHaveTextContent("按章整理的业务说明：每一节写它是什么、适用规则、待澄清事项，图与需求条目都归在它说明的那一节。");
     expect(intro).toHaveTextContent("现在有 11 节，14 条已经定下，3 条还没定，2 处是助手补的、等你核实。");
     expect(intro).toHaveTextContent("在左边的目录里点一节");
     expect(opened).not.toHaveBeenCalled();

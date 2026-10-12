@@ -99,7 +99,7 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
           )
           : (
           <div className="oa-intro" data-testid="overall-intro">
-            <p className="oa-intro-note">{def?.display?.note ?? "用这件事自己的话写下的主题。"}</p>
+            <p className="oa-intro-note">{def?.display?.note ?? "按章整理的业务说明。"}</p>
             <p className="oa-intro-sum">现在有 {sum.pages} 节，{sum.settled} 条已经定下，{sum.open} 条还没定，{sum.pending} 处是助手补的、等你核实。</p>
             {sum.pages === 0 && onStart && task.stage ? (
               <div className="oa-start" data-testid="overall-start">
