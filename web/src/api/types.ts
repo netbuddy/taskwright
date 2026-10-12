@@ -363,6 +363,8 @@ export interface StageView {
   reason: string | null;
   lamps: Record<StageKey, StageLamp[]>;
   proposal?: StageProposal | null;
+  /** 所属流程：最近一次移动是在哪一条流程里发生的。现在只有一条流程，值恒为 initial（首次分析）。 */
+  flow?: string;
 }
 
 export interface Material {
@@ -751,6 +753,8 @@ export interface StageChanged {
   actor: "executor" | "user" | string;
   reason: string;
   run_id: string | null;
+  /** 这次移动的所属流程，现在恒为 initial（首次分析）。 */
+  flow?: string;
   op_id?: string | null;
   completion: Completion | null;
 }

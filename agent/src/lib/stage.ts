@@ -25,6 +25,13 @@ export const STAGE_NAMES: Record<Stage, string> = {
   reviewing: "评审确认",
 };
 
+/**
+ * 所属流程：一次阶段移动是在哪一条流程里发生的。现在只有一条流程（首次分析），值恒定；以后任务里可以单独开展一项活动、
+ * 或者在别的流程里开展时，靠它区分。它写在阶段移动那条事件的内容里，读阶段记录时带出来，早先没有写它的记录读出来就是首次分析。
+ */
+export const FLOW_INITIAL = "initial";
+export const FLOW_NAMES: Record<string, string> = { [FLOW_INITIAL]: "首次分析" };
+
 /** 谁移动的：助手或用户。取值与库事件的发起方一致。 */
 export type StageActor = "executor" | "user";
 

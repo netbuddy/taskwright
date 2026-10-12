@@ -46,8 +46,8 @@ test("记一次移动：一条事件加一行记录，同一个事件序号；�
   assert.ok(second > first);
   const events = query<{ seq: number; name: string; actor: string; call_id: string; payload: string }>(dir, "SELECT seq, name, actor, call_id, payload FROM event WHERE name = ? ORDER BY seq", EVENT_STAGE_MOVED);
   assert.deepEqual(events.map((e) => [e.seq, e.actor, e.call_id, JSON.parse(e.payload)]), [
-    [first, "executor", "call-reply-1", { stage: "clarifying", from: "reading", actor: "executor", reason: "材料读完了，先问借期。", run_id: "r2" }],
-    [second, "user", "ui-op-7", { stage: "writing", from: "clarifying", actor: "user", reason: "", run_id: null }],
+    [first, "executor", "call-reply-1", { stage: "clarifying", from: "reading", actor: "executor", reason: "材料读完了，先问借期。", run_id: "r2", flow: "initial" }],
+    [second, "user", "ui-op-7", { stage: "writing", from: "clarifying", actor: "user", reason: "", run_id: null, flow: "initial" }],
   ]);
   const rows = write(dir, (db) => stageRecords(db, taskId));
   assert.deepEqual(rows.map((r) => [r.stage, r.from_stage, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.event_seq]), [

@@ -22,7 +22,7 @@ import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase } from "./schema.ts";
 import { openProposal } from "./stage_proposal.ts";
 import {
-  ENTER_OPTIONS, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, NO_STAGES_TEXT, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
+  ENTER_OPTIONS, FLOW_INITIAL, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, NO_STAGES_TEXT, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
   defaultStage, isStage, judgeMove, lampLines, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
@@ -43,7 +43,14 @@ export interface StageRecord {
   call_id: string;
   event_seq: number;
   created_at: string;
+  /** 所属流程（lib/stage.ts 的 FLOW_INITIAL 等）：取自记下这次移动的那条事件的内容，那里没有写时是首次分析。 */
+  flow: string;
 }
+
+/** 读阶段记录的列：表里的各列，加上从那条事件的内容里取的所属流程（事件里没有写、或者那条事件已经不在时补首次分析）。 */
+const RECORD_COLUMNS = "r.stage, r.from_stage, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.event_seq, r.created_at, " +
+  `COALESCE(json_extract(e.payload, '$.flow'), '${FLOW_INITIAL}') AS flow`;
+const RECORD_FROM = `${TABLE} r LEFT JOIN event e ON e.seq = r.event_seq`;
 
 /** 库里有没有阶段记录表：只读的一侧会遇到还没有升级过的库。 */
 export function hasStageTable(db: DatabaseSync): boolean {
@@ -53,18 +60,14 @@ export function hasStageTable(db: DatabaseSync): boolean {
 /** 最近一次移动；一次都没有移过（或者库还没有这张表）时是 null。 */
 export function lastStageRecord(db: DatabaseSync, taskId: string): StageRecord | null {
   if (!hasStageTable(db)) return null;
-  const row = db.prepare(
-    `SELECT stage, from_stage, actor, reason, run_id, session_id, call_id, event_seq, created_at FROM ${TABLE} WHERE task_id = ? ORDER BY event_seq DESC LIMIT 1`,
-  ).get(taskId) as StageRecord | undefined;
+  const row = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.event_seq DESC LIMIT 1`).get(taskId) as StageRecord | undefined;
   return row && isStage(row.stage) ? { ...row, event_seq: Number(row.event_seq) } : null;
 }
 
 /** 全部移动，按先后排。 */
 export function stageRecords(db: DatabaseSync, taskId: string): StageRecord[] {
   if (!hasStageTable(db)) return [];
-  const rows = db.prepare(
-    `SELECT stage, from_stage, actor, reason, run_id, session_id, call_id, event_seq, created_at FROM ${TABLE} WHERE task_id = ? ORDER BY event_seq`,
-  ).all(taskId) as unknown as StageRecord[];
+  const rows = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.event_seq`).all(taskId) as unknown as StageRecord[];
   return rows.map((row) => ({ ...row, event_seq: Number(row.event_seq) }));
 }
 
@@ -98,13 +101,13 @@ export interface StageMove {
 }
 
 /**
- * 记一次移动：先记一条事件 STAGE_MOVED，再往阶段记录表插一行，返回事件序号。
+ * 记一次移动：先记一条事件 STAGE_MOVED，再往阶段记录表插一行，返回事件序号。事件的内容里另写这次移动的所属流程（现在恒为首次分析）。
  * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让事件、这一行与同一次调用里别的写入一起提交。
  */
 export function recordStageMove(db: DatabaseSync, move: StageMove): number {
   const seq = emit(db, {
     taskId: move.taskId, sessionId: move.sessionId, callId: move.callId, name: EVENT_STAGE_MOVED, actor: move.actor,
-    payload: { stage: move.to, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId },
+    payload: { stage: move.to, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId, flow: FLOW_INITIAL },
   });
   db.prepare(
     `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

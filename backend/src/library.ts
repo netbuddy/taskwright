@@ -18,9 +18,9 @@ import { pdfFacts, pdfSourceName } from "./projection.ts";
 import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQuestions, goalTree, rulesTable } from "../../agent/src/lib/overall_views.ts";
-import { QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
+import { FLOW_INITIAL, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
-import { stageRecords, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
+import { lastStageRecord, stageRecords, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -313,6 +313,7 @@ export function proposalView(fact: Omit<OpenProposal, "session_id" | "reply_entr
 /**
  * 任务现在的工作阶段与每个阶段的几盏灯，给接口的 stage 形状：{ current, moved_by, moved_at, reason, lamps, proposal }。
  * proposal 是开着的提议（助手发了提议进入下一个阶段的卡片、用户还没有进入，见 agent/src/lib/stage_proposal.ts），没有时为 null。
+ * flow 是所属流程：最近一次移动是在哪一条流程里发生的，一次都没有移过时也是首次分析（initial）；现在只有这一条流程。
  * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）；moved_by 是最近一次移动由谁做的（executor 或 user），
  * 一次都没有移过时与 moved_at、reason 一起为 null；lamps 按阶段给出各盏灯 { key, summary, ok, items }，ok 为 null 是不适用。
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，返回 null；算不出来时也返回 null。
@@ -328,7 +329,7 @@ export function stageView(taskDir: string) {
       if (summary === null) return null;
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       const open = task ? openProposal(db, task.task_id) : null;
-      return { ...summary, moved_at: clock.fromLocalText(summary.moved_at),
+      return { ...summary, moved_at: clock.fromLocalText(summary.moved_at), flow: (task ? lastStageRecord(db, task.task_id)?.flow : null) ?? FLOW_INITIAL,
         proposal: open === null ? null : proposalView(open, { session_id: open.session_id, reply_entry: open.reply_entry, seq: open.event_seq, at: open.at }) };
     } finally {
       db.close();
@@ -340,7 +341,7 @@ export function stageView(taskDir: string) {
 
 /**
  * 调试用：任务的全部阶段记录（按先后）与最近被拒的工具调用（新的在前，最多 limit 条）。库另开一个只读连接；
- * 还没有库、或者读不出来时两样都是空的。阶段记录每条写 { from, to, actor, reason, run_id, session_id, at }；
+ * 还没有库、或者读不出来时两样都是空的。阶段记录每条写 { from, to, actor, reason, run_id, session_id, at, flow }（flow 是所属流程）；
  * 被拒的调用每条写 { work_id, session_id, call_id, tool, kind, fact, guidance, at }，work_id 是它所属的那次工作。
  */
 export function stageDebugView(taskDir: string, limit = 200) {
@@ -353,6 +354,7 @@ export function stageDebugView(taskDir: string, limit = 200) {
       if (!task) return empty;
       const records = stageRecords(db, task.task_id).map((one) => ({
         from: one.from_stage, to: one.stage, actor: one.actor, reason: one.reason, run_id: one.run_id, session_id: one.session_id, at: clock.fromLocalText(one.created_at),
+        flow: one.flow,
       }));
       const rejections = tableNames(db).has("tool_rejection") ? (db.prepare(
         "SELECT work_id, session_id, call_id, tool_name, reason_kind, fact, guidance, created_at FROM tool_rejection ORDER BY rejection_id DESC LIMIT ?",
@@ -1006,8 +1008,9 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
   if (e.name === "STAGE_MOVED") {
     // 任务从一个工作阶段移到了另一个：到了哪个阶段（to）、从哪个阶段来（from）、谁移的、理由；助手移的带运行号，用户移的带操作编号。
     // 到了哪个阶段不叫 stage：这一批最后一条事件上的 stage 是现在的阶段与灯（见 libraryEvents），两样不能撞名。
+    // flow 是这次移动的所属流程；早先记下的移动事件里没有写，补首次分析。
     return ["stage_changed", { ...base, to: payload.stage ?? null, from: payload.from ?? null, actor, reason: payload.reason ?? "",
-      run_id: payload.run_id ?? null, op_id: opId, completion: null }];
+      run_id: payload.run_id ?? null, flow: typeof payload.flow === "string" && payload.flow ? payload.flow : FLOW_INITIAL, op_id: opId, completion: null }];
   }
   if (e.name === "CONFIRMATION_RECORDED") {
     return ["confirmation_recorded", { ...base, items: or(payload.items, []), basis: or(payload.basis, "ui_click"), op_id: opId, completion: null }];
