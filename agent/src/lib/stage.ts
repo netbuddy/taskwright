@@ -71,6 +71,9 @@ export const ENTER_OPTIONS: Record<Exclude<Stage, "reading">, CardOption> = {
   reviewing: { key: "enter_review", text: "进入评审确认" },
 };
 
+/** 留在这一段的那个选项在页面上的写法：四张卡片上都是这一句，不管助手在卡片里把它写成什么。 */
+export const STAY_TEXT = "继续本阶段";
+
 /** 留在某个阶段的那个选项（评审确认是最后一段，没有往前的卡片）。 */
 export const STAY_OPTIONS: Record<Exclude<Stage, "reviewing">, CardOption> = {
   reading: { key: "continue_reading", text: "再核读一遍" },

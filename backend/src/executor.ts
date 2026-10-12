@@ -854,7 +854,8 @@ export class Executor {
         const seqs = details.event_seqs || [];
         this.hub.emit("ui_action_noted", { session_id: sid, message_id: hit ? hit.id ?? null : null, at: clock.now(),
           text: conversation.textOf(message.content ?? null), event_seq: seqs.length ? seqs[0] : null, undoable: truthy(details.undoable),
-          op_id: details.op_id ?? null, revision_no: details.revision_no ?? null, kind: details.kind ?? null, review: details.review ?? null });
+          op_id: details.op_id ?? null, revision_no: details.revision_no ?? null, kind: details.kind ?? null, review: details.review ?? null,
+          ...conversation.continueStageFields(details) });
       } else if (ctype === conversation.UI_CLICK) {
         const entries = await this.fetchNewEntries(pi);
         const hit = [...entries].reverse().find((e) => e.type === "custom_message" && e.customType === ctype) ?? null;

@@ -20,6 +20,8 @@
  * 结果里 results 是 [{diagram_id, revision_no}]（图自己的修订号），revision_no 为 null，追加的那条自定义消息不可撤销。
  * 还有一个例外是停止（kind 为 stop_run）：用户在界面上停止了助手这一次运行，后端等运行停下之后发来。它不写库，只追加一条
  * taskwright-user-edit 自定义消息（正文是 lib/user_ops.ts 的 STOP_RUN_NOTE），助手下一次运行时据此知道上一次没有做完。
+ * 还有一个例外是「继续本阶段」（kind 为 continue_stage）：用户在提议进入下一个阶段的卡片上选了留在这一段。它也不写库，只追加一条
+ * taskwright-user-edit 自定义消息（lib/user_stage.ts），不发话、不引出运行；details 里带卡片所在回复的编号，页面据此把卡片显示为已选。
  * 状态栏是给后端读的，交互模式下只显示成底部一行截短的 JSON；所以交互模式里被拒时另外用 notify 把完整的拒绝原因
  * 发给人看（rejectionText），RPC 模式不发，后端照旧只读状态栏。
  *
@@ -42,6 +44,7 @@ import { piComplete, startReview } from "../lib/review_ui.ts";
 import { batchCounts } from "../lib/review_run.ts";
 import { DIAGRAM_OP_KIND, DIAGRAM_VIEW_OP_KIND, editDiagram, markDiagramViewed } from "../lib/user_diagram.ts";
 import { recordStageCardClick } from "../lib/stage_read.ts";
+import { CONTINUE_STAGE_KIND, continueStage } from "../lib/user_stage.ts";
 
 export const USER_COMMAND = "tw-user";
 export const UI_COMMAND = "tw-ui";
@@ -93,6 +96,24 @@ export function registerUserCommands(pi: ExtensionAPI): void {
         // 用户在界面上停止了这一次运行：后端在运行停下之后发来，这里只留一条通知，不写库。
         pi.sendMessage({ customType: USER_EDIT_CUSTOM_TYPE, content: STOP_RUN_NOTE, display: true, details: stopRunDetails(opId) });
         report({ ok: true, event_seqs: [], results: [], revision_no: null });
+        return;
+      }
+      if (request.kind === CONTINUE_STAGE_KIND) {
+        // 用户在进入卡片上选了「继续本阶段」：只留一条通知，不写库、不发话，提议仍然开着。
+        try {
+          const result = continueStage({ workspaceDir: ctx.cwd }, ctx.sessionManager.getBranch() as never, request);
+          pi.sendMessage({
+            customType: USER_EDIT_CUSTOM_TYPE,
+            content: result.note,
+            display: true,
+            details: { op_id: result.op_id, kind: result.kind, event_seqs: [], results: [], revision_no: null, undoable: false,
+              reply_entry: result.reply_entry, option_key: result.option_key, stage: result.stage },
+          });
+          report({ ok: true, event_seqs: [], results: [], revision_no: null });
+        } catch (error) {
+          if (error instanceof UserOpError) report({ ok: false, error: { code: error.code, message: error.message, data: error.data } });
+          else report({ ok: false, error: { code: "rejected", message: (error as Error).message, data: { reasons: [(error as Error).message] } } });
+        }
         return;
       }
       if (request.kind === DIAGRAM_VIEW_OP_KIND) {
