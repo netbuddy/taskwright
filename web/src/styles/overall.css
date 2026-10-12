@@ -261,3 +261,14 @@
 .app .oa-trace i { font-style: normal; color: var(--line3); }
 .app .oa-trace .see { cursor: pointer; text-decoration: underline; text-decoration-color: var(--line3); }
 .app .oa-trace .see:hover { color: var(--blue); }
+
+/* ───── 章首页自己的块（overall/ChapterBlocks.tsx）───── */
+.app .oa-goals { margin: 0; padding-left: 1.2rem; max-width: 52rem; font-size: 0.97rem; line-height: 1.8; }
+.app .oa-goals ul { margin: 0; padding-left: 1.2rem; color: var(--text2); }
+.app .oa-tablebox { max-width: 62rem; overflow-x: auto; border: 1px solid var(--line); border-radius: .5rem; }
+.app .oa-table.oa-matrix tbody tr { cursor: default; }
+.app .oa-table.oa-matrix th, .app .oa-table.oa-matrix td { white-space: nowrap; }
+.app .oa-table.oa-matrix td.n { width: auto; white-space: normal; min-width: 9rem; }
+.app .oa-table.oa-matrix td.none { color: var(--line3); }
+.app .oa-table.oa-matrix tr:last-child td { border-bottom: 0; }
+.app .oa-tablefoot { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .8rem; margin: .4rem 0 .6rem; font-size: 0.873rem; color: var(--text3); }

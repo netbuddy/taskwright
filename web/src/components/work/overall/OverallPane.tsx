@@ -10,7 +10,8 @@ import type { Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
 import { overallDef, retellText, titleOf, totals } from "../../../model/overall";
 import { NO_MATERIALS_TEXT, STAGE_STARTS, type StageStart } from "../../../model/stage";
-import { CHAPTER_DECISIONS, CHAPTER_GOALS, CHAPTER_RULES } from "../../../model/chapters";
+import { CHAPTER_DECISIONS, CHAPTER_GOALS, CHAPTER_OVERVIEW, CHAPTER_ROLES, CHAPTER_RULES } from "../../../model/chapters";
+import { OverviewBlocks, RolesBlocks } from "./ChapterBlocks";
 import { looseDiagrams } from "../../../model/sectionDiagrams";
 import { type FigureHost, LooseFigures } from "./Figure";
 import { ChapterHead } from "./ChapterHead";
@@ -83,7 +84,12 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
       <div className="oa-main" data-testid="overall-main">
         {page ?? (head?.kind === "glossary" ? <Glossary task={task} onOpen={open} />
           : head?.kind === "loose" ? <LooseFigures host={host} />
-          : head?.kind === "chapter" ? <ChapterHead task={task} contents={contents} chapterNo={head.no} lead={chapterLead(head.no)} onOpen={open} />
+          : head?.kind === "chapter" ? (
+            <ChapterHead task={task} contents={contents} chapterNo={head.no} lead={chapterLead(head.no)} onOpen={open} full={head.no === CHAPTER_OVERVIEW}>
+              {head.no === CHAPTER_OVERVIEW && <OverviewBlocks host={host} onChapter={(no) => openHead({ kind: "chapter", no })} />}
+              {head.no === CHAPTER_ROLES && <RolesBlocks host={host} />}
+            </ChapterHead>
+          )
           : (
           <div className="oa-intro" data-testid="overall-intro">
             <p className="oa-intro-note">{def?.display?.note ?? "用这件事自己的话写下的主题。"}</p>
