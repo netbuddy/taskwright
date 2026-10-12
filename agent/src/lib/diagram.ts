@@ -5,7 +5,7 @@
  * 图的修订号是这张图自己的（从 1 起连续），与任务的修订序号无关。一张图现在的样子是它修订号最大的那一行内容；
  * 删除也记一行（内容照删除之前的样子）。
  *
- * 图里画了哪些条目：助手按说明把条目编号写在节点的文字里（例如 `r1(["REQ-001 提交申请"])`）。五种图里节点名字能用的字符
+ * 图里画了哪些条目：助手按说明把条目编号写在节点的文字里（例如 `r1(["REQ-001 提交申请"])`）。各种图里节点名字能用的字符
  * 各不相同（有的不许连字符），所以不认节点的名字，只在整段 Mermaid 文本里找「集合的编号前缀-数字」形状的词，
  * 再到条目表里对。这是从文本里扫出来的补充视图，不存库；图依据了哪些条目以它的来源为准。
  *
@@ -19,10 +19,16 @@ export const DIAGRAM_PREFIX = "D";
 /** 图的编号的形状。 */
 export const DIAGRAM_ID = /^D-\d{3,}$/;
 
-/** 图的五个种类（与任务服务的校验模块 backend/src/diagram_validate.ts 的 DIAGRAM_KINDS 是一份约定，有测试核对两边相同）。 */
-export const DIAGRAM_KINDS = ["use_case", "class", "state", "sequence", "flowchart"] as const;
+/**
+ * 图的六个种类（与任务服务的校验模块 backend/src/diagram_validate.ts 的 DIAGRAM_KINDS 是一份约定，有测试核对两边相同）。
+ * context 是系统边界图：系统画成一个子图，外面是与它打交道的角色与外部系统；class 是对象关系图，用 Mermaid 的类图写法画。
+ * 库里不检查种类（见 lib/schema.ts 的 diagramVersionSql），有哪几种以这里为准。
+ */
+export const DIAGRAM_KINDS = ["context", "use_case", "class", "state", "sequence", "flowchart"] as const;
 export type DiagramKind = (typeof DIAGRAM_KINDS)[number];
-export const DIAGRAM_KIND_NAMES: Record<DiagramKind, string> = { use_case: "用例图", class: "类图", state: "状态图", sequence: "时序图", flowchart: "流程图" };
+export const DIAGRAM_KIND_NAMES: Record<DiagramKind, string> = {
+  context: "系统边界图", use_case: "用例图", class: "对象关系图", state: "状态图", sequence: "时序图", flowchart: "流程图",
+};
 
 /** 种类的中文名；认不出的照原样。 */
 export const kindName = (kind: string): string => (DIAGRAM_KIND_NAMES as Record<string, string>)[kind] ?? kind;

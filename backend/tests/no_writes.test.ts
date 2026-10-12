@@ -31,6 +31,8 @@ const ALLOWED: Record<string, string[]> = {
   "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames"],
   // 图：种类与编号的常量、从库里读图、从 Mermaid 文本里扫条目编号（只读与只做计算的函数，不写库）。
   "diagram.ts": ["DIAGRAM_KINDS", "DiagramRecord", "drawnItemIds", "kindName", "latestVersion", "liveDiagrams", "readDiagrams"],
+  // 从 Mermaid 文本里扫东西（只做计算）：系统边界图画没画出系统与系统外面的节点，保存前的校验用。
+  "diagram_scan.ts": ["contextShape"],
   // TASK_ID_PATTERN 是任务编号的写法（一个正则），数据包导入时用它核对包里写的编号。
   "create_task.ts": ["createTask", "TASK_ID_PATTERN"],
   // renumberTask 是写入：把一个任务库里的任务编号换成新的。它只许在数据包的导入里调（src/data_pack.ts，导入的任务与已有的任务

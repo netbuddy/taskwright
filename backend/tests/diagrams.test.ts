@@ -112,9 +112,9 @@ test("图的事件写成接口事件 diagram_changed：是哪一张、它自己�
   const views = data.events!.filter((e) => e.name === "DIAGRAM_SAVED").map((e) => library.eventPayload(lib, e)!);
   assert.deepEqual(views.map(([name, body]) => [name, body.diagram_id, body.revision_no, body.op, body.name, body.kind, body.kind_name, body.actor]), [
     ["diagram_changed", "D-001", 1, "add", "读者用例", "use_case", "用例图", "executor"],
-    ["diagram_changed", "D-002", 1, "add", "借书证", "class", "类图", "executor"],
+    ["diagram_changed", "D-002", 1, "add", "借书证", "class", "对象关系图", "executor"],
     ["diagram_changed", "D-001", 2, "update", "读者用例", "use_case", "用例图", "executor"],
-    ["diagram_changed", "D-002", 2, "delete", "借书证", "class", "类图", "executor"],
+    ["diagram_changed", "D-002", 2, "delete", "借书证", "class", "对象关系图", "executor"],
     ["diagram_changed", "D-003", 1, "add", "登录流程", "flowchart", "流程图", "executor"],
   ]);
   assert.ok(views.every(([, body]) => typeof body.at === "string" && typeof body.seq === "number"));
@@ -146,14 +146,15 @@ test("接口：图的列表、详情、没有这张图；校验通过、写错�
     assert.deepEqual([emptyStatus, empty.valid, empty.reason], [200, false, "empty"]);
     const [kindStatus, kind] = await send("POST", "/diagrams/validate", { kind: "用例图", mermaid: MERMAID });
     assert.deepEqual([kindStatus, kind.error.code, kind.error.data], [422, "rejected", { field: "kind" }]);
-    assert.match(kind.error.message, /图的种类要写 use_case、class、state、sequence、flowchart 里的一个，收到的是 "用例图"。/);
+    assert.match(kind.error.message, /图的种类要写 context、use_case、class、state、sequence、flowchart 里的一个，收到的是 "用例图"。/);
   } finally {
     await service.close();
   }
 });
 
-test("助手说明里教的写法（条目编号写在节点的文字里、节点的名字只用字母数字）五种图都通过校验，扫得出条目编号", async () => {
+test("助手说明里教的写法（条目编号写在节点的文字里、节点的名字只用字母数字）六种图都通过校验，扫得出条目编号", async () => {
   const texts: Record<string, string> = {
+    context: 'flowchart LR\n  buyer(["UC-001 买家"])\n  bank["UC-002 支付平台"]\n  subgraph 商城\n    desk["受理申请"]\n  end\n  buyer -- 退货申请 --> desk\n  desk -- 退款指令 --> bank',
     use_case: 'flowchart LR\n  buyer(["买家"])\n  subgraph 商城\n    r1(["UC-001 提交申请"])\n    r2(["UC-002 查看进度"])\n  end\n  buyer --> r1\n  r1 -. 包含 .-> r2',
     class: 'classDiagram\n  class Order["UC-001 订单"]\n  class Refund["UC-002 退款单"]\n  Order "1" --> "0..1" Refund : 产生',
     state: 'stateDiagram-v2\n  state "UC-001 待审核" as s1\n  state "UC-002 已退款" as s2\n  [*] --> s1\n  s1 --> s2 : 审核通过',

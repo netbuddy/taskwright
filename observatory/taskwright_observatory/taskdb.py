@@ -402,7 +402,8 @@ def _item_records(conn: sqlite3.Connection, sql: str, task_id: str, table: str) 
 
 
 #: 图的种类的中文名，与 agent/src/lib/diagram.ts 的 DIAGRAM_KIND_NAMES 一致。
-DIAGRAM_KIND_NAMES = {"use_case": "用例图", "class": "类图", "state": "状态图", "sequence": "时序图", "flowchart": "流程图"}
+DIAGRAM_KIND_NAMES = {"context": "系统边界图", "use_case": "用例图", "class": "对象关系图", "state": "状态图", "sequence": "时序图",
+                      "flowchart": "流程图"}
 
 
 def read_diagrams(conn: sqlite3.Connection, task_id: str) -> list[dict]:

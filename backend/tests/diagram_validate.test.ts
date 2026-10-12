@@ -1,5 +1,5 @@
 /**
- * 图表的校验（src/diagram_validate.ts）：五种图合法的通过、写错的报出第几行；种类不符、开头认不出、空文本、超长各有各的说法；
+ * 图表的校验（src/diagram_validate.ts）：六种图合法的通过、写错的报出第几行；种类不符、开头认不出、空文本、超长各有各的说法；
  * 到时限没有算完就结束那条线程，下一次照常能校验；校验引擎加载不了时说明是程序这边的问题，不说成文本写错。
  */
 
@@ -13,8 +13,19 @@ import { ROOT } from "./helpers.ts";
 const checker = new DiagramChecker();
 after(() => checker.stop());
 
-/** 每种图一份合法的文本；用例图用流程图的写法画。 */
+/** 每种图一份合法的文本；系统边界图与用例图用流程图的写法画。 */
 const GOOD: Record<DiagramKind, string> = {
+  context: [
+    "flowchart LR",
+    '  buyer(["OA-001 买家"])',
+    '  pay["支付平台"]',
+    '  subgraph sys["售后系统"]',
+    '    desk["受理售后申请"]',
+    '    refund["发起退款"]',
+    "  end",
+    "  buyer -- 售后申请 --> desk",
+    "  refund -- 退款指令 --> pay",
+  ].join("\n"),
   use_case: [
     "flowchart LR",
     '  buyer(["买家"])',
@@ -41,6 +52,8 @@ const GOOD: Record<DiagramKind, string> = {
 
 /** 每种图一份故意写错的文本，与写错的那一行（解析时的原话里写的行号可能是下一行）。 */
 const BAD: Record<DiagramKind, { text: string; line: number }> = {
+  // 第 3 行的子图没有 end。
+  context: { text: ["flowchart LR", '  buyer(["买家"])', '  subgraph sys["售后系统"]', '    desk["受理售后申请"]', "  buyer -- 售后申请 --> desk"].join("\n"), line: 5 },
   // 第 3 行的子图没有 end：要读到文本结束才发现，所以指的是最后一行。
   use_case: { text: ["flowchart LR", '  buyer(["买家"])', '  subgraph sys["售后系统"]', '    UC001(["UC-001 提交售后申请"])', "  buyer --- UC001"].join("\n"), line: 5 },
   // 第 2 行的类没有闭合花括号，第 4 行又开了一个。
@@ -58,18 +71,18 @@ const failed = (check: DiagramCheck) => {
   return check as Extract<DiagramCheck, { ok: false }>;
 };
 
-/** 一份接近上限的合法类图：解析它要一秒上下，用来试时限。 */
+/** 一份接近上限的合法对象关系图：解析它要一秒上下，用来试时限。 */
 function bigClassDiagram(): string {
   let text = "classDiagram\n";
   for (let n = 1; Buffer.byteLength(text) < DIAGRAM_TEXT_LIMIT - 200; n++) text += `  class C${n}["售后单 ${n}"] {\n    +String 售后单号\n    +提交()\n  }\n`;
   return text;
 }
 
-test("五种图合法的文本都通过", async () => {
+test("六种图合法的文本都通过", async () => {
   for (const kind of DIAGRAM_KINDS) assert.deepEqual(await checker.validate(kind, GOOD[kind]), { ok: true }, kind);
 });
 
-test("五种图写错的文本都报语法不对，说出第几行，并带着解析时的原话", async () => {
+test("六种图写错的文本都报语法不对，说出第几行，并带着解析时的原话", async () => {
   for (const kind of DIAGRAM_KINDS) {
     const check = failed(await checker.validate(kind, BAD[kind].text));
     assert.equal(check.reason, "syntax", kind);
@@ -91,9 +104,9 @@ test("括号没有闭合时，开头那一行与发现不对的那一行都写�
 test("写的不是说好的那一种：说出写的是哪一种；用例图与流程图都认流程图的写法", async () => {
   const asClass = failed(await checker.validate("class", GOOD.sequence));
   assert.equal(asClass.reason, "kind_mismatch");
-  assert.equal(asClass.message, "写的是时序图，不是你说的类图。");
+  assert.equal(asClass.message, "写的是时序图，不是你说的对象关系图。");
   const asUseCase = failed(await checker.validate("use_case", GOOD.class));
-  assert.equal(asUseCase.message, "写的是类图，不是你说的用例图。用例图用流程图的写法画，第一行写 flowchart。");
+  assert.equal(asUseCase.message, "写的是对象关系图，不是你说的用例图。用例图用流程图的写法画，第一行写 flowchart。");
   const pie = failed(await checker.validate("flowchart", 'pie\n  "合格" : 3\n  "不合格" : 1'));
   assert.equal(pie.message, "写的是饼图，不是你说的流程图。");
   // 种类不符先于语法：一份写错的时序图当作状态图交来，说的是种类不符。
@@ -103,15 +116,34 @@ test("写的不是说好的那一种：说出写的是哪一种；用例图与�
   assert.deepEqual(await checker.validate("flowchart", "graph TD\n  A --> B"), { ok: true });
 });
 
+test("系统边界图另核对两样：没有子图说没有画出系统，子图之外没有节点说没有画外面的角色或外部系统；别的种类不核对", async () => {
+  // 没有子图：只有几个节点连在一起。
+  const flat = ["flowchart LR", '  buyer(["买家"])', '  desk["受理售后申请"]', "  buyer -- 售后申请 --> desk"].join("\n");
+  const noSystem = failed(await checker.validate("context", flat));
+  assert.equal(noSystem.reason, "context_shape");
+  assert.equal(noSystem.message, "这张系统边界图里没有画出系统：系统要画成一个子图，从 subgraph 系统名 写到 end，里面写系统做的几件大事。改了再存。");
+  // 有子图，但所有节点都在子图里；写在子图外面的连线只是提到它们。
+  const closed = ["flowchart LR", '  subgraph sys["售后系统"]', '    desk["受理售后申请"]', '    refund["发起退款"]', "  end", "  desk --> refund"].join("\n");
+  const noOutside = failed(await checker.validate("context", closed));
+  assert.equal(noOutside.reason, "context_shape");
+  assert.match(noOutside.message, /^这张系统边界图里没有画系统外面的角色或外部系统：子图之外至少要有一个节点/);
+  // 同样的两份文本当作流程图、用例图交来都通过：这两样只对系统边界图核对。
+  for (const kind of ["flowchart", "use_case"]) for (const text of [flat, closed]) assert.deepEqual(await checker.validate(kind, text), { ok: true }, kind);
+  // 语法先于这两样：写错的系统边界图说的是语法不对。
+  assert.equal(failed(await checker.validate("context", BAD.context.text)).reason, "syntax");
+  // 外面的节点只在连线里出现、没有单独声明，也算。
+  assert.deepEqual(await checker.validate("context", ["flowchart LR", "  subgraph 售后系统", "    desk[受理]", "  end", "  买家 -- 售后申请 --> desk"].join("\n")), { ok: true });
+});
+
 test("开头认不出是哪种图", async () => {
   const check = failed(await checker.validate("state", "买家提交售后申请之后，售后专员审核。"));
   assert.equal(check.reason, "unknown_type");
-  assert.equal(check.message, "Mermaid 文本的开头没有写图的类型，或者写的不是用例图、类图、状态图、时序图、流程图里的一种。状态图的第一行要先写明类型。");
+  assert.equal(check.message, "Mermaid 文本的开头没有写图的类型，或者写的不是系统边界图、用例图、对象关系图、状态图、时序图、流程图里的一种。状态图的第一行要先写明类型。");
 });
 
 test("空文本、只有空白、不是文字，都说没有可以校验的内容；种类写得不对是调用方的错，直接报错", async () => {
   for (const text of ["", "  \n\t", undefined, 12]) assert.equal(failed(await checker.validate("flowchart", text)).reason, "empty");
-  await assert.rejects(checker.validate("用例图", GOOD.use_case), /图的种类要写 use_case、class、state、sequence、flowchart 里的一个/);
+  await assert.rejects(checker.validate("用例图", GOOD.use_case), /图的种类要写 context、use_case、class、state、sequence、flowchart 里的一个/);
 });
 
 test("超过上限的文本不校验，说出有多大；正好在上限以内的照常校验", async () => {

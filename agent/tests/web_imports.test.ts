@@ -36,7 +36,7 @@ function resolveFile(from: string, spec: string): string {
 }
 
 /** 写给页面用、页面还没有导入的文件：先照同样的规矩守着，页面接上的那一天不会才发现它用了 Node 的模块。 */
-const FOR_WEB = ["lib/pdf_source.ts", "lib/overall_analysis.ts", "lib/stage.ts"];
+const FOR_WEB = ["lib/pdf_source.ts", "lib/overall_analysis.ts", "lib/stage.ts", "lib/diagram_scan.ts"];
 
 /** 页面直接导入的 agent/src 文件，以及它们经相对导入牵进来的全部文件。 */
 function agentFilesUsedByWeb(): { files: Set<string>; problems: string[] } {
