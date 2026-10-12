@@ -52,8 +52,23 @@ describe("右侧栏的总体分析页签", () => {
     expect(screen.getByTestId("side-entry-概念-OA-003")).toBeInTheDocument();
     expect(screen.getByTestId("side-entry-流程-OA-003")).toBeInTheDocument();
     expect(panel.querySelector('[data-testid$="-OA-008"]')).toBeNull();
-    expect(screen.getByTestId("side-overall-rest")).toHaveTextContent("另有 2 个主题没有贴标签或者已废弃，到条目区的「总体分析」页签看。");
+    expect(screen.getByTestId("side-overall-rest")).toHaveTextContent("另有 2 个主题没有贴标签或者已废弃，到条目区的「业务说明」页签看。");
     expect(panel.querySelector(".dn-lead")).toHaveTextContent("这里只列贴了标签的主题，看条目时对照用。");
+    // 页签顶上那一句用页面上的叫法起头。
+    expect(panel.querySelector(".dn-lead b")!.textContent).toMatch(/^业务说明：/);
+  });
+
+  it("各章的导语页不列出，也不算进「另有 N 个」：贴没贴标签都一样", () => {
+    const task = overallTask();
+    const base = task.items.find((one) => one.item_id === "OA-011")!;
+    const intro = (id: string, chapter: string, labels: string[] = []) => ({ ...structuredClone(base), item_id: id, title: `${chapter}导语`,
+      fields: { 标题: `${chapter}导语`, 它是什么: `${chapter}这一章讲什么。`, 状态: "在用", 导语所属章: chapter, ...(labels.length ? { 标签: labels } : {}) } });
+    task.items.push(intro("OA-020", "业务流程") as never, intro("OA-021", "角色", ["角色"]) as never);
+    side(task);
+    const panel = screen.getByTestId("side-collection-总体分析");
+    expect(panel.querySelector('[data-testid$="-OA-020"]')).toBeNull();
+    expect(panel.querySelector('[data-testid$="-OA-021"]')).toBeNull();
+    expect(screen.getByTestId("side-overall-rest")).toHaveTextContent("另有 2 个主题没有贴标签或者已废弃");
   });
 
   it("每行是编号与标题、「它是什么」的首段、计数；待核实的写出来并且变色", () => {

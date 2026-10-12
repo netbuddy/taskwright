@@ -15,7 +15,7 @@ import { useEffect, type ReactNode } from "react";
 import type { ConversationMessage, Material, RevisionLogEntry, Item, Task } from "../../api/types";
 import { BUSY_TEXT, summaryOf } from "../../model/items";
 import { EMPTY_GROUP, groupItems, linkPhrase } from "../../model/domainNotes";
-import { collectionLabel, firstParagraph, isDeprecated, isOverall, isPending, sideLine, titleOf, whatOf } from "../../model/overall";
+import { OVERALL_LABEL, collectionLabel, firstParagraph, isDeprecated, isIntroPage, isOverall, isPending, sideLine, titleOf, whatOf } from "../../model/overall";
 import { hhmm, triggerText, UNDO_BLOCKED_TEXT, undoBlocked } from "../../model/revisions";
 import { MaterialPane, type LocateRequest } from "./MaterialPane";
 
@@ -109,19 +109,20 @@ export function SidePanel({
 /** 右侧栏里一个集合的分组清单（任务定义「界面」一项写了「右侧栏页签」的集合）。 */
 function CollectionSide({ task, collection, currentItem, onOpenItem }: { task: Task; collection: string; currentItem: string | null; onOpenItem: (id: string) => void }) {
   const def = task.definition.collections.find((c) => c.name === collection);
-  // 总体分析：这里是看条目时对照用的窄提纲，只列贴了标签、还在用的主题，按标签分组（一页贴了两个标签就在两组里各列一次）；
-  // 没有贴标签的与已废弃的到条目区的「总体分析」页签看。点一行切到条目区并打开那一页。
+  // 总体分析（页面上叫业务说明）：这里是看条目时对照用的窄提纲，只列贴了标签、还在用的主题，按标签分组（一页贴了两个标签就在两组里各列一次）；
+  // 没有贴标签的与已废弃的到条目区的「业务说明」页签看。各章的导语页不是条目的依据：这里不列，也不算进「另有 N 个」。
+  // 点一行切到条目区并打开那一页。
   const overall = isOverall(collection);
   const all = groupItems(task, collection);
   const groups = overall
-    ? all.filter((g) => g.name !== EMPTY_GROUP).map((g) => ({ name: g.name, items: g.items.filter((i) => !isDeprecated(i)) })).filter((g) => g.items.length > 0)
+    ? all.filter((g) => g.name !== EMPTY_GROUP).map((g) => ({ name: g.name, items: g.items.filter((i) => !isDeprecated(i) && !isIntroPage(i)) })).filter((g) => g.items.length > 0)
     : all;
-  const left = overall ? task.items.filter((i) => i.collection === collection && !groups.some((g) => g.items.includes(i))).length : 0;
+  const left = overall ? task.items.filter((i) => i.collection === collection && !isIntroPage(i) && !groups.some((g) => g.items.includes(i))).length : 0;
   return (
     <div className="dn-side" data-testid={`side-collection-${collection}`}>
-      {def?.display?.note && <div className="dn-lead"><b>{collection}：{def.display.note}</b>{overall && " 这里只列贴了标签的主题，看条目时对照用。"}</div>}
+      {def?.display?.note && <div className="dn-lead"><b>{collectionLabel(collection)}：{def.display.note}</b>{overall && " 这里只列贴了标签的主题，看条目时对照用。"}</div>}
       {groups.length === 0 && <div className="citedby-empty">{overall && left > 0 ? "还没有贴了标签的主题。" : "这个集合还没有条目。"}</div>}
-      {overall && left > 0 && <div className="citedby-empty" data-testid="side-overall-rest">另有 {left} 个主题没有贴标签或者已废弃，到条目区的「总体分析」页签看。</div>}
+      {overall && left > 0 && <div className="citedby-empty" data-testid="side-overall-rest">另有 {left} 个主题没有贴标签或者已废弃，到条目区的「{OVERALL_LABEL}」页签看。</div>}
       {groups.map((g) => (
         <div key={g.name}>
           <div className="grp">{g.name}</div>

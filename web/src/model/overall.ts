@@ -21,6 +21,12 @@ export const OVERALL_LABEL = "业务说明";
 /** 一个集合在页面上显示的名字：总体分析显示成业务说明，别的照集合名。 */
 export const collectionLabel = (name: string): string => (name === OVERALL_COLLECTION ? OVERALL_LABEL : name);
 
+/** 这一页是不是某一章的导语页：「导语所属章」写了字（编写文档阶段助手补写的；它不是节，不贴标签）。 */
+export function isIntroPage(item: Item): boolean {
+  const chapter = item.fields[OVERALL_FIELDS.intro];
+  return typeof chapter === "string" && chapter.trim() !== "";
+}
+
 /** 一页主题的各个字段的名字（任务定义里的写法）。 */
 export const TOPIC = {
   title: OVERALL_FIELDS.title, alias: OVERALL_FIELDS.aliases, what: OVERALL_FIELDS.what, examples: OVERALL_FIELDS.examples, settled: OVERALL_FIELDS.settled,
