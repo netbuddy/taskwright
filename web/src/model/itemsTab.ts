@@ -1,12 +1,14 @@
 // 条目区那一排页签：排成什么次序、一打开停在哪一个、记住用户上次停在哪一个。
-// 次序：任务定义里有名叫「总体分析」的集合时把它排在最前，其余照任务定义里的先后；图表页签总在各集合之后。
+// 次序：任务定义里有名叫「总体分析」的集合时把它排在最前，其余照任务定义里的先后。
+// 图表页签只在没有总体分析集合的任务里有（排在各集合之后）；有总体分析的任务，图画在业务说明的节里，没有图表页签：
+// 地址里要图表页签、或者浏览器记着上次停在图表页签的，都当作业务说明页签。
 // 记住：每个任务各记一个，存在浏览器本地；读写失败时当作没有记过，页面照常显示。
 // 没有总体分析集合的早先任务，次序不变，记住的是它自己的集合名。
 
 import type { CollectionDef, Task } from "../api/types";
 import { OVERALL_COLLECTION, isOverall } from "./overall";
 
-/** 记住的是图表页签（它不是集合）时存的值。 */
+/** 记住的是图表页签（它不是集合）时存的值。有总体分析的任务不再存这个值，早先存下的读到时当作业务说明页签。 */
 export const DIAGRAMS_TAB = "@diagrams";
 const storageKey = (taskId: string) => `taskwright.itemsTab.${taskId}`;
 
@@ -35,6 +37,7 @@ export function saveTab(taskId: string, tab: string): void {
 /**
  * 一打开停在哪个页签，按先后取第一条成立的：
  * 选中的条目所在的集合；地址里带的集合或图表页签；记住的页签（任务里还有这个集合才算）；
+ * 其中图表页签在有总体分析的任务里换成业务说明页签；
  * 任务里有总体分析、别的集合一条条目都没有时，停在总体分析（先把事情想清楚）；
  * 否则停在总体分析之外的第一个集合。
  */
@@ -44,10 +47,11 @@ export function initialTab(task: Task, o: { selected?: string | null; collection
   const first = order.find((c) => !isOverall(c.name))?.name ?? order[0]?.name ?? "";
   const selected = task.items.find((i) => i.item_id === o.selected)?.collection;
   if (has(selected)) return { tab: selected, diagrams: false };
-  if (o.diagrams) return { tab: first, diagrams: true };
+  const figures = has(OVERALL_COLLECTION) ? { tab: OVERALL_COLLECTION, diagrams: false } : { tab: first, diagrams: true };
+  if (o.diagrams) return figures;
   if (has(o.collection)) return { tab: o.collection, diagrams: false };
   const kept = readTab(task.task_id);
-  if (kept === DIAGRAMS_TAB) return { tab: first, diagrams: true };
+  if (kept === DIAGRAMS_TAB) return figures;
   if (has(kept)) return { tab: kept, diagrams: false };
   if (has(OVERALL_COLLECTION) && !task.items.some((i) => !isOverall(i.collection))) return { tab: OVERALL_COLLECTION, diagrams: false };
   return { tab: first, diagrams: false };

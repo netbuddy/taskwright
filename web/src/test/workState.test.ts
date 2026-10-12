@@ -114,6 +114,29 @@ describe("事件应用规则", () => {
     expect([s.phase, s.seq, s.task!.items[0].revision_no]).toEqual(["ready", 9, 2]);
   });
 
+  it("看图的事件（diagram_viewed）：修订号对得上的那张图记成看过；助手再改它回到没看过，用户自己改保持原样", () => {
+    const diagram = (seq: number, id: string, revision: number, actor = "executor") => ({
+      type: "sse" as const, event: "diagram_changed",
+      data: { seq, at: `2026-10-08T10:0${seq}:00+08:00`, task_id: "TASK-001", actor, op_id: null, diagram_id: id, revision_no: revision, op: revision === 1 ? "add" : "update", name: id, kind: "flowchart", kind_name: "流程图" },
+    });
+    const viewed = (seq: number, ...list: [string, number][]) => ({
+      type: "sse" as const, event: "diagram_viewed",
+      data: { seq, at: `2026-10-08T10:0${seq}:00+08:00`, task_id: "TASK-001", op_id: "ui-op-9", diagrams: list.map(([diagram_id, revision_no]) => ({ diagram_id, revision_no })) },
+    });
+    const flags = (s: ReturnType<typeof run>) => s.task!.diagrams!.map((one) => [one.diagram_id, one.revision_no, one.viewed]);
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) }, diagram(5, "D-001", 1), diagram(6, "D-002", 1));
+    expect(flags(s)).toEqual([["D-001", 1, false], ["D-002", 1, false]]);
+    // 看了 D-001 的修订 1；事件里另一张的修订号对不上（看的是早先的样子），不动。
+    s = run(s, viewed(7, ["D-001", 1], ["D-002", 0]));
+    expect(flags(s)).toEqual([["D-001", 1, true], ["D-002", 1, false]]);
+    expect([s.phase, s.seq]).toEqual(["ready", 7]);
+    // 用户自己改了 D-001：仍算看过。助手再改：要再看一次。
+    s = run(s, diagram(8, "D-001", 2, "user"));
+    expect(flags(s)[0]).toEqual(["D-001", 2, true]);
+    s = run(s, diagram(9, "D-001", 3));
+    expect(flags(s)[0]).toEqual(["D-001", 3, false]);
+  });
+
   it("重新读取整份数据时「正在保存」一律清掉：后端写完库才回应，重读到的数据已经包含那次操作", () => {
     let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) },
       { type: "op_pending", op_id: "ui-op-5", label: "修改", items: ["UC-001"] });
@@ -275,6 +298,17 @@ describe("列表型字段按步骤对齐", () => {
 describe("只随整份数据来的几项（待核实、依据待核实、提到）", () => {
   const ready = () => run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(1) });
   const fresh = (over: Record<string, unknown>) => [{ ...task().items[0], ...over }] as Task["items"];
+
+  it("另取回来的任务详情带着三张表与「被谁依据」：与页面上的不同就换上；没有带三张表时不动", () => {
+    const before = ready();
+    const views = { rules: { rows: [], conflicts: ["TBD-001"], unmatched: [] }, goals: { roots: [], loose: [] }, decisions: [] };
+    const after = workReducer(before, { type: "facts", items: fresh({ depended_by: [{ element_kind: "图", id: "D-001", revision_no: 1 }] }), overall_views: views });
+    expect(after.task!.overall_views).toEqual(views);
+    expect(after.task!.items[0].depended_by).toEqual([{ element_kind: "图", id: "D-001", revision_no: 1 }]);
+    // 再来一次相同的：状态对象不变；没有带三张表的一次不把它清掉。
+    expect(workReducer(after, { type: "facts", items: fresh({ depended_by: [{ element_kind: "图", id: "D-001", revision_no: 1 }] }), overall_views: views })).toBe(after);
+    expect(workReducer(after, { type: "facts", items: fresh({ depended_by: [{ element_kind: "图", id: "D-001", revision_no: 1 }] }) })).toBe(after);
+  });
 
   it("另取回来的任务详情里，修订号对得上的条目把这几项并进来；别的内容不动", () => {
     const before = ready();

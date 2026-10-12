@@ -1,5 +1,5 @@
-// 条目区那一排页签：有总体分析集合时它排最前；一打开停在哪一个（选中的条目、地址、记住的、缺省）；
-// 用户换了页签就记下来，下次打开这个任务回到那里；早先的任务（集合叫领域说明）次序不变。
+// 条目区那一排页签：有总体分析集合时它排最前，没有图表页签（图在业务说明里）；一打开停在哪一个（选中的条目、地址、记住的、缺省）；
+// 用户换了页签就记下来，下次打开这个任务回到那里；早先的任务（集合叫领域说明）次序不变，图表页签照旧在最后。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -41,14 +41,16 @@ function fresh(): Task {
 }
 
 describe("页签的次序", () => {
-  it("有总体分析集合时它排最前，其余照任务定义的先后，图表在最后", () => {
+  it("有总体分析集合时它排最前，其余照任务定义的先后；没有图表页签", () => {
     expect(tabOrder(overallTask().definition.collections).map((c) => c.name)).toEqual(["总体分析", "功能用例", "问题"]);
     render(<Panel t={overallTask()} />);
-    expect(tabs()).toEqual(["总体分析", "功能用例", "问题", "图表"]);
-    expect(screen.getByText("总体分析", { selector: ".itab" }).querySelector(".cnt")!.textContent).toBe("11");
+    // 总体分析这个集合的页签显示成「业务说明」。
+    expect(tabs()).toEqual(["业务说明", "功能用例", "问题"]);
+    expect(screen.queryByTestId("diagrams-tab")).toBeNull();
+    expect(screen.getByText("业务说明", { selector: ".itab" }).querySelector(".cnt")!.textContent).toBe("11");
   });
 
-  it("早先的任务次序不变", () => {
+  it("早先的任务次序不变，图表页签照旧在最后", () => {
     expect(tabOrder(oldTask().definition.collections).map((c) => c.name)).toEqual(["功能用例", "问题", "领域说明"]);
     render(<Panel t={oldTask()} />);
     expect(tabs()).toEqual(["功能用例", "问题", "领域说明", "图表"]);
@@ -60,7 +62,7 @@ describe("一打开停在哪个页签", () => {
     expect(initialTab(fresh(), {})).toEqual({ tab: "总体分析", diagrams: false });
     expect(initialTab(overallTask(), {})).toEqual({ tab: "功能用例", diagrams: false });
     render(<Panel t={fresh()} />);
-    expect(onTab()).toBe("总体分析");
+    expect(onTab()).toBe("业务说明");
   });
 
   it("选中的条目所在的集合最优先，其次是地址里带的集合或图表页签，再其次是记住的", () => {
@@ -68,14 +70,17 @@ describe("一打开停在哪个页签", () => {
     saveTab(t.task_id, "问题");
     expect(initialTab(t, {})).toEqual({ tab: "问题", diagrams: false });
     expect(initialTab(t, { collection: "总体分析" })).toEqual({ tab: "总体分析", diagrams: false });
-    expect(initialTab(t, { diagrams: true })).toEqual({ tab: "功能用例", diagrams: true });
+    // 地址里要图表页签：有总体分析的任务换成业务说明页签，早先的任务照旧是图表页签。
+    expect(initialTab(t, { diagrams: true })).toEqual({ tab: "总体分析", diagrams: false });
+    expect(initialTab(oldTask(), { diagrams: true })).toEqual({ tab: "功能用例", diagrams: true });
     expect(initialTab(t, { collection: "问题", selected: "OA-003" })).toEqual({ tab: "总体分析", diagrams: false });
   });
 
-  it("记住的是图表页签时回到图表；记住的集合任务里已经没有、或者地址里带的集合任务里没有时，按没有记过处理", () => {
+  it("记住的是图表页签时：有总体分析的任务当作业务说明页签，早先的任务回到图表；记住的集合任务里已经没有、或者地址里带的集合任务里没有时，按没有记过处理", () => {
     const t = overallTask();
     saveTab(t.task_id, DIAGRAMS_TAB);
-    expect(initialTab(t, {})).toEqual({ tab: "功能用例", diagrams: true });
+    expect(initialTab(t, {})).toEqual({ tab: "总体分析", diagrams: false });
+    expect(initialTab(oldTask(), {})).toEqual({ tab: "功能用例", diagrams: true });
     saveTab(t.task_id, "非功能需求");
     expect(initialTab(t, {})).toEqual({ tab: "功能用例", diagrams: false });
     expect(initialTab(t, { collection: "没有这个集合" })).toEqual({ tab: "功能用例", diagrams: false });
@@ -112,9 +117,9 @@ describe("记住用户上次停的页签", () => {
     expect(onTab()).toBe("问题");
   });
 
-  it("停在图表页签也记；从别处打开一个条目，页签跟着走，也记下来", () => {
+  it("早先的任务停在图表页签也记；从别处打开一个条目，页签跟着走，也记下来", () => {
     const t = overallTask();
-    const first = render(<Panel t={t} />);
+    const first = render(<Panel t={oldTask()} />);
     fireEvent.click(screen.getByTestId("diagrams-tab"));
     expect(readTab(t.task_id)).toBe(DIAGRAMS_TAB);
     first.unmount();

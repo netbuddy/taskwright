@@ -1,4 +1,5 @@
-// 图表页签的内容：图的列表，点一行换成这张图的详情（带「回到列表」）。图是任务的另一种要素，不是集合里的条目：
+// 图表页签的内容（只有没有总体分析集合的任务有这个页签；有总体分析的任务，图画在业务说明里，见 overall/Figure.tsx）：
+// 图的列表，点一行换成这张图的详情（带「回到列表」）。图是任务的另一种要素，不是集合里的条目：
 // 不评审、不用逐张确认、不算进完成条件，所以这里没有筛选、勾选与状态徽标。
 //
 // 列表取自整份任务数据里的 diagrams（图的事件 diagram_changed 会更新它）；详情打开时另取（GET …/diagrams/{编号}），
@@ -20,7 +21,7 @@ import { api, ApiError } from "../../api/client";
 import type { DiagramDetail as Detail, DiagramRow, Task } from "../../api/types";
 import { DiagramView } from "../diagram/DiagramView";
 import {
-  DIAGRAMS_EMPTY_TEXT, DIAGRAM_DELETED_TEXT, EXPORT_NEEDS_SAVE_TEXT, NOTHING_DRAWN_TEXT, PREVIEW_TEXT, drawnNote, revisionLine, revisionText, saveFailedText,
+  DIAGRAMS_EMPTY_TEXT, DIAGRAM_DELETED_TEXT, EXPORT_NEEDS_SAVE_TEXT, NOTHING_DRAWN_TEXT, PREVIEW_TEXT, diagramPreview, drawnNote, revisionLine, revisionText, saveFailedText,
 } from "../../model/diagrams";
 import { writeOffReason } from "../../model/items";
 import { SourceBox, type SubmitAction } from "./ItemDetail";
@@ -29,8 +30,7 @@ import { errorText } from "./errors";
 /** 详情右边一栏的两个页签。 */
 export type DiagramSideTab = "text" | "sources";
 
-/** 停止打字多久之后图按改后的文本重画（毫秒）。测试里改小。 */
-export const diagramPreview = { delayMs: 400 };
+export { diagramPreview };
 
 export function DiagramsPane({ task, selected, onSelect, readOnly, writesOff, latestRevision, submit, onLocate, onOpenItem, onDirty }: {
   task: Task;

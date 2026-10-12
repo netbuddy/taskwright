@@ -41,11 +41,10 @@ function page(task: Task, over: Partial<WorkState> = {}) {
 }
 const empty = (over: Partial<Task> = {}) => overallTask({ items: [], stage: stage("clarifying"), ...over });
 
-describe("工作视图里的阶段条与两个开头", () => {
-  it("任务有阶段：顶栏下面有阶段条，当前阶段标出来；任务没有阶段：没有这一行，也没有两个开头", () => {
+describe("工作视图里的两个开头", () => {
+  it("任务有阶段：业务说明还没有内容时有两个开头；不开调试模式时页面上没有阶段条；任务没有阶段：没有两个开头", () => {
     page(empty());
-    expect(screen.getByTestId("stage-bar")).toBeInTheDocument();
-    expect(screen.getByTestId("stage-clarifying")).toHaveAttribute("aria-current", "step");
+    expect(screen.queryByTestId("stage-bar")).toBeNull();
     expect(screen.getByTestId("overall-start")).toBeInTheDocument();
     cleanup();
     page(overallTask({ items: [], stage: null }));
@@ -99,7 +98,7 @@ describe("工作视图里的阶段条与两个开头", () => {
 
   it("已经有主题时不显示这两个按钮", () => {
     page(overallTask({ stage: stage("clarifying") }));
-    expect(screen.getByTestId("stage-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("overall-pane")).toBeInTheDocument();
     expect(screen.queryByTestId("overall-start")).toBeNull();
   });
 });

@@ -38,6 +38,8 @@ export const EXCEPTION_EXAMPLE_PREFIX = "例外：";
 /** 来源种类里的「助手补充」与它在早期版本里的名字，以及依据另一个条目的种类「条目」。本文件不导入别的模块，所以写在这里。 */
 const SUPPLEMENT_KINDS: readonly string[] = ["助手补充", "执行者补充"];
 const ITEM_KIND = "条目";
+/** 依据任务里一张图的来源的种类。 */
+const FIGURE_KIND = "图";
 
 type Fields = Record<string, unknown>;
 
@@ -131,9 +133,15 @@ export interface CitedPage {
   viewed: boolean;
 }
 
+/** 被一个条目写成来源的那张图现在的样子：用户看没看过它现在的内容（lib/diagram.ts 的 diagramViewed）。 */
+export interface CitedFigure {
+  viewed: boolean;
+}
+
 /**
- * 因依据而待核实：依据的是哪一页，是因为它已废弃（deprecated）、待核实（pending：有助手补充而用户没有确认的内容），
- * 还是用户还没有看过（unviewed：没有待核实的内容，但用户没有打开看过或点过确认）；已废弃而写了改看时 see 是改看的那一页。
+ * 因依据而待核实：依据的是哪一页或哪一张图（item_id 是页的编号或图的编号），是因为它已废弃（deprecated）、待核实
+ * （pending：有助手补充而用户没有确认的内容），还是用户还没有看过（unviewed：没有待核实的内容，但用户没有打开看过或点过确认）；
+ * 已废弃而写了改看时 see 是改看的那一页。图只有「用户还没有看过」这一种：图没有待核实的内容，也没有已废弃一说。
  */
 export interface BasisPending {
   item_id: string;
@@ -142,13 +150,26 @@ export interface BasisPending {
 }
 
 /**
- * 一个条目当前修订上的来源里，种类为「条目」、指向总体分析里一页的：那一页已废弃、待核实或者用户还没有看过时，返回头一处；都没有是 null。
+ * 一个条目当前修订上的来源里，种类为「条目」、指向总体分析里一页的：那一页已废弃、待核实或者用户还没有看过时；
+ * 种类为「图」的：那张图用户还没有看过它现在的内容时。照来源的先后返回头一处；都没有是 null。
  * 一页同时有几样时报最重的一样：已废弃先于待核实，待核实先于没看过。
- * 只看一层：被指的那一页自己依据了谁不往下追。page 按编号给出那一页现在的样子，不存在或已经删除时给 null。
+ * 只看一层：被指的那一页、那张图自己依据了谁不往下追。page 按编号给出那一页现在的样子，不存在或已经删除时给 null；
+ * figure 按编号给出那张图现在的样子，不存在或已经删除时给 null（已经删除的图不算待核实，来源上另标「已经删除」）。
+ * 不给 figure 的调用方不看图。
  */
-export function basisPending(sources: readonly { kind: unknown; locator: unknown }[], page: (itemId: string) => CitedPage | null): BasisPending | null {
+export function basisPending(
+  sources: readonly { kind: unknown; locator: unknown }[],
+  page: (itemId: string) => CitedPage | null,
+  figure?: (diagramId: string) => CitedFigure | null,
+): BasisPending | null {
   for (const one of sources) {
-    if (one.kind !== ITEM_KIND || typeof one.locator !== "string") continue;
+    if (typeof one.locator !== "string") continue;
+    if (one.kind === FIGURE_KIND) {
+      const cited = figure?.(one.locator.trim());
+      if (cited && !cited.viewed) return { item_id: one.locator.trim(), reason: "unviewed", see: null };
+      continue;
+    }
+    if (one.kind !== ITEM_KIND) continue;
     const cited = page(one.locator);
     if (!cited || cited.collection !== OVERALL_COLLECTION) continue;
     if (isDeprecated(cited.fields)) return { item_id: one.locator, reason: "deprecated", see: seeAlsoOf(cited.fields) };

@@ -34,19 +34,19 @@ describe("阶段条", () => {
   it("没通过的灯每盏一句（冒号之前的半句、数字加重、悬停是整句），通过的收成「其余 N 项已齐」，不适用的不显示也不计数", () => {
     const whole = "有 2 页标签为「流程」的主题还没有以「例外：」开头的例子：OA-003、OA-005。";
     render(<StageBar stage={stage("modeling", [
-      lamp("flows_have_exception", false, whole, ["OA-003", "OA-005"]),
-      lamp("roles_mentioned_by_flows", null, "还没有标签为「角色」的主题。"),
+      lamp("flows_have_flowchart_with_branch", false, whole, ["OA-003", "OA-005"]),
+      lamp("roles_in_context_and_use_cases", null, "还没有标签为「角色」的主题。"),
       lamp("no_duplicate_titles", true, "没有两页主题用了同一个标题或别名。"),
       lamp("no_untagged_pages", true, "在用的主题都贴了标签。"),
     ])} items={[item("OA-003")]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
-    const failing = screen.getByTestId("lamp-flows_have_exception");
+    const failing = screen.getByTestId("lamp-flows_have_flowchart_with_branch");
     // 引号里的那个冒号（「例外：」）不算清单前面的冒号。
     expect(failing).toHaveTextContent("有 2 页标签为「流程」的主题还没有以「例外：」开头的例子。");
     expect(failing).not.toHaveTextContent("OA-003");
     expect(failing).toHaveAttribute("title", whole);
     expect([...failing.querySelectorAll("b")].map((b) => b.textContent)).toEqual(["2"]);
     expect(screen.getByTestId("lamps-rest-ok")).toHaveTextContent("其余 2 项已齐");
-    expect(screen.queryByTestId("lamp-roles_mentioned_by_flows")).toBeNull();
+    expect(screen.queryByTestId("lamp-roles_in_context_and_use_cases")).toBeNull();
     expect(screen.getByTestId("stage-lamps")).toHaveTextContent("这一段还差：");
   });
 

@@ -10,10 +10,15 @@
 
 import type { CollectionDef, Item, Mention, Source, Task } from "../api/types";
 // 集合名、字段名、状态的取值与「反例：」这几个字，助手一侧与后端也用，只在那边的一个文件里写一遍（它不碰 Node 模块，页面可以直接导入）。
-import { COUNTER_EXAMPLE_PREFIX, OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED } from "../../../agent/src/lib/overall_analysis.ts";
-import { SOURCE_ITEM, SOURCE_SUPPLEMENT, sourceKindNow, unresolvedIssuesOf, viewTarget } from "./items";
+import { COUNTER_EXAMPLE_PREFIX, EXCEPTION_EXAMPLE_PREFIX, OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED } from "../../../agent/src/lib/overall_analysis.ts";
+import { SOURCE_ITEM, SOURCE_SUPPLEMENT, seenCurrent, sourceKindNow, unresolvedIssuesOf, viewTarget } from "./items";
 
 export { OVERALL_COLLECTION };
+
+/** 总体分析这个集合在页面上的叫法：业务说明。集合名不改，只改页签与提示里显示的字。 */
+export const OVERALL_LABEL = "业务说明";
+/** 一个集合在页面上显示的名字：总体分析显示成业务说明，别的照集合名。 */
+export const collectionLabel = (name: string): string => (name === OVERALL_COLLECTION ? OVERALL_LABEL : name);
 
 /** 一页主题的各个字段的名字（任务定义里的写法）。 */
 export const TOPIC = {
@@ -30,6 +35,10 @@ export const CONCEPT_LABEL = "概念";
 // pending_places 这些来源支持的各处（用户亲手改过的那一处已经不在里面），basis_pending 它依据的主题待核实或已废弃，
 // mentioned_by 别处提到它的句子（只有总体分析的页有）。条目的 viewed（看过）不等于不待核实：用户亲手改过的页算看过，
 // 别处助手补的仍可能待核实。早先的后端不给这几项，这时按「没有待核实、没有被提到」处理。
+
+/** 来源的两个种类：材料里的原文，用户在对话里说的话。 */
+const SOURCE_DOCUMENT = "文档原文";
+const SOURCE_USER_WORDS = "用户的话";
 
 const byId = (a: Item, b: Item) => a.item_id.localeCompare(b.item_id, undefined, { numeric: true });
 const listOf = (item: Item, field: string): string[] => {
@@ -89,18 +98,26 @@ export function confirmAction(item: Item): { kind: "mark_viewed"; targets: { ite
 
 /**
  * 待核实、依据待核实、提到这几项只随整份数据来，库事件里没有。任务里有总体分析时，页面在可能改变它们的事之后
- * （交付物有了新修订、有人确认或看过了某个条目）另取一次。这里给出「该不该再取」的记号：修订号或确认标记的条数变了，记号就变；
+ * （交付物有了新修订、有人确认或看过了某个条目、图有了变动或者被看过）另取一次。这里给出「该不该再取」的记号：修订号、确认标记的条数、
+ * 图的修订号与看没看过变了，记号就变；
  * 没有总体分析的早先任务不用取，返回 null。
  */
 export function factsKey(task: Task | null, latestRevision: number): string | null {
   if (!task || !overallDef(task)) return null;
-  return `${latestRevision}:${task.items.reduce((n, i) => n + i.confirmations.length, 0)}:${task.items.length}`;
+  // 图有了变动、被看过之后也要再取：以图为依据的条目待不待核实、各页被哪几张图依据都可能变了。
+  const diagrams = (task.diagrams ?? []).map((one) => `${one.diagram_id}.${one.revision_no}${one.viewed ? "v" : ""}`).join(",");
+  return `${latestRevision}:${task.items.reduce((n, i) => n + i.confirmations.length, 0)}:${task.items.length}:${diagrams}`;
 }
 
-/** 一条例子是不是反例，以及去掉「反例：」之后的正文。 */
-export function exampleParts(example: string): { counter: boolean; text: string } {
-  const counter = example.startsWith(COUNTER_PREFIX);
-  return { counter, text: counter ? example.slice(COUNTER_PREFIX.length).trim() : example };
+/**
+ * 一条例子是哪一种，以及去掉开头那几个字之后的正文：以「例外：」开头的是例外（流程走不通、要另行处理的情形，画在「异常分支」里），
+ * 以「反例：」开头的是反例（这种不算），别的是平常的例子。
+ */
+export function exampleKind(example: string): { kind: "exception" | "counter" | "plain"; text: string } {
+  const trimmed = example.trim();
+  if (trimmed.startsWith(EXCEPTION_EXAMPLE_PREFIX)) return { kind: "exception", text: trimmed.slice(EXCEPTION_EXAMPLE_PREFIX.length).trim() };
+  if (trimmed.startsWith(COUNTER_PREFIX)) return { kind: "counter", text: trimmed.slice(COUNTER_PREFIX.length).trim() };
+  return { kind: "plain", text: example };
 }
 
 /** 一段文字的首段：到第一个空行为止。 */
@@ -136,25 +153,72 @@ export function supplemented(item: Item): { whole: boolean; fields: Set<string>;
   return out;
 }
 
+/** 一段文字切开的一截：没有记号的原样，或者是要标出来的一段原话（added 是助手补的，material 是逐字出自材料的，带着那条来源）。 */
+export interface PassagePart {
+  text: string;
+  mark: "added" | "material" | null;
+  source?: Source;
+}
+
 /**
- * 「它是什么」里要标出的字句：助手写理由时用直角引号引了原文里的几个字（「保留期是 3 天」是我按常见做法补的），
- * 这几个字在正文里找得到就标出来。返回切开的片段；一处也找不到时整段不标（页面改为在这一块旁边说明）。
+ * 在一段文字里标出若干段原话。quotes 是要找的各段：助手补的那几个字（added）与材料里的原句（material，带来源）。
+ * 找得到的切成单独的一截并带上记号，找不到的不标。两段在同一处重叠时先出现的占先，同一个起点时长的占先。
  */
-export function markSupplemented(text: string, reasons: string[]): { text: string; marked: boolean }[] {
-  const quoted = [...new Set(reasons.flatMap((r) => [...r.matchAll(/「([^」]{2,})」/g)].map((m) => m[1])))]
-    .filter((q) => text.includes(q)).sort((a, b) => b.length - a.length);
-  if (quoted.length === 0) return [{ text, marked: false }];
-  const parts: { text: string; marked: boolean }[] = [];
+export function markPassage(text: string, quotes: readonly { quote: string; mark: "added" | "material"; source?: Source }[]): PassagePart[] {
+  const wanted = quotes.filter((one) => one.quote !== "" && text.includes(one.quote));
+  if (wanted.length === 0) return [{ text, mark: null }];
+  const parts: PassagePart[] = [];
   let rest = text;
   while (rest) {
-    const hits = quoted.map((q) => ({ q, at: rest.indexOf(q) })).filter((h) => h.at >= 0).sort((a, b) => a.at - b.at || b.q.length - a.q.length);
-    if (hits.length === 0) { parts.push({ text: rest, marked: false }); break; }
-    const { q, at } = hits[0];
-    if (at > 0) parts.push({ text: rest.slice(0, at), marked: false });
-    parts.push({ text: q, marked: true });
-    rest = rest.slice(at + q.length);
+    const hits = wanted.map((one) => ({ one, at: rest.indexOf(one.quote) })).filter((hit) => hit.at >= 0)
+      .sort((a, b) => a.at - b.at || b.one.quote.length - a.one.quote.length);
+    if (hits.length === 0) { parts.push({ text: rest, mark: null }); break; }
+    const { one, at } = hits[0];
+    if (at > 0) parts.push({ text: rest.slice(0, at), mark: null });
+    parts.push({ text: one.quote, mark: one.mark, ...(one.source ? { source: one.source } : {}) });
+    rest = rest.slice(at + one.quote.length);
   }
   return parts;
+}
+
+/** 助手写理由时用直角引号引出来的、它补进正文的那几个字（两个字以上的才算）。 */
+export function addedQuotes(reasons: readonly string[]): string[] {
+  return [...new Set(reasons.flatMap((reason) => [...reason.matchAll(/「([^」]{2,})」/g)].map((m) => m[1])))];
+}
+
+/**
+ * 「说明」（它是什么）里逐字出自材料的句子：支持这个字段、或者支持整页的「文档原文」来源的摘录（去掉首尾空白）。
+ * 在正文里找得到的才会被标出来（markPassage）；找不到的照旧只列在来源那一行。
+ */
+export function materialQuotes(item: Item): { quote: string; mark: "material"; source: Source }[] {
+  return [...sourcesFor(item, TOPIC.what), ...wholeSources(item)].filter((s) => sourceKindNow(String(s.kind)) === SOURCE_DOCUMENT && s.excerpt.trim() !== "")
+    .map((s) => ({ quote: s.excerpt.trim(), mark: "material" as const, source: s }));
+}
+
+/** 出处的一句短话：谁说的或者哪份材料，后面跟原话（长的截短）。助手补充的写理由；用户已经确认过的写明「你确认过」。 */
+export function sourceShortText(source: Pick<Source, "kind" | "locator" | "excerpt">, pending = false): string {
+  const kind = sourceKindNow(String(source.kind));
+  const quote = source.excerpt.length > 36 ? `${source.excerpt.slice(0, 36)}…` : source.excerpt;
+  if (kind === SOURCE_SUPPLEMENT) return `${pending ? "助手补的" : "助手补的，你确认过"} · 理由：${source.excerpt}`;
+  if (kind === SOURCE_USER_WORDS) return `你说的「${quote}」`;
+  if (kind === SOURCE_DOCUMENT) return `材料 ${source.locator.split("/").pop() ?? source.locator}「${quote}」`;
+  if (kind === "用户直接修改") return "你亲手改的";
+  return `${kind} ${source.locator}`.trim();
+}
+
+/** 支持整页的来源：没有指明哪一处的来源。 */
+export function wholeSources(item: Item): Source[] {
+  return item.sources.filter((s) => (s.supports ?? []).length === 0);
+}
+
+/** 节标题下面那一行小字要的三样：材料几处（种类为「文档原文」的来源）、澄清几条（种类为「用户的话」的来源）、这一页现在的内容用户看没看过（它现在所在的修订上有一条接受的确认标记）。 */
+export function sectionLead(item: Item): { materials: number; clarified: number; seen: boolean } {
+  const kinds = item.sources.map((s) => sourceKindNow(String(s.kind)));
+  return {
+    materials: kinds.filter((kind) => kind === SOURCE_DOCUMENT).length,
+    clarified: kinds.filter((kind) => kind === SOURCE_USER_WORDS).length,
+    seen: seenCurrent(item),
+  };
 }
 
 /** 「已经定下的」里算数的条数：助手补的、还没有确认的那几条不算。 */
@@ -207,73 +271,6 @@ export function countsText(task: Task, item: Item): string {
   return state === "pending" ? "待核实" : state === "unsorted" ? "未归类" : "";
 }
 
-export interface OutlineNode {
-  item: Item;
-  children: OutlineNode[];
-}
-
-/**
- * 提纲：按「上级主题」成树，同级按编号。上级不在总体分析里、或者顺着上级会绕回自己的页，当作顶层的一页，
- * 所以每一页都正好出现一次。
- */
-export function outline(task: Task): OutlineNode[] {
-  const pages = pagesOf(task);
-  const known = new Map(pages.map((p) => [p.item_id, p]));
-  const up = (page: Item): string | null => {
-    const id = parentOf(page);
-    return id && id !== page.item_id && known.has(id) ? id : null;
-  };
-  // 顺着上级一路往上走又回到这一页，就是绕圈：当它没有上级。上面的页自己绕圈不关它的事。
-  const parent = (page: Item): string | null => {
-    const seen = new Set<string>();
-    for (let at = up(page); at && !seen.has(at); at = up(known.get(at)!)) {
-      if (at === page.item_id) return null;
-      seen.add(at);
-    }
-    return up(page);
-  };
-  const nodes = new Map(pages.map((p) => [p.item_id, { item: p, children: [] } as OutlineNode]));
-  const roots: OutlineNode[] = [];
-  for (const page of pages) {
-    const up = parent(page);
-    if (up) nodes.get(up)!.children.push(nodes.get(page.item_id)!);
-    else roots.push(nodes.get(page.item_id)!);
-  }
-  return roots;
-}
-
-/** 提纲从上到下的次序（先自己、再下面的各页）；「上一条」「下一条」照它走。 */
-export function outlineOrder(nodes: OutlineNode[]): Item[] {
-  return nodes.flatMap((n) => [n.item, ...outlineOrder(n.children)]);
-}
-
-/** 面包屑：这一页上面的各级主题，从最上面一级到它的上级；它自己不在里面。 */
-export function trail(task: Task, item: Item): Item[] {
-  const path = (nodes: OutlineNode[], above: Item[]): Item[] | null => {
-    for (const n of nodes) {
-      if (n.item.item_id === item.item_id) return above;
-      const found = path(n.children, [...above, n.item]);
-      if (found) return found;
-    }
-    return null;
-  };
-  return path(outline(task), []) ?? [];
-}
-
-/** 这一页与它下面各级的页（复述时讲的范围）。 */
-export function withBelow(task: Task, itemId: string): Item[] {
-  const find = (nodes: OutlineNode[]): OutlineNode | null => {
-    for (const n of nodes) {
-      if (n.item.item_id === itemId) return n;
-      const found = find(n.children);
-      if (found) return found;
-    }
-    return null;
-  };
-  const node = find(outline(task));
-  return node ? outlineOrder([node]) : [];
-}
-
 /** 提纲底部的总计：在用的主题几个、已定几条、待问几条、待核实几处。已废弃的页不算。 */
 export function totals(task: Task): { pages: number; settled: number; open: number; pending: number } {
   const pages = pagesOf(task).filter((p) => !isDeprecated(p));
@@ -295,17 +292,20 @@ export function glossary(task: Task): { rows: { item: Item; aliases: string[]; f
 }
 
 /**
- * 一个条目依据的主题待核实或已废弃时，条目行上那枚小标签的字与悬停说明；没有这回事时为 null。
+ * 一个条目依据的主题待核实或已废弃、或者依据的图用户还没有看过时，条目行上那枚小标签的字与悬停说明；没有这回事时为 null。
  * 它不是条目自己的毛病：那一页确认了（或者把依据改到别的主题），标签就消掉。
  */
 export function basisNote(task: Task, item: Item): { text: string; title: string } | null {
   const basis = item.basis_pending;
   if (!basis) return null;
   const name = (id: string) => { const page = task.items.find((i) => i.item_id === id); return page ? `${id}「${titleOf(page)}」` : id; };
+  // 依据的是一张图（编号在图的清单里）：图现在的内容用户还没有看过。
+  const figure = (task.diagrams ?? []).find((one) => one.diagram_id === basis.item_id);
+  if (figure) return { text: "依据的图还没有看过", title: `它依据的图「${figure.name}」现在的内容你还没有看过；到业务说明里把这张图看一遍，这里就消掉。` };
   if (basis.reason === "deprecated") {
     return { text: "依据的主题已废弃", title: `它依据的主题 ${name(basis.item_id)}已废弃${basis.see ? `，改看 ${name(basis.see)}` : ""}。把依据改到还在用的主题上。` };
   }
-  return { text: "依据的主题待核实", title: `它依据的主题 ${name(basis.item_id)}里有助手补的内容还没有确认；到总体分析里确认那一页，这里就消掉。` };
+  return { text: "依据的主题待核实", title: `它依据的主题 ${name(basis.item_id)}里有助手补的内容还没有确认；到业务说明里确认那一节，这里就消掉。` };
 }
 
 /** 右侧栏窄提纲里一页下面那行小字：「3 定 · 1 问」，待核实的后面加「待核实」；什么都没有时写「说清了」；已废弃的页只写「已废弃」。 */
@@ -320,44 +320,6 @@ export function sideLine(task: Task, item: Item): string {
 export function dependents(task: Task, item: Item): Item[] {
   const ids = new Set((item.depended_by ?? []).filter((d) => d.element_kind === SOURCE_ITEM).map((d) => d.id));
   return task.items.filter((i) => ids.has(i.item_id)).sort(byId);
-}
-
-/**
- * 「提到它的地方」的一行。mention：别处的一句话里出现了它的标题或别名，word 是命中的词；
- * basis：一个条目依据它写，sentence 是那个条目引的原话，stale 为真是它在那之后改过（依据已变）。
- * from 是起点条目（已经不在任务里时为 null），place 说明在哪里（「主题 · 已经定下的第 2 条」「功能用例 · 依据它」）。
- */
-export interface MentionRow {
-  kind: "mention" | "basis";
-  id: string;
-  from: Item | null;
-  place: string;
-  sentence: string;
-  word: string | null;
-  stale: boolean;
-}
-
-export function mentionRows(task: Task, item: Item): MentionRow[] {
-  const find = (id: string) => task.items.find((i) => i.item_id === id) ?? null;
-  const where = (m: Mention) => {
-    const part = m.index == null ? m.field : `${m.field}第 ${m.index + 1} 条`;
-    return `${isOverall(m.collection) ? "主题" : m.collection} · ${part}`;
-  };
-  const mentions: MentionRow[] = (item.mentioned_by ?? []).map((m) => (
-    { kind: "mention", id: m.item_id, from: find(m.item_id), place: where(m), sentence: m.sentence, word: m.word, stale: false }
-  ));
-  const basis: MentionRow[] = dependents(task, item).map((from) => {
-    const source = from.sources.find((s) => sourceKindNow(String(s.kind)) === SOURCE_ITEM && s.locator === item.item_id);
-    return { kind: "basis", id: from.item_id, from, place: `${from.collection} · 依据它`, sentence: source?.excerpt ?? "", word: null, stale: source?.stale === "changed" };
-  });
-  return [...mentions, ...basis];
-}
-
-/** 把一句话按命中的词切开，画的时候给那个词上色；词不在句子里时整句不切。 */
-export function splitByWord(sentence: string, word: string | null): { text: string; hit: boolean }[] {
-  const at = word ? sentence.indexOf(word) : -1;
-  if (!word || at < 0) return [{ text: sentence, hit: false }];
-  return [{ text: sentence.slice(0, at), hit: false }, { text: word, hit: true }, { text: sentence.slice(at + word.length), hit: false }].filter((p) => p.text !== "");
 }
 
 /** 「复述一遍」发给助手的那句话：给了主题就讲它与它下面的主题，没有给就讲整个总体分析。 */

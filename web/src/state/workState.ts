@@ -18,9 +18,11 @@ import type {
   DeliverableChanged,
   DiagramChanged,
   DiagramRow,
+  DiagramViewed,
   ExecutorState,
   Item,
   ItemViewed,
+  OverallViews,
   Material,
   MaterialAdded,
   MaterialRemoved,
@@ -144,7 +146,7 @@ export type WorkAction =
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "sse"; event: string; data: unknown }
   | { type: "resync" }
-  | { type: "facts"; items: Item[] }
+  | { type: "facts"; items: Item[]; overall_views?: OverallViews | null }
   /** 让右侧栏的材料页签选中这份材料（阶段条上点了一盏说它还没有被引用的灯）。 */
   | { type: "focus_material"; path: string }
   | { type: "outgoing"; message: OutgoingMessage }
@@ -162,7 +164,7 @@ export function workReducer(state: WorkState, action: WorkAction): WorkState {
     case "snapshot":
       return applySnapshot(state, action.snapshot);
     case "facts":
-      return applyFacts(state, action.items);
+      return applyFacts(state, action.items, action.overall_views);
     case "focus_material":
       return { ...state, focusMaterial: action.path };
     case "resync":
@@ -198,13 +200,25 @@ export function workReducer(state: WorkState, action: WorkAction): WorkState {
 
 /**
  * 后端按任务里的事实现算、只随整份数据给出的几项：待核实（pending_verification、pending_sources、pending_places）、
- * 依据的主题待核实或已废弃（basis_pending）、别处提到它的句子（mentioned_by）。库事件里不带它们，所以确认、修改、
- * 助手保存之后，页面另取一次任务详情，把这几项按条目并进来（pages/WorkViewPage.tsx）。别的内容仍只由库事件改。
+ * 依据的主题待核实或已废弃（basis_pending）、别处提到它的句子（mentioned_by）、被谁依据（depended_by，图画出来之后才把页写成来源，
+ * 不产生条目的修订）。库事件里不带它们，所以确认、修改、助手保存、图有了变动或者被看过之后，页面另取一次任务详情，把这几项按条目并进来（pages/WorkViewPage.tsx）。别的内容仍只由库事件改。
  * 只并修订号对得上的条目：取回来的比页面旧或者新的，等下一次再并。
  */
-const FACT_KEYS = ["pending_verification", "pending_sources", "pending_places", "basis_pending", "mentioned_by"] as const;
+const FACT_KEYS = ["pending_verification", "pending_sources", "pending_places", "basis_pending", "mentioned_by", "depended_by"] as const;
 
-function applyFacts(state: WorkState, fresh: Item[]): WorkState {
+/**
+ * 另取来的任务详情里的几项事实并进来。views 是同一次取来的三张表（规则表、业务目标、决策记录与待澄清事项）：它们也只随整份数据来，
+ * 给了、与页面上的不同就换上；不给（没有取到这一项）时不动。
+ */
+function applyFacts(state: WorkState, fresh: Item[], views?: OverallViews | null): WorkState {
+  if (!state.task) return state;
+  if (views !== undefined && JSON.stringify(views) !== JSON.stringify(state.task.overall_views ?? null)) {
+    state = { ...state, task: { ...state.task, overall_views: views } };
+  }
+  return applyItemFacts(state, fresh);
+}
+
+function applyItemFacts(state: WorkState, fresh: Item[]): WorkState {
   if (!state.task) return state;
   const byId = new Map(fresh.map((i) => [i.item_id, i]));
   let changed = false;
@@ -332,6 +346,9 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
     case "diagram_changed":
       next = applyDiagramChanged(next, event.data as unknown as DiagramChanged);
       break;
+    case "diagram_viewed":
+      next = applyDiagramViewed(next, event.data as unknown as DiagramViewed);
+      break;
     case "item_viewed": {
       // 已读就是一条接受的确认标记，依据是 viewed；与撤回、界面修改走同一套应用。
       const data = event.data as unknown as ItemViewed;
@@ -422,6 +439,7 @@ function staleOf(item: Item): boolean {
 /**
  * 一张图新增、修改或删除了一次：更新任务里图的清单（task.diagrams）里的那一行。清单按编号排；删除的拿掉。
  * 来源条数事件里没有带：新增的先记 0、修改的沿用原来的，准确的数在图的详情里。
+ * 看没看过：助手新画、改过的图要再看一次，记成没看过；用户自己改的沿用原来的（看过之后自己再改仍算看过）。
  */
 function applyDiagramChanged(state: WorkState, data: DiagramChanged): WorkState {
   state = clearOp(state, data.op_id);
@@ -433,8 +451,23 @@ function applyDiagramChanged(state: WorkState, data: DiagramChanged): WorkState 
   const row: DiagramRow = {
     diagram_id: data.diagram_id, name: data.name, kind: data.kind, kind_name: data.kind_name ?? old?.kind_name ?? data.kind,
     revision_no: data.revision_no, revision_by: data.actor, revision_at: data.at, created_at: old?.created_at ?? data.at, source_count: old?.source_count ?? 0,
+    viewed: data.actor === "user" ? old?.viewed ?? false : false,
   };
   return { ...state, task: { ...state.task, diagrams: [...rest, row].sort((a, b) => a.diagram_id.localeCompare(b.diagram_id, "en", { numeric: true })) } };
+}
+
+/** 用户打开看了一张或几张图：清单里修订号与事件里相同的那几行记成看过（看的是早先的修订、图之后又改过的不动）。 */
+function applyDiagramViewed(state: WorkState, data: DiagramViewed): WorkState {
+  state = clearOp(state, data.op_id);
+  if (!state.task?.diagrams) return state;
+  const seen = new Set(data.diagrams.map((one) => `${one.diagram_id}\u0000${one.revision_no}`));
+  let changed = false;
+  const diagrams = state.task.diagrams.map((row) => {
+    if (row.viewed || !seen.has(`${row.diagram_id}\u0000${row.revision_no}`)) return row;
+    changed = true;
+    return { ...row, viewed: true };
+  });
+  return changed ? { ...state, task: { ...state.task, diagrams } } : state;
 }
 
 /** 按 op_id 消去「正在保存」。要在一切提前返回之前做：没消掉的话，那个条目的写入按钮会一直灰着。 */

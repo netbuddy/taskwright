@@ -218,16 +218,16 @@ export interface StageSummary {
   lamps: Record<Stage, Lamp[]>;
 }
 
-/** 任务里还在的图各自算灯要的几样（lib/stage.ts 的 LampDiagram），与任务里有没有记过用户看图。只读。 */
-export function lampDiagrams(db: DatabaseSync, taskId: string, definition: TaskDefinition): { diagrams: LampDiagram[]; viewsRecorded: boolean } {
+/** 任务里还在的图各自算灯要的几样（lib/stage.ts 的 LampDiagram）。只读。 */
+export function lampDiagrams(db: DatabaseSync, taskId: string, definition: TaskDefinition): LampDiagram[] {
   const records = liveDiagrams(readDiagrams(db, taskId));
   const seen = viewedDiagramRevisions(db, taskId);
-  if (records.length === 0) return { diagrams: [], viewsRecorded: seen.size > 0 };
+  if (records.length === 0) return [];
   const prefixes = definition.collections.map((one) => one.prefix);
   const cited = db.prepare(
     `SELECT locator FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind = ?${elementClause(db, ELEMENT_FIGURE)} ORDER BY position`,
   );
-  const diagrams = records.map((record) => {
+  return records.map((record) => {
     const now = latestVersion(record)!;
     return {
       diagram_id: record.diagram_id, kind: now.kind,
@@ -238,7 +238,6 @@ export function lampDiagrams(db: DatabaseSync, taskId: string, definition: TaskD
       viewed: diagramViewed(record, seen),
     };
   });
-  return { diagrams, viewsRecorded: seen.size > 0 };
 }
 
 /**
@@ -258,7 +257,7 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
   const pages = state.items.filter((one) => one.collection === OVERALL_COLLECTION);
   const others = state.items.filter((one) => one.collection !== OVERALL_COLLECTION);
   const questions = others.filter((one) => statusFieldOf.has(one.collection));
-  const { diagrams, viewsRecorded } = lampDiagrams(db, taskId, definition);
+  const diagrams = lampDiagrams(db, taskId, definition);
   const text = (value: unknown): string => (typeof value === "string" ? value : "");
   const rules = rulesTable(
     pages.map((one) => ({ item_id: one.item_id, fields: one.fields, sources: sourcesOf(one.item_id), created_at: null })),
@@ -282,7 +281,6 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
     collections: definition.collections.map((one) => one.name),
     citedDocuments: [...pages, ...questions].flatMap((one) => sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_DOCUMENT).map((s) => s.locator)),
     diagrams,
-    diagramViewsRecorded: viewsRecorded,
     ruleConflicts: rules.conflicts,
   };
 }

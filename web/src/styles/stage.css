@@ -1,4 +1,4 @@
-/* 阶段条：工作视图顶栏下面横跨整页的一行，只读。左边五个阶段名，右边当前阶段的灯；灯多了在阶段名右边折行，不截断。
+/* 阶段条：右侧栏「调试」页签顶上的一块，只读。上面一行五个阶段名（放不下就折行），下面是当前阶段的灯，一盏一行可折行，不截断。
  * 颜色只用 styles.css 开头的令牌。 */
 .app .stagebar { flex: none; display: flex; align-items: flex-start; gap: .2rem 1.2rem; flex-wrap: wrap; padding: .35rem .9rem;
   background: var(--stage); border-bottom: 1px solid var(--line2); font-size: 0.881rem; line-height: 1.6; }
@@ -62,3 +62,9 @@
 .app .dbg-rej .hd code { color: var(--amber-ink); font-family: ui-monospace, Menlo, monospace; }
 .app .dbg-rej .fact { color: var(--ink); margin-top: .15rem; overflow-wrap: anywhere; }
 .app .dbg-rej .guide { color: var(--text3); margin-top: .15rem; overflow-wrap: anywhere; }
+
+/* 放在调试页签里：右栏窄，阶段名一行、灯另起一行 */
+.app .dbg-pane .stagebar { flex-direction: column; flex-wrap: nowrap; gap: .3rem; margin-bottom: .7rem; padding: .5rem .6rem; border: 1px solid var(--line2); border-radius: .5rem; }
+.app .dbg-pane .stagebar .sb-stages { flex-wrap: wrap; row-gap: .2rem; }
+.app .dbg-pane .stagebar .sb-ln { width: .9rem; }
+.app .dbg-pane .stagebar .sb-lamps { flex: none; }

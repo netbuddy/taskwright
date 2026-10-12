@@ -9,6 +9,7 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
+import { overallState, pendingSummary, verificationLines } from "../src/lib/overall_read.ts";
 import { saveDiagram } from "../src/lib/save_diagram.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { type StageSummary, lampDiagrams, sourceMaterials, stageSummary } from "../src/lib/stage_read.ts";
@@ -29,6 +30,25 @@ function workspace(definition: Record<string, any> = overallDefinition()): { dir
     }
   };
   return { dir, taskId, summary };
+}
+/** 一个条目因依据而待核实的那一项，与给助手看的几行。 */
+function verificationOfItem(dir: string, taskId: string, definition: ReturnType<typeof validateDefinition>, itemId: string) {
+  const db = new DatabaseSync(databasePath(dir), { readOnly: true });
+  try {
+    const state = overallState(db, taskId, definition).verification.get(itemId)!;
+    return [state.basis_pending, verificationLines(itemId, state)];
+  } finally {
+    db.close();
+  }
+}
+/** 任务里待核实的条目合成的那一句。 */
+function pendingText(dir: string, taskId: string, definition: ReturnType<typeof validateDefinition>): string | null {
+  const db = new DatabaseSync(databasePath(dir), { readOnly: true });
+  try {
+    return pendingSummary(overallState(db, taskId, definition));
+  } finally {
+    db.close();
+  }
 }
 const lamp = (summary: StageSummary, key: string) => Object.values(summary.lamps).flat().find((one) => one.key === key)!;
 const brief = (summary: StageSummary, key: string) => [lamp(summary, key).ok, lamp(summary, key).items];
@@ -117,13 +137,13 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   await draw({ name: "借阅记录的状态", kind: "state", mermaid: 'stateDiagram-v2\n  state "OA-002 在借" as s1\n  [*] --> s1\n  s1 --> 已还 : 还书', sources: cite("OA-002") });
   const ro = new DatabaseSync(databasePath(dir), { readOnly: true });
   try {
-    assert.deepEqual(lampDiagrams(ro, taskId, definition), { viewsRecorded: false, diagrams: [
+    assert.deepEqual(lampDiagrams(ro, taskId, definition), [
       { diagram_id: "D-001", kind: "context", sources: ["OA-001"], drawn: ["OA-001"], linked: [], branches: false, viewed: false },
       { diagram_id: "D-002", kind: "use_case", sources: ["OA-001", "OA-004"], drawn: ["OA-001", "OA-004"], linked: [], branches: false, viewed: false },
       { diagram_id: "D-003", kind: "class", sources: ["OA-002", "OA-003", "OA-005"], drawn: ["OA-002", "OA-003", "OA-005"], linked: ["OA-002", "OA-003"], branches: false, viewed: false },
       { diagram_id: "D-004", kind: "flowchart", sources: ["OA-004"], drawn: ["OA-004"], linked: [], branches: true, viewed: false },
       { diagram_id: "D-005", kind: "state", sources: ["OA-002"], drawn: ["OA-002"], linked: [], branches: false, viewed: false },
-    ] });
+    ]);
   } finally {
     ro.close();
   }
@@ -146,12 +166,22 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "借书", 步骤: ["登记借出"] }, sources: [
     { kind: "图", locator: "D-002", excerpt: "OA-004 借书", supports: [{ field: "名称" }] }, { kind: "图", locator: "D-004", excerpt: "登记借出", supports: [{ field: "步骤", index: 0 }] }] }] });
   now = summary()!;
-  assert.deepEqual([lamp(now, "basis_diagrams_viewed").ok, lamp(now, "basis_diagrams_viewed").summary], [null, "还没有记下用户看过哪些图，这一项暂时算不出来。"]);
+  // 用户还没有看过任何一张图：不通过；这个用例也因为依据的图没看过而待核实。
+  assert.deepEqual(brief(now, "basis_diagrams_viewed"), [false, ["UC-001"]]);
+  // （那条规则冲突的问题依据的两页用户没有看过，它本来就待核实。）
+  assert.deepEqual(brief(now, "no_pending_items"), [false, ["TBD-001", "UC-001"]]);
+  assert.equal(pendingText(dir, taskId, definition), "待核实的条目：依据的主题待核实、用户还没有看过或已废弃的 1 个：TBD-001；依据的图用户还没有看过的 1 个：UC-001。");
+  assert.deepEqual(verificationOfItem(dir, taskId, definition, "UC-001"), [{ item_id: "D-002", reason: "unviewed", see: null },
+    ["待核实：它依据的图 D-002 用户还没有看过它现在的内容。请用户把这张图看一遍（看过就算确认）。"]]);
+  assert.equal(lamp(now, "basis_diagrams_viewed").summary, "有 1 个条目依据的图用户还没有看过：UC-001（没看过的图是 D-002、D-004）。");
   const view = (id: string) => markDiagramViewed({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-view-${id}`, kind: DIAGRAM_VIEW_OP_KIND, targets: [{ diagram_id: id, base_revision: 1 }] });
   view("D-002");
   assert.deepEqual(brief(summary()!, "basis_diagrams_viewed"), [false, ["UC-001"]]);
+  // 看了一张：头一处没看过的换成另一张。两张都看了：不再待核实。
+  assert.deepEqual(verificationOfItem(dir, taskId, definition, "UC-001")[0], { item_id: "D-004", reason: "unviewed", see: null });
   view("D-004");
   assert.deepEqual(brief(summary()!, "basis_diagrams_viewed"), [true, []]);
+  assert.deepEqual([brief(summary()!, "no_pending_items"), verificationOfItem(dir, taskId, definition, "UC-001")], [[false, ["TBD-001"]], [null, []]]);
 });
 
 test("材料清单里由 Word 或 PDF 材料生成的文字版与分段清单不算一份材料；原件不在时照算", () => {

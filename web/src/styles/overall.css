@@ -43,6 +43,25 @@
 .app .oa-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app .oa-n { flex: none; font-size: 0.857rem; color: var(--text3); font-variant-numeric: tabular-nums; }
 
+/* 目录：章标题一行（章号、章名），下面是它的各节；还没有内容的章灰着，当前打开着章首页的那一章反色 */
+.app .oa-toc { display: grid; gap: .35rem; }
+.app .oa-chap { display: grid; gap: .05rem; }
+.app .oa-ch { display: flex; align-items: center; gap: .45rem; padding: .28rem .45rem; border-radius: .4rem; cursor: pointer; font-family: var(--font-title); font-weight: 600; font-size: 0.97rem; letter-spacing: .03em; color: var(--ink); }
+.app .oa-ch:hover { background: var(--sel); }
+.app .oa-ch.cur { background: var(--ink); color: var(--on-ink); }
+.app .oa-ch.dim { font-weight: 400; color: var(--text3); }
+.app .oa-ch.plain { cursor: default; }
+.app .oa-ch.plain:hover { background: none; }
+.app .oa-ch .no { flex: none; width: 1rem; font-family: var(--font-body); font-weight: 400; font-size: 0.857rem; color: var(--text3); font-variant-numeric: tabular-nums; }
+.app .oa-ch.cur .no, .app .oa-ch.cur .oa-caret { color: var(--on-ink); opacity: .75; }
+.app .oa-chap > .oa-row { margin-left: 1.3rem; }
+.app .oa-row.dim .oa-name { color: var(--text3); }
+.app .oa-row.cur.dim .oa-name { color: var(--on-ink); }
+.app .oa-dot.none { background: none; }
+/* 章首页：各节的摘要，节号与标题可点 */
+.app .oa-sec-link { cursor: pointer; }
+.app .oa-sec-link:hover { color: var(--blue); }
+
 /* 状态点：说清了是绿，有助手补的待核实是琥珀，还有没定的是紫，没归类与已废弃是灰 */
 .app .oa-dot { flex: none; display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: var(--line3); }
 .app .oa-dot.settled { background: var(--ok); }
@@ -177,3 +196,97 @@
 .app .oa-gloss-note { margin-top: .8rem; font-size: 0.889rem; color: var(--text2); background: var(--quote); border-radius: .5rem; padding: .45rem .7rem; }
 .app .oa-gloss-note .see { color: var(--blue); cursor: pointer; }
 .app .oa-gloss-note .see:hover { text-decoration: underline; }
+
+/* ───── 节的统一版式（overall/SectionPage.tsx）───── */
+/* 说明里逐字出自材料的句子：淡底色加下划线，可以点（在右边的材料里看原文） */
+.app .oa-qt { background: var(--sel); border-bottom: .1rem solid var(--line3); border-radius: .15rem; padding: 0 .1rem; }
+.app .oa-qt.link { cursor: pointer; }
+.app .oa-qt.link:hover { border-bottom-color: var(--blue); }
+/* 还没有归类的页顶上那一句 */
+.app .oa-unsorted { margin: 0 0 .6rem; padding: .4rem .7rem; border: 1px dashed var(--line2); border-radius: .5rem; font-size: 0.889rem; color: var(--text3); }
+/* 异常分支：一条一张小卡，左边一道琥珀边；末尾的「＋ 补一种例外」是虚线框 */
+.app .oa-card.exc { border-left: .2rem solid var(--amber); }
+.app .oa-card.add { display: flex; align-items: center; justify-content: center; border-style: dashed; box-shadow: none; background: none; color: var(--text3); cursor: pointer; font: inherit; font-size: 0.93rem; }
+.app .oa-card.add:hover:not(:disabled) { color: var(--ink); border-color: var(--line3); }
+.app .oa-card.add:disabled { cursor: not-allowed; opacity: .6; }
+/* 适用规则里标了冲突的那一条 */
+.app .oa-rules li.conflict { background: var(--amber-bg); border-radius: .4rem; }
+.app .oa-conflict { display: block; margin-top: .15rem; font-size: 0.857rem; color: var(--amber); }
+.app .oa-conflict .see { cursor: pointer; text-decoration: underline; }
+/* 待澄清事项里问题那一句可以点（打开这个问题） */
+.app .oa-open .qlink { cursor: pointer; }
+.app .oa-open .qlink:hover { color: var(--blue); }
+
+/* ───── 节里的图（overall/Figure.tsx）───── */
+.app .oa-fig { max-width: 62rem; }
+.app .oa-fig-h { display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; min-width: 0; }
+.app .oa-fig-h .name { font-size: 0.97rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .oa-fig-h .acts { margin-left: auto; display: inline-flex; gap: .8rem; white-space: nowrap; }
+.app .oa-fig-note { margin-bottom: .35rem; font-size: 0.889rem; color: var(--text3); }
+/* 图的看板在节里定一个高度（页面自己上下滚），不随整块撑满 */
+.app .oa-fig-stage { flex: none; }
+.app .oa-fig-stage .diagram-view { height: auto !important; }
+.app .oa-fig-stage .diagram-stage { height: 24rem; flex: none !important; }
+.app .oa-fig-foot { display: flex; flex-wrap: wrap; gap: .2rem 1.2rem; margin-top: .4rem; font-size: 0.873rem; color: var(--text3); }
+.app .oa-fig-foot .see { cursor: pointer; text-decoration: underline; text-decoration-color: var(--line3); }
+.app .oa-fig-foot .see:hover { color: var(--blue); }
+.app .oa-fig-foot .rev { margin-left: auto; color: var(--mut); white-space: nowrap; }
+.app .oa-fig-side { margin-top: .6rem; padding-top: .5rem; border-top: 1px solid var(--line); }
+.app .oa-fig-side .dg-side-body { overflow: visible; }
+.app .oa-fig-side textarea.ed.dg-mermaid { width: 100%; min-height: 12rem; }
+.app .oa-fig-more { list-style: none; margin: .4rem 0 0; padding: 0; border: 1px solid var(--line); border-radius: .5rem; }
+.app .oa-fig-more li { display: flex; align-items: center; gap: .5rem; padding: .35rem .6rem; cursor: pointer; font-size: 0.921rem; border-top: 1px solid var(--line); }
+.app .oa-fig-more li:first-child { border-top: 0; }
+.app .oa-fig-more li:hover { background: var(--sel); }
+.app .oa-fig-more .r { margin-left: auto; font-size: 0.857rem; color: var(--mut); white-space: nowrap; }
+.app .oa-ch .oa-count { margin-left: auto; font-size: 0.857rem; color: var(--mut); }
+
+/* ───── 节末尾的三块（overall/SectionLinks.tsx）───── */
+.app .oa-rel { display: grid; grid-template-columns: max-content 1fr; gap: .45rem .9rem; margin: 0; max-width: 52rem; align-items: baseline; }
+.app .oa-rel dt { font-size: 0.889rem; color: var(--text3); white-space: nowrap; }
+.app .oa-rel dd { margin: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.app .oa-chip { padding: .1rem .55rem; border: 1px solid var(--line2); border-radius: 1rem; font-size: 0.905rem; cursor: pointer; background: var(--card); }
+.app .oa-chip:hover { border-color: var(--blue); color: var(--blue); }
+.app .oa-reqs { list-style: none; margin: 0; padding: 0; max-width: 52rem; border: 1px solid var(--line); border-radius: .5rem; }
+.app .oa-reqs li { display: flex; align-items: center; gap: .6rem; padding: .45rem .7rem; border-top: 1px solid var(--line); cursor: pointer; font-size: 0.937rem; }
+.app .oa-reqs li:first-child { border-top: 0; }
+.app .oa-reqs li:hover { background: var(--sel); }
+.app .oa-reqs .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .oa-reqs .c { font-size: 0.857rem; color: var(--mut); white-space: nowrap; }
+.app .oa-reqs .s { margin-left: auto; font-size: 0.857rem; white-space: nowrap; color: var(--text3); }
+.app .oa-reqs .s.confirmed { color: var(--ok); }
+.app .oa-reqs .s.reviewing { color: var(--amber); }
+.app .oa-trace { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; margin: 1rem 0 .4rem; padding-top: .6rem; border-top: 1px dashed var(--line2); max-width: 52rem; font-size: 0.873rem; color: var(--text3); }
+.app .oa-trace .k { color: var(--mut); margin-right: .3rem; }
+.app .oa-trace i { font-style: normal; color: var(--line3); }
+.app .oa-trace .see { cursor: pointer; text-decoration: underline; text-decoration-color: var(--line3); }
+.app .oa-trace .see:hover { color: var(--blue); }
+
+/* ───── 章首页自己的块（overall/ChapterBlocks.tsx）───── */
+.app .oa-goals { margin: 0; padding-left: 1.2rem; max-width: 52rem; font-size: 0.97rem; line-height: 1.8; }
+.app .oa-goals ul { margin: 0; padding-left: 1.2rem; color: var(--text2); }
+.app .oa-tablebox { max-width: 62rem; overflow-x: auto; border: 1px solid var(--line); border-radius: .5rem; }
+.app .oa-table.oa-matrix tbody tr { cursor: default; }
+.app .oa-table.oa-matrix th, .app .oa-table.oa-matrix td { white-space: nowrap; }
+.app .oa-table.oa-matrix td.n { width: auto; white-space: normal; min-width: 9rem; }
+.app .oa-table.oa-matrix td.none { color: var(--line3); }
+.app .oa-table.oa-matrix tr:last-child td { border-bottom: 0; }
+.app .oa-tablefoot { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .8rem; margin: .4rem 0 .6rem; font-size: 0.873rem; color: var(--text3); }
+.app .oa-conflicts { margin: 0 0 .5rem; padding: .35rem .7rem; max-width: 62rem; border-radius: .4rem; background: var(--amber-bg); color: var(--amber); font-size: 0.905rem; }
+.app .oa-conflicts .see { cursor: pointer; text-decoration: underline; }
+.app .oa-table.oa-rulestable tr.conflict { background: var(--amber-bg); }
+.app .oa-table.oa-rulestable td.from { white-space: nowrap; color: var(--text2); }
+.app .oa-table.oa-rulestable td.src { font-size: 0.873rem; color: var(--text3); width: 36%; }
+/* 规则那一栏占将近一半，窄的时候也不被另两栏挤成几个字一行 */
+.app .oa-table.oa-rulestable td:first-child { width: 44%; min-width: 12rem; }
+.app .oa-table.oa-decisions td:nth-child(3) { width: 40%; min-width: 12rem; }
+.app .oa-table.oa-rulestable tr:last-child td, .app .oa-table.oa-decisions tr:last-child td { border-bottom: 0; }
+.app .oa-table.oa-decisions td.at, .app .oa-table.oa-decisions td.kind { white-space: nowrap; color: var(--text3); font-size: 0.889rem; }
+.app .oa-table.oa-decisions tr.question td.kind { color: var(--amber); }
+.app .oa-table.oa-decisions td.note { font-size: 0.905rem; color: var(--text2); }
+.app .oa-goaltree { list-style: none; margin: 0; padding: 0; max-width: 52rem; font-size: 0.97rem; line-height: 1.7; }
+.app .oa-goaltree ul { list-style: none; margin: .1rem 0 .3rem; padding-left: 1.1rem; border-left: 1px solid var(--line2); }
+.app .oa-goaltree .g { font-weight: 600; }
+.app .oa-goaltree li.dec { font-size: 0.937rem; }
+.app .oa-goaltree li.dec .k { margin-right: .4rem; padding: 0 .35rem; border-radius: .25rem; background: var(--sel); font-size: 0.825rem; color: var(--text3); }
+.app .oa-goaltree li.dec .why { display: block; font-size: 0.873rem; color: var(--text3); }

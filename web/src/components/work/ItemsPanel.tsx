@@ -16,15 +16,17 @@
 // 导出 Word：顶上一行「生成文档」旁边的「导出 Word」导出列表里勾选的条目（全部页签里勾中的都算，不只当前页签），一个都没勾时灰；
 // 点了弹对话框（ExportDocxModal.tsx）。导出不改任何东西，所以勾选框在助手工作中、任务结束后也能勾；「标为已读」在这两种时候照旧不能用。
 // 卡片式的集合（问题条目）没有勾选框，导不了。
-// 图表页签：集合页签之后另有一个「图表」页签，计数是任务里还在的图的张数；它不是集合，内容由 DiagramsPane.tsx 画（图的列表与详情）。
-// 停在图表页签时筛选项不显示（它们筛的是条目），「还有 N 条未读」与批量条也不显示；进度汇总与提交提示条照旧。
-// 选中了条目时页签跟着条目所在的集合走，所以从图里点一个被画的条目会离开图表页签；条目详情「被谁依据」里的图点了再回来。
+// 图：有总体分析集合的任务，图画在业务说明里它说明的那一节、那一章的章首（overall/Figure.tsx），没有图表页签；
+// 地址里的 tab=diagrams、diagram=D-001 与条目详情「依据」「被谁依据」里的图，都打开业务说明里那张图所在的地方并滚到它。
+// 没有总体分析集合的任务（早先的任务、别的任务类型）图没有节可放，照旧在集合页签之后有一个「图表」页签，计数是任务里还在的图的张数；
+// 它不是集合，内容由 DiagramsPane.tsx 画（图的列表与详情）。停在图表页签时筛选项不显示（它们筛的是条目），「还有 N 条未读」
+// 与批量条也不显示；进度汇总与提交提示条照旧。选中了条目时页签跟着条目所在的集合走，所以从图里点一个被画的条目会离开图表页签。
 // 问题跟着条目走（ItemIssues.tsx）：列表行的状态徽标里带「问题 N」（ItemStatus.tsx），详情顶部列出挂在这条上、还没了结的问题；从问题卡片上的「牵涉 UC-003」跳来时
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "antd";
-import type { Item, Task } from "../../api/types";
+import type { DiagramRow, Item, Task } from "../../api/types";
 import type { ReviewRun } from "../../state/workState";
 import { BUSY_TEXT, FILTERS, failedReview, isEmptyValue, isUnread, keptReview, keepPendingField, matchesFilter, needsReading, pendingReview, reviewOffReason, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
 import { CompletionPanel } from "../CompletionPanel";
@@ -39,8 +41,13 @@ import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
 import { DiagramsPane } from "./DiagramsPane";
 import { OverallPane } from "./overall/OverallPane";
 import type { StageStart } from "../../model/stage";
-import { TopicPage } from "./overall/TopicPage";
-import { isOverall, outline, outlineOrder } from "../../model/overall";
+import { SectionPage } from "./overall/SectionPage";
+import { FigureBlocks, type FigureHost } from "./overall/Figure";
+import type { HeadView } from "./overall/Contents";
+import { SectionLinks } from "./overall/SectionLinks";
+import { OVERALL_COLLECTION, collectionLabel, isOverall } from "../../model/overall";
+import { figureHome, firstFigureHome } from "../../model/sectionDiagrams";
+import { toc, tocOrder } from "../../model/chapters";
 import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
@@ -50,15 +57,15 @@ export { BUSY_TEXT };
 
 export function ItemsPanel({
   task, initialCollection = null, initialDiagrams = false, initialDiagram = null, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
-  onAskAssistant, onAnswer, onSend, onStartStage, materialCount = 0, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, unreadRequest = 0, review = null, onReview, onPrefill,
+  onAskAssistant, onAnswer, onSend, onStartStage, materialCount = 0, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, review = null, onReview, onPrefill,
   submitBar = false,
 }: {
   task: Task;
   /** 一打开停在哪个集合的页签（任务页的集合卡带过来的）；不给、或者没有这个集合时是第一个集合。 */
   initialCollection?: string | null;
-  /** 一打开就停在图表页签（地址里的 tab=diagrams）。 */
+  /** 一打开就停在图表页签（地址里的 tab=diagrams）；有总体分析的任务停在业务说明里第一处有图的地方。 */
   initialDiagrams?: boolean;
-  /** 一打开就打开这张图（地址里的 diagram=D-001）；给了它也就停在图表页签。 */
+  /** 一打开就打开这张图（地址里的 diagram=D-001）；有总体分析的任务打开它所在的节或章首并滚到它。 */
   initialDiagram?: string | null;
   /** 任务已结束或助手不可用：一切写入都不能做。 */
   readOnly: boolean;
@@ -94,6 +101,8 @@ export function ItemsPanel({
   onDirty?: (dirty: boolean) => void;
   /** 有没有没保存的改图（图表页签里改了 Mermaid 文本还没有保存）。 */
   onDiagramDirty?: (dirty: boolean) => void;
+  /** 用户在业务说明里看到了一张图现在的内容（图画出来并且在看得见的范围里）。 */
+  onDiagramViewed?: (row: DiagramRow) => void;
   /** 卡片上点「筛出来看」时加一：筛选切到「未读」、回到列表。 */
   unreadRequest?: number;
   /** 最近一批界面发起的评审（进度与结果）。 */
@@ -115,6 +124,12 @@ export function ItemsPanel({
   // 图表页签：是不是停在它上面、打开着哪一张图。选中了条目时不算停在图表页签。
   const [showDiagrams, setShowDiagrams] = useState(opened.diagrams);
   const [diagram, setDiagram] = useState<string | null>(initialDiagram);
+  // 业务说明里哪几张图有没保存的改动：有一张就算有。
+  const dirtyFigures = useRef(new Set<string>());
+  const figureDirty = (diagramId: string, dirty: boolean) => {
+    if (dirty) dirtyFigures.current.add(diagramId); else dirtyFigures.current.delete(diagramId);
+    onDiagramDirty?.(dirtyFigures.current.size > 0);
+  };
   const [filter, setFilter] = useState<ItemFilter>("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
@@ -140,14 +155,35 @@ export function ItemsPanel({
   const [dirty, setDirty] = useState(false);
   const onDiagrams = !selectedItem && showDiagrams;
   const activeTab = selectedItem?.collection ?? tab;
-  // 停在「总体分析」页签：主体不是列表，是提纲加主题页（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
+  // 停在「业务说明」页签（总体分析这个集合）：主体不是列表，是目录加一节（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
   const onOverall = !onDiagrams && isOverall(activeTab);
   const noList = onDiagrams || onOverall;
   // 记住这个任务停在哪个页签（存在浏览器本地），下次打开这个任务回到这里。
   useEffect(() => { saveTab(task.task_id, onDiagrams ? DIAGRAMS_TAB : activeTab); }, [task.task_id, onDiagrams, activeTab]);
   const diagramCount = (task.diagrams ?? []).length;
-  /** 打开一张图（null 是图的列表）：取消选中的条目，切到图表页签。 */
-  const openDiagram = (diagramId: string | null) => { onSelect(null); setShowDiagrams(true); setDiagram(diagramId); };
+  // 有总体分析集合的任务，图在业务说明里；别的任务才有图表页签。
+  const hasOverall = collections.some((c) => isOverall(c.name));
+  const [headRequest, setHeadRequest] = useState<{ view: HeadView | null; seq: number } | null>(null);
+  const [figureFocus, setFigureFocus] = useState<{ diagramId: string; seq: number } | null>(null);
+  const requests = useRef(0);
+  /** 去业务说明里看图：给了编号去那张图所在的节或章首并滚到它，不给去第一处有图的地方；找不到就停在业务说明的首页。 */
+  const goFigure = (diagramId: string | null) => {
+    const all = toc(task);
+    const home = diagramId ? figureHome(task, all, diagramId) : firstFigureHome(task, all);
+    const seq = (requests.current += 1);
+    setTab(OVERALL_COLLECTION);
+    setFigureFocus(diagramId && home ? { diagramId, seq } : null);
+    if (home?.where === "section") { onSelect(home.itemId); return; }
+    onSelect(null);
+    setHeadRequest({ view: home?.where === "chapter" ? { kind: "chapter", no: home.chapter } : home?.where === "loose" ? { kind: "loose" } : null, seq });
+  };
+  /** 打开一张图（null 是图的列表，或者业务说明里第一处有图的地方）。没有总体分析的任务：取消选中的条目，切到图表页签。 */
+  const openDiagram = (diagramId: string | null) => {
+    if (hasOverall) { goFigure(diagramId); return; }
+    onSelect(null); setShowDiagrams(true); setDiagram(diagramId);
+  };
+  // 地址里要看图（tab=diagrams、diagram=D-001）：一打开就去那里。地址里同时选中了条目时以条目为准。
+  useEffect(() => { if (hasOverall && !selected && (initialDiagrams || initialDiagram)) goFigure(initialDiagram); }, []);
   const hitIds = hit?.items ?? [];
   const offTitle = writeOffReason(task, { readOnly, writesOff });
 
@@ -189,8 +225,9 @@ export function ItemsPanel({
   // 导出 Word 用的：全部页签里勾中的条目（已经不在的编号不算）。
   const exportItems = task.items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
-  // 总体分析的页：「上一条」「下一条」照提纲从上到下的次序走；看主题页还是按条目的样子看（修订与全部来源），换一页就回到主题页。
-  const topics = useMemo(() => (onOverall ? outlineOrder(outline(task)) : []), [task, onOverall]);
+  // 业务说明的节：「上一条」「下一条」照目录从上到下的次序走；看节的版式还是按条目的样子看（修订与全部来源），换一节就回到节的版式。
+  const contents = useMemo(() => (onOverall ? toc(task) : null), [task, onOverall]);
+  const topics = useMemo(() => (contents ? tocOrder(contents) : []), [contents]);
   const topicPos = selectedItem ? topics.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
   const [rawTopic, setRawTopic] = useState(false);
   useEffect(() => { setRawTopic(false); }, [selected]);
@@ -208,6 +245,11 @@ export function ItemsPanel({
     setFromIssue(o.fromIssue ? { issueId: o.fromIssue, itemId } : null);
     onSelect(itemId);
   };
+  // 业务说明里画图要的那几样（节里的图、章首的图、未归入节的图都用它）。
+  const figureHost: FigureHost | null = contents ? {
+    task, contents, readOnly, writesOff, latestRevision, submit, onLocate, onOpen: (id) => openItem(id), onOpenItem: (id) => openItem(id),
+    onViewed: onDiagramViewed, onDirty: figureDirty, focus: figureFocus,
+  } : null;
   /** 「回到问题列表」：切回问题所在的页签，滚到那张问题卡片。 */
   const backToIssue = (issueId: string) => {
     const issue = task.items.find((i) => i.item_id === issueId);
@@ -239,7 +281,7 @@ export function ItemsPanel({
       onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
       onLocate={onLocate} onOpenItem={onSelect} onOpenDiagram={openDiagram} onAskAssistant={onAskAssistant}
       view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
-      crumb={onOverall ? <span className="crumb" role="button" onClick={() => setRawTopic(false)} data-testid="back-to-topic">‹ 回到主题页</span>
+      crumb={onOverall ? <span className="crumb" role="button" onClick={() => setRawTopic(false)} data-testid="back-to-topic">‹ 回到这一节</span>
         : fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
       top={<ItemIssues task={task} itemId={selectedItem.item_id} readOnly={readOnly} writesOff={writesOff} hold={dirty} pendingItems={pendingItems}
         submit={submit} onSend={onSend} onPrefill={onAnswer} fromIssue={fromIssue?.issueId ?? null} />} />
@@ -252,13 +294,15 @@ export function ItemsPanel({
         {collections.map((c) => (
           <span key={c.name} className={`itab${!onDiagrams && c.name === activeTab ? " on" : ""}`} role="tab"
             onClick={() => { setTab(c.name); setShowDiagrams(false); onSelect(null); }}>
-            {c.name}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
+            {collectionLabel(c.name)}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
             {hit && hitsIn(c.name) > 0 && <span className="sw-hitn" title={`修订 ${hit.revision} 碰到这个页签里 ${hitsIn(c.name)} 个条目`} data-testid={`hit-count-${c.name}`}>{hitsIn(c.name)}</span>}
           </span>
         ))}
-        <span className={`itab${onDiagrams ? " on" : ""}`} role="tab" onClick={() => openDiagram(null)} data-testid="diagrams-tab">
-          图表<span className="cnt">{diagramCount}</span>
-        </span>
+        {!hasOverall && (
+          <span className={`itab${onDiagrams ? " on" : ""}`} role="tab" onClick={() => openDiagram(null)} data-testid="diagrams-tab">
+            图表<span className="cnt">{diagramCount}</span>
+          </span>
+        )}
         <span className="spacer" />
         <button type="button" className="btn sm" onClick={onGenerateDoc}>生成文档</button>
         <button type="button" className="btn sm" disabled={!exportItems.length} title={exportItems.length ? undefined : EXPORT_DOCX_HINT} data-testid="export-docx"
@@ -316,14 +360,19 @@ export function ItemsPanel({
           <DiagramsPane task={task} selected={diagram} onSelect={setDiagram} readOnly={readOnly} writesOff={writesOff} latestRevision={latestRevision}
             submit={submit} onLocate={onLocate} onOpenItem={(id) => openItem(id)} onDirty={onDiagramDirty} />
         ) : onOverall ? (
-          <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
+          <OverallPane task={task} host={figureHost!} headRequest={headRequest} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
             onStart={onStartStage} materialCount={materialCount}
             page={selectedItem && !rawTopic ? (
-              <TopicPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} readOnly={readOnly} writesOff={writesOff} submit={submit}
+              <SectionPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} contents={contents!} readOnly={readOnly} writesOff={writesOff} submit={submit}
                 onSend={onSend} onAnswer={onAnswer} onPrefill={onPrefill} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
                 onOpen={(id) => openItem(id)} onBack={() => onSelect(null)} onLocate={onLocate} onRaw={() => setRawTopic(true)}
                 onPrev={topicPos > 0 ? () => onSelect(topics[topicPos - 1].item_id) : null}
-                onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null} />
+                onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null}
+                figures={<FigureBlocks host={figureHost!} item={selectedItem} slots={["steps", "state", "relations"]} />}
+                links={<>
+                  <FigureBlocks host={figureHost!} item={selectedItem} slots={["other"]} />
+                  <SectionLinks host={figureHost!} item={selectedItem} onRaw={() => setRawTopic(true)} />
+                </>} />
             ) : detail} />
         ) : detail ? detail : items.length === 0 ? (
           <div className="empty">这个筛选下没有条目。换一个筛选试试。</div>

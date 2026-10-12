@@ -7,11 +7,12 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { TaskDefinition } from "./definition.ts";
 import { ACTOR_USER } from "./db.ts";
+import { DIAGRAM_ID, diagramViewed, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "./diagram.ts";
 import {
   type BasisPending, type Mention, OVERALL_COLLECTION, type PageFacts, type PlainItem, type RevisionFacts, type SupportPlaces, type Verification,
   basisPending, isSupplement, mentionsOf, pageFacts, verificationOf, viewedIn,
 } from "./overall_analysis.ts";
-import { ELEMENT_ITEM, SOURCE_ITEM, elementClause } from "./schema.ts";
+import { ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, elementClause } from "./schema.ts";
 import { jsonOrText } from "./task_read.ts";
 
 /** 一个条目算出来的两样：待不待核实（还待核实的来源条数与各处）、是不是因为依据的那一页而待核实。 */
@@ -94,10 +95,14 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
     const page = byId.get(itemId);
     return page ? { collection: page.collection, fields: page.fields, pending: own.get(itemId)!.pending_verification, viewed: viewed.get(itemId) === true } : null;
   };
+  // 条目依据的图用户看没看过：还在的图各自算一次（lib/diagram.ts 的 diagramViewed）；已经删除的图不在里面。
+  const seen = viewedDiagramRevisions(db, taskId);
+  const figureViewed = new Map(liveDiagrams(readDiagrams(db, taskId)).map((record) => [record.diagram_id, diagramViewed(record, seen)]));
+  const citedFigure = (diagramId: string) => (figureViewed.has(diagramId) ? { viewed: figureViewed.get(diagramId)! } : null);
   const verification = new Map<string, ItemVerification>();
   for (const item of items) {
     // 早期版本的库里依据另一个条目的来源种类叫「领域说明」，那时没有总体分析，不会指到它的页，所以只看现在的种类名。
-    const basis = basisPending((sources.get(item.item_id) ?? []).filter((one) => one.kind === SOURCE_ITEM), cited);
+    const basis = basisPending((sources.get(item.item_id) ?? []).filter((one) => one.kind === SOURCE_ITEM || one.kind === SOURCE_FIGURE), cited, citedFigure);
     verification.set(item.item_id, { ...own.get(item.item_id)!, basis_pending: basis });
   }
   const shapes = definition.collections.map((one) => ({ name: one.name, fields: one.fields.map((f) => ({ name: f.name, type: f.type })) }));
@@ -123,6 +128,11 @@ export function verificationLines(itemId: string, state: ItemVerification): stri
     lines.push(`待核实：${itemId} 有 ${state.pending_sources} 处是助手补充的，用户还没有确认（${where}）。请用户看一下这几处对不对；用户看过确认、或者亲手改过那一处之后，就不再待核实。`);
   }
   const basis = state.basis_pending;
+  // 依据的是一张图（编号是 D- 开头的那种）：图只有「用户还没有看过」这一种。
+  if (basis && DIAGRAM_ID.test(basis.item_id)) {
+    lines.push(`待核实：它依据的图 ${basis.item_id} 用户还没有看过它现在的内容。请用户把这张图看一遍（看过就算确认）。`);
+    return lines;
+  }
   if (basis?.reason === "pending") lines.push(`待核实：它依据的主题 ${basis.item_id} 还待核实（那一页有助手补充而用户没有确认的内容）。`);
   if (basis?.reason === "unviewed") lines.push(`待核实：它依据的主题 ${basis.item_id} 用户还没有看过。请用户打开那一页看一眼（看过就算确认）。`);
   if (basis?.reason === "deprecated") lines.push(`待核实：它依据的主题 ${basis.item_id} 已废弃${basis.see ? `，改看 ${basis.see}` : ""}；请改成依据现在在用的主题。`);
@@ -132,11 +142,16 @@ export function verificationLines(itemId: string, state: ItemVerification): stri
 /** 任务里待核实的条目合成的一句；一个都没有时是 null。 */
 export function pendingSummary(state: OverallState): string | null {
   const own = state.items.filter((one) => state.verification.get(one.item_id)!.pending_verification).map((one) => one.item_id);
-  const byBasis = state.items.filter((one) => !own.includes(one.item_id) && state.verification.get(one.item_id)!.basis_pending).map((one) => one.item_id);
-  if (own.length === 0 && byBasis.length === 0) return null;
+  const basisOf = (itemId: string) => state.verification.get(itemId)!.basis_pending;
+  const waiting = state.items.filter((one) => !own.includes(one.item_id) && basisOf(one.item_id)).map((one) => one.item_id);
+  // 因依据而待核实的分两种说：依据的是一页主题，依据的是一张图。
+  const byFigure = waiting.filter((id) => DIAGRAM_ID.test(basisOf(id)!.item_id));
+  const byBasis = waiting.filter((id) => !byFigure.includes(id));
+  if (own.length === 0 && waiting.length === 0) return null;
   const parts = [
     ...(own.length ? [`有助手补充而用户还没有确认的 ${own.length} 个：${own.join("、")}`] : []),
     ...(byBasis.length ? [`依据的主题待核实、用户还没有看过或已废弃的 ${byBasis.length} 个：${byBasis.join("、")}`] : []),
+    ...(byFigure.length ? [`依据的图用户还没有看过的 ${byFigure.length} 个：${byFigure.join("、")}`] : []),
   ];
   return `待核实的条目：${parts.join("；")}。`;
 }

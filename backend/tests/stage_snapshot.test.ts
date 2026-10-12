@@ -42,16 +42,16 @@ test("整份数据带 stage：现在的阶段、最近一次是谁在什么时�
   assert.deepEqual(library.stageView(ws), stage, "另开连接再算一遍，结果相同");
 });
 
-test("整份数据里与图有关的几盏灯：流程页画了带分叉的流程图就通过；条目依据的图用户看过之前不适用或不通过，看过之后通过", () => {
+test("整份数据里与图有关的几盏灯：流程页画了带分叉的流程图就通过；条目依据的图用户看过之前不通过，看过之后通过", () => {
   const CHART = { said: "把预约取书画成流程图", diagram: { name: "预约取书的流程", kind: "flowchart",
     mermaid: 'flowchart TD\n  a(["OA-001 预约取书"]) --> b{"书在不在架"}\n  b -- 在 --> c["办预约"]\n  b -- 不在 --> d["登记等候"]',
     sources: [{ kind: "用户的话", excerpt: "把预约取书画成流程图" }, { kind: "条目", locator: "OA-001" }] } };
   const BY_CHART = { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["办预约"] }, sources: [{ kind: "图", locator: "D-001", excerpt: "办预约" }] };
   const lamps = (dir: string, ...keys: string[]) => keys.map((key) => lampOf(library.taskSnapshot(dir)[1]!.stage!, key).ok);
-  // 画了图、依据图写了用例，用户还没有看过任何一张图：流程图那一盏通过，依据的图那一盏不适用。
+  // 画了图、依据图写了用例，用户还没有看过任何一张图：流程图那一盏通过，依据的图那一盏不通过。
   const drawn = build(tmp, "figure-lamps", DEFINITION, [[FLOW], { view: ["OA-001"] }, CHART, [BY_CHART]]);
-  assert.deepEqual(lamps(drawn, "flows_have_flowchart_with_branch", "basis_diagrams_viewed"), [true, null]);
-  assert.equal(lampOf(library.taskSnapshot(drawn)[1]!.stage!, "basis_diagrams_viewed").summary, "还没有记下用户看过哪些图，这一项暂时算不出来。");
+  assert.deepEqual(lamps(drawn, "flows_have_flowchart_with_branch", "basis_diagrams_viewed"), [true, false]);
+  assert.equal(lampOf(library.taskSnapshot(drawn)[1]!.stage!, "basis_diagrams_viewed").summary, "有 1 个条目依据的图用户还没有看过：UC-001（没看过的图是 D-001）。");
   // 用户看过这张图：通过。
   const seen = build(tmp, "figure-lamps-seen", DEFINITION, [[FLOW], { view: ["OA-001"] }, CHART, [BY_CHART], { view: ["D-001"] }]);
   assert.deepEqual(lamps(seen, "basis_diagrams_viewed"), [true]);

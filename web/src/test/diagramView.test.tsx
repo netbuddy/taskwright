@@ -267,6 +267,12 @@ describe("看板：拖动、滚轮与四个按钮", () => {
 
   it("视图的几样计算：一打开的比例、适应宽度、放大缩小一档、摆进看板、以一点为锚换比例（有上下限）", () => {
     expect([diagram.initialZoom(300, 600), diagram.initialZoom(600, 300), diagram.initialZoom(3000, 300), diagram.initialZoom(300, 0), diagram.initialZoom(400, 300)]).toEqual([1, 0.5, 0.5, 1, 0.75]);
+    // 整张都看得见的比例（四边各留 8）：放得下按原始大小；高放不下、宽放不下都缩；最多缩到一半；量不到看板时按原始大小。
+    const stage = { width: 616, height: 316 };
+    expect([
+      diagram.wholeZoom({ width: 300, height: 150 }, stage), diagram.wholeZoom({ width: 300, height: 400 }, stage), diagram.wholeZoom({ width: 800, height: 150 }, stage),
+      diagram.wholeZoom({ width: 300, height: 3000 }, stage), diagram.wholeZoom({ width: 300, height: 150 }, { width: 0, height: 0 }),
+    ]).toEqual([1, 0.75, 0.75, 0.5, 1]);
     expect([diagram.fitZoom(3000, 300), diagram.fitZoom(600, 300), diagram.fitZoom(10, 300), diagram.fitZoom(300, 0)]).toEqual([0.25, 0.5, 4, 1]);
     expect([diagram.stepZoom(1, 1), diagram.stepZoom(1, -1), diagram.stepZoom(4, 1), diagram.stepZoom(0.25, -1)]).toEqual([1.25, 0.8, 4, 0.25]);
     expect([diagram.MIN_ZOOM, diagram.MAX_ZOOM]).toEqual([0.25, 4]);
