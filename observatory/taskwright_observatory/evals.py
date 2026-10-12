@@ -10,7 +10,8 @@
 那几盏不进平均（与一次评测的灯通过率同一个算法）。
 
 对照：两次评测并排，每盏灯与清单的每一组各写两个数与差值。灯比的是通过率（通过的遍数比上能算的遍数），清单比的是命中的
-遍数比上核对的遍数。后一次比前一次低就是变差。有一边没有能算的遍时不比，差值为空。
+遍数比上核对的遍数。后一次比前一次低就是变差。有一边没有能算的遍时不比，差值为空。灯按阶段排在一起，每个阶段另比两次的本组通过率；
+阶段按每盏灯在各自汇总里带的阶段名分，所以灯增删前后的两次评测也能对照。
 """
 
 from __future__ import annotations
@@ -70,7 +71,10 @@ def read_detail(root: Path | None, label: str) -> dict:
     path = Path(root) / f"{SUMMARY_PREFIX}{label}.json"
     if "/" in label or "\\" in label or not path.is_file():
         raise EvalNotFound(f"找不到评测「{label}」。")
-    return json.loads(path.read_text(encoding="utf-8"))
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    # 早先写出的汇总里没有按阶段的那一项：照它每盏灯带的阶段现算，页面不用分两种读法。
+    summary.setdefault("灯按阶段", lamps_by_stage(summary.get("灯") or []))
+    return summary
 
 
 def _rate(done: int, of: int) -> float | None:
@@ -103,6 +107,15 @@ def compare(root: Path | None, first: str, second: str) -> dict:
     for row in lamps_b.values():                                 # 只有后一次有的灯
         lamp_rows.append({"阶段": row["阶段"], "键": row["键"], "说明": row["说明"], "前": None,
                           "后": _side(row["通过遍数"], row["能算的遍数"]), "差值": None, "变差": False})
+    # 同一个阶段的灯排在一起（只有后一次有的灯也归到它的阶段里）；阶段的先后按前一次、再按后一次里出现的先后。
+    stages = list(dict.fromkeys(row.get("阶段") or OTHER_STAGE for row in [*a["灯"], *b["灯"]]))
+    lamp_rows.sort(key=lambda row: stages.index(row.get("阶段") or OTHER_STAGE))
+    by_stage_a, by_stage_b = ({one["阶段"]: one for one in lamps_by_stage(s["灯"])} for s in (a, b))
+    stage_rows = []
+    for stage in stages:
+        one, two = (None if side.get(stage) is None else {"比率": side[stage]["通过率"], "灯数": side[stage]["灯数"]} for side in (by_stage_a, by_stage_b))
+        delta, worse = _delta(one, two)
+        stage_rows.append({"阶段": stage, "前": one, "后": two, "差值": delta, "变差": worse})
     key = lambda row: (row["部分"], tuple(row["组"]))            # noqa: E731
     groups_b = {key(row): row for row in b["至少应有"]}
     group_rows = []
@@ -118,7 +131,7 @@ def compare(root: Path | None, first: str, second: str) -> dict:
     for name in ("材料", "画像", "清单"):
         if a.get(name) != b.get(name):
             notes.append(f"两次评测的{name}不同（前一次是 {_show(a.get(name))}，后一次是 {_show(b.get(name))}），数字不能直接比。")
-    return {"前": head(a), "后": head(b), "提醒": notes, "灯": lamp_rows, "至少应有": group_rows,
+    return {"前": head(a), "后": head(b), "提醒": notes, "灯": lamp_rows, "灯按阶段": stage_rows, "至少应有": group_rows,
             "变差的灯": sum(1 for row in lamp_rows if row["变差"]), "变差的组": sum(1 for row in group_rows if row["变差"])}
 
 
@@ -137,6 +150,12 @@ def _cell(side: dict | None) -> str:
     return f"{side['分子']}／{side['分母']}" + ("" if side["比率"] is None else f"（{round(side['比率'] * 100)}%）")
 
 
+def _stage_cell(side: dict | None) -> str:
+    if side is None:
+        return "没有这一组"
+    return ("没有能算的" if side["比率"] is None else f"{round(side['比率'] * 100)}%") + f"（{side['灯数']} 盏）"
+
+
 def _delta_cell(row: dict) -> str:
     if row["差值"] is None:
         return "不比"
@@ -153,7 +172,10 @@ def compare_markdown(data: dict) -> str:
              f"- 后一次「{b['标签']}」：{b.get('时间')}，提交 {(b.get('提交号') or '没有记')[:12]}，{b.get('遍数')} 遍，灯通过率 {percent(b.get('灯通过率'))}，清单命中率 {percent(b.get('清单命中率'))}",
              f"- 变差的灯有 {data['变差的灯']} 盏，清单里变差的组有 {data['变差的组']} 组。"]
     lines += [f"- 提醒：{note}" for note in data["提醒"]]
-    lines += ["", "## 灯", "", "每格是「通过的遍数／能算的遍数」。", "", f"| 阶段 | 灯 | {a['标签']} | {b['标签']} | 差值 |", "|---|---|---|---|---|"]
+    lines += ["", "## 灯", "", "各阶段的通过率（一个阶段的通过率是这一组各盏灯通过率的平均；括号里是这一组有几盏灯）：", "",
+              f"| 阶段 | {a['标签']} | {b['标签']} | 差值 |", "|---|---|---|---|"]
+    lines += [f"| {row['阶段']} | {_stage_cell(row['前'])} | {_stage_cell(row['后'])} | {_delta_cell(row)} |" for row in data["灯按阶段"]]
+    lines += ["", "每格是「通过的遍数／能算的遍数」。", "", f"| 阶段 | 灯 | {a['标签']} | {b['标签']} | 差值 |", "|---|---|---|---|---|"]
     lines += [f"| {row['阶段']} | {row['说明']} | {_cell(row['前'])} | {_cell(row['后'])} | {_delta_cell(row)} |" for row in data["灯"]]
     lines += ["", "## 至少应有", "", "每格是「命中的遍数／核对的遍数」。", "", f"| 部分 | 关键词组 | {a['标签']} | {b['标签']} | 差值 |", "|---|---|---|---|---|"]
     lines += [f"| {row.get('部分名') or row['部分']} | {'／'.join(row['组'])} | {_cell(row['前'])} | {_cell(row['后'])} | {_delta_cell(row)} |" for row in data["至少应有"]]

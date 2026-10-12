@@ -23,16 +23,39 @@ function took(seconds) {
   return seconds == null ? "没有记" : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
 
-/** 同一个阶段的几盏灯，阶段名只在第一行写，占满这一组的行。 */
-function stageCells(rows) {
+/**
+ * 同一个阶段的几盏灯，阶段名只在第一行写，占满这一组的行；阶段名下面写这一组的通过率。
+ * notes 是每个阶段要写的那一行（已经是 HTML），没有的阶段只写名字。键在灯表里找不到阶段的灯在「其他」一组，排在最后。
+ */
+function stageCells(rows, notes = {}) {
   const span = {};
   rows.forEach((row) => { span[row["阶段"]] = (span[row["阶段"]] || 0) + 1; });
   let last = null;
   return rows.map((row) => {
     const first = row["阶段"] !== last;
     last = row["阶段"];
-    return first ? `<td rowspan="${span[row["阶段"]]}"><b>${esc(row["阶段"])}</b></td>` : "";
+    return first ? `<td rowspan="${span[row["阶段"]]}"><b>${esc(row["阶段"])}</b>${notes[row["阶段"]] || ""}</td>` : "";
   });
+}
+
+/** 详情页：每个阶段的本组通过率（这一组各盏灯通过率的平均）。 */
+function stageRates(groups) {
+  const notes = {};
+  (groups || []).forEach((one) => { notes[one["阶段"]] = `<div class="src">本组通过率 ${esc(percent(one["通过率"]))}</div>`; });
+  return notes;
+}
+
+/** 对照页：每个阶段前后两次的本组通过率与差值，变差的标出来。 */
+function stageDeltas(groups) {
+  const notes = {};
+  const rate = (side) => (side == null ? "没有这一组" : percent(side["比率"]));
+  (groups || []).forEach((one) => {
+    const points = one["差值"] == null ? null : Math.round(one["差值"] * 100);
+    const change = points == null ? "不比" : points === 0 ? "持平" : `${points > 0 ? "+" : "−"}${Math.abs(points)} 个百分点`;
+    notes[one["阶段"]] = `<div class="src">本组通过率：前 ${esc(rate(one["前"]))}，后 ${esc(rate(one["后"]))}</div>` +
+      `<div class="${one["变差"] ? "evworse" : "src"}">${esc(change)}${one["变差"] ? "，变差" : ""}</div>`;
+  });
+  return notes;
 }
 
 function noRoot(view, data) {
@@ -129,8 +152,8 @@ function passCols(s) {
 }
 
 function lampTable(s) {
-  const stages = stageCells(s["灯"]);
-  return `<table class="tbl"><colgroup><col style="width:6em"><col style="width:auto">${passCols(s)}<col style="width:6em"></colgroup>` +
+  const stages = stageCells(s["灯"], stageRates(s["灯按阶段"]));
+  return `<table class="tbl"><colgroup><col style="width:9em"><col style="width:auto">${passCols(s)}<col style="width:6em"></colgroup>` +
     `<thead><tr><th>阶段</th><th>灯</th>${passHeads(s)}<th>通过几遍</th></tr></thead><tbody>` +
     s["灯"].map((row, i) => `<tr>${stages[i]}<td>${esc(row["说明"])}</td>` +
       row["各遍"].map((state, n) => {
@@ -196,6 +219,7 @@ export async function renderEvalDetail(label) {
     `<section class="panel"><h2>各遍</h2>${runsTable(s)}</section>` +
     `<section class="panel"><h2>灯</h2><p class="muted" style="margin:0 0 10px">每盏灯是这一段「算够」的一条判据，按演练结束时的任务数据算，` +
     `告诉你这一段还差什么。「不适用」是这盏灯要看的那一类页或条目一个都没有，「算不了」是要用的数据取不到，这两种不计入通过率。` +
+    `阶段名下面是这一组的通过率，即这一组各盏灯通过率的平均。` +
     `点一格到那一遍演练的任务页。</p>${lampTable(s)}</section>` +
     `<section class="panel"><h2>至少应有</h2><p class="muted" style="margin:0 0 10px">清单是下限：这份材料读透了至少应当整理出这些。` +
     `一组里是同义的几种写法，出现一种就算命中。</p>${groupTable(s)}</section>` +
@@ -233,14 +257,15 @@ export async function renderEvalCompare(first, second) {
   view.innerHTML = `<section class="panel"><p class="muted">正在读这两次评测。</p></section>`;
   const data = await api.evalCompare(first, second);
   const a = data["前"], b = data["后"];
-  const stages = stageCells(data["灯"]);
+  const stages = stageCells(data["灯"], stageDeltas(data["灯按阶段"]));
   const cols = `<col style="width:9em"><col style="width:9em"><col style="width:12em">`;
   view.innerHTML =
     `<section class="panel"><h2>评测对照</h2><dl class="kv">${compareHead(a, "前一次")}${compareHead(b, "后一次")}` +
     `<dt>变差的</dt><dd>灯有 ${esc(data["变差的灯"])} 盏变差，清单里有 ${esc(data["变差的组"])} 组变差。差值是后一次减前一次；有一边没有能算的遍时不比。</dd></dl>` +
     data["提醒"].map((note) => `<p class="miss">${esc(note)}</p>`).join("") + `</section>` +
-    `<section class="panel"><h2>灯</h2><p class="muted" style="margin:0 0 10px">每格是「通过的遍数／能算的遍数」。</p>` +
-    `<table class="tbl"><colgroup><col style="width:6em"><col style="width:auto">${cols}</colgroup>` +
+    `<section class="panel"><h2>灯</h2><p class="muted" style="margin:0 0 10px">每格是「通过的遍数／能算的遍数」。` +
+    `阶段名下面是这一组前后两次的通过率（这一组各盏灯通过率的平均）。</p>` +
+    `<table class="tbl"><colgroup><col style="width:13em"><col style="width:auto">${cols}</colgroup>` +
     `<thead><tr><th>阶段</th><th>灯</th><th>${esc(a["标签"])}</th><th>${esc(b["标签"])}</th><th>差值</th></tr></thead><tbody>` +
     data["灯"].map((row, i) => `<tr>${stages[i]}<td>${esc(row["说明"])}</td>${side(row["前"])}${side(row["后"])}${delta(row)}</tr>`).join("") +
     `</tbody></table></section>` +

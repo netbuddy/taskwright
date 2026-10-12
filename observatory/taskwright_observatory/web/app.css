@@ -131,3 +131,4 @@ section.conceptcard .kv{grid-template-columns:8.5em minmax(0,1fr)}
 a.evcell{text-decoration:none}
 a.evcell:hover .chip{outline:2px solid var(--accent-bg)}
 td.evworse{color:var(--bad);font-weight:600;background:var(--bad-soft)}
+div.evworse{color:var(--bad);font-weight:600;font-size:11.5px}

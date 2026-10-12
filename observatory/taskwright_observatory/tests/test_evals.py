@@ -116,6 +116,48 @@ class EvalReadTest(unittest.TestCase):
                      "| 约束 | 一角 | 0／3（0%） | 没有这一项 | 不比 |"):
             self.assertIn(line, text)
 
+    def test_灯按阶段分组_每组给本组通过率_早先的汇总现算_对照里同一阶段排在一起并比两次的本组通过率(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            two_evals(root)
+            # 后一次另有两盏前一次没有的灯：一盏在已有的阶段里，一盏的键灯表里没有，汇总里归在「其他」。
+            later = json.loads((root / "评测汇总_改了说明.json").read_text(encoding="utf-8"))
+            later["灯"] += [lamp("roles_drawn", "每个角色都画进了图。", ["通过", "通过", "未通过"]), lamp("以后才有的灯", "以后才有的灯。", ["通过", "通过", "通过"], "其他")]
+            (root / "评测汇总_改了说明.json").write_text(json.dumps(later, ensure_ascii=False), encoding="utf-8")
+            detail = evals.read_detail(root, "基线")
+            data = evals.compare(root, "基线", "改了说明")
+            text = evals.compare_markdown(data)
+        # 手写的汇总里没有按阶段的那一项，读出来时照每盏灯带的阶段现算：整理建模两盏的平均是 (1/3 + 1) / 2，澄清那一盏没有能算的遍。
+        self.assertEqual([(one["阶段"], one["键"], one["灯数"], one["能算的灯数"]) for one in detail["灯按阶段"]],
+                         [("整理建模", ["flows_have_exception", "no_untagged_pages"], 2, 2), ("澄清", ["decisions_have_goal"], 1, 0)])
+        self.assertAlmostEqual(detail["灯按阶段"][0]["通过率"], 2 / 3)
+        self.assertIsNone(detail["灯按阶段"][1]["通过率"])
+        # 对照：只有后一次有的那盏整理建模的灯排进整理建模一组，不落在最后；「其他」一组只有后一次有。
+        self.assertEqual([(row["阶段"], row["键"]) for row in data["灯"]], [
+            ("整理建模", "flows_have_exception"), ("整理建模", "no_untagged_pages"), ("整理建模", "roles_drawn"), ("澄清", "decisions_have_goal"),
+            ("其他", "以后才有的灯")])
+        stages = {one["阶段"]: one for one in data["灯按阶段"]}
+        self.assertEqual(list(stages), ["整理建模", "澄清", "其他"])
+        modeling = stages["整理建模"]
+        self.assertEqual((modeling["前"]["灯数"], modeling["后"]["灯数"], modeling["变差"]), (2, 3, False))
+        self.assertAlmostEqual(modeling["前"]["比率"], 2 / 3)
+        self.assertAlmostEqual(modeling["后"]["比率"], (1 + 1 / 3 + 2 / 3) / 3)
+        self.assertAlmostEqual(modeling["差值"], 0)
+        # 澄清前一次没有能算的，不比；「其他」前一次没有这一组，不比。
+        self.assertEqual((stages["澄清"]["前"]["比率"], stages["澄清"]["差值"], stages["其他"]["前"], stages["其他"]["差值"]), (None, None, None, None))
+        for line in ("| 阶段 | 基线 | 改了说明 | 差值 |", "| 整理建模 | 67%（2 盏） | 67%（3 盏） | 持平 |", "| 澄清 | 没有能算的（1 盏） | 100%（1 盏） | 不比 |",
+                     "| 其他 | 没有这一组 | 100%（1 盏） | 不比 |"):
+            self.assertIn(line, text)
+
+    def test_对照里一个阶段的本组通过率降了_标变差(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_eval(root, "前", [lamp("no_untagged_pages", UNTAGGED, ["通过", "通过"])], [], "2026-01-01T09:00:00")
+            write_eval(root, "后", [lamp("no_untagged_pages", UNTAGGED, ["通过", "未通过"])], [], "2026-01-02T09:00:00")
+            data = evals.compare(root, "前", "后")
+        self.assertEqual([(one["阶段"], one["前"]["比率"], one["后"]["比率"], one["差值"], one["变差"]) for one in data["灯按阶段"]], [("整理建模", 1.0, 0.5, -0.5, True)])
+        self.assertIn("| 整理建模 | 100%（1 盏） | 50%（1 盏） | −50 个百分点，**变差** |", evals.compare_markdown(data))
+
 
 class EvalApiTest(unittest.TestCase):
     """三个页面各自的读取接口：起一个观测台服务，经 HTTP 取 JSON。"""
