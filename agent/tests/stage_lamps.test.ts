@@ -117,14 +117,21 @@ test("flows_have_flowchart_with_branch：每个流程页有一张以它为来源
   assert.equal(lampOf("flows_have_flowchart_with_branch", { pages: [pages[3]] }).ok, null);
 });
 
-test("stateful_concepts_have_state：说到状态的概念页有一张以它为来源的状态图；没有说到状态的概念页不看", () => {
+test("stateful_concepts_have_state：文字说到状态而没有状态图的概念页是差的；已经画了状态图的概念页算有图，不管文字里说没说到状态；两样都没有才不适用", () => {
   const pages = [page("OA-001", { tags: ["概念"], stateful: true }), page("OA-002", { tags: ["概念"], stateful: true }), page("OA-003", { tags: ["概念"] }),
     page("OA-004", { tags: ["流程"], stateful: true })];
   assert.deepEqual(brief(lampOf("stateful_concepts_have_state", { pages, diagrams: [diagram("D-001", "state", { sources: ["OA-001"] }), diagram("D-002", "state", { sources: ["OA-002"] })] })), [true, []]);
   const missing = lampOf("stateful_concepts_have_state", { pages, diagrams: [diagram("D-001", "state", { sources: ["OA-001"] }), diagram("D-002", "flowchart", { sources: ["OA-002"] })] });
   assert.deepEqual(brief(missing), [false, ["OA-002"]]);
   assert.equal(missing.summary, "有 1 页说到状态的「概念」主题还没有以它为来源的状态图：OA-002。说没说到状态是按字面认的（文字里有「状态」「变成」或者「从……变为……」），认错了的不用画，向用户说明即可。");
-  assert.deepEqual([lampOf("stateful_concepts_have_state", { pages: [pages[2], pages[3]] }).ok, lampOf("stateful_concepts_have_state", { pages: [pages[2]] }).summary], [null, "还没有说到状态的「概念」主题。"]);
+  const none = "还没有画了状态图的「概念」主题，也没有哪一页「概念」主题的文字说到状态。";
+  assert.deepEqual([lampOf("stateful_concepts_have_state", { pages: [pages[2], pages[3]] }).ok, lampOf("stateful_concepts_have_state", { pages: [pages[2]] }).summary], [null, none]);
+  // 文字里没有说到状态的概念页画了状态图：这盏灯通过，不再是不适用。流程页的状态图不算。
+  const drawn = lampOf("stateful_concepts_have_state", { pages: [pages[2], pages[3]], diagrams: [diagram("D-001", "state", { sources: ["OA-003"] })] });
+  assert.deepEqual([brief(drawn), drawn.summary], [[true, []], "有 1 页「概念」主题画了状态图；文字说到状态的「概念」主题都有状态图。"]);
+  assert.equal(lampOf("stateful_concepts_have_state", { pages: [pages[2], pages[3]], diagrams: [diagram("D-001", "state", { sources: ["OA-004"] })] }).ok, null);
+  // 一页画了、另一页说到状态而没有画：不通过，差的只列没有画的那一页。
+  assert.deepEqual(brief(lampOf("stateful_concepts_have_state", { pages, diagrams: [diagram("D-001", "state", { sources: ["OA-003"] }), diagram("D-002", "state", { sources: ["OA-001"] })] })), [false, ["OA-002"]]);
 });
 
 test("rules_no_conflict：规则表里没有还没了结的规则冲突；各页一条「已经定下的」都没有时不适用", () => {
