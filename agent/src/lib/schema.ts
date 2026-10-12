@@ -219,24 +219,19 @@ CREATE TABLE IF NOT EXISTS tool_rejection (
  * 图的编号是 D- 加三位流水号（D-001），由代码生成，不复用；新建任务时集合的编号前缀不许单写 D（见 definition.ts）。
  *
  * 后来加的表，用 IF NOT EXISTS，旧库第一次被写入一侧打开时补上；只读的一侧遇到还没有这两张表的库，当作一张图都没有。
+ *
+ * 图的种类（kind 列）库里不设检查，写的是哪几种只在代码里判（lib/diagram.ts 的 DIAGRAM_KINDS）：加一种图不用改库的结构。
+ * 格式版本 2 及更早建的库里这一列带着只许五种的检查，由升级步骤表的「2 到 3」那一步去掉（dropDiagramKindCheck）。
  */
-export const DIAGRAM_SQL = `
-CREATE TABLE IF NOT EXISTS diagram (
-  task_id              TEXT NOT NULL,     -- 所属任务的任务编号
-  diagram_id           TEXT NOT NULL,     -- 图的编号，D- 加三位流水号，例如 D-001，由代码生成，不复用
-  serial               INTEGER NOT NULL,  -- 流水号，同一任务里只增不减
-  deleted_in_revision  INTEGER,           -- 在这张图自己的第几次修订里删除，没删为空
-  event_seq            INTEGER NOT NULL,  -- 记下新增的那条事件的序号
-  deleted_event_seq    INTEGER,           -- 记下删除的那条事件的序号，没删为空
-  PRIMARY KEY (task_id, diagram_id)
-);
-CREATE TABLE IF NOT EXISTS diagram_version (  -- 图在它自己的每次修订下的内容
+/** 图的内容表的建表语句。建新库与把旧库的这张表重建成不带种类检查的样子（dropDiagramKindCheck）用的是同一份，只是表名与开头不同。 */
+export function diagramVersionSql(name: string, ifNotExists = false): string {
+  return `CREATE TABLE ${ifNotExists ? "IF NOT EXISTS " : ""}${name} (  -- 图在它自己的每次修订下的内容
   task_id      TEXT NOT NULL,          -- 所属任务的任务编号
   diagram_id   TEXT NOT NULL,          -- 图的编号
   revision_no  INTEGER NOT NULL,       -- 这张图自己的修订号，从 1 起连续
   op           TEXT NOT NULL CHECK (op IN ('add', 'update', 'delete')),  -- 这次修订做了什么
   name         TEXT NOT NULL,          -- 图名
-  kind         TEXT NOT NULL CHECK (kind IN ('use_case', 'class', 'state', 'sequence', 'flowchart')),  -- 图的种类：用例图、类图、状态图、时序图、流程图
+  kind         TEXT NOT NULL,          -- 图的种类的写法，例如 use_case、class、flowchart；有哪几种由代码判，库里不设检查
   mermaid      TEXT NOT NULL,          -- Mermaid 文本
   note         TEXT NOT NULL,          -- 说明，没有写时是空文字
   actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),  -- 由谁：助手或用户
@@ -247,6 +242,19 @@ CREATE TABLE IF NOT EXISTS diagram_version (  -- 图在它自己的每次修订�
   PRIMARY KEY (task_id, diagram_id, revision_no)
 );
 `;
+}
+
+export const DIAGRAM_SQL = `
+CREATE TABLE IF NOT EXISTS diagram (
+  task_id              TEXT NOT NULL,     -- 所属任务的任务编号
+  diagram_id           TEXT NOT NULL,     -- 图的编号，D- 加三位流水号，例如 D-001，由代码生成，不复用
+  serial               INTEGER NOT NULL,  -- 流水号，同一任务里只增不减
+  deleted_in_revision  INTEGER,           -- 在这张图自己的第几次修订里删除，没删为空
+  event_seq            INTEGER NOT NULL,  -- 记下新增的那条事件的序号
+  deleted_event_seq    INTEGER,           -- 记下删除的那条事件的序号，没删为空
+  PRIMARY KEY (task_id, diagram_id)
+);
+${diagramVersionSql("diagram_version", true)}`;
 
 /**
  * 阶段记录表：任务从一个工作阶段移到另一个阶段，一次移动一行（lib/stage.ts 与 lib/stage_read.ts）。任务现在在哪个阶段看事件序号最大的一行；
@@ -437,9 +445,10 @@ export function existingTables(db: DatabaseSync): string[] {
 
 /**
  * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。0 是没有编过版本号的库：0.4.x 及更早的版本建的，或者一张表都没有的空库。
- * 每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。1 是给库编上版本号的那一版；2 加了阶段记录表（stage_record）。
+ * 每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。1 是给库编上版本号的那一版；2 加了阶段记录表（stage_record）；
+ * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）。
  */
-export const TASK_DB_VERSION = 2;
+export const TASK_DB_VERSION = 3;
 
 /** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
 export const TASK_JSON = "task.json";
@@ -477,6 +486,7 @@ export function taskWrittenBy(workspaceDir: string): string | null {
 const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void }[] = [
   { from: 0, to: 1, run: fromUnversioned },
   { from: 1, to: 2, run: addStageRecords },
+  { from: 2, to: 3, run: dropDiagramKindCheck },
 ];
 
 /**
@@ -500,6 +510,30 @@ export function ensureSchema(db: DatabaseSync): { from: number; to: number } {
 /** 第 1 到 2 步：加阶段记录表。只加表，不动已有的表与数据；新建的库在建表语句里已经带着它，这一步对它什么都不改。 */
 function addStageRecords(db: DatabaseSync): void {
   db.exec(STAGE_RECORD_SQL);
+}
+
+/** 图的内容表的各列，按建表语句里的先后。 */
+const DIAGRAM_VERSION_COLUMNS = "task_id, diagram_id, revision_no, op, name, kind, mermaid, note, actor, session_id, call_id, created_at, event_seq";
+
+/**
+ * 第 2 到 3 步：去掉图的内容表里种类一列的检查。SQLite 改不了已有的表的检查，所以重建：建一张不带这条检查的新表，把旧行原样抄过去，
+ * 删掉旧表，把新表改成原来的名字（与 migrateSourcesToElements 同一个做法）。行数与每一行的内容都不变。
+ * 库里这张表的建表语句已经不带这条检查（新建的库、做过这一步的库）时什么都不改。
+ */
+function dropDiagramKindCheck(db: DatabaseSync): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'diagram_version'").get() as { sql: string } | undefined;
+  if (!row) {
+    db.exec(DIAGRAM_SQL);
+    return;
+  }
+  if (!/CHECK\s*\(\s*kind\s+IN\b/i.test(row.sql)) return;
+  db.exec("DROP TABLE IF EXISTS diagram_version_new");
+  db.exec(diagramVersionSql("diagram_version_new"));
+  db.exec(`
+    INSERT INTO diagram_version_new (${DIAGRAM_VERSION_COLUMNS}) SELECT ${DIAGRAM_VERSION_COLUMNS} FROM diagram_version;
+    DROP TABLE diagram_version;
+    ALTER TABLE diagram_version_new RENAME TO diagram_version;
+  `);
 }
 
 /**

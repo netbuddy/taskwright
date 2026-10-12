@@ -1,6 +1,6 @@
 /**
  * 工作的阶段里读写库的那一半（src/lib/stage_read.ts）：没有记录时的缺省、记一次移动、读最近一条；
- * 以及阶段记录表怎样补到已有的库里（格式版本 1 到 2）。
+ * 以及阶段记录表怎样补到已有的库里（格式版本 1 的库升级时补上）。
  */
 
 import assert from "node:assert/strict";
@@ -64,7 +64,7 @@ test("早先建的任务（任务定义里没有总体分析集合）没有阶�
   assert.equal(write(dir, (db) => stageOf(db, dir, taskId, validateDefinition(demoDefinition()))), null);
 });
 
-test("格式版本 1 的库没有阶段记录表：只读的一侧当作没有记录；写入一侧打开时升到版本 2 补上表，原有的行都还在", () => {
+test("格式版本 1 的库没有阶段记录表：只读的一侧当作没有记录；写入一侧打开时升到现在的版本并补上表，原有的行都还在", () => {
   const { dir, taskId } = workspace();
   write(dir, (db) => db.exec("DROP TABLE stage_record; PRAGMA user_version = 1"));
   const ro = new DatabaseSync(databasePath(dir), { readOnly: true });
@@ -77,8 +77,7 @@ test("格式版本 1 的库没有阶段记录表：只读的一侧当作没有�
     ro.close();
   }
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 1, to: TASK_DB_VERSION });
-  assert.equal(TASK_DB_VERSION, 2);
-  assert.equal(query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version, 2);
+  assert.equal(query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version, TASK_DB_VERSION);
   assert.equal(query(dir, "SELECT task_id FROM task").length, 1, "任务那一行还在");
   write(dir, (db) => recordStageMove(db, { taskId, sessionId: "s", runId: "r1", callId: "c", actor: "executor", from: "reading", to: "clarifying", reason: "读完了。" }));
   assert.equal(query(dir, "SELECT * FROM stage_record").length, 1);
