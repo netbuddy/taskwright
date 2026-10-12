@@ -286,8 +286,8 @@
        "摘要算法": "SHA-256 取前 16 位十六进制",
        "文件": [
         {
-         "字节数": 7946,
-         "摘要值": "1cafa954acf0bf7f",
+         "字节数": 7964,
+         "摘要值": "2cbddb21efcb544e",
          "路径": ".pi/skills/srs-authoring/SKILL.md"
         },
         {
@@ -472,7 +472,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"06c6fc834c41ae5c\",\"bytes\":76798,\"lines\":326,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":62327,\"lines\":237,\"digest\":\"c7da59159ac846b9\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7644,\"lines\":30,\"digest\":\"3f9be2fd945ac571\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4353,\"lines\":32,\"digest\":\"3fe9291498798cc3\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"616ce6a765fa54e3\",\"bytes\":76816,\"lines\":326,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":62327,\"lines\":237,\"digest\":\"c7da59159ac846b9\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7662,\"lines\":30,\"digest\":\"70e8d45a759591da\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4353,\"lines\":32,\"digest\":\"3fe9291498798cc3\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",
