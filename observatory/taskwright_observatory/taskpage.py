@@ -901,7 +901,8 @@ EXT_BRIEF_CHARS = 80
 #: 界面点击投进来的那句话与它触发的那次运行，开始时刻之差（运行减点击，单位秒）落在这个范围里就算对上。
 CLICK_WINDOW = (-1.0, 5.0)
 #: 扩展写进会话的自定义消息按类型分成几种行；没有登记的类型叫「扩展消息」。
-EXT_KIND = {"taskwright-user-edit": "用户操作", "taskwright-task-status": "任务现状", "taskwright-ui-click": "界面点击"}
+EXT_KIND = {"taskwright-user-edit": "用户操作", "taskwright-task-status": "任务现状", "taskwright-ui-click": "界面点击",
+            "taskwright-card-typed": "卡片里的回复"}
 EXT_NOTE = {
     "用户操作": "用户在网页上直接做的操作（改交付物，或把条目标成看过），没有经过助手，所以不是一次运行；扩展把这件事记进了会话，助手下一次运行时会看到。",
     "任务现状": "扩展在会话开始（或续接）时写进会话的任务现状，不是用户打的字，也不是一次运行；助手下一次运行时会看到。",
