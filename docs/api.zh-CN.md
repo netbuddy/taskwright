@@ -156,7 +156,7 @@ data: {
 | `modeling` | `roles_in_context_and_use_cases` | 每页标签为「角色」的主题，编号既写在某张系统边界图的 Mermaid 文本里，又写在某张用例图的文本里。 |
 | `modeling` | `concepts_related_in_class` | 每页标签为「概念」的主题在某张对象关系图里至少有一条关系线连着它。 |
 | `modeling` | `flows_have_flowchart_with_branch` | 每页标签为「流程」的主题有一张以它为来源的流程图，而且图里有判断节点（花括号的菱形）。 |
-| `modeling` | `stateful_concepts_have_state` | 每页说到状态的「概念」主题有一张以它为来源的状态图。说没说到状态按字面认：「它是什么」或「已经定下的」里有「状态」「变成」或者「从……变为……」。 |
+| `modeling` | `stateful_concepts_have_state` | 有状态的「概念」主题都有状态图。两部分一起看：已经有一张以它为来源的状态图的概念页算有图；「它是什么」或「已经定下的」里说到状态（按字面认：有「状态」「变成」或者「从……变为……」）而没有状态图的概念页是差的。有差的不通过，`items` 是这些页；没有差的而至少一页有图，通过；两样都没有，不适用。 |
 | `modeling` | `no_duplicate_titles` | 没有两页在用的主题标题或别名相同。 |
 | `modeling` | `no_untagged_pages` | 没有还没贴标签的主题。 |
 | `modeling` | `rules_no_conflict` | 各页「已经定下的」之间没有还没了结的规则冲突：没有「事项」以「规则冲突：」开头、状态仍是未解决的问题条目。`items` 是这些问题条目。 |
@@ -223,7 +223,8 @@ data: {
 | `POST …/materials/replace?path=…`（multipart，单文件） | 用另一个文件替换一份还没有进入对话的材料 | `{ok, path, replaced}`；已经进入对话的返回 `rejected`；见第 5.1 节「替换材料」 |
 | `GET …/knowledge`、`POST …/knowledge` `{libraries}` | 这个任务选用的知识库，以及改选用 | 见第 11 节 |
 | `GET …/conversation?session=…&before={message_id}&limit=100` | 更早的对话 | 形状与第 4.1 节 `conversation` 相同 |
-| `POST …/documents/preview` 与 `…/download` `{"revision_no": N, "items": [编号…], "format": "markdown"}` | 按某一次修订（缺省为最新）渲染整份交付物，也可以只列出其中几个条目 | 预览：`{ok, text}`；下载：文件本身。文档写明它按哪次修订生成，并在每个条目上标出它的内容来自哪次修订、在那次修订上有没有确认与评审；确认写明依据：已读、用户修改或明确确认。修订号超过最新修订，或列出的条目在那次修订时不在交付物里，返回 `bad_request` |
+| `POST …/documents/preview` 与 `…/download` `{"revision_no": N, "items": [编号…], "format": "markdown"}` | 按某一次修订（缺省为最新）渲染整份交付物，也可以只列出其中几个条目 | 预览：`{ok, text}`；下载：文件本身。`text` 是 Markdown：任务名与生成说明、目录、业务说明七章（章与节号同页面的目录）、需求条目各集合、追溯附录；图写成带图编号的代码块（```` ```mermaid D-004 ````）。文档写明它按哪次修订生成，并在每个条目上标出它的内容来自哪次修订、在那次修订上有没有确认与评审；确认写明依据：已读、用户修改或明确确认。页与条目取那次修订时的内容，图取它现在的内容。修订号超过最新修订，或列出的条目在那次修订时不在交付物里，返回 `bad_request` |
+| `POST …/documents/download` `{"format": "docx", "whole": true, "revision_no": N, "items": [编号…], "images": [{diagram_id, png, width, height}]}` | 整份文档的 Word 文件（.docx）：与上一行同一份内容，照同一批内容块写 | 文件本身；文件名「任务名-修订N.docx」写在 `Content-Disposition` 里（写法同下一行）。一个井号的标题是文档标题，二到四个井号依次是标题 1 到标题 3；开头的目录是标题的清单，没有页码。`images` 是文档里用到的图各一张 PNG：`png` 是文件内容的 base64，`width`、`height` 是它在文档里按多大排（像素，宽度超过版心时同比例缩小）；任务服务画不了图，所以由客户端画好交来。没有交来图片的图，在它的位置写一句说明与它的 Mermaid 文本。最多 80 张、合计 40 MB；写得不对（不是列表、缺项、不是 PNG）返回 `bad_request`。只能下载，不能预览 |
 | `POST …/documents/download` `{"format": "docx", "items": [编号…], "with_sources": true}` | 把列出的条目导出成一份 Word 文件（.docx） | 文件本身；文件名「任务名-条目-年-月-日.docx」写在 `Content-Disposition` 里：带中文的写在 `filename*`（UTF-8），旁边另有一个只有英文数字的 `filename`。每个条目导出的是它最新的修订，已删除的条目不导出。条目按集合分段，集合照任务定义里的先后，集合名作标题 1；每个条目一行标题 2（编号加名称），接一张两列的表，集合声明的字段每个一行：文本列表每项一段、带序号，别的多值用顿号连起来，空字段写「（空）」。`with_sources`（缺省 `true`）为真时表的最后一行是「来源」，一条来源一段，写成「种类 · 出处：摘录」，条目没有来源时写「（无）」。`items` 必填、不能是空的；列了交付物里从来没有过的编号、列出的条目都已删除、写了 `revision_no`（导出的总是最新的修订），或者对 `…/preview` 用这个格式，都返回 `bad_request` |
 
 ## 5 对话
@@ -288,7 +289,7 @@ data: {
 | choose（编写文档阶段请过目的卡片） | 「看过了，生成文档」／「需要修改」 | 都不发话。「看过了，生成文档」先发 `/actions` 的 `continue_stage`（`option_key` 为 `document_reviewed`），再对卡片点名的页发 `mark_viewed`（不带 `notify_executor`）；「需要修改」只发 `continue_stage` |
 | suggest（建议） | 采纳 / 换一个 | `/messages` |
 | propose（提议） | 就这样做 / 不要 | `/messages` |
-| ask（针对某个问题条目） | 先不管 | `/actions`，kind 为 `keep_pending`，`notify_executor: true` |
+| ask（针对某个问题条目） | 暂不处理（页面上的字；发的话里仍是「先不管」） | `/actions`，kind 为 `keep_pending`，`notify_executor: true` |
 | ask（针对条目） | 我不知道，你按常识补 | `/messages` |
 
 问这个任务是否已经完成的请选择卡片，有一项的 `key` 是 `complete`（文字「已完成，提交交付物」），另一项的文字是「还没完成，继续修改」。智能体的 `complete_task` 只在最近一次对这种卡片的点击点的是 `complete`、而且点了之后交付物没有新的修订时才成功；打字发来的消息不算。
@@ -350,7 +351,7 @@ data: {
 | 「先不管」之后 | `我先不管 {item id}，请接着往下做。` |
 | 在 ask 卡片上选「我不知道」 | `关于 {item ids}，我不知道，你按常识补上并标明是你补的。` |
 | 在没挂条目的 ask 卡片上选「我不知道，你按常识补」（`card.choice` 是 `不知道`） | `这个我不知道，你按常识补上并标明是你补的。` |
-| 在没挂条目的 ask 卡片上选「先放着」（`card.choice` 是 `先放着`） | `这个问题先放着，接着往下做。` |
+| 在没挂条目的 ask 卡片上选「暂不处理」（`card.choice` 是 `暂不处理`；这一版之前是「先放着」） | `这个问题暂不处理，接着往下做。` |
 
 直接操作还会在会话里追加一条标记为界面操作的消息，例如 `界面操作（不是用户打的字）：用户改了 UC-002 的「基本流程」，产生修订 5，UC-002 现在是修订 5。`
 
@@ -396,7 +397,7 @@ data: {
    - `capabilities.knowledge` 在服务有知识库时为 `true`（第 11 节）。这时回答里另有 `knowledge_upload`：知识库文档的上传，五项与 `upload` 相同（上限是 20 MB，`too_large_text` 是「单个文件不能超过 20 MB。」），另加 `kinds`：文档的种类与中文叫法，`[{kind, name}]`。网页界面只在 `capabilities.knowledge` 为 `true` 时显示「知识库」入口、上传时先问去向。
    - `POST /api/v1/service/exit` 只在以 `--mode desktop` 启动时存在，以 `--mode server` 启动时返回 `not_found`。它只接受来自本机回环地址（`127.0.0.1` 或 `::1`；`::ffff:127.0.0.1` 是 IPv4 回环地址在 IPv6 套接字上的写法，也算本机）的请求，其他来源一律返回 `forbidden`（403）。它先回答 `{ "ok": true }`，再照收到 SIGTERM 时的做法收尾：停止接收新连接、向每一条打开着的事件流发 `service_exiting`、关掉各任务的 pi、删掉本服务写的占用标记，然后退出进程。它只供 0.3 的过渡安装包使用（这种包由服务自己打开浏览器，没有桌面外壳）；最终的桌面版由外壳停止服务，这个接口不承诺长期保留。
    - 回答里另有 `pack_upload`：经接口导入数据包时的上限，`{ "max_bytes": 1073741824, "too_large_text": "在这里导入的数据包不能超过 1 GB。更大的数据包请用命令行导入。" }`（第 12 节）。
-   - `GET /api/v1/service/upgrade` 返回 `{ "ok": true, "upgrade": … }`。没有要做的数据升级时 `upgrade` 是 `null`。有时它是 `{state, data_dir, backup_dir, tasks: [{task_id, name}], service, knowledge, progress, report}`：`state` 是 `pending`（等着开始）、`running`（正在做）、`done`（做完了，个别任务没有做成也算）或 `failed`（整体没有做成，一个任务都没有动，可以再试）；`backup_dir` 是升级之前的备份会放进去的目录；`tasks` 是要升级的任务；`service` 与 `knowledge` 说任务登记与知识库要不要升级（知识库现在恒为假）；`progress` 是 `{total, done, current}`（一共几项、做完了几项、正在做的那一项的一句话），还没有开始时是 `null`；`report` 在做完或整体没有做成之后有，是 `{product_version, started_at, finished_at, data_dir, backup: {dir, bytes, files} | null, service, tasks: [{dir, task_id, name, from, to, ok, error, ms}], succeeded, failed, fatal, file, text}`，其中 `fatal` 是整体没有做成的原因，`file` 是报告写进的文件，`text` 是给人看的整段文字（页面原样显示）。`POST /api/v1/service/upgrade` 开始升级（`state` 是 `failed` 时是再试一次），立刻返回 `{ "ok": true, "started": true | false, "upgrade": … }`，升级在后面做，进度用前一个接口取（页面每半秒取一次）；正在做或已经做完时 `started` 为假。它不限来源，能打开页面的人就能开始（升级之前有备份，升级不改任务的内容）；没有要做的升级时返回 `rejected`。数据升级怎样做、备份与报告在哪里，见部署说明第 8.1 节。
+   - `GET /api/v1/service/upgrade` 返回 `{ "ok": true, "upgrade": … }`。没有要做的数据升级时 `upgrade` 是 `null`。有时它是 `{state, data_dir, backup_dir, tasks: [{task_id, name}], service, knowledge, progress, report}`：`state` 是 `pending`（等着开始）、`running`（正在做）、`done`（做完了，个别任务没有做成也算）或 `failed`（整体没有做成，一个任务都没有动，可以再试）；`backup_dir` 是升级之前的备份会放进去的目录；`tasks` 是要升级的任务；`service` 与 `knowledge` 说任务登记与知识库要不要升级（知识库现在恒为假）；`progress` 是 `{total, done, current}`（一共几项、做完了几项、正在做的那一项的一句话），还没有开始时是 `null`；`report` 在做完或整体没有做成之后有，是 `{product_version, started_at, finished_at, data_dir, tasks_dir, backup: {dir, bytes, files} | null, service, tasks: [{dir, task_id, name, from, to, ok, error, ms}], succeeded, failed, fatal, file, text}`，其中 `fatal` 是整体没有做成的原因，`file` 是报告写进的文件，`text` 是给人看的整段文字（页面原样显示）。`POST /api/v1/service/upgrade` 开始升级（`state` 是 `failed` 时是再试一次），立刻返回 `{ "ok": true, "started": true | false, "upgrade": … }`，升级在后面做，进度用前一个接口取（页面每半秒取一次）；正在做或已经做完时 `started` 为假。它不限来源，能打开页面的人就能开始（升级之前有备份，升级不改任务的内容）；没有要做的升级时返回 `rejected`。数据升级怎样做、备份与报告在哪里，见部署说明第 8.1 节。
    - 运行形态（`--mode desktop|server`，缺省 `server`）决定默认绑定地址（`desktop` 为 `127.0.0.1`，`server` 为 `0.0.0.0`，两种形态下 `--host` 都优先）以及退出接口是否存在；其余行为两种形态完全相同。运行形态会写进启动日志和各任务的占用标记（`service.lock` 里的 `mode` 一项）。
 
 ## 10 模型配置
