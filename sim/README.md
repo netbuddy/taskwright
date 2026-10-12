@@ -85,9 +85,9 @@ Langfuse 环境标签是 `sim-<序号>`，执行者与用户 agent 两边相同�
 以及评审者自己的提示词，不算在版本里。提示词版本做出来之前跑的评测，汇总里没有这一项；对照时照它各遍的演练目录现读，目录不在了就写取不到。
 
 ```bash
-# 跑一次评测：三遍，每遍最多 30 轮（画像里的隐藏事实多，缺省的 12 轮问不完）
+# 跑一次评测：三遍，每遍最多 60 轮（评测的缺省值；要改就加 --max-rounds）
 python3 -m sim.evals run --persona sim/personas/library-short.json --expect sim/expectations/library-short.json \
-    --materials-dir examples/library-lending --repeat 3 --max-rounds 30 --port 8791 --label <这一次评测的名字>
+    --materials-dir examples/library-lending --repeat 3 --port 8791 --label <这一次评测的名字>
 
 # 换了清单，或者往画像的「答不上的说法」里加了新说法之后，对跑过的一遍重算（同一次评测的另外几遍一并重算）
 python3 -m sim.evals judge <演练目录> [--expect <清单文件>] [--persona <画像文件>]

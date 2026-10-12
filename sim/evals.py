@@ -3,11 +3,12 @@
 用法（在代码仓根目录下）：
 
     python3 -m sim.evals run --persona sim/personas/library-short.json --expect sim/expectations/library-short.json \
-        --materials-dir examples/library-lending --repeat 3 --port 8791 --label <这一次评测的名字> [--max-rounds 30] [--sim-root ./sim-runs]
+        --materials-dir examples/library-lending --repeat 3 --port 8791 --label <这一次评测的名字> [--max-rounds 60] [--sim-root ./sim-runs]
     python3 -m sim.evals judge <演练目录> [--expect <清单文件>] [--persona <画像文件>]
     python3 -m sim.evals compare <前一次的标签> <后一次的标签> [--sim-root ./sim-runs]
 
-run：演练的参数与 sim.run 相同（内部调它的 run_once，每遍各自起后端、各自出判定报告）。每遍跑完算灯（sim/lamps.py）、核对清单
+run：演练的参数与 sim.run 相同（内部调它的 run_once，每遍各自起后端、各自出判定报告），只有每遍的轮数上限缺省是 60 而不是 12：
+工作分了阶段之后，一遍要经过好几张进入下一段的卡片，轮数少了走不到写条目。每遍跑完算灯（sim/lamps.py）、核对清单
 （sim/expectations.py）、列出助手问过的问题与模拟用户答不上的问题（sim/questions.py），并记下这一遍助手用的提示词版本与每份文件的摘要值
 （读自后端启动助手时的补记，怎样算在观测台的 taskwright_observatory/evals.py 里），写进该遍目录的「评测.json」。
 全部跑完在 sim-root 下写「评测汇总_<标签>.md」与「评测汇总_<标签>.json」，并往「evals.jsonl」追加一行。某一遍中途出错，
@@ -44,6 +45,8 @@ RUN_FILE = "评测.json"
 #: 演练根目录下的两种文件名，读它们的观测台与写它们的这里用同一份。
 LIST_FILE = eval_files.LIST_FILE
 SUMMARY_PREFIX = eval_files.SUMMARY_PREFIX
+#: 评测里每遍的轮数上限的缺省值（--max-rounds）。单跑一遍演练（sim.run）的缺省仍是 12。
+MAX_ROUNDS = 60
 
 
 def summary_path(root: Path, label: str, suffix: str) -> Path:
@@ -358,10 +361,12 @@ def command_compare(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
+    """评测的命令行：返回整个命令行与其中 run 子命令的那一份（报参数错误时用后者）。"""
     parser = argparse.ArgumentParser(prog="python3 -m sim.evals", description="评测：多遍演练，每遍算灯与「至少应有」清单，合成汇总。")
     commands = parser.add_subparsers(dest="command", required=True)
     run_parser = commands.add_parser("run", parents=[run.build_parser(add_help=False)], help="接连演练几遍并写评测汇总")
+    run_parser.set_defaults(max_rounds=MAX_ROUNDS)
     run_parser.add_argument("--expect", required=True, help="「至少应有」清单文件")
     run_parser.add_argument("--label", required=True, help="这一次评测的名字，例如助手说明的版本；在一个 sim-root 里不能重复")
     judge_parser = commands.add_parser("judge", help="对一遍跑过的演练重算评测")
@@ -372,6 +377,11 @@ def main(argv: list[str] | None = None) -> int:
     compare_parser.add_argument("first", help="前一次评测的标签")
     compare_parser.add_argument("second", help="后一次评测的标签")
     compare_parser.add_argument("--sim-root", default=str(Path.cwd() / "sim-runs"))
+    return parser, run_parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser, run_parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "run":
         return command_run(args, run_parser)
