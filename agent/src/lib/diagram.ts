@@ -103,3 +103,47 @@ export function drawnItemIds(mermaid: string, prefixes: readonly string[]): stri
   for (const hit of mermaid.match(pattern) ?? []) if (!out.includes(hit)) out.push(hit);
   return out;
 }
+
+// ───────────── 用户看没看过一张图 ─────────────
+
+/**
+ * 用户打开看过一张图时记的事件（界面操作 mark_diagram_viewed，lib/user_diagram.ts）。内容是 { diagrams: [{ diagram_id, revision_no }] }：
+ * 看的是哪张图、当时它是第几次修订。图的看过只记成事件，不另设表：条目的确认标记表（judgement_item）指到的每一行都要在条目内容表里，
+ * 放不下图。
+ */
+export const EVENT_DIAGRAM_VIEWED = "DIAGRAM_VIEWED";
+
+const viewKey = (diagramId: string, revisionNo: number): string => `${diagramId}\u0000${revisionNo}`;
+
+/** 任务里用户看过的「图加修订」：每项是图的编号与修订号拼成的键（见 diagramViewed）。一条这样的事件都没有时是空集合。 */
+export function viewedDiagramRevisions(db: DatabaseSync, taskId: string): Set<string> {
+  const rows = db.prepare("SELECT payload FROM event WHERE task_id = ? AND name = ? ORDER BY seq").all(taskId, EVENT_DIAGRAM_VIEWED) as { payload: string }[];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {
+      continue;
+    }
+    const list = (payload as { diagrams?: unknown } | null)?.diagrams;
+    if (!Array.isArray(list)) continue;
+    for (const one of list as { diagram_id?: unknown; revision_no?: unknown }[]) {
+      if (typeof one?.diagram_id === "string" && Number.isInteger(one.revision_no)) seen.add(viewKey(one.diagram_id, one.revision_no as number));
+    }
+  }
+  return seen;
+}
+
+/**
+ * 用户看没看过一张图现在的内容，与条目的判法相同（lib/overall_analysis.ts 的 viewedIn）：从最近一次不是用户亲手改出来的修订起、
+ * 到它现在的修订为止的这一段里，有一次修订用户打开看过。用户看过之后自己再改，仍算看过；助手又改出新的修订，就要再看一次；
+ * 用户亲手改不等于看过。seen 是 viewedDiagramRevisions 读出来的集合。
+ */
+export function diagramViewed(record: DiagramRecord, seen: ReadonlySet<string>): boolean {
+  let from = 0;
+  record.versions.forEach((one, index) => {
+    if (one.actor !== "user") from = index;
+  });
+  return record.versions.slice(from).some((one) => seen.has(viewKey(record.diagram_id, one.revision_no)));
+}

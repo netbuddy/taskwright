@@ -101,6 +101,29 @@ test("条目依据图：条目的来源带依据的现状（图之后改了是�
   assert.deepEqual(library.diagramDetail(deleted, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 2 }]);
 });
 
+test("用户看没看过一张图：图的列表带 viewed；助手改过之后回到没看过；看图的事件写成接口事件 diagram_viewed", () => {
+  const FLOW = "flowchart TD\n  s([开始]) --> e([结束])";
+  const drawn = (name: string) => ({ said: `画一张${name}`, diagram: { name, kind: "flowchart", mermaid: FLOW, sources: [{ kind: "用户的话", excerpt: `画一张${name}` }] } });
+  const dir = makeLegacyTask(join(tmp, "figure-viewed", "tasks"), { "材料.md": "读者凭口令登录。" }, [
+    drawn("登录流程"), drawn("办证流程"), drawn("挂失流程"),
+    // 用户看过 D-001 与 D-002；之后助手改了 D-002。
+    { view: ["D-001", "D-002"] },
+    { diagram: { diagram: "D-002", base_revision: 1, note: "助手改了说明。" } },
+  ]);
+  assert.deepEqual(library.diagramList(dir).map((one) => [one.diagram_id, one.revision_no, one.viewed]), [["D-001", 1, true], ["D-002", 2, false], ["D-003", 1, false]]);
+  assert.equal(library.diagramDetail(dir, "D-001")!.viewed, true);
+  const db = library.openRo(dir)!;
+  let data;
+  try {
+    data = library.readAll(db, 0);
+  } finally {
+    db.close();
+  }
+  const views = data.events!.filter((e) => e.name === "DIAGRAM_VIEWED").map((e) => library.eventPayload(new library.Library(data), e)!);
+  assert.deepEqual(views.map(([name, body]) => [name, body.diagrams, typeof body.op_id, typeof body.seq, typeof body.at]),
+    [["diagram_viewed", [{ diagram_id: "D-001", revision_no: 1 }, { diagram_id: "D-002", revision_no: 1 }], "string", "number", "string"]]);
+});
+
 test("图里画了谁：从 Mermaid 文本里扫出来的条目编号，带条目现在的标题与状态", () => {
   assert.deepEqual(library.diagramDetail(ws, "D-001")!.drawn, [
     { item_id: "UC-001", title: "登录", state: "live" },
@@ -272,6 +295,21 @@ test("用户改图：没有这张图、图已经删除、请求写得不对，�
     executor.state = "working";
     await assert.rejects(executor.action("S1", edit("D-001", "flowchart LR\n  a --> b")), (e: ApiError) => e.code === "session_busy");
     assert.deepEqual([calls, asked], [[], []]);
+  } finally {
+    restore();
+  }
+});
+
+test("用户看图：不校验文本，助手工作中也照样转交助手一侧（它不改图的内容）；转交的命令带种类、目标与操作编号", async () => {
+  const { executor, calls, asked, restore } = editing(async () => ({ ok: true }));
+  try {
+    executor.state = "working";
+    const opId = await executor.action("S1", { client_id: "c1", kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-001", base_revision: 2 }] });
+    assert.match(opId, /^ui-op-[0-9a-f]{12}$/);
+    assert.deepEqual(asked, []);
+    assert.deepEqual(calls.map((one) => JSON.parse(one.slice("/tw-user ".length))), [
+      { kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-001", base_revision: 2 }], op_id: opId },
+    ]);
   } finally {
     restore();
   }

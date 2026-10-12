@@ -29,8 +29,8 @@ const ALLOWED: Record<string, string[]> = {
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
   "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames"],
-  // 图：种类与编号的常量、从库里读图、从 Mermaid 文本里扫条目编号（只读与只做计算的函数，不写库）。
-  "diagram.ts": ["DIAGRAM_KINDS", "DiagramRecord", "drawnItemIds", "kindName", "latestVersion", "liveDiagrams", "readDiagrams"],
+  // 图：种类与编号的常量、从库里读图、从 Mermaid 文本里扫条目编号、用户看过哪些图（只读与只做计算的函数，不写库）。
+  "diagram.ts": ["DIAGRAM_KINDS", "DiagramRecord", "diagramViewed", "drawnItemIds", "kindName", "latestVersion", "liveDiagrams", "readDiagrams", "viewedDiagramRevisions"],
   // 从 Mermaid 文本里扫东西（只做计算）：系统边界图画没画出系统与系统外面的节点，保存前的校验用。
   "diagram_scan.ts": ["contextShape"],
   // TASK_ID_PATTERN 是任务编号的写法（一个正则），数据包导入时用它核对包里写的编号。

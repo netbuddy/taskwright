@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
-import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
+import { type DiagramRecord, diagramViewed, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { pdfFacts, pdfSourceName } from "./projection.ts";
 import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
@@ -400,6 +400,8 @@ export interface LibraryData {
   /** 任务里的全部图（删掉的也在）与图的来源（键是图的编号加图自己的修订号）。还没有图的表的旧库里是空的。 */
   diagrams?: DiagramRecord[];
   diagram_sources?: Map<string, SourceRow[]>;
+  /** 用户看过的「图加修订」（agent/src/lib/diagram.ts 的 viewedDiagramRevisions）。 */
+  diagram_views?: Set<string>;
   event_meta?: Map<number, { actor: any; at: any; call_id: any }>;
   reviews?: Row[];
   findings?: Map<number, any[]>;
@@ -435,6 +437,7 @@ export function readAll(db: DatabaseSync, afterSeq: number | null = null, withRe
       sources: readSources(db, tid),
       diagrams: readDiagrams(db, tid),
       diagram_sources: readSources(db, tid, ELEMENT_FIGURE),
+      diagram_views: viewedDiagramRevisions(db, tid),
       event_meta: eventMeta,
       reviews: readReviews(db, tid),
       findings: readFindings(db, tid),
@@ -570,7 +573,10 @@ export class Library {
     return (this.data.diagram_sources?.get(itemKey(diagramId, revisionNo)) || []).map((row) => this.withBasisState(sourceView(row)));
   }
 
-  /** 图的列表里的一项：编号、图名、种类、它自己现在的修订号、最近一次是谁在什么时候改的、什么时候画的、有几条来源。 */
+  /**
+   * 图的列表里的一项：编号、图名、种类、它自己现在的修订号、最近一次是谁在什么时候改的、什么时候画的、有几条来源，
+   * 以及用户看没看过它现在的内容（viewed，判法见 agent/src/lib/diagram.ts 的 diagramViewed：助手改过之后要再看一次）。
+   */
   diagramRow(record: DiagramRecord) {
     const now = latestVersion(record)!;
     return {
@@ -578,6 +584,7 @@ export class Library {
       revision_no: now.revision_no, revision_by: actorWord(now.actor), revision_at: clock.fromLocalText(now.created_at),
       created_at: clock.fromLocalText(record.versions[0].created_at),
       source_count: (this.data.diagram_sources?.get(itemKey(record.diagram_id, now.revision_no)) || []).length,
+      viewed: diagramViewed(record, this.data.diagram_views ?? new Set()),
     };
   }
 
@@ -901,6 +908,8 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
       status_after: or(payload.status_after, "已完成"), actor, completion: null }];
   }
   if (e.name === "ITEM_VIEWED") return ["item_viewed", { ...base, items: or(payload.items, []), op_id: opId, completion: null }];
+  // 用户打开看了一张图：diagrams 每项是图的编号与用户看到的那一次修订号。
+  if (e.name === "DIAGRAM_VIEWED") return ["diagram_viewed", { ...base, diagrams: or(payload.diagrams, []), op_id: opId }];
   if (e.name === "REVIEW_RECORDED") {
     return ["review_recorded", { ...base, item_id: payload.item_id ?? null, revision_no: payload.revision_no ?? null, verdict: payload.verdict ?? null,
       reason: payload.reason ?? null, findings: (or(payload.findings, []) as Record<string, any>[]).map(findingView),

@@ -40,7 +40,7 @@ import { REVIEW_OP_KIND, STOP_RUN_KIND, STOP_RUN_NOTE, UserOpError, checkReviewR
 import { ReviewError } from "../lib/review.ts";
 import { piComplete, startReview } from "../lib/review_ui.ts";
 import { batchCounts } from "../lib/review_run.ts";
-import { DIAGRAM_OP_KIND, editDiagram } from "../lib/user_diagram.ts";
+import { DIAGRAM_OP_KIND, DIAGRAM_VIEW_OP_KIND, editDiagram, markDiagramViewed } from "../lib/user_diagram.ts";
 import { recordStageCardClick } from "../lib/stage_read.ts";
 
 export const USER_COMMAND = "tw-user";
@@ -93,6 +93,17 @@ export function registerUserCommands(pi: ExtensionAPI): void {
         // 用户在界面上停止了这一次运行：后端在运行停下之后发来，这里只留一条通知，不写库。
         pi.sendMessage({ customType: USER_EDIT_CUSTOM_TYPE, content: STOP_RUN_NOTE, display: true, details: stopRunDetails(opId) });
         report({ ok: true, event_seqs: [], results: [], revision_no: null });
+        return;
+      }
+      if (request.kind === DIAGRAM_VIEW_OP_KIND) {
+        // 用户打开看了一张图：只记一条事件，不往会话里追加任何东西，不经 runUserOperation（lib/user_diagram.ts）。
+        try {
+          const result = markDiagramViewed({ workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId() }, request);
+          report({ ok: true, event_seqs: result.event_seqs, results: result.results, revision_no: null });
+        } catch (error) {
+          if (error instanceof UserOpError) report({ ok: false, error: { code: error.code, message: error.message, data: error.data } });
+          else report({ ok: false, error: { code: "rejected", message: (error as Error).message, data: { reasons: [(error as Error).message] } } });
+        }
         return;
       }
       if (request.kind === DIAGRAM_OP_KIND) {

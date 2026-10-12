@@ -121,6 +121,8 @@ export const executorSettings = {
 
 /** 界面操作的一个种类：用户在页面上改了一张图的 Mermaid 文本。写库之前先在任务服务这里校验（checkDiagramEdit）。 */
 export const EDIT_DIAGRAM = "edit_diagram";
+/** 用户打开看了一张图的界面操作（agent/src/lib/user_diagram.ts 的 DIAGRAM_VIEW_OP_KIND）。 */
+export const MARK_DIAGRAM_VIEWED = "mark_diagram_viewed";
 /** 用户改图、Mermaid 文本没有通过校验时，说明的开头；后面接校验给的原话。 */
 export const DIAGRAM_NOT_SAVED_TEXT = "这张图没有保存：";
 /** 用户改图、校验没有做成时的说明。 */
@@ -515,9 +517,10 @@ export class Executor {
     // 助手不在（已退出、还没启动、续接没接上之后）时与说话一样按需启动并续接这条会话，页面在这些状态下不必设只读；
     // 续接对不上照样报 session_resume_failed，操作不会在接错的会话里执行。没有给会话时不启动，免得为一次操作另开一条会话。
     await this.require(sessionId, sessionId !== null);
-    // 单一写入者规则管的是交付物内容。打开详情写已读（mark_viewed 且不通知执行者）不改内容，是唯一的例外：
-    // 执行者工作中也照写，免得用户这时看过的条目一直显示未读。卡片上点「这几条都看过了」要通知执行者，照旧受限。
-    const viewing = body.kind === "mark_viewed" && !truthy(body.notify_executor);
+    // 单一写入者规则管的是交付物内容。打开详情写已读（mark_viewed 且不通知执行者）与打开看一张图（mark_diagram_viewed）不改内容，
+    // 是仅有的两个例外：执行者工作中也照写，免得用户这时看过的条目一直显示未读、看过的图一直算没看过。
+    // 卡片上点「这几条都看过了」要通知执行者，照旧受限。
+    const viewing = (body.kind === "mark_viewed" && !truthy(body.notify_executor)) || body.kind === MARK_DIAGRAM_VIEWED;
     if (!viewing) await this.lock.run(() => this.turnCheck("action"));
     // 停止通知只由 stop 在真的停下一次工作之后发；直接操作的接口不收，免得没有停下什么却留下一条通知。
     if (body.kind === conversation.STOP_RUN) throw new ApiError("bad_request", "stop_run 不是直接操作，要停下助手请用 control 接口。");

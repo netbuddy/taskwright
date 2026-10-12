@@ -11,7 +11,8 @@ import { databasePath } from "../src/lib/db.ts";
 import { USER_COMMAND, USER_EDIT_CUSTOM_TYPE, USER_RESULT_KEY, registerUserCommands } from "../src/hooks/user_commands.ts";
 import { saveDiagram } from "../src/lib/save_diagram.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DIAGRAM_OP_KIND, diagramEditNote, editDiagram } from "../src/lib/user_diagram.ts";
+import { diagramViewed, readDiagrams, viewedDiagramRevisions } from "../src/lib/diagram.ts";
+import { DIAGRAM_OP_KIND, DIAGRAM_VIEW_OP_KIND, diagramEditNote, editDiagram, markDiagramViewed } from "../src/lib/user_diagram.ts";
 import { UserOpError } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, query } from "./helpers.ts";
 
@@ -146,4 +147,109 @@ test("/tw-user 里的 edit_diagram：改成了往会话里追加一句不可撤�
   assert.deepEqual([refused.op_id, refused.ok, refused.error.code], ["ui-op-8", false, "stale_revision"]);
   assert.equal(sent.length, 1);
   assert.equal(versions(dir).length, 2);
+});
+
+// ───────────── 用户看过一张图 ─────────────
+
+const view = (targets: unknown, over: Record<string, unknown> = {}) => ({ op_id: "ui-op-v1", kind: DIAGRAM_VIEW_OP_KIND, targets, ...over });
+/** 用户看没看过 D-001 现在的内容（只读地打开库来算）。 */
+function viewedNow(dir: string): boolean {
+  const db = new DatabaseSync(databasePath(dir), { readOnly: true });
+  try {
+    const taskId = (db.prepare("SELECT task_id FROM task").get() as { task_id: string }).task_id;
+    return diagramViewed(readDiagrams(db, taskId).find((one) => one.diagram_id === "D-001")!, viewedDiagramRevisions(db, taskId));
+  } finally {
+    db.close();
+  }
+}
+const viewEvents = (dir: string) => query<any>(dir, "SELECT name, actor, call_id, payload FROM event WHERE name = 'DIAGRAM_VIEWED' ORDER BY seq").map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
+const rejectedNow = (run: () => unknown): UserOpError => {
+  try {
+    run();
+  } catch (error) {
+    assert.ok(error instanceof UserOpError, String(error));
+    return error;
+  }
+  throw new Error("没有被拒");
+};
+
+test("用户打开看了一张图：记一条事件，写明哪张图的第几次修订；同一次修订再看不重复记；不往会话里追加东西，不占任何修订号", async () => {
+  const dir = await workspace();
+  assert.equal(viewedNow(dir), false);
+  const result = markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }]));
+  assert.deepEqual({ ...result, event_seqs: result.event_seqs.length },
+    { op_id: "ui-op-v1", kind: "mark_diagram_viewed", event_seqs: 1, results: [{ diagram_id: "D-001", revision_no: 1 }], revision_no: null, note: "", undoable: false });
+  assert.deepEqual(viewEvents(dir), [{ name: "DIAGRAM_VIEWED", actor: "user", call_id: "ui-op-v1", payload: { diagrams: [{ diagram_id: "D-001", revision_no: 1 }] } }]);
+  assert.equal(viewedNow(dir), true);
+  // 再看一次同一次修订：什么都不记。
+  const again = markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }], { op_id: "ui-op-v2" }));
+  assert.deepEqual(again.event_seqs, []);
+  assert.equal(viewEvents(dir).length, 1);
+  assert.equal(versions(dir).length, 1, "图没有多出修订");
+  assert.deepEqual(query<any>(dir, "SELECT MAX(revision_no) AS n FROM revision").map((row) => row.n), [1]);
+  assert.equal(query(dir, "SELECT 1 FROM judgement_item").length, 0, "不写条目的确认标记表");
+});
+
+test("看没看过一张图：助手改过之后要再看一次；用户看过之后自己再改仍算看过；用户亲手改不等于看过", async () => {
+  const dir = await workspace();
+  const executorEdit = (base: number, note: string) => saveDiagram({ ...callIn(dir), userMessages: [] }, { diagram: "D-001", base_revision: base, note }, { validate: async () => ({ ok: true }) });
+  // 修订 1 是助手画的，用户看过。
+  markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }]));
+  assert.equal(viewedNow(dir), true);
+  // 用户自己改出修订 2：仍算看过。
+  await editDiagram(ctx(dir), request(`${MERMAID}\n  a --> b`, { op_id: "ui-op-2" }));
+  assert.equal(viewedNow(dir), true);
+  // 助手改出修订 3：要再看一次。
+  await executorEdit(2, "助手改了说明。");
+  assert.equal(viewedNow(dir), false);
+  // 用户又亲手改出修订 4：没有看过助手那一次，不算看过。
+  await editDiagram(ctx(dir), request(`${MERMAID}\n  b --> a`, { op_id: "ui-op-4", targets: [{ diagram_id: "D-001", base_revision: 3 }] }));
+  assert.equal(viewedNow(dir), false);
+  // 用户打开看了修订 4：从助手那一次（修订 3）起的这一段里有一次看过，算看过。
+  markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 4 }], { op_id: "ui-op-v4" }));
+  assert.equal(viewedNow(dir), true);
+  // 用户看的是早先的修订 1，图现在已经是助手改出的修订 5：照记，但不算看过现在的内容。
+  await executorEdit(4, "助手又改了说明。");
+  assert.equal(viewedNow(dir), false);
+});
+
+test("看图被拒：图不存在或已删除、没有这一次修订、任务已经结束、参数不对；被拒时什么都不记", async () => {
+  const dir = await workspace();
+  assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view([{ diagram_id: "D-009", base_revision: 1 }]))).message, "图 D-009 不存在或已经删除。");
+  assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 7 }]))).message, "图 D-001 没有修订 7。");
+  for (const targets of [[], "D-001", [{ diagram_id: "D-001" }], [{ item_id: "UC-001", base_revision: 1 }]]) {
+    assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view(targets))).code, "bad_request", JSON.stringify(targets));
+  }
+  assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }, { diagram_id: "D-001", base_revision: 1 }]))).message, "targets 里有重复的图。");
+  assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }], { op_id: "op-1" }))).code, "bad_request");
+  assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }], { task_id: "T-另一个" }))).code, "bad_request");
+  // 一批里有一张不存在：整批不记。
+  assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }, { diagram_id: "D-002", base_revision: 1 }]))).code, "rejected");
+  assert.equal(viewEvents(dir).length, 0);
+  const raw = new DatabaseSync(databasePath(dir));
+  raw.exec("UPDATE task SET status = '已完成'");
+  raw.close();
+  assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }]))).code, "task_closed");
+  assert.equal(viewEvents(dir).length, 0);
+});
+
+test("/tw-user 里的 mark_diagram_viewed：记下并回报成功，不往会话里追加任何东西；被拒时回报错误码与说明", async () => {
+  const dir = await workspace();
+  const sent: any[] = [];
+  const commands = new Map<string, any>();
+  registerUserCommands({ registerCommand: (name: string, spec: any) => commands.set(name, spec), sendMessage: (message: any) => sent.push(message), sendUserMessage() { throw new Error("看图不该另外发话"); } } as any);
+  const status: Record<string, string> = {};
+  const fake = { mode: "rpc", cwd: dir, sessionManager: { getSessionId: () => "sess-ui" }, ui: { setStatus: (key: string, value: string) => (status[key] = value), notify() {} } };
+  const handler = commands.get(USER_COMMAND).handler as (args: string, ctx: any) => Promise<void>;
+
+  await handler(JSON.stringify(view([{ diagram_id: "D-001", base_revision: 1 }], { op_id: "ui-op-9" })), fake);
+  const done = JSON.parse(status[USER_RESULT_KEY]);
+  assert.deepEqual({ ...done, event_seqs: done.event_seqs.length }, { op_id: "ui-op-9", ok: true, event_seqs: 1, results: [{ diagram_id: "D-001", revision_no: 1 }], revision_no: null });
+  assert.equal(sent.length, 0);
+  assert.equal(viewedNow(dir), true);
+
+  await handler(JSON.stringify(view([{ diagram_id: "D-404", base_revision: 1 }], { op_id: "ui-op-10" })), fake);
+  const refused = JSON.parse(status[USER_RESULT_KEY]);
+  assert.deepEqual([refused.op_id, refused.ok, refused.error.code, refused.error.message], ["ui-op-10", false, "rejected", "图 D-404 不存在或已经删除。"]);
+  assert.equal(sent.length, 0);
 });
