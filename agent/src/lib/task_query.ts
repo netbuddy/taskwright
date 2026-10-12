@@ -10,6 +10,7 @@
  *
  * 对话理解：调用方给了会话编号时，两个工具的返回末尾另加三个派生事实（还在等回应的执行者行为、连续追问、改口，
  * 见 lib/dialogue_acts.ts 的 dialogueFacts），查看条目只算这个条目的；details.dialogue 是同一份结构化内容。
+ * 任务有阶段时，「查询任务状态」的最后两行是开着的提议与这一段还开着的提问与请选择（lib/stage_proposal.ts；后一行只在给了会话编号时写）。
  */
 
 import { existsSync, statSync } from "node:fs";
@@ -22,10 +23,10 @@ import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { mentionLines, overallState, pendingSummary, verificationLines } from "./overall_read.ts";
 import { stageLines, stageSummary } from "./stage_read.ts";
-import { openProposal, proposalLine } from "./stage_proposal.ts";
+import { cardsOpenInStage, openCardsLine, openProposal, proposalLine } from "./stage_proposal.ts";
 import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
-import { dialogueFactLines, dialogueFacts } from "./dialogue_acts.ts";
+import { dialogueFactLines, dialogueFacts, unansweredActs } from "./dialogue_acts.ts";
 import { hasColumn } from "./dialogue_schema.ts";
 import { DIAGRAM_ID, type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "./diagram.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
@@ -279,6 +280,8 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
     const stage = stageSummary(db, workspaceDir, task.task_id, definition);
     // 开着的提议接在后面一行：用户要求进入、退回或者说看过了时，助手据此知道该请他点「待决定」一行，而不是重发卡片。
     if (stage) lines.push("", ...stageLines(stage), proposalLine(openProposal(db, task.task_id), sessionId ?? null));
+    // 再后面一行是这一段还开着的提问与请选择（这条会话里的）：助手提议进入下一段之前据此一次一张重发。
+    if (stage && sessionId) lines.push(openCardsLine(cardsOpenInStage(db, task.task_id, unansweredActs(db, task.task_id, sessionId))));
     return {
       text: lines.join("\n"),
       details: {

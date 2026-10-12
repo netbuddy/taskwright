@@ -9,7 +9,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { EVENT_EXECUTOR_ACTS_RECORDED, recordReplyActs } from "../src/lib/dialogue_acts.ts";
 import { TASK_ACTIVE, withTaskDatabase } from "../src/lib/schema.ts";
 import { BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, STAY_HERE_OPTION, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
-import { NO_PROPOSAL_LINE, isStayKey, openProposal, proposalKindOf, proposalLine, proposalOfAct } from "../src/lib/stage_proposal.ts";
+import { NO_OPEN_CARDS_LINE, NO_PROPOSAL_LINE, isStayKey, openProposal, proposalKindOf, proposalLine, proposalOfAct } from "../src/lib/stage_proposal.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
 import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
@@ -237,10 +237,12 @@ test("给助手看的那一行：三种提议各一句，写明卡片在不在�
 test("查询任务状态的末尾、新会话的任务现状说明都带这一行；早先建的任务不带", () => {
   const FRESH = { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null };
   const dir = workspace();
-  assert.match(getTaskStatus(dir, SESSION).text, /\n没有开着的提议。$/);
+  assert.match(getTaskStatus(dir, SESSION).text, /\n没有开着的提议。\n这一段没有还开着的提问与请选择。$/);
   assert.match(taskStatusMessage(dir, FRESH, "sess-b")!.text, /\n没有开着的提议。$/);
   reply(dir, enterCard("clarifying", "reading"));
-  assert.match(getTaskStatus(dir, SESSION).text, /\n开着的提议：进入澄清（卡片在这条会话里）。[^\n]*$/);
+  assert.match(getTaskStatus(dir, SESSION).text, /\n开着的提议：进入澄清（卡片在这条会话里）。[^\n]*\n这一段没有还开着的提问与请选择。$/);
+  // 没有给会话编号时不写后一行：开着的卡片是按会话算的。
+  assert.match(getTaskStatus(dir).text, /\n开着的提议：进入澄清（卡片在另一条会话里）。[^\n]*$/);
   // 新开的另一条会话：助手的上下文里没有那张卡片，靠这一行知道。
   const fresh = taskStatusMessage(dir, FRESH, "sess-b")!;
   assert.match(fresh.text, /\n开着的提议：进入澄清（卡片在另一条会话里）。用户还没有进入；他要进入时不要重发同一张卡片/);
@@ -248,6 +250,33 @@ test("查询任务状态的末尾、新会话的任务现状说明都带这一�
   const old = workspace(demoDefinition());
   assert.doesNotMatch(getTaskStatus(old, SESSION).text, /提议/);
   assert.doesNotMatch(taskStatusMessage(old, FRESH, "sess-b")!.text, /提议/);
+});
+
+test("这一段还开着的提问与请选择：只列这条会话里、进入现在这个阶段之后发出的；提议的卡片、别的种类、答过的、重发过的、前面阶段留下的都不列", () => {
+  const dir = workspace();
+  const line = (session = SESSION) => getTaskStatus(dir, session).text.split("\n").at(-1)!;
+  assert.equal(NO_OPEN_CARDS_LINE, "这一段没有还开着的提问与请选择。");
+  assert.equal(line(), NO_OPEN_CARDS_LINE);
+  // 核读材料段里问了一问、请选了一次，又发了提议进入澄清的卡片，还有一条给建议值。
+  reply(dir, { kind: "ask", text: "借阅期限是多少天" });
+  reply(dir, { kind: "choose", text: "逾期按哪种办法处理", options: [{ key: "a", text: "罚款" }, { key: "b", text: "停借" }] });
+  reply(dir, { kind: "suggest", text: "建议每人最多借五本", value: "五本", basis: [] });
+  reply(dir, enterCard("clarifying", "reading"));
+  const ids = query<{ act_id: string }>(dir, "SELECT act_id FROM dialogue_act WHERE expects_response = 1 ORDER BY rowid").map((one) => one.act_id);
+  assert.equal(line(),
+    `这一段还开着的提问与请选择 2 张（你问过、用户搁下没有答的）：${ids[0]} 提问「借阅期限是多少天」；${ids[1]} 请选择「逾期按哪种办法处理」。` +
+    "提议进入下一段之前，把它们一次一张重发（act 里写 resends，值是这里的编号），全部过完再发进入下一段的卡片。");
+  // 别的会话里看不到这条会话的卡片。
+  assert.equal(line("sess-b"), NO_OPEN_CARDS_LINE);
+  // 重发了第一张：列的是新的那一张。
+  reply(dir, { kind: "ask", text: "借阅期限是多少天", resends: ids[0] });
+  assert.match(line(), /^这一段还开着的提问与请选择 2 张.*请选择「逾期按哪种办法处理」；r\d+-\d+ 提问「借阅期限是多少天」。/);
+  assert.doesNotMatch(line(), new RegExp(`${ids[0]} 提问`));
+  // 任务进入了澄清：前面那一段留下的不再列。
+  enterStage(dir, "clarifying");
+  assert.equal(line(), NO_OPEN_CARDS_LINE);
+  reply(dir, { kind: "ask", text: "馆员能不能代借" });
+  assert.match(line(), /^这一段还开着的提问与请选择 1 张（你问过、用户搁下没有答的）：r\d+-\d+ 提问「馆员能不能代借」。/);
 });
 
 test("续接旧会话：上次之后才发出的提议写一条（别的都没有变也写）；上次之前发的不重复；没有开着的不写", () => {

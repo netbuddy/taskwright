@@ -156,6 +156,44 @@ export function openProposal(db: DatabaseSync, taskId: string): OpenProposal | n
   return null;
 }
 
+/** 一条还在等回应的执行者行为里，本文件用到的几项（lib/dialogue_acts.ts 的 OpenAct；这里不从它导入，免得两个文件互相导入）。 */
+export interface WaitingAct {
+  act_id: string;
+  function: string;
+  summary: string;
+  event_seq: number;
+}
+
+/**
+ * 这一段还开着的提问与请选择：从这条会话里还在等回应的执行者行为（waiting，调用方用 unansweredActs 取）里，留下任务进入现在这个阶段之后
+ * 发出的提问（ask）与请选择（choose），提议的卡片（进入、退回某个阶段或请过目）不算。前面阶段留下的不列：那一段结束前已经问过一遍。只读。
+ */
+export function cardsOpenInStage<T extends WaitingAct>(db: DatabaseSync, taskId: string, waiting: readonly T[]): T[] {
+  const moved = db.prepare("SELECT MAX(seq) AS seq FROM event WHERE task_id = ? AND name = ?").get(taskId, EVENT_MOVED) as { seq: number | null } | undefined;
+  const since = Number(moved?.seq ?? 0);
+  const payload = db.prepare("SELECT payload FROM event WHERE seq = ?");
+  return waiting.filter((one) => {
+    if ((one.function !== "ask" && one.function !== "choose") || Number(one.event_seq) <= since) return false;
+    const row = payload.get(one.event_seq) as { payload: string } | undefined;
+    return proposalKindOf(row ? (load(row.payload) as { proposal?: unknown } | null)?.proposal : undefined) === null;
+  });
+}
+
+/** 这一段没有还开着的提问与请选择时给助手看的那一句。 */
+export const NO_OPEN_CARDS_LINE = "这一段没有还开着的提问与请选择。";
+
+/**
+ * 给助手看的一行：这一段还有哪几张提问与请选择的卡片用户没有答（行为编号、种类、问句）。查询任务状态的返回里接在开着的提议后面：
+ * 助手提议进入下一段之前据此把它们一次一张重发。
+ */
+export function openCardsLine(cards: readonly WaitingAct[]): string {
+  if (cards.length === 0) return NO_OPEN_CARDS_LINE;
+  const name = (fn: string) => (fn === "ask" ? "提问" : "请选择");
+  return `这一段还开着的提问与请选择 ${cards.length} 张（你问过、用户搁下没有答的）：` +
+    `${cards.map((one) => `${one.act_id} ${name(one.function)}「${one.summary}」`).join("；")}。` +
+    "提议进入下一段之前，把它们一次一张重发（act 里写 resends，值是这里的编号），全部过完再发进入下一段的卡片。";
+}
+
 /** 任务没有开着的提议时给助手看的那一句。 */
 export const NO_PROPOSAL_LINE = "没有开着的提议。";
 
