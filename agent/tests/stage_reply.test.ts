@@ -75,7 +75,7 @@ test("助手不能自己做的移动：回复照常送达、对话行为照常�
   put(dir, taskId, "reading", "modeling");
   // 往前一段（进入写条目）：要由用户在卡片上点。
   const writing = reply(dir, "writing", "主题都理清了。");
-  assert.equal(writing.text, "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 start_items「开始写条目」、continue_consolidate「再整理一遍」。" +
+  assert.equal(writing.text, "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 start_items「开始写条目」、continue_consolidate「继续本阶段」。" +
     "本轮记了 r1-1（告知：我立了两页。）。");
   assert.deepEqual([writing.extra!.moved, writing.extra!.why, writing.acts.length], [false, "user_only", 1]);
   // 往前不止一段。

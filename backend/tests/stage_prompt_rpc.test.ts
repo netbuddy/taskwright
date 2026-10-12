@@ -20,7 +20,7 @@ const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const CLARIFY_CARD = { kind: "choose", text: "材料读完了，接下来我一件一件问你。现在进入澄清吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
-  options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "continue_reading", text: "再核读一遍" }] };
+  options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "continue_reading", text: "继续本阶段" }] };
 const SCRIPT = {
   sequence: [
     // 第一句话（核读材料）：立一页主题，再发「进入澄清」的卡片。

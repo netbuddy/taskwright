@@ -24,13 +24,13 @@ const USE_CASE = { op: "add", collection: "功能用例", sources: [{ kind: "条
   fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } };
 const save = (id: string, operations: unknown[]) => ({ tool_calls: [{ id, name: "save_revision", arguments: { operations } }] });
 const CLARIFY_CARD = { kind: "choose", text: "材料读完了，接下来我一件一件问你。现在进入澄清吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
-  options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "continue_reading", text: "再核读一遍" }] };
+  options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "continue_reading", text: "继续本阶段" }] };
 const MODEL_CARD = { kind: "choose", text: "要问的都问到了，接下来我把主题页通读一遍。现在进入整理建模吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
-  options: [{ key: "enter_consolidate", text: "进入整理建模" }, { key: "continue_clarify", text: "继续澄清" }] };
+  options: [{ key: "enter_consolidate", text: "进入整理建模" }, { key: "continue_clarify", text: "继续本阶段" }] };
 const START_CARD = { kind: "choose", text: "这一页你看过之后，现在开始写条目吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
-  options: [{ key: "start_items", text: "开始写条目" }, { key: "continue_consolidate", text: "再整理一遍" }] };
+  options: [{ key: "start_items", text: "开始写条目" }, { key: "continue_consolidate", text: "继续本阶段" }] };
 const REVIEW_CARD = { kind: "choose", text: "用例写好了，接下来请你逐条看、发起评审。现在进入评审确认吗？", items: [{ item_id: "UC-001", revision_no: 2 }],
-  options: [{ key: "enter_review", text: "进入评审确认" }, { key: "continue_writing", text: "继续写条目" }] };
+  options: [{ key: "enter_review", text: "进入评审确认" }, { key: "continue_writing", text: "继续本阶段" }] };
 const DONE_CARD = { kind: "choose", text: "功能用例一共 1 个条目，已经评审通过，你也看过了。这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。",
   options: [{ key: "complete", text: "已完成，提交交付物" }, { key: "continue", text: "还没完成，继续修改" }] };
 const SCRIPT = {

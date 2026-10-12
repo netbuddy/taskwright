@@ -56,7 +56,9 @@ export function defaultStage(hasMaterials: boolean): Stage {
 export const START_ITEMS_KEY = "start_items";
 export const START_ITEMS_TEXT = "开始写条目";
 export const CONTINUE_CLARIFY_KEY = "continue_clarify";
-export const CONTINUE_CLARIFY_TEXT = "继续澄清";
+/** 留在这一段的那个选项的文字：四张卡片上都是这一句。 */
+export const STAY_TEXT = "继续本阶段";
+export const CONTINUE_CLARIFY_TEXT = STAY_TEXT;
 
 export interface CardOption {
   key: string;
@@ -71,15 +73,15 @@ export const ENTER_OPTIONS: Record<Exclude<Stage, "reading">, CardOption> = {
   reviewing: { key: "enter_review", text: "进入评审确认" },
 };
 
-/** 留在这一段的那个选项在页面上的写法：四张卡片上都是这一句，不管助手在卡片里把它写成什么。 */
-export const STAY_TEXT = "继续本阶段";
-
-/** 留在某个阶段的那个选项（评审确认是最后一段，没有往前的卡片）。 */
+/**
+ * 留在某个阶段的那个选项（评审确认是最后一段，没有往前的卡片）。四张卡片上文字相同、键各不相同：页面按键认出这一项，
+ * 不管助手在卡片里把它写成什么都显示成这一句；点它只把卡片标为已选，不替用户发话（lib/user_stage.ts）。
+ */
 export const STAY_OPTIONS: Record<Exclude<Stage, "reviewing">, CardOption> = {
-  reading: { key: "continue_reading", text: "再核读一遍" },
-  clarifying: { key: CONTINUE_CLARIFY_KEY, text: CONTINUE_CLARIFY_TEXT },
-  modeling: { key: "continue_consolidate", text: "再整理一遍" },
-  writing: { key: "continue_writing", text: "继续写条目" },
+  reading: { key: "continue_reading", text: STAY_TEXT },
+  clarifying: { key: CONTINUE_CLARIFY_KEY, text: STAY_TEXT },
+  modeling: { key: "continue_consolidate", text: STAY_TEXT },
+  writing: { key: "continue_writing", text: STAY_TEXT },
 };
 
 /**

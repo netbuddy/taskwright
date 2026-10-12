@@ -31,7 +31,7 @@ function workspace(definition: unknown = overallDefinition()): string {
 }
 const records = (dir: string) => query(dir, "SELECT stage, from_stage, actor, reason, run_id, call_id, session_id FROM stage_record ORDER BY event_seq").map((r) => ({ ...r }));
 
-test("点「开始写条目」：记一条用户的移动，理由写明是在卡片上选的；点「继续澄清」什么都不记", () => {
+test("点「开始写条目」：记一条用户的移动，理由写明是在卡片上选的；点「继续本阶段」什么都不记", () => {
   const dir = workspace();
   assert.equal(recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: CONTINUE_CLARIFY_KEY }), null);
   assert.equal(count(dir, "stage_record"), 0);
@@ -138,9 +138,9 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   assert.equal(sent[1][1], "我选：开始写条目");
   assert.deepEqual(records(dir).map((r) => [r.stage, r.actor, r.call_id]), [["writing", "user", "ui-op-41"]]);
 
-  // 点「继续澄清」：照常发那两条，不记移动，结果里没有事件序号。
+  // 点「继续本阶段」：照常发那两条，不记移动，结果里没有事件序号。
   const other = fakeCtx(dir);
-  await handler(JSON.stringify({ op_id: "ui-op-42", reply_entry: "a-1", option_key: CONTINUE_CLARIFY_KEY, option_text: CONTINUE_CLARIFY_TEXT, text: "我选：继续澄清" }), other.ctx);
+  await handler(JSON.stringify({ op_id: "ui-op-42", reply_entry: "a-1", option_key: CONTINUE_CLARIFY_KEY, option_text: CONTINUE_CLARIFY_TEXT, text: "我选：继续本阶段" }), other.ctx);
   assert.deepEqual(JSON.parse(other.status[UI_RESULT_KEY]), { op_id: "ui-op-42", ok: true, idle: true });
   assert.equal("stage_event_seq" in sent[2][1].details, false);
   assert.equal("stage_move" in sent[2][1].details, false);

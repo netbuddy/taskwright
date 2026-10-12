@@ -41,7 +41,7 @@ test("助手完成任务：评审确认之前的四个阶段被阶段拦下；�
     assert.equal(out.fact, `任务没有标为已完成：任务现在在${STAGE_NAMES[stage]}阶段，完成任务要在评审确认阶段。`);
     assert.equal(out.message, `${out.fact}\n${out.guidance}`);
     if (stage === "writing") assert.equal(out.guidance, "条目写完之后，要由用户在卡片上选「进入评审确认」进入评审确认，再完成任务。" +
-      "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续写条目」。");
+      "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续本阶段」。");
     else assert.match(out.guidance, /^要先写条目、再由用户进入评审确认，才能完成任务。进入写条目要由用户在卡片上选「开始写条目」/);
   }
   assert.equal(query<{ status: string }>(dir, "SELECT status FROM task")[0].status, "进行中");

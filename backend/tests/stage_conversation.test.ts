@@ -35,7 +35,7 @@ test("两个取值的函数：移成了才有；阶段名不对、没有移成�
 });
 
 const MODEL_CARD = { kind: "choose", text: "要问的都问到了。现在进入整理建模吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
-  options: [{ key: "enter_consolidate", text: "进入整理建模" }, { key: "continue_clarify", text: "继续澄清" }] };
+  options: [{ key: "enter_consolidate", text: "进入整理建模" }, { key: "continue_clarify", text: "继续本阶段" }] };
 const SCRIPT = {
   sequence: [
     // 第一句话（任务已被用户移到整理建模）：立一页主题，在回复里退回澄清。

@@ -42,13 +42,13 @@ test("核读材料与澄清两个阶段：新画、修改、删除都被拦，�
   const reading = (await refusal(dir, fresh()))!;
   assert.equal(reading.fact, "任务现在在核读材料阶段，这个阶段不能画图、改图或删图");
   assert.equal(reading.guidance, "图要到整理建模阶段才能画。往前进入下一段要由用户在卡片上点，你只能提议：材料读完之后先提议进入澄清，" +
-    "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_clarify「进入澄清」、continue_reading「再核读一遍」；澄清告一段落之后，再照同样的办法提议「进入整理建模」");
+    "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_clarify「进入澄清」、continue_reading「继续本阶段」；澄清告一段落之后，再照同样的办法提议「进入整理建模」");
   assert.equal(reading.message, `这张图没有保存：${reading.fact}。\n怎么办：${reading.guidance}。`);
   enterStage(dir, "clarifying");
   const clarifying = (await refusal(dir, fresh()))!;
   assert.equal(clarifying.fact, "任务现在在澄清阶段，这个阶段不能画图、改图或删图");
   assert.equal(clarifying.guidance, "图要到整理建模阶段才能画。进入整理建模要由用户在卡片上选「进入整理建模」，你只能提议：澄清告一段落之后，" +
-    "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_consolidate「进入整理建模」、continue_clarify「继续澄清」");
+    "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_consolidate「进入整理建模」、continue_clarify「继续本阶段」");
   assert.equal(count(dir, "diagram"), 0);
 
   // 在整理建模阶段画好一张，再退回澄清：改与删也被拦。

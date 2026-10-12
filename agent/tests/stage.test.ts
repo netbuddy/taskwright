@@ -43,24 +43,24 @@ test("移动的说明：成功写从哪里到哪里；被退回时写明现在�
   assert.equal(text("clarifying", "clarifying"), "任务本来就在澄清阶段，没有记移动。");
   // 往前一段：告诉助手用哪张卡片，两个选项怎样写。
   assert.equal(text("reading", "clarifying"),
-    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_clarify「进入澄清」、continue_reading「再核读一遍」。");
+    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_clarify「进入澄清」、continue_reading「继续本阶段」。");
   assert.equal(text("clarifying", "modeling"),
-    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_consolidate「进入整理建模」、continue_clarify「继续澄清」。");
+    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_consolidate「进入整理建模」、continue_clarify「继续本阶段」。");
   assert.equal(text("modeling", "writing"),
-    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 start_items「开始写条目」、continue_consolidate「再整理一遍」。");
+    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 start_items「开始写条目」、continue_consolidate「继续本阶段」。");
   assert.equal(text("writing", "reviewing"),
-    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续写条目」。");
+    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续本阶段」。");
   // 往前不止一段：另说明一次只进入下一段，卡片仍是进入下一段的那一张。
   assert.equal(text("reading", "modeling"),
-    "阶段没有移动：往前移动要由用户在卡片上点。一次只进入下一段，核读材料的下一段是澄清。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_clarify「进入澄清」、continue_reading「再核读一遍」。");
+    "阶段没有移动：往前移动要由用户在卡片上点。一次只进入下一段，核读材料的下一段是澄清。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_clarify「进入澄清」、continue_reading「继续本阶段」。");
   assert.match(text("clarifying", "reviewing"), /^阶段没有移动：往前移动要由用户在卡片上点。一次只进入下一段，澄清的下一段是整理建模。请用请选择卡片提议/);
   assert.equal(NO_STAGES_TEXT, "阶段没有移动：这个任务没有阶段，不要写 stage。");
   assert.deepEqual([START_ITEMS_KEY, CONTINUE_CLARIFY_KEY], ["start_items", "continue_clarify"]);
   // 四张卡片的两个选项：进入下一段的键与文字，留在这一段的键与文字。
   assert.deepEqual(ENTER_OPTIONS, { clarifying: { key: "enter_clarify", text: "进入澄清" }, modeling: { key: "enter_consolidate", text: "进入整理建模" },
     writing: { key: "start_items", text: "开始写条目" }, reviewing: { key: "enter_review", text: "进入评审确认" } });
-  assert.deepEqual(STAY_OPTIONS, { reading: { key: "continue_reading", text: "再核读一遍" }, clarifying: { key: "continue_clarify", text: "继续澄清" },
-    modeling: { key: "continue_consolidate", text: "再整理一遍" }, writing: { key: "continue_writing", text: "继续写条目" } });
+  assert.deepEqual(STAY_OPTIONS, { reading: { key: "continue_reading", text: "继续本阶段" }, clarifying: { key: "continue_clarify", text: "继续本阶段" },
+    modeling: { key: "continue_consolidate", text: "继续本阶段" }, writing: { key: "continue_writing", text: "继续本阶段" } });
   assert.deepEqual(["enter_clarify", "enter_consolidate", "start_items", "enter_review", "continue_clarify", "别的键", null].map(stageEnteredBy),
     ["clarifying", "modeling", "writing", "reviewing", null, null, null]);
   assert.deepEqual(STAGES.map(nextStage), ["clarifying", "modeling", "writing", "reviewing", null]);
@@ -89,9 +89,9 @@ test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么�
   assert.match(diagramRefusal("reading")![0], /^任务现在在核读材料阶段，这个阶段不能画图、改图或删图$/);
   // 怎样走到整理建模：往前由用户在卡片上点，助手只能发卡片提议；指引里没有「在回复里把任务移到」这种说法。
   assert.match(diagramRefusal("reading")![1], /往前进入下一段要由用户在卡片上点，你只能提议：材料读完之后先提议进入澄清，请用请选择卡片提议/);
-  assert.match(diagramRefusal("reading")![1], /enter_clarify「进入澄清」、continue_reading「再核读一遍」；澄清告一段落之后，再照同样的办法提议「进入整理建模」$/);
+  assert.match(diagramRefusal("reading")![1], /enter_clarify「进入澄清」、continue_reading「继续本阶段」；澄清告一段落之后，再照同样的办法提议「进入整理建模」$/);
   assert.match(diagramRefusal("clarifying")![1], /进入整理建模要由用户在卡片上选「进入整理建模」，你只能提议：澄清告一段落之后，请用请选择卡片提议/);
-  assert.match(diagramRefusal("clarifying")![1], /enter_consolidate「进入整理建模」、continue_clarify「继续澄清」$/);
+  assert.match(diagramRefusal("clarifying")![1], /enter_consolidate「进入整理建模」、continue_clarify「继续本阶段」$/);
   for (const stage of ["reading", "clarifying"] as const) assert.doesNotMatch(diagramRefusal(stage)![1], /在回复里把任务移到|自己移到/);
   assert.deepEqual([diagramRefusal("modeling"), diagramRefusal("writing"), diagramRefusal("reviewing")], [null, null, null]);
 
@@ -102,7 +102,7 @@ test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么�
   assert.deepEqual([reviewRefusal("writing"), reviewRefusal("reviewing")], [null, null]);
 
   assert.deepEqual(completeRefusal("writing"), ["任务现在在写条目阶段，完成任务要在评审确认阶段",
-    "条目写完之后，要由用户在卡片上选「进入评审确认」进入评审确认，再完成任务。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续写条目」"]);
+    "条目写完之后，要由用户在卡片上选「进入评审确认」进入评审确认，再完成任务。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续本阶段」"]);
   assert.match(completeRefusal("clarifying")![1], /^要先写条目、再由用户进入评审确认，才能完成任务。进入写条目要由用户在卡片上选「开始写条目」/);
   assert.equal(completeRefusal("reviewing"), null);
 });
