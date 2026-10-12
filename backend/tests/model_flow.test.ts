@@ -142,14 +142,17 @@ test("整理建模画出五种图、七盏灯都通过；写条目依据两张�
     const sourcesOf = async () => ((await snapshot()).items as Dict[]).find((one) => one.item_id === "UC-001")!.sources
       .map((s: Dict) => [s.kind, s.locator, s.excerpt, s.depends_revision, s.current_revision, s.stale]);
     assert.deepEqual(await sourcesOf(), [["图", "D-002", "OA-001 自助借书", 1, 1, null], ["图", "D-004", "记下借阅", 1, 1, null]]);
-    // 流程页经图被用例依据；用例没有直接依据主题页；用户还没有看过任何一张图，依据的图那一盏不通过。
-    assert.deepEqual(await lamps("writing"), { flows_backed_by_use_cases: true, basis_pages_viewed: null, basis_diagrams_viewed: false, no_pending_items: true });
+    // 流程页经图被用例依据；用例没有直接依据主题页；用户还没有看过任何一张图，依据的图那一盏不通过，用例因此待核实。
+    assert.deepEqual(await lamps("writing"), { flows_backed_by_use_cases: true, basis_pages_viewed: null, basis_diagrams_viewed: false, no_pending_items: false });
+    const basisOf = async () => ((await snapshot()).items as Dict[]).find((one) => one.item_id === "UC-001")!.basis_pending;
+    assert.deepEqual(await basisOf(), { item_id: "D-002", reason: "unviewed", see: null });
 
     // 用户看了用例图：还差流程图；两张都看了：通过。
     assert.equal((await action({ kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-002", base_revision: 1 }] })).status, 200);
     assert.equal((await lamps("writing")).basis_diagrams_viewed, false);
+    assert.deepEqual(await basisOf(), { item_id: "D-004", reason: "unviewed", see: null });
     assert.equal((await action({ kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-004", base_revision: 1 }] })).status, 200);
-    assert.equal((await lamps("writing")).basis_diagrams_viewed, true);
+    assert.deepEqual([(await lamps("writing")).basis_diagrams_viewed, (await lamps("writing")).no_pending_items, await basisOf()], [true, true, null]);
     assert.deepEqual(((await snapshot()).diagrams as Dict[]).filter((one) => one.viewed).map((one) => one.diagram_id), ["D-002", "D-004"]);
     assert.deepEqual(db("SELECT actor, payload FROM event WHERE name = 'DIAGRAM_VIEWED' ORDER BY seq").map((r: Dict) => [r.actor, JSON.parse(r.payload).diagrams]),
       [["user", [{ diagram_id: "D-002", revision_no: 1 }]], ["user", [{ diagram_id: "D-004", revision_no: 1 }]]]);
@@ -158,6 +161,7 @@ test("整理建模画出五种图、七盏灯都通过；写条目依据两张�
     await send({ text: "流程图里少了打印凭条那一步，补上。", client_id: "c-redraw" });
     assert.deepEqual(await sourcesOf(), [["图", "D-002", "OA-001 自助借书", 1, 1, null], ["图", "D-004", "记下借阅", 1, 2, "changed"]]);
     assert.equal((await lamps("writing")).basis_diagrams_viewed, false);
+    assert.deepEqual(await basisOf(), { item_id: "D-004", reason: "unviewed", see: null });
     const detail = (await call("GET", `/api/v1/tasks/${taskId}/diagrams/D-004`)).body.diagram as Dict;
     assert.deepEqual([detail.revision_no, detail.viewed, detail.depended_by], [2, false, [{ element_kind: "条目", id: "UC-001", revision_no: 2 }]]);
   }, { seed: false }));

@@ -819,6 +819,9 @@ export class Library {
       const page = plainOf.get(id);
       return page ? { collection: page.collection, fields: page.fields, pending: pendingOf.get(id)!.pending_verification, viewed: viewedOf.get(id) === true } : null;
     };
+    // 条目依据的图用户看没看过（还在的图；已经删除的不算待核实）。
+    const figureViewed = new Map(liveDiagrams(this.data.diagrams || []).map((record) => [record.diagram_id, diagramViewed(record, this.data.diagram_views ?? new Set())]));
+    const citedFigure = (id: string) => (figureViewed.has(id) ? { viewed: figureViewed.get(id)! } : null);
     for (const i of sorted) {
       if (i.deleted_in_revision !== null) continue;
       const no = this.currentRevision(i.item_id);
@@ -849,8 +852,9 @@ export class Library {
         // （保存时他改写的那几处已经从来源里去掉，所以当前修订上还在的助手补充都是他没有改到的）。
         // pending_sources 是还待核实的来源有几条，pending_places 是还待核实的各处（字段与第几项；field 为 null 指整个条目）。
         ...pendingOf.get(i.item_id)!,
-        // 因依据而待核实：它依据的总体分析的一页待核实（reason 是 pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。
-        basis_pending: basisPending(this.sourcesOf(i.item_id, no), citedPage),
+        // 因依据而待核实：它依据的总体分析的一页待核实（reason 是 pending）、已废弃（deprecated，see 是那一页写的改看）或者用户还没有看过（unviewed）；没有是 null。
+        // 依据的是一张图、而用户还没有看过它现在的内容时同样给出，item_id 是图的编号，reason 是 unviewed。
+        basis_pending: basisPending(this.sourcesOf(i.item_id, no), citedPage, citedFigure),
         // 总体分析的页：别的页与别的条目的文字里提到它的地方；一处都没有是空列表。别的集合的条目与没有总体分析集合的任务不带这一项。
         ...(withOverall && i.collection === OVERALL_COLLECTION ? { mentioned_by: mentions.get(i.item_id) ?? [] } : {}),
       });

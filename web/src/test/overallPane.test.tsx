@@ -209,4 +209,15 @@ describe("依据的主题待核实或已废弃的条目", () => {
     expect(gone.getAttribute("title")).toBe("它依据的主题 OA-003「预约取书」已废弃，改看 OA-006「续借」。把依据改到还在用的主题上。");
     expect(screen.queryByTestId("basis-pending-UC-002")).toBeNull();
   });
+
+  it("依据的图用户还没有看过时，小标签写的是图，悬停说明里写图名", () => {
+    const t = overallTask();
+    t.diagrams = [{ diagram_id: "D-002", name: "借书的流程", kind: "flowchart", kind_name: "流程图", revision_no: 1, revision_by: "executor", revision_at: "", created_at: "", source_count: 1 }];
+    change(t, "UC-002", (i) => { i.basis_pending = { item_id: "D-002", reason: "unviewed", see: null }; });
+    render(<Wrap><div className="app"><ItemsPanel task={t} initialCollection="功能用例" readOnly={false} recentlyChanged={[]} pendingItems={new Set()}
+      selected={null} onSelect={() => {}} submit={vi.fn(async () => null)} onGenerateDoc={() => {}} /></div></Wrap>);
+    const unseen = screen.getByTestId("basis-pending-UC-002");
+    expect(unseen).toHaveTextContent("依据的图还没有看过");
+    expect(unseen.getAttribute("title")).toBe("它依据的图「借书的流程」现在的内容你还没有看过；到业务说明里把这张图看一遍，这里就消掉。");
+  });
 });

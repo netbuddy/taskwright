@@ -62,6 +62,16 @@ test("因依据而待核实：依据的那一页已废弃、待核实或者用�
   assert.deepEqual(basisPending(cite("OA-005", "OA-002"), at), { item_id: "OA-005", reason: "unviewed", see: null });
   // 已废弃排在待核实前面说：那一页不该再被依据了。
   assert.deepEqual(basisPending(cite("OA-003"), at), { item_id: "OA-003", reason: "deprecated", see: "OA-001" });
+  // 依据的图：用户还没有看过它现在的内容时也算，编号是图的编号；看过的、已经不在的（查不到）不算；不给查图的办法时不看图。
+  const figures: Record<string, { viewed: boolean }> = { "D-001": { viewed: true }, "D-002": { viewed: false } };
+  const figure = (id: string) => figures[id] ?? null;
+  const draw = (...ids: string[]) => ids.map((locator) => ({ kind: "图", locator }));
+  assert.equal(basisPending(draw("D-001", "D-009"), at, figure), null);
+  assert.deepEqual(basisPending(draw("D-001", " D-002 "), at, figure), { item_id: "D-002", reason: "unviewed", see: null });
+  assert.equal(basisPending(draw("D-002"), at), null);
+  // 页与图混着写时照来源的先后报头一处。
+  assert.deepEqual(basisPending([...draw("D-002"), ...cite("OA-002")], at, figure), { item_id: "D-002", reason: "unviewed", see: null });
+  assert.deepEqual(basisPending([...cite("OA-002"), ...draw("D-002")], at, figure), { item_id: "OA-002", reason: "pending", see: null });
   assert.deepEqual(basisPending(cite("OA-004"), at), { item_id: "OA-004", reason: "deprecated", see: null });
   // 别的集合的条目待核实不传过来；已经删除或不存在的页不算；别的种类的来源不看。
   assert.equal(basisPending(cite("UC-009", "OA-999"), at), null);

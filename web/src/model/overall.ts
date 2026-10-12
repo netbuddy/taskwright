@@ -295,13 +295,16 @@ export function glossary(task: Task): { rows: { item: Item; aliases: string[]; f
 }
 
 /**
- * 一个条目依据的主题待核实或已废弃时，条目行上那枚小标签的字与悬停说明；没有这回事时为 null。
+ * 一个条目依据的主题待核实或已废弃、或者依据的图用户还没有看过时，条目行上那枚小标签的字与悬停说明；没有这回事时为 null。
  * 它不是条目自己的毛病：那一页确认了（或者把依据改到别的主题），标签就消掉。
  */
 export function basisNote(task: Task, item: Item): { text: string; title: string } | null {
   const basis = item.basis_pending;
   if (!basis) return null;
   const name = (id: string) => { const page = task.items.find((i) => i.item_id === id); return page ? `${id}「${titleOf(page)}」` : id; };
+  // 依据的是一张图（编号在图的清单里）：图现在的内容用户还没有看过。
+  const figure = (task.diagrams ?? []).find((one) => one.diagram_id === basis.item_id);
+  if (figure) return { text: "依据的图还没有看过", title: `它依据的图「${figure.name}」现在的内容你还没有看过；到业务说明里把这张图看一遍，这里就消掉。` };
   if (basis.reason === "deprecated") {
     return { text: "依据的主题已废弃", title: `它依据的主题 ${name(basis.item_id)}已废弃${basis.see ? `，改看 ${name(basis.see)}` : ""}。把依据改到还在用的主题上。` };
   }
