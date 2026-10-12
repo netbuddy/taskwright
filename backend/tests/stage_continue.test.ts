@@ -13,10 +13,14 @@ const NOTE = "界面操作（不是用户打的字）：用户在提议「进入
 const DETAILS = { op_id: "ui-op-7", kind: "continue_stage", event_seqs: [], results: [], revision_no: null, undoable: false,
   reply_entry: "a-1", option_key: "continue_reading", stage: "clarifying" };
 
-test("取值的函数：只有继续本阶段的通知带这两项；阶段写得不对时不带阶段", () => {
+test("取值的函数：只有继续本阶段的通知带这三项（卡片所在的回复、卡片是关于哪个阶段的、点的是哪一项）；阶段写得不对时不带阶段，没有记点的是哪一项时不带那一项", () => {
   assert.equal(CONTINUE_STAGE, "continue_stage");
-  assert.deepEqual(continueStageFields(DETAILS), { reply_message_id: "a-1", stage: "clarifying" });
-  assert.deepEqual(continueStageFields({ ...DETAILS, stage: "别的" }), { reply_message_id: "a-1" });
+  assert.deepEqual(continueStageFields(DETAILS), { reply_message_id: "a-1", stage: "clarifying", option_key: "continue_reading" });
+  assert.deepEqual(continueStageFields({ ...DETAILS, stage: "别的" }), { reply_message_id: "a-1", option_key: "continue_reading" });
+  // 第六个阶段也认；回退卡片的「留在本段」、请过目卡片的两项照原样带出。
+  assert.deepEqual(continueStageFields({ ...DETAILS, stage: "document", option_key: "document_reviewed" }), { reply_message_id: "a-1", stage: "document", option_key: "document_reviewed" });
+  assert.deepEqual(continueStageFields({ ...DETAILS, option_key: "stay_in_stage" }).option_key, "stay_in_stage");
+  assert.deepEqual(continueStageFields({ ...DETAILS, option_key: undefined }), { reply_message_id: "a-1", stage: "clarifying" });
   assert.deepEqual(continueStageFields({ kind: "stop_run", reply_entry: "a-1" }), {});
   assert.deepEqual(continueStageFields({ kind: "continue_stage" }), {});
 });
@@ -34,12 +38,13 @@ test("对话记录：卡片后面是一条界面操作通知，不是用户的�
   const out = baseMessages(entries, "sess-1");
   assert.deepEqual(out.map((m) => [m.type, m.message_id]), [["user_message", "u-1"], ["assistant_reply", "a-1"], ["ui_action_noted", "c-1"], ["user_message", "u-2"]]);
   const note = out[2];
-  assert.deepEqual([note.kind, note.reply_message_id, note.stage, note.text, note.undoable, note.event_seq, note.op_id],
-    ["continue_stage", "a-1", "clarifying", NOTE, false, null, "ui-op-7"]);
+  assert.deepEqual([note.kind, note.reply_message_id, note.stage, note.option_key, note.text, note.undoable, note.event_seq, note.op_id],
+    ["continue_stage", "a-1", "clarifying", "continue_reading", NOTE, false, null, "ui-op-7"]);
   assert.deepEqual([out[3].origin, out[3].text, out[3].annotation], ["typed", "「借书」那一节漏了一句。", null]);
   // 别的界面操作通知没有这两项。
   const other = baseMessages([entries[0], { id: "c-9", parentId: "u-1", type: "custom_message", timestamp: "2026-01-01T01:01:00.000Z", customType: USER_EDIT,
     content: "界面操作（不是用户打的字）：用户把 UC-001 标为已读。", display: true, details: { op_id: "ui-op-1", kind: "mark_viewed", event_seqs: [3], undoable: false } }], "sess-1");
   assert.equal("reply_message_id" in other[1], false);
   assert.equal("stage" in other[1], false);
+  assert.equal("option_key" in other[1], false);
 });

@@ -6,6 +6,8 @@
 清单文件的各节与核对的地方：
 - 「总体分析」：下面按种类分小节（流程页、角色页、概念页……），每组对着在用的主题页的标题与别名找。小节名里的种类不作
   命中条件（助手贴的标签可以与清单分的不同），结果里带命中的那一页实际贴的标签，供人看。
+  例外是「导语页」这个小节：每组写的是章名，对着在用的导语页的「导语所属章」找（编写文档阶段助手给有内容的章各补一页导语）；
+  导语页不参加别的小节的核对。
 - 「例外」：下面按流程分小节，小节名是流程的名字。先找这个流程的页（标题或别名里有这个名字或它在「流程页」里的同义写法；
   找到的页里有贴了「流程」标签的就只看这些），再在这些页里以「例外：」开头的例子里找每一组，别的例子里写到了不算命中。
   结果里另带「只在别的例子里提到的页」：关键词只出现在不以「例外：」开头的例子里的页，给人看差的是写法还是内容，不计入命中。
@@ -27,12 +29,14 @@ from pathlib import Path
 from taskwright_observatory import taskdb
 
 from sim.judge import groups_hit
-from sim.lamps import EXCEPTION_PREFIX, F_ALIASES, F_EXAMPLES, F_STATUS, F_TAGS, F_TITLE, DEPRECATED, OVERALL, _fields, _texts
+from sim.lamps import EXCEPTION_PREFIX, F_ALIASES, F_EXAMPLES, F_INTRO, F_STATUS, F_TAGS, F_TITLE, DEPRECATED, OVERALL, _fields, _texts, is_intro
 
 SECTION_OVERALL = "总体分析"
 SECTION_EXCEPTIONS = "例外"
 SECTION_MODELS = "模型"
 FLOW_SUBSECTION = "流程页"
+#: 「总体分析」一节里对着导语页找的那个小节。
+INTRO_SUBSECTION = "导语页"
 FLOW_TAG = "流程"
 #: 「例外」一节每一行另带的一项：关键词只出现在不以「例外：」开头的例子里的页。
 ELSEWHERE = "只在别的例子里提到的页"
@@ -63,7 +67,10 @@ def _row(section: str, group: list[str], found: list[tuple[str, str]], **extra) 
 def check(expect: dict, task: dict) -> list[dict]:
     """逐组核对。task 是 taskdb.read_workspace 读出的一个任务。每组一行：部分、组、命中与否、命中的词、命中的条目编号。"""
     items = [i for i in task.get("条目") or [] if i.get("在第几次修订删除") is None and i.get("当前内容")]
-    pages = [i for i in items if i["所属集合"] == OVERALL and _fields(i).get(F_STATUS) != DEPRECATED]
+    every = [i for i in items if i["所属集合"] == OVERALL and _fields(i).get(F_STATUS) != DEPRECATED]
+    # 导语页单独核对（「导语页」小节），不参加按标题与例子找的各节。
+    intros = [p for p in every if is_intro(p)]
+    pages = [p for p in every if not is_intro(p)]
     tags = {p["条目编号"]: _texts(_fields(p).get(F_TAGS)) for p in pages}
     rows: list[dict] = []
     for section, body in expect.items():
@@ -71,6 +78,11 @@ def check(expect: dict, task: dict) -> list[dict]:
             continue
         if section == SECTION_OVERALL:
             for subsection, groups in body.items():
+                if subsection == INTRO_SUBSECTION:
+                    for group in groups:
+                        found = [(p["条目编号"], word) for p in intros if (word := _hit(group, str(_fields(p).get(F_INTRO)))) is not None]
+                        rows.append(_row(f"{section}·{subsection}", group, found))
+                    continue
                 for group in groups:
                     found = [(p["条目编号"], word) for p in pages if (word := _hit(group, "\n".join(_names(p)))) is not None]
                     rows.append(_row(f"{section}·{subsection}", group, found, 页贴的标签={item_id: tags[item_id] for item_id, _w in found}))

@@ -1,6 +1,6 @@
 // 业务说明的章与节（model/chapters.ts）：页按标签归章、章内的先后与节号、未归类与已废弃的页、目录底部的汇总。
 import { describe, expect, it } from "vitest";
-import { CHAPTERS, chapterOf, sectionLabel, sectionOf, toc, tocOrder, tocTotals } from "../model/chapters";
+import { CHAPTERS, INTRO_NAME, chapterOf, introChapter, sectionLabel, sectionOf, toc, tocOrder, tocTotals } from "../model/chapters";
 import { change, itemOf, overallTask } from "./fixtures/overallTask";
 
 const rows = (task = overallTask()) => toc(task).chapters.map((one) => [one.chapter.no, one.sections.map((s) => `${s.no ?? "-"} ${s.item.item_id}${s.depth ? ` +${s.depth}` : ""}`)]);
@@ -86,3 +86,38 @@ describe("目录里找一节、走上一条下一条、底部的汇总", () => {
     expect(tocTotals(task, toc(task))).toEqual({ sections: 9, items: 3, open: 3 });
   });
 });
+
+describe("章的导语页", () => {
+  /** 给夹具加两页导语：OA-012 是第 3 章的（待核实），OA-013 是第 5 章的。 */
+  function withIntros() {
+    const task = overallTask();
+    const base = itemOf(task, "OA-011");
+    const intro = (id: string, chapter: string, more: Record<string, unknown> = {}) => ({ ...structuredClone(base), item_id: id, title: `${chapter}导语`,
+      fields: { 标题: `${chapter}导语`, 它是什么: `${chapter}这一章讲什么。`, 状态: "在用", 导语所属章: chapter }, ...more });
+    task.items.push(intro("OA-012", "业务流程", { pending_verification: true, pending_sources: 1 }) as never, intro("OA-013", "业务规则") as never);
+    return task;
+  }
+
+  it("导语页挂在它那一章上，不是节、不占节号、不进未归类；目录的先后里排在这一章各节之前", () => {
+    const task = withIntros();
+    const contents = toc(task);
+    expect(contents.chapters.map((one) => one.intro?.item_id ?? null)).toEqual([null, null, "OA-012", null, "OA-013", null, null]);
+    // 第 3 章的节号照旧，未归类的仍是原来那两页。
+    expect(contents.chapters[2].sections.map((one) => one.no)).toEqual(toc(overallTask()).chapters[2].sections.map((one) => one.no));
+    expect(contents.unsorted.map((page) => page.item_id)).toEqual(["OA-008", "OA-011"]);
+    const order = tocOrder(contents).map((page) => page.item_id);
+    expect(order.indexOf("OA-012")).toBe(order.indexOf("OA-001") - 1);
+    expect(order.includes("OA-013")).toBe(true);
+    // 汇总里的节数不算导语页。
+    expect(tocTotals(task, contents).sections).toBe(tocTotals(overallTask(), toc(overallTask())).sections);
+  });
+
+  it("认一页是不是导语页；给人看的叫法是章名加「导语」", () => {
+    const task = withIntros();
+    const contents = toc(task);
+    expect([introChapter(contents, "OA-012")?.chapter.no, introChapter(contents, "OA-001"), introChapter(contents, null)]).toEqual([3, null, null]);
+    expect(sectionLabel(contents, itemOf(task, "OA-012"))).toBe("业务流程 导语");
+    expect(INTRO_NAME).toBe("导语");
+  });
+});
+

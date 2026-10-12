@@ -10,10 +10,11 @@ import type { MessageRequest, StageProposal, TaskStatusView } from "../../api/ty
 import {
   STATUS_NEXT_LABEL, STATUS_NEXT_TEXT, STATUS_TITLE, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, statusSubtitle,
 } from "../../model/taskStatus";
-import { PENDING_LABEL, enterRequest, pendingParts } from "./PendingProposal";
+import { PENDING_LABEL, actOnProposal, pendingParts } from "./PendingProposal";
+import type { ReviewedHandler } from "./ReplyCard";
 import type { SendResult } from "./sendRestore";
 
-export function TaskStatusCard({ status, liveProposal, off = false, offTitle, onMessage, onSend }: {
+export function TaskStatusCard({ status, liveProposal, off = false, offTitle, onMessage, onSend, onReviewed }: {
   status: TaskStatusView;
   /** 任务现在开着的提议（整份数据的 stage.proposal）：卡上的提议还是不是它，决定进入按钮能不能点。 */
   liveProposal: StageProposal | null | undefined;
@@ -24,6 +25,8 @@ export function TaskStatusCard({ status, liveProposal, off = false, offTitle, on
   onMessage: (text: string, card?: MessageRequest["card"]) => SendResult;
   /** 「请助手说明下一步」：发一句普通的话。 */
   onSend: (text: string) => SendResult;
+  /** 请过目的提议点了「看过了，生成文档」。 */
+  onReviewed?: ReviewedHandler;
 }) {
   const [entered, setEntered] = useState(false);
   const [asked, setAsked] = useState(false);
@@ -33,7 +36,7 @@ export function TaskStatusCard({ status, liveProposal, off = false, offTitle, on
   const enter = () => {
     if (!proposal || off || entered || !stillOpen) return;
     setEntered(true);
-    void Promise.resolve(onMessage(...enterRequest(proposal))).then((ok) => { if (ok === false) setEntered(false); });
+    void actOnProposal(proposal, onMessage, onReviewed).then((ok) => { if (!ok) setEntered(false); });
   };
   const askNext = () => {
     if (off || asked) return;

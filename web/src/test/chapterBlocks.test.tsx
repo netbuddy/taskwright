@@ -260,3 +260,54 @@ describe("第 7 章 决策记录与待澄清事项的章首页", () => {
     expect(screen.getByTestId("chapter-decisions")).toHaveTextContent("还没有决定，也没有待澄清事项。");
   });
 });
+
+describe("章的导语", () => {
+  /** 给夹具加两页导语：第 2 章的还待核实，第 3 章的核实过了。 */
+  function withIntros(): Task {
+    const task = overallTask();
+    const base = task.items.find((one) => one.item_id === "OA-011")!;
+    const intro = (id: string, chapter: string, more: Record<string, unknown> = {}) => ({ ...structuredClone(base), item_id: id, title: `${chapter}导语`,
+      fields: { 标题: `${chapter}导语`, 它是什么: `${chapter}这一章讲什么。\n\n第二段。`, 状态: "在用", 导语所属章: chapter }, ...more });
+    task.items.push(intro("OA-020", "角色", { pending_verification: true, pending_sources: 1 }) as never, intro("OA-021", "业务流程") as never);
+    return task;
+  }
+
+  it("章首页最上面是导语的正文；助手补写、还没有确认的带「助手补写，待过目」，点「打开导语」去那一页", () => {
+    render(<Panel t={withIntros()} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-2"));
+    const head = screen.getByTestId("chapter-head-2");
+    const block = within(head).getByTestId("chapter-intro");
+    expect(head.querySelector(".oa-blk")).toBe(block);
+    expect([...block.querySelectorAll(".oa-prose p")].map((p) => p.textContent)).toEqual(["角色这一章讲什么。", "第二段。"]);
+    expect(within(block).getByTestId("chapter-intro-pending")).toHaveTextContent("助手补写，待过目");
+    fireEvent.click(within(block).getByTestId("chapter-intro-open"));
+    // 打开的是导语那一页：面包屑写第几章与「导语」，不当作没有归类的页。
+    expect(text(screen.getByTestId("topic-crumb"))).toContain("2 角色›导语");
+    expect(screen.queryByTestId("topic-unsorted")).toBeNull();
+    expect([...screen.getByTestId("topic-meta").querySelectorAll(".oa-tag:not(.add)")].map((one) => one.textContent)).toEqual(["导语"]);
+    expect(screen.getByTestId("topic-confirm")).toBeInTheDocument();
+  });
+
+  it("目录里每章各节之前有一行「导语」，点它打开那一页；没有导语页的章没有这一行；导语页不在未归类里", () => {
+    render(<Panel t={withIntros()} />);
+    const row = screen.getByTestId("toc-OA-021");
+    expect(text(row)).toBe("导语");
+    // 第 3 章：导语那一行排在 3.1 之前。
+    const names = [...screen.getByTestId("toc").querySelectorAll(".oa-row")].map((one) => one.getAttribute("data-testid"));
+    expect(names.indexOf("toc-OA-021")).toBe(names.indexOf("toc-OA-001") - 1);
+    expect(within(screen.getByTestId("toc-unsorted")).queryByTestId("toc-OA-020")).toBeNull();
+    // 待核实的导语行前的点是琥珀色的状态，核实过的不算「还没归类」。
+    expect(screen.getByTestId("toc-OA-020").querySelector(".oa-dot")!.getAttribute("data-state")).toBe("pending");
+    expect(row.querySelector(".oa-dot")!.getAttribute("data-state")).toBe("settled");
+    fireEvent.click(row);
+    expect(text(screen.getByTestId("topic-crumb"))).toContain("3 业务流程›导语");
+    expect(text(screen.getByTestId("topic-title"))).toBe("业务流程导语");
+  });
+
+  it("没有导语页的章，章首页没有这一块", () => {
+    render(<Panel t={overallTask()} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-2"));
+    expect(screen.queryByTestId("chapter-intro")).toBeNull();
+  });
+});
+

@@ -89,7 +89,7 @@ test("总体分析的页前四个阶段新增、修改、删除都可以；问�
 test("评审确认阶段：页只能改状态与改看，不能新立、不能删、不能改别的字段；问题条目照常可以写", () => {
   const dir = filled();
   enterStage(dir, "reviewing");
-  assert.ok(refusal(dir, [page("续借")])!.includes("新增到「总体分析」的条目：任务现在在评审确认阶段，这个阶段不能新立主题页。\n  怎么办：要动主题页的内容，先在回复里把任务移回澄清或整理建模。"));
+  assert.ok(refusal(dir, [page("续借")])!.includes("新增到「总体分析」的条目：任务现在在评审确认阶段，这个阶段不能新立主题页。\n  怎么办：要动主题页的内容，得先回到澄清或整理建模：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_clarify「退回澄清」、stay_in_stage「留在本段」，由用户在卡片上点。"));
   const edited = refusal(dir, [{ op: "update", item: "OA-002", base_revision: revisionOf(dir, "OA-002"), fields: { 它是什么: "读者对借出的书办预约。", 状态: "已废弃" } }])!;
   assert.ok(edited.includes("OA-002：任务现在在评审确认阶段，这个阶段主题页只能改「状态」与「改看」，这次还改了「它是什么」。"), edited);
   assert.ok(refusal(dir, [{ op: "delete", item: "OA-002", base_revision: revisionOf(dir, "OA-002") }])!.includes("任务现在在评审确认阶段，这个阶段不能删除主题页。"));
@@ -153,5 +153,5 @@ test("早先建的任务没有阶段：有材料也不拦，助手照旧直接�
   assert.equal(refusal(dir, [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "借阅图书" } }]), null);
   assert.equal(refusal(dir, [{ op: "delete", item: "UC-001", base_revision: 2 }]), null);
   assert.equal(count(dir, "stage_record"), 0);
-  assert.deepEqual([...STAGES].length, 5);
+  assert.deepEqual([...STAGES].length, 6);
 });

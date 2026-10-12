@@ -17,7 +17,7 @@ vi.mock("../state/useWorkView", () => ({ useWorkView: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const STAGE: StageView = { current: "modeling", moved_by: "user", moved_at: "2026-10-10T09:00:00", reason: "", lamps: {
-  reading: [], clarifying: [], writing: [], reviewing: [],
+  reading: [], clarifying: [], writing: [], reviewing: [], document: [],
   modeling: [
     { key: "flows_have_flowchart_with_branch", ok: false, summary: "有 1 页标签为「流程」的主题还没有以「例外：」开头的例子：OA-003。", items: ["OA-003"] },
     { key: "roles_in_context_and_use_cases", ok: null, summary: "还没有标签为「角色」的主题。", items: [] },
@@ -56,7 +56,7 @@ function pane(working = false, prompt: DebugSystemPrompt = PROMPT, facts: DebugS
 }
 
 describe("右侧栏的调试页签", () => {
-  it("顶上是阶段条：五个阶段的名字，当前阶段标出来；没通过的灯一盏一句，点了打开它差的第一页", async () => {
+  it("顶上是阶段条：六个阶段的名字，当前阶段标出来；没通过的灯一盏一句，点了打开它差的第一页", async () => {
     const { onOpenItem } = pane();
     const bar = within(screen.getByTestId("debug-pane")).getByTestId("stage-bar");
     expect(screen.getByTestId("debug-pane").firstElementChild).toBe(bar);

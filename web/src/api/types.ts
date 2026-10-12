@@ -326,8 +326,8 @@ export interface StageMove {
   reason?: string;
 }
 
-/** 工作的五个阶段：核读材料、澄清、整理建模、写条目、评审确认。 */
-export type StageKey = "reading" | "clarifying" | "modeling" | "writing" | "reviewing";
+/** 工作的六个阶段：核读材料、澄清、整理建模、写条目、评审确认、编写文档。 */
+export type StageKey = "reading" | "clarifying" | "modeling" | "writing" | "reviewing" | "document";
 
 /** 一盏灯：某个阶段「做到什么算够」的一条判据。ok 为 null 是不适用；items 是差的页、条目或材料。灯只提示，不拦操作。 */
 export interface StageLamp {
@@ -344,6 +344,8 @@ export interface StageLamp {
  * event_seq 与 at 是记下它的那条库事件的序号与时刻。
  */
 export interface StageProposal {
+  /** 哪一种提议：enter 进入下一段，back 退回前面的阶段，review 请用户过目补写的页（点了不移动阶段）。早先的后端不给，当作 enter。 */
+  kind?: "enter" | "back" | "review";
   stage: StageKey;
   enter: { key: string; text: string };
   stay: { key: string; text: string } | null;
@@ -355,7 +357,7 @@ export interface StageProposal {
   at: string | null;
 }
 
-/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），五个阶段各自的灯，以及开着的提议（没有时为 null）。 */
+/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），六个阶段各自的灯，以及开着的提议（没有时为 null）。 */
 export interface StageView {
   current: StageKey;
   moved_by: "executor" | "user" | null;
@@ -480,9 +482,10 @@ export interface UiActionNoted {
    * 用户在提议进入下一个阶段的卡片上选了「继续本阶段」之后留的那条是 continue_stage，另带下面两项。
    */
   kind?: string | null;
-  /** continue_stage 才有：卡片在哪条回复上、卡片提议进入哪个阶段。 */
+  /** continue_stage 才有：卡片在哪条回复上、卡片是关于哪个阶段的、点的是卡片上哪一项（早先的后端不给最后一项，当作留在这一段的那一项）。 */
   reply_message_id?: string;
   stage?: StageKey;
+  option_key?: string;
   review?: { total: number; passed: number; failed: number; unfinished: number; problems: number; advice: number } | null;
 }
 
@@ -1157,7 +1160,7 @@ export interface DebugStage {
   latest_work_id: string | null;
 }
 
-/** 调试模式的提示词目录：现在设的是什么，以及固定的十三个文件名各自在目录里的情形。 */
+/** 调试模式的提示词目录：现在设的是什么，以及固定的十五个文件名各自在目录里的情形。 */
 export interface PromptDirView {
   /** 设置里写的目录；没有设时是 null。 */
   prompt_dir: string | null;

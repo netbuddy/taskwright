@@ -30,6 +30,10 @@ export interface TocChapter {
   sections: TocSection[];
   /** 「术语表」这一节的节号；只有第 4 章、而且有标签含「概念」的在用页时才有。 */
   glossaryNo: string | null;
+  /** 这一章的导语页（「导语所属章」写着这一章的在用页）；没有是 null。导语页不是节，在目录里排在这一章各节的前面。 */
+  intro: Item | null;
+  /** 这一章已废弃的、多出来的导语页。 */
+  otherIntros: Item[];
 }
 
 export interface Toc {
@@ -46,6 +50,7 @@ export function toc(task: Task): Toc {
   return {
     chapters: layout.chapters.map((one) => ({
       chapter: one.chapter, glossaryNo: one.glossaryNo,
+      intro: one.intro ? byId.get(one.intro) ?? null : null, otherIntros: one.otherIntros.map((id) => byId.get(id)!),
       sections: one.sections.map((section) => ({ item: byId.get(section.item_id)!, chapter: section.chapter, no: section.no, depth: section.depth })),
     })),
     unsorted: layout.unsorted.map((one) => byId.get(one.item_id)!),
@@ -62,13 +67,24 @@ export function sectionOf(contents: Toc, itemId: string | null | undefined): Toc
   return null;
 }
 
-/** 目录从上到下的各页（各章的节，再是未归类的页）；「上一条」「下一条」照它走。 */
-export function tocOrder(contents: Toc): Item[] {
-  return [...contents.chapters.flatMap((chapter) => chapter.sections.map((one) => one.item)), ...contents.unsorted];
+/** 这一页是哪一章的导语页（在用的那一页，或者已废弃、多出来的）；不是导语页是 null。 */
+export function introChapter(contents: Toc, itemId: string | null | undefined): TocChapter | null {
+  if (!itemId) return null;
+  return contents.chapters.find((one) => one.intro?.item_id === itemId || one.otherIntros.some((page) => page.item_id === itemId)) ?? null;
 }
 
-/** 给人看的一节的叫法：「3.1 借书」；没有节号的（已废弃、未归类）只写标题。 */
+/** 目录里导语那一行的名字。 */
+export const INTRO_NAME = "导语";
+
+/** 目录从上到下的各页（每章先是导语页，再是各节；最后是未归类的页）；「上一条」「下一条」照它走。 */
+export function tocOrder(contents: Toc): Item[] {
+  return [...contents.chapters.flatMap((chapter) => [...(chapter.intro ? [chapter.intro] : []), ...chapter.sections.map((one) => one.item)]), ...contents.unsorted];
+}
+
+/** 给人看的一节的叫法：「3.1 借书」；导语页写「业务流程 导语」；没有节号的（已废弃、未归类）只写标题。 */
 export function sectionLabel(contents: Toc, item: Item): string {
+  const intro = introChapter(contents, item.item_id);
+  if (intro) return `${intro.chapter.name} ${INTRO_NAME}`;
   const section = sectionOf(contents, item.item_id);
   return section?.no ? `${section.no} ${titleOf(item)}` : titleOf(item);
 }

@@ -60,7 +60,7 @@ test("刚建好、有材料的任务：在核读材料，没有人移过；材�
   const now = summary()!;
   assert.deepEqual([now.current, now.moved_by, now.moved_at, now.reason], ["reading", null, null, null]);
   assert.deepEqual(brief(now, "materials_cited"), [false, ["inputs/材料.md"]]);
-  assert.deepEqual(Object.keys(now.lamps), ["reading", "clarifying", "modeling", "writing", "reviewing"]);
+  assert.deepEqual(Object.keys(now.lamps), ["reading", "clarifying", "modeling", "writing", "reviewing", "document"]);
 });
 
 test("走一小段：立页、记问题、移动、用户看过、写用例，各盏灯跟着库里的内容变", () => {
@@ -138,11 +138,11 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   const ro = new DatabaseSync(databasePath(dir), { readOnly: true });
   try {
     assert.deepEqual(lampDiagrams(ro, taskId, definition), [
-      { diagram_id: "D-001", kind: "context", sources: ["OA-001"], drawn: ["OA-001"], linked: [], branches: false, viewed: false },
-      { diagram_id: "D-002", kind: "use_case", sources: ["OA-001", "OA-004"], drawn: ["OA-001", "OA-004"], linked: [], branches: false, viewed: false },
-      { diagram_id: "D-003", kind: "class", sources: ["OA-002", "OA-003", "OA-005"], drawn: ["OA-002", "OA-003", "OA-005"], linked: ["OA-002", "OA-003"], branches: false, viewed: false },
-      { diagram_id: "D-004", kind: "flowchart", sources: ["OA-004"], drawn: ["OA-004"], linked: [], branches: true, viewed: false },
-      { diagram_id: "D-005", kind: "state", sources: ["OA-002"], drawn: ["OA-002"], linked: [], branches: false, viewed: false },
+      { diagram_id: "D-001", kind: "context", sources: ["OA-001"], drawn: ["OA-001"], linked: [], branches: false, viewed: false, marked: false },
+      { diagram_id: "D-002", kind: "use_case", sources: ["OA-001", "OA-004"], drawn: ["OA-001", "OA-004"], linked: [], branches: false, viewed: false, marked: false },
+      { diagram_id: "D-003", kind: "class", sources: ["OA-002", "OA-003", "OA-005"], drawn: ["OA-002", "OA-003", "OA-005"], linked: ["OA-002", "OA-003"], branches: false, viewed: false, marked: false },
+      { diagram_id: "D-004", kind: "flowchart", sources: ["OA-004"], drawn: ["OA-004"], linked: [], branches: true, viewed: false, marked: false },
+      { diagram_id: "D-005", kind: "state", sources: ["OA-002"], drawn: ["OA-002"], linked: [], branches: false, viewed: false, marked: false },
     ]);
   } finally {
     ro.close();
@@ -200,13 +200,13 @@ test("查询任务状态的末尾写现在在哪个阶段、这一段还差什�
   const { dir } = workspace();
   // 刚建好：核读材料，材料还没有被引用。
   let out = getTaskStatus(dir);
-  assert.match(out.text, /\n\n任务现在在核读材料阶段（任务建好之后还没有人移动过）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。$/);
+  assert.match(out.text, /\n\n任务现在在核读材料阶段（任务建好之后还没有人移动过）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。\n没有开着的提议。$/);
   assert.equal((out.details as any).stage.current, "reading");
   // 立了一页引用材料的主题，用户移到澄清并写了理由：澄清这一段两盏灯都过（或不适用）。
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "总体分析", fields: { 标题: "登录", 它是什么: "用户可以登录。", 标签: ["概念"], 状态: "在用" }, sources: [SOURCE] }] });
   userOp(dir, { kind: "move_stage", fields: { stage: "澄清", reason: "材料我读过了。" } });
   out = getTaskStatus(dir);
-  assert.match(out.text, /\n\n任务现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 移过来的，理由：材料我读过了）。\n澄清这一段的几项都齐了。$/);
+  assert.match(out.text, /\n\n任务现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 移过来的，理由：材料我读过了）。\n澄清这一段的几项都齐了。\n没有开着的提议。$/);
   assert.deepEqual([(out.details as any).stage.current, (out.details as any).stage.moved_by], ["clarifying", "user"]);
 
   const old = workspace(demoDefinition() as Record<string, any>);

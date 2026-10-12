@@ -17,7 +17,7 @@ import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
-import { CONTINUE_STAGE_KIND, CONTINUE_STAGE_LINE, STAY_TEXT, stageMoveLine } from "../../model/stage";
+import { CONTINUE_STAGE_KIND, STAY_TEXT, continueStageLine, quietChoiceText, stageMoveLine } from "../../model/stage";
 import { NEW_SESSION_LINE, STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, nobodySpoke, wantsOpeningStatus } from "../../model/taskStatus";
 import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
@@ -176,7 +176,7 @@ export function Conversation({
   latestDraft.current = draft;
   const statusCard = (status: TaskStatusView) => (
     <TaskStatusCard status={status} liveProposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle}
-      onMessage={handlers.onMessage} onSend={onSend} />
+      onMessage={handlers.onMessage} onSend={onSend} onReviewed={handlers.onReviewed} />
   );
   const calledAfter = (id: string | null) => called.filter((one) => one.after === id).map((one) => (
     <div key={`status-${one.n}`} className="tstatus-wrap" data-testid="status-called">
@@ -216,6 +216,7 @@ export function Conversation({
             disabled={disabled} hold={hold} holdText={holdText} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
             stayed={m.type === "assistant_reply" && !!(m as AssistantReply).act && answeredByStaying(messages, index)}
+            stayedKey={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredStayKey(messages, index) : null}
             unmovedAt={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmoved(messages, index) : null}
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
@@ -243,7 +244,7 @@ export function Conversation({
       </div>
       <div className={`chat-in${disabledReason ? " busy" : ""}`}>
         <div className={`busybar${note ? " show" : ""}${info ? " info" : ""}`} data-testid={note ? (info ? "executor-hint" : "busy-note") : undefined}>{note}</div>
-        <PendingProposal proposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle} onMessage={handlers.onMessage} />
+        <PendingProposal proposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle} onMessage={handlers.onMessage} onReviewed={handlers.onReviewed} />
         <div className="inbox">
           <textarea ref={inputRef} value={draft} disabled={disabled} rows={2} data-testid="chat-input"
             placeholder={disabledReason ? DISABLED_PLACEHOLDER : INPUT_PLACEHOLDER}
@@ -281,7 +282,9 @@ export function answeredText(messages: ConversationMessage[], index: number): st
   for (let i = index + 1; i < messages.length; i++) {
     const m = messages[i];
     if (m.type === "assistant_reply") return null;
-    if (m.type === "ui_action_noted" && (m as UiActionNoted).kind === CONTINUE_STAGE_KIND && (m as UiActionNoted).reply_message_id === replyId) return STAYED_TEXT;
+    if (m.type === "ui_action_noted" && (m as UiActionNoted).kind === CONTINUE_STAGE_KIND && (m as UiActionNoted).reply_message_id === replyId) {
+      return `你选了「${quietChoiceText((m as UiActionNoted).option_key)}」`;
+    }
     if (m.type !== "user_message") continue;
     const u = m as UserMessage & { card?: { choice?: string } | null };
     if (u.origin === "card_choice") {
@@ -305,9 +308,25 @@ export function answeredText(messages: ConversationMessage[], index: number): st
 /** 用户在进入卡片上选了「继续本阶段」之后，卡片答过了的那一句。 */
 export const STAYED_TEXT = `你选了「${STAY_TEXT}」`;
 
-/** 这张卡片是不是用户选了「继续本阶段」答过的。 */
+/** 答这张卡片的那条「不发话」的界面操作通知（continue_stage）；卡片不是这样答的是 null。 */
+function stayNote(messages: ConversationMessage[], index: number): UiActionNoted | null {
+  const replyId = (messages[index] as AssistantReply).message_id;
+  for (let i = index + 1; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.type === "assistant_reply" || m.type === "user_message") return null;
+    if (m.type === "ui_action_noted" && (m as UiActionNoted).kind === CONTINUE_STAGE_KIND && (m as UiActionNoted).reply_message_id === replyId) return m as UiActionNoted;
+  }
+  return null;
+}
+
+/** 这张卡片是不是用户点了不发话的一项答过的（「继续本阶段」「留在本段」「需要修改」「看过了，生成文档」）。 */
 export function answeredByStaying(messages: ConversationMessage[], index: number): boolean {
-  return answeredText(messages, index) === STAYED_TEXT;
+  return stayNote(messages, index) !== null;
+}
+
+/** 那条通知记的是点了哪一项；早先的通知没有记，是 null。 */
+export function answeredStayKey(messages: ConversationMessage[], index: number): string | null {
+  return stayNote(messages, index)?.option_key ?? null;
 }
 
 /**
@@ -358,7 +377,7 @@ function StatusNote({ line, text }: { line: string; text: string }) {
   );
 }
 
-function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, unmovedAt, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, stayedKey, unmovedAt, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -371,6 +390,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   onShowReviews?: () => void;
   answered: string | null;
   stayed: boolean;
+  stayedKey: string | null;
   /** 答这张卡片的那次点击没有让阶段移动时，任务当时所在的阶段。 */
   unmovedAt: string | null;
   onUndo: (revisionNo: number) => void;
@@ -434,7 +454,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </>
           )}
           {m.act && !m.degraded && (
-            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} unmovedAt={unmovedAt}
+            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} stayedKey={stayedKey} unmovedAt={unmovedAt}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}
           {revisions.length > 0 && (
@@ -460,8 +480,8 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
         );
       }
       if (m.kind === STOP_RUN_KIND) return <div className="selfnote stop" data-testid="stop-note">{STOP_NOTE_TEXT}</div>;
-      // 用户在进入卡片上选了「继续本阶段」：会话里那一句是写给助手看的，页面上换成一句短的。
-      if (m.kind === CONTINUE_STAGE_KIND) return <div className="selfnote" data-testid="continue-stage-note">{CONTINUE_STAGE_LINE}</div>;
+      // 用户在提议的卡片上选了不发话的一项（「继续本阶段」「留在本段」「需要修改」「看过了，生成文档」）：会话里那一句是写给助手看的，页面上换成一句短的。
+      if (m.kind === CONTINUE_STAGE_KIND) return <div className="selfnote" data-testid="continue-stage-note">{continueStageLine(m.option_key)}</div>;
       const revision = m.undoable ? revisionOf(m) : null;
       return (
         <div className="selfnote" data-testid="ui-action">

@@ -1,15 +1,16 @@
 /**
- * 每个阶段「这一段还差什么」的十六盏灯（src/lib/stage.ts 的 stageLamps，只算不读库）：每盏各有通过、不通过、不适用三种情形。
+ * 每个阶段「这一段还差什么」的二十一盏灯（src/lib/stage.ts 的 stageLamps，只算不读库）：每盏各有通过、不通过、不适用三种情形。
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  LAMP_KEYS, type Lamp, type LampDiagram, type LampInput, type LampItem, type LampPage, STAGES, lampLines, lampPage, lampQuestion, stageLamps,
+  LAMP_KEYS, type Lamp, type LampDiagram, type LampInput, type LampItem, type LampPage, type LampQuestion, STAGES, hasPendingMark, lampLines, lampPage, lampQuestion, stageLamps,
 } from "../src/lib/stage.ts";
 
 const page = (id: string, over: Partial<LampPage> = {}): LampPage =>
-  ({ item_id: id, title: `主题${id}`, aliases: [], tags: [], deprecated: false, parent: null, examples: [], viewed: false, settled: 0, stateful: false, ...over });
+  ({ item_id: id, title: `主题${id}`, aliases: [], tags: [], deprecated: false, parent: null, examples: [], viewed: false, settled: 0, stateful: false,
+    intro: null, what: true, pending: false, marked: false, ...over });
 const item = (id: string, over: Partial<LampItem> = {}): LampItem => ({ item_id: id, collection: "功能用例", cites: [], citesDiagrams: [], pending: false, ...over });
 const diagram = (id: string, kind: string, over: Partial<LampDiagram> = {}): LampDiagram =>
   ({ diagram_id: id, kind, sources: [], drawn: [], linked: [], branches: false, viewed: false, ...over });
@@ -25,7 +26,7 @@ function lampOf(key: string, given: Partial<LampInput>): Lamp {
 }
 const brief = (one: Lamp) => [one.ok, one.items];
 
-test("十六盏灯按阶段分组，键与次序固定；什么都没有的任务里「每个某某页都……」的灯是不适用", () => {
+test("二十一盏灯按阶段分组，键与次序固定；什么都没有的任务里「每个某某页都……」的灯是不适用", () => {
   const lamps = stageLamps(input());
   assert.deepEqual(Object.keys(lamps), [...STAGES]);
   assert.deepEqual(Object.values(lamps).flat().map((one) => one.key), [...LAMP_KEYS]);
@@ -34,12 +35,13 @@ test("十六盏灯按阶段分组，键与次序固定；什么都没有的任�
     clarifying: ["tagged_pages_no_open_questions", "decisions_have_goal"],
     modeling: ["roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
       "no_duplicate_titles", "no_untagged_pages", "rules_no_conflict"],
-    writing: ["flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items"],
+    writing: ["flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items", "no_blocking_questions", "no_pending_marks"],
     reviewing: ["reviews_no_open_findings", "completion_met"],
+    document: ["chapters_have_intro", "glossary_complete", "document_no_blocking_questions"],
   });
-  // 空任务：前十四盏都不适用；评审与完成条件两盏不通过。
-  assert.equal(LAMP_KEYS.length, 16);
-  assert.deepEqual(Object.values(lamps).flat().map((one) => one.ok), [...Array(14).fill(null), false, false]);
+  // 空任务：评审与完成条件两盏不通过，别的十九盏都不适用。
+  assert.equal(LAMP_KEYS.length, 21);
+  assert.deepEqual(Object.values(lamps).flat().map((one) => one.ok), [...Array(16).fill(null), false, false, null, null, null]);
   for (const one of Object.values(lamps).flat()) assert.match(one.summary, /。$/, `${one.key} 的说明是一句完整的话`);
 });
 
@@ -210,9 +212,15 @@ test("reviews_no_open_findings 与 completion_met：评审没有未处理的发�
 test("从字段内容取算灯要的几样：一页主题、一条问题", () => {
   assert.deepEqual(lampPage("OA-002", { 标题: " 预约取书 ", 别名: ["预约 ", ""], 标签: ["流程", "概念"], 上级主题: ["OA-001"], 例子: ["例外：书丢了。"], 状态: "已废弃" }, true),
     { item_id: "OA-002", title: "预约取书", aliases: ["预约"], tags: ["流程", "概念"], deprecated: true, parent: "OA-001", examples: ["例外：书丢了。"], viewed: true,
-      settled: 0, stateful: false });
+      settled: 0, stateful: false, intro: null, what: false, pending: false, marked: false });
   assert.deepEqual(lampPage("OA-003", { 标题: "读者", 状态: "在用", 已经定下的: ["一人一证。", "", "证不外借。"] }, false),
-    { item_id: "OA-003", title: "读者", aliases: [], tags: [], deprecated: false, parent: null, examples: [], viewed: false, settled: 2, stateful: false });
+    { item_id: "OA-003", title: "读者", aliases: [], tags: [], deprecated: false, parent: null, examples: [], viewed: false, settled: 2, stateful: false,
+      intro: null, what: false, pending: false, marked: false });
+  // 导语页、写没写「它是什么」、待核实由调用方给、文字里有没有「待定」标记。
+  const intro = lampPage("OA-020", { 标题: "业务流程导语", 它是什么: "这一章讲借书与预约。", 导语所属章: " 业务流程 ", 已经定下的: ["待定：保留期遇闭馆日怎样算"] }, true, true);
+  assert.deepEqual([intro.intro, intro.what, intro.pending, intro.marked], ["业务流程", true, true, true]);
+  assert.deepEqual([hasPendingMark("待定"), hasPendingMark(" 待定 "), hasPendingMark("待定：借满怎么办"), hasPendingMark(["读者刷证", "待定:超时"]), hasPendingMark({ 扩展流程: ["待定"] }),
+    hasPendingMark("这件事有待定夺"), hasPendingMark("期待定下来"), hasPendingMark(null), hasPendingMark('b{"待定：有没有借满"}')], [true, true, true, true, true, false, false, false, true]);
   // 说没说到状态：按字面认「状态」「变成」「从……变为……」，看「它是什么」与「已经定下的」；例子与标题里的不看，「变为」前面没有「从」不认。
   const stateful = (fields: Record<string, unknown>) => lampPage("OA-009", fields, false).stateful;
   assert.deepEqual([
@@ -221,10 +229,13 @@ test("从字段内容取算灯要的几样：一页主题、一条问题", () =>
     stateful({ 它是什么: "从三月起执行。押金另算，不变为积分。" }),
   ], [true, true, true, false, false]);
   const q = (fields: Record<string, unknown>) => lampQuestion("TBD-001", fields, "状态");
-  assert.deepEqual(q({ 种类: "待澄清", 状态: "未解决", 关联条目: ["OA-001", "UC-002"] }), { item_id: "TBD-001", open: true, related: ["OA-001", "UC-002"] });
+  assert.deepEqual(q({ 种类: "待澄清", 状态: "未解决", 关联条目: ["OA-001", "UC-002"] }), { item_id: "TBD-001", open: true, related: ["OA-001", "UC-002"], unresolved: true, blocking: false });
+  // 未解决不分种类；是否阻断下游只认「阻断下游」这个取值。
+  assert.deepEqual([q({ 种类: "范围外", 状态: "未解决", 是否阻断下游: "阻断下游" }).unresolved, q({ 种类: "范围外", 状态: "未解决", 是否阻断下游: "阻断下游" }).blocking,
+    q({ 状态: "已解决", 是否阻断下游: "阻断下游" }).unresolved, q({ 状态: "未解决", 是否阻断下游: "不阻断" }).blocking], [true, true, false, false]);
   assert.deepEqual([q({ 种类: "范围外", 状态: "未解决" }).open, q({ 种类: "待澄清", 状态: "已解决" }).open, q({ 种类: "待澄清", 状态: "用户决定保留" }).open], [false, false, false]);
   // 集合没有「种类」这个字段时只看状态。
-  assert.deepEqual(q({ 状态: "未解决" }), { item_id: "TBD-001", open: true, related: [] });
+  assert.deepEqual(q({ 状态: "未解决" }), { item_id: "TBD-001", open: true, related: [], unresolved: true, blocking: false });
 });
 
 test("「这一段还差什么」的几行：不通过的灯各一句；都通过或不适用时写一句都齐了", () => {
@@ -235,4 +246,66 @@ test("「这一段还差什么」的几行：不通过的灯各一句；都通�
     "  - 有 1 页主题还没有贴标签：OA-002。",
   ]);
   assert.deepEqual(lampLines("reading", lamps.reading), ["核读材料这一段的几项都齐了。"]);
+});
+
+// ───────────── 写条目与编写文档新加的五盏 ─────────────
+
+const question = (id: string, over: Partial<LampQuestion> = {}): LampQuestion => ({ item_id: id, open: true, related: [], unresolved: true, blocking: false, ...over });
+const DECLARED = { declared: { intro: true, blocking: true } };
+
+test("no_blocking_questions：未了结的阻断下游的问题列出来；不阻断的、已经了结的不算；写条目与编写文档各一盏，判法相同", () => {
+  const questions = [question("TBD-001", { blocking: true }), question("TBD-002"), question("TBD-003", { blocking: true, unresolved: false, open: false })];
+  for (const key of ["no_blocking_questions", "document_no_blocking_questions"]) {
+    assert.deepEqual(brief(lampOf(key, { ...DECLARED, questions })), [false, ["TBD-001"]]);
+    assert.equal(lampOf(key, { ...DECLARED, questions }).summary, "有 1 个阻断下游的问题还没有了结：TBD-001。");
+    assert.deepEqual(brief(lampOf(key, { ...DECLARED, questions: questions.slice(1) })), [true, []]);
+    // 一个问题条目都没有、任务定义里没有这个字段：不适用。
+    assert.equal(lampOf(key, { ...DECLARED }).ok, null);
+    assert.equal(lampOf(key, { questions }).ok, null);
+    assert.equal(lampOf(key, { questions }).summary, "任务定义的问题集合里没有「是否阻断下游」这个字段。");
+  }
+});
+
+test("no_pending_marks：在用的页、图、条目里标着待定的都列出来；已废弃的页不算；什么都没有时不适用", () => {
+  const given = {
+    pages: [page("OA-001", { marked: true }), page("OA-002"), page("OA-003", { marked: true, deprecated: true })],
+    diagrams: [diagram("D-001", "flowchart", { marked: true }), diagram("D-002", "state")],
+    items: [item("UC-001", { marked: true }), item("UC-002")],
+  };
+  assert.deepEqual(brief(lampOf("no_pending_marks", given)), [false, ["OA-001", "D-001", "UC-001"]]);
+  assert.equal(lampOf("no_pending_marks", given).summary, "有 3 处还标着待定：OA-001、D-001、UC-001。");
+  assert.deepEqual(brief(lampOf("no_pending_marks", { pages: [page("OA-002")], diagrams: [diagram("D-002", "state")], items: [item("UC-002")] })), [true, []]);
+  assert.equal(lampOf("no_pending_marks", {}).ok, null);
+});
+
+test("chapters_have_intro：有内容的章都要有一页在用、写了说明的导语页；第 5、7 章看有没有规则、决定与没了结的问题；没有内容的章不要求", () => {
+  const pages = [
+    page("OA-001", { tags: ["流程"], settled: 2 }), page("OA-002", { tags: ["角色"] }), page("OA-003", { tags: ["决定"] }),
+    page("OA-010", { intro: "业务流程" }), page("OA-011", { intro: "角色", what: false }), page("OA-012", { intro: "业务规则", deprecated: true }),
+  ];
+  const lit = lampOf("chapters_have_intro", { ...DECLARED, pages });
+  // 有内容的章：角色、业务流程、业务规则（有已经定下的）、业务目标（决定页归这一章）、决策记录（有决定）。
+  // 业务流程有导语；角色的导语没有写说明、业务规则的导语已废弃，都不算。
+  assert.deepEqual([lit.ok, lit.summary], [false, "有 4 章还没有导语：「角色」、「业务规则」、「业务目标」、「决策记录与待澄清事项」。"]);
+  const all = [...pages, page("OA-013", { intro: "角色" }), page("OA-014", { intro: "业务规则" }), page("OA-015", { intro: "业务目标" }), page("OA-016", { intro: "决策记录与待澄清事项" })];
+  assert.equal(lampOf("chapters_have_intro", { ...DECLARED, pages: all }).ok, true);
+  // 没有决定、只有一条没了结的问题时，第 7 章也算有内容。
+  const seven = lampOf("chapters_have_intro", { ...DECLARED, pages: [page("OA-020", { intro: "角色" }), page("OA-002", { tags: ["角色"] })], questions: [question("TBD-001")] });
+  assert.deepEqual([seven.ok, seven.summary], [false, "有 1 章还没有导语：「决策记录与待澄清事项」。"]);
+  // 各章都没有内容、任务定义里没有这个字段：不适用。导语页自己不算内容。
+  assert.equal(lampOf("chapters_have_intro", { ...DECLARED, pages: [page("OA-010", { intro: "业务流程" })] }).ok, null);
+  assert.equal(lampOf("chapters_have_intro", { pages }).summary, "任务定义的总体分析里没有「导语所属章」这个字段。");
+});
+
+test("glossary_complete：标签含概念的在用页都写了说明而且不待核实；没有概念页时不适用", () => {
+  const pages = [page("OA-001", { tags: ["概念"] }), page("OA-002", { tags: ["概念", "角色"], pending: true }), page("OA-003", { tags: ["概念"], what: false }),
+    page("OA-004", { tags: ["概念"], what: false, deprecated: true }), page("OA-005", { tags: ["流程"], pending: true })];
+  assert.deepEqual(brief(lampOf("glossary_complete", { pages })), [false, ["OA-002", "OA-003"]]);
+  assert.deepEqual(brief(lampOf("glossary_complete", { pages: [pages[0], pages[4]] })), [true, []]);
+  assert.equal(lampOf("glossary_complete", { pages: [pages[4]] }).ok, null);
+});
+
+test("导语页不贴标签，不算没归类的页", () => {
+  assert.deepEqual(brief(lampOf("no_untagged_pages", { pages: [page("OA-001", { tags: ["流程"] }), page("OA-010", { intro: "业务流程" }), page("OA-002")] })), [false, ["OA-002"]]);
+  assert.deepEqual(brief(lampOf("no_untagged_pages", { pages: [page("OA-001", { tags: ["流程"] }), page("OA-010", { intro: "业务流程" })] })), [true, []]);
 });

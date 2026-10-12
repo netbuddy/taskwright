@@ -31,13 +31,19 @@ function refusal(dir: string, by?: "executor" | "user"): { fact: string; guidanc
   return null;
 }
 
-test("助手请求评审：核读材料、澄清、整理建模三个阶段被拦；写条目与评审确认阶段可以", () => {
+test("助手请求评审：核读材料、澄清、整理建模三个阶段被拦；写条目与评审确认阶段可以；编写文档阶段被拦，指引是提议退回评审确认", () => {
   const dir = workspace();
   for (const stage of STAGES) {
     enterStage(dir, stage);
     const out = refusal(dir, "executor");
     if (stage === "writing" || stage === "reviewing") {
       assert.equal(out, null, STAGE_NAMES[stage]);
+      continue;
+    }
+    if (stage === "document") {
+      assert.equal(out!.fact, "任务现在在编写文档阶段，这个阶段不能请求评审");
+      assert.equal(out!.guidance, "编写文档阶段只补写主题页的文字。要做这件事，得先回到评审确认：请用请选择卡片提议，在问句里写明为什么要退回，" +
+        "两个选项的键与文字是 back_to_review「退回评审确认」、stay_in_stage「留在本段」，由用户在卡片上点");
       continue;
     }
     assert.equal(out!.fact, `任务现在在${STAGE_NAMES[stage]}阶段，评审要到写条目阶段才能请求`);

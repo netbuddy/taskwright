@@ -23,6 +23,8 @@ export const OVERALL_COLLECTION = "总体分析";
 export const OVERALL_FIELDS = {
   title: "标题", aliases: "别名", what: "它是什么", examples: "例子", settled: "已经定下的",
   tags: "标签", parent: "上级主题", status: "状态", seeAlso: "改看",
+  // 这一页是哪一章的导语：取值是业务说明七章的章名（lib/overall_chapters.ts）；不是导语页时不填。早先建的任务的定义里没有这个字段。
+  intro: "导语所属章",
 } as const;
 
 /** 状态的两个取值。 */

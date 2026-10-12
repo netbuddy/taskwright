@@ -3,7 +3,7 @@
  *
  * 提示词目录存在产品设置文件顶层的 debug.prompt_dir（文件里别的键原样保留）。助手一侧的扩展在调试模式下每次运行开始时读它，
  * 目录里有哪一份文件就用哪一份代替产品自带的或任务目录里的（agent/src/lib/stage_prompt.ts）。这里只管设与看：设的时候核对它是
- * 一个存在的目录的绝对路径；看的时候逐个列出那十三个固定的文件名在目录里有没有、用不用得上。产品只读这个目录，不往里写。
+ * 一个存在的目录的绝对路径；看的时候逐个列出那十五个固定的文件名在目录里有没有、用不用得上。产品只读这个目录，不往里写。
  *
  * 最近一次的系统提示来自扩展每次运行报来的那一行（pi_session.ts 的 lastStagePrompt），由执行者按任务留最近一份在内存里；
  * 服务重启之后、这个任务再运行一次之前是没有的。
@@ -36,7 +36,7 @@ function isDirectory(path: string): boolean {
   }
 }
 
-/** 提示词目录现在设的是什么，以及十三个文件名各自在目录里的情形。 */
+/** 提示词目录现在设的是什么，以及十五个文件名各自在目录里的情形。 */
 export function promptDirView(service: Service) {
   requireDebug(service);
   const dir = readPromptDir(process.env);

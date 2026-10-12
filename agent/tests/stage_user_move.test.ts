@@ -51,8 +51,8 @@ test("任务本来就在那个阶段：不记、不追加说明，也不算出�
   const same = move(dir, { stage: "澄清" });
   assert.deepEqual([same.note, same.event_seqs], ["", []]);
   assert.equal(count(dir, "stage_record"), 0);
-  // 五个阶段各移一遍，每一步都从上一步所在的阶段出发。
-  const order = ["reading", "modeling", "writing", "reviewing", "clarifying"] as const;
+  // 六个阶段各移一遍，每一步都从上一步所在的阶段出发。
+  const order = ["reading", "modeling", "writing", "reviewing", "document", "clarifying"] as const;
   let from = "澄清";
   for (const to of order) {
     assert.equal(move(dir, { stage: STAGE_NAMES[to] }).note, `界面操作（不是用户打的字）：用户把任务从${from}移到${STAGE_NAMES[to]}。`);
@@ -66,7 +66,7 @@ test("拒绝：没有写阶段或名字不对；任务编号对不上；任务�
   for (const fields of [undefined, {}, { stage: "发布" }, { stage: 3 }]) {
     const error = refused(() => move(dir, fields));
     assert.equal(error.code, "bad_request");
-    assert.equal(error.message, "move_stage 要在 fields 里写 stage：「核读材料」「澄清」「整理建模」「写条目」「评审确认」之一；可以另写一句 reason。");
+    assert.equal(error.message, "move_stage 要在 fields 里写 stage：「核读材料」「澄清」「整理建模」「写条目」「评审确认」「编写文档」之一；可以另写一句 reason。");
   }
   assert.equal(refused(() => move(dir, { stage: "澄清" }, { task_id: "TASK-别的" })).code, "bad_request");
   assert.equal(count(dir, "stage_record"), 0);

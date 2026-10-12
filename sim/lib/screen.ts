@@ -87,14 +87,42 @@ export function isStageCard(act: Act | null | undefined): boolean {
   return act?.kind === "choose" && (act.options ?? []).some((o) => isEnterKey(o.key));
 }
 
-/** 这个键是不是进入卡片上留在这一段的那个选项。 */
-export function isStayOption(act: Act | null | undefined, key: string): boolean {
-  return isStageCard(act) && key.startsWith("continue_") && (act!.options ?? []).some((o) => o.key === key);
+/**
+ * 助手提议的另两种卡片，也与网页认的是同一种：提议退回前面的阶段（一个选项的键以 back_to_ 开头，另一项 stay_in_stage 页面写成「留在本段」），
+ * 编写文档阶段请用户过目补写的页（document_reviewed「看过了，生成文档」与 document_revise「需要修改」）。
+ * 「留在本段」「需要修改」与「继续本阶段」一样只发界面操作 continue_stage；「看过了，生成文档」也不发话：先发 continue_stage，
+ * 再把卡片点名的页标为已读（mark_viewed，不通知助手），助手不因此运行。
+ */
+export const STAY_HERE_KEY = "stay_in_stage";
+export const STAY_HERE_TEXT = "留在本段";
+export const DOCUMENT_REVIEWED_KEY = "document_reviewed";
+export const DOCUMENT_REVISE_KEY = "document_revise";
+export const DOCUMENT_REVISE_TEXT = "需要修改";
+const isBackKey = (key: string): boolean => key.startsWith("back_to_");
+
+/** 一张卡片是助手的哪一种提议：进入下一个阶段、退回前面的阶段、请用户过目补写的页；不是提议是 null。照这个先后取第一种对得上的。 */
+export function proposalKind(act: Act | null | undefined): "enter" | "back" | "review" | null {
+  if (act?.kind !== "choose") return null;
+  const keys = (act.options ?? []).map((o) => o.key);
+  if (keys.some(isEnterKey)) return "enter";
+  if (keys.some(isBackKey)) return "back";
+  return keys.includes(DOCUMENT_REVIEWED_KEY) ? "review" : null;
 }
 
-/** 请选择卡片上一个选项给人看的文字：进入卡片上留在这一段的那一项写「继续本阶段」，别的照助手写的。 */
+/** 这个键是不是提议的卡片上不生效的那个选项：进入卡片上留在这一段的、回退卡片上的「留在本段」、请过目卡片上的「需要修改」。 */
+export function isStayOption(act: Act | null | undefined, key: string): boolean {
+  return proposalKind(act) !== null && (key.startsWith("continue_") || key === STAY_HERE_KEY || key === DOCUMENT_REVISE_KEY) && (act!.options ?? []).some((o) => o.key === key);
+}
+
+/** 这个键是不是请过目卡片上的「看过了，生成文档」。 */
+export function isReviewedOption(act: Act | null | undefined, key: string): boolean {
+  return proposalKind(act) === "review" && key === DOCUMENT_REVIEWED_KEY;
+}
+
+/** 请选择卡片上一个选项给人看的文字：提议的卡片上不生效的那一项照页面写固定的字（「继续本阶段」「留在本段」「需要修改」），别的照助手写的。 */
 function optionLabel(act: Act, option: { key: string; text: string }): string {
-  return isStayOption(act, option.key) ? STAY_TEXT : option.text;
+  if (!isStayOption(act, option.key)) return option.text;
+  return option.key === STAY_HERE_KEY ? STAY_HERE_TEXT : option.key === DOCUMENT_REVISE_KEY ? DOCUMENT_REVISE_TEXT : STAY_TEXT;
 }
 
 /**
@@ -282,17 +310,18 @@ export interface RespondParams {
   reason?: string;
 }
 
-/** 一次回应要发给后端的请求：说话、直接操作，或者什么都不发（只表示结束或放弃）。 */
+/** 一次回应要发给后端的请求：说话、直接操作（then 是紧接着发的第二个直接操作），或者什么都不发（只表示结束或放弃）。 */
 export type Plan =
   | { kind: "message"; body: Record<string, unknown> }
-  | { kind: "action"; body: Record<string, unknown> }
+  | { kind: "action"; body: Record<string, unknown>; then?: Record<string, unknown> }
   | { kind: "none" };
 
 const CLICK_TEXT: Record<string, string> = { 不对: "这个不对。", 采纳: "我采纳这个建议。", 换一个: "请换一个建议。", 就这样做: "就这样做。", 不要: "不要这样做。" };
 
 /**
  * 按接口约定（docs/api.md「卡片上的按钮」）把一次回应翻成请求：「这几条都看过了」走 actions 的 mark_viewed（带 notify_executor），其余按钮走 messages 带 card，
- * 话用第 7 节的模板；说话走 messages。进入卡片上的「继续本阶段」走 actions 的 continue_stage，不发话，助手不因此运行。形式不对时抛异常，写明哪里不对。
+ * 话用第 7 节的模板；说话走 messages。提议的卡片上不生效的那一项（「继续本阶段」「留在本段」「需要修改」）走 actions 的 continue_stage，不发话，助手不因此运行；
+ * 请过目卡片上的「看过了，生成文档」先发 continue_stage、再发 mark_viewed（不通知助手），同样不发话。形式不对时抛异常，写明哪里不对。
  */
 export function planRespond(params: RespondParams, lastReply: Message | null, clientId: string, task?: TaskView | null): Plan {
   const p = params ?? {};
@@ -331,6 +360,13 @@ export function planRespond(params: RespondParams, lastReply: Message | null, cl
       // 与网页一致：只留一条界面操作通知，提议仍然开着；fields 写卡片所在回复的编号与点的键。
       return { kind: "action", body: { client_id: clientId, kind: CONTINUE_STAGE, targets: [], notify_executor: false,
         fields: { reply_message_id: lastReply?.message_id ?? null, option_key: click } } };
+    }
+    if (isReviewedOption(act, click)) {
+      // 与网页一致：先留通知（这时提议还开着），再把卡片点名的页标为已读；两步都不引出助手的一次运行。
+      return { kind: "action", body: { client_id: clientId, kind: CONTINUE_STAGE, targets: [], notify_executor: false,
+        fields: { reply_message_id: lastReply?.message_id ?? null, option_key: click } },
+        ...((act.items ?? []).length ? { then: { client_id: `${clientId}-viewed`, kind: "mark_viewed", notify_executor: false,
+          targets: (act.items ?? []).map((i) => ({ item_id: i.item_id, base_revision: i.revision_no })) } } : {}) };
     }
     const option = act.kind === "choose" ? act.options?.find((o) => o.key === click) : undefined;
     const said = option ? `我选：${option.text}` : click === "不对" && text ? text : CLICK_TEXT[click];

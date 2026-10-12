@@ -15,6 +15,7 @@
 import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
+import { isStage } from "../../agent/src/lib/stage.ts";
 import { callFacts, derivedSourceName } from "./library.ts";
 import { understandingLines, worksFromEntries } from "./work_summary.ts";
 
@@ -37,8 +38,7 @@ export const FALLBACK_TEXT = "请用 reply 工具把要对用户说的话发出�
 export type Entry = Record<string, any>;
 
 /** 回复里的告知一律整理成 {"text", "items"?}：旧会话里一条告知是一句纯文字，新的是带 items 的对象；认不出的丢掉。 */
-const STAGE_KEYS = ["reading", "clarifying", "modeling", "writing", "reviewing"];
-const isStageKey = (value: unknown): value is string => typeof value === "string" && STAGE_KEYS.includes(value);
+const isStageKey = (value: unknown): value is string => isStage(value);
 
 /**
  * 助手在回复里把任务退回了前面的阶段时，那条回复带的一项：从哪个阶段、到哪个阶段、理由。
@@ -55,9 +55,10 @@ export function replyStageMove(details: Record<string, any>, reason: unknown): {
  * 「继续本阶段」的那条界面操作通知另带的两项：卡片在哪条回复上（reply_message_id）、卡片提议进入哪个阶段（stage）。
  * details 是那条通知的 details。别的界面操作通知不带，返回空对象。
  */
-export function continueStageFields(details: Record<string, any>): { reply_message_id?: string; stage?: string } {
+export function continueStageFields(details: Record<string, any>): { reply_message_id?: string; stage?: string; option_key?: string } {
   if (details.kind !== CONTINUE_STAGE || typeof details.reply_entry !== "string") return {};
-  return { reply_message_id: details.reply_entry, ...(isStageKey(details.stage) ? { stage: details.stage } : {}) };
+  return { reply_message_id: details.reply_entry, ...(isStageKey(details.stage) ? { stage: details.stage } : {}),
+    ...(typeof details.option_key === "string" && details.option_key ? { option_key: details.option_key } : {}) };
 }
 
 /**

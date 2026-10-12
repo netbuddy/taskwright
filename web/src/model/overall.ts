@@ -11,7 +11,8 @@
 import type { CollectionDef, Item, Mention, Source, Task } from "../api/types";
 // 集合名、字段名、状态的取值与「反例：」这几个字，助手一侧与后端也用，只在那边的一个文件里写一遍（它不碰 Node 模块，页面可以直接导入）。
 import { COUNTER_EXAMPLE_PREFIX, EXCEPTION_EXAMPLE_PREFIX, OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED } from "../../../agent/src/lib/overall_analysis.ts";
-import { SOURCE_ITEM, SOURCE_SUPPLEMENT, seenCurrent, sourceKindNow, unresolvedIssuesOf, viewTarget } from "./items";
+import { RESOLVED_VALUE, SOURCE_ITEM, SOURCE_SUPPLEMENT, issueStatus, issuesOf, seenCurrent, sourceKindNow, unresolvedIssuesOf, viewTarget } from "./items";
+import { QUESTION_BLOCKING, QUESTION_BLOCKING_FIELD } from "../../../agent/src/lib/stage";
 
 export { OVERALL_COLLECTION };
 
@@ -227,15 +228,50 @@ export function settledCount(item: Item): number {
   return settledOf(item).filter((_, i) => !pending.has(i)).length;
 }
 
-/** 挂在这一页上、还没有了结的问题（「还没定的」）。 */
+/** 问题条目里的三个字段：没有它下一段做不做得出、不阻断的什么时候回看、了结之后答案落实到了哪里。 */
+export { QUESTION_BLOCKING, QUESTION_BLOCKING_FIELD };
+export const QUESTION_NOT_BLOCKING = "不阻断";
+export const QUESTION_REVISIT_FIELD = "何时回看";
+export const QUESTION_LANDED_FIELD = "落实到";
+
+/** 这个问题是不是阻断下游的：没有它下一段做不出。没有写这一项的问题（早先的任务）当作不阻断。 */
+export function isBlockingQuestion(question: Item): boolean {
+  return textOf(question, QUESTION_BLOCKING_FIELD).trim() === QUESTION_BLOCKING;
+}
+
+/** 问题上那枚小标签写什么：「阻断下游」或「不阻断」；任务的定义里没有这一项时不挂（null）。 */
+export function questionBlockingText(task: Task, question: Item): string | null {
+  const def = task.definition.collections.find((c) => c.name === question.collection);
+  if (!(def?.fields ?? []).some((f) => f.name === QUESTION_BLOCKING_FIELD)) return null;
+  return isBlockingQuestion(question) ? QUESTION_BLOCKING : QUESTION_NOT_BLOCKING;
+}
+
+/** 不阻断的问题什么时候回看；阻断下游的、没有写的为空。 */
+export function questionRevisit(question: Item): string {
+  return isBlockingQuestion(question) ? "" : textOf(question, QUESTION_REVISIT_FIELD).trim();
+}
+
+/** 了结的问题答案落实到了哪里；没有写的为空。 */
+export function questionLanded(question: Item): string {
+  return textOf(question, QUESTION_LANDED_FIELD).trim();
+}
+
+/** 挂在这一页上、还没有了结的问题（「还没定的」）：阻断下游的排在前面，各自按编号。 */
 export function openQuestions(task: Task, item: Item): Item[] {
-  return unresolvedIssuesOf(task, item.item_id);
+  const all = unresolvedIssuesOf(task, item.item_id);
+  return [...all.filter(isBlockingQuestion), ...all.filter((one) => !isBlockingQuestion(one))];
+}
+
+/** 挂在这一页上、已经了结（状态是「已解决」）的问题，按编号。 */
+export function settledQuestions(task: Task, item: Item): Item[] {
+  return issuesOf(task, item.item_id).filter((one) => issueStatus(task, one) === RESOLVED_VALUE);
 }
 
 /** 「助手为什么问」：问题条目里除第一个字段之外、填了字的文本字段（需求规格里是「建议的处理」），取第一个；没有时为空。 */
 export function questionReason(task: Task, question: Item): string {
   const def = task.definition.collections.find((c) => c.name === question.collection);
-  const field = (def?.fields ?? []).slice(1).find((f) => f.type === "文本" && f.name !== "处理结果" && textOf(question, f.name).trim() !== "");
+  const skip = ["处理结果", QUESTION_REVISIT_FIELD, QUESTION_LANDED_FIELD];
+  const field = (def?.fields ?? []).slice(1).find((f) => f.type === "文本" && !skip.includes(f.name) && textOf(question, f.name).trim() !== "");
   return field ? textOf(question, field.name).trim() : "";
 }
 

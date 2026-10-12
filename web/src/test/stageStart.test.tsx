@@ -19,7 +19,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const info: ServiceInfo = { ok: true, app: "taskwright", version: "0.5.0", mode: "server", pid: 1, port: 8940, capabilities: { exit: false, model: true, model_config: true } };
 const stage = (current: StageView["current"]): StageView => ({ current, moved_by: null, moved_at: null, reason: null,
-  lamps: { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [] } });
+  lamps: { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [], document: [] } });
 const MATERIAL = { path: "inputs/材料.md", bytes: 10, modified_at: "" };
 
 function page(task: Task, over: Partial<WorkState> = {}) {

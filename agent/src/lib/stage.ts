@@ -1,28 +1,30 @@
 /**
- * 工作的阶段：任务定义里有「总体分析」集合的任务，工作分五个阶段——核读材料、澄清、整理建模、写条目、评审确认。
+ * 工作的阶段：任务定义里有「总体分析」集合的任务，工作分六个阶段——核读材料、澄清、整理建模、写条目、评审确认、编写文档。
  * 阶段由用户或助手的动作移动，每次移动留一条记录；助手每次调用写入工具时能写什么，由最近一条记录决定。
  *
- * 本文件只放不读库的东西：五个阶段的名字与次序、谁能从哪里移到哪里、每个阶段助手能写什么与被拦时的原话、
- * 提议进入写条目的那张卡片的两个选项，以及每个阶段「这一段还差什么」的几盏灯（一共十六盏）怎样算。读写库的在 lib/stage_read.ts。
+ * 本文件只放不读库的东西：六个阶段的名字与次序、谁能从哪里移到哪里、每个阶段助手能写什么与被拦时的原话、
+ * 提议进入写条目的那张卡片的两个选项，以及每个阶段「这一段还差什么」的几盏灯（一共二十一盏）怎样算。读写库的在 lib/stage_read.ts。
  *
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，这里的一切对它们都不生效；判据是 overall_analysis.ts 的 hasOverall。
  *
- * 本文件除了 overall_analysis.ts 不导入别的模块：助手的工具、后端的快照都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
+ * 本文件除了 overall_analysis.ts 与 overall_chapters.ts（它也只导入前者）不导入别的模块：助手的工具、后端的快照都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
  */
 
 import { OVERALL_FIELDS, isDeprecated, tagsOf } from "./overall_analysis.ts";
+import { CHAPTERS, CHAPTER_DECISIONS, CHAPTER_RULES, chapterOfLabels } from "./overall_chapters.ts";
 
-/** 五个阶段在库里与接口里的写法，按先后排。 */
-export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing"] as const;
+/** 六个阶段在库里与接口里的写法，按先后排。 */
+export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing", "document"] as const;
 export type Stage = (typeof STAGES)[number];
 
-/** 五个阶段给人看的名字。助手在回复里写的、拒绝原话里说的都是这几个名字。 */
+/** 六个阶段给人看的名字。助手在回复里写的、拒绝原话里说的都是这几个名字。 */
 export const STAGE_NAMES: Record<Stage, string> = {
   reading: "核读材料",
   clarifying: "澄清",
   modeling: "整理建模",
   writing: "写条目",
   reviewing: "评审确认",
+  document: "编写文档",
 };
 
 /**
@@ -63,7 +65,7 @@ export function defaultStage(hasMaterials: boolean): Stage {
 export const START_ITEMS_KEY = "start_items";
 export const START_ITEMS_TEXT = "开始写条目";
 export const CONTINUE_CLARIFY_KEY = "continue_clarify";
-/** 留在这一段的那个选项的文字：四张卡片上都是这一句。 */
+/** 留在这一段的那个选项的文字：五张卡片上都是这一句。 */
 export const STAY_TEXT = "继续本阶段";
 export const CONTINUE_CLARIFY_TEXT = STAY_TEXT;
 
@@ -78,18 +80,63 @@ export const ENTER_OPTIONS: Record<Exclude<Stage, "reading">, CardOption> = {
   modeling: { key: "enter_consolidate", text: "进入整理建模" },
   writing: { key: START_ITEMS_KEY, text: START_ITEMS_TEXT },
   reviewing: { key: "enter_review", text: "进入评审确认" },
+  document: { key: "enter_document", text: "进入编写文档" },
 };
 
 /**
- * 留在某个阶段的那个选项（评审确认是最后一段，没有往前的卡片）。四张卡片上文字相同、键各不相同：页面按键认出这一项，
+ * 留在某个阶段的那个选项（编写文档是最后一段，没有往前的卡片）。五张卡片上文字相同、键各不相同：页面按键认出这一项，
  * 不管助手在卡片里把它写成什么都显示成这一句；点它只把卡片标为已选，不替用户发话（lib/user_stage.ts）。
  */
-export const STAY_OPTIONS: Record<Exclude<Stage, "reviewing">, CardOption> = {
+export const STAY_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
   reading: { key: "continue_reading", text: STAY_TEXT },
   clarifying: { key: CONTINUE_CLARIFY_KEY, text: STAY_TEXT },
   modeling: { key: "continue_consolidate", text: STAY_TEXT },
   writing: { key: "continue_writing", text: STAY_TEXT },
+  reviewing: { key: "continue_review", text: STAY_TEXT },
 };
+
+/**
+ * 退回前面的阶段也由用户决定：助手认为这一段的输入大面积不能用了（用户放进了新材料、几页的理解互相矛盾），用一张请选择卡片
+ * 提议退回并写明原因，卡片上固定两个选项，「退回某段」与「留在本段」。用户点了「退回」，系统替用户记一次移动。
+ * 局部不明白的地方不退回：记一条问题条目、在那一处标「待定」、接着做这一段。
+ * 退回某个阶段的那个选项（编写文档是最后一段，没有「退回」到它的卡片）。
+ */
+export const BACK_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
+  reading: { key: "back_to_reading", text: "退回核读材料" },
+  clarifying: { key: "back_to_clarify", text: "退回澄清" },
+  modeling: { key: "back_to_consolidate", text: "退回整理建模" },
+  writing: { key: "back_to_writing", text: "退回写条目" },
+  reviewing: { key: "back_to_review", text: "退回评审确认" },
+};
+/** 回退卡片上留在这一段的那个选项：点它只把卡片标为已选，不替用户发话，提议仍然开着。 */
+export const STAY_HERE_OPTION: CardOption = { key: "stay_in_stage", text: "留在本段" };
+
+/**
+ * 编写文档阶段请用户过目的那张卡片的两个选项。点「看过了，生成文档」不移动阶段、不引出助手的运行：页面把卡片点名的页记为看过，
+ * 再打开生成文档；点「需要修改」只把卡片标为已选，用户接着说要改哪里。
+ */
+export const DOCUMENT_REVIEWED_OPTION: CardOption = { key: "document_reviewed", text: "看过了，生成文档" };
+export const DOCUMENT_REVISE_OPTION: CardOption = { key: "document_revise", text: "需要修改" };
+
+/** 卡片上的一个选项键是「退回」哪个阶段的；不是这样的键时返回 null。 */
+export function stageBackedBy(key: unknown): Exclude<Stage, "document"> | null {
+  const found = (Object.keys(BACK_OPTIONS) as Exclude<Stage, "document">[]).find((stage) => BACK_OPTIONS[stage].key === key);
+  return found ?? null;
+}
+
+/** 怎样提议退回某个阶段：告诉助手用哪张卡片、两个选项怎样写。 */
+export function backCardGuidance(to: Exclude<Stage, "document">): string {
+  const back = BACK_OPTIONS[to];
+  return `请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 ${back.key}「${back.text}」、${STAY_HERE_OPTION.key}「${STAY_HERE_OPTION.text}」`;
+}
+
+/** 回复里写了已经停用的 stage 时的拒绝：事实与怎么办。 */
+export const STAGE_PARAM_RETIRED: Refusal = [
+  "回复里写了 stage（或 reason），这两项已经停用：阶段不由你移动，任务还在原来的阶段",
+  "往前进入下一段，用进入下一段的请选择卡片提议；这一段的输入大面积不能用、要退回前面的阶段，用请选择卡片提议退回并在问句里写明原因，" +
+    `两个选项的键与文字照这样写：${Object.values(BACK_OPTIONS).map((one) => `${one.key}「${one.text}」`).join("、")}里要退到的那一个，与 ${STAY_HERE_OPTION.key}「${STAY_HERE_OPTION.text}」；都由用户在卡片上点。` +
+    "只是有一处没弄明白时不要退回：记一条问题条目，在那一处标「待定」，接着做这一段",
+];
 
 /**
  * 总体分析还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
@@ -105,7 +152,7 @@ export const STAGE_START_TEXTS = {
  */
 export const STATUS_NEXT_TEXT = "请按任务状况说明下一步该做什么。";
 
-/** 某个阶段的下一段；评审确认之后没有。 */
+/** 某个阶段的下一段；编写文档之后没有。 */
 export function nextStage(stage: Stage): Stage | null {
   return STAGES[STAGES.indexOf(stage) + 1] ?? null;
 }
@@ -117,11 +164,11 @@ export function stageEnteredBy(key: unknown): Exclude<Stage, "reading"> | null {
 }
 
 /**
- * 在某个阶段怎样提议进入下一段：告诉助手用哪张卡片、两个选项怎样写。评审确认是最后一段，没有下一段，返回空串。
+ * 在某个阶段怎样提议进入下一段：告诉助手用哪张卡片、两个选项怎样写。编写文档是最后一段，没有下一段，返回空串。
  */
 export function forwardCardGuidance(from: Stage): string {
   const next = nextStage(from);
-  if (next === null || from === "reviewing" || next === "reading") return "";
+  if (next === null || from === "document" || next === "reading") return "";
   const enter = ENTER_OPTIONS[next], stay = STAY_OPTIONS[from];
   return `请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 ${enter.key}「${enter.text}」、${stay.key}「${stay.text}」`;
 }
@@ -129,29 +176,16 @@ export function forwardCardGuidance(from: Stage): string {
 /**
  * 一次移动行不行。
  * - same：目标就是现在所在的阶段，原地不动不算移动，不记。
- * - user_only：往前移动（目标在现在这个阶段之后）要由用户在卡片上点，助手只能提议。
- * 用户的移动不设限；助手可以从任何阶段退回它前面的任何阶段。
+ * - user_only：移动阶段（往前、往后都是）要由用户决定，助手只能发卡片提议。
+ * 用户的移动不设限。
  */
 export type MoveVerdict = { ok: true } | { ok: false; why: "same" | "user_only" };
 
 export function judgeMove(from: Stage, to: Stage, actor: StageActor): MoveVerdict {
   if (from === to) return { ok: false, why: "same" };
   if (actor === "user") return { ok: true };
-  if (STAGES.indexOf(to) < STAGES.indexOf(from)) return { ok: true };
   return { ok: false, why: "user_only" };
 }
-
-/** 助手在回复里写了 stage 之后，工具返回里说明结果的那一句（接在「回复已送达。」后面）。 */
-export function moveText(from: Stage, to: Stage, verdict: MoveVerdict): string {
-  if (verdict.ok) return `任务已从${STAGE_NAMES[from]}移到${STAGE_NAMES[to]}。`;
-  if (verdict.why === "same") return `任务本来就在${STAGE_NAMES[from]}阶段，没有记移动。`;
-  const next = nextStage(from);
-  const oneStep = next !== null && to !== next ? `一次只进入下一段，${STAGE_NAMES[from]}的下一段是${STAGE_NAMES[next]}。` : "";
-  return `阶段没有移动：往前移动要由用户在卡片上点。${oneStep}${forwardCardGuidance(from)}。`;
-}
-
-/** 早先建的任务没有阶段，助手在回复里写了 stage 时的那一句。 */
-export const NO_STAGES_TEXT = "阶段没有移动：这个任务没有阶段，不要写 stage。";
 
 // ───────────── 每个阶段助手能写什么 ─────────────
 
@@ -162,25 +196,36 @@ export const NO_STAGES_TEXT = "阶段没有移动：这个任务没有阶段，�
  */
 export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "complete";
 
-/** 每一类写入从哪个阶段起可以做。页与问题任何阶段都可以写（评审确认阶段对页另有限制，见 pageRefusal）。 */
-const ALLOWED_FROM: Record<WriteKind, Stage> = {
-  page: "reading",
-  problem: "reading",
-  diagram: "modeling",
-  item: "writing",
-  review: "writing",
-  complete: "reviewing",
+/**
+ * 每个阶段助手能做哪几类写入。页与问题任何阶段都可以写（评审确认阶段对页另有限制，见 pageRefusal）。
+ * 编写文档排在最后，却不能写条目、不能画图、不能请求评审，所以这里一个阶段一个阶段列出来，不按先后推。
+ */
+const ALLOWED: Record<Stage, readonly WriteKind[]> = {
+  reading: ["page", "problem"],
+  clarifying: ["page", "problem"],
+  modeling: ["page", "problem", "diagram"],
+  writing: ["page", "problem", "diagram", "item", "review"],
+  reviewing: ["page", "problem", "diagram", "item", "review", "complete"],
+  document: ["page", "problem", "complete"],
 };
 
 /** 这个阶段助手能不能做这一类写入。 */
 export function canWrite(stage: Stage, kind: WriteKind): boolean {
-  return STAGES.indexOf(stage) >= STAGES.indexOf(ALLOWED_FROM[kind]);
+  return ALLOWED[stage].includes(kind);
 }
 
 /** 拒绝的两层文字：事实（现在在哪个阶段、拦下的是什么）与怎么办（这一步要先做什么、谁能移动）。 */
 export type Refusal = [fact: string, guidance: string];
 
 const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", delete: "删除" };
+
+/**
+ * 编写文档阶段被拦时怎么办：这一段只补写业务说明的文字。要动条目、图或者再评审，得先回到前面的阶段，
+ * 回去要由用户决定：助手发卡片提议退回并写明原因，用户点了才退。
+ */
+function howToLeaveDocument(back: Exclude<Stage, "document">): string {
+  return `编写文档阶段只补写主题页的文字。要做这件事，得先回到${STAGE_NAMES[back]}：${backCardGuidance(back)}，由用户在卡片上点`;
+}
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
 function howToReachWriting(): string {
@@ -193,6 +238,9 @@ function howToReachWriting(): string {
  */
 export function itemRefusal(stage: Stage, op: string, collection: string): Refusal | null {
   if (canWrite(stage, "item")) return null;
+  if (stage === "document") {
+    return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`, howToLeaveDocument("reviewing")];
+  }
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`,
     `「${collection}」的条目要到写条目阶段才能写。${howToReachWriting()}`,
@@ -205,7 +253,7 @@ export function itemRefusal(stage: Stage, op: string, collection: string): Refus
  */
 export function pageRefusal(stage: Stage, op: string, changed: readonly string[] = []): Refusal | null {
   if (stage !== "reviewing") return null;
-  const guidance = "要动主题页的内容，先在回复里把任务移回澄清或整理建模";
+  const guidance = `要动主题页的内容，得先回到澄清或整理建模：${backCardGuidance("clarifying")}，由用户在卡片上点`;
   const head = `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段`;
   if (op === "add") return [`${head}不能新立主题页`, guidance];
   if (op === "delete") return [`${head}不能删除主题页`, guidance];
@@ -221,6 +269,7 @@ export function pageRefusal(stage: Stage, op: string, changed: readonly string[]
  */
 export function diagramRefusal(stage: Stage): Refusal | null {
   if (canWrite(stage, "diagram")) return null;
+  if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`, howToLeaveDocument("modeling")];
   const enterModeling = ENTER_OPTIONS.modeling.text;
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`,
@@ -233,13 +282,14 @@ export function diagramRefusal(stage: Stage): Refusal | null {
 /** 助手请求评审：写条目之前的阶段都拦。可以时返回 null。 */
 export function reviewRefusal(stage: Stage): Refusal | null {
   if (canWrite(stage, "review")) return null;
+  if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能请求评审`, howToLeaveDocument("reviewing")];
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，评审要到写条目阶段才能请求`,
     `条目写出来之后再评审。${howToReachWriting()}`,
   ];
 }
 
-/** 助手完成任务：只有评审确认阶段可以。可以时返回 null。 */
+/** 助手完成任务：评审确认与编写文档两个阶段可以。可以时返回 null。 */
 export function completeRefusal(stage: Stage): Refusal | null {
   if (canWrite(stage, "complete")) return null;
   return [
@@ -309,6 +359,14 @@ export interface LampPage {
   settled: number;
   /** 这一页说没说到状态：「它是什么」或「已经定下的」里有「状态」二字、有「变成」，或者有「从……变为……」。按字面认，会漏也会多。 */
   stateful: boolean;
+  /** 它是哪一章的导语页：「导语所属章」里写的章名；不是导语页是 null。 */
+  intro: string | null;
+  /** 「它是什么」写了没有。 */
+  what: boolean;
+  /** 这一页待核实：有助手补充而用户还没有确认的内容。 */
+  pending: boolean;
+  /** 这一页的文字里有没有「待定」标记（hasPendingMark）。 */
+  marked: boolean;
 }
 
 /** 算灯要的一张图（还在的图，取它现在的内容）。扫 Mermaid 文本在读库的一侧做（lib/diagram_scan.ts），这里拿到的是扫好的结果。 */
@@ -326,6 +384,8 @@ export interface LampDiagram {
   branches: boolean;
   /** 用户看没看过它现在的内容。 */
   viewed: boolean;
+  /** 它的 Mermaid 文本里有没有「待定：」标记。没有给当作没有。 */
+  marked?: boolean;
 }
 
 /** 算灯要的一个条目（总体分析以外的集合里的，含问题条目）。 */
@@ -338,6 +398,8 @@ export interface LampItem {
   citesDiagrams: string[];
   /** 待核实：自己有助手补充而用户没有确认的内容，或者因依据的那一页而待核实。 */
   pending: boolean;
+  /** 它的字段里有没有「待定」标记（hasPendingMark）。没有给当作没有。 */
+  marked?: boolean;
 }
 
 /** 算灯要的一条问题条目。 */
@@ -347,6 +409,10 @@ export interface LampQuestion {
   open: boolean;
   /** 它关联的条目的编号。 */
   related: string[];
+  /** 状态是不是「未解决」（不分种类）。 */
+  unresolved: boolean;
+  /** 是否阻断下游：写的是「阻断下游」为真，「不阻断」或者没有写为假。 */
+  blocking: boolean;
 }
 
 /** 算灯要的全部事实。助手一侧与后端各自从任务库里读出来填，算法只在这里。 */
@@ -370,6 +436,11 @@ export interface LampInput {
   review: { failing: string[]; any: boolean };
   /** 完成条件：是不是全部满足；没满足的各条的说明。 */
   completion: { satisfied: boolean; unmet: string[] };
+  /**
+   * 任务定义里有没有声明这两个字段：总体分析的「导语所属章」、问题集合的「是否阻断下游」。早先建的任务的定义里没有，
+   * 与它们有关的灯是不适用。没有给当作都没有。
+   */
+  declared?: { intro: boolean; blocking: boolean };
 }
 
 const texts = (value: unknown): string[] => (Array.isArray(value) ? value.filter((one): one is string => typeof one === "string" && one.trim() !== "") : []);
@@ -378,7 +449,23 @@ const texts = (value: unknown): string[] => (Array.isArray(value) ? value.filter
 const STATE_WORDS = /状态|变成|从[^。；;！？\n]{0,40}变为/;
 
 /** 从一页的字段内容与用户看没看过，取出算灯要的几样。 */
-export function lampPage(itemId: string, fields: Record<string, unknown>, viewed: boolean): LampPage {
+/**
+ * 「待定」标记：一处还没有定下来、先这样记着的地方。约定的写法是字段的值（或列表里的一项）就是「待定」两个字，
+ * 或者文字里带着「待定：」加一句说明（图的节点文字以「待定：」开头）。问题了结、内容落实之后助手把它去掉。
+ */
+export const PENDING_MARK = "待定";
+const MARK_IN_TEXT = /待定[：:]/;
+export function hasPendingMark(value: unknown): boolean {
+  if (typeof value === "string") return value.trim() === PENDING_MARK || MARK_IN_TEXT.test(value);
+  if (Array.isArray(value)) return value.some(hasPendingMark);
+  if (value !== null && typeof value === "object") return Object.values(value as Record<string, unknown>).some(hasPendingMark);
+  return false;
+}
+/** 问题条目里「是否阻断下游」这个字段与表示阻断的取值（与 lib/definition.ts 里的同名常量一致；这里不从它导入，本文件要给页面用）。 */
+export const QUESTION_BLOCKING_FIELD = "是否阻断下游";
+export const QUESTION_BLOCKING = "阻断下游";
+
+export function lampPage(itemId: string, fields: Record<string, unknown>, viewed: boolean, pending = false): LampPage {
   const title = fields[OVERALL_FIELDS.title];
   const what = fields[OVERALL_FIELDS.what];
   const settled = texts(fields[OVERALL_FIELDS.settled]);
@@ -387,6 +474,8 @@ export function lampPage(itemId: string, fields: Record<string, unknown>, viewed
     tags: tagsOf(fields), deprecated: isDeprecated(fields), parent: texts(fields[OVERALL_FIELDS.parent])[0] ?? null,
     examples: texts(fields[OVERALL_FIELDS.examples]), viewed, settled: settled.length,
     stateful: [typeof what === "string" ? what : "", ...settled].some((one) => STATE_WORDS.test(one)),
+    intro: typeof fields[OVERALL_FIELDS.intro] === "string" && (fields[OVERALL_FIELDS.intro] as string).trim() !== "" ? (fields[OVERALL_FIELDS.intro] as string).trim() : null,
+    what: typeof what === "string" && what.trim() !== "", pending, marked: hasPendingMark(fields),
   };
 }
 
@@ -400,13 +489,14 @@ export function lampQuestion(itemId: string, fields: Record<string, unknown>, st
     item_id: itemId,
     open: fields[statusField] === QUESTION_OPEN_STATUS && (kind === undefined || kind === QUESTION_KIND_CLARIFY),
     related: texts(fields[QUESTION_RELATED_FIELD]),
+    unresolved: fields[statusField] === QUESTION_OPEN_STATUS, blocking: fields[QUESTION_BLOCKING_FIELD] === QUESTION_BLOCKING,
   };
 }
 
 const list = (ids: readonly string[]) => ids.join("、");
 const lamp = (key: string, ok: boolean | null, summary: string, items: string[] = []): Lamp => ({ key, summary, ok, items });
 
-/** 每个阶段的几盏灯，五个阶段都算。 */
+/** 每个阶段的几盏灯，六个阶段都算。 */
 export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   const live = input.pages.filter((one) => !one.deprecated);
   const byId = new Map(input.pages.map((one) => [one.item_id, one]));
@@ -494,7 +584,8 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
         `有 ${clashes.length} 个标题或别名被两页以上的主题用了：${clashes.map(([word, ids]) => `「${word}」（${list(ids)}）`).join("、")}。`, clashing);
 
   // 整理建模：没有未归类的页。用户明说先不归类的，程序认不出，只看标签。
-  const loose = live.filter((one) => one.tags.length === 0);
+  // 导语页不贴标签，不算没归类。
+  const loose = live.filter((one) => one.tags.length === 0 && !one.intro);
   const noUntagged = live.length === 0 ? lamp("no_untagged_pages", null, "总体分析里还没有主题。")
     : loose.length === 0 ? lamp("no_untagged_pages", true, "每页主题都贴了标签。")
       : lamp("no_untagged_pages", false, `有 ${loose.length} 页主题还没有贴标签：${list(loose.map((one) => one.item_id))}。`, loose.map((one) => one.item_id));
@@ -542,6 +633,38 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
     : pending.length === 0 ? lamp("no_pending_items", true, "没有待核实的条目。")
       : lamp("no_pending_items", false, `有 ${pending.length} 个条目待核实：${list(pending.map((one) => one.item_id))}。`, pending.map((one) => one.item_id));
 
+  // 写条目与编写文档：没有未了结的阻断下游的问题。两个阶段各一盏，键不同，判法相同。
+  const blockers = input.questions.filter((one) => one.unresolved && one.blocking);
+  const noBlocking = (key: string): Lamp => (!input.declared?.blocking ? lamp(key, null, "任务定义的问题集合里没有「是否阻断下游」这个字段。")
+    : input.questions.length === 0 ? lamp(key, null, "还没有问题条目。")
+      : blockers.length === 0 ? lamp(key, true, "没有未了结的阻断下游的问题。")
+        : lamp(key, false, `有 ${blockers.length} 个阻断下游的问题还没有了结：${list(blockers.map((one) => one.item_id))}。`, blockers.map((one) => one.item_id)));
+
+  // 写条目：图、页与条目里没有「待定」标记。
+  const marked = [...live.filter((one) => one.marked).map((one) => one.item_id), ...input.diagrams.filter((one) => one.marked).map((one) => one.diagram_id),
+    ...others.filter((one) => one.marked).map((one) => one.item_id)];
+  const noMarks = live.length + input.diagrams.length + others.length === 0 ? lamp("no_pending_marks", null, "还没有页、图或条目。")
+    : marked.length === 0 ? lamp("no_pending_marks", true, "图、页与条目里没有标为待定的地方。")
+      : lamp("no_pending_marks", false, `有 ${marked.length} 处还标着待定：${list(marked)}。`, marked);
+
+  // 编写文档：有内容的章都有一页在用、写了「它是什么」的导语页。第 5、7 章没有自己的页，看各页有没有「已经定下的」、有没有决定或没了结的问题。
+  const sections = live.filter((one) => !one.intro);
+  const filled = CHAPTERS.filter((chapter) => sections.some((one) => chapterOfLabels(one.tags)?.no === chapter.no)
+    || (chapter.no === CHAPTER_RULES && settledTotal > 0)
+    || (chapter.no === CHAPTER_DECISIONS && (tagged(TAG_DECISION).length > 0 || input.questions.some((one) => one.unresolved))));
+  const bare = filled.filter((chapter) => !live.some((one) => one.intro === chapter.name && one.what));
+  const chaptersIntro = !input.declared?.intro ? lamp("chapters_have_intro", null, "任务定义的总体分析里没有「导语所属章」这个字段。")
+    : filled.length === 0 ? lamp("chapters_have_intro", null, "业务说明的各章都还没有内容。")
+      : bare.length === 0 ? lamp("chapters_have_intro", true, "有内容的章都有导语。")
+        : lamp("chapters_have_intro", false, `有 ${bare.length} 章还没有导语：${bare.map((chapter) => `「${chapter.name}」`).join("、")}。`);
+
+  // 编写文档：术语表齐全——标签含「概念」的在用页都写了「它是什么」，而且不待核实。
+  const terms = tagged(TAG_CONCEPT);
+  const unclear = terms.filter((one) => !one.what || one.pending);
+  const glossary = terms.length === 0 ? lamp("glossary_complete", null, `还没有标签为「${TAG_CONCEPT}」的主题。`)
+    : unclear.length === 0 ? lamp("glossary_complete", true, `标签为「${TAG_CONCEPT}」的主题都写了说明，也都核实过了。`)
+      : lamp("glossary_complete", false, `有 ${unclear.length} 页标签为「${TAG_CONCEPT}」的主题还没有写说明或者还待核实：${list(unclear.map((one) => one.item_id))}。`, unclear.map((one) => one.item_id));
+
   // 评审确认：评审没有未处理的发现；完成条件全部满足。
   const reviews = !input.review.any ? lamp("reviews_no_open_findings", false, "还没有评审过。")
     : input.review.failing.length === 0 ? lamp("reviews_no_open_findings", true, "评审没有未处理的发现。")
@@ -553,8 +676,9 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
     reading: [materialsCited],
     clarifying: [noOpenQuestions, decisionsHaveGoal],
     modeling: [rolesDrawn, conceptsRelated, flowsCharted, statesDrawn, noDuplicates, noUntagged, noRuleConflict],
-    writing: [flowsBacked, basisViewed, basisDiagramsViewed, noPending],
+    writing: [flowsBacked, basisViewed, basisDiagramsViewed, noPending, noBlocking("no_blocking_questions"), noMarks],
     reviewing: [reviews, completion],
+    document: [chaptersIntro, glossary, noBlocking("document_no_blocking_questions")],
   };
 }
 
@@ -563,7 +687,9 @@ export const LAMP_KEYS = [
   "materials_cited", "tagged_pages_no_open_questions", "decisions_have_goal",
   "roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
   "no_duplicate_titles", "no_untagged_pages", "rules_no_conflict",
-  "flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items", "reviews_no_open_findings", "completion_met",
+  "flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items", "no_blocking_questions", "no_pending_marks",
+  "reviews_no_open_findings", "completion_met",
+  "chapters_have_intro", "glossary_complete", "document_no_blocking_questions",
 ] as const;
 
 /**

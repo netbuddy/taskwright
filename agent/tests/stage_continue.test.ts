@@ -9,7 +9,7 @@ import { USER_COMMAND, USER_EDIT_CUSTOM_TYPE, USER_RESULT_KEY, registerUserComma
 import { createTask } from "../src/lib/create_task.ts";
 import { recordReplyActs } from "../src/lib/dialogue_acts.ts";
 import { TASK_ACTIVE, withTaskDatabase } from "../src/lib/schema.ts";
-import { ENTER_OPTIONS, STAY_OPTIONS, STAY_TEXT } from "../src/lib/stage.ts";
+import { BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, STAY_HERE_OPTION, STAY_OPTIONS, STAY_TEXT } from "../src/lib/stage.ts";
 import { openProposal } from "../src/lib/stage_proposal.ts";
 import { UserOpError } from "../src/lib/user_ops.ts";
 import { CONTINUE_STAGE_KIND, continueStage, continueStageNote } from "../src/lib/user_stage.ts";
@@ -53,6 +53,26 @@ test("这条会话里的进入卡片上选「继续本阶段」：返回要留�
     "界面操作（不是用户打的字）：用户在提议「开始写条目」的卡片上选了「继续本阶段」，没有进入写条目。这个提议仍然开着，用户要进入时会自己点，不用再发同一张卡片。");
   assert.equal(STAY_TEXT, "继续本阶段");
   assert.deepEqual([count(dir, "event"), count(dir, "stage_record")], [events, 0]);
+});
+
+test("回退卡片上的「留在本段」、请过目卡片上的「需要修改」与「看过了，生成文档」：也只留一句话，各有各的说法；回退卡片上的「退回」不走这里", () => {
+  const dir = workspace();
+  const back = card("b-1", { kind: "choose", text: "前面几页要重看。退回澄清吗？", options: [BACK_OPTIONS.clarifying, STAY_HERE_OPTION] });
+  const review = card("b-2", { kind: "choose", text: "补写了两章的导语，请过目。", items: [{ item_id: "OA-010", revision_no: 1 }], options: [DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION] });
+  const branch = [said("u-1", "接着做"), back, review] as never;
+  const run = (entry: string, key: string) => continueStage({ workspaceDir: dir }, branch, request({ reply_message_id: entry, option_key: key }));
+  const before = count(dir, "event");
+  assert.deepEqual([run("b-1", "stay_in_stage").note, run("b-1", "stay_in_stage").stage], [
+    "界面操作（不是用户打的字）：用户在提议「退回澄清」的卡片上选了「留在本段」，没有退回澄清。这个提议仍然开着，用户要退回时会自己点，不用再发同一张卡片。", "clarifying"]);
+  assert.equal(run("b-2", "document_revise").note,
+    "界面操作（不是用户打的字）：用户在请你过目的卡片上选了「需要修改」。等用户说要改哪里，照着改，改完再发一次请过目的卡片。");
+  assert.deepEqual([run("b-2", "document_reviewed").note, run("b-2", "document_reviewed").stage, run("b-2", "document_reviewed").option_key], [
+    "界面操作（不是用户打的字）：用户在请你过目的卡片上选了「看过了，生成文档」：卡片点名的页已经记为看过。生成文档由用户在界面上按，你不用为此再做什么。", "document", "document_reviewed"]);
+  assert.equal(count(dir, "event"), before, "库里什么都不多");
+  // 退回的那一项要记移动，走卡片点击那条路；别的卡片上的键对不上的照旧拒绝。
+  assert.equal(refused(() => run("b-1", "back_to_clarify")).code, "rejected");
+  assert.equal(refused(() => run("b-1", "document_revise")).message, "认不出这张卡片：它不是助手提议的卡片，或者上面没有这个选项。");
+  assert.equal(refused(() => run("b-2", "stay_in_stage")).code, "rejected");
 });
 
 test("认不出就拒绝：不是进入卡片、卡片上留在这一段的不是这个键、点的不是留在这一段的键、参数不全、任务不在进行中", () => {

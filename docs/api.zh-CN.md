@@ -55,7 +55,7 @@ data: {
 | `task_changed` | 任务被创建、完成或放弃时 | `seq`、`at`、`task_id`、`task_name`、`status_before`、`status_after`、`actor`、`completion` |
 | `diagram_changed` | 一张图被新画、修改或删除时 | `seq`、`at`、`task_id`、`actor`、`op_id`、`diagram_id`、`revision_no`（这张图自己改后的修订号）、`op`（`add`、`update`、`delete`）、`name`、`kind`、`kind_name`（种类的中文名，例如「用例图」）。不带 Mermaid 文本与来源，要用时取图的详情 |
 | `stage_changed` | 任务从一个工作阶段移到另一个阶段时：助手在回复里退回的、用户用直接操作移的，或者用户在卡片上点了进入下一个阶段的选项 | `seq`、`at`、`task_id`、`to`（移到了哪个阶段）、`from`（从哪个阶段来）、`actor`（`executor` 或 `user`）、`reason`（助手必写；用户的可以是空文字）、`run_id`（助手移的是运行号，用户移的为 null）、`flow`（这次移动的所属流程，现在只有一条流程，恒为 `initial`）、`op_id`、`completion` |
-| `stage_proposed` | 助手发出一张提议进入下一个阶段的卡片时（请选择卡片，其中一个选项的键是进入某个阶段的键）。别的回复不推这一条 | `seq`、`at`、`task_id`、`actor`（`executor`）、`run_id`、`proposal`（这条提议，形状见第 4.1 节的 `stage.proposal`）、`completion`。任务现在开着的是哪一条提议，看这一批最后一条事件上的 `stage.proposal` |
+| `stage_proposed` | 助手发出一张提议的卡片时（请选择卡片，其中一个选项的键是进入某个阶段的键、退回某个阶段的键，或者编写文档阶段请用户过目的 `document_reviewed`）。别的回复不推这一条 | `seq`、`at`、`task_id`、`actor`（`executor`）、`run_id`、`proposal`（这条提议，形状见第 4.1 节的 `stage.proposal`）、`completion`。任务现在开着的是哪一条提议，看这一批最后一条事件上的 `stage.proposal` |
 | `review_recorded` | 评审者（reviewer）评完一个条目时；`verdict` 为 `合规` 或 `不合规`，由代码按发现所依据规则的级别算出 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`verdict`、`reason`、`findings`（每条有 `rule_id`、`level`（`必选` 或 `可选`）、`field`、`index`（从 0 起，指整个字段时为 null）、`problem`、`suggestion`）、`op_id`（用户在界面上发起的评审才有）、`completion` |
 | `review_unfinished` | 一个条目的评审没有完成（超时、调用失败、两次输出不合格、评审期间条目被改），不记合规与否 | `seq`、`at`、`task_id`、`item_id`、`revision_no`、`reason`、`op_id`、`completion` |
 | `review_progress` | 界面发起的一批评审（`request_review`）开始时（`done` 为 0），以及每评完一个条目时 | `seq`、`at`、`task_id`、`op_id`、`done`、`total`、`current`（此刻正在评的条目）、`item_id`（刚评完的条目，开始时为 null）、`completion` |
@@ -83,7 +83,7 @@ data: {
 | `step` | 一次工具调用（tool call）开始，以及本轮结束时补发的一行修正 | `work_id`、`step_key`、`text`、`in_progress`、`failed` |
 | `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`card`、`queued`；用户在卡片上点了进入下一个阶段、服务替用户记了移动时另有 `stage_move`（`from`、`to`、`actor` 为 `user`）；点的是进入某个阶段的选项而阶段没有移动时（次序不对，或者任务本来就在那个阶段）另有 `stage_unmoved`（`at` 是任务当时所在的阶段） |
 | `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节）；智能体在这条回复里把任务退回了前面的阶段时另有 `stage_move`（`from`、`to`、`actor` 为 `executor`、`reason`） |
-| `ui_action_noted` | 一次直接操作完成，或者用户停止了智能体的一次工作 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类；用户停止了智能体的一次工作之后留的那一条是 `stop_run`，见第 5.5 节：它没有库事件、没有修订、不能撤销，`text` 是写给智能体看的，页面另写一句自己的话）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`） |
+| `ui_action_noted` | 一次直接操作完成，或者用户停止了智能体的一次工作 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类；用户停止了智能体的一次工作之后留的那一条是 `stop_run`，见第 5.5 节：它没有库事件、没有修订、不能撤销，`text` 是写给智能体看的，页面另写一句自己的话）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`）、`reply_message_id`、`stage` 与 `option_key`（`kind` 为 `continue_stage` 的那一条才有，见第 6 节第 15 条） |
 | `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at`；这份材料是替换上来的时候另带 `replaces`，值是被换掉的那份材料的路径（第 5.1 节「替换材料」） |
 | `material_removed` | 删除了一份材料，或者一份材料被替换掉了（第 5.1 节） | `at`、`path`；由 Word 材料、PDF 材料生成的文件随它一起删掉，不另发事件。被替换掉的时候另带 `replaced_by`，值是换上来的那份材料的路径，紧接着有一条那份材料的 `material_added` |
 | `work_summary` | 一个工作单元结束后 | `work_id`、`at`、`seconds`、`step_count`、`stages`（每项带 `text`）、`outcome`（这个工作单元怎样结束，取值与 `work_ended` 相同；刷新后读到的对话里的 `work_summary` 消息带同样的值）；只有 `outcome` 为 `stopped_by_user` 时另有 `saved`：这个工作单元实际保存了什么，`{"revisions": […], "items": n, "diagrams": n}`。它按这个工作单元各次工具调用的调用编号到任务库里查，不看会话里有没有工具结果，所以停止到达时已经写进库、结果却没有回到会话的那一次保存也算在内。`revisions` 是保存的任务修订号，从小到大；`items` 是这些修订碰到的条目个数（同一个条目只数一次）；`diagrams` 是保存过的图的张数（图的修订号各算各的，不在 `revisions` 里）。一个工具调用都没有的工作单元不读任务库，直接给空值。任务库没法查时 `saved` 为 `null`。停止不回滚任何东西 |
@@ -113,9 +113,9 @@ data: {
                             "all_rules": [ { "id": "UC-R13", "level": "可选", "text": "…", "state": "off" }, … ],
                             "rule_switches": { "off": ["UC-R13"], "promote": [] }, "rules_hash": "…" }, … ] },
             "completion": { … 见第 4.2 节 … },
-            "stage": { "current": "clarifying", "moved_by": "executor", "moved_at": "…", "reason": "材料读完了，主题页立好了。", "flow": "initial", "proposal": null,
+            "stage": { "current": "clarifying", "moved_by": "user", "moved_at": "…", "reason": "用户在卡片上选了「进入澄清」", "flow": "initial", "proposal": null,
                        "lamps": { "reading": [ { "key": "materials_cited", "summary": "每份材料都被至少一页主题或一条问题引用了。", "ok": true, "items": [] } ],
-                                  "clarifying": [ … ], "modeling": [ … ], "writing": [ … ], "reviewing": [ … ] } },   // 工作的阶段与灯，见下文；没有阶段的任务是 null
+                                  "clarifying": [ … ], "modeling": [ … ], "writing": [ … ], "reviewing": [ … ], "document": [ … ] } },   // 工作的阶段与灯，见下文；没有阶段的任务是 null
             "items": [ { "item_id": "UC-001", "collection": "功能用例", "title": "…", "revision_no": 5, "revision_by": "user",
                          "revision_at": "…", "revisions": [2, 5], "fields": { … }, "sources": [ … ],
                          "depended_by": [ { "element_kind": "条目", "id": "CON-002", "revision_no": 4 }, { "element_kind": "图", "id": "D-001", "revision_no": 2 } ],   // 被谁依据：把这个条目写成来源的别的条目与图，带它们当前的修订号（图的是图自己的修订号；只数还在的条目与图的当前修订）；没有时是空列表
@@ -142,9 +142,9 @@ data: {
 - `mentioned_by`（**提到**；只有「总体分析」集合的条目带这一项）。贴了标签、在用的主题的标题与别名是词表；别的页与别的条目当前修订的文字里出现了这一页的词，就各记一条：`item_id` 与 `collection` 是出现在哪个条目里，`field` 与 `index` 是哪个字段的第几项，`word` 是认出来的词，`sentence` 是那一句原话，`revision_no` 是被提到的这一页现在的修订号（页面可以拿它记住用户看到这条提到时那一页是哪次修订，那一页之后又改了就能提醒）。一个位置上取词表里最长的词；一句话里同一页只记一次；一页不记自己提到自己；两页的标题或别名相同时两页各记一条。没有贴标签的页与已废弃的页是空列表。
 
 
-`task.stage` 是**工作的阶段**。任务定义里有「总体分析」集合的任务，工作分五个阶段：`reading`（核读材料）、`clarifying`（澄清）、`modeling`（整理建模）、`writing`（写条目）、`reviewing`（评审确认）。`current` 是现在所在的阶段，取最近一次移动；一次都没有移过时，任务目录里有材料是 `reading`、没有材料是 `clarifying`，这时 `moved_by`、`moved_at`、`reason` 都是 null。`moved_by` 是 `executor` 或 `user`。阶段决定助手这一刻能写什么：总体分析的页与问题条目一直可以写；图从整理建模起；别的集合的条目与请求评审从写条目起；完成任务只在评审确认；评审确认阶段主题页只能改「状态」与「改看」。助手在不许的阶段调用写入工具会被拒绝，拒绝里写明现在在哪个阶段、要先做什么。用户的直接操作不看阶段。`lamps` 按阶段给出几盏**灯**，每盏是 `{ key, summary, ok, items }`：`summary` 是一句完整的话；`ok` 为 true 是通过、false 是不通过、null 是不适用（例如「每页流程都……」而一页流程都没有）；`items` 是差的页、条目或材料。灯是每个阶段「做到什么算够」的提示，从任务现有的内容现算，不拦任何操作。没有「总体分析」集合的任务（0.4 建的）没有阶段，`stage` 是 null。十六盏灯：
+`task.stage` 是**工作的阶段**。任务定义里有「总体分析」集合的任务，工作分六个阶段：`reading`（核读材料）、`clarifying`（澄清）、`modeling`（整理建模）、`writing`（写条目）、`reviewing`（评审确认）、`document`（编写文档）。`current` 是现在所在的阶段，取最近一次移动；一次都没有移过时，任务目录里有材料是 `reading`、没有材料是 `clarifying`，这时 `moved_by`、`moved_at`、`reason` 都是 null。`moved_by` 是 `user` 或 `executor`：现在阶段只由用户移动，`executor` 只出现在这一版之前留下的记录里。阶段决定助手这一刻能写什么：总体分析的页与问题条目一直可以写；图在整理建模、写条目、评审确认三个阶段；别的集合的条目与请求评审在写条目与评审确认两个阶段；评审确认阶段主题页只能改「状态」与「改看」；编写文档阶段只能写主题页与问题条目；完成任务在评审确认与编写文档两个阶段。助手在不许的阶段调用写入工具会被拒绝，拒绝里写明现在在哪个阶段、要先做什么。用户的直接操作不看阶段。`lamps` 按阶段给出几盏**灯**，每盏是 `{ key, summary, ok, items }`：`summary` 是一句完整的话；`ok` 为 true 是通过、false 是不通过、null 是不适用（例如「每页流程都……」而一页流程都没有）；`items` 是差的页、条目或材料。灯是每个阶段「做到什么算够」的提示，从任务现有的内容现算，不拦任何操作。没有「总体分析」集合的任务（0.4 建的）没有阶段，`stage` 是 null。任务定义里没有相应字段时（这一版之前建的任务没有「导语所属章」与问题的「是否阻断下游」），与它们有关的几盏是不适用。二十一盏灯：
 
-`stage.proposal` 是**开着的提议**，没有时为 null。助手发出提议进入下一个阶段的卡片之后，提议就一直开着，直到任务的阶段有过一次移动（用户进入了下一段，或者助手把任务退回了前面的阶段）、助手又发了一张这样的卡片、或者任务不再进行中。形状是 `{ stage, enter, stay, text, items, session_id, reply_message_id, event_seq, at }`：`stage` 是要进入的阶段；`enter` 与 `stay` 是卡片上进入与留在这一段的两个选项 `{key, text}`（卡片上没有留在这一段的选项时 `stay` 为 null）；`text` 是卡片的问句；`items` 是点名请用户先看的条目；`session_id` 与 `reply_message_id` 指出卡片在哪条会话的哪条回复上；`event_seq` 与 `at` 是记下它的那条数据库事件的序号与时刻。提议开着时，客户端可以随时替用户点进入：照第 5.4 节发那句「我选：……」，`card.reply_message_id` 写这里的 `reply_message_id`、`card.choice` 写 `enter.key`；卡片是在另一条会话里发的也一样，服务照开着的提议记移动。这一项做出来之前发出的卡片认不成提议，那张卡片自己照常能点。
+`stage.proposal` 是**开着的提议**，没有时为 null。助手发出提议的卡片之后，提议就一直开着，直到任务的阶段有过一次移动、助手又发了一张提议的卡片、任务不再进行中，或者（`review` 这一种）卡片点名的页用户都看过了。形状是 `{ kind, stage, enter, stay, text, items, session_id, reply_message_id, event_seq, at }`。`kind` 是提议的种类：`enter` 提议进入下一个阶段，`back` 提议退回前面的阶段，`review` 是编写文档阶段请用户过目补写的页（不移动阶段）；这一版之前的服务不给这一项，按 `enter` 读。`stage` 是要进入或退回的阶段（`review` 时是 `document`）；`enter` 是卡片上生效的那个选项 `{key, text}`（进入、退回，或者「看过了，生成文档」），`stay` 是不生效的那个选项（「继续本阶段」「留在本段」「需要修改」；卡片上没有时为 null）；`text` 是卡片的问句；`items` 是点名请用户先看的条目；`session_id` 与 `reply_message_id` 指出卡片在哪条会话的哪条回复上；`event_seq` 与 `at` 是记下它的那条数据库事件的序号与时刻。提议开着时，客户端可以随时替用户照提议做。`enter` 与 `back` 两种：照第 5.4 节发那句「我选：……」，`card.reply_message_id` 写这里的 `reply_message_id`、`card.choice` 写 `enter.key`；卡片是在另一条会话里发的也一样，服务照开着的提议记移动。`review` 这一种不发话：先发 `continue_stage`（`option_key` 写 `document_reviewed`），再对 `items` 发 `mark_viewed`（不带 `notify_executor`），见第 5.2 节。这一项做出来之前发出的卡片认不成提议，那张卡片自己照常能点。
 
 `stage.flow` 是**所属流程**：最近一次移动是在哪一条流程里发生的，一次都没有移过时也给出。现在只有一条流程，值恒为 `initial`（首次分析）；它记在阶段移动那条事件里，任务库的格式没有因此改变。
 
@@ -164,8 +164,13 @@ data: {
 | `writing` | `basis_pages_viewed` | 条目依据的主题页用户都看过。 |
 | `writing` | `basis_diagrams_viewed` | 条目依据的图用户都看过（判法见第 4.2 节图的 `viewed`）。没有条目依据图时不适用。 |
 | `writing` | `no_pending_items` | 总体分析以外没有待核实的条目（含因依据而待核实的）。 |
+| `writing` | `no_blocking_questions` | 没有状态仍是未解决、「是否阻断下游」写着「阻断下游」的问题条目。`items` 是这些问题条目。还没有问题条目、或者任务定义的问题集合里没有这个字段时不适用。 |
+| `writing` | `no_pending_marks` | 在用的主题页、还在的图与别的集合的条目里没有「待定」标记：字段的值（或列表里的一项）就是「待定」两个字，或者文字里有「待定：」；图看它的 Mermaid 文本。问题条目自己不算。`items` 是标着的页、图与条目。 |
 | `reviewing` | `reviews_no_open_findings` | 没有评审不合规而未处理的条目；任务还没有评审过时不通过。 |
 | `reviewing` | `completion_met` | 完成条件全部满足。 |
+| `document` | `chapters_have_intro` | 业务说明里有内容的章（有节，或者第 5、7 章算出来的表里有行）都有一页在用、写了「它是什么」的导语页（主题页的「导语所属章」写着这一章的章名）。差的是章，写在 `summary` 里，`items` 为空。任务定义里没有「导语所属章」时不适用。 |
+| `document` | `glossary_complete` | 每页标签含「概念」的在用主题都写了「它是什么」，而且不待核实。 |
+| `document` | `document_no_blocking_questions` | 判法同 `no_blocking_questions`。 |
 
 `task.overall_views` 是从总体分析的页与问题条目算出来的三张表，只算不存；没有「总体分析」集合的任务是 null。
 - `rules`（**规则表**）：`{ rows, conflicts, unmatched }`。`rows` 把在用的各页「已经定下的」逐条列出，每行是 `{ item_id, title, index, text, sources, conflicts }`：`index` 是它在那一页「已经定下的」里的位置（从 0 起），`sources` 是支持这一条的各条来源（`kind`、`locator`、`excerpt`），`conflicts` 是把它标为冲突的问题条目的编号。冲突怎样对上：「事项」以「规则冲突：」开头、状态仍是未解决的问题条目，它的来源里种类为 `条目`、出处是这一页、摘录与这条规则的文字互相包含的，这条规则标为冲突。表一级的 `conflicts` 是全部还没有了结的规则冲突问题，`unmatched` 是其中对不上任何一条规则的。
@@ -279,6 +284,8 @@ data: {
 | confirm（确认） | 不对 | `/messages` |
 | choose（选择） | 某个选项 | `/messages` |
 | choose（提议进入下一个阶段的卡片） | 留在这一段的那一项（页面上一律写「继续本阶段」） | `/actions`，kind 为 `continue_stage`，`fields` 写 `{reply_message_id, option_key}`；不发话，智能体不因此运行 |
+| choose（提议退回前面阶段的卡片） | 退回的那一项（「退回某阶段」）／「留在本段」 | 退回走 `/messages`，服务在转交点击时替用户记移动；「留在本段」走 `/actions` 的 `continue_stage` |
+| choose（编写文档阶段请过目的卡片） | 「看过了，生成文档」／「需要修改」 | 都不发话。「看过了，生成文档」先发 `/actions` 的 `continue_stage`（`option_key` 为 `document_reviewed`），再对卡片点名的页发 `mark_viewed`（不带 `notify_executor`）；「需要修改」只发 `continue_stage` |
 | suggest（建议） | 采纳 / 换一个 | `/messages` |
 | propose（提议） | 就这样做 / 不要 | `/messages` |
 | ask（针对某个问题条目） | 先不管 | `/actions`，kind 为 `keep_pending`，`notify_executor: true` |
@@ -296,7 +303,7 @@ data: {
 
 续接或切换会话之后，服务核对 pi 报告的会话是不是请求的那一条。pi 报告的是别的会话（例如会话文件不在了，pi 没有报错而是新开了一条），或者 pi 拒绝切换时，服务不采纳那条会话：停掉这个任务的 pi，写一行日志（任务编号、请求的会话、pi 报告的会话），并返回 `session_resume_failed`。核对发生在把用户的话交给 pi 之前，所以这句话没有发出去，也没有进入任何会话；下一次请求时按平常的方式重新启动 pi。这种情况下快照照常返回，对话记录从会话文件读取，`executor.state` 为 `not_started`。会话文件整个不在时仍返回 `not_found`。服务启动时把 `--tasks` 与 `--runs` 转成绝对路径，交给 pi 的会话文件路径也一律是绝对路径。
 
-**移动工作阶段。** 智能体的「回复」另有两个可选参数 `stage`（五个阶段的名字之一，例如「澄清」）与 `reason`（写了 `stage` 就必须写一句）。智能体自己只能把任务退回前面的任何阶段；移成了记一条 `stage_changed`。移不成（想往前移、本来就在那个阶段、任务没有阶段）时回复照常送达，只在工具的返回里说明原因。往前进入下一个阶段要由用户决定：智能体做完这一段，用请选择卡片提议，卡片上两个选项的 `key` 是固定的，一个进入下一段，一个留在这一段。进入的四个键是 `enter_clarify`（文字「进入澄清」）、`enter_consolidate`（「进入整理建模」）、`start_items`（「开始写条目」）、`enter_review`（「进入评审确认」）；留在这一段的四个键是 `continue_reading`、`continue_clarify`、`continue_consolidate`、`continue_writing`，文字都是「继续本阶段」。用户点了进入的那一项，服务在转交这次点击时替用户记一次移动（`stage_changed`，`actor` 为 `user`），然后才把那句固定的话发给智能体，智能体回应这次点击时已经在新的阶段。`enter_clarify`、`enter_consolidate`、`enter_review` 只在任务正处在紧挨着的前一段时才记，次序不对的点击当普通选项处理；`start_items` 在写条目之前的哪一段点都记。
+**移动工作阶段。** 阶段只由用户移动。智能体「回复」的 `stage` 与 `reason` 两个参数已经停用：带了其中任何一个，这次回复整个被拒绝，拒绝里指引改发卡片。往前进入下一个阶段：智能体做完这一段，用请选择卡片提议，卡片上两个选项的 `key` 是固定的，一个进入下一段，一个留在这一段。进入的五个键是 `enter_clarify`（文字「进入澄清」）、`enter_consolidate`（「进入整理建模」）、`start_items`（「开始写条目」）、`enter_review`（「进入评审确认」）、`enter_document`（「进入编写文档」）；留在这一段的五个键是 `continue_reading`、`continue_clarify`、`continue_consolidate`、`continue_writing`、`continue_review`，文字都是「继续本阶段」。用户点了进入的那一项，服务在转交这次点击时替用户记一次移动（`stage_changed`，`actor` 为 `user`），然后才把那句固定的话发给智能体，智能体回应这次点击时已经在新的阶段。`enter_clarify`、`enter_consolidate`、`enter_review`、`enter_document` 只在任务正处在紧挨着的前一段时才记，次序不对的点击当普通选项处理；`start_items` 在写条目之前的哪一段点都记，任务已经过了写条目时点它是回到写条目。往后退回前面的阶段：智能体用请选择卡片提议并在问句里写明原因，两个选项是退回的键 `back_to_reading`（「退回核读材料」）、`back_to_clarify`（「退回澄清」）、`back_to_consolidate`（「退回整理建模」）、`back_to_writing`（「退回写条目」）、`back_to_review`（「退回评审确认」）之一，与 `stay_in_stage`（「留在本段」）。用户点了退回的那一项，服务同样替用户记移动，`reason` 是「用户在卡片上选了『退回某阶段』：」后面接卡片的问句；目标不在现在这个阶段之前时不记。编写文档阶段请用户过目的卡片上两个键是 `document_reviewed`（「看过了，生成文档」）与 `document_revise`（「需要修改」），点哪一个都不移动阶段。
 
 **提问只给开放问题。** `kind` 为 `ask` 而 `text` 里任何位置出现「是否」「能不能」「要不要」「可不可以」「对不对」「行不行」，或者以「吗」收尾（不算结尾的标点）时，回复被拒，原因写明是非题用请选择、征求同意用提议；确是开放问题的，把问句改写成不带这些词的形式就能送达。这是只看字面的规则。
 
@@ -327,7 +334,7 @@ data: {
 12. `edit_diagram` 把用户在页面上改过的 Mermaid 文本存成那张图的一次新修订，发起方是用户：`targets` 只写一项 `{ "diagram_id": "D-001", "base_revision": N }`，N 是页面看到的这张图自己的修订号；`fields` 只写 `{ "mermaid": "…" }`（图名、种类、说明与删除由智能体来改）。任务服务先校验这段文本，做法与 `POST …/diagrams/validate` 相同，种类用这张图现在的种类。没有通过的不保存：返回 `rejected`，说明以「这张图没有保存：」开头、后面是校验给的原话，`data` 里带 `reason`、`line` 与 `message`；校验本身没有做成时 `data.reason` 是 `unavailable`，说明写的是这是程序这边的问题、不是文本写错了。`base_revision` 已经不是这张图现在的修订号时返回 `stale_revision`，`data.diagrams` 列出这张图、它现在的修订号与是谁改的；文本没有改动、图不存在或已经删除，返回 `rejected`。与智能体的 `save_diagram` 不同：不核对文本里写的条目编号是不是现有的条目，也不要求画进图里的条目各有来源；来源沿用上一次修订的，「图里画了谁」按新文本重算。结果以带同一个 `op_id` 的 `diagram_changed` 事件到达；任务的修订序号不动，这一步不能撤销。会话里追加一行界面操作的说明「界面操作（不是用户打的字）：用户在界面上改了图 D-001「…」的 Mermaid 文本，D-001 现在是修订 N。要看现在的文本，用 get_item 写 D-001。」，不引出一次运行。
 13. `move_stage` 由用户把任务移到另一个工作阶段：不写 `targets`，`fields` 写 `{ "stage": 阶段的名字或写法, "reason": 可以不写 }`。用户想移到哪个阶段都可以；记一条 `stage_changed`，往会话里追加一句界面操作通知，不产生修订，不能撤销，不引出智能体的运行。任务本来就在那个阶段时什么都不记。没有阶段的任务返回 `rejected`。
 14. `mark_diagram_viewed` 记下用户打开看了一张或几张图：`targets` 每项写 `{ "diagram_id": "D-001", "base_revision": N }`，N 是用户打开时这张图自己的修订号。记一条 `diagram_viewed`，不改图的内容，不占任何修订号，不往会话里追加东西，不能撤销。它是幂等的：同一张图的同一次修订已经记过就跳过，全部跳过时不记事件。图不存在、已经删除或者没有这一次修订时返回 `rejected`，一张都不记。
-15. `continue_stage` 是用户在提议进入下一个阶段的卡片上选了留在这一段的那一项（「继续本阶段」）：不写 `targets`，`fields` 写 `{ "reply_message_id": 卡片所在那条回复的编号, "option_key": 点的那个选项的键 }`。它不写数据库、不替用户发话、不引出智能体的一次运行，只在会话里留一条界面操作通知（对话事件 `ui_action_noted`，`kind` 为 `continue_stage`，另带 `reply_message_id` 与 `stage`），客户端据此把那张卡片显示为已选；提议仍然开着（`stage.proposal` 不变），智能体下一次运行时在上下文里看得到这条通知。卡片认不出、点的不是留在这一段的键时以 `rejected` 拒绝。把留在这一段的键照第 5.4 节当作一句话发出去（早先的做法）仍然收，那样会引出一次运行。
+15. `continue_stage` 是用户在智能体提议的卡片上选了不发话的一项：提议进入下一段的卡片上留在这一段的那一项（「继续本阶段」）、提议退回的卡片上的 `stay_in_stage`（「留在本段」）、请过目的卡片上的 `document_revise`（「需要修改」）与 `document_reviewed`（「看过了，生成文档」）。不写 `targets`，`fields` 写 `{ "reply_message_id": 卡片所在那条回复的编号, "option_key": 点的那个选项的键 }`。它不写数据库、不替用户发话、不引出智能体的一次运行，只在会话里留一条界面操作通知（对话事件 `ui_action_noted`，`kind` 为 `continue_stage`，另带 `reply_message_id`、`stage` 与 `option_key`），客户端据此把那张卡片显示为已选；提议仍然开着（`stage.proposal` 不变），智能体下一次运行时在上下文里看得到这条通知。`document_reviewed` 之后客户端要接着对卡片点名的页发 `mark_viewed`：那几页都看过了，这条提议才结束。卡片认不出、点的不是上面这几个键时以 `rejected` 拒绝。把留在这一段的键照第 5.4 节当作一句话发出去（早先的做法）仍然收，那样会引出一次运行。
 
 ## 7 发送给智能体的固定句式
 
@@ -560,7 +567,7 @@ data: {
 ### 13.1 提示词目录
 
 - `GET /api/v1/debug/prompt-dir` 返回 `{ "prompt_dir": 目录或 null, "usable": true | false | null, "note": 说明或 null, "files": [ { "name", "state", "reason" } ] }`。`usable` 在没有设目录时是 `null`，设了的目录已经不在或者不是目录时是 `false`，这时 `note` 写着原因，每次运行用的都是原来的文字。
-- `files` 固定十三项，是目录里认的全部文件名：`system.md`、`common.md`、`reading.md`、`clarifying.md`、`modeling.md`、`writing.md`、`reviewing.md`，以及 `task-type/` 下的 `common.md` 与五个阶段各一份。`state` 是 `used`（目录里有，下一次运行用它代替原来的那一份）、`absent`（目录里没有，用原来的）或 `refused`（目录里有而不用，`reason` 写着原因：它是软链接、不是普通文件，或者超过 262144 字节）。别的文件名一概不读。不是合法 UTF-8 的文件要到读的时候才认得出，那时照旧用原来的那一份，原因写在 13.2 的 `notes` 里。一份空文件的意思是这一部分不要。
+- `files` 固定十五项，是目录里认的全部文件名：`system.md`、`common.md`、`reading.md`、`clarifying.md`、`modeling.md`、`writing.md`、`reviewing.md`、`document.md`，以及 `task-type/` 下的 `common.md` 与六个阶段各一份。`state` 是 `used`（目录里有，下一次运行用它代替原来的那一份）、`absent`（目录里没有，用原来的）或 `refused`（目录里有而不用，`reason` 写着原因：它是软链接、不是普通文件，或者超过 262144 字节）。别的文件名一概不读。不是合法 UTF-8 的文件要到读的时候才认得出，那时照旧用原来的那一份，原因写在 13.2 的 `notes` 里。一份空文件的意思是这一部分不要。
 - `POST /api/v1/debug/prompt-dir`，请求体 `{ "path": "目录的绝对路径" }`，返回与上面相同。`path` 写空串或 `null` 是清掉。不是绝对路径、目录不存在或者不是目录时返回 `bad_request`（400），什么都不改。值存在产品设置文件顶层的 `debug.prompt_dir`。
 - 助手的程序每次运行开始时重读设置与目录（只查文件的修改时刻与大小，变了才重读内容），所以换了目录、改了文件，下一句话就生效，不用重启。产品只读这个目录，不往里写。
 

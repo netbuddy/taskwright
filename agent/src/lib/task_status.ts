@@ -45,6 +45,8 @@ import { isLocationTable } from "./docx_locations.ts";
 import { isPdfLocationTable } from "./pdf_locations.ts";
 import { type SelectedLibrary, envKnowledgeRoot, knowledgeChangedAt, selectedKnowledge } from "./knowledge.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
+import { hasOverall } from "./overall_analysis.ts";
+import { openProposal, proposalLine } from "./stage_proposal.ts";
 
 /** 这条自定义消息的类型名。后端、观测台与会话文件里都认这个名字。 */
 export const TASK_STATUS_CUSTOM_TYPE = "taskwright-task-status";
@@ -110,7 +112,7 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
       // 续接：上次之后任务的选用或知识库的文档清单变过，才把知识库一段再写一遍。
       : changesSince(db, task, facts.lastMessageAt, sessionId, materials,
         knowledgeChangedAt(workspaceDir, knowledgeRoot) > facts.lastMessageAt ? libraries : null, facts.lastRunStopped === true);
-    return withOpenActs(db, task.task_id, sessionId, message);
+    return withOpenActs(db, task.task_id, sessionId, withProposal(db, task, definition, sessionId, fresh ? null : facts.lastMessageAt, materials, message));
   } finally {
     db.close();
   }
@@ -158,6 +160,28 @@ function withKnowledgeChange(message: TaskStatusMessage, libraries: SelectedLibr
     text: `${message.text}\n上次之后，这个任务选用的知识库或其中的文档有变化：现在选用的知识库里没有文档。`,
     details: { ...message.details, knowledge: knowledgeDetails(libraries) },
   };
+}
+
+/**
+ * 在消息末尾写一行开着的提议（lib/stage_proposal.ts 的 proposalLine）；任务没有阶段时原样返回。
+ * - 新会话：有没有都写（没有时写「没有开着的提议。」），助手从干净的上下文开始，靠这一行知道。
+ * - 续接旧会话（since 是上次这条会话最后一条消息的时刻）：只在有一条开着的、而且是上次之后才发出的提议时写；
+ *   上次之前发的，这条会话的上下文里已经有过交代，不重复。这时别的都没有变也为它写一条。
+ */
+function withProposal(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, sessionId: string, since: number | null, materials: Materials,
+  message: TaskStatusMessage | null): TaskStatusMessage | null {
+  if (!hasOverall(definition.collections)) return message;
+  const open = openProposal(db, task.task_id);
+  const line = proposalLine(open, sessionId);
+  if (since === null) return message ? { ...message, text: `${message.text}\n${line}`, details: { ...message.details, proposal: open } } : message;
+  if (open === null || open.at <= wallClockText(new Date(since))) return message;
+  const base: TaskStatusMessage = message ?? {
+    kind: "变化",
+    text: `【执行者续接这条会话时（${clock()}）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。`,
+    details: { kind: "变化", task_id: task.task_id, since: wallClockText(new Date(since)), session_id: sessionId, added: [], updated: [], deleted: [], event_seqs: [],
+      materials: materialsDetails(materials), new_materials: [] },
+  };
+  return { ...base, text: `${base.text}\n${line}`, details: { ...base.details, proposal: open } };
 }
 
 /** 在消息末尾列出这条会话里还在等回应的执行者行为；没有就原样返回。 */

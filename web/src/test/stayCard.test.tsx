@@ -33,8 +33,8 @@ const show = (messages: unknown[]) => render(<Wrap><Conversation messages={messa
   hasEarlier={false} onLoadEarlier={noop} revisionOf={() => null} attachments={[]} /></Wrap>);
 
 describe("卡片上的「继续本阶段」", () => {
-  it("留在这一段的四个键都认；文字是固定的一句", () => {
-    expect([...STAY_KEYS].sort()).toEqual(["continue_clarify", "continue_consolidate", "continue_reading", "continue_writing"]);
+  it("留在这一段的五个键都认；文字是固定的一句", () => {
+    expect([...STAY_KEYS].sort()).toEqual(["continue_clarify", "continue_consolidate", "continue_reading", "continue_review", "continue_writing"]);
     expect(STAY_TEXT).toBe("继续本阶段");
   });
 

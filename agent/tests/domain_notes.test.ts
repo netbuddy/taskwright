@@ -13,6 +13,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { loadDefinition, validateDefinition } from "../src/lib/definition.ts";
+import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { checkCompletion, completionHints, unlinkedDomainNotes } from "../src/lib/conditions.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
@@ -66,7 +67,7 @@ const itemRows = (dir: string, item: string, revisionNo: number) =>
   query<any>(dir, "SELECT element_kind, kind, locator, excerpt, field, depends_revision FROM item_source WHERE item_id = ? AND revision_no = ? AND kind = '条目' ORDER BY position", item, revisionNo)
     .map((row) => ({ ...row }));
 
-test("真实的任务类型：这个位置上现在是「总体分析」集合（OA，九个字段，不评审），完成条件是每个条目用户确认；没有「领域说明」集合了", () => {
+test("真实的任务类型：这个位置上现在是「总体分析」集合（OA，十个字段，不评审），完成条件是每个条目用户确认；没有「领域说明」集合了", () => {
   const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
   const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
   assert.equal(definition.collections.some((c) => c.name === "领域说明"), false);
@@ -75,12 +76,22 @@ test("真实的任务类型：这个位置上现在是「总体分析」集合�
   assert.deepEqual(pages.fields.map((f) => [f.name, f.type, f.required]), [
     ["标题", "文本", true], ["别名", "文本列表", false], ["它是什么", "文本", true], ["例子", "文本列表", false], ["已经定下的", "文本列表", false],
     ["标签", "文本列表", false], ["上级主题", "条目引用", false], ["状态", "枚举", true], ["改看", "条目引用", false],
+    ["导语所属章", "枚举", false],
   ]);
+  // 导语所属章的取值就是业务说明七章的章名（lib/overall_chapters.ts）。
+  assert.deepEqual(pages.fields.find((f) => f.name === "导语所属章")!.values, CHAPTERS.map((one) => one.name));
+  // 问题集合：是否阻断下游必填，何时回看与落实到可以不填。
+  const problems = definition.collections.find((c) => c.name === "问题")!;
+  assert.deepEqual(problems.fields.map((f) => [f.name, f.type, f.required]), [
+    ["事项", "文本", true], ["种类", "枚举", true], ["是否阻断下游", "枚举", true], ["何时回看", "文本", false], ["建议的处理", "文本", false],
+    ["状态", "枚举", true], ["处理结果", "文本", false], ["落实到", "文本", false], ["关联条目", "条目引用", false],
+  ]);
+  assert.deepEqual(problems.fields.find((f) => f.name === "是否阻断下游")!.values, ["阻断下游", "不阻断"]);
   assert.deepEqual(pages.fields.find((f) => f.name === "标签")!.values, ["概念", "角色", "流程", "场景", "目标", "范围", "假设", "决定"]);
   assert.deepEqual(pages.fields.filter((f) => f.sameCollection && f.single).map((f) => f.name), ["上级主题", "改看"]);
   assert.equal(pages.reviewRules ?? null, null);
   assert.deepEqual(definition.completion.总体分析, ["每个条目用户确认"]);
-  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/srs-authoring.json"), "utf-8")).版本, 2);
+  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/srs-authoring.json"), "utf-8")).版本, 3);
 });
 
 test("来源种类「条目」：出处是还在的条目时保存，记下引用时它的修订号；出处去掉首尾空白；产出方记作条目", () => {

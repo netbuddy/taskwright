@@ -42,9 +42,15 @@ export function registerRespond(pi: ExtensionAPI): void {
           throw new Error(`界面提示：${data?.error?.message ?? `请求失败（${status}）`}。这次回应没有发出去，可以先看看界面再回应。`);
         }
         response = data;
+        // 「看过了，生成文档」：紧接着把卡片点名的页标为已读。
+        if (plan.kind === "action" && plan.then) {
+          const second = await call("POST", taskPath("/actions"), plan.then);
+          if (second.status !== 200) throw new Error(`界面提示：${second.data?.error?.message ?? `请求失败（${second.status}）`}。卡片已经标为选过，那几页没有记为看过。`);
+        }
       }
       return spoken("已经发出去了", {
         sent: plan.kind === "none" ? null : plan.body,
+        ...(plan.kind === "action" && plan.then ? { then: plan.then } : {}),
         route: plan.kind,
         done: params.done === true,
         give_up: params.give_up === true,

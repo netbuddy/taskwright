@@ -5,6 +5,8 @@
 //   异常分支 ── 「例子」里以「例外：」开头的各条，一条一张小卡，写出处；流程节末尾有「＋ 补一种例外」。
 //   示例 ── 「例子」里其余各条，一条一张卡片；以「反例：」开头的是灰色卡片，写「这种不算」。
 //   适用规则 ── 「已经定下的」，一句一条，每条下面一行出处；助手补的那一条前面是琥珀点；规则表里标了冲突的那一条写明与哪一节的规则冲突。
+//   待澄清事项 ── 每个问题挂一枚「阻断下游」或「不阻断」（不阻断的写何时回看），阻断下游的排在前面；已经了结的问题列在
+//                 下面，写它落实到了哪里。
 //   待澄清事项 ── 问题集合里挂在这一页、还没有了结的问题，带「需要它的原因」；在这里写一句回答点「记下」就发给助手，
 //                「暂不处理」把这个问题标为先不管。
 // 这几块之间与之后还有条目区交进来的几块（Figure.tsx、SectionLinks.tsx）：说明之后是这一节的图（流程步骤、状态图、与其他对象的关系），
@@ -18,11 +20,11 @@
 
 import { useState, type ReactNode } from "react";
 import type { CollectionDef, Item, Source, Task } from "../../../api/types";
-import { CHAPTER_FLOWS, UNSORTED_NAME, chapterByNo, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
+import { CHAPTER_FLOWS, INTRO_NAME, UNSORTED_NAME, chapterByNo, introChapter, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
 import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
 import {
-  DEPRECATED, TOPIC, addedQuotes, confirmAction, dependents, exampleKind, examplesOf, isDeprecated, isPending, labelsOf, markPassage, materialQuotes, openQuestions, pendingCount,
-  questionReason, retellText, reviseDependentsText, sectionLead, seeInstead, settledOf, sourceShortText, sourcesFor, supplemented, titleOf, whatOf, wholeSources,
+  DEPRECATED, TOPIC, addedQuotes, confirmAction, dependents, exampleKind, examplesOf, isBlockingQuestion, isDeprecated, isPending, labelsOf, markPassage, materialQuotes, openQuestions,
+  pendingCount, questionBlockingText, questionLanded, questionReason, questionRevisit, settledQuestions, retellText, reviseDependentsText, sectionLead, seeInstead, settledOf, sourceShortText, sourcesFor, supplemented, titleOf, whatOf, wholeSources,
 } from "../../../model/overall";
 import { FieldEditor, type SubmitAction } from "../ItemDetail";
 import { TopicEdit } from "./TopicEdit";
@@ -83,7 +85,9 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
 }) {
   const toast = useToast();
   const section = sectionOf(contents, item.item_id);
-  const chapter = section ? chapterByNo(section.chapter) : null;
+  // 导语页不是节：面包屑写它是哪一章的导语，不算没有归类。
+  const introOf = introChapter(contents, item.item_id);
+  const chapter = section ? chapterByNo(section.chapter) : introOf?.chapter ?? null;
   const labels = labelsOf(item);
   const lead = sectionLead(item);
   const pending = pendingCount(item);
@@ -104,6 +108,7 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
   const isFlow = section?.chapter === CHAPTER_FLOWS;
   const settled = settledOf(item);
   const questions = openQuestions(task, item);
+  const closed = settledQuestions(task, item);
   const basisCount = dependents(task, item).length;
   const offTitle = writeOffReason(task, { readOnly, writesOff });
   // 规则表里把这一页的哪几条标成了冲突：第几条 → 与它冲突的那一条所在的节（找不到另一条时是 null）。
@@ -148,7 +153,7 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
       <div className="oa-crumb" data-testid="topic-crumb">
         <span className="back" role="button" onClick={onBack} data-testid="topic-back">‹ 回到目录</span>
         {chapter
-          ? <><span className="up">{chapter.no} {chapter.name}</span>{section!.no && <><i>›</i><span className="here">{section!.no}</span></>}</>
+          ? <><span className="up">{chapter.no} {chapter.name}</span>{introOf ? <><i>›</i><span className="here">{INTRO_NAME}</span></> : section!.no && <><i>›</i><span className="here">{section!.no}</span></>}</>
           : <span className="up">{UNSORTED_NAME}</span>}
         <span className="oa-nav">
           <button type="button" className="btn sm" disabled={!onPrev} onClick={onPrev ?? undefined} data-testid="topic-prev">‹ 上一条</button>
@@ -169,7 +174,8 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
           {[lead.materials > 0 ? `材料 ${lead.materials} 处` : "", lead.clarified > 0 ? `澄清 ${lead.clarified} 条` : "", lead.seen ? "你看过" : ""].filter(Boolean).join(" · ") || "还没有来源"}
         </span>
         <span className="sep" />
-        {labels.length === 0 && <span className="oa-tag none">{UNSORTED_NAME}</span>}
+        {labels.length === 0 && !introOf && <span className="oa-tag none">{UNSORTED_NAME}</span>}
+        {introOf && <span className="oa-tag">{INTRO_NAME}</span>}
         {labels.map((name) => <span key={name} className="oa-tag">{name}</span>)}
         {labelField && !editing && (
           <button type="button" className="oa-tag add" disabled={!!offTitle} title={offTitle ?? "给这一页加标签、换标签或者去掉标签；标签决定它排在哪一章"}
@@ -286,10 +292,10 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
         </section>
       )}
 
-      {questions.length > 0 && (
+      {(questions.length > 0 || closed.length > 0) && (
         <section className="oa-blk" data-testid="topic-open">
-          <h3>待澄清事项 <small>答在这里就行，助手会把答案记进这一节</small></h3>
-          <ul className="oa-open">
+          <h3>待澄清事项 {questions.length > 0 && <small>答在这里就行，助手会把答案记进这一节</small>}</h3>
+          {questions.length > 0 && <ul className="oa-open">
             {questions.map((q) => <Question key={q.item_id} task={task} question={q} off={readOnly || writesOff} offTitle={offTitle}
               onSend={onSend} onAnswer={onAnswer} onOpen={onOpen}
               onKeep={async () => {
@@ -297,7 +303,21 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
                 const e = await submit({ kind: "keep_pending", targets: [{ item_id: q.item_id, base_revision: q.revision_no }], notify_executor: false }, label);
                 if (e) toast.error(rejectedText(label, e, q.item_id));
               }} />)}
-          </ul>
+          </ul>}
+          {closed.length > 0 && (
+            <ul className="oa-closed" data-testid="topic-closed">
+              {closed.map((q) => {
+                const landed = questionLanded(q);
+                return (
+                  <li key={q.item_id} data-testid={`topic-closed-${q.item_id}`}>
+                    <span className="mk">已了结</span>
+                    <span className="qlink" role="button" title={`打开 ${q.item_id}`} onClick={() => onOpen(q.item_id)}>{q.title}</span>
+                    {landed && <span className="to" data-testid={`topic-landed-${q.item_id}`}>落实到：{landed}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       )}
 
@@ -331,6 +351,8 @@ function Question({ task, question, off, offTitle, onSend, onAnswer, onOpen, onK
 }) {
   const [answer, setAnswer] = useState("");
   const why = questionReason(task, question);
+  const blocking = questionBlockingText(task, question);
+  const revisit = questionRevisit(question);
   const typed = answer.trim() !== "";
   // 写了字点「记下」是直接发给助手；空着点是把开头填进对话区的输入框，让用户到那里接着写。
   const record = () => {
@@ -340,8 +362,12 @@ function Question({ task, question, off, offTitle, onSend, onAnswer, onOpen, onK
   };
   return (
     <li data-testid={`topic-question-${question.item_id}`}>
-      <div className="q"><span className="qlink" role="button" title={`打开 ${question.item_id}`} onClick={() => onOpen(question.item_id)}>{question.title}</span></div>
+      <div className="q">
+        {blocking && <span className={`oa-qkind${isBlockingQuestion(question) ? " block" : ""}`} data-testid={`topic-blocking-${question.item_id}`}>{blocking}</span>}
+        <span className="qlink" role="button" title={`打开 ${question.item_id}`} onClick={() => onOpen(question.item_id)}>{question.title}</span>
+      </div>
       {why && <div className="why">需要它的原因：{why}</div>}
+      {revisit && <div className="why" data-testid={`topic-revisit-${question.item_id}`}>何时回看：{revisit}</div>}
       <div className="ans">
         <input value={answer} placeholder="在这里写你的回答…" aria-label={`回答 ${question.item_id}`} disabled={off} title={off ? offTitle : undefined}
           onChange={(e) => setAnswer(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && typed && !off) record(); }} />

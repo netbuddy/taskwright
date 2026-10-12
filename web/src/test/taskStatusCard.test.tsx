@@ -30,7 +30,7 @@ const STATUS: TaskStatusView = {
   missing: [{ key: "roles_in_context_and_use_cases", summary: "有 1 页标签为「角色」的主题还没有画进用例图：OA-003。" }, { key: "rules_no_conflict", summary: "还有 1 对规则冲突没有了结。" }],
   proposal: PROPOSAL, versions: [],
 };
-const LAMPS = { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [] };
+const LAMPS = { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [], document: [] };
 const taskWith = (proposal: StageProposal | null = PROPOSAL): Task => ({ ...overallTask(), stage: { current: "modeling", moved_by: "user", moved_at: "2026-10-10T11:02:00", reason: "", lamps: LAMPS, proposal } });
 const reply = (id: string, text: string) => ({ type: "assistant_reply", message_id: id, at: "", work_id: null, via_reply_tool: true, informs: [], act: null, text });
 const said = (id: string, text: string) => ({ type: "user_message", message_id: id, at: "", text, origin: "typed", annotation: null, queued: false });
@@ -81,6 +81,25 @@ describe("状况卡各行的写法", () => {
     fireEvent.click(screen.getByTestId("status-next"));
     expect(onSend.mock.calls).toEqual([["请按任务状况说明下一步该做什么。"]]);
     expect(STATUS_NEXT_TEXT).toBe("请按任务状况说明下一步该做什么。");
+  });
+
+  it("开着的是请过目的提议：写补写了几处，按钮是「看过了，生成文档」，点了不发话，交给页面处理", async () => {
+    const review: StageProposal = { ...PROPOSAL, kind: "review", stage: "document", enter: { key: "document_reviewed", text: "看过了，生成文档" },
+      stay: { key: "document_revise", text: "需要修改" }, items: [{ item_id: "OA-020", revision_no: 1 }, { item_id: "OA-021", revision_no: 1 }] };
+    const onMessage = vi.fn(), onReviewed = vi.fn().mockResolvedValue(true);
+    render(<Wrap><TaskStatusCard status={{ ...STATUS, proposal: review }} liveProposal={review} onMessage={onMessage} onSend={noop} onReviewed={onReviewed} /></Wrap>);
+    expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定补写的 2 处待过目");
+    expect(screen.getByTestId("status-enter")).toHaveTextContent(/^看过了，生成文档$/);
+    fireEvent.click(screen.getByTestId("status-enter"));
+    expect(onReviewed.mock.calls).toEqual([["reply-far", review.items]]);
+    expect(onMessage).not.toHaveBeenCalled();
+    // 退回的提议写「退回」。
+    cleanup();
+    const back: StageProposal = { ...PROPOSAL, kind: "back", stage: "clarifying", enter: { key: "back_to_clarify", text: "退回澄清" }, stay: { key: "stay_in_stage", text: "留在本段" } };
+    render(<Wrap><TaskStatusCard status={{ ...STATUS, proposal: back }} liveProposal={back} onMessage={onMessage} onSend={noop} /></Wrap>);
+    expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定助手已提议退回澄清阶段");
+    fireEvent.click(screen.getByTestId("status-enter"));
+    expect(onMessage.mock.calls).toEqual([["我选：退回澄清", { reply_message_id: "reply-far", kind: "choose", choice: "back_to_clarify" }]]);
   });
 
   it("没有开着的提议：没有「待决定」一行，只有「请助手说明下一步」；卡上的提议已经结束时进入按钮点不了", () => {

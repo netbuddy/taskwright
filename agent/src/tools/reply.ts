@@ -20,7 +20,6 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup } from "../lib/reply.ts";
 import { spoken } from "../lib/speak.ts";
 import { currentRun, recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
-import { replyStageMove } from "../lib/stage_read.ts";
 import { reportStopped, stopAtLimit } from "../lib/rejection_limit.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 import { checkQuotes } from "../lib/save_revision.ts";
@@ -116,12 +115,10 @@ const parameters = Type.Object({
   })),
   stage: Type.Optional(Type.Union([Type.Null(), Type.String()], {
     description:
-      "只在你要把任务移到另一个工作阶段时写（任务有阶段时才有用）：写阶段的名字，「核读材料」「澄清」「整理建模」「写条目」「评审确认」之一。" +
-      "你自己只能把任务退回前面的阶段（例如整理时发现一个词没说清，退回澄清）。" +
-      "往前进入下一个阶段要由用户在卡片上点：这时不要写 stage，改用请选择卡片提议，说清下一段要做什么。不移动阶段时不写这一项。",
+      "已停用，不要写（写了回复会被拒绝）。阶段不由你移动：往前进入下一段、退回前面的阶段，都用请选择卡片提议，由用户在卡片上点。",
   })),
   reason: Type.Optional(Type.Union([Type.Null(), Type.String()], {
-    description: "写了 stage 时必须写：一句话，说明为什么现在退回这个阶段。",
+    description: "已停用，不要写。提议退回前面的阶段时，原因写在那张请选择卡片的问句里。",
   })),
 });
 
@@ -176,12 +173,8 @@ export function registerReply(pi: ExtensionAPI): void {
         return stopped;
       }
       const messageId = turn.calls.some((call) => call.id === toolCallId) ? turn.entryId : null;
-      // 回复里写了 stage：在记对话行为的同一个事务里判这次移动行不行，行就记一条阶段记录（lib/stage_read.ts）。
-      // 移不成时回复照常送达，只在返回的文字里说明原因。
-      const wanted = decision.reply.stage ?? null;
       const sessionId = ctx.sessionManager.getSessionId();
-      const recorded = recordReplyActs(ctx.cwd, sessionId, branch as never, decision.reply, messageId, toolCallId,
-        wanted ? (db, taskId, runId) => replyStageMove(db, ctx.cwd, { taskId, sessionId, runId, callId: toolCallId }, wanted.to, wanted.reason) : undefined);
+      const recorded = recordReplyActs(ctx.cwd, sessionId, branch as never, decision.reply, messageId, toolCallId);
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。
       return spoken(recorded?.text ? `回复已送达。${recorded.text}` : "回复已送达", {
         delivered: true,
@@ -190,8 +183,6 @@ export function registerReply(pi: ExtensionAPI): void {
         message_id: messageId,
         event_seq: recorded?.eventSeq ?? null,
         acts: recorded?.acts ?? [],
-        // 回复里写了 stage 时才有这一项：这次移动的结果（移成没有、从哪里到哪里、没移成的原因）。
-        ...(recorded?.extra ? { stage: recorded.extra } : {}),
       });
     },
   });

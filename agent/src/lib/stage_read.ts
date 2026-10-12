@@ -15,15 +15,15 @@ import { emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, keepPendingField, validateDefinition } from "./definition.ts";
 import { diagramViewed, latestVersion, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "./diagram.ts";
 import { classLinked, drawnItemIds, hasBranch } from "./diagram_scan.ts";
-import { OVERALL_COLLECTION, hasOverall } from "./overall_analysis.ts";
+import { OVERALL_COLLECTION, OVERALL_FIELDS, hasOverall } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { rulesTable } from "./overall_views.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase } from "./schema.ts";
 import { openProposal } from "./stage_proposal.ts";
 import {
-  ENTER_OPTIONS, FLOW_INITIAL, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, NO_STAGES_TEXT, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
-  defaultStage, isStage, judgeMove, lampLines, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
+  BACK_OPTIONS, ENTER_OPTIONS, FLOW_INITIAL, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
+  defaultStage, isStage, judgeMove, lampLines, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
@@ -105,6 +105,8 @@ export interface StageMove {
  * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让事件、这一行与同一次调用里别的写入一起提交。
  */
 export function recordStageMove(db: DatabaseSync, move: StageMove): number {
+  // 库不检查阶段的取值（lib/schema.ts），所以写之前在这里判：不是阶段表里的写法就不记。
+  if (!isStage(move.to) || !isStage(move.from)) throw new Error(`阶段记录里的阶段写法不对：从「${String(move.from)}」到「${String(move.to)}」。`);
   const seq = emit(db, {
     taskId: move.taskId, sessionId: move.sessionId, callId: move.callId, name: EVENT_STAGE_MOVED, actor: move.actor,
     payload: { stage: move.to, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId, flow: FLOW_INITIAL },
@@ -124,7 +126,7 @@ export interface StageMoveOutcome {
   from: Stage | null;
   moved: boolean;
   /** 没有移成的原因；not_next 只出现在卡片点击上：点的那个阶段不是紧挨着的下一段。 */
-  why: "same" | "user_only" | "no_stages" | "not_next" | null;
+  why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | null;
   event_seq: number | null;
 }
 
@@ -141,23 +143,17 @@ export function moveStage(db: DatabaseSync, workspaceDir: string, who: Omit<Stag
   return { requested: to, from, moved: true, why: null, event_seq: recordStageMove(db, { ...who, from, to, reason }) };
 }
 
-/**
- * 助手在回复里写了 stage：判并记这次移动，交回给「回复」工具的三样（lib/dialogue_acts.ts 的 ReplyExtra）——
- * 接在「回复已送达。」后面的一句说明；移不成时留在回复那条事件里的 stage_declined（想移到哪里、为什么没移）；这次移动的结果。
- * 回复照常送达，移不成不算被拒。
- */
-export function replyStageMove(db: DatabaseSync, workspaceDir: string, who: { taskId: string; sessionId: string; runId: string; callId: string },
-  to: Stage, reason: string): { text: string; payload?: Record<string, unknown>; value: StageMoveOutcome } {
-  const outcome = moveStage(db, workspaceDir, { ...who, actor: "executor" }, to, reason);
-  if (outcome.from === null) return { text: NO_STAGES_TEXT, payload: { stage_declined: { stage: to, why: "no_stages" } }, value: outcome };
-  const verdict = outcome.moved ? { ok: true as const } : { ok: false as const, why: outcome.why as "same" | "user_only" };
-  const text = moveText(outcome.from, to, verdict);
-  return outcome.moved ? { text, value: outcome } : { text, payload: { stage_declined: { stage: to, from: outcome.from, why: outcome.why } }, value: outcome };
-}
-
 /** 用户在卡片上点了「进入某个阶段」时，那条阶段记录里写的理由。 */
 export function enterReason(to: Exclude<Stage, "reading">): string {
   return `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`;
+}
+/**
+ * 用户在卡片上点了「退回某个阶段」时，那条阶段记录里写的理由：点的是哪一项，后面接卡片的问句（助手在那里写为什么要退回）。
+ * 问句是空的时只写点的是哪一项。
+ */
+export function backReason(to: Exclude<Stage, "document">, question: string): string {
+  const said = question.trim();
+  return `用户在卡片上选了「${BACK_OPTIONS[to].text}」${said ? `：${said}` : ""}`;
 }
 /** 点的是「开始写条目」时的理由。 */
 export const START_ITEMS_REASON = enterReason("writing");
@@ -176,7 +172,8 @@ export const START_ITEMS_REASON = enterReason("writing");
 export function recordStageCardClick(workspaceDir: string, sessionId: string, branch: readonly Entry[],
   click: { opId: string; replyEntry: unknown; optionKey: unknown }): StageMoveOutcome | null {
   const to = stageEnteredBy(click.optionKey);
-  if (to === null) return null;
+  const back = to === null ? stageBackedBy(click.optionKey) : null;
+  if (to === null && back === null) return null;
   // 回复编号没有给、或者给的是空文字（开着的提议没有记下它在哪条回复上时，页面只能这样发）：都当作没有给。
   const replyEntry = typeof click.replyEntry === "string" && click.replyEntry !== "" ? click.replyEntry : null;
   const card = replyEntry !== null ? branch.find((entry) => entry.id === replyEntry) : undefined;
@@ -188,14 +185,22 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
       const task = db.prepare("SELECT task_id, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
         { task_id: string; status: string; definition_text: string } | undefined;
       if (!task || task.status !== TASK_ACTIVE) return null;
+      let cardQuestion = typeof act?.text === "string" ? act.text : "";
       if (!card) {
         const open = openProposal(db, task.task_id);
-        if (open === null || open.enter.key !== click.optionKey) return null;
+        if (open === null || open.kind === "review" || open.enter.key !== click.optionKey) return null;
         if (replyEntry !== null && replyEntry !== open.reply_entry) return null;
+        cardQuestion = open.text;
       }
       const from = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
-      if (to !== "writing" && from !== null && nextStage(from) !== to) return { requested: to, from, moved: false, why: "not_next" as const, event_seq: null };
-      return moveStage(db, workspaceDir, { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" }, to, enterReason(to));
+      const who = { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" as const };
+      if (back !== null) {
+        // 退回：目标要在现在这个阶段之前；卡片的问句（助手写的原因）记进理由。
+        if (from !== null && STAGES.indexOf(back) >= STAGES.indexOf(from)) return { requested: back, from, moved: false, why: "not_back" as const, event_seq: null };
+        return moveStage(db, workspaceDir, who, back, backReason(back, cardQuestion));
+      }
+      if (to !== "writing" && from !== null && nextStage(from) !== to) return { requested: to!, from, moved: false, why: "not_next" as const, event_seq: null };
+      return moveStage(db, workspaceDir, who, to!, enterReason(to!));
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return null;
@@ -222,7 +227,7 @@ export function sourceMaterials(paths: readonly string[]): string[] {
   return paths.filter((one) => !derived(one));
 }
 
-/** 任务现在的阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），以及五个阶段各自的几盏灯。 */
+/** 任务现在的阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），以及六个阶段各自的几盏灯。 */
 export interface StageSummary {
   current: Stage;
   moved_by: StageActor | null;
@@ -250,6 +255,7 @@ export function lampDiagrams(db: DatabaseSync, taskId: string, definition: TaskD
       linked: now.kind === KIND_CLASS ? classLinked(now.mermaid, prefixes) : [],
       branches: now.kind === KIND_FLOWCHART && hasBranch(now.mermaid),
       viewed: diagramViewed(record, seen),
+      marked: hasPendingMark(now.mermaid),
     };
   });
 }
@@ -281,7 +287,7 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
     })),
   );
   return {
-    pages: pages.map((one) => lampPage(one.item_id, one.fields, state.viewed.get(one.item_id) === true)),
+    pages: pages.map((one) => lampPage(one.item_id, one.fields, state.viewed.get(one.item_id) === true, state.verification.get(one.item_id)?.pending_verification === true)),
     items: others.map((one) => {
       const verification = state.verification.get(one.item_id)!;
       return {
@@ -289,6 +295,8 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
         cites: sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_ITEM).map((s) => s.locator),
         citesDiagrams: [...new Set(sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_FIGURE).map((s) => s.locator))],
         pending: verification.pending_verification || verification.basis_pending !== null,
+        // 问题条目自己不算标着待定的地方：它就是用来记没定的事的。
+        marked: !statusFieldOf.has(one.collection) && hasPendingMark(one.fields),
       };
     }),
     questions: questions.map((one) => lampQuestion(one.item_id, one.fields, statusFieldOf.get(one.collection)!)),
@@ -296,6 +304,10 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
     citedDocuments: [...pages, ...questions].flatMap((one) => sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_DOCUMENT).map((s) => s.locator)),
     diagrams,
     ruleConflicts: rules.conflicts,
+    declared: {
+      intro: definition.collections.some((one) => one.name === OVERALL_COLLECTION && one.fields.some((field) => field.name === OVERALL_FIELDS.intro)),
+      blocking: definition.collections.some((one) => keepPendingField(one) !== null && one.fields.some((field) => field.name === QUESTION_BLOCKING_FIELD)),
+    },
   };
 }
 
