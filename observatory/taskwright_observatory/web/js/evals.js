@@ -147,8 +147,12 @@ function groupTable(s) {
       row["各遍"].map((hit, n) => {
         if (hit == null) return passCell(s["各遍"][n], "没有核对", "", "");
         const ids = row["各遍命中的条目"][n] || [];
+        // 「例外」一节只认以「例外：」开头的例子：没有命中而别的例子里提到了的，写出是哪几页。
+        // 早先的评测按全部例子找，那时的结果文件带的是「各遍以例外开头」，照原样显示。
+        const elsewhere = (row["各遍只在别的例子里提到的页"] || [])[n] || [];
         const prefixed = (row["各遍以例外开头"] || [])[n];
-        const detail = [ids.join("、"), prefixed === false && hit ? "例子不以「例外：」开头" : ""].filter(Boolean).join("；");
+        const detail = [ids.join("、"), !hit && elsewhere.length ? `${elsewhere.join("、")} 的例子里提到了，但不以「例外：」开头` : "",
+          prefixed === false && hit ? "例子不以「例外：」开头" : ""].filter(Boolean).join("；");
         return passCell(s["各遍"][n], hit ? "命中" : "没有", hit ? "good" : "bad", detail);
       }).join("") +
       `<td>${row["命中遍数"]}／${row["核对的遍数"]}</td></tr>`).join("") + `</tbody></table>`;

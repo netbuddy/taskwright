@@ -26,7 +26,7 @@ def rows_of(items) -> dict:
 
 
 class ExpectationTest(unittest.TestCase):
-    def test_总体分析按标题与别名_例外在流程页的全部例子里找_是不是以例外开头只显示(self):
+    def test_总体分析按标题与别名_例外只在流程页以例外开头的例子里找(self):
         rows = rows_of([
             page(1, "图书借阅", ["流程"], ["小王一次借了六本，超过上限，只登记到五本。", "例外：名下有逾期未还的书，不能再借。"]),
             page(2, "借书证", ["概念"], ["有逾期的人补办借书证要先还书。"]),
@@ -41,10 +41,20 @@ class ExpectationTest(unittest.TestCase):
         self.assertFalse(rows[("总体分析·流程页", "续借")]["命中"])
         # 例外：流程「借书」的页按同义写法找到两页，其中贴了流程标签的只有 OA-001，所以只看它的例子。
         over, overdue = rows[("例外·借书", "超过上限／最多借")], rows[("例外·借书", "有逾期／逾期未还")]
-        self.assertEqual((over["命中"], over["以例外开头"], over["流程的页"]), (True, False, ["OA-001"]))
-        self.assertEqual((overdue["命中"], overdue["以例外开头"], overdue["命中的词"]), (True, True, "有逾期"))
+        # 「超过上限」只出现在不以「例外：」开头的例子里：不命中，另外写出是哪一页提到了。
+        self.assertEqual((over["命中"], over["命中的条目编号"], over["只在别的例子里提到的页"], over["流程的页"]), (False, [], ["OA-001"], ["OA-001"]))
+        self.assertEqual((overdue["命中"], overdue["命中的条目编号"], overdue["只在别的例子里提到的页"], overdue["命中的词"]), (True, ["OA-001"], [], "有逾期"))
+        self.assertNotIn("以例外开头", overdue)
         # 这个流程的页找不到（续借那一页已废弃）：这一组不命中。
         self.assertEqual((rows[("例外·续借", "有人预约")]["命中"], rows[("例外·续借", "有人预约")]["流程的页"]), (False, []))
+
+    def test_例外的例子开头有空格照样认_句子中间的例外两个字与反例不算(self):
+        rows = rows_of([
+            page(1, "借书", ["流程"], ["  例外：一次借的书超过上限，多出来的不借。", "反例：名下有逾期未还的书也能借。", "小王遇到例外：有逾期，没借成。"]),
+        ])
+        over, overdue = rows[("例外·借书", "超过上限／最多借")], rows[("例外·借书", "有逾期／逾期未还")]
+        self.assertEqual((over["命中"], over["命中的词"], over["只在别的例子里提到的页"]), (True, "超过上限", []))
+        self.assertEqual((overdue["命中"], overdue["只在别的例子里提到的页"]), (False, ["OA-001"]))
 
     def test_问题按事项_功能用例按名称_非功能需求与约束按类别与需求语句(self):
         rows = rows_of([

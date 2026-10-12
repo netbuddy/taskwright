@@ -132,7 +132,7 @@ def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
             hits = sum(1 for x in each if x and x["命中"])
             group_rows.append({"部分": first["部分"], "组": first["组"], "各遍": [None if x is None else bool(x["命中"]) for x in each],
                                "各遍命中的条目": [[] if x is None else x["命中的条目编号"] for x in each],
-                               "各遍以例外开头": [None if x is None else x.get("以例外开头") for x in each],
+                               "各遍" + expectations.ELSEWHERE: [[] if x is None else x.get(expectations.ELSEWHERE) or [] for x in each],
                                "命中遍数": hits, "核对的遍数": len(checked)})
     rates = [row["通过率"] for row in lamp_rows if row["通过率"] is not None]
     total = sum(row["核对的遍数"] for row in group_rows)
@@ -187,8 +187,11 @@ def summary_markdown(s: dict) -> str:
     if s["至少应有"]:
         lines += [f"| 部分 | 关键词组 |{heads} 命中几遍 |", "|---|---|" + "---|" * (n + 1)]
         for row in s["至少应有"]:
-            cells = "".join(" 没有核对 |" if hit is None else f" {'命中' if hit else '没有'}{('（' + '、'.join(ids) + '）') if ids else ''} |"
-                            for hit, ids in zip(row["各遍"], row["各遍命中的条目"]))
+            # 「例外」一节没有命中、而别的例子里提到了的，写出是哪几页：差的是写法（没有以「例外：」开头），不是内容。
+            cells = "".join(" 没有核对 |" if hit is None else
+                            f" {'命中' if hit else '没有'}{('（' + '、'.join(ids) + '）') if ids else ''}"
+                            f"{('（' + '、'.join(others) + ' 的例子里提到了，但不以「例外：」开头）') if others and not hit else ''} |"
+                            for hit, ids, others in zip(row["各遍"], row["各遍命中的条目"], row.get("各遍" + expectations.ELSEWHERE) or [[]] * len(row["各遍"])))
             lines.append(f"| {row['部分']} | {expectations.group_label(row['组'])} |{cells} {row['命中遍数']}／{row['核对的遍数']} |")
     else:
         lines.append("这次评测没有核对清单（没有给清单，或者每一遍都没有跑完）。")
