@@ -1,6 +1,6 @@
 // 设置页面的「调试」一栏，只在服务开着调试模式（带 --debug 启动）时出现。现在只有一项：提示词目录。
 // 有阶段的任务每次运行开始时，系统提示由几份说明文件拼成；设了提示词目录之后，目录里有哪一份就用哪一份代替产品自带的，
-// 没有的照旧。改了目录里的文件，下一句话就生效，不用重启。下面的清单列出固定的十三个文件名各自在目录里的情形。
+// 没有的照旧。改了目录里的文件，下一句话就生效，不用重启。下面的清单列出固定的十五个文件名各自在目录里的情形。
 
 import { useCallback, useEffect, useState } from "react";
 import { Button, Input } from "antd";
@@ -69,8 +69,8 @@ export function DebugSettings() {
         </table>
       )}
       <div className="note">
-        system.md 是系统提示，common.md 是每个阶段都要用的说明，reading.md、clarifying.md、modeling.md、writing.md、reviewing.md
-        依次是核读材料、澄清、整理建模、写条目、评审确认五个阶段各自的一段；task-type 目录下的同名文件是任务类型那一级的。
+        system.md 是系统提示，common.md 是每个阶段都要用的说明，reading.md、clarifying.md、modeling.md、writing.md、reviewing.md、document.md
+        依次是核读材料、澄清、整理建模、写条目、评审确认、编写文档六个阶段各自的一段；task-type 目录下的同名文件是任务类型那一级的。
         一份空文件的意思是这一部分不要。
       </div>
     </div>

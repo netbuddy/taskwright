@@ -56,7 +56,7 @@ function pane(working = false, prompt: DebugSystemPrompt = PROMPT, facts: DebugS
 }
 
 describe("右侧栏的调试页签", () => {
-  it("顶上是阶段条：五个阶段的名字，当前阶段标出来；没通过的灯一盏一句，点了打开它差的第一页", async () => {
+  it("顶上是阶段条：六个阶段的名字，当前阶段标出来；没通过的灯一盏一句，点了打开它差的第一页", async () => {
     const { onOpenItem } = pane();
     const bar = within(screen.getByTestId("debug-pane")).getByTestId("stage-bar");
     expect(screen.getByTestId("debug-pane").firstElementChild).toBe(bar);

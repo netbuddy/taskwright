@@ -227,7 +227,7 @@ export function sourceMaterials(paths: readonly string[]): string[] {
   return paths.filter((one) => !derived(one));
 }
 
-/** 任务现在的阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），以及五个阶段各自的几盏灯。 */
+/** 任务现在的阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），以及六个阶段各自的几盏灯。 */
 export interface StageSummary {
   current: Stage;
   moved_by: StageActor | null;

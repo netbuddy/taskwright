@@ -326,7 +326,7 @@ export interface StageMove {
   reason?: string;
 }
 
-/** 工作的五个阶段：核读材料、澄清、整理建模、写条目、评审确认。 */
+/** 工作的六个阶段：核读材料、澄清、整理建模、写条目、评审确认、编写文档。 */
 export type StageKey = "reading" | "clarifying" | "modeling" | "writing" | "reviewing" | "document";
 
 /** 一盏灯：某个阶段「做到什么算够」的一条判据。ok 为 null 是不适用；items 是差的页、条目或材料。灯只提示，不拦操作。 */
@@ -357,7 +357,7 @@ export interface StageProposal {
   at: string | null;
 }
 
-/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），五个阶段各自的灯，以及开着的提议（没有时为 null）。 */
+/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），六个阶段各自的灯，以及开着的提议（没有时为 null）。 */
 export interface StageView {
   current: StageKey;
   moved_by: "executor" | "user" | null;
@@ -1160,7 +1160,7 @@ export interface DebugStage {
   latest_work_id: string | null;
 }
 
-/** 调试模式的提示词目录：现在设的是什么，以及固定的十三个文件名各自在目录里的情形。 */
+/** 调试模式的提示词目录：现在设的是什么，以及固定的十五个文件名各自在目录里的情形。 */
 export interface PromptDirView {
   /** 设置里写的目录；没有设时是 null。 */
   prompt_dir: string | null;

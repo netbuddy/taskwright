@@ -1,4 +1,4 @@
-// 阶段条：五个阶段名（已过的、当前的、还没到的），当前阶段的灯（没通过的每盏一句、可以点；通过的收成一句；全部通过；全不适用），
+// 阶段条：六个阶段名（已过的、当前的、还没到的），当前阶段的灯（没通过的每盏一句、可以点；通过的收成一句；全部通过；全不适用），
 // 一盏灯的句子取后端整句冒号之前的半句、数字加重、悬停是整句；点灯去清单里的第一个；任务没有阶段时不画。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
