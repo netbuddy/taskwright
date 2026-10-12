@@ -144,3 +144,39 @@ test("产品的任务类型：新建的任务按模板生成文档，术语与�
   // 依据主题的用例，来源写成集合名加编号。
   assert.match(section("## 3 功能需求", "## 4 非功能需求"), /来源：总体分析 OA-001（「被借走的书可以预约。」）/);
 });
+
+test("产品的任务类型：各章的导语页进文档——概述与范围的导语在最前面，业务对象的在术语与定义开头，别的几章的在总体描述开头；导语页不当作没有标签的草稿丢掉，已废弃的不进", () => {
+  const material = "被借走的书可以预约。读者凭借书证借书。";
+  const source = (excerpt: string) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt });
+  const topic = (fields: Record<string, unknown>) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources: [source("读者凭借书证借书。")] });
+  const typed = makeTypedTask(join(tmp, "intros"), "srs-authoring", { "材料.md": material }, [
+    [
+      topic({ 标题: "预约", 标签: ["概念", "流程"], 它是什么: "被借走的书可以预约。", 例子: ["读者凭借书证借书。"] }),
+      topic({ 标题: "读者", 标签: ["角色"], 它是什么: "读者凭借书证借书。" }),
+    ],
+    [
+      topic({ 标题: "概述与范围导语", 导语所属章: "概述与范围", 它是什么: "图书馆要让读者自己办借还。\n\n本文给馆员与开发人员看。\n\n本期只做馆内借还。" }),
+      topic({ 标题: "业务对象导语", 导语所属章: "业务对象", 它是什么: "这件事里有图书与借阅记录两种对象。" }),
+      topic({ 标题: "角色导语", 导语所属章: "角色", 它是什么: "有读者与馆员两种角色。" }),
+      topic({ 标题: "业务流程导语", 导语所属章: "业务流程", 它是什么: "流程有借书与预约两段。" }),
+    ],
+    [topic({ 标题: "业务目标导语（旧）", 导语所属章: "业务目标", 它是什么: "这一页已经不用了。", 状态: "已废弃" })],
+  ]);
+  const text = render.render(typed, library.libraryOf(typed));
+  const section = (from: string, to: string) => text.slice(text.indexOf(from), text.indexOf(to));
+  // 最前面：概述与范围的导语（几段连成一段）。
+  assert.match(section("# 软件需求规格说明", "## 1 术语与定义"), /\n图书馆要让读者自己办借还。\s+本文给馆员与开发人员看。\s+本期只做馆内借还。 ［修订 2 · 未确认］\n/);
+  // 术语与定义开头：业务对象的导语，然后才是术语。
+  const terms = section("## 1 术语与定义", "## 2 总体描述");
+  assert.ok(terms.indexOf("这件事里有图书与借阅记录两种对象。") > 0 && terms.indexOf("这件事里有图书与借阅记录两种对象。") < terms.indexOf("- **预约**"));
+  // 总体描述开头：角色、业务流程的导语各一段，照章的先后；没有导语的章不留空行。
+  const overall = section("## 2 总体描述", "## 3 功能需求");
+  const role = overall.indexOf("**角色。** 有读者与馆员两种角色。"), flow = overall.indexOf("**业务流程。** 流程有借书与预约两段。"), groups = overall.indexOf("### 角色");
+  assert.ok(role > 0 && role < flow && flow < groups, `${role} ${flow} ${groups}`);
+  assert.doesNotMatch(overall, /\*\*业务规则。\*\*|\*\*业务目标。\*\*|\*\*决策记录与待澄清事项。\*\*/);
+  // 导语页不进按标签归的组，也不进术语；已废弃的导语不进文档。
+  assert.deepEqual([...overall.matchAll(/^### (.+)$/gm)].map((m) => m[1]), ["角色", "流程"]);
+  assert.doesNotMatch(text, /导语（旧）|这一页已经不用了/);
+  assert.equal((text.match(/有读者与馆员两种角色。/g) ?? []).length, 1);
+});
+
