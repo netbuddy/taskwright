@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { DIAGRAM_KINDS, DIAGRAM_KIND_NAMES } from "../src/lib/diagram.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PLATFORM_DIR = join(ROOT, "agent", "prompts", "skills", "taskwright-executor");
@@ -70,10 +71,11 @@ test("平台 skill 不写需求规格任务的专名", () => {
     "use-case-writing", "ears-writing", "基本流程", "前置条件"]) assert.ok(!body.includes(word), word);
 });
 
-test("平台 skill 第四节写明来源的四种：助手补充要写理由、不用填出处；依据另一个条目时种类写「条目」，它改了之后会标「依据已变」", () => {
+test("平台 skill 第四节写明来源的五种：助手补充要写理由、不用填出处；依据另一个条目时种类写「条目」、依据一张图时种类写「图」，它改了之后会标「依据已变」", () => {
   const body = bodyOf(PLATFORM);
   const section = body.slice(body.indexOf("## 四、来源怎样填"), body.indexOf("## 五、"));
-  for (const words of ["种类有四种：", "- **文档原文**：", "- **用户的话**：", "- **助手补充**：", "- **条目**：",
+  for (const words of ["种类有五种：", "- **文档原文**：", "- **用户的话**：", "- **助手补充**：", "- **条目**：", "- **图**：",
+    "出处写图的编号（例如 D-002）；摘录可以写空文字，也可以逐字抄图里一个节点上的文字", "图之后又改了，界面上这条来源旁同样会标「依据已变」",
     "出处不用填；摘录写一句理由：你为什么这样补、依据的是什么常识或推断，不写理由会被拒绝",
     "理由里用直角引号把你补进正文的那几个字逐字引出来，一个字都不改", "页面靠这几个字在正文里标出哪里是你补的", "引出的字不在它支持的那几处正文里时，保存会被拒绝", "补了几处就各引一次，并在 supports 里写明是哪个字段的第几项",
     "这个条目依据了任务里的另一个条目", "出处写那个条目的编号（例如 OA-002），摘录逐字抄它当前内容里的一句；它必须还在",
@@ -84,21 +86,25 @@ test("平台 skill 第四节写明来源的四种：助手补充要写理由、�
   assert.ok(!section.includes("执行者"));
 });
 
-test("平台 skill 有画图一节：只在用户要求时画、用保存图这一个工具、五种图的画法、节点写条目编号、来源怎样写、校验不过与改图删图", () => {
+test("平台 skill 有画图一节：只在用户要求时画、用保存图这一个工具、六种图的画法、节点写条目编号、来源怎样写、校验不过与改图删图", () => {
   const body = bodyOf(PLATFORM);
   const section = body.slice(body.indexOf("## 十一、画图"));
   assert.ok(body.includes("## 十一、画图"));
   for (const words of ["整理条目时不要主动画图", "图不是条目，不要用 save_revision 存；图不评审，不算进完成条件",
     "用流程图的写法画，第一行写 `flowchart LR`", "参与者与用例都写成圆角节点，例如 `buyer([\"买家\"])`", "系统边界写成子图", "包含与扩展写在虚线上",
-    "不要用 Mermaid 自带的用例图写法", "第一行写 `classDiagram`", "第一行写 `stateDiagram-v2`", "第一行写 `sequenceDiagram`", "第一行写 `flowchart TD`",
+    "不要用 Mermaid 自带的用例图写法", "第一行写 `classDiagram`",
+    "系统画成一个子图（`subgraph 系统名` 到 `end`）", "至少要有一个子图与一个子图之外的节点，否则保存会被拒绝",
+    "类的名字只用英文字母与数字，条目编号与中文名写在方括号的文字里，例如 `class Loan[\"OA-003 借阅记录\"]`",
+    "一张图是照哪个条目画出来的（例如某一页流程的流程图、某一页概念的状态图），那个条目也要写一条种类为「条目」的来源", "种类不能写「图」", "第一行写 `stateDiagram-v2`", "第一行写 `sequenceDiagram`", "第一行写 `flowchart TD`",
     "把条目编号写在这个节点的文字里，放在最前面", "不要把条目编号当节点的名字", "只写任务里现有的条目编号",
     "每个条目写一条种类为「条目」的来源，出处写条目编号，画图时这种来源不用写摘录", "图的来源不写 `supports`",
     "同一轮里连续三次没有通过，就不要再试：用回复告诉用户这张图哪里画不出来", "系统说这一次没有办法校验（不是文本写错了）时，图没有存，直接告诉用户",
     "写上图的编号（diagram）与你看到的它的修订号（base_revision）", "删图写 `delete` 为真", "用 get_item 写图的编号", "图的修订号是图自己的"]) {
     assert.ok(section.includes(words), words);
   }
-  // 五个种类的写法与工具认的相同。
-  for (const kind of ["use_case", "class", "state", "sequence", "flowchart"]) assert.ok(section.includes(`（${kind}）`), kind);
+  // 六个种类的写法与工具认的相同，叫法与种类的中文名表相同。
+  for (const kind of DIAGRAM_KINDS) assert.ok(section.includes(`${DIAGRAM_KIND_NAMES[kind]}（${kind}）`), kind);
+  assert.equal(DIAGRAM_KINDS.length, 6);
 });
 
 test("平台 skill 写明被拒之后不删信息换取通过", () => {
