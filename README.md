@@ -16,7 +16,7 @@ Taskwright is a general task-oriented agent. You give it a **task definition**; 
 - Completion is checked by code against the task definition's conditions, and the deliverable is rendered into a document from a template; neither step goes through a model.
 - Everything can be reviewed afterwards: every run, turn, tool call and rejection is recorded.
 
-The bundled task type, *software requirements specification*, adds four item collections, the rules for use cases and EARS sentences, and the assistant's way of working. The full list of what the current version can and cannot do is in [docs/capabilities.md](docs/capabilities.md).
+The bundled task type, *software requirements specification*, adds five item collections (the business description, plus use cases, non-functional requirements, constraints and questions), the rules for use cases and EARS sentences, and the assistant's way of working. Work on such a task goes through six stages, each entered by your click on a card the assistant proposes; what you and the assistant come to understand is written as a business description in seven chapters with five standard models drawn from it, and items are written from that description; the generated document follows its chapters and can be downloaded whole as a Word file. The full list of what the current version can and cannot do is in [docs/capabilities.md](docs/capabilities.md).
 
 ## Components
 
