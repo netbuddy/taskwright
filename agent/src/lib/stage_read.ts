@@ -174,7 +174,9 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
   click: { opId: string; replyEntry: unknown; optionKey: unknown }): StageMoveOutcome | null {
   const to = stageEnteredBy(click.optionKey);
   if (to === null) return null;
-  const card = typeof click.replyEntry === "string" ? branch.find((entry) => entry.id === click.replyEntry) : undefined;
+  // 回复编号没有给、或者给的是空文字（开着的提议没有记下它在哪条回复上时，页面只能这样发）：都当作没有给。
+  const replyEntry = typeof click.replyEntry === "string" && click.replyEntry !== "" ? click.replyEntry : null;
+  const card = replyEntry !== null ? branch.find((entry) => entry.id === replyEntry) : undefined;
   // 那条回复在这条分支上：照它自己判，是别的东西（用户的话、别的卡片、卡片上没有这个键）就不认，不再去看开着的提议。
   const act = card ? chooseActOf(card) : null;
   if (card && (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === click.optionKey))) return null;
@@ -186,7 +188,7 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
       if (!card) {
         const open = openProposal(db, task.task_id);
         if (open === null || open.enter.key !== click.optionKey) return null;
-        if (typeof click.replyEntry === "string" && click.replyEntry !== open.reply_entry) return null;
+        if (replyEntry !== null && replyEntry !== open.reply_entry) return null;
       }
       const from = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
       if (to !== "writing" && from !== null && nextStage(from) !== to) return { requested: to, from, moved: false, why: "not_next" as const, event_seq: null };

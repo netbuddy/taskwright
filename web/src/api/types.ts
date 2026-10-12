@@ -337,13 +337,32 @@ export interface StageLamp {
   items: string[];
 }
 
-/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），以及五个阶段各自的灯。 */
+/**
+ * 开着的提议：助手发了一张提议进入下一个阶段的卡片，任务还没有进入。提议一直开着，直到任务的阶段有过一次移动、助手又发了一张这样的卡片、
+ * 或者任务不再进行中。stage 是要进入的阶段；enter 与 stay 是卡片上进入与留在这一段的两个选项（没有留在这一段的选项时 stay 为 null）；
+ * text 是卡片的问句；items 是点名请用户先看的条目；session_id 与 reply_message_id 指出卡片在哪条会话的哪条回复上；
+ * event_seq 与 at 是记下它的那条库事件的序号与时刻。
+ */
+export interface StageProposal {
+  stage: StageKey;
+  enter: { key: string; text: string };
+  stay: { key: string; text: string } | null;
+  text: string;
+  items: { item_id: string; revision_no: number | null }[];
+  session_id: string | null;
+  reply_message_id: string | null;
+  event_seq: number;
+  at: string | null;
+}
+
+/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），五个阶段各自的灯，以及开着的提议（没有时为 null）。 */
 export interface StageView {
   current: StageKey;
   moved_by: "executor" | "user" | null;
   moved_at: string | null;
   reason: string | null;
   lamps: Record<StageKey, StageLamp[]>;
+  proposal?: StageProposal | null;
 }
 
 export interface Material {
@@ -737,10 +756,25 @@ export interface StageChanged {
 }
 
 /**
+ * 助手发了一张提议进入下一个阶段的卡片。任务现在开着的是哪一条提议，看这一批最后一条库事件上的 stage.proposal
+ * （这张卡片之后阶段又移动过的话，那里已经是 null）。
+ */
+export interface StageProposed {
+  seq: number;
+  at: string;
+  task_id: string;
+  actor: "executor" | string;
+  run_id: string | null;
+  proposal: StageProposal;
+  completion: Completion | null;
+}
+
+/**
  * 库事件：有序号（SSE 的 id 行），可补发。有阶段的任务，每一批最后一条库事件（不论哪一种）另带 stage：
  * 现在的阶段与灯，与整份数据里 task.stage 同一个形状。
  */
 export type LibraryEvent =
+  | { event: "stage_proposed"; data: StageProposed }
   | { event: "deliverable_changed"; data: DeliverableChanged }
   | { event: "task_changed"; data: TaskChanged }
   | { event: "review_recorded"; data: ReviewRecorded }
@@ -758,6 +792,7 @@ export type LibraryEvent =
   | { event: "stage_changed"; data: StageChanged };
 
 export const LIBRARY_EVENTS = [
+  "stage_proposed",
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
   "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "stage_changed",
 ] as const;

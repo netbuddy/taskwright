@@ -130,7 +130,10 @@ test("卡片在另一条会话里：这条会话的分支上找不到那条回�
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-5", replyEntry: null, optionKey: "enter_consolidate" })!.moved, true);
   assert.equal(open(dir), null);
   assert.ok(next.seq);
-  assert.equal(count(dir, "stage_record"), 2);
+  // 回复编号给的是空文字：与没有给一样。
+  reply(dir, enterCard("writing", "modeling"), "sess-first");
+  assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-6", replyEntry: "", optionKey: "start_items" })!.moved, true);
+  assert.equal(count(dir, "stage_record"), 3);
 });
 
 test("事件的名字与「回复」记的是同一个", () => {

@@ -3,3 +3,11 @@
 .app .act .opts.stayed .btn { cursor: default; }
 .app .act .opts.stayed .btn.pri.faded { background: var(--ai); border-color: var(--ai); color: var(--on-ink); opacity: .45; }
 .app .act .opts.stayed .btn.picked { background: var(--ai-bg); border-color: var(--ai-line); color: var(--ai); font-weight: 600; }
+
+/* 输入框上方的「待决定」一行：助手的提议还开着。一件待办，不是进度。 */
+.app .pend { display: flex; align-items: center; gap: .5rem; margin: 0 0 .4rem; padding: .3rem .35rem .3rem .65rem;
+  border: 1px solid var(--ai-line); background: var(--ai-bg); border-radius: .7rem; font-size: 0.897rem; }
+.app .pend .k { flex: none; color: var(--ai); font-weight: 600; }
+.app .pend .what { flex: 1; min-width: 0; color: var(--ink); }
+.app .pend .go { flex: none; border-radius: 71rem; }
+.app .pend .go:not(:disabled) { background: var(--ai); border-color: var(--ai); color: var(--on-ink); }

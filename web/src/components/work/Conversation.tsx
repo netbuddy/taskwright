@@ -18,6 +18,7 @@ import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
 import { CONTINUE_STAGE_KIND, CONTINUE_STAGE_LINE, STAY_TEXT, stageMoveLine } from "../../model/stage";
+import { PendingProposal } from "./PendingProposal";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -179,6 +180,7 @@ export function Conversation({
       </div>
       <div className={`chat-in${disabledReason ? " busy" : ""}`}>
         <div className={`busybar${note ? " show" : ""}${info ? " info" : ""}`} data-testid={note ? (info ? "executor-hint" : "busy-note") : undefined}>{note}</div>
+        <PendingProposal proposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle} onMessage={handlers.onMessage} />
         <div className="inbox">
           <textarea ref={inputRef} value={draft} disabled={disabled} rows={2} data-testid="chat-input"
             placeholder={disabledReason ? DISABLED_PLACEHOLDER : INPUT_PLACEHOLDER}
