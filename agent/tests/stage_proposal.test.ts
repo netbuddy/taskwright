@@ -81,14 +81,14 @@ test("提议结束的三种情形：阶段有过一次移动（向前或者退�
   reply(forward, enterCard("clarifying", "reading"));
   enterStage(forward, "clarifying");
   assert.equal(open(forward), null);
-  // 助手把任务退回了前面的阶段：早先的提议也结束。
+  // 任务退回了前面的阶段（用户移的：助手不能自己移动阶段）：早先的提议也结束。
   const back = workspace();
   enterStage(back, "modeling");
   reply(back, enterCard("writing", "modeling"));
   assert.equal(open(back)!.stage, "writing");
   withTaskDatabase(back, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
-    moveStage(db, back, { taskId: task.task_id, sessionId: SESSION, runId: "r3", callId: "call-back", actor: "executor" }, "clarifying", "有一个词没有说清");
+    moveStage(db, back, { taskId: task.task_id, sessionId: SESSION, runId: null, callId: "ui-op-back", actor: "user" }, "clarifying", "用户在卡片上选了「退回澄清」：两页的理解对不上");
   });
   assert.equal(open(back), null);
   // 移动之后助手又发了一张：新的这一条开着。早先那一条不会回来。

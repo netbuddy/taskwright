@@ -1,7 +1,8 @@
 /**
  * 阶段的移动怎样进对话区的消息（真的后端进程与真的 pi，模型换成进程内的假端点）：
- * 助手在回复里把任务退回前面的阶段，那条回复带 stage_move（从哪到哪、理由）；用户在卡片上点了「进入」下一段，那句「我选：……」带
- * stage_move（从哪到哪）。实时推的消息与重开页面时读的消息都带，形状相同；没有移动阶段的回复与用户的话不带这一项。
+ * 阶段只由用户移动：用户在卡片上点了「退回」前面的阶段或者「进入」下一段，那句「我选：……」带 stage_move（从哪到哪）；
+ * 助手发卡片的那条回复不带。实时推的消息与重开页面时读的消息都带，形状相同；没有移动阶段的回复与用户的话不带这一项。
+ * 早先的会话里助手在回复里自己退回过阶段，那样的回复读出来仍带 stage_move（replyStageMove，只有取值函数的那一例核对它）。
  */
 
 import assert from "node:assert/strict";
@@ -36,12 +37,16 @@ test("两个取值的函数：移成了才有；阶段名不对、没有移成�
 
 const MODEL_CARD = { kind: "choose", text: "要问的都问到了。现在进入整理建模吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
   options: [{ key: "enter_consolidate", text: "进入整理建模" }, { key: "continue_clarify", text: "继续本阶段" }] };
+const BACK_CARD = { kind: "choose", text: "「自助机」这个词牵涉好几页，前面的理解要重看。退回澄清吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
+  options: [{ key: "back_to_clarify", text: "退回澄清" }, { key: "stay_in_stage", text: "留在本段" }] };
 const SCRIPT = {
   sequence: [
-    // 第一句话（任务已被用户移到整理建模）：立一页主题，在回复里退回澄清。
+    // 第一句话（任务已被用户移到整理建模）：立一页主题，发提议退回澄清的卡片。
     { tool_calls: [TOPIC_CALL] },
-    { tool_calls: [{ id: "call-back", name: "reply", arguments: { informs: [], act: null, text: "「自助机」这个词还没说清，先退回澄清。", stage: "澄清", reason: "「自助机」这个词还没说清。" } }] },
-    // 第二句话（澄清）：发「进入整理建模」的卡片。
+    reply("「自助机」这个词牵涉好几页，前面的理解要重看。退回澄清吗？", "call-back", BACK_CARD),
+    // 用户点了「退回澄清」之后。
+    reply("好，回到澄清。自助机是什么？", "call-asked"),
+    // 用户答了之后（澄清）：发「进入整理建模」的卡片。
     reply("要问的都问到了。现在进入整理建模吗？", "call-card", MODEL_CARD),
     // 用户点了之后。
     reply("好，我开始通读主题页。", "call-go"),
@@ -73,20 +78,21 @@ function conversationEvents(port: number, taskId: string): { events: [string, Di
   return { events, close: () => req.destroy() };
 }
 
-test("助手退回阶段的那条回复、用户点卡片进入下一段的那句话，都带 stage_move；点了进入的卡片而阶段没有移动的那句话带 stage_unmoved；实时推的与重读的相同，别的消息不带", { skip: NO_PI, timeout: 180000 }, () =>
-  withStack(tmp, "stage-conversation", SCRIPT, async ({ call, taskId, session, port, send, action, entryOfCall }) => {
+test("用户点卡片退回前面的阶段、点卡片进入下一段的那两句话都带 stage_move，助手发卡片的回复不带；点了进入的卡片而阶段没有移动的那句话带 stage_unmoved；实时推的与重读的相同，别的消息不带", { skip: NO_PI, timeout: 180000 }, () =>
+  withStack(tmp, "stage-conversation", SCRIPT, async ({ call, taskId, session, port, send, action, entryOfCall, db }) => {
     const pushed = conversationEvents(port, taskId);
     try {
       assert.equal((await action({ kind: "move_stage", targets: [], fields: { stage: "整理建模" } })).status, 200);
       await send({ text: "自助机是什么？", client_id: "c-1" });
+      await send({ text: "我选：退回澄清", client_id: "c-back", origin: "card_choice", card: { reply_message_id: entryOfCall("call-back"), kind: "choose", choice: "back_to_clarify" } });
       await send({ text: "就是门口那台机器。", client_id: "c-2" });
       await send({ text: "我选：进入整理建模", client_id: "c-3", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "enter_consolidate" } });
       // 再点一次那张卡片：任务已经在整理建模，这次点击不记移动。
       await send({ text: "我选：进入整理建模", client_id: "c-4", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "enter_consolidate" } });
-      for (const end = Date.now() + 10000; pushed.events.filter(([, data]) => data.session_id === session).length < 8 && Date.now() < end;) await sleep(100);
+      for (const end = Date.now() + 10000; pushed.events.filter(([, data]) => data.session_id === session).length < 10 && Date.now() < end;) await sleep(100);
 
       const wanted = {
-        back: { from: "modeling", to: "clarifying", actor: "executor", reason: "「自助机」这个词还没说清。" },
+        back: { from: "modeling", to: "clarifying", actor: "user" },
         enter: { from: "clarifying", to: "modeling", actor: "user" },
       };
       // 实时推的。
@@ -94,7 +100,9 @@ test("助手退回阶段的那条回复、用户点卡片进入下一段的那�
       const liveMoves = live.map(([name, data]) => [name, data.text, data.stage_move ?? null, data.stage_unmoved ?? null]);
       assert.deepEqual(liveMoves, [
         ["user_message", "自助机是什么？", null, null],
-        ["assistant_reply", "「自助机」这个词还没说清，先退回澄清。", wanted.back, null],
+        ["assistant_reply", "「自助机」这个词牵涉好几页，前面的理解要重看。退回澄清吗？", null, null],
+        ["user_message", "我选：退回澄清", wanted.back, null],
+        ["assistant_reply", "好，回到澄清。自助机是什么？", null, null],
         ["user_message", "就是门口那台机器。", null, null],
         ["assistant_reply", "要问的都问到了。现在进入整理建模吗？", null, null],
         ["user_message", "我选：进入整理建模", wanted.enter, null],
@@ -104,8 +112,15 @@ test("助手退回阶段的那条回复、用户点卡片进入下一段的那�
       ]);
       // 没有移动的消息里没有这个键（不是写成 null）。
       assert.equal("stage_move" in live[0][1], false);
-      assert.equal("stage_move" in live[3][1], false);
-      assert.equal("stage_unmoved" in live[4][1], false);
+      assert.equal("stage_move" in live[1][1], false);
+      assert.equal("stage_move" in live[5][1], false);
+      assert.equal("stage_unmoved" in live[6][1], false);
+
+      // 库里的阶段记录：退回那一条是用户的移动，理由是点的那一项加卡片上助手写的原因。
+      assert.deepEqual(db("SELECT from_stage, stage, actor, reason FROM stage_record ORDER BY event_seq").slice(1), [
+        { from_stage: "modeling", stage: "clarifying", actor: "user", reason: "用户在卡片上选了「退回澄清」：「自助机」这个词牵涉好几页，前面的理解要重看。退回澄清吗？" },
+        { from_stage: "clarifying", stage: "modeling", actor: "user", reason: "用户在卡片上选了「进入整理建模」" },
+      ]);
 
       // 重开页面时读的。
       const read = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[];

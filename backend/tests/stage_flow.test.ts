@@ -44,9 +44,10 @@ const SCRIPT = {
     reply("要问的都问到了。现在进入整理建模吗？", "call-model", MODEL_CARD),
     // 用户点了「进入整理建模」：发「开始写条目」的卡片。
     reply("主题页理好了。这一页你看过之后，现在开始写条目吗？", "call-start", START_CARD),
-    // 用户点了「开始写条目」：写用例；想在回复里自己移到评审确认（被退回，回复照常送达），同一条回复带着「进入评审确认」的卡片。
+    // 用户点了「开始写条目」：写用例；想在回复里自己移到评审确认（stage 已经停用，这次回复被拒），再照指引只发「进入评审确认」的卡片。
     save("call-uc", [USE_CASE]),
-    { tool_calls: [{ id: "call-wrote", name: "reply", arguments: { informs: [], act: REVIEW_CARD, text: "写好了一个用例。现在进入评审确认吗？", stage: "评审确认", reason: "条目写完了。" } }] },
+    { tool_calls: [{ id: "call-wrote-stage", name: "reply", arguments: { informs: [], act: REVIEW_CARD, text: "写好了一个用例。现在进入评审确认吗？", stage: "评审确认", reason: "条目写完了。" } }] },
+    reply("写好了一个用例。现在进入评审确认吗？", "call-wrote", REVIEW_CARD),
     // 用户点了「进入评审确认」。
     reply("请逐条打开看，再在界面上点「评审」。", "call-review"),
     // 用户说完成：发是否完成的卡片；用户点了之后完成任务。
@@ -86,7 +87,7 @@ function systemText(request: Dict): string {
 }
 const STAGE_HEADINGS = ["核读材料", "澄清", "整理建模", "写条目", "评审确认"].map((name) => `# 现在这个阶段：${name}\n`);
 
-test("五个阶段从头走到完成：往前的每一步都由用户在卡片上点，助手自己往前移被退回；被拦的写入、整份数据里的 stage 与推出的事件；每次运行的系统提示只有那个阶段的一段", { skip: NO_PI, timeout: 180000 }, () =>
+test("五个阶段从头走到完成：往前的每一步都由用户在卡片上点，助手在回复里写 stage 被拒；被拦的写入、整份数据里的 stage 与推出的事件；每次运行的系统提示只有那个阶段的一段", { skip: NO_PI, timeout: 180000 }, () =>
   withStack(tmp, "stages", SCRIPT, async ({ call, taskId, session, port, db, send, action, entryOfCall, requests }) => {
     let seen = 0;
     /** 上次核对之后助手这一侧新发的请求（评审者的请求不算），每一个的系统提示里都只有 name 这个阶段的一段。 */
@@ -133,11 +134,13 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] })).status, 200);
       await send({ text: "我选：开始写条目", client_id: "c-2", origin: "card_choice", card: { reply_message_id: entryOfCall("call-start"), kind: "choose", choice: "start_items" } });
       assert.deepEqual(db("SELECT item_id FROM item ORDER BY rowid").map((r: Dict) => r.item_id), ["OA-001", "UC-001"]);
-      // 助手在那条回复里写了 stage「评审确认」：回复送达了，阶段没有动，原因留在回复那条事件里。
+      // 助手在回复里写了 stage「评审确认」：这一项已经停用，那次回复被拒、阶段没有动；助手照指引改发卡片。
       assert.equal((await stageNow()).current, "writing");
-      const declined = db("SELECT payload FROM event WHERE name = 'EXECUTOR_ACTS_RECORDED' ORDER BY seq").map((r: Dict) => JSON.parse(r.payload).stage_declined).filter(Boolean);
-      assert.deepEqual(declined, [{ stage: "reviewing", from: "writing", why: "user_only" }]);
-      promptsAre("写条目", 2);
+      const refusedReply = db("SELECT tool_name, fact, guidance FROM tool_rejection ORDER BY rowid").at(-1) as Dict;
+      assert.equal(refusedReply.tool_name, "reply");
+      assert.match(refusedReply.fact, /回复里写了 stage（或 reason），这两项已经停用：阶段不由你移动，任务还在原来的阶段/);
+      assert.match(refusedReply.guidance, /用请选择卡片提议退回并在问句里写明原因/);
+      promptsAre("写条目", 3);
 
       // 用户在卡片上点「进入评审确认」。
       await send({ text: "我选：进入评审确认", client_id: "c-review", origin: "card_choice", card: { reply_message_id: entryOfCall("call-wrote"), kind: "choose", choice: "enter_review" } });
@@ -161,7 +164,7 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       await send({ text: "我选：已完成，提交交付物", client_id: "c-4", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "complete" } });
       assert.equal(db("SELECT status FROM task")[0].status, "已完成");
       promptsAre("评审确认", 4);
-      assert.deepEqual(db("SELECT tool_name FROM tool_rejection").map((r: Dict) => r.tool_name), ["save_revision"], "除了核读材料时那一次，没有别的调用被拦");
+      assert.deepEqual(db("SELECT tool_name FROM tool_rejection ORDER BY rowid").map((r: Dict) => r.tool_name), ["save_revision", "reply"], "除了核读材料时那一次与写了 stage 的那次回复，没有别的调用被拦");
 
       // 事件连接推出了四次移动，序号与库里的事件相同。
       for (const end = Date.now() + 10000; pushed.events.length < 4 && Date.now() < end;) await sleep(100);

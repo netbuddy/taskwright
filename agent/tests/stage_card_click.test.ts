@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { UI_COMMAND, UI_RESULT_KEY, registerUserCommands } from "../src/hooks/user_commands.ts";
-import { CONTINUE_CLARIFY_KEY, CONTINUE_CLARIFY_TEXT, ENTER_OPTIONS, STAGE_NAMES, START_ITEMS_KEY, START_ITEMS_TEXT, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
-import { START_ITEMS_REASON, enterReason, recordStageCardClick } from "../src/lib/stage_read.ts";
+import { BACK_OPTIONS, CONTINUE_CLARIFY_KEY, CONTINUE_CLARIFY_TEXT, ENTER_OPTIONS, STAY_HERE_OPTION, stageBackedBy, STAGE_NAMES, START_ITEMS_KEY, START_ITEMS_TEXT, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
+import { START_ITEMS_REASON, backReason, enterReason, recordStageCardClick } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
@@ -66,8 +66,9 @@ test("早先建的任务没有阶段、已经不在进行中的任务：点了�
   assert.equal(recordStageCardClick(makeWorkspace(), SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: START_ITEMS_KEY }), null, "还没有库");
 });
 
-test("四张往前走的卡片：在紧挨着的前一段点「进入」才记移动；点「留在这一段」不记", () => {
-  const steps: [Stage, Exclude<Stage, "reading">][] = [["reading", "clarifying"], ["clarifying", "modeling"], ["modeling", "writing"], ["writing", "reviewing"]];
+test("五张往前走的卡片：在紧挨着的前一段点「进入」才记移动；点「留在这一段」不记", () => {
+  const steps: [Exclude<Stage, "document">, Exclude<Stage, "reading">][] = [["reading", "clarifying"], ["clarifying", "modeling"], ["modeling", "writing"], ["writing", "reviewing"],
+    ["reviewing", "document"]];
   for (const [from, to] of steps) {
     const dir = workspace();
     if (from !== "reading") enterStage(dir, from);
@@ -81,6 +82,39 @@ test("四张往前走的卡片：在紧挨着的前一段点「进入」才记�
     assert.deepEqual(records(dir).at(-1), { stage: to, from_stage: from, actor: "user", reason: `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`, run_id: null, call_id: "ui-op-2", session_id: SESSION });
     assert.equal(enterReason(to), `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`);
   }
+});
+
+test("回退卡片：点「退回某段」记一条用户的移动，理由是点的那一项加卡片的问句；点「留在本段」不记；只能退到前面的阶段", () => {
+  const QUESTION = "用户放进了一份新的借阅规定，前面几页的理解要重看。退回核读材料吗？";
+  const backCard = (id: string, to: Exclude<Stage, "document">, text = QUESTION) => ({
+    id, type: "message",
+    message: { role: "assistant", content: [{ type: "toolCall", name: "reply", id: `call-${id}`,
+      arguments: { informs: [], act: { kind: "choose", text, options: [BACK_OPTIONS[to], STAY_HERE_OPTION] }, text } }] },
+  });
+  const dir = workspace();
+  enterStage(dir, "modeling");
+  const before = count(dir, "stage_record");
+  const branch = [said("u-1", "我放了一份新材料"), backCard("a-1", "reading"), backCard("a-2", "writing"), backCard("a-3", "modeling"), backCard("a-4", "clarifying", "  ")] as never;
+  // 留在本段：不记。
+  assert.equal(recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-1", replyEntry: "a-1", optionKey: STAY_HERE_OPTION.key }), null);
+  // 退到后面的阶段、退到现在所在的阶段：都不记，结果里写明原因。
+  for (const [entry, to] of [["a-2", "writing"], ["a-3", "modeling"]] as const) {
+    const refused = recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-2", replyEntry: entry, optionKey: BACK_OPTIONS[to].key })!;
+    assert.deepEqual([refused.moved, refused.why, refused.from, refused.requested], [false, "not_back", "modeling", to]);
+  }
+  assert.equal(count(dir, "stage_record"), before);
+  // 退回核读材料：记成用户的移动。
+  const moved = recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-3", replyEntry: "a-1", optionKey: BACK_OPTIONS.reading.key })!;
+  assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "modeling", "reading"]);
+  assert.deepEqual(records(dir).at(-1), { stage: "reading", from_stage: "modeling", actor: "user", reason: `用户在卡片上选了「退回核读材料」：${QUESTION}`,
+    run_id: null, call_id: "ui-op-3", session_id: SESSION });
+  // 卡片的问句是空白时理由里只写点的是哪一项。
+  assert.deepEqual([backReason("clarifying", "  "), backReason("clarifying", " 两页的理解对不上。 ")], ["用户在卡片上选了「退回澄清」", "用户在卡片上选了「退回澄清」：两页的理解对不上。"]);
+  // 五个退回的键与「留在本段」。
+  assert.deepEqual(Object.values(BACK_OPTIONS).map((one) => [one.key, one.text, stageBackedBy(one.key)]), [
+    ["back_to_reading", "退回核读材料", "reading"], ["back_to_clarify", "退回澄清", "clarifying"], ["back_to_consolidate", "退回整理建模", "modeling"],
+    ["back_to_writing", "退回写条目", "writing"], ["back_to_review", "退回评审确认", "reviewing"]]);
+  assert.deepEqual([STAY_HERE_OPTION, stageBackedBy("enter_clarify"), stageBackedBy("stay_in_stage"), stageBackedBy(null)], [{ key: "stay_in_stage", text: "留在本段" }, null, null, null]);
 });
 
 test("次序不对的点击不记：进入澄清、进入整理建模、进入评审确认只认紧挨着的前一段；开始写条目在写条目之前的哪一段点都算", () => {

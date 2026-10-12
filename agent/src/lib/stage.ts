@@ -96,6 +96,42 @@ export const STAY_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
 };
 
 /**
+ * 退回前面的阶段也由用户决定：助手认为这一段的输入大面积不能用了（用户放进了新材料、几页的理解互相矛盾），用一张请选择卡片
+ * 提议退回并写明原因，卡片上固定两个选项，「退回某段」与「留在本段」。用户点了「退回」，系统替用户记一次移动。
+ * 局部不明白的地方不退回：记一条问题条目、在那一处标「待定」、接着做这一段。
+ * 退回某个阶段的那个选项（编写文档是最后一段，没有「退回」到它的卡片）。
+ */
+export const BACK_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
+  reading: { key: "back_to_reading", text: "退回核读材料" },
+  clarifying: { key: "back_to_clarify", text: "退回澄清" },
+  modeling: { key: "back_to_consolidate", text: "退回整理建模" },
+  writing: { key: "back_to_writing", text: "退回写条目" },
+  reviewing: { key: "back_to_review", text: "退回评审确认" },
+};
+/** 回退卡片上留在这一段的那个选项：点它只把卡片标为已选，不替用户发话，提议仍然开着。 */
+export const STAY_HERE_OPTION: CardOption = { key: "stay_in_stage", text: "留在本段" };
+
+/** 卡片上的一个选项键是「退回」哪个阶段的；不是这样的键时返回 null。 */
+export function stageBackedBy(key: unknown): Exclude<Stage, "document"> | null {
+  const found = (Object.keys(BACK_OPTIONS) as Exclude<Stage, "document">[]).find((stage) => BACK_OPTIONS[stage].key === key);
+  return found ?? null;
+}
+
+/** 怎样提议退回某个阶段：告诉助手用哪张卡片、两个选项怎样写。 */
+export function backCardGuidance(to: Exclude<Stage, "document">): string {
+  const back = BACK_OPTIONS[to];
+  return `请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 ${back.key}「${back.text}」、${STAY_HERE_OPTION.key}「${STAY_HERE_OPTION.text}」`;
+}
+
+/** 回复里写了已经停用的 stage 时的拒绝：事实与怎么办。 */
+export const STAGE_PARAM_RETIRED: Refusal = [
+  "回复里写了 stage（或 reason），这两项已经停用：阶段不由你移动，任务还在原来的阶段",
+  "往前进入下一段，用进入下一段的请选择卡片提议；这一段的输入大面积不能用、要退回前面的阶段，用请选择卡片提议退回并在问句里写明原因，" +
+    `两个选项的键与文字照这样写：${Object.values(BACK_OPTIONS).map((one) => `${one.key}「${one.text}」`).join("、")}里要退到的那一个，与 ${STAY_HERE_OPTION.key}「${STAY_HERE_OPTION.text}」；都由用户在卡片上点。` +
+    "只是有一处没弄明白时不要退回：记一条问题条目，在那一处标「待定」，接着做这一段",
+];
+
+/**
  * 总体分析还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
  * 页面点了按钮先把任务移到那个阶段、再发这一句；它们不是用户自己打的字，整理用户说过的话时要认出来。
  */
@@ -133,29 +169,16 @@ export function forwardCardGuidance(from: Stage): string {
 /**
  * 一次移动行不行。
  * - same：目标就是现在所在的阶段，原地不动不算移动，不记。
- * - user_only：往前移动（目标在现在这个阶段之后）要由用户在卡片上点，助手只能提议。
- * 用户的移动不设限；助手可以从任何阶段退回它前面的任何阶段。
+ * - user_only：移动阶段（往前、往后都是）要由用户决定，助手只能发卡片提议。
+ * 用户的移动不设限。
  */
 export type MoveVerdict = { ok: true } | { ok: false; why: "same" | "user_only" };
 
 export function judgeMove(from: Stage, to: Stage, actor: StageActor): MoveVerdict {
   if (from === to) return { ok: false, why: "same" };
   if (actor === "user") return { ok: true };
-  if (STAGES.indexOf(to) < STAGES.indexOf(from)) return { ok: true };
   return { ok: false, why: "user_only" };
 }
-
-/** 助手在回复里写了 stage 之后，工具返回里说明结果的那一句（接在「回复已送达。」后面）。 */
-export function moveText(from: Stage, to: Stage, verdict: MoveVerdict): string {
-  if (verdict.ok) return `任务已从${STAGE_NAMES[from]}移到${STAGE_NAMES[to]}。`;
-  if (verdict.why === "same") return `任务本来就在${STAGE_NAMES[from]}阶段，没有记移动。`;
-  const next = nextStage(from);
-  const oneStep = next !== null && to !== next ? `一次只进入下一段，${STAGE_NAMES[from]}的下一段是${STAGE_NAMES[next]}。` : "";
-  return `阶段没有移动：往前移动要由用户在卡片上点。${oneStep}${forwardCardGuidance(from)}。`;
-}
-
-/** 早先建的任务没有阶段，助手在回复里写了 stage 时的那一句。 */
-export const NO_STAGES_TEXT = "阶段没有移动：这个任务没有阶段，不要写 stage。";
 
 // ───────────── 每个阶段助手能写什么 ─────────────
 
@@ -193,8 +216,8 @@ const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", dele
  * 编写文档阶段被拦时怎么办：这一段只补写业务说明的文字。要动条目、图或者再评审，得先回到前面的阶段，
  * 回去要由用户决定：助手发卡片提议退回并写明原因，用户点了才退。
  */
-function howToLeaveDocument(back: Stage): string {
-  return `编写文档阶段只补写主题页的文字。要做这件事，先用请选择卡片提议退回${STAGE_NAMES[back]}并写明原因，由用户在卡片上点`;
+function howToLeaveDocument(back: Exclude<Stage, "document">): string {
+  return `编写文档阶段只补写主题页的文字。要做这件事，得先回到${STAGE_NAMES[back]}：${backCardGuidance(back)}，由用户在卡片上点`;
 }
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
@@ -223,7 +246,7 @@ export function itemRefusal(stage: Stage, op: string, collection: string): Refus
  */
 export function pageRefusal(stage: Stage, op: string, changed: readonly string[] = []): Refusal | null {
   if (stage !== "reviewing") return null;
-  const guidance = "要动主题页的内容，先在回复里把任务移回澄清或整理建模";
+  const guidance = `要动主题页的内容，得先回到澄清或整理建模：${backCardGuidance("clarifying")}，由用户在卡片上点`;
   const head = `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段`;
   if (op === "add") return [`${head}不能新立主题页`, guidance];
   if (op === "delete") return [`${head}不能删除主题页`, guidance];
