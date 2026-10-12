@@ -1,13 +1,13 @@
 // 一节末尾的三块（排在「待澄清事项」与「其他图」之后），没有内容的不画：
 //   相关角色与对象 ── 与这一页有关的别的节，分「角色」「业务对象」「相关流程」三行，点一个打开那一节。
 //   对应的需求条目 ── 依据这一页写的条目，一条一行：标题、所在的集合、状态词（草稿、评审中 · N 处发现、已确认），点一行打开那个条目。
-//   追溯 ── 一行：材料 › 澄清记录 › 图 › 条目。点材料在右边的材料里看第一处原文，点澄清记录换成条目详情的样子看全部来源，
+//   追溯 ── 一行：材料 › 澄清记录 › 图 › 条目 › 文档节号。点材料在右边的材料里看第一处原文，点澄清记录换成条目详情的样子看全部来源，
 //           点图滚到本节的图，点条目打开它。
 // 这里只画；数由 model/sectionLinks.ts 算。用例图与对象关系图的连线要另取图的文本（useDiagramGraphs.ts）。
 
 import { Fragment, type ReactNode } from "react";
 import type { Item } from "../../../api/types";
-import { sectionLabel } from "../../../model/chapters";
+import { sectionLabel, sectionOf } from "../../../model/chapters";
 import { KIND_CLASS, KIND_USE_CASE } from "../../../model/sectionDiagrams";
 import { relatedPages, requirementStateText, requirementsOf, traceOf } from "../../../model/sectionLinks";
 import type { FigureHost } from "./Figure";
@@ -49,6 +49,9 @@ export function SectionLinks({ host, item, onRaw }: {
       <Fragment key={one.item_id}>{i > 0 && "、"}<span className="see" role="button" title={one.title} onClick={() => onOpenItem?.(one.item_id)}>{one.item_id}</span></Fragment>
     ))}</span>);
   }
+  // 最后一段：这一节在生成的文档里是第几节。文档的章与节号同这里的目录；没有编号的页（未归类、已废弃、导语页）不进文档的节，没有这一段。
+  const docNo = sectionOf(contents, item.item_id)?.no ?? null;
+  if (docNo) segments.push(<span data-testid="trace-document" title="生成的文档里这一节的节号，与目录里的相同">文档 {docNo} 节</span>);
 
   return (
     <>
