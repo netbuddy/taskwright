@@ -482,9 +482,10 @@ export interface UiActionNoted {
    * 用户在提议进入下一个阶段的卡片上选了「继续本阶段」之后留的那条是 continue_stage，另带下面两项。
    */
   kind?: string | null;
-  /** continue_stage 才有：卡片在哪条回复上、卡片提议进入哪个阶段。 */
+  /** continue_stage 才有：卡片在哪条回复上、卡片是关于哪个阶段的、点的是卡片上哪一项（早先的后端不给最后一项，当作留在这一段的那一项）。 */
   reply_message_id?: string;
   stage?: StageKey;
+  option_key?: string;
   review?: { total: number; passed: number; failed: number; unfinished: number; problems: number; advice: number } | null;
 }
 

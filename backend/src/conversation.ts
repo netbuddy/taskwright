@@ -55,9 +55,10 @@ export function replyStageMove(details: Record<string, any>, reason: unknown): {
  * 「继续本阶段」的那条界面操作通知另带的两项：卡片在哪条回复上（reply_message_id）、卡片提议进入哪个阶段（stage）。
  * details 是那条通知的 details。别的界面操作通知不带，返回空对象。
  */
-export function continueStageFields(details: Record<string, any>): { reply_message_id?: string; stage?: string } {
+export function continueStageFields(details: Record<string, any>): { reply_message_id?: string; stage?: string; option_key?: string } {
   if (details.kind !== CONTINUE_STAGE || typeof details.reply_entry !== "string") return {};
-  return { reply_message_id: details.reply_entry, ...(isStageKey(details.stage) ? { stage: details.stage } : {}) };
+  return { reply_message_id: details.reply_entry, ...(isStageKey(details.stage) ? { stage: details.stage } : {}),
+    ...(typeof details.option_key === "string" && details.option_key ? { option_key: details.option_key } : {}) };
 }
 
 /**

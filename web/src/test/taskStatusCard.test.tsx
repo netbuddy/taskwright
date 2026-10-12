@@ -83,6 +83,25 @@ describe("状况卡各行的写法", () => {
     expect(STATUS_NEXT_TEXT).toBe("请按任务状况说明下一步该做什么。");
   });
 
+  it("开着的是请过目的提议：写补写了几处，按钮是「看过了，生成文档」，点了不发话，交给页面处理", async () => {
+    const review: StageProposal = { ...PROPOSAL, kind: "review", stage: "document", enter: { key: "document_reviewed", text: "看过了，生成文档" },
+      stay: { key: "document_revise", text: "需要修改" }, items: [{ item_id: "OA-020", revision_no: 1 }, { item_id: "OA-021", revision_no: 1 }] };
+    const onMessage = vi.fn(), onReviewed = vi.fn().mockResolvedValue(true);
+    render(<Wrap><TaskStatusCard status={{ ...STATUS, proposal: review }} liveProposal={review} onMessage={onMessage} onSend={noop} onReviewed={onReviewed} /></Wrap>);
+    expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定补写的 2 处待过目");
+    expect(screen.getByTestId("status-enter")).toHaveTextContent(/^看过了，生成文档$/);
+    fireEvent.click(screen.getByTestId("status-enter"));
+    expect(onReviewed.mock.calls).toEqual([["reply-far", review.items]]);
+    expect(onMessage).not.toHaveBeenCalled();
+    // 退回的提议写「退回」。
+    cleanup();
+    const back: StageProposal = { ...PROPOSAL, kind: "back", stage: "clarifying", enter: { key: "back_to_clarify", text: "退回澄清" }, stay: { key: "stay_in_stage", text: "留在本段" } };
+    render(<Wrap><TaskStatusCard status={{ ...STATUS, proposal: back }} liveProposal={back} onMessage={onMessage} onSend={noop} /></Wrap>);
+    expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定助手已提议退回澄清阶段");
+    fireEvent.click(screen.getByTestId("status-enter"));
+    expect(onMessage.mock.calls).toEqual([["我选：退回澄清", { reply_message_id: "reply-far", kind: "choose", choice: "back_to_clarify" }]]);
+  });
+
   it("没有开着的提议：没有「待决定」一行，只有「请助手说明下一步」；卡上的提议已经结束时进入按钮点不了", () => {
     render(<Wrap><TaskStatusCard status={{ ...STATUS, proposal: null }} liveProposal={null} onMessage={noop} onSend={noop} /></Wrap>);
     expect(screen.queryByTestId("status-proposal")).toBeNull();

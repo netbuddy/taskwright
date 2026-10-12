@@ -20,7 +20,7 @@ import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
 import { DebugPane } from "../components/work/DebugPane";
-import type { StageStart } from "../model/stage";
+import { DOCUMENT_REVIEWED_KEY, quietChoiceText, type StageStart } from "../model/stage";
 import { ReviewPanel } from "../components/work/ReviewPanel";
 import { DocumentModal } from "../components/DocumentModal";
 import { errorText } from "../components/work/errors";
@@ -247,6 +247,19 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     },
     onMessage: (text: string, card?: MessageRequest["card"]) => send(text, card),
     onShowUnread: () => setUnreadRequest((n) => n + 1),
+    // 请过目的卡片上点了「看过了，生成文档」：先在会话里留一条通知（这时提议还开着，卡片在另一条会话里也认得出），
+    // 再把卡片点名的页标为已读（提议随之结束），然后打开生成文档。两步都不引出助手的一次运行。
+    onReviewed: async (replyMessageId: string, items: { item_id: string; revision_no?: number | null }[]): Promise<boolean> => {
+      const noted = await submit({ kind: "continue_stage", targets: [], fields: { reply_message_id: replyMessageId, option_key: DOCUMENT_REVIEWED_KEY }, notify_executor: false },
+        `选择${quietChoiceText(DOCUMENT_REVIEWED_KEY)}`);
+      const failed = noted ?? (items.length > 0
+        ? await submit({ kind: "mark_viewed", targets: items.map((one) => ({ item_id: one.item_id, base_revision: one.revision_no ?? undefined })), notify_executor: false },
+          `把 ${items.map((one) => one.item_id).join("、")} 标为已读`)
+        : null);
+      if (failed) { toast.error(errorText(failed)); return false; }
+      setDoc({ open: true, revision: null });
+      return true;
+    },
   };
 
   const attach = async (file: File) => {

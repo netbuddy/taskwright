@@ -5,6 +5,8 @@
 //   choose  某个选项 → messages；suggest「采纳」「换一个」→ messages；propose「就这样做」「不要」→ messages
 //           例外：提议进入下一个阶段的卡片上留在这一段的那一项，一律显示成「继续本阶段」，点了走 actions（continue_stage）：
 //           只把卡片标为已选，不替用户发话，不引出助手的一次运行；提议仍然开着，从输入框上方的「待决定」一行进入。
+//           提议退回前面阶段的卡片上「留在本段」、编写文档阶段请用户过目的卡片上「需要修改」同样走 continue_stage，各显示自己的文字。
+//           请过目的卡片上「看过了，生成文档」也不发话：先留一条 continue_stage 的通知，再把卡片点名的页标为已读，然后打开生成文档。
 //   ask     挂在条目上：能标为先不管的条目各一个「先不管」→ actions（keep_pending），「我不知道，你按常识补」→ messages；
 //           没挂条目（scope 为 general，或者没有写 items）：「我不知道，你按常识补」「先放着」→ messages
 // 发给执行者的话只用第 7 节的固定模板。卡片里始终有「或者直接告诉我你的想法」的输入框。
@@ -22,7 +24,10 @@ import { Popconfirm } from "antd";
 import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../api/types";
 import { CONFIRM_CONDITION, SOURCE_ITEM, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, sourceKindNow, unreadItems } from "../../model/items";
 import { storyPlace } from "../../model/overall";
-import { ENTER_KEYS, STAY_HINT, STAY_KEYS, STAY_TEXT, stageUnmovedLine } from "../../model/stage";
+import {
+  DOCUMENT_REVIEWED_KEY, ENTER_KEYS, REVIEWED_HINT, isActingKey, isQuietKey, proposalCardKind, quietChoiceText, quietHint, quietText, stageUnmovedLine,
+  type ProposalCardKind,
+} from "../../model/stage";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { isKnowledgeLocator } from "../../model/knowledge";
 
@@ -55,6 +60,12 @@ export const TEMPLATES = {
  */
 /** 助手提议进入下一个阶段的那张请选择卡片的标题。 */
 export const STAGE_CARD_TITLE = "进入下一阶段 · 请决定";
+/** 助手提议退回前面的阶段的卡片、编写文档阶段请用户过目补写的页的卡片的标题。 */
+export const BACK_CARD_TITLE = "退回前面的阶段 · 请决定";
+export const REVIEW_CARD_TITLE = "补写的内容 · 请过目";
+const PROPOSAL_TITLES: Record<ProposalCardKind, string> = { enter: STAGE_CARD_TITLE, back: BACK_CARD_TITLE, review: REVIEW_CARD_TITLE };
+/** 提议的卡片上点名的页前面那一行小字。 */
+const PROPOSAL_LOOK: Record<ProposalCardKind, string> = { enter: "请先看：", back: "牵涉到：", review: "补写了这几页：" };
 
 const KIND_LABEL: Record<ActKind, string> = { ask: "提问", confirm: "请过目", suggest: "给建议值", choose: "请选择", propose: "提议" };
 /** 卡片正文那一行左边的小标签，照原型的写法。 */
@@ -66,11 +77,23 @@ export interface CardHandlers {
   onMessage: (text: string, card?: MessageRequest["card"]) => SendResult;
   /** 条目区筛出未读的条目。 */
   onShowUnread?: () => void;
+  /**
+   * 请过目的卡片上点了「看过了，生成文档」：留一条通知、把点名的页标为已读、打开生成文档，不引出助手的一次运行。
+   * 返回假表示没有做成（按钮放开，可以再点）。
+   */
+  onReviewed?: ReviewedHandler;
 }
+
+export type ReviewedHandler = (replyMessageId: string, items: { item_id: string; revision_no?: number | null }[]) => boolean | Promise<boolean>;
 
 /** 一张卡片是不是助手提议进入下一个阶段的：请选择，其中一个选项的键是「进入」某个阶段的键。 */
 export function stageCardOf(act: Act): boolean {
   return act.kind === "choose" && (act.options ?? []).some((o) => o.key in ENTER_KEYS);
+}
+
+/** 一张卡片是助手的哪一种提议：进入下一个阶段、退回前面的阶段、请用户过目补写的页；不是提议是 null。 */
+export function proposalKindOfCard(act: Act): ProposalCardKind | null {
+  return act.kind === "choose" ? proposalCardKind(act.options) : null;
 }
 
 /** 完成前还挡着的只剩未读：未满足的完成条件都是「每个条目用户确认」；还有别的条件没满足（包括评审通过）时不算。 */
@@ -79,9 +102,11 @@ function onlyUnreadLeft(task: Task | null): boolean {
   return unmet.length > 0 && unmet.every((c) => c.name === CONFIRM_CONDITION);
 }
 
-export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, stayed = false, unmovedAt = null, handlers, onOpenItem, onLocate }: {
+export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, stayed = false, stayedKey = null, unmovedAt = null, handlers, onOpenItem, onLocate }: {
   /** 这张卡片是用户选了「继续本阶段」答过的（对话记录里有那条界面操作通知）：两个选项留着，进入的那一项变淡，「继续本阶段」带勾。 */
   stayed?: boolean;
+  /** 对话记录里那条界面操作通知记的是点了哪一项（「留在本段」「需要修改」「看过了，生成文档」）；早先的通知没有记，不给。 */
+  stayedKey?: string | null;
   /** 这张卡片所在的那条回复的正文；复述的卡片据它判断故事写在卡片里还是写在回复里。 */
   replyText?: string;
   act: Act;
@@ -107,18 +132,26 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
 }) {
   const [draft, setDraft] = useState("");
   const [chosen, setChosen] = useState<string | null>(null);
-  const [stayedHere, setStayedHere] = useState(false);
+  const [quietHere, setQuietHere] = useState<string | null>(null);
 
   const card = (choice: string): MessageRequest["card"] => ({ reply_message_id: replyMessageId, kind: act.kind, choice });
   const say = (text: string, choice: string, label = choice) => {
     setChosen(label);
     handlers.onMessage(text, card(choice));
   };
-  /** 在进入卡片上选「继续本阶段」：只留一条界面操作通知，不发话。 */
+  /** 在提议的卡片上选不生效的那一项（「继续本阶段」「留在本段」「需要修改」）：只留一条界面操作通知，不发话。 */
   const stay = (optionKey: string) => {
-    setChosen(STAY_TEXT);
-    setStayedHere(true);
-    handlers.onAction({ kind: "continue_stage", targets: [], fields: { reply_message_id: replyMessageId, option_key: optionKey }, notify_executor: false }, `选择${STAY_TEXT}`);
+    setChosen(quietText(optionKey));
+    setQuietHere(optionKey);
+    handlers.onAction({ kind: "continue_stage", targets: [], fields: { reply_message_id: replyMessageId, option_key: optionKey }, notify_executor: false }, `选择${quietText(optionKey)}`);
+  };
+  /** 在请过目的卡片上选「看过了，生成文档」：不发话；没有做成时放开按钮。 */
+  const reviewed = () => {
+    setChosen(quietChoiceText(DOCUMENT_REVIEWED_KEY));
+    setQuietHere(DOCUMENT_REVIEWED_KEY);
+    void Promise.resolve(handlers.onReviewed?.(replyMessageId, act.items ?? []) ?? false).then((ok) => {
+      if (ok === false) { setChosen(null); setQuietHere(null); }
+    });
   };
   const refs = act.items ?? [];
   const contexts = refs.map((r) => itemContext(task, r.item_id));
@@ -142,8 +175,14 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   const offTitle = hold ? holdText : undefined;
   const sendOff = disabled || hold || writesOff;
   const done = answered ?? (chosen ? `你选了「${chosen}」` : null);
-  // 选了「继续本阶段」的进入卡片（刚点的，或者对话记录里有那条通知）：不收成一句，留着两个选项的样子。
-  const wasStayed = stageCardOf(act) && (stayed || (stayedHere && !answered));
+  // 选了不生效那一项的提议卡片（刚点的，或者对话记录里有那条通知）：不收成一句，留着两个选项的样子。
+  // 点的是哪一项：刚点的认本地记的；对话记录里的认通知记的键，早先的通知没有记，取卡片上不生效的那一项。
+  const proposalKind = proposalKindOfCard(act);
+  const quietPicked = !proposalKind ? null
+    : stayed ? stayedKey ?? (act.options ?? []).find((o) => isQuietKey(o.key))?.key ?? null
+    : quietHere && !answered ? quietHere : null;
+  const wasStayed = quietPicked !== null && isQuietKey(quietPicked);
+  const wasReviewed = quietPicked === DOCUMENT_REVIEWED_KEY;
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
   const sendDraft = () => {
@@ -183,14 +222,16 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   // 助手提议往前走的卡片（请选择，其中一个选项的键是「进入」某个阶段的四个键之一）：标题写「进入下一阶段 · 请决定」，
   // 进入的那个选项画成主按钮，点名的条目前面写「请先看：」。用户点了进入，系统替用户记移动，阶段条随库事件变。
   const stageCard = !story && stageCardOf(act);
+  // 另两种提议的卡片：提议退回前面的阶段（「退回某阶段」「留在本段」）、编写文档阶段请用户过目（「看过了，生成文档」「需要修改」）。
+  const proposal = story ? null : proposalKind;
 
   return (
     <div className={`act${story ? " retell" : ""}`} data-kind={act.kind} data-testid={`act-${act.kind}`} data-story={story ?? undefined}
-      data-stage-card={stageCard ? "true" : undefined}>
-      <div className="tt">{story ? "复述 · 请核对" : stageCard ? STAGE_CARD_TITLE : KIND_LABEL[act.kind] ?? act.kind}</div>
+      data-stage-card={stageCard ? "true" : undefined} data-proposal={proposal ?? undefined}>
+      <div className="tt">{story ? "复述 · 请核对" : proposal ? PROPOSAL_TITLES[proposal] : KIND_LABEL[act.kind] ?? act.kind}</div>
       {contexts.length > 0 && (
         <div data-testid="card-context">
-          {stageCard && <div className="ctxh" data-testid="card-look-first">请先看：</div>}
+          {proposal && <div className="ctxh" data-testid="card-look-first">{PROPOSAL_LOOK[proposal]}</div>}
           {contexts.map((c, i) => (
             <div key={c.itemId}>
               <div className="ctx" role="button" onClick={() => onOpenItem?.(c.itemId)} data-testid={`card-context-${c.itemId}`}>
@@ -240,12 +281,16 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
           {hold && <div className="sw-holdhint" data-testid="card-hold-hint">{holdText}</div>}
           {act.kind === "choose" && (
             <div className="actions opts">
-              {(act.options ?? []).map((o) => (stageCard && STAY_KEYS.has(o.key) ? (
+              {(act.options ?? []).map((o) => (proposal && isQuietKey(o.key) ? (
                 <button type="button" key={o.key} className="btn sm" disabled={off} title={offTitle} onClick={() => stay(o.key)} data-testid={`card-option-${o.key}`}>
-                  {STAY_TEXT}
+                  {quietText(o.key)}
+                </button>
+              ) : proposal === "review" && o.key === DOCUMENT_REVIEWED_KEY ? (
+                <button type="button" key={o.key} className="btn sm pri" disabled={off} title={offTitle} onClick={reviewed} data-testid={`card-option-${o.key}`}>
+                  {o.text}
                 </button>
               ) : (
-                <button type="button" key={o.key} className={`btn sm${stageCard && o.key in ENTER_KEYS ? " pri" : ""}`} disabled={off} title={offTitle}
+                <button type="button" key={o.key} className={`btn sm${proposal && isActingKey(o.key) ? " pri" : ""}`} disabled={off} title={offTitle}
                   onClick={() => say(TEMPLATES.choose(o.text), o.key, o.text)} data-testid={`card-option-${o.key}`}>
                   {o.text}
                 </button>
@@ -319,14 +364,15 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
         <>
           <div className="actions opts stayed" data-testid="card-stayed">
             {(act.options ?? []).map((o) => (
-              <button type="button" key={o.key} disabled className={`btn sm${o.key in ENTER_KEYS ? " pri faded" : STAY_KEYS.has(o.key) ? " picked" : ""}`}
-                data-testid={`card-option-${o.key}`}>{STAY_KEYS.has(o.key) ? `${STAY_TEXT} ✓` : o.text}</button>
+              <button type="button" key={o.key} disabled className={`btn sm${isActingKey(o.key) ? " pri faded" : isQuietKey(o.key) ? " picked" : ""}`}
+                data-testid={`card-option-${o.key}`}>{isQuietKey(o.key) ? `${quietText(o.key)} ✓` : o.text}</button>
             ))}
           </div>
-          <div className="done pale" data-testid="card-stay-hint">{STAY_HINT}</div>
+          <div className="done pale" data-testid="card-stay-hint">{quietHint(quietPicked!)}</div>
         </>
       )}
       {done && !wasStayed && <div className="done">✓ {done}</div>}
+      {done && wasReviewed && <div className="done pale" data-testid="card-reviewed-hint">{REVIEWED_HINT}</div>}
       {done && unmovedAt && <div className="done pale" data-testid="card-stage-unmoved">{stageUnmovedLine(unmovedAt)}</div>}
       {showUnread && (
         <div className="sw-unread-hint" data-testid="card-unread">
