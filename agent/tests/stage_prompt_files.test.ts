@@ -293,9 +293,20 @@ test("需求规格任务的说明拆成三份：SKILL.md 只留每个阶段都�
   assert.ok(reading.includes("这几批里不要夹着用例、需求或约束"));
   const writing = readFileSync(join(SRS_SKILL, "stages", "writing.md"), "utf-8");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
-  for (const head of ["总体分析与材料里的内容都要整理进条目", "1. **把内容分拣成四类。**", "2. **一批最多写 4 个条目，问题条目放最后一批。**", "3. **一句话既是解释又是规则时。**", "4. **写完对用户说话。**"]) {
+  for (const head of ["整理建模阶段画出的图与材料里的内容都要整理进条目", "1. **照图写条目。**", "2. **每条功能用例的来源写两张图。**", "3. **非功能需求不经图。**",
+    "4. **含糊的记成问题。**", "5. **一批最多写 4 个条目，问题条目放最后一批。**", "6. **一句话既是解释又是规则时。**", "7. **写完对用户说话。**"]) {
     assert.ok(writing.includes(head), head);
   }
+  // 从图到条目的对应：五种图都说到了，功能用例的八个字段都有着落（字段名与任务定义里的相同）。
+  const mapping = writing.slice(writing.indexOf("1. **照图写条目。**"), writing.indexOf("2. **每条功能用例的来源写两张图。**"));
+  for (const kind of ["用例图", "流程图", "状态图", "对象关系图", "系统边界图"]) assert.ok(mapping.includes(kind), kind);
+  const definition = JSON.parse(readFileSync(join(ROOT, "task-types", "srs-authoring", "docs", "task-definitions", "srs-authoring.json"), "utf-8"));
+  const useCase = definition.交付物.条目集合.find((one: { 名称: string }) => one.名称 === "功能用例");
+  assert.equal(useCase.字段.length, 8);
+  for (const field of useCase.字段 as { 名: string }[]) assert.ok(mapping.includes(`「${field.名}」`), field.名);
+  assert.ok(writing.includes("种类写「图」，出处写图的编号（例如 D-002）"));
+  assert.ok(writing.includes("任务里只有一张用例图，各条用例都指向它，不要为每条用例另画一张。"));
+  assert.ok(writing.includes("这件事不牵涉状态图时，不必为了对应而补写。"));
   // 任务类型的文件名也只用阶段的键。
   for (const name of readdirSync(join(SRS_SKILL, "stages"))) assert.ok((STAGES as readonly string[]).includes(name.replace(/\.md$/, "")), name);
 });
