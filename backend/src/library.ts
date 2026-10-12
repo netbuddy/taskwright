@@ -298,13 +298,14 @@ export function completion(taskDir: string, taskId: string, definition: ParsedDe
 }
 
 /**
- * 开着的提议写成接口的形状：要进入的阶段（stage）、进入与留在本段两个选项（enter、stay，卡片上没有留在本段的选项时 stay 为 null）、
+ * 开着的提议写成接口的形状：哪一种（kind：enter 进入下一段、back 退回前面的阶段、review 请用户过目补写的页；早先记下的没有这一项，当作 enter）、
+ * 关于哪个阶段（stage：要进入的、要退回的，review 是编写文档）、生效与不生效的两个选项（enter、stay，卡片上没有不生效的选项时 stay 为 null）、
  * 卡片的问句（text）、点名请用户先看的条目（items）、卡片在哪条会话的哪条回复上（session_id、reply_message_id）、
  * 记下它的那条事件的序号与时刻（event_seq、at）。fact 是事件里记的那一项，别的几样取自事件那一行。
  */
 export function proposalView(fact: Omit<OpenProposal, "session_id" | "reply_entry" | "event_seq" | "at">, row: { session_id: unknown; reply_entry: unknown; seq: unknown; at: unknown }) {
   return {
-    stage: fact.stage, enter: fact.enter, stay: fact.stay ?? null, text: fact.text ?? "", items: or(fact.items, []),
+    kind: fact.kind ?? "enter", stage: fact.stage, enter: fact.enter, stay: fact.stay ?? null, text: fact.text ?? "", items: or(fact.items, []),
     session_id: typeof row.session_id === "string" ? row.session_id : null, reply_message_id: typeof row.reply_entry === "string" ? row.reply_entry : null,
     event_seq: Number(row.seq), at: clock.fromLocalText(typeof row.at === "string" ? row.at : null),
   };

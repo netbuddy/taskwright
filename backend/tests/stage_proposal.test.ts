@@ -26,7 +26,7 @@ test("整份数据的 stage 带开着的提议：要进入的阶段、两个选�
   const ws = build(tmp, "open", DEFINITION, [[FLOW], { reply: CARD, session: "sess-first" }]);
   const proposal = library.taskSnapshot(ws)[1]!.stage!.proposal!;
   assert.deepEqual({ ...proposal, event_seq: null, at: null, reply_message_id: null }, {
-    stage: "reviewing", enter: ENTER_REVIEW, stay: STAY, text: "条目写完了，进入评审确认吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
+    kind: "enter", stage: "reviewing", enter: ENTER_REVIEW, stay: STAY, text: "条目写完了，进入评审确认吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
     session_id: "sess-first", reply_message_id: null, event_seq: null, at: null,
   });
   assert.match(proposal.reply_message_id!, /^reply-/);

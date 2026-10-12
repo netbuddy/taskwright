@@ -8,10 +8,12 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { EVENT_EXECUTOR_ACTS_RECORDED, recordReplyActs } from "../src/lib/dialogue_acts.ts";
 import { TASK_ACTIVE, withTaskDatabase } from "../src/lib/schema.ts";
-import { ENTER_OPTIONS, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
-import { isStayKey, openProposal, proposalOfAct } from "../src/lib/stage_proposal.ts";
+import { BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, STAY_HERE_OPTION, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
+import { isStayKey, openProposal, proposalKindOf, proposalOfAct } from "../src/lib/stage_proposal.ts";
+import { saveRevision } from "../src/lib/save_revision.ts";
 import { moveStage, recordStageCardClick } from "../src/lib/stage_read.ts";
-import { DEFINITION_PATH, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { runUserOperation } from "../src/lib/user_ops.ts";
+import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 const SESSION = "sess-a";
 const said = (id: string, text: string) => ({ id, type: "message", message: { role: "user", content: text } });
@@ -44,24 +46,26 @@ const payloadOf = (dir: string, seq: number) => JSON.parse(query<{ payload: stri
 test("一张卡片是不是进入卡片：请选择里有进入某个阶段的键才是；留在这一段的键按五个固定的键认", () => {
   const fact = proposalOfAct(enterCard("clarifying", "reading", [{ item_id: "OA-001", revision_no: 2 }, { item_id: "OA-002" }]))!;
   assert.deepEqual(fact, {
-    stage: "clarifying", enter: ENTER_OPTIONS.clarifying, stay: STAY_OPTIONS.reading, text: "这一段做完了，进入澄清吗？",
+    kind: "enter", stage: "clarifying", enter: ENTER_OPTIONS.clarifying, stay: STAY_OPTIONS.reading, text: "这一段做完了，进入澄清吗？",
     items: [{ item_id: "OA-001", revision_no: 2 }, { item_id: "OA-002", revision_no: null }],
   });
   // 五张卡片各进入一个阶段；没有留在这一段的选项时 stay 是 null。
   assert.deepEqual((["clarifying", "modeling", "writing", "reviewing", "document"] as const).map((to) => proposalOfAct({ kind: "choose", text: "", options: [ENTER_OPTIONS[to]] })),
-    (["clarifying", "modeling", "writing", "reviewing", "document"] as const).map((to) => ({ stage: to, enter: ENTER_OPTIONS[to], stay: null, text: "", items: [] })));
+    (["clarifying", "modeling", "writing", "reviewing", "document"] as const).map((to) => ({ kind: "enter", stage: to, enter: ENTER_OPTIONS[to], stay: null, text: "", items: [] })));
   // 不是请选择、没有进入键、选项不成样子：都不是。
   for (const act of [null, { kind: "confirm", text: "请看", items: [] }, { kind: "choose", text: "选一个", options: [{ key: "a", text: "甲" }, STAY_OPTIONS.reading] },
     { kind: "choose", text: "选一个" }, { kind: "ask", text: "进入澄清吗", options: [ENTER_OPTIONS.clarifying] }]) assert.equal(proposalOfAct(act), null);
   assert.deepEqual(Object.values(STAY_OPTIONS).map((one) => isStayKey(one.key)), [true, true, true, true, true]);
-  assert.deepEqual(["enter_clarify", "start_items", "continue", "complete", null].map(isStayKey), [false, false, false, false, false]);
+  assert.deepEqual(["enter_clarify", "start_items", "continue", "complete", null, "back_to_clarify", "document_reviewed"].map(isStayKey), [false, false, false, false, false, false, false]);
+  // 回退卡片的「留在本段」与请过目卡片的「需要修改」也是不生效的那一项。
+  assert.deepEqual([isStayKey(STAY_HERE_OPTION.key), isStayKey(DOCUMENT_REVISE_OPTION.key)], [true, true]);
 });
 
 test("发出进入卡片：事件里带 proposal，提议就开着，带着卡片在哪条会话的哪条回复上；别的回复不带，也不结束它", () => {
   const dir = workspace();
   assert.equal(open(dir), null, "还没有发过卡片");
   const card = reply(dir, enterCard("clarifying", "reading", [{ item_id: "OA-001", revision_no: 1 }]));
-  assert.deepEqual(payloadOf(dir, card.seq!).proposal, { stage: "clarifying", enter: ENTER_OPTIONS.clarifying, stay: STAY_OPTIONS.reading,
+  assert.deepEqual(payloadOf(dir, card.seq!).proposal, { kind: "enter", stage: "clarifying", enter: ENTER_OPTIONS.clarifying, stay: STAY_OPTIONS.reading,
     text: "这一段做完了，进入澄清吗？", items: [{ item_id: "OA-001", revision_no: 1 }] });
   const now = open(dir)!;
   assert.deepEqual([now.stage, now.enter.key, now.stay?.key, now.session_id, now.reply_entry, now.event_seq, now.items],
@@ -140,4 +144,70 @@ test("事件的名字与「回复」记的是同一个", () => {
   const dir = workspace();
   const card = reply(dir, enterCard("clarifying", "reading"));
   assert.equal(query<{ name: string }>(dir, "SELECT name FROM event WHERE seq = ?", card.seq)[0].name, EVENT_EXECUTOR_ACTS_RECORDED);
+});
+
+// ───────────── 另外两种提议：退回、补写待过目 ─────────────
+
+const backCard = (to: Exclude<Stage, "document">, text = "用户放进了新材料，前面几页要重看。退回吗？") =>
+  ({ kind: "choose", text, options: [BACK_OPTIONS[to], STAY_HERE_OPTION] });
+const reviewCard = (items: { item_id: string; revision_no?: number }[]) =>
+  ({ kind: "choose", text: "补写了两章的导语，请过目。", items, options: [DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION] });
+
+test("回退卡片与请过目的卡片也是提议：种类、关于哪个阶段、生效与不生效的两项各是什么；早先没有记种类的事件当作进入", () => {
+  assert.deepEqual(proposalOfAct(backCard("clarifying")), {
+    kind: "back", stage: "clarifying", enter: BACK_OPTIONS.clarifying, stay: STAY_HERE_OPTION, text: "用户放进了新材料，前面几页要重看。退回吗？", items: [] });
+  assert.deepEqual(proposalOfAct(reviewCard([{ item_id: "OA-010", revision_no: 3 }])), {
+    kind: "review", stage: "document", enter: DOCUMENT_REVIEWED_OPTION, stay: DOCUMENT_REVISE_OPTION, text: "补写了两章的导语，请过目。", items: [{ item_id: "OA-010", revision_no: 3 }] });
+  // 只有「需要修改」或只有「留在本段」的卡片不是提议。
+  assert.equal(proposalOfAct({ kind: "choose", text: "要改吗", options: [DOCUMENT_REVISE_OPTION, { key: "x", text: "别的" }] }), null);
+  assert.equal(proposalOfAct({ kind: "choose", text: "留下吗", options: [STAY_HERE_OPTION, { key: "x", text: "别的" }] }), null);
+  assert.deepEqual([
+    proposalKindOf({ stage: "clarifying", enter: ENTER_OPTIONS.clarifying }), proposalKindOf({ kind: "back", stage: "reading", enter: BACK_OPTIONS.reading }),
+    proposalKindOf({ kind: "review", stage: "document", enter: DOCUMENT_REVIEWED_OPTION }),
+    // 种类与键对不上、阶段写法不对、不是对象：认不出。
+    proposalKindOf({ kind: "back", stage: "reading", enter: ENTER_OPTIONS.clarifying }), proposalKindOf({ kind: "enter", stage: "别的", enter: ENTER_OPTIONS.clarifying }), proposalKindOf(null),
+  ], ["enter", "back", "review", null, null, null]);
+});
+
+test("回退的提议：发出就开着，用户点了退回（阶段移动）就结束；用户留在本段时仍然开着", () => {
+  const dir = workspace();
+  enterStage(dir, "modeling");
+  const card = reply(dir, backCard("reading"));
+  const now = open(dir)!;
+  assert.deepEqual([now.kind, now.stage, now.enter.key, now.stay?.key, now.reply_entry], ["back", "reading", "back_to_reading", "stay_in_stage", card.entry]);
+  // 卡片不在这条会话的分支上（换了一条会话）：照开着的提议核对，点退回照样记移动，理由里带卡片的问句。
+  const moved = recordStageCardClick(dir, "sess-b", [said("u-9", "在吗")] as never, { opId: "ui-op-b", replyEntry: card.entry, optionKey: "back_to_reading" })!;
+  assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "modeling", "reading"]);
+  assert.equal(query<{ reason: string }>(dir, "SELECT reason FROM stage_record ORDER BY event_seq DESC LIMIT 1")[0].reason,
+    "用户在卡片上选了「退回核读材料」：用户放进了新材料，前面几页要重看。退回吗？");
+  assert.equal(open(dir), null);
+});
+
+test("补写待过目的提议：发出就开着；卡片点名的页用户都看过了就结束；助手又改了其中一页、再发一张，新的那一条开着", () => {
+  const dir = workspace();
+  const add = (title: string) => saveRevision(callIn(dir), { operations: [{ op: "add", collection: "总体分析",
+    fields: { 标题: title, 它是什么: `${title}的说明。`, 状态: "在用" }, sources: [SOURCE] }] });
+  add("业务流程导语");
+  add("角色导语");
+  enterStage(dir, "document");
+  const pages = [{ item_id: "OA-001", revision_no: 1 }, { item_id: "OA-002", revision_no: 2 }];
+  const card = reply(dir, reviewCard(pages));
+  assert.deepEqual([open(dir)!.kind, open(dir)!.stage, open(dir)!.items, open(dir)!.event_seq], ["review", "document", pages, card.seq]);
+  const view = (item: string, revision: number) => runUserOperation({ workspaceDir: dir, sessionId: SESSION },
+    { op_id: `ui-view-${item}-${revision}`, kind: "mark_viewed", targets: [{ item_id: item, base_revision: revision }], notify_executor: false });
+  // 只看了一页：还开着。
+  view("OA-001", 1);
+  assert.equal(open(dir)!.event_seq, card.seq);
+  // 两页都看过：结束。
+  view("OA-002", 2);
+  assert.equal(open(dir), null);
+  // 助手照用户说的又改了一页（它又成了没看过的），再发一张卡片：开着的是新的那一条。
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-002", base_revision: 2, fields: { 它是什么: "读者与馆员两种角色。" } }] });
+  const again = reply(dir, reviewCard([{ item_id: "OA-001", revision_no: 1 }, { item_id: "OA-002", revision_no: 3 }]));
+  assert.equal(open(dir)!.event_seq, again.seq);
+  // 一页都没有点名的请过目卡片：没有可看的页，一直开着到下一次提议或移动。
+  const bare = reply(dir, reviewCard([]));
+  assert.equal(open(dir)!.event_seq, bare.seq);
+  enterStage(dir, "reviewing");
+  assert.equal(open(dir), null);
 });

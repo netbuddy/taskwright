@@ -188,7 +188,7 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
       let cardQuestion = typeof act?.text === "string" ? act.text : "";
       if (!card) {
         const open = openProposal(db, task.task_id);
-        if (open === null || open.enter.key !== click.optionKey) return null;
+        if (open === null || open.kind === "review" || open.enter.key !== click.optionKey) return null;
         if (replyEntry !== null && replyEntry !== open.reply_entry) return null;
         cardQuestion = open.text;
       }

@@ -111,6 +111,13 @@ export const BACK_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
 /** 回退卡片上留在这一段的那个选项：点它只把卡片标为已选，不替用户发话，提议仍然开着。 */
 export const STAY_HERE_OPTION: CardOption = { key: "stay_in_stage", text: "留在本段" };
 
+/**
+ * 编写文档阶段请用户过目的那张卡片的两个选项。点「看过了，生成文档」不移动阶段、不引出助手的运行：页面把卡片点名的页记为看过，
+ * 再打开生成文档；点「需要修改」只把卡片标为已选，用户接着说要改哪里。
+ */
+export const DOCUMENT_REVIEWED_OPTION: CardOption = { key: "document_reviewed", text: "看过了，生成文档" };
+export const DOCUMENT_REVISE_OPTION: CardOption = { key: "document_revise", text: "需要修改" };
+
 /** 卡片上的一个选项键是「退回」哪个阶段的；不是这样的键时返回 null。 */
 export function stageBackedBy(key: unknown): Exclude<Stage, "document"> | null {
   const found = (Object.keys(BACK_OPTIONS) as Exclude<Stage, "document">[]).find((stage) => BACK_OPTIONS[stage].key === key);

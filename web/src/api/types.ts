@@ -344,6 +344,8 @@ export interface StageLamp {
  * event_seq 与 at 是记下它的那条库事件的序号与时刻。
  */
 export interface StageProposal {
+  /** 哪一种提议：enter 进入下一段，back 退回前面的阶段，review 请用户过目补写的页（点了不移动阶段）。早先的后端不给，当作 enter。 */
+  kind?: "enter" | "back" | "review";
   stage: StageKey;
   enter: { key: string; text: string };
   stay: { key: string; text: string } | null;
