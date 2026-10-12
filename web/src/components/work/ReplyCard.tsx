@@ -29,6 +29,7 @@ import {
   type ProposalCardKind,
 } from "../../model/stage";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
+import { RESENT_TEXT } from "../../model/cardAnswer";
 import { isKnowledgeLocator } from "../../model/knowledge";
 
 /** 有未保存的条目编辑时，对话区与卡片上会发话或写库的按钮为什么不能用。 */
@@ -38,12 +39,8 @@ export const DIAGRAM_HOLD_TEXT = "先保存或放弃对图的改动";
 
 /** 在卡片的文本框里发话时，卡片标识里 choice 写的固定值。 */
 export const CARD_TYPED_CHOICE = "typed";
-/** 卡片答过之后收成的一句：用户在这张卡片的文本框里写了回复。 */
-export const TYPED_IN_CARD_TEXT = "你在卡片里回复了";
-/** 卡片答过之后收成的一句：用户在卡片之外说的话，助手判断是在回答这张卡片。 */
-export const ANSWERED_OUTSIDE_TEXT = "你回答了这张卡片";
-/** 卡片收成的一句：用户搁下没有答，助手在后面把同一个问题重发了一遍。这一句前面不打勾。 */
-export const RESENT_TEXT = "这个问题在后面重新问了";
+// 卡片收成的那几句在 model/cardAnswer.ts，这里照原来的名字转出。
+export { ANSWERED_OUTSIDE_TEXT, RESENT_TEXT, TYPED_IN_CARD_TEXT } from "../../model/cardAnswer";
 
 /** 第 7 节的固定模板。 */
 export const TEMPLATES = {

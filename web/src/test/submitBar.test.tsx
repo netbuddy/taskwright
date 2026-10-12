@@ -82,6 +82,14 @@ describe("提示条显示的条件与问句", () => {
     expect(showSubmitBar(task(), false, [card(["a", "b"])]), "别的卡片不算").toBe(true);
   });
 
+  it("用户在底部输入框说了别的事，提交卡片还开着：提示条仍不显示；助手的回复写明这句话回答了卡片之后才显示", () => {
+    const typed = { type: "user_message", session_id: "s", message_id: "u2", at: "", text: "UC-002 再改一个字。", origin: "typed", annotation: null } as unknown as ConversationMessage;
+    const reply = (over: Record<string, unknown>) => ({ type: "assistant_reply", session_id: "s", message_id: "a2", at: "", text: "好。", informs: [], act: null,
+      via_reply_tool: true, ...over }) as unknown as ConversationMessage;
+    expect(showSubmitBar(task(), false, [card(["complete", "continue"]), typed, reply({})])).toBe(false);
+    expect(showSubmitBar(task(), false, [card(["complete", "continue"]), typed, reply({ answers_card: ["a1"] })])).toBe(true);
+  });
+
   it("以最近一张提交卡片为准", () => {
     expect(pendingSubmitCard([card(["complete", "continue"]), said, card(["complete", "continue"])])).toBe(true);
     expect(pendingSubmitCard([card(["complete", "continue"]), said])).toBe(false);
