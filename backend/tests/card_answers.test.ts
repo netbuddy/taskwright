@@ -83,7 +83,7 @@ test("底部输入框的话不关卡片；卡片文本框里的话带卡片的�
       await send({ text: "先不说这个，这一段差不多了。", client_id: "c-7" });
 
       // 卡片文本框里的话：模型收到的说明写明是用户打的字、回应的是哪张卡片；没有回应它的那份理解被拒了一次。
-      const told = requests().map((one) => JSON.stringify(one.请求体)).find((text) => text.includes("卡片里的回复（是用户打的字）"))!;
+      const told = requests().map((one) => JSON.stringify(one.请求体)).find((text) => text.includes("那张卡片的文本框里写了下面这句话"))!;
       assert.match(told, /用户在 r1-2（提问「借书证丢了怎样补办」）那张卡片的文本框里写了下面这句话。这句话是在回应这张卡片，理解里要有一项的 responds_to 写 r1-2。/);
       const refused = db("SELECT call_id, fact FROM tool_rejection WHERE tool_name = 'reply'");
       assert.deepEqual(refused.map((one: Dict) => one.call_id), ["call-typed-bad"]);

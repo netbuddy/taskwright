@@ -20,7 +20,8 @@ import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { RULE_CONFLICT_PREFIX } from "../src/lib/overall_views.ts";
 import { PROBLEM_BLOCKING, PROBLEM_BLOCKING_FIELD, PROBLEM_LANDED_FIELD, PROBLEM_NOT_BLOCKING, PROBLEM_REVISIT_FIELD } from "../src/lib/definition.ts";
 import { BACK_OPTIONS, ENTER_OPTIONS, type LampInput, PENDING_MARK, STAGES, STAGE_NAMES, STAY_HERE_OPTION, STAY_OPTIONS, type Stage, type WriteKind, canWrite, nextStage, stageLamps } from "../src/lib/stage.ts";
-import { NO_PROPOSAL_LINE } from "../src/lib/stage_proposal.ts";
+import { NO_PROPOSAL_LINE, openCardsLine } from "../src/lib/stage_proposal.ts";
+import { CARD_TYPED_PREFIX } from "../src/lib/dialogue_acts.ts";
 
 /** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
 const EMPTY_LAMP_INPUT: LampInput = {
@@ -347,6 +348,29 @@ test("写条目与评审确认两段：依据用户看过的页、写完发「�
   assert.ok(reviewing.includes("用户选了现在完成，再调用完成任务"));
   // 评审确认不再是最后一段：完成条件都满足之后提议进入编写文档；用户明说不写文档时才问是否完成。
   assert.ok(reviewing.includes("3. **条件都满足之后提议进入编写文档。**") && reviewing.includes("用户明说不写文档、要直接完成时"));
+});
+
+test("卡片之外的话先判断是不是在回答卡片；搁下的卡片不催，提议进入下一段之前一次一张重发；说明里用的名字与程序写的一致", () => {
+  const common = sections(read("common.md"));
+  const section = (title: string) => [...common.entries()].find(([name]) => name.startsWith(title))![1];
+  // 第一节与第八节：卡片文本框里打的字前面的那条说明、它要写理解；开头几个字与扩展写的相同。
+  assert.ok(section("一、").includes(`以「${CARD_TYPED_PREFIX}」开头的说明`));
+  assert.ok(section("八、").includes(`用户在卡片的文本框里打的字不在此列：它前面的说明以「${CARD_TYPED_PREFIX}」开头，那是用户自己的话，要写理解。`));
+  // 第九节：先判断，是就写 responds_to，不是就搁下；重发写 resends。
+  const facts = section("九、");
+  for (const said of ["不一定是在回答卡片，先按上下文判断", "理解里 `responds_to` 指向它，页面据此把那张卡片显示为答过", "那张卡片算暂时搁下",
+    "搁下的卡片不要催，不要紧跟着重发，也不要当作用户已经同意", "`act` 里写 `resends`（值是它的编号，只有提问与请选择可以重发）", "提议的卡片不重发"]) {
+    assert.ok(facts.includes(said), `第九节应当写着「${said}」`);
+  }
+  // 第十节第 3 条：发进入下一段的卡片之前看任务状态最后一行，一次一张重发，仍不答的记问题条目，重发过一次的不再重发。
+  const stages = section(SECTION_TEN);
+  const line = openCardsLine([{ act_id: "r3-2", function: "ask", summary: "借阅期限是多少天", event_seq: 9 }]);
+  const named = /^(这一段还开着的提问与请选择)/.exec(line)![1];
+  for (const said of [`先用查询任务状态看最后一行「${named}」`, "先把它们一次一张重发，这时不提议进入下一段", "这个问题前面没有答，这一段结束前请确认",
+    "照第 9 条记成问题条目，写明「阻断下游」或「不阻断」；重发过一次的不再重发。全部过完，才发进入下一段的卡片。"]) {
+    assert.ok(stages.includes(said), `第十节应当写着「${said}」`);
+  }
+  assert.ok(section(SECTION_TWELVE).includes("这一段还有哪几张提问与请选择的卡片用户没有答"));
 });
 
 test("共用部分第五节新加的那个反例标明了它是错的写法", () => {
