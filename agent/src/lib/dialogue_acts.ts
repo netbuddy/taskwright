@@ -56,6 +56,13 @@ type Entry = {
 /** 卡片点击的标注、界面操作通知两种自定义消息的类型名（与 hooks/user_commands.ts 同名常量一致）。 */
 const UI_CLICK_TYPE = "taskwright-ui-click";
 const USER_EDIT_TYPE = "taskwright-user-edit";
+/**
+ * 用户在卡片的文本框里打了一句话时，扩展命令 /tw-ui 先追加的那条自定义消息的类型。它不是点击：同意判定（lib/completion_consent.ts 的
+ * cardClicks）与按点击合成用户行为（synthesizedBy）都只认 taskwright-ui-click，所以这句话照常要执行者写理解，也不会被当成点了哪个选项。
+ */
+export const CARD_TYPED_TYPE = "taskwright-card-typed";
+/** 页面在卡片的文本框里发话时，卡片标识里 choice 写的固定值。 */
+export const CARD_TYPED_KEY = "typed";
 /** 卡片上点「这几条都看过了」之后替用户发的那句话的开头（lib/user_ops.ts 的 VIEWED_NOTICE_PREFIX）。 */
 const VIEWED_PREFIX = "我已经看过了：";
 /** 「先不管这条」之后后端替用户发的那句话的开头（backend/src/executor.ts 的 KEEP_PENDING_NOTICE_PREFIX）。 */
@@ -76,6 +83,8 @@ export interface RunInfo {
   userEntryId: string;
   userText: string;
   synthesized: Synthesized | null;
+  /** 这句话是用户在某张卡片的文本框里打的：卡片所在回复的会话条目编号；不是时为 null。 */
+  typedCard: string | null;
   /** 这句话之后分支上已经有几条助手消息。 */
   assistantCount: number;
 }
@@ -103,7 +112,8 @@ export function branchRuns(branch: Entry[]): RunInfo[] {
       const text = textOf(entry.message.content);
       if (text.trim() === FALLBACK_TEXT) continue;
       const runNo = runs.length + 1;
-      runs.push({ runNo, runId: `r${runNo}`, userEntryId: entry.id, userText: text, synthesized: synthesizedBy(lastCustom, text), assistantCount: 0 });
+      runs.push({ runNo, runId: `r${runNo}`, userEntryId: entry.id, userText: text, synthesized: synthesizedBy(lastCustom, text),
+        typedCard: typedCardOf(lastCustom, text), assistantCount: 0 });
       lastCustom = null;
     } else if (role === "assistant" && runs.length > 0) {
       runs[runs.length - 1].assistantCount += 1;
@@ -130,6 +140,13 @@ function synthesizedBy(custom: Entry | null, text: string): Synthesized | null {
     if (details.kind === "keep_pending" && text.startsWith(KEEP_PENDING_PREFIX)) return { kind: "keep_pending", items };
   }
   return null;
+}
+
+/** 这句用户的话是不是在某张卡片的文本框里打的：紧挨在它前面的那条自定义消息记着是哪条回复的卡片。 */
+function typedCardOf(custom: Entry | null, text: string): string | null {
+  if (!custom || custom.customType !== CARD_TYPED_TYPE) return null;
+  const details = custom.details ?? {};
+  return details.text === text && typeof details.reply_entry === "string" && details.reply_entry ? details.reply_entry : null;
 }
 
 // ───────────── 写库 ─────────────
@@ -216,11 +233,18 @@ export function aboutReminder(summary: string): boolean {
 /**
  * 核对一份已经符合 schema 的理解里的几样事实：responds_to 指向这条会话里有的执行者行为、
  * 那一条期待回应时还没有被回应过；targets 里的条目在这个任务里有（删掉的条目也算有）；摘要说的不是系统的那句提醒。
- * userText 是这一轮用户的那句原话，给了就写进提醒那一条的说明里。返回逐条的问题。
+ * userText 是这一轮用户的那句原话，给了就写进提醒那一条的说明里。typedCard 是这句话所在的那张卡片（用户在卡片的文本框里打的字，
+ * 值是卡片所在回复的条目编号）：那张卡片还开着时，理解里要有一项回应它。返回逐条的问题。
  */
-export function understandingFactErrors(db: DatabaseSync, taskId: string, sessionId: string, value: unknown, userText?: string): string[] {
+export function understandingFactErrors(db: DatabaseSync, taskId: string, sessionId: string, value: unknown, userText?: string,
+  typedCard?: string | null): string[] {
   const errors: string[] = [];
   const acts = (value as { acts: UserAct[] }).acts;
+  // 这句话是用户在一张还开着的卡片的文本框里打的：页面已经把那张卡片算作答过，理解里要有一项回应它，库里才对得上。
+  const card = typedCard ? unansweredActs(db, taskId, sessionId).find((one) => one.source_entry === typedCard) : undefined;
+  if (card && !acts.some((act) => act.responds_to === card.act_id)) {
+    errors.push(`这句话是用户在 ${card.act_id} 那张卡片的文本框里写的，是在回应这张卡片；理解里要有一项的 responds_to 写 ${card.act_id}`);
+  }
   const itemExists = db.prepare("SELECT 1 FROM item WHERE task_id = ? AND item_id = ?");
   const actRow = db.prepare("SELECT speaker, expects_response FROM dialogue_act WHERE task_id = ? AND session_id = ? AND act_id = ?");
   acts.forEach((act, index) => {
@@ -255,7 +279,7 @@ export const USER_INTENT_OUTPUT: StructuredOutput = {
   schema: INTENT_SCHEMA,
   invalidEvent: EVENT_USER_INTENT_INVALID,
   alreadyRecorded: (db, turn) => hasUserActs(db, turn.taskId, turn.sessionId, turn.userEntryId),
-  checkFacts: (db, turn, value) => understandingFactErrors(db, turn.taskId, turn.sessionId, value, turn.userText),
+  checkFacts: (db, turn, value) => understandingFactErrors(db, turn.taskId, turn.sessionId, value, turn.userText, turn.typedCard),
   record: (db, turn, value) => writeUnderstanding(db, turn, (value as { acts: UserAct[] }).acts),
   recordInvalid: (db, turn, written, errors) => writeInvalid(db, turn, errors.join("；"), written),
   requiredEachTurn: { recordMissing: (db, turn, nearest) => writeMissing(db, turn, nearest) },
@@ -274,7 +298,7 @@ function inTurn<T>(workspaceDir: string, sessionId: string, run: RunInfo, body: 
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const taskId = taskIdOf(db);
       if (!taskId) return { kind: "skipped", why: "库里还没有任务" } as const;
-      return body(db, { taskId, sessionId, runId: run.runId, userEntryId: run.userEntryId, userText: run.userText });
+      return body(db, { taskId, sessionId, runId: run.runId, userEntryId: run.userEntryId, userText: run.userText, typedCard: run.typedCard });
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return { kind: "skipped", why: "还没有任务库" };
@@ -688,6 +712,29 @@ export function readDialogueFacts(workspaceDir: string, sessionId: string, itemI
   try {
     const taskId = taskIdOf(db);
     return taskId ? dialogueFacts(db, taskId, sessionId, itemId) : null;
+  } finally {
+    db.close();
+  }
+}
+
+/** 用户在卡片的文本框里打了一句话时，那条自定义消息开头的几个字。 */
+export const CARD_TYPED_PREFIX = "卡片里的回复（是用户打的字）：";
+
+/**
+ * 用户在卡片的文本框里打了一句话时，扩展命令先追加的那条说明的文字。那张卡片还开着（期待回应、还没有被回应）时写明它的行为编号，
+ * 助手据此在理解里写 responds_to；找不到开着的那一条（没有库、卡片早先已经答过）时只说是哪条回复的卡片。只读。
+ */
+export function cardTypedNotice(workspaceDir: string, sessionId: string, replyEntry: string | null): string {
+  const plain = `${CARD_TYPED_PREFIX}用户在回复 ${replyEntry ?? ""} 的卡片的文本框里写了下面这句话。`;
+  const path = databasePath(workspaceDir);
+  if (!replyEntry || !existsSync(path) || statSync(path).size === 0) return plain;
+  const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  try {
+    const taskId = hasDialogueTable(db) ? taskIdOf(db) : null;
+    const card = taskId ? unansweredActs(db, taskId, sessionId).find((one) => one.source_entry === replyEntry) : undefined;
+    if (!card) return plain;
+    return `${CARD_TYPED_PREFIX}用户在 ${card.act_id}（${FUNCTION_NAMES[card.function] ?? card.function}「${card.summary}」）那张卡片的文本框里写了下面这句话。` +
+      `这句话是在回应这张卡片，理解里要有一项的 responds_to 写 ${card.act_id}。`;
   } finally {
     db.close();
   }

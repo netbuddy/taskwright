@@ -16,6 +16,7 @@ import { withTaskDatabase } from "../src/lib/schema.ts";
 import { EXECUTOR_FUNCTIONS, INTENT_SCHEMA, schemaErrors } from "../src/lib/intent_schema.ts";
 import {
   aboutReminder,
+  cardTypedNotice,
   currentRun,
   quotedUserText,
   readDialogueFacts,
@@ -389,6 +390,44 @@ test("界面点击合成的话：执行者不写理解，按点击直接记一�
   settle(dir, run3);
   assert.equal(acts(dir).find((r) => r.source_entry === "u-3")?.function, "affirm");
   assert.equal(events(dir, "USER_INTENT_MISSING").length, 0);
+});
+
+test("卡片文本框里打的字：不算点击，照常要写理解；卡片还开着时说明里写明它的编号，理解里没有一项回应它就不合格", () => {
+  const dir = workspaceWithItems();
+  const { branch, askId } = withExecutorAsk(dir);
+  // 说明：卡片还开着时点出行为编号与问句，并写明 responds_to 怎么填；没有库、找不到那张卡片时只说是哪条回复。
+  assert.equal(cardTypedNotice(dir, SESSION, "reply-msg-1"),
+    `卡片里的回复（是用户打的字）：用户在 ${askId}（请确认「请确认 UC-001、UC-002」）那张卡片的文本框里写了下面这句话。这句话是在回应这张卡片，理解里要有一项的 responds_to 写 ${askId}。`);
+  assert.equal(cardTypedNotice(dir, SESSION, "no-such-reply"), "卡片里的回复（是用户打的字）：用户在回复 no-such-reply 的卡片的文本框里写了下面这句话。");
+  assert.match(cardTypedNotice(makeWorkspace(), SESSION, "reply-msg-1"), /用户在回复 reply-msg-1 的卡片的文本框里/);
+
+  const typed: Entry[] = [
+    ...branch,
+    { id: "typed", type: "custom_message", customType: "taskwright-card-typed", details: { reply_entry: "reply-msg-1", text: "UC-002 的名称改成注销" } },
+    userEntry("UC-002 的名称改成注销", "u-2"),
+  ];
+  const run = currentRun(typed)!;
+  assert.equal(run.synthesized, null);
+  assert.equal(run.typedCard, "reply-msg-1");
+  // 理解里没有回应那张卡片：不合格，原因写明要回应哪一条。
+  const correct = { function: "correct", targets: [{ item_id: "UC-002", field: "名称" }], confidence: "high", summary: "UC-002 的名称改成注销" };
+  assert.deepEqual(recordedNames(record(dir, typed, fenced([correct]))), []);
+  assert.match(payloads(dir, "USER_INTENT_INVALID").at(-1).reason, new RegExp(`这句话是用户在 ${askId} 那张卡片的文本框里写的.*responds_to 写 ${askId}`));
+  assert.throws(() => requireUnderstanding(dir, SESSION, typed, "保存修订", "save_revision"), new RegExp(`responds_to 写 ${askId}`));
+  // 写了就合格：记成执行者写的理解，不是界面操作合成的。
+  assert.deepEqual(recordedNames(record(dir, typed, fenced([{ ...correct, responds_to: askId }]))), ["user_intent"]);
+  const row = acts(dir).find((r) => r.source_entry === "u-2")!;
+  assert.deepEqual([row.origin, row.function, row.responds_to], ["understanding", "correct", askId]);
+  assert.deepEqual(readDialogueFacts(dir, SESSION)!.unanswered, []);
+  // 那张卡片已经答过之后，又在它的文本框里写话（页面上不会有，接口可以这样发）：不再要求回应它。
+  const again: Entry[] = [
+    ...typed, assistantEntry(),
+    { id: "typed-2", type: "custom_message", customType: "taskwright-card-typed", details: { reply_entry: "reply-msg-1", text: "再问一句" } },
+    userEntry("再问一句", "u-3"),
+  ];
+  assert.deepEqual(recordedNames(record(dir, again, fenced([{ function: "question", confidence: "high", summary: "再问一句" }]))), ["user_intent"]);
+  // 说明里记的那句话与用户的话对不上（中间隔了别的话）：不算卡片里打的字。
+  assert.equal(currentRun([...again, assistantEntry(), userEntry("别的话", "u-4")])!.typedCard, null);
 });
 
 // ───────────── 门禁 ─────────────

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { USER_COMMAND, USER_RESULT_KEY, registerUserCommands, rejectionText } from "../src/hooks/user_commands.ts";
+import { UI_COMMAND, UI_RESULT_KEY, USER_COMMAND, USER_RESULT_KEY, registerUserCommands, rejectionText } from "../src/hooks/user_commands.ts";
 import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
 
 function userCommandHandler() {
@@ -60,4 +60,23 @@ test("RPC 模式下被拒只经状态栏回传，不发 notify；参数不是 JS
 test("rejectionText 把 data.reasons 里说明之外的原因逐条列出", () => {
   const text = rejectionText({ code: "rejected", message: "有 2 个操作不对", data: { reasons: ["有 2 个操作不对", "操作 1：字段为空", "操作 2：版本过期"] } });
   assert.equal(text, "/tw-user 没有执行（rejected）：有 2 个操作不对\n- 操作 1：字段为空\n- 操作 2：版本过期");
+});
+
+test("/tw-ui 的 option_key 是 typed：用户在卡片的文本框里打的字，追加的是 taskwright-card-typed 说明，不是界面点击，随后把原话发出去", async () => {
+  const dir = makeWorkspace();
+  const sent: any[] = [];
+  const said: string[] = [];
+  const commands = new Map<string, any>();
+  registerUserCommands({ registerCommand: (name: string, spec: any) => commands.set(name, spec),
+    sendMessage: (message: any, options: any) => sent.push({ message, options }), sendUserMessage: (text: string) => said.push(text) } as any);
+  const { ctx, status } = fakeCtx(dir, "rpc");
+  Object.assign(ctx, { isIdle: () => true, sessionManager: { getSessionId: () => "sess-ui", getBranch: () => [] } });
+  await commands.get(UI_COMMAND).handler(JSON.stringify({ op_id: "ui-op-1", reply_entry: "reply-9", option_key: "typed", option_text: "typed", text: "先说说别的" }), ctx);
+  assert.deepEqual(JSON.parse(status[UI_RESULT_KEY]), { op_id: "ui-op-1", ok: true, idle: true });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].message.customType, "taskwright-card-typed");
+  assert.equal(sent[0].message.content, "卡片里的回复（是用户打的字）：用户在回复 reply-9 的卡片的文本框里写了下面这句话。");
+  assert.deepEqual(sent[0].message.details, { op_id: "ui-op-1", reply_entry: "reply-9", text: "先说说别的" });
+  assert.deepEqual(sent[0].options, { deliverAs: "followUp" });
+  assert.deepEqual(said, ["先说说别的"]);
 });
