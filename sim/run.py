@@ -142,8 +142,9 @@ def upload(backend: Backend, task_id: str, path: Path) -> str:
 
 
 def user_turn(events: list[dict]) -> dict:
-    """用户 agent 这一次运行里做了什么：看了几次界面（看了哪些条目，其中哪几页主题是带着确认看的）、回应了什么。"""
-    looks, confirms, respond, rejected, text = [], [], None, [], ""
+    """用户 agent 这一次运行里做了什么：看了几次界面（看了哪些条目，其中哪几页主题是带着确认看的；另记打开过哪几张图）、回应了什么。
+    looks 每看一次界面记一项：带条目编号时是那个编号，不带编号或者带的是图的编号时是 None；图记在 diagram_looks 里。"""
+    looks, confirms, diagrams, respond, rejected, text = [], [], [], None, [], ""
     for e in events:
         kind = e.get("type")
         if kind == "tool_execution_start" and e.get("toolName") == "look":
@@ -151,6 +152,8 @@ def user_turn(events: list[dict]) -> dict:
             looks.append(args.get("item_id"))
             if args.get("item_id") and args.get("confirm") is True:
                 confirms.append(args["item_id"])
+            if args.get("diagram_id"):
+                diagrams.append(args["diagram_id"])
         if kind == "tool_execution_end" and e.get("toolName") == "respond":
             result = e.get("result") or {}
             if e.get("isError"):
@@ -160,7 +163,7 @@ def user_turn(events: list[dict]) -> dict:
         if kind == "message_end" and (e.get("message") or {}).get("role") == "assistant":
             parts = (e.get("message") or {}).get("content") or []
             text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and p.get("type") == "text") or text
-    return {"looks": looks, "confirms": confirms, "respond": respond, "respond_rejected": rejected, "other_text": text.strip()}
+    return {"looks": looks, "confirms": confirms, "diagram_looks": diagrams, "respond": respond, "respond_rejected": rejected, "other_text": text.strip()}
 
 
 def executor_turn(events: list[dict]) -> dict:
