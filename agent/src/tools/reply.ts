@@ -13,6 +13,7 @@
  * 对话理解：执行之前先核对这一轮有没有有效的理解（lib/dialogue_acts.ts 的 requireUnderstanding），没有就拒绝；
  * 合格送达之后把告知与向用户要的回应记进对话行为表（recordReplyActs），编号写进返回的文字与 details.acts，
  * details.event_seq 是那条 EXECUTOR_ACTS_RECORDED 事件的序号（没有要记的行为、或者还没有任务库时为空）。
+ * details.answers_card 是用户这句话回答了的卡片（卡片所在回复的编号，列表）：不由执行者填，从这一轮理解的 responds_to 算出。
  */
 
 import { Type } from "typebox";
@@ -183,6 +184,8 @@ export function registerReply(pi: ExtensionAPI): void {
         message_id: messageId,
         event_seq: recorded?.eventSeq ?? null,
         acts: recorded?.acts ?? [],
+        // 用户这句话回答了哪几张卡片（卡片所在回复的编号）：从这一轮理解的 responds_to 算出，页面据此把卡片标成答过。
+        answers_card: recorded?.answersCard ?? [],
       });
     },
   });

@@ -512,7 +512,9 @@ export function recordReplyActs<T = never>(
   replyEntryId: string | null,
   toolCallId: string,
   also?: (db: DatabaseSync, taskId: string, runId: string) => ReplyExtra<T>,
-): { acts: { act_id: string; function: string; summary: string; expects_response: boolean }[]; text: string; eventSeq: number | null; extra?: T | null } | null {
+): { acts: { act_id: string; function: string; summary: string; expects_response: boolean }[]; text: string; eventSeq: number | null; extra?: T | null;
+  /** 用户这句话回答了哪几张卡片：卡片所在回复的会话条目编号（见 answeredCards）。 */
+  answersCard: string[] } | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const run = currentRun(branch);
@@ -522,6 +524,7 @@ export function recordReplyActs<T = never>(
       const taskId = taskIdOf(db);
       if (!taskId) return null;
       const extra = also ? also(db, taskId, runId) : null;
+      const answersCard = run ? answeredCards(db, taskId, sessionId, run.userEntryId) : [];
       let serial = nextSerial(db, taskId, sessionId, runId);
       const rows: ActRow[] = [];
       const base = { run_id: runId, speaker: "executor", responds_to: null, confidence: null, source_entry: replyEntryId, origin: "reply" };
@@ -535,7 +538,7 @@ export function recordReplyActs<T = never>(
         rows.push({ ...base, act_id: `${runId}-${serial++}`, function: reply.act.kind, targets: dump(targets), expects_response: 1, summary: clip(reply.act.text) });
       }
       // 没有告知也没有要的回应：不记这条事件，除非另带的那件事有话要留在事件里。
-      if (rows.length === 0 && !extra?.payload) return { acts: [], text: extra?.text ?? "", eventSeq: null, extra: extra?.value ?? null };
+      if (rows.length === 0 && !extra?.payload) return { acts: [], text: extra?.text ?? "", eventSeq: null, extra: extra?.value ?? null, answersCard };
       const proposal = reply.act ? proposalFor(db, taskId, reply.act) : null;
       const seq = emit(db, {
         taskId, sessionId, callId: toolCallId, name: EVENT_EXECUTOR_ACTS_RECORDED, actor: ACTOR_EXECUTOR,
@@ -552,12 +555,28 @@ export function recordReplyActs<T = never>(
         text,
         eventSeq: seq,
         extra: extra?.value ?? null,
+        answersCard,
       };
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return null;
     throw error;
   }
+}
+
+/**
+ * 用户的一句话回答了哪几张卡片：执行者对这句话写的理解里，responds_to 指向的那些期待回应的执行者行为所在的回复（会话条目编号），
+ * 按卡片发出的先后排，同一条回复只列一次。只看执行者写的理解：界面点击合成的那句话带着卡片的标识，页面自己认得。
+ * 「回复」把它写进返回的 details.answers_card，页面据此把用户在卡片之外答掉的卡片标成答过；库里还没有对话行为表时是空的。
+ */
+export function answeredCards(db: DatabaseSync, taskId: string, sessionId: string, userEntryId: string): string[] {
+  if (!hasDialogueTable(db)) return [];
+  const rows = db.prepare(
+    "SELECT a.source_entry FROM dialogue_act u JOIN dialogue_act a ON a.task_id = u.task_id AND a.session_id = u.session_id AND a.act_id = u.responds_to " +
+      "WHERE u.task_id = ? AND u.session_id = ? AND u.speaker = 'user' AND u.origin = 'understanding' AND u.source_entry = ? " +
+      "AND a.speaker = 'executor' AND a.expects_response = 1 AND a.source_entry IS NOT NULL ORDER BY a.rowid",
+  ).all(taskId, sessionId, userEntryId) as { source_entry: string }[];
+  return [...new Set(rows.map((row) => row.source_entry))];
 }
 
 // ───────────── 保存修订取本轮理解里的编号 ─────────────

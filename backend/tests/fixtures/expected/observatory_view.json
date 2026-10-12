@@ -795,6 +795,7 @@
           "结果文字": "回复已送达",
           "结果细节": {
            "acts": [],
+           "answers_card": [],
            "degraded": false,
            "delivered": true,
            "event_seq": null,

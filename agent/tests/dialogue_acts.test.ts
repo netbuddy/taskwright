@@ -522,6 +522,31 @@ test("回复记执行者的行为：每条告知一条 inform 不期待回应，
   assert.equal(recordReplyActs(makeWorkspace(), SESSION, branch, { informs: ["x"], act: null }, "m", "c"), null);
 });
 
+test("回复带出用户这句话回答了哪几张卡片：取这一轮理解里 responds_to 指向的卡片所在的回复；没有回应、回应的是告知、点击合成的都不列", () => {
+  const dir = workspaceWithItems();
+  const { branch, askId } = withExecutorAsk(dir);
+  const reply = (run: Entry[], entry: string) => recordReplyActs(dir, SESSION, run, { informs: [], act: null }, entry, `call-${entry}`)!;
+  // 用户在卡片之外说了别的事：理解里没有 responds_to，卡片没有被回答。
+  const aside: Entry[] = [...branch, userEntry("材料里有没有写密码长度", "u-2")];
+  record(dir, aside, fenced([{ function: "question", confidence: "high", summary: "问密码长度" }]));
+  assert.deepEqual(reply(aside, "reply-msg-2").answersCard, []);
+  // 再说一句，这回是在答那张卡片（两项都回应它）：列出卡片所在的回复，只列一次。
+  const answer: Entry[] = [...aside, assistantEntry("reply-msg-2"), userEntry("两条都可以，UC-002 名称改成注销", "u-3")];
+  record(dir, answer, fenced([{ ...AFFIRM, responds_to: askId },
+    { function: "correct", responds_to: askId, targets: [{ item_id: "UC-002", field: "名称" }], confidence: "high", summary: "UC-002 名称改成注销" }]));
+  const out = recordReplyActs(dir, SESSION, answer, { informs: ["改好了。"], act: { kind: "ask", text: "还有要改的吗", items: [] } }, "reply-msg-3", "call-3")!;
+  assert.deepEqual(out.answersCard, ["reply-msg-1"]);
+  assert.equal(out.acts.length, 2);
+  // 点击合成的那句话带着卡片的标识，不经这里。
+  const clicked: Entry[] = [
+    ...answer, assistantEntry("reply-msg-3"),
+    { id: "click", type: "custom_message", customType: "taskwright-ui-click", details: { reply_entry: "reply-msg-3", option_text: "没有了", text: "我选：没有了" } },
+    userEntry("我选：没有了", "u-4"),
+  ];
+  record(dir, clicked, null, ["save_revision"]);
+  assert.deepEqual(reply(clicked, "reply-msg-4").answersCard, []);
+});
+
 // ───────────── 保存修订 ─────────────
 
 test("保存修订的 intent_act_id：取本轮与操作条目相同的用户行为；新增条目时取没写 targets 的请求；对不上留空", () => {
