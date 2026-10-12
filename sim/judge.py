@@ -280,6 +280,12 @@ def item_title(item: dict) -> str:
     return first if isinstance(first, str) else json.dumps(first, ensure_ascii=False)
 
 
+def stalled_line(stalled: dict) -> str:
+    """判定报告里单独标出的一行：这一遍是因为双方没有进展而停的，没有做完。stalled 是演练记录里的「没有进展而停」。"""
+    return (f"- **这一遍没有做完：** 从第 {stalled.get('从第几轮起')} 轮起双方连续 {stalled.get('连续轮数')} 轮没有进展，驾驭程序停了这一遍；"
+            "下面各项照停下时的任务数据判。")
+
+
 def executor_events(sim: Path):
     """执行者 pi 事件文件里的每一个事件（后端自己的附记文件不算）。"""
     for path in sorted((sim / "backend").glob("*/pi-events/*.jsonl")):
@@ -340,7 +346,7 @@ def layer2(data: dict) -> tuple[list[dict], dict]:
     sim, persona, record = data["sim"], data["persona"], data["record"]
     db_dir = sim / "库副本"
     checks: list[dict] = []
-    facts: dict = {"停止原因": record.get("停止原因"), "轮数": len(record.get("轮") or [])}
+    facts: dict = {"停止原因": record.get("停止原因"), "轮数": len(record.get("轮") or []), "没有进展而停": record.get("没有进展而停")}
     if not (db_dir / taskdb.DB_NAME).is_file():
         checks.append({"项": "有库副本", "通过": False, "说明": "演练目录里没有库副本。"})
         return checks, facts
@@ -435,6 +441,7 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
              + (f"，另有未提交的改动 {len((record.get('代码版本') or {}).get('未提交的改动') or [])} 个文件" if (record.get('代码版本') or {}).get('未提交的改动') else ""),
              f"- 执行者实际的工具清单：{'、'.join(record.get('执行者工具清单') or []) or '没有记'}",
              f"- Langfuse 环境标签：{record.get('Langfuse 环境标签')}", f"- 停止原因：{facts.get('停止原因')}；轮数：{facts.get('轮数')}",
+             *([stalled_line(facts["没有进展而停"])] if facts.get("没有进展而停") else []),
              f"- {state['说明']}", "",
              "## 第一层：用户 agent 有没有按画像演（代码能查的三项）", ""]
     for c in first:
@@ -472,7 +479,7 @@ def judge(sim: Path, persona_path: Path | None = None, summary_line: bool = True
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     summary = {"演练": record["演练"], "用户画像": record.get("用户画像"), "有效": valid, "有效性": state["有效性"],
                "作废起始轮": state["作废起始轮"], "用户主动补充": [{"轮": d["轮"], "事实": d["事实"]} for d in volunteered],
-               "停止原因": facts.get("停止原因"),
+               "停止原因": facts.get("停止原因"), "没有进展而停": bool(facts.get("没有进展而停")),
                "轮数": facts.get("轮数"), "第一层": {c["项"]: c["通过"] for c in first}, "第二层": {c["项"]: c["通过"] for c in second},
                "隐藏事实": [{"写进了条目": f["写进了条目"], "问出来了": f["问出来了"], "主动说出的轮次": f["用户 agent 主动说出的轮次"],
                              "说出的轮次": f["用户 agent 说出的轮次"], "情形": f["情形"], "在作废轮次里": f["在作废轮次里"]}

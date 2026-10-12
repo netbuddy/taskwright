@@ -4,7 +4,8 @@
  * 启动程序与按行收发经收发数据这一层（transport.ts 的 PiTransport）；本类只管上面的事：命令与应答的对应、事件队列、归档与补记。
  *
  * 归档写三个文件（格式见 observatory/archive-format.md，观测台按它读）：
- * - 原始事件流「<label>-<年月日>-<时分秒>.jsonl」：pi 标准输出的每一行，原样；
+ * - 原始事件流「<label>-<年月日>-<时分秒>.jsonl」：pi 标准输出的每一行，原样；只有取会话条目（get_entries）的回应换成一行摘要
+ *   （archivedLine），它的内容在会话文件里本来就有，而且每取一次就是整条会话那么大；
  * - 后端补记（同名，扩展名 .backend.jsonl）：pi 标准输出里没有的事实，每行 {"记录", "时刻", …}；
  * - 收到时刻（同名，扩展名 .times.jsonl）：原始事件流第 N 行是什么时候读到的，每行 {"行号", "收到时刻"}。
  */
@@ -37,6 +38,22 @@ export const SYSTEM_NOTE_EVENT = "system_note";
 export const TASKS_ROOT_ENV = "TASKWRIGHT_TASKS_ROOT";
 
 export type PiEvent = Record<string, any>;
+
+/** 取会话条目的回应在事件流里只记摘要时写的那句说明。 */
+export const ENTRIES_OMITTED = "取会话条目的回应只记摘要，内容在会话文件里";
+
+/**
+ * pi 标准输出的一行写进事件流时写成什么。别的行都原样；取会话条目（get_entries）成功的回应只记一行摘要：
+ * id、type、command、success 照旧，data 换成 { 省略, 条目数, 原字节数 }，原字节数是这一行原来的 UTF-8 字节数。
+ * 仍然占一行，所以收到时刻文件照旧与事件流逐行对应。message 是这一行解析出来的东西，解析不了时传 undefined。
+ */
+export function archivedLine(line: string, message: unknown): string {
+  const m = message as PiEvent | null | undefined;
+  if (!m || typeof m !== "object" || m.type !== "response" || m.command !== "get_entries" || m.success !== true) return line;
+  const entries = m.data?.entries;
+  return JSON.stringify({ id: m.id, type: m.type, command: m.command, success: true,
+    data: { 省略: ENTRIES_OMITTED, 条目数: Array.isArray(entries) ? entries.length : null, 原字节数: Buffer.byteLength(line, "utf8") } });
+}
 
 /**
  * pi 进程没了。附上它的标准错误原文。这句话只进日志与接口错误的附带信息 detail，不上页面：启动之后立刻退出时页面上是
@@ -490,16 +507,24 @@ export class PiSession {
 
   private onLine(line: string): void {
     const received = Date.now() / 1000;
+    // 先解析再落盘：写进事件流的那一行要看它是不是取会话条目的回应（archivedLine）。
+    let message: PiEvent = {};
+    let readable = false;
+    if (line.trim()) {
+      try {
+        message = JSON.parse(line);
+        readable = true;
+      } catch {
+        readable = false;
+      }
+    }
     if (this.archive !== null) {
-      writeSync(this.archive, line + "\n");
+      writeSync(this.archive, archivedLine(line, readable ? message : undefined) + "\n");
       this.archivedLines += 1;
       this.noteReceived(this.archivedLines, received);
     }
     if (!line.trim()) return;
-    let message: PiEvent;
-    try {
-      message = JSON.parse(line);
-    } catch {
+    if (!readable) {
       this.badLines.push(line);
       this.events.put({ type: "非JSON行", line });
       return;

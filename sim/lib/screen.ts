@@ -5,6 +5,7 @@
  * 看到什么：执行者新说的话（回复的告知、主行为、成文正文，以及可以点的按钮）、
  * 条目区现状（各集合条目数、每个条目的编号与标题；给编号时看这个条目的字段）。不给完成条件、材料原文、条目改动过的修订。
  * 总体分析这个集合在条目区里写成提纲：每页一行，写标题、标签，以及这一页现在的样子用户看没看过、有没有助手补的内容等着确认。
+ * 助手画的图另列一段：每张一行，写图名、种类、画自哪几页、现在这一版用户看没看过；给图的编号时看这张图的说明与 Mermaid 文本。
  */
 
 export interface Act {
@@ -203,6 +204,8 @@ export interface Item {
   pending_sources?: number;
   /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
   pending_places?: { field: string | null; index: number | null }[];
+  /** 被谁依据：把这个条目写成来源的别的条目与图（element_kind 是「条目」或「图」）。 */
+  depended_by?: { element_kind: string; id: string }[];
 }
 
 /** 总体分析这个集合的名字与它的几个字段名，与 agent/src/lib/overall_analysis.ts 一致。 */
@@ -257,6 +260,8 @@ function outlineLine(item: Item): string {
 export interface TaskView {
   definition: { collections: { name: string; fields: { name: string; type?: string; values?: string[] | null }[] }[] };
   items: Item[];
+  /** 任务里还在的图。旧后端没有这一项。 */
+  diagrams?: Diagram[];
 }
 
 function valueText(value: unknown): string {
@@ -299,6 +304,59 @@ export function renderItems(task: TaskView | null, itemId?: string, confirm = fa
     lines.push(`  ${c.name} ${items.length} 个${items.length ? "：" + items.map((i) => `${i.item_id}「${i.title}」${i.viewed === false ? "（未读）" : ""}`).join("、") : ""}`);
   }
   return lines.join("\n");
+}
+
+/** 图的列表里的一项（整份数据的 task.diagrams）；详情接口另给 mermaid、note、sources。 */
+export interface Diagram {
+  diagram_id: string;
+  name: string;
+  kind: string;
+  kind_name: string;
+  /** 这张图自己的修订号，从 1 起。 */
+  revision_no: number;
+  /** 用户看没看过它现在这一版。 */
+  viewed?: boolean;
+  mermaid?: string;
+  note?: string | null;
+  sources?: { kind: string; locator: string }[];
+}
+
+/** 来源与「被谁依据」里图这一种的写法，与 agent/src/lib/schema.ts 的 SOURCE_FIGURE 一致；条目这一种写「条目」。 */
+const FIGURE = "图";
+const ITEM_SOURCE = "条目";
+
+/** 一张图画自哪几页：把它写成来源的总体分析的页（每一页的 depended_by），照条目区里的先后。与网页把图放进节里用的是同一份数据。 */
+export function sourcePagesOf(task: TaskView | null | undefined, diagramId: string): string[] {
+  return (task?.items ?? []).filter((item) => item.collection === OVERALL && (item.depended_by ?? []).some((one) => one.element_kind === FIGURE && one.id === diagramId))
+    .map((item) => item.item_id);
+}
+
+/** 助手画的图那一段：每张一行，写编号、图名、种类、画自哪几页、现在这一版看没看过。一张图都没有时是空字符串。 */
+export function renderDiagrams(task: TaskView | null | undefined): string {
+  const diagrams = task?.diagrams ?? [];
+  if (!diagrams.length) return "";
+  const lines = [`助手画的图 ${diagrams.length} 张（想看哪一张，look 时在 diagram_id 里写它的编号）：`];
+  for (const one of diagrams) {
+    const pages = sourcePagesOf(task, one.diagram_id);
+    lines.push(`  ${one.diagram_id}「${one.name}」（${one.kind_name}）：${pages.length ? `画自 ${pages.join("、")}` : "没有写画自哪一页"}；${one.viewed ? "你看过现在这一版了" : "你还没看过现在这一版"}`);
+  }
+  return lines.join("\n");
+}
+
+/** 打开一张图看到的文字：图名、种类、说明、画自哪几页、Mermaid 文本。detail 是详情接口交来的那张图，没有这张图时传 null。 */
+export function renderDiagram(detail: Diagram | null | undefined, diagramId: string): string {
+  if (!detail) return `助手画的图里没有 ${diagramId}。`;
+  const pages = (detail.sources ?? []).filter((one) => one.kind === ITEM_SOURCE).map((one) => one.locator);
+  return [`${detail.diagram_id}「${detail.name}」，${detail.kind_name}，修订 ${detail.revision_no}（你正在看它现在这一版，看过就记为看过）：`,
+    `  说明：${valueText(detail.note)}`,
+    `  画自：${pages.length ? pages.join("、") : "（没有写）"}`,
+    "  图的文本（Mermaid 写法）：",
+    ...(detail.mermaid ?? "").split("\n").map((line) => `    ${line}`)].join("\n");
+}
+
+/** 用户打开一张图时要记的目标（界面操作 mark_diagram_viewed 的 targets 里的一项）：图的编号与用户看到的那一次修订号；没有这张图时为 null。 */
+export function viewOnLookDiagram(detail: Diagram | null | undefined): { diagram_id: string; base_revision: number } | null {
+  return detail ? { diagram_id: detail.diagram_id, base_revision: detail.revision_no } : null;
 }
 
 /** 「回应」的参数。 */

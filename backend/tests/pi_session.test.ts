@@ -9,7 +9,7 @@ import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } f
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { buildCommand, loadProfile, piLauncher } from "../src/launch.ts";
-import { PiExited, PiRefused, PiSession, PiTimeout, rebaseSessionCwd, technicalOf } from "../src/pi_session.ts";
+import { ENTRIES_OMITTED, PiExited, PiRefused, PiSession, PiTimeout, archivedLine, rebaseSessionCwd, technicalOf } from "../src/pi_session.ts";
 import { normalize } from "./fixtures/expected/inputs.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
@@ -125,6 +125,49 @@ test("命令：回应、被拒、超时、进程退出", async () => {
   }
   const notes = lines(pi.notesPath!).map((l) => JSON.parse(l));
   assert.deepEqual(notes.filter((n) => n["记录"] === "退出").map((n) => n["退出码"]), [3], "退出只记一次");
+});
+
+test("事件流里取会话条目的回应只记一行摘要：调用方拿到的仍是完整的回应，别的回应原样，行数与收到时刻照旧对齐", async () => {
+  const pi = new PiSession(PROFILE, workspace, join(tmp, "runs-entries"), "service", tmp);
+  await pi.start();
+  try {
+    await pi.request("prompt", { message: "你好" });
+    await drain(pi, (e) => e.type === "agent_settled");
+    const data = await pi.request("get_entries");
+    assert.equal(data.entries.length, 1, "调用方拿到的是完整的回应");
+    assert.equal(data.entries[0].message.content[0].text, "你好");
+    assert.deepEqual(await pi.getState(), { sessionId: "S1", sessionFile: null, isCompacting: false });
+  } finally {
+    await pi.close();
+  }
+  const archived = lines(pi.archivePath!).filter((l) => l.startsWith("{")).map((l) => JSON.parse(l));
+  const answers = archived.filter((e) => e.type === "response" && e.command === "get_entries");
+  assert.ok(answers.length >= 1);
+  for (const one of answers) {
+    assert.deepEqual(Object.keys(one), ["id", "type", "command", "success", "data"]);
+    assert.deepEqual(Object.keys(one.data), ["省略", "条目数", "原字节数"]);
+    assert.equal(one.data["省略"], ENTRIES_OMITTED);
+  }
+  const last = answers.at(-1)!;
+  const original = JSON.stringify({ type: "response", id: last.id, command: "get_entries", success: true, data: { entries: [{ type: "message", id: "u0000001", parentId: null,
+    timestamp: "2026-09-25T01:00:00.000Z", message: { role: "user", content: [{ type: "text", text: "你好" }] } }] } });
+  assert.deepEqual([last.data["条目数"], last.data["原字节数"]], [1, Buffer.byteLength(original, "utf8")]);
+  assert.ok(!readFileSync(pi.archivePath!, "utf-8").includes('"entries"'), "事件流里没有会话条目的内容");
+  const state = archived.find((e) => e.type === "response" && e.command === "get_state");
+  assert.deepEqual(state.data, { sessionId: "S1", sessionFile: null, isCompacting: false }, "别的回应原样");
+  const all = readFileSync(pi.archivePath!, "utf-8").split("\n").slice(0, -1);
+  assert.deepEqual(lines(pi.timesPath!).map((l) => JSON.parse(l)["行号"]), all.map((_, i) => i + 1), "收到时刻与事件流逐行对齐");
+});
+
+test("写进事件流的一行：只有取会话条目成功的回应换成摘要，失败的回应、别的命令、不是 JSON 的行都原样", () => {
+  const failed = JSON.stringify({ id: "x1", type: "response", command: "get_entries", success: false, error: "没有会话" });
+  assert.equal(archivedLine(failed, JSON.parse(failed)), failed);
+  const other = JSON.stringify({ id: "x2", type: "response", command: "get_state", success: true, data: { entries: [1, 2] } });
+  assert.equal(archivedLine(other, JSON.parse(other)), other);
+  assert.equal(archivedLine("这不是 JSON", undefined), "这不是 JSON");
+  assert.equal(archivedLine("null", null), "null");
+  const odd = JSON.stringify({ id: "x3", type: "response", command: "get_entries", success: true, data: { leafId: "e1" } });
+  assert.deepEqual(JSON.parse(archivedLine(odd, JSON.parse(odd))).data, { 省略: ENTRIES_OMITTED, 条目数: null, 原字节数: Buffer.byteLength(odd, "utf8") });
 });
 
 test("发话：逐条交出一次运行的事件，直到 agent_settled；扩展写入的自定义消息另合成一条系统说明", async () => {

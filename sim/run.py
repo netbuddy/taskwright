@@ -23,6 +23,8 @@ sim/profiles/user_agent.json 里写的。两样都是给不接真模型的测试
 4. 停止条件：轮数上限；用户 agent 表示目标达成（done）；用户 agent 放弃（give_up）；执行者连续两轮没有经「回复」说话，
    或者执行者不可用。另有一条保险：用户 agent 连续两次被叫到都没有回应，也停。用户 agent 起不来、驱动程序退出或报错时，
    停止原因写「模拟用户不可用：原因」，记录照常写下，错误再往外抛；
+   双方连续几轮没有进展也停（--stall-rounds，缺省 4，写 0 不查）：一轮里没有新的修订或图、阶段没有移动也没有新的提议、
+   助手的回复不带卡片、用户 agent 也没有点卡片上的按钮，就算没有进展（made_progress）。这样停的记录里另有「没有进展而停」一项；
 5. 记录写进 <sim-root>/sim-<序号>/，结束后调用 judge.py 出判定报告。record.json 里自动记下代码仓的提交号与未提交的
    改动文件（「代码版本」），以及执行者实际登记的工具清单（「执行者工具清单」），判定报告与批处理汇总都列出这两项。
 两个 pi 进程都由后端的会话类启动（执行者的由任务服务启动，用户 agent 的由驱动程序启动），标准输入就是 RPC 的命令通道，
@@ -56,6 +58,11 @@ EXECUTOR_WAIT = 900.0
 #: 不引出助手运行的界面操作（与 sim/lib/screen.ts 的 CONTINUE_STAGE 一致）：用户在提议进入下一个阶段的卡片上选了「继续本阶段」，
 #: 只在会话里留一条通知。做了这种操作之后不等助手，下一轮照常唤起用户 agent。
 SILENT_ACTIONS = ("continue_stage",)
+#: 双方连续这么多轮没有进展就停这一遍；命令行 --stall-rounds 可以改，0 是不查。
+STALL_ROUNDS = 4
+#: 后端推来的事件里算作进展的几种：保存了修订、保存了图、阶段移动了、助手发了新的提议、任务状态变了。
+#: 打开条目或图记下的已读（item_viewed、diagram_viewed）不算。
+PROGRESS_EVENTS = ("deliverable_changed", "diagram_changed", "stage_changed", "stage_proposed", "task_changed")
 
 
 def expects_executor(respond: dict) -> bool:
@@ -63,6 +70,27 @@ def expects_executor(respond: dict) -> bool:
     if respond.get("route") == "none":
         return False
     return (respond.get("sent") or {}).get("kind") not in SILENT_ACTIONS
+
+
+def clicked_card(respond: dict | None) -> bool:
+    """用户 agent 这一次回应是不是点了卡片上的按钮：走直接操作的（「这几条都看过了」「先不管」「继续本阶段」），或者发的话带着卡片的。"""
+    if not respond:
+        return False
+    return respond.get("route") == "action" or bool((respond.get("sent") or {}).get("card"))
+
+
+def made_progress(events: list[dict], respond: dict | None) -> bool:
+    """这一轮有没有进展。下面四样有一样就算有：有人保存了修订或者图；阶段移动了、助手发了新的提议或者任务状态变了；
+    助手的回复里有带卡片的；用户 agent 点了卡片上的按钮。events 是这一轮里后端推来的全部事件。"""
+    if any(e.get("event") in PROGRESS_EVENTS for e in events):
+        return True
+    if any(e.get("event") == "assistant_reply" and (e.get("data") or {}).get("act") and not (e.get("data") or {}).get("degraded") for e in events):
+        return True
+    return clicked_card(respond)
+
+
+def stall_reason(rounds: int) -> str:
+    return f"双方连续 {rounds} 轮没有进展：没有新的修订、卡片、阶段移动，模拟用户也没有点卡片"
 
 
 def next_sim_dir(root: Path) -> Path:
@@ -142,8 +170,9 @@ def upload(backend: Backend, task_id: str, path: Path) -> str:
 
 
 def user_turn(events: list[dict]) -> dict:
-    """用户 agent 这一次运行里做了什么：看了几次界面（看了哪些条目，其中哪几页主题是带着确认看的）、回应了什么。"""
-    looks, confirms, respond, rejected, text = [], [], None, [], ""
+    """用户 agent 这一次运行里做了什么：看了几次界面（看了哪些条目，其中哪几页主题是带着确认看的；另记打开过哪几张图）、回应了什么。
+    looks 每看一次界面记一项：带条目编号时是那个编号，不带编号或者带的是图的编号时是 None；图记在 diagram_looks 里。"""
+    looks, confirms, diagrams, respond, rejected, text = [], [], [], None, [], ""
     for e in events:
         kind = e.get("type")
         if kind == "tool_execution_start" and e.get("toolName") == "look":
@@ -151,6 +180,8 @@ def user_turn(events: list[dict]) -> dict:
             looks.append(args.get("item_id"))
             if args.get("item_id") and args.get("confirm") is True:
                 confirms.append(args["item_id"])
+            if args.get("diagram_id"):
+                diagrams.append(args["diagram_id"])
         if kind == "tool_execution_end" and e.get("toolName") == "respond":
             result = e.get("result") or {}
             if e.get("isError"):
@@ -160,7 +191,7 @@ def user_turn(events: list[dict]) -> dict:
         if kind == "message_end" and (e.get("message") or {}).get("role") == "assistant":
             parts = (e.get("message") or {}).get("content") or []
             text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and p.get("type") == "text") or text
-    return {"looks": looks, "confirms": confirms, "respond": respond, "respond_rejected": rejected, "other_text": text.strip()}
+    return {"looks": looks, "confirms": confirms, "diagram_looks": diagrams, "respond": respond, "respond_rejected": rejected, "other_text": text.strip()}
 
 
 def executor_turn(events: list[dict]) -> dict:
@@ -276,6 +307,8 @@ def build_parser(description: str = "跑用户 agent 演练；--repeat N 接连�
     parser.add_argument("--backend", default="", help="已起的后端地址，例如 http://127.0.0.1:8791/api/v1；不给就自己起一个")
     parser.add_argument("--port", type=int, default=8791)
     parser.add_argument("--max-rounds", type=int, default=12)
+    parser.add_argument("--stall-rounds", type=int, default=STALL_ROUNDS,
+                        help=f"双方连续这么多轮没有进展就停这一遍（没有新的修订、卡片、阶段移动，模拟用户也没有点卡片）；缺省 {STALL_ROUNDS}，写 0 不查")
     parser.add_argument("--goal", default=DEFAULT_GOAL)
     parser.add_argument("--repeat", type=int, default=1, help="同一画像接连跑几次（编号连续），大于 1 时结束后写批处理汇总")
     parser.add_argument("--profile", default="dev", help="自己起后端时用的启动配置（backend/profiles/ 下的名字），缺省 dev")
@@ -360,6 +393,8 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
 
         no_reply_rounds = 0
         silent_rounds = 0
+        stalled_rounds = 0
+        stall_limit = getattr(args, "stall_rounds", STALL_ROUNDS)
         for n in range(1, args.max_rounds + 1):
             wake = FIRST_WAKE if n == 1 else NEXT_WAKE
             mark = backend.mark()
@@ -410,6 +445,12 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
                 break
             if respond.get("give_up"):
                 record["停止原因"] = f"用户 agent 放弃：{respond.get('reason')}"
+                break
+            turn["有进展"] = made_progress(backend.since(mark), respond)
+            stalled_rounds = 0 if turn["有进展"] else stalled_rounds + 1
+            if stall_limit > 0 and stalled_rounds >= stall_limit:
+                record["停止原因"] = stall_reason(stalled_rounds)
+                record["没有进展而停"] = {"连续轮数": stalled_rounds, "从第几轮起": n - stalled_rounds + 1}
                 break
         else:
             record["停止原因"] = f"到了轮数上限 {args.max_rounds}"
