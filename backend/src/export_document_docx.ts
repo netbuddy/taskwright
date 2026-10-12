@@ -93,12 +93,14 @@ export async function documentDocx(markdown: string, images: ReadonlyMap<string,
     } else if (block.kind === "list") {
       // 序号按层各自数：回到上一层时下一层从头数。
       const counters: number[] = [];
-      for (const item of block.items) {
+      block.items.forEach((item, n) => {
         counters.length = item.depth + 1;
         counters[item.depth] = (counters[item.depth] ?? 0) + 1;
         const mark = block.ordered ? `${counters[item.depth]}. ` : "• ";
-        children.push(new Paragraph({ children: [new TextRun(mark), ...textRuns(item.runs)], indent: { left: 360 * (item.depth + 1), hanging: 280 } }));
-      }
+        // 最后一项后面空一点，免得紧贴着下一段。
+        children.push(new Paragraph({ children: [new TextRun(mark), ...textRuns(item.runs)], indent: { left: 360 * (item.depth + 1), hanging: 280 },
+          ...(n === block.items.length - 1 ? { spacing: { after: 120 } } : {}) }));
+      });
     } else if (block.kind === "table") {
       const width = Math.max(block.head.length, ...block.rows.map((row) => row.length));
       const padded = (row: string[]) => [...row, ...Array(width - row.length).fill("")];

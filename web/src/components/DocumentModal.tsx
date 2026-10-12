@@ -11,6 +11,7 @@ import { figurePngs } from "./diagram/mermaid";
 import { Button, Checkbox, Empty, Modal, Select, Spin } from "antd";
 import { api, ApiError, type DocumentPick } from "../api/client";
 import type { RevisionLogEntry, Task } from "../api/types";
+import { collectionLabel } from "../model/overall";
 import { aliveAt, hhmm } from "../model/revisions";
 import { DocumentPreview } from "./DocumentPreview";
 
@@ -110,7 +111,7 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
                 if (!inColl.length) return null;
                 return (
                   <div key={coll} style={{ marginBottom: "0.714rem" }}>
-                    <div className="cond-group">{coll}</div>
+                    <div className="cond-group">{collectionLabel(coll)}</div>
                     {inColl.map((id) => (
                       <label key={id} style={{ display: "flex", alignItems: "center", gap: "0.571rem", padding: "0.214rem 0", cursor: "pointer" }}>
                         <Checkbox checked={!unchecked.has(id)} data-testid={`doc-item-${id}`}

@@ -572,6 +572,8 @@ describe("生成文档：选一个修订加条目勾选", () => {
     render(<Wrap><DocumentModal task={task([UC1, UC2, TBD])} log={LOG} open onClose={noop} /></Wrap>);
     await waitFor(() => expect(preview).toHaveBeenLastCalledWith("TASK-001", { revision_no: 4 }));
     expect(aliveAt(LOG, 1).size).toBe(3);
+    // 左边按集合分组，组名用页面上的叫法（总体分析写成业务说明，别的照集合名）。
+    expect([...screen.getByTestId("doc-items").querySelectorAll(".cond-group")].map((one) => one.textContent)).not.toContain("总体分析");
     fireEvent.click(screen.getByTestId("doc-item-UC-002"));
     await waitFor(() => expect(preview).toHaveBeenLastCalledWith("TASK-001", { revision_no: 4, items: ["UC-001", "TBD-001"] }));
     cleanup();
