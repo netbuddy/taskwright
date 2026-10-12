@@ -11,8 +11,8 @@
 - 泄底：执行者上一轮摆出的东西里根本没有这件事，用户 agent 自己说了出来。这是用户 agent 演错。
 
 第一层只做代码能查的三项：泄底（查全部轮次）；点「这几条都看过了」（早期版本是「确认」）之前没有在同一轮里用「看界面」看过该条目的详情（没看内容就接受）；
-在助手提议进入写条目的卡片上点「开始写条目」时，卡片点名的主题页里有从头到尾没有打开过的（没看就同意开始写）。第三项只算「没打开过」：
-打开过、但库里没有它在卡片所写修订上看过的记录的（这一页有助手补的内容而没有确认，或者那之后又改过），不算演错，在说明里单独写出。
+在助手提议进入下一段的卡片上点进入的那个选项（例如「进入澄清」「开始写条目」）时，卡片点名的条目里有从头到尾没有打开过的（没看就同意往下走）。
+第三项只算「没打开过」：打开过、但库里没有它在卡片所写修订上看过的记录的（这一页有助手补的内容而没有确认，或者那之后又改过），不算演错，在说明里单独写出。
 第一层按轮作废：出错的最早一轮是第 1 轮，整场无效；是之后的第 k 轮，第 1 到 k−1 轮有效、第 k 轮起作废，
 标「部分有效」。作废轮次里才说出的隐藏事实不算问出。第二层其余各项按演练结束时的库判定，部分有效时照样列出，但注明含作废
 轮次之后的改动、只作参考。评判者查的两项（说了画像与材料都没有的事实、违背人设）不在这里。
@@ -162,16 +162,27 @@ def validity(first: list[dict]) -> dict:
 
 #: 卡片上表示看过了的那一下点击：现在走 mark_viewed，早期版本的演练记录里是 confirm。
 SEEN_KINDS = ("mark_viewed", "confirm")
-#: 助手提议进入写条目的那张请选择卡片上「开始写条目」这个选项的键（agent 的 START_ITEMS_KEY）。
+#: 助手提议进入下一段的那张请选择卡片上，进入的那个选项的键（agent/src/lib/stage.ts 的 ENTER_OPTIONS）：进入写条目的键沿用早先的名字，
+#: 其余都以 enter_ 开头。按写法认而不逐个列出，产品再加一段时这里不用改。留在这一段的键以 continue_ 开头，不算。
 START_ITEMS = "start_items"
+ENTER_PREFIX = "enter_"
+
+
+def enters_next_stage(choice) -> bool:
+    """卡片上点的这个选项是不是进入下一段的。"""
+    return isinstance(choice, str) and (choice == START_ITEMS or choice.startswith(ENTER_PREFIX))
+
+
+def clicked_card(record: dict, reply_message_id: str | None, before_round: int) -> dict:
+    """用户 agent 点的那张卡片：按回复的编号在之前各轮助手的回复里找；找不到时取这一轮之前最近一条带卡片的回复。没有时是空的。"""
+    replies = [r for t in record.get("轮") or [] if t["轮"] < before_round for r in (t.get("执行者") or {}).get("replies") or [] if r.get("act")]
+    hit = next((r for r in replies if reply_message_id and r.get("message_id") == reply_message_id), None) or (replies[-1] if replies else None)
+    return (hit or {}).get("act") or {}
 
 
 def card_items(record: dict, reply_message_id: str | None, before_round: int) -> list[dict]:
-    """用户 agent 点的那张卡片点名的条目（每项是条目编号与修订号）：按回复的编号在之前各轮助手的回复里找；
-    找不到时取这一轮之前最近一条带卡片的回复。"""
-    replies = [r for t in record.get("轮") or [] if t["轮"] < before_round for r in (t.get("执行者") or {}).get("replies") or [] if r.get("act")]
-    hit = next((r for r in replies if reply_message_id and r.get("message_id") == reply_message_id), None) or (replies[-1] if replies else None)
-    return [i for i in ((hit or {}).get("act") or {}).get("items") or [] if isinstance(i, dict) and i.get("item_id")]
+    """用户 agent 点的那张卡片点名的条目（每项是条目编号与修订号）。"""
+    return [i for i in clicked_card(record, reply_message_id, before_round).get("items") or [] if isinstance(i, dict) and i.get("item_id")]
 
 
 def viewed_marks(db_dir: Path) -> set[tuple[str, int]]:
@@ -182,31 +193,38 @@ def viewed_marks(db_dir: Path) -> set[tuple[str, int]]:
     return {(d["条目编号"], d["修订号"]) for mark in (tasks[0]["判读"] if tasks else []) for d in mark["明细"] if d["态度"] == "接受"}
 
 
-def start_clicks(data: dict) -> dict:
-    """第一层第三项：点「开始写条目」之前有没有打开过卡片点名的主题页。"""
+ENTER_CHECK = "点进入下一段的卡片之前打开过卡片点名的条目"
+
+
+def enter_clicks(data: dict) -> dict:
+    """第一层第三项：在助手提议进入下一段的卡片上点进入之前，有没有打开过卡片点名的条目（主题页，进入评审确认时是写好的条目）。"""
     record = data["record"]
     opened: set[str] = set()
-    clicks, unopened, unmarked = 0, [], []
+    clicks, unopened, unmarked = [], [], []
     marks = None
     for u in user_utterances(record):
         opened |= {x for x in u["looks"] if x}
-        if ((u.get("card") or {}).get("choice")) != START_ITEMS:
+        choice = (u.get("card") or {}).get("choice")
+        if not enters_next_stage(choice):
             continue
-        clicks += 1
+        card = clicked_card(record, (u["card"] or {}).get("reply_message_id"), u["轮"])
+        # 选项给人看的文字取自卡片；卡片找不到或者上面没有这个键时写键。
+        label = next((o.get("text") for o in card.get("options") or [] if isinstance(o, dict) and o.get("key") == choice and o.get("text")), choice)
+        clicks.append(f"第 {u['轮']} 轮「{label}」")
         items = card_items(record, (u["card"] or {}).get("reply_message_id"), u["轮"])
         missing = [i["item_id"] for i in items if i["item_id"] not in opened]
         if missing:
-            unopened.append({"轮": u["轮"], "没打开过的页": missing, "卡片点名的页": [i["item_id"] for i in items]})
+            unopened.append({"轮": u["轮"], "点的选项": label, "没打开过的条目": missing, "卡片点名的条目": [i["item_id"] for i in items]})
         if marks is None:
             marks = viewed_marks(data["sim"] / "库副本")
         if marks:
             unmarked += [f"第 {u['轮']} 轮 {i['item_id']}" for i in items
                          if i["item_id"] in opened and i.get("revision_no") is not None and (i["item_id"], i["revision_no"]) not in marks]
-    note = "没有点过「开始写条目」。" if not clicks else f"一共点了 {clicks} 次「开始写条目」。"
+    note = "没有点过进入下一段的卡片。" if not clicks else f"一共点了 {len(clicks)} 次进入下一段的卡片：{'、'.join(clicks)}。"
     if unmarked:
         note += ("打开过、但库里没有它在卡片所写修订上看过的记录的（这一页有助手补的内容而没有确认，或者那之后又改过），不算演错，列在这里："
                  + "、".join(unmarked) + "。")
-    return {"项": "点「开始写条目」之前打开过卡片点名的主题页", "通过": not unopened, "说明": note, "细节": unopened}
+    return {"项": ENTER_CHECK, "通过": not unopened, "说明": note, "细节": unopened}
 
 
 def layer1(data: dict) -> list[dict]:
@@ -227,7 +245,7 @@ def layer1(data: dict) -> list[dict]:
                 unseen.append({"轮": u["轮"], "条目": target["item_id"], "这一轮看过的条目": sorted(looked)})
     checks.append({"项": "点「这几条都看过了」之前在同一轮里看过该条目的详情", "通过": not unseen,
                    "说明": f"一共点了 {sum(1 for u in utterances if u['kind'] in SEEN_KINDS)} 次「这几条都看过了」。", "细节": unseen})
-    checks.append(start_clicks(data))
+    checks.append(enter_clicks(data))
     return checks
 
 

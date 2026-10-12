@@ -8,7 +8,8 @@
     python3 -m sim.evals compare <前一次的标签> <后一次的标签> [--sim-root ./sim-runs]
 
 run：演练的参数与 sim.run 相同（内部调它的 run_once，每遍各自起后端、各自出判定报告）。每遍跑完算灯（sim/lamps.py）、核对清单
-（sim/expectations.py）、列出助手问过的问题与模拟用户答不上的问题（sim/questions.py），写进该遍目录的「评测.json」。
+（sim/expectations.py）、列出助手问过的问题与模拟用户答不上的问题（sim/questions.py），并记下这一遍助手用的提示词版本与每份文件的摘要值
+（读自后端启动助手时的补记，怎样算在观测台的 taskwright_observatory/evals.py 里），写进该遍目录的「评测.json」。
 全部跑完在 sim-root 下写「评测汇总_<标签>.md」与「评测汇总_<标签>.json」，并往「evals.jsonl」追加一行。某一遍中途出错，
 记下原因接着跑下一遍；那一遍的灯都是「算不了」，不计入通过率。标签在一个 sim-root 里不能重复：对照与页面都按标签找评测。
 
@@ -20,6 +21,9 @@ compare：两次评测的对照，打印一段 Markdown：每盏灯与清单的�
 
 通过率怎样算：一盏灯的通过率是通过的遍数比上能算的遍数（结果是「通过」或「未通过」的遍），「不适用」与「算不了」不进分母；
 一次评测的灯通过率是各盏通过率的平均。清单命中率是命中的组数比上组数，各遍合在一起算。
+
+灯按阶段分组：一盏灯归哪个阶段，按它的键在 sim/lamps.py 的灯表里找，表里没有的键归「其他」，排在最后。汇总以各遍结果里实际出现的灯为准，
+不按灯表逐盏去找，所以灯增删之后这里不用改。每个阶段另给本组通过率：这一组各盏灯通过率的平均。
 """
 
 from __future__ import annotations
@@ -101,6 +105,7 @@ def judge_one(sim: Path, expect_path: Path | None = None, label: str | None = No
         "结束": record.get("结束"),
         "用时秒": _seconds(record),
         "出错": error if error is not None else old.get("出错"),
+        "提示词": eval_files.prompt_of_run(sim),
         "灯": lamps.lamps_for_sim(sim)["灯"],
         "至少应有": expectations.check(expect, tasks[0]) if expect is not None and tasks else None,
         "助手问过的问题": asked,
@@ -110,11 +115,27 @@ def judge_one(sim: Path, expect_path: Path | None = None, label: str | None = No
     return out
 
 
+def stage_of(key: str) -> str:
+    """一盏灯归哪个阶段：按键在灯表里找；表里没有的键归「其他」。"""
+    return next((stage for stage, one, _text in lamps.LAMPS if one == key), eval_files.OTHER_STAGE)
+
+
+def lamp_keys(runs: list[dict]) -> list[tuple[str, str, str]]:
+    """各遍结果里实际出现的灯，每盏一项（阶段、键、说明），按阶段的先后排（灯表里阶段出现的先后，「其他」在最后），同一阶段里按出现的先后。"""
+    stages = [*dict.fromkeys(stage for stage, _key, _text in lamps.LAMPS), eval_files.OTHER_STAGE]
+    texts: dict[str, str] = {}
+    for r in runs:
+        for x in r.get("灯") or []:
+            texts.setdefault(x["键"], x.get("说明") or x["键"])
+    found = [(stage_of(key), key, text) for key, text in texts.items()]
+    return sorted(found, key=lambda one: stages.index(one[0]))                 # sorted 是稳定的：同一阶段里先后不变
+
+
 def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
     """把几遍的「评测.json」合成一次评测的汇总。meta 是这次评测不随遍变的几样（时间、提交号、模型、材料等）。"""
     runs = [json.loads((sim / RUN_FILE).read_text(encoding="utf-8")) for sim in sims]
     lamp_rows = []
-    for n, (stage, key, text) in enumerate(lamps.LAMPS):
+    for stage, key, text in lamp_keys(runs):
         each = [next((x for x in r["灯"] if x["键"] == key), None) for r in runs]
         states = [x["结果"] if x else lamps.UNKNOWN for x in each]
         counted = [s for s in states if s in (lamps.PASSED, lamps.FAILED)]
@@ -130,18 +151,24 @@ def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
         for first in checked[0]["至少应有"]:
             each = [None if one is None else one.get((first["部分"], tuple(first["组"]))) for one in keyed]
             hits = sum(1 for x in each if x and x["命中"])
-            group_rows.append({"部分": first["部分"], "组": first["组"], "各遍": [None if x is None else bool(x["命中"]) for x in each],
+            group_rows.append({"部分": first["部分"], **({"部分名": first["部分名"]} if first.get("部分名") else {}), "组": first["组"],
+                               "各遍": [None if x is None else bool(x["命中"]) for x in each],
                                "各遍命中的条目": [[] if x is None else x["命中的条目编号"] for x in each],
-                               "各遍以例外开头": [None if x is None else x.get("以例外开头") for x in each],
+                               "各遍" + expectations.ELSEWHERE: [[] if x is None else x.get(expectations.ELSEWHERE) or [] for x in each],
                                "命中遍数": hits, "核对的遍数": len(checked)})
     rates = [row["通过率"] for row in lamp_rows if row["通过率"] is not None]
     total = sum(row["核对的遍数"] for row in group_rows)
+    # 提示词版本取各遍里第一份取得到的；几遍不一样（跑到一半有人改了文件）时各遍各是什么都留着，汇总里写明。
+    prompts = [r.get("提示词") or {"版本": None, "文件": [], "说明": eval_files.NO_LAUNCH_NOTE} for r in runs]
+    prompt = next((one for one in prompts if one.get("版本")), prompts[0] if prompts else {"版本": None, "文件": [], "说明": eval_files.NO_LAUNCH_NOTE})
     summary = {
         **meta, "标签": label, "遍数": len(runs),
+        "提示词版本": prompt.get("版本"), "提示词文件": prompt.get("文件") or [], "提示词说明": prompt.get("说明") or "",
+        "各遍提示词版本": [one.get("版本") for one in prompts],
         "各遍": [{"演练": r["演练"], "目录": str(sim), "任务的键": f"{r['任务目录']}/{r['任务编号']}" if r.get("任务编号") else None,
                   "停止原因": r.get("停止原因"), "轮数": r.get("轮数"), "用时秒": r.get("用时秒"), "出错": r.get("出错")}
                  for r, sim in zip(runs, sims)],
-        "灯": lamp_rows, "至少应有": group_rows,
+        "灯": lamp_rows, "灯按阶段": eval_files.lamps_by_stage(lamp_rows), "至少应有": group_rows,
         "灯通过率": sum(rates) / len(rates) if rates else None,
         "清单命中率": sum(row["命中遍数"] for row in group_rows) / total if total else None,
         "各遍的问题": [{"演练": r["演练"], "怎样列的": r["助手问过的问题"]["怎样列的"], "问题": r["助手问过的问题"]["问题"]} for r in runs],
@@ -167,6 +194,7 @@ def summary_markdown(s: dict) -> str:
     lines = [f"# 评测汇总：{s['标签']}", "",
              f"- 时间：{s.get('时间')}",
              f"- 代码提交号：{(s.get('提交号') or '没有记')[:12]}" + (f"（另有 {s['未提交的改动']} 个文件有未提交的改动）" if s.get("未提交的改动") else ""),
+             f"- 提示词版本：{s.get('提示词版本') or '取不到'}（每份文件见最后的「提示词」一节）",
              f"- 助手的模型：{s.get('模型') or '没有记'}；模拟用户的模型：{s.get('模拟用户的模型') or '没有记'}",
              f"- 材料：{'、'.join(s.get('材料') or []) or '没有'}；画像：{s.get('画像')}；清单：{s.get('清单')}",
              f"- 遍数：{n}；每遍的轮数上限：{s.get('轮数上限')}",
@@ -177,7 +205,10 @@ def summary_markdown(s: dict) -> str:
         lines.append(f"| 第 {i + 1} 遍 | {r['目录']} | {r.get('停止原因') or ''} | {r.get('轮数')} | {took} | {r.get('出错') or '没有'} |")
     lines += ["", "## 灯", "", "每盏灯是这一段「算够」的一条判据，按演练结束时的任务数据算。「不适用」是这盏灯要看的那一类页或条目一个都没有，"
               "「算不了」是要用的数据取不到，这两种不计入通过率。", "",
-              f"| 阶段 | 灯 |{heads} 通过几遍 |", "|---|---|" + "---|" * (n + 1)]
+              "各阶段的通过率（一个阶段的通过率是这一组各盏灯通过率的平均，没有能算的遍的灯不进平均）：", "",
+              "| 阶段 | 几盏灯 | 本组通过率 |", "|---|---|---|"]
+    lines += [f"| {one['阶段']} | {one['灯数']} | {percent(one['通过率'])} |" for one in s.get("灯按阶段") or eval_files.lamps_by_stage(s["灯"])]
+    lines += ["", f"| 阶段 | 灯 |{heads} 通过几遍 |", "|---|---|" + "---|" * (n + 1)]
     for row in s["灯"]:
         # 未通过时写差的页或条目；没有编号可列（例如还没有评审过）或算不了时写备注。
         cells = "".join(f" {state}{('（差 ' + '、'.join(missing) + '）') if missing else ('（' + note.rstrip('。') + '）') if note and state in (lamps.FAILED, lamps.UNKNOWN) else ''} |"
@@ -187,9 +218,12 @@ def summary_markdown(s: dict) -> str:
     if s["至少应有"]:
         lines += [f"| 部分 | 关键词组 |{heads} 命中几遍 |", "|---|---|" + "---|" * (n + 1)]
         for row in s["至少应有"]:
-            cells = "".join(" 没有核对 |" if hit is None else f" {'命中' if hit else '没有'}{('（' + '、'.join(ids) + '）') if ids else ''} |"
-                            for hit, ids in zip(row["各遍"], row["各遍命中的条目"]))
-            lines.append(f"| {row['部分']} | {expectations.group_label(row['组'])} |{cells} {row['命中遍数']}／{row['核对的遍数']} |")
+            # 「例外」一节没有命中、而别的例子里提到了的，写出是哪几页：差的是写法（没有以「例外：」开头），不是内容。
+            cells = "".join(" 没有核对 |" if hit is None else
+                            f" {'命中' if hit else '没有'}{('（' + '、'.join(ids) + '）') if ids else ''}"
+                            f"{('（' + '、'.join(others) + ' 的例子里提到了，但不以「例外：」开头）') if others and not hit else ''} |"
+                            for hit, ids, others in zip(row["各遍"], row["各遍命中的条目"], row.get("各遍" + expectations.ELSEWHERE) or [[]] * len(row["各遍"])))
+            lines.append(f"| {expectations.section_label(row)} | {expectations.group_label(row['组'])} |{cells} {row['命中遍数']}／{row['核对的遍数']} |")
     else:
         lines.append("这次评测没有核对清单（没有给清单，或者每一遍都没有跑完）。")
     lines += ["", "## 助手问过的问题", ""]
@@ -214,12 +248,25 @@ def summary_markdown(s: dict) -> str:
         if not one["待人答"] and not one["画像里可能已有"]:
             lines.append("- 没有。")
         lines.append("")
+    lines += ["## 提示词", "", "助手这次用的说明文件，读自后端启动助手时的补记。版本由每份文件的路径与摘要值算出，任何一份改了、多了或少了，版本都不同。", ""]
+    if s.get("提示词版本"):
+        versions = [one for one in s.get("各遍提示词版本") or [] if one]
+        lines.append(f"- 版本：{s['提示词版本']}，一共 {len(s.get('提示词文件') or [])} 份文件。")
+        if len(set(versions)) > 1:
+            lines.append("- 各遍用的提示词版本不一样（跑到一半有文件改过）：" + "、".join(f"第 {i + 1} 遍 {one or '取不到'}" for i, one in enumerate(s["各遍提示词版本"]))
+                         + "。下面列的是第一份取得到的那一遍的文件。")
+        lines += ["", "| 文件 | 在哪里 | 字节数 | 摘要值 |", "|---|---|---|---|"]
+        lines += [f"| {one['路径']} | {one.get('来自') or ''} | {one.get('字节数')} | {one.get('摘要值')} |" for one in s.get("提示词文件") or []]
+    else:
+        lines.append(f"- {s.get('提示词说明') or eval_files.NO_LAUNCH_NOTE}")
+    lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def list_line(summary: dict) -> dict:
     """evals.jsonl 里的一行：评测列表与对照要用的几样，完整内容在汇总文件里。"""
     return {"时间": summary.get("时间"), "标签": summary["标签"], "提交号": summary.get("提交号"), "未提交的改动": summary.get("未提交的改动"),
+            "提示词版本": summary.get("提示词版本"),
             "模型": summary.get("模型"), "模拟用户的模型": summary.get("模拟用户的模型"), "材料": summary.get("材料"),
             "画像": summary.get("画像"), "清单": summary.get("清单"), "遍数": summary["遍数"], "轮数上限": summary.get("轮数上限"),
             "各灯通过率": {row["键"]: row["通过率"] for row in summary["灯"]}, "灯通过率": summary["灯通过率"],

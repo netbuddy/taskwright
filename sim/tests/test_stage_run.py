@@ -6,7 +6,7 @@
 1. 用户 agent 说要整理需求；助手立一页主题，发「开始写条目」的卡片并点名这一页。
 2. 用户 agent 打开这一页，点「开始写条目」；助手写一个依据这一页的用例，发起评审（评审者由假模型回「没有发现」），
    发「进入评审确认」的卡片。
-3. 用户 agent 点「进入评审确认」；助手请用户确认这个用例。
+3. 用户 agent 打开卡片点名的用例，点「进入评审确认」；助手请用户确认这个用例。
 4. 用户 agent 打开用例，点「这几条都看过了」；助手发是否完成的卡片。
 5. 用户 agent 点「已完成，提交交付物」；助手完成任务（完成任务要在评审确认阶段，所以第 3 步少不了）。
 6. 用户 agent 看到任务完成，表示目标达成。
@@ -26,7 +26,7 @@ from pathlib import Path
 
 from taskwright_observatory import taskdb
 
-from sim import evals
+from sim import evals, judge
 from sim.tests.test_evals import EXAMPLES, REPO, free_port, intent, quiet, source
 from sim.tests.test_user_agent_round import ENV_AGENT_DIR, FakeModel
 from sim.tests.test_view_pages import look, respond, user
@@ -62,9 +62,11 @@ SCRIPT = {
         # 用户 agent：按看到的东西决定下一步。先后有讲究：每条只认它那一步独有的话。
         user(respond(click="已完成，提交交付物"), last_role="tool", last_contains="选项 complete"),
         user(respond(done=True), last_role="tool", last_contains="任务已经完成"),
-        user(respond(click="这几条都看过了"), last_role="tool", last_contains="UC-001「借书」，集合"),
+        # 打开用例之后点哪一个，看之前见没见过请确认的卡片：见过就是在确认，没见过就是在「进入评审确认」的卡片上。
+        {"when": {"any_contains": "【卡片：请确认】", "last_role": "tool", "last_contains": "UC-001「借书」，集合"}, "reply": respond(click="这几条都看过了")},
+        user(respond(click="进入评审确认"), last_role="tool", last_contains="UC-001「借书」，集合"),
         user(look(item_id="UC-001"), last_role="tool", last_contains="【卡片：请确认】"),
-        user(respond(click="进入评审确认"), last_role="tool", last_contains="选项 enter_review"),
+        user(look(item_id="UC-001"), last_role="tool", last_contains="选项 enter_review"),
         user(respond(click="开始写条目"), last_role="tool", last_contains="OA-001「借书」，集合"),
         user(look(item_id="OA-001"), last_role="tool", last_contains="选项 start_items"),
         user(respond(text=FIRST_WORDS), last_role="tool"),
@@ -114,17 +116,17 @@ class StageRunTest(unittest.TestCase):
         result = json.loads((sim / evals.RUN_FILE).read_text(encoding="utf-8"))
         summary = json.loads((sim / "判定摘要.json").read_text(encoding="utf-8"))
         self.assertEqual((record["停止原因"], len(record["轮"]), result["出错"]), ("用户 agent 表示目标达成", 6, ""))
-        # 用户 agent 每一轮做了什么：第 2 轮打开主题页再点「开始写条目」，第 3 轮点「进入评审确认」，第 4 轮打开用例再点「这几条都看过了」，第 5 轮点完成。
+        # 用户 agent 每一轮做了什么：第 2 轮打开主题页再点「开始写条目」，第 3 轮打开用例再点「进入评审确认」，第 4 轮打开用例再点「这几条都看过了」，第 5 轮点完成。
         turns = [(t["用户 agent"]["looks"], (t["用户 agent"]["respond"]["sent"] or {}).get("card", {}).get("choice"),
                   (t["用户 agent"]["respond"]["sent"] or {}).get("kind")) for t in record["轮"]]
-        self.assertEqual(turns, [([None], None, None), ([None, "OA-001"], "start_items", None), ([None], "enter_review", None),
+        self.assertEqual(turns, [([None], None, None), ([None, "OA-001"], "start_items", None), ([None, "UC-001"], "enter_review", None),
                                  ([None, "UC-001"], None, "mark_viewed"), ([None], "complete", None), ([None], None, None)])
         # 助手没有被拦过一次：用例是在用户点了「开始写条目」之后才写的，完成任务是在用户点了「进入评审确认」之后才做的。
         self.assertEqual(summary["被工具拒绝次数"], 0)
-        # 第一层三项都过，其中点「开始写条目」之前打开过卡片点名的那一页。
+        # 第一层三项都过，其中点「开始写条目」「进入评审确认」之前都打开过卡片点名的条目。
         self.assertEqual(summary["第一层"], {"没有在执行者没问的时候主动说出隐藏事实（查全部轮次）": True, "点「这几条都看过了」之前在同一轮里看过该条目的详情": True,
-                                           "点「开始写条目」之前打开过卡片点名的主题页": True})
-        self.assertEqual(summary["第一层说明"]["点「开始写条目」之前打开过卡片点名的主题页"], "一共点了 1 次「开始写条目」。")
+                                           judge.ENTER_CHECK: True})
+        self.assertEqual(summary["第一层说明"][judge.ENTER_CHECK], "一共点了 2 次进入下一段的卡片：第 2 轮「开始写条目」、第 3 轮「进入评审确认」。")
         # 库里：任务已完成；两次移动都是用户在卡片上点的，从核读材料直接进入写条目，再进入评审确认。
         task = taskdb.read_workspace(sim / "库副本")["任务"][0]
         self.assertEqual(task["状态"], "已完成")
