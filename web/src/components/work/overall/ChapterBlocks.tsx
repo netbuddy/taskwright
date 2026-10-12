@@ -5,7 +5,7 @@
 //   第 4 章 业务对象 ── 整张对象关系图。
 //   第 5 章 业务规则 ── 规则表：各节「适用规则」逐条列出，写出自哪一节与出处；标了冲突的行有底色，表上面一句「N 对相互冲突，已记为待澄清」。
 //   第 6 章 业务目标 ── 目标树：目标一层一层往里缩，挂在目标下的决定带着为什么这样决定；没有挂到目标下的决定另列。
-//   第 7 章 决策记录与待澄清事项 ── 按时间的一张表：时间、类别（决定、待澄清）、事项、说明；点一行打开它所在的节。
+//   第 7 章 决策记录与待澄清事项 ── 按时间的一张表：时间、类别（决定，或者问题自己的种类）、事项、说明；点一行打开它所在的节。
 // 这里只画；数由 model/chapterHeads.ts 与 model/sectionDiagrams.ts 算。
 
 import { useState } from "react";
@@ -14,7 +14,7 @@ import { decisionTarget, goalSummary, useCaseTable } from "../../../model/chapte
 import { formatTime } from "../../../model/format";
 import type { DecisionLeaf, GoalNode } from "../../../../../agent/src/lib/overall_views.ts";
 import { revisionText } from "../../../model/diagrams";
-import { isOverall, sourceShortText, titleOf } from "../../../model/overall";
+import { isOverall, sourceShortText, supplemented, titleOf } from "../../../model/overall";
 import { KIND_CLASS, KIND_CONTEXT, KIND_USE_CASE, diagramsOfKind } from "../../../model/sectionDiagrams";
 import { Figure, type FigureHost } from "./Figure";
 import { useDiagramGraphs } from "./useDiagramGraphs";
@@ -142,12 +142,15 @@ export function RulesBlocks({ host }: { host: FigureHost }) {
             <tbody>
               {rules.rows.map((row) => {
                 const page = pageOf(row.item_id);
+                // 这一条是不是助手补的、用户还没有确认（出处里「助手补的」后面写不写「你确认过」看它）。
+                const marks = page ? supplemented(page) : null;
+                const pending = !!marks && (marks.whole || marks.settled.has(row.index));
                 return (
                   <tr key={`${row.item_id}:${row.index}`} className={row.conflicts.length > 0 ? "conflict" : undefined} onClick={() => onOpen(row.item_id)}
                     title="打开这条规则所在的节" data-testid={`rule-${row.item_id}-${row.index}`}>
                     <td>{row.text}{row.conflicts.length > 0 && <span className="oa-conflict">有冲突，已记为待澄清</span>}</td>
                     <td className="from">{page ? sectionLabel(contents, page) : row.title}</td>
-                    <td className="src">{row.sources.length === 0 ? "—" : <>{sourceShortText(row.sources[0])}{row.sources.length > 1 && ` 等 ${row.sources.length} 条`}</>}</td>
+                    <td className="src">{row.sources.length === 0 ? "—" : <>{sourceShortText(row.sources[0], pending)}{row.sources.length > 1 && ` 等 ${row.sources.length} 条`}</>}</td>
                   </tr>
                 );
               })}
@@ -192,6 +195,9 @@ export function GoalsBlocks({ host }: { host: FigureHost }) {
   );
 }
 
+/** 第 7 章「类别」一栏：决定写「决定」；问题写它自己的种类（待澄清、范围外、后续迭代），没有种类的写「待澄清」。 */
+const DECISION_KIND = "决定", OPEN_KIND = "待澄清";
+
 /** 第 7 章：决策记录与待澄清事项，按时间。 */
 export function DecisionsBlocks({ host }: { host: FigureHost }) {
   const { task, onOpen, onOpenItem } = host;
@@ -212,7 +218,7 @@ export function DecisionsBlocks({ host }: { host: FigureHost }) {
               {rows.map((row) => (
                 <tr key={`${row.entry}:${row.item_id}`} className={row.entry} onClick={() => open(row)} title={row.item_id} data-testid={`decision-${row.item_id}`}>
                   <td className="at">{row.at ? formatTime(row.at) : "—"}</td>
-                  <td className="kind">{row.entry === "decision" ? "决定" : `待澄清${row.question_kind ? ` · ${row.question_kind}` : ""}`}</td>
+                  <td className="kind">{row.entry === "decision" ? DECISION_KIND : row.question_kind || OPEN_KIND}</td>
                   <td>{row.title}</td>
                   <td className="note">{row.note || "—"}</td>
                 </tr>

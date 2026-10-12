@@ -156,6 +156,8 @@ describe("第 5 章 业务规则的章首页", () => {
       rule("OA-002", 0, "学生一次最多借 5 本。", [], [{ kind: "文档原文", locator: "inputs/借阅规则.md", excerpt: "学生一次最多借 5 本" }, { kind: "用户的话", locator: "s1#u2", excerpt: "五本" }]),
       rule("OA-003", 2, "保留期内这本书不能续借。", ["TBD-001"], [{ kind: "用户的话", locator: "s1#u5", excerpt: "有人预约的书不能续借。" }]),
       rule("OA-006", 0, "每本书可以续借一次。", ["TBD-001"]),
+      // OA-003 的第 4 条在夹具里是助手补的、还没有确认；OA-005 的第 1 条确认过之后不再待核实。
+      rule("OA-003", 3, "保留期是 3 天。", [], [{ kind: "助手补充", locator: "", excerpt: "按常见做法补的。" }]),
     ],
     conflicts: ["TBD-001"], unmatched: [], ...over,
   });
@@ -164,13 +166,15 @@ describe("第 5 章 业务规则的章首页", () => {
   it("规则表：一条一行，写出自哪一节与出处（第一条，另有几条）；点一行打开那一节", () => {
     render(<Panel t={withRules(rules())} />);
     fireEvent.click(screen.getByTestId("toc-chapter-5"));
-    expect(screen.getByTestId("chapter-lead")).toHaveTextContent("3 条，自各节「适用规则」汇总");
+    expect(screen.getByTestId("chapter-lead")).toHaveTextContent("4 条，自各节「适用规则」汇总");
     const table = screen.getByTestId("rules-table");
     expect([...table.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual(["规则", "出自", "出处"]);
     expect([...table.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => text(td)).join("|"))).toEqual([
       "学生一次最多借 5 本。|3.2 借书与还书|材料 借阅规则.md「学生一次最多借 5 本」 等 2 条",
       "保留期内这本书不能续借。有冲突，已记为待澄清|3.3 预约取书|你说的「有人预约的书不能续借。」",
       "每本书可以续借一次。有冲突，已记为待澄清|3.4 续借|—",
+      // 助手补的、用户还没有确认的规则：出处里不写「你确认过」。
+      "保留期是 3 天。|3.3 预约取书|助手补的 · 理由：按常见做法补的。",
     ]);
     fireEvent.click(screen.getByTestId("rule-OA-006-0"));
     expect(text(screen.getByTestId("topic-title"))).toBe("续借");
@@ -228,7 +232,7 @@ describe("第 7 章 决策记录与待澄清事项的章首页", () => {
   it("按时间的一张表：时间、类别、事项、说明；点决定打开它那一节，点问题打开它牵涉的那一节", () => {
     const decisions = [
       { entry: "decision", item_id: "OA-004", title: "闭馆日不计入保留期", at: "2026-10-09T10:00:00+08:00", note: "读者周末来不了。", question_kind: null },
-      { entry: "question", item_id: "TBD-001", title: "保留的 3 天里遇到闭馆日，算不算在内？", at: "2026-10-09T11:00:00+08:00", note: "", question_kind: "规则冲突" },
+      { entry: "question", item_id: "TBD-001", title: "保留的 3 天里遇到闭馆日，算不算在内？", at: "2026-10-09T11:00:00+08:00", note: "", question_kind: "范围外" },
       { entry: "question", item_id: "TBD-003", title: "逾期从哪一天算起？", at: null, note: "从应还日期的第二天算。", question_kind: null },
     ];
     render(<Panel t={overallTask({ overall_views: { rules: { rows: [], conflicts: [], unmatched: [] }, goals: { roots: [], loose: [] }, decisions } as never })} />);
@@ -239,7 +243,7 @@ describe("第 7 章 决策记录与待澄清事项的章首页", () => {
     const cells = [...table.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].slice(1).map((td) => text(td)).join("|"));
     expect(cells).toEqual([
       "决定|闭馆日不计入保留期|读者周末来不了。",
-      "待澄清 · 规则冲突|保留的 3 天里遇到闭馆日，算不算在内？|—",
+      "范围外|保留的 3 天里遇到闭馆日，算不算在内？|—",
       "待澄清|逾期从哪一天算起？|从应还日期的第二天算。",
     ]);
     expect(text(screen.getByTestId("decision-TBD-003").querySelector("td"))).toBe("—");
