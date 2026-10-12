@@ -1,4 +1,4 @@
-"""评测的灯：工作的五个阶段各自「算够」的判据，由程序从任务库算出来，一共十二盏。
+"""评测的灯：工作的五个阶段各自「算够」的判据，由程序从任务库算出来，一共十六盏。
 
 灯只说明这一段还差什么，不拦任何操作。这里按演练结束时库副本里的数据算；「阶段」只是分组名。产品记下阶段之后，
 调用方可以用 compute 的 stage 参数只算某一个阶段的灯。
@@ -10,8 +10,9 @@
 - 算不了：要用的数据取不到（例如本机没有 node），写明原因。
 不适用与算不了都不计入通过率。
 
-口径与产品相同的三样不在这里另写：待核实与提到经命令行入口 agent/src/cli/overall_state.mts 取（agent 的 overallState），
-完成条件经观测台的 taskpage.check_completion 取（agent 的核对函数）。用户看没看过一页，照 agent/src/lib/overall_read.ts 的判法：
+口径与产品相同的几样不在这里另写：待核实经命令行入口 agent/src/cli/overall_state.mts 取（agent 的 overallState）；
+与图、规则冲突有关的七盏灯（PRODUCT_LAMPS）要扫图的 Mermaid 文本、要算规则表，整盏的结果也经这个入口从产品取（agent 的 stageLamps），
+这里只把它的三种结果换成这里的说法；完成条件经观测台的 taskpage.check_completion 取（agent 的核对函数）。用户看没看过一页，照 agent/src/lib/overall_read.ts 的判法：
 这一页当前所在的修订上，依据不是「界面修改」的确认标记里最近一条的态度是接受。
 
 程序认不出的两处只算一半，说明里写明：「决定」页「写了为什么」认不出，只看有没有上级「目标」页；「用户明说先不归类」认不出，
@@ -33,27 +34,30 @@ STATE_CLI = REPO_ROOT / "agent" / "src" / "cli" / "overall_state.mts"
 #: 集合名与字段名，与任务类型定义、agent/src/lib/overall_analysis.ts 一致。
 OVERALL = "总体分析"
 QUESTIONS = "问题"
-USE_CASES = "功能用例"
 F_TITLE, F_ALIASES, F_EXAMPLES, F_TAGS, F_PARENT, F_STATUS = "标题", "别名", "例子", "标签", "上级主题", "状态"
 DEPRECATED = "已废弃"
-#: 「例子」里一项以它开头的是例外。
+#: 「例子」里一项以它开头的是例外（评测的「至少应有」清单核对例外时用）。
 EXCEPTION_PREFIX = "例外："
 #: 确认标记的依据里表示「用户亲手改」的那个词。
 BASIS_EDIT = "界面修改"
 
 STAGES = ("核读材料", "澄清", "整理建模", "写条目", "评审确认")
 
-#: 十二盏灯：阶段、键、说明。键与产品里按阶段算的灯用同一套名字。
+#: 十六盏灯：阶段、键、说明。键与产品里按阶段算的灯用同一套名字。
 LAMPS = (
     ("核读材料", "materials_cited", "每份材料都被至少一页主题或一条问题引用。"),
     ("澄清", "tagged_pages_no_open_questions", "贴了标签的页没有挂着未解决的待澄清问题。"),
     ("澄清", "decisions_have_goal", "每个标签为「决定」的页有上级「目标」页（「写了为什么」程序认不出，只看上级目标页）。"),
-    ("整理建模", "flows_have_exception", "每个标签为「流程」的页至少有一条以「例外：」开头的例子。"),
-    ("整理建模", "roles_mentioned_by_flows", "每个标签为「角色」的页被至少一个「流程」或「场景」页提到。"),
+    ("整理建模", "roles_in_context_and_use_cases", "每个标签为「角色」的页都画进了系统边界图与用例图。"),
+    ("整理建模", "concepts_related_in_class", "每个标签为「概念」的页在对象关系图里至少有一条连线。"),
+    ("整理建模", "flows_have_flowchart_with_branch", "每个标签为「流程」的页有一张以它为来源、带判断分叉的流程图。"),
+    ("整理建模", "stateful_concepts_have_state", "每个说到状态的「概念」页有一张以它为来源的状态图（说没说到状态按字面认）。"),
     ("整理建模", "no_duplicate_titles", "没有两页的标题或别名相同。"),
     ("整理建模", "no_untagged_pages", "没有未归类的页（「用户明说先不归类」程序认不出，只看有没有贴标签）。"),
-    ("写条目", "flows_backed_by_use_cases", "每个标签为「流程」或「场景」的页被至少一条功能用例依据。"),
+    ("整理建模", "rules_no_conflict", "各页「已经定下的」之间没有还没了结的规则冲突。"),
+    ("写条目", "flows_backed_by_use_cases", "每个标签为「流程」或「场景」的页被至少一条功能用例依据（直接依据，或者依据一张以它为来源的图）。"),
     ("写条目", "basis_pages_viewed", "每条条目依据的页都是用户看过的。"),
+    ("写条目", "basis_diagrams_viewed", "每条条目依据的图都是用户看过的。"),
     ("写条目", "no_pending_items", "没有待核实的条目。"),
     ("评审确认", "reviews_no_open_findings", "评审没有未处理的发现。"),
     ("评审确认", "completion_met", "完成条件全部满足。"),
@@ -61,9 +65,13 @@ LAMPS = (
 
 PASSED, FAILED, NOT_APPLICABLE, UNKNOWN = "通过", "未通过", "不适用", "算不了"
 
+#: 整盏的结果从产品取的七盏灯（命令行入口输出里的 lamps）。
+PRODUCT_LAMPS = ("roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
+                 "rules_no_conflict", "flows_backed_by_use_cases", "basis_diagrams_viewed")
+
 
 def overall_facts(db_path: Path, task_id: str) -> tuple[dict | None, str]:
-    """经命令行入口取待核实、提到与各页的情况。返回（结果, 取不到时的原因）。"""
+    """经命令行入口取待核实、提到、各页的情况与产品算出的七盏灯。返回（结果, 取不到时的原因）。"""
     node = shutil.which("node")
     if not node:
         return None, "本机找不到 node，调不动 agent 里的计算函数。"
@@ -119,7 +127,7 @@ def _lamp(stage: str, key: str, text: str, state: str, missing: list[str] | None
 
 def compute(task: dict, facts: dict | None, materials: list[str], completion: list[dict] | None,
             stage: str | None = None, facts_problem: str = "", completion_problem: str = "") -> list[dict]:
-    """算十二盏灯。task 是 taskdb.read_workspace 读出的一个任务；facts 是 overall_facts 的结果（取不到时为 None）；
+    """算十六盏灯。task 是 taskdb.read_workspace 读出的一个任务；facts 是 overall_facts 的结果（取不到时为 None）；
     materials 是材料的文件名；completion 是完成条件逐项核对的结果（取不到时为 None）。stage 给了就只算那个阶段的。"""
     items = [i for i in task.get("条目") or [] if i.get("在第几次修订删除") is None and i.get("当前内容")]
     collections = [c.get("名称") for c in (task.get("任务定义") or {}).get("集合") or []]
@@ -134,6 +142,14 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
     def result(key: str) -> tuple[str, list[str], str, dict]:
         if OVERALL not in collections:
             return NOT_APPLICABLE, [], "这个任务的任务定义里没有总体分析这个集合。", {}
+        if key in PRODUCT_LAMPS:
+            if facts is None:
+                return UNKNOWN, [], facts_problem or "取不到产品算出的这盏灯。", {}
+            lamp = (facts.get("lamps") or {}).get(key)
+            if not isinstance(lamp, dict):
+                return UNKNOWN, [], "产品没有给出这盏灯的结果。", {}
+            state = {True: PASSED, False: FAILED}.get(lamp.get("ok"), NOT_APPLICABLE)
+            return state, ([str(one) for one in lamp.get("items") or []] if state == FAILED else []), ("" if state == PASSED else str(lamp.get("summary") or "")), {}
         if key == "materials_cited":
             if not materials:
                 return NOT_APPLICABLE, [], "这个任务没有材料。", {}
@@ -166,24 +182,6 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
             goals = {p["条目编号"] for p in tagged("目标")}
             missing = [p["条目编号"] for p in targets if not any(ref in goals for ref in _refs(_fields(p).get(F_PARENT)))]
             return (FAILED if missing else PASSED), missing, "", {}
-        if key == "flows_have_exception":
-            targets = tagged("流程")
-            if not targets:
-                return NOT_APPLICABLE, [], "没有一页贴了「流程」标签。", {}
-            missing = [p["条目编号"] for p in targets
-                       if not any(one.strip().startswith(EXCEPTION_PREFIX) for one in _texts(_fields(p).get(F_EXAMPLES)))]
-            return (FAILED if missing else PASSED), missing, "", {}
-        if key == "roles_mentioned_by_flows":
-            targets = tagged("角色")
-            if not targets:
-                return NOT_APPLICABLE, [], "没有一页贴了「角色」标签。", {}
-            if facts is None:
-                return UNKNOWN, [], facts_problem or "取不到提到的情况。", {}
-            speakers = {p["条目编号"] for p in tagged("流程")} | {p["条目编号"] for p in tagged("场景")}
-            mentions = facts.get("mentions") or {}
-            missing = [p["条目编号"] for p in targets
-                       if not any(one.get("item_id") in speakers for one in mentions.get(p["条目编号"]) or [])]
-            return (FAILED if missing else PASSED), missing, "", {}
         if key == "no_duplicate_titles":
             if not live:
                 return NOT_APPLICABLE, [], "总体分析里还没有在用的页。", {}
@@ -201,14 +199,6 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
             if not live:
                 return NOT_APPLICABLE, [], "总体分析里还没有在用的页。", {}
             missing = [p["条目编号"] for p in live if not tags[p["条目编号"]]]
-            return (FAILED if missing else PASSED), missing, "", {}
-        if key == "flows_backed_by_use_cases":
-            targets = {p["条目编号"]: p for p in [*tagged("流程"), *tagged("场景")]}
-            if not targets:
-                return NOT_APPLICABLE, [], "没有一页贴了「流程」或「场景」标签。", {}
-            backed = {str(s.get("出处") or "").strip() for i in items if i["所属集合"] == USE_CASES
-                      for s in _sources(i) if s.get("种类") == "条目"}
-            missing = [page for page in targets if page not in backed]
             return (FAILED if missing else PASSED), missing, "", {}
         if key == "basis_pages_viewed":
             citing = {i["条目编号"]: [str(s.get("出处") or "").strip() for s in _sources(i)

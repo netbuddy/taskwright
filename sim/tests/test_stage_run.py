@@ -132,12 +132,13 @@ class StageRunTest(unittest.TestCase):
             moves = db.execute("SELECT actor, from_stage, stage, reason FROM stage_record ORDER BY record_id").fetchall()
         self.assertEqual(moves, [("user", "reading", "writing", "用户在卡片上选了「开始写条目」"),
                                  ("user", "writing", "reviewing", "用户在卡片上选了「进入评审确认」")])
-        # 灯：写条目与评审确认两段都过了。
+        # 灯：写条目与评审确认两段都过了；这份演示脚本从核读材料直接进入写条目，没有画图，流程页没有流程图那一盏不通过。
         states = {x["键"]: x["结果"] for x in result["灯"]}
         self.assertEqual(states, {
             "materials_cited": "通过", "tagged_pages_no_open_questions": "通过", "decisions_have_goal": "不适用",
-            "flows_have_exception": "通过", "roles_mentioned_by_flows": "不适用", "no_duplicate_titles": "通过", "no_untagged_pages": "通过",
-            "flows_backed_by_use_cases": "通过", "basis_pages_viewed": "通过", "no_pending_items": "通过",
+            "roles_in_context_and_use_cases": "不适用", "concepts_related_in_class": "不适用", "flows_have_flowchart_with_branch": "未通过",
+            "stateful_concepts_have_state": "不适用", "no_duplicate_titles": "通过", "no_untagged_pages": "通过", "rules_no_conflict": "不适用",
+            "flows_backed_by_use_cases": "通过", "basis_pages_viewed": "通过", "basis_diagrams_viewed": "不适用", "no_pending_items": "通过",
             "reviews_no_open_findings": "通过", "completion_met": "通过"})
         hits = [(x["部分"], x["组"][0]) for x in result["至少应有"] if x["命中"]]
         self.assertEqual(hits, [("总体分析·流程页", "借书"), ("例外·借书", "有逾期"), ("功能用例", "借书")])
