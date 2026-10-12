@@ -249,6 +249,10 @@ export const QUESTION_KIND_FIELD = "种类";
 export const QUESTION_KIND_CLARIFY = "待澄清";
 export const QUESTION_OPEN_STATUS = "未解决";
 export const QUESTION_RELATED_FIELD = "关联条目";
+/** 问题条目里写打算怎样处理的字段。 */
+export const QUESTION_SUGGESTION_FIELD = "建议的处理";
+/** 问题集合的状态字段里表示「用户决定先放着」的取值：有一个枚举字段的取值里含它的集合就是问题集合（与 lib/definition.ts 的 keepPendingField 同一个判据）。 */
+export const QUESTION_KEEP_STATUS = "用户决定保留";
 
 /**
  * 图的种类里灯要认的五种的写法（与 lib/diagram.ts 的 DIAGRAM_KINDS 一致；那个文件读库，本文件不导入它）：

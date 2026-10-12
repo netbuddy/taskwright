@@ -17,6 +17,8 @@ import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_loca
 import { pdfFacts, pdfSourceName } from "./projection.ts";
 import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
+import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQuestions, goalTree, rulesTable } from "../../agent/src/lib/overall_views.ts";
+import { QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { stageRecords, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -745,6 +747,35 @@ export class Library {
     return out;
   }
 
+  /**
+   * 从总体分析的页与问题条目算出来的三张表（agent/src/lib/overall_views.ts，只算不存）：rules 是规则表，goals 是业务目标，
+   * decisions 是决策记录与待澄清事项。plain 是还在的各个条目现在的内容。问题条目认的是状态字段的取值里有「用户决定保留」的集合；
+   * 它说事情的那句话取集合的第一个字段，时刻取条目第一次保存的时刻。
+   */
+  overallViews(plain: readonly PlainItem[]) {
+    const createdAt = (itemId: string): string | null => {
+      const first = this.contents.get(itemKey(itemId, this.itemRevisions(itemId)[0]));
+      return clock.fromLocalText((first ? this.data.event_meta?.get(first.event_seq) : undefined)?.at ?? null);
+    };
+    const sourcesNow = (one: PlainItem): ViewSource[] =>
+      this.sourcesOf(one.item_id, one.revision_no).map((s) => ({ kind: s.kind, locator: s.locator, excerpt: s.excerpt, supports: s.supports ?? [] }));
+    const pages: ViewPage[] = plain.filter((one) => one.collection === OVERALL_COLLECTION)
+      .map((one) => ({ item_id: one.item_id, fields: one.fields, sources: sourcesNow(one), created_at: createdAt(one.item_id) }));
+    const statusFieldOf = new Map<string, string>();
+    for (const [name, collection] of this.collections) {
+      const field = (collection["字段"] || []).find((f: Record<string, any>) => f["类型"] === "枚举" && (f["取值"] || []).includes(QUESTION_KEEP_STATUS));
+      if (field) statusFieldOf.set(name, field["名"]);
+    }
+    const text = (value: unknown): string => (typeof value === "string" ? value : "");
+    const questions: ViewQuestion[] = plain.filter((one) => statusFieldOf.has(one.collection)).map((one) => ({
+      item_id: one.item_id, subject: titleOf(one.fields, this.collections.get(one.collection)),
+      open: one.fields[statusFieldOf.get(one.collection)!] === QUESTION_OPEN_STATUS,
+      kind: text(one.fields[QUESTION_KIND_FIELD]) || null, suggestion: text(one.fields[QUESTION_SUGGESTION_FIELD]),
+      sources: sourcesNow(one), created_at: createdAt(one.item_id),
+    }));
+    return { rules: rulesTable(pages, questions), goals: goalTree(pages), decisions: decisionsAndOpenQuestions(pages, questions) };
+  }
+
   /** 整份数据里的 task。 */
   taskView() {
     const task = this.data.task!;
@@ -837,6 +868,8 @@ export class Library {
       // 工作的阶段与灯：与完成条件一样在读事务提交之后另算（taskSnapshot），这里先占位。
       stage: null as ReturnType<typeof stageView>,
       items,
+      // 规则表、业务目标、决策记录与待澄清事项：从总体分析的页与问题条目现算；任务定义里没有总体分析集合时是 null。
+      overall_views: withOverall ? this.overallViews(plain) : null,
       diagrams: this.diagramsView(),
       latest_revision: this.latestRevision(),
       review_batches: this.batchesView(),

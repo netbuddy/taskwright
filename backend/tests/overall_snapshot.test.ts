@@ -91,9 +91,51 @@ test("被依据的那一页已废弃：依据它的条目带 basis_pending，rea
   assert.deepEqual(useCase.sources.map((s: any) => [s.locator, s.stale]), [["OA-001", "changed"]]);
 });
 
-test("没有总体分析集合的任务：待核实照样算，条目不带 mentioned_by，没有这一种提示", () => {
+test("整份数据带从总体分析算出来的三张表：规则表（冲突标在规则上）、业务目标、决策记录与待澄清事项", () => {
+  // 问题集合照产品的任务类型：状态里有「用户决定保留」，另有种类与建议的处理两个字段。
+  const collections = DEFINITION.交付物.条目集合.map((one) => (one.名称 === "待定事项" ? { ...one, 字段: [
+    { 名: "事项", 类型: "文本", 必填: true }, { 名: "种类", 类型: "枚举", 必填: false, 取值: ["待澄清", "范围外"] }, { 名: "建议的处理", 类型: "文本", 必填: false },
+    { 名: "状态", 类型: "枚举", 必填: true, 取值: ["未解决", "已解决", "用户决定保留"] }, { 名: "关联条目", 类型: "条目引用", 必填: false }] } : one));
+  const definition = { ...DEFINITION, 交付物: { ...DEFINITION.交付物, 条目集合: collections } };
+  const rule = (index: number) => ({ ...SOURCE, supports: [{ field: "已经定下的", index }] });
+  const what = { ...SOURCE, supports: [{ field: "它是什么" }] };
+  const ws = build("views", definition, [[
+    page({ 标题: "少排队", 标签: ["目标"] }),
+    page({ 标题: "只约在架的书", 标签: ["决定"], 上级主题: ["OA-001"], 已经定下的: ["只有在架的书才能预约。"] }, [what, rule(0)]),
+    page({ 标题: "预约取书", 标签: ["流程"], 已经定下的: ["借出的书也可以预约。", "保留期是 3 天。"] }, [what, rule(0), rule(1)]),
+    page({ 标题: "不收押金", 标签: ["决定"] }),
+  ], [
+    { op: "add", collection: "待定事项", fields: { 事项: "规则冲突：借出的书能不能预约", 种类: "待澄清", 建议的处理: "照馆里现在的做法定。", 状态: "未解决", 关联条目: ["OA-002", "OA-003"] },
+      sources: [{ kind: "条目", locator: "OA-002", excerpt: "只有在架的书才能预约。", supports: [{ field: "事项" }] }, { kind: "条目", locator: "OA-003", excerpt: "借出的书也可以预约。", supports: [{ field: "事项" }] }] },
+    { op: "add", collection: "待定事项", fields: { 事项: "保留期过了怎么办", 种类: "范围外", 状态: "未解决" }, sources: [SOURCE] },
+  ]]);
+  const views = library.taskSnapshot(ws)[1]!.overall_views!;
+  assert.deepEqual(views.rules.rows.map((row) => [row.item_id, row.title, row.index, row.text, row.sources.map((s) => s.kind), row.conflicts]), [
+    ["OA-002", "只约在架的书", 0, "只有在架的书才能预约。", ["文档原文"], ["TBD-001"]],
+    ["OA-003", "预约取书", 0, "借出的书也可以预约。", ["文档原文"], ["TBD-001"]],
+    ["OA-003", "预约取书", 1, "保留期是 3 天。", ["文档原文"], []],
+  ]);
+  assert.deepEqual([views.rules.conflicts, views.rules.unmatched], [["TBD-001"], []]);
+  assert.deepEqual(views.goals, {
+    roots: [{ item_id: "OA-001", title: "少排队", goals: [], decisions: [{ item_id: "OA-002", title: "只约在架的书", why: "只有在架的书才能预约。" }] }],
+    loose: [{ item_id: "OA-004", title: "不收押金", why: "读者对在架的书办预约。" }],
+  });
+  // 两页决定与两条还没有了结的问题，按第一次保存的时刻；不是规则冲突的问题不进规则表。
+  assert.deepEqual(views.decisions.map((row) => [row.entry, row.item_id, row.title, row.note, row.question_kind]), [
+    ["decision", "OA-002", "只约在架的书", "只有在架的书才能预约。", null],
+    ["decision", "OA-004", "不收押金", "读者对在架的书办预约。", null],
+    ["question", "TBD-001", "规则冲突：借出的书能不能预约", "照馆里现在的做法定。", "待澄清"],
+    ["question", "TBD-002", "保留期过了怎么办", "", "范围外"],
+  ]);
+  assert.ok(views.decisions.every((row) => typeof row.at === "string" && /^\d{4}-\d{2}-\d{2}T/.test(row.at)));
+  // 灯与规则表说的是同一回事。
+  assert.deepEqual(Object.values(library.taskSnapshot(ws)[1]!.stage!.lamps).flat().find((one) => one.key === "rules_no_conflict")!.items, ["TBD-001"]);
+});
+
+test("没有总体分析集合的任务：待核实照样算，条目不带 mentioned_by，没有这一种提示；三张表是 null", () => {
   const ws = makeWorkspace(tmp, "old", true);
   const [, task] = library.taskSnapshot(ws);
+  assert.equal(task!.overall_views, null);
   for (const item of task!.items as Record<string, any>[]) {
     assert.deepEqual([typeof item.pending_verification, typeof item.pending_sources, Array.isArray(item.pending_places), item.basis_pending, "mentioned_by" in item],
       ["boolean", "number", true, null, false], item.item_id);

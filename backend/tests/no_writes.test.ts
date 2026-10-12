@@ -25,7 +25,10 @@ const ALLOWED: Record<string, string[]> = {
   "conditions.ts": ["checkCompletion", "completionBrief", "completionHints"],
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
-  "stage.ts": ["STAGE_NAMES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS"],
+  // 另有问题条目的几个字段名与取值（常量）。
+  "stage.ts": ["STAGE_NAMES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD"],
+  // 从总体分析的页与问题条目算三张表（只做计算，不读库也不写库）。
+  "overall_views.ts": ["ViewPage", "ViewQuestion", "ViewSource", "decisionsAndOpenQuestions", "goalTree", "rulesTable"],
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
   "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames"],
