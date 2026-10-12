@@ -29,9 +29,9 @@ test("整份数据带 stage：现在的阶段、最近一次是谁在什么时�
     clarifying: ["tagged_pages_no_open_questions", "decisions_have_goal"],
     modeling: ["roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
       "no_duplicate_titles", "no_untagged_pages", "rules_no_conflict"],
-    writing: ["flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items"],
+    writing: ["flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items", "no_blocking_questions", "no_pending_marks"],
     reviewing: ["reviews_no_open_findings", "completion_met"],
-    document: [],
+    document: ["chapters_have_intro", "glossary_complete", "document_no_blocking_questions"],
   });
   // 几盏灯照库里的内容：材料被那一页引用了；流程页还没有流程图；用例依据的页用户看过；还没有评审过。
   assert.deepEqual([lampOf(stage, "materials_cited").ok, lampOf(stage, "basis_pages_viewed").ok, lampOf(stage, "no_pending_items").ok], [true, true, true]);

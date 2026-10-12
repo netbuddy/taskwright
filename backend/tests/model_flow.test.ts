@@ -143,7 +143,8 @@ test("整理建模画出五种图、七盏灯都通过；写条目依据两张�
       .map((s: Dict) => [s.kind, s.locator, s.excerpt, s.depends_revision, s.current_revision, s.stale]);
     assert.deepEqual(await sourcesOf(), [["图", "D-002", "OA-001 自助借书", 1, 1, null], ["图", "D-004", "记下借阅", 1, 1, null]]);
     // 流程页经图被用例依据；用例没有直接依据主题页；用户还没有看过任何一张图，依据的图那一盏不通过，用例因此待核实。
-    assert.deepEqual(await lamps("writing"), { flows_backed_by_use_cases: true, basis_pages_viewed: null, basis_diagrams_viewed: false, no_pending_items: false });
+    assert.deepEqual(await lamps("writing"), { flows_backed_by_use_cases: true, basis_pages_viewed: null, basis_diagrams_viewed: false, no_pending_items: false,
+      no_blocking_questions: null, no_pending_marks: true });
     const basisOf = async () => ((await snapshot()).items as Dict[]).find((one) => one.item_id === "UC-001")!.basis_pending;
     assert.deepEqual(await basisOf(), { item_id: "D-002", reason: "unviewed", see: null });
 

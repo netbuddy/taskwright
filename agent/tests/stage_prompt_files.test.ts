@@ -199,10 +199,11 @@ test("整理建模那一段：主动画五种图并写明第十一节第 1 条�
   assert.ok(enough.startsWith("## 做到什么算够\n\n七件："));
   assert.equal(enough.slice(enough.indexOf("七件：")).split("。")[0].split("；").length, 7);
   assert.equal(stageLamps(EMPTY_LAMP_INPUT).modeling.length, 7);
-  // 写条目那一段：算够的四件与灯的数目相同，条目可以依据图。
+  // 写条目那一段：算够的六件与灯的数目相同，条目可以依据图。
   const writing = sections(read("writing.md"));
-  assert.ok(writing.get("做到什么算够")!.includes("四件：") && writing.get("做到什么算够")!.includes("每个条目依据的图都是用户看过的"));
-  assert.equal(stageLamps(EMPTY_LAMP_INPUT).writing.length, 4);
+  assert.ok(writing.get("做到什么算够")!.includes("六件：") && writing.get("做到什么算够")!.includes("每个条目依据的图都是用户看过的"));
+  assert.ok(writing.get("做到什么算够")!.includes("没有还没了结的阻断下游的问题") && writing.get("做到什么算够")!.includes("没有还标着「待定」的地方"));
+  assert.equal(stageLamps(EMPTY_LAMP_INPUT).writing.length, 6);
   assert.ok(writing.get("这一段做什么")!.includes("条目也可以依据整理建模阶段画的图：来源种类写「图」，出处写图的编号"));
 });
 
@@ -325,6 +326,7 @@ test("编写文档那一段：补导语与概括句并写明依据；出口是�
   const enough = all.get("做到什么算够")!;
   assert.ok(enough.startsWith("## 做到什么算够\n\n三件："));
   assert.equal(enough.slice(enough.indexOf("三件：")).split("。")[0].split("；").length, 3);
+  assert.equal(stageLamps(EMPTY_LAMP_INPUT).document.length, 3);
   const exit = all.get("出口")!;
   assert.ok(exit.includes("`document_reviewed`「看过了，生成文档」、`document_revise`「需要修改」"));
   assert.ok(exit.includes("你不会因此再运行一次，所以要说的话在这张卡片上一次说完"));

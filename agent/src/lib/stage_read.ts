@@ -15,7 +15,7 @@ import { emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, keepPendingField, validateDefinition } from "./definition.ts";
 import { diagramViewed, latestVersion, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "./diagram.ts";
 import { classLinked, drawnItemIds, hasBranch } from "./diagram_scan.ts";
-import { OVERALL_COLLECTION, hasOverall } from "./overall_analysis.ts";
+import { OVERALL_COLLECTION, OVERALL_FIELDS, hasOverall } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { rulesTable } from "./overall_views.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
@@ -23,7 +23,7 @@ import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_I
 import { openProposal } from "./stage_proposal.ts";
 import {
   ENTER_OPTIONS, FLOW_INITIAL, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, NO_STAGES_TEXT, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
-  defaultStage, isStage, judgeMove, lampLines, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
+  defaultStage, isStage, judgeMove, lampLines, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
@@ -252,6 +252,7 @@ export function lampDiagrams(db: DatabaseSync, taskId: string, definition: TaskD
       linked: now.kind === KIND_CLASS ? classLinked(now.mermaid, prefixes) : [],
       branches: now.kind === KIND_FLOWCHART && hasBranch(now.mermaid),
       viewed: diagramViewed(record, seen),
+      marked: hasPendingMark(now.mermaid),
     };
   });
 }
@@ -283,7 +284,7 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
     })),
   );
   return {
-    pages: pages.map((one) => lampPage(one.item_id, one.fields, state.viewed.get(one.item_id) === true)),
+    pages: pages.map((one) => lampPage(one.item_id, one.fields, state.viewed.get(one.item_id) === true, state.verification.get(one.item_id)?.pending_verification === true)),
     items: others.map((one) => {
       const verification = state.verification.get(one.item_id)!;
       return {
@@ -291,6 +292,8 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
         cites: sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_ITEM).map((s) => s.locator),
         citesDiagrams: [...new Set(sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_FIGURE).map((s) => s.locator))],
         pending: verification.pending_verification || verification.basis_pending !== null,
+        // 问题条目自己不算标着待定的地方：它就是用来记没定的事的。
+        marked: !statusFieldOf.has(one.collection) && hasPendingMark(one.fields),
       };
     }),
     questions: questions.map((one) => lampQuestion(one.item_id, one.fields, statusFieldOf.get(one.collection)!)),
@@ -298,6 +301,10 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
     citedDocuments: [...pages, ...questions].flatMap((one) => sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_DOCUMENT).map((s) => s.locator)),
     diagrams,
     ruleConflicts: rules.conflicts,
+    declared: {
+      intro: definition.collections.some((one) => one.name === OVERALL_COLLECTION && one.fields.some((field) => field.name === OVERALL_FIELDS.intro)),
+      blocking: definition.collections.some((one) => keepPendingField(one) !== null && one.fields.some((field) => field.name === QUESTION_BLOCKING_FIELD)),
+    },
   };
 }
 

@@ -138,11 +138,11 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   const ro = new DatabaseSync(databasePath(dir), { readOnly: true });
   try {
     assert.deepEqual(lampDiagrams(ro, taskId, definition), [
-      { diagram_id: "D-001", kind: "context", sources: ["OA-001"], drawn: ["OA-001"], linked: [], branches: false, viewed: false },
-      { diagram_id: "D-002", kind: "use_case", sources: ["OA-001", "OA-004"], drawn: ["OA-001", "OA-004"], linked: [], branches: false, viewed: false },
-      { diagram_id: "D-003", kind: "class", sources: ["OA-002", "OA-003", "OA-005"], drawn: ["OA-002", "OA-003", "OA-005"], linked: ["OA-002", "OA-003"], branches: false, viewed: false },
-      { diagram_id: "D-004", kind: "flowchart", sources: ["OA-004"], drawn: ["OA-004"], linked: [], branches: true, viewed: false },
-      { diagram_id: "D-005", kind: "state", sources: ["OA-002"], drawn: ["OA-002"], linked: [], branches: false, viewed: false },
+      { diagram_id: "D-001", kind: "context", sources: ["OA-001"], drawn: ["OA-001"], linked: [], branches: false, viewed: false, marked: false },
+      { diagram_id: "D-002", kind: "use_case", sources: ["OA-001", "OA-004"], drawn: ["OA-001", "OA-004"], linked: [], branches: false, viewed: false, marked: false },
+      { diagram_id: "D-003", kind: "class", sources: ["OA-002", "OA-003", "OA-005"], drawn: ["OA-002", "OA-003", "OA-005"], linked: ["OA-002", "OA-003"], branches: false, viewed: false, marked: false },
+      { diagram_id: "D-004", kind: "flowchart", sources: ["OA-004"], drawn: ["OA-004"], linked: [], branches: true, viewed: false, marked: false },
+      { diagram_id: "D-005", kind: "state", sources: ["OA-002"], drawn: ["OA-002"], linked: [], branches: false, viewed: false, marked: false },
     ]);
   } finally {
     ro.close();
