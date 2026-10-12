@@ -45,56 +45,73 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [x] Replace a material
 - [x] The task status note at the top of a conversation folded into one line
 
-## 0.5 Stages of work and the business description
+## 0.5 Working in stages on a business description
 
-- [x] Stop a run in progress from the interface
-- [x] Upgrades that keep existing tasks
-- [x] Export and import of tasks and knowledge libraries as data packs
-- [x] Overall analysis: topic pages in the matter's own words that items are written from
-- [x] Work in six stages, each move the user's click on a card the assistant proposes
-- [x] Five standard models drawn in the modeling stage
-- [x] The business description on the page in seven chapters, with diagrams where they belong
-- [x] Questions recorded in place and settled with where the answer went
-- [x] A document stage that adds chapter introductions
-- [x] The generated document in the chapters of the business description, as Markdown and as a Word file of the whole document
+How does the assistant get from materials to requirements without guessing?
+
+- [x] Work in six stages, each entered by the user's click on a card the assistant proposes
+- [x] A business description in seven chapters, with five standard models drawn from it
+- [x] Questions recorded where they arise and settled with where the answer went
+- [x] A document generated in the chapters of the business description, downloadable as a Word file of the whole document
 - [x] Evaluation runs that compare the assistant before and after a change to its instructions
+- [x] Upgrades that keep existing tasks; export and import of tasks and knowledge libraries; stopping a run from the interface
 
-## 0.6 Tasks, activities and several users
+## 0.6 The life of a task
+
+What happens to a task after its first document?
 
 - [ ] Tasks, activities and flows: a task stays open after publishing a version, activities can run on their own or as nodes of a flow, the seven basic capabilities, and a change flow on top of a published version
-- [ ] Authentication and multiple users
+- [ ] Publishing a version in place of completing the task; a version records which revision of which items it contains
+- [ ] Browse past tasks and versions
+
+## 0.7 Several users at once
+
+Who may see and change what, and how many can work at the same time?
+
+- [ ] Authentication, owners and permissions
 - [ ] Limits on how many assistants run at once, with idle shutdown and a queue
-- [ ] Search of materials by meaning
-- [ ] A source that cites a knowledge base document says so when the document has been replaced
-- [ ] One name, 请过目, for the card that asks the user to look at items, in the assistant's instructions and in the simulator
-
-## 0.7 First public release, deliverables and desktop
-
 - [ ] Backup and restore of tasks
-- [ ] Review rules verified on real projects
-- [ ] One round of evaluation and improvement for the assistant's known faults: missed content, contradictions written as settled rules, one rule written twice
 - [ ] Load test with tens of users at once
-- [ ] Screenshots in the tutorial brought up to date
+
+## 0.8 More than one format of specification
+
+Can the same understanding be written out in different forms?
+
 - [ ] Separating the business description from the specification format: one business description, several item formats (use case tables, user stories)
-- [ ] Cross-item review: duplicates, conflicts, inconsistent wording
-- [ ] Desktop application based on Electron
-- [ ] Baselines of the whole deliverable
-- [ ] Browse past tasks
-
-## 0.8 Long sessions
-
-- [ ] Resume correctly after a session has been compacted
-- [ ] Recover after a crash
-
-## 0.9 Task orchestration
-
-- [ ] Nested tasks
-- [ ] Subtasks run one after another
 - [ ] A second task type: document writing
 - [ ] Read-only requirements pool shared across tasks
 
-## 1.0 Practice runs
+## 0.9 The assistant's quality
 
+How good is what the assistant writes, and how do we know?
+
+- [ ] Review rules verified on real projects
+- [ ] Cross-item review: duplicates, conflicts, inconsistent wording
+- [ ] One round of evaluation and improvement for the assistant's known faults: missed content, contradictions written as settled rules, one rule written twice
 - [ ] Simulated user as a product feature: choose a persona, run a practice session, read the verdicts and the judge's report
 - [ ] Observatory replay of what the user saw
+
+## 1.0 First public release
+
+Is it robust enough to hand to people we do not know?
+
+- [ ] Resume correctly after a session has been compacted; recover after a crash
+- [ ] Desktop application based on Electron
+- [ ] Screenshots in the tutorial brought up to date
 - [ ] Secret management
+
+## 1.1 Task orchestration
+
+Can one task be made of others?
+
+- [ ] Nested tasks
+- [ ] Subtasks run one after another
+
+## Small fixes that ride along with a release
+
+- [ ] Search of materials by meaning
+- [ ] A source that cites a knowledge base document says so when the document has been replaced
+- [ ] One name, 请过目, for the card that asks the user to look at items, in the assistant's instructions and in the simulator
+- [ ] The four places that still say 先不管: the third option of the card that asks whether a question is resolved, the sentence sent for the user, the note left in the conversation, the operation names in the Revisions tab
+- [ ] A shorter shared part of the stage instructions
+- [ ] Fetch session entries from the assistant process only when they have changed
