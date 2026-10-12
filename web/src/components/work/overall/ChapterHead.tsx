@@ -12,7 +12,7 @@ import { firstParagraph, isDeprecated, isPending, titleOf, whatOf } from "../../
 /** 导语上那句待过目的话。 */
 export const INTRO_PENDING_TEXT = "助手补写，待过目";
 
-export function ChapterHead({ contents, chapterNo, lead, children, onOpen, full = false }: {
+export function ChapterHead({ contents, chapterNo, lead, children, onOpen, full = false, sectionNote }: {
   /** 各节的说明显示全文（各段都在），不只是第一段。 */
   full?: boolean;
   task: Task;
@@ -22,6 +22,8 @@ export function ChapterHead({ contents, chapterNo, lead, children, onOpen, full 
   lead: ReactNode;
   /** 这一章自己的块，画在各节的摘要之前。 */
   children?: ReactNode;
+  /** 各节标题后面的一句小字（第 3 章写这一节对应几条用例）；不给、或者给的是空的就不写。 */
+  sectionNote?: (itemId: string) => string;
   onOpen: (itemId: string) => void;
 }) {
   const chapter = chapterByNo(chapterNo);
@@ -49,7 +51,8 @@ export function ChapterHead({ contents, chapterNo, lead, children, onOpen, full 
         return (
           <section key={one.item.item_id} className="oa-blk" data-testid={`chapter-section-${one.item.item_id}`}>
             <h3><span className="oa-sec-link" role="button" tabIndex={0} title="打开这一节" onClick={() => onOpen(one.item.item_id)}
-              onKeyDown={(e) => { if (e.key === "Enter") onOpen(one.item.item_id); }}>{one.no} {titleOf(one.item)}</span></h3>
+              onKeyDown={(e) => { if (e.key === "Enter") onOpen(one.item.item_id); }}>{one.no} {titleOf(one.item)}</span>
+              {sectionNote?.(one.item.item_id) && <small data-testid={`chapter-section-note-${one.item.item_id}`}>{sectionNote(one.item.item_id)}</small>}</h3>
             <div className="oa-prose">{paragraphs.length > 0 ? paragraphs.map((p, i) => <p key={i}>{p}</p>) : <p className="oa-empty">这一节还没有写说明。</p>}</div>
           </section>
         );

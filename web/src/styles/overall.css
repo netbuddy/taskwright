@@ -307,3 +307,8 @@
 .app .oa-closed .qlink { cursor: pointer; }
 .app .oa-closed .qlink:hover { color: var(--blue); }
 .app .oa-closed .to { display: block; color: var(--text3); margin-top: .1rem; }
+
+/* ───── 目录里第 3 章章名右边的小三角：单独收起、展开各节；章名自己打开章首页 ───── */
+.app .oa-ch .oa-caret { cursor: pointer; border-radius: .25rem; }
+.app .oa-ch .oa-caret:hover { background: var(--line); }
+.app .oa-head h3 > small[data-testid^="chapter-section-note-"] { margin-left: .6rem; }
