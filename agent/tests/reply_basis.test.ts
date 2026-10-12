@@ -95,12 +95,12 @@ test("Word 材料：出处写段落号，摘录在那一段里送达；写错段
   assert.match(error.message, /act\.basis 的第 1 条的摘录「逾期的每本每天罚款一角」在 requirements-styled\.docx 第 91 段·表 3 行 2 列 2里找不到，它在第 76 段。\n   怎么办：出处改写成 inputs\/requirements-styled\.docx#p76。/);
 });
 
-test("助手补充不核对摘录；种类不在四种之内、缺摘录，按保存修订的原话拒绝", () => {
+test("助手补充不核对摘录；种类不在五种之内、缺摘录，按保存修订的原话拒绝", () => {
   const dir = workspace();
   const ok = checkReply(suggest([{ kind: "助手补充", locator: "助手补充", excerpt: "行业惯例是七天" }]), facts(dir));
   assert.equal(ok.act?.basis?.[0].excerpt, "行业惯例是七天");
   const error = rejection(dir, [{ kind: "猜的", locator: "x", excerpt: "" }]);
-  assert.match(error.message, /act\.basis 的第 1 条的 kind 写的是 "猜的"，只能是「文档原文」、「用户的话」、「助手补充」、「条目」之一/);
+  assert.match(error.message, /act\.basis 的第 1 条的 kind 写的是 "猜的"，只能是「文档原文」、「用户的话」、「助手补充」、「条目」、「图」之一/);
   assert.match(error.message, /act\.basis 的第 1 条缺少 excerpt（摘录的原文）/);
 });
 

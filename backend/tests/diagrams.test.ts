@@ -76,6 +76,31 @@ test("图的详情：Mermaid 文本、说明、改动过的修订号；来源与
   assert.equal(library.diagramDetail(ws, "D-404"), null);
 });
 
+test("条目依据图：条目的来源带依据的现状（图之后改了是依据已变，删了是已删除），图的详情列出依据它的条目", () => {
+  const FLOW = 'flowchart TD\n  a(["UC-001 登录"]) --> b["输入口令"]';
+  /** 任务修订 1 有 UC-001；D-001 是登录的流程图；任务修订 2 新增 UC-002，整个条目依据 D-001；再接 more 里的几步。 */
+  const build = (name: string, more: unknown[]) => makeLegacyTask(join(tmp, name, "tasks"), { "材料.md": "读者凭口令登录。" }, [
+    [useCase("登录", "读者登录系统。")],
+    { said: "把登录画成流程图", diagram: { name: "登录流程", kind: "flowchart", mermaid: FLOW, sources: [{ kind: "用户的话", excerpt: "把登录画成流程图" }, { kind: "条目", locator: "UC-001" }] } },
+    [{ ...useCase("找回口令", "读者找回口令。"), sources: [{ kind: "图", locator: "D-001", excerpt: "输入口令" }] }],
+    ...more,
+  ]);
+  const cited = (dir: string) => library.taskSnapshot(dir)[1]!.items.find((one) => one.item_id === "UC-002")!.sources
+    .map((s) => [s.kind, s.locator, s.excerpt, s.depends_revision, s.current_revision, s.stale]);
+  const fresh = build("figure-fresh", []);
+  assert.deepEqual(cited(fresh), [["图", "D-001", "输入口令", 1, 1, null]]);
+  assert.deepEqual(library.diagramDetail(fresh, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 2 }]);
+  // 条目的「被谁依据」只数依据条目的来源：UC-001 被图依据，UC-002 没有被谁依据。
+  const items = new Map(library.taskSnapshot(fresh)[1]!.items.map((one) => [one.item_id, one]));
+  assert.deepEqual([items.get("UC-001")!.depended_by, items.get("UC-002")!.depended_by], [[{ element_kind: "图", id: "D-001", revision_no: 1 }], []]);
+  const changed = build("figure-changed", [{ diagram: { diagram: "D-001", base_revision: 1, note: "加了说明。" } }]);
+  assert.deepEqual(cited(changed), [["图", "D-001", "输入口令", 1, 2, "changed"]]);
+  const deleted = build("figure-deleted", [{ diagram: { diagram: "D-001", base_revision: 1, delete: true } }]);
+  assert.deepEqual(cited(deleted), [["图", "D-001", "输入口令", 1, null, "deleted"]]);
+  // 删掉的图也给得出详情，依据它的条目还列着。
+  assert.deepEqual(library.diagramDetail(deleted, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 2 }]);
+});
+
 test("图里画了谁：从 Mermaid 文本里扫出来的条目编号，带条目现在的标题与状态", () => {
   assert.deepEqual(library.diagramDetail(ws, "D-001")!.drawn, [
     { item_id: "UC-001", title: "登录", state: "live" },

@@ -61,7 +61,7 @@ export const TASK_DONE = "已完成";
 export const TASK_ABANDONED = "已放弃";
 
 /**
- * 来源是任务要素之间的「依据」关系：一个产出型的要素（条目，以后还有图）记下它依据了哪个要素的哪个位置。
+ * 来源是任务要素之间的「依据」关系：一个产出型的要素（条目或者图）记下它依据了哪个要素的哪个位置。
  *
  * 依据方的种类（来源表的 kind 列）：
  * - 「文档原文」：材料里或知识库文档里的一段原话，出处写文件的路径（知识库文档以 knowledge/ 开头，不另立种类）。
@@ -69,7 +69,8 @@ export const TASK_ABANDONED = "已放弃";
  * - 「助手补充」：助手按常识补上、或者从材料里推出来而材料没有明说的内容；摘录里写的是理由。早期版本叫「执行者补充」。
  * - 「条目」：任务里的另一个条目，出处写它的条目编号（例如 DN-002、UC-003），摘录写引用的那句；另记引用时它的修订号
  *   （depends_revision），它之后又改了，读取一侧据此标「依据已变」。早期版本只能引用「领域说明」集合里的条目，种类名就叫「领域说明」。
- * - 「图」：任务里的一张图，出处写图的编号，同样记修订号。图这种要素还没有做出来，保存修订现在不收这一种。
+ * - 「图」：任务里的一张图，出处写图的编号（例如 D-002），摘录可以不写，写了要逐字出现在那张图现在的 Mermaid 文本里；
+ *   同样记下引用时图的修订号（图自己的修订号）。只有条目能依据图，一张图不能把另一张图当作依据。
  * - 「用户直接修改」：早期版本在用户直接改了某个字段时由系统写的，出处是那次操作的编号；现在不再写，也不再显示，
  *   旧修订里的记录原样留在库里（种类清单与表的检查照旧收它）。
  */
@@ -78,8 +79,8 @@ export const SOURCE_SUPPLEMENT = "助手补充";
 export const SOURCE_ITEM = "条目";
 export const SOURCE_FIGURE = "图";
 export const SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM, SOURCE_FIGURE, SOURCE_USER_EDIT] as const;
-/** 助手可以填的四种。「图」要等图这种要素做出来。 */
-export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM] as const;
+/** 助手可以填的五种。 */
+export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM, SOURCE_FIGURE] as const;
 /** 早期版本的两个种类名与它们现在的名字。库迁移之前读到的、助手照旧说明写来的都按现在的名字认（sourceKindNow）。 */
 export const LEGACY_SOURCE_KINDS: Readonly<Record<string, string>> = { 执行者补充: SOURCE_SUPPLEMENT, 领域说明: SOURCE_ITEM };
 /** 一个种类名现在叫什么：早期版本的名字换成现在的，别的照原样。 */

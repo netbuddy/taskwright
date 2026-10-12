@@ -71,6 +71,7 @@ import { type CallContext, type ToolOutcome, type UserMessage, activeTasks } fro
 import {
   DOCX_LOCATOR, PROJECTION_SUFFIXES, SPAN_LIMIT, inTextBox, isLegacyProjection, paragraphsWith, placeExcerpt, projectionParagraphs, projectionTablePositions,
 } from "./docx_source.ts";
+import { DIAGRAM_ID, type DiagramRecord, latestVersion as latestDiagramVersion, readDiagrams } from "./diagram.ts";
 import { parsePdfLocator } from "./pdf_locations.ts";
 import { PDF_SPAN_LIMIT, pdfProjectionUnits, pdfUnitIndex, pdfUnitsWith, placePdfExcerpt } from "./pdf_source.ts";
 import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, sourceKindNow, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
@@ -356,7 +357,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const addedAt = new Map<string, number>();
   // 这一批里已经通过核对的新增与修改将要保存的内容：后面的操作把它们当作依据时，摘录对着这里核对，修订号是这一次的。
   const written = new Map<string, { collection: string; fields: Record<string, unknown> }>();
-  const itemSources = (number: number, self: string | null) => itemSourceLookups(definition, items, latestVersion, { deletedHere, addedAt, written }, number, self);
+  const diagrams = readDiagrams(db, taskId);
+  const itemSources = (number: number, self: string | null) => itemSourceLookups(definition, items, latestVersion, { deletedHere, addedAt, written }, number, self, diagrams);
   // 这一批里新增的条目各在哪个集合里（条目引用字段「只许本集合」的核对要查）。
   const addedIn = new Map<string, string>();
   const refs: RefLookups = {
@@ -647,12 +649,13 @@ export function checkDiagramSources(
   errors: string[],
   previous: readonly Source[] = [],
 ): Source[] | null {
-  const lookups = itemSourceLookups(definition, itemsOf(db, taskId), latestVersionOf(db, taskId), { deletedHere: new Set(), addedAt: new Map(), written: new Map() }, 0, null);
+  const lookups = itemSourceLookups(definition, itemsOf(db, taskId), latestVersionOf(db, taskId), { deletedHere: new Set(), addedAt: new Map(), written: new Map() }, 0, null,
+    readDiagrams(db, taskId));
   return checkSources(raw, true, errors, call.sessionId, call.userMessages ?? [], call.actor, materialReader(call.workspaceDir, definition.materialsDir, call.knowledgeRoot ?? null),
     lookups, undefined, previous, true);
 }
 
-/** 种类为「条目」的来源要用的三个查法（见 itemSourceLookups）。 */
+/** 种类为「条目」的来源要用的三个查法，与种类为「图」的来源要用的一个查法（见 itemSourceLookups）。 */
 export interface ItemSourceLookups {
   /** 出处指的条目能不能引用：能就返回 null，不能返回原因。 */
   ref: (locator: string) => string | null;
@@ -660,6 +663,8 @@ export interface ItemSourceLookups {
   text: (locator: string) => string[];
   /** 引用这一刻那个条目的修订号；它在这一次保存里才新增或修改时是 THIS_REVISION。 */
   revision: (locator: string) => number | typeof THIS_REVISION;
+  /** 出处指的图能不能引用：不能返回原因；能就返回它现在的修订号（图自己的）与 Mermaid 文本，摘录要逐字出现在这段文本里。 */
+  figure: (locator: string) => { reason: string } | { revision: number; mermaid: string };
 }
 
 /**
@@ -667,6 +672,8 @@ export interface ItemSourceLookups {
  * 或者是这一批里排在前面、已经通过核对的新增或修改（written 里有它，摘录对着它将要保存的内容核对，修订号就是这一次的）。
  * 一个条目不能把自己当作依据。number 是正在核对的操作是这一批的第几个，self 是它修改的条目编号（新增时没有）。
  * batch 是这一批的删除、新增与已经通过核对的内容；不是一批操作（例如「回复」核对依据）时给空的。
+ *
+ * 种类为「图」的来源：出处是任务里一张还在的图的编号（diagrams 是任务里的全部图，删掉的也在）。图单独保存，没有「同一批里」这回事。
  */
 function itemSourceLookups(
   definition: TaskDefinition,
@@ -675,6 +682,7 @@ function itemSourceLookups(
   batch: { deletedHere: Set<string>; addedAt: Map<string, number>; written: Map<string, { collection: string; fields: Record<string, unknown> }> },
   number: number,
   self: string | null,
+  diagrams: readonly DiagramRecord[] = [],
 ): ItemSourceLookups {
   const ref = (locator: string): string | null => {
     if (self !== null && locator === self) return "指的就是这个条目自己，一个条目不能把自己当作依据";
@@ -711,7 +719,15 @@ function itemSourceLookups(
     });
   };
   const revision = (locator: string) => (batch.written.has(locator) ? THIS_REVISION : latestVersion(locator).revision_no);
-  return { ref, text, revision };
+  const figure = (locator: string) => {
+    if (!DIAGRAM_ID.test(locator)) return { reason: "不是图的编号" };
+    const record = diagrams.find((one) => one.diagram_id === locator);
+    const now = record ? latestDiagramVersion(record) : null;
+    if (!record || !now) return { reason: "指向的图在这个任务里不存在" };
+    if (record.deleted_in_revision !== null) return { reason: `指向的图已在它的修订 ${record.deleted_in_revision} 删除` };
+    return { revision: now.revision_no, mermaid: now.mermaid };
+  };
+  return { ref, text, revision, figure };
 }
 
 /** 一条引用核对通过之后的样子：种类、出处（「用户的话」由工具代填）、摘录，以及「用户的话」可能带的规范化写入值。 */
@@ -753,7 +769,8 @@ export function checkQuotes(
     }
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const items = itemsOf(db, task.task_id);
-    const lookups = itemSourceLookups(definition, items, latestVersionOf(db, task.task_id), { deletedHere: new Set(), addedAt: new Map(), written: new Map() }, 0, null);
+    const lookups = itemSourceLookups(definition, items, latestVersionOf(db, task.task_id), { deletedHere: new Set(), addedAt: new Map(), written: new Map() }, 0, null,
+      readDiagrams(db, task.task_id));
     const checked = checkSources(raw, true, errors, sessionId, userMessages, ACTOR_EXECUTOR, materialReader(workspaceDir, definition.materialsDir, knowledgeRoot),
       lookups, whereOf);
     return checked && checked.map(({ kind, locator, excerpt, normalized_value }) => ({ kind, locator, excerpt, ...(normalized_value ? { normalized_value } : {}) }));
@@ -1131,8 +1148,9 @@ function checkSources(
     if (one.kind === SOURCE_USER_EDIT && actor !== ACTOR_USER) {
       errors.push(withGuide(`${where}的种类写成了「${SOURCE_USER_EDIT}」，这一种助手不能填`, kindsGuide));
       ok = false;
-    } else if (one.kind === SOURCE_FIGURE && actor !== ACTOR_USER) {
-      errors.push(withGuide(`${where}的种类写成了「${SOURCE_FIGURE}」，这个任务里现在还没有图，这一种还不能用`, kindsGuide));
+    } else if (one.kind === SOURCE_FIGURE && actor !== ACTOR_USER && figure) {
+      errors.push(withGuide(`${where}的种类写成了「${SOURCE_FIGURE}」，一张图不能把另一张图当作依据`,
+        `图的来源写它画自的条目（种类「${SOURCE_ITEM}」）、用户的话、材料原文或者你补充的理由`));
       ok = false;
     } else if (typeof one.kind !== "string" || !allowed.includes(one.kind)) {
       errors.push(
@@ -1147,8 +1165,8 @@ function checkSources(
       ok = false;
       return;
     }
-    // 图依据条目时可以不写摘录：图依据的是条目整体，要紧的是记下引用时它的修订号。写了照样逐字核对。
-    const bareItem = figure && one.kind === SOURCE_ITEM && (typeof one.excerpt !== "string" || one.excerpt.trim() === "");
+    // 图依据条目、条目依据图时可以不写摘录：依据的是对方整体，要紧的是记下引用时它的修订号。写了照样逐字核对。
+    const bareItem = ((figure && one.kind === SOURCE_ITEM) || one.kind === SOURCE_FIGURE) && (typeof one.excerpt !== "string" || one.excerpt.trim() === "");
     if (!userWords && !supplement && (typeof one.locator !== "string" || one.locator.trim() === "")) missing.push("locator（出处）");
     if (!bareItem && (typeof one.excerpt !== "string" || one.excerpt.trim() === "")) missing.push("excerpt（摘录的原文）");
     if (missing.length > 0) {
@@ -1204,6 +1222,24 @@ function checkSources(
         return;
       }
       depends = itemSource.revision(locator);
+    }
+    if (one.kind === SOURCE_FIGURE && actor !== ACTOR_USER && itemSource) {
+      locator = locator.trim();
+      const found = itemSource.figure(locator);
+      if ("reason" in found) {
+        errors.push(withGuide(`${where}的种类是「${SOURCE_FIGURE}」，出处 ${locator} ${found.reason}`,
+          "出处写一张还在的图的编号，例如 D-001；用 get_task_status 可以看到任务里有哪几张图"));
+        ok = false;
+        return;
+      }
+      const excerpt = bareItem ? "" : (one.excerpt as string).trim();
+      if (excerpt !== "" && !found.mermaid.includes(excerpt)) {
+        errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在图 ${locator} 现在的 Mermaid 文本里找不到`,
+          "摘录逐字抄图里一个节点上的文字（用 get_item 写图的编号可以看到它的文本）；不好抄时可以不写摘录"));
+        ok = false;
+        return;
+      }
+      depends = found.revision;
     }
     const keepLocator =
       userWords && actor === ACTOR_USER && typeof one.locator === "string" && one.locator.includes("#");

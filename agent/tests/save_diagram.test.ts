@@ -81,7 +81,7 @@ test("新画一张图缺项、种类不对、图名太长、写了 base_revision
   await assert.rejects(save(dir, fresh({ sources: [{ kind: "用户的话", excerpt: USER_SAID, supports: [{ field: "名称" }] }, SOURCES[1], SOURCES[2]] })),
     /第 1 条来源写了 supports；图没有字段，图的来源不写 supports/);
   await assert.rejects(save(dir, fresh({ sources: [SOURCES[0], SOURCES[1], { kind: "条目", locator: "UC-002", excerpt: "不在里面的话" }] })), /在 UC-002 的当前修订里找不到/);
-  await assert.rejects(save(dir, fresh({ sources: [...SOURCES, { kind: "图", locator: "D-001", excerpt: "x" }] })), /种类写成了「图」，这个任务里现在还没有图，这一种还不能用/);
+  await assert.rejects(save(dir, fresh({ sources: [...SOURCES, { kind: "图", locator: "D-001", excerpt: "x" }] })), /第 4 条来源的种类写成了「图」，一张图不能把另一张图当作依据/);
   await assert.rejects(save(dir, fresh({ delete: true })), /要删除图，但没有写是哪一张/);
   assert.equal(count(dir, "diagram"), 0);
   assert.equal(query(dir, "SELECT 1 FROM item_source WHERE element_kind = '图'").length, 0);
