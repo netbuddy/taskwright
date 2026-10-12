@@ -20,6 +20,9 @@ compare：两次评测的对照，打印一段 Markdown：每盏灯与清单的�
 
 通过率怎样算：一盏灯的通过率是通过的遍数比上能算的遍数（结果是「通过」或「未通过」的遍），「不适用」与「算不了」不进分母；
 一次评测的灯通过率是各盏通过率的平均。清单命中率是命中的组数比上组数，各遍合在一起算。
+
+灯按阶段分组：一盏灯归哪个阶段，按它的键在 sim/lamps.py 的灯表里找，表里没有的键归「其他」，排在最后。汇总以各遍结果里实际出现的灯为准，
+不按灯表逐盏去找，所以灯增删之后这里不用改。每个阶段另给本组通过率：这一组各盏灯通过率的平均。
 """
 
 from __future__ import annotations
@@ -110,11 +113,27 @@ def judge_one(sim: Path, expect_path: Path | None = None, label: str | None = No
     return out
 
 
+def stage_of(key: str) -> str:
+    """一盏灯归哪个阶段：按键在灯表里找；表里没有的键归「其他」。"""
+    return next((stage for stage, one, _text in lamps.LAMPS if one == key), eval_files.OTHER_STAGE)
+
+
+def lamp_keys(runs: list[dict]) -> list[tuple[str, str, str]]:
+    """各遍结果里实际出现的灯，每盏一项（阶段、键、说明），按阶段的先后排（灯表里阶段出现的先后，「其他」在最后），同一阶段里按出现的先后。"""
+    stages = [*dict.fromkeys(stage for stage, _key, _text in lamps.LAMPS), eval_files.OTHER_STAGE]
+    texts: dict[str, str] = {}
+    for r in runs:
+        for x in r.get("灯") or []:
+            texts.setdefault(x["键"], x.get("说明") or x["键"])
+    found = [(stage_of(key), key, text) for key, text in texts.items()]
+    return sorted(found, key=lambda one: stages.index(one[0]))                 # sorted 是稳定的：同一阶段里先后不变
+
+
 def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
     """把几遍的「评测.json」合成一次评测的汇总。meta 是这次评测不随遍变的几样（时间、提交号、模型、材料等）。"""
     runs = [json.loads((sim / RUN_FILE).read_text(encoding="utf-8")) for sim in sims]
     lamp_rows = []
-    for n, (stage, key, text) in enumerate(lamps.LAMPS):
+    for stage, key, text in lamp_keys(runs):
         each = [next((x for x in r["灯"] if x["键"] == key), None) for r in runs]
         states = [x["结果"] if x else lamps.UNKNOWN for x in each]
         counted = [s for s in states if s in (lamps.PASSED, lamps.FAILED)]
@@ -142,7 +161,7 @@ def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
         "各遍": [{"演练": r["演练"], "目录": str(sim), "任务的键": f"{r['任务目录']}/{r['任务编号']}" if r.get("任务编号") else None,
                   "停止原因": r.get("停止原因"), "轮数": r.get("轮数"), "用时秒": r.get("用时秒"), "出错": r.get("出错")}
                  for r, sim in zip(runs, sims)],
-        "灯": lamp_rows, "至少应有": group_rows,
+        "灯": lamp_rows, "灯按阶段": eval_files.lamps_by_stage(lamp_rows), "至少应有": group_rows,
         "灯通过率": sum(rates) / len(rates) if rates else None,
         "清单命中率": sum(row["命中遍数"] for row in group_rows) / total if total else None,
         "各遍的问题": [{"演练": r["演练"], "怎样列的": r["助手问过的问题"]["怎样列的"], "问题": r["助手问过的问题"]["问题"]} for r in runs],
@@ -178,7 +197,10 @@ def summary_markdown(s: dict) -> str:
         lines.append(f"| 第 {i + 1} 遍 | {r['目录']} | {r.get('停止原因') or ''} | {r.get('轮数')} | {took} | {r.get('出错') or '没有'} |")
     lines += ["", "## 灯", "", "每盏灯是这一段「算够」的一条判据，按演练结束时的任务数据算。「不适用」是这盏灯要看的那一类页或条目一个都没有，"
               "「算不了」是要用的数据取不到，这两种不计入通过率。", "",
-              f"| 阶段 | 灯 |{heads} 通过几遍 |", "|---|---|" + "---|" * (n + 1)]
+              "各阶段的通过率（一个阶段的通过率是这一组各盏灯通过率的平均，没有能算的遍的灯不进平均）：", "",
+              "| 阶段 | 几盏灯 | 本组通过率 |", "|---|---|---|"]
+    lines += [f"| {one['阶段']} | {one['灯数']} | {percent(one['通过率'])} |" for one in s.get("灯按阶段") or eval_files.lamps_by_stage(s["灯"])]
+    lines += ["", f"| 阶段 | 灯 |{heads} 通过几遍 |", "|---|---|" + "---|" * (n + 1)]
     for row in s["灯"]:
         # 未通过时写差的页或条目；没有编号可列（例如还没有评审过）或算不了时写备注。
         cells = "".join(f" {state}{('（差 ' + '、'.join(missing) + '）') if missing else ('（' + note.rstrip('。') + '）') if note and state in (lamps.FAILED, lamps.UNKNOWN) else ''} |"

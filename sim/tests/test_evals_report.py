@@ -1,15 +1,72 @@
-"""评测汇总里几样内容的写法：「例外」一节没有命中时的说明、「模型」一节的名字。每遍的「评测.json」照评测命令写出的样子手写，不起后端。"""
+"""评测汇总里几样内容的写法：灯按阶段分组与本组通过率、「例外」一节没有命中时的说明、「模型」一节的名字。
+每遍的「评测.json」照评测命令写出的样子手写，不起后端。"""
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from taskwright_observatory import evals as eval_files
 
-from sim import evals
+from sim import evals, lamps
 from sim.tests.test_evals import META, group, write_run
+
+
+def lamp(key: str, state: str, stage: str = "随便写的", text: str | None = None) -> dict:
+    return {"阶段": stage, "键": key, "说明": text or f"{key} 的说明。", "结果": state, "通过": None, "差的条目编号": [], "备注": ""}
+
+
+def write_lamps(root: Path, name: str, rows: list[dict]) -> Path:
+    """一遍的「评测.json」，灯换成给定的这几盏。"""
+    sim = write_run(root, name, {}, None)
+    result = json.loads((sim / evals.RUN_FILE).read_text(encoding="utf-8"))
+    (sim / evals.RUN_FILE).write_text(json.dumps({**result, "灯": rows}, ensure_ascii=False), encoding="utf-8")
+    return sim
+
+
+class StageGroupTest(unittest.TestCase):
+    def test_灯按键找阶段_以各遍实际出现的为准_灯表里没有的键归其他_每组给本组通过率(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # 两遍各有四盏，先后是乱的；其中一盏的键灯表里没有，它自己带的阶段名不作数；第二遍多一盏第一遍没有的。
+            sims = [write_lamps(root, "sim-001", [lamp("completion_met", "未通过"), lamp("以后才有的灯", "通过", "评审确认"),
+                                                 lamp("no_untagged_pages", "通过"), lamp("materials_cited", "通过")]),
+                    write_lamps(root, "sim-002", [lamp("completion_met", "通过"), lamp("以后才有的灯", "未通过"), lamp("no_untagged_pages", "不适用"),
+                                                 lamp("materials_cited", "通过"), lamp("no_duplicate_titles", "不适用")])]
+            summary = evals.summarize(root, "甲", sims, META)
+            text = evals.summary_path(root, "甲", "md").read_text(encoding="utf-8")
+        # 行按阶段的先后排，「其他」在最后；灯表里另外那些这两遍都没有出现的灯不在汇总里。
+        self.assertEqual([(row["阶段"], row["键"], row["各遍"]) for row in summary["灯"]], [
+            ("核读材料", "materials_cited", ["通过", "通过"]), ("整理建模", "no_untagged_pages", ["通过", "不适用"]),
+            ("整理建模", "no_duplicate_titles", ["算不了", "不适用"]), ("评审确认", "completion_met", ["未通过", "通过"]),
+            ("其他", "以后才有的灯", ["通过", "未通过"])])
+        self.assertEqual(summary["灯按阶段"], [
+            {"阶段": "核读材料", "键": ["materials_cited"], "灯数": 1, "能算的灯数": 1, "通过率": 1.0},
+            {"阶段": "整理建模", "键": ["no_untagged_pages", "no_duplicate_titles"], "灯数": 2, "能算的灯数": 1, "通过率": 1.0},
+            {"阶段": "评审确认", "键": ["completion_met"], "灯数": 1, "能算的灯数": 1, "通过率": 0.5},
+            {"阶段": "其他", "键": ["以后才有的灯"], "灯数": 1, "能算的灯数": 1, "通过率": 0.5}])
+        # 总的灯通过率照旧：有通过率的四盏的平均。
+        self.assertAlmostEqual(summary["灯通过率"], (1 + 1 + 0.5 + 0.5) / 4)
+        for line in ("| 阶段 | 几盏灯 | 本组通过率 |", "| 核读材料 | 1 | 100% |", "| 整理建模 | 2 | 100% |", "| 评审确认 | 1 | 50% |", "| 其他 | 1 | 50% |",
+                     "| 其他 | 以后才有的灯 的说明。 | 通过 | 未通过 | 1／2 |"):
+            self.assertIn(line, text)
+        self.assertLess(text.index("| 阶段 | 几盏灯 | 本组通过率 |"), text.index("| 阶段 | 灯 | 第 1 遍 |"))
+
+    def test_灯表里每一盏都找得到它的阶段_一组里一盏能算的都没有时本组通过率为空(self):
+        self.assertEqual([evals.stage_of(key) for _stage, key, _text in lamps.LAMPS], [stage for stage, _key, _text in lamps.LAMPS])
+        self.assertEqual(evals.stage_of("没有这盏灯"), "其他")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            idle = {key: state for (stage, key, _text), state in zip([one for one in lamps.LAMPS if one[0] == "澄清"], ["不适用", "算不了"] * len(lamps.LAMPS))}
+            summary = evals.summarize(root, "甲", [write_run(root, "sim-001", idle, None)], META)
+            text = evals.summary_path(root, "甲", "md").read_text(encoding="utf-8")
+        stages = {one["阶段"]: one for one in summary["灯按阶段"]}
+        # 灯表里的每一盏都在，阶段的先后与灯表相同。
+        self.assertEqual((list(stages), sum(one["灯数"] for one in stages.values())), (list(dict.fromkeys(stage for stage, _k, _t in lamps.LAMPS)), len(lamps.LAMPS)))
+        self.assertEqual((stages["澄清"]["能算的灯数"], stages["澄清"]["通过率"], stages["核读材料"]["通过率"]), (0, None, 1.0))
+        self.assertIn(f"| 澄清 | {stages['澄清']['灯数']} | 没有能算的 |", text)
 
 
 class ExceptionCellTest(unittest.TestCase):

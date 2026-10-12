@@ -6,6 +6,9 @@
   模拟用户答不上的问题）；旁边同名的 .md 是给人直接读的同一份内容。
 评测按标签找，标签在一个演练根目录里不重复。
 
+灯按阶段分组：汇总里每盏灯带着它所在的阶段，行已经按阶段排在一起。一个阶段的通过率是这一组各盏灯通过率的平均，没有能算的遍的
+那几盏不进平均（与一次评测的灯通过率同一个算法）。
+
 对照：两次评测并排，每盏灯与清单的每一组各写两个数与差值。灯比的是通过率（通过的遍数比上能算的遍数），清单比的是命中的
 遍数比上核对的遍数。后一次比前一次低就是变差。有一边没有能算的遍时不比，差值为空。
 """
@@ -21,6 +24,23 @@ LIST_FILE = "evals.jsonl"
 SUMMARY_PREFIX = "评测汇总_"
 
 NO_ROOT = "启动观测台时没有给演练根目录（--sim-root），所以这里没有评测可看。"
+
+
+#: 一盏灯的键在灯表里找不到阶段时归到的那一组。
+OTHER_STAGE = "其他"
+
+
+def lamps_by_stage(lamp_rows: list[dict]) -> list[dict]:
+    """灯按阶段分组，阶段按各行出现的先后。每组一项：阶段、这一组的键、几盏灯、其中几盏有能算的遍、本组通过率（一盏能算的都没有时为空）。"""
+    grouped: dict[str, list[dict]] = {}
+    for row in lamp_rows:
+        grouped.setdefault(row.get("阶段") or OTHER_STAGE, []).append(row)
+    out = []
+    for stage, rows in grouped.items():
+        rates = [row["通过率"] for row in rows if row.get("通过率") is not None]
+        out.append({"阶段": stage, "键": [row["键"] for row in rows], "灯数": len(rows), "能算的灯数": len(rates),
+                    "通过率": sum(rates) / len(rates) if rates else None})
+    return out
 
 
 class EvalNotFound(LookupError):
