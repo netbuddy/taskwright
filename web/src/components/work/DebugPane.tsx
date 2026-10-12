@@ -1,7 +1,7 @@
 // 右侧栏的「调试」页签，只在服务开着调试模式（带 --debug 启动）时出现。最上面是阶段条（StageBar.tsx：六个阶段的名字与当前阶段还差哪几项，
 // 平常的页面上不显示它），下面四块，从上到下：
 //   1. 最近一次运行实际发给模型的系统提示，按部分列出，每一部分写明出自哪里，点开看原文；
-//   2. 阶段记录：谁在什么时候把任务从哪个阶段移到哪个阶段、理由；
+//   2. 阶段记录：谁在什么时候把任务从哪个阶段移到哪个阶段、这次移动在哪一条流程里、理由；
 //   3. 现在这个阶段的每盏灯：通过、没通过还是不适用，整句，与它列出的编号（可以点开）；
 //   4. 被拒的工具调用：缺省只列最近一次工作里的，可以改看全部。
 // 打开页签时取一次，助手每做完一轮再取一次，另有「刷新」；不定时轮询。灯随整份数据来，不另取。
@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { DebugStage, DebugSystemPrompt, Item, StageView } from "../../api/types";
 import { formatTime } from "../../model/format";
-import { STAGE_NAMES } from "../../model/stage";
+import { STAGE_NAMES, flowName } from "../../model/stage";
 import { StageBar } from "./StageBar";
 
 const HOW_TEXT: Record<string, string> = { recomposed: "这一次是重新读文件拼的", reused: "这一次沿用了上一次拼好的", kept_after_error: "这一次重拼出错，沿用了上一次拼好的" };
@@ -80,12 +80,12 @@ export function DebugPane({ taskId, stage, items = [], working, onOpenItem, onOp
         <div className="dbg-h">阶段记录</div>
         {!facts ? <div className="dbg-none">正在取。</div> : facts.records.length === 0 ? <div className="dbg-none">还没有人移动过阶段。</div> : (
           <table className="dbg-table">
-            <thead><tr><th>时刻</th><th>谁</th><th>从哪到哪</th><th>理由</th></tr></thead>
+            <thead><tr><th>时刻</th><th>谁</th><th>从哪到哪</th><th>所属流程</th><th>理由</th></tr></thead>
             <tbody>
               {facts.records.map((one, index) => (
                 <tr key={index}>
                   <td>{formatTime(one.at)}</td><td>{ACTOR_TEXT[one.actor] ?? one.actor}</td>
-                  <td>{one.from_name} → {one.to_name}</td><td>{one.reason || "（没有写）"}</td>
+                  <td>{one.from_name} → {one.to_name}</td><td>{flowName(one.flow)}</td><td>{one.reason || "（没有写）"}</td>
                 </tr>
               ))}
             </tbody>

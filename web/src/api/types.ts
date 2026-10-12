@@ -1157,7 +1157,9 @@ export interface DebugSystemPrompt {
 
 /** 调试模式：某个任务的阶段记录流水与被拒的工具调用。rejections 新的在前；latest_work_id 是最近一次被拒所在的那次工作。 */
 export interface DebugStage {
-  records: { from: StageKey; from_name: string; to: StageKey; to_name: string; actor: "executor" | "user"; reason: string; run_id: string | null; session_id: string; at: string }[];
+  records: { from: StageKey; from_name: string; to: StageKey; to_name: string; actor: "executor" | "user"; reason: string; run_id: string | null; session_id: string; at: string;
+    /** 所属流程（现在恒为 initial，首次分析）；flow 这一项做出来之前记下的移动也给 initial。早先的后端不给。 */
+    flow?: string }[];
   rejections: { work_id: string | null; session_id: string; call_id: string; tool: string; kind: string; fact: string; guidance: string | null; at: string }[];
   latest_work_id: string | null;
 }
