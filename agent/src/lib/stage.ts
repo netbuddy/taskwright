@@ -25,6 +25,13 @@ export const STAGE_NAMES: Record<Stage, string> = {
   reviewing: "评审确认",
 };
 
+/**
+ * 所属流程：一次阶段移动是在哪一条流程里发生的。现在只有一条流程（首次分析），值恒定；以后任务里可以单独开展一项活动、
+ * 或者在别的流程里开展时，靠它区分。它写在阶段移动那条事件的内容里，读阶段记录时带出来，早先没有写它的记录读出来就是首次分析。
+ */
+export const FLOW_INITIAL = "initial";
+export const FLOW_NAMES: Record<string, string> = { [FLOW_INITIAL]: "首次分析" };
+
 /** 谁移动的：助手或用户。取值与库事件的发起方一致。 */
 export type StageActor = "executor" | "user";
 
@@ -56,7 +63,9 @@ export function defaultStage(hasMaterials: boolean): Stage {
 export const START_ITEMS_KEY = "start_items";
 export const START_ITEMS_TEXT = "开始写条目";
 export const CONTINUE_CLARIFY_KEY = "continue_clarify";
-export const CONTINUE_CLARIFY_TEXT = "继续澄清";
+/** 留在这一段的那个选项的文字：四张卡片上都是这一句。 */
+export const STAY_TEXT = "继续本阶段";
+export const CONTINUE_CLARIFY_TEXT = STAY_TEXT;
 
 export interface CardOption {
   key: string;
@@ -71,12 +80,15 @@ export const ENTER_OPTIONS: Record<Exclude<Stage, "reading">, CardOption> = {
   reviewing: { key: "enter_review", text: "进入评审确认" },
 };
 
-/** 留在某个阶段的那个选项（评审确认是最后一段，没有往前的卡片）。 */
+/**
+ * 留在某个阶段的那个选项（评审确认是最后一段，没有往前的卡片）。四张卡片上文字相同、键各不相同：页面按键认出这一项，
+ * 不管助手在卡片里把它写成什么都显示成这一句；点它只把卡片标为已选，不替用户发话（lib/user_stage.ts）。
+ */
 export const STAY_OPTIONS: Record<Exclude<Stage, "reviewing">, CardOption> = {
-  reading: { key: "continue_reading", text: "再核读一遍" },
-  clarifying: { key: CONTINUE_CLARIFY_KEY, text: CONTINUE_CLARIFY_TEXT },
-  modeling: { key: "continue_consolidate", text: "再整理一遍" },
-  writing: { key: "continue_writing", text: "继续写条目" },
+  reading: { key: "continue_reading", text: STAY_TEXT },
+  clarifying: { key: CONTINUE_CLARIFY_KEY, text: STAY_TEXT },
+  modeling: { key: "continue_consolidate", text: STAY_TEXT },
+  writing: { key: "continue_writing", text: STAY_TEXT },
 };
 
 /**
@@ -87,6 +99,11 @@ export const STAGE_START_TEXTS = {
   reading: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。",
   clarifying: "请逐项澄清：一次只问一件事，先给出候选再问。",
 } as const;
+
+/**
+ * 任务状况卡上「请助手说明下一步」替用户发给助手的那句固定的话。它不是用户自己打的字，整理用户说过的话时要认出来。
+ */
+export const STATUS_NEXT_TEXT = "请按任务状况说明下一步该做什么。";
 
 /** 某个阶段的下一段；评审确认之后没有。 */
 export function nextStage(stage: Stage): Stage | null {

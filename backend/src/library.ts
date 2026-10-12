@@ -18,8 +18,9 @@ import { pdfFacts, pdfSourceName } from "./projection.ts";
 import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQuestions, goalTree, rulesTable } from "../../agent/src/lib/overall_views.ts";
-import { QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
-import { stageRecords, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
+import { FLOW_INITIAL, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
+import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
+import { lastStageRecord, stageRecords, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -297,7 +298,22 @@ export function completion(taskDir: string, taskId: string, definition: ParsedDe
 }
 
 /**
- * 任务现在的工作阶段与每个阶段的几盏灯，给接口的 stage 形状：{ current, moved_by, moved_at, reason, lamps }。
+ * 开着的提议写成接口的形状：要进入的阶段（stage）、进入与留在本段两个选项（enter、stay，卡片上没有留在本段的选项时 stay 为 null）、
+ * 卡片的问句（text）、点名请用户先看的条目（items）、卡片在哪条会话的哪条回复上（session_id、reply_message_id）、
+ * 记下它的那条事件的序号与时刻（event_seq、at）。fact 是事件里记的那一项，别的几样取自事件那一行。
+ */
+export function proposalView(fact: Omit<OpenProposal, "session_id" | "reply_entry" | "event_seq" | "at">, row: { session_id: unknown; reply_entry: unknown; seq: unknown; at: unknown }) {
+  return {
+    stage: fact.stage, enter: fact.enter, stay: fact.stay ?? null, text: fact.text ?? "", items: or(fact.items, []),
+    session_id: typeof row.session_id === "string" ? row.session_id : null, reply_message_id: typeof row.reply_entry === "string" ? row.reply_entry : null,
+    event_seq: Number(row.seq), at: clock.fromLocalText(typeof row.at === "string" ? row.at : null),
+  };
+}
+
+/**
+ * 任务现在的工作阶段与每个阶段的几盏灯，给接口的 stage 形状：{ current, moved_by, moved_at, reason, lamps, proposal }。
+ * proposal 是开着的提议（助手发了提议进入下一个阶段的卡片、用户还没有进入，见 agent/src/lib/stage_proposal.ts），没有时为 null。
+ * flow 是所属流程：最近一次移动是在哪一条流程里发生的，一次都没有移过时也是首次分析（initial）；现在只有这一条流程。
  * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）；moved_by 是最近一次移动由谁做的（executor 或 user），
  * 一次都没有移过时与 moved_at、reason 一起为 null；lamps 按阶段给出各盏灯 { key, summary, ok, items }，ok 为 null 是不适用。
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，返回 null；算不出来时也返回 null。
@@ -310,7 +326,11 @@ export function stageView(taskDir: string) {
     const db = new DatabaseSync(dbPath, { readOnly: true });
     try {
       const summary = stageSummaryOf(db, dirname(resolve(dbPath)));
-      return summary === null ? null : { ...summary, moved_at: clock.fromLocalText(summary.moved_at) };
+      if (summary === null) return null;
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
+      const open = task ? openProposal(db, task.task_id) : null;
+      return { ...summary, moved_at: clock.fromLocalText(summary.moved_at), flow: (task ? lastStageRecord(db, task.task_id)?.flow : null) ?? FLOW_INITIAL,
+        proposal: open === null ? null : proposalView(open, { session_id: open.session_id, reply_entry: open.reply_entry, seq: open.event_seq, at: open.at }) };
     } finally {
       db.close();
     }
@@ -321,7 +341,7 @@ export function stageView(taskDir: string) {
 
 /**
  * 调试用：任务的全部阶段记录（按先后）与最近被拒的工具调用（新的在前，最多 limit 条）。库另开一个只读连接；
- * 还没有库、或者读不出来时两样都是空的。阶段记录每条写 { from, to, actor, reason, run_id, session_id, at }；
+ * 还没有库、或者读不出来时两样都是空的。阶段记录每条写 { from, to, actor, reason, run_id, session_id, at, flow }（flow 是所属流程）；
  * 被拒的调用每条写 { work_id, session_id, call_id, tool, kind, fact, guidance, at }，work_id 是它所属的那次工作。
  */
 export function stageDebugView(taskDir: string, limit = 200) {
@@ -334,6 +354,7 @@ export function stageDebugView(taskDir: string, limit = 200) {
       if (!task) return empty;
       const records = stageRecords(db, task.task_id).map((one) => ({
         from: one.from_stage, to: one.stage, actor: one.actor, reason: one.reason, run_id: one.run_id, session_id: one.session_id, at: clock.fromLocalText(one.created_at),
+        flow: one.flow,
       }));
       const rejections = tableNames(db).has("tool_rejection") ? (db.prepare(
         "SELECT work_id, session_id, call_id, tool_name, reason_kind, fact, guidance, created_at FROM tool_rejection ORDER BY rejection_id DESC LIMIT ?",
@@ -908,7 +929,8 @@ export function findingView(one: Record<string, any>) {
  *   （这一轮结束时仍没有理解）、STRUCTURED_OUTPUT_UNMATCHED（助手文字里有对不上登记格式的片段）：这四种合成「理解为」那一行，
  *   由后端读任务库算出（work_summary.ts 的 understandingLines），实时随 step 与 work_summary 推送，刷新之后在对话记录的摘要里。
  * - EXECUTOR_ACTS_RECORDED（助手回复时记下的行为）：回复的内容由「回复」工具的结果带到页面，实时是 assistant_reply，
- *   刷新之后在对话记录里；这条记录本身只供助手查询与观测台使用。
+ *   刷新之后在对话记录里；这条记录本身只供助手查询与观测台使用。只有一种例外：回复里是一张提议进入下一个阶段的卡片时
+ *   （记录里带 proposal），推一条 stage_proposed，好让别的会话里开着的页面也知道任务有了一条待决定的提议。
  */
 export function eventPayload(lib: Library, e: Row): [string, Record<string, any>] | null {
   const payload = or(jsonOrText(e.payload), {}) as Record<string, any>;
@@ -977,11 +999,18 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
     return ["review_rules_changed", { ...base, collection: name, off: or(payload.off, []), promote: or(payload.promote, []), op_id: opId, completion: null,
       ...collectionReviewView(lib.definition, name, lib.data.task!.definition_text ?? null, lib.data.task_dir ?? null) }];
   }
+  if (e.name === "EXECUTOR_ACTS_RECORDED") {
+    // 助手发了一张提议进入下一个阶段的卡片：带上这条提议。现在开着的是哪一条看这一批最后一条事件上的 stage.proposal（之后又移动过就是 null）。
+    if (!isObject(payload.proposal) || !isObject(payload.proposal.enter)) return null;
+    return ["stage_proposed", { ...base, actor, run_id: payload.run_id ?? null,
+      proposal: proposalView(payload.proposal as never, { session_id: e.session_id, reply_entry: payload.reply_entry, seq: e.seq, at: e.at }), completion: null }];
+  }
   if (e.name === "STAGE_MOVED") {
     // 任务从一个工作阶段移到了另一个：到了哪个阶段（to）、从哪个阶段来（from）、谁移的、理由；助手移的带运行号，用户移的带操作编号。
     // 到了哪个阶段不叫 stage：这一批最后一条事件上的 stage 是现在的阶段与灯（见 libraryEvents），两样不能撞名。
+    // flow 是这次移动的所属流程；早先记下的移动事件里没有写，补首次分析。
     return ["stage_changed", { ...base, to: payload.stage ?? null, from: payload.from ?? null, actor, reason: payload.reason ?? "",
-      run_id: payload.run_id ?? null, op_id: opId, completion: null }];
+      run_id: payload.run_id ?? null, flow: typeof payload.flow === "string" && payload.flow ? payload.flow : FLOW_INITIAL, op_id: opId, completion: null }];
   }
   if (e.name === "CONFIRMATION_RECORDED") {
     return ["confirmation_recorded", { ...base, items: or(payload.items, []), basis: or(payload.basis, "ui_click"), op_id: opId, completion: null }];

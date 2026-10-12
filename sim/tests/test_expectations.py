@@ -104,9 +104,14 @@ class ExpectationTest(unittest.TestCase):
             self.assertEqual(len(expect["总体分析"]["流程页"]), flows)
             rows = expectations.check(expect, task([]))
             self.assertTrue(rows and not any(r["命中"] for r in rows))
-            # 「模型」一节先留着六个种类的空小节，不出任何一行；说明里写着它的用法。
-            self.assertEqual((list(expect["模型"]), sum(len(groups) for groups in expect["模型"].values()), [r for r in rows if r["部分"].startswith("模型")]),
-                             (["context", "use_case", "class", "state", "flowchart", "sequence"], 0, []))
+            # 「模型」一节按图的种类键分六个小节，时序图那一节是空的；任务里没有图时每组都不命中，「这一种的图」是空的。
+            models = [r for r in rows if r["部分"].startswith("模型·")]
+            self.assertEqual(list(expect["模型"]), ["context", "use_case", "class", "state", "flowchart", "sequence"])
+            self.assertEqual((len(models), expect["模型"]["sequence"]), (sum(len(groups) for groups in expect["模型"].values()), []))
+            self.assertGreater(len(models), 20)
+            self.assertEqual({r["部分"] for r in models}, {f"模型·{kind}" for kind, groups in expect["模型"].items() if groups})
+            self.assertTrue(all(r["这一种的图"] == [] and r["部分名"].startswith("模型·") for r in models))
+            self.assertNotIn("都是空的", expect["说明"])
             self.assertIn("「模型」一节按图的种类分小节", expect["说明"])
             for row in rows:
                 self.assertTrue(row["组"] and all(isinstance(word, str) and word for word in row["组"]))

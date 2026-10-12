@@ -142,8 +142,8 @@
         "代码仓里的路径": "agent/prompts/skills/taskwright-executor",
         "文件": [
          {
-          "字节数": 60735,
-          "摘要值": "6d22b7d0ea967a85",
+          "字节数": 60783,
+          "摘要值": "48f16b138c29f937",
           "路径": "SKILL.md"
          }
         ],
@@ -167,23 +167,23 @@
           "路径": "README.md"
          },
          {
-          "字节数": 4982,
-          "摘要值": "c9239f1d0e737215",
+          "字节数": 5030,
+          "摘要值": "63125ec7eb65c586",
           "路径": "clarifying.md"
          },
          {
-          "字节数": 56414,
-          "摘要值": "77a9dc881ed777a8",
+          "字节数": 56813,
+          "摘要值": "eeafddf5852716c0",
           "路径": "common.md"
          },
          {
-          "字节数": 5461,
-          "摘要值": "bda03ba8466a0ba4",
+          "字节数": 5485,
+          "摘要值": "649de7f199e76125",
           "路径": "modeling.md"
          },
          {
-          "字节数": 4009,
-          "摘要值": "1281888d56d8911a",
+          "字节数": 4033,
+          "摘要值": "bf8c04700843ddeb",
           "路径": "reading.md"
          },
          {
@@ -197,8 +197,8 @@
           "路径": "system.md"
          },
          {
-          "字节数": 3903,
-          "摘要值": "f0ccf3bb4ff62d5d",
+          "字节数": 3927,
+          "摘要值": "c58a437b4f627f46",
           "路径": "writing.md"
          }
         ],
@@ -327,8 +327,8 @@
         },
         {
          "代码仓里的路径": "agent/prompts/skills/taskwright-executor/SKILL.md",
-         "字节数": 60735,
-         "摘要值": "6d22b7d0ea967a85",
+         "字节数": 60783,
+         "摘要值": "48f16b138c29f937",
          "来自": "平台 skill",
          "路径": "<仓根>/agent/prompts/skills/taskwright-executor/SKILL.md"
         }
@@ -462,7 +462,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"861cf81d247b3b70\",\"bytes\":70467,\"lines\":304,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":56413,\"lines\":215,\"digest\":\"b65e9beea3308e81\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7572,\"lines\":30,\"digest\":\"b4560ff56510ef22\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4008,\"lines\":32,\"digest\":\"d3f1a6325b333f92\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"cfade15406076431\",\"bytes\":70890,\"lines\":304,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":56812,\"lines\":215,\"digest\":\"5308ffb7c01c6a31\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7572,\"lines\":30,\"digest\":\"b4560ff56510ef22\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4032,\"lines\":32,\"digest\":\"ab27f345b4def74f\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

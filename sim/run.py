@@ -53,6 +53,16 @@ FIRST_WAKE = "开始，先把你想做的事告诉助手"
 NEXT_WAKE = "执行者停下了，看一下界面再回应"
 DEFAULT_GOAL = "基准画像下执行者能否完成整理并问清隐藏事实"
 EXECUTOR_WAIT = 900.0
+#: 不引出助手运行的界面操作（与 sim/lib/screen.ts 的 CONTINUE_STAGE 一致）：用户在提议进入下一个阶段的卡片上选了「继续本阶段」，
+#: 只在会话里留一条通知。做了这种操作之后不等助手，下一轮照常唤起用户 agent。
+SILENT_ACTIONS = ("continue_stage",)
+
+
+def expects_executor(respond: dict) -> bool:
+    """用户 agent 这一次回应之后助手会不会运行：什么都没有发出去（只表示完成或放弃）、或者发的是不引出运行的界面操作时不会。"""
+    if respond.get("route") == "none":
+        return False
+    return (respond.get("sent") or {}).get("kind") not in SILENT_ACTIONS
 
 
 def next_sim_dir(root: Path) -> Path:
@@ -368,7 +378,7 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
                     break
                 continue
             silent_rounds = 0
-            if respond.get("route") != "none":
+            if expects_executor(respond):
                 end = time.time() + EXECUTOR_WAIT
                 while time.time() < end:
                     events = backend.since(mark)

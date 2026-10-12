@@ -20,8 +20,9 @@ import { overallState } from "./overall_read.ts";
 import { rulesTable } from "./overall_views.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase } from "./schema.ts";
+import { openProposal } from "./stage_proposal.ts";
 import {
-  ENTER_OPTIONS, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, NO_STAGES_TEXT, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
+  ENTER_OPTIONS, FLOW_INITIAL, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, NO_STAGES_TEXT, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
   defaultStage, isStage, judgeMove, lampLines, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
@@ -42,7 +43,14 @@ export interface StageRecord {
   call_id: string;
   event_seq: number;
   created_at: string;
+  /** 所属流程（lib/stage.ts 的 FLOW_INITIAL 等）：取自记下这次移动的那条事件的内容，那里没有写时是首次分析。 */
+  flow: string;
 }
+
+/** 读阶段记录的列：表里的各列，加上从那条事件的内容里取的所属流程（事件里没有写、或者那条事件已经不在时补首次分析）。 */
+const RECORD_COLUMNS = "r.stage, r.from_stage, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.event_seq, r.created_at, " +
+  `COALESCE(json_extract(e.payload, '$.flow'), '${FLOW_INITIAL}') AS flow`;
+const RECORD_FROM = `${TABLE} r LEFT JOIN event e ON e.seq = r.event_seq`;
 
 /** 库里有没有阶段记录表：只读的一侧会遇到还没有升级过的库。 */
 export function hasStageTable(db: DatabaseSync): boolean {
@@ -52,18 +60,14 @@ export function hasStageTable(db: DatabaseSync): boolean {
 /** 最近一次移动；一次都没有移过（或者库还没有这张表）时是 null。 */
 export function lastStageRecord(db: DatabaseSync, taskId: string): StageRecord | null {
   if (!hasStageTable(db)) return null;
-  const row = db.prepare(
-    `SELECT stage, from_stage, actor, reason, run_id, session_id, call_id, event_seq, created_at FROM ${TABLE} WHERE task_id = ? ORDER BY event_seq DESC LIMIT 1`,
-  ).get(taskId) as StageRecord | undefined;
+  const row = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.event_seq DESC LIMIT 1`).get(taskId) as StageRecord | undefined;
   return row && isStage(row.stage) ? { ...row, event_seq: Number(row.event_seq) } : null;
 }
 
 /** 全部移动，按先后排。 */
 export function stageRecords(db: DatabaseSync, taskId: string): StageRecord[] {
   if (!hasStageTable(db)) return [];
-  const rows = db.prepare(
-    `SELECT stage, from_stage, actor, reason, run_id, session_id, call_id, event_seq, created_at FROM ${TABLE} WHERE task_id = ? ORDER BY event_seq`,
-  ).all(taskId) as unknown as StageRecord[];
+  const rows = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.event_seq`).all(taskId) as unknown as StageRecord[];
   return rows.map((row) => ({ ...row, event_seq: Number(row.event_seq) }));
 }
 
@@ -97,13 +101,13 @@ export interface StageMove {
 }
 
 /**
- * 记一次移动：先记一条事件 STAGE_MOVED，再往阶段记录表插一行，返回事件序号。
+ * 记一次移动：先记一条事件 STAGE_MOVED，再往阶段记录表插一行，返回事件序号。事件的内容里另写这次移动的所属流程（现在恒为首次分析）。
  * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让事件、这一行与同一次调用里别的写入一起提交。
  */
 export function recordStageMove(db: DatabaseSync, move: StageMove): number {
   const seq = emit(db, {
     taskId: move.taskId, sessionId: move.sessionId, callId: move.callId, name: EVENT_STAGE_MOVED, actor: move.actor,
-    payload: { stage: move.to, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId },
+    payload: { stage: move.to, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId, flow: FLOW_INITIAL },
   });
   db.prepare(
     `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -161,7 +165,9 @@ export const START_ITEMS_REASON = enterReason("writing");
 /**
  * 用户点了一张卡片上的选项：点的是助手提议往前走的那张请选择卡片上「进入」某个阶段的选项时，替用户记一次移动。
  * 四个键各进入一个阶段（lib/stage.ts 的 ENTER_OPTIONS）：进入澄清、进入整理建模、开始写条目、进入评审确认。
- * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键；认不出就不记（返回 null），点击照常往下走。
+ * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键。这条分支上找不到那条回复时（卡片是在另一条会话里发的，
+ * 用户从输入框上方的「待决定」一行或者任务状况卡上点了进入），改为核对任务库里开着的提议（lib/stage_proposal.ts）：点的键是它的进入键、
+ * 给了回复编号时又正是它那一条，才算。两样都认不出就不记（返回 null），点击照常往下走。
  * 次序不对的点击也不记（结果里 moved 为假、why 为 not_next、from 是任务现在的阶段）：进入澄清、进入整理建模、进入评审确认只在任务正处在紧挨着的前一段时才算；
  * 开始写条目在写条目之前的哪一段点都算（用户可以跳过中间的阶段），任务已经过了写条目时点它是退回写条目。
  * 任务没有阶段、任务不在进行中、任务本来就在那个阶段时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
@@ -170,15 +176,23 @@ export const START_ITEMS_REASON = enterReason("writing");
 export function recordStageCardClick(workspaceDir: string, sessionId: string, branch: readonly Entry[],
   click: { opId: string; replyEntry: unknown; optionKey: unknown }): StageMoveOutcome | null {
   const to = stageEnteredBy(click.optionKey);
-  if (to === null || typeof click.replyEntry !== "string") return null;
-  const card = branch.find((entry) => entry.id === click.replyEntry);
+  if (to === null) return null;
+  // 回复编号没有给、或者给的是空文字（开着的提议没有记下它在哪条回复上时，页面只能这样发）：都当作没有给。
+  const replyEntry = typeof click.replyEntry === "string" && click.replyEntry !== "" ? click.replyEntry : null;
+  const card = replyEntry !== null ? branch.find((entry) => entry.id === replyEntry) : undefined;
+  // 那条回复在这条分支上：照它自己判，是别的东西（用户的话、别的卡片、卡片上没有这个键）就不认，不再去看开着的提议。
   const act = card ? chooseActOf(card) : null;
-  if (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === click.optionKey)) return null;
+  if (card && (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === click.optionKey))) return null;
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
         { task_id: string; status: string; definition_text: string } | undefined;
       if (!task || task.status !== TASK_ACTIVE) return null;
+      if (!card) {
+        const open = openProposal(db, task.task_id);
+        if (open === null || open.enter.key !== click.optionKey) return null;
+        if (replyEntry !== null && replyEntry !== open.reply_entry) return null;
+      }
       const from = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
       if (to !== "writing" && from !== null && nextStage(from) !== to) return { requested: to, from, moved: false, why: "not_next" as const, event_seq: null };
       return moveStage(db, workspaceDir, { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" }, to, enterReason(to));

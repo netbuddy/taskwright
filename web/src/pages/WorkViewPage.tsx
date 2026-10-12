@@ -198,7 +198,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       // 提交交付物也不登记：任务变为已完成的事件不带操作编号，挂着的话同样等不到；提交之后任务只读，提示条随之消失。
       // 改图（edit_diagram）照常登记：图的事件 diagram_changed 带操作编号，到了就消去。
       // 移动阶段也不登记：任务本来就在那个阶段时后端什么都不记、没有库事件，挂着的话会一直等不到。
-      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable" && req.kind !== "move_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
+      // 「继续本阶段」同样不登记：它只在会话里留一条通知，没有库事件。
+      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable" && req.kind !== "move_stage" && req.kind !== "continue_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
       return null;
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
@@ -234,8 +235,14 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   const undo = (revision: number) =>
     void submit({ kind: "undo", targets: [{ revision_no: revision }], notify_executor: false }, `撤销修订 ${revision}`).then((e) => { if (e) toast.error(errorText(e)); });
 
+  /** 取一次任务状况给对话区的状况卡用；取不到时报一条失败提示，返回 null。 */
+  const loadStatus = () => api.taskStatus(taskId).then((r) => r.status).catch((e) => {
+    toast.error(`任务状况没有取到：${errorText(e instanceof ApiError ? e : new ApiError("network", String(e)))}`);
+    return null;
+  });
+
   const cardHandlers = {
-    onAction: (req: Pick<ActionRequest, "kind" | "targets" | "notify_executor">, label: string) => {
+    onAction: (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string) => {
       void submit(req, label).then((e) => { if (e) toast.error(errorText(e)); });
     },
     onMessage: (text: string, card?: MessageRequest["card"]) => send(text, card),
@@ -426,7 +433,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                 hold={dirty || diagramDirty} holdText={diagramDirty && !dirty ? DIAGRAM_HOLD_TEXT : undefined} working={working} hint={hint} starting={executor?.state === "starting"}
                 onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews} onStop={busyElsewhere ? undefined : stop}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
-                draft={draft} onDraft={setDraft} inputRef={input}
+                draft={draft} onDraft={setDraft} inputRef={input} loadStatus={loadStatus}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}
                 revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions} revisionCount={log.length}
                 onLocate={(excerpt, locator) => locateSource(excerpt, locator && isKnowledgeLocator(locator) ? locator : "")}

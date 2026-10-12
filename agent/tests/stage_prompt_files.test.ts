@@ -212,8 +212,8 @@ test("每一段的「出口」：往前都是发卡片由用户点，两个选�
     assert.ok(exit.includes("用请选择提议进入"), stage);
     assert.match(exit, /你不能自己把任务(移到|往前移)/, stage);
   }
-  // 澄清那一段另有「开始写条目」的卡片：留在这一段的选项是继续澄清。
-  assert.ok(sections(read("clarifying.md")).get("出口")!.includes("`start_items`「开始写条目」、`continue_clarify`「继续澄清」"));
+  // 澄清那一段另有「开始写条目」的卡片：留在这一段的选项是继续本阶段。
+  assert.ok(sections(read("clarifying.md")).get("出口")!.includes("`start_items`「开始写条目」、`continue_clarify`「继续本阶段」"));
   for (const stage of STAGES) {
     const text = read(`${stage}.md`);
     assert.doesNotMatch(text, /自己移到(澄清|整理建模|写条目|评审确认)[：，]/, stage);

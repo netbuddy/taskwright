@@ -226,8 +226,10 @@ class EvalRunTest(unittest.TestCase):
                          (2, "fake/fake-model", "fake/fake-model", ["requirements.md"], "library-short.json", "library-short.json", 4))
         self.assertEqual([r["任务的键"] for r in summary["各遍"]], [f"{one['任务编号']}/{one['任务编号']}" for one in runs])
         self.assertEqual({row["键"]: row["各遍"] for row in summary["灯"]}["flows_have_flowchart_with_branch"], ["未通过", "未通过"])
-        self.assertEqual(len(summary["至少应有"]), 37)
-        self.assertAlmostEqual(summary["清单命中率"], 4 / 74)
+        # 短版清单一共 59 组：原有的 37 组，加上「模型」一节五种图的 22 组（这一遍没有画图，一组都没有命中）。
+        self.assertEqual(len(summary["至少应有"]), 59)
+        self.assertEqual(sum(1 for row in summary["至少应有"] if row["部分"].startswith("模型·")), 22)
+        self.assertAlmostEqual(summary["清单命中率"], 4 / 118)
         self.assertIn("# 评测汇总：试跑", text)
         self.assertIn(f"- 第 1 轮，提问：{QUESTION}", text)
         self.assertIn(f"- 第 2 轮，模拟用户说：「这个我得问一下教务处。」上一轮的问题：{QUESTION}画像里可能已有这件事（寒暑假期间借出的书，借期一律顺延到开学后第一周的周五，"

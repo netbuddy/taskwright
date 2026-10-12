@@ -29,6 +29,8 @@ export const NOTIFY_PREFIXES = ["我已经看过了：", "我已经在界面上�
 export const NOTIFY_KINDS = ["mark_viewed", "confirm"];
 /** 用户在界面上停止了助手一次运行之后留在会话里的那条界面操作通知的种类（agent/src/lib/user_ops.ts 的 STOP_RUN_KIND）。 */
 export const STOP_RUN = "stop_run";
+/** 用户在提议进入下一个阶段的卡片上选了「继续本阶段」之后留在会话里的那条界面操作通知的种类（agent/src/lib/user_stage.ts 的 CONTINUE_STAGE_KIND）。 */
+export const CONTINUE_STAGE = "continue_stage";
 /** 「回复」工具的兜底扩展追加的那句固定文字（agent/src/hooks/reply_fallback.ts 的 FALLBACK_TEXT），不是用户说的。 */
 export const FALLBACK_TEXT = "请用 reply 工具把要对用户说的话发出来";
 
@@ -47,6 +49,15 @@ export function replyStageMove(details: Record<string, any>, reason: unknown): {
   const move = details.stage;
   if (!isObject(move) || move.moved !== true || !isStageKey(move.from) || !isStageKey(move.requested)) return null;
   return { from: move.from, to: move.requested, actor: "executor", reason: typeof reason === "string" ? reason.trim() : "" };
+}
+
+/**
+ * 「继续本阶段」的那条界面操作通知另带的两项：卡片在哪条回复上（reply_message_id）、卡片提议进入哪个阶段（stage）。
+ * details 是那条通知的 details。别的界面操作通知不带，返回空对象。
+ */
+export function continueStageFields(details: Record<string, any>): { reply_message_id?: string; stage?: string } {
+  if (details.kind !== CONTINUE_STAGE || typeof details.reply_entry !== "string") return {};
+  return { reply_message_id: details.reply_entry, ...(isStageKey(details.stage) ? { stage: details.stage } : {}) };
 }
 
 /**
@@ -242,6 +253,7 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
           type: "ui_action_noted", session_id: sessionId, message_id: e.id, at, text: textOf(e.content ?? null),
           event_seq: seqs.length ? seqs[0] : null, undoable: truthy(details.undoable), op_id: details.op_id ?? null,
           revision_no: details.revision_no ?? null, kind: details.kind ?? null, review: details.review ?? null,
+          ...continueStageFields(details),
         });
         lastConfirm = NOTIFY_KINDS.includes(details.kind) ? e : null;
       } else if (ctype === TASK_STATUS) {

@@ -248,8 +248,8 @@ test("平台 skill 与任务 skill 写了总体分析的做法；平台 skill �
   assert.match(section, /工作分五个阶段：核读材料、澄清、整理建模、写条目、评审确认/);
   assert.match(section, /你自己只能把任务退回前面的阶段[^]*在回复里另写 `stage`（阶段的名字）与 `reason`（一句话，说明为什么现在退回去）/);
   assert.match(section, /你不能自己把任务往前移。/);
-  for (const pair of ["`enter_clarify`「进入澄清」、`continue_reading`「再核读一遍」", "`enter_consolidate`「进入整理建模」、`continue_clarify`「继续澄清」",
-    "`start_items`「开始写条目」、`continue_consolidate`「再整理一遍」", "`enter_review`「进入评审确认」、`continue_writing`「继续写条目」"]) assert.ok(section.includes(pair), pair);
+  for (const pair of ["`enter_clarify`「进入澄清」、`continue_reading`「继续本阶段」", "`enter_consolidate`「进入整理建模」、`continue_clarify`「继续本阶段」",
+    "`start_items`「开始写条目」、`continue_consolidate`「继续本阶段」", "`enter_review`「进入评审确认」、`continue_writing`「继续本阶段」"]) assert.ok(section.includes(pair), pair);
   assert.match(section, /以「例外：」开头的例子/);
   assert.match(section, /先给一个候选的「它是什么」与一个候选的例子/);
   assert.match(section, /`story_ok`「采纳为例子」、`story_fix`「有误，需修改」、`story_again`「换一个例子重述」/);

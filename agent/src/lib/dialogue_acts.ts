@@ -24,6 +24,7 @@ import { ACTOR_EXECUTOR, ACTOR_USER, databasePath, dump, emit, load, wallClockTe
 import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
 import { FUNCTION_NAMES, GATE_INVALID_TEXT, GATE_MISSING_TEXT, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
+import { proposalFor } from "./stage_proposal.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
   type ScanOutcome,
@@ -460,7 +461,7 @@ const GATE_PROBLEMS_SHOWN = 3;
 export interface ReplyForActs {
   /** 旧的写法里一条告知是一句纯文字，新的是 { text, items }；两种都认。 */
   informs: (string | { text: string; items?: { item_id: string }[] })[];
-  act: { kind: string; text: string; items?: { item_id: string }[] } | null;
+  act: { kind: string; text: string; items?: { item_id: string; revision_no?: number }[]; options?: { key: string; text: string }[] } | null;
 }
 
 /**
@@ -476,6 +477,7 @@ export interface ReplyExtra<T> {
 /**
  * 「回复」合格时调用：每条告知记一条 inform（不期待回应，targets 取它点名的条目），向用户要的回应记一条对应功能（期待回应），
  * 记一条事件 EXECUTOR_ACTS_RECORDED。返回记下的编号与给执行者看的一句话。没有任务库时什么都不记，返回 null。
+ * 向用户要的回应是一张提议进入下一个阶段的请选择卡片时，事件里另带一项 proposal（lib/stage_proposal.ts）：任务的提议开着没有就从它推。
  * also 给了时，在同一个事务里先调它（传任务编号与运行号），它的结果按 ReplyExtra 的说明并进来。
  */
 export function recordReplyActs<T = never>(
@@ -510,9 +512,10 @@ export function recordReplyActs<T = never>(
       }
       // 没有告知也没有要的回应：不记这条事件，除非另带的那件事有话要留在事件里。
       if (rows.length === 0 && !extra?.payload) return { acts: [], text: extra?.text ?? "", eventSeq: null, extra: extra?.value ?? null };
+      const proposal = reply.act ? proposalFor(db, taskId, reply.act) : null;
       const seq = emit(db, {
         taskId, sessionId, callId: toolCallId, name: EVENT_EXECUTOR_ACTS_RECORDED, actor: ACTOR_EXECUTOR,
-        payload: { run_id: runId, reply_entry: replyEntryId, acts: rows.map(payloadOf), ...(extra?.payload ?? {}) },
+        payload: { run_id: runId, reply_entry: replyEntryId, acts: rows.map(payloadOf), ...(proposal ? { proposal } : {}), ...(extra?.payload ?? {}) },
       });
       const at = wallClockText();
       for (const row of rows) insertAct(db, taskId, sessionId, row, seq, at);

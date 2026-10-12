@@ -337,13 +337,34 @@ export interface StageLamp {
   items: string[];
 }
 
-/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），以及五个阶段各自的灯。 */
+/**
+ * 开着的提议：助手发了一张提议进入下一个阶段的卡片，任务还没有进入。提议一直开着，直到任务的阶段有过一次移动、助手又发了一张这样的卡片、
+ * 或者任务不再进行中。stage 是要进入的阶段；enter 与 stay 是卡片上进入与留在这一段的两个选项（没有留在这一段的选项时 stay 为 null）；
+ * text 是卡片的问句；items 是点名请用户先看的条目；session_id 与 reply_message_id 指出卡片在哪条会话的哪条回复上；
+ * event_seq 与 at 是记下它的那条库事件的序号与时刻。
+ */
+export interface StageProposal {
+  stage: StageKey;
+  enter: { key: string; text: string };
+  stay: { key: string; text: string } | null;
+  text: string;
+  items: { item_id: string; revision_no: number | null }[];
+  session_id: string | null;
+  reply_message_id: string | null;
+  event_seq: number;
+  at: string | null;
+}
+
+/** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），五个阶段各自的灯，以及开着的提议（没有时为 null）。 */
 export interface StageView {
   current: StageKey;
   moved_by: "executor" | "user" | null;
   moved_at: string | null;
   reason: string | null;
   lamps: Record<StageKey, StageLamp[]>;
+  proposal?: StageProposal | null;
+  /** 所属流程：最近一次移动是在哪一条流程里发生的。现在只有一条流程，值恒为 initial（首次分析）。 */
+  flow?: string;
 }
 
 export interface Material {
@@ -454,8 +475,14 @@ export interface UiActionNoted {
   /** 与后端对齐后新增：撤销要用的修订序号；已读这类不产生修订的操作为 null。 */
   revision_no?: number | null;
   op_id?: string | null;
-  /** 界面操作的种类；评审结束的那条是 request_review，另带 review 计数；用户停止了助手一次工作之后留的那条是 stop_run。 */
+  /**
+   * 界面操作的种类；评审结束的那条是 request_review，另带 review 计数；用户停止了助手一次工作之后留的那条是 stop_run；
+   * 用户在提议进入下一个阶段的卡片上选了「继续本阶段」之后留的那条是 continue_stage，另带下面两项。
+   */
   kind?: string | null;
+  /** continue_stage 才有：卡片在哪条回复上、卡片提议进入哪个阶段。 */
+  reply_message_id?: string;
+  stage?: StageKey;
   review?: { total: number; passed: number; failed: number; unfinished: number; problems: number; advice: number } | null;
 }
 
@@ -726,7 +753,23 @@ export interface StageChanged {
   actor: "executor" | "user" | string;
   reason: string;
   run_id: string | null;
+  /** 这次移动的所属流程，现在恒为 initial（首次分析）。 */
+  flow?: string;
   op_id?: string | null;
+  completion: Completion | null;
+}
+
+/**
+ * 助手发了一张提议进入下一个阶段的卡片。任务现在开着的是哪一条提议，看这一批最后一条库事件上的 stage.proposal
+ * （这张卡片之后阶段又移动过的话，那里已经是 null）。
+ */
+export interface StageProposed {
+  seq: number;
+  at: string;
+  task_id: string;
+  actor: "executor" | string;
+  run_id: string | null;
+  proposal: StageProposal;
   completion: Completion | null;
 }
 
@@ -735,6 +778,7 @@ export interface StageChanged {
  * 现在的阶段与灯，与整份数据里 task.stage 同一个形状。
  */
 export type LibraryEvent =
+  | { event: "stage_proposed"; data: StageProposed }
   | { event: "deliverable_changed"; data: DeliverableChanged }
   | { event: "task_changed"; data: TaskChanged }
   | { event: "review_recorded"; data: ReviewRecorded }
@@ -752,6 +796,7 @@ export type LibraryEvent =
   | { event: "stage_changed"; data: StageChanged };
 
 export const LIBRARY_EVENTS = [
+  "stage_proposed",
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
   "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "stage_changed",
 ] as const;
@@ -1006,14 +1051,17 @@ export interface MessageRequest {
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
   | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "mark_diagram_viewed" | "move_stage";
 
+/** 「继续本阶段」：在提议进入下一个阶段的卡片上选了留在这一段。只在会话里留一条通知，不写库、不引出助手运行；fields 写卡片所在回复的编号与点的键。 */
+export type StageActionKind = "continue_stage";
+
 export interface ActionRequest {
   client_id: string;
-  kind: ActionKind;
+  kind: ActionKind | StageActionKind;
   task_id: string;
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
   targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
   /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。 */
-  fields?: Fields | { revision_no: number } | { mermaid: string };
+  fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string };
   notify_executor: boolean;
 }
 
@@ -1249,4 +1297,27 @@ export interface ContextWindowResult {
   context_window: number | null;
   source: "service" | null;
   message: string;
+}
+
+// ───────────── 任务状况 ─────────────
+
+/**
+ * 任务状况（GET /tasks/{task_id}/status）：程序据任务记录算出来的定位，不经助手。
+ * activity 是当前活动：现在总是一个阶段（kind 为 stage），flow 是所属流程（现在恒为 initial，首次分析）；一次都没有移动过时 moved_by、moved_at、reason 为 null。
+ * description 是业务说明：sections 是在用的页数，chapters 是有节的各章（七章的先后），unsorted 是没有归到任何一章的在用页数，open_questions 是没有了结的待澄清问题数。
+ * models 是还在的图按种类的张数；items 是总体分析与问题之外各集合的条目数与用户看过现在这一版的条数；
+ * missing 是现在这个阶段没有通过的灯；proposal 是开着的提议；versions 留给已发布的文档版本，现在恒为空。
+ */
+export interface TaskStatusView {
+  generated_at: string;
+  activity: {
+    kind: "stage"; key: StageKey; name: string; ordinal: number; flow: string;
+    moved_by: "executor" | "user" | null; moved_at: string | null; reason: string | null;
+  };
+  description: { sections: number; chapters: { no: number; name: string; sections: number }[]; unsorted: number; open_questions: number };
+  models: { kind: string; name: string; count: number }[];
+  items: { collection: string; total: number; viewed: number }[];
+  missing: { key: string; summary: string }[];
+  proposal: StageProposal | null;
+  versions: unknown[];
 }

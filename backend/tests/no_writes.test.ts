@@ -26,9 +26,11 @@ const ALLOWED: Record<string, string[]> = {
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
   // 另有问题条目的几个字段名与取值（常量）。
-  "stage.ts": ["STAGE_NAMES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD"],
+  "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_INITIAL", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD"],
   // 从总体分析的页与问题条目算三张表（只做计算，不读库也不写库）。
   "overall_views.ts": ["ViewPage", "ViewQuestion", "ViewSource", "decisionsAndOpenQuestions", "goalTree", "rulesTable"],
+  // 业务说明的章与节：总体分析的页按标签归章、编节号（只做计算，不读库，页面也用它）。任务状况里各章的节数从它来。
+  "overall_chapters.ts": ["CHAPTERS", "chapterLayout", "chapterPage"],
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
   "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames"],
@@ -74,7 +76,9 @@ const ALLOWED: Record<string, string[]> = {
   // upgradeTaskDatabase 是写入：把一个任务库升到现在的格式。它只许在数据升级里调（src/data_upgrade.ts，服务启动时的升级与命令行的
   // 升级都经那里），走的是助手写库时用的同一张步骤表；下面另有一条测试守着别的文件不导入它。
   // 工作的阶段：从任务库读出任务现在的阶段与每个阶段的几盏灯（只读函数，不写库）。
-  "stage_read.ts": ["stageSummaryOf", "stageRecords"],
+  "stage_read.ts": ["stageSummaryOf", "stageRecords", "lastStageRecord"],
+  // 开着的提议：从事件表读出任务现在待决定的那一条（只读函数，不写库），与它的类型。
+  "stage_proposal.ts": ["OpenProposal", "openProposal"],
   "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],

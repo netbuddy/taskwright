@@ -57,13 +57,13 @@ const SCRIPT = {
   sequence: [
     // 第一句话（核读材料）：立四页主题，发「进入澄清」的卡片。
     { tool_calls: [{ id: "call-pages", name: "save_revision", arguments: { operations: PAGES } }] },
-    reply("材料读完了，我立了四页主题。现在进入澄清吗？", "call-clarify", card("现在进入澄清吗？", ["enter_clarify", "进入澄清"], ["continue_reading", "再核读一遍"])),
+    reply("材料读完了，我立了四页主题。现在进入澄清吗？", "call-clarify", card("现在进入澄清吗？", ["enter_clarify", "进入澄清"], ["continue_reading", "继续本阶段"])),
     // 用户点了「进入澄清」：发「进入整理建模」的卡片。
-    reply("要问的都问到了。现在进入整理建模吗？", "call-model", card("现在进入整理建模吗？", ["enter_consolidate", "进入整理建模"], ["continue_clarify", "继续澄清"])),
+    reply("要问的都问到了。现在进入整理建模吗？", "call-model", card("现在进入整理建模吗？", ["enter_consolidate", "进入整理建模"], ["continue_clarify", "继续本阶段"])),
     // 用户点了「进入整理建模」：照次序画五种图，汇报，发「开始写条目」的卡片。
     draw(0), draw(1), draw(2), draw(3), draw(4),
     reply("五种图各画了一张：系统边界图、用例图、对象关系图、自助借书的流程图、借阅记录的状态图。角色与概念都进了图，规则没有冲突。请把这几张图看一遍。现在开始写条目吗？",
-      "call-start", card("图画好了，现在开始写条目吗？", ["start_items", "开始写条目"], ["continue_consolidate", "再整理一遍"])),
+      "call-start", card("图画好了，现在开始写条目吗？", ["start_items", "开始写条目"], ["continue_consolidate", "继续本阶段"])),
     // 用户点了「开始写条目」：写一条依据两张图的用例。
     { tool_calls: [{ id: "call-uc", name: "save_revision", arguments: { operations: [USE_CASE] } }] },
     reply("写好了一个用例：UC-001 自助借书。", "call-wrote"),

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from sim.launch_user import load_profile, user_agent_session
-from sim.run import batch_summary, build_parser, code_version, executor_tools, profile_model, used_model, user_turn
+from sim.run import batch_summary, build_parser, code_version, executor_tools, expects_executor, profile_model, used_model, user_turn
 
 SUMMARY = {"演练": "sim-004", "有效": True, "停止原因": "用户 agent 表示目标达成", "轮数": 7,
            "第一层": {"没有在执行者没问的时候主动说出隐藏事实（查全部轮次）": True, "点「确认」之前在同一轮里看过该条目的详情": True},
@@ -90,6 +90,17 @@ class RecordVersionTest(unittest.TestCase):
         turn = user_turn([look(), look(item_id="OA-001"), look(item_id="OA-002", confirm=True), look(item_id="UC-001", confirm=False),
                           {"type": "tool_execution_end", "toolName": "respond", "result": {"details": {"sent": {"text": "好"}, "route": "message"}}}])
         self.assertEqual((turn["looks"], turn["confirms"], turn["respond"]["route"]), ([None, "OA-001", "OA-002", "UC-001"], ["OA-002"], "message"))
+
+
+class ExpectsExecutorTest(unittest.TestCase):
+    def test_发了话或者做了要助手再出力的操作就等助手_只表示结束或者选了继续本阶段不等(self):
+        self.assertTrue(expects_executor({"route": "message", "sent": {"text": "帮我整理需求。"}}))
+        self.assertTrue(expects_executor({"route": "message", "sent": {"text": "我选：进入澄清", "origin": "card_choice", "card": {"choice": "enter_clarify"}}}))
+        self.assertTrue(expects_executor({"route": "action", "sent": {"kind": "mark_viewed", "notify_executor": True, "targets": []}}))
+        # 选了「继续本阶段」只在会话里留一条通知，助手不运行：不等，下一轮照常唤起用户 agent。
+        self.assertFalse(expects_executor({"route": "action", "sent": {"kind": "continue_stage", "targets": [], "notify_executor": False,
+                                                                     "fields": {"reply_message_id": "a7", "option_key": "continue_reading"}}}))
+        self.assertFalse(expects_executor({"route": "none", "sent": None, "done": True}))
 
 
 class RunOptionsTest(unittest.TestCase):

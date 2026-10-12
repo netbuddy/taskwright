@@ -9,13 +9,13 @@
  */
 
 import { basename } from "node:path";
-import { ENTER_OPTIONS, STAGE_START_TEXTS, STAY_OPTIONS } from "../../agent/src/lib/stage.ts";
+import { ENTER_OPTIONS, STAGE_START_TEXTS, STATUS_NEXT_TEXT, STAY_OPTIONS } from "../../agent/src/lib/stage.ts";
 
 /** 一条会话的对话消息（conversation.ts 的 baseMessages 给的形状），按先后。 */
 export type SessionMessages = Record<string, any>[];
 
 const STAGE_KEYS = new Set([...Object.values(ENTER_OPTIONS), ...Object.values(STAY_OPTIONS)].map((one) => one.key));
-const START_TEXTS = new Set<string>(Object.values(STAGE_START_TEXTS));
+const START_TEXTS = new Set<string>([...Object.values(STAGE_START_TEXTS), STATUS_NEXT_TEXT]);
 
 export interface PersonaFact {
   事实: string;

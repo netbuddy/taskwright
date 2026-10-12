@@ -34,10 +34,12 @@ test("一条会话里的事实：打的字照原话；卡片选择写成问与�
     card("a-2", "材料读完了。现在进入澄清吗？"),
     click("a-2", "enter_clarify", "进入澄清"),
     card("a-3", "现在开始写条目吗？"),
-    click("a-3", "continue_consolidate", "再整理一遍"),
+    click("a-3", "continue_consolidate", "继续本阶段"),
     said("我已经看过了：UC-001（修订 2）。请接着往下做。", { origin: "ui_request" }),
     { type: "system_note", message_id: "n-1", text: "请用 reply 工具把要对用户说的话发出来" },
     said("请逐项澄清：一次只问一件事，先给出候选再问。"),
+    // 任务状况卡上「请助手说明下一步」替用户发的那一句也是固定句，不收。
+    said("请按任务状况说明下一步该做什么。"),
     said("   "),
     click("a-9", "x", "就这样"),
   ]);

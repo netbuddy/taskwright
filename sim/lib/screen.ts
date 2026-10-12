@@ -75,18 +75,42 @@ export function buttonsOf(act: Act | null | undefined, task?: TaskView | null): 
 }
 
 /**
+ * 助手提议进入下一个阶段的卡片，与网页认的是同一种（web/src/components/work/ReplyCard.tsx）：请选择，其中一个选项的键是进入某个阶段的
+ * （start_items，或者以 enter_ 开头）。这种卡片上留在这一段的那个选项（键以 continue_ 开头）页面一律写成「继续本阶段」，
+ * 点它不替用户发话，只发一个界面操作 continue_stage：卡片标为已选，助手不因此运行，提议仍然开着。
+ */
+export const STAY_TEXT = "继续本阶段";
+export const CONTINUE_STAGE = "continue_stage";
+const isEnterKey = (key: string): boolean => key === "start_items" || key.startsWith("enter_");
+
+export function isStageCard(act: Act | null | undefined): boolean {
+  return act?.kind === "choose" && (act.options ?? []).some((o) => isEnterKey(o.key));
+}
+
+/** 这个键是不是进入卡片上留在这一段的那个选项。 */
+export function isStayOption(act: Act | null | undefined, key: string): boolean {
+  return isStageCard(act) && key.startsWith("continue_") && (act!.options ?? []).some((o) => o.key === key);
+}
+
+/** 请选择卡片上一个选项给人看的文字：进入卡片上留在这一段的那一项写「继续本阶段」，别的照助手写的。 */
+function optionLabel(act: Act, option: { key: string; text: string }): string {
+  return isStayOption(act, option.key) ? STAY_TEXT : option.text;
+}
+
+/**
  * 请选择卡片上点的是哪个选项：写选项的键或者选项的文字都认，返回选项的键；都对不上时原样返回。
  * 界面上人看到的是选项的文字（例如「开始写条目」），键是给程序认的（start_items），所以两种写法都收。
+ * 文字先按界面上显示的认（留在这一段的那一项是「继续本阶段」），再按助手在卡片里写的认。
  */
 export function optionKeyOf(act: Act | null | undefined, click: string): string {
   if (!act || act.kind !== "choose") return click;
   const options = act.options ?? [];
-  return (options.find((o) => o.key === click) ?? options.find((o) => o.text.trim() === click))?.key ?? click;
+  return (options.find((o) => o.key === click) ?? options.find((o) => optionLabel(act, o) === click) ?? options.find((o) => o.text.trim() === click))?.key ?? click;
 }
 
-/** 卡片上的按钮给人看的名字：请选择卡片写选项的文字，其余就是按钮名。 */
+/** 卡片上的按钮给人看的名字：请选择卡片写选项的文字（进入卡片上留在这一段的那一项写「继续本阶段」），其余就是按钮名。 */
 export function buttonLabels(act: Act | null | undefined, task?: TaskView | null): string[] {
-  if (act?.kind === "choose") return (act.options ?? []).map((o) => o.text);
+  if (act?.kind === "choose") return (act.options ?? []).map((o) => optionLabel(act, o));
   return buttonsOf(act, task);
 }
 
@@ -110,7 +134,7 @@ export function renderReply(m: Message, task?: TaskView | null): string {
   if (act) {
     lines.push(`【卡片：${KIND_WORD[act.kind] ?? act.kind}】${act.text}`);
     if (act.items?.length) lines.push(`涉及的条目：${act.items.map((i) => `${i.item_id}（修订 ${i.revision_no}）`).join("、")}`);
-    if (act.kind === "choose") for (const o of act.options ?? []) lines.push(`选项 ${o.key}：${o.text}`);
+    if (act.kind === "choose") for (const o of act.options ?? []) lines.push(`选项 ${o.key}：${optionLabel(act, o)}`);
     if (act.kind === "suggest") {
       lines.push(`建议的值：${act.value ?? ""}`);
       for (const b of act.basis ?? []) lines.push(`依据（${b.kind}）：${b.excerpt}`);
@@ -268,7 +292,7 @@ const CLICK_TEXT: Record<string, string> = { 不对: "这个不对。", 采纳: 
 
 /**
  * 按接口约定（docs/api.md「卡片上的按钮」）把一次回应翻成请求：「这几条都看过了」走 actions 的 mark_viewed（带 notify_executor），其余按钮走 messages 带 card，
- * 话用第 7 节的模板；说话走 messages。形式不对时抛异常，写明哪里不对。
+ * 话用第 7 节的模板；说话走 messages。进入卡片上的「继续本阶段」走 actions 的 continue_stage，不发话，助手不因此运行。形式不对时抛异常，写明哪里不对。
  */
 export function planRespond(params: RespondParams, lastReply: Message | null, clientId: string, task?: TaskView | null): Plan {
   const p = params ?? {};
@@ -302,6 +326,11 @@ export function planRespond(params: RespondParams, lastReply: Message | null, cl
       const ids = (act.items ?? []).map((i) => i.item_id).join("、");
       return { kind: "message", body: { text: `关于 ${ids}，我不知道，你按常识补上并标明是你补的。`, client_id: clientId, origin: "card_choice",
         card: { reply_message_id: lastReply?.message_id ?? null, kind: act.kind, choice: "不知道" } } };
+    }
+    if (isStayOption(act, click)) {
+      // 与网页一致：只留一条界面操作通知，提议仍然开着；fields 写卡片所在回复的编号与点的键。
+      return { kind: "action", body: { client_id: clientId, kind: CONTINUE_STAGE, targets: [], notify_executor: false,
+        fields: { reply_message_id: lastReply?.message_id ?? null, option_key: click } } };
     }
     const option = act.kind === "choose" ? act.options?.find((o) => o.key === click) : undefined;
     const said = option ? `我选：${option.text}` : click === "不对" && text ? text : CLICK_TEXT[click];
