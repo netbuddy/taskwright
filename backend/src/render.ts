@@ -21,7 +21,7 @@
  * - 每个条目里，字段有内容才写的一段：{{#有 字段}} … {{/有}}；
  * - 字段名后面可以跟一种取法：{{字段|首段}} 取文本字段的第一段（到第一个空行为止），{{字段|顿号}} 把列表字段用顿号连成一句
  *   （空的时候什么都不写）；
- * - 模板任何地方：{{文档修订号}}（这份文档按修订 N 生成）；
+ * - 模板任何地方：{{文档修订号}}（这份文档按修订 N 生成）、{{任务名}}；
  * - 各占一行的三个占位（render_chapters.ts）：{{业务说明}} 展开成与页面同一结构的七章（任务没有总体分析这个集合时什么都不写），
  *   {{追溯附录}} 展开成「每个需求条目依据了哪几节、哪几张图」的一张表，{{目录}} 展开成整份文档二级、三级标题的清单。
  *
@@ -31,13 +31,16 @@
  * 条目没有来源时，来源一项写「（无）」。
  */
 
-import { statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { ApiError } from "./errors.ts";
 import { readTextFile } from "./files.ts";
 import { type Library, actorWord } from "./library.ts";
 import { or, truthy } from "./py.ts";
 import { parseKnowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
+import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
+import { TASK_TYPES_DIR } from "./paths.ts";
+import { readTaskJson } from "./task_json.ts";
 import { CHAPTERS_SLOT, TOC_SLOT, TRACE_SLOT, businessDescription, tableOfContents, traceAppendix } from "./render_chapters.ts";
 
 const EACH = /\{\{#每个 (.+?)\}\}\n?(.*?)\{\{\/每个\}\}\n?/gs;
@@ -250,6 +253,32 @@ export function documentRequest(body: Dict): [number | null, string[] | null] {
 
 type Chosen = [string, number, Dict][];
 
+/**
+ * 这一次用哪份模板。模板在每个任务目录里有一份建任务时复制的副本；业务说明排成七章是后来才有的，早先建的任务的副本里没有
+ * {{业务说明}} 这个占位。这样的任务（副本没有这个占位，而任务定义里有总体分析这个集合）改用产品现在自带的那份模板，
+ * 让它们的文档也与页面同一个结构。任务类型认 task.json 里记的；没有记时看任务目录里那份任务定义的文件名。
+ * 产品里找不到这个任务类型、或者它的模板也没有这个占位时，照旧用任务目录里的副本。
+ */
+function currentTemplate(taskDir: string, lib: Library, templateRel: string, own: string): string {
+  if (own.includes(CHAPTERS_SLOT) || !lib.collections.has(OVERALL_COLLECTION)) return own;
+  let type = readTaskJson(taskDir)?.task_type ?? null;
+  if (!type) {
+    try {
+      const names = readdirSync(join(taskDir, "docs", "task-definitions")).filter((name) => name.endsWith(".json"));
+      type = names.length === 1 ? names[0].slice(0, -".json".length) : null;
+    } catch {
+      type = null;
+    }
+  }
+  if (!type || /[\\/]|^\.+$/.test(type)) return own;
+  try {
+    const shipped = readTextFile(join(TASK_TYPES_DIR, type, templateRel));
+    return shipped.includes(CHAPTERS_SLOT) ? shipped : own;
+  } catch {
+    return own;
+  }
+}
+
 export function render(taskDir: string, lib: Library, revisionNo: number | null = null, items: string[] | null = null, wordsLocator: Locate | null = null,
   libraryName: LibraryName | null = null): string {
   const templateRel = String(or(lib.definition["文档模板"], "docs/templates/srs.md"));
@@ -261,7 +290,7 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
     isFile = false;
   }
   if (!isFile) throw new ApiError("bad_request", `任务目录里没有文档模板 ${templateRel}。`);
-  const template = readTextFile(templatePath);
+  const template = currentTemplate(taskDir, lib, templateRel, readTextFile(templatePath));
   const latest = lib.latestRevision();
   if (latest === 0) throw new ApiError("bad_request", "交付物还没有任何修订，没有东西可以生成。");
   const docRevision = revisionNo || latest;
@@ -363,7 +392,9 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
 
   const none = (_m: string, selector: string, body: string) => (selected(selector)[1].length ? "" : body);
 
-  let out = template.replace(GROUP, group).replace(EACH, each).replace(NONE, none).replaceAll("{{文档修订号}}", () => String(docRevision));
+  const taskName = String(or(lib.data.task?.task_name, lib.definition["任务名"]) ?? "");
+  let out = template.replace(GROUP, group).replace(EACH, each).replace(NONE, none).replaceAll("{{文档修订号}}", () => String(docRevision))
+    .replaceAll("{{任务名}}", () => taskName);
   // 三个占位各占一行，连同后面的那个换行一起换掉：展开出来有内容时后面空一行，没有内容时什么都不留。
   const slot = (name: string, text: () => string) => {
     if (!out.includes(name)) return;
