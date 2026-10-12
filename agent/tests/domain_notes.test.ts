@@ -188,10 +188,12 @@ test("来源种类「条目」：用户在界面上改字段、撤销，都不�
   assert.deepEqual(itemRows(dir, "UC-001", 6).map((row) => [row.locator, row.field, row.depends_revision]), [["DN-001", "步骤", 2]]);
 });
 
-test("来源种类「图」：任务里还没有图，助手写了就拒绝，并说明能用的是哪几种", () => {
+test("来源种类「图」：出处不是图的编号、任务里没有这张图，都拒绝并说明出处该怎样写", () => {
   const dir = workspace();
   assert.throws(() => saveRevision(callIn(dir), { operations: [cite("FIG-001", 1, "UC-001", "登录", "图")] }),
-    /第 1 条来源的种类写成了「图」，这个任务里现在还没有图，这一种还不能用[\s\S]*kind 只能是「文档原文」、「用户的话」、「助手补充」、「条目」之一/);
+    /第 1 条来源的种类是「图」，出处 FIG-001 不是图的编号[\s\S]*出处写一张还在的图的编号，例如 D-001/);
+  assert.throws(() => saveRevision(callIn(dir), { operations: [cite("D-001", 1, "UC-001", "登录", "图")] }),
+    /第 1 条来源的种类是「图」，出处 D-001 指向的图在这个任务里不存在/);
 });
 
 test("提示：还没有和任何条目关联的领域说明——来源引用、别的条目的关联条目、自己的关联条目三种联系都算，删掉的条目不算", () => {

@@ -33,13 +33,13 @@ const support = Type.Object(
 
 const source = Type.Object(
   {
-    kind: Type.String({ description: "来源的种类，只能是「文档原文」「用户的话」「助手补充」「条目」四者之一。" }),
+    kind: Type.String({ description: "来源的种类，只能是「文档原文」「用户的话」「助手补充」「条目」「图」五者之一。" }),
     locator: Type.Optional(
       Type.String({
-        description: "出处：文档原文写文件路径；条目写所依据的那个条目的编号，例如 DN-002、UC-003。种类是「助手补充」时不用写；种类是「用户的话」时不要写，工具会在对话里找到那句话并代填。",
+        description: "出处：文档原文写文件路径；条目写所依据的那个条目的编号，例如 DN-002、UC-003；图写所依据的那张图的编号，例如 D-002。种类是「助手补充」时不用写；种类是「用户的话」时不要写，工具会在对话里找到那句话并代填。",
       }),
     ),
-    excerpt: Type.String({ description: "摘录的原文。用户的话要逐字照抄用户说过的一段原话；条目要逐字照抄那个条目当前内容里的一段，包括标点；助手补充在这里写一句理由：为什么这样补、依据的是什么常识或推断。" }),
+    excerpt: Type.String({ description: "摘录的原文。用户的话要逐字照抄用户说过的一段原话；条目要逐字照抄那个条目当前内容里的一段，包括标点；图可以写空文字，也可以逐字照抄图里一个节点上的文字；助手补充在这里写一句理由：为什么这样补、依据的是什么常识或推断。" }),
     normalized_value: Type.Optional(
       Type.String({
         description:

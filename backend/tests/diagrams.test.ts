@@ -76,6 +76,54 @@ test("图的详情：Mermaid 文本、说明、改动过的修订号；来源与
   assert.equal(library.diagramDetail(ws, "D-404"), null);
 });
 
+test("条目依据图：条目的来源带依据的现状（图之后改了是依据已变，删了是已删除），图的详情列出依据它的条目", () => {
+  const FLOW = 'flowchart TD\n  a(["UC-001 登录"]) --> b["输入口令"]';
+  /** 任务修订 1 有 UC-001；D-001 是登录的流程图；任务修订 2 新增 UC-002，整个条目依据 D-001；再接 more 里的几步。 */
+  const build = (name: string, more: unknown[]) => makeLegacyTask(join(tmp, name, "tasks"), { "材料.md": "读者凭口令登录。" }, [
+    [useCase("登录", "读者登录系统。")],
+    { said: "把登录画成流程图", diagram: { name: "登录流程", kind: "flowchart", mermaid: FLOW, sources: [{ kind: "用户的话", excerpt: "把登录画成流程图" }, { kind: "条目", locator: "UC-001" }] } },
+    [{ ...useCase("找回口令", "读者找回口令。"), sources: [{ kind: "图", locator: "D-001", excerpt: "输入口令" }] }],
+    ...more,
+  ]);
+  const cited = (dir: string) => library.taskSnapshot(dir)[1]!.items.find((one) => one.item_id === "UC-002")!.sources
+    .map((s) => [s.kind, s.locator, s.excerpt, s.depends_revision, s.current_revision, s.stale]);
+  const fresh = build("figure-fresh", []);
+  assert.deepEqual(cited(fresh), [["图", "D-001", "输入口令", 1, 1, null]]);
+  assert.deepEqual(library.diagramDetail(fresh, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 2 }]);
+  // 条目的「被谁依据」只数依据条目的来源：UC-001 被图依据，UC-002 没有被谁依据。
+  const items = new Map(library.taskSnapshot(fresh)[1]!.items.map((one) => [one.item_id, one]));
+  assert.deepEqual([items.get("UC-001")!.depended_by, items.get("UC-002")!.depended_by], [[{ element_kind: "图", id: "D-001", revision_no: 1 }], []]);
+  const changed = build("figure-changed", [{ diagram: { diagram: "D-001", base_revision: 1, note: "加了说明。" } }]);
+  assert.deepEqual(cited(changed), [["图", "D-001", "输入口令", 1, 2, "changed"]]);
+  const deleted = build("figure-deleted", [{ diagram: { diagram: "D-001", base_revision: 1, delete: true } }]);
+  assert.deepEqual(cited(deleted), [["图", "D-001", "输入口令", 1, null, "deleted"]]);
+  // 删掉的图也给得出详情，依据它的条目还列着。
+  assert.deepEqual(library.diagramDetail(deleted, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 2 }]);
+});
+
+test("用户看没看过一张图：图的列表带 viewed；助手改过之后回到没看过；看图的事件写成接口事件 diagram_viewed", () => {
+  const FLOW = "flowchart TD\n  s([开始]) --> e([结束])";
+  const drawn = (name: string) => ({ said: `画一张${name}`, diagram: { name, kind: "flowchart", mermaid: FLOW, sources: [{ kind: "用户的话", excerpt: `画一张${name}` }] } });
+  const dir = makeLegacyTask(join(tmp, "figure-viewed", "tasks"), { "材料.md": "读者凭口令登录。" }, [
+    drawn("登录流程"), drawn("办证流程"), drawn("挂失流程"),
+    // 用户看过 D-001 与 D-002；之后助手改了 D-002。
+    { view: ["D-001", "D-002"] },
+    { diagram: { diagram: "D-002", base_revision: 1, note: "助手改了说明。" } },
+  ]);
+  assert.deepEqual(library.diagramList(dir).map((one) => [one.diagram_id, one.revision_no, one.viewed]), [["D-001", 1, true], ["D-002", 2, false], ["D-003", 1, false]]);
+  assert.equal(library.diagramDetail(dir, "D-001")!.viewed, true);
+  const db = library.openRo(dir)!;
+  let data;
+  try {
+    data = library.readAll(db, 0);
+  } finally {
+    db.close();
+  }
+  const views = data.events!.filter((e) => e.name === "DIAGRAM_VIEWED").map((e) => library.eventPayload(new library.Library(data), e)!);
+  assert.deepEqual(views.map(([name, body]) => [name, body.diagrams, typeof body.op_id, typeof body.seq, typeof body.at]),
+    [["diagram_viewed", [{ diagram_id: "D-001", revision_no: 1 }, { diagram_id: "D-002", revision_no: 1 }], "string", "number", "string"]]);
+});
+
 test("图里画了谁：从 Mermaid 文本里扫出来的条目编号，带条目现在的标题与状态", () => {
   assert.deepEqual(library.diagramDetail(ws, "D-001")!.drawn, [
     { item_id: "UC-001", title: "登录", state: "live" },
@@ -112,9 +160,9 @@ test("图的事件写成接口事件 diagram_changed：是哪一张、它自己�
   const views = data.events!.filter((e) => e.name === "DIAGRAM_SAVED").map((e) => library.eventPayload(lib, e)!);
   assert.deepEqual(views.map(([name, body]) => [name, body.diagram_id, body.revision_no, body.op, body.name, body.kind, body.kind_name, body.actor]), [
     ["diagram_changed", "D-001", 1, "add", "读者用例", "use_case", "用例图", "executor"],
-    ["diagram_changed", "D-002", 1, "add", "借书证", "class", "类图", "executor"],
+    ["diagram_changed", "D-002", 1, "add", "借书证", "class", "对象关系图", "executor"],
     ["diagram_changed", "D-001", 2, "update", "读者用例", "use_case", "用例图", "executor"],
-    ["diagram_changed", "D-002", 2, "delete", "借书证", "class", "类图", "executor"],
+    ["diagram_changed", "D-002", 2, "delete", "借书证", "class", "对象关系图", "executor"],
     ["diagram_changed", "D-003", 1, "add", "登录流程", "flowchart", "流程图", "executor"],
   ]);
   assert.ok(views.every(([, body]) => typeof body.at === "string" && typeof body.seq === "number"));
@@ -146,14 +194,15 @@ test("接口：图的列表、详情、没有这张图；校验通过、写错�
     assert.deepEqual([emptyStatus, empty.valid, empty.reason], [200, false, "empty"]);
     const [kindStatus, kind] = await send("POST", "/diagrams/validate", { kind: "用例图", mermaid: MERMAID });
     assert.deepEqual([kindStatus, kind.error.code, kind.error.data], [422, "rejected", { field: "kind" }]);
-    assert.match(kind.error.message, /图的种类要写 use_case、class、state、sequence、flowchart 里的一个，收到的是 "用例图"。/);
+    assert.match(kind.error.message, /图的种类要写 context、use_case、class、state、sequence、flowchart 里的一个，收到的是 "用例图"。/);
   } finally {
     await service.close();
   }
 });
 
-test("助手说明里教的写法（条目编号写在节点的文字里、节点的名字只用字母数字）五种图都通过校验，扫得出条目编号", async () => {
+test("助手说明里教的写法（条目编号写在节点的文字里、节点的名字只用字母数字）六种图都通过校验，扫得出条目编号", async () => {
   const texts: Record<string, string> = {
+    context: 'flowchart LR\n  buyer(["UC-001 买家"])\n  bank["UC-002 支付平台"]\n  subgraph 商城\n    desk["受理申请"]\n  end\n  buyer -- 退货申请 --> desk\n  desk -- 退款指令 --> bank',
     use_case: 'flowchart LR\n  buyer(["买家"])\n  subgraph 商城\n    r1(["UC-001 提交申请"])\n    r2(["UC-002 查看进度"])\n  end\n  buyer --> r1\n  r1 -. 包含 .-> r2',
     class: 'classDiagram\n  class Order["UC-001 订单"]\n  class Refund["UC-002 退款单"]\n  Order "1" --> "0..1" Refund : 产生',
     state: 'stateDiagram-v2\n  state "UC-001 待审核" as s1\n  state "UC-002 已退款" as s2\n  [*] --> s1\n  s1 --> s2 : 审核通过',
@@ -246,6 +295,21 @@ test("用户改图：没有这张图、图已经删除、请求写得不对，�
     executor.state = "working";
     await assert.rejects(executor.action("S1", edit("D-001", "flowchart LR\n  a --> b")), (e: ApiError) => e.code === "session_busy");
     assert.deepEqual([calls, asked], [[], []]);
+  } finally {
+    restore();
+  }
+});
+
+test("用户看图：不校验文本，助手工作中也照样转交助手一侧（它不改图的内容）；转交的命令带种类、目标与操作编号", async () => {
+  const { executor, calls, asked, restore } = editing(async () => ({ ok: true }));
+  try {
+    executor.state = "working";
+    const opId = await executor.action("S1", { client_id: "c1", kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-001", base_revision: 2 }] });
+    assert.match(opId, /^ui-op-[0-9a-f]{12}$/);
+    assert.deepEqual(asked, []);
+    assert.deepEqual(calls.map((one) => JSON.parse(one.slice("/tw-user ".length))), [
+      { kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-001", base_revision: 2 }], op_id: opId },
+    ]);
   } finally {
     restore();
   }

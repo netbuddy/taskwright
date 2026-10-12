@@ -196,3 +196,68 @@ test("数据升级用的入口：旧库从 0 升到现在的版本，已经是�
   assert.throws(() => upgradeTaskDatabase(empty), NoDatabaseYet);
   assert.equal(existsSync(databasePath(empty)), false);
 });
+
+/** 格式版本 2 及更早的库里图的内容表：种类一列带着只许五种的检查。 */
+const OLD_DIAGRAM_VERSION_SQL = `
+CREATE TABLE diagram_version (
+  task_id      TEXT NOT NULL,
+  diagram_id   TEXT NOT NULL,
+  revision_no  INTEGER NOT NULL,
+  op           TEXT NOT NULL CHECK (op IN ('add', 'update', 'delete')),
+  name         TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('use_case', 'class', 'state', 'sequence', 'flowchart')),
+  mermaid      TEXT NOT NULL,
+  note         TEXT NOT NULL,
+  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),
+  session_id   TEXT NOT NULL,
+  call_id      TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  event_seq    INTEGER NOT NULL,
+  PRIMARY KEY (task_id, diagram_id, revision_no)
+);`;
+const INSERT_DIAGRAM_VERSION =
+  "INSERT INTO diagram_version (task_id, diagram_id, revision_no, op, name, kind, mermaid, note, actor, session_id, call_id, created_at, event_seq) VALUES ('T', ?, 1, 'add', ?, ?, 'flowchart LR\n a --> b', '', 'executor', 's', 'c', '2026-01-01T00:00:00', 1)";
+const diagramVersionSql = (dir: string) => query<{ sql: string }>(dir, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'diagram_version'")[0].sql;
+
+test("格式版本：新建的库里图的内容表不检查种类，五种之外的写法库也收", () => {
+  const dir = makeWorkspace();
+  withTaskDatabase(dir, { createIfMissing: true }, (db) => db.prepare(INSERT_DIAGRAM_VERSION).run("D-001", "系统边界", "context"));
+  assert.doesNotMatch(diagramVersionSql(dir), /CHECK\s*\(\s*kind/i);
+  assert.match(diagramVersionSql(dir), /CHECK \(op IN/);
+});
+
+test("格式版本 2 的库里图的内容表检查种类：升到版本 3 时去掉这条检查，原有的行一行不少、内容不变；再升一次什么都不改", () => {
+  const dir = makeWorkspace();
+  withTaskDatabase(dir, { createIfMissing: true }, (db) => {
+    db.exec(`DROP TABLE diagram_version; ${OLD_DIAGRAM_VERSION_SQL}`);
+    db.prepare(INSERT_DIAGRAM_VERSION).run("D-001", "借书流程", "flowchart");
+    db.prepare(INSERT_DIAGRAM_VERSION).run("D-002", "借阅记录的状态", "state");
+    db.exec("PRAGMA user_version = 2");
+  });
+  const before = query(dir, "SELECT * FROM diagram_version ORDER BY diagram_id");
+  // 还没有升级时，库自己拒绝五种之外的种类。
+  const raw = new DatabaseSync(databasePath(dir));
+  assert.throws(() => raw.prepare(INSERT_DIAGRAM_VERSION).run("D-003", "系统边界", "context"), /CHECK constraint failed/);
+  raw.close();
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 2, to: TASK_DB_VERSION });
+  assert.equal(TASK_DB_VERSION, 3);
+  assert.equal(version(dir), 3);
+  assert.deepEqual(query(dir, "SELECT * FROM diagram_version ORDER BY diagram_id"), before);
+  assert.doesNotMatch(diagramVersionSql(dir), /CHECK\s*\(\s*kind/i);
+  assert.match(diagramVersionSql(dir), /CHECK \(op IN/, "别的检查还在");
+  assert.deepEqual(tables(dir), [...TABLE_NAMES].sort(), "没有留下重建时用的那张表");
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(INSERT_DIAGRAM_VERSION).run("D-003", "系统边界", "context"));
+  assert.equal(query(dir, "SELECT * FROM diagram_version").length, 3);
+  const sql = diagramVersionSql(dir);
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.equal(diagramVersionSql(dir), sql);
+});
+
+test("没有编过版本号、图的内容表带着种类检查的库：一次升到现在的版本，检查一并去掉", () => {
+  const dir = makeWorkspace();
+  withTaskDatabase(dir, { createIfMissing: true }, (db) => {
+    db.exec(`DROP TABLE diagram_version; ${OLD_DIAGRAM_VERSION_SQL}; PRAGMA user_version = 0`);
+  });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION });
+  assert.doesNotMatch(diagramVersionSql(dir), /CHECK\s*\(\s*kind/i);
+});

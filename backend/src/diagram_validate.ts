@@ -1,47 +1,54 @@
 /**
  * 校验一段 Mermaid 文本：保存一张图之前先看它的语法对不对，不对就把第几行、哪里不对说给助手，让它改了再存。
  *
- * 图的种类五选一：用例图、类图、状态图、时序图、流程图。用例图不用 mermaid 自己的用例图写法，而用流程图的写法画
- * （参与者与用例写成圆角的节点，系统边界写成子图），所以校验时用例图与流程图都按流程图看，这两种之间分不出来。
+ * 图的种类六选一：系统边界图、用例图、对象关系图、状态图、时序图、流程图。用例图不用 mermaid 自己的用例图写法，而用流程图的写法画
+ * （参与者与用例写成圆角的节点，系统边界写成子图）；系统边界图也用流程图的写法画（系统写成子图，外面是角色与外部系统）。
+ * 所以校验时这三种都按流程图看，语法上分不出来。系统边界图另核对两样：至少一个子图，至少一个不在任何子图里的节点
+ * （agent/src/lib/diagram_scan.ts 的 contextShape，从文本里扫，认不准的写法往宽里算）。对象关系图用 mermaid 的类图写法画。
  *
  * 怎样校验：文本交给 mermaid 解析（src/diagram_engine.mjs），只看语法、不产出图。解析放在另一条线程里做
  * （src/diagram_worker.ts），原因写在那个文件开头。那条线程第一次用到时才起，起来后一直留着；一次校验等过了时限
  * 就把它结束掉，下一次校验再起一条。校验一份一份地做，不同时发两份。
  *
- * 结果有七种不通过：empty 没有文本；too_long 文本超过上限；unknown_type 开头认不出是哪种图；kind_mismatch 写的不是说好的
- * 那一种；syntax 语法不对；timeout 到时限还没有算完；unavailable 校验没有做成（引擎加载不了、那条线程出了错）。
+ * 结果有八种不通过：empty 没有文本；too_long 文本超过上限；unknown_type 开头认不出是哪种图；kind_mismatch 写的不是说好的
+ * 那一种；syntax 语法不对；context_shape 系统边界图没有画出系统或者系统外面的节点；timeout 到时限还没有算完；
+ * unavailable 校验没有做成（引擎加载不了、那条线程出了错）。
  * 最后一种是程序这边的毛病，不是文本的毛病，文字里说明白，免得助手去改一份本来没有错的文本。
  */
 
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
+import { contextShape } from "../../agent/src/lib/diagram_scan.ts";
 import { fromRoot } from "./paths.ts";
 
-export const DIAGRAM_KINDS = ["use_case", "class", "state", "sequence", "flowchart"] as const;
+export const DIAGRAM_KINDS = ["context", "use_case", "class", "state", "sequence", "flowchart"] as const;
 export type DiagramKind = (typeof DIAGRAM_KINDS)[number];
-export const DIAGRAM_KIND_NAMES: Record<DiagramKind, string> = { use_case: "用例图", class: "类图", state: "状态图", sequence: "时序图", flowchart: "流程图" };
+export const DIAGRAM_KIND_NAMES: Record<DiagramKind, string> = {
+  context: "系统边界图", use_case: "用例图", class: "对象关系图", state: "状态图", sequence: "时序图", flowchart: "流程图",
+};
 
 /** Mermaid 文本最多这么多字节（按 UTF-8 算）。 */
 export const DIAGRAM_TEXT_LIMIT = 20 * 1024;
-/** 一次校验最多等这么久；20 KB 的类图在开发机上约 1.4 秒。 */
+/** 一次校验最多等这么久；20 KB 的对象关系图在开发机上约 1.4 秒。 */
 export const DIAGRAM_TIMEOUT_MS = 2000;
 /** 校验引擎第一次加载最多等这么久（要读进 mermaid，慢的机器上要几秒）。 */
 export const DIAGRAM_LOAD_TIMEOUT_MS = 30_000;
 /** 解析时的原话最多带回这么多个字。 */
 const DETAIL_LIMIT = 600;
 
-export type DiagramProblem = "empty" | "too_long" | "unknown_type" | "kind_mismatch" | "syntax" | "timeout" | "unavailable";
+export type DiagramProblem = "empty" | "too_long" | "unknown_type" | "kind_mismatch" | "syntax" | "context_shape" | "timeout" | "unavailable";
 export type DiagramCheck = { ok: true } | { ok: false; reason: DiagramProblem; line: number | null; message: string };
 
-/** mermaid 认出的图类型各算哪一种：流程图的写法同时算用例图与流程图。 */
+/** mermaid 认出的图类型各算哪一种：流程图的写法同时算流程图、用例图与系统边界图。 */
+const FLOW_KINDS: DiagramKind[] = ["flowchart", "use_case", "context"];
 const TYPE_KINDS: Record<string, DiagramKind[]> = {
-  flowchart: ["flowchart", "use_case"], "flowchart-v2": ["flowchart", "use_case"], "flowchart-elk": ["flowchart", "use_case"],
+  flowchart: FLOW_KINDS, "flowchart-v2": FLOW_KINDS, "flowchart-elk": FLOW_KINDS,
   class: ["class"], classDiagram: ["class"],
   state: ["state"], stateDiagram: ["state"],
   sequence: ["sequence"],
 };
-/** 五种之外常见的图类型的中文名，说「写的是某某图」时用；不在这里的照 mermaid 的叫法写。 */
+/** 六种之外常见的图类型的中文名，说「写的是某某图」时用；不在这里的照 mermaid 的叫法写。 */
 const OTHER_TYPE_NAMES: Record<string, string> = {
   er: "实体关系图", gantt: "甘特图", pie: "饼图", mindmap: "思维导图", journey: "用户旅程图", gitGraph: "分支图", timeline: "时间线图",
   requirement: "需求图", c4: "C4 图", quadrantChart: "象限图", xychart: "坐标图", sankey: "桑基图", block: "方块图", kanban: "看板图", architecture: "架构图",
@@ -77,6 +84,21 @@ function syntaxProblem(text: string, error: { message: string; line: number | nu
   const hint = atEnd ? "文本到这里就结束了，多半是前面有括号没有闭合，或者子图、分支少了收尾的 end。" : "";
   const detail = error.message.trim();
   return problem("syntax", `Mermaid 文本${where}写得不对，改了再存。${hint}解析时的原话：${detail.length > DETAIL_LIMIT ? `${detail.slice(0, DETAIL_LIMIT)}…` : detail}`, lines[0] ?? null);
+}
+
+/**
+ * 系统边界图另核对的两样：画没画出系统（至少一个子图），画没画系统外面的角色或外部系统（至少一个不在任何子图里的节点）。
+ * 都有返回 null。
+ */
+function contextProblem(text: string): DiagramCheck | null {
+  const shape = contextShape(text);
+  if (shape.subgraphs === 0) {
+    return problem("context_shape", "这张系统边界图里没有画出系统：系统要画成一个子图，从 subgraph 系统名 写到 end，里面写系统做的几件大事。改了再存。");
+  }
+  if (shape.outside.length === 0) {
+    return problem("context_shape", "这张系统边界图里没有画系统外面的角色或外部系统：子图之外至少要有一个节点，它是与系统打交道的角色或外部系统，再用连线把它与子图里的节点连起来。改了再存。");
+  }
+  return null;
 }
 
 /**
@@ -125,10 +147,11 @@ export class DiagramChecker {
     const kinds = TYPE_KINDS[type];
     if (!kinds || !kinds.includes(kind as DiagramKind)) {
       const written = kinds ? DIAGRAM_KIND_NAMES[kinds[0]] : OTHER_TYPE_NAMES[type] ?? `另一种图（${type}）`;
-      const hint = kind === "use_case" ? "用例图用流程图的写法画，第一行写 flowchart。" : "";
+      const hint = kind === "use_case" || kind === "context" ? `${wanted}用流程图的写法画，第一行写 flowchart。` : "";
       return problem("kind_mismatch", `写的是${written}，不是你说的${wanted}。${hint}`, 1);
     }
-    return error ? syntaxProblem(text, error) : { ok: true };
+    if (error) return syntaxProblem(text, error);
+    return kind === "context" ? contextProblem(text) ?? { ok: true } : { ok: true };
   }
 
   /** 结束那条线程（下一次校验会再起一条）。 */

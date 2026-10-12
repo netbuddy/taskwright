@@ -29,7 +29,7 @@ META = {"时间": "2026-01-01T09:00:00", "提交号": "0123456789abcdef", "未�
 
 
 def lamp_states(states: dict[str, str]) -> list[dict]:
-    """十二盏灯的一遍结果：没有点名的都是通过。"""
+    """十六盏灯的一遍结果：没有点名的都是通过。"""
     return [{"阶段": stage, "键": key, "说明": text, "结果": states.get(key, "通过"), "通过": None,
              "差的条目编号": ["OA-001"] if states.get(key) == "未通过" else [], "备注": ""} for stage, key, text in lamps.LAMPS]
 
@@ -57,7 +57,7 @@ class SummaryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             sims = [
-                write_run(root, "sim-001", {"flows_have_exception": "未通过", "decisions_have_goal": "不适用"},
+                write_run(root, "sim-001", {"flows_have_flowchart_with_branch": "未通过", "decisions_have_goal": "不适用"},
                           [group("功能用例", ["借书", "借阅"], True), group("问题", ["寒暑假"], False)]),
                 write_run(root, "sim-002", {"decisions_have_goal": "不适用", "completion_met": "未通过"},
                           [group("功能用例", ["借书", "借阅"], True), group("问题", ["寒暑假"], True)]),
@@ -71,27 +71,27 @@ class SummaryTest(unittest.TestCase):
             evals.write_list(root, {**summary, "灯通过率": 0.5})
             again = evals.listed(root)
         rows = {row["键"]: row for row in summary["灯"]}
-        self.assertEqual((rows["flows_have_exception"]["各遍"], rows["flows_have_exception"]["通过遍数"], rows["flows_have_exception"]["能算的遍数"],
-                          rows["flows_have_exception"]["通过率"]), (["未通过", "通过", "算不了"], 1, 2, 0.5))
+        self.assertEqual((rows["flows_have_flowchart_with_branch"]["各遍"], rows["flows_have_flowchart_with_branch"]["通过遍数"], rows["flows_have_flowchart_with_branch"]["能算的遍数"],
+                          rows["flows_have_flowchart_with_branch"]["通过率"]), (["未通过", "通过", "算不了"], 1, 2, 0.5))
         self.assertEqual((rows["decisions_have_goal"]["能算的遍数"], rows["decisions_have_goal"]["通过率"]), (0, None))
         self.assertEqual(rows["materials_cited"]["通过率"], 1.0)
-        # 十一盏有通过率：九盏是 1，两盏是 0.5；没有能算的那一盏不进平均。
-        self.assertAlmostEqual(summary["灯通过率"], (9 + 0.5 + 0.5) / 11)
+        # 十五盏有通过率：十三盏是 1，两盏是 0.5；没有能算的那一盏不进平均。
+        self.assertAlmostEqual(summary["灯通过率"], (13 + 0.5 + 0.5) / 15)
         groups = {evals.expectations.group_label(row["组"]): row for row in summary["至少应有"]}
         self.assertEqual((groups["借书／借阅"]["各遍"], groups["借书／借阅"]["命中遍数"], groups["寒暑假"]["各遍"], groups["寒暑假"]["命中遍数"],
                           groups["寒暑假"]["核对的遍数"]), ([True, True, None], 2, [False, True, None], 1, 2))
         self.assertAlmostEqual(summary["清单命中率"], 3 / 4)
         self.assertEqual([r["任务的键"] for r in summary["各遍"]], ["TASK-1/TASK-1"] * 3)
         self.assertEqual(summary["各遍"][2]["出错"], "RuntimeError：后端任务服务没有起来。")
-        for line in ("# 评测汇总：甲", "- 灯通过率：91%；清单命中率：75%",
-                     "| 整理建模 | 每个标签为「流程」的页至少有一条以「例外：」开头的例子。 | 未通过（差 OA-001） | 通过 | 算不了 | 1／2 |",
+        for line in ("# 评测汇总：甲", "- 灯通过率：93%；清单命中率：75%",
+                     "| 整理建模 | 每个标签为「流程」的页有一张以它为来源、带判断分叉的流程图。 | 未通过（差 OA-001） | 通过 | 算不了 | 1／2 |",
                      "| 问题 | 寒暑假 | 没有 | 命中（UC-001） | 没有核对 | 1／2 |",
                      "- 第 1 轮，提问：寒暑假借期怎么算？",
                      "- 第 2 轮，模拟用户说：「这个我得问一下。」上一轮的问题：寒暑假借期怎么算？\n"):
             self.assertIn(line, text)
         self.assertIn("| 第 3 遍 | ", text)
         self.assertIn("| 7 分 5 秒 | RuntimeError：后端任务服务没有起来。 |", text)
-        self.assertEqual((len(listed), listed[0]["标签"], listed[0]["遍数"], listed[0]["各灯通过率"]["flows_have_exception"], listed[0]["汇总"]),
+        self.assertEqual((len(listed), listed[0]["标签"], listed[0]["遍数"], listed[0]["各灯通过率"]["flows_have_flowchart_with_branch"], listed[0]["汇总"]),
                          (1, "甲", 3, 0.5, "评测汇总_甲.json"))
         self.assertEqual((len(again), again[0]["灯通过率"]), (1, 0.5))
 
@@ -99,14 +99,14 @@ class SummaryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             groups = lambda hit: [group("功能用例", ["借书", "借阅"], True), group("问题", ["寒暑假"], hit)]      # noqa: E731
-            for label, first, states in (("甲", "sim-001", {"flows_have_exception": "未通过"}), ("乙", "sim-002", {"no_untagged_pages": "未通过"})):
+            for label, first, states in (("甲", "sim-001", {"flows_have_flowchart_with_branch": "未通过"}), ("乙", "sim-002", {"no_untagged_pages": "未通过"})):
                 sims = [write_run(root, first, states, groups(label == "甲"))]
                 evals.write_list(root, evals.summarize(root, label, sims, META))
             code, printed = quiet(["compare", "甲", "乙", "--sim-root", str(root)])
             missing, complaint = quiet(["compare", "甲", "丙", "--sim-root", str(root)])
         self.assertEqual(code, 0)
         for line in ("# 评测对照：甲 与 乙", "- 变差的灯有 1 盏，清单里变差的组有 1 组。",
-                     "| 整理建模 | 每个标签为「流程」的页至少有一条以「例外：」开头的例子。 | 0／1（0%） | 1／1（100%） | +100 个百分点 |",
+                     "| 整理建模 | 每个标签为「流程」的页有一张以它为来源、带判断分叉的流程图。 | 0／1（0%） | 1／1（100%） | +100 个百分点 |",
                      "| 问题 | 寒暑假 | 1／1（100%） | 0／1（0%） | −100 个百分点，**变差** |"):
             self.assertIn(line, printed)
         self.assertEqual(missing, 1)
@@ -207,9 +207,9 @@ class EvalRunTest(unittest.TestCase):
                              ("试跑", f"sim-00{n + 1}", "用户 agent 表示目标达成", 2, 4, ""))
             self.assertRegex(one["任务编号"], r"^TASK-")
             states = {x["键"]: x["结果"] for x in one["灯"]}
-            # 立了一页流程主题并被引用；例子不以「例外：」开头；没有用例依据这一页；没有评审过。
-            self.assertEqual((states["materials_cited"], states["flows_have_exception"], states["flows_backed_by_use_cases"],
-                              states["no_untagged_pages"], states["roles_mentioned_by_flows"], states["reviews_no_open_findings"]),
+            # 立了一页流程主题并被引用；还没有给它画流程图；没有用例依据这一页；没有评审过。
+            self.assertEqual((states["materials_cited"], states["flows_have_flowchart_with_branch"], states["flows_backed_by_use_cases"],
+                              states["no_untagged_pages"], states["roles_in_context_and_use_cases"], states["reviews_no_open_findings"]),
                              ("通过", "未通过", "未通过", "通过", "不适用", "未通过"))
             hits = [(x["部分"], x["组"][0]) for x in one["至少应有"] if x["命中"]]
             self.assertEqual(hits, [("总体分析·流程页", "借书"), ("问题", "寒暑假")])
@@ -225,7 +225,7 @@ class EvalRunTest(unittest.TestCase):
         self.assertEqual((summary["遍数"], summary["模型"], summary["模拟用户的模型"], summary["材料"], summary["画像"], summary["清单"], summary["轮数上限"]),
                          (2, "fake/fake-model", "fake/fake-model", ["requirements.md"], "library-short.json", "library-short.json", 4))
         self.assertEqual([r["任务的键"] for r in summary["各遍"]], [f"{one['任务编号']}/{one['任务编号']}" for one in runs])
-        self.assertEqual({row["键"]: row["各遍"] for row in summary["灯"]}["flows_have_exception"], ["未通过", "未通过"])
+        self.assertEqual({row["键"]: row["各遍"] for row in summary["灯"]}["flows_have_flowchart_with_branch"], ["未通过", "未通过"])
         self.assertEqual(len(summary["至少应有"]), 37)
         self.assertAlmostEqual(summary["清单命中率"], 4 / 74)
         self.assertIn("# 评测汇总：试跑", text)

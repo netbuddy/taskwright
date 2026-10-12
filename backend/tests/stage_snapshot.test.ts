@@ -27,18 +27,39 @@ test("整份数据带 stage：现在的阶段、最近一次是谁在什么时�
   assert.deepEqual(Object.fromEntries(Object.entries(stage.lamps).map(([name, lamps]) => [name, lamps.map((one) => one.key)])), {
     reading: ["materials_cited"],
     clarifying: ["tagged_pages_no_open_questions", "decisions_have_goal"],
-    modeling: ["flows_have_exception", "roles_mentioned_by_flows", "no_duplicate_titles", "no_untagged_pages"],
-    writing: ["flows_backed_by_use_cases", "basis_pages_viewed", "no_pending_items"],
+    modeling: ["roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
+      "no_duplicate_titles", "no_untagged_pages", "rules_no_conflict"],
+    writing: ["flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items"],
     reviewing: ["reviews_no_open_findings", "completion_met"],
   });
-  // 几盏灯照库里的内容：材料被那一页引用了；流程页没有例外的例子；用例依据的页用户看过；还没有评审过。
+  // 几盏灯照库里的内容：材料被那一页引用了；流程页还没有流程图；用例依据的页用户看过；还没有评审过。
   assert.deepEqual([lampOf(stage, "materials_cited").ok, lampOf(stage, "basis_pages_viewed").ok, lampOf(stage, "no_pending_items").ok], [true, true, true]);
-  assert.deepEqual([lampOf(stage, "flows_have_exception").ok, lampOf(stage, "flows_have_exception").items, lampOf(stage, "flows_have_exception").summary],
-    [false, ["OA-001"], "有 1 页标签为「流程」的主题还没有以「例外：」开头的例子：OA-001。"]);
+  assert.deepEqual([lampOf(stage, "flows_have_flowchart_with_branch").ok, lampOf(stage, "flows_have_flowchart_with_branch").items, lampOf(stage, "flows_have_flowchart_with_branch").summary],
+    [false, ["OA-001"], "有 1 页标签为「流程」的主题还没有带判断分叉的流程图：OA-001（还没有以它为来源的流程图）。"]);
   assert.deepEqual([lampOf(stage, "reviews_no_open_findings").ok, lampOf(stage, "reviews_no_open_findings").summary], [false, "还没有评审过。"]);
   // 这份演示任务定义里没有「功能用例」这个集合：那一盏不适用。
   assert.equal(lampOf(stage, "flows_backed_by_use_cases").ok, null);
   assert.deepEqual(library.stageView(ws), stage, "另开连接再算一遍，结果相同");
+});
+
+test("整份数据里与图有关的几盏灯：流程页画了带分叉的流程图就通过；条目依据的图用户看过之前不适用或不通过，看过之后通过", () => {
+  const CHART = { said: "把预约取书画成流程图", diagram: { name: "预约取书的流程", kind: "flowchart",
+    mermaid: 'flowchart TD\n  a(["OA-001 预约取书"]) --> b{"书在不在架"}\n  b -- 在 --> c["办预约"]\n  b -- 不在 --> d["登记等候"]',
+    sources: [{ kind: "用户的话", excerpt: "把预约取书画成流程图" }, { kind: "条目", locator: "OA-001" }] } };
+  const BY_CHART = { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["办预约"] }, sources: [{ kind: "图", locator: "D-001", excerpt: "办预约" }] };
+  const lamps = (dir: string, ...keys: string[]) => keys.map((key) => lampOf(library.taskSnapshot(dir)[1]!.stage!, key).ok);
+  // 画了图、依据图写了用例，用户还没有看过任何一张图：流程图那一盏通过，依据的图那一盏不适用。
+  const drawn = build(tmp, "figure-lamps", DEFINITION, [[FLOW], { view: ["OA-001"] }, CHART, [BY_CHART]]);
+  assert.deepEqual(lamps(drawn, "flows_have_flowchart_with_branch", "basis_diagrams_viewed"), [true, null]);
+  assert.equal(lampOf(library.taskSnapshot(drawn)[1]!.stage!, "basis_diagrams_viewed").summary, "还没有记下用户看过哪些图，这一项暂时算不出来。");
+  // 用户看过这张图：通过。
+  const seen = build(tmp, "figure-lamps-seen", DEFINITION, [[FLOW], { view: ["OA-001"] }, CHART, [BY_CHART], { view: ["D-001"] }]);
+  assert.deepEqual(lamps(seen, "basis_diagrams_viewed"), [true]);
+  // 用户看过之后助手又改了图：要再看一次，不通过，点名那个条目。
+  const redrawn = build(tmp, "figure-lamps-redrawn", DEFINITION, [[FLOW], { view: ["OA-001"] }, CHART, [BY_CHART], { view: ["D-001"] },
+    { diagram: { diagram: "D-001", base_revision: 1, note: "助手改了说明。" } }]);
+  const lamp = lampOf(library.taskSnapshot(redrawn)[1]!.stage!, "basis_diagrams_viewed");
+  assert.deepEqual([lamp.ok, lamp.items, lamp.summary], [false, ["UC-001"], "有 1 个条目依据的图用户还没有看过：UC-001（没看过的图是 D-001）。"]);
 });
 
 test("库事件：移动阶段转成 stage_changed；有阶段的任务每一批最后一条事件带现在的阶段与灯", () => {

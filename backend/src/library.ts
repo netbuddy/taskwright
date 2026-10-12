@@ -12,11 +12,13 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
-import { type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "../../agent/src/lib/diagram.ts";
+import { type DiagramRecord, diagramViewed, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "../../agent/src/lib/diagram.ts";
 import { LOCATIONS_SUFFIX, isLocationTable } from "../../agent/src/lib/docx_locations.ts";
 import { pdfFacts, pdfSourceName } from "./projection.ts";
 import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
+import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQuestions, goalTree, rulesTable } from "../../agent/src/lib/overall_views.ts";
+import { QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { stageRecords, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -223,7 +225,7 @@ export function batchView(no: number, row: Row) {
   return out;
 }
 
-/** 依据方是任务里的要素的两种来源：另一个条目，或者一张图（图这种要素还没有做出来）。 */
+/** 依据方是任务里的要素的两种来源：另一个条目，或者一张图。 */
 const SOURCE_ITEM = "条目";
 const SOURCE_FIGURE = "图";
 /** 产出方是哪种要素：条目，或者图。 */
@@ -400,6 +402,8 @@ export interface LibraryData {
   /** 任务里的全部图（删掉的也在）与图的来源（键是图的编号加图自己的修订号）。还没有图的表的旧库里是空的。 */
   diagrams?: DiagramRecord[];
   diagram_sources?: Map<string, SourceRow[]>;
+  /** 用户看过的「图加修订」（agent/src/lib/diagram.ts 的 viewedDiagramRevisions）。 */
+  diagram_views?: Set<string>;
   event_meta?: Map<number, { actor: any; at: any; call_id: any }>;
   reviews?: Row[];
   findings?: Map<number, any[]>;
@@ -435,6 +439,7 @@ export function readAll(db: DatabaseSync, afterSeq: number | null = null, withRe
       sources: readSources(db, tid),
       diagrams: readDiagrams(db, tid),
       diagram_sources: readSources(db, tid, ELEMENT_FIGURE),
+      diagram_views: viewedDiagramRevisions(db, tid),
       event_meta: eventMeta,
       reviews: readReviews(db, tid),
       findings: readFindings(db, tid),
@@ -539,9 +544,9 @@ export class Library {
   }
 
   /**
-   * 条目在某次修订下的来源。依据另一个条目的来源另带两项，都是现算的、不存库：对方现在的修订号（current_revision），
-   * 与依据的现状（stale）——对方已经删除是 "deleted"；对方现在的修订号大于引用时记下的修订号是 "changed"（依据已变）；
-   * 否则是 null。依据图的来源这两项先给 null：图这种要素还没有做出来。
+   * 条目在某次修订下的来源。依据另一个条目或一张图的来源另带两项，都是现算的、不存库：对方现在的修订号（current_revision，
+   * 图的是图自己的修订号），与依据的现状（stale）——对方已经删除是 "deleted"；对方现在的修订号大于引用时记下的修订号是
+   * "changed"（依据已变）；否则是 null。
    */
   sourcesOf(itemId: string, revisionNo: number | null | undefined): SourceView[] {
     if (!revisionNo) return [];
@@ -550,7 +555,13 @@ export class Library {
 
   /** 给依据另一个条目（或图）的来源带上对方现在的修订号与依据的现状；别的种类原样。 */
   withBasisState(one: SourceView): SourceView {
-    if (one.kind === SOURCE_FIGURE) return { ...one, current_revision: null, stale: null };
+    if (one.kind === SOURCE_FIGURE) {
+      const record = (this.data.diagrams || []).find((have) => have.diagram_id === one.locator);
+      const now = record ? latestVersion(record) : null;
+      if (!record || !now || record.deleted_in_revision !== null) return { ...one, current_revision: null, stale: "deleted" as const };
+      const then = one.depends_revision ?? null;
+      return { ...one, current_revision: now.revision_no, stale: then !== null && now.revision_no > then ? "changed" as const : null };
+    }
     if (one.kind !== SOURCE_ITEM) return one;
     const cited = this.items.get(one.locator);
     if (!cited || cited.deleted_in_revision !== null) return { ...one, current_revision: null, stale: "deleted" as const };
@@ -564,7 +575,10 @@ export class Library {
     return (this.data.diagram_sources?.get(itemKey(diagramId, revisionNo)) || []).map((row) => this.withBasisState(sourceView(row)));
   }
 
-  /** 图的列表里的一项：编号、图名、种类、它自己现在的修订号、最近一次是谁在什么时候改的、什么时候画的、有几条来源。 */
+  /**
+   * 图的列表里的一项：编号、图名、种类、它自己现在的修订号、最近一次是谁在什么时候改的、什么时候画的、有几条来源，
+   * 以及用户看没看过它现在的内容（viewed，判法见 agent/src/lib/diagram.ts 的 diagramViewed：助手改过之后要再看一次）。
+   */
   diagramRow(record: DiagramRecord) {
     const now = latestVersion(record)!;
     return {
@@ -572,6 +586,7 @@ export class Library {
       revision_no: now.revision_no, revision_by: actorWord(now.actor), revision_at: clock.fromLocalText(now.created_at),
       created_at: clock.fromLocalText(record.versions[0].created_at),
       source_count: (this.data.diagram_sources?.get(itemKey(record.diagram_id, now.revision_no)) || []).length,
+      viewed: diagramViewed(record, this.data.diagram_views ?? new Set()),
     };
   }
 
@@ -581,7 +596,8 @@ export class Library {
   }
 
   /**
-   * 一张图的详情：列表里的各项，加 Mermaid 文本、说明、它改动过的修订号、来源、被谁依据（现在没有要素能依据图，是空列表）、
+   * 一张图的详情：列表里的各项，加 Mermaid 文本、说明、它改动过的修订号、来源、被谁依据（当前修订的来源里有一条种类为「图」、
+   * 出处是它的那些还在的条目，照条目清单的顺序，每项是「条目」、条目编号与条目当前的修订号）、
    * 图里画了谁（drawn）。drawn 是从 Mermaid 文本里扫条目编号得出的补充视图，不存库：每项是条目编号、条目现在的标题与状态
    * （live 还在、deleted 已经删除、missing 任务里没有这个编号）。已经删除的图也给得出详情（deleted 为真），没有这张图返回 null。
    */
@@ -602,9 +618,22 @@ export class Library {
       ...this.diagramRow(record), deleted: record.deleted_in_revision !== null,
       mermaid: now.mermaid, note: now.note, revisions: record.versions.map((one) => one.revision_no),
       sources: this.diagramSourcesOf(diagramId, sourcesAt),
-      depended_by: [] as { element_kind: string; id: string; revision_no: number | null }[],
+      depended_by: this.diagramDependedBy(diagramId),
       drawn,
     };
+  }
+
+  /** 一张图被哪些条目依据：还没有删除的条目里，当前修订的来源有一条种类为「图」、出处是这张图的，照条目清单的顺序。现算，不存库。 */
+  diagramDependedBy(diagramId: string): { element_kind: string; id: string; revision_no: number | null }[] {
+    const out: { element_kind: string; id: string; revision_no: number | null }[] = [];
+    for (const i of this.items.values()) {
+      if (i.deleted_in_revision !== null) continue;
+      const no = this.currentRevision(i.item_id);
+      if ((this.data.sources?.get(itemKey(i.item_id, no)) || []).some((one) => one["种类"] === SOURCE_FIGURE && one["出处"] === diagramId)) {
+        out.push({ element_kind: ELEMENT_ITEM, id: i.item_id, revision_no: no });
+      }
+    }
+    return out;
   }
 
   /**
@@ -718,6 +747,35 @@ export class Library {
     return out;
   }
 
+  /**
+   * 从总体分析的页与问题条目算出来的三张表（agent/src/lib/overall_views.ts，只算不存）：rules 是规则表，goals 是业务目标，
+   * decisions 是决策记录与待澄清事项。plain 是还在的各个条目现在的内容。问题条目认的是状态字段的取值里有「用户决定保留」的集合；
+   * 它说事情的那句话取集合的第一个字段，时刻取条目第一次保存的时刻。
+   */
+  overallViews(plain: readonly PlainItem[]) {
+    const createdAt = (itemId: string): string | null => {
+      const first = this.contents.get(itemKey(itemId, this.itemRevisions(itemId)[0]));
+      return clock.fromLocalText((first ? this.data.event_meta?.get(first.event_seq) : undefined)?.at ?? null);
+    };
+    const sourcesNow = (one: PlainItem): ViewSource[] =>
+      this.sourcesOf(one.item_id, one.revision_no).map((s) => ({ kind: s.kind, locator: s.locator, excerpt: s.excerpt, supports: s.supports ?? [] }));
+    const pages: ViewPage[] = plain.filter((one) => one.collection === OVERALL_COLLECTION)
+      .map((one) => ({ item_id: one.item_id, fields: one.fields, sources: sourcesNow(one), created_at: createdAt(one.item_id) }));
+    const statusFieldOf = new Map<string, string>();
+    for (const [name, collection] of this.collections) {
+      const field = (collection["字段"] || []).find((f: Record<string, any>) => f["类型"] === "枚举" && (f["取值"] || []).includes(QUESTION_KEEP_STATUS));
+      if (field) statusFieldOf.set(name, field["名"]);
+    }
+    const text = (value: unknown): string => (typeof value === "string" ? value : "");
+    const questions: ViewQuestion[] = plain.filter((one) => statusFieldOf.has(one.collection)).map((one) => ({
+      item_id: one.item_id, subject: titleOf(one.fields, this.collections.get(one.collection)),
+      open: one.fields[statusFieldOf.get(one.collection)!] === QUESTION_OPEN_STATUS,
+      kind: text(one.fields[QUESTION_KIND_FIELD]) || null, suggestion: text(one.fields[QUESTION_SUGGESTION_FIELD]),
+      sources: sourcesNow(one), created_at: createdAt(one.item_id),
+    }));
+    return { rules: rulesTable(pages, questions), goals: goalTree(pages), decisions: decisionsAndOpenQuestions(pages, questions) };
+  }
+
   /** 整份数据里的 task。 */
   taskView() {
     const task = this.data.task!;
@@ -810,6 +868,8 @@ export class Library {
       // 工作的阶段与灯：与完成条件一样在读事务提交之后另算（taskSnapshot），这里先占位。
       stage: null as ReturnType<typeof stageView>,
       items,
+      // 规则表、业务目标、决策记录与待澄清事项：从总体分析的页与问题条目现算；任务定义里没有总体分析集合时是 null。
+      overall_views: withOverall ? this.overallViews(plain) : null,
       diagrams: this.diagramsView(),
       latest_revision: this.latestRevision(),
       review_batches: this.batchesView(),
@@ -881,6 +941,8 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
       status_after: or(payload.status_after, "已完成"), actor, completion: null }];
   }
   if (e.name === "ITEM_VIEWED") return ["item_viewed", { ...base, items: or(payload.items, []), op_id: opId, completion: null }];
+  // 用户打开看了一张图：diagrams 每项是图的编号与用户看到的那一次修订号。
+  if (e.name === "DIAGRAM_VIEWED") return ["diagram_viewed", { ...base, diagrams: or(payload.diagrams, []), op_id: opId }];
   if (e.name === "REVIEW_RECORDED") {
     return ["review_recorded", { ...base, item_id: payload.item_id ?? null, revision_no: payload.revision_no ?? null, verdict: payload.verdict ?? null,
       reason: payload.reason ?? null, findings: (or(payload.findings, []) as Record<string, any>[]).map(findingView),

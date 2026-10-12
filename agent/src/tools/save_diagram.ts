@@ -58,8 +58,9 @@ export function registerSaveDiagram(pi: ExtensionAPI): void {
     name: TOOL_NAME,
     label: "保存图",
     description:
-      "保存一张图：新画一张、修改一张已有的图，或者删除一张图。只在用户要求画图时用。" +
-      "图用 Mermaid 文本写，种类是用例图（use_case，用流程图的写法画）、类图（class）、状态图（state）、时序图（sequence）、流程图（flowchart）之一。" +
+      "保存一张图：新画一张、修改一张已有的图，或者删除一张图。什么时候画图照说明里写的做。" +
+      "图用 Mermaid 文本写，种类是系统边界图（context，用流程图的写法画）、用例图（use_case，用流程图的写法画）、对象关系图（class，用类图的写法画）、" +
+      "状态图（state）、时序图（sequence）、流程图（flowchart）之一。" +
       "新画一张图时必须写来源（sources），至少一条，不写就不保存。" +
       "保存前系统校验 Mermaid 文本的写法，不对就不保存，并告诉你第几行附近错在哪里。" +
       "图的编号由工具生成（D-001 这样）；修改与删除时写图的编号与 base_revision。" +

@@ -1,5 +1,6 @@
 /**
- * 用户在页面上改一张图的 Mermaid 文本（界面操作 edit_diagram）。经扩展命令 /tw-user 进来（hooks/user_commands.ts），不经模型。
+ * 用户在页面上对图做的两件事：改一张图的 Mermaid 文本（界面操作 edit_diagram），与打开看一张图（mark_diagram_viewed，见文件末尾）。
+ * 都经扩展命令 /tw-user 进来（hooks/user_commands.ts），不经模型。下面先说改图。
  *
  * 与条目的界面修改一样是一次直接写库，只是写的是图：记作这张图自己的一次新修订，发起方是用户。写库用「保存图」的核心函数
  * （lib/save_diagram.ts），与助手画图有三处不同：
@@ -15,8 +16,8 @@
  */
 
 import type { DatabaseSync } from "node:sqlite";
-import { ACTOR_USER } from "./db.ts";
-import { DIAGRAM_ID, latestVersion, readDiagrams } from "./diagram.ts";
+import { ACTOR_USER, emit } from "./db.ts";
+import { DIAGRAM_ID, EVENT_DIAGRAM_VIEWED, latestVersion, readDiagrams, viewedDiagramRevisions } from "./diagram.ts";
 import { saveDiagram } from "./save_diagram.ts";
 import { NoDatabaseYet, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
 import { ToolRejection } from "./tool_rejection.ts";
@@ -104,4 +105,62 @@ export async function editDiagram(ctx: { workspaceDir: string; sessionId: string
     if (error instanceof ToolRejection) throw new UserOpError("rejected", `图 ${id} 没有保存：${error.fact}。`, { reasons: [error.fact] });
     throw error;
   }
+}
+
+// ───────────── 用户看过一张图 ─────────────
+
+/** 操作种类：用户打开看了一张图。它不在 USER_OP_KINDS 里：记的是图，不经 runUserOperation。 */
+export const DIAGRAM_VIEW_OP_KIND = "mark_diagram_viewed";
+
+export interface DiagramViewResult {
+  op_id: string;
+  kind: typeof DIAGRAM_VIEW_OP_KIND;
+  event_seqs: number[];
+  results: { diagram_id: string; revision_no: number }[];
+  revision_no: null;
+  /** 恒为空文字：用户打开看一张图不往会话里追加任何东西，也不告诉助手。 */
+  note: "";
+  undoable: false;
+}
+
+/**
+ * 用户打开看了一张或几张图（界面操作 mark_diagram_viewed）：记一条 DIAGRAM_VIEWED 事件，写明看的是哪张图的第几次修订。
+ * 与打开条目详情记已读是同一回事，只是对象是图：不改图的内容，不占任何修订号，不往会话里追加东西。
+ * targets 每项写 { diagram_id, base_revision }，base_revision 是用户打开时这张图的修订号（它之后又改了也照记，记的是用户看到的那一次）。
+ * 同一张图的同一次修订已经记过就跳过；都跳过时不记事件。图不存在、已经删除、没有这一次修订时拒绝，什么都不记。
+ */
+export function markDiagramViewed(ctx: { workspaceDir: string; sessionId: string }, request: UserOpRequest): DiagramViewResult {
+  const opId = typeof request.op_id === "string" ? request.op_id : "";
+  if (!opId.startsWith("ui-")) throw new UserOpError("bad_request", "操作编号 op_id 应当由后端生成，以 ui- 开头。");
+  const shape = "mark_diagram_viewed 的 targets 是一个不为空的列表，每一项写 { \"diagram_id\": 图的编号, \"base_revision\": 整数 }。";
+  if (!Array.isArray(request.targets) || request.targets.length === 0) throw new UserOpError("bad_request", shape);
+  const targets = request.targets.map((one) => {
+    if (!isObject(one) || typeof one.diagram_id !== "string" || !Number.isInteger(one.base_revision)) throw new UserOpError("bad_request", shape);
+    return { diagram_id: one.diagram_id, revision_no: one.base_revision as number };
+  });
+  if (new Set(targets.map((one) => one.diagram_id)).size !== targets.length) throw new UserOpError("bad_request", "targets 里有重复的图。");
+
+  const seq = inDatabase(ctx.workspaceDir, (db) => {
+    const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+    if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+    if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
+      throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
+    }
+    if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再改。`, { status: task.status });
+    const records = readDiagrams(db, task.task_id);
+    for (const target of targets) {
+      const record = DIAGRAM_ID.test(target.diagram_id) ? records.find((one) => one.diagram_id === target.diagram_id) : undefined;
+      if (!record || record.versions.length === 0 || record.deleted_in_revision !== null) {
+        throw new UserOpError("rejected", `图 ${target.diagram_id} 不存在或已经删除。`, { reasons: [`图 ${target.diagram_id} 不存在或已经删除`] });
+      }
+      if (!record.versions.some((one) => one.revision_no === target.revision_no)) {
+        throw new UserOpError("rejected", `图 ${target.diagram_id} 没有修订 ${target.revision_no}。`, { reasons: [`图 ${target.diagram_id} 没有修订 ${target.revision_no}`] });
+      }
+    }
+    const seen = viewedDiagramRevisions(db, task.task_id);
+    const fresh = targets.filter((one) => !seen.has(`${one.diagram_id}\u0000${one.revision_no}`));
+    if (fresh.length === 0) return null;
+    return emit(db, { taskId: task.task_id, sessionId: ctx.sessionId, callId: opId, name: EVENT_DIAGRAM_VIEWED, payload: { diagrams: fresh }, actor: ACTOR_USER });
+  });
+  return { op_id: opId, kind: DIAGRAM_VIEW_OP_KIND, event_seqs: seq === null ? [] : [seq], results: targets, revision_no: null, note: "", undoable: false };
 }

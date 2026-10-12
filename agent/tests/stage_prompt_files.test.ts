@@ -15,7 +15,14 @@ import { fileURLToPath } from "node:url";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
 import { EXCEPTION_EXAMPLE_PREFIX } from "../src/lib/overall_analysis.ts";
 import { closedQuestion } from "../src/lib/reply.ts";
-import { ENTER_OPTIONS, STAGES, STAGE_NAMES, STAY_OPTIONS, type Stage, type WriteKind, canWrite, nextStage } from "../src/lib/stage.ts";
+import { RULE_CONFLICT_PREFIX } from "../src/lib/overall_views.ts";
+import { ENTER_OPTIONS, type LampInput, STAGES, STAGE_NAMES, STAY_OPTIONS, type Stage, type WriteKind, canWrite, nextStage, stageLamps } from "../src/lib/stage.ts";
+
+/** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
+const EMPTY_LAMP_INPUT: LampInput = {
+  pages: [], items: [], questions: [], collections: [], materials: [], citedDocuments: [], diagrams: [], diagramViewsRecorded: false, ruleConflicts: [],
+  review: { failing: [], any: false }, completion: { satisfied: false, unmet: [] },
+};
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const LEGACY = join(ROOT, "agent", "prompts", "skills", "taskwright-executor", "SKILL.md");
@@ -57,7 +64,7 @@ const EDITS: { why: string; from: string; to: string }[] = [
   {
     why: "画图：有阶段的任务要到整理建模阶段才能画，并且可以先提议。",
     from: "1. **只在用户要求时画。** 用户说「把这几个用例画成用例图」「给退款流程画一张时序图」这类话时才画；整理条目时不要主动画图。",
-    to: "1. **什么时候画。** 核读材料与澄清两个阶段不能画图，工具会拒绝。从整理建模阶段起，用户说「把这几个用例画成用例图」「给退款流程画一张时序图」这类话时画；你觉得一张图能帮用户看清时先提议，用户同意之后再画，不要不问就画。",
+    to: "1. **什么时候画。** 核读材料与澄清两个阶段不能画图，工具会拒绝。从整理建模阶段起，用户说「把这几个用例画成用例图」「给退款流程画一张时序图」这类话时画；你觉得一张图能帮用户看清时先提议，用户同意之后再画，不要不问就画。整理建模阶段例外：这一段你主动把五种图画出来，不等用户提出，也不用先提议，见「现在这个阶段」。",
   },
 ];
 
@@ -138,28 +145,63 @@ test("有阶段的任务的系统提示：说明已在下文、不用再读 skil
 // ───────────── 五个阶段各一段 ─────────────
 
 const STAGE_HEADINGS = ["这一段做什么", "这一段不做什么", "做到什么算够", "出口", "用户的话落在这一段之外时"];
+/** 整理建模那一段的最后一节换了写法：用户说的话按落在哪里分四种处理（落在前面阶段的事直接做）。别的四段还是原来的写法。 */
+const MODELING_LAST_HEADING = "用户说的话不属于本段时";
+const lastHeading = (stage: Stage) => (stage === "modeling" ? MODELING_LAST_HEADING : STAGE_HEADINGS[4]);
 
 test("五个阶段各有一段：文件名是阶段的键，标题写阶段的名字，都按同样的五个小节写", () => {
   for (const stage of STAGES) {
     const text = read(`${stage}.md`);
     assert.ok(text.startsWith(`# 现在这个阶段：${STAGE_NAMES[stage]}\n`), stage);
     assert.ok(text.includes(`任务现在在${STAGE_NAMES[stage]}阶段`), stage);
-    assert.deepEqual([...sections(text).keys()], STAGE_HEADINGS, stage);
+    assert.deepEqual([...sections(text).keys()], [...STAGE_HEADINGS.slice(0, 4), lastHeading(stage)], stage);
     // 这一段的「算够」里说了去哪里看还差什么。
     assert.ok(sections(text).get("做到什么算够")!.includes("查询任务状态的末尾写着这一段还差什么"), stage);
   }
 });
 
 test("每一段都写明用户的话落在这一段之外时怎么办：不照办、不复述求同意，说明现在在哪一段与怎样过去", () => {
-  for (const stage of STAGES) {
+  for (const stage of STAGES.filter((one) => one !== "modeling")) {
     const outside = sections(read(`${stage}.md`)).get("用户的话落在这一段之外时")!;
     assert.ok(outside.includes("不要照办，也不要把用户的话复述一遍求同意"), stage);
     assert.ok(outside.includes(`再在回复里说清任务现在在${STAGE_NAMES[stage]}阶段、那件事`), stage);
   }
   // 写条目之前的三段：用户要写条目时发那张卡片，由用户点。
   for (const stage of ["reading", "clarifying", "modeling"] as const) {
-    assert.ok(sections(read(`${stage}.md`)).get("用户的话落在这一段之外时")!.includes("发「开始写条目」的卡片，由用户点"), stage);
+    assert.ok(sections(read(`${stage}.md`)).get(lastHeading(stage))!.includes("发「开始写条目」的卡片，由用户点"), stage);
   }
+});
+
+test("整理建模那一段的「用户说的话不属于本段时」：分四种处理，落在前面阶段的事直接做，落在后面阶段的事发卡片", () => {
+  const outside = sections(read("modeling.md")).get(MODELING_LAST_HEADING)!;
+  const cases = outside.split("\n").filter((line) => line.startsWith("- "));
+  assert.deepEqual(cases.map((line) => line.slice(2, line.indexOf("（") === -1 ? line.indexOf("：") : Math.min(line.indexOf("（"), line.indexOf("：")))),
+    ["落在这一段", "落在前面的阶段", "落在后面的阶段", "与这件需求无关"]);
+  assert.ok(cases[0].endsWith("照做。"));
+  assert.ok(cases[1].includes("直接改相应的主题页并写上来源，不用退回") && cases[1].includes("跟着改图"));
+  assert.ok(cases[1].includes("退回核读材料，在回复里写 `stage`「核读材料」与 `reason`"));
+  assert.ok(cases[2].includes("用一句话说明任务现在在整理建模阶段、下一段要做什么") && cases[2].includes("用户打字说可以不算"));
+  assert.ok(cases[3].includes("简短作答，回到手上的事"));
+});
+
+test("整理建模那一段：主动画五种图并写明第十一节第 1 条对这一段不适用；固定的七步；算够的七件与灯的数目相同", () => {
+  const text = read("modeling.md");
+  assert.ok(text.includes("这一段你主动画图，不等用户提出，也不用先提议：第十一节第 1 条「用户提出时画、先提议再画」对这一段不适用。"));
+  assert.ok(read("common.md").includes("整理建模阶段例外：这一段你主动把五种图画出来，不等用户提出，也不用先提议，见「现在这个阶段」。"));
+  const steps = [...sections(text).get("这一段做什么")!.matchAll(/^(\d)\. \*\*([^*]+)\*\*/gm)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(steps, ["1 先画系统边界图（context）。", "2 再画用例图（use_case）。", "3 再画对象关系图（class）。", "4 每一页流程画一张流程图（flowchart）。",
+    "5 有状态的概念各画一张状态图（state）。", "6 把各页「已经定下的」通读一遍，找互相矛盾的规则。", "7 汇报。"]);
+  for (const words of [`「事项」以「${RULE_CONFLICT_PREFIX}」开头`, "每张图的节点文字最前面写它画的那一页的编号，来源写它画自的页",
+    "在用的页还没贴标签、或者没有上级主题的，这时贴上或建议", "并请用户把这几张图看一遍"]) assert.ok(text.includes(words), words);
+  const enough = sections(text).get("做到什么算够")!;
+  assert.ok(enough.startsWith("## 做到什么算够\n\n七件："));
+  assert.equal(enough.slice(enough.indexOf("七件：")).split("。")[0].split("；").length, 7);
+  assert.equal(stageLamps(EMPTY_LAMP_INPUT).modeling.length, 7);
+  // 写条目那一段：算够的四件与灯的数目相同，条目可以依据图。
+  const writing = sections(read("writing.md"));
+  assert.ok(writing.get("做到什么算够")!.includes("四件：") && writing.get("做到什么算够")!.includes("每个条目依据的图都是用户看过的"));
+  assert.equal(stageLamps(EMPTY_LAMP_INPUT).writing.length, 4);
+  assert.ok(writing.get("这一段做什么")!.includes("条目也可以依据整理建模阶段画的图：来源种类写「图」，出处写图的编号"));
 });
 
 test("每一段的「出口」：往前都是发卡片由用户点，两个选项的键与文字同程序里的常量；没有「自己往前移」的说法；回退仍可以自己做", () => {
@@ -251,9 +293,20 @@ test("需求规格任务的说明拆成三份：SKILL.md 只留每个阶段都�
   assert.ok(reading.includes("这几批里不要夹着用例、需求或约束"));
   const writing = readFileSync(join(SRS_SKILL, "stages", "writing.md"), "utf-8");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
-  for (const head of ["总体分析与材料里的内容都要整理进条目", "1. **把内容分拣成四类。**", "2. **一批最多写 4 个条目，问题条目放最后一批。**", "3. **一句话既是解释又是规则时。**", "4. **写完对用户说话。**"]) {
+  for (const head of ["整理建模阶段画出的图与材料里的内容都要整理进条目", "1. **照图写条目。**", "2. **每条功能用例的来源写两张图。**", "3. **非功能需求不经图。**",
+    "4. **含糊的记成问题。**", "5. **一批最多写 4 个条目，问题条目放最后一批。**", "6. **一句话既是解释又是规则时。**", "7. **写完对用户说话。**"]) {
     assert.ok(writing.includes(head), head);
   }
+  // 从图到条目的对应：五种图都说到了，功能用例的八个字段都有着落（字段名与任务定义里的相同）。
+  const mapping = writing.slice(writing.indexOf("1. **照图写条目。**"), writing.indexOf("2. **每条功能用例的来源写两张图。**"));
+  for (const kind of ["用例图", "流程图", "状态图", "对象关系图", "系统边界图"]) assert.ok(mapping.includes(kind), kind);
+  const definition = JSON.parse(readFileSync(join(ROOT, "task-types", "srs-authoring", "docs", "task-definitions", "srs-authoring.json"), "utf-8"));
+  const useCase = definition.交付物.条目集合.find((one: { 名称: string }) => one.名称 === "功能用例");
+  assert.equal(useCase.字段.length, 8);
+  for (const field of useCase.字段 as { 名: string }[]) assert.ok(mapping.includes(`「${field.名}」`), field.名);
+  assert.ok(writing.includes("种类写「图」，出处写图的编号（例如 D-002）"));
+  assert.ok(writing.includes("任务里只有一张用例图，各条用例都指向它，不要为每条用例另画一张。"));
+  assert.ok(writing.includes("这件事不牵涉状态图时，不必为了对应而补写。"));
   // 任务类型的文件名也只用阶段的键。
   for (const name of readdirSync(join(SRS_SKILL, "stages"))) assert.ok((STAGES as readonly string[]).includes(name.replace(/\.md$/, "")), name);
 });

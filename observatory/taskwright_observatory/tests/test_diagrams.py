@@ -84,7 +84,7 @@ class DiagramsTest(unittest.TestCase):
         text = out.getvalue()
         self.assertIn("【图】（不是条目，修订号是图自己的，不占下面的修订列表）", text)
         self.assertIn("D-001「读者的两件事」（用例图），改动过的修订：1、2。", text)
-        self.assertIn("D-002「多余的」（类图），在它的修订 2 删除，改动过的修订：1、2。", text)
+        self.assertIn("D-002「多余的」（对象关系图），在它的修订 2 删除，改动过的修订：1、2。", text)
         self.assertIn("种类是条目，出处是 UC-001，引用时它是修订 1", text)
 
     def test_核对脚本_带图的库全部通过_弄坏之后第11项指出是哪一行(self):

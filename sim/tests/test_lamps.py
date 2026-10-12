@@ -1,4 +1,5 @@
-"""评测的灯：十二盏各一组正反例（手写的任务数据），另有一例经真实的库、命令行入口与完成条件核对走一遍。"""
+"""评测的灯：十六盏。在这里算的九盏各一组正反例（手写的任务数据）；整盏从产品取的七盏看三种结果怎样换成这里的说法；
+另有一例经真实的库、命令行入口与完成条件核对走一遍。"""
 
 from __future__ import annotations
 
@@ -61,9 +62,14 @@ def one(key: str, items, facts: dict | None = None, materials=(), completion=Non
 
 
 class LampTest(unittest.TestCase):
-    def test_一共十二盏_按五个阶段分组_通过与否只有通过和未通过两种有值(self):
+    def test_一共十六盏_按五个阶段分组_通过与否只有通过和未通过两种有值(self):
         out = lamps.compute(task([page(1, "借书", ["流程"])]), None, [], None)
-        self.assertEqual(len(out), 12)
+        self.assertEqual(len(out), 16)
+        self.assertEqual([x["键"] for x in out if x["阶段"] == "整理建模"],
+                         ["roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
+                          "no_duplicate_titles", "no_untagged_pages", "rules_no_conflict"])
+        self.assertEqual([x["键"] for x in out if x["阶段"] == "写条目"],
+                         ["flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items"])
         self.assertEqual([x["阶段"] for x in out], [s for s, _k, _t in lamps.LAMPS])
         self.assertEqual(sorted({x["阶段"] for x in out}, key=lamps.STAGES.index), list(lamps.STAGES))
         for x in out:
@@ -97,24 +103,25 @@ class LampTest(unittest.TestCase):
                                                      page(4, "不收现金", ["决定"])]), ("未通过", ["OA-003", "OA-004"]))
         self.assertEqual(one("decisions_have_goal", [goal, other])[0], "不适用")
 
-    def test_流程页有以例外开头的例子(self):
-        self.assertEqual(one("flows_have_exception", [page(1, "借书", ["流程"], ["小王借了两本。", "例外：名下有逾期未还的书，不能再借。"])]), ("通过", []))
-        self.assertEqual(one("flows_have_exception", [page(1, "借书", ["流程"], ["反例：校外读者不能借。", "小王遇到例外：没带证。"]),
-                                                      page(2, "还书", ["流程"])]), ("未通过", ["OA-001", "OA-002"]))
-        self.assertEqual(one("flows_have_exception", [page(1, "读者", ["角色"])])[0], "不适用")
-        # 已废弃的流程页不算。
-        self.assertEqual(one("flows_have_exception", [page(1, "借书", ["流程"], status="已废弃")])[0], "不适用")
-
-    def test_角色页被流程页或场景页提到(self):
-        pages = [page(1, "读者", ["角色"]), page(2, "借书", ["流程"]), page(3, "借书证", ["概念"]), page(4, "馆员", ["角色"])]
-        mention = lambda who, by: {who: [{"item_id": by, "collection": "总体分析", "field": "它是什么", "word": "x", "sentence": "y"}]}  # noqa: E731
-        self.assertEqual(one("roles_mentioned_by_flows", pages[:3], {"mentions": mention("OA-001", "OA-002")}), ("通过", []))
-        # 只被概念页或条目提到不算；没有被任何地方提到也不算。
-        self.assertEqual(one("roles_mentioned_by_flows", pages, {"mentions": {**mention("OA-001", "OA-003"), **mention("OA-004", "UC-001")}}),
-                         ("未通过", ["OA-001", "OA-004"]))
-        self.assertEqual(one("roles_mentioned_by_flows", pages[1:3], {"mentions": {}})[0], "不适用")
-        found = [x for x in lamps.compute(task(pages), None, [], None, facts_problem="本机找不到 node。") if x["键"] == "roles_mentioned_by_flows"][0]
-        self.assertEqual((found["结果"], found["通过"], found["备注"]), ("算不了", None, "本机找不到 node。"))
+    def test_从产品取的七盏_三种结果换成这里的说法_取不到时是算不了(self):
+        pages = [page(1, "读者", ["角色"]), page(2, "借书", ["流程"])]
+        product = {"lamps": {
+            "roles_in_context_and_use_cases": {"ok": False, "items": ["OA-001"], "summary": "有 1 页标签为「角色」的主题还没有同时画进系统边界图与用例图：OA-001（用例图里没有）。"},
+            "flows_have_flowchart_with_branch": {"ok": True, "items": [], "summary": "每个标签为「流程」的主题都有一张带判断分叉的流程图。"},
+            "concepts_related_in_class": {"ok": None, "items": [], "summary": "还没有标签为「概念」的主题。"},
+        }}
+        found = {x["键"]: x for x in lamps.compute(task(pages), product, [], None)}
+        self.assertEqual((found["roles_in_context_and_use_cases"]["结果"], found["roles_in_context_and_use_cases"]["差的条目编号"], found["roles_in_context_and_use_cases"]["备注"]),
+                         ("未通过", ["OA-001"], "有 1 页标签为「角色」的主题还没有同时画进系统边界图与用例图：OA-001（用例图里没有）。"))
+        self.assertEqual((found["flows_have_flowchart_with_branch"]["结果"], found["flows_have_flowchart_with_branch"]["差的条目编号"], found["flows_have_flowchart_with_branch"]["备注"]),
+                         ("通过", [], ""))
+        self.assertEqual((found["concepts_related_in_class"]["结果"], found["concepts_related_in_class"]["备注"]), ("不适用", "还没有标签为「概念」的主题。"))
+        # 产品这一次没有给出某一盏（例如命令行入口是旧的）：算不了，写明原因。
+        self.assertEqual((found["rules_no_conflict"]["结果"], found["rules_no_conflict"]["备注"]), ("算不了", "产品没有给出这盏灯的结果。"))
+        # 命令行入口调不动：七盏都是算不了，原因照入口给的。
+        down = {x["键"]: x for x in lamps.compute(task(pages), None, [], None, facts_problem="本机找不到 node。")}
+        self.assertEqual({(down[key]["结果"], down[key]["通过"], down[key]["备注"]) for key in lamps.PRODUCT_LAMPS}, {("算不了", None, "本机找不到 node。")})
+        self.assertEqual(len(lamps.PRODUCT_LAMPS), 7)
 
     def test_没有两页的标题或别名相同(self):
         self.assertEqual(one("no_duplicate_titles", [page(1, "借书", aliases=["借阅"]), page(2, "还书", aliases=["归还"])]), ("通过", []))
@@ -127,14 +134,6 @@ class LampTest(unittest.TestCase):
         self.assertEqual(one("no_untagged_pages", [page(1, "借书", ["流程"]), page(2, "旧说法", status="已废弃")]), ("通过", []))
         self.assertEqual(one("no_untagged_pages", [page(1, "借书", ["流程"]), page(2, "借期")]), ("未通过", ["OA-002"]))
         self.assertEqual(one("no_untagged_pages", [])[0], "不适用")
-
-    def test_流程页与场景页被功能用例依据(self):
-        pages = [page(1, "借书", ["流程"]), page(2, "期末高峰", ["场景"]), page(3, "读者", ["角色"])]
-        self.assertEqual(one("flows_backed_by_use_cases", [*pages, use_case(1, [cites("OA-001"), cites("OA-002")])]), ("通过", []))
-        # 被约束依据不算，要被功能用例依据。
-        self.assertEqual(one("flows_backed_by_use_cases", [*pages, use_case(1, [cites("OA-001")]),
-                                                           item("CON-001", "约束", {"类别": "时限"}, [cites("OA-002")])]), ("未通过", ["OA-002"]))
-        self.assertEqual(one("flows_backed_by_use_cases", [pages[2], use_case(1)])[0], "不适用")
 
     def test_条目依据的页都是用户看过的(self):
         pages = [page(1, "借书", ["流程"], rev=2), page(2, "读者", ["角色"])]
@@ -239,12 +238,16 @@ class SimLampTest(unittest.TestCase):
             "materials_cited": ("通过", []),
             "tagged_pages_no_open_questions": ("未通过", ["OA-001"]),
             "decisions_have_goal": ("不适用", []),
-            "flows_have_exception": ("通过", []),
-            "roles_mentioned_by_flows": ("通过", []),              # 流程页「借书」的「它是什么」里有「读者」
+            "roles_in_context_and_use_cases": ("未通过", ["OA-002"]),      # 角色页「读者」还没有画进任何一张图
+            "concepts_related_in_class": ("不适用", []),
+            "flows_have_flowchart_with_branch": ("未通过", ["OA-001"]),   # 流程页「借书」还没有流程图
+            "stateful_concepts_have_state": ("不适用", []),
             "no_duplicate_titles": ("通过", []),
             "no_untagged_pages": ("通过", []),
+            "rules_no_conflict": ("不适用", []),                          # 两页都没有写「已经定下的」
             "flows_backed_by_use_cases": ("通过", []),
             "basis_pages_viewed": ("未通过", ["UC-001"]),          # 用例依据的页用户还没看过
+            "basis_diagrams_viewed": ("不适用", []),
             "no_pending_items": ("未通过", ["UC-001"]),            # 用例上有助手补充而用户没有确认
             "reviews_no_open_findings": ("未通过", []),            # 还没有评审过
             "completion_met": state["completion_met"],
@@ -255,7 +258,7 @@ class SimLampTest(unittest.TestCase):
         self.assertEqual({x["键"]: x["结果"] for x in after["灯"]}["basis_pages_viewed"], "通过")
         # 没有库副本的那一遍：每盏都算不了，写明原因。
         self.assertEqual({(x["结果"], x["备注"]) for x in empty["灯"]}, {("算不了", "这一遍没有库副本（演练没有跑完）。")})
-        self.assertEqual(len(empty["灯"]), 12)
+        self.assertEqual(len(empty["灯"]), 16)
 
 
 if __name__ == "__main__":

@@ -74,14 +74,14 @@ test("新画一张图：编号由工具生成，是这张图的修订 1；来源
 test("新画一张图缺项、种类不对、图名太长、写了 base_revision、没有来源，都拒绝并说明，什么都不写", async () => {
   const dir = workspace();
   await assert.rejects(save(dir, { kind: "use_case" }), /这张图没有保存：新画一张图缺少 name（图名）、mermaid（Mermaid 文本）。/);
-  await assert.rejects(save(dir, fresh({ kind: "用例图" })), /kind（图的种类）写的是 "用例图"[\s\S]*kind 只能是 use_case（用例图）、class（类图）、state（状态图）、sequence（时序图）、flowchart（流程图） 之一/);
+  await assert.rejects(save(dir, fresh({ kind: "用例图" })), /kind（图的种类）写的是 "用例图"[\s\S]*kind 只能是 context（系统边界图）、use_case（用例图）、class（对象关系图）、state（状态图）、sequence（时序图）、flowchart（流程图） 之一/);
   await assert.rejects(save(dir, fresh({ name: "图".repeat(61) })), /图名有 61 个字，超过了 60 个字/);
   await assert.rejects(save(dir, fresh({ base_revision: 1 })), /新画一张图时写了 base_revision/);
   await assert.rejects(save(dir, fresh({ sources: undefined })), /缺少 sources，至少要有一条来源[\s\S]*用户要你画图的那句话写一条「用户的话」/);
   await assert.rejects(save(dir, fresh({ sources: [{ kind: "用户的话", excerpt: USER_SAID, supports: [{ field: "名称" }] }, SOURCES[1], SOURCES[2]] })),
     /第 1 条来源写了 supports；图没有字段，图的来源不写 supports/);
   await assert.rejects(save(dir, fresh({ sources: [SOURCES[0], SOURCES[1], { kind: "条目", locator: "UC-002", excerpt: "不在里面的话" }] })), /在 UC-002 的当前修订里找不到/);
-  await assert.rejects(save(dir, fresh({ sources: [...SOURCES, { kind: "图", locator: "D-001", excerpt: "x" }] })), /种类写成了「图」，这个任务里现在还没有图，这一种还不能用/);
+  await assert.rejects(save(dir, fresh({ sources: [...SOURCES, { kind: "图", locator: "D-001", excerpt: "x" }] })), /第 4 条来源的种类写成了「图」，一张图不能把另一张图当作依据/);
   await assert.rejects(save(dir, fresh({ delete: true })), /要删除图，但没有写是哪一张/);
   assert.equal(count(dir, "diagram"), 0);
   assert.equal(query(dir, "SELECT 1 FROM item_source WHERE element_kind = '图'").length, 0);
@@ -152,7 +152,7 @@ test("修改图：只写要改的几项，是它的下一次修订；不写来�
   // 改了文本、画了新的条目而没有重写来源：拒绝。
   await assert.rejects(save(dir, { diagram: "D-001", base_revision: 3, mermaid: MERMAID }), /图里画了 UC-002，来源里没有写它[\s\S]*修改图时给了 sources 就是整份替换/);
   // 只改种类也要校验。
-  await assert.rejects(save(dir, { diagram: "D-001", base_revision: 3, kind: "class" }, bad("写的是流程图，不是你说的类图。")), /写的是流程图，不是你说的类图。/);
+  await assert.rejects(save(dir, { diagram: "D-001", base_revision: 3, kind: "class" }, bad("写的是流程图，不是你说的对象关系图。")), /写的是流程图，不是你说的对象关系图。/);
   assert.deepEqual(versions(dir).map((one) => [one.revision_no, one.op, one.name]), [[1, "add", "登录与退出"], [2, "update", "读者的两件事"], [3, "update", "读者的两件事"]]);
 });
 
@@ -271,8 +271,8 @@ test("数这一轮里图连续几次没有通过校验：别的拒绝不算也�
   assert.equal(consecutiveDiagramFailures([user("画一张图"), failed, failed, failed, user("那换成流程图"), failed]), 1);
 });
 
-test("图的五个种类", () => {
-  assert.deepEqual([...DIAGRAM_KINDS], ["use_case", "class", "state", "sequence", "flowchart"]);
+test("图的六个种类", () => {
+  assert.deepEqual([...DIAGRAM_KINDS], ["context", "use_case", "class", "state", "sequence", "flowchart"]);
 });
 
 test("新建任务时集合的编号前缀不许单写 D（与图的编号同形）", () => {
