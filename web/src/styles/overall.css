@@ -296,3 +296,14 @@
 .app .oa-intro-pending { margin-left: .6rem; color: var(--amber); }
 .app .oa-row.intro .oa-name { color: var(--text3); }
 .app .oa-row.intro.cur .oa-name { color: var(--on-ink); }
+
+/* ───── 待澄清事项：阻断下游与否的小标签、已了结的问题 ───── */
+.app .oa-qkind { display: inline-block; font-family: var(--font-body, inherit); font-size: 0.762rem; padding: .05rem .45rem; margin-right: .5rem; border-radius: .35rem;
+  border: 1px solid var(--line); color: var(--text2); vertical-align: middle; }
+.app .oa-qkind.block { border-color: var(--amber); color: var(--amber); }
+.app .oa-closed { list-style: none; margin: .2rem 0 0; padding: 0; max-width: 52rem; font-size: 0.905rem; color: var(--text2); }
+.app .oa-closed li { padding: .3rem 0; border-top: 1px dashed var(--line); }
+.app .oa-closed .mk { color: var(--text3); margin-right: .5rem; }
+.app .oa-closed .qlink { cursor: pointer; }
+.app .oa-closed .qlink:hover { color: var(--blue); }
+.app .oa-closed .to { display: block; color: var(--text3); margin-top: .1rem; }

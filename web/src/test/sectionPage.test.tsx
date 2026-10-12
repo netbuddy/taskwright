@@ -226,6 +226,46 @@ describe("节的各块", () => {
     expect(within(q).getByLabelText("回答 TBD-001")).toHaveValue("");
   });
 
+  it("待澄清事项：每个问题挂「阻断下游」或「不阻断」，阻断下游的排前面；不阻断的写何时回看；了结的列在下面，写落实到了哪里", () => {
+    const task = overallTask();
+    // 任务的定义里问题集合有这三个字段（新建的任务都有）。
+    const def = task.definition.collections.find((c) => c.name === "问题")!;
+    def.fields.push({ name: "是否阻断下游", type: "枚举", required: true, values: ["阻断下游", "不阻断"] } as never,
+      { name: "何时回看", type: "文本", required: false } as never, { name: "落实到", type: "文本", required: false } as never);
+    const first = task.items.find((one) => one.item_id === "TBD-001")!;
+    const more = (id: string, title: string, fields: Record<string, unknown>) => ({ ...structuredClone(first), item_id: id, title, fields: { ...first.fields, 事项: title, ...fields } });
+    first.fields = { ...first.fields, 是否阻断下游: "不阻断", 何时回看: "评审确认时" };
+    task.items.push(more("TBD-020", "逾期的读者能不能预约？", { 是否阻断下游: "阻断下游", 何时回看: "写了也不显示" }) as never,
+      more("TBD-021", "保留期满之后怎么办？", { 是否阻断下游: "阻断下游", 状态: "已解决", 处理结果: "期满自动取消", 落实到: "OA-001 已经定下的第 4 条" }) as never,
+      more("TBD-022", "要不要短信通知？", { 状态: "已解决" }) as never);
+    render(<Panel t={task} />);
+    const open = [...screen.getByTestId("topic-open").querySelectorAll(".oa-open > li")].map((li) => li.getAttribute("data-testid"));
+    expect(open).toEqual(["topic-question-TBD-020", "topic-question-TBD-001"]);
+    expect(screen.getByTestId("topic-blocking-TBD-020")).toHaveTextContent(/^阻断下游$/);
+    expect(screen.getByTestId("topic-blocking-TBD-020")).toHaveClass("block");
+    expect(screen.getByTestId("topic-blocking-TBD-001")).toHaveTextContent(/^不阻断$/);
+    expect(screen.getByTestId("topic-revisit-TBD-001")).toHaveTextContent("何时回看：评审确认时");
+    expect(screen.queryByTestId("topic-revisit-TBD-020")).toBeNull();
+    // 需要它的原因照旧取「建议的处理」，不会取成何时回看。
+    expect(screen.getByTestId("topic-question-TBD-001").querySelector(".why")).toHaveTextContent(/^需要它的原因：小王周六预约/);
+    // 已经了结的两个：一个写了落实到哪里，一个没有写。
+    expect([...screen.getByTestId("topic-closed").querySelectorAll("li")].map((li) => text(li))).toEqual(
+      ["已了结保留期满之后怎么办？落实到：OA-001 已经定下的第 4 条", "已了结要不要短信通知？"]);
+    expect(screen.queryByTestId("topic-landed-TBD-022")).toBeNull();
+  });
+
+  it("待澄清事项：早先的任务（定义里没有「是否阻断下游」）不挂那枚标签；只剩已了结的问题时这一块只列它们", () => {
+    const task = overallTask();
+    render(<Panel t={task} />);
+    expect(screen.queryByTestId("topic-blocking-TBD-001")).toBeNull();
+    cleanup();
+    const solved = change(overallTask(), "TBD-001", (item) => { item.fields = { ...item.fields, 状态: "已解决", 落实到: "OA-001 的例子" }; });
+    render(<Panel t={solved} />);
+    expect(screen.queryByTestId("topic-question-TBD-001")).toBeNull();
+    expect(screen.getByTestId("topic-closed-TBD-001")).toHaveTextContent("落实到：OA-001 的例子");
+    expect(screen.getByTestId("topic-open").querySelector("h3 small")).toBeNull();
+  });
+
   it("待澄清事项：回答框空着点「记下」只把开头填进对话区的输入框；「暂不处理」把问题标为先不管", () => {
     const send = vi.fn();
     const answer = vi.fn();
