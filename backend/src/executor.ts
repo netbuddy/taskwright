@@ -805,8 +805,8 @@ export class Executor {
         if (hit !== null) entries = everything;
       }
       if (hit !== null) this.lastUserEntry = hit.id ?? null;
-      let click: Dict | null = [...entries].reverse().find((e) => e.type === "custom_message" && e.customType === conversation.UI_CLICK
-        && (e.details || {}).text === raw) ?? null;
+      let click: Dict | null = [...entries].reverse().find((e) => e.type === "custom_message"
+        && (e.customType === conversation.UI_CLICK || e.customType === conversation.CARD_TYPED) && (e.details || {}).text === raw) ?? null;
       if (click === null && this.lastClick && (this.lastClick.details || {}).text === raw) click = this.lastClick;
       this.lastClick = null;
       let clientId: string | null = null;
@@ -817,7 +817,10 @@ export class Executor {
       }
       let origin = "typed";
       let annotation: Dict | null = null;
-      if (click !== null) {
+      if (click !== null && click.customType === conversation.CARD_TYPED) {
+        // 用户在卡片的文本框里打的字：仍是打的字，只标明写在哪张卡片里。
+        annotation = conversation.typedAnnotation(click.details || {}, click.id);
+      } else if (click !== null) {
         const d = click.details || {};
         origin = "card_choice";
         annotation = { reply_message_id: d.reply_entry ?? null, option_key: d.option_key ?? null, option_text: d.option_text ?? null, click_message_id: click.id ?? null };
@@ -856,10 +859,10 @@ export class Executor {
           text: conversation.textOf(message.content ?? null), event_seq: seqs.length ? seqs[0] : null, undoable: truthy(details.undoable),
           op_id: details.op_id ?? null, revision_no: details.revision_no ?? null, kind: details.kind ?? null, review: details.review ?? null,
           ...conversation.continueStageFields(details) });
-      } else if (ctype === conversation.UI_CLICK) {
+      } else if (ctype === conversation.UI_CLICK || ctype === conversation.CARD_TYPED) {
         const entries = await this.fetchNewEntries(pi);
         const hit = [...entries].reverse().find((e) => e.type === "custom_message" && e.customType === ctype) ?? null;
-        this.lastClick = { id: hit ? hit.id ?? null : null, details: message.details || {} };
+        this.lastClick = { id: hit ? hit.id ?? null : null, customType: ctype, details: message.details || {} };
       }
       return;
     }
@@ -996,7 +999,7 @@ export class Executor {
       }
       this.hub.emit("assistant_reply", { session_id: sid, message_id: details.message_id ?? null, at: clock.now(), work_id: work ? work.work_id : null,
         via_reply_tool: true, informs: conversation.normalizeInforms(reply.informs ?? null), act: reply.act ?? null, text: or(reply.text, ""),
-        degraded: truthy(details.degraded), ...(replyMove ? { stage_move: replyMove } : {}) });
+        degraded: truthy(details.degraded), ...(replyMove ? { stage_move: replyMove } : {}), ...conversation.replyCardFields(details) });
     }
   }
 

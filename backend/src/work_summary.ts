@@ -613,6 +613,48 @@ export function understandingText(acts: Dict[]): string | null {
   return "理解为：" + summaries.join("；") + CONFIDENCE_NOTE[lowest];
 }
 
+/** 卡片之间、话与卡片之间的两种指向（见 cardLinks）。 */
+export interface CardLinks {
+  /** 用户的一句话（会话条目编号）回答了哪几张卡片（卡片所在回复的会话条目编号）。 */
+  answers: Map<string, string[]>;
+  /** 一条回复（会话条目编号）的卡片重发的是哪一条回复的卡片。 */
+  resends: Map<string, string>;
+}
+
+/**
+ * 这条会话里哪句话回答了哪张卡片、哪张卡片是哪张的重发，从任务库的对话行为表现算：助手对一句话写的理解里 responds_to 指向一张卡片，
+ * 就是这句话回答了它（界面点击合成的不算，那句话自己带着卡片的标识）；一张卡片那一行的 responds_to 指向另一张卡片，就是重发。
+ * 读历史用它，所以这一版之前的会话里用户在卡片之外答掉的卡片照样认得出来。没有库、没有对话行为表（或者表里缺列）时两张表都是空的。只读。
+ */
+export function cardLinks(taskDir: string | null, sessionId: string): CardLinks {
+  const out: CardLinks = { answers: new Map(), resends: new Map() };
+  if (taskDir === null) return out;
+  const db = openRo(taskDir);
+  if (db === null) return out;
+  try {
+    // 没有这张表、或者表里没有要用的列（不是本程序建的库）：读对话记录不能因此失败，当作没有。
+    const columns = new Set((db.prepare("PRAGMA table_info(dialogue_act)").all() as Dict[]).map((one) => one.name));
+    if (!["task_id", "session_id", "act_id", "speaker", "origin", "responds_to", "expects_response", "source_entry"].every((name) => columns.has(name))) return out;
+    const rows = db.prepare(
+      "SELECT u.speaker AS speaker, u.origin AS origin, u.source_entry AS said, a.source_entry AS card FROM dialogue_act u " +
+        "JOIN dialogue_act a ON a.task_id = u.task_id AND a.session_id = u.session_id AND a.act_id = u.responds_to " +
+        "WHERE u.session_id = ? AND a.speaker = 'executor' AND a.expects_response = 1 AND u.source_entry IS NOT NULL AND a.source_entry IS NOT NULL " +
+        "ORDER BY u.rowid",
+    ).all(sessionId) as Dict[];
+    for (const { speaker, origin, said, card } of rows) {
+      if (speaker === "executor") out.resends.set(said, card);
+      else if (origin === "understanding") {
+        const cards = out.answers.get(said) ?? [];
+        if (!cards.includes(card)) cards.push(card);
+        out.answers.set(said, cards);
+      }
+    }
+    return out;
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * 这条会话里每句用户的话（按会话条目编号）对应的「理解为」那一行，从任务库的事件表读。界面合成的话（origin 为 ui）值为 null；
  * 还没有理解时按事件写一句（见 NO_UNDERSTANDING）。没有库、没有这几种事件的旧库，返回空的。只读。

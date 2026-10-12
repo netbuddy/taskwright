@@ -215,7 +215,8 @@ export function withAttachments(text: string, paths: string[]): string {
 
 /**
  * 卡片点击的标注。两种写法都认：annotation {reply_message_id, option_key, option_text}；
- * 前端的 card {reply_message_id, kind, choice}，choice 是选项的 key 或「不对」「采纳」之类的按钮字。
+ * 前端的 card {reply_message_id, kind, choice}，choice 是选项的 key 或「不对」「采纳」之类的按钮字；
+ * choice 是 typed 时不是点击：用户在这张卡片的文本框里打了一句话（text 就是他打的字），扩展照打的字处理，只标明写在哪张卡片里。
  * card 写法里没有选项的文字：按 reply_message_id 在会话条目里找到那条回复，从它「回复」工具参数的 act.options 里按键查回文字；
  * 查不到（「不对」「采纳」这类按钮，或那条回复不在条目里）就用 choice 本身。
  */
@@ -414,7 +415,8 @@ const handlers: Record<string, Handler> = {
         const open = library.stageView(t.dir)?.proposal ?? null;
         if (open !== null && open.enter.key === annotation.option_key) annotation.option_text = open.enter.text;
       }
-      queued = await t.executor.cardClick(session, text, clientId, annotation);
+      // choice 是 typed：用户在卡片的文本框里打的字，不是点击；与底部输入框打的字一样，斜杠开头的前面加「用户说：」。
+      queued = await t.executor.cardClick(session, annotation.option_key === conversation.CARD_TYPED_KEY ? rewriteSlash(text) : text, clientId, annotation);
     } else {
       queued = await t.executor.say(session, withAttachments(rewriteSlash(text), attachments), clientId, text);
     }
