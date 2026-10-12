@@ -84,8 +84,20 @@ export interface ReviewRulesSpec {
 
 /** 「把问题条目标为先不管」写进状态字段的取值。 */
 export const KEEP_PENDING_STATUS = "用户决定保留";
-/** 问题条目在状态之外唯一还能由执行者改的字段：写明问题最后怎样了结。 */
+/** 问题条目里写明问题最后怎样了结的字段。 */
 export const PROBLEM_RESULT_FIELD = "处理结果";
+/**
+ * 问题条目的另外三个字段（需求规格任务的定义里有；集合里没有声明哪一个，与它有关的核对就不做）：
+ * 是否阻断下游——没有这个问题的答案下一个阶段做不出就是「阻断下游」，否则「不阻断」；何时回看——不阻断的问题推到什么时候再看；
+ * 落实到——问题了结时，答案写进了哪一页、哪个条目或哪张图（编号加一句话）。
+ */
+export const PROBLEM_BLOCKING_FIELD = "是否阻断下游";
+export const PROBLEM_BLOCKING = "阻断下游";
+export const PROBLEM_NOT_BLOCKING = "不阻断";
+export const PROBLEM_REVISIT_FIELD = "何时回看";
+export const PROBLEM_LANDED_FIELD = "落实到";
+/** 问题条目写下之后执行者还能改的字段（状态之外）：处理结果、落实到、是否阻断下游、何时回看。别的字段（事项、种类、关联条目之类）不再改。 */
+export const PROBLEM_EDITABLE_FIELDS: readonly string[] = [PROBLEM_RESULT_FIELD, PROBLEM_LANDED_FIELD, PROBLEM_BLOCKING_FIELD, PROBLEM_REVISIT_FIELD];
 
 /**
  * 问题条目的集合靠状态字段了结：有一个枚举字段的取值里含「用户决定保留」，就返回这个字段，

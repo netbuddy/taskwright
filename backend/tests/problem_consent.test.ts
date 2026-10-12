@@ -17,7 +17,7 @@ const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL };
-const RESOLVE = { operations: [{ op: "update", item: "TBD-001", base_revision: 2, fields: { 状态: "已解决", 处理结果: "用户确认：借书前不检查逾期。" } }] };
+const RESOLVE = { operations: [{ op: "update", item: "TBD-001", base_revision: 2, fields: { 状态: "已解决", 处理结果: "用户确认：借书前不检查逾期。", 落实到: "UC-001 基本流程：借书前不检查逾期" } }] };
 const CARD = { kind: "choose", text: "TBD-001 这个问题是否已解决？", items: [{ item_id: "TBD-001", revision_no: 2 }],
   options: [{ key: "a", text: "已解决" }, { key: "b", text: "还没解决，继续改" }, { key: "c", text: "先不管，保留" }] };
 const SCRIPT = {

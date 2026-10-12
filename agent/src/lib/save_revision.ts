@@ -62,7 +62,11 @@ import {
   FIELD_ITEM_REF,
   FIELD_TEXT,
   FIELD_TEXT_LIST,
-  PROBLEM_RESULT_FIELD,
+  PROBLEM_BLOCKING_FIELD,
+  PROBLEM_EDITABLE_FIELDS,
+  PROBLEM_LANDED_FIELD,
+  PROBLEM_NOT_BLOCKING,
+  PROBLEM_REVISIT_FIELD,
   type TaskDefinition,
   keepPendingField,
   validateDefinition,
@@ -79,11 +83,11 @@ import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
-import { GATE_GUIDANCE, OVERALL_COLLECTION, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
+import { GATE_GUIDANCE, OVERALL_COLLECTION, OVERALL_FIELDS, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { type Stage, itemRefusal, pageRefusal } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
-import { CONSENT_OPTION, type ProblemFacts, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
+import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
 export interface Support {
@@ -365,6 +369,20 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     collectionOf: (itemId) => items.get(itemId)?.collection ?? addedIn.get(itemId) ?? null,
     fieldsOf: (itemId) => written.get(itemId)?.fields ?? (items.has(itemId) ? (JSON.parse(latestVersion(itemId).fields) as Record<string, unknown>) : null),
   };
+  /**
+   * 一章至多一页在用的导语页：总体分析的一页写了「导语所属章」、又没有废弃时，看别的在用页有没有已经写了同一章的
+   * （库里现有的取它现在的内容，这一批里前面的操作写过的取写过之后的）。有就记一条原因。self 是这一页自己的编号，新增时为 null。
+   */
+  const introOwners = (chapter: unknown, self: string | null): string[] => {
+    const ids = new Set<string>([...items.keys(), ...written.keys()]);
+    return [...ids].filter((id) => {
+      if (id === self || deletedHere.has(id)) return false;
+      const row = items.get(id);
+      if (row ? row.collection !== OVERALL_COLLECTION || row.deleted_in_revision !== null : written.get(id)!.collection !== OVERALL_COLLECTION) return false;
+      const fields = refs.fieldsOf(id);
+      return !!fields && fields[OVERALL_FIELDS.intro] === chapter && !isDeprecated(fields);
+    });
+  };
   {
     const serialOf = new Map<string, number>();
     for (const row of items.values()) {
@@ -400,6 +418,14 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   operations.forEach((raw, index) => {
     const number = index + 1;
     const errors: string[] = [];
+    /** 总体分析的一页写了「导语所属章」时，核对这一章还没有别的在用的导语页。 */
+    const checkIntroPage = (fields: Fields, self: string | null): void => {
+      const chapter = fields[OVERALL_FIELDS.intro];
+      if (isEmptyValue(chapter) || isDeprecated(fields)) return;
+      const owners = introOwners(chapter, self);
+      if (owners.length === 0) return;
+      errors.push(withGuide(`「${String(chapter)}」这一章已经有一页在用的导语页：${owners.join("、")}`, "一章只立一页导语页，请改那一页，不要另立"));
+    };
     if (!isObject(raw)) {
       problems.push({ label: `操作 ${number}`, fact: `操作 ${number}：它应当是一个对象，现在不是`, guidance: "" });
       return;
@@ -449,6 +475,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         const refusal = status && call.actor !== ACTOR_USER
           ? newProblemStatus(raw.fields[status.name], (status.values ?? []).find((value) => !Object.hasOwn(CONSENT_OPTION, value)) ?? null) : null;
         if (refusal) errors.push(withGuide(refusal.fact, refusal.guidance));
+        if (call.actor !== ACTOR_USER) checkProblemContent(collection, raw.fields, true, undefined, errors);
+        if (collection.name === OVERALL_COLLECTION) checkIntroPage(raw.fields, null);
         for (const field of collection.fields) {
           if (field.required && isEmptyValue(raw.fields[field.name])) {
             errors.push(`必填字段「${field.name}」没有填或者是空的`);
@@ -547,6 +575,10 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         checkProblemStatus(collection, itemId, before, raw.fields, changedHere, problemFacts, errors);
       }
       merged = dropEmpty({ ...before, ...raw.fields });
+      if (call.actor !== ACTOR_USER) {
+        checkProblemContent(collection, merged, PROBLEM_BLOCKING_FIELD in raw.fields || PROBLEM_REVISIT_FIELD in raw.fields, before[keepPendingField(collection)?.name ?? ""], errors);
+      }
+      if (collection.name === OVERALL_COLLECTION) checkIntroPage(merged, itemId);
       for (const field of collection.fields) {
         if (field.required && field.name in raw.fields && isEmptyValue(raw.fields[field.name])) {
           errors.push(`必填字段「${field.name}」改完之后是空的，必填字段不能清空`);
@@ -834,23 +866,46 @@ function rewrittenNote(itemId: string, list: RewrittenSupport[]): string {
 
 /**
  * 问题条目（集合里有取值含「用户决定保留」的状态字段，见 keepPendingField）写下之后，执行者修改它时
- * 只能改状态与处理结果：用户的回答要写进它牵涉的条目，而不是写回问题本身。值没有变的字段不算改。
+ * 只能改状态、处理结果、落实到、是否阻断下游与何时回看（集合里有的才算）：用户的回答要写进它牵涉的条目，而不是写回问题本身。
+ * 值没有变的字段不算改。
  * 新增不受这条限制（新增时状态不能直接写成已解决或用户决定保留，见 lib/problem_consent.ts 的 newProblemStatus）；用户在界面上的操作（先不管、撤销）不经这里核对。
  */
 function checkProblemUpdate(collection: CollectionDef, itemId: string, before: Fields, fields: Fields, errors: string[]): void {
   const status = keepPendingField(collection);
   if (!status) return;
   const changed = Object.keys(fields).filter((name) => {
-    if (name === status.name || name === PROBLEM_RESULT_FIELD) return false;
+    if (name === status.name || PROBLEM_EDITABLE_FIELDS.includes(name)) return false;
     if (!collection.fields.some((one) => one.name === name)) return false;   // 没有这个字段，checkFields 已经说过
     const value = fields[name];
     return !(isEmptyValue(value) ? isEmptyValue(before[name]) : sameJson(value, before[name]));
   });
   if (changed.length === 0) return;
+  const editable = [status.name, ...PROBLEM_EDITABLE_FIELDS.filter((name) => collection.fields.some((one) => one.name === name))];
   errors.push(withGuide(
-    `助手想改 ${itemId} 的${changed.map((name) => `「${name}」`).join("、")}，但问题条目写下后只能改${status.name}与${PROBLEM_RESULT_FIELD}`,
+    `助手想改 ${itemId} 的${changed.map((name) => `「${name}」`).join("、")}，但问题条目写下后只能改${editable.length === 2 ? editable.join("与") : `${editable.slice(0, -1).join("、")}与${editable[editable.length - 1]}`}`,
     "用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决",
   ));
+}
+
+/**
+ * 问题条目内容上的两条规矩，执行者新增与修改时都查；集合里没有声明相应字段的不查（早先建的任务的定义里没有这几个字段）。
+ * - 「是否阻断下游」写的是「不阻断」时，「何时回看」要写：推后的问题得说清什么时候回来看。touched 为假（这次没有动这两个字段）时不查，
+ *   免得用户在界面上留下的写法挡住执行者改别的字段。
+ * - 状态这一次改成「已解决」时，「落实到」要写：答案写进了哪里。
+ * after 是改完之后的全部字段，beforeStatus 是改之前的状态（新增时不给）。
+ */
+function checkProblemContent(collection: CollectionDef, after: Fields, touched: boolean, beforeStatus: unknown, errors: string[]): void {
+  const status = keepPendingField(collection);
+  if (!status) return;
+  const has = (name: string) => collection.fields.some((one) => one.name === name);
+  if (touched && has(PROBLEM_BLOCKING_FIELD) && has(PROBLEM_REVISIT_FIELD) && after[PROBLEM_BLOCKING_FIELD] === PROBLEM_NOT_BLOCKING && isEmptyValue(after[PROBLEM_REVISIT_FIELD])) {
+    errors.push(withGuide(`「${PROBLEM_BLOCKING_FIELD}」写的是「${PROBLEM_NOT_BLOCKING}」，「${PROBLEM_REVISIT_FIELD}」却没有写`,
+      `不阻断的问题是推后再看的，请在「${PROBLEM_REVISIT_FIELD}」里写什么时候回来看它，例如「评审确认时」`));
+  }
+  if (has(PROBLEM_LANDED_FIELD) && after[status.name] === RESOLVED_STATUS && beforeStatus !== RESOLVED_STATUS && isEmptyValue(after[PROBLEM_LANDED_FIELD])) {
+    errors.push(withGuide(`状态改成了「${RESOLVED_STATUS}」，「${PROBLEM_LANDED_FIELD}」却没有写`,
+      `请在「${PROBLEM_LANDED_FIELD}」里写这个问题的答案写进了哪里：页、条目或图的编号加一句话，例如「OA-006 已经定下的第 2 条：保留期遇闭馆日顺延」`));
+  }
 }
 
 /**
