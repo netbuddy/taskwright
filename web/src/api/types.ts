@@ -4,6 +4,8 @@
 // 约定里写「可空」的字段用 `| null`；约定没写、但前端必须容忍缺失的，用可选（`?`）。
 // 前端遇到不认识的字段一律忽略，所以这里只列用得到的。
 
+import type { DecisionRow, GoalTree, RulesTable } from "../../../agent/src/lib/overall_views.ts";
+
 // ───────────── 共用 ─────────────
 
 export type Actor = "executor" | "user";
@@ -45,6 +47,11 @@ export interface DiagramRow {
   revision_at: string;
   created_at: string;
   source_count: number;
+  /**
+   * 用户看没看过它现在的内容：从最近一次不是用户亲手改出来的修订起、到它现在的修订为止，有一次修订用户打开看过。
+   * 助手改过之后要再看一次。早先的后端不给这一项，当作没看过。
+   */
+  viewed?: boolean;
 }
 
 /** 图里画的一个条目（从 Mermaid 文本里扫出来的条目编号）：live 还在，deleted 已经删除，missing 任务里没有这个编号。 */
@@ -241,7 +248,7 @@ export interface Item {
   revisions: number[];
   fields: Fields;
   sources: Source[];
-  /** 被谁依据：把这个条目写成来源的别的条目（只数它们当前的修订），没有时是空列表。 */
+  /** 被谁依据：把这个条目写成来源的别的条目与图（只数它们当前的修订），没有时是空列表。 */
   depended_by?: DependedBy[];
   reviews: Review[];
   /** 保留记录（含已撤销的）；旧后端没有这一项。 */
@@ -278,6 +285,13 @@ export interface Mention {
   revision_no: number;
 }
 
+/** 整份任务数据里的三张表；形状由助手一侧算它们的那个文件定（页面可以直接导入）。 */
+export interface OverallViews {
+  rules: RulesTable;
+  goals: GoalTree;
+  decisions: DecisionRow[];
+}
+
 export interface Task {
   task_id: string;
   task_name: string;
@@ -295,6 +309,11 @@ export interface Task {
   diagrams?: DiagramRow[];
   /** 评审批次，按先后；旧后端没有这一项。 */
   review_batches?: ReviewBatch[];
+  /**
+   * 从总体分析的页与问题条目算出来的三张表（只算不存）：rules 规则表，goals 业务目标，decisions 决策记录与待澄清事项。
+   * 没有「总体分析」集合的任务是 null；早先的后端不给这一项。库事件里不带它，与待核实那几项一起另取（state/workState.ts 的 facts）。
+   */
+  overall_views?: OverallViews | null;
   /** 任务现在的工作阶段与每个阶段的几盏灯；早先建的任务（没有「总体分析」集合）没有阶段，是 null；旧后端没有这一项。 */
   stage?: StageView | null;
 }
@@ -688,6 +707,15 @@ export interface ItemViewed {
   completion: Completion | null;
 }
 
+/** 用户打开看了一张或几张图：每项是图的编号与用户看到的那一次修订号（图自己的修订号）。 */
+export interface DiagramViewed {
+  seq: number;
+  op_id?: string | null;
+  at: string;
+  task_id: string;
+  diagrams: { diagram_id: string; revision_no: number }[];
+}
+
 /** 任务从一个工作阶段移到了另一个：到了哪个阶段、从哪个阶段来、谁移的、理由；助手移的带运行号，用户移的带操作编号。 */
 export interface StageChanged {
   seq: number;
@@ -720,11 +748,12 @@ export type LibraryEvent =
   | { event: "confirmation_recorded"; data: ConfirmationRecorded }
   | { event: "item_viewed"; data: ItemViewed }
   | { event: "diagram_changed"; data: DiagramChanged }
+  | { event: "diagram_viewed"; data: DiagramViewed }
   | { event: "stage_changed"; data: StageChanged };
 
 export const LIBRARY_EVENTS = [
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
-  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "stage_changed",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "stage_changed",
 ] as const;
 
 export interface WorkStarted {
@@ -970,9 +999,12 @@ export interface MessageRequest {
   card?: { reply_message_id: string; kind: ActKind; choice: string };
 }
 
-/** request_review：请评审者评审；targets 为空列表时评全部待评审的条目。后端核对通过就回应，评审在后台跑。 */
+/**
+ * request_review：请评审者评审；targets 为空列表时评全部待评审的条目。后端核对通过就回应，评审在后台跑。
+ * mark_diagram_viewed：用户打开看了一张图；targets 写 { diagram_id, base_revision }。助手工作中也接受，不往会话里追加东西。
+ */
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
-  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "move_stage";
+  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "mark_diagram_viewed" | "move_stage";
 
 export interface ActionRequest {
   client_id: string;

@@ -209,6 +209,16 @@ describe("总体分析：该不该另取一次待核实与提到", () => {
     expect(factsKey(task, 13)).not.toBe(key);
     change(task, "OA-003", (p) => { p.confirmations.push({ revision_no: 12, accepted: true, basis: "viewed" }); });
     expect(factsKey(task, 12)).not.toBe(key);
+    // 图多了一张、图有了新修订、图被看过，记号也都变。
+    const drawn = overallTask();
+    const row = { diagram_id: "D-001", name: "借书的流程", kind: "flowchart", kind_name: "流程图", revision_no: 1, revision_by: "executor", revision_at: "", created_at: "", source_count: 1 };
+    const plain = factsKey(drawn, 12);
+    drawn.diagrams = [row];
+    const one = factsKey(drawn, 12);
+    drawn.diagrams = [{ ...row, revision_no: 2 }];
+    const two = factsKey(drawn, 12);
+    drawn.diagrams = [{ ...row, revision_no: 2, viewed: true }];
+    expect(new Set([plain, one, two, factsKey(drawn, 12)]).size).toBe(4);
     const fewer = overallTask();
     fewer.items = fewer.items.slice(1);
     expect(factsKey(fewer, 12)).not.toBe(key);

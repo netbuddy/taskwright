@@ -150,7 +150,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     factsSeen.current = facts;
     let live = true;
     const timer = setTimeout(() => {
-      api.getTask(taskId).then((t) => { if (live) dispatch({ type: "facts", items: t.items }); }).catch(() => undefined);
+      api.getTask(taskId).then((t) => { if (live) dispatch({ type: "facts", items: t.items, overall_views: t.overall_views }); }).catch(() => undefined);
     }, 250);
     return () => { live = false; clearTimeout(timer); };
   }, [facts, taskId]);

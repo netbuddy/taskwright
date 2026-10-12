@@ -89,12 +89,15 @@ export function confirmAction(item: Item): { kind: "mark_viewed"; targets: { ite
 
 /**
  * 待核实、依据待核实、提到这几项只随整份数据来，库事件里没有。任务里有总体分析时，页面在可能改变它们的事之后
- * （交付物有了新修订、有人确认或看过了某个条目）另取一次。这里给出「该不该再取」的记号：修订号或确认标记的条数变了，记号就变；
+ * （交付物有了新修订、有人确认或看过了某个条目、图有了变动或者被看过）另取一次。这里给出「该不该再取」的记号：修订号、确认标记的条数、
+ * 图的修订号与看没看过变了，记号就变；
  * 没有总体分析的早先任务不用取，返回 null。
  */
 export function factsKey(task: Task | null, latestRevision: number): string | null {
   if (!task || !overallDef(task)) return null;
-  return `${latestRevision}:${task.items.reduce((n, i) => n + i.confirmations.length, 0)}:${task.items.length}`;
+  // 图有了变动、被看过之后也要再取：以图为依据的条目待不待核实、各页被哪几张图依据都可能变了。
+  const diagrams = (task.diagrams ?? []).map((one) => `${one.diagram_id}.${one.revision_no}${one.viewed ? "v" : ""}`).join(",");
+  return `${latestRevision}:${task.items.reduce((n, i) => n + i.confirmations.length, 0)}:${task.items.length}:${diagrams}`;
 }
 
 /** 一条例子是不是反例，以及去掉「反例：」之后的正文。 */
