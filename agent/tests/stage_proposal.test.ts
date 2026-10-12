@@ -9,7 +9,9 @@ import { createTask } from "../src/lib/create_task.ts";
 import { EVENT_EXECUTOR_ACTS_RECORDED, recordReplyActs } from "../src/lib/dialogue_acts.ts";
 import { TASK_ACTIVE, withTaskDatabase } from "../src/lib/schema.ts";
 import { BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, STAY_HERE_OPTION, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
-import { isStayKey, openProposal, proposalKindOf, proposalOfAct } from "../src/lib/stage_proposal.ts";
+import { NO_PROPOSAL_LINE, isStayKey, openProposal, proposalKindOf, proposalLine, proposalOfAct } from "../src/lib/stage_proposal.ts";
+import { getTaskStatus } from "../src/lib/task_query.ts";
+import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { moveStage, recordStageCardClick } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
@@ -210,4 +212,55 @@ test("补写待过目的提议：发出就开着；卡片点名的页用户都�
   assert.equal(open(dir)!.event_seq, bare.seq);
   enterStage(dir, "reviewing");
   assert.equal(open(dir), null);
+});
+
+// ───────────── 开着的提议写给助手看 ─────────────
+
+test("给助手看的那一行：三种提议各一句，写明卡片在不在这条会话里、用户要做这件事时请他点「待决定」；没有时写没有", () => {
+  const dir = workspace();
+  assert.equal(proposalLine(null, SESSION), NO_PROPOSAL_LINE);
+  assert.equal(NO_PROPOSAL_LINE, "没有开着的提议。");
+  reply(dir, enterCard("clarifying", "reading"));
+  assert.equal(proposalLine(open(dir), SESSION),
+    "开着的提议：进入澄清（卡片在这条会话里）。用户还没有进入；他要进入时不要重发同一张卡片，请他点输入框上方「待决定」一行里的按钮。");
+  assert.match(proposalLine(open(dir), "sess-b"), /^开着的提议：进入澄清（卡片在另一条会话里）。/);
+  assert.match(proposalLine(open(dir), null), /卡片在另一条会话里/);
+  enterStage(dir, "modeling");
+  reply(dir, backCard("reading"));
+  assert.equal(proposalLine(open(dir), SESSION),
+    "开着的提议：退回核读材料（卡片在这条会话里）。用户还没有决定；他要退回时不要重发同一张卡片，请他点输入框上方「待决定」一行里的按钮。");
+  reply(dir, reviewCard([{ item_id: "OA-010", revision_no: 1 }, { item_id: "OA-011", revision_no: 1 }]));
+  assert.equal(proposalLine(open(dir), SESSION),
+    "开着的提议：请用户过目补写的 2 页（OA-010、OA-011）（卡片在这条会话里）。用户还没有都看过；他说看过了、要生成文档时不要重发同一张卡片，请他点输入框上方「待决定」一行里的按钮。");
+});
+
+test("查询任务状态的末尾、新会话的任务现状说明都带这一行；早先建的任务不带", () => {
+  const FRESH = { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null };
+  const dir = workspace();
+  assert.match(getTaskStatus(dir, SESSION).text, /\n没有开着的提议。$/);
+  assert.match(taskStatusMessage(dir, FRESH, "sess-b")!.text, /\n没有开着的提议。$/);
+  reply(dir, enterCard("clarifying", "reading"));
+  assert.match(getTaskStatus(dir, SESSION).text, /\n开着的提议：进入澄清（卡片在这条会话里）。[^\n]*$/);
+  // 新开的另一条会话：助手的上下文里没有那张卡片，靠这一行知道。
+  const fresh = taskStatusMessage(dir, FRESH, "sess-b")!;
+  assert.match(fresh.text, /\n开着的提议：进入澄清（卡片在另一条会话里）。用户还没有进入；他要进入时不要重发同一张卡片/);
+  assert.equal((fresh.details.proposal as { stage: string }).stage, "clarifying");
+  const old = workspace(demoDefinition());
+  assert.doesNotMatch(getTaskStatus(old, SESSION).text, /提议/);
+  assert.doesNotMatch(taskStatusMessage(old, FRESH, "sess-b")!.text, /提议/);
+});
+
+test("续接旧会话：上次之后才发出的提议写一条（别的都没有变也写）；上次之前发的不重复；没有开着的不写", () => {
+  const dir = workspace();
+  const facts = (lastMessageAt: number) => ({ hasUserMessage: true, hasStatusMessage: true, lastMessageAt });
+  // 没有开着的提议、别的也没有变：照旧不写。
+  assert.equal(taskStatusMessage(dir, facts(Date.now() + 1000), "sess-b"), null);
+  const before = Date.now() - 60_000;
+  reply(dir, enterCard("clarifying", "reading"));
+  // 这条会话上次的最后一条消息在卡片之前：写一条，带这一行。
+  const told = taskStatusMessage(dir, facts(before), "sess-b")!;
+  assert.equal(told.kind, "变化");
+  assert.match(told.text, /\n开着的提议：进入澄清（卡片在另一条会话里）。/);
+  // 上次的最后一条消息在卡片之后（这条会话已经知道了）：不为它再写。
+  assert.equal(taskStatusMessage(dir, facts(Date.now() + 60_000), "sess-b"), null);
 });

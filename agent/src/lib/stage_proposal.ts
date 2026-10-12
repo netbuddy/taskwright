@@ -20,7 +20,7 @@ import { hasOverall } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { TASK_ACTIVE } from "./schema.ts";
 import {
-  type CardOption, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, STAY_HERE_OPTION, STAY_OPTIONS, type Stage, isStage, stageBackedBy, stageEnteredBy,
+  type CardOption, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, STAGE_NAMES, STAY_HERE_OPTION, STAY_OPTIONS, type Stage, isStage, stageBackedBy, stageEnteredBy,
 } from "./stage.ts";
 
 /** 「回复」记执行者行为的那条事件的名字（与 lib/dialogue_acts.ts 的 EVENT_EXECUTOR_ACTS_RECORDED 同一个；这里不从它导入，免得两个文件互相导入）。 */
@@ -154,4 +154,26 @@ export function openProposal(db: DatabaseSync, taskId: string): OpenProposal | n
       reply_entry: typeof payload?.reply_entry === "string" ? payload.reply_entry : null, event_seq: seq, at: row.at };
   }
   return null;
+}
+
+/** 任务没有开着的提议时给助手看的那一句。 */
+export const NO_PROPOSAL_LINE = "没有开着的提议。";
+
+/**
+ * 给助手看的一行：任务现在有没有开着的提议、是哪一种、卡片在哪条会话里，以及用户要求做这件事时该怎么办。
+ * 会话打开时的任务现状说明与查询任务状态的返回都用它：助手换一条会话之后上下文里没有那张卡片，靠这一行知道提议还开着。
+ * sessionId 是读的这一侧所在的会话，用来说卡片是不是就在这条会话里。
+ */
+export function proposalLine(open: OpenProposal | null, sessionId: string | null): string {
+  if (open === null) return NO_PROPOSAL_LINE;
+  const where = sessionId !== null && open.session_id === sessionId ? "卡片在这条会话里" : "卡片在另一条会话里";
+  const pressed = "不要重发同一张卡片，请他点输入框上方「待决定」一行里的按钮";
+  if (open.kind === "back") {
+    return `开着的提议：退回${STAGE_NAMES[open.stage]}（${where}）。用户还没有决定；他要退回时${pressed}。`;
+  }
+  if (open.kind === "review") {
+    const pages = open.items.map((one) => one.item_id);
+    return `开着的提议：请用户过目补写的 ${pages.length} 页${pages.length ? `（${pages.join("、")}）` : ""}（${where}）。用户还没有都看过；他说看过了、要生成文档时${pressed}。`;
+  }
+  return `开着的提议：进入${STAGE_NAMES[open.stage]}（${where}）。用户还没有进入；他要进入时${pressed}。`;
 }

@@ -200,13 +200,13 @@ test("查询任务状态的末尾写现在在哪个阶段、这一段还差什�
   const { dir } = workspace();
   // 刚建好：核读材料，材料还没有被引用。
   let out = getTaskStatus(dir);
-  assert.match(out.text, /\n\n任务现在在核读材料阶段（任务建好之后还没有人移动过）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。$/);
+  assert.match(out.text, /\n\n任务现在在核读材料阶段（任务建好之后还没有人移动过）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。\n没有开着的提议。$/);
   assert.equal((out.details as any).stage.current, "reading");
   // 立了一页引用材料的主题，用户移到澄清并写了理由：澄清这一段两盏灯都过（或不适用）。
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "总体分析", fields: { 标题: "登录", 它是什么: "用户可以登录。", 标签: ["概念"], 状态: "在用" }, sources: [SOURCE] }] });
   userOp(dir, { kind: "move_stage", fields: { stage: "澄清", reason: "材料我读过了。" } });
   out = getTaskStatus(dir);
-  assert.match(out.text, /\n\n任务现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 移过来的，理由：材料我读过了）。\n澄清这一段的几项都齐了。$/);
+  assert.match(out.text, /\n\n任务现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 移过来的，理由：材料我读过了）。\n澄清这一段的几项都齐了。\n没有开着的提议。$/);
   assert.deepEqual([(out.details as any).stage.current, (out.details as any).stage.moved_by], ["clarifying", "user"]);
 
   const old = workspace(demoDefinition() as Record<string, any>);
