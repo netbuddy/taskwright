@@ -1106,6 +1106,8 @@ export interface UpgradeReport {
   started_at: string;
   finished_at: string;
   data_dir: string;
+  /** 这一次扫的是哪个任务目录；早先的服务不给。 */
+  tasks_dir?: string;
   backup: { dir: string; bytes: number; files: number } | null;
   service: "created" | "upgraded" | "current" | null;
   tasks: { dir: string; task_id: string | null; name: string | null; from: number; to: number; ok: boolean; error: string | null; ms: number }[];

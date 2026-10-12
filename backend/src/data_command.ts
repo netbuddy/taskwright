@@ -21,7 +21,7 @@
 import { parseArgs } from "node:util";
 import { newerDataText } from "../../agent/src/lib/schema.ts";
 import { PackError, exportPack, exportText, importPack, importText, upgradePack, upgradePackText } from "./data_pack.ts";
-import { locate, occupiedTasks, planUpgrade, reportText, runUpgrade, upgradeNeeded } from "./data_upgrade.ts";
+import { locate, occupiedTasks, planUpgrade, reportText, runUpgrade, upgradeCommandLine, upgradeNeeded } from "./data_upgrade.ts";
 import * as occupancy from "./occupancy.ts";
 import { appVersion } from "./paths.ts";
 import { ServiceDb, type TaskEntry } from "./service_db.ts";
@@ -151,7 +151,7 @@ async function importCommand(args: string[], out: Print, err: Print): Promise<nu
     return 2;
   }
   if (upgradeNeeded(plan)) {
-    err(`数据目录 ${where.dataDir} 里有上一版留下的数据要先升级。请先运行 taskwright data upgrade --data ${where.dataDir}，做完再导入。`);
+    err(`数据目录 ${where.dataDir} 里有上一版留下的数据要先升级。请先运行 ${upgradeCommandLine(where)}，做完再导入。`);
     return 2;
   }
   // 登记表到真要记第一个任务时才打开（没有就建）：整个包被拒绝时不在数据目录里留下任何东西。

@@ -18,7 +18,7 @@ import { loadProfile } from "./launch.ts";
 import { migrateProviderPurposes } from "./model_config.ts";
 import { defaultHost, listenFrom } from "./listen.ts";
 import { sweepImportLeftovers } from "./data_pack.ts";
-import { PendingUpgrade, locate, planUpgrade, upgradeNeeded } from "./data_upgrade.ts";
+import { PendingUpgrade, locate, planUpgrade, upgradeCommandLine, upgradeNeeded } from "./data_upgrade.ts";
 import { appVersion, logDir } from "./paths.ts";
 import { MODES, type Mode, Service } from "./service.ts";
 import { NewerDataDirectory, ServiceDb } from "./service_db.ts";
@@ -130,7 +130,7 @@ export async function startService(options: StartOptions): Promise<Started> {
   const pending = upgradeNeeded(plan);
   if (pending && mode === "server") {
     const what = [plan.tasks.length ? `${plan.tasks.length} 个任务` : "", plan.service.state === "outdated" ? "任务登记" : ""].filter(Boolean).join("与");
-    throw new StartError(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${what}）。请先运行 taskwright data upgrade --data ${dataDir}，做完再启动服务。`);
+    throw new StartError(`数据目录 ${dataDir} 里有上一版留下的数据要先升级（${what}）。请先运行 ${upgradeCommandLine({ dataDir, tasksDir, knowledgeDir })}，做完再启动服务。`);
   }
   let registry: ServiceDb | null = null;
   if (!pending) {
