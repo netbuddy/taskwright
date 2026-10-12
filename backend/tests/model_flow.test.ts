@@ -2,8 +2,8 @@
  * 整理建模的五种图从头走一遍（真的后端进程与真的 pi，模型换成进程内的假端点；图的 Mermaid 文本由后端真的校验）：
  * 核读材料时助手立四页主题 → 用户在卡片上点进入澄清、再点进入整理建模 → 助手照说明的次序画系统边界图、用例图、对象关系图、
  * 流程图、状态图各一张，来源都写它画自的页 → 整理建模的七盏灯都算得出、都通过 → 用户看过主题页、点「开始写条目」→
- * 助手写一条功能用例，来源是那张用例图与它自己的流程图 → 用户还没有看过图时「条目依据的图用户都看过」不适用，
- * 看了一张不通过，两张都看了通过；助手改了其中一张图之后，那条来源标「依据已变」，这盏灯又不通过。
+ * 助手写一条功能用例，来源是那张用例图与它自己的流程图 → 用户还没有看过图时「条目依据的图用户都看过」不通过，
+ * 看了一张仍不通过，两张都看了通过；助手改了其中一张图之后，那条来源标「依据已变」，这盏灯又不通过。
  * 另核对整份数据里的规则表，与整理建模、写条目两次运行里模型收到的说明。
  */
 
@@ -142,8 +142,8 @@ test("整理建模画出五种图、七盏灯都通过；写条目依据两张�
     const sourcesOf = async () => ((await snapshot()).items as Dict[]).find((one) => one.item_id === "UC-001")!.sources
       .map((s: Dict) => [s.kind, s.locator, s.excerpt, s.depends_revision, s.current_revision, s.stale]);
     assert.deepEqual(await sourcesOf(), [["图", "D-002", "OA-001 自助借书", 1, 1, null], ["图", "D-004", "记下借阅", 1, 1, null]]);
-    // 流程页经图被用例依据；用例没有直接依据主题页；用户还没有看过任何一张图。
-    assert.deepEqual(await lamps("writing"), { flows_backed_by_use_cases: true, basis_pages_viewed: null, basis_diagrams_viewed: null, no_pending_items: true });
+    // 流程页经图被用例依据；用例没有直接依据主题页；用户还没有看过任何一张图，依据的图那一盏不通过。
+    assert.deepEqual(await lamps("writing"), { flows_backed_by_use_cases: true, basis_pages_viewed: null, basis_diagrams_viewed: false, no_pending_items: true });
 
     // 用户看了用例图：还差流程图；两张都看了：通过。
     assert.equal((await action({ kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-002", base_revision: 1 }] })).status, 200);

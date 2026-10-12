@@ -347,8 +347,6 @@ export interface LampInput {
   citedDocuments: string[];
   /** 任务里还在的图。 */
   diagrams: LampDiagram[];
-  /** 任务里有没有记过「用户看过一张图」。一次都没有记过时，「条目依据的图用户都看过」这一盏算不适用（页面还没有接上这条记录时就是这样）。 */
-  diagramViewsRecorded: boolean;
   /** 还没有了结的规则冲突：规则表（lib/overall_views.ts 的 rulesTable）里标出的那几条问题条目的编号。 */
   ruleConflicts: string[];
   /** 评审：当前修订在当前规则下评审不合规、又没有保留写法的条目；任务里有没有过评审记录。 */
@@ -511,16 +509,15 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
       : lamp("basis_pages_viewed", false,
         `有 ${blind.length} 个条目依据的主题用户还没有看过：${list(blind.map((one) => one.item_id))}（没看过的主题是 ${list(unseen)}）。`, blind.map((one) => one.item_id));
 
-  // 写条目：每条条目依据的图都是用户看过的。任务里一次都没有记过用户看图时算不适用。
+  // 写条目：每条条目依据的图都是用户看过的。
   const drawing = others.filter((one) => one.citesDiagrams.some((id) => diagramOf.has(id)));
   const unseenOf = (one: LampItem) => one.citesDiagrams.filter((id) => diagramOf.has(id) && !diagramOf.get(id)!.viewed);
   const unlooked = drawing.filter((one) => unseenOf(one).length > 0);
   const basisDiagramsViewed = drawing.length === 0 ? lamp("basis_diagrams_viewed", null, "还没有依据图写的条目。")
-    : !input.diagramViewsRecorded ? lamp("basis_diagrams_viewed", null, "还没有记下用户看过哪些图，这一项暂时算不出来。")
-      : unlooked.length === 0 ? lamp("basis_diagrams_viewed", true, "条目依据的图用户都看过了。")
-        : lamp("basis_diagrams_viewed", false,
-          `有 ${unlooked.length} 个条目依据的图用户还没有看过：${list(unlooked.map((one) => one.item_id))}（没看过的图是 ${list([...new Set(unlooked.flatMap(unseenOf))])}）。`,
-          unlooked.map((one) => one.item_id));
+    : unlooked.length === 0 ? lamp("basis_diagrams_viewed", true, "条目依据的图用户都看过了。")
+      : lamp("basis_diagrams_viewed", false,
+        `有 ${unlooked.length} 个条目依据的图用户还没有看过：${list(unlooked.map((one) => one.item_id))}（没看过的图是 ${list([...new Set(unlooked.flatMap(unseenOf))])}）。`,
+        unlooked.map((one) => one.item_id));
 
   // 写条目：没有待核实的条目。
   const pending = others.filter((one) => one.pending);

@@ -155,7 +155,7 @@ Every item also carries a few facts that are worked out when the snapshot is rea
 | `modeling` | `rules_no_conflict` | No rule conflict among the 已经定下的 of the pages is still open: no problem item whose 事项 begins with 规则冲突： and whose status is still 未解决. `items` are those problem items. |
 | `writing` | `flows_backed_by_use_cases` | Every page labelled 流程 or 场景 (scene) is cited by at least one item of the 功能用例 (use case) collection: the item cites the page itself, or a diagram that names the page as a source. |
 | `writing` | `basis_pages_viewed` | The user has looked at every topic page that items are based on. |
-| `writing` | `basis_diagrams_viewed` | The user has viewed every diagram that an item cites (see `viewed` of a diagram in section 4.2). Not applicable while no viewing of a diagram has ever been recorded in the task. |
+| `writing` | `basis_diagrams_viewed` | The user has viewed every diagram that an item cites (see `viewed` of a diagram in section 4.2). Not applicable when no item cites a diagram. |
 | `writing` | `no_pending_items` | No item outside the overall analysis waits to be verified (including those waiting because of their basis). |
 | `reviewing` | `reviews_no_open_findings` | No item has failed its review without being dealt with; not passed while the task has never been reviewed. |
 | `reviewing` | `completion_met` | All completion conditions are met. |

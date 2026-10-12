@@ -117,13 +117,13 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   await draw({ name: "借阅记录的状态", kind: "state", mermaid: 'stateDiagram-v2\n  state "OA-002 在借" as s1\n  [*] --> s1\n  s1 --> 已还 : 还书', sources: cite("OA-002") });
   const ro = new DatabaseSync(databasePath(dir), { readOnly: true });
   try {
-    assert.deepEqual(lampDiagrams(ro, taskId, definition), { viewsRecorded: false, diagrams: [
+    assert.deepEqual(lampDiagrams(ro, taskId, definition), [
       { diagram_id: "D-001", kind: "context", sources: ["OA-001"], drawn: ["OA-001"], linked: [], branches: false, viewed: false },
       { diagram_id: "D-002", kind: "use_case", sources: ["OA-001", "OA-004"], drawn: ["OA-001", "OA-004"], linked: [], branches: false, viewed: false },
       { diagram_id: "D-003", kind: "class", sources: ["OA-002", "OA-003", "OA-005"], drawn: ["OA-002", "OA-003", "OA-005"], linked: ["OA-002", "OA-003"], branches: false, viewed: false },
       { diagram_id: "D-004", kind: "flowchart", sources: ["OA-004"], drawn: ["OA-004"], linked: [], branches: true, viewed: false },
       { diagram_id: "D-005", kind: "state", sources: ["OA-002"], drawn: ["OA-002"], linked: [], branches: false, viewed: false },
-    ] });
+    ]);
   } finally {
     ro.close();
   }
@@ -146,7 +146,9 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "借书", 步骤: ["登记借出"] }, sources: [
     { kind: "图", locator: "D-002", excerpt: "OA-004 借书", supports: [{ field: "名称" }] }, { kind: "图", locator: "D-004", excerpt: "登记借出", supports: [{ field: "步骤", index: 0 }] }] }] });
   now = summary()!;
-  assert.deepEqual([lamp(now, "basis_diagrams_viewed").ok, lamp(now, "basis_diagrams_viewed").summary], [null, "还没有记下用户看过哪些图，这一项暂时算不出来。"]);
+  // 用户还没有看过任何一张图：不通过。
+  assert.deepEqual(brief(now, "basis_diagrams_viewed"), [false, ["UC-001"]]);
+  assert.equal(lamp(now, "basis_diagrams_viewed").summary, "有 1 个条目依据的图用户还没有看过：UC-001（没看过的图是 D-002、D-004）。");
   const view = (id: string) => markDiagramViewed({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-view-${id}`, kind: DIAGRAM_VIEW_OP_KIND, targets: [{ diagram_id: id, base_revision: 1 }] });
   view("D-002");
   assert.deepEqual(brief(summary()!, "basis_diagrams_viewed"), [false, ["UC-001"]]);

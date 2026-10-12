@@ -15,7 +15,7 @@ const diagram = (id: string, kind: string, over: Partial<LampDiagram> = {}): Lam
   ({ diagram_id: id, kind, sources: [], drawn: [], linked: [], branches: false, viewed: false, ...over });
 const input = (over: Partial<LampInput> = {}): LampInput => ({
   pages: [], items: [], questions: [], collections: ["功能用例", "非功能需求", "约束", "问题", "总体分析"], materials: [], citedDocuments: [],
-  diagrams: [], diagramViewsRecorded: false, ruleConflicts: [], review: { failing: [], any: false }, completion: { satisfied: false, unmet: ["「功能用例」至少一个条目：还没有条目。"] }, ...over,
+  diagrams: [], ruleConflicts: [], review: { failing: [], any: false }, completion: { satisfied: false, unmet: ["「功能用例」至少一个条目：还没有条目。"] }, ...over,
 });
 /** 按键取一盏灯。 */
 function lampOf(key: string, given: Partial<LampInput>): Lamp {
@@ -180,20 +180,20 @@ test("basis_pages_viewed 与 no_pending_items：条目依据的页用户都看�
   assert.deepEqual([lampOf("basis_pages_viewed", { pages, items: [item("UC-001")] }).ok, lampOf("no_pending_items", { pages }).ok], [null, null]);
 });
 
-test("basis_diagrams_viewed：条目依据的图用户都看过；没有条目依据图、任务里还没有记过用户看图时不适用", () => {
+test("basis_diagrams_viewed：条目依据的图用户都看过；没有条目依据图时不适用；用户一张图都没有看过时如实是不通过", () => {
   const charts = [diagram("D-001", "use_case", { viewed: true }), diagram("D-002", "flowchart"), diagram("D-003", "flowchart")];
   const good = [item("UC-001", { citesDiagrams: ["D-001"] }), item("NFR-001", { collection: "非功能需求" })];
-  assert.deepEqual(brief(lampOf("basis_diagrams_viewed", { diagrams: charts, diagramViewsRecorded: true, items: good })), [true, []]);
+  assert.deepEqual(brief(lampOf("basis_diagrams_viewed", { diagrams: charts, items: good })), [true, []]);
   const bad = [item("UC-001", { citesDiagrams: ["D-001", "D-002"] }), item("UC-002", { citesDiagrams: ["D-003", "D-002"] }), item("UC-003", { citesDiagrams: ["D-001"] })];
-  const blind = lampOf("basis_diagrams_viewed", { diagrams: charts, diagramViewsRecorded: true, items: bad });
+  const blind = lampOf("basis_diagrams_viewed", { diagrams: charts, items: bad });
   assert.deepEqual(brief(blind), [false, ["UC-001", "UC-002"]]);
   assert.equal(blind.summary, "有 2 个条目依据的图用户还没有看过：UC-001、UC-002（没看过的图是 D-002、D-003）。");
-  // 任务里一次都没有记过用户看图：不适用，说明里写原因。
-  const unrecorded = lampOf("basis_diagrams_viewed", { diagrams: charts, items: bad });
-  assert.deepEqual([unrecorded.ok, unrecorded.summary], [null, "还没有记下用户看过哪些图，这一项暂时算不出来。"]);
+  // 用户一张图都没有看过：不通过，点名每一个依据了图的条目。
+  const none = lampOf("basis_diagrams_viewed", { diagrams: charts.map((one) => ({ ...one, viewed: false })), items: bad });
+  assert.deepEqual([none.ok, none.items], [false, ["UC-001", "UC-002", "UC-003"]]);
   // 没有条目依据图；依据的图已经不在。
-  assert.deepEqual([lampOf("basis_diagrams_viewed", { diagrams: charts, diagramViewsRecorded: true, items: [item("UC-001")] }).ok,
-    lampOf("basis_diagrams_viewed", { diagrams: charts, diagramViewsRecorded: true, items: [item("UC-001", { citesDiagrams: ["D-009"] })] }).summary], [null, "还没有依据图写的条目。"]);
+  assert.deepEqual([lampOf("basis_diagrams_viewed", { diagrams: charts, items: [item("UC-001")] }).ok,
+    lampOf("basis_diagrams_viewed", { diagrams: charts, items: [item("UC-001", { citesDiagrams: ["D-009"] })] }).summary], [null, "还没有依据图写的条目。"]);
 });
 
 test("reviews_no_open_findings 与 completion_met：评审没有未处理的发现；完成条件全部满足", () => {

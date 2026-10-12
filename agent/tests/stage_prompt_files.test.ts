@@ -20,7 +20,7 @@ import { ENTER_OPTIONS, type LampInput, STAGES, STAGE_NAMES, STAY_OPTIONS, type 
 
 /** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
 const EMPTY_LAMP_INPUT: LampInput = {
-  pages: [], items: [], questions: [], collections: [], materials: [], citedDocuments: [], diagrams: [], diagramViewsRecorded: false, ruleConflicts: [],
+  pages: [], items: [], questions: [], collections: [], materials: [], citedDocuments: [], diagrams: [], ruleConflicts: [],
   review: { failing: [], any: false }, completion: { satisfied: false, unmet: [] },
 };
 

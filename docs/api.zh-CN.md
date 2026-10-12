@@ -157,7 +157,7 @@ data: {
 | `modeling` | `rules_no_conflict` | 各页「已经定下的」之间没有还没了结的规则冲突：没有「事项」以「规则冲突：」开头、状态仍是未解决的问题条目。`items` 是这些问题条目。 |
 | `writing` | `flows_backed_by_use_cases` | 每页标签为「流程」或「场景」的主题被「功能用例」集合里至少一个条目依据：条目直接依据这一页，或者依据一张以这一页为来源的图。 |
 | `writing` | `basis_pages_viewed` | 条目依据的主题页用户都看过。 |
-| `writing` | `basis_diagrams_viewed` | 条目依据的图用户都看过（判法见第 4.2 节图的 `viewed`）。任务里一次都没有记过用户看图时不适用。 |
+| `writing` | `basis_diagrams_viewed` | 条目依据的图用户都看过（判法见第 4.2 节图的 `viewed`）。没有条目依据图时不适用。 |
 | `writing` | `no_pending_items` | 总体分析以外没有待核实的条目（含因依据而待核实的）。 |
 | `reviewing` | `reviews_no_open_findings` | 没有评审不合规而未处理的条目；任务还没有评审过时不通过。 |
 | `reviewing` | `completion_met` | 完成条件全部满足。 |
