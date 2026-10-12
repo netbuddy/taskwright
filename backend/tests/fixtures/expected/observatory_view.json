@@ -162,18 +162,18 @@
         "代码仓里的路径": "agent/prompts/stages",
         "文件": [
          {
-          "字节数": 1433,
-          "摘要值": "e0d5db845dfd8448",
+          "字节数": 1509,
+          "摘要值": "8bbeac4ec87aae85",
           "路径": "README.md"
          },
          {
-          "字节数": 5030,
-          "摘要值": "63125ec7eb65c586",
+          "字节数": 5514,
+          "摘要值": "ffd0692c656ed45b",
           "路径": "clarifying.md"
          },
          {
-          "字节数": 56813,
-          "摘要值": "eeafddf5852716c0",
+          "字节数": 61239,
+          "摘要值": "6841dc41b55b1a26",
           "路径": "common.md"
          },
          {
@@ -182,18 +182,18 @@
           "路径": "document.md"
          },
          {
-          "字节数": 5485,
-          "摘要值": "649de7f199e76125",
+          "字节数": 6015,
+          "摘要值": "c28e420fe7581ce4",
           "路径": "modeling.md"
          },
          {
-          "字节数": 4033,
-          "摘要值": "bf8c04700843ddeb",
+          "字节数": 4354,
+          "摘要值": "3eeb18d6e5c829f9",
           "路径": "reading.md"
          },
          {
-          "字节数": 2447,
-          "摘要值": "8c2677717550cf3d",
+          "字节数": 3587,
+          "摘要值": "ceb5978025cf1a1f",
           "路径": "reviewing.md"
          },
          {
@@ -202,8 +202,8 @@
           "路径": "system.md"
          },
          {
-          "字节数": 4032,
-          "摘要值": "49670f1c09a3e4a4",
+          "字节数": 4419,
+          "摘要值": "8e067b6ac9ed934b",
           "路径": "writing.md"
          }
         ],
@@ -286,9 +286,14 @@
        "摘要算法": "SHA-256 取前 16 位十六进制",
        "文件": [
         {
-         "字节数": 7874,
-         "摘要值": "316c2299272e8060",
+         "字节数": 7946,
+         "摘要值": "1cafa954acf0bf7f",
          "路径": ".pi/skills/srs-authoring/SKILL.md"
+        },
+        {
+         "字节数": 1301,
+         "摘要值": "e0b12c1094a9e014",
+         "路径": ".pi/skills/srs-authoring/stages/document.md"
         },
         {
          "字节数": 759,
@@ -467,7 +472,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"cfade15406076431\",\"bytes\":70890,\"lines\":304,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":56812,\"lines\":215,\"digest\":\"5308ffb7c01c6a31\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7572,\"lines\":30,\"digest\":\"b4560ff56510ef22\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4032,\"lines\":32,\"digest\":\"ab27f345b4def74f\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"5789a95bc1cb8b8f\",\"bytes\":75709,\"lines\":325,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":61238,\"lines\":236,\"digest\":\"2284e0cfb0a64f4c\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7644,\"lines\":30,\"digest\":\"3f9be2fd945ac571\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4353,\"lines\":32,\"digest\":\"3fe9291498798cc3\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

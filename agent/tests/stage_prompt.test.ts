@@ -34,10 +34,10 @@ function tempDir(): string {
 const compose = (stage: (typeof STAGES)[number]) => composeStagePrompt({ stage, workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL });
 
 for (const stage of STAGES) {
-  test(`${STAGE_NAMES[stage]}阶段拼出的系统提示：系统提示、两份共用部分、这个阶段的那一段，最后是工作目录；没有别的四个阶段的段落`, () => {
+  test(`${STAGE_NAMES[stage]}阶段拼出的系统提示：系统提示、两份共用部分、这个阶段的那一段，最后是工作目录；没有别的五个阶段的段落`, () => {
     const prompt = compose(stage);
     assert.equal(prompt.stage, stage);
-    const hasTaskStage = stage === "reading" || stage === "writing";
+    const hasTaskStage = stage === "reading" || stage === "writing" || stage === "document";
     assert.deepEqual(prompt.parts.map((one) => one.part),
       ["system", "platform_common", "task_common", "platform_stage", ...(hasTaskStage ? ["task_stage"] : []), "tail"]);
     assert.deepEqual(prompt.parts.map((one) => one.from), ["builtin", "builtin", "task", "builtin", ...(hasTaskStage ? ["task"] : []), "pi"]);
@@ -53,6 +53,7 @@ for (const stage of STAGES) {
     }
     assert.equal(prompt.text.includes("## 这类任务在核读材料阶段"), stage === "reading");
     assert.equal(prompt.text.includes("## 这类任务在写条目阶段"), stage === "writing");
+    assert.equal(prompt.text.includes("## 这类任务在编写文档阶段"), stage === "document");
     // 任务 skill 的 frontmatter 不进系统提示；pi 的 skill 清单不接回去；早先的任务用的那一份平台说明不在里面。
     assert.doesNotMatch(prompt.text, /^---$/m);
     assert.doesNotMatch(prompt.text, /<skills>|<available_skills>/);
