@@ -1,0 +1,5 @@
+/* 助手提议进入下一个阶段：卡片上选了「继续本阶段」之后的样子。两个选项留着，进入的那一项变淡，「继续本阶段」带勾；
+   提议还开着，进入的入口在输入框上方的「待决定」一行。 */
+.app .act .opts.stayed .btn { cursor: default; }
+.app .act .opts.stayed .btn.pri.faded { background: var(--ai); border-color: var(--ai); color: var(--on-ink); opacity: .45; }
+.app .act .opts.stayed .btn.picked { background: var(--ai-bg); border-color: var(--ai-line); color: var(--ai); font-weight: 600; }

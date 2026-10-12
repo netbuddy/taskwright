@@ -17,7 +17,7 @@ import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
-import { stageMoveLine } from "../../model/stage";
+import { CONTINUE_STAGE_KIND, CONTINUE_STAGE_LINE, STAY_TEXT, stageMoveLine } from "../../model/stage";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -152,6 +152,7 @@ export function Conversation({
           <MessageView key={(m as { message_id?: string }).message_id ?? `${m.type}-${index}`} message={m} task={task} handlers={handlers}
             disabled={disabled} hold={hold} holdText={holdText} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
+            stayed={m.type === "assistant_reply" && !!(m as AssistantReply).act && answeredByStaying(messages, index)}
             unmovedAt={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmoved(messages, index) : null}
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
@@ -204,12 +205,15 @@ export function Conversation({
 /**
  * 卡片答过没有：这条回复之后用户说的第一句话。点卡片发出的写「你选了「…」」，界面操作之后发给助手的写那件事，
  * 自己打的写「你直接写了回复」。这条回复之后还没有用户的话就是还没答，返回 null。
+ * 提议进入下一个阶段的卡片另有一种答法：用户选了「继续本阶段」，会话里留的是一条界面操作通知（不是一句话），认它指着这条回复的那一条。
  */
 export function answeredText(messages: ConversationMessage[], index: number): string | null {
   const options = (messages[index] as AssistantReply).act?.options ?? [];
+  const replyId = (messages[index] as AssistantReply).message_id;
   for (let i = index + 1; i < messages.length; i++) {
     const m = messages[i];
     if (m.type === "assistant_reply") return null;
+    if (m.type === "ui_action_noted" && (m as UiActionNoted).kind === CONTINUE_STAGE_KIND && (m as UiActionNoted).reply_message_id === replyId) return STAYED_TEXT;
     if (m.type !== "user_message") continue;
     const u = m as UserMessage & { card?: { choice?: string } | null };
     if (u.origin === "card_choice") {
@@ -228,6 +232,14 @@ export function answeredText(messages: ConversationMessage[], index: number): st
     return "你直接写了回复";
   }
   return null;
+}
+
+/** 用户在进入卡片上选了「继续本阶段」之后，卡片答过了的那一句。 */
+export const STAYED_TEXT = `你选了「${STAY_TEXT}」`;
+
+/** 这张卡片是不是用户选了「继续本阶段」答过的。 */
+export function answeredByStaying(messages: ConversationMessage[], index: number): boolean {
+  return answeredText(messages, index) === STAYED_TEXT;
 }
 
 /**
@@ -278,7 +290,7 @@ function StatusNote({ line, text }: { line: string; text: string }) {
   );
 }
 
-function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, unmovedAt, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, unmovedAt, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -290,6 +302,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   onRevisionTag?: (revisions: number[]) => void;
   onShowReviews?: () => void;
   answered: string | null;
+  stayed: boolean;
   /** 答这张卡片的那次点击没有让阶段移动时，任务当时所在的阶段。 */
   unmovedAt: string | null;
   onUndo: (revisionNo: number) => void;
@@ -353,7 +366,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </>
           )}
           {m.act && !m.degraded && (
-            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} unmovedAt={unmovedAt}
+            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} unmovedAt={unmovedAt}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}
           {revisions.length > 0 && (
@@ -379,6 +392,8 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
         );
       }
       if (m.kind === STOP_RUN_KIND) return <div className="selfnote stop" data-testid="stop-note">{STOP_NOTE_TEXT}</div>;
+      // 用户在进入卡片上选了「继续本阶段」：会话里那一句是写给助手看的，页面上换成一句短的。
+      if (m.kind === CONTINUE_STAGE_KIND) return <div className="selfnote" data-testid="continue-stage-note">{CONTINUE_STAGE_LINE}</div>;
       const revision = m.undoable ? revisionOf(m) : null;
       return (
         <div className="selfnote" data-testid="ui-action">

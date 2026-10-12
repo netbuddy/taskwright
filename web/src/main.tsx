@@ -6,6 +6,7 @@ import { applyTheme, readTheme } from "./model/theme";
 import "./styles.css";
 import "./styles/workview.css";
 import "./styles/workview-extra.css";
+import "./styles/proposal.css";
 import "./styles/issues.css";
 import "./styles/status.css";
 import "./styles/docx.css";

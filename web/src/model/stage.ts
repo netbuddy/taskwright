@@ -2,10 +2,10 @@
 // 阶段与灯都随整份数据与库事件来（task.stage，见 state/workState.ts），这里只把它变成要画的样子，不另取数据。
 // 阶段的名字、次序与卡片上「进入下一段」的选项键取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
-import { ENTER_OPTIONS, STAGES, STAGE_NAMES, STAGE_START_TEXTS } from "../../../agent/src/lib/stage";
+import { ENTER_OPTIONS, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_OPTIONS, STAY_TEXT } from "../../../agent/src/lib/stage";
 import type { Item, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
-export { STAGES, STAGE_NAMES };
+export { STAGES, STAGE_NAMES, STAY_TEXT };
 
 /** 阶段条上的一格：这个阶段已经过了、正在这里、还没到。 */
 export type StageMark = "done" | "current" | "ahead";
@@ -57,6 +57,16 @@ export function lampTarget(lamp: StageLamp, items: readonly Item[]): { kind: "it
 export const ENTER_KEYS: Record<string, StageKey> = Object.fromEntries(
   (Object.keys(ENTER_OPTIONS) as (keyof typeof ENTER_OPTIONS)[]).map((stage) => [ENTER_OPTIONS[stage].key, stage]),
 );
+
+/** 「留在这一段」的四个选项键。卡片上这一项不管助手写成什么，页面一律显示成「继续本阶段」。 */
+export const STAY_KEYS: ReadonlySet<string> = new Set(Object.values(STAY_OPTIONS).map((one) => one.key));
+
+/** 界面操作通知的种类：用户在提议进入下一个阶段的卡片上选了「继续本阶段」（后端 conversation.ts 的 CONTINUE_STAGE）。 */
+export const CONTINUE_STAGE_KIND = "continue_stage";
+/** 对话区里那条通知写成的一行。 */
+export const CONTINUE_STAGE_LINE = `界面操作：用户选择${STAY_TEXT}`;
+/** 选了「继续本阶段」之后卡片下面的那句小字：提议还开着，从哪里进入。 */
+export const STAY_HINT = "这个提议仍然开着，要进入时点输入框上方「待决定」一行里的按钮。";
 
 /**
  * 对话区里说一次阶段移动的那一行。助手只会把任务退回前面的阶段，写「助手把任务退回澄清：理由」；

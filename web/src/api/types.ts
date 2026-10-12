@@ -454,8 +454,14 @@ export interface UiActionNoted {
   /** 与后端对齐后新增：撤销要用的修订序号；已读这类不产生修订的操作为 null。 */
   revision_no?: number | null;
   op_id?: string | null;
-  /** 界面操作的种类；评审结束的那条是 request_review，另带 review 计数；用户停止了助手一次工作之后留的那条是 stop_run。 */
+  /**
+   * 界面操作的种类；评审结束的那条是 request_review，另带 review 计数；用户停止了助手一次工作之后留的那条是 stop_run；
+   * 用户在提议进入下一个阶段的卡片上选了「继续本阶段」之后留的那条是 continue_stage，另带下面两项。
+   */
   kind?: string | null;
+  /** continue_stage 才有：卡片在哪条回复上、卡片提议进入哪个阶段。 */
+  reply_message_id?: string;
+  stage?: StageKey;
   review?: { total: number; passed: number; failed: number; unfinished: number; problems: number; advice: number } | null;
 }
 
@@ -1006,14 +1012,17 @@ export interface MessageRequest {
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
   | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "mark_diagram_viewed" | "move_stage";
 
+/** 「继续本阶段」：在提议进入下一个阶段的卡片上选了留在这一段。只在会话里留一条通知，不写库、不引出助手运行；fields 写卡片所在回复的编号与点的键。 */
+export type StageActionKind = "continue_stage";
+
 export interface ActionRequest {
   client_id: string;
-  kind: ActionKind;
+  kind: ActionKind | StageActionKind;
   task_id: string;
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
   targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
   /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。 */
-  fields?: Fields | { revision_no: number } | { mermaid: string };
+  fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string };
   notify_executor: boolean;
 }
 
