@@ -404,7 +404,13 @@ const handlers: Record<string, Handler> = {
     const clientId = body.client_id ?? null;
     let queued: boolean;
     if (body.origin === "card_choice") {
-      queued = await t.executor.cardClick(session, text, clientId, cardAnnotation(body, session ? await t.executor.entries(session) : []));
+      const annotation = cardAnnotation(body, session ? await t.executor.entries(session) : []);
+      // 卡片是在另一条会话里发的（用户从「待决定」一行或者任务状况卡上点了进入）：这条会话里找不到选项的文字，取开着的提议上写的。
+      if (annotation.option_text === annotation.option_key) {
+        const open = library.stageView(t.dir)?.proposal ?? null;
+        if (open !== null && open.enter.key === annotation.option_key) annotation.option_text = open.enter.text;
+      }
+      queued = await t.executor.cardClick(session, text, clientId, annotation);
     } else {
       queued = await t.executor.say(session, withAttachments(rewriteSlash(text), attachments), clientId, text);
     }
