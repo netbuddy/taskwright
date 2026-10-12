@@ -8,6 +8,8 @@
  *   树压平之后顺序编节号（3.1、3.2）。第 6 章同级里目标排在前、只贴了「决定」的排在后。
  *   已废弃的页留在它的章里，不占节号，这样在用的节的节号不因为废弃一页而变。
  * - 第 4 章最后一节固定是「术语表」（任务里有标签含「概念」的在用页时才有，不论那一页归在哪一章）。
+ * - 导语页：「导语所属章」里写了一章的章名的页是那一章的导语页，不看它的标签。它不是节、不编节号、不进「未归类」，
+ *   挂在那一章的章首（在用的取编号最小的一页；已废弃的只列出来）。写的不是七章章名之一的当作没有写。
  *
  * 本文件除了 overall_analysis.ts 不导入别的模块：助手一侧、后端与页面都可以直接导入（agent/tests/web_imports.test.ts 守着）。
  */
@@ -48,19 +50,26 @@ export function chapterOfLabels(labels: readonly string[]): Chapter | null {
   return CHAPTERS.find((chapter) => chapter.labels.some((label) => labels.includes(label))) ?? null;
 }
 
-/** 算章与节要的一页：编号、标签、上级主题的编号（没有写是 null）、是不是已废弃。 */
+/** 算章与节要的一页：编号、标签、上级主题的编号（没有写是 null）、是不是已废弃、是哪一章的导语页（章号；不是导语页是 null）。 */
 export interface ChapterPage {
   item_id: string;
   labels: readonly string[];
   parent: string | null;
   deprecated: boolean;
+  intro?: number | null;
+}
+
+/** 一页的字段里写的是哪一章的导语：「导语所属章」是七章章名之一时返回章号，没有写或者写的不是章名是 null。 */
+export function introChapterOf(fields: Record<string, unknown>): number | null {
+  const name = fields[OVERALL_FIELDS.intro];
+  return typeof name === "string" ? CHAPTERS.find((chapter) => chapter.name === name.trim())?.no ?? null : null;
 }
 
 /** 从一页的字段内容取出算章与节要的几样。「上级主题」写成一个编号或者一个列表都认，取第一个。 */
 export function chapterPage(itemId: string, fields: Record<string, unknown>): ChapterPage {
   const up = fields[OVERALL_FIELDS.parent];
   const first = Array.isArray(up) ? up.find((one): one is string => typeof one === "string" && one.trim() !== "") : typeof up === "string" && up.trim() !== "" ? up : undefined;
-  return { item_id: itemId, labels: tagsOf(fields), parent: first?.trim() ?? null, deprecated: isDeprecated(fields) };
+  return { item_id: itemId, labels: tagsOf(fields), parent: first?.trim() ?? null, deprecated: isDeprecated(fields), intro: introChapterOf(fields) };
 }
 
 /** 一章里的一节：哪一页、在第几章、节号（已废弃的页没有节号）、在章里缩进几层（顶层是 0）。 */
@@ -76,6 +85,10 @@ export interface ChapterSections {
   sections: ChapterSection[];
   /** 「术语表」这一节的节号；只有第 4 章、而且任务里有标签含「概念」的在用页时才有。 */
   glossaryNo: string | null;
+  /** 这一章在用的导语页的编号（有几页时取编号最小的）；没有是 null。 */
+  intro: string | null;
+  /** 这一章已废弃的导语页与多出来的导语页的编号。 */
+  otherIntros: string[];
 }
 
 export interface ChapterLayout {
@@ -121,7 +134,10 @@ function ordered(pages: readonly ChapterPage[], order: (a: ChapterPage, b: Chapt
  * 要么在某一章的 sections 里，要么在 unsorted 里。要数在用的页：章里数节号不是 null 的，unsorted 里数 deprecated 为假的。
  */
 export function chapterLayout(pages: readonly ChapterPage[]): ChapterLayout {
-  const sorted = [...pages].sort(byId);
+  const all = [...pages].sort(byId);
+  // 导语页先拿出来：它们不是节，也不算没归类。
+  const intros = all.filter((page) => (page.intro ?? null) !== null);
+  const sorted = all.filter((page) => (page.intro ?? null) === null);
   const hasConcept = sorted.some((page) => !page.deprecated && page.labels.includes(LABEL_CONCEPT));
   const chapters = CHAPTERS.map((chapter): ChapterSections => {
     const own = sorted.filter((page) => chapterOfLabels(page.labels)?.no === chapter.no);
@@ -129,7 +145,10 @@ export function chapterLayout(pages: readonly ChapterPage[]): ChapterLayout {
     let count = 0;
     const sections = ordered(own, order).map(({ page, depth }): ChapterSection =>
       ({ item_id: page.item_id, chapter: chapter.no, depth, no: page.deprecated ? null : `${chapter.no}.${++count}` }));
-    return { chapter, sections, glossaryNo: chapter.no === CHAPTER_OBJECTS && hasConcept ? `${chapter.no}.${count + 1}` : null };
+    const mine = intros.filter((page) => page.intro === chapter.no);
+    const intro = mine.find((page) => !page.deprecated)?.item_id ?? null;
+    return { chapter, sections, glossaryNo: chapter.no === CHAPTER_OBJECTS && hasConcept ? `${chapter.no}.${count + 1}` : null,
+      intro, otherIntros: mine.filter((page) => page.item_id !== intro).map((page) => page.item_id) };
   });
   return { chapters, unsorted: sorted.filter((page) => chapterOfLabels(page.labels) === null).map((page) => ({ item_id: page.item_id, deprecated: page.deprecated })) };
 }

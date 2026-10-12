@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import type { Task } from "../../../api/types";
-import { CHAPTER_DECISIONS, CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_RULES, GLOSSARY_NAME, UNSORTED_NAME, type Toc, tocTotals } from "../../../model/chapters";
+import { CHAPTER_DECISIONS, CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_RULES, GLOSSARY_NAME, INTRO_NAME, UNSORTED_NAME, type Toc, tocTotals } from "../../../model/chapters";
 import { STATE_TEXT, isDeprecated, titleOf, topicState, type TopicState } from "../../../model/overall";
 
 /** 中栏右边现在显示的不是某一节时，显示的是哪一样：某一章的章首页，或者术语表。 */
@@ -59,7 +59,7 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
     <div className="oa-outline-body" data-testid="toc">
       {pageCount === 0 && <div className="oa-none">还没有内容。把这件事讲给助手听，它会把说到的角色、流程与业务对象一节一节立起来。</div>}
       <div className="oa-toc">
-        {contents.chapters.map(({ chapter, sections, glossaryNo }) => {
+        {contents.chapters.map(({ chapter, sections, glossaryNo, intro }) => {
           const folds = chapter.no === CHAPTER_FLOWS;
           const on = head?.kind === "chapter" && head.no === chapter.no;
           const closed = folds && flowsFolded;
@@ -73,6 +73,19 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
                 <span className="no">{chapter.no}</span><span className="oa-name">{chapter.name}</span>
                 {folds && sections.length > 0 && <span className="oa-caret" aria-hidden="true">{closed ? "▸" : "▾"}</span>}
               </div>
+              {!closed && intro && (() => {
+                // 导语页不贴标签，不算「还没归类」。
+                const raw = topicState(task, intro);
+                const state = raw === "unsorted" ? "settled" : raw;
+                const on = intro.item_id === current;
+                return (
+                  <div className={`oa-row intro${on ? " cur" : ""}`} role="button" tabIndex={0} title={`${chapter.name}的导语：${STATE_TEXT[state]}`} aria-current={on ? "true" : undefined}
+                    onClick={() => onOpen(intro.item_id)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(intro.item_id); }} data-testid={`toc-${intro.item_id}`}>
+                    <span className={`oa-dot ${state}`} data-state={state} />
+                    <span className="oa-name">{INTRO_NAME}</span>
+                  </div>
+                );
+              })()}
               {!closed && sections.map((one) => row(one.item, one.depth, one.no))}
               {chapter.no === CHAPTER_OBJECTS && glossaryNo && (
                 <div className={`oa-row${head?.kind === "glossary" ? " cur" : ""}`} role="button" tabIndex={0} title={`${glossaryNo} ${GLOSSARY_NAME}`}

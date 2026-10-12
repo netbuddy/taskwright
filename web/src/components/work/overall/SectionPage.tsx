@@ -18,7 +18,7 @@
 
 import { useState, type ReactNode } from "react";
 import type { CollectionDef, Item, Source, Task } from "../../../api/types";
-import { CHAPTER_FLOWS, UNSORTED_NAME, chapterByNo, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
+import { CHAPTER_FLOWS, INTRO_NAME, UNSORTED_NAME, chapterByNo, introChapter, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
 import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
 import {
   DEPRECATED, TOPIC, addedQuotes, confirmAction, dependents, exampleKind, examplesOf, isDeprecated, isPending, labelsOf, markPassage, materialQuotes, openQuestions, pendingCount,
@@ -83,7 +83,9 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
 }) {
   const toast = useToast();
   const section = sectionOf(contents, item.item_id);
-  const chapter = section ? chapterByNo(section.chapter) : null;
+  // 导语页不是节：面包屑写它是哪一章的导语，不算没有归类。
+  const introOf = introChapter(contents, item.item_id);
+  const chapter = section ? chapterByNo(section.chapter) : introOf?.chapter ?? null;
   const labels = labelsOf(item);
   const lead = sectionLead(item);
   const pending = pendingCount(item);
@@ -148,7 +150,7 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
       <div className="oa-crumb" data-testid="topic-crumb">
         <span className="back" role="button" onClick={onBack} data-testid="topic-back">‹ 回到目录</span>
         {chapter
-          ? <><span className="up">{chapter.no} {chapter.name}</span>{section!.no && <><i>›</i><span className="here">{section!.no}</span></>}</>
+          ? <><span className="up">{chapter.no} {chapter.name}</span>{introOf ? <><i>›</i><span className="here">{INTRO_NAME}</span></> : section!.no && <><i>›</i><span className="here">{section!.no}</span></>}</>
           : <span className="up">{UNSORTED_NAME}</span>}
         <span className="oa-nav">
           <button type="button" className="btn sm" disabled={!onPrev} onClick={onPrev ?? undefined} data-testid="topic-prev">‹ 上一条</button>
@@ -169,7 +171,8 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
           {[lead.materials > 0 ? `材料 ${lead.materials} 处` : "", lead.clarified > 0 ? `澄清 ${lead.clarified} 条` : "", lead.seen ? "你看过" : ""].filter(Boolean).join(" · ") || "还没有来源"}
         </span>
         <span className="sep" />
-        {labels.length === 0 && <span className="oa-tag none">{UNSORTED_NAME}</span>}
+        {labels.length === 0 && !introOf && <span className="oa-tag none">{UNSORTED_NAME}</span>}
+        {introOf && <span className="oa-tag">{INTRO_NAME}</span>}
         {labels.map((name) => <span key={name} className="oa-tag">{name}</span>)}
         {labelField && !editing && (
           <button type="button" className="oa-tag add" disabled={!!offTitle} title={offTitle ?? "给这一页加标签、换标签或者去掉标签；标签决定它排在哪一章"}

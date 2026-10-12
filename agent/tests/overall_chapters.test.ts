@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CHAPTERS, type ChapterPage, chapterByNo, chapterLayout, chapterOfLabels, chapterPage } from "../src/lib/overall_chapters.ts";
+import { CHAPTERS, type ChapterPage, chapterByNo, chapterLayout, chapterOfLabels, chapterPage, introChapterOf } from "../src/lib/overall_chapters.ts";
 
 const page = (n: number, labels: string[], parent: number | null = null, deprecated = false): ChapterPage =>
   ({ item_id: `OA-${String(n).padStart(3, "0")}`, labels, parent: parent === null ? null : `OA-${String(parent).padStart(3, "0")}`, deprecated });
@@ -25,9 +25,13 @@ test("归章：贴了几个标签的照章的先后取第一个对得上的；�
 });
 
 test("从字段内容取出算章与节要的几样：上级主题写成列表或一个编号都认", () => {
-  assert.deepEqual(chapterPage("OA-002", { 标签: ["流程", ""], 上级主题: ["OA-001"], 状态: "在用" }), { item_id: "OA-002", labels: ["流程"], parent: "OA-001", deprecated: false });
-  assert.deepEqual(chapterPage("OA-003", { 上级主题: " OA-001 ", 状态: "已废弃" }), { item_id: "OA-003", labels: [], parent: "OA-001", deprecated: true });
-  assert.deepEqual(chapterPage("OA-004", {}), { item_id: "OA-004", labels: [], parent: null, deprecated: false });
+  assert.deepEqual(chapterPage("OA-002", { 标签: ["流程", ""], 上级主题: ["OA-001"], 状态: "在用" }), { item_id: "OA-002", labels: ["流程"], parent: "OA-001", deprecated: false, intro: null });
+  assert.deepEqual(chapterPage("OA-003", { 上级主题: " OA-001 ", 状态: "已废弃" }), { item_id: "OA-003", labels: [], parent: "OA-001", deprecated: true, intro: null });
+  assert.deepEqual(chapterPage("OA-004", {}), { item_id: "OA-004", labels: [], parent: null, deprecated: false, intro: null });
+  // 导语页：「导语所属章」写的是七章章名之一才算，返回章号；写别的当作没有写。
+  assert.deepEqual([chapterPage("OA-010", { 导语所属章: "业务流程" }).intro, chapterPage("OA-011", { 导语所属章: " 决策记录与待澄清事项 " }).intro,
+    chapterPage("OA-012", { 导语所属章: "附录" }).intro, chapterPage("OA-013", { 导语所属章: ["业务流程"] }).intro], [3, 7, null, null]);
+  assert.deepEqual([introChapterOf({ 导语所属章: "概述与范围" }), introChapterOf({})], [1, null]);
 });
 
 test("章内按上级主题成树（只认本章里的上级），同级按编号，压平之后顺序编号；没有标签的页另列", () => {
@@ -79,3 +83,24 @@ test("上级主题绕成圈的页都当作顶层，一页不丢；自己是自�
   const pages = [page(1, ["流程"], 2), page(2, ["流程"], 1), page(3, ["流程"], 3), page(4, ["流程"], 3)];
   assert.deepEqual(rows(pages)[2], ["3.1 OA-001", "3.2 OA-002", "3.3 OA-003", "3.4 OA-004 +1"]);
 });
+
+test("导语页挂在它那一章的章首：不是节、不占节号、不进未归类，不看它的标签；在用的取编号最小的一页，已废弃的与多出来的另列", () => {
+  const intro = (n: number, chapter: number, deprecated = false, labels: string[] = []) =>
+    ({ item_id: `OA-${String(n).padStart(3, "0")}`, labels, parent: null, deprecated, intro: chapter });
+  const layout = chapterLayout([
+    page(1, ["流程"]), page(2, ["流程"]), page(3, []),
+    intro(10, 3), intro(11, 3), intro(12, 5), intro(13, 7, true), intro(14, 2, false, ["流程"]),
+  ]);
+  // 第 3 章的两节照旧是 3.1、3.2：导语页没有挤进去，贴了「流程」标签的那页导语也没有。
+  assert.deepEqual(layout.chapters[2].sections.map((one) => `${one.no} ${one.item_id}`), ["3.1 OA-001", "3.2 OA-002"]);
+  assert.deepEqual(layout.chapters.map((one) => one.intro), [null, "OA-014", "OA-010", null, "OA-012", null, null]);
+  assert.deepEqual(layout.chapters.map((one) => one.otherIntros), [[], [], ["OA-011"], [], [], [], ["OA-013"]]);
+  // 未归类的只有那一页真的没有贴标签的。
+  assert.deepEqual(layout.unsorted, [{ item_id: "OA-003", deprecated: false }]);
+  // 每一页恰好在一处：节、未归类、导语三样加起来是全部页。
+  const placed = [...layout.chapters.flatMap((one) => [...one.sections.map((s) => s.item_id), ...(one.intro ? [one.intro] : []), ...one.otherIntros]), ...layout.unsorted.map((one) => one.item_id)];
+  assert.deepEqual(placed.sort(), ["OA-001", "OA-002", "OA-003", "OA-010", "OA-011", "OA-012", "OA-013", "OA-014"]);
+  // 没有写导语一项的页（早先的调用方）照旧。
+  assert.deepEqual(chapterLayout([{ item_id: "OA-001", labels: ["流程"], parent: null, deprecated: false }]).chapters[2].intro, null);
+});
+

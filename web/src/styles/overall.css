@@ -290,3 +290,9 @@
 .app .oa-goaltree li.dec { font-size: 0.937rem; }
 .app .oa-goaltree li.dec .k { margin-right: .4rem; padding: 0 .35rem; border-radius: .25rem; background: var(--sel); font-size: 0.825rem; color: var(--text3); }
 .app .oa-goaltree li.dec .why { display: block; font-size: 0.873rem; color: var(--text3); }
+
+/* ───── 章的导语（章首页最上面一块；目录里每章各节之前的一行）───── */
+.app .oa-intro-blk.pending .oa-prose { border-left: .2rem solid var(--amber); padding-left: .7rem; }
+.app .oa-intro-pending { margin-left: .6rem; color: var(--amber); }
+.app .oa-row.intro .oa-name { color: var(--text3); }
+.app .oa-row.intro.cur .oa-name { color: var(--on-ink); }
