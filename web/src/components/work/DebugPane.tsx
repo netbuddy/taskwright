@@ -1,4 +1,5 @@
-// 右侧栏的「调试」页签，只在服务开着调试模式（带 --debug 启动）时出现。四块，从上到下：
+// 右侧栏的「调试」页签，只在服务开着调试模式（带 --debug 启动）时出现。最上面是阶段条（StageBar.tsx：五个阶段的名字与当前阶段还差哪几项，
+// 平常的页面上不显示它），下面四块，从上到下：
 //   1. 最近一次运行实际发给模型的系统提示，按部分列出，每一部分写明出自哪里，点开看原文；
 //   2. 阶段记录：谁在什么时候把任务从哪个阶段移到哪个阶段、理由；
 //   3. 现在这个阶段的每盏灯：通过、没通过还是不适用，整句，与它列出的编号（可以点开）；
@@ -7,17 +8,22 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
-import type { DebugStage, DebugSystemPrompt, StageView } from "../../api/types";
+import type { DebugStage, DebugSystemPrompt, Item, StageView } from "../../api/types";
 import { formatTime } from "../../model/format";
 import { STAGE_NAMES } from "../../model/stage";
+import { StageBar } from "./StageBar";
 
 const HOW_TEXT: Record<string, string> = { recomposed: "这一次是重新读文件拼的", reused: "这一次沿用了上一次拼好的", kept_after_error: "这一次重拼出错，沿用了上一次拼好的" };
 const ACTOR_TEXT: Record<string, string> = { user: "用户", executor: "助手" };
 const LAMP_STATE: [string, string][] = [["ok", "通过"], ["no", "没通过"], ["na", "不适用"]];
 
-export function DebugPane({ taskId, stage, working, onOpenItem }: {
+export function DebugPane({ taskId, stage, items = [], working, onOpenItem, onOpenMaterial }: {
   taskId: string;
   stage: StageView | null;
+  /** 任务的条目（阶段条上点一盏没通过的灯，要找它差的第一页、第一条）。 */
+  items?: readonly Item[];
+  /** 打开一份材料（阶段条上点「材料还没有读完」之类的灯）。 */
+  onOpenMaterial?: (path: string) => void;
   /** 助手是不是正在工作：从工作中变为不在工作时再取一次。 */
   working: boolean;
   onOpenItem: (itemId: string) => void;
@@ -42,6 +48,7 @@ export function DebugPane({ taskId, stage, working, onOpenItem }: {
   const rejections = facts ? (allRejections ? facts.rejections : facts.rejections.filter((one) => one.work_id === facts.latest_work_id)) : [];
   return (
     <div className="dbg-pane" data-testid="debug-pane">
+      <StageBar stage={stage} items={items} onOpenItem={onOpenItem} onOpenMaterial={onOpenMaterial ?? (() => {})} />
       <div className="dbg-top">
         <span className="dbg-note">这些只在调试模式下有，给调说明文字的人看。</span>
         <button type="button" className="btn sm" onClick={load} data-testid="debug-refresh">刷新</button>

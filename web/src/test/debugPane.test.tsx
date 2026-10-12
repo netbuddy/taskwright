@@ -1,7 +1,7 @@
 // 右侧栏的「调试」页签：服务开着调试模式才有；四块内容（系统提示按部分列出、阶段记录、这一段的灯、被拒的工具调用）；
 // 打开时取一次，助手做完一轮再取一次，点「刷新」再取一次；被拒的调用缺省只列最近一次工作里的，可以改看全部。
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { api } from "../api/client";
 import type { DebugStage, DebugSystemPrompt, ServiceInfo, StageView, TaskDetail } from "../api/types";
@@ -19,8 +19,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const STAGE: StageView = { current: "modeling", moved_by: "user", moved_at: "2026-10-10T09:00:00", reason: "", lamps: {
   reading: [], clarifying: [], writing: [], reviewing: [],
   modeling: [
-    { key: "flows_have_exception", ok: false, summary: "有 1 页标签为「流程」的主题还没有以「例外：」开头的例子：OA-003。", items: ["OA-003"] },
-    { key: "roles_mentioned_by_flows", ok: null, summary: "还没有标签为「角色」的主题。", items: [] },
+    { key: "flows_have_flowchart_with_branch", ok: false, summary: "有 1 页标签为「流程」的主题还没有以「例外：」开头的例子：OA-003。", items: ["OA-003"] },
+    { key: "roles_in_context_and_use_cases", ok: null, summary: "还没有标签为「角色」的主题。", items: [] },
     { key: "no_duplicate_titles", ok: true, summary: "没有两页主题用了同一个标题或别名。", items: [] },
   ] } };
 const PROMPT: DebugSystemPrompt = {
@@ -49,11 +49,23 @@ function pane(working = false, prompt: DebugSystemPrompt = PROMPT, facts: DebugS
   const getPrompt = vi.spyOn(api, "debugSystemPrompt").mockResolvedValue(prompt);
   const getFacts = vi.spyOn(api, "debugStage").mockResolvedValue(facts);
   const onOpenItem = vi.fn();
-  const view = render(<DebugPane taskId="TASK-001" stage={STAGE} working={working} onOpenItem={onOpenItem} />);
-  return { getPrompt, getFacts, onOpenItem, view };
+  const onOpenMaterial = vi.fn();
+  const items = [{ item_id: "OA-003", collection: "总体分析" }] as never;
+  const view = render(<DebugPane taskId="TASK-001" stage={STAGE} items={items} working={working} onOpenItem={onOpenItem} onOpenMaterial={onOpenMaterial} />);
+  return { getPrompt, getFacts, onOpenItem, onOpenMaterial, view };
 }
 
 describe("右侧栏的调试页签", () => {
+  it("顶上是阶段条：五个阶段的名字，当前阶段标出来；没通过的灯一盏一句，点了打开它差的第一页", async () => {
+    const { onOpenItem } = pane();
+    const bar = within(screen.getByTestId("debug-pane")).getByTestId("stage-bar");
+    expect(screen.getByTestId("debug-pane").firstElementChild).toBe(bar);
+    expect(within(bar).getByTestId("stage-modeling")).toHaveAttribute("aria-current", "step");
+    fireEvent.click(within(bar).getByTestId("lamp-flows_have_flowchart_with_branch"));
+    expect(onOpenItem).toHaveBeenCalledWith("OA-003");
+    await screen.findByTestId("debug-prompt-meta");
+  });
+
   it("系统提示：先说阶段、重拼还是沿用、提示词目录，再按部分列出，每一部分写出处、文件与行数，点开是原文；没有用上的文件各写一句原因", async () => {
     pane();
     const meta = await screen.findByTestId("debug-prompt-meta");
@@ -75,13 +87,13 @@ describe("右侧栏的调试页签", () => {
     const { onOpenItem } = pane();
     await screen.findByTestId("debug-prompt-meta");
     expect(screen.getByTestId("debug-lamps")).toHaveTextContent("「整理建模」这一段的灯");
-    const failing = screen.getByTestId("debug-lamp-flows_have_exception");
+    const failing = screen.getByTestId("debug-lamp-flows_have_flowchart_with_branch");
     expect(failing).toHaveClass("no");
     expect(failing).toHaveTextContent("没通过有 1 页标签为「流程」的主题还没有以「例外：」开头的例子：OA-003。");
-    expect(failing.querySelector(".key")).toHaveTextContent("flows_have_exception");
+    expect(failing.querySelector(".key")).toHaveTextContent("flows_have_flowchart_with_branch");
     fireEvent.click(failing.querySelector(".ids a")!);
     expect(onOpenItem).toHaveBeenCalledWith("OA-003");
-    expect(screen.getByTestId("debug-lamp-roles_mentioned_by_flows")).toHaveTextContent("不适用");
+    expect(screen.getByTestId("debug-lamp-roles_in_context_and_use_cases")).toHaveTextContent("不适用");
     expect(screen.getByTestId("debug-lamp-no_duplicate_titles")).toHaveClass("ok");
   });
 
@@ -153,8 +165,11 @@ describe("工作视图里的调试页签", () => {
     const tab = await screen.findByTestId("side-tab-debug");
     expect(tab).toHaveTextContent("调试");
     expect(getPrompt).not.toHaveBeenCalled();
+    // 阶段条平常不在页面上，点开调试页签才看得到。
+    expect(screen.queryByTestId("stage-bar")).toBeNull();
     fireEvent.click(tab);
     expect(await screen.findByTestId("debug-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("stage-bar")).toBeInTheDocument();
     await waitFor(() => expect(getPrompt).toHaveBeenCalledWith("TASK-001"));
   });
 

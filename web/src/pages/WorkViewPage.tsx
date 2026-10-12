@@ -19,7 +19,6 @@ import { DIAGRAM_HOLD_TEXT } from "../components/work/ReplyCard";
 import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
-import { StageBar } from "../components/work/StageBar";
 import { DebugPane } from "../components/work/DebugPane";
 import type { StageStart } from "../model/stage";
 import { ReviewPanel } from "../components/work/ReviewPanel";
@@ -409,7 +408,6 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
             {!closed && <div className="srow newrow" role="button" onClick={() => void newSession()}>＋ 新建会话（让助手从干净的上下文开始，交付物还是这一份）</div>}
           </div>
         </div>
-        <StageBar stage={task?.stage} items={task?.items ?? []} onOpenItem={openItem} onOpenMaterial={openMaterial} />
         <div className="app-body">
           <div className="rail">
             <div className="ico" title="全局查找（还没有做）">⌕</div>
@@ -464,7 +462,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                       onOpenFinding={openFinding} onPrefill={prefill} />
                   ) : undefined}
                   reviewCount={task ? openProblems(task) : 0} task={task ?? undefined}
-                  debug={service.info?.debug ? <DebugPane taskId={taskId} stage={task?.stage ?? null} working={!!working} onOpenItem={openItem} /> : undefined} />
+                  debug={service.info?.debug ? <DebugPane taskId={taskId} stage={task?.stage ?? null} items={task?.items ?? []} working={!!working} onOpenItem={openItem} onOpenMaterial={openMaterial} /> : undefined} />
               </div>
             </div>
           </div>
