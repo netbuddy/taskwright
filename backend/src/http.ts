@@ -12,6 +12,7 @@ import { pipeline } from "node:stream/promises";
 import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
+import { taskStatus } from "./task_status.ts";
 import * as render from "./render.ts";
 import * as exportDocx from "./export_docx.ts";
 import { DIAGRAM_KINDS, validateDiagram } from "./diagram_validate.ts";
@@ -352,6 +353,8 @@ const handlers: Record<string, Handler> = {
   debug_prompt_dir_set: async (service, req) => json(200, await debugPrompt.setPromptDir(service, bodyJson(req))),
   debug_system_prompt: (service, req) => json(200, debugPrompt.lastSystemPrompt(service, req.params.task)),
   debug_stage: (service, req) => json(200, debugPrompt.stageDebug(service, req.params.task)),
+  // 任务状况：现在的阶段、各章的节数、图与条目的计数、这一段还差什么、开着的提议。程序算出来的，不经助手；没有阶段的任务 status 为 null。
+  task_status: (service, req) => json(200, { ok: true, status: taskStatus(service.task(req.params.task).dir) }),
   debug_persona_draft: async (service, req) => json(200, await debugPrompt.personaDraftOf(service, req.params.task)),
   model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
   model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service), req.params.provider, bodyJson(req))),
@@ -634,6 +637,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", `/api/v1/knowledge/libraries/${L}/documents/delete`, "delete_document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/content`, "document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/raw`, "document_raw"],
+  ["GET", `/api/v1/tasks/${T}/status`, "task_status"],
   ["GET", `/api/v1/tasks/${T}/debug/system-prompt`, "debug_system_prompt"],
   ["GET", `/api/v1/tasks/${T}/debug/stage`, "debug_stage"],
   ["GET", `/api/v1/tasks/${T}/debug/persona-draft`, "debug_persona_draft"],
