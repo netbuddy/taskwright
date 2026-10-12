@@ -266,7 +266,7 @@ describe("节的各块", () => {
     expect(screen.getByTestId("topic-open").querySelector("h3 small")).toBeNull();
   });
 
-  it("待澄清事项：回答框空着点「记下」只把开头填进对话区的输入框；「暂不处理」把问题标为先不管", () => {
+  it("待澄清事项：回答框空着点「记下」只把开头填进对话区的输入框；「暂不处理」把问题标为暂不处理", () => {
     const send = vi.fn();
     const answer = vi.fn();
     const submit = vi.fn(async () => null);
@@ -276,7 +276,7 @@ describe("节的各块", () => {
     expect(answer.mock.calls[0][0].item_id).toBe("TBD-001");
     expect(screen.getByTestId("topic-keep-TBD-001")).toHaveTextContent("暂不处理");
     fireEvent.click(screen.getByTestId("topic-keep-TBD-001"));
-    expect(submit).toHaveBeenCalledWith({ kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }], notify_executor: false }, "把 TBD-001 标为先不管");
+    expect(submit).toHaveBeenCalledWith({ kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }], notify_executor: false }, "把 TBD-001 标为暂不处理");
   });
 
   it("助手工作中、任务结束后，回答与暂不处理都不能点", () => {

@@ -314,7 +314,7 @@ export function matchesFilter(item: Item, filter: ItemFilter, task?: Task): bool
 }
 
 /**
- * 问题条目：「先不管」（keep_pending）适用的条目，所在集合有一个枚举字段，取值里有接口约定写明的「用户决定保留」。
+ * 问题条目：「暂不处理」（keep_pending）适用的条目，所在集合有一个枚举字段，取值里有接口约定写明的「用户决定保留」。
  * 按取值认，不按字段名认；任务定义里没有这种字段时不显示这个按钮。
  */
 export const KEEP_PENDING_VALUE = "用户决定保留";

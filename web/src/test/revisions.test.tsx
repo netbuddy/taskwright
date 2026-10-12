@@ -153,7 +153,7 @@ describe("「刚改」只标执行者最近一次运行改过的条目", () => {
 });
 
 describe("单一写入者：执行者工作中", () => {
-  it("条目区顶部有横幅；改字段、删除、先不管都灰化并在悬停说明里写明原因；「让助手来改这一条」「回答这个问题」照常可用", () => {
+  it("条目区顶部有横幅；改字段、删除、暂不处理都灰化并在悬停说明里写明原因；「让助手来改这一条」「回答这个问题」照常可用", () => {
     const t = task([UC1, UC2, TBD]);
     render(<Wrap><ItemDetail task={t} item={UC1} def={t.definition.collections[0]} readOnly={false} writesOff pending={false}
       submit={vi.fn(async () => null)} onAskAssistant={noop} /></Wrap>);
@@ -203,11 +203,11 @@ describe("单一写入者：执行者工作中", () => {
     expect(screen.getByTestId("edit-item")).toBeEnabled();
   });
 
-  it("问题条目的详情没有「修改」，底部只留「先不管，保留」与「删除」", () => {
+  it("问题条目的详情没有「修改」，底部只留「暂不处理」与「删除」", () => {
     const t = task([UC1, UC2, TBD]);
     render(<Wrap><ItemDetail task={t} item={TBD} def={t.definition.collections[1]} readOnly={false} pending={false} submit={vi.fn(async () => null)} /></Wrap>);
     expect(screen.queryByTestId("edit-item")).toBeNull();
-    expect(screen.getByText("先不管，保留")).toBeEnabled();
+    expect(screen.getByText("暂不处理")).toBeEnabled();
     expect(screen.getByTestId("delete-item")).toBeEnabled();
   });
 
@@ -483,7 +483,7 @@ describe("已读即确认", () => {
     expect(submit).toHaveBeenCalledWith({ kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 4 }], notify_executor: false }, expect.any(String));
   });
 
-  it("旧任务的问题集合还叫旧名：按「用户决定保留」这个取值照样认出来，汇总行计数、不要求看过、卡片带「先不管，保留」", () => {
+  it("旧任务的问题集合还叫旧名：按「用户决定保留」这个取值照样认出来，汇总行计数、不要求看过、卡片带「暂不处理」", () => {
     const OLD = "待定与范围外事项";
     const base = task([]);
     const oldTbd = { ...TBD, collection: OLD };
@@ -500,7 +500,7 @@ describe("已读即确认", () => {
     expect(screen.getByTestId("progress")).toHaveTextContent("2 个条目 · 待评审 0 · 评审不通过 0 · 1 条未读；问题 1 条未解决");
     fireEvent.click(screen.getByText(OLD));
     expect(screen.getByTestId("item-TBD-001")).toBeInTheDocument();
-    expect(screen.getByTestId("keep-TBD-001")).toHaveTextContent("先不管，保留");
+    expect(screen.getByTestId("keep-TBD-001")).toHaveTextContent("暂不处理");
   });
 
   it("详情里的边框在打开那一刻冻结：已读标记到了、边框的依据没了，这次打开仍看得到；改到新修订才重新取", () => {

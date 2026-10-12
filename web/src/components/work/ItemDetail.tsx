@@ -4,9 +4,9 @@
 // 任务定义「界面」一项写了的集合（例如领域说明）：关联条目旁写上标题，来源之后另列「被哪些条目引用」。顶部一行：编号、标题、
 // 与列表行完全相同的主状态徽标与「问题 N」（ItemStatus.tsx）、修订下拉、上一条与下一条；下面一行灰字写「已读 · 现在是修订 N，由助手写的 · 来源 N 条」，
 // 修订不止一次时末尾带「和修订 N 比对」。有助手补充时一条灰色横幅（讲的是内容，不是状态）；底部「来源」一节按种类列标签加摘录。
-// 没有「确认」按钮：用户打开详情就记为已读（页面在打开时发 mark_viewed），已读就算确认。用户在这里改字段或标为先不管，
+// 没有「确认」按钮：用户打开详情就记为已读（页面在打开时发 mark_viewed），已读就算确认。用户在这里改字段或标为暂不处理，
 // 后端随修订自动写一条确认标记。已读是条目级、单向的，没有撤回按钮。
-// 问题条目（见 keepPendingField）写下之后只由用户了结：底部只有「先不管，保留」与「删除」，不能直接修改。
+// 问题条目（见 keepPendingField）写下之后只由用户了结：底部只有「暂不处理」与「删除」，不能直接修改。
 //
 // 修订：条目的内容由「条目编号加修订号」标识。下拉列出它改动过的修订，选一个看它那时的样子，
 // 画线的地方是和它上一次改动的差别。字段修订标识：自上次确认的修订以来助手改过的字段
@@ -15,7 +15,7 @@
 // 这次打开一直看得到，下次再打开边框与「刚改」就不再出现。
 //
 // 直接操作全部走 actions；响应只当作接受或拒绝，界面上的变化等库事件到了才发生。
-// 单一写入者：执行者工作中（writesOff）改字段、删除、先不管全部灰化，底部写明原因；灰化的写入按钮都带悬停说明（writeOffReason）；
+// 单一写入者：执行者工作中（writesOff）改字段、删除、暂不处理全部灰化，底部写明原因；灰化的写入按钮都带悬停说明（writeOffReason）；
 // 「让助手来改这一条」只预填输入框，照常可用。进入编辑时记下改前所在的修订与字段（editBase），保存用它作 base_revision；
 // 两个页面同时编辑同一条目时后端以 stale_revision 拒绝，这里只报一条停住的失败提示（全站提示条，写明已被改到修订 N），
 // 末尾带「打开最新」：退出编辑、回到最新修订，不提供合并。其它被拒同样报失败提示，不在详情里就地写错误行。
@@ -367,7 +367,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           {!keepField && <button type="button" className="btn" disabled={writeOff || old} title={editOffTitle} onClick={startEdit} data-testid="edit-item">修改</button>}
           {keepField && item.fields[keepField.name] !== KEEP_PENDING_VALUE && (
             <button type="button" className="btn" disabled={writeOff} title={offTitle}
-              onClick={() => void run({ kind: "keep_pending", targets: target, notify_executor: false }, `把 ${item.item_id} 标为先不管`)}>先不管，保留</button>
+              onClick={() => void run({ kind: "keep_pending", targets: target, notify_executor: false }, `把 ${item.item_id} 标为暂不处理`)}>暂不处理</button>
           )}
           <Popconfirm title={`删除 ${item.item_id}？删除会产生一次修订，之后可以在右侧「修订」页签撤销这次修订。`} okText="删除" cancelText="取消" disabled={writeOff}
             onConfirm={() => void run({ kind: "delete_item", targets: target, notify_executor: false }, `删除 ${item.item_id}`)}>

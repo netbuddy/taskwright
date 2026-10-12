@@ -1,11 +1,11 @@
 // 条目区，照设计原型：顶上一行集合页签与「生成文档」，下面一行筛选与进度（点开是完成条件），
 // 「还有 N 条未读」的提示与勾选后的批量标为已读，然后是列表；点一行，列表换成这个条目的详情（带「回到列表」）。
 // 打开详情就记为已读（由页面在打开时发 mark_viewed），已读就算确认；未读的行像邮件一样加粗。
-// 问题条目一类的集合（有取值「用户决定保留」的枚举字段）铺成一张张卡片，未解决的带「回答这个问题」「先不管，保留」。
+// 问题条目一类的集合（有取值「用户决定保留」的枚举字段）铺成一张张卡片，未解决的带「回答这个问题」「暂不处理」。
 // 自上次确认以来助手改过的条目带「修订 N · 刚改」；库事件刚改过的条目短时闪一下。集合名、字段名一律取自任务定义。
 //
 // 单一写入者：执行者工作中（writesOff），顶部一条横幅，改字段、保存、删除、批量标为已读、撤回、
-// 先不管全部灰化；「回答这个问题」「让助手来改这一条」只往对话区输入框预填文字、不写库，照常可用。
+// 暂不处理全部灰化；「回答这个问题」「让助手来改这一条」只往对话区输入框预填文字、不写库，照常可用。
 // 在右侧「修订」页签选中一次修订（hit）时，它碰到的条目高亮，集合页签上标出各有几个，筛选行加一个可点掉的提示。
 // 宽屏时列表每行在标题后多一列「一句摘要」，显隐由样式里的容器查询按条目区宽度决定（阈值 40rem）。
 //
@@ -266,7 +266,7 @@ export function ItemsPanel({
     else toast.error(rejectedText(label, e));
   };
   const keepPending = async (item: Item) => {
-    const label = `把 ${item.item_id} 标为先不管`;
+    const label = `把 ${item.item_id} 标为暂不处理`;
     const e = await submit({ kind: "keep_pending", targets: [{ item_id: item.item_id, base_revision: item.revision_no }], notify_executor: false }, label);
     if (e) toast.error(rejectedText(label, e, item.item_id));
   };
@@ -445,11 +445,11 @@ function PendingCard({ task, item, readOnly, writesOff, flash, hit, just, pendin
       {texts.map((f) => <div className="sug" key={f.name}><b>{f.name}：</b>{String(item.fields[f.name])}</div>)}
       {open && (
         <div className="tfoot">
-          {/* 「回答这个问题」只往对话区输入框里预填一句话、不写库，执行者工作中也可用；「先不管，保留」是写入，工作中灰化 */}
+          {/* 「回答这个问题」只往对话区输入框里预填一句话、不写库，执行者工作中也可用；「暂不处理」是写入，工作中灰化 */}
           <button type="button" className="aibtn" disabled={readOnly} onClick={onAnswer} data-testid={`answer-${item.item_id}`}>回答这个问题</button>
           <span className="aihint">回答要发给助手，它改完要等一会儿</span>
           <button type="button" className="btn sm" disabled={readOnly || writesOff || pending} title={writeOffReason(task, { readOnly, writesOff, pending })} onClick={onKeep}
-            data-testid={`keep-${item.item_id}`}>先不管，保留</button>
+            data-testid={`keep-${item.item_id}`}>暂不处理</button>
         </div>
       )}
     </div>
