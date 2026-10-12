@@ -13,6 +13,8 @@ run：演练的参数与 sim.run 相同（内部调它的 run_once，每遍各�
 （读自后端启动助手时的补记，怎样算在观测台的 taskwright_observatory/evals.py 里），写进该遍目录的「评测.json」。
 全部跑完在 sim-root 下写「评测汇总_<标签>.md」与「评测汇总_<标签>.json」，并往「evals.jsonl」追加一行。某一遍中途出错，
 记下原因接着跑下一遍；那一遍的灯都是「算不了」，不计入通过率。标签在一个 sim-root 里不能重复：对照与页面都按标签找评测。
+开跑前看 sim-root 所在分区的可用空间：少于 2G 不开跑；每遍跑完再看一次，少于 1G 就不跑剩下的几遍，照跑完的几遍写汇总，
+汇总里写明少跑了几遍，命令以 1 退出。磁盘写满时演练会在几秒内失败，而且牵连同一台机器上别的程序，所以先查。
 
 judge：对一遍跑过的演练重算「评测.json」（换了清单，或者往画像的「答不上的说法」里加了新说法之后用）。这一遍属于某次评测时，
 那次评测的另外几遍用同样的清单与画像一并重算，两份汇总与 evals.jsonl 里的那一行跟着重写。
@@ -31,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 import time
 from datetime import datetime
@@ -45,8 +48,20 @@ RUN_FILE = "评测.json"
 #: 演练根目录下的两种文件名，读它们的观测台与写它们的这里用同一份。
 LIST_FILE = eval_files.LIST_FILE
 SUMMARY_PREFIX = eval_files.SUMMARY_PREFIX
+#: sim-root 所在分区的可用空间（字节）：开跑前少于前一个数不开跑；每遍跑完少于后一个数，就不跑剩下的几遍。
+MIN_FREE_TO_START = 2 * 1024 ** 3
+MIN_FREE_TO_CONTINUE = 1024 ** 3
 #: 评测里每遍的轮数上限的缺省值（--max-rounds）。单跑一遍演练（sim.run）的缺省仍是 12。
 MAX_ROUNDS = 60
+
+
+def free_bytes(path: Path) -> int:
+    """这个目录所在分区现在的可用空间（字节）。"""
+    return shutil.disk_usage(path).free
+
+
+def gigabytes(size: int) -> str:
+    return f"{size / 1024 ** 3:.1f}G"
 
 
 def summary_path(root: Path, label: str, suffix: str) -> Path:
@@ -204,6 +219,7 @@ def summary_markdown(s: dict) -> str:
              f"- 助手的模型：{s.get('模型') or '没有记'}；模拟用户的模型：{s.get('模拟用户的模型') or '没有记'}",
              f"- 材料：{'、'.join(s.get('材料') or []) or '没有'}；画像：{s.get('画像')}；清单：{s.get('清单')}",
              f"- 遍数：{n}；每遍的轮数上限：{s.get('轮数上限')}",
+             *([f"- 原定 {n + s['没有跑的遍数']} 遍，少跑了 {s['没有跑的遍数']} 遍：{s.get('没有跑的原因')}。"] if s.get("没有跑的遍数") else []),
              *([f"- 有 {s['没有进展而停的遍数']} 遍因为双方没有进展而停，没有做完："
                 + "、".join(f"第 {i + 1} 遍" for i, r in enumerate(s["各遍"]) if r.get("没有进展而停")) + "。灯与清单照停下时的任务数据算。"]
                if s.get("没有进展而停的遍数") else []),
@@ -303,12 +319,22 @@ def command_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
     root.mkdir(parents=True, exist_ok=True)
     if any(row["标签"] == args.label for row in listed(root)):
         parser.error(f"标签「{args.label}」在 {root} 里已经用过了。对照与页面都按标签找评测，请换一个标签。")
+    free = free_bytes(root)
+    if free < MIN_FREE_TO_START:
+        parser.error(f"{root} 所在的分区只剩 {gigabytes(free)} 可用空间，少于开跑要的 {gigabytes(MIN_FREE_TO_START)}，没有开跑。请先清出空间再跑。")
     persona_path, expect_path = Path(args.persona).resolve(), Path(args.expect).resolve()
     persona = load_persona(persona_path)
     expectations.load(expect_path)                      # 清单读不出来就在开跑之前报错
     started = time.strftime("%Y-%m-%dT%H:%M:%S")
     sims: list[Path] = []
+    cut_short: dict = {}
     for i in range(args.repeat):
+        free = free_bytes(root) if i else None
+        if free is not None and free < MIN_FREE_TO_CONTINUE:
+            cut_short = {"没有跑的遍数": args.repeat - i,
+                         "没有跑的原因": f"第 {i} 遍跑完后 {root} 所在的分区只剩 {gigabytes(free)} 可用空间，少于接着跑要的 {gigabytes(MIN_FREE_TO_CONTINUE)}"}
+            print(f"{cut_short['没有跑的原因']}；剩下的 {args.repeat - i} 遍没有跑。", flush=True)
+            break
         sim = run.next_sim_dir(root)
         sims.append(sim)
         print(f"评测「{args.label}」第 {i + 1} 遍，共 {args.repeat} 遍", flush=True)
@@ -324,10 +350,10 @@ def command_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
     summary = summarize(root, args.label, sims, {
         "时间": started, "提交号": version.get("提交号"), "未提交的改动": len(version.get("未提交的改动") or []),
         "模型": record.get("执行者模型"), "模拟用户的模型": record.get("用户 agent 模型"), "材料": persona.get("材料") or [],
-        "画像": persona_path.name, "清单": expect_path.name, "轮数上限": args.max_rounds})
+        "画像": persona_path.name, "清单": expect_path.name, "轮数上限": args.max_rounds, **cut_short})
     write_list(root, summary)
     print(f"灯通过率 {percent(summary['灯通过率'])}，清单命中率 {percent(summary['清单命中率'])}；评测汇总：{summary_path(root, args.label, 'md')}", flush=True)
-    return 0
+    return 1 if cut_short else 0
 
 
 def command_judge(args: argparse.Namespace) -> int:
