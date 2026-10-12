@@ -191,6 +191,9 @@ START_CARD = {"kind": "choose", "text": "这两页你看过之后，现在开始
               "options": [{"key": "start_items", "text": "开始写条目"}, {"key": "continue_clarify", "text": "继续澄清"}]}
 
 
+ENTER_CHECK = "点进入下一段的卡片之前打开过卡片点名的条目"
+
+
 def start_record(looks_2: list, looks_3: list, choice: str = "start_items", card: dict | None = START_CARD) -> dict:
     """三轮：第 1 轮说要整理，助手发提议的卡片；第 2 轮看页并说一句；第 3 轮看页并在卡片上点一个选项。"""
     said = lambda n, text, looks, sent=None: {"轮": n, "用户 agent": {"looks": looks, "respond": {"sent": sent or {"text": text}, "route": "message"}}}      # noqa: E731
@@ -210,19 +213,35 @@ class StartItemsTest(unittest.TestCase):
     def test_之前各轮或同一轮打开过卡片点名的每一页_通过(self):
         found = self.check(start_record([None, "OA-001"], [None, "OA-002"]))
         self.assertEqual((found["项"], found["通过"], found["说明"], found["细节"]),
-                         ("点「开始写条目」之前打开过卡片点名的主题页", True, "一共点了 1 次「开始写条目」。", []))
+                         (ENTER_CHECK, True, "一共点了 1 次进入下一段的卡片：第 3 轮「开始写条目」。", []))
 
     def test_有一页从头到尾没打开过就点了_不通过_从那一轮起作废(self):
         found = self.check(start_record([None, "OA-001"], [None, "UC-001"]))
-        self.assertEqual((found["通过"], found["细节"]), (False, [{"轮": 3, "没打开过的页": ["OA-002"], "卡片点名的页": ["OA-001", "OA-002"]}]))
+        self.assertEqual((found["通过"], found["细节"]),
+                         (False, [{"轮": 3, "点的选项": "开始写条目", "没打开过的条目": ["OA-002"], "卡片点名的条目": ["OA-001", "OA-002"]}]))
         self.assertEqual(judge.validity([found])["作废起始轮"], 3)
 
     def test_没有点过_点的是继续澄清_卡片没有点名页_都通过(self):
         never = {"演练": "sim-001", "轮": [{"轮": 1, "用户 agent": {"looks": [None], "respond": {"sent": {"text": "帮我整理。"}}}, "执行者": {"replies": []}}]}
-        self.assertEqual((self.check(never)["通过"], self.check(never)["说明"]), (True, "没有点过「开始写条目」。"))
-        self.assertEqual(self.check(start_record([None], [None], choice="continue_clarify"))["说明"], "没有点过「开始写条目」。")
+        self.assertEqual((self.check(never)["通过"], self.check(never)["说明"]), (True, "没有点过进入下一段的卡片。"))
+        self.assertEqual(self.check(start_record([None], [None], choice="continue_clarify"))["说明"], "没有点过进入下一段的卡片。")
         no_items = self.check(start_record([None], [None], card={**START_CARD, "items": []}))
-        self.assertEqual((no_items["通过"], no_items["说明"]), (True, "一共点了 1 次「开始写条目」。"))
+        self.assertEqual((no_items["通过"], no_items["说明"]), (True, "一共点了 1 次进入下一段的卡片：第 3 轮「开始写条目」。"))
+
+    def test_每一张进入下一段的卡片都查_按键的写法认_不逐张列出(self):
+        # 四张现有的卡片与一张产品以后才有的（键以 enter_ 开头）都算进入下一段；留在这一段的键与完成任务那张卡片的两个键不算。
+        self.assertEqual([judge.enters_next_stage(key) for key in ("enter_clarify", "enter_consolidate", "start_items", "enter_review", "enter_document")], [True] * 5)
+        self.assertEqual([judge.enters_next_stage(key) for key in ("continue_reading", "continue_clarify", "continue", "complete", "不对", None)], [False] * 6)
+        for key, text in (("enter_clarify", "进入澄清"), ("enter_consolidate", "进入整理建模"), ("enter_review", "进入评审确认")):
+            card = {**START_CARD, "options": [{"key": key, "text": text}, {"key": "continue_reading", "text": "再核读一遍"}]}
+            opened = self.check(start_record([None, "OA-001"], [None, "OA-002"], choice=key, card=card))
+            self.assertEqual((opened["通过"], opened["说明"]), (True, f"一共点了 1 次进入下一段的卡片：第 3 轮「{text}」。"))
+            skipped = self.check(start_record([None], [None, "OA-001"], choice=key, card=card))
+            self.assertEqual((skipped["通过"], skipped["细节"]),
+                             (False, [{"轮": 3, "点的选项": text, "没打开过的条目": ["OA-002"], "卡片点名的条目": ["OA-001", "OA-002"]}]))
+        # 卡片上找不到这个键的文字时写键。
+        unknown = self.check(start_record([None, "OA-001", "OA-002"], [None], choice="enter_document"))
+        self.assertEqual(unknown["说明"], "一共点了 1 次进入下一段的卡片：第 3 轮「enter_document」。")
 
     @unittest.skipUnless(shutil.which("node"), "本机没有 node")
     def test_打开过但库里没有那一修订上看过的记录_不算演错_在说明里单独写出(self):
@@ -235,7 +254,7 @@ class StartItemsTest(unittest.TestCase):
             copy_db(task_dir, sim)
             found = judge.layer1({"persona": {}, "record": start_record([None, "OA-001", "OA-002"], [None]), "sim": sim})[2]
         self.assertTrue(found["通过"])
-        self.assertEqual(found["说明"], "一共点了 1 次「开始写条目」。打开过、但库里没有它在卡片所写修订上看过的记录的（这一页有助手补的内容而没有确认，"
+        self.assertEqual(found["说明"], "一共点了 1 次进入下一段的卡片：第 3 轮「开始写条目」。打开过、但库里没有它在卡片所写修订上看过的记录的（这一页有助手补的内容而没有确认，"
                          "或者那之后又改过），不算演错，列在这里：第 3 轮 OA-002。")
 
 
