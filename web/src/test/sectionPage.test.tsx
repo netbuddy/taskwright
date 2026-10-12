@@ -155,8 +155,9 @@ describe("节的各块", () => {
     expect(card.querySelector(".oa-src")).toHaveTextContent("你说的「有人预约的书不能续借。」");
     // 例外不再出现在示例里；平常的例子与反例还在。
     expect([...screen.getByTestId("topic-examples").querySelectorAll(".oa-card")].length).toBe(2);
-    // 块的次序：说明、异常分支、示例、适用规则、待澄清事项。
-    expect([...screen.getByTestId("topic-page").querySelectorAll(".oa-blk > h3")].map((h) => h.firstChild!.textContent!.trim())).toEqual(["说明", "异常分支", "示例", "适用规则", "待澄清事项"]);
+    // 块的次序：说明、异常分支、示例、适用规则、待澄清事项，然后是相关角色与对象、对应的需求条目。
+    expect([...screen.getByTestId("topic-page").querySelectorAll(".oa-blk > h3")].map((h) => h.firstChild!.textContent!.trim()))
+      .toEqual(["说明", "异常分支", "示例", "适用规则", "待澄清事项", "相关角色与对象", "对应的需求条目"]);
     fireEvent.click(screen.getByTestId("topic-add-exception"));
     expect(screen.getByTestId("topic-edit")).toBeInTheDocument();
   });
@@ -451,6 +452,46 @@ describe("底部的动作与复述", () => {
   it("已废弃而没有写改看哪一页的，照实说", () => {
     render(<Panel t={change(overallTask(), "OA-011", (p) => { p.fields.状态 = "已废弃"; })} first="OA-011" />);
     expect(text(screen.getByTestId("topic-gone"))).toBe("这一页已废弃。没有写改看哪一页。");
+  });
+});
+
+describe("节末尾的三块", () => {
+  it("相关角色与对象：与这一页有关的节按角色、业务对象、相关流程分行，没有的行不画；点一个打开那一节", () => {
+    render(<Panel t={overallTask()} first="OA-002" />);
+    const block = screen.getByTestId("topic-related");
+    expect([...block.querySelectorAll("dt")].map((one) => one.textContent)).toEqual(["业务对象", "相关流程"]);
+    expect([...block.querySelectorAll("dd")].map((one) => text(one))).toEqual(["4.1 逾期与罚款", "3.3 预约取书"]);
+    fireEvent.click(screen.getByTestId("related-OA-005"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("逾期与罚款");
+  });
+
+  it("对应的需求条目：一条一行，写标题、所在的集合与状态词；点一行打开那个条目", () => {
+    const t = change(overallTask(), "UC-002", (item) => {
+      item.reviews = [{ revision_no: item.revision_no, verdict: "不合规", findings: [{ rule_id: "R1", level: "必选", message: "缺前置条件" }] } as never];
+    });
+    render(<Panel t={t} />);
+    const rows = [...screen.getByTestId("topic-requirements").querySelectorAll("li")];
+    expect(rows.map((row) => text(row))).toEqual(["续借功能用例评审中 · 1 处发现", "预约图书功能用例草稿"]);
+    fireEvent.click(screen.getByTestId("requirement-UC-003"));
+    expect(screen.queryByTestId("topic-page")).toBeNull();
+    expect(screen.getByTestId("item-detail")).toHaveTextContent("预约图书");
+  });
+
+  it("追溯：材料 › 澄清记录 › 条目，没有内容的段不画；点材料在右边定位第一处原文，点澄清记录换成条目详情的样子", () => {
+    const locate = vi.fn();
+    render(<Panel t={overallTask()} spies={{ locate }} />);
+    expect(text(screen.getByTestId("topic-trace"))).toBe("追溯材料 借阅规则.md›澄清记录 2 条›条目 UC-002、UC-003");
+    expect(screen.queryByTestId("trace-figures")).toBeNull();
+    fireEvent.click(within(screen.getByTestId("trace-materials")).getByRole("button"));
+    expect(locate).toHaveBeenCalledWith("同一册图书同一时间只接受一位读者的预约。", "inputs/借阅规则.md");
+    fireEvent.click(within(screen.getByTestId("trace-clarified")).getByRole("button"));
+    expect(screen.getByTestId("item-detail")).toBeInTheDocument();
+  });
+
+  it("没有相关的节、没有条目依据、没有来源的页，这三块都不画", () => {
+    const t = change(overallTask(), "OA-011", (page) => { page.sources = []; });
+    render(<Panel t={t} first="OA-011" />);
+    for (const id of ["topic-related", "topic-requirements", "topic-trace"]) expect(screen.queryByTestId(id)).toBeNull();
   });
 });
 

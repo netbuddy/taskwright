@@ -92,7 +92,7 @@ describe("图画在节的哪一块", () => {
     serve(task);
     render(<Panel t={task} />);
     await shown("D-002");
-    expect(blocks()).toEqual(["说明", "流程步骤", "异常分支", "示例", "适用规则", "其他图"]);
+    expect(blocks()).toEqual(["说明", "流程步骤", "异常分支", "示例", "适用规则", "其他图", "相关角色与对象"]);
     expect(within(screen.getByTestId("topic-fig-steps")).getByTestId("figure-name")).toHaveTextContent("图 D-002");
     expect(within(screen.getByTestId("topic-fig-other")).getByTestId("figure-name")).toHaveTextContent("图 D-003");
   });
@@ -251,6 +251,17 @@ describe("看图记录", () => {
     expect(viewed).not.toHaveBeenCalled();
     watchers[0].cb([{ isIntersecting: true }]);
     await waitFor(() => expect(viewed).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("图里的连线进「相关角色与对象」，图进追溯行", () => {
+  it("对象关系图里与本节的对象相连的对象列在「业务对象」一行；追溯行写本节有几张图", async () => {
+    const task = drawn();
+    serve(task);
+    render(<Panel t={task} first="OA-010" />);
+    // OA-010 的文字没有提到别的页，也没有被提到：这一行全靠对象关系图里 Card（OA-005）与 Hall（OA-010）之间的连线。
+    expect(text(await screen.findByTestId("related-OA-005"))).toBe("4.1 逾期与罚款");
+    expect(text(screen.getByTestId("trace-figures"))).toBe("图 1 张");
   });
 });
 

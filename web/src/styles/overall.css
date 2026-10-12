@@ -240,3 +240,24 @@
 .app .oa-fig-more li:hover { background: var(--sel); }
 .app .oa-fig-more .r { margin-left: auto; font-size: 0.857rem; color: var(--mut); white-space: nowrap; }
 .app .oa-ch .oa-count { margin-left: auto; font-size: 0.857rem; color: var(--mut); }
+
+/* ───── 节末尾的三块（overall/SectionLinks.tsx）───── */
+.app .oa-rel { display: grid; grid-template-columns: max-content 1fr; gap: .45rem .9rem; margin: 0; max-width: 52rem; align-items: baseline; }
+.app .oa-rel dt { font-size: 0.889rem; color: var(--text3); white-space: nowrap; }
+.app .oa-rel dd { margin: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.app .oa-chip { padding: .1rem .55rem; border: 1px solid var(--line2); border-radius: 1rem; font-size: 0.905rem; cursor: pointer; background: var(--card); }
+.app .oa-chip:hover { border-color: var(--blue); color: var(--blue); }
+.app .oa-reqs { list-style: none; margin: 0; padding: 0; max-width: 52rem; border: 1px solid var(--line); border-radius: .5rem; }
+.app .oa-reqs li { display: flex; align-items: center; gap: .6rem; padding: .45rem .7rem; border-top: 1px solid var(--line); cursor: pointer; font-size: 0.937rem; }
+.app .oa-reqs li:first-child { border-top: 0; }
+.app .oa-reqs li:hover { background: var(--sel); }
+.app .oa-reqs .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .oa-reqs .c { font-size: 0.857rem; color: var(--mut); white-space: nowrap; }
+.app .oa-reqs .s { margin-left: auto; font-size: 0.857rem; white-space: nowrap; color: var(--text3); }
+.app .oa-reqs .s.confirmed { color: var(--ok); }
+.app .oa-reqs .s.reviewing { color: var(--amber); }
+.app .oa-trace { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; margin: 1rem 0 .4rem; padding-top: .6rem; border-top: 1px dashed var(--line2); max-width: 52rem; font-size: 0.873rem; color: var(--text3); }
+.app .oa-trace .k { color: var(--mut); margin-right: .3rem; }
+.app .oa-trace i { font-style: normal; color: var(--line3); }
+.app .oa-trace .see { cursor: pointer; text-decoration: underline; text-decoration-color: var(--line3); }
+.app .oa-trace .see:hover { color: var(--blue); }

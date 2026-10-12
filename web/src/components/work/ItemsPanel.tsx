@@ -41,6 +41,7 @@ import { OverallPane } from "./overall/OverallPane";
 import type { StageStart } from "../../model/stage";
 import { SectionPage } from "./overall/SectionPage";
 import { FigureBlocks, type FigureHost } from "./overall/Figure";
+import { SectionLinks } from "./overall/SectionLinks";
 import { collectionLabel, isOverall } from "../../model/overall";
 import { toc, tocOrder } from "../../model/chapters";
 import { useToast } from "../Toasts";
@@ -341,7 +342,10 @@ export function ItemsPanel({
                 onPrev={topicPos > 0 ? () => onSelect(topics[topicPos - 1].item_id) : null}
                 onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null}
                 figures={<FigureBlocks host={figureHost!} item={selectedItem} slots={["steps", "state", "relations"]} />}
-                links={<FigureBlocks host={figureHost!} item={selectedItem} slots={["other"]} />} />
+                links={<>
+                  <FigureBlocks host={figureHost!} item={selectedItem} slots={["other"]} />
+                  <SectionLinks host={figureHost!} item={selectedItem} onRaw={() => setRawTopic(true)} />
+                </>} />
             ) : detail} />
         ) : detail ? detail : items.length === 0 ? (
           <div className="empty">这个筛选下没有条目。换一个筛选试试。</div>
