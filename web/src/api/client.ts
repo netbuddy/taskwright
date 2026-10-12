@@ -3,6 +3,7 @@
 // 连不上后端、超时、返回的不是 JSON 时，也折成同一种形状，code 用前端自己的几个值（network、timeout、bad_response）。
 
 import { dispositionFileName } from "../model/download";
+import type { TaskStatusView } from "./types";
 import type {
   ActionRequest,
   ApiErrorBody,
@@ -150,6 +151,8 @@ export const api = {
   promptDir: () => request<PromptDirView>("GET", "/debug/prompt-dir"),
   /** 某个任务最近一次运行实际发给模型的系统提示，按部分列出。 */
   debugSystemPrompt: (taskId: string) => request<DebugSystemPrompt>("GET", `/tasks/${encodeURIComponent(taskId)}/debug/system-prompt`),
+  /** 任务状况：程序据任务记录算出来的定位（阶段、各章节数、图与条目的计数、这一段还差什么、开着的提议）；没有阶段的任务 status 为 null。 */
+  taskStatus: (taskId: string) => request<{ ok: boolean; status: TaskStatusView | null }>("GET", `/tasks/${encodeURIComponent(taskId)}/status`),
   /** 某个任务的阶段记录流水与被拒的工具调用。 */
   debugStage: (taskId: string) => request<DebugStage>("GET", `/tasks/${encodeURIComponent(taskId)}/debug/stage`),
   /** 把这个任务里用户说过的话整理成模拟器用户画像的草稿：persona 是要存成文件的内容，file_name 是文件名。 */

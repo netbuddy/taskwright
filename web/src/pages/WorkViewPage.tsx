@@ -235,6 +235,12 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   const undo = (revision: number) =>
     void submit({ kind: "undo", targets: [{ revision_no: revision }], notify_executor: false }, `撤销修订 ${revision}`).then((e) => { if (e) toast.error(errorText(e)); });
 
+  /** 取一次任务状况给对话区的状况卡用；取不到时报一条失败提示，返回 null。 */
+  const loadStatus = () => api.taskStatus(taskId).then((r) => r.status).catch((e) => {
+    toast.error(`任务状况没有取到：${errorText(e instanceof ApiError ? e : new ApiError("network", String(e)))}`);
+    return null;
+  });
+
   const cardHandlers = {
     onAction: (req: Pick<ActionRequest, "kind" | "targets" | "fields" | "notify_executor">, label: string) => {
       void submit(req, label).then((e) => { if (e) toast.error(errorText(e)); });
@@ -427,7 +433,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                 hold={dirty || diagramDirty} holdText={diagramDirty && !dirty ? DIAGRAM_HOLD_TEXT : undefined} working={working} hint={hint} starting={executor?.state === "starting"}
                 onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews} onStop={busyElsewhere ? undefined : stop}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
-                draft={draft} onDraft={setDraft} inputRef={input}
+                draft={draft} onDraft={setDraft} inputRef={input} loadStatus={loadStatus}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}
                 revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions} revisionCount={log.length}
                 onLocate={(excerpt, locator) => locateSource(excerpt, locator && isKnowledgeLocator(locator) ? locator : "")}

@@ -1298,3 +1298,26 @@ export interface ContextWindowResult {
   source: "service" | null;
   message: string;
 }
+
+// ───────────── 任务状况 ─────────────
+
+/**
+ * 任务状况（GET /tasks/{task_id}/status）：程序据任务记录算出来的定位，不经助手。
+ * activity 是当前活动：现在总是一个阶段（kind 为 stage），flow 是所属流程（现在恒为 initial，首次分析）；一次都没有移动过时 moved_by、moved_at、reason 为 null。
+ * description 是业务说明：sections 是在用的页数，chapters 是有节的各章（七章的先后），unsorted 是没有归到任何一章的在用页数，open_questions 是没有了结的待澄清问题数。
+ * models 是还在的图按种类的张数；items 是总体分析与问题之外各集合的条目数与用户看过现在这一版的条数；
+ * missing 是现在这个阶段没有通过的灯；proposal 是开着的提议；versions 留给已发布的文档版本，现在恒为空。
+ */
+export interface TaskStatusView {
+  generated_at: string;
+  activity: {
+    kind: "stage"; key: StageKey; name: string; ordinal: number; flow: string;
+    moved_by: "executor" | "user" | null; moved_at: string | null; reason: string | null;
+  };
+  description: { sections: number; chapters: { no: number; name: string; sections: number }[]; unsorted: number; open_questions: number };
+  models: { kind: string; name: string; count: number }[];
+  items: { collection: string; total: number; viewed: number }[];
+  missing: { key: string; summary: string }[];
+  proposal: StageProposal | null;
+  versions: unknown[];
+}

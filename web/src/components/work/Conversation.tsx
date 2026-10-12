@@ -11,14 +11,16 @@
 // （方块变淡并脉动，不能再点），这次工作结束时换回发送键。发送与停止互斥：工作中本来就不能发送。停止不受未保存的条目编辑影响；
 // 工作中按回车不会停止，只有点方块才停。停下之后会话里留一条界面操作通知（种类 stop_run），对话区画成「你停止了助手这一次的工作」。
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SavedFacts, SystemNote, Task, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
+import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SavedFacts, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
 import { CONTINUE_STAGE_KIND, CONTINUE_STAGE_LINE, STAY_TEXT, stageMoveLine } from "../../model/stage";
+import { NEW_SESSION_LINE, STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, wantsOpeningStatus } from "../../model/taskStatus";
 import { PendingProposal } from "./PendingProposal";
+import { TaskStatusCard } from "./TaskStatusCard";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -51,7 +53,13 @@ export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
   hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onStop,
+  loadStatus,
 }: {
+  /**
+   * 取一次任务状况（后端的状况接口）；取不到返回 null。给了它，有阶段的任务才有「任务状况」入口、/状况 与新建会话开头的状况卡。
+   * 状况卡是页面本地放进对话区的，不写进会话，不经助手；刷新之后调出过的那些就不在了。
+   */
+  loadStatus?: () => Promise<TaskStatusView | null>;
   messages: ConversationMessage[];
   currentWork: CurrentWork | null;
   outgoing: OutgoingMessage[];
@@ -109,6 +117,37 @@ export function Conversation({
     const el = box.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, currentWork?.steps.length, outgoing.length]);
+  // 任务状况卡。新建会话的开头：这条会话一打开时一条消息都没有、任务里又已经有主题页，就取一次状况放在最前面；
+  // 之后用户说了话它仍留在原处（它不是会话里的消息，刷新之后对话已经有消息，就不再出现）。
+  const statusOn = !!task?.stage && !!loadStatus;
+  const openingWanted = useRef(wantsOpeningStatus(task, messages.length, outgoing.length, hasEarlier, !!disabledReason));
+  const [opening, setOpening] = useState<TaskStatusView | null>(null);
+  useEffect(() => {
+    if (!openingWanted.current || !loadStatus) return;
+    let live = true;
+    void loadStatus().then((status) => { if (live && status) setOpening(status); });
+    return () => { live = false; };
+    // 只在这条会话打开时判一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // 用户调出的状况卡：点输入框旁的「任务状况」或者打 /状况。插在当时最后一条消息的后面，前面一行写明是界面操作。
+  const [called, setCalled] = useState<{ n: number; after: string | null; status: TaskStatusView }[]>([]);
+  const lastMessageId = (): string | null => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const id = (messages[i] as { message_id?: string }).message_id;
+      if (id) return id;
+    }
+    return null;
+  };
+  const callStatus = () => {
+    if (!statusOn) return;
+    const after = lastMessageId();
+    void loadStatus!().then((status) => { if (status) setCalled((list) => [...list, { n: list.length + 1, after, status }]); });
+  };
+  useEffect(() => {
+    const el = box.current;
+    if (el && (called.length || opening)) el.scrollTop = el.scrollHeight;
+  }, [called.length, opening]);
   // 停止：点了之后到这次工作结束之前是「正在停止」；请求没有做成时恢复。工作结束（working 变假）时复位，下一次工作又是可以点的停止键。
   const canStop = working && !!onStop;
   const [stopping, setStopping] = useState(false);
@@ -135,7 +174,23 @@ export function Conversation({
   // 输入框此刻的内容：发送失败时据它判断用户有没有接着打新字。
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
+  const statusCard = (status: TaskStatusView) => (
+    <TaskStatusCard status={status} liveProposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle}
+      onMessage={handlers.onMessage} onSend={onSend} />
+  );
+  const calledAfter = (id: string | null) => called.filter((one) => one.after === id).map((one) => (
+    <div key={`status-${one.n}`} className="tstatus-wrap" data-testid="status-called">
+      <div className="selfnote" data-testid="status-called-line">{STATUS_CALLED_LINE}</div>
+      {statusCard(one.status)}
+    </div>
+  ));
   const send = () => {
+    // 「/状况」不发给助手：与点「任务状况」入口相同，在对话里本地插一张状况卡。
+    if (draft.trim() === STATUS_COMMAND && statusOn) {
+      setDraft("");
+      callStatus();
+      return;
+    }
     if (!draft.trim() || sendOff) return;
     const original = draft;
     setDraft("");
@@ -149,8 +204,15 @@ export function Conversation({
     <>
       <div className="msgs" ref={box} onScroll={onScroll} data-testid="conversation">
         {hasEarlier && <span className="earlier" role="button" onClick={onLoadEarlier}>再往前读一段对话</span>}
-        {messages.map((m, index) => (
-          <MessageView key={(m as { message_id?: string }).message_id ?? `${m.type}-${index}`} message={m} task={task} handlers={handlers}
+        {opening && (
+          <div className="tstatus-wrap" data-testid="status-opening">
+            <div className="selfnote" data-testid="new-session-line">{NEW_SESSION_LINE}</div>
+            {statusCard(opening)}
+          </div>
+        )}
+        {calledAfter(null)}
+        {messages.map((m, index) => (<Fragment key={(m as { message_id?: string }).message_id ?? `${m.type}-${index}`}>
+          <MessageView message={m} task={task} handlers={handlers}
             disabled={disabled} hold={hold} holdText={holdText} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
             stayed={m.type === "assistant_reply" && !!(m as AssistantReply).act && answeredByStaying(messages, index)}
@@ -159,7 +221,8 @@ export function Conversation({
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
               : m.type === "work_summary" && revisionsOfWork ? revisionsOfWork((m as WorkSummary).work_id) : []} onRevisionTag={onRevisionTag}
             onShowReviews={onShowReviews} />
-        ))}
+          {calledAfter((m as { message_id?: string }).message_id ?? null)}
+        </Fragment>))}
         {outgoing.map((m) => (
           <div key={m.client_id} className={`m user${m.state === "sending" ? " sending" : ""}`}>
             {m.text}
@@ -190,6 +253,9 @@ export function Conversation({
             <span className="chip" style={{ cursor: disabled ? "not-allowed" : "pointer" }} role="button"
               onClick={() => !disabled && fileInput.current?.click()}>📎 附一份材料</span>
             {attachments.map((a) => <span key={a} className="chip on">附件：{a.split("/").pop()}</span>)}
+            {statusOn && (
+              <span className="chip stbtn" role="button" title="随时调出：阶段、成果、这一段还差什么、待决定" onClick={callStatus} data-testid="status-button">{STATUS_BUTTON}</span>
+            )}
             {canStop ? (
               <span className={`send stop${stopping ? " stopping" : ""}`} role="button" aria-label={stopping ? STOPPING_TITLE : "停止"} aria-disabled={stopping}
                 title={stopping ? STOPPING_TITLE : STOP_TITLE} onClick={stop} data-testid="stop-run"><i /></span>

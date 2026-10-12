@@ -100,6 +100,11 @@ export const STAGE_START_TEXTS = {
   clarifying: "请逐项澄清：一次只问一件事，先给出候选再问。",
 } as const;
 
+/**
+ * 任务状况卡上「请助手说明下一步」替用户发给助手的那句固定的话。它不是用户自己打的字，整理用户说过的话时要认出来。
+ */
+export const STATUS_NEXT_TEXT = "请按任务状况说明下一步该做什么。";
+
 /** 某个阶段的下一段；评审确认之后没有。 */
 export function nextStage(stage: Stage): Stage | null {
   return STAGES[STAGES.indexOf(stage) + 1] ?? null;
