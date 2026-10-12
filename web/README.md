@@ -59,6 +59,7 @@ npm run build     # 类型检查加生产构建
 
 - 说话、直接操作、停下、往前读对话这四个请求，都在路径后面带 `?session={session_id}`。
 - 卡片点击时，说话的请求体多带两项：`origin: "card_choice"`，以及 `card: { reply_message_id, kind, choice }`。
+- 在卡片的文本框里打字也带这两项，`choice` 写固定值 `typed`；底部输入框发的话不带。卡片只在三种情形下显示为答过：一句话带着它的标识；助手后面的回复在 `answers_card` 里写了它（用户在卡片之外说的话，由助手判断是不是在回答它）；助手后面的回复在 `resends_card` 里写了它（重发了一遍）。
 - 快照里 `conversation.messages` 的每一条都有 `type` 字段。
 - `user_message` 带 `client_id`；`ui_action_noted` 带 `revision_no` 与 `op_id`；`confirmation_recorded` 带 `op_id`。
 - 库事件的操作种类多了 `restore`，表示撤销了一次删除。

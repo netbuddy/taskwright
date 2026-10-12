@@ -429,6 +429,8 @@ export interface Act {
   preview?: { effect: "remove" | "add" | "change"; text: string }[];
   /** 与任何条目都无关的问题写 "general"，这时 items 可以为空。 */
   scope?: "general";
+  /** 这张卡片是把先前一张没有答的卡片重发一遍时，助手写的那一张的行为编号；页面不用它，认回复上的 resends_card。 */
+  resends?: string;
 }
 
 // ───────────── 3.2 过程与对话类事件，也是 conversation.messages 里的条目 ─────────────
@@ -440,6 +442,10 @@ export interface UserMessage {
   at: string;
   text: string;
   origin: "typed" | "card_choice" | "ui_request" | string;
+  /**
+   * 这句话是在哪张卡片上发的：点卡片上的选项（origin 为 card_choice）与在卡片的文本框里打字（origin 仍为 typed，option_key 为 typed）
+   * 都带 reply_message_id（卡片所在回复的编号）；底部输入框打的字是 null。
+   */
   annotation: unknown | null;
   queued: boolean;
   client_id?: string;
@@ -464,6 +470,10 @@ export interface AssistantReply {
   degraded?: boolean;
   /** 助手在这条回复里把任务退回了前面的阶段时才有：从哪个阶段、到哪个阶段、理由。 */
   stage_move?: StageMove;
+  /** 用户在它之前的那句话回答了哪几张卡片（卡片所在回复的编号）：用户在卡片之外说的话，由助手按上下文判断是不是在回答卡片。没有时不带。 */
+  answers_card?: string[];
+  /** 这条回复的卡片重发的是哪一条回复的卡片（用户搁下没有答，助手再问一遍）。不是重发时不带。 */
+  resends_card?: string;
 }
 
 export interface UiActionNoted {
@@ -1042,6 +1052,7 @@ export interface MessageRequest {
   attachments: string[];
   /**
    * 卡片点击时带上：后端据此走扩展命令 /tw-ui，并在会话里记下「哪条回复的哪个选项」。
+   * 在卡片的文本框里打字也带：choice 写固定值 typed，后端照打的字处理，只记下这句话写在哪张卡片里。
    */
   origin?: "typed" | "card_choice";
   card?: { reply_message_id: string; kind: ActKind; choice: string };
