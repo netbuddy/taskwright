@@ -160,7 +160,8 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   const review = reviewState(item, task);
   // 任务定义「界面」一项写了的集合（例如领域说明）：详情里另列「被哪些条目引用」，关联条目旁写上标题。
   const display = displayOf(task, item.collection);
-  const titleOf = (id: string) => task.items.find((i) => i.item_id === id)?.title ?? "";
+  // 编号对应的标题：条目的标题，或者图的名字。
+  const titleOf = (id: string) => task.items.find((i) => i.item_id === id)?.title ?? (task.diagrams ?? []).find((one) => one.diagram_id === id)?.name ?? "";
   const keepField = keepPendingField(task, item.collection);
   const shownNo = viewRevision ?? item.revision_no;
   const shown = viewRevision != null ? revisions?.find((v) => v.revision_no === viewRevision) ?? null : null;
@@ -327,7 +328,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
 
           {/* 条目上的话都算用户自己的，来源只标注引用了哪些原始片段；一条都没有时整节不显示。 */}
           {sources.length > 0 && <div className="sec-h">来源</div>}
-          {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} titleOf={titleOf} />)}
+          {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} onOpenDiagram={onOpenDiagram} titleOf={titleOf} />)}
           {display && <CitedBy task={task} item={item} onOpenItem={onOpenItem} />}
           {/* 被谁依据：把这一条写成来源的别的条目与图。领域说明一类的集合上面已经有「被哪些条目引用」一节，那里列了条目，这一行只补上图。
               图的编号点了切到图表页签并打开那张图，后面写图名与「图」字。 */}
@@ -529,8 +530,10 @@ function FieldRow({ def, value, before, marked, findings, ruleOf, onFix, fixOff,
  * 出自知识库文档的来源，种类仍是「文档原文」，出处以 knowledge/ 开头：标签写「知识库」（紫红色），出处写「知识库名 / 文档名」，
  * 点了打开那份文档的正文；文档已经不在知识库的清单里时出处不可点，旁边灰字写明。
  */
-export function SourceBox({ source, onLocate, onOpenItem, titleOf, whole = "条目" }: {
+export function SourceBox({ source, onLocate, onOpenItem, onOpenDiagram, titleOf, whole = "条目" }: {
   source: Source; onLocate?: (excerpt: string, locator: string) => void; onOpenItem?: (itemId: string) => void; titleOf?: (itemId: string) => string;
+  /** 来源是一张图时点编号打开那张图（去业务说明里它所在的地方）；不给时照条目的做法交给 onOpenItem。 */
+  onOpenDiagram?: (diagramId: string) => void;
   /** 这条来源属于什么：条目的来源没有指明字段时写「算作支持整个条目」；图的来源不指字段，写「图」时这一行不显示。 */
   whole?: "条目" | "图";
 }) {
@@ -559,7 +562,8 @@ export function SourceBox({ source, onLocate, onOpenItem, titleOf, whole = "条�
         )}
         {kb && kb.gone && <><span className="evi off">出处：{kb.label}</span><span className="gone" data-testid="kb-doc-gone">这份文档已经不在知识库里</span></>}
         {onElement && source.stale !== "deleted" && (
-          <> <span className="ref" role="button" data-testid={`note-source-${source.locator}`} onClick={() => onOpenItem?.(source.locator)}>{source.locator}</span> {titleOf?.(source.locator)}</>
+          <> <span className="ref" role="button" data-testid={`note-source-${source.locator}`}
+            onClick={() => (source.kind === SOURCE_FIGURE && onOpenDiagram ? onOpenDiagram(source.locator) : onOpenItem?.(source.locator))}>{source.locator}</span> {titleOf?.(source.locator)}</>
         )}
         {onElement && source.stale === "deleted" && <span className="gone" data-testid={`basis-deleted-${source.locator}`}>{source.locator} 已经删除</span>}
         {source.stale === "changed" && (

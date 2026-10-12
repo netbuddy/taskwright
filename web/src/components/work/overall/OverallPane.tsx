@@ -5,7 +5,7 @@
 // 目录里点章标题打开那一章的章首页（ChapterHead.tsx），点第 4 章末尾的「术语表」打开术语表（Glossary.tsx）；点一节就回到节。
 // 有哪一节都放不进的图时，目录末尾多一行「未归入节的图」，点它把这几张图一张一张画在右边（Figure.tsx）。
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
 import { overallDef, retellText, titleOf, totals } from "../../../model/overall";
@@ -21,7 +21,9 @@ import { Glossary } from "./Glossary";
 /** 目录展开没有：auto 是没有动过，够宽就展开、窄就收着；open 与 closed 是用户点出来的。 */
 type OutlineShown = "auto" | "open" | "closed";
 
-export function OverallPane({ task, host, selected, onSelect, page, readOnly = false, writesOff = false, onSend, onStart, materialCount = 0 }: {
+export function OverallPane({ task, host, selected, onSelect, page, readOnly = false, writesOff = false, onSend, onStart, materialCount = 0, headRequest = null }: {
+  /** 条目区要右边换成哪一章的章首页、术语表或者「未归入节的图」（null 是首页）；seq 每次加一。 */
+  headRequest?: { view: HeadView | null; seq: number } | null;
   /** 画图要的那几样（目录也在里面）。 */
   host: FigureHost;
   readOnly?: boolean;
@@ -44,6 +46,7 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
 }) {
   const [shown, setShown] = useState<OutlineShown>("auto");
   const [head, setHead] = useState<HeadView | null>(null);
+  useEffect(() => { if (headRequest) setHead(headRequest.view); }, [headRequest?.seq]);
   const contents = host.contents;
   const loose = looseDiagrams(task, contents).length;
   const side = useRef<HTMLDivElement>(null);

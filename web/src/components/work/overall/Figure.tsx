@@ -39,6 +39,8 @@ export interface FigureHost {
   onViewed?: (row: DiagramRow) => void;
   /** 这张图有没有没保存的改动。 */
   onDirty?: (diagramId: string, dirty: boolean) => void;
+  /** 要看的那张图（从地址、条目的依据点过来的）：它在哪一处，那一处就显示它并滚到它；seq 每次加一。 */
+  focus?: { diagramId: string; seq: number } | null;
 }
 
 /** 一处的图：rows 是放在这一处的各张（最近修订的在前），显示第一张，其余收在「另有 N 张」里。 */
@@ -50,11 +52,19 @@ export function Figure({ host, rows, decorate }: {
 }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const focus = host.focus ?? null;
+  const wanted = focus && rows.some((one) => one.diagram_id === focus.diagramId) ? focus : null;
+  useEffect(() => {
+    if (!wanted) return;
+    setPicked(wanted.diagramId);
+    root.current?.scrollIntoView?.({ block: "center" });
+  }, [wanted?.seq]);
   const row = rows.find((one) => one.diagram_id === picked) ?? rows[0];
   if (!row) return null;
   const others = rows.filter((one) => one.diagram_id !== row.diagram_id);
   return (
-    <div className="oa-fig" data-testid={`figure-${row.diagram_id}`}>
+    <div className="oa-fig" ref={root} data-testid={`figure-${row.diagram_id}`}>
       <FigureBody key={row.diagram_id} host={host} row={row} decorate={decorate}
         more={others.length > 0 && (
           <button type="button" className="linkbtn" onClick={() => setMoreOpen(!moreOpen)} data-testid="figure-more">{moreOpen ? "收起" : `另有 ${others.length} 张`}</button>

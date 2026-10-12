@@ -1,6 +1,6 @@
 // 业务说明里的图（components/work/overall/Figure.tsx 与它在节里、目录里的接法）：图画在它说明的那一节的哪一块、块的先后、
 // 图下面的「画自」与「被依据」、同一块几张图时显示最近修订的一张与「另有 N 张」、「文本与来源」里改图与看来源、
-// 看到图就记一次看过、对象节里标出本节的对象、目录末尾「未归入节的图」。
+// 看到图就记一次看过、对象节里标出本节的对象、目录末尾「未归入节的图」、地址里与条目依据里的图打开它所在的地方。
 // mermaid 包换成假的（jsdom 里画不了图）；取图的详情换成假的接口。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -72,11 +72,12 @@ function serve(task: Task, over: Record<string, Partial<DiagramDetail>> = {}) {
   return vi.spyOn(api, "diagram").mockImplementation(async (_taskId: string, id: string) => detailOf(task, id, over[id]));
 }
 type Spies = { submit?: ReturnType<typeof vi.fn>; viewed?: ReturnType<typeof vi.fn>; dirty?: ReturnType<typeof vi.fn> };
-function Panel({ t, first = "OA-002", readOnly = false, writesOff = false, spies = {} }: { t: Task; first?: string | null; readOnly?: boolean; writesOff?: boolean; spies?: Spies }) {
+type From = { diagram?: string | null; diagrams?: boolean; collection?: string };
+function Panel({ t, first = "OA-002", readOnly = false, writesOff = false, spies = {}, from = {} }: { t: Task; first?: string | null; readOnly?: boolean; writesOff?: boolean; spies?: Spies; from?: From }) {
   const [selected, setSelected] = useState<string | null>(first);
   return (
     <Wrap>
-      <ItemsPanel task={t} initialCollection="总体分析" readOnly={readOnly} writesOff={writesOff} recentlyChanged={[]} pendingItems={new Set()} latestRevision={t.latest_revision}
+      <ItemsPanel task={t} initialCollection={from.collection ?? "总体分析"} initialDiagram={from.diagram ?? null} initialDiagrams={from.diagrams ?? false} readOnly={readOnly} writesOff={writesOff} recentlyChanged={[]} pendingItems={new Set()} latestRevision={t.latest_revision}
         selected={selected} onSelect={setSelected} submit={(spies.submit ?? vi.fn(async () => null)) as never} onGenerateDoc={() => {}}
         onDiagramViewed={spies.viewed as never} onDiagramDirty={spies.dirty as never} />
     </Wrap>
@@ -283,5 +284,71 @@ describe("未归入节的图", () => {
     serve(task);
     render(<Panel t={task} first={null} />);
     expect(screen.queryByTestId("toc-loose")).toBeNull();
+  });
+});
+
+describe("地址里的图与条目依据里的图", () => {
+  it("地址里带着图的编号：打开那张图所在的节并滚到它；它收在「另有 N 张」里时换成显示它", async () => {
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    const task = drawn();
+    serve(task);
+    // 从别的页签的地址进来也一样：页签换到业务说明。
+    render(<Panel t={task} first={null} from={{ diagram: "D-001", collection: "功能用例" }} />);
+    expect(document.querySelector(".itab.on")!.textContent).toContain("业务说明");
+    expect(text(await screen.findByTestId("topic-title"))).toBe("借书与还书");
+    await shown("D-001");
+    expect(within(screen.getByTestId("topic-fig-steps")).getByTestId("figure-name")).toHaveTextContent("图 D-001");
+    expect(scrolled).toHaveBeenCalled();
+  });
+
+  it("对象关系图打开第 4 章章首；哪一节都放不进的图打开「未归入节的图」；已经不在的图停在业务说明的首页", async () => {
+    const task = drawn();
+    serve(task);
+    const first = render(<Panel t={task} first={null} from={{ diagram: "D-005" }} />);
+    expect(await screen.findByTestId("chapter-head-4")).toBeInTheDocument();
+    first.unmount();
+    const second = render(<Panel t={task} first={null} from={{ diagram: "D-006" }} />);
+    expect(await screen.findByTestId("loose-figures")).toBeInTheDocument();
+    second.unmount();
+    render(<Panel t={task} first={null} from={{ diagram: "D-404" }} />);
+    expect(screen.getByTestId("overall-intro")).toBeInTheDocument();
+  });
+
+  it("地址里只说看图（tab=diagrams）：停在第一处有图的地方；一张图都没有时停在业务说明的首页；浏览器记着上次停在图表页签的也当作业务说明", async () => {
+    const task = drawn();
+    serve(task);
+    const first = render(<Panel t={task} first={null} from={{ diagrams: true, collection: "功能用例" }} />);
+    // 没有系统边界图与用例图：照目录从上到下，第一节带图的是 3.2 借书与还书。
+    expect(text(await screen.findByTestId("topic-title"))).toBe("借书与还书");
+    first.unmount();
+    const none = render(<Panel t={overallTask()} first={null} from={{ diagrams: true, collection: "功能用例" }} />);
+    expect(screen.getByTestId("overall-intro")).toBeInTheDocument();
+    expect(screen.queryByTestId("diagrams-tab")).toBeNull();
+    none.unmount();
+    window.localStorage.setItem(`taskwright.itemsTab.${task.task_id}`, "@diagrams");
+    render(<Panel t={overallTask()} first={null} from={{ collection: "" }} />);
+    expect(document.querySelector(".itab.on")!.textContent).toContain("业务说明");
+    window.localStorage.clear();
+  });
+
+  it("条目详情「依据」里的图点了去它所在的节，「依据」里的页点了打开那一节", async () => {
+    const task = drawn();
+    change(task, "UC-002", (item) => { item.sources = [
+      { kind: "图", locator: "D-004", excerpt: "", supports: [], depends_revision: 2, current_revision: 2, stale: null },
+      { kind: "条目", locator: "OA-003", excerpt: "", supports: [], depends_revision: 12, current_revision: 12, stale: null },
+    ] as never; });
+    serve(task);
+    render(<Panel t={task} first="UC-002" />);
+    const detail = screen.getByTestId("item-detail");
+    // 图的编号后面写着图名。
+    expect(detail).toHaveTextContent("D-004 图 D-004");
+    fireEvent.click(within(detail).getByTestId("note-source-D-004"));
+    expect(text(await screen.findByTestId("topic-title"))).toBe("逾期与罚款");
+    await shown("D-004");
+    cleanup();
+    render(<Panel t={task} first="UC-002" />);
+    fireEvent.click(within(screen.getByTestId("item-detail")).getByTestId("note-source-OA-003"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("预约取书");
   });
 });
