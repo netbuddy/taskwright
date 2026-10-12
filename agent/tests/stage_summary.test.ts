@@ -9,8 +9,10 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
+import { saveDiagram } from "../src/lib/save_diagram.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { type StageSummary, sourceMaterials, stageSummary } from "../src/lib/stage_read.ts";
+import { type StageSummary, lampDiagrams, sourceMaterials, stageSummary } from "../src/lib/stage_read.ts";
+import { DIAGRAM_VIEW_OP_KIND, markDiagramViewed } from "../src/lib/user_diagram.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, SOURCE, callIn, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
@@ -43,7 +45,7 @@ test("刚建好、有材料的任务：在核读材料，没有人移过；材�
 
 test("走一小段：立页、记问题、移动、用户看过、写用例，各盏灯跟着库里的内容变", () => {
   const { dir, summary } = workspace();
-  // 助手立一页流程（照抄材料，没有例外的例子），记一个关联到它的未解决问题。
+  // 助手立一页流程（照抄材料），记一个关联到它的未解决问题。
   saveRevision(callIn(dir), { operations: [
     { op: "add", collection: "总体分析", fields: { 标题: "登录", 它是什么: "用户可以登录。", 例子: ["登录总要输入口令。"], 标签: ["流程"], 状态: "在用" }, sources: [SOURCE] },
     { op: "add", collection: "问题", fields: { 事项: "口令输错几次要锁定？", 状态: "未解决", 关联条目: ["OA-001"] }, sources: [SOURCE] },
@@ -51,7 +53,7 @@ test("走一小段：立页、记问题、移动、用户看过、写用例，�
   let now = summary()!;
   assert.deepEqual(brief(now, "materials_cited"), [true, []]);
   assert.deepEqual(brief(now, "tagged_pages_no_open_questions"), [false, ["OA-001"]]);
-  assert.deepEqual(brief(now, "flows_have_exception"), [false, ["OA-001"]]);
+  assert.deepEqual(brief(now, "flows_have_flowchart_with_branch"), [false, ["OA-001"]]);
   assert.deepEqual(brief(now, "no_untagged_pages"), [true, []]);
   // 这份演示任务定义里用例的集合叫「用例」，没有「功能用例」：那一盏不适用。
   assert.equal(lamp(now, "flows_backed_by_use_cases").ok, null);
@@ -77,13 +79,79 @@ test("走一小段：立页、记问题、移动、用户看过、写用例，�
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["输入口令"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "用户可以登录。" }] }] });
   now = summary()!;
   assert.equal(now.current, "writing");
-  assert.deepEqual(brief(now, "flows_have_exception"), [true, []]);
   assert.deepEqual(brief(now, "basis_pages_viewed"), [false, ["UC-001"]]);
   assert.deepEqual(brief(now, "no_pending_items"), [false, ["UC-001"]]);
   // 用户看过 OA-001 现在的内容：两盏都过。
   userOp(dir, { kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 3 }] });
   now = summary()!;
   assert.deepEqual([brief(now, "basis_pages_viewed"), brief(now, "no_pending_items")], [[true, []], [true, []]]);
+});
+
+test("与图、规则冲突有关的几盏灯从库里读：角色进两种图、概念有连线、流程图有分叉、状态图、规则冲突、依据的图用户看过", async () => {
+  const { dir, taskId, summary } = workspace();
+  const definition = validateDefinition(overallDefinition());
+  const said = "把这几张图都画出来";
+  const draw = (params: Record<string, unknown>) => saveDiagram({ ...callIn(dir), userMessages: [{ entryId: "u1", text: `${said}。` }] },
+    { sources: [{ kind: "用户的话", excerpt: said }], ...params } as any, { validate: async () => ({ ok: true }) });
+  const cite = (...ids: string[]) => [{ kind: "用户的话", excerpt: said }, ...ids.map((id) => ({ kind: "条目", locator: id }))];
+  const pageOf = (fields: Record<string, unknown>) => ({ op: "add", collection: "总体分析", fields: { 它是什么: "用户可以登录。", 状态: "在用", ...fields }, sources: [SOURCE] });
+  const rule = (index: number) => ({ ...SOURCE, supports: [{ field: "已经定下的", index }] });
+  // OA-001 读者（角色）、OA-002 借阅记录（概念，说到状态）、OA-003 图书（概念）、OA-004 借书（流程）、OA-005 借书证（概念，孤零零的）。
+  saveRevision(callIn(dir), { operations: [
+    pageOf({ 标题: "读者", 标签: ["角色"] }),
+    { ...pageOf({ 标题: "借阅记录", 标签: ["概念"], 已经定下的: ["还书后记录从在借变为已还。", "一次最多借 30 天。"] }), sources: [SOURCE, rule(0), rule(1)].map((one, n) => (n === 0 ? { ...one, supports: [{ field: "它是什么" }] } : one)) },
+    pageOf({ 标题: "图书", 标签: ["概念"] }),
+    { ...pageOf({ 标题: "借书", 标签: ["流程"], 例子: ["小王周六借了一本书。"], 已经定下的: ["教师一次最多借 60 天。"] }), sources: [{ ...SOURCE, supports: [{ field: "它是什么" }] }, rule(0)] },
+    pageOf({ 标题: "借书证", 标签: ["概念"] }),
+  ] });
+  let now = summary()!;
+  assert.deepEqual([brief(now, "roles_in_context_and_use_cases"), brief(now, "concepts_related_in_class"), brief(now, "flows_have_flowchart_with_branch"), brief(now, "stateful_concepts_have_state"),
+    brief(now, "rules_no_conflict")], [[false, ["OA-001"]], [false, ["OA-002", "OA-003", "OA-005"]], [false, ["OA-004"]], [false, ["OA-002"]], [true, []]]);
+
+  // 助手到整理建模阶段画五种图。
+  enterStage(dir, "modeling");
+  await draw({ name: "系统边界", kind: "context", mermaid: 'flowchart LR\n  r(["OA-001 读者"])\n  subgraph 图书馆系统\n    d["办理借还"]\n  end\n  r -- 借书申请 --> d', sources: cite("OA-001") });
+  await draw({ name: "读者用例", kind: "use_case", mermaid: 'flowchart LR\n  r(["OA-001 读者"])\n  u(["OA-004 借书"])\n  r --> u', sources: cite("OA-001", "OA-004") });
+  await draw({ name: "对象关系", kind: "class", mermaid: 'classDiagram\n  class Loan["OA-002 借阅记录"]\n  class Book["OA-003 图书"]\n  class Card["OA-005 借书证"]\n  Loan --> Book : 借的是', sources: cite("OA-002", "OA-003", "OA-005") });
+  await draw({ name: "借书的流程", kind: "flowchart", mermaid: 'flowchart TD\n  a(["OA-004 借书"]) --> b{"证有没有过期"}\n  b -- 没有 --> c["登记借出"]\n  b -- 过期 --> e["拒绝"]', sources: cite("OA-004") });
+  await draw({ name: "借阅记录的状态", kind: "state", mermaid: 'stateDiagram-v2\n  state "OA-002 在借" as s1\n  [*] --> s1\n  s1 --> 已还 : 还书', sources: cite("OA-002") });
+  const ro = new DatabaseSync(databasePath(dir), { readOnly: true });
+  try {
+    assert.deepEqual(lampDiagrams(ro, taskId, definition), { viewsRecorded: false, diagrams: [
+      { diagram_id: "D-001", kind: "context", sources: ["OA-001"], drawn: ["OA-001"], linked: [], branches: false, viewed: false },
+      { diagram_id: "D-002", kind: "use_case", sources: ["OA-001", "OA-004"], drawn: ["OA-001", "OA-004"], linked: [], branches: false, viewed: false },
+      { diagram_id: "D-003", kind: "class", sources: ["OA-002", "OA-003", "OA-005"], drawn: ["OA-002", "OA-003", "OA-005"], linked: ["OA-002", "OA-003"], branches: false, viewed: false },
+      { diagram_id: "D-004", kind: "flowchart", sources: ["OA-004"], drawn: ["OA-004"], linked: [], branches: true, viewed: false },
+      { diagram_id: "D-005", kind: "state", sources: ["OA-002"], drawn: ["OA-002"], linked: [], branches: false, viewed: false },
+    ] });
+  } finally {
+    ro.close();
+  }
+  now = summary()!;
+  assert.deepEqual([brief(now, "roles_in_context_and_use_cases"), brief(now, "concepts_related_in_class"), brief(now, "flows_have_flowchart_with_branch"), brief(now, "stateful_concepts_have_state")],
+    [[true, []], [false, ["OA-005"]], [true, []], [true, []]]);
+  assert.equal(lamp(now, "concepts_related_in_class").summary, "有 1 页标签为「概念」的主题在对象关系图里还没有连线：OA-005。");
+
+  // 助手记一条规则冲突的问题：来源指到两页的两条规则。问题了结之后灯恢复。
+  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "问题", fields: { 事项: "规则冲突：一次最多借 30 天还是 60 天", 状态: "未解决", 关联条目: ["OA-002", "OA-004"] },
+    sources: [{ kind: "条目", locator: "OA-002", excerpt: "一次最多借 30 天。", supports: [{ field: "事项" }] }, { kind: "条目", locator: "OA-004", excerpt: "教师一次最多借 60 天。", supports: [{ field: "事项" }] }] }] });
+  now = summary()!;
+  assert.deepEqual(brief(now, "rules_no_conflict"), [false, ["TBD-001"]]);
+  userOp(dir, { kind: "edit_fields", targets: [{ item_id: "TBD-001", base_revision: 2 }], fields: { 状态: "已解决" } });
+  assert.deepEqual(brief(summary()!, "rules_no_conflict"), [true, []]);
+
+  // 写条目：用例依据用例图与它自己的流程图。流程页经图被用例依据（这份定义里用例的集合不叫「功能用例」，那一盏不适用，这里不看）。
+  userOp(dir, { kind: "mark_viewed", targets: [{ item_id: "OA-004", base_revision: 1 }] });
+  enterStage(dir, "writing");
+  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "借书", 步骤: ["登记借出"] }, sources: [
+    { kind: "图", locator: "D-002", excerpt: "OA-004 借书", supports: [{ field: "名称" }] }, { kind: "图", locator: "D-004", excerpt: "登记借出", supports: [{ field: "步骤", index: 0 }] }] }] });
+  now = summary()!;
+  assert.deepEqual([lamp(now, "basis_diagrams_viewed").ok, lamp(now, "basis_diagrams_viewed").summary], [null, "还没有记下用户看过哪些图，这一项暂时算不出来。"]);
+  const view = (id: string) => markDiagramViewed({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-view-${id}`, kind: DIAGRAM_VIEW_OP_KIND, targets: [{ diagram_id: id, base_revision: 1 }] });
+  view("D-002");
+  assert.deepEqual(brief(summary()!, "basis_diagrams_viewed"), [false, ["UC-001"]]);
+  view("D-004");
+  assert.deepEqual(brief(summary()!, "basis_diagrams_viewed"), [true, []]);
 });
 
 test("材料清单里由 Word 或 PDF 材料生成的文字版与分段清单不算一份材料；原件不在时照算", () => {

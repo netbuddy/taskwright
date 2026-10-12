@@ -3,14 +3,14 @@
  * 阶段由用户或助手的动作移动，每次移动留一条记录；助手每次调用写入工具时能写什么，由最近一条记录决定。
  *
  * 本文件只放不读库的东西：五个阶段的名字与次序、谁能从哪里移到哪里、每个阶段助手能写什么与被拦时的原话、
- * 提议进入写条目的那张卡片的两个选项，以及每个阶段「这一段还差什么」的几盏灯怎样算。读写库的在 lib/stage_read.ts。
+ * 提议进入写条目的那张卡片的两个选项，以及每个阶段「这一段还差什么」的几盏灯（一共十六盏）怎样算。读写库的在 lib/stage_read.ts。
  *
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，这里的一切对它们都不生效；判据是 overall_analysis.ts 的 hasOverall。
  *
  * 本文件除了 overall_analysis.ts 不导入别的模块：助手的工具、后端的快照都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
  */
 
-import { EXCEPTION_EXAMPLE_PREFIX, type Mention, OVERALL_FIELDS, isDeprecated, tagsOf } from "./overall_analysis.ts";
+import { OVERALL_FIELDS, isDeprecated, tagsOf } from "./overall_analysis.ts";
 
 /** 五个阶段在库里与接口里的写法，按先后排。 */
 export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing"] as const;
@@ -239,6 +239,7 @@ export function completeRefusal(stage: Stage): Refusal | null {
 export const TAG_FLOW = "流程";
 export const TAG_SCENE = "场景";
 export const TAG_ROLE = "角色";
+export const TAG_CONCEPT = "概念";
 export const TAG_DECISION = "决定";
 export const TAG_GOAL = "目标";
 /** 功能用例所在的集合。 */
@@ -248,6 +249,16 @@ export const QUESTION_KIND_FIELD = "种类";
 export const QUESTION_KIND_CLARIFY = "待澄清";
 export const QUESTION_OPEN_STATUS = "未解决";
 export const QUESTION_RELATED_FIELD = "关联条目";
+
+/**
+ * 图的种类里灯要认的五种的写法（与 lib/diagram.ts 的 DIAGRAM_KINDS 一致；那个文件读库，本文件不导入它）：
+ * 系统边界图、用例图、对象关系图、流程图、状态图。
+ */
+export const KIND_CONTEXT = "context";
+export const KIND_USE_CASE = "use_case";
+export const KIND_CLASS = "class";
+export const KIND_FLOWCHART = "flowchart";
+export const KIND_STATE = "state";
 
 /** 一盏灯。ok 为真是通过，为假是不通过，为 null 是不适用（例如「每个流程页都……」而一页流程页都没有）。items 是差的页、条目或材料。 */
 export interface Lamp {
@@ -269,6 +280,27 @@ export interface LampPage {
   examples: string[];
   /** 用户看没看过它现在的内容。 */
   viewed: boolean;
+  /** 「已经定下的」有几条。 */
+  settled: number;
+  /** 这一页说没说到状态：「它是什么」或「已经定下的」里有「状态」二字、有「变成」，或者有「从……变为……」。按字面认，会漏也会多。 */
+  stateful: boolean;
+}
+
+/** 算灯要的一张图（还在的图，取它现在的内容）。扫 Mermaid 文本在读库的一侧做（lib/diagram_scan.ts），这里拿到的是扫好的结果。 */
+export interface LampDiagram {
+  diagram_id: string;
+  /** 图的种类的写法。 */
+  kind: string;
+  /** 它当前修订上种类为「条目」的来源指到的条目编号。 */
+  sources: string[];
+  /** 它的 Mermaid 文本里写到的条目编号。 */
+  drawn: string[];
+  /** 有连线连着的条目编号。只对对象关系图算，别的种类是空列表。 */
+  linked: string[];
+  /** 有没有判断节点。只对流程图算，别的种类是假。 */
+  branches: boolean;
+  /** 用户看没看过它现在的内容。 */
+  viewed: boolean;
 }
 
 /** 算灯要的一个条目（总体分析以外的集合里的，含问题条目）。 */
@@ -277,6 +309,8 @@ export interface LampItem {
   collection: string;
   /** 它当前修订上种类为「条目」的来源指到的条目编号。 */
   cites: string[];
+  /** 它当前修订上种类为「图」的来源指到的图的编号。 */
+  citesDiagrams: string[];
   /** 待核实：自己有助手补充而用户没有确认的内容，或者因依据的那一页而待核实。 */
   pending: boolean;
 }
@@ -303,8 +337,12 @@ export interface LampInput {
   materials: string[];
   /** 总体分析的页与问题条目当前修订上「文档原文」来源的出处，原样（可以带 # 后面的位置）。 */
   citedDocuments: string[];
-  /** 被提到的页的编号 → 提到它的各处（overall_analysis.ts 的 mentionsOf）。 */
-  mentions: ReadonlyMap<string, readonly Pick<Mention, "item_id">[]>;
+  /** 任务里还在的图。 */
+  diagrams: LampDiagram[];
+  /** 任务里有没有记过「用户看过一张图」。一次都没有记过时，「条目依据的图用户都看过」这一盏算不适用（页面还没有接上这条记录时就是这样）。 */
+  diagramViewsRecorded: boolean;
+  /** 还没有了结的规则冲突：规则表（lib/overall_views.ts 的 rulesTable）里标出的那几条问题条目的编号。 */
+  ruleConflicts: string[];
   /** 评审：当前修订在当前规则下评审不合规、又没有保留写法的条目；任务里有没有过评审记录。 */
   review: { failing: string[]; any: boolean };
   /** 完成条件：是不是全部满足；没满足的各条的说明。 */
@@ -313,13 +351,19 @@ export interface LampInput {
 
 const texts = (value: unknown): string[] => (Array.isArray(value) ? value.filter((one): one is string => typeof one === "string" && one.trim() !== "") : []);
 
+/** 一段文字说没说到状态：有「状态」二字、有「变成」，或者有「从……变为……」（中间不跨句）。 */
+const STATE_WORDS = /状态|变成|从[^。；;！？\n]{0,40}变为/;
+
 /** 从一页的字段内容与用户看没看过，取出算灯要的几样。 */
 export function lampPage(itemId: string, fields: Record<string, unknown>, viewed: boolean): LampPage {
   const title = fields[OVERALL_FIELDS.title];
+  const what = fields[OVERALL_FIELDS.what];
+  const settled = texts(fields[OVERALL_FIELDS.settled]);
   return {
     item_id: itemId, title: typeof title === "string" ? title.trim() : "", aliases: texts(fields[OVERALL_FIELDS.aliases]).map((one) => one.trim()),
     tags: tagsOf(fields), deprecated: isDeprecated(fields), parent: texts(fields[OVERALL_FIELDS.parent])[0] ?? null,
-    examples: texts(fields[OVERALL_FIELDS.examples]), viewed,
+    examples: texts(fields[OVERALL_FIELDS.examples]), viewed, settled: settled.length,
+    stateful: [typeof what === "string" ? what : "", ...settled].some((one) => STATE_WORDS.test(one)),
   };
 }
 
@@ -372,22 +416,47 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
         `有 ${aimless.length} 页标签为「${TAG_DECISION}」的主题没有标签为「${TAG_GOAL}」的上级主题：${list(aimless.map((one) => one.item_id))}。在「它是什么」里写了为什么的也算说清了，这一点程序认不出，要自己看。`,
         aimless.map((one) => one.item_id));
 
-  // 整理建模：每个「流程」页至少有一条以「例外：」开头的例子。
-  const flows = tagged(TAG_FLOW);
-  const smooth = flows.filter((one) => !one.examples.some((example) => example.trim().startsWith(EXCEPTION_EXAMPLE_PREFIX)));
-  const flowsHaveException = flows.length === 0 ? lamp("flows_have_exception", null, `还没有标签为「${TAG_FLOW}」的主题。`)
-    : smooth.length === 0 ? lamp("flows_have_exception", true, `每个标签为「${TAG_FLOW}」的主题都有一条以「${EXCEPTION_EXAMPLE_PREFIX}」开头的例子。`)
-      : lamp("flows_have_exception", false,
-        `有 ${smooth.length} 页标签为「${TAG_FLOW}」的主题还没有以「${EXCEPTION_EXAMPLE_PREFIX}」开头的例子：${list(smooth.map((one) => one.item_id))}。`, smooth.map((one) => one.item_id));
-
-  // 整理建模：每个「角色」页被至少一个「流程」或「场景」页提到。
+  // 整理建模：每个「角色」页都画进了系统边界图与用例图（图的 Mermaid 文本里写着它的编号）。
   const roles = tagged(TAG_ROLE);
-  const acts = new Set(live.filter((one) => one.tags.includes(TAG_FLOW) || one.tags.includes(TAG_SCENE)).map((one) => one.item_id));
-  const idle = roles.filter((one) => !(input.mentions.get(one.item_id) ?? []).some((m) => acts.has(m.item_id)));
-  const rolesMentioned = roles.length === 0 ? lamp("roles_mentioned_by_flows", null, `还没有标签为「${TAG_ROLE}」的主题。`)
-    : idle.length === 0 ? lamp("roles_mentioned_by_flows", true, `每个标签为「${TAG_ROLE}」的主题都被标签为「${TAG_FLOW}」或「${TAG_SCENE}」的主题提到了。`)
-      : lamp("roles_mentioned_by_flows", false,
-        `有 ${idle.length} 页标签为「${TAG_ROLE}」的主题没有被任何标签为「${TAG_FLOW}」或「${TAG_SCENE}」的主题提到：${list(idle.map((one) => one.item_id))}。`, idle.map((one) => one.item_id));
+  const drawnIn = (kind: string) => new Set(input.diagrams.filter((one) => one.kind === kind).flatMap((one) => one.drawn));
+  const inContext = drawnIn(KIND_CONTEXT), inUseCase = drawnIn(KIND_USE_CASE);
+  const undrawn = roles.filter((one) => !(inContext.has(one.item_id) && inUseCase.has(one.item_id)));
+  const lacking = (id: string) => (!inContext.has(id) && !inUseCase.has(id) ? "两种图里都没有" : !inContext.has(id) ? "系统边界图里没有" : "用例图里没有");
+  const rolesDrawn = roles.length === 0 ? lamp("roles_in_context_and_use_cases", null, `还没有标签为「${TAG_ROLE}」的主题。`)
+    : undrawn.length === 0 ? lamp("roles_in_context_and_use_cases", true, `每个标签为「${TAG_ROLE}」的主题都画进了系统边界图与用例图。`)
+      : lamp("roles_in_context_and_use_cases", false,
+        `有 ${undrawn.length} 页标签为「${TAG_ROLE}」的主题还没有同时画进系统边界图与用例图：${undrawn.map((one) => `${one.item_id}（${lacking(one.item_id)}）`).join("、")}。`,
+        undrawn.map((one) => one.item_id));
+
+  // 整理建模：每个「概念」页在对象关系图里至少有一条连线。
+  const concepts = tagged(TAG_CONCEPT);
+  const classDiagrams = input.diagrams.filter((one) => one.kind === KIND_CLASS);
+  const linked = new Set(classDiagrams.flatMap((one) => one.linked));
+  const alone = concepts.filter((one) => !linked.has(one.item_id));
+  const conceptsRelated = concepts.length === 0 ? lamp("concepts_related_in_class", null, `还没有标签为「${TAG_CONCEPT}」的主题。`)
+    : alone.length === 0 ? lamp("concepts_related_in_class", true, `每个标签为「${TAG_CONCEPT}」的主题在对象关系图里都有连线。`)
+      : lamp("concepts_related_in_class", false,
+        `${classDiagrams.length === 0 ? "还没有画对象关系图。" : ""}有 ${alone.length} 页标签为「${TAG_CONCEPT}」的主题在对象关系图里还没有连线：${list(alone.map((one) => one.item_id))}。`,
+        alone.map((one) => one.item_id));
+
+  // 整理建模：每个「流程」页有一张以它为来源的流程图，而且图里有判断分叉。
+  const flows = tagged(TAG_FLOW);
+  const chartsOf = (id: string) => input.diagrams.filter((one) => one.kind === KIND_FLOWCHART && one.sources.includes(id));
+  const unbranched = flows.filter((one) => !chartsOf(one.item_id).some((chart) => chart.branches));
+  const flowsCharted = flows.length === 0 ? lamp("flows_have_flowchart_with_branch", null, `还没有标签为「${TAG_FLOW}」的主题。`)
+    : unbranched.length === 0 ? lamp("flows_have_flowchart_with_branch", true, `每个标签为「${TAG_FLOW}」的主题都有一张带判断分叉的流程图。`)
+      : lamp("flows_have_flowchart_with_branch", false,
+        `有 ${unbranched.length} 页标签为「${TAG_FLOW}」的主题还没有带判断分叉的流程图：${unbranched.map((one) => `${one.item_id}（${chartsOf(one.item_id).length === 0 ? "还没有以它为来源的流程图" : "流程图里没有判断分叉"}）`).join("、")}。`,
+        unbranched.map((one) => one.item_id));
+
+  // 整理建模：说到状态的「概念」页有一张以它为来源的状态图。说没说到状态按字面认（lampPage 的 stateful）。
+  const stateful = concepts.filter((one) => one.stateful);
+  const stateless = stateful.filter((one) => !input.diagrams.some((chart) => chart.kind === KIND_STATE && chart.sources.includes(one.item_id)));
+  const statesDrawn = stateful.length === 0 ? lamp("stateful_concepts_have_state", null, `还没有说到状态的「${TAG_CONCEPT}」主题。`)
+    : stateless.length === 0 ? lamp("stateful_concepts_have_state", true, `每个说到状态的「${TAG_CONCEPT}」主题都有一张状态图。`)
+      : lamp("stateful_concepts_have_state", false,
+        `有 ${stateless.length} 页说到状态的「${TAG_CONCEPT}」主题还没有以它为来源的状态图：${list(stateless.map((one) => one.item_id))}。说没说到状态是按字面认的（文字里有「状态」「变成」或者「从……变为……」），认错了的不用画，向用户说明即可。`,
+        stateless.map((one) => one.item_id));
 
   // 整理建模：没有两页标题或别名相同。
   const owners = new Map<string, string[]>();
@@ -407,9 +476,17 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
     : loose.length === 0 ? lamp("no_untagged_pages", true, "每页主题都贴了标签。")
       : lamp("no_untagged_pages", false, `有 ${loose.length} 页主题还没有贴标签：${list(loose.map((one) => one.item_id))}。`, loose.map((one) => one.item_id));
 
-  // 写条目：每个「流程」与「场景」页被至少一条用例依据。
+  // 整理建模：各页「已经定下的」之间没有还没了结的规则冲突。
+  const settledTotal = live.reduce((sum, one) => sum + one.settled, 0);
+  const noRuleConflict = settledTotal === 0 ? lamp("rules_no_conflict", null, "各页主题还没有写「已经定下的」。")
+    : input.ruleConflicts.length === 0 ? lamp("rules_no_conflict", true, "各页「已经定下的」之间没有还没了结的规则冲突。")
+      : lamp("rules_no_conflict", false, `有 ${input.ruleConflicts.length} 处规则冲突还没有了结：${list(input.ruleConflicts)}。`, [...input.ruleConflicts]);
+
+  // 写条目：每个「流程」与「场景」页被至少一条用例依据。用例直接依据那一页，或者依据一张以那一页为来源的图，都算。
   const toBack = live.filter((one) => one.tags.includes(TAG_FLOW) || one.tags.includes(TAG_SCENE));
-  const backedBy = new Set(others.filter((one) => one.collection === USE_CASE_COLLECTION).flatMap((one) => one.cites));
+  const diagramOf = new Map(input.diagrams.map((one) => [one.diagram_id, one]));
+  const backedBy = new Set(others.filter((one) => one.collection === USE_CASE_COLLECTION)
+    .flatMap((one) => [...one.cites, ...one.citesDiagrams.flatMap((id) => diagramOf.get(id)?.sources ?? [])]));
   const unbacked = toBack.filter((one) => !backedBy.has(one.item_id));
   const flowsBacked = !input.collections.includes(USE_CASE_COLLECTION) ? lamp("flows_backed_by_use_cases", null, `这个任务没有「${USE_CASE_COLLECTION}」这个集合。`)
     : toBack.length === 0 ? lamp("flows_backed_by_use_cases", null, `还没有标签为「${TAG_FLOW}」或「${TAG_SCENE}」的主题。`)
@@ -425,6 +502,17 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
     : blind.length === 0 ? lamp("basis_pages_viewed", true, "条目依据的主题用户都看过了。")
       : lamp("basis_pages_viewed", false,
         `有 ${blind.length} 个条目依据的主题用户还没有看过：${list(blind.map((one) => one.item_id))}（没看过的主题是 ${list(unseen)}）。`, blind.map((one) => one.item_id));
+
+  // 写条目：每条条目依据的图都是用户看过的。任务里一次都没有记过用户看图时算不适用。
+  const drawing = others.filter((one) => one.citesDiagrams.some((id) => diagramOf.has(id)));
+  const unseenOf = (one: LampItem) => one.citesDiagrams.filter((id) => diagramOf.has(id) && !diagramOf.get(id)!.viewed);
+  const unlooked = drawing.filter((one) => unseenOf(one).length > 0);
+  const basisDiagramsViewed = drawing.length === 0 ? lamp("basis_diagrams_viewed", null, "还没有依据图写的条目。")
+    : !input.diagramViewsRecorded ? lamp("basis_diagrams_viewed", null, "还没有记下用户看过哪些图，这一项暂时算不出来。")
+      : unlooked.length === 0 ? lamp("basis_diagrams_viewed", true, "条目依据的图用户都看过了。")
+        : lamp("basis_diagrams_viewed", false,
+          `有 ${unlooked.length} 个条目依据的图用户还没有看过：${list(unlooked.map((one) => one.item_id))}（没看过的图是 ${list([...new Set(unlooked.flatMap(unseenOf))])}）。`,
+          unlooked.map((one) => one.item_id));
 
   // 写条目：没有待核实的条目。
   const pending = others.filter((one) => one.pending);
@@ -442,16 +530,18 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   return {
     reading: [materialsCited],
     clarifying: [noOpenQuestions, decisionsHaveGoal],
-    modeling: [flowsHaveException, rolesMentioned, noDuplicates, noUntagged],
-    writing: [flowsBacked, basisViewed, noPending],
+    modeling: [rolesDrawn, conceptsRelated, flowsCharted, statesDrawn, noDuplicates, noUntagged, noRuleConflict],
+    writing: [flowsBacked, basisViewed, basisDiagramsViewed, noPending],
     reviewing: [reviews, completion],
   };
 }
 
 /** 全部灯的键，按阶段的先后。 */
 export const LAMP_KEYS = [
-  "materials_cited", "tagged_pages_no_open_questions", "decisions_have_goal", "flows_have_exception", "roles_mentioned_by_flows", "no_duplicate_titles",
-  "no_untagged_pages", "flows_backed_by_use_cases", "basis_pages_viewed", "no_pending_items", "reviews_no_open_findings", "completion_met",
+  "materials_cited", "tagged_pages_no_open_questions", "decisions_have_goal",
+  "roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
+  "no_duplicate_titles", "no_untagged_pages", "rules_no_conflict",
+  "flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items", "reviews_no_open_findings", "completion_met",
 ] as const;
 
 /**

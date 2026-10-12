@@ -1,6 +1,6 @@
 /**
  * 图：任务的一种要素（另一种是条目）。这里放图的种类、编号的写法、从库里读图，以及「图里画了哪些条目」的扫法。
- * 只读，不写库；写库在 lib/save_diagram.ts。库表见 lib/schema.ts 的 DIAGRAM_SQL。
+ * 只读，不写库；写库在 lib/save_diagram.ts。库表见 lib/schema.ts 的 DIAGRAM_SQL。从 Mermaid 文本里扫东西的几个函数在 lib/diagram_scan.ts。
  *
  * 图的修订号是这张图自己的（从 1 起连续），与任务的修订序号无关。一张图现在的样子是它修订号最大的那一行内容；
  * 删除也记一行（内容照删除之前的样子）。
@@ -91,18 +91,8 @@ export const latestVersion = (record: DiagramRecord): DiagramVersion | null => r
 export const liveDiagrams = (records: DiagramRecord[]): DiagramRecord[] =>
   records.filter((one) => one.deleted_in_revision === null && one.versions.length > 0);
 
-/**
- * Mermaid 文本里出现的条目编号，按第一次出现的先后，不重复。prefixes 是任务定义里各集合的编号前缀。
- * 认的是「前缀-至少三位数字」，前后不能紧挨着英文字母或数字（UC-0012 与 XUC-001 都不算 UC-001）。
- */
-export function drawnItemIds(mermaid: string, prefixes: readonly string[]): string[] {
-  const usable = prefixes.filter((one) => /^[A-Z][A-Z0-9]*$/.test(one)).sort((a, b) => b.length - a.length);
-  if (usable.length === 0) return [];
-  const pattern = new RegExp(`(?<![A-Za-z0-9])(?:${usable.join("|")})-\\d{3,}(?![A-Za-z0-9])`, "g");
-  const out: string[] = [];
-  for (const hit of mermaid.match(pattern) ?? []) if (!out.includes(hit)) out.push(hit);
-  return out;
-}
+/** Mermaid 文本里出现的条目编号：算法在 lib/diagram_scan.ts（那个文件不碰库，页面也可以导入），这里照旧给出这个名字。 */
+export { drawnItemIds } from "./diagram_scan.ts";
 
 // ───────────── 用户看没看过一张图 ─────────────
 

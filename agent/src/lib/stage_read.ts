@@ -13,13 +13,16 @@ import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { checkCompletion } from "./conditions.ts";
 import { emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, keepPendingField, validateDefinition } from "./definition.ts";
+import { diagramViewed, latestVersion, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "./diagram.ts";
+import { classLinked, drawnItemIds, hasBranch } from "./diagram_scan.ts";
 import { OVERALL_COLLECTION, hasOverall } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
+import { rulesTable } from "./overall_views.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
-import { NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_ITEM, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
+import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase } from "./schema.ts";
 import {
-  ENTER_OPTIONS, type Lamp, type LampInput, NO_STAGES_TEXT, STAGE_NAMES, type Stage, type StageActor, defaultStage, isStage, judgeMove,
-  lampLines, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
+  ENTER_OPTIONS, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, NO_STAGES_TEXT, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
+  defaultStage, isStage, judgeMove, lampLines, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
@@ -215,25 +218,55 @@ export interface StageSummary {
   lamps: Record<Stage, Lamp[]>;
 }
 
-/** 从任务库里读出算灯要的全部事实（lib/stage.ts 的 LampInput）。只读。 */
-export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): LampInput {
+/** 任务里还在的图各自算灯要的几样（lib/stage.ts 的 LampDiagram），与任务里有没有记过用户看图。只读。 */
+export function lampDiagrams(db: DatabaseSync, taskId: string, definition: TaskDefinition): { diagrams: LampDiagram[]; viewsRecorded: boolean } {
+  const records = liveDiagrams(readDiagrams(db, taskId));
+  const seen = viewedDiagramRevisions(db, taskId);
+  if (records.length === 0) return { diagrams: [], viewsRecorded: seen.size > 0 };
+  const prefixes = definition.collections.map((one) => one.prefix);
+  const cited = db.prepare(
+    `SELECT locator FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind = ?${elementClause(db, ELEMENT_FIGURE)} ORDER BY position`,
+  );
+  const diagrams = records.map((record) => {
+    const now = latestVersion(record)!;
+    return {
+      diagram_id: record.diagram_id, kind: now.kind,
+      sources: [...new Set((cited.all(taskId, record.diagram_id, now.revision_no, SOURCE_ITEM) as { locator: string }[]).map((row) => row.locator.trim()))],
+      drawn: drawnItemIds(now.mermaid, prefixes),
+      linked: now.kind === KIND_CLASS ? classLinked(now.mermaid, prefixes) : [],
+      branches: now.kind === KIND_FLOWCHART && hasBranch(now.mermaid),
+      viewed: diagramViewed(record, seen),
+    };
+  });
+  return { diagrams, viewsRecorded: seen.size > 0 };
+}
+
+/**
+ * 算灯要的事实里只从任务库就读得出的那一部分：页、条目、问题、集合名、被引用的文档、图、规则冲突。只读。
+ * 另外三样要看任务目录（材料清单、评审规则文件、完成条件的核对），由 lampInput 补上；模拟器的评测只有库的副本，只用这一部分
+ * （cli/overall_state.mts）。
+ */
+export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefinition): Omit<LampInput, "materials" | "review" | "completion"> {
   const state = overallState(db, taskId, definition);
   const statusFieldOf = new Map(definition.collections.flatMap((one) => {
     const field = keepPendingField(one);
     return field ? [[one.name, field.name] as [string, string]] : [];
   }));
+  // 问题条目里说事情的那句话：它所在集合的第一个字段（需求规格这一类任务里是「事项」）。
+  const subjectFieldOf = new Map(definition.collections.map((one) => [one.name, one.fields[0]?.name ?? ""]));
   const sourcesOf = (itemId: string) => state.sources.get(itemId) ?? [];
   const pages = state.items.filter((one) => one.collection === OVERALL_COLLECTION);
   const others = state.items.filter((one) => one.collection !== OVERALL_COLLECTION);
   const questions = others.filter((one) => statusFieldOf.has(one.collection));
-  const reviewed = new Set(Object.entries(definition.completion).filter(([, names]) => names.includes(REVIEWED_CONDITION)).map(([name]) => name));
-  const hashOf = new Map<string, string | null>();
-  const failing = others.filter((one) => {
-    if (!reviewed.has(one.collection)) return false;
-    if (!hashOf.has(one.collection)) hashOf.set(one.collection, currentRulesHash(db, workspaceDir, one.collection));
-    return verdictAt(db, taskId, one.item_id, one.revision_no, hashOf.get(one.collection)!).state === "failed";
-  }).map((one) => one.item_id);
-  const completion = checkCompletion(db, taskId, definition.completion, { workspaceDir });
+  const { diagrams, viewsRecorded } = lampDiagrams(db, taskId, definition);
+  const text = (value: unknown): string => (typeof value === "string" ? value : "");
+  const rules = rulesTable(
+    pages.map((one) => ({ item_id: one.item_id, fields: one.fields, sources: sourcesOf(one.item_id), created_at: null })),
+    questions.map((one) => ({
+      item_id: one.item_id, subject: text(one.fields[subjectFieldOf.get(one.collection)!]), open: one.fields[statusFieldOf.get(one.collection)!] === QUESTION_OPEN_STATUS,
+      kind: null, suggestion: "", sources: sourcesOf(one.item_id), created_at: null,
+    })),
+  );
   return {
     pages: pages.map((one) => lampPage(one.item_id, one.fields, state.viewed.get(one.item_id) === true)),
     items: others.map((one) => {
@@ -241,14 +274,36 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
       return {
         item_id: one.item_id, collection: one.collection,
         cites: sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_ITEM).map((s) => s.locator),
+        citesDiagrams: [...new Set(sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_FIGURE).map((s) => s.locator))],
         pending: verification.pending_verification || verification.basis_pending !== null,
       };
     }),
     questions: questions.map((one) => lampQuestion(one.item_id, one.fields, statusFieldOf.get(one.collection)!)),
     collections: definition.collections.map((one) => one.name),
-    materials: sourceMaterials(listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path)),
     citedDocuments: [...pages, ...questions].flatMap((one) => sourcesOf(one.item_id).filter((s) => s.kind === SOURCE_DOCUMENT).map((s) => s.locator)),
-    mentions: state.mentions,
+    diagrams,
+    diagramViewsRecorded: viewsRecorded,
+    ruleConflicts: rules.conflicts,
+  };
+}
+
+/** 从任务库与任务目录里读出算灯要的全部事实（lib/stage.ts 的 LampInput）。只读。 */
+export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): LampInput {
+  const facts = lampFacts(db, taskId, definition);
+  const reviewed = new Set(Object.entries(definition.completion).filter(([, names]) => names.includes(REVIEWED_CONDITION)).map(([name]) => name));
+  const revisionOf = new Map((db.prepare(
+    "SELECT i.item_id, (SELECT MAX(revision_no) FROM item_version w WHERE w.task_id = i.task_id AND w.item_id = i.item_id) AS no FROM item i WHERE i.task_id = ? AND i.deleted_in_revision IS NULL",
+  ).all(taskId) as { item_id: string; no: number }[]).map((row) => [row.item_id, Number(row.no)]));
+  const hashOf = new Map<string, string | null>();
+  const failing = facts.items.filter((one) => {
+    if (!reviewed.has(one.collection)) return false;
+    if (!hashOf.has(one.collection)) hashOf.set(one.collection, currentRulesHash(db, workspaceDir, one.collection));
+    return verdictAt(db, taskId, one.item_id, revisionOf.get(one.item_id)!, hashOf.get(one.collection)!).state === "failed";
+  }).map((one) => one.item_id);
+  const completion = checkCompletion(db, taskId, definition.completion, { workspaceDir });
+  return {
+    ...facts,
+    materials: sourceMaterials(listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path)),
     review: { failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined },
     completion: {
       satisfied: completion.every((one) => one.satisfied),
