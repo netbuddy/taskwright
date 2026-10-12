@@ -21,7 +21,9 @@
  * - 每个条目里，字段有内容才写的一段：{{#有 字段}} … {{/有}}；
  * - 字段名后面可以跟一种取法：{{字段|首段}} 取文本字段的第一段（到第一个空行为止），{{字段|顿号}} 把列表字段用顿号连成一句
  *   （空的时候什么都不写）；
- * - 模板任何地方：{{文档修订号}}（这份文档按修订 N 生成）。
+ * - 模板任何地方：{{文档修订号}}（这份文档按修订 N 生成）；
+ * - 各占一行的三个占位（render_chapters.ts）：{{业务说明}} 展开成与页面同一结构的七章（任务没有总体分析这个集合时什么都不写），
+ *   {{追溯附录}} 展开成「每个需求条目依据了哪几节、哪几张图」的一张表，{{目录}} 展开成整份文档二级、三级标题的清单。
  *
  * 没有评审通过或没有确认标记的条目不拦，如实写进「评审状态」「确认状态」两处。
  * 「用户的话」的出处在库里是「会话编号#消息编号」，文档里换成「会话「名称」里用户的第 N 句话」（由调用方算好传进来）；
@@ -36,6 +38,7 @@ import { readTextFile } from "./files.ts";
 import { type Library, actorWord } from "./library.ts";
 import { or, truthy } from "./py.ts";
 import { parseKnowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
+import { CHAPTERS_SLOT, TOC_SLOT, TRACE_SLOT, businessDescription, tableOfContents, traceAppendix } from "./render_chapters.ts";
 
 const EACH = /\{\{#每个 (.+?)\}\}\n?(.*?)\{\{\/每个\}\}\n?/gs;
 const GROUP = /\{\{#按 (\S+) (逐值归组|归组) (.+?)\}\}\n?(.*?)\{\{\/按\}\}\n?/gs;
@@ -360,6 +363,22 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
 
   const none = (_m: string, selector: string, body: string) => (selected(selector)[1].length ? "" : body);
 
-  return template.replace(GROUP, group).replace(EACH, each).replace(NONE, none).replaceAll("{{文档修订号}}", () => String(docRevision));
+  let out = template.replace(GROUP, group).replace(EACH, each).replace(NONE, none).replaceAll("{{文档修订号}}", () => String(docRevision));
+  // 三个占位各占一行，连同后面的那个换行一起换掉：展开出来有内容时后面空一行，没有内容时什么都不留。
+  const slot = (name: string, text: () => string) => {
+    if (!out.includes(name)) return;
+    const expanded = text();
+    out = out.replace(new RegExp(`${name.replace(/[{}]/g, "\\$&")}\n?`), () => (expanded ? `${expanded}\n` : ""));
+  };
+  if (out.includes(CHAPTERS_SLOT) || out.includes(TRACE_SLOT)) {
+    const chapters = businessDescription(lib, chosen, {
+      mark: (itemId, no) => confirmState(lib, itemId, no),
+      sources: (itemId, no) => sourcesText(lib, itemId, no, wordsLocator, libraryName),
+    });
+    slot(CHAPTERS_SLOT, () => chapters.text);
+    slot(TRACE_SLOT, () => traceAppendix(lib, chosen, chapters.sectionLabel));
+  }
+  slot(TOC_SLOT, () => tableOfContents(out.replace(TOC_SLOT, "")));
+  return out;
 }
 
