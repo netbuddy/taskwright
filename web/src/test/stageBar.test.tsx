@@ -12,12 +12,12 @@ afterEach(cleanup);
 const lamp = (key: string, ok: boolean | null, summary: string, items: string[] = []): StageLamp => ({ key, ok, summary, items });
 const stage = (current: StageKey, lamps: StageLamp[]): StageView => ({
   current, moved_by: null, moved_at: null, reason: null,
-  lamps: { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [], [current]: lamps },
+  lamps: { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [], document: [], [current]: lamps },
 });
 const item = (item_id: string): Item => ({ item_id, collection: "总体分析", title: item_id, fields: {}, revision_no: 1 } as unknown as Item);
 
 describe("阶段条", () => {
-  it("五个阶段按次序排：当前的标出来，前面的算已经过了，后面的算还没到；五种当前阶段各对一遍", () => {
+  it("六个阶段按次序排：当前的标出来，前面的算已经过了，后面的算还没到；六种当前阶段各对一遍", () => {
     for (const [index, current] of STAGES.entries()) {
       const { unmount } = render(<StageBar stage={stage(current, [])} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
       expect(STAGES.map((key) => screen.getByTestId(`stage-${key}`).className.replace("sb-s ", ""))).toEqual(
@@ -25,7 +25,7 @@ describe("阶段条", () => {
       expect(screen.getByTestId(`stage-${current}`)).toHaveAttribute("aria-current", "step");
       unmount();
     }
-    expect(stageMarks("modeling").map((one) => one.name)).toEqual(["核读材料", "澄清", "整理建模", "写条目", "评审确认"]);
+    expect(stageMarks("modeling").map((one) => one.name)).toEqual(["核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档"]);
     // 阶段名只是文字，没有可以点的样子。
     render(<StageBar stage={stage("clarifying", [])} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
     expect(screen.getByTestId("stage-writing")).not.toHaveAttribute("role");
@@ -88,7 +88,7 @@ describe("阶段条", () => {
     expect(again.container).toBeEmptyDOMElement();
   });
 
-  it("读法的几个小函数：缩短句子、拆数字、分三类、点灯去哪里、四个进入键", () => {
+  it("读法的几个小函数：缩短句子、拆数字、分三类、点灯去哪里、五个进入键", () => {
     expect(lampShort("有 3 条条目依据的主题用户还没有看过：UC-001、UC-002、UC-003。")).toBe("有 3 条条目依据的主题用户还没有看过。");
     expect(lampShort("每份材料都被引用了。")).toBe("每份材料都被引用了。");
     expect(lampShort("每个标签为「流程」的主题都有一条以「例外：」开头的例子。")).toBe("每个标签为「流程」的主题都有一条以「例外：」开头的例子。");
@@ -100,7 +100,7 @@ describe("阶段条", () => {
     expect(lampTarget(lamp("a", false, "甲", []), [])).toBeNull();
     expect(lampTarget(lamp("a", false, "甲", ["OA-001"]), [item("OA-001")])).toEqual({ kind: "item", itemId: "OA-001" });
     expect(lampTarget(lamp("a", false, "甲", ["inputs/x.md"]), [item("OA-001")])).toEqual({ kind: "material", path: "inputs/x.md" });
-    expect(ENTER_KEYS).toEqual({ enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing" });
+    expect(ENTER_KEYS).toEqual({ enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
   });
 
   it("点了说材料没有被引用的灯之后，状态里记下要在材料页签选中的那份材料", () => {

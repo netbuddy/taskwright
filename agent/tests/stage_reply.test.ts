@@ -37,14 +37,14 @@ function put(dir: string, taskId: string, from: Stage, to: Stage): void {
   withTaskDatabase(dir, { createIfMissing: false }, (db) => recordStageMove(db, { taskId, sessionId: SESSION, runId: null, callId: `ui-op-${++call}`, actor: "user", from, to, reason: "" }));
 }
 
-test("形式：stage 写五个阶段名之一并带一句理由；名字不对、缺理由各报一条；不写就是不移动，回复的形状与原来相同", () => {
+test("形式：stage 写六个阶段名之一并带一句理由；名字不对、缺理由各报一条；不写就是不移动，回复的形状与原来相同", () => {
   assert.deepEqual(checkReply({ ...base, stage: "澄清", reason: " 材料读完了。 " }, facts).stage, { to: "clarifying", reason: "材料读完了。" });
   assert.deepEqual(checkReply({ ...base, stage: "writing", reason: "用户说可以写了。" }, facts).stage, { to: "writing", reason: "用户说可以写了。" });
   for (const none of [{}, { stage: null }, { stage: "", reason: "" }, { stage: null, reason: "只写了理由。" }]) {
     assert.deepEqual(checkReply({ ...base, ...none }, facts), base);
   }
   assert.throws(() => checkReply({ ...base, stage: "发布", reason: "条目都写完了。" }, facts),
-    /没有送达[^]*stage 写的是 "发布"，不是阶段的名字。\n\s+怎么办：stage 只能是「核读材料」「澄清」「整理建模」「写条目」「评审确认」之一；不移动阶段时不要写 stage。/);
+    /没有送达[^]*stage 写的是 "发布"，不是阶段的名字。\n\s+怎么办：stage 只能是「核读材料」「澄清」「整理建模」「写条目」「评审确认」「编写文档」之一；不移动阶段时不要写 stage。/);
   assert.throws(() => checkReply({ ...base, stage: "澄清" }, facts), /写了 stage 没有写 reason。\n\s+怎么办：reason 写一句话，说明为什么现在移到这个阶段。/);
   assert.throws(() => checkReply({ ...base, stage: "澄清", reason: "   " }, facts), /写了 stage 没有写 reason/);
   assert.throws(() => checkReply({ ...base, stages: "澄清" }, facts), /多了「stages」这一项，回复只有 informs、act、text 三项（要移动工作阶段时另写 stage 与 reason）/);

@@ -1,8 +1,8 @@
 /**
- * 工作的阶段：任务定义里有「总体分析」集合的任务，工作分五个阶段——核读材料、澄清、整理建模、写条目、评审确认。
+ * 工作的阶段：任务定义里有「总体分析」集合的任务，工作分六个阶段——核读材料、澄清、整理建模、写条目、评审确认、编写文档。
  * 阶段由用户或助手的动作移动，每次移动留一条记录；助手每次调用写入工具时能写什么，由最近一条记录决定。
  *
- * 本文件只放不读库的东西：五个阶段的名字与次序、谁能从哪里移到哪里、每个阶段助手能写什么与被拦时的原话、
+ * 本文件只放不读库的东西：六个阶段的名字与次序、谁能从哪里移到哪里、每个阶段助手能写什么与被拦时的原话、
  * 提议进入写条目的那张卡片的两个选项，以及每个阶段「这一段还差什么」的几盏灯（一共十六盏）怎样算。读写库的在 lib/stage_read.ts。
  *
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，这里的一切对它们都不生效；判据是 overall_analysis.ts 的 hasOverall。
@@ -12,17 +12,18 @@
 
 import { OVERALL_FIELDS, isDeprecated, tagsOf } from "./overall_analysis.ts";
 
-/** 五个阶段在库里与接口里的写法，按先后排。 */
-export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing"] as const;
+/** 六个阶段在库里与接口里的写法，按先后排。 */
+export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing", "document"] as const;
 export type Stage = (typeof STAGES)[number];
 
-/** 五个阶段给人看的名字。助手在回复里写的、拒绝原话里说的都是这几个名字。 */
+/** 六个阶段给人看的名字。助手在回复里写的、拒绝原话里说的都是这几个名字。 */
 export const STAGE_NAMES: Record<Stage, string> = {
   reading: "核读材料",
   clarifying: "澄清",
   modeling: "整理建模",
   writing: "写条目",
   reviewing: "评审确认",
+  document: "编写文档",
 };
 
 /**
@@ -63,7 +64,7 @@ export function defaultStage(hasMaterials: boolean): Stage {
 export const START_ITEMS_KEY = "start_items";
 export const START_ITEMS_TEXT = "开始写条目";
 export const CONTINUE_CLARIFY_KEY = "continue_clarify";
-/** 留在这一段的那个选项的文字：四张卡片上都是这一句。 */
+/** 留在这一段的那个选项的文字：五张卡片上都是这一句。 */
 export const STAY_TEXT = "继续本阶段";
 export const CONTINUE_CLARIFY_TEXT = STAY_TEXT;
 
@@ -78,17 +79,19 @@ export const ENTER_OPTIONS: Record<Exclude<Stage, "reading">, CardOption> = {
   modeling: { key: "enter_consolidate", text: "进入整理建模" },
   writing: { key: START_ITEMS_KEY, text: START_ITEMS_TEXT },
   reviewing: { key: "enter_review", text: "进入评审确认" },
+  document: { key: "enter_document", text: "进入编写文档" },
 };
 
 /**
- * 留在某个阶段的那个选项（评审确认是最后一段，没有往前的卡片）。四张卡片上文字相同、键各不相同：页面按键认出这一项，
+ * 留在某个阶段的那个选项（编写文档是最后一段，没有往前的卡片）。五张卡片上文字相同、键各不相同：页面按键认出这一项，
  * 不管助手在卡片里把它写成什么都显示成这一句；点它只把卡片标为已选，不替用户发话（lib/user_stage.ts）。
  */
-export const STAY_OPTIONS: Record<Exclude<Stage, "reviewing">, CardOption> = {
+export const STAY_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
   reading: { key: "continue_reading", text: STAY_TEXT },
   clarifying: { key: CONTINUE_CLARIFY_KEY, text: STAY_TEXT },
   modeling: { key: "continue_consolidate", text: STAY_TEXT },
   writing: { key: "continue_writing", text: STAY_TEXT },
+  reviewing: { key: "continue_review", text: STAY_TEXT },
 };
 
 /**
@@ -105,7 +108,7 @@ export const STAGE_START_TEXTS = {
  */
 export const STATUS_NEXT_TEXT = "请按任务状况说明下一步该做什么。";
 
-/** 某个阶段的下一段；评审确认之后没有。 */
+/** 某个阶段的下一段；编写文档之后没有。 */
 export function nextStage(stage: Stage): Stage | null {
   return STAGES[STAGES.indexOf(stage) + 1] ?? null;
 }
@@ -117,11 +120,11 @@ export function stageEnteredBy(key: unknown): Exclude<Stage, "reading"> | null {
 }
 
 /**
- * 在某个阶段怎样提议进入下一段：告诉助手用哪张卡片、两个选项怎样写。评审确认是最后一段，没有下一段，返回空串。
+ * 在某个阶段怎样提议进入下一段：告诉助手用哪张卡片、两个选项怎样写。编写文档是最后一段，没有下一段，返回空串。
  */
 export function forwardCardGuidance(from: Stage): string {
   const next = nextStage(from);
-  if (next === null || from === "reviewing" || next === "reading") return "";
+  if (next === null || from === "document" || next === "reading") return "";
   const enter = ENTER_OPTIONS[next], stay = STAY_OPTIONS[from];
   return `请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 ${enter.key}「${enter.text}」、${stay.key}「${stay.text}」`;
 }
@@ -162,25 +165,36 @@ export const NO_STAGES_TEXT = "阶段没有移动：这个任务没有阶段，�
  */
 export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "complete";
 
-/** 每一类写入从哪个阶段起可以做。页与问题任何阶段都可以写（评审确认阶段对页另有限制，见 pageRefusal）。 */
-const ALLOWED_FROM: Record<WriteKind, Stage> = {
-  page: "reading",
-  problem: "reading",
-  diagram: "modeling",
-  item: "writing",
-  review: "writing",
-  complete: "reviewing",
+/**
+ * 每个阶段助手能做哪几类写入。页与问题任何阶段都可以写（评审确认阶段对页另有限制，见 pageRefusal）。
+ * 编写文档排在最后，却不能写条目、不能画图、不能请求评审，所以这里一个阶段一个阶段列出来，不按先后推。
+ */
+const ALLOWED: Record<Stage, readonly WriteKind[]> = {
+  reading: ["page", "problem"],
+  clarifying: ["page", "problem"],
+  modeling: ["page", "problem", "diagram"],
+  writing: ["page", "problem", "diagram", "item", "review"],
+  reviewing: ["page", "problem", "diagram", "item", "review", "complete"],
+  document: ["page", "problem", "complete"],
 };
 
 /** 这个阶段助手能不能做这一类写入。 */
 export function canWrite(stage: Stage, kind: WriteKind): boolean {
-  return STAGES.indexOf(stage) >= STAGES.indexOf(ALLOWED_FROM[kind]);
+  return ALLOWED[stage].includes(kind);
 }
 
 /** 拒绝的两层文字：事实（现在在哪个阶段、拦下的是什么）与怎么办（这一步要先做什么、谁能移动）。 */
 export type Refusal = [fact: string, guidance: string];
 
 const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", delete: "删除" };
+
+/**
+ * 编写文档阶段被拦时怎么办：这一段只补写业务说明的文字。要动条目、图或者再评审，得先回到前面的阶段，
+ * 回去要由用户决定：助手发卡片提议退回并写明原因，用户点了才退。
+ */
+function howToLeaveDocument(back: Stage): string {
+  return `编写文档阶段只补写主题页的文字。要做这件事，先用请选择卡片提议退回${STAGE_NAMES[back]}并写明原因，由用户在卡片上点`;
+}
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
 function howToReachWriting(): string {
@@ -193,6 +207,9 @@ function howToReachWriting(): string {
  */
 export function itemRefusal(stage: Stage, op: string, collection: string): Refusal | null {
   if (canWrite(stage, "item")) return null;
+  if (stage === "document") {
+    return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`, howToLeaveDocument("reviewing")];
+  }
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`,
     `「${collection}」的条目要到写条目阶段才能写。${howToReachWriting()}`,
@@ -221,6 +238,7 @@ export function pageRefusal(stage: Stage, op: string, changed: readonly string[]
  */
 export function diagramRefusal(stage: Stage): Refusal | null {
   if (canWrite(stage, "diagram")) return null;
+  if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`, howToLeaveDocument("modeling")];
   const enterModeling = ENTER_OPTIONS.modeling.text;
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`,
@@ -233,13 +251,14 @@ export function diagramRefusal(stage: Stage): Refusal | null {
 /** 助手请求评审：写条目之前的阶段都拦。可以时返回 null。 */
 export function reviewRefusal(stage: Stage): Refusal | null {
   if (canWrite(stage, "review")) return null;
+  if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能请求评审`, howToLeaveDocument("reviewing")];
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，评审要到写条目阶段才能请求`,
     `条目写出来之后再评审。${howToReachWriting()}`,
   ];
 }
 
-/** 助手完成任务：只有评审确认阶段可以。可以时返回 null。 */
+/** 助手完成任务：评审确认与编写文档两个阶段可以。可以时返回 null。 */
 export function completeRefusal(stage: Stage): Refusal | null {
   if (canWrite(stage, "complete")) return null;
   return [
@@ -406,7 +425,7 @@ export function lampQuestion(itemId: string, fields: Record<string, unknown>, st
 const list = (ids: readonly string[]) => ids.join("、");
 const lamp = (key: string, ok: boolean | null, summary: string, items: string[] = []): Lamp => ({ key, summary, ok, items });
 
-/** 每个阶段的几盏灯，五个阶段都算。 */
+/** 每个阶段的几盏灯，六个阶段都算。 */
 export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   const live = input.pages.filter((one) => !one.deprecated);
   const byId = new Map(input.pages.map((one) => [one.item_id, one]));
@@ -555,6 +574,7 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
     modeling: [rolesDrawn, conceptsRelated, flowsCharted, statesDrawn, noDuplicates, noUntagged, noRuleConflict],
     writing: [flowsBacked, basisViewed, basisDiagramsViewed, noPending],
     reviewing: [reviews, completion],
+    document: [],
   };
 }
 

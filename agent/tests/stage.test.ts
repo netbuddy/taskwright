@@ -8,10 +8,10 @@ import {
   canWrite, completeRefusal, CONTINUE_CLARIFY_KEY, defaultStage, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, isStage, itemRefusal, judgeMove, moveText, nextStage, NO_STAGES_TEXT, pageRefusal, reviewRefusal, type Stage, STAGE_NAMES, stageByName, stageEnteredBy, STAGES, START_ITEMS_KEY, STAY_OPTIONS,
 } from "../src/lib/stage.ts";
 
-test("五个阶段：次序、给人看的名字、由名字认回来；没有记录时有材料先核读、没有材料从澄清开始", () => {
-  assert.deepEqual([...STAGES], ["reading", "clarifying", "modeling", "writing", "reviewing"]);
-  assert.deepEqual(STAGES.map((one) => STAGE_NAMES[one]), ["核读材料", "澄清", "整理建模", "写条目", "评审确认"]);
-  assert.deepEqual(["核读材料", " 澄清 ", "整理建模", "写条目", "评审确认"].map(stageByName), [...STAGES]);
+test("六个阶段：次序、给人看的名字、由名字认回来；没有记录时有材料先核读、没有材料从澄清开始", () => {
+  assert.deepEqual([...STAGES], ["reading", "clarifying", "modeling", "writing", "reviewing", "document"]);
+  assert.deepEqual(STAGES.map((one) => STAGE_NAMES[one]), ["核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档"]);
+  assert.deepEqual(["核读材料", " 澄清 ", "整理建模", "写条目", "评审确认", "编写文档"].map(stageByName), [...STAGES]);
   assert.deepEqual([stageByName("writing"), stageByName("发布"), stageByName(""), stageByName(3)], ["writing", null, null, null]);
   assert.deepEqual([isStage("modeling"), isStage("澄清"), isStage(null)], [true, false, false]);
   assert.deepEqual([defaultStage(true), defaultStage(false)], ["reading", "clarifying"]);
@@ -22,14 +22,15 @@ test("移动：助手只能退回前面的阶段，往前一律要由用户在�
     const one = judgeMove(from, to, actor);
     return one.ok ? "ok" : one.why;
   };
-  // 助手：二十五格逐格对。
+  // 助手：三十六格逐格对。
   const expected: Record<Stage, string[]> = {
-    //            到核读      到澄清   到整理建模    到写条目      到评审确认
-    reading:    ["same",     "user_only", "user_only", "user_only", "user_only"],
-    clarifying: ["ok",       "same",      "user_only", "user_only", "user_only"],
-    modeling:   ["ok",       "ok",        "same",      "user_only", "user_only"],
-    writing:    ["ok",       "ok",        "ok",        "same",      "user_only"],
-    reviewing:  ["ok",       "ok",    "ok",        "ok",        "same"],
+    //            到核读      到澄清   到整理建模    到写条目      到评审确认    到编写文档
+    reading:    ["same",     "user_only", "user_only", "user_only", "user_only", "user_only"],
+    clarifying: ["ok",       "same",      "user_only", "user_only", "user_only", "user_only"],
+    modeling:   ["ok",       "ok",        "same",      "user_only", "user_only", "user_only"],
+    writing:    ["ok",       "ok",        "ok",        "same",      "user_only", "user_only"],
+    reviewing:  ["ok",       "ok",        "ok",        "ok",        "same",      "user_only"],
+    document:   ["ok",       "ok",        "ok",        "ok",        "ok",        "same"],
   };
   for (const from of STAGES) assert.deepEqual(STAGES.map((to) => verdict(from, to, "executor")), expected[from], `助手从${STAGE_NAMES[from]}`);
   // 用户：除了原地不动，哪里都能去。
@@ -56,24 +57,35 @@ test("移动的说明：成功写从哪里到哪里；被退回时写明现在�
   assert.match(text("clarifying", "reviewing"), /^阶段没有移动：往前移动要由用户在卡片上点。一次只进入下一段，澄清的下一段是整理建模。请用请选择卡片提议/);
   assert.equal(NO_STAGES_TEXT, "阶段没有移动：这个任务没有阶段，不要写 stage。");
   assert.deepEqual([START_ITEMS_KEY, CONTINUE_CLARIFY_KEY], ["start_items", "continue_clarify"]);
-  // 四张卡片的两个选项：进入下一段的键与文字，留在这一段的键与文字。
+  // 五张卡片的两个选项：进入下一段的键与文字，留在这一段的键与文字。
   assert.deepEqual(ENTER_OPTIONS, { clarifying: { key: "enter_clarify", text: "进入澄清" }, modeling: { key: "enter_consolidate", text: "进入整理建模" },
-    writing: { key: "start_items", text: "开始写条目" }, reviewing: { key: "enter_review", text: "进入评审确认" } });
+    writing: { key: "start_items", text: "开始写条目" }, reviewing: { key: "enter_review", text: "进入评审确认" }, document: { key: "enter_document", text: "进入编写文档" } });
+  assert.equal(text("reviewing", "document"),
+    "阶段没有移动：往前移动要由用户在卡片上点。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_document「进入编写文档」、continue_review「继续本阶段」。");
   assert.deepEqual(STAY_OPTIONS, { reading: { key: "continue_reading", text: "继续本阶段" }, clarifying: { key: "continue_clarify", text: "继续本阶段" },
-    modeling: { key: "continue_consolidate", text: "继续本阶段" }, writing: { key: "continue_writing", text: "继续本阶段" } });
-  assert.deepEqual(["enter_clarify", "enter_consolidate", "start_items", "enter_review", "continue_clarify", "别的键", null].map(stageEnteredBy),
-    ["clarifying", "modeling", "writing", "reviewing", null, null, null]);
-  assert.deepEqual(STAGES.map(nextStage), ["clarifying", "modeling", "writing", "reviewing", null]);
-  assert.equal(forwardCardGuidance("reviewing"), "");
+    modeling: { key: "continue_consolidate", text: "继续本阶段" }, writing: { key: "continue_writing", text: "继续本阶段" },
+    reviewing: { key: "continue_review", text: "继续本阶段" } });
+  assert.deepEqual(["enter_clarify", "enter_consolidate", "start_items", "enter_review", "enter_document", "continue_clarify", "别的键", null].map(stageEnteredBy),
+    ["clarifying", "modeling", "writing", "reviewing", "document", null, null, null]);
+  assert.deepEqual(STAGES.map(nextStage), ["clarifying", "modeling", "writing", "reviewing", "document", null]);
+  // 编写文档是最后一段，没有往前的卡片。
+  assert.equal(forwardCardGuidance("document"), "");
 });
 
-test("每个阶段助手能写什么：页与问题一直可以，图从整理建模起，别的集合的条目与请求评审从写条目起，完成任务只在评审确认", () => {
+test("每个阶段助手能写什么：页与问题一直可以，图从整理建模起，别的集合的条目与请求评审从写条目起，完成任务在评审确认与编写文档；编写文档只写页与问题", () => {
   const row = (stage: Stage) => (["page", "problem", "diagram", "item", "review", "complete"] as const).map((kind) => canWrite(stage, kind));
   assert.deepEqual(row("reading"), [true, true, false, false, false, false]);
   assert.deepEqual(row("clarifying"), [true, true, false, false, false, false]);
   assert.deepEqual(row("modeling"), [true, true, true, false, false, false]);
   assert.deepEqual(row("writing"), [true, true, true, true, true, false]);
   assert.deepEqual(row("reviewing"), [true, true, true, true, true, true]);
+  // 编写文档排在最后，却不能画图、不能写条目、不能请求评审：守门表一个阶段一个阶段列，不按先后推。
+  assert.deepEqual(row("document"), [true, true, false, false, false, true]);
+  const leave = (back: string) => `编写文档阶段只补写主题页的文字。要做这件事，先用请选择卡片提议退回${back}并写明原因，由用户在卡片上点`;
+  assert.deepEqual(itemRefusal("document", "update", "功能用例"), ["任务现在在编写文档阶段，这个阶段不能修改「功能用例」的条目", leave("评审确认")]);
+  assert.deepEqual(diagramRefusal("document"), ["任务现在在编写文档阶段，这个阶段不能画图、改图或删图", leave("整理建模")]);
+  assert.deepEqual(reviewRefusal("document"), ["任务现在在编写文档阶段，这个阶段不能请求评审", leave("评审确认")]);
+  assert.deepEqual([completeRefusal("document"), completeRefusal("reviewing"), pageRefusal("document", "add"), pageRefusal("document", "update", ["它是什么"])], [null, null, null, null]);
 });
 
 test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么；怎么办写这一步要先做什么、谁能移动", () => {

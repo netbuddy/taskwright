@@ -327,7 +327,7 @@ export interface StageMove {
 }
 
 /** 工作的五个阶段：核读材料、澄清、整理建模、写条目、评审确认。 */
-export type StageKey = "reading" | "clarifying" | "modeling" | "writing" | "reviewing";
+export type StageKey = "reading" | "clarifying" | "modeling" | "writing" | "reviewing" | "document";
 
 /** 一盏灯：某个阶段「做到什么算够」的一条判据。ok 为 null 是不适用；items 是差的页、条目或材料。灯只提示，不拦操作。 */
 export interface StageLamp {

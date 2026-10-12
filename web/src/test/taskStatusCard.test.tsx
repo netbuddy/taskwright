@@ -30,7 +30,7 @@ const STATUS: TaskStatusView = {
   missing: [{ key: "roles_in_context_and_use_cases", summary: "有 1 页标签为「角色」的主题还没有画进用例图：OA-003。" }, { key: "rules_no_conflict", summary: "还有 1 对规则冲突没有了结。" }],
   proposal: PROPOSAL, versions: [],
 };
-const LAMPS = { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [] };
+const LAMPS = { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [], document: [] };
 const taskWith = (proposal: StageProposal | null = PROPOSAL): Task => ({ ...overallTask(), stage: { current: "modeling", moved_by: "user", moved_at: "2026-10-10T11:02:00", reason: "", lamps: LAMPS, proposal } });
 const reply = (id: string, text: string) => ({ type: "assistant_reply", message_id: id, at: "", work_id: null, via_reply_tool: true, informs: [], act: null, text });
 const said = (id: string, text: string) => ({ type: "user_message", message_id: id, at: "", text, origin: "typed", annotation: null, queued: false });

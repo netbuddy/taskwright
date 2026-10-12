@@ -163,7 +163,7 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
     }
   }
 
-  // stage 与 reason：都不写（或写 null、空白）就是不移动阶段。写了 stage 必须是五个阶段名之一，并写一句理由。
+  // stage 与 reason：都不写（或写 null、空白）就是不移动阶段。写了 stage 必须是六个阶段名之一，并写一句理由。
   let stage: Reply["stage"] = null;
   if (!isBlank(params.stage)) {
     const to = stageByName(params.stage);

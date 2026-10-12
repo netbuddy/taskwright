@@ -17,7 +17,7 @@ const FLOW = page({ 标题: "预约取书", 标签: ["流程"], 例子: ["小王
 const USE_CASE = { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] };
 const lampOf = (stage: NonNullable<ReturnType<typeof library.stageView>>, key: string) => Object.values(stage.lamps).flat().find((one) => one.key === key)!;
 
-test("整份数据带 stage：现在的阶段、最近一次是谁在什么时候为什么移的、五个阶段的灯", () => {
+test("整份数据带 stage：现在的阶段、最近一次是谁在什么时候为什么移的、六个阶段的灯", () => {
   // 夹具一建好任务就由用户移到写条目；之后助手立一页流程，用户看过它，助手依据它写一条用例；最后用户移到评审确认并写了理由。
   const ws = build(tmp, "stage", DEFINITION, [[FLOW], { view: ["OA-001"] }, [USE_CASE]]);
   const [, task] = library.taskSnapshot(ws);
@@ -31,6 +31,7 @@ test("整份数据带 stage：现在的阶段、最近一次是谁在什么时�
       "no_duplicate_titles", "no_untagged_pages", "rules_no_conflict"],
     writing: ["flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items"],
     reviewing: ["reviews_no_open_findings", "completion_met"],
+    document: [],
   });
   // 几盏灯照库里的内容：材料被那一页引用了；流程页还没有流程图；用例依据的页用户看过；还没有评审过。
   assert.deepEqual([lampOf(stage, "materials_cited").ok, lampOf(stage, "basis_pages_viewed").ok, lampOf(stage, "no_pending_items").ok], [true, true, true]);

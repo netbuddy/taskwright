@@ -153,5 +153,5 @@ test("早先建的任务没有阶段：有材料也不拦，助手照旧直接�
   assert.equal(refusal(dir, [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "借阅图书" } }]), null);
   assert.equal(refusal(dir, [{ op: "delete", item: "UC-001", base_revision: 2 }]), null);
   assert.equal(count(dir, "stage_record"), 0);
-  assert.deepEqual([...STAGES].length, 5);
+  assert.deepEqual([...STAGES].length, 6);
 });

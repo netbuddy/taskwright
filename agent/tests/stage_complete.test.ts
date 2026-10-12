@@ -28,12 +28,12 @@ function refusal(dir: string): { fact: string; guidance: string; message: string
   assert.fail("应当被拒绝");
 }
 
-test("助手完成任务：评审确认之前的四个阶段被阶段拦下；到了评审确认阶段才轮到核对完成条件", () => {
+test("助手完成任务：评审确认之前的四个阶段被阶段拦下；到了评审确认或编写文档阶段才轮到核对完成条件", () => {
   const dir = workspace();
   for (const stage of STAGES) {
     enterStage(dir, stage);
     const out = refusal(dir);
-    if (stage === "reviewing") {
+    if (stage === "reviewing" || stage === "document") {
       assert.equal(out.fact.includes("完成任务要在评审确认阶段"), false);
       assert.match(out.fact, /^任务没有标为已完成。\n/, "过了阶段这一关，被拒是因为完成条件没满足");
       continue;

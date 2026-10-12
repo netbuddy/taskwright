@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
 import { EXCEPTION_EXAMPLE_PREFIX } from "../src/lib/overall_analysis.ts";
 import { closedQuestion } from "../src/lib/reply.ts";
+import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { RULE_CONFLICT_PREFIX } from "../src/lib/overall_views.ts";
 import { ENTER_OPTIONS, type LampInput, STAGES, STAGE_NAMES, STAY_OPTIONS, type Stage, type WriteKind, canWrite, nextStage, stageLamps } from "../src/lib/stage.ts";
 
@@ -142,14 +143,15 @@ test("有阶段的任务的系统提示：说明已在下文、不用再读 skil
   assert.equal(bottom(system), bottom(legacy));
 });
 
-// ───────────── 五个阶段各一段 ─────────────
+// ───────────── 六个阶段各一段 ─────────────
 
 const STAGE_HEADINGS = ["这一段做什么", "这一段不做什么", "做到什么算够", "出口", "用户的话落在这一段之外时"];
-/** 整理建模那一段的最后一节换了写法：用户说的话按落在哪里分四种处理（落在前面阶段的事直接做）。别的四段还是原来的写法。 */
+/** 整理建模与编写文档两段的最后一节是新的写法：用户说的话按落在哪里分四种处理（落在前面阶段的事直接做）。别的四段还是原来的写法。 */
 const MODELING_LAST_HEADING = "用户说的话不属于本段时";
-const lastHeading = (stage: Stage) => (stage === "modeling" ? MODELING_LAST_HEADING : STAGE_HEADINGS[4]);
+const NEW_LAST_HEADING: readonly Stage[] = ["modeling", "document"];
+const lastHeading = (stage: Stage) => (NEW_LAST_HEADING.includes(stage) ? MODELING_LAST_HEADING : STAGE_HEADINGS[4]);
 
-test("五个阶段各有一段：文件名是阶段的键，标题写阶段的名字，都按同样的五个小节写", () => {
+test("六个阶段各有一段：文件名是阶段的键，标题写阶段的名字，都按同样的五个小节写", () => {
   for (const stage of STAGES) {
     const text = read(`${stage}.md`);
     assert.ok(text.startsWith(`# 现在这个阶段：${STAGE_NAMES[stage]}\n`), stage);
@@ -161,7 +163,7 @@ test("五个阶段各有一段：文件名是阶段的键，标题写阶段的�
 });
 
 test("每一段都写明用户的话落在这一段之外时怎么办：不照办、不复述求同意，说明现在在哪一段与怎样过去", () => {
-  for (const stage of STAGES.filter((one) => one !== "modeling")) {
+  for (const stage of STAGES.filter((one) => !NEW_LAST_HEADING.includes(one))) {
     const outside = sections(read(`${stage}.md`)).get("用户的话落在这一段之外时")!;
     assert.ok(outside.includes("不要照办，也不要把用户的话复述一遍求同意"), stage);
     assert.ok(outside.includes(`再在回复里说清任务现在在${STAGE_NAMES[stage]}阶段、那件事`), stage);
@@ -309,4 +311,29 @@ test("需求规格任务的说明拆成三份：SKILL.md 只留每个阶段都�
   assert.ok(writing.includes("这件事不牵涉状态图时，不必为了对应而补写。"));
   // 任务类型的文件名也只用阶段的键。
   for (const name of readdirSync(join(SRS_SKILL, "stages"))) assert.ok((STAGES as readonly string[]).includes(name.replace(/\.md$/, "")), name);
+});
+
+test("编写文档那一段：补导语与概括句并写明依据；出口是请用户过目的卡片，不引出运行所以话要一次说完；分四种处理用户的话", () => {
+  const text = read("document.md");
+  const all = sections(text);
+  const steps = [...all.get("这一段做什么")!.matchAll(/^(\d)\. \*\*([^*]+)\*\*/gm)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(steps, ["1 通读。", "2 每章补一页导语。", "3 各节开头补一句概括。", "4 核对术语与说法。", "5 补写的每一处都写明依据。", "6 汇报。"]);
+  for (const words of ["「导语所属章」填这一章的章名", "一章只立一页", "任务定义里没有「导语所属章」这个字段时不立导语页", "来源种类写「助手补充」",
+    "不要自己挑一个改掉，记一条问题条目"]) assert.ok(all.get("这一段做什么")!.includes(words), words);
+  // 七章的章名与程序里的相同。
+  for (const chapter of CHAPTERS) assert.ok(all.get("这一段做什么")!.includes(chapter.name), chapter.name);
+  const enough = all.get("做到什么算够")!;
+  assert.ok(enough.startsWith("## 做到什么算够\n\n三件："));
+  assert.equal(enough.slice(enough.indexOf("三件：")).split("。")[0].split("；").length, 3);
+  const exit = all.get("出口")!;
+  assert.ok(exit.includes("`document_reviewed`「看过了，生成文档」、`document_revise`「需要修改」"));
+  assert.ok(exit.includes("你不会因此再运行一次，所以要说的话在这张卡片上一次说完"));
+  assert.ok(exit.includes("不要自己退回，用请选择提议退回并写明原因") && exit.includes("`stay_in_stage`「留在本段」"));
+  assert.doesNotMatch(text, /`stage`「/, "这一段不教助手在回复里写 stage");
+  const cases = all.get(MODELING_LAST_HEADING)!.split("\n").filter((line) => line.startsWith("- "));
+  assert.equal(cases.length, 4);
+  assert.ok(cases[0].startsWith("- 落在这一段") && cases[0].endsWith("照做。"));
+  assert.ok(cases[1].includes("直接改相应的主题页并写上来源，不用退回"));
+  assert.ok(cases[2].includes("用一句话说明任务现在在编写文档阶段") && cases[2].includes("用户打字说可以不算"));
+  assert.ok(cases[3].includes("简短作答，回到手上的事"));
 });

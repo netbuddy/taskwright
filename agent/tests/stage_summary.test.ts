@@ -60,7 +60,7 @@ test("刚建好、有材料的任务：在核读材料，没有人移过；材�
   const now = summary()!;
   assert.deepEqual([now.current, now.moved_by, now.moved_at, now.reason], ["reading", null, null, null]);
   assert.deepEqual(brief(now, "materials_cited"), [false, ["inputs/材料.md"]]);
-  assert.deepEqual(Object.keys(now.lamps), ["reading", "clarifying", "modeling", "writing", "reviewing"]);
+  assert.deepEqual(Object.keys(now.lamps), ["reading", "clarifying", "modeling", "writing", "reviewing", "document"]);
 });
 
 test("走一小段：立页、记问题、移动、用户看过、写用例，各盏灯跟着库里的内容变", () => {

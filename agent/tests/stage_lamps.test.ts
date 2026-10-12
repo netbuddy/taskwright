@@ -36,6 +36,7 @@ test("十六盏灯按阶段分组，键与次序固定；什么都没有的任�
       "no_duplicate_titles", "no_untagged_pages", "rules_no_conflict"],
     writing: ["flows_backed_by_use_cases", "basis_pages_viewed", "basis_diagrams_viewed", "no_pending_items"],
     reviewing: ["reviews_no_open_findings", "completion_met"],
+    document: [],
   });
   // 空任务：前十四盏都不适用；评审与完成条件两盏不通过。
   assert.equal(LAMP_KEYS.length, 16);

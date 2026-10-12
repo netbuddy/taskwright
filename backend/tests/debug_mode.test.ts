@@ -105,7 +105,7 @@ test("不是调试模式时，调试用的几个接口都答 not_found，并说�
   });
 });
 
-test("提示词目录的读与设：只收存在的目录的绝对路径；存进设置文件顶层的 debug.prompt_dir，别的键原样保留；十三个文件名各自的情形；空串是清掉", async () => {
+test("提示词目录的读与设：只收存在的目录的绝对路径；存进设置文件顶层的 debug.prompt_dir，别的键原样保留；十五个文件名各自的情形；空串是清掉", async () => {
   const settings = join(tmp, "debug-settings.json");
   writeFileSync(settings, JSON.stringify({ version: 2, pi_dirs: { "/some/agent": { selection: { language: null, embedding: null }, providers: {} } } }), "utf-8");
   const dir = join(tmp, "prompts");
@@ -117,7 +117,7 @@ test("提示词目录的读与设：只收存在的目录的绝对路径；存�
     const service = new Service(join(tmp, "d1", "tasks"), join(tmp, "d1", "runs"), {}, { debug: true });
     try {
       const empty = (await go(service, "GET", "/api/v1/debug/prompt-dir")).body;
-      assert.deepEqual([empty.prompt_dir, empty.usable, empty.note, empty.files.length], [null, null, null, 13]);
+      assert.deepEqual([empty.prompt_dir, empty.usable, empty.note, empty.files.length], [null, null, null, 15]);
       assert.ok(empty.files.every((one: Dict) => one.state === "absent"));
 
       for (const [path, words] of [["relative/dir", /提示词目录要写绝对路径/], [join(tmp, "没有这个目录"), /这个目录不存在或者不是目录/], [settings, /这个目录不存在或者不是目录/]] as const) {
@@ -131,8 +131,8 @@ test("提示词目录的读与设：只收存在的目录的绝对路径；存�
       const set = await go(service, "POST", "/api/v1/debug/prompt-dir", { path: dir });
       assert.equal(set.status, 200);
       assert.deepEqual([set.body.prompt_dir, set.body.usable, set.body.note], [dir, true, null]);
-      assert.deepEqual(set.body.files.map((one: Dict) => one.name), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md",
-        "task-type/common.md", "task-type/reading.md", "task-type/clarifying.md", "task-type/modeling.md", "task-type/writing.md", "task-type/reviewing.md"]);
+      assert.deepEqual(set.body.files.map((one: Dict) => one.name), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md", "document.md",
+        "task-type/common.md", "task-type/reading.md", "task-type/clarifying.md", "task-type/modeling.md", "task-type/writing.md", "task-type/reviewing.md", "task-type/document.md"]);
       const states = Object.fromEntries(set.body.files.map((one: Dict) => [one.name, one.state]));
       assert.deepEqual([states["clarifying.md"], states["task-type/writing.md"], states["system.md"], states["common.md"]], ["used", "used", "refused", "absent"]);
       assert.match(set.body.files.find((one: Dict) => one.name === "system.md").reason, /^它是一个软链接，这一份照旧用原来的。$/);

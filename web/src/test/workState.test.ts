@@ -352,7 +352,7 @@ describe("只随整份数据来的几项（待核实、依据待核实、提到�
 describe("工作的阶段（stage_changed 与库事件带来的 stage）", () => {
   const lamps = (ok: boolean): StageView["lamps"] => ({
     reading: [{ key: "materials_cited", summary: ok ? "每份材料都被至少一页主题或一条问题引用了。" : "有 1 份材料还没有被任何一页主题或问题引用：inputs/材料.md。", ok, items: ok ? [] : ["inputs/材料.md"] }],
-    clarifying: [], modeling: [], writing: [], reviewing: [],
+    clarifying: [], modeling: [], writing: [], reviewing: [], document: [],
   });
   const staged = (seq: number): Snapshot => {
     const snap = snapshot(seq);

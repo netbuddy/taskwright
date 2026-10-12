@@ -41,19 +41,19 @@ const open = (dir: string) => withTaskDatabase(dir, { createIfMissing: false }, 
 });
 const payloadOf = (dir: string, seq: number) => JSON.parse(query<{ payload: string }>(dir, "SELECT payload FROM event WHERE seq = ?", seq)[0].payload);
 
-test("一张卡片是不是进入卡片：请选择里有进入某个阶段的键才是；留在这一段的键按四个固定的键认", () => {
+test("一张卡片是不是进入卡片：请选择里有进入某个阶段的键才是；留在这一段的键按五个固定的键认", () => {
   const fact = proposalOfAct(enterCard("clarifying", "reading", [{ item_id: "OA-001", revision_no: 2 }, { item_id: "OA-002" }]))!;
   assert.deepEqual(fact, {
     stage: "clarifying", enter: ENTER_OPTIONS.clarifying, stay: STAY_OPTIONS.reading, text: "这一段做完了，进入澄清吗？",
     items: [{ item_id: "OA-001", revision_no: 2 }, { item_id: "OA-002", revision_no: null }],
   });
-  // 四张卡片各进入一个阶段；没有留在这一段的选项时 stay 是 null。
-  assert.deepEqual((["clarifying", "modeling", "writing", "reviewing"] as const).map((to) => proposalOfAct({ kind: "choose", text: "", options: [ENTER_OPTIONS[to]] })),
-    (["clarifying", "modeling", "writing", "reviewing"] as const).map((to) => ({ stage: to, enter: ENTER_OPTIONS[to], stay: null, text: "", items: [] })));
+  // 五张卡片各进入一个阶段；没有留在这一段的选项时 stay 是 null。
+  assert.deepEqual((["clarifying", "modeling", "writing", "reviewing", "document"] as const).map((to) => proposalOfAct({ kind: "choose", text: "", options: [ENTER_OPTIONS[to]] })),
+    (["clarifying", "modeling", "writing", "reviewing", "document"] as const).map((to) => ({ stage: to, enter: ENTER_OPTIONS[to], stay: null, text: "", items: [] })));
   // 不是请选择、没有进入键、选项不成样子：都不是。
   for (const act of [null, { kind: "confirm", text: "请看", items: [] }, { kind: "choose", text: "选一个", options: [{ key: "a", text: "甲" }, STAY_OPTIONS.reading] },
     { kind: "choose", text: "选一个" }, { kind: "ask", text: "进入澄清吗", options: [ENTER_OPTIONS.clarifying] }]) assert.equal(proposalOfAct(act), null);
-  assert.deepEqual(Object.values(STAY_OPTIONS).map((one) => isStayKey(one.key)), [true, true, true, true]);
+  assert.deepEqual(Object.values(STAY_OPTIONS).map((one) => isStayKey(one.key)), [true, true, true, true, true]);
   assert.deepEqual(["enter_clarify", "start_items", "continue", "complete", null].map(isStayKey), [false, false, false, false, false]);
 });
 

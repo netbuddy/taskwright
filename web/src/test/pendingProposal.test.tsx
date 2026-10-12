@@ -17,7 +17,7 @@ const Wrap = ({ children }: { children: ReactNode }) => (
 );
 const PROPOSAL: StageProposal = { stage: "clarifying", enter: { key: "enter_clarify", text: "进入澄清" }, stay: { key: "continue_reading", text: "继续本阶段" },
   text: "材料核读完了，进入澄清吗？", items: [], session_id: "sess-first", reply_message_id: "reply-far", event_seq: 12, at: "2026-01-01T09:00:00" };
-const LAMPS = { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [] };
+const LAMPS = { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [], document: [] };
 const taskWith = (proposal: StageProposal | null): Task => ({ ...overallTask(), stage: { current: "reading", moved_by: null, moved_at: null, reason: null, lamps: LAMPS, proposal } });
 function chat(task: Task | null, over: Record<string, unknown> = {}) {
   const onMessage = vi.fn();

@@ -323,9 +323,9 @@ test("事件处理：早先的任务什么都不返回、什么都不报；任�
 
 // ───────────── 调试模式的提示词目录 ─────────────
 
-test("提示词目录只认十三个固定的文件名：平台一级七份，任务类型一级六份", () => {
-  assert.deepEqual(promptDirNames(), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md",
-    "task-type/common.md", "task-type/reading.md", "task-type/clarifying.md", "task-type/modeling.md", "task-type/writing.md", "task-type/reviewing.md"]);
+test("提示词目录只认十五个固定的文件名：平台一级八份，任务类型一级七份", () => {
+  assert.deepEqual(promptDirNames(), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md", "document.md",
+    "task-type/common.md", "task-type/reading.md", "task-type/clarifying.md", "task-type/modeling.md", "task-type/writing.md", "task-type/reviewing.md", "task-type/document.md"]);
 });
 
 test("提示词目录里有哪一份就用哪一份，没有的照旧；空目录的效果与没有设相同；别的文件名不读", () => {
