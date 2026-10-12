@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { DocumentPreview } from "../components/DocumentPreview";
+import { blobBase64, figurePngs } from "../components/diagram/mermaid";
 
 const fakeRender = vi.fn(async (id: string, text: string) => {
   if (text.includes("坏的")) throw new Error("Parse error on line 2");
@@ -65,3 +66,19 @@ describe("生成文档的预览", () => {
     expect(screen.getByTestId("doc-preview").querySelector("h2")).toHaveTextContent("甲");
   });
 });
+
+describe("把文档里的图转成图片交给任务服务", () => {
+  it("二进制数据写成 base64，长的也对", async () => {
+    expect(await blobBase64(new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])]))).toBe("iVBORw==");
+    const long = new Uint8Array(100_000).map((_, n) => n % 251);
+    const text = await blobBase64(new Blob([long]));
+    expect(Uint8Array.from(atob(text), (c) => c.charCodeAt(0))).toEqual(long);
+  });
+
+  it("画不出来的那一张不在结果里，不影响别的；一张都没有时是空的", async () => {
+    // 画不出 SVG 的图只是跳过，不抛错。（把 SVG 转成 PNG 要真的浏览器画布，这里测不了，在浏览器走查里看。）
+    expect(await figurePngs([{ diagram_id: "D-009", mermaid: "坏的" }, { diagram_id: "D-010", mermaid: "也是坏的" }])).toEqual([]);
+    expect(await figurePngs([])).toEqual([]);
+  });
+});
+

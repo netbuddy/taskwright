@@ -171,3 +171,30 @@ export async function exportPng(svg: string, name: string): Promise<{ scale: num
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return { scale };
 }
+
+/** 一段二进制数据写成 base64（分段拼，免得一次展开太多参数）。 */
+export async function blobBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(binary);
+}
+
+/**
+ * 把文档里的几张图各画成一张 PNG，交给任务服务嵌进 Word 文件用。figures 是图的编号与 Mermaid 文本。
+ * width、height 是它在文档里按多大排（放大之前的像素）；PNG 本身是放大过的，印出来不糊。
+ * 画不出来的那一张不在结果里（Word 里那一处会写它的 Mermaid 文本），不影响别的。
+ */
+export async function figurePngs(figures: readonly { diagram_id: string; mermaid: string }[]): Promise<{ diagram_id: string; png: string; width: number; height: number }[]> {
+  const out: { diagram_id: string; png: string; width: number; height: number }[] = [];
+  for (const one of figures) {
+    try {
+      const { blob, width, height, scale } = await svgToPng(await renderDiagram(one.mermaid));
+      out.push({ diagram_id: one.diagram_id, png: await blobBase64(blob), width: Math.round(width / scale), height: Math.round(height / scale) });
+    } catch {
+      // 这一张画不出来：跳过。
+    }
+  }
+  return out;
+}
+

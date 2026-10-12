@@ -7,7 +7,9 @@ import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 
 import type { AssistantReply, Item, RevisionLogEntry, Task, WorkSummary } from "../api/types";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
+import * as diagramTools from "../components/diagram/mermaid";
+import * as download from "../model/download";
 import { ItemsPanel } from "../components/work/ItemsPanel";
 import { ItemDetail } from "../components/work/ItemDetail";
 import { Conversation, WorkSummaryLine } from "../components/work/Conversation";
@@ -22,6 +24,7 @@ import { initialWorkState, workReducer } from "../state/workState";
 const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
 );
+vi.mock("mermaid", () => ({ default: { initialize: () => {}, render: async (id: string, text: string) => ({ svg: `<svg id="${id}" viewBox="0 0 300 120"><text>${text.split("\n")[0]}</text></svg>` }) } }));
 afterEach(() => { vi.restoreAllMocks(); });
 
 const noop = () => {};
@@ -574,6 +577,47 @@ describe("生成文档：选一个修订加条目勾选", () => {
     cleanup();
     render(<Wrap><DocumentModal task={task([UC1, UC2, TBD])} log={LOG} open revision={1} onClose={noop} /></Wrap>);
     await waitFor(() => expect(preview).toHaveBeenLastCalledWith("TASK-001", { revision_no: 1 }));
+  });
+});
+
+describe("生成文档：下载 Word", () => {
+  const DOC = "# 文档\n\n**流程步骤**（D-004 借书）\n\n```mermaid D-004\nflowchart TD\n  a --> b\n```\n\n```mermaid D-004\nflowchart TD\n  a --> b\n```\n\n```mermaid D-009\nstateDiagram-v2\n```\n";
+
+  it("把预览里用到的图各画一张 PNG（同一张只画一次）随请求交过去，按那次修订与勾选的条目下载；文件名用任务服务给的", async () => {
+    vi.spyOn(api, "previewDocument").mockResolvedValue({ text: DOC });
+    const pngs = vi.spyOn(diagramTools, "figurePngs").mockResolvedValue([{ diagram_id: "D-004", png: "AAAA", width: 300, height: 120 }]);
+    const sent = vi.spyOn(api, "downloadDocumentDocx").mockResolvedValue({ blob: new Blob(["x"]), fileName: "退款-修订4.docx" });
+    const saved = vi.spyOn(download, "saveBlob").mockImplementation(noop);
+    render(<Wrap><DocumentModal task={task([UC1, UC2, TBD])} log={LOG} open onClose={noop} /></Wrap>);
+    await screen.findByTestId("doc-figure-D-009");
+    const button = screen.getByTestId("doc-download-word");
+    expect(button).toHaveTextContent(/^下载 Word$/);
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+    expect(pngs).toHaveBeenCalledWith([{ diagram_id: "D-004", mermaid: "flowchart TD\n  a --> b" }, { diagram_id: "D-009", mermaid: "stateDiagram-v2" }]);
+    expect(sent).toHaveBeenCalledWith("TASK-001", { revision_no: 4 }, [{ diagram_id: "D-004", png: "AAAA", width: 300, height: 120 }], expect.stringMatching(/-修订4\.docx$/));
+    expect(saved.mock.calls[0][1]).toBe("退款-修订4.docx");
+    // 去掉一个条目再下载：请求里只列勾着的。
+    fireEvent.click(screen.getByTestId("doc-item-UC-002"));
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
+    expect(sent.mock.calls[1][1]).toEqual({ revision_no: 4, items: ["UC-001", "TBD-001"] });
+  });
+
+  it("任务服务拒绝时把原因写在预览上方，按钮放开", async () => {
+    vi.spyOn(api, "previewDocument").mockResolvedValue({ text: DOC });
+    vi.spyOn(diagramTools, "figurePngs").mockResolvedValue([]);
+    vi.spyOn(api, "downloadDocumentDocx").mockRejectedValue(new ApiError("bad_response", "导出 Word 要用的 docx 包没有装上，这一次没有导出。", 500));
+    const saved = vi.spyOn(download, "saveBlob").mockImplementation(noop);
+    render(<Wrap><DocumentModal task={task([UC1])} log={LOG} open onClose={noop} /></Wrap>);
+    const button = screen.getByTestId("doc-download-word");
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+    expect(await screen.findByText("导出 Word 要用的 docx 包没有装上，这一次没有导出。")).toBeInTheDocument();
+    expect(saved).not.toHaveBeenCalled();
+    await waitFor(() => expect(button).not.toBeDisabled());
   });
 });
 

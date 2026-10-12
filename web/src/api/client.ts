@@ -228,6 +228,20 @@ export const api = {
     }
     return response.blob();
   },
+  // 整份文档的 Word 文件：与预览同一份内容。images 是文档里用到的各张图在页面上转成的 PNG（后端画不了图）；
+  // 文件名由任务服务定，写在响应头里；读不到时用 fallbackName。
+  downloadDocumentDocx: async (taskId: string, pick: DocumentPick, images: DocumentImage[], fallbackName: string) => {
+    const response = await fetch(`${BASE}${task(taskId)}/documents/download`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...pick, format: "docx", whole: true, images }),
+    });
+    if (!response.ok) {
+      const said = ((await response.json().catch(() => null)) as Partial<ApiErrorBody> | null)?.error?.message;
+      throw new ApiError("bad_response", said ?? fallbackText(response.status, `下载没有成功（HTTP ${response.status}）。`), response.status);
+    }
+    return { blob: await response.blob(), fileName: dispositionFileName(response.headers.get("Content-Disposition")) ?? fallbackName };
+  },
   // 导出 Word：选中的条目各取最新的修订，生成一份 .docx。文件名由任务服务定，写在响应头里；读不到时用 fallbackName。
   // 被拒绝时（例如选中的条目都已经删除）照任务服务说的原因写。
   exportItemsDocx: async (taskId: string, items: string[], withSources: boolean, fallbackName: string) => {
@@ -307,6 +321,14 @@ function unwrapSessions(r: SessionListEntry[] | { sessions: SessionListEntry[] }
 export interface DocumentPick {
   revision_no?: number;
   items?: string[];
+}
+
+/** 随「下载 Word」交给任务服务的一张图：图的编号、PNG 文件内容的 base64、它在文档里按多大排（像素）。 */
+export interface DocumentImage {
+  diagram_id: string;
+  png: string;
+  width: number;
+  height: number;
 }
 
 /** 前端生成的临时编号（client_id）。 */
