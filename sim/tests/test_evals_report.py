@@ -69,6 +69,46 @@ class StageGroupTest(unittest.TestCase):
         self.assertIn(f"| 澄清 | {stages['澄清']['灯数']} | 没有能算的 |", text)
 
 
+class PromptVersionTest(unittest.TestCase):
+    def test_汇总取各遍里第一份取得到的提示词版本_写进汇总与列表_几遍不一样时写明(self):
+        files = lambda digest: [{"路径": "agent/prompts/stages/common.md", "来自": "代码仓", "字节数": 120, "摘要值": digest},      # noqa: E731
+                                {"路径": ".pi/skills/srs-authoring/SKILL.md", "来自": "任务目录", "字节数": 80, "摘要值": "cccc"}]
+        prompt = lambda digest: {"版本": eval_files.prompt_version(files(digest)), "文件": files(digest), "说明": ""}                # noqa: E731
+
+        def write_prompt(root: Path, name: str, found: dict | None) -> Path:
+            sim = write_run(root, name, {}, None)
+            result = json.loads((sim / evals.RUN_FILE).read_text(encoding="utf-8"))
+            (sim / evals.RUN_FILE).write_text(json.dumps({**result, **({"提示词": found} if found else {})}, ensure_ascii=False), encoding="utf-8")
+            return sim
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            nothing = {"版本": None, "文件": [], "说明": eval_files.NO_LAUNCH_NOTE}
+            # 第一遍没有跑起来，取不到；第二、三遍是同一版。
+            same = evals.summarize(root, "甲", [write_prompt(root, "sim-001", nothing), write_prompt(root, "sim-002", prompt("1111")),
+                                                write_prompt(root, "sim-003", prompt("1111"))], META)
+            same_text = evals.summary_path(root, "甲", "md").read_text(encoding="utf-8")
+            evals.write_list(root, same)
+            # 跑到一半有文件改过：两遍的版本不一样。
+            mixed = evals.summarize(root, "乙", [write_prompt(root, "sim-004", prompt("1111")), write_prompt(root, "sim-005", prompt("2222"))], META)
+            mixed_text = evals.summary_path(root, "乙", "md").read_text(encoding="utf-8")
+            # 早先跑的几遍，「评测.json」里没有这一项。
+            old = evals.summarize(root, "丙", [write_prompt(root, "sim-006", None)], META)
+            old_text = evals.summary_path(root, "丙", "md").read_text(encoding="utf-8")
+            listed = evals.listed(root)
+        version = prompt("1111")["版本"]
+        self.assertEqual((same["提示词版本"], same["提示词文件"], same["各遍提示词版本"], listed[0]["提示词版本"]), (version, files("1111"), [None, version, version], version))
+        for line in (f"- 提示词版本：{version}（每份文件见最后的「提示词」一节）", "## 提示词", f"- 版本：{version}，一共 2 份文件。",
+                     "| agent/prompts/stages/common.md | 代码仓 | 120 | 1111 |", "| .pi/skills/srs-authoring/SKILL.md | 任务目录 | 80 | cccc |"):
+            self.assertIn(line, same_text)
+        self.assertNotIn("各遍用的提示词版本不一样", same_text)
+        self.assertEqual((mixed["提示词版本"], mixed["各遍提示词版本"]), (version, [version, prompt("2222")["版本"]]))
+        self.assertIn(f"- 各遍用的提示词版本不一样（跑到一半有文件改过）：第 1 遍 {version}、第 2 遍 {prompt('2222')['版本']}。下面列的是第一份取得到的那一遍的文件。", mixed_text)
+        self.assertEqual((old["提示词版本"], old["提示词文件"]), (None, []))
+        self.assertIn("- 提示词版本：取不到（每份文件见最后的「提示词」一节）", old_text)
+        self.assertIn(f"- {eval_files.NO_LAUNCH_NOTE}", old_text)
+
+
 class ExceptionCellTest(unittest.TestCase):
     def test_例外一节没有命中而别的例子里提到了_汇总里写出是哪几页(self):
         with tempfile.TemporaryDirectory() as tmp:

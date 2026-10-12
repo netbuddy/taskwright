@@ -8,7 +8,8 @@
     python3 -m sim.evals compare <前一次的标签> <后一次的标签> [--sim-root ./sim-runs]
 
 run：演练的参数与 sim.run 相同（内部调它的 run_once，每遍各自起后端、各自出判定报告）。每遍跑完算灯（sim/lamps.py）、核对清单
-（sim/expectations.py）、列出助手问过的问题与模拟用户答不上的问题（sim/questions.py），写进该遍目录的「评测.json」。
+（sim/expectations.py）、列出助手问过的问题与模拟用户答不上的问题（sim/questions.py），并记下这一遍助手用的提示词版本与每份文件的摘要值
+（读自后端启动助手时的补记，怎样算在观测台的 taskwright_observatory/evals.py 里），写进该遍目录的「评测.json」。
 全部跑完在 sim-root 下写「评测汇总_<标签>.md」与「评测汇总_<标签>.json」，并往「evals.jsonl」追加一行。某一遍中途出错，
 记下原因接着跑下一遍；那一遍的灯都是「算不了」，不计入通过率。标签在一个 sim-root 里不能重复：对照与页面都按标签找评测。
 
@@ -104,6 +105,7 @@ def judge_one(sim: Path, expect_path: Path | None = None, label: str | None = No
         "结束": record.get("结束"),
         "用时秒": _seconds(record),
         "出错": error if error is not None else old.get("出错"),
+        "提示词": eval_files.prompt_of_run(sim),
         "灯": lamps.lamps_for_sim(sim)["灯"],
         "至少应有": expectations.check(expect, tasks[0]) if expect is not None and tasks else None,
         "助手问过的问题": asked,
@@ -156,8 +158,13 @@ def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
                                "命中遍数": hits, "核对的遍数": len(checked)})
     rates = [row["通过率"] for row in lamp_rows if row["通过率"] is not None]
     total = sum(row["核对的遍数"] for row in group_rows)
+    # 提示词版本取各遍里第一份取得到的；几遍不一样（跑到一半有人改了文件）时各遍各是什么都留着，汇总里写明。
+    prompts = [r.get("提示词") or {"版本": None, "文件": [], "说明": eval_files.NO_LAUNCH_NOTE} for r in runs]
+    prompt = next((one for one in prompts if one.get("版本")), prompts[0] if prompts else {"版本": None, "文件": [], "说明": eval_files.NO_LAUNCH_NOTE})
     summary = {
         **meta, "标签": label, "遍数": len(runs),
+        "提示词版本": prompt.get("版本"), "提示词文件": prompt.get("文件") or [], "提示词说明": prompt.get("说明") or "",
+        "各遍提示词版本": [one.get("版本") for one in prompts],
         "各遍": [{"演练": r["演练"], "目录": str(sim), "任务的键": f"{r['任务目录']}/{r['任务编号']}" if r.get("任务编号") else None,
                   "停止原因": r.get("停止原因"), "轮数": r.get("轮数"), "用时秒": r.get("用时秒"), "出错": r.get("出错")}
                  for r, sim in zip(runs, sims)],
@@ -187,6 +194,7 @@ def summary_markdown(s: dict) -> str:
     lines = [f"# 评测汇总：{s['标签']}", "",
              f"- 时间：{s.get('时间')}",
              f"- 代码提交号：{(s.get('提交号') or '没有记')[:12]}" + (f"（另有 {s['未提交的改动']} 个文件有未提交的改动）" if s.get("未提交的改动") else ""),
+             f"- 提示词版本：{s.get('提示词版本') or '取不到'}（每份文件见最后的「提示词」一节）",
              f"- 助手的模型：{s.get('模型') or '没有记'}；模拟用户的模型：{s.get('模拟用户的模型') or '没有记'}",
              f"- 材料：{'、'.join(s.get('材料') or []) or '没有'}；画像：{s.get('画像')}；清单：{s.get('清单')}",
              f"- 遍数：{n}；每遍的轮数上限：{s.get('轮数上限')}",
@@ -240,12 +248,25 @@ def summary_markdown(s: dict) -> str:
         if not one["待人答"] and not one["画像里可能已有"]:
             lines.append("- 没有。")
         lines.append("")
+    lines += ["## 提示词", "", "助手这次用的说明文件，读自后端启动助手时的补记。版本由每份文件的路径与摘要值算出，任何一份改了、多了或少了，版本都不同。", ""]
+    if s.get("提示词版本"):
+        versions = [one for one in s.get("各遍提示词版本") or [] if one]
+        lines.append(f"- 版本：{s['提示词版本']}，一共 {len(s.get('提示词文件') or [])} 份文件。")
+        if len(set(versions)) > 1:
+            lines.append("- 各遍用的提示词版本不一样（跑到一半有文件改过）：" + "、".join(f"第 {i + 1} 遍 {one or '取不到'}" for i, one in enumerate(s["各遍提示词版本"]))
+                         + "。下面列的是第一份取得到的那一遍的文件。")
+        lines += ["", "| 文件 | 在哪里 | 字节数 | 摘要值 |", "|---|---|---|---|"]
+        lines += [f"| {one['路径']} | {one.get('来自') or ''} | {one.get('字节数')} | {one.get('摘要值')} |" for one in s.get("提示词文件") or []]
+    else:
+        lines.append(f"- {s.get('提示词说明') or eval_files.NO_LAUNCH_NOTE}")
+    lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def list_line(summary: dict) -> dict:
     """evals.jsonl 里的一行：评测列表与对照要用的几样，完整内容在汇总文件里。"""
     return {"时间": summary.get("时间"), "标签": summary["标签"], "提交号": summary.get("提交号"), "未提交的改动": summary.get("未提交的改动"),
+            "提示词版本": summary.get("提示词版本"),
             "模型": summary.get("模型"), "模拟用户的模型": summary.get("模拟用户的模型"), "材料": summary.get("材料"),
             "画像": summary.get("画像"), "清单": summary.get("清单"), "遍数": summary["遍数"], "轮数上限": summary.get("轮数上限"),
             "各灯通过率": {row["键"]: row["通过率"] for row in summary["灯"]}, "灯通过率": summary["灯通过率"],

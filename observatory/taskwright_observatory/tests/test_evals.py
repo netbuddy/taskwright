@@ -45,6 +45,24 @@ def write_eval(root: Path, label: str, lamps: list[dict], groups: list[dict], ti
     return summary
 
 
+def launch_notes(sim: Path, stages: dict[str, str], skill: str = "aaaa", task_files: dict[str, str] | None = None, name: str = "service-1") -> None:
+    """照后端的写法在一遍演练目录里写一份启动补记：按阶段的说明、平台 skill 各自的文件摘要值，与任务目录知识仓库的摘要值。"""
+    events = sim / "backend" / "TASK-1" / "pi-events"
+    events.mkdir(parents=True, exist_ok=True)
+    files = lambda digests: [{"路径": path, "字节数": 10, "摘要值": digest} for path, digest in digests.items()]      # noqa: E731
+    task_files = task_files if task_files is not None else {".pi/skills/srs-authoring/SKILL.md": "cccc", ".pi/skills/srs-authoring/stages/reading.md": "dddd",
+                                                           "docs/review-rules/ears.json": "eeee"}
+    notes = [
+        {"记录": "启动", "命令行": ["pi"], "平台 skill": {"有没有": True, "代码仓里的路径": "agent/prompts/skills/taskwright-executor",
+                                                    "目录": "/somewhere/agent/prompts/skills/taskwright-executor", "文件": files({"SKILL.md": skill})},
+         "按阶段的说明": {"有没有": True, "代码仓里的路径": "agent/prompts/stages", "目录": "/somewhere/agent/prompts/stages", "文件": files(stages)}},
+        {"记录": "知识仓库摘要", "位置": [".pi/skills", "docs"],
+         "文件": [*files(task_files), {"路径": "/somewhere/agent/prompts/skills/taskwright-executor/SKILL.md", "字节数": 10, "摘要值": skill, "来自": "平台 skill"}]},
+    ]
+    (events / f"{name}.backend.jsonl").write_text("\n".join(json.dumps(note, ensure_ascii=False) for note in notes) + "\n这一行不是 JSON\n", encoding="utf-8")
+    (events / f"{name}.jsonl").write_text("", encoding="utf-8")
+
+
 EXCEPTION = "每个标签为「流程」的页至少有一条以「例外：」开头的例子。"
 UNTAGGED = "没有未归类的页。"
 GOAL = "每个标签为「决定」的页有上级「目标」页。"
@@ -157,6 +175,90 @@ class EvalReadTest(unittest.TestCase):
             data = evals.compare(root, "前", "后")
         self.assertEqual([(one["阶段"], one["前"]["比率"], one["后"]["比率"], one["差值"], one["变差"]) for one in data["灯按阶段"]], [("整理建模", 1.0, 0.5, -0.5, True)])
         self.assertIn("| 整理建模 | 100%（1 盏） | 50%（1 盏） | −50 个百分点，**变差** |", evals.compare_markdown(data))
+
+
+class PromptVersionTest(unittest.TestCase):
+    def test_一遍演练的提示词版本读自启动补记_三组文件都收_任务目录的_docs_不收_任何一份变了版本就不同(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs = [root / name for name in ("一", "二", "三", "四", "五")]
+            launch_notes(runs[0], {"common.md": "1111", "reading.md": "2222"})
+            launch_notes(runs[1], {"reading.md": "2222", "common.md": "1111"})                                      # 同样的文件，补记里先后不同
+            launch_notes(runs[2], {"common.md": "1111", "reading.md": "9999"})                                      # 一份按阶段的说明改了
+            launch_notes(runs[3], {"common.md": "1111", "reading.md": "2222"}, skill="bbbb")                        # 平台 skill 改了
+            launch_notes(runs[4], {"common.md": "1111", "reading.md": "2222"},
+                         task_files={".pi/skills/srs-authoring/SKILL.md": "cccc", "docs/review-rules/ears.json": "ffff"})   # 任务目录里少了一份；docs 下的改了
+            # 这一遍后来又启动过一次，文件已经改过：以第一次启动为准。
+            launch_notes(runs[0], {"common.md": "8888"}, name="service-2")
+            (root / "空的").mkdir()
+            found = [evals.prompt_of_run(run) for run in runs]
+            nothing = evals.prompt_of_run(root / "空的")
+        first = found[0]
+        self.assertEqual([(one["路径"], one["来自"], one["摘要值"]) for one in first["文件"]], [
+            (".pi/skills/srs-authoring/SKILL.md", "任务目录", "cccc"), (".pi/skills/srs-authoring/stages/reading.md", "任务目录", "dddd"),
+            ("agent/prompts/skills/taskwright-executor/SKILL.md", "代码仓", "aaaa"), ("agent/prompts/stages/common.md", "代码仓", "1111"),
+            ("agent/prompts/stages/reading.md", "代码仓", "2222")])
+        self.assertRegex(first["版本"], r"^[0-9a-f]{12}$")
+        self.assertEqual((first["说明"], found[1]["版本"]), ("", first["版本"]))
+        # 四种变法各得一个不同的版本；补记里的本机目录不进结果。
+        self.assertEqual(len({one["版本"] for one in found}), 4)
+        self.assertNotIn("somewhere", json.dumps(found, ensure_ascii=False))
+        self.assertEqual((nothing["版本"], nothing["文件"], nothing["说明"]), (None, [], evals.NO_LAUNCH_NOTE))
+
+    def test_对照里版本相同就说相同_不同时逐份列出改了的多出来的与没有的_取不到时照实说(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            two_evals(root)
+            file = lambda path, digest, where="代码仓": {"路径": path, "来自": where, "字节数": 10, "摘要值": digest}      # noqa: E731
+
+            def record(label: str, files: list[dict] | None) -> None:
+                path = root / f"评测汇总_{label}.json"
+                summary = json.loads(path.read_text(encoding="utf-8"))
+                summary.update({"提示词版本": evals.prompt_version(files or []), "提示词文件": files or [], "提示词说明": "" if files else evals.NO_LAUNCH_NOTE})
+                path.write_text(json.dumps(summary, ensure_ascii=False), encoding="utf-8")
+
+            before = [file("agent/prompts/stages/common.md", "1111"), file("agent/prompts/stages/reading.md", "2222"),
+                      file(".pi/skills/srs-authoring/stages/reading.md", "3333", "任务目录")]
+            record("基线", before)
+            record("改了说明", before)
+            same = evals.compare(root, "基线", "改了说明")
+            record("改了说明", [file("agent/prompts/stages/common.md", "1111"), file("agent/prompts/stages/reading.md", "7777"),
+                                file("agent/prompts/stages/drafting.md", "5555")])
+            changed = evals.compare(root, "基线", "改了说明")
+            text = evals.compare_markdown(changed)
+            record("改了说明", None)
+            unknown = evals.compare(root, "基线", "改了说明")
+        self.assertEqual((same["提示词"]["相同"], same["提示词"]["变了的文件"], same["提示词"]["说明"], same["前"]["提示词版本"] == same["后"]["提示词版本"]),
+                         (True, [], "两次用的是同一版提示词。", True))
+        prompts = changed["提示词"]
+        self.assertEqual((prompts["相同"], prompts["说明"], prompts["前"]["文件数"], prompts["后"]["文件数"]), (False, "两次用的提示词不同，有 3 份文件变了。", 3, 3))
+        self.assertEqual([(one["路径"], one["来自"], one["怎样变"], one["前"], one["后"]) for one in prompts["变了的文件"]], [
+            (".pi/skills/srs-authoring/stages/reading.md", "任务目录", "后一次没有的", "3333", None),
+            ("agent/prompts/stages/drafting.md", "代码仓", "后一次多出来的", None, "5555"),
+            ("agent/prompts/stages/reading.md", "代码仓", "改了", "2222", "7777")])
+        for line in ("## 提示词", f"- 前一次「基线」的提示词版本：{changed['前']['提示词版本']}；后一次「改了说明」的提示词版本：{changed['后']['提示词版本']}。",
+                     "- 两次用的提示词不同，有 3 份文件变了。", "| agent/prompts/stages/reading.md | 代码仓 | 改了 | 2222 | 7777 |",
+                     "| agent/prompts/stages/drafting.md | 代码仓 | 后一次多出来的 | 没有 | 5555 |"):
+            self.assertIn(line, text)
+        self.assertEqual((unknown["提示词"]["相同"], unknown["提示词"]["变了的文件"], unknown["提示词"]["说明"]),
+                         (None, [], f"后一次取不到提示词版本：{evals.NO_LAUNCH_NOTE}所以列不出变了哪几份文件。"))
+
+    def test_早先写出的汇总里没有提示词版本_照它各遍的演练目录现读_目录不在了就取不到(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            two_evals(root)                                                     # 手写的汇总里没有提示词版本，各遍目录是 sim-001 到 sim-003
+            gone = evals.read_detail(root, "基线")
+            launch_notes(root / "sim-002", {"common.md": "1111"})                # 第一遍的目录不在，第二遍的在
+            detail = evals.read_detail(root, "基线")
+            data = evals.compare(root, "基线", "改了说明")
+            unchanged = json.loads((root / "评测汇总_基线.json").read_text(encoding="utf-8"))
+        self.assertEqual((gone["提示词版本"], gone["提示词文件"], gone["提示词说明"]), (None, [], evals.NO_LAUNCH_NOTE))
+        self.assertRegex(detail["提示词版本"], r"^[0-9a-f]{12}$")
+        self.assertEqual([one["路径"] for one in detail["提示词文件"]], [".pi/skills/srs-authoring/SKILL.md", ".pi/skills/srs-authoring/stages/reading.md",
+                                                                   "agent/prompts/skills/taskwright-executor/SKILL.md", "agent/prompts/stages/common.md"])
+        # 两次评测的各遍目录相同（都是这三个），所以现读出来的是同一版；汇总文件本身没有被改写。
+        self.assertEqual((data["提示词"]["相同"], data["前"]["提示词版本"]), (True, detail["提示词版本"]))
+        self.assertNotIn("提示词版本", unchanged)
 
 
 class EvalApiTest(unittest.TestCase):
