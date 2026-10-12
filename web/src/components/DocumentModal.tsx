@@ -1,5 +1,6 @@
 // 生成文档对话框：选一个修订（缺省最新，列表来自修订日志），
 // 再勾选要写进文档的条目（那次修订时交付物里的条目，缺省全选），右边实时预览；预览与下载都是纯读取。
+// 预览是排好版的样子（DocumentPreview.tsx：标题、表格、列表照排版显示，图当场画出来）；下载的 Markdown 是文本。
 // 文档按那次修订整体导出，不再逐条目混选修订。没有评审通过或没有确认的条目照样写进去，渲染程序在文档里如实标注。
 
 import { useEffect, useMemo, useState } from "react";
@@ -7,6 +8,7 @@ import { Button, Checkbox, Empty, Modal, Select, Spin } from "antd";
 import { api, ApiError, type DocumentPick } from "../api/client";
 import type { RevisionLogEntry, Task } from "../api/types";
 import { aliveAt, hhmm } from "../model/revisions";
+import { DocumentPreview } from "./DocumentPreview";
 
 export function DocumentModal({ task, log, open, revision: initial, onClose }: {
   task: Task;
@@ -98,7 +100,7 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
             <div style={{ overflow: "auto" }}>
               {error && <div className="busy-note">{error}</div>}
               {loading && <Spin size="small" />}
-              {picked.length ? <pre className="doc-text" data-testid="doc-preview">{preview}</pre> : <Empty description="还没有选任何条目" />}
+              {picked.length ? <DocumentPreview text={preview} /> : <Empty description="还没有选任何条目" />}
             </div>
           </div>
         </>
