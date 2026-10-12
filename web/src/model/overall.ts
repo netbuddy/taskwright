@@ -15,6 +15,11 @@ import { SOURCE_ITEM, SOURCE_SUPPLEMENT, sourceKindNow, unresolvedIssuesOf, view
 
 export { OVERALL_COLLECTION };
 
+/** 总体分析这个集合在页面上的叫法：业务说明。集合名不改，只改页签与提示里显示的字。 */
+export const OVERALL_LABEL = "业务说明";
+/** 一个集合在页面上显示的名字：总体分析显示成业务说明，别的照集合名。 */
+export const collectionLabel = (name: string): string => (name === OVERALL_COLLECTION ? OVERALL_LABEL : name);
+
 /** 一页主题的各个字段的名字（任务定义里的写法）。 */
 export const TOPIC = {
   title: OVERALL_FIELDS.title, alias: OVERALL_FIELDS.aliases, what: OVERALL_FIELDS.what, examples: OVERALL_FIELDS.examples, settled: OVERALL_FIELDS.settled,
@@ -311,7 +316,7 @@ export function basisNote(task: Task, item: Item): { text: string; title: string
   if (basis.reason === "deprecated") {
     return { text: "依据的主题已废弃", title: `它依据的主题 ${name(basis.item_id)}已废弃${basis.see ? `，改看 ${name(basis.see)}` : ""}。把依据改到还在用的主题上。` };
   }
-  return { text: "依据的主题待核实", title: `它依据的主题 ${name(basis.item_id)}里有助手补的内容还没有确认；到总体分析里确认那一页，这里就消掉。` };
+  return { text: "依据的主题待核实", title: `它依据的主题 ${name(basis.item_id)}里有助手补的内容还没有确认；到业务说明里确认那一节，这里就消掉。` };
 }
 
 /** 右侧栏窄提纲里一页下面那行小字：「3 定 · 1 问」，待核实的后面加「待核实」；什么都没有时写「说清了」；已废弃的页只写「已废弃」。 */

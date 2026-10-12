@@ -15,7 +15,7 @@ import { useEffect, type ReactNode } from "react";
 import type { ConversationMessage, Material, RevisionLogEntry, Item, Task } from "../../api/types";
 import { BUSY_TEXT, summaryOf } from "../../model/items";
 import { EMPTY_GROUP, groupItems, linkPhrase } from "../../model/domainNotes";
-import { firstParagraph, isDeprecated, isOverall, isPending, sideLine, titleOf, whatOf } from "../../model/overall";
+import { collectionLabel, firstParagraph, isDeprecated, isOverall, isPending, sideLine, titleOf, whatOf } from "../../model/overall";
 import { hhmm, triggerText, UNDO_BLOCKED_TEXT, undoBlocked } from "../../model/revisions";
 import { MaterialPane, type LocateRequest } from "./MaterialPane";
 
@@ -63,7 +63,7 @@ export function SidePanel({
 }) {
   const collTabs = (task?.definition.collections ?? []).filter((c) => c.display?.side_tab);
   const tabs: [SideTab, string, number | null][] = [["material", "材料", null],
-    ...collTabs.map((c): [SideTab, string, number | null] => [`coll:${c.name}`, c.name, task!.items.filter((i) => i.collection === c.name).length]),
+    ...collTabs.map((c): [SideTab, string, number | null] => [`coll:${c.name}`, collectionLabel(c.name), task!.items.filter((i) => i.collection === c.name).length]),
     ["doc", "文档", null], ["rev", "修订", log.length || null]];
   if (review) tabs.push(["review", "评审", reviewCount || null]);
   if (debug) tabs.push(["debug", "调试", null]);

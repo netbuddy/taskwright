@@ -43,6 +43,25 @@
 .app .oa-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app .oa-n { flex: none; font-size: 0.857rem; color: var(--text3); font-variant-numeric: tabular-nums; }
 
+/* 目录：章标题一行（章号、章名），下面是它的各节；还没有内容的章灰着，当前打开着章首页的那一章反色 */
+.app .oa-toc { display: grid; gap: .35rem; }
+.app .oa-chap { display: grid; gap: .05rem; }
+.app .oa-ch { display: flex; align-items: center; gap: .45rem; padding: .28rem .45rem; border-radius: .4rem; cursor: pointer; font-family: var(--font-title); font-weight: 600; font-size: 0.97rem; letter-spacing: .03em; color: var(--ink); }
+.app .oa-ch:hover { background: var(--sel); }
+.app .oa-ch.cur { background: var(--ink); color: var(--on-ink); }
+.app .oa-ch.dim { font-weight: 400; color: var(--text3); }
+.app .oa-ch.plain { cursor: default; }
+.app .oa-ch.plain:hover { background: none; }
+.app .oa-ch .no { flex: none; width: 1rem; font-family: var(--font-body); font-weight: 400; font-size: 0.857rem; color: var(--text3); font-variant-numeric: tabular-nums; }
+.app .oa-ch.cur .no, .app .oa-ch.cur .oa-caret { color: var(--on-ink); opacity: .75; }
+.app .oa-chap > .oa-row { margin-left: 1.3rem; }
+.app .oa-row.dim .oa-name { color: var(--text3); }
+.app .oa-row.cur.dim .oa-name { color: var(--on-ink); }
+.app .oa-dot.none { background: none; }
+/* 章首页：各节的摘要，节号与标题可点 */
+.app .oa-sec-link { cursor: pointer; }
+.app .oa-sec-link:hover { color: var(--blue); }
+
 /* 状态点：说清了是绿，有助手补的待核实是琥珀，还有没定的是紫，没归类与已废弃是灰 */
 .app .oa-dot { flex: none; display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: var(--line3); }
 .app .oa-dot.settled { background: var(--ok); }

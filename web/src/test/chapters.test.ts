@@ -53,7 +53,9 @@ describe("目录：章内的先后与节号", () => {
     label("OA-008", ["决定"], ["OA-010"]);     // 挂在目标下
     label("OA-005", ["目标"], ["OA-010"]);     // 下一级目标
     expect(rows(task)[5]).toEqual([6, ["6.1 OA-010", "6.2 OA-005 +1", "6.3 OA-008 +1", "6.4 OA-011"]]);
-    // 没有标签含概念的页了：第 4 章没有术语表这一节。
+    // 第 4 章自己没有页了，但别的章里还有标签含概念的页（预约取书、读者）：术语表仍是第 4 章的一节，节号从 1 起。
+    expect(toc(task).chapters[3].glossaryNo).toBe("4.1");
+    for (const page of task.items) if (page.collection === "总体分析") page.fields["标签"] = (page.fields["标签"] as string[]).filter((one) => one !== "概念");
     expect(toc(task).chapters[3].glossaryNo).toBeNull();
   });
 

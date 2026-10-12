@@ -40,7 +40,8 @@ import { DiagramsPane } from "./DiagramsPane";
 import { OverallPane } from "./overall/OverallPane";
 import type { StageStart } from "../../model/stage";
 import { TopicPage } from "./overall/TopicPage";
-import { isOverall, outline, outlineOrder } from "../../model/overall";
+import { collectionLabel, isOverall } from "../../model/overall";
+import { toc, tocOrder } from "../../model/chapters";
 import { useToast } from "../Toasts";
 
 /** 发起评审：给要评的条目（空列表＝全部待评审的条目）与一句说明。 */
@@ -140,7 +141,7 @@ export function ItemsPanel({
   const [dirty, setDirty] = useState(false);
   const onDiagrams = !selectedItem && showDiagrams;
   const activeTab = selectedItem?.collection ?? tab;
-  // 停在「总体分析」页签：主体不是列表，是提纲加主题页（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
+  // 停在「业务说明」页签（总体分析这个集合）：主体不是列表，是目录加一节（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
   const onOverall = !onDiagrams && isOverall(activeTab);
   const noList = onDiagrams || onOverall;
   // 记住这个任务停在哪个页签（存在浏览器本地），下次打开这个任务回到这里。
@@ -189,8 +190,8 @@ export function ItemsPanel({
   // 导出 Word 用的：全部页签里勾中的条目（已经不在的编号不算）。
   const exportItems = task.items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
-  // 总体分析的页：「上一条」「下一条」照提纲从上到下的次序走；看主题页还是按条目的样子看（修订与全部来源），换一页就回到主题页。
-  const topics = useMemo(() => (onOverall ? outlineOrder(outline(task)) : []), [task, onOverall]);
+  // 业务说明的节：「上一条」「下一条」照目录从上到下的次序走；看节的版式还是按条目的样子看（修订与全部来源），换一节就回到节的版式。
+  const topics = useMemo(() => (onOverall ? tocOrder(toc(task)) : []), [task, onOverall]);
   const topicPos = selectedItem ? topics.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
   const [rawTopic, setRawTopic] = useState(false);
   useEffect(() => { setRawTopic(false); }, [selected]);
@@ -252,7 +253,7 @@ export function ItemsPanel({
         {collections.map((c) => (
           <span key={c.name} className={`itab${!onDiagrams && c.name === activeTab ? " on" : ""}`} role="tab"
             onClick={() => { setTab(c.name); setShowDiagrams(false); onSelect(null); }}>
-            {c.name}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
+            {collectionLabel(c.name)}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
             {hit && hitsIn(c.name) > 0 && <span className="sw-hitn" title={`修订 ${hit.revision} 碰到这个页签里 ${hitsIn(c.name)} 个条目`} data-testid={`hit-count-${c.name}`}>{hitsIn(c.name)}</span>}
           </span>
         ))}

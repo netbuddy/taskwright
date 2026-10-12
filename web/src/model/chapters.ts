@@ -109,7 +109,8 @@ export function toc(task: Task): Toc {
     let count = 0;
     const sections = ordered(own, order).map(({ item, depth }): TocSection =>
       ({ item, chapter: chapter.no, depth, no: isDeprecated(item) ? null : `${chapter.no}.${++count}` }));
-    const glossaryNo = chapter.no === CHAPTER_OBJECTS && own.some((page) => !isDeprecated(page) && labelsOf(page).includes(CONCEPT_LABEL)) ? `${chapter.no}.${count + 1}` : null;
+    // 术语表收的是标签含「概念」的页，不论它归在哪一章（例如同时贴了「流程」的归在第 3 章）。
+    const glossaryNo = chapter.no === CHAPTER_OBJECTS && pages.some((page) => !isDeprecated(page) && labelsOf(page).includes(CONCEPT_LABEL)) ? `${chapter.no}.${count + 1}` : null;
     return { chapter, sections, glossaryNo };
   });
   return { chapters, unsorted: pages.filter((page) => chapterOf(page) === null) };

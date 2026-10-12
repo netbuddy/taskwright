@@ -44,8 +44,9 @@ describe("页签的次序", () => {
   it("有总体分析集合时它排最前，其余照任务定义的先后，图表在最后", () => {
     expect(tabOrder(overallTask().definition.collections).map((c) => c.name)).toEqual(["总体分析", "功能用例", "问题"]);
     render(<Panel t={overallTask()} />);
-    expect(tabs()).toEqual(["总体分析", "功能用例", "问题", "图表"]);
-    expect(screen.getByText("总体分析", { selector: ".itab" }).querySelector(".cnt")!.textContent).toBe("11");
+    // 总体分析这个集合的页签显示成「业务说明」。
+    expect(tabs()).toEqual(["业务说明", "功能用例", "问题", "图表"]);
+    expect(screen.getByText("业务说明", { selector: ".itab" }).querySelector(".cnt")!.textContent).toBe("11");
   });
 
   it("早先的任务次序不变", () => {
@@ -60,7 +61,7 @@ describe("一打开停在哪个页签", () => {
     expect(initialTab(fresh(), {})).toEqual({ tab: "总体分析", diagrams: false });
     expect(initialTab(overallTask(), {})).toEqual({ tab: "功能用例", diagrams: false });
     render(<Panel t={fresh()} />);
-    expect(onTab()).toBe("总体分析");
+    expect(onTab()).toBe("业务说明");
   });
 
   it("选中的条目所在的集合最优先，其次是地址里带的集合或图表页签，再其次是记住的", () => {

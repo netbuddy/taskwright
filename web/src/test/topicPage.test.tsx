@@ -54,17 +54,18 @@ describe("主题页的顶部", () => {
     expect(screen.getByTestId("topic-counts")).toHaveTextContent("0 个条目依据它 · 被 0 处提到");
   });
 
-  it("上一条、下一条照提纲从上到下的次序；第一页没有上一条，最后一页没有下一条；回到提纲", () => {
-    render(<Panel t={overallTask()} first="OA-001" />);
+  it("上一条、下一条照目录从上到下的次序；第一节没有上一条，最后一页没有下一条；回到目录", () => {
+    // 目录的第一节是第 1 章的「闭馆日怎么算」，然后是第 2 章的两个角色，再是第 3 章。
+    render(<Panel t={overallTask()} first="OA-004" />);
     expect(screen.getByTestId("topic-prev")).toBeDisabled();
     fireEvent.click(screen.getByTestId("topic-next"));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-002借书与还书");
+    expect(text(screen.getByTestId("topic-title"))).toBe("OA-007读者");
     fireEvent.click(screen.getByTestId("topic-next"));
     fireEvent.click(screen.getByTestId("topic-next"));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-004闭馆日怎么算"); // 「预约取书」下面的页排在「逾期与罚款」之前
+    expect(text(screen.getByTestId("topic-title"))).toBe("OA-001借阅");
     fireEvent.click(screen.getByTestId("topic-prev"));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-003预约取书");
-    fireEvent.click(screen.getByTestId("outline-OA-011"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("OA-009馆员");
+    fireEvent.click(screen.getByTestId("toc-OA-011"));
     expect(screen.getByTestId("topic-next")).toBeDisabled();
     fireEvent.click(screen.getByTestId("topic-back"));
     expect(screen.queryByTestId("topic-page")).toBeNull();
@@ -322,13 +323,13 @@ describe("底部的动作与复述", () => {
   it("提纲底部也有「复述一遍」：打开着一页就讲这一页，没有打开讲整个总体分析；未选主题时右边也有一个", () => {
     const send = vi.fn();
     render(<Panel t={overallTask()} first={null} spies={{ send }} />);
-    fireEvent.click(screen.getByTestId("outline-retell"));
+    fireEvent.click(screen.getByTestId("toc-retell"));
     expect(send).toHaveBeenLastCalledWith("请把现在对总体分析里各个主题的理解讲成一段故事");
-    expect(screen.getByTestId("intro-retell")).toHaveAttribute("title", "请助手把对各个主题的理解讲成一段故事，请核对这段复述");
+    expect(screen.getByTestId("intro-retell")).toHaveAttribute("title", "请助手把对各节的理解讲成一段故事，请核对这段复述");
     fireEvent.click(screen.getByTestId("intro-retell"));
     expect(send).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByTestId("outline-OA-006"));
-    fireEvent.click(screen.getByTestId("outline-retell"));
+    fireEvent.click(screen.getByTestId("toc-OA-006"));
+    fireEvent.click(screen.getByTestId("toc-retell"));
     expect(send).toHaveBeenLastCalledWith("请把现在对「续借」及其下面主题的理解讲成一段故事");
   });
 
@@ -361,7 +362,7 @@ describe("底部的动作与复述", () => {
   it("助手工作中不能复述、不能标为已废弃；预填那一个照常可用", () => {
     render(<Panel t={overallTask()} writesOff spies={{ send: vi.fn() }} />);
     expect(screen.getByTestId("topic-retell")).toBeDisabled();
-    expect(screen.getByTestId("outline-retell")).toBeDisabled();
+    expect(screen.getByTestId("toc-retell")).toBeDisabled();
     expect(screen.getByTestId("topic-retire")).toBeDisabled();
     expect(screen.getByTestId("topic-revise")).not.toBeDisabled();
   });
@@ -406,7 +407,7 @@ describe("提到它的地方", () => {
     render(<Panel t={overallTask()} />);
     fireEvent.click(screen.getByTestId("topic-mention-1").querySelector(".from")!);
     expect(text(screen.getByTestId("topic-title"))).toBe("OA-006续借");
-    fireEvent.click(screen.getByTestId("outline-OA-003"));
+    fireEvent.click(screen.getByTestId("toc-OA-003"));
     fireEvent.click(screen.getByTestId("topic-mention-4").querySelector(".from")!);
     expect(screen.queryByTestId("overall-pane")).toBeNull();
     expect(document.querySelector(".itab.on")!.textContent).toBe("功能用例3");
@@ -425,11 +426,11 @@ describe("按条目的样子看", () => {
     fireEvent.click(screen.getByTestId("topic-raw"));
     expect(screen.queryByTestId("topic-page")).toBeNull();
     expect(screen.getByTestId("item-detail")).toBeInTheDocument();
-    expect(screen.getByTestId("outline")).toBeInTheDocument();
+    expect(screen.getByTestId("toc")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("back-to-topic"));
     expect(screen.getByTestId("topic-page")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("topic-raw"));
-    fireEvent.click(screen.getByTestId("outline-OA-002"));
+    fireEvent.click(screen.getByTestId("toc-OA-002"));
     expect(text(screen.getByTestId("topic-title"))).toBe("OA-002借书与还书");
   });
 });
