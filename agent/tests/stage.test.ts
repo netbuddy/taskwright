@@ -87,8 +87,12 @@ test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么�
   assert.deepEqual([itemRefusal("writing", "add", "功能用例"), itemRefusal("reviewing", "delete", "功能用例")], [null, null]);
 
   assert.match(diagramRefusal("reading")![0], /^任务现在在核读材料阶段，这个阶段不能画图、改图或删图$/);
-  assert.match(diagramRefusal("reading")![1], /先在回复里把任务移到澄清/);
-  assert.match(diagramRefusal("clarifying")![1], /在回复里把任务移到整理建模$/);
+  // 怎样走到整理建模：往前由用户在卡片上点，助手只能发卡片提议；指引里没有「在回复里把任务移到」这种说法。
+  assert.match(diagramRefusal("reading")![1], /往前进入下一段要由用户在卡片上点，你只能提议：材料读完之后先提议进入澄清，请用请选择卡片提议/);
+  assert.match(diagramRefusal("reading")![1], /enter_clarify「进入澄清」、continue_reading「再核读一遍」；澄清告一段落之后，再照同样的办法提议「进入整理建模」$/);
+  assert.match(diagramRefusal("clarifying")![1], /进入整理建模要由用户在卡片上选「进入整理建模」，你只能提议：澄清告一段落之后，请用请选择卡片提议/);
+  assert.match(diagramRefusal("clarifying")![1], /enter_consolidate「进入整理建模」、continue_clarify「继续澄清」$/);
+  for (const stage of ["reading", "clarifying"] as const) assert.doesNotMatch(diagramRefusal(stage)![1], /在回复里把任务移到|自己移到/);
   assert.deepEqual([diagramRefusal("modeling"), diagramRefusal("writing"), diagramRefusal("reviewing")], [null, null, null]);
 
   for (const stage of ["reading", "clarifying", "modeling"] as const) {

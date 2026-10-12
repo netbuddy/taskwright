@@ -198,14 +198,18 @@ export function pageRefusal(stage: Stage, op: string, changed: readonly string[]
   return [`${head}主题页只能改「${OVERALL_FIELDS.status}」与「${OVERALL_FIELDS.seeAlso}」，这次还改了${others.map((name) => `「${name}」`).join("、")}`, guidance];
 }
 
-/** 助手新画、修改或删除一张图：整理建模之前的阶段都拦。可以时返回 null。 */
+/**
+ * 助手新画、修改或删除一张图：整理建模之前的阶段都拦。可以时返回 null。
+ * 「怎么办」里说的是怎样走到整理建模：往前进入下一段要由用户在卡片上点，助手只能发卡片提议（forwardCardGuidance）。
+ */
 export function diagramRefusal(stage: Stage): Refusal | null {
   if (canWrite(stage, "diagram")) return null;
+  const enterModeling = ENTER_OPTIONS.modeling.text;
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`,
     stage === "reading"
-      ? "图要到整理建模阶段才能画。材料读完先在回复里把任务移到澄清，澄清告一段落之后再移到整理建模"
-      : "图要到整理建模阶段才能画。澄清告一段落之后，在回复里把任务移到整理建模",
+      ? `图要到整理建模阶段才能画。往前进入下一段要由用户在卡片上点，你只能提议：材料读完之后先提议进入澄清，${forwardCardGuidance("reading")}；澄清告一段落之后，再照同样的办法提议「${enterModeling}」`
+      : `图要到整理建模阶段才能画。进入整理建模要由用户在卡片上选「${enterModeling}」，你只能提议：澄清告一段落之后，${forwardCardGuidance("clarifying")}`,
   ];
 }
 
