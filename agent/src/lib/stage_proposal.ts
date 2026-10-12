@@ -162,6 +162,8 @@ export interface WaitingAct {
   function: string;
   summary: string;
   event_seq: number;
+  /** 这一行自己是重发时，被重发的那一张的编号；不是重发时为 null。 */
+  responds_to?: string | null;
 }
 
 /**
@@ -184,14 +186,21 @@ export const NO_OPEN_CARDS_LINE = "这一段没有还开着的提问与请选择
 
 /**
  * 给助手看的一行：这一段还有哪几张提问与请选择的卡片用户没有答（行为编号、种类、问句）。查询任务状态的返回里接在开着的提议后面：
- * 助手提议进入下一段之前据此把它们一次一张重发。
+ * 助手提议进入下一段之前据此把它们一次一张重发。已经重发过一次仍没有答的另列在后半句：不再重发，记成问题条目。
  */
 export function openCardsLine(cards: readonly WaitingAct[]): string {
   if (cards.length === 0) return NO_OPEN_CARDS_LINE;
   const name = (fn: string) => (fn === "ask" ? "提问" : "请选择");
-  return `这一段还开着的提问与请选择 ${cards.length} 张（你问过、用户搁下没有答的）：` +
-    `${cards.map((one) => `${one.act_id} ${name(one.function)}「${one.summary}」`).join("；")}。` +
-    "提议进入下一段之前，把它们一次一张重发（act 里写 resends，值是这里的编号），全部过完再发进入下一段的卡片。";
+  const list = (some: readonly WaitingAct[]) => some.map((one) => `${one.act_id} ${name(one.function)}「${one.summary}」`).join("；");
+  const first = cards.filter((one) => !one.responds_to);
+  const again = cards.filter((one) => one.responds_to);
+  return (first.length
+    ? `这一段还开着的提问与请选择 ${first.length} 张（你问过、用户搁下没有答的）：${list(first)}。` +
+      "提议进入下一段之前，把它们一次一张重发（act 里写 resends，值是这里的编号），全部过完再发进入下一段的卡片。"
+    : "") +
+    (again.length
+      ? `这一段重发过一次、用户仍没有答的 ${again.length} 张：${list(again)}。不要再重发：还没有为它记问题条目的记一条（写明是否阻断下游），然后照常提议进入下一段。`
+      : "");
 }
 
 /** 任务没有开着的提议时给助手看的那一句。 */

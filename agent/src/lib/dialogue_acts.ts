@@ -622,13 +622,15 @@ export interface OpenAct {
   source_entry: string | null;
   /** 记下这一行的那条事件的序号。 */
   event_seq: number;
+  /** 这一行自己是把先前哪一张卡片重发了一遍：那一张的编号；不是重发时为 null。 */
+  responds_to: string | null;
 }
 
 /** 这条会话里还在等回应的执行者行为：期待回应、还没有用户行为回应它，也没有被后来的卡片重发（重发的那一行 responds_to 指着它）。按先后排。 */
 export function unansweredActs(db: DatabaseSync, taskId: string, sessionId: string): OpenAct[] {
   if (!hasDialogueTable(db)) return [];
   return db.prepare(
-    "SELECT a.act_id, a.run_id, a.function, a.summary, a.targets, a.source_entry, a.event_seq FROM dialogue_act a " +
+    "SELECT a.act_id, a.run_id, a.function, a.summary, a.targets, a.source_entry, a.event_seq, a.responds_to FROM dialogue_act a " +
       "WHERE a.task_id = ? AND a.session_id = ? AND a.speaker = 'executor' AND a.expects_response = 1 " +
       "AND NOT EXISTS (SELECT 1 FROM dialogue_act u WHERE u.task_id = a.task_id AND u.session_id = a.session_id AND u.responds_to = a.act_id) " +
       "ORDER BY a.rowid",

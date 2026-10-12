@@ -268,10 +268,14 @@ test("这一段还开着的提问与请选择：只列这条会话里、进入�
     "提议进入下一段之前，把它们一次一张重发（act 里写 resends，值是这里的编号），全部过完再发进入下一段的卡片。");
   // 别的会话里看不到这条会话的卡片。
   assert.equal(line("sess-b"), NO_OPEN_CARDS_LINE);
-  // 重发了第一张：列的是新的那一张。
+  // 重发了第一张：原来那张不再列；重发的那一张另列在后半句，写明不要再重发、记成问题条目。
   reply(dir, { kind: "ask", text: "借阅期限是多少天", resends: ids[0] });
-  assert.match(line(), /^这一段还开着的提问与请选择 2 张.*请选择「逾期按哪种办法处理」；r\d+-\d+ 提问「借阅期限是多少天」。/);
+  assert.match(line(), new RegExp(`^这一段还开着的提问与请选择 1 张（你问过、用户搁下没有答的）：${ids[1]} 请选择「逾期按哪种办法处理」。提议进入下一段之前，把它们一次一张重发[^。]*。` +
+    "这一段重发过一次、用户仍没有答的 1 张：r\\d+-\\d+ 提问「借阅期限是多少天」。不要再重发：还没有为它记问题条目的记一条（写明是否阻断下游），然后照常提议进入下一段。$"));
   assert.doesNotMatch(line(), new RegExp(`${ids[0]} 提问`));
+  // 两张都重发过了：只剩后半句。
+  reply(dir, { kind: "choose", text: "逾期按哪种办法处理", options: [{ key: "a", text: "罚款" }, { key: "b", text: "停借" }], resends: ids[1] });
+  assert.match(line(), /^这一段重发过一次、用户仍没有答的 2 张：/);
   // 任务进入了澄清：前面那一段留下的不再列。
   enterStage(dir, "clarifying");
   assert.equal(line(), NO_OPEN_CARDS_LINE);
