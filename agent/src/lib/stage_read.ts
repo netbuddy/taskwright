@@ -20,6 +20,7 @@ import { overallState } from "./overall_read.ts";
 import { rulesTable } from "./overall_views.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase } from "./schema.ts";
+import { openProposal } from "./stage_proposal.ts";
 import {
   ENTER_OPTIONS, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, NO_STAGES_TEXT, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
   defaultStage, isStage, judgeMove, lampLines, lampPage, lampQuestion, moveText, nextStage, stageEnteredBy, stageLamps,
@@ -161,7 +162,9 @@ export const START_ITEMS_REASON = enterReason("writing");
 /**
  * 用户点了一张卡片上的选项：点的是助手提议往前走的那张请选择卡片上「进入」某个阶段的选项时，替用户记一次移动。
  * 四个键各进入一个阶段（lib/stage.ts 的 ENTER_OPTIONS）：进入澄清、进入整理建模、开始写条目、进入评审确认。
- * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键；认不出就不记（返回 null），点击照常往下走。
+ * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键。这条分支上找不到那条回复时（卡片是在另一条会话里发的，
+ * 用户从输入框上方的「待决定」一行或者任务状况卡上点了进入），改为核对任务库里开着的提议（lib/stage_proposal.ts）：点的键是它的进入键、
+ * 给了回复编号时又正是它那一条，才算。两样都认不出就不记（返回 null），点击照常往下走。
  * 次序不对的点击也不记（结果里 moved 为假、why 为 not_next、from 是任务现在的阶段）：进入澄清、进入整理建模、进入评审确认只在任务正处在紧挨着的前一段时才算；
  * 开始写条目在写条目之前的哪一段点都算（用户可以跳过中间的阶段），任务已经过了写条目时点它是退回写条目。
  * 任务没有阶段、任务不在进行中、任务本来就在那个阶段时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
@@ -170,15 +173,21 @@ export const START_ITEMS_REASON = enterReason("writing");
 export function recordStageCardClick(workspaceDir: string, sessionId: string, branch: readonly Entry[],
   click: { opId: string; replyEntry: unknown; optionKey: unknown }): StageMoveOutcome | null {
   const to = stageEnteredBy(click.optionKey);
-  if (to === null || typeof click.replyEntry !== "string") return null;
-  const card = branch.find((entry) => entry.id === click.replyEntry);
+  if (to === null) return null;
+  const card = typeof click.replyEntry === "string" ? branch.find((entry) => entry.id === click.replyEntry) : undefined;
+  // 那条回复在这条分支上：照它自己判，是别的东西（用户的话、别的卡片、卡片上没有这个键）就不认，不再去看开着的提议。
   const act = card ? chooseActOf(card) : null;
-  if (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === click.optionKey)) return null;
+  if (card && (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === click.optionKey))) return null;
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
         { task_id: string; status: string; definition_text: string } | undefined;
       if (!task || task.status !== TASK_ACTIVE) return null;
+      if (!card) {
+        const open = openProposal(db, task.task_id);
+        if (open === null || open.enter.key !== click.optionKey) return null;
+        if (typeof click.replyEntry === "string" && click.replyEntry !== open.reply_entry) return null;
+      }
       const from = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
       if (to !== "writing" && from !== null && nextStage(from) !== to) return { requested: to, from, moved: false, why: "not_next" as const, event_seq: null };
       return moveStage(db, workspaceDir, { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" }, to, enterReason(to));
