@@ -354,6 +354,21 @@ test("请选择不点名条目也合格；点名了只核对形状", () => {
 
 // ───────────── 请确认只允许条目当前所在的修订 ─────────────
 
+test("重发：提问与请选择可以写 resends，指向一张还开着的同一种卡片；别的种类不认，空的、不开着的、种类不同的被拒", () => {
+  const ask = (extra: object) => ({ informs: [], act: { kind: "ask", text: "借阅期限是多少天", scope: "general", ...extra }, text: "前面这个问题还没有答：借阅期限是多少天？" });
+  const facts = (fact: ReturnType<NonNullable<ReplyFacts["resendFact"]>>): ReplyFacts => ({ ...alone(), resendFact: () => fact });
+  assert.equal(checkReply(ask({ resends: "r3-2" }), facts({ open: true, kind: "ask" })).act?.resends, "r3-2");
+  const choose = { informs: [], act: { kind: "choose", text: "逾期按哪种办法处理", options: [{ key: "a", text: "罚款" }, { key: "b", text: "停借" }], resends: "r4-1" }, text: "请选一种。" };
+  assert.equal(checkReply(choose, facts({ open: true, kind: "choose" })).act?.resends, "r4-1");
+  // 不接库时只核对写了没有。
+  assert.equal(checkReply(ask({ resends: "r3-2" }), alone()).act?.resends, "r3-2");
+  rejected(ask({ resends: " " }), alone(), /act.resends 写了就应当是原来那张卡片的行为编号/);
+  rejected(ask({ resends: "r3-2" }), facts({ open: false, why: "它已经被 r5-1 回应过了，不用重发" }), /act.resends 写的是 r3-2，它已经被 r5-1 回应过了，不用重发/);
+  rejected(ask({ resends: "r3-2" }), facts({ open: true, kind: "choose" }), /act.resends 写的 r3-2 是请选择（choose），这次发的是提问（ask）；重发要与原来那张是同一种/);
+  rejected({ informs: [], act: { kind: "confirm", text: "请确认 UC-001", items: [{ item_id: "UC-001", revision_no: 2 }], resends: "r3-2" }, text: "请确认。" },
+    { ...alone(table), resendFact: () => ({ open: true, kind: "confirm" }) }, /请确认（confirm）不写 act.resends；resends 只属于提问（ask）、请选择（choose）/);
+});
+
 test("请确认的修订号不是条目当前所在的修订时拒绝，并写明它现在在哪次修订", () => {
   const facts = { ...alone(table), currentRevisionOf: () => 2 };
   rejected({ informs: [], act: { kind: "confirm", text: "请确认。", items: [{ item_id: "UC-001", revision_no: 1 }] }, text: "请确认。" }, facts,

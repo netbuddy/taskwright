@@ -52,10 +52,10 @@ export const BASIS_KINDS = EXECUTOR_SOURCE_KINDS;
 
 /** 每种要的回应除 kind、text、items 之外还允许写哪几项。items 五种都可以写。 */
 const ALLOWED_EXTRA: Record<ActKind, string[]> = {
-  ask: ["scope"],
+  ask: ["scope", "resends"],
   confirm: [],
   suggest: ["value", "basis", "scope"],
-  choose: ["options"],
+  choose: ["options", "resends"],
   propose: ["preview", "scope"],
 };
 
@@ -95,7 +95,12 @@ export interface ReplyAct {
   basis?: { kind: string; locator: string; excerpt: string }[];
   preview?: { effect: string; text: string }[];
   scope?: typeof SCOPE_GENERAL;
+  /** 这张卡片是把先前哪一张没有答的卡片重发一遍：那一张的行为编号（例如 r3-2）。只有提问与请选择可以写。 */
+  resends?: string;
 }
+
+/** 一张卡片能不能被重发：能的话是哪一种；不能的话为什么。 */
+export type ResendFact = { open: true; kind: string } | { open: false; why: string };
 
 /** 一条告知：一句话，说到某个条目时在 items 里点名它（界面画成链接）。告知不等用户回应。 */
 export interface Inform {
@@ -135,6 +140,11 @@ export interface ReplyFacts {
    * （种类、出处、摘录齐全），摘录不拿去比对，给直接调用本函数的单元测试用。
    */
   checkBasis?: (raw: unknown, errors: string[], whereOf: (index: number) => string) => ReplyAct["basis"] | null;
+  /**
+   * 查 act.resends 写的那个行为编号是不是一张还开着、可以重发的卡片（lib/dialogue_acts.ts 的 resendFact）。
+   * 不给时只核对写了没有，给直接调用本函数的单元测试用。
+   */
+  resendFact?: (actId: string) => ResendFact;
 }
 
 /** 键名里带引号、冒号或空白时，多半是模型把 JSON 写坏了（例如写成「text': 」）；拒绝理由里点明这一点。 */
@@ -286,7 +296,7 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
       errors.push(
         owner.length > 0
           ? `${name}不写 act.${key}；${key} 只属于${owner.map((x) => KIND_NAME[x]).join("、")}`
-          : `act 里多了「${key}」这一项，act 只有 kind、text、items、options、value、basis、preview 这几项`,
+          : `act 里多了「${key}」这一项，act 只有 kind、text、items、options、value、basis、preview、resends 这几项`,
       );
     }
   }
@@ -295,6 +305,19 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   if (k === "ask" && typeof raw.text === "string" && closedQuestion(raw.text)) {
     const said = raw.text.trim();
     errors.push(withGuide(`提问（ask）写的是一句是非题或者征求同意的话：「${[...said].length > 40 ? `${[...said].slice(0, 40).join("")}…` : said}」`, CLOSED_QUESTION_GUIDANCE));
+  }
+
+  // 重发：写了 resends 就要指向一张还开着的、同一种的卡片。
+  if ((k === "ask" || k === "choose") && "resends" in raw) {
+    if (isBlank(raw.resends)) {
+      errors.push("act.resends 写了就应当是原来那张卡片的行为编号（例如 r3-2）；这张卡片不是重发的就不写这一项");
+    } else if (facts.resendFact) {
+      const fact = facts.resendFact(raw.resends as string);
+      if (!fact.open) errors.push(`act.resends 写的是 ${raw.resends}，${fact.why}`);
+      else if (fact.kind !== k) {
+        errors.push(`act.resends 写的 ${raw.resends} 是${KIND_NAME[fact.kind as ActKind] ?? fact.kind}，这次发的是${name}；重发要与原来那张是同一种`);
+      }
+    }
   }
 
   // scope 只有一个取值；写了 general 就表示与条目无关，不要再点名条目。

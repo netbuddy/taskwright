@@ -24,7 +24,7 @@ import { ACTOR_EXECUTOR, ACTOR_USER, databasePath, dump, emit, load, wallClockTe
 import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
 import { FUNCTION_NAMES, GATE_INVALID_TEXT, GATE_MISSING_TEXT, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
-import { proposalFor } from "./stage_proposal.ts";
+import { proposalFor, proposalKindOf } from "./stage_proposal.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
   type ScanOutcome,
@@ -255,7 +255,9 @@ export function understandingFactErrors(db: DatabaseSync, taskId: string, sessio
       else if (row.speaker !== "executor") errors.push(`${where}.responds_to 写的是 ${act.responds_to}，那是用户的行为；只能指向你（执行者）的行为`);
       else if (row.expects_response === 1) {
         const by = answeredBy(db, taskId, sessionId, act.responds_to);
+        const resent = by ? null : resentBy(db, taskId, sessionId, act.responds_to);
         if (by) errors.push(`${where}.responds_to 写的是 ${act.responds_to}，它已经被 ${by} 回应过了；这句话不是在回应它时不写 responds_to`);
+        else if (resent) errors.push(`${where}.responds_to 写的是 ${act.responds_to}，那张卡片后来重发成了 ${resent}；用户回应的是这件事时 responds_to 写 ${resent}`);
       }
     }
     if (typeof act.summary === "string" && aboutReminder(act.summary)) {
@@ -485,7 +487,9 @@ const GATE_PROBLEMS_SHOWN = 3;
 export interface ReplyForActs {
   /** 旧的写法里一条告知是一句纯文字，新的是 { text, items }；两种都认。 */
   informs: (string | { text: string; items?: { item_id: string }[] })[];
-  act: { kind: string; text: string; items?: { item_id: string; revision_no?: number }[]; options?: { key: string; text: string }[] } | null;
+  act: { kind: string; text: string; items?: { item_id: string; revision_no?: number }[]; options?: { key: string; text: string }[];
+    /** 这张卡片重发的是先前哪一张（行为编号）；不是重发时不写。 */
+    resends?: string } | null;
 }
 
 /**
@@ -514,7 +518,9 @@ export function recordReplyActs<T = never>(
   also?: (db: DatabaseSync, taskId: string, runId: string) => ReplyExtra<T>,
 ): { acts: { act_id: string; function: string; summary: string; expects_response: boolean }[]; text: string; eventSeq: number | null; extra?: T | null;
   /** 用户这句话回答了哪几张卡片：卡片所在回复的会话条目编号（见 answeredCards）。 */
-  answersCard: string[] } | null {
+  answersCard: string[];
+  /** 这次回复的卡片重发的是哪一张：原来那张所在回复的会话条目编号；不是重发时为 null。 */
+  resendsCard: string | null } | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const run = currentRun(branch);
@@ -535,10 +541,17 @@ export function recordReplyActs<T = never>(
       }
       if (reply.act) {
         const targets = (reply.act.items ?? []).map((one) => ({ item_id: one.item_id }));
-        rows.push({ ...base, act_id: `${runId}-${serial++}`, function: reply.act.kind, targets: dump(targets), expects_response: 1, summary: clip(reply.act.text) });
+        // 重发：新的这一行回应原来那张，原来那张从此不再算等回应（unansweredActs）。
+        rows.push({ ...base, act_id: `${runId}-${serial++}`, function: reply.act.kind, targets: dump(targets), expects_response: 1, summary: clip(reply.act.text),
+          responds_to: reply.act.resends ?? null });
       }
+      const resends = reply.act?.resends ?? null;
+      const resendsCard = resends
+        ? ((db.prepare("SELECT source_entry FROM dialogue_act WHERE task_id = ? AND session_id = ? AND act_id = ?").get(taskId, sessionId, resends) as
+          { source_entry: string | null } | undefined)?.source_entry ?? null)
+        : null;
       // 没有告知也没有要的回应：不记这条事件，除非另带的那件事有话要留在事件里。
-      if (rows.length === 0 && !extra?.payload) return { acts: [], text: extra?.text ?? "", eventSeq: null, extra: extra?.value ?? null, answersCard };
+      if (rows.length === 0 && !extra?.payload) return { acts: [], text: extra?.text ?? "", eventSeq: null, extra: extra?.value ?? null, answersCard, resendsCard };
       const proposal = reply.act ? proposalFor(db, taskId, reply.act) : null;
       const seq = emit(db, {
         taskId, sessionId, callId: toolCallId, name: EVENT_EXECUTOR_ACTS_RECORDED, actor: ACTOR_EXECUTOR,
@@ -549,6 +562,7 @@ export function recordReplyActs<T = never>(
       const describe = (row: ActRow) => `${row.act_id}（${FUNCTION_NAMES[row.function] ?? row.function}：${row.summary}）`;
       const main = rows.find((row) => row.expects_response === 1);
       const text = (extra?.text ?? "") + (rows.length ? `本轮记了 ${rows.map(describe).join("、")}。` : "") +
+        (main && resends ? `${main.act_id} 是 ${resends} 的重发，${resends} 不再等回应。` : "") +
         (main ? `用户回应时，你下一轮理解里的 responds_to 写 ${main.act_id}。` : "");
       return {
         acts: rows.map((row) => ({ act_id: row.act_id, function: row.function, summary: row.summary, expects_response: row.expects_response === 1 })),
@@ -556,6 +570,7 @@ export function recordReplyActs<T = never>(
         eventSeq: seq,
         extra: extra?.value ?? null,
         answersCard,
+        resendsCard,
       };
     });
   } catch (error) {
@@ -607,15 +622,55 @@ export interface OpenAct {
   source_entry: string | null;
 }
 
-/** 这条会话里还在等回应的执行者行为：期待回应、还没有用户行为回应它。按先后排。 */
+/** 这条会话里还在等回应的执行者行为：期待回应、还没有用户行为回应它，也没有被后来的卡片重发（重发的那一行 responds_to 指着它）。按先后排。 */
 export function unansweredActs(db: DatabaseSync, taskId: string, sessionId: string): OpenAct[] {
   if (!hasDialogueTable(db)) return [];
   return db.prepare(
     "SELECT a.act_id, a.run_id, a.function, a.summary, a.targets, a.source_entry FROM dialogue_act a " +
       "WHERE a.task_id = ? AND a.session_id = ? AND a.speaker = 'executor' AND a.expects_response = 1 " +
-      "AND NOT EXISTS (SELECT 1 FROM dialogue_act u WHERE u.task_id = a.task_id AND u.session_id = a.session_id AND u.speaker = 'user' AND u.responds_to = a.act_id) " +
+      "AND NOT EXISTS (SELECT 1 FROM dialogue_act u WHERE u.task_id = a.task_id AND u.session_id = a.session_id AND u.responds_to = a.act_id) " +
       "ORDER BY a.rowid",
   ).all(taskId, sessionId) as unknown as OpenAct[];
+}
+
+/** 一条执行者行为有没有被后来的卡片重发过；重发过返回重发的那一条的编号。 */
+function resentBy(db: DatabaseSync, taskId: string, sessionId: string, actId: string): string | null {
+  const row = db.prepare("SELECT act_id FROM dialogue_act WHERE task_id = ? AND session_id = ? AND speaker = 'executor' AND responds_to = ? ORDER BY rowid LIMIT 1")
+    .get(taskId, sessionId, actId) as { act_id: string } | undefined;
+  return row?.act_id ?? null;
+}
+
+/**
+ * 「回复」核对 act.resends 时用：actId 是不是这条会话里一张还开着、可以重发的卡片。只读。
+ * 不能重发的几种：没有这个编号、不是向用户要回应的行为、已经被用户回应过、已经重发过、是提议进入或退回阶段（或请过目）的卡片。
+ */
+export function resendFact(db: DatabaseSync, taskId: string, sessionId: string, actId: string): { open: true; kind: string } | { open: false; why: string } {
+  const where = "编号写在查询任务状态「这一段还开着的提问与请选择」一行里";
+  if (!hasDialogueTable(db)) return { open: false, why: `这条会话里没有这个编号的对话行为；${where}` };
+  const row = db.prepare("SELECT speaker, function, expects_response, event_seq FROM dialogue_act WHERE task_id = ? AND session_id = ? AND act_id = ?")
+    .get(taskId, sessionId, actId) as { speaker: string; function: string; expects_response: number; event_seq: number } | undefined;
+  if (!row) return { open: false, why: `这条会话里没有这个编号的对话行为；${where}` };
+  if (row.speaker !== "executor" || row.expects_response !== 1) return { open: false, why: "那不是一张向用户要回应的卡片；不是重发就不写 resends" };
+  const answered = answeredBy(db, taskId, sessionId, actId);
+  if (answered) return { open: false, why: `它已经被 ${answered} 回应过了，不用重发；这张卡片问的是新的事就不写 resends` };
+  const resent = resentBy(db, taskId, sessionId, actId);
+  if (resent) return { open: false, why: `它已经重发过了（${resent}）；还要再问就写 resends: "${resent}"` };
+  const event = db.prepare("SELECT payload FROM event WHERE seq = ?").get(row.event_seq) as { payload: string } | undefined;
+  const proposal = event ? (load(event.payload) as { proposal?: unknown } | null)?.proposal : undefined;
+  if (proposalKindOf(proposal) !== null) {
+    return { open: false, why: "那是一张提议的卡片（进入、退回某个阶段或请过目），不重发；用户要做这件事时请他点输入框上方「待决定」一行里的按钮" };
+  }
+  return { open: true, kind: row.function };
+}
+
+/** 只读地打开任务库，给「回复」的核对函数一个查 resends 的函数；没有库时每个编号都答没有。用完调用 close。 */
+export function openResendLookup(workspaceDir: string, sessionId: string): { resendFact: (actId: string) => ReturnType<typeof resendFact>; close: () => void } {
+  const path = databasePath(workspaceDir);
+  const none = { open: false as const, why: "这个任务目录还没有任务数据库，没有可以重发的卡片" };
+  if (!existsSync(path) || statSync(path).size === 0) return { resendFact: () => none, close: () => {} };
+  const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  const taskId = taskIdOf(db);
+  return { resendFact: (actId) => (taskId ? resendFact(db, taskId, sessionId, actId) : none), close: () => db.close() };
 }
 
 export interface DialogueFacts {

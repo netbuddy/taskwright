@@ -18,6 +18,7 @@ import {
   aboutReminder,
   cardTypedNotice,
   currentRun,
+  openResendLookup,
   quotedUserText,
   readDialogueFacts,
   recordAtSettle,
@@ -32,7 +33,7 @@ import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
-import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, query, tempDir } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, overallDefinition, query, tempDir } from "./helpers.ts";
 
 const SESSION = "session-test";
 
@@ -545,6 +546,64 @@ test("回复带出用户这句话回答了哪几张卡片：取这一轮理解�
   ];
   record(dir, clicked, null, ["save_revision"]);
   assert.deepEqual(reply(clicked, "reply-msg-4").answersCard, []);
+});
+
+test("重发：新的卡片回应原来那张，原来那张不再等回应；能不能重发按库里的事实答；理解回应被重发的那张时指到新的一张", () => {
+  const dir = workspaceWithItems();
+  const branch = [userEntry("整理一下", "u-1")];
+  record(dir, branch, fenced([{ function: "request", confidence: "high", summary: "整理" }]));
+  const asked = recordReplyActs(dir, SESSION, branch, { informs: ["存好了。"], act: { kind: "ask", text: "借阅期限是多少天" } }, "reply-ask", "call-1")!;
+  const askId = asked.acts.find((one) => one.expects_response)!.act_id;
+  assert.equal(asked.resendsCard, null);
+  const fact = (id: string) => {
+    const lookup = openResendLookup(dir, SESSION);
+    try { return lookup.resendFact(id); } finally { lookup.close(); }
+  };
+  assert.deepEqual(fact(askId), { open: true, kind: "ask" });
+  assert.match((fact("r9-9") as { why: string }).why, /这条会话里没有这个编号的对话行为/);
+  assert.match((fact("r1-1") as { why: string }).why, /那不是一张向用户要回应的卡片/);
+  assert.match((fact("r1-2") as { why: string }).why, /那不是一张向用户要回应的卡片/);
+  assert.match((openResendLookup(makeWorkspace(), SESSION).resendFact(askId) as { why: string }).why, /还没有任务数据库/);
+
+  // 用户说了别的事，助手后来把那一问重发了一遍。
+  const run2: Entry[] = [...branch, assistantEntry("reply-ask"), userEntry("先看看别的", "u-2")];
+  record(dir, run2, fenced([{ function: "request", confidence: "high", summary: "先看别的" }]));
+  const resent = recordReplyActs(dir, SESSION, run2, { informs: [], act: { kind: "ask", text: "借阅期限是多少天", resends: askId } }, "reply-again", "call-2")!;
+  const newId = resent.acts[0].act_id;
+  assert.equal(resent.resendsCard, "reply-ask");
+  assert.match(resent.text, new RegExp(`${newId} 是 ${askId} 的重发，${askId} 不再等回应。用户回应时，你下一轮理解里的 responds_to 写 ${newId}。$`));
+  assert.equal(acts(dir).find((r) => r.act_id === newId).responds_to, askId);
+  assert.equal(JSON.parse(events(dir, "EXECUTOR_ACTS_RECORDED").at(-1).payload).acts[0].responds_to, askId);
+  // 还在等回应的只剩重发的那一张；原来那张不能再重发，要重发就指新的一张。
+  assert.deepEqual(readDialogueFacts(dir, SESSION)!.unanswered.map((one) => one.act_id), [newId]);
+  assert.match((fact(askId) as { why: string }).why, new RegExp(`它已经重发过了（${newId}）；还要再问就写 resends: "${newId}"`));
+  assert.deepEqual(fact(newId), { open: true, kind: "ask" });
+  // 用户回答：理解指着原来那张时被拒并指到新的一张；指着新的一张合格，之后两张都不再等回应，也都不能重发。
+  const run3: Entry[] = [...run2, assistantEntry("reply-again"), userEntry("三十天", "u-3")];
+  const answer = { function: "inform", confidence: "high", summary: "借阅期限三十天" };
+  assert.deepEqual(recordedNames(record(dir, run3, fenced([{ ...answer, responds_to: askId }]))), []);
+  assert.match(payloads(dir, "USER_INTENT_INVALID").at(-1).reason, new RegExp(`那张卡片后来重发成了 ${newId}；用户回应的是这件事时 responds_to 写 ${newId}`));
+  assert.deepEqual(recordedNames(record(dir, run3, fenced([{ ...answer, responds_to: newId }]))), ["user_intent"]);
+  assert.deepEqual(readDialogueFacts(dir, SESSION)!.unanswered, []);
+  assert.match((fact(newId) as { why: string }).why, /它已经被 r3-1 回应过了，不用重发/);
+  assert.deepEqual(recordReplyActs(dir, SESSION, run3, { informs: ["记下了。"], act: null }, "reply-done", "call-3")!.answersCard, ["reply-again"]);
+});
+
+test("提议进入下一个阶段的卡片不能重发", () => {
+  const dir = makeWorkspace(overallDefinition());
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  const branch = [userEntry("读完了吗", "u-1")];
+  record(dir, branch, fenced([{ function: "question", confidence: "high", summary: "问读完没有" }]));
+  const out = recordReplyActs(dir, SESSION, branch, { informs: [], act: { kind: "choose", text: "材料读完了，进入澄清吗",
+    options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "continue_reading", text: "继续本阶段" }] } }, "reply-p", "call-p")!;
+  const lookup = openResendLookup(dir, SESSION);
+  try {
+    const fact = lookup.resendFact(out.acts[0].act_id);
+    assert.equal(fact.open, false);
+    assert.match((fact as { why: string }).why, /那是一张提议的卡片.*不重发.*「待决定」一行里的按钮/);
+  } finally {
+    lookup.close();
+  }
 });
 
 // ───────────── 保存修订 ─────────────
