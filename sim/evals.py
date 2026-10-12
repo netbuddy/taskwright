@@ -130,7 +130,8 @@ def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
         for first in checked[0]["至少应有"]:
             each = [None if one is None else one.get((first["部分"], tuple(first["组"]))) for one in keyed]
             hits = sum(1 for x in each if x and x["命中"])
-            group_rows.append({"部分": first["部分"], "组": first["组"], "各遍": [None if x is None else bool(x["命中"]) for x in each],
+            group_rows.append({"部分": first["部分"], **({"部分名": first["部分名"]} if first.get("部分名") else {}), "组": first["组"],
+                               "各遍": [None if x is None else bool(x["命中"]) for x in each],
                                "各遍命中的条目": [[] if x is None else x["命中的条目编号"] for x in each],
                                "各遍" + expectations.ELSEWHERE: [[] if x is None else x.get(expectations.ELSEWHERE) or [] for x in each],
                                "命中遍数": hits, "核对的遍数": len(checked)})
@@ -192,7 +193,7 @@ def summary_markdown(s: dict) -> str:
                             f" {'命中' if hit else '没有'}{('（' + '、'.join(ids) + '）') if ids else ''}"
                             f"{('（' + '、'.join(others) + ' 的例子里提到了，但不以「例外：」开头）') if others and not hit else ''} |"
                             for hit, ids, others in zip(row["各遍"], row["各遍命中的条目"], row.get("各遍" + expectations.ELSEWHERE) or [[]] * len(row["各遍"])))
-            lines.append(f"| {row['部分']} | {expectations.group_label(row['组'])} |{cells} {row['命中遍数']}／{row['核对的遍数']} |")
+            lines.append(f"| {expectations.section_label(row)} | {expectations.group_label(row['组'])} |{cells} {row['命中遍数']}／{row['核对的遍数']} |")
     else:
         lines.append("这次评测没有核对清单（没有给清单，或者每一遍都没有跑完）。")
     lines += ["", "## 助手问过的问题", ""]

@@ -90,15 +90,21 @@ def compare(root: Path | None, first: str, second: str) -> dict:
         other = groups_b.pop(key(row), None)
         one, two = _side(row["命中遍数"], row["核对的遍数"]), (_side(other["命中遍数"], other["核对的遍数"]) if other else None)
         delta, worse = _delta(one, two)
-        group_rows.append({"部分": row["部分"], "组": row["组"], "前": one, "后": two, "差值": delta, "变差": worse})
+        group_rows.append({"部分": row["部分"], **_shown(other or row), "组": row["组"], "前": one, "后": two, "差值": delta, "变差": worse})
     for row in groups_b.values():
-        group_rows.append({"部分": row["部分"], "组": row["组"], "前": None, "后": _side(row["命中遍数"], row["核对的遍数"]), "差值": None, "变差": False})
+        group_rows.append({"部分": row["部分"], **_shown(row), "组": row["组"], "前": None, "后": _side(row["命中遍数"], row["核对的遍数"]),
+                           "差值": None, "变差": False})
     notes = []
     for name in ("材料", "画像", "清单"):
         if a.get(name) != b.get(name):
             notes.append(f"两次评测的{name}不同（前一次是 {_show(a.get(name))}，后一次是 {_show(b.get(name))}），数字不能直接比。")
     return {"前": head(a), "后": head(b), "提醒": notes, "灯": lamp_rows, "至少应有": group_rows,
             "变差的灯": sum(1 for row in lamp_rows if row["变差"]), "变差的组": sum(1 for row in group_rows if row["变差"])}
+
+
+def _shown(row: dict) -> dict:
+    """清单里一行给人看的「部分」（「模型」一节有：「部分」写图的种类的键，「部分名」写种类的名字）；没有时什么都不带。"""
+    return {"部分名": row["部分名"]} if row.get("部分名") else {}
 
 
 def _show(value) -> str:
@@ -130,5 +136,5 @@ def compare_markdown(data: dict) -> str:
     lines += ["", "## 灯", "", "每格是「通过的遍数／能算的遍数」。", "", f"| 阶段 | 灯 | {a['标签']} | {b['标签']} | 差值 |", "|---|---|---|---|---|"]
     lines += [f"| {row['阶段']} | {row['说明']} | {_cell(row['前'])} | {_cell(row['后'])} | {_delta_cell(row)} |" for row in data["灯"]]
     lines += ["", "## 至少应有", "", "每格是「命中的遍数／核对的遍数」。", "", f"| 部分 | 关键词组 | {a['标签']} | {b['标签']} | 差值 |", "|---|---|---|---|---|"]
-    lines += [f"| {row['部分']} | {'／'.join(row['组'])} | {_cell(row['前'])} | {_cell(row['后'])} | {_delta_cell(row)} |" for row in data["至少应有"]]
+    lines += [f"| {row.get('部分名') or row['部分']} | {'／'.join(row['组'])} | {_cell(row['前'])} | {_cell(row['后'])} | {_delta_cell(row)} |" for row in data["至少应有"]]
     return "\n".join(lines) + "\n"

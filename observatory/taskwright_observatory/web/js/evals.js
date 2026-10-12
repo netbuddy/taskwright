@@ -13,6 +13,8 @@ const percent = (rate) => (rate == null ? "没有能算的" : `${Math.round(rate
 const shortCommit = (id) => (id ? id.slice(0, 12) : "没有记");
 const when = (text) => (text || "").replace("T", " ");
 const groupLabel = (words) => words.join("／");
+/** 清单里一行给人看的「部分」：「模型」一节的「部分」写的是图的种类的键，给人看的名字在「部分名」里。 */
+const sectionLabel = (row) => row["部分名"] || row["部分"];
 
 /** 一遍里一盏灯的结果用哪种样式：通过是绿的，未通过是红的，不适用与算不了是灰的。 */
 const STATE_CLASS = { "通过": "good", "未通过": "bad" };
@@ -143,7 +145,7 @@ function groupTable(s) {
   if (!s["至少应有"].length) return `<p class="muted">这次评测没有核对清单：没有给清单，或者每一遍都没有跑完。</p>`;
   return `<table class="tbl"><colgroup><col style="width:11em"><col style="width:auto">${passCols(s)}<col style="width:6em"></colgroup>` +
     `<thead><tr><th>部分</th><th>关键词组</th>${passHeads(s)}<th>命中几遍</th></tr></thead><tbody>` +
-    s["至少应有"].map((row) => `<tr><td>${esc(row["部分"])}</td><td>${esc(groupLabel(row["组"]))}</td>` +
+    s["至少应有"].map((row) => `<tr><td>${esc(sectionLabel(row))}</td><td>${esc(groupLabel(row["组"]))}</td>` +
       row["各遍"].map((hit, n) => {
         if (hit == null) return passCell(s["各遍"][n], "没有核对", "", "");
         const ids = row["各遍命中的条目"][n] || [];
@@ -246,7 +248,7 @@ export async function renderEvalCompare(first, second) {
     (data["至少应有"].length
       ? `<table class="tbl"><colgroup><col style="width:11em"><col style="width:auto">${cols}</colgroup>` +
         `<thead><tr><th>部分</th><th>关键词组</th><th>${esc(a["标签"])}</th><th>${esc(b["标签"])}</th><th>差值</th></tr></thead><tbody>` +
-        data["至少应有"].map((row) => `<tr><td>${esc(row["部分"])}</td><td>${esc(groupLabel(row["组"]))}</td>` +
+        data["至少应有"].map((row) => `<tr><td>${esc(sectionLabel(row))}</td><td>${esc(groupLabel(row["组"]))}</td>` +
           `${side(row["前"])}${side(row["后"])}${delta(row)}</tr>`).join("") + `</tbody></table>`
       : `<p class="muted">两次评测都没有核对清单。</p>`) + `</section>`;
 }

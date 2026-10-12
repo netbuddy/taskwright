@@ -10,6 +10,10 @@
   找到的页里有贴了「流程」标签的就只看这些），再在这些页里以「例外：」开头的例子里找每一组，别的例子里写到了不算命中。
   结果里另带「只在别的例子里提到的页」：关键词只出现在不以「例外：」开头的例子里的页，给人看差的是写法还是内容，不计入命中。
   （早先按全部例子找、是不是以「例外：」开头只显示；改成现在这样之前算出的命中数与之后的不能直接比。）
+- 「模型」：下面按图的种类分小节，小节名是产品里图的种类的键（use_case、class、state、sequence、flowchart，产品以后加的种类照它的键写）。
+  每组在任务里没有删掉的、这一种的全部图现在的 Mermaid 文本里找，图名与说明不看。结果里「部分」写种类的键（两次评测对照时按它对），
+  另带「部分名」（种类给人看的名字，观测台认得的写中文名，认不出的照键写）与「这一种的图」（这一种一共有哪几张）。
+  一个小节是空的列表时不出任何一行。
 - 「问题」：对着问题条目的「事项」找。
 - 「功能用例」：对着用例名称找。
 - 「非功能需求」「约束」：对着类别与需求语句找。
@@ -20,11 +24,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from taskwright_observatory import taskdb
+
 from sim.judge import groups_hit
 from sim.lamps import EXCEPTION_PREFIX, F_ALIASES, F_EXAMPLES, F_STATUS, F_TAGS, F_TITLE, DEPRECATED, OVERALL, _fields, _texts
 
 SECTION_OVERALL = "总体分析"
 SECTION_EXCEPTIONS = "例外"
+SECTION_MODELS = "模型"
 FLOW_SUBSECTION = "流程页"
 FLOW_TAG = "流程"
 #: 「例外」一节每一行另带的一项：关键词只出现在不以「例外：」开头的例子里的页。
@@ -83,6 +90,14 @@ def check(expect: dict, task: dict) -> list[dict]:
                         elif any(_hit(group, one) is not None for one in examples):
                             elsewhere.append(p["条目编号"])
                     rows.append(_row(f"{section}·{flow}", group, found, **{ELSEWHERE: elsewhere}, 流程的页=[p["条目编号"] for p in mine]))
+        elif section == SECTION_MODELS:
+            drawn = [(d["图的编号"], d["修订内容"][-1]) for d in task.get("图") or [] if d.get("在第几次修订删除") is None and d.get("修订内容")]
+            for kind, groups in body.items():
+                mine = [(diagram_id, now) for diagram_id, now in drawn if now.get("种类") == kind]
+                shown = f"{section}·{taskdb.DIAGRAM_KIND_NAMES.get(kind, kind)}"
+                for group in groups:
+                    found = [(diagram_id, word) for diagram_id, now in mine if (word := _hit(group, now.get("Mermaid 文本") or "")) is not None]
+                    rows.append(_row(f"{section}·{kind}", group, found, 部分名=shown, 这一种的图=[diagram_id for diagram_id, _now in mine]))
         else:
             for group in body:
                 found = []
@@ -97,6 +112,11 @@ def check(expect: dict, task: dict) -> list[dict]:
                         found.append((item["条目编号"], word))
                 rows.append(_row(section, group, found))
     return rows
+
+
+def section_label(row: dict) -> str:
+    """一行给人看的「部分」：有「部分名」的（「模型」一节）写它，没有的写「部分」。"""
+    return row.get("部分名") or row["部分"]
 
 
 def group_label(group: list[str]) -> str:
