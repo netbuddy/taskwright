@@ -1,4 +1,4 @@
-"""评测的灯：工作的五个阶段各自「算够」的判据，由程序从任务库算出来，一共十六盏。
+"""评测的灯：工作的六个阶段各自「算够」的判据，由程序从任务库算出来，一共二十一盏。
 
 灯只说明这一段还差什么，不拦任何操作。这里按演练结束时库副本里的数据算；「阶段」只是分组名。产品记下阶段之后，
 调用方可以用 compute 的 stage 参数只算某一个阶段的灯。
@@ -11,7 +11,8 @@
 不适用与算不了都不计入通过率。
 
 口径与产品相同的几样不在这里另写：待核实经命令行入口 agent/src/cli/overall_state.mts 取（agent 的 overallState）；
-与图、规则冲突有关的七盏灯（PRODUCT_LAMPS）要扫图的 Mermaid 文本、要算规则表，整盏的结果也经这个入口从产品取（agent 的 stageLamps），
+与图、规则冲突有关的七盏灯要扫图的 Mermaid 文本、要算规则表，看问题是否阻断下游、待定标记、各章导语与术语的五盏照产品的判法，
+这十二盏（PRODUCT_LAMPS）整盏的结果也经这个入口从产品取（agent 的 stageLamps），
 这里只把它的三种结果换成这里的说法；完成条件经观测台的 taskpage.check_completion 取（agent 的核对函数）。用户看没看过一页，照 agent/src/lib/overall_read.ts 的判法：
 这一页当前所在的修订上，依据不是「界面修改」的确认标记里最近一条的态度是接受。
 
@@ -36,14 +37,16 @@ OVERALL = "总体分析"
 QUESTIONS = "问题"
 F_TITLE, F_ALIASES, F_EXAMPLES, F_TAGS, F_PARENT, F_STATUS = "标题", "别名", "例子", "标签", "上级主题", "状态"
 DEPRECATED = "已废弃"
+#: 写了这一项的页是那一章的导语页（编写文档阶段助手补写的）：不贴标签，不算未归类。
+F_INTRO = "导语所属章"
 #: 「例子」里一项以它开头的是例外（评测的「至少应有」清单核对例外时用）。
 EXCEPTION_PREFIX = "例外："
 #: 确认标记的依据里表示「用户亲手改」的那个词。
 BASIS_EDIT = "界面修改"
 
-STAGES = ("核读材料", "澄清", "整理建模", "写条目", "评审确认")
+STAGES = ("核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档")
 
-#: 十六盏灯：阶段、键、说明。键与产品里按阶段算的灯用同一套名字。
+#: 二十一盏灯：阶段、键、说明。键与产品里按阶段算的灯用同一套名字。
 LAMPS = (
     ("核读材料", "materials_cited", "每份材料都被至少一页主题或一条问题引用。"),
     ("澄清", "tagged_pages_no_open_questions", "贴了标签的页没有挂着未解决的待澄清问题。"),
@@ -59,19 +62,25 @@ LAMPS = (
     ("写条目", "basis_pages_viewed", "每条条目依据的页都是用户看过的。"),
     ("写条目", "basis_diagrams_viewed", "每条条目依据的图都是用户看过的。"),
     ("写条目", "no_pending_items", "没有待核实的条目。"),
+    ("写条目", "no_blocking_questions", "没有未了结的阻断下游的问题。"),
+    ("写条目", "no_pending_marks", "图、页与条目里没有标为待定的地方。"),
     ("评审确认", "reviews_no_open_findings", "评审没有未处理的发现。"),
     ("评审确认", "completion_met", "完成条件全部满足。"),
+    ("编写文档", "chapters_have_intro", "业务说明里有内容的章都有导语。"),
+    ("编写文档", "glossary_complete", "每个标签为「概念」的页都写了说明，而且不待核实。"),
+    ("编写文档", "document_no_blocking_questions", "没有未了结的阻断下游的问题。"),
 )
 
 PASSED, FAILED, NOT_APPLICABLE, UNKNOWN = "通过", "未通过", "不适用", "算不了"
 
-#: 整盏的结果从产品取的七盏灯（命令行入口输出里的 lamps）。
+#: 整盏的结果从产品取的十二盏灯（命令行入口输出里的 lamps）：看图与规则表的七盏，看问题、待定标记、导语与术语的五盏。
 PRODUCT_LAMPS = ("roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
-                 "rules_no_conflict", "flows_backed_by_use_cases", "basis_diagrams_viewed")
+                 "rules_no_conflict", "flows_backed_by_use_cases", "basis_diagrams_viewed",
+                 "no_blocking_questions", "no_pending_marks", "chapters_have_intro", "glossary_complete", "document_no_blocking_questions")
 
 
 def overall_facts(db_path: Path, task_id: str) -> tuple[dict | None, str]:
-    """经命令行入口取待核实、提到、各页的情况与产品算出的七盏灯。返回（结果, 取不到时的原因）。"""
+    """经命令行入口取待核实、提到、各页的情况与产品算出的十二盏灯。返回（结果, 取不到时的原因）。"""
     node = shutil.which("node")
     if not node:
         return None, "本机找不到 node，调不动 agent 里的计算函数。"
@@ -120,6 +129,12 @@ def viewed_items(task: dict) -> set[str]:
     return {item_id for item_id, attitude in last.items() if attitude == "接受"}
 
 
+def is_intro(page: dict) -> bool:
+    """这一页是不是某一章的导语页：「导语所属章」写了字。"""
+    value = _fields(page).get(F_INTRO)
+    return isinstance(value, str) and value.strip() != ""
+
+
 def _lamp(stage: str, key: str, text: str, state: str, missing: list[str] | None = None, note: str = "", **extra) -> dict:
     return {"阶段": stage, "键": key, "说明": text, "结果": state, "通过": {PASSED: True, FAILED: False}.get(state),
             "差的条目编号": list(missing or []), "备注": note, **extra}
@@ -127,7 +142,7 @@ def _lamp(stage: str, key: str, text: str, state: str, missing: list[str] | None
 
 def compute(task: dict, facts: dict | None, materials: list[str], completion: list[dict] | None,
             stage: str | None = None, facts_problem: str = "", completion_problem: str = "") -> list[dict]:
-    """算十六盏灯。task 是 taskdb.read_workspace 读出的一个任务；facts 是 overall_facts 的结果（取不到时为 None）；
+    """算二十一盏灯。task 是 taskdb.read_workspace 读出的一个任务；facts 是 overall_facts 的结果（取不到时为 None）；
     materials 是材料的文件名；completion 是完成条件逐项核对的结果（取不到时为 None）。stage 给了就只算那个阶段的。"""
     items = [i for i in task.get("条目") or [] if i.get("在第几次修订删除") is None and i.get("当前内容")]
     collections = [c.get("名称") for c in (task.get("任务定义") or {}).get("集合") or []]
@@ -198,7 +213,8 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
         if key == "no_untagged_pages":
             if not live:
                 return NOT_APPLICABLE, [], "总体分析里还没有在用的页。", {}
-            missing = [p["条目编号"] for p in live if not tags[p["条目编号"]]]
+            # 导语页不贴标签，不算未归类（与产品的判法相同）。
+            missing = [p["条目编号"] for p in live if not tags[p["条目编号"]] and not is_intro(p)]
             return (FAILED if missing else PASSED), missing, "", {}
         if key == "basis_pages_viewed":
             citing = {i["条目编号"]: [str(s.get("出处") or "").strip() for s in _sources(i)

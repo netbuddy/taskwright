@@ -141,7 +141,10 @@ class StageRunTest(unittest.TestCase):
             "roles_in_context_and_use_cases": "不适用", "concepts_related_in_class": "不适用", "flows_have_flowchart_with_branch": "未通过",
             "stateful_concepts_have_state": "不适用", "no_duplicate_titles": "通过", "no_untagged_pages": "通过", "rules_no_conflict": "不适用",
             "flows_backed_by_use_cases": "通过", "basis_pages_viewed": "通过", "basis_diagrams_viewed": "不适用", "no_pending_items": "通过",
-            "reviews_no_open_findings": "通过", "completion_met": "通过"})
+            "no_blocking_questions": "不适用", "no_pending_marks": "通过",
+            "reviews_no_open_findings": "通过", "completion_met": "通过",
+            # 编写文档的三盏：这份演示脚本没有走到那一段，没有立导语页，也没有问题条目与概念页。
+            "chapters_have_intro": "未通过", "glossary_complete": "不适用", "document_no_blocking_questions": "不适用"})
         hits = [(x["部分"], x["组"][0]) for x in result["至少应有"] if x["命中"]]
         self.assertEqual(hits, [("总体分析·流程页", "借书"), ("例外·借书", "有逾期"), ("功能用例", "借书")])
         # 助手问过的问题按轮对上：第 1 轮提议开始写条目，第 2 轮提议进入评审确认，第 3 轮请确认用例，第 4 轮问是否完成。

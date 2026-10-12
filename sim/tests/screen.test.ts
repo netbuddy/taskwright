@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CONTINUE_STAGE, STAY_TEXT, buttonLabels, buttonsOf, isStageCard, isStayOption, optionKeyOf, pendingCount, planRespond, renderItems, renderMessages, renderReply,
+  CONTINUE_STAGE, DOCUMENT_REVISE_TEXT, STAY_HERE_TEXT, STAY_TEXT, buttonLabels, buttonsOf, isReviewedOption, isStageCard, isStayOption, optionKeyOf, pendingCount, planRespond, proposalKind, renderItems, renderMessages, renderReply,
   viewOnLook, viewedNow,
 } from "../lib/screen.ts";
 
@@ -233,4 +233,41 @@ test("提议进入下一个阶段的卡片上留在这一段的那一项：显�
     act: { kind: "choose" as const, text: "要不要接着读？", options: [{ key: "continue_reading", text: "接着读" }, { key: "stop", text: "先停" }] } };
   assert.deepEqual([isStageCard(other.act), buttonLabels(other.act)], [false, ["接着读", "先停"]]);
   assert.equal((planRespond({ click: "接着读" }, other, "c4") as any).body.text, "我选：接着读");
+});
+
+test("提议退回前面阶段的卡片：「留在本段」不管助手写成什么都显示这四个字，点了发界面操作 continue_stage；退回的那一项照旧发话", () => {
+  const card = { kind: "choose" as const, text: "你放进了一份新材料，前面几页要重来。退回澄清吗？", items: [],
+    options: [{ key: "back_to_clarify", text: "退回澄清" }, { key: "stay_in_stage", text: "先不退" }] };
+  const reply = { type: "assistant_reply", message_id: "b1", text: "退回澄清吗？", act: card };
+  assert.deepEqual([proposalKind(card), isStageCard(card), isStayOption(card, "stay_in_stage"), isStayOption(card, "back_to_clarify")], ["back", false, true, false]);
+  assert.deepEqual(buttonLabels(card), ["退回澄清", "留在本段"]);
+  assert.match(renderReply(reply as any), /\n选项 stay_in_stage：留在本段\n/);
+  const stay = { kind: "action", body: { client_id: "c1", kind: "continue_stage", targets: [], notify_executor: false, fields: { reply_message_id: "b1", option_key: "stay_in_stage" } } };
+  assert.deepEqual([planRespond({ click: "留在本段" }, reply, "c1"), planRespond({ click: "先不退" }, reply, "c1"), planRespond({ click: "stay_in_stage" }, reply, "c1")], [stay, stay, stay]);
+  assert.deepEqual(planRespond({ click: "退回澄清" }, reply, "c2"), { kind: "message", body: { text: "我选：退回澄清", client_id: "c2", origin: "card_choice",
+    card: { reply_message_id: "b1", kind: "choose", choice: "back_to_clarify" } } });
+  assert.equal(STAY_HERE_TEXT, "留在本段");
+});
+
+test("编写文档阶段请过目的卡片：「看过了，生成文档」不发话，先发 continue_stage、再把卡片点名的页标为已读；「需要修改」只发 continue_stage", () => {
+  const card = { kind: "choose" as const, text: "补写了两章的导语，请过目。", items: [{ item_id: "OA-020", revision_no: 1 }, { item_id: "OA-021", revision_no: 2 }],
+    options: [{ key: "document_reviewed", text: "看过了，生成文档" }, { key: "document_revise", text: "要改" }] };
+  const reply = { type: "assistant_reply", message_id: "d1", text: "请过目。", act: card };
+  assert.deepEqual([proposalKind(card), isReviewedOption(card, "document_reviewed"), isStayOption(card, "document_revise"), isStayOption(card, "document_reviewed")],
+    ["review", true, true, false]);
+  assert.deepEqual(buttonLabels(card), ["看过了，生成文档", "需要修改"]);
+  assert.deepEqual(planRespond({ click: "看过了，生成文档" }, reply, "c1"), {
+    kind: "action",
+    body: { client_id: "c1", kind: "continue_stage", targets: [], notify_executor: false, fields: { reply_message_id: "d1", option_key: "document_reviewed" } },
+    then: { client_id: "c1-viewed", kind: "mark_viewed", notify_executor: false, targets: [{ item_id: "OA-020", base_revision: 1 }, { item_id: "OA-021", base_revision: 2 }] },
+  });
+  assert.deepEqual(planRespond({ click: "需要修改" }, reply, "c2"),
+    { kind: "action", body: { client_id: "c2", kind: "continue_stage", targets: [], notify_executor: false, fields: { reply_message_id: "d1", option_key: "document_revise" } } });
+  // 卡片没有点名页：只发那一个界面操作。
+  const bare = { ...reply, act: { ...card, items: [] } };
+  assert.equal("then" in planRespond({ click: "document_reviewed" }, bare, "c3"), false);
+  assert.equal(DOCUMENT_REVISE_TEXT, "需要修改");
+  // 不是提议的卡片上同名的键不算。
+  assert.equal(proposalKind({ kind: "ask", text: "？" } as any), null);
+  assert.equal(isReviewedOption({ kind: "choose", text: "", options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "document_reviewed", text: "看过了" }] } as any, "document_reviewed"), false);
 });

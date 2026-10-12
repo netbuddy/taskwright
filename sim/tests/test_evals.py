@@ -29,7 +29,7 @@ META = {"时间": "2026-01-01T09:00:00", "提交号": "0123456789abcdef", "未�
 
 
 def lamp_states(states: dict[str, str]) -> list[dict]:
-    """十六盏灯的一遍结果：没有点名的都是通过。"""
+    """二十一盏灯的一遍结果：没有点名的都是通过。"""
     return [{"阶段": stage, "键": key, "说明": text, "结果": states.get(key, "通过"), "通过": None,
              "差的条目编号": ["OA-001"] if states.get(key) == "未通过" else [], "备注": ""} for stage, key, text in lamps.LAMPS]
 
@@ -75,15 +75,15 @@ class SummaryTest(unittest.TestCase):
                           rows["flows_have_flowchart_with_branch"]["通过率"]), (["未通过", "通过", "算不了"], 1, 2, 0.5))
         self.assertEqual((rows["decisions_have_goal"]["能算的遍数"], rows["decisions_have_goal"]["通过率"]), (0, None))
         self.assertEqual(rows["materials_cited"]["通过率"], 1.0)
-        # 十五盏有通过率：十三盏是 1，两盏是 0.5；没有能算的那一盏不进平均。
-        self.assertAlmostEqual(summary["灯通过率"], (13 + 0.5 + 0.5) / 15)
+        # 二十盏有通过率：十八盏是 1，两盏是 0.5；没有能算的那一盏不进平均。
+        self.assertAlmostEqual(summary["灯通过率"], (18 + 0.5 + 0.5) / 20)
         groups = {evals.expectations.group_label(row["组"]): row for row in summary["至少应有"]}
         self.assertEqual((groups["借书／借阅"]["各遍"], groups["借书／借阅"]["命中遍数"], groups["寒暑假"]["各遍"], groups["寒暑假"]["命中遍数"],
                           groups["寒暑假"]["核对的遍数"]), ([True, True, None], 2, [False, True, None], 1, 2))
         self.assertAlmostEqual(summary["清单命中率"], 3 / 4)
         self.assertEqual([r["任务的键"] for r in summary["各遍"]], ["TASK-1/TASK-1"] * 3)
         self.assertEqual(summary["各遍"][2]["出错"], "RuntimeError：后端任务服务没有起来。")
-        for line in ("# 评测汇总：甲", "- 灯通过率：93%；清单命中率：75%",
+        for line in ("# 评测汇总：甲", "- 灯通过率：95%；清单命中率：75%",
                      "| 整理建模 | 每个标签为「流程」的页有一张以它为来源、带判断分叉的流程图。 | 未通过（差 OA-001） | 通过 | 算不了 | 1／2 |",
                      "| 问题 | 寒暑假 | 没有 | 命中（UC-001） | 没有核对 | 1／2 |",
                      "- 第 1 轮，提问：寒暑假借期怎么算？",
@@ -226,10 +226,12 @@ class EvalRunTest(unittest.TestCase):
                          (2, "fake/fake-model", "fake/fake-model", ["requirements.md"], "library-short.json", "library-short.json", 4))
         self.assertEqual([r["任务的键"] for r in summary["各遍"]], [f"{one['任务编号']}/{one['任务编号']}" for one in runs])
         self.assertEqual({row["键"]: row["各遍"] for row in summary["灯"]}["flows_have_flowchart_with_branch"], ["未通过", "未通过"])
-        # 短版清单一共 59 组：原有的 37 组，加上「模型」一节五种图的 22 组（这一遍没有画图，一组都没有命中）。
-        self.assertEqual(len(summary["至少应有"]), 59)
+        # 短版清单一共 64 组：原有的 37 组，加上「模型」一节五种图的 22 组（这一遍没有画图，一组都没有命中），
+        # 再加上「导语页」小节的 5 组（这一遍没有走到编写文档，一组都没有命中）。
+        self.assertEqual(len(summary["至少应有"]), 64)
+        self.assertEqual(sum(1 for row in summary["至少应有"] if row["部分"] == "总体分析·导语页"), 5)
         self.assertEqual(sum(1 for row in summary["至少应有"] if row["部分"].startswith("模型·")), 22)
-        self.assertAlmostEqual(summary["清单命中率"], 4 / 118)
+        self.assertAlmostEqual(summary["清单命中率"], 4 / 128)
         self.assertIn("# 评测汇总：试跑", text)
         self.assertIn(f"- 第 1 轮，提问：{QUESTION}", text)
         self.assertIn(f"- 第 2 轮，模拟用户说：「这个我得问一下教务处。」上一轮的问题：{QUESTION}画像里可能已有这件事（寒暑假期间借出的书，借期一律顺延到开学后第一周的周五，"

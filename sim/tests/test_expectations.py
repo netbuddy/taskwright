@@ -98,10 +98,29 @@ class ExpectationTest(unittest.TestCase):
                          (["DG-005"], "模型·" + expectations.taskdb.DIAGRAM_KIND_NAMES.get("context", "context")))
         self.assertEqual(expectations.section_label({"部分": "问题"}), "问题")
 
+    def test_导语页小节对着导语所属章找_导语页不参加别的小节(self):
+        expect = {"总体分析": {"流程页": [["借书", "借阅"], ["业务流程"]], "导语页": [["业务流程"], ["角色"], ["业务对象"]]}, "例外": {"借书": [["有逾期"]]}}
+        rows = {(r["部分"], expectations.group_label(r["组"])): r for r in expectations.check(expect, task([
+            page(1, "借书", ["流程"], ["例外：名下有逾期未还的书，不能再借。"]),
+            page(2, "业务流程导语", examples=["例外：有逾期的借书另说。"], intro="业务流程"),
+            page(3, "角色导语", intro="角色", status="已废弃"),
+        ]))}
+        hit = rows[("总体分析·导语页", "业务流程")]
+        self.assertEqual((hit["命中"], hit["命中的条目编号"], hit["命中的词"]), (True, ["OA-002"], "业务流程"))
+        self.assertNotIn("页贴的标签", hit)
+        # 已废弃的导语页不算；没有立的章不命中。
+        self.assertEqual((rows[("总体分析·导语页", "角色")]["命中"], rows[("总体分析·导语页", "业务对象")]["命中"]), (False, False))
+        # 导语页的标题里有「业务流程」，但它不参加按标题找的小节，也不当作「借书」这个流程的页。
+        self.assertFalse(rows[("总体分析·流程页", "业务流程")]["命中"])
+        self.assertEqual(rows[("总体分析·流程页", "借书／借阅")]["命中的条目编号"], ["OA-001"])
+        self.assertEqual(rows[("例外·借书", "有逾期")]["流程的页"], ["OA-001"])
+
     def test_仓里的两份清单读得出来_每组都是关键词的列表(self):
         for name, flows in (("library-short.json", 5), ("library-long.json", 6)):
             expect = expectations.load(REPO / "sim" / "expectations" / name)
             self.assertEqual(len(expect["总体分析"]["流程页"]), flows)
+            self.assertEqual([group[0] for group in expect["总体分析"]["导语页"]], ["概述与范围", "角色", "业务流程", "业务对象", "业务目标"])
+            self.assertIn("「导语页」小节每组写的是章名", expect["说明"])
             rows = expectations.check(expect, task([]))
             self.assertTrue(rows and not any(r["命中"] for r in rows))
             # 「模型」一节按图的种类键分六个小节，时序图那一节是空的；任务里没有图时每组都不命中，「这一种的图」是空的。
