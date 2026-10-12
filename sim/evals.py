@@ -99,6 +99,7 @@ def judge_one(sim: Path, expect_path: Path | None = None, label: str | None = No
         "画像": record.get("用户画像"),
         "清单": Path(expect_path).name if expect_path else old.get("清单"),
         "停止原因": record.get("停止原因"),
+        "没有进展而停": bool(record.get("没有进展而停")),
         "轮数": len(record.get("轮") or []),
         "轮数上限": record.get("轮数上限"),
         "开始": record.get("开始"),
@@ -166,8 +167,10 @@ def summarize(root: Path, label: str, sims: list[Path], meta: dict) -> dict:
         "提示词版本": prompt.get("版本"), "提示词文件": prompt.get("文件") or [], "提示词说明": prompt.get("说明") or "",
         "各遍提示词版本": [one.get("版本") for one in prompts],
         "各遍": [{"演练": r["演练"], "目录": str(sim), "任务的键": f"{r['任务目录']}/{r['任务编号']}" if r.get("任务编号") else None,
-                  "停止原因": r.get("停止原因"), "轮数": r.get("轮数"), "用时秒": r.get("用时秒"), "出错": r.get("出错")}
+                  "停止原因": r.get("停止原因"), "没有进展而停": bool(r.get("没有进展而停")), "轮数": r.get("轮数"), "用时秒": r.get("用时秒"),
+                  "出错": r.get("出错")}
                  for r, sim in zip(runs, sims)],
+        "没有进展而停的遍数": sum(1 for r in runs if r.get("没有进展而停")),
         "灯": lamp_rows, "灯按阶段": eval_files.lamps_by_stage(lamp_rows), "至少应有": group_rows,
         "灯通过率": sum(rates) / len(rates) if rates else None,
         "清单命中率": sum(row["命中遍数"] for row in group_rows) / total if total else None,
@@ -198,6 +201,9 @@ def summary_markdown(s: dict) -> str:
              f"- 助手的模型：{s.get('模型') or '没有记'}；模拟用户的模型：{s.get('模拟用户的模型') or '没有记'}",
              f"- 材料：{'、'.join(s.get('材料') or []) or '没有'}；画像：{s.get('画像')}；清单：{s.get('清单')}",
              f"- 遍数：{n}；每遍的轮数上限：{s.get('轮数上限')}",
+             *([f"- 有 {s['没有进展而停的遍数']} 遍因为双方没有进展而停，没有做完："
+                + "、".join(f"第 {i + 1} 遍" for i, r in enumerate(s["各遍"]) if r.get("没有进展而停")) + "。灯与清单照停下时的任务数据算。"]
+               if s.get("没有进展而停的遍数") else []),
              f"- 灯通过率：{percent(s['灯通过率'])}；清单命中率：{percent(s['清单命中率'])}", "",
              "## 各遍", "", "| 遍 | 演练目录 | 停止原因 | 轮数 | 用时 | 出错 |", "|---|---|---|---|---|---|"]
     for i, r in enumerate(s["各遍"]):
