@@ -5,6 +5,9 @@ import type { DiagramRow, DrawnItem } from "../api/types";
 import { errorText } from "../components/work/errors";
 import { formatTime } from "./format";
 
+/** 停止打字多久之后图按改后的文本重画（毫秒）。测试里改小。 */
+export const diagramPreview = { delayMs: 400 };
+
 /** 一张图都没有时的引导。 */
 export const DIAGRAMS_EMPTY_TEXT = "在对话里让助手画一张图，例如『把这几个用例画成用例图』";
 /** 文本有没保存的改动时，「导出 PNG」灰掉的原因。 */
@@ -15,6 +18,9 @@ export const PREVIEW_TEXT = "预览：改动还没有保存";
 export const NOTHING_DRAWN_TEXT = "这张图的文本里没有写条目编号。";
 /** 详情开着的时候这张图被删了。 */
 export const DIAGRAM_DELETED_TEXT = "这张图已经删除。";
+
+/** 图下面「画自」那一行里，不是业务说明的节的来源有几条时的说法。 */
+export const otherSourcesText = (count: number): string => `另有 ${count} 条别的来源`;
 
 /** 谁改的：助手或者用户。 */
 export const byName = (by: string): string => (by === "user" ? "用户" : "助手");

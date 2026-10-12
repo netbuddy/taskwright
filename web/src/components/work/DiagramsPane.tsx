@@ -20,7 +20,7 @@ import { api, ApiError } from "../../api/client";
 import type { DiagramDetail as Detail, DiagramRow, Task } from "../../api/types";
 import { DiagramView } from "../diagram/DiagramView";
 import {
-  DIAGRAMS_EMPTY_TEXT, DIAGRAM_DELETED_TEXT, EXPORT_NEEDS_SAVE_TEXT, NOTHING_DRAWN_TEXT, PREVIEW_TEXT, drawnNote, revisionLine, revisionText, saveFailedText,
+  DIAGRAMS_EMPTY_TEXT, DIAGRAM_DELETED_TEXT, EXPORT_NEEDS_SAVE_TEXT, NOTHING_DRAWN_TEXT, PREVIEW_TEXT, diagramPreview, drawnNote, revisionLine, revisionText, saveFailedText,
 } from "../../model/diagrams";
 import { writeOffReason } from "../../model/items";
 import { SourceBox, type SubmitAction } from "./ItemDetail";
@@ -29,8 +29,7 @@ import { errorText } from "./errors";
 /** 详情右边一栏的两个页签。 */
 export type DiagramSideTab = "text" | "sources";
 
-/** 停止打字多久之后图按改后的文本重画（毫秒）。测试里改小。 */
-export const diagramPreview = { delayMs: 400 };
+export { diagramPreview };
 
 export function DiagramsPane({ task, selected, onSelect, readOnly, writesOff, latestRevision, submit, onLocate, onOpenItem, onDirty }: {
   task: Task;

@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SettingOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
-import type { ActionRequest, AssistantReply, Item, KnowledgeLibrary, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
+import type { ActionRequest, AssistantReply, DiagramRow, Item, KnowledgeLibrary, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
 import { useWorkView } from "../state/useWorkView";
 import { Conversation } from "../components/work/Conversation";
 import { ItemsPanel } from "../components/work/ItemsPanel";
@@ -30,6 +30,7 @@ import { FONT_TIERS, narrowViewport, readFontTier, saveFontTier, type FontTier }
 import { justChangedItems, marksByItem, revisionsOfReply, revisionsOfWork, touchedItems } from "../model/revisions";
 import { openProblems } from "../model/items";
 import { factsKey, viewOnOpen } from "../model/overall";
+import { diagramViewTarget } from "../model/sectionDiagrams";
 import { showSubmitBar } from "../model/submit";
 import { go, href, openSettings } from "../router";
 import { useToast } from "../components/Toasts";
@@ -216,6 +217,16 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     const target = viewOnOpen(state.task, itemId);
     if (!target) return;
     void api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, kind: "mark_viewed", targets: [target], notify_executor: false })
+      .catch(() => undefined);
+  };
+  /**
+   * 用户在业务说明里看到了一张图现在的内容：在它现在的修订上记一条「看过」。与打开条目记已读一样不显示「正在保存」、不报错：
+   * 没记上时这张图照旧算没看过，下一次看到再记。任务结束后、已经看过的图不记（model/sectionDiagrams.ts 的 diagramViewTarget）。
+   */
+  const viewDiagram = (row: DiagramRow) => {
+    const target = diagramViewTarget(state.task, row);
+    if (!target) return;
+    void api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, kind: "mark_diagram_viewed", targets: [target], notify_executor: false })
       .catch(() => undefined);
   };
   /** 发起评审：targets 为空＝全部待评审的条目。后端核对通过就回应，被拒时报一条失败提示。 */
@@ -436,7 +447,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   onStartStage={startStage} materialCount={state.materials.filter((m) => !m.derived_from).length}
-                  hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty}
+                  hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty} onDiagramViewed={viewDiagram}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} />
                 </KnowledgeContext.Provider>

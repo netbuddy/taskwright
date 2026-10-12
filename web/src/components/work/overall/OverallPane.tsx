@@ -3,13 +3,16 @@
 // 阈值 48rem）目录缺省收着，点把手后盖在右边的内容上面，点了一节或一章就自己收起。
 // 还没有点任何一节时，右边是这个集合的一句说明与总计；不替用户打开第一节。
 // 目录里点章标题打开那一章的章首页（ChapterHead.tsx），点第 4 章末尾的「术语表」打开术语表（Glossary.tsx）；点一节就回到节。
+// 有哪一节都放不进的图时，目录末尾多一行「未归入节的图」，点它把这几张图一张一张画在右边（Figure.tsx）。
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
 import { overallDef, retellText, titleOf, totals } from "../../../model/overall";
 import { NO_MATERIALS_TEXT, STAGE_STARTS, type StageStart } from "../../../model/stage";
-import { CHAPTER_DECISIONS, CHAPTER_GOALS, CHAPTER_RULES, toc } from "../../../model/chapters";
+import { CHAPTER_DECISIONS, CHAPTER_GOALS, CHAPTER_RULES } from "../../../model/chapters";
+import { looseDiagrams } from "../../../model/sectionDiagrams";
+import { type FigureHost, LooseFigures } from "./Figure";
 import { ChapterHead } from "./ChapterHead";
 import { Contents, type HeadView } from "./Contents";
 import { Glossary } from "./Glossary";
@@ -17,7 +20,9 @@ import { Glossary } from "./Glossary";
 /** 目录展开没有：auto 是没有动过，够宽就展开、窄就收着；open 与 closed 是用户点出来的。 */
 type OutlineShown = "auto" | "open" | "closed";
 
-export function OverallPane({ task, selected, onSelect, page, readOnly = false, writesOff = false, onSend, onStart, materialCount = 0 }: {
+export function OverallPane({ task, host, selected, onSelect, page, readOnly = false, writesOff = false, onSend, onStart, materialCount = 0 }: {
+  /** 画图要的那几样（目录也在里面）。 */
+  host: FigureHost;
   readOnly?: boolean;
   writesOff?: boolean;
   /**
@@ -38,7 +43,8 @@ export function OverallPane({ task, selected, onSelect, page, readOnly = false, 
 }) {
   const [shown, setShown] = useState<OutlineShown>("auto");
   const [head, setHead] = useState<HeadView | null>(null);
-  const contents = useMemo(() => toc(task), [task]);
+  const contents = host.contents;
+  const loose = looseDiagrams(task, contents).length;
   const side = useRef<HTMLDivElement>(null);
   const def = overallDef(task);
   const sum = totals(task);
@@ -72,10 +78,11 @@ export function OverallPane({ task, selected, onSelect, page, readOnly = false, 
           <span className="oa-seg"><a className="on">目录</a></span>
           <span className="btn sm" role="button" onClick={toggle} data-testid="toc-collapse">⇤ 收起</span>
         </div>
-        <Contents task={task} contents={contents} current={selected} head={page ? null : head} onOpen={open} onHead={openHead} onRetell={retell} retellOff={retellOff} />
+        <Contents task={task} contents={contents} current={selected} head={page ? null : head} onOpen={open} onHead={openHead} onRetell={retell} retellOff={retellOff} looseCount={loose} />
       </aside>
       <div className="oa-main" data-testid="overall-main">
         {page ?? (head?.kind === "glossary" ? <Glossary task={task} onOpen={open} />
+          : head?.kind === "loose" ? <LooseFigures host={host} />
           : head?.kind === "chapter" ? <ChapterHead task={task} contents={contents} chapterNo={head.no} lead={chapterLead(head.no)} onOpen={open} />
           : (
           <div className="oa-intro" data-testid="overall-intro">

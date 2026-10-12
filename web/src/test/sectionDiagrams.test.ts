@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import type { DiagramRow, Task } from "../api/types";
 import { toc } from "../model/chapters";
-import { diagramsOfKind, diagramsOfPage, figureHome, firstFigureHome, looseDiagrams, sectionFigures, sourcePages } from "../model/sectionDiagrams";
+import {
+  CLASS_MARK_STYLE, classNamesOf, diagramViewTarget, diagramsOfKind, diagramsOfPage, figureHome, firstFigureHome, looseDiagrams, markClasses, sectionFigures, sourcePages,
+} from "../model/sectionDiagrams";
 import { change, itemOf, overallTask } from "./fixtures/overallTask";
 
 const row = (id: string, kind: string, at = "2026-10-09T10:00:00+08:00"): DiagramRow =>
@@ -100,5 +102,33 @@ describe("一张图放在哪里", () => {
     const only = overallTask({ diagrams: [row("D-001", "sequence")] });
     expect(firstFigureHome(only, toc(only))).toEqual({ where: "loose" });
     expect(firstFigureHome(overallTask(), toc(overallTask()))).toBeNull();
+  });
+});
+
+describe("标出本节的对象与看图记录", () => {
+  const CLASSES = 'classDiagram\n  class Card["OA-005 借书证"]\n  class Fine["OA-010 逾期"]\n  class Reader["读者"]\n  Card --> Fine : 产生\n';
+
+  it("对象关系图里代表这一页的类：节点文字里写着这一页编号的那几个；图里没有画这一页时一个都没有", () => {
+    const task = overallTask();
+    expect(classNamesOf(CLASSES, task, "OA-005")).toEqual(["Card"]);
+    expect(classNamesOf(CLASSES, task, "OA-010")).toEqual(["Fine"]);
+    expect(classNamesOf(CLASSES, task, "OA-003")).toEqual([]);
+  });
+
+  it("标出这几个类：在文本后面各添一行 style 语句；一个类都没有、或者不是类图写法时原样返回", () => {
+    expect(markClasses(CLASSES, ["Card", "Fine"])).toBe(`${CLASSES.trimEnd()}\n  style Card ${CLASS_MARK_STYLE}\n  style Fine ${CLASS_MARK_STYLE}\n`);
+    expect(markClasses(CLASSES, [])).toBe(CLASSES);
+    const flow = "flowchart LR\n  a --> b\n";
+    expect(markClasses(flow, ["a"])).toBe(flow);
+  });
+
+  it("看到一张图要不要记：任务进行中、它现在的内容还没有看过才记，记在它现在的修订上", () => {
+    const task = overallTask();
+    const seen = { ...row("D-001", "flowchart"), revision_no: 4 };
+    expect(diagramViewTarget(task, seen)).toEqual({ diagram_id: "D-001", base_revision: 4 });
+    expect(diagramViewTarget(task, { ...seen, viewed: false })).toEqual({ diagram_id: "D-001", base_revision: 4 });
+    expect(diagramViewTarget(task, { ...seen, viewed: true })).toBeNull();
+    expect(diagramViewTarget(overallTask({ status: "已完成" }), seen)).toBeNull();
+    expect(diagramViewTarget(null, seen)).toBeNull();
   });
 });

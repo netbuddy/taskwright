@@ -27,9 +27,16 @@ export const exportShrunkText = (scale: number) => (scale < 1
 
 type Drawn = { state: "empty" } | { state: "drawing" } | { state: "done"; svg: string } | { state: "failed"; reason: string };
 
-export function DiagramView({ text, fileName = "图", exportOff = null }: {
+/** 嵌在可以上下滚的页面里时悬停的提示：滚轮留给页面，按住 Ctrl 再滚才放大缩小。 */
+export const STAGE_HINT_CTRL_TEXT = "按住拖动可以移动图，按住 Ctrl 滚轮放大缩小";
+
+export function DiagramView({ text, fileName = "图", exportOff = null, onDrawn, wheel = "always" }: {
   text: string;
   fileName?: string;
+  /** 图画出来了（每画成一次叫一次）。 */
+  onDrawn?: () => void;
+  /** 滚轮什么时候放大缩小：always 是一直，ctrl 是按住 Ctrl（或 ⌘）时才是、平常让页面照常滚。 */
+  wheel?: "always" | "ctrl";
   /** 现在不能导出的原因（例如文本有没保存的改动）：给了就把「导出 PNG」灰掉，悬停显示这句话。 */
   exportOff?: string | null;
 }) {
@@ -48,6 +55,8 @@ export function DiagramView({ text, fileName = "图", exportOff = null }: {
   const sized = useMemo(() => (svg === null ? null : sizedSvg(svg)), [svg]);
   const shown: DiagramViewport = view ?? { zoom: 1, x: 0, y: 0 };
 
+  const whenDrawn = useRef(onDrawn);
+  whenDrawn.current = onDrawn;
   useEffect(() => {
     setNote(null);
     if (!text.trim()) {
@@ -57,7 +66,7 @@ export function DiagramView({ text, fileName = "图", exportOff = null }: {
     let stale = false;
     setDrawn({ state: "drawing" });
     renderDiagram(text).then(
-      (done) => { if (!stale) setDrawn({ state: "done", svg: done }); },
+      (done) => { if (!stale) { setDrawn({ state: "done", svg: done }); whenDrawn.current?.(); } },
       (error: unknown) => { if (!stale) setDrawn({ state: "failed", reason: error instanceof Error ? error.message : String(error) }); },
     );
     return () => { stale = true; };
@@ -115,15 +124,16 @@ export function DiagramView({ text, fileName = "图", exportOff = null }: {
   useEffect(() => {
     const board = stage.current;
     if (!board) return;
-    const wheel = (event: WheelEvent) => {
+    const onWheel = (event: WheelEvent) => {
+      if (wheel === "ctrl" && !event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       const box = board.getBoundingClientRect();
       const factor = event.deltaY < 0 ? WHEEL_STEP : 1 / WHEEL_STEP;
       zoomBy((zoom) => zoom * factor, event.clientX - box.left, event.clientY - box.top);
     };
-    board.addEventListener("wheel", wheel, { passive: false });
-    return () => board.removeEventListener("wheel", wheel);
-  }, [hasStage]);
+    board.addEventListener("wheel", onWheel, { passive: false });
+    return () => board.removeEventListener("wheel", onWheel);
+  }, [hasStage, wheel]);
 
   const download = async () => {
     if (drawn.state !== "done" || exporting) return;
@@ -164,7 +174,7 @@ export function DiagramView({ text, fileName = "图", exportOff = null }: {
         </div>
       )}
       {sized && (
-        <div ref={stage} className={`diagram-stage${panning ? " panning" : ""}`} data-testid="diagram-stage" title={STAGE_HINT_TEXT} onPointerDown={startPan}
+        <div ref={stage} className={`diagram-stage${panning ? " panning" : ""}`} data-testid="diagram-stage" title={wheel === "ctrl" ? STAGE_HINT_CTRL_TEXT : STAGE_HINT_TEXT} onPointerDown={startPan}
           style={{ position: "relative", flex: "1 1 auto", minHeight: "16rem", overflow: "hidden", cursor: panning ? "grabbing" : "grab", userSelect: "none", touchAction: "none" }}>
           <div data-testid="diagram-svg" dangerouslySetInnerHTML={{ __html: sized.text }}
             style={{ position: "absolute", left: 0, top: 0, width: `${sized.width}px`, height: `${sized.height}px`, transformOrigin: "0 0",

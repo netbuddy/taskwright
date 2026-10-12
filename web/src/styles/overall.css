@@ -216,3 +216,27 @@
 /* 待澄清事项里问题那一句可以点（打开这个问题） */
 .app .oa-open .qlink { cursor: pointer; }
 .app .oa-open .qlink:hover { color: var(--blue); }
+
+/* ───── 节里的图（overall/Figure.tsx）───── */
+.app .oa-fig { max-width: 62rem; }
+.app .oa-fig-h { display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; min-width: 0; }
+.app .oa-fig-h .name { font-size: 0.97rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .oa-fig-h .acts { margin-left: auto; display: inline-flex; gap: .8rem; white-space: nowrap; }
+.app .oa-fig-note { margin-bottom: .35rem; font-size: 0.889rem; color: var(--text3); }
+/* 图的看板在节里定一个高度（页面自己上下滚），不随整块撑满 */
+.app .oa-fig-stage { flex: none; }
+.app .oa-fig-stage .diagram-view { height: auto !important; }
+.app .oa-fig-stage .diagram-stage { height: 24rem; flex: none !important; }
+.app .oa-fig-foot { display: flex; flex-wrap: wrap; gap: .2rem 1.2rem; margin-top: .4rem; font-size: 0.873rem; color: var(--text3); }
+.app .oa-fig-foot .see { cursor: pointer; text-decoration: underline; text-decoration-color: var(--line3); }
+.app .oa-fig-foot .see:hover { color: var(--blue); }
+.app .oa-fig-foot .rev { margin-left: auto; color: var(--mut); white-space: nowrap; }
+.app .oa-fig-side { margin-top: .6rem; padding-top: .5rem; border-top: 1px solid var(--line); }
+.app .oa-fig-side .dg-side-body { overflow: visible; }
+.app .oa-fig-side textarea.ed.dg-mermaid { width: 100%; min-height: 12rem; }
+.app .oa-fig-more { list-style: none; margin: .4rem 0 0; padding: 0; border: 1px solid var(--line); border-radius: .5rem; }
+.app .oa-fig-more li { display: flex; align-items: center; gap: .5rem; padding: .35rem .6rem; cursor: pointer; font-size: 0.921rem; border-top: 1px solid var(--line); }
+.app .oa-fig-more li:first-child { border-top: 0; }
+.app .oa-fig-more li:hover { background: var(--sel); }
+.app .oa-fig-more .r { margin-left: auto; font-size: 0.857rem; color: var(--mut); white-space: nowrap; }
+.app .oa-ch .oa-count { margin-left: auto; font-size: 0.857rem; color: var(--mut); }

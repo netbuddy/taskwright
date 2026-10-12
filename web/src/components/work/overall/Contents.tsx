@@ -10,11 +10,13 @@ import { CHAPTER_DECISIONS, CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_RULES, GLOSS
 import { STATE_TEXT, isDeprecated, titleOf, topicState, type TopicState } from "../../../model/overall";
 
 /** 中栏右边现在显示的不是某一节时，显示的是哪一样：某一章的章首页，或者术语表。 */
-export type HeadView = { kind: "chapter"; no: number } | { kind: "glossary" };
+export type HeadView = { kind: "chapter"; no: number } | { kind: "glossary" } | { kind: "loose" };
 
 const LEGEND: TopicState[] = ["settled", "pending", "open"];
 
-export function Contents({ task, contents, current, head, onOpen, onHead, onRetell, retellOff }: {
+export function Contents({ task, contents, current, head, onOpen, onHead, onRetell, retellOff, looseCount = 0 }: {
+  /** 哪一节都放不进的图有几张；有的时候目录末尾多一行「未归入节的图」。 */
+  looseCount?: number;
   task: Task;
   contents: Toc;
   /** 打开着的那一节（页的编号）；没有打开节时是 null。 */
@@ -84,6 +86,14 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
           <div className="oa-chap" data-testid="toc-unsorted">
             <div className="oa-ch dim plain" title="这几页还没有贴标签，贴上之后会排进相应的章"><span className="no" /><span className="oa-name">{UNSORTED_NAME}</span></div>
             {contents.unsorted.map((item) => row(item, 0, null, true))}
+          </div>
+        )}
+        {looseCount > 0 && (
+          <div className="oa-chap">
+            <div className={`oa-ch plain${head?.kind === "loose" ? " cur" : ""}`} role="button" tabIndex={0} title="这几张图没有写它画的是哪一节" aria-current={head?.kind === "loose" ? "true" : undefined}
+              onClick={() => onHead({ kind: "loose" })} onKeyDown={(e) => { if (e.key === "Enter") onHead({ kind: "loose" }); }} data-testid="toc-loose">
+              <span className="no" /><span className="oa-name">未归入节的图</span><span className="oa-count">{looseCount}</span>
+            </div>
           </div>
         )}
       </div>

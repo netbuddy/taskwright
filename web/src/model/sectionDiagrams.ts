@@ -12,6 +12,7 @@
 // 同一处有几张图时，最近修订的排在最前（页面显示第一张，其余收在「另有 N 张」里）。
 
 import type { DiagramRow, Item, Task } from "../api/types";
+import { diagramGraph } from "../../../agent/src/lib/diagram_scan.ts";
 import { CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_OVERVIEW, CHAPTER_ROLES, type Toc, sectionOf, tocOrder } from "./chapters";
 import { SOURCE_FIGURE } from "./items";
 import { isOverall } from "./overall";
@@ -111,4 +112,32 @@ export function firstFigureHome(task: Task, contents: Toc): FigureHome | null {
   }
   if (rows.some((row) => row.kind === KIND_CLASS)) return { where: "chapter", chapter: CHAPTER_OBJECTS };
   return { where: "loose" };
+}
+
+/** 任务定义里各集合的编号前缀（认图的节点文字里写的条目编号要用）。 */
+export const prefixesOf = (task: Task): string[] => task.definition.collections.map((one) => one.prefix);
+
+/** 对象关系图里代表这一页的那几个类的名字：节点文字里写着这一页的编号的类。 */
+export function classNamesOf(mermaid: string, task: Task, itemId: string): string[] {
+  return diagramGraph(mermaid, prefixesOf(task)).nodes.filter((node) => node.items.includes(itemId)).map((node) => node.name);
+}
+
+/** 标出本节对象时用的边框颜色与粗细（Mermaid 的 style 语句）。 */
+export const CLASS_MARK_STYLE = "stroke:#2563eb,stroke-width:3px";
+
+/**
+ * 在对象关系图的文本后面添几行 style 语句，把这几个类的边框加粗（只影响画出来的样子，不改库里的文本）。
+ * 一个类都没有、或者文本不是类图写法时原样返回。
+ */
+export function markClasses(mermaid: string, names: readonly string[]): string {
+  if (names.length === 0 || !/^\s*classDiagram\b/m.test(mermaid)) return mermaid;
+  return `${mermaid.replace(/\s+$/, "")}\n${names.map((name) => `  style ${name} ${CLASS_MARK_STYLE}`).join("\n")}\n`;
+}
+
+/**
+ * 用户看到了一张图：要不要记、记在哪一次修订上。任务进行中、这张图现在的内容用户还没有看过，才返回要记的目标；否则是 null。
+ */
+export function diagramViewTarget(task: Task | null, row: DiagramRow): { diagram_id: string; base_revision: number } | null {
+  if (!task || task.status !== "进行中" || row.viewed === true) return null;
+  return { diagram_id: row.diagram_id, base_revision: row.revision_no };
 }

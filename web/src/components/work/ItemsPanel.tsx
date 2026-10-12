@@ -22,9 +22,9 @@
 // 问题跟着条目走（ItemIssues.tsx）：列表行的状态徽标里带「问题 N」（ItemStatus.tsx），详情顶部列出挂在这条上、还没了结的问题；从问题卡片上的「牵涉 UC-003」跳来时
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "antd";
-import type { Item, Task } from "../../api/types";
+import type { DiagramRow, Item, Task } from "../../api/types";
 import type { ReviewRun } from "../../state/workState";
 import { BUSY_TEXT, FILTERS, failedReview, isEmptyValue, isUnread, keptReview, keepPendingField, matchesFilter, needsReading, pendingReview, reviewOffReason, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
 import { CompletionPanel } from "../CompletionPanel";
@@ -40,6 +40,7 @@ import { DiagramsPane } from "./DiagramsPane";
 import { OverallPane } from "./overall/OverallPane";
 import type { StageStart } from "../../model/stage";
 import { SectionPage } from "./overall/SectionPage";
+import { FigureBlocks, type FigureHost } from "./overall/Figure";
 import { collectionLabel, isOverall } from "../../model/overall";
 import { toc, tocOrder } from "../../model/chapters";
 import { useToast } from "../Toasts";
@@ -51,7 +52,7 @@ export { BUSY_TEXT };
 
 export function ItemsPanel({
   task, initialCollection = null, initialDiagrams = false, initialDiagram = null, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
-  onAskAssistant, onAnswer, onSend, onStartStage, materialCount = 0, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, unreadRequest = 0, review = null, onReview, onPrefill,
+  onAskAssistant, onAnswer, onSend, onStartStage, materialCount = 0, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, review = null, onReview, onPrefill,
   submitBar = false,
 }: {
   task: Task;
@@ -95,6 +96,8 @@ export function ItemsPanel({
   onDirty?: (dirty: boolean) => void;
   /** 有没有没保存的改图（图表页签里改了 Mermaid 文本还没有保存）。 */
   onDiagramDirty?: (dirty: boolean) => void;
+  /** 用户在业务说明里看到了一张图现在的内容（图画出来并且在看得见的范围里）。 */
+  onDiagramViewed?: (row: DiagramRow) => void;
   /** 卡片上点「筛出来看」时加一：筛选切到「未读」、回到列表。 */
   unreadRequest?: number;
   /** 最近一批界面发起的评审（进度与结果）。 */
@@ -116,6 +119,12 @@ export function ItemsPanel({
   // 图表页签：是不是停在它上面、打开着哪一张图。选中了条目时不算停在图表页签。
   const [showDiagrams, setShowDiagrams] = useState(opened.diagrams);
   const [diagram, setDiagram] = useState<string | null>(initialDiagram);
+  // 业务说明里哪几张图有没保存的改动：有一张就算有。
+  const dirtyFigures = useRef(new Set<string>());
+  const figureDirty = (diagramId: string, dirty: boolean) => {
+    if (dirty) dirtyFigures.current.add(diagramId); else dirtyFigures.current.delete(diagramId);
+    onDiagramDirty?.(dirtyFigures.current.size > 0);
+  };
   const [filter, setFilter] = useState<ItemFilter>("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
@@ -210,6 +219,11 @@ export function ItemsPanel({
     setFromIssue(o.fromIssue ? { issueId: o.fromIssue, itemId } : null);
     onSelect(itemId);
   };
+  // 业务说明里画图要的那几样（节里的图、章首的图、未归入节的图都用它）。
+  const figureHost: FigureHost | null = contents ? {
+    task, contents, readOnly, writesOff, latestRevision, submit, onLocate, onOpen: (id) => openItem(id), onOpenItem: (id) => openItem(id),
+    onViewed: onDiagramViewed, onDirty: figureDirty,
+  } : null;
   /** 「回到问题列表」：切回问题所在的页签，滚到那张问题卡片。 */
   const backToIssue = (issueId: string) => {
     const issue = task.items.find((i) => i.item_id === issueId);
@@ -318,14 +332,16 @@ export function ItemsPanel({
           <DiagramsPane task={task} selected={diagram} onSelect={setDiagram} readOnly={readOnly} writesOff={writesOff} latestRevision={latestRevision}
             submit={submit} onLocate={onLocate} onOpenItem={(id) => openItem(id)} onDirty={onDiagramDirty} />
         ) : onOverall ? (
-          <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
+          <OverallPane task={task} host={figureHost!} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
             onStart={onStartStage} materialCount={materialCount}
             page={selectedItem && !rawTopic ? (
               <SectionPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} contents={contents!} readOnly={readOnly} writesOff={writesOff} submit={submit}
                 onSend={onSend} onAnswer={onAnswer} onPrefill={onPrefill} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
                 onOpen={(id) => openItem(id)} onBack={() => onSelect(null)} onLocate={onLocate} onRaw={() => setRawTopic(true)}
                 onPrev={topicPos > 0 ? () => onSelect(topics[topicPos - 1].item_id) : null}
-                onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null} />
+                onNext={topicPos >= 0 && topicPos < topics.length - 1 ? () => onSelect(topics[topicPos + 1].item_id) : null}
+                figures={<FigureBlocks host={figureHost!} item={selectedItem} slots={["steps", "state", "relations"]} />}
+                links={<FigureBlocks host={figureHost!} item={selectedItem} slots={["other"]} />} />
             ) : detail} />
         ) : detail ? detail : items.length === 0 ? (
           <div className="empty">这个筛选下没有条目。换一个筛选试试。</div>
