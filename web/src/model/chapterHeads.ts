@@ -6,14 +6,14 @@
 //   · 决策记录与待澄清事项（第 7 章）一行点了去哪里：决定去它自己那一节；问题去它牵涉的第一节，没有牵涉业务说明的节就打开问题自己。
 
 import type { Item, Task } from "../api/types";
-import type { DiagramGraph, GraphNode } from "../../../agent/src/lib/diagram_scan.ts";
+import type { DiagramGraph } from "../../../agent/src/lib/diagram_scan.ts";
+import { CELL_TAKES_PART, useCaseMatrix } from "../../../agent/src/lib/overall_figures.ts";
 import type { GoalTree } from "../../../agent/src/lib/overall_views.ts";
 import { CHAPTER_FLOWS, CHAPTER_ROLES, type Toc, sectionOf } from "./chapters";
 import { SOURCE_ITEM, issueRefs, sourceKindNow } from "./items";
 import { isDeprecated, isOverall, titleOf } from "./overall";
 
-/** 连线上没有写字时格子里写的字。 */
-export const CELL_TAKES_PART = "参与";
+export { CELL_TAKES_PART };
 
 export interface UseCaseRow {
   /** 这一行的叫法：节点上的字去掉条目编号；写了编号、任务里有这个条目的，用它的标题。 */
@@ -31,14 +31,10 @@ export interface UseCaseTable {
   rows: UseCaseRow[];
 }
 
-const cleanText = (node: GraphNode): string => node.items.reduce((text, id) => text.replace(id, ""), node.text).replace(/\s+/g, " ").trim();
-
-/** 角色与用例对照表。graphs 是任务里各张用例图解析出来的节点与连线；图里没有画任何角色时 rows 是空的。 */
+/** 角色与用例对照表。graphs 是任务里各张用例图解析出来的节点与连线；图里没有画任何角色时 rows 是空的。行怎样从图里算见共用的 useCaseMatrix。 */
 export function useCaseTable(task: Task, contents: Toc, graphs: readonly DiagramGraph[]): UseCaseTable {
   const roles = (contents.chapters.find((one) => one.chapter.no === CHAPTER_ROLES)?.sections ?? []).map((one) => one.item).filter((page) => !isDeprecated(page));
   const byId = new Map(task.items.map((item) => [item.item_id, item]));
-  /** 一个节点是哪个角色：写了角色页的编号，或者节点上的字正好是角色页的标题；不是角色是 -1。 */
-  const roleOf = (node: GraphNode): number => roles.findIndex((role) => node.items.includes(role.item_id) || (node.items.length === 0 && node.text.trim() === titleOf(role)));
   const flowsOf = (item: Item | null): Item[] => {
     if (!item) return [];
     if (sectionOf(contents, item.item_id)?.chapter === CHAPTER_FLOWS) return [item];
@@ -47,30 +43,12 @@ export function useCaseTable(task: Task, contents: Toc, graphs: readonly Diagram
       .filter((page): page is Item => page !== undefined && sectionOf(contents, page.item_id)?.chapter === CHAPTER_FLOWS && !isDeprecated(page))
       .filter((page, i, all) => all.indexOf(page) === i);
   };
-  const rows = new Map<string, { row: UseCaseRow; labels: Set<string>[] }>();
-  for (const graph of graphs) {
-    const nodeOf = (name: string) => graph.nodes.find((node) => node.name === name);
-    for (const edge of graph.edges) {
-      const a = nodeOf(edge.from), b = nodeOf(edge.to);
-      if (!a || !b) continue;
-      const ra = roleOf(a), rb = roleOf(b);
-      // 只收一头是角色、另一头不是角色的线。
-      if ((ra >= 0) === (rb >= 0)) continue;
-      const role = ra >= 0 ? ra : rb;
-      const other = ra >= 0 ? b : a;
-      const item = other.items.map((id) => byId.get(id)).find((one) => one !== undefined) ?? null;
-      const key = item ? item.item_id : `text:${cleanText(other)}`;
-      if (!rows.has(key)) {
-        const label = item ? (isOverall(item.collection) ? titleOf(item) : item.title || item.item_id) : cleanText(other);
-        rows.set(key, { row: { label, item, cells: roles.map(() => ""), flows: flowsOf(item) }, labels: roles.map(() => new Set<string>()) });
-      }
-      rows.get(key)!.labels[role].add(edge.label.trim() || CELL_TAKES_PART);
-    }
-  }
-  return {
-    roles,
-    rows: [...rows.values()].map(({ row, labels }) => ({ ...row, cells: labels.map((set) => [...set].join("、")) })),
-  };
+  const rows = useCaseMatrix(roles.map((role) => ({ item_id: role.item_id, title: titleOf(role) })), graphs, (id) => byId.has(id)).map((row) => {
+    const item = row.item_id ? byId.get(row.item_id)! : null;
+    const label = item ? (isOverall(item.collection) ? titleOf(item) : item.title || item.item_id) : row.text;
+    return { label, item, cells: row.cells, flows: flowsOf(item) };
+  });
+  return { roles, rows };
 }
 
 /** 业务目标摘要：目标树的前两层（最上层的目标与它们各自下面一层的目标）。 */
