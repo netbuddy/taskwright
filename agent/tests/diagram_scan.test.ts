@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classLinked, contextShape, drawnItemIds, hasBranch } from "../src/lib/diagram_scan.ts";
+import { classLinked, contextShape, diagramGraph, drawnItemIds, hasBranch } from "../src/lib/diagram_scan.ts";
 
 const lines = (...rows: string[]) => rows.join("\n");
 
@@ -109,4 +109,88 @@ test("对象关系图：各种关系线、不带空格的写法、反引号括�
   // 只声明、没有关系线；成员用冒号写在类外面；注释里的关系线。
   assert.deepEqual(classLinked(lines("classDiagram", '  class A["OA-001 甲"]', "  A : +String 名称", "  %% A --> B", "  note for A \"OA-001 --> OA-002\""), ["OA"]), []);
   assert.deepEqual(classLinked("classDiagram\n  A --> B", []), []);
+});
+
+test("一张图的节点与连线（流程图写法）：节点的文字与里面的条目编号，连线的两端与线上写的字", () => {
+  const graph = diagramGraph(lines(
+    "flowchart LR",
+    '  reader(["OA-002 读者"])',
+    '  clerk(["OA-009 借还台馆员"]):::role',
+    "  subgraph 图书馆系统",
+    '    borrow(["OA-001 借书"])',
+    '    reserve(["预约取书"])',
+    "  end",
+    "  classDef role fill:#eee",
+    "  reader -- 发起 --> borrow",
+    "  clerk -->|办理| borrow",
+    "  reader --> reserve",
+    '  clerk -. "上架、放回" .-> reserve',
+    "  reader & clerk == 都能查 ==> q[查询]; q --> log[(日志)] --> done{{完成}}",
+  ), ["OA", "UC"]);
+  assert.deepEqual(graph.nodes, [
+    { name: "reader", text: "OA-002 读者", items: ["OA-002"] },
+    { name: "clerk", text: "OA-009 借还台馆员", items: ["OA-009"] },
+    { name: "borrow", text: "OA-001 借书", items: ["OA-001"] },
+    { name: "reserve", text: "预约取书", items: [] },
+    { name: "q", text: "查询", items: [] },
+    { name: "log", text: "日志", items: [] },
+    { name: "done", text: "完成", items: [] },
+  ]);
+  assert.deepEqual(graph.edges, [
+    { from: "reader", to: "borrow", label: "发起" },
+    { from: "clerk", to: "borrow", label: "办理" },
+    { from: "reader", to: "reserve", label: "" },
+    { from: "clerk", to: "reserve", label: "上架、放回" },
+    { from: "reader", to: "q", label: "都能查" },
+    { from: "clerk", to: "q", label: "都能查" },
+    { from: "q", to: "log", label: "" },
+    { from: "log", to: "done", label: "" },
+  ]);
+});
+
+test("一张图的节点与连线：不带空格的连线、没有另写文字的节点、文字里的括号与箭头、判断节点", () => {
+  const graph = diagramGraph(lines(
+    "graph TD",
+    "  A-->B",
+    '  B --> c{"金额大于 500（含）--> 复核？"}',
+    "  c -- 是 --> d[\"UC-002 主管复核 [加急]\"]",
+    "  c -- 否 --> e([结束])",
+    "  style d fill:#fff",
+    "  click e callback",
+  ), ["UC"]);
+  assert.deepEqual(graph.nodes.map((one) => [one.name, one.text, one.items]), [
+    ["A", "A", []], ["B", "B", []], ["c", "金额大于 500（含）--> 复核？", []], ["d", "UC-002 主管复核 [加急]", ["UC-002"]], ["e", "结束", []],
+  ]);
+  assert.deepEqual(graph.edges.map((one) => `${one.from}>${one.to}:${one.label}`), ["A>B:", "B>c:", "c>d:是", "c>e:否"]);
+});
+
+test("一张图的节点与连线（类图写法）：类的文字里的条目编号，关系线的两端与冒号后面的说明；成员不算", () => {
+  const graph = diagramGraph(lines(
+    "classDiagram",
+    '  class Loan["OA-003 借阅记录"] {',
+    "    +Date 借出日期",
+    "  }",
+    '  class Book["OA-002 图书"]',
+    '  Reader "1" --> "0..*" Loan : 办理',
+    "  Loan --> Book",
+    "  `OA-007 馆藏副本` *-- Book : 属于",
+  ), ["OA"]);
+  assert.deepEqual(graph.nodes, [
+    { name: "Loan", text: "OA-003 借阅记录", items: ["OA-003"] },
+    { name: "Book", text: "OA-002 图书", items: ["OA-002"] },
+    { name: "Reader", text: "Reader", items: [] },
+    { name: "`OA-007 馆藏副本`", text: "OA-007 馆藏副本", items: ["OA-007"] },
+  ]);
+  assert.deepEqual(graph.edges, [
+    { from: "Reader", to: "Loan", label: "办理" }, { from: "Loan", to: "Book", label: "" }, { from: "`OA-007 馆藏副本`", to: "Book", label: "属于" },
+  ]);
+  // 对象关系图里有连线的条目照旧算得出（与拆出来的关系线是同一份）。
+  assert.deepEqual(classLinked(lines("classDiagram", '  class Loan["OA-003 借阅记录"]', '  class Book["OA-002 图书"]', "  Loan --> Book"), ["OA"]), ["OA-003", "OA-002"]);
+});
+
+test("一张图的节点与连线：状态图、时序图与空文本给空的；没有前缀可认时节点照有、条目编号是空的", () => {
+  assert.deepEqual(diagramGraph("stateDiagram-v2\n  [*] --> 在架\n  在架 --> 借出 : 借书", ["OA"]), { nodes: [], edges: [] });
+  assert.deepEqual(diagramGraph("sequenceDiagram\n  a->>b: 说", ["OA"]), { nodes: [], edges: [] });
+  assert.deepEqual(diagramGraph("", ["OA"]), { nodes: [], edges: [] });
+  assert.deepEqual(diagramGraph('%% 注释\nflowchart LR\n  a["OA-001 借书"] --> b', []), { nodes: [{ name: "a", text: "OA-001 借书", items: [] }, { name: "b", text: "b", items: [] }], edges: [{ from: "a", to: "b", label: "" }] });
 });
