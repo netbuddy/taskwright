@@ -39,7 +39,7 @@ import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
 import { DiagramsPane } from "./DiagramsPane";
 import { OverallPane } from "./overall/OverallPane";
 import type { StageStart } from "../../model/stage";
-import { TopicPage } from "./overall/TopicPage";
+import { SectionPage } from "./overall/SectionPage";
 import { collectionLabel, isOverall } from "../../model/overall";
 import { toc, tocOrder } from "../../model/chapters";
 import { useToast } from "../Toasts";
@@ -191,7 +191,8 @@ export function ItemsPanel({
   const exportItems = task.items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
   // 业务说明的节：「上一条」「下一条」照目录从上到下的次序走；看节的版式还是按条目的样子看（修订与全部来源），换一节就回到节的版式。
-  const topics = useMemo(() => (onOverall ? tocOrder(toc(task)) : []), [task, onOverall]);
+  const contents = useMemo(() => (onOverall ? toc(task) : null), [task, onOverall]);
+  const topics = useMemo(() => (contents ? tocOrder(contents) : []), [contents]);
   const topicPos = selectedItem ? topics.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
   const [rawTopic, setRawTopic] = useState(false);
   useEffect(() => { setRawTopic(false); }, [selected]);
@@ -240,7 +241,7 @@ export function ItemsPanel({
       onNext={pos >= 0 && pos < items.length - 1 ? () => onSelect(items[pos + 1].item_id) : null}
       onLocate={onLocate} onOpenItem={onSelect} onOpenDiagram={openDiagram} onAskAssistant={onAskAssistant}
       view={view && view.itemId === selectedItem.item_id ? view : null} latestRevision={latestRevision} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
-      crumb={onOverall ? <span className="crumb" role="button" onClick={() => setRawTopic(false)} data-testid="back-to-topic">‹ 回到主题页</span>
+      crumb={onOverall ? <span className="crumb" role="button" onClick={() => setRawTopic(false)} data-testid="back-to-topic">‹ 回到这一节</span>
         : fromIssue ? <FromIssueCrumb issueId={fromIssue.issueId} onBack={() => backToIssue(fromIssue.issueId)} /> : null}
       top={<ItemIssues task={task} itemId={selectedItem.item_id} readOnly={readOnly} writesOff={writesOff} hold={dirty} pendingItems={pendingItems}
         submit={submit} onSend={onSend} onPrefill={onAnswer} fromIssue={fromIssue?.issueId ?? null} />} />
@@ -320,7 +321,7 @@ export function ItemsPanel({
           <OverallPane task={task} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
             onStart={onStartStage} materialCount={materialCount}
             page={selectedItem && !rawTopic ? (
-              <TopicPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} readOnly={readOnly} writesOff={writesOff} submit={submit}
+              <SectionPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} contents={contents!} readOnly={readOnly} writesOff={writesOff} submit={submit}
                 onSend={onSend} onAnswer={onAnswer} onPrefill={onPrefill} onDirty={(d) => { setDirty(d); onDirty?.(d); }}
                 onOpen={(id) => openItem(id)} onBack={() => onSelect(null)} onLocate={onLocate} onRaw={() => setRawTopic(true)}
                 onPrev={topicPos > 0 ? () => onSelect(topics[topicPos - 1].item_id) : null}

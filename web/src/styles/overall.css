@@ -196,3 +196,23 @@
 .app .oa-gloss-note { margin-top: .8rem; font-size: 0.889rem; color: var(--text2); background: var(--quote); border-radius: .5rem; padding: .45rem .7rem; }
 .app .oa-gloss-note .see { color: var(--blue); cursor: pointer; }
 .app .oa-gloss-note .see:hover { text-decoration: underline; }
+
+/* ───── 节的统一版式（overall/SectionPage.tsx）───── */
+/* 说明里逐字出自材料的句子：淡底色加下划线，可以点（在右边的材料里看原文） */
+.app .oa-qt { background: var(--sel); border-bottom: .1rem solid var(--line3); border-radius: .15rem; padding: 0 .1rem; }
+.app .oa-qt.link { cursor: pointer; }
+.app .oa-qt.link:hover { border-bottom-color: var(--blue); }
+/* 还没有归类的页顶上那一句 */
+.app .oa-unsorted { margin: 0 0 .6rem; padding: .4rem .7rem; border: 1px dashed var(--line2); border-radius: .5rem; font-size: 0.889rem; color: var(--text3); }
+/* 异常分支：一条一张小卡，左边一道琥珀边；末尾的「＋ 补一种例外」是虚线框 */
+.app .oa-card.exc { border-left: .2rem solid var(--amber); }
+.app .oa-card.add { display: flex; align-items: center; justify-content: center; border-style: dashed; box-shadow: none; background: none; color: var(--text3); cursor: pointer; font: inherit; font-size: 0.93rem; }
+.app .oa-card.add:hover:not(:disabled) { color: var(--ink); border-color: var(--line3); }
+.app .oa-card.add:disabled { cursor: not-allowed; opacity: .6; }
+/* 适用规则里标了冲突的那一条 */
+.app .oa-rules li.conflict { background: var(--amber-bg); border-radius: .4rem; }
+.app .oa-conflict { display: block; margin-top: .15rem; font-size: 0.857rem; color: var(--amber); }
+.app .oa-conflict .see { cursor: pointer; text-decoration: underline; }
+/* 待澄清事项里问题那一句可以点（打开这个问题） */
+.app .oa-open .qlink { cursor: pointer; }
+.app .oa-open .qlink:hover { color: var(--blue); }

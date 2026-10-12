@@ -1,16 +1,14 @@
-// 总体分析在页面上的派生（model/overall.ts）：提纲成树与每行的计数、状态点的先后、底部总计、术语表、
-// 哪几处是助手补的、提到它的地方与依据它的条目、复述要发的话、复述卡片怎样认。数据是图书馆借阅的夹具。
+// 总体分析在页面上的派生（model/overall.ts）：每行的计数、状态点的先后、底部总计、术语表、
+// 哪几处是助手补的、说明里要标出的原话、节标题下那一行小字、依据它的条目、复述要发的话、复述卡片怎样认。数据是图书馆借阅的夹具。
+// 页怎样归章、排先后与编节号在 chapters.test.ts 与助手一侧的测试里核对。
 import { describe, expect, it } from "vitest";
 import {
-  STORY_KEYS, confirmAction, countsText, sideLine, dependents, factsKey, exampleParts, firstParagraph, glossary, isStoryOptions, markSupplemented, mentionRows, openQuestions, outline, outlineOrder,
-  overallDef, pagesOf, pendingCount, questionReason, retellText, settledCount, sourcesFor, splitByWord, storyPlace, supplemented, topicState, totals, trail, withBelow,
-  viewOnOpen, type OutlineNode,
+  STORY_KEYS, addedQuotes, confirmAction, countsText, sideLine, dependents, factsKey, exampleKind, firstParagraph, glossary, isStoryOptions, markPassage, materialQuotes, openQuestions,
+  overallDef, pagesOf, pendingCount, questionReason, retellText, sectionLead, settledCount, sourcesFor, storyPlace, supplemented, topicState, totals, viewOnOpen, wholeSources,
 } from "../model/overall";
 import { change, itemOf, overallTask } from "./fixtures/overallTask";
 
-const shape = (nodes: OutlineNode[]): unknown[] => nodes.map((n) => (n.children.length ? [n.item.item_id, shape(n.children)] : n.item.item_id));
-
-describe("总体分析：提纲", () => {
+describe("总体分析：各页与目录每行的计数", () => {
   it("任务定义里有名叫总体分析的集合才有；页按编号排", () => {
     const task = overallTask();
     expect(overallDef(task)?.prefix).toBe("OA");
@@ -18,36 +16,6 @@ describe("总体分析：提纲", () => {
     const old = overallTask();
     old.definition.collections = old.definition.collections.filter((c) => c.name !== "总体分析");
     expect(overallDef(old)).toBeNull();
-  });
-
-  it("按上级主题成树，同级按编号", () => {
-    expect(shape(outline(overallTask()))).toEqual([
-      ["OA-001", ["OA-002", ["OA-003", ["OA-004"]], "OA-005", "OA-006"]],
-      ["OA-007", ["OA-008"]],
-      "OA-009", "OA-010", "OA-011",
-    ]);
-  });
-
-  it("上级不在总体分析里、指向自己、或者绕成一圈的页，当作顶层的一页；每一页都正好出现一次", () => {
-    const task = overallTask();
-    change(task, "OA-009", (p) => { p.fields.上级主题 = ["UC-001"]; });
-    change(task, "OA-010", (p) => { p.fields.上级主题 = ["OA-010"]; });
-    change(task, "OA-001", (p) => { p.fields.上级主题 = ["OA-003"]; }); // OA-003 的上级是 OA-001：两页绕成一圈
-    const order = outlineOrder(outline(task)).map((p) => p.item_id);
-    expect([...order].sort()).toEqual(pagesOf(task).map((p) => p.item_id));
-    const roots = outline(task).map((n) => n.item.item_id);
-    expect(roots).toEqual(expect.arrayContaining(["OA-001", "OA-003", "OA-009", "OA-010"]));
-    // 绕圈的两页下面原有的页还挂在它们下面。
-    expect(outline(task).find((n) => n.item.item_id === "OA-003")!.children.map((n) => n.item.item_id)).toEqual(["OA-004"]);
-  });
-
-  it("从上到下的次序先自己再下面的页；面包屑是它上面的各级；它与它下面的页", () => {
-    const task = overallTask();
-    expect(outlineOrder(outline(task)).map((p) => p.item_id).slice(0, 5)).toEqual(["OA-001", "OA-002", "OA-003", "OA-004", "OA-005"]);
-    expect(trail(task, itemOf(task, "OA-004")).map((p) => p.item_id)).toEqual(["OA-001", "OA-003"]);
-    expect(trail(task, itemOf(task, "OA-001"))).toEqual([]);
-    expect(withBelow(task, "OA-003").map((p) => p.item_id)).toEqual(["OA-003", "OA-004"]);
-    expect(withBelow(task, "OA-999")).toEqual([]);
   });
 
   it("状态点：待核实、有待问、未归类、说清了，同时满足几种时按这个先后；已废弃排最前", () => {
@@ -138,21 +106,56 @@ describe("总体分析：一页里的内容", () => {
     expect([...supplemented(page).fields]).toEqual(["它是什么"]);
   });
 
-  it("「它是什么」里标出理由引到的那几个字；理由没有引原文、或者引的字不在正文里时不标", () => {
-    const what = "书放在预留架的这段时间叫保留期，保留期是 3 天，过了没来取，书放回书架。";
-    expect(markSupplemented(what, ["「保留期是 3 天」是按常见做法补的，你只说了「留几天」。"])).toEqual([
-      { text: "书放在预留架的这段时间叫保留期，", marked: false }, { text: "保留期是 3 天", marked: true }, { text: "，过了没来取，书放回书架。", marked: false },
-    ]);
-    expect(markSupplemented(what, ["这一句是我补的。"])).toEqual([{ text: what, marked: false }]);
-    expect(markSupplemented(what, ["「留一周」是我猜的。"])).toEqual([{ text: what, marked: false }]);
-    // 引了两处、其中一处出现两次：都标出来，先后照正文。只引一个字的不算（太容易在别处撞上）。
-    expect(markSupplemented("甲乙丙丁，甲乙", ["「甲乙」与「丙丁」"]).filter((p) => p.marked).map((p) => p.text)).toEqual(["甲乙", "丙丁", "甲乙"]);
-    expect(markSupplemented("甲乙丙丁", ["「丙」是补的"])).toEqual([{ text: "甲乙丙丁", marked: false }]);
+  it("助手补的那几个字：理由里用直角引号引出来的、两个字以上的；没有引的一个都没有", () => {
+    expect(addedQuotes(["「保留期是 3 天」是按常见做法补的，你只说了「留几天」。"])).toEqual(["保留期是 3 天", "留几天"]);
+    expect(addedQuotes(["这一句是我补的。"])).toEqual([]);
+    // 只引一个字的不算（太容易在别处撞上）；两条理由引了同一处只算一次。
+    expect(addedQuotes(["「丙」是补的", "「甲乙」", "又是「甲乙」"])).toEqual(["甲乙"]);
   });
 
-  it("例子里以「反例：」开头的是反例；首段到第一个空行为止", () => {
-    expect(exampleParts("反例：小李登记的是排队等书。")).toEqual({ counter: true, text: "小李登记的是排队等书。" });
-    expect(exampleParts("小王周二来取。")).toEqual({ counter: false, text: "小王周二来取。" });
+  it("在一段文字里标出原话：找得到的切成单独的一截，找不到的不标；出现两次的两处都标，先后照正文", () => {
+    const what = "书放在预留架的这段时间叫保留期，保留期是 3 天，过了没来取，书放回书架。";
+    expect(markPassage(what, [{ quote: "保留期是 3 天", mark: "added" }, { quote: "留几天", mark: "added" }])).toEqual([
+      { text: "书放在预留架的这段时间叫保留期，", mark: null }, { text: "保留期是 3 天", mark: "added" }, { text: "，过了没来取，书放回书架。", mark: null },
+    ]);
+    expect(markPassage(what, [])).toEqual([{ text: what, mark: null }]);
+    expect(markPassage(what, [{ quote: "留一周", mark: "added" }, { quote: "", mark: "added" }])).toEqual([{ text: what, mark: null }]);
+    expect(markPassage("甲乙丙丁，甲乙", [{ quote: "甲乙", mark: "added" }, { quote: "丙丁", mark: "added" }]).filter((p) => p.mark).map((p) => p.text)).toEqual(["甲乙", "丙丁", "甲乙"]);
+  });
+
+  it("材料原句与助手补的字句一起标：各带各的记号，材料原句带着它的来源；两段从同一处起头时长的占先", () => {
+    const source = { kind: "文档原文", locator: "inputs/a.md", excerpt: "借期都是 30 天", supports: [] };
+    const parts = markPassage("借期都是 30 天，保留期是 3 天。", [{ quote: "借期都是 30 天", mark: "material", source }, { quote: "保留期是 3 天", mark: "added" }]);
+    expect(parts).toEqual([
+      { text: "借期都是 30 天", mark: "material", source }, { text: "，", mark: null }, { text: "保留期是 3 天", mark: "added" }, { text: "。", mark: null },
+    ]);
+    expect(markPassage("借期都是 30 天。", [{ quote: "借期", mark: "added" }, { quote: "借期都是 30 天", mark: "material", source }]).map((p) => p.text)).toEqual(["借期都是 30 天", "。"]);
+  });
+
+  it("说明里逐字出自材料的句子：支持「它是什么」或者支持整页的「文档原文」来源的摘录，去掉首尾空白；用户的话与支持别处的不算", () => {
+    const task = overallTask();
+    expect(materialQuotes(itemOf(task, "OA-002")).map((one) => one.quote)).toEqual(["借书和还书都可以在自助借还机上办理，也可以到服务台办理。"]);
+    expect(materialQuotes(itemOf(task, "OA-003"))).toEqual([]);
+    const page = change(task, "OA-004", (p) => { p.sources.push({ kind: "文档原文", locator: "inputs/a.md", excerpt: " 每周日闭馆 ", supports: [] }, { kind: "文档原文", locator: "inputs/a.md", excerpt: "  ", supports: [] }); });
+    const whole = itemOf(page, "OA-004");
+    expect(wholeSources(whole).map((s) => s.excerpt)).toEqual([" 每周日闭馆 ", "  "]);
+    expect(materialQuotes(whole)).toEqual([{ quote: "每周日闭馆", mark: "material", source: whole.sources[1] }]);
+  });
+
+  it("节标题下那一行小字要的三样：材料几处、澄清几条、这一页现在所在的修订用户看没看过", () => {
+    const task = overallTask();
+    // OA-002 现在是第 3 次修订，用户看过的就是第 3 次。
+    expect(sectionLead(itemOf(task, "OA-002"))).toEqual({ materials: 2, clarified: 2, seen: true });
+    // OA-003 现在是第 12 次修订，用户看过的是第 9 次：现在的内容还没有看过。
+    expect(sectionLead(itemOf(task, "OA-003"))).toEqual({ materials: 1, clarified: 2, seen: false });
+    // 从来没有看过的页。
+    expect(sectionLead(itemOf(task, "OA-008"))).toEqual({ materials: 0, clarified: 1, seen: false });
+  });
+
+  it("例子分三种：以「例外：」开头的是例外，以「反例：」开头的是反例，别的是平常的例子；首段到第一个空行为止", () => {
+    expect(exampleKind("例外：借书证过期了，不能预约。")).toEqual({ kind: "exception", text: "借书证过期了，不能预约。" });
+    expect(exampleKind("反例：小李登记的是排队等书。")).toEqual({ kind: "counter", text: "小李登记的是排队等书。" });
+    expect(exampleKind("小王周二来取。")).toEqual({ kind: "plain", text: "小王周二来取。" });
     expect(firstParagraph("第一段。\n\n第二段。")).toBe("第一段。");
     expect(firstParagraph("只有一段。")).toBe("只有一段。");
   });
@@ -252,43 +255,11 @@ describe("总体分析：术语表", () => {
   });
 });
 
-describe("总体分析：提到它的地方", () => {
-  it("别处提到它的句子在前，依据它写的条目在后；依据在那之后改过的带「依据已变」", () => {
+describe("总体分析：依据它写的条目", () => {
+  it("依据这一页写的条目，按编号；没有条目依据的页一条都没有", () => {
     const task = overallTask();
-    const page = itemOf(task, "OA-003");
-    expect(dependents(task, page).map((i) => i.item_id)).toEqual(["UC-002", "UC-003"]);
-    const rows = mentionRows(task, page);
-    expect(rows.map((r) => `${r.kind} ${r.id} ${r.place}${r.stale ? " 已变" : ""}`)).toEqual([
-      "mention OA-002 主题 · 它是什么",
-      "mention OA-006 主题 · 已经定下的第 2 条",
-      "mention UC-002 功能用例 · 约束规则第 1 条",
-      "basis UC-002 功能用例 · 依据它",
-      "basis UC-003 功能用例 · 依据它 已变",
-    ]);
-    expect(rows[1]).toMatchObject({ word: "预约", sentence: "有人预约的书不能续借。" });
-    expect(rows[4].sentence).toBe("读者对一本在架的书办预约，馆员把这本书从书架取下，放到预留架上等读者来取。");
-    expect(rows[0].from?.title).toBe("借书与还书");
-  });
-
-  it("起点条目已经不在任务里时，这一行还在，只是没有起点", () => {
-    const task = overallTask();
-    task.items = task.items.filter((i) => i.item_id !== "OA-006");
-    expect(mentionRows(task, itemOf(task, "OA-003")).find((r) => r.id === "OA-006")!.from).toBeNull();
-  });
-
-  it("没有被提到、也没有条目依据的页，一行都没有；早先的后端不给 mentioned_by 时也一样", () => {
-    const task = overallTask();
-    expect(mentionRows(task, itemOf(task, "OA-011"))).toEqual([]);
-    const page = itemOf(task, "OA-009");
-    delete page.mentioned_by;
-    expect(mentionRows(task, page)).toEqual([]);
-  });
-
-  it("按命中的词切开原句；词不在句子里时不切", () => {
-    expect(splitByWord("有人预约的书不能续借。", "预约")).toEqual([{ text: "有人", hit: false }, { text: "预约", hit: true }, { text: "的书不能续借。", hit: false }]);
-    expect(splitByWord("预约取书", "预约取书")).toEqual([{ text: "预约取书", hit: true }]);
-    expect(splitByWord("系统为读者预留图书。", "预约")).toEqual([{ text: "系统为读者预留图书。", hit: false }]);
-    expect(splitByWord("一句话。", null)).toEqual([{ text: "一句话。", hit: false }]);
+    expect(dependents(task, itemOf(task, "OA-003")).map((i) => i.item_id)).toEqual(["UC-002", "UC-003"]);
+    expect(dependents(task, itemOf(task, "OA-011"))).toEqual([]);
   });
 });
 

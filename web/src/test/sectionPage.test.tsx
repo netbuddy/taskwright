@@ -1,6 +1,6 @@
-// 总体分析的一页主题：面包屑、标题、标签、待核实与依据提到的计数；四块（它是什么、例子、已经定下的、还没定的）各画出来；
-// 助手补的字句与那一条已定带标注，出处写在每一处下面；还没定的问题可以在这里回答或者先放着；
-// 上一条、下一条照提纲的次序；「看修订与全部来源」换成条目详情的样子，再回到主题页。
+// 业务说明的一节（总体分析的一页主题）：面包屑（第几章 › 节号）、标题、一行小字、标签与待核实；
+// 各块（说明、异常分支、示例、适用规则、待澄清事项）有内容才画；材料原句与助手补的字句各有标注，出处写在每一处下面；
+// 待澄清的问题可以在这里回答或者暂不处理；上一条、下一条照目录的次序；「看修订与全部来源」换成条目详情的样子，再回到这一节。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -29,29 +29,36 @@ function Panel({ t, first = "OA-003", readOnly = false, writesOff = false, spies
 }
 const text = (el: Element | null) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
 
-describe("主题页的顶部", () => {
-  it("面包屑是它上面的各级主题，点一级打开那一页；标题前面是编号", () => {
+describe("节的顶部", () => {
+  it("面包屑是第几章与节号；标题里不写页的编号，编号在悬停说明里", () => {
     render(<Panel t={overallTask()} first="OA-004" />);
-    expect(text(screen.getByTestId("topic-crumb"))).toContain("借阅›预约取书›闭馆日怎么算");
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-004闭馆日怎么算");
-    fireEvent.click(screen.getByText("预约取书", { selector: ".oa-crumb .up" }));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-003预约取书");
+    expect(text(screen.getByTestId("topic-crumb"))).toContain("1 概述与范围›1.1");
+    expect(text(screen.getByTestId("topic-title"))).toBe("闭馆日怎么算");
+    expect(screen.getByTestId("topic-title").getAttribute("title")).toBe("OA-004");
+    fireEvent.click(screen.getByTestId("toc-OA-003"));
+    expect(text(screen.getByTestId("topic-crumb"))).toContain("3 业务流程›3.3");
+    expect(text(screen.getByTestId("topic-title"))).toBe("预约取书");
   });
 
-  it("标签、几处待核实、几个条目依据它与被几处提到", () => {
-    render(<Panel t={overallTask()} />);
+  it("一行小字：材料几处、澄清几条、你看过；后面是标签与几处待核实", () => {
+    render(<Panel t={overallTask()} first="OA-002" />);
+    expect(text(screen.getByTestId("topic-lead"))).toBe("材料 2 处 · 澄清 2 条 · 你看过");
+    fireEvent.click(screen.getByTestId("toc-OA-003"));
+    // 这一页用户看过的是早先的修订，现在的内容还没有看过：不写「你看过」。
+    expect(text(screen.getByTestId("topic-lead"))).toBe("材料 1 处 · 澄清 2 条");
     const meta = screen.getByTestId("topic-meta");
-    expect([...meta.querySelectorAll(".oa-tag:not(.add)")].map((t) => t.textContent)).toEqual(["概念", "流程"]);
+    expect([...meta.querySelectorAll(".oa-tag:not(.add)")].map((one) => one.textContent)).toEqual(["概念", "流程"]);
     expect(screen.getByTestId("topic-add-label")).toHaveTextContent("＋ 标签");
     expect(screen.getByTestId("topic-pending")).toHaveTextContent("1 处待核实");
-    expect(screen.getByTestId("topic-counts")).toHaveTextContent("2 个条目依据它 · 被 3 处提到");
   });
 
-  it("没有贴标签的页写「未归类」；不待核实的页不写待核实", () => {
+  it("没有贴标签的页：面包屑写「未归类」，顶上一句说明，标签那里也写「未归类」；不待核实的页不写待核实", () => {
     render(<Panel t={overallTask()} first="OA-008" />);
-    expect([...screen.getByTestId("topic-meta").querySelectorAll(".oa-tag:not(.add)")].map((t) => t.textContent)).toEqual(["未归类"]);
+    expect(text(screen.getByTestId("topic-crumb"))).toContain("未归类");
+    expect(screen.getByTestId("topic-unsorted")).toHaveTextContent("这一节还没有归类，贴上标签之后会排进相应的章。");
+    expect([...screen.getByTestId("topic-meta").querySelectorAll(".oa-tag:not(.add)")].map((one) => one.textContent)).toEqual(["未归类"]);
     expect(screen.queryByTestId("topic-pending")).toBeNull();
-    expect(screen.getByTestId("topic-counts")).toHaveTextContent("0 个条目依据它 · 被 0 处提到");
+    expect(text(screen.getByTestId("topic-lead"))).toBe("澄清 1 条");
   });
 
   it("上一条、下一条照目录从上到下的次序；第一节没有上一条，最后一页没有下一条；回到目录", () => {
@@ -59,12 +66,12 @@ describe("主题页的顶部", () => {
     render(<Panel t={overallTask()} first="OA-004" />);
     expect(screen.getByTestId("topic-prev")).toBeDisabled();
     fireEvent.click(screen.getByTestId("topic-next"));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-007读者");
+    expect(text(screen.getByTestId("topic-title"))).toBe("读者");
     fireEvent.click(screen.getByTestId("topic-next"));
     fireEvent.click(screen.getByTestId("topic-next"));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-001借阅");
+    expect(text(screen.getByTestId("topic-title"))).toBe("借阅");
     fireEvent.click(screen.getByTestId("topic-prev"));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-009馆员");
+    expect(text(screen.getByTestId("topic-title"))).toBe("馆员");
     fireEvent.click(screen.getByTestId("toc-OA-011"));
     expect(screen.getByTestId("topic-next")).toBeDisabled();
     fireEvent.click(screen.getByTestId("topic-back"));
@@ -73,7 +80,7 @@ describe("主题页的顶部", () => {
   });
 });
 
-describe("主题页的四块", () => {
+describe("节的各块", () => {
   it("它是什么：一段一段画出来，助手补的那几个字标出来，块尾写来源", () => {
     render(<Panel t={overallTask()} />);
     const what = screen.getByTestId("topic-what");
@@ -87,6 +94,26 @@ describe("主题页的四块", () => {
       "助手补的 · 理由：「保留期是 3 天」是按高校图书馆常见做法补的，你只说了「留几天」，没有说几天。",
     ]);
     expect(sources[1]).toHaveClass("v");
+  });
+
+  it("说明：逐字出自材料的句子用底色标出，点它在右边的材料里看原文；支持整页的来源也列在来源那一行；正文里找不到的不标", () => {
+    const locate = vi.fn();
+    // OA-002 的「它是什么」里没有材料的原话（材料写的是「办理」，页里写的是「办」）：不标，来源照列。
+    render(<Panel t={overallTask()} first="OA-002" spies={{ locate }} />);
+    expect(screen.getByTestId("topic-what").querySelectorAll(".oa-qt").length).toBe(0);
+    expect([...screen.getByTestId("topic-what").querySelectorAll(".oa-src .one")].map((s) => s.textContent)).toEqual(["材料 借阅规则.md「借书和还书都可以在自助借还机上办理，也可以到服务台办理。」"]);
+    cleanup();
+    // 把页里那半句改成与材料一字不差，再加一条支持整页的材料来源：两句都标出来，点一句定位到它自己的出处。
+    const t = change(overallTask(), "OA-002", (p) => {
+      p.fields["它是什么"] = "读者拿着书和借书证办理借还。借书和还书都可以在自助借还机上办理，也可以到服务台办理。借期都是 30 天。";
+      p.sources.push({ kind: "文档原文", locator: "inputs/规定.md", excerpt: " 借期都是 30 天 ", supports: [] });
+    });
+    render(<Panel t={t} first="OA-002" spies={{ locate }} />);
+    const quotes = [...screen.getByTestId("topic-what").querySelectorAll(".oa-qt")];
+    expect(quotes.map((q) => q.textContent)).toEqual(["借书和还书都可以在自助借还机上办理，也可以到服务台办理。", "借期都是 30 天"]);
+    fireEvent.click(quotes[1]);
+    expect(locate).toHaveBeenCalledWith(" 借期都是 30 天 ", "inputs/规定.md");
+    expect([...screen.getByTestId("topic-what").querySelectorAll(".oa-src .one")].map((s) => s.textContent)[1]).toBe("材料 规定.md「 借期都是 30 天 」");
   });
 
   it("它是什么：理由没有引原文、标不出是哪几个字时，整块旁边画一道边；确认之后都不标", () => {
@@ -105,15 +132,57 @@ describe("主题页的四块", () => {
     expect(screen.getByTestId("topic-what").querySelector(".oa-prose")).not.toHaveClass("pending");
   });
 
-  it("例子：一条一张卡片，反例是灰色卡片、写「这种不算」，正文里不带「反例：」", () => {
+  it("示例：一条一张卡片，反例是灰色卡片、写「这种不算」，正文里不带「反例：」", () => {
     render(<Panel t={overallTask()} />);
+    expect(screen.getByTestId("topic-examples").querySelector("h3")).toHaveTextContent("示例");
     const first = screen.getByTestId("topic-example-0");
     const second = screen.getByTestId("topic-example-1");
     expect(first).not.toHaveClass("neg");
-    expect(first.querySelector(".k")).toHaveTextContent("例子 1");
+    expect(first.querySelector(".k")).toBeNull();
     expect(second).toHaveClass("neg");
     expect(second.querySelector(".k")).toHaveTextContent("这种不算");
     expect(second.querySelector("p")!.textContent).toBe("小李想借的《深入理解计算机系统》还在别人手上，他登记的是排队等书，不是预约取书。");
+  });
+
+  it("异常分支：以「例外：」开头的例子各一张小卡，正文里不带「例外：」，写出处；流程节末尾有「＋ 补一种例外」，点了进到修改", () => {
+    const t = change(overallTask(), "OA-003", (p) => { (p.fields["例子"] as string[]).push("例外：读者的借书证过期了，不能预约。"); p.sources[2].supports!.push({ field: "例子", index: 2 }); });
+    render(<Panel t={t} />);
+    const block = screen.getByTestId("topic-exceptions");
+    expect(block.querySelector("h3")).toHaveTextContent("异常分支");
+    const card = within(block).getByTestId("topic-example-2");
+    expect(card).toHaveClass("exc");
+    expect(card.querySelector("p")!.textContent).toBe("读者的借书证过期了，不能预约。");
+    expect(card.querySelector(".oa-src")).toHaveTextContent("你说的「有人预约的书不能续借。」");
+    // 例外不再出现在示例里；平常的例子与反例还在。
+    expect([...screen.getByTestId("topic-examples").querySelectorAll(".oa-card")].length).toBe(2);
+    // 块的次序：说明、异常分支、示例、适用规则、待澄清事项。
+    expect([...screen.getByTestId("topic-page").querySelectorAll(".oa-blk > h3")].map((h) => h.firstChild!.textContent!.trim())).toEqual(["说明", "异常分支", "示例", "适用规则", "待澄清事项"]);
+    fireEvent.click(screen.getByTestId("topic-add-exception"));
+    expect(screen.getByTestId("topic-edit")).toBeInTheDocument();
+  });
+
+  it("异常分支：流程节没有例外时这一块也在，只有「＋ 补一种例外」；不是流程的节没有例外时没有这一块", () => {
+    render(<Panel t={overallTask()} first="OA-006" />);
+    expect(screen.getByTestId("topic-exceptions").querySelectorAll(".oa-card.exc").length).toBe(0);
+    expect(screen.getByTestId("topic-add-exception")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("toc-OA-010"));
+    expect(screen.queryByTestId("topic-exceptions")).toBeNull();
+  });
+
+  it("适用规则：规则表里标了冲突的那一条写明与哪一节的规则冲突，点节名打开那一节；对不上另一条时只说有冲突", () => {
+    const row = (item_id: string, index: number, conflicts: string[]) => ({ item_id, title: "", index, text: "", sources: [], conflicts });
+    const t = overallTask({ overall_views: {
+      rules: { rows: [row("OA-003", 2, ["TBD-009"]), row("OA-006", 0, ["TBD-009"]), row("OA-003", 3, ["TBD-010"]), row("OA-003", 0, [])], conflicts: ["TBD-009", "TBD-010"], unmatched: [] },
+      goals: { roots: [], loose: [] }, decisions: [],
+    } });
+    render(<Panel t={t} />);
+    expect(screen.getByTestId("topic-settled-2")).toHaveClass("conflict");
+    expect(text(screen.getByTestId("topic-conflict-2"))).toBe("与 3.4 续借 的一条规则冲突，已记为待澄清");
+    expect(text(screen.getByTestId("topic-conflict-3"))).toBe("这条规则有冲突，已记为待澄清");
+    expect(screen.queryByTestId("topic-conflict-0")).toBeNull();
+    expect(screen.getByTestId("topic-settled-0")).not.toHaveClass("conflict");
+    fireEvent.click(within(screen.getByTestId("topic-conflict-2")).getByRole("button"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("续借");
   });
 
   it("已经定下的：一句一条，每条下面是出处；助手补的那一条前面是琥珀点", () => {
@@ -141,12 +210,13 @@ describe("主题页的四块", () => {
     expect(locate).toHaveBeenCalledWith("同一册图书同一时间只接受一位读者的预约。", "inputs/借阅规则.md");
   });
 
-  it("还没定的：挂在这一页上还没有了结的问题，带助手问的原因；写了回答点「记下」发给助手", () => {
+  it("待澄清事项：挂在这一页上还没有了结的问题，带需要它的原因；问题的编号不写在正文里；写了回答点「记下」发给助手", () => {
     const send = vi.fn();
     render(<Panel t={overallTask()} spies={{ send }} />);
     const q = screen.getByTestId("topic-question-TBD-001");
-    expect(q.querySelector(".q")).toHaveTextContent("TBD-001保留的 3 天里遇到闭馆日，算不算在内？");
-    expect(q.querySelector(".why")).toHaveTextContent("助手问的原因：小王周六预约、周一到架，如果周日闭馆而且算在 3 天里，他周二来取就只剩一天了。");
+    expect(screen.getByTestId("topic-open").querySelector("h3")).toHaveTextContent("待澄清事项");
+    expect(text(q.querySelector(".q"))).toBe("保留的 3 天里遇到闭馆日，算不算在内？");
+    expect(q.querySelector(".why")).toHaveTextContent("需要它的原因：小王周六预约、周一到架，如果周日闭馆而且算在 3 天里，他周二来取就只剩一天了。");
     fireEvent.change(within(q).getByLabelText("回答 TBD-001"), { target: { value: " 闭馆日不算，顺延 " } });
     fireEvent.click(screen.getByTestId("topic-answer-TBD-001"));
     expect(send).toHaveBeenCalledTimes(1);
@@ -155,7 +225,7 @@ describe("主题页的四块", () => {
     expect(within(q).getByLabelText("回答 TBD-001")).toHaveValue("");
   });
 
-  it("还没定的：回答框空着点「记下」只把开头填进对话区的输入框；「这件事先放着」把问题标为先不管", () => {
+  it("待澄清事项：回答框空着点「记下」只把开头填进对话区的输入框；「暂不处理」把问题标为先不管", () => {
     const send = vi.fn();
     const answer = vi.fn();
     const submit = vi.fn(async () => null);
@@ -163,22 +233,22 @@ describe("主题页的四块", () => {
     fireEvent.click(screen.getByTestId("topic-answer-TBD-001"));
     expect(send).not.toHaveBeenCalled();
     expect(answer.mock.calls[0][0].item_id).toBe("TBD-001");
+    expect(screen.getByTestId("topic-keep-TBD-001")).toHaveTextContent("暂不处理");
     fireEvent.click(screen.getByTestId("topic-keep-TBD-001"));
     expect(submit).toHaveBeenCalledWith({ kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }], notify_executor: false }, "把 TBD-001 标为先不管");
   });
 
-  it("助手工作中、任务结束后，回答与先放着都不能点", () => {
+  it("助手工作中、任务结束后，回答与暂不处理都不能点", () => {
     render(<Panel t={overallTask()} writesOff />);
     expect(screen.getByTestId("topic-answer-TBD-001")).toBeDisabled();
     expect(screen.getByTestId("topic-keep-TBD-001")).toBeDisabled();
     expect(screen.getByLabelText("回答 TBD-001")).toBeDisabled();
   });
 
-  it("哪一块没有内容就写一句话，四块都在", () => {
+  it("没有内容的块不显示：只有说明的页只画说明这一块", () => {
     render(<Panel t={overallTask()} first="OA-011" />);
-    expect(screen.getByTestId("topic-examples")).toHaveTextContent("还没有例子");
-    expect(screen.getByTestId("topic-settled")).toHaveTextContent("还没有定下什么");
-    expect(screen.getByTestId("topic-open")).toHaveTextContent("现在没有挂在这一页上的问题");
+    expect([...screen.getByTestId("topic-page").querySelectorAll(".oa-blk > h3")].map((h) => h.textContent)).toEqual(["说明"]);
+    for (const id of ["topic-exceptions", "topic-examples", "topic-settled", "topic-open"]) expect(screen.queryByTestId(id)).toBeNull();
     expect(screen.getByTestId("topic-what").querySelectorAll(".oa-prose p").length).toBe(1);
   });
 });
@@ -315,7 +385,7 @@ describe("底部的动作与复述", () => {
     const send = vi.fn();
     render(<Panel t={overallTask()} spies={{ send }} />);
     // 悬停提示说清点了之后会怎样：助手讲成一段故事，请用户核对。
-    expect(screen.getByTestId("topic-retell")).toHaveAttribute("title", "请助手把对这一页及其下面主题的理解讲成一段故事，请核对这段复述");
+    expect(screen.getByTestId("topic-retell")).toHaveAttribute("title", "请助手把对这一节及其下面各节的理解讲成一段故事，请核对这段复述");
     fireEvent.click(screen.getByTestId("topic-retell"));
     expect(send).toHaveBeenCalledWith("请把现在对「预约取书」及其下面主题的理解讲成一段故事");
   });
@@ -367,14 +437,14 @@ describe("底部的动作与复述", () => {
     expect(screen.getByTestId("topic-revise")).not.toBeDisabled();
   });
 
-  it("已废弃的页：顶上一句「这一页已废弃，改看 OA-m」，点它打开那一页；标题划掉，底部没有「标为已废弃」", () => {
+  it("已废弃的页：顶上一句「这一页已废弃，改看某一节」，点它打开那一节；标题划掉，底部没有「标为已废弃」", () => {
     const t = change(overallTask(), "OA-011", (p) => { p.fields.状态 = "已废弃"; p.fields.改看 = ["OA-007"]; });
     render(<Panel t={t} first="OA-011" />);
-    expect(text(screen.getByTestId("topic-gone"))).toBe("这一页已废弃。改看 OA-007 读者。");
+    expect(text(screen.getByTestId("topic-gone"))).toBe("这一页已废弃。改看 2.1 读者。");
     expect(screen.getByTestId("topic-title")).toHaveClass("gone");
     expect(screen.queryByTestId("topic-retire")).toBeNull();
     fireEvent.click(screen.getByTestId("topic-see"));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-007读者");
+    expect(text(screen.getByTestId("topic-title"))).toBe("读者");
     expect(screen.queryByTestId("topic-gone")).toBeNull();
   });
 
@@ -384,44 +454,8 @@ describe("底部的动作与复述", () => {
   });
 });
 
-describe("提到它的地方", () => {
-  it("别处说到它的句子在前，命中的词上色；依据它写的条目在后，依据在那之后改过的带「依据已变」", () => {
-    render(<Panel t={overallTask()} />);
-    const rows = [...screen.getByTestId("topic-mentions").querySelectorAll(".oa-mentions li")];
-    expect(rows.map((li) => `${li.getAttribute("data-kind")}｜${text(li.querySelector(".from"))}`)).toEqual([
-      "mention｜借书与还书主题 · 它是什么",
-      "mention｜续借主题 · 已经定下的第 2 条",
-      "mention｜UC-002 续借功能用例 · 约束规则第 1 条",
-      "basis｜UC-002 续借功能用例 · 依据它",
-      "basis｜UC-003 预约图书功能用例 · 依据它",
-    ]);
-    expect(rows[0].querySelector("mark")!.textContent).toBe("预约取书");
-    expect(rows[1].querySelector("q")!.textContent).toBe("有人预约的书不能续借。");
-    expect(rows[1].querySelector("mark")!.textContent).toBe("预约");
-    expect(rows[3].querySelector("mark")).toBeNull();
-    expect(screen.getByTestId("topic-stale-UC-003")).toHaveTextContent("依据已变");
-    expect(screen.queryByTestId("topic-stale-UC-002")).toBeNull();
-  });
-
-  it("点出处打开那一页主题；点条目的出处切到它所在的页签并打开它", () => {
-    render(<Panel t={overallTask()} />);
-    fireEvent.click(screen.getByTestId("topic-mention-1").querySelector(".from")!);
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-006续借");
-    fireEvent.click(screen.getByTestId("toc-OA-003"));
-    fireEvent.click(screen.getByTestId("topic-mention-4").querySelector(".from")!);
-    expect(screen.queryByTestId("overall-pane")).toBeNull();
-    expect(document.querySelector(".itab.on")!.textContent).toBe("功能用例3");
-    expect(screen.getByTestId("item-detail")).toHaveTextContent("UC-003");
-  });
-
-  it("没有别处提到、也没有条目依据的页写一句话", () => {
-    render(<Panel t={overallTask()} first="OA-011" />);
-    expect(screen.getByTestId("topic-mentions")).toHaveTextContent("还没有别处提到它，也没有条目依据它。");
-  });
-});
-
 describe("按条目的样子看", () => {
-  it("点「看修订与全部来源」换成条目详情，上面有「回到主题页」；换一页又是主题页", () => {
+  it("点「看修订与全部来源」换成条目详情，上面有「回到这一节」；换一节又是节的版式", () => {
     render(<Panel t={overallTask()} />);
     fireEvent.click(screen.getByTestId("topic-raw"));
     expect(screen.queryByTestId("topic-page")).toBeNull();
@@ -431,6 +465,6 @@ describe("按条目的样子看", () => {
     expect(screen.getByTestId("topic-page")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("topic-raw"));
     fireEvent.click(screen.getByTestId("toc-OA-002"));
-    expect(text(screen.getByTestId("topic-title"))).toBe("OA-002借书与还书");
+    expect(text(screen.getByTestId("topic-title"))).toBe("借书与还书");
   });
 });
