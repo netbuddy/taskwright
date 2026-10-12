@@ -260,24 +260,27 @@ ${diagramVersionSql("diagram_version", true)}`;
 /**
  * 阶段记录表：任务从一个工作阶段移到另一个阶段，一次移动一行（lib/stage.ts 与 lib/stage_read.ts）。任务现在在哪个阶段看事件序号最大的一行；
  * 一行都没有时按任务有没有材料定（有材料是核读材料，没有是澄清），这个缺省不落库。只有任务定义里有「总体分析」集合的任务才会有行。
- * 阶段用英文写法存（reading、clarifying、modeling、writing、reviewing），与事件、接口里的写法相同。
- * 格式版本 2 加的表：旧库由升级步骤表的「1 到 2」那一步补上；只读的一侧遇到还没有这张表的库，当作一条记录都没有。
+ * 阶段用英文写法存（reading、clarifying、modeling、writing、reviewing、document），与事件、接口里的写法相同。
+ * 阶段有哪几个只在代码里判（lib/stage.ts 的 STAGES），库不检查两列阶段的取值：加一个阶段不用改库的结构。
+ * 格式版本 2 加的表：旧库由升级步骤表的「1 到 2」那一步补上；格式版本 3 及更早的库里这两列带着只许五个阶段的检查，
+ * 由「3 到 4」那一步去掉。只读的一侧遇到还没有这张表的库，当作一条记录都没有。
  */
-export const STAGE_RECORD_SQL = `
-CREATE TABLE IF NOT EXISTS stage_record (
+const stageRecordSql = (table: string): string => `
+CREATE TABLE IF NOT EXISTS ${table} (
   record_id    INTEGER PRIMARY KEY,   -- 记录的编号
   task_id      TEXT NOT NULL,         -- 所属任务的任务编号
   session_id   TEXT NOT NULL,         -- 发生这次移动的那条 pi 会话的会话编号
   run_id       TEXT,                  -- 助手移动时是运行号（这条会话当前分支上第几句用户的话，例如 r3）；用户移动时为空
   call_id      TEXT NOT NULL,         -- 助手移动时是那次「回复」调用的调用编号；用户移动时是界面操作的操作编号
   actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),  -- 由谁：助手或用户
-  stage        TEXT NOT NULL CHECK (stage IN ('reading', 'clarifying', 'modeling', 'writing', 'reviewing')),       -- 移到了哪个阶段
-  from_stage   TEXT NOT NULL CHECK (from_stage IN ('reading', 'clarifying', 'modeling', 'writing', 'reviewing')),  -- 从哪个阶段移过来
+  stage        TEXT NOT NULL,         -- 移到了哪个阶段（取值只在代码里判）
+  from_stage   TEXT NOT NULL,         -- 从哪个阶段移过来（取值只在代码里判）
   reason       TEXT NOT NULL,         -- 理由：助手必须写一句；用户的可以是空文字
   event_seq    INTEGER NOT NULL,      -- 记下这次移动的那条事件的序号
   created_at   TEXT NOT NULL          -- 时刻（本地时间）
 );
 `;
+export const STAGE_RECORD_SQL = stageRecordSql("stage_record");
 
 /**
  * 修订表上按调用编号判重的索引：同一任务里，同一次工具调用（同一个调用编号）只能形成一次修订。
@@ -447,9 +450,9 @@ export function existingTables(db: DatabaseSync): string[] {
 /**
  * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。0 是没有编过版本号的库：0.4.x 及更早的版本建的，或者一张表都没有的空库。
  * 每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。1 是给库编上版本号的那一版；2 加了阶段记录表（stage_record）；
- * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）。
+ * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）；4 去掉了阶段记录表里两列阶段的检查（阶段有哪几个只在代码里判）。
  */
-export const TASK_DB_VERSION = 3;
+export const TASK_DB_VERSION = 4;
 
 /** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
 export const TASK_JSON = "task.json";
@@ -488,6 +491,7 @@ const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void
   { from: 0, to: 1, run: fromUnversioned },
   { from: 1, to: 2, run: addStageRecords },
   { from: 2, to: 3, run: dropDiagramKindCheck },
+  { from: 3, to: 4, run: dropStageChecks },
 ];
 
 /**
@@ -534,6 +538,30 @@ function dropDiagramKindCheck(db: DatabaseSync): void {
     INSERT INTO diagram_version_new (${DIAGRAM_VERSION_COLUMNS}) SELECT ${DIAGRAM_VERSION_COLUMNS} FROM diagram_version;
     DROP TABLE diagram_version;
     ALTER TABLE diagram_version_new RENAME TO diagram_version;
+  `);
+}
+
+/** 阶段记录表的各列，按建表语句里的先后。 */
+const STAGE_RECORD_COLUMNS = "record_id, task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at";
+
+/**
+ * 第 3 到 4 步：去掉阶段记录表里「移到哪个阶段」「从哪个阶段移来」两列的检查。做法与上一步相同：建一张不带这两条检查的新表，
+ * 把旧行原样抄过去（记录的编号也照抄），删掉旧表，把新表改成原来的名字。行数与每一行的内容都不变。
+ * 库里这张表的建表语句已经不带这两条检查（新建的库、做过这一步的库）时什么都不改；还没有这张表时补上。
+ */
+function dropStageChecks(db: DatabaseSync): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'stage_record'").get() as { sql: string } | undefined;
+  if (!row) {
+    db.exec(STAGE_RECORD_SQL);
+    return;
+  }
+  if (!/CHECK\s*\(\s*(from_)?stage\s+IN\b/i.test(row.sql)) return;
+  db.exec("DROP TABLE IF EXISTS stage_record_new");
+  db.exec(stageRecordSql("stage_record_new"));
+  db.exec(`
+    INSERT INTO stage_record_new (${STAGE_RECORD_COLUMNS}) SELECT ${STAGE_RECORD_COLUMNS} FROM stage_record;
+    DROP TABLE stage_record;
+    ALTER TABLE stage_record_new RENAME TO stage_record;
   `);
 }
 

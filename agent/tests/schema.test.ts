@@ -240,8 +240,7 @@ test("格式版本 2 的库里图的内容表检查种类：升到版本 3 时�
   assert.throws(() => raw.prepare(INSERT_DIAGRAM_VERSION).run("D-003", "系统边界", "context"), /CHECK constraint failed/);
   raw.close();
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 2, to: TASK_DB_VERSION });
-  assert.equal(TASK_DB_VERSION, 3);
-  assert.equal(version(dir), 3);
+  assert.equal(version(dir), TASK_DB_VERSION);
   assert.deepEqual(query(dir, "SELECT * FROM diagram_version ORDER BY diagram_id"), before);
   assert.doesNotMatch(diagramVersionSql(dir), /CHECK\s*\(\s*kind/i);
   assert.match(diagramVersionSql(dir), /CHECK \(op IN/, "别的检查还在");
@@ -260,4 +259,69 @@ test("没有编过版本号、图的内容表带着种类检查的库：一次�
   });
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION });
   assert.doesNotMatch(diagramVersionSql(dir), /CHECK\s*\(\s*kind/i);
+});
+
+/** 格式版本 3 及更早的库里的阶段记录表：两列阶段带着只许五个阶段的检查。 */
+const OLD_STAGE_RECORD_SQL = `
+CREATE TABLE stage_record (
+  record_id    INTEGER PRIMARY KEY,
+  task_id      TEXT NOT NULL,
+  session_id   TEXT NOT NULL,
+  run_id       TEXT,
+  call_id      TEXT NOT NULL,
+  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),
+  stage        TEXT NOT NULL CHECK (stage IN ('reading', 'clarifying', 'modeling', 'writing', 'reviewing')),
+  from_stage   TEXT NOT NULL CHECK (from_stage IN ('reading', 'clarifying', 'modeling', 'writing', 'reviewing')),
+  reason       TEXT NOT NULL,
+  event_seq    INTEGER NOT NULL,
+  created_at   TEXT NOT NULL
+);`;
+const INSERT_STAGE_RECORD =
+  "INSERT INTO stage_record (task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at) VALUES ('T', 's', NULL, ?, 'user', ?, ?, '用户点的', 1, '2026-10-11T10:00:00')";
+const stageRecordSql = (dir: string) => query<{ sql: string }>(dir, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'stage_record'")[0].sql;
+
+test("格式版本：新建的库里阶段记录表不检查阶段的取值，五个阶段之外的写法库也收；谁移的那一列照旧检查", () => {
+  const dir = makeWorkspace();
+  withTaskDatabase(dir, { createIfMissing: true }, (db) => db.prepare(INSERT_STAGE_RECORD).run("op-1", "document", "reviewing"));
+  assert.doesNotMatch(stageRecordSql(dir), /CHECK\s*\(\s*(from_)?stage/i);
+  assert.match(stageRecordSql(dir), /CHECK \(actor IN/);
+});
+
+test("格式版本 3 的库里阶段记录表检查阶段的取值：升到版本 4 时去掉这两条检查，原有的行一行不少、编号与内容不变；再升一次什么都不改", () => {
+  const dir = makeWorkspace();
+  withTaskDatabase(dir, { createIfMissing: true }, (db) => {
+    db.exec(`DROP TABLE stage_record; ${OLD_STAGE_RECORD_SQL}`);
+    db.prepare(INSERT_STAGE_RECORD).run("op-1", "clarifying", "reading");
+    db.prepare(INSERT_STAGE_RECORD).run("op-2", "modeling", "clarifying");
+    db.exec("DELETE FROM stage_record WHERE call_id = 'op-1'");   // 编号不从 1 连着排的时候也要照抄
+    db.prepare(INSERT_STAGE_RECORD).run("op-3", "writing", "modeling");
+    db.exec("PRAGMA user_version = 3");
+  });
+  const before = query(dir, "SELECT * FROM stage_record ORDER BY record_id");
+  assert.deepEqual(before.map((row) => (row as { record_id: number }).record_id), [2, 3]);
+  // 还没有升级时，库自己拒绝五个阶段之外的写法。
+  const raw = new DatabaseSync(databasePath(dir));
+  assert.throws(() => raw.prepare(INSERT_STAGE_RECORD).run("op-4", "document", "reviewing"), /CHECK constraint failed/);
+  raw.close();
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 3, to: TASK_DB_VERSION });
+  assert.equal(TASK_DB_VERSION, 4);
+  assert.equal(version(dir), 4);
+  assert.deepEqual(query(dir, "SELECT * FROM stage_record ORDER BY record_id"), before);
+  assert.doesNotMatch(stageRecordSql(dir), /CHECK\s*\(\s*(from_)?stage/i);
+  assert.match(stageRecordSql(dir), /CHECK \(actor IN/, "别的检查还在");
+  assert.deepEqual(tables(dir), [...TABLE_NAMES].sort(), "没有留下重建时用的那张表");
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(INSERT_STAGE_RECORD).run("op-4", "document", "reviewing"));
+  assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM stage_record ORDER BY record_id").map((row) => row.record_id), [2, 3, 4]);
+  const sql = stageRecordSql(dir);
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.equal(stageRecordSql(dir), sql);
+});
+
+test("没有编过版本号、阶段记录表带着阶段检查的库：一次升到现在的版本，检查一并去掉", () => {
+  const dir = makeWorkspace();
+  withTaskDatabase(dir, { createIfMissing: true }, (db) => {
+    db.exec(`DROP TABLE stage_record; ${OLD_STAGE_RECORD_SQL}; PRAGMA user_version = 0`);
+  });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION });
+  assert.doesNotMatch(stageRecordSql(dir), /CHECK\s*\(\s*(from_)?stage/i);
 });

@@ -105,6 +105,8 @@ export interface StageMove {
  * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让事件、这一行与同一次调用里别的写入一起提交。
  */
 export function recordStageMove(db: DatabaseSync, move: StageMove): number {
+  // 库不检查阶段的取值（lib/schema.ts），所以写之前在这里判：不是阶段表里的写法就不记。
+  if (!isStage(move.to) || !isStage(move.from)) throw new Error(`阶段记录里的阶段写法不对：从「${String(move.from)}」到「${String(move.to)}」。`);
   const seq = emit(db, {
     taskId: move.taskId, sessionId: move.sessionId, callId: move.callId, name: EVENT_STAGE_MOVED, actor: move.actor,
     payload: { stage: move.to, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId, flow: FLOW_INITIAL },

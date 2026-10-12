@@ -30,7 +30,6 @@ test("记一次移动：事件的内容里写所属流程；读记录时带出�
   assert.deepEqual(read(dir, (db, id) => [lastStageRecord(db, id)!.stage, lastStageRecord(db, id)!.flow]), ["modeling", "initial"]);
   assert.equal(query<{ name: string }>(dir, "SELECT name FROM pragma_table_info('stage_record')").some((column) => column.name === "flow"), false);
   assert.equal(query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version, TASK_DB_VERSION);
-  assert.equal(TASK_DB_VERSION, 3);
 });
 
 test("早先记下的移动事件里没有写所属流程：读出来补首次分析；事件里写了别的流程的照它写的读", () => {
