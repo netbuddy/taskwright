@@ -276,7 +276,10 @@
 .app .oa-conflicts .see { cursor: pointer; text-decoration: underline; }
 .app .oa-table.oa-rulestable tr.conflict { background: var(--amber-bg); }
 .app .oa-table.oa-rulestable td.from { white-space: nowrap; color: var(--text2); }
-.app .oa-table.oa-rulestable td.src { font-size: 0.873rem; color: var(--text3); min-width: 12rem; }
+.app .oa-table.oa-rulestable td.src { font-size: 0.873rem; color: var(--text3); width: 36%; }
+/* 规则那一栏占将近一半，窄的时候也不被另两栏挤成几个字一行 */
+.app .oa-table.oa-rulestable td:first-child { width: 44%; min-width: 12rem; }
+.app .oa-table.oa-decisions td:nth-child(3) { width: 40%; min-width: 12rem; }
 .app .oa-table.oa-rulestable tr:last-child td, .app .oa-table.oa-decisions tr:last-child td { border-bottom: 0; }
 .app .oa-table.oa-decisions td.at, .app .oa-table.oa-decisions td.kind { white-space: nowrap; color: var(--text3); font-size: 0.889rem; }
 .app .oa-table.oa-decisions tr.question td.kind { color: var(--amber); }

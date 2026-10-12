@@ -81,6 +81,16 @@ export function initialZoom(width: number, room: number): number {
   return clampZoom(Math.max(AUTO_MIN_ZOOM, room / width));
 }
 
+/**
+ * 一打开时整张图都看得见的比例（图嵌在页面的一块里、看板的高度是定死的时候用）：宽与高都放得下就按原始大小，
+ * 哪个方向放不下就缩到放得下（四边各留 STAGE_MARGIN），但最多缩到 AUTO_MIN_ZOOM。量不到看板的大小时按原始大小。
+ */
+export function wholeZoom(size: { width: number; height: number }, stage: { width: number; height: number }): number {
+  if (!(stage.width > 0) || !(stage.height > 0) || !(size.width > 0) || !(size.height > 0)) return 1;
+  const fit = Math.min((stage.width - 2 * STAGE_MARGIN) / size.width, (stage.height - 2 * STAGE_MARGIN) / size.height);
+  return fit >= 1 ? 1 : clampZoom(Math.max(AUTO_MIN_ZOOM, fit));
+}
+
 /** 「适应宽度」的比例：正好与看板一样宽（不超过上下限）。量不到看板的宽度时按原始大小。 */
 export function fitZoom(width: number, room: number): number {
   return room > 0 && width > 0 ? clampZoom(room / width) : 1;

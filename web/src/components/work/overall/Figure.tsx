@@ -185,7 +185,7 @@ function FigureBody({ host, row, decorate, more }: { host: FigureHost; row: Diag
       <div className="dg-figure oa-fig-stage">
         {dirty && <div className="dg-preview" data-testid="diagram-preview-note">{PREVIEW_TEXT}</div>}
         <DiagramView text={decorate && !dirty ? decorate(shownText) : shownText} fileName={`${detail.diagram_id} ${detail.name}`} exportOff={dirty ? EXPORT_NEEDS_SAVE_TEXT : null}
-          wheel="ctrl" onDrawn={() => setDrawn(true)} />
+          wheel="ctrl" fit="whole" onDrawn={() => setDrawn(true)} />
       </div>
       <div className="oa-fig-foot" data-testid="figure-foot">
         <span data-testid="figure-from">
@@ -261,7 +261,7 @@ export function FigureBlocks({ host, item, slots }: { host: FigureHost; item: It
     <>
       {slots.filter((slot) => figures[slot].length > 0).map((slot) => (
         <section key={slot} className="oa-blk" data-testid={`topic-fig-${slot}`}>
-          <h3>{SLOT_TITLE[slot]}{slot === "relations" && <small>整张对象关系图，本节的对象边框加粗</small>}</h3>
+          <h3>{SLOT_TITLE[slot]}{slot === "relations" && <small>取自第 4 章对象关系图，本节的对象边框加粗</small>}</h3>
           <Figure host={host} rows={figures[slot]}
             decorate={slot === "relations" ? (text) => markClasses(text, classNamesOf(text, host.task, item.item_id)) : undefined} />
         </section>

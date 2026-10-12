@@ -13,6 +13,8 @@ import { STATE_TEXT, isDeprecated, titleOf, topicState, type TopicState } from "
 export type HeadView = { kind: "chapter"; no: number } | { kind: "glossary" } | { kind: "loose" };
 
 const LEGEND: TopicState[] = ["settled", "pending", "open"];
+/** 章下面一节的行比章标题往里缩多少（rem，与样式里 .oa-chap > .oa-row 的左边距相同）；下级的节在它上面再往里缩。 */
+const SECTION_INDENT = 1.3;
 
 export function Contents({ task, contents, current, head, onOpen, onHead, onRetell, retellOff, looseCount = 0 }: {
   /** 哪一节都放不进的图有几张；有的时候目录末尾多一行「未归入节的图」。 */
@@ -44,7 +46,7 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
     const on = item.item_id === current;
     return (
       <div key={item.item_id} className={`oa-row${on ? " cur" : ""}${isDeprecated(item) ? " gone" : ""}${dim ? " dim" : ""}`} role="button" tabIndex={0}
-        style={depth > 0 ? { marginLeft: `${depth * 0.9}rem` } : undefined}
+        style={depth > 0 ? { marginLeft: `${SECTION_INDENT + depth * 0.9}rem` } : undefined}
         title={`${no ? `${no} ` : ""}${titleOf(item)}：${STATE_TEXT[state]}`} aria-current={on ? "true" : undefined}
         onClick={() => onOpen(item.item_id)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(item.item_id); }} data-testid={`toc-${item.item_id}`}>
         <span className={`oa-dot ${state}`} data-state={state} />
@@ -90,7 +92,7 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
         )}
         {looseCount > 0 && (
           <div className="oa-chap">
-            <div className={`oa-ch plain${head?.kind === "loose" ? " cur" : ""}`} role="button" tabIndex={0} title="这几张图没有写它画的是哪一节" aria-current={head?.kind === "loose" ? "true" : undefined}
+            <div className={`oa-ch${head?.kind === "loose" ? " cur" : ""}`} role="button" tabIndex={0} title="这几张图没有写它画的是哪一节" aria-current={head?.kind === "loose" ? "true" : undefined}
               onClick={() => onHead({ kind: "loose" })} onKeyDown={(e) => { if (e.key === "Enter") onHead({ kind: "loose" }); }} data-testid="toc-loose">
               <span className="no" /><span className="oa-name">未归入节的图</span><span className="oa-count">{looseCount}</span>
             </div>

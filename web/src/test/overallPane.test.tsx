@@ -75,7 +75,8 @@ describe("目录", () => {
       .toEqual(["1概述与范围", "2角色", "3业务流程▾", "4业务对象", "5业务规则", "6业务目标", "7决策记录与待澄清事项", "未归类"]);
     expect(rows()).toEqual(["闭馆日怎么算", "读者", "馆员", "借阅", "借书与还书", "预约取书", "续借", "逾期与罚款", "馆藏", "术语表", "借书证的有效期", "和校园卡打通"]);
     // 「借书与还书」在「借阅」之下：往里缩一层；「借阅」是顶层。
-    expect([row("OA-001").style.marginLeft, row("OA-002").style.marginLeft]).toEqual(["", "0.9rem"]);
+    // 章下面的节由样式统一往里缩 1.3rem；下级的节在这上面再缩 0.9rem，所以写的是两样加起来。
+    expect([row("OA-001").style.marginLeft, row("OA-002").style.marginLeft]).toEqual(["", "2.2rem"]);
     const dot = (id: string) => row(id).querySelector(".oa-dot")!.getAttribute("data-state");
     expect([dot("OA-002"), dot("OA-003"), dot("OA-004"), dot("OA-008")]).toEqual(["settled", "pending", "open", "unsorted"]);
     expect(row("OA-003").getAttribute("title")).toBe("3.3 预约取书：有助手补的，待核实");

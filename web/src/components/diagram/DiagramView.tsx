@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "antd";
-import { PNG_SCALE, WHEEL_STEP, type DiagramViewport, exportPng, fitZoom, initialZoom, placed, renderDiagram, sizedSvg, stepZoom, zoomAt } from "./mermaid";
+import { PNG_SCALE, WHEEL_STEP, type DiagramViewport, exportPng, fitZoom, initialZoom, placed, renderDiagram, sizedSvg, stepZoom, wholeZoom, zoomAt } from "./mermaid";
 
 export const DIAGRAM_EMPTY_TEXT = "还没有 Mermaid 文本。";
 export const DIAGRAM_DRAWING_TEXT = "正在画图……";
@@ -30,7 +30,9 @@ type Drawn = { state: "empty" } | { state: "drawing" } | { state: "done"; svg: s
 /** 嵌在可以上下滚的页面里时悬停的提示：滚轮留给页面，按住 Ctrl 再滚才放大缩小。 */
 export const STAGE_HINT_CTRL_TEXT = "按住拖动可以移动图，按住 Ctrl 滚轮放大缩小";
 
-export function DiagramView({ text, fileName = "图", exportOff = null, onDrawn, wheel = "always" }: {
+export function DiagramView({ text, fileName = "图", exportOff = null, onDrawn, wheel = "always", fit = "width" }: {
+  /** 一打开时怎样定比例：width 是只看宽度（图比看板宽才缩），whole 是整张都看得见（看板的高度定死时用）。 */
+  fit?: "width" | "whole";
   text: string;
   fileName?: string;
   /** 图画出来了（每画成一次叫一次）。 */
@@ -78,7 +80,7 @@ export function DiagramView({ text, fileName = "图", exportOff = null, onDrawn,
   useEffect(() => {
     if (!sized || adjusted.current) return;
     const space = room();
-    setView(placed(sized, space, initialZoom(sized.width, space.width)));
+    setView(placed(sized, space, fit === "whole" ? wholeZoom(sized, space) : initialZoom(sized.width, space.width)));
   }, [sized]);
 
   /** 用户换比例：锚点在看板上 (px, py)，不给时是看板的中心。 */
