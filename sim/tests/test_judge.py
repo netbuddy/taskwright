@@ -31,9 +31,9 @@ saveRevision({ workspaceDir: dir, sessionId: "s", callId: "ui-op-1", actor: "use
     { kind: "助手补充", excerpt: "按常识补了出示借书证这一步" }] },
   { op: "add", collection: "约束", fields: { 类别: "时限", 句式类型: "普遍型", 需求语句: "寒暑假期间借出的图书，借期应当顺延到开学后第一周的周五。" },
     sources: [{ kind: "用户的话", locator: "s#e1", excerpt: "寒暑假借的书顺延到开学第一周周五" }] },
-  { op: "add", collection: "问题", fields: { 事项: "遗失的图书怎样处理", 种类: "待澄清", 状态: "未解决" },
+  { op: "add", collection: "问题", fields: { 事项: "遗失的图书怎样处理", 种类: "待澄清", 是否阻断下游: "不阻断", 何时回看: "评审确认时", 状态: "未解决" },
     sources: [src("读者还书时，逾期的每本每天罚款一角。")] },
-  { op: "add", collection: "问题", fields: { 事项: "智能推荐的范围不明确", 种类: "待澄清", 状态: "未解决" },
+  { op: "add", collection: "问题", fields: { 事项: "智能推荐的范围不明确", 种类: "待澄清", 是否阻断下游: "不阻断", 何时回看: "评审确认时", 状态: "未解决" },
     sources: [src("系统还要能智能推荐图书。")] },
 ] });
 """

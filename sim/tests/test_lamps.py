@@ -195,7 +195,7 @@ saveRevision({ workspaceDir: dir, sessionId: "s", callId: "ui-op-1", actor: "use
 saveRevision({ workspaceDir: dir, sessionId: "s", callId: "ui-op-2", actor: "user" }, { operations: [
   { op: "add", collection: "功能用例", fields: { 用例名称: "借书", 用例功能: "读者凭借书证借书。", 参与者: ["读者"], 基本流程: ["读者出示借书证", "系统登记借书"] },
     sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者凭借书证借书。" }, { kind: "助手补充", excerpt: "按常识补了出示借书证这一步" }] },
-  { op: "add", collection: "问题", fields: { 事项: "寒暑假借期怎么算", 种类: "待澄清", 状态: "未解决", 关联条目: ["OA-001"] }, sources: [src("读者凭借书证借书")] },
+  { op: "add", collection: "问题", fields: { 事项: "寒暑假借期怎么算", 种类: "待澄清", 是否阻断下游: "不阻断", 何时回看: "评审确认时", 状态: "未解决", 关联条目: ["OA-001"] }, sources: [src("读者凭借书证借书")] },
 ] });
 """
 VIEW = r"""

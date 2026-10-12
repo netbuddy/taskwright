@@ -27,7 +27,7 @@ const SCRIPT = {
       { op: "add", collection: "功能用例", sources: [SOURCE],
         fields: { 用例名称: "借书", 用例功能: "读者借书。", 参与者: ["读者"], 基本流程: ["读者在自助机上刷借书证", "系统记下借阅"] } },
       { op: "add", collection: "问题", sources: [SOURCE],
-        fields: { 事项: "借书前要不要检查逾期未还的书？", 种类: "待澄清", 状态: "未解决", 关联条目: ["UC-001"] } },
+        fields: { 事项: "借书前要不要检查逾期未还的书？", 种类: "待澄清", 是否阻断下游: "阻断下游", 状态: "未解决", 关联条目: ["UC-001"] } },
     ] } }] },
     reply("整理好了一个用例，还有一个问题要问你。", "call-done-1"),
     { tool_calls: [{ id: "call-resolve-early", name: "save_revision", arguments: RESOLVE }] },

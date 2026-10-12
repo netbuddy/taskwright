@@ -147,7 +147,7 @@ SCRIPT = {"rules": [
              "标题": "借书", "它是什么": "读者凭借书证借书，每本书可以续借一次。", "例子": ["读者凭借书证借书"], "标签": ["流程"], "状态": "在用"},
              "sources": [source("读者凭借书证借书，每本书可以续借一次。")]}]}},
          {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "问题", "fields": {
-             "事项": "寒暑假期间的借期怎样算", "种类": "待澄清", "状态": "未解决"},
+             "事项": "寒暑假期间的借期怎样算", "种类": "待澄清", "是否阻断下游": "不阻断", "何时回看": "评审确认时", "状态": "未解决"},
              "sources": [source("寒暑假期间的借期另行规定。")]}]}}]}},
     {"when": {"last_role": "user", "last_contains": "教务处"},
      "reply": {"text": intent("inform", "要去问教务处"), "tool_calls": [{"name": "reply", "arguments": {"informs": [], "act": None, "text": "好的，这件事先记着。"}}]}},
