@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { ApartmentOutlined, AppstoreOutlined, LockOutlined, ProfileOutlined, QuestionCircleOutlined, ReadOutlined, SlidersOutlined } from "@ant-design/icons";
 import type { Task } from "../../api/types";
 import { isUnread, needsReview, reviewCounts } from "../../model/items";
+import { collectionLabel } from "../../model/overall";
 import { href } from "../../router";
 
 /** 五种集合色的样式类（依次是蓝、青绿、靛蓝、琥珀、石板灰，见 styles/task-page.css）。 */
@@ -48,16 +49,18 @@ export function CollectionCards({ task, sessionId }: {
           const reviewed = needsReview(task, coll.name);
           const counts = reviewCounts(task, coll.name);
           const read = items.filter((i) => !isUnread(i)).length;
-          const about = empty ? `${coll.name}还没有条目。`
+          // 给人看的名字：总体分析显示成「业务说明」，与工作视图里的页签一致；集合名、测试标记与链接里仍用集合名。
+          const shown = collectionLabel(coll.name);
+          const about = empty ? `${shown}还没有条目。`
             : reviewed
               ? `这 ${n} 个条目里，${counts.passed} 个在当前所在的修订上评审通过，${counts.kept > 0 ? `${counts.kept} 个评审不通过但你保留了写法（按你的决定算通过），` : ""}你已经看过其中 ${read} 个。`
               : `这 ${n} 个条目里，你已经看过 ${read} 个。这个集合不评审。`;
-          const title = `${about}${sessionId ? `点这张卡进入工作视图，只看${coll.name}。` : NO_SESSION_TITLE}`;
+          const title = `${about}${sessionId ? `点这张卡进入工作视图，只看${shown}。` : NO_SESSION_TITLE}`;
           const body = (
             <>
               <div className="tp-coll-h">
                 <span className="cic">{look.icon}</span>
-                <span className="tp-coll-name">{coll.name}</span><span className="tp-coll-pre">{coll.prefix}</span>
+                <span className="tp-coll-name">{shown}</span><span className="tp-coll-pre">{coll.prefix}</span>
               </div>
               <div className="tp-coll-n" data-testid={`board-count-${coll.name}`}>{n}</div>
               <div className="tp-coll-s">
