@@ -18,7 +18,7 @@ import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
 import { CONTINUE_STAGE_KIND, CONTINUE_STAGE_LINE, STAY_TEXT, stageMoveLine } from "../../model/stage";
-import { NEW_SESSION_LINE, STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, wantsOpeningStatus } from "../../model/taskStatus";
+import { NEW_SESSION_LINE, STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, nobodySpoke, wantsOpeningStatus } from "../../model/taskStatus";
 import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
@@ -117,10 +117,10 @@ export function Conversation({
     const el = box.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, currentWork?.steps.length, outgoing.length]);
-  // 任务状况卡。新建会话的开头：这条会话一打开时一条消息都没有、任务里又已经有主题页，就取一次状况放在最前面；
+  // 任务状况卡。新建会话的开头：这条会话一打开时还没有人说过话（会话开头系统放的那条任务现状说明不算）、任务里又已经有主题页，就取一次状况放在最前面；
   // 之后用户说了话它仍留在原处（它不是会话里的消息，刷新之后对话已经有消息，就不再出现）。
   const statusOn = !!task?.stage && !!loadStatus;
-  const openingWanted = useRef(wantsOpeningStatus(task, messages.length, outgoing.length, hasEarlier, !!disabledReason));
+  const openingWanted = useRef(wantsOpeningStatus(task, nobodySpoke(messages) ? 0 : 1, outgoing.length, hasEarlier, !!disabledReason));
   const [opening, setOpening] = useState<TaskStatusView | null>(null);
   useEffect(() => {
     if (!openingWanted.current || !loadStatus) return;

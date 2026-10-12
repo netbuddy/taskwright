@@ -65,11 +65,17 @@ export function missingLine(missing: TaskStatusView["missing"]): string {
   return missing.map((one) => lampShort(one.summary).replace(/[。.]+$/, "")).join("；");
 }
 
+/** 一条会话里还没有人说过话：没有用户的话，也没有助手的回复。会话一开头系统放的任务现状说明、界面操作的通知不算。 */
+export function nobodySpoke(messages: readonly { type: string }[]): boolean {
+  return !messages.some((one) => one.type === "user_message" || one.type === "assistant_reply");
+}
+
 /**
- * 新建会话的开头要不要放一张状况卡：任务有阶段、还在进行中，这条会话一条消息都没有（也没有更早的一段、没有正在发送的话），
+ * 新建会话的开头要不要放一张状况卡：任务有阶段、还在进行中，这条会话里还没有人说过话（也没有更早的一段、没有正在发送的话），
  * 而且总体分析里已经有在用的主题页。新任务的第一条会话还没有主题页，不放：那时中栏有两个开头的按钮。
+ * spoken 是这条会话里用户的话与助手的回复一共几条（见 nobodySpoke）。
  */
-export function wantsOpeningStatus(task: Task | null, messages: number, outgoing: number, hasEarlier: boolean, closed: boolean): boolean {
-  if (!task?.stage || closed || messages > 0 || outgoing > 0 || hasEarlier) return false;
+export function wantsOpeningStatus(task: Task | null, spoken: number, outgoing: number, hasEarlier: boolean, closed: boolean): boolean {
+  if (!task?.stage || closed || spoken > 0 || outgoing > 0 || hasEarlier) return false;
   return pagesOf(task).some((page) => !isDeprecated(page));
 }

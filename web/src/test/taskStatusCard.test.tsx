@@ -8,7 +8,8 @@ import type { ConversationMessage, StageProposal, Task, TaskStatusView } from ".
 import { Conversation } from "../components/work/Conversation";
 import { TaskStatusCard } from "../components/work/TaskStatusCard";
 import {
-  NEW_SESSION_LINE, STATUS_CALLED_LINE, STATUS_NEXT_TEXT, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, shortMoment, statusSubtitle, wantsOpeningStatus,
+  NEW_SESSION_LINE, STATUS_CALLED_LINE, STATUS_NEXT_TEXT, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, nobodySpoke, shortMoment, statusSubtitle,
+  wantsOpeningStatus,
 } from "../model/taskStatus";
 import { overallTask } from "./fixtures/overallTask";
 
@@ -100,8 +101,12 @@ describe("状况卡各行的写法", () => {
 });
 
 describe("新建会话的开头", () => {
-  it("判法：任务有阶段、在进行中、这条会话一条消息都没有、任务里已经有在用的主题页", () => {
+  it("判法：任务有阶段、在进行中、这条会话里还没有人说过话、任务里已经有在用的主题页", () => {
     const task = taskWith();
+    // 会话一开头系统放的任务现状说明、界面操作的通知不算有人说过话。
+    expect(nobodySpoke([])).toBe(true);
+    expect(nobodySpoke([{ type: "system_note" }, { type: "ui_action_noted" }])).toBe(true);
+    expect([nobodySpoke([{ type: "system_note" }, { type: "user_message" }]), nobodySpoke([{ type: "assistant_reply" }])]).toEqual([false, false]);
     expect(wantsOpeningStatus(task, 0, 0, false, false)).toBe(true);
     expect(wantsOpeningStatus(task, 1, 0, false, false)).toBe(false);     // 已经有消息
     expect(wantsOpeningStatus(task, 0, 1, false, false)).toBe(false);     // 有一句正在发送
@@ -112,8 +117,9 @@ describe("新建会话的开头", () => {
     expect(wantsOpeningStatus(null, 0, 0, false, false)).toBe(false);
   });
 
-  it("对话区第一条是一行小字加状况卡；用户说了话之后它仍在最前面", async () => {
-    const { loadStatus } = chat(taskWith());
+  it("对话区第一条是一行小字加状况卡，排在会话开头那条任务现状说明之前", async () => {
+    const NOTE = { type: "system_note", message_id: "n0", at: "", kind: "task_status", text: "任务现状：总体分析 16 页。", details: null };
+    const { loadStatus } = chat(taskWith(), [NOTE]);
     const opening = await screen.findByTestId("status-opening");
     expect(loadStatus).toHaveBeenCalledTimes(1);
     expect(within(opening).getByTestId("new-session-line")).toHaveTextContent(NEW_SESSION_LINE);
