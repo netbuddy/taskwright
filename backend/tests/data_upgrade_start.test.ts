@@ -18,6 +18,7 @@ import { TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
 import * as library from "../src/library.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { SERVICE_DB_NAME } from "../src/service_db.ts";
+import { upgradeCommandLine } from "../src/data_upgrade.ts";
 import { StartError, startService } from "../src/start.ts";
 import { BACKEND_MAIN, ROOT, captureConsole, tempDir } from "./helpers.ts";
 
@@ -56,6 +57,29 @@ test("服务器形态：有上一版留下的任务就不启动，说明先运�
   const real = run(["--data", data, "--port", "0", "--mode", "server", "--host", "127.0.0.1", "--profile", "fake"]);
   assert.equal(real.status, 1, real.err);
   assert.match(real.err, /服务没有起来：数据目录 .* 里有上一版留下的数据要先升级（2 个任务）。请先运行 taskwright data upgrade --data /);
+});
+
+test("任务目录不在数据目录下面时，提示里的命令带着 --tasks（知识库目录同理）；照提示运行确实升级了那些任务", async () => {
+  // 拼命令的函数：缺省位置只带 --data；另给的目录各带自己的参数；带空白的路径加引号。
+  assert.equal(upgradeCommandLine({ dataDir: "/d", tasksDir: "/d/tasks", knowledgeDir: "/d/knowledge" }), "taskwright data upgrade --data /d");
+  assert.equal(upgradeCommandLine({ dataDir: "/d", tasksDir: "/d/tasks/", knowledgeDir: null }), "taskwright data upgrade --data /d");
+  assert.equal(upgradeCommandLine({ dataDir: "/d", tasksDir: "/elsewhere/tasks", knowledgeDir: "/k b" }), 'taskwright data upgrade --data /d --tasks /elsewhere/tasks --knowledge "/k b"');
+  // 真的服务：任务放在数据目录之外，启动被拒，提示里的命令带着 --tasks。
+  const source = dataWith({ "TASK-A": "0.4.1" });
+  const data = join(tmp, "data-apart");
+  const tasks = join(tmp, "tasks-apart");
+  mkdirSync(data, { recursive: true });
+  cpSync(join(source, "tasks"), tasks, { recursive: true });
+  await assert.rejects(startService({ port: 0, mode: "server", host: "127.0.0.1", profile: "fake", ownProcess: false, data, tasks }),
+    (error: Error) => error instanceof StartError
+      && error.message === `数据目录 ${data} 里有上一版留下的数据要先升级（1 个任务）。请先运行 taskwright data upgrade --data ${data} --tasks ${tasks}，做完再启动服务。`);
+  // 只带 --data 的旧命令在这里是空跑；照提示带上 --tasks 才升级，报告写明扫的是哪个任务目录。
+  const bare = run(["data", "upgrade", "--data", data]);
+  assert.match(bare.out, new RegExp(`任务目录：${join(data, "tasks")}\n[\\s\\S]*任务：没有要升级的`));
+  const done = run(["data", "upgrade", "--data", data, "--tasks", tasks]);
+  assert.equal(done.status, 0, done.err);
+  assert.ok(done.out.includes(`\n任务目录：${tasks}\n`), done.out);
+  assert.match(done.out, /合计：1 个任务，成功 1 个，没有做成 0 个。/);
 });
 
 test("命令行 data upgrade：不起服务，备份、升级、打印报告；之后服务器形态起得来，任务能用", async () => {

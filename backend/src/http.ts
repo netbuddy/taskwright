@@ -15,6 +15,7 @@ import * as library from "./library.ts";
 import { taskStatus } from "./task_status.ts";
 import * as render from "./render.ts";
 import * as exportDocx from "./export_docx.ts";
+import * as exportDocument from "./export_document_docx.ts";
 import { DIAGRAM_KINDS, validateDiagram } from "./diagram_validate.ts";
 import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
@@ -560,6 +561,18 @@ const handlers: Record<string, Handler> = {
     const lib = library.libraryOf(t.dir);
     // 知识库来源的出处在文档里写知识库的名字：名字取自现在的知识库清单，已经不在的写编号。
     const names = new Map((service.knowledge?.libraries() ?? []).map((one) => [one.id, one.name]));
+    if (format === "docx" && body.whole === true) {
+      // 整份文档的 Word 文件：与预览、Markdown 同一份内容（同一个模板、同一次修订、同一批选中的条目），照同一批块写；
+      // 图由页面转成 PNG 随请求交来（images），没有交来的写它的 Mermaid 文本。
+      if (req.params.mode !== "download") throw new ApiError("bad_request", "Word 文件只能下载，不能预览。");
+      const [revisionNo, items] = render.documentRequest(body);
+      const images = exportDocument.imagesOf(body);
+      const text = render.render(t.dir, lib, revisionNo, items, await wordsLocator(t, lib), (id) => names.get(id) ?? null);
+      const taskName = String(or(lib.data.task?.task_name, lib.definition["任务名"]) ?? t.taskId);
+      const fileName = exportDocument.documentFileName(taskName, revisionNo || lib.latestRevision());
+      const data = await exportDocument.documentDocx(text, images, taskName);
+      return { status: 200, headers: { "Content-Type": exportDocx.DOCX_TYPE, "Content-Disposition": exportDocx.docxDisposition(fileName, t.taskId, "document") }, body: data };
+    }
     if (format === "docx") {
       // 选中的条目导出成 Word 文件：只能下载，导出的是每个条目最新的修订。
       if (req.params.mode !== "download") throw new ApiError("bad_request", "Word 文件只能下载，不能预览。");

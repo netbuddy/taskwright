@@ -13,14 +13,13 @@
 
 import type { DiagramRow, Item, Task } from "../api/types";
 import { diagramGraph } from "../../../agent/src/lib/diagram_scan.ts";
+import { type FigureSlot, KIND_CLASS, KIND_CONTEXT, KIND_FLOWCHART, KIND_STATE, KIND_USE_CASE, figureSlot, headChapterOfKind } from "../../../agent/src/lib/overall_figures.ts";
 import { CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_OVERVIEW, CHAPTER_ROLES, type Toc, sectionOf, tocOrder } from "./chapters";
 import { SOURCE_FIGURE } from "./items";
 import { isOverall } from "./overall";
 
-export const KIND_CONTEXT = "context", KIND_USE_CASE = "use_case", KIND_CLASS = "class", KIND_FLOWCHART = "flowchart", KIND_STATE = "state";
-
-/** 一节里放图的四块：流程步骤、状态图、与其他对象的关系、其他图。 */
-export type FigureSlot = "steps" | "state" | "relations" | "other";
+export { KIND_CLASS, KIND_CONTEXT, KIND_FLOWCHART, KIND_STATE, KIND_USE_CASE };
+export type { FigureSlot };
 export type SectionFigures = Record<FigureSlot, DiagramRow[]>;
 
 /** 一张图放在哪里：某一章的章首，或者某一节的某一块；哪里都放不进是 loose。 */
@@ -47,16 +46,10 @@ export function sourcePages(task: Task, contents: Toc, diagramId: string): Item[
     .sort((a, b) => order.findIndex((one) => one.item_id === a.item_id) - order.findIndex((one) => one.item_id === b.item_id));
 }
 
-/** 一张图在它的一个来源页的节里放进哪一块；不放进这一节是 null。pages 是这张图的全部来源页（sourcePages）。 */
+/** 一张图在它的一个来源页的节里放进哪一块；不放进这一节是 null。pages 是这张图的全部来源页（sourcePages）。规则见共用的 figureSlot。 */
 function slotIn(contents: Toc, row: DiagramRow, page: Item, pages: Item[]): FigureSlot | null {
-  const chapter = sectionOf(contents, page.item_id)?.chapter ?? null;
-  const fits = (wanted: number) => pages.some((one) => sectionOf(contents, one.item_id)?.chapter === wanted);
-  const first = pages[0]?.item_id === page.item_id;
-  if (row.kind === KIND_CONTEXT || row.kind === KIND_USE_CASE) return null;
-  if (row.kind === KIND_CLASS) return chapter === CHAPTER_OBJECTS ? "relations" : null;
-  if (row.kind === KIND_FLOWCHART) return chapter === CHAPTER_FLOWS ? "steps" : !fits(CHAPTER_FLOWS) && first ? "other" : null;
-  if (row.kind === KIND_STATE) return chapter === CHAPTER_OBJECTS ? "state" : !fits(CHAPTER_OBJECTS) && first ? "other" : null;
-  return first ? "other" : null;
+  const chapterOf = (one: Item): number | null => sectionOf(contents, one.item_id)?.chapter ?? null;
+  return figureSlot(row.kind, chapterOf(page), pages.map(chapterOf), pages[0]?.item_id === page.item_id);
 }
 
 /** 一节里各块放哪几张图，每块里最近修订的在前。 */
@@ -78,9 +71,8 @@ export function diagramsOfKind(task: Task, kind: string): DiagramRow[] {
 export function figureHome(task: Task, contents: Toc, diagramId: string): FigureHome | null {
   const row = (task.diagrams ?? []).find((one) => one.diagram_id === diagramId);
   if (!row) return null;
-  if (row.kind === KIND_CONTEXT) return { where: "chapter", chapter: CHAPTER_OVERVIEW };
-  if (row.kind === KIND_USE_CASE) return { where: "chapter", chapter: CHAPTER_ROLES };
-  if (row.kind === KIND_CLASS) return { where: "chapter", chapter: CHAPTER_OBJECTS };
+  const head = headChapterOfKind(row.kind);
+  if (head !== null) return { where: "chapter", chapter: head };
   const pages = sourcePages(task, contents, diagramId);
   for (const page of pages) {
     const slot = slotIn(contents, row, page, pages);

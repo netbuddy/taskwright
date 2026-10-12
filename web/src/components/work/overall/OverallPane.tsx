@@ -10,7 +10,9 @@ import type { Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
 import { overallDef, retellText, titleOf, totals } from "../../../model/overall";
 import { NO_MATERIALS_TEXT, STAGE_STARTS, type StageStart } from "../../../model/stage";
-import { CHAPTER_DECISIONS, CHAPTER_GOALS, CHAPTER_OBJECTS, CHAPTER_OVERVIEW, CHAPTER_ROLES, CHAPTER_RULES } from "../../../model/chapters";
+import { CHAPTER_DECISIONS, CHAPTER_FLOWS, CHAPTER_GOALS, CHAPTER_OBJECTS, CHAPTER_OVERVIEW, CHAPTER_ROLES, CHAPTER_RULES } from "../../../model/chapters";
+import { requirementsOf } from "../../../model/sectionLinks";
+import { USE_CASE_COLLECTION } from "../../../../../agent/src/lib/stage";
 import { DecisionsBlocks, GoalsBlocks, ObjectsBlocks, OverviewBlocks, RolesBlocks, RulesBlocks } from "./ChapterBlocks";
 import { looseDiagrams } from "../../../model/sectionDiagrams";
 import { type FigureHost, LooseFigures } from "./Figure";
@@ -65,6 +67,12 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
   const open = (itemId: string) => { if (shown === "open") setShown("auto"); setHead(null); onSelect(itemId); };
   // 点了章标题或术语表：不再停在哪一节上，右边换成章首页或术语表。
   const openHead = (view: HeadView) => { if (shown === "open") setShown("auto"); onSelect(null); setHead(view); };
+  /** 第 3 章章首页上每一节标题后面的那句：依据这一节（或者画在这一节里的图）写的功能用例有几条；一条都没有不写。 */
+  const useCaseNote = (itemId: string): string => {
+    const page = task.items.find((one) => one.item_id === itemId);
+    const count = page ? requirementsOf(task, page).filter((one) => one.item.collection === USE_CASE_COLLECTION).length : 0;
+    return count > 0 ? `${count} 条用例` : "";
+  };
   /** 章首页那一行小字。 */
   const chapterLead = (no: number): string => {
     const sections = contents.chapters.find((one) => one.chapter.no === no)!.sections.filter((one) => one.no !== null).length;
@@ -88,7 +96,8 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
         {page ?? (head?.kind === "glossary" ? <Glossary task={task} onOpen={open} />
           : head?.kind === "loose" ? <LooseFigures host={host} />
           : head?.kind === "chapter" ? (
-            <ChapterHead task={task} contents={contents} chapterNo={head.no} lead={chapterLead(head.no)} onOpen={open} full={head.no === CHAPTER_OVERVIEW}>
+            <ChapterHead task={task} contents={contents} chapterNo={head.no} lead={chapterLead(head.no)} onOpen={open} full={head.no === CHAPTER_OVERVIEW}
+              sectionNote={head.no === CHAPTER_FLOWS ? useCaseNote : undefined}>
               {head.no === CHAPTER_OVERVIEW && <OverviewBlocks host={host} onChapter={(no) => openHead({ kind: "chapter", no })} />}
               {head.no === CHAPTER_ROLES && <RolesBlocks host={host} />}
               {head.no === CHAPTER_OBJECTS && <ObjectsBlocks host={host} />}
@@ -99,7 +108,7 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
           )
           : (
           <div className="oa-intro" data-testid="overall-intro">
-            <p className="oa-intro-note">{def?.display?.note ?? "用这件事自己的话写下的主题。"}</p>
+            <p className="oa-intro-note">{def?.display?.note ?? "按章整理的业务说明。"}</p>
             <p className="oa-intro-sum">现在有 {sum.pages} 节，{sum.settled} 条已经定下，{sum.open} 条还没定，{sum.pending} 处是助手补的、等你核实。</p>
             {sum.pages === 0 && onStart && task.stage ? (
               <div className="oa-start" data-testid="overall-start">

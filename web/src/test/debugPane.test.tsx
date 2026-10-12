@@ -12,6 +12,7 @@ import { WorkViewPage } from "../pages/WorkViewPage";
 import { useWorkView } from "../state/useWorkView";
 import { initialWorkState, type WorkState } from "../state/workState";
 import { overallTask } from "./fixtures/overallTask";
+import { flowName } from "../model/stage";
 
 vi.mock("../state/useWorkView", () => ({ useWorkView: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -35,7 +36,7 @@ const PROMPT: DebugSystemPrompt = {
 };
 const FACTS: DebugStage = {
   records: [
-    { from: "reading", from_name: "核读材料", to: "clarifying", to_name: "澄清", actor: "user", reason: "用户在卡片上选了「进入澄清」", run_id: null, session_id: "S-1", at: "2026-10-10T08:50:00" },
+    { from: "reading", from_name: "核读材料", to: "clarifying", to_name: "澄清", actor: "user", reason: "用户在卡片上选了「进入澄清」", run_id: null, session_id: "S-1", at: "2026-10-10T08:50:00", flow: "initial" },
     { from: "writing", from_name: "写条目", to: "clarifying", to_name: "澄清", actor: "executor", reason: "", run_id: "r3", session_id: "S-1", at: "2026-10-10T08:58:00" },
   ],
   rejections: [
@@ -77,10 +78,14 @@ describe("右侧栏的调试页签", () => {
     expect(screen.getByTestId("debug-prompt")).toHaveTextContent("提示词目录里的 system.md 没有用上：它是一个软链接。");
   });
 
-  it("阶段记录：每次移动一行，写谁、从哪到哪、理由；没有写理由的写明没有写", async () => {
+  it("阶段记录：每次移动一行，写谁、从哪到哪、所属流程、理由；没有写理由的写明没有写，早先的后端没有给所属流程的写明没有记", async () => {
     pane();
-    const rows = [...(await screen.findByTestId("debug-records")).querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].slice(1).map((td) => td.textContent));
-    expect(rows).toEqual([["用户", "核读材料 → 澄清", "用户在卡片上选了「进入澄清」"], ["助手", "写条目 → 澄清", "（没有写）"]]);
+    const section = await screen.findByTestId("debug-records");
+    expect([...section.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual(["时刻", "谁", "从哪到哪", "所属流程", "理由"]);
+    const rows = [...section.querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].slice(1).map((td) => td.textContent));
+    expect(rows).toEqual([["用户", "核读材料 → 澄清", "首次分析", "用户在卡片上选了「进入澄清」"], ["助手", "写条目 → 澄清", "（没有记）", "（没有写）"]]);
+    // 认不出的流程照原样写。
+    expect([flowName("initial"), flowName("change"), flowName(null)]).toEqual(["首次分析", "change", "（没有记）"]);
   });
 
   it("这一段的灯：通过、没通过、不适用三种都列出，写整句与键，列出的编号可以点开", async () => {

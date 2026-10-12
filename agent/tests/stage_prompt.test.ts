@@ -4,8 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
@@ -15,7 +14,7 @@ import {
   StagePromptCache, composeStagePrompt, debugPromptDir, digestOf, partFact, piTail, promptDirNames, skillBody, stageFile, stageInWorkspace, taskSkills,
 } from "../src/lib/stage_prompt.ts";
 import { STAGE_PROMPT_STATUS_KEY, type StagePromptReport, stagePromptFor } from "../src/hooks/stage_prompt.ts";
-import { DEFINITION_PATH, callIn, demoDefinition, enterStage, makeWorkspace, overallDefinition } from "./helpers.ts";
+import { DEFINITION_PATH, callIn, demoDefinition, enterStage, makeWorkspace, overallDefinition, tempDir } from "./helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
 const SRS_TYPE = join(ROOT, "task-types", "srs-authoring");
@@ -25,8 +24,8 @@ const TAIL = "<cwd>\n/somewhere/task\n</cwd>";
 
 const temps: string[] = [];
 after(() => { for (const one of temps) rmSync(one, { recursive: true, force: true }); });
-function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "stage-prompt-"));
+function scratchDir(): string {
+  const dir = tempDir("stage-prompt-");
   temps.push(dir);
   return dir;
 }
@@ -79,7 +78,7 @@ test("早先的任务没有阶段，不拼；任务库不在或还没有任务�
   const old = makeWorkspace(demoDefinition());
   createTask(callIn(old), { definition_path: DEFINITION_PATH });
   assert.equal(stageInWorkspace(old), null);
-  assert.equal(stageInWorkspace(tempDir()), null);
+  assert.equal(stageInWorkspace(scratchDir()), null);
   const empty = makeWorkspace(overallDefinition());
   assert.equal(stageInWorkspace(empty), null);
 });
@@ -98,7 +97,7 @@ test("没有阶段记录时按缺省的阶段：有材料是核读材料，没�
 });
 
 test("早先复制进任务目录的整份任务 skill（没有 stages 目录）：整份正文当共用部分，按阶段的那一段为空", () => {
-  const task = tempDir();
+  const task = scratchDir();
   const skillDir = join(task, ".pi", "skills", "old-type");
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(join(skillDir, "SKILL.md"), "---\nname: old-type\ndescription: 早先的整份说明\n---\n\n# 早先的整份说明\n\n1. 读材料。\n2. 分拣。\n", "utf-8");
@@ -110,14 +109,14 @@ test("早先复制进任务目录的整份任务 skill（没有 stages 目录）
 
 test("任务 skill 只认平台 skill 之外的；一个任务 skill 都没有、或者它的文件不在时，只拼平台一级的三份", () => {
   assert.deepEqual(taskSkills([PLATFORM_SKILL, SRS_SKILL]), [SRS_SKILL]);
-  for (const skills of [[PLATFORM_SKILL], [PLATFORM_SKILL, { name: "gone", filePath: join(tempDir(), "SKILL.md") }]]) {
-    const prompt = composeStagePrompt({ stage: "clarifying", workspaceDir: tempDir(), skills, tail: TAIL });
+  for (const skills of [[PLATFORM_SKILL], [PLATFORM_SKILL, { name: "gone", filePath: join(scratchDir(), "SKILL.md") }]]) {
+    const prompt = composeStagePrompt({ stage: "clarifying", workspaceDir: scratchDir(), skills, tail: TAIL });
     assert.deepEqual(prompt.parts.map((one) => one.part), ["system", "platform_common", "platform_stage", "tail"]);
   }
 });
 
 test("平台一级的文件缺了一份就抛错，说明缺的是哪一份", () => {
-  const dir = tempDir();
+  const dir = scratchDir();
   writeFileSync(join(dir, SYSTEM_FILE), "系统提示", "utf-8");
   writeFileSync(join(dir, COMMON_FILE), "共用部分", "utf-8");
   assert.throws(() => composeStagePrompt({ stage: "reading", workspaceDir: dir, skills: [], tail: "", platformDir: dir }), /拼系统提示要用的文件不在：.*reading\.md/);
@@ -173,7 +172,7 @@ function countingIo(): PromptIo & { reads: string[]; stamps: number } {
 
 /** 一套放在临时目录里的平台一级文件，测试可以随意改。 */
 function platformCopy(): string {
-  const dir = tempDir();
+  const dir = scratchDir();
   writeFileSync(join(dir, SYSTEM_FILE), "系统提示", "utf-8");
   writeFileSync(join(dir, COMMON_FILE), "共用部分", "utf-8");
   for (const stage of STAGES) writeFileSync(join(dir, stageFile(stage)), `${STAGE_NAMES[stage]}那一段`, "utf-8");
@@ -214,7 +213,7 @@ test("阶段变了才重拼；移回原来的阶段也是重拼（只记着上�
 
 test("文件改了（修改时刻或大小变了）、任务目录里多了这个阶段的一段、pi 接的那一截变了，都重拼", () => {
   const dir = platformCopy();
-  const task = tempDir();
+  const task = scratchDir();
   const skillDir = join(task, ".pi", "skills", "some-type");
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(join(skillDir, "SKILL.md"), "任务类型共用", "utf-8");
@@ -255,7 +254,7 @@ test("重拼出错时沿用上一份并带上原因；手里什么都没有时�
   // 文件补回来之后照常重拼。
   writeFileSync(join(dir, stageFile("clarifying")), "澄清那一段", "utf-8");
   assert.equal(cache.get(input("clarifying")).how, "recomposed");
-  assert.throws(() => new StagePromptCache().get({ ...input("reading"), platformDir: tempDir() }), /拼系统提示要用的文件不在/);
+  assert.throws(() => new StagePromptCache().get({ ...input("reading"), platformDir: scratchDir() }), /拼系统提示要用的文件不在/);
   assert.deepEqual(Object.keys(HOW_NAMES).sort(), ["kept_after_error", "recomposed", "reused"]);
 });
 
@@ -313,7 +312,7 @@ test("事件处理：早先的任务什么都不返回、什么都不报；任�
   assert.equal(quiet.result, undefined);
   assert.deepEqual(quiet.reports, []);
 
-  const broken = tempDir();
+  const broken = scratchDir();
   writeFileSync(join(broken, "task.sqlite"), "这不是一个数据库文件", "utf-8");
   const failed = start(broken, new StagePromptCache(), new WeakMap());
   assert.equal(failed.result, undefined);
@@ -330,7 +329,7 @@ test("提示词目录只认十五个固定的文件名：平台一级八份，�
 });
 
 test("提示词目录里有哪一份就用哪一份，没有的照旧；空目录的效果与没有设相同；别的文件名不读", () => {
-  const dir = tempDir();
+  const dir = scratchDir();
   const input = (stage: (typeof STAGES)[number]) => ({ stage, workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL, promptDir: dir });
   // 空目录：与没有设一样。
   assert.equal(composeStagePrompt(input("clarifying")).text, compose("clarifying").text);
@@ -369,8 +368,8 @@ test("提示词目录里有哪一份就用哪一份，没有的照旧；空目�
 });
 
 test("提示词目录里不用的文件：软链接不跟、目录不读、太大的不读、不是合法 UTF-8 的不用；这一部分照旧用原来的，并写明原因", () => {
-  const dir = tempDir();
-  const secret = join(tempDir(), "别处的文件.md");
+  const dir = scratchDir();
+  const secret = join(scratchDir(), "别处的文件.md");
   writeFileSync(secret, "别处的文字，不该进系统提示", "utf-8");
   symlinkSync(secret, join(dir, "system.md"));
   mkdirSync(join(dir, "common.md"));
@@ -392,7 +391,7 @@ test("提示词目录里不用的文件：软链接不跟、目录不读、太�
 });
 
 test("提示词目录里改一句，下一次就重拼；目录没变就沿用；换一个目录也重拼", () => {
-  const dir = tempDir();
+  const dir = scratchDir();
   const cache = new StagePromptCache();
   const input = (promptDir: string | null) => ({ stage: "clarifying" as const, workspaceDir: SRS_TYPE, skills: [PLATFORM_SKILL, SRS_SKILL], tail: TAIL, promptDir });
   assert.equal(cache.get(input(dir)).how, "recomposed");
@@ -413,8 +412,8 @@ test("提示词目录里改一句，下一次就重拼；目录没变就沿用�
 });
 
 test("这一次运行的提示词目录：不是调试模式时不读设置文件；调试模式下每次现读，设的不是一个存在的目录时不用并写明原因", () => {
-  const dir = tempDir();
-  const settings = join(tempDir(), "settings.json");
+  const dir = scratchDir();
+  const settings = join(scratchDir(), "settings.json");
   const env = (extra: Record<string, string> = {}) => ({ [ENV_DEBUG_SETTINGS]: settings, ...extra });
   writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: dir } }), "utf-8");
   // 没有那个环境变量：不是调试模式，设置文件里写着目录也不起作用。
@@ -422,7 +421,7 @@ test("这一次运行的提示词目录：不是调试模式时不读设置文�
   assert.deepEqual(debugPromptDir({ [ENV_DEBUG_SETTINGS]: "  " }), { debug: false, dir: null });
   assert.deepEqual(debugPromptDir(env()), { debug: true, dir });
   // 换了目录，下一次读到的就是新的。
-  const other = tempDir();
+  const other = scratchDir();
   writeFileSync(settings, JSON.stringify({ version: 2, debug: { prompt_dir: other }, pi_dirs: {} }), "utf-8");
   assert.deepEqual(debugPromptDir(env()), { debug: true, dir: other });
   // 没有设、清掉了、设置文件不在或读不出：没有目录，不算出错。
@@ -430,7 +429,7 @@ test("这一次运行的提示词目录：不是调试模式时不读设置文�
     writeFileSync(settings, text, "utf-8");
     assert.deepEqual(debugPromptDir(env()), { debug: true, dir: null }, text);
   }
-  assert.deepEqual(debugPromptDir({ [ENV_DEBUG_SETTINGS]: join(tempDir(), "没有这个文件.json") }), { debug: true, dir: null });
+  assert.deepEqual(debugPromptDir({ [ENV_DEBUG_SETTINGS]: join(scratchDir(), "没有这个文件.json") }), { debug: true, dir: null });
   // 相对路径、不存在的目录、是一个文件：不用，写明原因。
   writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: "relative/dir" } }), "utf-8");
   assert.match(debugPromptDir(env()).note!, /^设置里的提示词目录不是绝对路径：relative\/dir。这次没有用它。$/);
@@ -445,8 +444,8 @@ test("这一次运行的提示词目录：不是调试模式时不读设置文�
 test("事件处理，调试模式：从提示词目录读，报出去的那一行带每一部分的文字；早先的任务也报一行；不是调试模式时两样都没有", () => {
   const dir = makeWorkspace(overallDefinition(), { material: false });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
-  const promptDir = tempDir();
-  const settings = join(tempDir(), "settings.json");
+  const promptDir = scratchDir();
+  const settings = join(scratchDir(), "settings.json");
   writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: promptDir } }), "utf-8");
   writeFileSync(join(promptDir, "clarifying.md"), "# 现在这个阶段：澄清\n\n调试时改的一句。", "utf-8");
   const before = process.env[ENV_DEBUG_SETTINGS];

@@ -114,7 +114,7 @@ test("几种写法合在一起：术语表一节与按标签归组的总体描�
   ].join("\n"));
 });
 
-test("产品的任务类型：新建的任务按模板生成文档，术语与定义取标签含概念的主题，总体描述按别的标签归组，没有标签与已废弃的不进文档", () => {
+test("产品的任务类型：新建的任务按模板生成文档——前七章是业务说明，章与节号同页面的目录；需求条目排在第 8 章起；最后是追溯附录；没有标签与已废弃的不进文档", () => {
   const material = "被借走的书可以预约。书还回来以后，系统通知预约的读者，这本书为他保留 3 天。读者凭借书证借书。";
   const source = (excerpt: string, supports?: unknown[]) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt, ...(supports ? { supports } : {}) });
   const topic = (fields: Record<string, unknown>, sources: unknown[]) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources });
@@ -133,19 +133,27 @@ test("产品的任务类型：新建的任务按模板生成文档，术语与�
   ]);
   const text = render.render(typed, library.libraryOf(typed));
   const section = (from: string, to: string) => text.slice(text.indexOf(from), text.indexOf(to));
-  assert.equal(section("## 1 术语与定义", "## 2 总体描述").trim(),
-    "## 1 术语与定义\n\n- **预约**（OA-001），又叫预约取书：被借走的书可以预约。 ［修订 1 · 已确认（已读）］");
-  const overall = section("## 2 总体描述", "## 3 功能需求");
-  // 概念那一组不在总体描述里；取值的次序里角色在流程前面。
-  assert.deepEqual([...overall.matchAll(/^### (.+)$/gm)].map((m) => m[1]), ["角色", "流程"]);
-  assert.match(overall, /### 角色\n\n\*\*OA-002 读者\*\* ［修订 1 · 未确认］\n\n读者凭借书证借书。\n\n来源：文档原文，出处 inputs\/材料\.md（「读者凭借书证借书。」）/);
-  assert.match(overall, /### 流程\n\n\*\*OA-001 预约\*\* ［修订 1 · 已确认（已读）］\n\n被借走的书可以预约。\n\n例子：\n\n- 书还回来以后，系统通知预约的读者\n\n已经定下的：\n\n1\. 这本书为他保留 3 天。\n\n来源：/);
+  // 标题一行带任务名；后面是生成说明、目录。
+  assert.match(text, /^# .*软件需求规格说明\n\n> 本文档按交付物的修订 2 生成，[^\n]*\n\n## 目录\n\n- 1 概述与范围\n/);
+  assert.doesNotMatch(text, /\{\{/);
+  // 各章各节：贴了概念与流程两个标签的页排进靠前的第 3 章；概念都进第 4 章末尾的术语表；没有标签的草稿不成节。
+  assert.deepEqual([...text.matchAll(/^(##|###) (.+?)(?: ［.*］)?$/gm)].map((m) => `${m[1].length === 3 ? "  " : ""}${m[2]}`), [
+    "目录", "1 概述与范围", "2 角色", "  2.1 读者", "3 业务流程", "  3.1 预约", "4 业务对象", "  4.1 术语表", "5 业务规则", "6 业务目标", "7 决策记录与待澄清事项",
+    "8 功能需求", "  UC-001 预约图书", "9 非功能需求", "10 约束", "11 问题", "附录 追溯",
+  ]);
   assert.doesNotMatch(text, /草稿/);
-  // 依据主题的用例，来源写成集合名加编号。
-  assert.match(section("## 3 功能需求", "## 4 非功能需求"), /来源：总体分析 OA-001（「被借走的书可以预约。」）/);
+  assert.match(section("## 3 业务流程", "## 4 业务对象"),
+    /### 3\.1 预约 ［修订 1 · 已确认（已读）］\n\n被借走的书可以预约。\n\n\*\*示例\*\*\n\n- 书还回来以后，系统通知预约的读者\n\n\*\*适用规则\*\*\n\n1\. 这本书为他保留 3 天。\n\n\*\*对应的需求条目\*\*\n\n- UC-001 预约图书\n\n来源：文档原文，出处 inputs\/材料\.md/);
+  assert.match(section("## 4 业务对象", "## 5 业务规则"), /### 4\.1 术语表\n\n\| 术语 \| 又叫 \| 说明 \|\n\|---\|---\|---\|\n\| 预约 \| 预约取书 \| 被借走的书可以预约。 \|/);
+  assert.match(section("## 5 业务规则", "## 6 业务目标"), /\| 这本书为他保留 3 天。 \| 3\.1 预约 \| — \|/);
+  // 没有内容的章写一句话。
+  assert.match(section("## 1 概述与范围", "## 2 角色"), /^## 1 概述与范围\n\n这一章还没有内容。\n\n$/);
+  // 需求条目照原来的写法，依据主题的用例来源写成集合名加编号；附录里依据的节写节号。
+  assert.match(section("## 8 功能需求", "## 9 非功能需求"), /### UC-001 预约图书 ［修订 2 · [^\n]*\n[\s\S]*来源：总体分析 OA-001（「被借走的书可以预约。」）/);
+  assert.match(text.slice(text.indexOf("## 附录 追溯")), /\| UC-001 预约图书 \| 3\.1 预约 \| — \|\n/);
 });
 
-test("产品的任务类型：各章的导语页进文档——概述与范围的导语在最前面，业务对象的在术语与定义开头，别的几章的在总体描述开头；导语页不当作没有标签的草稿丢掉，已废弃的不进", () => {
+test("产品的任务类型：各章的导语页写在它那一章的开头，不成节；已废弃的导语不进文档", () => {
   const material = "被借走的书可以预约。读者凭借书证借书。";
   const source = (excerpt: string) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt });
   const topic = (fields: Record<string, unknown>) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources: [source("读者凭借书证借书。")] });
@@ -164,19 +172,29 @@ test("产品的任务类型：各章的导语页进文档——概述与范围�
   ]);
   const text = render.render(typed, library.libraryOf(typed));
   const section = (from: string, to: string) => text.slice(text.indexOf(from), text.indexOf(to));
-  // 最前面：概述与范围的导语（几段连成一段）。
-  assert.match(section("# 软件需求规格说明", "## 1 术语与定义"), /\n图书馆要让读者自己办借还。\s+本文给馆员与开发人员看。\s+本期只做馆内借还。 ［修订 2 · 未确认］\n/);
-  // 术语与定义开头：业务对象的导语，然后才是术语。
-  const terms = section("## 1 术语与定义", "## 2 总体描述");
-  assert.ok(terms.indexOf("这件事里有图书与借阅记录两种对象。") > 0 && terms.indexOf("这件事里有图书与借阅记录两种对象。") < terms.indexOf("- **预约**"));
-  // 总体描述开头：角色、业务流程的导语各一段，照章的先后；没有导语的章不留空行。
-  const overall = section("## 2 总体描述", "## 3 功能需求");
-  const role = overall.indexOf("**角色。** 有读者与馆员两种角色。"), flow = overall.indexOf("**业务流程。** 流程有借书与预约两段。"), groups = overall.indexOf("### 角色");
-  assert.ok(role > 0 && role < flow && flow < groups, `${role} ${flow} ${groups}`);
-  assert.doesNotMatch(overall, /\*\*业务规则。\*\*|\*\*业务目标。\*\*|\*\*决策记录与待澄清事项。\*\*/);
-  // 导语页不进按标签归的组，也不进术语；已废弃的导语不进文档。
-  assert.deepEqual([...overall.matchAll(/^### (.+)$/gm)].map((m) => m[1]), ["角色", "流程"]);
-  assert.doesNotMatch(text, /导语（旧）|这一页已经不用了/);
+  // 概述与范围的导语三段都在，方括号里的修订与确认状态跟在最后一段后面。
+  assert.match(section("## 1 概述与范围", "## 2 角色"), /^## 1 概述与范围\n\n图书馆要让读者自己办借还。\n\n本文给馆员与开发人员看。\n\n本期只做馆内借还。 ［修订 2 · 未确认］\n\n$/);
+  assert.match(section("## 2 角色", "## 3 业务流程"), /^## 2 角色\n\n有读者与馆员两种角色。 ［修订 2 · 未确认］\n\n### 2\.1 读者 /);
+  assert.match(section("## 3 业务流程", "## 4 业务对象"), /^## 3 业务流程\n\n流程有借书与预约两段。 ［修订 2 · 未确认］\n\n### 3\.1 预约 /);
+  assert.match(section("## 4 业务对象", "## 5 业务规则"), /^## 4 业务对象\n\n这件事里有图书与借阅记录两种对象。 ［修订 2 · 未确认］\n\n### 4\.1 术语表/);
+  // 导语页不成节，也不进术语表；已废弃的导语不进文档；每段导语只出现一次。
+  assert.doesNotMatch(text, /### [^\n]*导语|导语（旧）|这一页已经不用了/);
   assert.equal((text.match(/有读者与馆员两种角色。/g) ?? []).length, 1);
+  assert.match(section("## 6 业务目标", "## 7 决策记录与待澄清事项"), /^## 6 业务目标\n\n这一章还没有内容。/);
 });
 
+test("早先建的任务：任务目录里的模板副本没有业务说明这个占位时，改用产品现在自带的模板；副本有占位、或者产品里没有这个任务类型时用副本", () => {
+  const topic = { op: "add", collection: "总体分析", fields: { 状态: "在用", 标题: "读者", 标签: ["角色"], 它是什么: "读者凭借书证借书。" },
+    sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭借书证借书。" }] };
+  const old = makeTypedTask(join(tmp, "old-copy"), "srs-authoring", { "材料.md": "读者凭借书证借书。" }, [[topic]]);
+  // 早先的副本：没有占位。
+  writeFileSync(join(old, "docs", "templates", "srs.md"), "# 旧模板\n\n{{#每个 总体分析}}- {{标题}}\n{{/每个}}", "utf-8");
+  const fresh = render.render(old, library.libraryOf(old));
+  assert.match(fresh, /软件需求规格说明\n[\s\S]*## 2 角色\n\n### 2\.1 读者 /);
+  assert.doesNotMatch(fresh, /旧模板/);
+  // 副本自己有占位：用副本。
+  writeFileSync(join(old, "docs", "templates", "srs.md"), "# 我改过的模板\n\n{{业务说明}}\n", "utf-8");
+  assert.match(render.render(old, library.libraryOf(old)), /^# 我改过的模板\n\n## 1 概述与范围/);
+  // 产品里没有它的任务类型的任务（本文件开头那个演示任务）：一直用它自己的模板。
+  assert.equal(rendered("只有这一句。\n"), "只有这一句。\n");
+});

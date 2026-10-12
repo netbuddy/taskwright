@@ -91,7 +91,7 @@ test("真实的任务类型：这个位置上现在是「总体分析」集合�
   assert.deepEqual(pages.fields.filter((f) => f.sameCollection && f.single).map((f) => f.name), ["上级主题", "改看"]);
   assert.equal(pages.reviewRules ?? null, null);
   assert.deepEqual(definition.completion.总体分析, ["每个条目用户确认"]);
-  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/srs-authoring.json"), "utf-8")).版本, 3);
+  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/srs-authoring.json"), "utf-8")).版本, 4);
 });
 
 test("来源种类「条目」：出处是还在的条目时保存，记下引用时它的修订号；出处去掉首尾空白；产出方记作条目", () => {
@@ -297,7 +297,7 @@ test("任务定义的「界面」一项：真实任务类型的总体分析写�
   const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
   const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
   assert.deepEqual(definition.collections.find((c) => c.name === "总体分析")!.display,
-    { note: "用这件事自己的话写下的主题：它是什么、例子、已经定下的。条目依据它写。", sideTab: true, groupField: "标签", leadingGroups: ["概念"] });
+    { note: "按章整理的业务说明：每一节写它是什么、适用规则、待澄清事项，图与需求条目都归在它说明的那一节。", sideTab: true, groupField: "标签", leadingGroups: ["概念"] });
   assert.equal(definition.collections.find((c) => c.name === "功能用例")!.display, null);
   const withDisplay = (display: unknown) => {
     const def = definitionWithNotes();

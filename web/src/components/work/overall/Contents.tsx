@@ -65,13 +65,18 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
           const closed = folds && flowsFolded;
           return (
             <div key={chapter.no} className="oa-chap">
+              {/* 点章名打开章首页，七章都一样；第 3 章的节多，章名右边另有一个小三角收起、展开它下面的各节。 */}
               <div className={`oa-ch${on ? " cur" : ""}${filled(chapter.no, sections.length) ? "" : " dim"}`} role="button" tabIndex={0}
-                title={folds ? (closed ? "展开这一章的各节" : "收起这一章的各节") : `打开第 ${chapter.no} 章的章首`}
-                aria-expanded={folds ? !closed : undefined} aria-current={on ? "true" : undefined} data-testid={`toc-chapter-${chapter.no}`}
-                onClick={() => (folds ? setFlowsFolded(!closed) : onHead({ kind: "chapter", no: chapter.no }))}
-                onKeyDown={(e) => { if (e.key === "Enter") { if (folds) setFlowsFolded(!closed); else onHead({ kind: "chapter", no: chapter.no }); } }}>
+                title={`打开第 ${chapter.no} 章的章首`} aria-current={on ? "true" : undefined} data-testid={`toc-chapter-${chapter.no}`}
+                onClick={() => onHead({ kind: "chapter", no: chapter.no })}
+                onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onHead({ kind: "chapter", no: chapter.no }); }}>
                 <span className="no">{chapter.no}</span><span className="oa-name">{chapter.name}</span>
-                {folds && sections.length > 0 && <span className="oa-caret" aria-hidden="true">{closed ? "▸" : "▾"}</span>}
+                {folds && (sections.length > 0 || intro) && (
+                  <span className="oa-caret" role="button" tabIndex={0} aria-expanded={!closed} aria-label={closed ? "展开这一章的各节" : "收起这一章的各节"}
+                    title={closed ? "展开这一章的各节" : "收起这一章的各节"} data-testid={`toc-fold-${chapter.no}`}
+                    onClick={(e) => { e.stopPropagation(); setFlowsFolded(!closed); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setFlowsFolded(!closed); } }}>{closed ? "▸" : "▾"}</span>
+                )}
               </div>
               {!closed && intro && (() => {
                 // 导语页不贴标签，不算「还没归类」。

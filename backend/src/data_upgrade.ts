@@ -12,7 +12,7 @@
  */
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 // upgradeTaskDatabase 是后端里除建任务之外唯一会改任务库的调用，只在这里（数据升级）用。
 import { TASKS_ROOT_ENV, TASK_DB_VERSION, newerDataText, taskWrittenBy, upgradeTaskDatabase } from "../../agent/src/lib/schema.ts";
@@ -46,6 +46,18 @@ export function locate(given: { data?: string; tasks?: string; runs?: string; kn
     dataDir: dataDirectory(given.data ? expandUser(given.data) : null, given.tasks ? tasksDir : null, env), tasksDir,
     runsDir: expandUser(given.runs ?? join(base, "runs")), knowledgeDir: expandUser(given.knowledge ?? join(base, "knowledge")),
   };
+}
+
+/**
+ * 升级这份数据要运行的完整命令。任务目录、知识库目录不在数据目录下的缺省位置时（启动服务时另给了 --tasks、--knowledge），
+ * 把各自的参数带上：只带 --data 的话，命令会去数据目录下面找任务，找不到就空跑一次。带空白的路径加引号。
+ */
+export function upgradeCommandLine(where: DataLocations): string {
+  const quoted = (path: string): string => (/\s/.test(path) ? `"${path}"` : path);
+  const parts = ["taskwright data upgrade", "--data", quoted(where.dataDir)];
+  if (resolve(where.tasksDir) !== resolve(join(where.dataDir, "tasks"))) parts.push("--tasks", quoted(where.tasksDir));
+  if (where.knowledgeDir && resolve(where.knowledgeDir) !== resolve(join(where.dataDir, "knowledge"))) parts.push("--knowledge", quoted(where.knowledgeDir));
+  return parts.join(" ");
 }
 
 /** 一个要升级（或者升不了）的任务。 */
@@ -182,6 +194,8 @@ export interface UpgradeReport {
   started_at: string;
   finished_at: string;
   data_dir: string;
+  /** 这一次扫的是哪个任务目录（各个任务目录的上级目录）。 */
+  tasks_dir: string;
   /** 备份放在哪里、一共多少字节、里面有几个文件；没有东西要备份时文件数是 0。备份没有做成、或者这一次不做备份时是 null。 */
   backup: { dir: string; bytes: number; files: number } | null;
   /** 服务级库这一次是新建的（created）、升级的（upgraded）还是本来就是现在的格式（current）；整体没有做成时是 null。 */
@@ -304,7 +318,7 @@ export async function runUpgrade(plan: UpgradePlan, options: RunOptions = {}): P
   const productVersion = options.productVersion ?? appVersion();
   const started = now();
   const tasks = [...plan.tasks, ...(options.retryFailed ? plan.failed : [])].sort((a, b) => library.byCodePoint(a.dir, b.dir));
-  const report: UpgradeReport = { product_version: productVersion, started_at: clock.now(), finished_at: "", data_dir: plan.dataDir, backup: null,
+  const report: UpgradeReport = { product_version: productVersion, started_at: clock.now(), finished_at: "", data_dir: plan.dataDir, tasks_dir: plan.tasksDir, backup: null,
     service: null, tasks: [], succeeded: 0, failed: 0, fatal: null, file: null };
   const total = tasks.length + 2;
   let done = 0;
@@ -381,7 +395,7 @@ const sizeText = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1
 
 /** 报告写成给人看的一段文字：页面与命令行显示的、写进文件的都是它。 */
 export function reportText(report: UpgradeReport): string {
-  const lines = [`数据升级报告（${report.product_version}）`, `数据目录：${report.data_dir}`, `开始：${report.started_at}　结束：${report.finished_at}`];
+  const lines = [`数据升级报告（${report.product_version}）`, `数据目录：${report.data_dir}`, `任务目录：${report.tasks_dir}`, `开始：${report.started_at}　结束：${report.finished_at}`];
   if (report.backup) {
     lines.push(report.backup.files > 0 ? `升级之前的备份：${report.backup.dir}（${report.backup.files} 个文件，${sizeText(report.backup.bytes)}）` : "升级之前的备份：没有要备份的文件");
   }
@@ -457,7 +471,7 @@ export class PendingUpgrade {
     }, (error: Error) => {
       // runUpgrade 自己把错都写进报告里；到这里是意料之外的错，照整体没有做成算。
       this.report = { product_version: this.options.productVersion ?? appVersion(), started_at: clock.now(), finished_at: clock.now(), data_dir: this.plan.dataDir,
-        backup: null, service: null, tasks: [], succeeded: 0, failed: 0, fatal: error.message, file: null };
+        tasks_dir: this.plan.tasksDir, backup: null, service: null, tasks: [], succeeded: 0, failed: 0, fatal: error.message, file: null };
       this.state = "failed";
     });
     return true;

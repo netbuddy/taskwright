@@ -1,12 +1,19 @@
 // 生成文档对话框：选一个修订（缺省最新，列表来自修订日志），
 // 再勾选要写进文档的条目（那次修订时交付物里的条目，缺省全选），右边实时预览；预览与下载都是纯读取。
+// 预览是排好版的样子（DocumentPreview.tsx：标题、表格、列表照排版显示，图当场画出来）；下载的 Markdown 是文本。
+// 「下载 Word」出与预览同一份内容的 Word 文件：任务服务画不了图，页面先把文档里用到的图各画成一张 PNG 随请求交过去。
 // 文档按那次修订整体导出，不再逐条目混选修订。没有评审通过或没有确认的条目照样写进去，渲染程序在文档里如实标注。
 
 import { useEffect, useMemo, useState } from "react";
+import { documentBlocks } from "../../../agent/src/lib/document_blocks.ts";
+import { saveBlob } from "../model/download";
+import { figurePngs } from "./diagram/mermaid";
 import { Button, Checkbox, Empty, Modal, Select, Spin } from "antd";
 import { api, ApiError, type DocumentPick } from "../api/client";
 import type { RevisionLogEntry, Task } from "../api/types";
+import { collectionLabel } from "../model/overall";
 import { aliveAt, hhmm } from "../model/revisions";
+import { DocumentPreview } from "./DocumentPreview";
 
 export function DocumentModal({ task, log, open, revision: initial, onClose }: {
   task: Task;
@@ -22,6 +29,7 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
   const [preview, setPreview] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wordBusy, setWordBusy] = useState(false);
 
   useEffect(() => { if (open) { setRevision(initial ?? latest); setUnchecked(new Set()); } }, [open, initial]);
   // 没有指定修订、打开时修订日志还没读到：读到之后选最新的那次。指定了修订时不管：这个副作用与上一个在同一次打开时先后执行，
@@ -58,11 +66,32 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
     URL.revokeObjectURL(url);
   };
 
+  /** 下载 Word：图取自现在这份预览里的代码块（同一张图只画一次）。 */
+  const downloadWord = async () => {
+    if (wordBusy) return;
+    setWordBusy(true);
+    try {
+      const seen = new Set<string>();
+      const figures = documentBlocks(preview).flatMap((block) => (block.kind === "figure" && block.diagram_id && !seen.has(block.diagram_id) && seen.add(block.diagram_id)
+        ? [{ diagram_id: block.diagram_id, mermaid: block.mermaid }] : []));
+      const { blob, fileName } = await api.downloadDocumentDocx(task.task_id, pick, await figurePngs(figures), `${task.task_name}-修订${revision}.docx`);
+      saveBlob(blob, fileName);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setWordBusy(false);
+    }
+  };
+
   const byWho = (r: RevisionLogEntry) => (r.by === "user" ? "你在界面上改的" : "助手");
   return (
     <Modal title="生成文档" open={open} onCancel={onClose} width="min(76rem, 94vw)" footer={[
       <span key="n" className="muted small" style={{ marginRight: "0.857rem" }}>修订 {revision}，选了 {picked.length} 个条目</span>,
       <Button key="c" onClick={onClose}>关闭</Button>,
+      <Button key="w" disabled={!picked.length || !revision || loading || wordBusy} onClick={() => void downloadWord()} data-testid="doc-download-word">
+        {wordBusy ? "正在准备 Word…" : "下载 Word"}
+      </Button>,
       <Button key="d" type="primary" disabled={!picked.length || !revision} onClick={download} data-testid="doc-download">下载 Markdown</Button>,
     ]}>
       {!log.length ? <Empty description="这个任务还没有修订，没有可以生成的内容" /> : (
@@ -82,7 +111,7 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
                 if (!inColl.length) return null;
                 return (
                   <div key={coll} style={{ marginBottom: "0.714rem" }}>
-                    <div className="cond-group">{coll}</div>
+                    <div className="cond-group">{collectionLabel(coll)}</div>
                     {inColl.map((id) => (
                       <label key={id} style={{ display: "flex", alignItems: "center", gap: "0.571rem", padding: "0.214rem 0", cursor: "pointer" }}>
                         <Checkbox checked={!unchecked.has(id)} data-testid={`doc-item-${id}`}
@@ -98,7 +127,7 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
             <div style={{ overflow: "auto" }}>
               {error && <div className="busy-note">{error}</div>}
               {loading && <Spin size="small" />}
-              {picked.length ? <pre className="doc-text" data-testid="doc-preview">{preview}</pre> : <Empty description="还没有选任何条目" />}
+              {picked.length ? <DocumentPreview text={preview} /> : <Empty description="还没有选任何条目" />}
             </div>
           </div>
         </>

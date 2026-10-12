@@ -4,14 +4,14 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { USER_COMMAND, USER_EDIT_CUSTOM_TYPE, USER_RESULT_KEY, registerUserCommands } from "../src/hooks/user_commands.ts";
 import { STOP_RUN_KIND, STOP_RUN_NOTE } from "../src/lib/user_ops.ts";
+import { tempDir } from "./helpers.ts";
 
 test("stop_run：往会话里追加一条不可撤销的通知并回报成功；不发话引出新的运行，任务目录里什么都不写", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "tw-stop-run-"));
+  const dir = tempDir("tw-stop-run-");
   const commands = new Map<string, any>();
   const messages: any[] = [];
   const said: string[] = [];

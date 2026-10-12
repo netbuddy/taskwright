@@ -195,14 +195,18 @@ test("核读到编写文档：问题就地记下并了结、回退由用户在�
     assert.deepEqual(moves().map((one: Dict) => [one.from_stage, one.stage]),
       [["reading", "clarifying"], ["clarifying", "modeling"], ["modeling", "writing"], ["writing", "modeling"], ["modeling", "writing"], ["writing", "reviewing"], ["reviewing", "document"]]);
 
-    // 生成文档：三章的导语都在「总体描述」的开头，各以章名起头；规则与用例照常在。
+    // 生成文档：与页面同一个结构。三章的导语各在自己那一章的开头；规则在流程那一节的「适用规则」里与第 5 章的规则表里；
+    // 用例在第 8 章，附录写它依据的是哪一节。
     const document = await call("POST", `/api/v1/tasks/${taskId}/documents/preview`, {});
     assert.equal(document.status, 200, JSON.stringify(document.body));
     const text: string = document.body.text;
-    const overall = text.slice(text.indexOf("## 2 总体描述"), text.indexOf("## 3 功能需求"));
-    const places = INTROS.map(([chapter, words]) => overall.indexOf(`**${chapter}。** ${words}`));
-    assert.ok(places.every((at) => at > 0) && places[0] < places[1] && places[1] < places[2], JSON.stringify(places));
-    assert.ok(places[2] < overall.indexOf("### 流程"), "导语排在按标签归的各组之前");
-    assert.ok(overall.includes(RULE) && !text.includes("待定："));
-    assert.match(text.slice(text.indexOf("## 3 功能需求")), /借书/);
+    const chapter = (no: number, name: string, next: string) => text.slice(text.indexOf(`## ${no} ${name}`), text.indexOf(next));
+    assert.match(chapter(3, "业务流程", "## 4 业务对象"), /^## 3 业务流程\n\n这一章讲读者怎样在自助机上借书。 ［修订 6 · 已确认（已读）］\n\n### 3\.1 自助借书 /);
+    assert.match(chapter(5, "业务规则", "## 6 业务目标"), new RegExp(`^## 5 业务规则\\n\\n${INTROS[1][1]} ［修订 6 · 已确认（已读）］\\n\\n\\| 规则 \\| 出自 \\| 冲突 \\|\\n\\|---\\|---\\|---\\|\\n\\| ${RULE} \\| 3\\.1 自助借书 \\|`));
+    assert.match(chapter(7, "决策记录与待澄清事项", "## 8 功能需求"), new RegExp(`^## 7 决策记录与待澄清事项\\n\\n${INTROS[2][1]} `));
+    assert.ok(chapter(3, "业务流程", "## 4 业务对象").includes(`**适用规则**\n\n1. ${RULE}`) && !text.includes("待定："));
+    // 了结了的问题在那一节的待澄清事项里写着落实到哪里。
+    assert.ok(chapter(3, "业务流程", "## 4 业务对象").includes("- 已了结：借书证丢失的读者能不能借书？（TBD-001）　落实到：OA-001 已经定下的第 1 条"));
+    assert.match(text.slice(text.indexOf("## 8 功能需求")), /### UC-001 借书 /);
+    assert.match(text.slice(text.indexOf("## 附录 追溯")), /\| UC-001 借书 \| 3\.1 自助借书 \| — \|/);
   }, { seed: false }));

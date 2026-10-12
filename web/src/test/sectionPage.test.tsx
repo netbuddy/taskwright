@@ -266,7 +266,7 @@ describe("节的各块", () => {
     expect(screen.getByTestId("topic-open").querySelector("h3 small")).toBeNull();
   });
 
-  it("待澄清事项：回答框空着点「记下」只把开头填进对话区的输入框；「暂不处理」把问题标为先不管", () => {
+  it("待澄清事项：回答框空着点「记下」只把开头填进对话区的输入框；「暂不处理」把问题标为暂不处理", () => {
     const send = vi.fn();
     const answer = vi.fn();
     const submit = vi.fn(async () => null);
@@ -276,7 +276,7 @@ describe("节的各块", () => {
     expect(answer.mock.calls[0][0].item_id).toBe("TBD-001");
     expect(screen.getByTestId("topic-keep-TBD-001")).toHaveTextContent("暂不处理");
     fireEvent.click(screen.getByTestId("topic-keep-TBD-001"));
-    expect(submit).toHaveBeenCalledWith({ kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }], notify_executor: false }, "把 TBD-001 标为先不管");
+    expect(submit).toHaveBeenCalledWith({ kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }], notify_executor: false }, "把 TBD-001 标为暂不处理");
   });
 
   it("助手工作中、任务结束后，回答与暂不处理都不能点", () => {
@@ -517,10 +517,12 @@ describe("节末尾的三块", () => {
     expect(screen.getByTestId("item-detail")).toHaveTextContent("预约图书");
   });
 
-  it("追溯：材料 › 澄清记录 › 条目，没有内容的段不画；点材料在右边定位第一处原文，点澄清记录换成条目详情的样子", () => {
+  it("追溯：材料 › 澄清记录 › 条目 › 文档节号，没有内容的段不画；点材料在右边定位第一处原文，点澄清记录换成条目详情的样子", () => {
     const locate = vi.fn();
     render(<Panel t={overallTask()} spies={{ locate }} />);
-    expect(text(screen.getByTestId("topic-trace"))).toBe("追溯材料 借阅规则.md›澄清记录 2 条›条目 UC-002、UC-003");
+    // 最后一段是这一节在生成的文档里的节号，与面包屑里的节号是同一个。
+    const no = text(screen.getByTestId("topic-crumb")).match(/›(\d+\.\d+)/)![1];
+    expect(text(screen.getByTestId("topic-trace"))).toBe(`追溯材料 借阅规则.md›澄清记录 2 条›条目 UC-002、UC-003›文档 ${no} 节`);
     expect(screen.queryByTestId("trace-figures")).toBeNull();
     fireEvent.click(within(screen.getByTestId("trace-materials")).getByRole("button"));
     expect(locate).toHaveBeenCalledWith("同一册图书同一时间只接受一位读者的预约。", "inputs/借阅规则.md");

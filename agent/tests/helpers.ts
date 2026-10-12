@@ -3,7 +3,7 @@
  * 夹具是测试自己写的，与真实任务的起始文件无关。
  */
 
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -130,9 +130,29 @@ export const MATERIAL_TEXT = [
   "",
 ].join("\n");
 
+/**
+ * 建一个临时目录。测试进程退出时把这个进程经它建的目录都删掉：每份测试文件是一个进程，跑一遍整套要建上万个目录，
+ * 不清的话每跑一遍在临时目录下留下一百兆上下。测试里要临时目录一律用它，不要直接调 mkdtempSync。
+ */
+const madeDirs: string[] = [];
+process.on("exit", () => {
+  for (const dir of madeDirs) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // 清不掉不算测试失败。
+    }
+  }
+});
+export function tempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+
 /** 建一个临时任务目录，写好任务定义文件与一份材料（inputs/材料.md，material 为假时不放），返回任务目录。 */
 export function makeWorkspace(definition: unknown = demoDefinition(), { material = true } = {}): string {
-  const dir = mkdtempSync(join(tmpdir(), "taskwright-agent-test-"));
+  const dir = tempDir("taskwright-agent-test-");
   mkdirSync(join(dir, "docs/task-definitions"), { recursive: true });
   writeFileSync(join(dir, DEFINITION_PATH), JSON.stringify(definition, null, 2), "utf-8");
   if (material) {

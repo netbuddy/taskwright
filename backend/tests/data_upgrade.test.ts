@@ -106,9 +106,11 @@ test("升级：每个任务升到现在的格式并补写 task.json、记进登�
     assert.equal(report.file, join(where.dataDir, "logs", "upgrade-20261008-140509.txt"));
     const text = readFileSync(report.file!, "utf-8");
     assert.equal(text, reportText(report));
-    assert.match(text, /^数据升级报告（0\.5\.0）\n数据目录：.*\n开始：.*结束：.*\n升级之前的备份：.*20261008-140509-pre-0\.5（4 个文件，/);
+    assert.match(text, /^数据升级报告（0\.5\.0）\n数据目录：.*\n任务目录：.*\n开始：.*结束：.*\n升级之前的备份：.*20261008-140509-pre-0\.5（4 个文件，/);
     assert.match(text, new RegExp(`任务 ${where.ids[0]}「借阅系统」：格式 0 升到 ${TASK_DB_VERSION}，成功，用了 \\d+ 毫秒`));
     assert.match(text, /合计：2 个任务，成功 2 个，没有做成 0 个。\n$/);
+    // 报告写明这一次扫的是哪个任务目录。
+    assert.ok(text.includes(`\n任务目录：${where.tasksDir}\n`), text);
     // 进度：一共四项（备份、数据目录、两个任务），做完的数一步步加到头，最后一条没有「正在做」。
     assert.deepEqual(seen.map((p) => [p.total, p.done]), [[4, 0], [4, 1], [4, 2], [4, 3], [4, 4]]);
     assert.deepEqual([seen[0].current, seen[1].current, seen[4].current], ["正在备份", "正在准备数据目录", null]);

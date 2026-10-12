@@ -1,14 +1,14 @@
 // 问题跟着条目走：问题条目（见 keepPendingField）的「条目引用」字段列着它牵涉的条目，这里把问题挂回到那些条目上。
 //   · ItemIssues：条目详情标题行之下「挂在这条上的问题」一区，只列还没了结的问题（见 isOpenIssue），每个一张卡片；
 //     一个都没有时整块不渲染。已解决与用户决定保留的问题不挂在条目上，在「问题」页签与修订里看。
-//     卡片带一行输入框与「回答」「先不管，保留」：「回答」把「回答 TBD-002：用户写的话」直接发到对话区，
+//     卡片带一行输入框与「回答」「暂不处理」：「回答」把「回答 TBD-002：用户写的话」直接发到对话区，
 //     输入框为空时只预填对话区输入框、不发送（与「问题」页签上的「回答这个问题」相同，助手工作中也照常可用）；
-//     「先不管，保留」走 keep_pending（notify_executor: false），保留之后那张卡片随即不再显示。
+//     「暂不处理」走 keep_pending（notify_executor: false），保留之后那张卡片随即不再显示。
 //     问题卡片上没有「修改」：问题写下后只由用户了结。
 //   · FromIssueCrumb：从「问题」页签点「牵涉 UC-003」跳来时，详情顶部那一行「‹ 回到问题列表」。
 //     那个问题还没了结时，它的卡片排第一张并加粗边框，其余问题折叠成一行「还有 N 个问题 ▸」；
 //     已经了结时顶部那一行照旧，它的卡片不显示，其余问题照常摊开。
-// 灰化：「先不管，保留」与其它写入按钮一致（任务已结束、助手不可用、助手工作中、正在保存）；「回答」只在任务已结束或
+// 灰化：「暂不处理」与其它写入按钮一致（任务已结束、助手不可用、助手工作中、正在保存）；「回答」只在任务已结束或
 // 助手不可用时灰化，输入框里有字、要直接发送时，再按对话区发送键的规矩灰化（助手工作中、有未保存的条目编辑）。都悬停说明原因。
 //
 // 卡片上的字段：第一个字段是事项；名为「处理结果」的文本字段是了结时写的处理结果（与保存修订工具认问题条目的判据一致，
@@ -111,7 +111,7 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
     restoreOnFailure(onSend?.(issueAnswerText(issue.item_id, original)), original, () => latestAnswer.current, setAnswer);
   };
   const keep = async () => {
-    const label = `把 ${issue.item_id} 标为先不管`;
+    const label = `把 ${issue.item_id} 标为暂不处理`;
     const e = await submit({ kind: "keep_pending", targets: [{ item_id: issue.item_id, base_revision: issue.revision_no }], notify_executor: false }, label);
     if (e) toast.error(rejectedText(label, e, issue.item_id));
   };
@@ -131,7 +131,7 @@ function IssueCard({ task, issue, hi, readOnly, writesOff, hold, pending, submit
           data-testid={`issue-input-${issue.item_id}`} />
         <button type="button" className="btn sm" disabled={answerOff} title={answerTitle ?? (typed ? "发给助手" : "输入框空着时只把开头填进对话区输入框，不发送")} onClick={doAnswer}
           data-testid={`issue-answer-${issue.item_id}`}>回答</button>
-        <button type="button" className="btn sm" disabled={keepOff} title={keepTitle} onClick={keep} data-testid={`issue-keep-${issue.item_id}`}>先不管，保留</button>
+        <button type="button" className="btn sm" disabled={keepOff} title={keepTitle} onClick={keep} data-testid={`issue-keep-${issue.item_id}`}>暂不处理</button>
       </div>
     </div>
   );

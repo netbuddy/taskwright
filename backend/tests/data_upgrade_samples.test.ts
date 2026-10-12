@@ -78,7 +78,7 @@ for (const version of VERSIONS) {
         assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.task_name, t.status, t.supported, t.item_count]), [[id, "图书借阅（样本）", "进行中", true, 4]]);
         const page = service.taskPage(service.task(id)) as Record<string, any>;
         assert.deepEqual(page.materials.map((m: any) => m.path), ["inputs/材料.md"]);
-        assert.deepEqual(page.task_type_versions, { copied: null, current: 3 }, "上一版建的任务没有记任务类型说明是第几版");
+        assert.deepEqual(page.task_type_versions, { copied: null, current: 4 }, "上一版建的任务没有记任务类型说明是第几版");
       } finally {
         await service.close();
       }

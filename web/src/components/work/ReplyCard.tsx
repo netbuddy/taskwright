@@ -7,8 +7,8 @@
 //           只把卡片标为已选，不替用户发话，不引出助手的一次运行；提议仍然开着，从输入框上方的「待决定」一行进入。
 //           提议退回前面阶段的卡片上「留在本段」、编写文档阶段请用户过目的卡片上「需要修改」同样走 continue_stage，各显示自己的文字。
 //           请过目的卡片上「看过了，生成文档」也不发话：先留一条 continue_stage 的通知，再把卡片点名的页标为已读，然后打开生成文档。
-//   ask     挂在条目上：能标为先不管的条目各一个「先不管」→ actions（keep_pending），「我不知道，你按常识补」→ messages；
-//           没挂条目（scope 为 general，或者没有写 items）：「我不知道，你按常识补」「先放着」→ messages
+//   ask     挂在条目上：能标为暂不处理的条目各一个「暂不处理」→ actions（keep_pending），「我不知道，你按常识补」→ messages；
+//           没挂条目（scope 为 general，或者没有写 items）：「我不知道，你按常识补」「暂不处理」→ messages
 // 发给执行者的话只用第 7 节的固定模板。卡片里始终有「或者直接告诉我你的想法」的输入框。
 // 评审没有通过的条目也可以标为看过，不拦，点的时候提示一句（第 6 节规则 4）。
 // 样式与结构照设计原型的 .act 卡片：标题小字、「标签＋值」几行、深色主按钮加浅色次按钮、卡片内输入框；
@@ -48,10 +48,10 @@ export const TEMPLATES = {
   dontKnow: (itemIds: string) => `关于 ${itemIds}，我不知道，你按常识补上并标明是你补的。`,
   /** 没挂条目的提问卡片「我不知道，你按常识补」：没有条目可点名，说的是这一问。 */
   dontKnowGeneral: "这个我不知道，你按常识补上并标明是你补的。",
-  /** 没挂条目的提问卡片「先放着」。 */
-  setAside: "这个问题先放着，接着往下做。",
+  /** 没挂条目的提问卡片「暂不处理」。 */
+  setAside: "这个问题暂不处理，接着往下做。",
 };
-// 「先不管这条」发给执行者的那句「我先不管 {条目编号}，请接着往下做。」由后端在直接操作成功后发，
+// 「暂不处理这条」发给执行者的那句「我先不管 {条目编号}，请接着往下做。」（后端写的话，没有跟着页面的按钮改）由后端在直接操作成功后发，
 // 见 backend/src/executor.ts 的 keepPendingNotice；前端只发直接操作。
 
 /**
@@ -155,16 +155,16 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   };
   const refs = act.items ?? [];
   const contexts = refs.map((r) => itemContext(task, r.item_id));
-  // 提问挂在条目上时是「先不管」与「我不知道，你按常识补」；scope 为 general 的提问、没有挂条目的提问是「我不知道，你按常识补」与「先放着」。
+  // 提问挂在条目上时是「暂不处理」与「我不知道，你按常识补」；scope 为 general 的提问、没有挂条目的提问是「我不知道，你按常识补」与「暂不处理」。
   const askOnItems = act.kind === "ask" && act.scope !== "general" && refs.length > 0;
   const askGeneral = act.kind === "ask" && !askOnItems;
   const pendingRefs = askOnItems ? refs.filter((r, i) => contexts[i].pending) : [];
   const keepPending = (ref: { item_id: string; revision_no?: number }) => {
-    setChosen(`先不管 ${ref.item_id}`);
+    setChosen(`暂不处理 ${ref.item_id}`);
     const current = task?.items.find((i) => i.item_id === ref.item_id)?.revision_no;
     handlers.onAction(
       { kind: "keep_pending", targets: [{ item_id: ref.item_id, base_revision: ref.revision_no ?? current }], notify_executor: true },
-      `把 ${ref.item_id} 标为先不管`,
+      `把 ${ref.item_id} 标为暂不处理`,
     );
   };
   const failedReview = (act.items ?? []).filter((ref) => {
@@ -329,7 +329,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
             <div className="actions">
               {pendingRefs.map((ref) => (
                 <button type="button" key={ref.item_id} className="btn sm" disabled={off} title={offTitle} onClick={() => keepPending(ref)} data-testid={`card-keep-${ref.item_id}`}>
-                  {pendingRefs.length === 1 ? "先不管这条" : `先不管 ${ref.item_id}`}
+                  {pendingRefs.length === 1 ? "暂不处理这条" : `暂不处理 ${ref.item_id}`}
                 </button>
               ))}
               <button type="button" className="btn sm" disabled={off} title={offTitle} data-testid="card-dont-know"
@@ -346,8 +346,8 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
                 我不知道，你按常识补
               </button>
               <button type="button" className="btn sm" disabled={off} title={offTitle} data-testid="card-set-aside"
-                onClick={() => say(TEMPLATES.setAside, "先放着")}>
-                先放着
+                onClick={() => say(TEMPLATES.setAside, "暂不处理")}>
+                暂不处理
               </button>
             </div>
           )}

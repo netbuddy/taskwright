@@ -49,7 +49,7 @@ describe("条目区的「业务说明」页签", () => {
     const opened = vi.fn();
     render(<Panel t={overallTask()} opened={opened} />);
     const intro = screen.getByTestId("overall-intro");
-    expect(intro).toHaveTextContent("用这件事自己的话写下的主题");
+    expect(intro).toHaveTextContent("按章整理的业务说明：每一节写它是什么、适用规则、待澄清事项，图与需求条目都归在它说明的那一节。");
     expect(intro).toHaveTextContent("现在有 11 节，14 条已经定下，3 条还没定，2 处是助手补的、等你核实。");
     expect(intro).toHaveTextContent("在左边的目录里点一节");
     expect(opened).not.toHaveBeenCalled();
@@ -92,15 +92,30 @@ describe("目录", () => {
     expect(screen.getByTestId("toc-totals").textContent).toBe("说明共 9 节 · 3 条需求条目 · 3 处待澄清");
   });
 
-  it("点第 3 章的标题收起它的各节、再点展开；别的章点标题打开章首页", () => {
+  it("第 3 章章名右边的小三角收起它的各节、再点展开，不打开章首页；点章名打开章首页，七章都一样", () => {
     const opened = vi.fn();
     render(<Panel t={overallTask()} first="OA-002" opened={opened} />);
-    fireEvent.click(chapter(3));
+    const fold = () => screen.getByTestId("toc-fold-3");
+    fireEvent.click(fold());
     expect(screen.queryByTestId("toc-OA-001")).toBeNull();
-    expect(chapter(3)).toHaveAttribute("aria-expanded", "false");
+    expect(fold()).toHaveAttribute("aria-expanded", "false");
+    expect(fold()).toHaveAttribute("aria-label", "展开这一章的各节");
     expect(opened).not.toHaveBeenCalled();
-    fireEvent.click(chapter(3));
+    expect(screen.queryByTestId("chapter-head-3")).toBeNull();
+    fireEvent.click(fold());
     expect(screen.getByTestId("toc-OA-001")).toBeInTheDocument();
+    // 别的章没有小三角。
+    expect(screen.queryByTestId("toc-fold-2")).toBeNull();
+    // 第 3 章：点章名打开章首页，各节照旧展开着；章首页里每节一段摘要，依据这一节写了用例的在标题后面写几条。
+    fireEvent.click(chapter(3));
+    const head3 = screen.getByTestId("chapter-head-3");
+    expect(chapter(3)).toHaveAttribute("aria-current", "true");
+    expect(screen.getByTestId("toc-OA-001")).toBeInTheDocument();
+    expect(within(head3).getByTestId("chapter-title")).toHaveTextContent("业务流程");
+    expect(within(head3).getByTestId("chapter-section-OA-001")).toBeInTheDocument();
+    const notes = [...head3.querySelectorAll('[data-testid^="chapter-section-note-"]')].map((one) => [one.getAttribute("data-testid")!.replace("chapter-section-note-", ""), one.textContent]);
+    expect(notes.length).toBeGreaterThan(0);
+    for (const [, words] of notes) expect(words).toMatch(/^\d+ 条用例$/);
     // 第 2 章：打开章首页，不再停在哪一节上；章首页里是这一章各节的摘要，点节的标题打开那一节。
     fireEvent.click(chapter(2));
     expect(opened).toHaveBeenLastCalledWith(null);

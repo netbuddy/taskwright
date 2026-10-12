@@ -146,20 +146,20 @@ describe("提问挂在条目上", () => {
     expect(onOpenItem).toHaveBeenCalledWith("TBD-001");
   });
 
-  it("「先不管这条」走 actions 的 keep_pending 并通知执行者；「我不知道，你按常识补」走 messages 的模板句", () => {
+  it("「暂不处理这条」走 actions 的 keep_pending 并通知执行者；「我不知道，你按常识补」走 messages 的模板句", () => {
     const h = card({ kind: "ask", text: "你们打算怎样处理？", items: [{ item_id: "TBD-001", revision_no: 1 }] }, pendingTask());
-    fireEvent.click(screen.getByText("先不管这条"));
+    fireEvent.click(screen.getByText("暂不处理这条"));
     expect(h.onAction).toHaveBeenCalledWith(
       { kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }], notify_executor: true }, expect.any(String));
     const h2 = card({ kind: "ask", text: "你们打算怎样处理？", items: [{ item_id: "TBD-001", revision_no: 1 }] }, pendingTask());
-    fireEvent.click(screen.getByTestId("card-dont-know")); // 第一张卡片点过「先不管这条」之后按钮已收起
+    fireEvent.click(screen.getByTestId("card-dont-know")); // 第一张卡片点过「暂不处理这条」之后按钮已收起
     expect(h2.onMessage).toHaveBeenCalledWith("关于 TBD-001，我不知道，你按常识补上并标明是你补的。",
       { reply_message_id: "msg-7", kind: "ask", choice: "不知道" });
   });
 
-  it("挂在功能用例上的提问没有「先不管这条」，也没有没挂条目时的那两个按钮", () => {
+  it("挂在功能用例上的提问没有「暂不处理这条」，也没有没挂条目时的那两个按钮", () => {
     card({ kind: "ask", text: "UC-001 的步骤够吗？", items: [{ item_id: "UC-001", revision_no: 2 }] });
-    expect(screen.queryByText("先不管这条")).toBeNull();
+    expect(screen.queryByText("暂不处理这条")).toBeNull();
     expect(screen.getByTestId("card-dont-know")).toBeInTheDocument();
     expect(screen.queryByTestId("card-dont-know-general")).toBeNull();
     expect(screen.queryByTestId("card-set-aside")).toBeNull();
@@ -169,15 +169,15 @@ describe("提问挂在条目上", () => {
 describe("没挂条目的提问", () => {
   const actions = () => [...screen.getByTestId("act-ask").querySelectorAll(".actions button")].map((b) => b.textContent);
 
-  it("scope 为 general 或者没有写 items 的提问有两个按钮「我不知道，你按常识补」「先放着」，输入框照旧，不列条目", () => {
+  it("scope 为 general 或者没有写 items 的提问有两个按钮「我不知道，你按常识补」「暂不处理」，输入框照旧，不列条目", () => {
     card({ kind: "ask", text: "你们用哪种支付渠道？", scope: "general" });
-    expect(actions()).toEqual(["我不知道，你按常识补", "先放着"]);
+    expect(actions()).toEqual(["我不知道，你按常识补", "暂不处理"]);
     expect(screen.queryByTestId("card-dont-know")).toBeNull();          // 挂了条目时的那个按钮不在
     expect(screen.queryByTestId("card-context")).toBeNull();
     expect(screen.getByTestId("card-input")).toBeInTheDocument();
     cleanup();
     card({ kind: "ask", text: "退款由谁审批？" });
-    expect(actions()).toEqual(["我不知道，你按常识补", "先放着"]);
+    expect(actions()).toEqual(["我不知道，你按常识补", "暂不处理"]);
   });
 
   it("「我不知道，你按常识补」发固定的一句，标注与挂了条目的那个按钮相同；点过之后卡片收成一句", () => {
@@ -190,10 +190,10 @@ describe("没挂条目的提问", () => {
     expect(screen.getByTestId("act-ask").querySelector(".done")).toHaveTextContent("我不知道，你按常识补");
   });
 
-  it("「先放着」发固定的一句，标注写先放着", () => {
+  it("「暂不处理」发固定的一句，标注写暂不处理", () => {
     const h = card({ kind: "ask", text: "你们用哪种支付渠道？", scope: "general" });
     fireEvent.click(screen.getByTestId("card-set-aside"));
-    expect(h.onMessage).toHaveBeenCalledWith("这个问题先放着，接着往下做。", { reply_message_id: "msg-7", kind: "ask", choice: "先放着" });
+    expect(h.onMessage).toHaveBeenCalledWith("这个问题暂不处理，接着往下做。", { reply_message_id: "msg-7", kind: "ask", choice: "暂不处理" });
     expect(h.onAction).not.toHaveBeenCalled();
   });
 
@@ -287,10 +287,10 @@ describe("直接操作被拒时的错误显示：一律报一条停住的失败�
     expect(screen.getByRole("heading", { name: "买家申请退款" })).toBeInTheDocument(); // 标题没有被乐观地改掉
   });
 
-  it("「先不管」按取值「用户决定保留」认出适用的集合，走 keep_pending", async () => {
+  it("「暂不处理」按取值「用户决定保留」认出适用的集合，走 keep_pending", async () => {
     const submit = vi.fn(async () => null);
     detail(submit, 1);
-    fireEvent.click(screen.getByText("先不管，保留"));
+    fireEvent.click(screen.getByText("暂不处理"));
     await waitFor(() => expect(submit).toHaveBeenCalledWith(
       { kind: "keep_pending", targets: [{ item_id: "TBD-001", base_revision: 1 }], notify_executor: false }, expect.any(String)));
   });
@@ -308,7 +308,7 @@ describe("直接操作被拒时的错误显示：一律报一条停住的失败�
 
   it("超时显示「还没有得到确认」", async () => {
     detail(vi.fn(async () => new ApiError("timeout", "等了太久", 0)), 1);
-    fireEvent.click(screen.getByText("先不管，保留"));
+    fireEvent.click(screen.getByText("暂不处理"));
     expect(await screen.findByTestId("toast-bad")).toHaveTextContent("这次修改还没有得到确认，请稍后看是否已经生效。");
   });
 });

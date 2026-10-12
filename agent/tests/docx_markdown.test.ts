@@ -4,14 +4,13 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { docxProjection, formatNumber } from "../src/lib/docx_markdown.ts";
 import { projectionParagraphs } from "../src/lib/docx_source.ts";
 import { buildSegments } from "../src/lib/segments.ts";
-import { SAMPLE, SAMPLE_DOCX, legacyProjection, makeDocx, projection } from "./helpers.ts";
+import { SAMPLE, SAMPLE_DOCX, legacyProjection, makeDocx, projection, tempDir } from "./helpers.ts";
 import { paragraphsOf, readZipEntry } from "../../scripts/docx_paragraphs.mjs";
 
 const squeeze = (s: string) => s.replace(/\s+/g, "");
@@ -187,7 +186,7 @@ test("0.2 的纯文本投影照旧可解析：段数与各段文字", () => {
 });
 
 test("命令行入口：写投影、图片目录与分段清单（参数经 --segments-json 给）；--print 只给全文不写文件；坏文件与坏参数退出码 1 并给中文原因", () => {
-  const dir = mkdtempSync(join(tmpdir(), "docx-cli-"));
+  const dir = tempDir("docx-cli-");
   const docx = join(dir, "需求.docx");
   writeFileSync(docx, readFileSync(SAMPLE));
   const run = (...args: string[]) => {

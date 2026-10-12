@@ -131,7 +131,7 @@ describe("条目详情顶部「挂在这条上的问题」", () => {
     expect(screen.queryByTestId("item-issues")).toBeNull();
   });
 
-  it("在卡片上点「先不管，保留」、保存之后那张卡片随即不再显示，其余照旧", async () => {
+  it("在卡片上点「暂不处理」、保存之后那张卡片随即不再显示，其余照旧", async () => {
     const submit = vi.fn(async () => null);
     const t = task();
     const { rerender } = render(<Panel t={t} submit={submit} />);
@@ -160,7 +160,7 @@ describe("条目详情顶部「挂在这条上的问题」", () => {
     expect(input).toHaveValue("");
   });
 
-  it("「先不管，保留」走 keep_pending，不通知助手", async () => {
+  it("「暂不处理」走 keep_pending，不通知助手", async () => {
     const submit = vi.fn(async () => null);
     render(<Panel submit={submit} />);
     fireEvent.click(screen.getByTestId("item-UC-003"));
@@ -169,7 +169,7 @@ describe("条目详情顶部「挂在这条上的问题」", () => {
       { kind: "keep_pending", targets: [{ item_id: "TBD-010", base_revision: 1 }], notify_executor: false }, expect.any(String)));
   });
 
-  it("助手工作中：「先不管」灰化；「回答」空着照常能预填，写了字要发送时才灰化并说明原因", () => {
+  it("助手工作中：「暂不处理」灰化；「回答」空着照常能预填，写了字要发送时才灰化并说明原因", () => {
     const onSend = vi.fn();
     const onAnswer = vi.fn();
     render(<Panel writesOff onSend={onSend} onAnswer={onAnswer} />);

@@ -1,12 +1,12 @@
 // PDF 材料的分段清单（lib/pdf_segments.ts）：从投影全文与书签目录算出各段的起止页、起止行与块数。
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { PDF_SEGMENTS_VERSION, buildPdfSegments, pdfProjectionPages, pdfProjectionUnits, writePdfSegments } from "../src/lib/pdf_segments.ts";
 import { SEGMENT_DEFAULTS, paramsDigest } from "../src/lib/segments.ts";
+import { tempDir } from "./helpers.ts";
 
 const HEADER = (pages: number, units: number) => `<!--\n由 x.pdf 生成，供助手阅读。页数：${pages}。块总数：${units}。\n出处写 inputs/x.pdf#p页-块（例如 inputs/x.pdf#p3-7）。\n-->\n`;
 
@@ -94,7 +94,7 @@ test("没有文字的页也在段里：全是这种页的材料是一段，块�
 });
 
 test("写成文件：两格缩进的 JSON，末尾换行，读回来相同", () => {
-  const dir = mkdtempSync(join(tmpdir(), "taskwright-pdf-segments-"));
+  const dir = tempDir("taskwright-pdf-segments-");
   try {
     const list = buildPdfSegments(projection([3, 3]), params(), "inputs/x.pdf", "inputs/x.pdf.md", []);
     const file = join(dir, "x.pdf.segments.json");

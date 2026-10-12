@@ -562,11 +562,14 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
         `有 ${unbranched.length} 页标签为「${TAG_FLOW}」的主题还没有带判断分叉的流程图：${unbranched.map((one) => `${one.item_id}（${chartsOf(one.item_id).length === 0 ? "还没有以它为来源的流程图" : "流程图里没有判断分叉"}）`).join("、")}。`,
         unbranched.map((one) => one.item_id));
 
-  // 整理建模：说到状态的「概念」页有一张以它为来源的状态图。说没说到状态按字面认（lampPage 的 stateful）。
-  const stateful = concepts.filter((one) => one.stateful);
-  const stateless = stateful.filter((one) => !input.diagrams.some((chart) => chart.kind === KIND_STATE && chart.sources.includes(one.item_id)));
-  const statesDrawn = stateful.length === 0 ? lamp("stateful_concepts_have_state", null, `还没有说到状态的「${TAG_CONCEPT}」主题。`)
-    : stateless.length === 0 ? lamp("stateful_concepts_have_state", true, `每个说到状态的「${TAG_CONCEPT}」主题都有一张状态图。`)
+  // 整理建模：有状态的「概念」页有一张以它为来源的状态图。两部分一起看：已经有状态图的概念页算有图（不管文字里说没说到状态）；
+  // 文字说到状态（按字面认，lampPage 的 stateful）而没有状态图的概念页算差的。有差的不通过；没有差的而至少一页有图，通过；两样都没有，不适用。
+  const hasStateChart = (itemId: string): boolean => input.diagrams.some((chart) => chart.kind === KIND_STATE && chart.sources.includes(itemId));
+  const charted = concepts.filter((one) => hasStateChart(one.item_id));
+  const stateless = concepts.filter((one) => one.stateful && !hasStateChart(one.item_id));
+  const statesDrawn = stateless.length === 0 && charted.length === 0
+    ? lamp("stateful_concepts_have_state", null, `还没有画了状态图的「${TAG_CONCEPT}」主题，也没有哪一页「${TAG_CONCEPT}」主题的文字说到状态。`)
+    : stateless.length === 0 ? lamp("stateful_concepts_have_state", true, `有 ${charted.length} 页「${TAG_CONCEPT}」主题画了状态图；文字说到状态的「${TAG_CONCEPT}」主题都有状态图。`)
       : lamp("stateful_concepts_have_state", false,
         `有 ${stateless.length} 页说到状态的「${TAG_CONCEPT}」主题还没有以它为来源的状态图：${list(stateless.map((one) => one.item_id))}。说没说到状态是按字面认的（文字里有「状态」「变成」或者「从……变为……」），认错了的不用画，向用户说明即可。`,
         stateless.map((one) => one.item_id));

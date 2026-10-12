@@ -3,11 +3,16 @@
 // 阶段的名字、次序与卡片上「进入下一段」的选项键取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
 import {
-  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_OPTIONS, STAY_TEXT,
+  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_OPTIONS, STAY_TEXT,
 } from "../../../agent/src/lib/stage";
 import type { Item, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
 export { STAGES, STAGE_NAMES, STAY_TEXT };
+
+/** 所属流程给人看的名字：认得的写中文名（现在只有「首次分析」），认不出的照原样写，没有给的写「（没有记）」。 */
+export function flowName(flow: string | null | undefined): string {
+  return flow ? (FLOW_NAMES as Record<string, string>)[flow] ?? flow : "（没有记）";
+}
 
 /** 阶段条上的一格：这个阶段已经过了、正在这里、还没到。 */
 export type StageMark = "done" | "current" | "ahead";

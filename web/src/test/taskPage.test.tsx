@@ -289,6 +289,16 @@ describe("交付物", () => {
     ]);
   });
 
+  it("总体分析这个集合的卡显示成「业务说明」，悬停提示里也是；别的集合照集合名；卡的标记仍用集合名", async () => {
+    page(detail({ definition: { collections: ["总体分析", "功能用例"].map((name, i) => ({ name, prefix: `P${i}`, needs_review: false, review_rules: null, fields: [FIELD] })) } } as unknown as Partial<TaskDetail>));
+    await ready();
+    const card = screen.getByTestId("board-总体分析");
+    expect(card.querySelector(".tp-coll-name")).toHaveTextContent(/^业务说明$/);
+    expect(card.getAttribute("title")).toContain("业务说明还没有条目。");
+    expect(card.getAttribute("title")).not.toContain("总体分析");
+    expect(screen.getByTestId("board-功能用例").querySelector(".tp-coll-name")).toHaveTextContent(/^功能用例$/);
+  });
+
   it("还没有会话时集合卡不可点，悬停提示写明原因；还没有修订时不写「最后改在」", async () => {
     page(detail({ items: [] }));
     await ready();

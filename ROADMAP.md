@@ -45,27 +45,37 @@ Planned themes for the next releases. No dates; order and scope may change.
 - [x] Replace a material
 - [x] The task status note at the top of a conversation folded into one line
 
-## 0.5 Several users
+## 0.5 Stages of work and the business description
 
-- [ ] Search of materials by meaning
-- [ ] Authentication and multiple users
 - [x] Stop a run in progress from the interface
-- [ ] Limits on how many assistants run at once, with idle shutdown and a queue
 - [x] Upgrades that keep existing tasks
 - [x] Export and import of tasks and knowledge libraries as data packs
-- [ ] Overall analysis: topic pages in the matter's own words that items are written from (data, rules and assistant instructions done; the page is next)
+- [x] Overall analysis: topic pages in the matter's own words that items are written from
+- [x] Work in six stages, each move the user's click on a card the assistant proposes
+- [x] Five standard models drawn in the modeling stage
+- [x] The business description on the page in seven chapters, with diagrams where they belong
+- [x] Questions recorded in place and settled with where the answer went
+- [x] A document stage that adds chapter introductions
+- [x] The generated document in the chapters of the business description, as Markdown and as a Word file of the whole document
+- [x] Evaluation runs that compare the assistant before and after a change to its instructions
 
-## 0.6 First public release
+## 0.6 Tasks, activities and several users
+
+- [ ] Tasks, activities and flows: a task stays open after publishing a version, activities can run on their own or as nodes of a flow, the seven basic capabilities, and a change flow on top of a published version
+- [ ] Authentication and multiple users
+- [ ] Limits on how many assistants run at once, with idle shutdown and a queue
+- [ ] Search of materials by meaning
+- [ ] A source that cites a knowledge base document says so when the document has been replaced
+- [ ] One name, 请过目, for the card that asks the user to look at items, in the assistant's instructions and in the simulator
+
+## 0.7 First public release, deliverables and desktop
 
 - [ ] Backup and restore of tasks
 - [ ] Review rules verified on real projects
 - [ ] One round of evaluation and improvement for the assistant's known faults: missed content, contradictions written as settled rules, one rule written twice
 - [ ] Load test with tens of users at once
 - [ ] Screenshots in the tutorial brought up to date
-
-## 0.7 Deliverables and desktop
-
-- [ ] Word (.docx) export of the whole deliverable
+- [ ] Separating the business description from the specification format: one business description, several item formats (use case tables, user stories)
 - [ ] Cross-item review: duplicates, conflicts, inconsistent wording
 - [ ] Desktop application based on Electron
 - [ ] Baselines of the whole deliverable

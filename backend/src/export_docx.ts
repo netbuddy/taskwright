@@ -37,13 +37,13 @@ const NAME_LIMIT = 60;
 const LABEL_WIDTH = 22;
 const VALUE_WIDTH = 78;
 /** 字体：中文宋体，其余 Calibri。字号以半磅计：正文 10.5 磅（五号），标题 1 是 16 磅，标题 2 是 13 磅。 */
-const FONT = { ascii: "Calibri", hAnsi: "Calibri", eastAsia: "宋体", cs: "Calibri" };
-const BODY_SIZE = 21;
-const HEADING1_SIZE = 32;
-const HEADING2_SIZE = 26;
+export const FONT = { ascii: "Calibri", hAnsi: "Calibri", eastAsia: "宋体", cs: "Calibri" };
+export const BODY_SIZE = 21;
+export const HEADING1_SIZE = 32;
+export const HEADING2_SIZE = 26;
 
 /** Word 内置的「网格型」表格样式（Table Grid）的定义：docx 包没有定义表格样式的写法，经它的 externalStyles 带进样式表。 */
-const TABLE_GRID_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+export const TABLE_GRID_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
   + '<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="39"/><w:tblPr><w:tblBorders>'
   + ["top", "left", "bottom", "right", "insideH", "insideV"].map((side) => `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="auto"/>`).join("")
   + "</w:tblBorders></w:tblPr></w:style></w:styles>";
@@ -53,7 +53,7 @@ let loading: Promise<Dict> | null = null;
 export const DOCX_MISSING_TEXT = "导出 Word 要用的 docx 包没有装上，这一次没有导出。";
 
 /** 加载 docx 包里用到的那几样：安装包里是构建时打好的那一份，仓库里是 docx_lib.mjs。没有加载成时下一次再试。 */
-function loadDocx(): Promise<Dict> {
+export function loadDocx(): Promise<Dict> {
   const packed = fromRoot("backend/vendor/docx/docx_lib.mjs");
   loading ??= import(existsSync(packed) ? pathToFileURL(packed).href : new URL("./docx_lib.mjs", import.meta.url).href);
   loading.catch(() => { loading = null; });
@@ -82,8 +82,8 @@ export function docxFileName(taskName: string, today: Date = new Date()): string
 }
 
 /** 下载这份文件时的 Content-Disposition：文件名带中文，按 RFC 5987 写在 filename* 里；另给一个只有英文数字的 filename，给不认 filename* 的软件用。 */
-export function docxDisposition(fileName: string, taskId: string): string {
-  const plain = `${taskId.replace(/[^A-Za-z0-9._-]+/g, "_")}-items.docx`;
+export function docxDisposition(fileName: string, taskId: string, what: "items" | "document" = "items"): string {
+  const plain = `${taskId.replace(/[^A-Za-z0-9._-]+/g, "_")}-${what}.docx`;
   const encoded = encodeURIComponent(fileName).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   return `attachment; filename="${plain}"; filename*=UTF-8''${encoded}`;
 }

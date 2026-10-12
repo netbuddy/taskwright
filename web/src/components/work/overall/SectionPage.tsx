@@ -8,7 +8,7 @@
 //   待澄清事项 ── 每个问题挂一枚「阻断下游」或「不阻断」（不阻断的写何时回看），阻断下游的排在前面；已经了结的问题列在
 //                 下面，写它落实到了哪里。
 //   待澄清事项 ── 问题集合里挂在这一页、还没有了结的问题，带「需要它的原因」；在这里写一句回答点「记下」就发给助手，
-//                「暂不处理」把这个问题标为先不管。
+//                「暂不处理」把这个问题标为暂不处理。
 // 这几块之间与之后还有条目区交进来的几块（Figure.tsx、SectionLinks.tsx）：说明之后是这一节的图（流程步骤、状态图、与其他对象的关系），
 // 待澄清事项之后是其他图、相关角色与对象、对应的需求条目与追溯行。
 // 末尾一排动作：「修改」；「让助手照这条改条目」只往对话区的输入框里预填一句话；「标为已废弃」先问一句再保存；
@@ -299,7 +299,7 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
             {questions.map((q) => <Question key={q.item_id} task={task} question={q} off={readOnly || writesOff} offTitle={offTitle}
               onSend={onSend} onAnswer={onAnswer} onOpen={onOpen}
               onKeep={async () => {
-                const label = `把 ${q.item_id} 标为先不管`;
+                const label = `把 ${q.item_id} 标为暂不处理`;
                 const e = await submit({ kind: "keep_pending", targets: [{ item_id: q.item_id, base_revision: q.revision_no }], notify_executor: false }, label);
                 if (e) toast.error(rejectedText(label, e, q.item_id));
               }} />)}

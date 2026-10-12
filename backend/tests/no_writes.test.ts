@@ -26,18 +26,22 @@ const ALLOWED: Record<string, string[]> = {
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
   // 另有问题条目的几个字段名与取值（常量）。
-  "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_INITIAL", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage"],
+  "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_INITIAL", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark"],
   // 从总体分析的页与问题条目算三张表（只做计算，不读库也不写库）。
-  "overall_views.ts": ["ViewPage", "ViewQuestion", "ViewSource", "decisionsAndOpenQuestions", "goalTree", "rulesTable"],
+  "overall_views.ts": ["ViewPage", "ViewQuestion", "ViewSource", "decisionsAndOpenQuestions", "goalTree", "rulesTable", "GoalNode"],
   // 业务说明的章与节：总体分析的页按标签归章、编节号（只做计算，不读库，页面也用它）。任务状况里各章的节数从它来。
-  "overall_chapters.ts": ["CHAPTERS", "chapterLayout", "chapterPage"],
+  "overall_chapters.ts": ["CHAPTERS", "chapterLayout", "chapterPage", "CHAPTER_DECISIONS", "CHAPTER_FLOWS", "CHAPTER_GOALS", "CHAPTER_OBJECTS", "CHAPTER_OVERVIEW", "CHAPTER_ROLES", "CHAPTER_RULES", "GLOSSARY_NAME", "LABEL_CONCEPT"],
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
   "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames"],
   // 图：种类与编号的常量、从库里读图、从 Mermaid 文本里扫条目编号、用户看过哪些图（只读与只做计算的函数，不写库）。
   "diagram.ts": ["DIAGRAM_KINDS", "DiagramRecord", "diagramViewed", "drawnItemIds", "kindName", "latestVersion", "liveDiagrams", "readDiagrams", "viewedDiagramRevisions"],
   // 从 Mermaid 文本里扫东西（只做计算）：系统边界图画没画出系统与系统外面的节点，保存前的校验用。
-  "diagram_scan.ts": ["contextShape"],
+  // 图放在业务说明的哪里、角色与用例对照表的行（只做计算，页面也用它）：生成文档的七章照它排。
+  "overall_figures.ts": ["FigureSlot", "KIND_CLASS", "KIND_CONTEXT", "KIND_USE_CASE", "figureSlot", "useCaseMatrix"],
+  // 把生成出来的文档切成块（只做计算，页面的预览也用它）：整份文档的 Word 文件照这些块写。
+  "document_blocks.ts": ["DocBlock", "DocRun", "documentBlocks"],
+  "diagram_scan.ts": ["contextShape", "diagramGraph"],
   // TASK_ID_PATTERN 是任务编号的写法（一个正则），数据包导入时用它核对包里写的编号。
   "create_task.ts": ["createTask", "TASK_ID_PATTERN"],
   // renumberTask 是写入：把一个任务库里的任务编号换成新的。它只许在数据包的导入里调（src/data_pack.ts，导入的任务与已有的任务
@@ -50,7 +54,7 @@ const ALLOWED: Record<string, string[]> = {
   "docx_locations.ts": ["LOCATIONS_SUFFIX", "isLocationTable"],
   "docx_location_input.ts": ["locationTable"],
   // 总体分析由事实算出来的几样（待核实、因依据而待核实、提到）：不依赖任何模块、只算不读库的函数与两个常量，后端的快照把自己读出的事实交给它们算。
-  "overall_analysis.ts": ["OVERALL_COLLECTION", "PlainItem", "RevisionFacts", "Verification", "basisPending", "isSupplement", "mentionsOf", "verificationOf", "viewedIn"],
+  "overall_analysis.ts": ["OVERALL_COLLECTION", "PlainItem", "RevisionFacts", "Verification", "basisPending", "isSupplement", "mentionsOf", "verificationOf", "viewedIn", "OVERALL_FIELDS", "EXCEPTION_EXAMPLE_PREFIX", "isDeprecated", "tagsOf"],
   // 评审结论：不依赖任何模块的纯函数，只按传进去的记录下结论。
   "review_verdict.ts": ["reviewVerdict"],
   // 知识库：文档的种类与通用知识库的编号、来源出处的拆法（不依赖任何模块的纯函数）。

@@ -1,7 +1,7 @@
 /** 任务现状消息与「查询任务状态」里的知识库一段：选用的知识库与文档清单（不给路径、不给正文），续接时只在变过之后重写。 */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -9,7 +9,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
 import { taskStatusMessage } from "../src/lib/task_status.ts";
-import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, tempDir } from "./helpers.ts";
 
 const FRESH = { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null };
 
@@ -18,7 +18,7 @@ const BODY = "逾期每册每天罚款 0.5 元";
 
 /** 知识库根目录：通用知识库里一份术语表与一份几十 KB 的长文档，「行业规范」里一份 Word 规范（带由它生成的那份文字），「空的」里没有文档。 */
 function makeRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
+  const root = tempDir("tw-kb-");
   writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用知识库" }, { id: "lib-a1", name: "行业规范" }, { id: "lib-e0", name: "空的" }] }));
   for (const id of ["general", "lib-a1", "lib-e0"]) mkdirSync(join(root, id, "files"), { recursive: true });
   writeFileSync(join(root, "general", "documents.json"), JSON.stringify({ documents: [{ name: "术语.md", kind: "glossary", bytes: 64 }, { name: "长文.md", kind: "standard", bytes: 59392 }] }));
