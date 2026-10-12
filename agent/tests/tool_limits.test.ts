@@ -4,11 +4,11 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { tempDir } from "./helpers.ts";
 import {
   GREP_CAPPED_STATUS_KEY, GREP_MAX_BYTES, GREP_MAX_LINES, KNOWLEDGE_READ_LINES, capGrep, cappedText, knowledgeReadLimit, reportCapped, resolvedPath,
 } from "../src/lib/tool_limits.ts";
@@ -64,7 +64,7 @@ test("grep 的返回超过 6144 字节：按整行减到连同末尾那句话放
 
 /** 一处用户数据目录的样子：tasks/TASK-001 是任务目录，knowledge/ 是知识库根目录。 */
 function makeDirs(): { base: string; task: string; root: string; doc: string } {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "tw-limits-")));
+  const base = realpathSync(tempDir("tw-limits-"));
   const task = join(base, "tasks", "TASK-001");
   const root = join(base, "knowledge");
   mkdirSync(join(task, "inputs"), { recursive: true });

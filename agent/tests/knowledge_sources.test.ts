@@ -4,15 +4,14 @@
  */
 
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { docxProjection } from "../src/lib/docx_markdown.ts";
 import { checkQuotes, lineEndsOnly, saveRevision } from "../src/lib/save_revision.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
-import { DEFINITION_PATH, MATERIAL_TEXT, SAMPLE, SAMPLE_DOCX, SOURCE, callIn, count, makeWorkspace, putSampleDocx, query } from "./helpers.ts";
+import { DEFINITION_PATH, MATERIAL_TEXT, SAMPLE, SAMPLE_DOCX, SOURCE, callIn, count, makeWorkspace, putSampleDocx, query, tempDir } from "./helpers.ts";
 
 const TERMS = "# 退款术语\n\n原路退回：把钱退到买家付款时用的那个账户。\n部分退款：只退订单金额的一部分。\n";
 const TERM = { kind: "文档原文", locator: "knowledge/general/术语.md", excerpt: "原路退回：把钱退到买家付款时用的那个账户。" };
@@ -20,7 +19,7 @@ const WORD = { kind: "文档原文", locator: "knowledge/lib-a1/规范.docx#p76"
 
 /** 知识库根目录：通用知识库里一份术语表；「行业规范」里一份 Word 文档与它的投影；「别的资料」里一份文本文档。 */
 function makeRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
+  const root = tempDir("tw-kb-");
   writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用知识库" }, { id: "lib-a1", name: "行业规范" }, { id: "lib-b2", name: "别的资料" }] }));
   for (const id of ["general", "lib-a1", "lib-b2"]) mkdirSync(join(root, id, "files"), { recursive: true });
   writeFileSync(join(root, "general", "files", "术语.md"), TERMS);
@@ -130,7 +129,7 @@ test("不是知识库的出处必须落在任务目录里：任务目录之外�
   const root = makeRoot();
   const dir = makeTask();
   const outside = join(root, "general", "files", "术语.md");
-  const twin = mkdtempSync(join(tmpdir(), "tw-kb-outside-"));
+  const twin = tempDir("tw-kb-outside-");
   writeFileSync(join(twin, "材料.md"), "用户可以登录。\n");
   for (const locator of [outside, join(twin, "材料.md"), `../${twin.split("/").pop()}/材料.md`, "inputs/../../etc/hosts", "."]) {
     assert.throws(() => save(dir, root, add({ kind: "文档原文", locator, excerpt: locator === outside ? TERM.excerpt : "用户可以登录。" })),

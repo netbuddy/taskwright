@@ -6,13 +6,13 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { tempDir } from "./helpers.ts";
 import {
   CANCELLED_TEXT, CLOSING_TEXT, LOCK_NAME, NOT_FOUND_TEXT, NO_DOCUMENTS_TEXT, NO_KNOWLEDGE_TEXT, REASON_TEXT, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, SEARCH_PATH,
   BODY_CLOSE, BODY_OPEN, BUDGET_BYTES, UNREACHABLE_TEXT, assemble, backendAddresses, failedText, openingText, searchKnowledge, searchParams, trimmedText, truncatedText,
@@ -30,7 +30,7 @@ let hits: { method: string; path: string; body: Dict }[] = [];
 let n = 0;
 
 before(async () => {
-  tmp = mkdtempSync(join(tmpdir(), "tw-kb-search-"));
+  tmp = tempDir("tw-kb-search-");
   server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const chunks: Buffer[] = [];
     req.on("data", (c) => chunks.push(c));

@@ -2,11 +2,11 @@
 // 引用情况在 task_status.test.ts 里连同任务现状消息一起测。
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { projectionParagraphs } from "../src/lib/docx_source.ts";
+import { tempDir } from "./helpers.ts";
 import {
   SEGMENT_DEFAULTS, SEGMENTS_ENV, buildSegments, envSegmentParams, paramsDigest, readSegments, segmentParams,
 } from "../src/lib/segments.ts";
@@ -77,7 +77,7 @@ test("0.2 的纯文本投影也能分块（没有标题，整份一块）", () =
 });
 
 test("读清单：不在就算好写回；参数摘要一致就用文件里的；参数变了重算并覆盖；纯文本投影只算不写；投影读不到是 null", () => {
-  const dir = mkdtempSync(join(tmpdir(), "segments-"));
+  const dir = tempDir("segments-");
   try {
     const md = join(dir, "x.docx.md");
     const file = join(dir, "x.docx.segments.json");

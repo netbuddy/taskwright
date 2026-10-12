@@ -5,7 +5,7 @@
  */
 
 import { type ChildProcess, type SpawnOptions, spawn, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -69,8 +69,21 @@ export function within<T>(what: string, ms: number, promise: Promise<T>): Promis
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
+const madeDirs: string[] = [];
+process.on("exit", () => {
+  // 测试自己在结束时会清；这里兜住中途失败、清理没有跑到的那些。清不掉不算测试失败。
+  for (const dir of madeDirs) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // 不管。
+    }
+  }
+});
 export function tempDir(prefix = "taskwright-backend-"): string {
-  return mkdtempSync(join(tmpdir(), prefix));
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
 }
 
 function node(args: string[]): void {

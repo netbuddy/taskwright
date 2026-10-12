@@ -4,8 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
@@ -32,7 +31,7 @@ import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
-import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, query } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, query, tempDir } from "./helpers.ts";
 
 const SESSION = "session-test";
 
@@ -289,7 +288,7 @@ test("一轮结束：没有合格理解记 USER_INTENT_MISSING，附本轮各片
 
 test("通用性：登记表里加一种假 schema，识别器不改代码就能认出它；它不算每轮必需，缺了不记失败", () => {
   const dir = workspaceWithItems();
-  const schemaPath = join(mkdtempSync(join(tmpdir(), "tw-schema-")), "estimate.schema.json");
+  const schemaPath = join(tempDir("tw-schema-"), "estimate.schema.json");
   writeFileSync(schemaPath, JSON.stringify({
     type: "object", required: ["estimate_hours", "done"], additionalProperties: false,
     properties: { estimate_hours: { type: "number", minimum: 0 }, done: { type: "boolean" }, kind: { const: "estimate" } },

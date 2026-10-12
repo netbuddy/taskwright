@@ -1,16 +1,17 @@
 /** 助手一侧读知识库：出处的写法与拆法、任务选用的知识库与文档清单、出处指向的文件、最近一次变动的时刻。 */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { KNOWLEDGE_ROOT_ENV, envKnowledgeRoot, knowledgeChangedAt, knowledgeFilePath, selectedKnowledge, selectedLibraryIds } from "../src/lib/knowledge.ts";
 import { isKnowledgeLocator, knowledgeLocator, parseKnowledgeLocator } from "../src/lib/knowledge_locator.ts";
+import { tempDir } from "./helpers.ts";
 
 /** 建一个知识库根目录：通用知识库里一份术语表，另一个知识库里一份 Word 规范（带投影）。 */
 function makeRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
+  const root = tempDir("tw-kb-");
   writeFileSync(join(root, "libraries.json"), JSON.stringify({ version: 1, libraries: [{ id: "general", name: "通用知识库" }, { id: "lib-a1", name: "行业规范" }] }));
   mkdirSync(join(root, "general", "files"), { recursive: true });
   writeFileSync(join(root, "general", "files", "术语.md"), "原路退回：把钱退到买家付款时用的那个账户。\n");
@@ -23,7 +24,7 @@ function makeRoot(): string {
 }
 
 const makeTask = (libraries?: unknown) => {
-  const dir = mkdtempSync(join(tmpdir(), "tw-kb-task-"));
+  const dir = tempDir("tw-kb-task-");
   if (libraries !== undefined) writeFileSync(join(dir, "knowledge.json"), JSON.stringify({ version: 1, libraries, notes: [] }));
   return dir;
 };
@@ -71,7 +72,7 @@ test("没有知识库根目录、根目录不存在、文档清单读不出来�
   const task = makeTask(["general"]);
   assert.deepEqual(selectedKnowledge(task, null), []);
   assert.deepEqual(selectedKnowledge(task, join(tmpdir(), "tw-kb-没有这个目录")), []);
-  const root = mkdtempSync(join(tmpdir(), "tw-kb-"));
+  const root = tempDir("tw-kb-");
   writeFileSync(join(root, "libraries.json"), JSON.stringify({ libraries: [{ id: "general", name: "通用知识库" }] }));
   assert.deepEqual(selectedKnowledge(task, root), [{ id: "general", name: "通用知识库", documents: [] }]);
 });
