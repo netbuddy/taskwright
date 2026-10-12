@@ -42,6 +42,11 @@ const SECTION_TWELVE = "十二、";
  */
 const EDITS: { why: string; from: string; to: string }[] = [
   {
+    why: "第五节第 8 条：有阶段的任务里澄清是一问一答，每答一条就发一张「是否已解决」的卡片会打断节奏；改成答完的几条用一张卡片一起问，并写明了结时记落实到。早先的任务没有这个字段，也不分阶段，照旧。",
+    from: "   - 不缺了，就在同一轮回复的末尾用请选择问用户这个问题是否已解决，在 `items` 里点名这个问题条目，选项固定三个：「已解决」「还没解决，继续改」「先不管，保留」。不要用请过目问，见第 5 条。\n   - 用户选「已解决」，就把问题的状态改为已解决，在处理结果里写明采纳的内容；选「先不管，保留」，就把状态改为「用户决定保留」，在处理结果里写明用户决定先保留。这两种都只改状态与处理结果两个字段。选「还没解决，继续改」，就问用户还要怎么改。",
+    to: "   - 不缺了，这个问题在内容上就答完了；它的状态要用户在卡片上点过才能改。手上没有别的事要问时，在同一轮回复的末尾用请选择问这个问题是否已解决，在 `items` 里点名这个问题条目，选项固定三个：「已解决」「还没解决，继续改」「先不管，保留」。不要用请过目问，见第 5 条。\n   - 手上还有别的事要接着问时（澄清阶段一问一答就是这样），不要每答一条就发这张卡片：直接问下一件，开头用一句话带过刚记下的事，例如「借期 30 天，记进『借书』那一页了。」等到没有要问的了、或者要提议进入下一段之前，用一张这样的卡片把已经答完的几条一起问，`items` 点名这几条问题条目。只放答案已经写进条目的问题。\n   - 用户选「已解决」，就把卡片点名的问题的状态改为已解决（点名了几条就在一次保存里都改），在处理结果里写明采纳的内容，在「落实到」里写答案写进了哪里；选「先不管，保留」，就把状态改为「用户决定保留」，在处理结果里写明用户决定先保留。这两种都只改状态、处理结果与落实到。选「还没解决，继续改」，就问用户还要怎么改。",
+  },
+  {
     why: "读材料那一步：早先的任务读到的内容都整理成条目；有阶段的任务按阶段写，核读材料阶段写不了条目。",
     from: "把这次读到的几块里的内容整理成条目并保存（照任务 skill 的分批规矩），再读后面的块",
     to: "把这次读到的几块里的内容按现在这个阶段该写的东西整理并保存（核读材料阶段写主题页与问题条目，写条目阶段写条目；一次保存写多少照任务 skill 的分批规矩），再读后面的块",
@@ -271,11 +276,23 @@ test("每一段的「出口」：往前都是发卡片由用户点，两个选�
     assert.doesNotMatch(text, /自己移到(澄清|整理建模|写条目|评审确认|编写文档)[：，]/, stage);
     assert.doesNotMatch(text, /在(同一次)?回复里写 `stage`/, stage);
   }
-  // 澄清与评审确认两段不主动提议；别的几段做完才提议。
-  for (const stage of ["clarifying", "reviewing"] as const) {
-    assert.ok(sections(read(`${stage}.md`)).get("出口")!.includes("这一段你不主动提议进入下一段。只在两种情形发卡片：用户问起"), stage);
-  }
-  for (const stage of ["reading", "modeling", "writing", "document"] as const) assert.ok(!read(`${stage}.md`).includes("不主动提议"), stage);
+  // 评审确认不主动提议；澄清不催用户，但没有要问的了就照常提议、不停着等；别的几段做完才提议。
+  assert.ok(sections(read("reviewing.md")).get("出口")!.includes("这一段你不主动提议进入下一段。只在两种情形发卡片：用户问起"));
+  const clarifyExit = sections(read("clarifying.md")).get("出口")!;
+  assert.ok(clarifyExit.includes("这一段不催用户：用户还在说、你还有要问的事时，不提议进入下一段。"));
+  assert.ok(clarifyExit.includes("剩下没了结的问题都是用户答不上的、用户说先保留的、或者不阻断的。第二种情形照常提议，不要停着等用户开口：每次回复的末尾，要么是下一个问题，要么是这张卡片。"));
+  for (const stage of ["reading", "clarifying", "modeling", "writing", "document"] as const) assert.ok(!read(`${stage}.md`).includes("不主动提议"), stage);
+  // 澄清：材料没写而业务必需的规则也要问；答案直接记、答完的几条一张卡片一起了结；答不上的记问题、不追问；不凭一句泛泛的话立目标页。
+  const clarifyDo = sections(read("clarifying.md")).get("这一段做什么")!;
+  assert.ok(clarifyDo.includes("二是这件业务要运转起来必须有、而材料没有写的规则"));
+  assert.ok(clarifyDo.includes("不要每记一条就发一张「是否已解决」的卡片：在下一问的开头用一句话带过，答完的几条到最后用一张卡片一起问（第五节第 8 条）"));
+  assert.ok(clarifyDo.includes("记下之后不要换个问法再问同一件事"));
+  assert.ok(clarifyDo.includes("不立目标页，也不再追问"));
+  // 共用部分：答完的几条一张卡片一起问；进入卡片只点名最要紧的几个；待定的记号只有一种。
+  const common = read("common.md");
+  assert.ok(common.includes("用一张这样的卡片把已经答完的几条一起问，`items` 点名这几条问题条目"));
+  assert.ok(common.includes("只点名最要紧的几个，一般不超过六个"));
+  assert.ok(common.includes("不要写成「待澄清」「未定」「TBD」或一个问号，程序只认「待定」两个字"));
   // 局部不明白不退回；整理建模、写条目两段写明大面积不能用时发回退卡片。
   assert.ok(sections(read("modeling.md")).get("出口")!.includes("不要退回，也不要停下来等。照第十节第 9 条记一条问题条目，在图上那一处标「待定：」，接着画别的"));
   assert.ok(sections(read("modeling.md")).get("出口")!.includes("发提议退回澄清的卡片（第十节第 2 条），由用户点"));

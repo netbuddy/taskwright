@@ -167,13 +167,13 @@
           "路径": "README.md"
          },
          {
-          "字节数": 5514,
-          "摘要值": "ffd0692c656ed45b",
+          "字节数": 6897,
+          "摘要值": "9c65a5b296a87321",
           "路径": "clarifying.md"
          },
          {
-          "字节数": 61239,
-          "摘要值": "6841dc41b55b1a26",
+          "字节数": 62328,
+          "摘要值": "58f3254c6898119e",
           "路径": "common.md"
          },
          {
@@ -472,7 +472,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"5789a95bc1cb8b8f\",\"bytes\":75709,\"lines\":325,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":61238,\"lines\":236,\"digest\":\"2284e0cfb0a64f4c\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7644,\"lines\":30,\"digest\":\"3f9be2fd945ac571\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4353,\"lines\":32,\"digest\":\"3fe9291498798cc3\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"06c6fc834c41ae5c\",\"bytes\":76798,\"lines\":326,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":62327,\"lines\":237,\"digest\":\"c7da59159ac846b9\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7644,\"lines\":30,\"digest\":\"3f9be2fd945ac571\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4353,\"lines\":32,\"digest\":\"3fe9291498798cc3\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",
