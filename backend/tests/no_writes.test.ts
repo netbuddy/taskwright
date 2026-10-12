@@ -39,6 +39,8 @@ const ALLOWED: Record<string, string[]> = {
   // 从 Mermaid 文本里扫东西（只做计算）：系统边界图画没画出系统与系统外面的节点，保存前的校验用。
   // 图放在业务说明的哪里、角色与用例对照表的行（只做计算，页面也用它）：生成文档的七章照它排。
   "overall_figures.ts": ["FigureSlot", "KIND_CLASS", "KIND_CONTEXT", "KIND_USE_CASE", "figureSlot", "useCaseMatrix"],
+  // 把生成出来的文档切成块（只做计算，页面的预览也用它）：整份文档的 Word 文件照这些块写。
+  "document_blocks.ts": ["DocBlock", "DocRun", "documentBlocks"],
   "diagram_scan.ts": ["contextShape", "diagramGraph"],
   // TASK_ID_PATTERN 是任务编号的写法（一个正则），数据包导入时用它核对包里写的编号。
   "create_task.ts": ["createTask", "TASK_ID_PATTERN"],
