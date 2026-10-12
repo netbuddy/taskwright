@@ -1,8 +1,8 @@
-// 章首页上要算的东西（model/chapterHeads.ts）：角色与用例对照表、业务目标摘要。数据是图书馆借阅的夹具。
+// 章首页上要算的东西（model/chapterHeads.ts）：角色与用例对照表、业务目标摘要、决策记录一行点了去哪里。数据是图书馆借阅的夹具。
 import { describe, expect, it } from "vitest";
 import { diagramGraph } from "../../../agent/src/lib/diagram_scan.ts";
 import { toc } from "../model/chapters";
-import { CELL_TAKES_PART, goalSummary, useCaseTable } from "../model/chapterHeads";
+import { CELL_TAKES_PART, decisionTarget, goalSummary, useCaseTable } from "../model/chapterHeads";
 import { change, overallTask } from "./fixtures/overallTask";
 
 const PREFIXES = ["UC", "TBD", "OA"];
@@ -62,5 +62,18 @@ describe("业务目标摘要", () => {
       { item_id: "OA-023", title: "少丢书", goals: [] },
     ]);
     expect(goalSummary(undefined)).toEqual([]);
+  });
+});
+
+describe("决策记录与待澄清事项的一行点了去哪里", () => {
+  it("决定去它自己那一节；问题去它牵涉的第一节；没有牵涉业务说明的节的问题打开问题自己；任务里没有的不去", () => {
+    const task = overallTask();
+    expect(decisionTarget(task, { entry: "decision", item_id: "OA-004" })).toEqual({ kind: "section", itemId: "OA-004" });
+    // 夹具里 TBD-001 挂在 OA-003 上。
+    expect(decisionTarget(task, { entry: "question", item_id: "TBD-001" })).toEqual({ kind: "section", itemId: "OA-003" });
+    const refs = task.definition.collections.find((one) => one.name === "问题")!.fields.find((field) => field.type === "条目引用")!.name;
+    change(task, "TBD-002", (issue) => { issue.fields[refs] = ["UC-001"]; });
+    expect(decisionTarget(task, { entry: "question", item_id: "TBD-002" })).toEqual({ kind: "item", itemId: "TBD-002" });
+    expect(decisionTarget(task, { entry: "question", item_id: "TBD-404" })).toBeNull();
   });
 });

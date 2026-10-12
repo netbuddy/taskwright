@@ -3,12 +3,13 @@
 //     （写了编号的是那一页或那个条目，没有写编号的照节点上的字）；格子是角色与这一行之间连线上写的字，没有写字的写「参与」，
 //     几根线写的字不同就都列出来；末列是这一行所属的流程（它自己是流程节，或者它是依据流程节写的条目）。
 //   · 业务目标摘要（第 1 章）：目标树的前两层。
+//   · 决策记录与待澄清事项（第 7 章）一行点了去哪里：决定去它自己那一节；问题去它牵涉的第一节，没有牵涉业务说明的节就打开问题自己。
 
 import type { Item, Task } from "../api/types";
 import type { DiagramGraph, GraphNode } from "../../../agent/src/lib/diagram_scan.ts";
 import type { GoalTree } from "../../../agent/src/lib/overall_views.ts";
 import { CHAPTER_FLOWS, CHAPTER_ROLES, type Toc, sectionOf } from "./chapters";
-import { SOURCE_ITEM, sourceKindNow } from "./items";
+import { SOURCE_ITEM, issueRefs, sourceKindNow } from "./items";
 import { isDeprecated, isOverall, titleOf } from "./overall";
 
 /** 连线上没有写字时格子里写的字。 */
@@ -75,4 +76,16 @@ export function useCaseTable(task: Task, contents: Toc, graphs: readonly Diagram
 /** 业务目标摘要：目标树的前两层（最上层的目标与它们各自下面一层的目标）。 */
 export function goalSummary(goals: GoalTree | undefined): { item_id: string; title: string; goals: { item_id: string; title: string }[] }[] {
   return (goals?.roots ?? []).map((root) => ({ item_id: root.item_id, title: root.title, goals: root.goals.map((one) => ({ item_id: one.item_id, title: one.title })) }));
+}
+
+/**
+ * 第 7 章的一行点了打开什么：section 是业务说明的一节，item 是一个条目（在它自己的页签里）；任务里找不到是 null。
+ * 决定就是它自己那一节；问题是它牵涉的条目里第一个业务说明的节，没有就是问题条目自己。
+ */
+export function decisionTarget(task: Task, row: { entry: "decision" | "question"; item_id: string }): { kind: "section" | "item"; itemId: string } | null {
+  const item = task.items.find((one) => one.item_id === row.item_id);
+  if (!item) return null;
+  if (row.entry === "decision") return { kind: "section", itemId: item.item_id };
+  const page = issueRefs(task, item).map((id) => task.items.find((one) => one.item_id === id)).find((one) => one !== undefined && isOverall(one.collection));
+  return page ? { kind: "section", itemId: page.item_id } : { kind: "item", itemId: item.item_id };
 }

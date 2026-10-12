@@ -22,23 +22,12 @@ import { CHAPTER_FLOWS, UNSORTED_NAME, chapterByNo, sectionLabel, sectionOf, typ
 import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
 import {
   DEPRECATED, TOPIC, addedQuotes, confirmAction, dependents, exampleKind, examplesOf, isDeprecated, isPending, labelsOf, markPassage, materialQuotes, openQuestions, pendingCount,
-  questionReason, retellText, reviseDependentsText, sectionLead, seeInstead, settledOf, sourcesFor, supplemented, titleOf, whatOf, wholeSources,
+  questionReason, retellText, reviseDependentsText, sectionLead, seeInstead, settledOf, sourceShortText, sourcesFor, supplemented, titleOf, whatOf, wholeSources,
 } from "../../../model/overall";
 import { FieldEditor, type SubmitAction } from "../ItemDetail";
 import { TopicEdit } from "./TopicEdit";
 import { rejectedText } from "../errors";
 import { useToast } from "../../Toasts";
-
-/** 出处的一句短话：谁说的或者哪份材料，后面跟原话（长的截短）。助手补充的写理由；用户已经确认过的写明「你确认过」。 */
-function sourceText(source: Source, pending: boolean): string {
-  const kind = sourceKindNow(String(source.kind));
-  const quote = source.excerpt.length > 36 ? `${source.excerpt.slice(0, 36)}…` : source.excerpt;
-  if (kind === SOURCE_SUPPLEMENT) return `${pending ? "助手补的" : "助手补的，你确认过"} · 理由：${source.excerpt}`;
-  if (kind === "用户的话") return `你说的「${quote}」`;
-  if (kind === "文档原文") return `材料 ${source.locator.split("/").pop() ?? source.locator}「${quote}」`;
-  if (kind === "用户直接修改") return "你亲手改的";
-  return `${kind} ${source.locator}`.trim();
-}
 
 /** 一处的出处。pending 为真是这一处还待核实：助手补充的那一条用琥珀字；确认过之后它与别的出处同色。 */
 function SourceLine({ sources, pending = false, onLocate }: { sources: Source[]; pending?: boolean; onLocate?: (excerpt: string, locator: string) => void }) {
@@ -51,7 +40,7 @@ function SourceLine({ sources, pending = false, onLocate }: { sources: Source[];
         return (
           <span key={i} className={`one${supplement && pending ? " v" : ""}${canLocate ? " link" : ""}`} role={canLocate ? "button" : undefined}
             title={canLocate ? "在右边的材料里看这句原文" : undefined} onClick={canLocate ? () => onLocate!(s.excerpt, s.locator) : undefined}>
-            {sourceText(s, pending)}
+            {sourceShortText(s, pending)}
           </span>
         );
       })}

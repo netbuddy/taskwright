@@ -10,8 +10,8 @@ import type { Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
 import { overallDef, retellText, titleOf, totals } from "../../../model/overall";
 import { NO_MATERIALS_TEXT, STAGE_STARTS, type StageStart } from "../../../model/stage";
-import { CHAPTER_DECISIONS, CHAPTER_GOALS, CHAPTER_OVERVIEW, CHAPTER_ROLES, CHAPTER_RULES } from "../../../model/chapters";
-import { OverviewBlocks, RolesBlocks } from "./ChapterBlocks";
+import { CHAPTER_DECISIONS, CHAPTER_GOALS, CHAPTER_OBJECTS, CHAPTER_OVERVIEW, CHAPTER_ROLES, CHAPTER_RULES } from "../../../model/chapters";
+import { DecisionsBlocks, GoalsBlocks, ObjectsBlocks, OverviewBlocks, RolesBlocks, RulesBlocks } from "./ChapterBlocks";
 import { looseDiagrams } from "../../../model/sectionDiagrams";
 import { type FigureHost, LooseFigures } from "./Figure";
 import { ChapterHead } from "./ChapterHead";
@@ -88,6 +88,10 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
             <ChapterHead task={task} contents={contents} chapterNo={head.no} lead={chapterLead(head.no)} onOpen={open} full={head.no === CHAPTER_OVERVIEW}>
               {head.no === CHAPTER_OVERVIEW && <OverviewBlocks host={host} onChapter={(no) => openHead({ kind: "chapter", no })} />}
               {head.no === CHAPTER_ROLES && <RolesBlocks host={host} />}
+              {head.no === CHAPTER_OBJECTS && <ObjectsBlocks host={host} />}
+              {head.no === CHAPTER_RULES && <RulesBlocks host={host} />}
+              {head.no === CHAPTER_GOALS && <GoalsBlocks host={host} />}
+              {head.no === CHAPTER_DECISIONS && <DecisionsBlocks host={host} />}
             </ChapterHead>
           )
           : (

@@ -1,5 +1,6 @@
 // 各章章首页上自己的块（components/work/overall/ChapterBlocks.tsx）：第 1 章的系统边界图与业务目标摘要、各节说明全文；
-// 第 2 章的角色与用例对照表、表下的依据与「查看用例图」。mermaid 包换成假的；取图的详情换成假的接口。
+// 第 2 章的角色与用例对照表、表下的依据与「查看用例图」；第 4 章的对象关系图；第 5 章的规则表与冲突；第 6 章的目标树；
+// 第 7 章按时间的表。mermaid 包换成假的；取图的详情换成假的接口。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -27,6 +28,7 @@ const row = (id: string, kind: string, kindName: string, name: string): DiagramR
 const TEXTS: Record<string, string> = {
   "D-001": 'flowchart LR\n  s["借阅系统"]\n  r(["OA-007 读者"])\n  r --> s',
   "D-009": "flowchart LR\n  a --> b",
+  "D-003": 'classDiagram\n  class Fine["OA-005 逾期与罚款"]\n  class Stock["OA-010 馆藏"]\n  Stock --> Fine',
   "D-002": 'flowchart LR\n  r(["OA-007 读者"])\n  l(["OA-009 馆员"])\n  a(["OA-006 续借"])\n  b(["UC-003 预约图书"])\n  c(["缴纳罚款"])\n  r -->|发起| a\n  r --> b\n  l -->|上架| b\n  r --> c',
 };
 function serve(task: Task) {
@@ -126,5 +128,131 @@ describe("第 2 章 角色的章首页", () => {
     render(<Panel t={task} />);
     fireEvent.click(screen.getByTestId("toc-chapter-2"));
     expect(await screen.findByText("用例图里还没有画出角色与用例之间的连线。")).toBeInTheDocument();
+  });
+});
+
+describe("第 4 章 业务对象的章首页", () => {
+  it("整张对象关系图画在各节摘要之前；没有对象关系图时没有这一块", async () => {
+    const task = overallTask({ diagrams: [row("D-003", "class", "对象关系图", "借阅的对象")] });
+    serve(task);
+    const view = render(<Panel t={task} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-4"));
+    expect(await within(screen.getByTestId("chapter-classes")).findByTestId("diagram-svg")).toBeInTheDocument();
+    // 章首画的是库里的原文，不标哪一个对象。
+    expect(fakeRender.mock.calls.map((call) => call[1])).toEqual([TEXTS["D-003"]]);
+    expect([...screen.getByTestId("chapter-head-4").querySelectorAll(".oa-blk > h3")].map((h) => text(h))[0]).toBe("对象关系");
+    view.unmount();
+    render(<Panel t={overallTask()} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-4"));
+    expect(screen.queryByTestId("chapter-classes")).toBeNull();
+  });
+});
+
+describe("第 5 章 业务规则的章首页", () => {
+  const rule = (item_id: string, index: number, ruleText: string, conflicts: string[] = [], sources: { kind: string; locator: string; excerpt: string }[] = []) =>
+    ({ item_id, title: "", index, text: ruleText, sources, conflicts });
+  const rules = (over: Partial<{ conflicts: string[]; unmatched: string[] }> = {}) => ({
+    rows: [
+      rule("OA-002", 0, "学生一次最多借 5 本。", [], [{ kind: "文档原文", locator: "inputs/借阅规则.md", excerpt: "学生一次最多借 5 本" }, { kind: "用户的话", locator: "s1#u2", excerpt: "五本" }]),
+      rule("OA-003", 2, "保留期内这本书不能续借。", ["TBD-001"], [{ kind: "用户的话", locator: "s1#u5", excerpt: "有人预约的书不能续借。" }]),
+      rule("OA-006", 0, "每本书可以续借一次。", ["TBD-001"]),
+    ],
+    conflicts: ["TBD-001"], unmatched: [], ...over,
+  });
+  const withRules = (table: unknown) => overallTask({ overall_views: { rules: table, goals: { roots: [], loose: [] }, decisions: [] } as never });
+
+  it("规则表：一条一行，写出自哪一节与出处（第一条，另有几条）；点一行打开那一节", () => {
+    render(<Panel t={withRules(rules())} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-5"));
+    expect(screen.getByTestId("chapter-lead")).toHaveTextContent("3 条，自各节「适用规则」汇总");
+    const table = screen.getByTestId("rules-table");
+    expect([...table.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual(["规则", "出自", "出处"]);
+    expect([...table.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => text(td)).join("|"))).toEqual([
+      "学生一次最多借 5 本。|3.2 借书与还书|材料 借阅规则.md「学生一次最多借 5 本」 等 2 条",
+      "保留期内这本书不能续借。有冲突，已记为待澄清|3.3 预约取书|你说的「有人预约的书不能续借。」",
+      "每本书可以续借一次。有冲突，已记为待澄清|3.4 续借|—",
+    ]);
+    fireEvent.click(screen.getByTestId("rule-OA-006-0"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("续借");
+  });
+
+  it("标了冲突的行有底色，表上面写「N 对相互冲突，已记为待澄清」并列出那几个问题，点一个打开它；对不上规则的另说一句", () => {
+    render(<Panel t={withRules(rules({ conflicts: ["TBD-001", "TBD-003"], unmatched: ["TBD-003"] }))} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-5"));
+    expect(screen.getByTestId("rule-OA-002-0")).not.toHaveClass("conflict");
+    expect(screen.getByTestId("rule-OA-003-2")).toHaveClass("conflict");
+    expect(text(screen.getByTestId("rules-conflicts"))).toBe("2 对相互冲突，已记为待澄清：保留的 3 天里遇到闭馆日，算不算在内？、逾期从哪一天算起？。其中 1 对在表里对不上是哪两条规则，请打开问题看。");
+    fireEvent.click(within(screen.getByTestId("rules-conflicts")).getAllByRole("button")[1]);
+    expect(screen.getByTestId("item-detail")).toHaveTextContent("逾期从哪一天算起？");
+  });
+
+  it("没有冲突时不写那一句；一条规则都没有时写一句话", () => {
+    const view = render(<Panel t={withRules(rules({ conflicts: [] }))} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-5"));
+    expect(screen.queryByTestId("rules-conflicts")).toBeNull();
+    view.unmount();
+    render(<Panel t={overallTask()} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-5"));
+    expect(screen.getByTestId("chapter-rules")).toHaveTextContent("各节还没有写适用规则。");
+  });
+});
+
+describe("第 6 章 业务目标的章首页", () => {
+  it("目标树：目标一层一层往里缩，挂在目标下的决定带着为什么；没有挂到目标下的决定另列；点一个打开那一节", () => {
+    const tree = { roots: [{
+      item_id: "OA-001", title: "借还更省事", decisions: [{ item_id: "OA-004", title: "闭馆日不计入保留期", why: "读者周末来不了。" }],
+      goals: [{ item_id: "OA-002", title: "自助办理", goals: [], decisions: [{ item_id: "OA-006", title: "续借在自助机上办", why: "" }] }],
+    }], loose: [{ item_id: "OA-010", title: "馆藏按册登记", why: "一册一个条码。" }] };
+    render(<Panel t={overallTask({ overall_views: views(tree) })} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-6"));
+    const root = screen.getByTestId("goal-OA-001");
+    expect(root.firstElementChild).toHaveTextContent("借还更省事");
+    expect(within(root).getByTestId("goal-OA-002")).toHaveTextContent("自助办理");
+    expect(text(within(root).getByTestId("goal-decision-OA-004"))).toBe("决定闭馆日不计入保留期为什么：读者周末来不了。");
+    // 没有写为什么的决定不写「为什么」。
+    expect(text(within(screen.getByTestId("goal-OA-002")).getByTestId("goal-decision-OA-006"))).toBe("决定续借在自助机上办");
+    expect(text(within(screen.getByTestId("chapter-goals-loose")).getByTestId("goal-decision-OA-010"))).toBe("决定馆藏按册登记为什么：一册一个条码。");
+    fireEvent.click(within(screen.getByTestId("goal-decision-OA-004")).getByRole("button"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("闭馆日怎么算");
+  });
+
+  it("没有目标时写一句话，没有散着的决定时不画那一块", () => {
+    render(<Panel t={overallTask()} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-6"));
+    expect(screen.getByTestId("chapter-goals")).toHaveTextContent("还没有标签含「目标」的节。");
+    expect(screen.queryByTestId("chapter-goals-loose")).toBeNull();
+  });
+});
+
+describe("第 7 章 决策记录与待澄清事项的章首页", () => {
+  it("按时间的一张表：时间、类别、事项、说明；点决定打开它那一节，点问题打开它牵涉的那一节", () => {
+    const decisions = [
+      { entry: "decision", item_id: "OA-004", title: "闭馆日不计入保留期", at: "2026-10-09T10:00:00+08:00", note: "读者周末来不了。", question_kind: null },
+      { entry: "question", item_id: "TBD-001", title: "保留的 3 天里遇到闭馆日，算不算在内？", at: "2026-10-09T11:00:00+08:00", note: "", question_kind: "规则冲突" },
+      { entry: "question", item_id: "TBD-003", title: "逾期从哪一天算起？", at: null, note: "从应还日期的第二天算。", question_kind: null },
+    ];
+    render(<Panel t={overallTask({ overall_views: { rules: { rows: [], conflicts: [], unmatched: [] }, goals: { roots: [], loose: [] }, decisions } as never })} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-7"));
+    expect(screen.getByTestId("chapter-lead")).toHaveTextContent("3 项，自各节的决定与待澄清事项汇总");
+    const table = screen.getByTestId("decisions-table");
+    expect([...table.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual(["时间", "类别", "事项", "说明"]);
+    const cells = [...table.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].slice(1).map((td) => text(td)).join("|"));
+    expect(cells).toEqual([
+      "决定|闭馆日不计入保留期|读者周末来不了。",
+      "待澄清 · 规则冲突|保留的 3 天里遇到闭馆日，算不算在内？|—",
+      "待澄清|逾期从哪一天算起？|从应还日期的第二天算。",
+    ]);
+    expect(text(screen.getByTestId("decision-TBD-003").querySelector("td"))).toBe("—");
+    fireEvent.click(screen.getByTestId("decision-TBD-001"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("预约取书");
+    fireEvent.click(screen.getByTestId("toc-chapter-7"));
+    fireEvent.click(screen.getByTestId("decision-OA-004"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("闭馆日怎么算");
+  });
+
+  it("一项都没有时写一句话", () => {
+    render(<Panel t={overallTask()} />);
+    fireEvent.click(screen.getByTestId("toc-chapter-7"));
+    expect(screen.getByTestId("chapter-decisions")).toHaveTextContent("还没有决定，也没有待澄清事项。");
   });
 });

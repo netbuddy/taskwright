@@ -195,6 +195,17 @@ export function materialQuotes(item: Item): { quote: string; mark: "material"; s
     .map((s) => ({ quote: s.excerpt.trim(), mark: "material" as const, source: s }));
 }
 
+/** 出处的一句短话：谁说的或者哪份材料，后面跟原话（长的截短）。助手补充的写理由；用户已经确认过的写明「你确认过」。 */
+export function sourceShortText(source: Pick<Source, "kind" | "locator" | "excerpt">, pending = false): string {
+  const kind = sourceKindNow(String(source.kind));
+  const quote = source.excerpt.length > 36 ? `${source.excerpt.slice(0, 36)}…` : source.excerpt;
+  if (kind === SOURCE_SUPPLEMENT) return `${pending ? "助手补的" : "助手补的，你确认过"} · 理由：${source.excerpt}`;
+  if (kind === SOURCE_USER_WORDS) return `你说的「${quote}」`;
+  if (kind === SOURCE_DOCUMENT) return `材料 ${source.locator.split("/").pop() ?? source.locator}「${quote}」`;
+  if (kind === "用户直接修改") return "你亲手改的";
+  return `${kind} ${source.locator}`.trim();
+}
+
 /** 支持整页的来源：没有指明哪一处的来源。 */
 export function wholeSources(item: Item): Source[] {
   return item.sources.filter((s) => (s.supports ?? []).length === 0);
