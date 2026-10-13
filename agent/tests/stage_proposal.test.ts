@@ -15,7 +15,7 @@ import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { moveStage, recordStageCardClick } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, moveRows, overallDefinition, query } from "./helpers.ts";
 
 const SESSION = "sess-a";
 const said = (id: string, text: string) => ({ id, type: "message", message: { role: "user", content: text } });
@@ -108,6 +108,29 @@ test("提议结束的三种情形：阶段有过一次移动（向前或者退�
   assert.equal(open(back), null);
 });
 
+test("用户开始一项活动使开着的提议作废时，对话里那一句末尾写明；做的正是提议的那一步、或者没有开着的提议时不写", () => {
+  const dir = workspace();
+  const start = (activity: string, inFlow: boolean) => runUserOperation({ workspaceDir: dir, sessionId: SESSION },
+    { op_id: `ui-op-void-${activity}-${inFlow}-${++replies}`, kind: "start_activity", fields: { activity, in_flow: inFlow } }).note;
+  enterStage(dir, "reading");
+  // 助手提议进入澄清，用户却去单独开展澄清：提议作废，那一句末尾写明。
+  reply(dir, enterCard("clarifying", "reading"));
+  assert.equal(open(dir)!.stage, "clarifying");
+  assert.equal(start("澄清", false), "界面操作（不是用户打的字）：用户单独开展澄清。（原来在做：核读材料）（助手先前的提议作废，回来后由助手重新提议）");
+  assert.equal(open(dir), null);
+  // 回到流程：这时没有开着的提议，不写。
+  assert.equal(start("核读材料", true), "界面操作（不是用户打的字）：用户继续首次分析，从核读材料接着。（原来在做：澄清）");
+  // 助手再提议进入澄清，用户从任务状况卡在流程里开始澄清：做的正是提议的那一步，不写。
+  reply(dir, enterCard("clarifying", "reading"));
+  assert.equal(runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: "ui-op-void-as-proposed", kind: "move_stage", fields: { stage: "澄清" } }).note,
+    "界面操作（不是用户打的字）：用户把任务从核读材料移到澄清。");
+  assert.equal(open(dir), null);
+  // 助手提议进入整理建模，用户直接把任务移到写条目：不是提议的那一步，提议作废，写明。
+  reply(dir, enterCard("modeling", "clarifying"));
+  assert.equal(runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: "ui-op-void-skip", kind: "move_stage", fields: { stage: "写条目" } }).note,
+    "界面操作（不是用户打的字）：用户把任务从澄清移到写条目。（助手先前的提议作废，回来后由助手重新提议）");
+});
+
 test("早先建的任务没有阶段：发了带进入键的卡片也不记 proposal", () => {
   const dir = workspace(demoDefinition());
   const card = reply(dir, enterCard("writing", "clarifying"));
@@ -117,16 +140,17 @@ test("早先建的任务没有阶段：发了带进入键的卡片也不记 prop
 
 test("卡片在另一条会话里：这条会话的分支上找不到那条回复，点进入照开着的提议记移动；键或回复编号对不上就不记", () => {
   const dir = workspace();
+  enterStage(dir, "reading");
   const card = reply(dir, enterCard("clarifying", "reading"), "sess-first");
   const elsewhere = [said("u-x", "接着昨天的做")] as never;
   // 键不是开着的提议的进入键、回复编号是别的卡片：都不记。
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-1", replyEntry: card.entry, optionKey: "enter_consolidate" }), null);
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-2", replyEntry: "reply-none", optionKey: "enter_clarify" }), null);
-  assert.equal(count(dir, "stage_record"), 0);
+  assert.equal(count(dir, "activity_record"), 1, "只有启动首次分析的那一条");
   // 键与回复编号都对得上：记一条用户的移动，记在点的那条会话上；提议随之结束。
   const moved = recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-3", replyEntry: card.entry, optionKey: "enter_clarify" })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "reading", "clarifying"]);
-  assert.deepEqual(query(dir, "SELECT stage, from_stage, actor, session_id, call_id FROM stage_record").map((row) => ({ ...row })),
+  assert.deepEqual(moveRows(dir).slice(1).map((row) => ({ stage: row.stage, from_stage: row.from_stage, actor: row.actor, session_id: row.session_id, call_id: row.call_id })),
     [{ stage: "clarifying", from_stage: "reading", actor: "user", session_id: "sess-second", call_id: "ui-op-3" }]);
   assert.equal(open(dir), null);
   // 提议已经结束：同一个请求再来一次不再记。
@@ -139,7 +163,7 @@ test("卡片在另一条会话里：这条会话的分支上找不到那条回�
   // 回复编号给的是空文字：与没有给一样。
   reply(dir, enterCard("writing", "modeling"), "sess-first");
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-6", replyEntry: "", optionKey: "start_items" })!.moved, true);
-  assert.equal(count(dir, "stage_record"), 3);
+  assert.equal(count(dir, "activity_record"), 4);
 });
 
 test("事件的名字与「回复」记的是同一个", () => {
@@ -180,7 +204,7 @@ test("回退的提议：发出就开着，用户点了退回（阶段移动）�
   // 卡片不在这条会话的分支上（换了一条会话）：照开着的提议核对，点退回照样记移动，理由里带卡片的问句。
   const moved = recordStageCardClick(dir, "sess-b", [said("u-9", "在吗")] as never, { opId: "ui-op-b", replyEntry: card.entry, optionKey: "back_to_reading" })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "modeling", "reading"]);
-  assert.equal(query<{ reason: string }>(dir, "SELECT reason FROM stage_record ORDER BY event_seq DESC LIMIT 1")[0].reason,
+  assert.equal(moveRows(dir).at(-1)!.reason,
     "用户在卡片上选了「退回核读材料」：用户放进了新材料，前面几页要重看。退回吗？");
   assert.equal(open(dir), null);
 });
@@ -281,6 +305,37 @@ test("这一段还开着的提问与请选择：只列这条会话里、进入�
   assert.equal(line(), NO_OPEN_CARDS_LINE);
   reply(dir, { kind: "ask", text: "馆员能不能代借" });
   assert.match(line(), /^这一段还开着的提问与请选择 1 张（你问过、用户搁下没有答的）：r\d+-\d+ 提问「馆员能不能代借」。/);
+});
+
+test("升级上来的库里早先的移动事件（STAGE_MOVED）照样算界：它之前的提议已经结束，它之前留下的提问不再列；它之后发的照常开着", () => {
+  const dir = workspace();
+  const line = () => getTaskStatus(dir, SESSION).text.split("\n").at(-1)!;
+  // 早先的样子：发了进入澄清的卡片、问了一问，随后用户点了进入——那时一次移动只记一条 STAGE_MOVED。
+  reply(dir, enterCard("clarifying", "reading"));
+  reply(dir, { kind: "ask", text: "借阅期限是多少天" });
+  assert.equal(open(dir)!.stage, "clarifying");
+  assert.match(line(), /^这一段还开着的提问与请选择 1 张/);
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
+    const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
+    const seq = Number(db.prepare(
+      "INSERT INTO event (task_id, session_id, call_id, name, actor, payload, at) VALUES (?, ?, 'ui-op-old', 'STAGE_MOVED', 'user', ?, '2026-10-10T09:00:00')",
+    ).run(task.task_id, SESSION, JSON.stringify({ stage: "clarifying", from: "reading", actor: "user", reason: "", run_id: null, flow: "initial" })).lastInsertRowid);
+    // 升级把那次移动改写成了一条活动记录。
+    db.prepare(
+      "INSERT INTO activity_record (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) " +
+        "VALUES (?, ?, NULL, 'ui-op-old', 'user', 'clarifying', 'clarifying', 'initial', '', '2026-10-10T09:00:00', ?)",
+    ).run(task.task_id, SESSION, seq);
+  });
+  assert.equal(open(dir), null, "那次移动之前的提议结束了");
+  assert.equal(line(), NO_OPEN_CARDS_LINE, "那次移动之前留下的提问不再列");
+  // 之后发的照常开着；再移一次（现在的事件名）又结束。
+  const next = reply(dir, enterCard("modeling", "clarifying"));
+  reply(dir, { kind: "ask", text: "馆员能不能代借" });
+  assert.deepEqual([open(dir)!.stage, open(dir)!.event_seq], ["modeling", next.seq]);
+  assert.match(line(), /^这一段还开着的提问与请选择 1 张（你问过、用户搁下没有答的）：r\d+-\d+ 提问「馆员能不能代借」。/);
+  enterStage(dir, "modeling");
+  assert.equal(open(dir), null);
+  assert.equal(line(), NO_OPEN_CARDS_LINE);
 });
 
 test("续接旧会话：上次之后才发出的提议写一条（别的都没有变也写）；上次之前发的不重复；没有开着的不写", () => {

@@ -52,8 +52,9 @@ test("助手请求评审：核读材料、澄清、整理建模三个阶段被�
   }
 });
 
-test("刚建好、有材料的任务在核读材料：助手请求评审被拦；用户在页面上发起的不看阶段", () => {
+test("在核读材料阶段：助手请求评审被拦；用户在页面上发起的不看阶段", () => {
   const dir = workspace();
+  enterStage(dir, "reading");
   assert.match(refusal(dir, "executor")!.fact, /^任务现在在核读材料阶段/);
   assert.equal(refusal(dir, "user"), null);
   // 不写第三个参数时按用户算：页面那条路照旧。

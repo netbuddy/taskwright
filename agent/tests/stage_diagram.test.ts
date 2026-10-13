@@ -38,7 +38,8 @@ const revisionOf = (dir: string) => query<{ n: number }>(dir, "SELECT MAX(revisi
 
 test("核读材料与澄清两个阶段：新画、修改、删除都被拦，原话写明现在在哪个阶段、要先做什么", async () => {
   const dir = workspace();
-  // 刚建好、有材料：在核读材料。
+  // 首次分析从核读材料启动。
+  enterStage(dir, "reading");
   const reading = (await refusal(dir, fresh()))!;
   assert.equal(reading.fact, "任务现在在核读材料阶段，这个阶段不能画图、改图或删图");
   assert.equal(reading.guidance, "图要到整理建模阶段才能画。往前进入下一段要由用户在卡片上点，你只能提议：材料读完之后先提议进入澄清，" +
@@ -86,5 +87,5 @@ test("用户在页面上改图不看阶段：澄清阶段照样能改", async ()
 test("早先建的任务没有阶段：有材料也不拦，助手照旧直接画图", async () => {
   const dir = workspace(demoDefinition());
   assert.equal(await refusal(dir, fresh()), null);
-  assert.equal(count(dir, "stage_record"), 0);
+  assert.equal(count(dir, "activity_record"), 0);
 });

@@ -2,15 +2,14 @@
  * 阶段的移动怎样进对话区的消息（真的后端进程与真的 pi，模型换成进程内的假端点）：
  * 阶段只由用户移动：用户在卡片上点了「退回」前面的阶段或者「进入」下一段，那句「我选：……」带 stage_move（从哪到哪）；
  * 助手发卡片的那条回复不带。实时推的消息与重开页面时读的消息都带，形状相同；没有移动阶段的回复与用户的话不带这一项。
- * 早先的会话里助手在回复里自己退回过阶段，那样的回复读出来仍带 stage_move（replyStageMove，只有取值函数的那一例核对它）。
  */
 
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { request } from "node:http";
 import { after, test } from "node:test";
-import { clickStageMove, clickStageUnmoved, replyStageMove } from "../src/conversation.ts";
-import { captureConsole, tempDir } from "./helpers.ts";
+import { clickStageMove, clickStageUnmoved } from "../src/conversation.ts";
+import { captureConsole, movesSql, tempDir } from "./helpers.ts";
 import { type Dict, NO_PI, TOPIC_CALL, reply, sleep, withStack } from "./consent_stack.ts";
 
 captureConsole();
@@ -19,12 +18,7 @@ process.env.PI_OFFLINE = "1";
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-test("两个取值的函数：移成了才有；阶段名不对、没有移成、没有这一项时都是 null", () => {
-  assert.deepEqual(replyStageMove({ stage: { moved: true, from: "modeling", requested: "clarifying", why: null } }, " 「预约」没说清。 "),
-    { from: "modeling", to: "clarifying", actor: "executor", reason: "「预约」没说清。" });
-  assert.equal(replyStageMove({ stage: { moved: false, from: "modeling", requested: "writing", why: "user_only" } }, "可以写了。"), null);
-  assert.equal(replyStageMove({}, "没有写 stage。"), null);
-  assert.equal(replyStageMove({ stage: { moved: true, from: "modeling", requested: "别的" } }, ""), null);
+test("两个取值的函数：记了移动才有；阶段名不对、没有这一项时都是 null", () => {
   assert.deepEqual(clickStageMove({ stage_move: { from: "reading", to: "clarifying" } }), { from: "reading", to: "clarifying", actor: "user" });
   assert.equal(clickStageMove({ stage_event_seq: 12 }), null);
   assert.equal(clickStageMove({ stage_move: { from: "reading", to: "别的" } }), null);
@@ -33,6 +27,11 @@ test("两个取值的函数：移成了才有；阶段名不对、没有移成�
   assert.equal(clickStageUnmoved({ stage_move: { from: "reading", to: "clarifying" } }), null);
   assert.equal(clickStageUnmoved({ stage_event_seq: 12 }), null);
   assert.equal(clickStageUnmoved({ stage_unmoved: { at: "别的" } }), null);
+  // 任务空闲时点了「开始核读材料」：from 是空闲，how 写这次是启动还是继续首次分析。别的进入与退回在空闲时不算数，带 why。
+  assert.deepEqual(clickStageMove({ stage_move: { from: "idle", to: "reading", how: "launch" } }), { from: "idle", to: "reading", actor: "user", how: "launch" });
+  assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "idle", why: "not_in_flow" } }), { at: "idle", why: "not_in_flow" });
+  assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "clarifying", why: "not_in_flow" } }), { at: "clarifying", why: "not_in_flow" });
+  assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "reading", why: "别的" } }), { at: "reading" });
 });
 
 const MODEL_CARD = { kind: "choose", text: "要问的都问到了。现在进入整理建模吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
@@ -92,8 +91,8 @@ test("用户点卡片退回前面的阶段、点卡片进入下一段的那两�
       for (const end = Date.now() + 10000; pushed.events.filter(([, data]) => data.session_id === session).length < 10 && Date.now() < end;) await sleep(100);
 
       const wanted = {
-        back: { from: "modeling", to: "clarifying", actor: "user" },
-        enter: { from: "clarifying", to: "modeling", actor: "user" },
+        back: { from: "modeling", to: "clarifying", actor: "user", how: "move" },
+        enter: { from: "clarifying", to: "modeling", actor: "user", how: "move" },
       };
       // 实时推的。
       const live = pushed.events.filter(([, data]) => data.session_id === session);
@@ -117,7 +116,8 @@ test("用户点卡片退回前面的阶段、点卡片进入下一段的那两�
       assert.equal("stage_unmoved" in live[6][1], false);
 
       // 库里的阶段记录：退回那一条是用户的移动，理由是点的那一项加卡片上助手写的原因。
-      assert.deepEqual(db("SELECT from_stage, stage, actor, reason FROM stage_record ORDER BY event_seq").slice(1), [
+      // 前两条是启动首次分析（夹具记的）与这例开头把任务移到整理建模的那一次，不在这里核对。
+      assert.deepEqual(db(movesSql(["from_stage", "stage", "actor", "reason"])).slice(2), [
         { from_stage: "modeling", stage: "clarifying", actor: "user", reason: "用户在卡片上选了「退回澄清」：「自助机」这个词牵涉好几页，前面的理解要重看。退回澄清吗？" },
         { from_stage: "clarifying", stage: "modeling", actor: "user", reason: "用户在卡片上选了「进入整理建模」" },
       ]);

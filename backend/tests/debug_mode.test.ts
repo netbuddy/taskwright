@@ -105,7 +105,7 @@ test("不是调试模式时，调试用的几个接口都答 not_found，并说�
   });
 });
 
-test("提示词目录的读与设：只收存在的目录的绝对路径；存进设置文件顶层的 debug.prompt_dir，别的键原样保留；十五个文件名各自的情形；空串是清掉", async () => {
+test("提示词目录的读与设：只收存在的目录的绝对路径；存进设置文件顶层的 debug.prompt_dir，别的键原样保留；十六个文件名各自的情形；空串是清掉", async () => {
   const settings = join(tmp, "debug-settings.json");
   writeFileSync(settings, JSON.stringify({ version: 2, pi_dirs: { "/some/agent": { selection: { language: null, embedding: null }, providers: {} } } }), "utf-8");
   const dir = join(tmp, "prompts");
@@ -117,7 +117,7 @@ test("提示词目录的读与设：只收存在的目录的绝对路径；存�
     const service = new Service(join(tmp, "d1", "tasks"), join(tmp, "d1", "runs"), {}, { debug: true });
     try {
       const empty = (await go(service, "GET", "/api/v1/debug/prompt-dir")).body;
-      assert.deepEqual([empty.prompt_dir, empty.usable, empty.note, empty.files.length], [null, null, null, 15]);
+      assert.deepEqual([empty.prompt_dir, empty.usable, empty.note, empty.files.length], [null, null, null, 16]);
       assert.ok(empty.files.every((one: Dict) => one.state === "absent"));
 
       for (const [path, words] of [["relative/dir", /提示词目录要写绝对路径/], [join(tmp, "没有这个目录"), /这个目录不存在或者不是目录/], [settings, /这个目录不存在或者不是目录/]] as const) {
@@ -131,7 +131,7 @@ test("提示词目录的读与设：只收存在的目录的绝对路径；存�
       const set = await go(service, "POST", "/api/v1/debug/prompt-dir", { path: dir });
       assert.equal(set.status, 200);
       assert.deepEqual([set.body.prompt_dir, set.body.usable, set.body.note], [dir, true, null]);
-      assert.deepEqual(set.body.files.map((one: Dict) => one.name), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md", "document.md",
+      assert.deepEqual(set.body.files.map((one: Dict) => one.name), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md", "document.md", "flows/initial.md",
         "task-type/common.md", "task-type/reading.md", "task-type/clarifying.md", "task-type/modeling.md", "task-type/writing.md", "task-type/reviewing.md", "task-type/document.md"]);
       const states = Object.fromEntries(set.body.files.map((one: Dict) => [one.name, one.state]));
       assert.deepEqual([states["clarifying.md"], states["task-type/writing.md"], states["system.md"], states["common.md"]], ["used", "used", "refused", "absent"]);
@@ -181,9 +181,9 @@ test("调试模式下真的跑一遍：提示词目录里改一句，再问一�
     assert.equal(first.text, systemText(requests()[0]));
     assert.deepEqual([first.available, first.replaced, first.stage, first.stage_name, first.how, first.prompt_dir, first.session_id], [true, true, "reading", "核读材料", "recomposed", null, session]);
     assert.deepEqual(first.parts.map((one: Dict) => [one.part, one.from]),
-      [["system", "builtin"], ["platform_common", "builtin"], ["task_common", "task"], ["platform_stage", "builtin"], ["task_stage", "task"], ["tail", "pi"]]);
-    assert.deepEqual(first.parts.map((one: Dict) => one.part_name), ["系统提示", "平台说明的共用部分", "任务类型说明的共用部分", "平台说明里这个阶段的那一段", "任务类型说明里这个阶段的那一段", "助手程序接在后面的工作目录等"]);
-    assert.deepEqual(first.parts.map((one: Dict) => one.from_name), ["产品自带", "产品自带", "任务目录", "产品自带", "任务目录", "助手程序"]);
+      [["system", "builtin"], ["platform_common", "builtin"], ["task_common", "task"], ["platform_stage", "builtin"], ["node_exit", "builtin"], ["task_stage", "task"], ["tail", "pi"]]);
+    assert.deepEqual(first.parts.map((one: Dict) => one.part_name), ["系统提示", "平台说明的共用部分", "任务类型说明的共用部分", "平台说明里这个阶段的那一段", "这个阶段在流程里的出口", "任务类型说明里这个阶段的那一段", "助手程序接在后面的工作目录等"]);
+    assert.deepEqual(first.parts.map((one: Dict) => one.from_name), ["产品自带", "产品自带", "任务目录", "产品自带", "产品自带", "任务目录", "助手程序"]);
     assert.equal(first.parts[3].file, "agent/prompts/stages/reading.md");
     for (const one of first.parts) assert.deepEqual([one.lines, one.bytes], [one.text.split("\n").length, Buffer.byteLength(one.text, "utf-8")]);
 
@@ -225,9 +225,10 @@ const REJECT_SCRIPT = {
 
 test("调试模式下的阶段记录流水与被拒的工具调用：谁在什么时候把任务从哪移到哪、理由；被拒的调用带工具名、事实、指引与它所属的那次工作", { skip: NO_PI, timeout: 180000 }, async () => {
   await withStack(tmp, "debug-stage", REJECT_SCRIPT, async ({ call, taskId, session, send, action }) => {
-    // 一开始：没有移动，也没有被拒的调用。
+    // 一开始：只有用户启动首次分析的那一条（任务此前空闲，从哪里来是空的），没有被拒的调用。
     const fresh = (await call("GET", `/api/v1/tasks/${taskId}/debug/stage`)).body;
-    assert.deepEqual(fresh, { records: [], rejections: [], latest_work_id: null });
+    assert.deepEqual([fresh.records.map((one: Dict) => [one.from, one.from_name, one.to, one.to_name, one.actor, one.flow]), fresh.rejections, fresh.latest_work_id],
+      [[[null, "", "reading", "核读材料", "user", "initial"]], [], null]);
 
     await send({ text: "直接写用例吧。", client_id: "c-1" });
     assert.equal((await action({ kind: "move_stage", targets: [], fields: { stage: "澄清", reason: "材料看过了。" } })).status, 200);
@@ -235,7 +236,7 @@ test("调试模式下的阶段记录流水与被拒的工具调用：谁在什�
     await send({ text: "再说一句。", client_id: "c-2" });
 
     const view = (await call("GET", `/api/v1/tasks/${taskId}/debug/stage`)).body;
-    assert.deepEqual(view.records.map((one: Dict) => [one.from, one.from_name, one.to, one.to_name, one.actor, one.reason, one.run_id]), [
+    assert.deepEqual(view.records.slice(1).map((one: Dict) => [one.from, one.from_name, one.to, one.to_name, one.actor, one.reason, one.run_id]), [
       ["reading", "核读材料", "clarifying", "澄清", "user", "材料看过了。", null],
       ["clarifying", "澄清", "modeling", "整理建模", "user", "", null],
     ]);

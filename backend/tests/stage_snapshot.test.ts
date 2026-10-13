@@ -1,5 +1,5 @@
 /**
- * 整份数据里的 stage（任务现在的工作阶段与每个阶段的几盏灯）与库事件 stage_changed：
+ * 整份数据里的 stage（任务现在的工作阶段与每个阶段的几盏灯）与库事件 activity_started、activity_ended：
  * 任务库经子进程里助手一侧真实的保存、界面操作建，这里只读。早先建的任务没有阶段；还没有阶段记录表的库当作没有移过。
  */
 
@@ -63,13 +63,16 @@ test("整份数据里与图有关的几盏灯：流程页画了带分叉的流�
   assert.deepEqual([lamp.ok, lamp.items, lamp.summary], [false, ["UC-001"], "有 1 个条目依据的图用户还没有看过：UC-001（没看过的图是 D-001）。"]);
 });
 
-test("库事件：移动阶段转成 stage_changed；有阶段的任务每一批最后一条事件带现在的阶段与灯", () => {
+test("库事件：移动阶段转成 activity_ended（前一项活动结束）与 activity_started（开始另一项）；有阶段的任务每一批最后一条事件带现在的阶段与灯", () => {
   const ws = build(tmp, "events", DEFINITION, [[FLOW], { stage: "评审确认" }]);
   const [events] = library.libraryEvents(ws, 0);
-  const moves = events.filter(([name]) => name === "stage_changed").map(([, data]) => data);
-  assert.deepEqual(moves.map((d) => [d.to, d.from, d.actor, d.reason, d.run_id, d.op_id]),
-    [["writing", "reading", "user", "", null, "ui-fixture-1"], ["reviewing", "writing", "user", "", null, "ui-fixture-2"]]);
+  const moves = events.filter(([name]) => name === "activity_started").map(([, data]) => data);
+  assert.deepEqual(moves.map((d) => [d.to, d.from, d.actor, d.reason, d.run_id, d.op_id, d.flow, d.node]),
+    [["writing", null, "user", "", null, "ui-fixture-1", "initial", "writing"], ["reviewing", "writing", "user", "", null, "ui-fixture-2", "initial", "reviewing"]]);
   assert.ok(moves.every((d) => typeof d.seq === "number" && typeof d.at === "string" && typeof d.task_id === "string"));
+  // 第一次移动之前任务空闲（从哪里来是 null），没有可结束的；第二次先结束写条目，紧挨在开始评审确认的那一条之前。
+  const ended = events.filter(([name]) => name === "activity_ended").map(([, data]) => data);
+  assert.deepEqual(ended.map((d) => [d.activity, d.node, d.actor, d.reason, d.op_id, d.seq]), [["writing", "writing", "user", "", "ui-fixture-2", moves[1].seq - 1]]);
   // 序号连续：移动阶段的事件没有被跳过。
   assert.deepEqual(events.map(([, d]) => d.seq), events.map((_, n) => events[0][1].seq + n));
   const last = events.at(-1)![1];
@@ -78,16 +81,28 @@ test("库事件：移动阶段转成 stage_changed；有阶段的任务每一批
   assert.ok(events.slice(0, -1).every(([, d]) => !("stage" in d)), "只有这一批的最后一条带");
   // 只取后面一段时，最后一条照样带。
   const [tail] = library.libraryEvents(ws, last.seq - 1);
-  assert.deepEqual([tail.length, tail[0][0], tail[0][1].stage.current], [1, "stage_changed", "reviewing"]);
+  assert.deepEqual([tail.length, tail[0][0], tail[0][1].stage.current], [1, "activity_started", "reviewing"]);
 });
 
-test("刚建好还没有人移过的任务：有材料在核读材料，三项为 null；库里还没有阶段记录表时也一样", () => {
+test("库事件：升级上来的库里早先的移动事件（STAGE_MOVED）转成同一种 activity_started，移到的阶段取它的 stage", () => {
+  const ws = build(tmp, "events-old", DEFINITION, [[FLOW]]);
+  const max = library.libraryEvents(ws, 0)[1];
+  sqlRun(ws, [["INSERT INTO event (task_id, session_id, call_id, name, actor, payload, at) SELECT task_id, 'sess-old', 'ui-op-old', 'STAGE_MOVED', 'user', ?, '2026-10-10T09:00:00' FROM task",
+    JSON.stringify({ stage: "reviewing", from: "writing", actor: "user", reason: "条目都看过了。", run_id: null })]]);
+  const [events] = library.libraryEvents(ws, max);
+  assert.deepEqual(events.map(([name, d]) => [name, d.to, d.from, d.actor, d.reason, d.run_id, d.flow, d.node, d.op_id]),
+    [["activity_started", "reviewing", "writing", "user", "条目都看过了。", null, "initial", "reviewing", "ui-op-old"]]);
+});
+
+test("刚建好还没有开展过活动的任务：空闲，三项为 null，带着开展一项活动的三组选项；库里还没有活动记录表时也一样", () => {
   const ws = build(tmp, "fresh", DEFINITION, [[FLOW]]);
-  // 夹具先移到了写条目；把那条记录去掉，回到没有移过的样子。
-  sqlRun(ws, [["DELETE FROM stage_record"]]);
+  // 夹具先移到了写条目；把那条记录去掉，回到没有开展过活动的样子。
+  sqlRun(ws, [["DELETE FROM activity_record"]]);
   const fresh = library.taskSnapshot(ws)[1]!.stage!;
-  assert.deepEqual([fresh.current, fresh.moved_by, fresh.moved_at, fresh.reason], ["reading", null, null, null]);
-  sqlRun(ws, [["DROP TABLE stage_record"]]);
+  assert.deepEqual([fresh.current, fresh.node, fresh.flow_node, fresh.moved_by, fresh.moved_at, fresh.reason], ["idle", null, null, null, null, null]);
+  assert.deepEqual([fresh.launch.current, fresh.launch.flows.map((one) => [one.label, one.activity, one.enabled]), fresh.launch.activities.map((one) => [one.label, one.enabled])],
+    [null, [["启动首次分析", "reading", true]], [["核读材料", true], ["澄清", true], ["整理建模", true], ["写条目", true], ["评审确认", false], ["编写文档", false]]]);
+  sqlRun(ws, [["DROP TABLE activity_record"]]);
   assert.deepEqual(library.taskSnapshot(ws)[1]!.stage, fresh);
 });
 
@@ -97,5 +112,5 @@ test("早先建的任务没有阶段：整份数据里 stage 是 null，库事�
   assert.equal(task!.stage, null);
   const [events] = library.libraryEvents(ws, 0);
   assert.ok(events.length > 0);
-  assert.ok(events.every(([name, d]) => name !== "stage_changed" && !("stage" in d)));
+  assert.ok(events.every(([name, d]) => name !== "activity_started" && name !== "activity_ended" && !("stage" in d)));
 });

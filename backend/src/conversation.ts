@@ -17,7 +17,7 @@
 import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
-import { isStage } from "../../agent/src/lib/stage.ts";
+import { isPosition, isStage } from "../../agent/src/lib/stage.ts";
 import { callFacts, derivedSourceName } from "./library.ts";
 import { cardLinks, understandingLines, worksFromEntries } from "./work_summary.ts";
 
@@ -55,17 +55,6 @@ export type Entry = Record<string, any>;
 const isStageKey = (value: unknown): value is string => isStage(value);
 
 /**
- * 助手在回复里把任务退回了前面的阶段时，那条回复带的一项：从哪个阶段、到哪个阶段、理由。
- * details 是「回复」工具结果的 details（其中 stage 是这次移动的结果，移成了 moved 为真），reason 是助手写的理由。
- * 没有写 stage、或者没有移成时为 null，消息里不带这一项。
- */
-export function replyStageMove(details: Record<string, any>, reason: unknown): { from: string; to: string; actor: "executor"; reason: string } | null {
-  const move = details.stage;
-  if (!isObject(move) || move.moved !== true || !isStageKey(move.from) || !isStageKey(move.requested)) return null;
-  return { from: move.from, to: move.requested, actor: "executor", reason: typeof reason === "string" ? reason.trim() : "" };
-}
-
-/**
  * 「继续本阶段」的那条界面操作通知另带的两项：卡片在哪条回复上（reply_message_id）、卡片提议进入哪个阶段（stage）。
  * details 是那条通知的 details。别的界面操作通知不带，返回空对象。
  */
@@ -79,10 +68,11 @@ export function continueStageFields(details: Record<string, any>): { reply_messa
  * 用户在卡片上点了「进入」某个阶段、系统替用户记了移动时，那句「我选：……」带的一项：从哪个阶段、到哪个阶段。
  * details 是那条界面点击标注的 details（助手一侧在记下移动时写进 stage_move）。没有记移动时为 null。
  */
-export function clickStageMove(details: Record<string, any>): { from: string; to: string; actor: "user" } | null {
+export function clickStageMove(details: Record<string, any>): { from: string; to: string; actor: "user"; how?: string } | null {
   const move = details.stage_move;
-  if (!isObject(move) || !isStageKey(move.from) || !isStageKey(move.to)) return null;
-  return { from: move.from, to: move.to, actor: "user" };
+  // from 可以是空闲：任务空闲时用户在卡片上点了「开始核读材料」。how 写这次是流程里的移动、启动还是继续首次分析（早先的点击没有这一项）。
+  if (!isObject(move) || !isPosition(move.from) || !isStageKey(move.to)) return null;
+  return { from: move.from, to: move.to, actor: "user", ...(typeof move.how === "string" && move.how ? { how: move.how } : {}) };
 }
 
 /**
@@ -90,10 +80,20 @@ export function clickStageMove(details: Record<string, any>): { from: string; to
  * 任务当时在哪个阶段。details 是那条界面点击标注的 details（助手一侧写进 stage_unmoved）。没有这一项时为 null：
  * 记了移动的点击、不是进入阶段的点击、没有阶段的任务、早先版本留下的点击都没有。
  */
-export function clickStageUnmoved(details: Record<string, any>): { at: string } | null {
+export function clickStageUnmoved(details: Record<string, any>): { at: string; why?: string } | null {
   const stay = details.stage_unmoved;
-  if (!isObject(stay) || !isStageKey(stay.at)) return null;
-  return { at: stay.at };
+  // at 可以是空闲；why 为 not_in_flow 是任务不在首次分析流程里（空闲或者正在单独开展一项活动），进入与退回不算数。
+  if (!isObject(stay) || !isPosition(stay.at)) return null;
+  return { at: stay.at, ...(stay.why === "not_in_flow" ? { why: stay.why } : {}) };
+}
+
+/**
+ * 助手在一条回复里汇报单独开展的那项活动做完了时，那条回复带的一项：结束的是哪一项活动。
+ * details 是「回复」工具结果的 details（助手一侧结束了活动记录时写进 activity_done）。没有结束时返回空对象，消息里不带这一项。
+ */
+export function replyActivityDone(details: Record<string, any>): { activity_done?: { activity: string } } {
+  const done = details.activity_done;
+  return isObject(done) && isStageKey(done.activity) ? { activity_done: { activity: done.activity } } : {};
 }
 
 export function normalizeInforms(informs: unknown): Record<string, any>[] {
@@ -351,11 +351,10 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
           const reply = or(details.reply, {}) as Record<string, any>;
           args = { informs: [], act: null, text: or(or(reply.text, args.text), "") };
         }
-        const replyMove = replyStageMove(details, (or(call.arguments, {}) as Record<string, any>).reason);
         out.push({
           type: "assistant_reply", session_id: sessionId, message_id: e.id, at, work_id: null, via_reply_tool: true,
           informs: normalizeInforms(args.informs ?? null), act: args.act ?? null, text: or(args.text, ""), degraded: truthy(details.degraded),
-          ...(replyMove ? { stage_move: replyMove } : {}), ...replyCardFields(details),
+          ...replyCardFields(details), ...replyActivityDone(details),
         });
         segmentReplied = true;
       }

@@ -5,6 +5,7 @@
 // 前端遇到不认识的字段一律忽略，所以这里只列用得到的。
 
 import type { DecisionRow, GoalTree, RulesTable } from "../../../agent/src/lib/overall_views.ts";
+import type { LaunchView, StartHow } from "../../../agent/src/lib/stage.ts";
 
 // ───────────── 共用 ─────────────
 
@@ -318,16 +319,24 @@ export interface Task {
   stage?: StageView | null;
 }
 
-/** 一条对话消息带着的阶段移动：助手在回复里退回（actor 为 executor，带理由），或者用户在卡片上点了进入下一段（actor 为 user）。 */
+/**
+ * 用户的一句话带着的阶段移动：用户在卡片上点了进入下一段或者退回前面的阶段，系统替用户记了这次移动。阶段只由用户移动。
+ * from 是移动之前任务在哪里（任务空闲时用户点了「开始核读材料」，是 idle）；how 是这一次怎样开始的：流程里的移动（move）、
+ * 启动首次分析（launch）、继续首次分析（resume）。早先的消息没有 how，当作 move。
+ */
 export interface StageMove {
-  from: StageKey;
+  from: PositionKey;
   to: StageKey;
-  actor: "executor" | "user";
-  reason?: string;
+  actor: "user";
+  how?: StartHow;
 }
 
-/** 工作的六个阶段：核读材料、澄清、整理建模、写条目、评审确认、编写文档。 */
+/** 工作的六个阶段：核读材料、澄清、整理建模、写条目、评审确认、编写文档。它们也是六项可以开展的活动。 */
 export type StageKey = "reading" | "clarifying" | "modeling" | "writing" | "reviewing" | "document";
+/** 任务现在在哪里：六个阶段之一，或者空闲（没有在进行的活动；新建的任务从空闲起）。 */
+export type PositionKey = StageKey | "idle";
+/** 「开展一项活动」一节的内容与其中可以点的一项、一项活动怎样开始的：定义在助手一侧（agent/src/lib/stage.ts），后端算好，页面只渲染。 */
+export type { LaunchOption, LaunchView, StartHow } from "../../../agent/src/lib/stage.ts";
 
 /** 一盏灯：某个阶段「做到什么算够」的一条判据。ok 为 null 是不适用；items 是差的页、条目或材料。灯只提示，不拦操作。 */
 export interface StageLamp {
@@ -359,14 +368,21 @@ export interface StageProposal {
 
 /** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），六个阶段各自的灯，以及开着的提议（没有时为 null）。 */
 export interface StageView {
-  current: StageKey;
+  /** 任务现在在哪个阶段；空闲时是 idle。 */
+  current: PositionKey;
+  /** 现在这项活动在首次分析流程里的节点：在流程里时与 current 相同；用户单独开展的活动、空闲时为 null。早先的后端不给。 */
+  node?: StageKey | null;
+  /** 首次分析走到的节点；没有走过是 null。 */
+  flow_node?: StageKey | null;
+  /** 「开展一项活动」一节现在的内容。 */
+  launch?: LaunchView | null;
   moved_by: "executor" | "user" | null;
   moved_at: string | null;
   reason: string | null;
   lamps: Record<StageKey, StageLamp[]>;
   proposal?: StageProposal | null;
-  /** 所属流程：最近一次移动是在哪一条流程里发生的。现在只有一条流程，值恒为 initial（首次分析）。 */
-  flow?: string;
+  /** 所属流程：现在这项活动在哪一条流程里。现在只有首次分析（initial）；用户单独开展的活动不在流程里，是 null。 */
+  flow?: string | null;
 }
 
 export interface Material {
@@ -451,8 +467,11 @@ export interface UserMessage {
   client_id?: string;
   /** 用户在卡片上点了进入下一段、系统替用户记了移动时才有：从哪个阶段、到哪个阶段。 */
   stage_move?: StageMove;
-  /** 用户点了一张进入某个阶段的卡片而阶段没有移动时才有（次序不对，或者任务本来就在那个阶段）：任务当时在哪个阶段。 */
-  stage_unmoved?: { at: string };
+  /**
+   * 用户点了一张进入某个阶段的卡片而阶段没有移动时才有（次序不对，或者任务本来就在那个阶段）：任务当时在哪个阶段。
+   * why 为 not_in_flow 是任务当时不在首次分析流程里（空闲，at 是 idle；或者正在单独开展一项活动），进入与退回不算数。
+   */
+  stage_unmoved?: { at: string; why?: string };
 }
 
 export interface AssistantReply {
@@ -468,8 +487,8 @@ export interface AssistantReply {
   text: string;
   /** 连续被拒到上限后放行的纯文字回复；为真时照普通文字显示并加一行说明。 */
   degraded?: boolean;
-  /** 助手在这条回复里把任务退回了前面的阶段时才有：从哪个阶段、到哪个阶段、理由。 */
-  stage_move?: StageMove;
+  /** 助手在这条回复里汇报用户单独开展的那项活动做完了时才有：结束的是哪一项活动。任务随之空闲。 */
+  activity_done?: { activity: StageKey };
   /** 用户在它之前的那句话回答了哪几张卡片（卡片所在回复的编号）：用户在卡片之外说的话，由助手按上下文判断是不是在回答卡片。没有时不带。 */
   answers_card?: string[];
   /** 这条回复的卡片重发的是哪一条回复的卡片（用户搁下没有答，助手再问一遍）。不是重发时不带。 */
@@ -756,7 +775,10 @@ export interface DiagramViewed {
   diagrams: { diagram_id: string; revision_no: number }[];
 }
 
-/** 任务从一个工作阶段移到了另一个：到了哪个阶段、从哪个阶段来、谁移的、理由；助手移的带运行号，用户移的带操作编号。 */
+/**
+ * 库事件 activity_started 的内容：任务开始了一项活动，也就是从一个工作阶段移到了另一个——到了哪个阶段、从哪个阶段来、谁移的、理由；
+ * 助手移的带运行号，用户移的带操作编号。
+ */
 export interface StageChanged {
   seq: number;
   at: string;
@@ -768,6 +790,21 @@ export interface StageChanged {
   run_id: string | null;
   /** 这次移动的所属流程，现在恒为 initial（首次分析）。 */
   flow?: string;
+  /** 这项活动在流程里的节点，现在与 to 相同。 */
+  node?: string | null;
+  op_id?: string | null;
+  completion: Completion | null;
+}
+
+/** 库事件 activity_ended 的内容：一项活动结束了。移动阶段时它紧挨在 activity_started 之前；页面现在不用它。 */
+export interface ActivityEnded {
+  seq: number;
+  at: string;
+  task_id: string;
+  activity: StageKey;
+  node: string | null;
+  actor: "executor" | "user" | string;
+  reason: string;
   op_id?: string | null;
   completion: Completion | null;
 }
@@ -806,12 +843,13 @@ export type LibraryEvent =
   | { event: "item_viewed"; data: ItemViewed }
   | { event: "diagram_changed"; data: DiagramChanged }
   | { event: "diagram_viewed"; data: DiagramViewed }
-  | { event: "stage_changed"; data: StageChanged };
+  | { event: "activity_started"; data: StageChanged }
+  | { event: "activity_ended"; data: ActivityEnded };
 
 export const LIBRARY_EVENTS = [
   "stage_proposed",
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
-  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "stage_changed",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "activity_started", "activity_ended",
 ] as const;
 
 export interface WorkStarted {
@@ -1063,7 +1101,7 @@ export interface MessageRequest {
  * mark_diagram_viewed：用户打开看了一张图；targets 写 { diagram_id, base_revision }。助手工作中也接受，不往会话里追加东西。
  */
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
-  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "mark_diagram_viewed" | "move_stage";
+  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "mark_diagram_viewed" | "move_stage" | "start_activity";
 
 /** 「继续本阶段」：在提议进入下一个阶段的卡片上选了留在这一段。只在会话里留一条通知，不写库、不引出助手运行；fields 写卡片所在回复的编号与点的键。 */
 export type StageActionKind = "continue_stage";
@@ -1074,8 +1112,9 @@ export interface ActionRequest {
   task_id: string;
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
   targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
-  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。 */
-  fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string };
+  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。
+   * start_activity 写 { activity, in_flow }：开展哪一项活动（阶段的写法）、是在首次分析流程里从这个节点开始还是单独开展。 */
+  fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string } | { activity: string; in_flow: boolean };
   notify_executor: boolean;
 }
 
@@ -1328,10 +1367,16 @@ export interface ContextWindowResult {
  */
 export interface TaskStatusView {
   generated_at: string;
+  /**
+   * 当前活动。kind 为 stage 是任务在首次分析流程里的某个阶段（ordinal 是第几阶段）；activity 是用户单独开展的一项活动
+   * （ordinal 与 flow 为 null）；idle 是空闲（key 为 idle，ordinal 与后三项为 null）。
+   */
   activity: {
-    kind: "stage"; key: StageKey; name: string; ordinal: number; flow: string;
+    kind: "stage" | "activity" | "idle"; key: PositionKey; name: string; ordinal: number | null; flow: string | null;
     moved_by: "executor" | "user" | null; moved_at: string | null; reason: string | null;
   };
+  /** 「开展一项活动」一节；任务不在进行中、或者后端是早先的版本时没有。 */
+  launch?: LaunchView | null;
   description: { sections: number; chapters: { no: number; name: string; sections: number }[]; unsorted: number; open_questions: number };
   models: { kind: string; name: string; count: number }[];
   items: { collection: string; total: number; viewed: number }[];

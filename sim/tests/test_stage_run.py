@@ -131,8 +131,11 @@ class StageRunTest(unittest.TestCase):
         task = taskdb.read_workspace(sim / "库副本")["任务"][0]
         self.assertEqual(task["状态"], "已完成")
         with sqlite3.connect(sim / "库副本" / taskdb.DB_NAME) as db:
-            moves = db.execute("SELECT actor, from_stage, stage, reason FROM stage_record ORDER BY record_id").fetchall()
-        self.assertEqual(moves, [("user", "reading", "writing", "用户在卡片上选了「开始写条目」"),
+            moves = db.execute(
+                "SELECT r.actor, json_extract(e.payload, '$.from'), r.activity, r.reason FROM activity_record r "
+                "LEFT JOIN event e ON e.seq = r.started_seq ORDER BY r.started_seq").fetchall()
+        # 第一条是开场时驾驭程序替用户选的「启动首次分析」：新任务空闲，从核读材料开始。
+        self.assertEqual(moves, [("user", None, "reading", ""), ("user", "reading", "writing", "用户在卡片上选了「开始写条目」"),
                                  ("user", "writing", "reviewing", "用户在卡片上选了「进入评审确认」")])
         # 灯：写条目与评审确认两段都过了；这份演示脚本从核读材料直接进入写条目，没有画图，流程页没有流程图那一盏不通过。
         states = {x["键"]: x["结果"] for x in result["灯"]}

@@ -8,7 +8,7 @@ import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import * as library from "../src/library.ts";
 import { CHAPTER_NAMES, taskStatus } from "../src/task_status.ts";
-import { DEMO_DEFINITION, tempDir } from "./helpers.ts";
+import { DEMO_DEFINITION, sqlRun, tempDir } from "./helpers.ts";
 import { DEFINITION, SOURCE, build, page } from "./overall_stack.ts";
 
 const tmp = tempDir();
@@ -86,6 +86,38 @@ test("刚建的任务：没有页、没有图、没有提议，各项都是空�
   assert.deepEqual(fresh.items.map((one) => [one.collection, one.total]), [["用例", 0], ["待定事项", 0]]);
   assert.equal(taskStatus(build(tmp, "old", DEMO_DEFINITION, [])), null);
   assert.equal(taskStatus(`${tmp}/没有这个目录`), null);
+});
+
+test("开展一项活动一节：正在进行的一行、首次分析能不能点、六项活动各自的前提；任务已经完成时没有这一节", () => {
+  // 夹具一建好任务就由用户移到写条目（在流程里）；有一页主题，没有需求条目。
+  const ws = build(tmp, "launch", WITH_QUESTIONS, [[PAGES[0]]]);
+  const flowed = taskStatus(ws)!;
+  assert.deepEqual(flowed.launch!.current, { activity: "writing", in_flow: true, label: "继续首次分析：写条目" });
+  assert.deepEqual(flowed.launch!.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: false, state: "正在进行" }]);
+  assert.deepEqual(flowed.launch!.activities.map((one) => [one.label, one.in_flow, one.enabled, one.state]), [
+    ["核读材料", false, true, "可以开展"], ["澄清", false, true, "可以开展"], ["整理建模", false, true, "可以开展"],
+    ["写条目", false, false, "正在流程里进行"], ["评审确认", false, false, "还没有需求条目"], ["编写文档", false, false, "还没有需求条目"]]);
+  assert.deepEqual(flowed.launch!.later, [{ label: "发布", state: "0.6 后续" }]);
+  assert.deepEqual(flowed.launch, library.taskSnapshot(ws)[1]!.stage!.launch, "与整份数据里的是同一份");
+  // 用户改做单独的澄清（直接改库：把在进行的那条记录记成不在流程里的澄清，流程的位置另留一条已结束的写条目）。
+  sqlRun(ws, [
+    ["UPDATE activity_record SET ended_at = started_at, ended_seq = started_seq"],
+    ["INSERT INTO activity_record (task_id, session_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) SELECT task_id, 's', 'ui-op-alone', 'user', 'clarifying', NULL, NULL, '', '2026-10-12T10:00:00', 9000 FROM task"],
+  ]);
+  const alone = taskStatus(ws)!;
+  assert.deepEqual(alone.activity, { kind: "activity", key: "clarifying", name: "澄清", ordinal: null, flow: null, moved_by: "user", moved_at: alone.activity.moved_at, reason: "" });
+  assert.match(String(alone.activity.moved_at), /^2026-10-12T10:00:00/);
+  assert.deepEqual([alone.launch!.current, alone.launch!.flows[0]], [{ activity: "clarifying", in_flow: false, label: "继续澄清" },
+    { activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: true, state: "可以开展" }]);
+  assert.deepEqual(alone.launch!.activities.map((one) => one.state), ["可以开展", "正在进行", "可以开展", "可以开展", "还没有需求条目", "还没有需求条目"]);
+  // 这一段还差什么照那项活动（澄清）的灯；整份数据里所属流程是 null，节点是 null，流程走到写条目。
+  const stage = library.taskSnapshot(ws)[1]!.stage!;
+  assert.deepEqual([stage.current, stage.node, stage.flow_node, stage.flow], ["clarifying", null, "writing", null]);
+  assert.deepEqual(alone.missing, stage.lamps.clarifying.filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })));
+  assert.deepEqual(library.stageDebugView(ws).records.map((one) => [one.to, one.flow]), [["writing", "initial"], ["clarifying", null]]);
+  // 任务已经完成：没有这一节。
+  sqlRun(ws, [["UPDATE task SET status = '已完成'"]]);
+  assert.equal(taskStatus(ws)!.launch, null);
 });
 
 test("七章的章号与章名", () => {

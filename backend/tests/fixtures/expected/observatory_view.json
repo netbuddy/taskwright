@@ -162,38 +162,38 @@
         "代码仓里的路径": "agent/prompts/stages",
         "文件": [
          {
-          "字节数": 1509,
-          "摘要值": "8bbeac4ec87aae85",
+          "字节数": 2274,
+          "摘要值": "5cf6272293a80f46",
           "路径": "README.md"
          },
          {
-          "字节数": 6897,
-          "摘要值": "9c65a5b296a87321",
+          "字节数": 4418,
+          "摘要值": "d186c59d632286db",
           "路径": "clarifying.md"
          },
          {
-          "字节数": 64240,
-          "摘要值": "cb9b7f11de5af699",
+          "字节数": 65174,
+          "摘要值": "e2dbc646ccacb962",
           "路径": "common.md"
          },
          {
-          "字节数": 4842,
-          "摘要值": "63dffdb32fced247",
+          "字节数": 2761,
+          "摘要值": "876519327936c596",
           "路径": "document.md"
          },
          {
-          "字节数": 6015,
-          "摘要值": "c28e420fe7581ce4",
+          "字节数": 4080,
+          "摘要值": "fa73b369ea71fb9b",
           "路径": "modeling.md"
          },
          {
-          "字节数": 4354,
-          "摘要值": "3eeb18d6e5c829f9",
+          "字节数": 2404,
+          "摘要值": "7e502509f064023e",
           "路径": "reading.md"
          },
          {
-          "字节数": 3587,
-          "摘要值": "ceb5978025cf1a1f",
+          "字节数": 1443,
+          "摘要值": "1fe9bb29886ee79c",
           "路径": "reviewing.md"
          },
          {
@@ -202,8 +202,8 @@
           "路径": "system.md"
          },
          {
-          "字节数": 4419,
-          "摘要值": "8e067b6ac9ed934b",
+          "字节数": 2568,
+          "摘要值": "fe13d6516505bf78",
           "路径": "writing.md"
          }
         ],
@@ -214,6 +214,18 @@
        "时刻": "<时刻>",
        "是不是重启接回": false,
        "模型": "fake/fake-model",
+       "流程的说明": {
+        "代码仓里的路径": "agent/prompts/flows",
+        "文件": [
+         {
+          "字节数": 13345,
+          "摘要值": "1e4aa600b10fca30",
+          "路径": "initial.md"
+         }
+        ],
+        "有没有": true,
+        "目录": "<仓根>/agent/prompts/flows"
+       },
        "环境标签": "",
        "记录": "启动"
       },
@@ -472,7 +484,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"reading\",\"how\":\"recomposed\",\"digest\":\"6cf4a6edaa6849f9\",\"bytes\":78728,\"lines\":326,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":64239,\"lines\":237,\"digest\":\"4eb019cc37fb2617\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7662,\"lines\":30,\"digest\":\"70e8d45a759591da\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/reading.md\",\"bytes\":4353,\"lines\":32,\"digest\":\"3fe9291498798cc3\"},{\"part\":\"task_stage\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/stages/reading.md\",\"bytes\":758,\"lines\":5,\"digest\":\"d2c91da16aab3778\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"923f4561667bf87e\",\"bytes\":79104,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65173,\"lines\":238,\"digest\":\"42e16a70cc66fc3b\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7662,\"lines\":30,\"digest\":\"70e8d45a759591da\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"10d4db82ebef2faa\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

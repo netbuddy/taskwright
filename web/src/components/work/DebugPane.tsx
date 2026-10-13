@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { DebugStage, DebugSystemPrompt, Item, StageView } from "../../api/types";
 import { formatTime } from "../../model/format";
-import { STAGE_NAMES, flowName } from "../../model/stage";
+import { IDLE_TEXT, flowName, isIdle, positionLabel } from "../../model/stage";
 import { StageBar } from "./StageBar";
 
 const HOW_TEXT: Record<string, string> = { recomposed: "这一次是重新读文件拼的", reused: "这一次沿用了上一次拼好的", kept_after_error: "这一次重拼出错，沿用了上一次拼好的" };
@@ -44,7 +44,9 @@ export function DebugPane({ taskId, stage, items = [], working, onOpenItem, onOp
     wasWorking.current = working;
   }, [working, load]);
 
-  const lamps = stage ? stage.lamps[stage.current] ?? [] : [];
+  // 任务空闲时没有灯：空闲不是一个阶段。
+  const idle = isIdle(stage);
+  const lamps = stage && stage.current !== "idle" ? stage.lamps[stage.current] ?? [] : [];
   const rejections = facts ? (allRejections ? facts.rejections : facts.rejections.filter((one) => one.work_id === facts.latest_work_id)) : [];
   return (
     <div className="dbg-pane" data-testid="debug-pane">
@@ -94,8 +96,8 @@ export function DebugPane({ taskId, stage, items = [], working, onOpenItem, onOp
       </section>
 
       <section data-testid="debug-lamps">
-        <div className="dbg-h">{stage ? `「${STAGE_NAMES[stage.current]}」这一段的灯` : "这一段的灯"}</div>
-        {!stage ? <div className="dbg-none">这个任务没有阶段。</div> : lamps.length === 0 ? <div className="dbg-none">这一段没有灯。</div> : lamps.map((lamp) => {
+        <div className="dbg-h">{stage && !idle ? `「${positionLabel(stage.current)}」这一段的灯` : "这一段的灯"}</div>
+        {!stage ? <div className="dbg-none">这个任务没有阶段。</div> : idle ? <div className="dbg-none" data-testid="debug-lamps-idle">{IDLE_TEXT}空闲时没有灯。</div> : lamps.length === 0 ? <div className="dbg-none">这一段没有灯。</div> : lamps.map((lamp) => {
           const [cls, text] = LAMP_STATE[lamp.ok === true ? 0 : lamp.ok === false ? 1 : 2];
           return (
             <div key={lamp.key} className={`dbg-lamp ${cls}`} data-testid={`debug-lamp-${lamp.key}`}>

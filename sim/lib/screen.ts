@@ -262,6 +262,68 @@ export interface TaskView {
   items: Item[];
   /** 任务里还在的图。旧后端没有这一项。 */
   diagrams?: Diagram[];
+  /** 任务现在的工作阶段；这里只用其中「开展一项活动」一节。没有阶段的任务、旧后端没有这一项。 */
+  stage?: { current?: string; launch?: LaunchView | null } | null;
+}
+
+/** 任务状况卡上「开展一项活动」一节里可以点的一项（后端算好，agent/src/lib/stage.ts 的 LaunchOption）。 */
+export interface LaunchOption {
+  activity: string;
+  in_flow: boolean;
+  label: string;
+  enabled: boolean;
+  state: string;
+}
+
+/** 「开展一项活动」一节：正在进行的活动（只是一行）、可以启动或继续的流程、可以单独开展的活动、以后才有的。 */
+export interface LaunchView {
+  current: { activity: string; in_flow: boolean; label: string } | null;
+  flows: LaunchOption[];
+  activities: LaunchOption[];
+  later: { label: string; state: string }[];
+}
+
+/** 点了「开展一项活动」里的一项发的界面操作（与网页一致）：只记活动记录、在对话里留一行，不替用户发话，助手不因此运行。 */
+export const START_ACTIVITY = "start_activity";
+/** 这一节不选任何一项时的写法：什么都不发。 */
+export const LAUNCH_SKIP = "不选";
+/** 单独开展一项活动时的写法的前缀：「单独开展：澄清」。 */
+export const LAUNCH_ALONE_PREFIX = "单独开展：";
+
+/** 「看界面」里「开展一项活动」一节怎样写；任务没有这一节时是空字符串。 */
+export function renderLaunch(launch: LaunchView | null | undefined): string {
+  if (!launch) return "";
+  const one = (option: LaunchOption, name: string) => `${name}${option.enabled ? "" : `（现在不能选：${option.state}）`}`;
+  return [
+    "任务状况卡上的「开展一项活动」（不是必须选；想选就在 respond 的 launch 里照下面的写法写一项，不选可以直接说话）：",
+    ...(launch.current ? [`  正在进行：${launch.current.label}`] : ["  现在没有在进行的活动，任务空闲。"]),
+    `  流程：${launch.flows.map((option) => one(option, option.label)).join("、")}`,
+    `  单独开展：${launch.activities.map((option) => one(option, `${LAUNCH_ALONE_PREFIX}${option.label}`)).join("、")}`,
+  ].join("\n");
+}
+
+/**
+ * 按写法在这一节里找一项。流程的一项写按钮上的字，「启动首次分析」「继续首次分析」写到这里就认（后面「（从某阶段接着）」可以不写）；
+ * 单独开展的写「单独开展：活动名」。写的是「不选」时返回 null。找不到、或者那一项现在不能选时抛错，写明可以选的有哪些。
+ */
+export function launchOption(launch: LaunchView | null | undefined, wanted: string): LaunchOption | null {
+  const name = wanted.trim();
+  if (name === LAUNCH_SKIP) return null;
+  if (!launch) throw new Error("任务状况卡上现在没有「开展一项活动」这一节（任务已经结束，或者这个任务没有阶段）");
+  const found = name.startsWith(LAUNCH_ALONE_PREFIX)
+    ? launch.activities.find((option) => option.label === name.slice(LAUNCH_ALONE_PREFIX.length).trim())
+    : launch.flows.find((option) => option.label === name || option.label.startsWith(`${name}（`));
+  const offered = [...launch.flows.map((option) => option.label), ...launch.activities.map((option) => `${LAUNCH_ALONE_PREFIX}${option.label}`), LAUNCH_SKIP];
+  if (!found) throw new Error(`「开展一项活动」里没有「${name}」这一项，可以写的是：${offered.join("／")}`);
+  if (!found.enabled) throw new Error(`「${name}」现在不能选：${found.state}`);
+  return found;
+}
+
+/** 选一项要发的请求：界面操作 start_activity；「不选」什么都不发。 */
+export function planLaunch(launch: LaunchView | null | undefined, wanted: string, clientId: string): Plan {
+  const option = launchOption(launch, wanted);
+  if (option === null) return { kind: "none" };
+  return { kind: "action", body: { client_id: clientId, kind: START_ACTIVITY, targets: [], notify_executor: false, fields: { activity: option.activity, in_flow: option.in_flow } } };
 }
 
 function valueText(value: unknown): string {
@@ -363,6 +425,8 @@ export function viewOnLookDiagram(detail: Diagram | null | undefined): { diagram
 export interface RespondParams {
   text?: string;
   click?: string;
+  /** 在任务状况卡的「开展一项活动」里选一项，照「看界面」列出的写法写；写「不选」是不选。不与 text、click 同时写。 */
+  launch?: string;
   done?: boolean;
   give_up?: boolean;
   reason?: string;
@@ -379,7 +443,8 @@ const CLICK_TEXT: Record<string, string> = { 不对: "这个不对。", 采纳: 
 /**
  * 按接口约定（docs/api.md「卡片上的按钮」）把一次回应翻成请求：「这几条都看过了」走 actions 的 mark_viewed（带 notify_executor），其余按钮走 messages 带 card，
  * 话用第 7 节的模板；说话走 messages。提议的卡片上不生效的那一项（「继续本阶段」「留在本段」「需要修改」）走 actions 的 continue_stage，不发话，助手不因此运行；
- * 请过目卡片上的「看过了，生成文档」先发 continue_stage、再发 mark_viewed（不通知助手），同样不发话。形式不对时抛异常，写明哪里不对。
+ * 请过目卡片上的「看过了，生成文档」先发 continue_stage、再发 mark_viewed（不通知助手），同样不发话。
+ * 在「开展一项活动」里选一项（launch）走 actions 的 start_activity，不发话，助手不因此运行；写「不选」什么都不发。形式不对时抛异常，写明哪里不对。
  */
 export function planRespond(params: RespondParams, lastReply: Message | null, clientId: string, task?: TaskView | null): Plan {
   const p = params ?? {};
@@ -388,6 +453,15 @@ export function planRespond(params: RespondParams, lastReply: Message | null, cl
   const clicked = typeof p.click === "string" ? p.click.trim() : "";
   const click = clicked ? optionKeyOf(act, clicked) : "";
   const errors: string[] = [];
+  const launch = typeof p.launch === "string" ? p.launch.trim() : "";
+  if (launch) {
+    if (text || click) throw new Error("这次回应的形式不对，没有发出去：选「开展一项活动」里的一项时不要同时写 text 或 click；要说话就另外回一次。");
+    try {
+      return planLaunch(task?.stage?.launch, launch, clientId);
+    } catch (error) {
+      throw new Error(`这次回应的形式不对，没有发出去：${(error as Error).message}。`);
+    }
+  }
   if (p.done && p.give_up) errors.push("done 与 give_up 不能同时为真");
   if (p.give_up && (typeof p.reason !== "string" || !p.reason.trim())) errors.push("give_up 要配一句 reason，说明为什么放弃");
   if (!text && !click && !p.done && !p.give_up) errors.push("要么写 text 说一句话，要么写 click 点一个按钮，要么用 done 或 give_up 结束");

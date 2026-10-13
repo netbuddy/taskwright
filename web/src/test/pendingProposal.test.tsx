@@ -30,6 +30,8 @@ function chat(task: Task | null, over: Record<string, unknown> = {}) {
 describe("「待决定」一行", () => {
   it("四个阶段各自的写法；点按钮发出去的与点卡片上的进入项相同", () => {
     expect(PENDING_LABEL).toBe("待决定");
+    // 任务空闲时助手提议开始核读材料：不说「进入某阶段」。
+    expect(pendingParts({ stage: "reading" })).toEqual(["助手已提议开始", "核读材料", ""]);
     expect((["clarifying", "modeling", "writing", "reviewing"] as const).map((stage) => pendingParts({ stage }).join(""))).toEqual(
       ["助手已提议进入澄清阶段", "助手已提议进入整理建模阶段", "助手已提议进入写条目阶段", "助手已提议进入评审确认阶段"]);
     expect(enterRequest(PROPOSAL)).toEqual(["我选：进入澄清", { reply_message_id: "reply-far", kind: "choose", choice: "enter_clarify" }]);

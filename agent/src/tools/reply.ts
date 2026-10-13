@@ -27,6 +27,7 @@ import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 import { checkQuotes } from "../lib/save_revision.ts";
 import { envKnowledgeRoot } from "../lib/knowledge.ts";
 import { userMessagesOnBranch } from "./save_revision.ts";
+import { activityDoneGate, reportActivityDone } from "../lib/stage_read.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = REPLY_TOOL_NAME;
@@ -127,6 +128,11 @@ const parameters = Type.Object({
   reason: Type.Optional(Type.Union([Type.Null(), Type.String()], {
     description: "已停用，不要写。提议退回前面的阶段时，原因写在那张请选择卡片的问句里。",
   })),
+  activity_done: Type.Optional(Type.Union([Type.Null(), Type.Boolean()], {
+    description:
+      "只在用户单独开展一项活动（不在首次分析流程里）、这项活动做够了、你要汇报结束时写 true：这条回复送达之后这项活动结束，任务空闲。" +
+      "别的时候不写。任务在流程里的某个阶段时写了会被拒绝：流程里做完一段，用进入下一段的请选择卡片提议。",
+  })),
 });
 
 export function registerReply(pi: ExtensionAPI): void {
@@ -163,6 +169,8 @@ export function registerReply(pi: ExtensionAPI): void {
             currentRevisionOf: lookup.currentRevisionOf,
             priorRejections: consecutiveReplyRejections(branch),
             resendFact: resend.resendFact,
+            // 回复里写了 activity_done 时：任务正在单独开展一项活动才行。
+            activityDoneRefusal: () => activityDoneGate(ctx.cwd),
             // 给建议值的依据：与保存修订的来源同一套逐字核对。
             checkBasis: (raw, errors, whereOf) =>
               checkQuotes(ctx.cwd, ctx.sessionManager.getSessionId(), userMessagesOnBranch(ctx), raw, errors, whereOf, envKnowledgeRoot()),
@@ -185,6 +193,8 @@ export function registerReply(pi: ExtensionAPI): void {
       const messageId = turn.calls.some((call) => call.id === toolCallId) ? turn.entryId : null;
       const sessionId = ctx.sessionManager.getSessionId();
       const recorded = recordReplyActs(ctx.cwd, sessionId, branch as never, decision.reply, messageId, toolCallId);
+      // 助手汇报单独开展的那项活动做完了：回复送达之后结束那条活动记录，任务随之空闲。
+      const done = decision.reply.activity_done ? reportActivityDone(ctx.cwd, sessionId, toolCallId) : null;
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。
       return spoken(recorded?.text ? `回复已送达。${recorded.text}` : "回复已送达", {
         delivered: true,
@@ -197,6 +207,8 @@ export function registerReply(pi: ExtensionAPI): void {
         answers_card: recorded?.answersCard ?? [],
         // 这张卡片重发的是哪一张（原来那张所在回复的编号）：页面据此把原来那张收成一句；不是重发时不带这一项。
         ...(recorded?.resendsCard ? { resends_card: recorded.resendsCard } : {}),
+        // 这条回复结束了哪一项单独开展的活动、记下结束的那条事件的序号：页面据此在回复下面写一行；没有结束时不带这一项。
+        ...(done ? { activity_done: done } : {}),
       });
     },
   });

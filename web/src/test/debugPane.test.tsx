@@ -85,7 +85,7 @@ describe("右侧栏的调试页签", () => {
     const rows = [...section.querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].slice(1).map((td) => td.textContent));
     expect(rows).toEqual([["用户", "核读材料 → 澄清", "首次分析", "用户在卡片上选了「进入澄清」"], ["助手", "写条目 → 澄清", "（没有记）", "（没有写）"]]);
     // 认不出的流程照原样写。
-    expect([flowName("initial"), flowName("change"), flowName(null)]).toEqual(["首次分析", "change", "（没有记）"]);
+    expect([flowName("initial"), flowName("change"), flowName(undefined), flowName(null)]).toEqual(["首次分析", "change", "（没有记）", "单独开展"]);
   });
 
   it("这一段的灯：通过、没通过、不适用三种都列出，写整句与键，列出的编号可以点开", async () => {

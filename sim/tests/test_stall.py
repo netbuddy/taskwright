@@ -49,12 +49,37 @@ class ProgressTest(unittest.TestCase):
         self.assertFalse(made_progress([], typed))
         self.assertFalse(made_progress([reply_event(None), {"event": "work_ended", "data": {}}, {"event": "item_viewed", "data": {}},
                                         {"event": "diagram_viewed", "data": {}}, {"event": "executor_state", "data": {"state": "idle"}}], typed))
-        for name in ("deliverable_changed", "diagram_changed", "stage_changed", "stage_proposed", "task_changed"):
+        for name in ("deliverable_changed", "diagram_changed", "activity_started", "stage_proposed", "task_changed"):
             self.assertTrue(made_progress([{"event": name, "data": {}}], typed), name)
         card = {"kind": "ask", "text": "借期多长？", "scope": "general"}
         self.assertTrue(made_progress([reply_event(card)], typed))
         # 连续被拒之后放行的纯文字回复带着卡片的内容，界面上不画卡片：不算。
         self.assertFalse(made_progress([reply_event(card, degraded=True)], typed))
+
+    def test_开场替用户在开展一项活动里选哪一项_不引出助手运行的操作有哪些(self):
+        from sim.run import OPENING_DEFAULT, SILENT_ACTIONS, expects_executor, opening_choice
+        launch = {"current": None,
+                  "flows": [{"activity": "reading", "in_flow": True, "label": "启动首次分析", "enabled": True, "state": "从核读材料开始"}],
+                  "activities": [{"activity": "clarifying", "in_flow": False, "label": "澄清", "enabled": True, "state": "可以开展"},
+                                 {"activity": "writing", "in_flow": False, "label": "写条目", "enabled": False, "state": "业务说明还没有页"}],
+                  "later": []}
+        self.assertEqual(OPENING_DEFAULT, "启动首次分析")
+        # 画像不写「开场」：启动首次分析；写单独开展哪一项就选哪一项；写不选就不选。
+        self.assertEqual(opening_choice(launch, ""), (launch["flows"][0], "选了「启动首次分析」"))
+        self.assertEqual(opening_choice(launch, "单独开展：澄清"), (launch["activities"][0], "选了「澄清」"))
+        self.assertEqual(opening_choice(launch, "不选"), (None, "画像写的是不选，任务从空闲开始"))
+        # 找不到、现在不能选、任务状况里没有这一节：都不选，说明里写原因。
+        self.assertEqual(opening_choice(launch, "单独开展：写条目"), (None, "「单独开展：写条目」现在不能选（业务说明还没有页），没有选"))
+        self.assertEqual(opening_choice(launch, "需求变更"), (None, "「开展一项活动」里没有「需求变更」这一项，没有选"))
+        self.assertEqual(opening_choice(None, ""), (None, "任务状况里没有「开展一项活动」这一节，没有选"))
+        # 流程走过一段之后那一项写「继续首次分析（从某阶段接着）」：写到「继续首次分析」就认。
+        resume = {**launch, "flows": [{"activity": "writing", "in_flow": True, "label": "继续首次分析（从写条目接着）", "enabled": True, "state": "可以开展"}]}
+        self.assertEqual(opening_choice(resume, "继续首次分析")[0], resume["flows"][0])
+        # 在「开展一项活动」里选一项、选「继续本阶段」都不引出助手的运行；不选什么都不发，也不等助手。
+        self.assertEqual(SILENT_ACTIONS, ("continue_stage", "start_activity"))
+        self.assertFalse(expects_executor({"route": "action", "sent": {"kind": "start_activity"}}))
+        self.assertFalse(expects_executor({"route": "none", "sent": None}))
+        self.assertTrue(expects_executor({"route": "message", "sent": {"text": "开始吧"}}))
 
     def test_用户点了卡片上的按钮算有进展_只打字不算(self):
         self.assertTrue(clicked_card({"route": "message", "sent": {"text": "我选：已解决", "origin": "card_choice", "card": {"choice": "resolved"}}}))

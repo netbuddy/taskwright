@@ -27,8 +27,8 @@ import { ensureDialogueSchema } from "./dialogue_schema.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十七张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version、stage_record 是后来加的，
- *  旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。 */
+/** 十七张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version、activity_record 是后来加的，
+ *  旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。早先的阶段记录表（stage_record）在格式版本 5 改写成活动记录表之后删掉了，不在这里。 */
 export const TABLE_NAMES = [
   "task",
   "revision",
@@ -46,11 +46,11 @@ export const TABLE_NAMES = [
   "tool_rejection",
   "diagram",
   "diagram_version",
-  "stage_record",
+  "activity_record",
 ] as const;
 
 /** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version", "stage_record"];
+export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version", "activity_record"];
 
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
@@ -258,12 +258,9 @@ CREATE TABLE IF NOT EXISTS diagram (
 ${diagramVersionSql("diagram_version", true)}`;
 
 /**
- * 阶段记录表：任务从一个工作阶段移到另一个阶段，一次移动一行（lib/stage.ts 与 lib/stage_read.ts）。任务现在在哪个阶段看事件序号最大的一行；
- * 一行都没有时按任务有没有材料定（有材料是核读材料，没有是澄清），这个缺省不落库。只有任务定义里有「总体分析」集合的任务才会有行。
- * 阶段用英文写法存（reading、clarifying、modeling、writing、reviewing、document），与事件、接口里的写法相同。
- * 阶段有哪几个只在代码里判（lib/stage.ts 的 STAGES），库不检查两列阶段的取值：加一个阶段不用改库的结构。
- * 格式版本 2 加的表：旧库由升级步骤表的「1 到 2」那一步补上；格式版本 3 及更早的库里这两列带着只许五个阶段的检查，
- * 由「3 到 4」那一步去掉。只读的一侧遇到还没有这张表的库，当作一条记录都没有。
+ * 早先的阶段记录表（格式版本 2 到 4）：任务从一个工作阶段移到另一个阶段，一次移动一行。格式版本 5 把它的每一行改写成活动记录表的一行，
+ * 然后删掉这张表（moveStageRecordsToActivities）。建表语句还留着，只给升级步骤表里的「1 到 2」「3 到 4」两步用：
+ * 从更早的格式一步步升上来的库要先有它，才轮得到「4 到 5」那一步。现在的库里没有这张表，别处不要再用它。
  */
 const stageRecordSql = (table: string): string => `
 CREATE TABLE IF NOT EXISTS ${table} (
@@ -280,7 +277,37 @@ CREATE TABLE IF NOT EXISTS ${table} (
   created_at   TEXT NOT NULL          -- 时刻（本地时间）
 );
 `;
-export const STAGE_RECORD_SQL = stageRecordSql("stage_record");
+const STAGE_RECORD_SQL = stageRecordSql("stage_record");
+
+/**
+ * 活动记录表：任务里开展过的每一项活动一行——哪一项活动、所属的节点与流程、谁在什么时候为什么开始、什么时候结束
+ * （lib/stage.ts 与 lib/stage_read.ts）。任务现在在做哪一项活动，看还没有结束（ended_at 为空）的那一行里开始得最晚的一行；
+ * 没有还没结束的行，任务就是空闲（新建的任务一行都没有，从空闲起）。只有任务定义里有「总体分析」集合的任务才会有行。
+ * 活动现在就是六个工作阶段，用英文写法存（reading、clarifying、modeling、writing、reviewing、document），与事件、接口里的写法相同；
+ * 有哪几项只在代码里判（lib/stage.ts 的 STAGES），库不检查取值。
+ * 节点是这项活动在流程里的位置：在流程里开展时与活动同一个写法，单独开展时为空；流程现在只有首次分析（initial）。
+ * 现在每一行都在首次分析这条流程里，节点与流程两列都有值。
+ * 格式版本 5 加的表，取代早先的阶段记录表：旧库由升级步骤表的「4 到 5」那一步把阶段记录逐行改写过来。
+ * 只读的一侧遇到还没有这张表的库，当作一条记录都没有。
+ */
+export const ACTIVITY_RECORD_SQL = `
+CREATE TABLE IF NOT EXISTS activity_record (
+  record_id    INTEGER PRIMARY KEY,   -- 记录的编号
+  task_id      TEXT NOT NULL,         -- 所属任务的任务编号
+  session_id   TEXT NOT NULL,         -- 开始这项活动的那条 pi 会话的会话编号
+  run_id       TEXT,                  -- 助手开始时是运行号（这条会话当前分支上第几句用户的话，例如 r3）；用户开始时为空
+  call_id      TEXT NOT NULL,         -- 助手开始时是那次工具调用的调用编号；用户开始时是界面操作的操作编号
+  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),  -- 由谁开始：助手或用户
+  activity     TEXT NOT NULL,         -- 哪一项活动（取值只在代码里判）
+  node         TEXT,                  -- 所属节点：在流程里开展时与活动同一个写法，单独开展时为空
+  flow         TEXT,                  -- 所属流程（现在只有 initial，首次分析）；单独开展时为空
+  reason       TEXT NOT NULL,         -- 开始的理由；用户的可以是空文字
+  started_at   TEXT NOT NULL,         -- 开始的时刻（本地时间）
+  ended_at     TEXT,                  -- 结束的时刻（本地时间）；还在进行为空
+  started_seq  INTEGER NOT NULL,      -- 记下开始的那条事件的序号
+  ended_seq    INTEGER                -- 记下结束的那条事件的序号；还在进行为空
+);
+`;
 
 /**
  * 修订表上按调用编号判重的索引：同一任务里，同一次工具调用（同一个调用编号）只能形成一次修订。
@@ -435,7 +462,7 @@ ${REVIEW_FINDING_SQL}
 ${REVIEW_WAIVER_SQL}
 ${TOOL_REJECTION_SQL}
 ${DIAGRAM_SQL}
-${STAGE_RECORD_SQL}
+${ACTIVITY_RECORD_SQL}
 ${REVISION_CALL_INDEX_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
@@ -450,9 +477,10 @@ export function existingTables(db: DatabaseSync): string[] {
 /**
  * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。0 是没有编过版本号的库：0.4.x 及更早的版本建的，或者一张表都没有的空库。
  * 每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。1 是给库编上版本号的那一版；2 加了阶段记录表（stage_record）；
- * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）；4 去掉了阶段记录表里两列阶段的检查（阶段有哪几个只在代码里判）。
+ * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）；4 去掉了阶段记录表里两列阶段的检查（阶段有哪几个只在代码里判）；
+ * 5 加了活动记录表（activity_record），把阶段记录逐行改写进去，删掉了阶段记录表。
  */
-export const TASK_DB_VERSION = 4;
+export const TASK_DB_VERSION = 5;
 
 /** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
 export const TASK_JSON = "task.json";
@@ -492,6 +520,7 @@ const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void
   { from: 1, to: 2, run: addStageRecords },
   { from: 2, to: 3, run: dropDiagramKindCheck },
   { from: 3, to: 4, run: dropStageChecks },
+  { from: 4, to: 5, run: moveStageRecordsToActivities },
 ];
 
 /**
@@ -512,7 +541,7 @@ export function ensureSchema(db: DatabaseSync): { from: number; to: number } {
   return { from, to: version };
 }
 
-/** 第 1 到 2 步：加阶段记录表。只加表，不动已有的表与数据；新建的库在建表语句里已经带着它，这一步对它什么都不改。 */
+/** 第 1 到 2 步：加阶段记录表。只加表，不动已有的表与数据。新建的库走到这一步也会建出一张空的，随后由「4 到 5」那一步删掉。 */
 function addStageRecords(db: DatabaseSync): void {
   db.exec(STAGE_RECORD_SQL);
 }
@@ -562,6 +591,31 @@ function dropStageChecks(db: DatabaseSync): void {
     INSERT INTO stage_record_new (${STAGE_RECORD_COLUMNS}) SELECT ${STAGE_RECORD_COLUMNS} FROM stage_record;
     DROP TABLE stage_record;
     ALTER TABLE stage_record_new RENAME TO stage_record;
+  `);
+}
+
+/**
+ * 第 4 到 5 步：加活动记录表，把阶段记录表的每一行改写成一条活动记录，然后删掉阶段记录表。
+ * 一次移动变成一项活动：移到的那个阶段是活动，也是它在流程里的节点；移动的时刻与事件序号是活动开始的时刻与序号；
+ * 同一个任务里后一次移动的时刻与事件序号是前一项活动结束的时刻与序号，最后一次移动之后的那项活动还在进行（两列为空）。
+ * 所属流程取自记下那次移动的事件（STAGE_MOVED）的内容，事件里没有写、或者那条事件已经不在时写首次分析。
+ * 记录的编号、会话、运行号、调用编号、由谁、理由照抄。从哪个阶段移过来不另存：读的时候取自同一条事件的内容（lib/stage_read.ts）。
+ * 事件表不动：早先的移动事件仍叫 STAGE_MOVED。库里已经没有阶段记录表（新建的库、做过这一步的库）时只补活动记录表。
+ */
+function moveStageRecordsToActivities(db: DatabaseSync): void {
+  db.exec(ACTIVITY_RECORD_SQL);
+  if (!existingTables(db).includes("stage_record")) return;
+  const later = (column: string) =>
+    `(SELECT n.${column} FROM stage_record n WHERE n.task_id = r.task_id AND n.event_seq > r.event_seq ORDER BY n.event_seq LIMIT 1)`;
+  db.exec(`
+    INSERT INTO activity_record (record_id, task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, ended_at, started_seq, ended_seq)
+    SELECT r.record_id, r.task_id, r.session_id, r.run_id, r.call_id, r.actor, r.stage, r.stage,
+      COALESCE((SELECT json_extract(e.payload, '$.flow') FROM event e WHERE e.seq = r.event_seq AND e.name = 'STAGE_MOVED' AND json_valid(e.payload)), 'initial'),
+      r.reason, r.created_at, ${later("created_at")}, r.event_seq, ${later("event_seq")}
+    FROM stage_record r
+    WHERE NOT EXISTS (SELECT 1 FROM activity_record a WHERE a.record_id = r.record_id)
+    ORDER BY r.event_seq;
+    DROP TABLE stage_record;
   `);
 }
 

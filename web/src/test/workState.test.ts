@@ -349,7 +349,7 @@ describe("只随整份数据来的几项（待核实、依据待核实、提到�
   });
 });
 
-describe("工作的阶段（stage_changed 与库事件带来的 stage）", () => {
+describe("工作的阶段（activity_started 与库事件带来的 stage）", () => {
   const lamps = (ok: boolean): StageView["lamps"] => ({
     reading: [{ key: "materials_cited", summary: ok ? "每份材料都被至少一页主题或一条问题引用了。" : "有 1 份材料还没有被任何一页主题或问题引用：inputs/材料.md。", ok, items: ok ? [] : ["inputs/材料.md"] }],
     clarifying: [], modeling: [], writing: [], reviewing: [], document: [],
@@ -359,7 +359,7 @@ describe("工作的阶段（stage_changed 与库事件带来的 stage）", () =>
     return { ...snap, task: { ...snap.task!, stage: { current: "reading", moved_by: null, moved_at: null, reason: null, lamps: lamps(false) } } };
   };
   const moved = (seq: number, to: string, from: string, actor: string, extra: Record<string, unknown> = {}) => ({
-    type: "sse" as const, event: "stage_changed",
+    type: "sse" as const, event: "activity_started",
     data: { seq, at: "2026-10-09T20:00:00+08:00", task_id: "TASK-001", to, from, actor, reason: "材料读完了。", run_id: actor === "executor" ? "r1" : null,
             op_id: actor === "user" ? `ui-op-${seq}` : null, completion: null, ...extra },
   });
@@ -378,6 +378,19 @@ describe("工作的阶段（stage_changed 与库事件带来的 stage）", () =>
     s = run(s, moved(7, "writing", "clarifying", "user"));
     expect(s.task!.stage).toMatchObject({ current: "writing", moved_by: "user" });
     expect(s.seenOps).toContain("ui-op-7");
+  });
+
+  it("移动阶段是两条库事件：前一项活动结束（activity_ended）只推进序号，不改任务上的阶段；紧接着的 activity_started 才换", () => {
+    const ended = {
+      type: "sse" as const, event: "activity_ended",
+      data: { seq: 5, at: "2026-10-09T20:00:00+08:00", task_id: "TASK-001", activity: "reading", node: "reading", actor: "user", reason: "", op_id: "ui-op-9", completion: null },
+    };
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: staged(4) }, ended);
+    expect([s.phase === "waiting_snapshot", s.seq]).toEqual([false, 5]);
+    expect(s.task!.stage).toMatchObject({ current: "reading", moved_by: null, moved_at: null, reason: null });
+    s = run(s, moved(6, "clarifying", "reading", "user"));
+    expect([s.phase === "waiting_snapshot", s.seq]).toEqual([false, 6]);
+    expect(s.task!.stage).toMatchObject({ current: "clarifying", moved_by: "user" });
   });
 
   it("一批里最后一条库事件带着现在的阶段与灯：不论是哪一种事件，都照它换掉", () => {

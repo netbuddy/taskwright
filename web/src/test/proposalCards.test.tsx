@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import type { Act, ConversationMessage, StageProposal } from "../api/types";
 import { Conversation, answeredByStaying, answeredStayKey, answeredText } from "../components/work/Conversation";
 import { PendingProposal, actOnProposal, pendingParts } from "../components/work/PendingProposal";
-import { BACK_CARD_TITLE, REVIEW_CARD_TITLE, ReplyCard, proposalKindOfCard } from "../components/work/ReplyCard";
+import { BACK_CARD_TITLE, REVIEW_CARD_TITLE, ReplyCard, START_CARD_TITLE, proposalKindOfCard } from "../components/work/ReplyCard";
 import {
   BACK_KEYS, DOCUMENT_REVIEWED_KEY, DOCUMENT_REVISE_KEY, ENTER_KEYS, REVIEWED_HINT, REVISE_HINT, STAY_HERE_HINT, STAY_HERE_KEY, continueStageLine, isActingKey,
   isQuietKey, proposalCardKind, quietChoiceText, quietText,
@@ -40,8 +40,8 @@ const show = (messages: unknown[]) => render(<Wrap><Conversation messages={messa
   hasEarlier={false} onLoadEarlier={noop} revisionOf={() => null} attachments={[]} /></Wrap>);
 
 describe("卡片的键与种类", () => {
-  it("进入的键五个、退回的键五个；一张卡片照进入、退回、请过目的先后认种类", () => {
-    expect(ENTER_KEYS).toEqual({ enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
+  it("进入的键六个（含空闲时的开始核读材料）、退回的键五个；一张卡片照进入、退回、请过目的先后认种类", () => {
+    expect(ENTER_KEYS).toEqual({ enter_reading: "reading", enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
     expect(BACK_KEYS).toEqual({ back_to_reading: "reading", back_to_clarify: "clarifying", back_to_consolidate: "modeling", back_to_writing: "writing", back_to_review: "reviewing" });
     expect([STAY_HERE_KEY, DOCUMENT_REVIEWED_KEY, DOCUMENT_REVISE_KEY]).toEqual(["stay_in_stage", "document_reviewed", "document_revise"]);
     expect([proposalKindOfCard(BACK), proposalKindOfCard(REVIEW), proposalCardKind([{ key: "enter_document" }, { key: "continue_review" }]), proposalCardKind([{ key: "a" }]), proposalCardKind(null)])
@@ -51,6 +51,17 @@ describe("卡片的键与种类", () => {
       .toEqual([[true, false], [true, false], [true, false], [false, true], [false, true], [false, true]]);
     expect([quietText("stay_in_stage"), quietText("document_revise"), quietText("continue_review"), quietChoiceText("document_reviewed"), quietChoiceText(undefined)])
       .toEqual(["留在本段", "需要修改", "继续本阶段", "看过了，生成文档", "继续本阶段"]);
+  });
+
+  it("任务空闲时提议开始核读材料的卡片：标题写「开始核读材料 · 请决定」，「先不开始」是不生效的那一项、照原文显示", () => {
+    const card = { kind: "choose", text: "你上传了一份材料。现在开始核读材料吗？", options: [{ key: "enter_reading", text: "开始核读材料" }, { key: "stay_idle", text: "先不开始" }] };
+    show([{ type: "assistant_reply", message_id: "r1", at: "", work_id: null, via_reply_tool: true, informs: [], act: card, text: "现在开始核读材料吗？" }]);
+    const shown = screen.getByTestId("act-choose");
+    expect(shown.querySelector(".tt")).toHaveTextContent(START_CARD_TITLE);
+    expect(START_CARD_TITLE).toBe("开始核读材料 · 请决定");
+    expect([...shown.querySelectorAll("button")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["开始核读材料", "先不开始"]));
+    expect([proposalCardKind(card.options), isActingKey("enter_reading"), isQuietKey("stay_idle"), quietText("stay_idle"), quietText("continue_reading")])
+      .toEqual(["enter", true, true, "先不开始", "继续本阶段"]);
   });
 });
 

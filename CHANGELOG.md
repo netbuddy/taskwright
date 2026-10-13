@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading from 0.5.0
+
+- The task database goes to format 5. Tasks created by 0.5.0 are upgraded like any earlier task (when the service starts, with `taskwright data upgrade`, or when a data pack is imported): every stage record becomes an activity record, and the stage of the task, its last move and the stage records in the debug tab read the same afterwards.
+- A task created by 0.5.0 that was never moved has no record. 0.5.0 counted it in the reading stage when it had materials and in the clarifying stage when it had none; after the upgrade it is idle, like a new task. Launch the first analysis from the task status card to continue as before.
+- Clients of the API: the event `stage_changed` is replaced by `activity_started` and `activity_ended` (see **Interface** below).
+
+### Tasks, activities and the flow
+
+Reading the material, clarifying, modeling, writing items, reviewing and writing the document are now six activities. In that order they form the flow of the first analysis, which is what 0.5.0 called the six stages; an activity can also be carried out on its own.
+
+- **A new task starts idle.** No activity is in progress until you start one. While idle the assistant writes topic pages and records questions, as in the clarifying stage, and proposes no stage; when you upload a material it asks on a card whether to start reading (开始核读材料) or not yet (先不开始).
+- **Starting an activity from the task status card.** The card has a new section, 开展一项活动: the activity in progress (one line), the first analysis to launch or resume, and the six activities to start on their own, each with whether it can be started now and what is missing if not (a material for reading, a page of the business description for modeling and for writing items, items for reviewing and for the document); the activity being carried out in the flow cannot also be started on its own. You do not have to choose; you can simply type. The card now opens every new session, the first session of a new task included, and `/状况` shows the same card. Only the last status card in a conversation has the entries to choose; earlier ones point to it.
+- **Changing what you do.** Choosing another entry while an activity is in progress ends that activity, and the conversation says what was in progress before. A proposal the assistant had open lapses with it, and the same line says so; back in the stage, the assistant proposes again. The first analysis keeps its place: 继续首次分析 resumes at the stage where it stopped.
+- **An activity on its own ends with a report.** When it is done the assistant says so in a reply and the task is idle again; it proposes no other stage, and the line under the reply says how to carry on: start the activity again from the task status card. Cards that enter or go back a stage belong to the flow and do not count while the task is idle or in an activity on its own; the card then points to the task status card.
+- Only you start an activity. The assistant has no tool for it; writing items in particular starts only by your choice.
+- The conversation no longer has a line above a reply for a stage move made by the assistant. The assistant has not been able to move the stage since before 0.5.0; a session recorded during the development of 0.5 that contains such a move no longer shows that line.
+- For those who tune the instructions: the six stage files under `agent/prompts/stages/` now describe the activity only, and the parts on leaving a stage are in `agent/prompts/flows/initial.md`, one section per node of the first analysis. For a task in the flow the assembled system prompt is the same text as in 0.5.0, apart from one new item in the shared part. The debug prompt directory recognizes `flows/initial.md` as a sixteenth file name.
+
+### Interface
+
+- Events: a stage move is sent as `activity_ended` followed by `activity_started`, in place of `stage_changed`. `activity_started` has the fields `stage_changed` had (`to`, `from`, `actor`, `reason`, `run_id`, `flow`, `op_id`) and `node`; `from` is null when the task was idle, and `node` and `flow` are null for an activity started on its own. `activity_ended` has `activity`, `node`, `actor`, `reason` and `op_id`. A start from idle has no activity to end and sends only `activity_started`. A client that listened for `stage_changed` must listen for `activity_started`.
+- New direct operation `start_activity` with `fields` `{ activity, in_flow }`: start at a stage of the first analysis, or start an activity on its own. `move_stage` is unchanged and is the same operation in the flow.
+- Task status: `launch`, the section for starting an activity; `activity.kind` may be `activity` (started on its own) or `idle`, with `ordinal` null. Task data: `task.stage.current` may be `idle`, and `task.stage` has `node`, `flow_node` and `launch`.
+- The assistant's reply accepts `activity_done`; a reply message then carries `activity_done` with the activity that ended. A user message sent from a card carries `how` in `stage_move`, and `why` in `stage_unmoved` when the click did not count because the task was not in the flow.
+- New card option keys: `enter_reading` and `stay_idle`.
+- See sections 4, 5, 6 and 13 of the API reference.
+
+### Evaluation
+
+- A simulated run opens by choosing for the user in the section for starting an activity: the first analysis unless the persona says otherwise under 开场 (不选 to decline, or 单独开展：… for an activity on its own). The user agent sees the section and can choose an entry with `launch` in its respond tool.
+
 ### Added
 - **导出 SVG** ("export SVG") beside **导出 PNG** on a diagram: the drawing is rendered once more with HTML labels switched off, so the labels also show in viewers other than a browser, and is saved as a `.svg` file with the same name as the PNG would have. Fonts are not embedded; the file uses the fonts of the machine that opens it.
 

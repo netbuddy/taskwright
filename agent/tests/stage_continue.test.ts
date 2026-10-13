@@ -52,7 +52,7 @@ test("这条会话里的进入卡片上选「继续本阶段」：返回要留�
   assert.equal(continueStageNote({ stage: "writing", enter: ENTER_OPTIONS.writing }),
     "界面操作（不是用户打的字）：用户在提议「开始写条目」的卡片上选了「继续本阶段」，没有进入写条目。这个提议仍然开着，用户要进入时会自己点，不用再发同一张卡片。");
   assert.equal(STAY_TEXT, "继续本阶段");
-  assert.deepEqual([count(dir, "event"), count(dir, "stage_record")], [events, 0]);
+  assert.deepEqual([count(dir, "event"), count(dir, "activity_record")], [events, 0]);
 });
 
 test("回退卡片上的「留在本段」、请过目卡片上的「需要修改」与「看过了，生成文档」：也只留一句话，各有各的说法；回退卡片上的「退回」不走这里", () => {
@@ -132,7 +132,7 @@ test("处理函数：只追加一条界面操作通知，不替用户发话；�
   assert.deepEqual(sent, [["custom", { customType: USER_EDIT_CUSTOM_TYPE, content: NOTE, display: true,
     details: { op_id: "ui-op-7", kind: "continue_stage", event_seqs: [], results: [], revision_no: null, undoable: false,
       reply_entry: "a-1", option_key: "continue_reading", stage: "clarifying" } }]]);
-  assert.equal(count(dir, "stage_record"), 0);
+  assert.equal(count(dir, "activity_record"), 0);
 
   const again = fakeCtx(dir);
   await handler(JSON.stringify({ op_id: "ui-op-8", kind: "continue_stage", fields: { reply_message_id: "a-2", option_key: "continue_reading" } }), again.ctx);

@@ -85,7 +85,7 @@ import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
 import { GATE_GUIDANCE, OVERALL_COLLECTION, OVERALL_FIELDS, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
-import { type Stage, itemRefusal, pageRefusal } from "./stage.ts";
+import { type Position, itemRefusal, pageRefusal } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 
@@ -402,9 +402,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   // 最低门（任务定义里有总体分析集合时才设）：助手往总体分析与问题集合之外的集合里新增条目之前，任务里要已经有一页
   // 在用的主题贴了标签、有例子、用户又看过。只看这次保存之前库里已有的页：同一批里才新增的页用户还没有看过。
   const gate = call.actor !== ACTOR_USER && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
-  // 工作的阶段（任务有总体分析集合时才有，lib/stage.ts）：助手这一刻能写什么看任务现在所在的阶段，取的是这次调用时最近的一条阶段记录。
+  // 工作的阶段（任务有总体分析集合时才有，lib/stage.ts）：助手这一刻能写什么看任务现在所在的阶段，取的是这次调用时还在进行的那条活动记录（任务空闲时按澄清的规矩拦）。
   // 用户在界面上的操作不看阶段。早先建的任务没有阶段，stage 是 null，下面几处都不拦。
-  const stage: Stage | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition) : null;
+  const stage: Position | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition) : null;
   /** 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改总体分析的页时改动了的字段名。 */
   const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = []) => {
     if (stage === null) return null;

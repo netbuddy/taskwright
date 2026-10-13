@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Item, StageKey, StageLamp, StageView } from "../api/types";
 import { StageBar } from "../components/work/StageBar";
-import { ENTER_KEYS, STAGES, lampGroups, lampShort, lampTarget, splitNumbers, stageMarks } from "../model/stage";
+import { ENTER_KEYS, IDLE_TEXT, STAGES, isAlone, isIdle, lampGroups, lampShort, lampTarget, splitNumbers, stageMarks } from "../model/stage";
 import { workReducer, initialWorkState } from "../state/workState";
 
 afterEach(cleanup);
@@ -29,6 +29,27 @@ describe("阶段条", () => {
     // 阶段名只是文字，没有可以点的样子。
     render(<StageBar stage={stage("clarifying", [])} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
     expect(screen.getByTestId("stage-writing")).not.toHaveAttribute("role");
+  });
+
+  it("任务空闲：没有当前的一格，写一句任务空闲，不画灯；用户单独开展一项活动：只有那一格是当前，前面的不算做过，写明是单独开展，灯照那项活动的", () => {
+    const idle = { ...stage("clarifying", [lamp("a", false, "有 1 页还差：OA-001。", ["OA-001"])]), current: "idle" as const, node: null };
+    const { unmount } = render(<StageBar stage={idle} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
+    expect(STAGES.map((key) => screen.getByTestId(`stage-${key}`).className.replace("sb-s ", ""))).toEqual(STAGES.map(() => "ahead"));
+    expect(STAGES.every((key) => !screen.getByTestId(`stage-${key}`).hasAttribute("aria-current"))).toBe(true);
+    expect(screen.getByTestId("stage-position")).toHaveTextContent(IDLE_TEXT);
+    expect(IDLE_TEXT).toBe("任务空闲：没有在进行的活动。");
+    expect(screen.queryByTestId("stage-lamps")).toBeNull();
+    expect([isIdle(idle), isAlone(idle), lampGroups(idle)]).toEqual([true, false, { failing: [], passed: 0, applicable: 0 }]);
+    unmount();
+    const alone = { ...stage("writing", [lamp("a", false, "有 1 页还差：OA-001。", ["OA-001"])]), node: null };
+    render(<StageBar stage={alone} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
+    expect(STAGES.map((key) => screen.getByTestId(`stage-${key}`).className.replace("sb-s ", ""))).toEqual(["ahead", "ahead", "ahead", "current", "ahead", "ahead"]);
+    expect(screen.getByTestId("stage-position")).toHaveTextContent("单独开展：写条目（不在首次分析流程里）。");
+    expect(screen.getByTestId("lamp-a")).toHaveTextContent("有 1 页还差。");
+    expect([isIdle(alone), isAlone(alone)]).toEqual([false, true]);
+    // 在流程里的阶段（节点与阶段相同）、早先的后端不给节点：都不是单独开展，没有那一句。
+    expect([isAlone({ ...alone, node: "writing" }), isAlone(stage("writing", []))]).toEqual([false, false]);
+    expect(stageMarks("idle").every((one) => one.mark === "ahead")).toBe(true);
   });
 
   it("没通过的灯每盏一句（冒号之前的半句、数字加重、悬停是整句），通过的收成「其余 N 项已齐」，不适用的不显示也不计数", () => {
@@ -88,7 +109,7 @@ describe("阶段条", () => {
     expect(again.container).toBeEmptyDOMElement();
   });
 
-  it("读法的几个小函数：缩短句子、拆数字、分三类、点灯去哪里、五个进入键", () => {
+  it("读法的几个小函数：缩短句子、拆数字、分三类、点灯去哪里、六个进入键", () => {
     expect(lampShort("有 3 条条目依据的主题用户还没有看过：UC-001、UC-002、UC-003。")).toBe("有 3 条条目依据的主题用户还没有看过。");
     expect(lampShort("每份材料都被引用了。")).toBe("每份材料都被引用了。");
     expect(lampShort("每个标签为「流程」的主题都有一条以「例外：」开头的例子。")).toBe("每个标签为「流程」的主题都有一条以「例外：」开头的例子。");
@@ -100,7 +121,7 @@ describe("阶段条", () => {
     expect(lampTarget(lamp("a", false, "甲", []), [])).toBeNull();
     expect(lampTarget(lamp("a", false, "甲", ["OA-001"]), [item("OA-001")])).toEqual({ kind: "item", itemId: "OA-001" });
     expect(lampTarget(lamp("a", false, "甲", ["inputs/x.md"]), [item("OA-001")])).toEqual({ kind: "material", path: "inputs/x.md" });
-    expect(ENTER_KEYS).toEqual({ enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
+    expect(ENTER_KEYS).toEqual({ enter_reading: "reading", enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
   });
 
   it("点了说材料没有被引用的灯之后，状态里记下要在材料页签选中的那份材料", () => {

@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { composeStagePrompt, digestOf } from "../../agent/src/lib/stage_prompt.ts";
-import { ROOT, captureConsole, sendAndWaitTurn, sqlGet, sqlRun, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, movesSql, sendAndWaitTurn, sqlGet, sqlRun, tempDir } from "./helpers.ts";
 import { type Dict, NO_PI, TOPIC_CALL, reply, withStack } from "./consent_stack.ts";
 
 captureConsole();
@@ -75,12 +75,12 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     // 启动参数给的那一份与 pi 的 skill 清单都不在里面；工作目录接在最后。
     assert.doesNotMatch(systemText(first[0]), /先用 read 读 taskwright-executor 的正文|<skills>|<available_skills>/);
     assert.ok(systemText(first[0]).endsWith(`<cwd>\n${taskDir}\n</cwd>`));
-    assert.equal(db("SELECT COUNT(*) AS n FROM stage_record")[0].n, 0, "助手只发了卡片，阶段没有动");
+    assert.equal(db("SELECT COUNT(*) AS n FROM activity_record")[0].n, 1, "助手只发了卡片，阶段没有动：只有启动首次分析的那一条");
 
     // 用户在卡片上点「进入澄清」：扩展先记移动、再代发那句固定的话，这句话引起的运行拿到的已经是澄清的那一份；
     // 按阶段的那一段之前的文字与上一次相同。
     await send({ text: "我选：进入澄清", client_id: "c-2", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "enter_clarify" } });
-    assert.equal(db("SELECT stage FROM stage_record ORDER BY event_seq DESC LIMIT 1")[0].stage, "clarifying");
+    assert.equal(db(movesSql(["stage"])).at(-1).stage, "clarifying");
     const clarifying = expected("clarifying");
     assert.equal(systemText(requests()[2]), clarifying.text);
     assert.ok(clarifying.text.includes("# 现在这个阶段：澄清\n"));
@@ -98,7 +98,7 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     const own = (text: string) => text.slice(0, -`\n\n<cwd>\n${taskDir}\n</cwd>`.length);
     assert.deepEqual(notes.map((n) => n.digest), [digestOf(own(reading.text)), digestOf(own(clarifying.text)), digestOf(own(clarifying.text))]);
     assert.deepEqual(notes[0].parts.map((p: Dict) => p.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/srs-authoring/SKILL.md",
-      "agent/prompts/stages/reading.md", ".pi/skills/srs-authoring/stages/reading.md"]);
+      "agent/prompts/stages/reading.md", "agent/prompts/flows/initial.md", ".pi/skills/srs-authoring/stages/reading.md"]);
     assert.ok(!JSON.stringify(notes).includes("你是 Taskwright 的执行者"));
 
     // 早先的任务：把另一个任务的任务定义改成没有「总体分析」集合的样子（早先建的任务就是这样），它没有阶段。
