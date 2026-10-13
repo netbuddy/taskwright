@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  backCardGuidance, canWrite, completeRefusal, CONTINUE_CLARIFY_KEY, defaultStage, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
+  activityBlocked, activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, completeRefusal, flowStartNode, launchView, startHow, startReadingCardGuidance, STAY_IDLE_OPTION, switchedReason, CONTINUE_CLARIFY_KEY, defaultStage, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
   itemRefusal, judgeMove, nextStage, pageRefusal, positionName, reviewRefusal, type Stage, STAGE_NAMES, stageByName, stageEnteredBy, STAGES, START_ITEMS_KEY, STAY_OPTIONS,
 } from "../src/lib/stage.ts";
 
@@ -38,14 +38,17 @@ test("提议的卡片怎样写：往前一段一张、两个选项的键与文�
   assert.equal(backCardGuidance("clarifying"), "请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_clarify「退回澄清」、stay_in_stage「留在本段」");
   assert.equal(backCardGuidance("reviewing"), "请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_review「退回评审确认」、stay_in_stage「留在本段」");
   assert.deepEqual([START_ITEMS_KEY, CONTINUE_CLARIFY_KEY], ["start_items", "continue_clarify"]);
-  // 五张卡片的两个选项：进入下一段的键与文字，留在这一段的键与文字。
-  assert.deepEqual(ENTER_OPTIONS, { clarifying: { key: "enter_clarify", text: "进入澄清" }, modeling: { key: "enter_consolidate", text: "进入整理建模" },
+  // 五张卡片的两个选项：进入下一段的键与文字，留在这一段的键与文字。核读材料的那一项只在任务空闲时用，另一项是「先不开始」。
+  assert.deepEqual(ENTER_OPTIONS, { reading: { key: "enter_reading", text: "开始核读材料" },
+    clarifying: { key: "enter_clarify", text: "进入澄清" }, modeling: { key: "enter_consolidate", text: "进入整理建模" },
     writing: { key: "start_items", text: "开始写条目" }, reviewing: { key: "enter_review", text: "进入评审确认" }, document: { key: "enter_document", text: "进入编写文档" } });
   assert.deepEqual(STAY_OPTIONS, { reading: { key: "continue_reading", text: "继续本阶段" }, clarifying: { key: "continue_clarify", text: "继续本阶段" },
     modeling: { key: "continue_consolidate", text: "继续本阶段" }, writing: { key: "continue_writing", text: "继续本阶段" },
     reviewing: { key: "continue_review", text: "继续本阶段" } });
   assert.deepEqual(["enter_clarify", "enter_consolidate", "start_items", "enter_review", "enter_document", "continue_clarify", "别的键", null].map(stageEnteredBy),
     ["clarifying", "modeling", "writing", "reviewing", "document", null, null, null]);
+  assert.deepEqual([stageEnteredBy("enter_reading"), stageEnteredBy("stay_idle"), STAY_IDLE_OPTION], ["reading", null, { key: "stay_idle", text: "先不开始" }]);
+  assert.equal(startReadingCardGuidance(), "请用请选择卡片提议，两个选项的键与文字是 enter_reading「开始核读材料」、stay_idle「先不开始」");
   assert.deepEqual(STAGES.map(nextStage), ["clarifying", "modeling", "writing", "reviewing", "document", null]);
   // 编写文档是最后一段，没有往前的卡片。
   assert.equal(forwardCardGuidance("document"), "");
@@ -138,3 +141,49 @@ test("空闲时助手能写什么：与澄清相同，只有页与问题；被�
     assert.match(refusal![1], /从任务状况卡开展一项活动/);
   }
 });
+
+test("一项活动怎样开始、对话里怎样说：流程里的移动、启动首次分析、继续首次分析、单独开展；原来在做别的活动时句末注明", () => {
+  // 在流程里开始：之前就在流程里是移动；之前不在流程里，首次分析没有走过是启动，走过是继续。单独开展不看这些。
+  assert.deepEqual([startHow(true, true, "clarifying"), startHow(true, true, null), startHow(true, false, null), startHow(true, false, "writing"),
+    startHow(false, true, "clarifying"), startHow(false, false, null)], ["move", "move", "launch", "resume", "alone", "alone"]);
+  assert.equal(activityStartSentence("move", "modeling", "clarifying"), "用户把任务从澄清移到整理建模。");
+  assert.equal(activityStartSentence("launch", "reading", IDLE), "用户启动首次分析，从核读材料开始。");
+  assert.equal(activityStartSentence("resume", "writing", IDLE), "用户继续首次分析，从写条目接着。");
+  assert.equal(activityStartSentence("resume", "writing", "clarifying"), "用户继续首次分析，从写条目接着。（原来在做：澄清）");
+  assert.equal(activityStartSentence("alone", "modeling", IDLE), "用户单独开展整理建模。");
+  assert.equal(activityStartSentence("alone", "clarifying", "writing"), "用户单独开展澄清。（原来在做：写条目）");
+  assert.equal(switchedReason("clarifying"), "用户改做澄清");
+  assert.equal(activityDoneSentence("modeling"), "助手汇报这项活动结束：整理建模。任务现在空闲。");
+  assert.deepEqual([flowStartNode(true), flowStartNode(false)], ["reading", "clarifying"]);
+});
+
+test("开展一项活动的三组选项：正在进行的只是一行；首次分析可以启动或继续；六项活动各带前提，缺什么写什么；发布留到以后", () => {
+  const facts = { position: IDLE, inFlow: false, flowNode: null, hasMaterials: false, pages: 0, items: 0 } as const;
+  // 新任务：空闲，没有材料、没有页、没有条目。
+  const fresh = launchView(facts);
+  assert.equal(fresh.current, null);
+  assert.deepEqual(fresh.flows, [{ activity: "clarifying", in_flow: true, label: "启动首次分析", enabled: true, state: "从澄清开始" }]);
+  assert.deepEqual(fresh.activities.map((one) => [one.label, one.enabled, one.state]), [
+    ["核读材料", false, "还没有材料，先上传"], ["澄清", true, "可以开展"], ["整理建模", true, "可以开展"],
+    ["写条目", false, "业务说明还没有页"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有需求条目"]]);
+  assert.ok(fresh.activities.every((one) => one.in_flow === false));
+  assert.deepEqual(fresh.later, [{ label: "发布", state: "0.6 后续" }]);
+  // 有材料：首次分析从核读材料启动，核读材料可以单独开展。
+  const withMaterial = launchView({ ...facts, hasMaterials: true });
+  assert.deepEqual([withMaterial.flows[0].activity, withMaterial.flows[0].state, withMaterial.activities[0].enabled], ["reading", "从核读材料开始", true]);
+  // 在流程里的写条目：第一组写「继续首次分析：写条目」，流程那一项正在进行、不能点；六项单独开展的照前提。
+  const writing = launchView({ position: "writing", inFlow: true, flowNode: "writing", hasMaterials: true, pages: 2, items: 0 });
+  assert.deepEqual(writing.current, { activity: "writing", in_flow: true, label: "继续首次分析：写条目" });
+  assert.deepEqual(writing.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: false, state: "正在进行" }]);
+  assert.deepEqual(writing.activities.map((one) => one.enabled), [true, true, true, true, false, false]);
+  // 流程走到写条目之后改做单独的澄清：第一组写「继续澄清」，流程可以从写条目接着，澄清那一项正在进行。
+  const alone = launchView({ position: "clarifying", inFlow: false, flowNode: "writing", hasMaterials: true, pages: 2, items: 3 });
+  assert.deepEqual(alone.current, { activity: "clarifying", in_flow: false, label: "继续澄清" });
+  assert.deepEqual(alone.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: true, state: "可以开展" }]);
+  assert.deepEqual(alone.activities.map((one) => [one.enabled, one.state]),
+    [[true, "可以开展"], [false, "正在进行"], [true, "可以开展"], [true, "可以开展"], [true, "可以开展"], [true, "可以开展"]]);
+  // 前提各自缺什么。
+  assert.deepEqual(STAGES.map((one) => activityBlocked(one, facts)), ["还没有材料，先上传", null, null, "业务说明还没有页", "还没有需求条目", "还没有需求条目"]);
+  assert.deepEqual(STAGES.map((one) => activityBlocked(one, { hasMaterials: true, pages: 1, items: 1 })), [null, null, null, null, null, null]);
+});
+

@@ -101,8 +101,12 @@ export interface CardOption {
   text: string;
 }
 
-/** 进入某个阶段的那个选项（核读材料是第一段，没有「进入」它的卡片）。 */
-export const ENTER_OPTIONS: Record<Exclude<Stage, "reading">, CardOption> = {
+/**
+ * 进入某个阶段的那个选项。核读材料是第一段，在流程里没有「进入」它的卡片；它的这一项只在任务空闲时用：
+ * 用户上传了材料，助手用请选择卡片提议开始核读材料，卡片上另一项是「先不开始」（STAY_IDLE_OPTION）。
+ */
+export const ENTER_OPTIONS: Record<Stage, CardOption> = {
+  reading: { key: "enter_reading", text: "开始核读材料" },
   clarifying: { key: "enter_clarify", text: "进入澄清" },
   modeling: { key: "enter_consolidate", text: "进入整理建模" },
   writing: { key: START_ITEMS_KEY, text: START_ITEMS_TEXT },
@@ -121,6 +125,12 @@ export const STAY_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
   writing: { key: "continue_writing", text: STAY_TEXT },
   reviewing: { key: "continue_review", text: STAY_TEXT },
 };
+
+/**
+ * 任务空闲时助手提议开始核读材料的那张卡片上不生效的那一项：空闲时没有阶段可以「继续」，所以另写一句。
+ * 点它只把卡片标为已选，不替用户发话，提议仍然开着。
+ */
+export const STAY_IDLE_OPTION: CardOption = { key: "stay_idle", text: "先不开始" };
 
 /**
  * 退回前面的阶段也由用户决定：助手认为这一段的输入大面积不能用了（用户放进了新材料、几页的理解互相矛盾），用一张请选择卡片
@@ -184,10 +194,16 @@ export function nextStage(stage: Stage): Stage | null {
   return STAGES[STAGES.indexOf(stage) + 1] ?? null;
 }
 
-/** 卡片上的一个选项键是「进入」哪个阶段的；不是这样的键时返回 null。 */
-export function stageEnteredBy(key: unknown): Exclude<Stage, "reading"> | null {
-  const found = (Object.keys(ENTER_OPTIONS) as Exclude<Stage, "reading">[]).find((stage) => ENTER_OPTIONS[stage].key === key);
+/** 卡片上的一个选项键是「进入」哪个阶段的（「开始核读材料」算进入核读材料）；不是这样的键时返回 null。 */
+export function stageEnteredBy(key: unknown): Stage | null {
+  const found = (Object.keys(ENTER_OPTIONS) as Stage[]).find((stage) => ENTER_OPTIONS[stage].key === key);
   return found ?? null;
+}
+
+/** 任务空闲时怎样提议开始核读材料：告诉助手用哪张卡片、两个选项怎样写。 */
+export function startReadingCardGuidance(): string {
+  const enter = ENTER_OPTIONS.reading;
+  return `请用请选择卡片提议，两个选项的键与文字是 ${enter.key}「${enter.text}」、${STAY_IDLE_OPTION.key}「${STAY_IDLE_OPTION.text}」`;
 }
 
 /**
@@ -195,7 +211,7 @@ export function stageEnteredBy(key: unknown): Exclude<Stage, "reading"> | null {
  */
 export function forwardCardGuidance(from: Stage): string {
   const next = nextStage(from);
-  if (next === null || from === "document" || next === "reading") return "";
+  if (next === null || from === "document") return "";
   const enter = ENTER_OPTIONS[next], stay = STAY_OPTIONS[from];
   return `请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 ${enter.key}「${enter.text}」、${stay.key}「${stay.text}」`;
 }
@@ -212,6 +228,128 @@ export function judgeMove(from: Position, to: Stage, actor: StageActor): MoveVer
   if (from === to) return { ok: false, why: "same" };
   if (actor === "user") return { ok: true };
   return { ok: false, why: "user_only" };
+}
+
+// ───────────── 开展一项活动 ─────────────
+
+/**
+ * 一项活动是怎样开始的：
+ * - move：任务本来就在首次分析流程里的某个阶段，移到了流程里的另一个阶段（卡片上的进入与退回、直接移动）；
+ * - launch：任务还没有走过首次分析，从这个节点启动它；
+ * - resume：首次分析走过一段，任务后来空闲了或者改做了单独的活动，现在从这个节点接着走；
+ * - alone：单独开展这项活动，不在流程里。
+ */
+export type StartHow = "move" | "launch" | "resume" | "alone";
+
+/**
+ * 判一次开始属于哪一种。inFlow 是这次要不要在流程里开始；fromInFlow 是开始之前任务是不是正在流程里的某个阶段；
+ * flowBefore 是开始之前首次分析走到的节点（最近一条带节点的活动记录），没有走过是 null。
+ */
+export function startHow(inFlow: boolean, fromInFlow: boolean, flowBefore: Stage | null): StartHow {
+  if (!inFlow) return "alone";
+  if (fromInFlow) return "move";
+  return flowBefore === null ? "launch" : "resume";
+}
+
+/**
+ * 对话里说一次活动开始的那一句，不带「界面操作」的前缀。from 是开始之前任务在哪里（一个阶段或者空闲）。
+ * 流程里的移动照旧写从哪到哪；另外三种开始之前任务正在做别的活动时，句末注明原来在做什么。
+ */
+export function activityStartSentence(how: StartHow, to: Stage, from: Position): string {
+  const name = STAGE_NAMES[to];
+  if (how === "move") return `用户把任务从${positionName(from)}移到${name}。`;
+  const was = from === IDLE ? "" : `（原来在做：${STAGE_NAMES[from]}）`;
+  const flow = FLOW_NAMES[FLOW_INITIAL];
+  if (how === "launch") return `用户启动${flow}，从${name}开始。${was}`;
+  if (how === "resume") return `用户继续${flow}，从${name}接着。${was}`;
+  return `用户单独开展${name}。${was}`;
+}
+
+/** 有活动在进行时用户改做别的活动，原来那条活动记录结束的起因。 */
+export function switchedReason(to: Stage): string {
+  return `用户改做${STAGE_NAMES[to]}`;
+}
+
+/** 助手汇报单独开展的活动做完了时，那条活动记录结束的起因。 */
+export const ACTIVITY_DONE_REASON = "助手汇报这项活动结束";
+
+/** 助手汇报一项单独开展的活动结束时，对话里那条回复下面的一行。 */
+export function activityDoneSentence(activity: Stage): string {
+  return `助手汇报这项活动结束：${STAGE_NAMES[activity]}。任务现在空闲。`;
+}
+
+/** 首次分析从哪个节点启动：有材料从核读材料，没有材料从澄清。 */
+export function flowStartNode(hasMaterials: boolean): Stage {
+  return hasMaterials ? "reading" : "clarifying";
+}
+
+/** 算「开展一项活动」那一节要的事实。 */
+export interface LaunchFacts {
+  /** 任务现在在哪里：一个阶段，或者空闲。 */
+  position: Position;
+  /** 现在这项活动是不是在首次分析流程里（空闲时为假）。 */
+  inFlow: boolean;
+  /** 首次分析走到的节点：最近一条带节点的活动记录；没有走过是 null。 */
+  flowNode: Stage | null;
+  /** 任务里有没有材料。 */
+  hasMaterials: boolean;
+  /** 业务说明里在用的主题页有几页。 */
+  pages: number;
+  /** 需求条目有几条（总体分析与问题之外各集合的条目）。 */
+  items: number;
+}
+
+/** 可以点的一项：开展哪一项活动、在不在流程里、按钮上的字、现在能不能开展、一句状态（不能开展时写缺什么）。 */
+export interface LaunchOption {
+  activity: Stage;
+  in_flow: boolean;
+  label: string;
+  enabled: boolean;
+  state: string;
+}
+
+/**
+ * 任务状况卡上「开展一项活动」一节的内容，三组：
+ * current 是正在进行的活动（只显示一行，不是按钮；空闲时为 null）；flows 是可以启动或继续的流程（现在只有首次分析）；
+ * activities 是可以单独开展的活动（六项）；later 是以后才有的（发布）。
+ */
+export interface LaunchView {
+  current: { activity: Stage; in_flow: boolean; label: string } | null;
+  flows: LaunchOption[];
+  activities: LaunchOption[];
+  later: { label: string; state: string }[];
+}
+
+export const LAUNCH_READY = "可以开展";
+export const LAUNCH_ACTIVE = "正在进行";
+
+/** 单独开展一项活动缺什么；不缺是 null。核读材料要有材料，写条目要业务说明有页，评审确认与编写文档要有需求条目。 */
+export function activityBlocked(activity: Stage, facts: Pick<LaunchFacts, "hasMaterials" | "pages" | "items">): string | null {
+  if (activity === "reading" && !facts.hasMaterials) return "还没有材料，先上传";
+  if (activity === "writing" && facts.pages === 0) return "业务说明还没有页";
+  if ((activity === "reviewing" || activity === "document") && facts.items === 0) return "还没有需求条目";
+  return null;
+}
+
+export function launchView(facts: LaunchFacts): LaunchView {
+  const flow = FLOW_NAMES[FLOW_INITIAL];
+  const at = facts.position === IDLE ? null : facts.position;
+  const current = at === null ? null
+    : { activity: at, in_flow: facts.inFlow, label: facts.inFlow ? `继续${flow}：${STAGE_NAMES[at]}` : `继续${STAGE_NAMES[at]}` };
+  const node = facts.flowNode ?? flowStartNode(facts.hasMaterials);
+  const inFlowNow = at !== null && facts.inFlow;
+  const flows: LaunchOption[] = [{
+    activity: node, in_flow: true,
+    label: facts.flowNode === null ? `启动${flow}` : `继续${flow}（从${STAGE_NAMES[node]}接着）`,
+    enabled: !inFlowNow,
+    state: inFlowNow ? LAUNCH_ACTIVE : facts.flowNode === null ? `从${STAGE_NAMES[node]}开始` : LAUNCH_READY,
+  }];
+  const activities: LaunchOption[] = STAGES.map((activity) => {
+    const active = at === activity && !facts.inFlow;
+    const blocked = activityBlocked(activity, facts);
+    return { activity, in_flow: false, label: STAGE_NAMES[activity], enabled: !active && blocked === null, state: active ? LAUNCH_ACTIVE : blocked ?? LAUNCH_READY };
+  });
+  return { current, flows, activities, later: [{ label: "发布", state: "0.6 后续" }] };
 }
 
 // ───────────── 每个阶段助手能写什么 ─────────────

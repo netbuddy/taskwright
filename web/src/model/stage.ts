@@ -3,7 +3,7 @@
 // 阶段的名字、次序与卡片上「进入下一段」的选项键取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
 import {
-  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_OPTIONS, STAY_TEXT,
+  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, STAY_TEXT,
 } from "../../../agent/src/lib/stage";
 import type { Item, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
@@ -60,13 +60,20 @@ export function lampTarget(lamp: StageLamp, items: readonly Item[]): { kind: "it
   return items.some((one) => one.item_id === first) ? { kind: "item", itemId: first } : { kind: "material", path: first };
 }
 
-/** 「进入下一段」的五个选项键各进入哪个阶段：进入澄清、进入整理建模、开始写条目、进入评审确认、进入编写文档。 */
+/**
+ * 「进入」的六个选项键各进入哪个阶段：进入澄清、进入整理建模、开始写条目、进入评审确认、进入编写文档，
+ * 以及任务空闲时助手提议的「开始核读材料」。
+ */
 export const ENTER_KEYS: Record<string, StageKey> = Object.fromEntries(
   (Object.keys(ENTER_OPTIONS) as (keyof typeof ENTER_OPTIONS)[]).map((stage) => [ENTER_OPTIONS[stage].key, stage]),
 );
 
-/** 进入卡片上「留在这一段」的五个选项键。卡片上这一项不管助手写成什么，页面一律显示成「继续本阶段」。 */
-export const STAY_KEYS: ReadonlySet<string> = new Set(Object.values(STAY_OPTIONS).map((one) => one.key));
+/**
+ * 进入卡片上不生效的那一项的键：五张往前走的卡片上「留在这一段」的五个，卡片上这一项不管助手写成什么，页面一律显示成「继续本阶段」；
+ * 另有任务空闲时提议开始核读材料的那张卡片上的「先不开始」。
+ */
+export const STAY_IDLE_KEY = STAY_IDLE_OPTION.key;
+export const STAY_KEYS: ReadonlySet<string> = new Set([...Object.values(STAY_OPTIONS).map((one) => one.key), STAY_IDLE_KEY]);
 
 /** 「退回前面的阶段」的五个选项键各退回哪个阶段。 */
 export const BACK_KEYS: Record<string, StageKey> = Object.fromEntries(
@@ -93,8 +100,9 @@ export function proposalCardKind(options: readonly { key: string }[] | null | un
 export const isActingKey = (key: string): boolean => key in ENTER_KEYS || key in BACK_KEYS || key === DOCUMENT_REVIEWED_KEY;
 /** 卡片上不生效的那一项：进入卡片的「继续本阶段」、回退卡片的「留在本段」、请过目卡片的「需要修改」。点它只把卡片标为已选，提议仍然开着。 */
 export const isQuietKey = (key: string): boolean => STAY_KEYS.has(key) || key === STAY_HERE_KEY || key === DOCUMENT_REVISE_KEY;
-/** 不生效的那一项在页面上写成什么：进入卡片上一律是「继续本阶段」，另两种照固定的文字。 */
+/** 不生效的那一项在页面上写成什么：进入卡片上一律是「继续本阶段」（开始核读材料的那张卡片上是「先不开始」），另两种照固定的文字。 */
 export function quietText(key: string): string {
+  if (key === STAY_IDLE_KEY) return STAY_IDLE_OPTION.text;
   return key === STAY_HERE_KEY ? STAY_HERE_OPTION.text : key === DOCUMENT_REVISE_KEY ? DOCUMENT_REVISE_OPTION.text : STAY_TEXT;
 }
 /** 界面操作 continue_stage 认的四种选项在页面上的叫法：上面三种，加请过目卡片上的「看过了，生成文档」。 */

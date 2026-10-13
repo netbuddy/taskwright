@@ -9,7 +9,7 @@
  * 移动阶段就是结束现在这项活动、开始另一项：前一条记录填上结束的时刻，再插一条新的。
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段：stageOf 返回 null，调用方据此什么都不做。
  *
- * 记移动的函数只管写，这次移动行不行由调用方先用 lib/stage.ts 的 judgeMove 判过。
+ * 记活动开始的函数（recordStageMove）只管写，这次行不行由 startActivity 先判。
  */
 
 import type { DatabaseSync } from "node:sqlite";
@@ -19,15 +19,17 @@ import { emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, keepPendingField, validateDefinition } from "./definition.ts";
 import { diagramViewed, latestVersion, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "./diagram.ts";
 import { classLinked, drawnItemIds, hasBranch } from "./diagram_scan.ts";
-import { OVERALL_COLLECTION, OVERALL_FIELDS, hasOverall } from "./overall_analysis.ts";
+import { OVERALL_COLLECTION, OVERALL_FIELDS, hasOverall, isDeprecated } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { rulesTable } from "./overall_views.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase } from "./schema.ts";
 import { openProposal } from "./stage_proposal.ts";
 import {
-  BACK_OPTIONS, ENTER_OPTIONS, FLOW_INITIAL, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type Position, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor,
-  defaultStage, gateStage, isPosition, isStage, judgeMove, lampLines, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  ACTIVITY_DONE_REASON, BACK_OPTIONS, ENTER_OPTIONS, FLOW_INITIAL, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
+  type Position, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor, type StartHow,
+  activityBlocked, defaultStage, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  startHow, switchedReason,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
@@ -135,25 +137,36 @@ export function stageOf(db: DatabaseSync, workspaceDir: string, taskId: string, 
   return currentStage(db, taskId, taskHasMaterials(workspaceDir, definition.materialsDir));
 }
 
-/** 一次移动要记下的几样。 */
+/** 首次分析走到的节点：最近一条带节点的活动记录的节点；任务还没有在流程里开展过活动时是 null。 */
+export function flowNode(db: DatabaseSync, taskId: string): Stage | null {
+  if (!hasActivityTable(db)) return null;
+  const row = db.prepare(`SELECT node FROM ${TABLE} WHERE task_id = ? AND node IS NOT NULL ORDER BY started_seq DESC LIMIT 1`).get(taskId) as { node: string } | undefined;
+  return row && isStage(row.node) ? row.node : null;
+}
+
+/** 一次活动开始要记下的几样。 */
 export interface StageMove {
   taskId: string;
   sessionId: string;
-  /** 助手移动时的运行号；用户移动时为 null。 */
+  /** 助手开始时的运行号；用户开始时为 null。 */
   runId: string | null;
   callId: string;
   actor: StageActor;
-  /** 移动之前任务在哪里：一个阶段，或者空闲。 */
+  /** 开始之前任务在哪里：一个阶段，或者空闲。 */
   from: Position;
   to: Stage;
   reason: string;
+  /** 是不是在首次分析流程里开始；不给当作是。单独开展时为假，记录的节点与流程两列为空。 */
+  inFlow?: boolean;
+  /** 原来那项活动结束的起因；不给时与 reason 相同。 */
+  endReason?: string;
 }
 
 /**
- * 记一次移动：先把还在进行的活动记录结束（记一条事件 ACTIVITY_ENDED，记录填上这一刻与这条事件的序号；结束的理由就是这次移动的理由），
- * 再记一条事件 ACTIVITY_STARTED、插一条新的活动记录，返回开始那条事件的序号。任务还没有任何记录时（位置是按有没有材料定的缺省）
- * 没有可结束的，只记开始的一条；任务空闲时也一样，这时事件里的 from 是 null（之前没有在进行的活动）。
- * 新记录的节点与活动同一个写法，所属流程现在恒为首次分析；事件的内容里也写这两样。
+ * 记一次活动开始（移动阶段就是在流程里开始另一项活动）：先把还在进行的活动记录结束（记一条事件 ACTIVITY_ENDED，记录填上这一刻与
+ * 这条事件的序号），再记一条事件 ACTIVITY_STARTED、插一条新的活动记录，返回开始那条事件的序号。任务没有在进行的活动时（空闲）
+ * 没有可结束的，只记开始的一条，这时事件里的 from 是 null。
+ * 在流程里开始时，新记录的节点与活动同一个写法，所属流程是首次分析；单独开展时这两列为空。事件的内容里也写这两样。
  * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让两条事件、两处记录与同一次调用里别的写入一起提交。
  */
 export function recordStageMove(db: DatabaseSync, move: StageMove): number {
@@ -161,50 +174,133 @@ export function recordStageMove(db: DatabaseSync, move: StageMove): number {
   if (!isStage(move.to) || !isPosition(move.from)) throw new Error(`阶段记录里的阶段写法不对：从「${String(move.from)}」到「${String(move.to)}」。`);
   const who = { taskId: move.taskId, sessionId: move.sessionId, callId: move.callId, actor: move.actor };
   const at = wallClockText();
-  const open = db.prepare(`SELECT record_id, activity, node FROM ${TABLE} WHERE task_id = ? AND ended_at IS NULL ORDER BY started_seq`).all(move.taskId) as
-    { record_id: number; activity: string; node: string | null }[];
-  for (const one of open) {
-    const ended = emit(db, { ...who, name: EVENT_ACTIVITY_ENDED, payload: { activity: one.activity, node: one.node, reason: move.reason, actor: move.actor } });
-    db.prepare(`UPDATE ${TABLE} SET ended_at = ?, ended_seq = ? WHERE record_id = ?`).run(at, ended, one.record_id);
-  }
+  endOpenRecords(db, who, at, move.endReason ?? move.reason);
+  const inFlow = move.inFlow ?? true;
+  const node = inFlow ? move.to : null, flow = inFlow ? FLOW_INITIAL : null;
   const seq = emit(db, {
     ...who, name: EVENT_ACTIVITY_STARTED,
-    payload: { activity: move.to, node: move.to, flow: FLOW_INITIAL, from: move.from === IDLE ? null : move.from, actor: move.actor, reason: move.reason, run_id: move.runId },
+    payload: { activity: move.to, node, flow, from: move.from === IDLE ? null : move.from, actor: move.actor, reason: move.reason, run_id: move.runId },
   });
   db.prepare(
     `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(move.taskId, move.sessionId, move.runId, move.callId, move.actor, move.to, move.to, FLOW_INITIAL, move.reason, at, seq);
+  ).run(move.taskId, move.sessionId, move.runId, move.callId, move.actor, move.to, node, flow, move.reason, at, seq);
   return seq;
 }
 
+/** 把任务还在进行的活动记录都结束：每条记一条事件 ACTIVITY_ENDED，填上结束的时刻与那条事件的序号。返回结束了的那几条记录的活动与事件序号。 */
+function endOpenRecords(db: DatabaseSync, who: { taskId: string; sessionId: string; callId: string; actor: StageActor }, at: string, reason: string):
+  { activity: string; node: string | null; seq: number }[] {
+  const open = db.prepare(`SELECT record_id, activity, node FROM ${TABLE} WHERE task_id = ? AND ended_at IS NULL ORDER BY started_seq`).all(who.taskId) as
+    { record_id: number; activity: string; node: string | null }[];
+  return open.map((one) => {
+    const seq = emit(db, { ...who, name: EVENT_ACTIVITY_ENDED, payload: { activity: one.activity, node: one.node, reason, actor: who.actor } });
+    db.prepare(`UPDATE ${TABLE} SET ended_at = ?, ended_seq = ? WHERE record_id = ?`).run(at, seq, one.record_id);
+    return { activity: one.activity, node: one.node, seq };
+  });
+}
+
 /**
- * 一次移动的结果。moved 为真是记下了；为假时 why 写原因：same 原地不动，user_only 往前移动要由用户在卡片上点，
- * no_stages 这个任务没有阶段（早先建的任务）。from 是移动之前所在的阶段（或者空闲），任务没有阶段时为 null。
+ * 助手汇报单独开展的活动做完了：把那条活动记录结束，任务随之空闲。只有任务正在单独开展一项活动时才做；
+ * 任务在流程里的某个阶段、任务空闲、任务没有阶段时什么都不记，返回 null。做了返回结束的是哪一项活动与那条事件的序号。
+ * 必须在调用方已经开好的写事务里调用。
+ */
+export function endStandaloneActivity(db: DatabaseSync, who: { taskId: string; sessionId: string; callId: string; actor: StageActor }): { activity: Stage; event_seq: number } | null {
+  const open = openActivityRecord(db, who.taskId);
+  if (open === null || open.node !== null) return null;
+  const ended = endOpenRecords(db, who, wallClockText(), ACTIVITY_DONE_REASON);
+  return { activity: open.activity, event_seq: ended.at(-1)!.seq };
+}
+
+/**
+ * 一次移动（一次活动开始）的结果。moved 为真是记下了；为假时 why 写原因：same 原地不动（同一项活动、同一种开展方式），
+ * user_only 开展活动要由用户决定，no_stages 这个任务没有阶段（早先建的任务），not_ready 单独开展这项活动缺前提（blocked 里写缺什么），
+ * not_in_flow 任务不在首次分析流程里（空闲或者正在单独开展一项活动），卡片上的进入与退回不算数。
+ * from 是开始之前任务在哪里（一个阶段或者空闲），任务没有阶段时为 null。记下了的另带 how（怎样开始的，lib/stage.ts 的 StartHow）与 in_flow。
  */
 export interface StageMoveOutcome {
   requested: Stage;
   from: Position | null;
   moved: boolean;
-  /** 没有移成的原因；not_next 只出现在卡片点击上：点的那个阶段不是紧挨着的下一段。 */
-  why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | null;
+  /** 没有移成的原因；not_next 与 not_back 只出现在卡片点击上：点的那个阶段不是紧挨着的下一段、不在现在这个阶段之前。 */
+  why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | "not_ready" | "not_in_flow" | null;
   event_seq: number | null;
+  how?: StartHow;
+  in_flow?: boolean;
+  /** why 为 not_ready 时：缺什么。 */
+  blocked?: string;
+}
+
+/** 任务现在的位置、现在这项活动在不在流程里、首次分析走到的节点。任务没有阶段（或者库里没有这个任务）时为 null。 */
+function whereIs(db: DatabaseSync, workspaceDir: string, taskId: string): { from: Position; fromInFlow: boolean; flowBefore: Stage | null; definition: TaskDefinition } | null {
+  const task = db.prepare("SELECT definition_text FROM task WHERE task_id = ?").get(taskId) as { definition_text: string } | undefined;
+  if (!task) return null;
+  const definition = validateDefinition(JSON.parse(task.definition_text));
+  const from = stageOf(db, workspaceDir, taskId, definition);
+  if (from === null) return null;
+  const open = openActivityRecord(db, taskId);
+  // 没有在进行的记录而位置是一个阶段：那是还没有任何记录时的缺省位置，当作在流程里。
+  return { from, fromInFlow: from !== IDLE && (open === null || open.node !== null), flowBefore: flowNode(db, taskId), definition };
 }
 
 /**
- * 想把任务移到某个阶段：先看任务有没有阶段、这次移动行不行（lib/stage.ts 的 judgeMove），行就记下。不行不抛错，原因写在结果里，
- * 由调用方决定怎样告诉助手或用户。必须在调用方已经开好的写事务里调用。
+ * 想让任务开始一项活动：在流程里开始（inFlow 为真，移动阶段、启动或继续首次分析都是它），或者单独开展（inFlow 为假）。
+ * 先看任务有没有阶段、这次行不行，行就记下。不行不抛错，原因写在结果里，由调用方决定怎样告诉助手或用户。
+ * 开展活动只由用户决定；任务已经在同一项活动、同一种开展方式里时不记；单独开展要够前提（lib/stage.ts 的 activityBlocked），
+ * 在流程里开始不查前提。有别的活动在进行、这次又不是流程里的移动时，原来那条记录结束的起因写「用户改做某项活动」。
+ * 必须在调用方已经开好的写事务里调用。
  */
-export function moveStage(db: DatabaseSync, workspaceDir: string, who: Omit<StageMove, "from" | "to" | "reason">, to: Stage, reason: string): StageMoveOutcome {
-  const task = db.prepare("SELECT definition_text FROM task WHERE task_id = ?").get(who.taskId) as { definition_text: string } | undefined;
-  const from = task ? stageOf(db, workspaceDir, who.taskId, validateDefinition(JSON.parse(task.definition_text))) : null;
-  if (from === null) return { requested: to, from: null, moved: false, why: "no_stages", event_seq: null };
-  const verdict = judgeMove(from, to, who.actor);
-  if (!verdict.ok) return { requested: to, from, moved: false, why: verdict.why, event_seq: null };
-  return { requested: to, from, moved: true, why: null, event_seq: recordStageMove(db, { ...who, from, to, reason }) };
+export function startActivity(db: DatabaseSync, workspaceDir: string, who: Omit<StageMove, "from" | "to" | "reason" | "inFlow" | "endReason">,
+  to: Stage, inFlow: boolean, reason: string): StageMoveOutcome {
+  const where = whereIs(db, workspaceDir, who.taskId);
+  if (where === null) return { requested: to, from: null, moved: false, why: "no_stages", event_seq: null };
+  const { from, fromInFlow, flowBefore } = where;
+  const none = { requested: to, from, moved: false, event_seq: null };
+  if (from === to && fromInFlow === inFlow) return { ...none, why: "same" };
+  if (who.actor !== "user") return { ...none, why: "user_only" };
+  if (!inFlow) {
+    const blocked = activityBlocked(to, launchFacts(db, workspaceDir, who.taskId, where.definition));
+    if (blocked !== null) return { ...none, why: "not_ready", blocked };
+  }
+  const how = startHow(inFlow, fromInFlow, flowBefore);
+  const event_seq = recordStageMove(db, { ...who, from, to, reason, inFlow, ...(how !== "move" && from !== IDLE ? { endReason: switchedReason(to) } : {}) });
+  return { requested: to, from, moved: true, why: null, event_seq, how, in_flow: inFlow };
+}
+
+/**
+ * 想把任务移到某个阶段：就是在首次分析流程里开始那项活动（startActivity）。任务空闲或者正在单独开展一项活动时，
+ * 这是启动或继续首次分析。必须在调用方已经开好的写事务里调用。
+ */
+export function moveStage(db: DatabaseSync, workspaceDir: string, who: Omit<StageMove, "from" | "to" | "reason" | "inFlow" | "endReason">, to: Stage, reason: string): StageMoveOutcome {
+  return startActivity(db, workspaceDir, who, to, true, reason);
+}
+
+/** 算「开展一项活动」那一节要的事实（lib/stage.ts 的 LaunchFacts）：任务现在的位置、流程走到哪里、有没有材料、几页主题、几条需求条目。只读。 */
+export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): LaunchFacts {
+  const open = openActivityRecord(db, taskId);
+  const hasMaterials = taskHasMaterials(workspaceDir, definition.materialsDir);
+  const position = currentStage(db, taskId, hasMaterials);
+  const questions = new Set(definition.collections.filter((one) => keepPendingField(one) !== null).map((one) => one.name));
+  const live = db.prepare(
+    "SELECT i.collection, v.fields FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
+      "AND v.revision_no = (SELECT MAX(revision_no) FROM item_version w WHERE w.task_id = i.task_id AND w.item_id = i.item_id) " +
+      "WHERE i.task_id = ? AND i.deleted_in_revision IS NULL",
+  ).all(taskId) as { collection: string; fields: string }[];
+  const pages = live.filter((one) => one.collection === OVERALL_COLLECTION && !isDeprecatedText(one.fields)).length;
+  const items = live.filter((one) => one.collection !== OVERALL_COLLECTION && !questions.has(one.collection)).length;
+  return { position, inFlow: position !== IDLE && (open === null || open.node !== null), flowNode: flowNode(db, taskId), hasMaterials, pages, items };
+}
+
+/** 一页主题现在的字段内容（库里存的 JSON 文字）是不是已废弃。读不出来当作在用。 */
+function isDeprecatedText(fields: string): boolean {
+  try {
+    return isDeprecated(JSON.parse(fields) as Record<string, unknown>);
+  } catch {
+    return false;
+  }
 }
 
 /** 用户在卡片上点了「进入某个阶段」时，那条阶段记录里写的理由。 */
-export function enterReason(to: Exclude<Stage, "reading">): string {
+export function enterReason(to: Stage): string {
   return `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`;
 }
 /**
@@ -219,14 +315,18 @@ export function backReason(to: Exclude<Stage, "document">, question: string): st
 export const START_ITEMS_REASON = enterReason("writing");
 
 /**
- * 用户点了一张卡片上的选项：点的是助手提议往前走的那张请选择卡片上「进入」某个阶段的选项时，替用户记一次移动。
- * 四个键各进入一个阶段（lib/stage.ts 的 ENTER_OPTIONS）：进入澄清、进入整理建模、开始写条目、进入评审确认。
+ * 用户点了一张卡片上的选项：点的是助手提议的那张请选择卡片上「进入」或「退回」某个阶段的选项时，替用户记一次移动。
+ * 进入的键各进入一个阶段（lib/stage.ts 的 ENTER_OPTIONS）：进入澄清、进入整理建模、开始写条目、进入评审确认、进入编写文档，
+ * 以及任务空闲时的「开始核读材料」。
  * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键。这条分支上找不到那条回复时（卡片是在另一条会话里发的，
  * 用户从输入框上方的「待决定」一行或者任务状况卡上点了进入），改为核对任务库里开着的提议（lib/stage_proposal.ts）：点的键是它的进入键、
  * 给了回复编号时又正是它那一条，才算。两样都认不出就不记（返回 null），点击照常往下走。
- * 次序不对的点击也不记（结果里 moved 为假、why 为 not_next、from 是任务现在的阶段）：进入澄清、进入整理建模、进入评审确认只在任务正处在紧挨着的前一段时才算；
- * 开始写条目在写条目之前的哪一段点都算（用户可以跳过中间的阶段），任务已经过了写条目时点它是退回写条目。
- * 任务空闲时按它在澄清时判（lib/stage.ts 的 gateStage）：进入整理建模、开始写条目、退回核读材料算，别的不算。
+ * 进入与退回是首次分析流程里的事，按任务现在在哪里判：
+ * - 任务在流程里的某个阶段：次序不对的点击不记（why 为 not_next 或 not_back）。进入澄清、进入整理建模、进入评审确认、进入编写文档只在任务
+ *   正处在紧挨着的前一段时才算；开始写条目在写条目之前的哪一段点都算（用户可以跳过中间的阶段），任务已经过了写条目时点它是退回写条目；
+ *   退回的目标要在现在这个阶段之前。
+ * - 任务空闲：只有「开始核读材料」算，它启动（或继续）首次分析、从核读材料开始；别的进入与退回都不算（why 为 not_in_flow）。
+ * - 任务正在单独开展一项活动：进入与退回都不算（why 为 not_in_flow）。
  * 任务没有阶段、任务不在进行中、任务本来就在那个阶段时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
  * 发那句固定的话之前调用，这样助手回应这次点击的那一次运行从头就在新的阶段。
  */
@@ -253,16 +353,21 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
         if (replyEntry !== null && replyEntry !== open.reply_entry) return null;
         cardQuestion = open.text;
       }
-      const from = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
+      const where = whereIs(db, workspaceDir, task.task_id);
+      const from = where?.from ?? null;
       const who = { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" as const };
-      // 次序按任务现在所在的阶段判；空闲时按澄清判。
-      const at = from === null ? null : gateStage(from);
+      const unmoved = (why: "not_back" | "not_next" | "not_in_flow") => ({ requested: (back ?? to)!, from, moved: false, why, event_seq: null });
+      if (where !== null && !where.fromInFlow) {
+        // 任务空闲或者正在单独开展一项活动：只有空闲时的「开始核读材料」算。
+        if (from === IDLE && to === "reading") return moveStage(db, workspaceDir, who, to, enterReason(to));
+        return unmoved("not_in_flow");
+      }
       if (back !== null) {
         // 退回：目标要在现在这个阶段之前；卡片的问句（助手写的原因）记进理由。
-        if (at !== null && STAGES.indexOf(back) >= STAGES.indexOf(at)) return { requested: back, from, moved: false, why: "not_back" as const, event_seq: null };
+        if (from !== null && from !== IDLE && STAGES.indexOf(back) >= STAGES.indexOf(from)) return unmoved("not_back");
         return moveStage(db, workspaceDir, who, back, backReason(back, cardQuestion));
       }
-      if (to !== "writing" && at !== null && nextStage(at) !== to) return { requested: to!, from, moved: false, why: "not_next" as const, event_seq: null };
+      if (to !== "writing" && from !== null && from !== IDLE && nextStage(from) !== to) return unmoved("not_next");
       return moveStage(db, workspaceDir, who, to!, enterReason(to!));
     });
   } catch (error) {
@@ -296,6 +401,12 @@ export function sourceMaterials(paths: readonly string[]): string[] {
  */
 export interface StageSummary {
   current: Position;
+  /** 现在这项活动在首次分析流程里的节点：在流程里时与 current 同一个写法；单独开展、空闲时为 null。 */
+  node: Stage | null;
+  /** 首次分析走到的节点（最近一条带节点的活动记录）；没有走过是 null。 */
+  flow_node: Stage | null;
+  /** 任务状况卡上「开展一项活动」一节的内容（lib/stage.ts 的 LaunchView）。 */
+  launch: LaunchView;
   moved_by: StageActor | null;
   /** 最近一次移动的时刻（库里的本地时间写法）。 */
   moved_at: string | null;
@@ -409,8 +520,12 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
 export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): StageSummary | null {
   if (!hasOverall(definition.collections)) return null;
   const open = openActivityRecord(db, taskId);
+  const facts = launchFacts(db, workspaceDir, taskId, definition);
   return {
-    current: open?.activity ?? currentStage(db, taskId, taskHasMaterials(workspaceDir, definition.materialsDir)),
+    current: facts.position,
+    node: facts.position !== IDLE && facts.inFlow ? facts.position : null,
+    flow_node: facts.flowNode,
+    launch: launchView(facts),
     moved_by: open?.actor ?? null,
     moved_at: open?.started_at ?? null,
     reason: open ? open.reason : null,
@@ -438,6 +553,14 @@ export function stageLines(summary: StageSummary): string[] {
   if (summary.current === IDLE) return [IDLE_LINE];
   const name = STAGE_NAMES[summary.current];
   const reason = (summary.reason ?? "").replace(/[。.\s]+$/, "");
+  if (summary.node === null && summary.moved_by !== null) {
+    // 单独开展的活动：不在首次分析流程里，做够了由助手汇报结束。
+    return [
+      `任务现在在单独开展${name}这项活动，不在首次分析流程里（${summary.moved_by === "user" ? "用户" : "助手"}在 ${(summary.moved_at ?? "").slice(0, 16).replace("T", " ")} 开始的${reason ? `，理由：${reason}` : ""}）。` +
+        "这项活动做够了就在回复里汇报结束（回复里写 activity_done: true），不提议进入别的活动。",
+      ...lampLines(summary.current, summary.lamps[summary.current]),
+    ];
+  }
   const head = summary.moved_by === null
     ? `任务现在在${name}阶段（任务建好之后还没有人移动过）。`
     : `任务现在在${name}阶段（${summary.moved_by === "user" ? "用户" : "助手"}在 ${(summary.moved_at ?? "").slice(0, 16).replace("T", " ")} 移过来的${reason ? `，理由：${reason}` : ""}）。`;

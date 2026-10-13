@@ -33,8 +33,15 @@
  * 这次点击就是同意，修订号要是现在的），发起方记用户。任务标为已完成，往会话里追加一句说明，不引出执行者的运行。
  *
  * 移动阶段（move_stage）：用户把任务移到另一个工作阶段（lib/stage.ts）。fields 写 { stage, reason }：stage 是六个阶段名之一，reason 可以不写。
- * 用户想移到哪个阶段都可以；记一条阶段记录，往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行。任务本来就在那个阶段时
- * 什么都不记、也不追加说明。早先建的任务没有阶段，拒绝。
+ * 用户想移到哪个阶段都可以；记一条活动记录，往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行。任务本来就在那个阶段时
+ * 什么都不记、也不追加说明。早先建的任务没有阶段，拒绝。移动阶段就是在首次分析流程里开始那项活动：任务空闲或者正在单独开展
+ * 一项活动时，它是启动或继续首次分析。
+ *
+ * 开展一项活动（start_activity）：用户在任务状况卡的「开展一项活动」一节点了一项。fields 写 { activity, in_flow }：activity 是六项活动
+ * （六个阶段）的名字或写法之一；in_flow 为真是在首次分析流程里从这个节点开始（启动或继续首次分析），为假是单独开展这项活动。
+ * 有别的活动在进行时，那条活动记录先结束，起因写「用户改做某项活动」。记一条活动记录，往会话里追加一句说明，不产生修订、不能撤销、
+ * 不引出执行者的运行、不替用户发话。任务已经在同一项活动、同一种开展方式里时什么都不记。单独开展缺前提时拒绝并写明缺什么
+ * （lib/stage.ts 的 activityBlocked）。写条目与发布这样的活动只能由用户从这里启动：助手的工具没有启动活动的路。
  *
  * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_revision、undo_conflict、
  * task_closed、no_task、rejected、bad_request）和给人看的一句中文，data 里放细节。本模块不依赖 pi。
@@ -51,8 +58,8 @@ import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
-import { STAGES, STAGE_NAMES, positionName, stageByName } from "./stage.ts";
-import { moveStage } from "./stage_read.ts";
+import { type Position, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, stageByName } from "./stage.ts";
+import { startActivity } from "./stage_read.ts";
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
 export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
@@ -60,7 +67,7 @@ export const EVENT_REVIEW_WAIVED = "REVIEW_WAIVED";
 export const EVENT_REVIEW_UNWAIVED = "REVIEW_UNWAIVED";
 export const EVENT_REVIEW_RULES_CHANGED = "REVIEW_RULES_CHANGED";
 export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules",
-  "submit_deliverable", "move_stage"] as const;
+  "submit_deliverable", "move_stage", "start_activity"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
 export { KEEP_PENDING_STATUS };
@@ -177,6 +184,7 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
   if (kind === "set_review_rules") return setReviewRules(ctx, opId, request);
   if (kind === "submit_deliverable") return submitDeliverable(ctx, opId, request);
   if (kind === "move_stage") return moveStageByUser(ctx, opId, request);
+  if (kind === "start_activity") return startActivityByUser(ctx, opId, request);
   if (!Array.isArray(request.targets) || request.targets.length === 0) {
     throw new UserOpError("bad_request", "targets 应当是一个不为空的列表。");
   }
@@ -680,9 +688,9 @@ function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult 
   };
 }
 
-/** 用户移动之后追加进会话的那句话。 */
-export function stageMoveNote(from: string, to: string, reason: string): string {
-  return `界面操作（不是用户打的字）：用户把任务从${from}移到${to}。${reason ? `理由：${reason}` : ""}`;
+/** 一次活动开始往会话里追加的那句说明（给助手看，页面原样显示）。 */
+export function activityStartNote(how: StartHow, to: Stage, from: Position, reason = ""): string {
+  return `界面操作（不是用户打的字）：${activityStartSentence(how, to, from)}${reason ? `理由：${reason}` : ""}`;
 }
 
 /** 移动阶段：见文件头。fields 写 { stage, reason }。 */
@@ -693,6 +701,22 @@ function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOp
     throw new UserOpError("bad_request", `move_stage 要在 fields 里写 stage：${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一；可以另写一句 reason。`);
   }
   const reason = typeof fields.reason === "string" ? fields.reason.trim() : "";
+  return startByUser(ctx, opId, request, "move_stage", to, true, reason, "移动阶段");
+}
+
+/** 开展一项活动：见文件头。fields 写 { activity, in_flow }。 */
+function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
+  const fields = isObject(request.fields) ? request.fields : {};
+  const to = stageByName(fields.activity);
+  if (to === null || typeof fields.in_flow !== "boolean") {
+    throw new UserOpError("bad_request",
+      `start_activity 要在 fields 里写 activity（${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一）与 in_flow（true 是在首次分析流程里从这里开始，false 是单独开展）。`);
+  }
+  return startByUser(ctx, opId, request, "start_activity", to, fields.in_flow, "", "开展活动");
+}
+
+/** 移动阶段与开展一项活动共用的那一段：核对任务、记活动开始、拼结果。verb 是任务已经不在进行中时拒绝的话里说的动作。 */
+function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move_stage" | "start_activity", to: Stage, inFlow: boolean, reason: string, verb: string): UserOpResult {
   let outcome;
   try {
     outcome = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
@@ -701,18 +725,22 @@ function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOp
       if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
         throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
       }
-      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再移动阶段。`, { status: task.status });
-      return moveStage(db, ctx.workspaceDir, { taskId: task.task_id, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, reason);
+      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再${verb}。`, { status: task.status });
+      return startActivity(db, ctx.workspaceDir, { taskId: task.task_id, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, reason);
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
     throw error;
   }
   if (outcome.from === null) throw new UserOpError("rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] });
+  if (outcome.why === "not_ready") {
+    const fact = `现在还不能单独开展${STAGE_NAMES[to]}：${outcome.blocked}`;
+    throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+  }
   return {
-    op_id: opId, kind: "move_stage", event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
-    // 本来就在那个阶段：什么都没有记，也不往会话里追加说明。
-    note: outcome.moved ? stageMoveNote(positionName(outcome.from), STAGE_NAMES[to], reason) : "",
+    op_id: opId, kind, event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
+    // 本来就在那项活动里：什么都没有记，也不往会话里追加说明。
+    note: outcome.moved ? activityStartNote(outcome.how!, to, outcome.from, reason) : "",
     notify_text: null, undoable: false,
   };
 }

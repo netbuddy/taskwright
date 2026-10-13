@@ -13,7 +13,7 @@ import { prepareReviews } from "../src/lib/review.ts";
 import { type SaveDiagramParams, saveDiagram } from "../src/lib/save_diagram.ts";
 import { SaveRejected, saveRevision } from "../src/lib/save_revision.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
-import { BACK_OPTIONS, ENTER_OPTIONS, IDLE, STAGES, STAY_HERE_OPTION, STAY_OPTIONS } from "../src/lib/stage.ts";
+import { BACK_OPTIONS, ENTER_OPTIONS, IDLE, STAGES, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS } from "../src/lib/stage.ts";
 import { IDLE_LINE, activityRecords, currentStage, openActivityRecord, recordStageCardClick, stageLines, stageOf, stageSummary } from "../src/lib/stage_read.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
 import { rejectionOf } from "../src/lib/tool_rejection.ts";
@@ -134,7 +134,8 @@ test("从空闲移到一个阶段：只记开始的一条，事件里的 from �
   const { dir, taskId } = idle();
   const before = count(dir, "event");
   const out = runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: "ui-op-idle-move", kind: "move_stage", fields: { stage: "整理建模" } });
-  assert.equal(out.note, "界面操作（不是用户打的字）：用户把任务从空闲移到整理建模。");
+  // 首次分析之前走到过澄清，这一次是从整理建模接着走。
+  assert.equal(out.note, "界面操作（不是用户打的字）：用户继续首次分析，从整理建模接着。");
   const events = query<{ seq: number; name: string; payload: string }>(dir, "SELECT seq, name, payload FROM event WHERE seq > ? ORDER BY seq", before);
   assert.deepEqual(events.map((e) => [e.name, JSON.parse(e.payload)]), [
     ["ACTIVITY_STARTED", { activity: "modeling", node: "modeling", flow: "initial", from: null, actor: "user", reason: "", run_id: null }],
@@ -151,7 +152,7 @@ test("从空闲移到一个阶段：只记开始的一条，事件里的 from �
   }
 });
 
-test("空闲时卡片上的点击按任务在澄清时判：进入整理建模、开始写条目、退回核读材料算；进入澄清、进入评审确认、退回澄清不算", () => {
+test("空闲时卡片上的点击：只有「开始核读材料」算，它启动首次分析；别的进入与退回都不算，原因是任务不在流程里", () => {
   const card = (key: string, text: string, other: { key: string; text: string }) => ({
     id: "reply-card", type: "message",
     message: { role: "assistant", content: [{ type: "toolCall", id: "call-card", name: "reply", arguments: { informs: [], act: { kind: "choose", text: "这样可以吗？", options: [{ key, text }, other] } } }] },
@@ -159,17 +160,21 @@ test("空闲时卡片上的点击按任务在澄清时判：进入整理建模�
   const click = (dir: string, option: { key: string; text: string }, other: { key: string; text: string }) => recordStageCardClick(dir, "sess-a",
     [card(option.key, option.text, other)] as never, { opId: `ui-op-${option.key}`, replyEntry: "reply-card", optionKey: option.key });
   const tried: [{ key: string; text: string }, { key: string; text: string }, boolean, string | null][] = [
-    [ENTER_OPTIONS.modeling, STAY_OPTIONS.clarifying, true, null],
-    [ENTER_OPTIONS.writing, STAY_OPTIONS.clarifying, true, null],
-    [BACK_OPTIONS.reading, STAY_HERE_OPTION, true, null],
-    [ENTER_OPTIONS.clarifying, STAY_OPTIONS.reading, false, "not_next"],
-    [ENTER_OPTIONS.reviewing, STAY_OPTIONS.writing, false, "not_next"],
-    [BACK_OPTIONS.clarifying, STAY_HERE_OPTION, false, "not_back"],
+    [ENTER_OPTIONS.reading, STAY_IDLE_OPTION, true, null],
+    [ENTER_OPTIONS.modeling, STAY_OPTIONS.clarifying, false, "not_in_flow"],
+    [ENTER_OPTIONS.writing, STAY_OPTIONS.clarifying, false, "not_in_flow"],
+    [ENTER_OPTIONS.clarifying, STAY_OPTIONS.reading, false, "not_in_flow"],
+    [ENTER_OPTIONS.reviewing, STAY_OPTIONS.writing, false, "not_in_flow"],
+    [BACK_OPTIONS.reading, STAY_HERE_OPTION, false, "not_in_flow"],
+    [BACK_OPTIONS.clarifying, STAY_HERE_OPTION, false, "not_in_flow"],
   ];
   for (const [option, other, moved, why] of tried) {
     const { dir } = idle("writing");
     const out = click(dir, option, other);
     assert.deepEqual([out?.from, out?.moved, out?.why], [IDLE, moved, why], option.key);
     assert.equal(moveRows(dir).length, moved ? 2 : 1, option.key);
+    // 「开始核读材料」：首次分析之前走到过写条目，所以这一次是继续首次分析，从核读材料接着；记录在流程里。
+    if (moved) assert.deepEqual([out!.how, out!.in_flow, query(dir, "SELECT node, flow FROM activity_record ORDER BY started_seq DESC LIMIT 1").map((r) => ({ ...r }))],
+      ["resume", true, [{ node: "reading", flow: "initial" }]]);
   }
 });

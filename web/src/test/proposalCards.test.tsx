@@ -40,8 +40,8 @@ const show = (messages: unknown[]) => render(<Wrap><Conversation messages={messa
   hasEarlier={false} onLoadEarlier={noop} revisionOf={() => null} attachments={[]} /></Wrap>);
 
 describe("卡片的键与种类", () => {
-  it("进入的键五个、退回的键五个；一张卡片照进入、退回、请过目的先后认种类", () => {
-    expect(ENTER_KEYS).toEqual({ enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
+  it("进入的键六个（含空闲时的开始核读材料）、退回的键五个；一张卡片照进入、退回、请过目的先后认种类", () => {
+    expect(ENTER_KEYS).toEqual({ enter_reading: "reading", enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
     expect(BACK_KEYS).toEqual({ back_to_reading: "reading", back_to_clarify: "clarifying", back_to_consolidate: "modeling", back_to_writing: "writing", back_to_review: "reviewing" });
     expect([STAY_HERE_KEY, DOCUMENT_REVIEWED_KEY, DOCUMENT_REVISE_KEY]).toEqual(["stay_in_stage", "document_reviewed", "document_revise"]);
     expect([proposalKindOfCard(BACK), proposalKindOfCard(REVIEW), proposalCardKind([{ key: "enter_document" }, { key: "continue_review" }]), proposalCardKind([{ key: "a" }]), proposalCardKind(null)])

@@ -17,7 +17,7 @@
 import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
-import { isStage } from "../../agent/src/lib/stage.ts";
+import { isPosition, isStage } from "../../agent/src/lib/stage.ts";
 import { callFacts, derivedSourceName } from "./library.ts";
 import { cardLinks, understandingLines, worksFromEntries } from "./work_summary.ts";
 
@@ -68,10 +68,11 @@ export function continueStageFields(details: Record<string, any>): { reply_messa
  * 用户在卡片上点了「进入」某个阶段、系统替用户记了移动时，那句「我选：……」带的一项：从哪个阶段、到哪个阶段。
  * details 是那条界面点击标注的 details（助手一侧在记下移动时写进 stage_move）。没有记移动时为 null。
  */
-export function clickStageMove(details: Record<string, any>): { from: string; to: string; actor: "user" } | null {
+export function clickStageMove(details: Record<string, any>): { from: string; to: string; actor: "user"; how?: string } | null {
   const move = details.stage_move;
-  if (!isObject(move) || !isStageKey(move.from) || !isStageKey(move.to)) return null;
-  return { from: move.from, to: move.to, actor: "user" };
+  // from 可以是空闲：任务空闲时用户在卡片上点了「开始核读材料」。how 写这次是流程里的移动、启动还是继续首次分析（早先的点击没有这一项）。
+  if (!isObject(move) || !isPosition(move.from) || !isStageKey(move.to)) return null;
+  return { from: move.from, to: move.to, actor: "user", ...(typeof move.how === "string" && move.how ? { how: move.how } : {}) };
 }
 
 /**
@@ -79,10 +80,11 @@ export function clickStageMove(details: Record<string, any>): { from: string; to
  * 任务当时在哪个阶段。details 是那条界面点击标注的 details（助手一侧写进 stage_unmoved）。没有这一项时为 null：
  * 记了移动的点击、不是进入阶段的点击、没有阶段的任务、早先版本留下的点击都没有。
  */
-export function clickStageUnmoved(details: Record<string, any>): { at: string } | null {
+export function clickStageUnmoved(details: Record<string, any>): { at: string; why?: string } | null {
   const stay = details.stage_unmoved;
-  if (!isObject(stay) || !isStageKey(stay.at)) return null;
-  return { at: stay.at };
+  // at 可以是空闲；why 为 not_in_flow 是任务不在首次分析流程里（空闲或者正在单独开展一项活动），进入与退回不算数。
+  if (!isObject(stay) || !isPosition(stay.at)) return null;
+  return { at: stay.at, ...(stay.why === "not_in_flow" ? { why: stay.why } : {}) };
 }
 
 export function normalizeInforms(informs: unknown): Record<string, any>[] {

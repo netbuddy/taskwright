@@ -88,7 +88,7 @@ describe("阶段条", () => {
     expect(again.container).toBeEmptyDOMElement();
   });
 
-  it("读法的几个小函数：缩短句子、拆数字、分三类、点灯去哪里、五个进入键", () => {
+  it("读法的几个小函数：缩短句子、拆数字、分三类、点灯去哪里、六个进入键", () => {
     expect(lampShort("有 3 条条目依据的主题用户还没有看过：UC-001、UC-002、UC-003。")).toBe("有 3 条条目依据的主题用户还没有看过。");
     expect(lampShort("每份材料都被引用了。")).toBe("每份材料都被引用了。");
     expect(lampShort("每个标签为「流程」的主题都有一条以「例外：」开头的例子。")).toBe("每个标签为「流程」的主题都有一条以「例外：」开头的例子。");
@@ -100,7 +100,7 @@ describe("阶段条", () => {
     expect(lampTarget(lamp("a", false, "甲", []), [])).toBeNull();
     expect(lampTarget(lamp("a", false, "甲", ["OA-001"]), [item("OA-001")])).toEqual({ kind: "item", itemId: "OA-001" });
     expect(lampTarget(lamp("a", false, "甲", ["inputs/x.md"]), [item("OA-001")])).toEqual({ kind: "material", path: "inputs/x.md" });
-    expect(ENTER_KEYS).toEqual({ enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
+    expect(ENTER_KEYS).toEqual({ enter_reading: "reading", enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
   });
 
   it("点了说材料没有被引用的灯之后，状态里记下要在材料页签选中的那份材料", () => {

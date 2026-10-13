@@ -16,7 +16,7 @@
 
 import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { NoDatabaseYet, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
-import { DOCUMENT_REVIEWED_OPTION, STAGE_NAMES, STAY_TEXT } from "./stage.ts";
+import { DOCUMENT_REVIEWED_OPTION, STAGE_NAMES, STAY_IDLE_OPTION, STAY_TEXT } from "./stage.ts";
 import { type ProposalFact, isStayKey, openProposal, proposalOfAct } from "./stage_proposal.ts";
 import { UserOpError, type UserOpRequest } from "./user_ops.ts";
 
@@ -34,6 +34,10 @@ export function continueStageNote(fact: Pick<ProposalFact, "stage" | "enter"> & 
     return optionKey === fact.enter.key
       ? `${head}用户在请你过目的卡片上选了「${fact.enter.text}」：卡片点名的页已经记为看过。生成文档由用户在界面上按，你不用为此再做什么。`
       : `${head}用户在请你过目的卡片上选了「${fact.stay?.text ?? "需要修改"}」。等用户说要改哪里，照着改，改完再发一次请过目的卡片。`;
+  }
+  if (fact.stay?.key === STAY_IDLE_OPTION.key) {
+    return `${head}用户在提议「${fact.enter.text}」的卡片上选了「${STAY_IDLE_OPTION.text}」，没有开始${STAGE_NAMES[fact.stage]}，任务仍然空闲。` +
+      "这个提议仍然开着，用户要开始时会自己点，不用再发同一张卡片。";
   }
   return `${head}用户在提议「${fact.enter.text}」的卡片上选了「${STAY_TEXT}」，没有进入${STAGE_NAMES[fact.stage]}。` +
     "这个提议仍然开着，用户要进入时会自己点，不用再发同一张卡片。";

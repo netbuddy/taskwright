@@ -27,6 +27,11 @@ test("两个取值的函数：记了移动才有；阶段名不对、没有这�
   assert.equal(clickStageUnmoved({ stage_move: { from: "reading", to: "clarifying" } }), null);
   assert.equal(clickStageUnmoved({ stage_event_seq: 12 }), null);
   assert.equal(clickStageUnmoved({ stage_unmoved: { at: "别的" } }), null);
+  // 任务空闲时点了「开始核读材料」：from 是空闲，how 写这次是启动还是继续首次分析。别的进入与退回在空闲时不算数，带 why。
+  assert.deepEqual(clickStageMove({ stage_move: { from: "idle", to: "reading", how: "launch" } }), { from: "idle", to: "reading", actor: "user", how: "launch" });
+  assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "idle", why: "not_in_flow" } }), { at: "idle", why: "not_in_flow" });
+  assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "clarifying", why: "not_in_flow" } }), { at: "clarifying", why: "not_in_flow" });
+  assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "reading", why: "别的" } }), { at: "reading" });
 });
 
 const MODEL_CARD = { kind: "choose", text: "要问的都问到了。现在进入整理建模吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
@@ -86,8 +91,8 @@ test("用户点卡片退回前面的阶段、点卡片进入下一段的那两�
       for (const end = Date.now() + 10000; pushed.events.filter(([, data]) => data.session_id === session).length < 10 && Date.now() < end;) await sleep(100);
 
       const wanted = {
-        back: { from: "modeling", to: "clarifying", actor: "user" },
-        enter: { from: "clarifying", to: "modeling", actor: "user" },
+        back: { from: "modeling", to: "clarifying", actor: "user", how: "move" },
+        enter: { from: "clarifying", to: "modeling", actor: "user", how: "move" },
       };
       // 实时推的。
       const live = pushed.events.filter(([, data]) => data.session_id === session);

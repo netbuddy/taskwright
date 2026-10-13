@@ -168,7 +168,7 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   assert.deepEqual(sent.map(([kind]) => kind), ["custom", "user"]);
   assert.equal(sent[0][1].details.stage_event_seq, seq);
   // 标注里另写这次移动从哪个阶段到哪个阶段：对话区据此在用户那句话下面写一行。
-  assert.deepEqual(sent[0][1].details.stage_move, { from: "reading", to: "writing" });
+  assert.deepEqual(sent[0][1].details.stage_move, { from: "reading", to: "writing", how: "move" });
   assert.equal(sent[1][1], "我选：开始写条目");
   assert.deepEqual(records(dir).map((r) => [r.stage, r.actor, r.call_id]), [["writing", "user", "ui-op-41"]]);
 

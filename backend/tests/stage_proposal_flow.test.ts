@@ -95,6 +95,6 @@ test("发卡片、选继续本阶段、再说两轮、在另一条会话里点�
     const inSecond = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${second}`)).body.messages as Dict[];
     const click = inSecond.find((m) => m.type === "user_message")!;
     assert.deepEqual([click.text, click.origin, click.stage_move, click.annotation.option_key, click.annotation.option_text, click.annotation.reply_message_id],
-      ["我选：进入澄清", "card_choice", { from: "reading", to: "clarifying", actor: "user" }, "enter_clarify", "进入澄清", cardEntry]);
+      ["我选：进入澄清", "card_choice", { from: "reading", to: "clarifying", actor: "user", how: "move" }, "enter_clarify", "进入澄清", cardEntry]);
     assert.ok(inSecond.some((m) => m.type === "assistant_reply" && m.text === "好，开始澄清。第一件事：借书证丢了怎么办？"));
   }, { seed: false }));

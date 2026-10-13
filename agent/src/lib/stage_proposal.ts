@@ -20,7 +20,7 @@ import { hasOverall } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { TASK_ACTIVE } from "./schema.ts";
 import {
-  type CardOption, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, STAGE_NAMES, STAY_HERE_OPTION, STAY_OPTIONS, type Stage, isStage, stageBackedBy, stageEnteredBy,
+  type CardOption, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, STAGE_NAMES, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, type Stage, isStage, stageBackedBy, stageEnteredBy,
 } from "./stage.ts";
 
 /** 「回复」记执行者行为的那条事件的名字（与 lib/dialogue_acts.ts 的 EVENT_EXECUTOR_ACTS_RECORDED 同一个；这里不从它导入，免得两个文件互相导入）。 */
@@ -31,8 +31,11 @@ const EVENT_ACTS = "EXECUTOR_ACTS_RECORDED";
  */
 const STARTED_NAMES = "('ACTIVITY_STARTED', 'STAGE_MOVED')";
 
-/** 三种卡片上不生效的那一项：进入卡片的「继续本阶段」、回退卡片的「留在本段」、请过目卡片的「需要修改」。点它只把卡片标为已选。 */
-const ENTER_STAY_KEYS: ReadonlySet<string> = new Set(Object.values(STAY_OPTIONS).map((one) => one.key));
+/**
+ * 三种卡片上不生效的那一项：进入卡片的「继续本阶段」（任务空闲时提议开始核读材料的那张卡片上是「先不开始」）、
+ * 回退卡片的「留在本段」、请过目卡片的「需要修改」。点它只把卡片标为已选。
+ */
+const ENTER_STAY_KEYS: ReadonlySet<string> = new Set([...Object.values(STAY_OPTIONS).map((one) => one.key), STAY_IDLE_OPTION.key]);
 const STAY_KEYS: ReadonlySet<string> = new Set([...ENTER_STAY_KEYS, STAY_HERE_OPTION.key, DOCUMENT_REVISE_OPTION.key]);
 
 /** 卡片上的一个选项键是不是不生效的那一项（见 STAY_KEYS）。 */
@@ -225,5 +228,6 @@ export function proposalLine(open: OpenProposal | null, sessionId: string | null
     const pages = open.items.map((one) => one.item_id);
     return `开着的提议：请用户过目补写的 ${pages.length} 页${pages.length ? `（${pages.join("、")}）` : ""}（${where}）。用户还没有都看过；他说看过了、要生成文档时${pressed}。`;
   }
+  if (open.stage === "reading") return `开着的提议：开始核读材料（${where}）。用户还没有决定；他要开始时${pressed}。`;
   return `开着的提议：进入${STAGE_NAMES[open.stage]}（${where}）。用户还没有进入；他要进入时${pressed}。`;
 }
