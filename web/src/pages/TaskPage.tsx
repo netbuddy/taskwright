@@ -1,25 +1,24 @@
-// 任务起点页：任务一级的家。自上而下：面包屑、任务头（任务类型与时刻一行、任务名与一句状态、一段定位的话）、
+// 任务起点页：任务一级的家，也是活动的目录。自上而下：面包屑、任务头（任务类型与时刻一行、任务名与一句状态、一段定位的话）、
 // 「三步开始」指引与三种常见起点（只在六类需求资产都空着、又没有活动在进行时显示）、需求资产现状六格、工作流程两张卡、
-// 单项活动七张卡加「不开展活动」、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
+// 单项活动七张卡与「自由讨论」一行、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
 // 外框是工作视图的顶栏加导航条（components/TaskFrame.tsx）；各块的组件在 components/task/，样式在 styles/task-page.css。
 // 数据是两次普通读取：任务详情（GET …/tasks/{task_id}，带材料与会话）与任务状况（GET …/status，带资产现状、活动目录与这一页的几段话）。
 // 另开一条不带会话的事件连接，只听执行者状态：助手做完一轮时两样都重读一次。
-// 点工作流程或单项活动的按钮：在一条新会话里开展它，然后进那条会话的工作台。「不开展活动」是新建一条会话直接进工作台。
+// 工作流程卡、活动卡、三种常见起点与「开始」按钮都只是进活动输入页（pages/StartInputPage.tsx），开展在那里提交。
+// 「自由讨论」是唯一不经输入页的入口：新建一条会话直接进工作台。
 // 任务已完成或已放弃时整页只读：没有活动目录，上传区、材料的「删除」与知识库的改选用都不显示，只读说明写明原因。
-// 没有阶段的任务（早先建的）没有资产现状与活动目录，这一页只有任务头、「不开展活动」、会话与材料。
+// 没有阶段的任务（早先建的）没有资产现状与活动目录，这一页只有任务头、「自由讨论」、会话与材料。
 
 import { useEffect, useState } from "react";
-import { Alert, Modal, Spin } from "antd";
+import { Alert, Spin } from "antd";
 import { api, ApiError } from "../api/client";
 import { openEventStream } from "../api/events";
-import type { CatalogActivity, CatalogFlow, KnowledgeLibrary, Material, TaskDetail, TaskStatusView } from "../api/types";
+import type { KnowledgeLibrary, TaskDetail, TaskStatusView } from "../api/types";
 import { TaskFrame } from "../components/TaskFrame";
 import { useToast } from "../components/Toasts";
 import { saveBlob } from "../model/download";
 import { formatTime, formatTimeShort } from "../model/format";
 import { ownMaterials } from "../model/docx";
-import { DocxPaper } from "../components/work/DocxPaper";
-import { PdfPaper } from "../components/work/PdfPaper";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
 import { GENERAL } from "../model/knowledge";
@@ -27,7 +26,8 @@ import { allAssetsEmpty, latestSession, stateLine } from "../model/startPage";
 import { TaskKnowledgeCard } from "../components/TaskKnowledgeCard";
 import { SessionList } from "../components/task/SessionList";
 import { MaterialsCard } from "../components/task/MaterialsCard";
-import { ActivityCards, AssetCells, FlowCards, StartGuide } from "../components/task/StartBlocks";
+import { useMaterialViewer } from "../components/task/MaterialViewer";
+import { ActivityCards, AssetCells, FlowCards, FreeTalk, StartGuide } from "../components/task/StartBlocks";
 import "../styles/task-page.css";
 
 /**
@@ -44,12 +44,9 @@ export function TaskPage({ taskId }: { taskId: string }) {
   // 任务状况：资产现状、活动目录与这一页的几段话。读不到（没有阶段的任务、早先的后端）时是 null，页面只画任务详情里有的。
   const [status, setStatus] = useState<TaskStatusView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [material, setMaterial] = useState<{ path: string; text: string } | null>(null);
-  // Word 材料的「查看」按原版式显示（与工作视图材料区同一个渲染），不显示给助手读的投影。
-  const [wordPath, setWordPath] = useState<string | null>(null);
-  const [pdfPath, setPdfPath] = useState<string | null>(null);
-  // 正在开展的那一项的键（流程或活动的键，「不开展活动」是 none）：请求回来之前各按钮都点不动，免得开展两次。
-  const [starting, setStarting] = useState<string | null>(null);
+  const { view, viewer } = useMaterialViewer(taskId);
+  // 「自由讨论」新建会话的请求还没有回来：按钮点不动，免得建出两条会话。
+  const [entering, setEntering] = useState(false);
   const toast = useToast();
   const service = useService();
   const hasKnowledge = !!service.info?.capabilities.knowledge;
@@ -125,39 +122,19 @@ export function TaskPage({ taskId }: { taskId: string }) {
     }
   };
 
-  /** 在一条新会话里开展一条流程或一项活动，成功后进那条会话的工作台；不成（例如助手正在工作）就在页上报原因，不跳转。 */
-  const startIn = async (key: string, fields: { activity: string; in_flow: boolean }) => {
-    if (starting) return;
-    setStarting(key);
-    try {
-      const { session_id } = await api.startInNewSession(taskId, fields);
-      go(href.work(taskId, session_id));
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "没有开展成。");
-    } finally {
-      setStarting(null);
-    }
-  };
-  const startFlow = (flow: CatalogFlow) => { if (flow.start) void startIn(flow.key, { activity: flow.start, in_flow: true }); };
-  const startActivity = (activity: CatalogActivity) => void startIn(activity.key, { activity: activity.key, in_flow: false });
-
-  /** 「不开展活动」：新建一条会话，直接进工作台。 */
+  /** 「自由讨论」：新建一条会话，直接进工作台。 */
   const enterWorkbench = async () => {
-    if (starting) return;
-    setStarting("none");
+    if (entering) return;
+    setEntering(true);
     try {
       const { session_id } = await api.createSession(taskId);
       go(href.work(taskId, session_id));
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "新建会话没有成功。");
     } finally {
-      setStarting(null);
+      setEntering(false);
     }
   };
-
-  // 查看一份材料：Word 与 PDF 按原样分页显示，别的显示文字。
-  const view = (m: Material) => (/\.docx$/i.test(m.path) ? setWordPath(m.path) : /\.pdf$/i.test(m.path) ? setPdfPath(m.path)
-    : void api.materialContent(taskId, m.path).then(setMaterial));
 
   return (
     <TaskFrame taskId={taskId} taskName={task.task_name} where="任务起点" sessions={task.sessions}>
@@ -186,7 +163,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
         </header>
         {closed && <Alert type="info" showIcon style={{ marginTop: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能开展活动、新建会话、上传材料或修改条目。`} />}
 
-        {empty && !closed && <StartGuide flow={recommended} texts={status?.start_page} busy={starting !== null} onStart={startFlow} />}
+        {empty && !closed && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} />}
 
         {status?.assets && (
           <section className="tp-sec">
@@ -199,19 +176,19 @@ export function TaskPage({ taskId }: { taskId: string }) {
           <>
             <section className="tp-sec">
               <div className="tp-sec-h"><h2>工作流程</h2><span className="tp-sec-note">按推荐次序串联多项活动；每站完成后助手提议下一站，由你确认后进入</span></div>
-              <FlowCards flows={catalog.flows} busy={starting} onStart={startFlow} backHref={latest ? href.work(taskId, latest.session_id) : null} />
+              <FlowCards taskId={taskId} flows={catalog.flows} backHref={latest ? href.work(taskId, latest.session_id) : null} />
             </section>
             <section className="tp-sec">
               <div className="tp-sec-h"><h2>单项活动</h2><span className="tp-sec-note">独立开展其中一项；可否开展取决于其输入资产是否具备；完成后仅汇报结果，不提议下一站</span></div>
-              <ActivityCards activities={catalog.activities} busy={starting} onStart={startActivity} onEnter={() => void enterWorkbench()} canEnter={!closed}
-                backHref={latest ? href.work(taskId, latest.session_id) : null} />
+              <ActivityCards taskId={taskId} activities={catalog.activities} backHref={latest ? href.work(taskId, latest.session_id) : null} />
+              <FreeTalk canEnter={!closed} busy={entering} onEnter={() => void enterWorkbench()} />
             </section>
           </>
         )}
         {!catalog && !closed && (
           <section className="tp-sec">
             <div className="tp-sec-h"><h2>进入工作台</h2></div>
-            <ActivityCards activities={[]} busy={starting} onStart={startActivity} onEnter={() => void enterWorkbench()} canEnter />
+            <FreeTalk canEnter busy={entering} onEnter={() => void enterWorkbench()} />
           </section>
         )}
 
@@ -223,23 +200,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
         </div>
       </div>
 
-      <Modal title={material?.path} open={!!material} onCancel={() => setMaterial(null)} footer={null} width="min(54.286rem, 94vw)">
-        <pre className="doc-text" style={{ maxHeight: "40rem", overflow: "auto" }}>{material?.text}</pre>
-      </Modal>
-      <Modal title={wordPath} open={!!wordPath} onCancel={() => setWordPath(null)} footer={null} width="min(64rem, 94vw)" destroyOnHidden>
-        {wordPath && (
-          <div className="app docx-view">
-            <div className="doc-b"><DocxPaper taskId={taskId} path={wordPath} items={[]} locate={null} /></div>
-          </div>
-        )}
-      </Modal>
-      <Modal title={pdfPath} open={!!pdfPath} onCancel={() => setPdfPath(null)} footer={null} width="min(64rem, 94vw)" destroyOnHidden>
-        {pdfPath && (
-          <div className="app docx-view">
-            <div className="doc-b pdf-modal-b"><PdfPaper taskId={taskId} path={pdfPath} items={[]} locate={null} /></div>
-          </div>
-        )}
-      </Modal>
+      {viewer}
     </TaskFrame>
   );
 }

@@ -38,12 +38,12 @@ export function flowTag(flow: CatalogFlow): { text: string; kind: "now" | "rec" 
 /** 后端给的「正在进行」那一句状态（agent/src/lib/stage.ts 的 LAUNCH_ACTIVE）。 */
 export const FLOW_ACTIVE = "正在进行";
 
-/** 工作流程卡主按钮上的字：没有走过是「开展」，走过是「继续」。 */
+/** 工作流程卡右下角提示的字：没有走过是「开展」，走过是「继续」。 */
 export function flowButton(flow: CatalogFlow): string {
-  return `${flow.at === null ? "开展" : "继续"}${flow.name}`;
+  return flow.at === null ? "开展" : "继续";
 }
 
-/** 流程走过时主按钮旁的一句：从哪一站接着。没有走过不写。 */
+/** 流程走过时卡片底部的一句：从哪一站接着。没有走过不写。 */
 export function flowResumeNote(flow: CatalogFlow): string {
   const at = flow.nodes.find((one) => one.key === flow.at);
   return at ? `从「${at.name}」接着` : "";

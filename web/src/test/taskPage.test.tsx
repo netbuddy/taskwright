@@ -69,6 +69,7 @@ function page(task: TaskDetail = detail(), serviceInfo: ServiceInfo = info, stat
     status: status === undefined ? vi.spyOn(api, "taskStatus").mockRejectedValue(new ApiError("not_found", "没有这个接口。", 404))
       : vi.spyOn(api, "taskStatus").mockResolvedValue({ ok: true, status }),
     start: vi.spyOn(api, "startInNewSession").mockResolvedValue({ ok: true, op_id: "ui-op-1", session_id: "S-started" }),
+    action: vi.spyOn(api, "action").mockResolvedValue({ ok: true, client_id: "c", op_id: "ui-op-2" }),
     material: vi.spyOn(api, "uploadMaterial").mockResolvedValue({ path: "inputs/a.md" }),
     document: vi.spyOn(api, "uploadDocument").mockResolvedValue({ name: "a.md", kind: "other", bytes: 1, uploaded_at: "" }),
     select: vi.spyOn(api, "setTaskKnowledge").mockImplementation(async (_t, ids) => ids),
@@ -216,7 +217,7 @@ describe("起点页：空任务", () => {
     expect(cells.every((one) => one.querySelector(".v")!.classList.contains("zero") && one.querySelector(".s") === null)).toBe(true);
   });
 
-  it("工作流程两张卡：推荐的那条带「推荐」与主按钮；不能开展的那条变淡，写「前置条件未满足」与它的前置条件", async () => {
+  it("工作流程两张卡：推荐的那条带「推荐」，整张卡可点、进它的输入页，右下角写「开展 →」；不能开展的那条变淡、不可点，写「前置条件未满足」与它的前置条件", async () => {
     page(detail(), info, statusOf());
     await ready();
     const initial = await screen.findByTestId("flow-initial");
@@ -224,16 +225,17 @@ describe("起点页：空任务", () => {
     expect(text(initial.querySelector(".t"))).toBe("首次分析推荐");
     expect([...initial.querySelectorAll(".tp-kv dd")].map(text)).toEqual(["首次分析的适用情形。", "核读材料 › 澄清 › 写条目 › 发布", "项目材料（可选）、目标系统描述"]);
     expect(text(initial.querySelector(".eg"))).toBe("示例首次分析的经过。");
-    expect(screen.getByTestId("flow-start-initial")).toHaveTextContent("开展首次分析");
-    expect(screen.getByTestId("flow-start-initial")).toHaveClass("pri");
+    expect([initial.tagName, initial.getAttribute("href"), initial.classList.contains("go")]).toEqual(["A", "#/tasks/TASK-P/start/initial", true]);
+    expect(text(initial.querySelector(".tp-arrow"))).toBe("开展 →");
+    expect(initial.querySelector("button")).toBeNull();
     const change = screen.getByTestId("flow-change");
     expect(change).toHaveClass("off");
     expect(text(change.querySelector(".t"))).toBe("需求变更前置条件未满足");
     expect(text(change.querySelector(".tp-need"))).toBe("前置条件：存在已发布的版本。");
-    expect(screen.queryByTestId("flow-start-change")).toBeNull();
+    expect([change.tagName, change.classList.contains("go"), change.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
   });
 
-  it("单项活动每项一张卡：方式、目的、例子、输入与产出、前置条件；能开展的有按钮，缺前提的变淡、前置条件是琥珀色并说明缺什么；末尾是「不开展活动」", async () => {
+  it("单项活动每项一张卡：方式、目的、例子、输入与产出、前置条件；能开展的整张卡可点、进它的输入页，缺前提的变淡、不可点，前置条件是琥珀色并说明缺什么；末尾另起一行是「自由讨论」", async () => {
     page(detail(), info, statusOf());
     await ready();
     const clarifying = await screen.findByTestId("activity-clarifying");
@@ -242,55 +244,60 @@ describe("起点页：空任务", () => {
     expect(text(clarifying.querySelector(".tp-rw"))).toBe("输入业务说明产出业务说明");
     expect(clarifying.querySelector(".tp-rw .w")).toHaveTextContent("业务说明");
     expect(text(clarifying.querySelector(".tp-quiet"))).toBe("无前置条件；可从空白开始。");
-    expect(screen.getByTestId("activity-start-clarifying")).toHaveTextContent("开展澄清");
+    expect([clarifying.tagName, clarifying.getAttribute("href"), text(clarifying.querySelector(".tp-arrow"))]).toEqual(["A", "#/tasks/TASK-P/start/clarifying", "开展 →"]);
+    expect(clarifying.querySelector("button")).toBeNull();
     const writing = screen.getByTestId("activity-writing");
     expect(writing).toHaveClass("off");
     expect(text(writing.querySelector(".tp-need"))).toBe("前置条件：业务说明至少一节，分析模型均已查看。");
     expect(writing.querySelector(".tp-need")).toHaveAttribute("title", "业务说明还没有内容；有 1 张分析模型还没有查看。");
-    expect(screen.queryByTestId("activity-start-writing")).toBeNull();
+    expect([writing.tagName, writing.classList.contains("go"), writing.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
     // 发布现在还不能开展：写那一句状态，不是琥珀色。
     const publish = screen.getByTestId("activity-publish");
     expect([publish.classList.contains("off"), text(publish.querySelector(".tp-quiet")), publish.querySelector(".tp-need")]).toEqual([true, "此版本尚未提供。", null]);
-    expect(text(screen.getByTestId("activity-none"))).toContain("不开展活动直接进入工作台与助手讨论。");
+    // 「自由讨论」不是活动：不在活动卡的网格里，方式写「对话」，按钮是「进入工作台」。
+    const free = screen.getByTestId("free-talk");
+    expect(free.closest(".tp-acts")).toBeNull();
+    expect(text(free.querySelector(".t"))).toBe("自由讨论对话");
+    expect(text(free.querySelector(".d"))).toBe("不开展具体活动，直接进入工作台与助手讨论。助手可解答问题、把定下的事记入业务说明，但不写需求条目，也不提议下一站。");
+    expect(screen.getByTestId("enter-workbench")).toHaveTextContent("进入工作台");
     expect(screen.getByTestId("enter-workbench")).toBeEnabled();
   });
 
-  it("点「开始首次分析」或流程卡的按钮：在新会话里从流程该开始的那一站开展，然后进那条会话的工作台", async () => {
+  it("点「开始首次分析」进首次分析的输入页；三种常见起点各是一个链接，进同一页并带上是第几种；这一页上不发开展请求", async () => {
     const calls = page(detail(), info, statusOf());
     await ready();
+    expect([0, 1, 2].map((index) => screen.getByTestId(`start-case-${index}`).getAttribute("href"))).toEqual([
+      "#/tasks/TASK-P/start/initial?case=0", "#/tasks/TASK-P/start/initial?case=1", "#/tasks/TASK-P/start/initial?case=2"]);
     fireEvent.click(await screen.findByTestId("guide-start"));
-    await waitFor(() => expect(calls.start).toHaveBeenCalledWith("TASK-P", { activity: "clarifying", in_flow: true }));
-    await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-started"));
-    window.location.hash = "";
-    fireEvent.click(screen.getByTestId("flow-start-initial"));
-    await waitFor(() => expect(calls.start).toHaveBeenCalledTimes(2));
-    expect(calls.start.mock.calls[1]).toEqual(["TASK-P", { activity: "clarifying", in_flow: true }]);
+    await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/start/initial"));
+    expect(calls.start).not.toHaveBeenCalled();
+    expect(calls.action).not.toHaveBeenCalled();
   });
 
-  it("点一项活动的按钮：在新会话里单独开展它；点「进入工作台」：只新建会话，不开展活动", async () => {
-    const calls = page(detail(), info, statusOf());
+  it("推荐的流程现在不能开展时：「开始」按钮是灰的，三种常见起点不可点", async () => {
+    page(detail(), info, statusOf({ catalog: { flows: [flowOf("initial", "首次分析", { recommended: true, enabled: false, state: "活动的定义读不出来", start: null }), CHANGE], activities: [] } }));
     await ready();
-    fireEvent.click(await screen.findByTestId("activity-start-clarifying"));
-    await waitFor(() => expect(calls.start).toHaveBeenCalledWith("TASK-P", { activity: "clarifying", in_flow: false }));
-    await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-started"));
-    fireEvent.click(screen.getByTestId("enter-workbench"));
-    await waitFor(() => expect(calls.newSession).toHaveBeenCalledWith("TASK-P"));
+    expect(await screen.findByTestId("guide-start")).toBeDisabled();
+    expect(screen.queryByTestId("start-case-0")).toBeNull();
+    expect(screen.getByTestId("start-cases").querySelectorAll("a")).toHaveLength(0);
+  });
+
+  it("点「自由讨论」的「进入工作台」：只新建会话、不开展活动，直接进工作台；请求回来之前按钮点不动；没有建成照写后端的原话，留在这一页", async () => {
+    const calls = page(detail(), info, statusOf());
+    let done: (value: { session_id: string }) => void = () => {};
+    calls.newSession.mockReturnValueOnce(new Promise((resolve) => { done = resolve; }));
+    await ready();
+    fireEvent.click(await screen.findByTestId("enter-workbench"));
+    await waitFor(() => expect(screen.getByTestId("enter-workbench")).toBeDisabled());
+    done({ session_id: "S-new" });
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
-    expect(calls.start).toHaveBeenCalledTimes(1);
-  });
-
-  it("开展没有成（例如助手正在工作）：照写后端的原话，留在这一页；请求回来之前各按钮点不动", async () => {
-    const calls = page(detail(), info, statusOf());
-    let fail: (reason: unknown) => void = () => {};
-    calls.start.mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
-    await ready();
-    fireEvent.click(await screen.findByTestId("activity-start-clarifying"));
-    await waitFor(() => expect(screen.getByTestId("guide-start")).toBeDisabled());
-    expect(screen.getByTestId("flow-start-initial")).toBeDisabled();
-    expect(screen.getByTestId("enter-workbench")).toBeDisabled();
-    fail(new ApiError("session_busy", "助手正在另一条会话里工作，做完才能在这里继续。", 409));
+    expect(calls.newSession).toHaveBeenCalledWith("TASK-P");
+    expect(calls.start).not.toHaveBeenCalled();
+    window.location.hash = "";
+    calls.newSession.mockRejectedValueOnce(new ApiError("session_busy", "助手正在另一条会话里工作，做完才能在这里继续。", 409));
+    await waitFor(() => expect(screen.getByTestId("enter-workbench")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("enter-workbench"));
     expect(await screen.findByText("助手正在另一条会话里工作，做完才能在这里继续。")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId("activity-start-clarifying")).toBeEnabled());
     expect(window.location.hash).toBe("");
   });
 });
@@ -298,7 +305,7 @@ describe("起点页：空任务", () => {
 describe("起点页：有内容的任务", () => {
   const sessions = [session("S1", "第一句", "2026-09-28T18:02:00"), session("S2", "第二句", "2026-09-29T10:02:00")];
 
-  it("空闲、有内容：没有「三步开始」；任务名旁写「当前无活动」，发布过写第几版；格子里有数的写那一句；流程走过时按钮是「继续」并写从哪一站接着", async () => {
+  it("空闲、有内容：没有「三步开始」；任务名旁写「当前无活动」，发布过写第几版；格子里有数的写那一句；流程走过时卡片右下角写「继续 →」并写从哪一站接着", async () => {
     page(detail({ sessions }), info, statusOf({ assets: FILLED_ASSETS, catalog: { flows: [flowOf("initial", "首次分析", { recommended: true, at: "writing", start: "writing" }), CHANGE], activities: [] } }));
     await ready();
     expect(await screen.findByTestId("task-state")).toHaveTextContent("当前无活动");
@@ -306,8 +313,8 @@ describe("起点页：有内容的任务", () => {
     expect(screen.queryByTestId("start-cases")).toBeNull();
     expect([...screen.getByTestId("asset-cells").querySelectorAll(".tp-cell")].map((one) => [text(one.querySelector(".v")), text(one.querySelector(".s"))])).toEqual([
       ["2 份", "均已核读"], ["9 节", "1 处待澄清"], ["4 张", "1 未查看"], ["6 条", "6 未读 · 1 待核实"], ["未评审", ""], ["未发布", ""]]);
-    expect(screen.getByTestId("flow-start-initial")).toHaveTextContent("继续首次分析");
-    expect(text(screen.getByTestId("flow-initial").querySelector(".tp-go"))).toBe("继续首次分析从「写条目」接着");
+    expect(text(screen.getByTestId("flow-initial").querySelector(".tp-go"))).toBe("从「写条目」接着继续 →");
+    expect(screen.getByTestId("flow-initial")).toHaveAttribute("href", "#/tasks/TASK-P/start/initial");
     cleanup(); vi.restoreAllMocks();
     const released = FILLED_ASSETS.map((one) => (one.key === "versions" ? cell("versions", "文档与版本", 1, "版", "第 1 版") : one));
     page(detail({ sessions }), info, statusOf({ assets: released }));
@@ -315,7 +322,7 @@ describe("起点页：有内容的任务", () => {
     expect(await screen.findByTestId("task-state")).toHaveTextContent("已发布第 1 版 · 当前无活动");
   });
 
-  it("有活动在进行时打开：任务名旁写「当前活动」；这项活动正在写的那一格着色并写「正在产出」；它的卡片不变淡，带「正在进行」与「回到工作台」", async () => {
+  it("有活动在进行时打开：任务名旁写「当前活动」；这项活动正在写的那一格着色并写「正在产出」；它的卡片不变淡，带「正在进行」，整张卡点了回工作台", async () => {
     const clarifying = activityOf("clarifying", "澄清", { enabled: false, state: "正在进行", writes: [kind("description", "业务说明")] });
     page(detail({ sessions }), info, statusOf({
       assets: FILLED_ASSETS, activity: { ...IDLE_ACTIVITY, kind: "activity", key: "clarifying", name: "澄清", flow: null, moved_by: "user", moved_at: "2026-09-29T10:00:00", reason: "" },
@@ -328,13 +335,12 @@ describe("起点页：有内容的任务", () => {
     expect(screen.getByTestId("asset-items")).not.toHaveClass("hot");
     const card = screen.getByTestId("activity-clarifying");
     expect([card.classList.contains("now"), card.classList.contains("off"), text(card.querySelector(".t"))]).toEqual([true, false, "澄清批处理正在进行"]);
-    expect(screen.queryByTestId("activity-start-clarifying")).toBeNull();
-    // 「回到工作台」去最近活动的那条会话。
-    expect(screen.getByTestId("activity-back-clarifying")).toHaveAttribute("href", "#/tasks/TASK-P/sessions/S2");
-    expect(screen.getByTestId("activity-start-writing")).toBeEnabled();
+    // 整张卡去最近活动的那条会话的工作台，右下角写「回到工作台 →」。
+    expect([card.getAttribute("href"), text(card.querySelector(".tp-arrow"))]).toEqual(["#/tasks/TASK-P/sessions/S2", "回到工作台 →"]);
+    expect(screen.getByTestId("activity-writing")).toHaveAttribute("href", "#/tasks/TASK-P/start/writing");
   });
 
-  it("流程正在进行：流程卡写「正在进行」与现在在哪一站，按钮换成「回到工作台」；流程里正在做的那一项活动同样不变淡", async () => {
+  it("流程正在进行：流程卡写「正在进行」与现在在哪一站，整张卡点了回工作台；流程里正在做的那一项活动同样不变淡", async () => {
     const writing = activityOf("writing", "写条目", { enabled: false, state: "正在工作流程中进行" });
     page(detail({ sessions }), info, statusOf({
       assets: FILLED_ASSETS, activity: { ...IDLE_ACTIVITY, kind: "stage", key: "writing", name: "写条目", ordinal: 4, moved_by: "user", moved_at: "2026-09-29T10:00:00", reason: "" },
@@ -343,9 +349,8 @@ describe("起点页：有内容的任务", () => {
     await ready();
     const initial = await screen.findByTestId("flow-initial");
     expect([initial.classList.contains("off"), text(initial.querySelector(".t"))]).toEqual([false, "首次分析正在进行"]);
-    expect(text(initial.querySelector(".tp-go"))).toBe("现在在「写条目」这一站。回到工作台");
-    expect(screen.getByTestId("flow-back")).toHaveAttribute("href", "#/tasks/TASK-P/sessions/S2");
-    expect(screen.queryByTestId("flow-start-initial")).toBeNull();
+    expect(text(initial.querySelector(".tp-go"))).toBe("现在在「写条目」这一站。回到工作台 →");
+    expect(initial).toHaveAttribute("href", "#/tasks/TASK-P/sessions/S2");
     expect(text(screen.getByTestId("activity-writing").querySelector(".t"))).toBe("写条目批处理正在工作流程中进行");
   });
 

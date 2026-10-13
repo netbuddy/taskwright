@@ -1113,8 +1113,9 @@ export interface ActionRequest {
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
   targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
   /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。
-   * start_activity 写 { activity, in_flow }：开展哪一项活动（阶段的写法）、是在首次分析流程里从这个节点开始还是单独开展。 */
-  fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string } | { activity: string; in_flow: boolean };
+   * start_activity 写 { activity, in_flow }：开展哪一项活动（阶段的写法）、是在首次分析流程里从这个节点开始还是单独开展；
+   * 另可以写 scope，是范围说明。 */
+  fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string } | { activity: string; in_flow: boolean; scope?: string };
   notify_executor: boolean;
 }
 
@@ -1428,11 +1429,22 @@ export interface ActivityCatalog {
   activities: CatalogActivity[];
 }
 
-/** 任务起点页上的几段文字。 */
+/** 任务起点页与活动输入页上的几段文字。 */
 export interface StartPageTexts {
   lead: string;
   guide_note: string;
-  cases: { title: string; text: string }[];
+  /** 三种常见起点；focus 是点了它进输入页时先看哪一块（早先的后端不给）。 */
+  cases: { title: string; text: string; focus?: "materials" | "description" }[];
+  /** 首次编制时输入页上的几段；早先的后端不给。 */
+  intake?: {
+    lead: string;
+    material_kinds: string[];
+    describe_note: string;
+    describe_placeholder: string;
+    describe_examples: string[];
+    /** 「开展后」一块里有材料与没有材料两种情形各一句。 */
+    after: string[];
+  };
 }
 
 export interface TaskStatusView {
