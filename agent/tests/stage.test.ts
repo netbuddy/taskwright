@@ -152,7 +152,7 @@ test("一项活动怎样开始、对话里怎样说：流程里的移动、启�
   assert.equal(activityStartSentence("alone", "modeling", IDLE), "用户单独开展整理建模。");
   assert.equal(activityStartSentence("alone", "clarifying", "writing"), "用户单独开展澄清。（原来在做：写条目）");
   assert.equal(switchedReason("clarifying"), "用户改做澄清");
-  assert.equal(activityDoneSentence("modeling"), "助手汇报这项活动结束：整理建模。任务现在空闲。");
+  assert.equal(activityDoneSentence("modeling"), "助手汇报这项活动结束：整理建模。任务现在空闲。要接着做，从任务状况卡再开展一次。");
   assert.deepEqual([flowStartNode(true), flowStartNode(false)], ["reading", "clarifying"]);
 });
 

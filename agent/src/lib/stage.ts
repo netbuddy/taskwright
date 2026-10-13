@@ -283,9 +283,9 @@ export function activityDoneRefusal(position: Position): Refusal {
   ];
 }
 
-/** 助手汇报一项单独开展的活动结束时，对话里那条回复下面的一行。 */
+/** 助手汇报一项单独开展的活动结束时，对话里那条回复下面的一行。末尾告诉用户怎样接着做：任务空闲之后助手不会自己接着做那项活动。 */
 export function activityDoneSentence(activity: Stage): string {
-  return `助手汇报这项活动结束：${STAGE_NAMES[activity]}。任务现在空闲。`;
+  return `助手汇报这项活动结束：${STAGE_NAMES[activity]}。任务现在空闲。要接着做，从任务状况卡再开展一次。`;
 }
 
 /** 首次分析从哪个节点启动：有材料从核读材料，没有材料从澄清。 */

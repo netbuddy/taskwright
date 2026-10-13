@@ -104,11 +104,11 @@ describe("对话区里的阶段移动", () => {
   });
 
   it("助手汇报单独开展的活动结束：那条回复下面一行写结束的是哪一项、任务现在空闲；别的回复没有这一行", () => {
-    expect(activityDoneLine("modeling")).toBe("助手汇报这项活动结束：整理建模。任务现在空闲。");
+    expect(activityDoneLine("modeling")).toBe("助手汇报这项活动结束：整理建模。任务现在空闲。要接着做，从任务状况卡再开展一次。");
     show([reply("r1", "五张图都画好了。", { activity_done: { activity: "modeling" } }), reply("r2", "记下了。")]);
     const lines = screen.getAllByTestId("activity-done");
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toHaveTextContent("助手汇报这项活动结束：整理建模。任务现在空闲。");
+    expect(lines[0]).toHaveTextContent("助手汇报这项活动结束：整理建模。任务现在空闲。要接着做，从任务状况卡再开展一次。");
     expect(lines[0]).toHaveClass("selfnote");
     const first = screen.getAllByTestId("assistant-reply")[0];
     expect(first.compareDocumentPosition(lines[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
