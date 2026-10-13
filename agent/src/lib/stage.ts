@@ -180,6 +180,19 @@ export const STAGE_START_TEXTS = {
 } as const;
 
 /**
+ * 活动输入页上点了「开展」之后，页面替用户发给助手的第一句话，每项活动一句：用户在输入页上写了目标系统描述时发的是那段描述，
+ * 没有写才发这一句，助手据此开始做。核读材料与澄清沿用上面两句。它们不是用户自己打的字，整理用户说过的话时要认出来。
+ */
+export const ACTIVITY_START_TEXTS: Record<Stage, string> = {
+  reading: STAGE_START_TEXTS.reading,
+  clarifying: STAGE_START_TEXTS.clarifying,
+  modeling: `请开始${STAGE_NAMES.modeling}。`,
+  writing: `请开始${STAGE_NAMES.writing}。`,
+  reviewing: `请开始${STAGE_NAMES.reviewing}。`,
+  document: `请开始${STAGE_NAMES.document}。`,
+};
+
+/**
  * 任务状况卡上「请助手说明下一步」替用户发给助手的那句固定的话。它不是用户自己打的字，整理用户说过的话时要认出来。
  */
 export const STATUS_NEXT_TEXT = "请按任务状况说明下一步该做什么。";

@@ -606,7 +606,7 @@ In a task that has stages (its task definition has the collection 总体分析, 
 
 - `persona` has the keys of the persona files under `sim/personas/`: 名字, 说明, 人设, 目标, 答不上的说法, 材料, 熟悉的材料, 材料说明, 隐藏事实, 接受底线. Only 隐藏事实 (the hidden facts) and the two lists of materials are filled in; the name, the character and the goal are empty strings for a person to fill.
 - The hidden facts follow the order of the sessions and, within a session, the order of speaking: every sentence the user typed is one fact, in the user's own words; every choice on a card is one fact, written as 问：the card's question　答：the chosen option. The three keyword fields of each fact are empty.
-- Left out: the fixed sentences the service sends for the user (`origin` `ui_request`), the two sentences sent by the two starting buttons of the overall analysis, and the card choices that enter or stay in a stage.
+- Left out: the fixed sentences the service sends for the user (`origin` `ui_request`), the two sentences sent by the two starting buttons of the overall analysis, the sentence the activity input page sends after starting an activity when the user wrote nothing (one per activity, such as 「请开始整理建模。」), and the card choices that enter or stay in a stage.
 - Read-only; nothing is written. The page saves what it receives as a file.
 
 
