@@ -15,7 +15,8 @@
  * 「## 出口」一节，也去掉（withoutSection）。
  *
  * 平台一级的文件在 agent/prompts/stages/（system.md、common.md 与六项活动各一份，文件名是 lib/stage.ts 里阶段的键），
- * 流程的定义在 agent/prompts/flows/。
+ * 流程的定义在 agent/prompts/flows/。活动的定义与流程的定义开头两行 --- 之间有一段结构化的头（lib/activity_def.ts），
+ * 给任务起点页的活动目录用，拼系统提示时去掉，只用其后的正文。stages 目录里另有一份 publish.md（发布）只有头，不是工作阶段，不拼。
  * 任务类型一级的文件在任务目录里那份任务 skill 的目录下：SKILL.md 的正文是共用部分，旁边的 stages/<阶段的键>.md 是那个阶段的一段，
  * 没有这个文件就是这一段没有内容。早先建任务时复制进任务目录的是整份的 SKILL.md、没有 stages 目录，照同样的规则读出来就是
  * 「共用部分是整份文字、按阶段的那一段为空」。
@@ -168,7 +169,7 @@ export interface LoadedSkill {
   filePath: string;
 }
 
-/** 去掉 SKILL.md 开头两行 --- 之间的 frontmatter，留下正文。 */
+/** 去掉 SKILL.md 开头两行 --- 之间的 frontmatter，留下正文。活动的定义与流程的定义开头的头也用它去掉。 */
 export function skillBody(text: string): string {
   const match = /^---\n[\s\S]*?\n---\n([\s\S]*)$/.exec(text);
   return (match ? match[1] : text).replace(/^\n+/, "");
@@ -365,6 +366,8 @@ function fromSlots(input: ComposeInput, all: readonly Slot[], io: PromptIo): Sta
   /** 一份文件的文字拼进去之前怎样取：任务 skill 去掉 frontmatter；节点的出口只取这个节点的那一节；空闲时见文件头。 */
   const shaped = (part: PartKind, text: string, path: string): string => {
     if (part === "task_common") return skillBody(text);
+    // 活动的定义与流程的定义开头的头（lib/activity_def.ts）不进系统提示：只用正文。
+    if (part === "platform_stage" || part === "node_exit") text = skillBody(text);
     if (part === "node_exit") {
       const section = nodeSection(text, input.stage as Stage);
       if (section === null) throw new Error(`流程的定义里没有「# ${nodeHeading(input.stage as Stage)}」这一节：${path}`);

@@ -1,3 +1,14 @@
+---
+activity: reviewing
+name: 评审确认
+mode: dialogue
+purpose: 按评审规则检查需求条目，列出发现；由你逐条处理并确认。
+reads: items
+writes: review, items
+requires: has_items
+example: 发现「UC-003 缺少异常分支」，可让助手修改，或保留写法并记理由。
+---
+
 # 现在这个阶段：评审确认
 
 任务现在在评审确认阶段，是六个阶段里的第五个。这一段跟着用户的节奏走：用户逐条看条目、发起评审，你照评审的结果改；完成条件都满足之后，提议进入编写文档。
