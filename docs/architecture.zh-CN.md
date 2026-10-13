@@ -49,6 +49,8 @@
 
 **有阶段的任务的系统提示怎样来。** 任务定义里有「总体分析」集合的任务有阶段。这样的任务，助手一侧的扩展在每次运行开始之前（pi 的 `before_agent_start` 事件，`agent/src/hooks/stage_prompt.ts`）读任务库里最近一条阶段记录，把系统提示整份换成拼好的一份：`agent/prompts/stages/` 下的 `system.md`、`common.md` 与现在这个阶段的那一份（文件名是阶段的键：`reading.md`、`clarifying.md`、`modeling.md`、`writing.md`、`reviewing.md`），加上任务目录里任务 skill 的正文与它旁边 `stages/` 目录里这个阶段的那一份（可以没有），最后接回 pi 自己加的工作目录。pi 的 skill 清单不接回去。替换只管这一次运行，所以换阶段在下一次运行生效；扩展在进程里记着上一份，阶段与各文件的修改时刻、大小都没有变就原样交回。每次运行它经状态栏报一行（哪个阶段、重拼还是沿用、说明文字与各部分的摘要值），后端记成补记里的「系统提示」一条。早先的任务没有阶段，扩展什么都不做：系统提示是启动参数给的 `backend/prompts/executor_system_prompt.md`，平台说明是 `--skill` 加载的 `agent/prompts/skills/taskwright-executor/SKILL.md`。两份平台说明里本应相同的各节由 `agent/tests/stage_prompt_files.test.ts` 逐段核对。
 
+**活动的说明与节点的出口分开放。** `agent/prompts/stages/` 下六个阶段的文件只写活动自己：做什么、不做什么、做到什么算够。一项活动做完了提议什么、往回提议什么、用户说的话不属于这一段时怎样办，是它在一条流程里的那个节点的事，写在流程的定义里（`agent/prompts/flows/initial.md`，首次分析，每个节点一节）。任务在流程里的某个阶段时，系统提示里活动的说明后面接它那个节点的一节（拼出来的文字与 0.5.0 相同）；用户单独开展一项活动时接一段固定的文字（做够了在回复里汇报结束，不提议别的活动）；任务空闲时用一段固定的开头接澄清那项活动的说明，不带出口。启动记录里除了 `agent/prompts/stages/` 的文件，也登记 `agent/prompts/flows/` 的文件的字节数与摘要值。
+
 ## 配置放在哪里
 
 | 什么 | 在哪里 | 谁写 |
