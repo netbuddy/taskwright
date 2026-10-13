@@ -318,12 +318,11 @@ export interface Task {
   stage?: StageView | null;
 }
 
-/** 一条对话消息带着的阶段移动：助手在回复里退回（actor 为 executor，带理由），或者用户在卡片上点了进入下一段（actor 为 user）。 */
+/** 用户的一句话带着的阶段移动：用户在卡片上点了进入下一段或者退回前面的阶段，系统替用户记了这次移动。阶段只由用户移动。 */
 export interface StageMove {
   from: StageKey;
   to: StageKey;
-  actor: "executor" | "user";
-  reason?: string;
+  actor: "user";
 }
 
 /** 工作的六个阶段：核读材料、澄清、整理建模、写条目、评审确认、编写文档。 */
@@ -468,8 +467,6 @@ export interface AssistantReply {
   text: string;
   /** 连续被拒到上限后放行的纯文字回复；为真时照普通文字显示并加一行说明。 */
   degraded?: boolean;
-  /** 助手在这条回复里把任务退回了前面的阶段时才有：从哪个阶段、到哪个阶段、理由。 */
-  stage_move?: StageMove;
   /** 用户在它之前的那句话回答了哪几张卡片（卡片所在回复的编号）：用户在卡片之外说的话，由助手按上下文判断是不是在回答卡片。没有时不带。 */
   answers_card?: string[];
   /** 这条回复的卡片重发的是哪一条回复的卡片（用户搁下没有答，助手再问一遍）。不是重发时不带。 */

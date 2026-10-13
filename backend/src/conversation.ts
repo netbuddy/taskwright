@@ -55,17 +55,6 @@ export type Entry = Record<string, any>;
 const isStageKey = (value: unknown): value is string => isStage(value);
 
 /**
- * 助手在回复里把任务退回了前面的阶段时，那条回复带的一项：从哪个阶段、到哪个阶段、理由。
- * details 是「回复」工具结果的 details（其中 stage 是这次移动的结果，移成了 moved 为真），reason 是助手写的理由。
- * 没有写 stage、或者没有移成时为 null，消息里不带这一项。
- */
-export function replyStageMove(details: Record<string, any>, reason: unknown): { from: string; to: string; actor: "executor"; reason: string } | null {
-  const move = details.stage;
-  if (!isObject(move) || move.moved !== true || !isStageKey(move.from) || !isStageKey(move.requested)) return null;
-  return { from: move.from, to: move.requested, actor: "executor", reason: typeof reason === "string" ? reason.trim() : "" };
-}
-
-/**
  * 「继续本阶段」的那条界面操作通知另带的两项：卡片在哪条回复上（reply_message_id）、卡片提议进入哪个阶段（stage）。
  * details 是那条通知的 details。别的界面操作通知不带，返回空对象。
  */
@@ -351,11 +340,10 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
           const reply = or(details.reply, {}) as Record<string, any>;
           args = { informs: [], act: null, text: or(or(reply.text, args.text), "") };
         }
-        const replyMove = replyStageMove(details, (or(call.arguments, {}) as Record<string, any>).reason);
         out.push({
           type: "assistant_reply", session_id: sessionId, message_id: e.id, at, work_id: null, via_reply_tool: true,
           informs: normalizeInforms(args.informs ?? null), act: args.act ?? null, text: or(args.text, ""), degraded: truthy(details.degraded),
-          ...(replyMove ? { stage_move: replyMove } : {}), ...replyCardFields(details),
+          ...replyCardFields(details),
         });
         segmentReplied = true;
       }

@@ -119,8 +119,8 @@ export const REVIEWED_HINT = "这几页已经记为看过，可以在条目区�
 export const quietHint = (key: string): string => (key === STAY_HERE_KEY ? STAY_HERE_HINT : key === DOCUMENT_REVISE_KEY ? REVISE_HINT : STAY_HINT);
 
 /**
- * 对话区里说一次阶段移动的那一行。助手只会把任务退回前面的阶段，写「助手把任务退回澄清：理由」；
- * 用户在卡片上点了进入下一段，写「界面操作：用户把任务从核读材料移到澄清。」，与别的界面操作记号是同一种说法。
+ * 对话区里说一次阶段移动的那一行：用户在卡片上点了进入下一段（或者退回前面的阶段），写「界面操作：用户把任务从核读材料移到澄清。」，
+ * 与别的界面操作记号是同一种说法。阶段只由用户移动。
  */
 /** 用户点了一张进入某个阶段的卡片而阶段没有移动时，卡片上「✓ 你选了……」下面的那句小字。at 是任务当时所在的阶段。 */
 export function stageUnmovedLine(at: string): string {
@@ -128,12 +128,7 @@ export function stageUnmovedLine(at: string): string {
 }
 
 export function stageMoveLine(move: StageMove): string {
-  const to = STAGE_NAMES[move.to] ?? move.to;
-  if (move.actor === "executor") {
-    const reason = (move.reason ?? "").trim();
-    return reason ? `助手把任务退回${to}：${reason}` : `助手把任务退回${to}。`;
-  }
-  return `界面操作：用户把任务从${STAGE_NAMES[move.from] ?? move.from}移到${to}。`;
+  return `界面操作：用户把任务从${STAGE_NAMES[move.from] ?? move.from}移到${STAGE_NAMES[move.to] ?? move.to}。`;
 }
 
 /**

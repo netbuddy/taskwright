@@ -356,8 +356,6 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
       const m = message as AssistantReply;
       return (
         <>
-        {/* 助手在这条回复里把任务退回了前面的阶段：在回复上面写一行，与助手的过程行同款 */}
-        {m.stage_move && <div className="proc"><div className="pline" data-testid="stage-move-assistant"><span className="ptxt">{stageMoveLine(m.stage_move)}</span></div></div>}
         <div className="m ai" data-testid="assistant-reply">
           {m.degraded ? (
             <>

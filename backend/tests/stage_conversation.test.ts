@@ -2,14 +2,13 @@
  * 阶段的移动怎样进对话区的消息（真的后端进程与真的 pi，模型换成进程内的假端点）：
  * 阶段只由用户移动：用户在卡片上点了「退回」前面的阶段或者「进入」下一段，那句「我选：……」带 stage_move（从哪到哪）；
  * 助手发卡片的那条回复不带。实时推的消息与重开页面时读的消息都带，形状相同；没有移动阶段的回复与用户的话不带这一项。
- * 早先的会话里助手在回复里自己退回过阶段，那样的回复读出来仍带 stage_move（replyStageMove，只有取值函数的那一例核对它）。
  */
 
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { request } from "node:http";
 import { after, test } from "node:test";
-import { clickStageMove, clickStageUnmoved, replyStageMove } from "../src/conversation.ts";
+import { clickStageMove, clickStageUnmoved } from "../src/conversation.ts";
 import { captureConsole, movesSql, tempDir } from "./helpers.ts";
 import { type Dict, NO_PI, TOPIC_CALL, reply, sleep, withStack } from "./consent_stack.ts";
 
@@ -19,12 +18,7 @@ process.env.PI_OFFLINE = "1";
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-test("两个取值的函数：移成了才有；阶段名不对、没有移成、没有这一项时都是 null", () => {
-  assert.deepEqual(replyStageMove({ stage: { moved: true, from: "modeling", requested: "clarifying", why: null } }, " 「预约」没说清。 "),
-    { from: "modeling", to: "clarifying", actor: "executor", reason: "「预约」没说清。" });
-  assert.equal(replyStageMove({ stage: { moved: false, from: "modeling", requested: "writing", why: "user_only" } }, "可以写了。"), null);
-  assert.equal(replyStageMove({}, "没有写 stage。"), null);
-  assert.equal(replyStageMove({ stage: { moved: true, from: "modeling", requested: "别的" } }, ""), null);
+test("两个取值的函数：记了移动才有；阶段名不对、没有这一项时都是 null", () => {
   assert.deepEqual(clickStageMove({ stage_move: { from: "reading", to: "clarifying" } }), { from: "reading", to: "clarifying", actor: "user" });
   assert.equal(clickStageMove({ stage_event_seq: 12 }), null);
   assert.equal(clickStageMove({ stage_move: { from: "reading", to: "别的" } }), null);
