@@ -108,6 +108,29 @@ test("提议结束的三种情形：阶段有过一次移动（向前或者退�
   assert.equal(open(back), null);
 });
 
+test("用户开始一项活动使开着的提议作废时，对话里那一句末尾写明；做的正是提议的那一步、或者没有开着的提议时不写", () => {
+  const dir = workspace();
+  const start = (activity: string, inFlow: boolean) => runUserOperation({ workspaceDir: dir, sessionId: SESSION },
+    { op_id: `ui-op-void-${activity}-${inFlow}-${++replies}`, kind: "start_activity", fields: { activity, in_flow: inFlow } }).note;
+  enterStage(dir, "reading");
+  // 助手提议进入澄清，用户却去单独开展澄清：提议作废，那一句末尾写明。
+  reply(dir, enterCard("clarifying", "reading"));
+  assert.equal(open(dir)!.stage, "clarifying");
+  assert.equal(start("澄清", false), "界面操作（不是用户打的字）：用户单独开展澄清。（原来在做：核读材料）（助手先前的提议作废，回来后由助手重新提议）");
+  assert.equal(open(dir), null);
+  // 回到流程：这时没有开着的提议，不写。
+  assert.equal(start("核读材料", true), "界面操作（不是用户打的字）：用户继续首次分析，从核读材料接着。（原来在做：澄清）");
+  // 助手再提议进入澄清，用户从任务状况卡在流程里开始澄清：做的正是提议的那一步，不写。
+  reply(dir, enterCard("clarifying", "reading"));
+  assert.equal(runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: "ui-op-void-as-proposed", kind: "move_stage", fields: { stage: "澄清" } }).note,
+    "界面操作（不是用户打的字）：用户把任务从核读材料移到澄清。");
+  assert.equal(open(dir), null);
+  // 助手提议进入整理建模，用户直接把任务移到写条目：不是提议的那一步，提议作废，写明。
+  reply(dir, enterCard("modeling", "clarifying"));
+  assert.equal(runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: "ui-op-void-skip", kind: "move_stage", fields: { stage: "写条目" } }).note,
+    "界面操作（不是用户打的字）：用户把任务从澄清移到写条目。（助手先前的提议作废，回来后由助手重新提议）");
+});
+
 test("早先建的任务没有阶段：发了带进入键的卡片也不记 proposal", () => {
   const dir = workspace(demoDefinition());
   const card = reply(dir, enterCard("writing", "clarifying"));

@@ -260,6 +260,12 @@ export function activityStartSentence(how: StartHow, to: Stage, from: Position):
   return `用户单独开展${name}。${was}`;
 }
 
+/**
+ * 用户开始了一项活动、助手先前开着的提议因此作废时，对话里那一句后面加的半句：输入框上方「待决定」一行随之消失，
+ * 让用户与助手都知道原因。用户做的正是提议的那一步（在流程里开始提议的那个阶段）时不加。
+ */
+export const PROPOSAL_VOIDED_NOTE = "（助手先前的提议作废，回来后由助手重新提议）";
+
 /** 有活动在进行时用户改做别的活动，原来那条活动记录结束的起因。 */
 export function switchedReason(to: Stage): string {
   return `用户改做${STAGE_NAMES[to]}`;

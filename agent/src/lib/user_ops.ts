@@ -58,7 +58,8 @@ import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
-import { type Position, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, stageByName } from "./stage.ts";
+import { PROPOSAL_VOIDED_NOTE, type Position, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, stageByName } from "./stage.ts";
+import { openProposal } from "./stage_proposal.ts";
 import { startActivity } from "./stage_read.ts";
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
@@ -715,9 +716,13 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
   return startByUser(ctx, opId, request, "start_activity", to, fields.in_flow, "", "开展活动");
 }
 
-/** 移动阶段与开展一项活动共用的那一段：核对任务、记活动开始、拼结果。verb 是任务已经不在进行中时拒绝的话里说的动作。 */
+/**
+ * 移动阶段与开展一项活动共用的那一段：核对任务、记活动开始、拼结果。verb 是任务已经不在进行中时拒绝的话里说的动作。
+ * 助手先前的提议开着、这次开始的又不是它提议的那一步时，提议随这次开始作废，追加的说明末尾写明（PROPOSAL_VOIDED_NOTE）。
+ */
 function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move_stage" | "start_activity", to: Stage, inFlow: boolean, reason: string, verb: string): UserOpResult {
   let outcome;
+  let voided = false;
   try {
     outcome = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
@@ -726,7 +731,12 @@ function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move
         throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
       }
       if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再${verb}。`, { status: task.status });
-      return startActivity(db, ctx.workspaceDir, { taskId: task.task_id, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, reason);
+      const proposal = openProposal(db, task.task_id);
+      const done = startActivity(db, ctx.workspaceDir, { taskId: task.task_id, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, reason);
+      // 用户做的正是提议的那一步（在流程里进入或者退回提议的那个阶段）：提议是办成了，不算作废。
+      const asProposed = proposal !== null && proposal.kind !== "review" && inFlow && proposal.stage === to;
+      voided = done.moved && proposal !== null && !asProposed;
+      return done;
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
@@ -740,7 +750,7 @@ function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move
   return {
     op_id: opId, kind, event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
     // 本来就在那项活动里：什么都没有记，也不往会话里追加说明。
-    note: outcome.moved ? activityStartNote(outcome.how!, to, outcome.from, reason) : "",
+    note: outcome.moved ? `${activityStartNote(outcome.how!, to, outcome.from, reason)}${voided ? PROPOSAL_VOIDED_NOTE : ""}` : "",
     notify_text: null, undoable: false,
   };
 }
