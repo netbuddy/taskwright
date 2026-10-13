@@ -2,9 +2,14 @@
 
 /* 原型的全局清零，只在工作视图里生效（原型是整页清零，这里收窄到 .app 之内）。 */
 .wv-page { width: 100%; height: 100vh; padding: .5rem 1.2%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.app, .app * { margin: 0; padding: 0; }
-.app button { font-family: inherit; color: inherit; }
-.app a { color: inherit; text-decoration: none; }
+.app, .app :where(:not(.unreset, .unreset *)) { margin: 0; padding: 0; }
+.app button:where(:not(.unreset *)) { font-family: inherit; color: inherit; }
+.app a:where(:not(.unreset *)) { color: inherit; text-decoration: none; }
+/* 任务一级的整页（任务起点页，components/TaskFrame.tsx）借用这里的顶栏与导航条；它中间的一栏带 .unreset，上面三条清零不管它：
+ * 里面的卡片、表格与 Ant Design 的控件照任务页自己的样式（styles/task-page.css）。:where 不加权重，工作视图里各条规则谁压过谁与原来一样。 */
+.app .task-main { flex: 1; min-width: 0; overflow: auto; background: var(--stage); border-radius: 0 0 .9rem 0; }
+/* 实心的小标签（例如「推荐」）：全站的 .chip.dark 在工作视图里被 .app .chip 盖住，这里补回来 */
+.app .chip.dark { color: var(--on-ink); background: var(--ink); border-color: var(--ink); font-weight: 600; }
 .app .topbar a.tname:hover { text-decoration: underline; }
 
 /* 暂时不能用的外观：写入按钮、发送按钮、卡片按钮同一档浅灰实心；

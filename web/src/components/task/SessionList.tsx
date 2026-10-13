@@ -1,4 +1,4 @@
-// 任务页的会话清单：每条会话一行，写它的第一句话、最近活动的时刻与它产生了几次修订，右边「打开」进入工作视图。
+// 任务起点页的会话清单：每条会话一行，写它的第一句话、最近活动的时刻与它产生了几次修订，右边「打开」进入工作视图。
 // 最近活动的排在前面；助手正接着的那条会话行前有一个绿色小圆点（与左侧栏的做法相同）。
 
 import { MessageOutlined, RightOutlined } from "@ant-design/icons";
@@ -25,7 +25,7 @@ export function SessionList({ taskId, sessions }: { taskId: string; sessions: Se
     <section className="tp-sec">
       <div className="tp-sec-h"><h2><MessageOutlined className="tp-hic" />会话</h2><span className="cnt" data-testid="session-count">{rows.length}</span></div>
       <div className="tp-sessions">
-        {rows.length === 0 && <div className="tp-sempty" data-testid="session-empty">还没有会话。点右上角「新建会话」开始。</div>}
+        {rows.length === 0 && <div className="tp-sempty" data-testid="session-empty">还没有会话。开展工作后自动建立。</div>}
         {rows.map((s) => (
           <div key={s.session_id} className="tp-srow" title="打开这条会话，进入工作视图。" onClick={() => go(href.work(taskId, s.session_id))} data-testid="session-row">
             <MessageOutlined className="sic" />

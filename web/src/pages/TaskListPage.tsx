@@ -1,4 +1,5 @@
 // 任务列表页：一次普通读取（GET /api/v1/tasks），不连事件流。
+// 打开一个任务时去哪里由 model/startPage.ts 的 taskEntryHref 定：业务说明已经有内容的进工作台，否则进任务起点页。
 
 import { useEffect, useState } from "react";
 import { Alert, Button, Table, Tag } from "antd";
@@ -7,7 +8,8 @@ import { api, ApiError } from "../api/client";
 import type { TaskListEntry } from "../api/types";
 import { NewTaskModal, Shell, sortByActivity } from "../components/Shell";
 import { formatTime } from "../model/format";
-import { go, href } from "../router";
+import { openTask } from "../model/startPage";
+import { go } from "../router";
 
 export function statusTag(status: string) {
   const color = status === "进行中" ? "orange" : status === "已完成" ? "green" : "default";
@@ -50,7 +52,7 @@ export function TaskListPage() {
         dataSource={tasks ?? []}
         pagination={false}
         size="middle"
-        onRow={(t) => (unsupported(t) ? { style: { color: "var(--mut)", cursor: "not-allowed" }, title: t.note } : { onClick: () => go(href.task(t.task_id)), style: { cursor: "pointer" } })}
+        onRow={(t) => (unsupported(t) ? { style: { color: "var(--mut)", cursor: "not-allowed" }, title: t.note } : { onClick: () => openTask(t.task_id, go), style: { cursor: "pointer" } })}
         columns={[
           { title: "任务名", dataIndex: "task_name", render: (v: string, t) => (<><b>{v}</b>{t.domain_tag && <div className="muted small">{t.domain_tag}</div>}</>) },
           { title: "任务类型", dataIndex: "task_type" },
@@ -64,7 +66,7 @@ export function TaskListPage() {
           },
           { title: "最近活动", dataIndex: "last_active_at", render: formatTime },
           { title: "会话数", dataIndex: "session_count" },
-          { title: "", render: (_: unknown, t) => (unsupported(t) ? null : <Button size="small" onClick={() => go(href.task(t.task_id))}>打开</Button>) },
+          { title: "", render: (_: unknown, t) => (unsupported(t) ? null : <Button size="small" onClick={() => openTask(t.task_id, go)}>打开</Button>) },
         ]}
       />
       <NewTaskModal open={open} onClose={() => setOpen(false)} />

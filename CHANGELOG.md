@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A task created by 0.5.0 that was never moved has no record. 0.5.0 counted it in the reading stage when it had materials and in the clarifying stage when it had none; after the upgrade it is idle, like a new task. Launch the first analysis from the task status card to continue as before.
 - Clients of the API: the event `stage_changed` is replaced by `activity_started` and `activity_ended` (see **Interface** below).
 
+### The task start page
+
+The task page is replaced by the task start page, the home of a task. It keeps the frame of the work view (top bar and rail) and has no conversation.
+
+- **What it shows.** The task type and times, the task name with one line of state (尚无需求资产, 当前活动：…, 当前无活动, or 已发布第 N 版 · 当前无活动), a paragraph on what the task is for; the state of the six kinds of requirement assets, one cell each with what produces it; the two flows and the seven activities as cards with their purpose, example, input and output kinds and prerequisites; then the session list, the materials and the knowledge bases in use as before.
+- **A task that holds nothing yet** also gets a three-step guide with the main button 开始首次分析 and three common starting points.
+- **Starting work.** A button of a flow or an activity creates a session, starts the work in it and opens the workbench. A card whose prerequisites are not met is dimmed and says what is missing on hover. 不开展活动 opens a new session without starting anything. For now the start is immediate; a page for the inputs comes next.
+- **Opening a task from the list** leads to the workbench (the most recently active session) when the business description already has content, and to the start page otherwise. The task name in the top bar of the work view and the task icon in its rail lead to the start page.
+- Gone from this page: the completion bar, the cards per collection, and the buttons 生成文档 and 新建会话. Documents are generated from the work view as before; a new session comes from 进入工作台 here or from the 会话 menu in the work view.
+
 ### Tasks, activities and the flow
 
 Reading the material, clarifying, modeling, writing items, reviewing and writing the document are now six activities. In that order they form the flow of the first analysis, which is what 0.5.0 called the six stages; an activity can also be carried out on its own.
@@ -35,6 +45,7 @@ Reading the material, clarifying, modeling, writing items, reviewing and writing
 - Task status: `launch`, the section for starting an activity; `activity.kind` may be `activity` (started on its own) or `idle`, with `ordinal` null. Task data: `task.stage.current` may be `idle`, and `task.stage` has `node`, `flow_node` and `launch`.
 - Task status and `task.stage` also have `assets`, the current state of the six kinds of requirement assets (materials and evidence, business description, analysis models, requirement items, review and confirmation, documents and versions), and `catalog`, the two flows and the seven activities with the wording from their definitions, whether each can be started now and a one-line state; a flow carries its stations, the station reached (`at`) and the station to start from (`start`). `task.stage.scope` is the note on scope of the current activity. `launch` stays for the current page.
 - The system prompt shown in the debug tab may have one more part, `scope`.
+- Task status: `start_page`, the texts of the task start page (`lead`, `guide_note`, `cases`).
 - The assistant's reply accepts `activity_done`; a reply message then carries `activity_done` with the activity that ended. A user message sent from a card carries `how` in `stage_move`, and `why` in `stage_unmoved` when the click did not count because the task was not in the flow.
 - New card option keys: `enter_reading` and `stay_idle`.
 - See sections 4, 5, 6 and 13 of the API reference.

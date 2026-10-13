@@ -1,4 +1,4 @@
-// 任务页的会话卡片与「最近一次活动」：任务页开一条不带会话的事件连接，只听执行者状态；助手做完一轮（从工作中变为别的状态）时
+// 任务起点页的会话清单与「最近一次活动」：这一页开一条不带会话的事件连接，只听执行者状态；助手做完一轮（从工作中变为别的状态）时
 // 重读任务。重新连上时重读一次。任务已经结束时不开；离开页面时断开。
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -32,18 +32,19 @@ function detail(count: number, at: string, status = "进行中"): TaskDetail {
 
 function open(first: TaskDetail) {
   const get = vi.spyOn(api, "getTask").mockResolvedValue(first);
+  const status = vi.spyOn(api, "taskStatus").mockResolvedValue({ ok: true, status: null });
   vi.spyOn(api, "listTasks").mockResolvedValue([]);
   vi.spyOn(api, "listSessions").mockResolvedValue([]);
   vi.spyOn(api, "serviceInfo").mockRejectedValue(new Error("没有这个接口"));
   const view = render(<ConfigProvider><AntApp><ToastProvider><ServiceProvider><TaskPage taskId="TASK-E" /></ServiceProvider></ToastProvider></AntApp></ConfigProvider>);
-  return { get, view };
+  return { get, status, view };
 }
 const executor = (state: string) => act(() => handlers!.onMessage({ event: "executor_state", id: null, data: { state, text: "", active_session: "S1" } }));
 
 describe("任务页随助手做完一轮更新", () => {
   it("连接不带会话；从工作中变为空闲时重读，会话卡片换成新的消息条数", async () => {
-    const { get } = open(detail(4, "2026-09-28T01:05:00Z"));
-    expect(await screen.findByText(/4 条消息/)).toBeInTheDocument();
+    const { get, status } = open(detail(4, "2026-09-28T01:05:00Z"));
+    expect(await screen.findByTestId("session-row")).toHaveTextContent("4 条消息");
     await waitFor(() => expect(handlers).not.toBeNull());
     expect((openEventStream as Mock).mock.calls[0][0]).toBe("/api/v1/tasks/TASK-E/events");
     expect(get).toHaveBeenCalledTimes(1);
@@ -51,8 +52,10 @@ describe("任务页随助手做完一轮更新", () => {
     executor("working");
     expect(get).toHaveBeenCalledTimes(1);
     executor("idle");
-    expect(await screen.findByText(/10 条消息/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("session-row")).toHaveTextContent("10 条消息"));
     expect(get).toHaveBeenCalledTimes(2);
+    // 任务状况随任务详情一起重读：资产现状与活动目录不停在打开页面的那一刻。
+    expect(status).toHaveBeenCalledTimes(2);
   });
 
   it("没有从工作中离开（空闲到空闲）时不重读；刚连上时收到的第一条非工作中状态重读一次；别的事件不看", async () => {
@@ -87,7 +90,7 @@ describe("任务页随助手做完一轮更新", () => {
   it("任务已经结束（已完成、已放弃）时不开这条连接", async () => {
     for (const status of ["已完成", "已放弃"]) {
       open(detail(4, "2026-09-28T01:05:00Z", status));
-      expect(await screen.findByText(/4 条消息/)).toBeInTheDocument();
+      expect(await screen.findByTestId("session-row")).toHaveTextContent("4 条消息");
       expect(openEventStream).not.toHaveBeenCalled();
       cleanup(); vi.restoreAllMocks();
     }

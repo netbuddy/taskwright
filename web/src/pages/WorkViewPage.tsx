@@ -397,7 +397,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
           </div>
           <div className="empty missing">
             <div>找不到这条会话。还没有说过话的会话，在你打开别的会话之后不会保留。</div>
-            <div><a href={href.task(taskId)} data-testid="missing-session-back">回到任务页</a></div>
+            <div><a href={href.task(taskId)} data-testid="missing-session-back">回到任务起点</a></div>
           </div>
         </div>
       </div>
@@ -441,7 +441,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
         <div className="app-body">
           <div className="rail">
             <div className="ico" title="全局查找（还没有做）">⌕</div>
-            <a className="ico on" title="当前任务：回到任务页" href={href.task(taskId)}>▣</a>
+            <a className="ico on" title="任务起点" href={href.task(taskId)}>▣</a>
             <div className="ico" title="材料、文档与修订：展开或收起右侧栏" role="button" style={{ cursor: "pointer" }} onClick={() => toggleDoc(!docCollapsed)}>▤</div>
             <div className="sp" />
             <div className="ico" title="设置" role="button" style={{ cursor: "pointer" }} onClick={openSettings} data-testid="rail-settings">◉</div>

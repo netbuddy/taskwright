@@ -1365,6 +1365,76 @@ export interface ContextWindowResult {
  * models 是还在的图按种类的张数；items 是总体分析与问题之外各集合的条目数与用户看过现在这一版的条数；
  * missing 是现在这个阶段没有通过的灯；proposal 是开着的提议；versions 留给已发布的文档版本，现在恒为空。
  */
+/** 需求资产六类里一类的现状：任务起点页上的一格。 */
+export interface AssetCell {
+  /** materials、description、models、items、review、versions 之一。 */
+  key: string;
+  name: string;
+  /** 数量；评审与确认是评审过几轮，文档与版本是发布到第几版。 */
+  count: number;
+  unit: string;
+  /** 格里的大字：「3 节」「未评审」「未发布」。 */
+  text: string;
+  /** 大字下面的一句；没有可说的是空文字。 */
+  note: string;
+  /** 产出这一类的各项活动的名称；材料来自上传，是空的。 */
+  produced_by: string[];
+}
+
+/** 带名称的一个键：一类资产、一项活动。 */
+export interface NamedKey {
+  key: string;
+  name: string;
+}
+
+/** 活动目录里的一项单项活动。文字取自活动的定义；enabled 与 state 是现在能不能开展。 */
+export interface CatalogActivity {
+  key: string;
+  name: string;
+  mode: "batch" | "dialogue" | "user_only";
+  mode_name: string;
+  purpose: string;
+  reads: NamedKey[];
+  writes: NamedKey[];
+  prerequisite_text: string;
+  example: string;
+  enabled: boolean;
+  /** 一句状态：可以开展、正在进行、正在工作流程中进行、此版本尚未提供，或者缺什么前提。 */
+  state: string;
+  recommended: boolean;
+}
+
+/** 活动目录里的一条工作流程。 */
+export interface CatalogFlow {
+  key: string;
+  name: string;
+  purpose: string;
+  applies: string;
+  nodes: NamedKey[];
+  inputs: string;
+  prerequisite_text: string;
+  example: string;
+  enabled: boolean;
+  state: string;
+  recommended: boolean;
+  /** 流程走到的站；没有走过为 null。 */
+  at: string | null;
+  /** 现在开展应当从哪一站开始；这条流程现在还不能开展时为 null。 */
+  start: StageKey | null;
+}
+
+export interface ActivityCatalog {
+  flows: CatalogFlow[];
+  activities: CatalogActivity[];
+}
+
+/** 任务起点页上的几段文字。 */
+export interface StartPageTexts {
+  lead: string;
+  guide_note: string;
+  cases: { title: string; text: string }[];
+}
+
 export interface TaskStatusView {
   generated_at: string;
   /**
@@ -1377,6 +1447,12 @@ export interface TaskStatusView {
   };
   /** 「开展一项活动」一节；任务不在进行中、或者后端是早先的版本时没有。 */
   launch?: LaunchView | null;
+  /** 需求资产六类的现状；后端是早先的版本时没有。 */
+  assets?: AssetCell[];
+  /** 活动目录；任务不在进行中、或者后端是早先的版本时没有。 */
+  catalog?: ActivityCatalog | null;
+  /** 任务起点页上的几段文字；后端是早先的版本时没有。 */
+  start_page?: StartPageTexts;
   description: { sections: number; chapters: { no: number; name: string; sections: number }[]; unsorted: number; open_questions: number };
   models: { kind: string; name: string; count: number }[];
   items: { collection: string; total: number; viewed: number }[];

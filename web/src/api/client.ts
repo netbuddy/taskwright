@@ -305,6 +305,13 @@ export const api = {
     request<{ libraries: string[] }>("POST", `${task(taskId)}/knowledge`, { libraries }).then((r) => r.libraries),
 
   // 6 直接操作
+  /**
+   * 在一条新会话里开展活动：不带会话，后端先核对这项活动能不能开展，再新建会话、在新会话里记开展，回应里带新会话的编号。
+   * in_flow 为真是在首次分析流程里从这一站开始；scope 是范围说明，可以不给。
+   */
+  startInNewSession: (taskId: string, fields: { activity: string; in_flow: boolean; scope?: string }) =>
+    request<{ ok: true; op_id: string; session_id: string }>(
+      "POST", `${task(taskId)}/actions`, { kind: "start_activity", targets: [], fields: { ...fields, session: "new" }, notify_executor: false }, ACTION_TIMEOUT_MS),
   action: (taskId: string, sessionId: string, body: ActionRequest) =>
     request<{ ok: true; client_id: string; op_id: string }>(
       "POST", `${task(taskId)}/actions?session=${encodeURIComponent(sessionId)}`, body, ACTION_TIMEOUT_MS),
