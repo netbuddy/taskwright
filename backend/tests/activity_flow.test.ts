@@ -84,20 +84,22 @@ test("新任务空闲；助手提议开始核读、用户点了启动首次分�
     // 缺前提的不能单独开展：还没有需求条目，评审确认被拒；业务说明还没有内容，整理建模被拒。什么都不记。
     const refused = await action({ kind: "start_activity", targets: [], fields: { activity: "reviewing", in_flow: false }, notify_executor: false });
     assert.equal(refused.status >= 400, true);
-    assert.equal(refused.body.error.message, "现在还不能单独开展评审确认：还没有需求条目。");
+    assert.equal(refused.body.error.message, "现在还不能开展「评审确认」：还没有需求条目。");
     const noPages = await action({ kind: "start_activity", targets: [], fields: { activity: "modeling", in_flow: false }, notify_executor: false });
-    assert.equal(noPages.body.error.message, "现在还不能单独开展整理建模：业务说明还没有内容。");
+    assert.equal(noPages.body.error.message, "现在还不能开展「整理建模」：业务说明还没有内容。");
 
     // 用户从任务状况卡单独开展澄清：核读材料那条记录结束（起因是用户改做），新记录不在流程里；对话里留一行，不引出助手的运行。
     const before = requests().length;
-    assert.equal((await action({ kind: "start_activity", targets: [], fields: { activity: "clarifying", in_flow: false }, notify_executor: false })).status, 200);
+    assert.equal((await action({ kind: "start_activity", targets: [], fields: { activity: "clarifying", in_flow: false, scope: "只问续借的规则" }, notify_executor: false })).status, 200);
     const alone = await status();
     assert.deepEqual([alone.activity.kind, alone.activity.key, alone.activity.name, alone.activity.ordinal, alone.activity.flow, alone.activity.moved_by],
       ["activity", "clarifying", "澄清", null, null, "user"]);
     assert.deepEqual([alone.launch.current, alone.launch.flows[0].label, alone.launch.flows[0].enabled],
       [{ activity: "clarifying", in_flow: false, label: "继续澄清" }, "继续首次分析（从核读材料接着）", true]);
     const note = (await messages()).filter((m) => m.type === "ui_action_noted").at(-1)!;
-    assert.deepEqual([note.kind, note.text], ["start_activity", "界面操作（不是用户打的字）：用户单独开展澄清。（原来在做：核读材料）"]);
+    assert.deepEqual([note.kind, note.text], ["start_activity", "界面操作（不是用户打的字）：用户开展活动「澄清」。（原来在做：核读材料）范围说明：只问续借的规则。"]);
+    assert.deepEqual(db("SELECT activity, scope FROM activity_record ORDER BY started_seq DESC LIMIT 1"), [{ activity: "clarifying", scope: "只问续借的规则" }]);
+    assert.equal((await stageNow()).scope, "只问续借的规则");
     assert.equal(requests().length, before, "开展一项活动不引出助手的运行");
     assert.deepEqual(db("SELECT name, json_extract(payload, '$.reason') AS reason FROM event WHERE name LIKE 'ACTIVITY_%' ORDER BY seq").slice(-2),
       [{ name: "ACTIVITY_ENDED", reason: "用户改做澄清" }, { name: "ACTIVITY_STARTED", reason: "" }]);
@@ -105,6 +107,10 @@ test("新任务空闲；助手提议开始核读、用户点了启动首次分�
     // 助手做够了：回复里写 activity_done，送达之后这项活动结束，任务空闲；那条回复带着结束的是哪一项。这次运行的系统提示里出口是固定的那一段。
     await send({ text: "还有什么要问我的？", client_id: "c-3" });
     assert.ok(systemText(requests().at(-1)!).includes(STANDALONE_EXIT));
+    // 范围说明在这项活动进行期间的系统提示里，接在出口之后。
+    const scopedPrompt = systemText(requests().at(-1)!);
+    assert.ok(scopedPrompt.includes("## 本次范围说明\n") && scopedPrompt.includes("本次范围说明：只问续借的规则"));
+    assert.ok(scopedPrompt.indexOf(STANDALONE_EXIT) < scopedPrompt.indexOf("## 本次范围说明"));
     const ended = await stageNow();
     assert.deepEqual([ended.current, ended.node, ended.flow_node, ended.moved_by], ["idle", null, "reading", null]);
     const reported = (await messages()).filter((m) => m.type === "assistant_reply").at(-1)!;
@@ -114,7 +120,7 @@ test("新任务空闲；助手提议开始核读、用户点了启动首次分�
 
     // 用户继续首次分析（从核读材料接着）；助手在流程里写 activity_done：整次回复被拒，任务仍在核读材料；去掉之后送达。
     assert.equal((await action({ kind: "start_activity", targets: [], fields: { activity: "reading", in_flow: true }, notify_executor: false })).status, 200);
-    assert.equal((await messages()).filter((m) => m.type === "ui_action_noted").at(-1)!.text, "界面操作（不是用户打的字）：用户继续首次分析，从核读材料接着。");
+    assert.equal((await messages()).filter((m) => m.type === "ui_action_noted").at(-1)!.text, "界面操作（不是用户打的字）：用户继续工作流程「首次分析」，从「核读材料」接着。");
     await send({ text: "读得怎么样了？", client_id: "c-4" });
     assert.ok(db("SELECT tool_name, fact FROM tool_rejection ORDER BY rowid").some((r: Dict) => r.tool_name === "reply"
       && String(r.fact).includes("回复里写了 activity_done，而任务现在在首次分析流程里的核读材料阶段")));

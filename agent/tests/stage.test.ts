@@ -146,11 +146,11 @@ test("一项活动怎样开始、对话里怎样说：流程里的移动、启�
   assert.deepEqual([startHow(true, true, "clarifying"), startHow(true, true, null), startHow(true, false, null), startHow(true, false, "writing"),
     startHow(false, true, "clarifying"), startHow(false, false, null)], ["move", "move", "launch", "resume", "alone", "alone"]);
   assert.equal(activityStartSentence("move", "modeling", "clarifying"), "用户把任务从澄清移到整理建模。");
-  assert.equal(activityStartSentence("launch", "reading", IDLE), "用户启动首次分析，从核读材料开始。");
-  assert.equal(activityStartSentence("resume", "writing", IDLE), "用户继续首次分析，从写条目接着。");
-  assert.equal(activityStartSentence("resume", "writing", "clarifying"), "用户继续首次分析，从写条目接着。（原来在做：澄清）");
-  assert.equal(activityStartSentence("alone", "modeling", IDLE), "用户单独开展整理建模。");
-  assert.equal(activityStartSentence("alone", "clarifying", "writing"), "用户单独开展澄清。（原来在做：写条目）");
+  assert.equal(activityStartSentence("launch", "reading", IDLE), "用户开展工作流程「首次分析」，从「核读材料」开始。");
+  assert.equal(activityStartSentence("resume", "writing", IDLE), "用户继续工作流程「首次分析」，从「写条目」接着。");
+  assert.equal(activityStartSentence("resume", "writing", "clarifying"), "用户继续工作流程「首次分析」，从「写条目」接着。（原来在做：澄清）");
+  assert.equal(activityStartSentence("alone", "modeling", IDLE), "用户开展活动「整理建模」。");
+  assert.equal(activityStartSentence("alone", "clarifying", "writing"), "用户开展活动「澄清」。（原来在做：写条目）");
   assert.equal(switchedReason("clarifying"), "用户改做澄清");
   assert.equal(activityDoneSentence("modeling"), "助手汇报这项活动结束：整理建模。任务现在空闲。要接着做，从任务状况卡再开展一次。");
   assert.deepEqual([flowStartNode(true), flowStartNode(false)], ["reading", "clarifying"]);
@@ -178,9 +178,9 @@ test("开展一项活动的三组选项：正在进行的只是一行；首次�
   assert.deepEqual(writing.current, { activity: "writing", in_flow: true, label: "继续首次分析：写条目" });
   assert.deepEqual(writing.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: false, state: "正在进行" }]);
   assert.deepEqual(writing.activities.map((one) => one.enabled), [true, true, true, false, false, false]);
-  // 流程里正在做的那一项，单独开展一组里同名的不能点，写明它正在流程里进行。
+  // 流程里正在做的那一项，单独开展一组里同名的不能点，写明它正在工作流程中进行。
   assert.deepEqual(writing.activities.filter((one) => !one.enabled).map((one) => [one.label, one.state]),
-    [["写条目", "正在流程里进行"], ["评审确认", "还没有需求条目"], ["编写文档", "还没有已确认的需求条目"]]);
+    [["写条目", "正在工作流程中进行"], ["评审确认", "还没有需求条目"], ["编写文档", "还没有已确认的需求条目"]]);
   // 流程走到写条目之后改做单独的澄清：第一组写「继续澄清」，流程可以从写条目接着，澄清那一项正在进行。
   const alone = launchView({ position: "clarifying", inFlow: false, flowNode: "writing", hasMaterials: true, blocked: none });
   assert.deepEqual(alone.current, { activity: "clarifying", in_flow: false, label: "继续澄清" });

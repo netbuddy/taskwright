@@ -86,11 +86,11 @@ describe("对话区里的阶段移动", () => {
   });
 
   it("任务空闲时点了「开始核读材料」：那一行写启动首次分析（走过一段的写继续）；早先的消息没有写怎样开始的，照移动写", () => {
-    expect(stageMoveLine({ from: "idle", to: "reading", actor: "user", how: "launch" })).toBe("界面操作：用户启动首次分析，从核读材料开始。");
-    expect(stageMoveLine({ from: "idle", to: "reading", actor: "user", how: "resume" })).toBe("界面操作：用户继续首次分析，从核读材料接着。");
+    expect(stageMoveLine({ from: "idle", to: "reading", actor: "user", how: "launch" })).toBe("界面操作：用户开展工作流程「首次分析」，从「核读材料」开始。");
+    expect(stageMoveLine({ from: "idle", to: "reading", actor: "user", how: "resume" })).toBe("界面操作：用户继续工作流程「首次分析」，从「核读材料」接着。");
     expect(stageMoveLine({ from: "reading", to: "clarifying", actor: "user", how: "move" })).toBe("界面操作：用户把任务从核读材料移到澄清。");
     show([said("u1", "我选：开始核读材料", { origin: "card_choice", stage_move: { from: "idle", to: "reading", actor: "user", how: "launch" } })]);
-    expect(screen.getByTestId("stage-move-user")).toHaveTextContent("界面操作：用户启动首次分析，从核读材料开始。");
+    expect(screen.getByTestId("stage-move-user")).toHaveTextContent("界面操作：用户开展工作流程「首次分析」，从「核读材料」开始。");
   });
 
   it("任务不在流程里时点了进入或退回的卡片：卡片上的小字说这次点击没有开始活动、任务空闲或者正在单独开展哪一项、请从任务状况卡开展", () => {

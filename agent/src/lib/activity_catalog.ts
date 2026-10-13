@@ -12,7 +12,7 @@ import {
   PUBLISH, READ_NAMES, prerequisiteText,
 } from "./activity_def.ts";
 import { CHAPTERS, chapterLayout } from "./overall_chapters.ts";
-import { FLOW_INITIAL, IDLE, LAUNCH_ACTIVE, LAUNCH_READY, type LampInput, type Position, type Stage, flowStartNode, isStage } from "./stage.ts";
+import { FLOW_INITIAL, IDLE, LAUNCH_ACTIVE, LAUNCH_IN_FLOW, LAUNCH_READY, type LampInput, type Position, type Stage, flowStartNode, isStage } from "./stage.ts";
 
 /** 算六类资产的现状与前置条件要的数。 */
 export interface AssetFacts {
@@ -204,8 +204,6 @@ export interface CatalogWhere {
   flowNode: Stage | null;
 }
 
-/** 任务正在首次分析流程里做这项活动时，单项活动里同名那一项的状态。 */
-export const CATALOG_IN_FLOW = "正在工作流程中进行";
 /** 还不能开展的活动（发布）的状态。 */
 export const CATALOG_LATER = "此版本尚未提供";
 
@@ -222,7 +220,7 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
     const blocked = blockedText(one.requires, facts);
     // 发布现在还不能开展：缺前提时说缺什么，不缺时说明这个版本还没有。
     if (one.key === PUBLISH) return { ...base, enabled: false, state: blocked ?? CATALOG_LATER };
-    if (at === one.key) return { ...base, enabled: false, state: where.inFlow ? CATALOG_IN_FLOW : LAUNCH_ACTIVE };
+    if (at === one.key) return { ...base, enabled: false, state: where.inFlow ? LAUNCH_IN_FLOW : LAUNCH_ACTIVE };
     return { ...base, enabled: blocked === null, state: blocked ?? LAUNCH_READY };
   });
   const flows: CatalogFlow[] = defs.flows.map((one) => {

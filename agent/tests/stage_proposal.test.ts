@@ -116,10 +116,10 @@ test("用户开始一项活动使开着的提议作废时，对话里那一句�
   // 助手提议进入澄清，用户却去单独开展澄清：提议作废，那一句末尾写明。
   reply(dir, enterCard("clarifying", "reading"));
   assert.equal(open(dir)!.stage, "clarifying");
-  assert.equal(start("澄清", false), "界面操作（不是用户打的字）：用户单独开展澄清。（原来在做：核读材料）（助手先前的提议作废，回来后由助手重新提议）");
+  assert.equal(start("澄清", false), "界面操作（不是用户打的字）：用户开展活动「澄清」。（原来在做：核读材料）（助手先前的提议作废，回来后由助手重新提议）");
   assert.equal(open(dir), null);
   // 回到流程：这时没有开着的提议，不写。
-  assert.equal(start("核读材料", true), "界面操作（不是用户打的字）：用户继续首次分析，从核读材料接着。（原来在做：澄清）");
+  assert.equal(start("核读材料", true), "界面操作（不是用户打的字）：用户继续工作流程「首次分析」，从「核读材料」接着。（原来在做：澄清）");
   // 助手再提议进入澄清，用户从任务状况卡在流程里开始澄清：做的正是提议的那一步，不写。
   reply(dir, enterCard("clarifying", "reading"));
   assert.equal(runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: "ui-op-void-as-proposed", kind: "move_stage", fields: { stage: "澄清" } }).note,

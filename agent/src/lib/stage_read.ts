@@ -74,13 +74,17 @@ export interface ActivityRecord {
   ended_at: string | null;
   started_seq: number;
   ended_seq: number | null;
+  /** 用户开展这项活动时写的范围说明；没有写是 null。 */
+  scope: string | null;
 }
 
 /**
  * 读活动记录的列：表里的各列，加上从记下开始的那条事件的内容里取的「从哪个阶段来」。那条事件在，就照它写的（它写 null 是开始之前任务空闲）；
  * 那条事件已经不在时，取前一条记录的活动。
  */
-const RECORD_COLUMNS = "r.record_id, r.activity, r.node, r.flow, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.started_at, r.ended_at, r.started_seq, r.ended_seq, " +
+const recordColumns = (db: DatabaseSync): string => "r.record_id, r.activity, r.node, r.flow, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.started_at, r.ended_at, r.started_seq, r.ended_seq, " +
+  // 范围说明一列是格式版本 6 加的：只读的一侧会遇到还没有升级过的库，那时当作没有写。
+  `${hasScopeColumn(db) ? "r.scope" : "NULL AS scope"}, ` +
   "CASE WHEN e.seq IS NOT NULL AND json_valid(e.payload) THEN json_extract(e.payload, '$.from') ELSE " +
   `(SELECT p.activity FROM ${TABLE} p WHERE p.task_id = r.task_id AND p.started_seq < r.started_seq ORDER BY p.started_seq DESC LIMIT 1) END AS "from"`;
 const RECORD_FROM = `${TABLE} r LEFT JOIN event e ON e.seq = r.started_seq`;
@@ -88,8 +92,13 @@ const RECORD_FROM = `${TABLE} r LEFT JOIN event e ON e.seq = r.started_seq`;
 type RecordRow = Omit<ActivityRecord, "from"> & { from: unknown };
 const recordOf = (row: RecordRow): ActivityRecord => ({
   ...row, record_id: Number(row.record_id), started_seq: Number(row.started_seq), ended_seq: row.ended_seq === null ? null : Number(row.ended_seq),
-  from: isStage(row.from) ? row.from : null,
+  from: isStage(row.from) ? row.from : null, scope: typeof row.scope === "string" && row.scope !== "" ? row.scope : null,
 });
+
+/** 活动记录表有没有范围说明一列。 */
+function hasScopeColumn(db: DatabaseSync): boolean {
+  return (db.prepare(`PRAGMA table_info(${TABLE})`).all() as { name: string }[]).some((row) => row.name === "scope");
+}
 
 /** 库里有没有活动记录表：只读的一侧会遇到还没有升级过的库。 */
 export function hasActivityTable(db: DatabaseSync): boolean {
@@ -99,7 +108,7 @@ export function hasActivityTable(db: DatabaseSync): boolean {
 /** 全部活动记录，按开始的先后排。 */
 export function activityRecords(db: DatabaseSync, taskId: string): ActivityRecord[] {
   if (!hasActivityTable(db)) return [];
-  const rows = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.started_seq`).all(taskId) as unknown as RecordRow[];
+  const rows = db.prepare(`SELECT ${recordColumns(db)} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.started_seq`).all(taskId) as unknown as RecordRow[];
   return rows.map(recordOf);
 }
 
@@ -109,7 +118,7 @@ export function activityRecords(db: DatabaseSync, taskId: string): ActivityRecor
  */
 export function openActivityRecord(db: DatabaseSync, taskId: string): ActivityRecord | null {
   if (!hasActivityTable(db)) return null;
-  const row = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? AND r.ended_at IS NULL ORDER BY r.started_seq DESC LIMIT 1`).get(taskId) as RecordRow | undefined;
+  const row = db.prepare(`SELECT ${recordColumns(db)} FROM ${RECORD_FROM} WHERE r.task_id = ? AND r.ended_at IS NULL ORDER BY r.started_seq DESC LIMIT 1`).get(taskId) as RecordRow | undefined;
   return row && isStage(row.activity) ? recordOf(row) : null;
 }
 
@@ -155,6 +164,8 @@ export interface StageMove {
   inFlow?: boolean;
   /** 原来那项活动结束的起因；不给时与 reason 相同。 */
   endReason?: string;
+  /** 用户开展这项活动时写的范围说明；不给或者是空文字就是没有写。 */
+  scope?: string;
 }
 
 /**
@@ -162,6 +173,7 @@ export interface StageMove {
  * 这条事件的序号），再记一条事件 ACTIVITY_STARTED、插一条新的活动记录，返回开始那条事件的序号。任务没有在进行的活动时（空闲）
  * 没有可结束的，只记开始的一条，这时事件里的 from 是 null。
  * 在流程里开始时，新记录的节点与活动同一个写法，所属流程是首次分析；单独开展时这两列为空。事件的内容里也写这两样。
+ * 写了范围说明时，记进新记录的范围说明一列，事件的内容里也带上（scope）；没有写时事件里没有这一项。
  * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让两条事件、两处记录与同一次调用里别的写入一起提交。
  */
 export function recordStageMove(db: DatabaseSync, move: StageMove): number {
@@ -172,13 +184,14 @@ export function recordStageMove(db: DatabaseSync, move: StageMove): number {
   endOpenRecords(db, who, at, move.endReason ?? move.reason);
   const inFlow = move.inFlow ?? true;
   const node = inFlow ? move.to : null, flow = inFlow ? FLOW_INITIAL : null;
+  const scope = (move.scope ?? "").trim() || null;
   const seq = emit(db, {
     ...who, name: EVENT_ACTIVITY_STARTED,
-    payload: { activity: move.to, node, flow, from: move.from === IDLE ? null : move.from, actor: move.actor, reason: move.reason, run_id: move.runId },
+    payload: { activity: move.to, node, flow, from: move.from === IDLE ? null : move.from, actor: move.actor, reason: move.reason, run_id: move.runId, ...(scope ? { scope } : {}) },
   });
   db.prepare(
-    `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(move.taskId, move.sessionId, move.runId, move.callId, move.actor, move.to, node, flow, move.reason, at, seq);
+    `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(move.taskId, move.sessionId, move.runId, move.callId, move.actor, move.to, node, flow, move.reason, at, seq, scope);
   return seq;
 }
 
@@ -278,10 +291,10 @@ function whereIs(db: DatabaseSync, workspaceDir: string, taskId: string): { from
  * 开展活动只由用户决定；任务已经在同一项活动、同一种开展方式里时不记；单独开展要够前提（这项活动的定义里写的数据条件，
  * lib/activity_catalog.ts 的 blockedByStage），任务正在流程里做这一项时也不能单独开展它；
  * 在流程里开始不查前提。有别的活动在进行、这次又不是流程里的移动时，原来那条记录结束的起因写「用户改做某项活动」。
- * 必须在调用方已经开好的写事务里调用。
+ * scope 是用户写的范围说明（可以不写），记进新的活动记录。必须在调用方已经开好的写事务里调用。
  */
-export function startActivity(db: DatabaseSync, workspaceDir: string, who: Omit<StageMove, "from" | "to" | "reason" | "inFlow" | "endReason">,
-  to: Stage, inFlow: boolean, reason: string): StageMoveOutcome {
+export function startActivity(db: DatabaseSync, workspaceDir: string, who: Omit<StageMove, "from" | "to" | "reason" | "inFlow" | "endReason" | "scope">,
+  to: Stage, inFlow: boolean, reason: string, scope = ""): StageMoveOutcome {
   const where = whereIs(db, workspaceDir, who.taskId);
   if (where === null) return { requested: to, from: null, moved: false, why: "no_stages", event_seq: null };
   const { from, fromInFlow, flowBefore } = where;
@@ -294,7 +307,7 @@ export function startActivity(db: DatabaseSync, workspaceDir: string, who: Omit<
     if (blocked !== null) return { ...none, why: "not_ready", blocked };
   }
   const how = startHow(inFlow, fromInFlow, flowBefore);
-  const event_seq = recordStageMove(db, { ...who, from, to, reason, inFlow, ...(how !== "move" && from !== IDLE ? { endReason: switchedReason(to) } : {}) });
+  const event_seq = recordStageMove(db, { ...who, from, to, reason, inFlow, scope, ...(how !== "move" && from !== IDLE ? { endReason: switchedReason(to) } : {}) });
   return { requested: to, from, moved: true, why: null, event_seq, how, in_flow: inFlow };
 }
 
@@ -302,7 +315,7 @@ export function startActivity(db: DatabaseSync, workspaceDir: string, who: Omit<
  * 想把任务移到某个阶段：就是在首次分析流程里开始那项活动（startActivity）。任务空闲或者正在单独开展一项活动时，
  * 这是启动或继续首次分析。必须在调用方已经开好的写事务里调用。
  */
-export function moveStage(db: DatabaseSync, workspaceDir: string, who: Omit<StageMove, "from" | "to" | "reason" | "inFlow" | "endReason">, to: Stage, reason: string): StageMoveOutcome {
+export function moveStage(db: DatabaseSync, workspaceDir: string, who: Omit<StageMove, "from" | "to" | "reason" | "inFlow" | "endReason" | "scope">, to: Stage, reason: string): StageMoveOutcome {
   return startActivity(db, workspaceDir, who, to, true, reason);
 }
 
@@ -455,6 +468,8 @@ export interface StageSummary {
   /** 最近一次移动的时刻（库里的本地时间写法）。 */
   moved_at: string | null;
   reason: string | null;
+  /** 用户开展现在这项活动时写的范围说明；没有写、任务空闲时为 null。 */
+  scope: string | null;
   lamps: Record<Stage, Lamp[]>;
 }
 
@@ -584,6 +599,7 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
     moved_by: open?.actor ?? null,
     moved_at: open?.started_at ?? null,
     reason: open ? open.reason : null,
+    scope: open?.scope ?? null,
     lamps: stageLamps(input),
   };
 }

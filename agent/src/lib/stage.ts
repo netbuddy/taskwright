@@ -255,9 +255,18 @@ export function activityStartSentence(how: StartHow, to: Stage, from: Position):
   if (how === "move") return `用户把任务从${positionName(from)}移到${name}。`;
   const was = from === IDLE ? "" : `（原来在做：${STAGE_NAMES[from]}）`;
   const flow = FLOW_NAMES[FLOW_INITIAL];
-  if (how === "launch") return `用户启动${flow}，从${name}开始。${was}`;
-  if (how === "resume") return `用户继续${flow}，从${name}接着。${was}`;
-  return `用户单独开展${name}。${was}`;
+  if (how === "launch") return `用户开展工作流程「${flow}」，从「${name}」开始。${was}`;
+  if (how === "resume") return `用户继续工作流程「${flow}」，从「${name}」接着。${was}`;
+  return `用户开展活动「${name}」。${was}`;
+}
+
+/** 范围说明最多多少个字：它要放进系统提示，太长的不收。 */
+export const SCOPE_MAX_LENGTH = 2000;
+
+/** 对话里那一句后面接的范围说明：「范围说明：……」，末尾没有句号时补一个。没有写范围说明时是空文字。 */
+export function scopeSentence(scope: string): string {
+  const said = scope.trim();
+  return said ? `范围说明：${said}${/[。！？.!?]$/.test(said) ? "" : "。"}` : "";
 }
 
 /**
@@ -336,8 +345,8 @@ export interface LaunchView {
 
 export const LAUNCH_READY = "可以开展";
 export const LAUNCH_ACTIVE = "正在进行";
-/** 任务正在首次分析流程里做这项活动时，「单独开展」一组里同名的那一项不能点，后面写这一句。 */
-export const LAUNCH_IN_FLOW = "正在流程里进行";
+/** 任务正在首次分析流程里做这项活动时，单项活动里同名的那一项不能点，后面写这一句。 */
+export const LAUNCH_IN_FLOW = "正在工作流程中进行";
 
 export function launchView(facts: LaunchFacts): LaunchView {
   const flow = FLOW_NAMES[FLOW_INITIAL];

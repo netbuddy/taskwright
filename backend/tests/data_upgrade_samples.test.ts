@@ -150,7 +150,7 @@ test("0.5.0 建的任务：阶段记录升成活动记录，现在的阶段、�
       const rows = db.prepare("SELECT * FROM activity_record ORDER BY started_seq").all().map((row) => ({ ...row }));
       assert.deepEqual(rows, before.map((r, index) => ({
         record_id: r.record_id, task_id: id, session_id: r.session_id, run_id: r.run_id, call_id: r.call_id, actor: r.actor, activity: r.stage, node: r.stage, flow: r.flow,
-        reason: r.reason, started_at: r.created_at, ended_at: before[index + 1]?.created_at ?? null, started_seq: r.event_seq, ended_seq: before[index + 1]?.event_seq ?? null,
+        reason: r.reason, started_at: r.created_at, ended_at: before[index + 1]?.created_at ?? null, started_seq: r.event_seq, ended_seq: before[index + 1]?.event_seq ?? null, scope: null,
       })));
       assert.deepEqual(db.prepare("SELECT seq, name, payload, actor, at FROM event ORDER BY seq").all().map((row) => ({ ...row })), eventsBefore, "事件一条不动");
     } finally {

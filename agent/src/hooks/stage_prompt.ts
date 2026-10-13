@@ -84,8 +84,8 @@ export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: Stag
     }
     const options = event.systemPromptOptions ?? {};
     const tail = piTail(launched, String(options.customPrompt ?? ""));
-    const { stage, inFlow } = where;
-    const got = cache.get({ stage, inFlow, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
+    const { stage, inFlow, scope } = where;
+    const got = cache.get({ stage, inFlow, scope, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
     let summary = summaries.get(got.prompt);
     if (!summary) summaries.set(got.prompt, (summary = summarize(got.prompt)));
     // 重拼出错而沿用上一份时，stage 写的是任务现在的阶段，上一份是哪个阶段的看 parts 里那一段的文件名。

@@ -2,7 +2,8 @@
  * 有阶段的任务的系统提示怎样拼：读哪几份文件、按什么次序接、每一部分叫什么。不碰 pi，挂到事件上的那一半在 hooks/stage_prompt.ts。
  *
  * 拼出来的次序是：系统提示、平台说明的共用部分、任务类型说明的共用部分、平台说明里现在这项活动的那一段、
- * 这项活动在流程里的节点的出口、任务类型说明里现在这个阶段的那一段，最后是 pi 自己接在系统提示后面的那一截（工作目录、上下文文件）。
+ * 这项活动在流程里的节点的出口、任务类型说明里现在这个阶段的那一段、用户开展这项活动时写的范围说明（写了才有），
+ * 最后是 pi 自己接在系统提示后面的那一截（工作目录、上下文文件）。
  * 按阶段的几段放在最后：换阶段时前面几部分一字不变，模型服务对请求开头相同的那一截不用重算。
  *
  * 活动的说明与节点的出口是分开的两处。活动的说明（做什么、不做什么、做到什么算够）一项活动一份文件，与它在不在流程里无关；
@@ -122,8 +123,18 @@ export function withoutSection(text: string, heading: string): string {
   return kept.join("\n");
 }
 
+/**
+ * 用户开展一项活动时写了范围说明：这项活动进行期间，系统提示里按活动拼的几段后面接这一段。
+ * 换了活动、活动结束之后就没有了。
+ */
+export function scopeSection(scope: string): string {
+  return "## 本次范围说明\n\n" +
+    "用户开展这项活动时写了范围说明。这一次照它说的范围做；它没有说到的，照上面的说明。\n\n" +
+    `本次范围说明：${scope.trim()}`;
+}
+
 /** 拼进系统提示的一部分是什么。 */
-export type PartKind = "system" | "platform_common" | "task_common" | "platform_stage" | "node_exit" | "task_stage" | "tail";
+export type PartKind = "system" | "platform_common" | "task_common" | "platform_stage" | "node_exit" | "task_stage" | "scope" | "tail";
 
 /** 每一部分给人看的名字。 */
 export const PART_NAMES: Record<PartKind, string> = {
@@ -133,6 +144,7 @@ export const PART_NAMES: Record<PartKind, string> = {
   platform_stage: "平台说明里这个阶段的那一段",
   node_exit: "这个阶段在流程里的出口",
   task_stage: "任务类型说明里这个阶段的那一段",
+  scope: "本次范围说明",
   tail: "助手程序接在后面的工作目录等",
 };
 
@@ -147,7 +159,7 @@ export interface PromptPart {
   from: PartOrigin;
   /**
    * 文件的路径：产品自带的相对代码仓根目录，任务目录里的相对任务目录，提示词目录里的相对那个目录；不是文件的为 null
-   * （pi 接的那一截；用户单独开展一项活动时代替节点出口的那一段固定文字）。
+   * （pi 接的那一截；用户单独开展一项活动时代替节点出口的那一段固定文字；范围说明，它出自任务库，from 写任务目录）。
    */
   file: string | null;
   text: string;
@@ -251,6 +263,8 @@ export interface ComposeInput {
   stage: Position;
   /** 现在这项活动是不是在首次分析流程里；不给当作是。单独开展时为假：节点的出口换成固定的一段。空闲时不看它。 */
   inFlow?: boolean;
+  /** 用户开展现在这项活动时写的范围说明；没有写不给或者给 null。空闲时不看它。 */
+  scope?: string | null;
   /** 任务目录：任务目录里的文件路径相对它来写。 */
   workspaceDir: string;
   /** pi 加载的全部 skill。 */
@@ -396,6 +410,8 @@ function fromSlots(input: ComposeInput, all: readonly Slot[], io: PromptIo): Sta
     // 用户单独开展一项活动：活动的说明后面接固定的一段，代替节点的出口。
     if (slot.part === "platform_stage" && !idle && !(input.inFlow ?? true)) parts.push({ part: "node_exit", from: "builtin", file: null, text: STANDALONE_EXIT });
   }
+  // 范围说明：接在按活动拼的几段的最后。
+  if (!idle && input.scope?.trim()) parts.push({ part: "scope", from: "task", file: null, text: scopeSection(input.scope) });
   add({ part: "tail", from: "pi", file: null }, input.tail);
   return { stage: input.stage, text: parts.map((one) => one.text).join("\n\n"), parts, notes };
 }
@@ -437,7 +453,7 @@ export class StagePromptCache {
   get(input: ComposeInput): CachedPrompt {
     // 这一次的输入与各份文件的属性合成一把钥匙：与上一次相同就是没变。
     const all = slots(input, this.io);
-    const key = JSON.stringify([input.stage, input.inFlow ?? true, input.tail, input.promptDir ?? null, all.map((one) => one.stamps)]);
+    const key = JSON.stringify([input.stage, input.inFlow ?? true, input.scope ?? null, input.tail, input.promptDir ?? null, all.map((one) => one.stamps)]);
     if (this.last && this.last.key === key) return { prompt: this.last.prompt, how: "reused" };
     try {
       const prompt = fromSlots(input, all, this.io);
@@ -473,10 +489,10 @@ export function stageInWorkspace(workspaceDir: string): Position | null {
 }
 
 /**
- * 同上，另带现在这项活动是不是在首次分析流程里（空闲时为假）。
+ * 同上，另带现在这项活动是不是在首次分析流程里（空闲时为假），与用户开展它时写的范围说明（没有写、空闲时为 null）。
  * 不换系统提示的那几种情形返回 null。
  */
-export function whereInWorkspace(workspaceDir: string): { stage: Position; inFlow: boolean } | null {
+export function whereInWorkspace(workspaceDir: string): { stage: Position; inFlow: boolean; scope: string | null } | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
@@ -486,7 +502,7 @@ export function whereInWorkspace(workspaceDir: string): { stage: Position; inFlo
     const stage = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
     if (stage === null) return null;
     const open = openActivityRecord(db, task.task_id);
-    return { stage, inFlow: open !== null && open.node !== null };
+    return { stage, inFlow: open !== null && open.node !== null, scope: stage === IDLE ? null : open?.scope ?? null };
   } finally {
     db.close();
   }

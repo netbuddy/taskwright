@@ -39,6 +39,9 @@
  *
  * 开展一项活动（start_activity）：用户在任务状况卡的「开展一项活动」一节点了一项。fields 写 { activity, in_flow }：activity 是六项活动
  * （六个阶段）的名字或写法之一；in_flow 为真是在首次分析流程里从这个节点开始（启动或继续首次分析），为假是单独开展这项活动。
+ * fields 里另可以写两项：scope 是范围说明（一段文字，最多 SCOPE_MAX_LENGTH 个字），记进活动记录，写进追加的那句说明，
+ * 这项活动进行期间助手每次运行的系统提示里都带着它；session 写 current（缺省）或 new，new 是在一条新会话里开展——新会话由后端
+ * 在转交之前建好，这里只核对写法。
  * 有别的活动在进行时，那条活动记录先结束，起因写「用户改做某项活动」。记一条活动记录，往会话里追加一句说明，不产生修订、不能撤销、
  * 不引出执行者的运行、不替用户发话。任务已经在同一项活动、同一种开展方式里时什么都不记。单独开展缺前提时拒绝并写明缺什么
  * （这项活动的定义里写的数据条件，lib/activity_catalog.ts）。写条目与发布这样的活动只能由用户从这里启动：助手的工具没有启动活动的路。
@@ -58,7 +61,7 @@ import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
-import { PROPOSAL_VOIDED_NOTE, type Position, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, stageByName } from "./stage.ts";
+import { PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, scopeSentence, stageByName } from "./stage.ts";
 import { openProposal } from "./stage_proposal.ts";
 import { startActivity } from "./stage_read.ts";
 
@@ -689,10 +692,13 @@ function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult 
   };
 }
 
-/** 一次活动开始往会话里追加的那句说明（给助手看，页面原样显示）。 */
-export function activityStartNote(how: StartHow, to: Stage, from: Position, reason = ""): string {
-  return `界面操作（不是用户打的字）：${activityStartSentence(how, to, from)}${reason ? `理由：${reason}` : ""}`;
+/** 一次活动开始往会话里追加的那句说明（给助手看，页面原样显示）。写了范围说明时接在后面。 */
+export function activityStartNote(how: StartHow, to: Stage, from: Position, reason = "", scope = ""): string {
+  return `界面操作（不是用户打的字）：${activityStartSentence(how, to, from)}${reason ? `理由：${reason}` : ""}${scopeSentence(scope)}`;
 }
+
+/** 开展活动时会话那一项的两个写法：在现在这条会话里开展，或者在一条新会话里开展。 */
+export const START_SESSIONS = ["current", "new"] as const;
 
 /** 移动阶段：见文件头。fields 写 { stage, reason }。 */
 function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
@@ -705,7 +711,7 @@ function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOp
   return startByUser(ctx, opId, request, "move_stage", to, true, reason, "移动阶段");
 }
 
-/** 开展一项活动：见文件头。fields 写 { activity, in_flow }。 */
+/** 开展一项活动：见文件头。fields 写 { activity, in_flow }，另可以写 scope 与 session。 */
 function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
   const fields = isObject(request.fields) ? request.fields : {};
   const to = stageByName(fields.activity);
@@ -713,14 +719,24 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
     throw new UserOpError("bad_request",
       `start_activity 要在 fields 里写 activity（${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一）与 in_flow（true 是在首次分析流程里从这里开始，false 是单独开展）。`);
   }
-  return startByUser(ctx, opId, request, "start_activity", to, fields.in_flow, "", "开展活动");
+  if (fields.scope !== undefined && fields.scope !== null && typeof fields.scope !== "string") {
+    throw new UserOpError("bad_request", "start_activity 的 scope 是范围说明，应当是一段文字；不写范围说明就不要带这一项。");
+  }
+  const scope = typeof fields.scope === "string" ? fields.scope.trim() : "";
+  if (scope.length > SCOPE_MAX_LENGTH) {
+    throw new UserOpError("bad_request", `范围说明有 ${scope.length} 个字，最多 ${SCOPE_MAX_LENGTH} 个字。`);
+  }
+  if (fields.session !== undefined && !(START_SESSIONS as readonly unknown[]).includes(fields.session)) {
+    throw new UserOpError("bad_request", `start_activity 的 session 只能写 ${START_SESSIONS.join(" 或 ")}：current 是在现在这条会话里开展，new 是在一条新会话里开展。`);
+  }
+  return startByUser(ctx, opId, request, "start_activity", to, fields.in_flow, "", "开展活动", scope);
 }
 
 /**
  * 移动阶段与开展一项活动共用的那一段：核对任务、记活动开始、拼结果。verb 是任务已经不在进行中时拒绝的话里说的动作。
  * 助手先前的提议开着、这次开始的又不是它提议的那一步时，提议随这次开始作废，追加的说明末尾写明（PROPOSAL_VOIDED_NOTE）。
  */
-function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move_stage" | "start_activity", to: Stage, inFlow: boolean, reason: string, verb: string): UserOpResult {
+function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move_stage" | "start_activity", to: Stage, inFlow: boolean, reason: string, verb: string, scope = ""): UserOpResult {
   let outcome;
   let voided = false;
   try {
@@ -732,7 +748,7 @@ function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move
       }
       if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再${verb}。`, { status: task.status });
       const proposal = openProposal(db, task.task_id);
-      const done = startActivity(db, ctx.workspaceDir, { taskId: task.task_id, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, reason);
+      const done = startActivity(db, ctx.workspaceDir, { taskId: task.task_id, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, reason, scope);
       // 用户做的正是提议的那一步（在流程里进入或者退回提议的那个阶段）：提议是办成了，不算作废。
       const asProposed = proposal !== null && proposal.kind !== "review" && inFlow && proposal.stage === to;
       voided = done.moved && proposal !== null && !asProposed;
@@ -744,13 +760,13 @@ function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move
   }
   if (outcome.from === null) throw new UserOpError("rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] });
   if (outcome.why === "not_ready") {
-    const fact = `现在还不能单独开展${STAGE_NAMES[to]}：${outcome.blocked}`;
+    const fact = `现在还不能开展「${STAGE_NAMES[to]}」：${outcome.blocked}`;
     throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
   }
   return {
     op_id: opId, kind, event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
     // 本来就在那项活动里：什么都没有记，也不往会话里追加说明。
-    note: outcome.moved ? `${activityStartNote(outcome.how!, to, outcome.from, reason)}${voided ? PROPOSAL_VOIDED_NOTE : ""}` : "",
+    note: outcome.moved ? `${activityStartNote(outcome.how!, to, outcome.from, reason, scope)}${voided ? PROPOSAL_VOIDED_NOTE : ""}` : "",
     notify_text: null, undoable: false,
   };
 }

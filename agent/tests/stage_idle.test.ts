@@ -134,7 +134,7 @@ test("从空闲移到一个阶段：只记开始的一条，事件里的 from �
   const before = count(dir, "event");
   const out = runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: "ui-op-idle-move", kind: "move_stage", fields: { stage: "整理建模" } });
   // 首次分析之前走到过澄清，这一次是从整理建模接着走。
-  assert.equal(out.note, "界面操作（不是用户打的字）：用户继续首次分析，从整理建模接着。");
+  assert.equal(out.note, "界面操作（不是用户打的字）：用户继续工作流程「首次分析」，从「整理建模」接着。");
   const events = query<{ seq: number; name: string; payload: string }>(dir, "SELECT seq, name, payload FROM event WHERE seq > ? ORDER BY seq", before);
   assert.deepEqual(events.map((e) => [e.name, JSON.parse(e.payload)]), [
     ["ACTIVITY_STARTED", { activity: "modeling", node: "modeling", flow: "initial", from: null, actor: "user", reason: "", run_id: null }],

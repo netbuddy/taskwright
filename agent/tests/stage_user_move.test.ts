@@ -34,7 +34,7 @@ test("用户想移到哪个阶段都可以：新任务空闲，第一次移动�
   const dir = workspace();
   const first = move(dir, { stage: "写条目" });
   assert.deepEqual([first.kind, first.results, first.revision_no, first.undoable, first.notify_text, first.event_seqs.length], ["move_stage", [], null, false, null, 1]);
-  assert.equal(first.note, "界面操作（不是用户打的字）：用户启动首次分析，从写条目开始。");
+  assert.equal(first.note, "界面操作（不是用户打的字）：用户开展工作流程「首次分析」，从「写条目」开始。");
   assert.equal(move(dir, { stage: "评审确认", reason: " 条目我都看过了。 " }).note, "界面操作（不是用户打的字）：用户把任务从写条目移到评审确认。理由：条目我都看过了。");
   assert.equal(move(dir, { stage: "clarifying" }).note, "界面操作（不是用户打的字）：用户把任务从评审确认移到澄清。");
   assert.deepEqual(moveRows(dir).map(({ event_seq: _seq, ...r }) => r), [
@@ -48,7 +48,7 @@ test("用户想移到哪个阶段都可以：新任务空闲，第一次移动�
 
 test("任务本来就在那个阶段：不记、不追加说明，也不算出错", () => {
   const dir = workspace(overallDefinition(), false);
-  assert.equal(move(dir, { stage: "澄清" }).note, "界面操作（不是用户打的字）：用户启动首次分析，从澄清开始。");
+  assert.equal(move(dir, { stage: "澄清" }).note, "界面操作（不是用户打的字）：用户开展工作流程「首次分析」，从「澄清」开始。");
   const same = move(dir, { stage: "澄清" });
   assert.deepEqual([same.note, same.event_seqs], ["", []]);
   assert.equal(count(dir, "activity_record"), 1);

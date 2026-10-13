@@ -305,7 +305,8 @@ CREATE TABLE IF NOT EXISTS activity_record (
   started_at   TEXT NOT NULL,         -- 开始的时刻（本地时间）
   ended_at     TEXT,                  -- 结束的时刻（本地时间）；还在进行为空
   started_seq  INTEGER NOT NULL,      -- 记下开始的那条事件的序号
-  ended_seq    INTEGER                -- 记下结束的那条事件的序号；还在进行为空
+  ended_seq    INTEGER,               -- 记下结束的那条事件的序号；还在进行为空
+  scope        TEXT                   -- 用户开展这项活动时写的范围说明；没有写为空（格式版本 6 加的列）
 );
 `;
 
@@ -478,9 +479,9 @@ export function existingTables(db: DatabaseSync): string[] {
  * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。0 是没有编过版本号的库：0.4.x 及更早的版本建的，或者一张表都没有的空库。
  * 每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。1 是给库编上版本号的那一版；2 加了阶段记录表（stage_record）；
  * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）；4 去掉了阶段记录表里两列阶段的检查（阶段有哪几个只在代码里判）；
- * 5 加了活动记录表（activity_record），把阶段记录逐行改写进去，删掉了阶段记录表。
+ * 5 加了活动记录表（activity_record），把阶段记录逐行改写进去，删掉了阶段记录表；6 给活动记录表加了范围说明一列（scope）。
  */
-export const TASK_DB_VERSION = 5;
+export const TASK_DB_VERSION = 6;
 
 /** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
 export const TASK_JSON = "task.json";
@@ -521,6 +522,7 @@ const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void
   { from: 2, to: 3, run: dropDiagramKindCheck },
   { from: 3, to: 4, run: dropStageChecks },
   { from: 4, to: 5, run: moveStageRecordsToActivities },
+  { from: 5, to: 6, run: addActivityScope },
 ];
 
 /**
@@ -539,6 +541,15 @@ export function ensureSchema(db: DatabaseSync): { from: number; to: number } {
     version = step.to;
   }
   return { from, to: version };
+}
+
+/**
+ * 第 5 到 6 步：活动记录表加范围说明一列。只加列，不动已有的数据；新建的库建表时就有这一列，这里什么都不做。
+ */
+function addActivityScope(db: DatabaseSync): void {
+  db.exec(ACTIVITY_RECORD_SQL);
+  const columns = (db.prepare("PRAGMA table_info(activity_record)").all() as { name: string }[]).map((row) => row.name);
+  if (!columns.includes("scope")) db.exec("ALTER TABLE activity_record ADD COLUMN scope TEXT");
 }
 
 /** 第 1 到 2 步：加阶段记录表。只加表，不动已有的表与数据。新建的库走到这一步也会建出一张空的，随后由「4 到 5」那一步删掉。 */

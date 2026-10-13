@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CATALOG_IN_FLOW, CATALOG_LATER, type AssetFacts, assetCells, assetFacts, blockedByStage, blockedText, catalog, conditionMet } from "../src/lib/activity_catalog.ts";
+import { CATALOG_LATER, type AssetFacts, assetCells, assetFacts, blockedByStage, blockedText, catalog, conditionMet } from "../src/lib/activity_catalog.ts";
 import { CONDITIONS } from "../src/lib/activity_def.ts";
 import { definitions } from "../src/lib/activity_def_read.ts";
 import { IDLE, type LampDiagram, type LampInput, type LampItem, type LampPage, type LampQuestion, STAGES } from "../src/lib/stage.ts";
@@ -118,7 +118,7 @@ test("活动目录：空任务只有澄清与首次分析能开展；首次分�
 test("活动目录：流程里正在做的那一项不能同时单独开展；单独开展着的那一项写正在进行；流程走过就从走到的那一站接着", () => {
   const facts: AssetFacts = { ...EMPTY, materials: 1, sections: 2, items: 3, itemsConfirmed: 3, reviewRounds: 1 };
   const inFlow = catalog(DEFS, facts, { position: "writing", inFlow: true, flowNode: "writing" });
-  assert.deepEqual(inFlow.activities.map((one) => [one.enabled, one.state]), [[true, "可以开展"], [true, "可以开展"], [true, "可以开展"], [false, CATALOG_IN_FLOW],
+  assert.deepEqual(inFlow.activities.map((one) => [one.enabled, one.state]), [[true, "可以开展"], [true, "可以开展"], [true, "可以开展"], [false, "正在工作流程中进行"],
     [true, "可以开展"], [true, "可以开展"], [false, CATALOG_LATER]]);
   assert.deepEqual([inFlow.flows[0].enabled, inFlow.flows[0].state, inFlow.flows[0].at, inFlow.flows[0].start], [false, "正在进行", "writing", "writing"]);
   const alone = catalog(DEFS, facts, { position: "clarifying", inFlow: false, flowNode: "writing" });

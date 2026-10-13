@@ -159,11 +159,11 @@ test("格式版本 4 升到 5：每条阶段记录改写成一条活动记录，
   assert.deepEqual([tableThere(dir, "activity_record"), tableThere(dir, "stage_record")], [true, false]);
   assert.deepEqual(query(dir, "SELECT * FROM activity_record ORDER BY started_seq").map((row) => ({ ...row })), [
     { record_id: 3, task_id: taskId, session_id: "sess-old", run_id: null, call_id: "ui-op-1", actor: "user", activity: "clarifying", node: "clarifying", flow: "initial",
-      reason: "材料读完了。", started_at: "2026-10-10T09:00:00", ended_at: "2026-10-10T10:30:00", started_seq: seqs[0], ended_seq: seqs[1] },
+      reason: "材料读完了。", started_at: "2026-10-10T09:00:00", ended_at: "2026-10-10T10:30:00", started_seq: seqs[0], ended_seq: seqs[1], scope: null },
     { record_id: 7, task_id: taskId, session_id: "sess-old", run_id: null, call_id: "ui-op-2", actor: "user", activity: "writing", node: "writing", flow: "initial",
-      reason: "", started_at: "2026-10-10T10:30:00", ended_at: "2026-10-11T08:15:00", started_seq: seqs[1], ended_seq: seqs[2] },
+      reason: "", started_at: "2026-10-10T10:30:00", ended_at: "2026-10-11T08:15:00", started_seq: seqs[1], ended_seq: seqs[2], scope: null },
     { record_id: 8, task_id: taskId, session_id: "sess-old", run_id: null, call_id: "ui-op-3", actor: "user", activity: "clarifying", node: "clarifying", flow: "change",
-      reason: "借期要重新问。", started_at: "2026-10-11T08:15:00", ended_at: null, started_seq: seqs[2], ended_seq: null },
+      reason: "借期要重新问。", started_at: "2026-10-11T08:15:00", ended_at: null, started_seq: seqs[2], ended_seq: null, scope: null },
   ]);
   assert.deepEqual(query(dir, "SELECT seq, name, payload, at FROM event ORDER BY seq").map((row) => ({ ...row })), events, "事件表原样不动，早先的移动事件仍叫 STAGE_MOVED");
   // 读出来：现在在澄清；每条记录从哪个阶段来取自那条移动事件。

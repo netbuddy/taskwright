@@ -13,7 +13,7 @@ import { IDLE, STAGES, STAGE_NAMES } from "../src/lib/stage.ts";
 import {
   COMMON_FILE, ENV_DEBUG_SETTINGS, EXIT_HEADING, HOW_NAMES, NODE_IO, ORIGIN_NAMES, PART_NAMES, PLATFORM_SKILL_DIR, PLATFORM_STAGES_DIR, PROMPT_DIR_MAX_BYTES, type PromptIo, SYSTEM_FILE,
   StagePromptCache, composeStagePrompt, debugPromptDir, digestOf, partFact, piTail, promptDirName, promptDirNames, skillBody, stageFile, stageInWorkspace, taskSkills, whereInWorkspace, withoutOpening, withoutSection,
-  IDLE_OPENING, STANDALONE_EXIT, nodeHeading, nodeSection,
+  IDLE_OPENING, STANDALONE_EXIT, nodeHeading, nodeSection, scopeSection,
 } from "../src/lib/stage_prompt.ts";
 import { STAGE_PROMPT_STATUS_KEY, type StagePromptReport, stagePromptFor } from "../src/hooks/stage_prompt.ts";
 import { DEFINITION_PATH, callIn, demoDefinition, endActivities, enterStage, makeWorkspace, overallDefinition, tempDir } from "./helpers.ts";
@@ -609,24 +609,55 @@ test("读任务现在在哪里：在流程里、单独开展、空闲各是什�
   const dir = makeWorkspace(overallDefinition(), { material: true });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   // 刚建好、还没有任何活动记录：空闲。
-  assert.deepEqual(whereInWorkspace(dir), { stage: IDLE, inFlow: false });
+  assert.deepEqual(whereInWorkspace(dir), { stage: IDLE, inFlow: false, scope: null });
   enterStage(dir, "modeling");
-  assert.deepEqual(whereInWorkspace(dir), { stage: "modeling", inFlow: true });
+  assert.deepEqual(whereInWorkspace(dir), { stage: "modeling", inFlow: true, scope: null });
   const cache = new StagePromptCache(), summaries = new WeakMap<object, any>();
   const flowed = start(dir, cache, summaries).reports[0][1];
   assert.deepEqual([flowed.stage, flowed.in_flow, flowed.parts!.map((one) => one.part)], ["modeling", true, ["system", "platform_common", "task_common", "platform_stage", "node_exit"]]);
-  // 用户单独开展澄清。
+  // 用户开展活动「澄清」。
   runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: "ui-op-prompt-1", kind: "start_activity", fields: { activity: "澄清", in_flow: false } });
-  assert.deepEqual(whereInWorkspace(dir), { stage: "clarifying", inFlow: false });
+  assert.deepEqual(whereInWorkspace(dir), { stage: "clarifying", inFlow: false, scope: null });
   const alone = start(dir, cache, summaries);
   assert.deepEqual([alone.reports[0][1].stage, alone.reports[0][1].in_flow, alone.reports[0][1].how], ["clarifying", false, "recomposed"]);
   assert.ok(alone.result!.systemPrompt.includes(STANDALONE_EXIT) && alone.result!.systemPrompt.includes("# 现在这个阶段：澄清\n"));
   assert.equal(alone.reports[0][1].parts!.at(-1)!.file, null);
   // 把记录记成已结束：空闲。
   endActivities(dir);
-  assert.deepEqual([whereInWorkspace(dir), stageInWorkspace(dir)], [{ stage: IDLE, inFlow: false }, IDLE]);
+  assert.deepEqual([whereInWorkspace(dir), stageInWorkspace(dir)], [{ stage: IDLE, inFlow: false, scope: null }, IDLE]);
   const idle = start(dir, cache, summaries);
   assert.deepEqual([idle.reports[0][1].replaced, idle.reports[0][1].stage, idle.reports[0][1].in_flow, idle.reports[0][1].how], [true, "idle", false, "recomposed"]);
   assert.ok(idle.result!.systemPrompt.includes("# 现在：任务空闲\n") && !idle.result!.systemPrompt.includes("# 现在这个阶段："));
   assert.deepEqual(idle.reports[0][1].parts!.map((one) => one.part), ["system", "platform_common", "task_common", "platform_stage"]);
+});
+
+test("范围说明：用户开展活动时写了，这项活动进行期间系统提示在按活动拼的几段后面多一部分；换了活动、任务空闲就没有了；只改范围说明也重拼", () => {
+  const dir = makeWorkspace(overallDefinition(), { material: true });
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  const op = (n: number, fields: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-scope-${n}`, kind: "start_activity", fields });
+  op(1, { activity: "澄清", in_flow: false, scope: "只问续借的规则" });
+  assert.deepEqual(whereInWorkspace(dir), { stage: "clarifying", inFlow: false, scope: "只问续借的规则" });
+  const cache = new StagePromptCache(), summaries = new WeakMap<object, any>();
+  const scoped = start(dir, cache, summaries);
+  const parts = scoped.reports[0][1].parts!;
+  assert.deepEqual(parts.map((one) => [one.part, one.from, one.file]).slice(-2), [["node_exit", "builtin", null], ["scope", "task", null]]);
+  assert.equal(scopeSection("  只问续借的规则 "), "## 本次范围说明\n\n用户开展这项活动时写了范围说明。这一次照它说的范围做；它没有说到的，照上面的说明。\n\n本次范围说明：只问续借的规则");
+  const text = scoped.result!.systemPrompt;
+  assert.ok(text.includes(scopeSection("只问续借的规则")));
+  assert.ok(text.indexOf(STANDALONE_EXIT) < text.indexOf("## 本次范围说明") && text.indexOf("## 本次范围说明") < text.indexOf("<cwd>"), "接在出口之后、助手程序接的那一截之前");
+  assert.equal(PART_NAMES.scope, "本次范围说明");
+  // 没有变：沿用上一份。
+  assert.equal(start(dir, cache, summaries).reports[0][1].how, "reused");
+  // 在流程里开展另一项、写了另一句范围说明：重拼，带的是新的那一句，接在节点的出口与任务类型那一段之后。
+  op(2, { activity: "核读材料", in_flow: true, scope: "先读新补的那一份。" });
+  const flowed = start(dir, cache, summaries);
+  assert.deepEqual([flowed.reports[0][1].how, flowed.reports[0][1].parts!.map((one) => one.part).slice(-3)], ["recomposed", ["node_exit", "task_stage", "scope"]]);
+  assert.ok(flowed.result!.systemPrompt.includes("本次范围说明：先读新补的那一份。") && !flowed.result!.systemPrompt.includes("只问续借的规则"));
+  // 改做别的活动而没有写范围说明：没有这一部分。
+  op(3, { activity: "澄清", in_flow: false });
+  assert.deepEqual(whereInWorkspace(dir), { stage: "clarifying", inFlow: false, scope: null });
+  assert.ok(!start(dir, cache, summaries).result!.systemPrompt.includes("本次范围说明"));
+  // 直接拼：任务空闲时给了范围说明也不放。
+  const idle = composeStagePrompt({ stage: IDLE, scope: "不该出现", workspaceDir: dir, skills: [], tail: "" });
+  assert.ok(!idle.text.includes("不该出现"));
 });
