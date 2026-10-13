@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Activities behind the stages
+
+Nothing changes on the page in this part: the stage bar, the cards and the wording are as they were. What changed is how the position of a task is recorded, in preparation for starting an activity on its own.
+
+- The task database goes to format 5. Each stage a task has been in is now an activity record: which activity, the node and the flow it belongs to, who started it, when and why, and when it ended. Where the task is now is the record that has not ended. Tasks created by 0.5.0 are upgraded like any earlier task (when the service starts, with `taskwright data upgrade`, or when a data pack is imported): every stage record becomes an activity record, and the stage of the task, its last move and the stage records in the debug tab read the same afterwards.
+- A task can be idle: it has had activities and none is in progress. While idle the assistant may write what it may write in the clarifying stage, and its instructions are those of the clarifying stage without the part about proposing the next stage. No action sets a task idle yet.
+- The conversation no longer has a line above a reply for a stage move made by the assistant. The assistant has not been able to move the stage since before 0.5.0; a session recorded during the development of 0.5 that contains such a move no longer shows that line.
+
+### Interface
+
+- Events: a stage move is sent as `activity_ended` followed by `activity_started`, in place of `stage_changed`. `activity_started` has the fields `stage_changed` had (`to`, `from`, `actor`, `reason`, `run_id`, `flow`, `op_id`) and `node`; `from` is null when the task was idle. `activity_ended` has `activity`, `node`, `actor`, `reason` and `op_id`. The first move of a task has no activity to end and sends only `activity_started`. A client that listened for `stage_changed` must listen for `activity_started`.
+- Task data: `task.stage.current` may be `idle`. Task status: `activity.kind` and `activity.key` may be `idle`, with `ordinal`, `moved_by`, `moved_at` and `reason` null and nothing in `missing`.
+
 ## [0.5.0] - 2026-10-12
 
 0.5.0 changes how a requirements task is worked. The assistant no longer writes items straight from the materials: work goes through six stages, each entered by your click on a card the assistant proposes. What you and the assistant come to understand is kept as a business description in seven chapters, with five standard models drawn from it; items are written from that description. A point that is unclear is recorded as a question where it arises and settled later, without going back a stage. The generated document follows the chapters of the business description and can be downloaded as a Word file. Tasks now keep working across upgrades, and tasks and knowledge libraries can be exported and imported as data packs.
