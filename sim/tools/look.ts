@@ -11,7 +11,7 @@
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { call, snapshotWhenIdle, state, taskPath } from "../lib/backend.ts";
-import { type Diagram, type Message, renderDiagram, renderDiagrams, renderItems, renderMessages, viewOnLook, viewOnLookDiagram } from "../lib/screen.ts";
+import { type Diagram, type Message, renderDiagram, renderDiagrams, renderItems, renderLaunch, renderMessages, viewOnLook, viewOnLookDiagram } from "../lib/screen.ts";
 
 export const LOOK_TOOL = "look";
 
@@ -59,6 +59,8 @@ export function registerLook(pi: ExtensionAPI): void {
       } else {
         parts.push(renderItems(snapshot.task, params.item_id || undefined, confirm));
         if (!params.item_id) parts.push(renderDiagrams(snapshot.task));
+        // 任务状况卡上的「开展一项活动」：看整个界面时列出来，可以在「回应」里选一项。
+        if (!params.item_id) parts.push(renderLaunch(snapshot.task?.stage?.launch));
         target = params.item_id ? viewOnLook(snapshot.task, params.item_id, confirm) : null;
         if (target) {
           state.counter += 1;

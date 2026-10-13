@@ -20,6 +20,11 @@ echo "3. open a session (this starts the agent)"
 SESSION=$(curl -sf -X POST "$API/tasks/$TASK/sessions" | json 'd["session_id"]')
 curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" > /dev/null
 
+# A new task is idle: nothing is in progress until you start an activity. In the web interface you choose on the task
+# status card; here the first analysis is launched through the API, which puts the task in its reading stage.
+curl -sf -X POST "$API/tasks/$TASK/actions?session=$SESSION" -H 'Content-Type: application/json' \
+  -d '{"client_id": "example-launch", "kind": "start_activity", "targets": [], "notify_executor": false, "fields": {"activity": "reading", "in_flow": true}}' > /dev/null
+
 echo "4. ask the agent to work"
 curl -sf -X POST "$API/tasks/$TASK/messages?session=$SESSION" -H 'Content-Type: application/json' \
   -d '{"text": "请读 inputs 里的材料，整理成需求规格说明。", "client_id": "example-1"}' > /dev/null
@@ -49,8 +54,8 @@ last_reply() {
 }
 
 echo "5. wait until the agent has read the material and replied (usually a few minutes; progress every 5 seconds)"
-# A new task starts in the reading stage: the agent reads the material and writes topic pages in the overall analysis,
-# and may ask questions. It does not write use cases or requirements yet.
+# The task is in the reading stage of the first analysis: the agent reads the material and writes topic pages in the
+# overall analysis, and may ask questions. It does not write use cases or requirements yet.
 wait_for_replies 1
 last_reply
 
