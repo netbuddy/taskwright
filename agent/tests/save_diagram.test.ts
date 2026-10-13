@@ -156,6 +156,27 @@ test("修改图：只写要改的几项，是它的下一次修订；不写来�
   assert.deepEqual(versions(dir).map((one) => [one.revision_no, one.op, one.name]), [[1, "add", "登录与退出"], [2, "update", "读者的两件事"], [3, "update", "读者的两件事"]]);
 });
 
+test("助手把图里的节点删了再存：那个条目的来源去掉（不论沿用还是这次又写上），仍画着的保留，本来就只当依据引用、没画过的保留", async () => {
+  const dir = workspace();
+  // 修订 1：画着 UC-001、UC-002；再多引一个没有画进图里的条目当依据（任务里加一个 UC-003，只写在来源里）。
+  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "改口令", 步骤: ["输入旧口令"] }, sources: [SOURCE] }] });
+  await save(dir, fresh({ sources: [...SOURCES, { kind: "条目", locator: "UC-003" }] }));
+  const only = 'flowchart LR\n  a(["UC-001 登录"])';
+  // 不写来源：沿用，但 UC-002 已不在图里，去掉；UC-003 从来没画过，保留。
+  const kept = await save(dir, { diagram: "D-001", base_revision: 1, mermaid: only });
+  assert.match(kept.text, /UC-002 已经不在图里，它们的来源一并去掉了。/);
+  assert.deepEqual(kept.details.dropped_sources, ["UC-002"]);
+  assert.deepEqual(sourceRows(dir, "D-001", 2).map((row) => [row.kind, row.locator]), [["用户的话", "session-test#u1"], ["条目", "UC-001"], ["条目", "UC-003"]]);
+  // 又把 UC-002 的来源整份写回去：UC-002 是上一修订就没画的，是新加的来源，照现有规则保留。
+  await save(dir, { diagram: "D-001", base_revision: 2, mermaid: 'flowchart LR\n  a(["UC-001 登录"])\n  n["备注"]', sources: [...SOURCES, { kind: "条目", locator: "UC-003" }] });
+  assert.deepEqual(sourceRows(dir, "D-001", 3).map((row) => row.locator), ["session-test#u1", "UC-001", "UC-002", "UC-003"]);
+  // 改画回来后再删一个节点，同时整份重写了旧来源：被删的那个仍然去掉。
+  await save(dir, { diagram: "D-001", base_revision: 3, mermaid: MERMAID, sources: SOURCES });
+  const again = await save(dir, { diagram: "D-001", base_revision: 4, mermaid: only, sources: SOURCES });
+  assert.deepEqual(again.details.dropped_sources, ["UC-002"]);
+  assert.deepEqual(sourceRows(dir, "D-001", 5).map((row) => row.locator), ["session-test#u1", "UC-001"]);
+});
+
 test("删除图：记作它的下一次修订，内容照删除之前的样子；删掉的图不能再改，编号不复用", async () => {
   const dir = workspace();
   await save(dir, fresh());

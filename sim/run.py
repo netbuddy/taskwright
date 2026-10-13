@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -305,7 +306,7 @@ def build_parser(description: str = "跑用户 agent 演练；--repeat N 接连�
     parser.add_argument("--materials-dir", default=os.environ.get("TASKWRIGHT_SIM_MATERIALS_DIR", ""),
                         help="用户画像里材料文件所在的目录；不给就取环境变量 TASKWRIGHT_SIM_MATERIALS_DIR。试验材料不入代码仓")
     parser.add_argument("--backend", default="", help="已起的后端地址，例如 http://127.0.0.1:8791/api/v1；不给就自己起一个")
-    parser.add_argument("--port", type=int, default=8791)
+    parser.add_argument("--port", type=int, default=8791, help="自己起后端时用的端口；写 0 让后端自己挑空端口（测试用）")
     parser.add_argument("--max-rounds", type=int, default=12)
     parser.add_argument("--stall-rounds", type=int, default=STALL_ROUNDS,
                         help=f"双方连续这么多轮没有进展就停这一遍（没有新的修订、卡片、阶段移动，模拟用户也没有点卡片）；缺省 {STALL_ROUNDS}，写 0 不查")
@@ -346,6 +347,19 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def listening_port(log: Path, service: subprocess.Popen, timeout: float = 30.0) -> int:
+    """后端用 --port 0 自己挑端口时，从它的启动输出（backend.log）里读实际端口；这样不会有「先问到空端口再交给后端」的空当。"""
+    end = time.time() + timeout
+    while time.time() < end:
+        found = re.search(r"任务服务在 http://[^:/]+:(\d+)/", log.read_text(encoding="utf-8", errors="replace") if log.exists() else "")
+        if found:
+            return int(found.group(1))
+        if service.poll() is not None:
+            raise RuntimeError(f"后端任务服务起来就退出了（退出码 {service.returncode}），输出见 {log}。")
+        time.sleep(0.1)
+    raise RuntimeError(f"后端任务服务 {timeout:.0f} 秒内没有打印监听地址，输出见 {log}。")
+
+
 def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: Path) -> Path:
     """跑一次演练，记录写进 sim 目录，结束后判定；返回判定报告的路径。"""
     tag = sim.name
@@ -361,7 +375,6 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
     service = None
     base = args.backend
     if not base:
-        base = f"http://127.0.0.1:{args.port}/api/v1"
         node = shutil.which("node")
         if node is None:
             raise RuntimeError("在 PATH 里找不到 node，起不了后端任务服务。")
@@ -370,6 +383,8 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
                                     "--runs", str(sim / "backend"), "--knowledge", str(sim / "knowledge"),
                                     "--port", str(args.port), "--profile", args.profile], cwd=str(REPO_ROOT),
                                    stdout=open(sim / "backend.log", "w"), stderr=subprocess.STDOUT, env=dict(os.environ))
+        port = args.port or listening_port(sim / "backend.log", service)
+        base = f"http://127.0.0.1:{port}/api/v1"
     backend = Backend(base, sim / "执行者事件流.txt")
     ua = None
     try:

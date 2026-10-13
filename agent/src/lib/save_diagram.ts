@@ -103,6 +103,8 @@ interface Plan {
   validate: boolean;
   /** 图里画了哪些条目（从 Mermaid 文本里扫出来的）。 */
   drawn: string[];
+  /** 这一次因为条目从图里删掉了而从来源里去掉的条目编号（只有修改图时会有）。 */
+  dropped: string[];
 }
 
 const reject = (fact: string, guidance = ""): ToolRejection =>
@@ -170,7 +172,7 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
     const sources = checkDiagramSources(db, taskId, definition, params.sources, call, errors);
     if (!sources) throw reject(errors.join("；"), "图至少要有一条来源：用户要你画图的那句话写一条「用户的话」，画进图里的每个条目各写一条种类为「条目」的来源");
     const drawn = checkDrawn(db, taskId, definition, content.mermaid!, sources);
-    return { taskId, op: "add", record: null, name: content.name!, kind: content.kind!, mermaid: content.mermaid!, note: content.note ?? "", sources, validate: true, drawn };
+    return { taskId, op: "add", record: null, name: content.name!, kind: content.kind!, mermaid: content.mermaid!, note: content.note ?? "", sources, validate: true, drawn, dropped: [] };
   }
 
   // 修改与删除：图必须存在、没有删除，base_revision 是它现在的修订号。
@@ -192,7 +194,7 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   if (deleting) {
     const extra = (["name", "kind", "mermaid", "note", "sources"] as const).filter((key) => given(params[key]));
     if (extra.length) throw reject(`删除图 ${id} 时还写了 ${extra.join("、")}`, "删除时只写 diagram、base_revision 与 delete");
-    return { taskId, op: "delete", record, name: current.name, kind: current.kind, mermaid: current.mermaid, note: current.note, sources: [], validate: false, drawn: [] };
+    return { taskId, op: "delete", record, name: current.name, kind: current.kind, mermaid: current.mermaid, note: current.note, sources: [], validate: false, drawn: [], dropped: [] };
   }
 
   const content = checkContent(params);
@@ -205,6 +207,11 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
     sources = checked;
   }
   const merged = { name: content.name ?? current.name, kind: content.kind ?? current.kind, mermaid: content.mermaid ?? current.mermaid, note: content.note ?? current.note };
+  // 改了 Mermaid 文本时按新文本重算「条目」来源：上一修订的文本里画着、这一版文本里不再出现的条目，来源去掉（不论来源是沿用的还是这次又写上的）；
+  // 仍然画着的保留；上一修订的文本里本来就没画、只是当依据引用的条目也保留；新加的来源照常核对。
+  const prefixes = definition.collections.map((one) => one.prefix);
+  const dropped = content.mermaid === undefined ? [] : drawnItemIds(current.mermaid, prefixes).filter((id) => !drawnItemIds(content.mermaid!, prefixes).includes(id));
+  if (dropped.length) sources = sources.filter((one) => !(one.kind === SOURCE_ITEM && dropped.includes(one.locator)));
   const sameContent = merged.name === current.name && merged.kind === current.kind && merged.mermaid === current.mermaid && merged.note === current.note;
   if (sameContent && !given(params.sources)) {
     throw reject(`对图 ${id} 的修改与它在修订 ${current.revision_no} 的内容完全一样，没有改动任何东西`, "只写要改的那几项；不需要改就不用保存");
@@ -212,7 +219,7 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   // 图里写的条目编号与来源对不对得上，只在这一次动了 Mermaid 文本或者来源时核对；只改图名或说明不核对，用户在页面上改图也不核对。
   const touched = content.mermaid !== undefined || given(params.sources);
   const drawn = touched && !userEdit ? checkDrawn(db, taskId, definition, merged.mermaid, sources) : drawnItemIds(merged.mermaid, definition.collections.map((one) => one.prefix));
-  return { taskId, op: "update", record, ...merged, sources, validate: content.mermaid !== undefined || merged.kind !== current.kind, drawn };
+  return { taskId, op: "update", record, ...merged, sources, validate: content.mermaid !== undefined || merged.kind !== current.kind, drawn, dropped };
 }
 
 /** 图名、种类、Mermaid 文本、说明四项里给了的那几项，核对形状；没给的不在结果里。 */
@@ -283,11 +290,12 @@ function savedBefore(db: DatabaseSync, call: CallContext): ToolOutcome | null {
   };
 }
 
-function savedText(id: string, op: Plan["op"], name: string, kind: string, revisionNo: number, drawn: string[]): string {
+function savedText(id: string, op: Plan["op"], name: string, kind: string, revisionNo: number, drawn: string[], dropped: string[] = []): string {
   if (op === "delete") return `已删除图 ${id}「${name}」（删除记作它的修订 ${revisionNo}）。`;
   return `已${op === "add" ? "保存" : "修改"}图 ${id}「${name}」（${kindName(kind)}），现在是修订 ${revisionNo}。` +
     `要再改这张图时 diagram 写 ${id}、base_revision 写 ${revisionNo}。` +
-    (drawn.length ? `图里画了 ${drawn.length} 个条目：${drawn.join("、")}。` : "");
+    (drawn.length ? `图里画了 ${drawn.length} 个条目：${drawn.join("、")}。` : "") +
+    (dropped.length ? `${dropped.join("、")} 已经不在图里，它们的来源一并去掉了。` : "");
 }
 
 /** 第 3 步：写图、内容、来源与事件。 */
@@ -322,8 +330,8 @@ function write(db: DatabaseSync, call: CallContext, one: Plan): ToolOutcome {
       source.normalized_value ?? null, typeof source.depends_revision === "number" ? source.depends_revision : null);
   });
   return {
-    text: savedText(id, one.op, one.name, one.kind, revisionNo, one.drawn),
-    details: { task_id: one.taskId, diagram_id: id, revision_no: revisionNo, op: one.op, name: one.name, kind: one.kind, event_seq: seq, saved: true, drawn: one.drawn },
+    text: savedText(id, one.op, one.name, one.kind, revisionNo, one.drawn, one.dropped),
+    details: { task_id: one.taskId, diagram_id: id, revision_no: revisionNo, op: one.op, name: one.name, kind: one.kind, event_seq: seq, saved: true, drawn: one.drawn, ...(one.dropped.length ? { dropped_sources: one.dropped } : {}) },
   };
 }
 

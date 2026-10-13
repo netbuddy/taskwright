@@ -286,8 +286,11 @@ describe("用户改图", () => {
     expect(textarea().readOnly).toBe(true);
     // 图的事件到了：清单里这张图成了修订 3，详情重新取。
     view.rerender(panel(task([row({ revision_no: 3, revision_by: "user" })]), { initialDiagram: "D-001", submit, onDiagramDirty }));
-    await waitFor(() => expect(screen.getByTestId("diagram-sub").textContent).toMatch(/^现在是修订 3，由你改的/));
-    expect(screen.getByTestId("diagram-sub").textContent).not.toContain("正在保存");
+    // 新详情渲染之后，「正在保存」要到下一次渲染（副作用清掉保存状态）才消失，所以两件事一起等。
+    await waitFor(() => {
+      expect(screen.getByTestId("diagram-sub").textContent).toMatch(/^现在是修订 3，由你改的/);
+      expect(screen.getByTestId("diagram-sub").textContent).not.toContain("正在保存");
+    });
     expect(textarea().value).toBe(changed);
     expect(textarea().readOnly).toBe(false);
     expect(screen.queryByTestId("diagram-preview-note")).toBeNull();

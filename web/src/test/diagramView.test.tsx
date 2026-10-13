@@ -16,13 +16,14 @@ const fakeRender = vi.fn((id: string, text: string) => new Promise<{ svg: string
 }));
 const fakeInitialize = vi.fn();
 vi.mock("mermaid", () => ({ default: { initialize: (...args: unknown[]) => fakeInitialize(...args), render: (id: string, text: string) => fakeRender(id, text) } }));
-vi.mock("../components/diagram/mermaid", async (original) => ({ ...(await original<typeof diagram>()), exportPng: vi.fn(async () => ({ scale: 2 })) }));
+vi.mock("../components/diagram/mermaid", async (original) => ({ ...(await original<typeof diagram>()), exportPng: vi.fn(async () => ({ scale: 2 })), exportSvg: vi.fn(async () => undefined) }));
 
 const exportPng = vi.mocked(diagram.exportPng);
+const exportSvg = vi.mocked(diagram.exportSvg);
 const GOOD = "flowchart TD\n  A[买家提交售后申请] --> B[售后专员审核]";
 const BAD = "flowchart TD\n  写错 A[开始 --> B";
 
-afterEach(() => { cleanup(); drawings.clear(); fakeRender.mockClear(); exportPng.mockReset(); exportPng.mockImplementation(async () => ({ scale: 2 })); });
+afterEach(() => { cleanup(); drawings.clear(); fakeRender.mockClear(); exportPng.mockReset(); exportPng.mockImplementation(async () => ({ scale: 2 })); exportSvg.mockClear(); });
 
 describe("画图", () => {
   it("文本画成图放进页面，按钮可以点；mermaid 只设一次，用 strict 并且不让它往页面里塞报错图", async () => {
@@ -103,6 +104,37 @@ describe("导出 PNG", () => {
     await waitFor(() => expect(screen.getByTestId("diagram-note")).toHaveTextContent(exportShrunkText(1.25)));
     expect(exportShrunkText(1.25)).toBe("这张图很大，导出的 PNG 只放大了 1.3 倍（平常是 2 倍）。");
     expect(exportShrunkText(0.44)).toBe("这张图很大，导出的 PNG 缩小到了原图的 0.4 倍，字可能看不清；把图拆成几张再导出。");
+  });
+});
+
+describe("导出 SVG", () => {
+  it("点按钮把图的 Mermaid 文本与文件名交给导出（它另画一遍，不用页面上那份）；画出来之前与不能导出时灰掉；失败时写明原因", async () => {
+    render(<DiagramView text={GOOD} fileName="D-001 售后申请的流程" />);
+    expect(screen.getByTestId("diagram-export-svg")).toBeDisabled();
+    await screen.findByTestId("diagram-svg");
+    fireEvent.click(screen.getByTestId("diagram-export-svg"));
+    await waitFor(() => expect(exportSvg).toHaveBeenCalledTimes(1));
+    expect(exportSvg).toHaveBeenCalledWith(GOOD, "D-001 售后申请的流程");
+    await waitFor(() => expect(screen.getByTestId("diagram-export-svg")).toBeEnabled());
+    exportSvg.mockRejectedValueOnce(new Error("画不出来。"));
+    fireEvent.click(screen.getByTestId("diagram-export-svg"));
+    await waitFor(() => expect(screen.getByTestId("diagram-note")).toHaveTextContent(`${EXPORT_FAILED_TEXT}画不出来。`));
+    cleanup();
+    render(<DiagramView text={GOOD} exportOff="文本有没保存的改动" />);
+    await screen.findByTestId("diagram-svg");
+    expect(screen.getByTestId("diagram-export-svg")).toBeDisabled();
+  });
+
+  it("文件名与 PNG 同名只换后缀；另画一遍时只在这张图的文本前加 init 指令关掉 htmlLabels，不动全局设置", async () => {
+    const real = await vi.importActual<typeof diagram>("../components/diagram/mermaid");
+    expect(real.svgFileName("D-001 a/b:c")).toBe("D-001 a_b_c.svg");
+    expect(real.svgFileName("  ")).toBe("图.svg");
+    expect(real.pngFileName("D-001 a/b:c")).toBe("D-001 a_b_c.png");
+    fakeInitialize.mockClear();
+    fakeRender.mockClear();
+    await real.renderPlainDiagram(GOOD);
+    expect(fakeRender.mock.calls[0][1]).toBe(`%%{init: {"htmlLabels": false}}%%\n${GOOD}`);
+    expect(fakeInitialize.mock.calls.length).toBeLessThanOrEqual(1);
   });
 });
 
