@@ -1,4 +1,4 @@
-// 一张图：把 Mermaid 文本画出来，画不出来时写明原因，另有一个「导出 PNG」按钮。用在业务说明里的图（work/overall/Figure.tsx）与图表页签里图的详情（work/DiagramsPane.tsx）。
+// 一张图：把 Mermaid 文本画出来，画不出来时写明原因，另有「导出 PNG」与「导出 SVG」两个按钮。用在业务说明里的图（work/overall/Figure.tsx）与图表页签里图的详情（work/DiagramsPane.tsx）。
 //
 // 文本一变就重画；先后发出的两次画图，后到的若是旧文本的结果就丢掉。画不出来（语法不对）时不显示上一张图，
 // 只显示原因，免得用户把旧图当成新文本的样子。
@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "antd";
-import { PNG_SCALE, WHEEL_STEP, type DiagramViewport, exportPng, fitZoom, initialZoom, placed, renderDiagram, sizedSvg, stepZoom, wholeZoom, zoomAt } from "./mermaid";
+import { PNG_SCALE, WHEEL_STEP, type DiagramViewport, exportPng, exportSvg, fitZoom, initialZoom, placed, renderDiagram, sizedSvg, stepZoom, wholeZoom, zoomAt } from "./mermaid";
 
 export const DIAGRAM_EMPTY_TEXT = "还没有 Mermaid 文本。";
 export const DIAGRAM_DRAWING_TEXT = "正在画图……";
@@ -39,7 +39,7 @@ export function DiagramView({ text, fileName = "图", exportOff = null, onDrawn,
   onDrawn?: () => void;
   /** 滚轮什么时候放大缩小：always 是一直，ctrl 是按住 Ctrl（或 ⌘）时才是、平常让页面照常滚。 */
   wheel?: "always" | "ctrl";
-  /** 现在不能导出的原因（例如文本有没保存的改动）：给了就把「导出 PNG」灰掉，悬停显示这句话。 */
+  /** 现在不能导出的原因（例如文本有没保存的改动）：给了就把「导出 PNG」与「导出 SVG」灰掉，悬停显示这句话。 */
   exportOff?: string | null;
 }) {
   const [drawn, setDrawn] = useState<Drawn>({ state: "empty" });
@@ -137,6 +137,19 @@ export function DiagramView({ text, fileName = "图", exportOff = null, onDrawn,
     return () => board.removeEventListener("wheel", onWheel);
   }, [hasStage, wheel]);
 
+  const downloadSvg = async () => {
+    if (drawn.state !== "done" || exporting) return;
+    setExporting(true);
+    setNote(null);
+    try {
+      await exportSvg(text, fileName);
+    } catch (error) {
+      setNote(`${EXPORT_FAILED_TEXT}${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const download = async () => {
     if (drawn.state !== "done" || exporting) return;
     setExporting(true);
@@ -156,6 +169,8 @@ export function DiagramView({ text, fileName = "图", exportOff = null, onDrawn,
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.5rem 0.75rem", marginBottom: "0.5rem" }}>
         <Button onClick={() => void download()} disabled={drawn.state !== "done" || !!exportOff} title={exportOff ?? undefined} loading={exporting}
           data-testid="diagram-export">导出 PNG</Button>
+        <Button onClick={() => void downloadSvg()} disabled={drawn.state !== "done" || !!exportOff} title={exportOff ?? undefined} loading={exporting}
+          data-testid="diagram-export-svg">导出 SVG</Button>
         {sized && (
           <span data-testid="diagram-zoom" style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
             <Button size="small" onClick={() => zoomBy((zoom) => stepZoom(zoom, -1))} data-testid="diagram-zoom-out">缩小</Button>

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **导出 SVG** ("export SVG") beside **导出 PNG** on a diagram: the drawing is rendered once more with HTML labels switched off, so the labels also show in viewers other than a browser, and is saved as a `.svg` file with the same name as the PNG would have. Fonts are not embedded; the file uses the fonts of the machine that opens it.
+
+### Fixed
+- Changing a diagram's Mermaid text, by the assistant or by you in the 文本 tab, now drops the sources of items that were drawn before and are no longer in the text. Sources of items still drawn, and sources that only cite an item as evidence, stay. The assistant's reply says which sources were dropped.
+- Tests: the simulation tests ask the backend for its own port (`--port 0`) instead of probing for a free one first; the grep limit test fails, instead of being skipped, when `rg` (ripgrep) is not installed, and `scripts/test-all.sh` now lists `rg` among its requirements.
+
 ## [0.5.0] - 2026-10-12
 
 0.5.0 changes how a requirements task is worked. The assistant no longer writes items straight from the materials: work goes through six stages, each entered by your click on a card the assistant proposes. What you and the assistant come to understand is kept as a business description in seven chapters, with five standard models drawn from it; items are written from that description. A point that is unclear is recorded as a question where it arises and settled later, without going back a stage. The generated document follows the chapters of the business description and can be downloaded as a Word file. Tasks now keep working across upgrades, and tasks and knowledge libraries can be exported and imported as data packs.

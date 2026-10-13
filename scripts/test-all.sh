@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs every test suite and the web build. Needs Node 24+, Python 3.12+ with pytest, and the pi CLI on PATH
-# for the integration tests (they use a local fake model endpoint, never a real model service).
+# Runs every test suite and the web build. Needs Node 24+, Python 3.12+ with pytest, the pi CLI and rg (ripgrep) on PATH
+# for the integration tests (they use a local fake model endpoint, never a real model service). Without rg the grep-limit test fails on purpose.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

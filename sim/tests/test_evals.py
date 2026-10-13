@@ -13,7 +13,6 @@ import io
 import json
 import os
 import shutil
-import socket
 import tempfile
 import unittest
 from pathlib import Path
@@ -118,12 +117,6 @@ class SummaryTest(unittest.TestCase):
             self.assertIsNotNone(evals.check_label(bad), bad)
 
 
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 def intent(function: str, summary: str) -> str:
     return "```json\n" + json.dumps({"acts": [{"function": function, "confidence": "high", "summary": summary}]}, ensure_ascii=False) + "\n```"
 
@@ -181,7 +174,7 @@ class EvalRunTest(unittest.TestCase):
             os.environ.update({ENV_AGENT_DIR: str(fake.agent_dir), "PI_OFFLINE": "1", "XDG_DATA_HOME": str(root / "data"),
                                "TASKWRIGHT_SETTINGS_FILE": str(root / "settings.json")})
             base = ["run", "--persona", str(REPO / "sim" / "personas" / "library-short.json"), "--expect", str(REPO / "sim" / "expectations" / "library-short.json"),
-                    "--materials-dir", str(EXAMPLES), "--port", str(free_port()), "--profile", "fake", "--user-model", "fake/fake-model",
+                    "--materials-dir", str(EXAMPLES), "--port", "0", "--profile", "fake", "--user-model", "fake/fake-model",
                     "--sim-root", str(sims_root), "--max-rounds", "4"]
             code, printed = quiet([*base, "--repeat", "2", "--label", "试跑"])
             self.assertEqual(code, 0, printed)

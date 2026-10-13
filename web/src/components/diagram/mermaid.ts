@@ -1,7 +1,10 @@
-// 图表的渲染与导出：把一段 Mermaid 文本画成 SVG，把 SVG 导出成 PNG 文件。
+// 图表的渲染与导出：把一段 Mermaid 文本画成 SVG，把 SVG 导出成 PNG 或 SVG 文件。
 //
 // mermaid 很大，所以用到时才加载（import()），构建时它自己成为单独的文件，不进页面一打开就要取的那个脚本。
 // 图上的文字照 mermaid 的缺省办法画（嵌在 SVG 里的 HTML），这样各种图的文字位置都是对的。
+//
+// 导出 SVG 要另画一遍、关掉 htmlLabels（文字不再嵌 HTML，改成 SVG 自己的 text 元素）：嵌着 HTML 的 SVG 只有浏览器会显示文字，
+// 别的查看器（Word、Inkscape、图片预览）里标签是空的。画出来的 SVG 直接存成文件，字体不嵌进去，用的是看图那台机器上的字体。
 //
 // 导出 PNG 分三步：给 SVG 写上明确的宽高（mermaid 输出的是 width="100%"，单独当图片用时没有固有大小）；把它经
 // data 地址交给一个图片元素；画到放大了的白底画布上再取 PNG。必须经 data 地址：经 blob 地址时，SVG 里嵌着 HTML 的图
@@ -40,6 +43,12 @@ export async function renderDiagram(text: string): Promise<string> {
     for (const leftover of [document.getElementById(id), document.getElementById(`d${id}`)]) leftover?.remove();
   }
 }
+
+/**
+ * 同上，但关掉 htmlLabels：文字用 SVG 自己的 text 元素，导出成文件给浏览器以外的查看器用。
+ * 用文本最前面的 init 指令只对这一张图关（mermaid 的 initialize 是全局的，改它会影响同时在画的别的图）。
+ */
+export const renderPlainDiagram = (text: string): Promise<string> => renderDiagram(`%%{init: {"htmlLabels": false}}%%\n${text}`);
 
 /** 给 SVG 写上明确的宽高（取 viewBox 的大小）。返回改过的 SVG 文本与宽高。 */
 export function sizedSvg(svg: string): { text: string; width: number; height: number } {
@@ -125,10 +134,12 @@ export function pngScale(width: number, height: number): number {
 }
 
 /** 文件名里不能有的字符换成下划线；空的时候叫「图」。 */
-export function pngFileName(name: string): string {
+function cleanedName(name: string): string {
   const cleaned = name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").trim().replace(/^\.+/, "");
-  return `${cleaned || "图"}.png`;
+  return cleaned || "图";
 }
+export const pngFileName = (name: string): string => `${cleanedName(name)}.png`;
+export const svgFileName = (name: string): string => `${cleanedName(name)}.svg`;
 
 /** 把 SVG 画成 PNG。返回 PNG 数据、它的宽高（像素）与实际放大的倍数。 */
 export async function svgToPng(svg: string): Promise<{ blob: Blob; width: number; height: number; scale: number }> {
@@ -161,15 +172,26 @@ export async function svgToPng(svg: string): Promise<{ blob: Blob; width: number
 /** 把 SVG 导出成 PNG 文件并让浏览器下载。name 是不带扩展名的文件名。返回实际放大的倍数。 */
 export async function exportPng(svg: string, name: string): Promise<{ scale: number }> {
   const { blob, scale } = await svgToPng(svg);
+  saveBlob(blob, pngFileName(name));
+  return { scale };
+}
+
+/** 让浏览器下载一段数据。 */
+function saveBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = pngFileName(name);
+  link.download = fileName;
   document.body.appendChild(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  return { scale };
+}
+
+/** 把 Mermaid 文本另画一遍（关掉 htmlLabels）存成 SVG 文件并让浏览器下载。name 是不带扩展名的文件名。 */
+export async function exportSvg(text: string, name: string): Promise<void> {
+  const { text: svg } = sizedSvg(await renderPlainDiagram(text));
+  saveBlob(new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${svg}`], { type: "image/svg+xml;charset=utf-8" }), svgFileName(name));
 }
 
 /** 一段二进制数据写成 base64（分段拼，免得一次展开太多参数）。 */

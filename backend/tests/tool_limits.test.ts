@@ -21,7 +21,8 @@ captureConsole();
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-const NO_RG = spawnSync("rg", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 rg（pi 的 grep 要用它）" : false;
+// pi 的 grep 要用 rg；没有 rg 时这例测试要失败（不能跳过再报通过），所以下面在用例开头断言它在。
+const HAS_RG = !spawnSync("rg", ["--version"], { encoding: "utf-8" }).error;
 
 /** 验证栈把知识库目录放在任务目录的旁边（helpers.ts 的 spawnBackend）。 */
 const knowledgeOf = (name: string) => join(tmp, name, "knowledge");
@@ -85,7 +86,8 @@ test("read 读知识库里的文件不写要读几行时只读回 120 行；写�
   });
 });
 
-test("grep 的返回太多时只留前 40 行并加一句话，归档里留一条记录；返回不多的原样不动；材料与知识库一样", { skip: NO_PI || NO_RG, timeout: 120_000 }, async () => {
+test("grep 的返回太多时只留前 40 行并加一句话，归档里留一条记录；返回不多的原样不动；材料与知识库一样", { skip: NO_PI, timeout: 120_000 }, async () => {
+  assert.ok(HAS_RG, "需要 rg（ripgrep）：本机 PATH 上没有 rg，而 pi 的 grep 要用它；装好 ripgrep 再跑这一套测试");
   const name = "grep";
   putKnowledge(name);
   const script = { sequence: [
