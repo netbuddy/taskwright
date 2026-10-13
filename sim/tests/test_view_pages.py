@@ -21,7 +21,7 @@ from taskwright_observatory import taskdb
 
 from sim import lamps, run
 from sim.run import FIRST_WAKE
-from sim.tests.test_evals import EXAMPLES, REPO, free_port, intent, source
+from sim.tests.test_evals import EXAMPLES, REPO, intent, source
 from sim.tests.test_user_agent_round import ENV_AGENT_DIR, FakeModel
 
 
@@ -84,7 +84,7 @@ class ViewPagesTest(unittest.TestCase):
             os.environ.update({ENV_AGENT_DIR: str(fake.agent_dir), "PI_OFFLINE": "1", "XDG_DATA_HOME": str(root / "data"),
                                "TASKWRIGHT_SETTINGS_FILE": str(root / "settings.json")})
             code = run.main(["--persona", str(REPO / "sim" / "personas" / "library-short.json"), "--materials-dir", str(EXAMPLES),
-                             "--port", str(free_port()), "--profile", "fake", "--user-model", "fake/fake-model",
+                             "--port", "0", "--profile", "fake", "--user-model", "fake/fake-model",
                              "--sim-root", str(root / "sims"), "--max-rounds", "4"])
         finally:
             fake.stop()

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from sim import run
 from sim.run import STALL_ROUNDS, build_parser, clicked_card, made_progress, stall_reason
-from sim.tests.test_evals import EXAMPLES, REPO, free_port, intent, quiet
+from sim.tests.test_evals import EXAMPLES, REPO, intent, quiet
 from sim.tests.test_stage_run import FIRST_WORDS, PAGE, say, tool
 from sim.tests.test_user_agent_round import ENV_AGENT_DIR, FakeModel
 from sim.tests.test_view_pages import look, respond, user
@@ -84,7 +84,7 @@ class StallRunTest(unittest.TestCase):
             os.environ.update({ENV_AGENT_DIR: str(fake.agent_dir), "PI_OFFLINE": "1", "XDG_DATA_HOME": str(root / "data"),
                                "TASKWRIGHT_SETTINGS_FILE": str(root / "settings.json")})
             common = ["--persona", str(REPO / "sim" / "personas" / "library-short.json"), "--materials-dir", str(EXAMPLES),
-                      "--port", str(free_port()), "--profile", "fake", "--user-model", "fake/fake-model", "--sim-root", str(root / "sims"),
+                      "--port", "0", "--profile", "fake", "--user-model", "fake/fake-model", "--sim-root", str(root / "sims"),
                       "--max-rounds", str(ROUNDS), *argv]
             if evals_run:
                 return quiet(["run", "--expect", str(REPO / "sim" / "expectations" / "library-short.json"), "--repeat", "1", "--label", "互相等", *common])[0]

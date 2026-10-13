@@ -33,7 +33,7 @@ from pathlib import Path
 from taskwright_observatory import evals as eval_files, taskdb
 
 from sim import evals, judge, lamps
-from sim.tests.test_evals import EXAMPLES, REPO, free_port, intent, quiet
+from sim.tests.test_evals import EXAMPLES, REPO, intent, quiet
 from sim.tests.test_stage_run import CONFIRM_CARD, DONE_CARD, FIRST_WORDS, HAS_STAGES, PAGE, REVIEW_CARD, USE_CASE, say, tool
 from sim.tests.test_user_agent_round import ENV_AGENT_DIR, FakeModel
 from sim.tests.test_view_pages import look, respond, user
@@ -117,7 +117,7 @@ class StageCardsTest(unittest.TestCase):
                                "TASKWRIGHT_SETTINGS_FILE": str(root / "settings.json")})
             code, printed = quiet(["run", "--persona", str(REPO / "sim" / "personas" / "library-short.json"),
                                    "--expect", str(REPO / "sim" / "expectations" / "library-short.json"), "--materials-dir", str(EXAMPLES),
-                                   "--port", str(free_port()), "--profile", "fake", "--user-model", "fake/fake-model",
+                                   "--port", "0", "--profile", "fake", "--user-model", "fake/fake-model",
                                    "--sim-root", str(sims_root), "--max-rounds", "13", "--repeat", str(PASSES), "--label", LABEL])
         finally:
             fake.stop()

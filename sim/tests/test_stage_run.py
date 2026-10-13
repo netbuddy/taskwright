@@ -27,7 +27,7 @@ from pathlib import Path
 from taskwright_observatory import taskdb
 
 from sim import evals, judge
-from sim.tests.test_evals import EXAMPLES, REPO, free_port, intent, quiet, source
+from sim.tests.test_evals import EXAMPLES, REPO, intent, quiet, source
 from sim.tests.test_user_agent_round import ENV_AGENT_DIR, FakeModel
 from sim.tests.test_view_pages import look, respond, user
 
@@ -104,7 +104,7 @@ class StageRunTest(unittest.TestCase):
                                "TASKWRIGHT_SETTINGS_FILE": str(root / "settings.json")})
             code, printed = quiet(["run", "--persona", str(REPO / "sim" / "personas" / "library-short.json"),
                                    "--expect", str(REPO / "sim" / "expectations" / "library-short.json"), "--materials-dir", str(EXAMPLES),
-                                   "--port", str(free_port()), "--profile", "fake", "--user-model", "fake/fake-model",
+                                   "--port", "0", "--profile", "fake", "--user-model", "fake/fake-model",
                                    "--sim-root", str(sims_root), "--max-rounds", "8", "--repeat", "1", "--label", "走到完成"])
         finally:
             fake.stop()
