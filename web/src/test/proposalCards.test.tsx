@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import type { Act, ConversationMessage, StageProposal } from "../api/types";
 import { Conversation, answeredByStaying, answeredStayKey, answeredText } from "../components/work/Conversation";
 import { PendingProposal, actOnProposal, pendingParts } from "../components/work/PendingProposal";
-import { BACK_CARD_TITLE, REVIEW_CARD_TITLE, ReplyCard, proposalKindOfCard } from "../components/work/ReplyCard";
+import { BACK_CARD_TITLE, REVIEW_CARD_TITLE, ReplyCard, START_CARD_TITLE, proposalKindOfCard } from "../components/work/ReplyCard";
 import {
   BACK_KEYS, DOCUMENT_REVIEWED_KEY, DOCUMENT_REVISE_KEY, ENTER_KEYS, REVIEWED_HINT, REVISE_HINT, STAY_HERE_HINT, STAY_HERE_KEY, continueStageLine, isActingKey,
   isQuietKey, proposalCardKind, quietChoiceText, quietText,
@@ -51,6 +51,17 @@ describe("卡片的键与种类", () => {
       .toEqual([[true, false], [true, false], [true, false], [false, true], [false, true], [false, true]]);
     expect([quietText("stay_in_stage"), quietText("document_revise"), quietText("continue_review"), quietChoiceText("document_reviewed"), quietChoiceText(undefined)])
       .toEqual(["留在本段", "需要修改", "继续本阶段", "看过了，生成文档", "继续本阶段"]);
+  });
+
+  it("任务空闲时提议开始核读材料的卡片：标题写「开始核读材料 · 请决定」，「先不开始」是不生效的那一项、照原文显示", () => {
+    const card = { kind: "choose", text: "你上传了一份材料。现在开始核读材料吗？", options: [{ key: "enter_reading", text: "开始核读材料" }, { key: "stay_idle", text: "先不开始" }] };
+    show([{ type: "assistant_reply", message_id: "r1", at: "", work_id: null, via_reply_tool: true, informs: [], act: card, text: "现在开始核读材料吗？" }]);
+    const shown = screen.getByTestId("act-choose");
+    expect(shown.querySelector(".tt")).toHaveTextContent(START_CARD_TITLE);
+    expect(START_CARD_TITLE).toBe("开始核读材料 · 请决定");
+    expect([...shown.querySelectorAll("button")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["开始核读材料", "先不开始"]));
+    expect([proposalCardKind(card.options), isActingKey("enter_reading"), isQuietKey("stay_idle"), quietText("stay_idle"), quietText("continue_reading")])
+      .toEqual(["enter", true, true, "先不开始", "继续本阶段"]);
   });
 });
 

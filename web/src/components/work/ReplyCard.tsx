@@ -66,6 +66,8 @@ export const TEMPLATES = {
  */
 /** 助手提议进入下一个阶段的那张请选择卡片的标题。 */
 export const STAGE_CARD_TITLE = "进入下一阶段 · 请决定";
+/** 任务空闲时助手提议开始核读材料的那张卡片的标题：这时没有「下一阶段」，是启动首次分析。 */
+export const START_CARD_TITLE = "开始核读材料 · 请决定";
 /** 助手提议退回前面的阶段的卡片、编写文档阶段请用户过目补写的页的卡片的标题。 */
 export const BACK_CARD_TITLE = "退回前面的阶段 · 请决定";
 export const REVIEW_CARD_TITLE = "补写的内容 · 请过目";
@@ -233,11 +235,13 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   const stageCard = !story && stageCardOf(act);
   // 另两种提议的卡片：提议退回前面的阶段（「退回某阶段」「留在本段」）、编写文档阶段请用户过目（「看过了，生成文档」「需要修改」）。
   const proposal = story ? null : proposalKind;
+  // 任务空闲时提议开始核读材料的卡片：进入的那一项是「开始核读材料」。
+  const startsReading = (act.options ?? []).some((one) => ENTER_KEYS[one.key] === "reading");
 
   return (
     <div className={`act${story ? " retell" : ""}`} data-kind={act.kind} data-testid={`act-${act.kind}`} data-story={story ?? undefined}
       data-stage-card={stageCard ? "true" : undefined} data-proposal={proposal ?? undefined}>
-      <div className="tt">{story ? "复述 · 请核对" : proposal ? PROPOSAL_TITLES[proposal] : KIND_LABEL[act.kind] ?? act.kind}</div>
+      <div className="tt">{story ? "复述 · 请核对" : proposal ? (proposal === "enter" && startsReading ? START_CARD_TITLE : PROPOSAL_TITLES[proposal]) : KIND_LABEL[act.kind] ?? act.kind}</div>
       {contexts.length > 0 && (
         <div data-testid="card-context">
           {proposal && <div className="ctxh" data-testid="card-look-first">{PROPOSAL_LOOK[proposal]}</div>}
