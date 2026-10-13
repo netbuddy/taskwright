@@ -87,9 +87,14 @@ test("启动与继续首次分析：没有走过是启动，走过是继续；�
     [["ACTIVITY_ENDED", "clarifying", null, "用户改做写条目"], ["ACTIVITY_STARTED", "writing", "writing", ""]]);
   assert.deepEqual(records(dir, taskId).map((r) => [r[0], r[1], r[4]]),
     [["clarifying", null, false], ["reading", "reading", false], ["writing", "writing", false], ["clarifying", null, false], ["writing", "writing", true]]);
-  // 同一项活动换一种开展方式不算原地不动：流程里的写条目改成单独开展写条目（先立一页主题，够单独开展的前提），再记一条。
+  // 任务正在流程里做写条目：不能把它再单独开展一遍（前提够了也不行），什么都不记；状况卡上那一项写「正在流程里进行」。
   saveRevision(callIn(dir), { operations: [READY_PAGE] });
-  assert.equal(start(dir, "写条目", false).note, "界面操作（不是用户打的字）：用户单独开展写条目。（原来在做：写条目）");
+  const records_before = count(dir, "activity_record");
+  assert.throws(() => start(dir, "写条目", false), (error: unknown) => error instanceof UserOpError && error.code === "rejected"
+    && error.message === "现在还不能单独开展写条目：正在流程里进行。");
+  assert.equal(count(dir, "activity_record"), records_before);
+  assert.deepEqual(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION))!.launch.activities.filter((one) => one.activity === "writing").map((one) => [one.enabled, one.state]),
+    [[false, "正在流程里进行"]]);
 });
 
 test("单独开展的前提：核读材料要有材料，整理建模与写条目要业务说明有页，评审确认与编写文档要有需求条目；缺的拒绝并写明缺什么，在流程里开始不查", () => {
@@ -114,16 +119,17 @@ test("单独开展的前提：核读材料要有材料，整理建模与写条�
   assert.equal(start(dir, "写条目", true).note, "界面操作（不是用户打的字）：用户启动首次分析，从写条目开始。（原来在做：澄清）");
   assert.deepEqual(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION))!.launch.activities.map((one) => [one.label, one.enabled, one.state]), [
     ["核读材料", false, "还没有材料，先上传"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有页"],
-    ["写条目", false, "业务说明还没有页"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有需求条目"]]);
-  // 另一个有材料的任务：在写条目阶段立一页主题、写一条用例之后，六项都可以单独开展（已废弃的页、问题条目不算数）。
+    ["写条目", false, "正在流程里进行"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有需求条目"]]);
+  // 另一个有材料的任务：在写条目阶段立一页主题、写一条用例之后，前提都够了（已废弃的页、问题条目不算数）；只有流程里正在做的写条目不能单独开展。
   const full = workspace();
   enterStage(full.dir, "writing");
   saveRevision(callIn(full.dir), { operations: [READY_PAGE] });
   assert.deepEqual(inDb(full.dir, (db) => stageSummary(db, full.dir, full.taskId, DEFINITION))!.launch.activities.map((one) => one.state),
-    ["可以开展", "可以开展", "可以开展", "可以开展", "还没有需求条目", "还没有需求条目"]);
+    ["可以开展", "可以开展", "可以开展", "正在流程里进行", "还没有需求条目", "还没有需求条目"]);
   userOp(full.dir, { kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] });
   saveRevision(callIn(full.dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "借书", 步骤: ["选书"] }, sources: [SOURCE] }] });
-  assert.ok(inDb(full.dir, (db) => stageSummary(db, full.dir, full.taskId, DEFINITION))!.launch.activities.every((one) => one.enabled));
+  assert.deepEqual(inDb(full.dir, (db) => stageSummary(db, full.dir, full.taskId, DEFINITION))!.launch.activities.map((one) => one.state),
+    ["可以开展", "可以开展", "可以开展", "正在流程里进行", "可以开展", "可以开展"]);
   assert.equal(start(full.dir, "评审确认", false).note, "界面操作（不是用户打的字）：用户单独开展评审确认。（原来在做：写条目）");
 });
 
@@ -181,8 +187,8 @@ test("回复里的 activity_done 怎样核对与落库：单独开展时放行�
   assert.equal(activityDoneGate(dir)![0], "回复里写了 activity_done，而任务现在空闲，没有在进行的活动可以结束");
   assert.equal(reportActivityDone(dir, "sess-a", "call-reply-1"), null);
   // 在流程里：拒绝。
-  start(dir, "澄清", true);
-  assert.match(activityDoneGate(dir)![0], /^回复里写了 activity_done，而任务现在在首次分析流程里的澄清阶段/);
+  start(dir, "核读材料", true);
+  assert.match(activityDoneGate(dir)![0], /^回复里写了 activity_done，而任务现在在首次分析流程里的核读材料阶段/);
   assert.equal(reportActivityDone(dir, "sess-a", "call-reply-2"), null);
   // 单独开展：放行，结束。
   start(dir, "澄清", false);

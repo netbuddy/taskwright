@@ -174,7 +174,10 @@ test("开展一项活动的三组选项：正在进行的只是一行；首次�
   const writing = launchView({ position: "writing", inFlow: true, flowNode: "writing", hasMaterials: true, pages: 2, items: 0 });
   assert.deepEqual(writing.current, { activity: "writing", in_flow: true, label: "继续首次分析：写条目" });
   assert.deepEqual(writing.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: false, state: "正在进行" }]);
-  assert.deepEqual(writing.activities.map((one) => one.enabled), [true, true, true, true, false, false]);
+  assert.deepEqual(writing.activities.map((one) => one.enabled), [true, true, true, false, false, false]);
+  // 流程里正在做的那一项，单独开展一组里同名的不能点，写明它正在流程里进行。
+  assert.deepEqual(writing.activities.filter((one) => !one.enabled).map((one) => [one.label, one.state]),
+    [["写条目", "正在流程里进行"], ["评审确认", "还没有需求条目"], ["编写文档", "还没有需求条目"]]);
   // 流程走到写条目之后改做单独的澄清：第一组写「继续澄清」，流程可以从写条目接着，澄清那一项正在进行。
   const alone = launchView({ position: "clarifying", inFlow: false, flowNode: "writing", hasMaterials: true, pages: 2, items: 3 });
   assert.deepEqual(alone.current, { activity: "clarifying", in_flow: false, label: "继续澄清" });

@@ -27,7 +27,7 @@ import { openProposal } from "./stage_proposal.ts";
 import {
   ACTIVITY_DONE_REASON, BACK_OPTIONS, ENTER_OPTIONS, FLOW_INITIAL, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
   type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
-  activityBlocked, activityDoneRefusal, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  activityBlocked, activityDoneRefusal, LAUNCH_IN_FLOW, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
   startHow, switchedReason,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
@@ -273,6 +273,7 @@ function whereIs(db: DatabaseSync, workspaceDir: string, taskId: string): { from
  * 想让任务开始一项活动：在流程里开始（inFlow 为真，移动阶段、启动或继续首次分析都是它），或者单独开展（inFlow 为假）。
  * 先看任务有没有阶段、这次行不行，行就记下。不行不抛错，原因写在结果里，由调用方决定怎样告诉助手或用户。
  * 开展活动只由用户决定；任务已经在同一项活动、同一种开展方式里时不记；单独开展要够前提（lib/stage.ts 的 activityBlocked），
+ * 任务正在流程里做这一项时也不能单独开展它；
  * 在流程里开始不查前提。有别的活动在进行、这次又不是流程里的移动时，原来那条记录结束的起因写「用户改做某项活动」。
  * 必须在调用方已经开好的写事务里调用。
  */
@@ -285,7 +286,8 @@ export function startActivity(db: DatabaseSync, workspaceDir: string, who: Omit<
   if (from === to && fromInFlow === inFlow) return { ...none, why: "same" };
   if (who.actor !== "user") return { ...none, why: "user_only" };
   if (!inFlow) {
-    const blocked = activityBlocked(to, launchFacts(db, workspaceDir, who.taskId, where.definition));
+    // 任务正在流程里做这一项时不能把它单独开展一遍；别的情形看前提够不够。
+    const blocked = from === to && fromInFlow ? LAUNCH_IN_FLOW : activityBlocked(to, launchFacts(db, workspaceDir, who.taskId, where.definition));
     if (blocked !== null) return { ...none, why: "not_ready", blocked };
   }
   const how = startHow(inFlow, fromInFlow, flowBefore);

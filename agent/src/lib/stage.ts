@@ -332,6 +332,8 @@ export interface LaunchView {
 
 export const LAUNCH_READY = "可以开展";
 export const LAUNCH_ACTIVE = "正在进行";
+/** 任务正在首次分析流程里做这项活动时，「单独开展」一组里同名的那一项不能点，后面写这一句。 */
+export const LAUNCH_IN_FLOW = "正在流程里进行";
 
 /** 单独开展一项活动缺什么；不缺是 null。核读材料要有材料，整理建模与写条目要业务说明有页，评审确认与编写文档要有需求条目。 */
 export function activityBlocked(activity: Stage, facts: Pick<LaunchFacts, "hasMaterials" | "pages" | "items">): string | null {
@@ -356,7 +358,8 @@ export function launchView(facts: LaunchFacts): LaunchView {
   }];
   const activities: LaunchOption[] = STAGES.map((activity) => {
     const active = at === activity && !facts.inFlow;
-    const blocked = activityBlocked(activity, facts);
+    // 任务正在流程里做这一项：不能再把它单独开展一遍（那会把流程里的这一步结束掉）。
+    const blocked = at === activity && facts.inFlow ? LAUNCH_IN_FLOW : activityBlocked(activity, facts);
     return { activity, in_flow: false, label: STAGE_NAMES[activity], enabled: !active && blocked === null, state: active ? LAUNCH_ACTIVE : blocked ?? LAUNCH_READY };
   });
   return { current, flows, activities, later: [{ label: "发布", state: "0.6 后续" }] };
