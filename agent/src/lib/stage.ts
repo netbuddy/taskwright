@@ -50,6 +50,33 @@ export function stageByName(name: unknown): Stage | null {
   return STAGES.find((one) => STAGE_NAMES[one] === text) ?? null;
 }
 
+/**
+ * 空闲：任务现在没有在进行的活动（任务有过活动记录，而每一条都已经结束）。它不是一个阶段，不排在 STAGES 的次序里，
+ * 也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「任务现在在哪里」的那几处。它与 null 不是一回事：
+ * null 是早先建的任务（任务定义里没有「总体分析」集合），那种任务没有阶段，什么都不拦；空闲的任务有阶段，照下面的规矩拦。
+ * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED），卡片上的点击也按任务在澄清时判（见 gateStage）。
+ */
+export const IDLE = "idle";
+export const IDLE_NAME = "空闲";
+
+/** 任务现在的位置：六个阶段之一，或者空闲。 */
+export type Position = Stage | typeof IDLE;
+
+/** 一个值是不是位置的写法：六个阶段的写法或者空闲。 */
+export function isPosition(value: unknown): value is Position {
+  return value === IDLE || isStage(value);
+}
+
+/** 位置给人看的名字：阶段的名字，或者「空闲」。 */
+export function positionName(position: Position): string {
+  return position === IDLE ? IDLE_NAME : STAGE_NAMES[position];
+}
+
+/** 空闲时按哪个阶段的规矩办：澄清。任务在某个阶段时就是那个阶段。 */
+export function gateStage(position: Position): Stage {
+  return position === IDLE ? "clarifying" : position;
+}
+
 /** 任务还没有任何活动记录时在哪个阶段：有材料就先核读材料，没有材料就从澄清开始。 */
 export function defaultStage(hasMaterials: boolean): Stage {
   return hasMaterials ? "reading" : "clarifying";
@@ -177,11 +204,11 @@ export function forwardCardGuidance(from: Stage): string {
  * 一次移动行不行。
  * - same：目标就是现在所在的阶段，原地不动不算移动，不记。
  * - user_only：移动阶段（往前、往后都是）要由用户决定，助手只能发卡片提议。
- * 用户的移动不设限。
+ * 用户的移动不设限；任务空闲时移到哪个阶段都不是原地不动。
  */
 export type MoveVerdict = { ok: true } | { ok: false; why: "same" | "user_only" };
 
-export function judgeMove(from: Stage, to: Stage, actor: StageActor): MoveVerdict {
+export function judgeMove(from: Position, to: Stage, actor: StageActor): MoveVerdict {
   if (from === to) return { ok: false, why: "same" };
   if (actor === "user") return { ok: true };
   return { ok: false, why: "user_only" };
@@ -199,8 +226,10 @@ export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "co
 /**
  * 每个阶段助手能做哪几类写入。页与问题任何阶段都可以写（评审确认阶段对页另有限制，见 pageRefusal）。
  * 编写文档排在最后，却不能写条目、不能画图、不能请求评审，所以这里一个阶段一个阶段列出来，不按先后推。
+ * 空闲时与澄清相同：只能写页与问题。
  */
-const ALLOWED: Record<Stage, readonly WriteKind[]> = {
+const ALLOWED: Record<Position, readonly WriteKind[]> = {
+  idle: ["page", "problem"],
   reading: ["page", "problem"],
   clarifying: ["page", "problem"],
   modeling: ["page", "problem", "diagram"],
@@ -209,8 +238,8 @@ const ALLOWED: Record<Stage, readonly WriteKind[]> = {
   document: ["page", "problem", "complete"],
 };
 
-/** 这个阶段助手能不能做这一类写入。 */
-export function canWrite(stage: Stage, kind: WriteKind): boolean {
+/** 这个阶段（或者空闲时）助手能不能做这一类写入。 */
+export function canWrite(stage: Position, kind: WriteKind): boolean {
   return ALLOWED[stage].includes(kind);
 }
 
@@ -227,17 +256,31 @@ function howToLeaveDocument(back: Exclude<Stage, "document">): string {
   return `编写文档阶段只补写主题页的文字。要做这件事，得先回到${STAGE_NAMES[back]}：${backCardGuidance(back)}，由用户在卡片上点`;
 }
 
+/** 空闲时被拦的事实开头的那半句。 */
+const IDLE_FACT = "任务现在没有在进行的活动";
+
+/**
+ * 空闲时被拦怎么办：这件事要在哪一项活动里做（where），而开展哪一项活动由用户定——从任务状况卡开展一项活动。
+ * 空闲时助手能做的与澄清相同：立主题页、改主题页、记问题条目。
+ */
+function howToLeaveIdle(where: string): string {
+  return `${where}。开展哪一项活动由用户决定：请用户从任务状况卡开展一项活动。任务空闲时你可以立主题页、改主题页、记问题条目`;
+}
+
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
 function howToReachWriting(): string {
   return `进入写条目要由用户在卡片上选「${START_ITEMS_TEXT}」：你可以先立页、请用户看，觉得理解够了就用请选择卡片提议`;
 }
 
 /**
- * 助手新增、修改或删除别的集合（不是总体分析、也不是问题）的条目：写条目之前的阶段都拦。
+ * 助手新增、修改或删除别的集合（不是总体分析、也不是问题）的条目：写条目之前的阶段都拦，空闲时也拦。
  * 可以写时返回 null。
  */
-export function itemRefusal(stage: Stage, op: string, collection: string): Refusal | null {
+export function itemRefusal(stage: Position, op: string, collection: string): Refusal | null {
   if (canWrite(stage, "item")) return null;
+  if (stage === IDLE) {
+    return [`${IDLE_FACT}，这时不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`, howToLeaveIdle(`「${collection}」的条目要在写条目这项活动里写`)];
+  }
   if (stage === "document") {
     return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`, howToLeaveDocument("reviewing")];
   }
@@ -248,10 +291,10 @@ export function itemRefusal(stage: Stage, op: string, collection: string): Refus
 }
 
 /**
- * 助手新增、修改或删除总体分析的一页：前四个阶段都可以；评审确认阶段只能改「状态」与「改看」两个字段，
+ * 助手新增、修改或删除总体分析的一页：前四个阶段与空闲时都可以；评审确认阶段只能改「状态」与「改看」两个字段，
  * 不能新立页、不能删页。changed 是修改时这次改动了的字段名。可以写时返回 null。
  */
-export function pageRefusal(stage: Stage, op: string, changed: readonly string[] = []): Refusal | null {
+export function pageRefusal(stage: Position, op: string, changed: readonly string[] = []): Refusal | null {
   if (stage !== "reviewing") return null;
   const guidance = `要动主题页的内容，得先回到澄清或整理建模：${backCardGuidance("clarifying")}，由用户在卡片上点`;
   const head = `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段`;
@@ -264,11 +307,12 @@ export function pageRefusal(stage: Stage, op: string, changed: readonly string[]
 }
 
 /**
- * 助手新画、修改或删除一张图：整理建模之前的阶段都拦。可以时返回 null。
+ * 助手新画、修改或删除一张图：整理建模之前的阶段都拦，空闲时也拦。可以时返回 null。
  * 「怎么办」里说的是怎样走到整理建模：往前进入下一段要由用户在卡片上点，助手只能发卡片提议（forwardCardGuidance）。
  */
-export function diagramRefusal(stage: Stage): Refusal | null {
+export function diagramRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "diagram")) return null;
+  if (stage === IDLE) return [`${IDLE_FACT}，这时不能画图、改图或删图`, howToLeaveIdle("图要在整理建模这项活动里画")];
   if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`, howToLeaveDocument("modeling")];
   const enterModeling = ENTER_OPTIONS.modeling.text;
   return [
@@ -279,9 +323,10 @@ export function diagramRefusal(stage: Stage): Refusal | null {
   ];
 }
 
-/** 助手请求评审：写条目之前的阶段都拦。可以时返回 null。 */
-export function reviewRefusal(stage: Stage): Refusal | null {
+/** 助手请求评审：写条目之前的阶段都拦，空闲时也拦。可以时返回 null。 */
+export function reviewRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "review")) return null;
+  if (stage === IDLE) return [`${IDLE_FACT}，这时不能请求评审`, howToLeaveIdle("评审要在写条目或评审确认这项活动里请求")];
   if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能请求评审`, howToLeaveDocument("reviewing")];
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，评审要到写条目阶段才能请求`,
@@ -289,9 +334,10 @@ export function reviewRefusal(stage: Stage): Refusal | null {
   ];
 }
 
-/** 助手完成任务：评审确认与编写文档两个阶段可以。可以时返回 null。 */
-export function completeRefusal(stage: Stage): Refusal | null {
+/** 助手完成任务：评审确认与编写文档两个阶段可以，空闲时不可以。可以时返回 null。 */
+export function completeRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "complete")) return null;
+  if (stage === IDLE) return [`${IDLE_FACT}，这时不能完成任务`, howToLeaveIdle("完成任务要在评审确认或编写文档这项活动里做")];
   return [
     `任务现在在${STAGE_NAMES[stage]}阶段，完成任务要在评审确认阶段`,
     stage === "writing"
