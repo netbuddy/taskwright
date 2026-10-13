@@ -39,6 +39,8 @@ export interface Turn {
   userEntryId: string;
   /** 引出这一轮的那句用户的话的原文；调用方手里没有时不给。 */
   userText?: string;
+  /** 这句话是用户在某张卡片的文本框里打的：卡片所在回复的会话条目编号；不是或者调用方手里没有时不给。 */
+  typedCard?: string | null;
 }
 
 /** 一种登记的结构化输出。 */

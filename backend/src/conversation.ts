@@ -3,8 +3,10 @@
  *
  * - 用户消息 → user_message。文字以「用户说：/」开头的，是后端给用户打的斜杠开头的字加的前缀，显示时去掉前缀；
  *   紧跟在 taskwright-ui-click 自定义消息后面、文字与它记的那句相同的，合成一条 origin 为 card_choice 的用户消息；
+ *   紧跟在 taskwright-card-typed 自定义消息后面的，是用户在卡片的文本框里打的字，origin 仍是 typed，标注里写是哪条回复的卡片；
  *   文字与「确认之后通知执行者」的模板相符、并且紧跟在确认的 taskwright-user-edit 后面的，origin 为 ui_request。
  * - 「回复」工具一次成功的调用 → assistant_reply（via_reply_tool 为真，message_id 是那条助手消息的条目编号）；
+ *   用户在它之前的那句话回答了哪几张卡片（answers_card）、它的卡片重发的是哪一张（resends_card）另从任务库现算（withCardLinks）；
  *   一段用户消息之后没有成功的回复、只有助手正文的，取这段里最后一条有正文的助手消息，via_reply_tool 为假。
  * - taskwright-user-edit → ui_action_noted；taskwright-task-status → system_note（kind 为 task_status；文字换成页面上的说法，
  *   见 taskStatusDisplayText；另带这条消息的 details，见 taskStatusDisplayDetails）。兜底追加的那句也是 system_note，kind 为 reply_fallback。
@@ -17,10 +19,22 @@ import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
 import { isStage } from "../../agent/src/lib/stage.ts";
 import { callFacts, derivedSourceName } from "./library.ts";
-import { understandingLines, worksFromEntries } from "./work_summary.ts";
+import { cardLinks, understandingLines, worksFromEntries } from "./work_summary.ts";
 
 export const SLASH_PREFIX = "用户说：";
 export const UI_CLICK = "taskwright-ui-click";
+/** 用户在卡片的文本框里打了一句话时，扩展先追加的那条自定义消息的类型（agent/src/lib/dialogue_acts.ts 的 CARD_TYPED_TYPE）。 */
+export const CARD_TYPED = "taskwright-card-typed";
+/** 页面在卡片的文本框里发话时，卡片标识里 choice 写的固定值；会话记录里这句话的标注的 option_key 也是它。 */
+export const CARD_TYPED_KEY = "typed";
+
+/**
+ * 用户在卡片的文本框里打的那句话的标注：是哪条回复的卡片。这句话是用户打的字（origin 仍是 typed），不是点了哪个选项，
+ * 所以 option_text 为空；页面据 reply_message_id 把那张卡片标成答过。
+ */
+export function typedAnnotation(details: Record<string, any>, noteId: unknown): Record<string, any> {
+  return { reply_message_id: details.reply_entry ?? null, option_key: CARD_TYPED_KEY, option_text: null, click_message_id: noteId ?? null };
+}
 export const USER_EDIT = "taskwright-user-edit";
 export const TASK_STATUS = "taskwright-task-status";
 export const REPLY_TOOL = "reply";
@@ -186,7 +200,33 @@ export function displayText(raw: string): string {
  */
 export function messages(entries: Entry[], sessionId: string, definition: Record<string, any> = {}, taskDir: string | null = null): Record<string, any>[] {
   const path = branch(entries);
-  return withWorkSummaries(messagesOfPath(path, sessionId), path, sessionId, definition, taskDir);
+  return withWorkSummaries(withCardLinks(messagesOfPath(path, sessionId), taskDir, sessionId), path, sessionId, definition, taskDir);
+}
+
+/**
+ * 给回复补上两项：answers_card（用户在它之前的那句话回答了哪几张卡片）与 resends_card（它的卡片重发的是哪一张），值都是卡片所在回复的编号。
+ * 从任务库的对话行为表现算（work_summary.ts 的 cardLinks）；库里查不到时留着从「回复」的结果里取到的值。没有的不带这两项。
+ */
+export function withCardLinks(out: Record<string, any>[], taskDir: string | null, sessionId: string): Record<string, any>[] {
+  const links = cardLinks(taskDir, sessionId);
+  if (links.answers.size === 0 && links.resends.size === 0) return out;
+  let said: string | null = null;
+  for (const m of out) {
+    if (m.type === "user_message") said = m.message_id ?? null;
+    if (m.type !== "assistant_reply" || !m.via_reply_tool) continue;
+    const answered = said !== null ? links.answers.get(said) : undefined;
+    if (answered) m.answers_card = answered;
+    const resent = links.resends.get(m.message_id);
+    if (resent) m.resends_card = resent;
+  }
+  return out;
+}
+
+/** 「回复」的结果里带的两项，写成回复消息上的样子：没有的不带。实时推送与读历史（库里查不到时）都用它。 */
+export function replyCardFields(details: Record<string, any>): { answers_card?: string[]; resends_card?: string } {
+  const answers = (Array.isArray(details.answers_card) ? details.answers_card : []).filter((one: unknown) => typeof one === "string" && one);
+  return { ...(answers.length ? { answers_card: answers } : {}),
+    ...(typeof details.resends_card === "string" && details.resends_card ? { resends_card: details.resends_card } : {}) };
 }
 
 /**
@@ -247,7 +287,7 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
     if (kind === "custom_message") {
       const ctype = e.customType;
       const details = or(e.details, {}) as Record<string, any>;
-      if (ctype === UI_CLICK) pendingClick = e;
+      if (ctype === UI_CLICK || ctype === CARD_TYPED) pendingClick = e;
       else if (ctype === USER_EDIT) {
         const seqs = or(details.event_seqs, []) as any[];
         out.push({
@@ -280,7 +320,10 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
       let origin = "typed";
       let annotation: Record<string, any> | null = null;
       const clickDetails = or((pendingClick || {}).details, {}) as Record<string, any>;
-      if (pendingClick !== null && clickDetails.text === raw) {
+      if (pendingClick !== null && clickDetails.text === raw && pendingClick.customType === CARD_TYPED) {
+        // 用户在卡片的文本框里打的字：仍是打的字，只标明写在哪张卡片里。
+        annotation = typedAnnotation(clickDetails, pendingClick.id);
+      } else if (pendingClick !== null && clickDetails.text === raw) {
         origin = "card_choice";
         annotation = {
           reply_message_id: clickDetails.reply_entry ?? null, option_key: clickDetails.option_key ?? null,
@@ -312,7 +355,7 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
         out.push({
           type: "assistant_reply", session_id: sessionId, message_id: e.id, at, work_id: null, via_reply_tool: true,
           informs: normalizeInforms(args.informs ?? null), act: args.act ?? null, text: or(args.text, ""), degraded: truthy(details.degraded),
-          ...(replyMove ? { stage_move: replyMove } : {}),
+          ...(replyMove ? { stage_move: replyMove } : {}), ...replyCardFields(details),
         });
         segmentReplied = true;
       }

@@ -81,8 +81,8 @@ data: {
 |---|---|---|
 | `work_started` | 智能体开始工作 | `work_id`、`at`、`triggered_by`（消息编号） |
 | `step` | 一次工具调用（tool call）开始，以及本轮结束时补发的一行修正 | `work_id`、`step_key`、`text`、`in_progress`、`failed` |
-| `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`card`、`queued`；用户在卡片上点了进入下一个阶段、服务替用户记了移动时另有 `stage_move`（`from`、`to`、`actor` 为 `user`）；点的是进入某个阶段的选项而阶段没有移动时（次序不对，或者任务本来就在那个阶段）另有 `stage_unmoved`（`at` 是任务当时所在的阶段） |
-| `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节）；智能体在这条回复里把任务退回了前面的阶段时另有 `stage_move`（`from`、`to`、`actor` 为 `executor`、`reason`） |
+| `user_message` | pi 接收了一条用户消息 | `message_id`（会话条目编号；极少数情况下来不及找到条目时为空）、`client_id`、`at`、`text`、`origin`（`typed`、`card_choice`、`ui_request`）、`annotation`、`queued`；`annotation` 在底部输入框打的字上为 null，在卡片上点选项时是 `{reply_message_id, option_key, option_text, click_message_id}`（卡片所在的回复与点的选项），在卡片的文本框里打字时形状相同、`option_key` 为 `typed`、`option_text` 为空（这句话的 `origin` 仍是 `typed`）；用户在卡片上点了进入下一个阶段、服务替用户记了移动时另有 `stage_move`（`from`、`to`、`actor` 为 `user`）；点的是进入某个阶段的选项而阶段没有移动时（次序不对，或者任务本来就在那个阶段）另有 `stage_unmoved`（`at` 是任务当时所在的阶段） |
+| `assistant_reply` | 智能体作出了回复 | `message_id`、`at`、`work_id`、`via_reply_tool`、`informs`、`act`、`text`、`degraded`（见第 5.3 节）；用户在它之前的那句话不是从卡片上发的、却回答了卡片时另有 `answers_card`（那几张卡片所在回复的 `message_id`）；这条回复的卡片把先前一张没有答的卡片再问一遍时另有 `resends_card`（那张卡片所在回复的 `message_id`），见第 5.3 节；智能体在这条回复里把任务退回了前面的阶段时另有 `stage_move`（`from`、`to`、`actor` 为 `executor`、`reason`） |
 | `ui_action_noted` | 一次直接操作完成，或者用户停止了智能体的一次工作 | `message_id`、`at`、`text`、`event_seq`、`op_id`、`revision_no`、`undoable`、`kind`（操作种类；用户停止了智能体的一次工作之后留的那一条是 `stop_run`，见第 5.5 节：它没有库事件、没有修订、不能撤销，`text` 是写给智能体看的，页面另写一句自己的话）、`review`（评审结束那一条才有：`total`、`passed`、`failed`、`unfinished`、`problems`、`advice`）、`reply_message_id`、`stage` 与 `option_key`（`kind` 为 `continue_stage` 的那一条才有，见第 6 节第 15 条） |
 | `material_added` | 上传了一份材料 | `at`、`path`、`bytes`、`modified_at`；这份材料是替换上来的时候另带 `replaces`，值是被换掉的那份材料的路径（第 5.1 节「替换材料」） |
 | `material_removed` | 删除了一份材料，或者一份材料被替换掉了（第 5.1 节） | `at`、`path`；由 Word 材料、PDF 材料生成的文件随它一起删掉，不另发事件。被替换掉的时候另带 `replaced_by`，值是换上来的那份材料的路径，紧接着有一条那份材料的 `material_added` |
@@ -268,16 +268,19 @@ data: {
   "scope": "general",                                       // 仅 ask/suggest/propose：不针对任何条目时用（此时不填 items）
   "options": [ { "key": "a", "text": "…" } ],               // 仅 choose
   "value": "…", "basis": [ { "kind": "文档原文", "locator": "…", "excerpt": "…" } ],   // 仅 suggest；每条依据与 save_revision 的来源同一套逐字核对，用户的话的出处是工具填写的
-  "preview": [ { "effect": "remove" | "add" | "change", "text": "…" } ]           // 仅 propose
+  "preview": [ { "effect": "remove" | "add" | "change", "text": "…" } ],          // 仅 propose
+  "resends": "r3-2"                                         // 仅 ask/choose，可选：这张卡片把先前一张没有答的卡片再问一遍，值是那一张的行为编号
 },
 "text": "…"                      // 以自然语言呈现的回复正文
 ```
 
 只有智能体在等用户的一个具体回应时才带 `act`；回答用户的问题、汇报做了什么，`act` 为 `null`。告知从不画成卡片：它点名的条目画成条目链接（有 `act` 时跟在那条告知后面；没有 `act` 时在正文下方列一行「提到的条目」，同一个条目只列一次）。告知能点名条目之前录下的会话里，告知是纯文字；服务器一律整理成对象再发出。`degraded: true` 表示：多次被拒绝后放行的一条纯文本回复；展示时应当作纯文本处理，附一行提示，不带卡片。回复以受限的 Markdown 渲染（段落、列表、加粗、行内代码）。
 
+**卡片什么时候算答过。** 卡片一直开着（按钮与文本框可用），直到出现下面任何一种情形：一条用户消息带着它的标识（`annotation.reply_message_id` 是卡片所在的回复：点了卡片上的选项，或者在卡片自己的文本框里打了字）；一条种类为 `continue_stage` 的 `ui_action_noted` 指着它；后面的一条回复在 `answers_card` 里列了它；后面的一条回复在 `resends_card` 里写了它。底部输入框里打的字本身不关卡片：它可能是在说别的事。这句话是不是在回答一张开着的卡片，由智能体按上下文判断，写在它对这句话的理解里；`answers_card` 由服务从这份理解算出（智能体不另填），实时事件与重读对话记录时说法相同，重读时从任务库现算，所以早先的会话读出来也一样。用户搁下的卡片，智能体在提议进入下一段之前重发，一条回复重发一张，`act.resends` 写原来那张；原来那张从此不再等回应，这条回复带 `resends_card`。没有带标识的消息（早先版本记下的点击、直接操作之后发出的那句话）只在智能体还没有再回复之前算作回答。
+
 ### 5.4 卡片按钮
 
-结果必须写入数据库的按钮走 `/actions`（见第 6 节）；需要智能体进一步处理的按钮走 `/messages`，带 `origin: "card_choice"` 与 `card: {reply_message_id, kind, choice}`，用第 7 节里的固定句式。
+结果必须写入数据库的按钮走 `/actions`（见第 6 节）；需要智能体进一步处理的按钮走 `/messages`，带 `origin: "card_choice"` 与 `card: {reply_message_id, kind, choice}`，用第 7 节里的固定句式。在卡片的文本框里打的一句话走同一条路，`choice` 写固定值 `typed`，`text` 就是用户打的字：它不是点击，智能体照打的字读，这条消息只标明写在哪张卡片里。
 
 | 卡片 | 按钮 | 走向 |
 |---|---|---|

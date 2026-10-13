@@ -29,12 +29,18 @@ import {
   type ProposalCardKind,
 } from "../../model/stage";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
+import { RESENT_TEXT } from "../../model/cardAnswer";
 import { isKnowledgeLocator } from "../../model/knowledge";
 
 /** 有未保存的条目编辑时，对话区与卡片上会发话或写库的按钮为什么不能用。 */
 export const HOLD_TEXT = "先保存或取消正在编辑的条目";
 /** 没保存的是对一张图的改动时的说法（图表页签里改 Mermaid 文本）。 */
 export const DIAGRAM_HOLD_TEXT = "先保存或放弃对图的改动";
+
+/** 在卡片的文本框里发话时，卡片标识里 choice 写的固定值。 */
+export const CARD_TYPED_CHOICE = "typed";
+// 卡片收成的那几句在 model/cardAnswer.ts，这里照原来的名字转出。
+export { ANSWERED_OUTSIDE_TEXT, RESENT_TEXT, TYPED_IN_CARD_TEXT } from "../../model/cardAnswer";
 
 /** 第 7 节的固定模板。 */
 export const TEMPLATES = {
@@ -120,7 +126,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   holdText?: string;
   /** 执行者正在工作。 */
   writesOff?: boolean;
-  /** 这张卡片之后用户已经说过话时，写成「✓ 你选了…」一类的一句话，按钮与输入框收起（原型的「结掉卡片」）。 */
+  /** 这张卡片答过了（或者在后面重发了）时，写成「✓ 你选了…」一类的一句话，按钮与输入框收起（原型的「结掉卡片」）。 */
   answered?: string | null;
   /** 答这张卡片的那次点击是「进入」某个阶段而阶段没有移动时，任务当时所在的阶段；「✓ 你选了…」下面据此多写一句小字。 */
   unmovedAt?: string | null;
@@ -189,7 +195,8 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
     if (!draft.trim() || sendOff) return;
     const original = draft;
     setDraft("");
-    restoreOnFailure(handlers.onMessage(original.trim()), original, () => latestDraft.current, setDraft);
+    // 带上这张卡片的标识：这句话算作对这张卡片的回答（底部输入框发的话不带，不关卡片）。对话记录里有了这句话，卡片才收起。
+    restoreOnFailure(handlers.onMessage(original.trim(), card(CARD_TYPED_CHOICE)), original, () => latestDraft.current, setDraft);
   };
   /** 条目行末尾的修订说明：请过目卡片写上次看过的修订，其余卡片只写修订号。 */
   const revisionNote = (itemId: string, revision: number) => {
@@ -371,7 +378,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
           <div className="done pale" data-testid="card-stay-hint">{quietHint(quietPicked!)}</div>
         </>
       )}
-      {done && !wasStayed && <div className="done">✓ {done}</div>}
+      {done && !wasStayed && <div className={`done${done === RESENT_TEXT ? " pale" : ""}`} data-testid="card-done">{done === RESENT_TEXT ? done : `✓ ${done}`}</div>}
       {done && wasReviewed && <div className="done pale" data-testid="card-reviewed-hint">{REVIEWED_HINT}</div>}
       {done && unmovedAt && <div className="done pale" data-testid="card-stage-unmoved">{stageUnmovedLine(unmovedAt)}</div>}
       {showUnread && (

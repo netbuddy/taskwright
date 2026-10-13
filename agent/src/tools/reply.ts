@@ -13,13 +13,15 @@
  * 对话理解：执行之前先核对这一轮有没有有效的理解（lib/dialogue_acts.ts 的 requireUnderstanding），没有就拒绝；
  * 合格送达之后把告知与向用户要的回应记进对话行为表（recordReplyActs），编号写进返回的文字与 details.acts，
  * details.event_seq 是那条 EXECUTOR_ACTS_RECORDED 事件的序号（没有要记的行为、或者还没有任务库时为空）。
+ * details.answers_card 是用户这句话回答了的卡片（卡片所在回复的编号，列表）：不由执行者填，从这一轮理解的 responds_to 算出。
+ * details.resends_card 是这张卡片重发的那一张所在回复的编号（act.resends 写了才有）。
  */
 
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup } from "../lib/reply.ts";
 import { spoken } from "../lib/speak.ts";
-import { currentRun, recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
+import { currentRun, openResendLookup, recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
 import { reportStopped, stopAtLimit } from "../lib/rejection_limit.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 import { checkQuotes } from "../lib/save_revision.ts";
@@ -66,6 +68,11 @@ const act = Type.Object(
       }),
     ),
     value: Type.Optional(Type.String({ description: "只有给建议值（suggest）写，而且必须写：你建议的那个值。" })),
+    resends: Type.Optional(Type.String({
+      description:
+        "只有提问（ask）与请选择（choose）可以写，只在重发时写：这张卡片是把先前一张用户没有答的卡片再问一遍时，写那一张的行为编号（例如 r3-2，" +
+        "查询任务状态「这一段还开着的提问与请选择」一行里列着）。写了之后原来那张不再等回应。问的是新的事不写。",
+    })),
     basis: Type.Optional(
       Type.Array(
         Type.Object({ kind: Type.Optional(Type.String()), locator: Type.Optional(Type.String()), excerpt: Type.Optional(Type.String()) }, { additionalProperties: true }),
@@ -147,6 +154,7 @@ export function registerReply(pi: ExtensionAPI): void {
       const decided = withRejectionRecord(rejection, params, () => {
         requireUnderstanding(ctx.cwd, ctx.sessionManager.getSessionId(), branch as never, "回复", TOOL_NAME);
         const lookup = openRevisionLookup(ctx.cwd);
+        const resend = openResendLookup(ctx.cwd, ctx.sessionManager.getSessionId());
         try {
           return decideReply(params, {
             toolCallId,
@@ -154,12 +162,14 @@ export function registerReply(pi: ExtensionAPI): void {
             revisionFact: lookup.revisionFact,
             currentRevisionOf: lookup.currentRevisionOf,
             priorRejections: consecutiveReplyRejections(branch),
+            resendFact: resend.resendFact,
             // 给建议值的依据：与保存修订的来源同一套逐字核对。
             checkBasis: (raw, errors, whereOf) =>
               checkQuotes(ctx.cwd, ctx.sessionManager.getSessionId(), userMessagesOnBranch(ctx), raw, errors, whereOf, envKnowledgeRoot()),
           });
         } finally {
           lookup.close();
+          resend.close();
         }
       });
       let decision: Awaited<typeof decided>;
@@ -183,6 +193,10 @@ export function registerReply(pi: ExtensionAPI): void {
         message_id: messageId,
         event_seq: recorded?.eventSeq ?? null,
         acts: recorded?.acts ?? [],
+        // 用户这句话回答了哪几张卡片（卡片所在回复的编号）：从这一轮理解的 responds_to 算出，页面据此把卡片标成答过。
+        answers_card: recorded?.answersCard ?? [],
+        // 这张卡片重发的是哪一张（原来那张所在回复的编号）：页面据此把原来那张收成一句；不是重发时不带这一项。
+        ...(recorded?.resendsCard ? { resends_card: recorded.resendsCard } : {}),
       });
     },
   });

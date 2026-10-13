@@ -16,7 +16,9 @@ import { withTaskDatabase } from "../src/lib/schema.ts";
 import { EXECUTOR_FUNCTIONS, INTENT_SCHEMA, schemaErrors } from "../src/lib/intent_schema.ts";
 import {
   aboutReminder,
+  cardTypedNotice,
   currentRun,
+  openResendLookup,
   quotedUserText,
   readDialogueFacts,
   recordAtSettle,
@@ -31,7 +33,7 @@ import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
-import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, query, tempDir } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, overallDefinition, query, tempDir } from "./helpers.ts";
 
 const SESSION = "session-test";
 
@@ -391,6 +393,44 @@ test("界面点击合成的话：执行者不写理解，按点击直接记一�
   assert.equal(events(dir, "USER_INTENT_MISSING").length, 0);
 });
 
+test("卡片文本框里打的字：不算点击，照常要写理解；卡片还开着时说明里写明它的编号，理解里没有一项回应它就不合格", () => {
+  const dir = workspaceWithItems();
+  const { branch, askId } = withExecutorAsk(dir);
+  // 说明：卡片还开着时点出行为编号与问句，并写明 responds_to 怎么填；没有库、找不到那张卡片时只说是哪条回复。
+  assert.equal(cardTypedNotice(dir, SESSION, "reply-msg-1"),
+    `卡片里的回复（是用户打的字）：用户在 ${askId}（请确认「请确认 UC-001、UC-002」）那张卡片的文本框里写了下面这句话。这句话是在回应这张卡片，理解里要有一项的 responds_to 写 ${askId}。`);
+  assert.equal(cardTypedNotice(dir, SESSION, "no-such-reply"), "卡片里的回复（是用户打的字）：用户在回复 no-such-reply 的卡片的文本框里写了下面这句话。");
+  assert.match(cardTypedNotice(makeWorkspace(), SESSION, "reply-msg-1"), /用户在回复 reply-msg-1 的卡片的文本框里/);
+
+  const typed: Entry[] = [
+    ...branch,
+    { id: "typed", type: "custom_message", customType: "taskwright-card-typed", details: { reply_entry: "reply-msg-1", text: "UC-002 的名称改成注销" } },
+    userEntry("UC-002 的名称改成注销", "u-2"),
+  ];
+  const run = currentRun(typed)!;
+  assert.equal(run.synthesized, null);
+  assert.equal(run.typedCard, "reply-msg-1");
+  // 理解里没有回应那张卡片：不合格，原因写明要回应哪一条。
+  const correct = { function: "correct", targets: [{ item_id: "UC-002", field: "名称" }], confidence: "high", summary: "UC-002 的名称改成注销" };
+  assert.deepEqual(recordedNames(record(dir, typed, fenced([correct]))), []);
+  assert.match(payloads(dir, "USER_INTENT_INVALID").at(-1).reason, new RegExp(`这句话是用户在 ${askId} 那张卡片的文本框里写的.*responds_to 写 ${askId}`));
+  assert.throws(() => requireUnderstanding(dir, SESSION, typed, "保存修订", "save_revision"), new RegExp(`responds_to 写 ${askId}`));
+  // 写了就合格：记成执行者写的理解，不是界面操作合成的。
+  assert.deepEqual(recordedNames(record(dir, typed, fenced([{ ...correct, responds_to: askId }]))), ["user_intent"]);
+  const row = acts(dir).find((r) => r.source_entry === "u-2")!;
+  assert.deepEqual([row.origin, row.function, row.responds_to], ["understanding", "correct", askId]);
+  assert.deepEqual(readDialogueFacts(dir, SESSION)!.unanswered, []);
+  // 那张卡片已经答过之后，又在它的文本框里写话（页面上不会有，接口可以这样发）：不再要求回应它。
+  const again: Entry[] = [
+    ...typed, assistantEntry(),
+    { id: "typed-2", type: "custom_message", customType: "taskwright-card-typed", details: { reply_entry: "reply-msg-1", text: "再问一句" } },
+    userEntry("再问一句", "u-3"),
+  ];
+  assert.deepEqual(recordedNames(record(dir, again, fenced([{ function: "question", confidence: "high", summary: "再问一句" }]))), ["user_intent"]);
+  // 说明里记的那句话与用户的话对不上（中间隔了别的话）：不算卡片里打的字。
+  assert.equal(currentRun([...again, assistantEntry(), userEntry("别的话", "u-4")])!.typedCard, null);
+});
+
 // ───────────── 门禁 ─────────────
 
 test("门禁：这一轮没有合格理解时三个工具的拒绝理由相同，附本轮各片段最近的错误；有理解放行；没有库、没有用户的话不拦", () => {
@@ -481,6 +521,89 @@ test("回复记执行者的行为：每条告知一条 inform 不期待回应，
   // 纯文字回复没有要记的行为；没有库时什么都不记。
   assert.deepEqual(recordReplyActs(dir, SESSION, branch, { informs: [], act: null }, "m", "c")!.acts, []);
   assert.equal(recordReplyActs(makeWorkspace(), SESSION, branch, { informs: ["x"], act: null }, "m", "c"), null);
+});
+
+test("回复带出用户这句话回答了哪几张卡片：取这一轮理解里 responds_to 指向的卡片所在的回复；没有回应、回应的是告知、点击合成的都不列", () => {
+  const dir = workspaceWithItems();
+  const { branch, askId } = withExecutorAsk(dir);
+  const reply = (run: Entry[], entry: string) => recordReplyActs(dir, SESSION, run, { informs: [], act: null }, entry, `call-${entry}`)!;
+  // 用户在卡片之外说了别的事：理解里没有 responds_to，卡片没有被回答。
+  const aside: Entry[] = [...branch, userEntry("材料里有没有写密码长度", "u-2")];
+  record(dir, aside, fenced([{ function: "question", confidence: "high", summary: "问密码长度" }]));
+  assert.deepEqual(reply(aside, "reply-msg-2").answersCard, []);
+  // 再说一句，这回是在答那张卡片（两项都回应它）：列出卡片所在的回复，只列一次。
+  const answer: Entry[] = [...aside, assistantEntry("reply-msg-2"), userEntry("两条都可以，UC-002 名称改成注销", "u-3")];
+  record(dir, answer, fenced([{ ...AFFIRM, responds_to: askId },
+    { function: "correct", responds_to: askId, targets: [{ item_id: "UC-002", field: "名称" }], confidence: "high", summary: "UC-002 名称改成注销" }]));
+  const out = recordReplyActs(dir, SESSION, answer, { informs: ["改好了。"], act: { kind: "ask", text: "还有要改的吗", items: [] } }, "reply-msg-3", "call-3")!;
+  assert.deepEqual(out.answersCard, ["reply-msg-1"]);
+  assert.equal(out.acts.length, 2);
+  // 点击合成的那句话带着卡片的标识，不经这里。
+  const clicked: Entry[] = [
+    ...answer, assistantEntry("reply-msg-3"),
+    { id: "click", type: "custom_message", customType: "taskwright-ui-click", details: { reply_entry: "reply-msg-3", option_text: "没有了", text: "我选：没有了" } },
+    userEntry("我选：没有了", "u-4"),
+  ];
+  record(dir, clicked, null, ["save_revision"]);
+  assert.deepEqual(reply(clicked, "reply-msg-4").answersCard, []);
+});
+
+test("重发：新的卡片回应原来那张，原来那张不再等回应；能不能重发按库里的事实答；理解回应被重发的那张时指到新的一张", () => {
+  const dir = workspaceWithItems();
+  const branch = [userEntry("整理一下", "u-1")];
+  record(dir, branch, fenced([{ function: "request", confidence: "high", summary: "整理" }]));
+  const asked = recordReplyActs(dir, SESSION, branch, { informs: ["存好了。"], act: { kind: "ask", text: "借阅期限是多少天" } }, "reply-ask", "call-1")!;
+  const askId = asked.acts.find((one) => one.expects_response)!.act_id;
+  assert.equal(asked.resendsCard, null);
+  const fact = (id: string) => {
+    const lookup = openResendLookup(dir, SESSION);
+    try { return lookup.resendFact(id); } finally { lookup.close(); }
+  };
+  assert.deepEqual(fact(askId), { open: true, kind: "ask" });
+  assert.match((fact("r9-9") as { why: string }).why, /这条会话里没有这个编号的对话行为/);
+  assert.match((fact("r1-1") as { why: string }).why, /那不是一张向用户要回应的卡片/);
+  assert.match((fact("r1-2") as { why: string }).why, /那不是一张向用户要回应的卡片/);
+  assert.match((openResendLookup(makeWorkspace(), SESSION).resendFact(askId) as { why: string }).why, /还没有任务数据库/);
+
+  // 用户说了别的事，助手后来把那一问重发了一遍。
+  const run2: Entry[] = [...branch, assistantEntry("reply-ask"), userEntry("先看看别的", "u-2")];
+  record(dir, run2, fenced([{ function: "request", confidence: "high", summary: "先看别的" }]));
+  const resent = recordReplyActs(dir, SESSION, run2, { informs: [], act: { kind: "ask", text: "借阅期限是多少天", resends: askId } }, "reply-again", "call-2")!;
+  const newId = resent.acts[0].act_id;
+  assert.equal(resent.resendsCard, "reply-ask");
+  assert.match(resent.text, new RegExp(`${newId} 是 ${askId} 的重发，${askId} 不再等回应。用户回应时，你下一轮理解里的 responds_to 写 ${newId}。$`));
+  assert.equal(acts(dir).find((r) => r.act_id === newId).responds_to, askId);
+  assert.equal(JSON.parse(events(dir, "EXECUTOR_ACTS_RECORDED").at(-1).payload).acts[0].responds_to, askId);
+  // 还在等回应的只剩重发的那一张；原来那张不能再重发，要重发就指新的一张。
+  assert.deepEqual(readDialogueFacts(dir, SESSION)!.unanswered.map((one) => one.act_id), [newId]);
+  assert.match((fact(askId) as { why: string }).why, new RegExp(`它已经重发过了（${newId}）；还要再问就写 resends: "${newId}"`));
+  assert.deepEqual(fact(newId), { open: true, kind: "ask" });
+  // 用户回答：理解指着原来那张时被拒并指到新的一张；指着新的一张合格，之后两张都不再等回应，也都不能重发。
+  const run3: Entry[] = [...run2, assistantEntry("reply-again"), userEntry("三十天", "u-3")];
+  const answer = { function: "inform", confidence: "high", summary: "借阅期限三十天" };
+  assert.deepEqual(recordedNames(record(dir, run3, fenced([{ ...answer, responds_to: askId }]))), []);
+  assert.match(payloads(dir, "USER_INTENT_INVALID").at(-1).reason, new RegExp(`那张卡片后来重发成了 ${newId}；用户回应的是这件事时 responds_to 写 ${newId}`));
+  assert.deepEqual(recordedNames(record(dir, run3, fenced([{ ...answer, responds_to: newId }]))), ["user_intent"]);
+  assert.deepEqual(readDialogueFacts(dir, SESSION)!.unanswered, []);
+  assert.match((fact(newId) as { why: string }).why, /它已经被 r3-1 回应过了，不用重发/);
+  assert.deepEqual(recordReplyActs(dir, SESSION, run3, { informs: ["记下了。"], act: null }, "reply-done", "call-3")!.answersCard, ["reply-again"]);
+});
+
+test("提议进入下一个阶段的卡片不能重发", () => {
+  const dir = makeWorkspace(overallDefinition());
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  const branch = [userEntry("读完了吗", "u-1")];
+  record(dir, branch, fenced([{ function: "question", confidence: "high", summary: "问读完没有" }]));
+  const out = recordReplyActs(dir, SESSION, branch, { informs: [], act: { kind: "choose", text: "材料读完了，进入澄清吗",
+    options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "continue_reading", text: "继续本阶段" }] } }, "reply-p", "call-p")!;
+  const lookup = openResendLookup(dir, SESSION);
+  try {
+    const fact = lookup.resendFact(out.acts[0].act_id);
+    assert.equal(fact.open, false);
+    assert.match((fact as { why: string }).why, /那是一张提议的卡片.*不重发.*「待决定」一行里的按钮/);
+  } finally {
+    lookup.close();
+  }
 });
 
 // ───────────── 保存修订 ─────────────

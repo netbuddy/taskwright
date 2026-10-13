@@ -1,22 +1,26 @@
 // 提交交付物的提示条（条目区顶部，绿色，只有「已完成，提交交付物」一个按钮）：什么时候显示、问句怎么写。
 // 完成条件满没满足只看后端算好的 task.completion.all_met（与「完成任务」同一组核对），页面不另算；问句里的数字与事实照数据填写。
-// 与助手的卡片不同时出现：本会话的对话里有一张还没回应的「这个任务是否已经完成」卡片时不显示。
+// 与助手的卡片不同时出现：本会话的对话里有一张还没回应（还开着）的「这个任务是否已经完成」卡片时不显示。
 
 import type { AssistantReply, ConversationMessage, Task } from "../api/types";
 import { COMPLETE_KEY } from "../../../agent/src/lib/completion_consent.ts";
 import { CONFIRM_CONDITION, REVIEW_CONDITION, keepPendingField } from "./items";
+import { answeredText } from "./cardAnswer";
 
 /** 完成条件「没有状态为未解决的条目」的名称（agent/src/lib/conditions.ts）。 */
 export const UNRESOLVED_CONDITION = "没有状态为未解决的条目";
 
-/** 对话里最近一张「这个任务是否已经完成」卡片（请选择，有一项 key 为 complete）还没回应：它之后还没有用户的话。 */
+/**
+ * 对话里最近一张「这个任务是否已经完成」卡片（请选择，有一项 key 为 complete）还没回应：照对话区判断卡片答过没有的同一套规则
+ * （model/cardAnswer.ts），所以用户在底部输入框说了别的事、卡片还开着时，提示条仍不显示。
+ */
 export function pendingSubmitCard(messages: ConversationMessage[]): boolean {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m.type !== "assistant_reply") continue;
     const act = (m as AssistantReply).act;
     if (act?.kind !== "choose" || !(act.options ?? []).some((o) => o.key === COMPLETE_KEY)) continue;
-    return !messages.slice(i + 1).some((later) => later.type === "user_message");
+    return answeredText(messages, i) === null;
   }
   return false;
 }

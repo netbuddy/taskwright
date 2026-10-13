@@ -117,13 +117,13 @@ describe("卡片五种主行为", () => {
     expect(h.onAction).not.toHaveBeenCalled();
   });
 
-  it("提问：输入框发出的话是普通的一句话，不带卡片标注", () => {
+  it("提问：卡片的文本框发出的话带这张卡片的标识，choice 是固定的 typed", () => {
     const h = card({ kind: "ask", text: "退款由谁审批？" });
     expect(screen.queryByTestId("card-confirm")).toBeNull();
     expect(screen.queryByTestId("card-adopt")).toBeNull();
     fireEvent.change(screen.getByTestId("card-input"), { target: { value: "财务主管" } });
     fireEvent.keyDown(screen.getByTestId("card-input"), { key: "Enter", code: "Enter", keyCode: 13 });
-    expect(h.onMessage).toHaveBeenCalledWith("财务主管");
+    expect(h.onMessage).toHaveBeenCalledWith("财务主管", { reply_message_id: "msg-7", kind: "ask", choice: "typed" });
   });
 });
 

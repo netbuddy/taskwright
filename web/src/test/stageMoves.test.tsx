@@ -64,11 +64,12 @@ describe("对话区里的阶段移动", () => {
     expect(screen.queryByTestId("stage-move-user")).toBeNull();
   });
 
-  it("记了移动的点击、不带这一项的点击（留在这一段的选项、早先留下的点击）、用户直接打字答的卡片：都没有那句小字", () => {
+  it("记了移动的点击、不带这一项的点击（留在这一段的选项、早先留下的点击）、用户在卡片的文本框里打字答的卡片：都没有那句小字", () => {
     const card = { kind: "choose", text: "现在进入整理建模吗？", options: [{ key: "enter_consolidate", text: "进入整理建模" }, { key: "continue_clarify", text: "继续澄清" }] };
     const click = (over: Record<string, unknown>) => said("u1", "我选：进入整理建模", { origin: "card_choice",
       annotation: { reply_message_id: "r1", option_key: "enter_consolidate", option_text: "进入整理建模" }, ...over });
-    for (const answer of [click({ stage_move: { from: "clarifying", to: "modeling", actor: "user" } }), click({}), said("u1", "再等等。", { stage_unmoved: { at: "reading" } })]) {
+    for (const answer of [click({ stage_move: { from: "clarifying", to: "modeling", actor: "user" } }), click({}),
+      said("u1", "再等等。", { annotation: { reply_message_id: "r1", option_key: "typed", option_text: null }, stage_unmoved: { at: "reading" } })]) {
       show([reply("r1", "要问的都问到了。", { act: card }), answer]);
       expect(document.querySelector(".act .done")).not.toBeNull();
       expect(screen.queryByTestId("card-stage-unmoved")).toBeNull();

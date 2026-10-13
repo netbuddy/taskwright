@@ -110,6 +110,15 @@ test("用户在对话里打字说要完成而没有点卡片：拒绝；照着�
   assert.match(await refused(dir, [user("整理好了吗"), card("k1"), user(`我选：${AGREE_TEXT}`)]), /还没有在问这个任务是否已经完成的卡片上点/);
 });
 
+test("用户在卡片的文本框里打字不算点击：写的就是同意那一项的文字也不算同意", async () => {
+  const dir = workspace();
+  const typed = (cardId: string, text: string): Entry[] => [
+    { id: `t${++serial}`, type: "custom_message", customType: "taskwright-card-typed", details: { reply_entry: cardId, text } }, user(text)];
+  assert.equal(lastCompletionClick([user("整理好了吗"), card("k1"), ...typed("k1", AGREE_TEXT)]), null);
+  assert.match(await refused(dir, [user("整理好了吗"), card("k1"), ...typed("k1", `我选：${AGREE_TEXT}`)]), /还没有在问这个任务是否已经完成的卡片上点/);
+  assert.equal(status(dir), "进行中");
+});
+
 test("完成条件不满足时只报条件，不提同意；用户已经点了同意也一样", async () => {
   const dir = workspace(false);
   const text = await refused(dir, [user("整理好了吗"), card("k1"), ...click("k1", COMPLETE_KEY, AGREE_TEXT)]);

@@ -32,6 +32,9 @@
  * 点的是助手提议往前走的那张卡片上「进入」某个阶段的选项时（选项键 enter_clarify、enter_consolidate、start_items、enter_review），
  * 在发这两条之前先替用户记一次移动（lib/stage_read.ts 的 recordStageCardClick）；记下了的话，结果里的 stage_event_seq 是那条事件的序号，
  * 后端据此去查库转发。
+ * option_key 是 typed 时不是点击：用户在那张卡片的文本框里打了一句话。这时追加的是 taskwright-card-typed 自定义消息
+ * （文字见 lib/dialogue_acts.ts 的 cardTypedNotice：卡片还开着时写明它的行为编号），不替用户移动阶段，随后照样 sendUserMessage 用户的原话；
+ * 这句话不算点击，助手照常要写理解。
  *
  * 处理函数里的写库是同步的（node:sqlite），从开事务到提交之间没有 await，与工具的执行函数不会交错。
  */
@@ -45,6 +48,7 @@ import { batchCounts } from "../lib/review_run.ts";
 import { DIAGRAM_OP_KIND, DIAGRAM_VIEW_OP_KIND, editDiagram, markDiagramViewed } from "../lib/user_diagram.ts";
 import { recordStageCardClick } from "../lib/stage_read.ts";
 import { CONTINUE_STAGE_KIND, continueStage } from "../lib/user_stage.ts";
+import { CARD_TYPED_KEY, CARD_TYPED_TYPE, cardTypedNotice } from "../lib/dialogue_acts.ts";
 
 export const USER_COMMAND = "tw-user";
 export const UI_COMMAND = "tw-ui";
@@ -183,6 +187,22 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       const text = request && typeof request.text === "string" ? request.text.trim() : "";
       if (!request || !text) {
         ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: false, error: { code: "bad_request", message: "/tw-ui 的参数要有 text。", data: {} } }));
+        return;
+      }
+      // 用户在卡片的文本框里打的字：不是点击，只标明这句话写在哪张卡片里，再把原话发出去。
+      if (request.option_key === CARD_TYPED_KEY) {
+        const replyEntry = typeof request.reply_entry === "string" ? request.reply_entry : null;
+        pi.sendMessage(
+          {
+            customType: CARD_TYPED_TYPE,
+            content: cardTypedNotice(ctx.cwd, ctx.sessionManager.getSessionId(), replyEntry),
+            display: true,
+            details: { op_id: opId, reply_entry: replyEntry, text },
+          },
+          { deliverAs: "followUp" },
+        );
+        pi.sendUserMessage(text, { deliverAs: "followUp" });
+        ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: true, idle: ctx.isIdle() }));
         return;
       }
       // 点的是「进入」某个阶段的选项：先替用户把任务移过去，再发下面两条，助手回应这次点击时从头就在新的阶段。

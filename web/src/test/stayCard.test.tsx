@@ -90,14 +90,15 @@ describe("对话区里的「继续本阶段」", () => {
     expect(answeredByStaying(messages as ConversationMessage[], 1)).toBe(true);
   });
 
-  it("通知指着的是别的回复、或者卡片是用户直接打字答的：不算选了继续本阶段", () => {
+  it("通知指着的是别的回复：不算选了继续本阶段；用户在底部输入框说了别的话，卡片仍然开着，之后指着它的通知照样算", () => {
     const elsewhere = [reply("r1", "进入澄清吗？", CARD), stayNote("n1", "r0"), said("u2", "先等等。")];
-    expect(answeredText(elsewhere as ConversationMessage[], 0)).toBe("你直接写了回复");
+    expect(answeredText(elsewhere as ConversationMessage[], 0)).toBeNull();
     expect(answeredByStaying(elsewhere as ConversationMessage[], 0)).toBe(false);
     const unanswered = [reply("r1", "进入澄清吗？", CARD)];
     expect(answeredText(unanswered as ConversationMessage[], 0)).toBeNull();
-    // 助手又说了一条之后才有的通知不算前一张卡片的。
-    const later = [reply("r1", "进入澄清吗？", CARD), reply("r2", "我再补一句。"), stayNote("n1", "r1")];
-    expect(answeredText(later as ConversationMessage[], 0)).toBeNull();
+    // 卡片没有答就一直开着：用户说了别的事、助手又说了一条之后，他从「待决定」一行选了继续本阶段，通知指着这张卡片，算它答过了。
+    const later = [reply("r1", "进入澄清吗？", CARD), said("u2", "先等等。"), reply("r2", "我再补一句。"), stayNote("n1", "r1")];
+    expect(answeredText(later as ConversationMessage[], 0)).toBe("你选了「继续本阶段」");
+    expect(answeredByStaying(later as ConversationMessage[], 0)).toBe(true);
   });
 });

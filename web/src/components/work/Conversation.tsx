@@ -17,11 +17,12 @@ import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
-import { CONTINUE_STAGE_KIND, STAY_TEXT, continueStageLine, quietChoiceText, stageMoveLine } from "../../model/stage";
+import { CONTINUE_STAGE_KIND, continueStageLine, stageMoveLine } from "../../model/stage";
 import { NEW_SESSION_LINE, STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, nobodySpoke, wantsOpeningStatus } from "../../model/taskStatus";
 import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
+import { answeredByStaying, answeredStayKey, answeredText, answeredUnmoved } from "../../model/cardAnswer";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { useService } from "../ServiceControls";
@@ -271,76 +272,8 @@ export function Conversation({
   );
 }
 
-/**
- * 卡片答过没有：这条回复之后用户说的第一句话。点卡片发出的写「你选了「…」」，界面操作之后发给助手的写那件事，
- * 自己打的写「你直接写了回复」。这条回复之后还没有用户的话就是还没答，返回 null。
- * 提议进入下一个阶段的卡片另有一种答法：用户选了「继续本阶段」，会话里留的是一条界面操作通知（不是一句话），认它指着这条回复的那一条。
- */
-export function answeredText(messages: ConversationMessage[], index: number): string | null {
-  const options = (messages[index] as AssistantReply).act?.options ?? [];
-  const replyId = (messages[index] as AssistantReply).message_id;
-  for (let i = index + 1; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.type === "assistant_reply") return null;
-    if (m.type === "ui_action_noted" && (m as UiActionNoted).kind === CONTINUE_STAGE_KIND && (m as UiActionNoted).reply_message_id === replyId) {
-      return `你选了「${quietChoiceText((m as UiActionNoted).option_key)}」`;
-    }
-    if (m.type !== "user_message") continue;
-    const u = m as UserMessage & { card?: { choice?: string } | null };
-    if (u.origin === "card_choice") {
-      const note = u.annotation as { option_text?: string } | null;
-      // 先按卡片上选项的键查回选项的文字：后端对 card 写法的请求把 option_text 也填成了键（例如 deny），不能直接用；
-      // 查不到再用标注里的 option_text，最后从「我选：…」里取。
-      const key = u.card?.choice ?? (note as { option_key?: string } | null)?.option_key;
-      const byKey = options.find((o) => o.key === key)?.text;
-      return `你选了「${byKey ?? note?.option_text ?? u.text.replace(/^我选：/, "")}」`;
-    }
-    if (u.origin === "ui_request") {
-      if (u.text.startsWith("我已经看过了")) return "你在卡片上表示看过了";
-      // 早期版本的会话里是界面确认之后那句话。
-      return u.text.startsWith("我已经在界面上确认了") ? "你在界面上确认了" : "你在界面上操作过了";
-    }
-    return "你直接写了回复";
-  }
-  return null;
-}
-
-/** 用户在进入卡片上选了「继续本阶段」之后，卡片答过了的那一句。 */
-export const STAYED_TEXT = `你选了「${STAY_TEXT}」`;
-
-/** 答这张卡片的那条「不发话」的界面操作通知（continue_stage）；卡片不是这样答的是 null。 */
-function stayNote(messages: ConversationMessage[], index: number): UiActionNoted | null {
-  const replyId = (messages[index] as AssistantReply).message_id;
-  for (let i = index + 1; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.type === "assistant_reply" || m.type === "user_message") return null;
-    if (m.type === "ui_action_noted" && (m as UiActionNoted).kind === CONTINUE_STAGE_KIND && (m as UiActionNoted).reply_message_id === replyId) return m as UiActionNoted;
-  }
-  return null;
-}
-
-/** 这张卡片是不是用户点了不发话的一项答过的（「继续本阶段」「留在本段」「需要修改」「看过了，生成文档」）。 */
-export function answeredByStaying(messages: ConversationMessage[], index: number): boolean {
-  return stayNote(messages, index) !== null;
-}
-
-/** 那条通知记的是点了哪一项；早先的通知没有记，是 null。 */
-export function answeredStayKey(messages: ConversationMessage[], index: number): string | null {
-  return stayNote(messages, index)?.option_key ?? null;
-}
-
-/**
- * 答这张卡片的那次点击是「进入」某个阶段而阶段没有移动时，任务当时所在的阶段；别的情形是 null。
- * 与 answeredText 看的是同一句话：这条回复之后用户说的第一句。
- */
-export function answeredUnmoved(messages: ConversationMessage[], index: number): string | null {
-  for (let i = index + 1; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.type === "assistant_reply") return null;
-    if (m.type === "user_message") return (m as UserMessage).origin === "card_choice" ? (m as UserMessage).stage_unmoved?.at ?? null : null;
-  }
-  return null;
-}
+// 卡片答过没有的判定在 model/cardAnswer.ts（提交交付物的提示条也用它），这里照原来的名字转出。
+export { STAYED_TEXT, answeredByStaying, answeredStayKey, answeredText, answeredUnmoved } from "../../model/cardAnswer";
 
 /** 告知里点名的条目编号，按出现的先后，同一个条目只列一次。 */
 function itemIds(informs: Inform[]): string[] {
