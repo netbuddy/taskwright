@@ -30,15 +30,15 @@ function refused(fn: () => unknown): UserOpError {
   assert.fail("应当被拒绝");
 }
 
-test("用户想移到哪个阶段都可以：从核读材料直接到写条目，再到评审确认，再退回澄清；每次记一条、追加一句说明", () => {
+test("用户想移到哪个阶段都可以：新任务空闲，第一次移动是启动首次分析；之后直接到评审确认，再退回澄清；每次记一条、追加一句说明", () => {
   const dir = workspace();
   const first = move(dir, { stage: "写条目" });
   assert.deepEqual([first.kind, first.results, first.revision_no, first.undoable, first.notify_text, first.event_seqs.length], ["move_stage", [], null, false, null, 1]);
-  assert.equal(first.note, "界面操作（不是用户打的字）：用户把任务从核读材料移到写条目。");
+  assert.equal(first.note, "界面操作（不是用户打的字）：用户启动首次分析，从写条目开始。");
   assert.equal(move(dir, { stage: "评审确认", reason: " 条目我都看过了。 " }).note, "界面操作（不是用户打的字）：用户把任务从写条目移到评审确认。理由：条目我都看过了。");
   assert.equal(move(dir, { stage: "clarifying" }).note, "界面操作（不是用户打的字）：用户把任务从评审确认移到澄清。");
   assert.deepEqual(moveRows(dir).map(({ event_seq: _seq, ...r }) => r), [
-    { stage: "writing", from_stage: "reading", actor: "user", reason: "", run_id: null, call_id: `ui-op-${n - 2}`, session_id: "sess-ui" },
+    { stage: "writing", from_stage: null, actor: "user", reason: "", run_id: null, call_id: `ui-op-${n - 2}`, session_id: "sess-ui" },
     { stage: "reviewing", from_stage: "writing", actor: "user", reason: "条目我都看过了。", run_id: null, call_id: `ui-op-${n - 1}`, session_id: "sess-ui" },
     { stage: "clarifying", from_stage: "reviewing", actor: "user", reason: "", run_id: null, call_id: `ui-op-${n}`, session_id: "sess-ui" },
   ]);
@@ -48,11 +48,12 @@ test("用户想移到哪个阶段都可以：从核读材料直接到写条目�
 
 test("任务本来就在那个阶段：不记、不追加说明，也不算出错", () => {
   const dir = workspace(overallDefinition(), false);
+  assert.equal(move(dir, { stage: "澄清" }).note, "界面操作（不是用户打的字）：用户启动首次分析，从澄清开始。");
   const same = move(dir, { stage: "澄清" });
   assert.deepEqual([same.note, same.event_seqs], ["", []]);
-  assert.equal(count(dir, "activity_record"), 0);
-  // 六个阶段各移一遍，每一步都从上一步所在的阶段出发。
-  const order = ["reading", "modeling", "writing", "reviewing", "document", "clarifying"] as const;
+  assert.equal(count(dir, "activity_record"), 1);
+  // 另外五个阶段各移一遍，每一步都从上一步所在的阶段出发。
+  const order = ["reading", "modeling", "writing", "reviewing", "document"] as const;
   let from = "澄清";
   for (const to of order) {
     assert.equal(move(dir, { stage: STAGE_NAMES[to] }).note, `界面操作（不是用户打的字）：用户把任务从${from}移到${STAGE_NAMES[to]}。`);

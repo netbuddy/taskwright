@@ -53,18 +53,17 @@ function saveRefusal(dir: string, operations: unknown[]): string | null {
   }
 }
 
-test("有活动记录而每一条都已结束：任务空闲，读出来是 idle，不看有没有材料；一条记录都没有时仍是按材料定的缺省；早先建的任务仍是 null", () => {
+test("没有在进行的活动记录就是空闲：刚建好的任务一条记录都没有，是空闲，不看有没有材料；每一条都已结束的也是；早先建的任务仍是 null", () => {
   const { dir, taskId } = idle("modeling");
   assert.equal(read(dir, (db) => openActivityRecord(db, taskId)), null);
   assert.deepEqual(read(dir, (db) => activityRecords(db, taskId)).map((r) => [r.activity, r.ended_at !== null]), [["modeling", true]]);
-  assert.deepEqual(read(dir, (db) => [stageOf(db, dir, taskId, DEFINITION), currentStage(db, taskId, true), currentStage(db, taskId, false)]), [IDLE, IDLE, IDLE]);
-  // 一条记录都没有：不是空闲，是缺省的位置，这个缺省不落库。
-  const fresh = workspace();
-  assert.equal(read(fresh.dir, (db) => stageOf(db, fresh.dir, fresh.taskId, DEFINITION)), "reading");
-  endActivities(fresh.dir);
-  assert.equal(read(fresh.dir, (db) => stageOf(db, fresh.dir, fresh.taskId, DEFINITION)), "reading", "没有记录可结束，位置不变");
-  const bare = workspace(overallDefinition(), false);
-  assert.equal(read(bare.dir, (db) => stageOf(db, bare.dir, bare.taskId, DEFINITION)), "clarifying");
+  assert.deepEqual(read(dir, (db) => [stageOf(db, dir, taskId, DEFINITION), currentStage(db, taskId)]), [IDLE, IDLE]);
+  // 刚建好的任务：有材料、没有材料都是空闲，空闲不落库。
+  for (const material of [true, false]) {
+    const fresh = workspace(overallDefinition(), material);
+    assert.equal(read(fresh.dir, (db) => stageOf(db, fresh.dir, fresh.taskId, DEFINITION)), IDLE);
+    assert.equal(count(fresh.dir, "activity_record"), 0);
+  }
   // 早先建的任务没有阶段：null，与空闲不是一回事。
   const old = workspace(demoDefinition());
   assert.equal(read(old.dir, (db) => stageOf(db, old.dir, old.taskId, validateDefinition(demoDefinition()))), null);

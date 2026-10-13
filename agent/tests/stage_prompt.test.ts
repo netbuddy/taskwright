@@ -90,13 +90,13 @@ test("早先的任务没有阶段，不拼；任务库不在或还没有任务�
   assert.equal(stageInWorkspace(empty), null);
 });
 
-test("没有阶段记录时按缺省的阶段：有材料是核读材料，没有材料是澄清；有了记录看最近一条", () => {
+test("刚建好的任务没有活动记录，是空闲，有没有材料都一样；有了记录看还在进行的那一条", () => {
   const withMaterial = makeWorkspace(overallDefinition(), { material: true });
   createTask(callIn(withMaterial), { definition_path: DEFINITION_PATH });
-  assert.equal(stageInWorkspace(withMaterial), "reading");
+  assert.equal(stageInWorkspace(withMaterial), IDLE);
   const noMaterial = makeWorkspace(overallDefinition(), { material: false });
   createTask(callIn(noMaterial), { definition_path: DEFINITION_PATH });
-  assert.equal(stageInWorkspace(noMaterial), "clarifying");
+  assert.equal(stageInWorkspace(noMaterial), IDLE);
   enterStage(withMaterial, "modeling");
   assert.equal(stageInWorkspace(withMaterial), "modeling");
   enterStage(withMaterial, "clarifying");
@@ -292,6 +292,7 @@ function start(workspaceDir: string, cache: StagePromptCache, summaries: WeakMap
 test("事件处理：有阶段的任务返回拼好的系统提示并报一行事实；连续两次阶段不变，第二次报「沿用」；阶段变了报「重拼」", () => {
   const dir = makeWorkspace(overallDefinition(), { material: true });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  enterStage(dir, "reading");
   const cache = new StagePromptCache();
   const summaries = new WeakMap<object, any>();
   const first = start(dir, cache, summaries);
@@ -466,6 +467,7 @@ test("这一次运行的提示词目录：不是调试模式时不读设置文�
 test("事件处理，调试模式：从提示词目录读，报出去的那一行带每一部分的文字；早先的任务也报一行；不是调试模式时两样都没有", () => {
   const dir = makeWorkspace(overallDefinition(), { material: false });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  enterStage(dir, "clarifying");
   const promptDir = scratchDir();
   const settings = join(scratchDir(), "settings.json");
   writeFileSync(settings, JSON.stringify({ debug: { prompt_dir: promptDir } }), "utf-8");
@@ -606,8 +608,8 @@ test("任务空闲时：任务类型一级澄清的那一段若有「出口」�
 test("读任务现在在哪里：在流程里、单独开展、空闲各是什么；事件处理照它拼并报出去", () => {
   const dir = makeWorkspace(overallDefinition(), { material: true });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
-  // 还没有任何活动记录：位置是缺省的核读材料，算在流程里。
-  assert.deepEqual(whereInWorkspace(dir), { stage: "reading", inFlow: true });
+  // 刚建好、还没有任何活动记录：空闲。
+  assert.deepEqual(whereInWorkspace(dir), { stage: IDLE, inFlow: false });
   enterStage(dir, "modeling");
   assert.deepEqual(whereInWorkspace(dir), { stage: "modeling", inFlow: true });
   const cache = new StagePromptCache(), summaries = new WeakMap<object, any>();

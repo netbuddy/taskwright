@@ -22,19 +22,17 @@ function workspace(definition: unknown = overallDefinition(), material = true): 
 }
 const write = <T>(dir: string, body: (db: DatabaseSync) => T) => withTaskDatabase(dir, { createIfMissing: false }, body);
 
-test("没有记录时：有材料在核读材料，没有材料在澄清；这个缺省不落库，上传了材料就跟着变", () => {
+test("没有在进行的活动记录时任务空闲：刚建好的任务有没有材料都是空闲，空闲不落库，上传材料也不改变它", () => {
   const { dir, taskId } = workspace(overallDefinition(), false);
   const definition = validateDefinition(overallDefinition());
   assert.equal(taskHasMaterials(dir, definition.materialsDir), false);
-  assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition)), "clarifying");
+  assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition)), "idle");
   mkdirSync(join(dir, "inputs"), { recursive: true });
   writeFileSync(join(dir, "inputs/材料.md"), "读者凭借书证借书。", "utf-8");
   assert.equal(taskHasMaterials(dir, definition.materialsDir), true);
-  assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition)), "reading");
-  assert.equal(query(dir, "SELECT * FROM activity_record").length, 0, "缺省不落库");
-  // 材料又拿掉：没有记录时照样跟着变回澄清。
+  assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition)), "idle");
+  assert.equal(query(dir, "SELECT * FROM activity_record").length, 0, "空闲不落库");
   rmSync(join(dir, "inputs/材料.md"));
-  assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition)), "clarifying");
 });
 
 test("记一次移动：结束前一条活动记录、开始新的一条，各记一条事件，序号对得上；第一次移动没有可结束的；有了记录之后只看还在进行的那一条，不再看有没有材料", () => {
@@ -62,8 +60,7 @@ test("记一次移动：结束前一条活动记录、开始新的一条，各�
   assert.deepEqual(rows.map((r) => [r.node, r.flow, r.ended_seq, r.ended_at]), [["clarifying", "initial", second - 1, rows[1].started_at], ["writing", "initial", null, null]]);
   assert.deepEqual(write(dir, (db) => openActivityRecord(db, taskId))!.activity, "writing");
   assert.equal(write(dir, (db) => openActivityRecord(db, taskId))!.record_id, rows[1].record_id);
-  // 有记录之后，有没有材料都不再改变所在的阶段。
-  assert.deepEqual(write(dir, (db) => [currentStage(db, taskId, true), currentStage(db, taskId, false)]), ["writing", "writing"]);
+  assert.deepEqual(write(dir, (db) => currentStage(db, taskId)), "writing");
 });
 
 test("早先建的任务（任务定义里没有总体分析集合）没有阶段", () => {
@@ -79,7 +76,7 @@ test("格式版本 1 的库没有活动记录表：只读的一侧当作没有�
     assert.equal(hasActivityTable(ro), false);
     assert.equal(openActivityRecord(ro, taskId), null);
     assert.deepEqual(activityRecords(ro, taskId), []);
-    assert.equal(currentStage(ro, taskId, true), "reading");
+    assert.equal(currentStage(ro, taskId), "idle");
   } finally {
     ro.close();
   }
@@ -186,12 +183,13 @@ test("格式版本 4 升到 5：每条阶段记录改写成一条活动记录，
   assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
 });
 
-test("格式版本 4 升到 5：一次都没有移动过的库只换表，没有记录；记下移动的事件已经不在时所属流程写首次分析、从哪里来取前一条记录", () => {
+test("格式版本 4 升到 5：一次都没有移动过的库只换表，没有记录，升级之后是空闲；记下移动的事件已经不在时所属流程写首次分析、从哪里来取前一条记录", () => {
   const empty = workspace();
   asVersion4(empty.dir, empty.taskId, []);
   assert.deepEqual(upgradeTaskDatabase(empty.dir), { from: 4, to: TASK_DB_VERSION });
   assert.deepEqual([tableThere(empty.dir, "activity_record"), tableThere(empty.dir, "stage_record"), query(empty.dir, "SELECT * FROM activity_record").length], [true, false, 0]);
-  assert.equal(write(empty.dir, (db) => stageOf(db, empty.dir, empty.taskId, validateDefinition(overallDefinition()))), "reading", "仍是按有没有材料定的缺省");
+  // 0.5 里这样的任务按有没有材料算在核读材料或澄清；升级之后它没有活动记录，是空闲。
+  assert.equal(write(empty.dir, (db) => stageOf(db, empty.dir, empty.taskId, validateDefinition(overallDefinition()))), "idle");
 
   const { dir, taskId } = workspace();
   asVersion4(dir, taskId, [{ from: "reading", to: "clarifying", at: "2026-10-10T09:00:00" }, { from: "clarifying", to: "modeling", at: "2026-10-10T10:00:00", flow: "change" }], true);

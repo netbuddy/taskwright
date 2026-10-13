@@ -55,10 +55,13 @@ const brief = (summary: StageSummary, key: string) => [lamp(summary, key).ok, la
 let ui = 0;
 const userOp = (dir: string, body: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-sum-${++ui}`, ...body });
 
-test("刚建好、有材料的任务：在核读材料，没有人移过；材料还没有被引用，那一盏不通过", () => {
+test("刚建好、有材料的任务：空闲，没有人开展过活动；材料还没有被引用，核读材料那一盏不通过", () => {
   const { summary } = workspace();
   const now = summary()!;
-  assert.deepEqual([now.current, now.moved_by, now.moved_at, now.reason], ["reading", null, null, null]);
+  assert.deepEqual([now.current, now.node, now.flow_node, now.moved_by, now.moved_at, now.reason], ["idle", null, null, null, null, null]);
+  // 开展一项活动那一节：没有正在进行的；首次分析从核读材料启动（有材料）；还没有页、没有条目的三项不能单独开展。
+  assert.deepEqual([now.launch.current, now.launch.flows.map((one) => [one.label, one.state]), now.launch.activities.map((one) => one.enabled)],
+    [null, [["启动首次分析", "从核读材料开始"]], [true, true, true, false, false, false]]);
   assert.deepEqual(brief(now, "materials_cited"), [false, ["inputs/材料.md"]]);
   assert.deepEqual(Object.keys(now.lamps), ["reading", "clarifying", "modeling", "writing", "reviewing", "document"]);
 });
@@ -198,9 +201,14 @@ test("早先建的任务没有阶段：读出来是 null", () => {
 test("查询任务状态的末尾写现在在哪个阶段、这一段还差什么；早先建的任务不写", async () => {
   const { getTaskStatus } = await import("../src/lib/task_query.ts");
   const { dir } = workspace();
-  // 刚建好：核读材料，材料还没有被引用。
+  // 刚建好：空闲，只有一句，不说灯。
   let out = getTaskStatus(dir);
-  assert.match(out.text, /\n\n任务现在在核读材料阶段（任务建好之后还没有人移动过）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。\n没有开着的提议。$/);
+  assert.match(out.text, /\n\n任务现在空闲：没有在进行的活动。开展哪一项活动由用户决定。\n没有开着的提议。$/);
+  assert.equal((out.details as any).stage.current, "idle");
+  // 用户启动首次分析：核读材料，材料还没有被引用。
+  userOp(dir, { kind: "start_activity", fields: { activity: "核读材料", in_flow: true } });
+  out = getTaskStatus(dir);
+  assert.match(out.text, /\n\n任务现在在核读材料阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 移过来的）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。\n没有开着的提议。$/);
   assert.equal((out.details as any).stage.current, "reading");
   // 立了一页引用材料的主题，用户移到澄清并写了理由：澄清这一段两盏灯都过（或不适用）。
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "总体分析", fields: { 标题: "登录", 它是什么: "用户可以登录。", 标签: ["概念"], 状态: "在用" }, sources: [SOURCE] }] });

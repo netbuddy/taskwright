@@ -68,9 +68,9 @@ test("库事件：移动阶段转成 activity_ended（前一项活动结束）�
   const [events] = library.libraryEvents(ws, 0);
   const moves = events.filter(([name]) => name === "activity_started").map(([, data]) => data);
   assert.deepEqual(moves.map((d) => [d.to, d.from, d.actor, d.reason, d.run_id, d.op_id, d.flow, d.node]),
-    [["writing", "reading", "user", "", null, "ui-fixture-1", "initial", "writing"], ["reviewing", "writing", "user", "", null, "ui-fixture-2", "initial", "reviewing"]]);
+    [["writing", null, "user", "", null, "ui-fixture-1", "initial", "writing"], ["reviewing", "writing", "user", "", null, "ui-fixture-2", "initial", "reviewing"]]);
   assert.ok(moves.every((d) => typeof d.seq === "number" && typeof d.at === "string" && typeof d.task_id === "string"));
-  // 第一次移动之前任务没有活动记录（核读材料是缺省的位置），没有可结束的；第二次先结束写条目，紧挨在开始评审确认的那一条之前。
+  // 第一次移动之前任务空闲（从哪里来是 null），没有可结束的；第二次先结束写条目，紧挨在开始评审确认的那一条之前。
   const ended = events.filter(([name]) => name === "activity_ended").map(([, data]) => data);
   assert.deepEqual(ended.map((d) => [d.activity, d.node, d.actor, d.reason, d.op_id, d.seq]), [["writing", "writing", "user", "", "ui-fixture-2", moves[1].seq - 1]]);
   // 序号连续：移动阶段的事件没有被跳过。
@@ -94,12 +94,14 @@ test("库事件：升级上来的库里早先的移动事件（STAGE_MOVED）转
     [["activity_started", "reviewing", "writing", "user", "条目都看过了。", null, "initial", "reviewing", "ui-op-old"]]);
 });
 
-test("刚建好还没有人移过的任务：有材料在核读材料，三项为 null；库里还没有活动记录表时也一样", () => {
+test("刚建好还没有开展过活动的任务：空闲，三项为 null，带着开展一项活动的三组选项；库里还没有活动记录表时也一样", () => {
   const ws = build(tmp, "fresh", DEFINITION, [[FLOW]]);
-  // 夹具先移到了写条目；把那条记录去掉，回到没有移过的样子。
+  // 夹具先移到了写条目；把那条记录去掉，回到没有开展过活动的样子。
   sqlRun(ws, [["DELETE FROM activity_record"]]);
   const fresh = library.taskSnapshot(ws)[1]!.stage!;
-  assert.deepEqual([fresh.current, fresh.moved_by, fresh.moved_at, fresh.reason], ["reading", null, null, null]);
+  assert.deepEqual([fresh.current, fresh.node, fresh.flow_node, fresh.moved_by, fresh.moved_at, fresh.reason], ["idle", null, null, null, null, null]);
+  assert.deepEqual([fresh.launch.current, fresh.launch.flows.map((one) => [one.label, one.activity, one.enabled]), fresh.launch.activities.map((one) => [one.label, one.enabled])],
+    [null, [["启动首次分析", "reading", true]], [["核读材料", true], ["澄清", true], ["整理建模", true], ["写条目", true], ["评审确认", false], ["编写文档", false]]]);
   sqlRun(ws, [["DROP TABLE activity_record"]]);
   assert.deepEqual(library.taskSnapshot(ws)[1]!.stage, fresh);
 });

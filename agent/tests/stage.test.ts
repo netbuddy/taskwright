@@ -5,17 +5,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  activityBlocked, activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, completeRefusal, flowStartNode, launchView, startHow, startReadingCardGuidance, STAY_IDLE_OPTION, switchedReason, CONTINUE_CLARIFY_KEY, defaultStage, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
+  activityBlocked, activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, completeRefusal, flowStartNode, launchView, startHow, startReadingCardGuidance, STAY_IDLE_OPTION, switchedReason, CONTINUE_CLARIFY_KEY, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
   itemRefusal, judgeMove, nextStage, pageRefusal, positionName, reviewRefusal, type Stage, STAGE_NAMES, stageByName, stageEnteredBy, STAGES, START_ITEMS_KEY, STAY_OPTIONS,
 } from "../src/lib/stage.ts";
 
-test("六个阶段：次序、给人看的名字、由名字认回来；没有记录时有材料先核读、没有材料从澄清开始", () => {
+test("六个阶段：次序、给人看的名字、由名字认回来", () => {
   assert.deepEqual([...STAGES], ["reading", "clarifying", "modeling", "writing", "reviewing", "document"]);
   assert.deepEqual(STAGES.map((one) => STAGE_NAMES[one]), ["核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档"]);
   assert.deepEqual(["核读材料", " 澄清 ", "整理建模", "写条目", "评审确认", "编写文档"].map(stageByName), [...STAGES]);
   assert.deepEqual([stageByName("writing"), stageByName("发布"), stageByName(""), stageByName(3)], ["writing", null, null, null]);
   assert.deepEqual([isStage("modeling"), isStage("澄清"), isStage(null)], [true, false, false]);
-  assert.deepEqual([defaultStage(true), defaultStage(false)], ["reading", "clarifying"]);
 });
 
 test("移动：助手一律不能自己移动阶段，往前、往后都要由用户决定；用户不设限；原地不动不算移动", () => {

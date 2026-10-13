@@ -24,17 +24,26 @@ const card = (id: string, options: unknown[] = OPTIONS) => ({
 const said = (id: string, text: string) => ({ id, type: "message", message: { role: "user", content: text } });
 const BRANCH = [said("u-1", "读一下材料"), card("a-1"), card("a-2", [{ key: "yes", text: "可以" }, { key: "no", text: "不行" }])] as never;
 
+/**
+ * 一个已经启动了首次分析、停在核读材料的任务（新建的任务是空闲的，进入与退回的卡片只在流程里算数）。
+ * 启动的那一条活动记录是这里记的，下面数记录、列移动时都不算它（早先建的任务没有阶段，没有这一条）。
+ */
 function workspace(definition: unknown = overallDefinition()): string {
   const dir = makeWorkspace(definition);
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  enterStage(dir, "reading");
   return dir;
 }
-const records = (dir: string) => moveRows(dir).map(({ event_seq: _seq, ...r }) => r);
+const launched = (dir: string) => (moveRows(dir)[0]?.stage === "reading" && moveRows(dir)[0].from_stage === null ? 1 : 0);
+/** 启动之后记下的移动，按先后。 */
+const records = (dir: string) => moveRows(dir).slice(launched(dir)).map(({ event_seq: _seq, ...r }) => r);
+/** 启动之后记下了几次移动。 */
+const moves = (dir: string) => moveRows(dir).length - launched(dir);
 
 test("点「开始写条目」：记一条用户的移动，理由写明是在卡片上选的；点「继续本阶段」什么都不记", () => {
   const dir = workspace();
   assert.equal(recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: CONTINUE_CLARIFY_KEY }), null);
-  assert.equal(count(dir, "activity_record"), 0);
+  assert.equal(moves(dir), 0);
   const moved = recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-2", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "reading", "writing"]);
   assert.equal(START_ITEMS_REASON, "用户在卡片上选了「开始写条目」");
@@ -42,7 +51,7 @@ test("点「开始写条目」：记一条用户的移动，理由写明是在�
   // 已经在写条目了再点一次（例如点了一张更早的卡片）：原地不动，不再记。
   const again = recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-3", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
   assert.deepEqual([again.moved, again.why], [false, "same"]);
-  assert.equal(count(dir, "activity_record"), 1);
+  assert.equal(moves(dir), 1);
 });
 
 test("认不出那张卡片就不记：回复不在这条分支上、那条回复不是请选择、卡片上没有这个键、点的不是这个键", () => {
@@ -55,14 +64,14 @@ test("认不出那张卡片就不记：回复不在这条分支上、那条回�
     { replyEntry: null, optionKey: START_ITEMS_KEY },
   ];
   for (const one of tries) assert.equal(recordStageCardClick(dir, SESSION, BRANCH, { opId: "ui-op-1", ...one }), null);
-  assert.equal(count(dir, "activity_record"), 0);
+  assert.equal(moves(dir), 0);
 });
 
 test("早先建的任务没有阶段、已经不在进行中的任务：点了也不记", () => {
   const old = workspace(demoDefinition());
   const none = recordStageCardClick(old, SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: START_ITEMS_KEY })!;
   assert.deepEqual([none.moved, none.why, none.from], [false, "no_stages", null]);
-  assert.equal(count(old, "activity_record"), 0);
+  assert.equal(moves(old), 0);
   assert.equal(recordStageCardClick(makeWorkspace(), SESSION, BRANCH, { opId: "ui-op-1", replyEntry: "a-1", optionKey: START_ITEMS_KEY }), null, "还没有库");
 });
 
@@ -72,11 +81,11 @@ test("五张往前走的卡片：在紧挨着的前一段点「进入」才记�
   for (const [from, to] of steps) {
     const dir = workspace();
     if (from !== "reading") enterStage(dir, from);
-    const before = count(dir, "activity_record");
+    const before = moves(dir);
     const options = [ENTER_OPTIONS[to], STAY_OPTIONS[from]];
     const branch = [said("u-1", "读一下材料"), card("a-1", options)] as never;
     assert.equal(recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-1", replyEntry: "a-1", optionKey: STAY_OPTIONS[from].key }), null, `${from}：留在这一段`);
-    assert.equal(count(dir, "activity_record"), before);
+    assert.equal(moves(dir), before);
     const moved = recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-2", replyEntry: "a-1", optionKey: ENTER_OPTIONS[to].key })!;
     assert.deepEqual([moved.moved, moved.from, moved.requested], [true, from, to], `${from} 到 ${to}`);
     assert.deepEqual(records(dir).at(-1), { stage: to, from_stage: from, actor: "user", reason: `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`, run_id: null, call_id: "ui-op-2", session_id: SESSION });
@@ -93,7 +102,7 @@ test("回退卡片：点「退回某段」记一条用户的移动，理由是�
   });
   const dir = workspace();
   enterStage(dir, "modeling");
-  const before = count(dir, "activity_record");
+  const before = moves(dir);
   const branch = [said("u-1", "我放了一份新材料"), backCard("a-1", "reading"), backCard("a-2", "writing"), backCard("a-3", "modeling"), backCard("a-4", "clarifying", "  ")] as never;
   // 留在本段：不记。
   assert.equal(recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-1", replyEntry: "a-1", optionKey: STAY_HERE_OPTION.key }), null);
@@ -102,7 +111,7 @@ test("回退卡片：点「退回某段」记一条用户的移动，理由是�
     const refused = recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-2", replyEntry: entry, optionKey: BACK_OPTIONS[to].key })!;
     assert.deepEqual([refused.moved, refused.why, refused.from, refused.requested], [false, "not_back", "modeling", to]);
   }
-  assert.equal(count(dir, "activity_record"), before);
+  assert.equal(moves(dir), before);
   // 退回核读材料：记成用户的移动。
   const moved = recordStageCardClick(dir, SESSION, branch, { opId: "ui-op-3", replyEntry: "a-1", optionKey: BACK_OPTIONS.reading.key })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "modeling", "reading"]);
@@ -125,13 +134,13 @@ test("次序不对的点击不记：进入澄清、进入整理建模、进入�
   // 结果里写明没有移、为什么、任务现在在哪里（卡片点击的标注据此写 stage_unmoved）。
   assert.deepEqual(click(reading, "modeling"), { requested: "modeling", from: "reading", moved: false, why: "not_next", event_seq: null });
   assert.deepEqual(click(reading, "reviewing"), { requested: "reviewing", from: "reading", moved: false, why: "not_next", event_seq: null });
-  assert.equal(count(reading, "activity_record"), 0);
+  assert.equal(moves(reading), 0);
   // 任务已经在整理建模：再点一张早先的「进入澄清」不会把任务退回去。
   const modeling = workspace();
   enterStage(modeling, "modeling");
   assert.deepEqual([click(modeling, "clarifying")?.moved, click(modeling, "clarifying")?.why, click(modeling, "clarifying")?.from], [false, "not_next", "modeling"]);
   assert.deepEqual([click(modeling, "reviewing")?.moved, click(modeling, "reviewing")?.why], [false, "not_next"]);
-  assert.equal(count(modeling, "activity_record"), 1);
+  assert.equal(moves(modeling), 1);
   // 开始写条目：核读材料、澄清、整理建模三段里点都算，用户可以跳过中间的阶段。
   for (const from of ["reading", "clarifying", "modeling"] as const) {
     const dir = workspace();
@@ -163,7 +172,7 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   const { handler, sent } = uiHandler();
   const { ctx, status } = fakeCtx(dir);
   await handler(JSON.stringify({ op_id: "ui-op-41", reply_entry: "a-1", option_key: START_ITEMS_KEY, option_text: START_ITEMS_TEXT, text: "我选：开始写条目" }), ctx);
-  const seq = moveRows(dir)[0].event_seq;
+  const seq = moveRows(dir).at(-1)!.event_seq;
   assert.deepEqual(JSON.parse(status[UI_RESULT_KEY]), { op_id: "ui-op-41", ok: true, idle: true, stage_event_seq: seq });
   assert.deepEqual(sent.map(([kind]) => kind), ["custom", "user"]);
   assert.equal(sent[0][1].details.stage_event_seq, seq);
@@ -180,7 +189,7 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   assert.equal("stage_move" in sent[2][1].details, false);
   assert.equal("stage_unmoved" in sent[2][1].details, false);
   assert.equal("stage_unmoved" in sent[0][1].details, false);
-  assert.equal(count(dir, "activity_record"), 1);
+  assert.equal(moves(dir), 1);
 
   // 任务已经在写条目，再点一次那张卡片上的「开始写条目」：照常发那两条，不记移动；标注里写任务当时在哪个阶段，
   // 卡片上据此告诉用户这次点击没有改变阶段。
@@ -190,7 +199,7 @@ test("卡片点击的处理函数：点「开始写条目」时先记移动、�
   assert.deepEqual(sent.slice(4).map(([kind]) => kind), ["custom", "user"]);
   assert.deepEqual(sent[4][1].details.stage_unmoved, { at: "writing" });
   assert.equal("stage_move" in sent[4][1].details, false);
-  assert.equal(count(dir, "activity_record"), 1);
+  assert.equal(moves(dir), 1);
 });
 
 test("用户先在界面上把任务移回澄清，再点卡片上的「开始写条目」：又记一条，最近一条说了算", async () => {

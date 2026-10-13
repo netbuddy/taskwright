@@ -32,7 +32,7 @@ test("空闲的任务：整份数据里 stage.current 是 idle，谁移的、什
   assert.deepEqual([stage.current, stage.moved_by, stage.moved_at, stage.reason, stage.flow, stage.proposal], ["idle", null, null, null, "initial", null]);
   assert.deepEqual(stage.lamps, before.lamps, "灯照算，不因空闲而变");
   // 调试用的记录流水照旧列出那一次移动。
-  assert.deepEqual(library.stageDebugView(ws).records.map((one) => [one.from, one.to]), [["reading", "writing"]]);
+  assert.deepEqual(library.stageDebugView(ws).records.map((one) => [one.from, one.to]), [[null, "writing"]]);
 });
 
 test("空闲的任务状况：当前活动的种类与写法是 idle，名字是「空闲」，第几阶段为 null；这一段还差什么是空的", () => {

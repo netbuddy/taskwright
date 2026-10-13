@@ -102,9 +102,9 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
     const stageNow = async () => (await call("GET", `/api/v1/tasks/${taskId}/snapshot?session=${session}`)).body.task.stage as Dict;
     const pushed = stageEvents(port, taskId);
     try {
-      // 刚建好、有材料：核读材料，没有人移过。
+      // 用户启动了首次分析（夹具做的）：停在核读材料。
       const fresh = await stageNow();
-      assert.deepEqual([fresh.current, fresh.moved_by, fresh.moved_at, fresh.reason], ["reading", null, null, null]);
+      assert.deepEqual([fresh.current, fresh.moved_by, fresh.reason, fresh.node, fresh.flow_node], ["reading", "user", "", "reading", "reading"]);
 
       await send({ text: "把材料整理成需求规格说明。", client_id: "c-1" });
       // 核读材料阶段写用例被拦：整批没有写入，原话留在拒绝记录里。
@@ -146,7 +146,7 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       await send({ text: "我选：进入评审确认", client_id: "c-review", origin: "card_choice", card: { reply_message_id: entryOfCall("call-wrote"), kind: "choose", choice: "enter_review" } });
       const reviewing = await stageNow();
       assert.deepEqual([reviewing.current, reviewing.moved_by, reviewing.reason], ["reviewing", "user", "用户在卡片上选了「进入评审确认」"]);
-      assert.deepEqual(db(movesSql(["from_stage", "stage", "actor", "reason", "run_id"])), [
+      assert.deepEqual(db(movesSql(["from_stage", "stage", "actor", "reason", "run_id"])).slice(1), [
         { from_stage: "reading", stage: "clarifying", actor: "user", reason: "用户在卡片上选了「进入澄清」", run_id: null },
         { from_stage: "clarifying", stage: "modeling", actor: "user", reason: "用户在卡片上选了「进入整理建模」", run_id: null },
         { from_stage: "modeling", stage: "writing", actor: "user", reason: "用户在卡片上选了「开始写条目」", run_id: null },
@@ -166,10 +166,10 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       promptsAre("评审确认", 4);
       assert.deepEqual(db("SELECT tool_name FROM tool_rejection ORDER BY rowid").map((r: Dict) => r.tool_name), ["save_revision", "reply"], "除了核读材料时那一次与写了 stage 的那次回复，没有别的调用被拦");
 
-      // 事件连接推出了四次移动，序号与库里的事件相同。
-      for (const end = Date.now() + 10000; pushed.events.length < 4 && Date.now() < end;) await sleep(100);
+      // 事件连接推出了五次活动开始（启动首次分析的那一条，与后面四次移动），序号与库里的事件相同。
+      for (const end = Date.now() + 10000; pushed.events.length < 5 && Date.now() < end;) await sleep(100);
       assert.deepEqual(pushed.events.map((e) => [e.from, e.to, e.actor]),
-        [["reading", "clarifying", "user"], ["clarifying", "modeling", "user"], ["modeling", "writing", "user"], ["writing", "reviewing", "user"]]);
+        [[null, "reading", "user"], ["reading", "clarifying", "user"], ["clarifying", "modeling", "user"], ["modeling", "writing", "user"], ["writing", "reviewing", "user"]]);
       assert.deepEqual(pushed.events.map((e) => e.seq), db("SELECT seq FROM event WHERE name = 'ACTIVITY_STARTED' ORDER BY seq").map((r: Dict) => r.seq));
     } finally {
       pushed.close();

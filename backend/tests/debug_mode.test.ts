@@ -225,9 +225,10 @@ const REJECT_SCRIPT = {
 
 test("调试模式下的阶段记录流水与被拒的工具调用：谁在什么时候把任务从哪移到哪、理由；被拒的调用带工具名、事实、指引与它所属的那次工作", { skip: NO_PI, timeout: 180000 }, async () => {
   await withStack(tmp, "debug-stage", REJECT_SCRIPT, async ({ call, taskId, session, send, action }) => {
-    // 一开始：没有移动，也没有被拒的调用。
+    // 一开始：只有用户启动首次分析的那一条（任务此前空闲，从哪里来是空的），没有被拒的调用。
     const fresh = (await call("GET", `/api/v1/tasks/${taskId}/debug/stage`)).body;
-    assert.deepEqual(fresh, { records: [], rejections: [], latest_work_id: null });
+    assert.deepEqual([fresh.records.map((one: Dict) => [one.from, one.from_name, one.to, one.to_name, one.actor, one.flow]), fresh.rejections, fresh.latest_work_id],
+      [[[null, "", "reading", "核读材料", "user", "initial"]], [], null]);
 
     await send({ text: "直接写用例吧。", client_id: "c-1" });
     assert.equal((await action({ kind: "move_stage", targets: [], fields: { stage: "澄清", reason: "材料看过了。" } })).status, 200);
@@ -235,7 +236,7 @@ test("调试模式下的阶段记录流水与被拒的工具调用：谁在什�
     await send({ text: "再说一句。", client_id: "c-2" });
 
     const view = (await call("GET", `/api/v1/tasks/${taskId}/debug/stage`)).body;
-    assert.deepEqual(view.records.map((one: Dict) => [one.from, one.from_name, one.to, one.to_name, one.actor, one.reason, one.run_id]), [
+    assert.deepEqual(view.records.slice(1).map((one: Dict) => [one.from, one.from_name, one.to, one.to_name, one.actor, one.reason, one.run_id]), [
       ["reading", "核读材料", "clarifying", "澄清", "user", "材料看过了。", null],
       ["clarifying", "澄清", "modeling", "整理建模", "user", "", null],
     ]);

@@ -46,7 +46,7 @@ test("发卡片、选继续本阶段、再说两轮、在另一条会话里点�
       ["clarifying", CARD.options[0], CARD.options[1], session, cardEntry, CARD.items]);
     const first = await statusNow();
     assert.deepEqual([first.activity.key, first.activity.name, first.activity.ordinal, first.activity.flow, first.activity.moved_by],
-      ["reading", "核读材料", 1, "initial", null]);
+      ["reading", "核读材料", 1, "initial", "user"]);
     assert.deepEqual([first.description.sections, first.description.chapters, first.proposal.event_seq], [1, [{ no: 3, name: "业务流程", sections: 1 }], opened.event_seq]);
 
     // 2. 用户选「继续本阶段」：操作成功，会话里多一条界面操作通知，助手没有因此运行，没有记移动，提议仍然开着。
@@ -55,7 +55,7 @@ test("发卡片、选继续本阶段、再说两轮、在另一条会话里点�
     assert.equal(stayed.status, 200, JSON.stringify(stayed.body));
     await sleep(1500);
     assert.equal(requests().length, asked, "助手没有被叫起来");
-    assert.deepEqual(db("SELECT COUNT(*) AS n FROM activity_record"), [{ n: 0 }]);
+    assert.deepEqual(db("SELECT COUNT(*) AS n FROM activity_record"), [{ n: 1 }], "只有启动首次分析的那一条");
     assert.equal((await stageNow()).proposal.event_seq, opened.event_seq);
     const afterStay = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[];
     const note = afterStay[afterStay.length - 1];
@@ -84,7 +84,7 @@ test("发卡片、选继续本阶段、再说两轮、在另一条会话里点�
         { text: "我选：进入澄清", client_id: "c-4", origin: "card_choice", card: { reply_message_id: cardEntry, kind: "choose", choice: "enter_clarify" } });
       assert.equal(sent.status, 200, JSON.stringify(sent.body));
     });
-    assert.deepEqual(db(movesSql(["actor", "from_stage", "stage", "reason", "session_id"])),
+    assert.deepEqual(db(movesSql(["actor", "from_stage", "stage", "reason", "session_id"])).slice(1),
       [{ actor: "user", from_stage: "reading", stage: "clarifying", reason: "用户在卡片上选了「进入澄清」", session_id: second }]);
     const moved = await stageNow();
     assert.deepEqual([moved.current, moved.moved_by, moved.proposal, moved.flow], ["clarifying", "user", null, "initial"]);

@@ -134,7 +134,8 @@ class StageRunTest(unittest.TestCase):
             moves = db.execute(
                 "SELECT r.actor, json_extract(e.payload, '$.from'), r.activity, r.reason FROM activity_record r "
                 "LEFT JOIN event e ON e.seq = r.started_seq ORDER BY r.started_seq").fetchall()
-        self.assertEqual(moves, [("user", "reading", "writing", "用户在卡片上选了「开始写条目」"),
+        # 第一条是开场时驾驭程序替用户选的「启动首次分析」：新任务空闲，从核读材料开始。
+        self.assertEqual(moves, [("user", None, "reading", ""), ("user", "reading", "writing", "用户在卡片上选了「开始写条目」"),
                                  ("user", "writing", "reviewing", "用户在卡片上选了「进入评审确认」")])
         # 灯：写条目与评审确认两段都过了；这份演示脚本从核读材料直接进入写条目，没有画图，流程页没有流程图那一盏不通过。
         states = {x["键"]: x["结果"] for x in result["灯"]}

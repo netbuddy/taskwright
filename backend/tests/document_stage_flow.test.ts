@@ -97,7 +97,8 @@ test("核读到编写文档：问题就地记下并了结、回退由用户在�
     const stageNow = async () => (await taskNow()).stage as Dict;
     const lamp = async (stage: string, key: string) => ((await stageNow()).lamps[stage] as Dict[]).find((one) => one.key === key)!;
     const fieldsOf = (itemId: string) => JSON.parse(db("SELECT fields FROM item_version WHERE item_id = ? ORDER BY revision_no DESC LIMIT 1", itemId)[0].fields) as Dict;
-    const moves = () => db(movesSql(["actor", "from_stage", "stage", "reason"]));
+    // 启动首次分析的那一条（夹具记的，停在核读材料）不算在内。
+    const moves = () => db(movesSql(["actor", "from_stage", "stage", "reason"])).slice(1);
     const rejected = () => db("SELECT tool_name, call_id, fact FROM tool_rejection");
     let n = 0;
     const click = (callId: string, key: string, text: string) => send({ text: `我选：${text}`, client_id: `click-${++n}`, origin: "card_choice",

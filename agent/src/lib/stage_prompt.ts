@@ -470,7 +470,7 @@ export function stageInWorkspace(workspaceDir: string): Position | null {
 }
 
 /**
- * 同上，另带现在这项活动是不是在首次分析流程里（空闲时为假；还没有任何活动记录、位置是缺省的那个阶段时算在流程里）。
+ * 同上，另带现在这项活动是不是在首次分析流程里（空闲时为假）。
  * 不换系统提示的那几种情形返回 null。
  */
 export function whereInWorkspace(workspaceDir: string): { stage: Position; inFlow: boolean } | null {
@@ -483,7 +483,7 @@ export function whereInWorkspace(workspaceDir: string): { stage: Position; inFlo
     const stage = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
     if (stage === null) return null;
     const open = openActivityRecord(db, task.task_id);
-    return { stage, inFlow: stage !== IDLE && (open === null || open.node !== null) };
+    return { stage, inFlow: open !== null && open.node !== null };
   } finally {
     db.close();
   }

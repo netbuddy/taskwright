@@ -116,7 +116,8 @@ test("用户点卡片退回前面的阶段、点卡片进入下一段的那两�
       assert.equal("stage_unmoved" in live[6][1], false);
 
       // 库里的阶段记录：退回那一条是用户的移动，理由是点的那一项加卡片上助手写的原因。
-      assert.deepEqual(db(movesSql(["from_stage", "stage", "actor", "reason"])).slice(1), [
+      // 前两条是启动首次分析（夹具记的）与这例开头把任务移到整理建模的那一次，不在这里核对。
+      assert.deepEqual(db(movesSql(["from_stage", "stage", "actor", "reason"])).slice(2), [
         { from_stage: "modeling", stage: "clarifying", actor: "user", reason: "用户在卡片上选了「退回澄清」：「自助机」这个词牵涉好几页，前面的理解要重看。退回澄清吗？" },
         { from_stage: "clarifying", stage: "modeling", actor: "user", reason: "用户在卡片上选了「进入整理建模」" },
       ]);

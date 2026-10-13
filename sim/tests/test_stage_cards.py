@@ -150,7 +150,9 @@ class StageCardsTest(unittest.TestCase):
                 moves = db.execute(
                     "SELECT r.actor, json_extract(e.payload, '$.from'), r.activity, r.reason FROM activity_record r "
                     "LEFT JOIN event e ON e.seq = r.started_seq ORDER BY r.started_seq").fetchall()
-            self.assertEqual(moves, [("user", "reading", "clarifying", "用户在卡片上选了「进入澄清」"), ("user", "clarifying", "modeling", "用户在卡片上选了「进入整理建模」"),
+            # 第一条是开场时驾驭程序替用户选的「启动首次分析」：新任务空闲，从核读材料开始。
+            self.assertEqual(moves, [("user", None, "reading", ""),
+                                     ("user", "reading", "clarifying", "用户在卡片上选了「进入澄清」"), ("user", "clarifying", "modeling", "用户在卡片上选了「进入整理建模」"),
                                      ("user", "modeling", "writing", "用户在卡片上选了「开始写条目」"), ("user", "writing", "reviewing", "用户在卡片上选了「进入评审确认」"),
                                      ("user", "reviewing", "document", "用户在卡片上选了「进入编写文档」")])
             self.assertEqual((taskdb.read_workspace(sim / "库副本")["任务"][0]["状态"], first["被工具拒绝次数"]), ("已完成", 0))

@@ -117,16 +117,17 @@ test("早先建的任务没有阶段：发了带进入键的卡片也不记 prop
 
 test("卡片在另一条会话里：这条会话的分支上找不到那条回复，点进入照开着的提议记移动；键或回复编号对不上就不记", () => {
   const dir = workspace();
+  enterStage(dir, "reading");
   const card = reply(dir, enterCard("clarifying", "reading"), "sess-first");
   const elsewhere = [said("u-x", "接着昨天的做")] as never;
   // 键不是开着的提议的进入键、回复编号是别的卡片：都不记。
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-1", replyEntry: card.entry, optionKey: "enter_consolidate" }), null);
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-2", replyEntry: "reply-none", optionKey: "enter_clarify" }), null);
-  assert.equal(count(dir, "activity_record"), 0);
+  assert.equal(count(dir, "activity_record"), 1, "只有启动首次分析的那一条");
   // 键与回复编号都对得上：记一条用户的移动，记在点的那条会话上；提议随之结束。
   const moved = recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-3", replyEntry: card.entry, optionKey: "enter_clarify" })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "reading", "clarifying"]);
-  assert.deepEqual(moveRows(dir).map((row) => ({ stage: row.stage, from_stage: row.from_stage, actor: row.actor, session_id: row.session_id, call_id: row.call_id })),
+  assert.deepEqual(moveRows(dir).slice(1).map((row) => ({ stage: row.stage, from_stage: row.from_stage, actor: row.actor, session_id: row.session_id, call_id: row.call_id })),
     [{ stage: "clarifying", from_stage: "reading", actor: "user", session_id: "sess-second", call_id: "ui-op-3" }]);
   assert.equal(open(dir), null);
   // 提议已经结束：同一个请求再来一次不再记。
@@ -139,7 +140,7 @@ test("卡片在另一条会话里：这条会话的分支上找不到那条回�
   // 回复编号给的是空文字：与没有给一样。
   reply(dir, enterCard("writing", "modeling"), "sess-first");
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-6", replyEntry: "", optionKey: "start_items" })!.moved, true);
-  assert.equal(count(dir, "activity_record"), 3);
+  assert.equal(count(dir, "activity_record"), 4);
 });
 
 test("事件的名字与「回复」记的是同一个", () => {

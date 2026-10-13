@@ -75,7 +75,7 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     // 启动参数给的那一份与 pi 的 skill 清单都不在里面；工作目录接在最后。
     assert.doesNotMatch(systemText(first[0]), /先用 read 读 taskwright-executor 的正文|<skills>|<available_skills>/);
     assert.ok(systemText(first[0]).endsWith(`<cwd>\n${taskDir}\n</cwd>`));
-    assert.equal(db("SELECT COUNT(*) AS n FROM activity_record")[0].n, 0, "助手只发了卡片，阶段没有动");
+    assert.equal(db("SELECT COUNT(*) AS n FROM activity_record")[0].n, 1, "助手只发了卡片，阶段没有动：只有启动首次分析的那一条");
 
     // 用户在卡片上点「进入澄清」：扩展先记移动、再代发那句固定的话，这句话引起的运行拿到的已经是澄清的那一份；
     // 按阶段的那一段之前的文字与上一次相同。

@@ -51,10 +51,10 @@ export function stageByName(name: unknown): Stage | null {
 }
 
 /**
- * 空闲：任务现在没有在进行的活动（任务有过活动记录，而每一条都已经结束）。它不是一个阶段，不排在 STAGES 的次序里，
+ * 空闲：任务现在没有在进行的活动——刚建好还没有开展过任何活动，或者开展过的每一项都已经结束。它不是一个阶段，不排在 STAGES 的次序里，
  * 也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「任务现在在哪里」的那几处。它与 null 不是一回事：
  * null 是早先建的任务（任务定义里没有「总体分析」集合），那种任务没有阶段，什么都不拦；空闲的任务有阶段，照下面的规矩拦。
- * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED），卡片上的点击也按任务在澄清时判（见 gateStage）。
+ * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED）。新建的任务从空闲起：开展哪一项活动由用户在任务状况卡上定。
  */
 export const IDLE = "idle";
 export const IDLE_NAME = "空闲";
@@ -75,11 +75,6 @@ export function positionName(position: Position): string {
 /** 空闲时按哪个阶段的规矩办：澄清。任务在某个阶段时就是那个阶段。 */
 export function gateStage(position: Position): Stage {
   return position === IDLE ? "clarifying" : position;
-}
-
-/** 任务还没有任何活动记录时在哪个阶段：有材料就先核读材料，没有材料就从澄清开始。 */
-export function defaultStage(hasMaterials: boolean): Stage {
-  return hasMaterials ? "reading" : "clarifying";
 }
 
 // ───────────── 移动 ─────────────

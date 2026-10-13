@@ -25,7 +25,8 @@ test("记一次移动：事件的内容里与活动记录的一列都写所属�
   enterStage(dir, "modeling");
   assert.deepEqual([FLOW_INITIAL, FLOW_NAMES[FLOW_INITIAL]], ["initial", "首次分析"]);
   const payloads = query<{ payload: string }>(dir, "SELECT payload FROM event WHERE name = 'ACTIVITY_STARTED' ORDER BY seq").map((row) => JSON.parse(row.payload));
-  assert.deepEqual(payloads.map((one) => [one.activity, one.node, one.from, one.flow]), [["clarifying", "clarifying", "reading", "initial"], ["modeling", "modeling", "clarifying", "initial"]]);
+  // 新建的任务是空闲的：第一条从空闲开始，from 是 null。
+  assert.deepEqual(payloads.map((one) => [one.activity, one.node, one.from, one.flow]), [["clarifying", "clarifying", null, "initial"], ["modeling", "modeling", "clarifying", "initial"]]);
   assert.deepEqual(read(dir, (db, id) => activityRecords(db, id)).map((one) => [one.activity, one.node, one.flow]), [["clarifying", "clarifying", "initial"], ["modeling", "modeling", "initial"]]);
   assert.deepEqual(read(dir, (db, id) => [openActivityRecord(db, id)!.activity, openActivityRecord(db, id)!.flow]), ["modeling", "initial"]);
   assert.deepEqual(query<{ flow: string }>(dir, "SELECT flow FROM activity_record ORDER BY started_seq").map((row) => row.flow), ["initial", "initial"]);

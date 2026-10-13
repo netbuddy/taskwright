@@ -2,10 +2,9 @@
  * 工作的阶段里读写任务库的那一半（不读库的在 lib/stage.ts）：任务现在在哪个阶段、记一次移动。
  *
  * 承载是活动记录表：任务里开展过的每一项活动一行，现在的六个阶段就是六项活动，都在首次分析这条流程里。
- * 任务现在在哪个阶段看还没有结束的那条活动记录；一行都没有时按任务有没有材料定，这个缺省不落库，每次现算：
- * 任务建好还没有上传材料时是澄清，随后上传了材料而还没有任何移动，就是核读材料；有了第一条记录之后只看记录。
- * 有记录而每一条都已经结束，任务就是空闲（lib/stage.ts 的 IDLE）：没有在进行的活动。现在没有哪条路会把任务置为空闲
- * （移动阶段总是结束一条、紧接着开始一条），这里的读法先备着。
+ * 任务现在在哪个阶段看还没有结束的那条活动记录。没有在进行的记录，任务就是空闲（lib/stage.ts 的 IDLE）：刚建好的任务一条记录
+ * 都没有，是空闲；助手汇报单独开展的活动做完了之后，也是空闲。早先（格式版本 5 之前与 0.5）没有记录的任务按有没有材料
+ * 算在核读材料或澄清，现在不再有这个缺省。
  * 移动阶段就是结束现在这项活动、开始另一项：前一条记录填上结束的时刻，再插一条新的。
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段：stageOf 返回 null，调用方据此什么都不做。
  *
@@ -28,7 +27,7 @@ import { openProposal } from "./stage_proposal.ts";
 import {
   ACTIVITY_DONE_REASON, BACK_OPTIONS, ENTER_OPTIONS, FLOW_INITIAL, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
   type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
-  activityBlocked, activityDoneRefusal, defaultStage, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  activityBlocked, activityDoneRefusal, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
   startHow, switchedReason,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
@@ -116,25 +115,18 @@ export function taskHasMaterials(workspaceDir: string, materialsDir: string): bo
   return listMaterials(workspaceDir, materialsDir).files.length > 0;
 }
 
-/** 任务有没有过活动记录（不管结束没有）。库还没有这张表时是没有。 */
-export function hasActivityRecords(db: DatabaseSync, taskId: string): boolean {
-  return hasActivityTable(db) && db.prepare(`SELECT 1 FROM ${TABLE} WHERE task_id = ? LIMIT 1`).get(taskId) !== undefined;
-}
-
 /**
- * 任务现在在哪里：有还没有结束的活动记录就是那项活动（那个阶段）；有记录而都结束了是空闲；一条记录都没有按有没有材料定。
+ * 任务现在在哪里：有还没有结束的活动记录就是那项活动（那个阶段）；没有就是空闲。
  * 不管任务有没有阶段，调用方先用 hasOverall 判。
  */
-export function currentStage(db: DatabaseSync, taskId: string, hasMaterials: boolean): Position {
-  const open = openActivityRecord(db, taskId);
-  if (open) return open.activity;
-  return hasActivityRecords(db, taskId) ? IDLE : defaultStage(hasMaterials);
+export function currentStage(db: DatabaseSync, taskId: string): Position {
+  return openActivityRecord(db, taskId)?.activity ?? IDLE;
 }
 
 /** 任务现在在哪个阶段（或者空闲）；早先建的任务（没有「总体分析」集合）没有阶段，返回 null。 */
 export function stageOf(db: DatabaseSync, workspaceDir: string, taskId: string, definition: Pick<TaskDefinition, "collections" | "materialsDir">): Position | null {
   if (!hasOverall(definition.collections)) return null;
-  return currentStage(db, taskId, taskHasMaterials(workspaceDir, definition.materialsDir));
+  return currentStage(db, taskId);
 }
 
 /** 首次分析走到的节点：最近一条带节点的活动记录的节点；任务还没有在流程里开展过活动时是 null。 */
@@ -274,8 +266,7 @@ function whereIs(db: DatabaseSync, workspaceDir: string, taskId: string): { from
   const from = stageOf(db, workspaceDir, taskId, definition);
   if (from === null) return null;
   const open = openActivityRecord(db, taskId);
-  // 没有在进行的记录而位置是一个阶段：那是还没有任何记录时的缺省位置，当作在流程里。
-  return { from, fromInFlow: from !== IDLE && (open === null || open.node !== null), flowBefore: flowNode(db, taskId), definition };
+  return { from, fromInFlow: open !== null && open.node !== null, flowBefore: flowNode(db, taskId), definition };
 }
 
 /**
@@ -314,7 +305,7 @@ export function moveStage(db: DatabaseSync, workspaceDir: string, who: Omit<Stag
 export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): LaunchFacts {
   const open = openActivityRecord(db, taskId);
   const hasMaterials = taskHasMaterials(workspaceDir, definition.materialsDir);
-  const position = currentStage(db, taskId, hasMaterials);
+  const position = currentStage(db, taskId);
   const questions = new Set(definition.collections.filter((one) => keepPendingField(one) !== null).map((one) => one.name));
   const live = db.prepare(
     "SELECT i.collection, v.fields FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
@@ -323,7 +314,7 @@ export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: stri
   ).all(taskId) as { collection: string; fields: string }[];
   const pages = live.filter((one) => one.collection === OVERALL_COLLECTION && !isDeprecatedText(one.fields)).length;
   const items = live.filter((one) => one.collection !== OVERALL_COLLECTION && !questions.has(one.collection)).length;
-  return { position, inFlow: position !== IDLE && (open === null || open.node !== null), flowNode: flowNode(db, taskId), hasMaterials, pages, items };
+  return { position, inFlow: open !== null && open.node !== null, flowNode: flowNode(db, taskId), hasMaterials, pages, items };
 }
 
 /** 一页主题现在的字段内容（库里存的 JSON 文字）是不是已废弃。读不出来当作在用。 */
