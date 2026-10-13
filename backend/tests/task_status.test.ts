@@ -97,6 +97,12 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
     [{ key: "description", name: "业务说明" }], "前置条件：至少一份项目材料。"]);
   assert.ok(reading.purpose.length > 0 && reading.example.length > 0);
   assert.deepEqual(status.catalog, stage.catalog, "与整份数据里的是同一份");
+  // 起点页上的几段文字：定位的话里带任务名，主按钮下面一句，三种常见起点各有标题与做法。
+  const name = library.taskSnapshot(ws)[1]!.task_name;
+  assert.equal(status.start_page.lead, `本任务用于编制并持续维护「${name}」的需求规格说明。所有工作围绕同一套需求资产进行；每开展一项活动，资产即得到补充或修正。`);
+  assert.equal(status.start_page.guide_note, "预计首轮产出：业务说明初稿与待澄清问题清单");
+  assert.deepEqual(status.start_page.cases.map((one) => one.title), ["有调研材料", "只有口头想法", "已有旧版规格说明"]);
+  assert.ok(status.start_page.cases.every((one) => one.text.endsWith("。")));
 });
 
 test("刚建的任务：没有页、没有图、没有提议，各项都是空的；早先建的任务没有阶段，没有状况", () => {

@@ -17,6 +17,8 @@
  * catalog 是任务起点页的活动目录：flows 两条工作流程与 activities 七项单项活动，文字取自活动与流程的定义文件开头的头
  * （agent/prompts/stages/、agent/prompts/flows/），各带现在能不能开展（enabled）与一句状态（state）；能不能开展只看数据。
  * 任务不在进行中、或者定义读不出来时 catalog 为 null。launch 留给旧页面过渡，以后去掉。
+ * start_page 是任务起点页上的几段文字（startPageTexts）：一段定位的话、「三步开始」主按钮下面的一句、三种常见起点各一张小卡。
+ * 现在都是这里给的缺省文字，照需求规格说明这一类任务写；以后由任务类型的定义给。
  * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
  */
 
@@ -25,6 +27,22 @@ import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
 import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, QUESTION_KIND_CLARIFY, STAGES, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
+
+/**
+ * 任务起点页上的几段文字。lead 是任务名下面那一段定位的话；guide_note 是「三步开始」主按钮下面的一句；
+ * cases 是三种常见起点，每种一个标题与一句做法。
+ */
+export function startPageTexts(taskName: string) {
+  return {
+    lead: `本任务用于编制并持续维护「${taskName}」的需求规格说明。所有工作围绕同一套需求资产进行；每开展一项活动，资产即得到补充或修正。`,
+    guide_note: "预计首轮产出：业务说明初稿与待澄清问题清单",
+    cases: [
+      { title: "有调研材料", text: "上传会议记录、现行制度、旧系统说明；助手核读后立章节并逐句引用。" },
+      { title: "只有口头想法", text: "用三句话描述建设什么系统、服务哪些用户、解决什么问题；助手复述理解后逐项提问。" },
+      { title: "已有旧版规格说明", text: "把旧文档作为材料上传；助手按新结构重新组织，差异之处记为问题。" },
+    ],
+  };
+}
 
 export function taskStatus(taskDir: string) {
   const [, view] = library.taskSnapshot(taskDir);
@@ -80,6 +98,7 @@ export function taskStatus(taskDir: string) {
     launch: view.status === "进行中" ? stage.launch : null,
     assets: stage.assets,
     catalog: view.status === "进行中" ? stage.catalog : null,
+    start_page: startPageTexts(view.task_name),
     versions: [] as unknown[],
   };
 }
