@@ -103,6 +103,13 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   assert.equal(status.start_page.guide_note, "预计首轮产出：业务说明初稿与待澄清问题清单");
   assert.deepEqual(status.start_page.cases.map((one) => one.title), ["有调研材料", "只有口头想法", "已有旧版规格说明"]);
   assert.ok(status.start_page.cases.every((one) => one.text.endsWith("。")));
+  // 每种起点写明进输入页时先看哪一块；输入页上的几段：一段话、四类文件、目标系统描述的说明与三句示例、开展后两种情形各一句。
+  assert.deepEqual(status.start_page.cases.map((one) => one.focus), ["materials", "description", "materials"]);
+  const intake = status.start_page.intake;
+  assert.match(intake.lead, /^项目材料与目标系统描述至少提供一项。/);
+  assert.deepEqual([intake.material_kinds.length, intake.describe_examples.length, intake.after.length], [4, 3, 2]);
+  assert.ok(intake.describe_note.startsWith("说明三点：") && intake.describe_placeholder.endsWith("……"));
+  assert.deepEqual(intake.after.map((one) => one.slice(0, 4)), ["有材料：", "无材料："]);
 });
 
 test("刚建的任务：没有页、没有图、没有提议，各项都是空的；早先建的任务没有阶段，没有状况", () => {
