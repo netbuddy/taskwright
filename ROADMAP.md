@@ -63,6 +63,7 @@ What happens to a task after its first document?
 - [ ] Tasks, activities and flows: a task stays open after publishing a version, activities can run on their own or as nodes of a flow, the seven basic capabilities, and a change flow on top of a published version
 - [ ] Publishing a version in place of completing the task; a version records which revision of which items it contains
 - [ ] Browse past tasks and versions
+- [ ] Download a diagram as SVG, beside the PNG export
 
 ## 0.7 Several users at once
 
