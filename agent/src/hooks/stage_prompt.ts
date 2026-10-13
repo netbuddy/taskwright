@@ -24,7 +24,7 @@ import {
   type ComposeHow, type LoadedSkill, type PartFact, type PartKind, type PartOrigin, type StagePrompt, StagePromptCache, debugPromptDir, digestOf, partFact, piTail,
   stageInWorkspace,
 } from "../lib/stage_prompt.ts";
-import type { Stage } from "../lib/stage.ts";
+import type { Position } from "../lib/stage.ts";
 
 /** 报这一行事实用的状态栏键名。与 backend/src/pi_session.ts 里的同名常量是一份约定。 */
 export const STAGE_PROMPT_STATUS_KEY = "taskwright-stage-prompt";
@@ -32,7 +32,8 @@ export const STAGE_PROMPT_STATUS_KEY = "taskwright-stage-prompt";
 /** 报给后端的那一行事实。replaced 为假是这一次没有换系统提示，error 写着原因。 */
 export interface StagePromptReport {
   replaced: boolean;
-  stage?: Stage;
+  /** 这一次是为哪个阶段拼的；任务空闲时是 idle（用的是澄清的那一段，去掉了「出口」一节）。 */
+  stage?: Position;
   how?: ComposeHow;
   error?: string;
   /** 说明文字（从文件来的那几部分接起来，不含 pi 接在后面的工作目录等）的摘要值、字节数与行数。 */

@@ -5,6 +5,9 @@
  * 任务类型说明里现在这个阶段的那一段，最后是 pi 自己接在系统提示后面的那一截（工作目录、上下文文件）。
  * 按阶段的两段放在最后：换阶段时前面几部分一字不变，模型服务对请求开头相同的那一截不用重算。
  *
+ * 任务空闲时（没有在进行的活动，lib/stage.ts 的 IDLE）按阶段的两段用澄清的那两份文件，去掉其中的「## 出口」一节
+ * （那一节讲怎样提议进入下一段，空闲时不适用）；不另设文件，按标题切（withoutSection）。
+ *
  * 平台一级的文件在 agent/prompts/stages/（system.md、common.md 与六个阶段各一份，文件名是 lib/stage.ts 里阶段的键）。
  * 任务类型一级的文件在任务目录里那份任务 skill 的目录下：SKILL.md 的正文是共用部分，旁边的 stages/<阶段的键>.md 是那个阶段的一段，
  * 没有这个文件就是这一段没有内容。早先建任务时复制进任务目录的是整份的 SKILL.md、没有 stages 目录，照同样的规则读出来就是
@@ -30,7 +33,7 @@ import { DatabaseSync } from "node:sqlite";
 import { databasePath } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
-import { STAGES, type Stage } from "./stage.ts";
+import { IDLE, type Position, STAGES, gateStage } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
@@ -46,9 +49,27 @@ export const COMMON_FILE = "common.md";
 /** 任务 skill 的目录里放按阶段的几段的子目录。 */
 export const TASK_STAGES_SUBDIR = "stages";
 
-/** 某个阶段的那一段的文件名。 */
-export function stageFile(stage: Stage): string {
-  return `${stage}.md`;
+/** 某个阶段的那一段的文件名。任务空闲时用澄清的那一份。 */
+export function stageFile(stage: Position): string {
+  return `${gateStage(stage)}.md`;
+}
+
+/** 阶段文件里讲怎样离开这一段（提议进入下一段、谁能移动）的那一节的标题。任务空闲时拼的文字里不带这一节。 */
+export const EXIT_HEADING = "出口";
+
+/**
+ * 去掉一份 Markdown 文字里标题是 heading 的二级小节：从「## heading」那一行起，到下一个一级或二级标题之前（没有下一个就到末尾）。
+ * 更深的标题（###）算在这一节里，一起去掉。没有这一节时原样返回。
+ */
+export function withoutSection(text: string, heading: string): string {
+  const kept: string[] = [];
+  let skipping = false;
+  for (const line of text.split("\n")) {
+    const title = /^(#{1,6})\s+(.*?)\s*$/.exec(line);
+    if (title && title[1].length <= 2) skipping = title[1].length === 2 && title[2] === heading;
+    if (!skipping) kept.push(line);
+  }
+  return kept.join("\n");
 }
 
 /** 拼进系统提示的一部分是什么。 */
@@ -79,7 +100,8 @@ export interface PromptPart {
 }
 
 export interface StagePrompt {
-  stage: Stage;
+  /** 这一份是为哪个阶段拼的；任务空闲时是 idle。 */
+  stage: Position;
   /** 整份文字：各部分去掉末尾的空白之后用一个空行隔开。 */
   text: string;
   parts: PromptPart[];
@@ -171,7 +193,8 @@ export function taskSkills(skills: readonly LoadedSkill[]): LoadedSkill[] {
 }
 
 export interface ComposeInput {
-  stage: Stage;
+  /** 任务现在在哪个阶段；空闲时是 idle。 */
+  stage: Position;
   /** 任务目录：任务目录里的文件路径相对它来写。 */
   workspaceDir: string;
   /** pi 加载的全部 skill。 */
@@ -187,8 +210,8 @@ export interface ComposeInput {
 /** 提示词目录里放任务类型一级的文件的子目录。 */
 export const PROMPT_DIR_TASK_SUBDIR = "task-type";
 
-/** 某一部分在提示词目录里对应的文件名（相对那个目录）。pi 接的那一截没有对应的文件。 */
-export function promptDirName(part: Exclude<PartKind, "tail">, stage: Stage): string {
+/** 某一部分在提示词目录里对应的文件名（相对那个目录）。pi 接的那一截没有对应的文件。任务空闲时按阶段的两份是澄清的。 */
+export function promptDirName(part: Exclude<PartKind, "tail">, stage: Position): string {
   if (part === "system") return SYSTEM_FILE;
   if (part === "platform_common") return COMMON_FILE;
   if (part === "platform_stage") return stageFile(stage);
@@ -273,8 +296,11 @@ function slots(input: ComposeInput, io: PromptIo): Slot[] {
 function fromSlots(input: ComposeInput, all: readonly Slot[], io: PromptIo): StagePrompt {
   const parts: PromptPart[] = [];
   const notes: string[] = [];
+  // 任务空闲时，按阶段的两段（平台一级的与任务类型一级的，连同提示词目录里代替它们的）去掉「出口」一节。
+  const staged = (part: PartKind) => part === "platform_stage" || part === "task_stage";
   const add = (source: Pick<Source, "part" | "from"> & { file: string | null }, text: string) => {
-    const body = (source.part === "task_common" ? skillBody(text) : text).replace(/\s+$/, "");
+    const own = source.part === "task_common" ? skillBody(text) : input.stage === IDLE && staged(source.part) ? withoutSection(text, EXIT_HEADING) : text;
+    const body = own.replace(/\s+$/, "");
     if (body) parts.push({ part: source.part, from: source.from, file: source.file, text: body });
   };
   for (const slot of all) {
@@ -359,10 +385,10 @@ export function partFact(one: PromptPart): PartFact {
 }
 
 /**
- * 任务现在在哪个阶段，只读。任务库不在、库里还没有任务、或者是早先建的任务（没有「总体分析」集合）时返回 null：
+ * 任务现在在哪个阶段（或者空闲），只读。任务库不在、库里还没有任务、或者是早先建的任务（没有「总体分析」集合）时返回 null：
  * 这些情形都不换系统提示。
  */
-export function stageInWorkspace(workspaceDir: string): Stage | null {
+export function stageInWorkspace(workspaceDir: string): Position | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
