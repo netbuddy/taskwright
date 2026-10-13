@@ -231,3 +231,12 @@ export async function sendAndWaitTurn(port: number, taskId: string, sessionId: s
     req.destroy();
   }
 }
+
+/**
+ * 查任务库里记下的每一次阶段移动（活动记录表的每一行，按先后）的语句，列由调用方点：stage 是移到的阶段（那项活动），
+ * from_stage 取自记下开始的那条事件的内容，别的是表里的同名列。列名沿用早先阶段记录表的叫法。
+ */
+export function movesSql(columns: readonly string[]): string {
+  const column = (name: string) => (name === "stage" ? "r.activity AS stage" : name === "from_stage" ? "json_extract(e.payload, '$.from') AS from_stage" : `r.${name}`);
+  return `SELECT ${columns.map(column).join(", ")} FROM activity_record r LEFT JOIN event e ON e.seq = r.started_seq ORDER BY r.started_seq`;
+}

@@ -86,5 +86,5 @@ test("用户在页面上改图不看阶段：澄清阶段照样能改", async ()
 test("早先建的任务没有阶段：有材料也不拦，助手照旧直接画图", async () => {
   const dir = workspace(demoDefinition());
   assert.equal(await refusal(dir, fresh()), null);
-  assert.equal(count(dir, "stage_record"), 0);
+  assert.equal(count(dir, "activity_record"), 0);
 });

@@ -1,8 +1,10 @@
 /**
  * 工作的阶段里读写任务库的那一半（不读库的在 lib/stage.ts）：任务现在在哪个阶段、记一次移动。
  *
- * 任务现在在哪个阶段看阶段记录表里事件序号最大的一行；一行都没有时按任务有没有材料定，这个缺省不落库，每次现算：
+ * 承载是活动记录表：任务里开展过的每一项活动一行，现在的六个阶段就是六项活动，都在首次分析这条流程里。
+ * 任务现在在哪个阶段看还没有结束的那条活动记录；一行都没有时按任务有没有材料定，这个缺省不落库，每次现算：
  * 任务建好还没有上传材料时是澄清，随后上传了材料而还没有任何移动，就是核读材料；有了第一条记录之后只看记录。
+ * 移动阶段就是结束现在这项活动、开始另一项：前一条记录填上结束的时刻，再插一条新的。
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段：stageOf 返回 null，调用方据此什么都不做。
  *
  * 记移动的函数只管写，这次移动行不行由调用方先用 lib/stage.ts 的 judgeMove 判过。
@@ -30,45 +32,66 @@ import { listMaterials } from "./task_status.ts";
 /** 记下一次移动的事件名。 */
 export const EVENT_STAGE_MOVED = "STAGE_MOVED";
 
-const TABLE = "stage_record";
+const TABLE = "activity_record";
 
-/** 阶段记录表里的一行。 */
-export interface StageRecord {
-  stage: Stage;
-  from_stage: Stage;
+/** 活动记录表里的一行。 */
+export interface ActivityRecord {
+  record_id: number;
+  /** 哪一项活动：现在就是六个阶段之一。 */
+  activity: Stage;
+  /** 所属节点：在流程里开展时与活动同一个写法；单独开展时为 null（现在没有这种记录）。 */
+  node: string | null;
+  /** 所属流程（lib/stage.ts 的 FLOW_INITIAL 等）；单独开展时为 null（现在没有这种记录）。 */
+  flow: string | null;
+  /**
+   * 开始这项活动之前任务在哪个阶段：取自记下开始的那条事件的内容；事件里没有写、或者那条事件已经不在时，取前一条记录的活动；
+   * 两样都没有是 null。
+   */
+  from: Stage | null;
   actor: StageActor;
   reason: string;
   run_id: string | null;
   session_id: string;
   call_id: string;
-  event_seq: number;
-  created_at: string;
-  /** 所属流程（lib/stage.ts 的 FLOW_INITIAL 等）：取自记下这次移动的那条事件的内容，那里没有写时是首次分析。 */
-  flow: string;
+  started_at: string;
+  /** 结束的时刻；还在进行为 null。 */
+  ended_at: string | null;
+  started_seq: number;
+  ended_seq: number | null;
 }
 
-/** 读阶段记录的列：表里的各列，加上从那条事件的内容里取的所属流程（事件里没有写、或者那条事件已经不在时补首次分析）。 */
-const RECORD_COLUMNS = "r.stage, r.from_stage, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.event_seq, r.created_at, " +
-  `COALESCE(json_extract(e.payload, '$.flow'), '${FLOW_INITIAL}') AS flow`;
-const RECORD_FROM = `${TABLE} r LEFT JOIN event e ON e.seq = r.event_seq`;
+/** 读活动记录的列：表里的各列，加上从记下开始的那条事件的内容里取的「从哪个阶段来」（取不到时是前一条记录的活动）。 */
+const RECORD_COLUMNS = "r.record_id, r.activity, r.node, r.flow, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.started_at, r.ended_at, r.started_seq, r.ended_seq, " +
+  "COALESCE(CASE WHEN json_valid(e.payload) THEN json_extract(e.payload, '$.from') END, " +
+  `(SELECT p.activity FROM ${TABLE} p WHERE p.task_id = r.task_id AND p.started_seq < r.started_seq ORDER BY p.started_seq DESC LIMIT 1)) AS "from"`;
+const RECORD_FROM = `${TABLE} r LEFT JOIN event e ON e.seq = r.started_seq`;
 
-/** 库里有没有阶段记录表：只读的一侧会遇到还没有升级过的库。 */
-export function hasStageTable(db: DatabaseSync): boolean {
+type RecordRow = Omit<ActivityRecord, "from"> & { from: unknown };
+const recordOf = (row: RecordRow): ActivityRecord => ({
+  ...row, record_id: Number(row.record_id), started_seq: Number(row.started_seq), ended_seq: row.ended_seq === null ? null : Number(row.ended_seq),
+  from: isStage(row.from) ? row.from : null,
+});
+
+/** 库里有没有活动记录表：只读的一侧会遇到还没有升级过的库。 */
+export function hasActivityTable(db: DatabaseSync): boolean {
   return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(TABLE) !== undefined;
 }
 
-/** 最近一次移动；一次都没有移过（或者库还没有这张表）时是 null。 */
-export function lastStageRecord(db: DatabaseSync, taskId: string): StageRecord | null {
-  if (!hasStageTable(db)) return null;
-  const row = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.event_seq DESC LIMIT 1`).get(taskId) as StageRecord | undefined;
-  return row && isStage(row.stage) ? { ...row, event_seq: Number(row.event_seq) } : null;
+/** 全部活动记录，按开始的先后排。 */
+export function activityRecords(db: DatabaseSync, taskId: string): ActivityRecord[] {
+  if (!hasActivityTable(db)) return [];
+  const rows = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.started_seq`).all(taskId) as unknown as RecordRow[];
+  return rows.map(recordOf);
 }
 
-/** 全部移动，按先后排。 */
-export function stageRecords(db: DatabaseSync, taskId: string): StageRecord[] {
-  if (!hasStageTable(db)) return [];
-  const rows = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.event_seq`).all(taskId) as unknown as StageRecord[];
-  return rows.map((row) => ({ ...row, event_seq: Number(row.event_seq) }));
+/**
+ * 任务现在在进行的那项活动的记录：还没有结束的记录里开始得最晚的一条。一条都没有（或者库还没有这张表）时是 null。
+ * 活动的写法不是六个阶段之一的记录不认。
+ */
+export function openActivityRecord(db: DatabaseSync, taskId: string): ActivityRecord | null {
+  if (!hasActivityTable(db)) return null;
+  const row = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? AND r.ended_at IS NULL ORDER BY r.started_seq DESC LIMIT 1`).get(taskId) as RecordRow | undefined;
+  return row && isStage(row.activity) ? recordOf(row) : null;
 }
 
 /** 任务目录里有没有材料：材料目录第一层至少有一个文件（与任务现状消息列材料用的是同一个清单）。 */
@@ -76,9 +99,9 @@ export function taskHasMaterials(workspaceDir: string, materialsDir: string): bo
   return listMaterials(workspaceDir, materialsDir).files.length > 0;
 }
 
-/** 任务现在在哪个阶段：有记录看最近一条，没有记录按有没有材料定。不管任务有没有阶段，调用方先用 hasOverall 判。 */
+/** 任务现在在哪个阶段：有还没有结束的活动记录就看它，没有按有没有材料定。不管任务有没有阶段，调用方先用 hasOverall 判。 */
 export function currentStage(db: DatabaseSync, taskId: string, hasMaterials: boolean): Stage {
-  return lastStageRecord(db, taskId)?.stage ?? defaultStage(hasMaterials);
+  return openActivityRecord(db, taskId)?.activity ?? defaultStage(hasMaterials);
 }
 
 /** 任务现在在哪个阶段；早先建的任务（没有「总体分析」集合）没有阶段，返回 null。 */
@@ -101,19 +124,22 @@ export interface StageMove {
 }
 
 /**
- * 记一次移动：先记一条事件 STAGE_MOVED，再往阶段记录表插一行，返回事件序号。事件的内容里另写这次移动的所属流程（现在恒为首次分析）。
- * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让事件、这一行与同一次调用里别的写入一起提交。
+ * 记一次移动：先记一条事件 STAGE_MOVED，把还在进行的那条活动记录结束（填上这一刻与这条事件的序号），再插一条新的活动记录，
+ * 返回事件序号。新记录的节点与活动同一个写法，所属流程现在恒为首次分析；事件的内容里也写所属流程。
+ * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让事件、两处记录与同一次调用里别的写入一起提交。
  */
 export function recordStageMove(db: DatabaseSync, move: StageMove): number {
-  // 库不检查阶段的取值（lib/schema.ts），所以写之前在这里判：不是阶段表里的写法就不记。
+  // 库不检查活动的取值（lib/schema.ts），所以写之前在这里判：不是阶段表里的写法就不记。
   if (!isStage(move.to) || !isStage(move.from)) throw new Error(`阶段记录里的阶段写法不对：从「${String(move.from)}」到「${String(move.to)}」。`);
   const seq = emit(db, {
     taskId: move.taskId, sessionId: move.sessionId, callId: move.callId, name: EVENT_STAGE_MOVED, actor: move.actor,
     payload: { stage: move.to, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId, flow: FLOW_INITIAL },
   });
+  const at = wallClockText();
+  db.prepare(`UPDATE ${TABLE} SET ended_at = ?, ended_seq = ? WHERE task_id = ? AND ended_at IS NULL`).run(at, seq, move.taskId);
   db.prepare(
-    `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(move.taskId, move.sessionId, move.runId, move.callId, move.actor, move.to, move.from, move.reason, seq, wallClockText());
+    `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(move.taskId, move.sessionId, move.runId, move.callId, move.actor, move.to, move.to, FLOW_INITIAL, move.reason, at, seq);
   return seq;
 }
 
@@ -342,12 +368,12 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
  */
 export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): StageSummary | null {
   if (!hasOverall(definition.collections)) return null;
-  const last = lastStageRecord(db, taskId);
+  const open = openActivityRecord(db, taskId);
   return {
-    current: last?.stage ?? defaultStage(taskHasMaterials(workspaceDir, definition.materialsDir)),
-    moved_by: last?.actor ?? null,
-    moved_at: last?.created_at ?? null,
-    reason: last ? last.reason : null,
+    current: open?.activity ?? defaultStage(taskHasMaterials(workspaceDir, definition.materialsDir)),
+    moved_by: open?.actor ?? null,
+    moved_at: open?.started_at ?? null,
+    reason: open ? open.reason : null,
     lamps: stageLamps(lampInput(db, workspaceDir, taskId, definition)),
   };
 }

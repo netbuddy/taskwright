@@ -201,6 +201,16 @@ export function count(workspaceDir: string, table: string): number {
   return Number(query<{ n: number }>(workspaceDir, `SELECT COUNT(*) AS n FROM ${table}`)[0].n);
 }
 
+/**
+ * 任务里记下的每一次阶段移动，按先后：活动记录表的每一行，stage 是移到的阶段（那项活动），from_stage 取自记下开始的那条事件的内容，
+ * event_seq 是那条事件的序号。列名沿用早先阶段记录表的叫法。
+ */
+export function moveRows(workspaceDir: string): { stage: string; from_stage: string | null; actor: string; reason: string; run_id: string | null; call_id: string; session_id: string; event_seq: number }[] {
+  return query<any>(workspaceDir,
+    "SELECT r.activity AS stage, json_extract(e.payload, '$.from') AS from_stage, r.actor, r.reason, r.run_id, r.call_id, r.session_id, r.started_seq AS event_seq " +
+      "FROM activity_record r LEFT JOIN event e ON e.seq = r.started_seq ORDER BY r.started_seq").map((row) => ({ ...row }));
+}
+
 /** 一条合格的来源。 */
 export const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。" };
 

@@ -20,7 +20,7 @@ import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQuestions, goalTree, rulesTable } from "../../agent/src/lib/overall_views.ts";
 import { FLOW_INITIAL, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
-import { lastStageRecord, stageRecords, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
+import { activityRecords, openActivityRecord, stageSummaryOf } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -330,7 +330,7 @@ export function stageView(taskDir: string) {
       if (summary === null) return null;
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       const open = task ? openProposal(db, task.task_id) : null;
-      return { ...summary, moved_at: clock.fromLocalText(summary.moved_at), flow: (task ? lastStageRecord(db, task.task_id)?.flow : null) ?? FLOW_INITIAL,
+      return { ...summary, moved_at: clock.fromLocalText(summary.moved_at), flow: (task ? openActivityRecord(db, task.task_id)?.flow : null) ?? FLOW_INITIAL,
         proposal: open === null ? null : proposalView(open, { session_id: open.session_id, reply_entry: open.reply_entry, seq: open.event_seq, at: open.at }) };
     } finally {
       db.close();
@@ -353,9 +353,9 @@ export function stageDebugView(taskDir: string, limit = 200) {
     try {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       if (!task) return empty;
-      const records = stageRecords(db, task.task_id).map((one) => ({
-        from: one.from_stage, to: one.stage, actor: one.actor, reason: one.reason, run_id: one.run_id, session_id: one.session_id, at: clock.fromLocalText(one.created_at),
-        flow: one.flow,
+      const records = activityRecords(db, task.task_id).map((one) => ({
+        from: one.from, to: one.activity, actor: one.actor, reason: one.reason, run_id: one.run_id, session_id: one.session_id, at: clock.fromLocalText(one.started_at),
+        flow: one.flow ?? FLOW_INITIAL,
       }));
       const rejections = tableNames(db).has("tool_rejection") ? (db.prepare(
         "SELECT work_id, session_id, call_id, tool_name, reason_kind, fact, guidance, created_at FROM tool_rejection ORDER BY rejection_id DESC LIMIT ?",

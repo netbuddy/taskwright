@@ -81,13 +81,13 @@ test("库事件：移动阶段转成 stage_changed；有阶段的任务每一批
   assert.deepEqual([tail.length, tail[0][0], tail[0][1].stage.current], [1, "stage_changed", "reviewing"]);
 });
 
-test("刚建好还没有人移过的任务：有材料在核读材料，三项为 null；库里还没有阶段记录表时也一样", () => {
+test("刚建好还没有人移过的任务：有材料在核读材料，三项为 null；库里还没有活动记录表时也一样", () => {
   const ws = build(tmp, "fresh", DEFINITION, [[FLOW]]);
   // 夹具先移到了写条目；把那条记录去掉，回到没有移过的样子。
-  sqlRun(ws, [["DELETE FROM stage_record"]]);
+  sqlRun(ws, [["DELETE FROM activity_record"]]);
   const fresh = library.taskSnapshot(ws)[1]!.stage!;
   assert.deepEqual([fresh.current, fresh.moved_by, fresh.moved_at, fresh.reason], ["reading", null, null, null]);
-  sqlRun(ws, [["DROP TABLE stage_record"]]);
+  sqlRun(ws, [["DROP TABLE activity_record"]]);
   assert.deepEqual(library.taskSnapshot(ws)[1]!.stage, fresh);
 });
 

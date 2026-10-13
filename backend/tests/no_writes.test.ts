@@ -80,7 +80,7 @@ const ALLOWED: Record<string, string[]> = {
   // upgradeTaskDatabase 是写入：把一个任务库升到现在的格式。它只许在数据升级里调（src/data_upgrade.ts，服务启动时的升级与命令行的
   // 升级都经那里），走的是助手写库时用的同一张步骤表；下面另有一条测试守着别的文件不导入它。
   // 工作的阶段：从任务库读出任务现在的阶段与每个阶段的几盏灯（只读函数，不写库）。
-  "stage_read.ts": ["stageSummaryOf", "stageRecords", "lastStageRecord"],
+  "stage_read.ts": ["stageSummaryOf", "activityRecords", "openActivityRecord"],
   // 开着的提议：从事件表读出任务现在待决定的那一条（只读函数，不写库），与它的类型。
   "stage_proposal.ts": ["OpenProposal", "openProposal"],
   "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase"],

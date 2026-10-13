@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { request } from "node:http";
 import { after, test } from "node:test";
-import { captureConsole, tempDir } from "./helpers.ts";
+import { captureConsole, movesSql, tempDir } from "./helpers.ts";
 import { type Dict, MATERIAL, NO_PI, TOPIC_CALL, reply, sleep, withStack } from "./consent_stack.ts";
 
 captureConsole();
@@ -146,7 +146,7 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       await send({ text: "我选：进入评审确认", client_id: "c-review", origin: "card_choice", card: { reply_message_id: entryOfCall("call-wrote"), kind: "choose", choice: "enter_review" } });
       const reviewing = await stageNow();
       assert.deepEqual([reviewing.current, reviewing.moved_by, reviewing.reason], ["reviewing", "user", "用户在卡片上选了「进入评审确认」"]);
-      assert.deepEqual(db("SELECT from_stage, stage, actor, reason, run_id FROM stage_record ORDER BY event_seq"), [
+      assert.deepEqual(db(movesSql(["from_stage", "stage", "actor", "reason", "run_id"])), [
         { from_stage: "reading", stage: "clarifying", actor: "user", reason: "用户在卡片上选了「进入澄清」", run_id: null },
         { from_stage: "clarifying", stage: "modeling", actor: "user", reason: "用户在卡片上选了「进入整理建模」", run_id: null },
         { from_stage: "modeling", stage: "writing", actor: "user", reason: "用户在卡片上选了「开始写条目」", run_id: null },

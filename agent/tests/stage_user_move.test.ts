@@ -10,7 +10,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { STAGES, STAGE_NAMES } from "../src/lib/stage.ts";
 import { UserOpError, runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, callIn, count, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, callIn, count, demoDefinition, makeWorkspace, moveRows, overallDefinition, query } from "./helpers.ts";
 
 function workspace(definition: unknown = overallDefinition(), material = true): string {
   const dir = makeWorkspace(definition, { material });
@@ -37,7 +37,7 @@ test("用户想移到哪个阶段都可以：从核读材料直接到写条目�
   assert.equal(first.note, "界面操作（不是用户打的字）：用户把任务从核读材料移到写条目。");
   assert.equal(move(dir, { stage: "评审确认", reason: " 条目我都看过了。 " }).note, "界面操作（不是用户打的字）：用户把任务从写条目移到评审确认。理由：条目我都看过了。");
   assert.equal(move(dir, { stage: "clarifying" }).note, "界面操作（不是用户打的字）：用户把任务从评审确认移到澄清。");
-  assert.deepEqual(query(dir, "SELECT stage, from_stage, actor, reason, run_id, call_id, session_id FROM stage_record ORDER BY event_seq").map((r) => ({ ...r })), [
+  assert.deepEqual(moveRows(dir).map(({ event_seq: _seq, ...r }) => r), [
     { stage: "writing", from_stage: "reading", actor: "user", reason: "", run_id: null, call_id: `ui-op-${n - 2}`, session_id: "sess-ui" },
     { stage: "reviewing", from_stage: "writing", actor: "user", reason: "条目我都看过了。", run_id: null, call_id: `ui-op-${n - 1}`, session_id: "sess-ui" },
     { stage: "clarifying", from_stage: "reviewing", actor: "user", reason: "", run_id: null, call_id: `ui-op-${n}`, session_id: "sess-ui" },
@@ -50,7 +50,7 @@ test("任务本来就在那个阶段：不记、不追加说明，也不算出�
   const dir = workspace(overallDefinition(), false);
   const same = move(dir, { stage: "澄清" });
   assert.deepEqual([same.note, same.event_seqs], ["", []]);
-  assert.equal(count(dir, "stage_record"), 0);
+  assert.equal(count(dir, "activity_record"), 0);
   // 六个阶段各移一遍，每一步都从上一步所在的阶段出发。
   const order = ["reading", "modeling", "writing", "reviewing", "document", "clarifying"] as const;
   let from = "澄清";
@@ -58,7 +58,7 @@ test("任务本来就在那个阶段：不记、不追加说明，也不算出�
     assert.equal(move(dir, { stage: STAGE_NAMES[to] }).note, `界面操作（不是用户打的字）：用户把任务从${from}移到${STAGE_NAMES[to]}。`);
     from = STAGE_NAMES[to];
   }
-  assert.equal(count(dir, "stage_record"), STAGES.length);
+  assert.equal(count(dir, "activity_record"), STAGES.length);
 });
 
 test("拒绝：没有写阶段或名字不对；任务编号对不上；任务已经完成；早先建的任务没有阶段", () => {
@@ -69,12 +69,12 @@ test("拒绝：没有写阶段或名字不对；任务编号对不上；任务�
     assert.equal(error.message, "move_stage 要在 fields 里写 stage：「核读材料」「澄清」「整理建模」「写条目」「评审确认」「编写文档」之一；可以另写一句 reason。");
   }
   assert.equal(refused(() => move(dir, { stage: "澄清" }, { task_id: "TASK-别的" })).code, "bad_request");
-  assert.equal(count(dir, "stage_record"), 0);
+  assert.equal(count(dir, "activity_record"), 0);
 
   const old = workspace(demoDefinition());
   const none = refused(() => move(old, { stage: "澄清" }));
   assert.deepEqual([none.code, none.message, none.data], ["rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] }]);
-  assert.equal(count(old, "stage_record"), 0);
+  assert.equal(count(old, "activity_record"), 0);
 
   // 已完成的任务：演示任务定义的完成条件在一个条目都没有时不满足，所以直接把状态改掉来试。
   const done = workspace();

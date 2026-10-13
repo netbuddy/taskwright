@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
-import { captureConsole, sendAndWaitTurn, tempDir } from "./helpers.ts";
+import { captureConsole, movesSql, sendAndWaitTurn, tempDir } from "./helpers.ts";
 import { type Dict, NO_PI, TOPIC_CALL, reply, sleep, withStack } from "./consent_stack.ts";
 
 captureConsole();
@@ -55,7 +55,7 @@ test("发卡片、选继续本阶段、再说两轮、在另一条会话里点�
     assert.equal(stayed.status, 200, JSON.stringify(stayed.body));
     await sleep(1500);
     assert.equal(requests().length, asked, "助手没有被叫起来");
-    assert.deepEqual(db("SELECT COUNT(*) AS n FROM stage_record"), [{ n: 0 }]);
+    assert.deepEqual(db("SELECT COUNT(*) AS n FROM activity_record"), [{ n: 0 }]);
     assert.equal((await stageNow()).proposal.event_seq, opened.event_seq);
     const afterStay = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[];
     const note = afterStay[afterStay.length - 1];
@@ -84,7 +84,7 @@ test("发卡片、选继续本阶段、再说两轮、在另一条会话里点�
         { text: "我选：进入澄清", client_id: "c-4", origin: "card_choice", card: { reply_message_id: cardEntry, kind: "choose", choice: "enter_clarify" } });
       assert.equal(sent.status, 200, JSON.stringify(sent.body));
     });
-    assert.deepEqual(db("SELECT actor, from_stage, stage, reason, session_id FROM stage_record ORDER BY record_id"),
+    assert.deepEqual(db(movesSql(["actor", "from_stage", "stage", "reason", "session_id"])),
       [{ actor: "user", from_stage: "reading", stage: "clarifying", reason: "用户在卡片上选了「进入澄清」", session_id: second }]);
     const moved = await stageNow();
     assert.deepEqual([moved.current, moved.moved_by, moved.proposal, moved.flow], ["clarifying", "user", null, "initial"]);

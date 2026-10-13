@@ -277,51 +277,58 @@ CREATE TABLE stage_record (
   created_at   TEXT NOT NULL
 );`;
 const INSERT_STAGE_RECORD =
-  "INSERT INTO stage_record (task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at) VALUES ('T', 's', NULL, ?, 'user', ?, ?, '用户点的', 1, '2026-10-11T10:00:00')";
-const stageRecordSql = (dir: string) => query<{ sql: string }>(dir, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'stage_record'")[0].sql;
+  "INSERT INTO stage_record (task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at) VALUES ('T', 's', NULL, ?, 'user', ?, ?, '用户点的', ?, ?)";
+const INSERT_ACTIVITY_RECORD =
+  "INSERT INTO activity_record (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) VALUES ('T', 's', NULL, ?, ?, ?, ?, 'initial', '用户点的', '2026-10-11T10:00:00', 1)";
+const tableSql = (dir: string, name: string) => query<{ sql: string }>(dir, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", name)[0]?.sql ?? null;
 
-test("格式版本：新建的库里阶段记录表不检查阶段的取值，五个阶段之外的写法库也收；谁移的那一列照旧检查", () => {
+test("格式版本：新建的库里活动记录表不检查活动的取值，六个阶段之外的写法库也收；谁开始的那一列照旧检查；早先的阶段记录表不在", () => {
   const dir = makeWorkspace();
-  withTaskDatabase(dir, { createIfMissing: true }, (db) => db.prepare(INSERT_STAGE_RECORD).run("op-1", "document", "reviewing"));
-  assert.doesNotMatch(stageRecordSql(dir), /CHECK\s*\(\s*(from_)?stage/i);
-  assert.match(stageRecordSql(dir), /CHECK \(actor IN/);
+  withTaskDatabase(dir, { createIfMissing: true }, (db) => db.prepare(INSERT_ACTIVITY_RECORD).run("op-1", "user", "publishing", "publishing"));
+  assert.doesNotMatch(tableSql(dir, "activity_record")!, /CHECK\s*\(\s*(activity|node|flow)/i);
+  assert.match(tableSql(dir, "activity_record")!, /CHECK \(actor IN/);
+  const raw = new DatabaseSync(databasePath(dir));
+  assert.throws(() => raw.prepare(INSERT_ACTIVITY_RECORD).run("op-2", "reviewer", "writing", "writing"), /CHECK constraint failed/);
+  raw.close();
+  assert.equal(tableSql(dir, "stage_record"), null);
 });
 
-test("格式版本 3 的库里阶段记录表检查阶段的取值：升到版本 4 时去掉这两条检查，原有的行一行不少、编号与内容不变；再升一次什么都不改", () => {
+test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现在的版本时这几行改写成活动记录，编号照抄，阶段记录表不留；再升一次什么都不改", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, (db) => {
-    db.exec(`DROP TABLE stage_record; ${OLD_STAGE_RECORD_SQL}`);
-    db.prepare(INSERT_STAGE_RECORD).run("op-1", "clarifying", "reading");
-    db.prepare(INSERT_STAGE_RECORD).run("op-2", "modeling", "clarifying");
+    db.exec(`DROP TABLE activity_record; ${OLD_STAGE_RECORD_SQL}`);
+    db.prepare(INSERT_STAGE_RECORD).run("op-1", "clarifying", "reading", 11, "2026-10-11T10:00:00");
+    db.prepare(INSERT_STAGE_RECORD).run("op-2", "modeling", "clarifying", 12, "2026-10-11T11:00:00");
     db.exec("DELETE FROM stage_record WHERE call_id = 'op-1'");   // 编号不从 1 连着排的时候也要照抄
-    db.prepare(INSERT_STAGE_RECORD).run("op-3", "writing", "modeling");
+    db.prepare(INSERT_STAGE_RECORD).run("op-3", "writing", "modeling", 13, "2026-10-11T12:00:00");
     db.exec("PRAGMA user_version = 3");
   });
-  const before = query(dir, "SELECT * FROM stage_record ORDER BY record_id");
-  assert.deepEqual(before.map((row) => (row as { record_id: number }).record_id), [2, 3]);
+  assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM stage_record ORDER BY record_id").map((row) => row.record_id), [2, 3]);
   // 还没有升级时，库自己拒绝五个阶段之外的写法。
   const raw = new DatabaseSync(databasePath(dir));
-  assert.throws(() => raw.prepare(INSERT_STAGE_RECORD).run("op-4", "document", "reviewing"), /CHECK constraint failed/);
+  assert.throws(() => raw.prepare(INSERT_STAGE_RECORD).run("op-4", "document", "reviewing", 14, "2026-10-11T13:00:00"), /CHECK constraint failed/);
   raw.close();
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 3, to: TASK_DB_VERSION });
-  assert.equal(TASK_DB_VERSION, 4);
-  assert.equal(version(dir), 4);
-  assert.deepEqual(query(dir, "SELECT * FROM stage_record ORDER BY record_id"), before);
-  assert.doesNotMatch(stageRecordSql(dir), /CHECK\s*\(\s*(from_)?stage/i);
-  assert.match(stageRecordSql(dir), /CHECK \(actor IN/, "别的检查还在");
-  assert.deepEqual(tables(dir), [...TABLE_NAMES].sort(), "没有留下重建时用的那张表");
-  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(INSERT_STAGE_RECORD).run("op-4", "document", "reviewing"));
-  assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM stage_record ORDER BY record_id").map((row) => row.record_id), [2, 3, 4]);
-  const sql = stageRecordSql(dir);
+  assert.equal(TASK_DB_VERSION, 5);
+  assert.equal(version(dir), 5);
+  assert.deepEqual(query(dir, "SELECT record_id, call_id, activity, node, flow, started_at, ended_at, started_seq, ended_seq FROM activity_record ORDER BY record_id").map((row) => ({ ...row })), [
+    { record_id: 2, call_id: "op-2", activity: "modeling", node: "modeling", flow: "initial", started_at: "2026-10-11T11:00:00", ended_at: "2026-10-11T12:00:00", started_seq: 12, ended_seq: 13 },
+    { record_id: 3, call_id: "op-3", activity: "writing", node: "writing", flow: "initial", started_at: "2026-10-11T12:00:00", ended_at: null, started_seq: 13, ended_seq: null },
+  ]);
+  assert.deepEqual(tables(dir), [...TABLE_NAMES].sort(), "阶段记录表与重建时用的那张表都没有留下");
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(INSERT_ACTIVITY_RECORD).run("op-4", "user", "document", "document"));
+  assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM activity_record ORDER BY record_id").map((row) => row.record_id), [2, 3, 4]);
+  const sql = tableSql(dir, "activity_record");
   assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
-  assert.equal(stageRecordSql(dir), sql);
+  assert.equal(tableSql(dir, "activity_record"), sql);
 });
 
-test("没有编过版本号、阶段记录表带着阶段检查的库：一次升到现在的版本，检查一并去掉", () => {
+test("没有编过版本号、阶段记录表带着阶段检查的库：一次升到现在的版本，阶段记录表不留，活动记录表不带阶段的检查", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, (db) => {
-    db.exec(`DROP TABLE stage_record; ${OLD_STAGE_RECORD_SQL}; PRAGMA user_version = 0`);
+    db.exec(`DROP TABLE activity_record; ${OLD_STAGE_RECORD_SQL}; PRAGMA user_version = 0`);
   });
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION });
-  assert.doesNotMatch(stageRecordSql(dir), /CHECK\s*\(\s*(from_)?stage/i);
+  assert.equal(tableSql(dir, "stage_record"), null);
+  assert.doesNotMatch(tableSql(dir, "activity_record")!, /CHECK\s*\(\s*(activity|node|flow)/i);
 });

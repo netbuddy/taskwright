@@ -147,7 +147,9 @@ class StageCardsTest(unittest.TestCase):
             self.assertEqual(record["轮"][8]["用户 agent"]["respond"]["sent"]["text"], DONE_WORDS)
             # 库里五次移动都是用户在卡片上点的，一段接一段；任务已完成，助手没有一次调用被拦。
             with sqlite3.connect(sim / "库副本" / taskdb.DB_NAME) as db:
-                moves = db.execute("SELECT actor, from_stage, stage, reason FROM stage_record ORDER BY record_id").fetchall()
+                moves = db.execute(
+                    "SELECT r.actor, json_extract(e.payload, '$.from'), r.activity, r.reason FROM activity_record r "
+                    "LEFT JOIN event e ON e.seq = r.started_seq ORDER BY r.started_seq").fetchall()
             self.assertEqual(moves, [("user", "reading", "clarifying", "用户在卡片上选了「进入澄清」"), ("user", "clarifying", "modeling", "用户在卡片上选了「进入整理建模」"),
                                      ("user", "modeling", "writing", "用户在卡片上选了「开始写条目」"), ("user", "writing", "reviewing", "用户在卡片上选了「进入评审确认」"),
                                      ("user", "reviewing", "document", "用户在卡片上选了「进入编写文档」")])

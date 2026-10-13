@@ -15,7 +15,7 @@ import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { moveStage, recordStageCardClick } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, moveRows, overallDefinition, query } from "./helpers.ts";
 
 const SESSION = "sess-a";
 const said = (id: string, text: string) => ({ id, type: "message", message: { role: "user", content: text } });
@@ -122,11 +122,11 @@ test("卡片在另一条会话里：这条会话的分支上找不到那条回�
   // 键不是开着的提议的进入键、回复编号是别的卡片：都不记。
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-1", replyEntry: card.entry, optionKey: "enter_consolidate" }), null);
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-2", replyEntry: "reply-none", optionKey: "enter_clarify" }), null);
-  assert.equal(count(dir, "stage_record"), 0);
+  assert.equal(count(dir, "activity_record"), 0);
   // 键与回复编号都对得上：记一条用户的移动，记在点的那条会话上；提议随之结束。
   const moved = recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-3", replyEntry: card.entry, optionKey: "enter_clarify" })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "reading", "clarifying"]);
-  assert.deepEqual(query(dir, "SELECT stage, from_stage, actor, session_id, call_id FROM stage_record").map((row) => ({ ...row })),
+  assert.deepEqual(moveRows(dir).map((row) => ({ stage: row.stage, from_stage: row.from_stage, actor: row.actor, session_id: row.session_id, call_id: row.call_id })),
     [{ stage: "clarifying", from_stage: "reading", actor: "user", session_id: "sess-second", call_id: "ui-op-3" }]);
   assert.equal(open(dir), null);
   // 提议已经结束：同一个请求再来一次不再记。
@@ -139,7 +139,7 @@ test("卡片在另一条会话里：这条会话的分支上找不到那条回�
   // 回复编号给的是空文字：与没有给一样。
   reply(dir, enterCard("writing", "modeling"), "sess-first");
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-6", replyEntry: "", optionKey: "start_items" })!.moved, true);
-  assert.equal(count(dir, "stage_record"), 3);
+  assert.equal(count(dir, "activity_record"), 3);
 });
 
 test("事件的名字与「回复」记的是同一个", () => {
@@ -180,7 +180,7 @@ test("回退的提议：发出就开着，用户点了退回（阶段移动）�
   // 卡片不在这条会话的分支上（换了一条会话）：照开着的提议核对，点退回照样记移动，理由里带卡片的问句。
   const moved = recordStageCardClick(dir, "sess-b", [said("u-9", "在吗")] as never, { opId: "ui-op-b", replyEntry: card.entry, optionKey: "back_to_reading" })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "modeling", "reading"]);
-  assert.equal(query<{ reason: string }>(dir, "SELECT reason FROM stage_record ORDER BY event_seq DESC LIMIT 1")[0].reason,
+  assert.equal(moveRows(dir).at(-1)!.reason,
     "用户在卡片上选了「退回核读材料」：用户放进了新材料，前面几页要重看。退回吗？");
   assert.equal(open(dir), null);
 });
