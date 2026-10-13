@@ -43,7 +43,7 @@ test("用户想移到哪个阶段都可以：从核读材料直接到写条目�
     { stage: "clarifying", from_stage: "reviewing", actor: "user", reason: "", run_id: null, call_id: `ui-op-${n}`, session_id: "sess-ui" },
   ]);
   assert.equal(count(dir, "revision"), 0, "移动阶段不产生修订");
-  assert.deepEqual(query<{ actor: string; name: string }>(dir, "SELECT DISTINCT actor, name FROM event WHERE name = 'STAGE_MOVED'").map((e) => e.actor), ["user"]);
+  assert.deepEqual(query<{ actor: string; name: string }>(dir, "SELECT DISTINCT actor, name FROM event WHERE name IN ('ACTIVITY_STARTED', 'ACTIVITY_ENDED') ORDER BY name").map((e) => [e.name, e.actor]), [["ACTIVITY_ENDED", "user"], ["ACTIVITY_STARTED", "user"]]);
 });
 
 test("任务本来就在那个阶段：不记、不追加说明，也不算出错", () => {

@@ -756,7 +756,10 @@ export interface DiagramViewed {
   diagrams: { diagram_id: string; revision_no: number }[];
 }
 
-/** 任务从一个工作阶段移到了另一个：到了哪个阶段、从哪个阶段来、谁移的、理由；助手移的带运行号，用户移的带操作编号。 */
+/**
+ * 库事件 activity_started 的内容：任务开始了一项活动，也就是从一个工作阶段移到了另一个——到了哪个阶段、从哪个阶段来、谁移的、理由；
+ * 助手移的带运行号，用户移的带操作编号。
+ */
 export interface StageChanged {
   seq: number;
   at: string;
@@ -768,6 +771,21 @@ export interface StageChanged {
   run_id: string | null;
   /** 这次移动的所属流程，现在恒为 initial（首次分析）。 */
   flow?: string;
+  /** 这项活动在流程里的节点，现在与 to 相同。 */
+  node?: string | null;
+  op_id?: string | null;
+  completion: Completion | null;
+}
+
+/** 库事件 activity_ended 的内容：一项活动结束了。移动阶段时它紧挨在 activity_started 之前；页面现在不用它。 */
+export interface ActivityEnded {
+  seq: number;
+  at: string;
+  task_id: string;
+  activity: StageKey;
+  node: string | null;
+  actor: "executor" | "user" | string;
+  reason: string;
   op_id?: string | null;
   completion: Completion | null;
 }
@@ -806,12 +824,13 @@ export type LibraryEvent =
   | { event: "item_viewed"; data: ItemViewed }
   | { event: "diagram_changed"; data: DiagramChanged }
   | { event: "diagram_viewed"; data: DiagramViewed }
-  | { event: "stage_changed"; data: StageChanged };
+  | { event: "activity_started"; data: StageChanged }
+  | { event: "activity_ended"; data: ActivityEnded };
 
 export const LIBRARY_EVENTS = [
   "stage_proposed",
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
-  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "stage_changed",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "activity_started", "activity_ended",
 ] as const;
 
 export interface WorkStarted {

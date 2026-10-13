@@ -60,9 +60,9 @@ EXECUTOR_WAIT = 900.0
 SILENT_ACTIONS = ("continue_stage",)
 #: 双方连续这么多轮没有进展就停这一遍；命令行 --stall-rounds 可以改，0 是不查。
 STALL_ROUNDS = 4
-#: 后端推来的事件里算作进展的几种：保存了修订、保存了图、阶段移动了、助手发了新的提议、任务状态变了。
+#: 后端推来的事件里算作进展的几种：保存了修订、保存了图、阶段移动了（开始了另一项活动）、助手发了新的提议、任务状态变了。
 #: 打开条目或图记下的已读（item_viewed、diagram_viewed）不算。
-PROGRESS_EVENTS = ("deliverable_changed", "diagram_changed", "stage_changed", "stage_proposed", "task_changed")
+PROGRESS_EVENTS = ("deliverable_changed", "diagram_changed", "activity_started", "stage_proposed", "task_changed")
 
 
 def expects_executor(respond: dict) -> bool:

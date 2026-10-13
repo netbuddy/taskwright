@@ -3,7 +3,7 @@
  * 核读材料时助手立页、想写用例被拦，发「进入澄清」的卡片 → 用户点了，助手发「进入整理建模」的卡片 → 用户点了，助手发「开始写条目」的卡片 →
  * 用户看过那一页、点了，助手写用例，想在回复里自己移到评审确认（被退回，回复照常送达），同一条回复带着「进入评审确认」的卡片 → 用户点了 →
  * 用户看过用例、发起评审 → 助手发是否完成的卡片、用户点了之后完成任务。
- * 核对的是整条链路：库里的阶段记录、被拦的那次调用留下的原话、接口给的整份数据里的 stage、事件连接推出的 stage_changed，
+ * 核对的是整条链路：库里的活动记录、被拦的那次调用留下的原话、接口给的整份数据里的 stage、事件连接推出的 activity_started，
  * 以及每一次运行里模型收到的系统提示只有那个阶段的一段。
  */
 
@@ -57,7 +57,7 @@ const SCRIPT = {
   ],
 };
 
-/** 订阅任务的事件连接，把收到的 stage_changed 事件收进来。 */
+/** 订阅任务的事件连接，把收到的 activity_started 事件收进来。 */
 function stageEvents(port: number, taskId: string): { events: Dict[]; close: () => void } {
   const events: Dict[] = [];
   let buffer = "";
@@ -69,7 +69,7 @@ function stageEvents(port: number, taskId: string): { events: Dict[]; close: () 
         const block = buffer.slice(0, cut);
         buffer = buffer.slice(cut + 2);
         const data = /^data: (.*)$/m.exec(block)?.[1];
-        if (/^event: stage_changed$/m.test(block) && data) events.push(JSON.parse(data));
+        if (/^event: activity_started$/m.test(block) && data) events.push(JSON.parse(data));
       }
     });
     res.on("error", () => {});
@@ -170,7 +170,7 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       for (const end = Date.now() + 10000; pushed.events.length < 4 && Date.now() < end;) await sleep(100);
       assert.deepEqual(pushed.events.map((e) => [e.from, e.to, e.actor]),
         [["reading", "clarifying", "user"], ["clarifying", "modeling", "user"], ["modeling", "writing", "user"], ["writing", "reviewing", "user"]]);
-      assert.deepEqual(pushed.events.map((e) => e.seq), db("SELECT seq FROM event WHERE name = 'STAGE_MOVED' ORDER BY seq").map((r: Dict) => r.seq));
+      assert.deepEqual(pushed.events.map((e) => e.seq), db("SELECT seq FROM event WHERE name = 'ACTIVITY_STARTED' ORDER BY seq").map((r: Dict) => r.seq));
     } finally {
       pushed.close();
     }

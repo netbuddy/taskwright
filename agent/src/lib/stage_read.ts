@@ -29,7 +29,17 @@ import {
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
-/** 记下一次移动的事件名。 */
+/**
+ * 记活动开始与结束的两个事件名。移动阶段记两条：先一条 ACTIVITY_ENDED 结束现在这项活动，再一条 ACTIVITY_STARTED 开始另一项。
+ * 开始那一条的内容：activity（哪一项活动）、node（所属节点）、flow（所属流程）、from（开始之前任务在哪个阶段）、actor、reason、run_id。
+ * 结束那一条的内容：activity、node、reason、actor。
+ */
+export const EVENT_ACTIVITY_STARTED = "ACTIVITY_STARTED";
+export const EVENT_ACTIVITY_ENDED = "ACTIVITY_ENDED";
+/**
+ * 早先记一次移动用的事件名（格式版本 4 及更早）：一次移动一条，内容是 stage（移到哪个阶段）、from、actor、reason、run_id、flow。
+ * 现在不再记这种事件；升级上来的库里它们原样留着，读事件的几处两种名字都认。
+ */
 export const EVENT_STAGE_MOVED = "STAGE_MOVED";
 
 const TABLE = "activity_record";
@@ -124,19 +134,26 @@ export interface StageMove {
 }
 
 /**
- * 记一次移动：先记一条事件 STAGE_MOVED，把还在进行的那条活动记录结束（填上这一刻与这条事件的序号），再插一条新的活动记录，
- * 返回事件序号。新记录的节点与活动同一个写法，所属流程现在恒为首次分析；事件的内容里也写所属流程。
- * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让事件、两处记录与同一次调用里别的写入一起提交。
+ * 记一次移动：先把还在进行的活动记录结束（记一条事件 ACTIVITY_ENDED，记录填上这一刻与这条事件的序号；结束的理由就是这次移动的理由），
+ * 再记一条事件 ACTIVITY_STARTED、插一条新的活动记录，返回开始那条事件的序号。任务还没有任何记录时（位置是按有没有材料定的缺省）
+ * 没有可结束的，只记开始的一条。新记录的节点与活动同一个写法，所属流程现在恒为首次分析；事件的内容里也写这两样。
+ * 必须在调用方已经开好的写事务里调用（withTaskDatabase），好让两条事件、两处记录与同一次调用里别的写入一起提交。
  */
 export function recordStageMove(db: DatabaseSync, move: StageMove): number {
   // 库不检查活动的取值（lib/schema.ts），所以写之前在这里判：不是阶段表里的写法就不记。
   if (!isStage(move.to) || !isStage(move.from)) throw new Error(`阶段记录里的阶段写法不对：从「${String(move.from)}」到「${String(move.to)}」。`);
-  const seq = emit(db, {
-    taskId: move.taskId, sessionId: move.sessionId, callId: move.callId, name: EVENT_STAGE_MOVED, actor: move.actor,
-    payload: { stage: move.to, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId, flow: FLOW_INITIAL },
-  });
+  const who = { taskId: move.taskId, sessionId: move.sessionId, callId: move.callId, actor: move.actor };
   const at = wallClockText();
-  db.prepare(`UPDATE ${TABLE} SET ended_at = ?, ended_seq = ? WHERE task_id = ? AND ended_at IS NULL`).run(at, seq, move.taskId);
+  const open = db.prepare(`SELECT record_id, activity, node FROM ${TABLE} WHERE task_id = ? AND ended_at IS NULL ORDER BY started_seq`).all(move.taskId) as
+    { record_id: number; activity: string; node: string | null }[];
+  for (const one of open) {
+    const ended = emit(db, { ...who, name: EVENT_ACTIVITY_ENDED, payload: { activity: one.activity, node: one.node, reason: move.reason, actor: move.actor } });
+    db.prepare(`UPDATE ${TABLE} SET ended_at = ?, ended_seq = ? WHERE record_id = ?`).run(at, ended, one.record_id);
+  }
+  const seq = emit(db, {
+    ...who, name: EVENT_ACTIVITY_STARTED,
+    payload: { activity: move.to, node: move.to, flow: FLOW_INITIAL, from: move.from, actor: move.actor, reason: move.reason, run_id: move.runId },
+  });
   db.prepare(
     `INSERT INTO ${TABLE} (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(move.taskId, move.sessionId, move.runId, move.callId, move.actor, move.to, move.to, FLOW_INITIAL, move.reason, at, seq);

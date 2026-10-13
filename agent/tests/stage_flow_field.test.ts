@@ -1,5 +1,5 @@
 /**
- * 活动记录的「所属流程」：写在活动记录表的一列与阶段移动那条事件的内容里（现在恒为首次分析 initial），读记录时带出来。
+ * 活动记录的「所属流程」：写在活动记录表的一列与活动开始那条事件的内容里（现在恒为首次分析 initial），读记录时带出来。
  * 早先记下的移动事件里没有写它的，升级时补成首次分析（那一半在 stage_read.test.ts 里验）。
  */
 
@@ -24,8 +24,8 @@ test("记一次移动：事件的内容里与活动记录的一列都写所属�
   enterStage(dir, "clarifying");
   enterStage(dir, "modeling");
   assert.deepEqual([FLOW_INITIAL, FLOW_NAMES[FLOW_INITIAL]], ["initial", "首次分析"]);
-  const payloads = query<{ payload: string }>(dir, "SELECT payload FROM event WHERE name = 'STAGE_MOVED' ORDER BY seq").map((row) => JSON.parse(row.payload));
-  assert.deepEqual(payloads.map((one) => [one.stage, one.from, one.flow]), [["clarifying", "reading", "initial"], ["modeling", "clarifying", "initial"]]);
+  const payloads = query<{ payload: string }>(dir, "SELECT payload FROM event WHERE name = 'ACTIVITY_STARTED' ORDER BY seq").map((row) => JSON.parse(row.payload));
+  assert.deepEqual(payloads.map((one) => [one.activity, one.node, one.from, one.flow]), [["clarifying", "clarifying", "reading", "initial"], ["modeling", "modeling", "clarifying", "initial"]]);
   assert.deepEqual(read(dir, (db, id) => activityRecords(db, id)).map((one) => [one.activity, one.node, one.flow]), [["clarifying", "clarifying", "initial"], ["modeling", "modeling", "initial"]]);
   assert.deepEqual(read(dir, (db, id) => [openActivityRecord(db, id)!.activity, openActivityRecord(db, id)!.flow]), ["modeling", "initial"]);
   assert.deepEqual(query<{ flow: string }>(dir, "SELECT flow FROM activity_record ORDER BY started_seq").map((row) => row.flow), ["initial", "initial"]);

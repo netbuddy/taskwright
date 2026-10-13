@@ -1006,12 +1006,19 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
     return ["stage_proposed", { ...base, actor, run_id: payload.run_id ?? null,
       proposal: proposalView(payload.proposal as never, { session_id: e.session_id, reply_entry: payload.reply_entry, seq: e.seq, at: e.at }), completion: null }];
   }
-  if (e.name === "STAGE_MOVED") {
-    // 任务从一个工作阶段移到了另一个：到了哪个阶段（to）、从哪个阶段来（from）、谁移的、理由；助手移的带运行号，用户移的带操作编号。
+  if (e.name === "ACTIVITY_STARTED" || e.name === "STAGE_MOVED") {
+    // 任务开始了一项活动，也就是从一个工作阶段移到了另一个：到了哪个阶段（to）、从哪个阶段来（from）、谁移的、理由；助手移的带运行号，用户移的带操作编号。
     // 到了哪个阶段不叫 stage：这一批最后一条事件上的 stage 是现在的阶段与灯（见 libraryEvents），两样不能撞名。
-    // flow 是这次移动的所属流程；早先记下的移动事件里没有写，补首次分析。
-    return ["stage_changed", { ...base, to: payload.stage ?? null, from: payload.from ?? null, actor, reason: payload.reason ?? "",
-      run_id: payload.run_id ?? null, flow: typeof payload.flow === "string" && payload.flow ? payload.flow : FLOW_INITIAL, op_id: opId, completion: null }];
+    // flow 是这项活动的所属流程；早先记下的移动事件里没有写，补首次分析。node 是所属节点，在流程里开展时与活动同一个写法。
+    // 早先（格式版本 4 及更早）一次移动只记一条 STAGE_MOVED，移到的阶段写在 stage 里；升级上来的库里留着这种事件，转成同一种库事件。
+    const to = (e.name === "STAGE_MOVED" ? payload.stage : payload.activity) ?? null;
+    return ["activity_started", { ...base, to, from: payload.from ?? null, actor, reason: payload.reason ?? "",
+      run_id: payload.run_id ?? null, flow: typeof payload.flow === "string" && payload.flow ? payload.flow : FLOW_INITIAL,
+      node: e.name === "STAGE_MOVED" ? to : payload.node ?? null, op_id: opId, completion: null }];
+  }
+  if (e.name === "ACTIVITY_ENDED") {
+    // 一项活动结束了：哪一项、所属节点、谁结束的、理由。移动阶段时它紧挨在开始另一项活动的那一条之前。
+    return ["activity_ended", { ...base, activity: payload.activity ?? null, node: payload.node ?? null, actor, reason: payload.reason ?? "", op_id: opId, completion: null }];
   }
   if (e.name === "CONFIRMATION_RECORDED") {
     return ["confirmation_recorded", { ...base, items: or(payload.items, []), basis: or(payload.basis, "ui_click"), op_id: opId, completion: null }];

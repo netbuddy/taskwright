@@ -283,6 +283,37 @@ test("这一段还开着的提问与请选择：只列这条会话里、进入�
   assert.match(line(), /^这一段还开着的提问与请选择 1 张（你问过、用户搁下没有答的）：r\d+-\d+ 提问「馆员能不能代借」。/);
 });
 
+test("升级上来的库里早先的移动事件（STAGE_MOVED）照样算界：它之前的提议已经结束，它之前留下的提问不再列；它之后发的照常开着", () => {
+  const dir = workspace();
+  const line = () => getTaskStatus(dir, SESSION).text.split("\n").at(-1)!;
+  // 早先的样子：发了进入澄清的卡片、问了一问，随后用户点了进入——那时一次移动只记一条 STAGE_MOVED。
+  reply(dir, enterCard("clarifying", "reading"));
+  reply(dir, { kind: "ask", text: "借阅期限是多少天" });
+  assert.equal(open(dir)!.stage, "clarifying");
+  assert.match(line(), /^这一段还开着的提问与请选择 1 张/);
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
+    const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
+    const seq = Number(db.prepare(
+      "INSERT INTO event (task_id, session_id, call_id, name, actor, payload, at) VALUES (?, ?, 'ui-op-old', 'STAGE_MOVED', 'user', ?, '2026-10-10T09:00:00')",
+    ).run(task.task_id, SESSION, JSON.stringify({ stage: "clarifying", from: "reading", actor: "user", reason: "", run_id: null, flow: "initial" })).lastInsertRowid);
+    // 升级把那次移动改写成了一条活动记录。
+    db.prepare(
+      "INSERT INTO activity_record (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) " +
+        "VALUES (?, ?, NULL, 'ui-op-old', 'user', 'clarifying', 'clarifying', 'initial', '', '2026-10-10T09:00:00', ?)",
+    ).run(task.task_id, SESSION, seq);
+  });
+  assert.equal(open(dir), null, "那次移动之前的提议结束了");
+  assert.equal(line(), NO_OPEN_CARDS_LINE, "那次移动之前留下的提问不再列");
+  // 之后发的照常开着；再移一次（现在的事件名）又结束。
+  const next = reply(dir, enterCard("modeling", "clarifying"));
+  reply(dir, { kind: "ask", text: "馆员能不能代借" });
+  assert.deepEqual([open(dir)!.stage, open(dir)!.event_seq], ["modeling", next.seq]);
+  assert.match(line(), /^这一段还开着的提问与请选择 1 张（你问过、用户搁下没有答的）：r\d+-\d+ 提问「馆员能不能代借」。/);
+  enterStage(dir, "modeling");
+  assert.equal(open(dir), null);
+  assert.equal(line(), NO_OPEN_CARDS_LINE);
+});
+
 test("续接旧会话：上次之后才发出的提议写一条（别的都没有变也写）；上次之前发的不重复；没有开着的不写", () => {
   const dir = workspace();
   const facts = (lastMessageAt: number) => ({ hasUserMessage: true, hasStatusMessage: true, lastMessageAt });

@@ -12,7 +12,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
 import { TASK_DB_VERSION, upgradeTaskDatabase, withTaskDatabase } from "../src/lib/schema.ts";
-import { EVENT_STAGE_MOVED, activityRecords, currentStage, hasActivityTable, openActivityRecord, recordStageMove, stageOf, taskHasMaterials } from "../src/lib/stage_read.ts";
+import { EVENT_ACTIVITY_ENDED, EVENT_ACTIVITY_STARTED, EVENT_STAGE_MOVED, activityRecords, currentStage, hasActivityTable, openActivityRecord, recordStageMove, stageOf, taskHasMaterials } from "../src/lib/stage_read.ts";
 import { DEFINITION_PATH, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 function workspace(definition: unknown = overallDefinition(), material = true): { dir: string; taskId: string } {
@@ -37,17 +37,21 @@ test("没有记录时：有材料在核读材料，没有材料在澄清；这�
   assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition)), "clarifying");
 });
 
-test("记一次移动：一条事件加一条活动记录，同一个事件序号，前一条记录同时结束；有了记录之后只看还在进行的那一条，不再看有没有材料", () => {
+test("记一次移动：结束前一条活动记录、开始新的一条，各记一条事件，序号对得上；第一次移动没有可结束的；有了记录之后只看还在进行的那一条，不再看有没有材料", () => {
   const { dir, taskId } = workspace();
   const first = write(dir, (db) => recordStageMove(db, { taskId, sessionId: "sess-1", runId: "r2", callId: "call-reply-1", actor: "executor",
     from: "reading", to: "clarifying", reason: "材料读完了，先问借期。" }));
   const second = write(dir, (db) => recordStageMove(db, { taskId, sessionId: "sess-1", runId: null, callId: "ui-op-7", actor: "user",
     from: "clarifying", to: "writing", reason: "" }));
   assert.ok(second > first);
-  const events = query<{ seq: number; name: string; actor: string; call_id: string; payload: string }>(dir, "SELECT seq, name, actor, call_id, payload FROM event WHERE name = ? ORDER BY seq", EVENT_STAGE_MOVED);
-  assert.deepEqual(events.map((e) => [e.seq, e.actor, e.call_id, JSON.parse(e.payload)]), [
-    [first, "executor", "call-reply-1", { stage: "clarifying", from: "reading", actor: "executor", reason: "材料读完了，先问借期。", run_id: "r2", flow: "initial" }],
-    [second, "user", "ui-op-7", { stage: "writing", from: "clarifying", actor: "user", reason: "", run_id: null, flow: "initial" }],
+  const events = query<{ seq: number; name: string; actor: string; call_id: string; payload: string }>(dir,
+    "SELECT seq, name, actor, call_id, payload FROM event WHERE name IN (?, ?, ?) ORDER BY seq", EVENT_ACTIVITY_STARTED, EVENT_ACTIVITY_ENDED, EVENT_STAGE_MOVED);
+  // 第一次移动之前任务没有记录（核读材料是缺省的位置），只记开始；第二次先结束澄清、再开始写条目，两条紧挨着。早先的事件名不再记。
+  assert.deepEqual(events.map((e) => [e.seq, e.name, e.actor, e.call_id, JSON.parse(e.payload)]), [
+    [first, "ACTIVITY_STARTED", "executor", "call-reply-1",
+      { activity: "clarifying", node: "clarifying", flow: "initial", from: "reading", actor: "executor", reason: "材料读完了，先问借期。", run_id: "r2" }],
+    [second - 1, "ACTIVITY_ENDED", "user", "ui-op-7", { activity: "clarifying", node: "clarifying", reason: "", actor: "user" }],
+    [second, "ACTIVITY_STARTED", "user", "ui-op-7", { activity: "writing", node: "writing", flow: "initial", from: "clarifying", actor: "user", reason: "", run_id: null }],
   ]);
   const rows = write(dir, (db) => activityRecords(db, taskId));
   assert.deepEqual(rows.map((r) => [r.activity, r.from, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.started_seq]), [
@@ -55,7 +59,7 @@ test("记一次移动：一条事件加一条活动记录，同一个事件序�
     ["writing", "clarifying", "user", "", null, "sess-1", "ui-op-7", second],
   ]);
   // 每条记录的节点与活动同一个写法，所属流程是首次分析；前一条在后一条开始的那一刻结束，最后一条还在进行。
-  assert.deepEqual(rows.map((r) => [r.node, r.flow, r.ended_seq, r.ended_at]), [["clarifying", "initial", second, rows[1].started_at], ["writing", "initial", null, null]]);
+  assert.deepEqual(rows.map((r) => [r.node, r.flow, r.ended_seq, r.ended_at]), [["clarifying", "initial", second - 1, rows[1].started_at], ["writing", "initial", null, null]]);
   assert.deepEqual(write(dir, (db) => openActivityRecord(db, taskId))!.activity, "writing");
   assert.equal(write(dir, (db) => openActivityRecord(db, taskId))!.record_id, rows[1].record_id);
   // 有记录之后，有没有材料都不再改变所在的阶段。
@@ -170,8 +174,12 @@ test("格式版本 4 升到 5：每条阶段记录改写成一条活动记录，
   assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition)), "clarifying");
   assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((r) => [r.from, r.activity, r.flow]),
     [["reading", "clarifying", "initial"], ["clarifying", "writing", "initial"], ["writing", "clarifying", "change"]]);
-  // 升级之后照常再移一次：接在后面，前一条随之结束。
-  write(dir, (db) => recordStageMove(db, { taskId, sessionId: "s", runId: null, callId: "ui-op-9", actor: "user", from: "clarifying", to: "modeling", reason: "" }));
+  // 升级之后照常再移一次：接在后面，前一条随之结束；这一次记的是现在的两种事件。
+  const moved = write(dir, (db) => recordStageMove(db, { taskId, sessionId: "s", runId: null, callId: "ui-op-9", actor: "user", from: "clarifying", to: "modeling", reason: "" }));
+  assert.deepEqual(query<{ seq: number; name: string }>(dir, "SELECT seq, name FROM event WHERE seq > ? ORDER BY seq", seqs[2]).map((e) => [e.seq, e.name]),
+    [[moved - 1, "ACTIVITY_ENDED"], [moved, "ACTIVITY_STARTED"]]);
+  assert.deepEqual(query(dir, "SELECT ended_seq, started_seq FROM activity_record WHERE record_id IN (8, 9) ORDER BY record_id").map((r) => ({ ...r })),
+    [{ ended_seq: moved - 1, started_seq: seqs[2] }, { ended_seq: null, started_seq: moved }]);
   assert.deepEqual(query<{ activity: string; open: number }>(dir, "SELECT activity, ended_at IS NULL AS open FROM activity_record ORDER BY started_seq").map((r) => [r.activity, r.open]),
     [["clarifying", 0], ["writing", 0], ["clarifying", 0], ["modeling", 1]]);
   // 再升一次：已经是现在的版本，什么都不做。

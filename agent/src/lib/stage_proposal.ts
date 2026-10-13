@@ -4,7 +4,7 @@
  * - enter：做完一段，提议进入下一个阶段；
  * - back：这一段的输入大面积不能用了，提议退回前面的某个阶段；
  * - review：编写文档阶段补写完了，请用户过目补写的那几页（点了不移动阶段）。
- * 结束的情形：任务的阶段有过一次移动、助手又发了一张提议的卡片、任务不再进行中；review 另有一种，卡片点名的页用户都看过了。
+ * 结束的情形：任务开始了另一项活动（阶段有过一次移动）、助手又发了一张提议的卡片、任务不再进行中；review 另有一种，卡片点名的页用户都看过了。
  *
  * 提议不另设表：助手发卡片时「回复」记的那条事件（EXECUTOR_ACTS_RECORDED）里多带一项 proposal（proposalOfAct），
  * 开着的是哪一条从事件表里推（openProposal）。卡片的选项只在那一条会话的会话文件里，任务库里原来没有记，所以要在发的时候记下：
@@ -25,8 +25,11 @@ import {
 
 /** 「回复」记执行者行为的那条事件的名字（与 lib/dialogue_acts.ts 的 EVENT_EXECUTOR_ACTS_RECORDED 同一个；这里不从它导入，免得两个文件互相导入）。 */
 const EVENT_ACTS = "EXECUTOR_ACTS_RECORDED";
-/** 阶段移动那条事件的名字（与 lib/stage_read.ts 的 EVENT_STAGE_MOVED 同一个）。 */
-const EVENT_MOVED = "STAGE_MOVED";
+/**
+ * 划界用的事件名：活动开始的那条事件（与 lib/stage_read.ts 的 EVENT_ACTIVITY_STARTED 同一个），以及早先记一次阶段移动的那条
+ * （EVENT_STAGE_MOVED；升级上来的库里留着这种事件，照样算一次界）。两个名字写死在语句里，不是外来的文字。
+ */
+const STARTED_NAMES = "('ACTIVITY_STARTED', 'STAGE_MOVED')";
 
 /** 三种卡片上不生效的那一项：进入卡片的「继续本阶段」、回退卡片的「留在本段」、请过目卡片的「需要修改」。点它只把卡片标为已选。 */
 const ENTER_STAY_KEYS: ReadonlySet<string> = new Set(Object.values(STAY_OPTIONS).map((one) => one.key));
@@ -130,7 +133,7 @@ function allViewed(db: DatabaseSync, taskId: string, items: readonly { item_id: 
 
 /**
  * 任务现在开着的提议；没有时为 null。只读。
- * 取最近一条带 proposal 的回复事件：它之后任务的阶段没有移动过、任务还在进行中，它就开着；请过目的那一种另要卡片点名的页还没有都看过。
+ * 取最近一条带 proposal 的回复事件：它之后任务没有开始过另一项活动（阶段没有移动过）、任务还在进行中，它就开着；请过目的那一种另要卡片点名的页还没有都看过。
  * 更早的提议不看：助手发了新的提议卡片，早先的那一条就结束了。
  */
 export function openProposal(db: DatabaseSync, taskId: string): OpenProposal | null {
@@ -146,7 +149,7 @@ export function openProposal(db: DatabaseSync, taskId: string): OpenProposal | n
     const kind = proposalKindOf(fact);
     if (!fact || kind === null) continue;
     const seq = Number(row.seq);
-    const moved = db.prepare("SELECT 1 AS yes FROM event WHERE task_id = ? AND name = ? AND seq > ? LIMIT 1").get(taskId, EVENT_MOVED, seq);
+    const moved = db.prepare(`SELECT 1 AS yes FROM event WHERE task_id = ? AND name IN ${STARTED_NAMES} AND seq > ? LIMIT 1`).get(taskId, seq);
     if (moved) return null;
     const items = Array.isArray(fact.items) ? fact.items : [];
     if (kind === "review" && allViewed(db, taskId, items)) return null;
@@ -167,11 +170,11 @@ export interface WaitingAct {
 }
 
 /**
- * 这一段还开着的提问与请选择：从这条会话里还在等回应的执行者行为（waiting，调用方用 unansweredActs 取）里，留下任务进入现在这个阶段之后
+ * 这一段还开着的提问与请选择：从这条会话里还在等回应的执行者行为（waiting，调用方用 unansweredActs 取）里，留下任务进入现在这个阶段（最近一次活动开始）之后
  * 发出的提问（ask）与请选择（choose），提议的卡片（进入、退回某个阶段或请过目）不算。前面阶段留下的不列：那一段结束前已经问过一遍。只读。
  */
 export function cardsOpenInStage<T extends WaitingAct>(db: DatabaseSync, taskId: string, waiting: readonly T[]): T[] {
-  const moved = db.prepare("SELECT MAX(seq) AS seq FROM event WHERE task_id = ? AND name = ?").get(taskId, EVENT_MOVED) as { seq: number | null } | undefined;
+  const moved = db.prepare(`SELECT MAX(seq) AS seq FROM event WHERE task_id = ? AND name IN ${STARTED_NAMES}`).get(taskId) as { seq: number | null } | undefined;
   const since = Number(moved?.seq ?? 0);
   const payload = db.prepare("SELECT payload FROM event WHERE seq = ?");
   return waiting.filter((one) => {

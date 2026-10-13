@@ -355,7 +355,8 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
       next = applyConfirmationRecorded(next, { ...data, basis: "viewed", items: data.items.map((i) => ({ ...i, accepted: true })) });
       break;
     }
-    case "stage_changed":
+    case "activity_started":
+      // 任务开始了一项活动，也就是移到了另一个工作阶段。紧挨在它前面的 activity_ended（前一项活动结束）不用处理。
       next = applyStageChanged(next, event.data as unknown as StageChanged);
       break;
   }

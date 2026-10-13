@@ -52,10 +52,10 @@ test("库事件：助手发出进入卡片转成 stage_proposed，这一批最�
   assert.deepEqual(last.stage.proposal, library.taskSnapshot(ws)[1]!.stage!.proposal);
   // 只取卡片之后的事件：一条都没有，不推任何东西。
   assert.deepEqual(library.libraryEvents(ws, max)[0], []);
-  // 用户随后进入评审确认：这一批是 stage_changed，它带的 stage 里提议已经是 null。
+  // 用户随后进入评审确认：这一批的最后一条是 activity_started，它带的 stage 里提议已经是 null。
   const moved = build(tmp, "events-moved", DEFINITION, [[FLOW], { reply: CARD }, { stage: "评审确认" }]);
   const after = library.libraryEvents(moved, library.libraryEvents(moved, 0)[1] - 1)[0];
-  assert.deepEqual(after.map(([name, data]) => [name, data.to, data.stage.current, data.stage.proposal]), [["stage_changed", "reviewing", "reviewing", null]]);
+  assert.deepEqual(after.map(([name, data]) => [name, data.to, data.stage.current, data.stage.proposal]), [["activity_started", "reviewing", "reviewing", null]]);
 });
 
 test("早先建的任务没有阶段：发了带进入键的卡片也没有 stage_proposed，整份数据的 stage 是 null", () => {

@@ -49,7 +49,7 @@ class ProgressTest(unittest.TestCase):
         self.assertFalse(made_progress([], typed))
         self.assertFalse(made_progress([reply_event(None), {"event": "work_ended", "data": {}}, {"event": "item_viewed", "data": {}},
                                         {"event": "diagram_viewed", "data": {}}, {"event": "executor_state", "data": {"state": "idle"}}], typed))
-        for name in ("deliverable_changed", "diagram_changed", "stage_changed", "stage_proposed", "task_changed"):
+        for name in ("deliverable_changed", "diagram_changed", "activity_started", "stage_proposed", "task_changed"):
             self.assertTrue(made_progress([{"event": name, "data": {}}], typed), name)
         card = {"kind": "ask", "text": "借期多长？", "scope": "general"}
         self.assertTrue(made_progress([reply_event(card)], typed))
