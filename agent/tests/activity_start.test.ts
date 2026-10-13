@@ -11,7 +11,7 @@ import { validateDefinition } from "../src/lib/definition.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import { BACK_OPTIONS, ENTER_OPTIONS, IDLE, STAY_HERE_OPTION, STAY_OPTIONS } from "../src/lib/stage.ts";
-import { activityRecords, endStandaloneActivity, flowNode, recordStageCardClick, stageLines, stageOf, stageSummary, startActivity } from "../src/lib/stage_read.ts";
+import { activityDoneGate, activityRecords, endStandaloneActivity, flowNode, recordStageCardClick, reportActivityDone, stageLines, stageOf, stageSummary, startActivity } from "../src/lib/stage_read.ts";
 import { UserOpError, runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, endActivities, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
@@ -173,4 +173,27 @@ test("正在单独开展一项活动时，卡片上的进入与退回都不算�
     assert.deepEqual([out?.from, out?.moved, out?.why], ["clarifying", false, "not_in_flow"], option.key);
     assert.equal(count(dir, "activity_record"), rows, option.key);
   }
+});
+
+test("回复里的 activity_done 怎样核对与落库：单独开展时放行并结束那条记录、发起方是助手；在流程里、空闲、没有阶段的任务都拒绝，什么都不记", () => {
+  const { dir, taskId } = idleAfter("clarifying");
+  // 空闲：拒绝。
+  assert.equal(activityDoneGate(dir)![0], "回复里写了 activity_done，而任务现在空闲，没有在进行的活动可以结束");
+  assert.equal(reportActivityDone(dir, "sess-a", "call-reply-1"), null);
+  // 在流程里：拒绝。
+  start(dir, "澄清", true);
+  assert.match(activityDoneGate(dir)![0], /^回复里写了 activity_done，而任务现在在首次分析流程里的澄清阶段/);
+  assert.equal(reportActivityDone(dir, "sess-a", "call-reply-2"), null);
+  // 单独开展：放行，结束。
+  start(dir, "整理建模", false);
+  assert.equal(activityDoneGate(dir), null);
+  const before = count(dir, "event");
+  assert.deepEqual(reportActivityDone(dir, "sess-a", "call-reply-3"), { activity: "modeling", event_seq: before + 1 });
+  assert.deepEqual(query(dir, "SELECT name, actor, session_id, call_id FROM event WHERE seq = ?", before + 1).map((r) => ({ ...r })),
+    [{ name: "ACTIVITY_ENDED", actor: "executor", session_id: "sess-a", call_id: "call-reply-3" }]);
+  assert.equal(inDb(dir, (db) => stageOf(db, dir, taskId, DEFINITION)), IDLE);
+  // 没有阶段的任务、还没有库的目录：拒绝。
+  const old = workspace(demoDefinition());
+  assert.deepEqual(activityDoneGate(old.dir), ["回复里写了 activity_done，而这个任务没有活动可以结束", "去掉 activity_done 这一项再回复"]);
+  assert.deepEqual(activityDoneGate(makeWorkspace(overallDefinition()))?.[0], "回复里写了 activity_done，而这个任务没有活动可以结束");
 });

@@ -87,6 +87,15 @@ export function clickStageUnmoved(details: Record<string, any>): { at: string; w
   return { at: stay.at, ...(stay.why === "not_in_flow" ? { why: stay.why } : {}) };
 }
 
+/**
+ * 助手在一条回复里汇报单独开展的那项活动做完了时，那条回复带的一项：结束的是哪一项活动。
+ * details 是「回复」工具结果的 details（助手一侧结束了活动记录时写进 activity_done）。没有结束时返回空对象，消息里不带这一项。
+ */
+export function replyActivityDone(details: Record<string, any>): { activity_done?: { activity: string } } {
+  const done = details.activity_done;
+  return isObject(done) && isStageKey(done.activity) ? { activity_done: { activity: done.activity } } : {};
+}
+
 export function normalizeInforms(informs: unknown): Record<string, any>[] {
   const out = [];
   for (const one of (or(informs, []) as unknown[])) {
@@ -345,7 +354,7 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
         out.push({
           type: "assistant_reply", session_id: sessionId, message_id: e.id, at, work_id: null, via_reply_tool: true,
           informs: normalizeInforms(args.informs ?? null), act: args.act ?? null, text: or(args.text, ""), degraded: truthy(details.degraded),
-          ...replyCardFields(details),
+          ...replyCardFields(details), ...replyActivityDone(details),
         });
         segmentReplied = true;
       }

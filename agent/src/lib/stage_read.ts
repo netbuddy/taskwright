@@ -27,8 +27,8 @@ import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_I
 import { openProposal } from "./stage_proposal.ts";
 import {
   ACTIVITY_DONE_REASON, BACK_OPTIONS, ENTER_OPTIONS, FLOW_INITIAL, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
-  type Position, QUESTION_OPEN_STATUS, STAGE_NAMES, type Stage, type StageActor, type StartHow,
-  activityBlocked, defaultStage, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
+  activityBlocked, activityDoneRefusal, defaultStage, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
   startHow, switchedReason,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
@@ -209,6 +209,42 @@ export function endStandaloneActivity(db: DatabaseSync, who: { taskId: string; s
   if (open === null || open.node !== null) return null;
   const ended = endOpenRecords(db, who, wallClockText(), ACTIVITY_DONE_REASON);
   return { activity: open.activity, event_seq: ended.at(-1)!.seq };
+}
+
+/**
+ * 「回复」里写了 activity_done: true 时用：任务正在单独开展一项活动就返回 null（可以结束）；任务在流程里的某个阶段、
+ * 任务空闲时返回拒绝的事实与怎么办（lib/stage.ts 的 activityDoneRefusal）。任务没有阶段（早先建的任务）、库还不在时也拒绝。自己开事务。
+ */
+export function activityDoneGate(workspaceDir: string): Refusal | null {
+  const none: Refusal = ["回复里写了 activity_done，而这个任务没有活动可以结束", "去掉 activity_done 这一项再回复"];
+  try {
+    return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
+      const where = task ? whereIs(db, workspaceDir, task.task_id) : null;
+      if (where === null) return none;
+      return where.from !== IDLE && !where.fromInFlow ? null : activityDoneRefusal(where.from);
+    });
+  } catch (error) {
+    if (error instanceof NoDatabaseYet) return none;
+    throw error;
+  }
+}
+
+/**
+ * 助手在回复里汇报单独开展的活动做完了：结束那条活动记录（endStandaloneActivity），发起方记助手。自己开事务。
+ * 任务这时已经不在单独开展的活动里（或者没有任务）时什么都不记，返回 null。
+ */
+export function reportActivityDone(workspaceDir: string, sessionId: string, callId: string): { activity: Stage; event_seq: number } | null {
+  try {
+    return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
+      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+      if (!task || task.status !== TASK_ACTIVE) return null;
+      return endStandaloneActivity(db, { taskId: task.task_id, sessionId, callId, actor: "executor" });
+    });
+  } catch (error) {
+    if (error instanceof NoDatabaseYet) return null;
+    throw error;
+  }
 }
 
 /**

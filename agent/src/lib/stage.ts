@@ -273,6 +273,21 @@ export function switchedReason(to: Stage): string {
 /** 助手汇报单独开展的活动做完了时，那条活动记录结束的起因。 */
 export const ACTIVITY_DONE_REASON = "助手汇报这项活动结束";
 
+/**
+ * 回复里写了 activity_done 而任务不在单独开展的活动里时的拒绝：事实与怎么办。position 是任务现在在哪里
+ * （在首次分析流程里的某个阶段，或者空闲）。在流程里做完一段不由助手结束：用进入下一段的卡片提议，由用户点。
+ */
+export function activityDoneRefusal(position: Position): Refusal {
+  if (position === IDLE) {
+    return ["回复里写了 activity_done，而任务现在空闲，没有在进行的活动可以结束", "去掉 activity_done 这一项再回复。开展哪一项活动由用户从任务状况卡决定"];
+  }
+  const forward = forwardCardGuidance(position);
+  return [
+    `回复里写了 activity_done，而任务现在在首次分析流程里的${STAGE_NAMES[position]}阶段：这一项只在用户单独开展一项活动时用，流程里的阶段不由你结束`,
+    `去掉 activity_done 这一项再回复。${forward ? `这一段做完了要往前走，${forward}，由用户在卡片上点` : "这一段做完了，照这一段的说明请用户过目"}`,
+  ];
+}
+
 /** 助手汇报一项单独开展的活动结束时，对话里那条回复下面的一行。 */
 export function activityDoneSentence(activity: Stage): string {
   return `助手汇报这项活动结束：${STAGE_NAMES[activity]}。任务现在空闲。`;
