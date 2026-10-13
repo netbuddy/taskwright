@@ -1,5 +1,5 @@
 // 任务起点页：任务一级的家。自上而下：面包屑、任务头（任务类型与时刻一行、任务名与一句状态、一段定位的话）、
-// 「三步开始」指引与三种常见起点（只在六类需求资产都空着时显示）、需求资产现状六格、工作流程两张卡、
+// 「三步开始」指引与三种常见起点（只在六类需求资产都空着、又没有活动在进行时显示）、需求资产现状六格、工作流程两张卡、
 // 单项活动七张卡加「不开展活动」、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
 // 外框是工作视图的顶栏加导航条（components/TaskFrame.tsx）；各块的组件在 components/task/，样式在 styles/task-page.css。
 // 数据是两次普通读取：任务详情（GET …/tasks/{task_id}，带材料与会话）与任务状况（GET …/status，带资产现状、活动目录与这一页的几段话）。
@@ -95,7 +95,8 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const lastActive = task.sessions.map((s) => s.last_active_at).filter(Boolean).sort().pop();
   const versionNote = taskTypeVersionNote(task.task_type_versions);
   const catalog = status?.catalog ?? null;
-  const empty = allAssetsEmpty(status?.assets);
+  // 「三步开始」只给还没有开始的任务：六类资产都空着，而且没有活动在进行（刚开展了一项、还没有记下内容时不再指引怎样开始）。
+  const empty = allAssetsEmpty(status?.assets) && status?.activity.kind === "idle";
   const recommended = catalog?.flows.find((one) => one.recommended) ?? null;
   // 现在这项活动写的那几类资产：它们的格子着色。
   const writing = catalog?.activities.find((one) => one.key === status?.activity.key)?.writes.map((one) => one.key) ?? [];

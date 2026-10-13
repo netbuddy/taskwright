@@ -349,6 +349,17 @@ describe("起点页：有内容的任务", () => {
     expect(text(screen.getByTestId("activity-writing").querySelector(".t"))).toBe("写条目批处理正在工作流程中进行");
   });
 
+  it("六类资产都空着而已经有活动在进行（刚开展、还没有记下内容）：不再显示「三步开始」，任务名旁写当前活动", async () => {
+    page(detail({ sessions }), info, statusOf({
+      activity: { ...IDLE_ACTIVITY, kind: "activity", key: "clarifying", name: "澄清", flow: null, moved_by: "user", moved_at: "2026-09-29T10:00:00", reason: "" },
+    }));
+    await ready();
+    expect(await screen.findByTestId("task-state")).toHaveTextContent("当前活动：澄清");
+    expect(screen.getByTestId("asset-cells")).toBeInTheDocument();
+    expect(screen.queryByTestId("start-guide")).toBeNull();
+    expect(screen.queryByTestId("start-cases")).toBeNull();
+  });
+
   it("没有任务状况（没有阶段的任务、早先的后端）：只有任务头、「进入工作台」、会话与材料，不画资产现状与活动目录", async () => {
     page(detail(), info, null);
     await ready();
