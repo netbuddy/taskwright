@@ -14,7 +14,7 @@
 import { statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { NODE_IO, ORIGIN_NAMES, PART_NAMES, promptDirNames } from "../../agent/src/lib/stage_prompt.ts";
-import { STAGE_NAMES } from "../../agent/src/lib/stage.ts";
+import { STAGE_NAMES, isPosition, positionName } from "../../agent/src/lib/stage.ts";
 import { ApiError } from "./errors.ts";
 import { readPromptDir, writePromptDir } from "./product_settings.ts";
 import { baseMessages } from "./conversation.ts";
@@ -97,7 +97,7 @@ export function lastSystemPrompt(service: Service, taskId: string) {
       : fact.replaced === false ? "这个任务没有阶段，系统提示是启动时给的那一份，没有替换。" : null,
     session_id: last.session_id, at: last.at,
     replaced: fact.replaced === true,
-    stage: fact.stage ?? null, stage_name: fact.stage ? STAGE_NAMES[fact.stage as keyof typeof STAGE_NAMES] ?? null : null,
+    stage: fact.stage ?? null, stage_name: isPosition(fact.stage) ? positionName(fact.stage) : null,
     how: fact.how ?? null, error: fact.error ?? null,
     prompt_dir: fact.prompt_dir ?? null, notes: Array.isArray(fact.notes) ? fact.notes : [],
     digest: fact.digest ?? null,
@@ -117,7 +117,8 @@ export function stageDebug(service: Service, taskId: string) {
   const view = library.stageDebugView(service.task(taskId).dir);
   const records = view.records.map((one) => ({
     ...one,
-    from_name: STAGE_NAMES[one.from as keyof typeof STAGE_NAMES] ?? String(one.from),
+    // 从哪里来：一个阶段的名字；之前任务空闲、或者早先的记录里读不出来时是空文字。
+    from_name: one.from === null ? "" : STAGE_NAMES[one.from as keyof typeof STAGE_NAMES] ?? String(one.from),
     to_name: STAGE_NAMES[one.to as keyof typeof STAGE_NAMES] ?? String(one.to),
   }));
   return { records, rejections: view.rejections, latest_work_id: view.rejections.length > 0 ? view.rejections[0].work_id ?? null : null };

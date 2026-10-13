@@ -172,6 +172,16 @@ export function enterStage(workspaceDir: string, stage: Stage): void {
 }
 
 /**
+ * 把任务置为空闲：把还在进行的活动记录都记成已经结束（直接改库）。产品里现在没有哪条路会这样做，这是为了测空闲时各处怎样办的夹具。
+ * 任务一条活动记录都没有时调了没有用（那时的位置是按有没有材料定的缺省，不是空闲）。
+ */
+export function endActivities(workspaceDir: string): void {
+  withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
+    db.exec("UPDATE activity_record SET ended_at = started_at, ended_seq = started_seq WHERE ended_at IS NULL");
+  });
+}
+
+/**
  * 把任务放到写条目阶段。有总体分析集合的任务，助手要到写条目阶段才能写别的集合的条目（lib/stage.ts）；
  * 不是测阶段的测试，建好任务之后先调它。
  */

@@ -51,7 +51,7 @@ import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
-import { STAGES, STAGE_NAMES, stageByName } from "./stage.ts";
+import { STAGES, STAGE_NAMES, positionName, stageByName } from "./stage.ts";
 import { moveStage } from "./stage_read.ts";
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
@@ -712,7 +712,7 @@ function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOp
   return {
     op_id: opId, kind: "move_stage", event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
     // 本来就在那个阶段：什么都没有记，也不往会话里追加说明。
-    note: outcome.moved ? stageMoveNote(STAGE_NAMES[outcome.from], STAGE_NAMES[to], reason) : "",
+    note: outcome.moved ? stageMoveNote(positionName(outcome.from), STAGE_NAMES[to], reason) : "",
     notify_text: null, undoable: false,
   };
 }

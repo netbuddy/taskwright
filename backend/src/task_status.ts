@@ -5,14 +5,16 @@
  * 还没有了结的待澄清问题数、图按种类的张数、各集合的条目数与用户看过的条数、现在这个阶段没有通过的灯、开着的提议。
  * 章的归法与页面目录用的是同一个函数（agent/src/lib/overall_chapters.ts）。
  *
- * 字段按「当前活动」命名（activity）：现在任务总是处在某一个阶段，kind 恒为 stage、所属流程恒为首次分析；
- * 以后任务可以空闲、可以单独开展一项活动时，这一项可以是 null 或者别的种类。versions 留给已发布的文档版本，现在没有这种记录，恒为空列表。
+ * 字段按「当前活动」命名（activity）：任务处在某一个阶段时 kind 是 stage，key 是阶段的写法，ordinal 是第几阶段，所属流程恒为首次分析。
+ * 任务空闲（没有在进行的活动）时 kind 与 key 都是 idle，name 是「空闲」，ordinal 与谁移的、什么时候、为什么三项为 null，
+ * missing 是空的（空闲没有自己的灯）；现在没有哪条路会把任务置为空闲。以后可以单独开展一项活动时，这一项可以是别的种类。
+ * versions 留给已发布的文档版本，现在没有这种记录，恒为空列表。
  * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
  */
 
 import { CHAPTERS, chapterLayout, chapterPage } from "../../agent/src/lib/overall_chapters.ts";
 import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
-import { QUESTION_KEEP_STATUS, QUESTION_KIND_CLARIFY, STAGES, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
+import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, QUESTION_KIND_CLARIFY, STAGES, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 
@@ -20,7 +22,7 @@ export function taskStatus(taskDir: string) {
   const [, view] = library.taskSnapshot(taskDir);
   if (view === null || view.stage === null) return null;
   const stage = view.stage;
-  const current = stage.current as (typeof STAGES)[number];
+  const current = stage.current as Position;
 
   // 业务说明：总体分析的页按标签归章；每章数在用的节，未归类的数在用的页。
   const pages = view.items.filter((one) => one.collection === OVERALL_COLLECTION);
@@ -54,15 +56,15 @@ export function taskStatus(taskDir: string) {
 
   return {
     generated_at: clock.now(),
-    activity: {
-      kind: "stage" as const, key: current, name: STAGE_NAMES[current] ?? String(current), ordinal: STAGES.indexOf(current) + 1, flow: stage.flow,
-      moved_by: stage.moved_by, moved_at: stage.moved_at, reason: stage.reason,
-    },
+    activity: current === IDLE
+      ? { kind: "idle" as const, key: current, name: IDLE_NAME, ordinal: null, flow: stage.flow, moved_by: null, moved_at: null, reason: null }
+      : { kind: "stage" as const, key: current, name: STAGE_NAMES[current] ?? String(current), ordinal: STAGES.indexOf(current) + 1, flow: stage.flow,
+        moved_by: stage.moved_by, moved_at: stage.moved_at, reason: stage.reason },
     description: { sections: chapters.reduce((sum, one) => sum + one.sections, 0) + unsorted, chapters, unsorted, open_questions: openQuestions },
     models,
     items,
     // 这一段还差什么：现在这个阶段没有通过的灯，原句照灯的整句。
-    missing: (stage.lamps[current] ?? []).filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })),
+    missing: (current === IDLE ? [] : stage.lamps[current] ?? []).filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })),
     proposal: stage.proposal,
     versions: [] as unknown[],
   };

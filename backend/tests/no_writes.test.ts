@@ -26,7 +26,9 @@ const ALLOWED: Record<string, string[]> = {
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
   // 另有问题条目的几个字段名与取值（常量）。
-  "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_INITIAL", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark"],
+  "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_INITIAL", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark",
+    // 空闲（任务没有在进行的活动）的写法与名字、位置的类型与两个只做计算的函数。
+    "IDLE", "IDLE_NAME", "Position", "isPosition", "positionName"],
   // 从总体分析的页与问题条目算三张表（只做计算，不读库也不写库）。
   "overall_views.ts": ["ViewPage", "ViewQuestion", "ViewSource", "decisionsAndOpenQuestions", "goalTree", "rulesTable", "GoalNode"],
   // 业务说明的章与节：总体分析的页按标签归章、编节号（只做计算，不读库，页面也用它）。任务状况里各章的节数从它来。
