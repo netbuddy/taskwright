@@ -94,6 +94,7 @@ New in 0.5.0:
 
 - No evaluation run was made for this release. The instructions for the stages have been tried with a real model only in walkthroughs by hand, so how reliably the assistant follows the stages and how good its diagrams are has not been measured.
 - While the model is writing out a tool call, which takes a while for a long page or a diagram, the page gives no sign that work is going on.
+- Now and then the page still shows the assistant as working after it has finished a piece of work, and the buttons on its cards stay disabled. Reload the page: nothing is lost, and the work that was saved is all there.
 - The contents of the business description do not mark the sections that hold a diagram or a change you have not looked at yet.
 - Asking unanswered cards again before the next stage is required of the assistant by its instructions and not enforced by a tool; cards left open in another session of the task are not counted.
 - The page does not show which stage a task is in or what the stage still lacks: click **任务状况** ("task status") or ask the assistant. The stage bar exists only in debug mode.
