@@ -108,7 +108,7 @@ function onlyUnreadLeft(task: Task | null): boolean {
   return unmet.length > 0 && unmet.every((c) => c.name === CONFIRM_CONDITION);
 }
 
-export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, stayed = false, stayedKey = null, unmovedAt = null, handlers, onOpenItem, onLocate }: {
+export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, stayed = false, stayedKey = null, unmovedAt = null, unmovedWhy = null, handlers, onOpenItem, onLocate }: {
   /** 这张卡片是用户选了「继续本阶段」答过的（对话记录里有那条界面操作通知）：两个选项留着，进入的那一项变淡，「继续本阶段」带勾。 */
   stayed?: boolean;
   /** 对话记录里那条界面操作通知记的是点了哪一项（「留在本段」「需要修改」「看过了，生成文档」）；早先的通知没有记，不给。 */
@@ -130,6 +130,8 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   answered?: string | null;
   /** 答这张卡片的那次点击是「进入」某个阶段而阶段没有移动时，任务当时所在的阶段；「✓ 你选了…」下面据此多写一句小字。 */
   unmovedAt?: string | null;
+  /** 那次点击没有移动的原因（not_in_flow：任务当时不在首次分析流程里）；别的情形不给。 */
+  unmovedWhy?: string | null;
   handlers: CardHandlers;
   onOpenItem?: (itemId: string) => void;
   /** 点「依据：材料原文」小标签，文档区滚到这句原文。 */
@@ -380,7 +382,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
       )}
       {done && !wasStayed && <div className={`done${done === RESENT_TEXT ? " pale" : ""}`} data-testid="card-done">{done === RESENT_TEXT ? done : `✓ ${done}`}</div>}
       {done && wasReviewed && <div className="done pale" data-testid="card-reviewed-hint">{REVIEWED_HINT}</div>}
-      {done && unmovedAt && <div className="done pale" data-testid="card-stage-unmoved">{stageUnmovedLine(unmovedAt)}</div>}
+      {done && unmovedAt && <div className="done pale" data-testid="card-stage-unmoved">{stageUnmovedLine(unmovedAt, unmovedWhy)}</div>}
       {showUnread && (
         <div className="sw-unread-hint" data-testid="card-unread">
           还有 {unread.length} 条未读

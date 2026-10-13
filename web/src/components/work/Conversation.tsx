@@ -12,17 +12,17 @@
 // 工作中按回车不会停止，只有点方块才停。停下之后会话里留一条界面操作通知（种类 stop_run），对话区画成「你停止了助手这一次的工作」。
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SavedFacts, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
+import type { AssistantReply, ConversationMessage, CurrentWork, Inform, LaunchOption, SavedFacts, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
-import { CONTINUE_STAGE_KIND, continueStageLine, stageMoveLine } from "../../model/stage";
+import { CONTINUE_STAGE_KIND, activityDoneLine, continueStageLine, stageMoveLine } from "../../model/stage";
 import { NEW_SESSION_LINE, STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, nobodySpoke, wantsOpeningStatus } from "../../model/taskStatus";
 import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
-import { answeredByStaying, answeredStayKey, answeredText, answeredUnmoved } from "../../model/cardAnswer";
+import { answeredByStaying, answeredStayKey, answeredText, answeredUnmoved, answeredUnmovedWhy } from "../../model/cardAnswer";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { useService } from "../ServiceControls";
@@ -55,12 +55,15 @@ export function Conversation({
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
   hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onStop,
   loadStatus,
+  onLaunch,
 }: {
   /**
    * 取一次任务状况（后端的状况接口）；取不到返回 null。给了它，有阶段的任务才有「任务状况」入口、/状况 与新建会话开头的状况卡。
    * 状况卡是页面本地放进对话区的，不写进会话，不经助手；刷新之后调出过的那些就不在了。
    */
   loadStatus?: () => Promise<TaskStatusView | null>;
+  /** 用户在任务状况卡的「开展一项活动」一节点了一项：返回有没有做成。 */
+  onLaunch?: (option: LaunchOption) => Promise<boolean> | boolean;
   messages: ConversationMessage[];
   currentWork: CurrentWork | null;
   outgoing: OutgoingMessage[];
@@ -177,6 +180,7 @@ export function Conversation({
   latestDraft.current = draft;
   const statusCard = (status: TaskStatusView) => (
     <TaskStatusCard status={status} liveProposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle}
+      liveLaunch={disabledReason ? null : task?.stage?.launch} onLaunch={onLaunch}
       onMessage={handlers.onMessage} onSend={onSend} onReviewed={handlers.onReviewed} />
   );
   const calledAfter = (id: string | null) => called.filter((one) => one.after === id).map((one) => (
@@ -219,6 +223,7 @@ export function Conversation({
             stayed={m.type === "assistant_reply" && !!(m as AssistantReply).act && answeredByStaying(messages, index)}
             stayedKey={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredStayKey(messages, index) : null}
             unmovedAt={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmoved(messages, index) : null}
+            unmovedWhy={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmovedWhy(messages, index) : null}
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
               : m.type === "work_summary" && revisionsOfWork ? revisionsOfWork((m as WorkSummary).work_id) : []} onRevisionTag={onRevisionTag}
@@ -310,7 +315,7 @@ function StatusNote({ line, text }: { line: string; text: string }) {
   );
 }
 
-function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, stayedKey, unmovedAt, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, stayedKey, unmovedAt, unmovedWhy, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -326,6 +331,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   stayedKey: string | null;
   /** 答这张卡片的那次点击没有让阶段移动时，任务当时所在的阶段。 */
   unmovedAt: string | null;
+  unmovedWhy?: string | null;
   onUndo: (revisionNo: number) => void;
   onOpenItem: (itemId: string) => void;
   onLocate?: (excerpt: string, locator?: string) => void;
@@ -385,7 +391,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </>
           )}
           {m.act && !m.degraded && (
-            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} stayedKey={stayedKey} unmovedAt={unmovedAt}
+            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} stayedKey={stayedKey} unmovedAt={unmovedAt} unmovedWhy={unmovedWhy}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}
           {revisions.length > 0 && (
@@ -395,6 +401,8 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </div>
           )}
         </div>
+        {/* 助手在这条回复里汇报用户单独开展的那项活动做完了：回复下面写一行，任务随之空闲 */}
+        {m.activity_done && <div className="selfnote" data-testid="activity-done">{activityDoneLine(m.activity_done.activity)}</div>}
         </>
       );
     }

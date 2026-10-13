@@ -17,6 +17,8 @@ export const PENDING_LABEL = "待决定";
 export function pendingParts(proposal: Pick<StageProposal, "stage"> & Partial<Pick<StageProposal, "kind" | "items">>): [string, string, string] {
   if (proposal.kind === "review") return ["补写的", ` ${(proposal.items ?? []).length} 处`, "待过目"];
   const name = (STAGE_NAMES as Record<string, string>)[proposal.stage] ?? proposal.stage;
+  // 任务空闲时助手提议开始核读材料：不是进入下一个阶段，是启动首次分析。
+  if (proposal.kind !== "back" && proposal.stage === "reading") return ["助手已提议开始", name, ""];
   return [proposal.kind === "back" ? "助手已提议退回" : "助手已提议进入", name, "阶段"];
 }
 

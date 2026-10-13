@@ -3,8 +3,8 @@
 // 通过的收成「其余 N 项已齐」；全部通过时只写一句。阶段由用户在卡片上的点击移动（进入下一段，或者照助手的提议退回前面的阶段），条上没有可以移动阶段的控件。
 // 任务没有阶段（早先建的任务）时不画这一行。
 
-import type { Item, StageView } from "../../api/types";
-import { lampGroups, lampShort, lampTarget, splitNumbers, stageMarks } from "../../model/stage";
+import type { Item, StageKey, StageView } from "../../api/types";
+import { IDLE_TEXT, aloneText, isAlone, isIdle, lampGroups, lampShort, lampTarget, splitNumbers, stageMarks } from "../../model/stage";
 
 export function StageBar({ stage, items, onOpenItem, onOpenMaterial }: {
   stage: StageView | null | undefined;
@@ -13,8 +13,10 @@ export function StageBar({ stage, items, onOpenItem, onOpenMaterial }: {
   onOpenMaterial: (path: string) => void;
 }) {
   if (!stage) return null;
-  const marks = stageMarks(stage.current);
-  const { failing, passed, applicable } = lampGroups(stage);
+  // 任务空闲时没有当前的一格，也没有灯；用户单独开展一项活动时只有那一格是当前，灯照那项活动的。
+  const idle = isIdle(stage), alone = isAlone(stage);
+  const marks = stageMarks(stage.current, alone);
+  const { failing, passed, applicable } = idle ? { failing: [], passed: 0, applicable: 0 } : lampGroups(stage);
   const go = (lamp: (typeof failing)[number]) => {
     const target = lampTarget(lamp, items);
     if (!target) return;
@@ -33,7 +35,8 @@ export function StageBar({ stage, items, onOpenItem, onOpenMaterial }: {
           </span>
         ))}
       </div>
-      <div className="sb-lamps" data-testid="stage-lamps">
+      {(idle || alone) && <div className="sb-lamps" data-testid="stage-position"><span className="sb-lamp none">{idle ? IDLE_TEXT : aloneText(stage.current as StageKey)}</span></div>}
+      {!idle && <div className="sb-lamps" data-testid="stage-lamps">
         {applicable === 0 ? <span className="sb-lamp none" data-testid="lamps-none">这一段还没有可以核对的内容。</span>
           : failing.length === 0 ? <span className="sb-lamp ok" data-testid="lamps-all-ok"><span className="sb-d" />这一段的几项都齐了。</span>
           : (
@@ -53,7 +56,7 @@ export function StageBar({ stage, items, onOpenItem, onOpenMaterial }: {
               {passed > 0 && <span className="sb-lamp ok" data-testid="lamps-rest-ok"><span className="sb-d" />其余 {passed} 项已齐</span>}
             </>
           )}
-      </div>
+      </div>}
     </div>
   );
 }

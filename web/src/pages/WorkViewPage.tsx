@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SettingOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
-import type { ActionRequest, AssistantReply, DiagramRow, Item, KnowledgeLibrary, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
+import type { ActionRequest, AssistantReply, DiagramRow, Item, KnowledgeLibrary, LaunchOption, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
 import { useWorkView } from "../state/useWorkView";
 import { Conversation } from "../components/work/Conversation";
 import { ItemsPanel } from "../components/work/ItemsPanel";
@@ -199,7 +199,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       // 改图（edit_diagram）照常登记：图的事件 diagram_changed 带操作编号，到了就消去。
       // 移动阶段也不登记：任务本来就在那个阶段时后端什么都不记、没有库事件，挂着的话会一直等不到。
       // 「继续本阶段」同样不登记：它只在会话里留一条通知，没有库事件。
-      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable" && req.kind !== "move_stage" && req.kind !== "continue_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
+      // 开展一项活动与移动阶段一样不登记：任务已经在那项活动里时后端什么都不记。
+      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable" && req.kind !== "move_stage" && req.kind !== "start_activity" && req.kind !== "continue_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
       return null;
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
@@ -329,6 +330,15 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       void send(start.text);
     });
   };
+  /**
+   * 任务状况卡的「开展一项活动」一节点了一项：一次界面操作，后端记活动记录并在对话里留一行，不替用户发话。
+   * 没做成（例如助手正在工作、单独开展缺前提）报一条失败提示。返回有没有做成。
+   */
+  const startActivity = async (option: LaunchOption): Promise<boolean> => {
+    const error = await submit({ kind: "start_activity", targets: [], fields: { activity: option.activity, in_flow: option.in_flow }, notify_executor: false }, option.label);
+    if (error) toast.error(errorText(error));
+    return !error;
+  };
   /** 阶段条上点了一盏说材料还没有被引用的灯：展开右侧栏、切到材料页签，由材料页签选中那份材料。 */
   const openMaterial = (path: string) => {
     toggleDoc(false);
@@ -446,7 +456,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                 hold={dirty || diagramDirty} holdText={diagramDirty && !dirty ? DIAGRAM_HOLD_TEXT : undefined} working={working} hint={hint} starting={executor?.state === "starting"}
                 onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews} onStop={busyElsewhere ? undefined : stop}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
-                draft={draft} onDraft={setDraft} inputRef={input} loadStatus={loadStatus}
+                draft={draft} onDraft={setDraft} inputRef={input} loadStatus={loadStatus} onLaunch={startActivity}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}
                 revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions} revisionCount={log.length}
                 onLocate={(excerpt, locator) => locateSource(excerpt, locator && isKnowledgeLocator(locator) ? locator : "")}

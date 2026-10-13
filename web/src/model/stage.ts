@@ -3,24 +3,42 @@
 // 阶段的名字、次序与卡片上「进入下一段」的选项键取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
 import {
-  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, STAY_TEXT,
+  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, IDLE, IDLE_NAME, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, STAY_TEXT,
+  activityDoneSentence, activityStartSentence,
 } from "../../../agent/src/lib/stage";
-import type { Item, StageKey, StageLamp, StageMove, StageView } from "../api/types";
+import type { Item, PositionKey, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
 export { STAGES, STAGE_NAMES, STAY_TEXT };
 
 /** 所属流程给人看的名字：认得的写中文名（现在只有「首次分析」），认不出的照原样写，没有给的写「（没有记）」。 */
 export function flowName(flow: string | null | undefined): string {
+  // null 是不在任何流程里：用户单独开展的活动。早先的后端不给这一项。
+  if (flow === null) return "单独开展";
   return flow ? (FLOW_NAMES as Record<string, string>)[flow] ?? flow : "（没有记）";
 }
 
 /** 阶段条上的一格：这个阶段已经过了、正在这里、还没到。 */
 export type StageMark = "done" | "current" | "ahead";
 
-export function stageMarks(current: StageKey): { key: StageKey; name: string; mark: StageMark }[] {
-  const at = STAGES.indexOf(current);
-  return STAGES.map((key, index) => ({ key, name: STAGE_NAMES[key], mark: index < at ? "done" : index === at ? "current" : "ahead" }));
+/**
+ * 阶段条上六格各是什么样子。任务在首次分析流程里的某个阶段时，它之前的填实、它自己是当前、之后的空心。
+ * 任务空闲时没有当前的一格；用户单独开展一项活动（alone 为真）时只有那一格是当前，别的都空心：单独开展不说明前面的阶段做过。
+ */
+export function stageMarks(current: PositionKey, alone = false): { key: StageKey; name: string; mark: StageMark }[] {
+  const at = current === IDLE ? -1 : STAGES.indexOf(current);
+  const loose = current === IDLE || alone;
+  return STAGES.map((key, index) => ({ key, name: STAGE_NAMES[key], mark: index === at ? "current" : !loose && index < at ? "done" : "ahead" }));
 }
+
+/** 任务现在是不是空闲：没有在进行的活动。 */
+export const isIdle = (stage: Pick<StageView, "current"> | null | undefined): boolean => stage?.current === IDLE;
+/** 现在这项活动是不是用户单独开展的（不在首次分析流程里）。早先的后端不给 node，当作在流程里。 */
+export const isAlone = (stage: Pick<StageView, "current" | "node"> | null | undefined): boolean => !!stage && stage.current !== IDLE && stage.node === null;
+/** 阶段条下面、调试页签里说任务现在在哪里的那一句；任务在流程里的某个阶段时不用它。 */
+export const IDLE_TEXT = "任务空闲：没有在进行的活动。";
+export const aloneText = (stage: StageKey): string => `单独开展：${STAGE_NAMES[stage]}（不在首次分析流程里）。`;
+/** 位置给人看的名字：阶段的名字，或者「空闲」。 */
+export const positionLabel = (position: PositionKey | string): string => (position === IDLE ? IDLE_NAME : (STAGE_NAMES as Record<string, string>)[position] ?? position);
 
 /**
  * 一盏灯在阶段条上的那一句：后端的整句带着编号清单（「有 2 页……的例子：OA-003、OA-005。」），阶段条上只显示清单前面那个冒号之前的
@@ -47,7 +65,7 @@ export function splitNumbers(text: string): { text: string; number: boolean }[] 
 
 /** 当前阶段的灯分三类：没通过的逐盏列出，通过的只数个数，不适用的不显示也不计数。 */
 export function lampGroups(stage: StageView): { failing: StageLamp[]; passed: number; applicable: number } {
-  const lamps = stage.lamps[stage.current] ?? [];
+  const lamps = stage.current === IDLE ? [] : stage.lamps[stage.current] ?? [];
   const failing = lamps.filter((one) => one.ok === false);
   const passed = lamps.filter((one) => one.ok === true).length;
   return { failing, passed, applicable: failing.length + passed };
@@ -128,15 +146,24 @@ export const quietHint = (key: string): string => (key === STAY_HERE_KEY ? STAY_
 
 /**
  * 对话区里说一次阶段移动的那一行：用户在卡片上点了进入下一段（或者退回前面的阶段），写「界面操作：用户把任务从核读材料移到澄清。」，
- * 与别的界面操作记号是同一种说法。阶段只由用户移动。
+ * 与别的界面操作记号是同一种说法。阶段只由用户移动。任务空闲时点了「开始核读材料」，写的是启动（或继续）首次分析。
  */
-/** 用户点了一张进入某个阶段的卡片而阶段没有移动时，卡片上「✓ 你选了……」下面的那句小字。at 是任务当时所在的阶段。 */
-export function stageUnmovedLine(at: string): string {
-  return `这次点击没有改变阶段：任务当时在${(STAGE_NAMES as Record<string, string>)[at] ?? at}。`;
+/**
+ * 用户点了一张进入某个阶段的卡片而阶段没有移动时，卡片上「✓ 你选了……」下面的那句小字。at 是任务当时所在的阶段。
+ * why 为 not_in_flow 是任务当时不在首次分析流程里（空闲，或者正在单独开展一项活动）：进入与退回不算数，请用户从任务状况卡开展一项活动。
+ */
+export function stageUnmovedLine(at: string, why?: string | null): string {
+  if (why === "not_in_flow") {
+    return `这次点击没有开始活动：${at === IDLE ? "任务现在空闲" : `任务正在单独开展${positionLabel(at)}`}。请从任务状况卡开展一项活动。`;
+  }
+  return `这次点击没有改变阶段：任务当时在${positionLabel(at)}。`;
 }
 
+/** 助手在一条回复里汇报用户单独开展的那项活动做完了时，那条回复下面的一行。 */
+export const activityDoneLine = (activity: StageKey): string => activityDoneSentence(activity);
+
 export function stageMoveLine(move: StageMove): string {
-  return `界面操作：用户把任务从${STAGE_NAMES[move.from] ?? move.from}移到${STAGE_NAMES[move.to] ?? move.to}。`;
+  return `界面操作：${activityStartSentence(move.how ?? "move", move.to, move.from)}`;
 }
 
 /**
