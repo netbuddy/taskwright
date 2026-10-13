@@ -32,6 +32,7 @@
 .app .tstatus .activities .lopt small { color: var(--mut); }
 .app .tstatus .activities .lopt .later { color: var(--mut); }
 .app .tstatus .activities .lhint { color: var(--mut); margin-top: .25rem; }
+.app .tstatus .activities .lhint:first-child { margin-top: 0; }
 .app .tstatus .acts { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .45rem; }
 .app .tstatus .acts .btn { border-radius: 71rem; }
 .app .tstatus .acts .btn.pri:not(:disabled) { background: var(--ai); border-color: var(--ai); color: var(--on-ink); }

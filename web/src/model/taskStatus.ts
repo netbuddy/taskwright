@@ -45,6 +45,8 @@ export const LAUNCH_ALONE_LABEL = "单独开展";
 export const LAUNCH_LATER_LABEL = "以后";
 /** 这一节下面的一句：不选也可以。 */
 export const LAUNCH_HINT = "不选也可以，直接在下面说话就行。";
+/** 对话里不是最后一张的状况卡：「开展一项活动」一节收成这一行，可点的选项只在最后一张卡上。 */
+export const LAUNCH_EARLIER_LINE = "开展一项活动见最新的任务状况。";
 
 /**
  * 「阶段」一行：在哪个阶段、是第几个、最近一次是谁在什么时候移进来的；一次都没有移过时写任务从这里开始。

@@ -178,15 +178,17 @@ export function Conversation({
   // 输入框此刻的内容：发送失败时据它判断用户有没有接着打新字。
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
-  const statusCard = (status: TaskStatusView) => (
-    <TaskStatusCard status={status} liveProposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle}
+  // 对话里最后一张状况卡：调出过就是最近调出的那张，没有调出过就是会话开头的那张。只有它带可点的「开展一项活动」。
+  const lastCalled = called.reduce((max, one) => Math.max(max, one.n), -Infinity);
+  const statusCard = (status: TaskStatusView, earlier: boolean) => (
+    <TaskStatusCard status={status} earlier={earlier} liveProposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle}
       liveLaunch={disabledReason ? null : task?.stage?.launch} onLaunch={onLaunch}
       onMessage={handlers.onMessage} onSend={onSend} onReviewed={handlers.onReviewed} />
   );
   const calledAfter = (id: string | null) => called.filter((one) => one.after === id).map((one) => (
     <div key={`status-${one.n}`} className="tstatus-wrap" data-testid="status-called">
       <div className="selfnote" data-testid="status-called-line">{STATUS_CALLED_LINE}</div>
-      {statusCard(one.status)}
+      {statusCard(one.status, one.n !== lastCalled)}
     </div>
   ));
   const send = () => {
@@ -212,7 +214,7 @@ export function Conversation({
         {opening && (
           <div className="tstatus-wrap" data-testid="status-opening">
             <div className="selfnote" data-testid="new-session-line">{NEW_SESSION_LINE}</div>
-            {statusCard(opening)}
+            {statusCard(opening, called.length > 0)}
           </div>
         )}
         {calledAfter(null)}

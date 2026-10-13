@@ -6,19 +6,22 @@
 // 卡上另有一节「开展一项活动」：正在进行的活动（一行，不是按钮）、可以启动或继续的流程、可以单独开展的六项活动、以后才有的（发布）。
 // 每一项能不能开展、缺什么由后端算好；能开展的是按钮，点了是一次界面操作（start_activity），不替用户发话；不能开展的灰着并写缺什么。
 // 这一节不是必答题：没有「不选」的按钮，用户直接在输入框里说话就行。按钮照任务现在的情形画（整份数据里的那一份），不照取数那一刻的。
+// 可点的选项只在对话里最后一张状况卡上：更早的卡上半部分是当时的情形，按钮却是现在的，放在一起会说两个时刻的事，所以收成一行。
 
 import { useState } from "react";
 import type { LaunchOption, LaunchView, MessageRequest, StageProposal, TaskStatusView } from "../../api/types";
 import {
-  LAUNCH_ALONE_LABEL, LAUNCH_CURRENT_LABEL, LAUNCH_FLOW_LABEL, LAUNCH_HINT, LAUNCH_LATER_LABEL, LAUNCH_TITLE,
+  LAUNCH_ALONE_LABEL, LAUNCH_CURRENT_LABEL, LAUNCH_EARLIER_LINE, LAUNCH_FLOW_LABEL, LAUNCH_HINT, LAUNCH_LATER_LABEL, LAUNCH_TITLE,
   STATUS_NEXT_LABEL, STATUS_NEXT_TEXT, STATUS_TITLE, activityLabel, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, statusSubtitle,
 } from "../../model/taskStatus";
 import { PENDING_LABEL, actOnProposal, pendingParts } from "./PendingProposal";
 import type { ReviewedHandler } from "./ReplyCard";
 import type { SendResult } from "./sendRestore";
 
-export function TaskStatusCard({ status, liveProposal, liveLaunch, off = false, offTitle, onMessage, onSend, onReviewed, onLaunch }: {
+export function TaskStatusCard({ status, liveProposal, liveLaunch, earlier = false, off = false, offTitle, onMessage, onSend, onReviewed, onLaunch }: {
   status: TaskStatusView;
+  /** 这张卡不是对话里最后一张状况卡：「开展一项活动」一节不列选项，只写一行请用户看最新的那张。 */
+  earlier?: boolean;
   /** 「开展一项活动」一节现在的内容（整份数据的 stage.launch）；没有给时照卡上取数那一刻的。 */
   liveLaunch?: LaunchView | null;
   /** 点了「开展一项活动」里的一项：返回有没有做成。不给时这一节的按钮都不能点。 */
@@ -74,7 +77,8 @@ export function TaskStatusCard({ status, liveProposal, liveLaunch, off = false, 
       <div className="row" data-testid="status-items"><b>需求条目</b><span>{itemsLine(status.items)}</span></div>
       {status.activity.kind !== "idle" && <div className="row" data-testid="status-missing"><b>这一段还差</b><span>{missingLine(status.missing)}</span></div>}
       {proposal && <div className="row" data-testid="status-proposal"><b>{PENDING_LABEL}</b><span>{pendingParts(proposal).join("")}</span></div>}
-      {launch && (
+      {launch && earlier && <div className="activities" data-testid="status-activities-earlier"><div className="lhint">{LAUNCH_EARLIER_LINE}</div></div>}
+      {launch && !earlier && (
         <div className="activities" data-testid="status-activities" aria-label={LAUNCH_TITLE}>
           <div className="k2">{LAUNCH_TITLE}</div>
           {launch.current && <div className="row" data-testid="launch-current"><b>{LAUNCH_CURRENT_LABEL}</b><span>{launch.current.label}</span></div>}

@@ -8,7 +8,7 @@ import type { ConversationMessage, LaunchView, StageProposal, Task, TaskStatusVi
 import { Conversation } from "../components/work/Conversation";
 import { TaskStatusCard } from "../components/work/TaskStatusCard";
 import {
-  LAUNCH_HINT, NEW_SESSION_LINE, STATUS_CALLED_LINE, STATUS_NEXT_TEXT, activityLabel, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, nobodySpoke, shortMoment, statusSubtitle,
+  LAUNCH_EARLIER_LINE, LAUNCH_HINT, NEW_SESSION_LINE, STATUS_CALLED_LINE, STATUS_NEXT_TEXT, activityLabel, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, nobodySpoke, shortMoment, statusSubtitle,
   wantsOpeningStatus,
 } from "../model/taskStatus";
 import { overallTask } from "./fixtures/overallTask";
@@ -203,6 +203,37 @@ describe("开展一项活动", () => {
     const opening = await screen.findByTestId("status-opening");
     fireEvent.click(within(within(opening).getByTestId("launch-flows")).getByRole("button"));
     expect(onLaunch).toHaveBeenCalledWith(LAUNCH_IDLE.flows[0]);
+  });
+
+  it("可点的选项只在对话里最后一张状况卡上：调出新的一张之后，更早的卡把这一节收成一行", async () => {
+    const onLaunch = vi.fn().mockResolvedValue(true);
+    const task = taskWith(null);
+    chat({ ...task, stage: { ...task.stage!, current: "idle", launch: LAUNCH_IDLE } }, [], { onLaunch, loadStatus: vi.fn().mockResolvedValue(IDLE_STATUS) });
+    const opening = await screen.findByTestId("status-opening");
+    // 只有会话开头的那一张：它带选项。
+    expect(within(opening).getByTestId("status-activities")).toBeInTheDocument();
+    expect(within(opening).queryByTestId("status-activities-earlier")).toBeNull();
+    // 调出一张：开头那张收成一行，没有按钮；新的一张带选项。
+    fireEvent.click(screen.getByTestId("status-button"));
+    await vi.waitFor(() => expect(screen.getAllByTestId("status-called")).toHaveLength(1));
+    expect(within(opening).queryByTestId("status-activities")).toBeNull();
+    expect(within(opening).getByTestId("status-activities-earlier")).toHaveTextContent(LAUNCH_EARLIER_LINE);
+    expect(LAUNCH_EARLIER_LINE).toBe("开展一项活动见最新的任务状况。");
+    expect(within(within(opening).getByTestId("status-activities-earlier")).queryByRole("button")).toBeNull();
+    // 再调出一张：前一张调出的也收起，只有最后一张能点。
+    fireEvent.click(screen.getByTestId("status-button"));
+    await vi.waitFor(() => expect(screen.getAllByTestId("status-called")).toHaveLength(2));
+    const [first, second] = screen.getAllByTestId("status-called");
+    expect(within(first).getByTestId("status-activities-earlier")).toBeInTheDocument();
+    expect(screen.getAllByTestId("status-activities")).toHaveLength(1);
+    fireEvent.click(within(within(second).getByTestId("launch-flows")).getByRole("button"));
+    expect(onLaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it("更早的卡：任务已经结束时没有这一节，也没有那一行", () => {
+    render(<Wrap><TaskStatusCard status={IDLE_STATUS} earlier liveProposal={null} liveLaunch={null} onMessage={vi.fn()} onSend={vi.fn()} /></Wrap>);
+    expect(screen.queryByTestId("status-activities")).toBeNull();
+    expect(screen.queryByTestId("status-activities-earlier")).toBeNull();
   });
 });
 
