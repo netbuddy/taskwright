@@ -77,8 +77,8 @@ test("用户改图不核对条目编号与来源：多画一个没有来源的�
   const changed = 'flowchart LR\n  a(["UC-001 登录"])\n  c(["UC-003 改口令"])\n  x(["UC-404 不存在的"])\n  a --> c\n  a --> x';
   const result = await editDiagram(ctx(dir), request(changed));
   assert.equal(result.results[0].revision_no, 2);
-  // 来源还是原来那三条（其中 UC-002 已经不在图里），没有因为画了 UC-003 而要求补来源。
-  assert.deepEqual(sourcesAt(dir, 2).map((row) => [row.kind, row.locator]), [["用户的话", "session-test#u1"], ["条目", "UC-001"], ["条目", "UC-002"]]);
+  // UC-002 不在图里了，它的来源去掉；UC-001 仍在图里，保留；画了 UC-003 也不要求补来源。
+  assert.deepEqual(sourcesAt(dir, 2).map((row) => [row.kind, row.locator]), [["用户的话", "session-test#u1"], ["条目", "UC-001"]]);
   // 助手照旧两条都拦。
   await assert.rejects(saveDiagram({ ...callIn(dir), userMessages: [] }, { diagram: "D-001", base_revision: 2, mermaid: `${changed}\n  x --> a` }, { validate: async () => ({ ok: true }) }),
     /UC-404 在这个任务里不存在/);
@@ -252,4 +252,14 @@ test("/tw-user 里的 mark_diagram_viewed：记下并回报成功，不往会话
   const refused = JSON.parse(status[USER_RESULT_KEY]);
   assert.deepEqual([refused.op_id, refused.ok, refused.error.code, refused.error.message], ["ui-op-10", false, "rejected", "图 D-404 不存在或已经删除。"]);
   assert.equal(sent.length, 0);
+});
+
+test("用户把图里的节点删了再存：那个条目的来源跟着去掉，仍画着的保留；只改文字不动节点时来源原样沿用", async () => {
+  const dir = await workspace();
+  const only = 'flowchart LR\n  a(["UC-001 登录"])';
+  await editDiagram(ctx(dir), request(only));
+  assert.deepEqual(sourcesAt(dir, 2).map((row) => [row.kind, row.locator]), [["用户的话", "session-test#u1"], ["条目", "UC-001"]]);
+  // 第二次只改了节点上的字，节点还在：来源不变。
+  await editDiagram(ctx(dir), request('flowchart LR\n  a(["UC-001 用口令登录"])', { op_id: "ui-op-2", targets: [{ diagram_id: "D-001", base_revision: 2 }] }));
+  assert.deepEqual(sourcesAt(dir, 3).map((row) => [row.kind, row.locator]), [["用户的话", "session-test#u1"], ["条目", "UC-001"]]);
 });
