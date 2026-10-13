@@ -13,6 +13,10 @@
  * launch 是「开展一项活动」一节的内容（agent/src/lib/stage.ts 的 LaunchView）：正在进行的活动（一行，不是按钮）、可以启动或继续的流程、
  * 可以单独开展的六项活动各带能不能开展与缺什么、以后才有的（发布）。前提在这里算好，页面只渲染；点一项是界面操作 start_activity。
  * 任务不在进行中时 launch 为 null。versions 留给已发布的文档版本，现在没有这种记录，恒为空列表。
+ * assets 是需求资产六类的现状，六格，每格 { key, name, count, unit, text, note, produced_by }（agent/src/lib/activity_catalog.ts 的 AssetCell）。
+ * catalog 是任务起点页的活动目录：flows 两条工作流程与 activities 七项单项活动，文字取自活动与流程的定义文件开头的头
+ * （agent/prompts/stages/、agent/prompts/flows/），各带现在能不能开展（enabled）与一句状态（state）；能不能开展只看数据。
+ * 任务不在进行中、或者定义读不出来时 catalog 为 null。launch 留给旧页面过渡，以后去掉。
  * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
  */
 
@@ -74,6 +78,8 @@ export function taskStatus(taskDir: string) {
     missing: (current === IDLE ? [] : stage.lamps[current] ?? []).filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })),
     proposal: stage.proposal,
     launch: view.status === "进行中" ? stage.launch : null,
+    assets: stage.assets,
+    catalog: view.status === "进行中" ? stage.catalog : null,
     versions: [] as unknown[],
   };
 }

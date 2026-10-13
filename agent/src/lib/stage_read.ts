@@ -12,7 +12,7 @@
  */
 
 import type { DatabaseSync } from "node:sqlite";
-import { type AssetFacts, assetFacts, blockedByStage } from "./activity_catalog.ts";
+import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, catalog } from "./activity_catalog.ts";
 import { DefinitionHeadError } from "./activity_def.ts";
 import { type Definitions, definitions } from "./activity_def_read.ts";
 import { type Entry, chooseActOf } from "./completion_consent.ts";
@@ -446,6 +446,11 @@ export interface StageSummary {
   flow_node: Stage | null;
   /** 任务状况卡上「开展一项活动」一节的内容（lib/stage.ts 的 LaunchView）。 */
   launch: LaunchView;
+  /** 需求资产六类的现状（lib/activity_catalog.ts 的 AssetCell），照材料与证据、业务说明、分析模型、需求条目、评审与确认、文档与版本的次序。 */
+  assets: AssetCell[];
+  /** 给页面的活动目录：两条工作流程与七项单项活动，各带现在能不能开展。活动的定义读不出来时为 null，原因在 catalog_error。 */
+  catalog: Catalog | null;
+  catalog_error: string | null;
   moved_by: StageActor | null;
   /** 最近一次移动的时刻（库里的本地时间写法）。 */
   moved_at: string | null;
@@ -565,12 +570,17 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
   if (!hasOverall(definition.collections)) return null;
   const open = openActivityRecord(db, taskId);
   const input = lampInput(db, workspaceDir, taskId, definition);
-  const facts = launchFacts(db, workspaceDir, taskId, definition, assetFacts(input));
+  const assets = assetFacts(input);
+  const facts = launchFacts(db, workspaceDir, taskId, definition, assets);
+  const found = definitionsOrError();
   return {
     current: facts.position,
     node: facts.position !== IDLE && facts.inFlow ? facts.position : null,
     flow_node: facts.flowNode,
     launch: launchView(facts),
+    assets: assetCells(assets, found.defs?.activities ?? []),
+    catalog: found.defs ? catalog(found.defs, assets, { position: facts.position, inFlow: facts.inFlow, flowNode: facts.flowNode }) : null,
+    catalog_error: found.error,
     moved_by: open?.actor ?? null,
     moved_at: open?.started_at ?? null,
     reason: open ? open.reason : null,

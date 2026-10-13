@@ -1,6 +1,6 @@
 /**
  * 任务状况（src/task_status.ts）：现在的阶段与最近一次移动、总体分析的页按章归类的节数、待澄清数、图按种类的张数、
- * 各集合的条目数与用户看过的条数、这一段没有通过的灯、开着的提议。任务库经子进程里助手一侧真实的函数建，这里只读。
+ * 各集合的条目数与用户看过的条数、这一段没有通过的灯、开着的提议；需求资产六类的现状与活动目录。任务库经子进程里助手一侧真实的函数建，这里只读。
  */
 
 import assert from "node:assert/strict";
@@ -77,6 +77,26 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   assert.deepEqual(status.proposal, stage.proposal);
   assert.deepEqual([status.proposal!.stage, status.proposal!.enter.text, status.proposal!.session_id], ["reviewing", "进入评审确认", "sess-first"]);
   assert.deepEqual(status.versions, []);
+  // 需求资产六类的现状：材料一份、已被引用；业务说明的节数与待澄清数同上面 description 的；三张图用户都没有打开过；
+  // 两条用例里一条没有看过、一条因依据的页没看过而待核实；没有评审过、没有发布过。
+  assert.deepEqual(status.assets.map((one) => [one.key, one.name, one.count, one.unit, one.text, one.note]), [
+    ["materials", "材料与证据", 1, "份", "1 份", "均已核读"], ["description", "业务说明", 7, "节", "7 节", "1 处待澄清"], ["models", "分析模型", 3, "张", "3 张", "3 未查看"],
+    ["items", "需求条目", 2, "条", "2 条", "1 未读 · 1 待核实"], ["review", "评审与确认", 0, "轮", "未评审", ""], ["versions", "文档与版本", 0, "版", "未发布", ""]]);
+  // 每格写由哪些活动产出（取自各项活动的定义里「写」那一栏）；材料来自上传，没有产出它的活动。
+  assert.deepEqual(status.assets.map((one) => one.produced_by), [[], ["核读材料", "澄清", "整理建模", "编写文档"], ["整理建模"], ["写条目", "评审确认"], ["评审确认"], ["编写文档", "发布"]]);
+  assert.deepEqual(status.assets, stage.assets, "与整份数据里的是同一份");
+  // 活动目录：任务在流程里做写条目，这一项不能同时单独开展；别的六项按数据判，发布写缺什么；首次分析正在进行，需求变更要有已发布的版本。
+  assert.deepEqual(status.catalog!.activities.map((one) => [one.key, one.name, one.mode_name, one.enabled, one.state]), [
+    ["reading", "核读材料", "批处理", true, "可以开展"], ["clarifying", "澄清", "逐项对话", true, "可以开展"], ["modeling", "整理建模", "批处理", true, "可以开展"],
+    ["writing", "写条目", "批处理", false, "正在工作流程中进行"], ["reviewing", "评审确认", "逐项对话", true, "可以开展"], ["document", "编写文档", "批处理", true, "可以开展"],
+    ["publish", "发布", "仅限用户发起", false, "还没有评审过；还有待确认的内容"]]);
+  assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.name, one.enabled, one.state, one.recommended, one.at, one.start]), [
+    ["initial", "首次分析", false, "正在进行", true, "writing", "writing"], ["change", "需求变更", false, "还没有已发布的版本", false, null, null]]);
+  const reading = status.catalog!.activities[0];
+  assert.deepEqual([reading.reads, reading.writes, reading.prerequisite_text], [[{ key: "materials", name: "材料与证据" }, { key: "knowledge", name: "知识库" }],
+    [{ key: "description", name: "业务说明" }], "前置条件：至少一份项目材料。"]);
+  assert.ok(reading.purpose.length > 0 && reading.example.length > 0);
+  assert.deepEqual(status.catalog, stage.catalog, "与整份数据里的是同一份");
 });
 
 test("刚建的任务：没有页、没有图、没有提议，各项都是空的；早先建的任务没有阶段，没有状况", () => {
@@ -84,6 +104,8 @@ test("刚建的任务：没有页、没有图、没有提议，各项都是空�
   assert.deepEqual([fresh.activity.key, fresh.description, fresh.models, fresh.proposal],
     ["writing", { sections: 0, chapters: [], unsorted: 0, open_questions: 0 }, [], null]);
   assert.deepEqual(fresh.items.map((one) => [one.collection, one.total]), [["用例", 0], ["待定事项", 0]]);
+  // 资产现状：只有一份还没有被引用的材料，别的各格都是零，零的格下面没有那一句。
+  assert.deepEqual(fresh.assets.map((one) => [one.text, one.note]), [["1 份", "1 份未核读"], ["0 节", ""], ["0 张", ""], ["0 条", ""], ["未评审", ""], ["未发布", ""]]);
   assert.equal(taskStatus(build(tmp, "old", DEMO_DEFINITION, [])), null);
   assert.equal(taskStatus(`${tmp}/没有这个目录`), null);
 });
@@ -99,6 +121,10 @@ test("开展一项活动一节：正在进行的一行、首次分析能不能�
     ["写条目", false, false, "正在流程里进行"], ["评审确认", false, false, "还没有需求条目"], ["编写文档", false, false, "还没有已确认的需求条目"]]);
   assert.deepEqual(flowed.launch!.later, [{ label: "发布", state: "0.6 后续" }]);
   assert.deepEqual(flowed.launch, library.taskSnapshot(ws)[1]!.stage!.launch, "与整份数据里的是同一份");
+  // 活动目录按数据判：有一节业务说明、没有图，整理建模与写条目的前提够了（写条目正在流程里做）；没有需求条目，评审确认与编写文档不能开展。
+  assert.deepEqual(flowed.catalog!.activities.map((one) => [one.key, one.enabled, one.state]), [
+    ["reading", true, "可以开展"], ["clarifying", true, "可以开展"], ["modeling", true, "可以开展"], ["writing", false, "正在工作流程中进行"],
+    ["reviewing", false, "还没有需求条目"], ["document", false, "还没有已确认的需求条目"], ["publish", false, "还没有评审过"]]);
   // 用户改做单独的澄清（直接改库：把在进行的那条记录记成不在流程里的澄清，流程的位置另留一条已结束的写条目）。
   sqlRun(ws, [
     ["UPDATE activity_record SET ended_at = started_at, ended_seq = started_seq"],
@@ -115,9 +141,14 @@ test("开展一项活动一节：正在进行的一行、首次分析能不能�
   assert.deepEqual([stage.current, stage.node, stage.flow_node, stage.flow], ["clarifying", null, "writing", null]);
   assert.deepEqual(alone.missing, stage.lamps.clarifying.filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })));
   assert.deepEqual(library.stageDebugView(ws).records.map((one) => [one.to, one.flow]), [["writing", "initial"], ["clarifying", null]]);
-  // 任务已经完成：没有这一节。
+  // 单独开展着澄清：活动目录里澄清写正在进行；首次分析可以从走到的写条目接着。
+  assert.deepEqual(alone.catalog!.activities.filter((one) => !one.enabled).map((one) => [one.key, one.state]),
+    [["clarifying", "正在进行"], ["reviewing", "还没有需求条目"], ["document", "还没有已确认的需求条目"], ["publish", "还没有评审过"]]);
+  assert.deepEqual([alone.catalog!.flows[0].enabled, alone.catalog!.flows[0].state, alone.catalog!.flows[0].at, alone.catalog!.flows[0].start], [true, "可以开展", "writing", "writing"]);
+  // 任务已经完成：没有这一节，也没有活动目录；资产现状照旧给。
   sqlRun(ws, [["UPDATE task SET status = '已完成'"]]);
-  assert.equal(taskStatus(ws)!.launch, null);
+  const closed = taskStatus(ws)!;
+  assert.deepEqual([closed.launch, closed.catalog, closed.assets.length], [null, null, 6]);
 });
 
 test("七章的章号与章名", () => {
