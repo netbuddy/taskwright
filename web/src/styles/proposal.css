@@ -28,7 +28,8 @@
 .app .tstatus .activities .lopts { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: baseline; min-width: 0; }
 /* 一项里按钮与它后面的状态文字放不下一行时，状态文字折到按钮下面，不挤出卡片。 */
 .app .tstatus .activities .lopt { display: inline-flex; flex: none; flex-wrap: wrap; align-items: baseline; gap: .1rem .3rem; max-width: 100%; }
-.app .tstatus .activities .lopt .btn { border-radius: 71rem; }
+/* 按钮上的字比卡片还宽时（「继续首次分析（从核读材料接着）」）在按钮里折行，不伸出卡片。 */
+.app .tstatus .activities .lopt .btn { border-radius: 71rem; max-width: 100%; min-width: 0; white-space: normal; text-align: left; }
 .app .tstatus .activities .lopt small { color: var(--mut); }
 .app .tstatus .activities .lopt .later { color: var(--mut); }
 .app .tstatus .activities .lhint { color: var(--mut); margin-top: .25rem; }
