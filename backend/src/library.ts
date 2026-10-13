@@ -314,7 +314,9 @@ export function proposalView(fact: Omit<OpenProposal, "session_id" | "reply_entr
 /**
  * 任务现在的工作阶段与每个阶段的几盏灯，给接口的 stage 形状：{ current, moved_by, moved_at, reason, lamps, proposal }。
  * proposal 是开着的提议（助手发了提议进入下一个阶段的卡片、用户还没有进入，见 agent/src/lib/stage_proposal.ts），没有时为 null。
- * flow 是所属流程：最近一次移动是在哪一条流程里发生的，一次都没有移过时也是首次分析（initial）；现在只有这一条流程。
+ * flow 是所属流程：现在这项活动在哪一条流程里（现在只有首次分析 initial；空闲时也写它），用户单独开展的活动不在流程里，是 null。
+ * node 是现在这项活动在流程里的节点（单独开展、空闲时为 null），flow_node 是首次分析走到的节点，launch 是「开展一项活动」一节的内容
+ * （agent/src/lib/stage.ts 的 LaunchView）。
  * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）；moved_by 是最近一次移动由谁做的（executor 或 user），
  * 一次都没有移过时与 moved_at、reason 一起为 null；lamps 按阶段给出各盏灯 { key, summary, ok, items }，ok 为 null 是不适用。
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，返回 null；算不出来时也返回 null。
@@ -330,7 +332,7 @@ export function stageView(taskDir: string) {
       if (summary === null) return null;
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       const open = task ? openProposal(db, task.task_id) : null;
-      return { ...summary, moved_at: clock.fromLocalText(summary.moved_at), flow: (task ? openActivityRecord(db, task.task_id)?.flow : null) ?? FLOW_INITIAL,
+      return { ...summary, moved_at: clock.fromLocalText(summary.moved_at), flow: flowOf(task ? openActivityRecord(db, task.task_id) : null),
         proposal: open === null ? null : proposalView(open, { session_id: open.session_id, reply_entry: open.reply_entry, seq: open.event_seq, at: open.at }) };
     } finally {
       db.close();
@@ -340,9 +342,15 @@ export function stageView(taskDir: string) {
   }
 }
 
+/** 整份数据里 stage.flow 的取值：现在这项活动的所属流程。用户单独开展的活动不在流程里，是 null；空闲、流程里的阶段是首次分析。 */
+function flowOf(open: { node: string | null; flow: string | null } | null): string | null {
+  if (open !== null && open.node === null) return null;
+  return open?.flow ?? FLOW_INITIAL;
+}
+
 /**
  * 调试用：任务的全部阶段记录（按先后）与最近被拒的工具调用（新的在前，最多 limit 条）。库另开一个只读连接；
- * 还没有库、或者读不出来时两样都是空的。阶段记录每条写 { from, to, actor, reason, run_id, session_id, at, flow }（flow 是所属流程）；
+ * 还没有库、或者读不出来时两样都是空的。阶段记录每条写 { from, to, actor, reason, run_id, session_id, at, flow }（flow 是所属流程，单独开展的活动是 null）；
  * 被拒的调用每条写 { work_id, session_id, call_id, tool, kind, fact, guidance, at }，work_id 是它所属的那次工作。
  */
 export function stageDebugView(taskDir: string, limit = 200) {
@@ -355,7 +363,8 @@ export function stageDebugView(taskDir: string, limit = 200) {
       if (!task) return empty;
       const records = activityRecords(db, task.task_id).map((one) => ({
         from: one.from, to: one.activity, actor: one.actor, reason: one.reason, run_id: one.run_id, session_id: one.session_id, at: clock.fromLocalText(one.started_at),
-        flow: one.flow ?? FLOW_INITIAL,
+        // 单独开展的活动不在流程里：所属流程是 null。
+        flow: one.node === null ? null : one.flow ?? FLOW_INITIAL,
       }));
       const rejections = tableNames(db).has("tool_rejection") ? (db.prepare(
         "SELECT work_id, session_id, call_id, tool_name, reason_kind, fact, guidance, created_at FROM tool_rejection ORDER BY rejection_id DESC LIMIT ?",

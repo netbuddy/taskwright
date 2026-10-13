@@ -5,10 +5,14 @@
  * 还没有了结的待澄清问题数、图按种类的张数、各集合的条目数与用户看过的条数、现在这个阶段没有通过的灯、开着的提议。
  * 章的归法与页面目录用的是同一个函数（agent/src/lib/overall_chapters.ts）。
  *
- * 字段按「当前活动」命名（activity）：任务处在某一个阶段时 kind 是 stage，key 是阶段的写法，ordinal 是第几阶段，所属流程恒为首次分析。
- * 任务空闲（没有在进行的活动）时 kind 与 key 都是 idle，name 是「空闲」，ordinal 与谁移的、什么时候、为什么三项为 null，
- * missing 是空的（空闲没有自己的灯）；现在没有哪条路会把任务置为空闲。以后可以单独开展一项活动时，这一项可以是别的种类。
- * versions 留给已发布的文档版本，现在没有这种记录，恒为空列表。
+ * 字段按「当前活动」命名（activity），有三种：
+ * - 任务在首次分析流程里的某个阶段：kind 是 stage，key 是阶段的写法，ordinal 是第几阶段，flow 是所属流程（initial）。
+ * - 用户单独开展一项活动（不在流程里）：kind 是 activity，key 与 name 是那项活动的，ordinal 与 flow 为 null；missing 照那项活动的灯。
+ * - 任务空闲（没有在进行的活动）：kind 与 key 都是 idle，name 是「空闲」，ordinal 与谁移的、什么时候、为什么三项为 null，
+ *   missing 是空的（空闲没有自己的灯）。
+ * launch 是「开展一项活动」一节的内容（agent/src/lib/stage.ts 的 LaunchView）：正在进行的活动（一行，不是按钮）、可以启动或继续的流程、
+ * 可以单独开展的六项活动各带能不能开展与缺什么、以后才有的（发布）。前提在这里算好，页面只渲染；点一项是界面操作 start_activity。
+ * 任务不在进行中时 launch 为 null。versions 留给已发布的文档版本，现在没有这种记录，恒为空列表。
  * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
  */
 
@@ -58,14 +62,18 @@ export function taskStatus(taskDir: string) {
     generated_at: clock.now(),
     activity: current === IDLE
       ? { kind: "idle" as const, key: current, name: IDLE_NAME, ordinal: null, flow: stage.flow, moved_by: null, moved_at: null, reason: null }
-      : { kind: "stage" as const, key: current, name: STAGE_NAMES[current] ?? String(current), ordinal: STAGES.indexOf(current) + 1, flow: stage.flow,
-        moved_by: stage.moved_by, moved_at: stage.moved_at, reason: stage.reason },
+      : stage.node === null
+        ? { kind: "activity" as const, key: current, name: STAGE_NAMES[current] ?? String(current), ordinal: null, flow: null,
+          moved_by: stage.moved_by, moved_at: stage.moved_at, reason: stage.reason }
+        : { kind: "stage" as const, key: current, name: STAGE_NAMES[current] ?? String(current), ordinal: STAGES.indexOf(current) + 1, flow: stage.flow,
+          moved_by: stage.moved_by, moved_at: stage.moved_at, reason: stage.reason },
     description: { sections: chapters.reduce((sum, one) => sum + one.sections, 0) + unsorted, chapters, unsorted, open_questions: openQuestions },
     models,
     items,
     // 这一段还差什么：现在这个阶段没有通过的灯，原句照灯的整句。
     missing: (current === IDLE ? [] : stage.lamps[current] ?? []).filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })),
     proposal: stage.proposal,
+    launch: view.status === "进行中" ? stage.launch : null,
     versions: [] as unknown[],
   };
 }
