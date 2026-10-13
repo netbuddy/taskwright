@@ -27,6 +27,8 @@ const ALLOWED: Record<string, string[]> = {
   // 五个阶段给人看的名字（常量）。
   // 另有问题条目的几个字段名与取值（常量）。
   "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_INITIAL", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark",
+    // 范围说明的字数上限与按名字认阶段的函数：只做计算，后端在新建会话之前核对开展活动的写法时用。
+    "SCOPE_MAX_LENGTH", "stageByName",
     // 空闲（任务没有在进行的活动）的写法与名字、位置的类型与两个只做计算的函数。
     "IDLE", "IDLE_NAME", "Position", "isPosition", "positionName",
     // 任务空闲时提议开始核读材料的那张卡片上「先不开始」的那一项（常量）。

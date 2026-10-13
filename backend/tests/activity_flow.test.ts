@@ -2,14 +2,15 @@
  * 开展一项活动的整条链路（真的后端进程与真的 pi，模型换成进程内的假端点）：
  * 新任务空闲——系统提示是空闲的那一份、写条目被拦、助手用卡片提议开始核读材料；用户点了，首次分析从核读材料启动；
  * 用户从任务状况卡单独开展澄清，助手做够了在回复里汇报结束，任务回到空闲；
- * 用户继续首次分析，助手在流程里写 activity_done 被拒；单独开展缺前提时拒绝并写明缺什么。
+ * 用户继续首次分析，助手在流程里写 activity_done 被拒；单独开展缺前提时拒绝并写明缺什么；
+ * 在一条新会话里开展活动：后端先核对、再建会话，开展那一行在新会话的第一条消息之前。
  */
 
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import { IDLE_OPENING, STANDALONE_EXIT } from "../../agent/src/lib/stage_prompt.ts";
-import { captureConsole, movesSql, tempDir } from "./helpers.ts";
+import { captureConsole, movesSql, sendAndWaitTurn, tempDir } from "./helpers.ts";
 import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
 
 captureConsole();
@@ -34,6 +35,8 @@ const SCRIPT = {
     // 用户继续首次分析之后说了一句：在流程里写 activity_done，被拒；去掉之后送达。
     done("核读做完了。", "call-done-in-flow"),
     reply("材料还在读。", "call-plain"),
+    // 用户在一条新会话里开展澄清之后说的第一句话。
+    reply("好，先说续借：到期之前可以续借几次？", "call-new-session"),
   ],
 };
 
@@ -45,7 +48,7 @@ function systemText(request: Dict): string {
 }
 
 test("新任务空闲；助手提议开始核读、用户点了启动首次分析；单独开展一项活动由助手汇报结束；流程里不能由助手结束；缺前提的不能单独开展", { skip: NO_PI, timeout: 240000 }, () =>
-  withStack(tmp, "activities", SCRIPT, async ({ call, taskId, session, send, action, entryOfCall, requests, db }) => {
+  withStack(tmp, "activities", SCRIPT, async ({ call, taskId, session, port, send, action, entryOfCall, requests, db }) => {
     const status = async () => (await call("GET", `/api/v1/tasks/${taskId}/status`)).body.status as Dict;
     const stageNow = async () => (await call("GET", `/api/v1/tasks/${taskId}/snapshot?session=${session}`)).body.task.stage as Dict;
     const messages = async () => (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[];
@@ -132,4 +135,28 @@ test("新任务空闲；助手提议开始核读、用户点了启动首次分�
       { from_stage: null, stage: "reading", actor: "user" }, { from_stage: "reading", stage: "clarifying", actor: "user" }, { from_stage: null, stage: "reading", actor: "user" }]);
     assert.deepEqual(db("SELECT activity, node, flow, ended_at IS NULL AS open FROM activity_record ORDER BY started_seq"), [
       { activity: "reading", node: "reading", flow: "initial", open: 0 }, { activity: "clarifying", node: null, flow: null, open: 0 }, { activity: "reading", node: "reading", flow: "initial", open: 1 }]);
+
+    // 在一条新会话里开展活动。缺前提的先拒绝，一条会话都不多建。
+    const sessionCount = async () => ((await call("GET", `/api/v1/tasks/${taskId}/sessions`)).body.sessions as Dict[]).length;
+    const sessionsBefore = await sessionCount();
+    const early = await action({ kind: "start_activity", targets: [], fields: { activity: "reviewing", in_flow: false, session: "new" }, notify_executor: false });
+    assert.deepEqual([early.status >= 400, early.body.error.code, early.body.error.message], [true, "rejected", "现在还不能开展「评审确认」：还没有需求条目。"]);
+    // 写法不对的照常转交、由助手一侧拒绝，也不建会话。
+    const malformed = await action({ kind: "start_activity", targets: [], fields: { activity: "clarifying", in_flow: false, session: "new", scope: 7 }, notify_executor: false });
+    assert.equal(malformed.body.error.code, "bad_request");
+    assert.equal(await sessionCount(), sessionsBefore);
+    // 够前提的：后端新建一条会话，在新会话里记开展，回应里带新会话的编号；活动记录记的是新会话，范围说明照记。
+    const started = await action({ kind: "start_activity", targets: [], fields: { activity: "clarifying", in_flow: false, session: "new", scope: "从续借问起" }, notify_executor: false });
+    const newSession = started.body.session_id as string;
+    assert.ok(started.status === 200 && typeof newSession === "string" && newSession !== "" && newSession !== session, JSON.stringify(started.body));
+    assert.deepEqual(db("SELECT activity, session_id, scope FROM activity_record ORDER BY started_seq DESC LIMIT 1"), [{ activity: "clarifying", session_id: newSession, scope: "从续借问起" }]);
+    // 第一条消息发到新会话：开展那一行在它之前；这次运行的系统提示带着范围说明。
+    await sendAndWaitTurn(port, taskId, newSession, async () => {
+      assert.equal((await call("POST", `/api/v1/tasks/${taskId}/messages?session=${newSession}`, { text: "先问续借。", client_id: "c-new" })).status, 200);
+    });
+    const inNew = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${newSession}`)).body.messages as Dict[];
+    assert.deepEqual(inNew.filter((m) => m.type === "ui_action_noted" || m.type === "user_message").map((m) => [m.type, m.text]), [
+      ["ui_action_noted", "界面操作（不是用户打的字）：用户开展活动「澄清」。（原来在做：核读材料）范围说明：从续借问起。"], ["user_message", "先问续借。"]]);
+    assert.ok(systemText(requests().at(-1)!).includes("本次范围说明：从续借问起"));
+    assert.equal(await sessionCount(), sessionsBefore + 1);
   }, { seed: false, launch: false }));

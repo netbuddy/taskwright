@@ -17,6 +17,7 @@ import * as render from "./render.ts";
 import * as exportDocx from "./export_docx.ts";
 import * as exportDocument from "./export_document_docx.ts";
 import { DIAGRAM_KINDS, validateDiagram } from "./diagram_validate.ts";
+import { SCOPE_MAX_LENGTH, stageByName } from "../../agent/src/lib/stage.ts";
 import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
@@ -193,6 +194,31 @@ export function parseMultipartForm(contentType: string, body: Buffer): { file: [
 
 function sessionParam(req: Request, body: Record<string, any> = {}): string | null {
   return or(req.query.session, null) ?? or(body.session_id, null) ?? null;
+}
+
+/**
+ * 一次直接操作是不是「在一条新会话里开展活动」：start_activity 的 fields.session 写了 new，而且别的几项写法都对。
+ * 写法不对的不在这里拒绝，照常转交，由助手一侧答 bad_request；那样就不会先建出一条用不上的会话。
+ */
+function startsInNewSession(body: Record<string, any>): boolean {
+  const fields = body.fields;
+  if (body.kind !== "start_activity" || !isObject(fields) || fields.session !== "new") return false;
+  const scope = fields.scope;
+  return stageByName(fields.activity) !== null && typeof fields.in_flow === "boolean"
+    && (scope === undefined || scope === null || (typeof scope === "string" && scope.trim().length <= SCOPE_MAX_LENGTH));
+}
+
+/**
+ * 新建会话之前核对：单独开展的这项活动现在能不能开展（任务状况里活动目录的那一项）。不能就答 rejected 并写明原因，
+ * 不建会话。在流程里开始不查前提，与助手一侧相同。任务没有阶段、活动目录出不来时不在这里拒绝，交给助手一侧。
+ */
+function refuseUnstartable(taskDir: string, fields: Record<string, any>): void {
+  if (fields.in_flow !== false) return;
+  const key = stageByName(fields.activity);
+  const entry = taskStatus(taskDir)?.catalog?.activities.find((one) => one.key === key);
+  if (!entry || entry.enabled) return;
+  const fact = `现在还不能开展「${entry.name}」：${entry.state}`;
+  throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
 }
 
 /** 用户打的字首字符是斜杠时，前面加「用户说：」，免得被 pi 当作扩展命令吞掉。 */
@@ -426,8 +452,15 @@ const handlers: Record<string, Handler> = {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
     t.requireOpen();
-    const opId = await t.executor.action(sessionParam(req, body), body);
-    return json(200, { ok: true, client_id: body.client_id ?? null, op_id: opId });
+    let session = sessionParam(req, body);
+    // 在一条新会话里开展活动：先核对这项活动现在能不能开展，能才新建会话，再在新会话里记开展；回应里带新会话的编号。
+    let created: string | null = null;
+    if (startsInNewSession(body)) {
+      refuseUnstartable(t.dir, body.fields);
+      created = session = await t.executor.newSession();
+    }
+    const opId = await t.executor.action(session, body);
+    return json(200, { ok: true, client_id: body.client_id ?? null, op_id: opId, ...(created !== null ? { session_id: created } : {}) });
   },
   control: async (service, req) => {
     const t = service.task(req.params.task);
