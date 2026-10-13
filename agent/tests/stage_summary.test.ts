@@ -61,7 +61,7 @@ test("刚建好、有材料的任务：空闲，没有人开展过活动；材�
   assert.deepEqual([now.current, now.node, now.flow_node, now.moved_by, now.moved_at, now.reason], ["idle", null, null, null, null, null]);
   // 开展一项活动那一节：没有正在进行的；首次分析从核读材料启动（有材料）；还没有页、没有条目的三项不能单独开展。
   assert.deepEqual([now.launch.current, now.launch.flows.map((one) => [one.label, one.state]), now.launch.activities.map((one) => one.enabled)],
-    [null, [["启动首次分析", "从核读材料开始"]], [true, true, true, false, false, false]]);
+    [null, [["启动首次分析", "从核读材料开始"]], [true, true, false, false, false, false]]);
   assert.deepEqual(brief(now, "materials_cited"), [false, ["inputs/材料.md"]]);
   assert.deepEqual(Object.keys(now.lamps), ["reading", "clarifying", "modeling", "writing", "reviewing", "document"]);
 });

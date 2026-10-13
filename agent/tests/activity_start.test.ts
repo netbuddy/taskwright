@@ -40,21 +40,21 @@ function idleAfter(stage: "clarifying" | "writing"): { dir: string; taskId: stri
 test("单独开展一项活动：记录的节点与流程为空，事件里也是；对话里说「用户单独开展」；任务就在那项活动里，守门照它的", () => {
   const { dir, taskId } = idleAfter("clarifying");
   const before = count(dir, "event");
-  const out = start(dir, "整理建模", false);
-  assert.deepEqual([out.kind, out.note, out.undoable, out.notify_text], ["start_activity", "界面操作（不是用户打的字）：用户单独开展整理建模。", false, null]);
-  assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { activity: "modeling", node: null, flow: null, from: null, actor: "user", reason: "", run_id: null }]]);
+  const out = start(dir, "澄清", false);
+  assert.deepEqual([out.kind, out.note, out.undoable, out.notify_text], ["start_activity", "界面操作（不是用户打的字）：用户单独开展澄清。", false, null]);
+  assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { activity: "clarifying", node: null, flow: null, from: null, actor: "user", reason: "", run_id: null }]]);
   assert.deepEqual(out.event_seqs, [before + 1]);
-  assert.deepEqual(records(dir, taskId).at(-1), ["modeling", null, null, null, true]);
-  assert.equal(inDb(dir, (db) => stageOf(db, dir, taskId, DEFINITION)), "modeling");
+  assert.deepEqual(records(dir, taskId).at(-1), ["clarifying", null, null, null, true]);
+  assert.equal(inDb(dir, (db) => stageOf(db, dir, taskId, DEFINITION)), "clarifying");
   // 首次分析走到的节点不因单独开展而变。
   assert.equal(inDb(dir, (db) => flowNode(db, taskId)), "clarifying");
-  // 摘要：现在在整理建模，不在流程里；给助手看的一句写明是单独开展、做够了怎样汇报。
+  // 摘要：现在在澄清，不在流程里；给助手看的一句写明是单独开展、做够了怎样汇报。
   const summary = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION))!;
-  assert.deepEqual([summary.current, summary.node, summary.flow_node, summary.moved_by], ["modeling", null, "clarifying", "user"]);
-  assert.match(stageLines(summary)[0], /^任务现在在单独开展整理建模这项活动，不在首次分析流程里（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 开始的）。这项活动做够了就在回复里汇报结束（回复里写 activity_done: true），不提议进入别的活动。$/);
-  assert.match(stageLines(summary)[1], /^整理建模这一段/);
+  assert.deepEqual([summary.current, summary.node, summary.flow_node, summary.moved_by], ["clarifying", null, "clarifying", "user"]);
+  assert.match(stageLines(summary)[0], /^任务现在在单独开展澄清这项活动，不在首次分析流程里（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 开始的）。这项活动做够了就在回复里汇报结束（回复里写 activity_done: true），不提议进入别的活动。$/);
+  assert.match(stageLines(summary)[1], /^澄清这一段/);
   // 同一项活动、同一种开展方式再点一次：什么都不记，也不追加说明。
-  const again = start(dir, "modeling", false);
+  const again = start(dir, "clarifying", false);
   assert.deepEqual([again.note, again.event_seqs, count(dir, "event")], ["", [], before + 1]);
 });
 
@@ -92,7 +92,7 @@ test("启动与继续首次分析：没有走过是启动，走过是继续；�
   assert.equal(start(dir, "写条目", false).note, "界面操作（不是用户打的字）：用户单独开展写条目。（原来在做：写条目）");
 });
 
-test("单独开展的前提：核读材料要有材料，写条目要业务说明有页，评审确认与编写文档要有需求条目；缺的拒绝并写明缺什么，在流程里开始不查", () => {
+test("单独开展的前提：核读材料要有材料，整理建模与写条目要业务说明有页，评审确认与编写文档要有需求条目；缺的拒绝并写明缺什么，在流程里开始不查", () => {
   const { dir, taskId } = workspace(overallDefinition(), false);
   const refused = (activity: string) => {
     try {
@@ -107,13 +107,13 @@ test("单独开展的前提：核读材料要有材料，写条目要业务说�
   assert.deepEqual(refused("写条目"), ["rejected", "现在还不能单独开展写条目：业务说明还没有页。"]);
   assert.deepEqual(refused("评审确认"), ["rejected", "现在还不能单独开展评审确认：还没有需求条目。"]);
   assert.deepEqual(refused("编写文档"), ["rejected", "现在还不能单独开展编写文档：还没有需求条目。"]);
+  assert.deepEqual(refused("整理建模"), ["rejected", "现在还不能单独开展整理建模：业务说明还没有页。"]);
   assert.equal(count(dir, "activity_record"), 0, "被拒的一次都没有记");
   assert.equal(refused("澄清"), null);
-  assert.equal(refused("整理建模"), null);
   // 在流程里开始不查前提：没有页也能把任务移到写条目（与 0.5 的直接移动相同）。
-  assert.equal(start(dir, "写条目", true).note, "界面操作（不是用户打的字）：用户启动首次分析，从写条目开始。（原来在做：整理建模）");
+  assert.equal(start(dir, "写条目", true).note, "界面操作（不是用户打的字）：用户启动首次分析，从写条目开始。（原来在做：澄清）");
   assert.deepEqual(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION))!.launch.activities.map((one) => [one.label, one.enabled, one.state]), [
-    ["核读材料", false, "还没有材料，先上传"], ["澄清", true, "可以开展"], ["整理建模", true, "可以开展"],
+    ["核读材料", false, "还没有材料，先上传"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有页"],
     ["写条目", false, "业务说明还没有页"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有需求条目"]]);
   // 另一个有材料的任务：在写条目阶段立一页主题、写一条用例之后，六项都可以单独开展（已废弃的页、问题条目不算数）。
   const full = workspace();
@@ -146,11 +146,11 @@ test("助手汇报单独开展的活动结束：那条记录结束，任务空�
   const { dir, taskId } = idleAfter("clarifying");
   const who = { taskId, sessionId: "sess-a", callId: "call-reply-9", actor: "executor" as const };
   assert.equal(inDb(dir, (db) => endStandaloneActivity(db, who)), null, "空闲时没有可结束的");
-  start(dir, "整理建模", false);
+  start(dir, "澄清", false);
   const before = count(dir, "event");
   const ended = inDb(dir, (db) => endStandaloneActivity(db, who))!;
-  assert.deepEqual([ended.activity, ended.event_seq], ["modeling", before + 1]);
-  assert.deepEqual(events(dir, before), [["ACTIVITY_ENDED", { activity: "modeling", node: null, reason: "助手汇报这项活动结束", actor: "executor" }]]);
+  assert.deepEqual([ended.activity, ended.event_seq], ["clarifying", before + 1]);
+  assert.deepEqual(events(dir, before), [["ACTIVITY_ENDED", { activity: "clarifying", node: null, reason: "助手汇报这项活动结束", actor: "executor" }]]);
   assert.equal(inDb(dir, (db) => stageOf(db, dir, taskId, DEFINITION)), IDLE);
   // 在流程里的阶段：不由助手结束。
   start(dir, "澄清", true);
@@ -185,10 +185,10 @@ test("回复里的 activity_done 怎样核对与落库：单独开展时放行�
   assert.match(activityDoneGate(dir)![0], /^回复里写了 activity_done，而任务现在在首次分析流程里的澄清阶段/);
   assert.equal(reportActivityDone(dir, "sess-a", "call-reply-2"), null);
   // 单独开展：放行，结束。
-  start(dir, "整理建模", false);
+  start(dir, "澄清", false);
   assert.equal(activityDoneGate(dir), null);
   const before = count(dir, "event");
-  assert.deepEqual(reportActivityDone(dir, "sess-a", "call-reply-3"), { activity: "modeling", event_seq: before + 1 });
+  assert.deepEqual(reportActivityDone(dir, "sess-a", "call-reply-3"), { activity: "clarifying", event_seq: before + 1 });
   assert.deepEqual(query(dir, "SELECT name, actor, session_id, call_id FROM event WHERE seq = ?", before + 1).map((r) => ({ ...r })),
     [{ name: "ACTIVITY_ENDED", actor: "executor", session_id: "sess-a", call_id: "call-reply-3" }]);
   assert.equal(inDb(dir, (db) => stageOf(db, dir, taskId, DEFINITION)), IDLE);

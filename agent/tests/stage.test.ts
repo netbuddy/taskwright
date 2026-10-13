@@ -163,7 +163,7 @@ test("开展一项活动的三组选项：正在进行的只是一行；首次�
   assert.equal(fresh.current, null);
   assert.deepEqual(fresh.flows, [{ activity: "clarifying", in_flow: true, label: "启动首次分析", enabled: true, state: "从澄清开始" }]);
   assert.deepEqual(fresh.activities.map((one) => [one.label, one.enabled, one.state]), [
-    ["核读材料", false, "还没有材料，先上传"], ["澄清", true, "可以开展"], ["整理建模", true, "可以开展"],
+    ["核读材料", false, "还没有材料，先上传"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有页"],
     ["写条目", false, "业务说明还没有页"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有需求条目"]]);
   assert.ok(fresh.activities.every((one) => one.in_flow === false));
   assert.deepEqual(fresh.later, [{ label: "发布", state: "0.6 后续" }]);
@@ -182,7 +182,7 @@ test("开展一项活动的三组选项：正在进行的只是一行；首次�
   assert.deepEqual(alone.activities.map((one) => [one.enabled, one.state]),
     [[true, "可以开展"], [false, "正在进行"], [true, "可以开展"], [true, "可以开展"], [true, "可以开展"], [true, "可以开展"]]);
   // 前提各自缺什么。
-  assert.deepEqual(STAGES.map((one) => activityBlocked(one, facts)), ["还没有材料，先上传", null, null, "业务说明还没有页", "还没有需求条目", "还没有需求条目"]);
+  assert.deepEqual(STAGES.map((one) => activityBlocked(one, facts)), ["还没有材料，先上传", null, "业务说明还没有页", "业务说明还没有页", "还没有需求条目", "还没有需求条目"]);
   assert.deepEqual(STAGES.map((one) => activityBlocked(one, { hasMaterials: true, pages: 1, items: 1 })), [null, null, null, null, null, null]);
 });
 

@@ -333,10 +333,10 @@ export interface LaunchView {
 export const LAUNCH_READY = "可以开展";
 export const LAUNCH_ACTIVE = "正在进行";
 
-/** 单独开展一项活动缺什么；不缺是 null。核读材料要有材料，写条目要业务说明有页，评审确认与编写文档要有需求条目。 */
+/** 单独开展一项活动缺什么；不缺是 null。核读材料要有材料，整理建模与写条目要业务说明有页，评审确认与编写文档要有需求条目。 */
 export function activityBlocked(activity: Stage, facts: Pick<LaunchFacts, "hasMaterials" | "pages" | "items">): string | null {
   if (activity === "reading" && !facts.hasMaterials) return "还没有材料，先上传";
-  if (activity === "writing" && facts.pages === 0) return "业务说明还没有页";
+  if ((activity === "modeling" || activity === "writing") && facts.pages === 0) return "业务说明还没有页";
   if ((activity === "reviewing" || activity === "document") && facts.items === 0) return "还没有需求条目";
   return null;
 }

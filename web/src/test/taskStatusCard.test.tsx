@@ -125,7 +125,7 @@ const LAUNCH_IDLE: LaunchView = {
   flows: [{ activity: "reading", in_flow: true, label: "启动首次分析", enabled: true, state: "从核读材料开始" }],
   activities: [
     { activity: "reading", in_flow: false, label: "核读材料", enabled: true, state: "可以开展" }, { activity: "clarifying", in_flow: false, label: "澄清", enabled: true, state: "可以开展" },
-    { activity: "modeling", in_flow: false, label: "整理建模", enabled: true, state: "可以开展" }, { activity: "writing", in_flow: false, label: "写条目", enabled: false, state: "业务说明还没有页" },
+    { activity: "modeling", in_flow: false, label: "整理建模", enabled: false, state: "业务说明还没有页" }, { activity: "writing", in_flow: false, label: "写条目", enabled: false, state: "业务说明还没有页" },
     { activity: "reviewing", in_flow: false, label: "评审确认", enabled: false, state: "还没有需求条目" }, { activity: "document", in_flow: false, label: "编写文档", enabled: false, state: "还没有需求条目" },
   ],
   later: [{ label: "发布", state: "0.6 后续" }],
@@ -155,7 +155,8 @@ describe("开展一项活动", () => {
     expect([...section.querySelectorAll(".row b")].map((b) => b.textContent)).toEqual(["流程", "单独开展", "以后"]);
     expect(within(screen.getByTestId("launch-flows")).getByRole("button")).toHaveTextContent("启动首次分析");
     const buttons = within(screen.getByTestId("launch-activities")).getAllByRole("button");
-    expect(buttons.map((b) => [b.textContent, (b as HTMLButtonElement).disabled])).toEqual([["核读材料", false], ["澄清", false], ["整理建模", false], ["写条目", true], ["评审确认", true], ["编写文档", true]]);
+    expect(buttons.map((b) => [b.textContent, (b as HTMLButtonElement).disabled])).toEqual([["核读材料", false], ["澄清", false], ["整理建模", true], ["写条目", true], ["评审确认", true], ["编写文档", true]]);
+    expect(screen.getByTestId("launch-alone-modeling")).toHaveTextContent("整理建模业务说明还没有页");
     expect(screen.getByTestId("launch-alone-writing")).toHaveTextContent("写条目业务说明还没有页");
     expect(screen.getByTestId("launch-alone-reviewing")).toHaveTextContent("评审确认还没有需求条目");
     expect(screen.getByTestId("launch-alone-clarifying").querySelector("small")).toBeNull();
@@ -165,9 +166,9 @@ describe("开展一项活动", () => {
     expect(LAUNCH_HINT).toBe("不选也可以，直接在下面说话就行。");
     expect(within(section).queryByText(/不选$/)).toBeNull();
     // 点能开展的一项：交给页面（一次界面操作）；点不能开展的没有反应。
-    fireEvent.click(buttons[2]);
+    fireEvent.click(buttons[1]);
     expect(onLaunch).toHaveBeenCalledTimes(1);
-    expect(onLaunch).toHaveBeenCalledWith(LAUNCH_IDLE.activities[2]);
+    expect(onLaunch).toHaveBeenCalledWith(LAUNCH_IDLE.activities[1]);
     fireEvent.click(buttons[3]);
     expect(onLaunch).toHaveBeenCalledTimes(1);
   });
