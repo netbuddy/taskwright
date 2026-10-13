@@ -1,14 +1,21 @@
 /**
  * 有阶段的任务的系统提示怎样拼：读哪几份文件、按什么次序接、每一部分叫什么。不碰 pi，挂到事件上的那一半在 hooks/stage_prompt.ts。
  *
- * 拼出来的次序是：系统提示、平台说明的共用部分、任务类型说明的共用部分、平台说明里现在这个阶段的那一段、
- * 任务类型说明里现在这个阶段的那一段，最后是 pi 自己接在系统提示后面的那一截（工作目录、上下文文件）。
- * 按阶段的两段放在最后：换阶段时前面几部分一字不变，模型服务对请求开头相同的那一截不用重算。
+ * 拼出来的次序是：系统提示、平台说明的共用部分、任务类型说明的共用部分、平台说明里现在这项活动的那一段、
+ * 这项活动在流程里的节点的出口、任务类型说明里现在这个阶段的那一段，最后是 pi 自己接在系统提示后面的那一截（工作目录、上下文文件）。
+ * 按阶段的几段放在最后：换阶段时前面几部分一字不变，模型服务对请求开头相同的那一截不用重算。
  *
- * 任务空闲时（没有在进行的活动，lib/stage.ts 的 IDLE）按阶段的两段用澄清的那两份文件，去掉其中的「## 出口」一节
- * （那一节讲怎样提议进入下一段，空闲时不适用）；不另设文件，按标题切（withoutSection）。
+ * 活动的说明与节点的出口是分开的两处。活动的说明（做什么、不做什么、做到什么算够）一项活动一份文件，与它在不在流程里无关；
+ * 出口（做完了提议什么、往回提议什么、用户说的话不属于这一段时怎样办）是这项活动在一条流程里的那个节点的事，写在流程的定义里
+ * （agent/prompts/flows/initial.md，首次分析），一个节点一节。任务在流程里的某个阶段时，两处接起来；用户单独开展一项活动时，
+ * 出口换成固定的一段（STANDALONE_EXIT）：做够了就在回复里汇报结束，不提议进入别的活动。
  *
- * 平台一级的文件在 agent/prompts/stages/（system.md、common.md 与六个阶段各一份，文件名是 lib/stage.ts 里阶段的键）。
+ * 任务空闲时（没有在进行的活动，lib/stage.ts 的 IDLE）没有活动的说明可拼：用一段固定的开头（IDLE_OPENING）说明任务现在空闲，
+ * 后面接澄清那项活动的说明去掉标题与开头那一段话（从第一个「## 」小节起），不带任何节点的出口。任务类型一级澄清的那一段若有
+ * 「## 出口」一节，也去掉（withoutSection）。
+ *
+ * 平台一级的文件在 agent/prompts/stages/（system.md、common.md 与六项活动各一份，文件名是 lib/stage.ts 里阶段的键），
+ * 流程的定义在 agent/prompts/flows/。
  * 任务类型一级的文件在任务目录里那份任务 skill 的目录下：SKILL.md 的正文是共用部分，旁边的 stages/<阶段的键>.md 是那个阶段的一段，
  * 没有这个文件就是这一段没有内容。早先建任务时复制进任务目录的是整份的 SKILL.md、没有 stages 目录，照同样的规则读出来就是
  * 「共用部分是整份文字、按阶段的那一段为空」。
@@ -21,7 +28,7 @@
  * 重拼出错时沿用上一份并把原因带出去。
  *
  * 调试模式下另有一个「提示词目录」（debugPromptDir）：目录里有哪一份，就用那一份代替产品自带的或任务目录里的，没有的照旧。
- * 只认固定的十五个文件名（promptDirNames），软链接不跟、超过 PROMPT_DIR_MAX_BYTES 的不读、不是合法 UTF-8 的不用，
+ * 只认固定的十六个文件名（promptDirNames），软链接不跟、超过 PROMPT_DIR_MAX_BYTES 的不读、不是合法 UTF-8 的不用，
  * 这几种情形那一份照旧用原来的，并在 notes 里写明原因。产品只读这个目录，不往里写。
  */
 
@@ -33,13 +40,18 @@ import { DatabaseSync } from "node:sqlite";
 import { databasePath } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
-import { IDLE, type Position, STAGES, gateStage } from "./stage.ts";
-import { stageOf } from "./stage_read.ts";
+import { ENTER_OPTIONS, IDLE, type Position, STAGES, STAGE_NAMES, STAY_IDLE_OPTION, type Stage, gateStage } from "./stage.ts";
+import { openActivityRecord, stageOf } from "./stage_read.ts";
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
 
 /** 平台一级按阶段拼的文件所在的目录。 */
 export const PLATFORM_STAGES_DIR = join(PROMPTS_DIR, "stages");
+
+/** 流程的定义所在的目录，与首次分析这条流程的文件名。 */
+export const PLATFORM_FLOWS_DIR = join(PROMPTS_DIR, "flows");
+export const FLOWS_SUBDIR = "flows";
+export const FLOW_INITIAL_FILE = "initial.md";
 
 /** 平台 skill 的目录：它是早先的任务读的那一份，有阶段的任务不读它，认任务 skill 时要把它排除。 */
 export const PLATFORM_SKILL_DIR = join(PROMPTS_DIR, "skills", "taskwright-executor");
@@ -54,8 +66,45 @@ export function stageFile(stage: Position): string {
   return `${gateStage(stage)}.md`;
 }
 
-/** 阶段文件里讲怎样离开这一段（提议进入下一段、谁能移动）的那一节的标题。任务空闲时拼的文字里不带这一节。 */
+/** 讲怎样离开这一段（提议进入下一段、谁能移动）的那一节的标题：流程的定义里每个节点有这一节；任务空闲时拼的文字里不带它。 */
 export const EXIT_HEADING = "出口";
+
+/** 流程的定义里一个节点那一节的一级标题。 */
+export function nodeHeading(stage: Stage): string {
+  return `节点：${STAGE_NAMES[stage]}`;
+}
+
+/**
+ * 从流程的定义里取出一个节点那一节的正文：从「# 节点：某阶段」的下一行起，到下一个一级标题之前。没有这一节时返回 null。
+ * 正文里的小节照原样是二级标题（「## 出口」「## 用户说的话不属于本段时」），接在活动的说明后面正好与它的各节平级。
+ */
+export function nodeSection(text: string, stage: Stage): string | null {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => /^#\s+/.test(line) && line.replace(/^#\s+/, "").trim() === nodeHeading(stage));
+  if (start < 0) return null;
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^#\s+/.test(line));
+  return (end < 0 ? rest : rest.slice(0, end)).join("\n").trim();
+}
+
+/** 去掉一份活动说明开头的标题与那一段话：从第一个二级小节起；一个二级小节都没有时原样返回。 */
+export function withoutOpening(text: string): string {
+  const lines = text.split("\n");
+  const first = lines.findIndex((line) => /^##\s+/.test(line));
+  return first < 0 ? text : lines.slice(first).join("\n");
+}
+
+/** 任务空闲时接在共用部分后面的那一段的开头：后面接澄清那项活动的说明（去掉它自己的标题与开头那一段话）。 */
+export const IDLE_OPENING = "# 现在：任务空闲\n\n" +
+  "任务现在空闲：没有在进行的活动。下面的规矩与澄清一段相同，但不提议进入任何阶段；用户上传材料时用请选择卡片提议开始核读材料" +
+  `（两个选项的键与文字是 \`${ENTER_OPTIONS.reading.key}\`「${ENTER_OPTIONS.reading.text}」、\`${STAY_IDLE_OPTION.key}\`「${STAY_IDLE_OPTION.text}」），不自行开始。`;
+
+/** 用户单独开展一项活动时，代替节点出口的那一段。 */
+export const STANDALONE_EXIT = "## 出口\n\n" +
+  "这项活动是用户单独开展的，不在首次分析流程里。这项活动做够了就在回复里汇报结束，不提议进入别的活动：" +
+  "在成文的话里说清做到了哪里、还差什么，回复里写 `activity_done: true`；回复送达之后这项活动结束，任务空闲。" +
+  "不要发进入下一段或者退回前面阶段的卡片，用户点了也不算数。用户说的事不属于这项活动时：能在这项活动里顺手做的照做；" +
+  "这项活动做不了的（工具会拒绝），说明要做那件事请用户从任务状况卡开展相应的活动。";
 
 /**
  * 去掉一份 Markdown 文字里标题是 heading 的二级小节：从「## heading」那一行起，到下一个一级或二级标题之前（没有下一个就到末尾）。
@@ -73,7 +122,7 @@ export function withoutSection(text: string, heading: string): string {
 }
 
 /** 拼进系统提示的一部分是什么。 */
-export type PartKind = "system" | "platform_common" | "task_common" | "platform_stage" | "task_stage" | "tail";
+export type PartKind = "system" | "platform_common" | "task_common" | "platform_stage" | "node_exit" | "task_stage" | "tail";
 
 /** 每一部分给人看的名字。 */
 export const PART_NAMES: Record<PartKind, string> = {
@@ -81,6 +130,7 @@ export const PART_NAMES: Record<PartKind, string> = {
   platform_common: "平台说明的共用部分",
   task_common: "任务类型说明的共用部分",
   platform_stage: "平台说明里这个阶段的那一段",
+  node_exit: "这个阶段在流程里的出口",
   task_stage: "任务类型说明里这个阶段的那一段",
   tail: "助手程序接在后面的工作目录等",
 };
@@ -94,7 +144,10 @@ export const ORIGIN_NAMES: Record<PartOrigin, string> = { builtin: "产品自带
 export interface PromptPart {
   part: PartKind;
   from: PartOrigin;
-  /** 文件的路径：产品自带的相对代码仓根目录，任务目录里的相对任务目录，提示词目录里的相对那个目录；不是文件的（pi 接的那一截）为 null。 */
+  /**
+   * 文件的路径：产品自带的相对代码仓根目录，任务目录里的相对任务目录，提示词目录里的相对那个目录；不是文件的为 null
+   * （pi 接的那一截；用户单独开展一项活动时代替节点出口的那一段固定文字）。
+   */
   file: string | null;
   text: string;
 }
@@ -195,6 +248,8 @@ export function taskSkills(skills: readonly LoadedSkill[]): LoadedSkill[] {
 export interface ComposeInput {
   /** 任务现在在哪个阶段；空闲时是 idle。 */
   stage: Position;
+  /** 现在这项活动是不是在首次分析流程里；不给当作是。单独开展时为假：节点的出口换成固定的一段。空闲时不看它。 */
+  inFlow?: boolean;
   /** 任务目录：任务目录里的文件路径相对它来写。 */
   workspaceDir: string;
   /** pi 加载的全部 skill。 */
@@ -215,12 +270,14 @@ export function promptDirName(part: Exclude<PartKind, "tail">, stage: Position):
   if (part === "system") return SYSTEM_FILE;
   if (part === "platform_common") return COMMON_FILE;
   if (part === "platform_stage") return stageFile(stage);
+  if (part === "node_exit") return `${FLOWS_SUBDIR}/${FLOW_INITIAL_FILE}`;
   return `${PROMPT_DIR_TASK_SUBDIR}/${part === "task_common" ? COMMON_FILE : stageFile(stage)}`;
 }
 
-/** 提示词目录里认的全部文件名：平台一级七份，任务类型一级六份。别的名字一概不读。 */
+/** 提示词目录里认的全部文件名：平台一级八份、流程的定义一份、任务类型一级七份。别的名字一概不读。 */
 export function promptDirNames(): string[] {
-  return [SYSTEM_FILE, COMMON_FILE, ...STAGES.map(stageFile), `${PROMPT_DIR_TASK_SUBDIR}/${COMMON_FILE}`, ...STAGES.map((one) => `${PROMPT_DIR_TASK_SUBDIR}/${stageFile(one)}`)];
+  return [SYSTEM_FILE, COMMON_FILE, ...STAGES.map(stageFile), `${FLOWS_SUBDIR}/${FLOW_INITIAL_FILE}`,
+    `${PROMPT_DIR_TASK_SUBDIR}/${COMMON_FILE}`, ...STAGES.map((one) => `${PROMPT_DIR_TASK_SUBDIR}/${stageFile(one)}`)];
 }
 
 /** 平台一级的文件写进 file 一项时相对的目录：代码仓根目录。 */
@@ -235,7 +292,7 @@ interface Source {
   path: string;
 }
 
-/** 系统提示里的一个位置（五个位置按拼接的先后排）：这一次打算读哪几份文件，以及用来看它们变没变的属性。 */
+/** 系统提示里的一个位置（按拼接的先后排，最多六个）：这一次打算读哪几份文件，以及用来看它们变没变的属性。 */
 interface Slot {
   part: Exclude<PartKind, "tail">;
   /** 平台一级的三个位置缺了文件就拼不成；任务类型一级的没有就跳过。 */
@@ -252,9 +309,16 @@ interface Slot {
   stamps: unknown[];
 }
 
-/** 某个阶段的五个位置。只查文件的属性，不读内容。 */
+/** 这一次有没有节点的出口要从流程的定义里取：任务在流程里的某个阶段时有；空闲、单独开展时没有。 */
+function wantsNodeExit(input: ComposeInput): boolean {
+  return input.stage !== IDLE && (input.inFlow ?? true);
+}
+
+/** 某个阶段的几个位置。只查文件的属性，不读内容。 */
 function slots(input: ComposeInput, io: PromptIo): Slot[] {
   const platformDir = input.platformDir ?? PLATFORM_STAGES_DIR;
+  // 流程的定义：产品自带的在 agent/prompts/flows/；平台一级的目录换成别的时（测试），在那个目录的 flows/ 下。
+  const flowPath = join(input.platformDir ? join(input.platformDir, FLOWS_SUBDIR) : PLATFORM_FLOWS_DIR, FLOW_INITIAL_FILE);
   const builtin = (part: PartKind, name: string): Source => {
     const path = join(platformDir, name);
     return { part, from: "builtin", file: relative(REPO_ROOT, path), path };
@@ -266,6 +330,7 @@ function slots(input: ComposeInput, io: PromptIo): Slot[] {
     ["platform_common", true, [builtin("platform_common", COMMON_FILE)]],
     ["task_common", false, skills.map((one) => inTask("task_common", one.filePath))],
     ["platform_stage", true, [builtin("platform_stage", stageFile(input.stage))]],
+    ...(wantsNodeExit(input) ? [["node_exit", true, [{ part: "node_exit", from: "builtin", file: relative(REPO_ROOT, flowPath), path: flowPath }]] as [Slot["part"], boolean, Source[]]] : []),
     ["task_stage", false, skills.map((one) => inTask("task_stage", join(dirname(one.filePath), TASK_STAGES_SUBDIR, stageFile(input.stage))))],
   ];
   return wanted.map(([part, required, sources]) => {
@@ -296,11 +361,21 @@ function slots(input: ComposeInput, io: PromptIo): Slot[] {
 function fromSlots(input: ComposeInput, all: readonly Slot[], io: PromptIo): StagePrompt {
   const parts: PromptPart[] = [];
   const notes: string[] = [];
-  // 任务空闲时，按阶段的两段（平台一级的与任务类型一级的，连同提示词目录里代替它们的）去掉「出口」一节。
-  const staged = (part: PartKind) => part === "platform_stage" || part === "task_stage";
-  const add = (source: Pick<Source, "part" | "from"> & { file: string | null }, text: string) => {
-    const own = source.part === "task_common" ? skillBody(text) : input.stage === IDLE && staged(source.part) ? withoutSection(text, EXIT_HEADING) : text;
-    const body = own.replace(/\s+$/, "");
+  const idle = input.stage === IDLE;
+  /** 一份文件的文字拼进去之前怎样取：任务 skill 去掉 frontmatter；节点的出口只取这个节点的那一节；空闲时见文件头。 */
+  const shaped = (part: PartKind, text: string, path: string): string => {
+    if (part === "task_common") return skillBody(text);
+    if (part === "node_exit") {
+      const section = nodeSection(text, input.stage as Stage);
+      if (section === null) throw new Error(`流程的定义里没有「# ${nodeHeading(input.stage as Stage)}」这一节：${path}`);
+      return section;
+    }
+    if (idle && part === "platform_stage") return `${IDLE_OPENING}\n\n${withoutOpening(withoutSection(text, EXIT_HEADING))}`;
+    if (idle && part === "task_stage") return withoutSection(text, EXIT_HEADING);
+    return text;
+  };
+  const add = (source: Pick<Source, "part" | "from"> & { file: string | null; path?: string }, text: string) => {
+    const body = shaped(source.part, text, source.path ?? "").replace(/\s+$/, "");
     if (body) parts.push({ part: source.part, from: source.from, file: source.file, text: body });
   };
   for (const slot of all) {
@@ -315,14 +390,16 @@ function fromSlots(input: ComposeInput, all: readonly Slot[], io: PromptIo): Sta
     }
     if (slot.missing !== null) throw new Error(`拼系统提示要用的文件不在：${slot.missing}`);
     for (const one of slot.own) add(one, io.read(one.path));
+    // 用户单独开展一项活动：活动的说明后面接固定的一段，代替节点的出口。
+    if (slot.part === "platform_stage" && !idle && !(input.inFlow ?? true)) parts.push({ part: "node_exit", from: "builtin", file: null, text: STANDALONE_EXIT });
   }
   add({ part: "tail", from: "pi", file: null }, input.tail);
   return { stage: input.stage, text: parts.map((one) => one.text).join("\n\n"), parts, notes };
 }
 
 /**
- * 拼出某个阶段的系统提示。平台一级的三份文件（系统提示、共用部分、这个阶段的那一段）缺了任何一份而提示词目录里又没有代替它的，
- * 就抛错，调用方这时不换系统提示；任务类型一级的文件没有就跳过。
+ * 拼出某个阶段的系统提示。平台一级的三份文件（系统提示、共用部分、这个阶段的那一段）与任务在流程里时流程的定义，
+ * 缺了任何一份而提示词目录里又没有代替它的，就抛错，调用方这时不换系统提示；任务类型一级的文件没有就跳过。
  */
 export function composeStagePrompt(input: ComposeInput, io: PromptIo = NODE_IO): StagePrompt {
   return fromSlots(input, slots(input, io), io);
@@ -357,7 +434,7 @@ export class StagePromptCache {
   get(input: ComposeInput): CachedPrompt {
     // 这一次的输入与各份文件的属性合成一把钥匙：与上一次相同就是没变。
     const all = slots(input, this.io);
-    const key = JSON.stringify([input.stage, input.tail, input.promptDir ?? null, all.map((one) => one.stamps)]);
+    const key = JSON.stringify([input.stage, input.inFlow ?? true, input.tail, input.promptDir ?? null, all.map((one) => one.stamps)]);
     if (this.last && this.last.key === key) return { prompt: this.last.prompt, how: "reused" };
     try {
       const prompt = fromSlots(input, all, this.io);
@@ -389,13 +466,24 @@ export function partFact(one: PromptPart): PartFact {
  * 这些情形都不换系统提示。
  */
 export function stageInWorkspace(workspaceDir: string): Position | null {
+  return whereInWorkspace(workspaceDir)?.stage ?? null;
+}
+
+/**
+ * 同上，另带现在这项活动是不是在首次分析流程里（空闲时为假；还没有任何活动记录、位置是缺省的那个阶段时算在流程里）。
+ * 不换系统提示的那几种情形返回 null。
+ */
+export function whereInWorkspace(workspaceDir: string): { stage: Position; inFlow: boolean } | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
     const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
     if (!task) return null;
-    return stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
+    const stage = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
+    if (stage === null) return null;
+    const open = openActivityRecord(db, task.task_id);
+    return { stage, inFlow: stage !== IDLE && (open === null || open.node !== null) };
   } finally {
     db.close();
   }

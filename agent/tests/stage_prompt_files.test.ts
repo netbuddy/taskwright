@@ -21,6 +21,7 @@ import { RULE_CONFLICT_PREFIX } from "../src/lib/overall_views.ts";
 import { PROBLEM_BLOCKING, PROBLEM_BLOCKING_FIELD, PROBLEM_LANDED_FIELD, PROBLEM_NOT_BLOCKING, PROBLEM_REVISIT_FIELD } from "../src/lib/definition.ts";
 import { BACK_OPTIONS, ENTER_OPTIONS, type LampInput, PENDING_MARK, STAGES, STAGE_NAMES, STAY_HERE_OPTION, STAY_OPTIONS, type Stage, type WriteKind, canWrite, nextStage, stageLamps } from "../src/lib/stage.ts";
 import { NO_PROPOSAL_LINE, openCardsLine } from "../src/lib/stage_proposal.ts";
+import { nodeHeading, nodeSection } from "../src/lib/stage_prompt.ts";
 import { CARD_TYPED_PREFIX } from "../src/lib/dialogue_acts.ts";
 
 /** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
@@ -32,7 +33,17 @@ const EMPTY_LAMP_INPUT: LampInput = {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const LEGACY = join(ROOT, "agent", "prompts", "skills", "taskwright-executor", "SKILL.md");
 const STAGES_DIR = join(ROOT, "agent", "prompts", "stages");
-const read = (name: string) => readFileSync(join(STAGES_DIR, name), "utf-8");
+const readRaw = (name: string) => readFileSync(join(STAGES_DIR, name), "utf-8");
+/** 首次分析这条流程的定义：六个节点各一节，写出口与用户说的话不属于这一段时怎样办。 */
+const FLOW = readFileSync(join(ROOT, "agent", "prompts", "flows", "initial.md"), "utf-8");
+/**
+ * 读一份说明文件。六项活动的文件读出来的是这个阶段在首次分析流程里拼出来的那一段：活动的说明（做什么、不做什么、做到什么算够）
+ * 接上流程定义里它那个节点的一节（出口、用户说的话不属于本段时），与任务在流程里时系统提示里的那一截相同。别的文件原样。
+ */
+const read = (name: string) => {
+  const stage = STAGES.find((one) => name === `${one}.md`);
+  return stage ? `${readRaw(name).trimEnd()}\n\n${nodeSection(FLOW, stage)}\n` : readRaw(name);
+};
 
 /** 两份里不比的两节：早先那一份的第十节写全部阶段的做法与早先的任务，共用部分的第十节只写各阶段都要用的；第十二节只有共用部分有。 */
 const SECTION_TEN = "十、";
@@ -192,6 +203,22 @@ test("有阶段的任务的系统提示：说明已在下文、不用再读 skil
 const MODELING_LAST_HEADING = "用户说的话不属于本段时";
 const STAGE_HEADINGS = ["这一段做什么", "这一段不做什么", "做到什么算够", "出口", MODELING_LAST_HEADING];
 const lastHeading = (_stage: Stage) => MODELING_LAST_HEADING;
+
+test("活动的说明与节点的出口分在两处：活动文件只有做什么、不做什么、做到什么算够；流程的定义里六个节点各一节，写出口与用户的话不属于本段时", () => {
+  for (const stage of STAGES) {
+    const activity = readRaw(`${stage}.md`);
+    assert.ok(activity.startsWith(`# 现在这个阶段：${STAGE_NAMES[stage]}\n`), stage);
+    assert.deepEqual([...sections(activity).keys()], STAGE_HEADINGS.slice(0, 3), stage);
+    assert.doesNotMatch(activity, /^## 出口$|^## 用户说的话不属于本段时$/m, stage);
+    const node = nodeSection(FLOW, stage)!;
+    assert.deepEqual([...sections(node).keys()], [STAGE_HEADINGS[3], lastHeading(stage)], stage);
+    assert.ok(node.startsWith("## 出口\n"), stage);
+  }
+  // 流程的定义：一段开头的话，然后正好六个节点，照阶段的先后。
+  assert.deepEqual(FLOW.split("\n").filter((line) => /^# /.test(line)).slice(1).map((line) => line.slice(2)), STAGES.map(nodeHeading));
+  assert.ok(FLOW.startsWith("# 首次分析流程里各个节点的出口\n"));
+  assert.equal(nodeSection(FLOW.replace("# 节点：澄清", "# 节点：别的"), "clarifying"), null);
+});
 
 test("六个阶段各有一段：文件名是阶段的键，标题写阶段的名字，都按同样的五个小节写", () => {
   for (const stage of STAGES) {

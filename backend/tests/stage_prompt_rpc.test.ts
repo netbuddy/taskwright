@@ -98,7 +98,7 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     const own = (text: string) => text.slice(0, -`\n\n<cwd>\n${taskDir}\n</cwd>`.length);
     assert.deepEqual(notes.map((n) => n.digest), [digestOf(own(reading.text)), digestOf(own(clarifying.text)), digestOf(own(clarifying.text))]);
     assert.deepEqual(notes[0].parts.map((p: Dict) => p.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/srs-authoring/SKILL.md",
-      "agent/prompts/stages/reading.md", ".pi/skills/srs-authoring/stages/reading.md"]);
+      "agent/prompts/stages/reading.md", "agent/prompts/flows/initial.md", ".pi/skills/srs-authoring/stages/reading.md"]);
     assert.ok(!JSON.stringify(notes).includes("你是 Taskwright 的执行者"));
 
     // 早先的任务：把另一个任务的任务定义改成没有「总体分析」集合的样子（早先建的任务就是这样），它没有阶段。

@@ -22,7 +22,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   type ComposeHow, type LoadedSkill, type PartFact, type PartKind, type PartOrigin, type StagePrompt, StagePromptCache, debugPromptDir, digestOf, partFact, piTail,
-  stageInWorkspace,
+  whereInWorkspace,
 } from "../lib/stage_prompt.ts";
 import type { Position } from "../lib/stage.ts";
 
@@ -34,6 +34,8 @@ export interface StagePromptReport {
   replaced: boolean;
   /** 这一次是为哪个阶段拼的；任务空闲时是 idle（用的是澄清的那一段，去掉了「出口」一节）。 */
   stage?: Position;
+  /** 现在这项活动是不是在首次分析流程里：为假是用户单独开展的（节点的出口换成固定的一段），空闲时也为假。 */
+  in_flow?: boolean;
   how?: ComposeHow;
   error?: string;
   /** 说明文字（从文件来的那几部分接起来，不含 pi 接在后面的工作目录等）的摘要值、字节数与行数。 */
@@ -74,20 +76,21 @@ export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: Stag
   const launched = String(event.systemPrompt ?? "");
   try {
     const debug = debugPromptDir();
-    const stage = stageInWorkspace(ctx.cwd);
+    const where = whereInWorkspace(ctx.cwd);
     // 早先的任务没有阶段：系统提示与原来完全相同。平时不多报什么；调试模式下报一行，让调试接口看得到它拿到的是启动时给的那一份。
-    if (stage === null) {
+    if (where === null) {
       if (debug.debug) report({ replaced: false, debug: true, prompt_dir: debug.dir, notes: [], texts: [{ part: "launch", from: "pi", file: null, text: launched }] });
       return undefined;
     }
     const options = event.systemPromptOptions ?? {};
     const tail = piTail(launched, String(options.customPrompt ?? ""));
-    const got = cache.get({ stage, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
+    const { stage, inFlow } = where;
+    const got = cache.get({ stage, inFlow, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
     let summary = summaries.get(got.prompt);
     if (!summary) summaries.set(got.prompt, (summary = summarize(got.prompt)));
     // 重拼出错而沿用上一份时，stage 写的是任务现在的阶段，上一份是哪个阶段的看 parts 里那一段的文件名。
     report({
-      replaced: true, stage, how: got.how, ...(got.error ? { error: got.error } : {}), ...summary,
+      replaced: true, stage, in_flow: inFlow, how: got.how, ...(got.error ? { error: got.error } : {}), ...summary,
       ...(debug.debug ? { debug: true as const, prompt_dir: debug.dir, notes: [...(debug.note ? [debug.note] : []), ...got.prompt.notes], texts: got.prompt.parts } : {}),
     });
     return { systemPrompt: got.prompt.text };

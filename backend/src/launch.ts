@@ -343,6 +343,7 @@ export function startupRecord(profile: Profile, argv: string[]) {
     环境标签: (profile.langfuse || {}).environment ?? "",
     "平台 skill": platformSkillRecord(profile),
     按阶段的说明: stagePromptRecord(),
+    流程的说明: flowPromptRecord(),
   };
 }
 
@@ -366,6 +367,16 @@ export function stagePromptRecord() {
   const path = fromRoot(STAGE_PROMPTS_DIR);
   if (!isDir(path)) return { 有没有: false, 说明: `代码仓里没有 ${STAGE_PROMPTS_DIR} 这个目录，有阶段的任务这次用的是启动参数给的系统提示。` };
   return { 有没有: true, 代码仓里的路径: STAGE_PROMPTS_DIR, 目录: path, 文件: digestFiles(path, path) };
+}
+
+/** 流程的定义所在的目录，相对代码仓根目录：任务在一条流程里的某个阶段时，系统提示里那个节点的出口取自这里（agent/src/lib/stage_prompt.ts）。 */
+export const FLOW_PROMPTS_DIR = "agent/prompts/flows";
+
+/** 启动那一刻这个目录里每份文件的字节数与摘要值，与按阶段的说明同一个记法。 */
+export function flowPromptRecord() {
+  const path = fromRoot(FLOW_PROMPTS_DIR);
+  if (!isDir(path)) return { 有没有: false, 说明: `代码仓里没有 ${FLOW_PROMPTS_DIR} 这个目录，任务在流程里时拼不出节点的出口。` };
+  return { 有没有: true, 代码仓里的路径: FLOW_PROMPTS_DIR, 目录: path, 文件: digestFiles(path, path) };
 }
 
 // ───────────── 启动那一刻的知识仓库与上下文文件 ─────────────
