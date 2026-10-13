@@ -12,22 +12,25 @@
  */
 
 import type { DatabaseSync } from "node:sqlite";
+import { type AssetFacts, assetFacts, blockedByStage } from "./activity_catalog.ts";
+import { DefinitionHeadError } from "./activity_def.ts";
+import { type Definitions, definitions } from "./activity_def_read.ts";
 import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { checkCompletion } from "./conditions.ts";
 import { emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, keepPendingField, validateDefinition } from "./definition.ts";
 import { diagramViewed, latestVersion, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "./diagram.ts";
 import { classLinked, drawnItemIds, hasBranch } from "./diagram_scan.ts";
-import { OVERALL_COLLECTION, OVERALL_FIELDS, hasOverall, isDeprecated } from "./overall_analysis.ts";
+import { OVERALL_COLLECTION, OVERALL_FIELDS, hasOverall } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { rulesTable } from "./overall_views.ts";
-import { currentRulesHash, verdictAt } from "./review_state.ts";
+import { EVENT_REVIEW_BATCH, currentRulesHash, verdictAt } from "./review_state.ts";
 import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase } from "./schema.ts";
 import { openProposal } from "./stage_proposal.ts";
 import {
   ACTIVITY_DONE_REASON, BACK_OPTIONS, ENTER_OPTIONS, FLOW_INITIAL, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
   type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
-  activityBlocked, activityDoneRefusal, LAUNCH_IN_FLOW, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  activityDoneRefusal, LAUNCH_IN_FLOW, isPosition, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
   startHow, switchedReason,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
@@ -272,8 +275,8 @@ function whereIs(db: DatabaseSync, workspaceDir: string, taskId: string): { from
 /**
  * 想让任务开始一项活动：在流程里开始（inFlow 为真，移动阶段、启动或继续首次分析都是它），或者单独开展（inFlow 为假）。
  * 先看任务有没有阶段、这次行不行，行就记下。不行不抛错，原因写在结果里，由调用方决定怎样告诉助手或用户。
- * 开展活动只由用户决定；任务已经在同一项活动、同一种开展方式里时不记；单独开展要够前提（lib/stage.ts 的 activityBlocked），
- * 任务正在流程里做这一项时也不能单独开展它；
+ * 开展活动只由用户决定；任务已经在同一项活动、同一种开展方式里时不记；单独开展要够前提（这项活动的定义里写的数据条件，
+ * lib/activity_catalog.ts 的 blockedByStage），任务正在流程里做这一项时也不能单独开展它；
  * 在流程里开始不查前提。有别的活动在进行、这次又不是流程里的移动时，原来那条记录结束的起因写「用户改做某项活动」。
  * 必须在调用方已经开好的写事务里调用。
  */
@@ -287,7 +290,7 @@ export function startActivity(db: DatabaseSync, workspaceDir: string, who: Omit<
   if (who.actor !== "user") return { ...none, why: "user_only" };
   if (!inFlow) {
     // 任务正在流程里做这一项时不能把它单独开展一遍；别的情形看前提够不够。
-    const blocked = from === to && fromInFlow ? LAUNCH_IN_FLOW : activityBlocked(to, launchFacts(db, workspaceDir, who.taskId, where.definition));
+    const blocked = from === to && fromInFlow ? LAUNCH_IN_FLOW : launchFacts(db, workspaceDir, who.taskId, where.definition).blocked[to];
     if (blocked !== null) return { ...none, why: "not_ready", blocked };
   }
   const how = startHow(inFlow, fromInFlow, flowBefore);
@@ -303,29 +306,36 @@ export function moveStage(db: DatabaseSync, workspaceDir: string, who: Omit<Stag
   return startActivity(db, workspaceDir, who, to, true, reason);
 }
 
-/** 算「开展一项活动」那一节要的事实（lib/stage.ts 的 LaunchFacts）：任务现在的位置、流程走到哪里、有没有材料、几页主题、几条需求条目。只读。 */
-export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): LaunchFacts {
-  const open = openActivityRecord(db, taskId);
-  const hasMaterials = taskHasMaterials(workspaceDir, definition.materialsDir);
-  const position = currentStage(db, taskId);
-  const questions = new Set(definition.collections.filter((one) => keepPendingField(one) !== null).map((one) => one.name));
-  const live = db.prepare(
-    "SELECT i.collection, v.fields FROM item i JOIN item_version v ON v.task_id = i.task_id AND v.item_id = i.item_id " +
-      "AND v.revision_no = (SELECT MAX(revision_no) FROM item_version w WHERE w.task_id = i.task_id AND w.item_id = i.item_id) " +
-      "WHERE i.task_id = ? AND i.deleted_in_revision IS NULL",
-  ).all(taskId) as { collection: string; fields: string }[];
-  const pages = live.filter((one) => one.collection === OVERALL_COLLECTION && !isDeprecatedText(one.fields)).length;
-  const items = live.filter((one) => one.collection !== OVERALL_COLLECTION && !questions.has(one.collection)).length;
-  return { position, inFlow: open !== null && open.node !== null, flowNode: flowNode(db, taskId), hasMaterials, pages, items };
+/**
+ * 产品自带的活动与流程的定义（lib/activity_def_read.ts）。读不出来（文件不在、头缺栏）时不抛错，返回原因：
+ * 调用方据此不出活动目录、不让单独开展任何一项活动，别的照常。
+ */
+export function definitionsOrError(): { defs: Definitions; error: null } | { defs: null; error: string } {
+  try {
+    return { defs: definitions(), error: null };
+  } catch (error) {
+    if (error instanceof DefinitionHeadError) return { defs: null, error: error.message };
+    throw error;
+  }
 }
 
-/** 一页主题现在的字段内容（库里存的 JSON 文字）是不是已废弃。读不出来当作在用。 */
-function isDeprecatedText(fields: string): boolean {
-  try {
-    return isDeprecated(JSON.parse(fields) as Record<string, unknown>);
-  } catch {
-    return false;
-  }
+/** 活动的定义读不出来时，六项活动缺的前提都写这一句。 */
+function allBlocked(reason: string): Record<Stage, string | null> {
+  return Object.fromEntries(STAGES.map((one) => [one, `活动的定义读不出来：${reason}`])) as Record<Stage, string | null>;
+}
+
+/**
+ * 算「开展一项活动」那一节要的事实（lib/stage.ts 的 LaunchFacts）：任务现在的位置、流程走到哪里、有没有材料、六项活动各自缺什么前提。
+ * 前提只看数据（需求资产六类的现状，lib/activity_catalog.ts）。assets 是已经数好的现状，不给时这里自己读库去数。只读。
+ */
+export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition, assets?: AssetFacts): LaunchFacts {
+  const open = openActivityRecord(db, taskId);
+  const facts = assets ?? assetFacts(lampInput(db, workspaceDir, taskId, definition));
+  const found = definitionsOrError();
+  return {
+    position: currentStage(db, taskId), inFlow: open !== null && open.node !== null, flowNode: flowNode(db, taskId), hasMaterials: facts.materials > 0,
+    blocked: found.defs ? blockedByStage(found.defs.activities, facts) : allBlocked(found.error),
+  };
 }
 
 /** 用户在卡片上点了「进入某个阶段」时，那条阶段记录里写的理由。 */
@@ -503,6 +513,7 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
         pending: verification.pending_verification || verification.basis_pending !== null,
         // 问题条目自己不算标着待定的地方：它就是用来记没定的事的。
         marked: !statusFieldOf.has(one.collection) && hasPendingMark(one.fields),
+        viewed: state.viewed.get(one.item_id) === true,
       };
     }),
     questions: questions.map((one) => lampQuestion(one.item_id, one.fields, statusFieldOf.get(one.collection)!)),
@@ -534,7 +545,11 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
   return {
     ...facts,
     materials: sourceMaterials(listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path)),
-    review: { failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined },
+    review: {
+      failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined,
+      // 评审过几轮：一次评审（一个批次）结束时记一条摘要事件。
+      rounds: Number((db.prepare("SELECT COUNT(*) AS n FROM event WHERE task_id = ? AND name = ?").get(taskId, EVENT_REVIEW_BATCH) as { n: number }).n),
+    },
     completion: {
       satisfied: completion.every((one) => one.satisfied),
       unmet: completion.filter((one) => !one.satisfied).map((one) => `「${one.collection}」${one.condition}：${one.summary}`),
@@ -549,7 +564,8 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
 export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): StageSummary | null {
   if (!hasOverall(definition.collections)) return null;
   const open = openActivityRecord(db, taskId);
-  const facts = launchFacts(db, workspaceDir, taskId, definition);
+  const input = lampInput(db, workspaceDir, taskId, definition);
+  const facts = launchFacts(db, workspaceDir, taskId, definition, assetFacts(input));
   return {
     current: facts.position,
     node: facts.position !== IDLE && facts.inFlow ? facts.position : null,
@@ -558,7 +574,7 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
     moved_by: open?.actor ?? null,
     moved_at: open?.started_at ?? null,
     reason: open ? open.reason : null,
-    lamps: stageLamps(lampInput(db, workspaceDir, taskId, definition)),
+    lamps: stageLamps(input),
   };
 }
 

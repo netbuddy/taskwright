@@ -56,8 +56,8 @@ test("新任务空闲；助手提议开始核读、用户点了启动首次分�
     assert.deepEqual([fresh.launch.current, fresh.launch.flows.map((one: Dict) => [one.label, one.activity, one.in_flow, one.enabled, one.state])],
       [null, [["启动首次分析", "reading", true, true, "从核读材料开始"]]]);
     assert.deepEqual(fresh.launch.activities.map((one: Dict) => [one.label, one.enabled, one.state]), [
-      ["核读材料", true, "可以开展"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有页"],
-      ["写条目", false, "业务说明还没有页"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有需求条目"]]);
+      ["核读材料", true, "可以开展"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有内容"],
+      ["写条目", false, "业务说明还没有内容"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"]]);
     assert.deepEqual(db("SELECT COUNT(*) AS n FROM activity_record"), [{ n: 0 }]);
 
     // 不选，直接说话：助手这次运行拿到的是空闲的系统提示；写用例被拦，原话说任务没有在进行的活动；助手提议开始核读材料。
@@ -81,12 +81,12 @@ test("新任务空闲；助手提议开始核读、用户点了启动首次分�
     const readingPrompt = systemText(requests().at(-1)!);
     assert.ok(readingPrompt.includes("# 现在这个阶段：核读材料\n") && /^## 出口$/m.test(readingPrompt) && !readingPrompt.includes(IDLE_OPENING));
 
-    // 缺前提的不能单独开展：还没有需求条目，评审确认被拒；业务说明还没有页，整理建模被拒。什么都不记。
+    // 缺前提的不能单独开展：还没有需求条目，评审确认被拒；业务说明还没有内容，整理建模被拒。什么都不记。
     const refused = await action({ kind: "start_activity", targets: [], fields: { activity: "reviewing", in_flow: false }, notify_executor: false });
     assert.equal(refused.status >= 400, true);
     assert.equal(refused.body.error.message, "现在还不能单独开展评审确认：还没有需求条目。");
     const noPages = await action({ kind: "start_activity", targets: [], fields: { activity: "modeling", in_flow: false }, notify_executor: false });
-    assert.equal(noPages.body.error.message, "现在还不能单独开展整理建模：业务说明还没有页。");
+    assert.equal(noPages.body.error.message, "现在还不能单独开展整理建模：业务说明还没有内容。");
 
     // 用户从任务状况卡单独开展澄清：核读材料那条记录结束（起因是用户改做），新记录不在流程里；对话里留一行，不引出助手的运行。
     const before = requests().length;

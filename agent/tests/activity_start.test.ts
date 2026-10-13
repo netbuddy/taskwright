@@ -97,7 +97,7 @@ test("启动与继续首次分析：没有走过是启动，走过是继续；�
     [[false, "正在流程里进行"]]);
 });
 
-test("单独开展的前提：核读材料要有材料，整理建模与写条目要业务说明有页，评审确认与编写文档要有需求条目；缺的拒绝并写明缺什么，在流程里开始不查", () => {
+test("单独开展的前提只看数据：核读材料要有材料，整理建模与写条目要业务说明有内容，评审确认要有需求条目，编写文档要有已确认的需求条目；缺的拒绝并写明缺什么，在流程里开始不查", () => {
   const { dir, taskId } = workspace(overallDefinition(), false);
   const refused = (activity: string) => {
     try {
@@ -108,26 +108,31 @@ test("单独开展的前提：核读材料要有材料，整理建模与写条�
     }
     return null;
   };
-  assert.deepEqual(refused("核读材料"), ["rejected", "现在还不能单独开展核读材料：还没有材料，先上传。"]);
-  assert.deepEqual(refused("写条目"), ["rejected", "现在还不能单独开展写条目：业务说明还没有页。"]);
+  assert.deepEqual(refused("核读材料"), ["rejected", "现在还不能单独开展核读材料：还没有项目材料。"]);
+  assert.deepEqual(refused("写条目"), ["rejected", "现在还不能单独开展写条目：业务说明还没有内容。"]);
   assert.deepEqual(refused("评审确认"), ["rejected", "现在还不能单独开展评审确认：还没有需求条目。"]);
-  assert.deepEqual(refused("编写文档"), ["rejected", "现在还不能单独开展编写文档：还没有需求条目。"]);
-  assert.deepEqual(refused("整理建模"), ["rejected", "现在还不能单独开展整理建模：业务说明还没有页。"]);
+  assert.deepEqual(refused("编写文档"), ["rejected", "现在还不能单独开展编写文档：还没有已确认的需求条目。"]);
+  assert.deepEqual(refused("整理建模"), ["rejected", "现在还不能单独开展整理建模：业务说明还没有内容。"]);
   assert.equal(count(dir, "activity_record"), 0, "被拒的一次都没有记");
   assert.equal(refused("澄清"), null);
   // 在流程里开始不查前提：没有页也能把任务移到写条目（与 0.5 的直接移动相同）。
   assert.equal(start(dir, "写条目", true).note, "界面操作（不是用户打的字）：用户启动首次分析，从写条目开始。（原来在做：澄清）");
   assert.deepEqual(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION))!.launch.activities.map((one) => [one.label, one.enabled, one.state]), [
-    ["核读材料", false, "还没有材料，先上传"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有页"],
-    ["写条目", false, "正在流程里进行"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有需求条目"]]);
-  // 另一个有材料的任务：在写条目阶段立一页主题、写一条用例之后，前提都够了（已废弃的页、问题条目不算数）；只有流程里正在做的写条目不能单独开展。
+    ["核读材料", false, "还没有项目材料"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有内容"],
+    ["写条目", false, "正在流程里进行"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"]]);
+  // 另一个有材料的任务：在写条目阶段立一页主题、写一条用例、用户看过这条用例之后，前提都够了（已废弃的页、问题条目不算数）；只有流程里正在做的写条目不能单独开展。
   const full = workspace();
   enterStage(full.dir, "writing");
   saveRevision(callIn(full.dir), { operations: [READY_PAGE] });
   assert.deepEqual(inDb(full.dir, (db) => stageSummary(db, full.dir, full.taskId, DEFINITION))!.launch.activities.map((one) => one.state),
-    ["可以开展", "可以开展", "可以开展", "正在流程里进行", "还没有需求条目", "还没有需求条目"]);
+    ["可以开展", "可以开展", "可以开展", "正在流程里进行", "还没有需求条目", "还没有已确认的需求条目"]);
   userOp(full.dir, { kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] });
   saveRevision(callIn(full.dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "借书", 步骤: ["选书"] }, sources: [SOURCE] }] });
+  // 有了一条用例而用户还没有看过：评审确认可以开展，编写文档还差一条已确认的。
+  assert.deepEqual(inDb(full.dir, (db) => stageSummary(db, full.dir, full.taskId, DEFINITION))!.launch.activities.map((one) => one.state),
+    ["可以开展", "可以开展", "可以开展", "正在流程里进行", "可以开展", "还没有已确认的需求条目"]);
+  const [added] = query<{ item_id: string; revision_no: number }>(full.dir, "SELECT i.item_id, v.revision_no FROM item i JOIN item_version v ON v.item_id = i.item_id WHERE i.collection = '用例'");
+  userOp(full.dir, { kind: "mark_viewed", targets: [{ item_id: added.item_id, base_revision: added.revision_no }] });
   assert.deepEqual(inDb(full.dir, (db) => stageSummary(db, full.dir, full.taskId, DEFINITION))!.launch.activities.map((one) => one.state),
     ["可以开展", "可以开展", "可以开展", "正在流程里进行", "可以开展", "可以开展"]);
   assert.equal(start(full.dir, "评审确认", false).note, "界面操作（不是用户打的字）：用户单独开展评审确认。（原来在做：写条目）");

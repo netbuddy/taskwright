@@ -309,10 +309,8 @@ export interface LaunchFacts {
   flowNode: Stage | null;
   /** 任务里有没有材料。 */
   hasMaterials: boolean;
-  /** 业务说明里在用的主题页有几页。 */
-  pages: number;
-  /** 需求条目有几条（总体分析与问题之外各集合的条目）。 */
-  items: number;
+  /** 六项活动各自现在缺什么前提，不缺是 null。前提都是数据条件，写在各项活动的定义里（lib/activity_def.ts），由读库的一侧算好交进来。 */
+  blocked: Record<Stage, string | null>;
 }
 
 /** 可以点的一项：开展哪一项活动、在不在流程里、按钮上的字、现在能不能开展、一句状态（不能开展时写缺什么）。 */
@@ -341,14 +339,6 @@ export const LAUNCH_ACTIVE = "正在进行";
 /** 任务正在首次分析流程里做这项活动时，「单独开展」一组里同名的那一项不能点，后面写这一句。 */
 export const LAUNCH_IN_FLOW = "正在流程里进行";
 
-/** 单独开展一项活动缺什么；不缺是 null。核读材料要有材料，整理建模与写条目要业务说明有页，评审确认与编写文档要有需求条目。 */
-export function activityBlocked(activity: Stage, facts: Pick<LaunchFacts, "hasMaterials" | "pages" | "items">): string | null {
-  if (activity === "reading" && !facts.hasMaterials) return "还没有材料，先上传";
-  if ((activity === "modeling" || activity === "writing") && facts.pages === 0) return "业务说明还没有页";
-  if ((activity === "reviewing" || activity === "document") && facts.items === 0) return "还没有需求条目";
-  return null;
-}
-
 export function launchView(facts: LaunchFacts): LaunchView {
   const flow = FLOW_NAMES[FLOW_INITIAL];
   const at = facts.position === IDLE ? null : facts.position;
@@ -365,7 +355,7 @@ export function launchView(facts: LaunchFacts): LaunchView {
   const activities: LaunchOption[] = STAGES.map((activity) => {
     const active = at === activity && !facts.inFlow;
     // 任务正在流程里做这一项：不能再把它单独开展一遍（那会把流程里的这一步结束掉）。
-    const blocked = at === activity && facts.inFlow ? LAUNCH_IN_FLOW : activityBlocked(activity, facts);
+    const blocked = at === activity && facts.inFlow ? LAUNCH_IN_FLOW : facts.blocked[activity];
     return { activity, in_flow: false, label: STAGE_NAMES[activity], enabled: !active && blocked === null, state: active ? LAUNCH_ACTIVE : blocked ?? LAUNCH_READY };
   });
   return { current, flows, activities, later: [{ label: "发布", state: "0.6 后续" }] };
@@ -603,6 +593,8 @@ export interface LampItem {
   pending: boolean;
   /** 它的字段里有没有「待定」标记（hasPendingMark）。没有给当作没有。 */
   marked?: boolean;
+  /** 用户看没看过它现在的内容。算灯不用，数需求资产的现状用（lib/activity_catalog.ts）；没有给当作没看过。 */
+  viewed?: boolean;
 }
 
 /** 算灯要的一条问题条目。 */
@@ -635,8 +627,8 @@ export interface LampInput {
   diagrams: LampDiagram[];
   /** 还没有了结的规则冲突：规则表（lib/overall_views.ts 的 rulesTable）里标出的那几条问题条目的编号。 */
   ruleConflicts: string[];
-  /** 评审：当前修订在当前规则下评审不合规、又没有保留写法的条目；任务里有没有过评审记录。 */
-  review: { failing: string[]; any: boolean };
+  /** 评审：当前修订在当前规则下评审不合规、又没有保留写法的条目；任务里有没有过评审记录；评审过几轮（算灯不用，没有给时有过记录当作一轮）。 */
+  review: { failing: string[]; any: boolean; rounds?: number };
   /** 完成条件：是不是全部满足；没满足的各条的说明。 */
   completion: { satisfied: boolean; unmet: string[] };
   /**

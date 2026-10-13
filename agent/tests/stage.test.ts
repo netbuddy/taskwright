@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  activityBlocked, activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, completeRefusal, flowStartNode, launchView, startHow, startReadingCardGuidance, STAY_IDLE_OPTION, switchedReason, CONTINUE_CLARIFY_KEY, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
+  activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, completeRefusal, flowStartNode, launchView, startHow, startReadingCardGuidance, STAY_IDLE_OPTION, switchedReason, CONTINUE_CLARIFY_KEY, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
   itemRefusal, judgeMove, nextStage, pageRefusal, positionName, reviewRefusal, type Stage, STAGE_NAMES, stageByName, stageEnteredBy, STAGES, START_ITEMS_KEY, STAY_OPTIONS,
 } from "../src/lib/stage.ts";
 
@@ -156,36 +156,36 @@ test("一项活动怎样开始、对话里怎样说：流程里的移动、启�
   assert.deepEqual([flowStartNode(true), flowStartNode(false)], ["reading", "clarifying"]);
 });
 
-test("开展一项活动的三组选项：正在进行的只是一行；首次分析可以启动或继续；六项活动各带前提，缺什么写什么；发布留到以后", () => {
-  const facts = { position: IDLE, inFlow: false, flowNode: null, hasMaterials: false, pages: 0, items: 0 } as const;
+test("开展一项活动的三组选项：正在进行的只是一行；首次分析可以启动或继续；六项活动各带前提，缺什么照交进来的写；发布留到以后", () => {
+  // 六项活动各自缺什么前提由读库的一侧按数据算好交进来（lib/activity_catalog.ts），这里只管怎样摆。
+  const none = { reading: null, clarifying: null, modeling: null, writing: null, reviewing: null, document: null };
+  const blocked = { ...none, reading: "还没有项目材料", modeling: "业务说明还没有内容", writing: "业务说明还没有内容", reviewing: "还没有需求条目", document: "还没有已确认的需求条目" };
+  const facts = { position: IDLE, inFlow: false, flowNode: null, hasMaterials: false, blocked } as const;
   // 新任务：空闲，没有材料、没有页、没有条目。
   const fresh = launchView(facts);
   assert.equal(fresh.current, null);
   assert.deepEqual(fresh.flows, [{ activity: "clarifying", in_flow: true, label: "启动首次分析", enabled: true, state: "从澄清开始" }]);
   assert.deepEqual(fresh.activities.map((one) => [one.label, one.enabled, one.state]), [
-    ["核读材料", false, "还没有材料，先上传"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有页"],
-    ["写条目", false, "业务说明还没有页"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有需求条目"]]);
+    ["核读材料", false, "还没有项目材料"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有内容"],
+    ["写条目", false, "业务说明还没有内容"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"]]);
   assert.ok(fresh.activities.every((one) => one.in_flow === false));
   assert.deepEqual(fresh.later, [{ label: "发布", state: "0.6 后续" }]);
   // 有材料：首次分析从核读材料启动，核读材料可以单独开展。
-  const withMaterial = launchView({ ...facts, hasMaterials: true });
+  const withMaterial = launchView({ ...facts, hasMaterials: true, blocked: { ...blocked, reading: null } });
   assert.deepEqual([withMaterial.flows[0].activity, withMaterial.flows[0].state, withMaterial.activities[0].enabled], ["reading", "从核读材料开始", true]);
   // 在流程里的写条目：第一组写「继续首次分析：写条目」，流程那一项正在进行、不能点；六项单独开展的照前提。
-  const writing = launchView({ position: "writing", inFlow: true, flowNode: "writing", hasMaterials: true, pages: 2, items: 0 });
+  const writing = launchView({ position: "writing", inFlow: true, flowNode: "writing", hasMaterials: true, blocked: { ...none, reviewing: "还没有需求条目", document: "还没有已确认的需求条目" } });
   assert.deepEqual(writing.current, { activity: "writing", in_flow: true, label: "继续首次分析：写条目" });
   assert.deepEqual(writing.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: false, state: "正在进行" }]);
   assert.deepEqual(writing.activities.map((one) => one.enabled), [true, true, true, false, false, false]);
   // 流程里正在做的那一项，单独开展一组里同名的不能点，写明它正在流程里进行。
   assert.deepEqual(writing.activities.filter((one) => !one.enabled).map((one) => [one.label, one.state]),
-    [["写条目", "正在流程里进行"], ["评审确认", "还没有需求条目"], ["编写文档", "还没有需求条目"]]);
+    [["写条目", "正在流程里进行"], ["评审确认", "还没有需求条目"], ["编写文档", "还没有已确认的需求条目"]]);
   // 流程走到写条目之后改做单独的澄清：第一组写「继续澄清」，流程可以从写条目接着，澄清那一项正在进行。
-  const alone = launchView({ position: "clarifying", inFlow: false, flowNode: "writing", hasMaterials: true, pages: 2, items: 3 });
+  const alone = launchView({ position: "clarifying", inFlow: false, flowNode: "writing", hasMaterials: true, blocked: none });
   assert.deepEqual(alone.current, { activity: "clarifying", in_flow: false, label: "继续澄清" });
   assert.deepEqual(alone.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: true, state: "可以开展" }]);
   assert.deepEqual(alone.activities.map((one) => [one.enabled, one.state]),
     [[true, "可以开展"], [false, "正在进行"], [true, "可以开展"], [true, "可以开展"], [true, "可以开展"], [true, "可以开展"]]);
-  // 前提各自缺什么。
-  assert.deepEqual(STAGES.map((one) => activityBlocked(one, facts)), ["还没有材料，先上传", null, "业务说明还没有页", "业务说明还没有页", "还没有需求条目", "还没有需求条目"]);
-  assert.deepEqual(STAGES.map((one) => activityBlocked(one, { hasMaterials: true, pages: 1, items: 1 })), [null, null, null, null, null, null]);
 });
 

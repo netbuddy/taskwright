@@ -96,7 +96,7 @@ test("开展一项活动一节：正在进行的一行、首次分析能不能�
   assert.deepEqual(flowed.launch!.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: false, state: "正在进行" }]);
   assert.deepEqual(flowed.launch!.activities.map((one) => [one.label, one.in_flow, one.enabled, one.state]), [
     ["核读材料", false, true, "可以开展"], ["澄清", false, true, "可以开展"], ["整理建模", false, true, "可以开展"],
-    ["写条目", false, false, "正在流程里进行"], ["评审确认", false, false, "还没有需求条目"], ["编写文档", false, false, "还没有需求条目"]]);
+    ["写条目", false, false, "正在流程里进行"], ["评审确认", false, false, "还没有需求条目"], ["编写文档", false, false, "还没有已确认的需求条目"]]);
   assert.deepEqual(flowed.launch!.later, [{ label: "发布", state: "0.6 后续" }]);
   assert.deepEqual(flowed.launch, library.taskSnapshot(ws)[1]!.stage!.launch, "与整份数据里的是同一份");
   // 用户改做单独的澄清（直接改库：把在进行的那条记录记成不在流程里的澄清，流程的位置另留一条已结束的写条目）。
@@ -109,7 +109,7 @@ test("开展一项活动一节：正在进行的一行、首次分析能不能�
   assert.match(String(alone.activity.moved_at), /^2026-10-12T10:00:00/);
   assert.deepEqual([alone.launch!.current, alone.launch!.flows[0]], [{ activity: "clarifying", in_flow: false, label: "继续澄清" },
     { activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: true, state: "可以开展" }]);
-  assert.deepEqual(alone.launch!.activities.map((one) => one.state), ["可以开展", "正在进行", "可以开展", "可以开展", "还没有需求条目", "还没有需求条目"]);
+  assert.deepEqual(alone.launch!.activities.map((one) => one.state), ["可以开展", "正在进行", "可以开展", "可以开展", "还没有需求条目", "还没有已确认的需求条目"]);
   // 这一段还差什么照那项活动（澄清）的灯；整份数据里所属流程是 null，节点是 null，流程走到写条目。
   const stage = library.taskSnapshot(ws)[1]!.stage!;
   assert.deepEqual([stage.current, stage.node, stage.flow_node, stage.flow], ["clarifying", null, "writing", null]);
