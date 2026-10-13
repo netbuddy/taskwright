@@ -223,10 +223,14 @@ describe("知识库页面", () => {
     expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已换算 0 / 2");
     expect(screen.queryByTestId("kb-embed-start")).toBeNull();
     await waitFor(() => expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已换算 2 / 2"));
-    expect(calls.overview).toHaveBeenCalledTimes(3);
     expect(screen.queryByTestId("kb-embed-start")).toBeNull();
+    // 算完的那次回答到了之后，定时器要等页面渲染完、清理执行了才停，机器忙时这之间可能多响一次，所以不断言「恰好 3 次」：
+    // 先等一段时间让清理做完，再确认次数不再增加。
+    expect(calls.overview.mock.calls.length).toBeGreaterThanOrEqual(3);
     await new Promise((r) => setTimeout(r, 100));
-    expect(calls.overview).toHaveBeenCalledTimes(3);
+    const settled = calls.overview.mock.calls.length;
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls.overview).toHaveBeenCalledTimes(settled);
   });
 
   it("还没有切好片段时只写「换算中」；自动取的那一次没取到时页面照旧，不换成报错", async () => {
