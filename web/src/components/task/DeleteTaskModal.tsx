@@ -60,7 +60,7 @@ export function DeleteTaskModal({ taskId, taskName, onClose, onDeleted }: {
         <Button key="delete" danger type="primary" loading={deleting} disabled={!counts} onClick={() => void remove()} data-testid="delete-task-confirm">删除</Button>,
       ]}>
       <p data-testid="delete-task-text">{counts ? deleteTaskText(counts) : "正在读这个任务。"}</p>
-      <p className="muted small">可以先导出存档：把这个任务存成一个数据包文件，以后可以再导入。不导出也可以直接删除。</p>
+      <p className="muted small" data-testid="delete-task-export-note">先导出存档：导出这个任务的材料、需求资产与对话记录（不含运行日志），以后可以再导入。不导出也可以直接删除。</p>
       {error && <Alert type="error" showIcon message={error} data-testid="delete-task-error" />}
     </Modal>
   );

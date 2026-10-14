@@ -2,11 +2,13 @@
  * 数据包：把任务与知识库导出成一个 zip 文件（扩展名 .taskwright.zip），换机器、把单机的数据搬上服务器、或者升级之前先留一份时用。
  *
  * 包里有什么：
- *   manifest.json                清单文件：包的格式版本、产品版本、数据的格式版本、导出时刻、导出范围、任务清单、知识库清单、
+ *   说明.txt                     给人看的说明：包里有什么、没有什么、怎样导入（packReadme）。不列在文件清单里，导入时不解出来。
+ *   manifest.json                清单文件：包的格式版本、产品版本、数据的格式版本、导出时刻、导出范围、是否带了事件归档、任务清单、知识库清单、
  *                                每个文件的路径、字节数、SHA-256 与修改时刻，还有包里的空目录。它是包里最后一个条目，自己不列在文件清单里。
  *   tasks/<任务编号>/…           任务目录里的文件：任务库（task.sqlite，一个完整的副本）、docs、inputs、task.json、选用的知识库、
  *                                建任务时放进来的设置与方法说明。
- *   runs/<任务编号>/…            这个任务的归档（对话记录与事件记录），原样。没有对话过的任务没有这一部分。
+ *   runs/<任务编号>/…            这个任务的归档，原样：对话记录（pi-sessions）。事件归档（pi-events，pi 每一步的原始输出与运行日志）缺省不带，
+ *                                导出时选了带事件归档（withEvents，命令行 --with-events）才带。没有对话过的任务没有这一部分。
  *   knowledge/<库编号>/…         知识库目录，原样：文档、文字版、片段与换算好的数字串。
  *   knowledge/libraries.json     包里这些库在知识库清单里的条目。
  *   service/tasks.json           包里这些任务在任务登记表里的行。
@@ -58,6 +60,10 @@ import { ZipError, type ZipEntry, ZipReader, ZipTooLarge, ZipWriter, validEntryN
 
 /** 数据包文件名的结尾。 */
 export const PACK_SUFFIX = ".taskwright.zip";
+/** 包根上给人看的说明的名字。 */
+export const README_NAME = "说明.txt";
+/** 归档里的事件归档目录：缺省不带进包。 */
+export const EVENTS_DIR = "pi-events";
 /** 包的格式版本：包里的布局与清单文件的写法。以后改了布局就加 1，旧程序据此拒绝读不了的包。 */
 export const PACK_FORMAT = 1;
 /** 清单文件在包里的名字。 */
@@ -130,6 +136,8 @@ export interface Manifest {
   task_db_version: number;
   exported_at: string;
   scope: PackScope;
+  /** 带没带事件归档（runs/<任务编号>/pi-events）。早先的包没有这一项，那时一律带着。 */
+  with_events: boolean;
   tasks: PackTask[];
   libraries: PackLibrary[];
   files: PackFile[];
@@ -174,6 +182,8 @@ export interface ExportOptions {
   to: string;
   /** 助手是不是正在这个任务里工作（服务的接口导出时给）。 */
   working?: (taskId: string) => boolean;
+  /** 带上事件归档（runs/<任务编号>/pi-events）；缺省不带，只带对话记录。 */
+  withEvents?: boolean;
   productVersion?: string;
 }
 
@@ -330,7 +340,7 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
   const writer = ZipWriter.create(partial);
   const manifest: Manifest = {
     pack_format: PACK_FORMAT, product_version: options.productVersion ?? appVersion(), data_format: peekData(where.dataDir), task_db_version: TASK_DB_VERSION,
-    exported_at: clock.now(), scope: options.scope, tasks: [], libraries: [], files: [], empty_dirs: [],
+    exported_at: clock.now(), scope: options.scope, with_events: options.withEvents === true, tasks: [], libraries: [], files: [], empty_dirs: [],
   };
   const put = async (path: string, source: string, mtimeMs: number) => {
     const written = await writer.addFile(path, source, { store: STORED.has(extname(path).toLowerCase()), mtime: new Date(mtimeMs) });
@@ -358,7 +368,7 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
         const own = walk(taskDir, TASK_LEFT_OUT, `任务 ${id}`, skipped);
         for (const file of own.files) await put(`tasks/${id}/${file.rel}`, file.path, file.mtimeMs);
         manifest.empty_dirs.push(...own.emptyDirs.map((one) => `tasks/${id}/${one}`));
-        const archive = walk(join(where.runsDir, id), new Set(), `任务 ${id} 的归档`, skipped);
+        const archive = walk(join(where.runsDir, id), options.withEvents ? new Set() : new Set([EVENTS_DIR]), `任务 ${id} 的归档`, skipped);
         for (const file of archive.files) await put(`runs/${id}/${file.rel}`, file.path, file.mtimeMs);
         manifest.empty_dirs.push(...archive.emptyDirs.map((one) => `runs/${id}/${one}`));
         const lock = occupancy.readLock(taskDir);
@@ -387,6 +397,7 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
     }
     if (libraries.length > 0) await putJson(PACK_LIBRARIES, { version: 1, libraries });
     if (register.length > 0) await putJson(PACK_REGISTER, { version: 1, tasks: register });
+    await writer.addBuffer(README_NAME, Buffer.from(packReadme(manifest), "utf-8"), { mtime: new Date() });
     await writer.addBuffer(MANIFEST_NAME, Buffer.from(JSON.stringify(manifest, null, 2) + "\n", "utf-8"));
     const bytes = writer.finish();
     renameSync(partial, options.to);
@@ -399,6 +410,45 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+/**
+ * 包根上那份给人看的说明（说明.txt）：用日常语言写包里有什么、没有什么、怎样导入。照导出的范围与带没带事件归档写，
+ * 不列具体文件（具体文件在清单文件里）。
+ */
+export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_version" | "scope" | "with_events" | "tasks" | "libraries">): string {
+  const scope = manifest.scope === "task" ? "一个任务" : manifest.scope === "library" ? "一个知识库" : "全部任务与知识库";
+  const tasks = manifest.tasks.map((t) => `  ${t.task_id}${t.name ? `「${t.name}」` : ""}`);
+  const libraries = manifest.libraries.map((x) => `  ${x.id}「${x.name}」`);
+  const lines = [
+    "这是 Taskwright 导出的数据包。",
+    `导出时刻：${manifest.exported_at}　产品版本：${manifest.product_version}　范围：${scope}`,
+    ...(tasks.length ? ["包里的任务：", ...tasks] : []),
+    ...(libraries.length ? ["包里的知识库：", ...libraries] : []),
+    "",
+    "包里有什么",
+    ...(tasks.length ? [
+      "- 任务库：条目、修订、评审与确认、版本记录等，每个任务一份完整的副本（tasks/<任务编号>/task.sqlite）。",
+      "- 材料：放进任务里的文件和由它们生成的文字版（tasks/<任务编号>/inputs）。",
+      "- 发布过的各版的文档存档（tasks/<任务编号>/versions），发布过才有。",
+      "- 对话记录：与助手的每一条会话（runs/<任务编号>/pi-sessions）。",
+      "- 这个任务用的任务类型说明与规则的副本（tasks/<任务编号>/.pi 与 tasks/<任务编号>/docs）。",
+      ...(manifest.with_events ? ["- 运行日志与事件归档：助手每一步的原始记录（runs/<任务编号>/pi-events）。导出时选了带上它们。"] : []),
+    ] : []),
+    ...(libraries.length ? ["- 知识库：文档和它们的文字版、片段（knowledge/<库编号>）。"] : []),
+    "- 清单文件 manifest.json：每个文件的大小与校验值，导入时据此核对。",
+    "",
+    "包里没有什么",
+    ...(tasks.length && !manifest.with_events ? ["- 运行日志与事件归档（助手每一步的原始记录）。要带上它们，导出时加 --with-events。"] : []),
+    "- 产品设置、模型配置与密钥。",
+    "",
+    "怎样导入",
+    "- 用命令行：taskwright data import --from <这个文件>（可以加 --data <数据目录> 指定导到哪里）。",
+    "  编号已经有任务在用的任务缺省跳过；加 --renumber 就给它一个新编号导入。",
+    "- 导入之前会核对整个包，有一处不对就整包不导入，原有的数据不动。导入不改这个文件。",
+    "",
+  ];
+  return lines.join("\n");
 }
 
 /** 数据目录的格式版本；还没有服务级库，或者读不出来，是 0。 */
@@ -429,7 +479,7 @@ export function exportText(result: ExportResult): string {
     lines.push(`任务 ${task.task_id}${task.name ? `「${task.name}」` : ""}：${task.files} 个文件${using}`);
   }
   for (const one of result.libraries) lines.push(`知识库 ${one.id}「${one.name}」：${one.files} 个文件`);
-  if (result.tasks.length === 0 && result.libraries.length === 0) lines.push("这个数据目录里没有任务，也没有知识库：包里只有清单文件。");
+  if (result.tasks.length === 0 && result.libraries.length === 0) lines.push("这个数据目录里没有任务，也没有知识库：包里只有清单文件与说明。");
   for (const one of result.skipped) lines.push(`没有带：${one.what}（${one.reason}）`);
   lines.push("包里有材料与对话记录的副本，请妥善保管。产品设置、模型配置与密钥不在包里。");
   return lines.join("\n") + "\n";
@@ -476,7 +526,7 @@ function parseManifest(text: string): Manifest {
   return {
     pack_format: raw.pack_format, product_version: typeof raw.product_version === "string" && raw.product_version ? raw.product_version : "unknown",
     data_format: raw.data_format, task_db_version: raw.task_db_version, exported_at: typeof raw.exported_at === "string" ? raw.exported_at : "",
-    scope: raw.scope, tasks, libraries, files, empty_dirs: emptyDirs,
+    scope: raw.scope, with_events: raw.with_events === undefined ? true : raw.with_events === true, tasks, libraries, files, empty_dirs: emptyDirs,
   };
 }
 
@@ -530,7 +580,8 @@ export function openPack(file: string): OpenedPack {
     }
     const listed = new Map(manifest.files.map((f) => [f.path, f]));
     for (const one of reader.entries) {
-      if (one.name === MANIFEST_NAME) continue;
+      // 清单文件与给人看的说明都不在文件清单里，导入时也不解出来。
+      if (one.name === MANIFEST_NAME || one.name === README_NAME) continue;
       const wanted = listed.get(one.name);
       // 清单文件里没有的条目；同一个名字出现第二次的条目也落在这里（第一次已经从 listed 里去掉了）。
       if (!wanted) throw new PackError("refused", `数据包里的文件与清单文件对不上：多了 ${one.name}。`);
@@ -928,7 +979,9 @@ export async function upgradePack(file: string, to: string, options: { productVe
     pack.reader.close();
     const upgrade = await upgradeStaged(staging, options.productVersion ?? appVersion());
     if (upgrade?.fatal) throw new PackError("refused", `数据包没有升级成：${upgrade.fatal}`);
-    const written = await exportPack(where, { scope: manifest.scope, taskId: manifest.tasks[0]?.task_id, libraryId: manifest.libraries[0]?.id, to, productVersion: options.productVersion });
+    // 原包带着事件归档的（早先的包一律带着），升级出来的包照样带。
+    const written = await exportPack(where, { scope: manifest.scope, taskId: manifest.tasks[0]?.task_id, libraryId: manifest.libraries[0]?.id, to, productVersion: options.productVersion,
+      withEvents: manifest.with_events });
     return { written, from_version: manifest.product_version, tasks: upgrade?.tasks ?? [] };
   } finally {
     pack.reader.close();

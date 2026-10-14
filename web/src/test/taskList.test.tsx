@@ -85,6 +85,7 @@ describe("删除任务", () => {
     expect(get).toHaveBeenCalledWith("T1");
     expect(screen.getByText("删除任务「一次性的任务」？")).toBeInTheDocument();
     expect(screen.getByTestId("delete-task-export")).toHaveAttribute("href", "/api/v1/tasks/T1/export");
+    expect(screen.getByTestId("delete-task-export-note")).toHaveTextContent("先导出存档：导出这个任务的材料、需求资产与对话记录（不含运行日志），以后可以再导入。不导出也可以直接删除。");
     const remove = vi.spyOn(api, "deleteTask");
     fireEvent.click(screen.getByRole("button", { name: /^取\s?消$/ }));
     expect(remove).not.toHaveBeenCalled();

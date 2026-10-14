@@ -213,12 +213,13 @@ A **data pack** is a zip file (its name ends in `.taskwright.zip`) with a copy o
 ```bash
 node backend/src/main.mts data export --data <data directory> --to <pack>                        # everything
 node backend/src/main.mts data export --data <data directory> --task <task id> --to <pack>       # one task
+node backend/src/main.mts data export --data <data directory> --task <task id> --with-events --to <pack>  # one task, with its event archive
 node backend/src/main.mts data export --data <data directory> --library <library id> --to <pack> # one knowledge library
 node backend/src/main.mts data import --data <data directory> --from <pack> [--renumber]
 node backend/src/main.mts data upgrade --pack <pack> --to <new pack>
 ```
 
-- `data export`: works while the service is running; a task in use is exported too (the pack records that it was in use). A data directory that has not been upgraded yet can be exported. A file that already exists at `--to` is not overwritten.
+- `data export`: works while the service is running; a task in use is exported too (the pack records that it was in use). A data directory that has not been upgraded yet can be exported. A file that already exists at `--to` is not overwritten. The event archive (`runs/<task id>/pi-events/`, the raw record of every step of the assistant and the run logs) is left out by default and only the conversation records are exported; add `--with-events` when you need them to look into a problem.
 - `data import`: does nothing while a service is using the data directory; stop it first (or import through the service's interface). It also does nothing while the data directory itself has data of an earlier version that is not upgraded; run `data upgrade` first. The target may be an empty directory.
 - `data upgrade --pack`: upgrades a pack exported from data of an earlier version to the current format and writes a new pack; the original pack is left as it is, and no data directory is needed. Importing upgrades such a pack by itself, so this command is only for getting a pack in the new format.
 - Exit codes: 0 when everything was done (a task skipped on import because it already exists does not count as a failure); 1 when a task or a knowledge library failed, or when an export left a task directory out; 2 when nothing was done (wrong arguments, the data directory is in use by a service, the pack is wrong or newer than this program, the target file already exists).
@@ -228,13 +229,14 @@ node backend/src/main.mts data upgrade --pack <pack> --to <new pack>
 | Path in the pack | Content |
 |---|---|
 | `tasks/<task id>/` | the task directory: the task database (a complete copy), `docs/`, `inputs/`, `task.json`, the selected knowledge libraries, and the settings and instructions put there when the task was created |
-| `runs/<task id>/` | the task's archive: the conversation records and the event records, unchanged. A task that never had a conversation has none |
+| `runs/<task id>/` | the task's archive, unchanged: the conversation records (`pi-sessions/`). The event archive (`pi-events/`) is included only with `--with-events`. A task that never had a conversation has none |
 | `knowledge/<library id>/` | the knowledge library's directory, unchanged: documents, text versions, passages and the computed vectors |
 | `knowledge/libraries.json` | the entries of these libraries in the list of knowledge libraries |
 | `service/tasks.json` | the rows of these tasks in the task register |
-| the list file (`manifest.json` in the pack) | the pack's format version, the product version that exported it, the data format versions, the time of the export, the scope, the tasks and libraries, and for every file its path, size, SHA-256 and modification time |
+| `说明.txt` | a note for people: what the pack holds, what it does not hold, and how to import it. It is not in the list file and is not extracted on import |
+| the list file (`manifest.json` in the pack) | the pack's format version, the product version that exported it, the data format versions, the time of the export, the scope, whether the event archive is included, the tasks and libraries, and for every file its path, size, SHA-256 and modification time |
 
-**A pack does not hold** the product settings, the model configuration or any keys, so the model service has to be set up again on the new machine (section 3). It does not hold lock files, the log files beside a task database or temporary files either.
+**A pack does not hold** the product settings, the model configuration or any keys, so the model service has to be set up again on the new machine (section 3). By default it does not hold the event archive either; a task without it imports and works as usual, and the observatory lists its sessions as 没有事件归档 ("no event archive"). It does not hold lock files, the log files beside a task database or temporary files either.
 
 **How an import goes.** The whole pack is checked first: the list file can be read, the pack is not newer than this program, the files in the pack are exactly the files in the list, and every file has the SHA-256 the list gives. If anything is wrong, nothing is imported and the data directory is left as it was. After that the tasks and libraries are imported one by one, and one that fails does not stop the others. Modification times are restored as they were at the export, so a material that had entered the conversation still cannot be deleted or replaced after the import.
 

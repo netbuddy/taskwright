@@ -392,10 +392,11 @@ const handlers: Record<string, Handler> = {
     const agent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : "";
     return json(200, await service.deleteTask(t, [req.remote ?? "未知地址", agent].filter(Boolean).join("，")));
   },
-  // 把一个任务导出成数据包（任务目录与它的归档），回一个 zip 文件。
+  // 把一个任务导出成数据包（任务目录与它的对话记录），回一个 zip 文件。查询参数 with_events=1 时另带事件归档（pi-events）。
   export_task: (service, req) => {
     const t = service.task(req.params.task);
-    return packDownload(service, { scope: "task", taskId: t.taskId, working: () => t.executor.state === "working" }, `${t.taskId}${PACK_SUFFIX}`);
+    return packDownload(service, { scope: "task", taskId: t.taskId, working: () => t.executor.state === "working", withEvents: req.query.with_events === "1" },
+      `${t.taskId}${PACK_SUFFIX}`);
   },
   // 把一个知识库导出成数据包。
   export_library: (service, req) => {

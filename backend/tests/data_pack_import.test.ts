@@ -98,7 +98,8 @@ const leftovers = (where: PackLocations) => [where.tasksDir, where.runsDir, wher
 test("往返：整套导出再导入到一个空的数据目录，任务、归档、知识库逐个文件相同，登记表与知识库清单相同，修改时刻照原样", async () => {
   const { where, a, b, lib } = await sampleData();
   const file = packFile("all");
-  await exportPack(where, { scope: "all", to: file, productVersion: "0.5.0" });
+  // 带上事件归档：这一例核对归档逐个文件相同（缺省不带事件归档的导入见 data_pack_events.test.ts）。
+  await exportPack(where, { scope: "all", to: file, productVersion: "0.5.0", withEvents: true });
 
   const target = locations(fresh("target"));
   const registry = ServiceDb.open(target.dataDir, "0.5.0");
@@ -154,7 +155,7 @@ test("往返：整套导出再导入到一个空的数据目录，任务、归�
 test("编号已经有任务在用：缺省跳过并写明；改编号导入后两个任务并存，新编号的任务服务接手得了、能再存修订，归档原样", async () => {
   const { where, a } = await sampleData();
   const file = packFile(a);
-  await exportPack(where, { scope: "task", taskId: a, to: file });
+  await exportPack(where, { scope: "task", taskId: a, to: file, withEvents: true });
   const before = tree(where.tasksDir);
 
   const registry = ServiceDb.open(where.dataDir, "0.5.0");

@@ -548,7 +548,7 @@ A data pack is a zip file with a copy of one task or one knowledge library (a pa
 
 | Endpoint | Purpose | Returns |
 |---|---|---|
-| `GET /api/v1/tasks/{task_id}/export` | Export one task (its directory and its archive) as a data pack | The bytes of the zip file, `Content-Type: application/zip`, `Content-Disposition: attachment; filename="<task id>.taskwright.zip"`, with `Content-Length`. `not_found` when there is no such task |
+| `GET /api/v1/tasks/{task_id}/export` | Export one task (its directory and its conversation records) as a data pack; with `?with_events=1` its event archive (`pi-events`) is included too | The bytes of the zip file, `Content-Type: application/zip`, `Content-Disposition: attachment; filename="<task id>.taskwright.zip"`, with `Content-Length`. `not_found` when there is no such task |
 | `GET /api/v1/knowledge/libraries/{id}/export` | Export one knowledge library as a data pack | The same; the file name is `<library id>.taskwright.zip`. `not_found` when there is no such library |
 | `POST /api/v1/tasks/import` | Import a data pack whose scope is one task | `{ "ok": true, "report": … }` |
 | `POST /api/v1/knowledge/import` | Import a data pack whose scope is one knowledge library | The same |

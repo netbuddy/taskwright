@@ -26,16 +26,21 @@ from taskwright_observatory import evals, taskpage
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
+def is_archive_dir(path: Path) -> bool:
+    """是不是一个归档目录：有事件归档（pi-events）或者会话文件（pi-sessions）。数据包缺省不带事件归档，导入来的任务只有会话文件。"""
+    return (path / "pi-events").is_dir() or (path / "pi-sessions").is_dir()
+
+
 def expand_archive_dirs(given: list[Path]) -> list[Path]:
-    """把命令行给的目录展开成归档目录：本身有 pi-events 的就是归档目录；没有的，收它下面每个含有 pi-events 的
-    直接子目录（按名字排）。本身没有、子目录也都没有的，照旧当归档目录交给读取层，读出来就是空的。去掉重复的。
+    """把命令行给的目录展开成归档目录：本身是归档目录（见 is_archive_dir）的就是它；不是的，收它下面每个是归档目录的
+    直接子目录（按名字排）。本身不是、子目录也都不是的，照旧当归档目录交给读取层，读出来就是空的。去掉重复的。
     只列目录、不读文件，每次读取前调用一次也不费事。"""
     found: list[Path] = []
     for one in given:
-        if (one / "pi-events").is_dir():
+        if is_archive_dir(one):
             picked = [one]
         else:
-            picked = (sorted(p for p in one.iterdir() if p.is_dir() and (p / "pi-events").is_dir()) if one.is_dir() else []) or [one]
+            picked = (sorted(p for p in one.iterdir() if p.is_dir() and is_archive_dir(p)) if one.is_dir() else []) or [one]
         found.extend(p for p in picked if p not in found)
     return found
 
@@ -84,7 +89,7 @@ class IndexCache:
         sim_backends, sim_tasks = expand_sim_root(self.sim_root)
         # 演练的 backend 目录下还没有归档时不收：它不是归档目录，照「给的目录本身」收进去会多出一个读不出东西的归档目录。
         archive_dirs = expand_archive_dirs(self.given_dirs)
-        archive_dirs += [d for d in expand_archive_dirs(sim_backends) if (d / "pi-events").is_dir() and d not in archive_dirs]
+        archive_dirs += [d for d in expand_archive_dirs(sim_backends) if is_archive_dir(d) and d not in archive_dirs]
         workspace_dirs = ([self.workspaces_dir] if self.workspaces_dir is not None else []) + sim_tasks
         # 展开结果本身也放进指纹：新建的任务目录还没有文件时，也算变了。
         signature = (tuple(str(d) for d in archive_dirs), tuple(str(d) for d in workspace_dirs),

@@ -12,7 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
-import { MANIFEST_NAME, PACK_FORMAT, PACK_LIBRARIES, PACK_REGISTER, PackError, exportPack, exportText } from "../src/data_pack.ts";
+import { MANIFEST_NAME, PACK_FORMAT, PACK_LIBRARIES, PACK_REGISTER, PackError, README_NAME, exportPack, exportText } from "../src/data_pack.ts";
 import { KnowledgeStore } from "../src/knowledge.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { DATA_FORMAT } from "../src/service_db.ts";
@@ -61,7 +61,8 @@ test("整套导出：清单文件记着版本、范围、任务与知识库；�
 
   const to = join(fresh("out"), "all.taskwright.zip");
   mkdirSync(join(to, ".."), { recursive: true });
-  const result = await exportPack(where, { scope: "all", to, productVersion: "0.5.0" });
+  // 带上事件归档：这一例核对归档原样进包（缺省不带事件归档的情形见 data_pack_events.test.ts）。
+  const result = await exportPack(where, { scope: "all", to, productVersion: "0.5.0", withEvents: true });
   assert.deepEqual([result.file, result.bytes, result.scope, result.skipped], [to, statSync(to).size, "all", []]);
   assert.deepEqual(readdirSync(join(to, "..")), ["all.taskwright.zip"], "没有留下临时文件");
 
@@ -73,7 +74,9 @@ test("整套导出：清单文件记着版本、范围、任务与知识库；�
     [[a, "甲", "local", a, TASK_DB_VERSION, false, false], [b, "乙", "local", b, TASK_DB_VERSION, false, false]].sort());
   assert.deepEqual(manifest.libraries.map((one) => [one.id, one.name]).sort(), [["general", "通用知识库"], [lib.id, "售后规范"]].sort());
   // 包里的条目就是文件清单里的那些，一个不多一个不少；清单文件是最后一个条目。
-  assert.deepEqual([...names].sort(), manifest.files.map((f) => f.path).sort());
+  // 另有一份给人看的说明.txt，不在文件清单里。
+  assert.deepEqual(names.filter((name) => name !== README_NAME).sort(), manifest.files.map((f) => f.path).sort());
+  assert.ok(names.includes(README_NAME));
   assert.equal(result.files, manifest.files.length);
   for (const file of manifest.files) assert.deepEqual([content(file.path).length, sha256(content(file.path))], [file.bytes, file.sha256], file.path);
   const byPath = new Map(manifest.files.map((f) => [f.path, f]));
@@ -151,13 +154,13 @@ test("一个任务、一个知识库：只带它自己的；没有这个编号�
   const one = await exportPack(where, { scope: "task", taskId: a, to: join(dir, `${a}.taskwright.zip`) });
   const task = readPack(one.file);
   assert.deepEqual([task.manifest.scope, task.manifest.tasks.map((t) => t.task_id), task.manifest.libraries], ["task", [a], []]);
-  assert.ok(task.names.every((name) => name.startsWith(`tasks/${a}/`) || name.startsWith(`runs/${a}/`) || name === PACK_REGISTER), "别的任务与知识库都不在包里");
+  assert.ok(task.names.every((name) => name.startsWith(`tasks/${a}/`) || name.startsWith(`runs/${a}/`) || name === PACK_REGISTER || name === README_NAME), "别的任务与知识库都不在包里");
   assert.ok(!task.names.includes(PACK_LIBRARIES));
 
   const two = await exportPack(where, { scope: "library", libraryId: lib.id, to: join(dir, `${lib.id}.taskwright.zip`) });
   const pack = readPack(two.file);
   assert.deepEqual([pack.manifest.scope, pack.manifest.tasks, pack.manifest.libraries.map((x) => x.id)], ["library", [], [lib.id]]);
-  assert.ok(pack.names.every((name) => name.startsWith(`knowledge/${lib.id}/`) || name === PACK_LIBRARIES));
+  assert.ok(pack.names.every((name) => name.startsWith(`knowledge/${lib.id}/`) || name === PACK_LIBRARIES || name === README_NAME));
   assert.deepEqual(JSON.parse(pack.content(PACK_LIBRARIES).toString("utf-8")).libraries.map((x: any) => [x.id, x.name]), [[lib.id, "售后规范"]]);
 
   const missing = await failure(() => exportPack(where, { scope: "task", taskId: "TASK-NOPE", to: join(dir, "x.zip") }));
@@ -213,13 +216,13 @@ test("正在使用的任务照样导出，清单文件记着；读不出编号�
   assert.ok(!readPack(to).names.some((name) => name.endsWith(MANIFEST_NAME) || name.includes("link.json")));
 });
 
-test("一个空的数据目录：包里只有清单文件", async () => {
+test("一个空的数据目录：包里只有清单文件与说明", async () => {
   const where = locations(fresh("empty"));
   const to = join(fresh("out"), "empty.taskwright.zip");
   mkdirSync(join(to, ".."), { recursive: true });
   const result = await exportPack(where, { scope: "all", to });
   assert.deepEqual([result.files, result.tasks, result.libraries], [0, [], []]);
-  assert.deepEqual(readPack(to).names, []);
+  assert.deepEqual(readPack(to).names, [README_NAME]);
   assert.match(exportText(result), /包里只有清单文件/);
   assert.equal(existsSync(where.dataDir), false, "导出不建数据目录");
 });

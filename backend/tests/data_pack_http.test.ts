@@ -18,7 +18,7 @@ import { Service } from "../src/service.ts";
 import { ServiceDb } from "../src/service_db.ts";
 import { startService } from "../src/start.ts";
 import { ROOT, captureConsole, tempDir } from "./helpers.ts";
-import { dataWith, facts, locations, put, putArchive, readPack, tree } from "./pack_stack.ts";
+import { dataWith, facts, locations, put, putArchive, readPack, tree, withoutEvents } from "./pack_stack.ts";
 
 captureConsole();
 
@@ -119,7 +119,8 @@ test("导入接口：收下一个任务的包并让服务接手它；再发一�
     assert.deepEqual(list.body.tasks.map((t: Dict) => [t.task_id, t.task_name, t.supported, t.session_count]), [[a, "甲", true, 1]]);
     assert.deepEqual((await getJson(port, `/api/v1/tasks/${a}`)).body.materials.map((m: Dict) => m.path), ["inputs/材料.md"]);
     assert.deepEqual(started.service.registry!.tasks().map((t) => [t.task_id, t.dir]), [[a, a]]);
-    assert.deepEqual(tree(join(target.runsDir, a)), tree(join(where.runsDir, a)));
+    // 缺省不带事件归档：导入之后的归档是原来的对话记录那一部分。
+    assert.deepEqual(tree(join(target.runsDir, a)), withoutEvents(tree(join(where.runsDir, a))));
     assert.deepEqual(facts(join(target.tasksDir, a)), facts(join(where.tasksDir, a)));
     assert.deepEqual([staged(target.tasksDir), staged(target.runsDir), staged(target.knowledgeDir)], [[], [], []]);
     assert.ok(readdirSync(join(target.dataDir, "logs")).some((name) => /^import-\d{8}-\d{6}\.txt$/.test(name)), "报告写进了数据目录的日志目录");

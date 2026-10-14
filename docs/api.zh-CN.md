@@ -550,7 +550,7 @@ data: {
 
 | 接口 | 作用 | 返回 |
 |---|---|---|
-| `GET /api/v1/tasks/{task_id}/export` | 把一个任务（任务目录与它的归档）导出成数据包 | zip 文件的字节，`Content-Type: application/zip`，`Content-Disposition: attachment; filename="<任务编号>.taskwright.zip"`，带 `Content-Length`。没有这个任务是 `not_found` |
+| `GET /api/v1/tasks/{task_id}/export` | 把一个任务（任务目录与它的对话记录）导出成数据包；带 `?with_events=1` 时另带它的事件归档（`pi-events`） | zip 文件的字节，`Content-Type: application/zip`，`Content-Disposition: attachment; filename="<任务编号>.taskwright.zip"`，带 `Content-Length`。没有这个任务是 `not_found` |
 | `GET /api/v1/knowledge/libraries/{id}/export` | 把一个知识库导出成数据包 | 同上，文件名是 `<知识库编号>.taskwright.zip`。没有这个知识库是 `not_found` |
 | `POST /api/v1/tasks/import` | 导入一个范围是一个任务的数据包 | `{ "ok": true, "report": … }` |
 | `POST /api/v1/knowledge/import` | 导入一个范围是一个知识库的数据包 | 同上 |
