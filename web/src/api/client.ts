@@ -285,6 +285,10 @@ export const api = {
     const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
     return request<{ path: string }>("POST", `${task(taskId)}/materials${query}`, form);
   },
+  /** 删除一个任务（任务目录与它的会话归档），不能恢复；助手正在工作时任务服务拒绝。 */
+  deleteTask: (taskId: string) => request<{ ok: true; task_id: string }>("POST", `${task(taskId)}/delete`),
+  /** 把一个任务导出成数据包的下载地址（以后可以在设置里导入）。 */
+  exportTaskHref: (taskId: string) => `${BASE}${task(taskId)}/export`,
   deleteMaterial: (taskId: string, path: string) => request<{ ok: true; path: string }>("POST", `${task(taskId)}/materials/delete`, { path }),
   /** 用 file 替换 path 这份材料（只有还没有进入对话的材料换得掉）；返回新材料的路径与被换掉的那份的路径。 */
   replaceMaterial: (taskId: string, path: string, file: File) => {

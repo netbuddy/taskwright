@@ -386,6 +386,12 @@ async function packDownload(service: Service, options: Omit<ExportOptions, "to">
 }
 
 const handlers: Record<string, Handler> = {
+  // 删除一个任务（任务目录与它的会话归档）：助手正在工作时拒绝。请求从哪里来写进服务日志：来源地址与浏览器标识。
+  delete_task: async (service, req) => {
+    const t = service.task(req.params.task);
+    const agent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : "";
+    return json(200, await service.deleteTask(t, [req.remote ?? "未知地址", agent].filter(Boolean).join("，")));
+  },
   // 把一个任务导出成数据包（任务目录与它的归档），回一个 zip 文件。
   export_task: (service, req) => {
     const t = service.task(req.params.task);
@@ -776,6 +782,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", "/api/v1/tasks", "create_task"],
   ["GET", `/api/v1/tasks/${T}`, "get_task"],
   ["GET", `/api/v1/tasks/${T}/export`, "export_task"],
+  ["POST", `/api/v1/tasks/${T}/delete`, "delete_task"],
   ["GET", `/api/v1/tasks/${T}/sessions`, "list_sessions"],
   ["POST", `/api/v1/tasks/${T}/sessions`, "new_session"],
   ["GET", `/api/v1/tasks/${T}/events`, "events"],

@@ -29,8 +29,11 @@ export function Shell({ currentTaskId, nav = "tasks", libraries, children }: {
   }, [hasKnowledge, nav]);
 
   useEffect(() => {
-    // 侧栏只列打得开的任务；旧格式任务只在任务列表页里标明不支持。
-    api.listTasks().then((list) => setTasks(sortByActivity(list.filter((t) => t.supported !== false)))).catch(() => setTasks([]));
+    // 侧栏只列打得开的任务；旧格式任务只在任务列表页里标明不支持。删除了一个任务时（TASKS_CHANGED）重读。
+    const load = () => api.listTasks().then((list) => setTasks(sortByActivity(list.filter((t) => t.supported !== false)))).catch(() => setTasks([]));
+    void load();
+    window.addEventListener(TASKS_CHANGED, load);
+    return () => window.removeEventListener(TASKS_CHANGED, load);
   }, [currentTaskId]);
   useEffect(() => {
     if (currentTaskId) api.listSessions(currentTaskId).then(setSessions).catch(() => setSessions([]));
@@ -88,6 +91,9 @@ export function Shell({ currentTaskId, nav = "tasks", libraries, children }: {
     </div>
   );
 }
+
+/** 任务清单变了（删除了一个任务）时在 window 上发的事件名：侧栏据此重读。 */
+export const TASKS_CHANGED = "taskwright:tasks-changed";
 
 export function sortByActivity(list: TaskListEntry[]): TaskListEntry[] {
   // 时刻的写法可能带不同的时区，按时刻本身比；没有时刻的排在最后。

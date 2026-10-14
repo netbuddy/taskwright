@@ -326,7 +326,7 @@ export class Service {
             console.log(`跳过任务目录 ${name}：${library.OLD_FORMAT_TEXT}`);
           }
         } else if (db !== null) {
-          row = db.prepare("SELECT task_id, task_name, status, definition_path, started_at FROM task LIMIT 1").get() as Row | undefined;
+          row = db.prepare("SELECT task_id, task_name, definition_path, started_at FROM task LIMIT 1").get() as Row | undefined;
           taskId = row ? row.task_id : null;
         }
       } catch {
@@ -478,6 +478,30 @@ export class Service {
       });
     }
     return out;
+  }
+
+  /**
+   * 删除一个任务：真删除，不设回收站（任务目录自包含，导出的数据包就是备份）。助手正在工作（有没有做完的运行）时拒绝，请用户先停止助手。
+   * 否则停掉这个任务的事件轮询、关掉它的助手、关掉开着的事件流、删占用标记，再删任务目录与它的会话归档目录（runs 下以任务编号命名的目录），
+   * 从服务里与登记表里去掉；最后在服务日志里记一行：时刻、任务编号、任务名、请求来自哪里（client）。任务库里不留记录（库已经删了）。
+   * 不要求先导出。
+   */
+  async deleteTask(t: Task, client: string) {
+    if (t.executor.state === "working") {
+      throw new ApiError("session_busy", "助手正在工作，请先停止助手，再删除这个任务。", { active_session: t.executor.activeSession, reason: "working" });
+    }
+    const row = t.row();
+    const name = row && truthy(row.task_name) ? String(row.task_name) : String(t.definition()["任务名"] ?? t.taskId);
+    t.hub.stopPolling();
+    await t.executor.close();
+    t.hub.close();
+    this.releaseLock(t.dir);
+    rmSync(t.dir, { recursive: true, force: true });
+    rmSync(join(this.runsDir, t.taskId), { recursive: true, force: true });
+    this.tasks.delete(t.taskId);
+    this.registry?.removeTask(t.taskId);
+    console.log(`删除任务：时刻 ${clock.now()}，任务 ${t.taskId}「${name}」，来自 ${client}。`);
+    return { ok: true, task_id: t.taskId };
   }
 
   create(body: Record<string, any>) {

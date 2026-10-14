@@ -230,6 +230,11 @@ export class ServiceDb {
     return plain(this.db.prepare("SELECT * FROM tasks WHERE dir = ?").get(dir));
   }
 
+  /** 删掉一个任务的那一行（删除任务时）；没有登记过时什么都不做。 */
+  removeTask(taskId: string): void {
+    this.db.prepare("DELETE FROM tasks WHERE task_id = ?").run(taskId);
+  }
+
   /** 登记的全部任务，按编号排。 */
   tasks(): TaskRecord[] {
     return this.db.prepare("SELECT * FROM tasks ORDER BY task_id").all().map((row) => plain(row)!);

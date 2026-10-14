@@ -1,12 +1,14 @@
 // 任务列表页：一次普通读取（GET /api/v1/tasks），不连事件流。任务没有状态：按最近活动排，最近的在前；每行写发布过几版。
+// 每行末尾除了「打开」还有一个菜单，里面是「删除任务」（确认框见 DeleteTaskModal）。
 // 打开一个任务时去哪里由 model/startPage.ts 的 taskEntryHref 定：业务说明已经有内容的进工作台，否则进任务起点页。
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Table, Tag } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { Alert, Button, Dropdown, Table, Tag } from "antd";
+import { EllipsisOutlined, PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { TaskListEntry } from "../api/types";
-import { NewTaskModal, Shell, sortByActivity } from "../components/Shell";
+import { NewTaskModal, Shell, TASKS_CHANGED, sortByActivity } from "../components/Shell";
+import { DeleteTaskModal } from "../components/task/DeleteTaskModal";
 import { formatTime, formatTimeShort } from "../model/format";
 import { openTask } from "../model/startPage";
 import { go } from "../router";
@@ -26,6 +28,7 @@ export function TaskListPage() {
   const [tasks, setTasks] = useState<TaskListEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState<TaskListEntry | null>(null);
 
   useEffect(() => {
     api.listTasks().then((list) => setTasks(sortByActivity(list))).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
@@ -66,10 +69,19 @@ export function TaskListPage() {
           },
           { title: "最近活动", dataIndex: "last_active_at", render: formatTime },
           { title: "会话数", dataIndex: "session_count" },
-          { title: "", render: (_: unknown, t) => (unsupported(t) ? null : <Button size="small" onClick={() => openTask(t.task_id, go)}>打开</Button>) },
+          { title: "", render: (_: unknown, t) => (unsupported(t) ? null : (
+            <span style={{ display: "inline-flex", gap: "0.3rem" }} onClick={(e) => e.stopPropagation()}>
+              <Button size="small" onClick={() => openTask(t.task_id, go)}>打开</Button>
+              <Dropdown trigger={["click"]} menu={{ items: [{ key: "delete", label: "删除任务", danger: true }], onClick: () => setDeleting(t) }}>
+                <Button size="small" icon={<EllipsisOutlined />} aria-label="更多操作" title="更多操作" data-testid={`task-menu-${t.task_id}`} />
+              </Dropdown>
+            </span>
+          )) },
         ]}
       />
       <NewTaskModal open={open} onClose={() => setOpen(false)} />
+      <DeleteTaskModal taskId={deleting?.task_id ?? null} taskName={deleting?.task_name ?? ""} onClose={() => setDeleting(null)}
+        onDeleted={(id) => { setDeleting(null); setTasks((list) => list?.filter((one) => one.task_id !== id) ?? null); window.dispatchEvent(new Event(TASKS_CHANGED)); }} />
     </Shell>
   );
 }
