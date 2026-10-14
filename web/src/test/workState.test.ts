@@ -349,7 +349,7 @@ describe("只随整份数据来的几项（待核实、依据待核实、提到�
   });
 });
 
-describe("工作的阶段（activity_started 与库事件带来的 stage）", () => {
+describe("工作的阶段（工作项的三种库事件与库事件带来的 stage）", () => {
   const lamps = (ok: boolean): StageView["lamps"] => ({
     reading: [{ key: "materials_cited", summary: ok ? "每份材料都被至少一页主题或一条问题引用了。" : "有 1 份材料还没有被任何一页主题或问题引用：inputs/材料.md。", ok, items: ok ? [] : ["inputs/材料.md"] }],
     clarifying: [], modeling: [], writing: [], reviewing: [], document: [],
@@ -364,33 +364,47 @@ describe("工作的阶段（activity_started 与库事件带来的 stage）", ()
             op_id: actor === "user" ? `ui-op-${seq}` : null, completion: null, ...extra },
   });
 
-  it("移动阶段的事件按序号应用，不算序号缺口；任务上现在的阶段、谁移的、什么时候、理由换成这一次的", () => {
-    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: staged(4) }, moved(5, "clarifying", "reading", "executor"));
+  /** 流程的工作项换了一站的那条库事件；stage 是后端按这条会话算好、带在这一批最后一条事件上的阶段。 */
+  const entered = (seq: number, node: string, from: string, extra: Record<string, unknown> = {}) => ({
+    type: "sse" as const, event: "node_entered",
+    data: { seq, at: "2026-10-09T20:00:00+08:00", task_id: "TASK-001", record_id: 1, flow: "initial", node, from, direction: "forward", actor: "user", reason: "材料读完了。", run_id: null,
+            op_id: `ui-op-${seq}`, completion: null, ...extra },
+  });
+
+  it("启动工作项、流程换站、工作项结束三种库事件按序号应用，不算序号缺口；它们自己不改这条会话的阶段，阶段只照事件带的 stage 换", () => {
+    // 别的工作项启动了（这条事件推给任务的每一条会话，没有带 stage）：这条会话的阶段不动，只推进序号。
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: staged(4) }, moved(5, "clarifying", "reading", "user", { record_id: 2, from: null, flow: null, node: null }));
     expect(s.phase).not.toBe("waiting_snapshot");
     expect(s.seq).toBe(5);
-    expect(s.task!.stage).toMatchObject({ current: "clarifying", moved_by: "executor", moved_at: "2026-10-09T20:00:00+08:00", reason: "材料读完了。" });
-    // 这条事件自己不带灯：灯还是原来的。
-    expect(s.task!.stage!.lamps).toEqual(lamps(false));
+    expect(s.task!.stage).toMatchObject({ current: "reading", moved_by: null, moved_at: null, reason: null });
+    expect(s.seenOps).toContain("ui-op-5");
     // 接着的库事件序号连着，照常应用。
     s = run(s, changed(6, 2));
     expect([s.phase === "waiting_snapshot", s.seq, s.task!.items[0].revision_no]).toEqual([false, 6, 2]);
-    // 用户移的：按操作编号记下，与别的直接操作一样。
-    s = run(s, moved(7, "writing", "clarifying", "user"));
-    expect(s.task!.stage).toMatchObject({ current: "writing", moved_by: "user" });
+    // 这条会话的工作项换了一站：事件上带着后端按这条会话算好的阶段，照它换。
+    const stage: StageView = { current: "clarifying", node: "clarifying", moved_by: "user", moved_at: "2026-10-09T20:00:00+08:00", reason: "材料读完了。", lamps: lamps(true),
+      work_item: { record_id: 1, kind: "flow", name: "需求分析", activity: "clarifying", flow: "analysis", scope: null, started_at: "2026-10-09T19:00:00+08:00" } };
+    s = run(s, entered(7, "clarifying", "reading", { stage }));
+    expect([s.phase === "waiting_snapshot", s.seq]).toEqual([false, 7]);
+    expect(s.task!.stage).toEqual(stage);
     expect(s.seenOps).toContain("ui-op-7");
+    // 换站的事件没有带 stage（不是这一批的最后一条）：阶段不动。
+    s = run(s, entered(8, "modeling", "clarifying"));
+    expect([s.seq, s.task!.stage!.current]).toEqual([8, "clarifying"]);
   });
 
-  it("移动阶段是两条库事件：前一项活动结束（activity_ended）只推进序号，不改任务上的阶段；紧接着的 activity_started 才换", () => {
-    const ended = {
-      type: "sse" as const, event: "activity_ended",
-      data: { seq: 5, at: "2026-10-09T20:00:00+08:00", task_id: "TASK-001", activity: "reading", node: "reading", actor: "user", reason: "", op_id: "ui-op-9", completion: null },
-    };
-    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: staged(4) }, ended);
+  it("删除工作项的库事件（work_item_deleted）同样只推进序号；带着 stage 时照它换：这条会话的工作项删除之后会话归档、是空闲", () => {
+    const ended = (seq: number, extra: Record<string, unknown> = {}) => ({
+      type: "sse" as const, event: "work_item_deleted",
+      data: { seq, at: "2026-10-09T20:00:00+08:00", task_id: "TASK-001", record_id: 1, activity: "reading", node: "reading", flow: "analysis", archived_sessions: 1, actor: "user", reason: "",
+              op_id: "ui-op-9", completion: null, ...extra },
+    });
+    let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: staged(4) }, ended(5));
     expect([s.phase === "waiting_snapshot", s.seq]).toEqual([false, 5]);
     expect(s.task!.stage).toMatchObject({ current: "reading", moved_by: null, moved_at: null, reason: null });
-    s = run(s, moved(6, "clarifying", "reading", "user"));
-    expect([s.phase === "waiting_snapshot", s.seq]).toEqual([false, 6]);
-    expect(s.task!.stage).toMatchObject({ current: "clarifying", moved_by: "user" });
+    const idle: StageView = { current: "idle", node: null, moved_by: null, moved_at: null, reason: null, lamps: lamps(false) };
+    s = run(s, ended(6, { stage: idle }));
+    expect([s.seq, s.task!.stage!.current]).toEqual([6, "idle"]);
   });
 
   it("一批里最后一条库事件带着现在的阶段与灯：不论是哪一种事件，都照它换掉", () => {

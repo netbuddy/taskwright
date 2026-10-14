@@ -4,18 +4,18 @@
  * 画像文件的形状照 sim/personas/ 下的文件：名字、说明、人设、目标、答不上的说法、材料、熟悉的材料、材料说明、隐藏事实、接受底线。
  * 草稿里只有「隐藏事实」与材料是从任务里整理出来的：用户自己打的每一句话是一条事实；用户在卡片上的每一次选择是一条事实，
  * 写成「问：……　答：……」。每条事实的关键词、必须同时出现、问到的迹象三项留空，由人补；人设、目标等也留空。
- * 不收的：系统替用户发的固定句（看过条目之后那一类、两个开头按钮发的两句）、进入或留在某个阶段的卡片选择（那是推进工作的决定，
+ * 不收的：系统替用户发的固定句（看过条目之后那一类、两个开头按钮发的两句、活动输入页启动之后发的每项活动一句）、进入或留在某个阶段的卡片选择（那是推进工作的决定，
  * 不是这件事本身的事实）。这里只整理，不读文件、不碰任务库；取各条会话的消息由调用方做。
  */
 
 import { basename } from "node:path";
-import { ENTER_OPTIONS, STAGE_START_TEXTS, STATUS_NEXT_TEXT, STAY_IDLE_OPTION, STAY_OPTIONS } from "../../agent/src/lib/stage.ts";
+import { ACTIVITY_START_TEXTS, ENTER_OPTIONS, STAGE_START_TEXTS, STATUS_NEXT_TEXT, STAY_IDLE_OPTION, STAY_OPTIONS } from "../../agent/src/lib/stage.ts";
 
 /** 一条会话的对话消息（conversation.ts 的 baseMessages 给的形状），按先后。 */
 export type SessionMessages = Record<string, any>[];
 
 const STAGE_KEYS = new Set([...Object.values(ENTER_OPTIONS), ...Object.values(STAY_OPTIONS), STAY_IDLE_OPTION].map((one) => one.key));
-const START_TEXTS = new Set<string>([...Object.values(STAGE_START_TEXTS), STATUS_NEXT_TEXT]);
+const START_TEXTS = new Set<string>([...Object.values(STAGE_START_TEXTS), ...Object.values(ACTIVITY_START_TEXTS), STATUS_NEXT_TEXT]);
 
 export interface PersonaFact {
   事实: string;

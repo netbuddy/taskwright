@@ -82,14 +82,15 @@ export function clickStageMove(details: Record<string, any>): { from: string; to
  */
 export function clickStageUnmoved(details: Record<string, any>): { at: string; why?: string } | null {
   const stay = details.stage_unmoved;
-  // at 可以是空闲；why 为 not_in_flow 是任务不在首次分析流程里（空闲或者正在单独开展一项活动），进入与退回不算数。
+  // at 可以是空闲；why 为 not_in_flow 是这条会话不在做流程的工作项（空闲，或者它的工作项是单项活动），进入与退回不算数。
   if (!isObject(stay) || !isPosition(stay.at)) return null;
   return { at: stay.at, ...(stay.why === "not_in_flow" ? { why: stay.why } : {}) };
 }
 
 /**
- * 助手在一条回复里汇报单独开展的那项活动做完了时，那条回复带的一项：结束的是哪一项活动。
- * details 是「回复」工具结果的 details（助手一侧结束了活动记录时写进 activity_done）。没有结束时返回空对象，消息里不带这一项。
+ * 助手在一条回复里汇报这条会话的工作项（单项活动）做完了时，那条回复带的一项：做完的是哪一项活动。
+ * details 是「回复」工具结果的 details（助手一侧核对过这条会话在做单项活动时写进 activity_done）。没有时返回空对象，消息里不带这一项。
+ * 汇报做完只是一句话，不改任何记录。
  */
 export function replyActivityDone(details: Record<string, any>): { activity_done?: { activity: string } } {
   const done = details.activity_done;

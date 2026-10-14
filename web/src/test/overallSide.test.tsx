@@ -107,13 +107,3 @@ describe("右侧栏的总体分析页签", () => {
     expect(screen.getByTestId("side-collection-总体分析")).toHaveTextContent("还没有贴了标签的主题。");
   });
 });
-
-describe("任务页上的集合卡", () => {
-  it("总体分析与早先的领域说明用同一个图标与颜色，不随它在任务定义里排第几而变", async () => {
-    const { collectionLook } = await import("../components/task/CollectionCards");
-    expect(collectionLook("总体分析", 0).color).toBe("c5");
-    expect(collectionLook("总体分析", 3).color).toBe(collectionLook("领域说明", 1).color);
-    // 不认识的集合按先后轮换颜色，所以排第 0 个时是 c1：总体分析没有落到这一种。
-    expect(collectionLook("别的集合", 0).color).toBe("c1");
-  });
-});

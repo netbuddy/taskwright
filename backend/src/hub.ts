@@ -93,11 +93,20 @@ export class Hub {
   trigger(): void {
     this.stats.提示次数 += 1;
     const [events, top] = library.libraryEvents(this.taskDir, this.forwarded);
-    for (const [name, data] of events) {
-      for (const sub of [...this.subscribers]) sub.put([name, data.seq, data]);
+    // 这一批最后一条事件上带的阶段与灯是按会话算的：每个订阅者拿到的是它订阅的那条会话的那一份。
+    const stages = new Map<string | null, ReturnType<typeof library.stageView>>();
+    events.forEach(([name, data], index) => {
+      const last = index === events.length - 1 && "stage" in data;
+      for (const sub of [...this.subscribers]) sub.put([name, data.seq, last ? this.withStage(data, sub.session, stages) : data]);
       this.stats.推送的库事件数 += 1;
-    }
+    });
     this.forwarded = Math.max(this.forwarded, top);
+  }
+
+  /** 把一条库事件上带的阶段换成某条会话的那一份；stages 是这一批里已经算过的，免得同一条会话算两遍。 */
+  private withStage(data: Record<string, any>, session: string | null, stages: Map<string | null, ReturnType<typeof library.stageView>>): Record<string, any> {
+    if (!stages.has(session)) stages.set(session, library.stageView(this.taskDir, session));
+    return { ...data, stage: stages.get(session) };
   }
 
   private poll(): void {
@@ -119,7 +128,7 @@ export class Hub {
       if (top - lastEventId > hubSettings.replayWindow) {
         replay = [["resync", null, { reason: "gap_too_large" }]];
       } else if (top > lastEventId) {
-        const [events] = library.libraryEvents(this.taskDir, lastEventId);
+        const [events] = library.libraryEvents(this.taskDir, lastEventId, session);
         replay = events.map(([name, data]) => [name, data.seq, data]);
       }
       sub.lastSeq = lastEventId;

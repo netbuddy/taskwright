@@ -151,9 +151,9 @@ function activeTask(db: DatabaseSync): { taskId: string; definition: TaskDefinit
 /** 第 1 步：在库里核对参数与来源，得出要写的东西。不通过抛 ToolRejection。 */
 function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, userEdit = false): Plan {
   const { taskId, definition } = activeTask(db);
-  // 工作的阶段（lib/stage.ts）：助手在核读材料与澄清两个阶段不能画图、改图、删图。用户在页面上改图不看阶段；早先建的任务没有阶段。
+  // 工作的阶段（lib/stage.ts）：助手在核读材料与澄清两个阶段、会话空闲时不能画图、改图、删图，看的是这条会话的工作项。用户在页面上改图不看阶段；早先建的任务没有阶段。
   if (!userEdit && call.actor !== ACTOR_USER) {
-    const stage = stageOf(db, call.workspaceDir, taskId, definition);
+    const stage = stageOf(db, call.workspaceDir, taskId, definition, call.sessionId);
     const refusal = stage ? diagramRefusal(stage) : null;
     if (refusal) throw reject(...refusal);
   }

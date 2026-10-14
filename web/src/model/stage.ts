@@ -3,25 +3,26 @@
 // 阶段的名字、次序与卡片上「进入下一段」的选项键取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
 import {
-  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, IDLE, IDLE_NAME, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, STAY_TEXT,
-  activityDoneSentence, activityStartSentence,
+  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, IDLE, IDLE_NAME, STAGES, STAGE_NAMES, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, STAY_TEXT,
+  activityDoneSentence, activityStartSentence, flowKeyOf,
 } from "../../../agent/src/lib/stage";
 import type { Item, PositionKey, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
 export { STAGES, STAGE_NAMES, STAY_TEXT };
 
-/** 所属流程给人看的名字：认得的写中文名（现在只有「首次分析」），认不出的照原样写，没有给的写「（没有记）」。 */
+/** 所属流程给人看的名字：认得的写中文名（现在只有「需求分析」；早先的键 initial 也是它），认不出的照原样写，没有给的写「（没有记）」。 */
 export function flowName(flow: string | null | undefined): string {
-  // null 是不在任何流程里：用户单独开展的活动。早先的后端不给这一项。
-  if (flow === null) return "单独开展";
-  return flow ? (FLOW_NAMES as Record<string, string>)[flow] ?? flow : "（没有记）";
+  // null 是不在任何流程里：单项活动的工作项。早先的后端不给这一项。
+  if (flow === null) return "单项活动";
+  const key = flowKeyOf(flow);
+  return key ? (FLOW_NAMES as Record<string, string>)[key] ?? key : "（没有记）";
 }
 
 /** 阶段条上的一格：这个阶段已经过了、正在这里、还没到。 */
 export type StageMark = "done" | "current" | "ahead";
 
 /**
- * 阶段条上六格各是什么样子。任务在首次分析流程里的某个阶段时，它之前的填实、它自己是当前、之后的空心。
+ * 阶段条上六格各是什么样子。任务在需求分析流程里的某个阶段时，它之前的填实、它自己是当前、之后的空心。
  * 任务空闲时没有当前的一格；用户单独开展一项活动（alone 为真）时只有那一格是当前，别的都空心：单独开展不说明前面的阶段做过。
  */
 export function stageMarks(current: PositionKey, alone = false): { key: StageKey; name: string; mark: StageMark }[] {
@@ -32,13 +33,34 @@ export function stageMarks(current: PositionKey, alone = false): { key: StageKey
 
 /** 任务现在是不是空闲：没有在进行的活动。 */
 export const isIdle = (stage: Pick<StageView, "current"> | null | undefined): boolean => stage?.current === IDLE;
-/** 现在这项活动是不是用户单独开展的（不在首次分析流程里）。早先的后端不给 node，当作在流程里。 */
+/** 现在这项活动是不是用户单独开展的（不在需求分析流程里）。早先的后端不给 node，当作在流程里。 */
 export const isAlone = (stage: Pick<StageView, "current" | "node"> | null | undefined): boolean => !!stage && stage.current !== IDLE && stage.node === null;
 /** 阶段条下面、调试页签里说任务现在在哪里的那一句；任务在流程里的某个阶段时不用它。 */
-export const IDLE_TEXT = "任务空闲：没有在进行的活动。";
-export const aloneText = (stage: StageKey): string => `单独开展：${STAGE_NAMES[stage]}（不在首次分析流程里）。`;
+export const IDLE_TEXT = "本会话没有在进行的工作项：自由讨论，或者它的工作项已经结束。";
+export const aloneText = (stage: StageKey): string => `本会话的工作项是单项活动：${STAGE_NAMES[stage]}（不在工作流程里）。`;
 /** 位置给人看的名字：阶段的名字，或者「空闲」。 */
 export const positionLabel = (position: PositionKey | string): string => (position === IDLE ? IDLE_NAME : (STAGE_NAMES as Record<string, string>)[position] ?? position);
+
+/** 工作视图顶栏上会话空闲时的两处字：这条会话是自由讨论（不属于任何工作项，或者归档了），与去任务起点页启动工作的那一枚。 */
+export const NO_ACTIVITY_TEXT = "自由讨论 · 不绑定活动";
+export const START_WORK_TEXT = "启动工作";
+/** 顶栏上有活动在进行时的那一处：「当前活动：整理建模」。 */
+export const currentActivityText = (position: PositionKey | string): string => `当前活动：${positionLabel(position)}`;
+
+/**
+ * 工作视图顶栏上任务名与会话名后面的那一处写什么：
+ *   closed 任务已经结束，写「任务已完成」「任务已放弃」；
+ *   plain  任务没有阶段（早先建的任务），写「任务进行中」；
+ *   active 这条会话在做一个工作项，写「当前活动：某项活动」，点了打开切换工作面板；
+ *   idle   这条会话是自由讨论，写「自由讨论 · 不绑定活动」（点了同样打开面板），旁边另有一枚「启动工作」去任务起点页。
+ */
+export type TopbarActivity = { kind: "closed" | "plain" | "active" | "idle"; text: string };
+export function topbarActivity(task: { status: string; stage?: Pick<StageView, "current"> | null }): TopbarActivity {
+  if (task.status !== "进行中") return { kind: "closed", text: `任务${task.status}` };
+  if (!task.stage) return { kind: "plain", text: "任务进行中" };
+  if (isIdle(task.stage)) return { kind: "idle", text: NO_ACTIVITY_TEXT };
+  return { kind: "active", text: currentActivityText(task.stage.current) };
+}
 
 /**
  * 一盏灯在阶段条上的那一句：后端的整句带着编号清单（「有 2 页……的例子：OA-003、OA-005。」），阶段条上只显示清单前面那个冒号之前的
@@ -146,35 +168,24 @@ export const quietHint = (key: string): string => (key === STAY_HERE_KEY ? STAY_
 
 /**
  * 对话区里说一次阶段移动的那一行：用户在卡片上点了进入下一段（或者退回前面的阶段），写「界面操作：用户把任务从核读材料移到澄清。」，
- * 与别的界面操作记号是同一种说法。阶段只由用户移动。任务空闲时点了「开始核读材料」，写的是启动（或继续）首次分析。
+ * 与别的界面操作记号是同一种说法。阶段只由用户移动。任务空闲时点了「开始核读材料」，写的是启动（或继续）需求分析。
  */
 /**
- * 用户点了一张进入某个阶段的卡片而阶段没有移动时，卡片上「✓ 你选了……」下面的那句小字。at 是任务当时所在的阶段。
- * why 为 not_in_flow 是任务当时不在首次分析流程里（空闲，或者正在单独开展一项活动）：进入与退回不算数，请用户从任务状况卡开展一项活动。
+ * 用户点了一张进入某个阶段的卡片而阶段没有移动时，卡片上「✓ 你选了……」下面的那句小字。at 是这条会话当时所在的阶段。
+ * why 为 not_in_flow 是这条会话当时不在做流程的工作项（自由讨论的会话、工作项已经结束，或者工作项是单项活动）：进入与退回不算数，
+ * 请用户从任务起点页启动一个工作项。
  */
 export function stageUnmovedLine(at: string, why?: string | null): string {
   if (why === "not_in_flow") {
-    return `这次点击没有开始活动：${at === IDLE ? "任务现在空闲" : `任务正在单独开展${positionLabel(at)}`}。请从任务状况卡开展一项活动。`;
+    return `这次点击没有生效：${at === IDLE ? "本会话没有在进行的工作流程" : `本会话的工作项是单项活动「${positionLabel(at)}」`}。要进入某个阶段，请从任务起点页启动一个工作项。`;
   }
-  return `这次点击没有改变阶段：任务当时在${positionLabel(at)}。`;
+  return `这次点击没有改变阶段：工作项当时在${positionLabel(at)}。`;
 }
 
-/** 助手在一条回复里汇报用户单独开展的那项活动做完了时，那条回复下面的一行。 */
+/** 助手在一条回复里汇报这条会话的工作项（单项活动）做完了时，那条回复下面的一行。 */
 export const activityDoneLine = (activity: StageKey): string => activityDoneSentence(activity);
 
 export function stageMoveLine(move: StageMove): string {
   return `界面操作：${activityStartSentence(move.how ?? "move", move.to, move.from)}`;
 }
 
-/**
- * 总体分析还没有一页主题时的两个开头：按钮上的字、先把任务移到哪个阶段（界面操作 move_stage 的 stage 写阶段的名字）、
- * 再替用户发给助手的那句固定的话。
- */
-export const STAGE_STARTS = {
-  reading: { key: "reading", label: "通读材料起草", stage: STAGE_NAMES.reading, text: STAGE_START_TEXTS.reading },
-  clarifying: { key: "clarifying", label: "逐项澄清", stage: STAGE_NAMES.clarifying, text: STAGE_START_TEXTS.clarifying },
-} as const;
-export type StageStart = (typeof STAGE_STARTS)[keyof typeof STAGE_STARTS];
-
-/** 任务还没有材料时「通读材料起草」不可用的原因。 */
-export const NO_MATERIALS_TEXT = "这个任务还没有材料，先在右侧栏上传材料。";

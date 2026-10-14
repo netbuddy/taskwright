@@ -1,9 +1,9 @@
-// 任务页的材料卡：材料清单（名称、大小、上传时间、「查看」；还没有进入对话的材料另有「替换」与「删除」）与上传区。
+// 任务起点页与活动输入页的材料卡：材料清单（名称、大小、上传时间、「查看」；还没有进入对话的材料另有「替换」与「删除」）与上传区。
 // 这里上传的一律是材料，不问去向；参考文档在知识库页面上传。材料一旦进入了对话（上传之后有会话活动过）就不能删除、也不能替换，
 // 后端在任务详情里给每份材料标了 deletable，这里只按它决定：为真时「替换」与「删除」都可以点；为假时没有「删除」，
 // 「替换」是灰的、点不动，鼠标停在上面说明为什么。任务已结束时这两样都没有，也没有上传区。
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Modal, Upload } from "antd";
 import { FileTextOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../../api/client";
@@ -30,7 +30,7 @@ export function pdfSummary(pdf: { pages: number; no_text_pages: number[] }): str
   return `${pdf.pages} 页${pdf.no_text_pages.length > 0 ? `，其中 ${pdf.no_text_pages.length} 页没有可读的文字` : ""}`;
 }
 
-export function MaterialsCard({ taskId, materials, closed, info, onView, onChanged }: {
+export function MaterialsCard({ taskId, materials, closed, info, onView, onChanged, title = "材料", aside, intro, marked = false }: {
   taskId: string;
   /** 用户放进来的材料（不含由 Word 材料生成的文件）。 */
   materials: Material[];
@@ -40,6 +40,14 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
   onView: (material: Material) => void;
   /** 上传、替换或删除成功之后：重读任务。 */
   onChanged: () => void;
+  /** 卡片的标题；活动输入页上叫「项目材料」。 */
+  title?: string;
+  /** 份数后面的一句小字，例如「可选 · 推荐」。 */
+  aside?: string;
+  /** 标题下面、清单上面的说明；活动输入页在这里写适合上传哪几类文件。 */
+  intro?: ReactNode;
+  /** 这张卡是不是页面现在要用户先看的那一块：是的话描黑边。 */
+  marked?: boolean;
 }) {
   const toast = useToast();
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -112,8 +120,12 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
   };
 
   return (
-    <section className="tp-pane" aria-label="材料" data-testid="materials-card">
-      <div className="tp-sec-h"><h2><FileTextOutlined className="tp-hic" />材料</h2><span className="cnt" data-testid="material-count">{materials.length} 份</span></div>
+    <section className={`tp-pane${marked ? " marked" : ""}`} aria-label={title} data-testid="materials-card">
+      <div className="tp-sec-h">
+        <h2><FileTextOutlined className="tp-hic" />{title}</h2><span className="cnt" data-testid="material-count">{materials.length} 份</span>
+        {aside && <span className="aside">{aside}</span>}
+      </div>
+      {intro}
       {materials.length === 0 ? <div className="tp-none">这个任务还没有材料。</div> : (
         <table className="tp-mtable">
           <thead><tr><th>名称</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>

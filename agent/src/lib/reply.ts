@@ -118,7 +118,7 @@ export interface Reply {
   informs: Inform[];
   act: ReplyAct | null;
   text: string;
-  /** 助手在这条回复里汇报单独开展的那项活动做完了。只有写了 true 才带这一项。 */
+  /** 助手在这条回复里汇报本会话的工作项（单项活动）做完了。只有写了 true 才带这一项。 */
   activity_done?: true;
 }
 
@@ -148,7 +148,7 @@ export interface ReplyFacts {
    */
   resendFact?: (actId: string) => ResendFact;
   /**
-   * 回复里写了 activity_done: true 时调用：任务正在单独开展一项活动就返回 null（可以结束），否则返回拒绝的事实与怎么办
+   * 回复里写了 activity_done: true 时调用：这条会话正在做一个单项活动的工作项就返回 null（可以汇报做完），否则返回拒绝的事实与怎么办
    * （lib/stage.ts 的 activityDoneRefusal）。不给时不核对，给直接调用本函数的单元测试用。
    */
   activityDoneRefusal?: () => Refusal | null;
@@ -182,10 +182,10 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
   // 写了（不是 null、不是空白）就拒绝并指引发卡片；不写照常。
   if (!isBlank(params.stage) || !isBlank(params.reason)) errors.push(withGuide(...STAGE_PARAM_RETIRED));
 
-  // activity_done：助手汇报单独开展的那项活动做完了。只认 true、false 与 null；写了 true 而任务不在单独开展的活动里就拒绝。
+  // activity_done：助手汇报本会话的工作项（单项活动）做完了。只认 true、false 与 null；写了 true 而这条会话不在做单项活动的工作项就拒绝。
   const done = params.activity_done;
   if (done !== undefined && done !== null && typeof done !== "boolean") {
-    errors.push("activity_done 只能写 true 或 false：单独开展的那项活动做够了、要汇报结束时写 true，别的时候不写");
+    errors.push("activity_done 只能写 true 或 false：本会话的工作项是单项活动、这项活动做够了、要汇报做完时写 true，别的时候不写");
   } else if (done === true) {
     const refusal = facts.activityDoneRefusal?.() ?? null;
     if (refusal !== null) errors.push(withGuide(...refusal));

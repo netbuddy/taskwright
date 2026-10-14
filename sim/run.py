@@ -61,17 +61,17 @@ EXECUTOR_WAIT = 900.0
 #: 做了这种操作之后不等助手，下一轮照常唤起用户 agent。在「开展一项活动」里写「不选」什么都不发，同样不等助手（route 为 none）。
 SILENT_ACTIONS = ("continue_stage", "start_activity")
 #: 用户画像里「开场」一项的写法：演练开始、用户 agent 说第一句话之前，驾驭程序替用户在任务状况卡的「开展一项活动」里选哪一项。
-#: 不写是启动首次分析（与 0.5 的走法等价：那时新任务一建好就在首次分析里）；写「不选」是不选，任务从空闲开始；
+#: 不写是启动需求分析（与 0.5 的走法等价：那时新任务一建好就在需求分析里）；写「不选」是不选，任务从空闲开始；
 #: 写「单独开展：活动名」是单独开展那项活动。
 OPENING_KEY = "开场"
-OPENING_DEFAULT = "启动首次分析"
+OPENING_DEFAULT = "启动需求分析"
 OPENING_SKIP = "不选"
 OPENING_ALONE_PREFIX = "单独开展："
 #: 双方连续这么多轮没有进展就停这一遍；命令行 --stall-rounds 可以改，0 是不查。
 STALL_ROUNDS = 4
 #: 后端推来的事件里算作进展的几种：保存了修订、保存了图、阶段移动了（开始了另一项活动）、助手发了新的提议、任务状态变了。
 #: 打开条目或图记下的已读（item_viewed、diagram_viewed）不算。
-PROGRESS_EVENTS = ("deliverable_changed", "diagram_changed", "activity_started", "stage_proposed", "task_changed")
+PROGRESS_EVENTS = ("deliverable_changed", "diagram_changed", "activity_started", "node_entered", "stage_proposed", "task_changed")
 
 
 def expects_executor(respond: dict) -> bool:
@@ -84,8 +84,8 @@ def expects_executor(respond: dict) -> bool:
 def opening_choice(launch: dict | None, wanted: str) -> tuple[dict | None, str]:
     """照「开场」的写法在任务状况的「开展一项活动」一节里找要选的那一项：返回（那一项，说明）；不选、找不到、现在不能选时那一项为 None。
 
-    与 sim/lib/screen.ts 的 launchOption 同一个认法：流程的一项写按钮上的字，「启动首次分析」「继续首次分析」写到这里就认；
-    单独开展的写「单独开展：活动名」。任务已经在首次分析里（那一项写着正在进行）也算不用选。"""
+    与 sim/lib/screen.ts 的 launchOption 同一个认法：流程的一项写按钮上的字，「启动需求分析」「继续需求分析」写到这里就认；
+    单独开展的写「单独开展：活动名」。任务已经在需求分析里（那一项写着正在进行）也算不用选。"""
     name = (wanted or OPENING_DEFAULT).strip()
     if name == OPENING_SKIP:
         return None, "画像写的是不选，任务从空闲开始"
@@ -103,20 +103,23 @@ def opening_choice(launch: dict | None, wanted: str) -> tuple[dict | None, str]:
     return found, f"选了「{found.get('label')}」"
 
 
-def open_activity(backend: "Backend", task_id: str, session_id: str, persona: dict) -> dict:
-    """演练开场：替用户在任务状况卡的「开展一项活动」里选一项（界面操作 start_activity，不替用户发话，助手不因此运行）。返回记进演练记录的一项。"""
+def open_activity(backend: "Backend", task_id: str, persona: dict) -> dict:
+    """演练开场：替用户启动一个工作项（界面操作 start_activity，不替用户发话，助手不因此运行）。后端为它新建一条会话，
+    返回记进演练记录的一项，其中「会话」是那条新会话的编号；没有启动（画像写了不选、那一项现在不能选）时「会话」为 None。"""
     wanted = str(persona.get(OPENING_KEY) or OPENING_DEFAULT)
     status, data = backend.call("GET", f"/tasks/{task_id}/status")
     launch = ((data or {}).get("status") or {}).get("launch") if status == 200 else None
     option, note = opening_choice(launch, wanted)
-    out = {"画像写的": wanted, "说明": note, "发出": None}
+    out = {"画像写的": wanted, "说明": note, "发出": None, "会话": None}
     if option is not None:
         body = {"client_id": "sim-opening", "task_id": task_id, "kind": "start_activity", "targets": [], "notify_executor": False,
                 "fields": {"activity": option["activity"], "in_flow": option["in_flow"]}}
-        status, data = backend.call("POST", f"/tasks/{task_id}/actions?session={session_id}", body)
+        # 不带会话：后端新建一个工作项与一条属于它的会话，回应里带新会话的编号；演练此后就在那条会话里进行。
+        status, data = backend.call("POST", f"/tasks/{task_id}/actions", body)
         if status != 200:
             raise RuntimeError(f"开场选「{option.get('label')}」没有做成：{((data or {}).get('error') or {}).get('message') or status}")
         out["发出"] = body
+        out["会话"] = (data or {}).get("session_id")
     return out
 
 
@@ -444,12 +447,15 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
             upload(backend, task_id, source)
         backend.listen(task_id)
         time.sleep(0.5)
-        status, session = backend.call("POST", f"/tasks/{task_id}/sessions")
-        executor_session = session["session_id"]
-        record.update({"后端": base, "任务编号": task_id, "执行者会话": executor_session})
-        # 开场：替用户在任务状况卡上选一项（缺省启动首次分析），然后才轮到用户 agent 说第一句话。
-        record["开场"] = open_activity(backend, task_id, executor_session, persona)
+        # 开场：替用户启动一个工作项（缺省启动需求分析），演练在后端为它新建的那条会话里进行；然后才轮到用户 agent 说第一句话。
+        # 画像写了不选（或者那一项现在不能选）时没有工作项：另建一条会话，它是自由讨论的会话。
+        record["开场"] = open_activity(backend, task_id, persona)
         print(f"开场：{record['开场']['说明']}", flush=True)
+        executor_session = record["开场"]["会话"]
+        if not executor_session:
+            status, session = backend.call("POST", f"/tasks/{task_id}/sessions")
+            executor_session = session["session_id"]
+        record.update({"后端": base, "任务编号": task_id, "执行者会话": executor_session})
 
         os.environ.update({"TASKWRIGHT_SIM_BACKEND": base, "TASKWRIGHT_SIM_TASK": task_id, "TASKWRIGHT_SIM_SESSION": executor_session})
         ua = user_agent_session(persona, sim, sim / "materials", args.user_model or None)

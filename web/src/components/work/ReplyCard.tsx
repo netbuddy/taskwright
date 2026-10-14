@@ -66,7 +66,7 @@ export const TEMPLATES = {
  */
 /** 助手提议进入下一个阶段的那张请选择卡片的标题。 */
 export const STAGE_CARD_TITLE = "进入下一阶段 · 请决定";
-/** 任务空闲时助手提议开始核读材料的那张卡片的标题：这时没有「下一阶段」，是启动首次分析。 */
+/** 任务空闲时助手提议开始核读材料的那张卡片的标题：这时没有「下一阶段」，是启动需求分析。 */
 export const START_CARD_TITLE = "开始核读材料 · 请决定";
 /** 助手提议退回前面的阶段的卡片、编写文档阶段请用户过目补写的页的卡片的标题。 */
 export const BACK_CARD_TITLE = "退回前面的阶段 · 请决定";
@@ -132,7 +132,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   answered?: string | null;
   /** 答这张卡片的那次点击是「进入」某个阶段而阶段没有移动时，任务当时所在的阶段；「✓ 你选了…」下面据此多写一句小字。 */
   unmovedAt?: string | null;
-  /** 那次点击没有移动的原因（not_in_flow：任务当时不在首次分析流程里）；别的情形不给。 */
+  /** 那次点击没有移动的原因（not_in_flow：任务当时不在需求分析流程里）；别的情形不给。 */
   unmovedWhy?: string | null;
   handlers: CardHandlers;
   onOpenItem?: (itemId: string) => void;

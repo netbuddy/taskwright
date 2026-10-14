@@ -162,38 +162,43 @@
         "代码仓里的路径": "agent/prompts/stages",
         "文件": [
          {
-          "字节数": 2274,
-          "摘要值": "5cf6272293a80f46",
+          "字节数": 3882,
+          "摘要值": "e8af7e3c47446fb2",
           "路径": "README.md"
          },
          {
-          "字节数": 4418,
-          "摘要值": "d186c59d632286db",
+          "字节数": 4735,
+          "摘要值": "fa106bfa25499477",
           "路径": "clarifying.md"
          },
          {
-          "字节数": 65174,
-          "摘要值": "e2dbc646ccacb962",
+          "字节数": 65533,
+          "摘要值": "9234fb3ff45be87d",
           "路径": "common.md"
          },
          {
-          "字节数": 2761,
-          "摘要值": "876519327936c596",
+          "字节数": 3073,
+          "摘要值": "1fbe4fb39d54ea60",
           "路径": "document.md"
          },
          {
-          "字节数": 4080,
-          "摘要值": "fa73b369ea71fb9b",
+          "字节数": 4421,
+          "摘要值": "17ae87065053ab6f",
           "路径": "modeling.md"
          },
          {
-          "字节数": 2404,
-          "摘要值": "7e502509f064023e",
+          "字节数": 508,
+          "摘要值": "12bac74012cd1d28",
+          "路径": "publish.md"
+         },
+         {
+          "字节数": 2776,
+          "摘要值": "29dd1300aa048862",
           "路径": "reading.md"
          },
          {
-          "字节数": 1443,
-          "摘要值": "1fe9bb29886ee79c",
+          "字节数": 1753,
+          "摘要值": "9918ed7b4ae36898",
           "路径": "reviewing.md"
          },
          {
@@ -202,8 +207,8 @@
           "路径": "system.md"
          },
          {
-          "字节数": 2568,
-          "摘要值": "fe13d6516505bf78",
+          "字节数": 2915,
+          "摘要值": "9d5074c44c06799b",
           "路径": "writing.md"
          }
         ],
@@ -218,9 +223,14 @@
         "代码仓里的路径": "agent/prompts/flows",
         "文件": [
          {
-          "字节数": 13345,
-          "摘要值": "1e4aa600b10fca30",
-          "路径": "initial.md"
+          "字节数": 14043,
+          "摘要值": "ff91d1b6cf70eec7",
+          "路径": "analysis.md"
+         },
+         {
+          "字节数": 831,
+          "摘要值": "cafe9d2b348e4311",
+          "路径": "change.md"
          }
         ],
         "有没有": true,
@@ -484,7 +494,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"923f4561667bf87e\",\"bytes\":79104,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65173,\"lines\":238,\"digest\":\"42e16a70cc66fc3b\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7662,\"lines\":30,\"digest\":\"70e8d45a759591da\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"10d4db82ebef2faa\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"bf2d7f1e4c2e0faa\",\"bytes\":79463,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65532,\"lines\":238,\"digest\":\"12cbb08016f56e22\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7662,\"lines\":30,\"digest\":\"70e8d45a759591da\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"00a338448442f67b\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

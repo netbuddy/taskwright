@@ -31,20 +31,20 @@ describe("阶段条", () => {
     expect(screen.getByTestId("stage-writing")).not.toHaveAttribute("role");
   });
 
-  it("任务空闲：没有当前的一格，写一句任务空闲，不画灯；用户单独开展一项活动：只有那一格是当前，前面的不算做过，写明是单独开展，灯照那项活动的", () => {
+  it("会话空闲：没有当前的一格，写一句本会话没有在进行的工作项，不画灯；工作项是单项活动：只有那一格是当前，前面的不算做过，写明是单项活动，灯照那项活动的", () => {
     const idle = { ...stage("clarifying", [lamp("a", false, "有 1 页还差：OA-001。", ["OA-001"])]), current: "idle" as const, node: null };
     const { unmount } = render(<StageBar stage={idle} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
     expect(STAGES.map((key) => screen.getByTestId(`stage-${key}`).className.replace("sb-s ", ""))).toEqual(STAGES.map(() => "ahead"));
     expect(STAGES.every((key) => !screen.getByTestId(`stage-${key}`).hasAttribute("aria-current"))).toBe(true);
     expect(screen.getByTestId("stage-position")).toHaveTextContent(IDLE_TEXT);
-    expect(IDLE_TEXT).toBe("任务空闲：没有在进行的活动。");
+    expect(IDLE_TEXT).toBe("本会话没有在进行的工作项：自由讨论，或者它的工作项已经结束。");
     expect(screen.queryByTestId("stage-lamps")).toBeNull();
     expect([isIdle(idle), isAlone(idle), lampGroups(idle)]).toEqual([true, false, { failing: [], passed: 0, applicable: 0 }]);
     unmount();
     const alone = { ...stage("writing", [lamp("a", false, "有 1 页还差：OA-001。", ["OA-001"])]), node: null };
     render(<StageBar stage={alone} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
     expect(STAGES.map((key) => screen.getByTestId(`stage-${key}`).className.replace("sb-s ", ""))).toEqual(["ahead", "ahead", "ahead", "current", "ahead", "ahead"]);
-    expect(screen.getByTestId("stage-position")).toHaveTextContent("单独开展：写条目（不在首次分析流程里）。");
+    expect(screen.getByTestId("stage-position")).toHaveTextContent("本会话的工作项是单项活动：写条目（不在工作流程里）。");
     expect(screen.getByTestId("lamp-a")).toHaveTextContent("有 1 页还差。");
     expect([isIdle(alone), isAlone(alone)]).toEqual([false, true]);
     // 在流程里的阶段（节点与阶段相同）、早先的后端不给节点：都不是单独开展，没有那一句。

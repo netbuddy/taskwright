@@ -32,9 +32,9 @@ export const STAGE_PROMPT_STATUS_KEY = "taskwright-stage-prompt";
 /** 报给后端的那一行事实。replaced 为假是这一次没有换系统提示，error 写着原因。 */
 export interface StagePromptReport {
   replaced: boolean;
-  /** 这一次是为哪个阶段拼的；任务空闲时是 idle（用的是澄清的那一段，去掉了「出口」一节）。 */
+  /** 这一次是为哪个阶段拼的；会话空闲时是 idle（用的是澄清的那一段，去掉了「出口」一节）。 */
   stage?: Position;
-  /** 现在这项活动是不是在首次分析流程里：为假是用户单独开展的（节点的出口换成固定的一段），空闲时也为假。 */
+  /** 这条会话的工作项是不是流程的工作项：为假是单项活动的工作项（节点的出口换成固定的一段），空闲时也为假。 */
   in_flow?: boolean;
   how?: ComposeHow;
   error?: string;
@@ -64,7 +64,7 @@ function summarize(prompt: StagePrompt): Pick<StagePromptReport, "digest" | "byt
 }
 
 type StartEvent = { systemPrompt?: string; systemPromptOptions?: { customPrompt?: string; skills?: LoadedSkill[] } };
-type StartContext = { cwd: string; ui: { setStatus(key: string, text: string): void } };
+type StartContext = { cwd: string; ui: { setStatus(key: string, text: string): void }; sessionManager?: { getSessionId(): string } };
 
 /**
  * 处理一次 before_agent_start：返回要换上的系统提示，不换时返回 undefined。
@@ -76,7 +76,8 @@ export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: Stag
   const launched = String(event.systemPrompt ?? "");
   try {
     const debug = debugPromptDir();
-    const where = whereInWorkspace(ctx.cwd);
+    // 换哪一份看这条会话属于的工作项；拿不到会话编号时按自由讨论的会话办。
+    const where = whereInWorkspace(ctx.cwd, ctx.sessionManager?.getSessionId() ?? null);
     // 早先的任务没有阶段：系统提示与原来完全相同。平时不多报什么；调试模式下报一行，让调试接口看得到它拿到的是启动时给的那一份。
     if (where === null) {
       if (debug.debug) report({ replaced: false, debug: true, prompt_dir: debug.dir, notes: [], texts: [{ part: "launch", from: "pi", file: null, text: launched }] });
@@ -84,8 +85,8 @@ export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: Stag
     }
     const options = event.systemPromptOptions ?? {};
     const tail = piTail(launched, String(options.customPrompt ?? ""));
-    const { stage, inFlow } = where;
-    const got = cache.get({ stage, inFlow, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
+    const { stage, inFlow, scope } = where;
+    const got = cache.get({ stage, inFlow, scope, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
     let summary = summaries.get(got.prompt);
     if (!summary) summaries.set(got.prompt, (summary = summarize(got.prompt)));
     // 重拼出错而沿用上一份时，stage 写的是任务现在的阶段，上一份是哪个阶段的看 parts 里那一段的文件名。

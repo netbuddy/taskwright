@@ -146,7 +146,7 @@ const digest = (text: string) => createHash("sha256").update(text).digest("hex")
  * 第 1 步：只读核对并装配提示。拒绝：库或任务不存在、任务不是进行中；点名的条目不存在、已删除、所在集合不要求评审、
  * 修订号不是条目当前所在的修订；点名的条目在当前修订、当前规则下已经评过；集合的规则文件读不出来；一个要评的也没有。
  */
-export function prepareReviews(workspaceDir: string, requested: RequestedItem[] | null, by: "executor" | "user" = "user"): PreparedReviews {
+export function prepareReviews(workspaceDir: string, requested: RequestedItem[] | null, by: "executor" | "user" = "user", sessionId: string | null = null): PreparedReviews {
   const path = databasePath(workspaceDir);
   if (!existsSync(path)) throw new ReviewError("这个任务目录还没有任务数据库，没有条目可以评审。");
   const system = readFileSync(REVIEW_PROMPT_PATH, "utf-8");
@@ -157,9 +157,9 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
     if (!task) throw new ReviewError("库里还没有任务，没有条目可以评审。");
     if (task.status !== "进行中") throw new ReviewError(`这个任务的状态是「${task.status}」，不能再评审。`);
     const definition = validateDefinition(JSON.parse(task.definition_text));
-    // 工作的阶段（lib/stage.ts）：助手要到写条目阶段才能请求评审。用户在页面上发起的评审不看阶段；早先建的任务没有阶段。
+    // 工作的阶段（lib/stage.ts）：助手要到写条目阶段才能请求评审，看的是这条会话的工作项（sessionId）。用户在页面上发起的评审不看阶段；早先建的任务没有阶段。
     if (by === "executor") {
-      const stage = stageOf(db, workspaceDir, task.task_id, definition);
+      const stage = stageOf(db, workspaceDir, task.task_id, definition, sessionId);
       const refusal = stage ? reviewRefusal(stage) : null;
       if (refusal) throw new ToolRejection(`什么都没有评：${refusal[0]}。\n怎么办：${refusal[1]}。`, refusal[0], refusal[1]);
     }

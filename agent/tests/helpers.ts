@@ -15,7 +15,7 @@ import { type ProblemClick, problemClicks } from "../src/lib/problem_consent.ts"
 import { REGISTERED_OUTPUTS } from "../src/lib/registered_outputs.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import type { Stage } from "../src/lib/stage.ts";
-import { moveStage } from "../src/lib/stage_read.ts";
+import { attachSession, flowWorkItem, moveStage, openActivityRecord, startActivity } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 // 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
 import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
@@ -163,21 +163,45 @@ export function makeWorkspace(definition: unknown = demoDefinition(), { material
 }
 
 let stageOps = 0;
-/** 把任务放到某个工作阶段（当作用户在界面上移过去的）。早先建的任务没有阶段，调了什么都不做。 */
-export function enterStage(workspaceDir: string, stage: Stage): void {
-  withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
+/** 测试里固定的两条会话：界面操作用的那一条，与助手的工具调用用的那一条（callIn 的缺省）。enterStage 把它们挂到同一个工作项上。 */
+export const UI_SESSION = "sess-ui";
+export const CALL_SESSION = "session-test";
+
+/**
+ * 让测试里的会话处在某个工作阶段（当作用户在界面上做的）：这几条会话还没有在做流程的工作项时，挂到任务里的流程工作项上
+ * （没有就启动一个需求分析的工作项、从这个阶段开始），再把它移到这个阶段；已经在做流程的工作项时，把它移到这个阶段。
+ * 早先建的任务没有阶段，调了什么都不做。返回工作项的记录号（没有阶段的任务返回 null）。
+ */
+export function enterStage(workspaceDir: string, stage: Stage, sessions: readonly string[] = [UI_SESSION, CALL_SESSION]): number | null {
+  return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
-    moveStage(db, workspaceDir, { taskId: task.task_id, sessionId: "sess-ui", runId: null, callId: `ui-op-stage-${++stageOps}`, actor: "user" }, stage, "");
+    const who = { taskId: task.task_id, sessionId: sessions[0], runId: null, callId: `ui-op-stage-${++stageOps}`, actor: "user" as const };
+    const open = openActivityRecord(db, task.task_id, sessions[0]);
+    if (open !== null && open.flow !== null) {
+      moveStage(db, workspaceDir, who, stage, "");
+      return open.record_id;
+    }
+    // 这几条会话原来属于别的工作项（单项活动的）或者不属于任何工作项：夹具里把它们摘下来，好挂到流程的工作项上。产品里一条会话不会换工作项。
+    for (const one of sessions) db.prepare("DELETE FROM work_item_session WHERE session_id = ?").run(one);
+    const existing = flowWorkItem(db, task.task_id);
+    if (existing !== null) {
+      for (const one of sessions) attachSession(db, task.task_id, existing.record_id, one);
+      moveStage(db, workspaceDir, who, stage, "");
+      return existing.record_id;
+    }
+    const started = startActivity(db, workspaceDir, who, stage, true, "");
+    if (started.record_id === undefined) return null;
+    for (const one of sessions.slice(1)) attachSession(db, task.task_id, started.record_id, one);
+    return started.record_id;
   });
 }
 
 /**
- * 把任务置为空闲：把还在进行的活动记录都记成已经结束（直接改库）。产品里现在没有哪条路会这样做，这是为了测空闲时各处怎样办的夹具。
- * 任务一条活动记录都没有时调了没有用（那时的位置是按有没有材料定的缺省，不是空闲）。
+ * 让测试里的会话空闲：把全部会话从工作项上摘下来（直接改库），它们都成了自由讨论的会话。这是为了测空闲时各处怎样办的夹具。
  */
-export function endActivities(workspaceDir: string): void {
+export function idleSessions(workspaceDir: string): void {
   withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
-    db.exec("UPDATE activity_record SET ended_at = started_at, ended_seq = started_seq WHERE ended_at IS NULL");
+    db.exec("DELETE FROM work_item_session");
   });
 }
 
@@ -212,13 +236,31 @@ export function count(workspaceDir: string, table: string): number {
 }
 
 /**
- * 任务里记下的每一次阶段移动，按先后：活动记录表的每一行，stage 是移到的阶段（那项活动），from_stage 取自记下开始的那条事件的内容，
- * event_seq 是那条事件的序号。列名沿用早先阶段记录表的叫法。
+ * 任务里的每一个工作项，按启动的先后：活动记录表的每一行，stage 是它现在做的那项活动，from_stage 取自记下启动的那条事件的内容（现在恒为空），
+ * event_seq 是那条事件的序号。列名沿用早先阶段记录表的叫法。流程的工作项换站不另开一行：换站的先后看 nodeMoves。
  */
 export function moveRows(workspaceDir: string): { stage: string; from_stage: string | null; actor: string; reason: string; run_id: string | null; call_id: string; session_id: string; event_seq: number }[] {
   return query<any>(workspaceDir,
     "SELECT r.activity AS stage, json_extract(e.payload, '$.from') AS from_stage, r.actor, r.reason, r.run_id, r.call_id, r.session_id, r.started_seq AS event_seq " +
       "FROM activity_record r LEFT JOIN event e ON e.seq = r.started_seq ORDER BY r.started_seq").map((row) => ({ ...row }));
+}
+
+/** 流程的工作项每一次换站，按先后：到哪一站、从哪一站、往前还是往后、谁、理由、那条事件的序号与工作项的记录号。 */
+export function nodeMoves(workspaceDir: string): { node: string; from: string | null; direction: string; actor: string; reason: string; record_id: number; event_seq: number; session_id: string }[] {
+  return stageMoves(workspaceDir).map((one) => ({ node: one.stage, from: one.from_stage, direction: one.direction, actor: one.actor, reason: one.reason, record_id: one.record_id, event_seq: one.event_seq, session_id: one.session_id }));
+}
+
+/**
+ * 同上，照早先「一次移动一行」的列名给：stage 是到哪一站，from_stage 是从哪一站，另带运行号与调用编号。
+ * 启动工作项不算一次移动，不在这里。
+ */
+export function stageMoves(workspaceDir: string): { stage: string; from_stage: string | null; direction: string; actor: string; reason: string; run_id: string | null; call_id: string; session_id: string; record_id: number; event_seq: number }[] {
+  return query<{ seq: number; payload: string; session_id: string; call_id: string }>(workspaceDir,
+    "SELECT seq, payload, session_id, call_id FROM event WHERE name = 'ACTIVITY_NODE_ENTERED' ORDER BY seq").map((row) => {
+    const one = JSON.parse(row.payload);
+    return { stage: one.node, from_stage: one.from, direction: one.direction, actor: one.actor, reason: one.reason, run_id: one.run_id ?? null, call_id: row.call_id, session_id: row.session_id,
+      record_id: one.record_id, event_seq: Number(row.seq) };
+  });
 }
 
 /** 一条合格的来源。 */

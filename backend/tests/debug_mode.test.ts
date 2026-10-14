@@ -131,7 +131,7 @@ test("提示词目录的读与设：只收存在的目录的绝对路径；存�
       const set = await go(service, "POST", "/api/v1/debug/prompt-dir", { path: dir });
       assert.equal(set.status, 200);
       assert.deepEqual([set.body.prompt_dir, set.body.usable, set.body.note], [dir, true, null]);
-      assert.deepEqual(set.body.files.map((one: Dict) => one.name), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md", "document.md", "flows/initial.md",
+      assert.deepEqual(set.body.files.map((one: Dict) => one.name), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md", "document.md", "flows/analysis.md",
         "task-type/common.md", "task-type/reading.md", "task-type/clarifying.md", "task-type/modeling.md", "task-type/writing.md", "task-type/reviewing.md", "task-type/document.md"]);
       const states = Object.fromEntries(set.body.files.map((one: Dict) => [one.name, one.state]));
       assert.deepEqual([states["clarifying.md"], states["task-type/writing.md"], states["system.md"], states["common.md"]], ["used", "used", "refused", "absent"]);
@@ -225,10 +225,10 @@ const REJECT_SCRIPT = {
 
 test("调试模式下的阶段记录流水与被拒的工具调用：谁在什么时候把任务从哪移到哪、理由；被拒的调用带工具名、事实、指引与它所属的那次工作", { skip: NO_PI, timeout: 180000 }, async () => {
   await withStack(tmp, "debug-stage", REJECT_SCRIPT, async ({ call, taskId, session, send, action }) => {
-    // 一开始：只有用户启动首次分析的那一条（任务此前空闲，从哪里来是空的），没有被拒的调用。
+    // 一开始：只有用户启动需求分析的那一条（任务此前空闲，从哪里来是空的），没有被拒的调用。
     const fresh = (await call("GET", `/api/v1/tasks/${taskId}/debug/stage`)).body;
     assert.deepEqual([fresh.records.map((one: Dict) => [one.from, one.from_name, one.to, one.to_name, one.actor, one.flow]), fresh.rejections, fresh.latest_work_id],
-      [[[null, "", "reading", "核读材料", "user", "initial"]], [], null]);
+      [[[null, "", "reading", "核读材料", "user", "analysis"]], [], null]);
 
     await send({ text: "直接写用例吧。", client_id: "c-1" });
     assert.equal((await action({ kind: "move_stage", targets: [], fields: { stage: "澄清", reason: "材料看过了。" } })).status, 200);

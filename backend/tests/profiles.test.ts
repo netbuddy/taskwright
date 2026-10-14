@@ -106,7 +106,7 @@ test("桌面形态下 pi 的设置文件的 defaultProvider 与 defaultModel 两
     const stageFiles = record["按阶段的说明"] as { 有没有: boolean; 代码仓里的路径: string; 文件: { 路径: string; 字节数: number; 摘要值: string }[] };
     assert.deepEqual([stageFiles.有没有, stageFiles.代码仓里的路径], [true, "agent/prompts/stages"]);
     assert.deepEqual(stageFiles.文件.map((one) => one.路径),
-      ["README.md", "clarifying.md", "common.md", "document.md", "modeling.md", "reading.md", "reviewing.md", "system.md", "writing.md"]);
+      ["README.md", "clarifying.md", "common.md", "document.md", "modeling.md", "publish.md", "reading.md", "reviewing.md", "system.md", "writing.md"]);
     for (const one of stageFiles.文件) assert.match(one.摘要值, /^[0-9a-f]{16}$/);
 
     writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { local: { models: [{ id: "qwen" }] } } }));

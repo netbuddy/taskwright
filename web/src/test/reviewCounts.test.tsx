@@ -1,16 +1,12 @@
-// 评审计数三处一致：条目区的汇总行、任务页的交付物看板、条目区的筛选，对同一个任务给出的评审通过、评审不通过（不含保留的）、
-// 已保留写法三个数各自相同；集合卡上的那行数字与悬停提示里的说明。
+// 评审计数两处一致：条目区的汇总行与条目区的筛选，对同一个任务给出的评审通过、评审不通过（不含保留的）、
+// 已保留写法三个数各自相同。任务页原来的交付物看板随任务起点页去掉了。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
-import { api } from "../api/client";
-import type { Item, Task, TaskDetail } from "../api/types";
+import type { Item, Task } from "../api/types";
 import { ItemsPanel } from "../components/work/ItemsPanel";
-import { ServiceProvider } from "../components/ServiceControls";
-import { ToastProvider } from "../components/Toasts";
-import { TaskPage } from "../pages/TaskPage";
 
 const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
@@ -75,43 +71,18 @@ function summary(t: Task) {
   return out;
 }
 
-async function board(t: Task) {
-  vi.spyOn(api, "getTask").mockResolvedValue({ ...t, sessions: [], materials: [] } as unknown as TaskDetail);
-  vi.spyOn(api, "listTasks").mockResolvedValue([]);
-  vi.spyOn(api, "serviceInfo").mockRejectedValue(new Error("没有这个接口"));
-  render(<ConfigProvider><AntApp><ToastProvider><ServiceProvider><TaskPage taskId="TASK-C" /></ServiceProvider></ToastProvider></AntApp></ConfigProvider>);
-  const card = await screen.findByTestId("board-功能用例");
-  // 卡上只有一行数字，详细的说明在悬停提示里：两处合起来看。
-  const line = card.textContent ?? "";
-  const text = `${line} ${card.getAttribute("title") ?? ""}`;
-  return { card, text, passed: Number(line.match(/评审通过 (\d+)\//)?.[1]), kept: Number(line.match(/已保留写法 (\d+)/)?.[1] ?? 0) };
-}
-
-describe("评审计数三处一致", () => {
-  it("汇总行、看板、筛选给出的评审通过、评审不通过、已保留写法各自相同", async () => {
+describe("评审计数两处一致", () => {
+  it("汇总行与筛选给出的评审通过、评审不通过、已保留写法各自相同", () => {
     const t = task(MIXED);
     const s = summary(t);
     expect(s.summary).toEqual({ pending: EXPECTED.pending, failed: EXPECTED.failed, kept: EXPECTED.kept });
     expect(s.filters).toEqual(EXPECTED);
-    const b = await board(t);
-    expect(b.passed).toBe(s.filters.passed);
-    expect(b.kept).toBe(s.filters.kept);
-    expect(b.text).toContain(`评审通过 ${EXPECTED.passed}/8`);
-    expect(b.text).toContain(`${EXPECTED.passed} 个在当前所在的修订上评审通过，${EXPECTED.kept} 个评审不通过但你保留了写法（按你的决定算通过）`);
   });
 
-  it("有保留了写法的条目时集合卡写出已保留写法的个数；没有保留的条目时不写这一项", async () => {
+  it("有保留了写法的条目时汇总行写出已保留写法的个数；没有保留的条目时不写这一项", () => {
     const t = task([item("UC-001", { reviews: [ok] }), item("UC-004", { reviews: [bad], waivers: [waiver] })]);
     expect(summary(t).text).toContain("评审不通过 0 · 已保留写法 1 ·");
-    let b = await board(t);
-    expect(b.text).toContain("评审通过 1/2");
-    expect(b.kept).toBe(1);
-    cleanup(); vi.restoreAllMocks();
     const plain = task([item("UC-001", { reviews: [ok] })]);
     expect(summary(plain).text).not.toContain("已保留写法");
-    b = await board(plain);
-    expect(b.text).toContain("评审通过 1/1");
-    expect(b.text).toContain("这 1 个条目里，1 个在当前所在的修订上评审通过，你已经看过其中 1 个。");
-    expect(b.text).not.toContain("已保留写法");
   });
 });

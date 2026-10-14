@@ -105,7 +105,7 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       if (request.kind === CONTINUE_STAGE_KIND) {
         // 用户在进入卡片上选了「继续本阶段」：只留一条通知，不写库、不发话，提议仍然开着。
         try {
-          const result = continueStage({ workspaceDir: ctx.cwd }, ctx.sessionManager.getBranch() as never, request);
+          const result = continueStage({ workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId() }, ctx.sessionManager.getBranch() as never, request);
           pi.sendMessage({
             customType: USER_EDIT_CUSTOM_TYPE,
             content: result.note,
@@ -162,13 +162,17 @@ export function registerUserCommands(pi: ExtensionAPI): void {
               results: result.results,
               revision_no: result.revision_no,
               undoable: result.undoable,
+              ...(result.record_id !== undefined ? { record_id: result.record_id } : {}),
+              ...(result.archived_sessions !== undefined ? { archived_sessions: result.archived_sessions } : {}),
             },
           },
           // 不传送法：执行者空闲时立即加进会话；正在运行时 pi 暂存到这一轮结束再加（不能插在工具调用与结果之间），
           // 只作上下文，不另外引出一次模型请求。
         );
         if (result.notify_text) pi.sendUserMessage(result.notify_text, { deliverAs: "followUp" });
-        report({ ok: true, event_seqs: result.event_seqs, results: result.results, revision_no: result.revision_no });
+        report({ ok: true, event_seqs: result.event_seqs, results: result.results, revision_no: result.revision_no,
+          ...(result.record_id !== undefined ? { activity_record_id: result.record_id } : {}),
+          ...(result.archived_sessions !== undefined ? { archived_sessions: result.archived_sessions } : {}) });
       } catch (error) {
         if (error instanceof UserOpError) {
           report({ ok: false, error: { code: error.code, message: error.message, data: error.data } });
@@ -214,11 +218,11 @@ export function registerUserCommands(pi: ExtensionAPI): void {
           { opId: opId ?? "", replyEntry: request.reply_entry, optionKey: request.option_key });
         stageSeq = moved?.event_seq ?? null;
         // 记下了移动：标注里另写从哪个阶段到哪个阶段，对话区据此在用户那句话下面写一行。
-        // how 写这次是流程里的移动（move）、启动首次分析（launch）还是继续首次分析（resume）。
+        // how 写这次是流程里的换站（move）；早先的对话里另有启动首次分析（launch）与继续首次分析（resume）。
         if (moved?.moved && moved.from !== null) stageMove = { from: moved.from, to: moved.requested, ...(moved.how ? { how: moved.how } : {}) };
         // 认出了是进入某个阶段的卡片、任务也有阶段，但这次点击没有让阶段移动（次序不对，或者任务本来就在那里）：
         // 标注里写下任务当时在哪个阶段，卡片上据此告诉用户这次点击没有改变阶段。
-        // 任务空闲或者正在单独开展一项活动时，进入与退回都不算数：另写 why 为 not_in_flow，卡片上据此提示从任务状况卡开展一项活动。
+        // 这条会话不在做流程的工作项时，进入与退回都不算数：另写 why 为 not_in_flow，卡片上据此提示从任务起点页启动一个工作项。
         else if (moved && !moved.moved && moved.from !== null) stageUnmoved = { at: moved.from, ...(moved.why === "not_in_flow" ? { why: moved.why } : {}) };
       } catch (error) {
         ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: false,

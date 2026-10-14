@@ -6,6 +6,7 @@ import { Button, Form, Input, Modal, Select } from "antd";
 import { BookOutlined, CaretDownOutlined, CaretRightOutlined, MessageOutlined, PlusOutlined, SettingOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { SessionListEntry, TaskListEntry } from "../api/types";
+import { openTask } from "../model/startPage";
 import { go, href, openSettings } from "../router";
 import { useToast } from "./Toasts";
 import { NoModelBanner, UserMenu, useService } from "./ServiceControls";
@@ -60,7 +61,7 @@ export function Shell({ currentTaskId, nav = "tasks", libraries, children }: {
             <div className="sider-caption">任务（按最近活动排序）</div>
             {tasks.map((t) => (
               <div key={t.task_id}>
-                <div className={`sider-task${t.task_id === currentTaskId ? " on" : ""}`} onClick={() => go(href.task(t.task_id))}>
+                <div className={`sider-task${t.task_id === currentTaskId ? " on" : ""}`} onClick={() => openTask(t.task_id, go)}>
                   {t.task_id === currentTaskId ? <CaretDownOutlined /> : <CaretRightOutlined />}
                   <span className="name" title={t.task_name}>{t.task_name}</span>
                   <span className="muted small">{t.session_count}</span>

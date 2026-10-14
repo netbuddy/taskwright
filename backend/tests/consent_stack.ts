@@ -38,8 +38,8 @@ export function seedWriting(taskDir: string): void {
 }
 
 /**
- * 把一个刚建好的任务（空闲）放进首次分析流程的核读材料阶段：当作用户在界面上启动的，经子进程调助手一侧真实的用户操作。
- * 库里因此多一条活动记录与一条活动开始的事件（会话写的是 session-fixture），数移动、数事件的测试要把它算进去。
+ * 给一个刚建好的任务启动需求分析、从核读材料开始：当作用户在界面上启动的，经子进程调助手一侧真实的用户操作。
+ * 库里因此多一个工作项（记录号 1）与一条启动的事件（会话写的是 session-fixture），数换站、数事件的测试要把它算进去。
  */
 export function launchFlow(taskDir: string): void {
   const launched = spawnSync(process.execPath, [join(ROOT, "agent", "tests", "fixtures", "save_more.mts"), taskDir, JSON.stringify([{ stage: "核读材料" }])], { encoding: "utf-8" });
@@ -67,7 +67,7 @@ export type Stack = {
  * 起一套验证栈（假端点、真后端、真 pi），建任务与会话，交给 body；结束时停掉。
  * autoIntent 为真（缺省）时假端点在用户说话之后第一个只有工具调用的回答前面自动补一段理解；测理解门禁时关掉，由脚本自己写。
  * seed 为真（缺省）时在开会话之前把任务备到可以写条目的样子（见 TOPIC_CALL 的说明）；为假时任务没有写过东西。
- * launch 为真（seed 为假时的缺省）时在开会话之前由用户启动首次分析、停在核读材料（launchFlow）；为假时任务是刚建好的样子：空闲。
+ * launch 为真（seed 为假时的缺省）时在开会话之前由用户启动需求分析、停在核读材料（launchFlow）；为假时任务是刚建好的样子：空闲。
  * args 是另加给后端的命令行参数（例如 --debug），env 是另加给后端的环境变量。
  */
 export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>,
@@ -96,7 +96,9 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
     writeFileSync(join(dir, "tasks", taskId, "inputs", "材料.md"), `${MATERIAL}\n`, "utf-8");
     if (seed) seedWriting(join(dir, "tasks", taskId));
     else if (launch) launchFlow(join(dir, "tasks", taskId));
-    const session: string = (await call("POST", `/api/v1/tasks/${taskId}/sessions`)).body.session_id;
+    // 夹具已经启动了需求分析时（seed、launch），这条会话接着做那个工作项：助手能写什么看的是它所在的会话属于的工作项。
+    // 没有启动过的任务里，这条会话是自由讨论的会话。
+    const session: string = (await call("POST", `/api/v1/tasks/${taskId}/sessions`, seed || launch ? { activity_record_id: 1 } : undefined)).body.session_id;
     // 只读查库；评审正在写库时偶尔读不出（子进程没有输出），按空列表算：轮询接着等，断言处读不出也会因为对不上而失败。
     const db = (sql: string, ...args: string[]) => JSON.parse(spawnSync(process.execPath, ["-e",
       `const {DatabaseSync}=require("node:sqlite");const db=new DatabaseSync(process.argv[1],{readOnly:true});` +

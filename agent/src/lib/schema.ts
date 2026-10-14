@@ -27,8 +27,8 @@ import { ensureDialogueSchema } from "./dialogue_schema.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十七张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version、activity_record 是后来加的，
- *  旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。早先的阶段记录表（stage_record）在格式版本 5 改写成活动记录表之后删掉了，不在这里。 */
+/** 十八张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version、activity_record、
+ *  work_item_session 是后来加的，旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。早先的阶段记录表（stage_record）在格式版本 5 改写成活动记录表之后删掉了，不在这里。 */
 export const TABLE_NAMES = [
   "task",
   "revision",
@@ -47,10 +47,11 @@ export const TABLE_NAMES = [
   "diagram",
   "diagram_version",
   "activity_record",
+  "work_item_session",
 ] as const;
 
 /** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version", "activity_record"];
+export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version", "activity_record", "work_item_session"];
 
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
@@ -279,33 +280,82 @@ CREATE TABLE IF NOT EXISTS ${table} (
 `;
 const STAGE_RECORD_SQL = stageRecordSql("stage_record");
 
+
 /**
- * 活动记录表：任务里开展过的每一项活动一行——哪一项活动、所属的节点与流程、谁在什么时候为什么开始、什么时候结束
- * （lib/stage.ts 与 lib/stage_read.ts）。任务现在在做哪一项活动，看还没有结束（ended_at 为空）的那一行里开始得最晚的一行；
- * 没有还没结束的行，任务就是空闲（新建的任务一行都没有，从空闲起）。只有任务定义里有「总体分析」集合的任务才会有行。
- * 活动现在就是六个工作阶段，用英文写法存（reading、clarifying、modeling、writing、reviewing、document），与事件、接口里的写法相同；
+ * 活动记录表：一行是一个工作项，也就是一次启动——启动一项单项活动，或者启动一条工作流程（lib/stage.ts 与 lib/stage_read.ts）。
+ * 工作项记着：现在做的是哪一项活动、在哪条流程的哪一站、谁在什么时候为什么启动、范围说明。工作项没有终点：它是任务里长期存在的一条线，
+ * 不要了由用户删除（删掉这一行，它的会话归档，见下面的 work_item_session）。
+ * 会话指向工作项：助手在一条会话里能写什么，看这条会话指向的工作项，不看任务；一个任务可以同时有几个工作项，其中流程的工作项至多一个。
+ * 只有任务定义里有「总体分析」集合的任务才会有行。
+ * 活动用英文写法存（reading、clarifying、modeling、writing、reviewing、document），与事件、接口里的写法相同；
  * 有哪几项只在代码里判（lib/stage.ts 的 STAGES），库不检查取值。
- * 节点是这项活动在流程里的位置：在流程里开展时与活动同一个写法，单独开展时为空；流程现在只有首次分析（initial）。
- * 现在每一行都在首次分析这条流程里，节点与流程两列都有值。
- * 格式版本 5 加的表，取代早先的阶段记录表：旧库由升级步骤表的「4 到 5」那一步把阶段记录逐行改写过来。
- * 只读的一侧遇到还没有这张表的库，当作一条记录都没有。
+ * 流程的工作项：flow 写流程的键（现在只有 analysis，需求分析），node 写现在在哪一站，activity 写这一站上的那项活动；
+ * 换站时更新 node 与 activity 两列并记一条事件，不另开一行。单项活动的工作项：node 与 flow 两列为空。
+ * 记录号自增且不重用（AUTOINCREMENT）：删掉的工作项的记录号不会落到新的工作项上，事件里的记录号始终只指一个工作项。
+ * 格式版本 5 加的表，取代早先的阶段记录表；格式版本 7 之前一行是一项活动的一段（流程里每到一站一行，带结束的时刻），
+ * 升级步骤表的「6 到 7」那一步把它们归并成工作项、重建成现在的样子。只读的一侧遇到还没有这张表的库，当作一个工作项都没有。
  */
-export const ACTIVITY_RECORD_SQL = `
-CREATE TABLE IF NOT EXISTS activity_record (
-  record_id    INTEGER PRIMARY KEY,   -- 记录的编号
+const activityRecordSql = (table: string) => `
+CREATE TABLE IF NOT EXISTS ${table} (
+  record_id    INTEGER PRIMARY KEY AUTOINCREMENT,  -- 工作项的记录号；自增，删掉的不再用
   task_id      TEXT NOT NULL,         -- 所属任务的任务编号
-  session_id   TEXT NOT NULL,         -- 开始这项活动的那条 pi 会话的会话编号
-  run_id       TEXT,                  -- 助手开始时是运行号（这条会话当前分支上第几句用户的话，例如 r3）；用户开始时为空
-  call_id      TEXT NOT NULL,         -- 助手开始时是那次工具调用的调用编号；用户开始时是界面操作的操作编号
-  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),  -- 由谁开始：助手或用户
-  activity     TEXT NOT NULL,         -- 哪一项活动（取值只在代码里判）
-  node         TEXT,                  -- 所属节点：在流程里开展时与活动同一个写法，单独开展时为空
-  flow         TEXT,                  -- 所属流程（现在只有 initial，首次分析）；单独开展时为空
-  reason       TEXT NOT NULL,         -- 开始的理由；用户的可以是空文字
-  started_at   TEXT NOT NULL,         -- 开始的时刻（本地时间）
-  ended_at     TEXT,                  -- 结束的时刻（本地时间）；还在进行为空
-  started_seq  INTEGER NOT NULL,      -- 记下开始的那条事件的序号
-  ended_seq    INTEGER                -- 记下结束的那条事件的序号；还在进行为空
+  session_id   TEXT NOT NULL,         -- 启动这个工作项时所在的那条 pi 会话的会话编号
+  run_id       TEXT,                  -- 助手启动时是运行号（这条会话当前分支上第几句用户的话，例如 r3）；用户启动时为空
+  call_id      TEXT NOT NULL,         -- 助手启动时是那次工具调用的调用编号；用户启动时是界面操作的操作编号
+  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),  -- 由谁启动：助手或用户
+  activity     TEXT NOT NULL,         -- 现在做的是哪一项活动（取值只在代码里判）；流程的工作项随换站更新
+  node         TEXT,                  -- 流程的工作项现在在哪一站（与活动同一个写法）；单项活动的工作项为空
+  flow         TEXT,                  -- 流程的工作项属于哪条流程（现在只有 analysis，需求分析）；单项活动的工作项为空
+  reason       TEXT NOT NULL,         -- 启动的理由；用户的可以是空文字
+  started_at   TEXT NOT NULL,         -- 启动的时刻（本地时间）
+  started_seq  INTEGER NOT NULL,      -- 记下启动的那条事件的序号
+  scope        TEXT                   -- 用户启动时写的范围说明；没有写为空
+);
+`;
+export const ACTIVITY_RECORD_SQL = activityRecordSql("activity_record");
+
+/**
+ * 格式版本 5、6 的活动记录表（6 比 5 多范围说明一列，由「5 到 6」那一步加）：一行是一项活动的一段，带结束的时刻与序号。
+ * 只给升级步骤用：「4 到 5」与「5 到 6」两步照它建表、往里写，「6 到 7」再把它重建成现在的样子。
+ */
+const ACTIVITY_RECORD_V5_SQL = `
+CREATE TABLE IF NOT EXISTS activity_record (
+  record_id    INTEGER PRIMARY KEY,
+  task_id      TEXT NOT NULL,
+  session_id   TEXT NOT NULL,
+  run_id       TEXT,
+  call_id      TEXT NOT NULL,
+  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),
+  activity     TEXT NOT NULL,
+  node         TEXT,
+  flow         TEXT,
+  reason       TEXT NOT NULL,
+  started_at   TEXT NOT NULL,
+  ended_at     TEXT,
+  started_seq  INTEGER NOT NULL,
+  ended_seq    INTEGER
+);
+`;
+
+/** 早先（格式版本 7 之前）流程的键：首次分析。「6 到 7」那一步把活动记录里的它改写成 FLOW_KEY_ANALYSIS；早先记下的事件里它原样留着，读事件时当作同一条流程。 */
+export const FLOW_KEY_LEGACY = "initial";
+/** 需求分析这条流程的键（与 lib/stage.ts 的 FLOW_ANALYSIS 同一个；这里另写一份，免得表结构文件导入阶段的代码）。 */
+const FLOW_KEY_ANALYSIS = "analysis";
+
+/**
+ * 工作项的会话：哪条会话属于哪个工作项。一条会话在建立时指向一个工作项，或者不指向任何工作项（自由讨论的会话，这张表里没有它的行），
+ * 之后不改；一个工作项可以先后有几条会话。
+ * 工作项被删除时，它的会话不删（会话文件是留痕，修订也指向会话），而是归档：archived_at 写上删除的时刻，record_id 照旧留着，
+ * 说明它曾属于那个已经删除的工作项（事件里也带着这个记录号；记录号不重用，不会落到新的工作项上）。
+ * 归档的会话不属于任何工作项，打开后按自由讨论办；会话清单默认不列它。格式版本 7 加的表。
+ */
+export const WORK_ITEM_SESSION_SQL = `
+CREATE TABLE IF NOT EXISTS work_item_session (
+  session_id   TEXT PRIMARY KEY,      -- pi 会话的会话编号；一条会话只属于一个工作项
+  record_id    INTEGER NOT NULL,      -- 所属工作项的记录号（activity_record.record_id）；会话归档后照旧留着，是那个已经删除的工作项的
+  task_id      TEXT NOT NULL,         -- 所属任务的任务编号
+  attached_at  TEXT NOT NULL,         -- 这条会话挂到工作项上的时刻（本地时间）
+  archived_at  TEXT                   -- 归档的时刻（本地时间）：它的工作项被删除的时刻；没有归档为空
 );
 `;
 
@@ -463,6 +513,7 @@ ${REVIEW_WAIVER_SQL}
 ${TOOL_REJECTION_SQL}
 ${DIAGRAM_SQL}
 ${ACTIVITY_RECORD_SQL}
+${WORK_ITEM_SESSION_SQL}
 ${REVISION_CALL_INDEX_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
@@ -470,7 +521,8 @@ export class NoDatabaseYet extends Error {}
 
 /** 库里现有的表名。 */
 export function existingTables(db: DatabaseSync): string[] {
-  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[];
+  // SQLite 自己的表（记录号自增计数用的 sqlite_sequence）不算。
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'").all() as { name: string }[];
   return rows.map((row) => row.name);
 }
 
@@ -478,9 +530,11 @@ export function existingTables(db: DatabaseSync): string[] {
  * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。0 是没有编过版本号的库：0.4.x 及更早的版本建的，或者一张表都没有的空库。
  * 每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。1 是给库编上版本号的那一版；2 加了阶段记录表（stage_record）；
  * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）；4 去掉了阶段记录表里两列阶段的检查（阶段有哪几个只在代码里判）；
- * 5 加了活动记录表（activity_record），把阶段记录逐行改写进去，删掉了阶段记录表。
+ * 5 加了活动记录表（activity_record），把阶段记录逐行改写进去，删掉了阶段记录表；6 给活动记录表加了范围说明一列（scope）；
+ * 7 把活动记录归并成工作项（流程里每到一站一行的并成一行，去掉结束的时刻，记录号改为自增不重用，流程的键改为 analysis），
+ * 加了工作项的会话表（work_item_session）。
  */
-export const TASK_DB_VERSION = 5;
+export const TASK_DB_VERSION = 7;
 
 /** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
 export const TASK_JSON = "task.json";
@@ -521,6 +575,8 @@ const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void
   { from: 2, to: 3, run: dropDiagramKindCheck },
   { from: 3, to: 4, run: dropStageChecks },
   { from: 4, to: 5, run: moveStageRecordsToActivities },
+  { from: 5, to: 6, run: addActivityScope },
+  { from: 6, to: 7, run: mergeIntoWorkItems },
 ];
 
 /**
@@ -539,6 +595,73 @@ export function ensureSchema(db: DatabaseSync): { from: number; to: number } {
     version = step.to;
   }
   return { from, to: version };
+}
+
+/**
+ * 第 5 到 6 步：活动记录表加范围说明一列。只加列，不动已有的数据；新建的库建表时就有这一列，这里什么都不做。
+ */
+function addActivityScope(db: DatabaseSync): void {
+  db.exec(ACTIVITY_RECORD_V5_SQL);
+  const columns = (db.prepare("PRAGMA table_info(activity_record)").all() as { name: string }[]).map((row) => row.name);
+  if (!columns.includes("scope")) db.exec("ALTER TABLE activity_record ADD COLUMN scope TEXT");
+}
+
+/**
+ * 第 6 到 7 步：把活动记录归并成工作项，重建活动记录表，加工作项的会话表。
+ * 这一步之前一行是一项活动的一段：流程里每到一站一行，前一行结束、后一行开始。归并的规矩：
+ * - 同一个任务里所属流程相同的行并成一行，不论中间有没有被单项活动隔开：留最早那一行（记录号、启动的人、理由、启动的时刻都是它的），
+ *   现在的活动与所在的一站取最晚那一行的，范围说明取最晚一行写了的；别的行删掉。早先流程的位置是整个任务唯一的，接着做的是同一次流程。
+ * - 单项活动的行每行各是一个工作项。工作项没有终点，早先记的结束不再保留（结束的两列随重建去掉）。
+ * - 流程的键：早先的 initial（首次分析）改写成 analysis（需求分析）。
+ * - 会话：每一行启动时所在的会话挂到它归入的工作项上；一条会话先后启动过几行的，挂到其中最晚那一行归入的工作项上。
+ *   没有挂上的会话不属于任何工作项，是自由讨论的会话。
+ * 活动记录表照现在的建表语句重建（记录号改为自增不重用），留下的行原样抄过去。表已经是现在的样子（新建的库）时不重建。
+ * 事件表不动：早先成对的活动结束与活动开始的事件原样留着，里面的流程键仍是 initial。
+ */
+function mergeIntoWorkItems(db: DatabaseSync): void {
+  db.exec(ACTIVITY_RECORD_V5_SQL);
+  db.exec(WORK_ITEM_SESSION_SQL);
+  const columns = (db.prepare("PRAGMA table_info(activity_record)").all() as { name: string }[]).map((row) => row.name);
+  if (!columns.includes("ended_at")) return;
+  if (!columns.includes("scope")) db.exec("ALTER TABLE activity_record ADD COLUMN scope TEXT");
+  type Row = { record_id: number; task_id: string; session_id: string; run_id: string | null; call_id: string; actor: string; activity: string;
+    node: string | null; flow: string | null; reason: string; scope: string | null; started_at: string; started_seq: number };
+  const rows = db.prepare(
+    "SELECT record_id, task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, scope, started_at, started_seq FROM activity_record ORDER BY task_id, started_seq, record_id",
+  ).all() as unknown as Row[];
+  // 每一行归入哪个工作项：流程里的行归入同一任务同一流程最早的那一行，单项活动的行归入自己。
+  const keeperOf = new Map<number, Row>();
+  const groups = new Map<string, Row[]>();
+  const kept: Row[] = [];
+  for (const row of rows) {
+    if (row.flow === null || row.flow === "") { keeperOf.set(Number(row.record_id), row); kept.push({ ...row, flow: null }); continue; }
+    const key = JSON.stringify([row.task_id, row.flow]);
+    const group = groups.get(key) ?? [];
+    if (group.length === 0) kept.push(row);
+    group.push(row);
+    groups.set(key, group);
+    keeperOf.set(Number(row.record_id), group[0]);
+  }
+  for (const [index, row] of kept.entries()) {
+    if (row.flow === null) continue;
+    const group = groups.get(JSON.stringify([row.task_id, row.flow]))!;
+    const last = group[group.length - 1];
+    const scope = [...group].reverse().find((one) => typeof one.scope === "string" && one.scope !== "")?.scope ?? null;
+    kept[index] = { ...row, activity: last.activity, node: last.node, scope, flow: row.flow === FLOW_KEY_LEGACY ? FLOW_KEY_ANALYSIS : row.flow };
+  }
+  // 重建：照现在的建表语句建一张新表，把留下的行抄过去，删掉旧表，把新表改成原来的名字。
+  db.exec(activityRecordSql("activity_record_new"));
+  const insert = db.prepare(
+    "INSERT INTO activity_record_new (record_id, task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  );
+  for (const row of kept) {
+    insert.run(row.record_id, row.task_id, row.session_id, row.run_id, row.call_id, row.actor, row.activity, row.node, row.flow, row.reason, row.started_at, row.started_seq,
+      typeof row.scope === "string" && row.scope !== "" ? row.scope : null);
+  }
+  db.exec("DROP TABLE activity_record; ALTER TABLE activity_record_new RENAME TO activity_record;");
+  // 会话挂到工作项上：rows 按启动的先后排，后面的行盖过前面的，留下的是每条会话最晚启动的那一行归入的工作项。
+  const attach = db.prepare("INSERT OR REPLACE INTO work_item_session (session_id, record_id, task_id, attached_at) VALUES (?, ?, ?, ?)");
+  for (const row of rows) attach.run(row.session_id, keeperOf.get(Number(row.record_id))!.record_id, row.task_id, row.started_at);
 }
 
 /** 第 1 到 2 步：加阶段记录表。只加表，不动已有的表与数据。新建的库走到这一步也会建出一张空的，随后由「4 到 5」那一步删掉。 */
@@ -600,11 +723,14 @@ function dropStageChecks(db: DatabaseSync): void {
  * 同一个任务里后一次移动的时刻与事件序号是前一项活动结束的时刻与序号，最后一次移动之后的那项活动还在进行（两列为空）。
  * 所属流程取自记下那次移动的事件（STAGE_MOVED）的内容，事件里没有写、或者那条事件已经不在时写首次分析。
  * 记录的编号、会话、运行号、调用编号、由谁、理由照抄。从哪个阶段移过来不另存：读的时候取自同一条事件的内容（lib/stage_read.ts）。
- * 事件表不动：早先的移动事件仍叫 STAGE_MOVED。库里已经没有阶段记录表（新建的库、做过这一步的库）时只补活动记录表。
+ * 事件表不动：早先的移动事件仍叫 STAGE_MOVED。库里已经没有阶段记录表（做过这一步的库）、或者它是空的（新建的库）时不建活动记录表：
+ * 新建的库建表时就有，「6 到 7」那一步也会补上。
  */
 function moveStageRecordsToActivities(db: DatabaseSync): void {
-  db.exec(ACTIVITY_RECORD_SQL);
   if (!existingTables(db).includes("stage_record")) return;
+  // 新建的库与没有记过移动的库：阶段记录表是空的，没有什么可改写，删掉即可（活动记录表这时可能已经是现在的样子，不往里写）。
+  if (db.prepare("SELECT 1 FROM stage_record LIMIT 1").get() === undefined) { db.exec("DROP TABLE stage_record"); return; }
+  db.exec(ACTIVITY_RECORD_V5_SQL);
   const later = (column: string) =>
     `(SELECT n.${column} FROM stage_record n WHERE n.task_id = r.task_id AND n.event_seq > r.event_seq ORDER BY n.event_seq LIMIT 1)`;
   db.exec(`

@@ -221,5 +221,5 @@ test("会话清单每条带 revision_count：按修订表里的会话编号计�
   const reply = (await dispatch(service, { method: "GET", path: `/api/v1/tasks/${t.taskId}/sessions`, query: {}, headers: {}, body: Buffer.alloc(0) })) as any;
   assert.deepEqual(counts(JSON.parse(reply.body.toString()).sessions), { S1: 2, S2: 0 });
   assert.deepEqual(Object.keys(service.taskPage(t).sessions[0]).sort(),
-    ["active", "last_active_at", "message_count", "name", "revision_count", "session_id", "started_at"]);
+    ["active", "last_active_at", "message_count", "name", "revision_count", "session_id", "started_at", "work_item"]);
 }));

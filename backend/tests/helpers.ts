@@ -233,10 +233,15 @@ export async function sendAndWaitTurn(port: number, taskId: string, sessionId: s
 }
 
 /**
- * 查任务库里记下的每一次阶段移动（活动记录表的每一行，按先后）的语句，列由调用方点：stage 是移到的阶段（那项活动），
- * from_stage 取自记下开始的那条事件的内容，别的是表里的同名列。列名沿用早先阶段记录表的叫法。
+ * 查任务库里记下的每一次启动与换站（按先后）的语句，列由调用方点：stage 是启动时做的那项活动、或者换站到的那一站，
+ * from_stage 是换站之前在哪一站（启动的那一条为空），actor、call_id、session_id 是那条事件的，reason、run_id 取自事件的内容。
+ * 读的是事件表：启动工作项的事件、流程换站的事件，以及早先记一次移动的事件。列名沿用早先阶段记录表的叫法。
  */
 export function movesSql(columns: readonly string[]): string {
-  const column = (name: string) => (name === "stage" ? "r.activity AS stage" : name === "from_stage" ? "json_extract(e.payload, '$.from') AS from_stage" : `r.${name}`);
-  return `SELECT ${columns.map(column).join(", ")} FROM activity_record r LEFT JOIN event e ON e.seq = r.started_seq ORDER BY r.started_seq`;
+  const from: Record<string, string> = {
+    stage: "COALESCE(json_extract(e.payload, '$.node'), json_extract(e.payload, '$.activity'), json_extract(e.payload, '$.stage')) AS stage",
+    from_stage: "json_extract(e.payload, '$.from') AS from_stage", reason: "json_extract(e.payload, '$.reason') AS reason", run_id: "json_extract(e.payload, '$.run_id') AS run_id",
+    event_seq: "e.seq AS event_seq",
+  };
+  return `SELECT ${columns.map((name) => from[name] ?? `e.${name}`).join(", ")} FROM event e WHERE e.name IN ('ACTIVITY_STARTED', 'ACTIVITY_NODE_ENTERED', 'STAGE_MOVED') ORDER BY e.seq`;
 }

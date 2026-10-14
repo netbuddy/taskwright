@@ -38,7 +38,7 @@ const revisionOf = (dir: string) => query<{ n: number }>(dir, "SELECT MAX(revisi
 
 test("核读材料与澄清两个阶段：新画、修改、删除都被拦，原话写明现在在哪个阶段、要先做什么", async () => {
   const dir = workspace();
-  // 首次分析从核读材料启动。
+  // 需求分析从核读材料启动。
   enterStage(dir, "reading");
   const reading = (await refusal(dir, fresh()))!;
   assert.equal(reading.fact, "任务现在在核读材料阶段，这个阶段不能画图、改图或删图");

@@ -4,7 +4,9 @@
  * - enter：做完一段，提议进入下一个阶段；
  * - back：这一段的输入大面积不能用了，提议退回前面的某个阶段；
  * - review：编写文档阶段补写完了，请用户过目补写的那几页（点了不移动阶段）。
- * 结束的情形：任务开始了另一项活动（阶段有过一次移动）、助手又发了一张提议的卡片、任务不再进行中；review 另有一种，卡片点名的页用户都看过了。
+ * 提议属于一个工作项：助手在哪条会话里发的卡片，它就属于那条会话的工作项。失效的情形：这个工作项换了一站、
+ * 助手在这个工作项里又发了一张提议的卡片、任务不再进行中；review 另有一种，卡片点名的页用户都看过了。
+ * 别的工作项启动、换站、删除都不影响它；这个工作项被删除时它的会话归档，归档的会话里没有提议。自由讨论的会话（不属于任何工作项）里没有提议。
  *
  * 提议不另设表：助手发卡片时「回复」记的那条事件（EXECUTOR_ACTS_RECORDED）里多带一项 proposal（proposalOfAct），
  * 开着的是哪一条从事件表里推（openProposal）。卡片的选项只在那一条会话的会话文件里，任务库里原来没有记，所以要在发的时候记下：
@@ -26,13 +28,38 @@ import {
 /** 「回复」记执行者行为的那条事件的名字（与 lib/dialogue_acts.ts 的 EVENT_EXECUTOR_ACTS_RECORDED 同一个；这里不从它导入，免得两个文件互相导入）。 */
 const EVENT_ACTS = "EXECUTOR_ACTS_RECORDED";
 /**
- * 划界用的事件名：活动开始的那条事件（与 lib/stage_read.ts 的 EVENT_ACTIVITY_STARTED 同一个），以及早先记一次阶段移动的那条
- * （EVENT_STAGE_MOVED；升级上来的库里留着这种事件，照样算一次界）。两个名字写死在语句里，不是外来的文字。
+ * 划界用的事件：同一个工作项换了一站（与 lib/stage_read.ts 的 EVENT_NODE_ENTERED 同名，内容里的 record_id 是这个工作项的），
+ * 以及早先（会话与工作项绑定之前）记一次阶段移动的那两种（ACTIVITY_STARTED、STAGE_MOVED，内容里没有 record_id；升级上来的库里留着，照样算一次界）。
+ * 现在的 ACTIVITY_STARTED 是启动一个工作项，内容里有 record_id：启动本身记在这里，好算「到这一站之后」从哪里起。
+ * 名字写死在语句里，不是外来的文字；两个问号都填工作项的记录号。
  */
-const STARTED_NAMES = "('ACTIVITY_STARTED', 'STAGE_MOVED')";
+const BOUNDARY = "((name = 'ACTIVITY_NODE_ENTERED' AND json_valid(payload) AND json_extract(payload, '$.record_id') = ?) " +
+  "OR (name IN ('ACTIVITY_STARTED', 'STAGE_MOVED') AND json_valid(payload) AND json_extract(payload, '$.record_id') IS NULL))";
+const ARRIVAL = "((name IN ('ACTIVITY_NODE_ENTERED', 'ACTIVITY_STARTED') AND json_valid(payload) AND json_extract(payload, '$.record_id') = ?) " +
+  "OR (name IN ('ACTIVITY_STARTED', 'STAGE_MOVED') AND json_valid(payload) AND json_extract(payload, '$.record_id') IS NULL))";
 
 /**
- * 三种卡片上不生效的那一项：进入卡片的「继续本阶段」（任务空闲时提议开始核读材料的那张卡片上是「先不开始」）、
+ * 这条会话正在做的工作项的记录号与属于它的全部会话（归档的不算）；会话不属于任何工作项、库还没有这两张表时是 null。
+ * 与 lib/stage_read.ts 的 openActivityRecord 说的是同一回事；这里自己查，免得两个文件互相导入。
+ */
+function workItemOf(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): { recordId: number; sessions: string[] } | null {
+  if (!sessionId) return null;
+  const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('activity_record', 'work_item_session')").all() as { name: string }[])
+    .map((row) => row.name));
+  if (tables.size < 2) return null;
+  // 归档的会话（它的工作项已经删除）不算：只在会话表有归档一列时加这个条件。
+  const archivedFilter = (db.prepare("PRAGMA table_info(work_item_session)").all() as { name: string }[]).some((row) => row.name === "archived_at") ? " AND s.archived_at IS NULL" : "";
+  const row = db.prepare(
+    "SELECT r.record_id FROM activity_record r JOIN work_item_session s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ?" + archivedFilter,
+  ).get(taskId, sessionId) as { record_id: number } | undefined;
+  if (!row) return null;
+  const recordId = Number(row.record_id);
+  const sessions = (db.prepare("SELECT session_id FROM work_item_session s WHERE record_id = ?" + archivedFilter).all(recordId) as { session_id: string }[]).map((one) => one.session_id);
+  return { recordId, sessions };
+}
+
+/**
+ * 三种卡片上不生效的那一项：进入卡片的「继续本阶段」（早先任务空闲时提议开始核读材料的那张卡片上是「先不开始」）、
  * 回退卡片的「留在本段」、请过目卡片的「需要修改」。点它只把卡片标为已选。
  */
 const ENTER_STAY_KEYS: ReadonlySet<string> = new Set([...Object.values(STAY_OPTIONS).map((one) => one.key), STAY_IDLE_OPTION.key]);
@@ -135,16 +162,19 @@ function allViewed(db: DatabaseSync, taskId: string, items: readonly { item_id: 
 }
 
 /**
- * 任务现在开着的提议；没有时为 null。只读。
- * 取最近一条带 proposal 的回复事件：它之后任务没有开始过另一项活动（阶段没有移动过）、任务还在进行中，它就开着；请过目的那一种另要卡片点名的页还没有都看过。
- * 更早的提议不看：助手发了新的提议卡片，早先的那一条就结束了。
+ * 这条会话的工作项现在开着的提议；没有时为 null。只读。
+ * 取这个工作项的各条会话里最近一条带 proposal 的回复事件：它之后这个工作项没有换过站，任务还在进行中，它就开着；
+ * 请过目的那一种另要卡片点名的页还没有都看过。更早的提议不看：助手发了新的提议卡片，早先的那一条就结束了。
+ * 会话不属于任何工作项（自由讨论的会话、归档的会话）时没有提议。
  */
-export function openProposal(db: DatabaseSync, taskId: string): OpenProposal | null {
+export function openProposal(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): OpenProposal | null {
   const task = db.prepare("SELECT status FROM task WHERE task_id = ?").get(taskId) as { status: string } | undefined;
   if (!task || task.status !== TASK_ACTIVE) return null;
+  const item = workItemOf(db, taskId, sessionId);
+  if (item === null) return null;
   const rows = db.prepare(
-    "SELECT seq, session_id, payload, at FROM event WHERE task_id = ? AND name = ? AND payload LIKE '%\"proposal\"%' ORDER BY seq DESC",
-  ).all(taskId, EVENT_ACTS) as unknown as { seq: number; session_id: string; payload: string; at: string }[];
+    `SELECT seq, session_id, payload, at FROM event WHERE task_id = ? AND name = ? AND payload LIKE '%"proposal"%' AND session_id IN (${item.sessions.map(() => "?").join(", ")}) ORDER BY seq DESC`,
+  ).all(taskId, EVENT_ACTS, ...item.sessions) as unknown as { seq: number; session_id: string; payload: string; at: string }[];
   for (const row of rows) {
     const payload = load(row.payload) as { proposal?: unknown; reply_entry?: unknown } | null;
     const fact = payload?.proposal as ProposalFact | undefined;
@@ -152,7 +182,7 @@ export function openProposal(db: DatabaseSync, taskId: string): OpenProposal | n
     const kind = proposalKindOf(fact);
     if (!fact || kind === null) continue;
     const seq = Number(row.seq);
-    const moved = db.prepare(`SELECT 1 AS yes FROM event WHERE task_id = ? AND name IN ${STARTED_NAMES} AND seq > ? LIMIT 1`).get(taskId, seq);
+    const moved = db.prepare(`SELECT 1 AS yes FROM event WHERE task_id = ? AND seq > ? AND ${BOUNDARY} LIMIT 1`).get(taskId, seq, item.recordId);
     if (moved) return null;
     const items = Array.isArray(fact.items) ? fact.items : [];
     if (kind === "review" && allViewed(db, taskId, items)) return null;
@@ -173,11 +203,14 @@ export interface WaitingAct {
 }
 
 /**
- * 这一段还开着的提问与请选择：从这条会话里还在等回应的执行者行为（waiting，调用方用 unansweredActs 取）里，留下任务进入现在这个阶段（最近一次活动开始）之后
- * 发出的提问（ask）与请选择（choose），提议的卡片（进入、退回某个阶段或请过目）不算。前面阶段留下的不列：那一段结束前已经问过一遍。只读。
+ * 这一段还开着的提问与请选择：从这条会话里还在等回应的执行者行为（waiting，调用方用 unansweredActs 取）里，留下这条会话的工作项到现在这一站
+ * （启动，或者最近一次换站）之后发出的提问（ask）与请选择（choose），提议的卡片（进入、退回某个阶段或请过目）不算。
+ * 前面阶段留下的不列：那一段结束前已经问过一遍。会话不在做哪个工作项时不分先后，都算。只读。
  */
-export function cardsOpenInStage<T extends WaitingAct>(db: DatabaseSync, taskId: string, waiting: readonly T[]): T[] {
-  const moved = db.prepare(`SELECT MAX(seq) AS seq FROM event WHERE task_id = ? AND name IN ${STARTED_NAMES}`).get(taskId) as { seq: number | null } | undefined;
+export function cardsOpenInStage<T extends WaitingAct>(db: DatabaseSync, taskId: string, waiting: readonly T[], sessionId: string | null | undefined): T[] {
+  const item = workItemOf(db, taskId, sessionId);
+  const moved = item === null ? undefined
+    : db.prepare(`SELECT MAX(seq) AS seq FROM event WHERE task_id = ? AND ${ARRIVAL}`).get(taskId, item.recordId) as { seq: number | null } | undefined;
   const since = Number(moved?.seq ?? 0);
   const payload = db.prepare("SELECT payload FROM event WHERE seq = ?");
   return waiting.filter((one) => {
@@ -209,11 +242,11 @@ export function openCardsLine(cards: readonly WaitingAct[]): string {
       : "");
 }
 
-/** 任务没有开着的提议时给助手看的那一句。 */
+/** 这条会话的工作项没有开着的提议时给助手看的那一句。 */
 export const NO_PROPOSAL_LINE = "没有开着的提议。";
 
 /**
- * 给助手看的一行：任务现在有没有开着的提议、是哪一种、卡片在哪条会话里，以及用户要求做这件事时该怎么办。
+ * 给助手看的一行：这条会话的工作项现在有没有开着的提议、是哪一种、卡片在哪条会话里，以及用户要求做这件事时该怎么办。
  * 会话打开时的任务现状说明与查询任务状态的返回都用它：助手换一条会话之后上下文里没有那张卡片，靠这一行知道提议还开着。
  * sessionId 是读的这一侧所在的会话，用来说卡片是不是就在这条会话里。
  */

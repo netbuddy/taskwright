@@ -40,7 +40,6 @@ import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
 import { DiagramsPane } from "./DiagramsPane";
 import { OverallPane } from "./overall/OverallPane";
-import type { StageStart } from "../../model/stage";
 import { SectionPage } from "./overall/SectionPage";
 import { FigureBlocks, type FigureHost } from "./overall/Figure";
 import type { HeadView } from "./overall/Contents";
@@ -57,7 +56,7 @@ export { BUSY_TEXT };
 
 export function ItemsPanel({
   task, initialCollection = null, initialDiagrams = false, initialDiagram = null, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
-  onAskAssistant, onAnswer, onSend, onStartStage, materialCount = 0, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, review = null, onReview, onPrefill,
+  onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, review = null, onReview, onPrefill,
   submitBar = false,
 }: {
   task: Task;
@@ -87,10 +86,6 @@ export function ItemsPanel({
   onAnswer?: (item: Item) => void;
   /** 条目详情里问题卡片上的「回答」：把一句话直接发到对话区。 */
   onSend?: (text: string) => void;
-  /** 总体分析还没有主题时的两个开头：先把任务移到那个阶段，再替用户发那句固定的话。 */
-  onStartStage?: (start: StageStart) => void;
-  /** 任务现在有几份材料（不算由别的材料生成的）。 */
-  materialCount?: number;
   /** 在「修订」页签里选中的那次修订与它碰到的条目。 */
   hit?: { revision: number; items: string[] } | null;
   onClearHit?: () => void;
@@ -361,7 +356,6 @@ export function ItemsPanel({
             submit={submit} onLocate={onLocate} onOpenItem={(id) => openItem(id)} onDirty={onDiagramDirty} />
         ) : onOverall ? (
           <OverallPane task={task} host={figureHost!} headRequest={headRequest} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
-            onStart={onStartStage} materialCount={materialCount}
             page={selectedItem && !rawTopic ? (
               <SectionPage key={selectedItem.item_id} task={task} item={selectedItem} def={def!} contents={contents!} readOnly={readOnly} writesOff={writesOff} submit={submit}
                 onSend={onSend} onAnswer={onAnswer} onPrefill={onPrefill} onDirty={(d) => { setDirty(d); onDirty?.(d); }}

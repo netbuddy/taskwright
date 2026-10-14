@@ -2,10 +2,21 @@
 
 /* 原型的全局清零，只在工作视图里生效（原型是整页清零，这里收窄到 .app 之内）。 */
 .wv-page { width: 100%; height: 100vh; padding: .5rem 1.2%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.app, .app * { margin: 0; padding: 0; }
-.app button { font-family: inherit; color: inherit; }
-.app a { color: inherit; text-decoration: none; }
+.app, .app :where(:not(.unreset, .unreset *)) { margin: 0; padding: 0; }
+.app button:where(:not(.unreset *)) { font-family: inherit; color: inherit; }
+.app a:where(:not(.unreset *)) { color: inherit; text-decoration: none; }
+/* 任务一级的整页（任务起点页，components/TaskFrame.tsx）借用这里的顶栏与导航条；它中间的一栏带 .unreset，上面三条清零不管它：
+ * 里面的卡片、表格与 Ant Design 的控件照任务页自己的样式（styles/task-page.css）。:where 不加权重，工作视图里各条规则谁压过谁与原来一样。 */
+.app .task-main { flex: 1; min-width: 0; overflow: auto; background: var(--stage); border-radius: 0 0 .9rem 0; }
+/* 实心的小标签（例如「推荐」）：全站的 .chip.dark 在工作视图里被 .app .chip 盖住，这里补回来 */
+.app .chip.dark { color: var(--on-ink); background: var(--ink); border-color: var(--ink); font-weight: 600; }
 .app .topbar a.tname:hover { text-decoration: underline; }
+/* 顶栏上可以点的「当前活动：某项活动 ▾」：靛蓝是交给助手去做的事的颜色；悬停时与别的可点元素一样只变边线 */
+.app .chip.ai { color: var(--ai); border-color: var(--ai-line); background: var(--ai-bg); }
+/* 顶栏上点了打开切换工作面板的两种小标签：「当前活动：某项活动 ▾」与「自由讨论 · 不绑定活动」 */
+.app .topbar .chip[role="button"] { cursor: pointer; }
+.app .topbar .chip.ai[role="button"]:hover { border-color: var(--ai); }
+.app .topbar .chip:not(.ai)[role="button"]:hover { border-color: var(--text3); }
 
 /* 暂时不能用的外观：写入按钮、发送按钮、卡片按钮同一档浅灰实心；
  * 实心黑的主按钮若只调半透明看不出禁用，所以不用 opacity。取自原型 v5 模板的 .sw- 一节。 */
@@ -409,3 +420,8 @@
 /* 图表组件里的按钮是 antd 的：工作视图的全局清零把它们的内边距清掉了，这里补回来。 */
 .app .diagram-view .ant-btn { padding: 0 .75rem; }
 .app .diagram-view .ant-btn.ant-btn-sm { padding: 0 .5rem; }
+/* 会话菜单：归档的会话变淡；底部「显示已归档的会话」开关 */
+.app .smenu .srow.archived .sn { color: var(--mut); font-weight: 400; }
+.app .smenu .sarch { display: flex; align-items: flex-start; gap: .4rem; border-top: 1px dotted var(--line2); margin-top: .25rem; padding: .4rem .5rem .2rem; font-size: 0.881rem; color: var(--mut); cursor: pointer; }
+.app .smenu .sarch input { margin-top: .2rem; }
+.app .smenu .sarch small { display: block; font-size: 0.82rem; }

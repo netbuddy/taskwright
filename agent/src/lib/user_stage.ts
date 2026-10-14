@@ -10,8 +10,8 @@
  * 用户之后从输入框上方的「待决定」一行点。
  *
  * 请求的 fields 写 { reply_message_id, option_key }：卡片所在那条回复的编号与点的那个选项的键。
- * 先在这条会话的当前分支上找那条回复，核对它是提议的卡片、点的键是它上面这四种之一；分支上找不到时（卡片是在另一条会话里发的）
- * 改为核对任务库里开着的提议。任务不在进行中、认不出卡片、点的不是这几种选项，都拒绝。
+ * 先在这条会话的当前分支上找那条回复，核对它是提议的卡片、点的键是它上面这四种之一；分支上找不到时（卡片是在同一个工作项的另一条会话里发的）
+ * 改为核对这条会话的工作项开着的提议。任务不在进行中、认不出卡片、点的不是这几种选项，都拒绝。
  */
 
 import { type Entry, chooseActOf } from "./completion_consent.ts";
@@ -53,7 +53,7 @@ export interface ContinueStageResult {
   stage: string;
 }
 
-export function continueStage(ctx: { workspaceDir: string }, branch: readonly Entry[], request: UserOpRequest): ContinueStageResult {
+export function continueStage(ctx: { workspaceDir: string; sessionId: string }, branch: readonly Entry[], request: UserOpRequest): ContinueStageResult {
   const opId = typeof request.op_id === "string" && request.op_id ? request.op_id : "";
   if (!opId) throw new UserOpError("bad_request", "界面操作要带 op_id。");
   const fields = (request.fields ?? {}) as { reply_message_id?: unknown; option_key?: unknown };
@@ -82,8 +82,8 @@ export function continueStage(ctx: { workspaceDir: string }, branch: readonly En
       }
       if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，卡片不能再点。`, { status: task.status });
       if (fact === null) {
-        // 这条会话里没有那条回复：卡片是在另一条会话里发的，照任务库里开着的提议核对。
-        const open = openProposal(db, task.task_id);
+        // 这条会话里没有那条回复：卡片是在同一个工作项的另一条会话里发的，照这条会话的工作项开着的提议核对。
+        const open = openProposal(db, task.task_id, ctx.sessionId);
         if (open === null || open.reply_entry !== replyEntry || !accepts(open)) throw unknown();
         fact = open;
       }

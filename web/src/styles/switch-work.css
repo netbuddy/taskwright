@@ -1,0 +1,25 @@
+/* 切换工作面板与启动确认框（工作视图里的对话框，components/work/SwitchWorkPanel.tsx）。六格与卡片沿用任务起点页的样式（task-page.css），
+   这里只放面板自己的几块：小标题、本会话的工作项那一张、辅助操作一行、确认框的几行与文本框。类名以 sw- 开头。 */
+.sw-panel { display: flex; flex-direction: column; gap: 0.857rem; }
+.sw-sub { font-size: 0.893rem; color: var(--text2); }
+.sw-group .gt { font-size: 0.857rem; color: var(--mut); margin-bottom: 0.429rem; }
+.sw-group .gt b { color: var(--ink); font-weight: 600; font-size: 0.929rem; margin-right: 0.571rem; }
+.sw-now { display: flex; gap: 0.857rem; align-items: flex-start; border: 1px solid var(--ai-line); border-radius: 0.714rem; padding: 0.714rem 0.857rem; background: var(--card); }
+.sw-now-l { flex: 1; min-width: 0; }
+.sw-now-l .t { font-weight: 600; display: flex; gap: 0.571rem; align-items: baseline; flex-wrap: wrap; }
+.sw-now-l .t small { font-weight: 400; color: var(--text3); font-size: 0.857rem; }
+.sw-now-l .d { font-size: 0.893rem; color: var(--text2); margin-top: 0.214rem; }
+.sw-now-r { display: flex; gap: 0.429rem; flex-wrap: wrap; justify-content: flex-end; }
+.sw-basics { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.sw-pick.go { cursor: pointer; }
+.sw-confirm h4 { font-size: 0.929rem; font-weight: 600; margin: 0.857rem 0 0.429rem; }
+.sw-eff { margin: 0; display: flex; flex-direction: column; gap: 0.357rem; }
+.sw-eff > div { display: grid; grid-template-columns: 6.4rem minmax(0, 1fr); gap: 0.571rem; font-size: 0.893rem; }
+.sw-eff dt { color: var(--mut); }
+.sw-eff dd { margin: 0; color: var(--text2); }
+.sw-scope { width: 100%; min-height: 4rem; border: 1px solid var(--line2); border-radius: 0.5rem; padding: 0.429rem 0.571rem; font: inherit; resize: vertical; }
+.sw-fa { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.857rem; }
+@media (max-width: 1000px) {
+  .sw-now { flex-direction: column; }
+  .sw-now-r { justify-content: flex-start; }
+}

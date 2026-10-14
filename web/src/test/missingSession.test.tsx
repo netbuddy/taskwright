@@ -31,12 +31,12 @@ function page(loadError: string, loadErrorCode: string) {
 }
 
 describe("找不到会话的页面", () => {
-  it("任务在、会话列表里没有这条：两行说明、回到任务页的链接、顶栏上的任务名；不带会话编号", async () => {
+  it("任务在、会话列表里没有这条：两行说明、回到任务起点的链接、顶栏上的任务名；不带会话编号", async () => {
     vi.spyOn(api, "getTask").mockResolvedValue(detail(["S-1", "S-2"]));
     page("这个任务里没有会话 S-GONE。", "not_found");
     const box = await screen.findByTestId("missing-session");
     expect(box).toHaveTextContent("找不到这条会话。还没有说过话的会话，在你打开别的会话之后不会保留。");
-    expect(screen.getByTestId("missing-session-back")).toHaveTextContent("回到任务页");
+    expect(screen.getByTestId("missing-session-back")).toHaveTextContent("回到任务起点");
     expect(screen.getByTestId("missing-session-back")).toHaveAttribute("href", expect.stringContaining("TASK-001"));
     expect(box.querySelector(".topbar")).toHaveTextContent("图书馆借还");
     expect(box).not.toHaveTextContent("S-GONE");

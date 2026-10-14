@@ -1,32 +1,37 @@
-// 任务页：一个任务的总览与入口。自上而下六块：面包屑、任务头、完成条件横条、交付物（每个集合一张卡）、会话清单、
-// 材料与选用的知识库两张并排的卡。各块的组件在 components/task/，样式在 styles/task-page.css。
-// 数据是一次普通读取（GET …/tasks/{task_id}，里面带材料与会话）。另开一条不带会话的事件连接，只听执行者状态：
-// 助手做完一轮时重读一次，会话清单与「最近一次活动」不停在打开页面的那一刻（与工作视图的会话菜单同一个做法）。
-// 页面上像结论的句子都由数据算出；集合名、完成条件名从接口取。任务已完成或已放弃时整页只读：「新建会话」、上传区、
-// 材料的「删除」与知识库的改选用都不显示，只读说明写明原因。服务没有知识库时不显示知识库卡，材料卡独占一行。
+// 任务起点页：任务一级的家，也是活动的目录。自上而下：面包屑、任务头（任务类型与时刻一行、任务名与一句状态、一段定位的话）、
+// 「三步开始」指引与三种常见起点（只在六类需求资产都空着、又没有工作项时显示）、待处理事项（有需求资产时显示，model/pendingWork.ts）、工作项（有工作项时显示）、需求资产现状六格、
+// 工作流程两张卡、单项活动七张卡与「自由讨论」一行、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
+// 外框是工作视图的顶栏加导航条（components/TaskFrame.tsx）；各块的组件在 components/task/，样式在 styles/task-page.css。
+// 数据是两次普通读取：任务详情（GET …/tasks/{task_id}，带材料与会话）与任务状况（GET …/status，带资产现状、活动目录与这一页的几段话）。
+// 另开一条不带会话的事件连接，只听执行者状态：助手做完一轮时两样都重读一次。
+// 工作流程卡、活动卡、三种常见起点与主按钮都只是进活动输入页（pages/StartInputPage.tsx），启动在那里提交。
+// 「自由讨论」不经输入页：新建一条会话直接进工作台。工作项卡上：「打开最新会话」进它最近有动静的那条会话；「换一条干净的会话接着」
+// 让后端新建一条属于它的会话再进去（不替用户发话：没说过话就离开的会话不保留，任务状况里也不计入）；「删除这个工作项」先弹确认，
+// 写明会归档几条会话，删了之后重读。
+// 任务已完成或已放弃时整页只读：没有活动目录，上传区、材料的「删除」与知识库的改选用都不显示，只读说明写明原因。
+// 没有阶段的任务（早先建的）没有资产现状与活动目录，这一页只有任务头、「自由讨论」、会话与材料。
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Modal, Spin } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { Alert, App as AntApp, Spin } from "antd";
 import { api, ApiError } from "../api/client";
 import { openEventStream } from "../api/events";
-import type { KnowledgeLibrary, Material, RevisionLogEntry, TaskDetail } from "../api/types";
-import { Shell } from "../components/Shell";
+import type { KnowledgeLibrary, TaskDetail, TaskStatusView, WorkItemView } from "../api/types";
+import { TaskFrame } from "../components/TaskFrame";
 import { useToast } from "../components/Toasts";
-import { DocumentModal } from "../components/DocumentModal";
 import { saveBlob } from "../model/download";
 import { formatTime, formatTimeShort } from "../model/format";
 import { ownMaterials } from "../model/docx";
-import { DocxPaper } from "../components/work/DocxPaper";
-import { PdfPaper } from "../components/work/PdfPaper";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
 import { GENERAL } from "../model/knowledge";
+import { allAssetsEmpty, deleteConfirmText, stateLine } from "../model/startPage";
 import { TaskKnowledgeCard } from "../components/TaskKnowledgeCard";
-import { CompletionBar } from "../components/task/CompletionBar";
-import { CollectionCards } from "../components/task/CollectionCards";
-import { SessionList, byRecentActivity } from "../components/task/SessionList";
+import { SessionList } from "../components/task/SessionList";
 import { MaterialsCard } from "../components/task/MaterialsCard";
+import { useMaterialViewer } from "../components/task/MaterialViewer";
+import { ActivityCards, AssetCells, FlowCards, FreeTalk, StartGuide, WorkItemCards } from "../components/task/StartBlocks";
+import { PendingWorkSection } from "../components/task/PendingWork";
+import { showsPendingWork } from "../model/pendingWork";
 import "../styles/task-page.css";
 
 /**
@@ -40,16 +45,16 @@ export function taskTypeVersionNote(versions: { copied: number | null; current: 
 
 export function TaskPage({ taskId }: { taskId: string }) {
   const [task, setTask] = useState<TaskDetail | null>(null);
+  // 任务状况：资产现状、活动目录与这一页的几段话。读不到（没有阶段的任务、早先的后端）时是 null，页面只画任务详情里有的。
+  const [status, setStatus] = useState<TaskStatusView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [docOpen, setDocOpen] = useState(false);
-  // 生成文档要选修订，修订列表来自修订日志；打开对话框时读一次。
-  const [log, setLog] = useState<RevisionLogEntry[]>([]);
-  useEffect(() => { if (docOpen) api.revisionLog(taskId).then((r) => setLog(r.revisions)).catch(() => setLog([])); }, [docOpen, taskId]);
-  const [material, setMaterial] = useState<{ path: string; text: string } | null>(null);
-  // Word 材料的「查看」按原版式显示（与工作视图材料区同一个渲染），不显示给助手读的投影。
-  const [wordPath, setWordPath] = useState<string | null>(null);
-  const [pdfPath, setPdfPath] = useState<string | null>(null);
+  const { view, viewer } = useMaterialViewer(taskId);
+  // 「自由讨论」新建会话的请求还没有回来：按钮点不动，免得建出两条会话。
+  const [entering, setEntering] = useState(false);
   const toast = useToast();
+  const { modal } = AntApp.useApp();
+  // 工作项卡上某个按钮的请求还没有回来（新建会话、删除）：卡上的按钮都点不动。
+  const [itemBusy, setItemBusy] = useState(false);
   const service = useService();
   const hasKnowledge = !!service.info?.capabilities.knowledge;
   // 全部知识库：「选用别的知识库」的勾选框列表要用。
@@ -57,10 +62,12 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const loadKnowledge = () => { if (hasKnowledge) api.knowledge().then(setLibraries).catch(() => setLibraries([])); };
   useEffect(loadKnowledge, [hasKnowledge]);
 
-  const load = () =>
-    api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
+  const load = () => {
+    void api.taskStatus(taskId).then((r) => setStatus(r.status)).catch(() => setStatus(null));
+    return api.getTask(taskId).then(setTask).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
+  };
   useEffect(() => { void load(); }, [taskId]);
-  // 执行者状态从工作中变为别的状态（助手做完一轮）时重读任务；刚连上、还不知道之前的状态时收到的第一条非工作中状态也算。
+  // 执行者状态从工作中变为别的状态（助手做完一轮）时重读；刚连上、还不知道之前的状态时收到的第一条非工作中状态也算。
   // 连接不带会话，服务把整个任务的事件都发过来，这里只看 executor_state；不带 Last-Event-ID，不补发旧事件。
   // 断线照 openEventStream 的办法重连，重新连上时重读一次（断开期间可能错过一轮的结束）。
   // 任务已经结束时不开；离开页面时断开。不定时轮询。
@@ -84,13 +91,18 @@ export function TaskPage({ taskId }: { taskId: string }) {
     });
   }, [taskId, running]);
 
-  if (error) return <Shell currentTaskId={taskId}><Alert type="error" showIcon message={error} /></Shell>;
-  if (!task) return <Shell currentTaskId={taskId}><Spin /></Shell>;
+  if (error) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Alert type="error" showIcon message={error} /></div></TaskFrame>;
+  if (!task) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Spin /></div></TaskFrame>;
 
   const closed = task.status !== "进行中";
   const selected = task.knowledge_libraries ?? [GENERAL];
-  const sessions = byRecentActivity(task.sessions);
   const lastActive = task.sessions.map((s) => s.last_active_at).filter(Boolean).sort().pop();
+  const versionNote = taskTypeVersionNote(task.task_type_versions);
+  const catalog = status?.catalog ?? null;
+  const workItems = status?.work_items ?? [];
+  // 「三步开始」只给还没有开始的任务：六类资产都空着，而且一个工作项都没有（刚启动了一个、还没有记下内容时不再指引怎样开始）。
+  const empty = allAssetsEmpty(status?.assets) && workItems.length === 0;
+  const recommended = catalog?.flows.find((one) => one.recommended) ?? null;
 
   const changeKnowledge = async (ids: string[]) => {
     try {
@@ -115,51 +127,138 @@ export function TaskPage({ taskId }: { taskId: string }) {
     }
   };
 
-  const newSession = async () => {
+  /** 「打开最新会话」：进这个工作项最近有动静的那条会话；它一条还在的会话都没有时，新建一条属于它的会话再进去。 */
+  const openWorkItem = (item: WorkItemView) => {
+    if (item.latest_session) go(href.work(taskId, item.latest_session.session_id));
+    else void continueWorkItem(item);
+  };
+
+  /** 「换一条干净的会话接着」：后端新建一条属于这个工作项的会话，进去。不替用户发第一句话。 */
+  const continueWorkItem = async (item: WorkItemView) => {
+    if (itemBusy) return;
+    setItemBusy(true);
     try {
-      const { session_id } = await api.createSession(taskId);
-      toast.success("已新建会话。");
+      const { session_id } = await api.continueWorkItem(taskId, item.record_id);
       go(href.work(taskId, session_id));
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "新建会话没有成功。");
+    } finally {
+      setItemBusy(false);
     }
   };
 
-  // 查看一份材料：Word 与 PDF 按原样分页显示，别的显示文字。
-  const view = (m: Material) => (/\.docx$/i.test(m.path) ? setWordPath(m.path) : /\.pdf$/i.test(m.path) ? setPdfPath(m.path)
-    : void api.materialContent(taskId, m.path).then(setMaterial));
+  /** 「删除这个工作项」：先确认，写明会归档几条会话；删了之后提示归档了几条，重读这一页。 */
+  const deleteWorkItem = (item: WorkItemView) => {
+    if (itemBusy) return;
+    modal.confirm({
+      title: `删除工作项「${item.name}」？`,
+      content: deleteConfirmText(item),
+      okText: "删除", cancelText: "取消", okButtonProps: { danger: true },
+      onOk: async () => {
+        setItemBusy(true);
+        try {
+          const done = await api.deleteWorkItem(taskId, item.record_id);
+          toast.success(`已删除工作项「${item.name}」${done.archived_sessions > 0 ? `，归档了 ${done.archived_sessions} 条会话` : ""}。`);
+          void load();
+        } catch (e) {
+          toast.error(e instanceof ApiError ? e.message : "删除没有成功。");
+        } finally {
+          setItemBusy(false);
+        }
+      },
+    });
+  };
+
+  /** 流程卡上的「打开它的会话」：那个流程工作项在工作项清单里，照「打开最新会话」办。 */
+  const openFlowItem = (recordId: number) => {
+    const item = workItems.find((one) => one.record_id === recordId);
+    if (item) openWorkItem(item);
+  };
+
+  /** 「自由讨论」：新建一条会话，直接进工作台。 */
+  const enterWorkbench = async () => {
+    if (entering) return;
+    setEntering(true);
+    try {
+      const { session_id } = await api.createSession(taskId);
+      go(href.work(taskId, session_id));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "新建会话没有成功。");
+    } finally {
+      setEntering(false);
+    }
+  };
 
   return (
-    <Shell currentTaskId={taskId}>
+    <TaskFrame taskId={taskId} taskName={task.task_name} where="任务起点" sessions={task.sessions}>
       <div className="tp-page" data-testid="task-page">
         <div className="tp-crumb"><a href={href.tasks()}>任务</a><span className="sep">›</span>{task.task_name}</div>
 
         <header className="tp-head">
           <div className="tp-head-l">
+            <div className="tp-head-meta" data-testid="task-meta">
+              任务类型：{task.task_type}{task.domain_tag ? ` · ${task.domain_tag}` : ""} · 创建于 {formatTime(task.started_at)}{lastActive ? `，最近一次活动在 ${formatTimeShort(lastActive)}` : ""}。
+              {versionNote && <span data-testid="task-type-version">{versionNote}</span>}
+            </div>
             <div className="tp-head-title">
               <h1>{task.task_name}</h1>
-              <span className={`tp-status${closed ? "" : " on"}`} data-testid="task-status">{task.status}</span>
-              <span className="tp-ttype">{task.task_type}</span>
-              {task.domain_tag && <span className="tp-ttype">{task.domain_tag}</span>}
+              {closed ? <span className="tp-status" data-testid="task-status">{task.status}</span>
+                : stateLine(status) && <span className="tp-state" data-testid="task-state">{stateLine(status)}</span>}
             </div>
-            <div className="tp-head-meta" data-testid="task-meta">
-              创建于 {formatTime(task.started_at)}{lastActive ? `，最近一次活动在 ${formatTimeShort(lastActive)}` : ""}。
-              {taskTypeVersionNote(task.task_type_versions) && <span data-testid="task-type-version">{taskTypeVersionNote(task.task_type_versions)}</span>}
+            {status?.start_page && <p className="tp-lead" data-testid="task-lead">{status.start_page.lead}</p>}
+          </div>
+          {service.info?.debug && (
+            <div className="tp-head-r">
+              <button className="btn sm" onClick={() => void exportPersona()} title="把这个任务里你说过的话整理成模拟器用户画像的草稿，存成一份文件。只在调试模式下有。"
+                data-testid="export-persona">导出为用户画像</button>
             </div>
-          </div>
-          <div className="tp-head-r">
-            {service.info?.debug && (
-              <Button onClick={() => void exportPersona()} title="把这个任务里你说过的话整理成模拟器用户画像的草稿，存成一份文件。只在调试模式下有。"
-                data-testid="export-persona">导出为用户画像</Button>
-            )}
-            <Button onClick={() => setDocOpen(true)}>生成文档</Button>
-            {!closed && <Button type="primary" icon={<PlusOutlined />} onClick={newSession}>新建会话</Button>}
-          </div>
+          )}
         </header>
-        {closed && <Alert type="info" showIcon style={{ marginTop: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能新建会话、上传材料或修改条目，生成文档照常可用。`} />}
+        {closed && <Alert type="info" showIcon style={{ marginTop: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能启动工作项、新建会话、上传材料或修改条目。`} />}
 
-        <CompletionBar task={task} />
-        <CollectionCards task={task} sessionId={sessions.find((s) => s.last_active_at)?.session_id ?? sessions[0]?.session_id ?? null} />
+        {empty && !closed && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} />}
+
+        {showsPendingWork(task, status) && (
+          <section className="tp-sec">
+            <div className="tp-sec-h"><h2>待处理事项</h2><span className="tp-sec-note">由需求资产上的记号汇总；每一项可直接启动对应的活动，或打开做它的会话</span></div>
+            <PendingWorkSection task={task} status={status} closed={closed} />
+          </section>
+        )}
+
+        {workItems.length > 0 && (
+          <section className="tp-sec">
+            <div className="tp-sec-h"><h2>工作项</h2><span className="tp-sec-note">每个工作项有自己的会话；打开会话接着做，或换一条干净的会话接着；按最近有动静的先后排列，不要的直接删除</span></div>
+            <WorkItemCards items={workItems} closed={closed} busy={itemBusy} onOpen={openWorkItem} onContinue={(item) => void continueWorkItem(item)} onDelete={deleteWorkItem} />
+          </section>
+        )}
+
+        {status?.assets && (
+          <section className="tp-sec">
+            <div className="tp-sec-h"><h2>需求资产现状</h2><span className="tp-sec-note">六类资产构成本项目的需求基础；每类下方写明由哪些活动产出</span></div>
+            <AssetCells assets={status.assets} />
+          </section>
+        )}
+
+        {catalog && (
+          <>
+            <section className="tp-sec">
+              <div className="tp-sec-h"><h2>工作流程</h2><span className="tp-sec-note">按推荐次序串联多项活动；每站完成后助手提议下一站，由你确认后进入。每次启动新建一个工作项和一条会话</span></div>
+              <FlowCards taskId={taskId} flows={catalog.flows} onOpenWorkItem={closed ? undefined : openFlowItem} />
+            </section>
+            <section className="tp-sec">
+              <div className="tp-sec-h"><h2>单项活动</h2><span className="tp-sec-note">独立启动其中一项；可否启动取决于其输入资产是否具备；完成后仅汇报结果，不提议下一站。同一项活动可以有多个工作项，靠范围说明区分</span></div>
+              <ActivityCards taskId={taskId} activities={catalog.activities} />
+              <FreeTalk canEnter={!closed} busy={entering} onEnter={() => void enterWorkbench()} />
+            </section>
+          </>
+        )}
+        {!catalog && !closed && (
+          <section className="tp-sec">
+            <div className="tp-sec-h"><h2>进入工作台</h2></div>
+            <FreeTalk canEnter busy={entering} onEnter={() => void enterWorkbench()} />
+          </section>
+        )}
+
         <SessionList taskId={taskId} sessions={task.sessions} />
 
         <div className={`tp-pair${hasKnowledge ? "" : " single"}`}>
@@ -168,24 +267,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
         </div>
       </div>
 
-      <DocumentModal task={task} log={log} open={docOpen} onClose={() => setDocOpen(false)} />
-      <Modal title={material?.path} open={!!material} onCancel={() => setMaterial(null)} footer={null} width="min(54.286rem, 94vw)">
-        <pre className="doc-text" style={{ maxHeight: "40rem", overflow: "auto" }}>{material?.text}</pre>
-      </Modal>
-      <Modal title={wordPath} open={!!wordPath} onCancel={() => setWordPath(null)} footer={null} width="min(64rem, 94vw)" destroyOnHidden>
-        {wordPath && (
-          <div className="app docx-view">
-            <div className="doc-b"><DocxPaper taskId={taskId} path={wordPath} items={[]} locate={null} /></div>
-          </div>
-        )}
-      </Modal>
-      <Modal title={pdfPath} open={!!pdfPath} onCancel={() => setPdfPath(null)} footer={null} width="min(64rem, 94vw)" destroyOnHidden>
-        {pdfPath && (
-          <div className="app docx-view">
-            <div className="doc-b pdf-modal-b"><PdfPaper taskId={taskId} path={pdfPath} items={[]} locate={null} /></div>
-          </div>
-        )}
-      </Modal>
-    </Shell>
+      {viewer}
+    </TaskFrame>
   );
 }

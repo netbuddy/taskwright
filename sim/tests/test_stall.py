@@ -59,22 +59,22 @@ class ProgressTest(unittest.TestCase):
     def test_开场替用户在开展一项活动里选哪一项_不引出助手运行的操作有哪些(self):
         from sim.run import OPENING_DEFAULT, SILENT_ACTIONS, expects_executor, opening_choice
         launch = {"current": None,
-                  "flows": [{"activity": "reading", "in_flow": True, "label": "启动首次分析", "enabled": True, "state": "从核读材料开始"}],
+                  "flows": [{"activity": "reading", "in_flow": True, "label": "启动需求分析", "enabled": True, "state": "从核读材料开始"}],
                   "activities": [{"activity": "clarifying", "in_flow": False, "label": "澄清", "enabled": True, "state": "可以开展"},
                                  {"activity": "writing", "in_flow": False, "label": "写条目", "enabled": False, "state": "业务说明还没有页"}],
                   "later": []}
-        self.assertEqual(OPENING_DEFAULT, "启动首次分析")
-        # 画像不写「开场」：启动首次分析；写单独开展哪一项就选哪一项；写不选就不选。
-        self.assertEqual(opening_choice(launch, ""), (launch["flows"][0], "选了「启动首次分析」"))
+        self.assertEqual(OPENING_DEFAULT, "启动需求分析")
+        # 画像不写「开场」：启动需求分析；写单独开展哪一项就选哪一项；写不选就不选。
+        self.assertEqual(opening_choice(launch, ""), (launch["flows"][0], "选了「启动需求分析」"))
         self.assertEqual(opening_choice(launch, "单独开展：澄清"), (launch["activities"][0], "选了「澄清」"))
         self.assertEqual(opening_choice(launch, "不选"), (None, "画像写的是不选，任务从空闲开始"))
         # 找不到、现在不能选、任务状况里没有这一节：都不选，说明里写原因。
         self.assertEqual(opening_choice(launch, "单独开展：写条目"), (None, "「单独开展：写条目」现在不能选（业务说明还没有页），没有选"))
         self.assertEqual(opening_choice(launch, "需求变更"), (None, "「开展一项活动」里没有「需求变更」这一项，没有选"))
         self.assertEqual(opening_choice(None, ""), (None, "任务状况里没有「开展一项活动」这一节，没有选"))
-        # 流程走过一段之后那一项写「继续首次分析（从某阶段接着）」：写到「继续首次分析」就认。
-        resume = {**launch, "flows": [{"activity": "writing", "in_flow": True, "label": "继续首次分析（从写条目接着）", "enabled": True, "state": "可以开展"}]}
-        self.assertEqual(opening_choice(resume, "继续首次分析")[0], resume["flows"][0])
+        # 流程走过一段之后那一项写「继续需求分析（从某阶段接着）」：写到「继续需求分析」就认。
+        resume = {**launch, "flows": [{"activity": "writing", "in_flow": True, "label": "继续需求分析（从写条目接着）", "enabled": True, "state": "可以开展"}]}
+        self.assertEqual(opening_choice(resume, "继续需求分析")[0], resume["flows"][0])
         # 在「开展一项活动」里选一项、选「继续本阶段」都不引出助手的运行；不选什么都不发，也不等助手。
         self.assertEqual(SILENT_ACTIONS, ("continue_stage", "start_activity"))
         self.assertFalse(expects_executor({"route": "action", "sent": {"kind": "start_activity"}}))

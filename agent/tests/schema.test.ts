@@ -16,7 +16,8 @@ const version = (dir: string) => query<{ user_version: number }>(dir, "PRAGMA us
 const journal = (dir: string) => query<{ journal_mode: string }>(dir, "PRAGMA journal_mode")[0].journal_mode;
 
 function tables(dir: string): string[] {
-  return query<{ name: string }>(dir, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").map((r) => r.name);
+  // SQLite 自己的表（记录号自增计数用的 sqlite_sequence）不算任务库的表。
+  return query<{ name: string }>(dir, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite%' ORDER BY name").map((r) => r.name);
 }
 
 test("库文件不存在时建齐十七张表", () => {
@@ -279,7 +280,25 @@ CREATE TABLE stage_record (
 const INSERT_STAGE_RECORD =
   "INSERT INTO stage_record (task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at) VALUES ('T', 's', NULL, ?, 'user', ?, ?, '用户点的', ?, ?)";
 const INSERT_ACTIVITY_RECORD =
-  "INSERT INTO activity_record (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) VALUES ('T', 's', NULL, ?, ?, ?, ?, 'initial', '用户点的', '2026-10-11T10:00:00', 1)";
+  "INSERT INTO activity_record (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) VALUES ('T', 's', NULL, ?, ?, ?, ?, 'analysis', '用户点的', '2026-10-11T10:00:00', 1)";
+/** 格式版本 5 的活动记录表：一行是一项活动的一段，带结束的时刻与序号，还没有范围说明一列。 */
+const V5_ACTIVITY_RECORD_SQL = `
+CREATE TABLE activity_record (
+  record_id    INTEGER PRIMARY KEY,
+  task_id      TEXT NOT NULL,
+  session_id   TEXT NOT NULL,
+  run_id       TEXT,
+  call_id      TEXT NOT NULL,
+  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),
+  activity     TEXT NOT NULL,
+  node         TEXT,
+  flow         TEXT,
+  reason       TEXT NOT NULL,
+  started_at   TEXT NOT NULL,
+  ended_at     TEXT,
+  started_seq  INTEGER NOT NULL,
+  ended_seq    INTEGER
+);`;
 const tableSql = (dir: string, name: string) => query<{ sql: string }>(dir, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", name)[0]?.sql ?? null;
 
 test("格式版本：新建的库里活动记录表不检查活动的取值，六个阶段之外的写法库也收；谁开始的那一列照旧检查；早先的阶段记录表不在", () => {
@@ -293,7 +312,7 @@ test("格式版本：新建的库里活动记录表不检查活动的取值，�
   assert.equal(tableSql(dir, "stage_record"), null);
 });
 
-test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现在的版本时这几行改写成活动记录，编号照抄，阶段记录表不留；再升一次什么都不改", () => {
+test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现在的版本时这几行先改写成活动记录（编号照抄）、再并成一个流程的工作项，阶段记录表不留；再升一次什么都不改", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, (db) => {
     db.exec(`DROP TABLE activity_record; ${OLD_STAGE_RECORD_SQL}`);
@@ -309,15 +328,37 @@ test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现�
   assert.throws(() => raw.prepare(INSERT_STAGE_RECORD).run("op-4", "document", "reviewing", 14, "2026-10-11T13:00:00"), /CHECK constraint failed/);
   raw.close();
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 3, to: TASK_DB_VERSION });
-  assert.equal(TASK_DB_VERSION, 5);
-  assert.equal(version(dir), 5);
-  assert.deepEqual(query(dir, "SELECT record_id, call_id, activity, node, flow, started_at, ended_at, started_seq, ended_seq FROM activity_record ORDER BY record_id").map((row) => ({ ...row })), [
-    { record_id: 2, call_id: "op-2", activity: "modeling", node: "modeling", flow: "initial", started_at: "2026-10-11T11:00:00", ended_at: "2026-10-11T12:00:00", started_seq: 12, ended_seq: 13 },
-    { record_id: 3, call_id: "op-3", activity: "writing", node: "writing", flow: "initial", started_at: "2026-10-11T12:00:00", ended_at: null, started_seq: 13, ended_seq: null },
+  assert.equal(TASK_DB_VERSION, 7);
+  assert.equal(version(dir), 7);
+  // 两行都在需求分析里：并成一行，留最早那一行的编号与启动的时刻，现在的活动与所在的一站取最晚那一行的；流程的键改写成 analysis，结束的两列随重建去掉。
+  assert.deepEqual(query(dir, "SELECT * FROM activity_record ORDER BY record_id").map((row) => ({ ...row })), [
+    { record_id: 2, task_id: "T", session_id: "s", run_id: null, call_id: "op-2", actor: "user", activity: "writing", node: "writing", flow: "analysis",
+      reason: "用户点的", started_at: "2026-10-11T11:00:00", started_seq: 12, scope: null },
   ]);
+  assert.match(tableSql(dir, "activity_record")!, /AUTOINCREMENT/);
   assert.deepEqual(tables(dir), [...TABLE_NAMES].sort(), "阶段记录表与重建时用的那张表都没有留下");
   withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(INSERT_ACTIVITY_RECORD).run("op-4", "user", "document", "document"));
-  assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM activity_record ORDER BY record_id").map((row) => row.record_id), [2, 3, 4]);
+  assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM activity_record ORDER BY record_id").map((row) => row.record_id), [2, 3]);
+  const sql = tableSql(dir, "activity_record");
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.equal(tableSql(dir, "activity_record"), sql);
+});
+
+test("格式版本 5 的库：活动记录表没有范围说明一列、带结束的两列；升到现在的版本时补上范围说明（为空）、去掉结束的两列，别的照抄；再升一次什么都不改", () => {
+  const dir = makeWorkspace();
+  withTaskDatabase(dir, { createIfMissing: true }, (db) => {
+    db.exec(`DROP TABLE activity_record; ${V5_ACTIVITY_RECORD_SQL}`);
+    db.exec("INSERT INTO activity_record (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, ended_at, started_seq, ended_seq) " +
+      "VALUES ('T', 's', NULL, 'op-1', 'user', 'clarifying', NULL, NULL, '用户点的', '2026-10-11T10:00:00', '2026-10-11T10:30:00', 1, 2)");
+    db.exec("PRAGMA user_version = 5");
+  });
+  assert.doesNotMatch(tableSql(dir, "activity_record")!, /scope/);
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 5, to: TASK_DB_VERSION });
+  assert.equal(version(dir), TASK_DB_VERSION);
+  assert.deepEqual(query(dir, "SELECT * FROM activity_record").map((row) => ({ ...row })), [
+    { record_id: 1, task_id: "T", session_id: "s", run_id: null, call_id: "op-1", actor: "user", activity: "clarifying", node: null, flow: null,
+      reason: "用户点的", started_at: "2026-10-11T10:00:00", started_seq: 1, scope: null },
+  ]);
   const sql = tableSql(dir, "activity_record");
   assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
   assert.equal(tableSql(dir, "activity_record"), sql);

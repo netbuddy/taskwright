@@ -9,7 +9,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { prepareReviews } from "../src/lib/review.ts";
 import { STAGES, STAGE_NAMES } from "../src/lib/stage.ts";
 import { rejectionOf } from "../src/lib/tool_rejection.ts";
-import { DEFINITION_PATH, callIn, demoDefinition, enterStage, makeWorkspace, overallDefinition } from "./helpers.ts";
+import { DEFINITION_PATH, callIn, demoDefinition, enterStage, makeWorkspace, overallDefinition, CALL_SESSION } from "./helpers.ts";
 
 function workspace(definition: unknown = overallDefinition()): string {
   const dir = makeWorkspace(definition);
@@ -22,7 +22,8 @@ function workspace(definition: unknown = overallDefinition()): string {
  */
 function refusal(dir: string, by?: "executor" | "user"): { fact: string; guidance: string; message: string } | null {
   try {
-    prepareReviews(dir, null, by);
+    // 助手的调用带着它所在的会话：阶段看的是这条会话的工作项（enterStage 把测试里的两条会话都挂在同一个工作项上）。
+    prepareReviews(dir, null, by, CALL_SESSION);
   } catch (error) {
     const layers = rejectionOf(error)!;
     if (layers.fact.startsWith("任务现在在")) return { fact: layers.fact, guidance: layers.guidance, message: (error as Error).message };

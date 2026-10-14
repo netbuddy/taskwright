@@ -4,6 +4,7 @@ import zhCN from "antd/locale/zh_CN";
 import { useRoute } from "./router";
 import { TaskListPage } from "./pages/TaskListPage";
 import { TaskPage } from "./pages/TaskPage";
+import { StartInputPage } from "./pages/StartInputPage";
 import { WorkViewPage } from "./pages/WorkViewPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -73,6 +74,7 @@ export function App() {
           <ServiceProvider>
           {route.page === "tasks" && <TaskListPage />}
           {route.page === "task" && <TaskPage key={route.taskId} taskId={route.taskId} />}
+          {route.page === "start" && <StartInputPage key={`${route.taskId}/${route.key}`} taskId={route.taskId} startKey={route.key} startCase={route.startCase} pick={route.pick ?? []} />}
           {route.page === "knowledge" && <KnowledgePage libraryId={route.libraryId} />}
           {route.page === "work" && <WorkViewPage key={`${route.taskId}/${route.sessionId}`} taskId={route.taskId} sessionId={route.sessionId} collection={route.collection}
             diagrams={route.diagrams} diagram={route.diagram} />}
