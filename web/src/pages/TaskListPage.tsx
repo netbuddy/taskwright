@@ -1,4 +1,5 @@
-// 任务列表页：一次普通读取（GET /api/v1/tasks），不连事件流。任务没有状态：按最近活动排，最近的在前；每行写发布过几版。
+// 任务列表页：一次普通读取（GET /api/v1/tasks），不连事件流。任务没有状态：按最近活动排，最近的在前；每行写进展（流程到了哪一站、
+// 几个工作项、几条阻断问题），数据随列表一起来，不逐个任务去取任务状况。版本不在这里写，在起点页的「文档与版本」与工作台的版本一节。
 // 每行末尾除了「打开」还有一个菜单，里面是「删除任务」（确认框见 DeleteTaskModal）。
 // 打开一个任务时去哪里由 model/startPage.ts 的 taskEntryHref 定：业务说明已经有内容的进工作台，否则进任务起点页。
 
@@ -9,7 +10,7 @@ import { api, ApiError } from "../api/client";
 import type { TaskListEntry } from "../api/types";
 import { NewTaskModal, Shell, TASKS_CHANGED, sortByActivity } from "../components/Shell";
 import { DeleteTaskModal } from "../components/task/DeleteTaskModal";
-import { formatTime, formatTimeShort } from "../model/format";
+import { formatTime } from "../model/format";
 import { openTask } from "../model/startPage";
 import { go } from "../router";
 
@@ -18,10 +19,10 @@ const unsupported = (t: TaskListEntry) => t.supported === false;
 /** 数据格式与这个程序对不上的三种情形（后端给的字样）：上一版的数据还没有升级、升级没有做成、是更新的版本写的。原因在 note 里。 */
 const FORMAT_STATES = ["需要升级", "需要处理", "需要更新的程序"];
 const occupiedText = (t: TaskListEntry) => (t.occupied?.port ? `正被端口 ${t.occupied.port} 的服务占用` : "正被另一个服务占用");
-/** 版本一栏：「已发布 2 版 · 最近发布 10-14 01:35」或「未发布」。 */
-export function versionsText(t: Pick<TaskListEntry, "version_count" | "latest_published_at">): string {
-  if (!t.version_count) return "未发布";
-  return `已发布 ${t.version_count} 版${t.latest_published_at ? ` · 最近发布 ${formatTimeShort(t.latest_published_at)}` : ""}`;
+/** 进展一栏：「需求分析 · 第 4 站写条目 · 2 个工作项 · 2 条阻断」；没有流程工作项写「未启动流程」，没有阻断问题时不写那一段。 */
+export function progressText(t: Pick<TaskListEntry, "flow" | "work_item_count" | "blocking_count">): string {
+  const flow = t.flow ? `${t.flow.name} · 第 ${t.flow.ordinal} 站${t.flow.node_name}` : "未启动流程";
+  return [flow, `${t.work_item_count ?? 0} 个工作项`, t.blocking_count ? `${t.blocking_count} 条阻断` : ""].filter(Boolean).join(" · ");
 }
 
 export function TaskListPage() {
@@ -58,10 +59,10 @@ export function TaskListPage() {
         columns={[
           { title: "任务名", dataIndex: "task_name", render: (v: string, t) => (<><b>{v}</b>{t.domain_tag && <div className="muted small">{t.domain_tag}</div>}</>) },
           { title: "任务类型", dataIndex: "task_type" },
-          { title: "版本", render: (_: unknown, t) => (t.occupied ? <Tag data-testid="task-occupied">{occupiedText(t)}</Tag>
+          { title: "进展", render: (_: unknown, t) => (t.occupied ? <Tag data-testid="task-occupied">{occupiedText(t)}</Tag>
             : unsupported(t) && FORMAT_STATES.includes(t.unavailable ?? "") ? <Tag data-testid="task-format">{t.unavailable}</Tag>
             : unsupported(t) ? <Tag data-testid="task-unsupported">旧格式，不支持</Tag>
-            : <span data-testid={`task-versions-${t.task_id}`}>{versionsText(t)}</span>) },
+            : <span data-testid={`task-progress-${t.task_id}`}>{progressText(t)}</span>) },
           { title: "条目数", dataIndex: "item_count" },
           {
             title: "完成条件",

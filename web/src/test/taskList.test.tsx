@@ -1,12 +1,12 @@
-// 任务列表：任务没有状态，按最近活动排，版本一栏写「已发布 N 版 · 最近发布 时刻」或「未发布」；
-// 正被别的服务占用的任务照样列出，灰显、打不开，版本一栏写明被哪个端口的服务占用。
+// 任务列表：任务没有状态，按最近活动排，「进展」一栏写流程到了哪一站、几个工作项、几条阻断；
+// 正被别的服务占用的任务照样列出，灰显、打不开，进展一栏写明被哪个端口的服务占用。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { api, ApiError } from "../api/client";
 import type { TaskDetail, TaskListEntry } from "../api/types";
 import { TASKS_CHANGED } from "../components/Shell";
-import { TaskListPage, versionsText } from "../pages/TaskListPage";
+import { TaskListPage } from "../pages/TaskListPage";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -27,7 +27,7 @@ describe("任务列表", () => {
     expect(screen.queryAllByRole("button", { name: "打开" })).toHaveLength(0);
   });
 
-  it("数据格式与这个程序对不上的任务：版本一栏照后端给的字样写（需要升级、需要处理、需要更新的程序），原因写在完成条件一栏，打不开", async () => {
+  it("数据格式与这个程序对不上的任务：进展一栏照后端给的字样写（需要升级、需要处理、需要更新的程序），原因写在完成条件一栏，打不开", async () => {
     const row = (id: string, unavailable: string, note: string) => ({ ...base, task_id: id, task_name: id, unavailable, supported: false, note });
     vi.spyOn(api, "listTasks").mockResolvedValue([
       row("T1", "需要升级", "这个任务是上一版建的，数据还没有升级。重新启动程序后升级。"),
@@ -43,24 +43,27 @@ describe("任务列表", () => {
     expect(screen.queryAllByRole("button", { name: "打开" })).toHaveLength(0);
   });
 
-  it("打得开的任务没有状态：一栏写发布过几版；按最近活动排，最近的在前（时刻的写法带不同时区也按时刻比）", async () => {
-    const open = (id: string, at: string, count: number, published: string | null) => ({ ...base, task_id: id, task_name: `任务 ${id}`, unavailable: null, supported: true,
-      item_count: 3, completion_total: 2, completion_unmet: 0, session_count: 1, last_active_at: at, version_count: count, latest_published_at: published });
+  it("打得开的任务没有状态：「进展」一栏写流程到了哪一站、几个工作项、几条阻断（有才写），没有流程写「未启动流程」；不写版本；按最近活动排，最近的在前（时刻的写法带不同时区也按时刻比）", async () => {
+    const open = (id: string, at: string, flow: TaskListEntry["flow"], items: number, blocking: number) => ({ ...base, task_id: id, task_name: `任务 ${id}`, unavailable: null,
+      supported: true, item_count: 3, completion_total: 2, completion_unmet: 0, session_count: 1, last_active_at: at, flow, work_item_count: items, blocking_count: blocking,
+      version_count: 2, latest_published_at: "2026-10-14T01:35:00-07:00" });
     vi.spyOn(api, "listTasks").mockResolvedValue([
-      open("T1", "2026-10-14T01:00:00-07:00", 0, null),
-      open("T2", "2026-10-14T09:30:00Z", 2, "2026-10-14T01:35:00-07:00"),
-      open("T3", "2026-10-13T20:00:00-07:00", 1, "2026-10-13T19:00:00-07:00"),
+      open("T1", "2026-10-14T01:00:00-07:00", null, 0, 0),
+      open("T2", "2026-10-14T09:30:00Z", { name: "需求分析", node: "writing", node_name: "写条目", ordinal: 4 }, 2, 2),
+      open("T3", "2026-10-13T20:00:00-07:00", null, 1, 0),
     ]);
     render(<ConfigProvider><AntApp><TaskListPage /></AntApp></ConfigProvider>);
-    await screen.findByTestId("task-versions-T1");
+    await screen.findByTestId("task-progress-T1");
     const rows = screen.getAllByRole("row").slice(1).map((one) => within(one).getByText(/^任务 T/).textContent);
     expect(rows).toEqual(["任务 T2", "任务 T1", "任务 T3"]);
-    expect(screen.getByTestId("task-versions-T1")).toHaveTextContent(/^未发布$/);
-    expect(screen.getByTestId("task-versions-T2")).toHaveTextContent(/^已发布 2 版 · 最近发布 /);
-    expect(screen.getAllByRole("columnheader").map((one) => one.textContent)).not.toContain("状态");
+    expect(screen.getByTestId("task-progress-T2")).toHaveTextContent(/^需求分析 · 第 4 站写条目 · 2 个工作项 · 2 条阻断$/);
+    expect(screen.getByTestId("task-progress-T1")).toHaveTextContent(/^未启动流程 · 0 个工作项$/);
+    expect(screen.getByTestId("task-progress-T3")).toHaveTextContent(/^未启动流程 · 1 个工作项$/);
+    const headers = screen.getAllByRole("columnheader").map((one) => one.textContent);
+    expect(headers).toContain("进展");
+    expect(headers.filter((one) => one === "状态" || one === "版本")).toEqual([]);
+    expect(document.body.textContent).not.toMatch(/已发布|未发布|进行中|已完成/);
     expect(screen.getByText(/^一共 3 个任务。/)).toBeTruthy();
-    expect(document.body.textContent).not.toMatch(/进行中|已完成/);
-    expect([versionsText({ version_count: 0, latest_published_at: null }), versionsText({ version_count: 1, latest_published_at: null })]).toEqual(["未发布", "已发布 1 版"]);
   });
 });
 
@@ -89,7 +92,7 @@ describe("删除任务", () => {
     const remove = vi.spyOn(api, "deleteTask");
     fireEvent.click(screen.getByRole("button", { name: /^取\s?消$/ }));
     expect(remove).not.toHaveBeenCalled();
-    expect(screen.getByTestId("task-versions-T1")).toBeInTheDocument();
+    expect(screen.getByTestId("task-progress-T1")).toBeInTheDocument();
   });
 
   it("点「删除」：请任务服务删除，这一行从列表里去掉，左侧栏收到任务清单变了的通知；不要求先导出", async () => {
@@ -99,7 +102,7 @@ describe("删除任务", () => {
     window.addEventListener(TASKS_CHANGED, changed);
     fireEvent.click(screen.getByTestId("delete-task-confirm"));
     await waitFor(() => expect(remove).toHaveBeenCalledWith("T1"));
-    await waitFor(() => expect(screen.queryByTestId("task-versions-T1")).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId("task-progress-T1")).toBeNull());
     expect(changed).toHaveBeenCalledTimes(1);
     window.removeEventListener(TASKS_CHANGED, changed);
   });
@@ -109,6 +112,6 @@ describe("删除任务", () => {
     vi.spyOn(api, "deleteTask").mockRejectedValue(new ApiError("session_busy", "助手正在工作，请先停止助手，再删除这个任务。", 409));
     fireEvent.click(screen.getByTestId("delete-task-confirm"));
     expect(await screen.findByTestId("delete-task-error")).toHaveTextContent("助手正在工作，请先停止助手，再删除这个任务。");
-    expect(screen.getByTestId("task-versions-T1")).toBeInTheDocument();
+    expect(screen.getByTestId("task-progress-T1")).toBeInTheDocument();
   });
 });

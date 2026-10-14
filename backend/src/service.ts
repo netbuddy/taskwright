@@ -17,6 +17,7 @@ import { FALLBACK_TEXT, USER_EDIT, baseMessages, branch, messages as conversatio
 import { ApiError } from "./errors.ts";
 import { readTextFile, readTextFileLenient } from "./files.ts";
 import * as library from "./library.ts";
+import { workItemView } from "./task_status.ts";
 import * as occupancy from "./occupancy.ts";
 import { PDF_NO_TEXT, PdfUploadError, runPdfProjection } from "./pdf_upload.ts";
 import { PDF_PROJECTION_SUFFIX, removePdfProjection } from "./pdf_projection.ts";
@@ -411,12 +412,19 @@ export class Service {
       const comp = view.completion;
       const versions = library.versionRows(t.dir);
       const latest = versions.at(-1) ?? null;
+      // 进展：流程工作项在第几站（一个任务至多一个）、工作项个数、未了结的阻断下游的问题有几条（写条目那一段的灯列出的条目）。
+      const items = library.workItemRows(t.dir).map((row) => workItemView(row, null));
+      const flowItem = items.find((one) => one.kind === "flow") ?? null;
+      const blocking = (view.stage?.lamps?.writing ?? []).find((one: { key: string }) => one.key === "no_blocking_questions");
       out.push({
         task_id: view.task_id, task_name: view.task_name, task_type: view.task_type, domain_tag: view.domain_tag, unavailable: null,
         item_count: view.items.length,
         completion_met: comp ? comp.conditions.filter((c: any) => c.met).length : null,
         completion_total: comp ? comp.conditions.length : null,
         completion_unmet: comp ? comp.unmet_count : null,
+        flow: flowItem && flowItem.node ? { name: flowItem.name, node: flowItem.node, node_name: flowItem.activity_name, ordinal: flowItem.ordinal } : null,
+        work_item_count: items.length,
+        blocking_count: blocking && blocking.ok === false ? blocking.items.length : 0,
         version_count: versions.length,
         latest_published_at: latest ? clock.fromLocalText(latest.published_at) : null,
         last_active_at: actives.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a)),
@@ -440,7 +448,8 @@ export class Service {
       }
       out.push({
         task_id: taskId, task_name: name, task_type: null, domain_tag: null, unavailable: "占用中",
-        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, version_count: null, latest_published_at: null,
+        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, flow: null, work_item_count: null, blocking_count: null,
+        version_count: null, latest_published_at: null,
         last_active_at: null, session_count: null, supported: false,
         occupied: { port: lock.port ?? null, pid: lock.pid ?? null, host: lock.host ?? null },
         note: occupancy.occupiedText(lock),
@@ -461,7 +470,8 @@ export class Service {
       }
       out.push({
         task_id: name, task_name: title, task_type: null, domain_tag: null, unavailable: problem.status,
-        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, version_count: null, latest_published_at: null,
+        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, flow: null, work_item_count: null, blocking_count: null,
+        version_count: null, latest_published_at: null,
         last_active_at: existsSync(folder) ? clock.fromEpochNs(statSync(folder, { bigint: true }).mtimeNs) : null,
         session_count: null, supported: false, note: problem.note,
       });
@@ -473,7 +483,8 @@ export class Service {
       if (existsSync(folder)) modified = clock.fromEpochNs(statSync(folder, { bigint: true }).mtimeNs);
       out.push({
         task_id: name, task_name: name, task_type: null, domain_tag: null, unavailable: "旧格式",
-        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, version_count: null, latest_published_at: null,
+        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, flow: null, work_item_count: null, blocking_count: null,
+        version_count: null, latest_published_at: null,
         last_active_at: modified, session_count: null, supported: false, note: library.OLD_FORMAT_TEXT,
       });
     }
