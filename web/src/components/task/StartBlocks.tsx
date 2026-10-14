@@ -152,7 +152,7 @@ function ActivityNote({ activity }: { activity: CatalogActivity }) {
 }
 
 /**
- * 单项活动：每项一张卡。能启动的整张卡可点，进这项活动的输入页；已经有工作项的在标题旁标「N 个工作项进行中」，照样可以再启动，
+ * 单项活动：每项一张卡。能启动的整张卡可点，进这项活动的输入页；已经有工作项的在标题旁标「N 个工作项」，照样可以再启动，
  * 那是另起一个。缺前提的、这个版本还没有提供的变淡、不可点。
  */
 export function ActivityCards({ taskId, activities }: {
@@ -166,7 +166,7 @@ export function ActivityCards({ taskId, activities }: {
         const count = one.active_count ?? 0;
         const body = (
           <>
-            <div className="t">{one.name}<small>{one.mode_name}</small>{count > 0 && <span className="chip okc" data-testid="activity-count">{count} 个工作项进行中</span>}</div>
+            <div className="t">{one.name}<small>{one.mode_name}</small>{count > 0 && <span className="chip okc" data-testid="activity-count">{count} 个工作项</span>}</div>
             <div className="d">{one.purpose}</div>
             <div className="ex">例：{one.example}</div>
             <div className="tp-rw">

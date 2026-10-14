@@ -425,7 +425,7 @@ describe("起点页：有内容的任务", () => {
     expect([change.classList.contains("off"), text(change.querySelector(".t")), text(change.querySelector(".tp-need"))]).toEqual([true, "需求变更", "已有流程工作项「需求分析」，位于「写条目」。"]);
     // 单项活动：澄清已有一个工作项，标出来，照样可以再启动。
     const clarifying = screen.getByTestId("activity-clarifying");
-    expect([text(clarifying.querySelector("[data-testid=activity-count]")), clarifying.getAttribute("href"), clarifying.classList.contains("now")]).toEqual(["1 个工作项进行中", "#/tasks/TASK-P/start/clarifying", true]);
+    expect([text(clarifying.querySelector("[data-testid=activity-count]")), clarifying.getAttribute("href"), clarifying.classList.contains("now")]).toEqual(["1 个工作项", "#/tasks/TASK-P/start/clarifying", true]);
     expect(screen.getByTestId("activity-writing").querySelector("[data-testid=activity-count]")).toBeNull();
   });
 
