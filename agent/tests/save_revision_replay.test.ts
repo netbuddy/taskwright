@@ -5,7 +5,6 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { REPLAYED_TEXT, saveRevision } from "../src/lib/save_revision.ts";
 import { REVISION_CALL_INDEX, REVISION_CALL_LOOKUP_INDEX, withTaskDatabase } from "../src/lib/schema.ts";
-import { completeTask } from "../src/lib/complete_task.ts";
 import { DEFINITION_PATH, SOURCE, callIn, count, makeWorkspace, query } from "./helpers.ts";
 
 function workspaceWithTask(): string {
@@ -55,7 +54,6 @@ test("任务结束之后重放结束之前的调用，仍交回第一次的结�
   withTaskDatabase(dir, { createIfMissing: false }, (db) => db.exec("UPDATE task SET status = '已完成'"));
   const again = saveRevision(call(dir, "call-before-end"), addUseCase());
   assert.match(again.text, new RegExp(`${REPLAYED_TEXT}$`));
-  assert.throws(() => completeTask(call(dir, "call-done")), /不能再完成一次/);
 });
 
 test("不同调用编号照常各形成一次修订", () => {

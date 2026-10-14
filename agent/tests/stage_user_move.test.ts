@@ -89,12 +89,4 @@ test("拒绝：没有写阶段或名字不对；任务编号对不上；任务�
   const none = refused(() => move(old, { stage: "澄清" }));
   assert.deepEqual([none.code, none.message, none.data], ["rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] }]);
   assert.equal(count(old, "activity_record"), 0);
-
-  // 已完成的任务：演示任务定义的完成条件在一个条目都没有时不满足，所以直接把状态改掉来试。
-  const done = workspace();
-  const db = new DatabaseSync(databasePath(done));
-  db.exec("UPDATE task SET status = '已完成'");
-  db.close();
-  const closed = refused(() => move(done, { stage: "澄清" }));
-  assert.deepEqual([closed.code, closed.message], ["task_closed", "任务已经已完成，不能再移动阶段。"]);
 });

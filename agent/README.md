@@ -15,7 +15,7 @@
 | `tools/get_item.ts` | 「查看条目」（`get_item`）：按编号看一个条目某一版的全部字段、来源、当前版本号、评审与确认状态。只读。 |
 | `tools/get_task_status.ts` | 「查询任务状态」（`get_task_status`）：各集合的条目、完成条件逐项、未解决的问题条目、未读清单（用户还没看过现在样子的条目）、最近一次修订。只读，输出与 `/tw-board` 同源。 |
 | `tools/search_knowledge.ts` | 「查找知识库」（`search_knowledge`）：在任务选用的知识库里按意思与按字面两路找与一句话最相关的几个片段，每个带所在的知识库与文档、位置、它在两路里各排第几、出处的写法与逐字的原文，全部文字不超过 8192 字节。两路由任务服务算（按意思那一路要调嵌入模型），核心逻辑在 `lib/knowledge_search.ts`。只读。 |
-| `tools/complete_task.ts` | 「完成任务」：按任务定义的完成条件逐项核对，全部满足才把任务标为已完成。 |
+| `tools/publish_version.ts` | 「发布版本」：按任务定义的完成条件逐项核对、核对用户同意，都通过才发布一个版本（版本记录与文档存档）。 |
 | **扩展点（`hooks/`）** | 挂在 pi 的事件上或登记成扩展命令，不写任务数据；扩展命令写库时调用与工具相同的核心函数。 |
 | `hooks/task_status.ts` | 打开会话时往会话里追加任务现状消息（`customType` 为 `taskwright-task-status`），并经状态栏同名的键报给后端。 |
 | `hooks/reply_fallback.ts` | 兜底：执行者没有经「回复」说话就停下时，追加一句固定的话要它改用「回复」，至多两次。 |
@@ -28,14 +28,16 @@
 | `lib/schema.ts` | 建表语句（全部代码里只有这一份）、来源的四种种类、「确保库已建好」的函数。 |
 | `lib/db.ts` | 给出库文件的位置、开立即事务、往事件表写一条事件。全部代码里只有这里往事件表写。 |
 | `lib/definition.ts` | 读取任务定义并校验它的形状。 |
-| `lib/conditions.ts` | 完成条件：登记条件名与查库的事实核对函数。看板、查询任务状态、完成任务都用这一组函数。 |
+| `lib/conditions.ts` | 完成条件：登记条件名与查库的事实核对函数。看板、查询任务状态、发布版本都用这一组函数。 |
 | `lib/create_task.ts` | 「创建任务」的核心逻辑（一库一任务：库里已有任务就拒绝，不论状态）。 |
 | `lib/save_revision.ts` | 「保存修订」的核心逻辑。 |
 | `lib/speak.ts` | 「说话」类工具的公共骨架：读这一轮的工具调用、要求单独调用、合格时返回结束本次运行的标记。 |
 | `lib/reply.ts` | 「回复」的核对：形式核对、提问等向用户要的回应必须挂在条目上、告知点名的条目要存在、卡片不能只是复述刚说过的话、请确认只认当前版本、连续被拒的计数与上限。 |
 | `lib/task_query.ts` | 「查看条目」与「查询任务状态」的核心逻辑，只读库。 |
 | `lib/model_call.ts` | 工具里直接调一次模型时共用的两样东西：模型调用记录的形状、从模型输出里取 JSON。现在只有「请求评审」的评审者用。 |
-| `lib/complete_task.ts` | 「完成任务」的核心逻辑。 |
+| `lib/publish_version.ts` | 「发布版本」的核心逻辑。 |
+| `lib/versions.ts` | 版本记录：读出各版、记下一次发布。 |
+| `lib/version_archive.ts` | 助手发布时请任务服务写这一版的文档存档。 |
 | `lib/user_ops.ts` | 用户直接操作的核心逻辑，`/tw-user` 调用它；改到的字段写「用户直接修改」来源，通知正文带改后的值；标为已读（打开详情）写依据为「已读」的确认标记，幂等。 |
 | `lib/task_status.ts` | 任务现状消息的内容：新会话写现状，续接旧会话写上次之后的变化。只读库。 |
 | `lib/board.ts` | 交付物看板的取数与排版，`/tw-board` 与两个只读工具共用。 |
@@ -154,7 +156,7 @@ grep -nE "sqlite|INSERT|UPDATE|SELECT" extension.ts hooks/*.ts
 ```
 
 应当看到：往 `event` 写只在 `lib/db.ts`；往任务数据的几张表写只在 `lib/create_task.ts`、
-`lib/save_revision.ts` 与 `lib/complete_task.ts`（它只改任务的状态与结束时刻）；建表语句只在 `lib/schema.ts`；
+`lib/save_revision.ts` 与 `lib/versions.ts`（它只写版本记录）；建表语句只在 `lib/schema.ts`；
 `extension.ts` 与 `hooks/` 里没有任何读写库的语句（最后一条命令只会命中 `hooks/user_commands.ts` 文件头注释里
 提到 `node:sqlite` 的那一行）。用户的直接操作经 `lib/user_ops.ts` 调用 `saveRevision` 写条目，确认记录写在
 `judgement` 与 `judgement_item` 两张表，不在上面第二条命令查的范围里。

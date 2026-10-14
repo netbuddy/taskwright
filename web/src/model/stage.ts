@@ -49,15 +49,13 @@ export const currentActivityText = (position: PositionKey | string): string => `
 
 /**
  * 工作视图顶栏上任务名与会话名后面的那一处写什么：
- *   closed 任务已经结束，写「任务已完成」「任务已放弃」；
- *   plain  任务没有阶段（早先建的任务），写「任务进行中」；
+ *   plain  任务没有阶段（任务定义里没有阶段的任务），写「这个任务没有阶段」；
  *   active 这条会话在做一个工作项，写「当前活动：某项活动」，点了打开切换工作面板；
  *   idle   这条会话是自由讨论，写「自由讨论 · 不绑定活动」（点了同样打开面板），旁边另有一枚「启动工作」去任务起点页。
  */
-export type TopbarActivity = { kind: "closed" | "plain" | "active" | "idle"; text: string };
-export function topbarActivity(task: { status: string; stage?: Pick<StageView, "current"> | null }): TopbarActivity {
-  if (task.status !== "进行中") return { kind: "closed", text: `任务${task.status}` };
-  if (!task.stage) return { kind: "plain", text: "任务进行中" };
+export type TopbarActivity = { kind: "plain" | "active" | "idle"; text: string };
+export function topbarActivity(task: { stage?: Pick<StageView, "current"> | null }): TopbarActivity {
+  if (!task.stage) return { kind: "plain", text: "这个任务没有阶段" };
   if (isIdle(task.stage)) return { kind: "idle", text: NO_ACTIVITY_TEXT };
   return { kind: "active", text: currentActivityText(task.stage.current) };
 }

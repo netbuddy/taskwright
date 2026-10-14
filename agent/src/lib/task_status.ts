@@ -28,7 +28,7 @@
  * 对话理解：这条会话里还有在等回应的执行者行为（你问过、用户还没回应的，见 lib/dialogue_acts.ts）时，消息末尾另列一行，
  * details.open_acts 是同一份清单。新会话里还没有对话行为，这一行只在续接时出现。
  *
- * 数字全部由库算出：条目数查条目表，完成条件用 conditions.ts 里与「完成任务」门禁同一组函数。
+ * 数字全部由库算出：条目数查条目表，完成条件用 conditions.ts 里与「发布版本」门禁同一组函数。
  * 本模块只读库（只读方式打开），不写任何东西，不依赖 pi，单元测试可以直接调用。
  */
 
@@ -75,7 +75,6 @@ export interface TaskStatusMessage {
 interface TaskRow {
   task_id: string;
   task_name: string | null;
-  status: string;
   definition_text: string;
 }
 
@@ -98,7 +97,7 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
-    const task = db.prepare("SELECT task_id, task_name, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+    const task = db.prepare("SELECT task_id, task_name, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       | TaskRow
       | undefined;
     if (!task) return null;
@@ -307,7 +306,7 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
     ).length;
   }
   const parts = [
-    `任务「${name}」（类型：${definition.taskName}），任务编号 ${task.task_id}，状态是${task.status}。`,
+    `任务「${name}」（类型：${definition.taskName}），任务编号 ${task.task_id}。`,
     total === 0
       ? "交付物还没有任何条目。"
       : `交付物现有 ${total} 个条目：${counts.map((one) => `${one.collection} ${one.count} 个`).join("、")}。`,
@@ -323,7 +322,6 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
       task_id: task.task_id,
       task_name: name,
       task_type: definition.taskName,
-      status: task.status,
       items: Object.fromEntries(counts.map((one) => [one.collection, one.count])),
       conditions_total: results.length,
       conditions_met: met,

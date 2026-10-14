@@ -10,7 +10,6 @@ import type { LaunchView, StartHow } from "../../../agent/src/lib/stage.ts";
 // ───────────── 共用 ─────────────
 
 export type Actor = "executor" | "user";
-export type TaskStatus = "进行中" | "已完成" | "已放弃";
 /**
  * 来源的种类，也就是这个条目依据的是什么：材料或知识库里的原文、用户的话、助手补充（摘录里写的是理由）、任务里的另一个条目、
  * 任务里的一张图（图还没有做出来，现在不会收到）。早期版本的「执行者补充」「领域说明」，后端交来时已经换成「助手补充」「条目」。
@@ -298,9 +297,7 @@ export interface Task {
   task_name: string;
   task_type: string;
   domain_tag: string | null;
-  status: TaskStatus | string;
   started_at: string;
-  ended_at: string | null;
   definition: TaskDefinition;
   completion: Completion | null;
   items: Item[];
@@ -317,6 +314,25 @@ export interface Task {
   overall_views?: OverallViews | null;
   /** 任务现在的工作阶段与每个阶段的几盏灯；早先建的任务（没有「总体分析」集合）没有阶段，是 null；旧后端没有这一项。 */
   stage?: StageView | null;
+  /** 发布过的各版，按版本号从小到大；早先的后端不给。 */
+  versions?: VersionView[];
+}
+
+/**
+ * 发布过的一版（GET …/versions 的一项，任务状况与整份数据里的 versions 相同）：版本号、发布的时刻、谁发布的、发布时交付物的修订号、
+ * 发布说明、文档里有几张图与其中几张在 Word 里是图片（一张图都没有、或者没有存档时都是 null），以及这一版的 Markdown 与 Word 存档在不在
+ * （从早先「已完成」升级来的第 1 版两样都没有）。
+ */
+export interface VersionView {
+  version_no: number;
+  published_at: string | null;
+  actor: "executor" | "user";
+  revision_no: number;
+  note: string | null;
+  figure_count: number | null;
+  figure_pictures: number | null;
+  has_markdown: boolean;
+  has_docx: boolean;
 }
 
 /**
@@ -690,8 +706,6 @@ export interface TaskChanged {
   at: string;
   task_id: string;
   task_name: string;
-  status_before: string | null;
-  status_after: string;
   actor: Actor | string;
   completion: Completion | null;
 }
@@ -916,7 +930,7 @@ export type LibraryEvent =
 export const LIBRARY_EVENTS = [
   "stage_proposed",
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
-  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "activity_started", "node_entered", "work_item_deleted",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "activity_started", "node_entered", "work_item_deleted", "version_published",
 ] as const;
 
 export interface WorkStarted {
@@ -969,11 +983,16 @@ export interface TaskListEntry {
   task_name: string;
   task_type: string;
   domain_tag: string | null;
-  status: TaskStatus | string;
+  /** 打不开时写明是哪一种：占用中、旧格式、需要升级、需要处理、需要更新的程序；打得开的任务是 null。 */
+  unavailable: string | null;
   item_count: number;
   completion_met: number | null;
   completion_total: number | null;
   completion_unmet?: number | null;
+  /** 发布过几版、最近一版的发布时刻；打不开的任务是 null，没有发布过是 0 与 null。 */
+  version_count: number | null;
+  latest_published_at: string | null;
+  /** 最近活动：会话里最近一条消息、最近一次启动或结束工作项、建任务，取最晚的那个时刻。 */
   last_active_at: string;
   session_count: number;
   /** 为假时列出来但打不开，note 写明原因：修订统一之前建的旧格式任务，或者正被别的服务占用（这时有 occupied）。 */
@@ -1168,7 +1187,7 @@ export interface MessageRequest {
  * mark_diagram_viewed：用户打开看了一张图；targets 写 { diagram_id, base_revision }。助手工作中也接受，不往会话里追加东西。
  */
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
-  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "mark_diagram_viewed" | "move_stage" | "start_activity";
+  | "waive_review" | "unwaive_review" | "set_review_rules" | "publish_version" | "edit_diagram" | "mark_diagram_viewed" | "move_stage" | "start_activity";
 
 /** 「继续本阶段」：在提议进入下一个阶段的卡片上选了留在这一段。只在会话里留一条通知，不写库、不引出助手运行；fields 写卡片所在回复的编号与点的键。 */
 export type StageActionKind = "continue_stage";
@@ -1179,7 +1198,7 @@ export interface ActionRequest {
   task_id: string;
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
   targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
-  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。
+  /** publish_version 由任务服务代发（页面走 POST …/versions），页面不直接发。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。
    * start_activity 写 { activity, in_flow }：开展哪一项活动（阶段的写法）、是在需求分析流程里从这个节点开始还是单独开展；
    * 另可以写 scope，是范围说明。 */
   fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string } | { activity: string; in_flow: boolean; scope?: string };
@@ -1194,7 +1213,6 @@ export type ErrorCode =
   | "stale_revision"
   | "old_format"
   | "undo_conflict"
-  | "task_closed"
   | "session_busy"
   | "executor_starting"
   | "executor_unavailable"
@@ -1378,6 +1396,8 @@ export interface ModelConfig {
   /** 没有选定语言模型时助手启动用的模型；from 是后端给的来源（「启动配置」或「助手程序的设置」），页面原样显示。 */
   fallback: { model: string; from: string } | null;
   providers: Provider[];
+  /** 桌面包首次启动时从本机 pi 的配置（一般是 ~/.pi/agent）复制过来的：从哪个目录、什么时候；不是时为 null，早先的后端不给。 */
+  copied_from_pi?: { from: string; at: string } | null;
 }
 
 /** POST /api/v1/model-config/providers/{id}/refresh-catalog：联网更新一次模型目录的结果；没有成功时 message 是原因。 */
@@ -1548,5 +1568,6 @@ export interface TaskStatusView {
   proposal: StageProposal | null;
   /** 任务的全部工作项（工作项没有终点），按最近有动静的倒序；早先的后端不给。 */
   work_items?: WorkItemView[];
-  versions: unknown[];
+  /** 发布过的各版，按版本号从小到大。 */
+  versions: VersionView[];
 }

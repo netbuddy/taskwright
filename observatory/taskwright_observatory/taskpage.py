@@ -893,7 +893,7 @@ def error_count_suffix(role: str, turns: list[dict]) -> str:
 # ───────────────────────── 四之一、按运行排的流程 ─────────────────────────
 
 #: 运行一行的「关键动作」只数这几个会改动任务或交付物的工具被接受的调用，按工具的中文名计次；被拒的另计一项。
-KEY_ACTION_TOOLS = ("save_revision", "save_version", "create_task", "complete_task")
+KEY_ACTION_TOOLS = ("save_revision", "save_version", "create_task", "complete_task", "publish_version")
 #: 页头与运行一行的「保存修订」按这个工具被接受的调用计数。
 SAVE_TOOL = "save_revision"
 #: 扩展消息那两种行的摘要取前多少个字。运行一行的用户那句话与助手应答都给完整的话，不截断。

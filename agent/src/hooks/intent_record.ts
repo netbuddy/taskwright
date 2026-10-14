@@ -21,7 +21,7 @@ import { currentRun, recordAtSettle, recordFromAssistantMessage } from "../lib/d
 import { REGISTERED_OUTPUTS } from "../lib/registered_outputs.ts";
 
 /** 要求这一轮先有理解的四个工具。 */
-export const GATED_TOOLS = ["save_revision", "save_diagram", "complete_task", "reply"] as const;
+export const GATED_TOOLS = ["save_revision", "save_diagram", "publish_version", "reply"] as const;
 
 /** 报错用的状态栏键名。 */
 export const INTENT_ERROR_KEY = "taskwright-intent-error";

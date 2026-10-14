@@ -2,7 +2,7 @@
  * 工作的阶段从头走一遍，五个阶段各有一次运行（真的后端进程与真的 pi，模型换成进程内的假端点）。往前的每一步都由用户在卡片上点：
  * 核读材料时助手立页、想写用例被拦，发「进入澄清」的卡片 → 用户点了，助手发「进入整理建模」的卡片 → 用户点了，助手发「开始写条目」的卡片 →
  * 用户看过那一页、点了，助手写用例，想在回复里自己移到评审确认（被退回，回复照常送达），同一条回复带着「进入评审确认」的卡片 → 用户点了 →
- * 用户看过用例、发起评审 → 助手发是否完成的卡片、用户点了之后完成任务。
+ * 用户看过用例、发起评审 → 助手发是否完成的卡片、用户点了之后发布第 1 版。
  * 核对的是整条链路：库里的活动记录、被拦的那次调用留下的原话、接口给的整份数据里的 stage、事件连接推出的 activity_started，
  * 以及每一次运行里模型收到的系统提示只有那个阶段的一段。
  */
@@ -31,8 +31,8 @@ const START_CARD = { kind: "choose", text: "这一页你看过之后，现在开
   options: [{ key: "start_items", text: "开始写条目" }, { key: "continue_consolidate", text: "继续本阶段" }] };
 const REVIEW_CARD = { kind: "choose", text: "用例写好了，接下来请你逐条看、发起评审。现在进入评审确认吗？", items: [{ item_id: "UC-001", revision_no: 2 }],
   options: [{ key: "enter_review", text: "进入评审确认" }, { key: "continue_writing", text: "继续本阶段" }] };
-const DONE_CARD = { kind: "choose", text: "功能用例一共 1 个条目，已经评审通过，你也看过了。这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。",
-  options: [{ key: "complete", text: "已完成，提交交付物" }, { key: "continue", text: "还没完成，继续修改" }] };
+const DONE_CARD = { kind: "choose", text: "功能用例一共 1 个条目，已经评审通过，你也看过了。这个任务是否已经完成、可以发布了？发布之后仍然可以接着修改。",
+  options: [{ key: "complete", text: "已完成，发布版本" }, { key: "continue", text: "还没完成，继续修改" }] };
 const SCRIPT = {
   rules: [{ when: { any_contains: "你是评审者" }, reply: { text: JSON.stringify({ 发现: [] }) } }],
   sequence: [
@@ -50,9 +50,9 @@ const SCRIPT = {
     reply("写好了一个用例。现在进入评审确认吗？", "call-wrote", REVIEW_CARD),
     // 用户点了「进入评审确认」。
     reply("请逐条打开看，再在界面上点「评审」。", "call-review"),
-    // 用户说完成：发是否完成的卡片；用户点了之后完成任务。
+    // 用户说发布：发是否完成的卡片；用户点了之后发布版本。
     reply("完成条件都满足了，请在卡片上选。", "call-card", DONE_CARD),
-    { tool_calls: [{ id: "call-complete", name: "complete_task", arguments: {} }] },
+    { tool_calls: [{ id: "call-complete", name: "publish_version", arguments: {} }] },
     reply("任务已经完成。", "call-done"),
   ],
 };
@@ -160,9 +160,9 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
         if (Date.now() > end) throw new Error("评审没有做完");
         await sleep(100);
       }
-      await send({ text: "都看过了，完成吧。", client_id: "c-3" });
-      await send({ text: "我选：已完成，提交交付物", client_id: "c-4", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "complete" } });
-      assert.equal(db("SELECT status FROM task")[0].status, "已完成");
+      await send({ text: "都看过了，发布吧。", client_id: "c-3" });
+      await send({ text: "我选：已完成，发布版本", client_id: "c-4", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "complete" } });
+      assert.deepEqual(db("SELECT version_no, actor FROM version_record").map((r: Dict) => ({ ...r })), [{ version_no: 1, actor: "executor" }]);
       promptsAre("评审确认", 4);
       assert.deepEqual(db("SELECT tool_name FROM tool_rejection ORDER BY rowid").map((r: Dict) => r.tool_name), ["save_revision", "reply"], "除了核读材料时那一次与写了 stage 的那次回复，没有别的调用被拦");
 

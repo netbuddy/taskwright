@@ -7,15 +7,17 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import { createReadStream, createWriteStream, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
+import { extname, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
 import { type SessionFact, taskStatus, workItemView } from "./task_status.ts";
+import { UPGRADED_VERSION_NOTE } from "../../agent/src/lib/schema.ts";
 import * as render from "./render.ts";
 import * as exportDocx from "./export_docx.ts";
 import * as exportDocument from "./export_document_docx.ts";
+import * as versionArchive from "./version_archive.ts";
 import { DIAGRAM_KINDS, validateDiagram } from "./diagram_validate.ts";
 import { SCOPE_MAX_LENGTH, STAGE_NAMES, stageByName } from "../../agent/src/lib/stage.ts";
 import { isObject, or, truthy } from "./py.ts";
@@ -384,10 +386,17 @@ async function packDownload(service: Service, options: Omit<ExportOptions, "to">
 }
 
 const handlers: Record<string, Handler> = {
-  // 把一个任务导出成数据包（任务目录与它的归档），回一个 zip 文件。
+  // 删除一个任务（任务目录与它的会话归档）：助手正在工作时拒绝。请求从哪里来写进服务日志：来源地址与浏览器标识。
+  delete_task: async (service, req) => {
+    const t = service.task(req.params.task);
+    const agent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : "";
+    return json(200, await service.deleteTask(t, [req.remote ?? "未知地址", agent].filter(Boolean).join("，")));
+  },
+  // 把一个任务导出成数据包（任务目录与它的对话记录），回一个 zip 文件。查询参数 with_events=1 时另带事件归档（pi-events）。
   export_task: (service, req) => {
     const t = service.task(req.params.task);
-    return packDownload(service, { scope: "task", taskId: t.taskId, working: () => t.executor.state === "working" }, `${t.taskId}${PACK_SUFFIX}`);
+    return packDownload(service, { scope: "task", taskId: t.taskId, working: () => t.executor.state === "working", withEvents: req.query.with_events === "1" },
+      `${t.taskId}${PACK_SUFFIX}`);
   },
   // 把一个知识库导出成数据包。
   export_library: (service, req) => {
@@ -415,6 +424,75 @@ const handlers: Record<string, Handler> = {
   task_status: (service, req) => {
     const t = service.task(req.params.task);
     return json(200, { ok: true, status: taskStatus(t.dir, sessionParam(req), t.executor.listSessions() as never) });
+  },
+  // 版本记录：各版的清单（与任务状况里的 versions 相同），与某一版发布时存档的文档（format=md 或 docx，不写是 md）。
+  list_versions: (service, req) => {
+    const t = service.task(req.params.task);
+    return json(200, { ok: true, versions: library.versionRows(t.dir).map((row) => library.versionView(row, t.dir)) });
+  },
+  // 页面发布一个版本：body 写 { revision_no（页面当时看到的修订号）, note（发布说明，可空）, images（页面画好的图，同「下载 Word」） }。
+  // 先定下版本号、把这一版的文档写进任务目录，再发界面操作 publish_version 核对与记下版本；没有记成就删掉写好的存档，照原话回答。
+  publish_version: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    const revisionNo = body.revision_no;
+    if (!Number.isInteger(revisionNo) || revisionNo < 0) throw new ApiError("bad_request", "revision_no 要写页面当时看到的修订号，一个不小于 0 的整数。");
+    if (body.note !== undefined && body.note !== null && typeof body.note !== "string") throw new ApiError("bad_request", "note 要写一句话，或者不写。");
+    const images = exportDocument.imagesOf(body);
+    const versionNo = versionArchive.nextVersion(t.dir);
+    const lib = library.libraryOf(t.dir);
+    const names = new Map((service.knowledge?.libraries() ?? []).map((one) => [one.id, one.name]));
+    const written = await versionArchive.writeArchive(t.dir, versionNo, revisionNo, images, await wordsLocator(t, lib), (id) => names.get(id) ?? null);
+    let done;
+    try {
+      done = await t.executor.actionWith(sessionParam(req, body), { kind: "publish_version", targets: [], notify_executor: false,
+        fields: { revision_no: revisionNo, version_no: versionNo, note: body.note ?? null, ...written } });
+    } catch (error) {
+      versionArchive.dropArchive(t.dir, versionNo);
+      throw error;
+    }
+    return json(200, { ok: true, op_id: done.op_id, version_no: versionNo, revision_no: revisionNo,
+      figure_count: written.figure_count, figure_pictures: written.figure_pictures });
+  },
+  // 助手发布版本时请任务服务写存档：body 写 { version_no, revision_no }。只写文件，不记版本；没有页面画的图，Word 里写 Mermaid 文本。
+  archive_version: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    const versionNo = body.version_no;
+    const revisionNo = body.revision_no;
+    if (!Number.isInteger(versionNo) || versionNo < 1 || !Number.isInteger(revisionNo) || revisionNo < 0) {
+      throw new ApiError("bad_request", "version_no 要写从 1 起的整数，revision_no 要写不小于 0 的整数。");
+    }
+    if (versionNo !== versionArchive.nextVersion(t.dir)) throw new ApiError("rejected", `下一版是第 ${versionArchive.nextVersion(t.dir)} 版，不是第 ${versionNo} 版。`);
+    const lib = library.libraryOf(t.dir);
+    const names = new Map((service.knowledge?.libraries() ?? []).map((one) => [one.id, one.name]));
+    const written = await versionArchive.writeArchive(t.dir, versionNo, revisionNo, new Map(), await wordsLocator(t, lib), (id) => names.get(id) ?? null);
+    return json(200, { ok: true, ...written });
+  },
+  version_document: (service, req) => {
+    const t = service.task(req.params.task);
+    const n = Number(req.params.version);
+    const format = req.query.format || "md";
+    if (format !== "md" && format !== "docx") throw new ApiError("bad_request", "format 要写 md 或 docx，不写是 md。");
+    const row = library.versionRows(t.dir).find((one) => one.version_no === n);
+    if (!row) throw new ApiError("not_found", `这个任务没有第 ${req.params.version} 版。`);
+    const what = format === "md" ? "Markdown" : "Word";
+    const rel = format === "md" ? row.markdown_path : row.docx_path;
+    if (rel === null) {
+      throw new ApiError("not_found", `第 ${n} 版没有 ${what} 存档${row.note === UPGRADED_VERSION_NOTE ? "：这一版是升级之前完成的，当时的文档没有存下来" : ""}。`);
+    }
+    const root = resolve(t.dir);
+    const file = resolve(root, rel);
+    if (!file.startsWith(root + sep) || !isFile(file)) throw new ApiError("not_found", `第 ${n} 版的 ${what} 存档不在任务目录里了。`);
+    const lib = library.libraryOf(t.dir);
+    const taskName = String(or(lib.data.task?.task_name, lib.definition["任务名"]) ?? t.taskId);
+    const plain = `${t.taskId.replace(/[^A-Za-z0-9._-]+/g, "_")}-v${n}.${format}`;
+    const encoded = encodeURIComponent(`${taskName}-第${n}版.${format}`).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    return {
+      status: 200,
+      headers: { "Content-Type": format === "md" ? "text/markdown; charset=utf-8" : exportDocx.DOCX_TYPE, "Content-Disposition": `attachment; filename="${plain}"; filename*=UTF-8''${encoded}` },
+      body: readFileSync(file),
+    };
   },
   debug_persona_draft: async (service, req) => json(200, await debugPrompt.personaDraftOf(service, req.params.task)),
   model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
@@ -444,7 +522,6 @@ const handlers: Record<string, Handler> = {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
     if (body.activity_record_id === undefined || body.activity_record_id === null) return json(200, { ok: true, session_id: await t.executor.newSession() });
-    t.requireOpen();
     const action = { kind: "continue_activity", task_id: t.taskId, targets: [], fields: { activity_record_id: body.activity_record_id }, notify_executor: false };
     if (!needsNewSession(action)) throw new ApiError("bad_request", "activity_record_id 是工作项的记录号，一个从 1 起的整数。");
     refuseBeforeNewSession(t.dir, action);
@@ -468,7 +545,6 @@ const handlers: Record<string, Handler> = {
   messages: async (service, req) => {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
-    t.requireOpen();
     const text = String(or(body.text, "")).trim();
     if (!text) throw new ApiError("bad_request", "text 不能是空的。");
     const attachments = (or(body.attachments, []) as string[]);
@@ -495,7 +571,6 @@ const handlers: Record<string, Handler> = {
   actions: async (service, req) => {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
-    t.requireOpen();
     let session = sessionParam(req, body);
     // 启动一个工作项、换一条会话接着做一个工作项：先核对行不行，行才新建会话，再在新会话里做；回应里带新会话的编号与工作项的记录号。
     let created: string | null = null;
@@ -505,6 +580,8 @@ const handlers: Record<string, Handler> = {
     }
     // 删除一个工作项而没有给会话（例如从任务起点页删）：在这个工作项最近有动静的会话里做，那句说明随之留在那条（随即归档的）会话里。
     if (body.kind === "delete_work_item" && !session) session = deleteSession(t.dir, body, t.executor.listSessions() as never);
+    // 发布版本要先写好这一版的文档存档，走 POST …/versions，不走这里。
+    if (body.kind === "publish_version") throw new ApiError("bad_request", "发布版本请用 POST /api/v1/tasks/{task_id}/versions：要先存下这一版的文档。");
     const done = await t.executor.actionWith(session, body);
     return json(200, { ok: true, client_id: body.client_id ?? null, op_id: done.op_id, ...(created !== null ? { session_id: created } : {}),
       ...(done.activity_record_id !== null ? { activity_record_id: done.activity_record_id } : {}),
@@ -706,6 +783,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", "/api/v1/tasks", "create_task"],
   ["GET", `/api/v1/tasks/${T}`, "get_task"],
   ["GET", `/api/v1/tasks/${T}/export`, "export_task"],
+  ["POST", `/api/v1/tasks/${T}/delete`, "delete_task"],
   ["GET", `/api/v1/tasks/${T}/sessions`, "list_sessions"],
   ["POST", `/api/v1/tasks/${T}/sessions`, "new_session"],
   ["GET", `/api/v1/tasks/${T}/events`, "events"],
@@ -734,6 +812,10 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/content`, "document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/raw`, "document_raw"],
   ["GET", `/api/v1/tasks/${T}/status`, "task_status"],
+  ["GET", `/api/v1/tasks/${T}/versions`, "list_versions"],
+  ["POST", `/api/v1/tasks/${T}/versions`, "publish_version"],
+  ["POST", `/api/v1/tasks/${T}/versions/archive`, "archive_version"],
+  ["GET", `/api/v1/tasks/${T}/versions/(?<version>[0-9]+)/document`, "version_document"],
   ["GET", `/api/v1/tasks/${T}/debug/system-prompt`, "debug_system_prompt"],
   ["GET", `/api/v1/tasks/${T}/debug/stage`, "debug_stage"],
   ["GET", `/api/v1/tasks/${T}/debug/persona-draft`, "debug_persona_draft"],

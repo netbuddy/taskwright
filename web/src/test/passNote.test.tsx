@@ -21,7 +21,7 @@ const OK2 = "按 2 条规则逐条核对，没有发现问题。";
 
 function task(items: Item[], hash: string | null = "h1"): Task {
   return {
-    task_id: "TASK-1", task_name: "t", task_type: "t", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-1", task_name: "t", task_type: "t", domain_tag: null, started_at: "",
     definition: { collections: [{ name: "功能用例", prefix: "UC", needs_review: true, rules_hash: hash, fields: [
       { name: "用例名称", type: "文本", required: true, values: null }, { name: "约束规则", type: "文本列表", required: false, values: null }],
       review_rules: [{ id: "UC-R1", level: "必选", text: "用例粒度以参与者的一个目的为准。" }, { id: "UC-R12", level: "可选", text: "约束规则与流程里不举例。" }],

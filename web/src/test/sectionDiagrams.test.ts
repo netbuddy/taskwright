@@ -128,7 +128,6 @@ describe("标出本节的对象与看图记录", () => {
     expect(diagramViewTarget(task, seen)).toEqual({ diagram_id: "D-001", base_revision: 4 });
     expect(diagramViewTarget(task, { ...seen, viewed: false })).toEqual({ diagram_id: "D-001", base_revision: 4 });
     expect(diagramViewTarget(task, { ...seen, viewed: true })).toBeNull();
-    expect(diagramViewTarget(overallTask({ status: "已完成" }), seen)).toBeNull();
     expect(diagramViewTarget(null, seen)).toBeNull();
   });
 });

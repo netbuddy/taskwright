@@ -8,16 +8,21 @@
 //
 // Order of work:
 //   1. From the first port on, ask GET /api/v1/service; if a desktop-mode Taskwright answers, only open the browser.
-//   2. Set TASKWRIGHT_PI_ENTRY to the bundled pi; put the bundled rg and fd (pi's grep and find) first on PATH;
-//      from an AppImage, copy agent/ once per build to a fixed place and set TASKWRIGHT_AGENT_DIR (see agentDir).
+//   2. Everything goes under one root, the data directory (--data, TASKWRIGHT_DATA_DIR, or the backend's user data
+//      directory; see backend/src/desktop_dirs.ts): point PI_CODING_AGENT_DIR at <root>/pi, Taskwright's own pi
+//      configuration directory (on the first start copy models.json, auth.json and settings.json from ~/.pi/agent when
+//      <root>/pi has neither), and keep the program's cache in <root>/cache. Set TASKWRIGHT_PI_ENTRY to the bundled pi;
+//      put the bundled rg and fd (pi's grep and find) first on PATH; from an AppImage, copy agent/ once per build to
+//      <root>/cache/agent-<build> and set TASKWRIGHT_AGENT_DIR (see agentDir); then remove the cache of older builds.
 //   3. Start the service with --mode desktop --profile desktop --port <first port> --web <root>/web, then the user's
 //      own arguments, which win (for example --host 0.0.0.0).
 //   4. Open the browser on the actual port. The console window stays as the status window: closing it stops the service.
 //
 // Environment:
 //   TASKWRIGHT_PORT          first port to try (default 8950); the next nine are tried when it is taken
-//   TASKWRIGHT_DATA_DIR      where tasks, archives, the knowledge base and logs go (default: the backend's user data directory)
-//   TASKWRIGHT_CACHE_DIR     where an AppImage keeps its copy of agent/ (default: the user cache directory)
+//   TASKWRIGHT_DATA_DIR      the root: tasks, archives, the knowledge base, logs, settings, pi/ and cache/ (default: the backend's user data directory)
+//   TASKWRIGHT_CACHE_DIR     where an AppImage keeps its copy of agent/ and a single executable its payload (default: <root>/cache)
+//   PI_CODING_AGENT_DIR      pi's configuration directory (default: <root>/pi)
 //   TASKWRIGHT_NO_BROWSER=1  do not open a browser
 //   TASKWRIGHT_OPEN_WITH     a command that is run with the URL instead of the platform's opener
 
@@ -39,22 +44,15 @@ function timing(mark: string): void {
   console.log(`[timing] ${mark}=${Math.round(performance.now())}ms`);
 }
 
-function cacheDir(): string {
-  if (process.env.TASKWRIGHT_CACHE_DIR) return process.env.TASKWRIGHT_CACHE_DIR;
-  if (process.platform === "win32") return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Taskwright", "cache");
-  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Caches", "Taskwright");
-  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), APP);
-}
-
 // pi loads the TypeScript extension through jiti, whose compile cache is keyed by the file's path. An AppImage is
 // mounted at a new random path on every start, so from an AppImage agent/ is copied once per build to a fixed place
-// in the user's cache directory, and the backend finds the extension and the platform skill there. A single
+// in the cache directory, and the backend finds the extension and the platform skill there. A single
 // executable already runs from a fixed place (its extracted payload).
-function agentDir(): string | null {
+function agentDir(cache: string): string | null {
   if (!process.env.APPIMAGE) return null;
   const manifest = fs.readFileSync(path.join(ROOT, "manifest.json"));
   const id = crypto.createHash("sha256").update(manifest).digest("hex").slice(0, 16);
-  const stable = path.join(cacheDir(), `agent-${id}`);
+  const stable = path.join(cache, `agent-${id}`);
   if (!fs.existsSync(path.join(stable, ".complete"))) {
     const temporary = `${stable}.tmp-${process.pid}`;
     fs.mkdirSync(path.dirname(stable), { recursive: true });
@@ -155,12 +153,38 @@ async function main(): Promise<void> {
   }
 
   process.env.TASKWRIGHT_PI_ENTRY ||= PI_ENTRY;
-  // The data directory, when one is named (--data wins over the environment variable), also holds the logs.
+  // The root: the data directory when one is named (--data wins over the environment variable), otherwise the
+  // backend's user data directory. When one is named, the logs and the product settings go there too.
+  const backend = (name: string) => import(pathToFileURL(path.join(ROOT, "backend", "src", name)).href);
+  const { userDataDir } = await backend("paths.js");
+  const { adoptPiConfig, desktopLayout, pruneOldBuilds } = await backend("desktop_dirs.js");
   const dataRoot = chosen.data ?? process.env.TASKWRIGHT_DATA_DIR;
-  if (dataRoot) process.env.TASKWRIGHT_LOG_DIR ||= path.join(dataRoot, "logs");
+  const layout = desktopLayout(dataRoot ?? userDataDir());
+  if (dataRoot) {
+    process.env.TASKWRIGHT_LOG_DIR ||= path.join(layout.root, "logs");
+    process.env.TASKWRIGHT_SETTINGS_FILE ||= path.join(layout.root, "settings.json");
+  }
+  // What happened before the service started is printed once it has: then it also goes into the service's log file.
+  const notes: string[] = [];
+  if (!layout.piGiven) {
+    process.env.PI_CODING_AGENT_DIR = layout.pi;
+    fs.mkdirSync(layout.pi, { recursive: true });
+    const legacy = path.join(os.homedir(), ".pi", "agent");
+    try {
+      const copied = await adoptPiConfig(layout.pi, legacy);
+      if (copied) notes.push(`已从本机 pi 的配置 ${copied.from} 复制 ${copied.files.join("、")} 到 ${layout.pi}；之后 Taskwright 只用它自己的这一份，不再读写 ${legacy}。`);
+    } catch (error) {
+      notes.push(`没能从本机 pi 的配置 ${legacy} 复制：${(error as Error).message}`);
+    }
+  }
+  process.env.TASKWRIGHT_CACHE_DIR = layout.cache;
   if (fs.existsSync(TOOLS_DIR)) process.env.PATH = `${TOOLS_DIR}${path.delimiter}${process.env.PATH ?? ""}`;
-  const agent = agentDir();
+  const agent = agentDir(layout.cache);
   if (agent) process.env.TASKWRIGHT_AGENT_DIR = agent;
+  // The cache of older builds: a single executable runs from <cache>/payload/<build>, an AppImage uses <cache>/agent-<build>.
+  const inPayload = path.basename(path.dirname(ROOT)) === "payload" && path.resolve(path.dirname(path.dirname(ROOT))) === layout.cache;
+  const removed = pruneOldBuilds(layout.cache, { payload: inPayload ? path.basename(ROOT) : null, agent: agent ? path.basename(agent) : null });
+  if (removed.length) notes.push(`删掉了旧构建的程序内容：${removed.map((one: string) => path.join(layout.cache, one)).join("、")}。`);
 
   const { startService } = await import(pathToFileURL(path.join(ROOT, "backend", "src", "start.js")).href);
   let started;
@@ -178,6 +202,7 @@ async function main(): Promise<void> {
   console.log("");
   console.log(`Taskwright 已启动：${url}`);
   console.log(`数据在 ${started.dataDir}。关闭这个窗口或按 Ctrl+C 即退出服务；也可以在页面上点「退出服务」。`);
+  for (const note of notes) console.log(note);
   console.log("");
   openBrowser(url);
 }

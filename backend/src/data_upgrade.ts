@@ -16,6 +16,7 @@ import { basename, join, resolve } from "node:path";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 // upgradeTaskDatabase 是后端里除建任务之外唯一会改任务库的调用，只在这里（数据升级）用。
 import { TASKS_ROOT_ENV, TASK_DB_VERSION, newerDataText, taskWrittenBy, upgradeTaskDatabase } from "../../agent/src/lib/schema.ts";
+import { overallTemplateFor } from "./workspace.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 import * as occupancy from "./occupancy.ts";
@@ -187,6 +188,8 @@ export interface TaskOutcome {
   /** 没有做成的原因。 */
   error: string | null;
   ms: number;
+  /** 升级时另做了的事，写进报告那一行的末尾，例如「补了总体分析集合」「补了第 1 版的版本记录（早先已完成，修订 12）」。 */
+  notes?: string[];
 }
 
 export interface UpgradeReport {
@@ -289,7 +292,7 @@ function afterTaskUpgraded(plan: UpgradePlan, dir: string, registry: ServiceDb, 
   const db = library.openRo(taskDir);
   let row: Record<string, any> | undefined;
   try {
-    row = db ? (db.prepare("SELECT task_id, task_name, status, definition_path, started_at FROM task LIMIT 1").get() as Record<string, any> | undefined) : undefined;
+    row = db ? (db.prepare("SELECT task_id, task_name, definition_path, started_at FROM task LIMIT 1").get() as Record<string, any> | undefined) : undefined;
   } finally {
     db?.close();
   }
@@ -302,7 +305,7 @@ function afterTaskUpgraded(plan: UpgradePlan, dir: string, registry: ServiceDb, 
     upgraded_by_version: productVersion, upgraded_at: clock.now(),
   });
   if (row?.task_id) {
-    registry.putTask({ task_id: row.task_id, name: row.task_name || null, owner: had?.owner ?? "local", status: row.status ?? null,
+    registry.putTask({ task_id: row.task_id, name: row.task_name || null, owner: had?.owner ?? "local", status: null,
       task_type: taskType, created_at: row.started_at ?? null, dir });
   }
   registry.clearUpgradeFailed(dir);
@@ -354,8 +357,9 @@ export async function runUpgrade(plan: UpgradePlan, options: RunOptions = {}): P
         try {
           const lock = occupancy.readLock(join(plan.tasksDir, task.dir));
           if (occupancy.occupiedByOther(lock)) throw new Error("任务正在被另一个服务使用");
-          const result = upgradeTaskDatabase(join(plan.tasksDir, task.dir));
+          const result = upgradeTaskDatabase(join(plan.tasksDir, task.dir), { overallTemplate: overallTemplateFor });
           outcome.to = result.to;
+          outcome.notes = result.notes;
           afterTaskUpgraded(plan, task.dir, registry, productVersion);
           outcome.ok = true;
           report.succeeded += 1;
@@ -408,7 +412,8 @@ export function reportText(report: UpgradeReport): string {
   if (report.tasks.length === 0) lines.push("任务：没有要升级的");
   for (const t of report.tasks) {
     const label = `${t.task_id ?? t.dir}${t.name ? `「${t.name}」` : ""}`;
-    lines.push(t.ok ? `任务 ${label}：格式 ${t.from} 升到 ${t.to}，成功，用了 ${t.ms} 毫秒` : `任务 ${label}：格式 ${t.from}，没有升级成（${t.error}），用了 ${t.ms} 毫秒`);
+    const notes = t.notes?.length ? `；${t.notes.join("；")}` : "";
+    lines.push(t.ok ? `任务 ${label}：格式 ${t.from} 升到 ${t.to}，成功，用了 ${t.ms} 毫秒${notes}` : `任务 ${label}：格式 ${t.from}，没有升级成（${t.error}），用了 ${t.ms} 毫秒`);
   }
   lines.push(`合计：${report.tasks.length} 个任务，成功 ${report.succeeded} 个，没有做成 ${report.failed} 个。`);
   if (report.failed > 0 && report.backup?.files) lines.push(`没有做成的任务原样没动；要回到升级之前，把备份里的文件复制回去：${report.backup.dir}`);

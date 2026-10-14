@@ -94,14 +94,14 @@ test("查询任务状态：各集合的条目、完成条件与看板逐行相�
   const outcome = getTaskStatus(dir);
   const lines = outcome.text.split("\n");
   assert.deepEqual(lines.slice(0, 4), [
-    "任务 TASK-001「增量七夹具」（类型：演示任务），状态是进行中。",
+    "任务 TASK-001「增量七夹具」（类型：演示任务）。",
     "",
     "用例 2 个：UC-001（修订 1）、UC-002（修订 1）。",
     "问题 1 个：TBD-001（修订 1）。",
   ]);
   // 完成条件那几行与 /tw-board 打印的一字不差。
   const board = boardLines(dir);
-  const from = board.findIndex((line) => line.startsWith("要完成任务") || line.startsWith("完成条件都已满足"));
+  const from = board.findIndex((line) => line.startsWith("要发布版本") || line.startsWith("完成条件都已满足"));
   const conditions = board.slice(from, board.indexOf("", from));
   assert.ok(conditions.length > 1);
   assert.deepEqual(lines.slice(5, 5 + conditions.length), conditions);

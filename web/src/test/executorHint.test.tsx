@@ -21,7 +21,7 @@ const Wrap = ({ children }: { children: ReactNode }) => (
 );
 
 const task: Task = {
-  task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, started_at: "",
   definition: { collections: [{ name: "用例", prefix: "UC", fields: [{ name: "名称", type: "文本", required: true, values: null }] }] },
   completion: null,
   items: [{ item_id: "UC-001", collection: "用例", title: "买家申请退款", revision_no: 1, revision_by: "executor", revision_at: "", revisions: [1],
@@ -83,10 +83,9 @@ describe("助手没有在运行时的工作视图", () => {
     expect(executorHint(null, false)).toBeNull();
   });
 
-  it("输入框整个停用时，占位文字不再重复提示条里的那句：助手不可用、任务已经结束、助手在另一条会话里工作三种情形相同", () => {
+  it("输入框整个停用时，占位文字不再重复提示条里的那句：助手不可用、助手在另一条会话里工作两种情形相同", () => {
     const cases: [ExecutorState, Task, string][] = [
       [{ state: "failed_to_start", text: "助手没有启动起来，系统原因：EACCES", active_session: null }, task, "助手现在不可用：助手没有启动起来，系统原因：EACCES"],
-      [{ state: "idle", text: "", active_session: "S1" }, { ...task, status: "已完成" } as Task, "这个任务已经结束，只能查看。"],
       [{ state: "working", text: "", active_session: "S2" }, task, "助手正在另一条会话里工作，做完才能在这里继续。"],
     ];
     for (const [executor, shown, note] of cases) {

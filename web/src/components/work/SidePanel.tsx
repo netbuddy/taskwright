@@ -5,14 +5,18 @@
 //     正文每行一个碰到的条目（操作、编号与标题、改了哪些字段、查看差异），底部「撤销这次修订」「按此修订生成文档」。
 //     点卡片选中它，条目区高亮它碰到的条目；再点一次取消。助手工作中照常可看，撤销灰化；
 //     碰到的条目之后又改过或已删掉的修订撤销不了（undoBlocked），按钮预先灰化并说明原因。
+//     顶上一节「版本」：发布过的各版，最新的在上，每版写版本号、时刻、谁发布的、发布时的修订号与发布说明，「下载 Markdown」「下载 Word」；
+//     没有存档的那一种灰着并说明原因。点「修订 N」选中那张修订卡片。（B2-3 把这一节搬进中栏「文档与版本」页签。）
 //   · 评审：工作视图给了 review（评审页签的内容，ReviewPanel）时才有这个页签，角标是要处理的问题的处数（openProblems，与评审页签顶上一行同一个函数）。
 //   · 任务定义「界面」一项写了「右侧栏页签」的集合（例如领域说明）：在「材料」之后各开一个页签，名字是集合名，
 //     页签键是「coll:集合名」。按分组字段分组（靠前的组在前），每条写编号与标题、内容摘要、与别的条目的联系、修订；
 //     还没有和任何条目关联的，联系那一行用琥珀色。点一条，在条目区打开它。
 // 收起后只剩一条竖排的把手，点它展开。
 
-import { useEffect, type ReactNode } from "react";
-import type { ConversationMessage, Material, RevisionLogEntry, Item, Task } from "../../api/types";
+import { useEffect, useState, type ReactNode } from "react";
+import { api } from "../../api/client";
+import type { ConversationMessage, Material, RevisionLogEntry, Item, Task, VersionView } from "../../api/types";
+import { figuresText, missingArchiveText, versionMeta } from "../../model/versions";
 import { BUSY_TEXT, summaryOf } from "../../model/items";
 import { EMPTY_GROUP, groupItems, linkPhrase } from "../../model/domainNotes";
 import { OVERALL_LABEL, collectionLabel, firstParagraph, isDeprecated, isIntroPage, isOverall, isPending, sideLine, titleOf, whatOf } from "../../model/overall";
@@ -96,7 +100,8 @@ export function SidePanel({
         {side.startsWith("coll:") && task && <CollectionSide task={task} collection={side.slice(5)} currentItem={currentItem} onOpenItem={onOpenItem} />}
         {side === "rev" && (
           <RevisionLogView log={log} messages={messages} selected={selectedRevision} onSelect={onSelectRevision} scrollNonce={scrollNonce}
-            onDiff={onDiff} onUndo={onUndo} onGenerate={onGenerate} writesOff={writesOff} readOnly={readOnly} liveItems={items} />
+            onDiff={onDiff} onUndo={onUndo} onGenerate={onGenerate} writesOff={writesOff} readOnly={readOnly} liveItems={items}
+            versions={<VersionsBlock taskId={taskId} versions={task?.versions ?? []} onSelectRevision={onSelectRevision} />} />
         )}
       </div>
       <div className="handle" role="button" title="展开右侧栏" onClick={onExpand} data-testid="doc-handle">
@@ -154,7 +159,46 @@ function CollectionSide({ task, collection, currentItem, onOpenItem }: { task: T
   );
 }
 
-function RevisionLogView({ log, messages, selected, onSelect, scrollNonce, onDiff, onUndo, onGenerate, writesOff, readOnly, liveItems }: {
+/**
+ * 修订页签顶上的「版本」一节。各版的存档在不在、图存了没有以版本接口为准：版本列表变了（发布了新的一版）就重取一次；
+ * 取到之前先照整份数据里的那一份画。
+ */
+function VersionsBlock({ taskId, versions, onSelectRevision }: { taskId: string; versions: VersionView[]; onSelectRevision: (revision: number | null) => void }) {
+  const [fetched, setFetched] = useState<VersionView[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (versions.length) api.listVersions(taskId).then((list) => { if (live) setFetched(list); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [taskId, versions.length]);
+  const list = [...(fetched && fetched.length >= versions.length ? fetched : versions)].sort((a, b) => b.version_no - a.version_no);
+  return (
+    <div className="sw-versions" data-testid="versions">
+      <div className="vh"><b>版本</b><span>{list.length ? `已发布 ${list.length} 版` : "还没有发布过"}</span></div>
+      {list.length === 0 && <div className="lead">完成条件都满足之后，条目区上方会出现发布的提示；发布时存下当时生成的 Markdown 与 Word。</div>}
+      {list.map((one) => (
+        <div key={one.version_no} className="sw-ver" data-testid={`version-${one.version_no}`}>
+          <div className="r1"><b>第 {one.version_no} 版</b>
+            <span className="m">{versionMeta(one)}</span>
+            <span className="look" role="button" onClick={() => onSelectRevision(one.revision_no)} title="在下面的修订日志里选中这次修订">修订 {one.revision_no}</span>
+          </div>
+          {one.note && <div className="note">{one.note}</div>}
+          <div className="dl">
+            {one.has_markdown ? <a href={api.versionDocumentHref(taskId, one.version_no, "md")} data-testid={`version-${one.version_no}-md`}>下载 Markdown</a>
+              : <span className="off" title={missingArchiveText(one)}>下载 Markdown</span>}
+            {one.has_docx ? <a href={api.versionDocumentHref(taskId, one.version_no, "docx")} data-testid={`version-${one.version_no}-docx`}>下载 Word</a>
+              : <span className="off" title={missingArchiveText(one)}>下载 Word</span>}
+            {!one.has_markdown && !one.has_docx && <span className="why">{missingArchiveText(one)}</span>}
+            {figuresText(one) && <span className="why" data-testid={`version-${one.version_no}-figures`}>{figuresText(one)}</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RevisionLogView({ log, messages, selected, onSelect, scrollNonce, onDiff, onUndo, onGenerate, writesOff, readOnly, liveItems, versions }: {
+  /** 顶上的「版本」一节。 */
+  versions?: ReactNode;
   log: RevisionLogEntry[];
   messages: ConversationMessage[];
   selected: number | null;
@@ -174,6 +218,7 @@ function RevisionLogView({ log, messages, selected, onSelect, scrollNonce, onDif
   const alive = new Set(liveItems.map((i) => i.item_id));
   return (
     <div className="sw-revlog" data-testid="revision-log">
+      {versions}
       <div className="lead">这个任务的每一次修订，最新的在上面。点一张卡片，条目区会标出它碰到的条目。</div>
       {log.length === 0 && <div className="lead">还没有修订。</div>}
       {log.map((r) => {

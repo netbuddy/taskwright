@@ -47,6 +47,11 @@ export function putArchive(where: PackLocations, taskId: string, mtimeMs = Date.
   return [session, ...events];
 }
 
+/** 归档目录的摘要里去掉事件归档（pi-events）那一部分：数据包缺省不带它，导入之后的归档与原来的这一部分逐个相同。 */
+export function withoutEvents(files: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(files).filter(([name]) => !name.startsWith("pi-events/")));
+}
+
 /** 一个目录下全部普通文件的摘要（相对路径 → SHA-256），任务库旁边的两个日志文件不算。目录不存在时是空的。 */
 export function tree(root: string): Record<string, string> {
   const out: Record<string, string> = {};

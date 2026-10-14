@@ -136,7 +136,7 @@ test("刚建的任务：没有页、没有图、没有提议，各项都是空�
   assert.equal(taskStatus(`${tmp}/没有这个目录`), null);
 });
 
-test("工作项的清单：全部工作项按最近有动静的倒序，各带属于它的会话与最近有动静的那一条，会话文件不在的与归档的不算；当前活动按会话算；删掉的不再列出；任务已经完成时没有活动目录", () => {
+test("工作项的清单：全部工作项按最近有动静的倒序，各带属于它的会话与最近有动静的那一条，会话文件不在的与归档的不算；当前活动按会话算；删掉的不再列出；库里状态一列写着早先的「已完成」时照常给活动目录", () => {
   // 夹具一建好任务就在会话 s 上启动需求分析、从写条目开始；有一页主题，没有需求条目。
   const ws = build(tmp, "launch", WITH_QUESTIONS, [[PAGES[0]]]);
   const flowed = taskStatus(ws, "s")!;
@@ -188,10 +188,10 @@ test("工作项的清单：全部工作项按最近有动静的倒序，各带�
   assert.deepEqual([deleted.activity.kind, deleted.work_items.map((one) => [one.record_id, one.session_ids])], ["idle", [[1, ["s", "s3"]]]]);
   assert.equal(deleted.catalog!.activities[1].active_count, 0);
   assert.deepEqual([...library.archivedSessionInfo(ws)].map(([id, one]) => [id, one.record_id]), [["s2", 2]], "归档的会话保留它曾属于的记录号");
-  // 任务已经完成：没有早先那一节，也没有活动目录；资产现状照旧给。
+  // 库里状态一列写着早先的「已完成」（0.5.0 完成的任务升级后就是这样）：这一列不再读，活动目录照常给。
   sqlRun(ws, [["UPDATE task SET status = '已完成'"]]);
   const closed = taskStatus(ws, "s")!;
-  assert.deepEqual([closed.launch, closed.catalog, closed.assets.length], [null, null, 6]);
+  assert.deepEqual([closed.catalog !== null, closed.assets.length], [true, 6]);
 });
 
 test("七章的章号与章名", () => {

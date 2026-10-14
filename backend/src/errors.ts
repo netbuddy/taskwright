@@ -8,7 +8,6 @@ export const STATUS: Record<string, number> = {
   stale_revision: 409,
   old_format: 409,
   undo_conflict: 409,
-  task_closed: 409,
   no_task: 409,
   session_busy: 409,
   task_occupied: 409,

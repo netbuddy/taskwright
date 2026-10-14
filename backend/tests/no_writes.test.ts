@@ -90,7 +90,9 @@ const ALLOWED: Record<string, string[]> = {
   "stage_read.ts": ["stageSummaryOf", "activityRecords", "archivedSessions", "WorkItemBrief", "workItemBrief", "workItemSessionName", "workItemSessions"],
   // 开着的提议：从事件表读出任务现在待决定的那一条（只读函数，不写库），与它的类型。
   "stage_proposal.ts": ["OpenProposal", "openProposal"],
-  "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase"],
+  "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase", "UPGRADED_VERSION_NOTE", "OverallTemplate"],
+  // 版本记录只读：读出各版与它们的类型；记一次发布的 recordVersion 是写入函数，不在这里。
+  "versions.ts": ["VersionRecord", "versionRecords", "versionDir", "ARCHIVED_MARKDOWN", "ARCHIVED_DOCX"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],
 };

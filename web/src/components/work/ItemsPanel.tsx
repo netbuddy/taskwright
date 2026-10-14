@@ -25,14 +25,15 @@
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Modal } from "antd";
+import { Input, Modal } from "antd";
 import type { DiagramRow, Item, Task } from "../../api/types";
 import type { ReviewRun } from "../../state/workState";
 import { BUSY_TEXT, FILTERS, failedReview, isEmptyValue, isUnread, keptReview, keepPendingField, matchesFilter, needsReading, pendingReview, reviewOffReason, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
 import { CompletionPanel } from "../CompletionPanel";
 import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
-import { submitQuestion } from "../../model/submit";
+import { submitQuestion, submitTitle } from "../../model/submit";
+import { changesAfter, changesLine, nextVersionNo } from "../../model/versions";
 import { unlinkedIds } from "../../model/domainNotes";
 import { DIAGRAMS_TAB, initialTab, saveTab, tabOrder } from "../../model/itemsTab";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
@@ -57,7 +58,7 @@ export { BUSY_TEXT };
 export function ItemsPanel({
   task, initialCollection = null, initialDiagrams = false, initialDiagram = null, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
   onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, review = null, onReview, onPrefill,
-  submitBar = false,
+  submitBar = false, onPublish,
 }: {
   task: Task;
   /** 一打开停在哪个集合的页签（任务页的集合卡带过来的）；不给、或者没有这个集合时是第一个集合。 */
@@ -106,8 +107,10 @@ export function ItemsPanel({
   onReview?: ReviewAction;
   /** 往对话区输入框预填一句话（「让助手照这条改」）。 */
   onPrefill?: (text: string) => void;
-  /** 显示提交交付物的提示条（model/submit.ts 的 showSubmitBar 算好交进来）。 */
+  /** 显示发布版本的提示条（model/submit.ts 的 showSubmitBar 算好交进来）。 */
   submitBar?: boolean;
+  /** 发布一个版本（工作视图做：生成图、发请求）；返回被拒的原因，成了是 null。不给时提示条上的按钮不能点。 */
+  onPublish?: (note: string) => Promise<string | null>;
 }) {
   // 页签的次序：有总体分析集合时它排最前（model/itemsTab.ts）。
   const collections = useMemo(() => tabOrder(task.definition.collections), [task.definition.collections]);
@@ -131,17 +134,22 @@ export function ItemsPanel({
   const [showProgress, setShowProgress] = useState(false);
   const [flash, setFlash] = useState<string[]>([]);
   const toast = useToast();
-  // 提交交付物：点提示条上的按钮先弹确认框，点「提交」才作为直接操作发出，带上页面看到的修订号。
-  // 被拒（例如确认框开着时交付物又改了）把说明写在提示条上；成功时任务变为已完成，提示条随之消失。
+  // 发布版本：点提示条上的按钮先弹确认框，可以写一句发布说明，点「发布」才发出（工作视图带上页面看到的修订号与画好的图）。
+  // 被拒（例如确认框开着时交付物又改了）把说明写在提示条上；成功时版本列表多一版，提示条随之消失，直到又有改动。
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const submitDeliverable = async () => {
+  const [publishNote, setPublishNote] = useState("");
+  // 「有 M 处改动在第 N 版之后」那一行展开没有。
+  const [showChanges, setShowChanges] = useState(false);
+  const publishNow = async () => {
+    if (!onPublish) return;
     setSubmitting(true);
-    const error = await submit({ kind: "submit_deliverable", targets: [], fields: { revision_no: latestRevision }, notify_executor: false }, "提交交付物");
+    const error = await onPublish(publishNote);
     setSubmitting(false);
     setConfirmSubmit(false);
-    setSubmitError(error ? errorText(error) : null);
+    setSubmitError(error);
+    if (!error) setPublishNote("");
   };
   /** 从哪个问题跳到当前条目的；详情顶部据此给「回到问题列表」，那张问题卡片排第一并高亮。 */
   const [fromIssue, setFromIssue] = useState<{ issueId: string; itemId: string } | null>(null);
@@ -321,21 +329,40 @@ export function ItemsPanel({
       </div>
       <div className={`prog-detail${showProgress ? " show" : ""}`}>
         <div>这份交付物什么时候算做完，由下面这几条决定：</div>
-        {showProgress && <CompletionPanel completion={task.completion} status={task.status} items={task.items} task={task}
+        {showProgress && <CompletionPanel completion={task.completion} items={task.items} task={task}
           reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
           onReview={onReview ? (list) => reviewItems(list, `评审 ${list.map((i) => i.item_id).join("、")}`) : undefined}
           onOpen={(id) => { setShowProgress(false); onSelect(id); }} />}
       </div>
       {submitBar && !readOnly && (
         <div className="alertbar submitbar" data-testid="submit-bar">
-          <div className="q"><b>完成条件都满足了。</b>{submitQuestion(task)}{submitError && <div className="err" data-testid="submit-error">{submitError}</div>}</div>
-          <button type="button" className="btn sm pri" disabled={writesOff} onClick={() => setConfirmSubmit(true)} data-testid="submit-deliverable">已完成，提交交付物</button>
+          <div className="q"><b>{submitTitle(task)}</b>{submitQuestion(task)}{submitError && <div className="err" data-testid="submit-error">{submitError}</div>}</div>
+          <button type="button" className="btn sm pri" disabled={writesOff || !onPublish} onClick={() => setConfirmSubmit(true)} data-testid="submit-deliverable">发布版本</button>
         </div>
       )}
-      <Modal title="提交交付物" open={confirmSubmit} onOk={() => void submitDeliverable()} onCancel={() => setConfirmSubmit(false)} okText="提交" cancelText="取消"
+      <Modal title={`发布第 ${nextVersionNo(task)} 版`} open={confirmSubmit} onOk={() => void publishNow()} onCancel={() => setConfirmSubmit(false)} okText="发布" cancelText="取消"
         confirmLoading={submitting} destroyOnHidden>
-        提交之后这个任务变成只读，交付物不能再改，仍然可以生成文档。确定提交吗？
+        <p data-testid="publish-what">把现在的交付物（修订 {latestRevision}）记为第 {nextVersionNo(task)} 版，并存下这一版生成的 Markdown 与 Word，以后可以随时下载当时的样子。
+          发布之后仍然可以接着修改，以后再发布新的一版。</p>
+        <Input.TextArea value={publishNote} onChange={(e) => setPublishNote(e.target.value)} maxLength={200} autoSize={{ minRows: 2, maxRows: 4 }}
+          placeholder="发布说明（可以不写），例如：首版，覆盖借阅主流程。" data-testid="publish-note" />
       </Modal>
+      {changesLine(task) && (
+        <div className="alertbar verbar" data-testid="changes-bar">
+          {changesLine(task)} ·
+          <button type="button" className="btn sm" onClick={() => setShowChanges(!showChanges)} data-testid="changes-toggle">{showChanges ? "收起" : "列出来"}</button>
+          {showChanges && (
+            <div className="verlist" data-testid="changes-list">
+              {changesAfter(task).items.map((one) => (
+                <span key={one.item_id} className="ref" role="button" onClick={() => { setShowChanges(false); openItem(one.item_id); }}>{one.item_id} {one.title}</span>
+              ))}
+              {changesAfter(task).diagrams.map((one) => (
+                <span key={one.diagram_id} className="ref" role="button" onClick={() => { setShowChanges(false); openDiagram(one.diagram_id); }}>{one.diagram_id} {one.name}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {!noList && unread.length > 0 && filter !== "unread" && (
         <div className="alertbar" data-testid="unread-bar">
           还有 {unread.length} 条未读 ·

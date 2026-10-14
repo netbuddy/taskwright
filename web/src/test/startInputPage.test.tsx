@@ -29,7 +29,7 @@ const material = (path: string): Material => ({ path, bytes: 2048, modified_at: 
 
 function detail(over: Partial<TaskDetail> = {}): TaskDetail {
   return {
-    task_id: "TASK-P", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, status: "进行中", started_at: "2026-10-13T08:00:00", ended_at: null,
+    task_id: "TASK-P", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "2026-10-13T08:00:00",
     definition: { collections: [] }, items: [], completion: null, latest_revision: 0, sessions: [], materials: [], knowledge_libraries: ["general"], ...over,
   } as unknown as TaskDetail;
 }
@@ -358,10 +358,6 @@ describe("活动输入页：启动不了的情形", () => {
     page("nothing");
     expect(await screen.findByTestId("start-unknown")).toHaveTextContent("活动目录里没有这一项，请回任务起点重新选择。");
     expect(screen.getByTestId("back-to-start")).toBeInTheDocument();
-    expect(screen.queryByTestId("start-submit")).toBeNull();
-    cleanup(); vi.restoreAllMocks();
-    page("analysis", detail({ status: "已完成" }), statusOf({ catalog: null }));
-    expect(await screen.findByTestId("start-closed")).toHaveTextContent("这个任务已完成，不能再启动工作项。");
     expect(screen.queryByTestId("start-submit")).toBeNull();
   });
 });

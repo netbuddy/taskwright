@@ -358,6 +358,20 @@ class FindSessionTests(unittest.TestCase):
         # 两个都给、有重复的，只收一次。
         self.assertEqual(len(expand_archive_dirs([runs, runs / "TASK-A"])), 2)
 
+    def test_只有会话文件没有事件归档的任务也收进来_会话写没有事件归档_详情不报错(self):
+        # 数据包缺省不带事件归档：导入来的任务在 runs/<任务>/ 下只有 pi-sessions。
+        runs = self.root / "runs"
+        runs.mkdir()
+        shutil.copytree(FIXTURE_RUNS, runs / "TASK-A")
+        shutil.rmtree(runs / "TASK-A" / "pi-events")
+        self.assertEqual([d.name for d in expand_archive_dirs([runs])], ["TASK-A"])
+        self.assertEqual(default_workspaces_dir(runs / "TASK-A"), runs)
+        index = Index([runs / "TASK-A"], self.root)
+        row = next(r for r in index.session_list()["会话"] if r["会话编号"] == SESSION_ID)
+        self.assertEqual([row["终态"], row["启动失败"], row["轮数"]], [runs_module.NO_EVENTS, False, 0])
+        detail = index.session_detail(SESSION_ID)
+        self.assertEqual([detail["终态"], detail["运行"]], ["没有事件归档", []])
+
     def test_runs下面还没有任务时也取旁边的tasks(self):
         # 先起观测台、之后再建任务：起的时候 runs/ 是空的，任务目录所在目录照样取旁边的 tasks/。
         runs = self.root / "runs"

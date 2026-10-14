@@ -20,6 +20,7 @@ import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
 import { ApiError } from "./errors.ts";
 import * as clock from "./clock.ts";
 import { CODEX_PROVIDER, codexLogin } from "./codex.ts";
+import { readCopiedMark } from "./desktop_dirs.ts";
 import { type Profile, buildEnvironment, piAgentDir, piLauncher, resolveModel } from "./launch.ts";
 import {
   type Kind, type ModelType, type PiDirSettings, type ProviderStatus, type Purpose, type Selection, type StoredModel, type StoredProvider,
@@ -359,9 +360,12 @@ export function view(ctx: Context) {
     const resolved = resolveModel(ctx.profile, ctx.env);
     fallback = { model: resolved.model, from: resolved.from };
   }
+  // 桌面包首次启动时从本机 pi 的配置复制过来的（desktop_dirs.ts 的 adoptPiConfig）：从哪里、什么时候。
+  const copied = readCopiedMark(agentDir(ctx));
   return {
     ok: true, editable: true, notice: null, selection, fallback,
     providers: [...providers, ...externalViews(models, dir)],
+    copied_from_pi: copied ? { from: copied.from, at: copied.at } : null,
   };
 }
 

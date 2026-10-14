@@ -14,7 +14,7 @@ import { TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { SERVICE_DB_NAME, ServiceDb } from "../src/service_db.ts";
 import { BACKEND_MAIN, ROOT, captureConsole, tempDir } from "./helpers.ts";
-import { dataWith, facts, put, putArchive, readPack, repack, tree } from "./pack_stack.ts";
+import { dataWith, facts, put, putArchive, readPack, repack, tree, withoutEvents } from "./pack_stack.ts";
 
 captureConsole();
 
@@ -67,7 +67,8 @@ test("导出整套再导入到一个空的数据目录：两个命令都退出 0
   assert.match(imported.out, /合计：导入了 2 个任务、0 个知识库；因为已经存在而跳过 1 项；没有做成 0 项。/);
   assert.match(imported.out, /这份报告也写在 .*logs.import-\d{8}-\d{6}\.txt/);
   assert.deepEqual(registered(target)?.sort(), [[a, "甲", a], [b, "乙", b]].sort(), "导入时建出了任务登记");
-  assert.deepEqual(tree(join(target, "runs", a)), tree(join(where.runsDir, a)));
+  // 缺省不带事件归档：导入之后的归档是原来的对话记录那一部分。
+  assert.deepEqual(tree(join(target, "runs", a)), withoutEvents(tree(join(where.runsDir, a))));
   assert.deepEqual(facts(join(target, "tasks", a)), facts(join(where.tasksDir, a)));
 
   const again = run(["data", "import", "--data", target, "--from", file]);

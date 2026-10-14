@@ -26,7 +26,7 @@ function item(id: string, collection: string, fields: Record<string, unknown>): 
   } as Item;
 }
 const TASK: Task = {
-  task_id: "TASK-E", task_name: "图书馆借还", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  task_id: "TASK-E", task_name: "图书馆借还", task_type: "演示", domain_tag: null, started_at: "",
   definition: { collections: [
     { name: "功能用例", prefix: "UC", needs_review: false, review_rules: null, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] },
     { name: "领域说明", prefix: "DN", needs_review: false, review_rules: null, fields: [{ name: "标题", type: "文本", required: true, values: null }] }] },

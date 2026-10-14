@@ -41,6 +41,7 @@ export interface TaskRecord {
   name: string | null;
   /** 属主；现在只有单机用户，写 local。 */
   owner: string;
+  /** 早先登记的任务状态。任务没有状态了，现在恒写 null；这一列留着，下一次整理表结构时删。 */
   status: string | null;
   task_type: string | null;
   created_at: string | null;
@@ -227,6 +228,11 @@ export class ServiceDb {
   /** 登记表里目录是这一个的那一行；没有登记过是 null。 */
   taskByDir(dir: string): TaskRecord | null {
     return plain(this.db.prepare("SELECT * FROM tasks WHERE dir = ?").get(dir));
+  }
+
+  /** 删掉一个任务的那一行（删除任务时）；没有登记过时什么都不做。 */
+  removeTask(taskId: string): void {
+    this.db.prepare("DELETE FROM tasks WHERE task_id = ?").run(taskId);
   }
 
   /** 登记的全部任务，按编号排。 */

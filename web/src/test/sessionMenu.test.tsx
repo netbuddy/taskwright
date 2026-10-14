@@ -19,7 +19,7 @@ const Wrap = ({ children }: { children: ReactNode }) => (
 );
 
 const task = {
-  task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, started_at: "",
   definition: { collections: [{ name: "用例", prefix: "UC", fields: [{ name: "名称", type: "文本", required: true, values: null }] }] },
   completion: null, items: [],
 } as unknown as Task;

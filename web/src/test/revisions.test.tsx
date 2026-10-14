@@ -39,7 +39,7 @@ function item(over: Partial<Item> & Pick<Item, "item_id">): Item {
 
 function task(items: Item[]): Task {
   return {
-    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [
       { name: "用例", prefix: "UC", fields: [
         { name: "名称", type: "文本", required: true, values: null },
@@ -180,7 +180,7 @@ describe("单一写入者：执行者工作中", () => {
     expect(screen.getByTestId("keep-TBD-001")).toHaveAttribute("title", "助手正在工作，结束后你可以继续修改");
   });
 
-  it("另外三种灰化原因写在悬停说明里：正在保存、看的是旧修订、任务已结束", async () => {
+  it("另外三种灰化原因写在悬停说明里：正在保存、看的是旧修订、助手不可用", async () => {
     vi.spyOn(api, "itemRevisions").mockResolvedValue([
       { revision_no: 1, by: "executor", at: "", fields: { 名称: "买家申请退款", 步骤: ["提交申请"] }, sources: [], reviews: [], confirmations: [] },
       { revision_no: 4, by: "executor", at: "", fields: UC1.fields, sources: [], reviews: [], confirmations: [] },
@@ -193,9 +193,8 @@ describe("单一写入者：执行者工作中", () => {
     expect(screen.getByTestId("edit-item")).toBeDisabled();
     expect(screen.getByTestId("edit-item")).toHaveAttribute("title", "你在看旧修订，回到最新才能改。");
     cleanup();
-    const ended = { ...t, status: "已完成" };
-    render(<Wrap><ItemDetail task={ended} item={UC1} def={t.definition.collections[0]} readOnly pending={false} submit={vi.fn(async () => null)} /></Wrap>);
-    expect(screen.getByTestId("delete-item")).toHaveAttribute("title", "任务已结束，不能再改。");
+    render(<Wrap><ItemDetail task={t} item={UC1} def={t.definition.collections[0]} readOnly pending={false} submit={vi.fn(async () => null)} /></Wrap>);
+    expect(screen.getByTestId("delete-item")).toHaveAttribute("title", "助手现在不可用，暂时不能改。");
   });
 
   it("修订列表没读到时不当作只有一次修订：下拉框上提示再打开一次试试", async () => {
@@ -458,12 +457,11 @@ describe("已读即确认", () => {
     expect(unreadItems(t).map((i) => i.item_id)).toEqual(["UC-001"]);
   });
 
-  it("打开详情要不要记为已读：进行中、要求看过的集合、现在未读才标，标的是条目当前所在的修订", () => {
+  it("打开详情要不要记为已读：要求看过的集合、现在未读才标，标的是条目当前所在的修订", () => {
     const t = withCompletion([UC1, read(UC2), TBD], ["每个条目用户确认"]);
     expect(viewTarget(t, "UC-001")).toEqual({ item_id: "UC-001", base_revision: 4 });
     expect(viewTarget(t, "UC-002")).toBeNull(); // 已读，幂等由后端再保一次
     expect(viewTarget(t, "TBD-001")).toBeNull(); // 问题条目靠状态收口，不要求看过
-    expect(viewTarget({ ...t, status: "已完成" }, "UC-001")).toBeNull();
     expect(viewTarget(t, null)).toBeNull();
   });
 

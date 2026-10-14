@@ -70,7 +70,7 @@ describe("排版库画不出来", () => {
     mockApi();
     vi.spyOn(api, "listTasks").mockResolvedValue([]);
     vi.spyOn(api, "getTask").mockResolvedValue({
-      task_id: "TASK-U", task_name: "Word 任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+      task_id: "TASK-U", task_name: "Word 任务", task_type: "演示", domain_tag: null, started_at: "",
       definition: { collections: [] }, items: [], completion: null, sessions: [], materials,
     } as unknown as TaskDetail);
     render(<ConfigProvider><AntApp><TaskPage taskId="TASK-U" /></AntApp></ConfigProvider>);

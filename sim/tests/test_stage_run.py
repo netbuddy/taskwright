@@ -8,7 +8,7 @@
    发「进入评审确认」的卡片。
 3. 用户 agent 打开卡片点名的用例，点「进入评审确认」；助手请用户确认这个用例。
 4. 用户 agent 打开用例，点「这几条都看过了」；助手发是否完成的卡片。
-5. 用户 agent 点「已完成，提交交付物」；助手完成任务（完成任务要在评审确认阶段，所以第 3 步少不了）。
+5. 用户 agent 点「已完成，发布版本」；助手发布第 1 版（发布版本要在评审确认阶段，所以第 3 步少不了）。
 6. 用户 agent 看到任务完成，表示目标达成。
 
 助手的回答按先后写成一串（这一例只跑一遍）；用户 agent 与评审者的回答写成规则，靠请求里的话认。本机没有 pi 或 node 时跳过。
@@ -45,7 +45,7 @@ REVIEW_CARD = {"kind": "choose", "text": "用例写好了，评审也通过了�
                "options": [{"key": "enter_review", "text": "进入评审确认"}, {"key": "continue_writing", "text": "继续写条目"}]}
 CONFIRM_CARD = {"kind": "confirm", "text": "请看一下这个用例。", "items": [{"item_id": "UC-001", "revision_no": 2}]}
 DONE_CARD = {"kind": "choose", "text": "功能用例一共 1 个条目，已经评审通过，你也看过了。这个任务是否已经完成？提交之后交付物不能再改，仍然可以生成文档。",
-             "options": [{"key": "complete", "text": "已完成，提交交付物"}, {"key": "continue", "text": "还没完成，继续修改"}]}
+             "options": [{"key": "complete", "text": "已完成，发布版本"}, {"key": "continue", "text": "还没完成，继续修改"}]}
 
 
 def tool(name: str, arguments: dict) -> dict:
@@ -60,7 +60,7 @@ SCRIPT = {
     "rules": [
         {"when": {"any_contains": "你是评审者"}, "reply": {"text": json.dumps({"发现": []}, ensure_ascii=False)}},
         # 用户 agent：按看到的东西决定下一步。先后有讲究：每条只认它那一步独有的话。
-        user(respond(click="已完成，提交交付物"), last_role="tool", last_contains="选项 complete"),
+        user(respond(click="已完成，发布版本"), last_role="tool", last_contains="选项 complete"),
         user(respond(done=True), last_role="tool", last_contains="任务已经完成"),
         # 打开用例之后点哪一个，看之前见没见过请确认的卡片：见过就是在确认，没见过就是在「进入评审确认」的卡片上。
         {"when": {"any_contains": "【卡片：请确认】", "last_role": "tool", "last_contains": "UC-001「借书」，集合"}, "reply": respond(click="这几条都看过了")},
@@ -81,7 +81,7 @@ SCRIPT = {
         say("写好了一个用例，评审通过了。现在进入评审确认吗？", REVIEW_CARD),
         say("请你看一下这个用例。", CONFIRM_CARD),
         say("完成条件都满足了，请在卡片上选。", DONE_CARD),
-        tool("complete_task", {}),
+        tool("publish_version", {}),
         say("任务已经完成。"),
     ],
     "default": {"text": "好的。"},
@@ -127,10 +127,11 @@ class StageRunTest(unittest.TestCase):
         self.assertEqual(summary["第一层"], {"没有在执行者没问的时候主动说出隐藏事实（查全部轮次）": True, "点「这几条都看过了」之前在同一轮里看过该条目的详情": True,
                                            judge.ENTER_CHECK: True})
         self.assertEqual(summary["第一层说明"][judge.ENTER_CHECK], "一共点了 2 次进入下一段的卡片：第 2 轮「开始写条目」、第 3 轮「进入评审确认」。")
-        # 库里：任务已完成；两次移动都是用户在卡片上点的，从核读材料直接进入写条目，再进入评审确认。
+        # 库里：发布了第 1 版（助手发布的），任务照常进行中；两次移动都是用户在卡片上点的，从核读材料直接进入写条目，再进入评审确认。
         task = taskdb.read_workspace(sim / "库副本")["任务"][0]
-        self.assertEqual(task["状态"], "已完成")
+        self.assertEqual(task["状态"], "进行中")
         with sqlite3.connect(sim / "库副本" / taskdb.DB_NAME) as db:
+            self.assertEqual(db.execute("SELECT version_no, actor FROM version_record").fetchall(), [(1, "executor")])
             moves = db.execute(
                 "SELECT e.actor, json_extract(e.payload, '$.from'), COALESCE(json_extract(e.payload, '$.node'), json_extract(e.payload, '$.activity')), "
                 "json_extract(e.payload, '$.reason') FROM event e WHERE e.name IN ('ACTIVITY_STARTED', 'ACTIVITY_NODE_ENTERED') ORDER BY e.seq").fetchall()

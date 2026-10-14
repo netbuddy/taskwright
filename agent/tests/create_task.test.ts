@@ -14,7 +14,7 @@ test("创建任务通过：写一行任务、记一条事件，返回文字写�
   const outcome = createTask(call, { definition_path: DEFINITION_PATH });
   const [task] = query<any>(dir, "SELECT * FROM task");
   assert.equal(task.task_id, "TASK-001");
-  assert.equal(task.status, "进行中");
+  assert.equal(task.status, "进行中", "状态一列不写，取缺省值");
   assert.equal(task.definition_path, DEFINITION_PATH);
   assert.match(task.definition_text, /演示任务/);
   assert.equal(task.session_id, "session-A");
@@ -32,21 +32,15 @@ test("创建任务通过：写一行任务、记一条事件，返回文字写�
   assert.match(outcome.text, /「关联条目」：类型是条目引用，写成条目编号的数组/);
 });
 
-test("一库一任务：库里已有任务时拒绝（不论状态），给出它的任务编号、任务名与状态，库里不多任何行", () => {
+test("一库一任务：库里已有任务时拒绝，给出它的任务编号与任务名，库里不多任何行", () => {
   const dir = makeWorkspace();
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   assert.throws(
     () => createTask(callIn(dir), { definition_path: DEFINITION_PATH }),
-    /这个任务目录的库里已经有任务了：任务编号是 TASK-001，任务名是「演示任务」，状态是进行中。一个库只放一个任务/,
+    /这个任务目录的库里已经有任务了：任务编号是 TASK-001，任务名是「演示任务」。一个库只放一个任务/,
   );
   assert.equal(count(dir, "task"), 1);
   assert.equal(count(dir, "event"), 1);
-  // 任务已经结束也一样拒绝。
-  const db = new DatabaseSync(databasePath(dir));
-  db.exec("UPDATE task SET status = '已完成'");
-  db.close();
-  assert.throws(() => createTask(callIn(dir), { definition_path: DEFINITION_PATH }), /状态是已完成。一个库只放一个任务/);
-  assert.equal(count(dir, "task"), 1);
 });
 
 test("任务名与领域标签：用户给了就存用户给的；标签没给就取任务定义里的；都没有为空", () => {

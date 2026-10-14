@@ -76,7 +76,7 @@ test("空交付物：「至少一个条目」是还差，其余是暂无条目�
     ["问题", "没有状态为未解决的条目", "empty", true],
   ]);
   assert.equal(results[1].summary, "这个集合现在没有条目，这一条暂不需要核对。");
-  assert.equal(completionBrief(results), "要完成任务，还差 1 项：用例至少要有一个条目。");
+  assert.equal(completionBrief(results), "要发布版本，还差 1 项：用例至少要有一个条目。");
 });
 
 test("有条目的集合按事实判，空集合写暂无条目并在概括句里另起一句说明", () => {
@@ -86,14 +86,14 @@ test("有条目的集合按事实判，空集合写暂无条目并在概括句�
   const results = withDb(dir, (db) => checkCompletion(db, "TASK-001", COMPLETION));
   assert.deepEqual(results.map((r) => r.state), ["met", "unmet", "unmet", "empty"]);
   assert.equal(completionBrief(results),
-    "要完成任务，还差 2 项：用例每个条目评审通过（还差 UC-001）；用例每个条目用户确认（还差 UC-001）。" +
+    "要发布版本，还差 2 项：用例每个条目评审通过（还差 UC-001）；用例每个条目用户确认（还差 UC-001）。" +
     "问题现在没有条目，这几个集合的条件暂不需要核对。");
 });
 
-test("都满足时概括句写可以完成任务；还差的条目多于上限时只写个数", () => {
+test("都满足时概括句写可以发布版本；还差的条目多于上限时只写个数", () => {
   const met = [{ condition: "至少一个条目", collection: "用例", satisfied: true, state: "met" as const, summary: "", unmet: [] }];
-  assert.equal(completionBrief(met), "完成条件都已满足，可以完成任务。");
+  assert.equal(completionBrief(met), "完成条件都已满足，可以发布版本。");
   const many = [{ condition: "每个条目用户确认", collection: "用例", satisfied: false, state: "unmet" as const, summary: "",
     unmet: Array.from({ length: 7 }, (_, i) => ({ item: `UC-00${i + 1}`, reason: "" })) }];
-  assert.equal(completionBrief(many), "要完成任务，还差 1 项：用例每个条目用户确认（还差 7 个）。");
+  assert.equal(completionBrief(many), "要发布版本，还差 1 项：用例每个条目用户确认（还差 7 个）。");
 });

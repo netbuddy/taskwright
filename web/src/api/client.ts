@@ -6,6 +6,7 @@ import { dispositionFileName } from "../model/download";
 import type { TaskStatusView } from "./types";
 import type {
   ActionRequest,
+  VersionView,
   ApiErrorBody,
   ContextWindowResult,
   DiagramDetail,
@@ -51,6 +52,8 @@ export class ApiError extends Error {
 
 /** 直接操作的超时（第 6 节规则 1）：数据库忙等待是 5 秒，前端等 10 秒。 */
 export const ACTION_TIMEOUT_MS = 10_000;
+/** 发布要先生成这一版的 Word，第一次要加载那一部分代码，等得久一些。 */
+export const PUBLISH_TIMEOUT_MS = 60_000;
 
 const BASE = "/api/v1";
 /** 请求发不出去（服务停了或网络断了）时的那句话。 */
@@ -216,6 +219,18 @@ export const api = {
       `${task(taskId)}/conversation?session=${encodeURIComponent(sessionId)}&before=${encodeURIComponent(before)}&limit=100`,
     ),
   // 生成文档：按一次修订整体导出（revision_no 不写就是最新），items 不写就是那次修订时的全部条目。
+  /**
+   * 发布一个版本：带上页面看到的修订号、发布说明（可空）与页面画好的图（同「下载 Word」）。任务服务先把这一版的文档存进任务目录，
+   * 再核对完成条件与这次同意、记下版本；被拒时照它说的原因写。回应里有版本号。
+   */
+  publishVersion: (taskId: string, sessionId: string, body: { revision_no: number; note: string | null; images: DocumentImage[] }) =>
+    request<{ ok: true; op_id: string; version_no: number; revision_no: number; figure_count: number | null; figure_pictures: number | null }>(
+      "POST", `${task(taskId)}/versions?session=${encodeURIComponent(sessionId)}`, body, PUBLISH_TIMEOUT_MS),
+  /** 发布过的各版（与整份数据里的 versions 相同，含存档在不在）。 */
+  listVersions: (taskId: string) => request<{ ok: true; versions: VersionView[] }>("GET", `${task(taskId)}/versions`).then((r) => r.versions),
+  /** 某一版存档的文档的下载地址（format 是 md 或 docx）；没有这种存档时任务服务回 404 并说明。 */
+  versionDocumentHref: (taskId: string, versionNo: number, format: "md" | "docx") =>
+    `${BASE}${task(taskId)}/versions/${versionNo}/document?format=${format}`,
   previewDocument: (taskId: string, pick: DocumentPick) =>
     request<{ text: string }>("POST", `${task(taskId)}/documents/preview`, { ...pick, format: "markdown" }),
   downloadDocument: async (taskId: string, pick: DocumentPick) => {
@@ -270,6 +285,10 @@ export const api = {
     const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
     return request<{ path: string }>("POST", `${task(taskId)}/materials${query}`, form);
   },
+  /** 删除一个任务（任务目录与它的会话归档），不能恢复；助手正在工作时任务服务拒绝。 */
+  deleteTask: (taskId: string) => request<{ ok: true; task_id: string }>("POST", `${task(taskId)}/delete`),
+  /** 把一个任务导出成数据包的下载地址（以后可以在设置里导入）。 */
+  exportTaskHref: (taskId: string) => `${BASE}${task(taskId)}/export`,
   deleteMaterial: (taskId: string, path: string) => request<{ ok: true; path: string }>("POST", `${task(taskId)}/materials/delete`, { path }),
   /** 用 file 替换 path 这份材料（只有还没有进入对话的材料换得掉）；返回新材料的路径与被换掉的那份的路径。 */
   replaceMaterial: (taskId: string, path: string, file: File) => {

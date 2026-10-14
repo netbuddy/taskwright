@@ -51,7 +51,7 @@ const UC1 = item({ item_id: "UC-001", reviews: [{ revision_no: 6, verdict: "合�
 
 function task(items: Item[], over: Partial<Task> = {}): Task {
   return {
-    task_id: "TASK-1", task_name: "t", task_type: "t", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-1", task_name: "t", task_type: "t", domain_tag: null, started_at: "",
     definition: { collections: [{ name: "功能用例", prefix: "UC", needs_review: true, rules_hash: H, fields: [
       { name: "用例名称", type: "文本", required: true, values: null }, { name: "基本流程", type: "文本列表", required: true, values: null },
       { name: "约束规则", type: "文本列表", required: false, values: null }],

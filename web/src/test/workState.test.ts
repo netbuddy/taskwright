@@ -11,8 +11,8 @@ const SESSION = "s-1";
 
 function task(): Task {
   return {
-    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中",
-    started_at: "2026-09-21T10:00:00+08:00", ended_at: null,
+    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null,
+    started_at: "2026-09-21T10:00:00+08:00",
     definition: { collections: [{ name: "用例", prefix: "UC", fields: [
       { name: "名称", type: "文本", required: true, values: null },
       { name: "步骤", type: "文本列表", required: true, values: null }] }] },
@@ -188,12 +188,12 @@ describe("事件应用规则", () => {
     expect(isUnread(s.task!.items[0])).toBe(false);
   });
 
-  it("对话里的确认记下依据是用户的话；任务完成的事件把任务状态改成已完成", () => {
+  it("对话里的确认记下依据是用户的话；任务事件换任务名", () => {
     const s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: snapshot(4) },
       { type: "sse", event: "confirmation_recorded", data: { seq: 5, at: "", task_id: "TASK-001", items: [{ item_id: "UC-001", revision_no: 1, accepted: true }], basis: "user_words", op_id: null, completion: null } },
-      { type: "sse", event: "task_changed", data: { seq: 6, at: "", task_id: "TASK-001", task_name: "演示任务", status_before: "进行中", status_after: "已完成", actor: "executor", completion: null } });
+      { type: "sse", event: "task_changed", data: { seq: 6, at: "", task_id: "TASK-001", task_name: "改过的名字", actor: "user", completion: null } });
     expect(s.task!.items[0].confirmations.map((c) => c.basis)).toEqual(["user_words"]);
-    expect(s.task!.status).toBe("已完成");
+    expect(s.task!.task_name).toBe("改过的名字");
   });
 
   it("删除操作把条目从列表里拿掉", () => {

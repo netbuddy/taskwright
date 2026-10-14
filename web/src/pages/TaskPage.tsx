@@ -70,10 +70,10 @@ export function TaskPage({ taskId }: { taskId: string }) {
   // 执行者状态从工作中变为别的状态（助手做完一轮）时重读；刚连上、还不知道之前的状态时收到的第一条非工作中状态也算。
   // 连接不带会话，服务把整个任务的事件都发过来，这里只看 executor_state；不带 Last-Event-ID，不补发旧事件。
   // 断线照 openEventStream 的办法重连，重新连上时重读一次（断开期间可能错过一轮的结束）。
-  // 任务已经结束时不开；离开页面时断开。不定时轮询。
-  const running = task?.status === "进行中";
+  // 任务读到之后才开；离开页面时断开。不定时轮询。
+  const loaded = !!task;
   useEffect(() => {
-    if (!running) return;
+    if (!loaded) return;
     let last: string | null = null;
     let opened = false;
     return openEventStream(`/api/v1/tasks/${encodeURIComponent(taskId)}/events`, () => null, {
@@ -89,12 +89,11 @@ export function TaskPage({ taskId }: { taskId: string }) {
         opened = true;
       },
     });
-  }, [taskId, running]);
+  }, [taskId, loaded]);
 
   if (error) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Alert type="error" showIcon message={error} /></div></TaskFrame>;
   if (!task) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Spin /></div></TaskFrame>;
 
-  const closed = task.status !== "进行中";
   const selected = task.knowledge_libraries ?? [GENERAL];
   const lastActive = task.sessions.map((s) => s.last_active_at).filter(Boolean).sort().pop();
   const versionNote = taskTypeVersionNote(task.task_type_versions);
@@ -202,8 +201,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
             </div>
             <div className="tp-head-title">
               <h1>{task.task_name}</h1>
-              {closed ? <span className="tp-status" data-testid="task-status">{task.status}</span>
-                : stateLine(status) && <span className="tp-state" data-testid="task-state">{stateLine(status)}</span>}
+              {stateLine(status) && <span className="tp-state" data-testid="task-state">{stateLine(status)}</span>}
             </div>
             {status?.start_page && <p className="tp-lead" data-testid="task-lead">{status.start_page.lead}</p>}
           </div>
@@ -214,21 +212,19 @@ export function TaskPage({ taskId }: { taskId: string }) {
             </div>
           )}
         </header>
-        {closed && <Alert type="info" showIcon style={{ marginTop: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能启动工作项、新建会话、上传材料或修改条目。`} />}
-
-        {empty && !closed && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} />}
+        {empty && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} />}
 
         {showsPendingWork(task, status) && (
           <section className="tp-sec">
             <div className="tp-sec-h"><h2>待处理事项</h2><span className="tp-sec-note">由需求资产上的记号汇总；每一项可直接启动对应的活动，或打开做它的会话</span></div>
-            <PendingWorkSection task={task} status={status} closed={closed} />
+            <PendingWorkSection task={task} status={status} />
           </section>
         )}
 
         {workItems.length > 0 && (
           <section className="tp-sec">
             <div className="tp-sec-h"><h2>工作项</h2><span className="tp-sec-note">每个工作项有自己的会话；打开会话接着做，或换一条干净的会话接着；按最近有动静的先后排列，不要的直接删除</span></div>
-            <WorkItemCards items={workItems} closed={closed} busy={itemBusy} onOpen={openWorkItem} onContinue={(item) => void continueWorkItem(item)} onDelete={deleteWorkItem} />
+            <WorkItemCards items={workItems} busy={itemBusy} onOpen={openWorkItem} onContinue={(item) => void continueWorkItem(item)} onDelete={deleteWorkItem} />
           </section>
         )}
 
@@ -243,27 +239,27 @@ export function TaskPage({ taskId }: { taskId: string }) {
           <>
             <section className="tp-sec">
               <div className="tp-sec-h"><h2>工作流程</h2><span className="tp-sec-note">按推荐次序串联多项活动；每站完成后助手提议下一站，由你确认后进入。每次启动新建一个工作项和一条会话</span></div>
-              <FlowCards taskId={taskId} flows={catalog.flows} onOpenWorkItem={closed ? undefined : openFlowItem} />
+              <FlowCards taskId={taskId} flows={catalog.flows} onOpenWorkItem={openFlowItem} />
             </section>
             <section className="tp-sec">
               <div className="tp-sec-h"><h2>单项活动</h2><span className="tp-sec-note">独立启动其中一项；可否启动取决于其输入资产是否具备；完成后仅汇报结果，不提议下一站。同一项活动可以有多个工作项，靠范围说明区分</span></div>
               <ActivityCards taskId={taskId} activities={catalog.activities} />
-              <FreeTalk canEnter={!closed} busy={entering} onEnter={() => void enterWorkbench()} />
+              <FreeTalk busy={entering} onEnter={() => void enterWorkbench()} />
             </section>
           </>
         )}
-        {!catalog && !closed && (
+        {!catalog && (
           <section className="tp-sec">
             <div className="tp-sec-h"><h2>进入工作台</h2></div>
-            <FreeTalk canEnter busy={entering} onEnter={() => void enterWorkbench()} />
+            <FreeTalk busy={entering} onEnter={() => void enterWorkbench()} />
           </section>
         )}
 
         <SessionList taskId={taskId} sessions={task.sessions} />
 
         <div className={`tp-pair${hasKnowledge ? "" : " single"}`}>
-          <MaterialsCard taskId={taskId} materials={ownMaterials(task.materials)} closed={closed} info={service.info} onView={view} onChanged={() => void load()} />
-          {hasKnowledge && <TaskKnowledgeCard libraries={libraries} selected={selected} readOnly={closed} onChange={changeKnowledge} />}
+          <MaterialsCard taskId={taskId} materials={ownMaterials(task.materials)} info={service.info} onView={view} onChanged={() => void load()} />
+          {hasKnowledge && <TaskKnowledgeCard libraries={libraries} selected={selected} readOnly={false} onChange={changeKnowledge} />}
         </div>
       </div>
 

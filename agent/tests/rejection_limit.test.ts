@@ -30,12 +30,12 @@ test("上限是 5 次；按拒绝的文字认它是哪一种", () => {
   assert.equal(refusalKind(FORM), "form");
 });
 
-test("数连续被拒的次数：回复被拒不论原因都算；保存修订、完成任务只算因为没有合格的理解被拒的", () => {
+test("数连续被拒的次数：回复被拒不论原因都算；保存修订、发布版本只算因为没有合格的理解被拒的", () => {
   assert.equal(consecutiveRefusals([]), 0);
   assert.equal(consecutiveRefusals([user("你好"), refused(missing()), refused(invalid), refused(FORM)]), 3);
   // 原来那个函数不数没有写理解的拒绝，现在照旧（放行规则用它）。
   assert.equal(consecutiveReplyRejections([user("你好"), refused(missing()), refused(invalid), refused(FORM)] as never), 1);
-  assert.equal(consecutiveRefusals([user("你好"), result("save_revision", true, missing("保存修订")), result("complete_task", true, missing("完成任务")), refused(missing())]), 3);
+  assert.equal(consecutiveRefusals([user("你好"), result("save_revision", true, missing("保存修订")), result("publish_version", true, missing("发布版本")), refused(missing())]), 3);
   // 保存修订因为输入不合规被拒：不算，也不打断。
   assert.equal(consecutiveRefusals([user("你好"), refused(missing()), result("save_revision", true, "保存修订没有执行：第 1 个操作的来源在材料里找不到。"), refused(missing())]), 2);
 });
@@ -46,7 +46,7 @@ test("数到哪里为止：用户的一句话，或者三个工具里任何一�
   assert.equal(consecutiveRefusals([user("你好"), refused(missing()), result("get_item", false, "UC-001 ……"), { type: "custom_message" }, refused(missing())]), 2);
   assert.equal(consecutiveRefusals([user("你好"), refused(missing()), result("reply", false, "回复已送达"), refused(FORM)]), 1);
   assert.equal(consecutiveRefusals([user("你好"), refused(missing()), refused(missing()), result("save_revision", false, "已保存修订 3"), refused(FORM)]), 1);
-  assert.equal(consecutiveRefusals([user("你好"), refused(missing()), result("complete_task", false, "任务已完成"), refused(FORM)]), 1);
+  assert.equal(consecutiveRefusals([user("你好"), refused(missing()), result("publish_version", false, "第 1 版已发布"), refused(FORM)]), 1);
 });
 
 test("到第 5 次时返回「出错并结束本次运行」的结果，带着拒绝原因与停下的那句话；没到时是 null，照常抛异常", () => {
@@ -64,14 +64,14 @@ test("到第 5 次时返回「出错并结束本次运行」的结果，带着�
   assert.equal(stopAtLimit(new Error(FORM), [user("你好"), ...times(6, refused(FORM))])!.details.reason_kind, "form");
   // 用户再说一句，计数清零。
   assert.equal(stopAtLimit(error, [user("你好"), ...times(4, refused(missing())), user("再说一句")]), null);
-  // 不算数的拒绝（保存修订、完成任务因为输入不合规）到不了上限。
+  // 不算数的拒绝（保存修订、发布版本因为输入不合规）到不了上限。
   assert.equal(stopAtLimit(new Error("来源找不到"), [user("你好"), ...times(4, refused(missing()))], false), null);
 });
 
 test("认「先写理解」那道门的拒绝：是这道门的才算，输入不合规的、别的门的、普通异常都不算", () => {
   assert.equal(isUnderstandingGate(new ToolRejection(missing("保存修订"), "事实", "指引", "gate")), true);
   assert.equal(isUnderstandingGate(new ToolRejection("保存修订没有执行：来源找不到。", "事实", "指引", "input")), false);
-  assert.equal(isUnderstandingGate(new ToolRejection("完成任务没有执行：用户还没有同意完成。", "事实", "指引", "gate")), false);
+  assert.equal(isUnderstandingGate(new ToolRejection("发布版本没有执行：用户还没有同意完成。", "事实", "指引", "gate")), false);
   assert.equal(isUnderstandingGate(new Error(missing())), false);
 });
 

@@ -1,6 +1,6 @@
 /**
  * 删除材料：本体连同 Word 材料的派生文件一起删、发 material_removed；助手正在工作时拒绝；路径不在材料目录里、
- * 或者是派生文件的路径时拒绝；任务已结束时拒绝。
+ * 或者是派生文件的路径时拒绝。任务没有状态，库里状态一列写着什么都不影响。
  * 已经进入对话的材料拒绝删除：材料上传之后（文件的修改时刻）任务里任何一条会话有过活动，就算进入了对话；按毫秒比，相等算进入。
  * 任务详情里每份材料带 deletable（同一个判据），每条会话带 revision_count（这条会话产生了几次修订）。
  * 会话文件在这里直接写出来（一行会话头，之后每行一条消息），不起助手。
@@ -84,11 +84,11 @@ test("助手正在工作时拒绝删除，说明写明结束后再删", () => wi
   }
 }));
 
-test("任务已结束时拒绝删除", () => withTask((service, t) => {
+test("库里状态一列写着早先的「已完成」时照常可以删除（任务没有状态了）", () => withTask((service, t) => {
   service.upload(t, "需求.md", Buffer.from("买家可以申请退货。"));
   sqlRun(t.dir, [["UPDATE task SET status = '已完成'"]]);
-  assert.equal(rejected(() => service.deleteMaterial(t, "inputs/需求.md")).code, "task_closed");
-  assert.deepEqual(files(t), ["需求.md"]);
+  service.deleteMaterial(t, "inputs/需求.md");
+  assert.deepEqual(files(t), []);
 }));
 
 test("经接口 POST …/materials/delete {path}", () => withTask(async (service, t) => {
@@ -188,13 +188,13 @@ test("已经进入对话、助手又正在工作时，拒绝的原因写进入�
   }
 }));
 
-test("deletable 对派生文件与已结束的任务为假", () => withTask((service, t) => {
+test("deletable 对派生文件为假；库里状态一列写着早先的「已完成」时不受影响", () => withTask((service, t) => {
   service.upload(t, "需求.docx", readFileSync(SAMPLE));
   const open = deletableOf(service, t);
   assert.equal(open["inputs/需求.docx"], true);
   assert.equal(open["inputs/需求.docx.md"], false);
   sqlRun(t.dir, [["UPDATE task SET status = '已完成'"]]);
-  assert.ok(Object.values(deletableOf(service, t)).every((value) => value === false));
+  assert.deepEqual(deletableOf(service, t), open);
 }));
 
 test("经接口删除一份已经进入对话的材料：返回 422 与 rejected", () => withTask(async (service, t) => {

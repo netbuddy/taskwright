@@ -5,7 +5,7 @@
  * - back：这一段的输入大面积不能用了，提议退回前面的某个阶段；
  * - review：编写文档阶段补写完了，请用户过目补写的那几页（点了不移动阶段）。
  * 提议属于一个工作项：助手在哪条会话里发的卡片，它就属于那条会话的工作项。失效的情形：这个工作项换了一站、
- * 助手在这个工作项里又发了一张提议的卡片、任务不再进行中；review 另有一种，卡片点名的页用户都看过了。
+ * 助手在这个工作项里又发了一张提议的卡片；review 另有一种，卡片点名的页用户都看过了。
  * 别的工作项启动、换站、删除都不影响它；这个工作项被删除时它的会话归档，归档的会话里没有提议。自由讨论的会话（不属于任何工作项）里没有提议。
  *
  * 提议不另设表：助手发卡片时「回复」记的那条事件（EXECUTOR_ACTS_RECORDED）里多带一项 proposal（proposalOfAct），
@@ -20,7 +20,6 @@ import { load } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import { hasOverall } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
-import { TASK_ACTIVE } from "./schema.ts";
 import {
   type CardOption, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, STAGE_NAMES, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, type Stage, isStage, stageBackedBy, stageEnteredBy,
 } from "./stage.ts";
@@ -163,13 +162,12 @@ function allViewed(db: DatabaseSync, taskId: string, items: readonly { item_id: 
 
 /**
  * 这条会话的工作项现在开着的提议；没有时为 null。只读。
- * 取这个工作项的各条会话里最近一条带 proposal 的回复事件：它之后这个工作项没有换过站，任务还在进行中，它就开着；
+ * 取这个工作项的各条会话里最近一条带 proposal 的回复事件：它之后这个工作项没有换过站，它就开着；
  * 请过目的那一种另要卡片点名的页还没有都看过。更早的提议不看：助手发了新的提议卡片，早先的那一条就结束了。
  * 会话不属于任何工作项（自由讨论的会话、归档的会话）时没有提议。
  */
 export function openProposal(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): OpenProposal | null {
-  const task = db.prepare("SELECT status FROM task WHERE task_id = ?").get(taskId) as { status: string } | undefined;
-  if (!task || task.status !== TASK_ACTIVE) return null;
+  if (!db.prepare("SELECT 1 FROM task WHERE task_id = ?").get(taskId)) return null;
   const item = workItemOf(db, taskId, sessionId);
   if (item === null) return null;
   const rows = db.prepare(

@@ -4,6 +4,7 @@
 // 已废弃的页划掉。第 4 章最后一行是「术语表」。没有贴标签的页列在最后的「未归类」下面，灰着。
 // 底下是状态点的图例与一行汇总（几节、几条需求条目、几处待澄清）。这里只管画，数都由 model/chapters.ts 与 model/overall.ts 算。
 
+import { changedAfter, changedBadge, latestVersion } from "../../../model/versions";
 import { useState } from "react";
 import type { Task } from "../../../api/types";
 import { CHAPTER_DECISIONS, CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_RULES, GLOSSARY_NAME, INTRO_NAME, UNSORTED_NAME, type Toc, tocTotals } from "../../../model/chapters";
@@ -41,6 +42,8 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
   const filled = (no: number, sections: number): boolean =>
     sections > 0 || (no === CHAPTER_RULES && (views?.rules.rows.length ?? 0) > 0) || (no === CHAPTER_DECISIONS && (views?.decisions.length ?? 0) > 0);
 
+  // 发布过版本时，最近一版之后改过的节旁标一个记号（不加计数；计数在条目区顶部那一行）。
+  const version = latestVersion(task);
   const row = (item: Toc["unsorted"][number], depth: number, no: string | null, dim = false) => {
     const state = topicState(task, item);
     const on = item.item_id === current;
@@ -51,6 +54,7 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
         onClick={() => onOpen(item.item_id)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(item.item_id); }} data-testid={`toc-${item.item_id}`}>
         <span className={`oa-dot ${state}`} data-state={state} />
         <span className="oa-name">{titleOf(item)}</span>
+        {changedAfter(version, item) && <span className="oa-ver" title={changedBadge(version!.version_no)} data-testid={`toc-changed-${item.item_id}`}>◆</span>}
       </div>
     );
   };

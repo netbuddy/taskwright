@@ -63,11 +63,10 @@ export function AssetCells({ assets, writing = [] }: { assets: AssetCell[]; writ
 /**
  * 工作项：任务有工作项时显示，一个一张卡，照任务状况给的次序（最近有动静的在前）。卡上写名字与种类、哪天启动的、流程在第几站、
  * 范围说明、几条会话与最近的那一条，三个按钮：打开最新会话、换一条干净的会话接着、删除这个工作项。工作项没有终点，没有「已做完」的卡。
- * 任务已经结束时只留「打开最新会话」。busy 是某个按钮的请求还没有回来：这时三个按钮都点不动。
+ * busy 是某个按钮的请求还没有回来：这时三个按钮都点不动。
  */
-export function WorkItemCards({ items, closed, busy, onOpen, onContinue, onDelete }: {
+export function WorkItemCards({ items, busy, onOpen, onContinue, onDelete }: {
   items: WorkItemView[];
-  closed: boolean;
   busy: boolean;
   onOpen: (item: WorkItemView) => void;
   onContinue: (item: WorkItemView) => void;
@@ -83,8 +82,8 @@ export function WorkItemCards({ items, closed, busy, onOpen, onContinue, onDelet
           <div className="sess">{workItemSessionsLine(item)}</div>
           <div className="tp-run-act">
             <button className="btn sm pri" disabled={busy} onClick={() => onOpen(item)} data-testid="work-item-open">打开最新会话</button>
-            {!closed && <button className="btn sm" disabled={busy} onClick={() => onContinue(item)} data-testid="work-item-continue">换一条干净的会话接着</button>}
-            {!closed && <button className="btn sm" disabled={busy} onClick={() => onDelete(item)} data-testid="work-item-delete">删除这个工作项</button>}
+            <button className="btn sm" disabled={busy} onClick={() => onContinue(item)} data-testid="work-item-continue">换一条干净的会话接着</button>
+            <button className="btn sm" disabled={busy} onClick={() => onDelete(item)} data-testid="work-item-delete">删除这个工作项</button>
           </div>
         </div>
       ))}
@@ -192,9 +191,7 @@ export function ActivityCards({ taskId, activities }: {
  * 「自由讨论」：不启动具体活动，直接进工作台。它不是活动，不排在活动卡的网格里，在「单项活动」一节末尾单独一行，
  * 只有边线、没有底色；它是这一页上唯一不经输入页的入口。
  */
-export function FreeTalk({ canEnter, busy, onEnter }: {
-  /** 任务还在进行中时才能进工作台新建会话。 */
-  canEnter: boolean;
+export function FreeTalk({ busy, onEnter }: {
   /** 新建会话的请求还没有回来：按钮点不动。 */
   busy: boolean;
   onEnter: () => void;
@@ -205,7 +202,7 @@ export function FreeTalk({ canEnter, busy, onEnter }: {
         <div className="t">自由讨论<small>对话</small></div>
         <div className="d">新建一条不属于任何工作项的会话，直接进入工作台与助手讨论。助手可解答问题、把定下的事记入业务说明，但不写需求条目，也不提议下一站。随时可用，不影响已有的工作项。</div>
       </div>
-      <button className="btn" disabled={!canEnter || busy} onClick={onEnter} data-testid="enter-workbench">进入工作台</button>
+      <button className="btn" disabled={busy} onClick={onEnter} data-testid="enter-workbench">进入工作台</button>
     </div>
   );
 }

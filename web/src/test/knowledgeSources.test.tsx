@@ -34,7 +34,7 @@ function task(sources: unknown[]): Task {
     reviews: [], confirmations: [], confirmation_stale: false, sources, fields: { 用例名称: "退款" },
   } as unknown as Item;
   return {
-    task_id: "TASK-K", task_name: "来源", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-K", task_name: "来源", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [{ name: "功能用例", prefix: "UC", needs_review: false, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] }] },
     completion: null, items: [item],
   } as unknown as Task;

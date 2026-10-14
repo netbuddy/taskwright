@@ -37,13 +37,17 @@ export function flowInProgress(flow: CatalogFlow): boolean {
 
 /** 后端给的「已有流程工作项……」那一句状态的开头（agent/src/lib/stage.ts 的 flowExistsText）：别的流程正在进行，这一条因此不能启动。 */
 const FLOW_TAKEN = "已有流程工作项";
+/** 后端给的「此版本尚未提供」那一句状态（agent/src/lib/activity_catalog.ts 的 CATALOG_LATER）：前提满足，但这一版还不能启动这条流程。 */
+const FLOW_LATER = "此版本尚未提供";
 
 /**
- * 工作流程卡标题旁的标签：这条流程已有工作项写「已在进行」；缺前提不能启动写「前置条件未满足」；能启动而且推荐的写「推荐」；
+ * 工作流程卡标题旁的标签：这条流程已有工作项写「已在进行」；前提满足而这一版还没有提供写「此版本尚未提供」（例如有了发布版本之后的需求变更）；
+ * 缺前提不能启动写「前置条件未满足」；能启动而且推荐的写「推荐」；
  * 别的情形不写（例如另一条流程正在进行，这一条因此不能启动：卡片底部写原因）。
  */
 export function flowTag(flow: CatalogFlow): { text: string; kind: "now" | "rec" | "off" } | null {
   if (flowInProgress(flow)) return { text: "已在进行", kind: "now" };
+  if (!flow.enabled && flow.state === FLOW_LATER) return { text: FLOW_LATER, kind: "off" };
   if (!flow.enabled && !flow.state.startsWith(FLOW_TAKEN)) return { text: "前置条件未满足", kind: "off" };
   return flow.enabled && flow.recommended ? { text: "推荐", kind: "rec" } : null;
 }

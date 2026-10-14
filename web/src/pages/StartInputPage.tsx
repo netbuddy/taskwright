@@ -88,9 +88,6 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
   if (!task || !statusRead) return frame(task?.task_name, "任务起点", <Spin />);
 
   const target = startTarget(status?.catalog, startKey);
-  if (task.status !== "进行中") {
-    return frame(task.task_name, "任务起点", <Alert type="info" showIcon message={`这个任务${task.status}，不能再启动工作项。`} data-testid="start-closed" />);
-  }
   if (!target) {
     return frame(task.task_name, "任务起点", <Alert type="info" showIcon message="活动目录里没有这一项，请回任务起点重新选择。" data-testid="start-unknown" />);
   }
@@ -178,7 +175,7 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
         <div className={`tp-pair${blocks.materials && blocks.knowledge ? "" : " single"}`}>
           {blocks.materials && (
             <div ref={materialsBlock} className="tp-in-wrap">
-              <MaterialsCard taskId={taskId} materials={materials} closed={false} info={service.info} onView={view} onChanged={() => void load()}
+              <MaterialsCard taskId={taskId} materials={materials} info={service.info} onView={view} onChanged={() => void load()}
                 title="项目材料" aside={target.kind === "flow" ? "可选 · 推荐" : undefined} marked={focusCase?.focus === "materials"}
                 intro={(
                   <>

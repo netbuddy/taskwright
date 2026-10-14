@@ -37,6 +37,8 @@ import { openProblems } from "../model/items";
 import { factsKey, viewOnOpen } from "../model/overall";
 import { diagramViewTarget } from "../model/sectionDiagrams";
 import { showSubmitBar } from "../model/submit";
+import { figuresOf } from "../model/versions";
+import { figurePngs } from "../components/diagram/mermaid";
 import { go, href, openSettings } from "../router";
 import { useToast } from "../components/Toasts";
 import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
@@ -110,19 +112,17 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   const [knowledgeDoc, setKnowledgeDoc] = useState<KnowledgeDocRequest | null>(null);
 
   const task = state.task;
-  const closed = !!task && task.status !== "进行中";
   const executor = state.executor;
   const busyElsewhere = !!executor && executor.state === "working" && !!executor.active_session && executor.active_session !== sessionId;
   const working = executor?.state === "working";
   const busySession = sessions.find((s) => s.session_id === executor?.active_session)?.name;
-  const disabledReason = closed ? "这个任务已经结束，只能查看。"
-    : busyElsewhere || busyError ? `助手正在${busySession ? `会话「${busySession}」` : "另一条会话"}里工作，做完才能在这里继续。`
+  const disabledReason = busyElsewhere || busyError ? `助手正在${busySession ? `会话「${busySession}」` : "另一条会话"}里工作，做完才能在这里继续。`
     : executor?.state === "failed_to_start" ? `助手现在不可用：${executor.text}`
     : null;
-  // 任务结束或助手启动不起来：一切写入都不能做。执行者工作中另算（writesOff），预填输入框的两个按钮那时照常可用。
+  // 助手启动不起来：一切写入都不能做。执行者工作中另算（writesOff），预填输入框的两个按钮那时照常可用。
   // 助手已经退出、还没启动、正在启动时不设只读：说话与操作都会让服务先把助手启动起来，只在输入框上方提示一句（executorHint.ts）。
   const hint = executorHint(executor, state.outgoing.some((m) => m.state === "sending"));
-  const readOnly = closed || (!!disabledReason && !busyElsewhere && !busyError);
+  const readOnly = !!disabledReason && !busyElsewhere && !busyError;
 
   // 会话列表（会话菜单里每条会话的最近活动与消息条数）：打开页面、会话改名、助手做完一轮（执行者状态从工作中变为不在工作）、
   // 打开会话菜单时各读一次；不定时轮询。执行者状态属于整个任务，别的会话里做完一轮也会重读。
@@ -213,11 +213,10 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       const r = await api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, ...req });
       // 标为已读不改内容，不显示「正在保存」；都已读过时后端什么都不写、没有库事件，挂着的话会一直等不到。
       // 评审也不改内容，进度与结果另有 review_progress、review_finished 两种事件，同样不登记。
-      // 提交交付物也不登记：任务变为已完成的事件不带操作编号，挂着的话同样等不到；提交之后任务只读，提示条随之消失。
       // 改图（edit_diagram）照常登记：图的事件 diagram_changed 带操作编号，到了就消去。
       // 移动阶段也不登记：任务本来就在那个阶段时后端什么都不记、没有库事件，挂着的话会一直等不到。
       // 「继续本阶段」同样不登记：它只在会话里留一条通知，没有库事件。
-      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable" && req.kind !== "move_stage" && req.kind !== "start_activity" && req.kind !== "continue_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
+      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "move_stage" && req.kind !== "start_activity" && req.kind !== "continue_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
       return null;
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
@@ -336,6 +335,22 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     setDocCollapsed(false);
     setSide("material");
     setLocate((l) => ({ excerpt, locator, nonce: (l?.nonce ?? 0) + 1 }));
+  };
+  /**
+   * 发布一个版本：照「下载 Word」的做法先取这一修订的文档、把里面用到的图画成 PNG，再带着页面看到的修订号与发布说明请任务服务发布。
+   * 成了提示一句（版本列表随事件更新）；被拒或出错返回原因，写在提示条上。
+   */
+  const publish = async (note: string): Promise<string | null> => {
+    try {
+      const revision = latestRevision;
+      const preview = revision ? (await api.previewDocument(taskId, { revision_no: revision })).text : "";
+      const images = await figurePngs(figuresOf(preview));
+      const done = await api.publishVersion(taskId, sessionId, { revision_no: revision, note: note.trim() || null, images });
+      toast.success(`第 ${done.version_no} 版已发布。`);
+      return null;
+    } catch (e) {
+      return errorText(e instanceof ApiError ? e : new ApiError("network", String(e)));
+    }
   };
   /** 换一条干净的会话接着做一个工作项：后端新建一条属于它的会话，进去，不替用户发话。 */
   const continueWorkItem = async (recordId: number) => {
@@ -459,7 +474,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
           <span className="set-btn" role="button" onClick={openSettings} data-testid="open-settings"><SettingOutlined />设置</span>
           <UserMenu where="topbar" />
           <SessionMenu taskId={taskId} taskName={task?.task_name} sessions={sessions} open={menuOpen} onClose={() => setMenuOpen(false)} currentId={sessionId}
-            onNew={closed ? undefined : () => void newSession()} />
+            onNew={() => void newSession()} />
         </div>
         <div className="app-body">
           <div className="rail">
@@ -501,7 +516,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty} onDiagramViewed={viewDiagram}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
-                  submitBar={showSubmitBar(task, working, state.messages)} />
+                  submitBar={showSubmitBar(task, working, state.messages)} onPublish={publish} />
                 </KnowledgeContext.Provider>
               ) : <div className="pane-items" />}
               <div className="pane-doc">

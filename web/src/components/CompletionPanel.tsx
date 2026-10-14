@@ -3,18 +3,17 @@
 // （第三组按用户的决定算通过，只是提示）；给了 task 时只认当前规则指纹下的评审记录；
 // 再给了 onReview、onOpen 时（工作视图里），旁边有「评审这 N 条」（评待评审的那几条）与「打开 X」（打开评审不通过的条目）。
 // 任务页没有事件流、看不到评审进度，只给条目、不给这两个按钮。
-// 完成条件之外的提示（completion.hints，不挡完成任务，例如还没有和任何条目关联的领域说明）写在它所属集合那一组的末尾，琥珀色。
+// 完成条件之外的提示（completion.hints，不挡发布版本，例如还没有和任何条目关联的领域说明）写在它所属集合那一组的末尾，琥珀色。
 
-import type { Completion, CompletionCondition, Item, Task, TaskStatus } from "../api/types";
+import type { Completion, CompletionCondition, Item, Task } from "../api/types";
 import { completionHeadline, conditionState, groupConditions, REVIEW_CONDITION, reviewState } from "../model/items";
 
 const LIST_AT_MOST = 6;
 /** 「打开 X」最多给几个。 */
 const OPEN_AT_MOST = 3;
 
-export function CompletionPanel({ completion, status, items, task, onReview, onOpen, reviewOff }: {
+export function CompletionPanel({ completion, items, task, onReview, onOpen, reviewOff }: {
   completion: Completion | null;
-  status?: TaskStatus | string;
   /** 任务的条目：用来把评审一条分成待评审与评审不通过两组。 */
   items?: Item[];
   /** 任务：给了就按当前规则指纹判断评审状态。 */
@@ -32,9 +31,7 @@ export function CompletionPanel({ completion, status, items, task, onReview, onO
   return (
     <div>
       <div className="small" style={{ marginBottom: "0.286rem" }}>
-        {completionHeadline(completion)}{status === "已完成"
-          ? "任务已经标为已完成。"
-          : completion.all_met ? "" : "都满足之后，助手才能把这个任务标记为已完成。"}
+        {completionHeadline(completion)}{completion.all_met ? "" : "都满足之后才能发布版本。"}
       </div>
       {groupConditions(completion).map(([collection, conditions]) => (
         <div key={collection}>
@@ -75,7 +72,7 @@ export function CompletionPanel({ completion, status, items, task, onReview, onO
           {(completion.hints ?? []).filter((h) => h.collection === collection).map((h) => (
             <div key={h.kind} className="cond hint" data-testid="cond-hint">
               <span className="tick">ⓘ</span>
-              <div><b style={{ fontWeight: 500 }}>提示</b>：{h.summary}这一条不挡完成任务，只是告诉你哪些还没用上。</div>
+              <div><b style={{ fontWeight: 500 }}>提示</b>：{h.summary}这一条不挡发布版本，只是告诉你哪些还没用上。</div>
             </div>
           ))}
         </div>

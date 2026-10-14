@@ -190,9 +190,9 @@ test("格式版本：比这个程序新的库被拒绝，库一个字节都不�
 test("数据升级用的入口：旧库从 0 升到现在的版本，已经是现在版本的原样返回，没有库文件时不建", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, (db) => db.exec("DROP TABLE tool_rejection; PRAGMA user_version = 0"));
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION, notes: [] });
   assert.ok(tables(dir).includes("tool_rejection"));
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
   const empty = makeWorkspace();
   assert.throws(() => upgradeTaskDatabase(empty), NoDatabaseYet);
   assert.equal(existsSync(databasePath(empty)), false);
@@ -240,7 +240,7 @@ test("格式版本 2 的库里图的内容表检查种类：升到版本 3 时�
   const raw = new DatabaseSync(databasePath(dir));
   assert.throws(() => raw.prepare(INSERT_DIAGRAM_VERSION).run("D-003", "系统边界", "context"), /CHECK constraint failed/);
   raw.close();
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 2, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 2, to: TASK_DB_VERSION, notes: [] });
   assert.equal(version(dir), TASK_DB_VERSION);
   assert.deepEqual(query(dir, "SELECT * FROM diagram_version ORDER BY diagram_id"), before);
   assert.doesNotMatch(diagramVersionSql(dir), /CHECK\s*\(\s*kind/i);
@@ -249,7 +249,7 @@ test("格式版本 2 的库里图的内容表检查种类：升到版本 3 时�
   withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(INSERT_DIAGRAM_VERSION).run("D-003", "系统边界", "context"));
   assert.equal(query(dir, "SELECT * FROM diagram_version").length, 3);
   const sql = diagramVersionSql(dir);
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
   assert.equal(diagramVersionSql(dir), sql);
 });
 
@@ -258,7 +258,7 @@ test("没有编过版本号、图的内容表带着种类检查的库：一次�
   withTaskDatabase(dir, { createIfMissing: true }, (db) => {
     db.exec(`DROP TABLE diagram_version; ${OLD_DIAGRAM_VERSION_SQL}; PRAGMA user_version = 0`);
   });
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION, notes: [] });
   assert.doesNotMatch(diagramVersionSql(dir), /CHECK\s*\(\s*kind/i);
 });
 
@@ -327,9 +327,9 @@ test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现�
   const raw = new DatabaseSync(databasePath(dir));
   assert.throws(() => raw.prepare(INSERT_STAGE_RECORD).run("op-4", "document", "reviewing", 14, "2026-10-11T13:00:00"), /CHECK constraint failed/);
   raw.close();
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 3, to: TASK_DB_VERSION });
-  assert.equal(TASK_DB_VERSION, 7);
-  assert.equal(version(dir), 7);
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 3, to: TASK_DB_VERSION, notes: [] });
+  assert.equal(TASK_DB_VERSION, 8);
+  assert.equal(version(dir), 8);
   // 两行都在需求分析里：并成一行，留最早那一行的编号与启动的时刻，现在的活动与所在的一站取最晚那一行的；流程的键改写成 analysis，结束的两列随重建去掉。
   assert.deepEqual(query(dir, "SELECT * FROM activity_record ORDER BY record_id").map((row) => ({ ...row })), [
     { record_id: 2, task_id: "T", session_id: "s", run_id: null, call_id: "op-2", actor: "user", activity: "writing", node: "writing", flow: "analysis",
@@ -340,7 +340,7 @@ test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现�
   withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(INSERT_ACTIVITY_RECORD).run("op-4", "user", "document", "document"));
   assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM activity_record ORDER BY record_id").map((row) => row.record_id), [2, 3]);
   const sql = tableSql(dir, "activity_record");
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
   assert.equal(tableSql(dir, "activity_record"), sql);
 });
 
@@ -353,14 +353,14 @@ test("格式版本 5 的库：活动记录表没有范围说明一列、带结�
     db.exec("PRAGMA user_version = 5");
   });
   assert.doesNotMatch(tableSql(dir, "activity_record")!, /scope/);
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 5, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 5, to: TASK_DB_VERSION, notes: [] });
   assert.equal(version(dir), TASK_DB_VERSION);
   assert.deepEqual(query(dir, "SELECT * FROM activity_record").map((row) => ({ ...row })), [
     { record_id: 1, task_id: "T", session_id: "s", run_id: null, call_id: "op-1", actor: "user", activity: "clarifying", node: null, flow: null,
       reason: "用户点的", started_at: "2026-10-11T10:00:00", started_seq: 1, scope: null },
   ]);
   const sql = tableSql(dir, "activity_record");
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
   assert.equal(tableSql(dir, "activity_record"), sql);
 });
 
@@ -369,7 +369,7 @@ test("没有编过版本号、阶段记录表带着阶段检查的库：一次�
   withTaskDatabase(dir, { createIfMissing: true }, (db) => {
     db.exec(`DROP TABLE activity_record; ${OLD_STAGE_RECORD_SQL}; PRAGMA user_version = 0`);
   });
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION, notes: [] });
   assert.equal(tableSql(dir, "stage_record"), null);
   assert.doesNotMatch(tableSql(dir, "activity_record")!, /CHECK\s*\(\s*(activity|node|flow)/i);
 });

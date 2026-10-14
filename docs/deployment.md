@@ -213,12 +213,13 @@ A **data pack** is a zip file (its name ends in `.taskwright.zip`) with a copy o
 ```bash
 node backend/src/main.mts data export --data <data directory> --to <pack>                        # everything
 node backend/src/main.mts data export --data <data directory> --task <task id> --to <pack>       # one task
+node backend/src/main.mts data export --data <data directory> --task <task id> --with-events --to <pack>  # one task, with its event archive
 node backend/src/main.mts data export --data <data directory> --library <library id> --to <pack> # one knowledge library
 node backend/src/main.mts data import --data <data directory> --from <pack> [--renumber]
 node backend/src/main.mts data upgrade --pack <pack> --to <new pack>
 ```
 
-- `data export`: works while the service is running; a task in use is exported too (the pack records that it was in use). A data directory that has not been upgraded yet can be exported. A file that already exists at `--to` is not overwritten.
+- `data export`: works while the service is running; a task in use is exported too (the pack records that it was in use). A data directory that has not been upgraded yet can be exported. A file that already exists at `--to` is not overwritten. The event archive (`runs/<task id>/pi-events/`, the raw record of every step of the assistant and the run logs) is left out by default and only the conversation records are exported; add `--with-events` when you need them to look into a problem.
 - `data import`: does nothing while a service is using the data directory; stop it first (or import through the service's interface). It also does nothing while the data directory itself has data of an earlier version that is not upgraded; run `data upgrade` first. The target may be an empty directory.
 - `data upgrade --pack`: upgrades a pack exported from data of an earlier version to the current format and writes a new pack; the original pack is left as it is, and no data directory is needed. Importing upgrades such a pack by itself, so this command is only for getting a pack in the new format.
 - Exit codes: 0 when everything was done (a task skipped on import because it already exists does not count as a failure); 1 when a task or a knowledge library failed, or when an export left a task directory out; 2 when nothing was done (wrong arguments, the data directory is in use by a service, the pack is wrong or newer than this program, the target file already exists).
@@ -228,13 +229,14 @@ node backend/src/main.mts data upgrade --pack <pack> --to <new pack>
 | Path in the pack | Content |
 |---|---|
 | `tasks/<task id>/` | the task directory: the task database (a complete copy), `docs/`, `inputs/`, `task.json`, the selected knowledge libraries, and the settings and instructions put there when the task was created |
-| `runs/<task id>/` | the task's archive: the conversation records and the event records, unchanged. A task that never had a conversation has none |
+| `runs/<task id>/` | the task's archive, unchanged: the conversation records (`pi-sessions/`). The event archive (`pi-events/`) is included only with `--with-events`. A task that never had a conversation has none |
 | `knowledge/<library id>/` | the knowledge library's directory, unchanged: documents, text versions, passages and the computed vectors |
 | `knowledge/libraries.json` | the entries of these libraries in the list of knowledge libraries |
 | `service/tasks.json` | the rows of these tasks in the task register |
-| the list file (`manifest.json` in the pack) | the pack's format version, the product version that exported it, the data format versions, the time of the export, the scope, the tasks and libraries, and for every file its path, size, SHA-256 and modification time |
+| `说明.txt` | a note for people: what the pack holds, what it does not hold, and how to import it. It is not in the list file and is not extracted on import |
+| the list file (`manifest.json` in the pack) | the pack's format version, the product version that exported it, the data format versions, the time of the export, the scope, whether the event archive is included, the tasks and libraries, and for every file its path, size, SHA-256 and modification time |
 
-**A pack does not hold** the product settings, the model configuration or any keys, so the model service has to be set up again on the new machine (section 3). It does not hold lock files, the log files beside a task database or temporary files either.
+**A pack does not hold** the product settings, the model configuration or any keys, so the model service has to be set up again on the new machine (section 3). By default it does not hold the event archive either; a task without it imports and works as usual, and the observatory lists its sessions as 没有事件归档 ("no event archive"). It does not hold lock files, the log files beside a task database or temporary files either.
 
 **How an import goes.** The whole pack is checked first: the list file can be read, the pack is not newer than this program, the files in the pack are exactly the files in the list, and every file has the SHA-256 the list gives. If anything is wrong, nothing is imported and the data directory is left as it was. After that the tasks and libraries are imported one by one, and one that fails does not stop the others. Modification times are restored as they were at the export, so a material that had entered the conversation still cannot be deleted or replaced after the import.
 
@@ -271,17 +273,30 @@ node backend/src/main.mts data upgrade --pack <pack> --to <new pack>
 
 ## 10 Desktop packages
 
-The desktop packages are for one person on one computer: a single file holds Node, the task service, pi, the web interface and rg and fd, the two programs pi's search tools use, so nothing else (Node, Python, pi) needs to be installed. The pi in the package is 1.0.4; its version and the versions of its dependencies are pinned by the lock file in the repository's `release/pi/`, so every build packs the same ones. Linux has `taskwright-x86_64.AppImage` and `taskwright-linux-x64`; Windows has `taskwright-win-x64.exe`. How to build them is in the repository's `release/README.md`. In 0.3 the desktop package is transitional: there is no desktop shell, and the service opens the system browser itself.
+The desktop packages are for one person on one computer: a single file holds Node, the task service, pi, the web interface and rg and fd, the two programs pi's search tools use, so nothing else (Node, Python, pi) needs to be installed. The pi in the package is 1.0.4; its version and the versions of its dependencies are pinned by the lock file in the repository's `release/pi/`, so every build packs the same ones. Linux has `taskwright-x86_64.AppImage` and `taskwright-linux-x64`, with the same contents; they differ only in how they run: the AppImage is mounted and run without extracting anything, but needs libfuse2 on older distributions; the single executable needs no FUSE, but extracts a copy (about 45 MB) to `cache/` in the data directory on the first start of each version. Windows has `taskwright-win-x64.exe`. How to build them is in the repository's `release/README.md`. In 0.3 the desktop package is transitional: there is no desktop shell, and the service opens the system browser itself.
 
 ### 10.1 Starting
 
 Double-click the file or run it from a terminal. It first checks ports 8950 to 8959 for a desktop package that is already running: if it finds one, it only opens the browser and ends. Otherwise it starts the task service with `--mode desktop --profile desktop --port 8950`, bound to `127.0.0.1`, and opens `http://127.0.0.1:<port>/` in the system browser. Arguments added on the command line are passed on to the task service and win over these defaults; for example `--host 0.0.0.0` lets other computers on the same network reach it (mind the warning at the top of this page about the internet).
 
-A single executable (`taskwright-linux-x64` and the Windows exe) extracts its contents to the user cache directory on the first start of each version (`~/.cache/taskwright/payload/` on Linux, `%LOCALAPPDATA%\Taskwright\cache\payload\` on Windows) and does not extract again later. On Windows, double-clicking the exe opens a console window; that window is the service's status window and shows the address and the log. Double-clicking the AppImage on Linux opens no window; the log goes to a file only (see section 10.2).
+A single executable (`taskwright-linux-x64` and the Windows exe) extracts its contents to `cache/payload/<build>/` in the data directory on the first start of each version and does not extract again later; an AppImage copies the extension to `cache/agent-<build>/`. Once a new version has started, these two of the older version are removed. On Windows, double-clicking the exe opens a console window; that window is the service's status window and shows the address and the log. Double-clicking the AppImage on Linux opens no window; the log goes to a file only (see section 10.2).
 
 ### 10.2 Data and logs
 
-Task directories, archives and the knowledge base are kept in the user data directory: `~/.local/share/taskwright/tasks/`, `runs/` and `knowledge/` on Linux, `%LOCALAPPDATA%\Taskwright\tasks\`, `runs\` and `knowledge\` on Windows. The log is written to `logs/backend-<date>.log` in the same directory. When the environment variable `TASKWRIGHT_DATA_DIR` is set (or `--data <dir>` is given at startup), all four go under the directory it names. The task register `service.sqlite`, the backups made before an upgrade (`backups/`) and the upgrade reports are in the same directory. Back them up as described in section 8; the first start after a new version is installed shows 数据升级 ("data upgrade") first, see section 8.1.
+Everything the desktop package writes is under one directory, the data directory, so deleting that directory uninstalls it: `~/.local/share/taskwright/` on Linux, `%LOCALAPPDATA%\Taskwright\` on Windows, `$HOME/Library/Application Support/Taskwright/` on macOS.
+
+| In the data directory | Content |
+|---|---|
+| `tasks/`, `runs/`, `knowledge/` | task directories, archives (conversation records and event archives), the knowledge base |
+| `logs/` | the service's log `backend-<date>.log`, and the reports of upgrades and imports |
+| `backups/` | the backups made before a data upgrade |
+| `settings.json`, `service.sqlite` | the product settings (the chosen models and the like, no keys), the task register |
+| `pi/` | Taskwright's own pi configuration directory: `models.json` (the registered model services), `auth.json` (keys), `settings.json` |
+| `cache/` | program contents: the single executable's extracted `payload/<build>/`, the AppImage's copied `agent-<build>/`; may be deleted, the next start makes them again |
+
+When the environment variable `TASKWRIGHT_DATA_DIR` is set (or `--data <dir>` is given at startup), the whole tree goes under the directory it names. `TASKWRIGHT_CACHE_DIR` and `PI_CODING_AGENT_DIR` can point `cache/` and `pi/` elsewhere on their own.
+
+Two more things are written to the system's temporary directory, not the data directory: the compile cache pi uses when it loads the extension (`jiti/`) and Node's module compile cache (`node-compile-cache/`). They are temporary files that can be made again at any time and go away when the system cleans its temporary directory. Back them up as described in section 8; the first start after a new version is installed shows 数据升级 ("data upgrade") first, see section 8.1.
 
 ### 10.3 Stopping
 
@@ -289,9 +304,9 @@ Any one of three ways: choose 退出服务 ("stop the service") in the 本机用
 
 ### 10.4 Setting up a model service
 
-The desktop package contains no keys. Model services and their credentials are read, as always, from pi's configuration directory: `~/.pi/agent/` on Linux, `%USERPROFILE%\.pi\agent\` on Windows, or the directory named by `PI_CODING_AGENT_DIR`.
+The desktop package contains no keys. Model services and their credentials are kept in Taskwright's own pi configuration directory `pi/` in the data directory (section 10.2), or the directory named by `PI_CODING_AGENT_DIR`; the desktop package neither reads nor writes this computer's pi configuration directory (`~/.pi/agent/`). On the first start, when `pi/` has neither `models.json` nor `auth.json` and `~/.pi/agent/` has one of them, `models.json`, `auth.json` and `settings.json` are copied over (a copy: afterwards each side changes on its own), the log says so, and the 模型 ("models") section of the settings page says 已从本机 pi 的配置复制 ("copied from this computer's pi configuration"). Signing in to a ChatGPT subscription as in section 3.1 writes pi's configuration directory: if you sign in after the first start, point `PI_CODING_AGENT_DIR` at `pi/` in the data directory while signing in.
 
-The desktop package ships without a default model. On first start the page says at the top that no language model is chosen; press 去配置模型 ("set up the model"), add a model service under 模型 on the settings page and choose a model (for a ChatGPT subscription, sign in first as in section 3.1). After upgrading from an earlier version, choose the model there once as well. Instead of choosing on the page, you can put two files in pi's configuration directory: `models.json` registers the model service, and `settings.json` names the one to use with `defaultProvider` and `defaultModel` (the same two settings pi's `/model` command writes). When both are present, the desktop package starts pi with that model. Restart the desktop package after placing the files. A language model chosen in the web interface (section 3) takes precedence over these two settings.
+The desktop package ships without a default model. On first start the page says at the top that no language model is chosen; press 去配置模型 ("set up the model"), add a model service under 模型 on the settings page and choose a model (for a ChatGPT subscription, sign in first as in section 3.1). After upgrading from an earlier version, choose the model there once as well. Instead of choosing on the page, you can put two files in pi's configuration directory (`pi/` in the data directory): `models.json` registers the model service, and `settings.json` names the one to use with `defaultProvider` and `defaultModel` (the same two settings pi's `/model` command writes). When both are present, the desktop package starts pi with that model. Restart the desktop package after placing the files. A language model chosen in the web interface (section 3) takes precedence over these two settings.
 
 Example 1: llama.cpp (or another OpenAI-compatible endpoint) on this computer. `models.json`:
 

@@ -26,7 +26,7 @@ import { overallState } from "./overall_read.ts";
 import { rulesTable } from "./overall_views.ts";
 import { EVENT_REVIEW_BATCH, currentRulesHash, verdictAt } from "./review_state.ts";
 import {
-  ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase,
+  ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, elementClause, withTaskDatabase,
 } from "./schema.ts";
 import { openProposal } from "./stage_proposal.ts";
 import {
@@ -35,6 +35,7 @@ import {
   activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
+import { versionCount } from "./versions.ts";
 
 /**
  * 工作项的三种事件。
@@ -463,7 +464,7 @@ export const START_ITEMS_REASON = enterReason("writing");
  *   退回的目标要在现在这个阶段之前。
  * - 别的情形（自由讨论的会话、归档的会话、单项活动的工作项）：进入与退回都不算（why 为 not_in_flow）。早先任务空闲时
  *   「开始核读材料」的卡片能启动流程，现在启动一律从任务起点页做，这张卡片上的点击也不算。
- * 任务没有阶段、任务不在进行中、工作项本来就在那一站时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
+ * 任务没有阶段、工作项本来就在那一站时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
  * 发那句固定的话之前调用，这样助手回应这次点击的那一次运行从头就在新的阶段。
  */
 export function recordStageCardClick(workspaceDir: string, sessionId: string, branch: readonly Entry[],
@@ -479,9 +480,9 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
   if (card && (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === click.optionKey))) return null;
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT task_id, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
-        { task_id: string; status: string; definition_text: string } | undefined;
-      if (!task || task.status !== TASK_ACTIVE) return null;
+      const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+        { task_id: string; definition_text: string } | undefined;
+      if (!task) return null;
       let cardQuestion = typeof act?.text === "string" ? act.text : "";
       if (!card) {
         const open = openProposal(db, task.task_id, sessionId);
@@ -677,6 +678,7 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
       satisfied: completion.every((one) => one.satisfied),
       unmet: completion.filter((one) => !one.satisfied).map((one) => `「${one.collection}」${one.condition}：${one.summary}`),
     },
+    versions: versionCount(db, taskId),
   };
 }
 

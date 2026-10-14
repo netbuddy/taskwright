@@ -243,7 +243,7 @@ test("任务选用的知识库：新任务写 [general]；没有文件的旧任�
   await service.close();
 });
 
-test("used_by_tasks 只数本服务接手的进行中任务", async () => {
+test("used_by_tasks 数本服务接手的任务，库里状态一列写着什么都算", async () => {
   const service = fresh();
   const lib = service.knowledge!.create("行业规范");
   const a = newTask(service, "甲");
@@ -252,12 +252,12 @@ test("used_by_tasks 只数本服务接手的进行中任务", async () => {
   service.setTaskKnowledge(b, { libraries: [lib.id] });
   const count = () => Object.fromEntries(service.knowledgeOverview().map((l) => [l.id, l.used_by_tasks]));
   assert.deepEqual(count(), { [GENERAL]: 2, [lib.id]: 2 });
-  // 把乙改成已放弃：不再算。
+  // 把乙的状态一列改成早先的「已放弃」：这一列不再读，照样算。
   const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(join(b.dir, "task.sqlite"));
   db.exec("UPDATE task SET status = '已放弃'");
   db.close();
-  assert.deepEqual(count(), { [GENERAL]: 1, [lib.id]: 1 });
+  assert.deepEqual(count(), { [GENERAL]: 2, [lib.id]: 2 });
   await service.close();
 });
 

@@ -108,14 +108,14 @@ test("拒绝：修订号过时、文本没有改、图不存在或已删除、�
   const gone = await rejected(() => editDiagram(ctx(dir), request("flowchart LR\n  a --> b", { targets: [{ diagram_id: "D-001", base_revision: 2 }] })));
   assert.deepEqual([gone.code, gone.message], ["rejected", "图 D-001 不存在或已经删除。"]);
 
+  // 库里状态一列写着早先的「已完成」：照常可以改。
   const closed = await workspace();
   completeTaskNow(closed);
-  const late = await rejected(() => editDiagram(ctx(closed), request(`${MERMAID}\n  a --> b`)));
-  assert.equal(late.code, "task_closed");
-  assert.equal(versions(closed).length, 1);
+  await editDiagram(ctx(closed), request(`${MERMAID}\n  a --> b`));
+  assert.equal(versions(closed).length, 2);
 });
 
-/** 把任务标成已完成（直接改库里的状态：这里只要「任务已经结束」这个前提）。 */
+/** 把库里状态一列改成早先的「已完成」（0.5.0 完成的任务升级后就是这样）：这一列不再读，写入照常。 */
 function completeTaskNow(dir: string): void {
   const db = new DatabaseSync(databasePath(dir));
   try {
@@ -229,8 +229,8 @@ test("看图被拒：图不存在或已删除、没有这一次修订、任务�
   const raw = new DatabaseSync(databasePath(dir));
   raw.exec("UPDATE task SET status = '已完成'");
   raw.close();
-  assert.equal(rejectedNow(() => markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }]))).code, "task_closed");
-  assert.equal(viewEvents(dir).length, 0);
+  markDiagramViewed(ctx(dir), view([{ diagram_id: "D-001", base_revision: 1 }]));
+  assert.equal(viewEvents(dir).length, 1, "状态一列写着早先的「已完成」也照常记");
 });
 
 test("/tw-user 里的 mark_diagram_viewed：记下并回报成功，不往会话里追加任何东西；被拒时回报错误码与说明", async () => {

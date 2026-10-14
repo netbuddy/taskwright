@@ -778,6 +778,10 @@ def attach_entry_ids(runs: list[dict], session_file: dict | None) -> None:
 
 # ───────────────────────── 会话 ─────────────────────────
 
+#: 只有会话文件、没有事件归档的会话的终态。
+NO_EVENTS = "没有事件归档"
+
+
 def build_sessions(archive_dir: Path) -> list[dict]:
     """扫一遍归档目录，给出全部会话，以及那几次没能启动起来的 pi。
 
@@ -865,6 +869,37 @@ def build_sessions(archive_dir: Path) -> list[dict]:
             "启动失败": True,
             "启动失败原因": reason,
             "归档文件": launch["归档文件"],
+        })
+
+    # 只有会话文件、没有事件归档的会话（数据包缺省不带事件归档，导入来的任务就是这样）：照样列出来，写明没有事件归档，不报错。
+    for session_id, session_file in session_files.items():
+        if session_id in grouped:
+            continue
+        times = [m["时刻"] for m in session_file["消息"] if m.get("时刻")]
+        sessions.append({
+            "会话编号": session_id,
+            "归档名": [],
+            "pi 进程启动次数": 0,
+            "是否重启过": False,
+            "启动": [],
+            "会话文件": session_file["会话文件路径"],
+            "会话名": session_file["会话名"],
+            "归档目录名": Path(archive_dir).name,
+            "会话文件条目数": len(session_file["消息"]),
+            "扩展写入的消息": session_file.get("自定义消息", []),
+            "工作目录": session_file["工作目录"],
+            "开始时刻": session_file.get("开始时刻") or (min(times) if times else None),
+            "结束时刻": max(times) if times else None,
+            "运行": [],
+            "运行次数": 0,
+            "轮数": 0,
+            "模型请求次数": 0,
+            "工具调用次数": 0,
+            "被拒次数": 0,
+            "是否被中止过": False,
+            "终态": NO_EVENTS,
+            "启动失败": False,
+            "没有事件归档": True,
         })
 
     sessions.sort(key=lambda s: (s["开始时刻"] or 0.0))

@@ -439,10 +439,10 @@ test("门禁：这一轮没有合格理解时三个工具的拒绝理由相同�
   assert.throws(() => requireUnderstanding(dir, SESSION, branch, "保存修订", "save_revision"),
     /^Error: 保存修订没有执行：先按 schema 写下你对用户这句话的理解：「整理一下」。这一轮还没有写理解。\n请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，写完接着调用 save_revision。$/);
   record(dir, branch, "我去整理。", ["save_revision"]);
-  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "完成任务", "complete_task"), /这一轮还没有写理解/);
+  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "发布版本", "publish_version"), /这一轮还没有写理解/);
   record(dir, branch, '{"acts": "整理"}', ["save_revision"]);
-  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "完成任务", "complete_task"),
-    /完成任务没有执行：先按 schema.*这一轮写了 1 个 JSON 片段，都不是合格的理解。各片段的问题：（1）acts 应当是一个列表/s);
+  assert.throws(() => requireUnderstanding(dir, SESSION, branch, "发布版本", "publish_version"),
+    /发布版本没有执行：先按 schema.*这一轮写了 1 个 JSON 片段，都不是合格的理解。各片段的问题：（1）acts 应当是一个列表/s);
   branch.push(assistantEntry());
   record(dir, branch, fenced([{ function: "request", confidence: "high", summary: "整理" }]), ["reply"]);
   requireUnderstanding(dir, SESSION, branch, "回复", "reply");

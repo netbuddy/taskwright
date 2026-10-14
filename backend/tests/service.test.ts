@@ -297,7 +297,7 @@ test("修订统一之前建的任务照样列出，标明不支持且打不开",
   db.close();
   const service = newService(null, root);
   const rows = service.listTasks();
-  assert.deepEqual(rows.map((r) => [r.task_id, r.status, r.supported]), [["TASK-OLD", "旧格式", false]]);
+  assert.deepEqual(rows.map((r) => [r.task_id, r.unavailable, r.supported]), [["TASK-OLD", "旧格式", false]]);
   assert.match(String(rows[0].note), /这个任务是旧格式/);
   assert.equal(codeOf(() => service.task("TASK-OLD")), "not_found");
   assert.equal(existsSync(join(old, occupancy.LOCK_NAME)), false, "旧格式的任务不接手，也不写占用标记");
@@ -325,7 +325,7 @@ describe("占用标记", () => {
       writeFileSync(join(folder, occupancy.LOCK_NAME), JSON.stringify({ port: 8790, pid: other.pid, started_at: "2026-09-24T10:00:00", host: hostname() }), "utf-8");
       const second = new Service(join(root, "tasks"), join(root, "runs2"), {}, { port: 8862 });
       const row = second.listTasks().find((r) => r.task_id === taskId)!;
-      assert.deepEqual([row.status, row.supported, row.task_name], ["占用中", false, "被占用的任务"]);
+      assert.deepEqual([row.unavailable, row.supported, row.task_name], ["占用中", false, "被占用的任务"]);
       assert.equal((row.occupied as any).port, 8790);
       assert.equal(row.note, "这个任务正被端口 8790 的服务占用，这里不能打开。");
       assert.throws(() => second.task(taskId), (e: unknown) => e instanceof ApiError && e.code === "task_occupied" && e.status === 409);

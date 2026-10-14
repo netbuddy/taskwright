@@ -268,7 +268,7 @@ describe("投影：表格位置与材料清单", () => {
 
 describe("任务页的材料清单", () => {
   const detail = {
-    task_id: "TASK-D", task_name: "Word 任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-D", task_name: "Word 任务", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [] }, items: [], completion: null, sessions: [],
     materials: [
       { path: PATH, bytes: 74000, modified_at: "2026-09-25T12:00:00Z", derived_from: null },

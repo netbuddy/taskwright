@@ -2,7 +2,7 @@
  * 执行者的两个只读工具的核心逻辑：「查看条目」（get_item）与「查询任务状态」（get_task_status）。
  *
  * 取数与排版用 board.ts 里与交付物看板（/tw-board）同一组函数，所以工具的输出与看板一致；完成条件用
- * conditions.ts 里与「完成任务」门禁同一组函数。库以只读方式打开，不写任何东西，也不记事件。
+ * conditions.ts 里与「发布版本」门禁同一组函数。库以只读方式打开，不写任何东西，也不记事件。
  * 查不到时抛异常，异常文字用中文写明原因，由 pi 交还模型。本模块不依赖 pi，单元测试可以直接调用。
  *
  * 「查询任务状态」另列每份材料的分段与引用情况（lib/segments.ts 的 materialFacts）：Word 材料逐块写标题、起止段落号与行号、
@@ -46,7 +46,7 @@ function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRo
   }
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
-    const task = db.prepare("SELECT task_id, task_name, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+    const task = db.prepare("SELECT task_id, task_name, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       | TaskRow
       | undefined;
     if (!task) throw new Error("库里还没有任务记录，没有东西可以查。");
@@ -220,7 +220,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
 export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledgeRoot: string | null = envKnowledgeRoot()): QueryOutcome {
   return withTask(workspaceDir, (db, task, definition) => {
     const name = task.task_name ?? definition.taskName;
-    const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}），状态是${task.status}。`, ""];
+    const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}）。`, ""];
     const counts: Record<string, string[]> = {};
     const unresolved: { item_id: string; revision_no: number; title: string }[] = [];
     for (const collection of definition.collections) {
@@ -249,14 +249,14 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
     lines.push(
       unread.length === 0
         ? "未读的条目：没有，每个条目用户都看过。"
-        : `未读的条目 ${unread.length} 条（用户从没打开看过它们；问用户要不要完成任务之前，先告诉用户还有几条没看）：${unreadList(unread)}。`,
+        : `未读的条目 ${unread.length} 条（用户从没打开看过它们；问用户要不要发布版本之前，先告诉用户还有几条没看）：${unreadList(unread)}。`,
     );
     // 待核实的条目：有助手补充而用户还没有确认的，或者依据的主题待核实、已废弃的。一个都没有时不写。
     const pending = pendingSummary(overallState(db, task.task_id, definition));
     if (pending) lines.push(pending);
-    // 完成条件之外的提示，不挡完成任务，例如还没有贴标签的主题。
+    // 完成条件之外的提示，不挡发布版本，例如还没有贴标签的主题。
     const hints = completionHints(db, task.task_id, definition.completion);
-    for (const hint of hints) lines.push(`提示（不挡完成任务）：${hint.summary}`);
+    for (const hint of hints) lines.push(`提示（不挡发布版本）：${hint.summary}`);
     // 材料的分段与引用情况写在修订与事件序号之前，末行仍与看板相同。
     const materials = materialFacts(db, task.task_id, workspaceDir,
       listMaterials(workspaceDir, definition.materialsDir).files.map((f) => f.path), envSegmentParams());

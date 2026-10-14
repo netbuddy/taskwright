@@ -49,7 +49,7 @@ describe("条目区集合页签的初值", () => {
     fields: { 名称: id }, sources: [], reviews: [], waivers: [], confirmations: [], confirmation_stale: false,
   });
   const task = {
-    task_id: "TASK-1", task_name: "页签", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-1", task_name: "页签", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: ["功能用例", "约束", "问题"].map((name, i) => ({ name, prefix: ["UC", "CON", "TBD"][i], needs_review: false, review_rules: null, fields: [field] })) },
     completion: null, items: [item("UC-001", "功能用例"), item("CON-001", "约束")], latest_revision: 1,
   } as unknown as Task;

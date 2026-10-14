@@ -136,14 +136,14 @@ function sourcesOf(db: DatabaseSync, taskId: string, id: string, revisionNo: num
   }));
 }
 
-/** 进行中的那一个任务与它的定义；没有或者不止一个时抛出说明。 */
+/** 库里那一个任务与它的定义；没有或者不止一个时抛出说明。 */
 function activeTask(db: DatabaseSync): { taskId: string; definition: TaskDefinition } {
   const running = activeTasks(db);
   if (running.length === 0) {
-    throw notInputProblem(new Error("这个任务已经结束（已完成或已放弃），或者库里没有任务记录，所以图没有保存。请把这个情况如实告诉用户。"));
+    throw notInputProblem(new Error("库里没有任务记录，所以图没有保存。请把这个情况如实告诉用户。"));
   }
   if (running.length > 1) {
-    throw notInputProblem(new Error(`这个任务目录里有 ${running.length} 个进行中的任务，库里的记录有问题，所以图没有保存。请把这个情况告诉用户。`));
+    throw notInputProblem(new Error(`这个任务目录里有 ${running.length} 个任务，库里的记录有问题，所以图没有保存。请把这个情况告诉用户。`));
   }
   return { taskId: running[0].task_id, definition: validateDefinition(JSON.parse(running[0].definition_text)) };
 }

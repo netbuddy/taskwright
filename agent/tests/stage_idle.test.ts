@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { completeTask } from "../src/lib/complete_task.ts";
+import { preparePublish } from "../src/lib/publish_version.ts";
 import { createTask } from "../src/lib/create_task.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
 import { prepareReviews } from "../src/lib/review.ts";
@@ -115,7 +115,7 @@ test("空闲时保存修订：页与问题可以写，别的集合的条目被�
   assert.equal(out.results[0].item_id, "UC-001");
 });
 
-test("空闲时画图、请求评审、完成任务都被拦，原话各写这件事要在哪一项活动里做", async () => {
+test("空闲时画图、请求评审、发布版本都被拦，原话各写这件事要在哪一项活动里做", async () => {
   const { dir } = idle();
   const diagram: SaveDiagramParams = { name: "借书的过程", kind: "flowchart", mermaid: "flowchart LR\n  a([读者选书]) --> b([办借书手续])", sources: [{ kind: "用户的话", excerpt: "把借书的过程画成一张流程图" }] };
   const layers = async (run: () => unknown) => {
@@ -131,8 +131,8 @@ test("空闲时画图、请求评审、完成任务都被拦，原话各写这�
     ["本会话不属于任何工作项，这时不能画图、改图或删图", `图要在整理建模这项活动里画。${HOW}`]);
   assert.deepEqual(await layers(() => prepareReviews(dir, null, "executor", CALL_SESSION)),
     ["本会话不属于任何工作项，这时不能请求评审", `评审要在写条目或评审确认这项活动里请求。${HOW}`]);
-  assert.deepEqual(await layers(() => completeTask(callIn(dir))),
-    ["任务没有标为已完成：本会话不属于任何工作项，这时不能完成任务。", `完成任务要在评审确认或编写文档这项活动里做。${HOW}。`]);
+  assert.deepEqual(await layers(() => preparePublish(callIn(dir))),
+    ["第 1 版没有发布：本会话不属于任何工作项，这时不能发布版本。", `发布版本要在评审确认或编写文档这项活动里做。${HOW}。`]);
   assert.deepEqual([count(dir, "diagram"), query<{ status: string }>(dir, "SELECT status FROM task")[0].status], [0, "进行中"]);
 });
 

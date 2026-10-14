@@ -19,7 +19,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_USER, emit } from "./db.ts";
 import { DIAGRAM_ID, EVENT_DIAGRAM_VIEWED, latestVersion, readDiagrams, viewedDiagramRevisions } from "./diagram.ts";
 import { saveDiagram } from "./save_diagram.ts";
-import { NoDatabaseYet, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
+import { NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import { UserOpError, type UserOpRequest } from "./user_ops.ts";
 
@@ -68,12 +68,11 @@ export async function editDiagram(ctx: { workspaceDir: string; sessionId: string
 
   // 先把给用户看的几种拒绝分清楚：任务已经结束、没有这张图、图在这之后改过、文本没有变。之后的写库由 saveDiagram 再核对一遍。
   const name = inDatabase(ctx.workspaceDir, (db) => {
-    const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+    const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
     if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
     if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
       throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
     }
-    if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再改。`, { status: task.status });
     const record = DIAGRAM_ID.test(id) ? readDiagrams(db, task.task_id).find((one) => one.diagram_id === id) : undefined;
     const current = record ? latestVersion(record) : null;
     if (!record || !current || record.deleted_in_revision !== null) {
@@ -141,12 +140,11 @@ export function markDiagramViewed(ctx: { workspaceDir: string; sessionId: string
   if (new Set(targets.map((one) => one.diagram_id)).size !== targets.length) throw new UserOpError("bad_request", "targets 里有重复的图。");
 
   const seq = inDatabase(ctx.workspaceDir, (db) => {
-    const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+    const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
     if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
     if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
       throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
     }
-    if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再改。`, { status: task.status });
     const records = readDiagrams(db, task.task_id);
     for (const target of targets) {
       const record = DIAGRAM_ID.test(target.diagram_id) ? records.find((one) => one.diagram_id === target.diagram_id) : undefined;

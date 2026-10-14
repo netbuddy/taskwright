@@ -164,6 +164,7 @@ export function registerUserCommands(pi: ExtensionAPI): void {
               undoable: result.undoable,
               ...(result.record_id !== undefined ? { record_id: result.record_id } : {}),
               ...(result.archived_sessions !== undefined ? { archived_sessions: result.archived_sessions } : {}),
+              ...(result.version_no !== undefined ? { version_no: result.version_no } : {}),
             },
           },
           // 不传送法：执行者空闲时立即加进会话；正在运行时 pi 暂存到这一轮结束再加（不能插在工具调用与结果之间），
@@ -172,7 +173,8 @@ export function registerUserCommands(pi: ExtensionAPI): void {
         if (result.notify_text) pi.sendUserMessage(result.notify_text, { deliverAs: "followUp" });
         report({ ok: true, event_seqs: result.event_seqs, results: result.results, revision_no: result.revision_no,
           ...(result.record_id !== undefined ? { activity_record_id: result.record_id } : {}),
-          ...(result.archived_sessions !== undefined ? { archived_sessions: result.archived_sessions } : {}) });
+          ...(result.archived_sessions !== undefined ? { archived_sessions: result.archived_sessions } : {}),
+          ...(result.version_no !== undefined ? { version_no: result.version_no } : {}) });
       } catch (error) {
         if (error instanceof UserOpError) {
           report({ ok: false, error: { code: error.code, message: error.message, data: error.data } });

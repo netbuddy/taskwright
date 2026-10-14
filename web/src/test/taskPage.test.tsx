@@ -55,8 +55,8 @@ const session = (id: string, name: string | null, last: string | null, over: Par
 
 function detail(over: Partial<TaskDetail> = {}): TaskDetail {
   return {
-    task_id: "TASK-P", task_name: "退款需求走查", task_type: "软件需求规格说明编制", domain_tag: null, status: "进行中",
-    started_at: "2026-09-28T17:49:00", ended_at: null,
+    task_id: "TASK-P", task_name: "退款需求走查", task_type: "软件需求规格说明编制", domain_tag: null,
+    started_at: "2026-09-28T17:49:00",
     definition: { collections: COLLECTIONS }, items: [], completion: null, latest_revision: 0, sessions: [],
     materials: [], knowledge_libraries: ["general", "lib-cb"], ...over,
   } as unknown as TaskDetail;
@@ -190,26 +190,19 @@ describe("任务头", () => {
     expect(screen.getByTestId("task-meta").textContent).toBe("任务类型：软件需求规格说明编制 · 创建于 2026-09-28 17:49。");
   });
 
-  it("任务已完成：任务名旁是灰底的状态，写明整页只读；没有活动目录与「进入工作台」，没有上传区、材料的「替换」与「删除」、知识库的改选用", async () => {
-    page(detail({ status: "已完成", materials: [{ path: "inputs/借阅说明.md", bytes: 5, modified_at: "2026-09-28T17:50:00", derived_from: null, deletable: false }] }),
-      info, statusOf({ assets: FILLED_ASSETS, catalog: null }));
+  it("发布过版本的任务照常可以做：任务名旁没有状态、没有只读说明；有活动目录、「进入工作台」、上传区与知识库的改选用", async () => {
+    page(detail({ versions: [{ version_no: 1, revision_no: 3, published_at: "2026-10-13T09:00:00", actor: "user", note: null, figure_count: null, figure_pictures: null, has_markdown: true, has_docx: true }],
+      materials: [{ path: "inputs/借阅说明.md", bytes: 5, modified_at: "2026-09-28T17:50:00", derived_from: null, deletable: true }] }),
+      info, statusOf({ assets: FILLED_ASSETS }));
     await ready();
-    expect(screen.getByTestId("task-status")).toHaveTextContent("已完成");
-    expect(screen.queryByTestId("task-state")).toBeNull();
-    expect(screen.getByText("这个任务已完成，整页只读：不能启动工作项、新建会话、上传材料或修改条目。")).toBeInTheDocument();
-    // 资产现状照常显示；活动目录、指引与「进入工作台」都没有。
-    expect(await screen.findByTestId("asset-description")).toHaveTextContent("9 节");
-    expect(screen.queryByTestId("flow-analysis")).toBeNull();
-    expect(screen.queryByTestId("start-guide")).toBeNull();
-    expect(screen.queryByTestId("enter-workbench")).toBeNull();
-    expect(screen.queryByTestId("upload-hint")).toBeNull();
-    expect(screen.queryByTestId("material-delete")).toBeNull();
-    expect(screen.queryByTestId("material-replace")).toBeNull();
-    expect(screen.queryByTestId("material-replace-off")).toBeNull();
-    expect(screen.queryByTestId("material-replace-input")).toBeNull();
+    expect(screen.queryByTestId("task-status")).toBeNull();
+    expect(screen.queryByText(/整页只读/)).toBeNull();
+    expect(await screen.findByTestId("flow-analysis")).toBeInTheDocument();
+    expect(screen.getByTestId("enter-workbench")).toBeEnabled();
+    expect(screen.getByTestId("upload-hint")).toBeInTheDocument();
+    expect(screen.getByTestId("material-delete")).toBeInTheDocument();
     await screen.findByTestId("kb-row-lib-cb");
-    expect(screen.queryByTestId("kb-pick")).toBeNull();
-    expect(screen.queryByText("不再选用")).toBeNull();
+    expect(screen.getByTestId("kb-pick")).toBeInTheDocument();
   });
 });
 
@@ -249,6 +242,16 @@ describe("起点页：空任务", () => {
     expect(text(change.querySelector(".t"))).toBe("需求变更前置条件未满足");
     expect(text(change.querySelector(".tp-need"))).toBe("前置条件：存在已发布的版本。");
     expect([change.tagName, change.classList.contains("go"), change.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
+  });
+
+  it("有了发布版本之后：需求变更的前提满足了，但这一版还没有提供，标签写「此版本尚未提供」，不写「前置条件未满足」", async () => {
+    const base = statusOf();
+    const flows = base.catalog!.flows.map((one) => (one.key === "change" ? { ...one, state: "此版本尚未提供" } : one));
+    page(detail(), info, statusOf({ catalog: { ...base.catalog!, flows } }));
+    await ready();
+    const change = await screen.findByTestId("flow-change");
+    expect(change).toHaveClass("off");
+    expect(text(change.querySelector(".t"))).toBe("需求变更此版本尚未提供");
   });
 
   it("单项活动每项一张卡：方式、目的、例子、输入与产出、前置条件；能启动的整张卡可点、进它的输入页，缺前提的变淡、不可点，前置条件是琥珀色并说明缺什么；末尾另起一行是「自由讨论」", async () => {
@@ -453,11 +456,11 @@ describe("起点页：有内容的任务", () => {
     expect(screen.queryByTestId("start-cases")).toBeNull();
   });
 
-  it("任务已经结束：工作项卡只留「打开最新会话」，流程卡上没有「打开它的会话」", async () => {
-    page(detail({ sessions, status: "已完成" }), info, statusOf({ assets: FILLED_ASSETS, work_items: [FLOW_ITEM] }));
+  it("工作项卡上三个按钮都在：打开最新会话、换一条干净的会话接着、删除这个工作项", async () => {
+    page(detail({ sessions }), info, statusOf({ assets: FILLED_ASSETS, work_items: [FLOW_ITEM] }));
     await ready();
     const card = await screen.findByTestId("work-item-1");
-    expect([...card.querySelectorAll("button")].map(text)).toEqual(["打开最新会话"]);
+    expect([...card.querySelectorAll("button")].map(text)).toEqual(["打开最新会话", "换一条干净的会话接着", "删除这个工作项"]);
   });
 
   it("没有任务状况（没有阶段的任务、早先的后端）：只有任务头、「进入工作台」、会话与材料，不画资产现状与活动目录", async () => {

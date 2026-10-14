@@ -236,9 +236,9 @@ test("提示：还没有和任何条目关联的领域说明——来源引用�
   } finally {
     db.close();
   }
-  // 查询任务状态的文字与结构化内容都带这条提示，写明不挡完成任务。
+  // 查询任务状态的文字与结构化内容都带这条提示，写明不挡发布版本。
   const status = getTaskStatus(dir);
-  assert.match(status.text, /提示（不挡完成任务）：有 2 条领域说明还没有和任何条目关联：DN-004、DN-005。/);
+  assert.match(status.text, /提示（不挡发布版本）：有 2 条领域说明还没有和任何条目关联：DN-004、DN-005。/);
   assert.deepEqual(status.details.hints.map((h: any) => h.items), [["DN-004", "DN-005"]]);
   // 服务端与观测台经命令行入口取完成条件，输出里也带 hints。
   const cli = resolve(import.meta.dirname, "../src/cli/check_completion.mts");

@@ -17,7 +17,7 @@ import { type Materials, OTHER_ITEM_BRIEF_LIMIT, OTHER_ITEMS_LIMIT, ReviewError,
 import { type Complete, runReviews } from "../src/lib/review_run.ts";
 import { reviewSlot } from "../src/lib/review_ui.ts";
 import { REVIEW_STATUS_KEY, USER_COMMAND, USER_EDIT_CUSTOM_TYPE, USER_RESULT_KEY, registerUserCommands } from "../src/hooks/user_commands.ts";
-import { completeTask } from "../src/lib/complete_task.ts";
+import { preparePublish } from "../src/lib/publish_version.ts";
 // @ts-ignore 仓库根目录的脚本是纯 JavaScript 模块
 import { documents, renderDocument } from "../../scripts/render-rules.mjs";
 import { DEFINITION_PATH, MATERIAL_TEXT, SOURCE, callIn, demoDefinition, makeWorkspace, query } from "./helpers.ts";
@@ -248,7 +248,7 @@ test("界面发起的评审：核对通过立即回报，评审在后台跑，�
   assert.ok((status[REVIEW_STATUS_KEY] ?? []).length >= 3, "每记一条进度或结束事件都提示一次后端");
 });
 
-test("界面发起的评审：任务已完成、点名的条目修订号过期、没有待评审的条目都被拒", async () => {
+test("界面发起的评审：点名的条目修订号过期、没有待评审的条目都被拒；库里状态一列写着早先的「已完成」时照常核对", async () => {
   const dir = withTwoItems(reviewWorkspace());
   const { run, status } = commandRig(dir, async () => JSON.stringify({ 发现: [] }));
   await run({ op_id: "ui-op-s", kind: "request_review", targets: [{ item_id: "UC-001", base_revision: 7 }] });
@@ -266,17 +266,17 @@ test("界面发起的评审：任务已完成、点名的条目修订号过期�
 
   withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare("UPDATE task SET status = '已完成'").run());
   await run({ op_id: "ui-op-c", kind: "request_review", targets: [] });
-  assert.equal(JSON.parse(status[USER_RESULT_KEY].at(-1)!).error.code, "task_closed");
+  assert.match(JSON.parse(status[USER_RESULT_KEY].at(-1)!).error.message, /没有需要评审的条目/);
 });
 
-// ───────────── 完成任务：开发期开关已退役，评审一条两类分开写 ─────────────
+// ───────────── 发布版本：开发期开关已退役，评审一条两类分开写 ─────────────
 
-test("完成任务的拒绝文字把还没评审与评审不合规分开写；环境变量不再能让评审一条视为满足", async () => {
+test("发布版本的拒绝文字把还没评审与评审不合规分开写；环境变量不再能让评审一条视为满足", async () => {
   const dir = withTwoItems(reviewWorkspace());
   await runReviews(callIn(dir), [{ item_id: "UC-002", revision_no: 1 }], { complete: fakeReviewer({ "UC-002": JSON.stringify({ 发现: [finding("D-R1", { 序号: 1 })] }) }).complete, model: "假" });
   process.env.TASKWRIGHT_DEV_REVIEW_AS_MET = "1";
   try {
-    assert.throws(() => completeTask(callIn(dir)), /UC-001 还没评审；UC-002 评审不合规。/);
+    assert.throws(() => preparePublish(callIn(dir)), /UC-001 还没评审；UC-002 评审不合规。/);
   } finally {
     delete process.env.TASKWRIGHT_DEV_REVIEW_AS_MET;
   }

@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
@@ -20,6 +20,7 @@ import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQuestions, goalTree, rulesTable } from "../../agent/src/lib/overall_views.ts";
 import { FLOW_ANALYSIS as FLOW_ANALYSIS_KEY, flowKeyOf, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
+import { type VersionRecord, versionRecords } from "../../agent/src/lib/versions.ts";
 import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -354,6 +355,51 @@ export interface WorkItemRow extends WorkItemBrief {
   session_ids: string[];
   /** 现在给这个工作项新建一条会话时，那条会话起的名字。 */
   session_name: string;
+}
+
+/** 一个任务的全部版本记录（agent/src/lib/versions.ts），按版本号从小到大；读不出库时是空的。 */
+export function versionRows(taskDir: string): VersionRecord[] {
+  try {
+    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+    try {
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
+      return task ? versionRecords(db, task.task_id) : [];
+    } finally {
+      db.close();
+    }
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 一个版本给页面的样子：版本号、发布的时刻、谁发布的、发布时的修订号、发布说明、文档里有几张图与其中几张在 Word 里是图片（一张都没有时为 null），
+ * 以及有没有 Markdown 与 Word 的存档
+ * （存档文件还在任务目录里才算有）。存档的路径不给页面，下载走 GET …/versions/{n}/document。
+ */
+export function versionView(row: VersionRecord, taskDir?: string) {
+  const kept = (path: string | null) => path !== null && (taskDir === undefined || existsSync(join(taskDir, path)));
+  return {
+    version_no: row.version_no, published_at: clock.fromLocalText(row.published_at), actor: row.actor === "user" ? "user" : "executor",
+    revision_no: row.revision_no, note: row.note, figure_count: row.figure_count, figure_pictures: row.figure_pictures,
+    has_markdown: kept(row.markdown_path), has_docx: kept(row.docx_path),
+  };
+}
+
+/** 任务最近一次启动或结束工作项的时刻（页面上的写法）；没有工作项、读不出库时是 null。任务列表按它与会话的最近活动排序。 */
+export function latestWorkItemAt(taskDir: string): string | null {
+  try {
+    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+    try {
+      const row = db.prepare("SELECT MAX(at) AS at FROM (SELECT started_at AS at FROM activity_record UNION ALL SELECT ended_at FROM activity_record WHERE ended_at IS NOT NULL)")
+        .get() as { at: string | null } | undefined;
+      return row?.at ? clock.fromLocalText(row.at) : null;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -962,9 +1008,7 @@ export class Library {
       task_name: or(task.task_name, this.definition["任务名"]),
       task_type: this.definition["任务名"],
       domain_tag: task.domain_tag ?? null,
-      status: task.status,
       started_at: clock.fromLocalText(task.started_at),
-      ended_at: clock.fromLocalText(task.ended_at),
       definition: definitionView(this.definition, task.definition_text ?? null, this.data.task_dir ?? null),
       completion: null as any,
       // 工作的阶段与灯：与完成条件一样在读事务提交之后另算（taskSnapshot），这里先占位。
@@ -975,6 +1019,8 @@ export class Library {
       diagrams: this.diagramsView(),
       latest_revision: this.latestRevision(),
       review_batches: this.batchesView(),
+      // 发布过的各版（与任务状况里的 versions 相同）：页面据最近一版的修订号标出「第 N 版后有改动」，发布的提示条据它判断有没有新东西可发。
+      versions: this.data.task_dir ? versionRows(this.data.task_dir).map((row) => versionView(row, this.data.task_dir!)) : [],
     };
   }
 
@@ -1008,6 +1054,7 @@ export function findingView(one: Record<string, any>) {
  * - EXECUTOR_ACTS_RECORDED（助手回复时记下的行为）：回复的内容由「回复」工具的结果带到页面，实时是 assistant_reply，
  *   刷新之后在对话记录里；这条记录本身只供助手查询与观测台使用。只有一种例外：回复里是一张提议进入下一个阶段的卡片时
  *   （记录里带 proposal），推一条 stage_proposed，好让别的会话里开着的页面也知道任务有了一条待决定的提议。
+ * 早先的任务完成事件 TASK_COMPLETED 也不推：任务没有状态了，0.5.0 完成的任务升级时补了第 1 版的版本记录。
  */
 export function eventPayload(lib: Library, e: Row): [string, Record<string, any>] | null {
   const payload = or(jsonOrText(e.payload), {}) as Record<string, any>;
@@ -1030,18 +1077,13 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
       undo_of_revision: payload.undo_of_revision ?? null, operations: ops, completion: null }];
   }
   if (e.name === "TASK_CREATED") {
-    return ["task_changed", { ...base, task_name: payload.task_name ?? null, status_before: null, status_after: "进行中", actor, completion: null }];
+    return ["task_changed", { ...base, task_name: payload.task_name ?? null, actor, completion: null }];
   }
   if (e.name === "DIAGRAM_SAVED") {
     // 图新增、修改或删除了一次。只带是哪一张、它自己改后的修订号、做了什么与图名、种类（连同中文名）；内容与来源由图的接口取。
     return ["diagram_changed", { ...base, actor, op_id: opId, diagram_id: payload.diagram_id ?? null, revision_no: payload.revision_no ?? null,
       op: payload.op ?? null, name: payload.name ?? null, kind: payload.kind ?? null,
       kind_name: typeof payload.kind === "string" ? kindName(payload.kind) : null }];
-  }
-  if (e.name === "TASK_COMPLETED") {
-    const task = lib.data.task!;
-    return ["task_changed", { ...base, task_name: or(task.task_name, lib.definition["任务名"]), status_before: or(payload.status_before, "进行中"),
-      status_after: or(payload.status_after, "已完成"), actor, completion: null }];
   }
   if (e.name === "ITEM_VIEWED") return ["item_viewed", { ...base, items: or(payload.items, []), op_id: opId, completion: null }];
   // 用户打开看了一张图：diagrams 每项是图的编号与用户看到的那一次修订号。
@@ -1098,6 +1140,11 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
     // 流程的工作项换了一站：哪个工作项、到哪一站（node）、从哪一站（from）、往前还是往后（direction）、谁、理由。
     return ["node_entered", { ...base, record_id: payload.record_id ?? null, flow: flowKeyOf(payload.flow), node: payload.node ?? null, from: payload.from ?? null,
       direction: payload.direction ?? null, actor, reason: payload.reason ?? "", run_id: payload.run_id ?? null, op_id: opId, completion: null }];
+  }
+  if (e.name === "VERSION_PUBLISHED") {
+    // 发布了一个版本：第几版、发布时交付物的修订号、谁、发布说明（没有写为 null）。版本的清单与存档由版本记录的接口取。
+    return ["version_published", { ...base, version_no: payload.version_no ?? null, revision_no: payload.revision_no ?? null, actor,
+      note: typeof payload.note === "string" ? payload.note : null, op_id: opId, completion: null }];
   }
   if (e.name === "WORK_ITEM_DELETED") {
     // 用户删除了一个工作项：哪个工作项、它做的是哪一项活动、所在的一站与所属流程、范围说明（有才写）、随之归档了几条会话、谁、理由。
@@ -1229,8 +1276,8 @@ export function changedFields(before: Record<string, any> | null, after: Record<
 
 /**
  * 按调用编号查一次调用在任务库里留下的事实，给过程摘要用：保存修订形成的修订（修订号与碰到的条目，条目取自那次修订的
- * REVISION_SAVED 事件），以及哪些调用把任务标为了已完成（TASK_COMPLETED 事件）。用户让助手停下时，工具可能已经写进了库、
- * 只是结果没来得及回到会话里，摘要据此如实写「保存了修订 N」「把任务标为已完成」。保存图同样按调用编号查：助手那一次调用给哪张图
+ * REVISION_SAVED 事件），以及哪些调用发布了版本（VERSION_PUBLISHED 事件；早先的任务完成事件 TASK_COMPLETED 也算）。用户让助手停下时，
+ * 工具可能已经写进了库、只是结果没来得及回到会话里，摘要据此如实写「保存了修订 N」「发布了版本」。保存图同样按调用编号查：助手那一次调用给哪张图
  * 写了它自己的第几次修订（图的修订号各算各的，不在任务的修订号里）。只读；库不在或读不出时都是空的。
  * 第一次查的时候才打开任务库，读一遍记下；一次也不查就不碰任务库（被停下的那次工作一个工具调用都没有时就是这样）。
  */
@@ -1260,7 +1307,8 @@ export function callFacts(taskDir: string | null): {
           const payload = or(jsonOrText(events.get(row.event_seq as number)?.payload ?? null), {}) as Record<string, any>;
           revisions.set(String(row.call_id), { revision_no: row.revision_no, operations: or(payload.operations, []) });
         }
-        for (const row of all(db, "SELECT call_id FROM event WHERE name = 'TASK_COMPLETED'")) if (row.call_id) completed.add(String(row.call_id));
+        // 发布了一个版本的调用（早先的完成任务也照样认）。
+        for (const row of all(db, "SELECT call_id FROM event WHERE name IN ('VERSION_PUBLISHED', 'TASK_COMPLETED')")) if (row.call_id) completed.add(String(row.call_id));
         try {
           for (const row of all(db, "SELECT diagram_id, revision_no, op, name, kind, call_id FROM diagram_version WHERE actor = 'executor'")) {
             if (row.call_id) diagrams.set(String(row.call_id), { diagram_id: row.diagram_id, revision_no: row.revision_no, op: row.op, name: row.name, kind: row.kind });

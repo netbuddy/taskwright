@@ -36,7 +36,7 @@ const HINT = { kind: "unlinked_domain_notes" as const, collection: "领域说明
 
 function task(over: Partial<Task> = {}): Task {
   return {
-    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [
       { name: "功能用例", prefix: "UC", needs_review: true, fields: [
         { name: "用例名称", type: "文本", required: true, values: null },
@@ -153,8 +153,8 @@ describe("右侧栏的领域说明页签", () => {
 });
 
 describe("完成条件面板的提示行", () => {
-  it("写在所属集合那一组末尾，写明不挡完成任务", () => {
-    render(<CompletionPanel completion={task().completion} status="进行中" />);
-    expect(screen.getByTestId("cond-hint").textContent).toBe("ⓘ提示：有 1 条领域说明还没有和任何条目关联：DN-004。这一条不挡完成任务，只是告诉你哪些还没用上。");
+  it("写在所属集合那一组末尾，写明不挡发布版本", () => {
+    render(<CompletionPanel completion={task().completion} />);
+    expect(screen.getByTestId("cond-hint").textContent).toBe("ⓘ提示：有 1 条领域说明还没有和任何条目关联：DN-004。这一条不挡发布版本，只是告诉你哪些还没用上。");
   });
 });

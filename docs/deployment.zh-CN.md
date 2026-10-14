@@ -215,12 +215,13 @@ node backend/src/main.mts data upgrade --data <数据目录>     # 桌面包：t
 ```bash
 node backend/src/main.mts data export --data <数据目录> --to <数据包>                       # 整套
 node backend/src/main.mts data export --data <数据目录> --task <任务编号> --to <数据包>      # 一个任务
+node backend/src/main.mts data export --data <数据目录> --task <任务编号> --with-events --to <数据包>  # 一个任务，带上事件归档
 node backend/src/main.mts data export --data <数据目录> --library <知识库编号> --to <数据包>  # 一个知识库
 node backend/src/main.mts data import --data <数据目录> --from <数据包> [--renumber]
 node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 ```
 
-- `data export`：服务开着也可以导出，正在使用的任务照样带上（包里记着导出时它正在使用）。还没有升级的数据目录也可以导出。`--to` 的文件已经在时不覆盖。
+- `data export`：服务开着也可以导出，正在使用的任务照样带上（包里记着导出时它正在使用）。还没有升级的数据目录也可以导出。`--to` 的文件已经在时不覆盖。事件归档（`runs/<任务编号>/pi-events/`，助手每一步的原始记录与运行日志）缺省不带，只带对话记录；查问题要用它们时加 `--with-events`。
 - `data import`：有服务正在用这个数据目录时不做，先停下它（或者经服务的接口导入）；这个数据目录自己有上一版的数据还没有升级时也不做，先运行 `data upgrade`。目标可以是一个空目录。
 - `data upgrade --pack`：把一个旧版本的数据导出的包升到现在的格式，写成一个新的包，原来的包不动；不需要数据目录。导入时遇到旧格式的包会自己先升级，所以这条命令只在想先得到一个新格式的包时才用。
 - 退出码：0 是都做成了（导入时因为已经存在而跳过的不算没有做成）；1 是有任务或知识库没有做成，或者导出时有任务目录没有带上；2 是没有做（参数不对、数据目录正被服务使用、数据包不对或者比这个程序新、目标文件已经在）。
@@ -230,13 +231,14 @@ node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 | 包里的路径 | 内容 |
 |---|---|
 | `tasks/<任务编号>/` | 任务目录：任务库（一份完整的副本）、`docs/`、`inputs/`、`task.json`、选用的知识库、建任务时放进来的设置与方法说明 |
-| `runs/<任务编号>/` | 这个任务的归档：对话记录与事件记录，原样。没有对话过的任务没有这一部分 |
+| `runs/<任务编号>/` | 这个任务的归档，原样：对话记录（`pi-sessions/`）。事件归档（`pi-events/`）缺省不带，导出时加 `--with-events` 才带。没有对话过的任务没有这一部分 |
 | `knowledge/<知识库编号>/` | 知识库目录，原样：文档、文字版、片段与换算好的数字串 |
 | `knowledge/libraries.json` | 包里这些知识库在知识库清单里的条目 |
 | `service/tasks.json` | 包里这些任务在任务登记里的行 |
-| 清单文件（包里名为 `manifest.json`） | 包的格式版本、导出它的产品版本、数据的格式版本、导出时刻、范围、任务与知识库的清单，以及每个文件的路径、字节数、SHA-256 与修改时刻 |
+| `说明.txt` | 给人看的说明：包里有什么、没有什么、怎样导入。不在清单文件里，导入时不解出来 |
+| 清单文件（包里名为 `manifest.json`） | 包的格式版本、导出它的产品版本、数据的格式版本、导出时刻、范围、带没带事件归档、任务与知识库的清单，以及每个文件的路径、字节数、SHA-256 与修改时刻 |
 
-**包里没有**产品设置、模型配置与密钥，所以在新的机器上要重新配置模型服务（第 3 节）；也没有占用标记、任务库旁边的日志文件与各种临时文件。
+**包里没有**产品设置、模型配置与密钥，所以在新的机器上要重新配置模型服务（第 3 节）；缺省也没有事件归档；也没有占用标记、任务库旁边的日志文件与各种临时文件。没有事件归档的任务照常导入、照常使用，观测台里它的会话写「没有事件归档」。
 
 **导入怎样做。** 先核对整个包：清单文件读得出来、包不比这个程序新、包里的文件与清单文件一一对应、每个文件的 SHA-256 与清单文件记的相同。有一处不对，整个包都不导入，数据目录原样不动。核对通过之后一项一项导入，一项没有做成不影响别的。文件的修改时刻照导出时的样子恢复，所以进入过对话的材料导入之后仍然不能删除、不能替换。
 
@@ -273,17 +275,30 @@ node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 
 ## 10 桌面包
 
-桌面包是给一个人在自己电脑上用的安装包：一个文件里装着 Node、任务服务、pi、网页界面，以及 pi 的检索工具要用的 rg 与 fd 两个程序，不需要另装 Node、Python 或 pi。桌面包自带的 pi 是 1.0.4，它和它的依赖的版本由代码仓 `release/pi/` 里的锁文件钉住，每次构建带进去的都相同。Linux 有 `taskwright-x86_64.AppImage` 与 `taskwright-linux-x64` 两种，Windows 是 `taskwright-win-x64.exe`；构建方法见代码仓的 `release/README.md`。0.3 的桌面包还是过渡形态：没有桌面外壳，由服务自己打开系统浏览器。
+桌面包是给一个人在自己电脑上用的安装包：一个文件里装着 Node、任务服务、pi、网页界面，以及 pi 的检索工具要用的 rg 与 fd 两个程序，不需要另装 Node、Python 或 pi。桌面包自带的 pi 是 1.0.4，它和它的依赖的版本由代码仓 `release/pi/` 里的锁文件钉住，每次构建带进去的都相同。Linux 有 `taskwright-x86_64.AppImage` 与 `taskwright-linux-x64` 两种，内容相同，差别只在怎样运行：AppImage 不解压，直接挂载运行，但在较旧的发行版上要装 libfuse2；单可执行文件不依赖 FUSE，但每个版本第一次启动时要解压一份到数据目录下的 `cache/`（约 45 MB）。Windows 是 `taskwright-win-x64.exe`；构建方法见代码仓的 `release/README.md`。0.3 的桌面包还是过渡形态：没有桌面外壳，由服务自己打开系统浏览器。
 
 ### 10.1 启动
 
 双击，或在终端里运行。启动时先看 8950 到 8959 端口上有没有一个已经在运行的桌面包：有就只打开浏览器，然后结束；没有就以 `--mode desktop --profile desktop --port 8950` 启动任务服务，只绑定 `127.0.0.1`，再用系统浏览器打开 `http://127.0.0.1:<端口>/`。命令行上追加的参数原样交给任务服务，并且优先于上面这些默认值，例如 `--host 0.0.0.0` 让同一网络里的其他电脑也能访问（这时请留意本文开头关于不要暴露到公网的提醒）。
 
-单可执行文件（`taskwright-linux-x64` 与 Windows 的 exe）在每个版本第一次启动时，把内容解压到用户缓存目录（Linux 是 `~/.cache/taskwright/payload/`，Windows 是 `%LOCALAPPDATA%\Taskwright\cache\payload\`），以后再启动就不再解压。Windows 上双击 exe 会出现一个命令行窗口，它就是服务的状态窗口，显示地址与日志；在 Linux 上双击 AppImage 不出现窗口，日志只写到文件里（见第 10.2 节）。
+单可执行文件（`taskwright-linux-x64` 与 Windows 的 exe）在每个版本第一次启动时，把内容解压到数据目录下的 `cache/payload/<构建号>/`，以后再启动就不再解压；AppImage 把扩展复制一份到 `cache/agent-<构建号>/`。新版本第一次启动成功后，旧版本的这两样自动删掉。Windows 上双击 exe 会出现一个命令行窗口，它就是服务的状态窗口，显示地址与日志；在 Linux 上双击 AppImage 不出现窗口，日志只写到文件里（见第 10.2 节）。
 
 ### 10.2 数据与日志
 
-任务目录、归档目录与知识库放在用户数据目录下：Linux 是 `~/.local/share/taskwright/tasks/`、`runs/` 与 `knowledge/`，Windows 是 `%LOCALAPPDATA%\Taskwright\tasks\`、`runs\` 与 `knowledge\`。日志写到同一目录下的 `logs/backend-<日期>.log`。设了环境变量 `TASKWRIGHT_DATA_DIR`（或者启动时给了 `--data <目录>`）时，这四样一起放到它指定的目录下。任务登记 `service.sqlite`、升级之前的备份 `backups/` 与升级报告也在这个目录里。备份方法同第 8 节；装了新版本之后第一次启动，页面会先显示「数据升级」，见第 8.1 节。
+桌面包写的东西都在一个目录（数据目录）下，删掉这一个目录就等于卸载：Linux 是 `~/.local/share/taskwright/`，Windows 是 `%LOCALAPPDATA%\Taskwright\`，macOS 是 `$HOME/Library/Application Support/Taskwright/`。
+
+| 数据目录下的 | 内容 |
+|---|---|
+| `tasks/`、`runs/`、`knowledge/` | 任务目录、归档目录（对话记录与事件归档）、知识库 |
+| `logs/` | 服务的日志 `backend-<日期>.log`，以及升级与导入的报告 |
+| `backups/` | 数据升级之前的备份 |
+| `settings.json`、`service.sqlite` | 产品设置（选定的模型等，不含密钥）、任务登记 |
+| `pi/` | Taskwright 自己的 pi 配置目录：`models.json`（登记的模型服务）、`auth.json`（密钥）、`settings.json` |
+| `cache/` | 程序内容：单可执行文件解压出的 `payload/<构建号>/`、AppImage 复制出的 `agent-<构建号>/`；可以删，下次启动重新生成 |
+
+设了环境变量 `TASKWRIGHT_DATA_DIR`（或者启动时给了 `--data <目录>`）时，整棵树跟着放到它指定的目录下。`TASKWRIGHT_CACHE_DIR` 与 `PI_CODING_AGENT_DIR` 可以把 `cache/` 与 `pi/` 单独指到别处。
+
+另外两处在系统临时目录里、不在数据目录下：pi 加载扩展时的编译缓存（`jiti/`）与 Node 的模块编译缓存（`node-compile-cache/`）。它们是随时可以重新生成的临时文件，系统清理临时目录时一起清掉。备份方法同第 8 节；装了新版本之后第一次启动，页面会先显示「数据升级」，见第 8.1 节。
 
 ### 10.3 退出
 
@@ -291,9 +306,9 @@ node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 
 ### 10.4 配置模型服务
 
-桌面包里不带任何密钥。模型服务的登记与凭据照旧从 pi 的配置目录读：Linux 是 `~/.pi/agent/`，Windows 是 `%USERPROFILE%\.pi\agent\`，设了环境变量 `PI_CODING_AGENT_DIR` 时以它为准。
+桌面包里不带任何密钥。模型服务的登记与凭据放在数据目录下 Taskwright 自己的 pi 配置目录 `pi/` 里（见第 10.2 节），设了环境变量 `PI_CODING_AGENT_DIR` 时以它为准；桌面包不读写本机 pi 的配置目录（`~/.pi/agent/`）。第一次启动时，`pi/` 里还没有 `models.json` 与 `auth.json`、而 `~/.pi/agent/` 里有其中之一，就把 `models.json`、`auth.json`、`settings.json` 复制一份过来（是复制，以后两边各改各的），日志里记一行，设置页的「模型」一栏写明「已从本机 pi 的配置复制」。第 3.1 节的 ChatGPT 订阅登录写的是 pi 的配置目录：第一次启动之后再登录的，登录时要让 `PI_CODING_AGENT_DIR` 指着数据目录下的 `pi/`。
 
-桌面包不带默认的模型。第一次打开时页面顶部提示还没有选定语言模型，点「去配置模型」，在设置页面的「模型」一栏添加模型服务并选定（用 ChatGPT 订阅的先照第 3.1 节登录）。从更早的版本升级上来的，也要到设置里选定一次。也可以不在页面上选，而在 pi 的配置目录里放两个文件：`models.json` 登记模型服务；`settings.json` 用 `defaultProvider` 与 `defaultModel` 两项指定用哪一个（pi 的 `/model` 命令写的也是这两项）。桌面包启动 pi 时，这两项都有就用它们。放好文件之后重新启动桌面包。在网页界面上选定的语言模型（见第 3 节）优先于这两项。
+桌面包不带默认的模型。第一次打开时页面顶部提示还没有选定语言模型，点「去配置模型」，在设置页面的「模型」一栏添加模型服务并选定（用 ChatGPT 订阅的先照第 3.1 节登录）。从更早的版本升级上来的，也要到设置里选定一次。也可以不在页面上选，而在 pi 的配置目录（数据目录下的 `pi/`）里放两个文件：`models.json` 登记模型服务；`settings.json` 用 `defaultProvider` 与 `defaultModel` 两项指定用哪一个（pi 的 `/model` 命令写的也是这两项）。桌面包启动 pi 时，这两项都有就用它们。放好文件之后重新启动桌面包。在网页界面上选定的语言模型（见第 3 节）优先于这两项。
 
 例一：本机的 llama.cpp（或其他 OpenAI 兼容接口）。`models.json`：
 

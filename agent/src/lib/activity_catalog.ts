@@ -63,7 +63,7 @@ export function assetFacts(input: LampInput): AssetFacts {
     itemsConfirmed: items.filter((one) => one.viewed === true && !one.pending).length,
     reviewRounds: input.review.rounds ?? (input.review.any ? 1 : 0),
     openFindings: input.review.failing.length,
-    versions: 0,
+    versions: input.versions ?? 0,
   };
 }
 

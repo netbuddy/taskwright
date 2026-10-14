@@ -1,7 +1,7 @@
 /**
  * 替换材料：用另一个文件换掉一份还没有进入对话的材料。旧文件连同由它生成的文件都没有了，新文件照上传的规矩收下
  * （Word 材料重新生成派生文件），名字与类型可以不同；先发 material_removed（带 replaced_by）再发 material_added（带 replaces）。
- * 前提与删除相同：已经进入对话的材料、助手正在工作时、任务已结束时、派生文件的路径一律拒绝。
+ * 前提与删除相同：已经进入对话的材料、助手正在工作时、派生文件的路径一律拒绝。
  * 新文件没有存成（类型不符、超过上限、与别的材料重名或重内容、不是合法的 Word 文件）时旧文件原样还在，一条事件也不发。
  * 新文件是 PDF 时上传要等另起的一次运行把它解析好：等的这段时间旧材料一直留在材料目录里，解析好了才移走它、移进新文件；
  * 解析不成时材料目录没有动过；解析好了但这段时间里旧材料进入了对话或者已经不在了，同样不换。
@@ -220,7 +220,7 @@ test("替换上来的文件从替换那一刻算起：此前的会话活动不�
   assert.equal(read(t, "需求.md"), "新的。");
 }));
 
-test("派生文件的路径、材料目录之外的路径、不存在的材料、助手正在工作、任务已结束：一律拒绝，什么都不动", () => withTask(async (service, t) => {
+test("派生文件的路径、材料目录之外的路径、不存在的材料、助手正在工作：一律拒绝，什么都不动", () => withTask(async (service, t) => {
   service.upload(t, "需求.docx", readFileSync(SAMPLE));
   const before = stamps(t);
   const data = Buffer.from("新的。");
@@ -236,8 +236,6 @@ test("派生文件的路径、材料目录之外的路径、不存在的材料�
   } finally {
     t.executor.state = "not_started";
   }
-  sqlRun(t.dir, [["UPDATE task SET status = '已完成'"]]);
-  assert.equal((await rejected(service.replaceMaterial(t, "inputs/需求.docx", "新.md", data))).code, "task_closed");
   assert.deepEqual(stamps(t), before);
 }));
 

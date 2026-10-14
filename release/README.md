@@ -8,8 +8,8 @@ Nothing built here is committed. The packages go to a directory outside the repo
 
 | File | What it is |
 |---|---|
-| `taskwright-x86_64.AppImage` | Linux. An AppImage holding the official Node binary and the payload as plain files; nothing is extracted. |
-| `taskwright-linux-x64` | Linux. A Node single executable application (SEA) with the payload embedded; the payload is extracted to the user cache directory on the first start of each build. |
+| `taskwright-x86_64.AppImage` | Linux. An AppImage holding the official Node binary and the payload as plain files; nothing is extracted, but older distributions need libfuse2 to mount it. |
+| `taskwright-linux-x64` | Linux. A Node single executable application (SEA) with the payload embedded; it needs no FUSE, and the payload is extracted to `cache/payload/<build>/` in the data directory on the first start of each build. |
 | `taskwright-win-x64.exe` | Windows, built on Linux. The same single executable, made from the official `node.exe`. |
 
 The payload repeats the repository's layout, so the backend finds its resources exactly as it does in the repository:
@@ -63,7 +63,7 @@ Do not run `npm install` or `npm ci` inside the repository for this. `--targets 
 
 The launcher starts the service with `--mode desktop --profile desktop --port 8950 --web <payload>/web`; arguments given on the command line are passed on and win, for example `--host 0.0.0.0`. The service listens on the first free port from 8950 to 8959 and the browser opens `http://127.0.0.1:<port>/`. Starting the package again while it runs only opens the browser. The service stops when its console window is closed, on Ctrl+C, or with the exit command in the page's user menu.
 
-Data (tasks, archives, logs) goes to the user data directory (`~/.local/share/taskwright` on Linux, `%LOCALAPPDATA%\Taskwright` on Windows). The model service comes from pi's configuration directory (`~/.pi/agent`, or `PI_CODING_AGENT_DIR`); the package contains no keys. Setting up a model service is described in the deployment guide.
+Everything the package writes goes under one root, the data directory (`~/.local/share/taskwright` on Linux, `%LOCALAPPDATA%\Taskwright` on Windows, `$HOME/Library/Application Support/Taskwright` on macOS): tasks, archives, the knowledge base, logs, backups, the product settings, the service database, `pi/` (Taskwright's own pi configuration directory, which the launcher sets `PI_CODING_AGENT_DIR` to) and `cache/` (the extracted payload and the AppImage's copy of `agent/`; the launcher removes those of older builds). The package neither reads nor writes `~/.pi/agent`, except that on the first start, when `pi/` has neither `models.json` nor `auth.json`, it copies `models.json`, `auth.json` and `settings.json` from there once. The package contains no keys. pi's jiti compile cache and Node's module compile cache stay in the system's temporary directory. Setting up a model service is described in the deployment guide.
 
 Data left by an earlier version is upgraded in place. When the package starts and finds tasks written by an earlier version, the page shows **数据升级** ("data upgrade") instead of everything else: what is to be upgraded, where the backup goes, and a button to start. The same upgrade can be run without starting the service:
 
@@ -73,9 +73,9 @@ Data left by an earlier version is upgraded in place. When the package starts an
 
 It refuses to work on a data directory that a running service is using, copies what it is about to change to `backups/<date and time>-<earlier version>/` in the data directory, upgrades task by task and prints a report, which it also writes to `logs/upgrade-<date and time>.txt`. The exit code is 0 when everything was upgraded (or nothing had to be), 1 when a task or the whole upgrade failed, 2 when nothing was done. See **Upgrading** in the deployment guide.
 
-The data commands for data packs work the same way from a package, without starting the service: `data export [--data <dir>] [--task <id> | --library <id>] --to <pack>` writes tasks and knowledge libraries into a zip file, `data import [--data <dir>] --from <pack> [--renumber]` reads one into a data directory, and `data upgrade --pack <pack> --to <new pack>` upgrades a pack written from data of an earlier version. See **Exporting and importing** in the deployment guide.
+The data commands for data packs work the same way from a package, without starting the service: `data export [--data <dir>] [--task <id> | --library <id>] [--with-events] --to <pack>` writes tasks and knowledge libraries into a zip file (the event archive only with `--with-events`), `data import [--data <dir>] --from <pack> [--renumber]` reads one into a data directory, and `data upgrade --pack <pack> --to <new pack>` upgrades a pack written from data of an earlier version. See **Exporting and importing** in the deployment guide.
 
-Environment variables read by the launcher: `TASKWRIGHT_PORT` (first port), `TASKWRIGHT_DATA_DIR` (the data directory: tasks, archives, the knowledge base, logs, the service database and the backups in one directory; `--data <dir>` on the command line does the same and wins), `TASKWRIGHT_CACHE_DIR` (the extracted payload and the AppImage's copy of `agent/`), `TASKWRIGHT_NO_BROWSER=1`, `TASKWRIGHT_OPEN_WITH` (a command run with the URL instead of the browser).
+Environment variables read by the launcher: `TASKWRIGHT_PORT` (first port), `TASKWRIGHT_DATA_DIR` (the root: everything listed above; `--data <dir>` on the command line does the same and wins), `TASKWRIGHT_CACHE_DIR` (the extracted payload and the AppImage's copy of `agent/`; default `<root>/cache`), `PI_CODING_AGENT_DIR` (pi's configuration directory; default `<root>/pi`), `TASKWRIGHT_NO_BROWSER=1`, `TASKWRIGHT_OPEN_WITH` (a command run with the URL instead of the browser).
 
 Measuring (Linux; the browser is replaced by a script that notes the time and loads the page):
 

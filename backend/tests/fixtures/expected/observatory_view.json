@@ -110,7 +110,7 @@
         "--approve",
         "--offline",
         "--tools",
-        "read,ls,grep,find,save_revision,save_diagram,reply,get_item,get_task_status,complete_task,request_review,search_knowledge",
+        "read,ls,grep,find,save_revision,save_diagram,reply,get_item,get_task_status,publish_version,request_review,search_knowledge",
         "--model",
         "fake/fake-model",
         "--thinking",
@@ -122,7 +122,7 @@
         "--session-dir",
         "<目录>/runs/<任务1>/pi-sessions/service",
         "--system-prompt",
-        "你是 Taskwright 的执行者，与用户协作，把用户提出的事情做成经过用户确认的、结构化的交付物。\n\n## 怎样工作\n\n1. 你在一个已经创建好的任务里工作。skill 清单里有两个 skill：taskwright-executor 写你在这个系统里怎样工作，另一个写这类任务怎么做。\n2. 动手之前，先用 read 读 taskwright-executor 的正文，再读任务 skill 的正文，再按它们说的做。任务 skill 会说明领域规矩文档在哪里；规矩文档也要读。\n3. 与任务无关的闲聊照常简短回应，不要调用写入类的工具。\n4. 拿不准用户的意思时，先问清楚再做；一次只问一件事。\n5. 想知道任务进行到哪一步、还缺什么，用查询工具去看，不要凭记忆。\n6. 对用户说话一律用 reply 工具，包括闲聊。\n7. 材料里把具体规定指给了别的文档（例如「按公司规范执行」「见术语表」）时，必须到知识库里把那条规定查出来写进条目，并记来源；查法见 taskwright-executor 第二节第 4 条。\n8. 查知识库用 search_knowledge 这一个工具；不要用 grep 去翻知识库，命中太多也拿不全。查到的片段就是逐字的原文，摘录从片段逐字抄，不必再读知识库文件核对。\n9. 不要一次整份读大文件：长材料照 taskwright-executor 第二节第 1 条按块读。\n\n## 底线\n\n1. 交付物的内容只通过工具写入。工具拒绝时，读它给出的原因，改正之后再试；不要绕开工具，也不要对用户说已经做完了而实际没有。\n2. 不编造用户的话里和材料里都没有的事实。按常识补充的内容，要向用户说明这是你补充的。\n3. 条目的内容接受不接受，由用户决定：用户在界面上打开一个条目看过它，就算确认了；看过之后你再改，它也不会翻回未读。还有用户从没看过的条目（未读）时，不要完成任务。\n4. 全程使用中文。"
+        "你是 Taskwright 的执行者，与用户协作，把用户提出的事情做成经过用户确认的、结构化的交付物。\n\n## 怎样工作\n\n1. 你在一个已经创建好的任务里工作。skill 清单里有两个 skill：taskwright-executor 写你在这个系统里怎样工作，另一个写这类任务怎么做。\n2. 动手之前，先用 read 读 taskwright-executor 的正文，再读任务 skill 的正文，再按它们说的做。任务 skill 会说明领域规矩文档在哪里；规矩文档也要读。\n3. 与任务无关的闲聊照常简短回应，不要调用写入类的工具。\n4. 拿不准用户的意思时，先问清楚再做；一次只问一件事。\n5. 想知道任务进行到哪一步、还缺什么，用查询工具去看，不要凭记忆。\n6. 对用户说话一律用 reply 工具，包括闲聊。\n7. 材料里把具体规定指给了别的文档（例如「按公司规范执行」「见术语表」）时，必须到知识库里把那条规定查出来写进条目，并记来源；查法见 taskwright-executor 第二节第 4 条。\n8. 查知识库用 search_knowledge 这一个工具；不要用 grep 去翻知识库，命中太多也拿不全。查到的片段就是逐字的原文，摘录从片段逐字抄，不必再读知识库文件核对。\n9. 不要一次整份读大文件：长材料照 taskwright-executor 第二节第 1 条按块读。\n\n## 底线\n\n1. 交付物的内容只通过工具写入。工具拒绝时，读它给出的原因，改正之后再试；不要绕开工具，也不要对用户说已经做完了而实际没有。\n2. 不编造用户的话里和材料里都没有的事实。按常识补充的内容，要向用户说明这是你补充的。\n3. 条目的内容接受不接受，由用户决定：用户在界面上打开一个条目看过它，就算确认了；看过之后你再改，它也不会翻回未读。还有用户从没看过的条目（未读）时，不要发布版本。\n4. 全程使用中文。"
        ],
        "工具白名单": [
         "read",
@@ -134,7 +134,7 @@
         "reply",
         "get_item",
         "get_task_status",
-        "complete_task",
+        "publish_version",
         "request_review",
         "search_knowledge"
        ],
@@ -142,8 +142,8 @@
         "代码仓里的路径": "agent/prompts/skills/taskwright-executor",
         "文件": [
          {
-          "字节数": 61983,
-          "摘要值": "f9315e9bbc59af14",
+          "字节数": 62228,
+          "摘要值": "017569f6159ff7c8",
           "路径": "SKILL.md"
          }
         ],
@@ -168,12 +168,12 @@
          },
          {
           "字节数": 4735,
-          "摘要值": "fa106bfa25499477",
+          "摘要值": "82202ed0caac3e3a",
           "路径": "clarifying.md"
          },
          {
-          "字节数": 65533,
-          "摘要值": "9234fb3ff45be87d",
+          "字节数": 65778,
+          "摘要值": "1503bb02cfc93008",
           "路径": "common.md"
          },
          {
@@ -183,7 +183,7 @@
          },
          {
           "字节数": 4421,
-          "摘要值": "17ae87065053ab6f",
+          "摘要值": "f5d45dac854df409",
           "路径": "modeling.md"
          },
          {
@@ -193,22 +193,22 @@
          },
          {
           "字节数": 2776,
-          "摘要值": "29dd1300aa048862",
+          "摘要值": "5858c85b44bb265e",
           "路径": "reading.md"
          },
          {
-          "字节数": 1753,
-          "摘要值": "9918ed7b4ae36898",
+          "字节数": 1771,
+          "摘要值": "65f91a4487596ba4",
           "路径": "reviewing.md"
          },
          {
           "字节数": 1709,
-          "摘要值": "40f561de967b0318",
+          "摘要值": "bf683e40f2902dd0",
           "路径": "system.md"
          },
          {
           "字节数": 2915,
-          "摘要值": "9d5074c44c06799b",
+          "摘要值": "a803bf10154c2576",
           "路径": "writing.md"
          }
         ],
@@ -223,8 +223,8 @@
         "代码仓里的路径": "agent/prompts/flows",
         "文件": [
          {
-          "字节数": 14043,
-          "摘要值": "ff91d1b6cf70eec7",
+          "字节数": 14094,
+          "摘要值": "c32779a81d57dce0",
           "路径": "analysis.md"
          },
          {
@@ -259,7 +259,7 @@
       },
       "启动时刻": "<时刻>",
       "实际工具清单": {
-       "原文": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"save_diagram\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\",\"search_knowledge\"]",
+       "原文": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"save_diagram\",\"reply\",\"get_item\",\"get_task_status\",\"publish_version\",\"request_review\",\"search_knowledge\"]",
        "工具": [
         "read",
         "ls",
@@ -270,7 +270,7 @@
         "reply",
         "get_item",
         "get_task_status",
-        "complete_task",
+        "publish_version",
         "request_review",
         "search_knowledge"
        ],
@@ -359,8 +359,8 @@
         },
         {
          "代码仓里的路径": "agent/prompts/skills/taskwright-executor/SKILL.md",
-         "字节数": 61983,
-         "摘要值": "f9315e9bbc59af14",
+         "字节数": 62228,
+         "摘要值": "017569f6159ff7c8",
          "来自": "平台 skill",
          "路径": "<仓根>/agent/prompts/skills/taskwright-executor/SKILL.md"
         }
@@ -393,7 +393,7 @@
     },
     "扩展写入的消息": [
      {
-      "文字": "【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：软件需求规格说明编制），任务编号 <任务1>，状态是进行中。交付物还没有任何条目。要完成任务，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\n没有开着的提议。",
+      "文字": "【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：软件需求规格说明编制），任务编号 <任务1>。交付物还没有任何条目。要发布版本，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\n没有开着的提议。",
       "时刻": "<时刻>",
       "时刻秒": "<时刻数>",
       "条目编号": "<条目1>",
@@ -474,7 +474,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"save_diagram\",\"reply\",\"get_item\",\"get_task_status\",\"complete_task\",\"request_review\",\"search_knowledge\"]",
+        "文字": "[\"read\",\"ls\",\"grep\",\"find\",\"save_revision\",\"save_diagram\",\"reply\",\"get_item\",\"get_task_status\",\"publish_version\",\"request_review\",\"search_knowledge\"]",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-active-tools",
@@ -484,7 +484,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"kind\":\"现状\",\"text\":\"【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：软件需求规格说明编制），任务编号 <任务1>，状态是进行中。交付物还没有任何条目。要完成任务，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\\n没有开着的提议。\",\"details\":{\"kind\":\"现状\",\"task_id\":\"<任务1>\",\"task_name\":\"对照任务\",\"task_type\":\"软件需求规格说明编制\",\"status\":\"进行中\",\"items\":{\"功能用例\":0,\"非功能需求\":0,\"约束\":0,\"问题\":0,\"总体分析\":0},\"conditions_total\":9,\"conditions_met\":0,\"conditions_unmet\":1,\"conditions_empty\":8,\"unresolved\":0,\"materials\":{\"dir\":\"inputs/\",\"files\":[{\"path\":\"inputs/材料.md\",\"bytes\":27}],\"citations\":[{\"path\":\"inputs/材料.md\",\"cited\":0}]},\"proposal\":null},\"entry_id\":\"<条目1>\",\"session_id\":\"<会话1>\"}",
+        "文字": "{\"kind\":\"现状\",\"text\":\"【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：软件需求规格说明编制），任务编号 <任务1>。交付物还没有任何条目。要发布版本，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\\n没有开着的提议。\",\"details\":{\"kind\":\"现状\",\"task_id\":\"<任务1>\",\"task_name\":\"对照任务\",\"task_type\":\"软件需求规格说明编制\",\"items\":{\"功能用例\":0,\"非功能需求\":0,\"约束\":0,\"问题\":0,\"总体分析\":0},\"conditions_total\":9,\"conditions_met\":0,\"conditions_unmet\":1,\"conditions_empty\":8,\"unresolved\":0,\"materials\":{\"dir\":\"inputs/\",\"files\":[{\"path\":\"inputs/材料.md\",\"bytes\":27}],\"citations\":[{\"path\":\"inputs/材料.md\",\"cited\":0}]},\"proposal\":null},\"entry_id\":\"<条目1>\",\"session_id\":\"<会话1>\"}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-task-status",
@@ -494,7 +494,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"bf2d7f1e4c2e0faa\",\"bytes\":79463,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"ef7f337921bce9a4\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65532,\"lines\":238,\"digest\":\"12cbb08016f56e22\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7662,\"lines\":30,\"digest\":\"70e8d45a759591da\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"00a338448442f67b\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"63efe663559b2cf7\",\"bytes\":79708,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65777,\"lines\":238,\"digest\":\"2d5e4ee84f810996\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7662,\"lines\":30,\"digest\":\"70e8d45a759591da\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"0f0cdc845702dfbd\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

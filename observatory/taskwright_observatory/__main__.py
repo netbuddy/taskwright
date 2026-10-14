@@ -32,14 +32,14 @@ def parse_args(argv=None) -> argparse.Namespace:
         prog="python3 -m taskwright_observatory",
         description="只读的本地观测台：看一次会话里助手做了什么，以及交付物怎么一步步改成现在这样。")
     parser.add_argument("--runs", action="append", default=[],
-                        help=f"归档目录，下面有 pi-events 与 pi-sessions 两个子目录；可以写好几次，一起看好几个归档目录。"
-                             f"给的目录本身没有 pi-events 时，把它下面每个含有 pi-events 的直接子目录都当归档目录收进来，"
+                        help=f"归档目录，下面有 pi-events 与 pi-sessions 两个子目录（从数据包导入的任务缺省只有 pi-sessions）；可以写好几次，一起看好几个归档目录。"
+                             f"给的目录本身两个子目录都没有时，把它下面每个含有其中之一的直接子目录都当归档目录收进来，"
                              f"所以产品后端的 runs/（runs/<任务目录名>/pi-events）给一次 --runs ./runs 就能看全部任务；"
                              f"每次读取都重新展开，观测台启动之后新建的任务也收进来。"
                              f"不给就取环境变量 {ENV_RUNS_DIR}。界面与文档里一律叫它「归档目录」。")
     parser.add_argument("--workspaces", default="",
                         help="任务目录所在目录。它下面每个含有 task.sqlite 的子目录算一个任务目录；"
-                             "直接指向一个任务目录也行。不给时按第一个 --runs 给的目录取：它本身有 pi-events（是归档目录）的，"
+                             "直接指向一个任务目录也行。不给时按第一个 --runs 给的目录取：它本身有 pi-events 或 pi-sessions（是归档目录）的，"
                              "取它的上一级；本身没有的（是 runs/ 这一层），它旁边有 tasks/ 目录就取那个 tasks/"
                              "（产品后端的 runs/ 与 tasks/ 并排放），没有就取它自己。只看这个目录本身，"
                              "不看它下面眼下有没有任务，所以在还空着的 runs/ 上先起观测台也取得对。")
@@ -60,7 +60,7 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def default_workspaces_dir(first_given: Path) -> Path:
     """没给 --workspaces 时的默认值，规则写在 --help 里。"""
-    if (first_given / "pi-events").is_dir():
+    if (first_given / "pi-events").is_dir() or (first_given / "pi-sessions").is_dir():
         return first_given.parent
     if (first_given.parent / "tasks").is_dir():
         return first_given.parent / "tasks"

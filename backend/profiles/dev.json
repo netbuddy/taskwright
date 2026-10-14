@@ -15,7 +15,7 @@
     "reply",
     "get_item",
     "get_task_status",
-    "complete_task",
+    "publish_version",
     "request_review",
     "search_knowledge"
   ],
@@ -53,7 +53,7 @@
   "extensions": [
     {
       "name": "任务数据工具",
-      "说明": "本代码仓自己的附加模块，登记助手的全部工具（保存修订、回复、查看条目、查询任务状态、完成任务、请求评审）、界面操作命令与几个只读的小模块。它跟着代码走，路径相对代码仓根目录。",
+      "说明": "本代码仓自己的附加模块，登记助手的全部工具（保存修订、回复、查看条目、查询任务状态、发布版本、请求评审）、界面操作命令与几个只读的小模块。它跟着代码走，路径相对代码仓根目录。",
       "source": "repo",
       "path": "agent/src/extension.ts"
     },

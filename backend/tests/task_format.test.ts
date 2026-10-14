@@ -60,7 +60,7 @@ test("建任务：任务目录里写 task.json，任务库是现在的格式版�
     assert.ok(meta.created_at, "建立时刻写了");
     assert.equal(library.taskDbVersion(dir), TASK_DB_VERSION);
     const row = service.registry!.task(id)!;
-    assert.deepEqual([row.name, row.owner, row.status, row.task_type, row.dir, row.upgrade_error], ["借阅系统", "local", "进行中", "srs-authoring", id, null]);
+    assert.deepEqual([row.name, row.owner, row.status, row.task_type, row.dir, row.upgrade_error], ["借阅系统", "local", null, "srs-authoring", id, null]);
     assert.ok(row.created_at);
     // 任务页给出任务类型说明的两个版本：建任务时复制进来的与产品自带的现在这一版。
     assert.deepEqual((service.taskPage(service.task(id)) as Record<string, any>).task_type_versions, { copied: 4, current: 4 });
@@ -100,7 +100,7 @@ test("上一版建的任务（库没有编过版本号）：不接手、不占�
     const service = serviceOn(root, { mode });
     try {
       const listed = service.listTasks();
-      assert.deepEqual(listed.map((t) => [t.task_id, t.task_name, t.status, t.supported, t.note]),
+      assert.deepEqual(listed.map((t) => [t.task_id, t.task_name, t.unavailable, t.supported, t.note]),
         [[id, "旧任务", "需要升级", false, `这个任务是上一版建的，数据还没有升级。${how}`]]);
       const refused = refusal(() => service.task(id));
       assert.deepEqual([refused.code, refused.status, refused.message, (refused.data as any).status], ["task_unavailable", 409, listed[0].note, "需要升级"]);
@@ -113,11 +113,11 @@ test("上一版建的任务（库没有编过版本号）：不接手、不占�
   const service = serviceOn(root);
   try {
     service.registry!.markUpgradeFailed(id, "2026-10-08T12:00:00Z", "任务库读不出来");
-    assert.deepEqual(service.listTasks().map((t) => [t.status, t.note]), [["需要处理", "这个任务的数据升级没有做成：任务库读不出来"]]);
+    assert.deepEqual(service.listTasks().map((t) => [t.unavailable, t.note]), [["需要处理", "这个任务的数据升级没有做成：任务库读不出来"]]);
     assert.equal((refusal(() => service.task(id)).data as any).status, "需要处理");
     // 格式对上之后（升级做成了），下一次扫描就接手。
     setVersion(dir, TASK_DB_VERSION);
-    assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.status, t.supported]), [[id, "进行中", true]]);
+    assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.unavailable, t.supported]), [[id, null, true]]);
     assert.equal(service.task(id).taskId, id);
   } finally {
     await service.close();
@@ -134,7 +134,7 @@ test("更新的版本写的任务：不接手，列表里是「需要更新的�
   writeFileSync(join(dir, TASK_JSON), JSON.stringify({ created_by_version: "0.5.0", upgraded_by_version: "0.7.0" }), "utf-8");
   const service = serviceOn(root);
   try {
-    assert.deepEqual(service.listTasks().map((t) => [t.status, t.supported, t.note]), [["需要更新的程序", false, "这份数据由 0.7.0 写入，请用 0.7.0 或更新的版本打开。"]]);
+    assert.deepEqual(service.listTasks().map((t) => [t.unavailable, t.supported, t.note]), [["需要更新的程序", false, "这份数据由 0.7.0 写入，请用 0.7.0 或更新的版本打开。"]]);
     rmSync(join(dir, TASK_JSON));
     assert.deepEqual(service.listTasks().map((t) => t.note), ["这份数据由更新的版本写入，请用更新的版本打开。"]);
     assert.equal(refusal(() => service.task(id)).code, "task_unavailable");

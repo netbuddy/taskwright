@@ -20,7 +20,7 @@ const info: ServiceInfo = {
   capabilities: { exit: false, model: true }, upload: { max_bytes: 10, too_large_text: TEXT },
 };
 const detail = {
-  task_id: "TASK-U", task_name: "上传", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  task_id: "TASK-U", task_name: "上传", task_type: "演示", domain_tag: null, started_at: "",
   definition: { collections: [] }, items: [], completion: null, sessions: [], materials: [],
 } as unknown as TaskDetail;
 

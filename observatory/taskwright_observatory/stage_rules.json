@@ -7,6 +7,7 @@
     "save_diagram": "画图",
     "save_version": "写任务字段",
     "complete_task": "完成任务",
+    "publish_version": "发布版本",
     "get_item": "查看条目",
     "get_task_status": "查询任务状态",
     "search_knowledge": "查知识库"

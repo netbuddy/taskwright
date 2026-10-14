@@ -16,7 +16,7 @@ import { type Complete, runReviews } from "../src/lib/review_run.ts";
 import { piComplete } from "../src/lib/review_ui.ts";
 import { rulesHashText } from "../src/lib/review_state.ts";
 import { UserOpError, runUserOperation } from "../src/lib/user_ops.ts";
-import { completeTask } from "../src/lib/complete_task.ts";
+import { preparePublish } from "../src/lib/publish_version.ts";
 import { getItem, getTaskStatus } from "../src/lib/task_query.ts";
 import { boardLines, itemLines } from "../src/lib/board.ts";
 import { DatabaseSync } from "node:sqlite";
@@ -225,7 +225,7 @@ test("完成条件三类分开写：还没评审、评审不合规、评审不�
   saveRevision(callIn(dir), { operations: ["甲", "乙", "丙"].map((name) => ({ op: "add", collection: "用例", fields: { 名称: name, 步骤: ["一", "二"] }, sources: [SOURCE] })) });
   await review(dir, [{ item_id: "UC-002", revision_no: 1 }, { item_id: "UC-003", revision_no: 1 }], { "UC-002": FAIL, "UC-003": FAIL });
   ui(dir, { kind: "waive_review", targets: [{ item_id: "UC-003", base_revision: 1 }], fields: {} });
-  assert.throws(() => completeTask(callIn(dir)), /UC-001 还没评审；UC-002 评审不合规；UC-003 评审不合规但你保留了。/);
+  assert.throws(() => preparePublish(callIn(dir)), /UC-001 还没评审；UC-002 评审不合规；UC-003 评审不合规但你保留了。/);
 });
 
 test("材料全文：总长不超过上限时给全文；超过时只给来源所在的自然段，并写明不是全文", () => {

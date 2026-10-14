@@ -9,8 +9,8 @@ const SESSION = "s-1";
 
 function task(completion: Completion | null = null): Task {
   return {
-    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中",
-    started_at: "2026-09-21T10:00:00+08:00", ended_at: null,
+    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null,
+    started_at: "2026-09-21T10:00:00+08:00",
     definition: { collections: [{ name: "用例", prefix: "UC", fields: [{ name: "名称", type: "文本", required: true, values: null }] }] },
     completion,
     items: [{ item_id: "UC-001", collection: "用例", title: "登录", revision_no: 1, revision_by: "executor", revision_at: "", revisions: [1],

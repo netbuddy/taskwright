@@ -13,7 +13,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, type Actor, EVENT_TASK_CREATED, emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, loadDefinition } from "./definition.ts";
 import { DIAGRAM_PREFIX } from "./diagram.ts";
-import { TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
+import { withTaskDatabase } from "./schema.ts";
 import type { ProblemClick } from "./problem_consent.ts";
 
 /** 当前会话分支上的一条用户消息：pi 会话条目的编号与原文。 */
@@ -71,13 +71,13 @@ interface ActiveTask {
 }
 
 /**
- * 库里状态为进行中的任务，按创建先后排。一库一任务之后，这里至多一行，语义就是「这个库的那个任务」
- * （它还在进行中时）；保留列表的形状，是为了让库里记录出错时调用方能说清楚是什么错。
+ * 库里的任务，按创建先后排。一库一任务，这里至多一行，语义就是「这个库的那个任务」；
+ * 保留列表的形状，是为了让库里记录出错时调用方能说清楚是什么错。任务没有状态，发布过版本的任务照常可以写。
  */
 export function activeTasks(db: DatabaseSync): ActiveTask[] {
   return db
-    .prepare("SELECT task_id, definition_text FROM task WHERE status = ? ORDER BY started_at, task_id")
-    .all(TASK_ACTIVE) as unknown as ActiveTask[];
+    .prepare("SELECT task_id, definition_text FROM task ORDER BY started_at, task_id")
+    .all() as unknown as ActiveTask[];
 }
 
 /** 从任务定义原文快照里取出任务名。快照是创建时校验过的，所以一定读得出来。 */
@@ -158,12 +158,12 @@ export function createTask(call: CallContext, params: CreateTaskParams): ToolOut
       throw new Error(`任务定义里集合「${clash.name}」的编号前缀是 ${DIAGRAM_PREFIX}，与图的编号（${DIAGRAM_PREFIX}-001 这样）同形，所以没有创建任务。请把这个集合的编号前缀改成别的。`);
     }
     const existing = db
-      .prepare("SELECT task_id, task_name, status, definition_text FROM task ORDER BY started_at, task_id")
-      .all() as { task_id: string; task_name: string | null; status: string; definition_text: string }[];
+      .prepare("SELECT task_id, task_name, definition_text FROM task ORDER BY started_at, task_id")
+      .all() as { task_id: string; task_name: string | null; definition_text: string }[];
     if (existing.length > 0) {
       const task = existing[0];
       throw new Error(
-        `这个任务目录的库里已经有任务了：任务编号是 ${task.task_id}，任务名是「${task.task_name ?? taskNameOf(task.definition_text)}」，状态是${task.status}。` +
+        `这个任务目录的库里已经有任务了：任务编号是 ${task.task_id}，任务名是「${task.task_name ?? taskNameOf(task.definition_text)}」。` +
           "一个库只放一个任务，所以没有创建新任务。要做新的任务，请新建一个任务目录。",
       );
     }
@@ -195,11 +195,11 @@ export function createTask(call: CallContext, params: CreateTaskParams): ToolOut
     });
     // task 表的唯一写入点。
     db.prepare(
-      "INSERT INTO task (task_id, task_name, domain_tag, definition_path, definition_text, status, session_id, call_id, event_seq, started_at, ended_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
-    ).run(taskId, taskName, domainTag, relativePath, text, TASK_ACTIVE, call.sessionId, call.callId, seq, at);
+      "INSERT INTO task (task_id, task_name, domain_tag, definition_path, definition_text, session_id, call_id, event_seq, started_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(taskId, taskName, domainTag, relativePath, text, call.sessionId, call.callId, seq, at);
     const textForModel =
-      `已创建任务：任务编号是 ${taskId}，任务名是「${definition.taskName}」，状态是进行中。\n` +
+      `已创建任务：任务编号是 ${taskId}，任务名是「${definition.taskName}」。\n` +
       describeDeliverable(definition) +
       `\n执行方法写在 ${definition.skillPath}，领域规矩文档是 ${definition.rulePaths.join("、")}。`;
     return {

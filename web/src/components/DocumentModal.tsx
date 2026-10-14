@@ -5,7 +5,6 @@
 // 文档按那次修订整体导出，不再逐条目混选修订。没有评审通过或没有确认的条目照样写进去，渲染程序在文档里如实标注。
 
 import { useEffect, useMemo, useState } from "react";
-import { documentBlocks } from "../../../agent/src/lib/document_blocks.ts";
 import { saveBlob } from "../model/download";
 import { figurePngs } from "./diagram/mermaid";
 import { Button, Checkbox, Empty, Modal, Select, Spin } from "antd";
@@ -13,6 +12,7 @@ import { api, ApiError, type DocumentPick } from "../api/client";
 import type { RevisionLogEntry, Task } from "../api/types";
 import { collectionLabel } from "../model/overall";
 import { aliveAt, hhmm } from "../model/revisions";
+import { figuresOf } from "../model/versions";
 import { DocumentPreview } from "./DocumentPreview";
 
 export function DocumentModal({ task, log, open, revision: initial, onClose }: {
@@ -71,10 +71,7 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
     if (wordBusy) return;
     setWordBusy(true);
     try {
-      const seen = new Set<string>();
-      const figures = documentBlocks(preview).flatMap((block) => (block.kind === "figure" && block.diagram_id && !seen.has(block.diagram_id) && seen.add(block.diagram_id)
-        ? [{ diagram_id: block.diagram_id, mermaid: block.mermaid }] : []));
-      const { blob, fileName } = await api.downloadDocumentDocx(task.task_id, pick, await figurePngs(figures), `${task.task_name}-修订${revision}.docx`);
+      const { blob, fileName } = await api.downloadDocumentDocx(task.task_id, pick, await figurePngs(figuresOf(preview)), `${task.task_name}-修订${revision}.docx`);
       saveBlob(blob, fileName);
       setError(null);
     } catch (e) {
