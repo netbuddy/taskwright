@@ -244,6 +244,16 @@ describe("起点页：空任务", () => {
     expect([change.tagName, change.classList.contains("go"), change.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
   });
 
+  it("有了发布版本之后：需求变更的前提满足了，但这一版还没有提供，标签写「此版本尚未提供」，不写「前置条件未满足」", async () => {
+    const base = statusOf();
+    const flows = base.catalog!.flows.map((one) => (one.key === "change" ? { ...one, state: "此版本尚未提供" } : one));
+    page(detail(), info, statusOf({ catalog: { ...base.catalog!, flows } }));
+    await ready();
+    const change = await screen.findByTestId("flow-change");
+    expect(change).toHaveClass("off");
+    expect(text(change.querySelector(".t"))).toBe("需求变更此版本尚未提供");
+  });
+
   it("单项活动每项一张卡：方式、目的、例子、输入与产出、前置条件；能启动的整张卡可点、进它的输入页，缺前提的变淡、不可点，前置条件是琥珀色并说明缺什么；末尾另起一行是「自由讨论」", async () => {
     page(detail(), info, statusOf());
     await ready();
