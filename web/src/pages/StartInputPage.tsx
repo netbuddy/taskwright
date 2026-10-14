@@ -8,6 +8,8 @@
 // （写了目标系统描述就是那段描述，没有写是这项活动的那句固定的话），然后进那条会话的工作台。没有启动成（例如助手正在工作）在页上报后端的原话，不跳转。
 // 这一页不选会话：一条会话在建立时就属于一个工作项，启动一律新建。任务里已有流程工作项时流程不能再启动，主按钮旁给「打开它的会话」。
 // 地址带 ?case=序号 时是从三种常见起点里的某一种进来的：那种起点要先看的那一块描黑边并滚到眼前，块里写着那种起点的做法。
+// 澄清的输入页在范围说明之上另有「待澄清问题」勾选块：还没了结的待澄清问题（阻断下游的在前）与待决定事项（model/pendingWork.ts 的 pickRows）。
+// 勾选的编号写进范围说明（「只澄清这几项：…。」在前，用户自己写的接在后面）；地址带 ?pick=编号,编号 时（从起点页「待处理事项」进来）那几项预先勾好。
 
 import { useEffect, useRef, useState } from "react";
 import { Alert, Input, Spin } from "antd";
@@ -25,15 +27,18 @@ import { GENERAL } from "../model/knowledge";
 import {
   SCOPE_MAX_LENGTH, blockedLine, existingFlowItem, firstMessage, inputBlocks, missingInput, prerequisiteBody, startButton, startFields, startSubtitle, startTarget, targetName,
 } from "../model/startInput";
+import { composeScope, pickRows, pickedScope } from "../model/pendingWork";
 import { go, href } from "../router";
 import "../styles/task-page.css";
 
-export function StartInputPage({ taskId, startKey, startCase }: {
+export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
   taskId: string;
   /** 地址里的键：一条工作流程或一项单项活动的键。 */
   startKey: string;
   /** 从三种常见起点里的第几种进来的；不是从那里进来的是 null。 */
   startCase: number | null;
+  /** 预先勾好的问题与待决定事项的编号（从起点页「待处理事项」进澄清的输入页时）；没有是空的。 */
+  pick?: string[];
 }) {
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [status, setStatus] = useState<TaskStatusView | null>(null);
@@ -42,6 +47,8 @@ export function StartInputPage({ taskId, startKey, startCase }: {
   const [error, setError] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("");
+  // 「待澄清问题」勾选块里勾着的编号。
+  const [picked, setPicked] = useState<string[]>(pick);
   // 启动的请求发出去、还没有进工作台：主按钮点不动，免得启动两次。
   const [starting, setStarting] = useState(false);
   const toast = useToast();
@@ -102,6 +109,11 @@ export function StartInputPage({ taskId, startKey, startCase }: {
   // 从头编制：启动工作流程、业务说明还空着。这时「启动后」写有材料与没有材料两种情形，三块输入上面有一段话。
   const first = target.kind === "flow" && blocks.description;
   const startNode = target.kind === "flow" ? target.flow.nodes.find((one) => one.key === target.flow.start) : null;
+  // 「待澄清问题」勾选块：只在澄清的输入页、任务里有可勾的问题或待决定事项时有。勾着的编号里只算现在还在清单上的。
+  const picks = target.kind === "activity" && target.activity.key === "clarifying" ? pickRows(task) : [];
+  const chosen = picks.filter((one) => picked.includes(one.id)).map((one) => one.id);
+  const pickedLine = pickedScope(chosen);
+  const toggle = (id: string) => setPicked((now) => (now.includes(id) ? now.filter((one) => one !== id) : [...now, id]));
 
   const changeKnowledge = async (ids: string[]) => {
     try {
@@ -116,7 +128,7 @@ export function StartInputPage({ taskId, startKey, startCase }: {
   const start = async () => {
     if (!fields || starting || blocked || missing) return;
     setStarting(true);
-    const note = scope.trim();
+    const note = composeScope(chosen, scope);
     const sent = { ...fields, ...(blocks.scope && note ? { scope: note } : {}) };
     let sessionId: string;
     try {
@@ -202,11 +214,26 @@ export function StartInputPage({ taskId, startKey, startCase }: {
         </div>
       )}
 
+      {blocks.scope && picks.length > 0 && (
+        <section className="tp-pane tp-in-block" aria-label="待澄清问题" data-testid="pick-block">
+          <div className="tp-sec-h"><h2>待澄清问题</h2><span className="aside">勾选后写进范围说明</span></div>
+          <div className="tp-pick">
+            {picks.map((one) => (
+              <label key={one.id} data-testid={`pick-${one.id}`}>
+                <input type="checkbox" checked={picked.includes(one.id)} onChange={() => toggle(one.id)} />
+                <span><b>{one.id}</b> {one.title}<small>{one.note}</small></span>
+              </label>
+            ))}
+          </div>
+          <p className="tp-in-p" data-testid="pick-note">{pickedLine ? `范围说明的开头将写：${pickedLine}` : "没有勾选时，在下方范围说明里写明要澄清的范围。"}</p>
+        </section>
+      )}
+
       {blocks.scope && (
         <section className="tp-pane tp-in-block" aria-label="范围说明" data-testid="scope-block">
           <div className="tp-sec-h"><h2><EditOutlined className="tp-hic" />范围说明</h2><span className="aside">可选</span></div>
           <p className="tp-in-p">限定这次只做哪一部分，例如只针对某几节、某几份材料或某几条条目；不写就是全部。助手在这个工作项的各条会话里都看得到这段话。</p>
-          <Input.TextArea value={scope} onChange={(e) => setScope(e.target.value)} autoSize={{ minRows: 2, maxRows: 8 }} maxLength={SCOPE_MAX_LENGTH}
+          <Input.TextArea value={scope} onChange={(e) => setScope(e.target.value)} autoSize={{ minRows: 2, maxRows: 8 }} maxLength={SCOPE_MAX_LENGTH - (pickedLine ? pickedLine.length + 1 : 0)}
             placeholder="例如：只整理「借书」「还书」两节的流程图。" data-testid="scope-input" />
         </section>
       )}

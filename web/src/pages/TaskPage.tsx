@@ -1,5 +1,5 @@
 // 任务起点页：任务一级的家，也是活动的目录。自上而下：面包屑、任务头（任务类型与时刻一行、任务名与一句状态、一段定位的话）、
-// 「三步开始」指引与三种常见起点（只在六类需求资产都空着、又没有工作项时显示）、工作项（有工作项时显示）、需求资产现状六格、
+// 「三步开始」指引与三种常见起点（只在六类需求资产都空着、又没有工作项时显示）、待处理事项（有需求资产时显示，model/pendingWork.ts）、工作项（有工作项时显示）、需求资产现状六格、
 // 工作流程两张卡、单项活动七张卡与「自由讨论」一行、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
 // 外框是工作视图的顶栏加导航条（components/TaskFrame.tsx）；各块的组件在 components/task/，样式在 styles/task-page.css。
 // 数据是两次普通读取：任务详情（GET …/tasks/{task_id}，带材料与会话）与任务状况（GET …/status，带资产现状、活动目录与这一页的几段话）。
@@ -30,6 +30,8 @@ import { SessionList } from "../components/task/SessionList";
 import { MaterialsCard } from "../components/task/MaterialsCard";
 import { useMaterialViewer } from "../components/task/MaterialViewer";
 import { ActivityCards, AssetCells, FlowCards, FreeTalk, StartGuide, WorkItemCards } from "../components/task/StartBlocks";
+import { PendingWorkSection } from "../components/task/PendingWork";
+import { showsPendingWork } from "../model/pendingWork";
 import "../styles/task-page.css";
 
 /**
@@ -215,6 +217,13 @@ export function TaskPage({ taskId }: { taskId: string }) {
         {closed && <Alert type="info" showIcon style={{ marginTop: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能启动工作项、新建会话、上传材料或修改条目。`} />}
 
         {empty && !closed && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} />}
+
+        {showsPendingWork(task, status) && (
+          <section className="tp-sec">
+            <div className="tp-sec-h"><h2>待处理事项</h2><span className="tp-sec-note">由需求资产上的记号汇总；每一项可直接启动对应的活动，或打开做它的会话</span></div>
+            <PendingWorkSection task={task} status={status} closed={closed} />
+          </section>
+        )}
 
         {workItems.length > 0 && (
           <section className="tp-sec">

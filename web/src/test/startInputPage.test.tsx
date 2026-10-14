@@ -2,7 +2,7 @@
 // 不能启动、还缺输入时主按钮点不动并写原因，已有流程工作项时给「打开它的会话」；从三种常见起点进来时先看哪一块。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { api, ApiError } from "../api/client";
 import type { AssetCell, CatalogActivity, CatalogFlow, KnowledgeLibrary, Material, ServiceInfo, SessionListEntry, TaskDetail, TaskStatusView } from "../api/types";
@@ -74,7 +74,7 @@ function statusOf(over: Partial<TaskStatusView> = {}): TaskStatusView {
 }
 
 /** 画出这一页，记下各次请求的先后。 */
-function page(key: string, task: TaskDetail = detail(), status: TaskStatusView | null = statusOf(), options: { startCase?: number | null; knowledge?: boolean } = {}) {
+function page(key: string, task: TaskDetail = detail(), status: TaskStatusView | null = statusOf(), options: { startCase?: number | null; knowledge?: boolean; pick?: string[] } = {}) {
   const order: string[] = [];
   const calls = {
     order,
@@ -89,7 +89,7 @@ function page(key: string, task: TaskDetail = detail(), status: TaskStatusView |
   vi.spyOn(api, "serviceInfo").mockResolvedValue(info(options.knowledge ?? true));
   vi.spyOn(api, "knowledge").mockResolvedValue(LIBS);
   render(<ConfigProvider button={{ autoInsertSpace: false }}><AntApp><ToastProvider><ServiceProvider>
-    <StartInputPage taskId="TASK-P" startKey={key} startCase={options.startCase ?? null} />
+    <StartInputPage taskId="TASK-P" startKey={key} startCase={options.startCase ?? null} pick={options.pick ?? []} />
   </ServiceProvider></ToastProvider></AntApp></ConfigProvider>);
   return calls;
 }
@@ -104,6 +104,10 @@ describe("活动输入页的地址", () => {
     expect(parseRoute("#/tasks/TASK-P/start/modeling?case=x")).toEqual({ page: "start", taskId: "TASK-P", key: "modeling", startCase: null });
     expect([href.start("TASK-P", "analysis"), href.start("TASK-P", "analysis", 0)]).toEqual(["#/tasks/TASK-P/start/analysis", "#/tasks/TASK-P/start/analysis?case=0"]);
     expect(parseRoute("#/tasks/TASK-P")).toEqual({ page: "task", taskId: "TASK-P" });
+    // 从起点页「待处理事项」进澄清的输入页：?pick=编号,编号 是预先勾好的几项，可以与 case 一起带。
+    expect(parseRoute("#/tasks/TASK-P/start/clarifying?pick=TBD-001,OA-003")).toEqual({ page: "start", taskId: "TASK-P", key: "clarifying", startCase: null, pick: ["TBD-001", "OA-003"] });
+    expect(href.start("TASK-P", "clarifying", null, ["TBD-001", "OA-003"])).toBe("#/tasks/TASK-P/start/clarifying?pick=TBD-001,OA-003");
+    expect(href.start("TASK-P", "analysis", 1, [])).toBe("#/tasks/TASK-P/start/analysis?case=1");
   });
 });
 
@@ -359,5 +363,51 @@ describe("活动输入页：启动不了的情形", () => {
     page("analysis", detail({ status: "已完成" }), statusOf({ catalog: null }));
     expect(await screen.findByTestId("start-closed")).toHaveTextContent("这个任务已完成，不能再启动工作项。");
     expect(screen.queryByTestId("start-submit")).toBeNull();
+  });
+});
+
+describe("从待处理事项进入澄清的输入页", () => {
+  const f = (name: string, type: string, values: string[] | null = null) => ({ name, type, required: false, values });
+  const QUESTIONS = { name: "问题", prefix: "TBD", fields: [f("事项", "文本"), f("种类", "枚举", ["待澄清", "范围外", "后续迭代"]), f("是否阻断下游", "枚举", ["阻断下游", "不阻断"]),
+    f("何时回看", "文本"), f("状态", "枚举", ["未解决", "已解决", "用户决定保留"]), f("关联条目", "条目引用")] };
+  const q = (id: string, title: string, block: string) => ({ item_id: id, collection: "问题", title, revision_no: 1, revision_by: "executor", revision_at: "", revisions: [1],
+    fields: { 事项: title, 种类: "待澄清", 是否阻断下游: block, 状态: "未解决", 关联条目: [] }, sources: [], reviews: [], waivers: [], confirmations: [] });
+  const lamps = { reading: [], clarifying: [{ key: "decisions_have_goal", ok: false, items: ["OA-003"], summary: "" }], modeling: [], writing: [], reviewing: [], document: [] };
+  const withQuestions = detail({
+    definition: { collections: [QUESTIONS] }, stage: { current: "idle", moved_by: null, moved_at: null, reason: null, lamps },
+    items: [q("TBD-001", "续借次数是否设上限", "阻断下游"), q("TBD-002", "预约保留期多长", "不阻断"),
+      { ...q("OA-003", "逾期不能续借", ""), collection: "总体分析", fields: {} }],
+  } as unknown as Partial<TaskDetail>);
+  const filled = statusOf({ assets: assets({ description: 3 }) });
+
+  it("澄清的输入页在范围说明之上有「待澄清问题」勾选块：阻断的在前，待决定事项在后；地址带的几项预先勾好，勾选的编号写在范围说明的开头一起发出", async () => {
+    const calls = page("clarifying", withQuestions, filled, { pick: ["TBD-001", "OA-003", "TBD-999"] });
+    await submit();
+    const block = screen.getByTestId("pick-block");
+    expect([...block.querySelectorAll("label")].map((one) => [text(one), (one.querySelector("input") as HTMLInputElement).checked])).toEqual([
+      ["TBD-001 续借次数是否设上限阻断下游", true], ["TBD-002 预约保留期多长不阻断", false], ["OA-003 逾期不能续借待决定事项 · 「决定」还没有写为了哪个目标", true]]);
+    expect(block.compareDocumentPosition(screen.getByTestId("scope-block")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 地址里有、清单上没有的编号不算。
+    expect(screen.getByTestId("pick-note")).toHaveTextContent("范围说明的开头将写：只澄清这几项：TBD-001、OA-003。");
+    fireEvent.click(within(screen.getByTestId("pick-TBD-002")).getByRole("checkbox"));
+    fireEvent.click(within(screen.getByTestId("pick-OA-003")).getByRole("checkbox"));
+    type("scope-input", " 先问上限。 ");
+    fireEvent.click(await submit());
+    await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
+    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "clarifying", in_flow: false, scope: "只澄清这几项：TBD-001、TBD-002。\n先问上限。" });
+  });
+
+  it("没有勾选时写一句提示；别的活动的输入页、没有可勾的问题时没有这一块", async () => {
+    page("clarifying", withQuestions, filled);
+    await submit();
+    expect(screen.getByTestId("pick-note")).toHaveTextContent("没有勾选时，在下方范围说明里写明要澄清的范围。");
+    cleanup(); vi.restoreAllMocks();
+    page("modeling", withQuestions, filled, { pick: ["TBD-001"] });
+    await submit();
+    expect(screen.queryByTestId("pick-block")).toBeNull();
+    cleanup(); vi.restoreAllMocks();
+    page("clarifying", detail(), filled);
+    await submit();
+    expect(screen.queryByTestId("pick-block")).toBeNull();
   });
 });

@@ -65,6 +65,28 @@
 .tp-case b { display: block; font-size: 0.972rem; font-weight: 600; margin-bottom: 0.143rem; }
 .tp-case span { font-size: 0.893rem; color: var(--text2); }
 
+/* 3a 待处理事项：四张卡两列排，窄了一列；每行是编号、标题与一句小字、动作按钮；推进建议一行占满，淡绿底 */
+.tp-todo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.857rem; }
+.tp-todo-card { background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; padding: 0.857rem 1.143rem; min-width: 0; }
+.tp-todo-card h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.286rem; font-size: 0.964rem; }
+.tp-todo-card h3.next { margin-top: 0.857rem; }
+.tp-todo-card h3 .n { margin-left: auto; font-weight: 400; color: var(--text3); font-size: 0.821rem; }
+.tp-todo-it { display: flex; align-items: flex-start; gap: 0.643rem; padding: 0.429rem 0; border-top: 1px dashed var(--line); font-size: 0.893rem; }
+.tp-todo-card h3 + .tp-todo-it { border-top: 0; }
+.tp-todo-it .id { font-family: ui-monospace, Menlo, monospace; font-size: 0.821rem; color: var(--text3); min-width: 4.6em; padding-top: 0.071rem; }
+.tp-todo-it .b { flex: 1; min-width: 0; }
+.tp-todo-it .b small { display: block; color: var(--text3); font-size: 0.821rem; }
+.tp-todo-none, .tp-todo-more { color: var(--mut); font-size: 0.857rem; padding: 0.286rem 0; }
+.tp-todo-adv { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.643rem; flex-wrap: wrap; background: var(--ok-bg); border: 1px solid var(--ok-line); border-radius: 0.714rem; padding: 0.714rem 1.143rem; font-size: 0.929rem; }
+.tp-todo-adv b { color: var(--ok); }
+.tp-todo-adv span { flex: 1; min-width: 12rem; }
+@media (max-width: 900px) { .tp-todo { grid-template-columns: minmax(0, 1fr); } }
+
+/* 澄清输入页的「待澄清问题」勾选块：一项一行，编号加粗，下面一行小字 */
+.tp-pick label { display: flex; gap: 0.571rem; align-items: flex-start; font-size: 0.929rem; padding: 0.286rem 0; cursor: pointer; }
+.tp-pick label input { margin-top: 0.286rem; }
+.tp-pick label small { display: block; color: var(--text3); font-size: 0.821rem; }
+
 /* 4 需求资产现状：六格一行。数量是零的格子数字用灰色；现在这项活动正在写的那一类着靛蓝 */
 .tp-assets { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.571rem; }
 .tp-cell { background: var(--card); border: 1px solid var(--line); border-radius: 0.643rem; padding: 0.571rem 0.714rem 0.643rem; min-height: 5.429rem; min-width: 0; }

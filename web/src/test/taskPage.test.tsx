@@ -429,6 +429,21 @@ describe("起点页：有内容的任务", () => {
     expect(screen.getByTestId("activity-writing").querySelector("[data-testid=activity-count]")).toBeNull();
   });
 
+  it("有需求资产时「待处理事项」一节排在「工作项」之上；六类资产都空着时没有这一节", async () => {
+    page(detail({ sessions, stage: { current: "idle", moved_by: null, moved_at: null, reason: null, lamps: { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [], document: [] } } } as unknown as Partial<TaskDetail>),
+      info, statusOf({ assets: FILLED_ASSETS, work_items: [workItem(1)] }));
+    await ready();
+    const pending = await screen.findByTestId("pending-work");
+    expect(pending.compareDocumentPosition(screen.getByTestId("work-items")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(text(pending.closest("section")!.querySelector("h2"))).toBe("待处理事项");
+    expect(text(screen.getByTestId("todo-findings"))).toBe("评审发现0尚未发起评审。");
+    cleanup(); vi.restoreAllMocks();
+    page(detail({ sessions, stage: { current: "idle", lamps: {} } } as unknown as Partial<TaskDetail>), info, statusOf({ work_items: [workItem(1)] }));
+    await ready();
+    await screen.findByTestId("work-items");
+    expect(screen.queryByTestId("pending-work")).toBeNull();
+  });
+
   it("六类资产都空着而已经有工作项（刚启动、还没有记下内容）：不再显示「三步开始」，显示「工作项」一节，任务名旁写个数", async () => {
     page(detail({ sessions }), info, statusOf({ work_items: [workItem(1)] }));
     await ready();

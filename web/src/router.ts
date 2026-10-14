@@ -2,7 +2,8 @@
 //   #/tasks                                  任务列表页
 //   #/tasks/{task_id}                        任务起点页
 //   #/tasks/{task_id}/start/{键}             活动输入页：键是一条工作流程或一项单项活动的键；后面可以带 ?case=序号，
-//                                            是从起点页三种常见起点里的第几种进来的（从 0 起），输入页据此先看那一块
+//                                            是从起点页三种常见起点里的第几种进来的（从 0 起），输入页据此先看那一块；
+//                                            澄清的输入页还可以带 ?pick=编号,编号，是从起点页「待处理事项」进来时预先勾好的问题与待决定事项
 //   #/tasks/{task_id}/sessions/{session_id}  工作视图；后面可以带 ?collection=集合名，条目区一打开就停在这个集合的页签；
 //                                            ?tab=diagrams 去看图，?diagram=D-001 直接打开那张图（图不是集合，不借用 collection）：
 //                                            有总体分析集合的任务，图在业务说明里，打开它所在的节或章首；别的任务停在图表页签
@@ -13,13 +14,13 @@ import { useEffect, useState } from "react";
 export type Route =
   | { page: "tasks" }
   | { page: "task"; taskId: string }
-  | { page: "start"; taskId: string; key: string; startCase: number | null }
+  | { page: "start"; taskId: string; key: string; startCase: number | null; pick?: string[] }
   | { page: "work"; taskId: string; sessionId: string; collection: string | null; diagrams: boolean; diagram: string | null }
   | { page: "knowledge"; libraryId: string | null }
   | { page: "settings"; section: "models" };
 
 export function parseRoute(hash: string): Route {
-  // 问号之后是参数（工作视图的 collection、tab、diagram，活动输入页的 case），先分出来再按斜杠拆路径。
+  // 问号之后是参数（工作视图的 collection、tab、diagram，活动输入页的 case 与 pick），先分出来再按斜杠拆路径。
   const mark = hash.indexOf("?");
   const query = new URLSearchParams(mark < 0 ? "" : hash.slice(mark + 1));
   const parts = (mark < 0 ? hash : hash.slice(0, mark)).replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
@@ -29,7 +30,9 @@ export function parseRoute(hash: string): Route {
   }
   if (parts[0] === "tasks" && parts[1] && parts[2] === "start" && parts[3]) {
     const startCase = query.get("case");
-    return { page: "start", taskId: parts[1], key: parts[3], startCase: startCase !== null && /^[0-9]+$/.test(startCase) ? Number(startCase) : null };
+    const pick = (query.get("pick") ?? "").split(",").map((one) => one.trim()).filter(Boolean);
+    return { page: "start", taskId: parts[1], key: parts[3], startCase: startCase !== null && /^[0-9]+$/.test(startCase) ? Number(startCase) : null,
+      ...(pick.length ? { pick } : {}) };
   }
   if (parts[0] === "tasks" && parts[1]) return { page: "task", taskId: parts[1] };
   if (parts[0] === "knowledge") return { page: "knowledge", libraryId: parts[1] ?? null };
@@ -40,9 +43,11 @@ export function parseRoute(hash: string): Route {
 export const href = {
   tasks: () => "#/tasks",
   task: (taskId: string) => `#/tasks/${encodeURIComponent(taskId)}`,
-  /** 活动输入页；startCase 是从三种常见起点里的第几种进来的。 */
-  start: (taskId: string, key: string, startCase?: number | null) =>
-    `#/tasks/${encodeURIComponent(taskId)}/start/${encodeURIComponent(key)}${startCase === undefined || startCase === null ? "" : `?case=${startCase}`}`,
+  /** 活动输入页；startCase 是从三种常见起点里的第几种进来的，pick 是预先勾好的问题与待决定事项的编号（澄清的输入页用）。 */
+  start: (taskId: string, key: string, startCase?: number | null, pick?: string[]) => {
+    const query = [startCase === undefined || startCase === null ? "" : `case=${startCase}`, pick?.length ? `pick=${pick.map(encodeURIComponent).join(",")}` : ""].filter(Boolean);
+    return `#/tasks/${encodeURIComponent(taskId)}/start/${encodeURIComponent(key)}${query.length ? `?${query.join("&")}` : ""}`;
+  },
   work: (taskId: string, sessionId: string, collection?: string | null) =>
     `#/tasks/${encodeURIComponent(taskId)}/sessions/${encodeURIComponent(sessionId)}${collection ? `?collection=${encodeURIComponent(collection)}` : ""}`,
   /** 工作视图里看图的地址；给了图的编号就直接打开那张图。 */
