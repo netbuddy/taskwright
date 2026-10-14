@@ -1,4 +1,4 @@
-// 工作视图：结构与样式照设计原型——顶栏（任务名 · 会话名、任务状态、字号三档、会话菜单），左边细导航条，
+// 工作视图：结构与样式照设计原型——顶栏（任务名 · 会话名、当前活动、字号三档、会话菜单），左边细导航条，
 // 对话区、条目区、右侧栏三栏；视口不到 100rem 宽时右侧栏默认收起成竖排的把手，用户自己开合过之后就不再自动改。
 // 数据按接口约定：先连事件流、再读整份数据、之后只听事件；说话与直接操作的响应只当作接受或拒绝。
 //
@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SettingOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
-import type { ActionRequest, AssistantReply, DiagramRow, Item, KnowledgeLibrary, LaunchOption, MessageRequest, SessionListEntry, UiActionNoted } from "../api/types";
+import type { ActionRequest, AssistantReply, DiagramRow, Item, KnowledgeLibrary, LaunchOption, MessageRequest, SessionListEntry, Task, UiActionNoted } from "../api/types";
 import { useWorkView } from "../state/useWorkView";
 import { Conversation } from "../components/work/Conversation";
 import { ItemsPanel } from "../components/work/ItemsPanel";
@@ -20,7 +20,7 @@ import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
 import { DebugPane } from "../components/work/DebugPane";
-import { DOCUMENT_REVIEWED_KEY, quietChoiceText, type StageStart } from "../model/stage";
+import { DOCUMENT_REVIEWED_KEY, START_WORK_TEXT, quietChoiceText, topbarActivity, type StageStart } from "../model/stage";
 import { ReviewPanel } from "../components/work/ReviewPanel";
 import { DocumentModal } from "../components/DocumentModal";
 import { errorText } from "../components/work/errors";
@@ -415,7 +415,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
           <a className="tname" href={href.task(taskId)}>{task?.task_name ?? "…"}</a>
           <span className="tsep">·</span>
           <span className="sname">{sessionName}</span>
-          {task && <span className="chip">{task.status === "进行中" ? "任务进行中" : `任务${task.status}`}</span>}
+          {task && <TopbarActivityChip task={task} startHref={href.task(taskId)} />}
           {Object.keys(state.pendingOps).length > 0 && <span className="chip warn">正在保存：{Object.values(state.pendingOps).map((p) => p.label).join("；")}</span>}
           <span className="sw-fs" title="字号：根字号随视口流动，这里再选一档" data-testid="font-tiers">
             字号{FONT_TIERS.map((t) => (
@@ -502,6 +502,27 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       <KnowledgeDocModal request={knowledgeDoc} libraries={libraries} onClose={() => setKnowledgeDoc(null)} />
     </div>
   );
+}
+
+/**
+ * 顶栏上任务名与会话名后面的那一处（model/stage.ts 的 topbarActivity）：有活动在进行时是可以点的「当前活动：某项活动 ▾」，
+ * 任务空闲时是「当前无活动」加一枚深色的「开展工作」；两处点了都去任务起点页，在那里选要开展的工作。
+ * 任务已经结束、任务没有阶段时只是一枚不能点的标签。
+ */
+function TopbarActivityChip({ task, startHref }: { task: Task; startHref: string }) {
+  const now = topbarActivity(task);
+  if (now.kind === "active") {
+    return <a className="chip ai" href={startHref} title="去任务起点页切换工作" data-testid="current-activity">{now.text} ▾</a>;
+  }
+  if (now.kind === "idle") {
+    return (
+      <>
+        <span className="chip" data-testid="current-activity">{now.text}</span>
+        <a className="chip dark" href={startHref} data-testid="start-work">{START_WORK_TEXT}</a>
+      </>
+    );
+  }
+  return <span className="chip" data-testid="current-activity">{now.text}</span>;
 }
 
 /**
