@@ -25,7 +25,7 @@ export function SessionList({ taskId, sessions }: { taskId: string; sessions: Se
     <section className="tp-sec">
       <div className="tp-sec-h"><h2><MessageOutlined className="tp-hic" />会话</h2><span className="cnt" data-testid="session-count">{rows.length}</span></div>
       <div className="tp-sessions">
-        {rows.length === 0 && <div className="tp-sempty" data-testid="session-empty">还没有会话。开展工作后自动建立。</div>}
+        {rows.length === 0 && <div className="tp-sempty" data-testid="session-empty">还没有会话。启动工作项时自动建立。</div>}
         {rows.map((s) => (
           <div key={s.session_id} className="tp-srow" title="打开这条会话，进入工作视图。" onClick={() => go(href.work(taskId, s.session_id))} data-testid="session-row">
             <MessageOutlined className="sic" />

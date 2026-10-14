@@ -29,10 +29,10 @@ describe("任务起点页的「进入工作台」", () => {
     expect(await screen.findByRole("button", { name: "进入工作台" })).toBeEnabled();
   });
 
-  it.each(["已完成", "已放弃"])("任务%s：不显示，只读说明写明不能开展活动", async (status) => {
+  it.each(["已完成", "已放弃"])("任务%s：不显示，只读说明写明不能启动工作项", async (status) => {
     taskPage(status);
     // 先等到只读说明出现（页面已按这个任务的状态画好），再断言按钮不在。
-    await screen.findByText(`这个任务${status}，整页只读：不能开展活动、新建会话、上传材料或修改条目。`);
+    await screen.findByText(`这个任务${status}，整页只读：不能启动工作项、新建会话、上传材料或修改条目。`);
     expect(screen.queryByRole("button", { name: "进入工作台" })).toBeNull();
     expect(screen.getByTestId("task-status")).toHaveTextContent(status);
   });

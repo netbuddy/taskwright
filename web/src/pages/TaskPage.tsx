@@ -1,19 +1,21 @@
 // 任务起点页：任务一级的家，也是活动的目录。自上而下：面包屑、任务头（任务类型与时刻一行、任务名与一句状态、一段定位的话）、
-// 「三步开始」指引与三种常见起点（只在六类需求资产都空着、又没有活动在进行时显示）、需求资产现状六格、工作流程两张卡、
-// 单项活动七张卡与「自由讨论」一行、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
+// 「三步开始」指引与三种常见起点（只在六类需求资产都空着、又没有工作项时显示）、工作项（有工作项时显示）、需求资产现状六格、
+// 工作流程两张卡、单项活动七张卡与「自由讨论」一行、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
 // 外框是工作视图的顶栏加导航条（components/TaskFrame.tsx）；各块的组件在 components/task/，样式在 styles/task-page.css。
 // 数据是两次普通读取：任务详情（GET …/tasks/{task_id}，带材料与会话）与任务状况（GET …/status，带资产现状、活动目录与这一页的几段话）。
 // 另开一条不带会话的事件连接，只听执行者状态：助手做完一轮时两样都重读一次。
-// 工作流程卡、活动卡、三种常见起点与「开始」按钮都只是进活动输入页（pages/StartInputPage.tsx），开展在那里提交。
-// 「自由讨论」是唯一不经输入页的入口：新建一条会话直接进工作台。
+// 工作流程卡、活动卡、三种常见起点与主按钮都只是进活动输入页（pages/StartInputPage.tsx），启动在那里提交。
+// 「自由讨论」不经输入页：新建一条会话直接进工作台。工作项卡上：「打开最新会话」进它最近有动静的那条会话；「换一条干净的会话接着」
+// 让后端新建一条属于它的会话再进去（不替用户发话：没说过话就离开的会话不保留，任务状况里也不计入）；「删除这个工作项」先弹确认，
+// 写明会归档几条会话，删了之后重读。
 // 任务已完成或已放弃时整页只读：没有活动目录，上传区、材料的「删除」与知识库的改选用都不显示，只读说明写明原因。
 // 没有阶段的任务（早先建的）没有资产现状与活动目录，这一页只有任务头、「自由讨论」、会话与材料。
 
 import { useEffect, useState } from "react";
-import { Alert, Spin } from "antd";
+import { Alert, App as AntApp, Spin } from "antd";
 import { api, ApiError } from "../api/client";
 import { openEventStream } from "../api/events";
-import type { KnowledgeLibrary, TaskDetail, TaskStatusView } from "../api/types";
+import type { KnowledgeLibrary, TaskDetail, TaskStatusView, WorkItemView } from "../api/types";
 import { TaskFrame } from "../components/TaskFrame";
 import { useToast } from "../components/Toasts";
 import { saveBlob } from "../model/download";
@@ -22,12 +24,12 @@ import { ownMaterials } from "../model/docx";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
 import { GENERAL } from "../model/knowledge";
-import { allAssetsEmpty, latestSession, stateLine } from "../model/startPage";
+import { allAssetsEmpty, deleteConfirmText, stateLine } from "../model/startPage";
 import { TaskKnowledgeCard } from "../components/TaskKnowledgeCard";
 import { SessionList } from "../components/task/SessionList";
 import { MaterialsCard } from "../components/task/MaterialsCard";
 import { useMaterialViewer } from "../components/task/MaterialViewer";
-import { ActivityCards, AssetCells, FlowCards, FreeTalk, StartGuide } from "../components/task/StartBlocks";
+import { ActivityCards, AssetCells, FlowCards, FreeTalk, StartGuide, WorkItemCards } from "../components/task/StartBlocks";
 import "../styles/task-page.css";
 
 /**
@@ -48,6 +50,9 @@ export function TaskPage({ taskId }: { taskId: string }) {
   // 「自由讨论」新建会话的请求还没有回来：按钮点不动，免得建出两条会话。
   const [entering, setEntering] = useState(false);
   const toast = useToast();
+  const { modal } = AntApp.useApp();
+  // 工作项卡上某个按钮的请求还没有回来（新建会话、删除）：卡上的按钮都点不动。
+  const [itemBusy, setItemBusy] = useState(false);
   const service = useService();
   const hasKnowledge = !!service.info?.capabilities.knowledge;
   // 全部知识库：「选用别的知识库」的勾选框列表要用。
@@ -92,12 +97,10 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const lastActive = task.sessions.map((s) => s.last_active_at).filter(Boolean).sort().pop();
   const versionNote = taskTypeVersionNote(task.task_type_versions);
   const catalog = status?.catalog ?? null;
-  // 「三步开始」只给还没有开始的任务：六类资产都空着，而且没有活动在进行（刚开展了一项、还没有记下内容时不再指引怎样开始）。
-  const empty = allAssetsEmpty(status?.assets) && status?.activity.kind === "idle";
+  const workItems = status?.work_items ?? [];
+  // 「三步开始」只给还没有开始的任务：六类资产都空着，而且一个工作项都没有（刚启动了一个、还没有记下内容时不再指引怎样开始）。
+  const empty = allAssetsEmpty(status?.assets) && workItems.length === 0;
   const recommended = catalog?.flows.find((one) => one.recommended) ?? null;
-  // 现在这项活动写的那几类资产：它们的格子着色。
-  const writing = catalog?.activities.find((one) => one.key === status?.activity.key)?.writes.map((one) => one.key) ?? [];
-  const latest = latestSession(task.sessions);
 
   const changeKnowledge = async (ids: string[]) => {
     try {
@@ -120,6 +123,54 @@ export function TaskPage({ taskId }: { taskId: string }) {
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "没有导出成。");
     }
+  };
+
+  /** 「打开最新会话」：进这个工作项最近有动静的那条会话；它一条还在的会话都没有时，新建一条属于它的会话再进去。 */
+  const openWorkItem = (item: WorkItemView) => {
+    if (item.latest_session) go(href.work(taskId, item.latest_session.session_id));
+    else void continueWorkItem(item);
+  };
+
+  /** 「换一条干净的会话接着」：后端新建一条属于这个工作项的会话，进去。不替用户发第一句话。 */
+  const continueWorkItem = async (item: WorkItemView) => {
+    if (itemBusy) return;
+    setItemBusy(true);
+    try {
+      const { session_id } = await api.continueWorkItem(taskId, item.record_id);
+      go(href.work(taskId, session_id));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "新建会话没有成功。");
+    } finally {
+      setItemBusy(false);
+    }
+  };
+
+  /** 「删除这个工作项」：先确认，写明会归档几条会话；删了之后提示归档了几条，重读这一页。 */
+  const deleteWorkItem = (item: WorkItemView) => {
+    if (itemBusy) return;
+    modal.confirm({
+      title: `删除工作项「${item.name}」？`,
+      content: deleteConfirmText(item),
+      okText: "删除", cancelText: "取消", okButtonProps: { danger: true },
+      onOk: async () => {
+        setItemBusy(true);
+        try {
+          const done = await api.deleteWorkItem(taskId, item.record_id);
+          toast.success(`已删除工作项「${item.name}」${done.archived_sessions > 0 ? `，归档了 ${done.archived_sessions} 条会话` : ""}。`);
+          void load();
+        } catch (e) {
+          toast.error(e instanceof ApiError ? e.message : "删除没有成功。");
+        } finally {
+          setItemBusy(false);
+        }
+      },
+    });
+  };
+
+  /** 流程卡上的「打开它的会话」：那个流程工作项在工作项清单里，照「打开最新会话」办。 */
+  const openFlowItem = (recordId: number) => {
+    const item = workItems.find((one) => one.record_id === recordId);
+    if (item) openWorkItem(item);
   };
 
   /** 「自由讨论」：新建一条会话，直接进工作台。 */
@@ -161,26 +212,33 @@ export function TaskPage({ taskId }: { taskId: string }) {
             </div>
           )}
         </header>
-        {closed && <Alert type="info" showIcon style={{ marginTop: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能开展活动、新建会话、上传材料或修改条目。`} />}
+        {closed && <Alert type="info" showIcon style={{ marginTop: "0.857rem" }} message={`这个任务${task.status}，整页只读：不能启动工作项、新建会话、上传材料或修改条目。`} />}
 
         {empty && !closed && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} />}
+
+        {workItems.length > 0 && (
+          <section className="tp-sec">
+            <div className="tp-sec-h"><h2>工作项</h2><span className="tp-sec-note">每个工作项有自己的会话；打开会话接着做，或换一条干净的会话接着；按最近有动静的先后排列，不要的直接删除</span></div>
+            <WorkItemCards items={workItems} closed={closed} busy={itemBusy} onOpen={openWorkItem} onContinue={(item) => void continueWorkItem(item)} onDelete={deleteWorkItem} />
+          </section>
+        )}
 
         {status?.assets && (
           <section className="tp-sec">
             <div className="tp-sec-h"><h2>需求资产现状</h2><span className="tp-sec-note">六类资产构成本项目的需求基础；每类下方写明由哪些活动产出</span></div>
-            <AssetCells assets={status.assets} writing={writing} />
+            <AssetCells assets={status.assets} />
           </section>
         )}
 
         {catalog && (
           <>
             <section className="tp-sec">
-              <div className="tp-sec-h"><h2>工作流程</h2><span className="tp-sec-note">按推荐次序串联多项活动；每站完成后助手提议下一站，由你确认后进入</span></div>
-              <FlowCards taskId={taskId} flows={catalog.flows} backHref={latest ? href.work(taskId, latest.session_id) : null} />
+              <div className="tp-sec-h"><h2>工作流程</h2><span className="tp-sec-note">按推荐次序串联多项活动；每站完成后助手提议下一站，由你确认后进入。每次启动新建一个工作项和一条会话</span></div>
+              <FlowCards taskId={taskId} flows={catalog.flows} onOpenWorkItem={closed ? undefined : openFlowItem} />
             </section>
             <section className="tp-sec">
-              <div className="tp-sec-h"><h2>单项活动</h2><span className="tp-sec-note">独立开展其中一项；可否开展取决于其输入资产是否具备；完成后仅汇报结果，不提议下一站</span></div>
-              <ActivityCards taskId={taskId} activities={catalog.activities} backHref={latest ? href.work(taskId, latest.session_id) : null} />
+              <div className="tp-sec-h"><h2>单项活动</h2><span className="tp-sec-note">独立启动其中一项；可否启动取决于其输入资产是否具备；完成后仅汇报结果，不提议下一站。同一项活动可以有多个工作项，靠范围说明区分</span></div>
+              <ActivityCards taskId={taskId} activities={catalog.activities} />
               <FreeTalk canEnter={!closed} busy={entering} onEnter={() => void enterWorkbench()} />
             </section>
           </>

@@ -40,7 +40,7 @@
 /* 区块标题（第二级） */
 .tp-sec { margin-top: 1.857rem; }
 .tp-sec-h { display: flex; align-items: baseline; gap: 0.571rem; margin-bottom: 0.786rem; }
-.tp-sec-h h2 { font-size: 1.143rem; font-weight: 600; margin: 0; }
+.tp-sec-h h2 { font-size: 1.143rem; font-weight: 600; margin: 0; white-space: nowrap; flex-shrink: 0; }
 .tp-sec-h .cnt { color: var(--mut); font-size: 0.972rem; font-variant-numeric: tabular-nums; }
 .tp-sec-h .aside { margin-left: auto; color: var(--mut); font-size: 0.929rem; }
 
@@ -84,11 +84,25 @@
 /* 卡片右下角提示点了做什么的字：「开展 →」「继续 →」「回到工作台 →」 */
 .tp-arrow { margin-left: auto; font-size: 0.857rem; font-weight: 600; color: var(--ink); white-space: nowrap; }
 
-/* 5 工作流程：两张卡并排。推荐的那一张黑边；现在不能开展的变淡 */
+/* 工作项：任务有工作项时在资产六格之上，两张一行；绿边，范围说明一块浅底 */
+.tp-runs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.857rem; }
+.tp-run { background: var(--card); border: 1px solid var(--ok-line); border-radius: 0.714rem; padding: 0.929rem 1.071rem 1rem; display: flex; flex-direction: column; gap: 0.357rem; min-width: 0; }
+.tp-run .t { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.tp-run .t b { font-size: 1.071rem; font-weight: 600; }
+.tp-run .t small { font-size: 0.857rem; color: var(--text3); }
+.tp-run .pos { font-size: 0.893rem; color: var(--text2); }
+.tp-run .scope { font-size: 0.893rem; color: var(--text2); background: var(--stage); border-radius: 0.5rem; padding: 0.429rem 0.714rem; }
+.tp-run .scope b { font-weight: 500; color: var(--mut); margin-right: 0.429rem; }
+.tp-run .sess { font-size: 0.857rem; color: var(--text3); }
+/* 三个按钮：类名不用 .act，免得套上工作视图里活动卡片的底色 */
+.tp-run-act { display: flex; gap: 0.5rem; align-items: center; margin-top: auto; padding-top: 0.357rem; flex-wrap: wrap; }
+
+/* 5 工作流程：两张卡并排。推荐的那一张黑边；已在进行的那一张绿边；现在不能启动的变淡 */
 .tp-flows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.857rem; }
 .tp-flow { background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; padding: 1rem 1.143rem 1.071rem; display: flex; flex-direction: column; gap: 0.357rem; min-width: 0; }
 .tp-flow.rec { border-color: var(--ink); box-shadow: var(--card-shadow); }
 .tp-flow.off { opacity: 0.62; }
+.tp-flow.now { border-color: var(--ok-line); }
 .tp-flow .t { display: flex; align-items: center; gap: 0.571rem; }
 .tp-flow .t b { font-size: 1.071rem; font-weight: 600; }
 .tp-flow p { margin: 0; font-size: 0.929rem; color: var(--text2); }
@@ -99,16 +113,16 @@
 .tp-kv dd.tp-nodes { word-break: keep-all; overflow-wrap: anywhere; }
 .tp-flow .eg { font-size: 0.857rem; color: var(--text2); background: var(--stage); border-radius: 0.5rem; padding: 0.5rem 0.714rem; margin-top: 0.357rem; }
 .tp-flow .eg b { color: var(--mut); font-weight: 400; margin-right: 0.429rem; }
-.tp-flow .tp-go { margin-top: auto; padding-top: 0.643rem; display: flex; gap: 0.643rem; align-items: baseline; }
+.tp-flow .tp-go { margin-top: auto; padding-top: 0.643rem; display: flex; gap: 0.643rem; align-items: baseline; flex-wrap: wrap; }
 /* 卡片底部的两种小字：缺前提是琥珀色，别的说明是灰色 */
 .tp-need { font-size: 0.857rem; color: var(--amber); }
 .tp-quiet { font-size: 0.857rem; color: var(--mut); }
 
-/* 6 单项活动：每项一张卡，一行排得下几张排几张；不能开展的变淡 */
+/* 6 单项活动：每项一张卡，一行排得下几张排几张；不能启动的变淡 */
 .tp-acts { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.714rem; }
 .tp-act { background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; padding: 0.857rem 1rem 0.929rem; display: flex; flex-direction: column; gap: 0.286rem; min-width: 0; }
 .tp-act.off { opacity: 0.62; }
-/* 正在进行的那一项：靛蓝边，不变淡 */
+/* 已经有工作项的那几项：靛蓝边 */
 .tp-act.now { border-color: var(--ai-line); }
 .tp-act .t { font-weight: 600; font-size: 1rem; display: flex; gap: 0.5rem; align-items: baseline; }
 .tp-act .t .chip { font-weight: 400; margin-left: auto; }
@@ -221,7 +235,7 @@
 @media (max-width: 1000px) {
   .tp-pair { grid-template-columns: minmax(0, 1fr); }
   .tp-assets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .tp-flows, .tp-cases, .tp-guide { grid-template-columns: minmax(0, 1fr); }
+  .tp-flows, .tp-runs, .tp-cases, .tp-guide { grid-template-columns: minmax(0, 1fr); }
   .tp-steps { flex-direction: column; gap: 0.571rem; }
   .tp-cta { align-items: flex-start; }
   .tp-cta small { text-align: left; }

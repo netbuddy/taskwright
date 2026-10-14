@@ -40,7 +40,7 @@ export function TaskFrame({ taskId, taskName, where, sessions, children }: {
           <UserMenu where="topbar" />
           <div className={`smenu${menuOpen ? " show" : ""}`} data-testid="session-menu">
             <div className="mh">任务「{taskName}」的会话（共 {sessions.length} 条，所有会话共享同一份交付物）</div>
-            {sessions.length === 0 && <div className="mh">还没有会话。开展工作后自动建立。</div>}
+            {sessions.length === 0 && <div className="mh">还没有会话。启动工作项时自动建立。</div>}
             {sessions.map((s) => (
               <div key={s.session_id} className="srow" role="button" onClick={() => { setMenuOpen(false); go(href.work(taskId, s.session_id)); }}>
                 <span className="sn">{s.name || "新会话，还没有说过话。"}</span>

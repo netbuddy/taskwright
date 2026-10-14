@@ -1,16 +1,17 @@
-// 任务起点页的几块：「三步开始」指引与三种常见起点、需求资产现状六格、工作流程两张卡、单项活动七张卡、「自由讨论」一行。
-// 文字都从任务状况取（资产现状 assets、活动目录 catalog、起点页的几段话 start_page），这里只画。
-// 起点页是目录：工作流程卡、活动卡、三种常见起点与「开始」按钮都只是进活动输入页（pages/StartInputPage.tsx），开展在那里提交；
-// 只有「自由讨论」不经输入页，直接进工作台。样式在 styles/task-page.css，按钮与小标签用工作视图已有的样式（.btn、.chip）。
+// 任务起点页的几块：「三步开始」指引与三种常见起点、工作项、需求资产现状六格、工作流程两张卡、单项活动七张卡、「自由讨论」一行。
+// 文字都从任务状况取（资产现状 assets、工作项 work_items、活动目录 catalog、起点页的几段话 start_page），这里只画。
+// 起点页是目录：工作流程卡、活动卡、三种常见起点与主按钮都只是进活动输入页（pages/StartInputPage.tsx），启动在那里提交；
+// 「自由讨论」不经输入页，直接进工作台；工作项卡上的三个按钮由页面去做（打开会话、换一条会话接着、删除）。
+// 样式在 styles/task-page.css，按钮与小标签用工作视图已有的样式（.btn、.chip）。
 
-import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, StartPageTexts } from "../../api/types";
-import { FLOW_ACTIVE, flowButton, flowResumeNote, flowTag, producedLine } from "../../model/startPage";
+import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, StartPageTexts, WorkItemView } from "../../api/types";
+import { START_ARROW, flowInProgress, flowPositionLine, flowTag, producedLine, workItemMeta, workItemPosition, workItemSessionsLine } from "../../model/startPage";
 import { go, href } from "../../router";
 
-/** 「三步开始」：只在六类资产都空着时显示。主按钮与三种常见起点都进推荐的那条工作流程的输入页。 */
+/** 「三步开始」：只在六类资产都空着、又没有工作项时显示。主按钮与三种常见起点都进推荐的那条工作流程的输入页。 */
 export function StartGuide({ taskId, flow, texts }: {
   taskId: string;
-  /** 推荐的工作流程；没有、或者现在不能开展时主按钮是灰的，三种起点不可点。 */
+  /** 推荐的工作流程；没有、或者现在不能启动时主按钮是灰的，三种起点不可点。 */
   flow: CatalogFlow | null;
   texts: StartPageTexts | undefined;
 }) {
@@ -28,7 +29,7 @@ export function StartGuide({ taskId, flow, texts }: {
           </ol>
         </div>
         <div className="tp-cta">
-          <button className="btn pri tp-lg" disabled={!open} onClick={() => open && go(href.start(taskId, open.key))} data-testid="guide-start">开始{name}</button>
+          <button className="btn pri tp-lg" disabled={!open} onClick={() => open && go(href.start(taskId, open.key))} data-testid="guide-start">启动{name}</button>
           {texts?.guide_note && <small>{texts.guide_note}</small>}
         </div>
       </section>
@@ -60,21 +61,54 @@ export function AssetCells({ assets, writing = [] }: { assets: AssetCell[]; writ
 }
 
 /**
- * 工作流程：每条一张卡。能开展的整张卡可点，进这条流程的输入页；正在进行的整张卡可点，回工作台；
- * 现在不能开展的变淡、不可点，卡片底部写前置条件。
+ * 工作项：任务有工作项时显示，一个一张卡，照任务状况给的次序（最近有动静的在前）。卡上写名字与种类、哪天启动的、流程在第几站、
+ * 范围说明、几条会话与最近的那一条，三个按钮：打开最新会话、换一条干净的会话接着、删除这个工作项。工作项没有终点，没有「已做完」的卡。
+ * 任务已经结束时只留「打开最新会话」。busy 是某个按钮的请求还没有回来：这时三个按钮都点不动。
  */
-export function FlowCards({ taskId, flows, backHref }: {
+export function WorkItemCards({ items, closed, busy, onOpen, onContinue, onDelete }: {
+  items: WorkItemView[];
+  closed: boolean;
+  busy: boolean;
+  onOpen: (item: WorkItemView) => void;
+  onContinue: (item: WorkItemView) => void;
+  onDelete: (item: WorkItemView) => void;
+}) {
+  return (
+    <div className="tp-runs" data-testid="work-items">
+      {items.map((item) => (
+        <div key={item.record_id} className="tp-run" data-testid={`work-item-${item.record_id}`}>
+          <div className="t"><b>{item.name}</b><span className="chip okc">{item.kind === "flow" ? "工作流程" : "单项活动"}</span><small>{workItemMeta(item)}</small></div>
+          {workItemPosition(item) && <div className="pos">{workItemPosition(item)}</div>}
+          {item.scope && <div className="scope"><b>范围</b>{item.scope}</div>}
+          <div className="sess">{workItemSessionsLine(item)}</div>
+          <div className="tp-run-act">
+            <button className="btn sm pri" disabled={busy} onClick={() => onOpen(item)} data-testid="work-item-open">打开最新会话</button>
+            {!closed && <button className="btn sm" disabled={busy} onClick={() => onContinue(item)} data-testid="work-item-continue">换一条干净的会话接着</button>}
+            {!closed && <button className="btn sm" disabled={busy} onClick={() => onDelete(item)} data-testid="work-item-delete">删除这个工作项</button>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 工作流程：每条一张卡。能启动的整张卡可点，进这条流程的输入页。任务里已有这条流程的工作项时（一个任务同一时刻至多一个流程工作项），
+ * 卡片不能再启动：标「已在进行」，底部写在第几站，另有「打开它的会话」。现在不能启动的变淡、不可点，卡片底部写前置条件；
+ * 因为另一条流程正在进行而不能启动的，底部写那一句原因。
+ */
+export function FlowCards({ taskId, flows, onOpenWorkItem }: {
   taskId: string;
   flows: CatalogFlow[];
-  /** 流程正在进行时整张卡去的地址（最近活动的那条会话的工作台）；没有会话时不给。 */
-  backHref: string | null;
+  /** 「打开它的会话」：打开那个流程工作项最近的会话。任务已经结束时不给，不画这个按钮。 */
+  onOpenWorkItem?: (recordId: number) => void;
 }) {
   return (
     <div className="tp-flows">
       {flows.map((flow) => {
         const tag = flowTag(flow);
-        const active = flow.state === FLOW_ACTIVE;
-        const to = flow.enabled ? href.start(taskId, flow.key) : active ? backHref : null;
+        const running = flowInProgress(flow);
+        const to = flow.enabled ? href.start(taskId, flow.key) : null;
         const body = (
           <>
             <div className="t"><b>{flow.name}</b>{tag && <span className={`chip${tag.kind === "rec" ? " dark" : tag.kind === "now" ? " okc" : ""}`}>{tag.text}</span>}</div>
@@ -86,15 +120,16 @@ export function FlowCards({ taskId, flows, backHref }: {
             </dl>
             <div className="eg"><b>示例</b>{flow.example}</div>
             <div className="tp-go">
-              {flow.enabled && flowResumeNote(flow) && <span className="tp-quiet">{flowResumeNote(flow)}</span>}
-              {active && <span className="tp-quiet">现在在「{flow.nodes.find((one) => one.key === flow.at)?.name ?? ""}」这一站。</span>}
-              {!flow.enabled && !active && <span className="tp-need">{flow.prerequisite_text}</span>}
-              {flow.enabled && <span className="tp-arrow">{flowButton(flow)} →</span>}
-              {active && to && <span className="tp-arrow">回到工作台 →</span>}
+              {running && <span className="tp-quiet" data-testid="flow-position">{flowPositionLine(flow)}（见上）。一个任务同一时刻只有一条流程工作项。</span>}
+              {running && onOpenWorkItem && (
+                <button className="btn sm" onClick={() => onOpenWorkItem(flow.work_item!.record_id)} data-testid="flow-open-work-item">打开它的会话</button>
+              )}
+              {!running && !flow.enabled && <span className="tp-need">{flow.work_item && flow.state.startsWith("已有流程工作项") ? `${flow.state}。` : flow.prerequisite_text}</span>}
+              {flow.enabled && <span className="tp-arrow">{START_ARROW}</span>}
             </div>
           </>
         );
-        const cls = `tp-flow${tag?.kind === "rec" ? " rec" : ""}${!flow.enabled && !active ? " off" : ""}${to ? " go" : ""}`;
+        const cls = `tp-flow${tag?.kind === "rec" ? " rec" : ""}${running ? " now" : !flow.enabled ? " off" : ""}${to ? " go" : ""}`;
         return to
           ? <a key={flow.key} className={cls} href={to} data-testid={`flow-${flow.key}`}>{body}</a>
           : <div key={flow.key} className={cls} data-testid={`flow-${flow.key}`}>{body}</div>;
@@ -107,34 +142,31 @@ export function FlowCards({ taskId, flows, backHref }: {
 const LATER = "此版本尚未提供";
 
 /**
- * 一项活动卡片底部的那一句：能开展时写定义里的前置条件（灰字）；这个版本还没有提供时写那一句状态（灰字）；
- * 缺前提时写定义里的前置条件（琥珀色），鼠标停在上面说明现在缺的是什么。正在进行的不写：状态在标题旁的小标签上。
+ * 一项活动卡片底部的那一句：能启动时写定义里的前置条件（灰字）；这个版本还没有提供时写那一句状态（灰字）；
+ * 缺前提时写定义里的前置条件（琥珀色），鼠标停在上面说明现在缺的是什么。
  */
 function ActivityNote({ activity }: { activity: CatalogActivity }) {
   if (activity.enabled) return <span className="tp-quiet">{activity.prerequisite_text}</span>;
-  if (activity.state.startsWith("正在")) return null;
   if (activity.state === LATER) return <span className="tp-quiet">{activity.state}。</span>;
   return <span className="tp-need" title={`${activity.state}。`}>{activity.prerequisite_text}</span>;
 }
 
 /**
- * 单项活动：每项一张卡。能开展的整张卡可点，进这项活动的输入页；正在进行的整张卡可点，回工作台；
- * 缺前提的、这个版本还没有提供的变淡、不可点。
+ * 单项活动：每项一张卡。能启动的整张卡可点，进这项活动的输入页；已经有工作项的在标题旁标「N 个工作项进行中」，照样可以再启动，
+ * 那是另起一个。缺前提的、这个版本还没有提供的变淡、不可点。
  */
-export function ActivityCards({ taskId, activities, backHref = null }: {
+export function ActivityCards({ taskId, activities }: {
   taskId: string;
   activities: ActivityCatalog["activities"];
-  /** 正在进行的那一项整张卡去的地址；没有会话时不给。 */
-  backHref?: string | null;
 }) {
   return (
     <div className="tp-acts">
       {activities.map((one) => {
-        const active = one.state.startsWith("正在");
-        const to = one.enabled ? href.start(taskId, one.key) : active ? backHref : null;
+        const to = one.enabled ? href.start(taskId, one.key) : null;
+        const count = one.active_count ?? 0;
         const body = (
           <>
-            <div className="t">{one.name}<small>{one.mode_name}</small>{active && <span className="chip okc">{one.state}</span>}</div>
+            <div className="t">{one.name}<small>{one.mode_name}</small>{count > 0 && <span className="chip okc" data-testid="activity-count">{count} 个工作项进行中</span>}</div>
             <div className="d">{one.purpose}</div>
             <div className="ex">例：{one.example}</div>
             <div className="tp-rw">
@@ -143,12 +175,11 @@ export function ActivityCards({ taskId, activities, backHref = null }: {
             </div>
             <div className="tp-go">
               <ActivityNote activity={one} />
-              {one.enabled && <span className="tp-arrow">开展 →</span>}
-              {active && to && <span className="tp-arrow">回到工作台 →</span>}
+              {one.enabled && <span className="tp-arrow">{START_ARROW}</span>}
             </div>
           </>
         );
-        const cls = `tp-act${one.enabled ? "" : active ? " now" : " off"}${to ? " go" : ""}`;
+        const cls = `tp-act${one.enabled ? (count > 0 ? " now" : "") : " off"}${to ? " go" : ""}`;
         return to
           ? <a key={one.key} className={cls} href={to} data-testid={`activity-${one.key}`}>{body}</a>
           : <div key={one.key} className={cls} data-testid={`activity-${one.key}`}>{body}</div>;
@@ -158,7 +189,7 @@ export function ActivityCards({ taskId, activities, backHref = null }: {
 }
 
 /**
- * 「自由讨论」：不开展具体活动，直接进工作台。它不是活动，不排在活动卡的网格里，在「单项活动」一节末尾单独一行，
+ * 「自由讨论」：不启动具体活动，直接进工作台。它不是活动，不排在活动卡的网格里，在「单项活动」一节末尾单独一行，
  * 只有边线、没有底色；它是这一页上唯一不经输入页的入口。
  */
 export function FreeTalk({ canEnter, busy, onEnter }: {
@@ -172,7 +203,7 @@ export function FreeTalk({ canEnter, busy, onEnter }: {
     <div className="tp-free" data-testid="free-talk">
       <div className="tp-free-l">
         <div className="t">自由讨论<small>对话</small></div>
-        <div className="d">不开展具体活动，直接进入工作台与助手讨论。助手可解答问题、把定下的事记入业务说明，但不写需求条目，也不提议下一站。</div>
+        <div className="d">新建一条不属于任何工作项的会话，直接进入工作台与助手讨论。助手可解答问题、把定下的事记入业务说明，但不写需求条目，也不提议下一站。随时可用，不影响已有的工作项。</div>
       </div>
       <button className="btn" disabled={!canEnter || busy} onClick={onEnter} data-testid="enter-workbench">进入工作台</button>
     </div>
