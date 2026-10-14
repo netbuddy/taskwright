@@ -425,3 +425,20 @@
 .app .smenu .sarch { display: flex; align-items: flex-start; gap: .4rem; border-top: 1px dotted var(--line2); margin-top: .25rem; padding: .4rem .5rem .2rem; font-size: 0.881rem; color: var(--mut); cursor: pointer; }
 .app .smenu .sarch input { margin-top: .2rem; }
 .app .smenu .sarch small { display: block; font-size: 0.82rem; }
+/* 修订页签顶上的「版本」一节：发布过的各版，每版一张小卡；没有存档的下载灰着 */
+.app .sw-versions { background: var(--card); border: 1px solid var(--line2); border-radius: .55rem; padding: .45rem .6rem .5rem; display: flex; flex-direction: column; gap: .35rem; }
+.app .sw-versions .vh { display: flex; align-items: baseline; gap: .5rem; font-size: 0.929rem; }
+.app .sw-versions .vh span { color: var(--mut); font-size: 0.873rem; }
+.app .sw-ver { border-top: 1px dashed var(--line2); padding-top: .35rem; font-size: 0.893rem; }
+.app .sw-ver .r1 { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; }
+.app .sw-ver .r1 .m { color: var(--mut); font-size: 0.857rem; }
+.app .sw-ver .r1 .look { margin-left: auto; color: var(--blue); cursor: pointer; font-size: 0.857rem; }
+.app .sw-ver .note { color: var(--text2); margin-top: .1rem; }
+.app .sw-ver .dl { display: flex; gap: .8rem; flex-wrap: wrap; align-items: baseline; margin-top: .2rem; font-size: 0.857rem; }
+.app .sw-ver .dl .off { color: var(--faint); cursor: not-allowed; }
+.app .sw-ver .dl .why { color: var(--mut); }
+/* 「第 N 版后有改动」：条目上的蓝色小标签、条目区顶部那一行与它列出的条目、业务说明目录里节旁的记号 */
+.app .chip.ver { color: var(--blue); border-color: var(--blue-line); background: var(--blue-bg); }
+.app .alertbar.verbar { flex-wrap: wrap; background: var(--blue-bg2); border-color: var(--blue-line); color: var(--text2); }
+.app .alertbar.verbar .verlist { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: .3rem .8rem; margin-top: .25rem; }
+.app .oa-ver { color: var(--blue); font-size: 0.643rem; margin-left: .3rem; flex: none; }

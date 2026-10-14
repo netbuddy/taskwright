@@ -367,10 +367,10 @@ export function unmetCount(completion: Completion): number {
   return completion.unmet_count ?? completion.conditions.filter((c) => conditionState(c) === "unmet").length;
 }
 
-/** 完成条件的一句话：「要完成任务，还差 N 项。」或「完成条件都已满足。」 */
+/** 完成条件的一句话：「要发布版本，还差 N 项。」或「完成条件都已满足。」 */
 export function completionHeadline(completion: Completion): string {
   const n = unmetCount(completion);
-  return n === 0 ? "完成条件都已满足。" : `要完成任务，还差 ${n} 项。`;
+  return n === 0 ? "完成条件都已满足。" : `要发布版本，还差 ${n} 项。`;
 }
 
 /** 按集合分组的完成条件，保持接口给的先后次序。 */

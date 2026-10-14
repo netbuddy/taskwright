@@ -6,11 +6,21 @@
 // 有助手补充的内容、正在保存。领域说明一类的集合里还没和任何条目关联的条目，另有一枚琥珀色小标签，那是提示，不是状态。
 // 问题条目一类的集合（有取值「用户决定保留」的枚举字段）只写它自己的状态：未解决（琥珀）、已解决（绿）、用户决定保留（绿边框）。
 // 条目改动过不止一次时写「修订 N」，只出现过一次的不写；任务定义里写了「界面」一项的集合（例如领域说明）在列表行上总写修订与来源。
+// 发布过版本、条目在最近一版之后改过时，另有一枚蓝色小标签「第 N 版后有改动」（model/versions.ts）：它不是缺什么，只是提示与发出去的那一版不同了。
 
 import type { Item, Task } from "../../api/types";
 import { displayOf, groupOf, unlinkedIds } from "../../model/domainNotes";
 import { basisNote } from "../../model/overall";
 import { hasExecutorSupplement, KEEP_PENDING_VALUE, keepPendingField, mainStatus, mainStatusDetail, mainStatusText, RESOLVED_VALUE } from "../../model/items";
+import { changedAfter, changedBadge, latestVersion } from "../../model/versions";
+
+/** 「第 N 版后有改动」：发布过、这个条目现在的修订号大于最近一版发布时的修订号。 */
+function ChangedTag({ task, item }: { task: Task; item: Item }) {
+  const version = latestVersion(task);
+  if (!changedAfter(version, item)) return null;
+  return <span className="chip ver sm" title={`第 ${version!.version_no} 版发布的是修订 ${version!.revision_no}，这个条目之后改到了修订 ${item.revision_no}`}
+    data-testid={`changed-${item.item_id}`}>{changedBadge(version!.version_no)}</span>;
+}
 
 /** 列表行与详情头部上的有色徽标：主状态一枚，必要时再加「问题 N」。问题条目只写它自己的状态。 */
 export function StatusBadges({ task, item }: { task: Task; item: Item }) {
@@ -50,7 +60,7 @@ export function ItemMeta({ task, item, just, pending, row = false }: { task: Tas
   if (keep) {
     const def = task.definition.collections.find((c) => c.name === item.collection);
     const others = (def?.fields ?? []).filter((f) => f.type === "枚举" && f.name !== keep.name && item.fields[f.name]);
-    return <>{others.map((f) => <span key={f.name} className="chip">{String(item.fields[f.name])}</span>)}{revision}{saving}</>;
+    return <>{others.map((f) => <span key={f.name} className="chip">{String(item.fields[f.name])}</span>)}{revision}<ChangedTag task={task} item={item} />{saving}</>;
   }
   const unlinked = !!display && row && unlinkedIds(task, item.collection).includes(item.item_id);
   // 它依据的总体分析主题待核实或已废弃：琥珀色小标签，悬停说明是哪一页、该怎么办（model/overall.ts）。
@@ -63,6 +73,7 @@ export function ItemMeta({ task, item, just, pending, row = false }: { task: Tas
       {hasExecutorSupplement(item) && <span className="gm">有助手补充的内容</span>}
       {unlinked && <span className="chip warn sm" data-testid={`unlinked-${item.item_id}`}>还没和任何条目关联</span>}
       {basis && <span className="chip warn sm" title={basis.title} data-testid={`basis-pending-${item.item_id}`}>{basis.text}</span>}
+      <ChangedTag task={task} item={item} />
       {saving}
     </span>
   );

@@ -317,6 +317,23 @@ export interface Task {
   overall_views?: OverallViews | null;
   /** 任务现在的工作阶段与每个阶段的几盏灯；早先建的任务（没有「总体分析」集合）没有阶段，是 null；旧后端没有这一项。 */
   stage?: StageView | null;
+  /** 发布过的各版，按版本号从小到大；早先的后端不给。 */
+  versions?: VersionView[];
+}
+
+/**
+ * 发布过的一版（GET …/versions 的一项，任务状况与整份数据里的 versions 相同）：版本号、发布的时刻、谁发布的、发布时交付物的修订号、
+ * 发布说明、文档里的图存了没有，以及这一版的 Markdown 与 Word 存档在不在（从早先「已完成」升级来的第 1 版两样都没有）。
+ */
+export interface VersionView {
+  version_no: number;
+  published_at: string | null;
+  actor: "executor" | "user";
+  revision_no: number;
+  note: string | null;
+  figures_archived: boolean;
+  has_markdown: boolean;
+  has_docx: boolean;
 }
 
 /**
@@ -916,7 +933,7 @@ export type LibraryEvent =
 export const LIBRARY_EVENTS = [
   "stage_proposed",
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
-  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "activity_started", "node_entered", "work_item_deleted",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "activity_started", "node_entered", "work_item_deleted", "version_published",
 ] as const;
 
 export interface WorkStarted {
@@ -1168,7 +1185,7 @@ export interface MessageRequest {
  * mark_diagram_viewed：用户打开看了一张图；targets 写 { diagram_id, base_revision }。助手工作中也接受，不往会话里追加东西。
  */
 export type ActionKind = "edit_fields" | "delete_item" | "mark_viewed" | "keep_pending" | "undo" | "request_review"
-  | "waive_review" | "unwaive_review" | "set_review_rules" | "submit_deliverable" | "edit_diagram" | "mark_diagram_viewed" | "move_stage" | "start_activity";
+  | "waive_review" | "unwaive_review" | "set_review_rules" | "publish_version" | "edit_diagram" | "mark_diagram_viewed" | "move_stage" | "start_activity";
 
 /** 「继续本阶段」：在提议进入下一个阶段的卡片上选了留在这一段。只在会话里留一条通知，不写库、不引出助手运行；fields 写卡片所在回复的编号与点的键。 */
 export type StageActionKind = "continue_stage";
@@ -1179,7 +1196,7 @@ export interface ActionRequest {
   task_id: string;
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
   targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
-  /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。
+  /** publish_version 由任务服务代发（页面走 POST …/versions），页面不直接发。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。
    * start_activity 写 { activity, in_flow }：开展哪一项活动（阶段的写法）、是在需求分析流程里从这个节点开始还是单独开展；
    * 另可以写 scope，是范围说明。 */
   fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string } | { activity: string; in_flow: boolean; scope?: string };
@@ -1548,5 +1565,6 @@ export interface TaskStatusView {
   proposal: StageProposal | null;
   /** 任务的全部工作项（工作项没有终点），按最近有动静的倒序；早先的后端不给。 */
   work_items?: WorkItemView[];
-  versions: unknown[];
+  /** 发布过的各版，按版本号从小到大。 */
+  versions: VersionView[];
 }

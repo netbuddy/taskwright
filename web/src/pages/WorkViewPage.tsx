@@ -37,6 +37,8 @@ import { openProblems } from "../model/items";
 import { factsKey, viewOnOpen } from "../model/overall";
 import { diagramViewTarget } from "../model/sectionDiagrams";
 import { showSubmitBar } from "../model/submit";
+import { figuresOf } from "../model/versions";
+import { figurePngs } from "../components/diagram/mermaid";
 import { go, href, openSettings } from "../router";
 import { useToast } from "../components/Toasts";
 import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
@@ -213,11 +215,10 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       const r = await api.action(taskId, sessionId, { client_id: clientId(), task_id: taskId, ...req });
       // 标为已读不改内容，不显示「正在保存」；都已读过时后端什么都不写、没有库事件，挂着的话会一直等不到。
       // 评审也不改内容，进度与结果另有 review_progress、review_finished 两种事件，同样不登记。
-      // 提交交付物也不登记：任务变为已完成的事件不带操作编号，挂着的话同样等不到；提交之后任务只读，提示条随之消失。
       // 改图（edit_diagram）照常登记：图的事件 diagram_changed 带操作编号，到了就消去。
       // 移动阶段也不登记：任务本来就在那个阶段时后端什么都不记、没有库事件，挂着的话会一直等不到。
       // 「继续本阶段」同样不登记：它只在会话里留一条通知，没有库事件。
-      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "submit_deliverable" && req.kind !== "move_stage" && req.kind !== "start_activity" && req.kind !== "continue_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
+      if (req.kind !== "mark_viewed" && req.kind !== "request_review" && req.kind !== "move_stage" && req.kind !== "start_activity" && req.kind !== "continue_stage") dispatch({ type: "op_pending", op_id: r.op_id, label, items: req.targets.map((t) => t.item_id).filter(Boolean) as string[] });
       return null;
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError("network", String(e));
@@ -336,6 +337,22 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     setDocCollapsed(false);
     setSide("material");
     setLocate((l) => ({ excerpt, locator, nonce: (l?.nonce ?? 0) + 1 }));
+  };
+  /**
+   * 发布一个版本：照「下载 Word」的做法先取这一修订的文档、把里面用到的图画成 PNG，再带着页面看到的修订号与发布说明请任务服务发布。
+   * 成了提示一句（版本列表随事件更新）；被拒或出错返回原因，写在提示条上。
+   */
+  const publish = async (note: string): Promise<string | null> => {
+    try {
+      const revision = latestRevision;
+      const preview = revision ? (await api.previewDocument(taskId, { revision_no: revision })).text : "";
+      const images = await figurePngs(figuresOf(preview));
+      const done = await api.publishVersion(taskId, sessionId, { revision_no: revision, note: note.trim() || null, images });
+      toast.success(`第 ${done.version_no} 版已发布。`);
+      return null;
+    } catch (e) {
+      return errorText(e instanceof ApiError ? e : new ApiError("network", String(e)));
+    }
   };
   /** 换一条干净的会话接着做一个工作项：后端新建一条属于它的会话，进去，不替用户发话。 */
   const continueWorkItem = async (recordId: number) => {
@@ -501,7 +518,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty} onDiagramViewed={viewDiagram}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
-                  submitBar={showSubmitBar(task, working, state.messages)} />
+                  submitBar={showSubmitBar(task, working, state.messages)} onPublish={publish} />
                 </KnowledgeContext.Provider>
               ) : <div className="pane-items" />}
               <div className="pane-doc">
