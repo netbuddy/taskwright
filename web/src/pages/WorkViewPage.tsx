@@ -481,6 +481,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input} loadStatus={loadStatus} statusRequest={statusRequest}
                 sessionLine={task?.stage && archivedHere === false ? newSessionLine(task.stage.work_item) : null}
+                onOtherWork={task?.stage ? () => setPanelOpen(true) : undefined}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}
                 revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions} revisionCount={log.length}
                 onLocate={(excerpt, locator) => locateSource(excerpt, locator && isKnowledgeLocator(locator) ? locator : "")}

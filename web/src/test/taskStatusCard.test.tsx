@@ -9,7 +9,8 @@ import type { ConversationMessage, StageProposal, Task, TaskStatusView, WorkItem
 import { Conversation } from "../components/work/Conversation";
 import { TaskStatusCard } from "../components/work/TaskStatusCard";
 import {
-  FREE_SESSION_LINE, STATUS_CALLED_LINE, STATUS_NEXT_TEXT, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, nobodySpoke, shortMoment, statusSubtitle,
+  FREE_SESSION_LINE, STATUS_CALLED_LINE, STATUS_NEXT_TEXT, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, nobodySpoke, shortMoment, statusTitle,
+  assetLine, launchNote, recommendedFlow, versionLine, workItemsLine,
   newSessionLine, wantsOpeningStatus,
 } from "../model/taskStatus";
 import { overallTask } from "./fixtures/overallTask";
@@ -46,7 +47,7 @@ function chat(task: Task | null, messages: unknown[] = [], over: Record<string, 
 describe("工作进展卡各行的写法", () => {
   it("本会话、业务说明、模型、需求条目、这一段还差", () => {
     expect(shortMoment("2026-10-11T16:20:03")).toBe("10-11 16:20");
-    expect(statusSubtitle(STATUS)).toBe("程序据任务记录生成 · 10-11 16:20");
+    expect(statusTitle(STATUS)).toBe("工作进展 · 10-11 16:20");
     expect(activityLine(STATUS.activity)).toBe("需求分析 · 第 3 站「整理建模」 · 10-10 11:02 进入");
     // 早先记下的流程键 initial 也读成需求分析。
     expect(activityLine({ ...STATUS.activity, flow: "initial" })).toBe("需求分析 · 第 3 站「整理建模」 · 10-10 11:02 进入");
@@ -69,13 +70,13 @@ describe("工作进展卡各行的写法", () => {
     render(<Wrap><TaskStatusCard status={STATUS} liveProposal={PROPOSAL} onMessage={onMessage} onSend={onSend} /></Wrap>);
     const card = screen.getByTestId("task-status");
     expect(card).toHaveAttribute("data-activity", "modeling");
-    expect(card.querySelector(".k")).toHaveTextContent("工作进展 程序据任务记录生成 · 10-11 16:20");
+    expect(card.querySelector(".k")).toHaveTextContent("工作进展 · 10-11 16:20 程序据任务记录生成");
     expect([...card.querySelectorAll(".row b")].map((b) => b.textContent)).toEqual(["本会话", "业务说明", "模型", "需求条目", "这一段还差", "待决定"]);
     expect(screen.getByTestId("status-description")).toHaveTextContent("16 节：角色 2 · 业务流程 6 · 业务对象 6 · 业务目标 2；1 处待澄清");
     expect(screen.getByTestId("status-description").querySelector("em")).toHaveTextContent("1 处待澄清");
     expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定助手已提议进入写条目阶段");
     expect(screen.queryByTestId("status-activities")).toBeNull();
-    // 进入按钮与输入框上方那一行的按钮是同一个请求；「请助手说明下一步」发那句固定的话。各自点过一次就不能再点。
+    // 进入按钮与输入框上方那一行的按钮是同一个请求；「请助手汇报当前状况」发那句固定的话。各自点过一次就不能再点。
     fireEvent.click(screen.getByTestId("status-enter"));
     fireEvent.click(screen.getByTestId("status-enter"));
     expect(onMessage.mock.calls).toEqual([["我选：开始写条目", { reply_message_id: "reply-far", kind: "choose", choice: "start_items" }]]);
@@ -104,11 +105,11 @@ describe("工作进展卡各行的写法", () => {
     expect(onMessage.mock.calls).toEqual([["我选：退回澄清", { reply_message_id: "reply-far", kind: "choose", choice: "back_to_clarify" }]]);
   });
 
-  it("没有开着的提议：没有「待决定」一行，只有「请助手说明下一步」；卡上的提议已经结束时进入按钮点不了", () => {
+  it("没有开着的提议：没有「待决定」一行，只有「请助手汇报当前状况」；卡上的提议已经结束时进入按钮点不了", () => {
     render(<Wrap><TaskStatusCard status={{ ...STATUS, proposal: null }} liveProposal={null} onMessage={noop} onSend={noop} /></Wrap>);
     expect(screen.queryByTestId("status-proposal")).toBeNull();
     expect(screen.queryByTestId("status-enter")).toBeNull();
-    expect(screen.getByTestId("status-next")).toHaveTextContent(/^请助手说明下一步$/);
+    expect(screen.getByTestId("status-next")).toHaveTextContent(/^请助手汇报当前状况$/);
     cleanup();
     const onMessage = vi.fn();
     render(<Wrap><TaskStatusCard status={STATUS} liveProposal={null} onMessage={onMessage} onSend={noop} /></Wrap>);
@@ -141,7 +142,7 @@ describe("「本会话」一行与退役的「开展一项活动」", () => {
     render(<Wrap><TaskStatusCard status={{ ...IDLE_STATUS, launch } as TaskStatusView} liveProposal={null} onMessage={vi.fn()} onSend={vi.fn()} /></Wrap>);
     expect(screen.queryByTestId("status-activities")).toBeNull();
     expect(screen.queryByTestId("status-activities-earlier")).toBeNull();
-    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["请助手说明下一步"]);
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["请助手汇报当前状况"]);
     expect(screen.getByTestId("task-status").textContent).not.toMatch(/开展|任务状况/);
   });
 });
@@ -256,5 +257,58 @@ describe("随时调出", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(screen.queryByTestId("status-called")).toBeNull();
+  });
+});
+
+describe("工作进展卡的版本、工作项与资产三行，启动推荐流程与其他工作", () => {
+  const cell = (key: string, count: number, text: string, note = "") => ({ key, name: key, count, unit: "", text, note, produced_by: [] });
+  const ASSETS = [cell("materials", 1, "1 份", "均已核读"), cell("description", 9, "9 节", "无待澄清事项"), cell("models", 4, "4 张", "均已查看"),
+    cell("items", 23, "23 条", "均已确认"), cell("review", 1, "1 轮", ""), cell("versions", 1, "第 1 版", "")];
+  const flow = (key: string, name: string, recommended: boolean, enabled = true) => ({ key, name, recommended, enabled }) as never;
+  const WORK = [
+    { record_id: 1, kind: "flow", name: "需求分析", activity: "clarifying", activity_name: "澄清", ordinal: 2 },
+    { record_id: 5, kind: "activity", name: "整理建模", activity: "modeling", activity_name: "整理建模", ordinal: null },
+  ] as unknown as TaskStatusView["work_items"];
+  const FULL: TaskStatusView = { ...IDLE_STATUS, assets: ASSETS, work_items: WORK,
+    catalog: { flows: [flow("analysis", "需求分析", false, false), flow("change", "需求变更", true)], activities: [] } } as unknown as TaskStatusView;
+
+  it("几行的写法：版本写发布的情形，工作项列出名字（流程另写在第几站），业务说明、模型、需求条目取资产现状那一格；早先的后端没有这几项时不画或照旧写", () => {
+    expect([versionLine(ASSETS), versionLine([cell("versions", 0, "未发布")]), versionLine(undefined)]).toEqual(["已发布第 1 版", "未发布", null]);
+    expect([workItemsLine(WORK), workItemsLine([]), workItemsLine(undefined)]).toEqual(["2 个工作项：需求分析（第 2 站「澄清」）、整理建模", "没有工作项", null]);
+    expect([assetLine(ASSETS, "description"), assetLine(ASSETS, "review"), assetLine(undefined, "models")]).toEqual(["9 节，无待澄清事项", "1 轮", null]);
+    render(<Wrap><TaskStatusCard status={FULL} taskId="TASK-001" liveProposal={null} onMessage={vi.fn()} onSend={vi.fn()} onOtherWork={vi.fn()} /></Wrap>);
+    const card = screen.getByTestId("task-status");
+    expect([...card.querySelectorAll(".row")].map((one) => one.textContent)).toEqual([
+      "本会话自由讨论（不绑定活动）", "版本已发布第 1 版", "工作项2 个工作项：需求分析（第 2 站「澄清」）、整理建模",
+      "业务说明9 节，无待澄清事项", "模型4 张，均已查看", "需求条目23 条，均已确认"]);
+  });
+
+  it("推荐的流程能启动时主按钮「启动需求变更」进它的输入页，下面一句说本会话怎样；「其他工作…」打开切换工作面板；没有能启动的推荐流程时没有主按钮", () => {
+    window.location.hash = "";
+    const onOtherWork = vi.fn();
+    render(<Wrap><TaskStatusCard status={FULL} taskId="TASK-001" liveProposal={null} onMessage={vi.fn()} onSend={vi.fn()} onOtherWork={onOtherWork} /></Wrap>);
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["启动需求变更", "请助手汇报当前状况", "其他工作…"]);
+    expect(screen.getByTestId("status-launch")).toHaveClass("pri");
+    expect(screen.getByTestId("status-launch-note")).toHaveTextContent("「启动需求变更」会新建一条属于它的会话；本会话留作自由讨论。");
+    fireEvent.click(screen.getByTestId("status-launch"));
+    expect(window.location.hash).toBe("#/tasks/TASK-001/start/change");
+    fireEvent.click(screen.getByTestId("status-other"));
+    expect(onOtherWork).toHaveBeenCalledTimes(1);
+    expect(launchNote(recommendedFlow(FULL.catalog!.flows)!, "整理建模")).toBe("「启动需求变更」会新建一条属于它的会话；本会话照旧属于工作项「整理建模」。");
+    cleanup();
+    render(<Wrap><TaskStatusCard status={{ ...FULL, catalog: { flows: [flow("analysis", "需求分析", true, false)], activities: [] } } as TaskStatusView} taskId="TASK-001"
+      liveProposal={null} onMessage={vi.fn()} onSend={vi.fn()} /></Wrap>);
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["请助手汇报当前状况"]);
+    expect(screen.queryByTestId("status-launch-note")).toBeNull();
+    window.location.hash = "";
+  });
+
+  it("任务空着（六类资产都没有）时新建会话的开头不放这张卡", async () => {
+    const empty = { ...FULL, assets: ASSETS.map((one) => ({ ...one, count: 0 })) } as TaskStatusView;
+    const loadStatus = vi.fn().mockResolvedValue(empty);
+    chat(taskWith(), [], { loadStatus });
+    await vi.waitFor(() => expect(loadStatus).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(screen.queryByTestId("status-opening")).toBeNull();
   });
 });

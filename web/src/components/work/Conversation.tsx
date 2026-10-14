@@ -18,6 +18,7 @@ import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
 import { storyPlace } from "../../model/overall";
 import { CONTINUE_STAGE_KIND, activityDoneLine, continueStageLine, stageMoveLine } from "../../model/stage";
+import { allAssetsEmpty } from "../../model/startPage";
 import { STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, nobodySpoke, wantsOpeningStatus } from "../../model/taskStatus";
 import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
@@ -57,7 +58,10 @@ export function Conversation({
   loadStatus,
   statusRequest = 0,
   sessionLine = null,
+  onOtherWork,
 }: {
+  /** 工作进展卡上的「其他工作…」：打开切换工作面板。不给时卡上没有这个按钮。 */
+  onOtherWork?: () => void;
   /** 别处（切换工作面板的「查看工作进展」）要在对话里插一张工作进展卡：每加一，插一张。0 是没有要求过。 */
   statusRequest?: number;
   /**
@@ -135,7 +139,8 @@ export function Conversation({
   useEffect(() => {
     if (!openingWanted.current || !loadStatus) return;
     let live = true;
-    void loadStatus().then((status) => { if (live && status) setOpening(status); });
+    // 任务空着（六类资产都没有）时不放：空任务不进工作台，这张卡在那里也没有可说的。
+    void loadStatus().then((status) => { if (live && status && !allAssetsEmpty(status.assets)) setOpening(status); });
     return () => { live = false; };
     // 只在这条会话打开时判一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -186,8 +191,8 @@ export function Conversation({
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
   const statusCard = (status: TaskStatusView) => (
-    <TaskStatusCard status={status} liveProposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle}
-      onMessage={handlers.onMessage} onSend={onSend} onReviewed={handlers.onReviewed} />
+    <TaskStatusCard status={status} taskId={task?.task_id} liveProposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle}
+      onMessage={handlers.onMessage} onSend={onSend} onReviewed={handlers.onReviewed} onOtherWork={onOtherWork} />
   );
   const calledAfter = (id: string | null) => called.filter((one) => one.after === id).map((one) => (
     <div key={`status-${one.n}`} className="tstatus-wrap" data-testid="status-called">

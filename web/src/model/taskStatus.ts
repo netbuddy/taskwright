@@ -4,7 +4,7 @@
 
 import { STATUS_NEXT_TEXT } from "../../../agent/src/lib/stage";
 import type { Task, TaskStatusView } from "../api/types";
-import type { WorkItemBrief } from "../api/types";
+import type { AssetCell, CatalogFlow, WorkItemBrief, WorkItemView } from "../api/types";
 import { formatTime } from "./format";
 import { flowName, lampShort } from "./stage";
 
@@ -14,7 +14,10 @@ export const STATUS_TITLE = "工作进展";
 export const STATUS_BUTTON = "工作进展";
 /** 输入框里打这一句，与点「工作进展」入口相同：不发给助手。 */
 export const STATUS_COMMAND = "/状况";
-export const STATUS_NEXT_LABEL = "请助手说明下一步";
+/** 替用户发那句固定的话（STATUS_NEXT_TEXT），请助手据任务现状汇报、说下一步。 */
+export const STATUS_NEXT_LABEL = "请助手汇报当前状况";
+/** 打开切换工作面板的那个按钮。 */
+export const OTHER_WORK_LABEL = "其他工作…";
 /** 用户调出工作进展时对话区里的那一行。 */
 export const STATUS_CALLED_LINE = "界面操作：用户调出工作进展";
 /** 自由讨论的会话开头那一行。 */
@@ -37,9 +40,45 @@ export function newSessionLine(work: WorkItemBrief | null | undefined): string {
   return `新会话 · 属于工作项「${work.name}」${work.started_at ? `（${shortMoment(work.started_at)}）` : ""}`;
 }
 
-/** 标题后面的小字：这张卡是程序算的，什么时候算的。 */
-export function statusSubtitle(status: Pick<TaskStatusView, "generated_at">): string {
-  return `程序据任务记录生成 · ${shortMoment(status.generated_at)}`;
+/** 标题：「工作进展 · 10-13 09:10」，时刻是取数的那一刻。 */
+export function statusTitle(status: Pick<TaskStatusView, "generated_at">): string {
+  return `${STATUS_TITLE} · ${shortMoment(status.generated_at)}`;
+}
+/** 标题后面的小字：这张卡是程序算的。 */
+export const STATUS_SUBTITLE = "程序据任务记录生成";
+
+/** 「版本」一行：发布过写「已发布第 N 版」，没有写「未发布」；没有资产现状（早先的后端）时是 null，不画这一行。 */
+export function versionLine(assets: AssetCell[] | undefined): string | null {
+  const cell = assets?.find((one) => one.key === "versions");
+  if (!cell) return null;
+  return cell.count > 0 ? `已发布${cell.text}` : "未发布";
+}
+
+/** 「工作项」一行：「3 个工作项：需求分析（第 2 站「澄清」）、整理建模、澄清」；没有时写「没有工作项」。早先的后端不给工作项清单时是 null。 */
+export function workItemsLine(items: WorkItemView[] | undefined): string | null {
+  if (!items) return null;
+  if (items.length === 0) return "没有工作项";
+  const names = items.map((one) => (one.kind === "flow" && one.ordinal ? `${one.name}（第 ${one.ordinal} 站「${one.activity_name}」）` : one.name));
+  return `${items.length} 个工作项：${names.join("、")}`;
+}
+
+/** 业务说明、模型、需求条目三行取资产现状那一格：「9 节，无待澄清事项」「4 张，均已查看」；没有那一格时是 null（照早先的写法）。 */
+export function assetLine(assets: AssetCell[] | undefined, key: string): string | null {
+  const cell = assets?.find((one) => one.key === key);
+  if (!cell) return null;
+  return cell.note ? `${cell.text}，${cell.note}` : cell.text;
+}
+
+/**
+ * 卡上的主按钮：任务的推荐流程现在能启动时是「启动需求分析」或「启动需求变更」（进它的输入页）；已有流程工作项、推荐的流程还不能启动时没有。
+ */
+export function recommendedFlow(flows: CatalogFlow[] | undefined): CatalogFlow | null {
+  return flows?.find((one) => one.recommended && one.enabled) ?? null;
+}
+
+/** 主按钮下面的一句：启动会新建会话，本会话怎样。sessionWork 是本会话的工作项名；自由讨论的会话是 null。 */
+export function launchNote(flow: CatalogFlow, sessionWork: string | null): string {
+  return `「启动${flow.name}」会新建一条属于它的会话；${sessionWork ? `本会话照旧属于工作项「${sessionWork}」` : "本会话留作自由讨论"}。`;
 }
 
 /** 第一行的标签。 */
