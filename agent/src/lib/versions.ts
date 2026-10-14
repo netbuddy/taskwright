@@ -27,9 +27,16 @@ export interface VersionRecord {
   /** 存档文件相对任务目录的路径；没有存档为 null。 */
   markdown_path: string | null;
   docx_path: string | null;
-  /** 文档里的图存了没有。 */
-  figures_archived: boolean;
+  /** 文档里有几张图、其中几张在 Word 里是图片；一张图都没有、或者没有存档时都是 null。 */
+  figure_count: number | null;
+  figure_pictures: number | null;
   event_seq: number;
+}
+
+/** 一版文档里的图：一共几张，其中几张在 Word 里是图片。 */
+export interface FigureTally {
+  count: number;
+  pictures: number;
 }
 
 /** 库里有没有版本记录表：格式版本 8 之前的库没有（它们在被写入一侧打开时先升级）。 */
@@ -41,12 +48,13 @@ function hasVersionTable(db: DatabaseSync): boolean {
 export function versionRecords(db: DatabaseSync, taskId: string): VersionRecord[] {
   if (!hasVersionTable(db)) return [];
   const rows = db.prepare(
-    "SELECT version_no, published_at, actor, revision_no, note, markdown_path, docx_path, figures_archived, event_seq FROM version_record WHERE task_id = ? ORDER BY version_no",
+    "SELECT version_no, published_at, actor, revision_no, note, markdown_path, docx_path, figure_count, figure_pictures, event_seq FROM version_record WHERE task_id = ? ORDER BY version_no",
   ).all(taskId) as Record<string, unknown>[];
   return rows.map((row) => ({
     version_no: Number(row.version_no), published_at: String(row.published_at), actor: String(row.actor), revision_no: Number(row.revision_no),
     note: row.note === null ? null : String(row.note), markdown_path: row.markdown_path === null ? null : String(row.markdown_path),
-    docx_path: row.docx_path === null ? null : String(row.docx_path), figures_archived: Number(row.figures_archived) === 1, event_seq: Number(row.event_seq),
+    docx_path: row.docx_path === null ? null : String(row.docx_path), figure_count: row.figure_count === null ? null : Number(row.figure_count),
+    figure_pictures: row.figure_pictures === null ? null : Number(row.figure_pictures), event_seq: Number(row.event_seq),
   }));
 }
 
@@ -67,7 +75,8 @@ export interface PublishRecord {
   note?: string | null;
   markdownPath?: string | null;
   docxPath?: string | null;
-  figuresArchived?: boolean;
+  /** 文档里有几张图、其中几张在 Word 里是图片；张数为 0 时两项都记为空。 */
+  figures?: FigureTally | null;
   /** 版本号由调用方先定好时给（后端要先按它决定存档的目录）；不给时取下一个。 */
   versionNo?: number;
 }
@@ -94,8 +103,9 @@ export function recordVersion(db: DatabaseSync, record: PublishRecord): { versio
     payload: { version_no: versionNo, revision_no: record.revisionNo, actor, note },
   });
   const at = wallClockText();
-  db.prepare(`INSERT INTO version_record (version_no, task_id, published_at, actor, revision_no, note, markdown_path, docx_path, figures_archived, event_seq)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(versionNo, record.taskId, at, actor, record.revisionNo, note, record.markdownPath ?? null, record.docxPath ?? null,
-    record.figuresArchived ? 1 : 0, seq);
+  const figures = record.figures && record.figures.count > 0 ? record.figures : null;
+  db.prepare(`INSERT INTO version_record (version_no, task_id, published_at, actor, revision_no, note, markdown_path, docx_path, figure_count, figure_pictures, event_seq)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(versionNo, record.taskId, at, actor, record.revisionNo, note, record.markdownPath ?? null, record.docxPath ?? null,
+    figures ? figures.count : null, figures ? figures.pictures : null, seq);
   return { version_no: versionNo, event_seq: seq, published_at: at };
 }

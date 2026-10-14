@@ -230,7 +230,7 @@ test("undo_conflict：那次修订之后同一个条目又被改过", () => {
   assert.equal((error.data.items as any[])[0].item_id, "UC-001");
 });
 
-test("task_closed、no_task、bad_request、rejected", () => {
+test("no_task、bad_request、rejected；库里状态一列写着早先的「已完成」也照常可以写", () => {
   const empty = makeWorkspace();
   assert.equal(refused(() => op(empty, { kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] })).code, "no_task");
   const dir = taskWithItems();
@@ -251,7 +251,7 @@ test("task_closed、no_task、bad_request、rejected", () => {
   const db = new DatabaseSync(databasePath(dir));
   db.exec("UPDATE task SET status = '已完成'");
   db.close();
-  assert.equal(refused(() => op(dir, { kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] })).code, "task_closed");
+  assert.equal(op(dir, { kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] }).event_seqs.length, 1);
 });
 
 test("restore 只给用户的撤销用：执行者用它被拒", () => {

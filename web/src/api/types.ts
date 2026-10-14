@@ -10,7 +10,6 @@ import type { LaunchView, StartHow } from "../../../agent/src/lib/stage.ts";
 // ───────────── 共用 ─────────────
 
 export type Actor = "executor" | "user";
-export type TaskStatus = "进行中" | "已完成" | "已放弃";
 /**
  * 来源的种类，也就是这个条目依据的是什么：材料或知识库里的原文、用户的话、助手补充（摘录里写的是理由）、任务里的另一个条目、
  * 任务里的一张图（图还没有做出来，现在不会收到）。早期版本的「执行者补充」「领域说明」，后端交来时已经换成「助手补充」「条目」。
@@ -298,9 +297,7 @@ export interface Task {
   task_name: string;
   task_type: string;
   domain_tag: string | null;
-  status: TaskStatus | string;
   started_at: string;
-  ended_at: string | null;
   definition: TaskDefinition;
   completion: Completion | null;
   items: Item[];
@@ -323,7 +320,8 @@ export interface Task {
 
 /**
  * 发布过的一版（GET …/versions 的一项，任务状况与整份数据里的 versions 相同）：版本号、发布的时刻、谁发布的、发布时交付物的修订号、
- * 发布说明、文档里的图存了没有，以及这一版的 Markdown 与 Word 存档在不在（从早先「已完成」升级来的第 1 版两样都没有）。
+ * 发布说明、文档里有几张图与其中几张在 Word 里是图片（一张图都没有、或者没有存档时都是 null），以及这一版的 Markdown 与 Word 存档在不在
+ * （从早先「已完成」升级来的第 1 版两样都没有）。
  */
 export interface VersionView {
   version_no: number;
@@ -331,7 +329,8 @@ export interface VersionView {
   actor: "executor" | "user";
   revision_no: number;
   note: string | null;
-  figures_archived: boolean;
+  figure_count: number | null;
+  figure_pictures: number | null;
   has_markdown: boolean;
   has_docx: boolean;
 }
@@ -707,8 +706,6 @@ export interface TaskChanged {
   at: string;
   task_id: string;
   task_name: string;
-  status_before: string | null;
-  status_after: string;
   actor: Actor | string;
   completion: Completion | null;
 }
@@ -986,11 +983,16 @@ export interface TaskListEntry {
   task_name: string;
   task_type: string;
   domain_tag: string | null;
-  status: TaskStatus | string;
+  /** 打不开时写明是哪一种：占用中、旧格式、需要升级、需要处理、需要更新的程序；打得开的任务是 null。 */
+  unavailable: string | null;
   item_count: number;
   completion_met: number | null;
   completion_total: number | null;
   completion_unmet?: number | null;
+  /** 发布过几版、最近一版的发布时刻；打不开的任务是 null，没有发布过是 0 与 null。 */
+  version_count: number | null;
+  latest_published_at: string | null;
+  /** 最近活动：会话里最近一条消息、最近一次启动或结束工作项、建任务，取最晚的那个时刻。 */
   last_active_at: string;
   session_count: number;
   /** 为假时列出来但打不开，note 写明原因：修订统一之前建的旧格式任务，或者正被别的服务占用（这时有 occupied）。 */
@@ -1211,7 +1213,6 @@ export type ErrorCode =
   | "stale_revision"
   | "old_format"
   | "undo_conflict"
-  | "task_closed"
   | "session_busy"
   | "executor_starting"
   | "executor_unavailable"

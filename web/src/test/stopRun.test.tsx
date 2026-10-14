@@ -135,7 +135,7 @@ describe("停下之后的界面操作通知与折叠行", () => {
 });
 
 describe("工作视图里的停止键", () => {
-  const task = { task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  const task = { task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [{ name: "用例", prefix: "UC", fields: [{ name: "名称", type: "文本", required: true, values: null }] }] }, completion: null, items: [] } as unknown as Task;
   function page(executor: ExecutorState) {
     vi.spyOn(api, "listSessions").mockResolvedValue([]);

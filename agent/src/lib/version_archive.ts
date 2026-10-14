@@ -2,7 +2,7 @@
  * 助手发布版本时请任务服务把这一版的文档写进任务目录：生成文档（Markdown 与 Word）的代码在任务服务那一边，
  * 助手这一侧只把版本号与修订号发给存档接口（POST /api/v1/tasks/{任务编号}/versions/archive），拿回两个文件的位置。
  * 任务服务在哪里，与校验图、查找知识库同一个办法（lib/knowledge_search.ts 的 backendAddresses）。
- * 助手发布时没有页面画好的图，Word 里的图写成 Mermaid 文本，图没有存（figures_archived 为假）。
+ * 助手发布时没有页面画好的图，Word 里的图都写成 Mermaid 文本：任务服务回答的图数里图片是 0 张。
  *
  * 存档没有做成（联系不上、回答了错误、到时间没有回答）时抛 archiveRefusal 的拒绝：这一版不发布，请用户在页面上再试。
  *
@@ -57,6 +57,7 @@ export async function archiveWithService(taskDir: string, check: PublishCheck, o
   return {
     markdownPath: typeof body.markdown_path === "string" ? body.markdown_path : null,
     docxPath: typeof body.docx_path === "string" ? body.docx_path : null,
-    figuresArchived: body.figures_archived === true,
+    figures: Number.isInteger(body.figure_count) && body.figure_count > 0 && Number.isInteger(body.figure_pictures)
+      ? { count: body.figure_count, pictures: body.figure_pictures } : null,
   };
 }

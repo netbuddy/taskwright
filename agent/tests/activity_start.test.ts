@@ -262,8 +262,6 @@ test("拒绝：没有写活动或 in_flow；任务已经完成；早先建的任
   // 助手一侧没有启动的路：核心函数对助手一律不记。
   const byExecutor = inDb(dir, (db) => startActivity(db, dir, { taskId, sessionId: "s", runId: "r1", callId: "call-x", actor: "executor" }, "clarifying", false, ""));
   assert.deepEqual([byExecutor.moved, byExecutor.why], [false, "user_only"]);
-  inDb(dir, (db) => db.exec("UPDATE task SET status = '已完成'"));
-  assert.deepEqual(refusedOp(() => start(dir, "s-y", "澄清", false)), ["task_closed", "任务已经已完成，不能再启动工作项。"]);
   const old = workspace(demoDefinition());
   assert.deepEqual(refusedOp(() => start(old.dir, "s-z", "澄清", false)), ["rejected", "这个任务没有阶段。"]);
 });

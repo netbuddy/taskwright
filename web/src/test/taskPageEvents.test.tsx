@@ -22,9 +22,9 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); (openEventStream as Mock).mockReset(); });
 
-function detail(count: number, at: string, status = "进行中"): TaskDetail {
+function detail(count: number, at: string): TaskDetail {
   return {
-    task_id: "TASK-E", task_name: "事件", task_type: "演示", domain_tag: null, status, started_at: "2026-09-28T01:00:00Z", ended_at: null,
+    task_id: "TASK-E", task_name: "事件", task_type: "演示", domain_tag: null, started_at: "2026-09-28T01:00:00Z",
     definition: { collections: [] }, completion: null, items: [], latest_revision: 0, materials: [],
     sessions: [{ session_id: "S1", name: "整理材料", started_at: "2026-09-28T01:00:00Z", last_active_at: at, message_count: count, active: true }],
   } as unknown as TaskDetail;
@@ -85,14 +85,5 @@ describe("任务页随助手做完一轮更新", () => {
     expect(close).not.toHaveBeenCalled();
     view.unmount();
     expect(close).toHaveBeenCalledTimes(1);
-  });
-
-  it("任务已经结束（已完成、已放弃）时不开这条连接", async () => {
-    for (const status of ["已完成", "已放弃"]) {
-      open(detail(4, "2026-09-28T01:05:00Z", status));
-      expect(await screen.findByTestId("session-row")).toHaveTextContent("4 条消息");
-      expect(openEventStream).not.toHaveBeenCalled();
-      cleanup(); vi.restoreAllMocks();
-    }
   });
 });

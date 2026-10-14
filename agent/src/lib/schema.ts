@@ -58,7 +58,7 @@ export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "d
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
 
-/** 任务的三种状态。「已放弃」先留着这个取值，放弃任务的工具以后再加。 */
+/** 早先任务表里状态一列的三种取值。格式 8 起这一列不读不写，只有升级时认「已完成」补第 1 版。 */
 export const TASK_ACTIVE = "进行中";
 export const TASK_DONE = "已完成";
 export const TASK_ABANDONED = "已放弃";
@@ -365,7 +365,8 @@ CREATE TABLE IF NOT EXISTS work_item_session (
  * 版本记录：一次发布一行。发布版本是对外交付的那一份：版本号从 1 起递增；记下发布的时刻、谁发布的、发布时交付物的整体修订号
  * （「某条目比第 N 版新」由它现在的修订号大于这个数推出，不另设字段）、一句发布说明，以及发布时生成的文档存档在任务目录里的位置
  * （versions/v{N}/document.md 与 document.docx；模板与呈现会随产品升级变化，只存修订号不能保证以后重生成一字不差）。
- * figures_archived 记文档里的图存了没有：页面发起发布时带着页面画好的图，存进 Word；没有图的写成 Mermaid 文本，记 0。
+ * figure_count 与 figure_pictures 记文档里有几张图、其中几张在 Word 里是图片：页面发起发布时带着页面画好的图，存进 Word；
+ * 没有图片的那几张在 Word 里写成 Mermaid 文本（助手发起时全是这样）。文档里一张图都没有时两项都为空，不写「图存了」。
  * 从早先「已完成」的任务升级来的第 1 版没有存档，两个路径为空。格式版本 8 加的表。
  */
 export const VERSION_RECORD_SQL = `
@@ -378,7 +379,8 @@ CREATE TABLE IF NOT EXISTS version_record (
   note             TEXT,                  -- 发布说明；没有写为空
   markdown_path    TEXT,                  -- 存档的 Markdown 相对任务目录的路径；没有存档为空
   docx_path        TEXT,                  -- 存档的 Word 相对任务目录的路径；没有存档为空
-  figures_archived INTEGER NOT NULL DEFAULT 0,  -- 文档里的图存了没有：1 存了，0 没有（写成了 Mermaid 文本，或者没有存档）
+  figure_count     INTEGER,               -- 文档里有几张图；一张都没有、或者没有存档时为空
+  figure_pictures  INTEGER,               -- 其中几张在 Word 里是图片（其余写成 Mermaid 文本）；figure_count 为空时为空
   event_seq        INTEGER NOT NULL       -- 记下这次发布的那条事件的序号；升级补的第 1 版是早先完成任务那条事件的
 );
 `;
@@ -445,12 +447,12 @@ CREATE TABLE task (
   domain_tag       TEXT,               -- 领域标签，只存不用，给将来的需求池预留；用户没给就取任务定义里的，都没有为空
   definition_path  TEXT NOT NULL,      -- 任务定义文件相对任务目录的路径
   definition_text  TEXT NOT NULL,      -- 创建任务那一刻任务定义文件的原文快照
-  status           TEXT NOT NULL CHECK (status IN ('进行中', '已完成', '已放弃')),  -- 任务的状态
+  status           TEXT NOT NULL DEFAULT '进行中' CHECK (status IN ('进行中', '已完成', '已放弃')),  -- 早先的任务状态；格式 8 起不读不写，新建时取缺省值，下一次整理表结构时删
   session_id       TEXT NOT NULL,      -- 创建它的那条 pi 会话的会话编号；由用户在界面上创建时还没有会话，为空文字
   call_id          TEXT NOT NULL,      -- 创建它的那次写入的编号：界面创建时是后端生成的操作编号（ui- 开头）
   event_seq        INTEGER NOT NULL,   -- 记下这次创建的那条事件的序号
   started_at       TEXT NOT NULL,      -- 创建时刻（本地时间）
-  ended_at         TEXT                -- 完成或放弃的时刻，没结束为空
+  ended_at         TEXT                -- 早先完成或放弃的时刻；格式 8 起不读不写
 );
 
 CREATE TABLE revision (
@@ -1025,8 +1027,8 @@ function addVersionRecords(db: DatabaseSync, ctx: UpgradeContext): void {
     const seq = done ? Number(done.seq) : Number((db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM event").get() as { n: number }).n);
     const revision = Number((db.prepare("SELECT COALESCE(MAX(revision_no), 0) AS n FROM revision WHERE task_id = ? AND event_seq < ?").get(task.task_id, done ? seq : Number.MAX_SAFE_INTEGER) as { n: number }).n);
     const actor = done && (done.actor === "executor" || done.actor === "user") ? done.actor : "executor";
-    db.prepare(`INSERT INTO version_record (version_no, task_id, published_at, actor, revision_no, note, markdown_path, docx_path, figures_archived, event_seq)
-      VALUES (1, ?, ?, ?, ?, ?, NULL, NULL, 0, ?)`).run(task.task_id, task.ended_at ?? done?.at ?? task.started_at, actor, revision, UPGRADED_VERSION_NOTE, seq);
+    db.prepare(`INSERT INTO version_record (version_no, task_id, published_at, actor, revision_no, note, markdown_path, docx_path, figure_count, figure_pictures, event_seq)
+      VALUES (1, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`).run(task.task_id, task.ended_at ?? done?.at ?? task.started_at, actor, revision, UPGRADED_VERSION_NOTE, seq);
     ctx.notes.push(`补了第 1 版的版本记录（早先已完成，修订 ${revision}）`);
   }
   const template = ctx.overallTemplate?.(task.definition_path) ?? null;

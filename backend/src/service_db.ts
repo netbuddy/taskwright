@@ -41,6 +41,7 @@ export interface TaskRecord {
   name: string | null;
   /** 属主；现在只有单机用户，写 local。 */
   owner: string;
+  /** 早先登记的任务状态。任务没有状态了，现在恒写 null；这一列留着，下一次整理表结构时删。 */
   status: string | null;
   task_type: string | null;
   created_at: string | null;

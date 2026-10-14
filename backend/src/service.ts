@@ -146,12 +146,6 @@ export class Task {
     const row = this.row();
     return row ? parseDefinition(row.definition_text) : {};
   }
-
-  requireOpen(): void {
-    const row = this.row();
-    if (row === null) throw new ApiError("no_task", "这个任务目录里没有任务记录。");
-    if (row.status !== "进行中") throw new ApiError("task_closed", `任务已经${pyStr(row.status)}，只能查看。`, { status: row.status });
-  }
 }
 
 /** 接手任务时写占用标记的函数：缺省是 occupancy.claim；只读对照时换成不写文件的版本。 */
@@ -294,13 +288,13 @@ export class Service {
     return { status: "需要升级", note: `这个任务是上一版建的，数据还没有升级。${how}` };
   }
 
-  /** 把一个接手了的任务记进登记表（没有服务级库时不记）。名字、状态与建立时刻取自任务库，任务类型取任务定义文件的名字。 */
+  /** 把一个接手了的任务记进登记表（没有服务级库时不记）。名字与建立时刻取自任务库，任务类型取任务定义文件的名字。 */
   private register(name: string, row: Row): void {
     if (!this.registry) return;
     const definition = typeof row.definition_path === "string" ? basename(row.definition_path).replace(/\.json$/i, "") : null;
     this.registry.putTask({
       task_id: row.task_id, name: truthy(row.task_name) ? row.task_name : null, owner: readTaskJson(join(this.tasksDir, name))?.owner ?? "local",
-      status: row.status ?? null, task_type: definition || null, created_at: row.started_at ?? null, dir: name,
+      status: null, task_type: definition || null, created_at: row.started_at ?? null, dir: name,
     });
   }
 
@@ -410,19 +404,27 @@ export class Service {
       const [, view] = library.taskSnapshot(t.dir);
       if (view === null) continue;
       const sessions = t.executor.listSessions();
-      const actives = [...sessions.filter((s) => truthy(s.last_active_at)).map((s) => s.last_active_at), view.started_at].filter(truthy) as string[];
+      // 最近活动：会话里最近一条消息、最近一次启动或结束工作项、建任务，取最晚的那个时刻。
+      const actives = [...sessions.filter((s) => truthy(s.last_active_at)).map((s) => s.last_active_at), library.latestWorkItemAt(t.dir), view.started_at]
+        .filter(truthy) as string[];
       if (!actives.length) throw new Error("max() arg is an empty sequence");
       const comp = view.completion;
+      const versions = library.versionRows(t.dir);
+      const latest = versions.at(-1) ?? null;
       out.push({
-        task_id: view.task_id, task_name: view.task_name, task_type: view.task_type, domain_tag: view.domain_tag, status: view.status,
+        task_id: view.task_id, task_name: view.task_name, task_type: view.task_type, domain_tag: view.domain_tag, unavailable: null,
         item_count: view.items.length,
         completion_met: comp ? comp.conditions.filter((c: any) => c.met).length : null,
         completion_total: comp ? comp.conditions.length : null,
         completion_unmet: comp ? comp.unmet_count : null,
-        last_active_at: actives.reduce((a, b) => (library.byCodePoint(b, a) > 0 ? b : a)),
+        version_count: versions.length,
+        latest_published_at: latest ? clock.fromLocalText(latest.published_at) : null,
+        last_active_at: actives.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a)),
         session_count: sessions.length, supported: true,
       });
     }
+    // 打得开的任务按最近活动排，最近的在前；打不开的几种排在后面。
+    out.sort((a, b) => Date.parse(String(b.last_active_at)) - Date.parse(String(a.last_active_at)));
     // 正被别的服务占用的任务：照样列出来，写明被哪个服务占用，打不开。
     for (const [taskId, info] of [...this.occupied].sort((a, b) => library.byCodePoint(a[0], b[0]))) {
       const lock = info.lock;
@@ -437,8 +439,8 @@ export class Service {
         db?.close();
       }
       out.push({
-        task_id: taskId, task_name: name, task_type: null, domain_tag: null, status: "占用中",
-        item_count: null, completion_met: null, completion_total: null, completion_unmet: null,
+        task_id: taskId, task_name: name, task_type: null, domain_tag: null, unavailable: "占用中",
+        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, version_count: null, latest_published_at: null,
         last_active_at: null, session_count: null, supported: false,
         occupied: { port: lock.port ?? null, pid: lock.pid ?? null, host: lock.host ?? null },
         note: occupancy.occupiedText(lock),
@@ -458,8 +460,8 @@ export class Service {
         db?.close();
       }
       out.push({
-        task_id: name, task_name: title, task_type: null, domain_tag: null, status: problem.status,
-        item_count: null, completion_met: null, completion_total: null, completion_unmet: null,
+        task_id: name, task_name: title, task_type: null, domain_tag: null, unavailable: problem.status,
+        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, version_count: null, latest_published_at: null,
         last_active_at: existsSync(folder) ? clock.fromEpochNs(statSync(folder, { bigint: true }).mtimeNs) : null,
         session_count: null, supported: false, note: problem.note,
       });
@@ -470,8 +472,8 @@ export class Service {
       let modified: string | null = null;
       if (existsSync(folder)) modified = clock.fromEpochNs(statSync(folder, { bigint: true }).mtimeNs);
       out.push({
-        task_id: name, task_name: name, task_type: null, domain_tag: null, status: "旧格式",
-        item_count: null, completion_met: null, completion_total: null, completion_unmet: null,
+        task_id: name, task_name: name, task_type: null, domain_tag: null, unavailable: "旧格式",
+        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, version_count: null, latest_published_at: null,
         last_active_at: modified, session_count: null, supported: false, note: library.OLD_FORMAT_TEXT,
       });
     }
@@ -509,11 +511,10 @@ export class Service {
     const [, view] = library.taskSnapshot(t.dir);
     if (view === null) throw new ApiError("no_task", "这个任务目录里没有任务记录。");
     const sessions = this.sessionRows(t);
-    // deletable：现在调删除接口会不会被这份材料本身的情况挡住（任务已结束、派生文件、已经进入对话）；助手正在工作是一时的，不算在内。
+    // deletable：现在调删除接口会不会被这份材料本身的情况挡住（派生文件、已经进入对话）；助手正在工作是一时的，不算在内。
     const lastActivity = t.executor.sessions.lastActivityMs(false);
-    const open = view.status === "进行中";
     const materials = library.materials(t.dir, t.definition()).map((m) => ({
-      ...m, deletable: open && m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
+      ...m, deletable: m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
     }));
     // 任务类型说明的版本：这个任务建的时候复制进来的是第几版（task.json 记着），产品自带的现在是第几版。说明不随升级更新，
     // 页面在两个数不同时写一句。上一版建的任务没有记，copied 是 null。
@@ -817,7 +818,6 @@ export class Service {
    * （见 enteredConversation），所以被条目引用过的材料既删不掉也换不掉；助手正在工作时不动。verb 是「删除」或「替换」，写进说明里。
    */
   private requireUntouched(t: Task, rel: unknown, verb: "删除" | "替换", enteredText: string): { path: string; target: string } {
-    t.requireOpen();
     const path = typeof rel === "string" ? rel : "";
     const target = this.materialPath(t, path);
     const row = library.materials(t.dir, t.definition()).find((m) => m.path === path);
@@ -914,14 +914,14 @@ export class Service {
     return this.knowledge;
   }
 
-  /** 本服务接手了的、进行中的任务：选用了多少个库按它们数；被别的服务占用的任务不数。 */
+  /** 本服务接手了的任务：选用了多少个库按它们数；被别的服务占用的任务不数。 */
   private openTasks(): Task[] {
     this.scan();
-    return [...this.tasks.values()].filter((t) => t.row()?.status === "进行中");
+    return [...this.tasks.values()].filter((t) => t.row() !== null);
   }
 
   /**
-   * 全部库与每个库的文档清单；used_by_tasks 是本服务接手的进行中任务里选用了它的个数。每份文档带换算状态（embedding），
+   * 全部库与每个库的文档清单；used_by_tasks 是本服务接手的任务里选用了它的个数。每份文档带换算状态（embedding），
    * 每个库带「换算好了几份、一共几份」。
    */
   knowledgeOverview() {
@@ -1005,7 +1005,6 @@ export class Service {
   /** 改任务选用的库：不存在的库以 rejected 拒绝；通用知识库每个任务都选用，没写时补在最前面。 */
   setTaskKnowledge(t: Task, body: Record<string, any>) {
     const store = this.requireKnowledge();
-    t.requireOpen();
     const given = body.libraries;
     if (!Array.isArray(given) || !given.every((one) => typeof one === "string")) throw new ApiError("bad_request", "libraries 应当是知识库编号的列表。");
     const unknown = given.filter((one) => !store.has(one));

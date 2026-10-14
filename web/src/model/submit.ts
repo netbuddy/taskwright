@@ -28,11 +28,11 @@ export function pendingSubmitCard(messages: ConversationMessage[]): boolean {
 }
 
 /**
- * 提示条显示不显示：任务进行中、完成条件全部满足、有东西可以发布成新的一版（还没发布过，或者最近一版之后又改过）、助手不在工作、
+ * 提示条显示不显示：完成条件全部满足、有东西可以发布成新的一版（还没发布过，或者最近一版之后又改过）、助手不在工作、
  * 对话里没有还没回应的发布卡片。刚发布完、什么都没改时不显示。
  */
 export function showSubmitBar(task: Task, working: boolean, messages: ConversationMessage[]): boolean {
-  return task.status === "进行中" && !!task.completion?.all_met && somethingToPublish(task) && !working && !pendingSubmitCard(messages);
+  return !!task.completion?.all_met && somethingToPublish(task) && !working && !pendingSubmitCard(messages);
 }
 
 /** 提示条的标题：「可以发布第 N 版了。」 */

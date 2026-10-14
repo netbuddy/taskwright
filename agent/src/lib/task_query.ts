@@ -46,7 +46,7 @@ function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRo
   }
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
-    const task = db.prepare("SELECT task_id, task_name, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+    const task = db.prepare("SELECT task_id, task_name, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       | TaskRow
       | undefined;
     if (!task) throw new Error("库里还没有任务记录，没有东西可以查。");
@@ -220,7 +220,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
 export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledgeRoot: string | null = envKnowledgeRoot()): QueryOutcome {
   return withTask(workspaceDir, (db, task, definition) => {
     const name = task.task_name ?? definition.taskName;
-    const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}），状态是${task.status}。`, ""];
+    const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}）。`, ""];
     const counts: Record<string, string[]> = {};
     const unresolved: { item_id: string; revision_no: number; title: string }[] = [];
     for (const collection of definition.collections) {

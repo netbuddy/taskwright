@@ -355,11 +355,11 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
       break;
     }
     case "version_published": {
-      // 发布了一版：加进版本列表（存档在不在、图存了没有，版本一节另向版本接口取）。
+      // 发布了一版：加进版本列表（存档在不在、文档里有几张图，版本一节另向版本接口取）。
       const data = event.data as { version_no?: number; revision_no?: number; actor?: string; note?: string | null; at?: string };
       if (next.task && typeof data.version_no === "number" && !(next.task.versions ?? []).some((one) => one.version_no === data.version_no)) {
         const added = { version_no: data.version_no, revision_no: data.revision_no ?? 0, actor: data.actor === "user" ? "user" as const : "executor" as const,
-          note: data.note ?? null, published_at: data.at ?? null, figures_archived: false, has_markdown: true, has_docx: true };
+          note: data.note ?? null, published_at: data.at ?? null, figure_count: null, figure_pictures: null, has_markdown: true, has_docx: true };
         next = { ...next, task: { ...next.task, versions: [...(next.task.versions ?? []), added] } };
       }
       break;
@@ -538,7 +538,7 @@ function applyTaskChanged(state: WorkState, data: TaskChanged): WorkState {
   if (!state.task) return state;
   return {
     ...state,
-    task: withCompletion({ ...state.task, status: data.status_after, task_name: data.task_name ?? state.task.task_name }, data.completion),
+    task: withCompletion({ ...state.task, task_name: data.task_name ?? state.task.task_name }, data.completion),
   };
 }
 

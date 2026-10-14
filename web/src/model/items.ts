@@ -239,11 +239,11 @@ export function unreadItems(task: Task): Item[] {
 }
 
 /**
- * 用户打开一个条目的详情时要不要记一条已读：任务进行中、这个集合要求用户看过、当前所在的修订还没有记过，才返回要标的目标
+ * 用户打开一个条目的详情时要不要记一条已读：这个集合要求用户看过、当前所在的修订还没有记过，才返回要标的目标
  * （条目与它当前所在的修订），否则返回 null。看过旧修订的条目再打开也记，库里据此如实留下用户最后看过哪次修订。
  */
 export function viewTarget(task: Task | null, itemId: string | null): { item_id: string; base_revision: number } | null {
-  if (!task || !itemId || task.status !== "进行中") return null;
+  if (!task || !itemId) return null;
   const item = task.items.find((i) => i.item_id === itemId);
   if (!item || !needsReading(task, item.collection) || seenCurrent(item)) return null;
   return { item_id: item.item_id, base_revision: item.revision_no };
@@ -253,11 +253,10 @@ export function viewTarget(task: Task | null, itemId: string | null): { item_id:
 export const BUSY_TEXT = "助手正在工作，结束后你可以继续修改";
 
 /**
- * 写入按钮灰化时悬停说明的原因，按先后取第一条：任务已结束、助手不可用、助手工作中、正在保存、看的是旧修订。
+ * 写入按钮灰化时悬停说明的原因，按先后取第一条：助手不可用、助手工作中、正在保存、看的是旧修订。
  * 都不是时返回 undefined（按钮可用，不带说明）。
  */
 export function writeOffReason(task: Task | null, o: { readOnly?: boolean; writesOff?: boolean; pending?: boolean; old?: boolean }): string | undefined {
-  if (task && task.status !== "进行中") return `任务已${task.status === "已放弃" ? "放弃" : "结束"}，不能再改。`;
   if (o.readOnly) return "助手现在不可用，暂时不能改。";
   if (o.writesOff) return BUSY_TEXT;
   if (o.pending) return "正在保存上一次修改，存好之后再操作。";
@@ -266,11 +265,10 @@ export function writeOffReason(task: Task | null, o: { readOnly?: boolean; write
 }
 
 /**
- * 评审按钮灰化时悬停说明的原因，按先后取第一条：任务已结束、助手不可用、助手工作中、上一批还在评、没有要评的条目。
+ * 评审按钮灰化时悬停说明的原因，按先后取第一条：助手不可用、助手工作中、上一批还在评、没有要评的条目。
  * 都不是时返回 undefined（按钮可用）。
  */
 export function reviewOffReason(task: Task | null, o: { readOnly?: boolean; writesOff?: boolean; running?: boolean; count: number }): string | undefined {
-  if (task && task.status !== "进行中") return `任务已${task.status === "已放弃" ? "放弃" : "结束"}，不能再评审。`;
   if (o.readOnly) return "助手现在不可用，暂时不能评审。";
   if (o.writesOff) return "助手正在工作，结束之后才能发起评审。";
   if (o.running) return "上一批评审还在进行，评完之后再发起。";

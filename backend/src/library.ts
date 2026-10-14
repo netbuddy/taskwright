@@ -357,10 +357,6 @@ export interface WorkItemRow extends WorkItemBrief {
   session_name: string;
 }
 
-/**
- * 任务的全部工作项，按启动的先后。库另开一个只读连接；还没有库、没有任务或者读不出来时是空的。
- * 时刻是库里的本地时间写法，调用方给页面之前自己换。
- */
 /** 一个任务的全部版本记录（agent/src/lib/versions.ts），按版本号从小到大；读不出库时是空的。 */
 export function versionRows(taskDir: string): VersionRecord[] {
   try {
@@ -377,18 +373,39 @@ export function versionRows(taskDir: string): VersionRecord[] {
 }
 
 /**
- * 一个版本给页面的样子：版本号、发布的时刻、谁发布的、发布时的修订号、发布说明、文档里的图存了没有，以及有没有 Markdown 与 Word 的存档
+ * 一个版本给页面的样子：版本号、发布的时刻、谁发布的、发布时的修订号、发布说明、文档里有几张图与其中几张在 Word 里是图片（一张都没有时为 null），
+ * 以及有没有 Markdown 与 Word 的存档
  * （存档文件还在任务目录里才算有）。存档的路径不给页面，下载走 GET …/versions/{n}/document。
  */
 export function versionView(row: VersionRecord, taskDir?: string) {
   const kept = (path: string | null) => path !== null && (taskDir === undefined || existsSync(join(taskDir, path)));
   return {
     version_no: row.version_no, published_at: clock.fromLocalText(row.published_at), actor: row.actor === "user" ? "user" : "executor",
-    revision_no: row.revision_no, note: row.note, figures_archived: row.figures_archived,
+    revision_no: row.revision_no, note: row.note, figure_count: row.figure_count, figure_pictures: row.figure_pictures,
     has_markdown: kept(row.markdown_path), has_docx: kept(row.docx_path),
   };
 }
 
+/** 任务最近一次启动或结束工作项的时刻（页面上的写法）；没有工作项、读不出库时是 null。任务列表按它与会话的最近活动排序。 */
+export function latestWorkItemAt(taskDir: string): string | null {
+  try {
+    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+    try {
+      const row = db.prepare("SELECT MAX(at) AS at FROM (SELECT started_at AS at FROM activity_record UNION ALL SELECT ended_at FROM activity_record WHERE ended_at IS NOT NULL)")
+        .get() as { at: string | null } | undefined;
+      return row?.at ? clock.fromLocalText(row.at) : null;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 任务的全部工作项，按启动的先后。库另开一个只读连接；还没有库、没有任务或者读不出来时是空的。
+ * 时刻是库里的本地时间写法，调用方给页面之前自己换。
+ */
 export function workItemRows(taskDir: string): WorkItemRow[] {
   try {
     const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
@@ -991,9 +1008,7 @@ export class Library {
       task_name: or(task.task_name, this.definition["任务名"]),
       task_type: this.definition["任务名"],
       domain_tag: task.domain_tag ?? null,
-      status: task.status,
       started_at: clock.fromLocalText(task.started_at),
-      ended_at: clock.fromLocalText(task.ended_at),
       definition: definitionView(this.definition, task.definition_text ?? null, this.data.task_dir ?? null),
       completion: null as any,
       // 工作的阶段与灯：与完成条件一样在读事务提交之后另算（taskSnapshot），这里先占位。
@@ -1039,6 +1054,7 @@ export function findingView(one: Record<string, any>) {
  * - EXECUTOR_ACTS_RECORDED（助手回复时记下的行为）：回复的内容由「回复」工具的结果带到页面，实时是 assistant_reply，
  *   刷新之后在对话记录里；这条记录本身只供助手查询与观测台使用。只有一种例外：回复里是一张提议进入下一个阶段的卡片时
  *   （记录里带 proposal），推一条 stage_proposed，好让别的会话里开着的页面也知道任务有了一条待决定的提议。
+ * 早先的任务完成事件 TASK_COMPLETED 也不推：任务没有状态了，0.5.0 完成的任务升级时补了第 1 版的版本记录。
  */
 export function eventPayload(lib: Library, e: Row): [string, Record<string, any>] | null {
   const payload = or(jsonOrText(e.payload), {}) as Record<string, any>;
@@ -1061,18 +1077,13 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
       undo_of_revision: payload.undo_of_revision ?? null, operations: ops, completion: null }];
   }
   if (e.name === "TASK_CREATED") {
-    return ["task_changed", { ...base, task_name: payload.task_name ?? null, status_before: null, status_after: "进行中", actor, completion: null }];
+    return ["task_changed", { ...base, task_name: payload.task_name ?? null, actor, completion: null }];
   }
   if (e.name === "DIAGRAM_SAVED") {
     // 图新增、修改或删除了一次。只带是哪一张、它自己改后的修订号、做了什么与图名、种类（连同中文名）；内容与来源由图的接口取。
     return ["diagram_changed", { ...base, actor, op_id: opId, diagram_id: payload.diagram_id ?? null, revision_no: payload.revision_no ?? null,
       op: payload.op ?? null, name: payload.name ?? null, kind: payload.kind ?? null,
       kind_name: typeof payload.kind === "string" ? kindName(payload.kind) : null }];
-  }
-  if (e.name === "TASK_COMPLETED") {
-    const task = lib.data.task!;
-    return ["task_changed", { ...base, task_name: or(task.task_name, lib.definition["任务名"]), status_before: or(payload.status_before, "进行中"),
-      status_after: or(payload.status_after, "已完成"), actor, completion: null }];
   }
   if (e.name === "ITEM_VIEWED") return ["item_viewed", { ...base, items: or(payload.items, []), op_id: opId, completion: null }];
   // 用户打开看了一张图：diagrams 每项是图的编号与用户看到的那一次修订号。
@@ -1265,8 +1276,8 @@ export function changedFields(before: Record<string, any> | null, after: Record<
 
 /**
  * 按调用编号查一次调用在任务库里留下的事实，给过程摘要用：保存修订形成的修订（修订号与碰到的条目，条目取自那次修订的
- * REVISION_SAVED 事件），以及哪些调用把任务标为了已完成（TASK_COMPLETED 事件）。用户让助手停下时，工具可能已经写进了库、
- * 只是结果没来得及回到会话里，摘要据此如实写「保存了修订 N」「把任务标为已完成」。保存图同样按调用编号查：助手那一次调用给哪张图
+ * REVISION_SAVED 事件），以及哪些调用发布了版本（VERSION_PUBLISHED 事件；早先的任务完成事件 TASK_COMPLETED 也算）。用户让助手停下时，
+ * 工具可能已经写进了库、只是结果没来得及回到会话里，摘要据此如实写「保存了修订 N」「发布了版本」。保存图同样按调用编号查：助手那一次调用给哪张图
  * 写了它自己的第几次修订（图的修订号各算各的，不在任务的修订号里）。只读；库不在或读不出时都是空的。
  * 第一次查的时候才打开任务库，读一遍记下；一次也不查就不碰任务库（被停下的那次工作一个工具调用都没有时就是这样）。
  */

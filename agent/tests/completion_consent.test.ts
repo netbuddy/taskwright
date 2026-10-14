@@ -46,7 +46,7 @@ const click = (cardId: string, key: string, text: string): Entry[] => {
 };
 
 /** 这几例只核对同意，不写存档。 */
-const NO_ARCHIVE = { markdownPath: null, docxPath: null, figuresArchived: false };
+const NO_ARCHIVE = { markdownPath: null, docxPath: null, figures: null };
 /** 把分支上界面点击合成的那几句话按事实记进对话行为表（与扩展在助手回应时做的相同），再调用发布版本。 */
 function complete(dir: string, branch: Entry[]) {
   recordAtSettle(dir, SESSION, branch as never, branch.filter((e) => e.message?.role === "user").map((e) => e.id), REGISTERED_OUTPUTS);
@@ -151,7 +151,7 @@ test("判断函数：两种来源同一套规则——没有、没同意、修�
 
 // ───────────── 页面上的发布（界面操作 publish_version，任务服务先写好存档） ─────────────
 
-const ARCHIVE = { markdown_path: "versions/v1/document.md", docx_path: "versions/v1/document.docx", figures_archived: true };
+const ARCHIVE = { markdown_path: "versions/v1/document.md", docx_path: "versions/v1/document.docx", figure_count: 2, figure_pictures: 2 };
 const submit = (dir: string, fields: unknown, opId = `ui-op-publish${++serial}`) =>
   runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: opId, kind: "publish_version", targets: [], fields });
 const userOpError = (fn: () => unknown) => {
@@ -166,8 +166,8 @@ const userOpError = (fn: () => unknown) => {
 test("页面发布：带着现在的修订号与任务服务定下的版本号、存档位置发布，记一行版本记录与一条事件，发起方是用户、调用编号是操作编号，往会话里追加一句说明；任务照常进行", () => {
   const dir = workspace();
   const result = submit(dir, { revision_no: 1, version_no: 1, note: " 首版 ", ...ARCHIVE }, "ui-op-publish-ok");
-  assert.deepEqual(query<any>(dir, "SELECT version_no, actor, revision_no, note, markdown_path, docx_path, figures_archived FROM version_record").map((r) => ({ ...r })),
-    [{ version_no: 1, actor: "user", revision_no: 1, note: "首版", markdown_path: "versions/v1/document.md", docx_path: "versions/v1/document.docx", figures_archived: 1 }]);
+  assert.deepEqual(query<any>(dir, "SELECT version_no, actor, revision_no, note, markdown_path, docx_path, figure_count, figure_pictures FROM version_record").map((r) => ({ ...r })),
+    [{ version_no: 1, actor: "user", revision_no: 1, note: "首版", markdown_path: "versions/v1/document.md", docx_path: "versions/v1/document.docx", figure_count: 2, figure_pictures: 2 }]);
   assert.deepEqual(query<any>(dir, "SELECT actor, call_id FROM event WHERE name = 'VERSION_PUBLISHED'").map((r) => [r.actor, r.call_id]), [["user", "ui-op-publish-ok"]]);
   assert.deepEqual([result.kind, result.version_no], ["publish_version", 1]);
   assert.equal(result.note, "界面操作（不是用户打的字）：用户在页面上发布了第 1 版（修订 1），发布说明：首版。发布之后任务照常可以修改，以后可以再发布新的一版。");

@@ -47,7 +47,7 @@ test("整个看板：条目的编号、标题、所在的修订、评审与确�
   const at = lines.pop()!;
   assert.match(at, /^事件表的最后一个序号是 4（REVISION_SAVED，发起方 executor，时刻 \d{4}-\d\d-\d\dT[\d:.]+）。$/);
   assert.deepEqual(lines, [
-    "任务 TASK-001「看板夹具」（类型：演示任务），状态是进行中。",
+    "任务 TASK-001「看板夹具」（类型：演示任务）。",
     "",
     "用例（现有 2 个）",
     "  UC-001　登录　修订 2　评审：还没有评审记录　确认：未读（用户从没看过）",

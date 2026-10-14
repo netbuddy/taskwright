@@ -75,7 +75,6 @@ export interface TaskStatusMessage {
 interface TaskRow {
   task_id: string;
   task_name: string | null;
-  status: string;
   definition_text: string;
 }
 
@@ -98,7 +97,7 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
-    const task = db.prepare("SELECT task_id, task_name, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+    const task = db.prepare("SELECT task_id, task_name, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       | TaskRow
       | undefined;
     if (!task) return null;
@@ -307,7 +306,7 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
     ).length;
   }
   const parts = [
-    `任务「${name}」（类型：${definition.taskName}），任务编号 ${task.task_id}，状态是${task.status}。`,
+    `任务「${name}」（类型：${definition.taskName}），任务编号 ${task.task_id}。`,
     total === 0
       ? "交付物还没有任何条目。"
       : `交付物现有 ${total} 个条目：${counts.map((one) => `${one.collection} ${one.count} 个`).join("、")}。`,
@@ -323,7 +322,6 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
       task_id: task.task_id,
       task_name: name,
       task_type: definition.taskName,
-      status: task.status,
       items: Object.fromEntries(counts.map((one) => [one.collection, one.count])),
       conditions_total: results.length,
       conditions_met: met,

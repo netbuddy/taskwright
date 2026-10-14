@@ -90,7 +90,9 @@ export function Shell({ currentTaskId, nav = "tasks", libraries, children }: {
 }
 
 export function sortByActivity(list: TaskListEntry[]): TaskListEntry[] {
-  return [...list].sort((a, b) => String(b.last_active_at).localeCompare(String(a.last_active_at)));
+  // 时刻的写法可能带不同的时区，按时刻本身比；没有时刻的排在最后。
+  const at = (t: TaskListEntry) => (t.last_active_at ? Date.parse(t.last_active_at) : Number.NEGATIVE_INFINITY);
+  return [...list].sort((a, b) => at(b) - at(a));
 }
 
 export function NewTaskModal({ open, onClose }: { open: boolean; onClose: () => void }) {

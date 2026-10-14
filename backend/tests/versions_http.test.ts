@@ -41,23 +41,23 @@ function taskWithVersions(): { taskId: string; dir: string } {
   mkdirSync(join(dir, "versions", "v2"), { recursive: true });
   writeFileSync(join(dir, "versions", "v2", "document.md"), "# 第 2 版\n", "utf-8");
   writeFileSync(join(dir, "versions", "v2", "document.docx"), Buffer.from("PK-word"));
-  const insert = "INSERT INTO version_record (version_no, task_id, published_at, actor, revision_no, note, markdown_path, docx_path, figures_archived, event_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+  const insert = "INSERT INTO version_record (version_no, task_id, published_at, actor, revision_no, note, markdown_path, docx_path, figure_count, figure_pictures, event_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
   sqlRun(dir, [
-    [insert, 1, taskId, "2026-10-01T11:00:00", "user", 2, UPGRADED_VERSION_NOTE, null, null, 0, 1],
-    [insert, 2, taskId, "2026-10-12T09:30:00", "user", 9, "加了预约", "versions/v2/document.md", "versions/v2/document.docx", 1, 1],
-    [insert, 3, taskId, "2026-10-13T09:30:00", "executor", 12, null, "versions/v2/document.md", "versions/v3/document.docx", 0, 1],
+    [insert, 1, taskId, "2026-10-01T11:00:00", "user", 2, UPGRADED_VERSION_NOTE, null, null, null, null, 1],
+    [insert, 2, taskId, "2026-10-12T09:30:00", "user", 9, "加了预约", "versions/v2/document.md", "versions/v2/document.docx", 2, 2, 1],
+    [insert, 3, taskId, "2026-10-13T09:30:00", "executor", 12, null, "versions/v2/document.md", "versions/v3/document.docx", 3, 0, 1],
   ]);
   return { taskId, dir };
 }
 
-test("版本清单：按版本号从小到大，写发布的时刻、谁、修订号、说明、图存了没有，以及两种存档在不在（文件还在任务目录里才算）；任务状况里的 versions 相同", async () => {
+test("版本清单：按版本号从小到大，写发布的时刻、谁、修订号、说明、文档里有几张图与其中几张是图片，以及两种存档在不在（文件还在任务目录里才算）；任务状况里的 versions 相同", async () => {
   const { taskId, dir } = taskWithVersions();
   const reply = await json(`/api/v1/tasks/${taskId}/versions`);
   assert.equal(reply.status, 200);
-  assert.deepEqual(reply.body.versions.map((one: Record<string, unknown>) => [one.version_no, one.actor, one.revision_no, one.note, one.figures_archived, one.has_markdown, one.has_docx]), [
-    [1, "user", 2, UPGRADED_VERSION_NOTE, false, false, false],
-    [2, "user", 9, "加了预约", true, true, true],
-    [3, "executor", 12, null, false, true, false],
+  assert.deepEqual(reply.body.versions.map((one: Record<string, unknown>) => [one.version_no, one.actor, one.revision_no, one.note, one.figure_count, one.figure_pictures, one.has_markdown, one.has_docx]), [
+    [1, "user", 2, UPGRADED_VERSION_NOTE, null, null, false, false],
+    [2, "user", 9, "加了预约", 2, 2, true, true],
+    [3, "executor", 12, null, 3, 0, true, false],
   ]);
   assert.match(reply.body.versions[1].published_at, /^2026-10-12T09:30:00/);
   assert.deepEqual(taskStatus(dir)!.versions, reply.body.versions);

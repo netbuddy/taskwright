@@ -288,12 +288,12 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const running = activeTasks(db);
   if (running.length === 0) {
     throw new Error(
-      "这个任务已经结束（已完成或已放弃），或者库里没有任务记录，所以没有地方保存修订，什么都没有写入。请把这个情况如实告诉用户。",
+      "库里没有任务记录，所以没有地方保存修订，什么都没有写入。请把这个情况如实告诉用户。",
     );
   }
   if (running.length > 1) {
     throw new Error(
-      `这个任务目录里有 ${running.length} 个进行中的任务（${running.map((one) => one.task_id).join("、")}），` +
+      `这个任务目录里有 ${running.length} 个任务（${running.map((one) => one.task_id).join("、")}），` +
         "同一时刻只应当有一个，库里的记录有问题，所以没有写入。请把这个情况告诉用户。",
     );
   }

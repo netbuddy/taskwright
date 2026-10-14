@@ -27,7 +27,7 @@ test("新会话写任务现状：任务名与类型、按集合的条目数、�
   createTask({ ...callIn(dir), sessionId: "", callId: "ui-op-1", actor: ACTOR_USER }, { definition_path: DEFINITION_PATH, task_name: "登录模块" });
   const empty = taskStatusMessage(dir, FRESH, "s")!;
   assert.equal(empty.kind, "现状");
-  assert.match(empty.text, /^【执行者开始这条会话时（\d\d:\d\d:\d\d）的任务状况：由扩展写入，不是用户打的字】任务「登录模块」（类型：演示任务），任务编号 TASK-001，状态是进行中。交付物还没有任何条目。要发布版本，还差 1 项：用例至少要有一个条目。未解决的问题条目有 0 条。/);
+  assert.match(empty.text, /^【执行者开始这条会话时（\d\d:\d\d:\d\d）的任务状况：由扩展写入，不是用户打的字】任务「登录模块」（类型：演示任务），任务编号 TASK-001。交付物还没有任何条目。要发布版本，还差 1 项：用例至少要有一个条目。未解决的问题条目有 0 条。/);
   saveRevision(callIn(dir), { operations: [addUseCase("登录"), addUseCase("注销"), addTbd("口令长度？")] });
   const message = taskStatusMessage(dir, FRESH, "s")!;
   assert.match(message.text, /交付物现有 3 个条目：用例 2 个、问题 1 个。/);

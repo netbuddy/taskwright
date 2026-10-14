@@ -2,7 +2,7 @@
  * 发布一个版本时，把这一版生成的文档存进任务目录：versions/v{N}/document.md 与 document.docx（agent/src/lib/versions.ts 的约定）。
  * 文档按发布时的那次修订整体生成，全部条目，与「生成文档」里同一个模板、同一个渲染（render.ts）；Word 与「下载 Word」同一个写法。
  * 页面发起的发布带着页面画好的图（PNG），存进 Word；助手发起的没有图，Word 里写它们的 Mermaid 文本。
- * 文档里的每一张图都有图片时（没有图也算）记「图存了」。
+ * 另外数出文档里有几张图、其中几张在 Word 里是图片；一张图都没有时两个数都是 null，版本记录里不写这一项。
  *
  * 只写文件，不写任务库：版本记录由助手一侧的发布函数在核对通过之后记（agent/src/lib/publish_version.ts）。没有记成时调用方删掉这个目录。
  */
@@ -21,7 +21,10 @@ import type { Locate, LibraryName } from "./render.ts";
 export interface WrittenArchive {
   markdown_path: string;
   docx_path: string;
-  figures_archived: boolean;
+  /** 文档里有几张图；一张都没有时为 null。 */
+  figure_count: number | null;
+  /** 其中几张在 Word 里是图片（其余写成 Mermaid 文本）；figure_count 为 null 时也为 null。 */
+  figure_pictures: number | null;
 }
 
 /** 下一个版本号：已有的最大号加 1。 */
@@ -52,7 +55,8 @@ export async function writeArchive(taskDir: string, versionNo: number, revisionN
   writeFileSync(join(full, ARCHIVED_DOCX), docx);
   return {
     markdown_path: `${dir}/${ARCHIVED_MARKDOWN}`, docx_path: `${dir}/${ARCHIVED_DOCX}`,
-    figures_archived: figures.every((id) => id !== "" && images.has(id)),
+    figure_count: figures.length ? figures.length : null,
+    figure_pictures: figures.length ? figures.filter((id) => id !== "" && images.has(id)).length : null,
   };
 }
 

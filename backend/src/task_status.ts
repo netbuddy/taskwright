@@ -21,12 +21,12 @@
  * - 这条会话空闲（自由讨论的会话，或者归档的会话）：kind 与 key 都是 idle，name 是「空闲」，ordinal 与谁、什么时候、为什么三项为 null，
  *   missing 是空的（空闲没有自己的灯）。
  * launch 是早先任务状况卡上那一节的内容（agent/src/lib/stage.ts 的 LaunchView），留给还读它的页面，以后去掉。
- * 任务不在进行中时 launch 为 null。versions 留给已发布的文档版本，现在没有这种记录，恒为空列表。
+ * versions 是发布过的各版（library.versionView），没有发布过是空列表。
  * assets 是需求资产六类的现状，六格，每格 { key, name, count, unit, text, note, produced_by }（agent/src/lib/activity_catalog.ts 的 AssetCell）。
  * catalog 是任务起点页的活动目录：flows 两条工作流程与 activities 七项单项活动，文字取自活动与流程的定义文件开头的头
  * （agent/prompts/stages/、agent/prompts/flows/），各带现在能不能启动（enabled）、一句状态（state）与工作项个数（active_count）；
  * 单项活动能不能启动只看数据，已经有工作项不拦；流程另带 work_item（任务里已有的流程工作项），有它时流程不能启动。
- * 任务不在进行中、或者定义读不出来时 catalog 为 null。
+ * 定义读不出来时 catalog 为 null。
  * start_page 是任务起点页与活动输入页上的几段文字（startPageTexts）：一段定位的话、「三步开始」主按钮下面的一句、三种常见起点各一张小卡、
  * 从头编制时输入页上的几段（intake）。
  * 现在都是这里给的缺省文字，照需求规格说明这一类任务写；以后由任务类型的定义给。
@@ -159,9 +159,9 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
     missing: (current === IDLE ? [] : stage.lamps[current] ?? []).filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })),
     proposal: stage.proposal,
     work_items: workItemViews(taskDir, sessions),
-    launch: view.status === "进行中" ? stage.launch : null,
+    launch: stage.launch,
     assets: stage.assets,
-    catalog: view.status === "进行中" ? stage.catalog : null,
+    catalog: stage.catalog,
     start_page: startPageTexts(view.task_name),
     versions: library.versionRows(taskDir).map((row) => library.versionView(row, taskDir)),
   };

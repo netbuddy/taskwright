@@ -39,7 +39,7 @@ describe("类型的叫法与文件过滤", () => {
 
 describe("两处入口", () => {
   const detail = {
-    task_id: "TASK-T", task_name: "类型", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-T", task_name: "类型", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [] }, items: [], completion: null, sessions: [], materials: [],
   } as unknown as TaskDetail;
 

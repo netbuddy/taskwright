@@ -29,7 +29,7 @@ function item(id: string, over: Partial<Item> = {}): Item {
 
 function task(items: Item[]): Task {
   return {
-    task_id: "TASK-C", task_name: "计数", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-C", task_name: "计数", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [
       { name: "功能用例", prefix: "UC", needs_review: true, rules_hash: "h1", review_rules: [{ id: "UC-R7", level: "必选", text: "写明目的。" }],
         fields: [{ name: "用例名称", type: "文本", required: true, values: null }] },

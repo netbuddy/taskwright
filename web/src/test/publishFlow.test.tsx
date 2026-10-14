@@ -25,7 +25,7 @@ const MET: Completion = { all_met: true, unmet_count: 0, brief: "", hints: [], c
 const UC = { item_id: "UC-001", collection: "功能用例", title: "借书", revision_no: 4, revision_by: "executor", revision_at: "", revisions: [4], fields: { 用例名称: "借书" },
   sources: [], reviews: [], confirmations: [{ revision_no: 4, accepted: true, basis: "viewed" }], confirmation_stale: false } as unknown as Item;
 const task = {
-  task_id: "TASK-001", task_name: "图书借阅", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  task_id: "TASK-001", task_name: "图书借阅", task_type: "演示", domain_tag: null, started_at: "",
   definition: { collections: [{ name: "功能用例", prefix: "UC", needs_review: false, review_rules: null, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] }] },
   completion: MET, items: [UC], latest_revision: 4, versions: [],
 } as unknown as Task;
@@ -38,7 +38,7 @@ function page() {
   vi.spyOn(api, "getTask").mockResolvedValue({ ...task, sessions: [], materials: [] } as unknown as TaskDetail);
   vi.spyOn(api, "listSessions").mockResolvedValue([]);
   const preview = vi.spyOn(api, "previewDocument").mockResolvedValue({ text: "# 文档\n\n```mermaid D-001\nflowchart TD\n  a --> b\n```\n" });
-  const publish = vi.spyOn(api, "publishVersion").mockResolvedValue({ ok: true, op_id: "ui-op-1", version_no: 1, revision_no: 4, figures_archived: true });
+  const publish = vi.spyOn(api, "publishVersion").mockResolvedValue({ ok: true, op_id: "ui-op-1", version_no: 1, revision_no: 4, figure_count: null, figure_pictures: null });
   render(<Wrap><WorkViewPage taskId="TASK-001" sessionId="S1" /></Wrap>);
   return { preview, publish };
 }

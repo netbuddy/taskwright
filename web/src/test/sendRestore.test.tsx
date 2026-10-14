@@ -80,7 +80,7 @@ describe("卡片与问题的输入框", () => {
     const { send, finish } = deferredSend();
     const base = { revision_by: "executor", revision_at: "", revisions: [1], sources: [], reviews: [], confirmations: [], confirmation_stale: false };
     const t = {
-      task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null, completion: null,
+      task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, started_at: "", completion: null,
       definition: { collections: [
         { name: "功能用例", prefix: "UC", fields: [{ name: "用例名称", type: "文本", required: true, values: null }] },
         { name: "问题", prefix: "TBD", fields: [

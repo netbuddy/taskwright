@@ -232,13 +232,13 @@ function walk(root: string, leftOut: ReadonlySet<string>, label: string, skipped
 }
 
 /** 任务库里任务的那一行里登记表要的几项；读不出来是 null。 */
-function taskRow(taskDir: string): { task_id: string; name: string | null; status: string | null; task_type: string | null; created_at: string | null } | null {
+function taskRow(taskDir: string): { task_id: string; name: string | null; task_type: string | null; created_at: string | null } | null {
   const db = library.openRo(taskDir);
   try {
-    const row = db ? (db.prepare("SELECT task_id, task_name, status, definition_path, started_at FROM task LIMIT 1").get() as Record<string, any> | undefined) : undefined;
+    const row = db ? (db.prepare("SELECT task_id, task_name, definition_path, started_at FROM task LIMIT 1").get() as Record<string, any> | undefined) : undefined;
     if (!row || typeof row.task_id !== "string") return null;
     return {
-      task_id: row.task_id, name: row.task_name || null, status: row.status ?? null,
+      task_id: row.task_id, name: row.task_name || null,
       task_type: typeof row.definition_path === "string" ? basename(row.definition_path).replace(/\.json$/i, "") : null, created_at: row.started_at ?? null,
     };
   } catch {
@@ -371,7 +371,7 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
         // 登记表里的那一行：有登记就照登记的（属主以它为准），没有就照任务库现在的样子拼一行。目录一律记成编号。
         const listed = registry?.task(id) ?? null;
         register.push({
-          task_id: id, name: listed?.name ?? row.name, owner: listed?.owner ?? owner, status: listed?.status ?? row.status,
+          task_id: id, name: listed?.name ?? row.name, owner: listed?.owner ?? owner, status: null,
           task_type: listed?.task_type ?? row.task_type, created_at: listed?.created_at ?? row.created_at, dir: id,
         });
       }
@@ -796,7 +796,7 @@ function importTask(where: PackLocations, staging: Staging, one: PackTask, optio
     const listed = register.get(one.task_id);
     const text = (value: unknown) => (typeof value === "string" && value ? value : null);
     options.registry?.putTask({
-      task_id: id, name: row.name, owner: text(listed?.owner) ?? readTaskJson(target)?.owner ?? one.owner, status: row.status,
+      task_id: id, name: row.name, owner: text(listed?.owner) ?? readTaskJson(target)?.owner ?? one.owner, status: null,
       task_type: row.task_type ?? text(listed?.task_type), created_at: row.created_at ?? text(listed?.created_at), dir: id,
     });
     // 它选用的知识库在这个数据目录里有没有。

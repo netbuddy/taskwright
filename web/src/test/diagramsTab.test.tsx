@@ -50,8 +50,8 @@ const detail = (over: Partial<DiagramDetail> = {}): DiagramDetail => ({
   drawn: [{ item_id: "UC-001", title: "借出图书", state: "live" }, { item_id: "UC-003", title: "挂失借书证", state: "deleted" }, { item_id: "UC-404", title: null, state: "missing" }],
   ...over,
 } as DiagramDetail);
-const task = (diagrams: DiagramRow[] | undefined, status = "进行中"): Task => ({
-  task_id: "TASK-D", task_name: "图表", task_type: "演示", domain_tag: null, status, started_at: "", ended_at: null,
+const task = (diagrams: DiagramRow[] | undefined): Task => ({
+  task_id: "TASK-D", task_name: "图表", task_type: "演示", domain_tag: null, started_at: "",
   definition: { collections: [{ name: "功能用例", prefix: "UC", needs_review: false, review_rules: null, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] }] },
   completion: null, items: [item("UC-001", "借出图书"), item("UC-002", "归还图书")], latest_revision: 2, diagrams,
 } as unknown as Task);
@@ -330,8 +330,8 @@ describe("用户改图", () => {
     expect(screen.getByTestId("diagram-save")).toBeDisabled();
     expect(screen.getByTestId("diagram-detail").querySelector(".dg-hint")!.textContent).toBe("助手正在工作，结束后你可以继续修改");
     view.unmount();
-    await openDiagram(task([row()], "已完成"), { readOnly: true });
+    await openDiagram(task([row()]), { readOnly: true });
     expect(textarea().readOnly).toBe(true);
-    expect(screen.getByTestId("diagram-detail").querySelector(".dg-hint")!.textContent).toBe("任务已结束，不能再改。");
+    expect(screen.getByTestId("diagram-detail").querySelector(".dg-hint")!.textContent).toBe("助手现在不可用，暂时不能改。");
   });
 });

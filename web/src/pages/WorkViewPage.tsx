@@ -112,19 +112,17 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   const [knowledgeDoc, setKnowledgeDoc] = useState<KnowledgeDocRequest | null>(null);
 
   const task = state.task;
-  const closed = !!task && task.status !== "进行中";
   const executor = state.executor;
   const busyElsewhere = !!executor && executor.state === "working" && !!executor.active_session && executor.active_session !== sessionId;
   const working = executor?.state === "working";
   const busySession = sessions.find((s) => s.session_id === executor?.active_session)?.name;
-  const disabledReason = closed ? "这个任务已经结束，只能查看。"
-    : busyElsewhere || busyError ? `助手正在${busySession ? `会话「${busySession}」` : "另一条会话"}里工作，做完才能在这里继续。`
+  const disabledReason = busyElsewhere || busyError ? `助手正在${busySession ? `会话「${busySession}」` : "另一条会话"}里工作，做完才能在这里继续。`
     : executor?.state === "failed_to_start" ? `助手现在不可用：${executor.text}`
     : null;
-  // 任务结束或助手启动不起来：一切写入都不能做。执行者工作中另算（writesOff），预填输入框的两个按钮那时照常可用。
+  // 助手启动不起来：一切写入都不能做。执行者工作中另算（writesOff），预填输入框的两个按钮那时照常可用。
   // 助手已经退出、还没启动、正在启动时不设只读：说话与操作都会让服务先把助手启动起来，只在输入框上方提示一句（executorHint.ts）。
   const hint = executorHint(executor, state.outgoing.some((m) => m.state === "sending"));
-  const readOnly = closed || (!!disabledReason && !busyElsewhere && !busyError);
+  const readOnly = !!disabledReason && !busyElsewhere && !busyError;
 
   // 会话列表（会话菜单里每条会话的最近活动与消息条数）：打开页面、会话改名、助手做完一轮（执行者状态从工作中变为不在工作）、
   // 打开会话菜单时各读一次；不定时轮询。执行者状态属于整个任务，别的会话里做完一轮也会重读。
@@ -476,7 +474,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
           <span className="set-btn" role="button" onClick={openSettings} data-testid="open-settings"><SettingOutlined />设置</span>
           <UserMenu where="topbar" />
           <SessionMenu taskId={taskId} taskName={task?.task_name} sessions={sessions} open={menuOpen} onClose={() => setMenuOpen(false)} currentId={sessionId}
-            onNew={closed ? undefined : () => void newSession()} />
+            onNew={() => void newSession()} />
         </div>
         <div className="app-body">
           <div className="rail">

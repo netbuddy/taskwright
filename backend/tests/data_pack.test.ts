@@ -97,7 +97,7 @@ test("整套导出：清单文件记着版本、范围、任务与知识库；�
   assert.deepEqual(JSON.parse(content(PACK_LIBRARIES).toString("utf-8")).libraries.map((one: any) => one.id).sort(), ["general", lib.id].sort());
   const register = JSON.parse(content(PACK_REGISTER).toString("utf-8")).tasks as Record<string, unknown>[];
   assert.deepEqual(register.map((row) => [row.task_id, row.name, row.owner, row.status, row.task_type, row.dir]).sort(),
-    [[a, "甲", "local", "进行中", "srs-authoring", a], [b, "乙", "local", "进行中", "srs-authoring", b]].sort());
+    [[a, "甲", "local", null, "srs-authoring", a], [b, "乙", "local", null, "srs-authoring", b]].sort());
 
   // 包里的任务库与原库内容相同（条数相同），而且只是一个文件。
   const copyDir = fresh("db");

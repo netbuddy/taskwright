@@ -89,8 +89,6 @@ test("认不出就拒绝：不是进入卡片、卡片上留在这一段的不�
   assert.equal(refused(() => continueStage({ workspaceDir: dir, sessionId: SESSION }, BRANCH, { kind: CONTINUE_STAGE_KIND, fields: {} } as never)).code, "bad_request");
   assert.equal(refused(() => continueStage({ workspaceDir: dir, sessionId: SESSION }, BRANCH, { ...request({ reply_message_id: "a-1", option_key: "continue_reading" }), task_id: "TASK-别的" })).code, "bad_request");
   assert.equal(refused(() => continueStage({ workspaceDir: makeWorkspace(overallDefinition()), sessionId: SESSION }, BRANCH, request({ reply_message_id: "a-1", option_key: "continue_reading" }))).code, "no_task");
-  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare("UPDATE task SET status = '已完成' WHERE status = ?").run(TASK_ACTIVE));
-  assert.equal(at({ reply_message_id: "a-1", option_key: "continue_reading" }).code, "task_closed");
 });
 
 test("卡片在同一个工作项的另一条会话里：照这个工作项开着的提议核对；选了之后提议仍然开着", () => {

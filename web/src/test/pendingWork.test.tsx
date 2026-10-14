@@ -32,7 +32,7 @@ const DIAGRAM = { diagram_id: "D-001", name: "自助借书流程", kind: "flowch
 
 function taskOf(over: Partial<TaskDetail> = {}, lamps: StageView["lamps"] = LAMPS): TaskDetail {
   return {
-    task_id: "TASK-P", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-P", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
     definition: { collections: [QUESTIONS, OVERALL, USE_CASES] }, completion: null, latest_revision: 9,
     items: [
       item("OA-001", "总体分析", "自助借书"), item("OA-003", "总体分析", "逾期不能续借"),
@@ -113,7 +113,7 @@ describe("推进建议", () => {
 
 describe("有阻断问题时的待处理事项", () => {
   it("四张卡与推进建议；问题与待决定事项「启动澄清」进澄清的输入页并预先勾好，两条阻断的另有一并处理；待核实条目打开写条目的会话；模型「查看」进工作台打开那张图", () => {
-    render(<PendingWorkSection task={taskOf()} status={statusOf([work({}), work({ record_id: 9, kind: "activity", name: "写条目", activity: "writing", node: null, ordinal: null, latest_session: { session_id: "S-writing", name: "写条目", last_active_at: "" } })])} closed={false} />);
+    render(<PendingWorkSection task={taskOf()} status={statusOf([work({}), work({ record_id: 9, kind: "activity", name: "写条目", activity: "writing", node: null, ordinal: null, latest_session: { session_id: "S-writing", name: "写条目", last_active_at: "" } })])} />);
     const questions = screen.getByTestId("todo-questions");
     expect(text(questions.querySelector("h3"))).toBe("待澄清问题阻断下游 2另有 1 条不阻断，评审确认时回看");
     expect(within(questions).getByText("阻断下游 2")).toHaveClass("chip", "warn");
@@ -134,15 +134,12 @@ describe("有阻断问题时的待处理事项", () => {
     expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-flow");
   });
 
-  it("没有写条目的工作项时待核实条目「启动写条目」；评审确认不能启动、又没有它的工作项时评审发现没有按钮；任务已经结束时只留看图的「查看」", () => {
+  it("没有写条目的工作项时待核实条目「启动写条目」；评审确认不能启动、又没有它的工作项时评审发现没有按钮", () => {
     const failing = taskOf({ review_batches: [{ no: 1 }] as never }, { ...LAMPS, reviewing: [lamp("reviews_no_open_findings", false, ["UC-001"])] });
-    render(<PendingWorkSection task={failing} status={statusOf([work({})])} closed={false} />);
+    render(<PendingWorkSection task={failing} status={statusOf([work({})])} />);
     expect(within(within(screen.getByTestId("todo-decisions")).getByTestId("todo-UC-001")).getByRole("button")).toHaveTextContent("启动写条目");
     const finding = within(screen.getByTestId("todo-findings")).getByTestId("todo-UC-001");
     expect([text(finding), within(finding).queryByRole("button")]).toEqual(["UC-001自助借书评审不合规，还没有处理", null]);
-    cleanup();
-    render(<PendingWorkSection task={taskOf()} status={statusOf()} closed />);
-    expect([...screen.getByTestId("pending-work").querySelectorAll("button")].map((one) => one.textContent)).toEqual(["查看"]);
   });
 });
 

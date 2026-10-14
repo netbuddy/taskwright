@@ -224,7 +224,7 @@ export const api = {
    * 再核对完成条件与这次同意、记下版本；被拒时照它说的原因写。回应里有版本号。
    */
   publishVersion: (taskId: string, sessionId: string, body: { revision_no: number; note: string | null; images: DocumentImage[] }) =>
-    request<{ ok: true; op_id: string; version_no: number; revision_no: number; figures_archived: boolean }>(
+    request<{ ok: true; op_id: string; version_no: number; revision_no: number; figure_count: number | null; figure_pictures: number | null }>(
       "POST", `${task(taskId)}/versions?session=${encodeURIComponent(sessionId)}`, body, PUBLISH_TIMEOUT_MS),
   /** 发布过的各版（与整份数据里的 versions 相同，含存档在不在）。 */
   listVersions: (taskId: string) => request<{ ok: true; versions: VersionView[] }>("GET", `${task(taskId)}/versions`).then((r) => r.versions),

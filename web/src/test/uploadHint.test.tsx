@@ -20,7 +20,7 @@ const info = (maxBytes: number): ServiceInfo => ({
   upload: { max_bytes: maxBytes, too_large_text: `单个文件不能超过 ${maxBytes / 1024 / 1024} MB。`, extensions: [".md", ".txt", ".docx"], types_text: ".md、.txt 与 Word 的 .docx" },
 });
 const detail = {
-  task_id: "TASK-H", task_name: "说明文字", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  task_id: "TASK-H", task_name: "说明文字", task_type: "演示", domain_tag: null, started_at: "",
   definition: { collections: [] }, items: [], completion: null, sessions: [], materials: [],
 } as unknown as TaskDetail;
 

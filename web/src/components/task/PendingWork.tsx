@@ -10,15 +10,14 @@ import { PENDING_ROWS, adviceLine, notBlockingLine, pendingWork, workItemDoing, 
 import { latestSession } from "../../model/startPage";
 import { go, href } from "../../router";
 
-export function PendingWorkSection({ task, status, closed }: { task: TaskDetail; status: TaskStatusView | null; closed: boolean }) {
+export function PendingWorkSection({ task, status }: { task: TaskDetail; status: TaskStatusView | null }) {
   const work = pendingWork(task);
   if (!work) return null;
   const activity = (key: StageKey): CatalogActivity | null => status?.catalog?.activities.find((one) => one.key === key) ?? null;
-  const clarify = closed ? null : activity("clarifying");
+  const clarify = activity("clarifying");
   const startClarify = (ids: string[]) => go(href.start(task.task_id, "clarifying", null, ids));
   /** 打开做某项活动的工作项最近的会话；没有这样的工作项而那项活动能启动时，进它的输入页。两样都不行时没有按钮。 */
   const sessionOrStart = (key: StageKey, open: string, start: string) => {
-    if (closed) return null;
     const item = workItemDoing(status, key);
     if (item?.latest_session) return { text: open, to: href.work(task.task_id, item.latest_session.session_id) };
     return activity(key)?.enabled ? { text: start, to: href.start(task.task_id, key) } : null;
@@ -83,7 +82,7 @@ export function PendingWorkSection({ task, status, closed }: { task: TaskDetail;
       {advice && (
         <div className="tp-todo-adv" data-testid="todo-advice">
           <b>推进建议</b><span>{advice}</span>
-          {!closed && flowItem?.latest_session && (
+          {flowItem?.latest_session && (
             <button className="btn sm" onClick={() => go(href.work(task.task_id, flowItem.latest_session!.session_id))}>打开{flowItem.name}的会话</button>
           )}
         </div>

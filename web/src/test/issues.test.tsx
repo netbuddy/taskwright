@@ -27,7 +27,7 @@ function tbd(id: string, matter: string, status: string, refs: string[], extra: 
 
 function task(over: Partial<Task> = {}): Task {
   return {
-    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [
       { name: "功能用例", prefix: "UC", fields: [
         { name: "用例名称", type: "文本", required: true, values: null },
@@ -197,11 +197,11 @@ describe("条目详情顶部「挂在这条上的问题」", () => {
     expect(screen.getByTestId("issue-keep-TBD-002")).toBeEnabled();
     unmount();
 
-    render(<Wrap><ItemIssues task={task({ status: "已完成" })} itemId="UC-005" readOnly pendingItems={new Set()} submit={vi.fn() as never} /></Wrap>);
+    render(<Wrap><ItemIssues task={task()} itemId="UC-005" readOnly pendingItems={new Set()} submit={vi.fn() as never} /></Wrap>);
     expect(screen.getByTestId("issue-input-TBD-002")).toBeDisabled();
     expect(screen.getByTestId("issue-answer-TBD-002")).toBeDisabled();
-    expect(screen.getByTestId("issue-answer-TBD-002")).toHaveAttribute("title", "任务已结束，不能再改。");
-    expect(screen.getByTestId("issue-keep-TBD-002")).toHaveAttribute("title", "任务已结束，不能再改。");
+    expect(screen.getByTestId("issue-answer-TBD-002")).toHaveAttribute("title", "助手现在不可用，暂时不能改。");
+    expect(screen.getByTestId("issue-keep-TBD-002")).toHaveAttribute("title", "助手现在不可用，暂时不能改。");
   });
 
   it("处理结果按字段名「处理结果」认、不显示在卡片上，与字段在「状态」之前还是之后无关；其余文本字段按定义顺序显示", () => {

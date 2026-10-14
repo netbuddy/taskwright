@@ -11,11 +11,11 @@
  *
  * 请求的 fields 写 { reply_message_id, option_key }：卡片所在那条回复的编号与点的那个选项的键。
  * 先在这条会话的当前分支上找那条回复，核对它是提议的卡片、点的键是它上面这四种之一；分支上找不到时（卡片是在同一个工作项的另一条会话里发的）
- * 改为核对这条会话的工作项开着的提议。任务不在进行中、认不出卡片、点的不是这几种选项，都拒绝。
+ * 改为核对这条会话的工作项开着的提议。认不出卡片、点的不是这几种选项，都拒绝。
  */
 
 import { type Entry, chooseActOf } from "./completion_consent.ts";
-import { NoDatabaseYet, TASK_ACTIVE, withTaskDatabase } from "./schema.ts";
+import { NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { DOCUMENT_REVIEWED_OPTION, STAGE_NAMES, STAY_IDLE_OPTION, STAY_TEXT } from "./stage.ts";
 import { type ProposalFact, isStayKey, openProposal, proposalOfAct } from "./stage_proposal.ts";
 import { UserOpError, type UserOpRequest } from "./user_ops.ts";
@@ -75,12 +75,11 @@ export function continueStage(ctx: { workspaceDir: string; sessionId: string }, 
   }
   try {
     withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
       if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
         throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
       }
-      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，卡片不能再点。`, { status: task.status });
       if (fact === null) {
         // 这条会话里没有那条回复：卡片是在同一个工作项的另一条会话里发的，照这条会话的工作项开着的提议核对。
         const open = openProposal(db, task.task_id, ctx.sessionId);

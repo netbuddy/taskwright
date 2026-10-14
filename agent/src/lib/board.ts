@@ -33,7 +33,6 @@ export const LIST_UNMET_AT_MOST = 6;
 export interface TaskRow {
   task_id: string;
   task_name: string | null;
-  status: string;
   definition_text: string;
 }
 
@@ -52,7 +51,7 @@ export function withBoardDatabase(workspaceDir: string, body: (db: DatabaseSync,
   }
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
-    const task = db.prepare("SELECT task_id, task_name, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+    const task = db.prepare("SELECT task_id, task_name, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       | TaskRow
       | undefined;
     if (!task) return ["库里还没有任务记录。"];
@@ -113,7 +112,7 @@ export function confirmState(db: DatabaseSync, taskId: string, itemId: string, r
 export function boardLines(workspaceDir: string): string[] {
   return withBoardDatabase(workspaceDir, (db, task, definition) => {
     const name = task.task_name ?? definition.taskName;
-    const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}），状态是${task.status}。`];
+    const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}）。`];
     for (const collection of definition.collections) {
       const rows = currentItems(db, task.task_id, collection.name);
       lines.push("", `${collection.name}（现有 ${rows.length} 个）`);

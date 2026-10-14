@@ -292,7 +292,7 @@ function afterTaskUpgraded(plan: UpgradePlan, dir: string, registry: ServiceDb, 
   const db = library.openRo(taskDir);
   let row: Record<string, any> | undefined;
   try {
-    row = db ? (db.prepare("SELECT task_id, task_name, status, definition_path, started_at FROM task LIMIT 1").get() as Record<string, any> | undefined) : undefined;
+    row = db ? (db.prepare("SELECT task_id, task_name, definition_path, started_at FROM task LIMIT 1").get() as Record<string, any> | undefined) : undefined;
   } finally {
     db?.close();
   }
@@ -305,7 +305,7 @@ function afterTaskUpgraded(plan: UpgradePlan, dir: string, registry: ServiceDb, 
     upgraded_by_version: productVersion, upgraded_at: clock.now(),
   });
   if (row?.task_id) {
-    registry.putTask({ task_id: row.task_id, name: row.task_name || null, owner: had?.owner ?? "local", status: row.status ?? null,
+    registry.putTask({ task_id: row.task_id, name: row.task_name || null, owner: had?.owner ?? "local", status: null,
       task_type: taskType, created_at: row.started_at ?? null, dir });
   }
   registry.clearUpgradeFailed(dir);

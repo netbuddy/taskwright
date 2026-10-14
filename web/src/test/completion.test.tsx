@@ -18,7 +18,7 @@ const EMPTY_DELIVERABLE: Completion = {
 
 describe("完成条件的三种状态", () => {
   it("空交付物：标题是还差 1 项，不写「满足了几条」；空集合的条件显示暂无条目", () => {
-    render(<CompletionPanel completion={EMPTY_DELIVERABLE} status="进行中" />);
+    render(<CompletionPanel completion={EMPTY_DELIVERABLE} />);
     expect(screen.getByText(/要发布版本，还差 1 项。/)).toBeTruthy();
     expect(screen.queryByText(/满足了/)).toBeNull();
     expect(screen.getAllByTestId("cond-empty")).toHaveLength(2);

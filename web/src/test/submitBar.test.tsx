@@ -34,7 +34,7 @@ const MET: Completion = { all_met: true, unmet_count: 0, brief: "", hints: [], c
 function task(over: Partial<Task> = {}): Task {
   const collection = (name: string, prefix: string) => ({ name, prefix, needs_review: false, review_rules: null, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] });
   return {
-    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
     definition: { collections: [collection("功能用例", "UC"), collection("约束", "CON"),
       { name: "问题", prefix: "TBD", needs_review: false, review_rules: null, fields: [
         { name: "事项", type: "文本", required: true, values: null }, { name: "状态", type: "枚举", required: true, values: ["未解决", "已解决", "用户决定保留"] }] },
@@ -47,7 +47,7 @@ function task(over: Partial<Task> = {}): Task {
 const TAIL = "要发布第 1 版吗？发布之后仍然可以接着修改，以后再发布新的一版。";
 /** 发布过的一版。 */
 const version = (no: number, revision: number, at = "2026-10-13T09:00:00") =>
-  ({ version_no: no, revision_no: revision, published_at: at, actor: "user" as const, note: null, figures_archived: true, has_markdown: true, has_docx: true });
+  ({ version_no: no, revision_no: revision, published_at: at, actor: "user" as const, note: null, figure_count: null, figure_pictures: null, has_markdown: true, has_docx: true });
 
 const card = (keys: string[]): ConversationMessage => ({ type: "assistant_reply", session_id: "s", message_id: "a1", at: "", text: "……", informs: [],
   act: { kind: "choose", text: "这个任务是否已经完成？", options: keys.map((key) => ({ key, text: key })) } } as unknown as ConversationMessage);
@@ -75,9 +75,8 @@ describe("提示条显示的条件与问句", () => {
     expect(q([])).toBe(TAIL);
   });
 
-  it("任务进行中、完成条件全部满足、助手不在工作、没有未回应的提交卡片才显示", () => {
+  it("完成条件全部满足、助手不在工作、没有未回应的提交卡片才显示", () => {
     expect(showSubmitBar(task(), false, [])).toBe(true);
-    expect(showSubmitBar(task({ status: "已完成" }), false, [])).toBe(false);
     expect(showSubmitBar(task({ completion: { ...MET, all_met: false } }), false, [])).toBe(false);
     expect(showSubmitBar(task({ completion: null }), false, [])).toBe(false);
     expect(showSubmitBar(task(), true, []), "助手在工作").toBe(false);

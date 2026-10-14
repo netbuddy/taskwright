@@ -27,7 +27,7 @@ import { validateDefinition } from "./definition.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import { AGREE_TEXT, COMPLETE_KEY, type CardClick, type Consent, DECLINE_TEXT, judgeConsent } from "./completion_consent.ts";
 import { clickEventSeq } from "./dialogue_acts.ts";
-import { nextVersionNo, recordVersion, versionDir } from "./versions.ts";
+import { type FigureTally, nextVersionNo, recordVersion, versionDir } from "./versions.ts";
 
 export interface PublishCall {
   workspaceDir: string;
@@ -52,11 +52,11 @@ export interface PublishCheck {
   conditions: number;
 }
 
-/** 这一版的文档存档：两个文件相对任务目录的路径（没有存档为 null），与文档里的图存了没有。 */
+/** 这一版的文档存档：两个文件相对任务目录的路径（没有存档为 null），与文档里有几张图、其中几张在 Word 里是图片（一张图都没有时为 null）。 */
 export interface Archive {
   markdownPath: string | null;
   docxPath: string | null;
-  figuresArchived: boolean;
+  figures: FigureTally | null;
 }
 
 /** 拒绝时给助手的指引：怎样问用户这个任务是否已经完成、可以发布了。 */
@@ -166,7 +166,7 @@ export function publishVersion(call: PublishCall, archive: Archive, expect?: { v
       }
       const recorded = recordVersion(db, {
         taskId: now.taskId, sessionId: call.sessionId, callId: call.callId, actor: call.actor ?? ACTOR_EXECUTOR, revisionNo: now.revisionNo,
-        note: call.note ?? null, versionNo: now.versionNo, markdownPath: archive.markdownPath, docxPath: archive.docxPath, figuresArchived: archive.figuresArchived,
+        note: call.note ?? null, versionNo: now.versionNo, markdownPath: archive.markdownPath, docxPath: archive.docxPath, figures: archive.figures,
       });
       const kept = archive.markdownPath && archive.docxPath ? "生成的文档存了 Markdown 与 Word 两份" : archive.markdownPath || archive.docxPath ? "生成的文档存了一份" : "这一版没有存文档";
       const text = `第 ${now.versionNo} 版已发布：完成条件 ${now.conditions} 条全部满足，发布的是修订 ${now.revisionNo}，${kept}。` +

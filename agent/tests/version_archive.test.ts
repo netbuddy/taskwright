@@ -1,5 +1,5 @@
 /**
- * 助手发布版本时请任务服务写存档（lib/version_archive.ts）：发到存档接口的是版本号与修订号，拿回两个文件的位置与图存了没有；
+ * 助手发布版本时请任务服务写存档（lib/version_archive.ts）：发到存档接口的是版本号与修订号，拿回两个文件的位置与图数；
  * 任务目录里没有服务锁、服务回答了错误、到时间没有回答时，都按「这一版不发布、请用户在页面上再试」拒绝。
  */
 
@@ -22,16 +22,17 @@ function taskDir(): string {
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-test("发到存档接口的是版本号与修订号；拿回两个文件的位置与图存了没有", async () => {
+test("发到存档接口的是版本号与修订号；拿回两个文件的位置与图数（文档里有几张图、其中几张是图片）；一张图都没有时图数是 null", async () => {
   const sent: { url: string; body: unknown }[] = [];
   const fetch = (async (url: string, init: RequestInit) => {
     sent.push({ url, body: JSON.parse(String(init.body)) });
-    return reply(200, { ok: true, markdown_path: "versions/v2/document.md", docx_path: "versions/v2/document.docx", figures_archived: false });
+    return reply(200, { ok: true, markdown_path: "versions/v2/document.md", docx_path: "versions/v2/document.docx", figure_count: sent.length === 1 ? 3 : null, figure_pictures: sent.length === 1 ? 0 : null });
   }) as unknown as typeof globalThis.fetch;
   const archive = await archiveWithService(taskDir(), CHECK, { fetch });
   assert.deepEqual(sent, [{ url: "http://127.0.0.1:8999" + archivePath("TASK-1"), body: { version_no: 2, revision_no: 7 } }]);
   assert.equal(archivePath("TASK-1"), "/api/v1/tasks/TASK-1/versions/archive");
-  assert.deepEqual(archive, { markdownPath: "versions/v2/document.md", docxPath: "versions/v2/document.docx", figuresArchived: false });
+  assert.deepEqual(archive, { markdownPath: "versions/v2/document.md", docxPath: "versions/v2/document.docx", figures: { count: 3, pictures: 0 } });
+  assert.equal((await archiveWithService(taskDir(), CHECK, { fetch })).figures, null);
 });
 
 test("没有服务锁、服务回答了错误、到时间没有回答：这一版不发布，拒绝里写明原因与请用户在页面上再试", async () => {

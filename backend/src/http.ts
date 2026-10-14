@@ -428,7 +428,6 @@ const handlers: Record<string, Handler> = {
   publish_version: async (service, req) => {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
-    t.requireOpen();
     const revisionNo = body.revision_no;
     if (!Number.isInteger(revisionNo) || revisionNo < 0) throw new ApiError("bad_request", "revision_no 要写页面当时看到的修订号，一个不小于 0 的整数。");
     if (body.note !== undefined && body.note !== null && typeof body.note !== "string") throw new ApiError("bad_request", "note 要写一句话，或者不写。");
@@ -445,7 +444,8 @@ const handlers: Record<string, Handler> = {
       versionArchive.dropArchive(t.dir, versionNo);
       throw error;
     }
-    return json(200, { ok: true, op_id: done.op_id, version_no: versionNo, revision_no: revisionNo, figures_archived: written.figures_archived });
+    return json(200, { ok: true, op_id: done.op_id, version_no: versionNo, revision_no: revisionNo,
+      figure_count: written.figure_count, figure_pictures: written.figure_pictures });
   },
   // 助手发布版本时请任务服务写存档：body 写 { version_no, revision_no }。只写文件，不记版本；没有页面画的图，Word 里写 Mermaid 文本。
   archive_version: async (service, req) => {
@@ -515,7 +515,6 @@ const handlers: Record<string, Handler> = {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
     if (body.activity_record_id === undefined || body.activity_record_id === null) return json(200, { ok: true, session_id: await t.executor.newSession() });
-    t.requireOpen();
     const action = { kind: "continue_activity", task_id: t.taskId, targets: [], fields: { activity_record_id: body.activity_record_id }, notify_executor: false };
     if (!needsNewSession(action)) throw new ApiError("bad_request", "activity_record_id 是工作项的记录号，一个从 1 起的整数。");
     refuseBeforeNewSession(t.dir, action);
@@ -539,7 +538,6 @@ const handlers: Record<string, Handler> = {
   messages: async (service, req) => {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
-    t.requireOpen();
     const text = String(or(body.text, "")).trim();
     if (!text) throw new ApiError("bad_request", "text 不能是空的。");
     const attachments = (or(body.attachments, []) as string[]);
@@ -566,7 +564,6 @@ const handlers: Record<string, Handler> = {
   actions: async (service, req) => {
     const t = service.task(req.params.task);
     const body = bodyJson(req);
-    t.requireOpen();
     let session = sessionParam(req, body);
     // 启动一个工作项、换一条会话接着做一个工作项：先核对行不行，行才新建会话，再在新会话里做；回应里带新会话的编号与工作项的记录号。
     let created: string | null = null;

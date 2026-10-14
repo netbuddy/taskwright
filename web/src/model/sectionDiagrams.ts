@@ -127,9 +127,9 @@ export function markClasses(mermaid: string, names: readonly string[]): string {
 }
 
 /**
- * 用户看到了一张图：要不要记、记在哪一次修订上。任务进行中、这张图现在的内容用户还没有看过，才返回要记的目标；否则是 null。
+ * 用户看到了一张图：要不要记、记在哪一次修订上。这张图现在的内容用户还没有看过，才返回要记的目标；否则是 null。
  */
 export function diagramViewTarget(task: Task | null, row: DiagramRow): { diagram_id: string; base_revision: number } | null {
-  if (!task || task.status !== "进行中" || row.viewed === true) return null;
+  if (!task || row.viewed === true) return null;
   return { diagram_id: row.diagram_id, base_revision: row.revision_no };
 }

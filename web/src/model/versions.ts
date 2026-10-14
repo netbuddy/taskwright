@@ -71,6 +71,19 @@ export function versionMeta(version: VersionView): string {
   return [version.published_at ? shortMoment(version.published_at) : "", version.actor === "user" ? "你发布的" : "助手发布的"].filter(Boolean).join(" · ");
 }
 
+/**
+ * Word 存档里的图是什么样子：文档里有几张图、其中几张是图片，照实写；一张图都没有、没有 Word 存档时不写（null）。
+ * 例：「Word 里 3 张图都是图片」「Word 里 3 张图是 Mermaid 文本」「Word 里 3 张图有 1 张是 Mermaid 文本」。
+ */
+export function figuresText(version: VersionView): string | null {
+  const count = version.figure_count;
+  if (!version.has_docx || !count) return null;
+  const pictures = version.figure_pictures ?? 0;
+  if (pictures >= count) return `Word 里 ${count} 张图都是图片`;
+  if (pictures === 0) return `Word 里 ${count} 张图是 Mermaid 文本`;
+  return `Word 里 ${count} 张图有 ${count - pictures} 张是 Mermaid 文本`;
+}
+
 /** 一版没有某种存档时下载按钮旁的说明。 */
 export function missingArchiveText(version: VersionView): string {
   return version.has_markdown || version.has_docx ? "这一种没有存下来" : "这一版是升级之前完成的，当时的文档没有存下来";

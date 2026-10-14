@@ -40,18 +40,16 @@ const chip = () => screen.getByTestId("current-activity");
 
 describe("顶栏那一处写什么", () => {
   it("有活动在进行写「当前活动：某项活动」，在流程里与单独开展都只写活动的名字", () => {
-    expect(topbarActivity({ status: "进行中", stage: stage("writing") })).toEqual({ kind: "active", text: "当前活动：写条目" });
-    expect(topbarActivity({ status: "进行中", stage: stage("modeling", null) })).toEqual({ kind: "active", text: "当前活动：整理建模" });
+    expect(topbarActivity({ stage: stage("writing") })).toEqual({ kind: "active", text: "当前活动：写条目" });
+    expect(topbarActivity({ stage: stage("modeling", null) })).toEqual({ kind: "active", text: "当前活动：整理建模" });
     expect(currentActivityText("clarifying")).toBe("当前活动：澄清");
   });
 
-  it("自由讨论的会话写「自由讨论 · 不绑定活动」；任务没有阶段写「任务进行中」；任务已经结束写它的状态；没有「已做完」这种写法", () => {
+  it("自由讨论的会话写「自由讨论 · 不绑定活动」；任务没有阶段写「这个任务没有阶段」；没有「已做完」这种写法", () => {
     expect([NO_ACTIVITY_TEXT, START_WORK_TEXT]).toEqual(["自由讨论 · 不绑定活动", "启动工作"]);
-    expect(topbarActivity({ status: "进行中", stage: stage("idle") })).toEqual({ kind: "idle", text: NO_ACTIVITY_TEXT });
-    expect(topbarActivity({ status: "进行中", stage: null })).toEqual({ kind: "plain", text: "任务进行中" });
-    expect(topbarActivity({ status: "进行中" })).toEqual({ kind: "plain", text: "任务进行中" });
-    expect(topbarActivity({ status: "已完成", stage: stage("document") })).toEqual({ kind: "closed", text: "任务已完成" });
-    expect(topbarActivity({ status: "已放弃", stage: stage("idle") })).toEqual({ kind: "closed", text: "任务已放弃" });
+    expect(topbarActivity({ stage: stage("idle") })).toEqual({ kind: "idle", text: NO_ACTIVITY_TEXT });
+    expect(topbarActivity({ stage: null })).toEqual({ kind: "plain", text: "这个任务没有阶段" });
+    expect(topbarActivity({})).toEqual({ kind: "plain", text: "这个任务没有阶段" });
   });
 });
 
@@ -62,7 +60,7 @@ describe("工作视图的顶栏", () => {
     expect([chip().tagName, chip().getAttribute("role")]).toEqual(["SPAN", "button"]);
     expect(chip()).toHaveClass("chip", "ai");
     expect(screen.queryByTestId("start-work")).toBeNull();
-    expect(document.querySelector(".topbar")).not.toHaveTextContent("任务进行中");
+    expect(document.querySelector(".topbar")).not.toHaveTextContent(/进行中|已完成/);
     fireEvent.click(chip());
     expect(await screen.findByTestId("switch-panel")).toBeInTheDocument();
   });
@@ -80,16 +78,9 @@ describe("工作视图的顶栏", () => {
     expect(start).toHaveClass("chip", "dark");
   });
 
-  it("任务已经结束：只写任务的状态，不能点，没有「启动工作」", () => {
-    page(overallTask({ status: "已完成", stage: stage("idle") }));
-    expect(chip()).toHaveTextContent("任务已完成");
-    expect(chip().tagName).toBe("SPAN");
-    expect(screen.queryByTestId("start-work")).toBeNull();
-  });
-
-  it("任务没有阶段：照旧写「任务进行中」，不能点，没有「启动工作」", () => {
+  it("任务没有阶段：写「这个任务没有阶段」，不能点，没有「启动工作」", () => {
     page(overallTask({ stage: null }));
-    expect(chip()).toHaveTextContent("任务进行中");
+    expect(chip()).toHaveTextContent("这个任务没有阶段");
     expect(chip().tagName).toBe("SPAN");
     expect(screen.queryByTestId("start-work")).toBeNull();
   });

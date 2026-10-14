@@ -248,7 +248,7 @@ test("界面发起的评审：核对通过立即回报，评审在后台跑，�
   assert.ok((status[REVIEW_STATUS_KEY] ?? []).length >= 3, "每记一条进度或结束事件都提示一次后端");
 });
 
-test("界面发起的评审：任务已完成、点名的条目修订号过期、没有待评审的条目都被拒", async () => {
+test("界面发起的评审：点名的条目修订号过期、没有待评审的条目都被拒；库里状态一列写着早先的「已完成」时照常核对", async () => {
   const dir = withTwoItems(reviewWorkspace());
   const { run, status } = commandRig(dir, async () => JSON.stringify({ 发现: [] }));
   await run({ op_id: "ui-op-s", kind: "request_review", targets: [{ item_id: "UC-001", base_revision: 7 }] });
@@ -266,7 +266,7 @@ test("界面发起的评审：任务已完成、点名的条目修订号过期�
 
   withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare("UPDATE task SET status = '已完成'").run());
   await run({ op_id: "ui-op-c", kind: "request_review", targets: [] });
-  assert.equal(JSON.parse(status[USER_RESULT_KEY].at(-1)!).error.code, "task_closed");
+  assert.match(JSON.parse(status[USER_RESULT_KEY].at(-1)!).error.message, /没有需要评审的条目/);
 });
 
 // ───────────── 发布版本：开发期开关已退役，评审一条两类分开写 ─────────────

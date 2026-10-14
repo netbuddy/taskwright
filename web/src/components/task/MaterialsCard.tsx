@@ -30,12 +30,10 @@ export function pdfSummary(pdf: { pages: number; no_text_pages: number[] }): str
   return `${pdf.pages} 页${pdf.no_text_pages.length > 0 ? `，其中 ${pdf.no_text_pages.length} 页没有可读的文字` : ""}`;
 }
 
-export function MaterialsCard({ taskId, materials, closed, info, onView, onChanged, title = "材料", aside, intro, marked = false }: {
+export function MaterialsCard({ taskId, materials, info, onView, onChanged, title = "材料", aside, intro, marked = false }: {
   taskId: string;
   /** 用户放进来的材料（不含由 Word 材料生成的文件）。 */
   materials: Material[];
-  /** 任务已完成或已放弃：只能查看。 */
-  closed: boolean;
   info: ServiceInfo | null;
   onView: (material: Material) => void;
   /** 上传、替换或删除成功之后：重读任务。 */
@@ -140,51 +138,49 @@ export function MaterialsCard({ taskId, materials, closed, info, onView, onChang
                 <td className="num">{formatTimeShort(m.modified_at)}</td>
                 <td>
                   <a className="tp-lnk" role="button" onClick={() => onView(m)} data-testid="material-view">查看</a>
-                  {!closed && m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => pick(m.path)} data-testid="material-replace">替换</a>}
-                  {!closed && !m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
-                  {!closed && m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => setDeleting(m.path)} data-testid="material-delete">删除</a>}
+                  {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => pick(m.path)} data-testid="material-replace">替换</a>}
+                  {!m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
+                  {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => setDeleting(m.path)} data-testid="material-delete">删除</a>}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      {!closed && (
-        <div className="tp-drop">
-          <Upload.Dragger
-            accept={uploadAccept(info)}
-            showUploadList={false}
-            customRequest={async ({ file, onSuccess, onError }) => {
-              // 类型不符或超过上限的文件不发请求，直接报后端给的那句话（先查类型，与后端的先后相同）。
-              // 拖进来的文件与在选择框里选了「所有文件」时选中的文件都不经过滤，所以类型也要在这里查。
-              const refused = unsupportedTypeText(info, file as File) ?? tooLargeText(info, file as File);
-              if (refused) {
-                toast.error(refused);
-                onError?.(new Error(refused));
-                return;
-              }
-              // PDF 要等一会儿：先说一句，结果出来时原地换成结果（同一个 key）。
-              const waiting = pdfUploadingText((file as File).name);
-              const same = waiting ? { key: `upload:${(file as File).name}` } : undefined;
-              if (waiting && same) toast.running(same.key, waiting);
-              try {
-                const r = await api.uploadMaterial(taskId, file as File);
-                toast.success(`已上传：${r.path}`, same);
-                onSuccess?.({});
-                onChanged();
-              } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : "上传没有成功。", same);
-                onError?.(e as Error);
-              }
-            }}
-          >
-            <UploadOutlined className="up" />
-            <span data-testid="upload-hint">{uploadHintText(info)}</span>
-          </Upload.Dragger>
-        </div>
-      )}
+      <div className="tp-drop">
+        <Upload.Dragger
+          accept={uploadAccept(info)}
+          showUploadList={false}
+          customRequest={async ({ file, onSuccess, onError }) => {
+            // 类型不符或超过上限的文件不发请求，直接报后端给的那句话（先查类型，与后端的先后相同）。
+            // 拖进来的文件与在选择框里选了「所有文件」时选中的文件都不经过滤，所以类型也要在这里查。
+            const refused = unsupportedTypeText(info, file as File) ?? tooLargeText(info, file as File);
+            if (refused) {
+              toast.error(refused);
+              onError?.(new Error(refused));
+              return;
+            }
+            // PDF 要等一会儿：先说一句，结果出来时原地换成结果（同一个 key）。
+            const waiting = pdfUploadingText((file as File).name);
+            const same = waiting ? { key: `upload:${(file as File).name}` } : undefined;
+            if (waiting && same) toast.running(same.key, waiting);
+            try {
+              const r = await api.uploadMaterial(taskId, file as File);
+              toast.success(`已上传：${r.path}`, same);
+              onSuccess?.({});
+              onChanged();
+            } catch (e) {
+              toast.error(e instanceof ApiError ? e.message : "上传没有成功。", same);
+              onError?.(e as Error);
+            }
+          }}
+        >
+          <UploadOutlined className="up" />
+          <span data-testid="upload-hint">{uploadHintText(info)}</span>
+        </Upload.Dragger>
+      </div>
       {/* 替换用的文件选择框：放在上传区之后，看不见，由「替换」打开。 */}
-      {!closed && <input ref={picker} type="file" accept={uploadAccept(info)} hidden onChange={(e) => picked(e.target.files?.[0])} data-testid="material-replace-input" />}
+      <input ref={picker} type="file" accept={uploadAccept(info)} hidden onChange={(e) => picked(e.target.files?.[0])} data-testid="material-replace-input" />
       <Modal title={replacing ? `用《${replacing.file.name}》替换材料《${fileName(replacing.path)}》？` : ""} open={!!replacing}
         onCancel={() => { if (!swapping) setReplacing(null); }} onOk={() => void replace()} okText="替换" cancelText="取消" confirmLoading={swapping}
         cancelButtonProps={{ disabled: swapping }} closable={!swapping} maskClosable={!swapping} keyboard={!swapping} destroyOnHidden>

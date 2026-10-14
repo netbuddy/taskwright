@@ -16,7 +16,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../api/client";
 import type { ConversationMessage, Material, RevisionLogEntry, Item, Task, VersionView } from "../../api/types";
-import { missingArchiveText, versionMeta } from "../../model/versions";
+import { figuresText, missingArchiveText, versionMeta } from "../../model/versions";
 import { BUSY_TEXT, summaryOf } from "../../model/items";
 import { EMPTY_GROUP, groupItems, linkPhrase } from "../../model/domainNotes";
 import { OVERALL_LABEL, collectionLabel, firstParagraph, isDeprecated, isIntroPage, isOverall, isPending, sideLine, titleOf, whatOf } from "../../model/overall";
@@ -188,7 +188,7 @@ function VersionsBlock({ taskId, versions, onSelectRevision }: { taskId: string;
             {one.has_docx ? <a href={api.versionDocumentHref(taskId, one.version_no, "docx")} data-testid={`version-${one.version_no}-docx`}>下载 Word</a>
               : <span className="off" title={missingArchiveText(one)}>下载 Word</span>}
             {!one.has_markdown && !one.has_docx && <span className="why">{missingArchiveText(one)}</span>}
-            {one.has_docx && !one.figures_archived && <span className="why">Word 里的图是 Mermaid 文本</span>}
+            {figuresText(one) && <span className="why" data-testid={`version-${one.version_no}-figures`}>{figuresText(one)}</span>}
           </div>
         </div>
       ))}

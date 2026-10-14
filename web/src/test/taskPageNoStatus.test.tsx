@@ -1,4 +1,4 @@
-// 任务起点页在任务结束之后：没有活动目录与「进入工作台」，上传框一样不显示，只读说明写明原因；进行中的任务有「进入工作台」。
+// 任务没有状态：0.5.0 完成的任务升级后有第 1 版，任务起点页与别的任务一样，有「进入工作台」，没有状态的字样与只读说明。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -11,10 +11,10 @@ import { TaskPage } from "../pages/TaskPage";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-function taskPage(status: string) {
+function taskPage(versions: unknown[]) {
   const detail = {
-    task_id: "TASK-C", task_name: "结束之后", task_type: "演示", domain_tag: null, status, started_at: "", ended_at: null,
-    definition: { collections: [] }, items: [], completion: null, sessions: [], materials: [],
+    task_id: "TASK-C", task_name: "早先完成的任务", task_type: "演示", domain_tag: null, started_at: "",
+    definition: { collections: [] }, items: [], completion: null, sessions: [], materials: [], versions,
   } as unknown as TaskDetail;
   vi.spyOn(api, "getTask").mockResolvedValue(detail);
   vi.spyOn(api, "taskStatus").mockResolvedValue({ ok: true, status: null });
@@ -24,16 +24,11 @@ function taskPage(status: string) {
 }
 
 describe("任务起点页的「进入工作台」", () => {
-  it("任务进行中：显示，可以点", async () => {
-    taskPage("进行中");
+  it.each([["没有发布过", []], ["升级时补了第 1 版", [{ version_no: 1, revision_no: 7, published_at: "2026-10-05T10:00:00", actor: "executor", note: "升级前完成，当时文档未存档",
+    figure_count: null, figure_pictures: null, has_markdown: false, has_docx: false }]]])("%s：显示，可以点；没有状态的字样与只读说明", async (_name, versions) => {
+    taskPage(versions);
     expect(await screen.findByRole("button", { name: "进入工作台" })).toBeEnabled();
-  });
-
-  it.each(["已完成", "已放弃"])("任务%s：不显示，只读说明写明不能启动工作项", async (status) => {
-    taskPage(status);
-    // 先等到只读说明出现（页面已按这个任务的状态画好），再断言按钮不在。
-    await screen.findByText(`这个任务${status}，整页只读：不能启动工作项、新建会话、上传材料或修改条目。`);
-    expect(screen.queryByRole("button", { name: "进入工作台" })).toBeNull();
-    expect(screen.getByTestId("task-status")).toHaveTextContent(status);
+    expect(screen.queryByTestId("task-status")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/整页只读|已完成|进行中/);
   });
 });

@@ -114,9 +114,9 @@ test("提议结束的情形：它的工作项换了一站（向前或者退回�
   // 没有移动、助手又发一张新的进入卡片：开着的是新的那一条。
   const newer = reply(back, enterCard("modeling", "clarifying", [{ item_id: "OA-003", revision_no: 4 }]));
   assert.deepEqual([open(back)!.event_seq, open(back)!.items], [newer.seq, [{ item_id: "OA-003", revision_no: 4 }]]);
-  // 任务不再进行中：没有开着的提议。
+  // 库里状态一列写着早先的「已完成」：这一列不再读，提议照样开着。
   withTaskDatabase(back, { createIfMissing: false }, (db) => db.prepare("UPDATE task SET status = '已完成' WHERE status = ?").run(TASK_ACTIVE));
-  assert.equal(open(back), null);
+  assert.equal(open(back)!.event_seq, newer.seq);
   // 工作项被删除（用户删的）：它的会话归档、不属于任何工作项，里面没有提议。
   const deleted = workspace();
   enter(deleted, "writing");

@@ -85,7 +85,7 @@ for (const version of VERSIONS) {
       // 服务接手它：列表里是能打开的任务，任务页读得出条目与材料。
       const service = new Service(where.tasksDir, join(dataDir, "runs"), {}, { port: 1, registry });
       try {
-        assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.task_name, t.status, t.supported, t.item_count]), [[id, "图书借阅（样本）", "进行中", true, 4]]);
+        assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.task_name, t.unavailable, t.supported, t.item_count]), [[id, "图书借阅（样本）", null, true, 4]]);
         const page = service.taskPage(service.task(id)) as Record<string, any>;
         assert.deepEqual(page.materials.map((m: any) => m.path), ["inputs/材料.md"]);
         assert.deepEqual(page.task_type_versions, { copied: null, current: 4 }, "上一版建的任务没有记任务类型说明是第几版");
@@ -182,7 +182,7 @@ test("0.5.0 建的任务：阶段记录升成一个需求分析的工作项，�
 
     const service = new Service(where.tasksDir, join(dataDir, "runs"), {}, { port: 1, registry });
     try {
-      assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.status, t.supported]), [[id, "进行中", true]]);
+      assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.unavailable, t.supported]), [[id, null, true]]);
       // 任务详情不属于哪条会话：任务一级没有「现在的阶段」，按自由讨论的会话算是空闲；工作项在任务状况里列着。
       const page = service.taskPage(service.task(id)) as Record<string, any>;
       assert.equal(page.stage.current, "idle");

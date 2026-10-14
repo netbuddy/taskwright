@@ -50,13 +50,13 @@ test("新建的库带着版本记录表；记一次发布写一条事件与一�
   assert.equal(TASK_DB_VERSION, 8);
   assert.deepEqual(write(dir, (db) => [versionRecords(db, taskId), versionCount(db, taskId), nextVersionNo(db, taskId)]), [[], 0, 1]);
   const first = write(dir, (db) => recordVersion(db, { taskId, sessionId: "sess-1", callId: "ui-op-1", actor: "user", revisionNo: 4, note: "  首版 ",
-    markdownPath: "versions/v1/document.md", docxPath: "versions/v1/document.docx", figuresArchived: true }));
-  const second = write(dir, (db) => recordVersion(db, { taskId, sessionId: "sess-1", callId: "call-9", revisionNo: 7 }));
+    markdownPath: "versions/v1/document.md", docxPath: "versions/v1/document.docx", figures: { count: 3, pictures: 2 } }));
+  const second = write(dir, (db) => recordVersion(db, { taskId, sessionId: "sess-1", callId: "call-9", revisionNo: 7, figures: { count: 0, pictures: 0 } }));
   assert.deepEqual([first.version_no, second.version_no], [1, 2]);
   const rows = write(dir, (db) => versionRecords(db, taskId));
-  assert.deepEqual(rows.map((one) => [one.version_no, one.actor, one.revision_no, one.note, one.markdown_path, one.docx_path, one.figures_archived, one.event_seq]), [
-    [1, "user", 4, "首版", "versions/v1/document.md", "versions/v1/document.docx", true, first.event_seq],
-    [2, "executor", 7, null, null, null, false, second.event_seq],
+  assert.deepEqual(rows.map((one) => [one.version_no, one.actor, one.revision_no, one.note, one.markdown_path, one.docx_path, one.figure_count, one.figure_pictures, one.event_seq]), [
+    [1, "user", 4, "首版", "versions/v1/document.md", "versions/v1/document.docx", 3, 2, first.event_seq],
+    [2, "executor", 7, null, null, null, null, null, second.event_seq], // 一张图都没有：图数不写
   ]);
   const events = query<{ name: string; payload: string; actor: string }>(dir, "SELECT name, payload, actor FROM event WHERE name = ? ORDER BY seq", EVENT_VERSION_PUBLISHED);
   assert.deepEqual(events.map((one) => [JSON.parse(one.payload), one.actor]), [
@@ -83,7 +83,7 @@ test("格式 7 升到 8：早先「已完成」的任务补一条第 1 版——
   const rows = query<Record<string, unknown>>(dir, "SELECT * FROM version_record").map((one) => ({ ...one }));
   const done = query<{ seq: number }>(dir, "SELECT seq FROM event WHERE name = 'TASK_COMPLETED'")[0].seq;
   assert.deepEqual(rows, [{ version_no: 1, task_id: taskId, published_at: "2026-10-01T11:00:00", actor: "user", revision_no: 2, note: UPGRADED_VERSION_NOTE,
-    markdown_path: null, docx_path: null, figures_archived: 0, event_seq: done }]);
+    markdown_path: null, docx_path: null, figure_count: null, figure_pictures: null, event_seq: done }]);
   // 状态一列照旧留着，不读不改；没有新的事件。
   assert.deepEqual(query(dir, "SELECT status FROM task").map((one) => ({ ...one })), [{ status: "已完成" }]);
   assert.equal(query(dir, "SELECT seq FROM event WHERE name = ?", EVENT_VERSION_PUBLISHED).length, 0);

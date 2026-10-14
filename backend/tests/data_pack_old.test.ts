@@ -66,7 +66,7 @@ for (const version of VERSIONS) {
 
       const service = new Service(target.tasksDir, target.runsDir, {}, { port: 1, registry: null });
       try {
-        assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.task_name, t.status, t.supported, t.item_count]), [[id, "图书借阅（样本）", "进行中", true, 4]]);
+        assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.task_name, t.unavailable, t.supported, t.item_count]), [[id, "图书借阅（样本）", null, true, 4]]);
         assert.deepEqual((service.taskPage(service.task(id)) as Record<string, any>).materials.map((m: any) => m.path), ["inputs/材料.md"]);
       } finally {
         await service.close();

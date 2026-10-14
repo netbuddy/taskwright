@@ -52,7 +52,7 @@ describe("unsupportedTypeText", () => {
 
 describe("任务页的上传框", () => {
   const detail = {
-    task_id: "TASK-D", task_name: "去重", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-D", task_name: "去重", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [] }, items: [], completion: null, sessions: [],
     materials: [{ path: "inputs/需求.md", bytes: 27, modified_at: "2026-09-27T10:00:00+08:00", derived_from: null }],
   } as unknown as TaskDetail;
@@ -113,7 +113,7 @@ describe("任务页的上传框", () => {
 
 describe("对话区的「附一份材料」", () => {
   const task = {
-    task_id: "TASK-D", task_name: "去重", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-D", task_name: "去重", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [] }, completion: null, items: [],
   } as unknown as Task;
 

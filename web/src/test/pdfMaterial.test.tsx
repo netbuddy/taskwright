@@ -45,7 +45,7 @@ const PDF = "inputs/借阅管理办法.pdf";
 function OpenItem({ sources }: { sources: unknown[] }) {
   const item = { item_id: "UC-001", collection: "功能用例", title: "借阅图书", revision_no: 1, revisions: [1], revision_by: "executor", revision_at: "",
     reviews: [], confirmations: [], confirmation_stale: false, sources, fields: { 用例名称: "借阅图书" } } as unknown as Item;
-  const task = { task_id: "TASK-S", task_name: "来源", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  const task = { task_id: "TASK-S", task_name: "来源", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [{ name: "功能用例", prefix: "UC", needs_review: false, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] }] },
     completion: null, items: [item] } as unknown as Task;
   return <Wrap><ItemsPanel task={task} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected="UC-001" onSelect={() => {}}
@@ -236,7 +236,7 @@ describe("来源标签与任务页材料卡", () => {
     let finish: (value: { path: string }) => void = () => {};
     const sent = vi.spyOn(api, "uploadMaterial").mockImplementation(() => new Promise((ok) => { finish = ok; }));
     const onChanged = vi.fn();
-    render(<Wrap><ToastProvider><MaterialsCard taskId="TASK-1" materials={[]} closed={false} info={null} onView={() => {}} onChanged={onChanged} /></ToastProvider></Wrap>);
+    render(<Wrap><ToastProvider><MaterialsCard taskId="TASK-1" materials={[]} info={null} onView={() => {}} onChanged={onChanged} /></ToastProvider></Wrap>);
     // 每传一次，上传框会换一个新的文件输入框，所以每次现找。
     const choose = (file: File) => fireEvent.change(document.querySelector("input[type=file]") as HTMLInputElement, { target: { files: [file] } });
     choose(new File(["%PDF"], "办法.pdf", { type: "application/pdf" }));
@@ -263,7 +263,7 @@ describe("来源标签与任务页材料卡", () => {
     expect(pdfSummary({ pages: 12, no_text_pages: [] })).toBe("12 页");
     expect(pdfSummary({ pages: 12, no_text_pages: [3, 7] })).toBe("12 页，其中 2 页没有可读的文字");
     const onView = vi.fn();
-    render(<Wrap><MaterialsCard taskId="TASK-1" materials={[MATERIALS[0], MATERIALS[4]]} closed={false} info={null} onView={onView} onChanged={() => {}} /></Wrap>);
+    render(<Wrap><MaterialsCard taskId="TASK-1" materials={[MATERIALS[0], MATERIALS[4]]} info={null} onView={onView} onChanged={() => {}} /></Wrap>);
     const rows = screen.getAllByTestId("material-row");
     expect(rows[0].querySelector("[data-testid=material-pdf]")!.textContent).toBe("5 页，其中 1 页没有可读的文字");
     expect(rows[1].querySelector("[data-testid=material-pdf]")).toBeNull();

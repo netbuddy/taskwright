@@ -67,7 +67,7 @@ import { DefinitionError, FIELD_ITEM_REF, FIELD_TEXT_LIST, KEEP_PENDING_STATUS, 
 import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
 import { SaveRejected, type Source, type Support, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { carrySources } from "./source_carry.ts";
-import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
+import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { publishVersion } from "./publish_version.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
@@ -76,6 +76,7 @@ import {
 } from "./stage.ts";
 import { openProposal } from "./stage_proposal.ts";
 import { type StageMoveOutcome, attachSession, deleteWorkItem, moveStage, sessionWorkItem, startActivity, workItemById, workItemName } from "./stage_read.ts";
+import type { FigureTally } from "./versions.ts";
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
 export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
@@ -163,7 +164,7 @@ export function stopRunDetails(opId: string | null) {
 }
 
 /**
- * request_review 的核对：操作编号、任务在不在、是不是进行中、targets 的形状。targets 为空列表时返回 null（评全部待评审的条目），
+ * request_review 的核对：操作编号、任务在不在、targets 的形状。targets 为空列表时返回 null（评全部待评审的条目），
  * 否则返回点名的条目与各自的修订号（base_revision）。条目在不在、所在集合要不要评审、修订号对不对，由 prepareReviews 核对。
  */
 export function checkReviewRequest(ctx: Ctx, request: UserOpRequest): { item_id: string; revision_no: number }[] | null {
@@ -181,12 +182,11 @@ export function checkReviewRequest(ctx: Ctx, request: UserOpRequest): { item_id:
   if (new Set(targets.map((t) => t.item_id)).size !== targets.length) throw new UserOpError("bad_request", "targets 里有重复的条目。");
   try {
     withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
       if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
         throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
       }
-      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再评审。`, { status: task.status });
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
@@ -374,14 +374,13 @@ export function describeFields(fields: Record<string, unknown>): string {
 function inspect(ctx: Ctx, request: UserOpRequest, kind: UserOpKind): Inspected {
   try {
     return withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT task_id, status, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
-        | { task_id: string; status: string; definition_text: string }
+      const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+        | { task_id: string; definition_text: string }
         | undefined;
       if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
       if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
         throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
       }
-      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再改。`, { status: task.status });
       const raw = request.targets as unknown[];
       if (kind === "undo") {
         const target = raw[0];
@@ -723,14 +722,13 @@ export const START_SESSION_RETIRED = "start_activity 的 session 已经停用：
 /** 这条会话不在做流程的工作项时，移动阶段被拒的那句话。 */
 export const NOT_IN_FLOW_TEXT = "本会话不在做工作流程的工作项，不能移动阶段。要做哪一项活动，请从任务起点页启动一个工作项。";
 
-/** 核对任务在、是这个任务、还在进行中；返回任务编号。verb 是任务已经不在进行中时拒绝的话里说的动作。 */
-function activeTaskId(db: DatabaseSync, request: UserOpRequest, verb: string): string {
-  const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+/** 核对任务在、是这个任务；返回任务编号。 */
+function taskIdOf(db: DatabaseSync, request: UserOpRequest): string {
+  const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
   if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
   if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
     throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
   }
-  if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再${verb}。`, { status: task.status });
   return task.task_id;
 }
 
@@ -754,7 +752,7 @@ function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOp
   const reason = typeof fields.reason === "string" ? fields.reason.trim() : "";
   let voided = false;
   const outcome: StageMoveOutcome = inTask(ctx, (db) => {
-    const taskId = activeTaskId(db, request, "移动阶段");
+    const taskId = taskIdOf(db, request);
     const proposal = openProposal(db, taskId, ctx.sessionId);
     const done = moveStage(db, ctx.workspaceDir, { taskId, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, reason);
     // 用户做的正是提议的那一步（进入或者退回提议的那个阶段）：提议是办成了，不算作废。
@@ -790,7 +788,7 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
   if (fields.session !== undefined) throw new UserOpError("bad_request", START_SESSION_RETIRED);
   const inFlow = fields.in_flow;
   const outcome: StageMoveOutcome = inTask(ctx, (db) => {
-    const taskId = activeTaskId(db, request, "启动工作项");
+    const taskId = taskIdOf(db, request);
     return startActivity(db, ctx.workspaceDir, { taskId, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, "", scope);
   });
   if (outcome.from === null) throw new UserOpError("rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] });
@@ -830,7 +828,7 @@ function continueActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest):
   const fields = isObject(request.fields) ? request.fields : {};
   const recordId = recordIdOf("continue_activity", fields, true)!;
   const item = inTask(ctx, (db) => {
-    const taskId = activeTaskId(db, request, "接着做工作项");
+    const taskId = taskIdOf(db, request);
     const found = workItemById(db, taskId, recordId);
     if (found === null) throw new UserOpError("not_found", `没有记录号是 ${recordId} 的工作项（可能已经删除）。`);
     if (sessionWorkItem(db, taskId, ctx.sessionId) !== null) {
@@ -855,7 +853,7 @@ function deleteWorkItemByUser(ctx: Ctx, opId: string, request: UserOpRequest): U
   const fields = isObject(request.fields) ? request.fields : {};
   const recordId = recordIdOf("delete_work_item", fields, false);
   const deleted = inTask(ctx, (db) => {
-    const taskId = activeTaskId(db, request, "删除工作项");
+    const taskId = taskIdOf(db, request);
     const item = recordId === null ? sessionWorkItem(db, taskId, ctx.sessionId) : workItemById(db, taskId, recordId);
     if (item === null) {
       if (recordId !== null) throw new UserOpError("not_found", `没有记录号是 ${recordId} 的工作项（可能已经删除）。`);
@@ -872,9 +870,17 @@ function deleteWorkItemByUser(ctx: Ctx, opId: string, request: UserOpRequest): U
 }
 
 /**
- * 发布版本：见文件头。fields 写 { revision_no, version_no, markdown_path, docx_path, figures_archived, note }：页面当时看到的修订号、
- * 任务服务定下的版本号与它已经写好的两个存档文件的位置、文档里的图存了没有、发布说明（可空）。
+ * 发布版本：见文件头。fields 写 { revision_no, version_no, markdown_path, docx_path, figure_count, figure_pictures, note }：页面当时看到的修订号、
+ * 任务服务定下的版本号与它已经写好的两个存档文件的位置、文档里有几张图与其中几张在 Word 里是图片（一张图都没有时不写）、发布说明（可空）。
  */
+/** fields 里的图数：两个都是不小于 0 的整数、图片不多于图时才算，张数为 0 时也是 null。 */
+function tallyOf(fields: Record<string, unknown>): FigureTally | null {
+  const count = fields.figure_count;
+  const pictures = fields.figure_pictures;
+  if (!Number.isInteger(count) || !Number.isInteger(pictures) || (count as number) <= 0 || (pictures as number) < 0 || (pictures as number) > (count as number)) return null;
+  return { count: count as number, pictures: pictures as number };
+}
+
 function publishVersionByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
   const fields = isObject(request.fields) ? request.fields : {};
   const revisionNo = fields.revision_no;
@@ -887,7 +893,7 @@ function publishVersionByUser(ctx: Ctx, opId: string, request: UserOpRequest): U
   let outcome;
   try {
     outcome = publishVersion({ workspaceDir: ctx.workspaceDir, sessionId: ctx.sessionId, callId: opId, consent: { source: "page", revisionNo: revisionNo as number },
-      actor: ACTOR_USER, note }, { markdownPath: path(fields.markdown_path), docxPath: path(fields.docx_path), figuresArchived: fields.figures_archived === true },
+      actor: ACTOR_USER, note }, { markdownPath: path(fields.markdown_path), docxPath: path(fields.docx_path), figures: tallyOf(fields) },
     { versionNo: versionNo as number, revisionNo: revisionNo as number });
   } catch (error) {
     if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
@@ -915,10 +921,9 @@ function setReviewRules(ctx: Ctx, opId: string, request: UserOpRequest): UserOpR
   }
   try {
     const outcome = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT task_id, status, definition_path, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
-        { task_id: string; status: string; definition_path: string; definition_text: string } | undefined;
+      const task = db.prepare("SELECT task_id, definition_path, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+        { task_id: string; definition_path: string; definition_text: string } | undefined;
       if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
-      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再改评审规则。`, { status: task.status });
       const before = reviewSpecOf(task.definition_text, collection);
       if (!before) throw new UserOpError("rejected", `集合「${collection}」没有评审规则，没有可以开关的规则。`, { reasons: [`集合「${collection}」没有评审规则`] });
       const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));

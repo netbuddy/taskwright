@@ -44,7 +44,7 @@ const TBD = item({ item_id: "TBD-001", collection: "问题", title: "借期", fi
 
 function task(items: Item[], over: Partial<Task> = {}): Task {
   return {
-    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
     definition: { collections: [
       { name: "功能用例", prefix: "UC", needs_review: true, review_rules: RULES, fields: [
         { name: "用例名称", type: "文本", required: true, values: null },
@@ -210,7 +210,7 @@ describe("完成条件面板里的评审一条", () => {
   it("分两组写待评审与评审不通过；「评审这 N 条」评待评审的，「打开 X」打开不通过的；不再有评审工具还没有的说法", () => {
     const onReview = vi.fn();
     const onOpen = vi.fn();
-    render(<CompletionPanel completion={completion} status="进行中" items={items} onReview={onReview} onOpen={onOpen} />);
+    render(<CompletionPanel completion={completion} items={items} onReview={onReview} onOpen={onOpen} />);
     expect(screen.getByTestId("cond-review")).toHaveTextContent("每个条目评审通过：还差 3 条，UC-004、UC-005 待评审；UC-003 评审不通过。");
     fireEvent.click(screen.getByTestId("cond-review-these"));
     expect(onReview).toHaveBeenCalledWith([PENDING_A, PENDING_B]);
@@ -218,7 +218,7 @@ describe("完成条件面板里的评审一条", () => {
     fireEvent.click(screen.getByTestId("cond-open-UC-003"));
     expect(onOpen).toHaveBeenCalledWith("UC-003");
     cleanup();
-    render(<CompletionPanel completion={{ ...completion, all_met: false }} status="已完成" items={items} />);
+    render(<CompletionPanel completion={{ ...completion, all_met: false }} items={items} />);
     expect(screen.queryByText(/评审工具还没有/)).toBeNull();
     expect(screen.queryByTestId("cond-review-these")).toBeNull();
   });

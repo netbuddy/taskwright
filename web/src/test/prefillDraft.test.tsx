@@ -19,7 +19,7 @@ const Wrap = ({ children }: { children: ReactNode }) => (
 );
 
 const task = {
-  task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, status: "进行中", started_at: "", ended_at: null,
+  task_id: "TASK-001", task_name: "演示任务", task_type: "演示", domain_tag: null, started_at: "",
   definition: { collections: [{ name: "问题", prefix: "TBD", fields: [
     { name: "事项", type: "文本", required: true, values: null },
     { name: "状态", type: "枚举", required: true, values: ["未解决", "已解决", "用户决定保留"] }] }] },

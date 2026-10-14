@@ -329,7 +329,7 @@ export function ItemsPanel({
       </div>
       <div className={`prog-detail${showProgress ? " show" : ""}`}>
         <div>这份交付物什么时候算做完，由下面这几条决定：</div>
-        {showProgress && <CompletionPanel completion={task.completion} status={task.status} items={task.items} task={task}
+        {showProgress && <CompletionPanel completion={task.completion} items={task.items} task={task}
           reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
           onReview={onReview ? (list) => reviewItems(list, `评审 ${list.map((i) => i.item_id).join("、")}`) : undefined}
           onOpen={(id) => { setShowProgress(false); onSelect(id); }} />}

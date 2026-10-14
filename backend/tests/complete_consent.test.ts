@@ -66,8 +66,8 @@ test("打字说发布被拒；助手发了是否已经完成的卡片、用户�
     await send({ text: `我选：${AGREE}`, client_id: "c-3", origin: "card_choice", card: { reply_message_id: cardEntry, kind: "choose", choice: "complete" } });
 
     assert.deepEqual(db("SELECT call_id FROM tool_rejection WHERE tool_name = 'publish_version'").map((r: Dict) => r.call_id), ["call-complete-typed"]);
-    assert.deepEqual(db("SELECT version_no, actor, revision_no, note, markdown_path, docx_path, figures_archived FROM version_record").map((r: Dict) => ({ ...r })), [
-      { version_no: 1, actor: "executor", revision_no: 2, note: "首版", markdown_path: "versions/v1/document.md", docx_path: "versions/v1/document.docx", figures_archived: 1 }]);
+    assert.deepEqual(db("SELECT version_no, actor, revision_no, note, markdown_path, docx_path, figure_count, figure_pictures FROM version_record").map((r: Dict) => ({ ...r })), [
+      { version_no: 1, actor: "executor", revision_no: 2, note: "首版", markdown_path: "versions/v1/document.md", docx_path: "versions/v1/document.docx", figure_count: null, figure_pictures: null }]);
     assert.deepEqual(db("SELECT call_id FROM event WHERE name = 'VERSION_PUBLISHED'").map((r: Dict) => r.call_id), ["call-complete"]);
     assert.ok(existsSync(join(dir, "tasks", taskId, "versions", "v1", "document.docx")));
     assert.match(readFileSync(join(dir, "tasks", taskId, "versions", "v1", "document.md"), "utf-8"), /借书/);
@@ -94,7 +94,7 @@ test("页面发布：看到的修订号不是现在的被拒、不留存档；�
 
     const done = await publish({ revision_no: 2, note: "首版" });
     assert.equal(done.status, 200);
-    assert.deepEqual([done.body.version_no, done.body.revision_no, done.body.figures_archived], [1, 2, true]);
+    assert.deepEqual([done.body.version_no, done.body.revision_no, done.body.figure_count, done.body.figure_pictures], [1, 2, null, null]);
     assert.deepEqual(db("SELECT actor, call_id FROM event WHERE name = 'VERSION_PUBLISHED'").map((r: Dict) => [r.actor, r.call_id]), [["user", done.body.op_id]]);
     assert.deepEqual(db("SELECT version_no, note, markdown_path FROM version_record").map((r: Dict) => ({ ...r })), [{ version_no: 1, note: "首版", markdown_path: "versions/v1/document.md" }]);
     assert.ok(existsSync(join(dir, "tasks", taskId, "versions", "v1", "document.md")));
