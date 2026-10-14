@@ -1,7 +1,7 @@
 /**
  * 扩展入口：只做登记，不含任何逻辑。
  *
- * 这一版登记「保存修订」「完成任务」两个写入工具、「查看条目」「查询任务状态」与「查找知识库」三个只读工具、执行者对用户说话一律要经的「回复」工具（合格时它结束本次运行），
+ * 这一版登记「保存修订」「发布版本」两个写入工具、「查看条目」「查询任务状态」与「查找知识库」三个只读工具、执行者对用户说话一律要经的「回复」工具（合格时它结束本次运行），
  * 以及「请求评审」工具（它代表另一个代理——评审者——的接缝；评审的主入口是用户在界面上点「评审」，走 /tw-user）
  * （2026-09-21 起任务由用户在界面上创建，执行者不再有「创建任务」工具，
  * 创建任务走不经 pi 的命令行入口 cli/create_task.mts），挂一个在打开会话时追加任务现状消息的扩展、
@@ -30,7 +30,7 @@ import { withTuiRenderers } from "./hooks/tui_render.ts";
 import { registerGetItem } from "./tools/get_item.ts";
 import { registerGetTaskStatus } from "./tools/get_task_status.ts";
 import { registerSearchKnowledge } from "./tools/search_knowledge.ts";
-import { registerCompleteTask } from "./tools/complete_task.ts";
+import { registerPublishVersion } from "./tools/publish_version.ts";
 import { registerRequestReview } from "./tools/request_review.ts";
 import { registerIntentRecord } from "./hooks/intent_record.ts";
 import { registerToolLimits } from "./hooks/tool_limits.ts";
@@ -42,7 +42,7 @@ export default function (pi: ExtensionAPI) {
   registerGetItem(pi);
   registerGetTaskStatus(pi);
   registerSearchKnowledge(pi);
-  registerCompleteTask(pi);
+  registerPublishVersion(pi);
   registerRequestReview(pi);
   registerBackendReports(pi);
   registerTaskStatus(pi);

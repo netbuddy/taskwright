@@ -17,7 +17,7 @@ import { type Materials, OTHER_ITEM_BRIEF_LIMIT, OTHER_ITEMS_LIMIT, ReviewError,
 import { type Complete, runReviews } from "../src/lib/review_run.ts";
 import { reviewSlot } from "../src/lib/review_ui.ts";
 import { REVIEW_STATUS_KEY, USER_COMMAND, USER_EDIT_CUSTOM_TYPE, USER_RESULT_KEY, registerUserCommands } from "../src/hooks/user_commands.ts";
-import { completeTask } from "../src/lib/complete_task.ts";
+import { preparePublish } from "../src/lib/publish_version.ts";
 // @ts-ignore 仓库根目录的脚本是纯 JavaScript 模块
 import { documents, renderDocument } from "../../scripts/render-rules.mjs";
 import { DEFINITION_PATH, MATERIAL_TEXT, SOURCE, callIn, demoDefinition, makeWorkspace, query } from "./helpers.ts";
@@ -269,14 +269,14 @@ test("界面发起的评审：任务已完成、点名的条目修订号过期�
   assert.equal(JSON.parse(status[USER_RESULT_KEY].at(-1)!).error.code, "task_closed");
 });
 
-// ───────────── 完成任务：开发期开关已退役，评审一条两类分开写 ─────────────
+// ───────────── 发布版本：开发期开关已退役，评审一条两类分开写 ─────────────
 
-test("完成任务的拒绝文字把还没评审与评审不合规分开写；环境变量不再能让评审一条视为满足", async () => {
+test("发布版本的拒绝文字把还没评审与评审不合规分开写；环境变量不再能让评审一条视为满足", async () => {
   const dir = withTwoItems(reviewWorkspace());
   await runReviews(callIn(dir), [{ item_id: "UC-002", revision_no: 1 }], { complete: fakeReviewer({ "UC-002": JSON.stringify({ 发现: [finding("D-R1", { 序号: 1 })] }) }).complete, model: "假" });
   process.env.TASKWRIGHT_DEV_REVIEW_AS_MET = "1";
   try {
-    assert.throws(() => completeTask(callIn(dir)), /UC-001 还没评审；UC-002 评审不合规。/);
+    assert.throws(() => preparePublish(callIn(dir)), /UC-001 还没评审；UC-002 评审不合规。/);
   } finally {
     delete process.env.TASKWRIGHT_DEV_REVIEW_AS_MET;
   }

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, completeRefusal, flowStartNode, launchView, startReadingCardGuidance, STAY_IDLE_OPTION, workItemContinuedSentence, workItemDeletedSentence, flowExistsText, CONTINUE_CLARIFY_KEY, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
+  activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, publishRefusal, flowStartNode, launchView, startReadingCardGuidance, STAY_IDLE_OPTION, workItemContinuedSentence, workItemDeletedSentence, flowExistsText, CONTINUE_CLARIFY_KEY, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
   itemRefusal, judgeMove, nextStage, pageRefusal, positionName, reviewRefusal, type Stage, STAGE_NAMES, stageByName, stageEnteredBy, STAGES, START_ITEMS_KEY, STAY_OPTIONS,
 } from "../src/lib/stage.ts";
 
@@ -53,8 +53,8 @@ test("提议的卡片怎样写：往前一段一张、两个选项的键与文�
   assert.equal(forwardCardGuidance("document"), "");
 });
 
-test("每个阶段助手能写什么：页与问题一直可以，图从整理建模起，别的集合的条目与请求评审从写条目起，完成任务在评审确认与编写文档；编写文档只写页与问题", () => {
-  const row = (stage: Stage) => (["page", "problem", "diagram", "item", "review", "complete"] as const).map((kind) => canWrite(stage, kind));
+test("每个阶段助手能写什么：页与问题一直可以，图从整理建模起，别的集合的条目与请求评审从写条目起，发布版本在评审确认与编写文档；编写文档只写页与问题", () => {
+  const row = (stage: Stage) => (["page", "problem", "diagram", "item", "review", "publish"] as const).map((kind) => canWrite(stage, kind));
   assert.deepEqual(row("reading"), [true, true, false, false, false, false]);
   assert.deepEqual(row("clarifying"), [true, true, false, false, false, false]);
   assert.deepEqual(row("modeling"), [true, true, true, false, false, false]);
@@ -67,7 +67,7 @@ test("每个阶段助手能写什么：页与问题一直可以，图从整理�
   assert.deepEqual(diagramRefusal("document"), ["任务现在在编写文档阶段，这个阶段不能画图、改图或删图", leave("modeling")]);
   assert.deepEqual(reviewRefusal("document"), ["任务现在在编写文档阶段，这个阶段不能请求评审", leave("reviewing")]);
   assert.equal(leave("reviewing"), "编写文档阶段只补写主题页的文字。要做这件事，得先回到评审确认：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_review「退回评审确认」、stay_in_stage「留在本段」，由用户在卡片上点");
-  assert.deepEqual([completeRefusal("document"), completeRefusal("reviewing"), pageRefusal("document", "add"), pageRefusal("document", "update", ["它是什么"])], [null, null, null, null]);
+  assert.deepEqual([publishRefusal("document"), publishRefusal("reviewing"), pageRefusal("document", "add"), pageRefusal("document", "update", ["它是什么"])], [null, null, null, null]);
 });
 
 test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么；怎么办写这一步要先做什么、谁能移动", () => {
@@ -95,10 +95,10 @@ test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么�
   }
   assert.deepEqual([reviewRefusal("writing"), reviewRefusal("reviewing")], [null, null]);
 
-  assert.deepEqual(completeRefusal("writing"), ["任务现在在写条目阶段，完成任务要在评审确认阶段",
-    "条目写完之后，要由用户在卡片上选「进入评审确认」进入评审确认，再完成任务。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续本阶段」"]);
-  assert.match(completeRefusal("clarifying")![1], /^要先写条目、再由用户进入评审确认，才能完成任务。进入写条目要由用户在卡片上选「开始写条目」/);
-  assert.equal(completeRefusal("reviewing"), null);
+  assert.deepEqual(publishRefusal("writing"), ["任务现在在写条目阶段，发布版本要在评审确认阶段",
+    "条目写完之后，要由用户在卡片上选「进入评审确认」进入评审确认，再发布版本。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续本阶段」"]);
+  assert.match(publishRefusal("clarifying")![1], /^要先写条目、再由用户进入评审确认，才能发布版本。进入写条目要由用户在卡片上选「开始写条目」/);
+  assert.equal(publishRefusal("reviewing"), null);
 });
 
 test("总体分析的页：前四个阶段随便写；评审确认阶段只能改状态与改看，不能新立、不能删", () => {
@@ -123,7 +123,7 @@ test("空闲：写法是 idle、名字是「空闲」，与六个阶段并列而
 });
 
 test("空闲时助手能写什么：与澄清相同，只有页与问题；被拦时事实写本会话不属于任何工作项，怎么办写由用户从任务起点页启动一个工作项", () => {
-  const row = (stage: Stage | typeof IDLE) => (["page", "problem", "diagram", "item", "review", "complete"] as const).map((kind) => canWrite(stage, kind));
+  const row = (stage: Stage | typeof IDLE) => (["page", "problem", "diagram", "item", "review", "publish"] as const).map((kind) => canWrite(stage, kind));
   assert.deepEqual(row(IDLE), [true, true, false, false, false, false]);
   assert.deepEqual(row(IDLE), row("clarifying"));
   const how = (where: string) => `${where}。启动哪一项活动由用户决定：请用户从任务起点页启动一个工作项。本会话里你可以立主题页、改主题页、记问题条目`;
@@ -131,11 +131,11 @@ test("空闲时助手能写什么：与澄清相同，只有页与问题；被�
   assert.equal(itemRefusal(IDLE, "delete", "约束")![0], "本会话不属于任何工作项，这时不能删除「约束」的条目");
   assert.deepEqual(diagramRefusal(IDLE), ["本会话不属于任何工作项，这时不能画图、改图或删图", how("图要在整理建模这项活动里画")]);
   assert.deepEqual(reviewRefusal(IDLE), ["本会话不属于任何工作项，这时不能请求评审", how("评审要在写条目或评审确认这项活动里请求")]);
-  assert.deepEqual(completeRefusal(IDLE), ["本会话不属于任何工作项，这时不能完成任务", how("完成任务要在评审确认或编写文档这项活动里做")]);
+  assert.deepEqual(publishRefusal(IDLE), ["本会话不属于任何工作项，这时不能发布版本", how("发布版本要在评审确认或编写文档这项活动里做")]);
   // 页：空闲时新立、修改、删除都可以。
   assert.deepEqual([pageRefusal(IDLE, "add"), pageRefusal(IDLE, "update", ["它是什么"]), pageRefusal(IDLE, "delete")], [null, null, null]);
   // 空闲时的拒绝里不说「阶段」，也不让助手发进入某一段的卡片：启动哪一项活动由用户在任务起点页上定。
-  for (const refusal of [itemRefusal(IDLE, "add", "功能用例"), diagramRefusal(IDLE), reviewRefusal(IDLE), completeRefusal(IDLE)]) {
+  for (const refusal of [itemRefusal(IDLE, "add", "功能用例"), diagramRefusal(IDLE), reviewRefusal(IDLE), publishRefusal(IDLE)]) {
     assert.doesNotMatch(refusal!.join(""), /阶段|请选择卡片|enter_|start_items|开展|任务状况卡/);
     assert.match(refusal![1], /从任务起点页启动一个工作项/);
   }

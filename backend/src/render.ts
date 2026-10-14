@@ -53,7 +53,7 @@ const IN_GROUP = /\{\{#组内每个\}\}\n?(.*?)\{\{\/组内每个\}\}\n?/gs;
 const NONE = /\{\{#没有 (.+?)\}\}\n?(.*?)\{\{\/没有\}\}\n?/gs;
 const FIELD = /\{\{([^\n]+?)\}\}/g;
 
-type Locate = (locator: string) => string | null;
+export type Locate = (locator: string) => string | null;
 type Dict = Record<string, any>;
 
 /** 值写成文字（字符串、数字、布尔、空）。 */
@@ -132,7 +132,7 @@ export const NO_SOURCES_TEXT = "（无）";
 /** 出自知识库文档的来源在文档里的种类写法（库里的种类仍是「文档原文」，与页面上的标签同一个叫法）。 */
 const KNOWLEDGE_WORD = "知识库";
 /** 知识库编号 → 名字；那个知识库已经不在（或服务没有知识库）时返回 null。 */
-type LibraryName = (id: string) => string | null;
+export type LibraryName = (id: string) => string | null;
 
 /**
  * 条目的来源写成一句话。出自知识库文档的来源（出处是 knowledge/知识库编号/文档名）种类写「知识库」，出处写成

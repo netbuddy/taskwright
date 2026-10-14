@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { checkCompletion } from "../src/lib/conditions.ts";
-import { completeTask } from "../src/lib/complete_task.ts";
+import { preparePublish } from "../src/lib/publish_version.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
@@ -171,7 +171,7 @@ test("mark_viewed 幂等：同一条目同一修订已经接受过的不再写�
   db.close();
 });
 
-test("已读是条目级、单向的：看过旧修订的条目被改后不算未读；从没看过的才进未读清单，完成任务被拒时写「还有 N 条你从没看过」", () => {
+test("已读是条目级、单向的：看过旧修订的条目被改后不算未读；从没看过的才进未读清单，发布版本被拒时写「还有 N 条你从没看过」", () => {
   const dir = taskWithItems();
   op(dir, { kind: "mark_viewed", targets: [{ item_id: "UC-001", base_revision: 1 }] });
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "用口令登录" } }] });
@@ -179,16 +179,16 @@ test("已读是条目级、单向的：看过旧修订的条目被改后不算�
   const status = getTaskStatus(dir);
   // UC-001 看过修订 1、现在是修订 2，当前修订上没有标记，仍不算未读；UC-002 从没看过。
   assert.deepEqual(status.details.unread, [{ item_id: "UC-002", title: "退出登录", revision_no: 3 }]);
-  assert.match(status.text, /未读的条目 1 条（用户从没打开看过它们；问用户要不要完成任务之前，先告诉用户还有几条没看）：UC-002「退出登录」。/);
+  assert.match(status.text, /未读的条目 1 条（用户从没打开看过它们；问用户要不要发布版本之前，先告诉用户还有几条没看）：UC-002「退出登录」。/);
   const refusedText = (() => {
     try {
-      completeTask({ workspaceDir: dir, sessionId: "s", callId: "call-done" });
+      preparePublish({ workspaceDir: dir, sessionId: "s", callId: "call-done" });
     } catch (error) {
       return (error as Error).message;
     }
     return assert.fail("应当被拒绝");
   })();
-  assert.match(refusedText, /^任务没有标为已完成。\n还有 1 条你从没看过：UC-002「退出登录」。\n/);
+  assert.match(refusedText, /^第 1 版没有发布。\n还有 1 条你从没看过：UC-002「退出登录」。\n/);
   op(dir, { kind: "mark_viewed", targets: [{ item_id: "UC-002", base_revision: 3 }] });
   assert.deepEqual(getTaskStatus(dir).details.unread, []);
   assert.match(getTaskStatus(dir).text, /未读的条目：没有/);

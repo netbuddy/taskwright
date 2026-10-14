@@ -12,7 +12,7 @@
 7. 用户 agent 点「进入编写文档」；助手给业务流程这一章补一页导语，发请过目的卡片并点名这一页。
 8. 用户 agent 打开导语页，点「看过了，生成文档」：只留一条界面操作通知、把这一页记为看过，助手不因此运行。
 9. 用户 agent 说文档可以了，请完成任务；助手发是否完成的卡片。
-10. 用户 agent 点「已完成，提交交付物」；助手完成任务。
+10. 用户 agent 点「已完成，发布版本」；助手发布第 1 版。
 11. 用户 agent 看到任务完成，表示目标达成。
 
 两遍用同一个假模型端点：助手的回答按先后写成一串，重复两次；用户 agent 与评审者的回答写成规则，靠请求里的话认，两遍通用。
@@ -68,7 +68,7 @@ ONE_PASS = [
     say("补写了业务流程这一章的导语。", READ_CARD),
     # 这一句是答用户自己打的那句话，要先写下对它的理解。
     {"text": intent("request", "文档可以了，完成任务"), **say("完成条件都满足了，请在卡片上选。", DONE_CARD)},
-    tool("complete_task", {}),
+    tool("publish_version", {}),
     say("任务已经完成。"),
 ]
 PASSES = 2
@@ -76,7 +76,7 @@ SCRIPT = {
     "rules": [
         {"when": {"any_contains": "你是评审者"}, "reply": {"text": json.dumps({"发现": []}, ensure_ascii=False)}},
         # 用户 agent：按看到的东西决定下一步。先后有讲究：每条只认它那一步独有的话。
-        user(respond(click="已完成，提交交付物"), last_role="tool", last_contains="选项 complete"),
+        user(respond(click="已完成，发布版本"), last_role="tool", last_contains="选项 complete"),
         user(respond(done=True), last_role="tool", last_contains="任务已经完成"),
         # 编写文档阶段：先打开导语页，再点「看过了，生成文档」；点了之后助手不说话，下一次看到的是界面记下的那条操作，这时请助手完成任务。
         user(respond(text=DONE_WORDS), last_role="tool", last_contains="选了「看过了，生成文档」"),
@@ -145,7 +145,7 @@ class StageCardsTest(unittest.TestCase):
             # 点了之后助手没有运行：这一轮没有助手的回复；下一轮用户 agent 自己说了那句话。
             self.assertEqual((record["轮"][7].get("执行者") or {}).get("replies") or [], [])
             self.assertEqual(record["轮"][8]["用户 agent"]["respond"]["sent"]["text"], DONE_WORDS)
-            # 库里五次移动都是用户在卡片上点的，一段接一段；任务已完成，助手没有一次调用被拦。
+            # 库里五次移动都是用户在卡片上点的，一段接一段；发布了第 1 版，任务照常进行中，助手没有一次调用被拦。
             with sqlite3.connect(sim / "库副本" / taskdb.DB_NAME) as db:
                 moves = db.execute(
                     "SELECT e.actor, json_extract(e.payload, '$.from'), COALESCE(json_extract(e.payload, '$.node'), json_extract(e.payload, '$.activity')), "
@@ -155,7 +155,9 @@ class StageCardsTest(unittest.TestCase):
                                      ("user", "reading", "clarifying", "用户在卡片上选了「进入澄清」"), ("user", "clarifying", "modeling", "用户在卡片上选了「进入整理建模」"),
                                      ("user", "modeling", "writing", "用户在卡片上选了「开始写条目」"), ("user", "writing", "reviewing", "用户在卡片上选了「进入评审确认」"),
                                      ("user", "reviewing", "document", "用户在卡片上选了「进入编写文档」")])
-            self.assertEqual((taskdb.read_workspace(sim / "库副本")["任务"][0]["状态"], first["被工具拒绝次数"]), ("已完成", 0))
+            self.assertEqual((taskdb.read_workspace(sim / "库副本")["任务"][0]["状态"], first["被工具拒绝次数"]), ("进行中", 0))
+            with sqlite3.connect(sim / "库副本" / taskdb.DB_NAME) as db:
+                self.assertEqual(db.execute("SELECT version_no, actor FROM version_record").fetchall(), [(1, "executor")])
             # 导语页记着用户看过它（第 3 次修订）。
             self.assertIn(("OA-002", 3), judge.viewed_marks(sim / "库副本"))
             # 第一层三项都过，第三项的说明写出五次点击。

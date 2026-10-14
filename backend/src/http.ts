@@ -12,11 +12,12 @@ import { pipeline } from "node:stream/promises";
 import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
-import { type SessionFact, taskStatus, versionView, workItemView } from "./task_status.ts";
+import { type SessionFact, taskStatus, workItemView } from "./task_status.ts";
 import { UPGRADED_VERSION_NOTE } from "../../agent/src/lib/schema.ts";
 import * as render from "./render.ts";
 import * as exportDocx from "./export_docx.ts";
 import * as exportDocument from "./export_document_docx.ts";
+import * as versionArchive from "./version_archive.ts";
 import { DIAGRAM_KINDS, validateDiagram } from "./diagram_validate.ts";
 import { SCOPE_MAX_LENGTH, STAGE_NAMES, stageByName } from "../../agent/src/lib/stage.ts";
 import { isObject, or, truthy } from "./py.ts";
@@ -420,7 +421,46 @@ const handlers: Record<string, Handler> = {
   // 版本记录：各版的清单（与任务状况里的 versions 相同），与某一版发布时存档的文档（format=md 或 docx，不写是 md）。
   list_versions: (service, req) => {
     const t = service.task(req.params.task);
-    return json(200, { ok: true, versions: library.versionRows(t.dir).map((row) => versionView(row, t.dir)) });
+    return json(200, { ok: true, versions: library.versionRows(t.dir).map((row) => library.versionView(row, t.dir)) });
+  },
+  // 页面发布一个版本：body 写 { revision_no（页面当时看到的修订号）, note（发布说明，可空）, images（页面画好的图，同「下载 Word」） }。
+  // 先定下版本号、把这一版的文档写进任务目录，再发界面操作 publish_version 核对与记下版本；没有记成就删掉写好的存档，照原话回答。
+  publish_version: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    t.requireOpen();
+    const revisionNo = body.revision_no;
+    if (!Number.isInteger(revisionNo) || revisionNo < 0) throw new ApiError("bad_request", "revision_no 要写页面当时看到的修订号，一个不小于 0 的整数。");
+    if (body.note !== undefined && body.note !== null && typeof body.note !== "string") throw new ApiError("bad_request", "note 要写一句话，或者不写。");
+    const images = exportDocument.imagesOf(body);
+    const versionNo = versionArchive.nextVersion(t.dir);
+    const lib = library.libraryOf(t.dir);
+    const names = new Map((service.knowledge?.libraries() ?? []).map((one) => [one.id, one.name]));
+    const written = await versionArchive.writeArchive(t.dir, versionNo, revisionNo, images, await wordsLocator(t, lib), (id) => names.get(id) ?? null);
+    let done;
+    try {
+      done = await t.executor.actionWith(sessionParam(req, body), { kind: "publish_version", targets: [], notify_executor: false,
+        fields: { revision_no: revisionNo, version_no: versionNo, note: body.note ?? null, ...written } });
+    } catch (error) {
+      versionArchive.dropArchive(t.dir, versionNo);
+      throw error;
+    }
+    return json(200, { ok: true, op_id: done.op_id, version_no: versionNo, revision_no: revisionNo, figures_archived: written.figures_archived });
+  },
+  // 助手发布版本时请任务服务写存档：body 写 { version_no, revision_no }。只写文件，不记版本；没有页面画的图，Word 里写 Mermaid 文本。
+  archive_version: async (service, req) => {
+    const t = service.task(req.params.task);
+    const body = bodyJson(req);
+    const versionNo = body.version_no;
+    const revisionNo = body.revision_no;
+    if (!Number.isInteger(versionNo) || versionNo < 1 || !Number.isInteger(revisionNo) || revisionNo < 0) {
+      throw new ApiError("bad_request", "version_no 要写从 1 起的整数，revision_no 要写不小于 0 的整数。");
+    }
+    if (versionNo !== versionArchive.nextVersion(t.dir)) throw new ApiError("rejected", `下一版是第 ${versionArchive.nextVersion(t.dir)} 版，不是第 ${versionNo} 版。`);
+    const lib = library.libraryOf(t.dir);
+    const names = new Map((service.knowledge?.libraries() ?? []).map((one) => [one.id, one.name]));
+    const written = await versionArchive.writeArchive(t.dir, versionNo, revisionNo, new Map(), await wordsLocator(t, lib), (id) => names.get(id) ?? null);
+    return json(200, { ok: true, ...written });
   },
   version_document: (service, req) => {
     const t = service.task(req.params.task);
@@ -536,6 +576,8 @@ const handlers: Record<string, Handler> = {
     }
     // 删除一个工作项而没有给会话（例如从任务起点页删）：在这个工作项最近有动静的会话里做，那句说明随之留在那条（随即归档的）会话里。
     if (body.kind === "delete_work_item" && !session) session = deleteSession(t.dir, body, t.executor.listSessions() as never);
+    // 发布版本要先写好这一版的文档存档，走 POST …/versions，不走这里。
+    if (body.kind === "publish_version") throw new ApiError("bad_request", "发布版本请用 POST /api/v1/tasks/{task_id}/versions：要先存下这一版的文档。");
     const done = await t.executor.actionWith(session, body);
     return json(200, { ok: true, client_id: body.client_id ?? null, op_id: done.op_id, ...(created !== null ? { session_id: created } : {}),
       ...(done.activity_record_id !== null ? { activity_record_id: done.activity_record_id } : {}),
@@ -766,6 +808,8 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/raw`, "document_raw"],
   ["GET", `/api/v1/tasks/${T}/status`, "task_status"],
   ["GET", `/api/v1/tasks/${T}/versions`, "list_versions"],
+  ["POST", `/api/v1/tasks/${T}/versions`, "publish_version"],
+  ["POST", `/api/v1/tasks/${T}/versions/archive`, "archive_version"],
   ["GET", `/api/v1/tasks/${T}/versions/(?<version>[0-9]+)/document`, "version_document"],
   ["GET", `/api/v1/tasks/${T}/debug/system-prompt`, "debug_system_prompt"],
   ["GET", `/api/v1/tasks/${T}/debug/stage`, "debug_stage"],

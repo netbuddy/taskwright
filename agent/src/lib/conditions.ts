@@ -1,7 +1,7 @@
 /**
  * 完成条件：一套固定的条件名，每个条件名对应一个查库的事实核对函数。
  *
- * 任务定义的「完成条件」一节按集合写条件名；观测台的完成条件清单、执行者的查询工具、「完成任务」
+ * 任务定义的「完成条件」一节按集合写条件名；观测台的完成条件清单、执行者的查询工具、「发布版本」
  * 工具的门禁三处都读同一份定义、调用这里同一组函数。函数只查库里的事实，不评判内容好坏。
  *
  * 「评审通过」「用户确认」不单独存成条目的状态字段，每次用查询得出：评审表里有一条针对条目当前所在修订、
@@ -183,7 +183,7 @@ export interface UnreadItem {
 
 /**
  * 未读清单：完成条件里要求「每个条目用户确认」的集合里，从来没有过接受标记的条目，按集合与流水号排。
- * 查询任务状态、完成任务的拒绝文字与后端的整份数据都用它（后端按同一规则在 Python 里算）。
+ * 查询任务状态、发布版本的拒绝文字与后端的整份数据都用它（后端按同一规则在 Python 里算）。
  */
 export function unreadItems(db: DatabaseSync, taskId: string, completion: Record<string, string[]>, titleField: (collection: string) => string | undefined): UnreadItem[] {
   const out: UnreadItem[] = [];
@@ -248,15 +248,15 @@ function unmetPhrase(r: ConditionResult, listAtMost: number): string {
 
 /**
  * 完成条件的一句话概括，任务现状消息、查询任务状态、看板共用这一种说法：
- * 还差时写「要完成任务，还差 N 项：……。」；都满足时写「完成条件都已满足，可以完成任务。」；
+ * 还差时写「要发布版本，还差 N 项：……。」；都满足时写「完成条件都已满足，可以发布版本。」；
  * 有暂无条目的集合时再补一句「……现在没有条目，这几个集合的条件暂不需要核对。」（这句只在有条目的交付物里写，
  * 空交付物已经说过「还没有任何条目」）。
  */
 export function completionBrief(results: ConditionResult[], listAtMost = 6): string {
   const unmet = results.filter((r) => r.state === "unmet");
   const head = unmet.length === 0
-    ? "完成条件都已满足，可以完成任务。"
-    : `要完成任务，还差 ${unmet.length} 项：${unmet.map((r) => unmetPhrase(r, listAtMost)).join("；")}。`;
+    ? "完成条件都已满足，可以发布版本。"
+    : `要发布版本，还差 ${unmet.length} 项：${unmet.map((r) => unmetPhrase(r, listAtMost)).join("；")}。`;
   const emptyCollections = [...new Set(results.filter((r) => r.state === "empty").map((r) => r.collection))];
   const anyItems = results.some((r) => r.state !== "empty" && !(r.condition === "至少一个条目" && r.state === "unmet"));
   const tail = emptyCollections.length > 0 && anyItems
@@ -268,7 +268,7 @@ export function completionBrief(results: ConditionResult[], listAtMost = 6): str
 // ───────────── 提示（不是门禁） ─────────────
 
 /**
- * 完成条件之外的提示：由事实算出来给人看，不挡完成任务。两种，一个任务只会有其中一种：
+ * 完成条件之外的提示：由事实算出来给人看，不挡发布版本。两种，一个任务只会有其中一种：
  * - unlinked_domain_notes：「领域说明」集合（0.4 建的任务）里还没有和任何条目关联的说明；
  * - untagged_overall_pages：「总体分析」集合里在用而还没有贴标签的主题。
  */

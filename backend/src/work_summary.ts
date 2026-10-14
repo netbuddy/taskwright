@@ -218,8 +218,8 @@ export const UNFINISHED_TEXT = {
   save_revision: "保存修订没有做成",
   save_revision_unchecked: "保存修订没有做完",
   save_diagram: "保存图没有做完",
-  complete_task: "完成任务没有做成",
-  complete_task_unchecked: "完成任务没有做完",
+  publish_version: "发布版本没有做成",
+  publish_version_unchecked: "发布版本没有做完",
   reply: "组织回复没有做成",
   other: (tool: string) => `调用 ${tool} 没有做成`,
 };
@@ -276,9 +276,9 @@ export function unfinishedText(tool: string, args: Dict, callId: string | null, 
     if (found) return stepText(tool, args, true, false, found, definition);
     return facts === null ? UNFINISHED_TEXT.save_revision_unchecked : UNFINISHED_TEXT.save_revision;
   }
-  if (tool === "complete_task") {
+  if (tool === "publish_version") {
     if (facts !== null && callId && facts.completed(callId)) return stepText(tool, args, true, false, null, definition);
-    return facts === null ? UNFINISHED_TEXT.complete_task_unchecked : UNFINISHED_TEXT.complete_task;
+    return facts === null ? UNFINISHED_TEXT.publish_version_unchecked : UNFINISHED_TEXT.publish_version;
   }
   if (tool === "read") {
     const { what, outline } = readWhat(String(or(args.path, "")), definition);
@@ -356,7 +356,7 @@ export function stepText(tool: string, args: Dict, done: boolean, failed: boolea
     // 这一次只按字面找了（没有选嵌入模型，或者按意思那一路没有做成）：写明，用户看得出为什么用词不同的没有找到。
     return d.mode === "keyword" ? `只按字面在知识库里查到 ${found} 个片段` : `在知识库里查到 ${found} 个片段`;
   }
-  if (tool === "complete_task") return failed ? "完成任务没有做成" : done ? "把任务标为已完成" : "正在完成任务";
+  if (tool === "publish_version") return failed ? "发布版本没有做成" : done ? "发布了一个版本" : "正在发布版本";
   if (tool === "request_review") {
     if (failed) return "请评审者评审没有做成";
     if (!done) return "正在请评审者评审";

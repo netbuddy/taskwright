@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
@@ -374,6 +374,19 @@ export function versionRows(taskDir: string): VersionRecord[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * 一个版本给页面的样子：版本号、发布的时刻、谁发布的、发布时的修订号、发布说明、文档里的图存了没有，以及有没有 Markdown 与 Word 的存档
+ * （存档文件还在任务目录里才算有）。存档的路径不给页面，下载走 GET …/versions/{n}/document。
+ */
+export function versionView(row: VersionRecord, taskDir?: string) {
+  const kept = (path: string | null) => path !== null && (taskDir === undefined || existsSync(join(taskDir, path)));
+  return {
+    version_no: row.version_no, published_at: clock.fromLocalText(row.published_at), actor: row.actor === "user" ? "user" : "executor",
+    revision_no: row.revision_no, note: row.note, figures_archived: row.figures_archived,
+    has_markdown: kept(row.markdown_path), has_docx: kept(row.docx_path),
+  };
 }
 
 export function workItemRows(taskDir: string): WorkItemRow[] {
@@ -991,6 +1004,8 @@ export class Library {
       diagrams: this.diagramsView(),
       latest_revision: this.latestRevision(),
       review_batches: this.batchesView(),
+      // 发布过的各版（与任务状况里的 versions 相同）：页面据最近一版的修订号标出「第 N 版后有改动」，发布的提示条据它判断有没有新东西可发。
+      versions: this.data.task_dir ? versionRows(this.data.task_dir).map((row) => versionView(row, this.data.task_dir!)) : [],
     };
   }
 
@@ -1281,7 +1296,8 @@ export function callFacts(taskDir: string | null): {
           const payload = or(jsonOrText(events.get(row.event_seq as number)?.payload ?? null), {}) as Record<string, any>;
           revisions.set(String(row.call_id), { revision_no: row.revision_no, operations: or(payload.operations, []) });
         }
-        for (const row of all(db, "SELECT call_id FROM event WHERE name = 'TASK_COMPLETED'")) if (row.call_id) completed.add(String(row.call_id));
+        // 发布了一个版本的调用（早先的完成任务也照样认）。
+        for (const row of all(db, "SELECT call_id FROM event WHERE name IN ('VERSION_PUBLISHED', 'TASK_COMPLETED')")) if (row.call_id) completed.add(String(row.call_id));
         try {
           for (const row of all(db, "SELECT diagram_id, revision_no, op, name, kind, call_id FROM diagram_version WHERE actor = 'executor'")) {
             if (row.call_id) diagrams.set(String(row.call_id), { diagram_id: row.diagram_id, revision_no: row.revision_no, op: row.op, name: row.name, kind: row.kind });

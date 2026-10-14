@@ -34,12 +34,9 @@
  * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
  */
 
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { CHAPTERS, chapterLayout, chapterPage } from "../../agent/src/lib/overall_chapters.ts";
 import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
 import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, QUESTION_KIND_CLARIFY, STAGES, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
-import type { VersionRecord } from "../../agent/src/lib/versions.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 
@@ -166,22 +163,10 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
     assets: stage.assets,
     catalog: view.status === "进行中" ? stage.catalog : null,
     start_page: startPageTexts(view.task_name),
-    versions: library.versionRows(taskDir).map((row) => versionView(row, taskDir)),
+    versions: library.versionRows(taskDir).map((row) => library.versionView(row, taskDir)),
   };
 }
 
-/**
- * 一个版本给页面的样子：版本号、发布的时刻、谁发布的、发布时的修订号、发布说明、文档里的图存了没有，以及有没有 Markdown 与 Word 的存档
- * （存档文件还在任务目录里才算有）。存档的路径不给页面，下载走 GET …/versions/{n}/document。
- */
-export function versionView(row: VersionRecord, taskDir?: string) {
-  const kept = (path: string | null) => path !== null && (taskDir === undefined || existsSync(join(taskDir, path)));
-  return {
-    version_no: row.version_no, published_at: clock.fromLocalText(row.published_at), actor: row.actor === "user" ? "user" : "executor",
-    revision_no: row.revision_no, note: row.note, figures_archived: row.figures_archived,
-    has_markdown: kept(row.markdown_path), has_docx: kept(row.docx_path),
-  };
-}
 
 /** 任务的全部工作项给页面的样子，按最近有动静的时刻倒序（会话都没有说过话的按启动的时刻；同一时刻的按记录号倒序）。 */
 function workItemViews(taskDir: string, sessions: readonly SessionFact[] | null) {

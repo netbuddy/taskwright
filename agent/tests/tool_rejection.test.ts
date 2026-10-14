@@ -8,7 +8,7 @@ import { withTaskDatabase } from "../src/lib/schema.ts";
 import { INPUT_EXCERPT_LIMIT, notInputProblem, recordRejection, rejectionOf } from "../src/lib/tool_rejection.ts";
 import { ReviewError } from "../src/lib/review.ts";
 import { decideReply, openRevisionLookup } from "../src/lib/reply.ts";
-import { completeTask } from "../src/lib/complete_task.ts";
+import { preparePublish } from "../src/lib/publish_version.ts";
 import { checkReviewParams } from "../src/lib/review.ts";
 import { piComplete } from "../src/lib/review_ui.ts";
 import { requireUnderstanding } from "../src/lib/dialogue_acts.ts";
@@ -44,8 +44,8 @@ function replyTool(dir: string, callId: string, params: unknown) {
   });
 }
 function completeTool(dir: string, callId: string) {
-  return withRejectionRecord({ workspaceDir: dir, sessionId: SESSION, callId, toolName: "complete_task" }, {}, () =>
-    completeTask({ workspaceDir: dir, sessionId: SESSION, callId }));
+  return withRejectionRecord({ workspaceDir: dir, sessionId: SESSION, callId, toolName: "publish_version" }, {}, () =>
+    preparePublish({ workspaceDir: dir, sessionId: SESSION, callId }));
 }
 function reviewTool(dir: string, callId: string, params: unknown, model: unknown) {
   return withRejectionRecord({ workspaceDir: dir, sessionId: SESSION, callId, toolName: "request_review" }, params, () => {
@@ -101,18 +101,18 @@ test("缺前置步骤（这一轮还没写理解）的拒绝记 gate，工作编
   assert.match(row.guidance, /^请按平台 skill「先写理解」一节的格式.*写完接着调用 save_revision。$/);
 });
 
-test("回复、完成任务、请求评审被拒各记一行", async () => {
+test("回复、发布版本、请求评审被拒各记一行", async () => {
   const dir = workspaceWithTask();
   await assert.rejects(replyTool(dir, "call-reply", { informs: [], act: null }), /这次回复的形式不对/);
-  await assert.rejects(completeTool(dir, "call-complete"), /任务没有标为已完成/);
+  await assert.rejects(completeTool(dir, "call-complete"), /第 1 版没有发布/);
   await assert.rejects(reviewTool(dir, "call-review", { items: [] }, { provider: "p", id: "m" }), /什么都没有评/);
   const rows = rejections(dir);
   assert.deepEqual(rows.map((r) => [r.tool_name, r.call_id]),
-    [["reply", "call-reply"], ["complete_task", "call-complete"], ["request_review", "call-review"]]);
+    [["reply", "call-reply"], ["publish_version", "call-complete"], ["request_review", "call-review"]]);
   assert.match(rows[0].fact, /^这次回复的形式不对，没有送达：\n1\. 缺少 text/);
   assert.equal(rows[0].guidance, "请按这几处改好后重新单独调用 reply");
-  assert.match(rows[1].fact, /^任务没有标为已完成。/);
-  assert.match(rows[1].guidance, /补齐之后再调用「完成任务」。$/);
+  assert.match(rows[1].fact, /^第 1 版没有发布。/);
+  assert.match(rows[1].guidance, /补齐之后再调用「发布版本」。$/);
   assert.equal(rows[2].guidance, null);
 });
 

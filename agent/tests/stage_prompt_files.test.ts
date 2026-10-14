@@ -332,7 +332,7 @@ test("每一段的「出口」：往前都是发卡片由用户点，两个选�
 });
 
 test("每一段的「不做什么」与工具守的一致：这一段不能写的东西都写了", () => {
-  const WORDS: Record<Exclude<WriteKind, "page" | "problem">, string> = { diagram: "不画图", item: "不写别的集合的条目", review: "不请求评审", complete: "不完成任务" };
+  const WORDS: Record<Exclude<WriteKind, "page" | "problem">, string> = { diagram: "不画图", item: "不写别的集合的条目", review: "不请求评审", publish: "不发布版本" };
   for (const stage of STAGES) {
     const not = sections(read(`${stage}.md`)).get("这一段不做什么")!;
     for (const [kind, word] of Object.entries(WORDS) as [WriteKind, string][]) {
@@ -368,14 +368,14 @@ test("整理建模那一段：例外清单八种，例外的例子以「例外�
   assert.ok(text.includes(`以「${EXCEPTION_EXAMPLE_PREFIX}」开头的例子`));
 });
 
-test("写条目与评审确认两段：依据用户看过的页、写完发「进入评审确认」的卡片；评审确认阶段提议进入编写文档，用户不写文档时完成任务", () => {
+test("写条目与评审确认两段：依据用户看过的页、写完发「进入评审确认」的卡片；评审确认阶段提议进入编写文档，用户不写文档时发布版本", () => {
   const writing = read("writing.md");
   assert.ok(writing.includes("只依据贴了标签、用户看过的页"));
   assert.ok(writing.includes("你不能自己把任务移到评审确认。"));
   const reviewing = read("reviewing.md");
-  assert.ok(reviewing.includes("用户选了现在完成，再调用完成任务"));
+  assert.ok(reviewing.includes("用户点了「已完成，发布版本」，再调用发布版本"));
   // 评审确认不再是最后一段：完成条件都满足之后提议进入编写文档；用户明说不写文档时才问是否完成。
-  assert.ok(reviewing.includes("3. **条件都满足之后提议进入编写文档。**") && reviewing.includes("用户明说不写文档、要直接完成时"));
+  assert.ok(reviewing.includes("3. **条件都满足之后提议进入编写文档。**") && reviewing.includes("用户明说不写文档、要直接发布时"));
 });
 
 test("卡片之外的话先判断是不是在回答卡片；搁下的卡片不催，提议进入下一段之前一次一张重发；说明里用的名字与程序写的一致", () => {

@@ -295,16 +295,16 @@ test("过程摘要：回复被拒按真实原因分写（没有写理解、理�
   assert.equal(stepText("reply", {}, true, false, { delivered: true }, {}), "说完了");
   assert.equal(stepText("reply", {}, false, false, null, {}), "正在组织回复");
   // 停下的那一步：三个工具都可能，都写同一句，不写「正在改」。
-  for (const tool of ["reply", "save_revision", "complete_task"]) {
+  for (const tool of ["reply", "save_revision", "publish_version"]) {
     assert.equal(stepText(tool, {}, true, true, { stopped: true, rejections: 5, reason_kind: "understanding_missing" }, {}), "助手这一轮没有按规矩回答，已经停下", tool);
   }
   assert.equal(LIMIT_STOPPED_STEP_TEXT, "助手这一轮没有按规矩回答，已经停下");
 });
 
-test("过程摘要：完成任务被拒时不写原因（条件没满足与用户还没同意都一样），做成了写把任务标为已完成", () => {
-  assert.equal(stepText("complete_task", {}, true, true, null, {}), "完成任务没有做成");
-  assert.equal(stepText("complete_task", {}, true, false, null, {}), "把任务标为已完成");
-  assert.equal(stepText("complete_task", {}, false, false, null, {}), "正在完成任务");
+test("过程摘要：发布版本被拒时不写原因（条件没满足与用户还没同意都一样），做成了写发布了一个版本", () => {
+  assert.equal(stepText("publish_version", {}, true, true, null, {}), "发布版本没有做成");
+  assert.equal(stepText("publish_version", {}, true, false, null, {}), "发布了一个版本");
+  assert.equal(stepText("publish_version", {}, false, false, null, {}), "正在发布版本");
 });
 
 test("告知：纯文字与带条目的都整理成对象，认不出的丢掉", () => {

@@ -5,7 +5,7 @@
  * 完成条件逐项满足情况，结尾一行是事件表的最后一个序号。带一个条目编号时打印这个条目在某次修订时的内容
  * （缺省是最新）的全部字段与来源，来源写明种类、出处、摘录，以及它支持哪个字段的第几项。
  *
- * 完成条件用 conditions.ts 里与「完成任务」门禁同一组函数核对；评审与确认两个状态的取法也与那组函数一致：
+ * 完成条件用 conditions.ts 里与「发布版本」门禁同一组函数核对；评审与确认两个状态的取法也与那组函数一致：
  * 评审看条目当前所在的修订有没有结论为合规的评审记录；确认看这个条目有没有过「接受」的标记，从没有过就叫「未读」
  * （已读是条目级、单向的，看过之后再改也不翻回未读，看板上写明用户最后看过哪次修订）。
  *
@@ -139,11 +139,11 @@ export function boardLines(workspaceDir: string): string[] {
   });
 }
 
-/** 完成条件逐项情况（已满足、还差、暂无条目），用 conditions.ts 里与「完成任务」门禁同一组函数。看板与「查询任务状态」共用。 */
+/** 完成条件逐项情况（已满足、还差、暂无条目），用 conditions.ts 里与「发布版本」门禁同一组函数。看板与「查询任务状态」共用。 */
 export function completionLines(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, workspaceDir?: string): string[] {
   const results = checkCompletion(db, task.task_id, definition.completion, { workspaceDir });
   const unmetCount = results.filter((one) => one.state === "unmet").length;
-  const lines = [unmetCount === 0 ? "完成条件都已满足，可以完成任务：" : `要完成任务，还差 ${unmetCount} 项：`];
+  const lines = [unmetCount === 0 ? "完成条件都已满足，可以发布版本：" : `要发布版本，还差 ${unmetCount} 项：`];
   const mark = { met: "[已满足]", unmet: "[还差]", empty: "[暂无条目]" } as const;
   for (const one of results) {
     const unmet = one.unmet.map((u) => u.item).filter((item): item is string => item !== null);

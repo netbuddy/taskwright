@@ -28,9 +28,10 @@
  * - 改评审规则（set_review_rules）：改一个集合「评审规矩」里的「关闭」「升为必选」两项，同时改任务目录里的任务定义副本与库里的快照，
  *   记 REVIEW_RULES_CHANGED。必选规则不能关（与任务定义校验同一套核对）。规则指纹随之变化，这个集合的条目都回到待评审；已有评审记录不动。
  *
- * 提交交付物（submit_deliverable）也只有用户能做：用户在页面的提示条上点「已完成，提交交付物」并在确认框里点「提交」。
- * fields 写页面当时看到的修订号 revision_no；与执行者的「完成任务」同一个核心函数 completeTask 核对（先完成条件，再同意：
- * 这次点击就是同意，修订号要是现在的），发起方记用户。任务标为已完成，往会话里追加一句说明，不引出执行者的运行。
+ * 发布版本（publish_version）也只有用户能做：用户在页面的提示条上点「发布版本」、在确认框里写发布说明（可空）并确认。
+ * 页面的请求先到任务服务：它定下版本号、把这一版的文档写进任务目录（versions/v{N}/），再发这个界面操作，fields 带上页面当时看到的修订号、
+ * 版本号与存档的位置。与执行者的「发布版本」同一个核心函数 publishVersion 核对（先完成条件，再同意：这次点击就是同意，修订号要是现在的；
+ * 版本号要是下一个），发起方记用户。记下版本，往会话里追加一句说明，不引出执行者的运行。任务照常可以修改。
  *
  * 移动阶段（move_stage）：用户把这条会话的工作项移到流程的另一站（lib/stage.ts）。fields 写 { stage, reason }：stage 是六个阶段名之一，reason 可以不写。
  * 这条会话要正在做一个流程的工作项；移到哪一站都可以。更新工作项所在的一站，往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行。
@@ -67,7 +68,7 @@ import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
 import { SaveRejected, type Source, type Support, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
-import { completeTask } from "./complete_task.ts";
+import { publishVersion } from "./publish_version.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
   IDLE, PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, isStage, scopeSentence, stageByName,
@@ -82,7 +83,7 @@ export const EVENT_REVIEW_WAIVED = "REVIEW_WAIVED";
 export const EVENT_REVIEW_UNWAIVED = "REVIEW_UNWAIVED";
 export const EVENT_REVIEW_RULES_CHANGED = "REVIEW_RULES_CHANGED";
 export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules",
-  "submit_deliverable", "move_stage", "start_activity", "continue_activity", "delete_work_item"] as const;
+  "publish_version", "move_stage", "start_activity", "continue_activity", "delete_work_item"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
 export { KEEP_PENDING_STATUS };
@@ -111,6 +112,8 @@ export interface UserOpResult {
   record_id?: number;
   /** 删除一个工作项时：随之归档了几条会话。别的操作没有这一项。 */
   archived_sessions?: number;
+  /** 发布版本时：发布的是第几版。别的操作没有这一项。 */
+  version_no?: number;
 }
 
 export class UserOpError extends Error {
@@ -201,7 +204,7 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
     throw new UserOpError("bad_request", `操作种类 kind 写的是 ${JSON.stringify(request.kind)}，只能是 ${USER_OP_KINDS.join("、")} 之一。`);
   }
   if (kind === "set_review_rules") return setReviewRules(ctx, opId, request);
-  if (kind === "submit_deliverable") return submitDeliverable(ctx, opId, request);
+  if (kind === "publish_version") return publishVersionByUser(ctx, opId, request);
   if (kind === "move_stage") return moveStageByUser(ctx, opId, request);
   if (kind === "start_activity") return startActivityByUser(ctx, opId, request);
   if (kind === "continue_activity") return continueActivityByUser(ctx, opId, request);
@@ -868,22 +871,24 @@ function deleteWorkItemByUser(ctx: Ctx, opId: string, request: UserOpRequest): U
   };
 }
 
-/** 提交交付物：见文件头。fields 写 { revision_no }，页面当时看到的修订号。 */
-function submitDeliverable(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
+/**
+ * 发布版本：见文件头。fields 写 { revision_no, version_no, markdown_path, docx_path, figures_archived, note }：页面当时看到的修订号、
+ * 任务服务定下的版本号与它已经写好的两个存档文件的位置、文档里的图存了没有、发布说明（可空）。
+ */
+function publishVersionByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
   const fields = isObject(request.fields) ? request.fields : {};
   const revisionNo = fields.revision_no;
-  if (!Number.isInteger(revisionNo) || (revisionNo as number) < 0) {
-    throw new UserOpError("bad_request", "submit_deliverable 要在 fields 里写 revision_no：页面当时看到的修订号，一个不小于 0 的整数。");
+  const versionNo = fields.version_no;
+  if (!Number.isInteger(revisionNo) || (revisionNo as number) < 0 || !Number.isInteger(versionNo) || (versionNo as number) < 1) {
+    throw new UserOpError("bad_request", "publish_version 要在 fields 里写 revision_no（页面当时看到的修订号，不小于 0 的整数）与 version_no（从 1 起的整数）。");
   }
+  const path = (value: unknown) => (typeof value === "string" && value ? value : null);
+  const note = typeof fields.note === "string" ? fields.note : null;
   let outcome;
   try {
-    withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT status FROM task ORDER BY started_at LIMIT 1").get() as { status: string } | undefined;
-      if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
-      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再提交。`, { status: task.status });
-    });
-    outcome = completeTask({ workspaceDir: ctx.workspaceDir, sessionId: ctx.sessionId, callId: opId,
-      consent: { source: "page", revisionNo: revisionNo as number }, actor: ACTOR_USER });
+    outcome = publishVersion({ workspaceDir: ctx.workspaceDir, sessionId: ctx.sessionId, callId: opId, consent: { source: "page", revisionNo: revisionNo as number },
+      actor: ACTOR_USER, note }, { markdownPath: path(fields.markdown_path), docxPath: path(fields.docx_path), figuresArchived: fields.figures_archived === true },
+    { versionNo: versionNo as number, revisionNo: revisionNo as number });
   } catch (error) {
     if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
     // 完成条件没满足、修订号不是现在的：说明给用户看，只取事实一层（指引一层是写给执行者的）。
@@ -891,10 +896,10 @@ function submitDeliverable(ctx: Ctx, opId: string, request: UserOpRequest): User
     throw error;
   }
   return {
-    op_id: opId, kind: "submit_deliverable", event_seqs: [outcome.details.event_seq], results: [], revision_no: null,
-    note: `界面操作（不是用户打的字）：用户在页面上确认这个任务已经完成，提交了交付物（修订 ${revisionNo}）。` +
-      "任务已标为已完成，交付物不能再改，仍然可以生成文档。",
-    notify_text: null, undoable: false,
+    op_id: opId, kind: "publish_version", event_seqs: [outcome.details.event_seq], results: [], revision_no: null,
+    note: `界面操作（不是用户打的字）：用户在页面上发布了第 ${outcome.details.version_no} 版（修订 ${outcome.details.revision_no}）` +
+      `${note && note.trim() ? `，发布说明：${note.trim()}` : ""}。发布之后任务照常可以修改，以后可以再发布新的一版。`,
+    notify_text: null, undoable: false, version_no: outcome.details.version_no,
   };
 }
 

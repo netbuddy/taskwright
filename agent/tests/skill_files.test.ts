@@ -23,7 +23,7 @@ const TASK_SKILLS = readdirSync(join(ROOT, "task-types"), { withFileTypes: true 
 const DEV_PROFILE = JSON.parse(readFileSync(join(ROOT, "backend", "profiles", "dev.json"), "utf-8"));
 
 /** 平台层的词：工具名与回复工具、来源、版本号的参数名。它们只该出现在平台 skill 里。 */
-const PLATFORM_WORDS = ["reply", "base_version", "base_revision", "version_no", "revision_no", "supports", "complete_task", "informs", "act"];
+const PLATFORM_WORDS = ["reply", "base_version", "base_revision", "version_no", "revision_no", "supports", "publish_version", "informs", "act"];
 /** 已经退役的工具与角色：平台 skill 与任务 skill 里都不该再出现。登记用户确认工具与确认判读者在「已读即确认」时退役。 */
 const RETIRED_WORDS = ["record_confirmation", "登记用户确认", "判读者"];
 

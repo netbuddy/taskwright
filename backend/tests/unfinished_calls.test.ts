@@ -1,6 +1,6 @@
 /**
  * 没有结果的工具调用（用户让助手停下时，工具还没开始、或没来得及把结果送回会话）不写成做完了：
- * 过程摘要与实时步骤行用同一个函数、同一种说法；保存修订与完成任务先按调用编号查任务库，写进去了照常写做完，
+ * 过程摘要与实时步骤行用同一个函数、同一种说法；保存修订与发布版本先按调用编号查任务库，写进去了照常写做完，
  * 查过没有写「没有做成」，没法查写「没有做完」；任何说法里都不出现 None。
  * 曾经的缺陷：被停下的保存修订在摘要里写成「写好并保存了修订 None：」。
  */
@@ -45,17 +45,17 @@ test("被停下的保存修订：没法查写「没有做完」，查过没有�
   assert.deepEqual([UNFINISHED_TEXT.save_revision_unchecked, UNFINISHED_TEXT.save_revision], ["保存修订没有做完", "保存修订没有做成"]);
 });
 
-test("没有结果的各种工具都不写成做完了，沿用各自「没有成」的说法；完成任务查到完成事件时照常写已完成；都没有 None", () => {
+test("没有结果的各种工具都不写成做完了，沿用各自「没有成」的说法；发布版本查到发布事件时照常写发布了；都没有 None", () => {
   const entries = [userEntry, aborted(
     call("c1", "read", { path: "inputs/材料.md" }), call("c2", "ls"), call("c3", "get_item", { item_id: "UC-002" }), call("c4", "get_task_status"),
-    call("c5", "request_review"), call("c6", "complete_task"), call("c7", "reply", { text: "好" }), call("c8", "grep"),
+    call("c5", "request_review"), call("c6", "publish_version"), call("c7", "reply", { text: "好" }), call("c8", "grep"),
     call("c9", "search_knowledge", { query: "罚款" }),
   )];
   const texts = stagesOf(entries, nothing);
   assert.deepEqual(texts, ["读材料《材料.md》没有读成", "看目录没有看成", "查看条目 UC-002 没有成", "查看任务状态没有成", "请评审者评审没有做成",
-    "完成任务没有做成", "组织回复没有做成", "调用 grep 没有做成", "查找知识库没有成"]);
-  assert.equal(stagesOf([userEntry, aborted(call("c6", "complete_task"))], null)[0], "完成任务没有做完");
-  assert.equal(stagesOf([userEntry, aborted(call("c6", "complete_task"))], { ...nothing, completed: (id) => id === "c6" })[0], "把任务标为已完成");
+    "发布版本没有做成", "组织回复没有做成", "调用 grep 没有做成", "查找知识库没有成"]);
+  assert.equal(stagesOf([userEntry, aborted(call("c6", "publish_version"))], null)[0], "发布版本没有做完");
+  assert.equal(stagesOf([userEntry, aborted(call("c6", "publish_version"))], { ...nothing, completed: (id) => id === "c6" })[0], "发布了一个版本");
   for (const text of texts) assert.doesNotMatch(text, /None/);
   // 由 Word 材料生成的文件写 Word 文件的本名；被停下的是看分段清单那一步时照「看」的说法。
   assert.deepEqual(stagesOf([userEntry, aborted(call("c1", "read", { path: "inputs/材料.docx.md" }), call("c2", "read", { path: "inputs/材料.docx.segments.json" }))], nothing),

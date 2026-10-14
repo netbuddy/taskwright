@@ -401,9 +401,9 @@ export function launchView(facts: LaunchFacts): LaunchView {
 /**
  * 助手的一次写入属于哪一类：
  * page 总体分析的页；problem 问题条目；diagram 图；item 别的集合的条目（用例、非功能需求、约束这一类）；
- * review 请求评审；complete 完成任务。
+ * review 请求评审；publish 发布版本。
  */
-export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "complete";
+export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "publish";
 
 /**
  * 每个阶段助手能做哪几类写入。页与问题任何阶段都可以写（评审确认阶段对页另有限制，见 pageRefusal）。
@@ -416,8 +416,8 @@ const ALLOWED: Record<Position, readonly WriteKind[]> = {
   clarifying: ["page", "problem"],
   modeling: ["page", "problem", "diagram"],
   writing: ["page", "problem", "diagram", "item", "review"],
-  reviewing: ["page", "problem", "diagram", "item", "review", "complete"],
-  document: ["page", "problem", "complete"],
+  reviewing: ["page", "problem", "diagram", "item", "review", "publish"],
+  document: ["page", "problem", "publish"],
 };
 
 /** 这个阶段（或者空闲时）助手能不能做这一类写入。 */
@@ -516,15 +516,15 @@ export function reviewRefusal(stage: Position): Refusal | null {
   ];
 }
 
-/** 助手完成任务：评审确认与编写文档两个阶段可以，空闲时不可以。可以时返回 null。 */
-export function completeRefusal(stage: Position): Refusal | null {
-  if (canWrite(stage, "complete")) return null;
-  if (stage === IDLE) return [`${IDLE_FACT}，这时不能完成任务`, howToLeaveIdle("完成任务要在评审确认或编写文档这项活动里做")];
+/** 助手发布版本：评审确认与编写文档两个阶段可以，空闲时不可以。可以时返回 null。 */
+export function publishRefusal(stage: Position): Refusal | null {
+  if (canWrite(stage, "publish")) return null;
+  if (stage === IDLE) return [`${IDLE_FACT}，这时不能发布版本`, howToLeaveIdle("发布版本要在评审确认或编写文档这项活动里做")];
   return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，完成任务要在评审确认阶段`,
+    `任务现在在${STAGE_NAMES[stage]}阶段，发布版本要在评审确认阶段`,
     stage === "writing"
-      ? `条目写完之后，要由用户在卡片上选「${ENTER_OPTIONS.reviewing.text}」进入评审确认，再完成任务。${forwardCardGuidance("writing")}`
-      : `要先写条目、再由用户进入评审确认，才能完成任务。${howToReachWriting()}`,
+      ? `条目写完之后，要由用户在卡片上选「${ENTER_OPTIONS.reviewing.text}」进入评审确认，再发布版本。${forwardCardGuidance("writing")}`
+      : `要先写条目、再由用户进入评审确认，才能发布版本。${howToReachWriting()}`,
   ];
 }
 
