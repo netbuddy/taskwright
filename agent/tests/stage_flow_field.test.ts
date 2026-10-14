@@ -9,7 +9,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { TASK_DB_VERSION, withTaskDatabase } from "../src/lib/schema.ts";
 import { FLOW_INITIAL, FLOW_NAMES } from "../src/lib/stage.ts";
 import { activityRecords, openActivityRecord } from "../src/lib/stage_read.ts";
-import { DEFINITION_PATH, callIn, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, UI_SESSION, callIn, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 function workspace(): string {
   const dir = makeWorkspace(overallDefinition());
@@ -19,26 +19,26 @@ function workspace(): string {
 const read = <T>(dir: string, run: (db: any, taskId: string) => T): T => withTaskDatabase(dir, { createIfMissing: false }, (db) =>
   run(db, (db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string }).task_id));
 
-test("记一次移动：事件的内容里与活动记录的一列都写所属流程；读记录时带出来", () => {
+test("流程的工作项：启动与换站的事件、活动记录的一列都写所属流程；读记录时带出来", () => {
   const dir = workspace();
   enterStage(dir, "clarifying");
   enterStage(dir, "modeling");
   assert.deepEqual([FLOW_INITIAL, FLOW_NAMES[FLOW_INITIAL]], ["initial", "首次分析"]);
-  const payloads = query<{ payload: string }>(dir, "SELECT payload FROM event WHERE name = 'ACTIVITY_STARTED' ORDER BY seq").map((row) => JSON.parse(row.payload));
-  // 新建的任务是空闲的：第一条从空闲开始，from 是 null。
-  assert.deepEqual(payloads.map((one) => [one.activity, one.node, one.from, one.flow]), [["clarifying", "clarifying", null, "initial"], ["modeling", "modeling", "clarifying", "initial"]]);
-  assert.deepEqual(read(dir, (db, id) => activityRecords(db, id)).map((one) => [one.activity, one.node, one.flow]), [["clarifying", "clarifying", "initial"], ["modeling", "modeling", "initial"]]);
-  assert.deepEqual(read(dir, (db, id) => [openActivityRecord(db, id)!.activity, openActivityRecord(db, id)!.flow]), ["modeling", "initial"]);
-  assert.deepEqual(query<{ flow: string }>(dir, "SELECT flow FROM activity_record ORDER BY started_seq").map((row) => row.flow), ["initial", "initial"]);
+  const payloads = query<{ name: string; payload: string }>(dir, "SELECT name, payload FROM event WHERE name IN ('ACTIVITY_STARTED', 'ACTIVITY_NODE_ENTERED') ORDER BY seq")
+    .map((row) => [row.name, JSON.parse(row.payload)] as const);
+  // 启动的一条从澄清开始，from 是 null；换站的一条写从哪一站到哪一站。两条都写所属流程。
+  assert.deepEqual(payloads.map(([name, one]) => [name, one.activity ?? null, one.node, one.from, one.flow]),
+    [["ACTIVITY_STARTED", "clarifying", "clarifying", null, "initial"], ["ACTIVITY_NODE_ENTERED", null, "modeling", "clarifying", "initial"]]);
+  assert.deepEqual(read(dir, (db, id) => activityRecords(db, id)).map((one) => [one.activity, one.node, one.flow]), [["modeling", "modeling", "initial"]]);
+  assert.deepEqual(read(dir, (db, id) => [openActivityRecord(db, id, UI_SESSION)!.activity, openActivityRecord(db, id, UI_SESSION)!.flow]), ["modeling", "initial"]);
   assert.equal(query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version, TASK_DB_VERSION);
 });
 
 test("所属流程读的是活动记录的那一列：列里写了别的流程的照它写的读", () => {
   const dir = workspace();
   enterStage(dir, "clarifying");
-  enterStage(dir, "modeling");
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
-    db.exec("UPDATE activity_record SET flow = 'change' WHERE activity = 'modeling'");
+    db.exec("UPDATE activity_record SET flow = 'change'");
   });
-  assert.deepEqual(read(dir, (db, id) => activityRecords(db, id)).map((one) => [one.activity, one.flow]), [["clarifying", "initial"], ["modeling", "change"]]);
+  assert.deepEqual(read(dir, (db, id) => activityRecords(db, id)).map((one) => [one.activity, one.flow]), [["clarifying", "change"]]);
 });

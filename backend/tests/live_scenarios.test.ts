@@ -69,7 +69,8 @@ test("两个任务同时各开一个助手：各自的事件连接只收到本�
       const other: string = (await call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "另一个任务" })).body.task_id;
       writeFileSync(join(tmp, "two-tasks", "tasks", other, "inputs", "材料.md"), `${MATERIAL}\n`, "utf-8");
       seedWriting(join(tmp, "two-tasks", "tasks", other));
-      const otherSession: string = (await call("POST", `/api/v1/tasks/${other}/sessions`)).body.session_id;
+      // 另一个任务的会话接着做夹具启动的那个工作项：助手在这条会话里才能写用例。
+      const otherSession: string = (await call("POST", `/api/v1/tasks/${other}/sessions`, { activity_record_id: 1 })).body.session_id;
       const pis = spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf-8" }).stdout.split("\n").filter(Boolean);
       assert.equal(pis.length, 2, "两个任务各有一个助手的程序在运行");
 
@@ -187,7 +188,8 @@ test("助手保存过一次修订之后中途让它停下：返回的 cleared �
       const note = stream.events.find((e) => e.event === "ui_action_noted" && isStopNote(e.data))!.data;
       assert.deepEqual([note.text, note.undoable, note.revision_no], [STOP_NOTE, false, null]);
       const read = async () => (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[];
-      assert.deepEqual((await read()).map((m) => (m.type === "ui_action_noted" ? m.kind : m.type)), ["system_note", "user_message", "work_summary", "stop_run"]);
+      // 会话开头另有一条界面操作通知：这条会话是接着做夹具启动的那个工作项建的。
+      assert.deepEqual((await read()).map((m) => (m.type === "ui_action_noted" ? m.kind : m.type)), ["system_note", "continue_activity", "user_message", "work_summary", "stop_run"]);
       assert.deepEqual((await read()).find((m) => m.type === "work_summary")!.saved, summary.saved, "刷新读回的与实时推送的相同");
 
       // 没有工作在进行时再停一次：什么都不留。

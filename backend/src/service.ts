@@ -522,10 +522,18 @@ export class Service {
     return { ...view, materials, sessions, knowledge_libraries: selectedLibraries(t.dir), task_type_versions: taskTypeVersions };
   }
 
-  /** 会话清单，每条另带 revision_count：这条会话产生了几次修订（修订表按会话编号计数，没有时为 0）。 */
+  /**
+   * 会话清单，每条另带 revision_count（这条会话产生了几次修订：修订表按会话编号计数，没有时为 0）与 work_item
+   * （这条会话属于的工作项：记录号、种类、名字、现在做的那项活动、状态；自由讨论的会话为 null）。
+   */
   sessionRows(t: Task) {
     const counts = library.revisionCountsBySession(t.dir);
-    return t.executor.listSessions().map((row) => ({ ...row, revision_count: counts.get(row.session_id) ?? 0 }));
+    const items = library.workItemRows(t.dir);
+    return t.executor.listSessions().map((row) => {
+      const item = items.find((one) => one.session_ids.includes(row.session_id)) ?? null;
+      return { ...row, revision_count: counts.get(row.session_id) ?? 0,
+        work_item: item === null ? null : { record_id: item.record_id, kind: item.kind, name: item.name, activity: item.activity, flow: item.flow, status: item.status } };
+    });
   }
 
   /**
@@ -555,7 +563,8 @@ export class Service {
         if (!(error instanceof ApiError && error.code === "session_resume_failed") && !startFailed) throw error;
       }
     }
-    const [seq, view, review] = library.taskSnapshot(t.dir, t.executor.reviewSince());
+    // 整份数据里的阶段是这条会话的：看它属于的工作项。
+    const [seq, view, review] = library.taskSnapshot(t.dir, t.executor.reviewSince(), session);
     let info: Record<string, any> | null = null;
     let conv = null;
     let work = null;

@@ -32,19 +32,24 @@
  * fields 写页面当时看到的修订号 revision_no；与执行者的「完成任务」同一个核心函数 completeTask 核对（先完成条件，再同意：
  * 这次点击就是同意，修订号要是现在的），发起方记用户。任务标为已完成，往会话里追加一句说明，不引出执行者的运行。
  *
- * 移动阶段（move_stage）：用户把任务移到另一个工作阶段（lib/stage.ts）。fields 写 { stage, reason }：stage 是六个阶段名之一，reason 可以不写。
- * 用户想移到哪个阶段都可以；记一条活动记录，往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行。任务本来就在那个阶段时
- * 什么都不记、也不追加说明。早先建的任务没有阶段，拒绝。移动阶段就是在首次分析流程里开始那项活动：任务空闲或者正在单独开展
- * 一项活动时，它是启动或继续首次分析。
+ * 移动阶段（move_stage）：用户把这条会话的工作项移到流程的另一站（lib/stage.ts）。fields 写 { stage, reason }：stage 是六个阶段名之一，reason 可以不写。
+ * 这条会话要正在做一个流程的工作项；移到哪一站都可以。更新工作项所在的一站，往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行。
+ * 工作项本来就在那一站时什么都不记、也不追加说明。早先建的任务没有阶段，拒绝。
  *
- * 开展一项活动（start_activity）：用户在任务状况卡的「开展一项活动」一节点了一项。fields 写 { activity, in_flow }：activity 是六项活动
- * （六个阶段）的名字或写法之一；in_flow 为真是在首次分析流程里从这个节点开始（启动或继续首次分析），为假是单独开展这项活动。
- * fields 里另可以写两项：scope 是范围说明（一段文字，最多 SCOPE_MAX_LENGTH 个字），记进活动记录，写进追加的那句说明，
- * 这项活动进行期间助手每次运行的系统提示里都带着它；session 写 current（缺省）或 new，new 是在一条新会话里开展——新会话由后端
- * 在转交之前建好，这里只核对写法。
- * 有别的活动在进行时，那条活动记录先结束，起因写「用户改做某项活动」。记一条活动记录，往会话里追加一句说明，不产生修订、不能撤销、
- * 不引出执行者的运行、不替用户发话。任务已经在同一项活动、同一种开展方式里时什么都不记。单独开展缺前提时拒绝并写明缺什么
- * （这项活动的定义里写的数据条件，lib/activity_catalog.ts）。写条目与发布这样的活动只能由用户从这里启动：助手的工具没有启动活动的路。
+ * 启动一个工作项（start_activity）：用户在任务起点页或者切换工作面板里选了一条工作流程或一项单项活动。fields 写 { activity, in_flow }：
+ * activity 是六项活动（六个阶段）的名字或写法之一；in_flow 为真是启动首次分析这条流程、从这一站开始，为假是启动这项单项活动。
+ * fields 里另可以写 scope：范围说明（一段文字，最多 SCOPE_MAX_LENGTH 个字），记进工作项，写进追加的那句说明，
+ * 这个工作项进行期间助手每次运行的系统提示里都带着它。
+ * 启动一律新建一个工作项与一条属于它的会话：会话由后端在转交之前建好，这里把工作项记在那条新会话上。早先的 session 一项已经停用，写了就拒绝；
+ * 这条会话已经属于一个工作项时也拒绝。同一项活动、同一条流程已经有进行中的工作项时不拦，再启动是另起一个。
+ * 往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行、不替用户发话。启动单项活动缺前提时拒绝并写明缺什么
+ * （这项活动的定义里写的数据条件，lib/activity_catalog.ts）。启动只能由用户做：助手的工具没有启动的路。
+ *
+ * 换一条会话接着做（continue_activity）：fields 写 { activity_record_id }，一个进行中的工作项的记录号。后端先建好一条新会话再转交，
+ * 这里把那条新会话挂到这个工作项上，往会话里追加一句说明。工作项的位置与范围说明都不变；原来的会话原样留着。
+ *
+ * 结束一个工作项（end_activity）：fields 写 { outcome, activity_record_id }：outcome 是 done（已做完）或 abandoned（已放弃）；
+ * activity_record_id 是工作项的记录号，不写就是这条会话的工作项。只有进行中的工作项能结束。状态记下之后，属于它的会话都按自由讨论办。
  *
  * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_revision、undo_conflict、
  * task_closed、no_task、rejected、bad_request）和给人看的一句中文，data 里放细节。本模块不依赖 pi。
@@ -61,9 +66,12 @@ import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
-import { PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, scopeSentence, stageByName } from "./stage.ts";
+import {
+  IDLE, PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, endedByUserReason, isStage, scopeSentence, stageByName,
+  workItemContinuedSentence, workItemEndedSentence,
+} from "./stage.ts";
 import { openProposal } from "./stage_proposal.ts";
-import { startActivity } from "./stage_read.ts";
+import { type StageMoveOutcome, attachSession, endWorkItem, isOutcome, moveStage, sessionWorkItem, startActivity, workItemById, workItemName } from "./stage_read.ts";
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
 export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
@@ -71,7 +79,7 @@ export const EVENT_REVIEW_WAIVED = "REVIEW_WAIVED";
 export const EVENT_REVIEW_UNWAIVED = "REVIEW_UNWAIVED";
 export const EVENT_REVIEW_RULES_CHANGED = "REVIEW_RULES_CHANGED";
 export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules",
-  "submit_deliverable", "move_stage", "start_activity"] as const;
+  "submit_deliverable", "move_stage", "start_activity", "continue_activity", "end_activity"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
 export { KEEP_PENDING_STATUS };
@@ -96,6 +104,8 @@ export interface UserOpResult {
   /** notify_executor 为真的标为已读之后发给执行者的那句话（固定模板），其余为 null。 */
   notify_text: string | null;
   undoable: boolean;
+  /** 启动、接着做、结束一个工作项时：那个工作项的记录号。别的操作没有这一项。 */
+  record_id?: number;
 }
 
 export class UserOpError extends Error {
@@ -189,6 +199,8 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
   if (kind === "submit_deliverable") return submitDeliverable(ctx, opId, request);
   if (kind === "move_stage") return moveStageByUser(ctx, opId, request);
   if (kind === "start_activity") return startActivityByUser(ctx, opId, request);
+  if (kind === "continue_activity") return continueActivityByUser(ctx, opId, request);
+  if (kind === "end_activity") return endActivityByUser(ctx, opId, request);
   if (!Array.isArray(request.targets) || request.targets.length === 0) {
     throw new UserOpError("bad_request", "targets 应当是一个不为空的列表。");
   }
@@ -692,13 +704,37 @@ function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult 
   };
 }
 
-/** 一次活动开始往会话里追加的那句说明（给助手看，页面原样显示）。写了范围说明时接在后面。 */
+/** 一次启动或者一次换站往会话里追加的那句说明（给助手看，页面原样显示）。写了范围说明时接在后面。 */
 export function activityStartNote(how: StartHow, to: Stage, from: Position, reason = "", scope = ""): string {
   return `界面操作（不是用户打的字）：${activityStartSentence(how, to, from)}${reason ? `理由：${reason}` : ""}${scopeSentence(scope)}`;
 }
 
-/** 开展活动时会话那一项的两个写法：在现在这条会话里开展，或者在一条新会话里开展。 */
-export const START_SESSIONS = ["current", "new"] as const;
+/** 启动工作项时早先那一项会话的写法已经停用：写了就拒绝的那句话。 */
+export const START_SESSION_RETIRED = "start_activity 的 session 已经停用：启动一律新建一个工作项与一条属于它的会话，不用写这一项。";
+
+/** 这条会话不在做流程的工作项时，移动阶段被拒的那句话。 */
+export const NOT_IN_FLOW_TEXT = "本会话不在做工作流程的工作项，不能移动阶段。要做哪一项活动，请从任务起点页启动一个工作项。";
+
+/** 核对任务在、是这个任务、还在进行中；返回任务编号。verb 是任务已经不在进行中时拒绝的话里说的动作。 */
+function activeTaskId(db: DatabaseSync, request: UserOpRequest, verb: string): string {
+  const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
+  if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+  if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
+    throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
+  }
+  if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再${verb}。`, { status: task.status });
+  return task.task_id;
+}
+
+/** 在写事务里做一段，库还不在时换成 no_task。 */
+function inTask<T>(ctx: Ctx, body: (db: DatabaseSync) => T): T {
+  try {
+    return withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, body);
+  } catch (error) {
+    if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
+    throw error;
+  }
+}
 
 /** 移动阶段：见文件头。fields 写 { stage, reason }。 */
 function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
@@ -708,16 +744,33 @@ function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOp
     throw new UserOpError("bad_request", `move_stage 要在 fields 里写 stage：${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一；可以另写一句 reason。`);
   }
   const reason = typeof fields.reason === "string" ? fields.reason.trim() : "";
-  return startByUser(ctx, opId, request, "move_stage", to, true, reason, "移动阶段");
+  let voided = false;
+  const outcome: StageMoveOutcome = inTask(ctx, (db) => {
+    const taskId = activeTaskId(db, request, "移动阶段");
+    const proposal = openProposal(db, taskId, ctx.sessionId);
+    const done = moveStage(db, ctx.workspaceDir, { taskId, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, reason);
+    // 用户做的正是提议的那一步（进入或者退回提议的那个阶段）：提议是办成了，不算作废。
+    const asProposed = proposal !== null && proposal.kind !== "review" && proposal.stage === to;
+    voided = done.moved && proposal !== null && !asProposed;
+    return done;
+  });
+  if (outcome.from === null) throw new UserOpError("rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] });
+  if (outcome.why === "not_in_flow") throw new UserOpError("rejected", NOT_IN_FLOW_TEXT, { reasons: [NOT_IN_FLOW_TEXT.replace(/。$/, "")] });
+  return {
+    op_id: opId, kind: "move_stage", event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
+    // 本来就在那一站：什么都没有记，也不往会话里追加说明。
+    note: outcome.moved ? `${activityStartNote("move", to, outcome.from, reason)}${voided ? PROPOSAL_VOIDED_NOTE : ""}` : "",
+    notify_text: null, undoable: false, ...(outcome.record_id !== undefined ? { record_id: outcome.record_id } : {}),
+  };
 }
 
-/** 开展一项活动：见文件头。fields 写 { activity, in_flow }，另可以写 scope 与 session。 */
+/** 启动一个工作项：见文件头。fields 写 { activity, in_flow }，另可以写 scope。 */
 function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
   const fields = isObject(request.fields) ? request.fields : {};
   const to = stageByName(fields.activity);
   if (to === null || typeof fields.in_flow !== "boolean") {
     throw new UserOpError("bad_request",
-      `start_activity 要在 fields 里写 activity（${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一）与 in_flow（true 是在首次分析流程里从这里开始，false 是单独开展）。`);
+      `start_activity 要在 fields 里写 activity（${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一）与 in_flow（true 是启动首次分析这条流程、从这一站开始，false 是启动这项单项活动）。`);
   }
   if (fields.scope !== undefined && fields.scope !== null && typeof fields.scope !== "string") {
     throw new UserOpError("bad_request", "start_activity 的 scope 是范围说明，应当是一段文字；不写范围说明就不要带这一项。");
@@ -726,48 +779,92 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
   if (scope.length > SCOPE_MAX_LENGTH) {
     throw new UserOpError("bad_request", `范围说明有 ${scope.length} 个字，最多 ${SCOPE_MAX_LENGTH} 个字。`);
   }
-  if (fields.session !== undefined && !(START_SESSIONS as readonly unknown[]).includes(fields.session)) {
-    throw new UserOpError("bad_request", `start_activity 的 session 只能写 ${START_SESSIONS.join(" 或 ")}：current 是在现在这条会话里开展，new 是在一条新会话里开展。`);
-  }
-  return startByUser(ctx, opId, request, "start_activity", to, fields.in_flow, "", "开展活动", scope);
-}
-
-/**
- * 移动阶段与开展一项活动共用的那一段：核对任务、记活动开始、拼结果。verb 是任务已经不在进行中时拒绝的话里说的动作。
- * 助手先前的提议开着、这次开始的又不是它提议的那一步时，提议随这次开始作废，追加的说明末尾写明（PROPOSAL_VOIDED_NOTE）。
- */
-function startByUser(ctx: Ctx, opId: string, request: UserOpRequest, kind: "move_stage" | "start_activity", to: Stage, inFlow: boolean, reason: string, verb: string, scope = ""): UserOpResult {
-  let outcome;
-  let voided = false;
-  try {
-    outcome = withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
-      if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
-      if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
-        throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
-      }
-      if (task.status !== TASK_ACTIVE) throw new UserOpError("task_closed", `任务已经${task.status}，不能再${verb}。`, { status: task.status });
-      const proposal = openProposal(db, task.task_id);
-      const done = startActivity(db, ctx.workspaceDir, { taskId: task.task_id, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, reason, scope);
-      // 用户做的正是提议的那一步（在流程里进入或者退回提议的那个阶段）：提议是办成了，不算作废。
-      const asProposed = proposal !== null && proposal.kind !== "review" && inFlow && proposal.stage === to;
-      voided = done.moved && proposal !== null && !asProposed;
-      return done;
-    });
-  } catch (error) {
-    if (error instanceof NoDatabaseYet) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
-    throw error;
-  }
+  if (fields.session !== undefined) throw new UserOpError("bad_request", START_SESSION_RETIRED);
+  const inFlow = fields.in_flow;
+  const outcome: StageMoveOutcome = inTask(ctx, (db) => {
+    const taskId = activeTaskId(db, request, "启动工作项");
+    return startActivity(db, ctx.workspaceDir, { taskId, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, "", scope);
+  });
   if (outcome.from === null) throw new UserOpError("rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] });
   if (outcome.why === "not_ready") {
-    const fact = `现在还不能开展「${STAGE_NAMES[to]}」：${outcome.blocked}`;
+    const fact = `现在还不能启动「${STAGE_NAMES[to]}」：${outcome.blocked}`;
+    throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+  }
+  if (outcome.why === "session_bound") {
+    const fact = "这条会话已经属于一个工作项，不能再在它上面启动另一个；启动一律在一条新会话里做";
     throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
   }
   return {
-    op_id: opId, kind, event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
-    // 本来就在那项活动里：什么都没有记，也不往会话里追加说明。
-    note: outcome.moved ? `${activityStartNote(outcome.how!, to, outcome.from, reason, scope)}${voided ? PROPOSAL_VOIDED_NOTE : ""}` : "",
-    notify_text: null, undoable: false,
+    op_id: opId, kind: "start_activity", event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
+    note: outcome.moved ? activityStartNote(outcome.how!, to, IDLE, "", scope) : "",
+    notify_text: null, undoable: false, ...(outcome.record_id !== undefined ? { record_id: outcome.record_id } : {}),
+  };
+}
+
+/** fields 里的 activity_record_id：一个从 1 起的整数；没有写是 null，写得不对抛 bad_request。 */
+function recordIdOf(kind: string, fields: Record<string, unknown>, required: boolean): number | null {
+  const value = fields.activity_record_id;
+  if (value === undefined || value === null) {
+    if (required) throw new UserOpError("bad_request", `${kind} 要在 fields 里写 activity_record_id：工作项的记录号。`);
+    return null;
+  }
+  if (!Number.isInteger(value) || (value as number) < 1) throw new UserOpError("bad_request", `${kind} 的 activity_record_id 是工作项的记录号，一个从 1 起的整数。`);
+  return value as number;
+}
+
+/** 换一条会话接着做一个进行中的工作项：见文件头。fields 写 { activity_record_id }。 */
+function continueActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
+  const fields = isObject(request.fields) ? request.fields : {};
+  const recordId = recordIdOf("continue_activity", fields, true)!;
+  const item = inTask(ctx, (db) => {
+    const taskId = activeTaskId(db, request, "接着做工作项");
+    const found = workItemById(db, taskId, recordId);
+    if (found === null) throw new UserOpError("not_found", `没有记录号是 ${recordId} 的工作项。`);
+    if (found.status !== "active") {
+      const fact = `工作项「${workItemName(found)}」已经结束，不能再接着做；要再做这项活动，从任务起点页再启动一次`;
+      throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+    }
+    if (sessionWorkItem(db, taskId, ctx.sessionId) !== null) {
+      const fact = "这条会话已经属于一个工作项；接着做一个工作项要在一条新会话里";
+      throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+    }
+    attachSession(db, taskId, found.record_id, ctx.sessionId);
+    return found;
+  });
+  return {
+    op_id: opId, kind: "continue_activity", event_seqs: [], results: [], revision_no: null,
+    note: `界面操作（不是用户打的字）：${workItemContinuedSentence(workItemName(item), item.flow !== null && isStage(item.node) ? item.node : null)}${scopeSentence(item.scope ?? "")}`,
+    notify_text: null, undoable: false, record_id: item.record_id,
+  };
+}
+
+/** 结束一个工作项：见文件头。fields 写 { outcome, activity_record_id }。 */
+function endActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
+  const fields = isObject(request.fields) ? request.fields : {};
+  const outcome = fields.outcome;
+  if (!isOutcome(outcome)) throw new UserOpError("bad_request", "end_activity 要在 fields 里写 outcome：done（已做完）或者 abandoned（已放弃）。");
+  const recordId = recordIdOf("end_activity", fields, false);
+  const done = outcome === "done";
+  const ended = inTask(ctx, (db) => {
+    const taskId = activeTaskId(db, request, "结束工作项");
+    const own = sessionWorkItem(db, taskId, ctx.sessionId);
+    const item = recordId === null ? own : workItemById(db, taskId, recordId);
+    if (item === null) {
+      if (recordId !== null) throw new UserOpError("not_found", `没有记录号是 ${recordId} 的工作项。`);
+      const fact = "这条会话不属于任何工作项，没有可以结束的";
+      throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+    }
+    if (item.status !== "active") {
+      const fact = `工作项「${workItemName(item)}」已经结束`;
+      throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+    }
+    const seq = endWorkItem(db, item, outcome, { taskId, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, endedByUserReason(done));
+    return { item, seq, here: own !== null && own.record_id === item.record_id };
+  });
+  return {
+    op_id: opId, kind: "end_activity", event_seqs: [ended.seq], results: [], revision_no: null,
+    note: `界面操作（不是用户打的字）：${workItemEndedSentence(workItemName(ended.item), done, ended.here)}`,
+    notify_text: null, undoable: false, record_id: ended.item.record_id,
   };
 }
 

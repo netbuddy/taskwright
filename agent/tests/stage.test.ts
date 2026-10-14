@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, completeRefusal, flowStartNode, launchView, startHow, startReadingCardGuidance, STAY_IDLE_OPTION, switchedReason, CONTINUE_CLARIFY_KEY, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
+  activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, completeRefusal, flowStartNode, launchView, startReadingCardGuidance, STAY_IDLE_OPTION, workItemContinuedSentence, workItemEndedSentence, endedByUserReason, CONTINUE_CLARIFY_KEY, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
   itemRefusal, judgeMove, nextStage, pageRefusal, positionName, reviewRefusal, type Stage, STAGE_NAMES, stageByName, stageEnteredBy, STAGES, START_ITEMS_KEY, STAY_OPTIONS,
 } from "../src/lib/stage.ts";
 
@@ -122,38 +122,41 @@ test("空闲：写法是 idle、名字是「空闲」，与六个阶段并列而
   assert.deepEqual(STAGES.map((to) => judgeMove(IDLE, to, "executor")), STAGES.map(() => ({ ok: false, why: "user_only" })));
 });
 
-test("空闲时助手能写什么：与澄清相同，只有页与问题；被拦时事实写任务现在没有在进行的活动，怎么办写由用户从任务状况卡开展一项活动", () => {
+test("空闲时助手能写什么：与澄清相同，只有页与问题；被拦时事实写本会话没有在进行的工作项，怎么办写由用户从任务起点页启动一个工作项", () => {
   const row = (stage: Stage | typeof IDLE) => (["page", "problem", "diagram", "item", "review", "complete"] as const).map((kind) => canWrite(stage, kind));
   assert.deepEqual(row(IDLE), [true, true, false, false, false, false]);
   assert.deepEqual(row(IDLE), row("clarifying"));
-  const how = (where: string) => `${where}。开展哪一项活动由用户决定：请用户从任务状况卡开展一项活动。任务空闲时你可以立主题页、改主题页、记问题条目`;
-  assert.deepEqual(itemRefusal(IDLE, "add", "功能用例"), ["任务现在没有在进行的活动，这时不能新增「功能用例」的条目", how("「功能用例」的条目要在写条目这项活动里写")]);
-  assert.equal(itemRefusal(IDLE, "delete", "约束")![0], "任务现在没有在进行的活动，这时不能删除「约束」的条目");
-  assert.deepEqual(diagramRefusal(IDLE), ["任务现在没有在进行的活动，这时不能画图、改图或删图", how("图要在整理建模这项活动里画")]);
-  assert.deepEqual(reviewRefusal(IDLE), ["任务现在没有在进行的活动，这时不能请求评审", how("评审要在写条目或评审确认这项活动里请求")]);
-  assert.deepEqual(completeRefusal(IDLE), ["任务现在没有在进行的活动，这时不能完成任务", how("完成任务要在评审确认或编写文档这项活动里做")]);
+  const how = (where: string) => `${where}。启动哪一项活动由用户决定：请用户从任务起点页启动一个工作项。本会话里你可以立主题页、改主题页、记问题条目`;
+  assert.deepEqual(itemRefusal(IDLE, "add", "功能用例"), ["本会话没有在进行的工作项，这时不能新增「功能用例」的条目", how("「功能用例」的条目要在写条目这项活动里写")]);
+  assert.equal(itemRefusal(IDLE, "delete", "约束")![0], "本会话没有在进行的工作项，这时不能删除「约束」的条目");
+  assert.deepEqual(diagramRefusal(IDLE), ["本会话没有在进行的工作项，这时不能画图、改图或删图", how("图要在整理建模这项活动里画")]);
+  assert.deepEqual(reviewRefusal(IDLE), ["本会话没有在进行的工作项，这时不能请求评审", how("评审要在写条目或评审确认这项活动里请求")]);
+  assert.deepEqual(completeRefusal(IDLE), ["本会话没有在进行的工作项，这时不能完成任务", how("完成任务要在评审确认或编写文档这项活动里做")]);
   // 页：空闲时新立、修改、删除都可以。
   assert.deepEqual([pageRefusal(IDLE, "add"), pageRefusal(IDLE, "update", ["它是什么"]), pageRefusal(IDLE, "delete")], [null, null, null]);
-  // 空闲时的拒绝里不说「阶段」，也不让助手发进入某一段的卡片：开展哪一项活动由用户在任务状况卡上定。
+  // 空闲时的拒绝里不说「阶段」，也不让助手发进入某一段的卡片：启动哪一项活动由用户在任务起点页上定。
   for (const refusal of [itemRefusal(IDLE, "add", "功能用例"), diagramRefusal(IDLE), reviewRefusal(IDLE), completeRefusal(IDLE)]) {
-    assert.doesNotMatch(refusal!.join(""), /阶段|请选择卡片|enter_|start_items/);
-    assert.match(refusal![1], /从任务状况卡开展一项活动/);
+    assert.doesNotMatch(refusal!.join(""), /阶段|请选择卡片|enter_|start_items|开展|任务状况卡/);
+    assert.match(refusal![1], /从任务起点页启动一个工作项/);
   }
 });
 
-test("一项活动怎样开始、对话里怎样说：流程里的移动、启动首次分析、继续首次分析、单独开展；原来在做别的活动时句末注明", () => {
-  // 在流程里开始：之前就在流程里是移动；之前不在流程里，首次分析没有走过是启动，走过是继续。单独开展不看这些。
-  assert.deepEqual([startHow(true, true, "clarifying"), startHow(true, true, null), startHow(true, false, null), startHow(true, false, "writing"),
-    startHow(false, true, "clarifying"), startHow(false, false, null)], ["move", "move", "launch", "resume", "alone", "alone"]);
-  assert.equal(activityStartSentence("move", "modeling", "clarifying"), "用户把任务从澄清移到整理建模。");
-  assert.equal(activityStartSentence("launch", "reading", IDLE), "用户开展工作流程「首次分析」，从「核读材料」开始。");
+test("对话里怎样说启动、换站、接着做与结束：启动流程、启动单项活动、流程换站各一句；早先的对话里另有继续首次分析与句末注明的原来在做什么", () => {
+  assert.equal(activityStartSentence("move", "modeling", "clarifying"), "用户把工作项从澄清移到整理建模。");
+  assert.equal(activityStartSentence("launch", "reading", IDLE), "用户启动工作流程「首次分析」，从「核读材料」开始。");
+  assert.equal(activityStartSentence("alone", "modeling", IDLE), "用户启动活动「整理建模」。");
+  // 早先的对话里留着的两样：继续首次分析，与启动之前任务正在做别的活动时句末的注明。
   assert.equal(activityStartSentence("resume", "writing", IDLE), "用户继续工作流程「首次分析」，从「写条目」接着。");
-  assert.equal(activityStartSentence("resume", "writing", "clarifying"), "用户继续工作流程「首次分析」，从「写条目」接着。（原来在做：澄清）");
-  assert.equal(activityStartSentence("alone", "modeling", IDLE), "用户开展活动「整理建模」。");
-  assert.equal(activityStartSentence("alone", "clarifying", "writing"), "用户开展活动「澄清」。（原来在做：写条目）");
-  assert.equal(switchedReason("clarifying"), "用户改做澄清");
-  assert.equal(activityDoneSentence("modeling"), "助手汇报这项活动结束：整理建模。任务现在空闲。要接着做，从任务状况卡再开展一次。");
+  assert.equal(activityStartSentence("alone", "clarifying", "writing"), "用户启动活动「澄清」。（原来在做：写条目）");
+  assert.equal(workItemContinuedSentence("首次分析", "writing"), "用户新建这条会话，接着做工作项「首次分析」，现在在「写条目」这一站。");
+  assert.equal(workItemContinuedSentence("整理建模", null), "用户新建这条会话，接着做工作项「整理建模」。");
+  assert.equal(workItemEndedSentence("整理建模", true), "用户结束工作项「整理建模」，记为已做完。本会话此后按自由讨论办；要再做，从任务起点页再启动一次。");
+  assert.equal(workItemEndedSentence("首次分析", false, false), "用户结束工作项「首次分析」，记为已放弃。");
+  assert.deepEqual([endedByUserReason(true), endedByUserReason(false)], ["用户结束这个工作项：已做完", "用户结束这个工作项：已放弃"]);
+  assert.equal(activityDoneSentence("modeling"), "助手汇报这个工作项做完：整理建模。本会话此后按自由讨论办；要再做，从任务起点页再启动一次。");
   assert.deepEqual([flowStartNode(true), flowStartNode(false)], ["reading", "clarifying"]);
+  // 对话与界面里不再说「开展」。
+  for (const one of [activityStartSentence("launch", "reading", IDLE), activityStartSentence("alone", "modeling", IDLE), activityDoneSentence("modeling")]) assert.doesNotMatch(one, /开展|任务状况卡/);
 });
 
 test("开展一项活动的三组选项：正在进行的只是一行；首次分析可以启动或继续；六项活动各带前提，缺什么照交进来的写；发布留到以后", () => {
@@ -166,7 +169,7 @@ test("开展一项活动的三组选项：正在进行的只是一行；首次�
   assert.equal(fresh.current, null);
   assert.deepEqual(fresh.flows, [{ activity: "clarifying", in_flow: true, label: "启动首次分析", enabled: true, state: "从澄清开始" }]);
   assert.deepEqual(fresh.activities.map((one) => [one.label, one.enabled, one.state]), [
-    ["核读材料", false, "还没有项目材料"], ["澄清", true, "可以开展"], ["整理建模", false, "业务说明还没有内容"],
+    ["核读材料", false, "还没有项目材料"], ["澄清", true, "可以启动"], ["整理建模", false, "业务说明还没有内容"],
     ["写条目", false, "业务说明还没有内容"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"]]);
   assert.ok(fresh.activities.every((one) => one.in_flow === false));
   assert.deepEqual(fresh.later, [{ label: "发布", state: "0.6 后续" }]);
@@ -184,8 +187,8 @@ test("开展一项活动的三组选项：正在进行的只是一行；首次�
   // 流程走到写条目之后改做单独的澄清：第一组写「继续澄清」，流程可以从写条目接着，澄清那一项正在进行。
   const alone = launchView({ position: "clarifying", inFlow: false, flowNode: "writing", hasMaterials: true, blocked: none });
   assert.deepEqual(alone.current, { activity: "clarifying", in_flow: false, label: "继续澄清" });
-  assert.deepEqual(alone.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: true, state: "可以开展" }]);
+  assert.deepEqual(alone.flows, [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: true, state: "可以启动" }]);
   assert.deepEqual(alone.activities.map((one) => [one.enabled, one.state]),
-    [[true, "可以开展"], [false, "正在进行"], [true, "可以开展"], [true, "可以开展"], [true, "可以开展"], [true, "可以开展"]]);
+    [[true, "可以启动"], [false, "正在进行"], [true, "可以启动"], [true, "可以启动"], [true, "可以启动"], [true, "可以启动"]]);
 });
 

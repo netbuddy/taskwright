@@ -73,7 +73,7 @@ export function completeTask(call: CompleteCall): CompleteOutcome {
       const definition = validateDefinition(JSON.parse(task.definition_text));
       // 工作的阶段（lib/stage.ts）：助手只有在评审确认阶段才能完成任务，先于完成条件核对。用户在页面上提交不看阶段；早先建的任务没有阶段。
       if ((call.actor ?? ACTOR_EXECUTOR) !== ACTOR_USER) {
-        const stage = stageOf(db, call.workspaceDir, task.task_id, definition);
+        const stage = stageOf(db, call.workspaceDir, task.task_id, definition, call.sessionId);
         const refusal = stage ? completeRefusal(stage) : null;
         if (refusal) {
           const fact = `任务没有标为已完成：${refusal[0]}。`;

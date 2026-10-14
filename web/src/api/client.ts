@@ -306,14 +306,17 @@ export const api = {
 
   // 6 直接操作
   /**
-   * 在一条新会话里开展活动：不带会话，后端先核对这项活动能不能开展，再新建会话、在新会话里记开展，回应里带新会话的编号。
-   * in_flow 为真是在首次分析流程里从这一站开始；scope 是范围说明，可以不给。
+   * 启动一个工作项：不带会话，后端先核对这项活动能不能启动，再新建一个工作项与一条属于它的会话，回应里带新会话的编号与工作项的记录号。
+   * in_flow 为真是启动首次分析这条流程、从这一站开始；scope 是范围说明，可以不给。
    */
   startInNewSession: (taskId: string, fields: { activity: string; in_flow: boolean; scope?: string }) =>
-    request<{ ok: true; op_id: string; session_id: string }>(
-      "POST", `${task(taskId)}/actions`, { kind: "start_activity", targets: [], fields: { ...fields, session: "new" }, notify_executor: false }, ACTION_TIMEOUT_MS),
+    request<{ ok: true; op_id: string; session_id: string; activity_record_id?: number }>(
+      "POST", `${task(taskId)}/actions`, { kind: "start_activity", targets: [], fields, notify_executor: false }, ACTION_TIMEOUT_MS),
+  /** 换一条干净的会话接着做一个进行中的工作项：后端新建一条会话并把它挂到这个工作项上，回应里带新会话的编号。 */
+  continueWorkItem: (taskId: string, recordId: number) =>
+    request<{ ok: true; session_id: string; activity_record_id: number }>("POST", `${task(taskId)}/sessions`, { activity_record_id: recordId }, ACTION_TIMEOUT_MS),
   action: (taskId: string, sessionId: string, body: ActionRequest) =>
-    request<{ ok: true; client_id: string; op_id: string }>(
+    request<{ ok: true; client_id: string; op_id: string; session_id?: string; activity_record_id?: number }>(
       "POST", `${task(taskId)}/actions?session=${encodeURIComponent(sessionId)}`, body, ACTION_TIMEOUT_MS),
 };
 

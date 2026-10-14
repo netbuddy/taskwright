@@ -14,14 +14,14 @@ import { type SaveDiagramParams, saveDiagram } from "../src/lib/save_diagram.ts"
 import { SaveRejected, saveRevision } from "../src/lib/save_revision.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import { BACK_OPTIONS, ENTER_OPTIONS, IDLE, STAGES, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS } from "../src/lib/stage.ts";
-import { IDLE_LINE, activityRecords, currentStage, openActivityRecord, recordStageCardClick, stageLines, stageOf, stageSummary } from "../src/lib/stage_read.ts";
+import { IDLE_LINE, activityRecords, currentStage, openActivityRecord, recordStageCardClick, stageLines, stageOf, stageSummary, sessionWorkItem } from "../src/lib/stage_read.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
 import { rejectionOf } from "../src/lib/tool_rejection.ts";
-import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, endActivities, enterStage, makeWorkspace, moveRows, overallDefinition, query } from "./helpers.ts";
+import { UserOpError, runUserOperation } from "../src/lib/user_ops.ts";
+import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, endActivities, enterStage, makeWorkspace, moveRows, overallDefinition, query, CALL_SESSION } from "./helpers.ts";
 
 const DEFINITION = validateDefinition(overallDefinition());
-const HOW = "开展哪一项活动由用户决定：请用户从任务状况卡开展一项活动。任务空闲时你可以立主题页、改主题页、记问题条目";
+const HOW = "启动哪一项活动由用户决定：请用户从任务起点页启动一个工作项。本会话里你可以立主题页、改主题页、记问题条目";
 
 function workspace(definition: unknown = overallDefinition(), material = true): { dir: string; taskId: string } {
   const dir = makeWorkspace(definition, { material });
@@ -53,36 +53,42 @@ function saveRefusal(dir: string, operations: unknown[]): string | null {
   }
 }
 
-test("没有在进行的活动记录就是空闲：刚建好的任务一条记录都没有，是空闲，不看有没有材料；每一条都已结束的也是；早先建的任务仍是 null", () => {
+test("会话没有在进行的工作项就是空闲：刚建好的任务一个工作项都没有，哪条会话都空闲，不看有没有材料；工作项已经结束的会话也是；早先建的任务仍是 null", () => {
   const { dir, taskId } = idle("modeling");
-  assert.equal(read(dir, (db) => openActivityRecord(db, taskId)), null);
+  assert.equal(read(dir, (db) => openActivityRecord(db, taskId, CALL_SESSION)), null);
+  assert.equal(read(dir, (db) => sessionWorkItem(db, taskId, CALL_SESSION))?.status, "done", "这条会话仍然属于那个已经结束的工作项");
   assert.deepEqual(read(dir, (db) => activityRecords(db, taskId)).map((r) => [r.activity, r.ended_at !== null]), [["modeling", true]]);
-  assert.deepEqual(read(dir, (db) => [stageOf(db, dir, taskId, DEFINITION), currentStage(db, taskId)]), [IDLE, IDLE]);
+  assert.deepEqual(read(dir, (db) => [stageOf(db, dir, taskId, DEFINITION, CALL_SESSION), currentStage(db, taskId, CALL_SESSION), currentStage(db, taskId, "sess-a")]), [IDLE, IDLE, IDLE]);
   // 刚建好的任务：有材料、没有材料都是空闲，空闲不落库。
   for (const material of [true, false]) {
     const fresh = workspace(overallDefinition(), material);
-    assert.equal(read(fresh.dir, (db) => stageOf(db, fresh.dir, fresh.taskId, DEFINITION)), IDLE);
+    assert.equal(read(fresh.dir, (db) => stageOf(db, fresh.dir, fresh.taskId, DEFINITION, CALL_SESSION)), IDLE);
     assert.equal(count(fresh.dir, "activity_record"), 0);
   }
   // 早先建的任务没有阶段：null，与空闲不是一回事。
   const old = workspace(demoDefinition());
-  assert.equal(read(old.dir, (db) => stageOf(db, old.dir, old.taskId, validateDefinition(demoDefinition()))), null);
+  assert.equal(read(old.dir, (db) => stageOf(db, old.dir, old.taskId, validateDefinition(demoDefinition()), CALL_SESSION)), null);
 });
 
-test("空闲时的摘要：现在的位置是 idle，谁移的、什么时候、为什么三项为 null，六个阶段的灯照算；给助手看的只有一句，不说灯", () => {
+test("空闲时的摘要：现在的位置是 idle，谁、什么时候、为什么三项为 null，六个阶段的灯照算；给助手看的只有一句，不说灯；自由讨论的会话与工作项已经结束的会话各有各的一句", () => {
   const { dir, taskId } = idle();
-  const summary = read(dir, (db) => stageSummary(db, dir, taskId, DEFINITION))!;
-  assert.deepEqual([summary.current, summary.moved_by, summary.moved_at, summary.reason], [IDLE, null, null, null]);
+  const summary = read(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "sess-a"))!;
+  assert.deepEqual([summary.current, summary.work_item, summary.moved_by, summary.moved_at, summary.reason], [IDLE, null, null, null, null]);
   assert.deepEqual(Object.keys(summary.lamps), [...STAGES], "灯还是六个阶段的，空闲没有自己的灯");
-  assert.equal(IDLE_LINE, "任务现在空闲：没有在进行的活动。开展哪一项活动由用户决定。");
+  assert.equal(IDLE_LINE, "本会话是自由讨论，不属于任何工作项：你可以立主题页、改主题页、记问题条目，不写需求条目，也不提议进入哪一项活动。启动哪一项活动由用户从任务起点页决定。");
   assert.deepEqual(stageLines(summary), [IDLE_LINE]);
   // 查询任务状态的末尾：那一句，后面照常接提议与卡片两行。
   const lines = getTaskStatus(dir, "sess-a").text.split("\n");
   assert.deepEqual(lines.slice(-3), [IDLE_LINE, "没有开着的提议。", "这一段没有还开着的提问与请选择。"]);
   assert.equal(lines.some((line) => /阶段（|这一段还差|这一段的几项都齐了/.test(line)), false);
+  // 属于已经结束的工作项的会话：位置同样是 idle，那一句写明工作项已经结束、此后按自由讨论办。
+  const ended = read(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, CALL_SESSION))!;
+  assert.deepEqual([ended.current, ended.work_item?.name, ended.work_item?.status, ended.moved_by], [IDLE, "首次分析", "done", null]);
+  assert.deepEqual(stageLines(ended), ["本会话的工作项「首次分析」已经结束（已做完）。本会话此后按自由讨论办：你可以立主题页、改主题页、记问题条目，不写需求条目，" +
+    "也不提议进入哪一项活动。要再做这项活动，由用户从任务起点页再启动一次。"]);
 });
 
-test("空闲时保存修订：页与问题可以写，别的集合的条目被拦，原话写任务现在没有在进行的活动、由用户从任务状况卡开展一项活动", () => {
+test("空闲时保存修订：页与问题可以写，别的集合的条目被拦，原话写本会话没有在进行的工作项、由用户从任务起点页启动一个工作项", () => {
   // 在写条目阶段先写好一页与一条用例，再置为空闲。
   const { dir } = workspace();
   enterStage(dir, "writing");
@@ -92,12 +98,12 @@ test("空闲时保存修订：页与问题可以写，别的集合的条目被�
   endActivities(dir);
   const revisions = count(dir, "revision");
   const added = saveRefusal(dir, [useCase("还书")])!;
-  assert.ok(added.includes("- 操作 1（新增，集合「用例」）：新增到「用例」的条目：任务现在没有在进行的活动，这时不能新增「用例」的条目。"), added);
+  assert.ok(added.includes("- 操作 1（新增，集合「用例」）：新增到「用例」的条目：本会话没有在进行的工作项，这时不能新增「用例」的条目。"), added);
   assert.ok(added.includes(`怎么办：「用例」的条目要在写条目这项活动里写。${HOW}`), added);
   const updated = saveRefusal(dir, [{ op: "update", item: "UC-001", base_revision: 2, fields: { 名称: "借阅图书" } }])!;
-  assert.ok(updated.includes("UC-001：任务现在没有在进行的活动，这时不能修改「用例」的条目。"), updated);
+  assert.ok(updated.includes("UC-001：本会话没有在进行的工作项，这时不能修改「用例」的条目。"), updated);
   const deleted = saveRefusal(dir, [{ op: "delete", item: "UC-001", base_revision: 2 }])!;
-  assert.ok(deleted.includes("任务现在没有在进行的活动，这时不能删除「用例」的条目。"), deleted);
+  assert.ok(deleted.includes("本会话没有在进行的工作项，这时不能删除「用例」的条目。"), deleted);
   assert.equal(count(dir, "revision"), revisions, "被拦的一次都没有写进去");
   // 页与问题：新立、修改都可以。
   assert.equal(saveRefusal(dir, [page("预约"), problem("闭馆日算不算在保留期内？")]), null);
@@ -121,59 +127,51 @@ test("空闲时画图、请求评审、完成任务都被拦，原话各写这�
     assert.fail("应当被拒绝");
   };
   assert.deepEqual(await layers(() => saveDiagram({ ...callIn(dir), userMessages: [{ entryId: "u1", text: "把借书的过程画成一张流程图。" }] }, diagram, { validate: async () => ({ ok: true }) })),
-    ["任务现在没有在进行的活动，这时不能画图、改图或删图", `图要在整理建模这项活动里画。${HOW}`]);
-  assert.deepEqual(await layers(() => prepareReviews(dir, null, "executor")),
-    ["任务现在没有在进行的活动，这时不能请求评审", `评审要在写条目或评审确认这项活动里请求。${HOW}`]);
+    ["本会话没有在进行的工作项，这时不能画图、改图或删图", `图要在整理建模这项活动里画。${HOW}`]);
+  assert.deepEqual(await layers(() => prepareReviews(dir, null, "executor", CALL_SESSION)),
+    ["本会话没有在进行的工作项，这时不能请求评审", `评审要在写条目或评审确认这项活动里请求。${HOW}`]);
   assert.deepEqual(await layers(() => completeTask(callIn(dir))),
-    ["任务没有标为已完成：任务现在没有在进行的活动，这时不能完成任务。", `完成任务要在评审确认或编写文档这项活动里做。${HOW}。`]);
+    ["任务没有标为已完成：本会话没有在进行的工作项，这时不能完成任务。", `完成任务要在评审确认或编写文档这项活动里做。${HOW}。`]);
   assert.deepEqual([count(dir, "diagram"), query<{ status: string }>(dir, "SELECT status FROM task")[0].status], [0, "进行中"]);
 });
 
-test("从空闲移到一个阶段：只记开始的一条，事件里的 from 是 null；会话里的说明写从空闲移到哪里；六个阶段都能去", () => {
+test("工作项结束之后：属于它的会话里不能再移动阶段；要再做，在一条新会话上另启动一个工作项，原来那一行不动", () => {
   const { dir, taskId } = idle();
-  const before = count(dir, "event");
-  const out = runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: "ui-op-idle-move", kind: "move_stage", fields: { stage: "整理建模" } });
-  // 首次分析之前走到过澄清，这一次是从整理建模接着走。
-  assert.equal(out.note, "界面操作（不是用户打的字）：用户继续工作流程「首次分析」，从「整理建模」接着。");
-  const events = query<{ seq: number; name: string; payload: string }>(dir, "SELECT seq, name, payload FROM event WHERE seq > ? ORDER BY seq", before);
-  assert.deepEqual(events.map((e) => [e.name, JSON.parse(e.payload)]), [
-    ["ACTIVITY_STARTED", { activity: "modeling", node: "modeling", flow: "initial", from: null, actor: "user", reason: "", run_id: null }],
-  ]);
-  assert.deepEqual(out.event_seqs, [events[0].seq]);
-  assert.deepEqual(read(dir, (db) => [stageOf(db, dir, taskId, DEFINITION), openActivityRecord(db, taskId)!.from]), ["modeling", null]);
-  // 移到任务结束前所在的那个阶段也算一次移动：空闲时没有「原地不动」。
-  for (const stage of STAGES) {
-    const one = idle(stage);
-    const records = count(one.dir, "activity_record");
-    enterStage(one.dir, stage);
-    assert.deepEqual(read(one.dir, (db) => stageOf(db, one.dir, one.taskId, DEFINITION)), stage);
-    assert.equal(count(one.dir, "activity_record"), records + 1, stage);
-  }
+  const before = [count(dir, "event"), count(dir, "activity_record")];
+  assert.throws(() => runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: "ui-op-idle-move", kind: "move_stage", fields: { stage: "整理建模" } }),
+    (error: unknown) => error instanceof UserOpError && error.code === "rejected" && error.message === "本会话不在做工作流程的工作项，不能移动阶段。要做哪一项活动，请从任务起点页启动一个工作项。");
+  assert.deepEqual([count(dir, "event"), count(dir, "activity_record")], before, "什么都没有记");
+  // 另启动一个：新会话上一个新的工作项，从整理建模开始。
+  const out = runUserOperation({ workspaceDir: dir, sessionId: "sess-new" }, { op_id: "ui-op-idle-start", kind: "start_activity", fields: { activity: "整理建模", in_flow: true } });
+  assert.equal(out.note, "界面操作（不是用户打的字）：用户启动工作流程「首次分析」，从「整理建模」开始。");
+  assert.deepEqual(read(dir, (db) => activityRecords(db, taskId)).map((r) => [r.activity, r.status]), [["clarifying", "done"], ["modeling", "active"]]);
+  assert.deepEqual(read(dir, (db) => [stageOf(db, dir, taskId, DEFINITION, "sess-new"), stageOf(db, dir, taskId, DEFINITION, CALL_SESSION)]), ["modeling", IDLE]);
 });
 
-test("空闲时卡片上的点击：只有「开始核读材料」算，它启动首次分析；别的进入与退回都不算，原因是任务不在流程里", () => {
+test("空闲时卡片上的点击：进入与退回都不算，原因是这条会话不在做流程的工作项；早先能启动首次分析的「开始核读材料」也不算", () => {
   const card = (key: string, text: string, other: { key: string; text: string }) => ({
     id: "reply-card", type: "message",
     message: { role: "assistant", content: [{ type: "toolCall", id: "call-card", name: "reply", arguments: { informs: [], act: { kind: "choose", text: "这样可以吗？", options: [{ key, text }, other] } } }] },
   });
-  const click = (dir: string, option: { key: string; text: string }, other: { key: string; text: string }) => recordStageCardClick(dir, "sess-a",
+  const click = (dir: string, session: string, option: { key: string; text: string }, other: { key: string; text: string }) => recordStageCardClick(dir, session,
     [card(option.key, option.text, other)] as never, { opId: `ui-op-${option.key}`, replyEntry: "reply-card", optionKey: option.key });
-  const tried: [{ key: string; text: string }, { key: string; text: string }, boolean, string | null][] = [
-    [ENTER_OPTIONS.reading, STAY_IDLE_OPTION, true, null],
-    [ENTER_OPTIONS.modeling, STAY_OPTIONS.clarifying, false, "not_in_flow"],
-    [ENTER_OPTIONS.writing, STAY_OPTIONS.clarifying, false, "not_in_flow"],
-    [ENTER_OPTIONS.clarifying, STAY_OPTIONS.reading, false, "not_in_flow"],
-    [ENTER_OPTIONS.reviewing, STAY_OPTIONS.writing, false, "not_in_flow"],
-    [BACK_OPTIONS.reading, STAY_HERE_OPTION, false, "not_in_flow"],
-    [BACK_OPTIONS.clarifying, STAY_HERE_OPTION, false, "not_in_flow"],
+  const tried: [{ key: string; text: string }, { key: string; text: string }][] = [
+    [ENTER_OPTIONS.reading, STAY_IDLE_OPTION],
+    [ENTER_OPTIONS.modeling, STAY_OPTIONS.clarifying],
+    [ENTER_OPTIONS.writing, STAY_OPTIONS.clarifying],
+    [ENTER_OPTIONS.clarifying, STAY_OPTIONS.reading],
+    [ENTER_OPTIONS.reviewing, STAY_OPTIONS.writing],
+    [BACK_OPTIONS.reading, STAY_HERE_OPTION],
+    [BACK_OPTIONS.clarifying, STAY_HERE_OPTION],
   ];
-  for (const [option, other, moved, why] of tried) {
+  for (const [option, other] of tried) {
     const { dir } = idle("writing");
-    const out = click(dir, option, other);
-    assert.deepEqual([out?.from, out?.moved, out?.why], [IDLE, moved, why], option.key);
-    assert.equal(moveRows(dir).length, moved ? 2 : 1, option.key);
-    // 「开始核读材料」：首次分析之前走到过写条目，所以这一次是继续首次分析，从核读材料接着；记录在流程里。
-    if (moved) assert.deepEqual([out!.how, out!.in_flow, query(dir, "SELECT node, flow FROM activity_record ORDER BY started_seq DESC LIMIT 1").map((r) => ({ ...r }))],
-      ["resume", true, [{ node: "reading", flow: "initial" }]]);
+    // 自由讨论的会话与属于已经结束的工作项的会话，都一样。
+    for (const session of ["sess-a", CALL_SESSION]) {
+      const out = click(dir, session, option, other);
+      assert.deepEqual([out?.from, out?.moved, out?.why], [IDLE, false, "not_in_flow"], `${option.key} ${session}`);
+    }
+    assert.equal(moveRows(dir).length, 1, option.key);
+    assert.equal(count(dir, "event"), count(dir, "event"));
   }
 });

@@ -37,15 +37,15 @@ test("别的多出来的项照旧报「多了」，不再提 stage 与 reason", 
   assert.throws(() => checkReply({ ...base, stages: "澄清" }, facts), (error: Error) => !error.message.includes("要移动工作阶段时"));
 });
 
-test("activity_done：不写、写 null 或 false 时回复照常，形状里没有这一项；写 true 而任务正在单独开展一项活动时带上它", () => {
+test("activity_done：不写、写 null 或 false 时回复照常，形状里没有这一项；写 true 而本会话的工作项是单项活动时带上它", () => {
   for (const none of [{}, { activity_done: null }, { activity_done: false }]) assert.deepEqual(checkReply({ ...base, ...none }, facts), base);
   assert.deepEqual(checkReply({ ...base, activity_done: true }, { ...facts, activityDoneRefusal: () => null }), { ...base, activity_done: true });
   // 没有给核对函数（直接调用的单元测试）时不核对。
   assert.deepEqual(checkReply({ ...base, activity_done: true }, facts), { ...base, activity_done: true });
-  assert.throws(() => checkReply({ ...base, activity_done: "是" }, facts), /activity_done 只能写 true 或 false：单独开展的那项活动做够了、要汇报结束时写 true，别的时候不写/);
+  assert.throws(() => checkReply({ ...base, activity_done: "是" }, facts), /activity_done 只能写 true 或 false：本会话的工作项是单项活动、这项活动做够了、要汇报结束时写 true，别的时候不写/);
 });
 
-test("activity_done 写了 true 而任务不在单独开展的活动里：整次回复被拒；在流程里指引用进入下一段的卡片，空闲时说没有可结束的活动", () => {
+test("activity_done 写了 true 而本会话不在做单项活动的工作项：整次回复被拒；流程的工作项指引用进入下一段的卡片，空闲时说没有可结束的工作项", () => {
   const refused = (position: Parameters<typeof activityDoneRefusal>[0]) => {
     try {
       checkReply({ ...base, activity_done: true }, { ...facts, activityDoneRefusal: () => activityDoneRefusal(position) });
@@ -56,11 +56,11 @@ test("activity_done 写了 true 而任务不在单独开展的活动里：整次
   };
   const clarifying = refused("clarifying");
   assert.match(clarifying, /没有送达/);
-  assert.ok(clarifying.includes("回复里写了 activity_done，而任务现在在首次分析流程里的澄清阶段：这一项只在用户单独开展一项活动时用，流程里的阶段不由你结束。"), clarifying);
+  assert.ok(clarifying.includes("回复里写了 activity_done，而本会话的工作项是工作流程，现在在澄清阶段：这一项只在工作项是单项活动时用，流程里的阶段不由你结束。"), clarifying);
   assert.ok(clarifying.includes("怎么办：去掉 activity_done 这一项再回复。这一段做完了要往前走，请用请选择卡片提议，说清下一段要做什么，" +
     "两个选项的键与文字是 enter_consolidate「进入整理建模」、continue_clarify「继续本阶段」，由用户在卡片上点。"), clarifying);
   assert.ok(refused("document").includes("怎么办：去掉 activity_done 这一项再回复。这一段做完了，照这一段的说明请用户过目。"));
   const idle = refused(IDLE);
-  assert.ok(idle.includes("回复里写了 activity_done，而任务现在空闲，没有在进行的活动可以结束。"), idle);
-  assert.ok(idle.includes("怎么办：去掉 activity_done 这一项再回复。开展哪一项活动由用户从任务状况卡决定。"), idle);
+  assert.ok(idle.includes("回复里写了 activity_done，而本会话没有在进行的工作项可以结束。"), idle);
+  assert.ok(idle.includes("怎么办：去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定。"), idle);
 });

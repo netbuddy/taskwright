@@ -36,7 +36,6 @@ import type {
   ReviewWaived,
   SessionInfo,
   Snapshot,
-  StageChanged,
   StageView,
   Step,
   SystemNote,
@@ -355,10 +354,8 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
       next = applyConfirmationRecorded(next, { ...data, basis: "viewed", items: data.items.map((i) => ({ ...i, accepted: true })) });
       break;
     }
-    case "activity_started":
-      // 任务开始了一项活动，也就是移到了另一个工作阶段。紧挨在它前面的 activity_ended（前一项活动结束）不用处理。
-      next = applyStageChanged(next, event.data as unknown as StageChanged);
-      break;
+    // 启动工作项、流程换站、工作项结束（activity_started、node_entered、activity_ended）不在这里改阶段：这几种事件说的是工作项，
+    // 推给任务的每一条会话；这条会话现在的阶段看下面这一批最后一条库事件带的 stage（后端按订阅的那条会话算好）。
   }
   // 有阶段的任务：这一批最后一条库事件带着现在的阶段与灯（不论是哪一种事件），照它换掉。
   const stage = (event.data as { stage?: StageView | null }).stage;
@@ -420,14 +417,6 @@ function applyRulesChanged(state: WorkState, data: ReviewRulesChanged): WorkStat
  * 任务移到了另一个工作阶段：把任务上记的现在的阶段、谁移的、什么时候、理由换成这一次的；灯不在这条事件里，
  * 由这一批最后一条事件带来的整份阶段数据换（见 applyLibrary 末尾）。任务没有阶段数据时（旧后端）不凭空造一份。
  */
-function applyStageChanged(state: WorkState, data: StageChanged): WorkState {
-  const next = withCompletionOnly(state, data.completion);
-  const stage = next.task?.stage;
-  if (!next.task || !stage) return next;
-  const by = data.actor === "user" || data.actor === "executor" ? data.actor : stage.moved_by;
-  return { ...next, task: { ...next.task, stage: { ...stage, current: data.to, moved_by: by, moved_at: data.at, reason: data.reason } } };
-}
-
 function withCompletionOnly(state: WorkState, completion: Completion | null | undefined): WorkState {
   return state.task ? { ...state, task: withCompletion(state.task, completion) } : state;
 }

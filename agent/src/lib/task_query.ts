@@ -277,11 +277,11 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
     const factLines = dialogue ? dialogueFactLines(dialogue) : [];
     if (factLines.length > 0) lines.push("", ...factLines);
     // 工作的阶段（任务定义里有总体分析集合时才有）：现在在哪个阶段、这一段还差什么，写在最后。
-    const stage = stageSummary(db, workspaceDir, task.task_id, definition);
+    const stage = stageSummary(db, workspaceDir, task.task_id, definition, sessionId ?? null);
     // 开着的提议接在后面一行：用户要求进入、退回或者说看过了时，助手据此知道该请他点「待决定」一行，而不是重发卡片。
-    if (stage) lines.push("", ...stageLines(stage), proposalLine(openProposal(db, task.task_id), sessionId ?? null));
+    if (stage) lines.push("", ...stageLines(stage), proposalLine(openProposal(db, task.task_id, sessionId ?? null), sessionId ?? null));
     // 再后面一行是这一段还开着的提问与请选择（这条会话里的）：助手提议进入下一段之前据此一次一张重发。
-    if (stage && sessionId) lines.push(openCardsLine(cardsOpenInStage(db, task.task_id, unansweredActs(db, task.task_id, sessionId))));
+    if (stage && sessionId) lines.push(openCardsLine(cardsOpenInStage(db, task.task_id, unansweredActs(db, task.task_id, sessionId), sessionId)));
     return {
       text: lines.join("\n"),
       details: {

@@ -24,7 +24,8 @@ function workspace(definition: Record<string, any> = overallDefinition()): { dir
   const summary = () => {
     const db = new DatabaseSync(databasePath(dir), { readOnly: true });
     try {
-      return stageSummary(db, dir, taskId, validateDefinition(definition));
+      // 看的是界面操作的那条会话：下面启动的工作项就记在它上面。
+      return stageSummary(db, dir, taskId, validateDefinition(definition), "sess-ui");
     } finally {
       db.close();
     }
@@ -83,7 +84,8 @@ test("走一小段：立页、记问题、移动、用户看过、写用例，�
   assert.deepEqual(brief(now, "reviews_no_open_findings"), [false, []]);
   assert.equal(lamp(now, "completion_met").ok, false);
 
-  // 用户把任务移到澄清：记下是谁、为什么。
+  // 用户启动首次分析、从核读材料开始，再把工作项移到澄清：记下是谁、为什么。
+  enterStage(dir, "reading");
   userOp(dir, { kind: "move_stage", fields: { stage: "澄清", reason: "材料我读过了。" } });
   now = summary()!;
   assert.deepEqual([now.current, now.moved_by, now.reason], ["clarifying", "user", "材料我读过了。"]);
@@ -203,18 +205,20 @@ test("查询任务状态的末尾写现在在哪个阶段、这一段还差什�
   const { dir } = workspace();
   // 刚建好：空闲，只有一句，不说灯。
   let out = getTaskStatus(dir);
-  assert.match(out.text, /\n\n任务现在空闲：没有在进行的活动。开展哪一项活动由用户决定。\n没有开着的提议。$/);
+  assert.match(out.text, /\n\n本会话是自由讨论，不属于任何工作项：你可以立主题页、改主题页、记问题条目，不写需求条目，也不提议进入哪一项活动。启动哪一项活动由用户从任务起点页决定。\n没有开着的提议。$/);
   assert.equal((out.details as any).stage.current, "idle");
   // 用户启动首次分析：核读材料，材料还没有被引用。
   userOp(dir, { kind: "start_activity", fields: { activity: "核读材料", in_flow: true } });
-  out = getTaskStatus(dir);
-  assert.match(out.text, /\n\n任务现在在核读材料阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 移过来的）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。\n没有开着的提议。$/);
+  out = getTaskStatus(dir, "sess-ui");
+  assert.match(out.text, /\n\n本会话的工作项是工作流程「首次分析」，现在在核读材料阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 到这一站的）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。\n没有开着的提议。\n这一段没有还开着的提问与请选择。$/);
+  // 同一时刻在别的会话里问：那条会话是自由讨论，不说这个工作项。
+  assert.equal((getTaskStatus(dir, "sess-other").details as any).stage.current, "idle");
   assert.equal((out.details as any).stage.current, "reading");
   // 立了一页引用材料的主题，用户移到澄清并写了理由：澄清这一段两盏灯都过（或不适用）。
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "总体分析", fields: { 标题: "登录", 它是什么: "用户可以登录。", 标签: ["概念"], 状态: "在用" }, sources: [SOURCE] }] });
   userOp(dir, { kind: "move_stage", fields: { stage: "澄清", reason: "材料我读过了。" } });
-  out = getTaskStatus(dir);
-  assert.match(out.text, /\n\n任务现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 移过来的，理由：材料我读过了）。\n澄清这一段的几项都齐了。\n没有开着的提议。$/);
+  out = getTaskStatus(dir, "sess-ui");
+  assert.match(out.text, /\n\n本会话的工作项是工作流程「首次分析」，现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 到这一站的，理由：材料我读过了）。\n澄清这一段的几项都齐了。\n没有开着的提议。\n这一段没有还开着的提问与请选择。$/);
   assert.deepEqual([(out.details as any).stage.current, (out.details as any).stage.moved_by], ["clarifying", "user"]);
 
   const old = workspace(demoDefinition() as Record<string, any>);

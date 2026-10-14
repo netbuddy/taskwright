@@ -293,7 +293,7 @@ test("格式版本：新建的库里活动记录表不检查活动的取值，�
   assert.equal(tableSql(dir, "stage_record"), null);
 });
 
-test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现在的版本时这几行改写成活动记录，编号照抄，阶段记录表不留；再升一次什么都不改", () => {
+test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现在的版本时这几行先改写成活动记录（编号照抄）、再并成一个流程的工作项，阶段记录表不留；再升一次什么都不改", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, (db) => {
     db.exec(`DROP TABLE activity_record; ${OLD_STAGE_RECORD_SQL}`);
@@ -309,21 +309,21 @@ test("格式版本 3 的库里阶段记录表检查阶段的取值：升到现�
   assert.throws(() => raw.prepare(INSERT_STAGE_RECORD).run("op-4", "document", "reviewing", 14, "2026-10-11T13:00:00"), /CHECK constraint failed/);
   raw.close();
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 3, to: TASK_DB_VERSION });
-  assert.equal(TASK_DB_VERSION, 6);
-  assert.equal(version(dir), 6);
-  assert.deepEqual(query(dir, "SELECT record_id, call_id, activity, node, flow, started_at, ended_at, started_seq, ended_seq FROM activity_record ORDER BY record_id").map((row) => ({ ...row })), [
-    { record_id: 2, call_id: "op-2", activity: "modeling", node: "modeling", flow: "initial", started_at: "2026-10-11T11:00:00", ended_at: "2026-10-11T12:00:00", started_seq: 12, ended_seq: 13 },
-    { record_id: 3, call_id: "op-3", activity: "writing", node: "writing", flow: "initial", started_at: "2026-10-11T12:00:00", ended_at: null, started_seq: 13, ended_seq: null },
+  assert.equal(TASK_DB_VERSION, 7);
+  assert.equal(version(dir), 7);
+  // 两行都在首次分析里：并成一行，留最早那一行的编号与启动的时刻，现在的活动与所在的一站取最晚那一行的，还在进行。
+  assert.deepEqual(query(dir, "SELECT record_id, call_id, activity, node, flow, started_at, ended_at, started_seq, ended_seq, status FROM activity_record ORDER BY record_id").map((row) => ({ ...row })), [
+    { record_id: 2, call_id: "op-2", activity: "writing", node: "writing", flow: "initial", started_at: "2026-10-11T11:00:00", ended_at: null, started_seq: 12, ended_seq: null, status: "active" },
   ]);
   assert.deepEqual(tables(dir), [...TABLE_NAMES].sort(), "阶段记录表与重建时用的那张表都没有留下");
   withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(INSERT_ACTIVITY_RECORD).run("op-4", "user", "document", "document"));
-  assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM activity_record ORDER BY record_id").map((row) => row.record_id), [2, 3, 4]);
+  assert.deepEqual(query<{ record_id: number }>(dir, "SELECT record_id FROM activity_record ORDER BY record_id").map((row) => row.record_id), [2, 3]);
   const sql = tableSql(dir, "activity_record");
   assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
   assert.equal(tableSql(dir, "activity_record"), sql);
 });
 
-test("格式版本 5 的库：活动记录表没有范围说明一列，升到 6 只加这一列，已有的行原样、这一列为空；再升一次什么都不改", () => {
+test("格式版本 5 的库：活动记录表没有范围说明一列，升上来时补上这一列，已有的行原样、这一列为空；再升一次什么都不改", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, (db) => {
     db.exec("ALTER TABLE activity_record DROP COLUMN scope");
@@ -332,11 +332,11 @@ test("格式版本 5 的库：活动记录表没有范围说明一列，升到 6
   });
   assert.doesNotMatch(tableSql(dir, "activity_record")!, /scope/);
   const before = query(dir, "SELECT * FROM activity_record").map((row) => ({ ...row }));
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 5, to: 6 });
-  assert.equal(version(dir), 6);
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 5, to: TASK_DB_VERSION });
+  assert.equal(version(dir), TASK_DB_VERSION);
   assert.deepEqual(query(dir, "SELECT * FROM activity_record").map((row) => ({ ...row })), before.map((row) => ({ ...row, scope: null })));
   const sql = tableSql(dir, "activity_record");
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 6, to: 6 });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
   assert.equal(tableSql(dir, "activity_record"), sql);
 });
 

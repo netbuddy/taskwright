@@ -11,7 +11,7 @@ import { UI_COMMAND, UI_RESULT_KEY, registerUserCommands } from "../src/hooks/us
 import { BACK_OPTIONS, CONTINUE_CLARIFY_KEY, CONTINUE_CLARIFY_TEXT, ENTER_OPTIONS, STAY_HERE_OPTION, stageBackedBy, STAGE_NAMES, START_ITEMS_KEY, START_ITEMS_TEXT, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
 import { START_ITEMS_REASON, backReason, enterReason, recordStageCardClick } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, callIn, count, demoDefinition, enterStage, makeWorkspace, moveRows, overallDefinition, query } from "./helpers.ts";
+import { DEFINITION_PATH, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query, stageMoves } from "./helpers.ts";
 
 const SESSION = "sess-ui";
 const OPTIONS = [{ key: START_ITEMS_KEY, text: START_ITEMS_TEXT }, { key: CONTINUE_CLARIFY_KEY, text: CONTINUE_CLARIFY_TEXT }];
@@ -25,8 +25,8 @@ const said = (id: string, text: string) => ({ id, type: "message", message: { ro
 const BRANCH = [said("u-1", "读一下材料"), card("a-1"), card("a-2", [{ key: "yes", text: "可以" }, { key: "no", text: "不行" }])] as never;
 
 /**
- * 一个已经启动了首次分析、停在核读材料的任务（新建的任务是空闲的，进入与退回的卡片只在流程里算数）。
- * 启动的那一条活动记录是这里记的，下面数记录、列移动时都不算它（早先建的任务没有阶段，没有这一条）。
+ * 一个已经启动了首次分析、停在核读材料的任务：测试里的两条会话都属于这个流程的工作项（进入与退回的卡片只在流程的工作项里算数）。
+ * 早先建的任务没有阶段，没有工作项。
  */
 function workspace(definition: unknown = overallDefinition()): string {
   const dir = makeWorkspace(definition);
@@ -34,11 +34,12 @@ function workspace(definition: unknown = overallDefinition()): string {
   enterStage(dir, "reading");
   return dir;
 }
-const launched = (dir: string) => (moveRows(dir)[0]?.stage === "reading" && moveRows(dir)[0].from_stage === null ? 1 : 0);
-/** 启动之后记下的移动，按先后。 */
-const records = (dir: string) => moveRows(dir).slice(launched(dir)).map(({ event_seq: _seq, ...r }) => r);
-/** 启动之后记下了几次移动。 */
-const moves = (dir: string) => moveRows(dir).length - launched(dir);
+/** 启动之后记下的换站，按先后；列名沿用早先「一次移动一行」的叫法。 */
+const records = (dir: string) => stageMoves(dir).map(({ event_seq: _seq, record_id: _id, direction: _direction, ...r }) => r);
+/** 启动之后换了几次站。 */
+const moves = (dir: string) => stageMoves(dir).length;
+/** 换站之后工作项仍是那一行。 */
+const moveRows = stageMoves;
 
 test("点「开始写条目」：记一条用户的移动，理由写明是在卡片上选的；点「继续本阶段」什么都不记", () => {
   const dir = workspace();

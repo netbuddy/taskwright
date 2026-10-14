@@ -19,7 +19,7 @@ import { ApiError } from "./errors.ts";
 import { splitLines } from "./files.ts";
 import type { Hub } from "./hub.ts";
 import { LaunchError, type Profile, resolveModel } from "./launch.ts";
-import { callFacts, diagramDetail, maxSeq, openRo } from "./library.ts";
+import { callFacts, diagramDetail, maxSeq, openRo, workItemRows } from "./library.ts";
 import { type PiEvent, PiExited, PiNotFound, PiPrepareFailed, PiRefused, PiSession, PiStartRefused, PiTimeout, technicalOf } from "./pi_session.ts";
 import { or, pyDumps, pyStr, truthy } from "./py.ts";
 import { LABEL, Sessions } from "./sessions.ts";
@@ -208,6 +208,8 @@ export class Executor {
   /** 发给 pi 的原文的开头 → origin（ui_request 之类）。 */
   readonly pendingOrigin = new Map<string, string>();
   private named = new Set<string>();
+  /** 按工作项起了名的会话与起的名字：会话文件里还读不到名字时，会话清单先用它。 */
+  private givenNames = new Map<string, string>();
   private lastClick: Dict | null = null;
   private lastUserEntry: string | null = null;
   /** 这个助手启动之前任务库的最大事件序号：整份数据里的进行中的评审只认这之后写下的进度。 */
@@ -234,7 +236,11 @@ export class Executor {
     if (this.activeSession && !seen.has(this.activeSession)) {
       rows.push({ session_id: this.activeSession, name: null, started_at: null, last_active_at: null, message_count: 0, active: false });
     }
-    for (const row of rows) row.active = row.session_id === this.activeSession && this.running();
+    for (const row of rows) {
+      row.active = row.session_id === this.activeSession && this.running();
+      // 刚按工作项起了名、会话文件还没有写出来（或者名字还没有落进文件）的会话：先用起名时记下的那个名字。
+      if (!truthy(row.name) && this.givenNames.has(row.session_id)) row.name = this.givenNames.get(row.session_id);
+    }
     return rows;
   }
 
@@ -514,6 +520,14 @@ export class Executor {
    * 评审（request_review）也走这里：扩展命令核对通过、记下第一条进度事件就回报，评审在 pi 进程里接着跑，进度与结果作为库事件推给前端。
    */
   async action(sessionId: string | null, body: Dict): Promise<string> {
+    return (await this.actionWith(sessionId, body)).op_id;
+  }
+
+  /**
+   * 同上，另带这次操作涉及的工作项的记录号（启动、换一条会话接着做、结束一个工作项时助手一侧回报的；别的操作为 null）。
+   * 启动或者接着做成了之后，这条会话随即按它的工作项起名。
+   */
+  async actionWith(sessionId: string | null, body: Dict): Promise<{ op_id: string; activity_record_id: number | null }> {
     // 助手不在（已退出、还没启动、续接没接上之后）时与说话一样按需启动并续接这条会话，页面在这些状态下不必设只读；
     // 续接对不上照样报 session_resume_failed，操作不会在接错的会话里执行。没有给会话时不启动，免得为一次操作另开一条会话。
     await this.require(sessionId, sessionId !== null);
@@ -545,7 +559,27 @@ export class Executor {
       const ids = ((or(command.targets, []) as Dict[]).filter((t) => truthy(t.item_id)).map((t) => pyStr(t.item_id))).join("、");
       await this.say(sessionId, keepPendingNotice(ids), null);
     }
-    return opId;
+    const recordId = typeof result.activity_record_id === "number" ? result.activity_record_id : null;
+    if ((command.kind === "start_activity" || command.kind === "continue_activity") && recordId !== null && sessionId) await this.nameAfterWorkItem(sessionId, recordId);
+    return { op_id: opId, activity_record_id: recordId };
+  }
+
+  /**
+   * 属于一个工作项的会话在建立时就按工作项起名：单项活动是活动的名字，流程是「流程名 · 所在的一站」，写了范围说明的接前几个字
+   * （agent/src/lib/stage_read.ts 的 workItemSessionName）。起了名的会话不再按第一句用户的话起名。起名没有做成不算这次操作失败。
+   */
+  private async nameAfterWorkItem(sessionId: string, recordId: number): Promise<void> {
+    const item = workItemRows(this.taskDir).find((one) => one.record_id === recordId);
+    if (!item) return;
+    this.named.add(sessionId);
+    this.givenNames.set(sessionId, item.session_name);
+    try {
+      await this.lock.run(async () => {
+        if (this.running() && this.activeSession === sessionId) await this.pi!.request("set_session_name", { name: item.session_name });
+      });
+    } catch (error) {
+      if (!(error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
+    }
   }
 
   /**
@@ -921,7 +955,7 @@ export class Executor {
     return found;
   }
 
-  /** 会话名按第一句用户的话自动起（RPC 的 set_session_name）。 */
+  /** 自由讨论的会话按第一句用户的话自动起名（RPC 的 set_session_name）；属于工作项的会话在建立时已经按工作项起了名（nameAfterWorkItem），这里不改。 */
   private async maybeName(pi: PiSession, sid: string, text: string): Promise<void> {
     this.named.add(sid);
     try {
@@ -989,7 +1023,7 @@ export class Executor {
       for (const t of work.turn_tools) if (t.id === (event.toolCallId ?? null)) Object.assign(t, { done: true, failed, details });
     }
     if (WRITE_TOOLS.has(tool) && !failed) this.hub.trigger();
-    // 助手在回复里汇报单独开展的活动结束：库里多了一条活动结束的事件，去查并转发给页面。
+    // 助手在回复里汇报这条会话的工作项做完：库里多了一条工作项结束的事件，去查并转发给页面。
     if (tool === REPLY_TOOL && !failed && details.activity_done) this.hub.trigger();
     if (tool === REPLY_TOOL && !failed) {
       const reply = details.reply || {};

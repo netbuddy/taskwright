@@ -16,14 +16,14 @@ echo "   task: $TASK"
 echo "2. upload the requirements material"
 curl -sf -X POST "$API/tasks/$TASK/materials" -F "file=@$HERE/requirements.md" | json 'd["path"]'
 
-echo "3. open a session (this starts the agent)"
-SESSION=$(curl -sf -X POST "$API/tasks/$TASK/sessions" | json 'd["session_id"]')
+echo "3. launch the first analysis (this creates a work item with its session, and starts the agent)"
+# Nothing is in progress in a new task until you start work. Starting work creates a work item (one launch of a flow or of
+# a single activity) and a session that belongs to it; what the agent may write in a session depends on the work item of
+# that session. In the web interface you choose on the task start page; here the first analysis is launched through the
+# API, from its reading stage. The answer carries the new session.
+SESSION=$(curl -sf -X POST "$API/tasks/$TASK/actions" -H 'Content-Type: application/json' \
+  -d '{"client_id": "example-launch", "kind": "start_activity", "targets": [], "notify_executor": false, "fields": {"activity": "reading", "in_flow": true}}' | json 'd["session_id"]')
 curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" > /dev/null
-
-# A new task is idle: nothing is in progress until you start an activity. In the web interface you choose on the task
-# status card; here the first analysis is launched through the API, which puts the task in its reading stage.
-curl -sf -X POST "$API/tasks/$TASK/actions?session=$SESSION" -H 'Content-Type: application/json' \
-  -d '{"client_id": "example-launch", "kind": "start_activity", "targets": [], "notify_executor": false, "fields": {"activity": "reading", "in_flow": true}}' > /dev/null
 
 echo "4. ask the agent to work"
 curl -sf -X POST "$API/tasks/$TASK/messages?session=$SESSION" -H 'Content-Type: application/json' \
@@ -54,15 +54,15 @@ last_reply() {
 }
 
 echo "5. wait until the agent has read the material and replied (usually a few minutes; progress every 5 seconds)"
-# The task is in the reading stage of the first analysis: the agent reads the material and writes topic pages in the
+# The work item is in the reading stage of the first analysis: the agent reads the material and writes topic pages in the
 # overall analysis, and may ask questions. It does not write use cases or requirements yet.
 wait_for_replies 1
 last_reply
 
 echo "6. look at the topic pages, then let the agent start writing items"
 # Writing items is the user's decision. In the web interface you open the topic pages and choose "开始写条目" on the
-# agent's card; here the same two things are done through the API: mark every topic page as viewed, and move the task
-# to the writing stage.
+# agent's card; here the same two things are done through the API: mark every topic page as viewed, and move the work
+# item of this session to the writing stage.
 PAGES=$(curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
   'json.dumps([{"item_id": i["item_id"], "base_revision": i["revision_no"]} for i in d["task"]["items"] if i["collection"] == "总体分析"])')
 if [ "$PAGES" != "[]" ]; then

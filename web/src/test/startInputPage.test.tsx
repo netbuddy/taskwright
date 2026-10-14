@@ -183,7 +183,7 @@ describe("活动输入页：首次分析", () => {
     fireEvent.click(screen.getByText("现行借阅依靠人工登记。"));
     expect(screen.getByTestId("describe-input")).toHaveValue("现行借阅依靠人工登记。");
     type("describe-input", "  建设图书馆借阅管理系统。 ");
-    expect(screen.getByTestId("start-where")).toHaveTextContent("将新建一条会话并进入工作台。");
+    expect(screen.getByTestId("start-where")).toHaveTextContent("将新建一个工作项和一条属于它的会话，并进入工作台。");
     fireEvent.click(await submit());
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
     expect(calls.order).toEqual(["start_new", "say"]);
@@ -246,7 +246,7 @@ describe("活动输入页：单项活动", () => {
   const sessions = [session("S1", "早先的会话", "2026-10-12T10:00:00"), session("S2", "最近的会话", "2026-10-13T08:30:00")];
   const filled = statusOf({ assets: assets({ materials: 1, description: 3 }) });
 
-  it("整理建模：只有范围说明一块；摘要写目的、产出、前提；有会话时缺省沿用最近活动的那条，写出它的名字", async () => {
+  it("整理建模：只有范围说明一块；摘要写目的、产出、前提；任务已经有会话时也没有会话的选择，启动一律新建", async () => {
     page("modeling", detail({ sessions }), filled);
     expect(await submit()).toHaveTextContent("开展整理建模");
     expect(screen.getByTestId("start-subtitle")).toHaveTextContent("批处理");
@@ -256,36 +256,29 @@ describe("活动输入页：单项活动", () => {
     expect(screen.getByTestId("scope-block")).toBeInTheDocument();
     expect([...screen.getByTestId("start-after").querySelectorAll("li")].map(text)).toEqual([
       "助手开展「整理建模」，完成后在对话区汇报结果，不提议下一站。", "页面切换为工作台：左侧对话区、中间业务说明与需求条目、右侧材料与修订。"]);
-    expect(text(screen.getByTestId("start-session"))).toContain("沿用当前会话「最近的会话」");
-    expect((screen.getByTestId("session-current") as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByTestId("start-where")).toHaveTextContent("将在当前会话里开展并进入工作台。");
+    expect([screen.queryByTestId("start-session"), screen.queryByTestId("session-current"), screen.queryByTestId("session-new")]).toEqual([null, null, null]);
+    expect(screen.getByTestId("start-where")).toHaveTextContent("将新建一个工作项和一条属于它的会话，并进入工作台。");
   });
 
-  it("沿用当前会话：在那条会话里开展，范围说明随开展请求发出、不拼进第一句话；第一句话是这项活动的那句固定的话", async () => {
+  it("任务已经有会话：照样新建一个工作项与一条会话，不在原来的会话里做；范围说明随启动的请求发出、不拼进第一句话；第一句话是这项活动的那句固定的话", async () => {
     const calls = page("modeling", detail({ sessions }), filled);
     await submit();
     type("scope-input", "  只整理「借书」一节的流程图。 ");
     fireEvent.click(await submit());
-    await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S2"));
-    expect(calls.order).toEqual(["start_current", "say"]);
-    expect(calls.action.mock.calls[0].slice(0, 2)).toEqual(["TASK-P", "S2"]);
-    expect(calls.action.mock.calls[0][2]).toMatchObject({
-      kind: "start_activity", task_id: "TASK-P", targets: [], notify_executor: false, fields: { activity: "modeling", in_flow: false, scope: "只整理「借书」一节的流程图。" } });
-    expect(calls.say.mock.calls[0].slice(0, 2)).toEqual(["TASK-P", "S2"]);
+    await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
+    expect(calls.order).toEqual(["start_new", "say"]);
+    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "modeling", in_flow: false, scope: "只整理「借书」一节的流程图。" });
+    expect(calls.action).not.toHaveBeenCalled();
+    expect(calls.say.mock.calls[0].slice(0, 2)).toEqual(["TASK-P", "S-new"]);
     expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请开始整理建模。" });
-    expect(calls.startNew).not.toHaveBeenCalled();
   });
 
-  it("选「新建会话」：在一条新会话里开展；没有写范围说明就不带这一项", async () => {
+  it("没有写范围说明就不带这一项", async () => {
     const calls = page("modeling", detail({ sessions }), filled);
-    await submit();
-    fireEvent.click(screen.getByTestId("session-new"));
-    expect(screen.getByTestId("start-where")).toHaveTextContent("将新建一条会话并进入工作台。");
     fireEvent.click(await submit());
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
     expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "modeling", in_flow: false });
     expect(calls.action).not.toHaveBeenCalled();
-    expect(calls.say.mock.calls[0].slice(0, 2)).toEqual(["TASK-P", "S-new"]);
   });
 
   it("核读材料有项目材料与领域知识库两块；澄清从空白开始时有目标系统描述（可选）与范围说明，写了描述就把它作为第一句话", async () => {

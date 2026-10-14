@@ -197,27 +197,42 @@ function sessionParam(req: Request, body: Record<string, any> = {}): string | nu
 }
 
 /**
- * 一次直接操作是不是「在一条新会话里开展活动」：start_activity 的 fields.session 写了 new，而且别的几项写法都对。
- * 写法不对的不在这里拒绝，照常转交，由助手一侧答 bad_request；那样就不会先建出一条用不上的会话。
+ * 一次直接操作是不是要先新建一条会话、再在新会话里做：启动一个工作项（start_activity）与换一条会话接着做一个工作项（continue_activity），
+ * 而且写法都对。写法不对的不在这里拒绝，照常转交，由助手一侧答 bad_request；那样就不会先建出一条用不上的会话。
+ * start_activity 早先的 session 一项已经停用，写了的也照常转交、由助手一侧拒绝。
  */
-function startsInNewSession(body: Record<string, any>): boolean {
+function needsNewSession(body: Record<string, any>): boolean {
   const fields = body.fields;
-  if (body.kind !== "start_activity" || !isObject(fields) || fields.session !== "new") return false;
-  const scope = fields.scope;
-  return stageByName(fields.activity) !== null && typeof fields.in_flow === "boolean"
-    && (scope === undefined || scope === null || (typeof scope === "string" && scope.trim().length <= SCOPE_MAX_LENGTH));
+  if (!isObject(fields)) return false;
+  if (body.kind === "start_activity") {
+    const scope = fields.scope;
+    return fields.session === undefined && stageByName(fields.activity) !== null && typeof fields.in_flow === "boolean"
+      && (scope === undefined || scope === null || (typeof scope === "string" && scope.trim().length <= SCOPE_MAX_LENGTH));
+  }
+  if (body.kind === "continue_activity") return Number.isInteger(fields.activity_record_id) && fields.activity_record_id >= 1;
+  return false;
 }
 
 /**
- * 新建会话之前核对：单独开展的这项活动现在能不能开展（任务状况里活动目录的那一项）。不能就答 rejected 并写明原因，
- * 不建会话。在流程里开始不查前提，与助手一侧相同。任务没有阶段、活动目录出不来时不在这里拒绝，交给助手一侧。
+ * 新建会话之前核对，不行就拒绝、不建会话。启动单项活动：这项活动现在能不能启动（任务状况里活动目录的那一项），不能就答 rejected 并写明原因；
+ * 启动流程不查前提，与助手一侧相同。接着做一个工作项：要有这个工作项、它还在进行中。任务没有阶段、活动目录出不来时不在这里拒绝，交给助手一侧。
  */
-function refuseUnstartable(taskDir: string, fields: Record<string, any>): void {
+function refuseBeforeNewSession(taskDir: string, body: Record<string, any>): void {
+  const fields = body.fields as Record<string, any>;
+  if (body.kind === "continue_activity") {
+    const item = library.workItemRows(taskDir).find((one) => one.record_id === fields.activity_record_id);
+    if (!item) throw new ApiError("not_found", `没有记录号是 ${fields.activity_record_id} 的工作项。`);
+    if (item.status !== "active") {
+      const fact = `工作项「${item.name}」已经结束，不能再接着做；要再做这项活动，从任务起点页再启动一次`;
+      throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
+    }
+    return;
+  }
   if (fields.in_flow !== false) return;
   const key = stageByName(fields.activity);
   const entry = taskStatus(taskDir)?.catalog?.activities.find((one) => one.key === key);
   if (!entry || entry.enabled) return;
-  const fact = `现在还不能开展「${entry.name}」：${entry.state}`;
+  const fact = `现在还不能启动「${entry.name}」：${entry.state}`;
   throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
 }
 
@@ -382,7 +397,11 @@ const handlers: Record<string, Handler> = {
   debug_system_prompt: (service, req) => json(200, debugPrompt.lastSystemPrompt(service, req.params.task)),
   debug_stage: (service, req) => json(200, debugPrompt.stageDebug(service, req.params.task)),
   // 任务状况：现在的阶段、各章的节数、图与条目的计数、这一段还差什么、开着的提议。程序算出来的，不经助手；没有阶段的任务 status 为 null。
-  task_status: (service, req) => json(200, { ok: true, status: taskStatus(service.task(req.params.task).dir) }),
+  // 带了 session 时，activity、missing、proposal 三项说的是那条会话；每个工作项最近有动静的会话取自会话清单。
+  task_status: (service, req) => {
+    const t = service.task(req.params.task);
+    return json(200, { ok: true, status: taskStatus(t.dir, sessionParam(req), t.executor.listSessions() as never) });
+  },
   debug_persona_draft: async (service, req) => json(200, await debugPrompt.personaDraftOf(service, req.params.task)),
   model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
   model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service), req.params.provider, bodyJson(req))),
@@ -404,9 +423,19 @@ const handlers: Record<string, Handler> = {
   create_task: (service, req) => json(200, service.create(bodyJson(req))),
   get_task: (service, req) => json(200, { ok: true, ...service.taskPage(service.task(req.params.task)) }),
   list_sessions: (service, req) => json(200, { ok: true, sessions: service.sessionRows(service.task(req.params.task)) }),
+  // 新建会话。请求体里写了 activity_record_id 时，这条新会话接着做那个进行中的工作项（换一条干净的会话接着做）：先核对有这个工作项、
+  // 它还在进行中，再新建会话并把它挂上去；回应里另带工作项的记录号。不写时新建的是自由讨论的会话，不属于任何工作项。
   new_session: async (service, req) => {
     const t = service.task(req.params.task);
-    return json(200, { ok: true, session_id: await t.executor.newSession() });
+    const body = bodyJson(req);
+    if (body.activity_record_id === undefined || body.activity_record_id === null) return json(200, { ok: true, session_id: await t.executor.newSession() });
+    t.requireOpen();
+    const action = { kind: "continue_activity", task_id: t.taskId, targets: [], fields: { activity_record_id: body.activity_record_id }, notify_executor: false };
+    if (!needsNewSession(action)) throw new ApiError("bad_request", "activity_record_id 是工作项的记录号，一个从 1 起的整数。");
+    refuseBeforeNewSession(t.dir, action);
+    const session = await t.executor.newSession();
+    const done = await t.executor.actionWith(session, action);
+    return json(200, { ok: true, session_id: session, activity_record_id: done.activity_record_id });
   },
   snapshot: async (service, req) => {
     const t = service.task(req.params.task);
@@ -436,9 +465,9 @@ const handlers: Record<string, Handler> = {
     let queued: boolean;
     if (body.origin === "card_choice") {
       const annotation = cardAnnotation(body, session ? await t.executor.entries(session) : []);
-      // 卡片是在另一条会话里发的（用户从「待决定」一行或者任务状况卡上点了进入）：这条会话里找不到选项的文字，取开着的提议上写的。
+      // 卡片是在同一个工作项的另一条会话里发的（用户从「待决定」一行点了进入）：这条会话里找不到选项的文字，取这条会话的工作项开着的提议上写的。
       if (annotation.option_text === annotation.option_key) {
-        const open = library.stageView(t.dir)?.proposal ?? null;
+        const open = library.stageView(t.dir, session)?.proposal ?? null;
         if (open !== null && open.enter.key === annotation.option_key) annotation.option_text = open.enter.text;
       }
       // choice 是 typed：用户在卡片的文本框里打的字，不是点击；与底部输入框打的字一样，斜杠开头的前面加「用户说：」。
@@ -453,14 +482,15 @@ const handlers: Record<string, Handler> = {
     const body = bodyJson(req);
     t.requireOpen();
     let session = sessionParam(req, body);
-    // 在一条新会话里开展活动：先核对这项活动现在能不能开展，能才新建会话，再在新会话里记开展；回应里带新会话的编号。
+    // 启动一个工作项、换一条会话接着做一个工作项：先核对行不行，行才新建会话，再在新会话里做；回应里带新会话的编号与工作项的记录号。
     let created: string | null = null;
-    if (startsInNewSession(body)) {
-      refuseUnstartable(t.dir, body.fields);
+    if (needsNewSession(body)) {
+      refuseBeforeNewSession(t.dir, body);
       created = session = await t.executor.newSession();
     }
-    const opId = await t.executor.action(session, body);
-    return json(200, { ok: true, client_id: body.client_id ?? null, op_id: opId, ...(created !== null ? { session_id: created } : {}) });
+    const done = await t.executor.actionWith(session, body);
+    return json(200, { ok: true, client_id: body.client_id ?? null, op_id: done.op_id, ...(created !== null ? { session_id: created } : {}),
+      ...(done.activity_record_id !== null ? { activity_record_id: done.activity_record_id } : {}) });
   },
   control: async (service, req) => {
     const t = service.task(req.params.task);

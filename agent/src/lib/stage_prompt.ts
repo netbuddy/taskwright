@@ -2,16 +2,16 @@
  * 有阶段的任务的系统提示怎样拼：读哪几份文件、按什么次序接、每一部分叫什么。不碰 pi，挂到事件上的那一半在 hooks/stage_prompt.ts。
  *
  * 拼出来的次序是：系统提示、平台说明的共用部分、任务类型说明的共用部分、平台说明里现在这项活动的那一段、
- * 这项活动在流程里的节点的出口、任务类型说明里现在这个阶段的那一段、用户开展这项活动时写的范围说明（写了才有），
+ * 这项活动在流程里的节点的出口、任务类型说明里现在这个阶段的那一段、用户启动这个工作项时写的范围说明（写了才有），
  * 最后是 pi 自己接在系统提示后面的那一截（工作目录、上下文文件）。
  * 按阶段的几段放在最后：换阶段时前面几部分一字不变，模型服务对请求开头相同的那一截不用重算。
  *
  * 活动的说明与节点的出口是分开的两处。活动的说明（做什么、不做什么、做到什么算够）一项活动一份文件，与它在不在流程里无关；
  * 出口（做完了提议什么、往回提议什么、用户说的话不属于这一段时怎样办）是这项活动在一条流程里的那个节点的事，写在流程的定义里
- * （agent/prompts/flows/initial.md，首次分析），一个节点一节。任务在流程里的某个阶段时，两处接起来；用户单独开展一项活动时，
+ * （agent/prompts/flows/initial.md，首次分析），一个节点一节。会话的工作项是流程的工作项时，两处接起来；工作项是单项活动时，
  * 出口换成固定的一段（STANDALONE_EXIT）：做够了就在回复里汇报结束，不提议进入别的活动。
  *
- * 任务空闲时（没有在进行的活动，lib/stage.ts 的 IDLE）没有活动的说明可拼：用一段固定的开头（IDLE_OPENING）说明任务现在空闲，
+ * 会话空闲时（没有在进行的工作项，lib/stage.ts 的 IDLE）没有活动的说明可拼：用一段固定的开头（IDLE_OPENING）说明本会话现在空闲，
  * 后面接澄清那项活动的说明去掉标题与开头那一段话（从第一个「## 」小节起），不带任何节点的出口。任务类型一级澄清的那一段若有
  * 「## 出口」一节，也去掉（withoutSection）。
  *
@@ -42,7 +42,7 @@ import { DatabaseSync } from "node:sqlite";
 import { databasePath } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
-import { ENTER_OPTIONS, IDLE, type Position, STAGES, STAGE_NAMES, STAY_IDLE_OPTION, type Stage, gateStage } from "./stage.ts";
+import { IDLE, type Position, STAGES, STAGE_NAMES, type Stage, gateStage } from "./stage.ts";
 import { openActivityRecord, stageOf } from "./stage_read.ts";
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
@@ -63,12 +63,12 @@ export const COMMON_FILE = "common.md";
 /** 任务 skill 的目录里放按阶段的几段的子目录。 */
 export const TASK_STAGES_SUBDIR = "stages";
 
-/** 某个阶段的那一段的文件名。任务空闲时用澄清的那一份。 */
+/** 某个阶段的那一段的文件名。会话空闲时用澄清的那一份。 */
 export function stageFile(stage: Position): string {
   return `${gateStage(stage)}.md`;
 }
 
-/** 讲怎样离开这一段（提议进入下一段、谁能移动）的那一节的标题：流程的定义里每个节点有这一节；任务空闲时拼的文字里不带它。 */
+/** 讲怎样离开这一段（提议进入下一段、谁能移动）的那一节的标题：流程的定义里每个节点有这一节；会话空闲时拼的文字里不带它。 */
 export const EXIT_HEADING = "出口";
 
 /** 流程的定义里一个节点那一节的一级标题。 */
@@ -96,17 +96,17 @@ export function withoutOpening(text: string): string {
   return first < 0 ? text : lines.slice(first).join("\n");
 }
 
-/** 任务空闲时接在共用部分后面的那一段的开头：后面接澄清那项活动的说明（去掉它自己的标题与开头那一段话）。 */
-export const IDLE_OPENING = "# 现在：任务空闲\n\n" +
-  "任务现在空闲：没有在进行的活动。下面的规矩与澄清一段相同，但不提议进入任何阶段；用户上传材料时用请选择卡片提议开始核读材料" +
-  `（两个选项的键与文字是 \`${ENTER_OPTIONS.reading.key}\`「${ENTER_OPTIONS.reading.text}」、\`${STAY_IDLE_OPTION.key}\`「${STAY_IDLE_OPTION.text}」），不自行开始。`;
+/** 会话空闲时（自由讨论的会话，或者它的工作项已经结束）接在共用部分后面的那一段的开头：后面接澄清那项活动的说明（去掉它自己的标题与开头那一段话）。 */
+export const IDLE_OPENING = "# 现在：自由讨论\n\n" +
+  "本会话现在没有在进行的工作项：它是自由讨论的会话，或者它的工作项已经结束。下面的规矩与澄清一段相同，但不写需求条目，不提议进入任何阶段，" +
+  "也不提议开始哪一项活动；用户上传了材料也不自行核读。用户要做哪一项活动，请他从任务起点页启动一个工作项。";
 
-/** 用户单独开展一项活动时，代替节点出口的那一段。 */
+/** 工作项是单项活动时，代替节点出口的那一段。 */
 export const STANDALONE_EXIT = "## 出口\n\n" +
-  "这项活动是用户单独开展的，不在首次分析流程里。这项活动做够了就在回复里汇报结束，不提议进入别的活动：" +
-  "在成文的话里说清做到了哪里、还差什么，回复里写 `activity_done: true`；回复送达之后这项活动结束，任务空闲。" +
+  "本会话的工作项是单项活动，不在工作流程里。这项活动做够了就在回复里汇报结束，不提议进入别的活动：" +
+  "在成文的话里说清做到了哪里、还差什么，回复里写 `activity_done: true`；回复送达之后这个工作项结束，本会话此后按自由讨论办。" +
   "不要发进入下一段或者退回前面阶段的卡片，用户点了也不算数。用户说的事不属于这项活动时：能在这项活动里顺手做的照做；" +
-  "这项活动做不了的（工具会拒绝），说明要做那件事请用户从任务状况卡开展相应的活动。";
+  "这项活动做不了的（工具会拒绝），说明要做那件事请用户从任务起点页启动相应的工作项。";
 
 /**
  * 去掉一份 Markdown 文字里标题是 heading 的二级小节：从「## heading」那一行起，到下一个一级或二级标题之前（没有下一个就到末尾）。
@@ -124,12 +124,12 @@ export function withoutSection(text: string, heading: string): string {
 }
 
 /**
- * 用户开展一项活动时写了范围说明：这项活动进行期间，系统提示里按活动拼的几段后面接这一段。
- * 换了活动、活动结束之后就没有了。
+ * 用户启动工作项时写了范围说明：这个工作项进行期间，它的各条会话的系统提示里按活动拼的几段后面接这一段。
+ * 工作项结束之后就没有了。
  */
 export function scopeSection(scope: string): string {
   return "## 本次范围说明\n\n" +
-    "用户开展这项活动时写了范围说明。这一次照它说的范围做；它没有说到的，照上面的说明。\n\n" +
+    "用户启动这个工作项时写了范围说明。这一次照它说的范围做；它没有说到的，照上面的说明。\n\n" +
     `本次范围说明：${scope.trim()}`;
 }
 
@@ -159,14 +159,14 @@ export interface PromptPart {
   from: PartOrigin;
   /**
    * 文件的路径：产品自带的相对代码仓根目录，任务目录里的相对任务目录，提示词目录里的相对那个目录；不是文件的为 null
-   * （pi 接的那一截；用户单独开展一项活动时代替节点出口的那一段固定文字；范围说明，它出自任务库，from 写任务目录）。
+   * （pi 接的那一截；工作项是单项活动时代替节点出口的那一段固定文字；范围说明，它出自任务库，from 写任务目录）。
    */
   file: string | null;
   text: string;
 }
 
 export interface StagePrompt {
-  /** 这一份是为哪个阶段拼的；任务空闲时是 idle。 */
+  /** 这一份是为哪个阶段拼的；会话空闲时是 idle。 */
   stage: Position;
   /** 整份文字：各部分去掉末尾的空白之后用一个空行隔开。 */
   text: string;
@@ -261,9 +261,9 @@ export function taskSkills(skills: readonly LoadedSkill[]): LoadedSkill[] {
 export interface ComposeInput {
   /** 任务现在在哪个阶段；空闲时是 idle。 */
   stage: Position;
-  /** 现在这项活动是不是在首次分析流程里；不给当作是。单独开展时为假：节点的出口换成固定的一段。空闲时不看它。 */
+  /** 这条会话的工作项是不是流程的工作项；不给当作是。单项活动的工作项为假：节点的出口换成固定的一段。空闲时不看它。 */
   inFlow?: boolean;
-  /** 用户开展现在这项活动时写的范围说明；没有写不给或者给 null。空闲时不看它。 */
+  /** 用户启动这条会话的工作项时写的范围说明；没有写不给或者给 null。空闲时不看它。 */
   scope?: string | null;
   /** 任务目录：任务目录里的文件路径相对它来写。 */
   workspaceDir: string;
@@ -280,7 +280,7 @@ export interface ComposeInput {
 /** 提示词目录里放任务类型一级的文件的子目录。 */
 export const PROMPT_DIR_TASK_SUBDIR = "task-type";
 
-/** 某一部分在提示词目录里对应的文件名（相对那个目录）。pi 接的那一截没有对应的文件。任务空闲时按阶段的两份是澄清的。 */
+/** 某一部分在提示词目录里对应的文件名（相对那个目录）。pi 接的那一截没有对应的文件。会话空闲时按阶段的两份是澄清的。 */
 export function promptDirName(part: Exclude<PartKind, "tail">, stage: Position): string {
   if (part === "system") return SYSTEM_FILE;
   if (part === "platform_common") return COMMON_FILE;
@@ -324,7 +324,7 @@ interface Slot {
   stamps: unknown[];
 }
 
-/** 这一次有没有节点的出口要从流程的定义里取：任务在流程里的某个阶段时有；空闲、单独开展时没有。 */
+/** 这一次有没有节点的出口要从流程的定义里取：会话的工作项是流程的工作项时有；空闲、工作项是单项活动时没有。 */
 function wantsNodeExit(input: ComposeInput): boolean {
   return input.stage !== IDLE && (input.inFlow ?? true);
 }
@@ -407,7 +407,7 @@ function fromSlots(input: ComposeInput, all: readonly Slot[], io: PromptIo): Sta
     }
     if (slot.missing !== null) throw new Error(`拼系统提示要用的文件不在：${slot.missing}`);
     for (const one of slot.own) add(one, io.read(one.path));
-    // 用户单独开展一项活动：活动的说明后面接固定的一段，代替节点的出口。
+    // 工作项是单项活动：活动的说明后面接固定的一段，代替节点的出口。
     if (slot.part === "platform_stage" && !idle && !(input.inFlow ?? true)) parts.push({ part: "node_exit", from: "builtin", file: null, text: STANDALONE_EXIT });
   }
   // 范围说明：接在按活动拼的几段的最后。
@@ -481,28 +481,28 @@ export function partFact(one: PromptPart): PartFact {
 }
 
 /**
- * 任务现在在哪个阶段（或者空闲），只读。任务库不在、库里还没有任务、或者是早先建的任务（没有「总体分析」集合）时返回 null：
- * 这些情形都不换系统提示。
+ * 这条会话现在在哪个阶段（或者空闲），只读：看的是这条会话属于的工作项。任务库不在、库里还没有任务、或者是早先建的任务
+ * （没有「总体分析」集合）时返回 null：这些情形都不换系统提示。
  */
-export function stageInWorkspace(workspaceDir: string): Position | null {
-  return whereInWorkspace(workspaceDir)?.stage ?? null;
+export function stageInWorkspace(workspaceDir: string, sessionId: string | null): Position | null {
+  return whereInWorkspace(workspaceDir, sessionId)?.stage ?? null;
 }
 
 /**
- * 同上，另带现在这项活动是不是在首次分析流程里（空闲时为假），与用户开展它时写的范围说明（没有写、空闲时为 null）。
+ * 同上，另带这条会话的工作项是不是流程的工作项（空闲时为假），与用户启动它时写的范围说明（没有写、空闲时为 null）。
  * 不换系统提示的那几种情形返回 null。
  */
-export function whereInWorkspace(workspaceDir: string): { stage: Position; inFlow: boolean; scope: string | null } | null {
+export function whereInWorkspace(workspaceDir: string, sessionId: string | null): { stage: Position; inFlow: boolean; scope: string | null } | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
     const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
     if (!task) return null;
-    const stage = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)));
+    const stage = stageOf(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)), sessionId);
     if (stage === null) return null;
-    const open = openActivityRecord(db, task.task_id);
-    return { stage, inFlow: open !== null && open.node !== null, scope: stage === IDLE ? null : open?.scope ?? null };
+    const open = openActivityRecord(db, task.task_id, sessionId);
+    return { stage, inFlow: open !== null && open.flow !== null, scope: stage === IDLE ? null : open?.scope ?? null };
   } finally {
     db.close();
   }

@@ -15,9 +15,17 @@ import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { moveStage, recordStageCardClick } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, moveRows, overallDefinition, query } from "./helpers.ts";
+import { CALL_SESSION, DEFINITION_PATH, SOURCE, UI_SESSION, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query, stageMoves } from "./helpers.ts";
 
 const SESSION = "sess-a";
+/**
+ * 这份测试里用到的各条会话：提议属于工作项，所以进入某个阶段时把它们都挂到同一个首次分析的工作项上——
+ * 助手发卡片的那一条、同一个工作项的另外几条、界面操作的那一条。
+ */
+const SESSIONS = [SESSION, "sess-b", "sess-first", "sess-second", UI_SESSION, CALL_SESSION];
+const enter = (dir: string, stage: Stage) => enterStage(dir, stage, SESSIONS);
+/** 启动之后工作项每一次换站，按先后。 */
+const moveRows = stageMoves;
 const said = (id: string, text: string) => ({ id, type: "message", message: { role: "user", content: text } });
 
 function workspace(definition: unknown = overallDefinition()): string {
@@ -39,9 +47,10 @@ function reply(dir: string, act: Record<string, unknown> | null, session = SESSI
   return { entry, seq: out!.eventSeq };
 }
 
-const open = (dir: string) => withTaskDatabase(dir, { createIfMissing: false }, (db) => {
+/** 一条会话的工作项现在开着的提议；不给会话时看的是助手发卡片的那一条。 */
+const open = (dir: string, session: string | null = SESSION) => withTaskDatabase(dir, { createIfMissing: false }, (db) => {
   const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
-  return openProposal(db, task.task_id);
+  return openProposal(db, task.task_id, session);
 });
 const payloadOf = (dir: string, seq: number) => JSON.parse(query<{ payload: string }>(dir, "SELECT payload FROM event WHERE seq = ?", seq)[0].payload);
 
@@ -65,6 +74,7 @@ test("一张卡片是不是进入卡片：请选择里有进入某个阶段的�
 
 test("发出进入卡片：事件里带 proposal，提议就开着，带着卡片在哪条会话的哪条回复上；别的回复不带，也不结束它", () => {
   const dir = workspace();
+  enter(dir, "reading");
   assert.equal(open(dir), null, "还没有发过卡片");
   const card = reply(dir, enterCard("clarifying", "reading", [{ item_id: "OA-001", revision_no: 1 }]));
   assert.deepEqual(payloadOf(dir, card.seq!).proposal, { kind: "enter", stage: "clarifying", enter: ENTER_OPTIONS.clarifying, stay: STAY_OPTIONS.reading,
@@ -81,15 +91,16 @@ test("发出进入卡片：事件里带 proposal，提议就开着，带着卡�
   assert.equal(open(dir)!.event_seq, card.seq);
 });
 
-test("提议结束的三种情形：阶段有过一次移动（向前或者退回）、助手发了新的进入卡片、任务不再进行中", () => {
-  // 用户点了进入：阶段向前移动，提议结束。
+test("提议结束的四种情形：它的工作项换了一站（向前或者退回）、助手发了新的进入卡片、它的工作项结束了、任务不再进行中", () => {
+  // 用户点了进入：工作项向前换了一站，提议结束。
   const forward = workspace();
+  enter(forward, "reading");
   reply(forward, enterCard("clarifying", "reading"));
-  enterStage(forward, "clarifying");
+  enter(forward, "clarifying");
   assert.equal(open(forward), null);
   // 任务退回了前面的阶段（用户移的：助手不能自己移动阶段）：早先的提议也结束。
   const back = workspace();
-  enterStage(back, "modeling");
+  enter(back, "modeling");
   reply(back, enterCard("writing", "modeling"));
   assert.equal(open(back)!.stage, "writing");
   withTaskDatabase(back, { createIfMissing: false }, (db) => {
@@ -106,29 +117,41 @@ test("提议结束的三种情形：阶段有过一次移动（向前或者退�
   // 任务不再进行中：没有开着的提议。
   withTaskDatabase(back, { createIfMissing: false }, (db) => db.prepare("UPDATE task SET status = '已完成' WHERE status = ?").run(TASK_ACTIVE));
   assert.equal(open(back), null);
+  // 工作项结束了（用户结束它）：它的提议也结束。
+  const ended = workspace();
+  enter(ended, "writing");
+  reply(ended, enterCard("reviewing", "writing"));
+  assert.equal(open(ended)!.stage, "reviewing");
+  runUserOperation({ workspaceDir: ended, sessionId: SESSION }, { op_id: "ui-op-end", kind: "end_activity", fields: { outcome: "abandoned" } });
+  assert.equal(open(ended), null);
 });
 
-test("用户开始一项活动使开着的提议作废时，对话里那一句末尾写明；做的正是提议的那一步、或者没有开着的提议时不写", () => {
+test("提议只随它自己的工作项失效：别的工作项启动、换站、结束都不影响它；同一个工作项换到别的一站时作废，对话里那一句末尾写明；做的正是提议的那一步时不写", () => {
   const dir = workspace();
-  const start = (activity: string, inFlow: boolean) => runUserOperation({ workspaceDir: dir, sessionId: SESSION },
-    { op_id: `ui-op-void-${activity}-${inFlow}-${++replies}`, kind: "start_activity", fields: { activity, in_flow: inFlow } }).note;
-  enterStage(dir, "reading");
-  // 助手提议进入澄清，用户却去单独开展澄清：提议作废，那一句末尾写明。
+  enter(dir, "reading");
   reply(dir, enterCard("clarifying", "reading"));
   assert.equal(open(dir)!.stage, "clarifying");
-  assert.equal(start("澄清", false), "界面操作（不是用户打的字）：用户开展活动「澄清」。（原来在做：核读材料）（助手先前的提议作废，回来后由助手重新提议）");
-  assert.equal(open(dir), null);
-  // 回到流程：这时没有开着的提议，不写。
-  assert.equal(start("核读材料", true), "界面操作（不是用户打的字）：用户继续工作流程「首次分析」，从「核读材料」接着。（原来在做：澄清）");
-  // 助手再提议进入澄清，用户从任务状况卡在流程里开始澄清：做的正是提议的那一步，不写。
-  reply(dir, enterCard("clarifying", "reading"));
+  // 用户在别的会话上启动一个单项的澄清，又启动一个首次分析、把它换一站、再把这两个都结束：都是别的工作项的事，这个工作项的提议还开着。
+  const elsewhere = (session: string, body: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: session }, { op_id: `ui-op-other-${++replies}`, ...body });
+  assert.equal(elsewhere("sess-x", { kind: "start_activity", fields: { activity: "澄清", in_flow: false } }).note, "界面操作（不是用户打的字）：用户启动活动「澄清」。");
+  assert.equal(open(dir)!.stage, "clarifying", "别的工作项启动不让它失效");
+  elsewhere("sess-y", { kind: "start_activity", fields: { activity: "核读材料", in_flow: true } });
+  assert.equal(elsewhere("sess-y", { kind: "move_stage", fields: { stage: "写条目" } }).note, "界面操作（不是用户打的字）：用户把工作项从核读材料移到写条目。", "那个工作项里没有提议，不写作废");
+  elsewhere("sess-y", { kind: "end_activity", fields: { outcome: "abandoned" } });
+  elsewhere("sess-x", { kind: "end_activity", fields: { outcome: "done" } });
+  assert.equal(open(dir)!.stage, "clarifying", "别的工作项换站、结束也不让它失效");
+  // 这条提议只属于它的工作项：别的工作项的会话、自由讨论的会话里都看不到它。
+  assert.deepEqual([open(dir, "sess-x"), open(dir, "sess-y"), open(dir, "sess-free"), open(dir, null)], [null, null, null, null]);
+  assert.equal(open(dir, "sess-b")!.stage, "clarifying", "同一个工作项的另一条会话里看得到");
+  // 用户在这个工作项里进入澄清：做的正是提议的那一步，提议办成了，不写作废。
   assert.equal(runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: "ui-op-void-as-proposed", kind: "move_stage", fields: { stage: "澄清" } }).note,
-    "界面操作（不是用户打的字）：用户把任务从核读材料移到澄清。");
+    "界面操作（不是用户打的字）：用户把工作项从核读材料移到澄清。");
   assert.equal(open(dir), null);
-  // 助手提议进入整理建模，用户直接把任务移到写条目：不是提议的那一步，提议作废，写明。
+  // 助手提议进入整理建模，用户直接把工作项移到写条目：不是提议的那一步，提议作废，写明。
   reply(dir, enterCard("modeling", "clarifying"));
   assert.equal(runUserOperation({ workspaceDir: dir, sessionId: SESSION }, { op_id: "ui-op-void-skip", kind: "move_stage", fields: { stage: "写条目" } }).note,
-    "界面操作（不是用户打的字）：用户把任务从澄清移到写条目。（助手先前的提议作废，回来后由助手重新提议）");
+    "界面操作（不是用户打的字）：用户把工作项从澄清移到写条目。（助手先前的提议作废，回来后由助手重新提议）");
+  assert.equal(open(dir), null);
 });
 
 test("早先建的任务没有阶段：发了带进入键的卡片也不记 proposal", () => {
@@ -138,24 +161,24 @@ test("早先建的任务没有阶段：发了带进入键的卡片也不记 prop
   assert.equal(open(dir), null);
 });
 
-test("卡片在另一条会话里：这条会话的分支上找不到那条回复，点进入照开着的提议记移动；键或回复编号对不上就不记", () => {
+test("卡片在同一个工作项的另一条会话里：这条会话的分支上找不到那条回复，点进入照这个工作项开着的提议记换站；键或回复编号对不上就不记", () => {
   const dir = workspace();
-  enterStage(dir, "reading");
+  enter(dir, "reading");
   const card = reply(dir, enterCard("clarifying", "reading"), "sess-first");
   const elsewhere = [said("u-x", "接着昨天的做")] as never;
   // 键不是开着的提议的进入键、回复编号是别的卡片：都不记。
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-1", replyEntry: card.entry, optionKey: "enter_consolidate" }), null);
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-2", replyEntry: "reply-none", optionKey: "enter_clarify" }), null);
-  assert.equal(count(dir, "activity_record"), 1, "只有启动首次分析的那一条");
+  assert.equal(moveRows(dir).length, 0, "一次站都没有换");
   // 键与回复编号都对得上：记一条用户的移动，记在点的那条会话上；提议随之结束。
   const moved = recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-3", replyEntry: card.entry, optionKey: "enter_clarify" })!;
   assert.deepEqual([moved.moved, moved.from, moved.requested], [true, "reading", "clarifying"]);
-  assert.deepEqual(moveRows(dir).slice(1).map((row) => ({ stage: row.stage, from_stage: row.from_stage, actor: row.actor, session_id: row.session_id, call_id: row.call_id })),
+  assert.deepEqual(moveRows(dir).map((row) => ({ stage: row.stage, from_stage: row.from_stage, actor: row.actor, session_id: row.session_id, call_id: row.call_id })),
     [{ stage: "clarifying", from_stage: "reading", actor: "user", session_id: "sess-second", call_id: "ui-op-3" }]);
   assert.equal(open(dir), null);
   // 提议已经结束：同一个请求再来一次不再记。
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-4", replyEntry: card.entry, optionKey: "enter_clarify" }), null);
-  // 没有给回复编号、键对得上开着的提议：也算（任务状况卡上的进入按钮不一定知道回复编号）。
+  // 没有给回复编号、键对得上开着的提议：也算（「待决定」一行上的按钮不一定知道回复编号）。
   const next = reply(dir, enterCard("modeling", "clarifying"), "sess-first");
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-5", replyEntry: null, optionKey: "enter_consolidate" })!.moved, true);
   assert.equal(open(dir), null);
@@ -163,7 +186,7 @@ test("卡片在另一条会话里：这条会话的分支上找不到那条回�
   // 回复编号给的是空文字：与没有给一样。
   reply(dir, enterCard("writing", "modeling"), "sess-first");
   assert.equal(recordStageCardClick(dir, "sess-second", elsewhere, { opId: "ui-op-6", replyEntry: "", optionKey: "start_items" })!.moved, true);
-  assert.equal(count(dir, "activity_record"), 4);
+  assert.deepEqual([moveRows(dir).length, count(dir, "activity_record")], [3, 1], "换了三次站，工作项还是那一行");
 });
 
 test("事件的名字与「回复」记的是同一个", () => {
@@ -197,7 +220,7 @@ test("回退卡片与请过目的卡片也是提议：种类、关于哪个阶�
 
 test("回退的提议：发出就开着，用户点了退回（阶段移动）就结束；用户留在本段时仍然开着", () => {
   const dir = workspace();
-  enterStage(dir, "modeling");
+  enter(dir, "modeling");
   const card = reply(dir, backCard("reading"));
   const now = open(dir)!;
   assert.deepEqual([now.kind, now.stage, now.enter.key, now.stay?.key, now.reply_entry], ["back", "reading", "back_to_reading", "stay_in_stage", card.entry]);
@@ -215,7 +238,7 @@ test("补写待过目的提议：发出就开着；卡片点名的页用户都�
     fields: { 标题: title, 它是什么: `${title}的说明。`, 状态: "在用" }, sources: [SOURCE] }] });
   add("业务流程导语");
   add("角色导语");
-  enterStage(dir, "document");
+  enter(dir, "document");
   const pages = [{ item_id: "OA-001", revision_no: 1 }, { item_id: "OA-002", revision_no: 2 }];
   const card = reply(dir, reviewCard(pages));
   assert.deepEqual([open(dir)!.kind, open(dir)!.stage, open(dir)!.items, open(dir)!.event_seq], ["review", "document", pages, card.seq]);
@@ -234,7 +257,7 @@ test("补写待过目的提议：发出就开着；卡片点名的页用户都�
   // 一页都没有点名的请过目卡片：没有可看的页，一直开着到下一次提议或移动。
   const bare = reply(dir, reviewCard([]));
   assert.equal(open(dir)!.event_seq, bare.seq);
-  enterStage(dir, "reviewing");
+  enter(dir, "reviewing");
   assert.equal(open(dir), null);
 });
 
@@ -242,6 +265,7 @@ test("补写待过目的提议：发出就开着；卡片点名的页用户都�
 
 test("给助手看的那一行：三种提议各一句，写明卡片在不在这条会话里、用户要做这件事时请他点「待决定」；没有时写没有", () => {
   const dir = workspace();
+  enter(dir, "reading");
   assert.equal(proposalLine(null, SESSION), NO_PROPOSAL_LINE);
   assert.equal(NO_PROPOSAL_LINE, "没有开着的提议。");
   reply(dir, enterCard("clarifying", "reading"));
@@ -249,7 +273,7 @@ test("给助手看的那一行：三种提议各一句，写明卡片在不在�
     "开着的提议：进入澄清（卡片在这条会话里）。用户还没有进入；他要进入时不要重发同一张卡片，请他点输入框上方「待决定」一行里的按钮。");
   assert.match(proposalLine(open(dir), "sess-b"), /^开着的提议：进入澄清（卡片在另一条会话里）。/);
   assert.match(proposalLine(open(dir), null), /卡片在另一条会话里/);
-  enterStage(dir, "modeling");
+  enter(dir, "modeling");
   reply(dir, backCard("reading"));
   assert.equal(proposalLine(open(dir), SESSION),
     "开着的提议：退回核读材料（卡片在这条会话里）。用户还没有决定；他要退回时不要重发同一张卡片，请他点输入框上方「待决定」一行里的按钮。");
@@ -261,13 +285,17 @@ test("给助手看的那一行：三种提议各一句，写明卡片在不在�
 test("查询任务状态的末尾、新会话的任务现状说明都带这一行；早先建的任务不带", () => {
   const FRESH = { hasUserMessage: false, hasStatusMessage: false, lastMessageAt: null };
   const dir = workspace();
+  enter(dir, "reading");
   assert.match(getTaskStatus(dir, SESSION).text, /\n没有开着的提议。\n这一段没有还开着的提问与请选择。$/);
   assert.match(taskStatusMessage(dir, FRESH, "sess-b")!.text, /\n没有开着的提议。$/);
   reply(dir, enterCard("clarifying", "reading"));
   assert.match(getTaskStatus(dir, SESSION).text, /\n开着的提议：进入澄清（卡片在这条会话里）。[^\n]*\n这一段没有还开着的提问与请选择。$/);
-  // 没有给会话编号时不写后一行：开着的卡片是按会话算的。
-  assert.match(getTaskStatus(dir).text, /\n开着的提议：进入澄清（卡片在另一条会话里）。[^\n]*$/);
-  // 新开的另一条会话：助手的上下文里没有那张卡片，靠这一行知道。
+  // 同一个工作项的另一条会话里：写明卡片在另一条会话里。
+  assert.match(getTaskStatus(dir, "sess-b").text, /\n开着的提议：进入澄清（卡片在另一条会话里）。[^\n]*\n这一段没有还开着的提问与请选择。$/);
+  // 没有给会话编号、或者是自由讨论的会话：提议属于工作项，这里看不到；没有给会话编号时也不写后一行（开着的卡片是按会话算的）。
+  assert.match(getTaskStatus(dir).text, /\n没有开着的提议。$/);
+  assert.match(taskStatusMessage(dir, FRESH, "sess-free")!.text, /\n没有开着的提议。$/);
+  // 新开的、接着做这个工作项的另一条会话：助手的上下文里没有那张卡片，靠这一行知道。
   const fresh = taskStatusMessage(dir, FRESH, "sess-b")!;
   assert.match(fresh.text, /\n开着的提议：进入澄清（卡片在另一条会话里）。用户还没有进入；他要进入时不要重发同一张卡片/);
   assert.equal((fresh.details.proposal as { stage: string }).stage, "clarifying");
@@ -278,6 +306,7 @@ test("查询任务状态的末尾、新会话的任务现状说明都带这一�
 
 test("这一段还开着的提问与请选择：只列这条会话里、进入现在这个阶段之后发出的；提议的卡片、别的种类、答过的、重发过的、前面阶段留下的都不列", () => {
   const dir = workspace();
+  enter(dir, "reading");
   const line = (session = SESSION) => getTaskStatus(dir, session).text.split("\n").at(-1)!;
   assert.equal(NO_OPEN_CARDS_LINE, "这一段没有还开着的提问与请选择。");
   assert.equal(line(), NO_OPEN_CARDS_LINE);
@@ -301,7 +330,7 @@ test("这一段还开着的提问与请选择：只列这条会话里、进入�
   reply(dir, { kind: "choose", text: "逾期按哪种办法处理", options: [{ key: "a", text: "罚款" }, { key: "b", text: "停借" }], resends: ids[1] });
   assert.match(line(), /^这一段重发过一次、用户仍没有答的 2 张：/);
   // 任务进入了澄清：前面那一段留下的不再列。
-  enterStage(dir, "clarifying");
+  enter(dir, "clarifying");
   assert.equal(line(), NO_OPEN_CARDS_LINE);
   reply(dir, { kind: "ask", text: "馆员能不能代借" });
   assert.match(line(), /^这一段还开着的提问与请选择 1 张（你问过、用户搁下没有答的）：r\d+-\d+ 提问「馆员能不能代借」。/);
@@ -309,6 +338,7 @@ test("这一段还开着的提问与请选择：只列这条会话里、进入�
 
 test("升级上来的库里早先的移动事件（STAGE_MOVED）照样算界：它之前的提议已经结束，它之前留下的提问不再列；它之后发的照常开着", () => {
   const dir = workspace();
+  enter(dir, "reading");
   const line = () => getTaskStatus(dir, SESSION).text.split("\n").at(-1)!;
   // 早先的样子：发了进入澄清的卡片、问了一问，随后用户点了进入——那时一次移动只记一条 STAGE_MOVED。
   reply(dir, enterCard("clarifying", "reading"));
@@ -317,14 +347,11 @@ test("升级上来的库里早先的移动事件（STAGE_MOVED）照样算界：
   assert.match(line(), /^这一段还开着的提问与请选择 1 张/);
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string };
-    const seq = Number(db.prepare(
-      "INSERT INTO event (task_id, session_id, call_id, name, actor, payload, at) VALUES (?, ?, 'ui-op-old', 'STAGE_MOVED', 'user', ?, '2026-10-10T09:00:00')",
-    ).run(task.task_id, SESSION, JSON.stringify({ stage: "clarifying", from: "reading", actor: "user", reason: "", run_id: null, flow: "initial" })).lastInsertRowid);
-    // 升级把那次移动改写成了一条活动记录。
     db.prepare(
-      "INSERT INTO activity_record (task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq) " +
-        "VALUES (?, ?, NULL, 'ui-op-old', 'user', 'clarifying', 'clarifying', 'initial', '', '2026-10-10T09:00:00', ?)",
-    ).run(task.task_id, SESSION, seq);
+      "INSERT INTO event (task_id, session_id, call_id, name, actor, payload, at) VALUES (?, ?, 'ui-op-old', 'STAGE_MOVED', 'user', ?, '2026-10-10T09:00:00')",
+    ).run(task.task_id, SESSION, JSON.stringify({ stage: "clarifying", from: "reading", actor: "user", reason: "", run_id: null, flow: "initial" }));
+    // 升级把那一段流程归并成了一个工作项：它现在在澄清。早先的移动事件里没有工作项的记录号。
+    db.exec("UPDATE activity_record SET activity = 'clarifying', node = 'clarifying'");
   });
   assert.equal(open(dir), null, "那次移动之前的提议结束了");
   assert.equal(line(), NO_OPEN_CARDS_LINE, "那次移动之前留下的提问不再列");
@@ -333,13 +360,14 @@ test("升级上来的库里早先的移动事件（STAGE_MOVED）照样算界：
   reply(dir, { kind: "ask", text: "馆员能不能代借" });
   assert.deepEqual([open(dir)!.stage, open(dir)!.event_seq], ["modeling", next.seq]);
   assert.match(line(), /^这一段还开着的提问与请选择 1 张（你问过、用户搁下没有答的）：r\d+-\d+ 提问「馆员能不能代借」。/);
-  enterStage(dir, "modeling");
+  enter(dir, "modeling");
   assert.equal(open(dir), null);
   assert.equal(line(), NO_OPEN_CARDS_LINE);
 });
 
 test("续接旧会话：上次之后才发出的提议写一条（别的都没有变也写）；上次之前发的不重复；没有开着的不写", () => {
   const dir = workspace();
+  enter(dir, "reading");
   const facts = (lastMessageAt: number) => ({ hasUserMessage: true, hasStatusMessage: true, lastMessageAt });
   // 没有开着的提议、别的也没有变：照旧不写。
   assert.equal(taskStatusMessage(dir, facts(Date.now() + 1000), "sess-b"), null);

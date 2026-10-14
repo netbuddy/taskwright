@@ -28,8 +28,8 @@ export const STAGE_NAMES: Record<Stage, string> = {
 };
 
 /**
- * 所属流程：一次阶段移动是在哪一条流程里发生的。现在只有一条流程（首次分析），值恒定；以后任务里可以单独开展一项活动、
- * 或者在别的流程里开展时，靠它区分。它写在活动记录表的「所属流程」一列与阶段移动那条事件的内容里；早先没有写它的移动，升级时补成首次分析。
+ * 所属流程：一个工作项是哪一条工作流程的一次启动。现在只有一条流程（首次分析）；单项活动的工作项不属于流程。
+ * 它写在活动记录表的「所属流程」一列与工作项的几种事件的内容里；早先没有写它的移动，升级时补成首次分析。
  */
 export const FLOW_INITIAL = "initial";
 export const FLOW_NAMES: Record<string, string> = { [FLOW_INITIAL]: "首次分析" };
@@ -51,15 +51,15 @@ export function stageByName(name: unknown): Stage | null {
 }
 
 /**
- * 空闲：任务现在没有在进行的活动——刚建好还没有开展过任何活动，或者开展过的每一项都已经结束。它不是一个阶段，不排在 STAGES 的次序里，
- * 也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「任务现在在哪里」的那几处。它与 null 不是一回事：
- * null 是早先建的任务（任务定义里没有「总体分析」集合），那种任务没有阶段，什么都不拦；空闲的任务有阶段，照下面的规矩拦。
- * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED）。新建的任务从空闲起：开展哪一项活动由用户在任务状况卡上定。
+ * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它的工作项已经结束。它不是一个阶段，
+ * 不排在 STAGES 的次序里，也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「这条会话现在在哪里」的那几处。它与 null 不是一回事：
+ * null 是早先建的任务（任务定义里没有「总体分析」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
+ * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED）。启动哪一项活动由用户在任务起点页上定。
  */
 export const IDLE = "idle";
 export const IDLE_NAME = "空闲";
 
-/** 任务现在的位置：六个阶段之一，或者空闲。 */
+/** 一条会话现在的位置：六个阶段之一，或者空闲。 */
 export type Position = Stage | typeof IDLE;
 
 /** 一个值是不是位置的写法：六个阶段的写法或者空闲。 */
@@ -97,7 +97,7 @@ export interface CardOption {
 }
 
 /**
- * 进入某个阶段的那个选项。核读材料是第一段，在流程里没有「进入」它的卡片；它的这一项只在任务空闲时用：
+ * 进入某个阶段的那个选项。核读材料是第一段，在流程里没有「进入」它的卡片；它的这一项是早先任务空闲时用的（现在启动一律从任务起点页做，点了不算数）：
  * 用户上传了材料，助手用请选择卡片提议开始核读材料，卡片上另一项是「先不开始」（STAY_IDLE_OPTION）。
  */
 export const ENTER_OPTIONS: Record<Stage, CardOption> = {
@@ -122,7 +122,7 @@ export const STAY_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
 };
 
 /**
- * 任务空闲时助手提议开始核读材料的那张卡片上不生效的那一项：空闲时没有阶段可以「继续」，所以另写一句。
+ * 早先任务空闲时助手提议开始核读材料的那张卡片上不生效的那一项：空闲时没有阶段可以「继续」，所以另写一句。
  * 点它只把卡片标为已选，不替用户发话，提议仍然开着。
  */
 export const STAY_IDLE_OPTION: CardOption = { key: "stay_idle", text: "先不开始" };
@@ -180,7 +180,7 @@ export const STAGE_START_TEXTS = {
 } as const;
 
 /**
- * 活动输入页上点了「开展」之后，页面替用户发给助手的第一句话，每项活动一句：用户在输入页上写了目标系统描述时发的是那段描述，
+ * 活动输入页上点了「启动」之后，页面替用户发给助手的第一句话，每项活动一句：用户在输入页上写了目标系统描述时发的是那段描述，
  * 没有写才发这一句，助手据此开始做。核读材料与澄清沿用上面两句。它们不是用户自己打的字，整理用户说过的话时要认出来。
  */
 export const ACTIVITY_START_TEXTS: Record<Stage, string> = {
@@ -193,7 +193,7 @@ export const ACTIVITY_START_TEXTS: Record<Stage, string> = {
 };
 
 /**
- * 任务状况卡上「请助手说明下一步」替用户发给助手的那句固定的话。它不是用户自己打的字，整理用户说过的话时要认出来。
+ * 页面上「请助手说明下一步」替用户发给助手的那句固定的话。它不是用户自己打的字，整理用户说过的话时要认出来。
  */
 export const STATUS_NEXT_TEXT = "请按任务状况说明下一步该做什么。";
 
@@ -208,7 +208,7 @@ export function stageEnteredBy(key: unknown): Stage | null {
   return found ?? null;
 }
 
-/** 任务空闲时怎样提议开始核读材料：告诉助手用哪张卡片、两个选项怎样写。 */
+/** 早先任务空闲时怎样提议开始核读材料：告诉助手用哪张卡片、两个选项怎样写。现在的说明不再教助手发这张卡片。 */
 export function startReadingCardGuidance(): string {
   const enter = ENTER_OPTIONS.reading;
   return `请用请选择卡片提议，两个选项的键与文字是 ${enter.key}「${enter.text}」、${STAY_IDLE_OPTION.key}「${STAY_IDLE_OPTION.text}」`;
@@ -228,7 +228,7 @@ export function forwardCardGuidance(from: Stage): string {
  * 一次移动行不行。
  * - same：目标就是现在所在的阶段，原地不动不算移动，不记。
  * - user_only：移动阶段（往前、往后都是）要由用户决定，助手只能发卡片提议。
- * 用户的移动不设限；任务空闲时移到哪个阶段都不是原地不动。
+ * 用户的移动不设限；从空闲移到哪个阶段都不是原地不动。
  */
 export type MoveVerdict = { ok: true } | { ok: false; why: "same" | "user_only" };
 
@@ -238,39 +238,47 @@ export function judgeMove(from: Position, to: Stage, actor: StageActor): MoveVer
   return { ok: false, why: "user_only" };
 }
 
-// ───────────── 开展一项活动 ─────────────
+// ───────────── 启动一个工作项、流程换站 ─────────────
 
 /**
- * 一项活动是怎样开始的：
- * - move：任务本来就在首次分析流程里的某个阶段，移到了流程里的另一个阶段（卡片上的进入与退回、直接移动）；
- * - launch：任务还没有走过首次分析，从这个节点启动它；
- * - resume：首次分析走过一段，任务后来空闲了或者改做了单独的活动，现在从这个节点接着走；
- * - alone：单独开展这项活动，不在流程里。
+ * 对话里那一行说的是哪一种事：
+ * - move：流程的工作项换了一站（卡片上的进入与退回、直接移动）；
+ * - launch：启动了一条工作流程，从这一站开始；
+ * - alone：启动了一项单项活动，不在流程里；
+ * - resume：早先的写法（会话与工作项绑定之前），首次分析走过一段之后从这一站接着走。现在不再记这一种，早先的对话里留着。
  */
 export type StartHow = "move" | "launch" | "resume" | "alone";
 
 /**
- * 判一次开始属于哪一种。inFlow 是这次要不要在流程里开始；fromInFlow 是开始之前任务是不是正在流程里的某个阶段；
- * flowBefore 是开始之前首次分析走到的节点（最近一条带节点的活动记录），没有走过是 null。
- */
-export function startHow(inFlow: boolean, fromInFlow: boolean, flowBefore: Stage | null): StartHow {
-  if (!inFlow) return "alone";
-  if (fromInFlow) return "move";
-  return flowBefore === null ? "launch" : "resume";
-}
-
-/**
- * 对话里说一次活动开始的那一句，不带「界面操作」的前缀。from 是开始之前任务在哪里（一个阶段或者空闲）。
- * 流程里的移动照旧写从哪到哪；另外三种开始之前任务正在做别的活动时，句末注明原来在做什么。
+ * 对话里说一次启动或者换站的那一句，不带「界面操作」的前缀。from 是这之前这条会话在哪里（一个阶段或者空闲）。
+ * 换站写从哪到哪。早先的对话里另有两样：接着走流程的那一种，以及启动之前任务正在做别的活动时句末注明的原来在做什么。
  */
 export function activityStartSentence(how: StartHow, to: Stage, from: Position): string {
   const name = STAGE_NAMES[to];
-  if (how === "move") return `用户把任务从${positionName(from)}移到${name}。`;
+  if (how === "move") return `用户把工作项从${positionName(from)}移到${name}。`;
   const was = from === IDLE ? "" : `（原来在做：${STAGE_NAMES[from]}）`;
   const flow = FLOW_NAMES[FLOW_INITIAL];
-  if (how === "launch") return `用户开展工作流程「${flow}」，从「${name}」开始。${was}`;
+  if (how === "launch") return `用户启动工作流程「${flow}」，从「${name}」开始。${was}`;
   if (how === "resume") return `用户继续工作流程「${flow}」，从「${name}」接着。${was}`;
-  return `用户开展活动「${name}」。${was}`;
+  return `用户启动活动「${name}」。${was}`;
+}
+
+/** 新建一条会话接着做一个进行中的工作项时，对话里那一句（不带「界面操作」的前缀）。name 是工作项的名字，node 是流程的工作项现在在哪一站。 */
+export function workItemContinuedSentence(name: string, node: Stage | null): string {
+  return `用户新建这条会话，接着做工作项「${name}」${node ? `，现在在「${STAGE_NAMES[node]}」这一站` : ""}。`;
+}
+
+/**
+ * 用户结束一个工作项时，对话里那一句（不带「界面操作」的前缀）。done 为真是已做完，为假是已放弃；
+ * here 为真是这句话留在属于这个工作项的会话里，这时另说明这条会话此后怎样办。
+ */
+export function workItemEndedSentence(name: string, done: boolean, here = true): string {
+  return `用户结束工作项「${name}」，记为${done ? "已做完" : "已放弃"}。${here ? "本会话此后按自由讨论办；要再做，从任务起点页再启动一次。" : ""}`;
+}
+
+/** 用户结束一个工作项时，那条记录结束的起因。 */
+export function endedByUserReason(done: boolean): string {
+  return done ? "用户结束这个工作项：已做完" : "用户结束这个工作项：已放弃";
 }
 
 /** 范围说明最多多少个字：它要放进系统提示，太长的不收。 */
@@ -283,37 +291,32 @@ export function scopeSentence(scope: string): string {
 }
 
 /**
- * 用户开始了一项活动、助手先前开着的提议因此作废时，对话里那一句后面加的半句：输入框上方「待决定」一行随之消失，
- * 让用户与助手都知道原因。用户做的正是提议的那一步（在流程里开始提议的那个阶段）时不加。
+ * 用户把流程的工作项移到了别的一站、助手先前在这个工作项里开着的提议因此作废时，对话里那一句后面加的半句：输入框上方「待决定」一行随之消失，
+ * 让用户与助手都知道原因。用户做的正是提议的那一步（进入或者退回提议的那个阶段）时不加。
  */
 export const PROPOSAL_VOIDED_NOTE = "（助手先前的提议作废，回来后由助手重新提议）";
 
-/** 有活动在进行时用户改做别的活动，原来那条活动记录结束的起因。 */
-export function switchedReason(to: Stage): string {
-  return `用户改做${STAGE_NAMES[to]}`;
-}
-
-/** 助手汇报单独开展的活动做完了时，那条活动记录结束的起因。 */
+/** 助手汇报单项活动的工作项做完了时，那条记录结束的起因。 */
 export const ACTIVITY_DONE_REASON = "助手汇报这项活动结束";
 
 /**
- * 回复里写了 activity_done 而任务不在单独开展的活动里时的拒绝：事实与怎么办。position 是任务现在在哪里
- * （在首次分析流程里的某个阶段，或者空闲）。在流程里做完一段不由助手结束：用进入下一段的卡片提议，由用户点。
+ * 回复里写了 activity_done 而这条会话不在做单项活动的工作项时的拒绝：事实与怎么办。position 是这条会话现在在哪里
+ * （流程的工作项的某一站，或者空闲）。流程里做完一段不由助手结束：用进入下一段的卡片提议，由用户点。
  */
 export function activityDoneRefusal(position: Position): Refusal {
   if (position === IDLE) {
-    return ["回复里写了 activity_done，而任务现在空闲，没有在进行的活动可以结束", "去掉 activity_done 这一项再回复。开展哪一项活动由用户从任务状况卡决定"];
+    return ["回复里写了 activity_done，而本会话没有在进行的工作项可以结束", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"];
   }
   const forward = forwardCardGuidance(position);
   return [
-    `回复里写了 activity_done，而任务现在在首次分析流程里的${STAGE_NAMES[position]}阶段：这一项只在用户单独开展一项活动时用，流程里的阶段不由你结束`,
+    `回复里写了 activity_done，而本会话的工作项是工作流程，现在在${STAGE_NAMES[position]}阶段：这一项只在工作项是单项活动时用，流程里的阶段不由你结束`,
     `去掉 activity_done 这一项再回复。${forward ? `这一段做完了要往前走，${forward}，由用户在卡片上点` : "这一段做完了，照这一段的说明请用户过目"}`,
   ];
 }
 
-/** 助手汇报一项单独开展的活动结束时，对话里那条回复下面的一行。末尾告诉用户怎样接着做：任务空闲之后助手不会自己接着做那项活动。 */
+/** 助手汇报单项活动的工作项做完时，对话里那条回复下面的一行。末尾告诉用户怎样再做：工作项结束之后助手不会自己接着做那项活动。 */
 export function activityDoneSentence(activity: Stage): string {
-  return `助手汇报这项活动结束：${STAGE_NAMES[activity]}。任务现在空闲。要接着做，从任务状况卡再开展一次。`;
+  return `助手汇报这个工作项做完：${STAGE_NAMES[activity]}。本会话此后按自由讨论办；要再做，从任务起点页再启动一次。`;
 }
 
 /** 首次分析从哪个节点启动：有材料从核读材料，没有材料从澄清。 */
@@ -321,13 +324,13 @@ export function flowStartNode(hasMaterials: boolean): Stage {
   return hasMaterials ? "reading" : "clarifying";
 }
 
-/** 算「开展一项活动」那一节要的事实。 */
+/** 算启动一项活动要的事实。 */
 export interface LaunchFacts {
-  /** 任务现在在哪里：一个阶段，或者空闲。 */
+  /** 这条会话现在在哪里：一个阶段，或者空闲。 */
   position: Position;
-  /** 现在这项活动是不是在首次分析流程里（空闲时为假）。 */
+  /** 这条会话正在做的工作项是不是流程的工作项（空闲时为假）。 */
   inFlow: boolean;
-  /** 首次分析走到的节点：最近一条带节点的活动记录；没有走过是 null。 */
+  /** 恒为 null：早先是「首次分析走到的节点」，现在流程的位置记在各个工作项上。 */
   flowNode: Stage | null;
   /** 任务里有没有材料。 */
   hasMaterials: boolean;
@@ -335,7 +338,7 @@ export interface LaunchFacts {
   blocked: Record<Stage, string | null>;
 }
 
-/** 可以点的一项：开展哪一项活动、在不在流程里、按钮上的字、现在能不能开展、一句状态（不能开展时写缺什么）。 */
+/** 可以点的一项：启动哪一项活动、在不在流程里、按钮上的字、现在能不能启动、一句状态（不能启动时写缺什么）。 */
 export interface LaunchOption {
   activity: Stage;
   in_flow: boolean;
@@ -345,9 +348,9 @@ export interface LaunchOption {
 }
 
 /**
- * 任务状况卡上「开展一项活动」一节的内容，三组：
- * current 是正在进行的活动（只显示一行，不是按钮；空闲时为 null）；flows 是可以启动或继续的流程（现在只有首次分析）；
- * activities 是可以单独开展的活动（六项）；later 是以后才有的（发布）。
+ * 早先任务状况卡上那一节的内容（新的页面不用它，任务起点页与切换工作面板读活动目录），三组：
+ * current 是这条会话正在做的活动（只显示一行，不是按钮；空闲时为 null）；flows 是可以启动的流程（现在只有首次分析）；
+ * activities 是可以启动的单项活动（六项）；later 是以后才有的（发布）。
  */
 export interface LaunchView {
   current: { activity: Stage; in_flow: boolean; label: string } | null;
@@ -356,7 +359,7 @@ export interface LaunchView {
   later: { label: string; state: string }[];
 }
 
-export const LAUNCH_READY = "可以开展";
+export const LAUNCH_READY = "可以启动";
 export const LAUNCH_ACTIVE = "正在进行";
 /** 任务正在首次分析流程里做这项活动时，单项活动里同名的那一项不能点，后面写这一句。 */
 export const LAUNCH_IN_FLOW = "正在工作流程中进行";
@@ -376,7 +379,7 @@ export function launchView(facts: LaunchFacts): LaunchView {
   }];
   const activities: LaunchOption[] = STAGES.map((activity) => {
     const active = at === activity && !facts.inFlow;
-    // 任务正在流程里做这一项：不能再把它单独开展一遍（那会把流程里的这一步结束掉）。
+    // 这条会话正在流程里做这一项：这一行不能点。
     const blocked = at === activity && facts.inFlow ? LAUNCH_IN_FLOW : facts.blocked[activity];
     return { activity, in_flow: false, label: STAGE_NAMES[activity], enabled: !active && blocked === null, state: active ? LAUNCH_ACTIVE : blocked ?? LAUNCH_READY };
   });
@@ -426,14 +429,14 @@ function howToLeaveDocument(back: Exclude<Stage, "document">): string {
 }
 
 /** 空闲时被拦的事实开头的那半句。 */
-const IDLE_FACT = "任务现在没有在进行的活动";
+const IDLE_FACT = "本会话没有在进行的工作项";
 
 /**
- * 空闲时被拦怎么办：这件事要在哪一项活动里做（where），而开展哪一项活动由用户定——从任务状况卡开展一项活动。
+ * 空闲时被拦怎么办：这件事要在哪一项活动里做（where），而启动哪一项活动由用户定——从任务起点页启动一个工作项。
  * 空闲时助手能做的与澄清相同：立主题页、改主题页、记问题条目。
  */
 function howToLeaveIdle(where: string): string {
-  return `${where}。开展哪一项活动由用户决定：请用户从任务状况卡开展一项活动。任务空闲时你可以立主题页、改主题页、记问题条目`;
+  return `${where}。启动哪一项活动由用户决定：请用户从任务起点页启动一个工作项。本会话里你可以立主题页、改主题页、记问题条目`;
 }
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */

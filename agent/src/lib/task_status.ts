@@ -171,7 +171,7 @@ function withKnowledgeChange(message: TaskStatusMessage, libraries: SelectedLibr
 function withProposal(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, sessionId: string, since: number | null, materials: Materials,
   message: TaskStatusMessage | null): TaskStatusMessage | null {
   if (!hasOverall(definition.collections)) return message;
-  const open = openProposal(db, task.task_id);
+  const open = openProposal(db, task.task_id, sessionId);
   const line = proposalLine(open, sessionId);
   if (since === null) return message ? { ...message, text: `${message.text}\n${line}`, details: { ...message.details, proposal: open } } : message;
   if (open === null || open.at <= wallClockText(new Date(since))) return message;

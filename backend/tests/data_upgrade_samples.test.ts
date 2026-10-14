@@ -105,7 +105,7 @@ for (const version of VERSIONS) {
   });
 }
 
-test("0.5.0 建的任务：阶段记录升成活动记录，现在的阶段、最近一次移动与全部记录读出来与升级之前一样；服务接手得了，还能再移一次", async () => {
+test("0.5.0 建的任务：阶段记录升成一个首次分析的工作项，那条旧会话属于它；现在的阶段、最近一次移动与每一次移动读出来与升级之前一样；服务接手得了，还能再换一站", async () => {
   const dataDir = join(tmp, STAGED);
   const where = { dataDir, tasksDir: join(dataDir, "tasks"), knowledgeDir: null };
   const id = "TASK-SAMPLE-050";
@@ -145,32 +145,43 @@ test("0.5.0 建的任务：阶段记录升成活动记录，现在的阶段、�
     try {
       const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
       assert.deepEqual([names.length, names.includes("activity_record"), names.includes("stage_record")], [TABLE_NAMES.length, true, false]);
-      // 每条阶段记录成了一条活动记录：编号、会话、调用编号、由谁、理由照抄；活动与节点是移到的那个阶段；开始的时刻与序号是那次移动的；
-      // 前一条在后一条的时刻结束，最后一条还在进行。
+      // 四条阶段记录都在首次分析里：并成一个工作项。编号、会话、调用编号、由谁、理由、启动的时刻与序号是最早那一次移动的；
+      // 现在的活动与所在的一站是最晚那一次移到的；还在进行。
       const rows = db.prepare("SELECT * FROM activity_record ORDER BY started_seq").all().map((row) => ({ ...row }));
-      assert.deepEqual(rows, before.map((r, index) => ({
-        record_id: r.record_id, task_id: id, session_id: r.session_id, run_id: r.run_id, call_id: r.call_id, actor: r.actor, activity: r.stage, node: r.stage, flow: r.flow,
-        reason: r.reason, started_at: r.created_at, ended_at: before[index + 1]?.created_at ?? null, started_seq: r.event_seq, ended_seq: before[index + 1]?.event_seq ?? null, scope: null,
-      })));
+      const first = before[0], latest = before.at(-1)!;
+      assert.deepEqual(rows, [{
+        record_id: first.record_id, task_id: id, session_id: first.session_id, run_id: first.run_id, call_id: first.call_id, actor: first.actor,
+        activity: latest.stage, node: latest.stage, flow: first.flow, reason: first.reason, started_at: first.created_at, ended_at: null, started_seq: first.event_seq, ended_seq: null,
+        scope: null, status: "active",
+      }]);
+      // 那条旧会话挂在这个工作项上。
+      assert.deepEqual(db.prepare("SELECT session_id, record_id, attached_at FROM work_item_session").all().map((row) => ({ ...row })),
+        [{ session_id: "session-sample", record_id: first.record_id, attached_at: latest.created_at }]);
       assert.deepEqual(db.prepare("SELECT seq, name, payload, actor, at FROM event ORDER BY seq").all().map((row) => ({ ...row })), eventsBefore, "事件一条不动");
     } finally {
       db.close();
     }
 
-    // 读出来与升级之前一样：现在在澄清，最近一次是用户移的；调试页签的记录逐条相同。
+    // 在那条旧会话里读出来与升级之前一样：现在在澄清，最近一次是用户移的（取自早先的移动事件）；调试页签的记录逐条相同，都是换站。
     const last = before.at(-1)!;
-    const stage = library.stageView(taskDir)!;
-    assert.deepEqual([stage.current, stage.moved_by, stage.moved_at, stage.reason, stage.flow],
-      ["clarifying", "user", clock.fromLocalText(last.created_at), "借期还没有问清楚。", "initial"]);
+    const stage = library.stageView(taskDir, "session-sample")!;
+    assert.deepEqual([stage.current, stage.moved_by, stage.reason, stage.flow, stage.work_item?.name, stage.work_item?.status],
+      ["clarifying", "user", "借期还没有问清楚。", "initial", "首次分析", "active"]);
+    const eventAt = new Map((eventsBefore as { seq: number; at: string }[]).map((one) => [Number(one.seq), one.at]));
+    assert.equal(stage.moved_at, clock.fromLocalText(eventAt.get(Number(last.event_seq))!));
     assert.deepEqual(library.stageDebugView(taskDir).records, before.map((r) => ({
-      from: r.from_stage, to: r.stage, actor: r.actor, reason: r.reason, run_id: r.run_id, session_id: r.session_id, at: clock.fromLocalText(r.created_at), flow: r.flow,
+      from: r.from_stage, to: r.stage, actor: r.actor, reason: r.reason, run_id: r.run_id, session_id: r.session_id, at: clock.fromLocalText(eventAt.get(Number(r.event_seq))!), flow: r.flow,
+      kind: "move", record_id: null,
     })));
+    // 别的会话不属于这个工作项：空闲。
+    assert.equal(library.stageView(taskDir, "sess-new")!.current, "idle");
 
     const service = new Service(where.tasksDir, join(dataDir, "runs"), {}, { port: 1, registry });
     try {
       assert.deepEqual(service.listTasks().map((t) => [t.task_id, t.status, t.supported]), [[id, "进行中", true]]);
+      // 任务详情不属于哪条会话：任务一级没有「现在的阶段」，按自由讨论的会话算是空闲；工作项在任务状况里列着。
       const page = service.taskPage(service.task(id)) as Record<string, any>;
-      assert.equal(page.stage.current, "clarifying");
+      assert.equal(page.stage.current, "idle");
     } finally {
       await service.close();
     }
@@ -178,12 +189,12 @@ test("0.5.0 建的任务：阶段记录升成活动记录，现在的阶段、�
     registry?.close();
   }
 
-  // 升级之后再移一次：经子进程调助手一侧真实的用户操作（移到整理建模）。接在后面，退回澄清的那一条随之结束。
-  const more = spawnSync(process.execPath, [SAVE_MORE, taskDir, JSON.stringify([{ stage: "整理建模" }])],
+  // 升级之后在那条旧会话里再换一站：经子进程调助手一侧真实的用户操作（移到整理建模）。接在后面，工作项还是那一个。
+  const more = spawnSync(process.execPath, [SAVE_MORE, taskDir, JSON.stringify([{ stage: "整理建模" }]), "session-sample"],
     { encoding: "utf-8", env: { ...process.env, [TASKS_ROOT_ENV]: where.tasksDir } });
   assert.equal(more.status, 0, more.stderr);
   const records = library.stageDebugView(taskDir).records;
   assert.deepEqual(records.map((r) => [r.from, r.to]), [...before.map((r) => [r.from_stage, r.stage]), ["clarifying", "modeling"]]);
-  assert.equal(library.stageView(taskDir)!.current, "modeling");
+  assert.deepEqual([library.stageView(taskDir, "session-sample")!.current, records.at(-1)!.kind, records.at(-1)!.record_id], ["modeling", "move", before[0].record_id]);
   assert.equal(existsSync(join(SAMPLES, STAGED, `${DB_NAME}-wal`)), false, "仓里的样本没有被打开过");
 });

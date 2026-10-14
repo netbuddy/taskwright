@@ -35,8 +35,8 @@ export const isIdle = (stage: Pick<StageView, "current"> | null | undefined): bo
 /** 现在这项活动是不是用户单独开展的（不在首次分析流程里）。早先的后端不给 node，当作在流程里。 */
 export const isAlone = (stage: Pick<StageView, "current" | "node"> | null | undefined): boolean => !!stage && stage.current !== IDLE && stage.node === null;
 /** 阶段条下面、调试页签里说任务现在在哪里的那一句；任务在流程里的某个阶段时不用它。 */
-export const IDLE_TEXT = "任务空闲：没有在进行的活动。";
-export const aloneText = (stage: StageKey): string => `单独开展：${STAGE_NAMES[stage]}（不在首次分析流程里）。`;
+export const IDLE_TEXT = "本会话没有在进行的工作项：自由讨论，或者它的工作项已经结束。";
+export const aloneText = (stage: StageKey): string => `本会话的工作项是单项活动：${STAGE_NAMES[stage]}（不在工作流程里）。`;
 /** 位置给人看的名字：阶段的名字，或者「空闲」。 */
 export const positionLabel = (position: PositionKey | string): string => (position === IDLE ? IDLE_NAME : (STAGE_NAMES as Record<string, string>)[position] ?? position);
 
@@ -170,17 +170,18 @@ export const quietHint = (key: string): string => (key === STAY_HERE_KEY ? STAY_
  * 与别的界面操作记号是同一种说法。阶段只由用户移动。任务空闲时点了「开始核读材料」，写的是启动（或继续）首次分析。
  */
 /**
- * 用户点了一张进入某个阶段的卡片而阶段没有移动时，卡片上「✓ 你选了……」下面的那句小字。at 是任务当时所在的阶段。
- * why 为 not_in_flow 是任务当时不在首次分析流程里（空闲，或者正在单独开展一项活动）：进入与退回不算数，请用户从任务状况卡开展一项活动。
+ * 用户点了一张进入某个阶段的卡片而阶段没有移动时，卡片上「✓ 你选了……」下面的那句小字。at 是这条会话当时所在的阶段。
+ * why 为 not_in_flow 是这条会话当时不在做流程的工作项（自由讨论的会话、工作项已经结束，或者工作项是单项活动）：进入与退回不算数，
+ * 请用户从任务起点页启动一个工作项。
  */
 export function stageUnmovedLine(at: string, why?: string | null): string {
   if (why === "not_in_flow") {
-    return `这次点击没有开始活动：${at === IDLE ? "任务现在空闲" : `任务正在单独开展${positionLabel(at)}`}。请从任务状况卡开展一项活动。`;
+    return `这次点击没有生效：${at === IDLE ? "本会话没有在进行的工作流程" : `本会话的工作项是单项活动「${positionLabel(at)}」`}。要进入某个阶段，请从任务起点页启动一个工作项。`;
   }
-  return `这次点击没有改变阶段：任务当时在${positionLabel(at)}。`;
+  return `这次点击没有改变阶段：工作项当时在${positionLabel(at)}。`;
 }
 
-/** 助手在一条回复里汇报用户单独开展的那项活动做完了时，那条回复下面的一行。 */
+/** 助手在一条回复里汇报这条会话的工作项（单项活动）做完了时，那条回复下面的一行。 */
 export const activityDoneLine = (activity: StageKey): string => activityDoneSentence(activity);
 
 export function stageMoveLine(move: StageMove): string {

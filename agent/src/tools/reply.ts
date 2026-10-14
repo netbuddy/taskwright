@@ -130,8 +130,8 @@ const parameters = Type.Object({
   })),
   activity_done: Type.Optional(Type.Union([Type.Null(), Type.Boolean()], {
     description:
-      "只在用户单独开展一项活动（不在首次分析流程里）、这项活动做够了、你要汇报结束时写 true：这条回复送达之后这项活动结束，任务空闲。" +
-      "别的时候不写。任务在流程里的某个阶段时写了会被拒绝：流程里做完一段，用进入下一段的请选择卡片提议。",
+      "只在本会话的工作项是单项活动（不在工作流程里）、这项活动做够了、你要汇报结束时写 true：这条回复送达之后这个工作项结束，本会话此后按自由讨论办。" +
+      "别的时候不写。本会话的工作项是工作流程时写了会被拒绝：流程里做完一段，用进入下一段的请选择卡片提议。",
   })),
 });
 
@@ -169,8 +169,8 @@ export function registerReply(pi: ExtensionAPI): void {
             currentRevisionOf: lookup.currentRevisionOf,
             priorRejections: consecutiveReplyRejections(branch),
             resendFact: resend.resendFact,
-            // 回复里写了 activity_done 时：任务正在单独开展一项活动才行。
-            activityDoneRefusal: () => activityDoneGate(ctx.cwd),
+            // 回复里写了 activity_done 时：这条会话正在做一个单项活动的工作项才行。
+            activityDoneRefusal: () => activityDoneGate(ctx.cwd, ctx.sessionManager.getSessionId()),
             // 给建议值的依据：与保存修订的来源同一套逐字核对。
             checkBasis: (raw, errors, whereOf) =>
               checkQuotes(ctx.cwd, ctx.sessionManager.getSessionId(), userMessagesOnBranch(ctx), raw, errors, whereOf, envKnowledgeRoot()),
@@ -193,7 +193,7 @@ export function registerReply(pi: ExtensionAPI): void {
       const messageId = turn.calls.some((call) => call.id === toolCallId) ? turn.entryId : null;
       const sessionId = ctx.sessionManager.getSessionId();
       const recorded = recordReplyActs(ctx.cwd, sessionId, branch as never, decision.reply, messageId, toolCallId);
-      // 助手汇报单独开展的那项活动做完了：回复送达之后结束那条活动记录，任务随之空闲。
+      // 助手汇报这条会话的工作项（单项活动）做完了：回复送达之后结束这个工作项，这条会话此后按自由讨论办。
       const done = decision.reply.activity_done ? reportActivityDone(ctx.cwd, sessionId, toolCallId) : null;
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。
       return spoken(recorded?.text ? `回复已送达。${recorded.text}` : "回复已送达", {
@@ -207,7 +207,7 @@ export function registerReply(pi: ExtensionAPI): void {
         answers_card: recorded?.answersCard ?? [],
         // 这张卡片重发的是哪一张（原来那张所在回复的编号）：页面据此把原来那张收成一句；不是重发时不带这一项。
         ...(recorded?.resendsCard ? { resends_card: recorded.resendsCard } : {}),
-        // 这条回复结束了哪一项单独开展的活动、记下结束的那条事件的序号：页面据此在回复下面写一行；没有结束时不带这一项。
+        // 这条回复结束了哪个工作项（哪一项单项活动、工作项的记录号）、记下结束的那条事件的序号：页面据此在回复下面写一行；没有结束时不带这一项。
         ...(done ? { activity_done: done } : {}),
       });
     },

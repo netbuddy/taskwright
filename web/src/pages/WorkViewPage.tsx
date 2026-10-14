@@ -331,13 +331,18 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     });
   };
   /**
-   * 任务状况卡的「开展一项活动」一节点了一项：一次界面操作，后端记活动记录并在对话里留一行，不替用户发话。
-   * 没做成（例如助手正在工作、单独开展缺前提）报一条失败提示。返回有没有做成。
+   * 任务状况卡上那一节点了一项：启动一个工作项。后端新建一个工作项与一条属于它的会话，在那条会话里留一行，不替用户发话；
+   * 做成了就进那条新会话。没做成（例如助手正在工作、启动单项活动缺前提）报一条失败提示。返回有没有做成。
    */
   const startActivity = async (option: LaunchOption): Promise<boolean> => {
-    const error = await submit({ kind: "start_activity", targets: [], fields: { activity: option.activity, in_flow: option.in_flow }, notify_executor: false }, option.label);
-    if (error) toast.error(errorText(error));
-    return !error;
+    try {
+      const started = await api.startInNewSession(taskId, { activity: option.activity, in_flow: option.in_flow });
+      go(href.work(taskId, started.session_id));
+      return true;
+    } catch (e) {
+      toast.error(errorText(e instanceof ApiError ? e : new ApiError("network", String(e))));
+      return false;
+    }
   };
   /** 阶段条上点了一盏说材料还没有被引用的灯：展开右侧栏、切到材料页签，由材料页签选中那份材料。 */
   const openMaterial = (path: string) => {

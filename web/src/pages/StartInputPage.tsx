@@ -1,15 +1,16 @@
 // 活动输入页：从任务起点页点了一条工作流程或一项单项活动之后的那一页，开展在这里提交。这一页没有对话区。
 // 自上而下：「返回任务起点」、这一项的名称与一句（流程从哪一站开始、活动的方式）、流程的各站一行、目的与前提的摘要、
-// 几块输入、「开展后」会发生什么、在哪条会话里开展、主按钮「开展某项」。
+// 几块输入、「开展后」会发生什么、主按钮「开展某项」。
 // 输入有四块，按这一项读哪几类资产显示（model/startInput.ts 的 inputBlocks）：项目材料（上传与清单，与任务起点页的材料卡是同一个组件）、
 // 领域知识库（勾选这个任务选用的知识库）、目标系统描述（它就是会话的第一条消息）、范围说明（只有单项活动有，随开展请求发给后端）。
 // 材料上传与知识库勾选都是当场生效的，不等点主按钮。
-// 点主按钮：先发开展请求（沿用最近活动的那条会话，或者新建一条会话），成了再替用户发第一句话（写了目标系统描述就是那段描述，
-// 没有写是这项活动的那句固定的话），然后进那条会话的工作台。开展不成（例如助手正在工作）在页上报后端的原话，不跳转。
+// 点主按钮：先发启动的请求（后端新建一个工作项与一条属于它的会话，回应里带新会话的编号），成了再替用户发第一句话
+// （写了目标系统描述就是那段描述，没有写是这项活动的那句固定的话），然后进那条会话的工作台。没有启动成（例如助手正在工作）在页上报后端的原话，不跳转。
+// 这一页不选会话：一条会话在建立时就属于一个工作项，启动一律新建。
 // 地址带 ?case=序号 时是从三种常见起点里的某一种进来的：那种起点要先看的那一块描黑边并滚到眼前，块里写着那种起点的做法。
 
 import { useEffect, useRef, useState } from "react";
-import { Alert, Input, Radio, Spin } from "antd";
+import { Alert, Input, Spin } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
 import type { KnowledgeLibrary, TaskDetail, TaskStatusView } from "../api/types";
@@ -42,8 +43,6 @@ export function StartInputPage({ taskId, startKey, startCase }: {
   const [error, setError] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("");
-  // 在哪条会话里开展：沿用最近活动的那条（缺省），或者新建一条。一条会话都没有时只能新建。
-  const [inNew, setInNew] = useState(false);
   // 开展的请求发出去、还没有进工作台：主按钮点不动，免得开展两次。
   const [starting, setStarting] = useState(false);
   const toast = useToast();
@@ -97,7 +96,6 @@ export function StartInputPage({ taskId, startKey, startCase }: {
   const blocked = blockedLine(target);
   const missing = missingInput(target, blocks, status?.assets, description);
   const latest = latestSession(task.sessions);
-  const useCurrent = latest !== null && !inNew;
   const selected = task.knowledge_libraries ?? [GENERAL];
   const materials = ownMaterials(task.materials);
   const endsCurrent = endsCurrentLine(status, target);
@@ -122,12 +120,7 @@ export function StartInputPage({ taskId, startKey, startCase }: {
     const sent = { ...fields, ...(blocks.scope && note ? { scope: note } : {}) };
     let sessionId: string;
     try {
-      if (useCurrent) {
-        await api.action(taskId, latest.session_id, { client_id: clientId(), task_id: taskId, kind: "start_activity", targets: [], fields: sent, notify_executor: false });
-        sessionId = latest.session_id;
-      } else {
-        sessionId = (await api.startInNewSession(taskId, sent)).session_id;
-      }
+      sessionId = (await api.startInNewSession(taskId, sent)).session_id;
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "没有开展成。");
       setStarting(false);
@@ -230,20 +223,6 @@ export function StartInputPage({ taskId, startKey, startCase }: {
         </ol>
       </section>
 
-      {latest && (
-        <section className="tp-pane tp-in-block" aria-label="会话" data-testid="start-session">
-          <div className="tp-sec-h"><h2>会话</h2></div>
-          <Radio.Group className="tp-in-radios" value={inNew ? "new" : "current"} onChange={(e) => setInNew(e.target.value === "new")}>
-            <Radio value="current" data-testid="session-current">
-              沿用当前会话「{latest.name || "新会话，还没有说过话。"}」<small>助手保留此前的讨论上下文。</small>
-            </Radio>
-            <Radio value="new" data-testid="session-new">
-              新建会话，从干净的上下文开始<small>适合当前会话已经很长，或要做的事与此前的讨论无关。</small>
-            </Radio>
-          </Radio.Group>
-        </section>
-      )}
-
       <div className="tp-in-go">
         <button className="btn pri" disabled={!fields || !!blocked || !!missing || starting} onClick={() => void start()} data-testid="start-submit">{startButton(target)}</button>
         {blocked ? (
@@ -253,7 +232,7 @@ export function StartInputPage({ taskId, startKey, startCase }: {
           </>
         )
           : missing ? <span className="tp-need" data-testid="start-missing">{missing}</span>
-            : <span className="tp-quiet" data-testid="start-where">{useCurrent ? "将在当前会话里开展并进入工作台。" : "将新建一条会话并进入工作台。"}</span>}
+            : <span className="tp-quiet" data-testid="start-where">将新建一个工作项和一条属于它的会话，并进入工作台。</span>}
       </div>
       {viewer}
     </>

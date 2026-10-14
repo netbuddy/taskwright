@@ -94,7 +94,8 @@ const SCRIPT = {
 test("核读到编写文档：问题就地记下并了结、回退由用户在卡片上点、补写的导语过目后进文档", { skip: NO_PI, timeout: 420000 }, () =>
   withStack(tmp, "document-flow", SCRIPT, async ({ call, taskId, session, send, action, entryOfCall, requests, db }) => {
     const taskNow = async () => (await call("GET", `/api/v1/tasks/${taskId}`)).body as Dict;
-    const stageNow = async () => (await taskNow()).stage as Dict;
+    // 阶段、灯与提议是按会话算的：看的是这条会话（它属于夹具启动的那个首次分析的工作项）。
+    const stageNow = async () => (await call("GET", `/api/v1/tasks/${taskId}/snapshot?session=${session}`)).body.task.stage as Dict;
     const lamp = async (stage: string, key: string) => ((await stageNow()).lamps[stage] as Dict[]).find((one) => one.key === key)!;
     const fieldsOf = (itemId: string) => JSON.parse(db("SELECT fields FROM item_version WHERE item_id = ? ORDER BY revision_no DESC LIMIT 1", itemId)[0].fields) as Dict;
     // 启动首次分析的那一条（夹具记的，停在核读材料）不算在内。
@@ -188,7 +189,8 @@ test("核读到编写文档：问题就地记下并了结、回退由用户在�
     await sleep(1500);
     assert.equal(requests().length, quiet, "点「看过了，生成文档」不引出助手运行");
     const after = await taskNow();
-    assert.deepEqual([after.stage.current, after.stage.proposal], ["document", null]);
+    const afterStage = await stageNow();
+    assert.deepEqual([afterStage.current, afterStage.proposal], ["document", null]);
     assert.deepEqual(after.items.filter((one: Dict) => ["OA-002", "OA-003", "OA-004"].includes(one.item_id)).map((one: Dict) => one.viewed), [true, true, true]);
     const readNote = ((await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[]).filter((m) => m.type === "ui_action_noted" && m.kind === "continue_stage").at(-1)!;
     assert.deepEqual([readNote.reply_message_id, readNote.option_key, readNote.stage], [readEntry, "document_reviewed", "document"]);

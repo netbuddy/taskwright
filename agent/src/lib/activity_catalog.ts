@@ -2,9 +2,8 @@
  * 需求资产六类的现状、前置条件满足没有、给页面的活动目录。只算，不读文件、不读库：事实由调用方读好交进来
  * （算灯用的那一份 lib/stage.ts 的 LampInput，与活动、流程的头 lib/activity_def.ts）。
  *
- * 能不能开展一项活动只看数据：材料有没有、业务说明有几节、图是不是都看过、需求条目有没有、有没有已确认的条目、
- * 评审有没有未处理的发现。与之前做没做过哪一项活动、流程走到哪里无关。另有一条不是前提的约束：任务正在流程里做这一项活动时，
- * 不能同时把它单独开展一遍；一个任务同一时刻只有一项活动在进行。
+ * 能不能启动一项活动只看数据：材料有没有、业务说明有几节、图是不是都看过、需求条目有没有、有没有已确认的条目、
+ * 评审有没有未处理的发现。与之前做没做过哪一项活动、别的工作项做到哪里无关：同一项活动已经有进行中的工作项也不拦。
  */
 
 import {
@@ -12,7 +11,7 @@ import {
   PUBLISH, READ_NAMES, prerequisiteText,
 } from "./activity_def.ts";
 import { CHAPTERS, chapterLayout } from "./overall_chapters.ts";
-import { FLOW_INITIAL, IDLE, LAUNCH_ACTIVE, LAUNCH_IN_FLOW, LAUNCH_READY, type LampInput, type Position, type Stage, flowStartNode, isStage } from "./stage.ts";
+import { FLOW_INITIAL, LAUNCH_READY, type LampInput, type Stage, flowStartNode, isStage } from "./stage.ts";
 
 /** 算六类资产的现状与前置条件要的数。 */
 export interface AssetFacts {
@@ -164,11 +163,13 @@ export interface CatalogActivity {
   /** 前置条件的一句，取自定义，与现在满足没有无关。 */
   prerequisite_text: string;
   example: string;
-  /** 现在能不能开展。 */
+  /** 现在能不能启动：只看数据前提。 */
   enabled: boolean;
-  /** 现在的状态一句：可以开展、正在进行、正在工作流程中进行、此版本尚未提供，或者缺什么前提。 */
+  /** 现在的状态一句：可以启动、此版本尚未提供，或者缺什么前提。 */
   state: string;
   recommended: boolean;
+  /** 这项活动现在有几个进行中的工作项。 */
+  active_count: number;
 }
 
 /** 活动目录里的一条工作流程。 */
@@ -186,10 +187,12 @@ export interface CatalogFlow {
   state: string;
   /** 推荐：没有发布过版本时是首次分析，发布过之后是需求变更。 */
   recommended: boolean;
-  /** 流程走到的站；没有走过、或者这条流程现在还不能开展时是 null。 */
+  /** 恒为 null：早先是「流程走到的站」，现在流程的位置记在各个工作项上，这一项只为还读它的页面留着。 */
   at: ActivityKey | null;
-  /** 现在开展这条流程应当从哪一站开始：走过就是走到的那一站，没有走过时有材料从核读材料、没有材料从澄清；这条流程现在还不能开展时是 null。 */
+  /** 现在启动这条流程应当从哪一站开始：有材料从核读材料、没有材料从澄清；这条流程现在还不能启动时是 null。 */
   start: Stage | null;
+  /** 这条流程现在有几个进行中的工作项。 */
+  active_count: number;
 }
 
 export interface Catalog {
@@ -197,45 +200,38 @@ export interface Catalog {
   activities: CatalogActivity[];
 }
 
-/** 任务现在在哪里：位置、现在这项活动在不在首次分析流程里、首次分析走到的节点。 */
-export interface CatalogWhere {
-  position: Position;
-  inFlow: boolean;
-  flowNode: Stage | null;
-}
-
-/** 还不能开展的活动（发布）的状态。 */
+/** 还不能启动的活动（发布）的状态。 */
 export const CATALOG_LATER = "此版本尚未提供";
 
-/** 给页面的活动目录：两条工作流程与七项单项活动，各带现在能不能开展。 */
-export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, facts: AssetFacts, where: CatalogWhere): Catalog {
-  const at = where.position === IDLE ? null : where.position;
-  const inFlowNow = at !== null && where.inFlow;
+/**
+ * 给页面的活动目录：两条工作流程与七项单项活动，各带现在能不能启动。能不能启动只看数据前提；counts 是进行中的工作项各有几个
+ * （单项活动的按活动的键、流程的按流程的键），已经有进行中的工作项不拦，再启动是另起一个。
+ */
+export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, facts: AssetFacts, counts: Readonly<Record<string, number>> = {}): Catalog {
   const activities: CatalogActivity[] = defs.activities.map((one) => {
     const base = {
       key: one.key, name: one.name, mode: one.mode, mode_name: MODE_NAMES[one.mode], purpose: one.purpose,
       reads: one.reads.map((key) => ({ key, name: READ_NAMES[key] })), writes: one.writes.map((key) => ({ key, name: ASSET_NAMES[key] })),
-      prerequisite_text: prerequisiteText(one.requires), example: one.example, recommended: false,
+      prerequisite_text: prerequisiteText(one.requires), example: one.example, recommended: false, active_count: counts[one.key] ?? 0,
     };
     const blocked = blockedText(one.requires, facts);
-    // 发布现在还不能开展：缺前提时说缺什么，不缺时说明这个版本还没有。
+    // 发布现在还不能启动：缺前提时说缺什么，不缺时说明这个版本还没有。
     if (one.key === PUBLISH) return { ...base, enabled: false, state: blocked ?? CATALOG_LATER };
-    if (at === one.key) return { ...base, enabled: false, state: where.inFlow ? LAUNCH_IN_FLOW : LAUNCH_ACTIVE };
     return { ...base, enabled: blocked === null, state: blocked ?? LAUNCH_READY };
   });
   const flows: CatalogFlow[] = defs.flows.map((one) => {
     const initial = one.key === FLOW_INITIAL;
     const blocked = blockedText(one.requires, facts);
-    const active = initial && inFlowNow;
     return {
       key: one.key, name: one.name, purpose: one.purpose, applies: one.applies, nodes: one.nodes.map((key) => ({ key, name: ACTIVITY_NAMES[key] })), inputs: one.inputs,
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
-      // 只有首次分析现在能开展；需求变更要有已发布的版本，而且它的各站还没有定义。
-      enabled: initial && !active && blocked === null,
-      state: active ? LAUNCH_ACTIVE : blocked ?? (initial ? LAUNCH_READY : CATALOG_LATER),
+      // 只有首次分析现在能启动；需求变更要有已发布的版本，而且它的各站还没有定义。
+      enabled: initial && blocked === null,
+      state: blocked ?? (initial ? LAUNCH_READY : CATALOG_LATER),
       recommended: initial ? facts.versions === 0 : facts.versions > 0,
-      at: initial ? where.flowNode : null,
-      start: initial ? where.flowNode ?? flowStartNode(facts.materials > 0) : null,
+      at: null,
+      start: initial ? flowStartNode(facts.materials > 0) : null,
+      active_count: counts[one.key] ?? 0,
     };
   });
   return { flows, activities };
