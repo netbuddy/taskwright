@@ -30,12 +30,16 @@
  * start_page 是任务起点页与活动输入页上的几段文字（startPageTexts）：一段定位的话、「三步开始」主按钮下面的一句、三种常见起点各一张小卡、
  * 从头编制时输入页上的几段（intake）。
  * 现在都是这里给的缺省文字，照需求规格说明这一类任务写；以后由任务类型的定义给。
+ * versions 是任务的版本记录，按版本号从小到大，每项见 versionView。
  * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { CHAPTERS, chapterLayout, chapterPage } from "../../agent/src/lib/overall_chapters.ts";
 import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
 import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, QUESTION_KIND_CLARIFY, STAGES, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
+import type { VersionRecord } from "../../agent/src/lib/versions.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 
@@ -162,7 +166,20 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
     assets: stage.assets,
     catalog: view.status === "进行中" ? stage.catalog : null,
     start_page: startPageTexts(view.task_name),
-    versions: [] as unknown[],
+    versions: library.versionRows(taskDir).map((row) => versionView(row, taskDir)),
+  };
+}
+
+/**
+ * 一个版本给页面的样子：版本号、发布的时刻、谁发布的、发布时的修订号、发布说明、文档里的图存了没有，以及有没有 Markdown 与 Word 的存档
+ * （存档文件还在任务目录里才算有）。存档的路径不给页面，下载走 GET …/versions/{n}/document。
+ */
+export function versionView(row: VersionRecord, taskDir?: string) {
+  const kept = (path: string | null) => path !== null && (taskDir === undefined || existsSync(join(taskDir, path)));
+  return {
+    version_no: row.version_no, published_at: clock.fromLocalText(row.published_at), actor: row.actor === "user" ? "user" : "executor",
+    revision_no: row.revision_no, note: row.note, figures_archived: row.figures_archived,
+    has_markdown: kept(row.markdown_path), has_docx: kept(row.docx_path),
   };
 }
 

@@ -35,6 +35,7 @@ import {
   activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
+import { versionCount } from "./versions.ts";
 
 /**
  * 工作项的三种事件。
@@ -677,6 +678,7 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
       satisfied: completion.every((one) => one.satisfied),
       unmet: completion.filter((one) => !one.satisfied).map((one) => `「${one.collection}」${one.condition}：${one.summary}`),
     },
+    versions: versionCount(db, taskId),
   };
 }
 

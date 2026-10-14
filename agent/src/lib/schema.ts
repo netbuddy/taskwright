@@ -13,7 +13,7 @@
  * 因为设计里把它列为这两张表的主要列。
  */
 
-import { existsSync, readFileSync, realpathSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath, inImmediateTransaction } from "./db.ts";
@@ -27,8 +27,8 @@ import { ensureDialogueSchema } from "./dialogue_schema.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十八张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version、activity_record、
- *  work_item_session 是后来加的，旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。早先的阶段记录表（stage_record）在格式版本 5 改写成活动记录表之后删掉了，不在这里。 */
+/** 十九张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version、activity_record、
+ *  work_item_session、version_record 是后来加的，旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。早先的阶段记录表（stage_record）在格式版本 5 改写成活动记录表之后删掉了，不在这里。 */
 export const TABLE_NAMES = [
   "task",
   "revision",
@@ -48,10 +48,12 @@ export const TABLE_NAMES = [
   "diagram_version",
   "activity_record",
   "work_item_session",
+  "version_record",
 ] as const;
 
 /** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version", "activity_record", "work_item_session"];
+export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version", "activity_record", "work_item_session",
+  "version_record"];
 
 /** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
 export const LEGACY_TABLE = "slot";
@@ -360,6 +362,31 @@ CREATE TABLE IF NOT EXISTS work_item_session (
 `;
 
 /**
+ * 版本记录：一次发布一行。发布版本是对外交付的那一份：版本号从 1 起递增；记下发布的时刻、谁发布的、发布时交付物的整体修订号
+ * （「某条目比第 N 版新」由它现在的修订号大于这个数推出，不另设字段）、一句发布说明，以及发布时生成的文档存档在任务目录里的位置
+ * （versions/v{N}/document.md 与 document.docx；模板与呈现会随产品升级变化，只存修订号不能保证以后重生成一字不差）。
+ * figures_archived 记文档里的图存了没有：页面发起发布时带着页面画好的图，存进 Word；没有图的写成 Mermaid 文本，记 0。
+ * 从早先「已完成」的任务升级来的第 1 版没有存档，两个路径为空。格式版本 8 加的表。
+ */
+export const VERSION_RECORD_SQL = `
+CREATE TABLE IF NOT EXISTS version_record (
+  version_no       INTEGER PRIMARY KEY,   -- 版本号，从 1 起递增
+  task_id          TEXT NOT NULL,         -- 所属任务的任务编号
+  published_at     TEXT NOT NULL,         -- 发布的时刻（本地时间）
+  actor            TEXT NOT NULL,         -- 谁发布的：executor 或 user
+  revision_no      INTEGER NOT NULL,      -- 发布时交付物的整体修订号；还没有修订时是 0
+  note             TEXT,                  -- 发布说明；没有写为空
+  markdown_path    TEXT,                  -- 存档的 Markdown 相对任务目录的路径；没有存档为空
+  docx_path        TEXT,                  -- 存档的 Word 相对任务目录的路径；没有存档为空
+  figures_archived INTEGER NOT NULL DEFAULT 0,  -- 文档里的图存了没有：1 存了，0 没有（写成了 Mermaid 文本，或者没有存档）
+  event_seq        INTEGER NOT NULL       -- 记下这次发布的那条事件的序号；升级补的第 1 版是早先完成任务那条事件的
+);
+`;
+
+/** 从早先「已完成」的任务升级来的第 1 版的发布说明。 */
+export const UPGRADED_VERSION_NOTE = "升级前完成，当时文档未存档";
+
+/**
  * 修订表上按调用编号判重的索引：同一任务里，同一次工具调用（同一个调用编号）只能形成一次修订。
  * 模型重试或 pi 重发同一次调用时，「保存修订」先按这个编号查到第一次的修订、原样返回，不再写一遍（见 save_revision.ts）；
  * 这个唯一索引是最后一道保险。调用编号为空文字的不算：模型服务没有给调用编号时，pi 交来的是空文字，这种调用无从判重。
@@ -514,6 +541,7 @@ ${TOOL_REJECTION_SQL}
 ${DIAGRAM_SQL}
 ${ACTIVITY_RECORD_SQL}
 ${WORK_ITEM_SESSION_SQL}
+${VERSION_RECORD_SQL}
 ${REVISION_CALL_INDEX_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
@@ -532,9 +560,10 @@ export function existingTables(db: DatabaseSync): string[] {
  * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）；4 去掉了阶段记录表里两列阶段的检查（阶段有哪几个只在代码里判）；
  * 5 加了活动记录表（activity_record），把阶段记录逐行改写进去，删掉了阶段记录表；6 给活动记录表加了范围说明一列（scope）；
  * 7 把活动记录归并成工作项（流程里每到一站一行的并成一行，去掉结束的时刻，记录号改为自增不重用，流程的键改为 analysis），
- * 加了工作项的会话表（work_item_session）。
+ * 加了工作项的会话表（work_item_session）；8 加了版本记录表（version_record），早先「已完成」的任务补一条第 1 版的记录，
+ * 任务定义里缺「总体分析」集合的（0.5 之前建的）照任务类型模板补上。任务表的状态一列从这一版起不再读写，留着不删。
  */
-export const TASK_DB_VERSION = 7;
+export const TASK_DB_VERSION = 8;
 
 /** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
 export const TASK_JSON = "task.json";
@@ -569,7 +598,7 @@ export function taskWrittenBy(workspaceDir: string): string | null {
  * 每一步可以重复做（做过的部分再做一遍不出错、不改数据），整张表在调用方开好的一个立即事务里走完，版本号也在这个事务里写：
  * 中途出错整体回退，库与版本号都还是升级之前的样子。
  */
-const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void }[] = [
+const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync, ctx: UpgradeContext) => void }[] = [
   { from: 0, to: 1, run: fromUnversioned },
   { from: 1, to: 2, run: addStageRecords },
   { from: 2, to: 3, run: dropDiagramKindCheck },
@@ -577,20 +606,44 @@ const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync) => void
   { from: 4, to: 5, run: moveStageRecordsToActivities },
   { from: 5, to: 6, run: addActivityScope },
   { from: 6, to: 7, run: mergeIntoWorkItems },
+  { from: 7, to: 8, run: addVersionRecords },
 ];
+
+/**
+ * 升级时步骤用得着、库里又没有的东西。只有数据升级（经后端）给得出，助手写库时不给：
+ * - workspaceDir：任务目录，补任务定义时把任务目录里的定义副本一起改；
+ * - overallTemplate：按任务定义文件的路径取任务类型模板里「总体分析」那一节（集合与它的完成条件），找不到是 null。
+ * notes 由步骤往里写这次做了的、值得写进升级报告的事。
+ */
+export interface UpgradeContext {
+  workspaceDir?: string;
+  overallTemplate?: (definitionPath: string) => OverallTemplate | null;
+  notes: string[];
+}
+
+/** 任务类型模板里「总体分析」那一节：条目集合的定义原文，与完成条件里它那一项（没有为 null）。 */
+export interface OverallTemplate {
+  collection: Record<string, unknown>;
+  completion: unknown;
+}
+
+/** 「总体分析」集合的名字（与 overall_analysis.ts 的 OVERALL_COLLECTION 相同；这里不导入它，免得库结构依赖条目的写法）。 */
+const OVERALL_NAME = "总体分析";
+/** 0.4 建的任务里「总体分析」的前身。 */
+const LEGACY_OVERALL_NAME = "领域说明";
 
 /**
  * 确保库是现在的格式：照 UPGRADE_STEPS 从库里记的版本一步步升到 TASK_DB_VERSION。已经是现在的版本就什么都不做，不再逐张表去看；
  * 比现在的版本新就拒绝（NewerTaskDatabase）。必须在调用方已经开好的事务里调用，好让建表、升级与随后的写入一起提交或一起回退。
  * 返回升级之前与之后的版本。
  */
-export function ensureSchema(db: DatabaseSync): { from: number; to: number } {
+export function ensureSchema(db: DatabaseSync, ctx: UpgradeContext = { notes: [] }): { from: number; to: number } {
   const from = taskDbVersion(db);
   if (from > TASK_DB_VERSION) throw new NewerTaskDatabase(newerDataText(null));
   let version = from;
   for (const step of UPGRADE_STEPS) {
     if (step.from !== version) continue;
-    step.run(db);
+    step.run(db, ctx);
     db.exec(`PRAGMA user_version = ${step.to}`);
     version = step.to;
   }
@@ -954,11 +1007,54 @@ function refuseNewer(db: DatabaseSync, workspaceDir: string): void {
 }
 
 /**
+ * 第 7 到 8 步：加版本记录表；任务表的状态一列从此不读不写。两件随这一步做的事：
+ * - 早先「已完成」的任务补一条第 1 版：发布的时刻取完成的时刻，修订号取完成那一刻之前的最后一次修订，谁发布取完成那条事件的发起方，
+ *   发布说明写「升级前完成，当时文档未存档」，两个存档路径为空。已经有版本记录的不补。
+ * - 任务定义里没有「总体分析」集合的（0.5 之前建的任务），照任务类型模板补上这一集合与它的完成条件，其余不动（0.4 时代的「领域说明」集合与它的条目原样留着）；
+ *   库里的定义快照与任务目录里的定义副本一起改。只有数据升级给了模板（ctx.overallTemplate）时才补；找不到模板就不补，照旧是没有阶段的任务。
+ */
+function addVersionRecords(db: DatabaseSync, ctx: UpgradeContext): void {
+  db.exec(VERSION_RECORD_SQL);
+  const task = db.prepare("SELECT task_id, status, started_at, ended_at, definition_path, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
+    { task_id: string; status: string; started_at: string; ended_at: string | null; definition_path: string; definition_text: string } | undefined;
+  if (!task) return;
+  const has = Number((db.prepare("SELECT COUNT(*) AS n FROM version_record").get() as { n: number }).n) > 0;
+  if (task.status === TASK_DONE && !has) {
+    const done = db.prepare("SELECT seq, actor, at FROM event WHERE task_id = ? AND name = 'TASK_COMPLETED' ORDER BY seq DESC LIMIT 1").get(task.task_id) as
+      { seq: number; actor: string; at: string } | undefined;
+    const seq = done ? Number(done.seq) : Number((db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM event").get() as { n: number }).n);
+    const revision = Number((db.prepare("SELECT COALESCE(MAX(revision_no), 0) AS n FROM revision WHERE task_id = ? AND event_seq < ?").get(task.task_id, done ? seq : Number.MAX_SAFE_INTEGER) as { n: number }).n);
+    const actor = done && (done.actor === "executor" || done.actor === "user") ? done.actor : "executor";
+    db.prepare(`INSERT INTO version_record (version_no, task_id, published_at, actor, revision_no, note, markdown_path, docx_path, figures_archived, event_seq)
+      VALUES (1, ?, ?, ?, ?, ?, NULL, NULL, 0, ?)`).run(task.task_id, task.ended_at ?? done?.at ?? task.started_at, actor, revision, UPGRADED_VERSION_NOTE, seq);
+    ctx.notes.push(`补了第 1 版的版本记录（早先已完成，修订 ${revision}）`);
+  }
+  const template = ctx.overallTemplate?.(task.definition_path) ?? null;
+  if (!template) return;
+  const raw = JSON.parse(task.definition_text) as Record<string, any>;
+  const collections = raw["交付物"]?.["条目集合"];
+  if (!Array.isArray(collections) || collections.some((one: Record<string, unknown>) => one["名称"] === OVERALL_NAME)) return;
+  collections.push(template.collection);
+  if (template.completion !== null && raw["完成条件"] && typeof raw["完成条件"] === "object" && !(OVERALL_NAME in raw["完成条件"])) {
+    raw["完成条件"][OVERALL_NAME] = template.completion;
+  }
+  const text = JSON.stringify(raw, null, 2) + "\n";
+  db.prepare("UPDATE task SET definition_text = ? WHERE task_id = ?").run(text, task.task_id);
+  // 任务目录里的任务定义副本与库里的快照保持一致（与改评审规则的做法相同）；写不成整个升级回退。副本不在（只复制了任务库的目录）时只改快照：
+  // 程序读的是库里的快照。
+  const copy = ctx.workspaceDir ? join(ctx.workspaceDir, task.definition_path) : null;
+  if (copy && existsSync(copy)) writeFileSync(copy, text, "utf-8");
+  ctx.notes.push("补了总体分析集合");
+  // 0.4 时代的「领域说明」集合（总体分析的前身）原样留着，当一个普通集合；它的条目不搬。
+  if (collections.some((one: Record<string, unknown>) => one["名称"] === LEGACY_OVERALL_NAME)) ctx.notes.push("保留了早期的领域说明集合");
+}
+
+/**
  * 把一个任务目录的库升到现在的格式，返回升级之前与之后的版本（相同就是不用升）。只给数据升级用：服务启动时的升级与命令行的升级
  * 都经后端调这里，走的是与助手写库同一张步骤表（ensureSchema）。库文件不存在抛 NoDatabaseYet，比这个程序新抛 NewerTaskDatabase，
  * 步骤表拒绝的旧库照原话抛错；出错时库原样不动。
  */
-export function upgradeTaskDatabase(workspaceDir: string): { from: number; to: number } {
+export function upgradeTaskDatabase(workspaceDir: string, options: { overallTemplate?: UpgradeContext["overallTemplate"] } = {}): { from: number; to: number; notes: string[] } {
   checkUnderTasksRoot(workspaceDir);
   const path = databasePath(workspaceDir);
   if (!(existsSync(path) && statSync(path).size > 0)) throw new NoDatabaseYet(path);
@@ -966,7 +1062,8 @@ export function upgradeTaskDatabase(workspaceDir: string): { from: number; to: n
   try {
     refuseNewer(db, workspaceDir);
     useWriteAheadLog(db);
-    return inImmediateTransaction(db, () => ensureSchema(db));
+    const ctx: UpgradeContext = { workspaceDir, overallTemplate: options.overallTemplate, notes: [] };
+    return { ...inImmediateTransaction(db, () => ensureSchema(db, ctx)), notes: ctx.notes };
   } finally {
     db.close();
   }

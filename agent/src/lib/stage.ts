@@ -671,6 +671,8 @@ export interface LampInput {
    * 与它们有关的灯是不适用。没有给当作都没有。
    */
   declared?: { intro: boolean; blocking: boolean };
+  /** 发过几版（版本记录的行数）；没有给当作没有发布过。 */
+  versions?: number;
 }
 
 const texts = (value: unknown): string[] => (Array.isArray(value) ? value.filter((one): one is string => typeof one === "string" && one.trim() !== "") : []);

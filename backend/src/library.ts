@@ -20,6 +20,7 @@ import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQuestions, goalTree, rulesTable } from "../../agent/src/lib/overall_views.ts";
 import { FLOW_ANALYSIS as FLOW_ANALYSIS_KEY, flowKeyOf, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
+import { type VersionRecord, versionRecords } from "../../agent/src/lib/versions.ts";
 import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -360,6 +361,21 @@ export interface WorkItemRow extends WorkItemBrief {
  * 任务的全部工作项，按启动的先后。库另开一个只读连接；还没有库、没有任务或者读不出来时是空的。
  * 时刻是库里的本地时间写法，调用方给页面之前自己换。
  */
+/** 一个任务的全部版本记录（agent/src/lib/versions.ts），按版本号从小到大；读不出库时是空的。 */
+export function versionRows(taskDir: string): VersionRecord[] {
+  try {
+    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+    try {
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
+      return task ? versionRecords(db, task.task_id) : [];
+    } finally {
+      db.close();
+    }
+  } catch {
+    return [];
+  }
+}
+
 export function workItemRows(taskDir: string): WorkItemRow[] {
   try {
     const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
@@ -1098,6 +1114,11 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
     // 流程的工作项换了一站：哪个工作项、到哪一站（node）、从哪一站（from）、往前还是往后（direction）、谁、理由。
     return ["node_entered", { ...base, record_id: payload.record_id ?? null, flow: flowKeyOf(payload.flow), node: payload.node ?? null, from: payload.from ?? null,
       direction: payload.direction ?? null, actor, reason: payload.reason ?? "", run_id: payload.run_id ?? null, op_id: opId, completion: null }];
+  }
+  if (e.name === "VERSION_PUBLISHED") {
+    // 发布了一个版本：第几版、发布时交付物的修订号、谁、发布说明（没有写为 null）。版本的清单与存档由版本记录的接口取。
+    return ["version_published", { ...base, version_no: payload.version_no ?? null, revision_no: payload.revision_no ?? null, actor,
+      note: typeof payload.note === "string" ? payload.note : null, op_id: opId, completion: null }];
   }
   if (e.name === "WORK_ITEM_DELETED") {
     // 用户删除了一个工作项：哪个工作项、它做的是哪一项活动、所在的一站与所属流程、范围说明（有才写）、随之归档了几条会话、谁、理由。

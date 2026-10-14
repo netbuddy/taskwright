@@ -8,10 +8,12 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { createTask } from "../../agent/src/lib/create_task.ts";
 import { ACTOR_USER } from "../../agent/src/lib/db.ts";
+import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
+import type { OverallTemplate } from "../../agent/src/lib/schema.ts";
 import { byCodePoint } from "./library.ts";
 import { TASK_TYPES_DIR } from "./paths.ts";
 
@@ -37,6 +39,25 @@ export function newOperationId(): string {
 
 export function definitionPathOf(taskType: string): string {
   return `docs/task-definitions/${taskType}.json`;
+}
+
+/**
+ * 任务类型模板里「总体分析」那一节：数据升级给任务定义里缺这一集合的早先任务补上时用（agent/src/lib/schema.ts 的第 7 到 8 步）。
+ * 按任务定义文件的路径认任务类型：路径的文件名就是任务类型（docs/task-definitions/<任务类型>.json）。模板里没有这一集合、
+ * 找不到模板、模板读不出来时是 null，这时不补。
+ */
+export function overallTemplateFor(definitionPath: string): OverallTemplate | null {
+  const type = basename(definitionPath).replace(/\.json$/, "");
+  const file = join(TASK_TYPES_DIR, type, definitionPathOf(type));
+  if (!type || !existsSync(file)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf-8")) as Record<string, any>;
+    const collection = (raw["交付物"]?.["条目集合"] as Record<string, unknown>[] | undefined)?.find((one) => one["名称"] === OVERALL_COLLECTION);
+    if (!collection) return null;
+    return { collection, completion: raw["完成条件"]?.[OVERALL_COLLECTION] ?? null };
+  } catch {
+    return null;
+  }
 }
 
 const isNonEmptyDir = (path: string) => existsSync(path) && readdirSync(path).length > 0;

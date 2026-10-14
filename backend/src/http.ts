@@ -7,12 +7,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import { createReadStream, createWriteStream, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
+import { extname, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
-import { type SessionFact, taskStatus, workItemView } from "./task_status.ts";
+import { type SessionFact, taskStatus, versionView, workItemView } from "./task_status.ts";
+import { UPGRADED_VERSION_NOTE } from "../../agent/src/lib/schema.ts";
 import * as render from "./render.ts";
 import * as exportDocx from "./export_docx.ts";
 import * as exportDocument from "./export_document_docx.ts";
@@ -416,6 +417,36 @@ const handlers: Record<string, Handler> = {
     const t = service.task(req.params.task);
     return json(200, { ok: true, status: taskStatus(t.dir, sessionParam(req), t.executor.listSessions() as never) });
   },
+  // 版本记录：各版的清单（与任务状况里的 versions 相同），与某一版发布时存档的文档（format=md 或 docx，不写是 md）。
+  list_versions: (service, req) => {
+    const t = service.task(req.params.task);
+    return json(200, { ok: true, versions: library.versionRows(t.dir).map((row) => versionView(row, t.dir)) });
+  },
+  version_document: (service, req) => {
+    const t = service.task(req.params.task);
+    const n = Number(req.params.version);
+    const format = req.query.format || "md";
+    if (format !== "md" && format !== "docx") throw new ApiError("bad_request", "format 要写 md 或 docx，不写是 md。");
+    const row = library.versionRows(t.dir).find((one) => one.version_no === n);
+    if (!row) throw new ApiError("not_found", `这个任务没有第 ${req.params.version} 版。`);
+    const what = format === "md" ? "Markdown" : "Word";
+    const rel = format === "md" ? row.markdown_path : row.docx_path;
+    if (rel === null) {
+      throw new ApiError("not_found", `第 ${n} 版没有 ${what} 存档${row.note === UPGRADED_VERSION_NOTE ? "：这一版是升级之前完成的，当时的文档没有存下来" : ""}。`);
+    }
+    const root = resolve(t.dir);
+    const file = resolve(root, rel);
+    if (!file.startsWith(root + sep) || !isFile(file)) throw new ApiError("not_found", `第 ${n} 版的 ${what} 存档不在任务目录里了。`);
+    const lib = library.libraryOf(t.dir);
+    const taskName = String(or(lib.data.task?.task_name, lib.definition["任务名"]) ?? t.taskId);
+    const plain = `${t.taskId.replace(/[^A-Za-z0-9._-]+/g, "_")}-v${n}.${format}`;
+    const encoded = encodeURIComponent(`${taskName}-第${n}版.${format}`).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    return {
+      status: 200,
+      headers: { "Content-Type": format === "md" ? "text/markdown; charset=utf-8" : exportDocx.DOCX_TYPE, "Content-Disposition": `attachment; filename="${plain}"; filename*=UTF-8''${encoded}` },
+      body: readFileSync(file),
+    };
+  },
   debug_persona_draft: async (service, req) => json(200, await debugPrompt.personaDraftOf(service, req.params.task)),
   model_provider_add: async (service, req) => json(200, await modelConfig.addProvider(modelContext(service), bodyJson(req))),
   model_provider_update: async (service, req) => json(200, await modelConfig.updateProvider(modelContext(service), req.params.provider, bodyJson(req))),
@@ -734,6 +765,8 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/content`, "document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/raw`, "document_raw"],
   ["GET", `/api/v1/tasks/${T}/status`, "task_status"],
+  ["GET", `/api/v1/tasks/${T}/versions`, "list_versions"],
+  ["GET", `/api/v1/tasks/${T}/versions/(?<version>[0-9]+)/document`, "version_document"],
   ["GET", `/api/v1/tasks/${T}/debug/system-prompt`, "debug_system_prompt"],
   ["GET", `/api/v1/tasks/${T}/debug/stage`, "debug_stage"],
   ["GET", `/api/v1/tasks/${T}/debug/persona-draft`, "debug_persona_draft"],

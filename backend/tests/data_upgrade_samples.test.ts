@@ -15,10 +15,11 @@ import { after, test } from "node:test";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { TABLE_NAMES, TASKS_ROOT_ENV, TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
 import * as clock from "../src/clock.ts";
-import { planUpgrade, runUpgrade } from "../src/data_upgrade.ts";
+import { planUpgrade, reportText, runUpgrade } from "../src/data_upgrade.ts";
 import * as library from "../src/library.ts";
 import { Service } from "../src/service.ts";
 import { readTaskJson } from "../src/task_json.ts";
+import { taskStatus } from "../src/task_status.ts";
 import { ROOT, captureConsole, tempDir } from "./helpers.ts";
 
 captureConsole();
@@ -70,7 +71,10 @@ for (const version of VERSIONS) {
     assert.deepEqual(plan.tasks.map((t) => [t.dir, t.task_id, t.name, t.version]), [[id, id, "图书借阅（样本）", 0]]);
     const { report, registry } = await runUpgrade(plan, { productVersion: "0.5.0" });
     try {
-      assert.deepEqual([report.fatal, report.tasks.map((t) => [t.dir, t.from, t.to, t.ok, t.error])], [null, [[id, 0, TASK_DB_VERSION, true, null]]]);
+      assert.deepEqual([report.fatal, report.tasks.map((t) => [t.dir, t.from, t.to, t.ok, t.error, t.notes])], [null, [[id, 0, TASK_DB_VERSION, true, null, ["补了总体分析集合", "保留了早期的领域说明集合"]]]]);
+      // 早先的任务定义里没有「总体分析」：升级时照现在的任务类型模板补上，之后与新任务一样有阶段，任务状况不再是空的。
+      assert.notEqual(taskStatus(taskDir), null);
+      assert.match(reportText(report), /成功，用了 \d+ 毫秒；补了总体分析集合/);
       const now = facts(taskDir);
       assert.deepEqual([library.taskDbVersion(taskDir), now.revisions, now.items, now.sources], [TASK_DB_VERSION, 3, 4, 4]);
       assert.deepEqual(now.kinds, { 文档原文: 2, 助手补充: 1, 条目: 1 }, "来源的种类都是现在的名字");
@@ -92,16 +96,16 @@ for (const version of VERSIONS) {
       registry?.close();
     }
 
-    // 再存一次修订：经子进程调助手一侧真实的保存函数，引用材料里的原话与先前的领域说明。
-    const more = spawnSync(process.execPath, [SAVE_MORE, taskDir, JSON.stringify([[{ op: "add", collection: "功能用例",
-      fields: { 用例名称: "缴纳罚款", 用例功能: "读者缴纳逾期罚款。", 参与者: ["读者"], 基本流程: ["读者查看罚款", "读者缴费"] },
-      sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。", supports: [{ field: "用例功能" }] },
-        { kind: "条目", locator: "DN-001", excerpt: "借书证是读者在本馆借书的凭证。", supports: [{ field: "用例名称" }] }] }]])],
+    // 再存一次修订：经子进程调助手一侧真实的保存函数，引用材料里的原话。补上「总体分析」之后这是有阶段的任务，
+    // 不属于工作项的会话里只能立主题页、记问题，所以存的是一页业务说明（补上的集合确实能写）。
+    const more = spawnSync(process.execPath, [SAVE_MORE, taskDir, JSON.stringify([[{ op: "add", collection: "总体分析",
+      fields: { 标题: "罚款", 它是什么: "逾期不还的，按馆里的规定罚款。", 状态: "在用" },
+      sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。" }] }]])],
       { encoding: "utf-8", env: { ...process.env, [TASKS_ROOT_ENV]: where.tasksDir } });
     assert.equal(more.status, 0, more.stderr);
     assert.deepEqual(JSON.parse(more.stdout), [4], "存成了修订 4");
     const after = facts(taskDir);
-    assert.deepEqual([after.revisions, after.items, after.sources, library.taskDbVersion(taskDir)], [4, 5, 6, TASK_DB_VERSION]);
+    assert.deepEqual([after.revisions, after.items, after.sources, library.taskDbVersion(taskDir)], [4, 5, 5, TASK_DB_VERSION]);
     assert.equal(existsSync(join(SAMPLES, version, `${DB_NAME}-wal`)), false, "仓里的样本没有被打开过");
   });
 }

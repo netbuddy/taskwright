@@ -105,13 +105,13 @@ test("格式版本 1 的库没有活动记录表：只读的一侧当作没有�
   } finally {
     ro.close();
   }
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 1, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 1, to: TASK_DB_VERSION, notes: [] });
   assert.equal(query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version, TASK_DB_VERSION);
   assert.equal(query(dir, "SELECT task_id FROM task").length, 1, "任务那一行还在");
   write(dir, (db) => launchWorkItem(db, { taskId, sessionId: "s", runId: null, callId: "c", actor: "user", to: "clarifying", inFlow: true, reason: "读完了。" }));
   assert.equal(query(dir, "SELECT * FROM activity_record").length, 1);
   // 再升一次：已经是现在的版本，什么都不做。
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
 });
 
 const tableThere = (dir: string, name: string) => query(dir, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", name).length === 1;
@@ -119,7 +119,7 @@ const tableThere = (dir: string, name: string) => query(dir, "SELECT name FROM s
 test("没有编过版本号的库一次升到现在的版本，活动记录表一并补上；早先的阶段记录表不留", () => {
   const { dir } = workspace();
   write(dir, (db) => db.exec("DROP TABLE activity_record; PRAGMA user_version = 0"));
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 0, to: TASK_DB_VERSION, notes: [] });
   assert.deepEqual([tableThere(dir, "activity_record"), tableThere(dir, "stage_record")], [true, false]);
 });
 
@@ -180,7 +180,7 @@ test("格式版本 4 升到现在的版本：阶段记录先逐行改写成活�
     { from: "writing", to: "clarifying", at: "2026-10-11T08:15:00", reason: "借期要重新问。", flow: "change", record_id: 8 },
   ]);
   const events = query(dir, "SELECT seq, name, payload, at FROM event ORDER BY seq").map((row) => ({ ...row }));
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 4, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 4, to: TASK_DB_VERSION, notes: [] });
   assert.deepEqual([tableThere(dir, "activity_record"), tableThere(dir, "stage_record"), tableThere(dir, "work_item_session")], [true, false, true]);
   // 需求分析的两行并成一行（留最早那一行的记录号与启动的时刻，活动与所在的一站取最晚那一行的）；另一条流程的那一行自己是一个工作项。
   assert.deepEqual(query(dir, "SELECT * FROM activity_record ORDER BY started_seq").map((row) => ({ ...row })), [
@@ -201,13 +201,13 @@ test("格式版本 4 升到现在的版本：阶段记录先逐行改写成活�
   assert.deepEqual(query<{ record_id: number; activity: string }>(dir, "SELECT record_id, activity FROM activity_record ORDER BY started_seq").map((r) => [r.record_id, r.activity]),
     [[3, "writing"], [8, "modeling"]]);
   // 再升一次：已经是现在的版本，什么都不做。
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
 });
 
 test("格式版本 4 升到现在的版本：一次都没有移动过的库只换表，没有工作项，升级之后会话都是空闲；记下移动的事件已经不在时所属流程写需求分析", () => {
   const empty = workspace();
   asVersion4(empty.dir, empty.taskId, []);
-  assert.deepEqual(upgradeTaskDatabase(empty.dir), { from: 4, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(empty.dir), { from: 4, to: TASK_DB_VERSION, notes: [] });
   assert.deepEqual([tableThere(empty.dir, "activity_record"), tableThere(empty.dir, "stage_record"), query(empty.dir, "SELECT * FROM activity_record").length, query(empty.dir, "SELECT * FROM work_item_session").length],
     [true, false, 0, 0]);
   // 0.5 里这样的任务按有没有材料算在核读材料或澄清；升级之后它没有工作项，哪条会话都是空闲。
@@ -215,7 +215,7 @@ test("格式版本 4 升到现在的版本：一次都没有移动过的库只�
 
   const { dir, taskId } = workspace();
   asVersion4(dir, taskId, [{ from: "reading", to: "clarifying", at: "2026-10-10T09:00:00" }, { from: "clarifying", to: "modeling", at: "2026-10-10T10:00:00", flow: "change" }], true);
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 4, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 4, to: TASK_DB_VERSION, notes: [] });
   // 两行都算需求分析（事件不在了，无从知道第二行写过别的流程），并成一行；从哪个阶段来也无从知道。
   assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((r) => [r.from, r.activity, r.flow]), [[null, "modeling", "analysis"]]);
 });
@@ -284,7 +284,7 @@ test("格式版本 6 升到 7：同一条流程的各行并成一个工作项（
   } finally {
     ro.close();
   }
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 6, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 6, to: TASK_DB_VERSION, notes: [] });
   // 五行变三个工作项：需求分析一个（留第 1 行，现在在写条目，范围说明取最晚写了的），整理建模一个，澄清一个。工作项没有终点，早先记的结束不留。
   assert.deepEqual(workItems(dir), [
     [1, "writing", "writing", "analysis", "2026-10-10T09:00:00", "只做借阅"],
@@ -299,18 +299,18 @@ test("格式版本 6 升到 7：同一条流程的各行并成一个工作项（
   const definition = validateDefinition(overallDefinition());
   assert.deepEqual(write(dir, (db) => ["s1", "s2", "s3", "s-free"].map((one) => stageOf(db, dir, taskId, definition, one))), ["writing", "clarifying", "writing", "idle"]);
   // 再升一次：已经是现在的版本，什么都不改。
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
   assert.equal(workItems(dir).length, 3);
 });
 
 test("格式版本 6 升到 7 时任务已经结束：照样归并，不按任务的状态猜工作项的状态；一行记录都没有的库只换表、加会话表", () => {
   const done = workspace();
   asVersion6(done.dir, done.taskId, V6_ROWS, "已完成", "2026-10-11T08:00:00");
-  assert.deepEqual(upgradeTaskDatabase(done.dir), { from: 6, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(done.dir), { from: 6, to: TASK_DB_VERSION, notes: ["补了第 1 版的版本记录（早先已完成，修订 0）"] });
   assert.deepEqual(workItems(done.dir).map((one) => one[0]), [1, 3, 5]);
   const empty = workspace();
   asVersion6(empty.dir, empty.taskId, []);
-  assert.deepEqual(upgradeTaskDatabase(empty.dir), { from: 6, to: TASK_DB_VERSION });
+  assert.deepEqual(upgradeTaskDatabase(empty.dir), { from: 6, to: TASK_DB_VERSION, notes: [] });
   assert.deepEqual([workItems(empty.dir).length, tableThere(empty.dir, "work_item_session"),
     query<{ name: string }>(empty.dir, "PRAGMA table_info(work_item_session)").some((one) => one.name === "archived_at")], [0, true, true]);
 });
