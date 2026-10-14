@@ -41,9 +41,9 @@ export const aloneText = (stage: StageKey): string => `本会话的工作项是�
 /** 位置给人看的名字：阶段的名字，或者「空闲」。 */
 export const positionLabel = (position: PositionKey | string): string => (position === IDLE ? IDLE_NAME : (STAGE_NAMES as Record<string, string>)[position] ?? position);
 
-/** 工作视图顶栏上空闲时的两处字：任务现在没有活动，与去任务起点页开展工作的那一枚。 */
-export const NO_ACTIVITY_TEXT = "当前无活动";
-export const START_WORK_TEXT = "开展工作";
+/** 工作视图顶栏上会话空闲时的两处字：这条会话是自由讨论（不属于任何工作项，或者归档了），与去任务起点页启动工作的那一枚。 */
+export const NO_ACTIVITY_TEXT = "自由讨论 · 不绑定活动";
+export const START_WORK_TEXT = "启动工作";
 /** 顶栏上有活动在进行时的那一处：「当前活动：整理建模」。 */
 export const currentActivityText = (position: PositionKey | string): string => `当前活动：${positionLabel(position)}`;
 
@@ -51,8 +51,8 @@ export const currentActivityText = (position: PositionKey | string): string => `
  * 工作视图顶栏上任务名与会话名后面的那一处写什么：
  *   closed 任务已经结束，写「任务已完成」「任务已放弃」；
  *   plain  任务没有阶段（早先建的任务），写「任务进行中」；
- *   active 有活动在进行，写「当前活动：某项活动」，可以点；
- *   idle   任务空闲，写「当前无活动」，旁边另有一枚「开展工作」。
+ *   active 这条会话在做一个工作项，写「当前活动：某项活动」，点了打开切换工作面板；
+ *   idle   这条会话是自由讨论，写「自由讨论 · 不绑定活动」（点了同样打开面板），旁边另有一枚「启动工作」去任务起点页。
  */
 export type TopbarActivity = { kind: "closed" | "plain" | "active" | "idle"; text: string };
 export function topbarActivity(task: { status: string; stage?: Pick<StageView, "current"> | null }): TopbarActivity {

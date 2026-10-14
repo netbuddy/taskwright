@@ -77,7 +77,7 @@ export function workItemSessionsLine(item: WorkItemView): string {
 }
 
 /** 删除一个工作项之前确认框里的那段话：会归档几条会话、归档之后怎样；流程的工作项另说明删了之后怎样重新开始。 */
-export function deleteConfirmText(item: WorkItemView): string {
+export function deleteConfirmText(item: Pick<WorkItemView, "name" | "kind" | "session_count">): string {
   const archived = item.session_count > 0 ? `它的 ${item.session_count} 条会话将归档：会话列表里默认不再列出，打开后按自由讨论办。` : "它还没有会话。";
   const flow = item.kind === "flow" ? `删除之后可以重新启动「${item.name}」，但原来所在的一站不保留。` : "";
   return `${archived}需求资产与修订都不受影响。${flow}删除之后不能恢复。`;

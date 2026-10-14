@@ -21,6 +21,11 @@ import type { LocateRequest } from "../components/work/MaterialPane";
 import { SidePanel, type SideTab } from "../components/work/SidePanel";
 import { DebugPane } from "../components/work/DebugPane";
 import { DOCUMENT_REVIEWED_KEY, START_WORK_TEXT, quietChoiceText, topbarActivity, type StageStart } from "../model/stage";
+import { App as AntApp } from "antd";
+import { SwitchWorkPanel, type SwitchWorkActions } from "../components/work/SwitchWorkPanel";
+import { deleteConfirmText } from "../model/startPage";
+import { retellText } from "../model/overall";
+import { pendingReview } from "../model/items";
 import { ReviewPanel } from "../components/work/ReviewPanel";
 import { DocumentModal } from "../components/DocumentModal";
 import { errorText } from "../components/work/errors";
@@ -81,6 +86,10 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   const userToggledDoc = useRef(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const toast = useToast();
+  const { modal } = AntApp.useApp();
+  // 切换工作面板开着没有；对话区插状况卡的请求（面板里的「查看工作进展」每点一次加一）。
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [statusRequest, setStatusRequest] = useState(0);
   const service = useService();
   // 知识库清单：来源卡片据此把出处里的知识库编号换成名字、判断文档还在不在。知识库的增删不推送事件，
   // 所以进入工作视图时取一次，浏览器窗口重新得到焦点时再取一次。服务没有知识库时是空清单；还没取到时是 null。
@@ -344,6 +353,41 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       return false;
     }
   };
+  /** 换一条干净的会话接着做一个工作项：后端新建一条属于它的会话，进去，不替用户发话。 */
+  const continueWorkItem = async (recordId: number) => {
+    try {
+      const { session_id } = await api.continueWorkItem(taskId, recordId);
+      go(href.work(taskId, session_id));
+    } catch (e) {
+      toast.error(errorText(e instanceof ApiError ? e : new ApiError("network", String(e))));
+    }
+  };
+  /** 删除一个工作项：先确认，写明会归档几条会话；删了之后本会话随之归档、按自由讨论办（整份数据随事件更新）。 */
+  const deleteWorkItem = (recordId: number, name: string, sessionCount: number, flow: boolean) => {
+    modal.confirm({
+      title: `删除工作项「${name}」？`,
+      content: deleteConfirmText({ name, kind: flow ? "flow" : "activity", session_count: sessionCount }),
+      okText: "删除", cancelText: "取消", okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const done = await api.deleteWorkItem(taskId, recordId, sessionId);
+          toast.success(`已删除工作项「${name}」${done.archived_sessions > 0 ? `，归档了 ${done.archived_sessions} 条会话` : ""}。`);
+        } catch (e) {
+          toast.error(errorText(e instanceof ApiError ? e : new ApiError("network", String(e))));
+        }
+      },
+    });
+  };
+  /** 切换工作面板里的几样操作：都是这一页已有的操作。 */
+  const panelActions: SwitchWorkActions = {
+    onPrefill: prefill,
+    onRetell: () => void send(retellText(null)),
+    onReview: () => review([], "评审待评审的条目"),
+    onAttach: (file) => void attach(file),
+    onShowStatus: () => setStatusRequest((n) => n + 1),
+    onContinue: (recordId) => void continueWorkItem(recordId),
+    onDelete: deleteWorkItem,
+  };
   /** 阶段条上点了一盏说材料还没有被引用的灯：展开右侧栏、切到材料页签，由材料页签选中那份材料。 */
   const openMaterial = (path: string) => {
     toggleDoc(false);
@@ -420,7 +464,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
           <a className="tname" href={href.task(taskId)}>{task?.task_name ?? "…"}</a>
           <span className="tsep">·</span>
           <span className="sname">{sessionName}</span>
-          {task && <TopbarActivityChip task={task} startHref={href.task(taskId)} />}
+          {task && <TopbarActivityChip task={task} startHref={href.task(taskId)} onOpenPanel={() => setPanelOpen(true)} />}
           {Object.keys(state.pendingOps).length > 0 && <span className="chip warn">正在保存：{Object.values(state.pendingOps).map((p) => p.label).join("；")}</span>}
           <span className="sw-fs" title="字号：根字号随视口流动，这里再选一档" data-testid="font-tiers">
             字号{FONT_TIERS.map((t) => (
@@ -461,7 +505,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                 hold={dirty || diagramDirty} holdText={diagramDirty && !dirty ? DIAGRAM_HOLD_TEXT : undefined} working={working} hint={hint} starting={executor?.state === "starting"}
                 onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews} onStop={busyElsewhere ? undefined : stop}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
-                draft={draft} onDraft={setDraft} inputRef={input} loadStatus={loadStatus} onLaunch={startActivity}
+                draft={draft} onDraft={setDraft} inputRef={input} loadStatus={loadStatus} onLaunch={startActivity} statusRequest={statusRequest}
                 revisionsOfReply={(reply: AssistantReply) => revisionsOfReply(reply, log)}
                 revisionsOfWork={(workId: string) => revisionsOfWork(workId, log)} onRevisionTag={showRevisions} revisionCount={log.length}
                 onLocate={(excerpt, locator) => locateSource(excerpt, locator && isKnowledgeLocator(locator) ? locator : "")}
@@ -505,24 +549,28 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
       </div>
       {task && <DocumentModal task={task} log={log} open={doc.open} revision={doc.revision} onClose={() => setDoc({ open: false, revision: null })} />}
       <KnowledgeDocModal request={knowledgeDoc} libraries={libraries} onClose={() => setKnowledgeDoc(null)} />
+      {task?.stage && (
+        <SwitchWorkPanel open={panelOpen} taskId={taskId} sessionId={sessionId} stage={task.stage} pendingReview={pendingReview(task).length}
+          off={disabledReason ?? (working ? "助手正在工作，等它做完这一轮。" : null)} actions={panelActions} onClose={() => setPanelOpen(false)} />
+      )}
     </div>
   );
 }
 
 /**
- * 顶栏上任务名与会话名后面的那一处（model/stage.ts 的 topbarActivity）：有活动在进行时是可以点的「当前活动：某项活动 ▾」，
- * 任务空闲时是「当前无活动」加一枚深色的「开展工作」；两处点了都去任务起点页，在那里选要开展的工作。
+ * 顶栏上任务名与会话名后面的那一处（model/stage.ts 的 topbarActivity），只有两种写法：这条会话在做一个工作项时是「当前活动：某项活动 ▾」，
+ * 点了打开切换工作面板；这条会话是自由讨论时是「自由讨论 · 不绑定活动」（点了同样打开面板），旁边一枚深色的「启动工作」去任务起点页。
  * 任务已经结束、任务没有阶段时只是一枚不能点的标签。
  */
-function TopbarActivityChip({ task, startHref }: { task: Task; startHref: string }) {
+function TopbarActivityChip({ task, startHref, onOpenPanel }: { task: Task; startHref: string; onOpenPanel: () => void }) {
   const now = topbarActivity(task);
   if (now.kind === "active") {
-    return <a className="chip ai" href={startHref} title="去任务起点页切换工作" data-testid="current-activity">{now.text} ▾</a>;
+    return <span className="chip ai" role="button" onClick={onOpenPanel} title="打开切换工作面板" data-testid="current-activity">{now.text} ▾</span>;
   }
   if (now.kind === "idle") {
     return (
       <>
-        <span className="chip" data-testid="current-activity">{now.text}</span>
+        <span className="chip" role="button" onClick={onOpenPanel} title="打开切换工作面板" data-testid="current-activity">{now.text}</span>
         <a className="chip dark" href={startHref} data-testid="start-work">{START_WORK_TEXT}</a>
       </>
     );

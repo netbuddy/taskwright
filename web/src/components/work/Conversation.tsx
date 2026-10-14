@@ -56,7 +56,10 @@ export function Conversation({
   hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onStop,
   loadStatus,
   onLaunch,
+  statusRequest = 0,
 }: {
+  /** 别处（切换工作面板的「查看工作进展」）要在对话里插一张状况卡：每加一，插一张。0 是没有要求过。 */
+  statusRequest?: number;
   /**
    * 取一次任务状况（后端的状况接口）；取不到返回 null。给了它，有阶段的任务才有「任务状况」入口、/状况 与新建会话开头的状况卡。
    * 状况卡是页面本地放进对话区的，不写进会话，不经助手；刷新之后调出过的那些就不在了。
@@ -152,6 +155,7 @@ export function Conversation({
     const el = box.current;
     if (el && (called.length || opening)) el.scrollTop = el.scrollHeight;
   }, [called.length, opening]);
+  useEffect(() => { if (statusRequest > 0) callStatus(); }, [statusRequest]);
   // 停止：点了之后到这次工作结束之前是「正在停止」；请求没有做成时恢复。工作结束（working 变假）时复位，下一次工作又是可以点的停止键。
   const canStop = working && !!onStop;
   const [stopping, setStopping] = useState(false);

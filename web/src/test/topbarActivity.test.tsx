@@ -1,7 +1,8 @@
-// 工作视图顶栏上任务名与会话名后面的那一处：有活动在进行时是可以点的「当前活动：某项活动 ▾」，任务空闲时是「当前无活动」
-// 加一枚「开展工作」，两处都去任务起点页；任务已经结束、任务没有阶段时只是一枚不能点的标签。
+// 工作视图顶栏上任务名与会话名后面的那一处，只有两种写法：这条会话在做一个工作项时是「当前活动：某项活动 ▾」，
+// 自由讨论的会话是「自由讨论 · 不绑定活动」加一枚「启动工作」（去任务起点页）；前两者点了打开切换工作面板。
+// 任务已经结束、任务没有阶段时只是一枚不能点的标签。
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { api } from "../api/client";
 import type { ServiceInfo, StageView, Task, TaskDetail } from "../api/types";
@@ -28,6 +29,7 @@ function page(task: Task) {
   vi.spyOn(api, "getTask").mockResolvedValue({ ...task, sessions: [], materials: [] } as unknown as TaskDetail);
   vi.spyOn(api, "listSessions").mockResolvedValue([]);
   vi.spyOn(api, "serviceInfo").mockResolvedValue(info);
+  vi.spyOn(api, "taskStatus").mockResolvedValue({ ok: true, status: null });
   render(
     <ConfigProvider button={{ autoInsertSpace: false }}><AntApp><ToastProvider><ServiceProvider>
       <WorkViewPage taskId="TASK-001" sessionId="S-1" />
@@ -43,7 +45,8 @@ describe("顶栏那一处写什么", () => {
     expect(currentActivityText("clarifying")).toBe("当前活动：澄清");
   });
 
-  it("任务空闲写「当前无活动」；任务没有阶段写「任务进行中」；任务已经结束写它的状态", () => {
+  it("自由讨论的会话写「自由讨论 · 不绑定活动」；任务没有阶段写「任务进行中」；任务已经结束写它的状态；没有「已做完」这种写法", () => {
+    expect([NO_ACTIVITY_TEXT, START_WORK_TEXT]).toEqual(["自由讨论 · 不绑定活动", "启动工作"]);
     expect(topbarActivity({ status: "进行中", stage: stage("idle") })).toEqual({ kind: "idle", text: NO_ACTIVITY_TEXT });
     expect(topbarActivity({ status: "进行中", stage: null })).toEqual({ kind: "plain", text: "任务进行中" });
     expect(topbarActivity({ status: "进行中" })).toEqual({ kind: "plain", text: "任务进行中" });
@@ -53,34 +56,38 @@ describe("顶栏那一处写什么", () => {
 });
 
 describe("工作视图的顶栏", () => {
-  it("有活动在进行：一枚可以点的「当前活动：某项活动 ▾」，去任务起点页；没有「开展工作」", () => {
+  it("会话在做一个工作项：一枚可以点的「当前活动：某项活动 ▾」，点了打开切换工作面板；没有「启动工作」", async () => {
     page(overallTask({ stage: stage("writing") }));
     expect(chip()).toHaveTextContent("当前活动：写条目 ▾");
-    expect(chip().tagName).toBe("A");
-    expect(chip()).toHaveAttribute("href", href.task("TASK-001"));
+    expect([chip().tagName, chip().getAttribute("role")]).toEqual(["SPAN", "button"]);
     expect(chip()).toHaveClass("chip", "ai");
     expect(screen.queryByTestId("start-work")).toBeNull();
     expect(document.querySelector(".topbar")).not.toHaveTextContent("任务进行中");
+    fireEvent.click(chip());
+    expect(await screen.findByTestId("switch-panel")).toBeInTheDocument();
   });
 
-  it("任务空闲：「当前无活动」不能点，旁边一枚深色的「开展工作」去任务起点页", () => {
+  it("自由讨论的会话：「自由讨论 · 不绑定活动」点了同样打开面板，旁边一枚深色的「启动工作」去任务起点页", async () => {
     page(overallTask({ stage: stage("idle") }));
     expect(chip()).toHaveTextContent(NO_ACTIVITY_TEXT);
-    expect(chip().tagName).toBe("SPAN");
+    expect([chip().tagName, chip().getAttribute("role")]).toEqual(["SPAN", "button"]);
+    expect(document.querySelector(".topbar")!.textContent).not.toMatch(/已做完|当前无活动|开展/);
+    fireEvent.click(chip());
+    expect(await screen.findByTestId("switch-panel")).toBeInTheDocument();
     const start = screen.getByTestId("start-work");
     expect(start).toHaveTextContent(START_WORK_TEXT);
     expect(start).toHaveAttribute("href", href.task("TASK-001"));
     expect(start).toHaveClass("chip", "dark");
   });
 
-  it("任务已经结束：只写任务的状态，不能点，没有「开展工作」", () => {
+  it("任务已经结束：只写任务的状态，不能点，没有「启动工作」", () => {
     page(overallTask({ status: "已完成", stage: stage("idle") }));
     expect(chip()).toHaveTextContent("任务已完成");
     expect(chip().tagName).toBe("SPAN");
     expect(screen.queryByTestId("start-work")).toBeNull();
   });
 
-  it("任务没有阶段：照旧写「任务进行中」，不能点，没有「开展工作」", () => {
+  it("任务没有阶段：照旧写「任务进行中」，不能点，没有「启动工作」", () => {
     page(overallTask({ stage: null }));
     expect(chip()).toHaveTextContent("任务进行中");
     expect(chip().tagName).toBe("SPAN");

@@ -152,7 +152,9 @@ export const api = {
   /** 某个任务最近一次运行实际发给模型的系统提示，按部分列出。 */
   debugSystemPrompt: (taskId: string) => request<DebugSystemPrompt>("GET", `/tasks/${encodeURIComponent(taskId)}/debug/system-prompt`),
   /** 任务状况：程序据任务记录算出来的定位（阶段、各章节数、图与条目的计数、这一段还差什么、开着的提议）；没有阶段的任务 status 为 null。 */
-  taskStatus: (taskId: string) => request<{ ok: boolean; status: TaskStatusView | null }>("GET", `/tasks/${encodeURIComponent(taskId)}/status`),
+  /** 任务状况；给了会话时，当前活动、还差什么与开着的提议说的是那条会话。 */
+  taskStatus: (taskId: string, sessionId: string | null = null) =>
+    request<{ ok: boolean; status: TaskStatusView | null }>("GET", `/tasks/${encodeURIComponent(taskId)}/status${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ""}`),
   /** 某个任务的阶段记录流水与被拒的工具调用。 */
   debugStage: (taskId: string) => request<DebugStage>("GET", `/tasks/${encodeURIComponent(taskId)}/debug/stage`),
   /** 把这个任务里用户说过的话整理成模拟器用户画像的草稿：persona 是要存成文件的内容，file_name 是文件名。 */
