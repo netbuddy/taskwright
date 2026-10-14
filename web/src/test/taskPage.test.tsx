@@ -107,14 +107,14 @@ const kind = (key: string, name: string) => ({ key, name });
 function activityOf(key: string, name: string, over: Partial<CatalogActivity> = {}): CatalogActivity {
   return {
     key, name, mode: "batch", mode_name: "批处理", purpose: `${name}的目的。`, reads: [kind("description", "业务说明")], writes: [kind("items", "需求条目")],
-    prerequisite_text: "前置条件：业务说明至少一节。", example: `${name}的例子。`, enabled: true, state: "可以开展", recommended: false, ...over,
+    prerequisite_text: "前置条件：业务说明至少一节。", example: `${name}的例子。`, enabled: true, state: "可以启动", recommended: false, ...over,
   };
 }
 const NODES = [kind("reading", "核读材料"), kind("clarifying", "澄清"), kind("writing", "写条目"), kind("publish", "发布")];
 function flowOf(key: string, name: string, over: Partial<CatalogFlow> = {}): CatalogFlow {
   return {
     key, name, purpose: `${name}的目的。`, applies: `${name}的适用情形。`, nodes: NODES, inputs: "项目材料（可选）、目标系统描述",
-    prerequisite_text: "无前置条件；可从空白开始。", example: `${name}的经过。`, enabled: true, state: "可以开展", recommended: false, at: null, start: "clarifying", ...over,
+    prerequisite_text: "无前置条件；可从空白开始。", example: `${name}的经过。`, enabled: true, state: "可以启动", recommended: false, at: null, start: "clarifying", ...over,
   };
 }
 const CHANGE = flowOf("change", "需求变更", { enabled: false, state: "还没有已发布的版本", prerequisite_text: "前置条件：存在已发布的版本。", start: null });
@@ -590,6 +590,44 @@ describe("会话清单", () => {
     await ready();
     expect(screen.getAllByTestId("session-row").map(text)).toEqual([
       "新会话，还没有说过话。还没有活动·这条会话还没有产生修订。打开", "第一句最近活动在 2026-09-28 18:02·一共 7 条消息。打开"]);
+  });
+
+  it("会话名旁标所属工作项：流程的写流程名与所在的站，单项活动写活动名，不属于工作项的写自由讨论；没有「已做完」这种标签", async () => {
+    page(detail({ sessions: [
+      session("S1", "需求分析", "2026-10-13T09:10:00", { work_item: { record_id: 1, kind: "flow", name: "需求分析", activity: "writing", flow: "analysis" } }),
+      session("S2", "整理建模 · 对象关系图", "2026-10-13T09:02:00", { work_item: { record_id: 5, kind: "activity", name: "整理建模", activity: "modeling", flow: null } }),
+      session("S3", "问几个关于预约的问题", "2026-10-11T20:05:00", { work_item: null }),
+    ] }), info, statusOf({ assets: FILLED_ASSETS }));
+    await ready();
+    expect(text(screen.getByText("每条会话属于一个工作项，或是自由讨论"))).toBe("每条会话属于一个工作项，或是自由讨论");
+    expect(screen.getAllByTestId("session-tag").map(text)).toEqual(["需求分析 · 写条目", "整理建模", "自由讨论"]);
+    expect(screen.getByTestId("session-count").textContent).toBe("3");
+    expect(document.body.textContent).not.toMatch(/已做完/);
+  });
+
+  it("「显示已归档的会话」默认关着；勾上时另取带归档的清单，归档的会话接在后面、标「已归档」，点它照样进那条会话；再去掉勾就不列", async () => {
+    const calls = page(detail({ sessions: [session("S1", "需求分析", "2026-10-13T09:10:00", { work_item: null })] }), info, statusOf({ assets: FILLED_ASSETS }));
+    const list = vi.spyOn(api, "listSessions").mockResolvedValue([
+      session("S1", "需求分析", "2026-10-13T09:10:00", { work_item: null, archived: false }),
+      session("S9", "澄清 · 续借规则", "2026-10-11T15:30:00", { work_item: null, archived: true, archived_at: "2026-10-13T21:14:00", archived_record_id: 4 }),
+    ]);
+    await ready();
+    expect(screen.getAllByTestId("session-row")).toHaveLength(1);
+    expect(list).not.toHaveBeenCalled();
+    const toggle = within(screen.getByTestId("show-archived")).getByRole("checkbox");
+    expect(screen.getByTestId("show-archived")).toHaveTextContent("显示已归档的会话删除工作项时它的会话归档，默认不列出");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(screen.getAllByTestId("session-row")).toHaveLength(2));
+    expect(list).toHaveBeenCalledWith("TASK-P", true);
+    const archived = screen.getAllByTestId("session-row")[1];
+    expect(archived).toHaveClass("archived");
+    expect(within(archived).getByTestId("session-tag")).toHaveTextContent("已归档");
+    expect(screen.getByTestId("session-count").textContent).toBe("1");
+    fireEvent.click(archived);
+    expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S9");
+    fireEvent.click(toggle);
+    expect(screen.getAllByTestId("session-row")).toHaveLength(1);
+    expect(calls.get).toHaveBeenCalled();
   });
 });
 

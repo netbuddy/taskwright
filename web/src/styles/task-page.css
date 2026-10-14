@@ -161,6 +161,11 @@
 /* 助手正接着的那条会话：行前一个绿色小圆点 */
 .tp-live { color: var(--ok); margin-right: 0.429rem; font-size: 0.643rem; vertical-align: 0.143rem; }
 .tp-sempty { padding: 1.143rem; color: var(--mut); font-size: 0.972rem; }
+/* 会话名旁所属工作项的标签；归档的会话变淡；清单下面「显示已归档的会话」开关 */
+.tp-srow .sfirst .chip { margin-left: 0.571rem; font-weight: 400; }
+.tp-srow.archived .sfirst { color: var(--mut); }
+.tp-sarch { display: flex; align-items: baseline; gap: 0.429rem; margin-top: 0.571rem; font-size: 0.893rem; color: var(--mut); cursor: pointer; }
+.tp-sarch small { margin-left: 0.571rem; }
 
 /* 8 材料与知识库：两张同高的卡并排；没有知识库时材料卡独占一行 */
 .tp-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.143rem; align-items: stretch; margin-top: 1.857rem; }

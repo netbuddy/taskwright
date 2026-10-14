@@ -1,15 +1,16 @@
-// 「任务状况」卡：程序据任务记录算出来的定位。各行的写法；两个按钮；「开展一项活动」一节；三处出现的办法——新建会话的开头
-// （会话里一条消息都没有）、输入框旁的「任务状况」入口、输入框里打「/状况」。后两种在对话里本地插一行「界面操作：用户调出任务状况」与卡，不发给助手。
+// 「工作进展」卡（早先叫任务状况卡）：程序据任务记录算出来的定位。各行的写法；两个按钮；「开展一项活动」一节已经退役；
+// 会话开头那一行（「新会话 · 属于工作项「X」（启动的时刻）」或「新会话 · 自由讨论（不绑定活动）」）；三处出现的办法——新建会话的开头
+// （会话里一条消息都没有）、输入框旁的「工作进展」入口、输入框里打「/状况」。后两种在对话里本地插一行「界面操作：用户调出工作进展」与卡，不发给助手。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
-import type { ConversationMessage, LaunchView, StageProposal, Task, TaskStatusView } from "../api/types";
+import type { ConversationMessage, StageProposal, Task, TaskStatusView, WorkItemBrief } from "../api/types";
 import { Conversation } from "../components/work/Conversation";
 import { TaskStatusCard } from "../components/work/TaskStatusCard";
 import {
-  LAUNCH_EARLIER_LINE, LAUNCH_HINT, NEW_SESSION_LINE, STATUS_CALLED_LINE, STATUS_NEXT_TEXT, activityLabel, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, nobodySpoke, shortMoment, statusSubtitle,
-  wantsOpeningStatus,
+  FREE_SESSION_LINE, STATUS_CALLED_LINE, STATUS_NEXT_TEXT, activityLine, descriptionLine, itemsLine, missingLine, modelsLine, nobodySpoke, shortMoment, statusSubtitle,
+  newSessionLine, wantsOpeningStatus,
 } from "../model/taskStatus";
 import { overallTask } from "./fixtures/overallTask";
 
@@ -22,7 +23,7 @@ const PROPOSAL: StageProposal = { stage: "writing", enter: { key: "start_items",
   text: "这几页整理好了，开始写条目吗？", items: [], session_id: "sess-first", reply_message_id: "reply-far", event_seq: 31, at: "2026-10-10T15:40:00" };
 const STATUS: TaskStatusView = {
   generated_at: "2026-10-11T16:20:03",
-  activity: { kind: "stage", key: "modeling", name: "整理建模", ordinal: 3, flow: "initial", moved_by: "user", moved_at: "2026-10-10T11:02:00", reason: "用户在卡片上选了「进入整理建模」" },
+  activity: { kind: "stage", key: "modeling", name: "整理建模", ordinal: 3, flow: "analysis", moved_by: "user", moved_at: "2026-10-10T11:02:00", reason: "用户在卡片上选了「进入整理建模」" },
   description: { sections: 16, chapters: [{ no: 2, name: "角色", sections: 2 }, { no: 3, name: "业务流程", sections: 6 }, { no: 4, name: "业务对象", sections: 6 }, { no: 6, name: "业务目标", sections: 2 }],
     unsorted: 0, open_questions: 1 },
   models: [{ kind: "context", name: "系统边界图", count: 1 }, { kind: "use_case", name: "用例图", count: 1 }, { kind: "flowchart", name: "流程图", count: 6 }],
@@ -42,13 +43,14 @@ function chat(task: Task | null, messages: unknown[] = [], over: Record<string, 
   return { onMessage, onSend, loadStatus };
 }
 
-describe("状况卡各行的写法", () => {
-  it("阶段、业务说明、模型、需求条目、这一段还差", () => {
+describe("工作进展卡各行的写法", () => {
+  it("本会话、业务说明、模型、需求条目、这一段还差", () => {
     expect(shortMoment("2026-10-11T16:20:03")).toBe("10-11 16:20");
     expect(statusSubtitle(STATUS)).toBe("程序据任务记录生成 · 10-11 16:20");
-    expect(activityLine(STATUS.activity)).toBe("整理建模（第 3 阶段）· 10-10 11:02 由你移入");
-    expect(activityLine({ ...STATUS.activity, moved_by: "executor" })).toBe("整理建模（第 3 阶段）· 10-10 11:02 由助手移入");
-    expect(activityLine({ ...STATUS.activity, key: "reading", name: "核读材料", ordinal: 1, moved_by: null, moved_at: null, reason: null })).toBe("核读材料（第 1 阶段）· 任务从这个阶段开始");
+    expect(activityLine(STATUS.activity)).toBe("需求分析 · 第 3 站「整理建模」 · 10-10 11:02 进入");
+    // 早先记下的流程键 initial 也读成需求分析。
+    expect(activityLine({ ...STATUS.activity, flow: "initial" })).toBe("需求分析 · 第 3 站「整理建模」 · 10-10 11:02 进入");
+    expect(activityLine({ ...STATUS.activity, key: "reading", name: "核读材料", ordinal: 1, moved_by: null, moved_at: null, reason: null })).toBe("需求分析 · 第 1 站「核读材料」");
     expect(descriptionLine(STATUS.description)).toEqual({ text: "16 节：角色 2 · 业务流程 6 · 业务对象 6 · 业务目标 2", open: "1 处待澄清" });
     expect(descriptionLine({ sections: 3, chapters: [{ no: 3, name: "业务流程", sections: 2 }], unsorted: 1, open_questions: 0 })).toEqual({ text: "3 节：业务流程 2 · 未归类 1", open: null });
     expect(descriptionLine({ sections: 0, chapters: [], unsorted: 0, open_questions: 0 })).toEqual({ text: "尚未开始", open: null });
@@ -62,13 +64,13 @@ describe("状况卡各行的写法", () => {
     expect(missingLine([])).toBe("这一段的几项都齐了");
   });
 
-  it("卡上依次是这几行；有开着的提议时多一行「待决定」与进入按钮；后端没有给「开展一项活动」时不画那一节", () => {
+  it("卡上依次是这几行；有开着的提议时多一行「待决定」与进入按钮", () => {
     const onMessage = vi.fn(), onSend = vi.fn();
     render(<Wrap><TaskStatusCard status={STATUS} liveProposal={PROPOSAL} onMessage={onMessage} onSend={onSend} /></Wrap>);
     const card = screen.getByTestId("task-status");
     expect(card).toHaveAttribute("data-activity", "modeling");
-    expect(card.querySelector(".k")).toHaveTextContent("任务状况 程序据任务记录生成 · 10-11 16:20");
-    expect([...card.querySelectorAll(".row b")].map((b) => b.textContent)).toEqual(["阶段", "业务说明", "模型", "需求条目", "这一段还差", "待决定"]);
+    expect(card.querySelector(".k")).toHaveTextContent("工作进展 程序据任务记录生成 · 10-11 16:20");
+    expect([...card.querySelectorAll(".row b")].map((b) => b.textContent)).toEqual(["本会话", "业务说明", "模型", "需求条目", "这一段还差", "待决定"]);
     expect(screen.getByTestId("status-description")).toHaveTextContent("16 节：角色 2 · 业务流程 6 · 业务对象 6 · 业务目标 2；1 处待澄清");
     expect(screen.getByTestId("status-description").querySelector("em")).toHaveTextContent("1 处待澄清");
     expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定助手已提议进入写条目阶段");
@@ -119,121 +121,28 @@ describe("状况卡各行的写法", () => {
   });
 });
 
-/** 空闲的新任务（有材料）：没有正在进行的；首次分析可以启动；还没有页与条目的三项不能单独开展。 */
-const LAUNCH_IDLE: LaunchView = {
-  current: null,
-  flows: [{ activity: "reading", in_flow: true, label: "启动首次分析", enabled: true, state: "从核读材料开始" }],
-  activities: [
-    { activity: "reading", in_flow: false, label: "核读材料", enabled: true, state: "可以开展" }, { activity: "clarifying", in_flow: false, label: "澄清", enabled: true, state: "可以开展" },
-    { activity: "modeling", in_flow: false, label: "整理建模", enabled: false, state: "业务说明还没有页" }, { activity: "writing", in_flow: false, label: "写条目", enabled: false, state: "业务说明还没有页" },
-    { activity: "reviewing", in_flow: false, label: "评审确认", enabled: false, state: "还没有需求条目" }, { activity: "document", in_flow: false, label: "编写文档", enabled: false, state: "还没有需求条目" },
-  ],
-  later: [{ label: "发布", state: "0.6 后续" }],
-};
-const IDLE_STATUS: TaskStatusView = { ...STATUS, activity: { kind: "idle", key: "idle", name: "空闲", ordinal: null, flow: "initial", moved_by: null, moved_at: null, reason: null },
-  missing: [], proposal: null, launch: LAUNCH_IDLE };
+const IDLE_STATUS: TaskStatusView = { ...STATUS, activity: { kind: "idle", key: "idle", name: "空闲", ordinal: null, flow: null, moved_by: null, moved_at: null, reason: null },
+  missing: [], proposal: null };
 
-describe("开展一项活动", () => {
-  it("当前活动那一行的三种写法：流程里的阶段、单独开展的活动、空闲；空闲时没有「这一段还差」一行", () => {
-    expect([activityLabel(STATUS.activity), activityLabel(IDLE_STATUS.activity)]).toEqual(["阶段", "活动"]);
-    expect(activityLine(IDLE_STATUS.activity)).toBe("空闲");
+describe("「本会话」一行与退役的「开展一项活动」", () => {
+  it("三种写法：流程的工作项写流程名、第几站与进入的时刻；单项活动的工作项写活动名与启动的时刻；自由讨论的会话写自由讨论；自由讨论时没有「这一段还差」一行", () => {
     const alone = { kind: "activity" as const, key: "modeling" as const, name: "整理建模", ordinal: null, flow: null, moved_by: "user" as const, moved_at: "2026-10-12T10:05:00", reason: "" };
-    expect([activityLabel(alone), activityLine(alone)]).toEqual(["活动", "整理建模（单独开展）· 10-12 10:05 由你开始"]);
+    expect(activityLine(alone)).toBe("整理建模 · 10-12 10:05 启动");
+    expect(activityLine({ ...alone, moved_at: null })).toBe("整理建模");
+    expect(activityLine(IDLE_STATUS.activity)).toBe("自由讨论（不绑定活动）");
     render(<Wrap><TaskStatusCard status={IDLE_STATUS} liveProposal={null} onMessage={vi.fn()} onSend={vi.fn()} /></Wrap>);
     expect(screen.getByTestId("task-status")).toHaveAttribute("data-activity", "idle");
-    expect(screen.getByTestId("status-activity")).toHaveTextContent("活动空闲");
+    expect(screen.getByTestId("status-activity")).toHaveTextContent("本会话自由讨论（不绑定活动）");
     expect(screen.queryByTestId("status-missing")).toBeNull();
   });
 
-  it("三组选项：流程一项、单独开展六项、以后的一项；能开展的是按钮，不能开展的灰着并写缺什么；没有「不选」的按钮，只有一句话说不选也可以", () => {
-    const onLaunch = vi.fn().mockResolvedValue(true);
-    render(<Wrap><TaskStatusCard status={IDLE_STATUS} liveProposal={null} onMessage={vi.fn()} onSend={vi.fn()} onLaunch={onLaunch} /></Wrap>);
-    const section = screen.getByTestId("status-activities");
-    expect(section).toHaveAccessibleName("开展一项活动");
-    expect(section.querySelector(".k2")).toHaveTextContent("开展一项活动");
-    expect(screen.queryByTestId("launch-current")).toBeNull();
-    expect([...section.querySelectorAll(".row b")].map((b) => b.textContent)).toEqual(["流程", "单独开展", "以后"]);
-    expect(within(screen.getByTestId("launch-flows")).getByRole("button")).toHaveTextContent("启动首次分析");
-    const buttons = within(screen.getByTestId("launch-activities")).getAllByRole("button");
-    expect(buttons.map((b) => [b.textContent, (b as HTMLButtonElement).disabled])).toEqual([["核读材料", false], ["澄清", false], ["整理建模", true], ["写条目", true], ["评审确认", true], ["编写文档", true]]);
-    expect(screen.getByTestId("launch-alone-modeling")).toHaveTextContent("整理建模业务说明还没有页");
-    expect(screen.getByTestId("launch-alone-writing")).toHaveTextContent("写条目业务说明还没有页");
-    expect(screen.getByTestId("launch-alone-reviewing")).toHaveTextContent("评审确认还没有需求条目");
-    expect(screen.getByTestId("launch-alone-clarifying").querySelector("small")).toBeNull();
-    expect(screen.getByTestId("launch-later")).toHaveTextContent("以后发布0.6 后续");
-    expect(within(screen.getByTestId("launch-later")).queryByRole("button")).toBeNull();
-    expect(section.querySelector(".lhint")).toHaveTextContent(LAUNCH_HINT);
-    expect(LAUNCH_HINT).toBe("不选也可以，直接在下面说话就行。");
-    expect(within(section).queryByText(/不选$/)).toBeNull();
-    // 点能开展的一项：交给页面（一次界面操作）；点不能开展的没有反应。
-    fireEvent.click(buttons[1]);
-    expect(onLaunch).toHaveBeenCalledTimes(1);
-    expect(onLaunch).toHaveBeenCalledWith(LAUNCH_IDLE.activities[1]);
-    fireEvent.click(buttons[3]);
-    expect(onLaunch).toHaveBeenCalledTimes(1);
-  });
-
-  it("有活动在进行：第一组只是一行「正在进行」，不是按钮；按钮照任务现在的情形画，不照取数那一刻的；不能发话时都不能点", () => {
-    const live: LaunchView = {
-      ...LAUNCH_IDLE, current: { activity: "clarifying", in_flow: false, label: "继续澄清" },
-      flows: [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: true, state: "可以开展" }],
-      activities: LAUNCH_IDLE.activities.map((one) => (one.activity === "clarifying" ? { ...one, enabled: false, state: "正在进行" } : { ...one, enabled: true, state: "可以开展" })),
-    };
-    const onLaunch = vi.fn().mockResolvedValue(true);
-    const { rerender } = render(<Wrap><TaskStatusCard status={IDLE_STATUS} liveProposal={null} liveLaunch={live} onMessage={vi.fn()} onSend={vi.fn()} onLaunch={onLaunch} /></Wrap>);
-    expect(screen.getByTestId("launch-current")).toHaveTextContent("正在进行继续澄清");
-    expect(within(screen.getByTestId("launch-current")).queryByRole("button")).toBeNull();
-    expect(within(screen.getByTestId("launch-flows")).getByRole("button")).toHaveTextContent("继续首次分析（从写条目接着）");
-    expect(screen.getByTestId("launch-alone-clarifying")).toHaveTextContent("澄清正在进行");
-    expect(within(screen.getByTestId("launch-alone-clarifying")).getByRole("button")).toBeDisabled();
-    fireEvent.click(within(screen.getByTestId("launch-flows")).getByRole("button"));
-    expect(onLaunch).toHaveBeenCalledWith(live.flows[0]);
-    // 助手正在工作等不能发话的时候：这一节的按钮都灰着。
-    rerender(<Wrap><TaskStatusCard status={IDLE_STATUS} liveProposal={null} liveLaunch={live} off offTitle="助手正在工作" onMessage={vi.fn()} onSend={vi.fn()} onLaunch={onLaunch} /></Wrap>);
-    expect(within(screen.getByTestId("status-activities")).getAllByRole("button").every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
-    // 任务已经结束（现在的情形里没有这一节）：不画。
-    rerender(<Wrap><TaskStatusCard status={IDLE_STATUS} liveProposal={null} liveLaunch={null} onMessage={vi.fn()} onSend={vi.fn()} onLaunch={onLaunch} /></Wrap>);
-    expect(screen.queryByTestId("status-activities")).toBeNull();
-  });
-
-  it("对话区里的状况卡：点一项交给页面的处理函数，用任务现在的那一份选项", async () => {
-    const onLaunch = vi.fn().mockResolvedValue(true);
-    const task = taskWith(null);
-    chat({ ...task, stage: { ...task.stage!, current: "idle", launch: LAUNCH_IDLE } }, [], { onLaunch, loadStatus: vi.fn().mockResolvedValue(IDLE_STATUS) });
-    const opening = await screen.findByTestId("status-opening");
-    fireEvent.click(within(within(opening).getByTestId("launch-flows")).getByRole("button"));
-    expect(onLaunch).toHaveBeenCalledWith(LAUNCH_IDLE.flows[0]);
-  });
-
-  it("可点的选项只在对话里最后一张状况卡上：调出新的一张之后，更早的卡把这一节收成一行", async () => {
-    const onLaunch = vi.fn().mockResolvedValue(true);
-    const task = taskWith(null);
-    chat({ ...task, stage: { ...task.stage!, current: "idle", launch: LAUNCH_IDLE } }, [], { onLaunch, loadStatus: vi.fn().mockResolvedValue(IDLE_STATUS) });
-    const opening = await screen.findByTestId("status-opening");
-    // 只有会话开头的那一张：它带选项。
-    expect(within(opening).getByTestId("status-activities")).toBeInTheDocument();
-    expect(within(opening).queryByTestId("status-activities-earlier")).toBeNull();
-    // 调出一张：开头那张收成一行，没有按钮；新的一张带选项。
-    fireEvent.click(screen.getByTestId("status-button"));
-    await vi.waitFor(() => expect(screen.getAllByTestId("status-called")).toHaveLength(1));
-    expect(within(opening).queryByTestId("status-activities")).toBeNull();
-    expect(within(opening).getByTestId("status-activities-earlier")).toHaveTextContent(LAUNCH_EARLIER_LINE);
-    expect(LAUNCH_EARLIER_LINE).toBe("开展一项活动见最新的任务状况。");
-    expect(within(within(opening).getByTestId("status-activities-earlier")).queryByRole("button")).toBeNull();
-    // 再调出一张：前一张调出的也收起，只有最后一张能点。
-    fireEvent.click(screen.getByTestId("status-button"));
-    await vi.waitFor(() => expect(screen.getAllByTestId("status-called")).toHaveLength(2));
-    const [first, second] = screen.getAllByTestId("status-called");
-    expect(within(first).getByTestId("status-activities-earlier")).toBeInTheDocument();
-    expect(screen.getAllByTestId("status-activities")).toHaveLength(1);
-    fireEvent.click(within(within(second).getByTestId("launch-flows")).getByRole("button"));
-    expect(onLaunch).toHaveBeenCalledTimes(1);
-  });
-
-  it("更早的卡：任务已经结束时没有这一节，也没有那一行", () => {
-    render(<Wrap><TaskStatusCard status={IDLE_STATUS} earlier liveProposal={null} liveLaunch={null} onMessage={vi.fn()} onSend={vi.fn()} /></Wrap>);
+  it("卡上没有「开展一项活动」一节，后端照旧给 launch 也不画；卡上不出现「开展」「任务状况」字样", () => {
+    const launch = { current: null, flows: [{ activity: "reading", in_flow: true, label: "启动需求分析", enabled: true, state: "从核读材料开始" }], activities: [], later: [] };
+    render(<Wrap><TaskStatusCard status={{ ...IDLE_STATUS, launch } as TaskStatusView} liveProposal={null} onMessage={vi.fn()} onSend={vi.fn()} /></Wrap>);
     expect(screen.queryByTestId("status-activities")).toBeNull();
     expect(screen.queryByTestId("status-activities-earlier")).toBeNull();
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["请助手说明下一步"]);
+    expect(screen.getByTestId("task-status").textContent).not.toMatch(/开展|任务状况/);
   });
 });
 
@@ -250,19 +159,39 @@ describe("新建会话的开头", () => {
     expect(wantsOpeningStatus(task, 0, 0, true, false)).toBe(false);      // 更早还有一段
     expect(wantsOpeningStatus(task, 0, 0, false, true)).toBe(false);      // 任务已经结束或者助手不可用
     expect(wantsOpeningStatus({ ...task, stage: null }, 0, 0, false, false)).toBe(false);                                   // 没有阶段的任务
-    expect(wantsOpeningStatus({ ...task, items: task.items.filter((i) => i.collection !== "总体分析") }, 0, 0, false, false)).toBe(true);    // 新任务，还没有主题页：也放，卡上有开展一项活动
+    expect(wantsOpeningStatus({ ...task, items: task.items.filter((i) => i.collection !== "总体分析") }, 0, 0, false, false)).toBe(true);    // 新任务，还没有主题页：也放
     expect(wantsOpeningStatus(null, 0, 0, false, false)).toBe(false);
   });
 
-  it("对话区第一条是一行小字加状况卡，排在会话开头那条任务现状说明之前", async () => {
+  it("会话开头那一行的写法：属于工作项的会话写工作项的名字与启动的时刻，自由讨论的会话写自由讨论", () => {
+    const work: WorkItemBrief = { record_id: 5, kind: "activity", name: "整理建模", activity: "modeling", flow: null, scope: null, started_at: "2026-10-13T09:02:00" };
+    expect(newSessionLine(work)).toBe("新会话 · 属于工作项「整理建模」（10-13 09:02）");
+    expect(newSessionLine({ ...work, started_at: null })).toBe("新会话 · 属于工作项「整理建模」");
+    expect([newSessionLine(null), newSessionLine(undefined), FREE_SESSION_LINE]).toEqual(Array(3).fill("新会话 · 自由讨论（不绑定活动）"));
+  });
+
+  it("对话区第一条是会话开头那一行，接着是工作进展卡，都排在会话开头那条任务现状说明之前", async () => {
     const NOTE = { type: "system_note", message_id: "n0", at: "", kind: "task_status", text: "任务现状：总体分析 16 页。", details: null };
-    const { loadStatus } = chat(taskWith(), [NOTE]);
+    const { loadStatus } = chat(taskWith(), [NOTE], { sessionLine: "新会话 · 属于工作项「需求分析」（10-13 09:02）" });
     const opening = await screen.findByTestId("status-opening");
     expect(loadStatus).toHaveBeenCalledTimes(1);
-    expect(within(opening).getByTestId("new-session-line")).toHaveTextContent(NEW_SESSION_LINE);
-    expect(NEW_SESSION_LINE).toBe("新建会话 · 助手从干净的上下文开始，交付物还是这一份");
+    const line = screen.getByTestId("new-session-line");
+    expect(line).toHaveTextContent("新会话 · 属于工作项「需求分析」（10-13 09:02）");
+    expect(line.compareDocumentPosition(opening) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(opening).getByTestId("task-status")).toBeInTheDocument();
     expect(screen.queryByTestId("status-called")).toBeNull();
+  });
+
+  it("会话开头那一行不论有没有人说过话都在最前面；更早还有一段没读出来、或者没有给（归档的会话、没有阶段的任务）时不画", () => {
+    chat(taskWith(), [said("u1", "请开始整理建模。"), reply("r1", "好的。")], { sessionLine: "新会话 · 属于工作项「整理建模」（10-13 09:02）" });
+    const line = screen.getByTestId("new-session-line");
+    expect(line.compareDocumentPosition(screen.getByTestId("assistant-reply")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+    chat(taskWith(), [reply("r1", "好的。")], { sessionLine: "新会话 · 自由讨论（不绑定活动）", hasEarlier: true });
+    expect(screen.queryByTestId("new-session-line")).toBeNull();
+    cleanup();
+    chat(taskWith(), [reply("r1", "好的。")]);
+    expect(screen.queryByTestId("new-session-line")).toBeNull();
   });
 
   it("会话里已经有消息：不放，也不去取状况；新任务还没有主题页的第一条会话照样放", async () => {
@@ -279,14 +208,14 @@ describe("新建会话的开头", () => {
 });
 
 describe("随时调出", () => {
-  it("点输入框旁的「任务状况」：在当时最后一条消息后面插一行界面操作与卡，不发给助手；再点一次再插一张", async () => {
+  it("点输入框旁的「工作进展」：在当时最后一条消息后面插一行界面操作与卡，不发给助手；再点一次再插一张", async () => {
     const { onSend, onMessage, loadStatus } = chat(taskWith(), [said("u1", "接着做"), reply("r1", "好的。")]);
     const button = screen.getByTestId("status-button");
-    expect(button).toHaveTextContent(/^任务状况$/);
+    expect(button).toHaveTextContent(/^工作进展$/);
     fireEvent.click(button);
     const called = await screen.findByTestId("status-called");
     expect(within(called).getByTestId("status-called-line")).toHaveTextContent(STATUS_CALLED_LINE);
-    expect(STATUS_CALLED_LINE).toBe("界面操作：用户调出任务状况");
+    expect(STATUS_CALLED_LINE).toBe("界面操作：用户调出工作进展");
     expect(within(called).getByTestId("task-status")).toBeInTheDocument();
     // 排在最后一条回复之后。
     expect(screen.getByTestId("assistant-reply").compareDocumentPosition(called) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

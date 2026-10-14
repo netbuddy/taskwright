@@ -1518,7 +1518,7 @@ export interface StartPageTexts {
     describe_note: string;
     describe_placeholder: string;
     describe_examples: string[];
-    /** 「开展后」一块里有材料与没有材料两种情形各一句。 */
+    /** 「启动后」一块里有材料与没有材料两种情形各一句。 */
     after: string[];
   };
 }

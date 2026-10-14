@@ -1,12 +1,12 @@
-// 活动输入页：从任务起点页点了一条工作流程或一项单项活动之后的那一页，开展在这里提交。这一页没有对话区。
+// 活动输入页：从任务起点页点了一条工作流程或一项单项活动之后的那一页，启动在这里提交。这一页没有对话区。
 // 自上而下：「返回任务起点」、这一项的名称与一句（流程从哪一站开始、活动的方式）、流程的各站一行、目的与前提的摘要、
-// 几块输入、「开展后」会发生什么、主按钮「开展某项」。
+// 几块输入、「启动后」会发生什么、主按钮「启动某项」。
 // 输入有四块，按这一项读哪几类资产显示（model/startInput.ts 的 inputBlocks）：项目材料（上传与清单，与任务起点页的材料卡是同一个组件）、
-// 领域知识库（勾选这个任务选用的知识库）、目标系统描述（它就是会话的第一条消息）、范围说明（只有单项活动有，随开展请求发给后端）。
+// 领域知识库（勾选这个任务选用的知识库）、目标系统描述（它就是会话的第一条消息）、范围说明（只有单项活动有，随启动的请求发给后端）。
 // 材料上传与知识库勾选都是当场生效的，不等点主按钮。
 // 点主按钮：先发启动的请求（后端新建一个工作项与一条属于它的会话，回应里带新会话的编号），成了再替用户发第一句话
 // （写了目标系统描述就是那段描述，没有写是这项活动的那句固定的话），然后进那条会话的工作台。没有启动成（例如助手正在工作）在页上报后端的原话，不跳转。
-// 这一页不选会话：一条会话在建立时就属于一个工作项，启动一律新建。
+// 这一页不选会话：一条会话在建立时就属于一个工作项，启动一律新建。任务里已有流程工作项时流程不能再启动，主按钮旁给「打开它的会话」。
 // 地址带 ?case=序号 时是从三种常见起点里的某一种进来的：那种起点要先看的那一块描黑边并滚到眼前，块里写着那种起点的做法。
 
 import { useEffect, useRef, useState } from "react";
@@ -22,9 +22,8 @@ import { MaterialsCard } from "../components/task/MaterialsCard";
 import { useMaterialViewer } from "../components/task/MaterialViewer";
 import { ownMaterials } from "../model/docx";
 import { GENERAL } from "../model/knowledge";
-import { latestSession } from "../model/startPage";
 import {
-  SCOPE_MAX_LENGTH, blockedLine, endsCurrentLine, firstMessage, inProgress, inputBlocks, missingInput, prerequisiteBody, startButton, startFields, startSubtitle, startTarget, targetName,
+  SCOPE_MAX_LENGTH, blockedLine, existingFlowItem, firstMessage, inputBlocks, missingInput, prerequisiteBody, startButton, startFields, startSubtitle, startTarget, targetName,
 } from "../model/startInput";
 import { go, href } from "../router";
 import "../styles/task-page.css";
@@ -43,7 +42,7 @@ export function StartInputPage({ taskId, startKey, startCase }: {
   const [error, setError] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("");
-  // 开展的请求发出去、还没有进工作台：主按钮点不动，免得开展两次。
+  // 启动的请求发出去、还没有进工作台：主按钮点不动，免得启动两次。
   const [starting, setStarting] = useState(false);
   const toast = useToast();
   const service = useService();
@@ -83,7 +82,7 @@ export function StartInputPage({ taskId, startKey, startCase }: {
 
   const target = startTarget(status?.catalog, startKey);
   if (task.status !== "进行中") {
-    return frame(task.task_name, "任务起点", <Alert type="info" showIcon message={`这个任务${task.status}，不能再开展活动。`} data-testid="start-closed" />);
+    return frame(task.task_name, "任务起点", <Alert type="info" showIcon message={`这个任务${task.status}，不能再启动工作项。`} data-testid="start-closed" />);
   }
   if (!target) {
     return frame(task.task_name, "任务起点", <Alert type="info" showIcon message="活动目录里没有这一项，请回任务起点重新选择。" data-testid="start-unknown" />);
@@ -95,12 +94,13 @@ export function StartInputPage({ taskId, startKey, startCase }: {
   const fields = startFields(target);
   const blocked = blockedLine(target);
   const missing = missingInput(target, blocks, status?.assets, description);
-  const latest = latestSession(task.sessions);
   const selected = task.knowledge_libraries ?? [GENERAL];
   const materials = ownMaterials(task.materials);
-  const endsCurrent = endsCurrentLine(status, target);
-  // 从头编制：工作流程第一次开展、业务说明还空着。这时「开展后」写有材料与没有材料两种情形，三块输入上面有一段话。
-  const first = target.kind === "flow" && target.flow.at === null && blocks.description;
+  // 已有流程工作项时「打开它的会话」进它最近有动静的那条会话（任务状况的工作项清单里有）。
+  const flowItem = existingFlowItem(target);
+  const flowSession = flowItem === null ? null : status?.work_items?.find((one) => one.record_id === flowItem)?.latest_session?.session_id ?? null;
+  // 从头编制：启动工作流程、业务说明还空着。这时「启动后」写有材料与没有材料两种情形，三块输入上面有一段话。
+  const first = target.kind === "flow" && blocks.description;
   const startNode = target.kind === "flow" ? target.flow.nodes.find((one) => one.key === target.flow.start) : null;
 
   const changeKnowledge = async (ids: string[]) => {
@@ -112,7 +112,7 @@ export function StartInputPage({ taskId, startKey, startCase }: {
     }
   };
 
-  /** 点主按钮：开展，成了再替用户发第一句话，然后进工作台。开展不成留在这一页；第一句话没有发出去照样进工作台，在那里再说。 */
+  /** 点主按钮：启动，成了再替用户发第一句话，然后进工作台。启动不成留在这一页；第一句话没有发出去照样进工作台，在那里再说。 */
   const start = async () => {
     if (!fields || starting || blocked || missing) return;
     setStarting(true);
@@ -122,14 +122,14 @@ export function StartInputPage({ taskId, startKey, startCase }: {
     try {
       sessionId = (await api.startInNewSession(taskId, sent)).session_id;
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "没有开展成。");
+      toast.error(e instanceof ApiError ? e.message : "没有启动成。");
       setStarting(false);
       return;
     }
     try {
       await api.sendMessage(taskId, sessionId, { text: firstMessage(fields.activity, blocks.description ? description : ""), client_id: clientId(), attachments: [] });
     } catch (e) {
-      toast.error(`已经开展「${name}」，但第一句话没有发出去：${e instanceof ApiError ? e.message : String(e)} 请在对话区再说一遍。`);
+      toast.error(`已经启动「${name}」，但第一句话没有发出去：${e instanceof ApiError ? e.message : String(e)} 请在对话区再说一遍。`);
     }
     go(href.work(taskId, sessionId));
   };
@@ -205,20 +205,19 @@ export function StartInputPage({ taskId, startKey, startCase }: {
       {blocks.scope && (
         <section className="tp-pane tp-in-block" aria-label="范围说明" data-testid="scope-block">
           <div className="tp-sec-h"><h2><EditOutlined className="tp-hic" />范围说明</h2><span className="aside">可选</span></div>
-          <p className="tp-in-p">限定这次只做哪一部分，例如只针对某几节、某几份材料或某几条条目；不写就是全部。助手在这次活动期间一直看得到这段话。</p>
+          <p className="tp-in-p">限定这次只做哪一部分，例如只针对某几节、某几份材料或某几条条目；不写就是全部。助手在这个工作项的各条会话里都看得到这段话。</p>
           <Input.TextArea value={scope} onChange={(e) => setScope(e.target.value)} autoSize={{ minRows: 2, maxRows: 8 }} maxLength={SCOPE_MAX_LENGTH}
             placeholder="例如：只整理「借书」「还书」两节的流程图。" data-testid="scope-input" />
         </section>
       )}
 
-      <section className="tp-pane tp-in-block" aria-label="开展后" data-testid="start-after">
-        <div className="tp-sec-h"><h2>开展后</h2></div>
+      <section className="tp-pane tp-in-block" aria-label="启动后" data-testid="start-after">
+        <div className="tp-sec-h"><h2>启动后</h2></div>
         <ol className="tp-in-after">
-          {endsCurrent && <li>{endsCurrent}</li>}
           {first && intake ? intake.after.map((one) => <li key={one}>{one}</li>)
             : target.kind === "flow"
-              ? <li>助手从「{startNode?.name ?? ""}」{target.flow.at === null ? "开始" : "接着"}，每站完成后在对话区汇报并提议下一站，由你确认后进入。</li>
-              : <li>助手开展「{name}」，完成后在对话区汇报结果，不提议下一站。</li>}
+              ? <li>助手从「{startNode?.name ?? ""}」开始，每站完成后在对话区汇报并提议下一站，由你确认后进入。</li>
+              : <li>助手进行「{name}」，完成后在对话区汇报结果，不提议下一站。</li>}
           <li>页面切换为工作台：左侧对话区、中间业务说明与需求条目、右侧材料与修订。</li>
         </ol>
       </section>
@@ -228,7 +227,7 @@ export function StartInputPage({ taskId, startKey, startCase }: {
         {blocked ? (
           <>
             <span className="tp-need" data-testid="start-blocked">{blocked}</span>
-            {inProgress(target) && latest && <a className="tp-lnk" href={href.work(taskId, latest.session_id)} data-testid="start-back-to-work">回到工作台</a>}
+            {flowSession && <a className="tp-lnk" href={href.work(taskId, flowSession)} data-testid="start-open-flow-session">打开它的会话</a>}
           </>
         )
           : missing ? <span className="tp-need" data-testid="start-missing">{missing}</span>

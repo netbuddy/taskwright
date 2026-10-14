@@ -3,7 +3,7 @@
 // 阶段的名字、次序与卡片上「进入下一段」的选项键取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
 import {
-  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, IDLE, IDLE_NAME, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, STAY_TEXT,
+  BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, IDLE, IDLE_NAME, STAGES, STAGE_NAMES, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, STAY_TEXT,
   activityDoneSentence, activityStartSentence, flowKeyOf,
 } from "../../../agent/src/lib/stage";
 import type { Item, PositionKey, StageKey, StageLamp, StageMove, StageView } from "../api/types";
@@ -189,15 +189,3 @@ export function stageMoveLine(move: StageMove): string {
   return `界面操作：${activityStartSentence(move.how ?? "move", move.to, move.from)}`;
 }
 
-/**
- * 总体分析还没有一页主题时的两个开头：按钮上的字、先把任务移到哪个阶段（界面操作 move_stage 的 stage 写阶段的名字）、
- * 再替用户发给助手的那句固定的话。
- */
-export const STAGE_STARTS = {
-  reading: { key: "reading", label: "通读材料起草", stage: STAGE_NAMES.reading, text: STAGE_START_TEXTS.reading },
-  clarifying: { key: "clarifying", label: "逐项澄清", stage: STAGE_NAMES.clarifying, text: STAGE_START_TEXTS.clarifying },
-} as const;
-export type StageStart = (typeof STAGE_STARTS)[keyof typeof STAGE_STARTS];
-
-/** 任务还没有材料时「通读材料起草」不可用的原因。 */
-export const NO_MATERIALS_TEXT = "这个任务还没有材料，先在右侧栏上传材料。";

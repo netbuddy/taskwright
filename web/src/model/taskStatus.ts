@@ -1,23 +1,24 @@
-// 任务状况卡上每一行怎样写。数据是后端的状况接口算好的（GET /tasks/{task_id}/status），这里只把它变成要画的句子，不另取数据。
-// 接口与这里的字段按「当前活动」命名（activity）：任务在需求分析流程里的某个阶段时，页面上那一行的标签写「阶段」；
-// 用户单独开展一项活动、任务空闲时写「活动」。卡上另有一节「开展一项活动」（launch），三组：正在进行的、流程、单独开展的六项。
+// 对话区「工作进展」卡上每一行怎样写，与新会话开头那一行。数据是后端的状况接口算好的（GET /tasks/{task_id}/status?session=…，
+// 接口叫「任务状况」），这里只把它变成要画的句子，不另取数据。接口里的 activity 说的是这条会话：它属于流程的工作项、单项活动的工作项，
+// 或者不属于任何工作项（自由讨论）。早先卡上另有一节「开展一项活动」，工作项与会话绑定之后退役了，启动工作在任务起点页与切换工作面板里。
 
 import { STATUS_NEXT_TEXT } from "../../../agent/src/lib/stage";
 import type { Task, TaskStatusView } from "../api/types";
+import type { WorkItemBrief } from "../api/types";
 import { formatTime } from "./format";
-import { lampShort } from "./stage";
+import { flowName, lampShort } from "./stage";
 
 export { STATUS_NEXT_TEXT };
 
-export const STATUS_TITLE = "任务状况";
-export const STATUS_BUTTON = "任务状况";
-/** 输入框里打这一句，与点「任务状况」入口相同：不发给助手。 */
+export const STATUS_TITLE = "工作进展";
+export const STATUS_BUTTON = "工作进展";
+/** 输入框里打这一句，与点「工作进展」入口相同：不发给助手。 */
 export const STATUS_COMMAND = "/状况";
 export const STATUS_NEXT_LABEL = "请助手说明下一步";
-/** 用户调出任务状况时对话区里的那一行。 */
-export const STATUS_CALLED_LINE = "界面操作：用户调出任务状况";
-/** 新建会话的开头，状况卡前面的那一行小字。 */
-export const NEW_SESSION_LINE = "新建会话 · 助手从干净的上下文开始，交付物还是这一份";
+/** 用户调出工作进展时对话区里的那一行。 */
+export const STATUS_CALLED_LINE = "界面操作：用户调出工作进展";
+/** 自由讨论的会话开头那一行。 */
+export const FREE_SESSION_LINE = "新会话 · 自由讨论（不绑定活动）";
 export const NOT_STARTED = "尚未开始";
 export const NOTHING_MISSING = "这一段的几项都齐了";
 
@@ -27,40 +28,32 @@ export function shortMoment(iso: string | null | undefined): string {
   return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(full) ? full.slice(5) : full;
 }
 
+/**
+ * 会话开头的那一行：属于工作项的会话写「新会话 · 属于工作项「整理建模」（10-13 09:02）」，括号里是工作项启动的时刻；
+ * 自由讨论的会话写「新会话 · 自由讨论（不绑定活动）」。
+ */
+export function newSessionLine(work: WorkItemBrief | null | undefined): string {
+  if (!work) return FREE_SESSION_LINE;
+  return `新会话 · 属于工作项「${work.name}」${work.started_at ? `（${shortMoment(work.started_at)}）` : ""}`;
+}
+
 /** 标题后面的小字：这张卡是程序算的，什么时候算的。 */
 export function statusSubtitle(status: Pick<TaskStatusView, "generated_at">): string {
   return `程序据任务记录生成 · ${shortMoment(status.generated_at)}`;
 }
 
-/** 那一行的标签：在流程里的阶段写「阶段」，单独开展的活动与空闲写「活动」。 */
-export function activityLabel(activity: TaskStatusView["activity"]): string {
-  return activity.kind === "stage" ? "阶段" : "活动";
-}
-
-/** 「开展一项活动」一节的标题与各组的标签。 */
-export const LAUNCH_TITLE = "开展一项活动";
-export const LAUNCH_CURRENT_LABEL = "正在进行";
-export const LAUNCH_FLOW_LABEL = "流程";
-export const LAUNCH_ALONE_LABEL = "单独开展";
-export const LAUNCH_LATER_LABEL = "以后";
-/** 这一节下面的一句：不选也可以。 */
-export const LAUNCH_HINT = "不选也可以，直接在下面说话就行。";
-/** 对话里不是最后一张的状况卡：「开展一项活动」一节收成这一行，可点的选项只在最后一张卡上。 */
-export const LAUNCH_EARLIER_LINE = "开展一项活动见最新的任务状况。";
+/** 第一行的标签。 */
+export const SESSION_ROW_LABEL = "本会话";
 
 /**
- * 「阶段」一行：在哪个阶段、是第几个、最近一次是谁在什么时候移进来的；一次都没有移过时写任务从这里开始。
- * 用户单独开展的活动写「整理建模（单独开展）· 时刻 由你开始」；空闲只写「空闲」。
+ * 「本会话」一行：流程的工作项写「需求分析 · 第 4 站「写条目」 · 10-13 09:02 进入」，没有换过站时写启动的时刻；
+ * 单项活动的工作项写「整理建模 · 10-13 09:02 启动」；自由讨论的会话写「自由讨论（不绑定活动）」。
  */
 export function activityLine(activity: TaskStatusView["activity"]): string {
-  if (activity.kind === "idle") return activity.name;
-  if (activity.kind === "activity") {
-    const by = activity.moved_by === "executor" ? "助手" : "你";
-    return `${activity.name}（单独开展）${activity.moved_at ? `· ${shortMoment(activity.moved_at)} 由${by}开始` : ""}`;
-  }
-  const head = `${activity.name}（第 ${activity.ordinal} 阶段）`;
-  if (!activity.moved_by || !activity.moved_at) return `${head}· 任务从这个阶段开始`;
-  return `${head}· ${shortMoment(activity.moved_at)} 由${activity.moved_by === "user" ? "你" : "助手"}移入`;
+  if (activity.kind === "idle") return "自由讨论（不绑定活动）";
+  const at = activity.moved_at ? shortMoment(activity.moved_at) : "";
+  if (activity.kind === "activity") return `${activity.name}${at ? ` · ${at} 启动` : ""}`;
+  return `${flowName(activity.flow)} · 第 ${activity.ordinal} 站「${activity.name}」${at ? ` · ${at} 进入` : ""}`;
 }
 
 /** 「业务说明」一行：一共几节、各章几节、未归类几页；待澄清另给，页面上加重。一节都没有时写尚未开始。 */
@@ -95,8 +88,7 @@ export function nobodySpoke(messages: readonly { type: string }[]): boolean {
 }
 
 /**
- * 新建会话的开头要不要放一张状况卡：任务有阶段、还在进行中，这条会话里还没有人说过话（也没有更早的一段、没有正在发送的话）。
- * 新任务的第一条会话也放：任务从空闲起，卡上「开展一项活动」一节是开始工作的地方。
+ * 新建会话的开头要不要放一张工作进展卡：任务有阶段、还在进行中，这条会话里还没有人说过话（也没有更早的一段、没有正在发送的话）。
  * spoken 是这条会话里用户的话与助手的回复一共几条（见 nobodySpoke）。
  */
 export function wantsOpeningStatus(task: Task | null, spoken: number, outgoing: number, hasEarlier: boolean, closed: boolean): boolean {

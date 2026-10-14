@@ -9,7 +9,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Task } from "../../../api/types";
 import { writeOffReason } from "../../../model/items";
 import { overallDef, retellText, titleOf, totals } from "../../../model/overall";
-import { NO_MATERIALS_TEXT, STAGE_STARTS, type StageStart } from "../../../model/stage";
 import { CHAPTER_DECISIONS, CHAPTER_FLOWS, CHAPTER_GOALS, CHAPTER_OBJECTS, CHAPTER_OVERVIEW, CHAPTER_ROLES, CHAPTER_RULES } from "../../../model/chapters";
 import { requirementsOf } from "../../../model/sectionLinks";
 import { USE_CASE_COLLECTION } from "../../../../../agent/src/lib/stage";
@@ -23,20 +22,13 @@ import { Glossary } from "./Glossary";
 /** 目录展开没有：auto 是没有动过，够宽就展开、窄就收着；open 与 closed 是用户点出来的。 */
 type OutlineShown = "auto" | "open" | "closed";
 
-export function OverallPane({ task, host, selected, onSelect, page, readOnly = false, writesOff = false, onSend, onStart, materialCount = 0, headRequest = null }: {
+export function OverallPane({ task, host, selected, onSelect, page, readOnly = false, writesOff = false, onSend, headRequest = null }: {
   /** 条目区要右边换成哪一章的章首页、术语表或者「未归入节的图」（null 是首页）；seq 每次加一。 */
   headRequest?: { view: HeadView | null; seq: number } | null;
   /** 画图要的那几样（目录也在里面）。 */
   host: FigureHost;
   readOnly?: boolean;
   writesOff?: boolean;
-  /**
-   * 还没有一页主题时的两个开头（「通读材料起草」「逐项澄清」）：先把任务移到那个阶段，再替用户发那句固定的话。
-   * 不给时不显示这两个按钮（任务没有阶段时）。
-   */
-  onStart?: (start: StageStart) => void;
-  /** 任务现在有几份材料（不算由别的材料生成的）；一份都没有时「通读材料起草」不可用。 */
-  materialCount?: number;
   /** 把一句话发给助手（「复述一遍」用）。 */
   onSend?: (text: string) => void;
   task: Task;
@@ -110,16 +102,8 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
           <div className="oa-intro" data-testid="overall-intro">
             <p className="oa-intro-note">{def?.display?.note ?? "按章整理的业务说明。"}</p>
             <p className="oa-intro-sum">现在有 {sum.pages} 节，{sum.settled} 条已经定下，{sum.open} 条还没定，{sum.pending} 处是助手补的、等你核实。</p>
-            {sum.pages === 0 && onStart && task.stage ? (
-              <div className="oa-start" data-testid="overall-start">
-                <p className="oa-intro-hint">业务说明还没有内容。可以让助手先通读材料、把材料里已经写明的角色、流程与业务对象各立一节，也可以直接从逐项澄清开始。</p>
-                <p className="oa-start-acts">
-                  <button type="button" className="btn pri" disabled={!!retellOff || materialCount === 0} title={retellOff ?? (materialCount === 0 ? NO_MATERIALS_TEXT : undefined)}
-                    onClick={() => onStart(STAGE_STARTS.reading)} data-testid="start-reading">{STAGE_STARTS.reading.label}</button>
-                  <button type="button" className="btn" disabled={!!retellOff} title={retellOff}
-                    onClick={() => onStart(STAGE_STARTS.clarifying)} data-testid="start-clarifying">{STAGE_STARTS.clarifying.label}</button>
-                </p>
-              </div>
+            {sum.pages === 0 && task.stage ? (
+              <p className="oa-intro-hint" data-testid="overall-empty">业务说明还没有内容。核读材料、澄清这两项活动把内容写进来：要从头编制，请在任务起点启动需求分析。</p>
             ) : (
               <p className="oa-intro-hint">在左边的目录里点一节，看它的说明、适用规则、待澄清事项与对应的需求条目；点章标题看这一章的章首。</p>
             )}

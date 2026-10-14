@@ -1,14 +1,14 @@
 // 任务一级的整页（任务起点页）用的外框：与工作视图同一个顶栏和左边的导航条，中间一栏放页面内容，没有对话区与右侧栏。
-// 顶栏不写会话名与当前活动：这一页不属于哪一条会话。「会话」菜单列出这个任务的会话，点一条进它的工作台。
+// 顶栏不写会话名与当前活动：这一页不属于哪一条会话。「会话」菜单（components/SessionMenu.tsx）列出这个任务的会话，点一条进它的工作台。
 // 中间一栏不套工作视图的清零（类名 unreset，见 styles/workview-extra.css），里面的卡片与表格照任务页原来的样式。
 
 import { useState, type ReactNode } from "react";
 import { SettingOutlined } from "@ant-design/icons";
 import type { SessionListEntry } from "../api/types";
 import { FONT_TIERS, readFontTier, saveFontTier, type FontTier } from "../model/fontScale";
-import { formatTime } from "../model/format";
-import { go, href, openSettings } from "../router";
+import { href, openSettings } from "../router";
 import { NoModelBanner, UserMenu } from "./ServiceControls";
+import { SessionMenu } from "./SessionMenu";
 
 export function TaskFrame({ taskId, taskName, where, sessions, children }: {
   taskId: string;
@@ -38,17 +38,7 @@ export function TaskFrame({ taskId, taskName, where, sessions, children }: {
           <span className="smenu-btn" role="button" onClick={() => setMenuOpen(!menuOpen)} data-testid="session-menu-button">会话 ▾</span>
           <span className="set-btn" role="button" onClick={openSettings} data-testid="open-settings"><SettingOutlined />设置</span>
           <UserMenu where="topbar" />
-          <div className={`smenu${menuOpen ? " show" : ""}`} data-testid="session-menu">
-            <div className="mh">任务「{taskName}」的会话（共 {sessions.length} 条，所有会话共享同一份交付物）</div>
-            {sessions.length === 0 && <div className="mh">还没有会话。启动工作项时自动建立。</div>}
-            {sessions.map((s) => (
-              <div key={s.session_id} className="srow" role="button" onClick={() => { setMenuOpen(false); go(href.work(taskId, s.session_id)); }}>
-                <span className="sn">{s.name || "新会话，还没有说过话。"}</span>
-                {s.active && <span className="chip okc">活动中</span>}
-                <span className="st">最近活动 {formatTime(s.last_active_at)} · {s.message_count} 条消息</span>
-              </div>
-            ))}
-          </div>
+          <SessionMenu taskId={taskId} taskName={taskName} sessions={sessions} open={menuOpen} onClose={() => setMenuOpen(false)} />
         </div>
         <div className="app-body">
           <div className="rail">

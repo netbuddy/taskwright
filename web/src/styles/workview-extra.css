@@ -420,3 +420,8 @@
 /* 图表组件里的按钮是 antd 的：工作视图的全局清零把它们的内边距清掉了，这里补回来。 */
 .app .diagram-view .ant-btn { padding: 0 .75rem; }
 .app .diagram-view .ant-btn.ant-btn-sm { padding: 0 .5rem; }
+/* 会话菜单：归档的会话变淡；底部「显示已归档的会话」开关 */
+.app .smenu .srow.archived .sn { color: var(--mut); font-weight: 400; }
+.app .smenu .sarch { display: flex; align-items: flex-start; gap: .4rem; border-top: 1px dotted var(--line2); margin-top: .25rem; padding: .4rem .5rem .2rem; font-size: 0.881rem; color: var(--mut); cursor: pointer; }
+.app .smenu .sarch input { margin-top: .2rem; }
+.app .smenu .sarch small { display: block; font-size: 0.82rem; }

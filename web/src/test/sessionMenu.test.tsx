@@ -1,7 +1,7 @@
 // 工作视图的会话菜单：每条会话的「最近活动」与消息条数在助手做完一轮时（执行者状态从工作中变为不在工作）、以及打开菜单时重读，
-// 不停在打开页面的那一刻。不用定时轮询。
+// 不停在打开页面的那一刻。不用定时轮询。每条会话旁标所属工作项；底部「显示已归档的会话」开关。
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
 import { api, ApiError } from "../api/client";
@@ -95,5 +95,45 @@ describe("新建会话被拒时的提示", () => {
     clickNew();
     await waitFor(() => expect(screen.getByTestId("toasts")).toHaveTextContent("助手正在另一条会话里工作，做完才能在这里继续。"));
     expect(screen.getByTestId("toasts")).not.toHaveTextContent("这条会话里工作");
+  });
+});
+
+describe("会话菜单按工作项标注，底部可显示已归档的会话", () => {
+  const entry = (id: string, name: string, over: Partial<SessionListEntry> = {}): SessionListEntry =>
+    ({ session_id: id, name, started_at: "2026-10-13T01:00:00Z", last_active_at: "2026-10-13T01:05:00Z", message_count: 3, active: false, ...over }) as SessionListEntry;
+  const LIVE = [
+    entry("S1", "需求分析", { work_item: { record_id: 1, kind: "flow", name: "需求分析", activity: "writing", flow: "analysis" }, archived: false }),
+    entry("S2", "整理建模 · 对象关系图", { work_item: { record_id: 5, kind: "activity", name: "整理建模", activity: "modeling", flow: null }, archived: false }),
+    entry("S3", "问几个关于预约的问题", { work_item: null, archived: false }),
+  ];
+  const ARCHIVED = entry("S9", "澄清 · 续借规则", { work_item: null, archived: true, archived_at: "2026-10-13T13:14:00Z", archived_record_id: 4 });
+
+  it("每条会话旁标所属工作项；页面取的是带归档的清单，菜单里只列未归档的；新建会话一行说明是自由讨论", async () => {
+    const list = vi.spyOn(api, "listSessions").mockResolvedValue([...LIVE, ARCHIVED]);
+    render(view(IDLE));
+    await waitFor(() => expect(within(menu()).getAllByTestId("session-menu-row")).toHaveLength(3));
+    expect(list).toHaveBeenCalledWith("TASK-001", true);
+    expect(within(menu()).getAllByTestId("session-menu-tag").map((one) => one.textContent)).toEqual(["需求分析 · 写条目", "整理建模", "自由讨论"]);
+    expect(menu()).toHaveTextContent("共 3 条");
+    expect(menu().textContent).not.toMatch(/已做完|澄清 · 续借规则/);
+    expect(within(menu()).getByText(/新建会话/)).toHaveTextContent("＋ 新建会话（自由讨论，不绑定活动；交付物还是这一份）");
+  });
+
+  it("勾上「显示已归档的会话」：归档的接在后面、标「已归档」，点它进那条会话；去掉勾就不列", async () => {
+    vi.spyOn(api, "listSessions").mockResolvedValue([...LIVE, ARCHIVED]);
+    render(view(IDLE));
+    fireEvent.click(screen.getByTestId("session-menu-button"));
+    await waitFor(() => expect(within(menu()).getAllByTestId("session-menu-row")).toHaveLength(3));
+    const toggle = within(screen.getByTestId("session-menu-archived")).getByRole("checkbox");
+    expect(screen.getByTestId("session-menu-archived")).toHaveTextContent("显示已归档的会话");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(within(menu()).getAllByTestId("session-menu-row")).toHaveLength(4));
+    const last = within(menu()).getAllByTestId("session-menu-row")[3];
+    expect(last).toHaveClass("archived");
+    expect(within(last).getByTestId("session-menu-tag")).toHaveTextContent("已归档");
+    fireEvent.click(last);
+    expect(window.location.hash).toBe("#/tasks/TASK-001/sessions/S9");
+    fireEvent.click(toggle);
+    expect(within(menu()).getAllByTestId("session-menu-row")).toHaveLength(3);
   });
 });
