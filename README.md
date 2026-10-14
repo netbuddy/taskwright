@@ -4,7 +4,7 @@ Taskwright is a general task-oriented agent. You give it a **task definition**; 
 
 [中文说明](README.zh-CN.md)
 
-**License.** The core is licensed under the [GNU AGPL-3.0](LICENSE). A commercial license is available separately; see [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+**License.** Taskwright is licensed under the [GNU GPL-3.0](LICENSE) (GPL-3.0-only).
 
 > Status: 0.5.0. The interfaces may still change between releases.
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- License: GPL-3.0-only replaces AGPL-3.0 and the separate commercial license.
+
 ### Upgrading from 0.5.0
 
 - The task database goes to format 8. Tasks created by 0.5.0 are upgraded like any earlier task (when the service starts, with `taskwright data upgrade`, or when a data pack is imported). The stage records of a task become one work item of the requirements analysis (the flow 0.5.0 called the six stages), at the stage the task was in, and the session in which the stages were moved belongs to it. In that session the stage, its last move and the moves listed in the debug tab read the same as before the upgrade. The other sessions of the task belong to no work item: they are sessions for free discussion, in which the assistant writes topic pages and questions only. A fresh session can carry on the same work item (see below).
