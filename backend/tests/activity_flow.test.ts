@@ -203,7 +203,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     assert.equal((await sessions()).some((one) => one.session_id === aloneSession), false, "缺省不列归档的会话");
     const withArchived = (await call("GET", `/api/v1/tasks/${taskId}/sessions?archived=1`)).body.sessions as Dict[];
     const archivedRow = withArchived.find((one) => one.session_id === aloneSession)!;
-    assert.deepEqual([archivedRow.archived, typeof archivedRow.archived_at, archivedRow.work_item], [true, "string", null]);
+    assert.deepEqual([archivedRow.archived, typeof archivedRow.archived_at, archivedRow.archived_record_id, archivedRow.work_item], [true, "string", 2, null]);
     assert.deepEqual(withArchived.filter((one) => one.session_id !== aloneSession).map((one) => one.archived), withArchived.filter((one) => one.session_id !== aloneSession).map(() => false));
     assert.equal((await messagesOf(aloneSession)).filter((m) => m.type === "ui_action_noted").at(-1)!.text, "界面操作（不是用户打的字）：用户删除工作项「澄清」，它的 1 条会话已归档。");
     assert.equal((await call("POST", `/api/v1/tasks/${taskId}/sessions`, { activity_record_id: 2 })).body.error.code, "not_found", "删掉的工作项不能接着做");
@@ -217,9 +217,9 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     assert.deepEqual([after.activity.kind, after.work_items.map((one: Dict) => [one.record_id, one.session_ids, one.session_count, one.latest_session.session_id])],
       ["idle", [[1, [flowSession, nextSession], 2, nextSession]]]);
 
-    // 全程：两次启动，没有换站；剩下需求分析一行；会话子表里澄清的那条会话归档、不再指向工作项，那条空会话的挂接留着但不计入。
+    // 全程：两次启动，没有换站；剩下需求分析一行；会话子表里澄清的那条会话归档、记录号照旧留着（是那个已经删除的工作项的），那条空会话的挂接留着但不计入。
     assert.deepEqual(db(movesSql(["from_stage", "stage", "actor"])), [{ from_stage: null, stage: "reading", actor: "user" }, { from_stage: null, stage: "clarifying", actor: "user" }]);
     assert.deepEqual(db("SELECT record_id, activity, node, flow FROM activity_record ORDER BY record_id"), [{ record_id: 1, activity: "reading", node: "reading", flow: "analysis" }]);
     assert.deepEqual(db("SELECT session_id, record_id, archived_at IS NOT NULL AS archived FROM work_item_session ORDER BY rowid").map((r: Dict) => [r.session_id, r.record_id, r.archived]),
-      [[flowSession, 1, 0], [aloneSession, null, 1], [nextSession, 1, 0], [empty, 1, 0]]);
+      [[flowSession, 1, 0], [aloneSession, 2, 1], [nextSession, 1, 0], [empty, 1, 0]]);
   }, { seed: false, launch: false }));

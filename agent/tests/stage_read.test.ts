@@ -77,7 +77,10 @@ test("三种写入各记什么：启动插一行、挂上会话、记一条带�
   ]);
   assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((r) => r.record_id), [other.record_id]);
   assert.deepEqual(write(dir, (db) => workItemSessions(db, taskId)).map((one) => [one.session_id, one.record_id]), [["sess-3", other.record_id]]);
-  assert.deepEqual(write(dir, (db) => [...archivedSessions(db, taskId).keys()]).sort(), ["sess-1", "sess-2"]);
+  assert.deepEqual(write(dir, (db) => [...archivedSessions(db, taskId)].map(([id, one]) => [id, one.record_id])).sort(), [["sess-1", started.record_id], ["sess-2", started.record_id]]);
+  // 子表那一行留着原来的记录号，只多了归档的时刻：说明它曾属于已经删除的这个工作项。
+  assert.deepEqual(query<{ session_id: string; record_id: number; archived: number }>(dir, "SELECT session_id, record_id, archived_at IS NOT NULL AS archived FROM work_item_session ORDER BY rowid")
+    .map((r) => [r.session_id, r.record_id, r.archived]), [["sess-1", started.record_id, 1], ["sess-2", started.record_id, 1], ["sess-3", other.record_id, 0]]);
   assert.deepEqual(write(dir, (db) => [sessionWorkItem(db, taskId, "sess-1"), currentStage(db, taskId, "sess-2"), currentStage(db, taskId, "sess-3")]), [null, "idle", "clarifying"]);
   // 记录号不重用：删掉的是最大的记录号以外的那一个，再删最大的那一个，新启动的工作项仍然排在后面。
   write(dir, (db) => deleteWorkItem(db, sessionWorkItem(db, taskId, "sess-3")!, { taskId, sessionId: "sess-3", callId: "ui-op-6", actor: "user" }, ""));

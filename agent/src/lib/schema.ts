@@ -345,13 +345,14 @@ const FLOW_KEY_ANALYSIS = "analysis";
 /**
  * 工作项的会话：哪条会话属于哪个工作项。一条会话在建立时指向一个工作项，或者不指向任何工作项（自由讨论的会话，这张表里没有它的行），
  * 之后不改；一个工作项可以先后有几条会话。
- * 工作项被删除时，它的会话不删（会话文件是留痕，修订也指向会话），而是归档：record_id 改为空、archived_at 写上删除的时刻。
+ * 工作项被删除时，它的会话不删（会话文件是留痕，修订也指向会话），而是归档：archived_at 写上删除的时刻，record_id 照旧留着，
+ * 说明它曾属于那个已经删除的工作项（事件里也带着这个记录号；记录号不重用，不会落到新的工作项上）。
  * 归档的会话不属于任何工作项，打开后按自由讨论办；会话清单默认不列它。格式版本 7 加的表。
  */
 export const WORK_ITEM_SESSION_SQL = `
 CREATE TABLE IF NOT EXISTS work_item_session (
   session_id   TEXT PRIMARY KEY,      -- pi 会话的会话编号；一条会话只属于一个工作项
-  record_id    INTEGER,               -- 所属工作项的记录号（activity_record.record_id）；会话归档后为空
+  record_id    INTEGER NOT NULL,      -- 所属工作项的记录号（activity_record.record_id）；会话归档后照旧留着，是那个已经删除的工作项的
   task_id      TEXT NOT NULL,         -- 所属任务的任务编号
   attached_at  TEXT NOT NULL,         -- 这条会话挂到工作项上的时刻（本地时间）
   archived_at  TEXT                   -- 归档的时刻（本地时间）：它的工作项被删除的时刻；没有归档为空

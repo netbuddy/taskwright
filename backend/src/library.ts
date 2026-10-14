@@ -380,15 +380,16 @@ export function workItemRows(taskDir: string): WorkItemRow[] {
 }
 
 /**
- * 归档的会话（它们的工作项被删除了）：会话编号到归档的时刻（接口的时刻写法）。库另开一个只读连接；读不出来时是空的。
+ * 归档的会话（它们的工作项被删除了）：会话编号到归档的时刻（接口的时刻写法）与它曾属于的那个已经删除的工作项的记录号。
+ * 库另开一个只读连接；读不出来时是空的。
  */
-export function archivedSessionTimes(taskDir: string): Map<string, string | null> {
+export function archivedSessionInfo(taskDir: string): Map<string, { archived_at: string | null; record_id: number }> {
   try {
     const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
     try {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       if (!task) return new Map();
-      return new Map([...archivedSessions(db, task.task_id)].map(([id, at]) => [id, clock.fromLocalText(at)]));
+      return new Map([...archivedSessions(db, task.task_id)].map(([id, one]) => [id, { archived_at: clock.fromLocalText(one.archived_at), record_id: one.record_id }]));
     } finally {
       db.close();
     }

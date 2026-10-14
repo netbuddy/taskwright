@@ -423,9 +423,10 @@ export interface SessionListEntry extends SessionInfo {
   revision_count?: number;
   /** 这条会话属于的工作项；自由讨论的会话、归档的会话为 null。早先的后端不给。 */
   work_item?: { record_id: number; kind: "flow" | "activity"; name: string; activity: StageKey; flow: string | null } | null;
-  /** 带 archived=1 取清单时才有：是不是归档的会话（它的工作项被删除了），与归档的时刻。 */
+  /** 带 archived=1 取清单时才有：是不是归档的会话（它的工作项被删除了）、归档的时刻、它曾属于的那个已经删除的工作项的记录号。 */
   archived?: boolean;
   archived_at?: string | null;
+  archived_record_id?: number | null;
 }
 
 /** 一条会话属于的工作项里页面用的几样（整份数据的 stage.work_item）。 */

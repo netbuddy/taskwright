@@ -135,7 +135,7 @@ export function workItemById(db: DatabaseSync, taskId: string, recordId: number)
 export function sessionWorkItem(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): ActivityRecord | null {
   if (!sessionId || !hasActivityTable(db) || !hasSessionTable(db)) return null;
   const row = db.prepare(
-    `SELECT ${recordColumns(db)} FROM ${RECORD_FROM} JOIN ${SESSIONS} s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ?`,
+    `SELECT ${recordColumns(db)} FROM ${RECORD_FROM} JOIN ${SESSIONS} s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ?${archivedClause(db, "s")}`,
   ).get(taskId, sessionId) as RecordRow | undefined;
   return row && isStage(row.activity) ? recordOf(row) : null;
 }
@@ -145,19 +145,26 @@ export function openActivityRecord(db: DatabaseSync, taskId: string, sessionId: 
   return sessionWorkItem(db, taskId, sessionId);
 }
 
+/** 会话表有归档一列时，只取没有归档的那几行的条件（接在 WHERE 后面）；还没有这一列的库（只读的一侧会遇到）不加条件。 */
+function archivedClause(db: DatabaseSync, alias: string): string {
+  const has = (db.prepare(`PRAGMA table_info(${SESSIONS})`).all() as { name: string }[]).some((row) => row.name === "archived_at");
+  return has ? ` AND ${alias}.archived_at IS NULL` : "";
+}
+
 /** 每条挂在工作项上的会话各属于哪个工作项（会话编号到记录号），与挂上的时刻。归档的会话不在里面。 */
 export function workItemSessions(db: DatabaseSync, taskId: string): { session_id: string; record_id: number; attached_at: string }[] {
   if (!hasSessionTable(db)) return [];
-  const rows = db.prepare(`SELECT session_id, record_id, attached_at FROM ${SESSIONS} WHERE task_id = ? AND record_id IS NOT NULL ORDER BY attached_at, rowid`).all(taskId) as
+  const rows = db.prepare(`SELECT session_id, record_id, attached_at FROM ${SESSIONS} s WHERE task_id = ?${archivedClause(db, "s")} ORDER BY attached_at, rowid`).all(taskId) as
     { session_id: string; record_id: number; attached_at: string }[];
   return rows.map((row) => ({ ...row, record_id: Number(row.record_id) }));
 }
 
-/** 归档的会话（它们的工作项被删除了）：会话编号到归档的时刻（库里的本地时间写法）。 */
-export function archivedSessions(db: DatabaseSync, taskId: string): Map<string, string> {
+/** 归档的会话（它们的工作项被删除了）：会话编号到归档的时刻（库里的本地时间写法）与它曾属于的那个已经删除的工作项的记录号。 */
+export function archivedSessions(db: DatabaseSync, taskId: string): Map<string, { archived_at: string; record_id: number }> {
   if (!hasSessionTable(db) || !(db.prepare(`PRAGMA table_info(${SESSIONS})`).all() as { name: string }[]).some((row) => row.name === "archived_at")) return new Map();
-  const rows = db.prepare(`SELECT session_id, archived_at FROM ${SESSIONS} WHERE task_id = ? AND archived_at IS NOT NULL`).all(taskId) as { session_id: string; archived_at: string }[];
-  return new Map(rows.map((row) => [row.session_id, row.archived_at]));
+  const rows = db.prepare(`SELECT session_id, archived_at, record_id FROM ${SESSIONS} WHERE task_id = ? AND archived_at IS NOT NULL`).all(taskId) as
+    { session_id: string; archived_at: string; record_id: number }[];
+  return new Map(rows.map((row) => [row.session_id, { archived_at: row.archived_at, record_id: Number(row.record_id) }]));
 }
 
 /** 任务目录里有没有材料：材料目录第一层至少有一个文件（与任务现状消息列材料用的是同一个清单）。 */
@@ -252,17 +259,18 @@ export function enterNode(db: DatabaseSync, item: ActivityRecord, to: Stage, who
 }
 
 /**
- * 删除一个工作项：记一条事件 WORK_ITEM_DELETED，把它的会话全部归档（不再属于任何工作项，记下归档的时刻），删掉活动记录那一行。
+ * 删除一个工作项：记一条事件 WORK_ITEM_DELETED，把它的会话全部归档（记下归档的时刻，记录号照旧留着；守门按归档的时刻判断，
+ * 归档的会话不属于任何工作项），删掉活动记录那一行。
  * 修订与别的事件都不动。返回随之归档了几条会话与那条事件的序号。必须在调用方已经开好的写事务里调用。
  */
 export function deleteWorkItem(db: DatabaseSync, item: ActivityRecord, who: Omit<Who, "runId">, reason: string): { archived: number; event_seq: number } {
-  const archived = Number((db.prepare(`SELECT COUNT(*) AS n FROM ${SESSIONS} WHERE record_id = ?`).get(item.record_id) as { n: number }).n);
+  const archived = Number((db.prepare(`SELECT COUNT(*) AS n FROM ${SESSIONS} WHERE record_id = ? AND archived_at IS NULL`).get(item.record_id) as { n: number }).n);
   const seq = emit(db, {
     taskId: who.taskId, sessionId: who.sessionId, callId: who.callId, actor: who.actor, name: EVENT_WORK_ITEM_DELETED,
     payload: { record_id: item.record_id, activity: item.activity, node: item.node, flow: item.flow, ...(item.scope ? { scope: item.scope } : {}),
       archived_sessions: archived, actor: who.actor, reason },
   });
-  db.prepare(`UPDATE ${SESSIONS} SET record_id = NULL, archived_at = ? WHERE record_id = ?`).run(wallClockText(), item.record_id);
+  db.prepare(`UPDATE ${SESSIONS} SET archived_at = ? WHERE record_id = ? AND archived_at IS NULL`).run(wallClockText(), item.record_id);
   db.prepare(`DELETE FROM ${TABLE} WHERE record_id = ?`).run(item.record_id);
   return { archived, event_seq: seq };
 }

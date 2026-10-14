@@ -47,12 +47,14 @@ function workItemOf(db: DatabaseSync, taskId: string, sessionId: string | null |
   const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('activity_record', 'work_item_session')").all() as { name: string }[])
     .map((row) => row.name));
   if (tables.size < 2) return null;
+  // 归档的会话（它的工作项已经删除）不算：只在会话表有归档一列时加这个条件。
+  const archivedFilter = (db.prepare("PRAGMA table_info(work_item_session)").all() as { name: string }[]).some((row) => row.name === "archived_at") ? " AND s.archived_at IS NULL" : "";
   const row = db.prepare(
-    "SELECT r.record_id FROM activity_record r JOIN work_item_session s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ?",
+    "SELECT r.record_id FROM activity_record r JOIN work_item_session s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ?" + archivedFilter,
   ).get(taskId, sessionId) as { record_id: number } | undefined;
   if (!row) return null;
   const recordId = Number(row.record_id);
-  const sessions = (db.prepare("SELECT session_id FROM work_item_session WHERE record_id = ?").all(recordId) as { session_id: string }[]).map((one) => one.session_id);
+  const sessions = (db.prepare("SELECT session_id FROM work_item_session s WHERE record_id = ?" + archivedFilter).all(recordId) as { session_id: string }[]).map((one) => one.session_id);
   return { recordId, sessions };
 }
 

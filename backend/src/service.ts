@@ -525,17 +525,19 @@ export class Service {
   /**
    * 会话清单，每条另带 revision_count（这条会话产生了几次修订：修订表按会话编号计数，没有时为 0）与 work_item
    * （这条会话属于的工作项：记录号、种类、名字、现在做的那项活动；自由讨论的会话、归档的会话为 null）。
-   * 归档的会话（它们的工作项被删除了）缺省不列；withArchived 为真时也列，每条另带 archived（是不是归档的）与 archived_at（归档的时刻，没有归档为 null）。
+   * 归档的会话（它们的工作项被删除了）缺省不列；withArchived 为真时也列，每条另带 archived（是不是归档的）、archived_at（归档的时刻）
+   * 与 archived_record_id（它曾属于的那个已经删除的工作项的记录号），没有归档的这两项为 null。
    */
   sessionRows(t: Task, withArchived = false) {
     const counts = library.revisionCountsBySession(t.dir);
     const items = library.workItemRows(t.dir);
-    const archived = library.archivedSessionTimes(t.dir);
+    const archived = library.archivedSessionInfo(t.dir);
     return t.executor.listSessions().filter((row) => withArchived || !archived.has(row.session_id)).map((row) => {
       const item = items.find((one) => one.session_ids.includes(row.session_id)) ?? null;
       return { ...row, revision_count: counts.get(row.session_id) ?? 0,
         work_item: item === null ? null : { record_id: item.record_id, kind: item.kind, name: item.name, activity: item.activity, flow: item.flow },
-        ...(withArchived ? { archived: archived.has(row.session_id), archived_at: archived.get(row.session_id) ?? null } : {}) };
+        ...(withArchived ? { archived: archived.has(row.session_id), archived_at: archived.get(row.session_id)?.archived_at ?? null,
+          archived_record_id: archived.get(row.session_id)?.record_id ?? null } : {}) };
     });
   }
 

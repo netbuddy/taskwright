@@ -22,7 +22,7 @@ const USE_CASE_2 = { op: "add", collection: "用例", fields: { 名称: "归还�
 /** 夹具一建好任务就由用户在会话 s 上启动需求分析、从写条目开始；这里再写两页、两条用例。 */
 const STEPS = [[FLOW, RETURN], { view: ["OA-001"] }, [USE_CASE, USE_CASE_2]];
 /** 把工作项都删掉、它们的会话都归档：这些会话此后空闲。 */
-const DELETE_ALL = ["UPDATE work_item_session SET record_id = NULL, archived_at = '2026-10-13T20:00:00'", "DELETE FROM activity_record"];
+const DELETE_ALL = ["UPDATE work_item_session SET archived_at = '2026-10-13T20:00:00'", "DELETE FROM activity_record"];
 
 test("空闲的会话：整份数据里 stage.current 是 idle，谁、什么时候、为什么三项为 null，灯还是六个阶段的；归档的会话与自由讨论的会话都是；与没有阶段的任务（null）不是一回事", () => {
   const ws = build(tmp, "idle", DEFINITION, STEPS);

@@ -183,11 +183,11 @@ test("工作项的清单：全部工作项按最近有动静的倒序，各带�
   // 启动与换站的流水从事件里读：直接改库放进去的那一个没有事件，只有夹具启动的那一条。
   assert.deepEqual(library.stageDebugView(ws).records.map((one) => [one.to, one.flow, one.kind, one.record_id]), [["writing", "analysis", "launch", 1]]);
   // 澄清的工作项删掉了（直接改库，与删除工作项的直接操作改的是同样两处）：它不再列出，它的会话归档、此后空闲。
-  sqlRun(ws, [["UPDATE work_item_session SET record_id = NULL, archived_at = '2026-10-12T13:00:00' WHERE record_id = 2"], ["DELETE FROM activity_record WHERE record_id = 2"]]);
+  sqlRun(ws, [["UPDATE work_item_session SET archived_at = '2026-10-12T13:00:00' WHERE record_id = 2"], ["DELETE FROM activity_record WHERE record_id = 2"]]);
   const deleted = taskStatus(ws, "s2", sessions)!;
   assert.deepEqual([deleted.activity.kind, deleted.work_items.map((one) => [one.record_id, one.session_ids])], ["idle", [[1, ["s", "s3"]]]]);
   assert.equal(deleted.catalog!.activities[1].active_count, 0);
-  assert.deepEqual([...library.archivedSessionTimes(ws).keys()], ["s2"]);
+  assert.deepEqual([...library.archivedSessionInfo(ws)].map(([id, one]) => [id, one.record_id]), [["s2", 2]], "归档的会话保留它曾属于的记录号");
   // 任务已经完成：没有早先那一节，也没有活动目录；资产现状照旧给。
   sqlRun(ws, [["UPDATE task SET status = '已完成'"]]);
   const closed = taskStatus(ws, "s")!;
