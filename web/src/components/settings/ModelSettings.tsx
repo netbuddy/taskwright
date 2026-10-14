@@ -11,6 +11,7 @@ import { api, ApiError } from "../../api/client";
 import type { ModelConfig, ModelSelection, ModelTestResult, ModelType, Provider } from "../../api/types";
 import { useService } from "../ServiceControls";
 import { useToast } from "../Toasts";
+import { formatTime } from "../../model/format";
 import { AddProvider } from "./AddProvider";
 import { PickModelDialog } from "./PickModelDialog";
 import { ProviderDetail, type FetchNote } from "./ProviderDetail";
@@ -156,6 +157,11 @@ export function ModelSettings() {
       <p className="lede">
         助手靠语言模型工作；知识库按意思查找时要用嵌入模型。{editable && "两类模型各自添加模型服务：先在下面添加，再在上面选定用哪个模型。"}
       </p>
+      {config.copied_from_pi && (
+        <p className="muted small" data-testid="copied-from-pi">
+          已从本机 pi 的配置复制（{config.copied_from_pi.from}，{formatTime(config.copied_from_pi.at)}）。之后在这里的修改只写在 Taskwright 自己的目录里，不改本机 pi 的配置。
+        </p>
+      )}
 
       <div className="section-title first">现在用的模型</div>
       <div className="card cur">

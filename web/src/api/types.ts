@@ -1396,6 +1396,8 @@ export interface ModelConfig {
   /** 没有选定语言模型时助手启动用的模型；from 是后端给的来源（「启动配置」或「助手程序的设置」），页面原样显示。 */
   fallback: { model: string; from: string } | null;
   providers: Provider[];
+  /** 桌面包首次启动时从本机 pi 的配置（一般是 ~/.pi/agent）复制过来的：从哪个目录、什么时候；不是时为 null，早先的后端不给。 */
+  copied_from_pi?: { from: string; at: string } | null;
 }
 
 /** POST /api/v1/model-config/providers/{id}/refresh-catalog：联网更新一次模型目录的结果；没有成功时 message 是原因。 */

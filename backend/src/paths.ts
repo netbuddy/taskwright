@@ -37,9 +37,14 @@ export const INTENT_SCHEMA_PATH = join(REPO_ROOT, "agent", "prompts", "schemas",
  * Linux 取 $XDG_DATA_HOME（缺省 ~/.local/share），Windows 取 %LOCALAPPDATA%，macOS 取 $HOME/Library/Application Support。
  */
 export function userDataDir(): string {
-  if (process.platform === "win32") return join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "Taskwright");
-  if (process.platform === "darwin") return join(homedir(), "Library", "Application Support", "Taskwright");
-  return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "taskwright");
+  return userDataDirFor(process.platform, process.env, homedir());
+}
+
+/** userDataDir 的算法本身：平台、环境变量与主目录由调用方给（测试各平台的缺省值用）。 */
+export function userDataDirFor(platform: NodeJS.Platform, env: NodeJS.ProcessEnv | Record<string, string | undefined>, home: string): string {
+  if (platform === "win32") return join(env.LOCALAPPDATA || join(home, "AppData", "Local"), "Taskwright");
+  if (platform === "darwin") return join(home, "Library", "Application Support", "Taskwright");
+  return join(env.XDG_DATA_HOME || join(home, ".local", "share"), "taskwright");
 }
 
 /** 指定数据目录的环境变量：桌面包的启动程序与任务服务都认它。 */

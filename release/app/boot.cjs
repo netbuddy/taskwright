@@ -5,7 +5,7 @@
 //   1. TASKWRIGHT_RUN_SCRIPT is set: behave like `node <script> <args>`. The backend starts pi this way, because
 //      running the executable itself would start the embedded program again, not pi.
 //   2. Otherwise: make sure the payload (launcher, backend, web files, pi, agent, rg and fd) is extracted into the
-//      user's cache directory, then load <payload>/app/main.mjs (the launcher). Extraction happens once per payload id; a directory is only
+//      cache directory (<root>/cache/payload/<build>), then load <payload>/app/main.mjs (the launcher). Extraction happens once per payload id; a directory is only
 //      used after a marker file says it is complete, and it is written under a temporary name first.
 "use strict";
 
@@ -21,12 +21,23 @@ function fail(error) {
   process.exit(70);
 }
 
-// The same cache directory as the launcher's (release/app/main.ts), with payload/ under it.
-function cacheRoot() {
-  if (process.env.TASKWRIGHT_CACHE_DIR) return path.join(process.env.TASKWRIGHT_CACHE_DIR, "payload");
-  if (process.platform === "win32") return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Taskwright", "cache", "payload");
-  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Caches", "Taskwright", "payload");
-  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "taskwright", "payload");
+// The same cache directory as the launcher's (release/app/main.ts and backend/src/desktop_dirs.ts): TASKWRIGHT_CACHE_DIR,
+// otherwise cache/ under the root, the data directory (--data on the command line, TASKWRIGHT_DATA_DIR, or the user
+// data directory of backend/src/paths.ts). payload/ is under it. The launcher gets the same directory through
+// TASKWRIGHT_CACHE_DIR, which is set here, and removes the payload of older builds once the service can start.
+function cacheDir() {
+  if (process.env.TASKWRIGHT_CACHE_DIR) return process.env.TASKWRIGHT_CACHE_DIR;
+  const args = process.argv.slice(2);
+  let data = process.env.TASKWRIGHT_DATA_DIR || "";
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--data" && i + 1 < args.length) data = args[i + 1];
+    else if (args[i].startsWith("--data=")) data = args[i].slice("--data=".length);
+  }
+  const root = data ? path.resolve(data)
+    : process.platform === "win32" ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Taskwright")
+    : process.platform === "darwin" ? path.join(os.homedir(), "Library", "Application Support", "Taskwright")
+    : path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "taskwright");
+  return path.join(root, "cache");
 }
 
 // Payload asset layout (written by release/build.mjs): compressed [u32 index length][index JSON][file bytes...];
@@ -66,7 +77,9 @@ if (script) {
 } else {
   try {
     const manifest = JSON.parse(sea.getAsset("manifest.json", "utf8"));
-    const target = path.join(cacheRoot(), manifest.id);
+    const cache = cacheDir();
+    process.env.TASKWRIGHT_CACHE_DIR = cache;
+    const target = path.join(cache, "payload", manifest.id);
     if (!fs.existsSync(path.join(target, ".complete"))) {
       const started = performance.now();
       console.log(`First start of this build: extracting to ${target}`);

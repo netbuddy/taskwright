@@ -89,6 +89,15 @@ describe("设置页面的「模型」一栏", () => {
     expect(screen.queryByText("手工添加一个模型")).toBeNull();
   });
 
+  it("桌面包首次启动时从本机 pi 的配置复制过来的：写一句从哪里复制、什么时候，之后的修改不改本机 pi 的配置；不是复制来的不写", async () => {
+    page(config({ copied_from_pi: { from: "/u/.pi/agent", at: "2026-10-14T03:00:00Z" } }));
+    expect(await screen.findByTestId("copied-from-pi")).toHaveTextContent(/^已从本机 pi 的配置复制（\/u\/\.pi\/agent，.+）。之后在这里的修改只写在 Taskwright 自己的目录里，不改本机 pi 的配置。$/);
+    cleanup();
+    page(config());
+    await screen.findByTestId("model-settings");
+    expect(screen.queryByTestId("copied-from-pi")).toBeNull();
+  });
+
   it("没有选语言模型时写出现在用的模型与来源，来源照后端给的原样写；没有选嵌入模型时写助手查知识库只按字面找", async () => {
     page(config({ fallback: { model: "local/qwen", from: "助手程序的设置" } }));
     expect(await screen.findByTestId("current-language")).toHaveTextContent("还没有选。现在用的是：local/qwen（来自助手程序的设置）。");
