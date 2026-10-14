@@ -989,7 +989,11 @@ export interface TaskListEntry {
   completion_met: number | null;
   completion_total: number | null;
   completion_unmet?: number | null;
-  /** 发布过几版、最近一版的发布时刻；打不开的任务是 null，没有发布过是 0 与 null。 */
+  /** 进展：流程工作项（名字、在哪一站、第几站；没有流程工作项时为 null）、工作项个数、未了结的阻断下游的问题有几条；打不开的任务都是 null，早先的后端不给。 */
+  flow?: { name: string; node: string; node_name: string; ordinal: number } | null;
+  work_item_count?: number | null;
+  blocking_count?: number | null;
+  /** 发布过几版、最近一版的发布时刻；打不开的任务是 null，没有发布过是 0 与 null。列表上不显示（版本在起点页与工作台里看）。 */
   version_count: number | null;
   latest_published_at: string | null;
   /** 最近活动：会话里最近一条消息、最近一次启动或结束工作项、建任务，取最晚的那个时刻。 */
