@@ -102,7 +102,7 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
     const stageNow = async () => (await call("GET", `/api/v1/tasks/${taskId}/snapshot?session=${session}`)).body.task.stage as Dict;
     const pushed = stageEvents(port, taskId);
     try {
-      // 用户启动了首次分析（夹具做的）：停在核读材料。
+      // 用户启动了需求分析（夹具做的）：停在核读材料。
       const fresh = await stageNow();
       assert.deepEqual([fresh.current, fresh.moved_by, fresh.reason, fresh.node, fresh.flow_node], ["reading", "user", "", "reading", "reading"]);
 
@@ -166,13 +166,13 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       promptsAre("评审确认", 4);
       assert.deepEqual(db("SELECT tool_name FROM tool_rejection ORDER BY rowid").map((r: Dict) => r.tool_name), ["save_revision", "reply"], "除了核读材料时那一次与写了 stage 的那次回复，没有别的调用被拦");
 
-      // 事件连接推出了四次换站（启动首次分析是夹具在订阅之前做的），都是同一个工作项的、往前的，序号与库里的事件相同。
+      // 事件连接推出了四次换站（启动需求分析是夹具在订阅之前做的），都是同一个工作项的、往前的，序号与库里的事件相同。
       for (const end = Date.now() + 10000; pushed.events.length < 4 && Date.now() < end;) await sleep(100);
       assert.deepEqual(pushed.events.map((e) => [e.record_id, e.from, e.node, e.direction, e.actor]),
         [[1, "reading", "clarifying", "forward", "user"], [1, "clarifying", "modeling", "forward", "user"], [1, "modeling", "writing", "forward", "user"], [1, "writing", "reviewing", "forward", "user"]]);
       assert.deepEqual(pushed.events.map((e) => e.seq), db("SELECT seq FROM event WHERE name = 'ACTIVITY_NODE_ENTERED' ORDER BY seq").map((r: Dict) => r.seq));
       // 整个过程只有一个工作项：流程换站不另开一行。
-      assert.deepEqual(db("SELECT record_id, flow, activity, status FROM activity_record"), [{ record_id: 1, flow: "initial", activity: "reviewing", status: "active" }]);
+      assert.deepEqual(db("SELECT record_id, flow, activity FROM activity_record"), [{ record_id: 1, flow: "analysis", activity: "reviewing" }]);
     } finally {
       pushed.close();
     }

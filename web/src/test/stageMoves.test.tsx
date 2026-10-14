@@ -85,12 +85,12 @@ describe("对话区里的阶段移动", () => {
     expect(stageMoveLine({ from: "writing", to: "clarifying", actor: "user" })).toBe("界面操作：用户把工作项从写条目移到澄清。");
   });
 
-  it("任务空闲时点了「开始核读材料」：那一行写启动首次分析（走过一段的写继续）；早先的消息没有写怎样开始的，照移动写", () => {
-    expect(stageMoveLine({ from: "idle", to: "reading", actor: "user", how: "launch" })).toBe("界面操作：用户启动工作流程「首次分析」，从「核读材料」开始。");
-    expect(stageMoveLine({ from: "idle", to: "reading", actor: "user", how: "resume" })).toBe("界面操作：用户继续工作流程「首次分析」，从「核读材料」接着。");
+  it("任务空闲时点了「开始核读材料」：那一行写启动需求分析（走过一段的写继续）；早先的消息没有写怎样开始的，照移动写", () => {
+    expect(stageMoveLine({ from: "idle", to: "reading", actor: "user", how: "launch" })).toBe("界面操作：用户启动工作流程「需求分析」，从「核读材料」开始。");
+    expect(stageMoveLine({ from: "idle", to: "reading", actor: "user", how: "resume" })).toBe("界面操作：用户继续工作流程「需求分析」，从「核读材料」接着。");
     expect(stageMoveLine({ from: "reading", to: "clarifying", actor: "user", how: "move" })).toBe("界面操作：用户把工作项从核读材料移到澄清。");
     show([said("u1", "我选：开始核读材料", { origin: "card_choice", stage_move: { from: "idle", to: "reading", actor: "user", how: "launch" } })]);
-    expect(screen.getByTestId("stage-move-user")).toHaveTextContent("界面操作：用户启动工作流程「首次分析」，从「核读材料」开始。");
+    expect(screen.getByTestId("stage-move-user")).toHaveTextContent("界面操作：用户启动工作流程「需求分析」，从「核读材料」开始。");
   });
 
   it("会话不在做流程的工作项时点了进入或退回的卡片：卡片上的小字说这次点击没有生效、本会话是什么情形、请从任务起点页启动一个工作项", () => {
@@ -103,12 +103,12 @@ describe("对话区里的阶段移动", () => {
     expect(screen.getByTestId("card-stage-unmoved")).toHaveTextContent("这次点击没有生效：本会话没有在进行的工作流程。要进入某个阶段，请从任务起点页启动一个工作项。");
   });
 
-  it("助手汇报工作项做完：那条回复下面一行写做完的是哪一项、这条会话此后怎样办；别的回复没有这一行", () => {
-    expect(activityDoneLine("modeling")).toBe("助手汇报这个工作项做完：整理建模。本会话此后按自由讨论办；要再做，从任务起点页再启动一次。");
+  it("助手汇报工作项做完：那条回复下面一行只写做完的是哪一项（工作项照旧留着）；别的回复没有这一行", () => {
+    expect(activityDoneLine("modeling")).toBe("助手汇报：整理建模做完了。");
     show([reply("r1", "五张图都画好了。", { activity_done: { activity: "modeling" } }), reply("r2", "记下了。")]);
     const lines = screen.getAllByTestId("activity-done");
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toHaveTextContent("助手汇报这个工作项做完：整理建模。本会话此后按自由讨论办；要再做，从任务起点页再启动一次。");
+    expect(lines[0]).toHaveTextContent("助手汇报：整理建模做完了。");
     expect(lines[0]).toHaveClass("selfnote");
     const first = screen.getAllByTestId("assistant-reply")[0];
     expect(first.compareDocumentPosition(lines[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

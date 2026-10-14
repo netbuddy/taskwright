@@ -18,9 +18,9 @@ import { pdfFacts, pdfSourceName } from "./projection.ts";
 import { OVERALL_COLLECTION, type PlainItem, type RevisionFacts, type Verification, basisPending, isSupplement, mentionsOf, verificationOf, viewedIn } from "../../agent/src/lib/overall_analysis.ts";
 import { reviewVerdict } from "../../agent/src/lib/review_verdict.ts";
 import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQuestions, goalTree, rulesTable } from "../../agent/src/lib/overall_views.ts";
-import { FLOW_INITIAL, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
+import { FLOW_ANALYSIS as FLOW_ANALYSIS_KEY, flowKeyOf, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
-import { type WorkItemBrief, activityRecords, stageSummaryOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
+import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
@@ -314,7 +314,7 @@ export function proposalView(fact: Omit<OpenProposal, "session_id" | "reply_entr
 /**
  * 任务现在的工作阶段与每个阶段的几盏灯，给接口的 stage 形状：{ current, moved_by, moved_at, reason, lamps, proposal }。
  * proposal 是开着的提议（助手发了提议进入下一个阶段的卡片、用户还没有进入，见 agent/src/lib/stage_proposal.ts），没有时为 null。
- * 阶段是按会话算的（sessionId，不给按自由讨论的会话算）。flow 是所属流程：这条会话正在做的工作项属于哪条流程（现在只有首次分析 initial）；单项活动的工作项、会话空闲时是 null。
+ * 阶段是按会话算的（sessionId，不给按自由讨论的会话算）。flow 是所属流程：这条会话正在做的工作项属于哪条流程（现在只有需求分析 analysis）；单项活动的工作项、会话空闲时是 null。
  * node 是流程的工作项现在在哪一站（单项活动的工作项、空闲时为 null），flow_node 与它相同，work_item 是这条会话属于的工作项，launch 是早先任务状况卡上那一节的内容
  * （agent/src/lib/stage.ts 的 LaunchView）。
  * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）；moved_by 是最近一次移动由谁做的（executor 或 user），
@@ -333,7 +333,7 @@ export function stageView(taskDir: string, sessionId: string | null = null) {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       const open = task ? openProposal(db, task.task_id, sessionId) : null;
       const item = summary.work_item === null ? null
-        : { ...summary.work_item, started_at: clock.fromLocalText(summary.work_item.started_at), ended_at: clock.fromLocalText(summary.work_item.ended_at) };
+        : { ...summary.work_item, started_at: clock.fromLocalText(summary.work_item.started_at) };
       return { ...summary, work_item: item, moved_at: clock.fromLocalText(summary.moved_at),
         // 这条会话正在做的工作项的所属流程：流程的工作项是流程的键；单项活动的工作项、会话空闲时为 null。
         flow: summary.current !== "idle" && summary.work_item !== null ? summary.work_item.flow : null,
@@ -379,6 +379,24 @@ export function workItemRows(taskDir: string): WorkItemRow[] {
   }
 }
 
+/**
+ * 归档的会话（它们的工作项被删除了）：会话编号到归档的时刻（接口的时刻写法）。库另开一个只读连接；读不出来时是空的。
+ */
+export function archivedSessionTimes(taskDir: string): Map<string, string | null> {
+  try {
+    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+    try {
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
+      if (!task) return new Map();
+      return new Map([...archivedSessions(db, task.task_id)].map(([id, at]) => [id, clock.fromLocalText(at)]));
+    } finally {
+      db.close();
+    }
+  } catch {
+    return new Map();
+  }
+}
+
 /** 每条挂在工作项上的会话各属于哪个工作项（会话编号到记录号）；库读不出来时是空的。 */
 export function sessionWorkItems(taskDir: string): Map<string, number> {
   return new Map(workItemRows(taskDir).flatMap((one) => one.session_ids.map((id): [string, number] => [id, one.record_id])));
@@ -405,8 +423,8 @@ export function stageDebugView(taskDir: string, limit = 200) {
         const payload = or(jsonOrText(row.payload), {}) as Record<string, any>;
         const entered = row.name === "ACTIVITY_NODE_ENTERED";
         const to = (row.name === "STAGE_MOVED" ? payload.stage : entered ? payload.node : payload.activity) ?? null;
-        // 早先的移动事件没有写所属流程的补首次分析；启动单项活动的那一条节点为空，不在流程里。
-        const flow = row.name === "ACTIVITY_STARTED" && (payload.node ?? null) === null ? null : typeof payload.flow === "string" && payload.flow ? payload.flow : FLOW_INITIAL;
+        // 早先的移动事件没有写所属流程的补需求分析，写的早先的键 initial 读成现在的 analysis；启动单项活动的那一条节点为空，不在流程里。
+        const flow = row.name === "ACTIVITY_STARTED" && (payload.node ?? null) === null ? null : flowKeyOf(payload.flow) ?? FLOW_ANALYSIS_KEY;
         return {
           from: payload.from ?? null, to, actor: actorWord(row.actor), reason: payload.reason ?? "", run_id: payload.run_id ?? null,
           session_id: row.session_id, at: clock.fromLocalText(row.at), flow,
@@ -1067,25 +1085,26 @@ export function eventPayload(lib: Library, e: Row): [string, Record<string, any>
     // 启动了一个工作项：哪个工作项（record_id）、做的是哪一项活动（to）、谁启动的、理由；流程的工作项另有所属流程（flow）与启动的那一站（node），
     // 单项活动的这两项为 null。用户启动的带操作编号，写了范围说明的带 scope。做的是哪一项活动不叫 stage：这一批最后一条事件上的 stage 是订阅的那条会话
     // 现在的阶段与灯（见 hub.ts），两样不能撞名。
-    // 早先（会话与工作项绑定之前）这种事件说的是任务从一个阶段移到另一个：内容里没有 record_id，from 是从哪个阶段来，没有写所属流程的补首次分析；
+    // 早先（会话与工作项绑定之前）这种事件说的是任务从一个阶段移到另一个：内容里没有 record_id，from 是从哪个阶段来，没有写所属流程的补需求分析；
     // 更早（格式版本 4 及以前）一次移动只记一条 STAGE_MOVED，移到的阶段写在 stage 里。升级上来的库里留着这两种，转成同一种库事件，record_id 为 null。
     const to = (e.name === "STAGE_MOVED" ? payload.stage : payload.activity) ?? null;
     const recordId = typeof payload.record_id === "number" ? payload.record_id : null;
     return ["activity_started", { ...base, record_id: recordId, to, from: payload.from ?? null, actor, reason: payload.reason ?? "",
-      run_id: payload.run_id ?? null, flow: recordId !== null ? payload.flow ?? null : typeof payload.flow === "string" && payload.flow ? payload.flow : FLOW_INITIAL,
+      run_id: payload.run_id ?? null, flow: recordId !== null ? flowKeyOf(payload.flow) : flowKeyOf(payload.flow) ?? FLOW_ANALYSIS_KEY,
       node: e.name === "STAGE_MOVED" ? to : payload.node ?? null, ...(typeof payload.scope === "string" && payload.scope ? { scope: payload.scope } : {}), op_id: opId, completion: null }];
   }
   if (e.name === "ACTIVITY_NODE_ENTERED") {
     // 流程的工作项换了一站：哪个工作项、到哪一站（node）、从哪一站（from）、往前还是往后（direction）、谁、理由。
-    return ["node_entered", { ...base, record_id: payload.record_id ?? null, flow: payload.flow ?? null, node: payload.node ?? null, from: payload.from ?? null,
+    return ["node_entered", { ...base, record_id: payload.record_id ?? null, flow: flowKeyOf(payload.flow), node: payload.node ?? null, from: payload.from ?? null,
       direction: payload.direction ?? null, actor, reason: payload.reason ?? "", run_id: payload.run_id ?? null, op_id: opId, completion: null }];
   }
-  if (e.name === "ACTIVITY_ENDED") {
-    // 一个工作项结束了：哪个工作项、做的是哪一项活动、结果（outcome：done 已做完，abandoned 已放弃）、谁结束的、理由。
-    // 早先记下的没有 record_id 与 outcome：那时移动阶段也记这种事件，紧挨在开始另一项活动的那一条之前。
-    return ["activity_ended", { ...base, record_id: typeof payload.record_id === "number" ? payload.record_id : null,
-      activity: payload.activity ?? null, node: payload.node ?? null, flow: payload.flow ?? null, outcome: payload.outcome ?? null, actor, reason: payload.reason ?? "", op_id: opId, completion: null }];
+  if (e.name === "WORK_ITEM_DELETED") {
+    // 用户删除了一个工作项：哪个工作项、它做的是哪一项活动、所在的一站与所属流程、范围说明（有才写）、随之归档了几条会话、谁、理由。
+    return ["work_item_deleted", { ...base, record_id: payload.record_id ?? null, activity: payload.activity ?? null, node: payload.node ?? null,
+      flow: flowKeyOf(payload.flow), ...(typeof payload.scope === "string" && payload.scope ? { scope: payload.scope } : {}),
+      archived_sessions: typeof payload.archived_sessions === "number" ? payload.archived_sessions : 0, actor, reason: payload.reason ?? "", op_id: opId, completion: null }];
   }
+  // 早先记下的 ACTIVITY_ENDED（一项活动结束；那时移动阶段也记这种事件）不再转发：工作项没有终点，接口里已经没有这种事件。
   if (e.name === "CONFIRMATION_RECORDED") {
     return ["confirmation_recorded", { ...base, items: or(payload.items, []), basis: or(payload.basis, "ui_click"), op_id: opId, completion: null }];
   }

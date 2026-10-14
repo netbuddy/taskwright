@@ -20,7 +20,7 @@ const STAY = { key: "continue_writing", text: "继续本阶段" };
 const CARD = { kind: "choose", text: "条目写完了，进入评审确认吗？", items: [{ item_id: "OA-001", revision_no: 1 }], options: [ENTER_REVIEW, STAY] };
 
 test("整份数据的 stage 带开着的提议：要进入的阶段、两个选项、问句、点名的条目、卡片在哪条会话的哪条回复上；没有时是 null", () => {
-  // 夹具一建好任务就由用户在会话 s 上启动首次分析、从写条目开始；助手在这条会话里发卡片。提议属于这个工作项。
+  // 夹具一建好任务就由用户在会话 s 上启动需求分析、从写条目开始；助手在这条会话里发卡片。提议属于这个工作项。
   const none = build(tmp, "none", DEFINITION, [[FLOW]]);
   assert.equal(library.taskSnapshot(none, null, "s")[1]!.stage!.proposal, null);
   const ws = build(tmp, "open", DEFINITION, [[FLOW], { reply: CARD }]);

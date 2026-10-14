@@ -50,13 +50,13 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
     chart("读者能做的事", "use_case", 'flowchart LR\n  r(["读者"]) --> u1(["预约图书"])'),
     { view: ["UC-001"] }, { reply: CARD },
   ]);
-  // 夹具在会话 s 上启动了首次分析：当前活动、还差什么、提议三项说的是这条会话。
-  const sessions = [{ session_id: "s", name: "首次分析 · 写条目", last_active_at: "2026-10-12T09:00:00+08:00" }];
+  // 夹具在会话 s 上启动了需求分析：当前活动、还差什么、提议三项说的是这条会话。
+  const sessions = [{ session_id: "s", name: "需求分析 · 写条目", last_active_at: "2026-10-12T09:00:00+08:00" }];
   const status = taskStatus(ws, "s", sessions)!;
   const stage = library.taskSnapshot(ws, null, "s")[1]!.stage!;
   assert.match(status.generated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-  // 当前活动：这条会话的工作项是首次分析，现在在写条目这一站；是用户启动的。
-  assert.deepEqual(status.activity, { kind: "stage", key: "writing", name: "写条目", ordinal: 4, flow: "initial",
+  // 当前活动：这条会话的工作项是需求分析，现在在写条目这一站；是用户启动的。
+  assert.deepEqual(status.activity, { kind: "stage", key: "writing", name: "写条目", ordinal: 4, flow: "analysis",
     moved_by: "user", moved_at: stage.moved_at, reason: "" });
   // 业务说明：七页在用。角色 2（借书证贴了概念与角色，归靠前的角色）、业务流程 2、业务对象 1、业务目标 1，未归类 1；已废弃的两页不数。
   assert.deepEqual(status.description, {
@@ -78,13 +78,13 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   // 开着的提议与整份数据里的是同一条；已发布的版本现在没有记录。
   assert.deepEqual(status.proposal, stage.proposal);
   assert.deepEqual([status.proposal!.stage, status.proposal!.enter.text, status.proposal!.session_id], ["reviewing", "进入评审确认", "s"]);
-  // 进行中的工作项：就是夹具启动的那一个，带属于它的会话与最近有动静的那一条；没有结束了的。
+  // 工作项：就是夹具启动的那一个，带属于它的会话与最近有动静的那一条；没有状态、没有结束的时刻，也没有最近结束的一列。
   assert.deepEqual(status.work_items.map(({ started_at: _at, ...one }) => one), [{
-    record_id: 1, kind: "flow", name: "首次分析", activity: "writing", activity_name: "写条目", node: "writing", ordinal: 4, flow: "initial", scope: null, status: "active", ended_at: null,
-    session_ids: ["s"], session_count: 1, latest_session: sessions[0], last_active_at: "2026-10-12T09:00:00+08:00", session_name: "首次分析 · 写条目" }]);
+    record_id: 1, kind: "flow", name: "需求分析", activity: "writing", activity_name: "写条目", node: "writing", ordinal: 4, flow: "analysis", scope: null,
+    session_ids: ["s"], session_count: 1, latest_session: sessions[0], last_active_at: "2026-10-12T09:00:00+08:00", session_name: "需求分析 · 写条目" }]);
   assert.match(String(status.work_items[0].started_at), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-  assert.deepEqual(status.recent_done, []);
-  // 不给会话时按自由讨论的会话算：当前活动是空闲、没有提议；工作项照样列出来，只是没有会话的名字与动静。
+  assert.equal("recent_done" in status, false);
+  // 不给会话时按自由讨论的会话算：当前活动是空闲、没有提议；工作项照样列出来，只是不知道哪些会话还在，全部算上，没有名字与动静。
   const bare = taskStatus(ws)!;
   assert.deepEqual([bare.activity.kind, bare.missing, bare.proposal, bare.work_items.length, bare.work_items[0].latest_session], ["idle", [], null, 1, { session_id: "s", name: null, last_active_at: null }]);
   assert.deepEqual(status.versions, []);
@@ -96,14 +96,15 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   // 每格写由哪些活动产出（取自各项活动的定义里「写」那一栏）；材料来自上传，没有产出它的活动。
   assert.deepEqual(status.assets.map((one) => one.produced_by), [[], ["核读材料", "澄清", "整理建模", "编写文档"], ["整理建模"], ["写条目", "评审确认"], ["评审确认"], ["编写文档", "发布"]]);
   assert.deepEqual(status.assets, stage.assets, "与整份数据里的是同一份");
-  // 活动目录：七项活动都只按数据判（三张图还没有看过，所以单项的写条目现在不能启动；这与首次分析正在写条目无关），
-  // 首次分析已经有一个进行中的工作项也照样可以再启动（带上个数）；发布写缺什么，需求变更要有已发布的版本。
+  // 活动目录：七项活动都只按数据判（三张图还没有看过，所以单项的写条目现在不能启动；这与需求分析正在写条目无关），
+  // 需求分析已经有一个工作项：两条流程都不能启动，带着现有的那一个；发布写缺什么。
   assert.deepEqual(status.catalog!.activities.map((one) => [one.key, one.name, one.mode_name, one.enabled, one.state, one.active_count]), [
     ["reading", "核读材料", "批处理", true, "可以启动", 0], ["clarifying", "澄清", "逐项对话", true, "可以启动", 0], ["modeling", "整理建模", "批处理", true, "可以启动", 0],
     ["writing", "写条目", "批处理", false, "有 3 张分析模型还没有查看", 0], ["reviewing", "评审确认", "逐项对话", true, "可以启动", 0], ["document", "编写文档", "批处理", true, "可以启动", 0],
     ["publish", "发布", "仅限用户发起", false, "还没有评审过；还有待确认的内容", 0]]);
   assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.name, one.enabled, one.state, one.recommended, one.at, one.start, one.active_count]), [
-    ["initial", "首次分析", true, "可以启动", true, null, "reading", 1], ["change", "需求变更", false, "还没有已发布的版本", false, null, null, 0]]);
+    ["analysis", "需求分析", false, "已有流程工作项「需求分析」，位于「写条目」", true, null, "reading", 1], ["change", "需求变更", false, "还没有已发布的版本", false, null, null, 0]]);
+  assert.deepEqual(status.catalog!.flows.map((one) => one.work_item), [{ record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }]);
   const reading = status.catalog!.activities[0];
   assert.deepEqual([reading.reads, reading.writes, reading.prerequisite_text], [[{ key: "materials", name: "材料与证据" }, { key: "knowledge", name: "知识库" }],
     [{ key: "description", name: "业务说明" }], "前置条件：至少一份项目材料。"]);
@@ -135,53 +136,58 @@ test("刚建的任务：没有页、没有图、没有提议，各项都是空�
   assert.equal(taskStatus(`${tmp}/没有这个目录`), null);
 });
 
-test("工作项的清单：进行中的按启动的先后，各带属于它的会话与最近有动静的那一条；当前活动按会话算；结束了的进最近结束的一列；任务已经完成时没有活动目录", () => {
-  // 夹具一建好任务就在会话 s 上启动首次分析、从写条目开始；有一页主题，没有需求条目。
+test("工作项的清单：全部工作项按最近有动静的倒序，各带属于它的会话与最近有动静的那一条，会话文件不在的与归档的不算；当前活动按会话算；删掉的不再列出；任务已经完成时没有活动目录", () => {
+  // 夹具一建好任务就在会话 s 上启动需求分析、从写条目开始；有一页主题，没有需求条目。
   const ws = build(tmp, "launch", WITH_QUESTIONS, [[PAGES[0]]]);
   const flowed = taskStatus(ws, "s")!;
   // 早先那一节（留给还读它的页面）说的是这条会话：它正在流程里做写条目。
-  assert.deepEqual(flowed.launch!.current, { activity: "writing", in_flow: true, label: "继续首次分析：写条目" });
+  assert.deepEqual(flowed.launch!.current, { activity: "writing", in_flow: true, label: "继续需求分析：写条目" });
   assert.deepEqual(flowed.launch, library.taskSnapshot(ws, null, "s")[1]!.stage!.launch, "与整份数据里的是同一份");
   // 活动目录按数据判：有一节业务说明、没有图，整理建模与写条目的前提够了；没有需求条目，评审确认与编写文档不能启动。
   assert.deepEqual(flowed.catalog!.activities.map((one) => [one.key, one.enabled, one.state]), [
     ["reading", true, "可以启动"], ["clarifying", true, "可以启动"], ["modeling", true, "可以启动"], ["writing", true, "可以启动"],
     ["reviewing", false, "还没有需求条目"], ["document", false, "还没有已确认的需求条目"], ["publish", false, "还没有评审过"]]);
-  // 用户另在会话 s2 上启动了一个单项的澄清（写了范围说明），又换了一条会话 s3 接着做首次分析（直接改库）。
+  // 用户另在会话 s2 上启动了一个单项的澄清（写了范围说明），又换了一条会话 s3 接着做需求分析（直接改库）。
   sqlRun(ws, [
-    ["INSERT INTO activity_record (task_id, session_id, call_id, actor, activity, node, flow, reason, started_at, started_seq, scope, status) " +
-      "SELECT task_id, 's2', 'ui-op-alone', 'user', 'clarifying', NULL, NULL, '', '2026-10-12T10:00:00', 9000, '只问续借', 'active' FROM task"],
+    ["INSERT INTO activity_record (task_id, session_id, call_id, actor, activity, node, flow, reason, started_at, started_seq, scope) " +
+      "SELECT task_id, 's2', 'ui-op-alone', 'user', 'clarifying', NULL, NULL, '', '2026-10-11T10:00:00', 9000, '只问续借' FROM task"],
     ["INSERT INTO work_item_session (session_id, record_id, task_id, attached_at) SELECT 's2', 2, task_id, '2026-10-12T10:00:00' FROM task"],
     ["INSERT INTO work_item_session (session_id, record_id, task_id, attached_at) SELECT 's3', 1, task_id, '2099-01-01T00:00:00' FROM task"],
   ]);
   const sessions = [
-    { session_id: "s", name: "首次分析 · 写条目", last_active_at: "2026-10-12T09:00:00+08:00" },
-    { session_id: "s3", name: "首次分析 · 写条目", last_active_at: "2026-10-12T12:00:00+08:00" },
+    { session_id: "s", name: "需求分析 · 写条目", last_active_at: "2026-10-12T09:00:00+08:00" },
+    { session_id: "s3", name: "需求分析 · 写条目", last_active_at: "2026-10-12T12:00:00+08:00" },
     { session_id: "s2", name: "澄清 · 只问续借", last_active_at: null },
   ];
   const alone = taskStatus(ws, "s2", sessions)!;
   // 会话 s2 的当前活动是它的工作项（单项的澄清），不是任务一级的什么；这一段还差什么照澄清的灯。
   assert.deepEqual(alone.activity, { kind: "activity", key: "clarifying", name: "澄清", ordinal: null, flow: null, moved_by: "user", moved_at: alone.activity.moved_at, reason: "" });
-  assert.match(String(alone.activity.moved_at), /^2026-10-12T10:00:00/);
+  assert.match(String(alone.activity.moved_at), /^2026-10-11T10:00:00/);
   const stage = library.taskSnapshot(ws, null, "s2")[1]!.stage!;
   assert.deepEqual([stage.current, stage.node, stage.flow_node, stage.flow, stage.scope, stage.work_item?.record_id], ["clarifying", null, null, null, "只问续借", 2]);
   assert.deepEqual(alone.missing, stage.lamps.clarifying.filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })));
-  // 同一时刻会话 s 与 s3 仍在首次分析的写条目，别的会话空闲。
+  // 同一时刻会话 s 与 s3 仍在需求分析的写条目，别的会话空闲。
   assert.deepEqual(["s", "s3", "s-free"].map((one) => taskStatus(ws, one)!.activity.key), ["writing", "writing", "idle"]);
-  // 两个进行中的工作项：首次分析有两条会话，最近有动静的是 s3；澄清的那条会话还没有说过话，取它自己，没有动静的时刻。
+  // 两个工作项，按最近有动静的倒序：需求分析有两条会话，最近有动静的是 s3；澄清的那条会话还没有说过话，取它自己，按启动的时刻（更早）排在后面。
   assert.deepEqual(alone.work_items.map((one) => [one.record_id, one.kind, one.name, one.node, one.ordinal, one.scope, one.session_ids, one.session_count,
     one.latest_session, one.last_active_at, one.session_name]), [
-    [1, "flow", "首次分析", "writing", 4, null, ["s", "s3"], 2, sessions[1], "2026-10-12T12:00:00+08:00", "首次分析 · 写条目"],
+    [1, "flow", "需求分析", "writing", 4, null, ["s", "s3"], 2, sessions[1], "2026-10-12T12:00:00+08:00", "需求分析 · 写条目"],
     [2, "activity", "澄清", null, null, "只问续借", ["s2"], 1, sessions[2], null, "澄清 · 只问续借"]]);
-  // 活动目录里澄清与首次分析各带一个进行中的工作项，照样可以再启动。
-  assert.deepEqual([alone.catalog!.activities[1].active_count, alone.catalog!.activities[1].enabled, alone.catalog!.flows[0].active_count, alone.catalog!.flows[0].enabled], [1, true, 1, true]);
+  // 活动目录里澄清与需求分析各带一个工作项：澄清照样可以再启动，流程都不能启动，带着现有的那一个。
+  assert.deepEqual([alone.catalog!.activities[1].active_count, alone.catalog!.activities[1].enabled, alone.catalog!.flows[0].active_count, alone.catalog!.flows[0].enabled,
+    alone.catalog!.flows[0].work_item, alone.catalog!.flows[1].work_item], [1, true, 1, false, { record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }]);
+  // 会话文件不在的会话（清单里没有 s3：新建之后一句话都没有说就换走了）不计入。
+  const without = taskStatus(ws, "s2", sessions.filter((one) => one.session_id !== "s3"))!;
+  assert.deepEqual(without.work_items.map((one) => [one.record_id, one.session_ids, one.session_count, one.latest_session?.session_id, one.last_active_at]),
+    [[1, ["s"], 1, "s", "2026-10-12T09:00:00+08:00"], [2, ["s2"], 1, "s2", null]]);
   // 启动与换站的流水从事件里读：直接改库放进去的那一个没有事件，只有夹具启动的那一条。
-  assert.deepEqual(library.stageDebugView(ws).records.map((one) => [one.to, one.flow, one.kind, one.record_id]), [["writing", "initial", "launch", 1]]);
-  // 澄清的工作项结束了：它进最近结束的一列，它的会话此后空闲。
-  sqlRun(ws, [["UPDATE activity_record SET status = 'done', ended_at = '2026-10-12T13:00:00', ended_seq = 9001 WHERE record_id = 2"]]);
-  const ended = taskStatus(ws, "s2", sessions)!;
-  assert.deepEqual([ended.activity.kind, ended.work_items.map((one) => one.record_id), ended.recent_done.map((one) => [one.record_id, one.status, String(one.ended_at).slice(0, 19)])],
-    ["idle", [1], [[2, "done", "2026-10-12T13:00:00"]]]);
-  assert.equal(ended.catalog!.activities[1].active_count, 0);
+  assert.deepEqual(library.stageDebugView(ws).records.map((one) => [one.to, one.flow, one.kind, one.record_id]), [["writing", "analysis", "launch", 1]]);
+  // 澄清的工作项删掉了（直接改库，与删除工作项的直接操作改的是同样两处）：它不再列出，它的会话归档、此后空闲。
+  sqlRun(ws, [["UPDATE work_item_session SET record_id = NULL, archived_at = '2026-10-12T13:00:00' WHERE record_id = 2"], ["DELETE FROM activity_record WHERE record_id = 2"]]);
+  const deleted = taskStatus(ws, "s2", sessions)!;
+  assert.deepEqual([deleted.activity.kind, deleted.work_items.map((one) => [one.record_id, one.session_ids])], ["idle", [[1, ["s", "s3"]]]]);
+  assert.equal(deleted.catalog!.activities[1].active_count, 0);
+  assert.deepEqual([...library.archivedSessionTimes(ws).keys()], ["s2"]);
   // 任务已经完成：没有早先那一节，也没有活动目录；资产现状照旧给。
   sqlRun(ws, [["UPDATE task SET status = '已完成'"]]);
   const closed = taskStatus(ws, "s")!;

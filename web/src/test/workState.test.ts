@@ -383,7 +383,7 @@ describe("工作的阶段（工作项的三种库事件与库事件带来的 sta
     expect([s.phase === "waiting_snapshot", s.seq, s.task!.items[0].revision_no]).toEqual([false, 6, 2]);
     // 这条会话的工作项换了一站：事件上带着后端按这条会话算好的阶段，照它换。
     const stage: StageView = { current: "clarifying", node: "clarifying", moved_by: "user", moved_at: "2026-10-09T20:00:00+08:00", reason: "材料读完了。", lamps: lamps(true),
-      work_item: { record_id: 1, kind: "flow", name: "首次分析", activity: "clarifying", flow: "initial", status: "active", scope: null, started_at: "2026-10-09T19:00:00+08:00", ended_at: null } };
+      work_item: { record_id: 1, kind: "flow", name: "需求分析", activity: "clarifying", flow: "analysis", scope: null, started_at: "2026-10-09T19:00:00+08:00" } };
     s = run(s, entered(7, "clarifying", "reading", { stage }));
     expect([s.phase === "waiting_snapshot", s.seq]).toEqual([false, 7]);
     expect(s.task!.stage).toEqual(stage);
@@ -393,10 +393,10 @@ describe("工作的阶段（工作项的三种库事件与库事件带来的 sta
     expect([s.seq, s.task!.stage!.current]).toEqual([8, "clarifying"]);
   });
 
-  it("工作项结束的库事件（activity_ended）同样只推进序号；带着 stage 时照它换：这条会话的工作项结束之后是空闲", () => {
+  it("删除工作项的库事件（work_item_deleted）同样只推进序号；带着 stage 时照它换：这条会话的工作项删除之后会话归档、是空闲", () => {
     const ended = (seq: number, extra: Record<string, unknown> = {}) => ({
-      type: "sse" as const, event: "activity_ended",
-      data: { seq, at: "2026-10-09T20:00:00+08:00", task_id: "TASK-001", record_id: 1, activity: "reading", node: "reading", flow: "initial", outcome: "done", actor: "user", reason: "",
+      type: "sse" as const, event: "work_item_deleted",
+      data: { seq, at: "2026-10-09T20:00:00+08:00", task_id: "TASK-001", record_id: 1, activity: "reading", node: "reading", flow: "analysis", archived_sessions: 1, actor: "user", reason: "",
               op_id: "ui-op-9", completion: null, ...extra },
     });
     let s = run(initialWorkState(SESSION), { type: "snapshot", snapshot: staged(4) }, ended(5));

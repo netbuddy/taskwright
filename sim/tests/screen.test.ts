@@ -275,7 +275,7 @@ test("编写文档阶段请过目的卡片：「看过了，生成文档」不�
 /** 空闲的新任务（有材料）在任务状况卡上的「开展一项活动」一节。 */
 const LAUNCH: LaunchView = {
   current: null,
-  flows: [{ activity: "reading", in_flow: true, label: "启动首次分析", enabled: true, state: "从核读材料开始" }],
+  flows: [{ activity: "reading", in_flow: true, label: "启动需求分析", enabled: true, state: "从核读材料开始" }],
   activities: [
     { activity: "reading", in_flow: false, label: "核读材料", enabled: true, state: "可以开展" }, { activity: "clarifying", in_flow: false, label: "澄清", enabled: true, state: "可以开展" },
     { activity: "writing", in_flow: false, label: "写条目", enabled: false, state: "业务说明还没有页" },
@@ -283,42 +283,42 @@ const LAUNCH: LaunchView = {
   later: [{ label: "发布", state: "0.6 后续" }],
 };
 const RESUME: LaunchView = { ...LAUNCH, current: { activity: "clarifying", in_flow: false, label: "继续澄清" },
-  flows: [{ activity: "writing", in_flow: true, label: "继续首次分析（从写条目接着）", enabled: true, state: "可以开展" }] };
+  flows: [{ activity: "writing", in_flow: true, label: "继续需求分析（从写条目接着）", enabled: true, state: "可以开展" }] };
 
 test("看界面里「开展一项活动」一节：写正在进行什么、流程与单独开展的各项，不能选的写明缺什么；没有这一节时什么都不写", () => {
   assert.equal(renderLaunch(LAUNCH), [
     "任务状况卡上的「开展一项活动」（不是必须选；想选就在 respond 的 launch 里照下面的写法写一项，不选可以直接说话）：",
     "  现在没有在进行的活动，任务空闲。",
-    "  流程：启动首次分析",
+    "  流程：启动需求分析",
     "  单独开展：单独开展：核读材料、单独开展：澄清、单独开展：写条目（现在不能选：业务说明还没有页）",
   ].join("\n"));
-  assert.match(renderLaunch(RESUME), /\n  正在进行：继续澄清\n  流程：继续首次分析（从写条目接着）\n/);
+  assert.match(renderLaunch(RESUME), /\n  正在进行：继续澄清\n  流程：继续需求分析（从写条目接着）\n/);
   assert.deepEqual([renderLaunch(null), renderLaunch(undefined)], ["", ""]);
 });
 
-test("在这一节里选一项：流程写按钮上的字（「继续首次分析」后面的括号可以不写），单独开展写「单独开展：活动名」，写「不选」是不选；找不到、不能选时写明原因", () => {
-  assert.deepEqual(launchOption(LAUNCH, "启动首次分析"), LAUNCH.flows[0]);
-  assert.deepEqual(launchOption(RESUME, " 继续首次分析 "), RESUME.flows[0]);
-  assert.deepEqual(launchOption(RESUME, "继续首次分析（从写条目接着）"), RESUME.flows[0]);
+test("在这一节里选一项：流程写按钮上的字（「继续需求分析」后面的括号可以不写），单独开展写「单独开展：活动名」，写「不选」是不选；找不到、不能选时写明原因", () => {
+  assert.deepEqual(launchOption(LAUNCH, "启动需求分析"), LAUNCH.flows[0]);
+  assert.deepEqual(launchOption(RESUME, " 继续需求分析 "), RESUME.flows[0]);
+  assert.deepEqual(launchOption(RESUME, "继续需求分析（从写条目接着）"), RESUME.flows[0]);
   assert.deepEqual(launchOption(LAUNCH, "单独开展：澄清"), LAUNCH.activities[1]);
   assert.equal(launchOption(LAUNCH, LAUNCH_SKIP), null);
   assert.equal(LAUNCH_SKIP, "不选");
-  assert.throws(() => launchOption(LAUNCH, "继续首次分析"), /「开展一项活动」里没有「继续首次分析」这一项，可以写的是：启动首次分析／单独开展：核读材料／单独开展：澄清／单独开展：写条目／不选/);
+  assert.throws(() => launchOption(LAUNCH, "继续需求分析"), /「开展一项活动」里没有「继续需求分析」这一项，可以写的是：启动需求分析／单独开展：核读材料／单独开展：澄清／单独开展：写条目／不选/);
   assert.throws(() => launchOption(LAUNCH, "单独开展：写条目"), /「单独开展：写条目」现在不能选：业务说明还没有页/);
   assert.throws(() => launchOption(LAUNCH, "澄清"), /没有「澄清」这一项/);
-  assert.throws(() => launchOption(null, "启动首次分析"), /现在没有「开展一项活动」这一节/);
+  assert.throws(() => launchOption(null, "启动需求分析"), /现在没有「开展一项活动」这一节/);
 });
 
 test("选一项发的是界面操作 start_activity：不发话，助手不因此运行；不选什么都不发；不与说话、点按钮同时写", () => {
   assert.equal(START_ACTIVITY, "start_activity");
-  assert.deepEqual(planLaunch(LAUNCH, "启动首次分析", "c1"), { kind: "action",
+  assert.deepEqual(planLaunch(LAUNCH, "启动需求分析", "c1"), { kind: "action",
     body: { client_id: "c1", kind: "start_activity", targets: [], notify_executor: false, fields: { activity: "reading", in_flow: true } } });
   assert.deepEqual(planLaunch(LAUNCH, "不选", "c1"), { kind: "none" });
   const task = { definition: { collections: [] }, items: [], stage: { current: "idle", launch: LAUNCH } };
   assert.deepEqual(planRespond({ launch: "单独开展：澄清" }, null, "c2", task), { kind: "action",
     body: { client_id: "c2", kind: "start_activity", targets: [], notify_executor: false, fields: { activity: "clarifying", in_flow: false } } });
   assert.deepEqual(planRespond({ launch: "不选" }, null, "c3", task), { kind: "none" });
-  assert.throws(() => planRespond({ launch: "启动首次分析", text: "开始吧" }, null, "c4", task), /选「开展一项活动」里的一项时不要同时写 text 或 click；要说话就另外回一次/);
+  assert.throws(() => planRespond({ launch: "启动需求分析", text: "开始吧" }, null, "c4", task), /选「开展一项活动」里的一项时不要同时写 text 或 click；要说话就另外回一次/);
   assert.throws(() => planRespond({ launch: "单独开展：写条目" }, null, "c5", task), /这次回应的形式不对，没有发出去：「单独开展：写条目」现在不能选：业务说明还没有页。/);
-  assert.throws(() => planRespond({ launch: "启动首次分析" }, null, "c6", { definition: { collections: [] }, items: [] }), /现在没有「开展一项活动」这一节/);
+  assert.throws(() => planRespond({ launch: "启动需求分析" }, null, "c6", { definition: { collections: [] }, items: [] }), /现在没有「开展一项活动」这一节/);
 });

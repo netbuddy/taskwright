@@ -187,8 +187,9 @@ export const api = {
   createTask: (body: { task_type: string; task_name: string; domain_tag: string | null }) =>
     request<{ task_id: string }>("POST", "/tasks", body),
   getTask: (taskId: string) => request<TaskDetail>("GET", task(taskId)),
-  listSessions: (taskId: string) =>
-    request<SessionListEntry[] | { sessions: SessionListEntry[] }>("GET", `${task(taskId)}/sessions`).then(unwrapSessions),
+  /** 会话清单；withArchived 为真时也列归档的会话（它们的工作项被删除了），每条带 archived。 */
+  listSessions: (taskId: string, withArchived = false) =>
+    request<SessionListEntry[] | { sessions: SessionListEntry[] }>("GET", `${task(taskId)}/sessions${withArchived ? "?archived=1" : ""}`).then(unwrapSessions),
   createSession: (taskId: string) => request<{ session_id: string }>("POST", `${task(taskId)}/sessions`, {}),
 
   // 4.1 整份数据
@@ -307,14 +308,21 @@ export const api = {
   // 6 直接操作
   /**
    * 启动一个工作项：不带会话，后端先核对这项活动能不能启动，再新建一个工作项与一条属于它的会话，回应里带新会话的编号与工作项的记录号。
-   * in_flow 为真是启动首次分析这条流程、从这一站开始；scope 是范围说明，可以不给。
+   * in_flow 为真是启动需求分析这条流程、从这一站开始；scope 是范围说明，可以不给。任务里已有流程工作项时以流程方式启动被拒。
    */
   startInNewSession: (taskId: string, fields: { activity: string; in_flow: boolean; scope?: string }) =>
     request<{ ok: true; op_id: string; session_id: string; activity_record_id?: number }>(
       "POST", `${task(taskId)}/actions`, { kind: "start_activity", targets: [], fields, notify_executor: false }, ACTION_TIMEOUT_MS),
-  /** 换一条干净的会话接着做一个进行中的工作项：后端新建一条会话并把它挂到这个工作项上，回应里带新会话的编号。 */
+  /** 换一条干净的会话接着做一个工作项：后端新建一条会话并把它挂到这个工作项上，回应里带新会话的编号。 */
   continueWorkItem: (taskId: string, recordId: number) =>
     request<{ ok: true; session_id: string; activity_record_id: number }>("POST", `${task(taskId)}/sessions`, { activity_record_id: recordId }, ACTION_TIMEOUT_MS),
+  /**
+   * 删除一个工作项：它的会话全部归档，回应里带归档了几条会话。sessionId 是请求所在的会话（那句说明留在这里）；不给时后端放在这个工作项最近的那条会话里。
+   */
+  deleteWorkItem: (taskId: string, recordId: number, sessionId: string | null = null) =>
+    request<{ ok: true; op_id: string; activity_record_id: number; archived_sessions: number }>(
+      "POST", `${task(taskId)}/actions${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ""}`,
+      { kind: "delete_work_item", targets: [], fields: { activity_record_id: recordId }, notify_executor: false }, ACTION_TIMEOUT_MS),
   action: (taskId: string, sessionId: string, body: ActionRequest) =>
     request<{ ok: true; client_id: string; op_id: string; session_id?: string; activity_record_id?: number }>(
       "POST", `${task(taskId)}/actions?session=${encodeURIComponent(sessionId)}`, body, ACTION_TIMEOUT_MS),

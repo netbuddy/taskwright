@@ -25,7 +25,7 @@ const said = (id: string, text: string) => ({ id, type: "message", message: { ro
 const BRANCH = [said("u-1", "读一下材料"), card("a-1"), card("a-2", [{ key: "yes", text: "可以" }, { key: "no", text: "不行" }])] as never;
 
 /**
- * 一个已经启动了首次分析、停在核读材料的任务：测试里的两条会话都属于这个流程的工作项（进入与退回的卡片只在流程的工作项里算数）。
+ * 一个已经启动了需求分析、停在核读材料的任务：测试里的两条会话都属于这个流程的工作项（进入与退回的卡片只在流程的工作项里算数）。
  * 早先建的任务没有阶段，没有工作项。
  */
 function workspace(definition: unknown = overallDefinition()): string {

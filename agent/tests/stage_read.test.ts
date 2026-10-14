@@ -13,8 +13,8 @@ import { databasePath } from "../src/lib/db.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
 import { TASK_DB_VERSION, upgradeTaskDatabase, withTaskDatabase } from "../src/lib/schema.ts";
 import {
-  EVENT_ACTIVITY_ENDED, EVENT_ACTIVITY_STARTED, EVENT_NODE_ENTERED, EVENT_STAGE_MOVED, activityRecords, attachSession, currentStage, endWorkItem, enterNode, hasActivityTable, hasSessionTable,
-  launchWorkItem, moveStage, openActivityRecord, sessionWorkItem, stageOf, taskHasMaterials, workItemSessions,
+  EVENT_ACTIVITY_STARTED, EVENT_NODE_ENTERED, EVENT_STAGE_MOVED, EVENT_WORK_ITEM_DELETED, activityRecords, archivedSessions, attachSession, currentStage, deleteWorkItem, enterNode,
+  hasActivityTable, hasSessionTable, launchWorkItem, moveStage, openActivityRecord, sessionWorkItem, stageOf, taskHasMaterials, workItemSessions,
 } from "../src/lib/stage_read.ts";
 import { DEFINITION_PATH, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
@@ -38,7 +38,7 @@ test("没有工作项时会话空闲：刚建好的任务有没有材料都是�
   rmSync(join(dir, "inputs/材料.md"));
 });
 
-test("三种写入各记什么：启动插一行、挂上会话、记一条带记录号的事件；换站只改这一行、记一条换站的事件；结束填上状态与时刻、记一条结束的事件", () => {
+test("三种写入各记什么：启动插一行、挂上会话、记一条带记录号的事件；换站只改这一行、记一条换站的事件；删除记一条删除的事件、删掉这一行、它的会话全部归档", () => {
   const { dir, taskId } = workspace();
   const who = { taskId, sessionId: "sess-1", runId: null, callId: "ui-op-1", actor: "user" as const };
   const started = write(dir, (db) => launchWorkItem(db, { ...who, to: "clarifying", inFlow: true, reason: "", scope: " 只做借阅 " }));
@@ -47,31 +47,42 @@ test("三种写入各记什么：启动插一行、挂上会话、记一条带�
   const entered = write(dir, (db) => enterNode(db, sessionWorkItem(db, taskId, "sess-1")!, "writing", { ...who, callId: "ui-op-2" }, "澄清够了"));
   const back = write(dir, (db) => enterNode(db, sessionWorkItem(db, taskId, "sess-1")!, "modeling", { ...who, runId: "r2", callId: "call-reply-1", actor: "executor" }, ""));
   write(dir, (db) => attachSession(db, taskId, started.record_id, "sess-2"));
-  const ended = write(dir, (db) => endWorkItem(db, sessionWorkItem(db, taskId, "sess-1")!, "abandoned", { taskId, sessionId: "sess-2", callId: "ui-op-3", actor: "user" }, "不做了"));
-  const events = query<{ seq: number; name: string; actor: string; session_id: string; call_id: string; payload: string }>(dir,
-    "SELECT seq, name, actor, session_id, call_id, payload FROM event WHERE name IN (?, ?, ?, ?) ORDER BY seq", EVENT_ACTIVITY_STARTED, EVENT_ACTIVITY_ENDED, EVENT_NODE_ENTERED, EVENT_STAGE_MOVED);
-  assert.deepEqual(events.map((e) => [e.seq, e.name, e.actor, e.session_id, e.call_id, JSON.parse(e.payload)]), [
-    [started.event_seq, "ACTIVITY_STARTED", "user", "sess-1", "ui-op-1",
-      { record_id: started.record_id, activity: "clarifying", node: "clarifying", flow: "initial", from: null, actor: "user", reason: "", run_id: null, scope: "只做借阅" }],
-    [entered, "ACTIVITY_NODE_ENTERED", "user", "sess-1", "ui-op-2",
-      { record_id: started.record_id, flow: "initial", node: "writing", from: "clarifying", direction: "forward", actor: "user", reason: "澄清够了", run_id: null }],
-    [back, "ACTIVITY_NODE_ENTERED", "executor", "sess-1", "call-reply-1",
-      { record_id: started.record_id, flow: "initial", node: "modeling", from: "writing", direction: "back", actor: "executor", reason: "", run_id: "r2" }],
-    [ended, "ACTIVITY_ENDED", "user", "sess-2", "ui-op-3",
-      { record_id: started.record_id, activity: "modeling", node: "modeling", flow: "initial", outcome: "abandoned", reason: "不做了", actor: "user" }],
-  ]);
-  // 自始至终只有一行；两条会话都属于它；结束之后两条会话都不在做哪个工作项。
+  // 自始至终只有一行；两条会话都属于它，都在做它。
   const rows = write(dir, (db) => activityRecords(db, taskId));
-  assert.deepEqual(rows.map((r) => [r.record_id, r.activity, r.node, r.flow, r.status, r.scope, r.session_id, r.started_seq, r.ended_seq, r.from]),
-    [[started.record_id, "modeling", "modeling", "initial", "abandoned", "只做借阅", "sess-1", started.event_seq, ended, null]]);
-  assert.ok(rows[0].ended_at !== null);
+  assert.deepEqual(rows.map((r) => [r.record_id, r.activity, r.node, r.flow, r.scope, r.session_id, r.started_seq, r.from]),
+    [[started.record_id, "modeling", "modeling", "analysis", "只做借阅", "sess-1", started.event_seq, null]]);
   assert.deepEqual(write(dir, (db) => workItemSessions(db, taskId)).map((one) => [one.session_id, one.record_id]), [["sess-1", started.record_id], ["sess-2", started.record_id]]);
-  assert.deepEqual(write(dir, (db) => [sessionWorkItem(db, taskId, "sess-2")?.status, openActivityRecord(db, taskId, "sess-1"), currentStage(db, taskId, "sess-2")]), ["abandoned", null, "idle"]);
+  assert.deepEqual(write(dir, (db) => [currentStage(db, taskId, "sess-1"), currentStage(db, taskId, "sess-2")]), ["modeling", "modeling"]);
   // 一条会话只属于一个工作项：已经挂过的会话再挂别的不改。
   const other = write(dir, (db) => launchWorkItem(db, { ...who, sessionId: "sess-3", callId: "ui-op-4", to: "clarifying", inFlow: false, reason: "" }));
   write(dir, (db) => attachSession(db, taskId, other.record_id, "sess-1"));
   assert.equal(write(dir, (db) => sessionWorkItem(db, taskId, "sess-1"))!.record_id, started.record_id);
   assert.deepEqual(write(dir, (db) => [currentStage(db, taskId, "sess-3"), currentStage(db, taskId, null), currentStage(db, taskId, "没有这条会话")]), ["clarifying", "idle", "idle"]);
+  // 删除流程的工作项：记一条删除的事件（带随之归档了几条会话），这一行不在了，它的两条会话归档、按自由讨论办；别的工作项不受影响。
+  const deleted = write(dir, (db) => deleteWorkItem(db, sessionWorkItem(db, taskId, "sess-1")!, { taskId, sessionId: "sess-2", callId: "ui-op-5", actor: "user" }, "不要了"));
+  assert.equal(deleted.archived, 2);
+  const events = query<{ seq: number; name: string; actor: string; session_id: string; call_id: string; payload: string }>(dir,
+    "SELECT seq, name, actor, session_id, call_id, payload FROM event WHERE name IN (?, ?, ?, ?) ORDER BY seq", EVENT_ACTIVITY_STARTED, EVENT_WORK_ITEM_DELETED, EVENT_NODE_ENTERED, EVENT_STAGE_MOVED);
+  assert.deepEqual(events.map((e) => [e.seq, e.name, e.actor, e.session_id, e.call_id, JSON.parse(e.payload)]), [
+    [started.event_seq, "ACTIVITY_STARTED", "user", "sess-1", "ui-op-1",
+      { record_id: started.record_id, activity: "clarifying", node: "clarifying", flow: "analysis", from: null, actor: "user", reason: "", run_id: null, scope: "只做借阅" }],
+    [entered, "ACTIVITY_NODE_ENTERED", "user", "sess-1", "ui-op-2",
+      { record_id: started.record_id, flow: "analysis", node: "writing", from: "clarifying", direction: "forward", actor: "user", reason: "澄清够了", run_id: null }],
+    [back, "ACTIVITY_NODE_ENTERED", "executor", "sess-1", "call-reply-1",
+      { record_id: started.record_id, flow: "analysis", node: "modeling", from: "writing", direction: "back", actor: "executor", reason: "", run_id: "r2" }],
+    [other.event_seq, "ACTIVITY_STARTED", "user", "sess-3", "ui-op-4",
+      { record_id: other.record_id, activity: "clarifying", node: null, flow: null, from: null, actor: "user", reason: "", run_id: null }],
+    [deleted.event_seq, "WORK_ITEM_DELETED", "user", "sess-2", "ui-op-5",
+      { record_id: started.record_id, activity: "modeling", node: "modeling", flow: "analysis", scope: "只做借阅", archived_sessions: 2, actor: "user", reason: "不要了" }],
+  ]);
+  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((r) => r.record_id), [other.record_id]);
+  assert.deepEqual(write(dir, (db) => workItemSessions(db, taskId)).map((one) => [one.session_id, one.record_id]), [["sess-3", other.record_id]]);
+  assert.deepEqual(write(dir, (db) => [...archivedSessions(db, taskId).keys()]).sort(), ["sess-1", "sess-2"]);
+  assert.deepEqual(write(dir, (db) => [sessionWorkItem(db, taskId, "sess-1"), currentStage(db, taskId, "sess-2"), currentStage(db, taskId, "sess-3")]), [null, "idle", "clarifying"]);
+  // 记录号不重用：删掉的是最大的记录号以外的那一个，再删最大的那一个，新启动的工作项仍然排在后面。
+  write(dir, (db) => deleteWorkItem(db, sessionWorkItem(db, taskId, "sess-3")!, { taskId, sessionId: "sess-3", callId: "ui-op-6", actor: "user" }, ""));
+  const fresh = write(dir, (db) => launchWorkItem(db, { ...who, sessionId: "sess-4", callId: "ui-op-7", to: "modeling", inFlow: false, reason: "" }));
+  assert.equal(fresh.record_id, other.record_id + 1);
 });
 
 test("早先建的任务（任务定义里没有总体分析集合）没有阶段", () => {
@@ -158,7 +169,7 @@ function asVersion4(dir: string, taskId: string, moves: { from: string; to: stri
   }
 }
 
-test("格式版本 4 升到现在的版本：阶段记录先逐行改写成活动记录，再归并成工作项——同一条流程的并成一行、取最晚的一站，还在进行；阶段记录表删掉，事件一条不动", () => {
+test("格式版本 4 升到现在的版本：阶段记录先逐行改写成活动记录，再归并成工作项——同一条流程的并成一行、取最晚的一站，流程键改写成 analysis；阶段记录表删掉，事件一条不动", () => {
   const { dir, taskId } = workspace();
   const seqs = asVersion4(dir, taskId, [
     { from: "reading", to: "clarifying", at: "2026-10-10T09:00:00", reason: "材料读完了。", record_id: 3 },
@@ -168,29 +179,29 @@ test("格式版本 4 升到现在的版本：阶段记录先逐行改写成活�
   const events = query(dir, "SELECT seq, name, payload, at FROM event ORDER BY seq").map((row) => ({ ...row }));
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 4, to: TASK_DB_VERSION });
   assert.deepEqual([tableThere(dir, "activity_record"), tableThere(dir, "stage_record"), tableThere(dir, "work_item_session")], [true, false, true]);
-  // 首次分析的两行并成一行（留最早那一行的记录号与启动的时刻，活动与所在的一站取最晚那一行的）；另一条流程的那一行自己是一个工作项。
+  // 需求分析的两行并成一行（留最早那一行的记录号与启动的时刻，活动与所在的一站取最晚那一行的）；另一条流程的那一行自己是一个工作项。
   assert.deepEqual(query(dir, "SELECT * FROM activity_record ORDER BY started_seq").map((row) => ({ ...row })), [
-    { record_id: 3, task_id: taskId, session_id: "sess-old", run_id: null, call_id: "ui-op-1", actor: "user", activity: "writing", node: "writing", flow: "initial",
-      reason: "材料读完了。", started_at: "2026-10-10T09:00:00", ended_at: null, started_seq: seqs[0], ended_seq: null, scope: null, status: "active" },
+    { record_id: 3, task_id: taskId, session_id: "sess-old", run_id: null, call_id: "ui-op-1", actor: "user", activity: "writing", node: "writing", flow: "analysis",
+      reason: "材料读完了。", started_at: "2026-10-10T09:00:00", started_seq: seqs[0], scope: null },
     { record_id: 8, task_id: taskId, session_id: "sess-old", run_id: null, call_id: "ui-op-3", actor: "user", activity: "clarifying", node: "clarifying", flow: "change",
-      reason: "借期要重新问。", started_at: "2026-10-11T08:15:00", ended_at: null, started_seq: seqs[2], ended_seq: null, scope: null, status: "active" },
+      reason: "借期要重新问。", started_at: "2026-10-11T08:15:00", started_seq: seqs[2], scope: null },
   ]);
   assert.deepEqual(query(dir, "SELECT seq, name, payload, at FROM event ORDER BY seq").map((row) => ({ ...row })), events, "事件表原样不动，早先的移动事件仍叫 STAGE_MOVED");
   // 那条旧会话挂到它最晚启动的那一行归入的工作项上：现在在澄清。
   assert.deepEqual(query(dir, "SELECT session_id, record_id, attached_at FROM work_item_session").map((row) => ({ ...row })), [{ session_id: "sess-old", record_id: 8, attached_at: "2026-10-11T08:15:00" }]);
   const definition = validateDefinition(overallDefinition());
   assert.deepEqual(write(dir, (db) => [stageOf(db, dir, taskId, definition, "sess-old"), stageOf(db, dir, taskId, definition, "sess-new")]), ["clarifying", "idle"]);
-  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((r) => [r.from, r.activity, r.flow]), [["reading", "writing", "initial"], ["writing", "clarifying", "change"]]);
+  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((r) => [r.from, r.activity, r.flow]), [["reading", "writing", "analysis"], ["writing", "clarifying", "change"]]);
   // 升级之后照常换一站：还是那一行，记的是现在的换站事件。
   const moved = write(dir, (db) => moveStage(db, dir, { taskId, sessionId: "sess-old", runId: null, callId: "ui-op-9", actor: "user" }, "modeling", ""));
   assert.deepEqual(query<{ seq: number; name: string }>(dir, "SELECT seq, name FROM event WHERE seq > ? ORDER BY seq", seqs[2]).map((e) => [e.seq, e.name]), [[moved.event_seq, "ACTIVITY_NODE_ENTERED"]]);
-  assert.deepEqual(query<{ record_id: number; activity: string; status: string }>(dir, "SELECT record_id, activity, status FROM activity_record ORDER BY started_seq").map((r) => [r.record_id, r.activity, r.status]),
-    [[3, "writing", "active"], [8, "modeling", "active"]]);
+  assert.deepEqual(query<{ record_id: number; activity: string }>(dir, "SELECT record_id, activity FROM activity_record ORDER BY started_seq").map((r) => [r.record_id, r.activity]),
+    [[3, "writing"], [8, "modeling"]]);
   // 再升一次：已经是现在的版本，什么都不做。
   assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION });
 });
 
-test("格式版本 4 升到现在的版本：一次都没有移动过的库只换表，没有工作项，升级之后会话都是空闲；记下移动的事件已经不在时所属流程写首次分析", () => {
+test("格式版本 4 升到现在的版本：一次都没有移动过的库只换表，没有工作项，升级之后会话都是空闲；记下移动的事件已经不在时所属流程写需求分析", () => {
   const empty = workspace();
   asVersion4(empty.dir, empty.taskId, []);
   assert.deepEqual(upgradeTaskDatabase(empty.dir), { from: 4, to: TASK_DB_VERSION });
@@ -202,11 +213,11 @@ test("格式版本 4 升到现在的版本：一次都没有移动过的库只�
   const { dir, taskId } = workspace();
   asVersion4(dir, taskId, [{ from: "reading", to: "clarifying", at: "2026-10-10T09:00:00" }, { from: "clarifying", to: "modeling", at: "2026-10-10T10:00:00", flow: "change" }], true);
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 4, to: TASK_DB_VERSION });
-  // 两行都算首次分析（事件不在了，无从知道第二行写过别的流程），并成一行；从哪个阶段来也无从知道。
-  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((r) => [r.from, r.activity, r.flow, r.status]), [[null, "modeling", "initial", "active"]]);
+  // 两行都算需求分析（事件不在了，无从知道第二行写过别的流程），并成一行；从哪个阶段来也无从知道。
+  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((r) => [r.from, r.activity, r.flow]), [[null, "modeling", "analysis"]]);
 });
 
-/** 格式版本 6 的活动记录表（没有状态一列），库里也没有工作项的会话表。 */
+/** 格式版本 6 的活动记录表（一行是一项活动的一段，带结束的两列），库里也没有工作项的会话表。 */
 const V6_ACTIVITY_RECORD_SQL = `
 CREATE TABLE activity_record (
   record_id    INTEGER PRIMARY KEY,
@@ -228,7 +239,7 @@ CREATE TABLE activity_record (
 
 type V6Row = { session: string; activity: string; inFlow: boolean; at: string; until: string | null; scope?: string };
 /**
- * 把一个现在的库改回格式版本 6 的样子：活动记录表没有状态一列，一行是一项活动的一段；没有工作项的会话表。rows 按先后放进去，记录号从 1 起。
+ * 把一个现在的库改回格式版本 6 的样子：活动记录表一行是一项活动的一段；没有工作项的会话表。rows 按先后放进去，记录号从 1 起。
  * status 与 endedAt 是任务的状态与结束的时刻。直接开库改，不经 withTaskDatabase（它一打开就会升级）。
  */
 function asVersion6(dir: string, taskId: string, rows: V6Row[], status = "进行中", endedAt: string | null = null): void {
@@ -248,7 +259,7 @@ function asVersion6(dir: string, taskId: string, rows: V6Row[], status = "进行
   }
 }
 
-/** 早先一个任务走过的一段：首次分析走了两站，改做了一次单项的整理建模，在另一条会话里接着走首次分析，又改做单项的澄清（还在进行）。 */
+/** 早先一个任务走过的一段：需求分析走了两站，改做了一次单项的整理建模，在另一条会话里接着走需求分析，又改做单项的澄清（还在进行）。 */
 const V6_ROWS: V6Row[] = [
   { session: "s1", activity: "reading", inFlow: true, at: "2026-10-10T09:00:00", until: "2026-10-10T10:00:00" },
   { session: "s1", activity: "clarifying", inFlow: true, at: "2026-10-10T10:00:00", until: "2026-10-10T11:00:00", scope: "只做借阅" },
@@ -256,28 +267,28 @@ const V6_ROWS: V6Row[] = [
   { session: "s3", activity: "writing", inFlow: true, at: "2026-10-10T12:00:00", until: "2026-10-10T13:00:00" },
   { session: "s2", activity: "clarifying", inFlow: false, at: "2026-10-10T13:00:00", until: null },
 ];
-const workItems = (dir: string) => query<{ record_id: number; activity: string; node: string | null; flow: string | null; status: string; started_at: string; ended_at: string | null; scope: string | null }>(dir,
-  "SELECT record_id, activity, node, flow, status, started_at, ended_at, scope FROM activity_record ORDER BY started_seq").map((r) => [r.record_id, r.activity, r.node, r.flow, r.status, r.started_at, r.ended_at, r.scope]);
+const workItems = (dir: string) => query<{ record_id: number; activity: string; node: string | null; flow: string | null; started_at: string; scope: string | null }>(dir,
+  "SELECT record_id, activity, node, flow, started_at, scope FROM activity_record ORDER BY started_seq").map((r) => [r.record_id, r.activity, r.node, r.flow, r.started_at, r.scope]);
 
-test("格式版本 6 升到 7：同一条流程的各行并成一个工作项（被单项活动隔开的也并），单项活动的每行各一个；流程的工作项还在进行、位置取最晚一行；会话挂到它最晚启动的那一行归入的工作项上", () => {
+test("格式版本 6 升到 7：同一条流程的各行并成一个工作项（被单项活动隔开的也并），单项活动的每行各一个；位置取最晚一行、流程键改写成 analysis、结束的两列去掉；会话挂到它最晚启动的那一行归入的工作项上", () => {
   const { dir, taskId } = workspace();
   asVersion6(dir, taskId, V6_ROWS);
   // 只读的一侧遇到还没有升级的库：没有工作项的会话表，哪条会话都当作空闲，不出错。
   const ro = new DatabaseSync(databasePath(dir), { readOnly: true });
   try {
-    assert.deepEqual([hasSessionTable(ro), sessionWorkItem(ro, taskId, "s1"), currentStage(ro, taskId, "s2"), activityRecords(ro, taskId).map((r) => r.status)],
-      [false, null, "idle", ["done", "done", "done", "done", "active"]]);
+    assert.deepEqual([hasSessionTable(ro), sessionWorkItem(ro, taskId, "s1"), currentStage(ro, taskId, "s2"), activityRecords(ro, taskId).map((r) => r.flow)],
+      [false, null, "idle", ["analysis", "analysis", null, "analysis", null]]);
   } finally {
     ro.close();
   }
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 6, to: TASK_DB_VERSION });
-  // 五行变三个工作项：首次分析一个（留第 1 行，现在在写条目，范围说明取最晚写了的，仍在进行、结束的时刻清空），整理建模已做完，澄清在进行。
+  // 五行变三个工作项：需求分析一个（留第 1 行，现在在写条目，范围说明取最晚写了的），整理建模一个，澄清一个。工作项没有终点，早先记的结束不留。
   assert.deepEqual(workItems(dir), [
-    [1, "writing", "writing", "initial", "active", "2026-10-10T09:00:00", null, "只做借阅"],
-    [3, "modeling", null, null, "done", "2026-10-10T11:00:00", "2026-10-10T12:00:00", null],
-    [5, "clarifying", null, null, "active", "2026-10-10T13:00:00", null, null],
+    [1, "writing", "writing", "analysis", "2026-10-10T09:00:00", "只做借阅"],
+    [3, "modeling", null, null, "2026-10-10T11:00:00", null],
+    [5, "clarifying", null, null, "2026-10-10T13:00:00", null],
   ]);
-  assert.deepEqual(query(dir, "SELECT ended_seq FROM activity_record ORDER BY started_seq").map((r) => r.ended_seq), [null, 1005, null]);
+  assert.deepEqual(query<{ name: string }>(dir, "PRAGMA table_info(activity_record)").map((one) => one.name).filter((one) => /ended|status/.test(one)), []);
   // 会话：s1 只启动过流程里的行；s2 先后启动过两个单项活动，挂到最晚的那一个；s3 是接着走流程的那一条。别的会话不属于任何工作项。
   assert.deepEqual(query(dir, "SELECT session_id, record_id, attached_at FROM work_item_session ORDER BY session_id").map((row) => ({ ...row })), [
     { session_id: "s1", record_id: 1, attached_at: "2026-10-10T10:00:00" }, { session_id: "s2", record_id: 5, attached_at: "2026-10-10T13:00:00" },
@@ -289,18 +300,14 @@ test("格式版本 6 升到 7：同一条流程的各行并成一个工作项（
   assert.equal(workItems(dir).length, 3);
 });
 
-test("格式版本 6 升到 7 时任务已经结束：已完成的任务工作项都记已做完；已放弃的任务里还没有结束的记已放弃、结束了的记已做完；没有结束时刻的补上任务结束的时刻", () => {
+test("格式版本 6 升到 7 时任务已经结束：照样归并，不按任务的状态猜工作项的状态；一行记录都没有的库只换表、加会话表", () => {
   const done = workspace();
   asVersion6(done.dir, done.taskId, V6_ROWS, "已完成", "2026-10-11T08:00:00");
   assert.deepEqual(upgradeTaskDatabase(done.dir), { from: 6, to: TASK_DB_VERSION });
-  assert.deepEqual(workItems(done.dir).map((one) => [one[0], one[4], one[6]]), [[1, "done", "2026-10-10T13:00:00"], [3, "done", "2026-10-10T12:00:00"], [5, "done", "2026-10-11T08:00:00"]]);
-  const abandoned = workspace();
-  asVersion6(abandoned.dir, abandoned.taskId, V6_ROWS, "已放弃", "2026-10-11T09:00:00");
-  assert.deepEqual(upgradeTaskDatabase(abandoned.dir), { from: 6, to: TASK_DB_VERSION });
-  assert.deepEqual(workItems(abandoned.dir).map((one) => [one[0], one[4], one[6]]), [[1, "done", "2026-10-10T13:00:00"], [3, "done", "2026-10-10T12:00:00"], [5, "abandoned", "2026-10-11T09:00:00"]]);
-  // 一行记录都没有的库：只加列与表。
+  assert.deepEqual(workItems(done.dir).map((one) => one[0]), [1, 3, 5]);
   const empty = workspace();
   asVersion6(empty.dir, empty.taskId, []);
   assert.deepEqual(upgradeTaskDatabase(empty.dir), { from: 6, to: TASK_DB_VERSION });
-  assert.deepEqual([workItems(empty.dir).length, tableThere(empty.dir, "work_item_session"), query<{ name: string }>(empty.dir, "PRAGMA table_info(activity_record)").some((one) => one.name === "status")], [0, true, true]);
+  assert.deepEqual([workItems(empty.dir).length, tableThere(empty.dir, "work_item_session"),
+    query<{ name: string }>(empty.dir, "PRAGMA table_info(work_item_session)").some((one) => one.name === "archived_at")], [0, true, true]);
 });

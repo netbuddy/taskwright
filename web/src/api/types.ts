@@ -322,7 +322,7 @@ export interface Task {
 /**
  * 用户的一句话带着的阶段移动：用户在卡片上点了进入下一段或者退回前面的阶段，系统替用户记了这次移动。阶段只由用户移动。
  * from 是移动之前任务在哪里（任务空闲时用户点了「开始核读材料」，是 idle）；how 是这一次怎样开始的：流程里的移动（move）、
- * 启动首次分析（launch）、继续首次分析（resume）。早先的消息没有 how，当作 move。
+ * 启动需求分析（launch）、继续需求分析（resume）。早先的消息没有 how，当作 move。
  */
 export interface StageMove {
   from: PositionKey;
@@ -370,9 +370,9 @@ export interface StageProposal {
 export interface StageView {
   /** 任务现在在哪个阶段；空闲时是 idle。 */
   current: PositionKey;
-  /** 现在这项活动在首次分析流程里的节点：在流程里时与 current 相同；用户单独开展的活动、空闲时为 null。早先的后端不给。 */
+  /** 现在这项活动在需求分析流程里的节点：在流程里时与 current 相同；用户单独开展的活动、空闲时为 null。早先的后端不给。 */
   node?: StageKey | null;
-  /** 首次分析走到的节点；没有走过是 null。 */
+  /** 需求分析走到的节点；没有走过是 null。 */
   flow_node?: StageKey | null;
   /** 「开展一项活动」一节现在的内容。 */
   launch?: LaunchView | null;
@@ -381,7 +381,7 @@ export interface StageView {
   reason: string | null;
   lamps: Record<StageKey, StageLamp[]>;
   proposal?: StageProposal | null;
-  /** 所属流程：这条会话正在做的工作项属于哪条流程（现在只有首次分析 initial）；单项活动的工作项、会话空闲时为 null。 */
+  /** 所属流程：这条会话正在做的工作项属于哪条流程（现在只有需求分析 analysis）；单项活动的工作项、会话空闲时为 null。 */
   flow?: string | null;
   /** 这条会话属于的工作项（不论它是不是已经结束）；自由讨论的会话为 null。早先的后端不给。 */
   work_item?: WorkItemBrief | null;
@@ -421,12 +421,12 @@ export interface SessionListEntry extends SessionInfo {
   active: boolean;
   /** 这条会话产生了几次修订；旧后端没有这一项。 */
   revision_count?: number;
-  /** 这条会话属于的工作项（不论它是不是已经结束）；自由讨论的会话为 null。早先的后端不给。 */
-  work_item?: { record_id: number; kind: "flow" | "activity"; name: string; activity: StageKey; flow: string | null; status: WorkItemStatus } | null;
+  /** 这条会话属于的工作项；自由讨论的会话、归档的会话为 null。早先的后端不给。 */
+  work_item?: { record_id: number; kind: "flow" | "activity"; name: string; activity: StageKey; flow: string | null } | null;
+  /** 带 archived=1 取清单时才有：是不是归档的会话（它的工作项被删除了），与归档的时刻。 */
+  archived?: boolean;
+  archived_at?: string | null;
 }
-
-/** 工作项的状态：进行中、已做完、已放弃。 */
-export type WorkItemStatus = "active" | "done" | "abandoned";
 
 /** 一条会话属于的工作项里页面用的几样（整份数据的 stage.work_item）。 */
 export interface WorkItemBrief {
@@ -438,13 +438,11 @@ export interface WorkItemBrief {
   /** 现在做的是哪一项活动。 */
   activity: StageKey;
   flow: string | null;
-  status: WorkItemStatus;
   scope: string | null;
   started_at: string | null;
-  ended_at: string | null;
 }
 
-/** 任务状况里的一个工作项（work_items 与 recent_done 的每一项）。 */
+/** 任务状况里的一个工作项（work_items 的每一项）。 */
 export interface WorkItemView extends WorkItemBrief {
   activity_name: string;
   /** 流程的工作项现在在哪一站，与那一站是第几站；单项活动的为 null。 */
@@ -510,7 +508,7 @@ export interface UserMessage {
   stage_move?: StageMove;
   /**
    * 用户点了一张进入某个阶段的卡片而阶段没有移动时才有（次序不对，或者任务本来就在那个阶段）：任务当时在哪个阶段。
-   * why 为 not_in_flow 是任务当时不在首次分析流程里（空闲，at 是 idle；或者正在单独开展一项活动），进入与退回不算数。
+   * why 为 not_in_flow 是任务当时不在需求分析流程里（空闲，at 是 idle；或者正在单独开展一项活动），进入与退回不算数。
    */
   stage_unmoved?: { at: string; why?: string };
 }
@@ -832,7 +830,7 @@ export interface StageChanged {
   actor: "executor" | "user" | string;
   reason: string;
   run_id: string | null;
-  /** 所属流程（initial 是首次分析）；单项活动的工作项为 null。 */
+  /** 所属流程（analysis 是需求分析；早先的键 initial 也是它）；单项活动的工作项为 null。 */
   flow?: string | null;
   /** 流程的工作项启动的那一站，与 to 相同；单项活动的为 null。 */
   node?: string | null;
@@ -859,16 +857,17 @@ export interface NodeEntered {
   completion: Completion | null;
 }
 
-/** 库事件 activity_ended 的内容：一个工作项结束了——哪个工作项、结果（done 已做完，abandoned 已放弃）、谁结束的、理由。早先记下的没有记录号与结果。 */
-export interface ActivityEnded {
+/** 库事件 work_item_deleted 的内容：用户删除了一个工作项——哪个工作项、它做的是哪一项活动、所在的一站与所属流程、随之归档了几条会话、谁、理由。 */
+export interface WorkItemDeleted {
   seq: number;
   at: string;
   task_id: string;
-  record_id?: number | null;
-  activity: StageKey;
+  record_id: number | null;
+  activity: StageKey | null;
   node: string | null;
-  flow?: string | null;
-  outcome?: "done" | "abandoned" | null;
+  flow: string | null;
+  scope?: string;
+  archived_sessions: number;
   actor: "executor" | "user" | string;
   reason: string;
   op_id?: string | null;
@@ -911,12 +910,12 @@ export type LibraryEvent =
   | { event: "diagram_viewed"; data: DiagramViewed }
   | { event: "activity_started"; data: StageChanged }
   | { event: "node_entered"; data: NodeEntered }
-  | { event: "activity_ended"; data: ActivityEnded };
+  | { event: "work_item_deleted"; data: WorkItemDeleted };
 
 export const LIBRARY_EVENTS = [
   "stage_proposed",
   "deliverable_changed", "task_changed", "review_recorded", "review_unfinished", "review_progress", "review_finished", "confirmation_recorded", "item_viewed",
-  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "activity_started", "node_entered", "activity_ended",
+  "review_batch", "review_waived", "review_unwaived", "review_rules_changed", "diagram_changed", "diagram_viewed", "activity_started", "node_entered", "work_item_deleted",
 ] as const;
 
 export interface WorkStarted {
@@ -1180,7 +1179,7 @@ export interface ActionRequest {
   /** base_revision 是打开这个条目时它所在的修订号；撤销（undo）写 revision_no。改图（edit_diagram）写 diagram_id 与页面看到的图自己的修订号。 */
   targets: { item_id?: string; diagram_id?: string; base_revision?: number; revision_no?: number }[];
   /** submit_deliverable 写 { revision_no }：页面当时看到的修订号。edit_diagram 写 { mermaid }：改后的 Mermaid 文本。move_stage 写 { stage }：阶段的名字。
-   * start_activity 写 { activity, in_flow }：开展哪一项活动（阶段的写法）、是在首次分析流程里从这个节点开始还是单独开展；
+   * start_activity 写 { activity, in_flow }：开展哪一项活动（阶段的写法）、是在需求分析流程里从这个节点开始还是单独开展；
    * 另可以写 scope，是范围说明。 */
   fields?: Fields | { revision_no: number } | { mermaid: string } | { reply_message_id: string; option_key: string } | { activity: string; in_flow: boolean; scope?: string };
   notify_executor: boolean;
@@ -1276,7 +1275,7 @@ export interface DebugSystemPrompt {
 /** 调试模式：某个任务的阶段记录流水与被拒的工具调用。rejections 新的在前；latest_work_id 是最近一次被拒所在的那次工作。 */
 export interface DebugStage {
   records: { from: StageKey; from_name: string; to: StageKey; to_name: string; actor: "executor" | "user"; reason: string; run_id: string | null; session_id: string; at: string;
-    /** 所属流程（现在恒为 initial，首次分析）；flow 这一项做出来之前记下的移动也给 initial。早先的后端不给。 */
+    /** 所属流程（现在恒为 analysis，需求分析）；flow 这一项做出来之前记下的移动也给 analysis。早先的后端不给。 */
     flow?: string }[];
   rejections: { work_id: string | null; session_id: string; call_id: string; tool: string; kind: string; fact: string; guidance: string | null; at: string }[];
   latest_work_id: string | null;
@@ -1428,7 +1427,7 @@ export interface ContextWindowResult {
 
 /**
  * 任务状况（GET /tasks/{task_id}/status）：程序据任务记录算出来的定位，不经助手。
- * activity 是当前活动：现在总是一个阶段（kind 为 stage），flow 是所属流程（现在恒为 initial，首次分析）；一次都没有移动过时 moved_by、moved_at、reason 为 null。
+ * activity 是当前活动：现在总是一个阶段（kind 为 stage），flow 是所属流程（现在恒为 analysis，需求分析）；一次都没有移动过时 moved_by、moved_at、reason 为 null。
  * description 是业务说明：sections 是在用的页数，chapters 是有节的各章（七章的先后），unsorted 是没有归到任何一章的在用页数，open_questions 是没有了结的待澄清问题数。
  * models 是还在的图按种类的张数；items 是总体分析与问题之外各集合的条目数与用户看过现在这一版的条数；
  * missing 是现在这个阶段没有通过的灯；proposal 是开着的提议；versions 留给已发布的文档版本，现在恒为空。
@@ -1487,12 +1486,17 @@ export interface CatalogFlow {
   enabled: boolean;
   state: string;
   recommended: boolean;
-  /** 这条流程现在有几个进行中的工作项；早先的后端不给。 */
+  /** 这条流程现在有几个工作项（至多一个）；早先的后端不给。 */
   active_count?: number;
-  /** 流程走到的站；没有走过为 null。 */
+  /** 恒为 null：早先是流程走到的站，现在流程的位置记在工作项上。 */
   at: string | null;
-  /** 现在开展应当从哪一站开始；这条流程现在还不能开展时为 null。 */
+  /** 现在启动应当从哪一站开始；这条流程现在还不能启动时为 null。 */
   start: StageKey | null;
+  /**
+   * 任务里已有的流程工作项（一个任务至多一个，不论哪条流程）：记录号、名字、所在的一站；没有为 null。有它时流程都不能启动，
+   * 页面把流程卡改成「打开它的会话」。早先的后端不给。
+   */
+  work_item?: { record_id: number; name: string; node: StageKey } | null;
 }
 
 export interface ActivityCatalog {
@@ -1506,7 +1510,7 @@ export interface StartPageTexts {
   guide_note: string;
   /** 三种常见起点；focus 是点了它进输入页时先看哪一块（早先的后端不给）。 */
   cases: { title: string; text: string; focus?: "materials" | "description" }[];
-  /** 首次编制时输入页上的几段；早先的后端不给。 */
+  /** 从头编制时输入页上的几段；早先的后端不给。 */
   intake?: {
     lead: string;
     material_kinds: string[];
@@ -1521,7 +1525,7 @@ export interface StartPageTexts {
 export interface TaskStatusView {
   generated_at: string;
   /**
-   * 当前活动。kind 为 stage 是任务在首次分析流程里的某个阶段（ordinal 是第几阶段）；activity 是用户单独开展的一项活动
+   * 当前活动。kind 为 stage 是任务在需求分析流程里的某个阶段（ordinal 是第几阶段）；activity 是用户单独开展的一项活动
    * （ordinal 与 flow 为 null）；idle 是空闲（key 为 idle，ordinal 与后三项为 null）。
    */
   activity: {
@@ -1541,9 +1545,7 @@ export interface TaskStatusView {
   items: { collection: string; total: number; viewed: number }[];
   missing: { key: string; summary: string }[];
   proposal: StageProposal | null;
-  /** 进行中的工作项，按启动的先后；早先的后端不给。 */
+  /** 任务的全部工作项（工作项没有终点），按最近有动静的倒序；早先的后端不给。 */
   work_items?: WorkItemView[];
-  /** 已经结束的工作项，最近结束的在前。 */
-  recent_done?: WorkItemView[];
   versions: unknown[];
 }

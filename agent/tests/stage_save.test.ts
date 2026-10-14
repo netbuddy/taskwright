@@ -114,7 +114,7 @@ test("一批里混着页与用例：被拦的那个操作报一条，整批一�
 
 test("阶段与最低门都过不去时两条原因都报；守门按调用那一刻还在进行的那条活动记录判", () => {
   const dir = workspace();
-  // 首次分析从核读材料启动。总体分析里一页都没有，最低门也过不去。
+  // 需求分析从核读材料启动。总体分析里一页都没有，最低门也过不去。
   enterStage(dir, "reading");
   const both = refusal(dir, [useCase("借书")])!;
   assert.ok(both.includes("任务现在在核读材料阶段，这个阶段不能新增「用例」的条目；还没有用户看过的主题：总体分析里还没有一页主题"), both);
@@ -129,12 +129,12 @@ test("阶段与最低门都过不去时两条原因都报；守门按调用那�
   assert.match(refusal(dir, [useCase("借书")])!, /任务现在在澄清阶段/);
 });
 
-test("新建的任务里会话是空闲的，有没有材料都一样：页可以写，用例被拦，原话说本会话没有在进行的工作项", () => {
+test("新建的任务里会话是空闲的，有没有材料都一样：页可以写，用例被拦，原话说本会话不属于任何工作项", () => {
   for (const material of [false, true]) {
     const dir = workspace(overallDefinition(), material);
     const said = [{ kind: "助手补充", excerpt: "先立一页占位。" }];
     assert.equal(refusal(dir, [{ ...page("预约"), sources: said }]), null);
-    assert.match(refusal(dir, [{ ...useCase("预约图书"), sources: said }])!, /本会话没有在进行的工作项，这时不能新增「用例」的条目/);
+    assert.match(refusal(dir, [{ ...useCase("预约图书"), sources: said }])!, /本会话不属于任何工作项，这时不能新增「用例」的条目/);
     assert.equal(count(dir, "activity_record"), 0, "空闲不落库：一个工作项都没有");
   }
 });

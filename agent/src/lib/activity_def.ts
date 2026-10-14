@@ -44,7 +44,7 @@ export type Mode = (typeof MODES)[number];
 export const MODE_NAMES: Record<Mode, string> = { batch: "批处理", dialogue: "逐项对话", user_only: "仅限用户发起" };
 
 /** 两条流程的键。 */
-export const FLOW_KEYS = ["initial", "change"] as const;
+export const FLOW_KEYS = ["analysis", "change"] as const;
 export type FlowKey = (typeof FLOW_KEYS)[number];
 
 /**

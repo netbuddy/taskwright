@@ -37,13 +37,15 @@ test("产品自带的七项活动：方式、读、写、前置条件照表", ()
   }
 });
 
-test("产品自带的两条流程：各站与前置条件；首次分析没有前置条件，需求变更要有已发布的版本", () => {
+test("产品自带的两条流程：各站与前置条件；需求分析没有前置条件，需求变更要有已发布的版本", () => {
   const { flows } = definitions();
   assert.deepEqual(flows.map((one) => one.key), [...FLOW_KEYS]);
-  const [initial, change] = flows;
-  assert.equal(initial.name, "首次分析");
-  assert.deepEqual(initial.nodes, [...STAGES, "publish"]);
-  assert.deepEqual(initial.requires, []);
+  const [analysis, change] = flows;
+  assert.deepEqual([analysis.key, analysis.name], ["analysis", "需求分析"]);
+  assert.deepEqual(analysis.nodes, [...STAGES, "publish"]);
+  assert.deepEqual(analysis.requires, []);
+  // 流程可以反复迭代，适用情形里不再说「首次」。
+  assert.ok(!analysis.applies.includes("首次") && !analysis.purpose.includes("首次"), analysis.applies);
   assert.equal(change.name, "需求变更");
   assert.deepEqual(change.nodes, ["reading", "modeling", "writing", "reviewing", "document", "publish"]);
   assert.deepEqual(change.requires, ["has_version"]);
@@ -83,12 +85,12 @@ test("活动的头缺栏、取值不认都报错，说明是哪份文件的哪�
 });
 
 test("流程的头缺栏、站名不认都报错", () => {
-  const head = ["flow: initial", "name: 首次分析", "purpose: 目的。", "applies: 适用。", "nodes: reading, clarifying", "inputs: 输入。", "requires:", "example: 示例。"];
-  assert.deepEqual(parseFlowDef(withHead(head), "initial.md").nodes, ["reading", "clarifying"]);
+  const head = ["flow: analysis", "name: 需求分析", "purpose: 目的。", "applies: 适用。", "nodes: reading, clarifying", "inputs: 输入。", "requires:", "example: 示例。"];
+  assert.deepEqual(parseFlowDef(withHead(head), "analysis.md").nodes, ["reading", "clarifying"]);
   for (const field of ["flow", "name", "purpose", "applies", "nodes", "inputs", "requires", "example"]) {
-    assert.throws(() => parseFlowDef(withHead(head.filter((line) => !line.startsWith(`${field}:`))), "initial.md"), new RegExp(`缺「${field}」一栏`), field);
+    assert.throws(() => parseFlowDef(withHead(head.filter((line) => !line.startsWith(`${field}:`))), "analysis.md"), new RegExp(`缺「${field}」一栏`), field);
   }
-  assert.throws(() => parseFlowDef(withHead(head.map((line) => (line.startsWith("nodes:") ? "nodes: reading, testing" : line))), "initial.md"), /「nodes」写了「testing」/);
+  assert.throws(() => parseFlowDef(withHead(head.map((line) => (line.startsWith("nodes:") ? "nodes: reading, testing" : line))), "analysis.md"), /「nodes」写了「testing」/);
 });
 
 test("从目录里读：文件不在、头里的键与文件名不同都报错", () => {

@@ -4,9 +4,9 @@
  * - enter：做完一段，提议进入下一个阶段；
  * - back：这一段的输入大面积不能用了，提议退回前面的某个阶段；
  * - review：编写文档阶段补写完了，请用户过目补写的那几页（点了不移动阶段）。
- * 提议属于一个工作项：助手在哪条会话里发的卡片，它就属于那条会话的工作项。结束的情形：这个工作项换了一站或者结束了、
+ * 提议属于一个工作项：助手在哪条会话里发的卡片，它就属于那条会话的工作项。失效的情形：这个工作项换了一站、
  * 助手在这个工作项里又发了一张提议的卡片、任务不再进行中；review 另有一种，卡片点名的页用户都看过了。
- * 别的工作项启动、换站、结束都不影响它。自由讨论的会话（不属于任何工作项）里没有提议。
+ * 别的工作项启动、换站、删除都不影响它；这个工作项被删除时它的会话归档，归档的会话里没有提议。自由讨论的会话（不属于任何工作项）里没有提议。
  *
  * 提议不另设表：助手发卡片时「回复」记的那条事件（EXECUTOR_ACTS_RECORDED）里多带一项 proposal（proposalOfAct），
  * 开着的是哪一条从事件表里推（openProposal）。卡片的选项只在那一条会话的会话文件里，任务库里原来没有记，所以要在发的时候记下：
@@ -28,18 +28,18 @@ import {
 /** 「回复」记执行者行为的那条事件的名字（与 lib/dialogue_acts.ts 的 EVENT_EXECUTOR_ACTS_RECORDED 同一个；这里不从它导入，免得两个文件互相导入）。 */
 const EVENT_ACTS = "EXECUTOR_ACTS_RECORDED";
 /**
- * 划界用的事件：同一个工作项换了一站或者结束了（与 lib/stage_read.ts 的 EVENT_NODE_ENTERED、EVENT_ACTIVITY_ENDED 同名，内容里的 record_id 是这个工作项的），
+ * 划界用的事件：同一个工作项换了一站（与 lib/stage_read.ts 的 EVENT_NODE_ENTERED 同名，内容里的 record_id 是这个工作项的），
  * 以及早先（会话与工作项绑定之前）记一次阶段移动的那两种（ACTIVITY_STARTED、STAGE_MOVED，内容里没有 record_id；升级上来的库里留着，照样算一次界）。
  * 现在的 ACTIVITY_STARTED 是启动一个工作项，内容里有 record_id：启动本身记在这里，好算「到这一站之后」从哪里起。
  * 名字写死在语句里，不是外来的文字；两个问号都填工作项的记录号。
  */
-const BOUNDARY = "((name IN ('ACTIVITY_NODE_ENTERED', 'ACTIVITY_ENDED') AND json_valid(payload) AND json_extract(payload, '$.record_id') = ?) " +
+const BOUNDARY = "((name = 'ACTIVITY_NODE_ENTERED' AND json_valid(payload) AND json_extract(payload, '$.record_id') = ?) " +
   "OR (name IN ('ACTIVITY_STARTED', 'STAGE_MOVED') AND json_valid(payload) AND json_extract(payload, '$.record_id') IS NULL))";
 const ARRIVAL = "((name IN ('ACTIVITY_NODE_ENTERED', 'ACTIVITY_STARTED') AND json_valid(payload) AND json_extract(payload, '$.record_id') = ?) " +
   "OR (name IN ('ACTIVITY_STARTED', 'STAGE_MOVED') AND json_valid(payload) AND json_extract(payload, '$.record_id') IS NULL))";
 
 /**
- * 这条会话正在做的工作项的记录号与属于它的全部会话；会话不属于任何工作项、工作项已经结束、库还没有这两张表时是 null。
+ * 这条会话正在做的工作项的记录号与属于它的全部会话（归档的不算）；会话不属于任何工作项、库还没有这两张表时是 null。
  * 与 lib/stage_read.ts 的 openActivityRecord 说的是同一回事；这里自己查，免得两个文件互相导入。
  */
 function workItemOf(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): { recordId: number; sessions: string[] } | null {
@@ -48,7 +48,7 @@ function workItemOf(db: DatabaseSync, taskId: string, sessionId: string | null |
     .map((row) => row.name));
   if (tables.size < 2) return null;
   const row = db.prepare(
-    "SELECT r.record_id FROM activity_record r JOIN work_item_session s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ? AND r.status = 'active'",
+    "SELECT r.record_id FROM activity_record r JOIN work_item_session s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ?",
   ).get(taskId, sessionId) as { record_id: number } | undefined;
   if (!row) return null;
   const recordId = Number(row.record_id);
@@ -161,9 +161,9 @@ function allViewed(db: DatabaseSync, taskId: string, items: readonly { item_id: 
 
 /**
  * 这条会话的工作项现在开着的提议；没有时为 null。只读。
- * 取这个工作项的各条会话里最近一条带 proposal 的回复事件：它之后这个工作项没有换过站、没有结束，任务还在进行中，它就开着；
+ * 取这个工作项的各条会话里最近一条带 proposal 的回复事件：它之后这个工作项没有换过站，任务还在进行中，它就开着；
  * 请过目的那一种另要卡片点名的页还没有都看过。更早的提议不看：助手发了新的提议卡片，早先的那一条就结束了。
- * 会话不属于任何工作项、工作项已经结束时没有提议。
+ * 会话不属于任何工作项（自由讨论的会话、归档的会话）时没有提议。
  */
 export function openProposal(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): OpenProposal | null {
   const task = db.prepare("SELECT status FROM task WHERE task_id = ?").get(taskId) as { status: string } | undefined;

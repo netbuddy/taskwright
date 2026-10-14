@@ -148,7 +148,7 @@ export interface ReplyFacts {
    */
   resendFact?: (actId: string) => ResendFact;
   /**
-   * 回复里写了 activity_done: true 时调用：这条会话正在做一个单项活动的工作项就返回 null（可以结束），否则返回拒绝的事实与怎么办
+   * 回复里写了 activity_done: true 时调用：这条会话正在做一个单项活动的工作项就返回 null（可以汇报做完），否则返回拒绝的事实与怎么办
    * （lib/stage.ts 的 activityDoneRefusal）。不给时不核对，给直接调用本函数的单元测试用。
    */
   activityDoneRefusal?: () => Refusal | null;
@@ -185,7 +185,7 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
   // activity_done：助手汇报本会话的工作项（单项活动）做完了。只认 true、false 与 null；写了 true 而这条会话不在做单项活动的工作项就拒绝。
   const done = params.activity_done;
   if (done !== undefined && done !== null && typeof done !== "boolean") {
-    errors.push("activity_done 只能写 true 或 false：本会话的工作项是单项活动、这项活动做够了、要汇报结束时写 true，别的时候不写");
+    errors.push("activity_done 只能写 true 或 false：本会话的工作项是单项活动、这项活动做够了、要汇报做完时写 true，别的时候不写");
   } else if (done === true) {
     const refusal = facts.activityDoneRefusal?.() ?? null;
     if (refusal !== null) errors.push(withGuide(...refusal));

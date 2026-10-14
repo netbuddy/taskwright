@@ -150,7 +150,7 @@ class StageCardsTest(unittest.TestCase):
                 moves = db.execute(
                     "SELECT e.actor, json_extract(e.payload, '$.from'), COALESCE(json_extract(e.payload, '$.node'), json_extract(e.payload, '$.activity')), "
                     "json_extract(e.payload, '$.reason') FROM event e WHERE e.name IN ('ACTIVITY_STARTED', 'ACTIVITY_NODE_ENTERED') ORDER BY e.seq").fetchall()
-            # 读的是启动与换站的事件。第一条是开场时驾驭程序替用户启动的首次分析：从核读材料开始；后面每一条是这个工作项换了一站。
+            # 读的是启动与换站的事件。第一条是开场时驾驭程序替用户启动的需求分析：从核读材料开始；后面每一条是这个工作项换了一站。
             self.assertEqual(moves, [("user", None, "reading", ""),
                                      ("user", "reading", "clarifying", "用户在卡片上选了「进入澄清」"), ("user", "clarifying", "modeling", "用户在卡片上选了「进入整理建模」"),
                                      ("user", "modeling", "writing", "用户在卡片上选了「开始写条目」"), ("user", "writing", "reviewing", "用户在卡片上选了「进入评审确认」"),

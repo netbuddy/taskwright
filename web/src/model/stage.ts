@@ -4,24 +4,25 @@
 
 import {
   BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, FLOW_NAMES, IDLE, IDLE_NAME, STAGES, STAGE_NAMES, STAGE_START_TEXTS, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, STAY_TEXT,
-  activityDoneSentence, activityStartSentence,
+  activityDoneSentence, activityStartSentence, flowKeyOf,
 } from "../../../agent/src/lib/stage";
 import type { Item, PositionKey, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
 export { STAGES, STAGE_NAMES, STAY_TEXT };
 
-/** 所属流程给人看的名字：认得的写中文名（现在只有「首次分析」），认不出的照原样写，没有给的写「（没有记）」。 */
+/** 所属流程给人看的名字：认得的写中文名（现在只有「需求分析」；早先的键 initial 也是它），认不出的照原样写，没有给的写「（没有记）」。 */
 export function flowName(flow: string | null | undefined): string {
-  // null 是不在任何流程里：用户单独开展的活动。早先的后端不给这一项。
-  if (flow === null) return "单独开展";
-  return flow ? (FLOW_NAMES as Record<string, string>)[flow] ?? flow : "（没有记）";
+  // null 是不在任何流程里：单项活动的工作项。早先的后端不给这一项。
+  if (flow === null) return "单项活动";
+  const key = flowKeyOf(flow);
+  return key ? (FLOW_NAMES as Record<string, string>)[key] ?? key : "（没有记）";
 }
 
 /** 阶段条上的一格：这个阶段已经过了、正在这里、还没到。 */
 export type StageMark = "done" | "current" | "ahead";
 
 /**
- * 阶段条上六格各是什么样子。任务在首次分析流程里的某个阶段时，它之前的填实、它自己是当前、之后的空心。
+ * 阶段条上六格各是什么样子。任务在需求分析流程里的某个阶段时，它之前的填实、它自己是当前、之后的空心。
  * 任务空闲时没有当前的一格；用户单独开展一项活动（alone 为真）时只有那一格是当前，别的都空心：单独开展不说明前面的阶段做过。
  */
 export function stageMarks(current: PositionKey, alone = false): { key: StageKey; name: string; mark: StageMark }[] {
@@ -32,7 +33,7 @@ export function stageMarks(current: PositionKey, alone = false): { key: StageKey
 
 /** 任务现在是不是空闲：没有在进行的活动。 */
 export const isIdle = (stage: Pick<StageView, "current"> | null | undefined): boolean => stage?.current === IDLE;
-/** 现在这项活动是不是用户单独开展的（不在首次分析流程里）。早先的后端不给 node，当作在流程里。 */
+/** 现在这项活动是不是用户单独开展的（不在需求分析流程里）。早先的后端不给 node，当作在流程里。 */
 export const isAlone = (stage: Pick<StageView, "current" | "node"> | null | undefined): boolean => !!stage && stage.current !== IDLE && stage.node === null;
 /** 阶段条下面、调试页签里说任务现在在哪里的那一句；任务在流程里的某个阶段时不用它。 */
 export const IDLE_TEXT = "本会话没有在进行的工作项：自由讨论，或者它的工作项已经结束。";
@@ -167,7 +168,7 @@ export const quietHint = (key: string): string => (key === STAY_HERE_KEY ? STAY_
 
 /**
  * 对话区里说一次阶段移动的那一行：用户在卡片上点了进入下一段（或者退回前面的阶段），写「界面操作：用户把任务从核读材料移到澄清。」，
- * 与别的界面操作记号是同一种说法。阶段只由用户移动。任务空闲时点了「开始核读材料」，写的是启动（或继续）首次分析。
+ * 与别的界面操作记号是同一种说法。阶段只由用户移动。任务空闲时点了「开始核读材料」，写的是启动（或继续）需求分析。
  */
 /**
  * 用户点了一张进入某个阶段的卡片而阶段没有移动时，卡片上「✓ 你选了……」下面的那句小字。at 是这条会话当时所在的阶段。

@@ -27,7 +27,7 @@ import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 import { checkQuotes } from "../lib/save_revision.ts";
 import { envKnowledgeRoot } from "../lib/knowledge.ts";
 import { userMessagesOnBranch } from "./save_revision.ts";
-import { activityDoneGate, reportActivityDone } from "../lib/stage_read.ts";
+import { activityDoneGate, activityDoneOf } from "../lib/stage_read.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = REPLY_TOOL_NAME;
@@ -130,7 +130,7 @@ const parameters = Type.Object({
   })),
   activity_done: Type.Optional(Type.Union([Type.Null(), Type.Boolean()], {
     description:
-      "只在本会话的工作项是单项活动（不在工作流程里）、这项活动做够了、你要汇报结束时写 true：这条回复送达之后这个工作项结束，本会话此后按自由讨论办。" +
+      "只在本会话的工作项是单项活动（不在工作流程里）、这项活动做够了、你要汇报做完时写 true：回复下面会多一行「助手汇报：某项活动做完了」，工作项照旧留着。" +
       "别的时候不写。本会话的工作项是工作流程时写了会被拒绝：流程里做完一段，用进入下一段的请选择卡片提议。",
   })),
 });
@@ -193,8 +193,8 @@ export function registerReply(pi: ExtensionAPI): void {
       const messageId = turn.calls.some((call) => call.id === toolCallId) ? turn.entryId : null;
       const sessionId = ctx.sessionManager.getSessionId();
       const recorded = recordReplyActs(ctx.cwd, sessionId, branch as never, decision.reply, messageId, toolCallId);
-      // 助手汇报这条会话的工作项（单项活动）做完了：回复送达之后结束这个工作项，这条会话此后按自由讨论办。
-      const done = decision.reply.activity_done ? reportActivityDone(ctx.cwd, sessionId, toolCallId) : null;
+      // 助手汇报这条会话的工作项（单项活动）做完了：只是回复下面的一句话，工作项照旧留着，不改任何记录。
+      const done = decision.reply.activity_done ? activityDoneOf(ctx.cwd, sessionId) : null;
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。
       return spoken(recorded?.text ? `回复已送达。${recorded.text}` : "回复已送达", {
         delivered: true,
@@ -207,7 +207,7 @@ export function registerReply(pi: ExtensionAPI): void {
         answers_card: recorded?.answersCard ?? [],
         // 这张卡片重发的是哪一张（原来那张所在回复的编号）：页面据此把原来那张收成一句；不是重发时不带这一项。
         ...(recorded?.resendsCard ? { resends_card: recorded.resendsCard } : {}),
-        // 这条回复结束了哪个工作项（哪一项单项活动、工作项的记录号）、记下结束的那条事件的序号：页面据此在回复下面写一行；没有结束时不带这一项。
+        // 这条回复汇报做完的是哪个工作项（哪一项单项活动、工作项的记录号）：页面据此在回复下面写一行；没有汇报时不带这一项。
         ...(done ? { activity_done: done } : {}),
       });
     },

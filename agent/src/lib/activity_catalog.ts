@@ -11,7 +11,7 @@ import {
   PUBLISH, READ_NAMES, prerequisiteText,
 } from "./activity_def.ts";
 import { CHAPTERS, chapterLayout } from "./overall_chapters.ts";
-import { FLOW_INITIAL, LAUNCH_READY, type LampInput, type Stage, flowStartNode, isStage } from "./stage.ts";
+import { FLOW_ANALYSIS, type FlowItemRef, LAUNCH_READY, type LampInput, type Stage, flowExistsText, flowStartNode, isStage } from "./stage.ts";
 
 /** 算六类资产的现状与前置条件要的数。 */
 export interface AssetFacts {
@@ -168,7 +168,7 @@ export interface CatalogActivity {
   /** 现在的状态一句：可以启动、此版本尚未提供，或者缺什么前提。 */
   state: string;
   recommended: boolean;
-  /** 这项活动现在有几个进行中的工作项。 */
+  /** 这项活动现在有几个工作项。 */
   active_count: number;
 }
 
@@ -183,16 +183,23 @@ export interface CatalogFlow {
   inputs: string;
   prerequisite_text: string;
   example: string;
+  /** 现在能不能启动：看数据前提，另外任务里已有流程的工作项（不论哪条流程）时不能启动。 */
   enabled: boolean;
+  /** 现在的状态一句：可以启动、此版本尚未提供、缺什么前提，或者已有哪个流程工作项、在哪一站。 */
   state: string;
-  /** 推荐：没有发布过版本时是首次分析，发布过之后是需求变更。 */
+  /** 推荐：没有发布过版本时是需求分析，发布过之后是需求变更。 */
   recommended: boolean;
   /** 恒为 null：早先是「流程走到的站」，现在流程的位置记在各个工作项上，这一项只为还读它的页面留着。 */
   at: ActivityKey | null;
   /** 现在启动这条流程应当从哪一站开始：有材料从核读材料、没有材料从澄清；这条流程现在还不能启动时是 null。 */
   start: Stage | null;
-  /** 这条流程现在有几个进行中的工作项。 */
+  /** 这条流程现在有几个工作项（至多一个）。 */
   active_count: number;
+  /**
+   * 任务里已有的流程工作项（一个任务至多一个，不论哪条流程，所以每条流程这一项相同）：记录号、名字、所在的一站；没有是 null。
+   * 有它时流程都不能启动，页面把流程卡改成「打开它的会话」。
+   */
+  work_item: FlowItemRef | null;
 }
 
 export interface Catalog {
@@ -204,10 +211,12 @@ export interface Catalog {
 export const CATALOG_LATER = "此版本尚未提供";
 
 /**
- * 给页面的活动目录：两条工作流程与七项单项活动，各带现在能不能启动。能不能启动只看数据前提；counts 是进行中的工作项各有几个
- * （单项活动的按活动的键、流程的按流程的键），已经有进行中的工作项不拦，再启动是另起一个。
+ * 给页面的活动目录：两条工作流程与七项单项活动，各带现在能不能启动。单项活动能不能启动只看数据前提；counts 是工作项各有几个
+ * （单项活动的按活动的键、流程的按流程的键），单项活动已经有工作项不拦，再启动是另起一个。flowItem 是任务里已有的流程工作项：
+ * 有它时两条流程都不能启动（一个任务同一时刻至多一个流程工作项）。
  */
-export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, facts: AssetFacts, counts: Readonly<Record<string, number>> = {}): Catalog {
+export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, facts: AssetFacts, counts: Readonly<Record<string, number>> = {},
+  flowItem: FlowItemRef | null = null): Catalog {
   const activities: CatalogActivity[] = defs.activities.map((one) => {
     const base = {
       key: one.key, name: one.name, mode: one.mode, mode_name: MODE_NAMES[one.mode], purpose: one.purpose,
@@ -220,18 +229,20 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
     return { ...base, enabled: blocked === null, state: blocked ?? LAUNCH_READY };
   });
   const flows: CatalogFlow[] = defs.flows.map((one) => {
-    const initial = one.key === FLOW_INITIAL;
+    const analysis = one.key === FLOW_ANALYSIS;
     const blocked = blockedText(one.requires, facts);
+    const ready = analysis && blocked === null;
     return {
       key: one.key, name: one.name, purpose: one.purpose, applies: one.applies, nodes: one.nodes.map((key) => ({ key, name: ACTIVITY_NAMES[key] })), inputs: one.inputs,
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
-      // 只有首次分析现在能启动；需求变更要有已发布的版本，而且它的各站还没有定义。
-      enabled: initial && blocked === null,
-      state: blocked ?? (initial ? LAUNCH_READY : CATALOG_LATER),
-      recommended: initial ? facts.versions === 0 : facts.versions > 0,
+      // 只有需求分析现在能启动；需求变更要有已发布的版本，而且它的各站还没有定义。已有流程工作项时都不能启动。
+      enabled: ready && flowItem === null,
+      state: ready && flowItem !== null ? flowExistsText(flowItem) : blocked ?? (analysis ? LAUNCH_READY : CATALOG_LATER),
+      recommended: analysis ? facts.versions === 0 : facts.versions > 0,
       at: null,
-      start: initial ? flowStartNode(facts.materials > 0) : null,
+      start: analysis ? flowStartNode(facts.materials > 0) : null,
       active_count: counts[one.key] ?? 0,
+      work_item: flowItem,
     };
   });
   return { flows, activities };

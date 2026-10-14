@@ -19,7 +19,7 @@ import { CALL_SESSION, DEFINITION_PATH, SOURCE, UI_SESSION, callIn, count, demoD
 
 const SESSION = "sess-a";
 /**
- * 这份测试里用到的各条会话：提议属于工作项，所以进入某个阶段时把它们都挂到同一个首次分析的工作项上——
+ * 这份测试里用到的各条会话：提议属于工作项，所以进入某个阶段时把它们都挂到同一个需求分析的工作项上——
  * 助手发卡片的那一条、同一个工作项的另外几条、界面操作的那一条。
  */
 const SESSIONS = [SESSION, "sess-b", "sess-first", "sess-second", UI_SESSION, CALL_SESSION];
@@ -91,7 +91,7 @@ test("发出进入卡片：事件里带 proposal，提议就开着，带着卡�
   assert.equal(open(dir)!.event_seq, card.seq);
 });
 
-test("提议结束的四种情形：它的工作项换了一站（向前或者退回）、助手发了新的进入卡片、它的工作项结束了、任务不再进行中", () => {
+test("提议结束的情形：它的工作项换了一站（向前或者退回）、助手发了新的进入卡片、任务不再进行中；它的工作项被删除之后，归档的会话里没有提议", () => {
   // 用户点了进入：工作项向前换了一站，提议结束。
   const forward = workspace();
   enter(forward, "reading");
@@ -117,29 +117,28 @@ test("提议结束的四种情形：它的工作项换了一站（向前或者�
   // 任务不再进行中：没有开着的提议。
   withTaskDatabase(back, { createIfMissing: false }, (db) => db.prepare("UPDATE task SET status = '已完成' WHERE status = ?").run(TASK_ACTIVE));
   assert.equal(open(back), null);
-  // 工作项结束了（用户结束它）：它的提议也结束。
-  const ended = workspace();
-  enter(ended, "writing");
-  reply(ended, enterCard("reviewing", "writing"));
-  assert.equal(open(ended)!.stage, "reviewing");
-  runUserOperation({ workspaceDir: ended, sessionId: SESSION }, { op_id: "ui-op-end", kind: "end_activity", fields: { outcome: "abandoned" } });
-  assert.equal(open(ended), null);
+  // 工作项被删除（用户删的）：它的会话归档、不属于任何工作项，里面没有提议。
+  const deleted = workspace();
+  enter(deleted, "writing");
+  reply(deleted, enterCard("reviewing", "writing"));
+  assert.equal(open(deleted)!.stage, "reviewing");
+  runUserOperation({ workspaceDir: deleted, sessionId: SESSION }, { op_id: "ui-op-delete", kind: "delete_work_item", fields: {} });
+  assert.equal(open(deleted), null);
 });
 
-test("提议只随它自己的工作项失效：别的工作项启动、换站、结束都不影响它；同一个工作项换到别的一站时作废，对话里那一句末尾写明；做的正是提议的那一步时不写", () => {
+test("提议只随它自己的工作项失效：别的工作项启动、删除都不影响它；同一个工作项换到别的一站时作废，对话里那一句末尾写明；做的正是提议的那一步时不写", () => {
   const dir = workspace();
   enter(dir, "reading");
   reply(dir, enterCard("clarifying", "reading"));
   assert.equal(open(dir)!.stage, "clarifying");
-  // 用户在别的会话上启动一个单项的澄清，又启动一个首次分析、把它换一站、再把这两个都结束：都是别的工作项的事，这个工作项的提议还开着。
+  // 用户在别的会话上启动两个单项的澄清，再删掉其中一个：都是别的工作项的事，这个工作项的提议还开着。
+  // （流程的工作项一个任务只有一个，别的工作项只能是单项活动。）
   const elsewhere = (session: string, body: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: session }, { op_id: `ui-op-other-${++replies}`, ...body });
   assert.equal(elsewhere("sess-x", { kind: "start_activity", fields: { activity: "澄清", in_flow: false } }).note, "界面操作（不是用户打的字）：用户启动活动「澄清」。");
   assert.equal(open(dir)!.stage, "clarifying", "别的工作项启动不让它失效");
-  elsewhere("sess-y", { kind: "start_activity", fields: { activity: "核读材料", in_flow: true } });
-  assert.equal(elsewhere("sess-y", { kind: "move_stage", fields: { stage: "写条目" } }).note, "界面操作（不是用户打的字）：用户把工作项从核读材料移到写条目。", "那个工作项里没有提议，不写作废");
-  elsewhere("sess-y", { kind: "end_activity", fields: { outcome: "abandoned" } });
-  elsewhere("sess-x", { kind: "end_activity", fields: { outcome: "done" } });
-  assert.equal(open(dir)!.stage, "clarifying", "别的工作项换站、结束也不让它失效");
+  elsewhere("sess-y", { kind: "start_activity", fields: { activity: "澄清", in_flow: false, scope: "另一轮" } });
+  elsewhere("sess-y", { kind: "delete_work_item", fields: {} });
+  assert.equal(open(dir)!.stage, "clarifying", "别的工作项删除也不让它失效");
   // 这条提议只属于它的工作项：别的工作项的会话、自由讨论的会话里都看不到它。
   assert.deepEqual([open(dir, "sess-x"), open(dir, "sess-y"), open(dir, "sess-free"), open(dir, null)], [null, null, null, null]);
   assert.equal(open(dir, "sess-b")!.stage, "clarifying", "同一个工作项的另一条会话里看得到");

@@ -22,7 +22,7 @@ export function StartGuide({ taskId, flow, texts }: {
         <div className="tp-guide-l">
           <div className="gt">三步开始</div>
           <ol className="tp-steps">
-            <li><span className="no">1</span><div><b>选择工作流程</b>首次编制请选择「{name}」。</div></li>
+            <li><span className="no">1</span><div><b>选择工作流程</b>从头编制或整体复查请启动「{name}」流程。</div></li>
             <li><span className="no">2</span><div><b>提供输入</b>上传项目材料，或直接描述目标系统。</div></li>
             <li><span className="no">3</span><div><b>由助手推进</b>助手逐站完成并提议下一站，每一步由你确认。</div></li>
           </ol>

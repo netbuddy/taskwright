@@ -40,7 +40,8 @@ function facts(taskDir: string) {
       revisions: count("SELECT COUNT(*) AS n FROM revision"), items: count("SELECT COUNT(DISTINCT item_id) AS n FROM item_version"),
       sources: count("SELECT COUNT(*) AS n FROM item_source"),
       kinds: Object.fromEntries((db.prepare("SELECT kind, COUNT(*) AS n FROM item_source GROUP BY kind").all() as { kind: string; n: number }[]).map((r) => [r.kind, r.n])),
-      tables: count("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'"),
+      // SQLite 自己的表（记录号自增计数用的 sqlite_sequence）不算。
+      tables: count("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite%'"),
     };
   } finally {
     db.close();
@@ -105,7 +106,7 @@ for (const version of VERSIONS) {
   });
 }
 
-test("0.5.0 建的任务：阶段记录升成一个首次分析的工作项，那条旧会话属于它；现在的阶段、最近一次移动与每一次移动读出来与升级之前一样；服务接手得了，还能再换一站", async () => {
+test("0.5.0 建的任务：阶段记录升成一个需求分析的工作项，那条旧会话属于它；现在的阶段、最近一次移动与每一次移动读出来与升级之前一样；服务接手得了，还能再换一站", async () => {
   const dataDir = join(tmp, STAGED);
   const where = { dataDir, tasksDir: join(dataDir, "tasks"), knowledgeDir: null };
   const id = "TASK-SAMPLE-050";
@@ -131,7 +132,7 @@ test("0.5.0 建的任务：阶段记录升成一个首次分析的工作项，�
     ["clarifying", "modeling", "user", "用户在卡片上选了「进入整理建模」", "initial"],
     ["modeling", "writing", "user", "用户在卡片上选了「开始写条目」", "initial"],
     ["writing", "clarifying", "user", "借期还没有问清楚。", "initial"],
-  ], "样本里是四次移动，最后退回了澄清");
+  ], "样本里是四次移动，最后退回了澄清；那一版的流程键是 initial");
 
   const plan = planUpgrade(where);
   assert.deepEqual(plan.tasks.map((t) => [t.dir, t.task_id, t.version]), [[id, id, 4]]);
@@ -143,16 +144,15 @@ test("0.5.0 建的任务：阶段记录升成一个首次分析的工作项，�
 
     const db = new DatabaseSync(join(taskDir, DB_NAME), { readOnly: true });
     try {
-      const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
+      const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite%'").all() as { name: string }[]).map((row) => row.name);
       assert.deepEqual([names.length, names.includes("activity_record"), names.includes("stage_record")], [TABLE_NAMES.length, true, false]);
-      // 四条阶段记录都在首次分析里：并成一个工作项。编号、会话、调用编号、由谁、理由、启动的时刻与序号是最早那一次移动的；
-      // 现在的活动与所在的一站是最晚那一次移到的；还在进行。
+      // 四条阶段记录都在需求分析里：并成一个工作项。编号、会话、调用编号、由谁、理由、启动的时刻与序号是最早那一次移动的；
+      // 现在的活动与所在的一站是最晚那一次移到的；流程键改写成 analysis；没有结束的两列。
       const rows = db.prepare("SELECT * FROM activity_record ORDER BY started_seq").all().map((row) => ({ ...row }));
       const first = before[0], latest = before.at(-1)!;
       assert.deepEqual(rows, [{
         record_id: first.record_id, task_id: id, session_id: first.session_id, run_id: first.run_id, call_id: first.call_id, actor: first.actor,
-        activity: latest.stage, node: latest.stage, flow: first.flow, reason: first.reason, started_at: first.created_at, ended_at: null, started_seq: first.event_seq, ended_seq: null,
-        scope: null, status: "active",
+        activity: latest.stage, node: latest.stage, flow: "analysis", reason: first.reason, started_at: first.created_at, started_seq: first.event_seq, scope: null,
       }]);
       // 那条旧会话挂在这个工作项上。
       assert.deepEqual(db.prepare("SELECT session_id, record_id, attached_at FROM work_item_session").all().map((row) => ({ ...row })),
@@ -165,12 +165,12 @@ test("0.5.0 建的任务：阶段记录升成一个首次分析的工作项，�
     // 在那条旧会话里读出来与升级之前一样：现在在澄清，最近一次是用户移的（取自早先的移动事件）；调试页签的记录逐条相同，都是换站。
     const last = before.at(-1)!;
     const stage = library.stageView(taskDir, "session-sample")!;
-    assert.deepEqual([stage.current, stage.moved_by, stage.reason, stage.flow, stage.work_item?.name, stage.work_item?.status],
-      ["clarifying", "user", "借期还没有问清楚。", "initial", "首次分析", "active"]);
+    assert.deepEqual([stage.current, stage.moved_by, stage.reason, stage.flow, stage.work_item?.name, stage.work_item?.record_id],
+      ["clarifying", "user", "借期还没有问清楚。", "analysis", "需求分析", before[0].record_id]);
     const eventAt = new Map((eventsBefore as { seq: number; at: string }[]).map((one) => [Number(one.seq), one.at]));
     assert.equal(stage.moved_at, clock.fromLocalText(eventAt.get(Number(last.event_seq))!));
     assert.deepEqual(library.stageDebugView(taskDir).records, before.map((r) => ({
-      from: r.from_stage, to: r.stage, actor: r.actor, reason: r.reason, run_id: r.run_id, session_id: r.session_id, at: clock.fromLocalText(eventAt.get(Number(r.event_seq))!), flow: r.flow,
+      from: r.from_stage, to: r.stage, actor: r.actor, reason: r.reason, run_id: r.run_id, session_id: r.session_id, at: clock.fromLocalText(eventAt.get(Number(r.event_seq))!), flow: "analysis",
       kind: "move", record_id: null,
     })));
     // 别的会话不属于这个工作项：空闲。

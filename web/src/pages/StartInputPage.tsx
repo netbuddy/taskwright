@@ -99,7 +99,7 @@ export function StartInputPage({ taskId, startKey, startCase }: {
   const selected = task.knowledge_libraries ?? [GENERAL];
   const materials = ownMaterials(task.materials);
   const endsCurrent = endsCurrentLine(status, target);
-  // 首次编制：工作流程第一次开展、业务说明还空着。这时「开展后」写有材料与没有材料两种情形，三块输入上面有一段话。
+  // 从头编制：工作流程第一次开展、业务说明还空着。这时「开展后」写有材料与没有材料两种情形，三块输入上面有一段话。
   const first = target.kind === "flow" && target.flow.at === null && blocks.description;
   const startNode = target.kind === "flow" ? target.flow.nodes.find((one) => one.key === target.flow.start) : null;
 

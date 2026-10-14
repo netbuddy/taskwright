@@ -30,7 +30,7 @@ function refused(fn: () => unknown): UserOpError {
   assert.fail("应当被拒绝");
 }
 
-/** 在界面操作的那条会话上启动一个首次分析的工作项，从某一站开始。移动阶段只在流程的工作项里做。 */
+/** 在界面操作的那条会话上启动一个需求分析的工作项，从某一站开始。移动阶段只在流程的工作项里做。 */
 const launch = (dir: string, stage: string) =>
   runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-${++n}`, kind: "start_activity", fields: { activity: stage, in_flow: true } });
 

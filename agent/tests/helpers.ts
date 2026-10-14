@@ -15,7 +15,7 @@ import { type ProblemClick, problemClicks } from "../src/lib/problem_consent.ts"
 import { REGISTERED_OUTPUTS } from "../src/lib/registered_outputs.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import type { Stage } from "../src/lib/stage.ts";
-import { attachSession, moveStage, openActivityRecord, startActivity } from "../src/lib/stage_read.ts";
+import { attachSession, flowWorkItem, moveStage, openActivityRecord, startActivity } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 // 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
 import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
@@ -168,9 +168,9 @@ export const UI_SESSION = "sess-ui";
 export const CALL_SESSION = "session-test";
 
 /**
- * 让测试里的会话处在某个工作阶段（当作用户在界面上做的）：这几条会话还没有在做流程的工作项时，启动一个首次分析的工作项、从这个阶段开始，
- * 并把这几条会话都挂上去；已经在做流程的工作项时，把它移到这个阶段。早先建的任务没有阶段，调了什么都不做。
- * 返回工作项的记录号（没有阶段的任务返回 null）。
+ * 让测试里的会话处在某个工作阶段（当作用户在界面上做的）：这几条会话还没有在做流程的工作项时，挂到任务里的流程工作项上
+ * （没有就启动一个需求分析的工作项、从这个阶段开始），再把它移到这个阶段；已经在做流程的工作项时，把它移到这个阶段。
+ * 早先建的任务没有阶段，调了什么都不做。返回工作项的记录号（没有阶段的任务返回 null）。
  */
 export function enterStage(workspaceDir: string, stage: Stage, sessions: readonly string[] = [UI_SESSION, CALL_SESSION]): number | null {
   return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
@@ -181,8 +181,14 @@ export function enterStage(workspaceDir: string, stage: Stage, sessions: readonl
       moveStage(db, workspaceDir, who, stage, "");
       return open.record_id;
     }
-    // 这几条会话原来属于的工作项已经结束（或者是单项活动的）：夹具里把它们摘下来，好再启动一个。产品里一条会话不会换工作项。
+    // 这几条会话原来属于别的工作项（单项活动的）或者不属于任何工作项：夹具里把它们摘下来，好挂到流程的工作项上。产品里一条会话不会换工作项。
     for (const one of sessions) db.prepare("DELETE FROM work_item_session WHERE session_id = ?").run(one);
+    const existing = flowWorkItem(db, task.task_id);
+    if (existing !== null) {
+      for (const one of sessions) attachSession(db, task.task_id, existing.record_id, one);
+      moveStage(db, workspaceDir, who, stage, "");
+      return existing.record_id;
+    }
     const started = startActivity(db, workspaceDir, who, stage, true, "");
     if (started.record_id === undefined) return null;
     for (const one of sessions.slice(1)) attachSession(db, task.task_id, started.record_id, one);
@@ -191,11 +197,11 @@ export function enterStage(workspaceDir: string, stage: Stage, sessions: readonl
 }
 
 /**
- * 让测试里的会话空闲：把还在进行的工作项都记成已做完（直接改库）。这是为了测空闲时各处怎样办的夹具。
+ * 让测试里的会话空闲：把全部会话从工作项上摘下来（直接改库），它们都成了自由讨论的会话。这是为了测空闲时各处怎样办的夹具。
  */
-export function endActivities(workspaceDir: string): void {
+export function idleSessions(workspaceDir: string): void {
   withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
-    db.exec("UPDATE activity_record SET status = 'done', ended_at = started_at, ended_seq = started_seq WHERE status = 'active'");
+    db.exec("DELETE FROM work_item_session");
   });
 }
 

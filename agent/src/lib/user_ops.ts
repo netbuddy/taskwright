@@ -37,19 +37,22 @@
  * 工作项本来就在那一站时什么都不记、也不追加说明。早先建的任务没有阶段，拒绝。
  *
  * 启动一个工作项（start_activity）：用户在任务起点页或者切换工作面板里选了一条工作流程或一项单项活动。fields 写 { activity, in_flow }：
- * activity 是六项活动（六个阶段）的名字或写法之一；in_flow 为真是启动首次分析这条流程、从这一站开始，为假是启动这项单项活动。
+ * activity 是六项活动（六个阶段）的名字或写法之一；in_flow 为真是启动需求分析这条流程、从这一站开始，为假是启动这项单项活动。
  * fields 里另可以写 scope：范围说明（一段文字，最多 SCOPE_MAX_LENGTH 个字），记进工作项，写进追加的那句说明，
- * 这个工作项进行期间助手每次运行的系统提示里都带着它。
+ * 这个工作项的每条会话里助手每次运行的系统提示都带着它。
  * 启动一律新建一个工作项与一条属于它的会话：会话由后端在转交之前建好，这里把工作项记在那条新会话上。早先的 session 一项已经停用，写了就拒绝；
- * 这条会话已经属于一个工作项时也拒绝。同一项活动、同一条流程已经有进行中的工作项时不拦，再启动是另起一个。
+ * 这条会话已经属于一个工作项时也拒绝。以流程方式启动时，任务里已有流程的工作项（不论哪条流程）就拒绝，拒绝里写明现有的那一个：
+ * 一个任务同一时刻至多一个流程的工作项。同一项单项活动已经有工作项时不拦，再启动是另起一个。
  * 往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行、不替用户发话。启动单项活动缺前提时拒绝并写明缺什么
  * （这项活动的定义里写的数据条件，lib/activity_catalog.ts）。启动只能由用户做：助手的工具没有启动的路。
  *
- * 换一条会话接着做（continue_activity）：fields 写 { activity_record_id }，一个进行中的工作项的记录号。后端先建好一条新会话再转交，
+ * 换一条会话接着做（continue_activity）：fields 写 { activity_record_id }，一个工作项的记录号。后端先建好一条新会话再转交，
  * 这里把那条新会话挂到这个工作项上，往会话里追加一句说明。工作项的位置与范围说明都不变；原来的会话原样留着。
  *
- * 结束一个工作项（end_activity）：fields 写 { outcome, activity_record_id }：outcome 是 done（已做完）或 abandoned（已放弃）；
- * activity_record_id 是工作项的记录号，不写就是这条会话的工作项。只有进行中的工作项能结束。状态记下之后，属于它的会话都按自由讨论办。
+ * 删除一个工作项（delete_work_item）：fields 写 { activity_record_id }，不写就是这条会话的工作项。工作项没有终点，不要了就删：
+ * 删掉活动记录那一行，它的会话全部归档（不再属于任何工作项，会话清单默认不列，打开后按自由讨论办），修订与事件都不动。
+ * 往这次请求所在的会话里追加一句说明，结果里带随之归档了几条会话（archived_sessions）。不能撤销；删了流程的工作项之后可以重新启动流程，
+ * 原来所在的一站不保留。
  *
  * 拒绝一律抛 UserOpError，带一个与接口错误码（docs/api.md 的「错误」一节）一致的错误码（stale_revision、undo_conflict、
  * task_closed、no_task、rejected、bad_request）和给人看的一句中文，data 里放细节。本模块不依赖 pi。
@@ -67,11 +70,11 @@ import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, TASK_ACTIVE, elemen
 import { completeTask } from "./complete_task.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
-  IDLE, PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, endedByUserReason, isStage, scopeSentence, stageByName,
-  workItemContinuedSentence, workItemEndedSentence,
+  IDLE, PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, isStage, scopeSentence, stageByName,
+  workItemContinuedSentence, workItemDeletedSentence,
 } from "./stage.ts";
 import { openProposal } from "./stage_proposal.ts";
-import { type StageMoveOutcome, attachSession, endWorkItem, isOutcome, moveStage, sessionWorkItem, startActivity, workItemById, workItemName } from "./stage_read.ts";
+import { type StageMoveOutcome, attachSession, deleteWorkItem, moveStage, sessionWorkItem, startActivity, workItemById, workItemName } from "./stage_read.ts";
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
 export const EVENT_ITEM_VIEWED = "ITEM_VIEWED";
@@ -79,7 +82,7 @@ export const EVENT_REVIEW_WAIVED = "REVIEW_WAIVED";
 export const EVENT_REVIEW_UNWAIVED = "REVIEW_UNWAIVED";
 export const EVENT_REVIEW_RULES_CHANGED = "REVIEW_RULES_CHANGED";
 export const USER_OP_KINDS = ["edit_fields", "delete_item", "mark_viewed", "keep_pending", "undo", "waive_review", "unwaive_review", "set_review_rules",
-  "submit_deliverable", "move_stage", "start_activity", "continue_activity", "end_activity"] as const;
+  "submit_deliverable", "move_stage", "start_activity", "continue_activity", "delete_work_item"] as const;
 export type UserOpKind = (typeof USER_OP_KINDS)[number];
 
 export { KEEP_PENDING_STATUS };
@@ -104,8 +107,10 @@ export interface UserOpResult {
   /** notify_executor 为真的标为已读之后发给执行者的那句话（固定模板），其余为 null。 */
   notify_text: string | null;
   undoable: boolean;
-  /** 启动、接着做、结束一个工作项时：那个工作项的记录号。别的操作没有这一项。 */
+  /** 启动、接着做、删除一个工作项时：那个工作项的记录号。别的操作没有这一项。 */
   record_id?: number;
+  /** 删除一个工作项时：随之归档了几条会话。别的操作没有这一项。 */
+  archived_sessions?: number;
 }
 
 export class UserOpError extends Error {
@@ -200,7 +205,7 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
   if (kind === "move_stage") return moveStageByUser(ctx, opId, request);
   if (kind === "start_activity") return startActivityByUser(ctx, opId, request);
   if (kind === "continue_activity") return continueActivityByUser(ctx, opId, request);
-  if (kind === "end_activity") return endActivityByUser(ctx, opId, request);
+  if (kind === "delete_work_item") return deleteWorkItemByUser(ctx, opId, request);
   if (!Array.isArray(request.targets) || request.targets.length === 0) {
     throw new UserOpError("bad_request", "targets 应当是一个不为空的列表。");
   }
@@ -770,7 +775,7 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
   const to = stageByName(fields.activity);
   if (to === null || typeof fields.in_flow !== "boolean") {
     throw new UserOpError("bad_request",
-      `start_activity 要在 fields 里写 activity（${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一）与 in_flow（true 是启动首次分析这条流程、从这一站开始，false 是启动这项单项活动）。`);
+      `start_activity 要在 fields 里写 activity（${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一）与 in_flow（true 是启动需求分析这条流程、从这一站开始，false 是启动这项单项活动）。`);
   }
   if (fields.scope !== undefined && fields.scope !== null && typeof fields.scope !== "string") {
     throw new UserOpError("bad_request", "start_activity 的 scope 是范围说明，应当是一段文字；不写范围说明就不要带这一项。");
@@ -789,6 +794,11 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
   if (outcome.why === "not_ready") {
     const fact = `现在还不能启动「${STAGE_NAMES[to]}」：${outcome.blocked}`;
     throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+  }
+  if (outcome.why === "flow_exists") {
+    const fact = `任务里已有流程工作项「${outcome.existing!.name}」（记录号 ${outcome.existing!.record_id}，位于「${STAGE_NAMES[outcome.existing!.node]}」），` +
+      "一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着";
+    throw new UserOpError("rejected", `${fact}。`, { reasons: [fact], existing: outcome.existing });
   }
   if (outcome.why === "session_bound") {
     const fact = "这条会话已经属于一个工作项，不能再在它上面启动另一个；启动一律在一条新会话里做";
@@ -812,18 +822,14 @@ function recordIdOf(kind: string, fields: Record<string, unknown>, required: boo
   return value as number;
 }
 
-/** 换一条会话接着做一个进行中的工作项：见文件头。fields 写 { activity_record_id }。 */
+/** 换一条会话接着做一个工作项：见文件头。fields 写 { activity_record_id }。 */
 function continueActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
   const fields = isObject(request.fields) ? request.fields : {};
   const recordId = recordIdOf("continue_activity", fields, true)!;
   const item = inTask(ctx, (db) => {
     const taskId = activeTaskId(db, request, "接着做工作项");
     const found = workItemById(db, taskId, recordId);
-    if (found === null) throw new UserOpError("not_found", `没有记录号是 ${recordId} 的工作项。`);
-    if (found.status !== "active") {
-      const fact = `工作项「${workItemName(found)}」已经结束，不能再接着做；要再做这项活动，从任务起点页再启动一次`;
-      throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
-    }
+    if (found === null) throw new UserOpError("not_found", `没有记录号是 ${recordId} 的工作项（可能已经删除）。`);
     if (sessionWorkItem(db, taskId, ctx.sessionId) !== null) {
       const fact = "这条会话已经属于一个工作项；接着做一个工作项要在一条新会话里";
       throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
@@ -838,33 +844,27 @@ function continueActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest):
   };
 }
 
-/** 结束一个工作项：见文件头。fields 写 { outcome, activity_record_id }。 */
-function endActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
+/** 用户删除一个工作项时，事件里记的理由。 */
+export const WORK_ITEM_DELETED_REASON = "用户删除这个工作项";
+
+/** 删除一个工作项：见文件头。fields 写 { activity_record_id }。 */
+function deleteWorkItemByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
   const fields = isObject(request.fields) ? request.fields : {};
-  const outcome = fields.outcome;
-  if (!isOutcome(outcome)) throw new UserOpError("bad_request", "end_activity 要在 fields 里写 outcome：done（已做完）或者 abandoned（已放弃）。");
-  const recordId = recordIdOf("end_activity", fields, false);
-  const done = outcome === "done";
-  const ended = inTask(ctx, (db) => {
-    const taskId = activeTaskId(db, request, "结束工作项");
-    const own = sessionWorkItem(db, taskId, ctx.sessionId);
-    const item = recordId === null ? own : workItemById(db, taskId, recordId);
+  const recordId = recordIdOf("delete_work_item", fields, false);
+  const deleted = inTask(ctx, (db) => {
+    const taskId = activeTaskId(db, request, "删除工作项");
+    const item = recordId === null ? sessionWorkItem(db, taskId, ctx.sessionId) : workItemById(db, taskId, recordId);
     if (item === null) {
-      if (recordId !== null) throw new UserOpError("not_found", `没有记录号是 ${recordId} 的工作项。`);
-      const fact = "这条会话不属于任何工作项，没有可以结束的";
+      if (recordId !== null) throw new UserOpError("not_found", `没有记录号是 ${recordId} 的工作项（可能已经删除）。`);
+      const fact = "这条会话不属于任何工作项，没有可以删除的";
       throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
     }
-    if (item.status !== "active") {
-      const fact = `工作项「${workItemName(item)}」已经结束`;
-      throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
-    }
-    const seq = endWorkItem(db, item, outcome, { taskId, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, endedByUserReason(done));
-    return { item, seq, here: own !== null && own.record_id === item.record_id };
+    return { item, ...deleteWorkItem(db, item, { taskId, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, WORK_ITEM_DELETED_REASON) };
   });
   return {
-    op_id: opId, kind: "end_activity", event_seqs: [ended.seq], results: [], revision_no: null,
-    note: `界面操作（不是用户打的字）：${workItemEndedSentence(workItemName(ended.item), done, ended.here)}`,
-    notify_text: null, undoable: false, record_id: ended.item.record_id,
+    op_id: opId, kind: "delete_work_item", event_seqs: [deleted.event_seq], results: [], revision_no: null,
+    note: `界面操作（不是用户打的字）：${workItemDeletedSentence(workItemName(deleted.item), deleted.archived)}`,
+    notify_text: null, undoable: false, record_id: deleted.item.record_id, archived_sessions: deleted.archived,
   };
 }
 

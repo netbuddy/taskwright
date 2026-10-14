@@ -8,10 +8,10 @@
  *
  * 活动的说明与节点的出口是分开的两处。活动的说明（做什么、不做什么、做到什么算够）一项活动一份文件，与它在不在流程里无关；
  * 出口（做完了提议什么、往回提议什么、用户说的话不属于这一段时怎样办）是这项活动在一条流程里的那个节点的事，写在流程的定义里
- * （agent/prompts/flows/initial.md，首次分析），一个节点一节。会话的工作项是流程的工作项时，两处接起来；工作项是单项活动时，
- * 出口换成固定的一段（STANDALONE_EXIT）：做够了就在回复里汇报结束，不提议进入别的活动。
+ * （agent/prompts/flows/analysis.md，需求分析），一个节点一节。会话的工作项是流程的工作项时，两处接起来；工作项是单项活动时，
+ * 出口换成固定的一段（STANDALONE_EXIT）：做够了就在回复里汇报做完，不提议进入别的活动。
  *
- * 会话空闲时（没有在进行的工作项，lib/stage.ts 的 IDLE）没有活动的说明可拼：用一段固定的开头（IDLE_OPENING）说明本会话现在空闲，
+ * 会话空闲时（不属于任何工作项，lib/stage.ts 的 IDLE）没有活动的说明可拼：用一段固定的开头（IDLE_OPENING）说明本会话现在空闲，
  * 后面接澄清那项活动的说明去掉标题与开头那一段话（从第一个「## 」小节起），不带任何节点的出口。任务类型一级澄清的那一段若有
  * 「## 出口」一节，也去掉（withoutSection）。
  *
@@ -50,10 +50,10 @@ const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "p
 /** 平台一级按阶段拼的文件所在的目录。 */
 export const PLATFORM_STAGES_DIR = join(PROMPTS_DIR, "stages");
 
-/** 流程的定义所在的目录，与首次分析这条流程的文件名。 */
+/** 流程的定义所在的目录，与需求分析这条流程的文件名。 */
 export const PLATFORM_FLOWS_DIR = join(PROMPTS_DIR, "flows");
 export const FLOWS_SUBDIR = "flows";
-export const FLOW_INITIAL_FILE = "initial.md";
+export const FLOW_ANALYSIS_FILE = "analysis.md";
 
 /** 平台 skill 的目录：它是早先的任务读的那一份，有阶段的任务不读它，认任务 skill 时要把它排除。 */
 export const PLATFORM_SKILL_DIR = join(PROMPTS_DIR, "skills", "taskwright-executor");
@@ -96,15 +96,16 @@ export function withoutOpening(text: string): string {
   return first < 0 ? text : lines.slice(first).join("\n");
 }
 
-/** 会话空闲时（自由讨论的会话，或者它的工作项已经结束）接在共用部分后面的那一段的开头：后面接澄清那项活动的说明（去掉它自己的标题与开头那一段话）。 */
+/** 会话空闲时（自由讨论的会话，或者归档的会话）接在共用部分后面的那一段的开头：后面接澄清那项活动的说明（去掉它自己的标题与开头那一段话）。 */
 export const IDLE_OPENING = "# 现在：自由讨论\n\n" +
-  "本会话现在没有在进行的工作项：它是自由讨论的会话，或者它的工作项已经结束。下面的规矩与澄清一段相同，但不写需求条目，不提议进入任何阶段，" +
+  "本会话不属于任何工作项，是自由讨论的会话。下面的规矩与澄清一段相同，但不写需求条目，不提议进入任何阶段，" +
   "也不提议开始哪一项活动；用户上传了材料也不自行核读。用户要做哪一项活动，请他从任务起点页启动一个工作项。";
 
 /** 工作项是单项活动时，代替节点出口的那一段。 */
 export const STANDALONE_EXIT = "## 出口\n\n" +
-  "本会话的工作项是单项活动，不在工作流程里。这项活动做够了就在回复里汇报结束，不提议进入别的活动：" +
-  "在成文的话里说清做到了哪里、还差什么，回复里写 `activity_done: true`；回复送达之后这个工作项结束，本会话此后按自由讨论办。" +
+  "本会话的工作项是单项活动，不在工作流程里。这项活动做够了就在回复里汇报做完，不提议进入别的活动：" +
+  "在成文的话里说清做到了哪里、还差什么，回复里写 `activity_done: true`。汇报只是一句话，工作项照旧留着：用户之后还可以在本会话里接着说，" +
+  "你照这项活动的规矩接着做。" +
   "不要发进入下一段或者退回前面阶段的卡片，用户点了也不算数。用户说的事不属于这项活动时：能在这项活动里顺手做的照做；" +
   "这项活动做不了的（工具会拒绝），说明要做那件事请用户从任务起点页启动相应的工作项。";
 
@@ -124,8 +125,8 @@ export function withoutSection(text: string, heading: string): string {
 }
 
 /**
- * 用户启动工作项时写了范围说明：这个工作项进行期间，它的各条会话的系统提示里按活动拼的几段后面接这一段。
- * 工作项结束之后就没有了。
+ * 用户启动工作项时写了范围说明：这个工作项的各条会话的系统提示里按活动拼的几段后面接这一段。
+ * 工作项删除之后，它的会话归档、按自由讨论办，就没有了。
  */
 export function scopeSection(scope: string): string {
   return "## 本次范围说明\n\n" +
@@ -285,13 +286,13 @@ export function promptDirName(part: Exclude<PartKind, "tail">, stage: Position):
   if (part === "system") return SYSTEM_FILE;
   if (part === "platform_common") return COMMON_FILE;
   if (part === "platform_stage") return stageFile(stage);
-  if (part === "node_exit") return `${FLOWS_SUBDIR}/${FLOW_INITIAL_FILE}`;
+  if (part === "node_exit") return `${FLOWS_SUBDIR}/${FLOW_ANALYSIS_FILE}`;
   return `${PROMPT_DIR_TASK_SUBDIR}/${part === "task_common" ? COMMON_FILE : stageFile(stage)}`;
 }
 
 /** 提示词目录里认的全部文件名：平台一级八份、流程的定义一份、任务类型一级七份。别的名字一概不读。 */
 export function promptDirNames(): string[] {
-  return [SYSTEM_FILE, COMMON_FILE, ...STAGES.map(stageFile), `${FLOWS_SUBDIR}/${FLOW_INITIAL_FILE}`,
+  return [SYSTEM_FILE, COMMON_FILE, ...STAGES.map(stageFile), `${FLOWS_SUBDIR}/${FLOW_ANALYSIS_FILE}`,
     `${PROMPT_DIR_TASK_SUBDIR}/${COMMON_FILE}`, ...STAGES.map((one) => `${PROMPT_DIR_TASK_SUBDIR}/${stageFile(one)}`)];
 }
 
@@ -333,7 +334,7 @@ function wantsNodeExit(input: ComposeInput): boolean {
 function slots(input: ComposeInput, io: PromptIo): Slot[] {
   const platformDir = input.platformDir ?? PLATFORM_STAGES_DIR;
   // 流程的定义：产品自带的在 agent/prompts/flows/；平台一级的目录换成别的时（测试），在那个目录的 flows/ 下。
-  const flowPath = join(input.platformDir ? join(input.platformDir, FLOWS_SUBDIR) : PLATFORM_FLOWS_DIR, FLOW_INITIAL_FILE);
+  const flowPath = join(input.platformDir ? join(input.platformDir, FLOWS_SUBDIR) : PLATFORM_FLOWS_DIR, FLOW_ANALYSIS_FILE);
   const builtin = (part: PartKind, name: string): Source => {
     const path = join(platformDir, name);
     return { part, from: "builtin", file: relative(REPO_ROOT, path), path };

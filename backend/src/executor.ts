@@ -524,10 +524,10 @@ export class Executor {
   }
 
   /**
-   * 同上，另带这次操作涉及的工作项的记录号（启动、换一条会话接着做、结束一个工作项时助手一侧回报的；别的操作为 null）。
-   * 启动或者接着做成了之后，这条会话随即按它的工作项起名。
+   * 同上，另带这次操作涉及的工作项的记录号（启动、换一条会话接着做、删除一个工作项时助手一侧回报的；别的操作为 null），
+   * 以及删除工作项时随之归档了几条会话（别的操作为 null）。启动或者接着做成了之后，这条会话随即按它的工作项起名。
    */
-  async actionWith(sessionId: string | null, body: Dict): Promise<{ op_id: string; activity_record_id: number | null }> {
+  async actionWith(sessionId: string | null, body: Dict): Promise<{ op_id: string; activity_record_id: number | null; archived_sessions: number | null }> {
     // 助手不在（已退出、还没启动、续接没接上之后）时与说话一样按需启动并续接这条会话，页面在这些状态下不必设只读；
     // 续接对不上照样报 session_resume_failed，操作不会在接错的会话里执行。没有给会话时不启动，免得为一次操作另开一条会话。
     await this.require(sessionId, sessionId !== null);
@@ -561,7 +561,7 @@ export class Executor {
     }
     const recordId = typeof result.activity_record_id === "number" ? result.activity_record_id : null;
     if ((command.kind === "start_activity" || command.kind === "continue_activity") && recordId !== null && sessionId) await this.nameAfterWorkItem(sessionId, recordId);
-    return { op_id: opId, activity_record_id: recordId };
+    return { op_id: opId, activity_record_id: recordId, archived_sessions: typeof result.archived_sessions === "number" ? result.archived_sessions : null };
   }
 
   /**
@@ -1023,8 +1023,6 @@ export class Executor {
       for (const t of work.turn_tools) if (t.id === (event.toolCallId ?? null)) Object.assign(t, { done: true, failed, details });
     }
     if (WRITE_TOOLS.has(tool) && !failed) this.hub.trigger();
-    // 助手在回复里汇报这条会话的工作项做完：库里多了一条工作项结束的事件，去查并转发给页面。
-    if (tool === REPLY_TOOL && !failed && details.activity_done) this.hub.trigger();
     if (tool === REPLY_TOOL && !failed) {
       const reply = details.reply || {};
       if (work !== null) {

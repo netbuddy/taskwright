@@ -89,7 +89,8 @@ export function clickStageUnmoved(details: Record<string, any>): { at: string; w
 
 /**
  * 助手在一条回复里汇报这条会话的工作项（单项活动）做完了时，那条回复带的一项：做完的是哪一项活动。
- * details 是「回复」工具结果的 details（助手一侧结束了活动记录时写进 activity_done）。没有结束时返回空对象，消息里不带这一项。
+ * details 是「回复」工具结果的 details（助手一侧核对过这条会话在做单项活动时写进 activity_done）。没有时返回空对象，消息里不带这一项。
+ * 汇报做完只是一句话，不改任何记录。
  */
 export function replyActivityDone(details: Record<string, any>): { activity_done?: { activity: string } } {
   const done = details.activity_done;

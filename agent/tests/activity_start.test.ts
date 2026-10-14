@@ -1,7 +1,8 @@
 /**
- * 工作项（src/lib/stage_read.ts 的 startActivity、moveStage、endWorkItem、endStandaloneActivity，src/lib/user_ops.ts 的 start_activity、
- * continue_activity、end_activity）：启动一项单项活动或一条流程就是在一条新会话上记一个工作项；流程换站只更新这一行；
- * 一条会话只属于一个工作项，守门看这条会话的工作项；工作项可以换一条会话接着做，可以由用户结束，单项活动的可以由助手汇报做完。
+ * 工作项（src/lib/stage_read.ts 的 startActivity、moveStage、deleteWorkItem、activityDoneOf，src/lib/user_ops.ts 的 start_activity、
+ * continue_activity、delete_work_item）：启动一项单项活动或一条流程就是在一条新会话上记一个工作项；流程换站只更新这一行；
+ * 一条会话只属于一个工作项，守门看这条会话的工作项；工作项没有终点，可以换一条会话接着做，不要了由用户删除（它的会话归档）；
+ * 一个任务同一时刻至多一个流程工作项；单项活动的工作项可以由助手汇报做完，汇报只是一句话。
  */
 
 import assert from "node:assert/strict";
@@ -14,7 +15,7 @@ import { withTaskDatabase } from "../src/lib/schema.ts";
 import { BACK_OPTIONS, ENTER_OPTIONS, IDLE, SCOPE_MAX_LENGTH, STAY_HERE_OPTION, STAY_OPTIONS } from "../src/lib/stage.ts";
 import { whereInWorkspace } from "../src/lib/stage_prompt.ts";
 import {
-  activeCounts, activityDoneGate, activityRecords, endStandaloneActivity, recordStageCardClick, reportActivityDone, sessionWorkItem, stageLines, stageOf, stageSummary, startActivity,
+  activeCounts, activityDoneGate, activityDoneOf, activityRecords, archivedSessions, recordStageCardClick, sessionWorkItem, stageLines, stageOf, stageSummary, startActivity,
   workItemSessionName, workItemSessions,
 } from "../src/lib/stage_read.ts";
 import { ToolRejection } from "../src/lib/tool_rejection.ts";
@@ -43,27 +44,27 @@ const refusedOp = (run: () => unknown): [string, string] | null => {
   }
   return null;
 };
-const items = (dir: string, taskId: string) => inDb(dir, (db) => activityRecords(db, taskId)).map((r) => [r.record_id, r.activity, r.node, r.flow, r.status, r.ended_at === null]);
+const items = (dir: string, taskId: string) => inDb(dir, (db) => activityRecords(db, taskId)).map((r) => [r.record_id, r.activity, r.node, r.flow]);
 const events = (dir: string, after: number) => query<{ name: string; payload: string }>(dir, "SELECT name, payload FROM event WHERE seq > ? ORDER BY seq", after)
   .map((e) => [e.name, JSON.parse(e.payload)]);
 const stageIn = (dir: string, taskId: string, session: string | null) => inDb(dir, (db) => stageOf(db, dir, taskId, DEFINITION, session));
 
-test("启动一项单项活动：在这条新会话上记一个进行中的工作项，会话挂上去，事件里带记录号；守门只对这条会话变，别的会话照旧空闲", () => {
+test("启动一项单项活动：在这条新会话上记一个工作项，会话挂上去，事件里带记录号；守门只对这条会话变，别的会话照旧空闲", () => {
   const { dir, taskId } = workspace();
   const before = count(dir, "event");
   const out = start(dir, "s-clarify", "澄清", false);
   assert.deepEqual([out.kind, out.note, out.undoable, out.notify_text, out.record_id], ["start_activity", "界面操作（不是用户打的字）：用户启动活动「澄清」。", false, null, 1]);
   assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "clarifying", node: null, flow: null, from: null, actor: "user", reason: "", run_id: null }]]);
   assert.deepEqual(out.event_seqs, [before + 1]);
-  assert.deepEqual(items(dir, taskId), [[1, "clarifying", null, null, "active", true]]);
+  assert.deepEqual(items(dir, taskId), [[1, "clarifying", null, null]]);
   assert.deepEqual(inDb(dir, (db) => workItemSessions(db, taskId)).map((one) => [one.session_id, one.record_id]), [["s-clarify", 1]]);
   // 这条会话在澄清；别的会话、没有给会话编号时都是空闲。
   assert.deepEqual([stageIn(dir, taskId, "s-clarify"), stageIn(dir, taskId, "s-other"), stageIn(dir, taskId, null)], ["clarifying", IDLE, IDLE]);
   // 摘要：这条会话的工作项是单项活动，不在流程里；给助手看的一句写明做够了怎样汇报。
   const summary = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-clarify"))!;
-  assert.deepEqual([summary.current, summary.node, summary.flow_node, summary.moved_by, summary.work_item?.kind, summary.work_item?.name, summary.work_item?.status],
-    ["clarifying", null, null, "user", "activity", "澄清", "active"]);
-  assert.match(stageLines(summary)[0], /^本会话的工作项是单项活动「澄清」，不在工作流程里（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 启动的）。这项活动做够了就在回复里汇报结束（回复里写 activity_done: true），不提议进入别的活动。$/);
+  assert.deepEqual([summary.current, summary.node, summary.flow_node, summary.moved_by, summary.work_item?.kind, summary.work_item?.name, summary.work_item?.record_id],
+    ["clarifying", null, null, "user", "activity", "澄清", 1]);
+  assert.match(stageLines(summary)[0], /^本会话的工作项是单项活动「澄清」，不在工作流程里（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 启动的）。这项活动做够了就在回复里汇报做完（回复里写 activity_done: true），不提议进入别的活动。$/);
   assert.match(stageLines(summary)[1], /^澄清这一段/);
   // 自由讨论的会话：摘要里没有工作项，给助手看的只有一句。
   const free = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-other"))!;
@@ -75,9 +76,9 @@ test("启动一条流程：一个工作项记着流程与所在的一站；换�
   const { dir, taskId } = workspace();
   const before = count(dir, "event");
   const out = start(dir, "s-flow", "核读材料", true);
-  assert.equal(out.note, "界面操作（不是用户打的字）：用户启动工作流程「首次分析」，从「核读材料」开始。");
-  assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "reading", node: "reading", flow: "initial", from: null, actor: "user", reason: "", run_id: null }]]);
-  assert.deepEqual(items(dir, taskId), [[1, "reading", "reading", "initial", "active", true]]);
+  assert.equal(out.note, "界面操作（不是用户打的字）：用户启动工作流程「需求分析」，从「核读材料」开始。");
+  assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "reading", node: "reading", flow: "analysis", from: null, actor: "user", reason: "", run_id: null }]]);
+  assert.deepEqual(items(dir, taskId), [[1, "reading", "reading", "analysis"]]);
   // 换站：移到写条目，再退回澄清。
   const forward = userOp(dir, "s-flow", { kind: "move_stage", fields: { stage: "写条目", reason: "材料都读过了" } });
   assert.deepEqual([forward.note, forward.record_id], ["界面操作（不是用户打的字）：用户把工作项从核读材料移到写条目。理由：材料都读过了", 1]);
@@ -85,7 +86,7 @@ test("启动一条流程：一个工作项记着流程与所在的一站；换�
   assert.equal(back.note, "界面操作（不是用户打的字）：用户把工作项从写条目移到澄清。");
   assert.deepEqual(nodeMoves(dir).map((one) => [one.record_id, one.from, one.node, one.direction, one.actor, one.reason]),
     [[1, "reading", "writing", "forward", "user", "材料都读过了"], [1, "writing", "clarifying", "back", "user", ""]]);
-  assert.deepEqual(items(dir, taskId), [[1, "clarifying", "clarifying", "initial", "active", true]], "还是那一行，没有另开");
+  assert.deepEqual(items(dir, taskId), [[1, "clarifying", "clarifying", "analysis"]], "还是那一行，没有另开");
   assert.equal(count(dir, "activity_record"), 1);
   // 已经在那一站：什么都不记，也不追加说明。
   const mark = count(dir, "event");
@@ -93,8 +94,8 @@ test("启动一条流程：一个工作项记着流程与所在的一站；换�
   assert.deepEqual([same.note, same.event_seqs, count(dir, "event")], ["", [], mark]);
   // 摘要里的谁、什么时候、为什么说的是最近一次换站。
   const summary = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-flow"))!;
-  assert.deepEqual([summary.current, summary.node, summary.work_item?.kind, summary.work_item?.name, summary.moved_by, summary.reason], ["clarifying", "clarifying", "flow", "首次分析", "user", ""]);
-  assert.match(stageLines(summary)[0], /^本会话的工作项是工作流程「首次分析」，现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 到这一站的）。$/);
+  assert.deepEqual([summary.current, summary.node, summary.work_item?.kind, summary.work_item?.name, summary.moved_by, summary.reason], ["clarifying", "clarifying", "flow", "需求分析", "user", ""]);
+  assert.match(stageLines(summary)[0], /^本会话的工作项是工作流程「需求分析」，现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 到这一站的）。$/);
   // 自由讨论的会话、单项活动的会话里不能移动阶段。
   assert.deepEqual(refusedOp(() => userOp(dir, "s-free", { kind: "move_stage", fields: { stage: "写条目" } })), ["rejected", NOT_IN_FLOW_TEXT]);
   start(dir, "s-alone", "澄清", false);
@@ -107,17 +108,17 @@ test("范围说明记进工作项与事件，接在对话那一句后面；早�
   const scoped = start(dir, "s-1", "澄清", false, { scope: "  只问续借的规则  " });
   assert.equal(scoped.note, "界面操作（不是用户打的字）：用户启动活动「澄清」。范围说明：只问续借的规则。");
   assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "clarifying", node: null, flow: null, from: null, actor: "user", reason: "", run_id: null, scope: "只问续借的规则" }]]);
-  assert.deepEqual(query<{ scope: string | null; session_id: string; status: string }>(dir, "SELECT scope, session_id, status FROM activity_record").map((row) => ({ ...row })),
-    [{ scope: "只问续借的规则", session_id: "s-1", status: "active" }]);
+  assert.deepEqual(query<{ scope: string | null; session_id: string }>(dir, "SELECT scope, session_id FROM activity_record").map((row) => ({ ...row })),
+    [{ scope: "只问续借的规则", session_id: "s-1" }]);
   assert.equal(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-1"))!.scope, "只问续借的规则");
   // 末尾已经有句号的不再补；只有空白的当作没有写，事件里没有这一项。
-  assert.equal(start(dir, "s-2", "写条目", true, { scope: "先写续借那几条。" }).note, "界面操作（不是用户打的字）：用户启动工作流程「首次分析」，从「写条目」开始。范围说明：先写续借那几条。");
+  assert.equal(start(dir, "s-2", "写条目", true, { scope: "先写续借那几条。" }).note, "界面操作（不是用户打的字）：用户启动工作流程「需求分析」，从「写条目」开始。范围说明：先写续借那几条。");
   const mark = count(dir, "event");
   start(dir, "s-3", "澄清", false, { scope: "   " });
   assert.equal("scope" in (events(dir, mark).at(-1)![1] as Record<string, unknown>), false);
   assert.equal(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-3"))!.scope, null);
   // 会话的名字：单项活动是活动名，流程是「流程名 · 所在的一站」，写了范围说明的接前 12 个字。
-  assert.deepEqual(inDb(dir, (db) => activityRecords(db, taskId)).map(workItemSessionName), ["澄清 · 只问续借的规则", "首次分析 · 写条目 · 先写续借那几条。", "澄清"]);
+  assert.deepEqual(inDb(dir, (db) => activityRecords(db, taskId)).map(workItemSessionName), ["澄清 · 只问续借的规则", "需求分析 · 写条目 · 先写续借那几条。", "澄清"]);
   assert.equal(workItemSessionName({ activity: "modeling", flow: null, scope: "只重画对象关系图，图书与副本分开建模；流程图与状态图不动。" }), "整理建模 · 只重画对象关系图，图书与");
   // 写法不对的拒绝，什么都不记：范围说明不是文字、太长；session 一项已经停用。
   const rows = count(dir, "activity_record");
@@ -126,33 +127,49 @@ test("范围说明记进工作项与事件，接在对话那一句后面；早�
   assert.deepEqual(bad({ scope: "字".repeat(SCOPE_MAX_LENGTH + 1) }), ["bad_request", `范围说明有 ${SCOPE_MAX_LENGTH + 1} 个字，最多 ${SCOPE_MAX_LENGTH} 个字。`]);
   assert.deepEqual(bad({ session: "new" }), ["bad_request", START_SESSION_RETIRED]);
   assert.deepEqual(bad({ session: "current" }), ["bad_request", START_SESSION_RETIRED]);
-  // 一条会话只属于一个工作项：在已经属于工作项的会话上再启动被拒，不论那个工作项还在不在进行。
+  // 一条会话只属于一个工作项：在已经属于工作项的会话上再启动被拒。
   assert.deepEqual(refusedOp(() => start(dir, "s-1", "澄清", false)), ["rejected", "这条会话已经属于一个工作项，不能再在它上面启动另一个；启动一律在一条新会话里做。"]);
   assert.equal(count(dir, "activity_record"), rows, "被拒的一次都没有记");
-  assert.equal(bad({ scope: "字".repeat(SCOPE_MAX_LENGTH) }), null);
+  assert.equal(refusedOp(() => start(dir, "s-max", "澄清", false, { scope: "字".repeat(SCOPE_MAX_LENGTH) })), null);
 });
 
-test("一个任务可以同时有几个进行中的工作项，同一项活动、同一条流程也可以并存；各有各的会话，换站与守门互不影响", () => {
+test("一个任务可以同时有几个工作项，同一项单项活动可以并存；流程工作项至多一个，再以流程方式启动被拒并写明现有的那一个；各有各的会话，换站与守门互不影响", () => {
   const { dir, taskId } = workspace();
   start(dir, "s-flow-a", "核读材料", true);
-  start(dir, "s-flow-b", "澄清", true, { scope: "第二遍" });
   start(dir, "s-clarify-a", "澄清", false);
-  start(dir, "s-clarify-b", "澄清", false);
-  assert.deepEqual(items(dir, taskId).map((one) => one.slice(0, 5)), [[1, "reading", "reading", "initial", "active"], [2, "clarifying", "clarifying", "initial", "active"],
-    [3, "clarifying", null, null, "active"], [4, "clarifying", null, null, "active"]]);
-  assert.deepEqual(inDb(dir, (db) => activeCounts(db, taskId)), { initial: 2, clarifying: 2 });
-  // 活动目录里各带个数，照样可以再启动。
+  start(dir, "s-clarify-b", "澄清", false, { scope: "第二遍" });
+  assert.deepEqual(items(dir, taskId), [[1, "reading", "reading", "analysis"], [2, "clarifying", null, null], [3, "clarifying", null, null]]);
+  assert.deepEqual(inDb(dir, (db) => activeCounts(db, taskId)), { analysis: 1, clarifying: 2 });
+  // 再以流程方式启动（不论从哪一站）：拒绝，写明现有的那一个；什么都不记。
+  const rows = count(dir, "activity_record");
+  let refused: unknown = null;
+  try {
+    start(dir, "s-flow-b", "澄清", true, { scope: "第二遍" });
+  } catch (error) {
+    refused = error;
+  }
+  assert.ok(refused instanceof UserOpError);
+  assert.deepEqual([refused.code, refused.message, refused.data.existing], ["rejected",
+    "任务里已有流程工作项「需求分析」（记录号 1，位于「核读材料」），一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着。",
+    { record_id: 1, name: "需求分析", node: "reading" }]);
+  assert.deepEqual([count(dir, "activity_record"), inDb(dir, (db) => sessionWorkItem(db, taskId, "s-flow-b"))], [rows, null]);
+  // 活动目录里各带个数；单项活动照样可以再启动，流程都不能启动，带着现有的那一个。
   const catalog = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, null))!.catalog!;
-  assert.deepEqual([catalog.flows[0].active_count, catalog.flows[0].enabled, catalog.activities[1].active_count, catalog.activities[1].enabled, catalog.activities[0].active_count], [2, true, 2, true, 0]);
-  // 一个工作项换站，别的不动。
+  assert.deepEqual([catalog.flows[0].active_count, catalog.flows[0].enabled, catalog.flows[0].state, catalog.flows[0].work_item, catalog.activities[1].active_count, catalog.activities[1].enabled],
+    [1, false, "已有流程工作项「需求分析」，位于「核读材料」", { record_id: 1, name: "需求分析", node: "reading" }, 2, true]);
+  // 一个工作项换站，别的不动；现有的那一个跟着写新的一站。
   userOp(dir, "s-flow-a", { kind: "move_stage", fields: { stage: "写条目" } });
-  assert.deepEqual(["s-flow-a", "s-flow-b", "s-clarify-a", "s-free"].map((one) => stageIn(dir, taskId, one)), ["writing", "clarifying", "clarifying", IDLE]);
-  // 结束其中一个，个数随之减少。
-  userOp(dir, "s-clarify-a", { kind: "end_activity", fields: { outcome: "done" } });
-  assert.deepEqual(inDb(dir, (db) => activeCounts(db, taskId)), { initial: 2, clarifying: 1 });
+  assert.deepEqual(["s-flow-a", "s-clarify-a", "s-clarify-b", "s-free"].map((one) => stageIn(dir, taskId, one)), ["writing", "clarifying", "clarifying", IDLE]);
+  assert.equal(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, null))!.catalog!.flows[0].state, "已有流程工作项「需求分析」，位于「写条目」");
+  // 删掉其中一个单项活动，个数随之减少；删掉流程的工作项之后，可以重新启动流程（原来所在的一站不保留）。
+  userOp(dir, "s-clarify-a", { kind: "delete_work_item", fields: {} });
+  userOp(dir, "s-flow-a", { kind: "delete_work_item", fields: {} });
+  assert.deepEqual(inDb(dir, (db) => activeCounts(db, taskId)), { clarifying: 1 });
+  assert.equal(start(dir, "s-flow-c", "澄清", true).record_id, 4);
+  assert.equal(stageIn(dir, taskId, "s-flow-c"), "clarifying");
 });
 
-test("守门按会话：助手能写什么、系统提示拼哪一段、能不能请求评审，都看这条会话的工作项；自由讨论的会话与工作项已经结束的会话按空闲", () => {
+test("守门按会话：助手能写什么、系统提示拼哪一段、能不能请求评审，都看这条会话的工作项；自由讨论的会话与归档的会话按空闲", () => {
   const { dir, taskId } = workspace();
   start(dir, "s-write", "写条目", true);
   start(dir, "s-clarify", "澄清", false, { scope: "只问续借" });
@@ -173,7 +190,7 @@ test("守门按会话：助手能写什么、系统提示拼哪一段、能不�
   // 二、澄清的工作项的会话：同一个任务、同一时刻，照澄清的规矩拦。
   assert.match(refusal("s-clarify")!, /任务现在在澄清阶段，这个阶段不能新增「用例」的条目/);
   // 三、自由讨论的会话：按空闲拦，原话请用户从任务起点页启动一个工作项。
-  assert.match(refusal("s-free")!, /本会话没有在进行的工作项，这时不能新增「用例」的条目/);
+  assert.match(refusal("s-free")!, /本会话不属于任何工作项，这时不能新增「用例」的条目/);
   assert.match(refusal("s-free")!, /请用户从任务起点页启动一个工作项/);
   // 四、系统提示拼哪一段也按会话：流程的、单项活动的（带范围说明）、自由讨论的。
   assert.deepEqual([whereInWorkspace(dir, "s-write"), whereInWorkspace(dir, "s-clarify"), whereInWorkspace(dir, "s-free"), whereInWorkspace(dir, null)],
@@ -189,14 +206,16 @@ test("守门按会话：助手能写什么、系统提示拼哪一段、能不�
   };
   assert.equal(reviewGate("s-write"), null);
   assert.match(reviewGate("s-clarify")!, /^任务现在在澄清阶段/);
-  assert.match(reviewGate("s-free")!, /^本会话没有在进行的工作项/);
-  // 六、工作项结束之后，属于它的会话按空闲：刚才能写用例的那条会话现在被拦。
-  userOp(dir, "s-write", { kind: "end_activity", fields: { outcome: "done" } });
+  assert.match(reviewGate("s-free")!, /^本会话不属于任何工作项/);
+  // 六、工作项删除之后，它的会话归档、按空闲：刚才能写用例的那条会话现在被拦，系统提示是自由讨论的。
+  userOp(dir, "s-write", { kind: "delete_work_item", fields: {} });
   assert.equal(stageIn(dir, taskId, "s-write"), IDLE);
-  assert.match(refusal("s-write")!, /本会话没有在进行的工作项，这时不能新增「用例」的条目/);
-  const ended = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-write"))!;
-  assert.deepEqual([ended.current, ended.work_item?.status, ended.work_item?.name], [IDLE, "done", "首次分析"]);
-  assert.match(stageLines(ended)[0], /^本会话的工作项「首次分析」已经结束（已做完）。本会话此后按自由讨论办/);
+  assert.match(refusal("s-write")!, /本会话不属于任何工作项，这时不能新增「用例」的条目/);
+  const archived = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-write"))!;
+  assert.deepEqual([archived.current, archived.work_item, stageLines(archived)], [IDLE, null,
+    ["本会话是自由讨论，不属于任何工作项：你可以立主题页、改主题页、记问题条目，不写需求条目，也不提议进入哪一项活动。启动哪一项活动由用户从任务起点页决定。"]]);
+  assert.deepEqual(whereInWorkspace(dir, "s-write"), { stage: IDLE, inFlow: false, scope: null });
+  assert.equal(stageIn(dir, taskId, "s-clarify"), "clarifying", "别的工作项不受影响");
 });
 
 test("启动单项活动的前提只看数据：核读材料要有材料，整理建模与写条目要业务说明有内容，评审确认要有需求条目，编写文档要有已确认的需求条目；缺的拒绝并写明缺什么，启动流程不查", () => {
@@ -212,7 +231,7 @@ test("启动单项活动的前提只看数据：核读材料要有材料，整�
   assert.equal(count(dir, "work_item_session"), 0, "被拒的会话也没有挂上");
   assert.equal(refused("澄清"), null);
   // 启动流程不查前提：没有页也能从写条目这一站启动。
-  assert.equal(start(dir, "s-flow", "写条目", true).note, "界面操作（不是用户打的字）：用户启动工作流程「首次分析」，从「写条目」开始。");
+  assert.equal(start(dir, "s-flow", "写条目", true).note, "界面操作（不是用户打的字）：用户启动工作流程「需求分析」，从「写条目」开始。");
   const states = () => inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, null))!.catalog!.activities.map((one) => one.state);
   assert.deepEqual(states(), ["还没有项目材料", "可以启动", "业务说明还没有内容", "业务说明还没有内容", "还没有需求条目", "还没有已确认的需求条目", "还没有评审过"]);
   // 另一个有材料的任务：立一页主题、写一条用例、用户看过这条用例之后，前提都够了（已废弃的页、问题条目不算数）。
@@ -228,7 +247,7 @@ test("启动单项活动的前提只看数据：核读材料要有材料，整�
   const [added] = query<{ item_id: string; revision_no: number }>(full.dir, "SELECT i.item_id, v.revision_no FROM item i JOIN item_version v ON v.item_id = i.item_id WHERE i.collection = '用例'");
   userOp(full.dir, "s-w", { kind: "mark_viewed", targets: [{ item_id: added.item_id, base_revision: added.revision_no }] });
   assert.deepEqual(fullStates(), ["可以启动", "可以启动", "可以启动", "可以启动", "可以启动", "可以启动"]);
-  // 写条目的流程工作项还在进行，照样可以另启动一个单项的写条目与一个评审确认。
+  // 已有写条目的流程工作项，照样可以另启动一个单项的写条目与一个评审确认。
   assert.equal(start(full.dir, "s-w2", "写条目", false).note, "界面操作（不是用户打的字）：用户启动活动「写条目」。");
   assert.equal(start(full.dir, "s-r", "评审确认", false).note, "界面操作（不是用户打的字）：用户启动活动「评审确认」。");
   assert.equal(stageIn(full.dir, full.taskId, "s-w"), "writing", "原来那个工作项原样留着");
@@ -249,40 +268,43 @@ test("拒绝：没有写活动或 in_flow；任务已经完成；早先建的任
   assert.deepEqual(refusedOp(() => start(old.dir, "s-z", "澄清", false)), ["rejected", "这个任务没有阶段。"]);
 });
 
-test("用户结束一个工作项：记已做完或已放弃，只有进行中的能结束；属于它的会话此后按空闲；可以写记录号结束别的工作项", () => {
+test("用户删除一个工作项：删掉活动记录那一行，它的会话全部归档（按自由讨论办），记一条删除的事件；可以写记录号删别的工作项；修订不动", () => {
   const { dir, taskId } = workspace();
-  start(dir, "s-a", "澄清", false);
+  start(dir, "s-a", "澄清", false, { scope: "只问续借" });
   start(dir, "s-b", "核读材料", true);
+  userOp(dir, "s-b2", { kind: "continue_activity", fields: { activity_record_id: 2 } });
+  saveRevision(callIn(dir, "s-a"), { operations: [READY_PAGE] });
+  const revisions = count(dir, "revision");
   const before = count(dir, "event");
-  const done = userOp(dir, "s-a", { kind: "end_activity", fields: { outcome: "done" } });
-  assert.deepEqual([done.kind, done.note, done.record_id, done.event_seqs], ["end_activity",
-    "界面操作（不是用户打的字）：用户结束工作项「澄清」，记为已做完。本会话此后按自由讨论办；要再做，从任务起点页再启动一次。", 1, [before + 1]]);
-  assert.deepEqual(events(dir, before), [["ACTIVITY_ENDED", { record_id: 1, activity: "clarifying", node: null, flow: null, outcome: "done", reason: "用户结束这个工作项：已做完", actor: "user" }]]);
-  assert.deepEqual(items(dir, taskId)[0], [1, "clarifying", null, null, "done", false]);
-  assert.deepEqual([stageIn(dir, taskId, "s-a"), stageIn(dir, taskId, "s-b")], [IDLE, "reading"]);
-  // 这条会话仍然属于那个工作项（不论它是不是已经结束），所以不能在它上面再启动。
-  assert.equal(inDb(dir, (db) => sessionWorkItem(db, taskId, "s-a"))?.status, "done");
-  // 在别的会话里写记录号结束：放弃首次分析。那句话留在发起的这条会话里，不说「本会话此后」。
-  const abandoned = userOp(dir, "s-a", { kind: "end_activity", fields: { outcome: "abandoned", activity_record_id: 2 } });
-  assert.equal(abandoned.note, "界面操作（不是用户打的字）：用户结束工作项「首次分析」，记为已放弃。");
-  assert.deepEqual(items(dir, taskId)[1].slice(0, 5), [2, "reading", "reading", "initial", "abandoned"]);
-  assert.equal(stageIn(dir, taskId, "s-b"), IDLE);
-  // 拒绝：已经结束的；没有这个记录号；自由讨论的会话没有可结束的；outcome 写得不对。
-  assert.deepEqual(refusedOp(() => userOp(dir, "s-a", { kind: "end_activity", fields: { outcome: "done" } })), ["rejected", "工作项「澄清」已经结束。"]);
-  assert.deepEqual(refusedOp(() => userOp(dir, "s-a", { kind: "end_activity", fields: { outcome: "done", activity_record_id: 9 } })), ["not_found", "没有记录号是 9 的工作项。"]);
-  assert.deepEqual(refusedOp(() => userOp(dir, "s-free", { kind: "end_activity", fields: { outcome: "done" } })), ["rejected", "这条会话不属于任何工作项，没有可以结束的。"]);
-  assert.deepEqual(refusedOp(() => userOp(dir, "s-a", { kind: "end_activity", fields: { outcome: "finished" } })),
-    ["bad_request", "end_activity 要在 fields 里写 outcome：done（已做完）或者 abandoned（已放弃）。"]);
+  const out = userOp(dir, "s-a", { kind: "delete_work_item", fields: {} });
+  assert.deepEqual([out.kind, out.note, out.record_id, out.archived_sessions, out.event_seqs, out.undoable], ["delete_work_item",
+    "界面操作（不是用户打的字）：用户删除工作项「澄清」，它的 1 条会话已归档。", 1, 1, [before + 1], false]);
+  assert.deepEqual(events(dir, before), [["WORK_ITEM_DELETED",
+    { record_id: 1, activity: "clarifying", node: null, flow: null, scope: "只问续借", archived_sessions: 1, actor: "user", reason: "用户删除这个工作项" }]]);
+  assert.deepEqual(items(dir, taskId), [[2, "reading", "reading", "analysis"]]);
+  assert.deepEqual([stageIn(dir, taskId, "s-a"), stageIn(dir, taskId, "s-b"), stageIn(dir, taskId, "s-b2")], [IDLE, "reading", "reading"]);
+  assert.equal(count(dir, "revision"), revisions, "修订不动");
+  // 在别的会话里写记录号删流程的工作项：它的两条会话都归档，那句话留在发起的这条会话里。
+  const flow = userOp(dir, "s-a", { kind: "delete_work_item", fields: { activity_record_id: 2 } });
+  assert.deepEqual([flow.note, flow.archived_sessions], ["界面操作（不是用户打的字）：用户删除工作项「需求分析」，它的 2 条会话已归档。", 2]);
+  assert.deepEqual([items(dir, taskId), stageIn(dir, taskId, "s-b"), stageIn(dir, taskId, "s-b2")], [[], IDLE, IDLE]);
+  assert.deepEqual(inDb(dir, (db) => [...archivedSessions(db, taskId).keys()].sort()), ["s-a", "s-b", "s-b2"]);
+  assert.deepEqual(inDb(dir, (db) => workItemSessions(db, taskId)), []);
+  // 拒绝：没有这个记录号（含已经删掉的）；自由讨论的会话没有可删的；记录号写得不对。
+  assert.deepEqual(refusedOp(() => userOp(dir, "s-a", { kind: "delete_work_item", fields: { activity_record_id: 1 } })), ["not_found", "没有记录号是 1 的工作项（可能已经删除）。"]);
+  assert.deepEqual(refusedOp(() => userOp(dir, "s-free", { kind: "delete_work_item", fields: {} })), ["rejected", "这条会话不属于任何工作项，没有可以删除的。"]);
+  assert.deepEqual(refusedOp(() => userOp(dir, "s-a", { kind: "delete_work_item", fields: { activity_record_id: "1" } })),
+    ["bad_request", "delete_work_item 的 activity_record_id 是工作项的记录号，一个从 1 起的整数。"]);
 });
 
-test("换一条会话接着做：新会话挂到同一个工作项上，位置与范围说明都不变，原来的会话原样留着；已经结束的不能接，已经属于工作项的会话不能接", () => {
+test("换一条会话接着做：新会话挂到同一个工作项上，位置与范围说明都不变，原来的会话原样留着；删掉的不能接，已经属于工作项的会话不能接", () => {
   const { dir, taskId } = workspace();
   start(dir, "s-1", "核读材料", true, { scope: "只做借阅" });
   userOp(dir, "s-1", { kind: "move_stage", fields: { stage: "写条目" } });
   const before = count(dir, "event");
   const out = userOp(dir, "s-2", { kind: "continue_activity", fields: { activity_record_id: 1 } });
   assert.deepEqual([out.kind, out.note, out.record_id, out.event_seqs], ["continue_activity",
-    "界面操作（不是用户打的字）：用户新建这条会话，接着做工作项「首次分析」，现在在「写条目」这一站。范围说明：只做借阅。", 1, []]);
+    "界面操作（不是用户打的字）：用户新建这条会话，接着做工作项「需求分析」，现在在「写条目」这一站。范围说明：只做借阅。", 1, []]);
   assert.equal(count(dir, "event"), before, "挂会话不记事件");
   assert.deepEqual(inDb(dir, (db) => workItemSessions(db, taskId)).map((one) => [one.session_id, one.record_id]), [["s-1", 1], ["s-2", 1]]);
   assert.deepEqual([stageIn(dir, taskId, "s-1"), stageIn(dir, taskId, "s-2")], ["writing", "writing"]);
@@ -291,32 +313,30 @@ test("换一条会话接着做：新会话挂到同一个工作项上，位置�
   userOp(dir, "s-2", { kind: "move_stage", fields: { stage: "评审确认" } });
   assert.deepEqual([stageIn(dir, taskId, "s-1"), stageIn(dir, taskId, "s-2")], ["reviewing", "reviewing"]);
   assert.equal(count(dir, "activity_record"), 1);
-  // 拒绝：没有写记录号；没有这个工作项；这条会话已经属于一个工作项；工作项已经结束。
+  // 拒绝：没有写记录号；没有这个工作项；这条会话已经属于一个工作项；工作项已经删掉。
   assert.deepEqual(refusedOp(() => userOp(dir, "s-3", { kind: "continue_activity", fields: {} })), ["bad_request", "continue_activity 要在 fields 里写 activity_record_id：工作项的记录号。"]);
-  assert.deepEqual(refusedOp(() => userOp(dir, "s-3", { kind: "continue_activity", fields: { activity_record_id: 7 } })), ["not_found", "没有记录号是 7 的工作项。"]);
+  assert.deepEqual(refusedOp(() => userOp(dir, "s-3", { kind: "continue_activity", fields: { activity_record_id: 7 } })), ["not_found", "没有记录号是 7 的工作项（可能已经删除）。"]);
   assert.deepEqual(refusedOp(() => userOp(dir, "s-2", { kind: "continue_activity", fields: { activity_record_id: 1 } })), ["rejected", "这条会话已经属于一个工作项；接着做一个工作项要在一条新会话里。"]);
-  userOp(dir, "s-1", { kind: "end_activity", fields: { outcome: "done" } });
+  userOp(dir, "s-1", { kind: "delete_work_item", fields: {} });
   assert.deepEqual(refusedOp(() => userOp(dir, "s-3", { kind: "continue_activity", fields: { activity_record_id: 1 } })),
-    ["rejected", "工作项「首次分析」已经结束，不能再接着做；要再做这项活动，从任务起点页再启动一次。"]);
+    ["not_found", "没有记录号是 1 的工作项（可能已经删除）。"]);
   assert.equal(inDb(dir, (db) => sessionWorkItem(db, taskId, "s-3")), null);
 });
 
-test("助手汇报做完：单项活动的工作项记已做完，这条会话此后空闲；流程的工作项、自由讨论的会话什么都不记", () => {
+test("助手汇报做完：只是一句话，什么都不记——单项活动的工作项读出是哪一项，工作项照旧留着、会话照旧在做它；流程的工作项、自由讨论的会话读出 null", () => {
   const { dir, taskId } = workspace();
-  const who = (session: string) => ({ taskId, sessionId: session, callId: "call-reply-9", actor: "executor" as const });
-  assert.equal(inDb(dir, (db) => endStandaloneActivity(db, who("s-free"))), null, "自由讨论的会话没有可结束的");
+  assert.equal(activityDoneOf(dir, "s-free"), null, "自由讨论的会话没有可汇报的");
   start(dir, "s-alone", "澄清", false);
   start(dir, "s-flow", "澄清", true);
-  assert.equal(inDb(dir, (db) => endStandaloneActivity(db, who("s-flow"))), null, "流程的工作项不由助手结束");
+  assert.equal(activityDoneOf(dir, "s-flow"), null, "流程的工作项不由助手汇报做完");
   const before = count(dir, "event");
-  const ended = inDb(dir, (db) => endStandaloneActivity(db, who("s-alone")))!;
-  assert.deepEqual(ended, { activity: "clarifying", record_id: 1, event_seq: before + 1 });
-  assert.deepEqual(events(dir, before), [["ACTIVITY_ENDED", { record_id: 1, activity: "clarifying", node: null, flow: null, outcome: "done", reason: "助手汇报这项活动结束", actor: "executor" }]]);
-  assert.deepEqual([stageIn(dir, taskId, "s-alone"), stageIn(dir, taskId, "s-flow")], [IDLE, "clarifying"]);
-  assert.equal(inDb(dir, (db) => endStandaloneActivity(db, who("s-alone"))), null, "已经结束的不再结束一次");
+  assert.deepEqual(activityDoneOf(dir, "s-alone"), { activity: "clarifying", record_id: 1 });
+  assert.equal(count(dir, "event"), before, "不记事件");
+  assert.deepEqual([stageIn(dir, taskId, "s-alone"), stageIn(dir, taskId, "s-flow"), items(dir, taskId).length], ["clarifying", "clarifying", 2]);
+  assert.deepEqual(activityDoneOf(dir, "s-alone"), { activity: "clarifying", record_id: 1 }, "可以再汇报一次");
 });
 
-test("这条会话不在做流程的工作项时，卡片上的进入与退回都不算数（早先空闲时能启动首次分析的「开始核读材料」也不算），什么都不记", () => {
+test("这条会话不在做流程的工作项时，卡片上的进入与退回都不算数（早先空闲时能启动需求分析的「开始核读材料」也不算），什么都不记", () => {
   const card = (option: { key: string; text: string }, other: { key: string; text: string }) => ({
     id: "reply-card", type: "message",
     message: { role: "assistant", content: [{ type: "toolCall", id: "call-card", name: "reply", arguments: { informs: [], act: { kind: "choose", text: "这样可以吗？", options: [option, other] } } }] },
@@ -335,25 +355,21 @@ test("这条会话不在做流程的工作项时，卡片上的进入与退回�
   assert.deepEqual([count(dir, "activity_record"), count(dir, "event")], marks);
 });
 
-test("回复里的 activity_done 怎样核对与落库：单项活动的工作项放行并结束、发起方是助手；流程的工作项、自由讨论的会话、没有阶段的任务都拒绝，什么都不记", () => {
+test("回复里的 activity_done 怎样核对：单项活动的工作项放行；流程的工作项、自由讨论的会话、没有阶段的任务都拒绝；放行了也不改任何记录", () => {
   const { dir, taskId } = workspace();
   // 自由讨论的会话：拒绝。
-  assert.deepEqual(activityDoneGate(dir, "s-free"), ["回复里写了 activity_done，而本会话没有在进行的工作项可以结束", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"]);
-  assert.equal(reportActivityDone(dir, "s-free", "call-reply-1"), null);
+  assert.deepEqual(activityDoneGate(dir, "s-free"), ["回复里写了 activity_done，而本会话不属于任何工作项，没有活动可以汇报做完", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"]);
   // 流程的工作项：拒绝。
   start(dir, "s-flow", "核读材料", true);
   assert.match(activityDoneGate(dir, "s-flow")![0], /^回复里写了 activity_done，而本会话的工作项是工作流程，现在在核读材料阶段/);
-  assert.equal(reportActivityDone(dir, "s-flow", "call-reply-2"), null);
-  // 单项活动的工作项：放行，结束。
+  // 单项活动的工作项：放行，不记任何东西，会话照旧在做它。
   start(dir, "s-alone", "澄清", false);
-  assert.equal(activityDoneGate(dir, "s-alone"), null);
   const before = count(dir, "event");
-  assert.deepEqual(reportActivityDone(dir, "s-alone", "call-reply-3"), { activity: "clarifying", record_id: 2, event_seq: before + 1 });
-  assert.deepEqual(query(dir, "SELECT name, actor, session_id, call_id FROM event WHERE seq = ?", before + 1).map((r) => ({ ...r })),
-    [{ name: "ACTIVITY_ENDED", actor: "executor", session_id: "s-alone", call_id: "call-reply-3" }]);
-  assert.deepEqual([stageIn(dir, taskId, "s-alone"), stageIn(dir, taskId, "s-flow")], [IDLE, "reading"]);
+  assert.equal(activityDoneGate(dir, "s-alone"), null);
+  assert.equal(count(dir, "event"), before);
+  assert.deepEqual([stageIn(dir, taskId, "s-alone"), stageIn(dir, taskId, "s-flow")], ["clarifying", "reading"]);
   // 没有阶段的任务、还没有库的目录：拒绝。
   const old = workspace(demoDefinition());
-  assert.deepEqual(activityDoneGate(old.dir, "s"), ["回复里写了 activity_done，而这个任务没有活动可以结束", "去掉 activity_done 这一项再回复"]);
-  assert.deepEqual(activityDoneGate(makeWorkspace(overallDefinition()), "s")?.[0], "回复里写了 activity_done，而这个任务没有活动可以结束");
+  assert.deepEqual(activityDoneGate(old.dir, "s"), ["回复里写了 activity_done，而这个任务没有活动可以汇报做完", "去掉 activity_done 这一项再回复"]);
+  assert.deepEqual(activityDoneGate(makeWorkspace(overallDefinition()), "s")?.[0], "回复里写了 activity_done，而这个任务没有活动可以汇报做完");
 });

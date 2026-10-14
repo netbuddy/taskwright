@@ -1,10 +1,11 @@
 /**
- * 工作的阶段里读写任务库的那一半（不读库的在 lib/stage.ts）：一条会话现在在做什么、启动一个工作项、流程换站、结束一个工作项。
+ * 工作的阶段里读写任务库的那一半（不读库的在 lib/stage.ts）：一条会话现在在做什么、启动一个工作项、流程换站、删除一个工作项。
  *
  * 承载是活动记录表与工作项的会话表（lib/schema.ts）。活动记录表一行是一个工作项，也就是一次启动：启动一项单项活动，或者启动一条
- * 工作流程（现在只有首次分析）。每条会话在建立时指向一个工作项，或者不指向任何工作项（自由讨论的会话），之后不改；
- * 一个工作项可以先后有几条会话，一个任务可以同时有几个进行中的工作项。
- * 助手在一条会话里能写什么，看这条会话指向的工作项现在做的是哪一项活动：会话不属于任何工作项、或者它的工作项已经结束时，
+ * 工作流程（现在只有需求分析）。每条会话在建立时指向一个工作项，或者不指向任何工作项（自由讨论的会话），之后不改；
+ * 一个工作项可以先后有几条会话，一个任务可以同时有几个工作项，其中流程的工作项至多一个。工作项没有终点，不要了由用户删除，
+ * 它的会话随之归档。
+ * 助手在一条会话里能写什么，看这条会话指向的工作项现在做的是哪一项活动：会话不属于任何工作项（自由讨论的会话、归档的会话）时
  * 按空闲办（lib/stage.ts 的 IDLE）。任务一级没有「现在在哪个阶段」。
  * 流程的工作项换站（进入下一段、退回前面的阶段）只更新这一行的活动与所在的一站，记一条事件，不另开一行。
  * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段：stageOf 返回 null，调用方据此什么都不做。
@@ -25,13 +26,13 @@ import { overallState } from "./overall_read.ts";
 import { rulesTable } from "./overall_views.ts";
 import { EVENT_REVIEW_BATCH, currentRulesHash, verdictAt } from "./review_state.ts";
 import {
-  ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, WORK_ITEM_ABANDONED, WORK_ITEM_ACTIVE, WORK_ITEM_DONE, elementClause, withTaskDatabase,
+  ELEMENT_FIGURE, NoDatabaseYet, SOURCE_DOCUMENT, SOURCE_FIGURE, SOURCE_ITEM, TASK_ACTIVE, elementClause, withTaskDatabase,
 } from "./schema.ts";
 import { openProposal } from "./stage_proposal.ts";
 import {
-  ACTIVITY_DONE_REASON, BACK_OPTIONS, ENTER_OPTIONS, FLOW_INITIAL, FLOW_NAMES, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
+  BACK_OPTIONS, ENTER_OPTIONS, FLOW_ANALYSIS, FLOW_NAMES, type FlowItemRef, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
   type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
-  activityDoneRefusal, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { listMaterials } from "./task_status.ts";
 
@@ -41,12 +42,15 @@ import { listMaterials } from "./task_status.ts";
  *   是启动的那一站与流程的键，单项活动的为 null）、from（恒为 null）、actor、reason、run_id，写了范围说明时另有 scope。
  * - ACTIVITY_NODE_ENTERED：流程的工作项换了一站。内容：record_id、flow、node（到哪一站）、from（从哪一站）、
  *   direction（forward 是进入后面的阶段，back 是退回前面的阶段）、actor、reason、run_id。
- * - ACTIVITY_ENDED：一个工作项结束了。内容：record_id、activity、node、flow、outcome（done 已做完，abandoned 已放弃）、reason、actor。
- * 格式版本 7 之前没有换站的事件，一次移动记一对「结束、开始」，内容里没有 record_id；升级上来的库里它们原样留着。
+ * - WORK_ITEM_DELETED：用户删除了一个工作项。内容：record_id、activity、node、flow、scope（有才写）、archived_sessions（随之归档了几条会话）、
+ *   actor、reason。
+ * 早先另有 ACTIVITY_ENDED（一项活动结束）：格式版本 7 之前一次移动记一对「结束、开始」，内容里没有 record_id；升级上来的库里它们原样留着，
+ * 现在不再记。
  */
 export const EVENT_ACTIVITY_STARTED = "ACTIVITY_STARTED";
 export const EVENT_ACTIVITY_ENDED = "ACTIVITY_ENDED";
 export const EVENT_NODE_ENTERED = "ACTIVITY_NODE_ENTERED";
+export const EVENT_WORK_ITEM_DELETED = "WORK_ITEM_DELETED";
 /**
  * 早先记一次移动用的事件名（格式版本 4 及更早）：一次移动一条，内容是 stage（移到哪个阶段）、from、actor、reason、run_id、flow。
  * 现在不再记这种事件；升级上来的库里它们原样留着，读事件的几处几种名字都认。
@@ -56,14 +60,6 @@ export const EVENT_STAGE_MOVED = "STAGE_MOVED";
 const TABLE = "activity_record";
 const SESSIONS = "work_item_session";
 
-/** 工作项的状态：进行中、已做完、已放弃。 */
-export type WorkItemStatus = typeof WORK_ITEM_ACTIVE | typeof WORK_ITEM_DONE | typeof WORK_ITEM_ABANDONED;
-/** 结束一个工作项时的两种结果。 */
-export type WorkItemOutcome = typeof WORK_ITEM_DONE | typeof WORK_ITEM_ABANDONED;
-export const isOutcome = (value: unknown): value is WorkItemOutcome => value === WORK_ITEM_DONE || value === WORK_ITEM_ABANDONED;
-/** 三种状态给人看的名字。 */
-export const WORK_ITEM_STATUS_NAMES: Record<WorkItemStatus, string> = { active: "进行中", done: "已做完", abandoned: "已放弃" };
-
 /** 活动记录表里的一行：一个工作项。 */
 export interface ActivityRecord {
   record_id: number;
@@ -71,7 +67,7 @@ export interface ActivityRecord {
   activity: Stage;
   /** 流程的工作项现在在哪一站（与活动同一个写法）；单项活动的工作项为 null。 */
   node: string | null;
-  /** 流程的工作项属于哪条流程（lib/stage.ts 的 FLOW_INITIAL）；单项活动的工作项为 null。 */
+  /** 流程的工作项属于哪条流程（lib/stage.ts 的 FLOW_ANALYSIS）；单项活动的工作项为 null。 */
   flow: string | null;
   /**
    * 早先（格式版本 7 之前）记的「开始这项活动之前任务在哪个阶段」：取自记下启动的那条事件的内容。现在启动的工作项恒为 null。
@@ -84,13 +80,9 @@ export interface ActivityRecord {
   session_id: string;
   call_id: string;
   started_at: string;
-  /** 结束的时刻；还在进行为 null。 */
-  ended_at: string | null;
   started_seq: number;
-  ended_seq: number | null;
   /** 用户启动时写的范围说明；没有写是 null。 */
   scope: string | null;
-  status: WorkItemStatus;
 }
 
 /** 活动记录表有没有某一列：只读的一侧会遇到还没有升级过的库。 */
@@ -100,19 +92,17 @@ function hasColumn(db: DatabaseSync, column: string): boolean {
 
 /**
  * 读活动记录的列：表里的各列，加上从记下启动的那条事件的内容里取的「从哪个阶段来」（早先的记录才有）。
- * 范围说明一列是格式版本 6 加的、状态一列是 7 加的：还没有升级过的库里，范围说明当作没有写，状态按有没有结束的时刻算。
+ * 范围说明一列是格式版本 6 加的：还没有升级过的库里当作没有写。还没有升级过的库里的流程键 initial 读成现在的写法。
  */
-const recordColumns = (db: DatabaseSync): string => "r.record_id, r.activity, r.node, r.flow, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.started_at, r.ended_at, r.started_seq, r.ended_seq, " +
+const recordColumns = (db: DatabaseSync): string => "r.record_id, r.activity, r.node, r.flow, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.started_at, r.started_seq, " +
   `${hasColumn(db, "scope") ? "r.scope" : "NULL AS scope"}, ` +
-  `${hasColumn(db, "status") ? "r.status" : `CASE WHEN r.ended_at IS NULL THEN '${WORK_ITEM_ACTIVE}' ELSE '${WORK_ITEM_DONE}' END AS status`}, ` +
   "CASE WHEN e.seq IS NOT NULL AND json_valid(e.payload) THEN json_extract(e.payload, '$.from') ELSE NULL END AS \"from\"";
 const RECORD_FROM = `${TABLE} r LEFT JOIN event e ON e.seq = r.started_seq`;
 
-type RecordRow = Omit<ActivityRecord, "from" | "status"> & { from: unknown; status: unknown };
+type RecordRow = Omit<ActivityRecord, "from"> & { from: unknown };
 const recordOf = (row: RecordRow): ActivityRecord => ({
-  ...row, record_id: Number(row.record_id), started_seq: Number(row.started_seq), ended_seq: row.ended_seq === null ? null : Number(row.ended_seq),
+  ...row, record_id: Number(row.record_id), started_seq: Number(row.started_seq), flow: flowKeyOf(row.flow),
   from: isStage(row.from) ? row.from : null, scope: typeof row.scope === "string" && row.scope !== "" ? row.scope : null,
-  status: row.status === WORK_ITEM_DONE || row.status === WORK_ITEM_ABANDONED ? row.status : WORK_ITEM_ACTIVE,
 });
 
 /** 库里有没有活动记录表：只读的一侧会遇到还没有升级过的库。 */
@@ -140,8 +130,7 @@ export function workItemById(db: DatabaseSync, taskId: string, recordId: number)
 }
 
 /**
- * 这条会话属于哪个工作项（不论它是不是已经结束）；会话不属于任何工作项（自由讨论的会话）、没有给会话编号、
- * 库还没有这两张表时是 null。
+ * 这条会话属于哪个工作项；会话不属于任何工作项（自由讨论的会话、归档的会话）、没有给会话编号、库还没有这两张表时是 null。
  */
 export function sessionWorkItem(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): ActivityRecord | null {
   if (!sessionId || !hasActivityTable(db) || !hasSessionTable(db)) return null;
@@ -151,18 +140,24 @@ export function sessionWorkItem(db: DatabaseSync, taskId: string, sessionId: str
   return row && isStage(row.activity) ? recordOf(row) : null;
 }
 
-/** 这条会话正在做的工作项：它属于的工作项还在进行中才算；自由讨论的会话、工作项已经结束的会话是 null。 */
+/** 这条会话正在做的工作项：与 sessionWorkItem 相同（工作项没有终点，会话属于哪个工作项就是在做哪个）。 */
 export function openActivityRecord(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): ActivityRecord | null {
-  const item = sessionWorkItem(db, taskId, sessionId);
-  return item !== null && item.status === WORK_ITEM_ACTIVE ? item : null;
+  return sessionWorkItem(db, taskId, sessionId);
 }
 
-/** 每条挂在工作项上的会话各属于哪个工作项（会话编号到记录号），与挂上的时刻。 */
+/** 每条挂在工作项上的会话各属于哪个工作项（会话编号到记录号），与挂上的时刻。归档的会话不在里面。 */
 export function workItemSessions(db: DatabaseSync, taskId: string): { session_id: string; record_id: number; attached_at: string }[] {
   if (!hasSessionTable(db)) return [];
-  const rows = db.prepare(`SELECT session_id, record_id, attached_at FROM ${SESSIONS} WHERE task_id = ? ORDER BY attached_at, rowid`).all(taskId) as
+  const rows = db.prepare(`SELECT session_id, record_id, attached_at FROM ${SESSIONS} WHERE task_id = ? AND record_id IS NOT NULL ORDER BY attached_at, rowid`).all(taskId) as
     { session_id: string; record_id: number; attached_at: string }[];
   return rows.map((row) => ({ ...row, record_id: Number(row.record_id) }));
+}
+
+/** 归档的会话（它们的工作项被删除了）：会话编号到归档的时刻（库里的本地时间写法）。 */
+export function archivedSessions(db: DatabaseSync, taskId: string): Map<string, string> {
+  if (!hasSessionTable(db) || !(db.prepare(`PRAGMA table_info(${SESSIONS})`).all() as { name: string }[]).some((row) => row.name === "archived_at")) return new Map();
+  const rows = db.prepare(`SELECT session_id, archived_at FROM ${SESSIONS} WHERE task_id = ? AND archived_at IS NOT NULL`).all(taskId) as { session_id: string; archived_at: string }[];
+  return new Map(rows.map((row) => [row.session_id, row.archived_at]));
 }
 
 /** 任务目录里有没有材料：材料目录第一层至少有一个文件（与任务现状消息列材料用的是同一个清单）。 */
@@ -188,7 +183,7 @@ export function workItemName(item: Pick<ActivityRecord, "activity" | "flow">): s
 }
 
 /**
- * 属于一个工作项的会话在建立时起的名字：单项活动是活动的名字，例如「整理建模」；流程是「首次分析 · 核读材料」这一式（建立时所在的那一站）；
+ * 属于一个工作项的会话在建立时起的名字：单项活动是活动的名字，例如「整理建模」；流程是「需求分析 · 核读材料」这一式（建立时所在的那一站）；
  * 写了范围说明的在后面接「 · 」与范围说明的前 12 个字。
  */
 export const SESSION_NAME_SCOPE_LENGTH = 12;
@@ -214,8 +209,8 @@ export function attachSession(db: DatabaseSync, taskId: string, recordId: number
 }
 
 /**
- * 启动一个工作项：插一行活动记录（进行中），把启动时所在的会话挂上去，记一条事件 ACTIVITY_STARTED。返回记录号与那条事件的序号。
- * 在流程里启动时，这一行的所在一站与活动同一个写法，所属流程是首次分析；单项活动的这两列为空。
+ * 启动一个工作项：插一行活动记录，把启动时所在的会话挂上去，记一条事件 ACTIVITY_STARTED。返回记录号与那条事件的序号。
+ * 在流程里启动时，这一行的所在一站与活动同一个写法，所属流程是需求分析；单项活动的这两列为空。
  * 写了范围说明时记进范围说明一列，事件的内容里也带上（scope）。这次行不行由 startActivity 先判，这里只管写。
  * 必须在调用方已经开好的写事务里调用（withTaskDatabase）。
  */
@@ -223,17 +218,20 @@ export function launchWorkItem(db: DatabaseSync, launch: Who & { to: Stage; inFl
   // 库不检查活动的取值（lib/schema.ts），所以写之前在这里判：不是阶段表里的写法就不记。
   if (!isStage(launch.to)) throw new Error(`活动记录里的活动写法不对：「${String(launch.to)}」。`);
   const at = wallClockText();
-  const node = launch.inFlow ? launch.to : null, flow = launch.inFlow ? FLOW_INITIAL : null;
+  const node = launch.inFlow ? launch.to : null, flow = launch.inFlow ? FLOW_ANALYSIS : null;
   const scope = (launch.scope ?? "").trim() || null;
-  // 事件的内容里要写记录号，所以先定下它：现有的最大记录号加一（在同一个写事务里，不会与别的写入撞上）。
-  const recordId = Number((db.prepare(`SELECT COALESCE(MAX(record_id), 0) + 1 AS next FROM ${TABLE}`).get() as { next: number }).next);
+  // 事件的内容里要写记录号，所以先定下它：用过的最大记录号加一（在同一个写事务里，不会与别的写入撞上）。
+  // 用过的最大记录号取自增计数与表里现有的最大记录号两者的大者：删掉的工作项的记录号不再用。
+  const counted = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'").get() !== undefined;
+  const used = counted ? db.prepare("SELECT seq FROM sqlite_sequence WHERE name = ?").get(TABLE) as { seq: number } | undefined : undefined;
+  const recordId = Math.max(Number(used?.seq ?? 0), Number((db.prepare(`SELECT COALESCE(MAX(record_id), 0) AS top FROM ${TABLE}`).get() as { top: number }).top)) + 1;
   const seq = emit(db, {
     taskId: launch.taskId, sessionId: launch.sessionId, callId: launch.callId, actor: launch.actor, name: EVENT_ACTIVITY_STARTED,
     payload: { record_id: recordId, activity: launch.to, node, flow, from: null, actor: launch.actor, reason: launch.reason, run_id: launch.runId, ...(scope ? { scope } : {}) },
   });
   db.prepare(
-    `INSERT INTO ${TABLE} (record_id, task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq, scope, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(recordId, launch.taskId, launch.sessionId, launch.runId, launch.callId, launch.actor, launch.to, node, flow, launch.reason, at, seq, scope, WORK_ITEM_ACTIVE);
+    `INSERT INTO ${TABLE} (record_id, task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(recordId, launch.taskId, launch.sessionId, launch.runId, launch.callId, launch.actor, launch.to, node, flow, launch.reason, at, seq, scope);
   attachSession(db, launch.taskId, recordId, launch.sessionId, at);
   return { record_id: recordId, event_seq: seq };
 }
@@ -254,35 +252,28 @@ export function enterNode(db: DatabaseSync, item: ActivityRecord, to: Stage, who
 }
 
 /**
- * 结束一个工作项：状态记成已做完或已放弃，填上结束的时刻，记一条事件 ACTIVITY_ENDED，返回那条事件的序号。
- * 必须在调用方已经开好的写事务里调用。
+ * 删除一个工作项：记一条事件 WORK_ITEM_DELETED，把它的会话全部归档（不再属于任何工作项，记下归档的时刻），删掉活动记录那一行。
+ * 修订与别的事件都不动。返回随之归档了几条会话与那条事件的序号。必须在调用方已经开好的写事务里调用。
  */
-export function endWorkItem(db: DatabaseSync, item: ActivityRecord, outcome: WorkItemOutcome, who: Omit<Who, "runId">, reason: string): number {
+export function deleteWorkItem(db: DatabaseSync, item: ActivityRecord, who: Omit<Who, "runId">, reason: string): { archived: number; event_seq: number } {
+  const archived = Number((db.prepare(`SELECT COUNT(*) AS n FROM ${SESSIONS} WHERE record_id = ?`).get(item.record_id) as { n: number }).n);
   const seq = emit(db, {
-    taskId: who.taskId, sessionId: who.sessionId, callId: who.callId, actor: who.actor, name: EVENT_ACTIVITY_ENDED,
-    payload: { record_id: item.record_id, activity: item.activity, node: item.node, flow: item.flow, outcome, reason, actor: who.actor },
+    taskId: who.taskId, sessionId: who.sessionId, callId: who.callId, actor: who.actor, name: EVENT_WORK_ITEM_DELETED,
+    payload: { record_id: item.record_id, activity: item.activity, node: item.node, flow: item.flow, ...(item.scope ? { scope: item.scope } : {}),
+      archived_sessions: archived, actor: who.actor, reason },
   });
-  db.prepare(`UPDATE ${TABLE} SET status = ?, ended_at = ?, ended_seq = ? WHERE record_id = ?`).run(outcome, wallClockText(), seq, item.record_id);
-  return seq;
+  db.prepare(`UPDATE ${SESSIONS} SET record_id = NULL, archived_at = ? WHERE record_id = ?`).run(wallClockText(), item.record_id);
+  db.prepare(`DELETE FROM ${TABLE} WHERE record_id = ?`).run(item.record_id);
+  return { archived, event_seq: seq };
 }
 
 /**
- * 助手汇报这条会话的工作项做完了：把它结束，状态记已做完。只有这条会话正在做的工作项是单项活动时才做；
- * 流程的工作项、自由讨论的会话、任务没有阶段时什么都不记，返回 null。做了返回结束的是哪一项活动、哪个工作项与那条事件的序号。
- * 必须在调用方已经开好的写事务里调用。
- */
-export function endStandaloneActivity(db: DatabaseSync, who: Omit<Who, "runId">): { activity: Stage; record_id: number; event_seq: number } | null {
-  const open = openActivityRecord(db, who.taskId, who.sessionId);
-  if (open === null || open.flow !== null) return null;
-  return { activity: open.activity, record_id: open.record_id, event_seq: endWorkItem(db, open, WORK_ITEM_DONE, who, ACTIVITY_DONE_REASON) };
-}
-
-/**
- * 「回复」里写了 activity_done: true 时用：这条会话正在做一个单项活动的工作项就返回 null（可以结束）；工作项是流程的、
- * 会话不在做哪个工作项时返回拒绝的事实与怎么办（lib/stage.ts 的 activityDoneRefusal）。任务没有阶段（早先建的任务）、库还不在时也拒绝。自己开事务。
+ * 「回复」里写了 activity_done: true 时用：这条会话正在做一个单项活动的工作项就返回 null（可以汇报）；工作项是流程的、
+ * 会话不属于哪个工作项时返回拒绝的事实与怎么办（lib/stage.ts 的 activityDoneRefusal）。任务没有阶段（早先建的任务）、库还不在时也拒绝。
+ * 汇报做完只是回复下面的一句话，不改任何记录。自己开事务。
  */
 export function activityDoneGate(workspaceDir: string, sessionId: string): Refusal | null {
-  const none: Refusal = ["回复里写了 activity_done，而这个任务没有活动可以结束", "去掉 activity_done 这一项再回复"];
+  const none: Refusal = ["回复里写了 activity_done，而这个任务没有活动可以汇报做完", "去掉 activity_done 这一项再回复"];
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
@@ -297,15 +288,15 @@ export function activityDoneGate(workspaceDir: string, sessionId: string): Refus
 }
 
 /**
- * 助手在回复里汇报这条会话的工作项做完了：结束它（endStandaloneActivity），发起方记助手。自己开事务。
- * 这条会话这时已经不在做单项活动的工作项（或者没有任务）时什么都不记，返回 null。
+ * 助手在回复里汇报这条会话的工作项做完了时，那条回复下面要写的是哪一项活动：这条会话正在做单项活动的工作项时是那项活动，
+ * 别的情形（流程的工作项、自由讨论的会话、没有任务）是 null。只读，不改任何记录。
  */
-export function reportActivityDone(workspaceDir: string, sessionId: string, callId: string): { activity: Stage; record_id: number; event_seq: number } | null {
+export function activityDoneOf(workspaceDir: string, sessionId: string): { activity: Stage; record_id: number } | null {
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
-      const task = db.prepare("SELECT task_id, status FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; status: string } | undefined;
-      if (!task || task.status !== TASK_ACTIVE) return null;
-      return endStandaloneActivity(db, { taskId: task.task_id, sessionId, callId, actor: "executor" });
+      const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
+      const open = task ? sessionWorkItem(db, task.task_id, sessionId) : null;
+      return open !== null && open.flow === null ? { activity: open.activity, record_id: open.record_id } : null;
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return null;
@@ -316,8 +307,9 @@ export function reportActivityDone(workspaceDir: string, sessionId: string, call
 /**
  * 一次启动或者一次换站的结果。moved 为真是记下了；为假时 why 写原因：same 原地不动（流程的工作项已经在那一站），
  * user_only 启动与换站要由用户决定，no_stages 这个任务没有阶段（早先建的任务），not_ready 启动这项单项活动缺前提（blocked 里写缺什么），
- * not_in_flow 这条会话不在做流程的工作项（自由讨论的会话、单项活动的工作项、工作项已经结束），卡片上的进入与退回不算数，
- * session_bound 这条会话已经属于一个工作项，不能再在它上面启动另一个。
+ * not_in_flow 这条会话不在做流程的工作项（自由讨论的会话、归档的会话、单项活动的工作项），卡片上的进入与退回不算数，
+ * session_bound 这条会话已经属于一个工作项，不能再在它上面启动另一个，flow_exists 任务里已有流程的工作项（existing 里写是哪一个），
+ * 不能再以流程方式启动。
  * from 是这条会话当时在哪里（一个阶段或者空闲），任务没有阶段时为 null。记下了的另带 how（lib/stage.ts 的 StartHow）、in_flow 与工作项的记录号。
  */
 export interface StageMoveOutcome {
@@ -325,13 +317,15 @@ export interface StageMoveOutcome {
   from: Position | null;
   moved: boolean;
   /** 没有做成的原因；not_next 与 not_back 只出现在卡片点击上：点的那个阶段不是紧挨着的下一段、不在现在这个阶段之前。 */
-  why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | "not_ready" | "not_in_flow" | "session_bound" | null;
+  why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | "not_ready" | "not_in_flow" | "session_bound" | "flow_exists" | null;
   event_seq: number | null;
   how?: StartHow;
   in_flow?: boolean;
   record_id?: number;
   /** why 为 not_ready 时：缺什么。 */
   blocked?: string;
+  /** why 为 flow_exists 时：任务里已有的那个流程的工作项。 */
+  existing?: FlowItemRef;
 }
 
 /** 这条会话现在的位置与它正在做的工作项（没有是 null）。任务没有阶段（或者库里没有这个任务）时为 null。 */
@@ -349,8 +343,9 @@ function whereIs(db: DatabaseSync, workspaceDir: string, taskId: string, session
  * 在一条会话上启动一个工作项：启动一条流程（inFlow 为真，to 是从哪一站启动），或者启动一项单项活动（inFlow 为假）。
  * 先看任务有没有阶段、这次行不行，行就记下。不行不抛错，原因写在结果里，由调用方决定怎样告诉助手或用户。
  * 启动只由用户决定；这条会话已经属于一个工作项时不能再启动（一条会话只属于一个工作项，要做别的另开一条会话）；
- * 单项活动要够前提（这项活动的定义里写的数据条件，lib/activity_catalog.ts 的 blockedByStage），在流程里启动不查前提。
- * 同一项活动、同一条流程已经有进行中的工作项时不拦：再启动是另起一个。
+ * 以流程方式启动时，任务里已有流程的工作项（不论哪条流程）就不能启动：一个任务同一时刻至多一个流程的工作项。
+ * 单项活动要够前提（这项活动的定义里写的数据条件，lib/activity_catalog.ts 的 blockedByStage），在流程里启动不查前提；
+ * 同一项单项活动已经有工作项时不拦：再启动是另起一个。
  * scope 是用户写的范围说明（可以不写）。必须在调用方已经开好的写事务里调用。
  */
 export function startActivity(db: DatabaseSync, workspaceDir: string, who: Who, to: Stage, inFlow: boolean, reason: string, scope = ""): StageMoveOutcome {
@@ -359,7 +354,10 @@ export function startActivity(db: DatabaseSync, workspaceDir: string, who: Who, 
   const none = { requested: to, from: where.from, moved: false, event_seq: null };
   if (who.actor !== "user") return { ...none, why: "user_only" };
   if (sessionWorkItem(db, who.taskId, who.sessionId) !== null) return { ...none, why: "session_bound" };
-  if (!inFlow) {
+  if (inFlow) {
+    const existing = flowWorkItem(db, who.taskId);
+    if (existing !== null) return { ...none, why: "flow_exists", existing };
+  } else {
     const blocked = launchFacts(db, workspaceDir, who.taskId, where.definition, who.sessionId).blocked[to];
     if (blocked !== null) return { ...none, why: "not_ready", blocked };
   }
@@ -409,16 +407,21 @@ export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: stri
   const facts = assets ?? assetFacts(lampInput(db, workspaceDir, taskId, definition));
   const found = definitionsOrError();
   return {
-    position: open?.activity ?? IDLE, inFlow: open !== null && open.flow !== null, flowNode: null, hasMaterials: facts.materials > 0,
+    position: open?.activity ?? IDLE, inFlow: open !== null && open.flow !== null, flowNode: null, flowItem: flowWorkItem(db, taskId), hasMaterials: facts.materials > 0,
     blocked: found.defs ? blockedByStage(found.defs.activities, facts) : allBlocked(found.error),
   };
 }
 
-/** 进行中的工作项各有几个：单项活动的按活动数，流程的按流程的键数。 */
+/** 任务里已有的那个流程的工作项（一个任务至多一个）；没有是 null。早先的库里若有几个，取最早启动的那个。 */
+export function flowWorkItem(db: DatabaseSync, taskId: string): FlowItemRef | null {
+  const item = activityRecords(db, taskId).find((one) => one.flow !== null);
+  return item ? { record_id: item.record_id, name: workItemName(item), node: item.activity } : null;
+}
+
+/** 工作项各有几个：单项活动的按活动数，流程的按流程的键数。 */
 export function activeCounts(db: DatabaseSync, taskId: string): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const one of activityRecords(db, taskId)) {
-    if (one.status !== WORK_ITEM_ACTIVE) continue;
     const key = one.flow ?? one.activity;
     counts[key] = (counts[key] ?? 0) + 1;
   }
@@ -450,8 +453,8 @@ export const START_ITEMS_REASON = enterReason("writing");
  * - 这条会话正在做一个流程的工作项：次序不对的点击不记（why 为 not_next 或 not_back）。进入澄清、进入整理建模、进入评审确认、进入编写文档只在
  *   工作项正处在紧挨着的前一段时才算；开始写条目在写条目之前的哪一段点都算（用户可以跳过中间的阶段），已经过了写条目时点它是退回写条目；
  *   退回的目标要在现在这个阶段之前。
- * - 别的情形（自由讨论的会话、单项活动的工作项、工作项已经结束）：进入与退回都不算（why 为 not_in_flow）。早先任务空闲时
- *   「开始核读材料」的卡片能启动首次分析，现在启动一律从任务起点页做，这张卡片上的点击也不算。
+ * - 别的情形（自由讨论的会话、归档的会话、单项活动的工作项）：进入与退回都不算（why 为 not_in_flow）。早先任务空闲时
+ *   「开始核读材料」的卡片能启动流程，现在启动一律从任务起点页做，这张卡片上的点击也不算。
  * 任务没有阶段、任务不在进行中、工作项本来就在那一站时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
  * 发那句固定的话之前调用，这样助手回应这次点击的那一次运行从头就在新的阶段。
  */
@@ -527,16 +530,14 @@ export interface WorkItemBrief {
   /** 现在做的是哪一项活动。 */
   activity: Stage;
   flow: string | null;
-  status: WorkItemStatus;
   scope: string | null;
-  /** 启动与结束的时刻（库里的本地时间写法）；还在进行时结束的时刻为 null。 */
+  /** 启动的时刻（库里的本地时间写法）。 */
   started_at: string;
-  ended_at: string | null;
 }
 
 export function workItemBrief(item: ActivityRecord): WorkItemBrief {
   return { record_id: item.record_id, kind: item.flow !== null ? "flow" : "activity", name: workItemName(item), activity: item.activity, flow: item.flow,
-    status: item.status, scope: item.scope, started_at: item.started_at, ended_at: item.ended_at };
+    scope: item.scope, started_at: item.started_at };
 }
 
 /**
@@ -549,7 +550,7 @@ export interface StageSummary {
   node: Stage | null;
   /** 与 node 相同，留给还按「流程走到哪一站」读的页面。 */
   flow_node: Stage | null;
-  /** 这条会话属于的工作项（不论它是不是已经结束）；自由讨论的会话为 null。 */
+  /** 这条会话属于的工作项；自由讨论的会话、归档的会话为 null。 */
   work_item: WorkItemBrief | null;
   /** 早先任务状况卡上「开展一项活动」一节的内容（lib/stage.ts 的 LaunchView）；新的页面不用它。 */
   launch: LaunchView;
@@ -694,8 +695,7 @@ export function lastMove(db: DatabaseSync, item: ActivityRecord): { actor: Stage
  */
 export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition, sessionId: string | null): StageSummary | null {
   if (!hasOverall(definition.collections)) return null;
-  const bound = sessionWorkItem(db, taskId, sessionId);
-  const open = bound !== null && bound.status === WORK_ITEM_ACTIVE ? bound : null;
+  const open = sessionWorkItem(db, taskId, sessionId);
   const input = lampInput(db, workspaceDir, taskId, definition);
   const assets = assetFacts(input);
   const facts = launchFacts(db, workspaceDir, taskId, definition, sessionId, assets);
@@ -706,10 +706,10 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
     current: facts.position,
     node,
     flow_node: node,
-    work_item: bound ? workItemBrief(bound) : null,
+    work_item: open ? workItemBrief(open) : null,
     launch: launchView(facts),
     assets: assetCells(assets, found.defs?.activities ?? []),
-    catalog: found.defs ? catalog(found.defs, assets, activeCounts(db, taskId)) : null,
+    catalog: found.defs ? catalog(found.defs, assets, activeCounts(db, taskId), facts.flowItem) : null,
     catalog_error: found.error,
     moved_by: moved?.actor ?? null,
     moved_at: moved?.at ?? null,
@@ -728,34 +728,28 @@ export function stageSummaryOf(db: DatabaseSync, workspaceDir: string, sessionId
   return task ? stageSummary(db, workspaceDir, task.task_id, validateDefinition(JSON.parse(task.definition_text)), sessionId) : null;
 }
 
-/** 自由讨论的会话里给助手看的那一句。 */
+/** 自由讨论的会话（包括归档的会话）里给助手看的那一句。 */
 export const IDLE_LINE = "本会话是自由讨论，不属于任何工作项：你可以立主题页、改主题页、记问题条目，不写需求条目，也不提议进入哪一项活动。启动哪一项活动由用户从任务起点页决定。";
-
-/** 这条会话的工作项已经结束时给助手看的那一句。 */
-export function endedLine(item: WorkItemBrief): string {
-  return `本会话的工作项「${item.name}」已经结束（${WORK_ITEM_STATUS_NAMES[item.status]}）。本会话此后按自由讨论办：你可以立主题页、改主题页、记问题条目，不写需求条目，` +
-    "也不提议进入哪一项活动。要再做这项活动，由用户从任务起点页再启动一次。";
-}
 
 /**
  * 给助手看的一段：这条会话的工作项是什么、现在在哪一站、最近一次是谁在什么时候为什么启动或者换站的，以及这一段还差什么（只说现在这个阶段的几盏灯）。
  * 查询任务状态的返回末尾用它。会话空闲时只有一句，不说灯：空闲没有自己的灯。
  */
 export function stageLines(summary: StageSummary): string[] {
-  if (summary.current === IDLE) return [summary.work_item !== null && summary.work_item.status !== WORK_ITEM_ACTIVE ? endedLine(summary.work_item) : IDLE_LINE];
+  if (summary.current === IDLE) return [IDLE_LINE];
   const name = STAGE_NAMES[summary.current];
   const reason = (summary.reason ?? "").replace(/[。.\s]+$/, "");
   const who = summary.moved_by === "executor" ? "助手" : "用户";
   const at = (summary.moved_at ?? "").slice(0, 16).replace("T", " ");
   if (summary.node === null) {
-    // 单项活动的工作项：不在流程里，做够了由助手汇报结束。
+    // 单项活动的工作项：不在流程里，做够了由助手汇报做完（只是一句话，工作项照旧留着）。
     return [
       `本会话的工作项是单项活动「${name}」，不在工作流程里（${who}在 ${at} 启动的${reason ? `，理由：${reason}` : ""}）。` +
-        "这项活动做够了就在回复里汇报结束（回复里写 activity_done: true），不提议进入别的活动。",
+        "这项活动做够了就在回复里汇报做完（回复里写 activity_done: true），不提议进入别的活动。",
       ...lampLines(summary.current, summary.lamps[summary.current]),
     ];
   }
-  const flow = summary.work_item?.name ?? FLOW_NAMES[FLOW_INITIAL];
+  const flow = summary.work_item?.name ?? FLOW_NAMES[FLOW_ANALYSIS];
   return [
     `本会话的工作项是工作流程「${flow}」，现在在${name}阶段（${who}在 ${at} 到这一站的${reason ? `，理由：${reason}` : ""}）。`,
     ...lampLines(summary.current, summary.lamps[summary.current]),

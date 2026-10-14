@@ -26,7 +26,7 @@ const ALLOWED: Record<string, string[]> = {
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
   // 另有问题条目的几个字段名与取值（常量）。
-  "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "ACTIVITY_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_INITIAL", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark",
+  "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "ACTIVITY_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_ANALYSIS", "flowKeyOf", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark",
     // 范围说明的字数上限与按名字认阶段的函数：只做计算，后端在新建会话之前核对开展活动的写法时用。
     "SCOPE_MAX_LENGTH", "stageByName",
     // 空闲（任务没有在进行的活动）的写法与名字、位置的类型与两个只做计算的函数。
@@ -87,7 +87,7 @@ const ALLOWED: Record<string, string[]> = {
   // upgradeTaskDatabase 是写入：把一个任务库升到现在的格式。它只许在数据升级里调（src/data_upgrade.ts，服务启动时的升级与命令行的
   // 升级都经那里），走的是助手写库时用的同一张步骤表；下面另有一条测试守着别的文件不导入它。
   // 工作的阶段：从任务库读出任务现在的阶段与每个阶段的几盏灯（只读函数，不写库）。
-  "stage_read.ts": ["stageSummaryOf", "activityRecords", "WorkItemBrief", "workItemBrief", "workItemSessionName", "workItemSessions"],
+  "stage_read.ts": ["stageSummaryOf", "activityRecords", "archivedSessions", "WorkItemBrief", "workItemBrief", "workItemSessionName", "workItemSessions"],
   // 开着的提议：从事件表读出任务现在待决定的那一条（只读函数，不写库），与它的类型。
   "stage_proposal.ts": ["OpenProposal", "openProposal"],
   "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase"],

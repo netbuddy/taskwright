@@ -354,7 +354,7 @@ function applyLibrary(state: WorkState, event: BufferedLibraryEvent): WorkState 
       next = applyConfirmationRecorded(next, { ...data, basis: "viewed", items: data.items.map((i) => ({ ...i, accepted: true })) });
       break;
     }
-    // 启动工作项、流程换站、工作项结束（activity_started、node_entered、activity_ended）不在这里改阶段：这几种事件说的是工作项，
+    // 启动工作项、流程换站、删除工作项（activity_started、node_entered、work_item_deleted）不在这里改阶段：这几种事件说的是工作项，
     // 推给任务的每一条会话；这条会话现在的阶段看下面这一批最后一条库事件带的 stage（后端按订阅的那条会话算好）。
   }
   // 有阶段的任务：这一批最后一条库事件带着现在的阶段与灯（不论是哪一种事件），照它换掉。

@@ -35,10 +35,10 @@ const LEGACY = join(ROOT, "agent", "prompts", "skills", "taskwright-executor", "
 const STAGES_DIR = join(ROOT, "agent", "prompts", "stages");
 /** 读 stages 目录里的一份文件。活动的定义开头有一段头（lib/activity_def.ts），拼系统提示时去掉，这里也去掉。 */
 const readRaw = (name: string) => skillBody(readFileSync(join(STAGES_DIR, name), "utf-8"));
-/** 首次分析这条流程的定义：六个节点各一节，写出口与用户说的话不属于这一段时怎样办。 */
-const FLOW = skillBody(readFileSync(join(ROOT, "agent", "prompts", "flows", "initial.md"), "utf-8"));
+/** 需求分析这条流程的定义：六个节点各一节，写出口与用户说的话不属于这一段时怎样办。 */
+const FLOW = skillBody(readFileSync(join(ROOT, "agent", "prompts", "flows", "analysis.md"), "utf-8"));
 /**
- * 读一份说明文件。六项活动的文件读出来的是这个阶段在首次分析流程里拼出来的那一段：活动的说明（做什么、不做什么、做到什么算够）
+ * 读一份说明文件。六项活动的文件读出来的是这个阶段在需求分析流程里拼出来的那一段：活动的说明（做什么、不做什么、做到什么算够）
  * 接上流程定义里它那个节点的一节（出口、用户说的话不属于本段时），与任务在流程里时系统提示里的那一截相同。别的文件原样。
  */
 const read = (name: string) => {
@@ -217,7 +217,7 @@ test("活动的说明与节点的出口分在两处：活动文件只有做什�
   }
   // 流程的定义：一段开头的话，然后正好六个节点，照阶段的先后。
   assert.deepEqual(FLOW.split("\n").filter((line) => /^# /.test(line)).slice(1).map((line) => line.slice(2)), STAGES.map(nodeHeading));
-  assert.ok(FLOW.startsWith("# 首次分析流程里各个节点的出口\n"));
+  assert.ok(FLOW.startsWith("# 需求分析流程里各个节点的出口\n"));
   assert.equal(nodeSection(FLOW.replace("# 节点：澄清", "# 节点：别的"), "clarifying"), null);
 });
 

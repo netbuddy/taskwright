@@ -28,11 +28,18 @@ export const STAGE_NAMES: Record<Stage, string> = {
 };
 
 /**
- * 所属流程：一个工作项是哪一条工作流程的一次启动。现在只有一条流程（首次分析）；单项活动的工作项不属于流程。
- * 它写在活动记录表的「所属流程」一列与工作项的几种事件的内容里；早先没有写它的移动，升级时补成首次分析。
+ * 所属流程：一个工作项是哪一条工作流程的一次启动。现在只有一条流程（需求分析）；单项活动的工作项不属于流程。
+ * 流程可以在各站之间来回走、反复迭代，没有终点；一个任务同一时刻至多有一个流程的工作项（不论哪条流程）。
+ * 它写在活动记录表的「所属流程」一列与工作项的几种事件的内容里。早先这条流程叫首次分析、键是 initial：
+ * 升级时活动记录里的键改写成 analysis，早先记下的事件里仍是 initial，读的时候用 flowKeyOf 当作同一条。
  */
-export const FLOW_INITIAL = "initial";
-export const FLOW_NAMES: Record<string, string> = { [FLOW_INITIAL]: "首次分析" };
+export const FLOW_ANALYSIS = "analysis";
+export const FLOW_NAMES: Record<string, string> = { [FLOW_ANALYSIS]: "需求分析" };
+/** 事件里记的流程键换成现在的写法：早先的 initial 是需求分析；空的、不是文字的给 null。 */
+export function flowKeyOf(value: unknown): string | null {
+  if (typeof value !== "string" || value === "") return null;
+  return value === "initial" ? FLOW_ANALYSIS : value;
+}
 
 /** 谁移动的：助手或用户。取值与库事件的发起方一致。 */
 export type StageActor = "executor" | "user";
@@ -51,7 +58,7 @@ export function stageByName(name: unknown): Stage | null {
 }
 
 /**
- * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它的工作项已经结束。它不是一个阶段，
+ * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它已经归档（它的工作项被删除了）。它不是一个阶段，
  * 不排在 STAGES 的次序里，也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「这条会话现在在哪里」的那几处。它与 null 不是一回事：
  * null 是早先建的任务（任务定义里没有「总体分析」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
  * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED）。启动哪一项活动由用户在任务起点页上定。
@@ -245,7 +252,7 @@ export function judgeMove(from: Position, to: Stage, actor: StageActor): MoveVer
  * - move：流程的工作项换了一站（卡片上的进入与退回、直接移动）；
  * - launch：启动了一条工作流程，从这一站开始；
  * - alone：启动了一项单项活动，不在流程里；
- * - resume：早先的写法（会话与工作项绑定之前），首次分析走过一段之后从这一站接着走。现在不再记这一种，早先的对话里留着。
+ * - resume：早先的写法（会话与工作项绑定之前），流程走过一段之后从这一站接着走。现在不再记这一种，早先的对话里留着。
  */
 export type StartHow = "move" | "launch" | "resume" | "alone";
 
@@ -257,7 +264,7 @@ export function activityStartSentence(how: StartHow, to: Stage, from: Position):
   const name = STAGE_NAMES[to];
   if (how === "move") return `用户把工作项从${positionName(from)}移到${name}。`;
   const was = from === IDLE ? "" : `（原来在做：${STAGE_NAMES[from]}）`;
-  const flow = FLOW_NAMES[FLOW_INITIAL];
+  const flow = FLOW_NAMES[FLOW_ANALYSIS];
   if (how === "launch") return `用户启动工作流程「${flow}」，从「${name}」开始。${was}`;
   if (how === "resume") return `用户继续工作流程「${flow}」，从「${name}」接着。${was}`;
   return `用户启动活动「${name}」。${was}`;
@@ -268,17 +275,9 @@ export function workItemContinuedSentence(name: string, node: Stage | null): str
   return `用户新建这条会话，接着做工作项「${name}」${node ? `，现在在「${STAGE_NAMES[node]}」这一站` : ""}。`;
 }
 
-/**
- * 用户结束一个工作项时，对话里那一句（不带「界面操作」的前缀）。done 为真是已做完，为假是已放弃；
- * here 为真是这句话留在属于这个工作项的会话里，这时另说明这条会话此后怎样办。
- */
-export function workItemEndedSentence(name: string, done: boolean, here = true): string {
-  return `用户结束工作项「${name}」，记为${done ? "已做完" : "已放弃"}。${here ? "本会话此后按自由讨论办；要再做，从任务起点页再启动一次。" : ""}`;
-}
-
-/** 用户结束一个工作项时，那条记录结束的起因。 */
-export function endedByUserReason(done: boolean): string {
-  return done ? "用户结束这个工作项：已做完" : "用户结束这个工作项：已放弃";
+/** 用户删除一个工作项时，对话里那一句（不带「界面操作」的前缀）。archived 是随之归档了几条会话。 */
+export function workItemDeletedSentence(name: string, archived: number): string {
+  return `用户删除工作项「${name}」${archived > 0 ? `，它的 ${archived} 条会话已归档` : ""}。`;
 }
 
 /** 范围说明最多多少个字：它要放进系统提示，太长的不收。 */
@@ -296,30 +295,27 @@ export function scopeSentence(scope: string): string {
  */
 export const PROPOSAL_VOIDED_NOTE = "（助手先前的提议作废，回来后由助手重新提议）";
 
-/** 助手汇报单项活动的工作项做完了时，那条记录结束的起因。 */
-export const ACTIVITY_DONE_REASON = "助手汇报这项活动结束";
-
 /**
  * 回复里写了 activity_done 而这条会话不在做单项活动的工作项时的拒绝：事实与怎么办。position 是这条会话现在在哪里
  * （流程的工作项的某一站，或者空闲）。流程里做完一段不由助手结束：用进入下一段的卡片提议，由用户点。
  */
 export function activityDoneRefusal(position: Position): Refusal {
   if (position === IDLE) {
-    return ["回复里写了 activity_done，而本会话没有在进行的工作项可以结束", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"];
+    return ["回复里写了 activity_done，而本会话不属于任何工作项，没有活动可以汇报做完", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"];
   }
   const forward = forwardCardGuidance(position);
   return [
-    `回复里写了 activity_done，而本会话的工作项是工作流程，现在在${STAGE_NAMES[position]}阶段：这一项只在工作项是单项活动时用，流程里的阶段不由你结束`,
+    `回复里写了 activity_done，而本会话的工作项是工作流程，现在在${STAGE_NAMES[position]}阶段：这一项只在工作项是单项活动时用，流程里的阶段做完了不由你汇报`,
     `去掉 activity_done 这一项再回复。${forward ? `这一段做完了要往前走，${forward}，由用户在卡片上点` : "这一段做完了，照这一段的说明请用户过目"}`,
   ];
 }
 
-/** 助手汇报单项活动的工作项做完时，对话里那条回复下面的一行。末尾告诉用户怎样再做：工作项结束之后助手不会自己接着做那项活动。 */
+/** 助手汇报单项活动的工作项做完时，对话里那条回复下面的一行。汇报只是一句话：工作项照旧留着，不改任何记录。 */
 export function activityDoneSentence(activity: Stage): string {
-  return `助手汇报这个工作项做完：${STAGE_NAMES[activity]}。本会话此后按自由讨论办；要再做，从任务起点页再启动一次。`;
+  return `助手汇报：${STAGE_NAMES[activity]}做完了。`;
 }
 
-/** 首次分析从哪个节点启动：有材料从核读材料，没有材料从澄清。 */
+/** 需求分析从哪个节点启动：有材料从核读材料，没有材料从澄清。 */
 export function flowStartNode(hasMaterials: boolean): Stage {
   return hasMaterials ? "reading" : "clarifying";
 }
@@ -332,10 +328,24 @@ export interface LaunchFacts {
   inFlow: boolean;
   /** 恒为 null：早先是「首次分析走到的节点」，现在流程的位置记在各个工作项上。 */
   flowNode: Stage | null;
+  /** 任务里已有的那个流程的工作项（一个任务至多一个）；没有是 null。有它时不能再以流程方式启动。 */
+  flowItem: FlowItemRef | null;
   /** 任务里有没有材料。 */
   hasMaterials: boolean;
   /** 六项活动各自现在缺什么前提，不缺是 null。前提都是数据条件，写在各项活动的定义里（lib/activity_def.ts），由读库的一侧算好交进来。 */
   blocked: Record<Stage, string | null>;
+}
+
+/** 任务里已有的那个流程的工作项：记录号、名字（流程的名字）、现在在哪一站。 */
+export interface FlowItemRef {
+  record_id: number;
+  name: string;
+  node: Stage;
+}
+
+/** 已有流程的工作项时，流程那一项不能启动，写这一句：在进行的是哪条、在哪一站。 */
+export function flowExistsText(item: FlowItemRef): string {
+  return `已有流程工作项「${item.name}」，位于「${STAGE_NAMES[item.node]}」`;
 }
 
 /** 可以点的一项：启动哪一项活动、在不在流程里、按钮上的字、现在能不能启动、一句状态（不能启动时写缺什么）。 */
@@ -349,7 +359,7 @@ export interface LaunchOption {
 
 /**
  * 早先任务状况卡上那一节的内容（新的页面不用它，任务起点页与切换工作面板读活动目录），三组：
- * current 是这条会话正在做的活动（只显示一行，不是按钮；空闲时为 null）；flows 是可以启动的流程（现在只有首次分析）；
+ * current 是这条会话正在做的活动（只显示一行，不是按钮；空闲时为 null）；flows 是可以启动的流程（现在只有需求分析）；
  * activities 是可以启动的单项活动（六项）；later 是以后才有的（发布）。
  */
 export interface LaunchView {
@@ -361,11 +371,11 @@ export interface LaunchView {
 
 export const LAUNCH_READY = "可以启动";
 export const LAUNCH_ACTIVE = "正在进行";
-/** 任务正在首次分析流程里做这项活动时，单项活动里同名的那一项不能点，后面写这一句。 */
+/** 早先：任务正在流程里做这项活动时，单项活动里同名的那一项不能点，后面写这一句。 */
 export const LAUNCH_IN_FLOW = "正在工作流程中进行";
 
 export function launchView(facts: LaunchFacts): LaunchView {
-  const flow = FLOW_NAMES[FLOW_INITIAL];
+  const flow = FLOW_NAMES[FLOW_ANALYSIS];
   const at = facts.position === IDLE ? null : facts.position;
   const current = at === null ? null
     : { activity: at, in_flow: facts.inFlow, label: facts.inFlow ? `继续${flow}：${STAGE_NAMES[at]}` : `继续${STAGE_NAMES[at]}` };
@@ -374,8 +384,8 @@ export function launchView(facts: LaunchFacts): LaunchView {
   const flows: LaunchOption[] = [{
     activity: node, in_flow: true,
     label: facts.flowNode === null ? `启动${flow}` : `继续${flow}（从${STAGE_NAMES[node]}接着）`,
-    enabled: !inFlowNow,
-    state: inFlowNow ? LAUNCH_ACTIVE : facts.flowNode === null ? `从${STAGE_NAMES[node]}开始` : LAUNCH_READY,
+    enabled: !inFlowNow && (facts.flowItem ?? null) === null,
+    state: inFlowNow ? LAUNCH_ACTIVE : facts.flowItem ? flowExistsText(facts.flowItem) : facts.flowNode === null ? `从${STAGE_NAMES[node]}开始` : LAUNCH_READY,
   }];
   const activities: LaunchOption[] = STAGES.map((activity) => {
     const active = at === activity && !facts.inFlow;
@@ -429,7 +439,7 @@ function howToLeaveDocument(back: Exclude<Stage, "document">): string {
 }
 
 /** 空闲时被拦的事实开头的那半句。 */
-const IDLE_FACT = "本会话没有在进行的工作项";
+const IDLE_FACT = "本会话不属于任何工作项";
 
 /**
  * 空闲时被拦怎么办：这件事要在哪一项活动里做（where），而启动哪一项活动由用户定——从任务起点页启动一个工作项。

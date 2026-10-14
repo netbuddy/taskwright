@@ -303,7 +303,7 @@ export function renderLaunch(launch: LaunchView | null | undefined): string {
 }
 
 /**
- * 按写法在这一节里找一项。流程的一项写按钮上的字，「启动首次分析」「继续首次分析」写到这里就认（后面「（从某阶段接着）」可以不写）；
+ * 按写法在这一节里找一项。流程的一项写按钮上的字，「启动需求分析」「继续需求分析」写到这里就认（后面「（从某阶段接着）」可以不写）；
  * 单独开展的写「单独开展：活动名」。写的是「不选」时返回 null。找不到、或者那一项现在不能选时抛错，写明可以选的有哪些。
  */
 export function launchOption(launch: LaunchView | null | undefined, wanted: string): LaunchOption | null {

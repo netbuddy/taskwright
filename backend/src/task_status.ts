@@ -5,26 +5,30 @@
  * 还没有了结的待澄清问题数、图按种类的张数、各集合的条目数与用户看过的条数、需求资产六类的现状、活动目录。
  * 章的归法与页面目录用的是同一个函数（agent/src/lib/overall_chapters.ts）。
  *
- * work_items 是进行中的工作项，按启动的先后；recent_done 是已经结束的，最近结束的在前，最多 RECENT_DONE_LIMIT 个。每个工作项：
+ * work_items 是任务的全部工作项（工作项没有终点，不要了由用户删除），按最近有动静的时刻倒序：取属于它的会话里最近一次活动的时刻，
+ * 一条会话都还没有说过话的按启动的时刻。每个工作项：
  * record_id（记录号）、kind（flow 是流程的工作项，activity 是单项活动的）、name（流程或活动的名字）、activity 与 activity_name（现在做的那项活动）、
- * node（流程的工作项现在在哪一站，单项活动的为 null）、ordinal（那一站是第几站）、flow、scope（范围说明）、status、started_at、ended_at、
+ * node（流程的工作项现在在哪一站，单项活动的为 null）、ordinal（那一站是第几站）、flow、scope（范围说明）、started_at、
  * session_ids 与 session_count（属于它的会话）、latest_session（最近有动静的那条会话：编号、名字、最近活动的时刻；一条都没有时为 null）、
  * last_active_at（最近动静的时刻）、session_name（现在给它新建一条会话时起的名字）。
- * 一个任务可以同时有几个进行中的工作项，任务一级没有「当前活动」。
+ * 会话只算还在的：归档的会话（工作项被删除时随之归档）本来就不再属于工作项；会话文件不存在的（新建之后一句话都没有说就换走了，
+ * 助手运行时不保留这种会话）也略去。
+ * 一个任务可以同时有几个工作项，其中流程的工作项至多一个；任务一级没有「当前活动」。
  *
  * activity、missing、proposal 三项说的是一条会话：请求里给了会话编号（session）时是那条会话的，不给时按自由讨论的会话算。activity 有三种：
- * - 这条会话正在做流程的工作项：kind 是 stage，key 是所在那一站的写法，ordinal 是第几站，flow 是所属流程（initial）。
+ * - 这条会话正在做流程的工作项：kind 是 stage，key 是所在那一站的写法，ordinal 是第几站，flow 是所属流程（analysis）。
  * - 这条会话正在做单项活动的工作项：kind 是 activity，key 与 name 是那项活动的，ordinal 与 flow 为 null；missing 照那项活动的灯。
- * - 这条会话空闲（自由讨论的会话，或者它的工作项已经结束）：kind 与 key 都是 idle，name 是「空闲」，ordinal 与谁、什么时候、为什么三项为 null，
+ * - 这条会话空闲（自由讨论的会话，或者归档的会话）：kind 与 key 都是 idle，name 是「空闲」，ordinal 与谁、什么时候、为什么三项为 null，
  *   missing 是空的（空闲没有自己的灯）。
  * launch 是早先任务状况卡上那一节的内容（agent/src/lib/stage.ts 的 LaunchView），留给还读它的页面，以后去掉。
  * 任务不在进行中时 launch 为 null。versions 留给已发布的文档版本，现在没有这种记录，恒为空列表。
  * assets 是需求资产六类的现状，六格，每格 { key, name, count, unit, text, note, produced_by }（agent/src/lib/activity_catalog.ts 的 AssetCell）。
  * catalog 是任务起点页的活动目录：flows 两条工作流程与 activities 七项单项活动，文字取自活动与流程的定义文件开头的头
- * （agent/prompts/stages/、agent/prompts/flows/），各带现在能不能启动（enabled）、一句状态（state）与进行中的工作项个数（active_count）；
- * 能不能启动只看数据，已经有进行中的工作项不拦。任务不在进行中、或者定义读不出来时 catalog 为 null。
+ * （agent/prompts/stages/、agent/prompts/flows/），各带现在能不能启动（enabled）、一句状态（state）与工作项个数（active_count）；
+ * 单项活动能不能启动只看数据，已经有工作项不拦；流程另带 work_item（任务里已有的流程工作项），有它时流程不能启动。
+ * 任务不在进行中、或者定义读不出来时 catalog 为 null。
  * start_page 是任务起点页与活动输入页上的几段文字（startPageTexts）：一段定位的话、「三步开始」主按钮下面的一句、三种常见起点各一张小卡、
- * 首次编制时输入页上的几段（intake）。
+ * 从头编制时输入页上的几段（intake）。
  * 现在都是这里给的缺省文字，照需求规格说明这一类任务写；以后由任务类型的定义给。
  * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
  */
@@ -38,7 +42,7 @@ import * as library from "./library.ts";
 /**
  * 任务起点页与活动输入页上的几段文字。lead 是任务名下面那一段定位的话；guide_note 是「三步开始」主按钮下面的一句；
  * cases 是三种常见起点，每种一个标题、一句做法，以及点了它进输入页时先看哪一块（focus：materials 是项目材料，description 是目标系统描述）。
- * intake 是首次编制时输入页上的几段：lead 是三块输入上面的一段话；material_kinds 是适合上传的几类文件；describe_note、
+ * intake 是从头编制时输入页上的几段：lead 是三块输入上面的一段话；material_kinds 是适合上传的几类文件；describe_note、
  * describe_placeholder、describe_examples 是目标系统描述那一块的说明、文本框里的提示与点了就填进去的示例；
  * after 是「启动后」一块里有材料与没有材料两种情形各一句。
  */
@@ -69,9 +73,6 @@ export function startPageTexts(taskName: string) {
   };
 }
 
-/** 已经结束的工作项最多列几个。 */
-export const RECENT_DONE_LIMIT = 10;
-
 /** 会话清单里算工作项最近动静要的几样（executor.listSessions() 的行）。 */
 export interface SessionFact {
   session_id: string;
@@ -79,28 +80,33 @@ export interface SessionFact {
   last_active_at?: string | null;
 }
 
-/** 一个工作项给页面的样子：见文件头。sessions 是任务的会话清单，用来找属于它的会话里最近有动静的那一条。 */
-export function workItemView(row: library.WorkItemRow, sessions: readonly SessionFact[]) {
-  const own = row.session_ids.map((id) => sessions.find((one) => one.session_id === id) ?? { session_id: id, name: null, last_active_at: null });
+/**
+ * 一个工作项给页面的样子：见文件头。sessions 是任务的会话清单（会话文件还在的那些），用来找属于它的会话里最近有动静的那一条，
+ * 也用来略去会话文件不存在的会话；不给（null）时不知道哪些还在，全部算上。
+ */
+export function workItemView(row: library.WorkItemRow, sessions: readonly SessionFact[] | null) {
+  const known = sessions ?? [];
+  const ids = sessions === null ? row.session_ids : row.session_ids.filter((id) => known.some((one) => one.session_id === id));
+  const own = ids.map((id) => known.find((one) => one.session_id === id) ?? { session_id: id, name: null, last_active_at: null });
   // 最近有动静的那一条；都还没有说过话时取最后挂上的那一条。
   const active = own.filter((one) => one.last_active_at).sort((a, b) => String(b.last_active_at).localeCompare(String(a.last_active_at)))[0] ?? null;
   const latest = active ?? own.at(-1) ?? null;
   const node = row.kind === "flow" ? row.activity : null;
   return {
     record_id: row.record_id, kind: row.kind, name: row.name, activity: row.activity, activity_name: STAGE_NAMES[row.activity] ?? String(row.activity),
-    node, ordinal: node === null ? null : STAGES.indexOf(node) + 1, flow: row.flow, scope: row.scope, status: row.status,
-    started_at: clock.fromLocalText(row.started_at), ended_at: clock.fromLocalText(row.ended_at),
-    session_ids: row.session_ids, session_count: row.session_ids.length,
+    node, ordinal: node === null ? null : STAGES.indexOf(node) + 1, flow: row.flow, scope: row.scope,
+    started_at: clock.fromLocalText(row.started_at),
+    session_ids: ids, session_count: ids.length,
     latest_session: latest === null ? null : { session_id: latest.session_id, name: latest.name ?? null, last_active_at: latest.last_active_at ?? null },
     last_active_at: active?.last_active_at ?? null, session_name: row.session_name,
   };
 }
 
 /**
- * 任务状况。sessionId 是为哪条会话取 activity、missing、proposal 三项（不给按自由讨论的会话算）；sessions 是任务的会话清单，
- * 用来写每个工作项最近有动静的会话，不给时这几项为空。
+ * 任务状况。sessionId 是为哪条会话取 activity、missing、proposal 三项（不给按自由讨论的会话算）；sessions 是任务的会话清单
+ * （会话文件还在的那些），用来写每个工作项最近有动静的会话、略去不存在的会话；不给时这几项为空，会话一条都不略。
  */
-export function taskStatus(taskDir: string, sessionId: string | null = null, sessions: readonly SessionFact[] = []) {
+export function taskStatus(taskDir: string, sessionId: string | null = null, sessions: readonly SessionFact[] | null = null) {
   const [, view] = library.taskSnapshot(taskDir, null, sessionId);
   if (view === null || view.stage === null) return null;
   const stage = view.stage;
@@ -151,9 +157,7 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
     // 这一段还差什么：现在这个阶段没有通过的灯，原句照灯的整句。
     missing: (current === IDLE ? [] : stage.lamps[current] ?? []).filter((lamp) => lamp.ok === false).map((lamp) => ({ key: lamp.key, summary: lamp.summary })),
     proposal: stage.proposal,
-    work_items: workItemViews(taskDir, sessions).filter((one) => one.status === "active"),
-    recent_done: workItemViews(taskDir, sessions).filter((one) => one.status !== "active")
-      .sort((a, b) => String(b.ended_at ?? "").localeCompare(String(a.ended_at ?? ""))).slice(0, RECENT_DONE_LIMIT),
+    work_items: workItemViews(taskDir, sessions),
     launch: view.status === "进行中" ? stage.launch : null,
     assets: stage.assets,
     catalog: view.status === "进行中" ? stage.catalog : null,
@@ -162,9 +166,11 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
   };
 }
 
-/** 任务的全部工作项给页面的样子，按启动的先后。 */
-function workItemViews(taskDir: string, sessions: readonly SessionFact[]) {
-  return library.workItemRows(taskDir).map((row) => workItemView(row, sessions));
+/** 任务的全部工作项给页面的样子，按最近有动静的时刻倒序（会话都没有说过话的按启动的时刻；同一时刻的按记录号倒序）。 */
+function workItemViews(taskDir: string, sessions: readonly SessionFact[] | null) {
+  const moment = (one: ReturnType<typeof workItemView>) => Date.parse(String(one.last_active_at ?? one.started_at ?? "")) || 0;
+  return library.workItemRows(taskDir).map((row) => workItemView(row, sessions))
+    .sort((a, b) => moment(b) - moment(a) || b.record_id - a.record_id);
 }
 
 /** 七章的章号与章名，按先后：页面要列出全部的章时用。 */

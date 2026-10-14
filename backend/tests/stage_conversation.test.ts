@@ -27,7 +27,7 @@ test("两个取值的函数：记了移动才有；阶段名不对、没有这�
   assert.equal(clickStageUnmoved({ stage_move: { from: "reading", to: "clarifying" } }), null);
   assert.equal(clickStageUnmoved({ stage_event_seq: 12 }), null);
   assert.equal(clickStageUnmoved({ stage_unmoved: { at: "别的" } }), null);
-  // 任务空闲时点了「开始核读材料」：from 是空闲，how 写这次是启动还是继续首次分析。别的进入与退回在空闲时不算数，带 why。
+  // 任务空闲时点了「开始核读材料」：from 是空闲，how 写这次是启动还是继续需求分析。别的进入与退回在空闲时不算数，带 why。
   assert.deepEqual(clickStageMove({ stage_move: { from: "idle", to: "reading", how: "launch" } }), { from: "idle", to: "reading", actor: "user", how: "launch" });
   assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "idle", why: "not_in_flow" } }), { at: "idle", why: "not_in_flow" });
   assert.deepEqual(clickStageUnmoved({ stage_unmoved: { at: "clarifying", why: "not_in_flow" } }), { at: "clarifying", why: "not_in_flow" });
@@ -116,7 +116,7 @@ test("用户点卡片退回前面的阶段、点卡片进入下一段的那两�
       assert.equal("stage_unmoved" in live[6][1], false);
 
       // 库里的阶段记录：退回那一条是用户的移动，理由是点的那一项加卡片上助手写的原因。
-      // 前两条是启动首次分析（夹具记的）与这例开头把任务移到整理建模的那一次，不在这里核对。
+      // 前两条是启动需求分析（夹具记的）与这例开头把任务移到整理建模的那一次，不在这里核对。
       assert.deepEqual(db(movesSql(["from_stage", "stage", "actor", "reason"])).slice(2), [
         { from_stage: "modeling", stage: "clarifying", actor: "user", reason: "用户在卡片上选了「退回澄清」：「自助机」这个词牵涉好几页，前面的理解要重看。退回澄清吗？" },
         { from_stage: "clarifying", stage: "modeling", actor: "user", reason: "用户在卡片上选了「进入整理建模」" },

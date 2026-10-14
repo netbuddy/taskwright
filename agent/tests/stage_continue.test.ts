@@ -95,7 +95,7 @@ test("认不出就拒绝：不是进入卡片、卡片上留在这一段的不�
 
 test("卡片在同一个工作项的另一条会话里：照这个工作项开着的提议核对；选了之后提议仍然开着", () => {
   const dir = workspace();
-  // 一个首次分析的工作项先后有两条会话：卡片是在头一条里发的，用户在后一条里从「待决定」一行点。
+  // 一个需求分析的工作项先后有两条会话：卡片是在头一条里发的，用户在后一条里从「待决定」一行点。
   enterStage(dir, "reading", ["sess-first", SESSION]);
   const elsewhere = [said("u-x", "接着昨天的做")] as never;
   const recorded = recordReplyActs(dir, "sess-first", [said("u-0", "读一下材料")] as never, { informs: [], act: ACT as never }, "reply-far", "call-far")!;

@@ -61,10 +61,10 @@ EXECUTOR_WAIT = 900.0
 #: 做了这种操作之后不等助手，下一轮照常唤起用户 agent。在「开展一项活动」里写「不选」什么都不发，同样不等助手（route 为 none）。
 SILENT_ACTIONS = ("continue_stage", "start_activity")
 #: 用户画像里「开场」一项的写法：演练开始、用户 agent 说第一句话之前，驾驭程序替用户在任务状况卡的「开展一项活动」里选哪一项。
-#: 不写是启动首次分析（与 0.5 的走法等价：那时新任务一建好就在首次分析里）；写「不选」是不选，任务从空闲开始；
+#: 不写是启动需求分析（与 0.5 的走法等价：那时新任务一建好就在需求分析里）；写「不选」是不选，任务从空闲开始；
 #: 写「单独开展：活动名」是单独开展那项活动。
 OPENING_KEY = "开场"
-OPENING_DEFAULT = "启动首次分析"
+OPENING_DEFAULT = "启动需求分析"
 OPENING_SKIP = "不选"
 OPENING_ALONE_PREFIX = "单独开展："
 #: 双方连续这么多轮没有进展就停这一遍；命令行 --stall-rounds 可以改，0 是不查。
@@ -84,8 +84,8 @@ def expects_executor(respond: dict) -> bool:
 def opening_choice(launch: dict | None, wanted: str) -> tuple[dict | None, str]:
     """照「开场」的写法在任务状况的「开展一项活动」一节里找要选的那一项：返回（那一项，说明）；不选、找不到、现在不能选时那一项为 None。
 
-    与 sim/lib/screen.ts 的 launchOption 同一个认法：流程的一项写按钮上的字，「启动首次分析」「继续首次分析」写到这里就认；
-    单独开展的写「单独开展：活动名」。任务已经在首次分析里（那一项写着正在进行）也算不用选。"""
+    与 sim/lib/screen.ts 的 launchOption 同一个认法：流程的一项写按钮上的字，「启动需求分析」「继续需求分析」写到这里就认；
+    单独开展的写「单独开展：活动名」。任务已经在需求分析里（那一项写着正在进行）也算不用选。"""
     name = (wanted or OPENING_DEFAULT).strip()
     if name == OPENING_SKIP:
         return None, "画像写的是不选，任务从空闲开始"
@@ -447,7 +447,7 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
             upload(backend, task_id, source)
         backend.listen(task_id)
         time.sleep(0.5)
-        # 开场：替用户启动一个工作项（缺省启动首次分析），演练在后端为它新建的那条会话里进行；然后才轮到用户 agent 说第一句话。
+        # 开场：替用户启动一个工作项（缺省启动需求分析），演练在后端为它新建的那条会话里进行；然后才轮到用户 agent 说第一句话。
         # 画像写了不选（或者那一项现在不能选）时没有工作项：另建一条会话，它是自由讨论的会话。
         record["开场"] = open_activity(backend, task_id, persona)
         print(f"开场：{record['开场']['说明']}", flush=True)

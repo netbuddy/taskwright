@@ -206,7 +206,7 @@ describe("起点页：空任务", () => {
     expect(screen.getByTestId("task-lead")).toHaveTextContent("本任务用于编制并持续维护「退款需求走查」的需求规格说明。");
     const guide = screen.getByTestId("start-guide");
     expect([...guide.querySelectorAll(".tp-steps li")].map(text)).toEqual([
-      "1选择工作流程首次编制请选择「首次分析」。", "2提供输入上传项目材料，或直接描述目标系统。", "3由助手推进助手逐站完成并提议下一站，每一步由你确认。"]);
+      "1选择工作流程从头编制或整体复查请启动「首次分析」流程。", "2提供输入上传项目材料，或直接描述目标系统。", "3由助手推进助手逐站完成并提议下一站，每一步由你确认。"]);
     expect(screen.getByTestId("guide-start")).toHaveTextContent("开始首次分析");
     expect(guide).toHaveTextContent("预计首轮产出：业务说明初稿与待澄清问题清单");
     expect([...screen.getByTestId("start-cases").querySelectorAll(".tp-case b")].map(text)).toEqual(["有调研材料", "只有口头想法", "已有旧版规格说明"]);

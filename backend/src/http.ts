@@ -12,12 +12,12 @@ import { pipeline } from "node:stream/promises";
 import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
 import * as library from "./library.ts";
-import { taskStatus } from "./task_status.ts";
+import { type SessionFact, taskStatus, workItemView } from "./task_status.ts";
 import * as render from "./render.ts";
 import * as exportDocx from "./export_docx.ts";
 import * as exportDocument from "./export_document_docx.ts";
 import { DIAGRAM_KINDS, validateDiagram } from "./diagram_validate.ts";
-import { SCOPE_MAX_LENGTH, stageByName } from "../../agent/src/lib/stage.ts";
+import { SCOPE_MAX_LENGTH, STAGE_NAMES, stageByName } from "../../agent/src/lib/stage.ts";
 import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
@@ -214,26 +214,40 @@ function needsNewSession(body: Record<string, any>): boolean {
 }
 
 /**
- * 新建会话之前核对，不行就拒绝、不建会话。启动单项活动：这项活动现在能不能启动（任务状况里活动目录的那一项），不能就答 rejected 并写明原因；
- * 启动流程不查前提，与助手一侧相同。接着做一个工作项：要有这个工作项、它还在进行中。任务没有阶段、活动目录出不来时不在这里拒绝，交给助手一侧。
+ * 新建会话之前核对，不行就拒绝、不建会话。启动单项活动：这项活动现在能不能启动（任务状况里活动目录的那一项），不能就答 rejected 并写明原因。
+ * 启动流程不查前提，与助手一侧相同；但任务里已有流程的工作项时答 rejected，写明现有的那一个（一个任务同一时刻至多一个流程工作项）。
+ * 接着做一个工作项：要有这个工作项。任务没有阶段、活动目录出不来时不在这里拒绝，交给助手一侧。
  */
 function refuseBeforeNewSession(taskDir: string, body: Record<string, any>): void {
   const fields = body.fields as Record<string, any>;
   if (body.kind === "continue_activity") {
     const item = library.workItemRows(taskDir).find((one) => one.record_id === fields.activity_record_id);
-    if (!item) throw new ApiError("not_found", `没有记录号是 ${fields.activity_record_id} 的工作项。`);
-    if (item.status !== "active") {
-      const fact = `工作项「${item.name}」已经结束，不能再接着做；要再做这项活动，从任务起点页再启动一次`;
-      throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
-    }
+    if (!item) throw new ApiError("not_found", `没有记录号是 ${fields.activity_record_id} 的工作项（可能已经删除）。`);
     return;
   }
-  if (fields.in_flow !== false) return;
+  if (fields.in_flow !== false) {
+    const flowItem = library.workItemRows(taskDir).find((one) => one.kind === "flow");
+    if (!flowItem) return;
+    const existing = { record_id: flowItem.record_id, name: flowItem.name, node: flowItem.activity };
+    const fact = `任务里已有流程工作项「${flowItem.name}」（记录号 ${flowItem.record_id}，位于「${STAGE_NAMES[flowItem.activity]}」），` +
+      "一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着";
+    throw new ApiError("rejected", `${fact}。`, { reasons: [fact], existing });
+  }
   const key = stageByName(fields.activity);
   const entry = taskStatus(taskDir)?.catalog?.activities.find((one) => one.key === key);
   if (!entry || entry.enabled) return;
   const fact = `现在还不能启动「${entry.name}」：${entry.state}`;
   throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
+}
+
+/**
+ * 删除一个工作项的请求没有给会话时在哪条会话里做：这个工作项最近有动静的那条还在的会话（任务状况里的 latest_session）。
+ * 记录号写得不对、没有这个工作项、它一条还在的会话都没有时返回 null，照常转交（由助手一侧拒绝，或者在助手现在开着的会话里做）。
+ */
+function deleteSession(taskDir: string, body: Record<string, any>, sessions: readonly SessionFact[]): string | null {
+  const recordId = isObject(body.fields) ? body.fields.activity_record_id : undefined;
+  const row = library.workItemRows(taskDir).find((one) => one.record_id === recordId);
+  return row ? workItemView(row, sessions).latest_session?.session_id ?? null : null;
 }
 
 /** 用户打的字首字符是斜杠时，前面加「用户说：」，免得被 pi 当作扩展命令吞掉。 */
@@ -422,7 +436,8 @@ const handlers: Record<string, Handler> = {
   list_task_types: () => json(200, { ok: true, task_types: taskTypes() }),
   create_task: (service, req) => json(200, service.create(bodyJson(req))),
   get_task: (service, req) => json(200, { ok: true, ...service.taskPage(service.task(req.params.task)) }),
-  list_sessions: (service, req) => json(200, { ok: true, sessions: service.sessionRows(service.task(req.params.task)) }),
+  // 会话清单：缺省不列归档的会话；带 ?archived=1 时也列，每条标明是不是归档的。
+  list_sessions: (service, req) => json(200, { ok: true, sessions: service.sessionRows(service.task(req.params.task), req.query.archived === "1") }),
   // 新建会话。请求体里写了 activity_record_id 时，这条新会话接着做那个进行中的工作项（换一条干净的会话接着做）：先核对有这个工作项、
   // 它还在进行中，再新建会话并把它挂上去；回应里另带工作项的记录号。不写时新建的是自由讨论的会话，不属于任何工作项。
   new_session: async (service, req) => {
@@ -488,9 +503,12 @@ const handlers: Record<string, Handler> = {
       refuseBeforeNewSession(t.dir, body);
       created = session = await t.executor.newSession();
     }
+    // 删除一个工作项而没有给会话（例如从任务起点页删）：在这个工作项最近有动静的会话里做，那句说明随之留在那条（随即归档的）会话里。
+    if (body.kind === "delete_work_item" && !session) session = deleteSession(t.dir, body, t.executor.listSessions() as never);
     const done = await t.executor.actionWith(session, body);
     return json(200, { ok: true, client_id: body.client_id ?? null, op_id: done.op_id, ...(created !== null ? { session_id: created } : {}),
-      ...(done.activity_record_id !== null ? { activity_record_id: done.activity_record_id } : {}) });
+      ...(done.activity_record_id !== null ? { activity_record_id: done.activity_record_id } : {}),
+      ...(done.archived_sessions !== null ? { archived_sessions: done.archived_sessions } : {}) });
   },
   control: async (service, req) => {
     const t = service.task(req.params.task);
