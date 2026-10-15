@@ -27,8 +27,10 @@ const DEFAULT_PI_SETTINGS = { followUpMode: "all" };
 /** 建任务失败。消息是给人看的一句中文。 */
 export class CreateTaskError extends Error {}
 
-export function availableTemplates(): string[] {
-  return readdirSync(TASK_TYPES_DIR).filter((name) => statSync(join(TASK_TYPES_DIR, name)).isDirectory()).sort(byCodePoint);
+/** root 下的起始文件目录（缺省是产品自带的 task-types/；任务服务传用户数据目录下的那一份）。以点开头的目录不算。 */
+export function availableTemplates(root: string = TASK_TYPES_DIR): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root).filter((name) => !name.startsWith(".") && statSync(join(root, name)).isDirectory()).sort(byCodePoint);
 }
 
 export function newOperationId(): string {
@@ -69,13 +71,16 @@ export interface CreatedTask {
   任务目录: string;
 }
 
-/** 建任务，返回任务编号、任务名、任务类型、领域标签、事件序号，另加任务目录与操作编号。 */
+/**
+ * 建任务，返回任务编号、任务名、任务类型、领域标签、事件序号，另加任务目录与操作编号。typesRoot 是从哪里复制任务类型
+ * （缺省是产品自带的 task-types/；任务服务传用户数据目录下的那一份，见 task_types.ts）。
+ */
 export function createTaskDir(targetDir: string, taskType = DEFAULT_TYPE, name: string | null = null, tag: string | null = null,
-  taskId: string | null = null, opId: string | null = null): CreatedTask {
+  taskId: string | null = null, opId: string | null = null, typesRoot: string = TASK_TYPES_DIR): CreatedTask {
   const target = resolve(targetDir);
-  const template = join(TASK_TYPES_DIR, taskType);
+  const template = join(typesRoot, taskType);
   if (!existsSync(template) || !statSync(template).isDirectory()) {
-    throw new CreateTaskError(`没有「${taskType}」这种任务类型。可用的有：${availableTemplates().join("、")}。`);
+    throw new CreateTaskError(`没有「${taskType}」这种任务类型。可用的有：${availableTemplates(typesRoot).join("、")}。`);
   }
   if (isNonEmptyDir(target)) throw new CreateTaskError(`${target} 已经存在而且不是空的。一个目录只放一个任务，请换一个目录。`);
   const existed = existsSync(target);

@@ -511,7 +511,7 @@ const handlers: Record<string, Handler> = {
     return { ...json(200, { ok: true }), after: () => service.exitHandler?.() };
   },
   list_tasks: (service) => json(200, { ok: true, tasks: service.listTasks() }),
-  list_task_types: () => json(200, { ok: true, task_types: taskTypes() }),
+  list_task_types: (service) => json(200, { ok: true, task_types: taskTypes(service.typesRoot) }),
   create_task: (service, req) => json(200, service.create(bodyJson(req))),
   get_task: (service, req) => json(200, { ok: true, ...service.taskPage(service.task(req.params.task)) }),
   // 会话清单：缺省不列归档的会话；带 ?archived=1 时也列，每条标明是不是归档的。

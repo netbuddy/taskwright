@@ -28,6 +28,7 @@ import { Hub } from "./hub.ts";
 import { DEBUG_MODE, PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
+import { listTaskTypes, seedTaskTypes, taskTypesRoot, typeInfo } from "./task_types.ts";
 import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
 import { readTaskJson, writeTaskJson } from "./task_json.ts";
 import type { PendingUpgrade } from "./data_upgrade.ts";
@@ -96,19 +97,12 @@ export function unsupportedTypeText(): string {
   return `只接受 ${uploadTypesText()} 文件。`;
 }
 
-/** 任务类型：task-types/ 下的每个目录，显示名取它的任务定义里的「任务名」；没有新格式任务定义的模板不列。 */
-export function taskTypes() {
-  const out = [];
-  for (const name of availableTemplates()) {
-    let label: unknown;
-    try {
-      label = JSON.parse(readTextFileLenient(join(TASK_TYPES_DIR, name, "docs", "task-definitions", `${name}.json`)))["任务名"];
-    } catch {
-      continue;
-    }
-    if (typeof label === "string" && label) out.push({ task_type: name, name: label });
-  }
-  return out;
+/**
+ * 任务类型：root 下的每个目录（缺省是产品自带的 task-types/；任务服务列的是用户数据目录下的那一份，见 Service.taskTypes），
+ * 显示名取它的任务定义里的「任务名」；没有新格式任务定义的模板不列。
+ */
+export function taskTypes(root: string = TASK_TYPES_DIR) {
+  return listTaskTypes(root);
 }
 
 export function newTaskId(): string {
@@ -176,14 +170,12 @@ export interface ServiceOptions {
   debug?: boolean;
 }
 
-/** 产品自带的这种任务类型的说明现在是第几版（任务定义里的「版本」）；定义读不出来或者没有写版本时是 null。 */
-export function taskTypeVersion(taskType: string): number | null {
-  try {
-    const version = JSON.parse(readTextFileLenient(join(TASK_TYPES_DIR, taskType, "docs", "task-definitions", `${taskType}.json`)))["版本"];
-    return Number.isInteger(version) ? version : null;
-  } catch {
-    return null;
-  }
+/**
+ * 这种任务类型的说明现在是第几版（任务定义里的「版本」）；定义读不出来或者没有写版本时是 null。root 缺省是产品自带的 task-types/；
+ * 任务服务看的是用户数据目录下的那一份。
+ */
+export function taskTypeVersion(taskType: string, root: string = TASK_TYPES_DIR): number | null {
+  return typeInfo(root, taskType)?.version ?? null;
 }
 
 /** 按码位排好的目录项。 */
@@ -222,6 +214,8 @@ export class Service {
   readonly runsDir: string;
   /** 数据目录：数据包导入的报告写在它的 logs/ 下，导出时从它读任务登记。 */
   readonly dataDir: string;
+  /** 建任务时从这里复制任务类型：数据目录下的 task-types/（见 task_types.ts）。 */
+  readonly typesRoot: string;
   readonly profile: Profile;
   /** 实际监听的端口：启动层在监听成功之后填上（命令行给的端口被占时会换到后面的端口）。 */
   port: number | null;
@@ -268,6 +262,9 @@ export class Service {
     this.releaseLock = options.release ?? occupancy.release;
     this.registry = options.registry ?? null;
     if (options.createTasksDir !== false) mkdirSync(this.tasksDir, { recursive: true });
+    // 任务类型落在数据目录下的 task-types/：第一次启动（或者产品带来了新的任务类型）时从产品自带的那一份播种，已有的不动（见 task_types.ts）。
+    this.typesRoot = taskTypesRoot(this.dataDir);
+    if (options.createTasksDir !== false) seedTaskTypes(this.dataDir, appVersion());
     // 知识库根目录同样转成绝对路径；第一次启动、还没有知识库的清单时建出通用知识库。
     this.knowledge = options.knowledgeDir ? new KnowledgeStore(resolve(options.knowledgeDir)) : null;
     if (this.knowledge && options.createTasksDir !== false) this.knowledge.ensure();
@@ -500,7 +497,9 @@ export class Service {
 
   create(body: Record<string, any>) {
     const taskType = or(body.task_type, DEFAULT_TYPE) as string;
-    const available = availableTemplates();
+    // 用户目录里还没有的（例如只读地建了服务对象之后）先播种。
+    seedTaskTypes(this.dataDir, appVersion());
+    const available = availableTemplates(this.typesRoot);
     if (!available.includes(taskType)) {
       throw new ApiError("bad_request", `没有「${pyStr(taskType)}」这种任务类型。`, { available });
     }
@@ -509,7 +508,7 @@ export class Service {
     const taskId = newTaskId();
     let result;
     try {
-      result = createTaskDir(join(this.tasksDir, taskId), taskType, name, tag, taskId);
+      result = createTaskDir(join(this.tasksDir, taskId), taskType, name, tag, taskId, null, this.typesRoot);
     } catch (error) {
       if (error instanceof CreateTaskError) throw new ApiError("rejected", "任务没有创建成功。", { reasons: [error.message] });
       throw error;
@@ -518,7 +517,7 @@ export class Service {
     writeFileSync(join(result.任务目录, SELECTION_FILE), JSON.stringify(initialSelection(), null, 2) + "\n", "utf-8");
     // 记下这个任务是哪个产品版本建的、任务类型说明是第几版（见 task_json.ts）。登记表在下面的扫描接手它时写。
     writeTaskJson(result.任务目录, {
-      created_by_version: appVersion(), task_type: taskType, task_type_version: taskTypeVersion(taskType), owner: "local",
+      created_by_version: appVersion(), task_type: taskType, task_type_version: taskTypeVersion(taskType, this.typesRoot), owner: "local",
       created_at: clock.now(), upgraded_by_version: null, upgraded_at: null,
     });
     this.scan();
@@ -534,10 +533,10 @@ export class Service {
     const materials = library.materials(t.dir, t.definition()).map((m) => ({
       ...m, deletable: m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
     }));
-    // 任务类型说明的版本：这个任务建的时候复制进来的是第几版（task.json 记着），产品自带的现在是第几版。说明不随升级更新，
-    // 页面在两个数不同时写一句。上一版建的任务没有记，copied 是 null。
+    // 任务类型说明的版本：这个任务建的时候复制进来的是第几版（task.json 记着），用户目录里的这种任务类型现在是第几版。
+    // 说明不随升级更新，页面在两个数不同时写一句。上一版建的任务没有记，copied 是 null。
     const meta = readTaskJson(t.dir);
-    const taskTypeVersions = { copied: meta?.task_type_version ?? null, current: meta?.task_type ? taskTypeVersion(meta.task_type) : null };
+    const taskTypeVersions = { copied: meta?.task_type_version ?? null, current: meta?.task_type ? taskTypeVersion(meta.task_type, this.typesRoot) : null };
     return { ...view, materials, sessions, knowledge_libraries: selectedLibraries(t.dir), task_type_versions: taskTypeVersions };
   }
 
