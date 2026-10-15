@@ -174,7 +174,7 @@ describe("活动输入页：需求分析", () => {
     expect(screen.getByTestId("describe-input")).toHaveAttribute("placeholder", "建设什么系统……");
     expect(text(screen.getByTestId("start-after").querySelector("h2"))).toBe("启动后");
     expect([...screen.getByTestId("start-after").querySelectorAll("li")].map(text)).toEqual([
-      "有材料：助手核读材料。", "无材料：助手依据描述复述理解。", "页面切换为工作台：左侧对话区、中间业务说明与需求条目、右侧材料与修订。"]);
+      "有材料：助手核读材料。", "无材料：助手依据描述复述理解。", "页面切换为工作台：左侧对话区，中间是六类需求资产的页签，右侧是原文定位与修订。"]);
     expect(screen.queryByTestId("scope-block")).toBeNull();
     expect(screen.queryByTestId("start-session")).toBeNull();
     expect(await submit()).toBeDisabled();
@@ -268,7 +268,7 @@ describe("活动输入页：单项活动", () => {
     expect([screen.queryByTestId("materials-card"), screen.queryByTestId("knowledge-choice"), screen.queryByTestId("describe-block")]).toEqual([null, null, null]);
     expect(screen.getByTestId("scope-block")).toBeInTheDocument();
     expect([...screen.getByTestId("start-after").querySelectorAll("li")].map(text)).toEqual([
-      "助手进行「整理建模」，完成后在对话区汇报结果，不提议下一站。", "页面切换为工作台：左侧对话区、中间业务说明与需求条目、右侧材料与修订。"]);
+      "助手进行「整理建模」，完成后在对话区汇报结果，不提议下一站。", "页面切换为工作台：左侧对话区，中间是六类需求资产的页签，右侧是原文定位与修订。"]);
     expect([screen.queryByTestId("start-session"), screen.queryByTestId("session-current"), screen.queryByTestId("session-new")]).toEqual([null, null, null]);
     expect(screen.getByTestId("start-where")).toHaveTextContent("将新建一个工作项和一条属于它的会话，并进入工作台。");
   });

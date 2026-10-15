@@ -1,4 +1,4 @@
-// 材料页签文件名旁的「被 N 个条目引用过」：摘录在原文里找得到的条目都算。两个条目的摘录互相重叠时两个都计入；
+// 原文定位页签文件名旁的「被 N 个条目引用过」：摘录在原文里找得到的条目都算。两个条目的摘录互相重叠时两个都计入；
 // 点来源标签高亮某一段的那两秒里，数字不变。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -22,7 +22,7 @@ const ITEMS = [
 ];
 const materials = [{ path: PATH, bytes: 1, modified_at: "" }];
 
-describe("材料页签的引用计数", () => {
+describe("原文定位页签的引用计数", () => {
   it("摘录重叠的两个条目都计入；高亮某一段时计数不变", async () => {
     vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: TEXT });
     const { rerender } = render(<MaterialPane taskId="TASK-001" materials={materials} items={ITEMS} />);

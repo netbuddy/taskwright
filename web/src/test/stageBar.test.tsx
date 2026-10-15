@@ -82,7 +82,7 @@ describe("阶段条", () => {
     expect(screen.getByTestId("lamps-none")).toHaveTextContent("这一段还没有可以核对的内容。");
   });
 
-  it("点一盏没通过的灯：清单里第一个是任务里的条目就打开它，是材料的路径就去材料页签；清单是空的这盏灯点不了", () => {
+  it("点一盏没通过的灯：清单里第一个是任务里的条目就打开它，是材料的路径就去原文定位页签；清单是空的这盏灯点不了", () => {
     const onOpenItem = vi.fn(), onOpenMaterial = vi.fn();
     render(<StageBar stage={stage("reading", [
       lamp("materials_cited", false, "有 1 份材料还没有被任何主题或问题引用：inputs/规则.md。", ["inputs/规则.md"]),
@@ -124,7 +124,7 @@ describe("阶段条", () => {
     expect(ENTER_KEYS).toEqual({ enter_reading: "reading", enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
   });
 
-  it("点了说材料没有被引用的灯之后，状态里记下要在材料页签选中的那份材料", () => {
+  it("点了说材料没有被引用的灯之后，状态里记下要在原文定位页签选中的那份材料", () => {
     const next = workReducer(initialWorkState("s-1"), { type: "focus_material", path: "inputs/规则.md" });
     expect(next.focusMaterial).toBe("inputs/规则.md");
   });

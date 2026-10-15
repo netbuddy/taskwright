@@ -163,15 +163,16 @@ describe("在两份 Word 文件之间切换", () => {
     });
     vi.spyOn(api, "materialContent").mockImplementation(content);
     const two = [...materials, { path: OTHER, bytes: 1, modified_at: "", derived_from: null }];
-    render(<MaterialPane taskId="TASK-U" materials={two} locate={null} />);
-    const select = await screen.findByTestId("material-select");
+    // 换材料由中栏「材料与证据」的「查看」带过来（focusPath），这一栏不另列清单。
+    const view = (focus: string | null) => <MaterialPane taskId="TASK-U" materials={two} locate={null} focusPath={focus} />;
+    const { rerender } = render(view(null));
     await waitFor(() => expect(document.querySelector("[data-testid=docx-paper] section.docx")).toBeTruthy(), SLOW);
-    fireEvent.change(select, { target: { value: OTHER } });
+    rerender(view(OTHER));
     await screen.findByText("这个任务没有这份材料。");
     expect(screen.queryByText(/Word 文件按原版式分页显示/)).toBeNull();
-    fireEvent.change(select, { target: { value: PATH } });
+    rerender(view(PATH));
     await waitFor(() => expect(screen.getByText(/Word 文件按原版式分页显示/)).toBeInTheDocument());
-    fireEvent.change(select, { target: { value: OTHER } });
+    rerender(view(OTHER));
     await screen.findByText("这个任务没有这份材料。");
     expect(screen.queryByText(/Word 文件按原版式分页显示/)).toBeNull();
   });

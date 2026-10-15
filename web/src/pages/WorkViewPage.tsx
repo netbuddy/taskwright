@@ -141,7 +141,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   }, [working]);
   useEffect(() => { if (menuOpen) loadSessions(); }, [menuOpen]);
   useEffect(() => { if (!busyElsewhere) setBusyError(null); }, [busyElsewhere]);
-  // 新加了材料（material_added 事件）：展开右侧栏、切到材料页签，由材料页签选中它显示正文。
+  // 新加了材料（material_added 事件）：展开右侧栏、切到原文定位页签，由它选中它显示正文。
   useEffect(() => { if (state.focusMaterial) { setDocCollapsed(false); setSide("material"); } }, [state.focusMaterial]);
   useEffect(() => {
     const onResize = () => { if (!userToggledDoc.current) setDocCollapsed(narrowViewport()); };
@@ -327,7 +327,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     prefill(PREFILL.answer(item.item_id, first ? String(item.fields[first] ?? item.title) : item.title));
   };
   const locateSource = (excerpt: string, locator: string) => {
-    // 出自知识库文档的来源：另开对话框看那份文档，不进「材料」页签（材料页签只放这次要整理的材料）。
+    // 出自知识库文档的来源：另开对话框看那份文档，不进「原文定位」页签（那里只放这次要整理的材料）。
     if (isKnowledgeLocator(locator)) {
       setKnowledgeDoc({ excerpt, locator });
       return;
@@ -387,7 +387,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     onContinue: (recordId) => void continueWorkItem(recordId),
     onDelete: deleteWorkItem,
   };
-  /** 阶段条上点了一盏说材料还没有被引用的灯：展开右侧栏、切到材料页签，由材料页签选中那份材料。 */
+  /** 阶段条上点了一盏说材料还没有被引用的灯：展开右侧栏、切到原文定位页签，由它选中那份材料。 */
   const openMaterial = (path: string) => {
     toggleDoc(false);
     setSide("material");
@@ -480,7 +480,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
           <div className="rail">
             <div className="ico" title="全局查找（还没有做）">⌕</div>
             <a className="ico on" title="任务起点" href={href.task(taskId)}>▣</a>
-            <div className="ico" title="材料、文档与修订：展开或收起右侧栏" role="button" style={{ cursor: "pointer" }} onClick={() => toggleDoc(!docCollapsed)}>▤</div>
+            <div className="ico" title="原文定位、修订与评审：展开或收起右侧栏" role="button" style={{ cursor: "pointer" }} onClick={() => toggleDoc(!docCollapsed)}>▤</div>
             <div className="sp" />
             <div className="ico" title="设置" role="button" style={{ cursor: "pointer" }} onClick={openSettings} data-testid="rail-settings">◉</div>
           </div>
@@ -532,7 +532,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                     <ReviewPanel task={task} review={state.review} readOnly={readOnly} writesOff={working} onReview={review} submit={submit}
                       onOpenFinding={openFinding} onPrefill={prefill} />
                   ) : undefined}
-                  reviewCount={task ? openProblems(task) : 0} task={task ?? undefined}
+                  reviewCount={task ? openProblems(task) : 0}
                   debug={service.info?.debug ? <DebugPane taskId={taskId} stage={task?.stage ?? null} items={task?.items ?? []} working={!!working} onOpenItem={openItem} onOpenMaterial={openMaterial} /> : undefined} />
               </div>
             </div>

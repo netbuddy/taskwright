@@ -1,5 +1,6 @@
-// 右侧栏「材料」页签：材料清单与原文（按需读取 GET …/materials/content）。只读。样式照设计原型：
-// 页签行（SidePanel）下面一行写文件名与引用计数（.sw-subh），再下面是原文（.paper）。
+// 右侧栏「原文定位」页签：一份材料的原文（按需读取 GET …/materials/content）。只读。样式照设计原型：
+// 页签行（SidePanel）下面一行写文件名与引用计数（.sw-subh），再下面是原文（.paper）。材料清单在中栏「材料与证据」页签，
+// 在那里点「查看」、或者点条目上的来源，这里换成那份材料并定位；这一栏不另列材料清单。
 //
 // 原文里被条目引用的句子画浅蓝底线（按各条目「文档原文」来源的摘录找，见 findExcerpt），点一下打开引用它的条目；
 // 条目那边点来源小标签时，这里切到那份材料、滚到那句并高亮（locate）；一段都找不到时在顶部提示两秒。
@@ -7,11 +8,11 @@
 // 点原文别处、点页面别处、按 Esc 键，动作条消失。
 //
 // Word 材料（.docx）按原版式分页显示，交给 DocxPaper；它的来源出处带段落号（inputs/x.docx#p37），按段落定位。
-// 上传 .docx 时后端生成的投影（x.docx.md；0.2 的任务里是 x.docx.txt）是给助手读的，材料清单里带 derived_from，材料下拉框里不列出。
+// 上传 .docx 时后端生成的投影（x.docx.md）是给助手读的，材料清单里带 derived_from，这里不显示它。
 // Word 材料在说明文字下面另有一栏「按章节看引用」（SectionList，读材料旁的分段清单），点一节跳到那一节的第一段。
 //
 // PDF 材料（.pdf）按原样分页显示，交给 PdfPaper；它的来源出处带页与块（inputs/x.pdf#p3-2），按块定位。上传 .pdf 时后端生成的投影、
-// 位置表与分段清单同样带 derived_from，不在下拉框里列出。文件名一行另写页数与有几页没有可读的文字；说明文字下面是目录
+// 位置表与分段清单同样带 derived_from，这里不显示它们。文件名一行另写页数与有几页没有可读的文字；说明文字下面是目录
 // （PdfOutline，取文件自己的书签目录，没有时按页列），点一项跳到那一页。
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -175,11 +176,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   return (
     <>
       <div className="sw-subh">
-        {materials.length > 1 ? (
-          <select value={path ?? ""} onChange={(e) => setPath(e.target.value)} data-testid="material-select">
-            {materials.map((m) => <option key={m.path} value={m.path}>{m.path.split("/").pop()}</option>)}
-          </select>
-        ) : <b>{name}</b>}
+        <b data-testid="material-name">{name}</b>
         <span className="chip">外来 · 只读</span>
         {text != null && <span className="chip">{citedItems.size ? `被 ${citedItems.size} 个条目引用过` : "还没有被条目引用"}</span>}
         {isPdf && pdfPages > 0 && <span className="chip" data-testid="pdf-pages-chip">{pdfPages} 页</span>}
@@ -196,7 +193,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
       {(isDocx || isPdf) && docxNote && <div className="busy-note locate-miss" data-testid="locate-note">{docxNote}</div>}
       <div className="doc-wrap sel-host" ref={wrap}>
         <div className="doc-b" ref={view}>
-          {!materials.length && <div className="empty">这个任务还没有材料。可以在任务页上传，或者在对话区「附一份材料」。</div>}
+          {!materials.length && <div className="empty">这个任务还没有材料。可以在中栏「材料与证据」页签上传，或者在对话区「附一份材料」。</div>}
           {error && <div className="busy-note">{error}</div>}
           {path && isDocx && (
             <DocxPaper taskId={taskId} path={path} items={items} paperRef={paper} onOpenItem={onOpenItem} onMouseUp={onMouseUp}

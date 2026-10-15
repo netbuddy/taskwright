@@ -1,13 +1,10 @@
 // 可被引作来源的解释性条目（需求规格任务里是「领域说明」集合）在界面上的几样派生：
-// 按任务定义「界面」一项的分组字段分组、谁引用了一个条目、一个条目与别的条目有没有联系。
+// 条目的分组字段值、谁引用了一个条目、这个条目自己引用了哪些还在的条目。
 // 集合名、字段名都取自任务定义；引用它的来源种类是「条目」（出处写条目编号），与依据别的集合的条目是同一种。
 // 不另存任何关系：来源表与「条目引用」字段就是全部依据，与 agent 侧 lib/conditions.ts 的 unlinkedDomainNotes 同一口径。
 
 import type { CollectionDef, Item, Task } from "../api/types";
 import { SOURCE_ITEM } from "./items";
-
-/** 分组字段空着时那一组的组名，与文档模板的归组一致。 */
-export const EMPTY_GROUP = "（未填）";
 
 type Display = NonNullable<CollectionDef["display"]>;
 
@@ -21,32 +18,6 @@ export function groupOf(item: Item, display: Display | null): string {
   if (!display?.group_field) return "";
   const v = item.fields[display.group_field];
   return Array.isArray(v) ? v.join("、") : String(v ?? "").trim();
-}
-
-/** 一个条目在分组字段上的各个值：字段是列表时一项一个（一页贴了两个标签就有两个），不是列表时至多一个；空着时没有。 */
-export function groupsOf(item: Item, display: Display | null): string[] {
-  if (!display?.group_field) return [];
-  const v = item.fields[display.group_field];
-  return (Array.isArray(v) ? v.map(String) : [String(v ?? "")]).map((one) => one.trim()).filter(Boolean);
-}
-
-/**
- * 按分组字段把一个集合的条目分组；组内保持原顺序。分组字段是列表时，一个条目有几个值就进几个组；空着的归「（未填）」一组。
- * 组的先后：靠前的组按给定顺序排最前；其余的，分组字段声明了取值就照取值的先后，没有声明就按每组第一个条目在列表里的先后。
- */
-export function groupItems(task: Task, collection: string): { name: string; items: Item[] }[] {
-  const display = displayOf(task, collection);
-  const groups = new Map<string, Item[]>();
-  for (const item of task.items.filter((i) => i.collection === collection)) {
-    const names = groupsOf(item, display);
-    for (const name of names.length ? names : [EMPTY_GROUP]) groups.set(name, [...(groups.get(name) ?? []), item]);
-  }
-  const leading = display?.leading_groups ?? [];
-  const declared = task.definition.collections.find((c) => c.name === collection)?.fields.find((f) => f.name === display?.group_field)?.values ?? [];
-  const rank = (name: string) => (leading.includes(name) ? leading.indexOf(name)
-    : declared.includes(name) ? leading.length + declared.indexOf(name) : leading.length + declared.length);
-  return [...groups.entries()].map(([name, items]) => ({ name, items }))
-    .sort((a, b) => rank(a.name) - rank(b.name));
 }
 
 /** 一个条目所有「条目引用」字段里的编号，去掉它自己。 */
@@ -89,19 +60,6 @@ export function citationsOf(task: Task, itemId: string): Citation[] {
 export function liveOwnRefs(task: Task, item: Item): string[] {
   const live = new Set(task.items.map((i) => i.item_id));
   return refsOf(task, item).filter((id) => live.has(id));
-}
-
-/** 一句话写这个条目与别的条目的联系，给右侧栏用；unlinked 为真表示没有任何联系（三种都没有）。 */
-export function linkPhrase(task: Task, item: Item): { text: string; unlinked: boolean } {
-  const cited = citationsOf(task, item.item_id);
-  const own = liveOwnRefs(task, item);
-  const parts: string[] = [];
-  const bySource = cited.filter((c) => c.how === "source");
-  if (bySource.length) parts.push(`被 ${[...new Set(bySource.map((c) => `${c.item.item_id} 的${c.where.replace(/第 \d+ 条/g, "")}`))].join("、")}引用`);
-  const byRef = cited.filter((c) => c.how === "ref");
-  if (byRef.length) parts.push(`${[...new Set(byRef.map((c) => c.item.item_id))].join("、")} 关联了它`);
-  if (own.length) parts.push(`关联了 ${own.join("、")}`);
-  return parts.length ? { text: parts.join("；"), unlinked: false } : { text: "还没有和任何条目关联", unlinked: true };
 }
 
 /** 完成条件接口给的「还没有和任何条目关联」的提示里，这个集合涉及的条目编号。 */

@@ -299,20 +299,6 @@ export const STATE_TEXT: Record<TopicState, string> = {
   deprecated: "已废弃", pending: "有助手补的，待核实", open: "还有没定的", unsorted: "记下了，还没归类", settled: "说清了",
 };
 
-/**
- * 提纲一行末尾的计数：「3 定 · 1 问」，没有的那一半不写；两样都没有时写状态（待核实、未归类），说清了的不写。
- * 已废弃的页只写「已废弃」，不数：这一页不再用了，它定了几条、挂着几个问题不必再提示。
- */
-export function countsText(task: Task, item: Item): string {
-  if (isDeprecated(item)) return STATE_TEXT.deprecated;
-  const settled = settledCount(item);
-  const open = openQuestions(task, item).length;
-  const parts = [settled > 0 ? `${settled} 定` : "", open > 0 ? `${open} 问` : ""].filter(Boolean);
-  if (parts.length > 0) return parts.join(" · ");
-  const state = topicState(task, item);
-  return state === "pending" ? "待核实" : state === "unsorted" ? "未归类" : "";
-}
-
 /** 提纲底部的总计：在用的主题几个、已定几条、待问几条、待核实几处。已废弃的页不算。 */
 export function totals(task: Task): { pages: number; settled: number; open: number; pending: number } {
   const pages = pagesOf(task).filter((p) => !isDeprecated(p));
@@ -348,14 +334,6 @@ export function basisNote(task: Task, item: Item): { text: string; title: string
     return { text: "依据的主题已废弃", title: `它依据的主题 ${name(basis.item_id)}已废弃${basis.see ? `，改看 ${name(basis.see)}` : ""}。把依据改到还在用的主题上。` };
   }
   return { text: "依据的主题待核实", title: `它依据的主题 ${name(basis.item_id)}里有助手补的内容还没有确认；到业务说明里确认那一节，这里就消掉。` };
-}
-
-/** 右侧栏窄提纲里一页下面那行小字：「3 定 · 1 问」，待核实的后面加「待核实」；什么都没有时写「说清了」；已废弃的页只写「已废弃」。 */
-export function sideLine(task: Task, item: Item): string {
-  if (isDeprecated(item)) return STATE_TEXT.deprecated;
-  const counts = countsText(task, item);
-  const pending = isPending(item) && counts !== "待核实" ? "待核实" : "";
-  return [counts, pending].filter(Boolean).join(" · ") || STATE_TEXT.settled;
 }
 
 /** 依据这一页写的条目（把它写成「条目」来源的别的条目），按编号。 */
