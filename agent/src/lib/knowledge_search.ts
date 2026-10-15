@@ -24,6 +24,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { selectedKnowledge } from "./knowledge.ts";
+import { fillText } from "./texts.ts";
+import { ToolRejection } from "./tool_rejection.ts";
 
 /** 任务服务写在任务目录里的占用标记（backend/src/occupancy.ts 的 LOCK_NAME，两边是一份约定）。 */
 export const LOCK_NAME = "service.lock";
@@ -35,46 +37,52 @@ export const SEARCH_MAX_LIMIT = 5;
 /** 等任务服务回答最多等多久：它换算要找的那句话最多等模型服务 60 秒。 */
 export const SEARCH_TIMEOUT_MS = 70_000;
 
-/** 这一次没有做成时接在原因后面的话。 */
-export const RETRY_TEXT = "可以再查一次；仍然不成时把这个原因告诉用户，这一处先保留材料的原话并记一条问题条目。";
-export const NO_KNOWLEDGE_TEXT = "这个任务没有知识库，没有可查的。";
-export const NO_DOCUMENTS_TEXT = "这个任务选用的知识库里没有文档，没有可查的。";
-export const UNREACHABLE_TEXT = `按意思查找这一次没有做成：联系不上系统里负责查找的那一部分。${RETRY_TEXT}`;
-export const CLOSING_TEXT = "查到的片段就是逐字的原文：摘录从片段逐字抄，出处照片段给的写法写；不必再读知识库文件核对，保存时系统会逐字核对，对不上会退回并说明原因。";
+/** 这一次没有做成时接在原因后面的话。下面几句的模板都在 agent/prompts/runtime/results_search_knowledge.md。 */
+export const RETRY_TEXT = fillText("result.search.retry");
+export const NO_KNOWLEDGE_TEXT = fillText("result.search.no_knowledge");
+export const NO_DOCUMENTS_TEXT = fillText("result.search.no_documents");
+export const UNREACHABLE_TEXT = fillText("result.search.unreachable", { retry: RETRY_TEXT });
+export const CLOSING_TEXT = fillText("result.search.closing");
 
-export const CANCELLED_TEXT = "查找被取消了。";
-export const NOT_FOUND_TEXT = "没有找到相关的片段。换一种说法再查一次；换了说法仍然没有，才算知识库里没有。";
+export const CANCELLED_TEXT = fillText("result.search.cancelled");
+export const NOT_FOUND_TEXT = fillText("result.search.not_found");
 
 /** 只按字面找的原因写成半句话。 */
 export const REASON_TEXT: Readonly<Record<string, string>> = {
-  not_selected: "没有选嵌入模型",
-  provider_gone: "选定的嵌入模型所在的模型服务不在了",
-  not_offered: "选定的模型服务不提供嵌入模型",
-  timeout: "按意思那一路没有做成：把要找的话换算成数字串时，到时间没有算完",
-  unreachable: "按意思那一路没有做成：连不上嵌入模型的模型服务",
-  key_rejected: "按意思那一路没有做成：嵌入模型的模型服务拒绝了密钥",
-  service_error: "按意思那一路没有做成：嵌入模型的模型服务回答了错误",
-  bad_answer: "按意思那一路没有做成：嵌入模型的模型服务回答的数字串不对",
+  not_selected: fillText("result.search.reason_not_selected"),
+  provider_gone: fillText("result.search.reason_provider_gone"),
+  not_offered: fillText("result.search.reason_not_offered"),
+  timeout: fillText("result.search.reason_timeout"),
+  unreachable: fillText("result.search.reason_unreachable"),
+  key_rejected: fillText("result.search.reason_key_rejected"),
+  service_error: fillText("result.search.reason_service_error"),
+  bad_answer: fillText("result.search.reason_bad_answer"),
 };
 
 /** 几份文档的名字连起来；多于 5 份时只写前 5 份与一共几份。 */
 const documentNames = (docs: { name: string }[]) =>
-  docs.slice(0, 5).map((doc) => `《${doc.name}》`).join("") + (docs.length > 5 ? `等 ${docs.length} 份文档` : "");
+  docs.slice(0, 5).map((doc) => fillText("result.search.document_name", { name: doc.name })).join("") +
+  (docs.length > 5 ? fillText("result.search.more_documents", { count: docs.length }) : "");
+const pronounOf = (docs: unknown[]) => (docs.length > 1 ? fillText("result.search.them") : fillText("result.search.it"));
 
 /**
  * 开头的一句：这一次在多大的范围里、按哪一路找的；哪些文档只按字面找了；哪些文档没有查到。body 是任务服务的回答。
  */
 export function openingText(query: string, body: Record<string, any>, selectedLibraries: number): string {
   const keywordOnly = body.mode === "keyword";
-  const way = keywordOnly ? `只按字面找（${REASON_TEXT[body.reason] ?? "按意思那一路没有做成"}）` : "按意思与按字面两路找";
+  const way = keywordOnly
+    ? fillText("result.search.way_keyword", { reason: REASON_TEXT[body.reason] ?? fillText("result.search.reason_other") })
+    : fillText("result.search.way_hybrid");
   const partial: { name: string }[] = Array.isArray(body.uncovered_semantic) ? body.uncovered_semantic : [];
   const missed: { name: string }[] = Array.isArray(body.uncovered) ? body.uncovered : [];
-  return `查找「${query}」：在这个任务选用的 ${Number(body.libraries) || selectedLibraries} 个知识库、${Number(body.documents) || 0} 份文档、${Number(body.chunks) || 0} 个片段里${way}。`
-    + (partial.length ? `${documentNames(partial)}还没有换算好，这一次对${partial.length > 1 ? "它们" : "它"}只按字面找了。` : "")
-    + (missed.length ? `${documentNames(missed)}这一次没有查到，因为${missed.length > 1 ? "它们" : "它"}的文件读不出来；没有找到不等于知识库里没有。` : "");
+  return fillText("result.search.opening", {
+    query, libraries: Number(body.libraries) || selectedLibraries, documents: Number(body.documents) || 0, chunks: Number(body.chunks) || 0, way,
+  })
+    + (partial.length ? fillText("result.search.partial", { documents: documentNames(partial), pronoun: pronounOf(partial) }) : "")
+    + (missed.length ? fillText("result.search.missed", { documents: documentNames(missed), pronoun: pronounOf(missed) }) : "");
 }
 
-export const failedText = (reason: string) => `按意思查找这一次没有做成：${reason.replace(/[。.]$/, "")}。${RETRY_TEXT}`;
+export const failedText = (reason: string) => fillText("result.search.failed", { reason: reason.replace(/[。.]$/, ""), retry: RETRY_TEXT });
 
 /** 工具的返回：给模型的一段文字，给读取一侧的结构化内容。 */
 export interface SearchOutcome {
@@ -149,51 +157,59 @@ export function backendAddresses(taskDir: string): string[] {
 /** 把参数整理好；写得不对时抛异常。 */
 export function searchParams(params: { query?: unknown; limit?: unknown }): { query: string; limit: number } {
   const query = typeof params.query === "string" ? params.query.trim() : "";
-  if (!query) throw new Error("query 要写要找的内容，用一句完整的话写出来，不能是空的。");
+  if (!query) {
+    const text = fillText("search_knowledge.query_empty");
+    throw new ToolRejection(text, text, "", ["search_knowledge.query_empty"]);
+  }
   const limit = params.limit === undefined || params.limit === null ? SEARCH_DEFAULT_LIMIT : params.limit;
   if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
-    throw new Error(`limit 要写 1 到 ${SEARCH_MAX_LIMIT} 的整数，不写是 ${SEARCH_DEFAULT_LIMIT}。`);
+    const text = fillText("search_knowledge.limit_invalid", { max: SEARCH_MAX_LIMIT, default: SEARCH_DEFAULT_LIMIT });
+    throw new ToolRejection(text, text, "", ["search_knowledge.limit_invalid"]);
   }
   return { query, limit };
 }
 
-const range = (from: number, to: number, unit: string) => (from === to ? `第 ${from} ${unit}` : `第 ${from} 到 ${to} ${unit}`);
+const range = (from: number, to: number, unit: string) =>
+  (from === to ? fillText("result.search.range_one", { from, unit }) : fillText("result.search.range", { from, to, unit }));
+const PARAGRAPHS = () => fillText("result.search.unit_paragraph");
 const bytesOf = (text: string) => Buffer.byteLength(text, "utf-8");
 
 /** 助手收到的全部文字（连同说明）最多多少字节；超过时从末尾去掉片段，第 1 个永不去掉。 */
 export const BUDGET_BYTES = 8192;
 /** 正文前后的记号：正文夹在这两行之间，摘录从这里面逐字抄。 */
-export const BODY_OPEN = "<<<原文开始";
-export const BODY_CLOSE = "原文结束>>>";
+export const BODY_OPEN = fillText("result.search.body_open");
+export const BODY_CLOSE = fillText("result.search.body_close");
 
 /** 去掉了几个片段时的那一行。 */
-export const trimmedText = (removed: number) => `（这一次的结果超过了 ${BUDGET_BYTES} 字节的上限：还有 ${removed} 条没有列出，缩小问题再查。）`;
+export const trimmedText = (removed: number) => fillText("result.search.trimmed", { budget: BUDGET_BYTES, removed });
 /** 第 1 个片段的正文也放不下、只显示了前几个字时的那一行。 */
-export const truncatedText = (chars: number) => `（正文只显示了前 ${chars} 字；要看后面的内容，把问题缩小再查。）`;
+export const truncatedText = (chars: number) => fillText("result.search.truncated", { chars });
 
 /** 片段在哪里：Word 文档是段落号，PDF 文档是页与块，别的是行号。 */
 function positionOf(hit: Hit): string {
-  if (hit.first_paragraph !== null && hit.last_paragraph !== null) return range(hit.first_paragraph, hit.last_paragraph, "段");
+  if (hit.first_paragraph !== null && hit.last_paragraph !== null) return range(hit.first_paragraph, hit.last_paragraph, PARAGRAPHS());
   if (hit.first_unit && hit.last_unit) {
     // 片段不跨页，所以起止在同一页：只有一块写「第 3 页第 2 块」，几块写「第 3 页第 2 到 5 块」。
     const { page, block } = hit.first_unit;
-    return hit.last_unit.block === block ? `第 ${page} 页第 ${block} 块` : `第 ${page} 页第 ${block} 到 ${hit.last_unit.block} 块`;
+    return hit.last_unit.block === block
+      ? fillText("result.search.pdf_block", { page, block }) : fillText("result.search.pdf_blocks", { page, block, last: hit.last_unit.block });
   }
-  if (hit.first_line !== null && hit.last_line !== null) return range(hit.first_line, hit.last_line, "行");
-  return "位置不详";
+  if (hit.first_line !== null && hit.last_line !== null) return range(hit.first_line, hit.last_line, fillText("result.search.unit_line"));
+  return fillText("result.search.position_unknown");
 }
 
 /** 表格的一行写成「p36｜p37、p38｜（同上）」：竖线隔开各格，格里是它的段落号。 */
-const rowShape = (cells: RowCell[]) => cells.map((cell) => (Array.isArray(cell) ? cell.map((n) => `p${n}`).join("、") : cell || "（空）")).join("｜");
+const rowShape = (cells: RowCell[]) =>
+  cells.map((cell) => (Array.isArray(cell) ? cell.map((n) => `p${n}`).join("、") : cell || fillText("result.search.empty_cell"))).join("｜");
 const paragraphLines = (paragraphs: Paragraph[]) => paragraphs.map((one) => `[p${one.paragraph}] ${one.text}`);
 const unitLines = (units: { page: number; block: number; text: string }[]) => units.map((one) => `[p${one.page}-${one.block}] ${one.text}`);
 
 /** 它在两路里各排第几。keywordOnly 为真是这一次只按字面找了。 */
 function ranksText(hit: Hit, keywordOnly: boolean): string {
-  if (keywordOnly) return `按字面排第 ${hit.rank_keyword}`;
-  if (hit.rank_semantic !== null && hit.rank_keyword !== null) return `按意思排第 ${hit.rank_semantic}，按字面排第 ${hit.rank_keyword}`;
-  if (hit.rank_semantic !== null) return `按意思排第 ${hit.rank_semantic}，按字面没有命中`;
-  return `按字面排第 ${hit.rank_keyword}，按意思没有比（这份文档还没有换算好）`;
+  if (keywordOnly) return fillText("result.search.rank_keyword", { keyword: String(hit.rank_keyword) });
+  if (hit.rank_semantic !== null && hit.rank_keyword !== null) return fillText("result.search.rank_both", { semantic: hit.rank_semantic, keyword: hit.rank_keyword });
+  if (hit.rank_semantic !== null) return fillText("result.search.rank_semantic", { semantic: hit.rank_semantic });
+  return fillText("result.search.rank_keyword_unconverted", { keyword: String(hit.rank_keyword) });
 }
 
 /** 一个片段排成的几部分：正文之前的各行、正文、正文之后的一行。 */
@@ -206,24 +222,24 @@ interface Block {
 function hitBlock(no: number, hit: Hit, keywordOnly: boolean): Block {
   const word = hit.paragraphs !== null;
   const pdf = Array.isArray(hit.units) && hit.units.length > 0 ? hit.units : null;
+  const ranks = ranksText(hit, keywordOnly);
   const head = [
-    `【第 ${no} 个片段】知识库「${hit.library_name}」《${hit.name}》${hit.title ? ` · 标题：${hit.title}` : ""} · ${ranksText(hit, keywordOnly)}`,
-    `位置：${positionOf(hit)}${hit.partial ? "（这一段很长，切成了几个片段，这里是其中的一截，不是全文）" : ""}`,
-    word ? `引用时出处写：${hit.locator}#p段落号（写摘录所在那一段的段落号）`
-      : pdf ? `引用时出处写：${hit.locator}#p页-块（写摘录所在那一块的页与块，例如 ${hit.locator}#p${pdf[0].page}-${pdf[0].block}）`
-        : `引用时出处写：${hit.locator}`,
+    hit.title
+      ? fillText("result.search.hit_head_titled", { no, library: hit.library_name, name: hit.name, title: hit.title, ranks })
+      : fillText("result.search.hit_head", { no, library: hit.library_name, name: hit.name, ranks }),
+    fillText("result.search.hit_position", { position: positionOf(hit), partial: hit.partial ? fillText("result.search.hit_partial") : "" }),
+    word ? fillText("result.search.locator_word", { locator: hit.locator })
+      : pdf ? fillText("result.search.locator_pdf", { locator: hit.locator, page: pdf[0].page, block: pdf[0].block })
+        : fillText("result.search.locator", { locator: hit.locator }),
   ];
-  if (hit.table?.length) {
-    head.push(`表格结构（每个分号是表格的一行，竖线隔开各格，格里写的是它的段落号；一条来源只抄一格里的字，不要把一行的几格连起来抄）：${hit.table.map(rowShape).join("；")}`);
-  }
+  if (hit.table?.length) head.push(fillText("result.search.table", { rows: hit.table.map(rowShape).join("；") }));
   if (hit.header) {
     const h = hit.header;
-    const where = h.first_paragraph !== null && h.last_paragraph !== null ? range(h.first_paragraph, h.last_paragraph, "段") : "位置不详";
-    head.push(`这张表的表头（出自${where}，只帮你看懂各列，不在这个片段的位置范围里；要引用表头里的字，出处写它自己的段落号）：${rowShape(h.cells)}`,
-      BODY_OPEN, ...paragraphLines(h.paragraphs), BODY_CLOSE);
+    const where = h.first_paragraph !== null && h.last_paragraph !== null
+      ? range(h.first_paragraph, h.last_paragraph, PARAGRAPHS()) : fillText("result.search.position_unknown");
+    head.push(fillText("result.search.table_header", { where, cells: rowShape(h.cells) }), BODY_OPEN, ...paragraphLines(h.paragraphs), BODY_CLOSE);
   }
-  head.push(word ? "正文（每行是一段，开头方括号里是这一段的段落号，摘录不带它）："
-    : pdf ? "正文（每行是一块，开头方括号里是这一块的页与块，摘录不带它；表格的一行是一块，各格之间隔着空格）：" : "正文：", BODY_OPEN);
+  head.push(word ? fillText("result.search.body_word") : pdf ? fillText("result.search.body_pdf") : fillText("result.search.body"), BODY_OPEN);
   return { head, body: word ? paragraphLines(hit.paragraphs!).join("\n") : pdf ? unitLines(pdf).join("\n") : hit.body ?? hit.text, tail: [BODY_CLOSE] };
 }
 
@@ -299,7 +315,7 @@ export async function searchKnowledge(
   if (options.signal?.aborted) return refused(CANCELLED_TEXT, "cancelled");
   if (status === 0) return refused(UNREACHABLE_TEXT, "unreachable");
   if (status !== 200 || !body?.ok) {
-    const message = typeof body?.error?.message === "string" && body.error.message ? body.error.message : `系统回答了错误（HTTP ${status}）`;
+    const message = typeof body?.error?.message === "string" && body.error.message ? body.error.message : fillText("result.search.service_error", { status });
     return refused(failedText(message), typeof body?.error?.code === "string" ? body.error.code : "error");
   }
   const model = typeof body.model === "string" ? body.model : null;
@@ -314,7 +330,7 @@ export async function searchKnowledge(
   };
   const opening = openingText(query, body, selected.length);
   if (!hits.length) return { text: `${opening}\n${NOT_FOUND_TEXT}`, details: { ...base, hits: [], shown: 0, bytes: bytesOf(`${opening}\n${NOT_FOUND_TEXT}`), truncated_chars: null } };
-  const done = assemble(`${opening}下面是最相关的 ${hits.length} 个片段。排在前面不等于就是你要找的规定：逐个看正文，对得上的才引用；一个片段里有多条规定时逐条看。`, hits, keywordOnly);
+  const done = assemble(`${opening}${fillText("result.search.found", { count: hits.length })}`, hits, keywordOnly);
   // 结构化的那一份不带片段的文字与原文；shown 是这一次实际列给助手的个数（排在前面的那几个）。
   const brief = hits.map(({ text: _text, body: _body, paragraphs: _paragraphs, table: _table, header: _header, ...rest }) => rest);
   return { text: done.text, details: { ...base, hits: brief, shown: done.shown, bytes: bytesOf(done.text), truncated_chars: done.truncated_chars } };

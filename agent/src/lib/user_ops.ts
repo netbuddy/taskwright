@@ -62,13 +62,14 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { ACTOR_EXECUTOR, ACTOR_USER, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
+import { ACTOR_EXECUTOR, ACTOR_USER, dump, emit, load, wallClockText } from "./db.ts";
 import { DefinitionError, FIELD_ITEM_REF, FIELD_TEXT_LIST, KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
 import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
 import { SaveRejected, type Source, type Support, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { publishVersion } from "./publish_version.ts";
+import { fillText, textPrefix } from "./texts.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
   IDLE, PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, isStage, scopeSentence, stageByName,
@@ -143,7 +144,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function actorWord(actor: string): string {
-  return actor === ACTOR_USER ? "user" : actor === ACTOR_EXECUTOR || actor === LEGACY_ACTOR_MODEL ? "executor" : actor;
+  return actor === ACTOR_USER ? "user" : actor === ACTOR_EXECUTOR ? "executor" : actor;
 }
 
 /** 用户在界面上发起评审的操作种类。它不在 USER_OP_KINDS 里：不写修订、不经 runUserOperation。 */
@@ -156,7 +157,7 @@ export const STOP_RUN_KIND = "stop_run";
  * 停止之后留在会话里的那句话。pi 把被停下的那条助手消息从发给模型的上下文里整条去掉，没有这句话，助手下一次运行时
  * 不知道上一次没有做完。页面按种类另写一句给用户看的话，不显示这一句。
  */
-export const STOP_RUN_NOTE = "界面操作（不是用户打的字）：用户在界面上停止了你这一次的工作，停下时正在做的那一步没有做完。";
+export const STOP_RUN_NOTE = fillText("ui_ops.stop_run");
 
 /** 停止通知那条自定义消息的 details：形状与别的界面操作通知相同，没有库事件，不能撤销。 */
 export function stopRunDetails(opId: string | null) {
@@ -234,23 +235,24 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
       { op: "update", item: targets[0].item_id, base_revision: targets[0].base_revision, fields },
       state, fields,
     )];
-    note = (d) =>
-      `界面操作（不是用户打的字）：用户改了 ${targets[0].item_id} 的${names.map((n) => `「${n}」`).join("、")}，产生修订 ${d.revision_no}，${targets[0].item_id} 现在是修订 ${d.revision_no}。` +
-      `${confirmedText(d.operations)}改后的内容是：\n${describeFields(fields)}`;
+    note = (d) => fillText("ui_ops.edit_fields", {
+      item: targets[0].item_id, fields: names.map((n) => `「${n}」`).join("、"), revision: d.revision_no,
+      confirmed: confirmedText(d.operations), content: describeFields(fields),
+    });
   } else if (kind === "delete_item") {
     operations = targets.map((t) => ({ op: "delete", item: t.item_id, base_revision: t.base_revision }));
-    note = (d) =>
-      `界面操作（不是用户打的字）：用户删除了 ${d.operations.map((o) => `${o.item}（删除前在修订 ${o.from_revision}）`).join("、")}，产生修订 ${d.revision_no}。` +
-      "这些条目已删除，不再算在交付物里。";
+    note = (d) => fillText("ui_ops.delete_items", {
+      items: d.operations.map((o) => fillText("ui_ops.deleted_item", { item: o.item, revision: String(o.from_revision) })).join("、"), revision: d.revision_no,
+    });
   } else {
     operations = targets.map((t) =>
       withUserEditSources({ op: "update", item: t.item_id, base_revision: t.base_revision, fields: { 状态: KEEP_PENDING_STATUS } }, state, {
         状态: KEEP_PENDING_STATUS,
       }),
     );
-    note = (d) =>
-      `界面操作（不是用户打的字）：用户把 ${d.operations.map((o) => `${o.item}`).join("、")} 标为先不管（状态改为「${KEEP_PENDING_STATUS}」），` +
-      `产生修订 ${d.revision_no}，${d.operations.map((o) => o.item).join("、")} 现在是修订 ${d.revision_no}。` + confirmedText(d.operations);
+    note = (d) => fillText("ui_ops.keep_pending", {
+      items: d.operations.map((o) => o.item).join("、"), status: KEEP_PENDING_STATUS, revision: d.revision_no, confirmed: confirmedText(d.operations),
+    });
   }
   // 改字段与标为先不管：随修订在同一个事务里把改出来的内容登记为用户已确认；删除不登记。
   const confirmation: { seq: number | null } = { seq: null };
@@ -275,7 +277,7 @@ export function runUserOperation(ctx: Ctx, request: UserOpRequest): UserOpResult
 
 /** 改字段与标为先不管的通知里那句：用户亲手改出来的内容，同时算作用户看过并认可了。 */
 function confirmedText(operations: RevisionOp[]): string {
-  return `这次修改同时算作用户看过并认可了 ${operations.map((o) => `${o.item}（修订 ${o.to_revision}）`).join("、")}。`;
+  return fillText("ui_ops.confirmed", { items: operations.map((o) => fillText("ui_ops.item_at_revision", { item: o.item, revision: String(o.to_revision) })).join("、") });
 }
 
 /** 调 saveRevision，把它的拒绝翻成 UserOpError。修订号核对已经在 inspect 里做过，这里再遇到就是同一时刻被改了。 */
@@ -289,7 +291,7 @@ function save(
     return saveRevision({ workspaceDir: ctx.workspaceDir, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, params, afterWrite);
   } catch (error) {
     const text = (error as Error).message;
-    if (text.includes("已经被") && text.includes("改到修订")) throw new UserOpError("stale_revision", "条目刚被改过，请看最新内容后再改。", { detail: text });
+    if (error instanceof SaveRejected && error.keys.includes("save_revision.base_revision_stale.older")) throw new UserOpError("stale_revision", "条目刚被改过，请看最新内容后再改。", { detail: text });
     // 保存修订被拒时带着分层的原因：给用户看的只取事实，指引是给助手的。
     const reasons = error instanceof SaveRejected ? error.reasons.map((r) => r.fact)
       : text.split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2));
@@ -513,8 +515,8 @@ function editedOnlyWithSupplements(db: DatabaseSync, itemId: string, revisionNo:
   const seen = marks.filter((one) => !one.basis.includes(`"${CONFIRMATION_BASIS.ui_edit}"`));
   if (seen.length > 0 && seen[seen.length - 1].attitude === "接受") return false;
   const supplement = db.prepare(
-    `SELECT 1 FROM item_source WHERE item_id = ? AND revision_no = ? AND kind IN (?, ?)${elementClause(db)} LIMIT 1`,
-  ).get(itemId, revisionNo, SOURCE_SUPPLEMENT, "执行者补充");
+    `SELECT 1 FROM item_source WHERE item_id = ? AND revision_no = ? AND kind = ?${elementClause()} LIMIT 1`,
+  ).get(itemId, revisionNo, SOURCE_SUPPLEMENT);
   return supplement !== undefined;
 }
 
@@ -530,21 +532,21 @@ function markViewed(ctx: Ctx, opId: string, targets: Target[], notify: boolean):
     const fresh = items.filter((t) => !acceptedAt(db, t.item_id, t.revision_no) || editedOnlyWithSupplements(db, t.item_id, t.revision_no));
     return fresh.length === 0 ? null : recordMark(db, ctx, opId, fresh, true, "viewed");
   });
-  const list = items.map((t) => `${t.item_id}（修订 ${t.revision_no}）`);
+  const list = items.map((t) => fillText("ui_ops.item_at_revision", { item: t.item_id, revision: t.revision_no }));
   return {
     op_id: opId,
     kind: "mark_viewed",
     event_seqs: seq === null ? [] : [seq],
     results: items,
     revision_no: null,
-    note: notify ? `界面操作（不是用户打的字）：用户在卡片上表示看过了 ${list.join("、")}，已记为已读。` : "",
-    notify_text: notify ? `${VIEWED_NOTICE_PREFIX}${list.join("，")}。请接着往下做。` : null,
+    note: notify ? fillText("ui_ops.mark_viewed", { items: list.join("、") }) : "",
+    notify_text: notify ? fillText("ui_ops.viewed_notice", { items: list.join("，") }) : null,
     undoable: false,
   };
 }
 
 /** 卡片上点「这几条都看过了」之后发给执行者的那句话的开头。后端（backend/src/conversation.ts）按它认出这句不是用户打的字。 */
-export const VIEWED_NOTICE_PREFIX = "我已经看过了：";
+export const VIEWED_NOTICE_PREFIX = textPrefix("ui_ops.viewed_notice");
 
 interface RevisionOp {
   op: string;
@@ -618,21 +620,22 @@ function undo(ctx: Ctx, opId: string, revisionNo: number): UserOpResult {
   const details = outcome.details as { revision_no: number; event_seq: number; operations: RevisionOp[] };
   // 每个条目退回了哪次修订的内容：撤销前在库里读好的改前修订号（update 与 restore 的 fields 取自它）。
   const undone = new Map((plan as { item: string; op: string }[]).map((one, i) => [one.item, backTo[i]]));
-  const words: Record<string, string> = { delete: "删除", update: "改回", restore: "恢复" };
   return {
     op_id: opId,
     kind: "undo",
     event_seqs: [details.event_seq],
     results: details.operations.map((o) => ({ item_id: o.item, revision_no: o.to_revision })),
     revision_no: details.revision_no,
-    note:
-      `界面操作（不是用户打的字）：用户撤销了修订 ${revisionNo}，产生修订 ${details.revision_no}：` +
-      details.operations.map((o) => o.op === "delete" ? `删除 ${o.item}（这是修订 ${revisionNo} 新增的）`
-        : `${words[o.op] ?? o.op} ${o.item}（${o.item} 退回修订 ${undone.get(o.item)} 的内容，现在是修订 ${o.to_revision}）`).join("、") + "。" +
-      plan
+    note: fillText("ui_ops.undo", {
+      undone: revisionNo, revision: details.revision_no,
+      changes: details.operations.map((o) => o.op === "delete" ? fillText("ui_ops.undo_deleted", { item: o.item, undone: revisionNo })
+        : o.op === "restore" ? fillText("ui_ops.undo_restored", { item: o.item, back_to: String(undone.get(o.item)), revision: String(o.to_revision) })
+        : fillText("ui_ops.undo_updated", { item: o.item, back_to: String(undone.get(o.item)), revision: String(o.to_revision) })).join("、"),
+      contents: plan
         .filter((one) => one.fields !== undefined)
-        .map((one) => `\n${one.item} 现在的内容是：\n${describeFields(dropEmptyFields(one.fields as Record<string, unknown>))}`)
+        .map((one) => `\n${fillText("ui_ops.undo_content", { item: one.item, fields: describeFields(dropEmptyFields(one.fields as Record<string, unknown>)) })}`)
         .join(""),
+    }),
     notify_text: null,
     undoable: true,
   };
@@ -651,7 +654,7 @@ function taskRow(db: DatabaseSync): { task_id: string; definition_path: string; 
 }
 
 function itemsPhrase(items: { item_id: string; revision_no: number }[]): string {
-  return items.map((t) => `${t.item_id}（修订 ${t.revision_no}）`).join("、");
+  return items.map((t) => fillText("ui_ops.item_at_revision", { item: t.item_id, revision: t.revision_no })).join("、");
 }
 
 /** 保留写法：每个目标在 base_revision 上的评审结论（lib/review_verdict.ts）是不通过，才写；保留针对的是当前规则下最后一条记录。 */
@@ -679,8 +682,7 @@ function waiveReview(ctx: Ctx, opId: string, targets: Target[], rawFields: unkno
   });
   return {
     op_id: opId, kind: "waive_review", event_seqs: [seq], results: items, revision_no: null,
-    note: `界面操作（不是用户打的字）：用户保留了 ${itemsPhrase(items)}现在的写法${reason ? `，理由：「${reason}」` : "，没有写理由"}。` +
-      "这条按用户的决定算通过；条目再改动，评审要重做。",
+    note: reason ? fillText("ui_ops.waive_reason", { items: itemsPhrase(items), reason }) : fillText("ui_ops.waive", { items: itemsPhrase(items) }),
     notify_text: null, undoable: false,
   };
 }
@@ -706,14 +708,14 @@ function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult 
   });
   return {
     op_id: opId, kind: "unwaive_review", event_seqs: [seq], results: items, revision_no: null,
-    note: `界面操作（不是用户打的字）：用户撤销了对 ${itemsPhrase(items)} 的保留，这些条目重新算作评审不通过。`,
+    note: fillText("ui_ops.unwaive", { items: itemsPhrase(items) }),
     notify_text: null, undoable: false,
   };
 }
 
 /** 一次启动或者一次换站往会话里追加的那句说明（给助手看，页面原样显示）。写了范围说明时接在后面。 */
 export function activityStartNote(how: StartHow, to: Stage, from: Position, reason = "", scope = ""): string {
-  return `界面操作（不是用户打的字）：${activityStartSentence(how, to, from)}${reason ? `理由：${reason}` : ""}${scopeSentence(scope)}`;
+  return fillText("ui_ops.activity_start", { sentence: activityStartSentence(how, to, from), reason: reason ? fillText("ui_ops.reason", { reason }) : "", scope: scopeSentence(scope) });
 }
 
 /** 启动工作项时早先那一项会话的写法已经停用：写了就拒绝的那句话。 */
@@ -840,7 +842,9 @@ function continueActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest):
   });
   return {
     op_id: opId, kind: "continue_activity", event_seqs: [], results: [], revision_no: null,
-    note: `界面操作（不是用户打的字）：${workItemContinuedSentence(workItemName(item), item.flow !== null && isStage(item.node) ? item.node : null)}${scopeSentence(item.scope ?? "")}`,
+    note: fillText("ui_ops.work_item_continued", {
+      sentence: workItemContinuedSentence(workItemName(item), item.flow !== null && isStage(item.node) ? item.node : null), scope: scopeSentence(item.scope ?? ""),
+    }),
     notify_text: null, undoable: false, record_id: item.record_id,
   };
 }
@@ -864,7 +868,7 @@ function deleteWorkItemByUser(ctx: Ctx, opId: string, request: UserOpRequest): U
   });
   return {
     op_id: opId, kind: "delete_work_item", event_seqs: [deleted.event_seq], results: [], revision_no: null,
-    note: `界面操作（不是用户打的字）：${workItemDeletedSentence(workItemName(deleted.item), deleted.archived)}`,
+    note: fillText("ui_ops.work_item_deleted", { sentence: workItemDeletedSentence(workItemName(deleted.item), deleted.archived) }),
     notify_text: null, undoable: false, record_id: deleted.item.record_id, archived_sessions: deleted.archived,
   };
 }
@@ -903,8 +907,9 @@ function publishVersionByUser(ctx: Ctx, opId: string, request: UserOpRequest): U
   }
   return {
     op_id: opId, kind: "publish_version", event_seqs: [outcome.details.event_seq], results: [], revision_no: null,
-    note: `界面操作（不是用户打的字）：用户在页面上发布了第 ${outcome.details.version_no} 版（修订 ${outcome.details.revision_no}）` +
-      `${note && note.trim() ? `，发布说明：${note.trim()}` : ""}。发布之后任务照常可以修改，以后可以再发布新的一版。`,
+    note: note && note.trim()
+      ? fillText("ui_ops.publish_note", { version: outcome.details.version_no, revision: outcome.details.revision_no, note: note.trim() })
+      : fillText("ui_ops.publish", { version: outcome.details.version_no, revision: outcome.details.revision_no }),
     notify_text: null, undoable: false, version_no: outcome.details.version_no,
   };
 }
@@ -945,11 +950,11 @@ function setReviewRules(ctx: Ctx, opId: string, request: UserOpRequest): UserOpR
       writeFileSync(join(ctx.workspaceDir, task.definition_path), text, "utf-8");
       return { seq, before };
     });
-    const words = [off.length ? `关闭 ${off.join("、")}` : "", promote.length ? `升为必选 ${promote.join("、")}` : ""].filter(Boolean).join("；");
+    const words = [off.length ? fillText("ui_ops.rules_off", { rules: off.join("、") }) : "",
+      promote.length ? fillText("ui_ops.rules_promote", { rules: promote.join("、") }) : ""].filter(Boolean).join("；");
     return {
       op_id: opId, kind: "set_review_rules", event_seqs: [outcome.seq], results: [], revision_no: null,
-      note: `界面操作（不是用户打的字）：用户改了集合「${collection}」的评审规则，现在${words || "没有关闭或升为必选的规则"}。` +
-        "之后的评审按新规则；规则改了，这个集合的条目都要重新评审，已有的评审记录不变。",
+      note: fillText("ui_ops.review_rules", { collection, change: words || fillText("ui_ops.rules_none") }),
       notify_text: null, undoable: false,
     };
   } catch (error) {

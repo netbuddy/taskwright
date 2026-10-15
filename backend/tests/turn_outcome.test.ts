@@ -171,7 +171,7 @@ test("被停下时结束消息的步数与摘要相同：一条消息里几个�
 });
 
 /** 「先写理解」那道门拒绝时的文字，与连续被拒到上限、由工具停下时那一条结果的文字和 details。 */
-const MISSING = "回复没有执行：先按 schema 写下你对用户这句话的理解。这一轮还没有写理解。\n请按平台 skill「先写理解」一节的格式……";
+const MISSING = "回复没有执行：先按 schema 写下你对用户这句话的理解。这一轮还没有写理解。\n请按平台说明「先写理解」一节的格式……";
 const STOPPED = { stopped: true, rejections: 5, reason_kind: "understanding_missing" };
 const refused = (callId: string, details?: Dict) => ({ ...result(callId, details ? `${MISSING}\n这一轮已经连续 5 次没有按规矩回答，这次运行到此停下。` : MISSING, true),
   message: { ...result(callId, MISSING, true).message, toolCallId: callId, ...(details ? { details } : {}) } });

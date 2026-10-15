@@ -39,6 +39,7 @@ import unittest
 from pathlib import Path
 
 from taskwright_observatory import runs as runs_module
+from taskwright_observatory import health as health_module
 from taskwright_observatory.__main__ import default_workspaces_dir, expand_archive_dirs, main as observatory_main, parse_args
 from taskwright_observatory.server import IndexCache, expand_sim_root
 from taskwright_observatory.api import Index
@@ -198,10 +199,15 @@ class ReaderTests(unittest.TestCase):
         self.assertFalse(fix["是不是同一次运行"])
         self.assertEqual(fix["运行序号"], 3)
         self.assertEqual(fix["轮号"], 0)
-        rows = self.index.health(SESSION_ID)["门禁"]["行"]
+        health = self.index.health(SESSION_ID)
+        rows = health["门禁"]["行"]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["发生次数"], 1)
         self.assertEqual(rows[0]["其后改正成功次数"], 1)
+        # 按原因码的那一栏：夹具的库是旧格式，没有拒绝记录，这一次被拒合成「没有拒绝记录」一行，分母是这个工具在归档里的调用次数。
+        coded = health["原因码"]["行"]
+        self.assertEqual([(row["原因码"], row["工具"], row["被拒次数"]) for row in coded], [(health_module.NO_RECORD, rejected[0]["工具"], 1)])
+        self.assertEqual(coded[0]["调用次数"], sum(1 for one in calls if one["工具"] == rejected[0]["工具"]))
 
     def test_同一条会话的两次启动被认成一次重启(self):
         """两个归档文件带同一个会话编号，说明中途重启过 pi 进程；第三次运行落在第二次启动里。"""

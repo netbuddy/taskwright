@@ -21,6 +21,7 @@ import { DIAGRAM_ID, EVENT_DIAGRAM_VIEWED, latestVersion, readDiagrams, viewedDi
 import { saveDiagram } from "./save_diagram.ts";
 import { NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { ToolRejection } from "./tool_rejection.ts";
+import { fillText } from "./texts.ts";
 import { UserOpError, type UserOpRequest } from "./user_ops.ts";
 
 /** 操作种类。它不在 USER_OP_KINDS 里：写的是图，不经 runUserOperation。 */
@@ -49,7 +50,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 
 /** 追加进会话的那句说明。 */
 export const diagramEditNote = (id: string, name: string, revisionNo: number): string =>
-  `界面操作（不是用户打的字）：用户在界面上改了图 ${id}「${name}」的 Mermaid 文本，${id} 现在是修订 ${revisionNo}。要看现在的文本，用 get_item 写 ${id}。`;
+  fillText("ui_ops.edit_diagram", { diagram: id, name, revision: revisionNo });
 
 export async function editDiagram(ctx: { workspaceDir: string; sessionId: string }, request: UserOpRequest): Promise<DiagramOpResult> {
   const opId = typeof request.op_id === "string" ? request.op_id : "";

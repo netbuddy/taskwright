@@ -44,6 +44,7 @@ import { validateDefinition } from "./definition.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
 import { IDLE, type Position, STAGES, STAGE_NAMES, type Stage, gateStage } from "./stage.ts";
 import { openActivityRecord, stageOf } from "./stage_read.ts";
+import { fillText } from "./texts.ts";
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
 
@@ -54,9 +55,6 @@ export const PLATFORM_STAGES_DIR = join(PROMPTS_DIR, "stages");
 export const PLATFORM_FLOWS_DIR = join(PROMPTS_DIR, "flows");
 export const FLOWS_SUBDIR = "flows";
 export const FLOW_ANALYSIS_FILE = "analysis.md";
-
-/** 平台 skill 的目录：它是早先的任务读的那一份，有阶段的任务不读它，认任务 skill 时要把它排除。 */
-export const PLATFORM_SKILL_DIR = join(PROMPTS_DIR, "skills", "taskwright-executor");
 
 export const SYSTEM_FILE = "system.md";
 export const COMMON_FILE = "common.md";
@@ -97,17 +95,10 @@ export function withoutOpening(text: string): string {
 }
 
 /** 会话空闲时（自由讨论的会话，或者归档的会话）接在共用部分后面的那一段的开头：后面接澄清那项活动的说明（去掉它自己的标题与开头那一段话）。 */
-export const IDLE_OPENING = "# 现在：自由讨论\n\n" +
-  "本会话不属于任何工作项，是自由讨论的会话。下面的规矩与澄清一段相同，但不写需求条目，不提议进入任何阶段，" +
-  "也不提议开始哪一项活动；用户上传了材料也不自行核读。用户要做哪一项活动，请他从任务起点页启动一个工作项。";
+export const IDLE_OPENING = fillText("stage_prompt.idle_opening");
 
 /** 工作项是单项活动时，代替节点出口的那一段。 */
-export const STANDALONE_EXIT = "## 出口\n\n" +
-  "本会话的工作项是单项活动，不在工作流程里。这项活动做够了就在回复里汇报做完，不提议进入别的活动：" +
-  "在成文的话里说清做到了哪里、还差什么，回复里写 `activity_done: true`。汇报只是一句话，工作项照旧留着：用户之后还可以在本会话里接着说，" +
-  "你照这项活动的规矩接着做。" +
-  "不要发进入下一段或者退回前面阶段的卡片，用户点了也不算数。用户说的事不属于这项活动时：能在这项活动里顺手做的照做；" +
-  "这项活动做不了的（工具会拒绝），说明要做那件事请用户从任务起点页启动相应的工作项。";
+export const STANDALONE_EXIT = fillText("stage_prompt.standalone_exit");
 
 /**
  * 去掉一份 Markdown 文字里标题是 heading 的二级小节：从「## heading」那一行起，到下一个一级或二级标题之前（没有下一个就到末尾）。
@@ -129,9 +120,7 @@ export function withoutSection(text: string, heading: string): string {
  * 工作项删除之后，它的会话归档、按自由讨论办，就没有了。
  */
 export function scopeSection(scope: string): string {
-  return "## 本次范围说明\n\n" +
-    "用户启动这个工作项时写了范围说明。这一次照它说的范围做；它没有说到的，照上面的说明。\n\n" +
-    `本次范围说明：${scope.trim()}`;
+  return fillText("stage_prompt.scope", { scope: scope.trim() });
 }
 
 /** 拼进系统提示的一部分是什么。 */
@@ -254,11 +243,6 @@ export function piTail(current: string, custom: string): string {
   return /<cwd>[\s\S]*?<\/cwd>/.exec(withoutSkills)?.[0] ?? "";
 }
 
-/** 任务 skill：pi 加载的 skill 里除了平台 skill 之外的那些，按 pi 给的次序。 */
-export function taskSkills(skills: readonly LoadedSkill[]): LoadedSkill[] {
-  return skills.filter((one) => resolve(dirname(one.filePath)) !== resolve(PLATFORM_SKILL_DIR));
-}
-
 export interface ComposeInput {
   /** 任务现在在哪个阶段；空闲时是 idle。 */
   stage: Position;
@@ -340,7 +324,8 @@ function slots(input: ComposeInput, io: PromptIo): Slot[] {
     return { part, from: "builtin", file: relative(REPO_ROOT, path), path };
   };
   const inTask = (part: PartKind, path: string): Source => ({ part, from: "task", file: relative(resolve(input.workspaceDir), resolve(path)), path });
-  const skills = taskSkills(input.skills);
+  // 任务 skill：pi 加载的 skill（只有任务目录里任务类型的那一份），按 pi 给的次序。
+  const skills = input.skills;
   const wanted: [Slot["part"], boolean, Source[]][] = [
     ["system", true, [builtin("system", SYSTEM_FILE)]],
     ["platform_common", true, [builtin("platform_common", COMMON_FILE)]],
@@ -483,7 +468,7 @@ export function partFact(one: PromptPart): PartFact {
 
 /**
  * 这条会话现在在哪个阶段（或者空闲），只读：看的是这条会话属于的工作项。任务库不在、库里还没有任务、或者是早先建的任务
- * （没有「总体分析」集合）时返回 null：这些情形都不换系统提示。
+ * （没有「业务说明」集合）时返回 null：这些情形都不换系统提示。
  */
 export function stageInWorkspace(workspaceDir: string, sessionId: string | null): Position | null {
   return whereInWorkspace(workspaceDir, sessionId)?.stage ?? null;

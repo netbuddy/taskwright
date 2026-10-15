@@ -57,7 +57,7 @@ export function toc(task: Task): Toc {
   };
 }
 
-/** 目录里的那一节；这一页没有贴标签（在「未归类」下）或者不是总体分析的页时是 null。 */
+/** 目录里的那一节；这一页没有贴标签（在「未归类」下）或者不是业务说明的页时是 null。 */
 export function sectionOf(contents: Toc, itemId: string | null | undefined): TocSection | null {
   if (!itemId) return null;
   for (const chapter of contents.chapters) {
@@ -89,7 +89,7 @@ export function sectionLabel(contents: Toc, item: Item): string {
   return section?.no ? `${section.no} ${titleOf(item)}` : titleOf(item);
 }
 
-/** 目录底部的汇总：编了号的节有几节、需求条目有几条（总体分析与问题集合之外的条目）、待澄清的有几处（还没有了结的问题条目）。 */
+/** 目录底部的汇总：编了号的节有几节、需求条目有几条（业务说明与问题集合之外的条目）、待澄清的有几处（还没有了结的问题条目）。 */
 export function tocTotals(task: Task, contents: Toc): { sections: number; items: number; open: number } {
   const sections = contents.chapters.reduce((n, chapter) => n + chapter.sections.filter((one) => one.no !== null).length, 0);
   let items = 0, open = 0;

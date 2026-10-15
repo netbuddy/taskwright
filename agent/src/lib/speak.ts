@@ -10,6 +10,9 @@
  * 拒绝一律抛异常，异常文字由 pi 交还模型重写。本模块不依赖 pi，也不读库。
  */
 
+import { refusalText } from "./texts.ts";
+import { withCodes } from "./tool_rejection.ts";
+
 /** 同一轮助手消息里的一个工具调用。 */
 export interface TurnCall {
   id: string;
@@ -43,10 +46,8 @@ export function lastAssistantTurn(branch: Entry[]): { entryId: string | null; ca
 export function requireAlone(label: string, toolName: string, toolCallId: string, callsThisTurn: TurnCall[]): void {
   const others = callsThisTurn.filter((call) => call.id !== toolCallId);
   if (others.length > 0) {
-    throw new Error(
-      `${label}必须单独调用，不能与其他工具同一轮。这一轮里除了${label}还调用了：${others.map((c) => c.name).join("、")}。` +
-        `请先把那些工具调用完、看到结果之后，再在下一次单独调用 ${toolName}。这次${label}没有送达。`,
-    );
+    const refusal = refusalText("reply.not_alone", { label, tool: toolName, others: others.map((c) => c.name).join("、") });
+    throw withCodes(new Error(`${refusal.fact}。${refusal.guidance}。`), [refusal.code]);
   }
 }
 

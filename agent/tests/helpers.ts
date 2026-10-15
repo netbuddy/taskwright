@@ -61,16 +61,16 @@ export function demoDefinition(): Record<string, unknown> {
 }
 
 /**
- * 示例任务定义加一个「总体分析」集合（九个字段照产品的任务类型），完成条件要求它每个条目用户确认。
- * 集合的先后：用例、问题、总体分析。
+ * 示例任务定义加一个「业务说明」集合（九个字段照产品的任务类型），完成条件要求它每个条目用户确认。
+ * 集合的先后：用例、问题、业务说明。
  */
 export function overallDefinition(): Record<string, any> {
   const raw = demoDefinition() as Record<string, any>;
   // 问题集合照产品的任务类型：状态里有「用户决定保留」（程序靠这个取值认问题集合）。
   raw.交付物.条目集合[1].字段[1].取值 = ["未解决", "已解决", "用户决定保留"];
   raw.交付物.条目集合.push({
-    名称: "总体分析", 编号前缀: "OA",
-    界面: { 右侧栏页签: true, 分组字段: "标签", 靠前的组: ["概念"] },
+    名称: "业务说明", 编号前缀: "OA",
+    界面: { 分组字段: "标签", 靠前的组: ["概念"] },
     字段: [
       { 名: "标题", 类型: "文本", 必填: true },
       { 名: "别名", 类型: "文本列表", 必填: false },
@@ -83,16 +83,16 @@ export function overallDefinition(): Record<string, any> {
       { 名: "改看", 类型: "条目引用", 必填: false, 只许本集合: true, 至多一个: true },
     ],
   });
-  raw.完成条件.总体分析 = ["每个条目用户确认"];
+  raw.完成条件.业务说明 = ["每个条目用户确认"];
   return raw;
 }
 
 /**
- * 一页合格的主题（贴了标签、有例子、来源是材料原文）：有总体分析集合的任务里，助手要先有这样一页、用户又看过它，才能往别的集合里
+ * 一页合格的主题（贴了标签、有例子、来源是材料原文）：有业务说明集合的任务里，助手要先有这样一页、用户又看过它，才能往别的集合里
  * 新增条目（最低门）。不是测最低门的测试先保存它，再调 viewReadyPage。它的文字里没有别的测试用到的词，不会多出「提到」。
  */
 export const READY_PAGE = {
-  op: "add", collection: "总体分析",
+  op: "add", collection: "业务说明",
   fields: { 标题: "馆藏范围", 它是什么: "本馆全部可以外借的纸质图书。", 例子: ["《算法导论》在三楼科技书库。"], 标签: ["范围"], 状态: "在用" },
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。" }],
 };
@@ -206,7 +206,7 @@ export function idleSessions(workspaceDir: string): void {
 }
 
 /**
- * 把任务放到写条目阶段。有总体分析集合的任务，助手要到写条目阶段才能写别的集合的条目（lib/stage.ts）；
+ * 把任务放到写条目阶段。有业务说明集合的任务，助手要到写条目阶段才能写别的集合的条目（lib/stage.ts）；
  * 不是测阶段的测试，建好任务之后先调它。
  */
 export function startWriting(workspaceDir: string): void {
@@ -349,4 +349,17 @@ export const cardClick = (cardId: string, key: string, text: string): BranchEntr
 export function problemClicksOn(workspaceDir: string, sessionId: string, branch: BranchEntry[]): ProblemClick[] {
   recordAtSettle(workspaceDir, sessionId, branch as never, branch.filter((e) => e.message?.role === "user").map((e) => e.id), REGISTERED_OUTPUTS);
   return problemClicks(branch);
+}
+
+/**
+ * 把一个现在格式（9）的任务库退回格式 8 的样子：工具拒绝表去掉原因码两列，版本号记 8。格式 8 与 9 只差这两列。
+ * 直接开库改，不经 withTaskDatabase（它一打开就会升级）。
+ */
+export function asFormat8(workspaceDir: string): void {
+  const db = new DatabaseSync(databasePath(workspaceDir));
+  try {
+    db.exec("ALTER TABLE tool_rejection DROP COLUMN reason_codes; ALTER TABLE tool_rejection DROP COLUMN reason_code; PRAGMA user_version = 8");
+  } finally {
+    db.close();
+  }
 }

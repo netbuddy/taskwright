@@ -13,7 +13,7 @@ from pathlib import Path
 from sim import lamps
 
 REPO = Path(__file__).resolve().parents[2]
-COLLECTIONS = [{"名称": name} for name in ("功能用例", "非功能需求", "约束", "问题", "总体分析")]
+COLLECTIONS = [{"名称": name} for name in ("功能用例", "非功能需求", "约束", "问题", "业务说明")]
 
 
 def content(fields: dict, sources=(), reviews=(), waivers=(), rev: int = 1) -> dict:
@@ -23,7 +23,7 @@ def content(fields: dict, sources=(), reviews=(), waivers=(), rev: int = 1) -> d
 def page(n: int, title: str, tags=(), examples=(), aliases=(), parent=(), status: str = "在用", sources=(), rev: int = 1, intro: str | None = None) -> dict:
     now = content({"标题": title, "别名": list(aliases), "它是什么": f"{title}是什么。", "例子": list(examples), "标签": list(tags),
                    "上级主题": list(parent), "状态": status, **({"导语所属章": intro} if intro is not None else {})}, sources, rev=rev)
-    return {"条目编号": f"OA-{n:03d}", "所属集合": "总体分析", "在第几次修订删除": None, "当前内容": now, "修订内容": [now]}
+    return {"条目编号": f"OA-{n:03d}", "所属集合": "业务说明", "在第几次修订删除": None, "当前内容": now, "修订内容": [now]}
 
 
 def item(item_id: str, collection: str, fields: dict, sources=(), reviews=(), waivers=()) -> dict:
@@ -79,7 +79,7 @@ class LampTest(unittest.TestCase):
         self.assertEqual([x["键"] for x in lamps.compute(task([]), None, [], None, stage="澄清")],
                          ["tagged_pages_no_open_questions", "decisions_have_goal"])
 
-    def test_任务定义里没有总体分析集合_每盏都不适用(self):
+    def test_任务定义里没有业务说明集合_每盏都不适用(self):
         out = lamps.compute(task([use_case(1)], collections=[{"名称": "功能用例"}, {"名称": "领域说明"}]), None, ["a.md"], [])
         self.assertEqual({x["结果"] for x in out}, {"不适用"})
 
@@ -203,16 +203,16 @@ class LampTest(unittest.TestCase):
 # 建任务目录与写库都用产品自己的函数；发起方写用户，所以不受助手一侧的几道核对拦着。
 CREATE = r"""
 import { createTaskDir } from "./backend/src/workspace.ts";
-process.stdout.write(JSON.stringify(createTaskDir(process.argv[1], "srs-authoring", null, null, "TASK-T")));
+process.stdout.write(JSON.stringify(createTaskDir(process.argv[1], "requirements-engineering", null, null, "TASK-T")));
 """
 SAVE = r"""
 import { saveRevision } from "./agent/src/lib/save_revision.ts";
 const dir = process.argv[1];
 const src = (excerpt) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt });
 saveRevision({ workspaceDir: dir, sessionId: "s", callId: "ui-op-1", actor: "user" }, { operations: [
-  { op: "add", collection: "总体分析", fields: { 标题: "借书", 它是什么: "读者凭借书证借书。", 例子: ["例外：读者名下有逾期未还的书，不能再借。"],
+  { op: "add", collection: "业务说明", fields: { 标题: "借书", 它是什么: "读者凭借书证借书。", 例子: ["例外：读者名下有逾期未还的书，不能再借。"],
     标签: ["流程"], 状态: "在用" }, sources: [src("读者凭借书证借书")] },
-  { op: "add", collection: "总体分析", fields: { 标题: "读者", 它是什么: "办了借书证的人。", 标签: ["角色"], 状态: "在用" }, sources: [src("读者")] },
+  { op: "add", collection: "业务说明", fields: { 标题: "读者", 它是什么: "办了借书证的人。", 标签: ["角色"], 状态: "在用" }, sources: [src("读者")] },
 ] });
 saveRevision({ workspaceDir: dir, sessionId: "s", callId: "ui-op-2", actor: "user" }, { operations: [
   { op: "add", collection: "功能用例", fields: { 用例名称: "借书", 用例功能: "读者凭借书证借书。", 参与者: ["读者"], 基本流程: ["读者出示借书证", "系统登记借书"] },

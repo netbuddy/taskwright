@@ -11,7 +11,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { DIAGRAM_KINDS, drawnItemIds, liveDiagrams, readDiagrams } from "../src/lib/diagram.ts";
 import {
-  GIVE_UP_TEXT, OVER_LIMIT_TEXT, TELL_USER_TEXT, VALIDATION_FAILED_TEXT, type DiagramCheck, type SaveDiagramParams,
+  GIVE_UP_TEXT, OVER_LIMIT_TEXT, VALIDATION_FAILED_TEXT, type DiagramCheck, type SaveDiagramParams,
   consecutiveDiagramFailures, saveDiagram, withSourcesKey,
 } from "../src/lib/save_diagram.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
@@ -224,7 +224,7 @@ test("校验没有做成：不保存，说明这是程序这边的问题、让�
     ({ ok: false, reason: "unavailable", line: null, message: "这一次没有办法校验 Mermaid 文本（联系不上系统里负责校验的那一部分）。这是程序这边的问题，不是文本写错了，请告诉用户。" });
   const error = await save(dir, fresh(), unavailable).catch((e: Error) => e);
   assert.equal((error as Error).message,
-    `这张图没有保存。这一次没有办法校验 Mermaid 文本（联系不上系统里负责校验的那一部分）。这是程序这边的问题，不是文本写错了，请告诉用户。${TELL_USER_TEXT}`);
+    `这张图没有保存。这一次没有办法校验 Mermaid 文本（联系不上系统里负责校验的那一部分）。这是程序这边的问题，不是文本写错了，请告诉用户。不要改了文本再试，用 reply 把这个情况告诉用户。`);
   assert.ok(!(error as Error).message.includes(VALIDATION_FAILED_TEXT));
   assert.equal(rejectionOf(error), null);
   assert.equal(count(dir, "diagram"), 0);

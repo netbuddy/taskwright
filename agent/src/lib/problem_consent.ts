@@ -18,6 +18,7 @@
 
 import { KEEP_PENDING_STATUS } from "./definition.ts";
 import { type Entry, cardClicks, chooseActOf } from "./completion_consent.ts";
+import { type RefusalText, fillText, refusalText } from "./texts.ts";
 
 /** 问题条目了结为已解决时状态字段的取值。 */
 export const RESOLVED_STATUS = "已解决";
@@ -67,18 +68,13 @@ export interface ProblemFacts {
   changedAfter: (itemId: string, seq: number) => string | null;
 }
 
-/** 核对不通过时的两层文字：事实（给人看）与指引（给助手）。 */
-export interface ProblemRefusal {
-  fact: string;
-  guidance: string;
-}
+/** 核对不通过时的原因码与两层文字：事实（给人看）与指引（给助手）。 */
+export type ProblemRefusal = RefusalText;
 
 /** 被拒时指引助手怎样问。 */
 function askGuidance(itemId: string, status: string): string {
-  const option = CONSENT_OPTION[status];
-  const typed = status === RESOLVED_STATUS ? "已经解决" : "先不管";
-  return `请用回复的请选择（choose）问用户这个问题是否已解决：在 items 里点名 ${itemId}，三个选项是「${RESOLVED_TEXT}」「${CONTINUE_TEXT}」「${KEEP_TEXT}」；` +
-    `用户点了「${option}」之后再把状态改为「${status}」。用户在对话里打字说${typed}不算，照样先发卡片`;
+  const values = { item: itemId, resolved: RESOLVED_TEXT, continue: CONTINUE_TEXT, keep: KEEP_TEXT, option: CONSENT_OPTION[status], status };
+  return status === RESOLVED_STATUS ? fillText("part.ask_problem_resolved", values) : fillText("part.ask_problem_keep", values);
 }
 
 /**
@@ -93,34 +89,24 @@ export function judgeProblemStatus(
   facts: ProblemFacts,
 ): ProblemRefusal | null {
   const option = CONSENT_OPTION[status];
-  const head = `助手想把 ${itemId} 的状态改为「${status}」，但`;
+  const common = { item: itemId, status, option, ask: askGuidance(itemId, status) };
   const click = [...facts.clicks].reverse().find((one) => one.items.includes(itemId));
   const seq = click ? facts.clickSeq(click.userEntryId) : null;
-  if (!click || seq === null) {
-    return { fact: `${head}用户还没有在问 ${itemId} 是否已解决的卡片上点「${option}」`, guidance: askGuidance(itemId, status) };
-  }
+  if (!click || seq === null) return refusalText("gate.problem_consent_missing", common);
   if (bare(click.optionText) !== bare(option)) {
-    return { fact: `${head}用户在最近一张问 ${itemId} 是否已解决的卡片上选的是「${click.optionText ?? ""}」`, guidance: askGuidance(itemId, status) };
+    return refusalText("gate.problem_consent_wrong_option", { item: itemId, status, ask: common.ask, chosen: click.optionText ?? "" });
   }
   for (const one of [itemId, ...linked]) {
     const change = facts.changedAfter(one, seq);
-    if (change) return { fact: `${head}用户点「${option}」之后，${one} 又${change}，要重新问`, guidance: askGuidance(itemId, status) };
+    if (change) return refusalText("gate.problem_consent_stale", { ...common, other: one, change });
   }
   const here = linked.filter((one) => changedInBatch.has(one));
-  if (here.length) {
-    return {
-      fact: `${head}这一批操作里还改了它牵涉的 ${here.join("、")}，用户点「${option}」时还没有这些改动，要重新问`,
-      guidance: `先单独保存对 ${here.join("、")} 的修改；${askGuidance(itemId, status)}`,
-    };
-  }
+  if (here.length) return refusalText("gate.problem_consent_batch_conflict", { ...common, items: here.join("、") });
   return null;
 }
 
 /** 新增问题条目时写的状态：不能直接写成要用户点头的那两种。unresolved 是这个集合里表示未解决的取值（没有时为 null）。 */
 export function newProblemStatus(status: unknown, unresolved: string | null): ProblemRefusal | null {
   if (typeof status !== "string" || !Object.hasOwn(CONSENT_OPTION, status)) return null;
-  return {
-    fact: `新增的问题条目状态不能直接写成「${status}」`,
-    guidance: `先按${unresolved ? `「${unresolved}」` : "未解决"}记下，用问这个问题是否已解决的卡片问过用户、用户点了「${CONSENT_OPTION[status]}」之后再改状态`,
-  };
+  return refusalText("gate.problem_new_status_direct", { status, unresolved: unresolved ? `「${unresolved}」` : "未解决", option: CONSENT_OPTION[status] });
 }

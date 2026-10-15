@@ -1,8 +1,8 @@
 /**
- * 执行者读的几份文件的内容检查：平台 skill（代码仓里，所有任务类型共用）、各任务类型的任务 skill（只写这类任务的做法）、
+ * 执行者读的几份文件的内容检查：平台说明（代码仓里，所有任务类型共用）、各任务类型的任务 skill（只写这类任务的做法）、
  * 执行者的系统提示，以及启动配置里的工具清单。只读这些文件，不改。
- * 核对的是：平台 skill 合不合 pi 的要求；平台 skill 只写通用的做法（修订号、被拒后的改法、评审由用户发起、同批引用）；
- * 任务 skill 里不出现平台层的写法（防止通用规则流回任务 skill）；两层都不提已经退役的工具与角色；系统提示先读平台 skill。
+ * 核对的是：平台说明只写通用的做法（修订号、被拒后的改法、评审由用户发起、同批引用）；
+ * 任务 skill 里不出现平台层的写法（防止通用规则流回任务 skill）；两层都不提已经退役的工具与角色；启动配置的系统提示是哪一份。
  */
 
 import assert from "node:assert/strict";
@@ -13,8 +13,8 @@ import { fileURLToPath } from "node:url";
 import { DIAGRAM_KINDS, DIAGRAM_KIND_NAMES } from "../src/lib/diagram.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const PLATFORM_DIR = join(ROOT, "agent", "prompts", "skills", "taskwright-executor");
-const PLATFORM = join(PLATFORM_DIR, "SKILL.md");
+/** 平台说明：放进系统提示的共用部分，所有任务类型共用。 */
+const PLATFORM = join(ROOT, "agent", "prompts", "stages", "common.md");
 const TASK_SKILLS = readdirSync(join(ROOT, "task-types"), { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((type) => {
   const base = join(ROOT, "task-types", type.name, ".pi", "skills");
   if (!existsSync(base)) return [];
@@ -22,9 +22,9 @@ const TASK_SKILLS = readdirSync(join(ROOT, "task-types"), { withFileTypes: true 
 }).sort();
 const DEV_PROFILE = JSON.parse(readFileSync(join(ROOT, "backend", "profiles", "dev.json"), "utf-8"));
 
-/** 平台层的词：工具名与回复工具、来源、版本号的参数名。它们只该出现在平台 skill 里。 */
+/** 平台层的词：工具名与回复工具、来源、版本号的参数名。它们只该出现在平台说明里。 */
 const PLATFORM_WORDS = ["reply", "base_version", "base_revision", "version_no", "revision_no", "supports", "publish_version", "informs", "act"];
-/** 已经退役的工具与角色：平台 skill 与任务 skill 里都不该再出现。登记用户确认工具与确认判读者在「已读即确认」时退役。 */
+/** 已经退役的工具与角色：平台说明与任务 skill 里都不该再出现。登记用户确认工具与确认判读者在「已读即确认」时退役。 */
 const RETIRED_WORDS = ["record_confirmation", "登记用户确认", "判读者"];
 
 /** 拆出 SKILL.md 开头两行 --- 之间的「名字: 值」与其后的正文。没有 frontmatter 时返回空对象与全文。 */
@@ -47,16 +47,7 @@ function taskSkillText(path: string): string {
   return [bodyOf(path), ...parts].join("\n");
 }
 
-test("平台 skill 的文件存在，frontmatter 合 pi 的要求：name 与目录同名、只用小写字母数字与连字符、不超过 64 个字符；description 必填", () => {
-  const [fields, body] = frontmatter(readFileSync(PLATFORM, "utf-8"));
-  assert.equal(fields.name, "taskwright-executor");
-  assert.match(fields.name, /^[a-z0-9]+(-[a-z0-9]+)*$/);
-  assert.ok(fields.name.length <= 64);
-  assert.ok(fields.description);
-  assert.ok(body.trim());
-});
-
-test("平台 skill 只用修订号，不用版本号", () => {
+test("平台说明只用修订号，不用版本号", () => {
   const body = bodyOf(PLATFORM);
   for (const word of ["version_no", "base_version", "版本号是", "新版本", "当前版本"]) assert.ok(!body.includes(word), word);
   assert.doesNotMatch(body, /第 ?[0-9N一二三四五六七八九十]+ ?版/);
@@ -64,14 +55,14 @@ test("平台 skill 只用修订号，不用版本号", () => {
   assert.ok(body.includes("revision_no"));
 });
 
-test("平台 skill 不写需求规格任务的专名", () => {
+test("平台说明不写需求规格任务的专名", () => {
   const body = bodyOf(PLATFORM);
-  // 需求规格任务的问题集合现在叫「问题」，这是个日常词，平台 skill 也用它说问题条目，所以只拦旧名。
-  for (const word of ["功能用例", "非功能需求", "待定与范围外事项", "UC-", "NFR-", "CON-", "TBD-", "srs-authoring",
+  // 需求规格任务的问题集合现在叫「问题」，这是个日常词，平台说明也用它说问题条目，所以只拦旧名。
+  for (const word of ["功能用例", "非功能需求", "待定与范围外事项", "UC-", "NFR-", "CON-", "TBD-", "requirements-engineering",
     "use-case-writing", "ears-writing", "基本流程", "前置条件"]) assert.ok(!body.includes(word), word);
 });
 
-test("平台 skill 第四节写明来源的五种：助手补充要写理由、不用填出处；依据另一个条目时种类写「条目」、依据一张图时种类写「图」，它改了之后会标「依据已变」", () => {
+test("平台说明第四节写明来源的五种：助手补充要写理由、不用填出处；依据另一个条目时种类写「条目」、依据一张图时种类写「图」，它改了之后会标「依据已变」", () => {
   const body = bodyOf(PLATFORM);
   const section = body.slice(body.indexOf("## 四、来源怎样填"), body.indexOf("## 五、"));
   for (const words of ["种类有五种：", "- **文档原文**：", "- **用户的话**：", "- **助手补充**：", "- **条目**：", "- **图**：",
@@ -86,11 +77,11 @@ test("平台 skill 第四节写明来源的五种：助手补充要写理由、�
   assert.ok(!section.includes("执行者"));
 });
 
-test("平台 skill 有画图一节：只在用户要求时画、用保存图这一个工具、六种图的画法、节点写条目编号、来源怎样写、校验不过与改图删图", () => {
+test("平台说明有画图一节：核读材料与澄清两段不画、别的阶段用户要求时画或先提议、用保存图这一个工具、六种图的画法、节点写条目编号、来源怎样写、校验不过与改图删图", () => {
   const body = bodyOf(PLATFORM);
   const section = body.slice(body.indexOf("## 十一、画图"));
   assert.ok(body.includes("## 十一、画图"));
-  for (const words of ["整理条目时不要主动画图", "图不是条目，不要用 save_revision 存；图不评审，不算进完成条件",
+  for (const words of ["核读材料与澄清两个阶段不能画图，工具会拒绝", "不要不问就画", "图不是条目，不要用 save_revision 存；图不评审，不算进完成条件",
     "用流程图的写法画，第一行写 `flowchart LR`", "参与者与用例都写成圆角节点，例如 `buyer([\"买家\"])`", "系统边界写成子图", "包含与扩展写在虚线上",
     "不要用 Mermaid 自带的用例图写法", "第一行写 `classDiagram`",
     "系统画成一个子图（`subgraph 系统名` 到 `end`）", "至少要有一个子图与一个子图之外的节点，否则保存会被拒绝",
@@ -107,20 +98,20 @@ test("平台 skill 有画图一节：只在用户要求时画、用保存图这�
   assert.equal(DIAGRAM_KINDS.length, 6);
 });
 
-test("平台 skill 写明被拒之后不删信息换取通过", () => {
+test("平台说明写明被拒之后不删信息换取通过", () => {
   const body = bodyOf(PLATFORM);
   assert.ok(body.includes("不得为了通过而删掉引用、来源或关联条目"));
   assert.ok(body.includes("删掉信息换取通过是错误做法"));
 });
 
-test("平台 skill 有评审一节：评审由用户发起，请求评审的工具只在用户要求时用", () => {
+test("平台说明有评审一节：评审由用户发起，请求评审的工具只在用户要求时用", () => {
   const body = bodyOf(PLATFORM);
   assert.ok(body.includes("## 六、评审"));
   for (const words of ["评审由用户在界面上发起，你不要主动评审", "用户在对话里要求评审时，才调用请求评审（request_review）",
     "问题类发现照建议改", "建议类发现告诉用户，由用户定", "不得为通过评审删掉内容或来源"]) assert.ok(body.includes(words), words);
 });
 
-test("平台 skill 写明 PDF 材料怎样读、出处怎样写：读投影、每块一行、表格按行不分格、摘录不跨页、没有文字的页那一行的意思、分段清单按页", () => {
+test("平台说明写明 PDF 材料怎样读、出处怎样写：读投影、每块一行、表格按行不分格、摘录不跨页、没有文字的页那一行的意思、分段清单按页", () => {
   const body = bodyOf(PLATFORM);
   for (const words of ["每份 PDF 材料有几页、几块、哪几页没有文字", "PDF 材料只读它的文字版，就是它旁边同名加 .md 的文件（例如 inputs/x.pdf.md），不要 read .pdf 本身",
     "文字版每块一行，行首方括号里是页与块，例如 `[p3-2]` 是第 3 页的第 2 块", "以 `>` 开头的行是页眉页脚，没有页与块，不能作出处",
@@ -132,7 +123,7 @@ test("平台 skill 写明 PDF 材料怎样读、出处怎样写：读投影、�
   assert.ok(body.includes("（这一页没有文字，可能是扫描件）"));
 });
 
-test("平台 skill 写明知识库什么时候必须查、怎样查（用查找知识库这一个办法，两路并行）、查到的片段怎样照抄、来源怎样记", () => {
+test("平台说明写明知识库什么时候必须查、怎样查（用查找知识库这一个办法，两路并行）、查到的片段怎样照抄、来源怎样记", () => {
   const body = bodyOf(PLATFORM);
   // 什么时候必须查：材料把具体内容指给别的文档时，不以用户提没提知识库为条件。
   for (const words of ["必须到知识库里把那条具体规定查出来，把规定本身写进条目", "这一条不看用户有没有提到知识库", "保存之前对照材料数一遍"]) assert.ok(body.includes(words), words);
@@ -180,7 +171,7 @@ test("执行者的工具清单是十二个：含请求评审、查找知识库�
   assert.ok(!("开发期开关" in DEV_PROFILE), "评审门禁做出来之后开发期开关退役");
 });
 
-test("同批引用：平台 skill 写明可以引用同一批里排在前面的新增条目；任务 skill 仍把问题条目放在最后一批", () => {
+test("同批引用：平台说明写明可以引用同一批里排在前面的新增条目；任务 skill 仍把问题条目放在最后一批", () => {
   const platform = bodyOf(PLATFORM);
   assert.ok(platform.includes("问题条目的关联条目只能填已经存在的条目，或者同一批里排在它前面新增的条目"));
   assert.ok(platform.includes("也可以写同一批里排在前面的新增操作将要拿到的编号"));
@@ -213,35 +204,32 @@ test("两层 skill 都不提已经退役的工具与角色", () => {
   }
 });
 
-test("任务 skill 指向平台 skill", () => {
+test("任务 skill 指向平台说明，不再提早先的平台说明", () => {
   assert.ok(TASK_SKILLS.length > 0);
-  for (const path of TASK_SKILLS) assert.ok(readFileSync(path, "utf-8").includes("taskwright-executor"), shown(path));
+  for (const path of TASK_SKILLS) {
+    const text = readFileSync(path, "utf-8");
+    assert.ok(text.includes("平台说明"), shown(path));
+    assert.ok(!text.includes("taskwright-executor"), shown(path));
+  }
 });
 
 test("需求规格任务的 skill 用新的集合名「问题」", () => {
-  const body = readFileSync(join(ROOT, "task-types", "srs-authoring", ".pi", "skills", "srs-authoring", "SKILL.md"), "utf-8");
+  const body = readFileSync(join(ROOT, "task-types", "requirements-engineering", ".pi", "skills", "requirements-engineering", "SKILL.md"), "utf-8");
   assert.ok(!body.includes("待定与范围外事项"));
   assert.ok(!body.includes("待定事项"));
   assert.ok(body.includes("「问题」集合里的条目叫问题条目，编号前缀是 TBD"));
 });
 
-test("系统提示先读平台 skill，且不提领域", () => {
+test("启动配置的系统提示就是有阶段的任务用的那一份，且不提领域", () => {
+  assert.equal(DEV_PROFILE.system_prompt_file, "agent/prompts/stages/system.md");
   const text = readFileSync(join(ROOT, DEV_PROFILE.system_prompt_file), "utf-8");
   assert.ok(text.startsWith("你是 Taskwright 的执行者"));
-  assert.ok(text.includes("先用 read 读 taskwright-executor 的正文，再读任务 skill 的正文"));
   assert.ok(!text.includes("需求工程"));
 });
 
-test("系统提示写明知识库的三条规矩：材料指向别的文档时必须查、查知识库用查找这一个工具且查到的就是逐字的原文、不一次整份读大文件", () => {
+test("系统提示一律说「知识库」，不简称「库」，不用写给开发者看的词；知识库的规矩写在平台说明第二节第 4 条", () => {
   const text = readFileSync(join(ROOT, DEV_PROFILE.system_prompt_file), "utf-8");
-  for (const words of [
-    "7. 材料里把具体规定指给了别的文档（例如「按公司规范执行」「见术语表」）时，必须到知识库里把那条规定查出来写进条目，并记来源；查法见 taskwright-executor 第二节第 4 条。",
-    "8. 查知识库用 search_knowledge 这一个工具；不要用 grep 去翻知识库，命中太多也拿不全。查到的片段就是逐字的原文，摘录从片段逐字抄，不必再读知识库文件核对。",
-    "9. 不要一次整份读大文件：长材料照 taskwright-executor 第二节第 1 条按块读。",
-  ]) assert.ok(text.includes(words), words);
-  // 三条都写在「怎样工作」里，在「底线」之前。
-  assert.ok(text.indexOf("9. 不要一次整份读大文件") < text.indexOf("## 底线"));
-  // 一律说「知识库」，不简称「库」；不用这几个写给开发者看的词；路径拦截撤掉了，不再说哪个工具不能用。
   assert.doesNotMatch(text.replaceAll("知识库", ""), /库/);
   for (const word of ["检索", "向量", "进程", "项目", "不能用 grep", "也不能用 ls", "读原文核对"]) assert.ok(!text.includes(word), word);
+  assert.match(bodyOf(PLATFORM), /\n4\. \*\*知识库怎样用。\*\*/);
 });

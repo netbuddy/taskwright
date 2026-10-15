@@ -29,7 +29,7 @@ const material = (path: string): Material => ({ path, bytes: 2048, modified_at: 
 
 function detail(over: Partial<TaskDetail> = {}): TaskDetail {
   return {
-    task_id: "TASK-P", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "2026-10-13T08:00:00",
+    task_id: "TASK-P", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "2026-10-13T08:00:00",
     definition: { collections: [] }, items: [], completion: null, latest_revision: 0, sessions: [], materials: [], knowledge_libraries: ["general"], ...over,
   } as unknown as TaskDetail;
 }
@@ -372,7 +372,7 @@ describe("从待处理事项进入澄清的输入页", () => {
   const withQuestions = detail({
     definition: { collections: [QUESTIONS] }, stage: { current: "idle", moved_by: null, moved_at: null, reason: null, lamps },
     items: [q("TBD-001", "续借次数是否设上限", "阻断下游"), q("TBD-002", "预约保留期多长", "不阻断"),
-      { ...q("OA-003", "逾期不能续借", ""), collection: "总体分析", fields: {} }],
+      { ...q("OA-003", "逾期不能续借", ""), collection: "业务说明", fields: {} }],
   } as unknown as Partial<TaskDetail>);
   const filled = statusOf({ assets: assets({ description: 3 }) });
 

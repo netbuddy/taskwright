@@ -75,12 +75,10 @@ test("用户的话：出处由工具代填成「会话编号#会话条目编号�
   assert.match(error.message, /act\.basis 的第 1 条引用的用户的话「五天内办完」在对话里没有找到。\n   怎么办：请逐字摘录用户说过的原话。/);
 });
 
-test("条目：摘录逐字出自那个还在的条目；早期版本的名字「领域说明」照收；摘录不在其中、条目不存在，都拒绝", () => {
+test("条目：摘录逐字出自那个还在的条目；摘录不在其中、条目不存在，都拒绝", () => {
   const dir = workspace();
   const ok = checkReply(suggest([{ kind: "条目", locator: "DN-001", excerpt: "区分大小写" }]), facts(dir));
   assert.deepEqual(ok.act?.basis, [{ kind: "条目", locator: "DN-001", excerpt: "区分大小写" }]);
-  const old = checkReply(suggest([{ kind: "领域说明", locator: "DN-001", excerpt: "区分大小写" }]), facts(dir));
-  assert.deepEqual(old.act?.basis, [{ kind: "条目", locator: "DN-001", excerpt: "区分大小写" }]);
   const error = rejection(dir, [{ kind: "条目", locator: "DN-001", excerpt: "不区分大小写" },
     { kind: "条目", locator: "UC-009", excerpt: "退款" }]);
   assert.match(error.message, /act\.basis 的第 1 条的摘录「不区分大小写」在 DN-001 的当前修订里找不到/);

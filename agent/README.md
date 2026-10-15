@@ -45,7 +45,7 @@
 | **命令行入口（`cli/`，不经 pi）** | 给不在 Node 里的程序（观测台）与手工使用，起 Node 子进程调用。 |
 | `cli/create_task.mts` | 创建任务：给一个已经放好起始文件的任务目录写任务记录，发起方 `user`。任务服务在进程里直接调用同一个核心函数（`backend/src/workspace.ts`），这个入口留给手工建任务与测试。 |
 | `cli/render.mts` | 排版：标准输入给一次工具结果，标准输出拿回排好的几行；观测台的任务页用它（`observatory/taskwright_observatory/taskpage.py`）。 |
-| `cli/overall_state.mts` | 总体分析的几样计算结果：给库文件与任务编号，标准输出拿回每个条目待不待核实、每一页被哪些地方提到、各页贴没贴标签与有几条例子（`lib/overall_read.ts` 的 `overallState`）；模拟器的评测用它（`sim/lamps.py`）。库以只读方式打开。 |
+| `cli/overall_state.mts` | 业务说明的几样计算结果：给库文件与任务编号，标准输出拿回每个条目待不待核实、每一页被哪些地方提到、各页贴没贴标签与有几条例子（`lib/overall_read.ts` 的 `overallState`）；模拟器的评测用它（`sim/lamps.py`）。库以只读方式打开。 |
 | `tests/` | 单元测试。它们直接测 `lib/` 里的核心函数，不经过 pi，也不经过模型。 |
 
 `lib/` 下的模块都不依赖 pi，是普通的函数；`tools/` 下的文件只做登记与形状转换。
@@ -91,7 +91,7 @@
 `TASK_CREATED` 事件。它不再登记成执行者的工具；任务服务在进程里直接调用它，手工建任务时经 `cli/create_task.mts`：
 
 ```
-node cli/create_task.mts --dir <任务目录> --definition docs/task-definitions/srs-authoring.json --op-id ui-op-… [--name 任务名] [--tag 领域标签]
+node cli/create_task.mts --dir <任务目录> --definition docs/task-definitions/requirements-engineering.json --op-id ui-op-… [--name 任务名] [--tag 领域标签]
 ```
 
 **保存修订**（`save_revision`，参数 `operations`：操作列表）。每个操作是新增、修改、删除三种之一：
@@ -107,7 +107,7 @@ node cli/create_task.mts --dir <任务目录> --definition docs/task-definitions
 当前所在的修订号；它与库里的不符时整批拒绝，拒绝的话写明「条目 UC-001 已经被用户改到修订 9（你看到的是修订 4），请先读最新内容再改」
 并附上当前内容，「被谁改」取自那次修订的事件的发起方。
 
-每条来源是 `{ "kind": "文档原文" | "用户的话" | "助手补充" | "条目" | "图", "locator": "…", "excerpt": "…", "supports": [ … ] }`。「条目」的出处写所依据的那个条目的编号，工具核对它还在、摘录逐字出自它的当前内容，并记下引用时它的修订号；「图」的出处写所依据的那张图的编号（例如 D-002），工具核对它还在，摘录可以是空的、写了要逐字出自它现在的 Mermaid 文本，并记下引用时它自己的修订号，只有条目能依据图；「助手补充」不写出处，摘录写理由，不能为空。早期版本的两个名字「执行者补充」「领域说明」照收，存成「助手补充」「条目」。来源表另收一种：「用户直接修改」（只有早期版本的系统写过，助手填它会被拒绝）。
+每条来源是 `{ "kind": "文档原文" | "用户的话" | "助手补充" | "条目" | "图", "locator": "…", "excerpt": "…", "supports": [ … ] }`。「条目」的出处写所依据的那个条目的编号，工具核对它还在、摘录逐字出自它的当前内容，并记下引用时它的修订号；「图」的出处写所依据的那张图的编号（例如 D-002），工具核对它还在，摘录可以是空的、写了要逐字出自它现在的 Mermaid 文本，并记下引用时它自己的修订号，只有条目能依据图；「助手补充」不写出处，摘录写理由，不能为空。来源表另收一种：「用户直接修改」（只有早期版本的系统写过，助手填它会被拒绝）。
 `supports` 写这条来源支持哪几处，每项是 `{ "field": 字段名 }` 或 `{ "field": 字段名, "index": 列表里的第几项（从 0 起） }`，
 不写或空列表表示支持整个条目；字段必须是这个集合声明的、改后的内容里不为空的，`index` 只用于列表型字段并且小于项数。
 种类是「用户的话」时模型不填出处：工具在当前会话分支的用户消息里，从最近往前找逐字包含摘录的那一条，
@@ -139,10 +139,11 @@ node --test 'tests/*.test.ts'
 `backend/src/launch.ts` 的 `buildCommand`。几点要紧的：
 
 - `--tools` 白名单以 `backend/profiles/dev.json` 为准：read 读文件，ls 列出目录里有哪些文件（两者都是 pi 自带的只读工具），其余是本目录登记的工具。白名单里必须写上自定义工具的名字，漏写时模型看不到它。`create_task` 已从白名单去掉。不开放 find、grep、bash。
-- 系统提示用 `--system-prompt` 整体替换成执行者自己的系统提示（`backend/prompts/executor_system_prompt.md`）。
-- 启动配置关掉了 pi 的技能自动发现（`--no-skills`），免得本机全局目录里的技能混进来；技能改用 `--skill` 显式加载，
-  先传平台 skill `--skill <代码仓>/agent/prompts/skills/taskwright-executor`（本目录 `prompts/skills/` 下，所有任务类型共用，
-  写在启动配置的 `platform_skill` 一项），再传任务目录里的 `--skill <任务目录>/.pi/skills`。先后决定 pi 的 skill 清单里的顺序。
+- 系统提示用 `--system-prompt` 整体替换成执行者自己的系统提示（`agent/prompts/stages/system.md`）。每一次运行之前，
+  扩展再按这条会话的工作项把系统提示换成拼好的一份（系统提示、平台说明、任务类型说明、现在这个阶段，见 `prompts/stages/README.md`）；
+  启动参数里的那一份只在拼不成时沿用，扩展也靠它认出 pi 接在后面的那一截。
+- 启动配置关掉了 pi 的技能自动发现（`--no-skills`），免得本机全局目录里的技能混进来；只用 `--skill <任务目录>/.pi/skills`
+  显式加载任务类型的 skill。所有任务类型共用的平台说明不是 skill，是 `prompts/stages/common.md`。
 
 ## 怎么核对三类代码的边界
 

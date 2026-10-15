@@ -248,6 +248,48 @@ def gate_rows(sessions: list[dict]) -> list[dict]:
     return sorted(buckets.values(), key=lambda b: -b["发生次数"])
 
 
+#: 被拒而库里没有原因码的两种情形在表里的写法。
+NO_CODE = "（没有原因码）"
+NO_RECORD = "（没有拒绝记录）"
+
+
+def reason_code_rows(sessions: list[dict], rejections_by_call: dict[str, list[dict]],
+                     tool_names: dict[str, str] | None = None) -> list[dict]:
+    """三、门禁统计的第二张表「每百次调用被拒次数，按原因码」：每个工具的每个原因码一行。
+
+    分母是这个工具在这些会话的归档里一共被调用了几次；分子是其中被拒、而且任务库的拒绝记录里带着这个原因码的次数。
+    分子从归档里被拒的那些调用出发、按调用编号去找拒绝记录，所以没有归档的会话（例如导入的数据包不带归档）
+    分母分子都不算。一次拒绝里同一个原因码出现几次只算一次。
+    格式 9 之前记下的拒绝没有原因码，合成一行「没有原因码」；被拒而库里没有记录的（不算输入问题的拒绝，
+    或者 pi 自己按参数格式拦下的）合成一行「没有拒绝记录」。
+    """
+    names = tool_names or {}
+    calls: dict[str, int] = {}
+    buckets: dict[tuple[str, str], dict] = {}
+    for session in sessions:
+        for call in _calls_of(session):
+            tool = call["工具"]
+            calls[tool] = calls.get(tool, 0) + 1
+            if call["是否被拒"] is not True:
+                continue
+            records = [one for one in rejections_by_call.get(call["调用编号"], [])
+                       if one.get("会话编号") in (None, "", session["会话编号"])]
+            if not records:
+                records = [{"全部原因码": [NO_RECORD], "原因种类": ""}]
+            for record in records:
+                for code in dict.fromkeys(record.get("全部原因码") or [NO_CODE]):
+                    bucket = buckets.setdefault((code, tool), {"原因码": code, "工具": tool, "工具中文名": names.get(tool, ""),
+                                                               "被拒次数": 0, "其中记作缺前置步骤": 0})
+                    bucket["被拒次数"] += 1
+                    bucket["其中记作缺前置步骤"] += int(record.get("原因种类") == "缺前置步骤")
+    rows = []
+    for bucket in buckets.values():
+        total = calls.get(bucket["工具"], 0)
+        rows.append({**bucket, "调用次数": total,
+                     "每百次调用被拒次数": round(bucket["被拒次数"] * 100 / total, 1) if total else None})
+    return sorted(rows, key=lambda row: (-row["被拒次数"], row["工具"], row["原因码"]))
+
+
 def stderr_items(sessions: list[dict]) -> list[dict]:
     """四、pi 标准错误里的扩展报错。"""
     launches = _launches_of(sessions)
@@ -372,7 +414,9 @@ def langfuse_items(sessions: list[dict], link_status: dict | None) -> list[dict]
 
 def build_health(sessions: list[dict], workspaces: list[dict],
                  touched_workspaces: set[str] | None,
-                 link_status: dict | None = None) -> dict:
+                 link_status: dict | None = None,
+                 rejections_by_call: dict[str, list[dict]] | None = None,
+                 tool_names: dict[str, str] | None = None) -> dict:
     """把上面几组检查合成一页。sessions 已经按当前范围筛过了。"""
     return {
         "分组": [
@@ -390,6 +434,15 @@ def build_health(sessions: list[dict], workspaces: list[dict],
                     "因为模型被拒之后常常先回过头问一句，真正改过来的那次调用落在下一次运行里。"
                     "拒绝原因按工具返回的原文归类，观测台不认任何写死的文案。",
             "行": gate_rows(sessions),
+        },
+        "原因码": {
+            "说明": "每个工具的每个原因码一行。原因码是工具拒绝时记进任务库的那一项（agent/prompts/runtime/ 下 rejections_*.md 里拒绝语的键，"
+                    "前两段）。分母是这个工具在当前范围的归档里一共被调用了几次，分子是其中被拒、而且拒绝记录里带着这个原因码的次数；"
+                    "没有归档的会话（例如导入的数据包不带归档）不算在内。一次拒绝有几个原因时每个原因码各算一次，同一个原因码只算一次。"
+                    "「记作缺前置步骤」是这次拒绝的第一个原因码属于守门类（还没写理解、阶段不对、用户还没同意等）。"
+                    "早先的版本记下的拒绝没有原因码，合成「没有原因码」一行；被拒而库里没有记录的"
+                    "（不算输入问题的拒绝，或者 pi 自己按参数格式拦下的）合成「没有拒绝记录」一行。",
+            "行": reason_code_rows(sessions, rejections_by_call or {}, tool_names),
         },
         "统计": {
             "会话数": len([s for s in sessions if not s["启动失败"]]),

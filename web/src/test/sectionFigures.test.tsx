@@ -77,7 +77,7 @@ function Panel({ t, first = "OA-002", readOnly = false, writesOff = false, spies
   const [selected, setSelected] = useState<string | null>(first);
   return (
     <Wrap>
-      <ItemsPanel task={t} initialCollection={from.collection ?? "总体分析"} initialDiagram={from.diagram ?? null} initialDiagrams={from.diagrams ?? false} readOnly={readOnly} writesOff={writesOff} recentlyChanged={[]} pendingItems={new Set()} latestRevision={t.latest_revision}
+      <ItemsPanel task={t} initialCollection={from.collection ?? "业务说明"} initialDiagram={from.diagram ?? null} initialDiagrams={from.diagrams ?? false} readOnly={readOnly} writesOff={writesOff} recentlyChanged={[]} pendingItems={new Set()} latestRevision={t.latest_revision}
         selected={selected} onSelect={setSelected} submit={(spies.submit ?? vi.fn(async () => null)) as never} onGenerateDoc={() => {}}
         onDiagramViewed={spies.viewed as never} onDiagramDirty={spies.dirty as never} />
     </Wrap>

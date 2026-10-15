@@ -22,7 +22,8 @@
  */
 
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
-import { GATE_MISSING_TEXT, INTENT_GATE_TEXT } from "./intent_schema.ts";
+import { understandingGateOf } from "./intent_schema.ts";
+import { fillText } from "./texts.ts";
 import { REPLY_TOOL_NAME } from "./reply.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 
@@ -33,7 +34,7 @@ export const REJECTION_LIMIT = 5;
 export const GATED_TOOL_NAMES: readonly string[] = ["save_revision", "save_diagram", "publish_version"];
 
 /** 停下时接在拒绝原因后面的那句话。模型此后不会再被请求，这句话留在会话记录里给人看。 */
-export const STOPPED_TEXT = `这一轮已经连续 ${REJECTION_LIMIT} 次没有按规矩回答，这次运行到此停下。`;
+export const STOPPED_TEXT = fillText("result.stopped", { limit: REJECTION_LIMIT });
 
 /** 停下这件事经状态栏报给后端用的键名（后端补记，观测台看得到）。 */
 export const STOPPED_STATUS_KEY = "taskwright-reply-stopped";
@@ -43,8 +44,7 @@ export type RefusalKind = "understanding_missing" | "understanding_invalid" | "f
 
 /** 按拒绝的文字认它是哪一种。 */
 export function refusalKind(text: string): RefusalKind {
-  if (!text.includes(INTENT_GATE_TEXT)) return "form";
-  return text.includes(GATE_MISSING_TEXT) ? "understanding_missing" : "understanding_invalid";
+  return understandingGateOf(text) ?? "form";
 }
 
 type BranchEntry = { type: string; message?: { role?: string; toolName?: string; isError?: boolean; content?: unknown } };
@@ -67,7 +67,7 @@ export function consecutiveRefusals(branch: BranchEntry[]): number {
       count += 1;
     } else if (role === "toolResult" && GATED_TOOL_NAMES.includes(toolName ?? "")) {
       if (entry.message.isError !== true) break;
-      if (textOfContent(entry.message.content).includes(INTENT_GATE_TEXT)) count += 1;
+      if (understandingGateOf(textOfContent(entry.message.content)) !== null) count += 1;
     } else if (role === "user") {
       if (textOfContent(entry.message.content).trim() !== FALLBACK_TEXT) break;
     }
@@ -75,9 +75,9 @@ export function consecutiveRefusals(branch: BranchEntry[]): number {
   return count;
 }
 
-/** 这个异常是不是「先写理解」那道门的拒绝。 */
+/** 这个异常是不是「先写理解」那道门的拒绝：按它带的原因码认。 */
 export function isUnderstandingGate(error: unknown): boolean {
-  return error instanceof ToolRejection && error.reasonKind === "gate" && error.message.includes(INTENT_GATE_TEXT);
+  return error instanceof ToolRejection && error.codes.some((code) => code === "gate.understanding_missing" || code === "gate.understanding_invalid");
 }
 
 /** 「出错并结束本次运行」的工具结果。 */

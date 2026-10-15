@@ -1,4 +1,4 @@
-/* 条目区的「总体分析」页签（components/work/overall/）：左边提纲、右边主题页。类名都以 oa- 开头，
+/* 条目区的「业务说明」页签（components/work/overall/）：左边提纲、右边主题页。类名都以 oa- 开头，
  * 颜色只用 styles.css 里的令牌，尺寸写 rem；两种界面风格结构相同。最小的字是 0.857rem。
  * 条目区（.items-body）本来是整块上下滚动；停在这个页签时它不滚，提纲与主题页各滚各的。 */
 .app .items-body.oa-body { overflow: hidden; display: flex; }

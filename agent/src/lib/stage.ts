@@ -1,17 +1,19 @@
 /**
- * 工作的阶段：任务定义里有「总体分析」集合的任务，工作分六个阶段——核读材料、澄清、整理建模、写条目、评审确认、编写文档。
+ * 工作的阶段：任务定义里有「业务说明」集合的任务，工作分六个阶段——核读材料、澄清、整理建模、写条目、评审确认、编写文档。
  * 阶段由用户或助手的动作移动，每次移动留一条记录；助手每次调用写入工具时能写什么，由最近一条记录决定。
  *
  * 本文件只放不读库的东西：六个阶段的名字与次序、谁能从哪里移到哪里、每个阶段助手能写什么与被拦时的原话、
  * 提议进入写条目的那张卡片的两个选项，以及每个阶段「这一段还差什么」的几盏灯（一共二十一盏）怎样算。读写库的在 lib/stage_read.ts。
  *
- * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，这里的一切对它们都不生效；判据是 overall_analysis.ts 的 hasOverall。
+ * 早先建的任务（任务定义里没有「业务说明」集合）没有阶段，这里的一切对它们都不生效；判据是 overall_analysis.ts 的 hasOverall。
  *
  * 本文件除了 overall_analysis.ts 与 overall_chapters.ts（它也只导入前者）不导入别的模块：助手的工具、后端的快照都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
  */
 
 import { OVERALL_FIELDS, isDeprecated, tagsOf } from "./overall_analysis.ts";
 import { CHAPTERS, CHAPTER_DECISIONS, CHAPTER_RULES, chapterOfLabels } from "./overall_chapters.ts";
+import { fillText, refusalText } from "./shared_texts.ts";
+import type { RefusalText } from "./texts_core.ts";
 
 /** 六个阶段在库里与接口里的写法，按先后排。 */
 export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing", "document"] as const;
@@ -60,7 +62,7 @@ export function stageByName(name: unknown): Stage | null {
 /**
  * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它已经归档（它的工作项被删除了）。它不是一个阶段，
  * 不排在 STAGES 的次序里，也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「这条会话现在在哪里」的那几处。它与 null 不是一回事：
- * null 是早先建的任务（任务定义里没有「总体分析」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
+ * null 是早先建的任务（任务定义里没有「业务说明」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
  * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED）。启动哪一项活动由用户在任务起点页上定。
  */
 export const IDLE = "idle";
@@ -166,19 +168,16 @@ export function stageBackedBy(key: unknown): Exclude<Stage, "document"> | null {
 /** 怎样提议退回某个阶段：告诉助手用哪张卡片、两个选项怎样写。 */
 export function backCardGuidance(to: Exclude<Stage, "document">): string {
   const back = BACK_OPTIONS[to];
-  return `请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 ${back.key}「${back.text}」、${STAY_HERE_OPTION.key}「${STAY_HERE_OPTION.text}」`;
+  return fillText("part.back_card", { back_key: back.key, back_text: back.text, stay_key: STAY_HERE_OPTION.key, stay_text: STAY_HERE_OPTION.text });
 }
 
-/** 回复里写了已经停用的 stage 时的拒绝：事实与怎么办。 */
-export const STAGE_PARAM_RETIRED: Refusal = [
-  "回复里写了 stage（或 reason），这两项已经停用：阶段不由你移动，任务还在原来的阶段",
-  "往前进入下一段，用进入下一段的请选择卡片提议；这一段的输入大面积不能用、要退回前面的阶段，用请选择卡片提议退回并在问句里写明原因，" +
-    `两个选项的键与文字照这样写：${Object.values(BACK_OPTIONS).map((one) => `${one.key}「${one.text}」`).join("、")}里要退到的那一个，与 ${STAY_HERE_OPTION.key}「${STAY_HERE_OPTION.text}」；都由用户在卡片上点。` +
-    "只是有一处没弄明白时不要退回：记一条问题条目，在那一处标「待定」，接着做这一段",
-];
+/** 回复里写了已经停用的 stage 时的拒绝：原因码、事实与怎么办。 */
+export const STAGE_PARAM_RETIRED: Refusal = refusalText("reply.stage_param_retired", {
+  back_options: Object.values(BACK_OPTIONS).map((one) => `${one.key}「${one.text}」`).join("、"), stay_key: STAY_HERE_OPTION.key, stay_text: STAY_HERE_OPTION.text,
+});
 
 /**
- * 总体分析还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
+ * 业务说明还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
  * 页面点了按钮先把任务移到那个阶段、再发这一句；它们不是用户自己打的字，整理用户说过的话时要认出来。
  */
 export const STAGE_START_TEXTS = {
@@ -228,7 +227,7 @@ export function forwardCardGuidance(from: Stage): string {
   const next = nextStage(from);
   if (next === null || from === "document") return "";
   const enter = ENTER_OPTIONS[next], stay = STAY_OPTIONS[from];
-  return `请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 ${enter.key}「${enter.text}」、${stay.key}「${stay.text}」`;
+  return fillText("part.forward_card", { enter_key: enter.key, enter_text: enter.text, stay_key: stay.key, stay_text: stay.text });
 }
 
 /**
@@ -262,22 +261,22 @@ export type StartHow = "move" | "launch" | "resume" | "alone";
  */
 export function activityStartSentence(how: StartHow, to: Stage, from: Position): string {
   const name = STAGE_NAMES[to];
-  if (how === "move") return `用户把工作项从${positionName(from)}移到${name}。`;
-  const was = from === IDLE ? "" : `（原来在做：${STAGE_NAMES[from]}）`;
+  if (how === "move") return fillText("stage.start_move", { from: positionName(from), to: name });
+  const was = from === IDLE ? "" : fillText("stage.start_was", { activity: STAGE_NAMES[from] });
   const flow = FLOW_NAMES[FLOW_ANALYSIS];
-  if (how === "launch") return `用户启动工作流程「${flow}」，从「${name}」开始。${was}`;
-  if (how === "resume") return `用户继续工作流程「${flow}」，从「${name}」接着。${was}`;
-  return `用户启动活动「${name}」。${was}`;
+  if (how === "launch") return fillText("stage.start_launch", { flow, to: name, was });
+  if (how === "resume") return fillText("stage.start_resume", { flow, to: name, was });
+  return fillText("stage.start_alone", { to: name, was });
 }
 
 /** 新建一条会话接着做一个进行中的工作项时，对话里那一句（不带「界面操作」的前缀）。name 是工作项的名字，node 是流程的工作项现在在哪一站。 */
 export function workItemContinuedSentence(name: string, node: Stage | null): string {
-  return `用户新建这条会话，接着做工作项「${name}」${node ? `，现在在「${STAGE_NAMES[node]}」这一站` : ""}。`;
+  return node ? fillText("stage.continued_at", { name, node: STAGE_NAMES[node] }) : fillText("stage.continued", { name });
 }
 
 /** 用户删除一个工作项时，对话里那一句（不带「界面操作」的前缀）。archived 是随之归档了几条会话。 */
 export function workItemDeletedSentence(name: string, archived: number): string {
-  return `用户删除工作项「${name}」${archived > 0 ? `，它的 ${archived} 条会话已归档` : ""}。`;
+  return archived > 0 ? fillText("stage.deleted_archived", { name, count: archived }) : fillText("stage.deleted", { name });
 }
 
 /** 范围说明最多多少个字：它要放进系统提示，太长的不收。 */
@@ -286,33 +285,30 @@ export const SCOPE_MAX_LENGTH = 2000;
 /** 对话里那一句后面接的范围说明：「范围说明：……」，末尾没有句号时补一个。没有写范围说明时是空文字。 */
 export function scopeSentence(scope: string): string {
   const said = scope.trim();
-  return said ? `范围说明：${said}${/[。！？.!?]$/.test(said) ? "" : "。"}` : "";
+  return said ? `${fillText("stage.scope", { scope: said })}${/[。！？.!?]$/.test(said) ? "" : "。"}` : "";
 }
 
 /**
  * 用户把流程的工作项移到了别的一站、助手先前在这个工作项里开着的提议因此作废时，对话里那一句后面加的半句：输入框上方「待决定」一行随之消失，
  * 让用户与助手都知道原因。用户做的正是提议的那一步（进入或者退回提议的那个阶段）时不加。
  */
-export const PROPOSAL_VOIDED_NOTE = "（助手先前的提议作废，回来后由助手重新提议）";
+export const PROPOSAL_VOIDED_NOTE = fillText("stage.proposal_voided");
 
 /**
  * 回复里写了 activity_done 而这条会话不在做单项活动的工作项时的拒绝：事实与怎么办。position 是这条会话现在在哪里
  * （流程的工作项的某一站，或者空闲）。流程里做完一段不由助手结束：用进入下一段的卡片提议，由用户点。
  */
 export function activityDoneRefusal(position: Position): Refusal {
-  if (position === IDLE) {
-    return ["回复里写了 activity_done，而本会话不属于任何工作项，没有活动可以汇报做完", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"];
-  }
+  if (position === IDLE) return refusalText("gate.activity_done_not_single_activity.idle");
   const forward = forwardCardGuidance(position);
-  return [
-    `回复里写了 activity_done，而本会话的工作项是工作流程，现在在${STAGE_NAMES[position]}阶段：这一项只在工作项是单项活动时用，流程里的阶段做完了不由你汇报`,
-    `去掉 activity_done 这一项再回复。${forward ? `这一段做完了要往前走，${forward}，由用户在卡片上点` : "这一段做完了，照这一段的说明请用户过目"}`,
-  ];
+  return refusalText("gate.activity_done_not_single_activity", {
+    stage: STAGE_NAMES[position], next: forward ? fillText("part.done_forward", { forward }) : fillText("part.done_review"),
+  });
 }
 
 /** 助手汇报单项活动的工作项做完时，对话里那条回复下面的一行。汇报只是一句话：工作项照旧留着，不改任何记录。 */
 export function activityDoneSentence(activity: Stage): string {
-  return `助手汇报：${STAGE_NAMES[activity]}做完了。`;
+  return fillText("stage.activity_done", { activity: STAGE_NAMES[activity] });
 }
 
 /** 需求分析从哪个节点启动：有材料从核读材料，没有材料从澄清。 */
@@ -400,7 +396,7 @@ export function launchView(facts: LaunchFacts): LaunchView {
 
 /**
  * 助手的一次写入属于哪一类：
- * page 总体分析的页；problem 问题条目；diagram 图；item 别的集合的条目（用例、非功能需求、约束这一类）；
+ * page 业务说明的页；problem 问题条目；diagram 图；item 别的集合的条目（用例、非功能需求、约束这一类）；
  * review 请求评审；publish 发布版本。
  */
 export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "publish";
@@ -425,8 +421,8 @@ export function canWrite(stage: Position, kind: WriteKind): boolean {
   return ALLOWED[stage].includes(kind);
 }
 
-/** 拒绝的两层文字：事实（现在在哪个阶段、拦下的是什么）与怎么办（这一步要先做什么、谁能移动）。 */
-export type Refusal = [fact: string, guidance: string];
+/** 拒绝的原因码与两层文字：事实（现在在哪个阶段、拦下的是什么）与怎么办（这一步要先做什么、谁能移动）。 */
+export type Refusal = RefusalText;
 
 const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", delete: "删除" };
 
@@ -435,57 +431,47 @@ const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", dele
  * 回去要由用户决定：助手发卡片提议退回并写明原因，用户点了才退。
  */
 function howToLeaveDocument(back: Exclude<Stage, "document">): string {
-  return `编写文档阶段只补写主题页的文字。要做这件事，得先回到${STAGE_NAMES[back]}：${backCardGuidance(back)}，由用户在卡片上点`;
+  return fillText("part.leave_document", { stage: STAGE_NAMES[back], back_card: backCardGuidance(back) });
 }
-
-/** 空闲时被拦的事实开头的那半句。 */
-const IDLE_FACT = "本会话不属于任何工作项";
 
 /**
- * 空闲时被拦怎么办：这件事要在哪一项活动里做（where），而启动哪一项活动由用户定——从任务起点页启动一个工作项。
- * 空闲时助手能做的与澄清相同：立主题页、改主题页、记问题条目。
+ * 空闲时被拦怎么办的后半句：启动哪一项活动由用户定——从任务起点页启动一个工作项。
+ * 空闲时助手能做的与澄清相同：立主题页、改主题页、记问题条目。前半句（这件事要在哪一项活动里做）在各条拒绝语的指引层里。
  */
-function howToLeaveIdle(where: string): string {
-  return `${where}。启动哪一项活动由用户决定：请用户从任务起点页启动一个工作项。本会话里你可以立主题页、改主题页、记问题条目`;
-}
+const howToLeaveIdle = (): string => fillText("part.leave_idle");
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
 function howToReachWriting(): string {
-  return `进入写条目要由用户在卡片上选「${START_ITEMS_TEXT}」：你可以先立页、请用户看，觉得理解够了就用请选择卡片提议`;
+  return fillText("part.reach_writing", { start_items: START_ITEMS_TEXT });
 }
 
 /**
- * 助手新增、修改或删除别的集合（不是总体分析、也不是问题）的条目：写条目之前的阶段都拦，空闲时也拦。
+ * 助手新增、修改或删除别的集合（不是业务说明、也不是问题）的条目：写条目之前的阶段都拦，空闲时也拦。
  * 可以写时返回 null。
  */
 export function itemRefusal(stage: Position, op: string, collection: string): Refusal | null {
   if (canWrite(stage, "item")) return null;
-  if (stage === IDLE) {
-    return [`${IDLE_FACT}，这时不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`, howToLeaveIdle(`「${collection}」的条目要在写条目这项活动里写`)];
-  }
-  if (stage === "document") {
-    return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`, howToLeaveDocument("reviewing")];
-  }
-  return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`,
-    `「${collection}」的条目要到写条目阶段才能写。${howToReachWriting()}`,
-  ];
+  const words = { op: OP_WORDS[op] ?? "写", collection };
+  if (stage === IDLE) return refusalText("gate.stage_item_write.idle", { ...words, leave_idle: howToLeaveIdle() });
+  if (stage === "document") return refusalText("gate.stage_item_write.document", { ...words, stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("reviewing") });
+  return refusalText("gate.stage_item_write", { ...words, stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
 /**
- * 助手新增、修改或删除总体分析的一页：前四个阶段与空闲时都可以；评审确认阶段只能改「状态」与「改看」两个字段，
+ * 助手新增、修改或删除业务说明的一页：前四个阶段与空闲时都可以；评审确认阶段只能改「状态」与「改看」两个字段，
  * 不能新立页、不能删页。changed 是修改时这次改动了的字段名。可以写时返回 null。
  */
 export function pageRefusal(stage: Position, op: string, changed: readonly string[] = []): Refusal | null {
   if (stage !== "reviewing") return null;
-  const guidance = `要动主题页的内容，得先回到澄清或整理建模：${backCardGuidance("clarifying")}，由用户在卡片上点`;
-  const head = `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段`;
-  if (op === "add") return [`${head}不能新立主题页`, guidance];
-  if (op === "delete") return [`${head}不能删除主题页`, guidance];
+  const common = { stage: STAGE_NAMES[stage], back_card: backCardGuidance("clarifying") };
+  if (op === "add") return refusalText("gate.stage_page_write.add", common);
+  if (op === "delete") return refusalText("gate.stage_page_write.delete", common);
   const allowed: string[] = [OVERALL_FIELDS.status, OVERALL_FIELDS.seeAlso];
   const others = changed.filter((name) => !allowed.includes(name));
   if (others.length === 0) return null;
-  return [`${head}主题页只能改「${OVERALL_FIELDS.status}」与「${OVERALL_FIELDS.seeAlso}」，这次还改了${others.map((name) => `「${name}」`).join("、")}`, guidance];
+  return refusalText("gate.stage_page_write.fields", {
+    ...common, status: OVERALL_FIELDS.status, see_also: OVERALL_FIELDS.seeAlso, fields: others.map((name) => `「${name}」`).join("、"),
+  });
 }
 
 /**
@@ -494,38 +480,29 @@ export function pageRefusal(stage: Position, op: string, changed: readonly strin
  */
 export function diagramRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "diagram")) return null;
-  if (stage === IDLE) return [`${IDLE_FACT}，这时不能画图、改图或删图`, howToLeaveIdle("图要在整理建模这项活动里画")];
-  if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`, howToLeaveDocument("modeling")];
+  if (stage === IDLE) return refusalText("gate.stage_diagram.idle", { leave_idle: howToLeaveIdle() });
+  if (stage === "document") return refusalText("gate.stage_diagram.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("modeling") });
   const enterModeling = ENTER_OPTIONS.modeling.text;
-  return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`,
-    stage === "reading"
-      ? `图要到整理建模阶段才能画。往前进入下一段要由用户在卡片上点，你只能提议：材料读完之后先提议进入澄清，${forwardCardGuidance("reading")}；澄清告一段落之后，再照同样的办法提议「${enterModeling}」`
-      : `图要到整理建模阶段才能画。进入整理建模要由用户在卡片上选「${enterModeling}」，你只能提议：澄清告一段落之后，${forwardCardGuidance("clarifying")}`,
-  ];
+  return stage === "reading"
+    ? refusalText("gate.stage_diagram.reading", { stage: STAGE_NAMES[stage], forward: forwardCardGuidance("reading"), enter_modeling: enterModeling })
+    : refusalText("gate.stage_diagram", { stage: STAGE_NAMES[stage], forward: forwardCardGuidance("clarifying"), enter_modeling: enterModeling });
 }
 
 /** 助手请求评审：写条目之前的阶段都拦，空闲时也拦。可以时返回 null。 */
 export function reviewRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "review")) return null;
-  if (stage === IDLE) return [`${IDLE_FACT}，这时不能请求评审`, howToLeaveIdle("评审要在写条目或评审确认这项活动里请求")];
-  if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能请求评审`, howToLeaveDocument("reviewing")];
-  return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，评审要到写条目阶段才能请求`,
-    `条目写出来之后再评审。${howToReachWriting()}`,
-  ];
+  if (stage === IDLE) return refusalText("gate.stage_review.idle", { leave_idle: howToLeaveIdle() });
+  if (stage === "document") return refusalText("gate.stage_review.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("reviewing") });
+  return refusalText("gate.stage_review", { stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
 /** 助手发布版本：评审确认与编写文档两个阶段可以，空闲时不可以。可以时返回 null。 */
 export function publishRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "publish")) return null;
-  if (stage === IDLE) return [`${IDLE_FACT}，这时不能发布版本`, howToLeaveIdle("发布版本要在评审确认或编写文档这项活动里做")];
-  return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，发布版本要在评审确认阶段`,
-    stage === "writing"
-      ? `条目写完之后，要由用户在卡片上选「${ENTER_OPTIONS.reviewing.text}」进入评审确认，再发布版本。${forwardCardGuidance("writing")}`
-      : `要先写条目、再由用户进入评审确认，才能发布版本。${howToReachWriting()}`,
-  ];
+  if (stage === IDLE) return refusalText("gate.stage_publish.idle", { leave_idle: howToLeaveIdle() });
+  return stage === "writing"
+    ? refusalText("gate.stage_publish.writing", { stage: STAGE_NAMES[stage], enter_reviewing: ENTER_OPTIONS.reviewing.text, forward: forwardCardGuidance("writing") })
+    : refusalText("gate.stage_publish", { stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
 // ───────────── 每个阶段还差什么：灯 ─────────────
@@ -616,7 +593,7 @@ export interface LampDiagram {
   marked?: boolean;
 }
 
-/** 算灯要的一个条目（总体分析以外的集合里的，含问题条目）。 */
+/** 算灯要的一个条目（业务说明以外的集合里的，含问题条目）。 */
 export interface LampItem {
   item_id: string;
   collection: string;
@@ -647,16 +624,16 @@ export interface LampQuestion {
 
 /** 算灯要的全部事实。助手一侧与后端各自从任务库里读出来填，算法只在这里。 */
 export interface LampInput {
-  /** 总体分析的全部页，含已废弃的。 */
+  /** 业务说明的全部页，含已废弃的。 */
   pages: LampPage[];
-  /** 总体分析以外各集合的条目，含问题条目。 */
+  /** 业务说明以外各集合的条目，含问题条目。 */
   items: LampItem[];
   questions: LampQuestion[];
   /** 任务定义里的集合名。 */
   collections: string[];
   /** 材料清单里不是由别的文件生成的文件，写它在任务目录里的路径（例如 inputs/需求.md）。 */
   materials: string[];
-  /** 总体分析的页与问题条目当前修订上「文档原文」来源的出处，原样（可以带 # 后面的位置）。 */
+  /** 业务说明的页与问题条目当前修订上「文档原文」来源的出处，原样（可以带 # 后面的位置）。 */
   citedDocuments: string[];
   /** 任务里还在的图。 */
   diagrams: LampDiagram[];
@@ -667,7 +644,7 @@ export interface LampInput {
   /** 完成条件：是不是全部满足；没满足的各条的说明。 */
   completion: { satisfied: boolean; unmet: string[] };
   /**
-   * 任务定义里有没有声明这两个字段：总体分析的「导语所属章」、问题集合的「是否阻断下游」。早先建的任务的定义里没有，
+   * 任务定义里有没有声明这两个字段：业务说明的「导语所属章」、问题集合的「是否阻断下游」。早先建的任务的定义里没有，
    * 与它们有关的灯是不适用。没有给当作都没有。
    */
   declared?: { intro: boolean; blocking: boolean };
@@ -813,7 +790,7 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   }
   const clashes = [...owners].filter(([, ids]) => ids.length > 1);
   const clashing = [...new Set(clashes.flatMap(([, ids]) => ids))];
-  const noDuplicates = live.length === 0 ? lamp("no_duplicate_titles", null, "总体分析里还没有主题。")
+  const noDuplicates = live.length === 0 ? lamp("no_duplicate_titles", null, "业务说明里还没有主题。")
     : clashes.length === 0 ? lamp("no_duplicate_titles", true, "没有两页主题的标题或别名相同。")
       : lamp("no_duplicate_titles", false,
         `有 ${clashes.length} 个标题或别名被两页以上的主题用了：${clashes.map(([word, ids]) => `「${word}」（${list(ids)}）`).join("、")}。`, clashing);
@@ -821,7 +798,7 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   // 整理建模：没有未归类的页。用户明说先不归类的，程序认不出，只看标签。
   // 导语页不贴标签，不算没归类。
   const loose = live.filter((one) => one.tags.length === 0 && !one.intro);
-  const noUntagged = live.length === 0 ? lamp("no_untagged_pages", null, "总体分析里还没有主题。")
+  const noUntagged = live.length === 0 ? lamp("no_untagged_pages", null, "业务说明里还没有主题。")
     : loose.length === 0 ? lamp("no_untagged_pages", true, "每页主题都贴了标签。")
       : lamp("no_untagged_pages", false, `有 ${loose.length} 页主题还没有贴标签：${list(loose.map((one) => one.item_id))}。`, loose.map((one) => one.item_id));
 
@@ -890,7 +867,7 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
     || (chapter.no === CHAPTER_RULES && settledTotal > 0)
     || (chapter.no === CHAPTER_DECISIONS && (tagged(TAG_DECISION).length > 0 || input.questions.some((one) => one.unresolved))));
   const bare = filled.filter((chapter) => !live.some((one) => one.intro === chapter.name && one.what));
-  const chaptersIntro = !input.declared?.intro ? lamp("chapters_have_intro", null, "任务定义的总体分析里没有「导语所属章」这个字段。")
+  const chaptersIntro = !input.declared?.intro ? lamp("chapters_have_intro", null, "任务定义的业务说明里没有「导语所属章」这个字段。")
     : filled.length === 0 ? lamp("chapters_have_intro", null, "业务说明的各章都还没有内容。")
       : bare.length === 0 ? lamp("chapters_have_intro", true, "有内容的章都有导语。")
         : lamp("chapters_have_intro", false, `有 ${bare.length} 章还没有导语：${bare.map((chapter) => `「${chapter.name}」`).join("、")}。`);

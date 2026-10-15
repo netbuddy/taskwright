@@ -6,7 +6,6 @@ export const STATUS: Record<string, number> = {
   not_found: 404,
   rejected: 422,
   stale_revision: 409,
-  old_format: 409,
   undo_conflict: 409,
   no_task: 409,
   session_busy: 409,

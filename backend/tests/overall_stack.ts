@@ -1,5 +1,5 @@
 /**
- * 带「总体分析」集合的测试任务：演示任务定义加这个集合（字段照产品的任务类型），经子进程里助手一侧真实的保存函数建库。
+ * 带「业务说明」集合的测试任务：演示任务定义加这个集合（字段照产品的任务类型），经子进程里助手一侧真实的保存函数建库。
  * 快照与文档渲染两份测试共用。
  */
 
@@ -15,11 +15,11 @@ export const MATERIAL = "读者对在架的书办预约。只有在架的书才�
 export const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者对在架的书办预约。" };
 export const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
 
-/** 演示任务定义加一个总体分析集合（字段照产品的任务类型）。 */
+/** 演示任务定义加一个业务说明集合（字段照产品的任务类型）。 */
 export const DEFINITION = {
   ...DEMO_DEFINITION,
   交付物: { ...DEMO_DEFINITION.交付物, 条目集合: [...DEMO_DEFINITION.交付物.条目集合, {
-    名称: "总体分析", 编号前缀: "OA", 界面: { 右侧栏页签: true, 分组字段: "标签", 靠前的组: ["概念"] },
+    名称: "业务说明", 编号前缀: "OA", 界面: { 分组字段: "标签", 靠前的组: ["概念"] },
     字段: [
       { 名: "标题", 类型: "文本", 必填: true }, { 名: "别名", 类型: "文本列表", 必填: false }, { 名: "它是什么", 类型: "文本", 必填: true },
       { 名: "例子", 类型: "文本列表", 必填: false }, { 名: "已经定下的", 类型: "文本列表", 必填: false },
@@ -29,7 +29,7 @@ export const DEFINITION = {
       { 名: "改看", 类型: "条目引用", 必填: false, 只许本集合: true, 至多一个: true },
     ],
   }] },
-  完成条件: { ...DEMO_DEFINITION.完成条件, 总体分析: ["每个条目用户确认"] },
+  完成条件: { ...DEMO_DEFINITION.完成条件, 业务说明: ["每个条目用户确认"] },
 };
 
 /**
@@ -68,8 +68,8 @@ export function userOps(ws: string, requests: Record<string, unknown>[]): (numbe
 }
 
 /** 一页合格的主题（贴了标签、有例子、不待核实）：有了它，助手才能往别的集合里新增条目。它的文字里没有别的页的词。 */
-export const READY = { op: "add", collection: "总体分析",
+export const READY = { op: "add", collection: "业务说明",
   fields: { 标题: "馆藏范围", 它是什么: "本馆全部可以外借的纸质图书。", 例子: ["《算法导论》在三楼科技书库。"], 标签: ["范围"], 状态: "在用" }, sources: [SOURCE] };
 
 export const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
-  ({ op: "add", collection: "总体分析", fields: { 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
+  ({ op: "add", collection: "业务说明", fields: { 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });

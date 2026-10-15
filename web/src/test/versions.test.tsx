@@ -31,7 +31,7 @@ function item(id: string, revision: number): Item {
 const diagram = (id: string, at: string) => ({ diagram_id: id, name: `${id} 图`, kind: "flowchart", kind_name: "流程图", revision_no: 2, revision_by: "executor", revision_at: at }) as unknown as DiagramRow;
 function task(over: Partial<Task> = {}): Task {
   return {
-    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
+    task_id: "TASK-001", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "",
     definition: { collections: [{ name: "功能用例", prefix: "UC", needs_review: false, review_rules: null, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] }] },
     completion: null, items: [item("UC-001", 3), item("UC-002", 5), item("UC-003", 6)], latest_revision: 6, versions: [version(1, 3), version(2, 5, { actor: "executor", note: "加了续借" })],
     diagrams: [diagram("D-001", "2026-10-13T08:00:00"), diagram("D-002", "2026-10-13T10:00:00")], ...over,

@@ -14,7 +14,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const info = (debug: boolean | undefined): ServiceInfo => ({ ok: true, app: "taskwright", version: "0.5.0", mode: "server", pid: 1, port: 8940,
   ...(debug === undefined ? {} : { debug }), capabilities: { exit: false, model: true, model_config: true, knowledge: false } });
-const TASK = { task_id: "TASK-P", task_name: "图书馆借还", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "2026-10-10T09:00:00",
+const TASK = { task_id: "TASK-P", task_name: "图书馆借还", task_type: "需求工程", domain_tag: null, started_at: "2026-10-10T09:00:00",
   definition: { collections: [] }, items: [], completion: null, latest_revision: 0, sessions: [], materials: [], knowledge_libraries: [] } as unknown as TaskDetail;
 const PERSONA = { 名字: "", 说明: "由任务「图书馆借还」（TASK-P）导出的草稿", 人设: "", 目标: "", 答不上的说法: [], 材料: ["材料.md"], 熟悉的材料: ["材料.md"], 材料说明: "",
   隐藏事实: [{ 事实: "预约的书到馆后留三天。", 关键词: [], 必须同时出现: [], 问到的迹象: [] }], 接受底线: [] };

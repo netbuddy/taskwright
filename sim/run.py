@@ -439,7 +439,7 @@ def run_once(args: argparse.Namespace, persona_path: Path, persona: dict, sim: P
     ua = None
     try:
         backend.wait_up()
-        status, created = backend.call("POST", "/tasks", {"task_type": "srs-authoring", "task_name": f"{persona['名字']}的需求整理（{tag}）"})
+        status, created = backend.call("POST", "/tasks", {"task_type": "requirements-engineering", "task_name": f"{persona['名字']}的需求整理（{tag}）"})
         task_id = created["task_id"]
         for name in persona.get("材料") or []:
             source = Path(args.materials_dir).expanduser() / name

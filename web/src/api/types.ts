@@ -105,16 +105,15 @@ export interface Completion {
   /** 一句话概括，与执行者看到的说法相同。 */
   brief?: string;
   conditions: CompletionCondition[];
-  /** 完成条件之外的提示，不是门禁。kind 为 unlinked_domain_notes：还没有和任何条目关联的领域说明（0.4 建的任务）；
-   *  untagged_overall_pages：总体分析里在用而还没有贴标签的主题。 */
+  /** 完成条件之外的提示，不是门禁。kind 为 untagged_overall_pages：业务说明里在用而还没有贴标签的主题。 */
   hints?: CompletionHint[];
 }
 
 export interface CompletionHint {
-  kind: "unlinked_domain_notes" | "untagged_overall_pages" | string;
+  kind: "untagged_overall_pages" | string;
   collection: string;
   items: string[];
-  /** 一句完整的话，例如「有 2 条领域说明还没有和任何条目关联：DN-003、DN-004。」 */
+  /** 一句完整的话，例如「有 2 页主题还没有贴标签：OA-003、OA-004。……」 */
   summary: string;
 }
 
@@ -147,10 +146,10 @@ export interface CollectionDef {
   fields: FieldDef[];
   /** 完成条件里对这个集合要求了「每个条目评审通过」。 */
   needs_review?: boolean;
-  /** 显示方式（任务定义的「界面」一项）：side_tab 在右侧栏另开页签，group_field 按这个字段分组并在条目行上写成小标签，
+  /** 显示方式（任务定义的「界面」一项）：group_field 按这个字段分组并在条目行上写成小标签，
    *  leading_groups 这几组按给定顺序排最前、其余按每组第一个条目的编号排，note 是写在这个集合页签下的一句白话。
    *  没写时为 null，照旧显示。 */
-  display?: { side_tab: boolean; group_field: string | null; leading_groups: string[]; note?: string | null } | null;
+  display?: { group_field: string | null; leading_groups: string[]; note?: string | null } | null;
   /** 这个集合的评审规则清单；没写评审规矩的集合为 null（评审只按字段声明）。 */
   review_rules?: ReviewRule[] | null;
   /** 规则文件里的全部规则，连同这个任务的开关状态；给评审页签的规则区用。 */
@@ -268,9 +267,9 @@ export interface Item {
   pending_sources?: number;
   /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
   pending_places?: { field: string | null; index: number | null }[];
-  /** 因依据而待核实：它依据的总体分析的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
+  /** 因依据而待核实：它依据的业务说明的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
   basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see: string | null } | null;
-  /** 只有总体分析的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */
+  /** 只有业务说明的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */
   mentioned_by?: Mention[];
 }
 
@@ -308,11 +307,11 @@ export interface Task {
   /** 评审批次，按先后；旧后端没有这一项。 */
   review_batches?: ReviewBatch[];
   /**
-   * 从总体分析的页与问题条目算出来的三张表（只算不存）：rules 规则表，goals 业务目标，decisions 决策记录与待澄清事项。
-   * 没有「总体分析」集合的任务是 null；早先的后端不给这一项。库事件里不带它，与待核实那几项一起另取（state/workState.ts 的 facts）。
+   * 从业务说明的页与问题条目算出来的三张表（只算不存）：rules 规则表，goals 业务目标，decisions 决策记录与待澄清事项。
+   * 没有「业务说明」集合的任务是 null；早先的后端不给这一项。库事件里不带它，与待核实那几项一起另取（state/workState.ts 的 facts）。
    */
   overall_views?: OverallViews | null;
-  /** 任务现在的工作阶段与每个阶段的几盏灯；早先建的任务（没有「总体分析」集合）没有阶段，是 null；旧后端没有这一项。 */
+  /** 任务现在的工作阶段与每个阶段的几盏灯；早先建的任务（没有「业务说明」集合）没有阶段，是 null；旧后端没有这一项。 */
   stage?: StageView | null;
   /** 发布过的各版，按版本号从小到大；早先的后端不给。 */
   versions?: VersionView[];
@@ -999,7 +998,7 @@ export interface TaskListEntry {
   /** 最近活动：会话里最近一条消息、最近一次启动或结束工作项、建任务，取最晚的那个时刻。 */
   last_active_at: string;
   session_count: number;
-  /** 为假时列出来但打不开，note 写明原因：修订统一之前建的旧格式任务，或者正被别的服务占用（这时有 occupied）。 */
+  /** 为假时列出来但打不开，note 写明原因：格式太早的旧格式任务，或者正被别的服务占用（这时有 occupied）。 */
   supported?: boolean;
   note?: string;
   /** 正被别的服务占用：那个服务的端口、进程号、主机名。 */
@@ -1215,7 +1214,6 @@ export type ErrorCode =
   | "bad_request"
   | "rejected"
   | "stale_revision"
-  | "old_format"
   | "undo_conflict"
   | "session_busy"
   | "executor_starting"
@@ -1454,7 +1452,7 @@ export interface ContextWindowResult {
  * 任务状况（GET /tasks/{task_id}/status）：程序据任务记录算出来的定位，不经助手。
  * activity 是当前活动：现在总是一个阶段（kind 为 stage），flow 是所属流程（现在恒为 analysis，需求分析）；一次都没有移动过时 moved_by、moved_at、reason 为 null。
  * description 是业务说明：sections 是在用的页数，chapters 是有节的各章（七章的先后），unsorted 是没有归到任何一章的在用页数，open_questions 是没有了结的待澄清问题数。
- * models 是还在的图按种类的张数；items 是总体分析与问题之外各集合的条目数与用户看过现在这一版的条数；
+ * models 是还在的图按种类的张数；items 是业务说明与问题之外各集合的条目数与用户看过现在这一版的条数；
  * missing 是现在这个阶段没有通过的灯；proposal 是开着的提议；versions 留给已发布的文档版本，现在恒为空。
  */
 /** 需求资产六类里一类的现状：任务起点页上的一格。 */

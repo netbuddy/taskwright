@@ -120,7 +120,7 @@ def parse_definition(text: str) -> dict:
             "编号前缀": entry.get("编号前缀", ""),
             "字段": [{"名": f.get("名", ""), "类型": f.get("类型", ""), "必填": bool(f.get("必填")),
                       "取值": f.get("取值")} for f in entry.get("字段") or [] if isinstance(f, dict)],
-            # 「界面」：只影响显示的可选项（右侧栏页签、分组字段、靠前的组），没写时为空对象。
+            # 「界面」：只影响显示的可选项（分组字段、靠前的组、说明），没写时为空对象。
             "界面": entry.get("界面") if isinstance(entry.get("界面"), dict) else {},
         })
     return {
@@ -290,9 +290,20 @@ def read_model_calls(conn: sqlite3.Connection, task_id: str) -> list[dict]:
 REJECTION_KINDS = {"input": "输入不合规", "gate": "缺前置步骤"}
 
 
+def _codes_of(row: sqlite3.Row) -> list[str]:
+    """一行拒绝记录的全部原因码（reason_codes 一列，JSON 数组）。格式 9 之前记下的行与没有这一列的库给空的。"""
+    if "reason_codes" not in row.keys() or not row["reason_codes"]:
+        return []
+    try:
+        codes = json.loads(row["reason_codes"])
+    except ValueError:
+        return []
+    return [str(one) for one in codes] if isinstance(codes, list) else []
+
+
 def read_tool_rejections(conn: sqlite3.Connection, task_id: str) -> list[dict]:
     """工具拒绝记录：执行者的一次工具调用被工具拒绝时记的一行（agent/src/lib/tool_rejection.ts）。
-    加这张表之前建的库没有它，给空的。"""
+    加这张表之前建的库没有它，给空的。原因码（格式 9 起才有）：「原因码」是第一个，「全部原因码」按出现的先后。"""
     if "tool_rejection" not in table_names(conn):
         return []
     return [{
@@ -302,6 +313,8 @@ def read_tool_rejections(conn: sqlite3.Connection, task_id: str) -> list[dict]:
         "工具调用编号": row["call_id"],
         "工具": row["tool_name"],
         "原因种类": REJECTION_KINDS.get(row["reason_kind"], row["reason_kind"]),
+        "原因码": row["reason_code"] if "reason_code" in row.keys() else None,
+        "全部原因码": _codes_of(row),
         "事实层": row["fact"],
         "指引层": row["guidance"] or "",
         "被拒输入摘录": row["input_excerpt"],

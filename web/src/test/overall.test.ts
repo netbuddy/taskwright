@@ -1,4 +1,4 @@
-// 总体分析在页面上的派生（model/overall.ts）：每行的计数、状态点的先后、底部总计、术语表、
+// 业务说明在页面上的派生（model/overall.ts）：每行的计数、状态点的先后、底部总计、术语表、
 // 哪几处是助手补的、说明里要标出的原话、节标题下那一行小字、依据它的条目、复述要发的话、复述卡片怎样认。数据是图书馆借阅的夹具。
 // 页怎样归章、排先后与编节号在 chapters.test.ts 与助手一侧的测试里核对。
 import { describe, expect, it } from "vitest";
@@ -8,13 +8,13 @@ import {
 } from "../model/overall";
 import { change, itemOf, overallTask } from "./fixtures/overallTask";
 
-describe("总体分析：各页与目录每行的计数", () => {
-  it("任务定义里有名叫总体分析的集合才有；页按编号排", () => {
+describe("业务说明：各页与目录每行的计数", () => {
+  it("任务定义里有名叫业务说明的集合才有；页按编号排", () => {
     const task = overallTask();
     expect(overallDef(task)?.prefix).toBe("OA");
     expect(pagesOf(task).map((p) => p.item_id)).toEqual(["OA-001", "OA-002", "OA-003", "OA-004", "OA-005", "OA-006", "OA-007", "OA-008", "OA-009", "OA-010", "OA-011"]);
     const old = overallTask();
-    old.definition.collections = old.definition.collections.filter((c) => c.name !== "总体分析");
+    old.definition.collections = old.definition.collections.filter((c) => c.name !== "业务说明");
     expect(overallDef(old)).toBeNull();
   });
 
@@ -37,7 +37,7 @@ describe("总体分析：各页与目录每行的计数", () => {
   });
 });
 
-describe("总体分析：一页里的内容", () => {
+describe("业务说明：一页里的内容", () => {
   it("待核实的页：助手补的是哪几处、理由是什么；不待核实的页一处都没有", () => {
     const task = overallTask();
     const page = itemOf(task, "OA-003");
@@ -154,8 +154,8 @@ describe("总体分析：一页里的内容", () => {
   });
 });
 
-describe("总体分析：确认待核实", () => {
-  // 夹具里总体分析是要求用户看过的集合（没有给完成条件时，不是问题条目一类的集合都算），所以别的页打开就会记已读。
+describe("业务说明：确认待核实", () => {
+  // 夹具里业务说明是要求用户看过的集合（没有给完成条件时，不是问题条目一类的集合都算），所以别的页打开就会记已读。
   const needsViewing = () => overallTask();
 
   it("打开待核实的页不记已读；不待核实、还没有看过的页照旧一打开就记", () => {
@@ -177,7 +177,7 @@ describe("总体分析：确认待核实", () => {
   });
 });
 
-describe("总体分析：该不该另取一次待核实与提到", () => {
+describe("业务说明：该不该另取一次待核实与提到", () => {
   it("修订号变了、有条目被确认了、条目多了或少了，记号都变；什么都没有发生时不变", () => {
     const task = overallTask();
     const key = factsKey(task, 12);
@@ -201,15 +201,15 @@ describe("总体分析：该不该另取一次待核实与提到", () => {
     expect(factsKey(fewer, 12)).not.toBe(key);
   });
 
-  it("没有总体分析的早先任务、任务还没有读到时，不用取", () => {
+  it("没有业务说明的早先任务、任务还没有读到时，不用取", () => {
     const old = overallTask();
-    old.definition.collections = old.definition.collections.filter((c) => c.name !== "总体分析");
+    old.definition.collections = old.definition.collections.filter((c) => c.name !== "业务说明");
     expect(factsKey(old, 12)).toBeNull();
     expect(factsKey(null, 0)).toBeNull();
   });
 });
 
-describe("总体分析：术语表", () => {
+describe("业务说明：术语表", () => {
   it("只收标签含概念、在用、不待核实的页；待核实的概念另列出来", () => {
     const task = overallTask();
     const got = glossary(task);
@@ -229,7 +229,7 @@ describe("总体分析：术语表", () => {
   });
 });
 
-describe("总体分析：依据它写的条目", () => {
+describe("业务说明：依据它写的条目", () => {
   it("依据这一页写的条目，按编号；没有条目依据的页一条都没有", () => {
     const task = overallTask();
     expect(dependents(task, itemOf(task, "OA-003")).map((i) => i.item_id)).toEqual(["UC-002", "UC-003"]);
@@ -237,10 +237,10 @@ describe("总体分析：依据它写的条目", () => {
   });
 });
 
-describe("总体分析：复述", () => {
-  it("复述一遍发给助手的话：给了主题讲它与它下面的主题，没有给讲整个总体分析", () => {
+describe("业务说明：复述", () => {
+  it("复述一遍发给助手的话：给了主题讲它与它下面的主题，没有给讲整个业务说明", () => {
     expect(retellText("预约取书")).toBe("请把现在对「预约取书」及其下面主题的理解讲成一段故事");
-    expect(retellText(null)).toBe("请把现在对总体分析里各个主题的理解讲成一段故事");
+    expect(retellText(null)).toBe("请把现在对业务说明里各个主题的理解讲成一段故事");
   });
 
   it("复述卡片：选项里有写死的键就是；没有键的，第一个选项以「这段对」开头也算；别的请选择卡片不算", () => {

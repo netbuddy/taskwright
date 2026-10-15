@@ -144,7 +144,7 @@ test("系统拒绝启动，没有执行权限：说明只写「系统原因：EA
 
 test("系统拒绝启动，命令行太长（系统提示文件超长）：说明只写「系统原因：E2BIG」，系统原话在 technical 里", async () => {
   // 系统提示文件的路径相对代码仓根目录；以 agent/ 开头时按 TASKWRIGHT_AGENT_DIR 找，这样超长的文件可以放在临时目录里。
-  // 扩展与平台 skill 也按这个目录找，这里不要它们。
+  // 扩展也按这个目录找，这里不要它们。
   const agentDir = join(tmp, "agent-e2big");
   mkdirSync(agentDir);
   writeFileSync(join(agentDir, "huge-prompt.md"), "x".repeat(1_000_000), "utf-8");   // 单个参数超过 Linux 的 128 KB 上限
@@ -154,7 +154,7 @@ test("系统拒绝启动，命令行太长（系统提示文件超长）：说�
   const savedAgentDir = process.env.TASKWRIGHT_AGENT_DIR;
   process.env.TASKWRIGHT_AGENT_DIR = agentDir;
   try {
-    const profile = { ...loadProfile("fake"), executable: script, extensions: [], platform_skill: undefined, system_prompt_file: "agent/huge-prompt.md" };
+    const profile = { ...loadProfile("fake"), executable: script, extensions: [], system_prompt_file: "agent/huge-prompt.md" };
     const got = await failStart(profile, "runs-e2big");
     assert.equal(got.detail, "系统原因：E2BIG");
     assert.equal(got.text, "助手没有启动起来，系统原因：E2BIG");

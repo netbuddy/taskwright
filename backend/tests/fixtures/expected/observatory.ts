@@ -21,7 +21,7 @@ const TOPIC = { 标题: "退货申请", 它是什么: "买家可以申请退货�
 export const SCRIPT = [
   // 一个回答里一次保存：立主题页（修订 1）。
   { text: INTENT, tool_calls: [
-    { name: "save_revision", arguments: { operations: [{ op: "add", collection: "总体分析", fields: TOPIC, sources: [SOURCE] }] } },
+    { name: "save_revision", arguments: { operations: [{ op: "add", collection: "业务说明", fields: TOPIC, sources: [SOURCE] }] } },
   ] },
   { tool_calls: [{ name: "reply", arguments: { informs: [], act: null, text: "存好了。" } }] },
 ];
@@ -76,7 +76,7 @@ export async function runConversation(root: string): Promise<[string, string]> {
   const base = `http://127.0.0.1:${port}`;
   let task = "";
   try {
-    task = (await call(base, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "对照任务" })).task_id;
+    task = (await call(base, "POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "对照任务" })).task_id;
     const material = Buffer.from(`--B\r\nContent-Disposition: form-data; name="file"; filename="材料.md"\r\n\r\n${SOURCE.excerpt}\r\n--B--\r\n`, "utf-8");
     await call(base, "POST", `/api/v1/tasks/${task}/materials`, undefined, material, { "Content-Type": "multipart/form-data; boundary=B" });
     // 用事件流等这一句话做完：不能反复读整份数据来等，那样每读一次都会让后端向 pi 取一次会话条目，归档里多出几行回应。

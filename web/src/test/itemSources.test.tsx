@@ -101,7 +101,7 @@ describe("条目详情里的来源", () => {
   it("被谁依据里的图：写编号、图名与「图」字，点了切到业务说明页签、打开那张图所在的地方；条目照旧能点", async () => {
     const t = sourcesTask([src("文档原文", "inputs/借阅说明.md", "读者可以借书。")]);
     // 图放在业务说明里：任务定义里要有业务说明那一个集合。
-    t.definition.collections.push(overallTask().definition.collections.find((one) => one.name === "总体分析")!);
+    t.definition.collections.push(overallTask().definition.collections.find((one) => one.name === "业务说明")!);
     (t.items[0] as Item).depended_by = [{ element_kind: "条目", id: "UC-002", revision_no: 1 }, { element_kind: "图", id: "D-001", revision_no: 2 }];
     t.items.push({ ...t.items[0], item_id: "UC-002", title: "办理借书证", sources: [], depended_by: [] } as unknown as Item);
     const row = { diagram_id: "D-001", name: "读者用例", kind: "use_case", kind_name: "用例图", revision_no: 2, revision_by: "executor", revision_at: "", created_at: "", source_count: 2 };

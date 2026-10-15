@@ -24,7 +24,7 @@ export function locations(dataDir: string): PackLocations & { knowledgeDir: stri
 export async function dataWith(dataDir: string, names: string[]): Promise<PackLocations & { knowledgeDir: string; ids: string[] }> {
   const where = locations(dataDir);
   const service = new Service(where.tasksDir, where.runsDir, {}, { port: 1, knowledgeDir: where.knowledgeDir, registry: ServiceDb.open(dataDir, "0.5.0") });
-  const ids = names.map((name) => service.create({ task_type: "srs-authoring", task_name: name }).task_id as string);
+  const ids = names.map((name) => service.create({ task_type: "requirements-engineering", task_name: name }).task_id as string);
   await service.close();
   return { ...where, ids };
 }

@@ -37,7 +37,7 @@ async function withTask(body: (service: Service, t: ReturnType<Service["task"]>)
   const root = join(tmp, `case-${++n}`);
   const service = new Service(join(root, "tasks"), join(root, "runs"), profile, { port: 1, knowledgeDir: join(root, "knowledge") });
   try {
-    await body(service, service.task(service.create({ task_type: "srs-authoring", task_name: "PDF 材料" }).task_id));
+    await body(service, service.task(service.create({ task_type: "requirements-engineering", task_name: "PDF 材料" }).task_id));
   } finally {
     await service.close();
   }

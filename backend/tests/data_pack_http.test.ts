@@ -195,12 +195,12 @@ test("导入接口的上限：请求头里写的长度超过上限时不收请�
 test("数据升级还没有做完时：导出与导入的四个接口都答 upgrade_pending，不收请求体、不留暂存目录", async () => {
   const data = fresh("pending");
   mkdirSync(join(data, "tasks"), { recursive: true });
-  cpSync(join(SAMPLES, "0.4.3"), join(data, "tasks", "TASK-A"), { recursive: true });
+  cpSync(join(SAMPLES, "format-8-b"), join(data, "tasks", "TASK-A"), { recursive: true });
   const started = await start(data, "desktop");
   try {
     const { port } = started;
     assert.equal((await getJson(port, "/api/v1/service")).body.upgrade_pending, true);
-    for (const path of ["/api/v1/tasks/TASK-SAMPLE-043/export", "/api/v1/knowledge/libraries/general/export"]) {
+    for (const path of ["/api/v1/tasks/TASK-SAMPLE-8B/export", "/api/v1/knowledge/libraries/general/export"]) {
       const refused = await getJson(port, path);
       assert.deepEqual([refused.status, refused.body.error.code, refused.body.error.message], [503, "upgrade_pending", UPGRADE_PENDING_TEXT], path);
     }

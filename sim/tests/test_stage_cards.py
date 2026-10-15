@@ -48,7 +48,7 @@ START_CARD = {"kind": "choose", "text": "这一页整理好了。现在开始写
 DOCUMENT_CARD = {"kind": "choose", "text": "条目都确认过了。进入编写文档，把各章的导语补上吗？", "items": [],
                  "options": [{"key": "enter_document", "text": "进入编写文档"}, {"key": "continue_review", "text": "再看看条目"}]}
 #: 业务流程这一章的导语页：不贴标签，「导语所属章」写章名；助手补写的，来源种类是助手补充。主题页、用例各占一次修订，它是第 3 次。
-INTRO = {"op": "add", "collection": "总体分析", "sources": [{"kind": "助手补充", "excerpt": "据 OA-001 与 UC-001 概括。"}],
+INTRO = {"op": "add", "collection": "业务说明", "sources": [{"kind": "助手补充", "excerpt": "据 OA-001 与 UC-001 概括。"}],
          "fields": {"标题": "业务流程导语", "导语所属章": "业务流程", "它是什么": "这一章讲读者怎样借书。", "状态": "在用"}}
 READ_CARD = {"kind": "choose", "text": "补写了业务流程这一章的导语，请过目。看过之后在条目区按「生成文档」。", "items": [{"item_id": "OA-002", "revision_no": 3}],
              "options": [{"key": "document_reviewed", "text": "看过了，生成文档"}, {"key": "document_revise", "text": "需要修改"}]}
@@ -178,16 +178,16 @@ class StageCardsTest(unittest.TestCase):
         self.assertEqual((by_stage["核读材料"]["通过率"], by_stage["评审确认"]["通过率"]), (1.0, 1.0))
         self.assertEqual(stages[-1], "编写文档")
         self.assertIn("| 核读材料 | 1 | 100% |", text)
-        # 提示词版本：两遍相同；文件清单里有代码仓里按阶段的说明、平台 skill，与任务目录里任务类型的说明；任务目录 docs 下的不在。
+        # 提示词版本：两遍相同；文件清单里有代码仓里按阶段的说明与任务目录里任务类型的说明，没有早先的平台 skill；任务目录 docs 下的不在。
         self.assertRegex(summary["提示词版本"], r"^[0-9a-f]{12}$")
         self.assertEqual(summary["各遍提示词版本"], [summary["提示词版本"]] * PASSES)
         listed = {one["路径"]: one for one in summary["提示词文件"]}
         on_disk = sorted(f"agent/prompts/stages/{p.name}" for p in (REPO / "agent" / "prompts" / "stages").iterdir() if p.is_file())
         self.assertEqual(sorted(path for path in listed if path.startswith("agent/prompts/stages/")), on_disk)
-        for path, where in (("agent/prompts/stages/common.md", "代码仓"), ("agent/prompts/skills/taskwright-executor/SKILL.md", "代码仓"),
-                            (".pi/skills/srs-authoring/SKILL.md", "任务目录"), (".pi/skills/srs-authoring/stages/reading.md", "任务目录")):
+        for path, where in (("agent/prompts/stages/common.md", "代码仓"), ("agent/prompts/stages/system.md", "代码仓"),
+                            (".pi/skills/requirements-engineering/SKILL.md", "任务目录"), (".pi/skills/requirements-engineering/stages/reading.md", "任务目录")):
             self.assertEqual((listed[path]["来自"], len(listed[path]["摘要值"])), (where, 16), path)
-        self.assertFalse([path for path in listed if path.startswith("docs/") or path.startswith("/")])
+        self.assertFalse([path for path in listed if path.startswith("docs/") or path.startswith("/") or path.startswith("agent/prompts/skills/")])
         self.assertIn(f"- 提示词版本：{summary['提示词版本']}（每份文件见最后的「提示词」一节）", text)
         self.assertIn(f"| agent/prompts/stages/common.md | 代码仓 | {listed['agent/prompts/stages/common.md']['字节数']} | {listed['agent/prompts/stages/common.md']['摘要值']} |", text)
         self.assertEqual(evals.listed(sims_root)[0]["提示词版本"], summary["提示词版本"])

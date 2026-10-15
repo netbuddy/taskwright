@@ -1,4 +1,4 @@
-// 业务说明的一节（总体分析的一页主题）。从上到下，块的次序固定，没有内容的块不显示：
+// 业务说明的一节（一页主题）。从上到下，块的次序固定，没有内容的块不显示：
 //   面包屑（第几章 › 节号）、标题、一行小字（材料几处、澄清几条、你看过；标签与「＋ 标签」；有几处待核实）、右边「修改」与「确认待核实」。
 //   说明 ── 「它是什么」，一段一段；逐字出自材料的句子用底色标出，点它在右边的材料里看原文；助手补的、用户还没有确认的字句用琥珀底标出；
 //           块尾一行来源。
@@ -21,7 +21,7 @@
 import { useState, type ReactNode } from "react";
 import type { CollectionDef, Item, Source, Task } from "../../../api/types";
 import { CHAPTER_FLOWS, INTRO_NAME, UNSORTED_NAME, chapterByNo, introChapter, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
-import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
+import { SOURCE_SUPPLEMENT, issueAnswerText, writeOffReason } from "../../../model/items";
 import {
   DEPRECATED, TOPIC, addedQuotes, confirmAction, dependents, exampleKind, examplesOf, isBlockingQuestion, isDeprecated, isPending, labelsOf, markPassage, materialQuotes, openQuestions,
   pendingCount, questionBlockingText, questionLanded, questionReason, questionRevisit, settledQuestions, retellText, reviseDependentsText, sectionLead, seeInstead, settledOf, sourceShortText, sourcesFor, supplemented, titleOf, whatOf, wholeSources,
@@ -37,8 +37,8 @@ function SourceLine({ sources, pending = false, onLocate }: { sources: Source[];
   return (
     <div className="oa-src">
       {sources.map((s, i) => {
-        const supplement = sourceKindNow(String(s.kind)) === SOURCE_SUPPLEMENT;
-        const canLocate = !supplement && sourceKindNow(String(s.kind)) === "文档原文" && !!onLocate;
+        const supplement = String(s.kind) === SOURCE_SUPPLEMENT;
+        const canLocate = !supplement && String(s.kind) === "文档原文" && !!onLocate;
         return (
           <span key={i} className={`one${supplement && pending ? " v" : ""}${canLocate ? " link" : ""}`} role={canLocate ? "button" : undefined}
             title={canLocate ? "在右边的材料里看这句原文" : undefined} onClick={canLocate ? () => onLocate!(s.excerpt, s.locator) : undefined}>
@@ -55,7 +55,7 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
   onPrefill?: (text: string) => void;
   task: Task;
   item: Item;
-  /** 总体分析这个集合的定义（字段与「标签」的取值从这里来）。 */
+  /** 业务说明这个集合的定义（字段与「标签」的取值从这里来）。 */
   def: CollectionDef;
   /** 业务说明的目录（这一页在第几章、节号是多少从这里来）。 */
   contents: Toc;

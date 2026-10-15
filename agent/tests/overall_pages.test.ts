@@ -1,5 +1,5 @@
 /**
- * 总体分析的一页经保存修订保存时另外核对的两条（改看只在已废弃时写；已经定下的每一条都要有出处），
+ * 业务说明的一页经保存修订保存时另外核对的两条（改看只在已废弃时写；已经定下的每一条都要有出处），
  * 以及完成条件之外「还没有贴标签」的提示。集合的字段照产品的任务类型（tests/helpers.ts 的 overallDefinition）。
  */
 
@@ -22,7 +22,7 @@ function workspace(definition: unknown = overallDefinition()): string {
 
 /** 新增一页主题：没写的必填项给缺省值，没写来源就是一条文档原文（整页都出自它）。 */
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
-  ({ op: "add", collection: "总体分析", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
+  ({ op: "add", collection: "业务说明", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
 const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
 const fieldsOf = (dir: string, id: string) =>
   JSON.parse(query<{ fields: string }>(dir, "SELECT fields FROM item_version WHERE item_id = ? ORDER BY revision_no DESC LIMIT 1", id)[0].fields);
@@ -30,7 +30,7 @@ const taskId = (dir: string) => query<{ task_id: string }>(dir, "SELECT task_id 
 
 test("这个集合的声明通过定义校验：标签是带取值的文本列表，上级主题与改看只许本集合、至多一个，分组字段是标签", () => {
   const definition = validateDefinition(overallDefinition());
-  const collection = definition.collections.find((c) => c.name === "总体分析")!;
+  const collection = definition.collections.find((c) => c.name === "业务说明")!;
   assert.deepEqual([collection.prefix, collection.fields[0].name, collection.display?.groupField], ["OA", "标题", "标签"]);
   assert.deepEqual(collection.fields.filter((f) => f.single && f.sameCollection).map((f) => f.name), ["上级主题", "改看"]);
   assert.equal(collection.fields.find((f) => f.name === "标签")!.values!.length, 8);
@@ -91,7 +91,7 @@ test("已经定下的每一条都要有出处：来源指到那一条、指到�
     sources: [{ ...SOURCE, supports: [{ field: "名称" }] }, SUPPLEMENT([{ field: "步骤", index: 0 }])] }] });
 });
 
-test("完成条件之外的提示：总体分析里在用而还没有贴标签的主题；贴了标签、已废弃的不算；没有这个集合的任务没有这一种提示", () => {
+test("完成条件之外的提示：业务说明里在用而还没有贴标签的主题；贴了标签、已废弃的不算；没有这个集合的任务没有这一种提示", () => {
   const dir = workspace();
   saveRevision(callIn(dir), { operations: [page({ 标题: "借阅" }), page({ 标题: "预约取书", 标签: ["流程"] }), page({ 标题: "预留" }), page({ 标题: "旧说法", 状态: "已废弃" })] });
   const db = new DatabaseSync(databasePath(dir), { readOnly: true });
@@ -99,7 +99,7 @@ test("完成条件之外的提示：总体分析里在用而还没有贴标签�
     const completion = validateDefinition(overallDefinition()).completion;
     assert.deepEqual(untaggedPages(db, taskId(dir)), ["OA-001", "OA-003"]);
     assert.deepEqual(completionHints(db, taskId(dir), completion), [{
-      kind: "untagged_overall_pages", collection: "总体分析", items: ["OA-001", "OA-003"],
+      kind: "untagged_overall_pages", collection: "业务说明", items: ["OA-001", "OA-003"],
       summary: "有 2 页主题还没有贴标签：OA-001、OA-003。贴了标签的主题才会进文档，评审也只认贴了标签的主题。",
     }]);
   } finally {

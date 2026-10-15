@@ -136,7 +136,7 @@ SCRIPT = {"rules": [
     # 助手：第一句话之后立一页主题、记一条待澄清的问题；工具结果回来之后提问；用户说要去问之后回一句。
     {"when": {"last_role": "user", "last_contains": "帮我把这份需求整理"},
      "reply": {"text": intent("request", "把需求整理成规格说明"), "tool_calls": [
-         {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "总体分析", "fields": {
+         {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "业务说明", "fields": {
              "标题": "借书", "它是什么": "读者凭借书证借书，每本书可以续借一次。", "例子": ["读者凭借书证借书"], "标签": ["流程"], "状态": "在用"},
              "sources": [source("读者凭借书证借书，每本书可以续借一次。")]}]}},
          {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "问题", "fields": {
@@ -205,7 +205,7 @@ class EvalRunTest(unittest.TestCase):
                               states["no_untagged_pages"], states["roles_in_context_and_use_cases"], states["reviews_no_open_findings"]),
                              ("通过", "未通过", "未通过", "通过", "不适用", "未通过"))
             hits = [(x["部分"], x["组"][0]) for x in one["至少应有"] if x["命中"]]
-            self.assertEqual(hits, [("总体分析·流程页", "借书"), ("问题", "寒暑假")])
+            self.assertEqual(hits, [("业务说明·流程页", "借书"), ("问题", "寒暑假")])
             # 助手的问题取自任务库的对话行为，轮次靠演练记录对上。
             asked = one["助手问过的问题"]
             self.assertEqual((asked["怎样列的"], [(q["轮"], q["功能"], q["文字"]) for q in asked["问题"]]),
@@ -222,7 +222,7 @@ class EvalRunTest(unittest.TestCase):
         # 短版清单一共 64 组：原有的 37 组，加上「模型」一节五种图的 22 组（这一遍没有画图，一组都没有命中），
         # 再加上「导语页」小节的 5 组（这一遍没有走到编写文档，一组都没有命中）。
         self.assertEqual(len(summary["至少应有"]), 64)
-        self.assertEqual(sum(1 for row in summary["至少应有"] if row["部分"] == "总体分析·导语页"), 5)
+        self.assertEqual(sum(1 for row in summary["至少应有"] if row["部分"] == "业务说明·导语页"), 5)
         self.assertEqual(sum(1 for row in summary["至少应有"] if row["部分"].startswith("模型·")), 22)
         self.assertAlmostEqual(summary["清单命中率"], 4 / 128)
         self.assertIn("# 评测汇总：试跑", text)

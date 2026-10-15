@@ -33,7 +33,7 @@ function page(task: Task, over: Partial<WorkState> = {}) {
   const sendMessage = vi.spyOn(api, "sendMessage").mockImplementation(async (_task, _session, req) => { calls.push(`message:${req.text}`); return { ok: true } as never; });
   render(
     <ConfigProvider button={{ autoInsertSpace: false }}><AntApp><ToastProvider><ServiceProvider>
-      <WorkViewPage taskId="TASK-001" sessionId="S-1" collection="总体分析" />
+      <WorkViewPage taskId="TASK-001" sessionId="S-1" collection="业务说明" />
     </ServiceProvider></ToastProvider></AntApp></ConfigProvider>,
   );
   return { calls, action, sendMessage };

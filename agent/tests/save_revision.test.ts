@@ -311,7 +311,7 @@ test("条目引用：多个编号里哪几个不对，拒绝文字逐个指出",
   assert.match(message, /第 4 个编号 7 应当写一个条目编号/);
 });
 
-test("助手补充：出处不用写，由工具填「助手补充」；理由写在 excerpt 里，没有写就拒绝；早期版本的名字「执行者补充」照收", () => {
+test("助手补充：出处不用写，由工具填「助手补充」；理由写在 excerpt 里，没有写就拒绝；早期版本的名字「执行者补充」不再认", () => {
   const dir = makeWorkspace();
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   const add = (source: Record<string, unknown>) => saveRevision(callIn(dir), { operations: [
@@ -319,13 +319,12 @@ test("助手补充：出处不用写，由工具填「助手补充」；理由�
   assert.throws(() => add({ kind: "助手补充" }),
     /这次「保存修订」什么都没有写入[\s\S]*第 1 条来源的种类是「助手补充」，没有写理由[\s\S]*在 excerpt 里写一句理由：为什么这样补、依据的是什么常识或推断/);
   assert.throws(() => add({ kind: "助手补充", locator: "助手补充", excerpt: "  " }), /第 1 条来源的种类是「助手补充」，没有写理由/);
-  assert.throws(() => add({ kind: "执行者补充", locator: "执行者补充" }), /第 1 条来源的种类是「助手补充」，没有写理由/);
+  assert.throws(() => add({ kind: "执行者补充", locator: "执行者补充", excerpt: "早期说明里的写法" }), /第 1 条来源的 kind 写的是 "执行者补充"/);
   assert.equal(query(dir, "SELECT 1 FROM item_source").length, 0);
   add({ kind: "助手补充", excerpt: "登录页照例先打开" });
-  add({ kind: "执行者补充", locator: "执行者补充", excerpt: "早期说明里的写法" });
   add({ kind: "助手补充", locator: "随手写的出处", excerpt: "出处写了别的也改成统一的" });
   assert.deepEqual(query<any>(dir, "SELECT kind, locator, excerpt, depends_revision FROM item_source ORDER BY revision_no").map((row) => [row.kind, row.locator, row.excerpt, row.depends_revision]),
-    [["助手补充", "助手补充", "登录页照例先打开", null], ["助手补充", "助手补充", "早期说明里的写法", null], ["助手补充", "助手补充", "出处写了别的也改成统一的", null]]);
+    [["助手补充", "助手补充", "登录页照例先打开", null], ["助手补充", "助手补充", "出处写了别的也改成统一的", null]]);
 });
 
 test("修改时给了来源：原来的来源保留，新给的接在后面；只给来源不改字段时整体替换，结果里写明去掉了哪几条", () => {

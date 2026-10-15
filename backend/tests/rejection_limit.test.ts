@@ -102,7 +102,7 @@ async function withStack(name: string, script: Dict, body: (stack: { say: (text:
   const base = `http://127.0.0.1:${port}`;
   let feed: ReturnType<typeof subscribe> | null = null;
   try {
-    const task = (await call(base, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "上限" })).task_id;
+    const task = (await call(base, "POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "上限" })).task_id;
     feed = subscribe(base, task);
     await sleep(200);
     const session = (await call(base, "POST", `/api/v1/tasks/${task}/sessions`)).session_id;

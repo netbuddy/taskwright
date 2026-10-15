@@ -21,7 +21,7 @@ import { checkCompletion, currentItems } from "./conditions.ts";
 import { currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
-import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, SOURCE_USER_EDIT, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 
 /** 标题在看板的一行里最多显示这么多个字，更长的截短并加省略号；条目详情里不截短。 */
@@ -55,7 +55,6 @@ export function withBoardDatabase(workspaceDir: string, body: (db: DatabaseSync,
       | TaskRow
       | undefined;
     if (!task) return ["库里还没有任务记录。"];
-    if (hasVersionColumns(db)) return [OLD_VERSION_FORMAT_TEXT];
     return body(db, task, validateDefinition(JSON.parse(task.definition_text)));
   } finally {
     db.close();
@@ -225,7 +224,7 @@ export function itemDetailLines(db: DatabaseSync, task: TaskRow, definition: Tas
     .prepare(
       // 早期版本写下的「用户直接修改」不读出。
       "SELECT position, kind, locator, excerpt, field, field_index FROM item_source " +
-        `WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause(db)} ORDER BY position, support_no`,
+        `WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause()} ORDER BY position, support_no`,
     )
     .all(task.task_id, itemId, chosen.revision_no, SOURCE_USER_EDIT) as {
     position: number;
@@ -238,8 +237,7 @@ export function itemDetailLines(db: DatabaseSync, task: TaskRow, definition: Tas
   const grouped = new Map<number, { kind: string; locator: string; excerpt: string; supports: string[] }>();
   for (const row of sources) {
     let one = grouped.get(row.position);
-    // 还没有迁过的库里种类是早期版本的名字：给助手看的一律是现在的名字。
-    if (!one) grouped.set(row.position, (one = { kind: sourceKindNow(row.kind), locator: sourceLocatorNow(row.kind, row.locator), excerpt: row.excerpt, supports: [] }));
+    if (!one) grouped.set(row.position, (one = { kind: row.kind, locator: row.locator, excerpt: row.excerpt, supports: [] }));
     if (row.field !== null) one.supports.push(row.field_index === null ? `「${row.field}」整个字段` : `「${row.field}」第 ${row.field_index + 1} 项`);
   }
   lines.push("", `来源（${grouped.size} 条）：`);

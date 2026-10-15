@@ -15,7 +15,7 @@ import { DEFINITION, SOURCE, build } from "./overall_stack.ts";
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-/** 带总体分析的演示任务定义，再加一个有「是否阻断下游」字段的问题集合，照产品的任务类型。 */
+/** 带业务说明的演示任务定义，再加一个有「是否阻断下游」字段的问题集合，照产品的任务类型。 */
 const WITH_BLOCKING = { ...DEFINITION, 交付物: { ...DEFINITION.交付物, 条目集合: [...DEFINITION.交付物.条目集合, {
   名称: "问题", 编号前缀: "Q", 字段: [
     { 名: "事项", 类型: "文本", 必填: true }, { 名: "种类", 类型: "枚举", 必填: true, 取值: ["待澄清", "待定"] },
@@ -36,7 +36,7 @@ test("进展：流程工作项在写条目（第 4 站）、两个工作项、�
     "SELECT task_id, 's2', 'ui-op-alone', 'user', 'clarifying', NULL, NULL, '', '2026-10-11T10:00:00', 9000, NULL FROM task"]]);
   const service = new Service(tasks, join(tmp, "runs"), {}, { port: 1, registry: null });
   try {
-    const empty = service.create({ task_type: "srs-authoring", task_name: "空任务" }).task_id;
+    const empty = service.create({ task_type: "requirements-engineering", task_name: "空任务" }).task_id;
     const rows = Object.fromEntries(service.listTasks().map((one) => [one.task_name === "空任务" ? "empty" : "busy", one]));
     assert.deepEqual([rows.busy.flow, rows.busy.work_item_count, rows.busy.blocking_count],
       [{ name: "需求分析", node: "writing", node_name: "写条目", ordinal: 4 }, 2, 2]);

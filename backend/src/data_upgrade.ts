@@ -15,8 +15,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSyn
 import { basename, join, resolve } from "node:path";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 // upgradeTaskDatabase 是后端里除建任务之外唯一会改任务库的调用，只在这里（数据升级）用。
-import { TASKS_ROOT_ENV, TASK_DB_VERSION, newerDataText, taskWrittenBy, upgradeTaskDatabase } from "../../agent/src/lib/schema.ts";
-import { overallTemplateFor } from "./workspace.ts";
+import { MIN_TASK_DB_VERSION, TASKS_ROOT_ENV, TASK_DB_VERSION, newerDataText, taskWrittenBy, upgradeTaskDatabase } from "../../agent/src/lib/schema.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 import * as occupancy from "./occupancy.ts";
@@ -97,17 +96,6 @@ function taskLabel(taskDir: string): { task_id: string | null; name: string | nu
   }
 }
 
-/** 修订统一之前建的任务（最早的格式）：这个程序不支持，也升不了，不算在要升级的里面（列表里另有「旧格式」的说明）。 */
-function unsupportedOldFormat(taskDir: string): boolean {
-  const db = library.openRo(taskDir);
-  try {
-    return db !== null && library.isPreRevision(db);
-  } catch {
-    return false;
-  } finally {
-    db?.close();
-  }
-}
 
 /** 只读地看一遍数据目录，得出要升级什么。什么都不改，也不建任何文件。 */
 export function planUpgrade(where: DataLocations): UpgradePlan {
@@ -132,7 +120,8 @@ export function planUpgrade(where: DataLocations): UpgradePlan {
     if (version === null || version === TASK_DB_VERSION) continue;
     const task: PlannedTask = { dir, ...taskLabel(taskDir), version };
     if (version > TASK_DB_VERSION) plan.newer.push({ ...task, written_by: taskWrittenBy(taskDir) });
-    else if (unsupportedOldFormat(taskDir)) continue;
+    // 格式早于本程序能升级的最早格式：不升级，服务把它列为旧格式。
+    else if (version < MIN_TASK_DB_VERSION) continue;
     else if (failures.has(dir)) plan.failed.push({ ...task, error: failures.get(dir)! });
     else plan.tasks.push(task);
   }
@@ -188,7 +177,7 @@ export interface TaskOutcome {
   /** 没有做成的原因。 */
   error: string | null;
   ms: number;
-  /** 升级时另做了的事，写进报告那一行的末尾，例如「补了总体分析集合」「补了第 1 版的版本记录（早先已完成，修订 12）」。 */
+  /** 升级时另做了的事，写进报告那一行的末尾，例如「补了业务说明集合」「补了第 1 版的版本记录（早先已完成，修订 12）」。 */
   notes?: string[];
 }
 
@@ -301,6 +290,8 @@ function afterTaskUpgraded(plan: UpgradePlan, dir: string, registry: ServiceDb, 
   writeTaskJson(taskDir, {
     created_by_version: had?.created_by_version ?? null, task_type: had?.task_type ?? taskType,
     task_type_version: had ? had.task_type_version : copiedTypeVersion(taskDir, row?.definition_path ?? null),
+    // 用的是任务类型的第几个修订：没有记过的（任务类型落到用户目录之前建的）按播种版算，记作修订 1。
+    task_type_revision: had?.task_type_revision ?? 1,
     owner: had?.owner ?? "local", created_at: had?.created_at ?? row?.started_at ?? null,
     upgraded_by_version: productVersion, upgraded_at: clock.now(),
   });
@@ -357,7 +348,7 @@ export async function runUpgrade(plan: UpgradePlan, options: RunOptions = {}): P
         try {
           const lock = occupancy.readLock(join(plan.tasksDir, task.dir));
           if (occupancy.occupiedByOther(lock)) throw new Error("任务正在被另一个服务使用");
-          const result = upgradeTaskDatabase(join(plan.tasksDir, task.dir), { overallTemplate: overallTemplateFor });
+          const result = upgradeTaskDatabase(join(plan.tasksDir, task.dir));
           outcome.to = result.to;
           outcome.notes = result.notes;
           afterTaskUpgraded(plan, task.dir, registry, productVersion);

@@ -110,7 +110,7 @@ test("刷新之后从会话记录读回的系统说明，与实时推送的，�
 
 /** 开始会话那一种的 details，照助手一侧写的形状（agent/src/lib/task_status.ts 的 statusNow）。 */
 const START_DETAILS = {
-  kind: "现状", task_id: "TASK-001", task_name: "登录模块", task_type: "软件需求规格说明编制", status: "进行中", items: { 用例: 1 },
+  kind: "现状", task_id: "TASK-001", task_name: "登录模块", task_type: "需求工程", status: "进行中", items: { 用例: 1 },
   conditions_total: 3, conditions_met: 1, conditions_unmet: 1, conditions_empty: 1, unresolved: 0,
   materials: {
     dir: "inputs/",

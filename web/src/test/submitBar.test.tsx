@@ -34,7 +34,7 @@ const MET: Completion = { all_met: true, unmet_count: 0, brief: "", hints: [], c
 function task(over: Partial<Task> = {}): Task {
   const collection = (name: string, prefix: string) => ({ name, prefix, needs_review: false, review_rules: null, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] });
   return {
-    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
+    task_id: "TASK-001", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "",
     definition: { collections: [collection("功能用例", "UC"), collection("约束", "CON"),
       { name: "问题", prefix: "TBD", needs_review: false, review_rules: null, fields: [
         { name: "事项", type: "文本", required: true, values: null }, { name: "状态", type: "枚举", required: true, values: ["未解决", "已解决", "用户决定保留"] }] },
@@ -93,10 +93,10 @@ describe("提示条显示的条件与问句", () => {
     expect(showSubmitBar(task(), false, [card(["complete", "continue"]), typed, reply({ answers_card: ["a1"] })])).toBe(true);
   });
 
-  it("总体分析这个集合在问句里写页面上的叫法「业务说明」", () => {
+  it("业务说明这个集合在问句里写集合名「业务说明」", () => {
     const t = task();
-    const withOverall = { ...t, definition: { collections: [...t.definition.collections, { name: "总体分析", prefix: "OA", needs_review: false, review_rules: null, fields: [{ name: "标题", type: "文本", required: true, values: null }] }] },
-      completion: { ...MET, conditions: [...MET.conditions, cond("总体分析", "每个条目用户确认")] }, items: [...t.items, item("OA-001", "总体分析")] } as Task;
+    const withOverall = { ...t, definition: { collections: [...t.definition.collections, { name: "业务说明", prefix: "OA", needs_review: false, review_rules: null, fields: [{ name: "标题", type: "文本", required: true, values: null }] }] },
+      completion: { ...MET, conditions: [...MET.conditions, cond("业务说明", "每个条目用户确认")] }, items: [...t.items, item("OA-001", "业务说明")] } as Task;
     expect(submitQuestion(withOverall)).toBe("功能用例、约束一共 3 个条目，都已经评审通过或者由你保留了写法，你也都看过了；1 条业务说明你也都看过了。" + TAIL);
   });
 

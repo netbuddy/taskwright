@@ -10,7 +10,7 @@ import type { DiagramGraph } from "../../../agent/src/lib/diagram_scan.ts";
 import { CELL_TAKES_PART, useCaseMatrix } from "../../../agent/src/lib/overall_figures.ts";
 import type { GoalTree } from "../../../agent/src/lib/overall_views.ts";
 import { CHAPTER_FLOWS, CHAPTER_ROLES, type Toc, sectionOf } from "./chapters";
-import { SOURCE_ITEM, issueRefs, sourceKindNow } from "./items";
+import { SOURCE_ITEM, issueRefs } from "./items";
 import { isDeprecated, isOverall, titleOf } from "./overall";
 
 export { CELL_TAKES_PART };
@@ -39,7 +39,7 @@ export function useCaseTable(task: Task, contents: Toc, graphs: readonly Diagram
     if (!item) return [];
     if (sectionOf(contents, item.item_id)?.chapter === CHAPTER_FLOWS) return [item];
     if (isOverall(item.collection)) return [];
-    return item.sources.filter((source) => sourceKindNow(String(source.kind)) === SOURCE_ITEM).map((source) => byId.get(source.locator))
+    return item.sources.filter((source) => String(source.kind) === SOURCE_ITEM).map((source) => byId.get(source.locator))
       .filter((page): page is Item => page !== undefined && sectionOf(contents, page.item_id)?.chapter === CHAPTER_FLOWS && !isDeprecated(page))
       .filter((page, i, all) => all.indexOf(page) === i);
   };

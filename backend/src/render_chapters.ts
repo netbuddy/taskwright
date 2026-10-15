@@ -1,5 +1,5 @@
 /**
- * 生成文档里的「业务说明」七章与追溯附录：把总体分析的页、问题条目与图排成与页面同一个结构的 Markdown。纯读取，不写库，不经模型。
+ * 生成文档里的「业务说明」七章与追溯附录：把业务说明的页、问题条目与图排成与页面同一个结构的 Markdown。纯读取，不写库，不经模型。
  *
  * 章与节号用页面目录的同一个函数（agent/src/lib/overall_chapters.ts），图放在哪里、角色与用例对照表怎样算用页面的同一条规则
  * （agent/src/lib/overall_figures.ts），规则表、目标树、决策记录与待澄清事项用页面的同一份算法（agent/src/lib/overall_views.ts）。
@@ -54,7 +54,7 @@ export interface ChapterHelpers {
 }
 
 export interface ChaptersResult {
-  /** 七章的 Markdown；任务没有总体分析这个集合、或者一页都没有选中时是空文字。 */
+  /** 七章的 Markdown；任务没有业务说明这个集合、或者一页都没有选中时是空文字。 */
   text: string;
   /** 各页在文档里的叫法：「3.1 自助借书」。只有编了节号的页在里面。 */
   sectionLabel: Map<string, string>;
@@ -99,7 +99,7 @@ export function businessDescription(lib: Library, chosen: Chosen, helpers: Chapt
   }));
   const questionsOn = (itemId: string) => questions.filter((one) => one.refs.includes(itemId));
 
-  // 需求条目：总体分析与问题集合之外被选中的条目，连同它当前内容上的来源。
+  // 需求条目：业务说明与问题集合之外被选中的条目，连同它当前内容上的来源。
   const requirements = [...chosen].filter(([name]) => name !== OVERALL_COLLECTION && !questionCollections.has(name)).flatMap(([name, rows]) => rows.map(([item_id, revision_no]) => ({
     item_id, collection: name, title: titleOf(fieldsAt(item_id, revision_no), lib.collections.get(name)) || item_id, sources: lib.sourcesOf(item_id, revision_no),
   })));

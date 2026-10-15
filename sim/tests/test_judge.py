@@ -18,7 +18,7 @@ PERSONA = json.loads((REPO / "sim" / "personas" / "librarian.json").read_text(en
 # 建任务目录、放起始文件、写任务记录：与任务服务建任务时用的是同一个函数（backend/src/workspace.ts 的 createTaskDir）。
 CREATE = r"""
 import { createTaskDir } from "./backend/src/workspace.ts";
-process.stdout.write(JSON.stringify(createTaskDir(process.argv[1], "srs-authoring", null, null, "TASK-T")));
+process.stdout.write(JSON.stringify(createTaskDir(process.argv[1], "requirements-engineering", null, null, "TASK-T")));
 """
 
 SCRIPT = r"""

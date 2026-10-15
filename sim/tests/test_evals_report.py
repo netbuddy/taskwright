@@ -72,7 +72,7 @@ class StageGroupTest(unittest.TestCase):
 class PromptVersionTest(unittest.TestCase):
     def test_汇总取各遍里第一份取得到的提示词版本_写进汇总与列表_几遍不一样时写明(self):
         files = lambda digest: [{"路径": "agent/prompts/stages/common.md", "来自": "代码仓", "字节数": 120, "摘要值": digest},      # noqa: E731
-                                {"路径": ".pi/skills/srs-authoring/SKILL.md", "来自": "任务目录", "字节数": 80, "摘要值": "cccc"}]
+                                {"路径": ".pi/skills/requirements-engineering/SKILL.md", "来自": "任务目录", "字节数": 80, "摘要值": "cccc"}]
         prompt = lambda digest: {"版本": eval_files.prompt_version(files(digest)), "文件": files(digest), "说明": ""}                # noqa: E731
 
         def write_prompt(root: Path, name: str, found: dict | None) -> Path:
@@ -99,7 +99,7 @@ class PromptVersionTest(unittest.TestCase):
         version = prompt("1111")["版本"]
         self.assertEqual((same["提示词版本"], same["提示词文件"], same["各遍提示词版本"], listed[0]["提示词版本"]), (version, files("1111"), [None, version, version], version))
         for line in (f"- 提示词版本：{version}（每份文件见最后的「提示词」一节）", "## 提示词", f"- 版本：{version}，一共 2 份文件。",
-                     "| agent/prompts/stages/common.md | 代码仓 | 120 | 1111 |", "| .pi/skills/srs-authoring/SKILL.md | 任务目录 | 80 | cccc |"):
+                     "| agent/prompts/stages/common.md | 代码仓 | 120 | 1111 |", "| .pi/skills/requirements-engineering/SKILL.md | 任务目录 | 80 | cccc |"):
             self.assertIn(line, same_text)
         self.assertNotIn("各遍用的提示词版本不一样", same_text)
         self.assertEqual((mixed["提示词版本"], mixed["各遍提示词版本"]), (version, [version, prompt("2222")["版本"]]))

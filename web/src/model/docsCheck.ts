@@ -6,7 +6,7 @@ import type { CompletionCondition, Task } from "../api/types";
 import { CHAPTERS, type Toc } from "./chapters";
 import { basisOf, traceFacts } from "./docsPage";
 import { CONFIRM_CONDITION, REVIEW_CONDITION, conditionState } from "./items";
-import { collectionLabel, isOverall } from "./overall";
+import { isOverall } from "./overall";
 import { emptyLineText } from "./completionLines";
 import { figureHome } from "./sectionDiagrams";
 
@@ -41,7 +41,7 @@ function named(ids: string[]): string {
 /** 一条完成条件差什么、去哪里补。 */
 function checkRow(task: Task, c: CompletionCondition): CheckRow {
   const state = conditionState(c);
-  const label = `${collectionLabel(c.collection)}：${c.name}`;
+  const label = `${c.collection}：${c.name}`;
   const key = `${c.collection}/${c.name}`;
   if (state === "met") return { key, label, state, gap: "已满足", go: null, goText: "" };
   const overall = isOverall(c.collection);
@@ -68,7 +68,7 @@ function checkRow(task: Task, c: CompletionCondition): CheckRow {
 export function checkRows(task: Task): CheckRow[] {
   const conditions = task.completion?.conditions ?? [];
   const rows = conditions.filter((one) => conditionState(one) !== "empty").map((one) => checkRow(task, one));
-  const empty = [...new Set(conditions.filter((one) => conditionState(one) === "empty").map((one) => collectionLabel(one.collection)))];
+  const empty = [...new Set(conditions.filter((one) => conditionState(one) === "empty").map((one) => one.collection))];
   if (empty.length) rows.push({ key: "暂不核对", label: "暂不核对", state: "empty", gap: emptyLineText(empty), go: null, goText: "" });
   return rows;
 }

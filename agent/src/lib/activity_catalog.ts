@@ -27,7 +27,7 @@ export interface AssetFacts {
   /** 图的张数，与其中用户还没有看过现在内容的张数。 */
   diagrams: number;
   diagramsUnviewed: number;
-  /** 需求条目（总体分析与问题之外各集合的条目）的条数；其中用户没有看过的、待核实的、已确认的（看过而且不待核实）各几条。 */
+  /** 需求条目（业务说明与问题之外各集合的条目）的条数；其中用户没有看过的、待核实的、已确认的（看过而且不待核实）各几条。 */
   items: number;
   itemsUnread: number;
   itemsPending: number;

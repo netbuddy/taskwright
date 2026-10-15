@@ -21,7 +21,7 @@ let n = 0;
 const fresh = () => join(tmp, `data-${++n}`);
 
 const entry = (id: string, more: Partial<TaskEntry> = {}): TaskEntry =>
-  ({ task_id: id, name: `任务 ${id}`, owner: "local", status: "进行中", task_type: "srs-authoring", created_at: "2026-10-08T12:00:00Z", dir: id, ...more });
+  ({ task_id: id, name: `任务 ${id}`, owner: "local", status: "进行中", task_type: "requirements-engineering", created_at: "2026-10-08T12:00:00Z", dir: id, ...more });
 
 test("新建：数据目录不在就建出来，两张表都在，格式版本与写它的产品版本记下；再打开不重建，产品版本改成这一次的", () => {
   const dir = fresh();

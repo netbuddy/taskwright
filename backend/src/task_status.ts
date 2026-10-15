@@ -1,7 +1,7 @@
 /**
  * 任务状况：任务现在做到哪里了，由程序据任务记录算出来，不经模型。任务起点页、切换工作面板与对话区的卡片用它。
  *
- * 只读，全部取自整份数据已经算好的东西（library.taskSnapshot）与工作项的清单（library.workItemRows）：有哪些工作项、总体分析的页按章归类的节数、
+ * 只读，全部取自整份数据已经算好的东西（library.taskSnapshot）与工作项的清单（library.workItemRows）：有哪些工作项、业务说明的页按章归类的节数、
  * 还没有了结的待澄清问题数、图按种类的张数、各集合的条目数与用户看过的条数、需求资产六类的现状、活动目录。
  * 章的归法与页面目录用的是同一个函数（agent/src/lib/overall_chapters.ts）。
  *
@@ -31,7 +31,7 @@
  * 从头编制时输入页上的几段（intake）。
  * 现在都是这里给的缺省文字，照需求规格说明这一类任务写；以后由任务类型的定义给。
  * versions 是任务的版本记录，按版本号从小到大，每项见 versionView。
- * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
+ * 没有阶段的任务（任务定义里没有「业务说明」集合）没有状况，返回 null。
  */
 
 import { CHAPTERS, chapterLayout, chapterPage } from "../../agent/src/lib/overall_chapters.ts";
@@ -39,6 +39,7 @@ import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
 import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, QUESTION_KIND_CLARIFY, STAGES, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
+import { fillText } from "../../agent/src/lib/texts.ts";
 
 /**
  * 任务起点页与活动输入页上的几段文字。lead 是任务名下面那一段定位的话；guide_note 是「三步开始」主按钮下面的一句；
@@ -49,27 +50,20 @@ import * as library from "./library.ts";
  */
 export function startPageTexts(taskName: string) {
   return {
-    lead: `本任务用于编制并持续维护「${taskName}」的需求规格说明。所有工作围绕同一套需求资产进行；每启动一个工作项，资产即得到补充或修正。`,
-    guide_note: "预计首轮产出：业务说明初稿与待澄清问题清单",
+    lead: fillText("status_page.lead", { task: taskName }),
+    guide_note: fillText("status_page.guide_note"),
     cases: [
-      { title: "有调研材料", text: "上传会议记录、现行制度、旧系统说明；助手核读后立章节并逐句引用。", focus: "materials" },
-      { title: "只有口头想法", text: "用三句话描述建设什么系统、服务哪些用户、解决什么问题；助手复述理解后逐项提问。", focus: "description" },
-      { title: "已有旧版规格说明", text: "旧版规格说明作为项目材料核读；助手按新结构重新组织，差异之处记为问题。", focus: "materials" },
+      { title: fillText("status_page.case_1_title"), text: fillText("status_page.case_1_text"), focus: "materials" },
+      { title: fillText("status_page.case_2_title"), text: fillText("status_page.case_2_text"), focus: "description" },
+      { title: fillText("status_page.case_3_title"), text: fillText("status_page.case_3_text"), focus: "materials" },
     ],
     intake: {
-      lead: "项目材料与目标系统描述至少提供一项。材料越完整，助手的初稿越接近实际业务；没有材料时，由目标系统描述开始，助手通过提问逐步建立业务说明。",
-      material_kinds: ["需求调研记录、访谈纪要", "现行制度、业务规则、办法", "旧系统说明、旧版规格说明", "表单、报表、单据样例"],
-      describe_note: "说明三点：建设什么系统、服务哪些用户、解决什么问题。助手将先复述其理解供你核对，再逐项提问。不必写功能清单，功能由助手从业务流程推导。",
-      describe_placeholder: "建设什么系统、服务哪些用户、解决什么问题……",
-      describe_examples: [
-        "建设图书馆借阅管理系统，服务读者与管理员，覆盖借书、还书、续借、预约与逾期处理。",
-        "现行借阅依靠人工登记，拟改为系统管理，并支持逾期提醒与到期前通知。",
-        "系统面向高校图书馆，读者分教师与学生两类，借阅上限与借期不同；采购编目不在范围内。",
-      ],
-      after: [
-        "有材料：助手核读材料，按角色、业务流程、业务对象立章节，列出待澄清问题，完成后在对话区汇报并提议进入「澄清」。",
-        "无材料：助手依据描述复述理解，进入「澄清」逐项提问。",
-      ],
+      lead: fillText("status_page.intake_lead"),
+      material_kinds: [fillText("status_page.material_kind_1"), fillText("status_page.material_kind_2"), fillText("status_page.material_kind_3"), fillText("status_page.material_kind_4")],
+      describe_note: fillText("status_page.describe_note"),
+      describe_placeholder: fillText("status_page.describe_placeholder"),
+      describe_examples: [fillText("status_page.describe_example_1"), fillText("status_page.describe_example_2"), fillText("status_page.describe_example_3")],
+      after: [fillText("status_page.after_materials"), fillText("status_page.after_description")],
     },
   };
 }
@@ -113,7 +107,7 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
   const stage = view.stage;
   const current = stage.current as Position;
 
-  // 业务说明：总体分析的页按标签归章；每章数在用的节，未归类的数在用的页。
+  // 业务说明：业务说明的页按标签归章；每章数在用的节，未归类的数在用的页。
   const pages = view.items.filter((one) => one.collection === OVERALL_COLLECTION);
   const layout = chapterLayout(pages.map((one) => chapterPage(one.item_id, one.fields)));
   const chapters = layout.chapters
@@ -132,7 +126,7 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
     else models.push({ kind: diagram.kind, name: diagram.kind_name, count: 1 });
   }
 
-  // 需求条目：总体分析与问题之外的每个集合。问题集合认的是状态字段的取值里有「用户决定保留」的集合。
+  // 需求条目：业务说明与问题之外的每个集合。问题集合认的是状态字段的取值里有「用户决定保留」的集合。
   const isQuestions = (collection: { fields: { values: unknown }[] }) =>
     collection.fields.some((field) => Array.isArray(field.values) && field.values.includes(QUESTION_KEEP_STATUS));
   const items = view.definition.collections

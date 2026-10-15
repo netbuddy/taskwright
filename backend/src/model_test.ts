@@ -67,7 +67,7 @@ let running = false;
 
 /** 测试用的启动配置：只在内存里，从服务的启动配置去掉与任务有关的几项。 */
 function testProfile(profile: Profile): Profile {
-  const { platform_skill: _skill, workspace_skills_dir: _skills, system_prompt_file: _prompt, ...rest } = profile;
+  const { workspace_skills_dir: _skills, system_prompt_file: _prompt, ...rest } = profile;
   return { ...rest, tools: [READ_TOOL], extensions: [] };
 }
 

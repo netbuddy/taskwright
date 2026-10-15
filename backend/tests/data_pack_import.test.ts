@@ -40,7 +40,7 @@ const USE_CASE = [{ op: "add", collection: "功能用例",
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。", supports: [{ field: "用例功能" }] }] }];
 
 /** 一页合格的主题（贴了标签、有例子、全部照抄材料）：新建的任务里要先有它、用户看过它、任务又移到了写条目阶段，才能写用例。 */
-const TOPIC = [{ op: "add", collection: "总体分析",
+const TOPIC = [{ op: "add", collection: "业务说明",
   fields: { 标题: "逾期罚款", 它是什么: "逾期不还的，按馆里的规定罚款。", 例子: ["读者凭借书证借书。"], 标签: ["概念"], 状态: "在用" },
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。", supports: [{ field: "它是什么" }] },
     { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭借书证借书。", supports: [{ field: "例子", index: 0 }] }] }];

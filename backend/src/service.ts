@@ -2,14 +2,14 @@
  * 任务服务：接手 --tasks 目录下的每个任务，拼出各读取接口的数据，建任务，收材料。它不写库（建任务经 agent 的 createTask 除外）。
  *
  * 接手任务时在任务目录里写一份占用标记（service.lock，见 occupancy.ts），退出时删掉；正被别的活着的服务占用的任务不接手：
- * 列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。修订统一之前建的任务（旧格式）不接手，列表里标明不支持。
+ * 列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。数据格式早于本程序能升级的最早格式的任务（旧格式）不接手，列表里标明不支持。
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
-import { TASK_DB_VERSION, newerDataText, taskWrittenBy } from "../../agent/src/lib/schema.ts";
+import { MIN_TASK_DB_VERSION, TASK_DB_VERSION, newerDataText, olderDataText, taskWrittenBy } from "../../agent/src/lib/schema.ts";
 import { MEDIA_SUFFIX } from "../../agent/src/lib/docx_markdown.ts";
 import { DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, parseDefinition } from "../../agent/src/lib/task_read.ts";
 import * as clock from "./clock.ts";
@@ -28,6 +28,7 @@ import { Hub } from "./hub.ts";
 import { DEBUG_MODE, PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
+import { listTaskTypes, recordSeedRevisions, revisionNumbers, seedTaskTypes, taskTypesRoot, typeInfo } from "./task_types.ts";
 import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
 import { readTaskJson, writeTaskJson } from "./task_json.ts";
 import type { PendingUpgrade } from "./data_upgrade.ts";
@@ -96,19 +97,12 @@ export function unsupportedTypeText(): string {
   return `只接受 ${uploadTypesText()} 文件。`;
 }
 
-/** 任务类型：task-types/ 下的每个目录，显示名取它的任务定义里的「任务名」；没有新格式任务定义的模板不列。 */
-export function taskTypes() {
-  const out = [];
-  for (const name of availableTemplates()) {
-    let label: unknown;
-    try {
-      label = JSON.parse(readTextFileLenient(join(TASK_TYPES_DIR, name, "docs", "task-definitions", `${name}.json`)))["任务名"];
-    } catch {
-      continue;
-    }
-    if (typeof label === "string" && label) out.push({ task_type: name, name: label });
-  }
-  return out;
+/**
+ * 任务类型：root 下的每个目录（缺省是产品自带的 task-types/；任务服务列的是用户数据目录下的那一份，见 Service.taskTypes），
+ * 显示名取它的任务定义里的「任务名」；没有新格式任务定义的模板不列。
+ */
+export function taskTypes(root: string = TASK_TYPES_DIR) {
+  return listTaskTypes(root);
 }
 
 export function newTaskId(): string {
@@ -176,14 +170,12 @@ export interface ServiceOptions {
   debug?: boolean;
 }
 
-/** 产品自带的这种任务类型的说明现在是第几版（任务定义里的「版本」）；定义读不出来或者没有写版本时是 null。 */
-export function taskTypeVersion(taskType: string): number | null {
-  try {
-    const version = JSON.parse(readTextFileLenient(join(TASK_TYPES_DIR, taskType, "docs", "task-definitions", `${taskType}.json`)))["版本"];
-    return Number.isInteger(version) ? version : null;
-  } catch {
-    return null;
-  }
+/**
+ * 这种任务类型的说明现在是第几版（任务定义里的「版本」）；定义读不出来或者没有写版本时是 null。root 缺省是产品自带的 task-types/；
+ * 任务服务看的是用户数据目录下的那一份。
+ */
+export function taskTypeVersion(taskType: string, root: string = TASK_TYPES_DIR): number | null {
+  return typeInfo(root, taskType)?.version ?? null;
 }
 
 /** 按码位排好的目录项。 */
@@ -222,6 +214,8 @@ export class Service {
   readonly runsDir: string;
   /** 数据目录：数据包导入的报告写在它的 logs/ 下，导出时从它读任务登记。 */
   readonly dataDir: string;
+  /** 建任务时从这里复制任务类型：数据目录下的 task-types/（见 task_types.ts）。 */
+  readonly typesRoot: string;
   readonly profile: Profile;
   /** 实际监听的端口：启动层在监听成功之后填上（命令行给的端口被占时会换到后面的端口）。 */
   port: number | null;
@@ -233,7 +227,6 @@ export class Service {
   readonly tasks = new Map<string, Task>();
   /** 正被别的服务占用、本服务没有接手的任务：任务编号 → {lock, dir}。 */
   readonly occupied = new Map<string, { lock: occupancy.Lock; dir: string }>();
-  readonly skipped = new Set<string>();
   /**
    * 数据格式与这个程序对不上、所以没有接手的任务，按目录名记：上一版建的、数据还没有升级（「需要升级」），升级过但没有做成
    * （「需要处理」），或者是更新的版本写的（「需要更新的程序」）。列表里照样列出并写明原因，打不开。每次扫描重算。
@@ -269,6 +262,10 @@ export class Service {
     this.releaseLock = options.release ?? occupancy.release;
     this.registry = options.registry ?? null;
     if (options.createTasksDir !== false) mkdirSync(this.tasksDir, { recursive: true });
+    // 任务类型落在数据目录下的 task-types/：第一次启动（或者产品带来了新的任务类型）时从产品自带的那一份播种，已有的不动（见 task_types.ts）。
+    this.typesRoot = taskTypesRoot(this.dataDir);
+    if (options.createTasksDir !== false) seedTaskTypes(this.dataDir, appVersion());
+    if (this.registry && options.createTasksDir !== false) recordSeedRevisions(this.dataDir, this.registry);
     // 知识库根目录同样转成绝对路径；第一次启动、还没有知识库的清单时建出通用知识库。
     this.knowledge = options.knowledgeDir ? new KnowledgeStore(resolve(options.knowledgeDir)) : null;
     if (this.knowledge && options.createTasksDir !== false) this.knowledge.ensure();
@@ -283,6 +280,8 @@ export class Service {
     const version = library.taskDbVersion(dir);
     if (version === null || version === TASK_DB_VERSION) return null;
     if (version > TASK_DB_VERSION) return { status: "需要更新的程序", note: newerDataText(taskWrittenBy(dir)) };
+    // 格式早于本程序能升级的最早格式：列出来，打不开，也不去升级。
+    if (version < MIN_TASK_DB_VERSION) return { status: "旧格式", note: olderDataText(version) };
     const failed = this.registry?.taskByDir(name) ?? null;
     if (failed?.upgrade_error) return { status: "需要处理", note: `这个任务的数据升级没有做成：${failed.upgrade_error}` };
     const how = this.mode === "desktop" ? "重新启动程序后升级。" : "请停下服务后运行 taskwright data upgrade。";
@@ -307,6 +306,8 @@ export class Service {
   /** 数据升级做完之后把打开着的服务级库接上（升级之前没有打开它）。 */
   attachRegistry(registry: ServiceDb): void {
     this.registry = registry;
+    // 播种时还没有服务级库的（数据要先升级），任务类型的修订 1 只存了目录：这时补记它的经过。
+    recordSeedRevisions(this.dataDir, registry);
   }
 
   scan(): void {
@@ -320,13 +321,7 @@ export class Service {
       let taskId: string | null = null;
       let row: Row | undefined;
       try {
-        if (db !== null && library.isPreRevision(db)) {
-          // 修订统一之前建的任务：本版本不支持，不接手（库表改动不做迁移）。
-          if (!this.skipped.has(name)) {
-            this.skipped.add(name);
-            console.log(`跳过任务目录 ${name}：${library.OLD_FORMAT_TEXT}`);
-          }
-        } else if (db !== null) {
+        if (db !== null) {
           row = db.prepare("SELECT task_id, task_name, definition_path, started_at FROM task LIMIT 1").get() as Row | undefined;
           taskId = row ? row.task_id : null;
         }
@@ -476,18 +471,6 @@ export class Service {
         session_count: null, supported: false, note: problem.note,
       });
     }
-    // 修订统一之前建的任务：本版本打不开，照样列出来并标明不支持，免得用户以为任务丢了。
-    for (const name of [...this.skipped].sort(library.byCodePoint)) {
-      const folder = join(this.tasksDir, name);
-      let modified: string | null = null;
-      if (existsSync(folder)) modified = clock.fromEpochNs(statSync(folder, { bigint: true }).mtimeNs);
-      out.push({
-        task_id: name, task_name: name, task_type: null, domain_tag: null, unavailable: "旧格式",
-        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, flow: null, work_item_count: null, blocking_count: null,
-        version_count: null, latest_published_at: null,
-        last_active_at: modified, session_count: null, supported: false, note: library.OLD_FORMAT_TEXT,
-      });
-    }
     return out;
   }
 
@@ -517,7 +500,9 @@ export class Service {
 
   create(body: Record<string, any>) {
     const taskType = or(body.task_type, DEFAULT_TYPE) as string;
-    const available = availableTemplates();
+    // 用户目录里还没有的（例如只读地建了服务对象之后）先播种。
+    if (seedTaskTypes(this.dataDir, appVersion()).length && this.registry) recordSeedRevisions(this.dataDir, this.registry);
+    const available = availableTemplates(this.typesRoot);
     if (!available.includes(taskType)) {
       throw new ApiError("bad_request", `没有「${pyStr(taskType)}」这种任务类型。`, { available });
     }
@@ -526,7 +511,7 @@ export class Service {
     const taskId = newTaskId();
     let result;
     try {
-      result = createTaskDir(join(this.tasksDir, taskId), taskType, name, tag, taskId);
+      result = createTaskDir(join(this.tasksDir, taskId), taskType, name, tag, taskId, null, this.typesRoot);
     } catch (error) {
       if (error instanceof CreateTaskError) throw new ApiError("rejected", "任务没有创建成功。", { reasons: [error.message] });
       throw error;
@@ -535,7 +520,8 @@ export class Service {
     writeFileSync(join(result.任务目录, SELECTION_FILE), JSON.stringify(initialSelection(), null, 2) + "\n", "utf-8");
     // 记下这个任务是哪个产品版本建的、任务类型说明是第几版（见 task_json.ts）。登记表在下面的扫描接手它时写。
     writeTaskJson(result.任务目录, {
-      created_by_version: appVersion(), task_type: taskType, task_type_version: taskTypeVersion(taskType), owner: "local",
+      created_by_version: appVersion(), task_type: taskType, task_type_version: taskTypeVersion(taskType, this.typesRoot),
+      task_type_revision: revisionNumbers(this.dataDir, taskType).at(-1) ?? null, owner: "local",
       created_at: clock.now(), upgraded_by_version: null, upgraded_at: null,
     });
     this.scan();
@@ -551,10 +537,10 @@ export class Service {
     const materials = library.materials(t.dir, t.definition()).map((m) => ({
       ...m, deletable: m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
     }));
-    // 任务类型说明的版本：这个任务建的时候复制进来的是第几版（task.json 记着），产品自带的现在是第几版。说明不随升级更新，
-    // 页面在两个数不同时写一句。上一版建的任务没有记，copied 是 null。
+    // 任务类型说明的版本：这个任务建的时候复制进来的是第几版（task.json 记着），用户目录里的这种任务类型现在是第几版。
+    // 说明不随升级更新，页面在两个数不同时写一句。上一版建的任务没有记，copied 是 null。
     const meta = readTaskJson(t.dir);
-    const taskTypeVersions = { copied: meta?.task_type_version ?? null, current: meta?.task_type ? taskTypeVersion(meta.task_type) : null };
+    const taskTypeVersions = { copied: meta?.task_type_version ?? null, current: meta?.task_type ? taskTypeVersion(meta.task_type, this.typesRoot) : null };
     return { ...view, materials, sessions, knowledge_libraries: selectedLibraries(t.dir), task_type_versions: taskTypeVersions };
   }
 

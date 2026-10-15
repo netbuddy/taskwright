@@ -11,7 +11,7 @@ import { RESUME_LINE, START_LINE, statusNoteLine } from "../model/statusNote";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-const START_TEXT = "这条会话开始时（10:02:03）的任务状况：任务「退款需求走查」（类型：软件需求规格说明编制），任务编号 TASK-P，状态是进行中。交付物现有 4 个条目。";
+const START_TEXT = "这条会话开始时（10:02:03）的任务状况：任务「退款需求走查」（类型：需求工程），任务编号 TASK-P，状态是进行中。交付物现有 4 个条目。";
 const RESUME_TEXT = "接着这条会话继续时（11:30:00），上次之后交付物的变化：新增了功能用例 UC-004、UC-005；修改了 UC-001。";
 const FALLBACK_TEXT = "助手这次没有用回复工具说话，系统自动提醒了它一句：「请用 reply 工具把要对用户说的话发出来」。这句不是你说的。";
 

@@ -1,7 +1,7 @@
 /**
  * 按阶段换系统提示，在真的 pi 上核对（真的后端进程与真的 pi，RPC 形态，模型换成进程内的假端点）：
  * 模型实际收到的系统消息，与助手一侧拼出来的文字逐字相同；一次运行之内不变；用户在卡片上点了「进入澄清」，这次点击引起的运行拿到的就是澄清的那一段；
- * 阶段没变的下一次运行沿用上一份；早先的任务（任务定义里没有「总体分析」集合）收到的仍是启动参数给的那一份加 pi 的 skill 清单。
+ * 阶段没变的下一次运行沿用上一份；早先的任务（任务定义里没有「业务说明」集合）收到的仍是启动参数给的那一份加 pi 的 skill 清单。
  * 这几条依赖 pi 的 before_agent_start 事件在 RPC 形态下的行为，换 pi 的版本时由这例测试守着。
  */
 
@@ -60,7 +60,7 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     const taskDir = join(dir, "tasks", taskId);
     const expected = (stage: "reading" | "clarifying") => composeStagePrompt({
       stage, workspaceDir: taskDir, tail: `<cwd>\n${taskDir}\n</cwd>`,
-      skills: [{ name: "srs-authoring", filePath: join(taskDir, ".pi", "skills", "srs-authoring", "SKILL.md") }],
+      skills: [{ name: "requirements-engineering", filePath: join(taskDir, ".pi", "skills", "requirements-engineering", "SKILL.md") }],
     });
 
     // 第一次运行：任务在核读材料。这次运行的两个请求（立页之前、工具结果回来之后）收到的都是核读材料的那一份。
@@ -97,26 +97,27 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     assert.deepEqual(notes.map((n) => [n.replaced, n.stage, n.how]), [[true, "reading", "recomposed"], [true, "clarifying", "recomposed"], [true, "clarifying", "reused"]]);
     const own = (text: string) => text.slice(0, -`\n\n<cwd>\n${taskDir}\n</cwd>`.length);
     assert.deepEqual(notes.map((n) => n.digest), [digestOf(own(reading.text)), digestOf(own(clarifying.text)), digestOf(own(clarifying.text))]);
-    assert.deepEqual(notes[0].parts.map((p: Dict) => p.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/srs-authoring/SKILL.md",
-      "agent/prompts/stages/reading.md", "agent/prompts/flows/analysis.md", ".pi/skills/srs-authoring/stages/reading.md"]);
+    assert.deepEqual(notes[0].parts.map((p: Dict) => p.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/requirements-engineering/SKILL.md",
+      "agent/prompts/stages/reading.md", "agent/prompts/flows/analysis.md", ".pi/skills/requirements-engineering/stages/reading.md"]);
     assert.ok(!JSON.stringify(notes).includes("你是 Taskwright 的执行者"));
 
-    // 早先的任务：把另一个任务的任务定义改成没有「总体分析」集合的样子（早先建的任务就是这样），它没有阶段。
-    const oldId: string = (await call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "早先的任务" })).body.task_id;
+    // 早先的任务：把另一个任务的任务定义改成没有「业务说明」集合的样子（早先建的任务就是这样），它没有阶段。
+    const oldId: string = (await call("POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "早先的任务" })).body.task_id;
     const oldDir = join(dir, "tasks", oldId);
     writeFileSync(join(oldDir, "inputs", "材料.md"), "读者凭借书证借书。\n", "utf-8");
     const definition = JSON.parse(sqlGet(oldDir, "SELECT definition_text FROM task")!.definition_text);
-    definition.交付物.条目集合 = definition.交付物.条目集合.filter((one: Dict) => one.名称 !== "总体分析");
-    delete definition.完成条件.总体分析;
+    definition.交付物.条目集合 = definition.交付物.条目集合.filter((one: Dict) => one.名称 !== "业务说明");
+    delete definition.完成条件.业务说明;
     sqlRun(oldDir, [["UPDATE task SET definition_text = ?", JSON.stringify(definition)]]);
     const oldSession: string = (await call("POST", `/api/v1/tasks/${oldId}/sessions`)).body.session_id;
     await sendAndWaitTurn(port, oldId, oldSession, async () => {
       assert.equal((await call("POST", `/api/v1/tasks/${oldId}/messages?session=${oldSession}`, { text: "你好。", client_id: "c-old" })).status, 200);
     });
     const old = systemText(requests()[4]);
-    const legacy = readFileSync(join(ROOT, "backend", "prompts", "executor_system_prompt.md"), "utf-8");
+    const legacy = readFileSync(join(ROOT, "agent", "prompts", "stages", "system.md"), "utf-8");
     assert.ok(old.startsWith(legacy), "系统提示的开头就是启动参数给的那一份");
-    assert.match(old, /<skills>[\s\S]*<name>taskwright-executor<\/name>[\s\S]*<name>srs-authoring<\/name>[\s\S]*<\/skills>/);
+    assert.match(old, /<skills>[\s\S]*<name>requirements-engineering<\/name>[\s\S]*<\/skills>/);
+    assert.ok(!old.includes("taskwright-executor"));
     assert.ok(old.endsWith(`<cwd>\n${oldDir}\n</cwd>`));
     assert.ok(!old.includes("# 现在这个阶段："));
     assert.deepEqual(promptNotes(dir, oldId), [], "早先的任务不报这一行");

@@ -22,9 +22,10 @@ import { DatabaseSync } from "node:sqlite";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { ACTOR_EXECUTOR, ACTOR_USER, databasePath, dump, emit, load, wallClockText } from "./db.ts";
 import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
-import { FUNCTION_NAMES, GATE_INVALID_TEXT, GATE_MISSING_TEXT, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
+import { FUNCTION_NAMES, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { proposalFor, proposalKindOf } from "./stage_proposal.ts";
+import { fillText, refusalText, textPrefix } from "./texts.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
   type ScanOutcome,
@@ -64,9 +65,9 @@ export const CARD_TYPED_TYPE = "taskwright-card-typed";
 /** 页面在卡片的文本框里发话时，卡片标识里 choice 写的固定值。 */
 export const CARD_TYPED_KEY = "typed";
 /** 卡片上点「这几条都看过了」之后替用户发的那句话的开头（lib/user_ops.ts 的 VIEWED_NOTICE_PREFIX）。 */
-const VIEWED_PREFIX = "我已经看过了：";
+const VIEWED_PREFIX = textPrefix("ui_ops.viewed_notice");
 /** 「先不管这条」之后后端替用户发的那句话的开头（backend/src/executor.ts 的 KEEP_PENDING_NOTICE_PREFIX）。 */
-const KEEP_PENDING_PREFIX = "我先不管 ";
+const KEEP_PENDING_PREFIX = textPrefix("ui_ops.keep_pending_notice");
 
 /** 这一轮的用户的话是系统按界面操作合成的：哪种操作、牵涉哪些条目、点的是哪条回复的哪个选项。 */
 export interface Synthesized {
@@ -272,7 +273,7 @@ export function understandingFactErrors(db: DatabaseSync, taskId: string, sessio
 }
 
 /**
- * 登记的结构化输出之一：执行者对用户这句话的理解。schema 就是发给执行者的那一份（平台 skill 里的说明由它生成）；
+ * 登记的结构化输出之一：执行者对用户这句话的理解。schema 就是发给执行者的那一份（平台说明里的说明由它生成）；
  * 每句用户的话都必须有一份，这一轮结束时没有就记 USER_INTENT_MISSING。
  */
 export const USER_INTENT_OUTPUT: StructuredOutput = {
@@ -467,16 +468,15 @@ export function requireUnderstanding(workspaceDir: string, sessionId: string, br
     db.close();
   }
   const shown = problems.slice(-GATE_PROBLEMS_SHOWN);
-  const why = shown.length === 0
-    ? GATE_MISSING_TEXT
-    : `这一轮写了 ${problems.length} 个 JSON 片段，${GATE_INVALID_TEXT}。` +
-      `${problems.length > shown.length ? `最近 ${shown.length} 个` : "各片段"}的问题：` + shown.map((one, i) => `（${i + 1}）${one}`).join("");
   // 引出用户那句原话：助手被拒几次之后容易忘了要理解的是哪一句。
-  const said = run.userText.trim() ? `：「${quotedUserText(run.userText)}」` : "";
-  const fact = `${label}没有执行：${INTENT_GATE_TEXT}${said}。${why}。`;
-  const guidance = "请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
-    `写完接着调用 ${toolName}。`;
-  throw new ToolRejection(`${fact}\n${guidance}`, fact, guidance, "gate");
+  const said = run.userText.trim() ? fillText("part.user_said", { text: quotedUserText(run.userText) }) : "";
+  const refusal = shown.length === 0
+    ? refusalText("gate.understanding_missing", { label, said, tool: toolName })
+    : refusalText("gate.understanding_invalid", {
+      label, said, tool: toolName, count: problems.length, problems: shown.map((one, i) => `（${i + 1}）${one}`).join(""),
+      which: problems.length > shown.length ? fillText("part.understanding_recent", { count: shown.length }) : fillText("part.understanding_each"),
+    });
+  throw new ToolRejection(`${refusal.fact}\n${refusal.guidance}`, refusal.fact, refusal.guidance, [refusal.code]);
 }
 
 /** 门禁拒绝时最多列几个片段的问题（最近的几个）。 */
@@ -559,11 +559,11 @@ export function recordReplyActs<T = never>(
       });
       const at = wallClockText();
       for (const row of rows) insertAct(db, taskId, sessionId, row, seq, at);
-      const describe = (row: ActRow) => `${row.act_id}（${FUNCTION_NAMES[row.function] ?? row.function}：${row.summary}）`;
+      const describe = (row: ActRow) => fillText("result.reply.act", { id: row.act_id, function: FUNCTION_NAMES[row.function] ?? row.function, summary: row.summary });
       const main = rows.find((row) => row.expects_response === 1);
-      const text = (extra?.text ?? "") + (rows.length ? `本轮记了 ${rows.map(describe).join("、")}。` : "") +
-        (main && resends ? `${main.act_id} 是 ${resends} 的重发，${resends} 不再等回应。` : "") +
-        (main ? `用户回应时，你下一轮理解里的 responds_to 写 ${main.act_id}。` : "");
+      const text = (extra?.text ?? "") + (rows.length ? fillText("result.reply.acts", { acts: rows.map(describe).join("、") }) : "") +
+        (main && resends ? fillText("result.reply.resend", { id: main.act_id, resends }) : "") +
+        (main ? fillText("result.reply.responds_to", { id: main.act_id }) : "");
       return {
         acts: rows.map((row) => ({ act_id: row.act_id, function: row.function, summary: row.summary, expects_response: row.expects_response === 1 })),
         text,
@@ -778,7 +778,7 @@ export function dialogueFactLines(facts: DialogueFacts): string[] {
         one.values.map((v) => `修订 ${v.revision_no}：${JSON.stringify(v.value)}`).join("，")).join("；")}。`,
     );
   }
-  if (lines.length > 0) lines.push("这几条事实只供参考，怎样用见平台 skill「三个事实怎么用」一节。");
+  if (lines.length > 0) lines.push("这几条事实只供参考，怎样用见平台说明「三个事实怎么用」一节。");
   return lines;
 }
 

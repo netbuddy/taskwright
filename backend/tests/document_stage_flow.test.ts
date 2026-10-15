@@ -49,7 +49,7 @@ const INTROS: [string, string][] = [
   ["业务规则", "这一章汇总各节里已经定下的规则，现在只有借书证丢失时的一条。"],
   ["决策记录与待澄清事项", "这一章按时间列出问过的问题与它们的去向。"],
 ];
-const intro = ([chapter, text]: [string, string]) => ({ op: "add", collection: "总体分析",
+const intro = ([chapter, text]: [string, string]) => ({ op: "add", collection: "业务说明",
   sources: [{ kind: "助手补充", excerpt: "据 OA-001、TBD-001 与 UC-001 概括。" }], fields: { 标题: `${chapter}导语`, 导语所属章: chapter, 它是什么: text, 状态: "在用" } });
 
 const SCRIPT = {

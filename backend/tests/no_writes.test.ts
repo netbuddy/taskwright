@@ -33,9 +33,9 @@ const ALLOWED: Record<string, string[]> = {
     "IDLE", "IDLE_NAME", "Position", "isPosition", "positionName",
     // 任务空闲时提议开始核读材料的那张卡片上「先不开始」的那一项（常量）。
     "STAY_IDLE_OPTION"],
-  // 从总体分析的页与问题条目算三张表（只做计算，不读库也不写库）。
+  // 从业务说明的页与问题条目算三张表（只做计算，不读库也不写库）。
   "overall_views.ts": ["ViewPage", "ViewQuestion", "ViewSource", "decisionsAndOpenQuestions", "goalTree", "rulesTable", "GoalNode"],
-  // 业务说明的章与节：总体分析的页按标签归章、编节号（只做计算，不读库，页面也用它）。任务状况里各章的节数从它来。
+  // 业务说明的章与节：业务说明的页按标签归章、编节号（只做计算，不读库，页面也用它）。任务状况里各章的节数从它来。
   "overall_chapters.ts": ["CHAPTERS", "chapterLayout", "chapterPage", "CHAPTER_DECISIONS", "CHAPTER_FLOWS", "CHAPTER_GOALS", "CHAPTER_OBJECTS", "CHAPTER_OVERVIEW", "CHAPTER_ROLES", "CHAPTER_RULES", "GLOSSARY_NAME", "LABEL_CONCEPT"],
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
@@ -51,6 +51,8 @@ const ALLOWED: Record<string, string[]> = {
   "diagram_scan.ts": ["contextShape", "diagramGraph"],
   // TASK_ID_PATTERN 是任务编号的写法（一个正则），数据包导入时用它核对包里写的编号。
   "create_task.ts": ["createTask", "TASK_ID_PATTERN"],
+  // 运行时文字的模板（agent/prompts/runtime/）：只读文件、填值。
+  "texts.ts": ["fillText", "textPattern", "textPrefix", "templates"],
   // renumberTask 是写入：把一个任务库里的任务编号换成新的。它只许在数据包的导入里调（src/data_pack.ts，导入的任务与已有的任务
   // 编号相同而用户选了改编号时），换的是还在暂存位置、没有进到任务根目录的那份副本；下面另有一条测试守着别的文件不导入它。
   "renumber_task.ts": ["renumberTask"],
@@ -60,7 +62,7 @@ const ALLOWED: Record<string, string[]> = {
   // 位置表：从 Word 文件算出章节，写成材料旁边的文件（与分段清单一样是文件，不是库）。
   "docx_locations.ts": ["LOCATIONS_SUFFIX", "isLocationTable"],
   "docx_location_input.ts": ["locationTable"],
-  // 总体分析由事实算出来的几样（待核实、因依据而待核实、提到）：不依赖任何模块、只算不读库的函数与两个常量，后端的快照把自己读出的事实交给它们算。
+  // 业务说明由事实算出来的几样（待核实、因依据而待核实、提到）：不依赖任何模块、只算不读库的函数与两个常量，后端的快照把自己读出的事实交给它们算。
   "overall_analysis.ts": ["OVERALL_COLLECTION", "PlainItem", "RevisionFacts", "Verification", "basisPending", "isSupplement", "mentionsOf", "verificationOf", "viewedIn", "OVERALL_FIELDS", "EXCEPTION_EXAMPLE_PREFIX", "isDeprecated", "tagsOf"],
   // 评审结论：不依赖任何模块的纯函数，只按传进去的记录下结论。
   "review_verdict.ts": ["reviewVerdict"],
@@ -69,7 +71,7 @@ const ALLOWED: Record<string, string[]> = {
   // 知识库：交给助手的环境变量名、任务目录里记选用的文件名（两个常量）。
   "knowledge.ts": ["KNOWLEDGE_ROOT_ENV", "SELECTION_FILE"],
   // 理解格式的几个常量：门禁拒绝里固定的几句话，过程摘要按它们认回复是因为什么被拒的。
-  "intent_schema.ts": ["GATE_MISSING_TEXT", "INTENT_GATE_TEXT"],
+  "intent_schema.ts": ["understandingGateOf"],
   // Word 文档的投影全文 → 各段文字：只做计算的函数，知识库文档切成片段时用。
   "docx_source.ts": ["projectionParagraphs", "tableCells"],
   // 自带工具返回的限量：几个常量与截短之后加的那句话（只做计算，不碰库），集成测试拿它们核对助手实际收到的文字。
@@ -90,11 +92,11 @@ const ALLOWED: Record<string, string[]> = {
   "stage_read.ts": ["stageSummaryOf", "activityRecords", "archivedSessions", "WorkItemBrief", "workItemBrief", "workItemSessionName", "workItemSessions"],
   // 开着的提议：从事件表读出任务现在待决定的那一条（只读函数，不写库），与它的类型。
   "stage_proposal.ts": ["OpenProposal", "openProposal"],
-  "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase", "UPGRADED_VERSION_NOTE", "OverallTemplate"],
+  "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "MIN_TASK_DB_VERSION", "olderDataText", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase", "UPGRADED_VERSION_NOTE"],
   // 版本记录只读：读出各版与它们的类型；记一次发布的 recordVersion 是写入函数，不在这里。
   "versions.ts": ["VersionRecord", "versionRecords", "versionDir", "ARCHIVED_MARKDOWN", "ARCHIVED_DOCX"],
-  // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。
-  "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST"],
+  // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。改任务类型时用 loadDefinition 核对改后的任务定义读得通（只读文件，不碰库）。
+  "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition"],
 };
 
 function files(dir: string): string[] {

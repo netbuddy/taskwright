@@ -6,12 +6,12 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { templates } from "../src/lib/texts.ts";
 import { tempDir } from "./helpers.ts";
 import {
   CANCELLED_TEXT, CLOSING_TEXT, LOCK_NAME, NOT_FOUND_TEXT, NO_DOCUMENTS_TEXT, NO_KNOWLEDGE_TEXT, REASON_TEXT, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, SEARCH_PATH,
@@ -346,9 +346,8 @@ test("给助手的每一句话都不请它改用 grep 去翻知识库，也不�
 });
 
 test("工具的说明：什么时候查、一次查一件事、不用写 limit、一个片段里有多条规定时逐条看、查到的就是逐字的原文、不要用 grep 去翻知识库", () => {
-  // 工具的登记文件依赖 pi 带来的包，这里不导入它，只读它的文字。
-  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "tools", "search_knowledge.ts"), "utf-8");
-  const description = [...source.slice(source.indexOf("description:"), source.indexOf("promptSnippet:")).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
+  // 说明文字在模板 agent/prompts/tools/search_knowledge.md 里。
+  const description = templates().get("search_knowledge.description")!.body;
   for (const words of [
     "按意思、按字面两路比较",
     "知道条号或原话时把它写进去，按字面那一路会找到。",
@@ -361,5 +360,5 @@ test("工具的说明：什么时候查、一次查一件事、不用写 limit�
   ]) assert.ok(description.includes(words), words);
   // 不写「最多 5 个」（写了模型就照着写 5），不再提读原文核对、换算好之前不能查、别的工具不能用。
   assert.doesNotMatch(description, /最多|用 read|还不能查|不能用 grep|也不能用 ls|检索|向量/);
-  assert.doesNotMatch(source.slice(source.indexOf("limit: Type.Optional")).split("\n")[0], /最多/);
+  assert.doesNotMatch(templates().get("search_knowledge.param.limit")!.body, /最多/);
 });

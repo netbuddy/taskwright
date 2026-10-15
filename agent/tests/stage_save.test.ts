@@ -1,6 +1,6 @@
 /**
  * 保存修订按工作阶段守门（lib/save_revision.ts 调 lib/stage.ts）：助手这一刻能写什么看任务现在所在的阶段。
- * 总体分析的页与问题条目一直可以写（评审确认阶段页只能改状态与改看）；别的集合的条目要到写条目阶段，新增、修改、删除都一样。
+ * 业务说明的页与问题条目一直可以写（评审确认阶段页只能改状态与改看）；别的集合的条目要到写条目阶段，新增、修改、删除都一样。
  * 被拦的操作逐个报原因，整批一个也不写。用户在界面上的操作不看阶段；早先建的任务没有阶段。
  */
 
@@ -13,7 +13,7 @@ import { runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 const page = (title: string, fields: Record<string, unknown> = {}) =>
-  ({ op: "add", collection: "总体分析", fields: { 标题: title, 它是什么: `${title}是馆里的一件事。`, 状态: "在用", ...fields }, sources: [SOURCE] });
+  ({ op: "add", collection: "业务说明", fields: { 标题: title, 它是什么: `${title}是馆里的一件事。`, 状态: "在用", ...fields }, sources: [SOURCE] });
 const useCase = (name: string) => ({ op: "add", collection: "用例", fields: { 名称: name, 步骤: ["选书", "办手续"] }, sources: [SOURCE] });
 const problem = (text: string) => ({ op: "add", collection: "问题", fields: { 事项: text, 状态: "未解决" }, sources: [SOURCE] });
 
@@ -73,7 +73,7 @@ test("别的集合的条目：核读材料、澄清、整理建模三个阶段�
   assert.equal(refusal(dir, [{ op: "delete", item: "UC-002", base_revision: revisionOf(dir, "UC-002") }]), null, "评审确认阶段可以删");
 });
 
-test("总体分析的页前四个阶段新增、修改、删除都可以；问题条目每个阶段都可以记（它的修改另有自己的规矩，不归阶段管）", () => {
+test("业务说明的页前四个阶段新增、修改、删除都可以；问题条目每个阶段都可以记（它的修改另有自己的规矩，不归阶段管）", () => {
   const dir = workspace();
   let n = 0;
   for (const stage of ["reading", "clarifying", "modeling", "writing"] as const) {
@@ -89,7 +89,7 @@ test("总体分析的页前四个阶段新增、修改、删除都可以；问�
 test("评审确认阶段：页只能改状态与改看，不能新立、不能删、不能改别的字段；问题条目照常可以写", () => {
   const dir = filled();
   enterStage(dir, "reviewing");
-  assert.ok(refusal(dir, [page("续借")])!.includes("新增到「总体分析」的条目：任务现在在评审确认阶段，这个阶段不能新立主题页。\n  怎么办：要动主题页的内容，得先回到澄清或整理建模：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_clarify「退回澄清」、stay_in_stage「留在本段」，由用户在卡片上点。"));
+  assert.ok(refusal(dir, [page("续借")])!.includes("新增到「业务说明」的条目：任务现在在评审确认阶段，这个阶段不能新立主题页。\n  怎么办：要动主题页的内容，得先回到澄清或整理建模：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_clarify「退回澄清」、stay_in_stage「留在本段」，由用户在卡片上点。"));
   const edited = refusal(dir, [{ op: "update", item: "OA-002", base_revision: revisionOf(dir, "OA-002"), fields: { 它是什么: "读者对借出的书办预约。", 状态: "已废弃" } }])!;
   assert.ok(edited.includes("OA-002：任务现在在评审确认阶段，这个阶段主题页只能改「状态」与「改看」，这次还改了「它是什么」。"), edited);
   assert.ok(refusal(dir, [{ op: "delete", item: "OA-002", base_revision: revisionOf(dir, "OA-002") }])!.includes("任务现在在评审确认阶段，这个阶段不能删除主题页。"));
@@ -114,10 +114,10 @@ test("一批里混着页与用例：被拦的那个操作报一条，整批一�
 
 test("阶段与最低门都过不去时两条原因都报；守门按调用那一刻还在进行的那条活动记录判", () => {
   const dir = workspace();
-  // 需求分析从核读材料启动。总体分析里一页都没有，最低门也过不去。
+  // 需求分析从核读材料启动。业务说明里一页都没有，最低门也过不去。
   enterStage(dir, "reading");
   const both = refusal(dir, [useCase("借书")])!;
-  assert.ok(both.includes("任务现在在核读材料阶段，这个阶段不能新增「用例」的条目；还没有用户看过的主题：总体分析里还没有一页主题"), both);
+  assert.ok(both.includes("任务现在在核读材料阶段，这个阶段不能新增「用例」的条目；还没有用户看过的主题：业务说明里还没有一页主题"), both);
   assert.ok(both.includes("进入写条目要由用户在卡片上选「开始写条目」"), both);
   // 用户把任务移到写条目：下一次调用就只剩最低门。
   enterStage(dir, "writing");

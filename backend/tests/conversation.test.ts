@@ -282,8 +282,8 @@ test("过程摘要：grep 的返回太多、被截短时写搜到几行、只看
 });
 
 test("过程摘要：回复被拒按真实原因分写（没有写理解、理解不合格、形式不对）；连续被拒到上限、由工具停下的那一步写已经停下", () => {
-  const missing = "回复没有执行：先按 schema 写下你对用户这句话的理解。这一轮还没有写理解。\n请按平台 skill「先写理解」一节的格式……";
-  const invalid = "回复没有执行：先按 schema 写下你对用户这句话的理解。这一轮写了 2 个 JSON 片段，都不是合格的理解。各片段的问题：（1）……";
+  const missing = "回复没有执行：先按 schema 写下你对用户这句话的理解。这一轮还没有写理解。\n请按平台说明「先写理解」一节的格式……";
+  const invalid = "回复没有执行：先按 schema 写下你对用户这句话的理解。这一轮写了 2 个 JSON 片段，都不是合格的理解。各片段的问题：（1）……。\n请按平台说明「先写理解」一节的格式……";
   const form = "回复没有执行：informs 应当是一个列表。";
   assert.deepEqual([replyRefusal(missing), replyRefusal(invalid), replyRefusal(form)], ["understanding_missing", "understanding_invalid", "form"]);
   const said = (text: string) => stepText("reply", {}, true, true, { refusal: replyRefusal(text) }, {});

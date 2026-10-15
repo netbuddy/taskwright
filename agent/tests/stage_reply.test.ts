@@ -29,7 +29,7 @@ test("写了 stage 或 reason：整次回复被拒，说明两项已经停用、
     });
   }
   // 指引里列出五个退回的键与「留在本段」，与程序里的常量相同。
-  for (const one of [...Object.values(BACK_OPTIONS), STAY_HERE_OPTION]) assert.ok(STAGE_PARAM_RETIRED[1].includes(`${one.key}「${one.text}」`), one.key);
+  for (const one of [...Object.values(BACK_OPTIONS), STAY_HERE_OPTION]) assert.ok(STAGE_PARAM_RETIRED.guidance.includes(`${one.key}「${one.text}」`), one.key);
 });
 
 test("别的多出来的项照旧报「多了」，不再提 stage 与 reason", () => {

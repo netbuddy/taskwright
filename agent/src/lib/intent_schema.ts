@@ -2,17 +2,18 @@
  * 理解格式的 JSON Schema：读进来，给出几样取自它的清单，并按它核对一份理解的形式。
  *
  * schema 文件 agent/prompts/schemas/user_intent.schema.json 是唯一的来源：用户侧九种功能、执行者回复的五种向用户要的回应
- * （lib/reply.ts 的 ACT_KINDS 取自这里）、三档把握、摘要的字数上限，都从它读；平台 skill 里的说明与示例由
- * scripts/render-intent-schema.mjs 从它生成。本模块只读这一个文件，不导入别的模块，免得与 reply.ts 互相导入。
+ * （lib/reply.ts 的 ACT_KINDS 取自这里）、三档把握、摘要的字数上限，都从它读；平台说明（agent/prompts/stages/common.md）里的说明与示例由
+ * scripts/render-intent-schema.mjs 从它生成。本模块只读这一个文件，除了取模板的 texts.ts 不导入别的模块，免得与 reply.ts 互相导入。
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { textPattern } from "./texts.ts";
 
 /** 理解格式的 JSON Schema 文件，仓内相对路径（写进提示与诊断用）。 */
 export const INTENT_SCHEMA_FILE = "agent/prompts/schemas/user_intent.schema.json";
-/** 理解格式的 JSON Schema 文件。平台 skill 里的说明由 scripts/render-intent-schema.mjs 从它生成。 */
+/** 理解格式的 JSON Schema 文件。平台说明（agent/prompts/stages/common.md）里的说明由 scripts/render-intent-schema.mjs 从它生成。 */
 export const INTENT_SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts", "schemas", "user_intent.schema.json");
 
 type Json = Record<string, any>;
@@ -31,14 +32,16 @@ export const FUNCTION_NAMES: Record<string, string> = {
   ...INTENT_SCHEMA.$defs.executor_function["x-names"],
 };
 
-/** 门禁拒绝的开头。lib/reply.ts 数「回复」连续被拒几次时，按它把门禁的拒绝排除在外。 */
-export const INTENT_GATE_TEXT = "先按 schema 写下你对用户这句话的理解";
 /**
- * 门禁拒绝里说原因的两句：这一轮一个理解的片段都没有写，或者写了但都不合格。后端的过程摘要按这两句分开写
- * （backend/src/work_summary.ts），lib/rejection_limit.ts 也按它们认是哪一种拒绝；改这里的字，两处跟着变。
+ * 「先写理解」那道门的两种拒绝（这一轮一个理解的片段都没有写，或者写了但都不合格），按工具结果的文字认；不是这道门的拒绝时为 null。
+ * 会话记录里的工具结果只有文字、没有原因码，所以按模板 gate.understanding_missing、gate.understanding_invalid
+ * （agent/prompts/runtime/rejections_gate.md）转成的正则认。lib/reply.ts 数「回复」连续被拒几次时按它把这道门的拒绝排除在外，
+ * lib/rejection_limit.ts 按它认是哪一种拒绝，后端的过程摘要按它分开写（backend/src/work_summary.ts）。
  */
-export const GATE_MISSING_TEXT = "这一轮还没有写理解";
-export const GATE_INVALID_TEXT = "都不是合格的理解";
+export function understandingGateOf(text: string): "understanding_missing" | "understanding_invalid" | null {
+  if (new RegExp(textPattern("gate.understanding_missing"), "s").test(text)) return "understanding_missing";
+  return new RegExp(textPattern("gate.understanding_invalid"), "s").test(text) ? "understanding_invalid" : null;
+}
 
 /** 摘要最多几个字（与 schema 里 summary 的 maxLength 一致）。 */
 export const SUMMARY_LIMIT: number = INTENT_SCHEMA.properties.acts.items.properties.summary.maxLength;

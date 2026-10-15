@@ -85,7 +85,7 @@ test("整套导出：清单文件记着版本、范围、任务与知识库；�
   const material = byPath.get(`tasks/${a}/inputs/售后退款 业务说明.md`)!;
   assert.deepEqual([material.sha256, material.mtime_ms], [sha256(readFileSync(join(where.tasksDir, a, "inputs", "售后退款 业务说明.md"))), materialAt]);
   for (const path of [`tasks/${a}/${DB_NAME}`, `tasks/${a}/task.json`, `tasks/${a}/knowledge.json`, `tasks/${a}/.pi/settings.json`, `tasks/${a}/inputs/图.png`,
-    `tasks/${a}/docs/task-definitions/srs-authoring.json`, ...archive.map((one) => `runs/${a}/${one}`)]) assert.ok(byPath.has(path), path);
+    `tasks/${a}/docs/task-definitions/requirements-engineering.json`, ...archive.map((one) => `runs/${a}/${one}`)]) assert.ok(byPath.has(path), path);
   assert.equal(byPath.get(`runs/${a}/${archive[0]}`)!.sha256, sha256(readFileSync(join(where.runsDir, a, archive[0]))), "归档原样");
   const left = manifest.files.map((f) => f.path).filter((path) => /service\.lock|\.uploading|\.tmp$|-wal$|-shm$/.test(path));
   assert.deepEqual(left, [], "占用标记、暂存目录、临时文件与日志文件不带");
@@ -100,7 +100,7 @@ test("整套导出：清单文件记着版本、范围、任务与知识库；�
   assert.deepEqual(JSON.parse(content(PACK_LIBRARIES).toString("utf-8")).libraries.map((one: any) => one.id).sort(), ["general", lib.id].sort());
   const register = JSON.parse(content(PACK_REGISTER).toString("utf-8")).tasks as Record<string, unknown>[];
   assert.deepEqual(register.map((row) => [row.task_id, row.name, row.owner, row.status, row.task_type, row.dir]).sort(),
-    [[a, "甲", "local", null, "srs-authoring", a], [b, "乙", "local", null, "srs-authoring", b]].sort());
+    [[a, "甲", "local", null, "requirements-engineering", a], [b, "乙", "local", null, "requirements-engineering", b]].sort());
 
   // 包里的任务库与原库内容相同（条数相同），而且只是一个文件。
   const copyDir = fresh("db");
@@ -179,16 +179,16 @@ test("一个任务、一个知识库：只带它自己的；没有这个编号�
 test("还没有升级的数据目录也能导出：目录名与编号不同的任务按编号进包，清单文件记着原目录名与旧的格式版本", async () => {
   const where = locations(fresh("old"));
   mkdirSync(where.tasksDir, { recursive: true });
-  cpSync(join(SAMPLES, "0.4.3"), join(where.tasksDir, "0.4.3"), { recursive: true });
+  cpSync(join(SAMPLES, "format-8-b"), join(where.tasksDir, "format-8-b"), { recursive: true });
   const to = join(fresh("out"), "old.taskwright.zip");
   mkdirSync(join(to, ".."), { recursive: true });
   const result = await exportPack(where, { scope: "all", to });
   const { manifest, names, content } = readPack(to);
   assert.deepEqual([manifest.data_format, manifest.task_db_version, manifest.libraries], [0, TASK_DB_VERSION, []]);
-  assert.deepEqual(manifest.tasks.map((t) => [t.task_id, t.name, t.dir, t.task_db_version, t.owner]), [["TASK-SAMPLE-043", "图书借阅（样本）", "0.4.3", 0, "local"]]);
-  assert.ok(names.includes(`tasks/TASK-SAMPLE-043/${DB_NAME}`) && names.includes("tasks/TASK-SAMPLE-043/inputs/材料.md"));
+  assert.deepEqual(manifest.tasks.map((t) => [t.task_id, t.name, t.dir, t.task_db_version, t.owner]), [["TASK-SAMPLE-8B", "图书借阅（样本乙）", "format-8-b", 8, "local"]]);
+  assert.ok(names.includes(`tasks/TASK-SAMPLE-8B/${DB_NAME}`) && names.includes("tasks/TASK-SAMPLE-8B/inputs/材料.md"));
   assert.deepEqual(JSON.parse(content(PACK_REGISTER).toString("utf-8")).tasks.map((row: any) => [row.task_id, row.owner, row.task_type, row.dir]),
-    [["TASK-SAMPLE-043", "local", "srs-authoring", "TASK-SAMPLE-043"]]);
+    [["TASK-SAMPLE-8B", "local", "srs-authoring", "TASK-SAMPLE-8B"]]);
   assert.equal(existsSync(join(where.dataDir, "service.sqlite")), false, "导出不建服务级库");
   assert.deepEqual(result.skipped, []);
 });

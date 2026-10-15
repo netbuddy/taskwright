@@ -17,6 +17,7 @@ import { RULE_REQUIRED } from "./definition.ts";
 import { ACTOR_EXECUTOR, ACTOR_USER, emit } from "./db.ts";
 import { withTaskDatabase } from "./schema.ts";
 import { EVENT_REVIEW_BATCH } from "./review_state.ts";
+import { fillText } from "./texts.ts";
 
 export const MAX_PARALLEL = 4;
 export const ITEM_TIMEOUT_MS = 60_000;
@@ -168,21 +169,21 @@ export function statusText(r: ItemOutcome): string {
   if (r.status === "评审未完成") return "评审未完成";
   const problems = r.findings.filter((f) => f.level === RULE_REQUIRED).length;
   const advice = r.findings.length - problems;
-  if (r.status === "合规") return advice ? `合规（建议 ${advice} 条）` : "合规";
-  return `不合规（问题 ${problems} 处，建议 ${advice} 条）`;
+  if (r.status === "合规") return advice ? fillText("result.review.status_passed_advice", { advice }) : fillText("result.review.status_passed");
+  return fillText("result.review.status_failed", { problems, advice });
 }
 
 /** 给调用方的文字：一句总数，然后每条一行结论，发现逐条列在下面。 */
 export function summaryText(results: ItemOutcome[]): string {
   const lines: string[] = [];
   const counts = (s: ItemOutcome["status"]) => results.filter((r) => r.status === s).length;
-  lines.push(`评审了 ${results.length} 个条目：合规 ${counts("合规")} 个，不合规 ${counts("不合规")} 个，评审未完成 ${counts("评审未完成")} 个。`);
+  lines.push(fillText("result.review.summary", { count: results.length, passed: counts("合规"), failed: counts("不合规"), unfinished: counts("评审未完成") }));
   for (const r of results) {
     if (r.status === "评审未完成") {
-      lines.push(`${r.item_id}（修订 ${r.revision_no}）：评审未完成（${r.reason}），没有记下合规与否，可以稍后再评审。`);
+      lines.push(fillText("result.review.unfinished_line", { item: r.item_id, revision: r.revision_no, reason: r.reason }));
       continue;
     }
-    lines.push(`${r.item_id}（修订 ${r.revision_no}）：${statusText(r)}。`);
+    lines.push(fillText("result.review.line", { item: r.item_id, revision: r.revision_no, status: statusText(r) }));
     r.findings.forEach((f, i) => lines.push(`  ${i + 1}. ${findingText(f)}`));
   }
   return lines.join("\n");

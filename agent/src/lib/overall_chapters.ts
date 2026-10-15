@@ -1,5 +1,5 @@
 /**
- * 业务说明的章与节：总体分析的页按标签归到七章里，章内排出先后、编上节号。只算不存，也不读库。
+ * 业务说明的章与节：业务说明的页按标签归到七章里，章内排出先后、编上节号。只算不存，也不读库。
  *
  * - 七章固定：概述与范围、角色、业务流程、业务对象、业务规则、业务目标、决策记录与待澄清事项。
  *   第 5、7 章没有自己的页，内容是从各页与问题条目算出来的表（lib/overall_views.ts）。
@@ -130,7 +130,7 @@ function ordered(pages: readonly ChapterPage[], order: (a: ChapterPage, b: Chapt
 }
 
 /**
- * 业务说明的章与节：七章各自的节，与没有归到任何一章的页。pages 是总体分析的全部页（含已废弃的）；每一页恰好出现一次，
+ * 业务说明的章与节：七章各自的节，与没有归到任何一章的页。pages 是业务说明的全部页（含已废弃的）；每一页恰好出现一次，
  * 要么在某一章的 sections 里，要么在 unsorted 里。要数在用的页：章里数节号不是 null 的，unsorted 里数 deprecated 为假的。
  */
 export function chapterLayout(pages: readonly ChapterPage[]): ChapterLayout {

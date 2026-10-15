@@ -14,7 +14,7 @@ import { formatTime } from "../model/format";
 import { openTask } from "../model/startPage";
 import { go } from "../router";
 
-/** 修订统一之前建的旧格式任务，或者正被别的服务占用的任务：列出来，灰显，打不开。 */
+/** 格式太早的旧格式任务，或者正被别的服务占用的任务：列出来，灰显，打不开。 */
 const unsupported = (t: TaskListEntry) => t.supported === false;
 /** 数据格式与这个程序对不上的三种情形（后端给的字样）：上一版的数据还没有升级、升级没有做成、是更新的版本写的。原因在 note 里。 */
 const FORMAT_STATES = ["需要升级", "需要处理", "需要更新的程序"];

@@ -1,5 +1,5 @@
 /**
- * 从任务库读出总体分析那几样（src/lib/overall_read.ts），经真实的保存修订与用户的界面操作造数据：
+ * 从任务库读出业务说明那几样（src/lib/overall_read.ts），经真实的保存修订与用户的界面操作造数据：
  * 待核实的四种情形（助手补充未确认、用户看过之后、助手再改之后、用户亲手改之后），因依据而待核实，提到；
  * 以及助手查看条目、查询任务状态时读到的说法。
  */
@@ -20,7 +20,7 @@ import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorksp
 
 const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
-  ({ op: "add", collection: "总体分析", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
+  ({ op: "add", collection: "业务说明", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
 
 function workspace(definition: Record<string, any> = overallDefinition()): string {
   const dir = makeWorkspace(definition);
@@ -154,7 +154,7 @@ test("助手读到的说法：查看条目写待核实与提到它的地方，�
   assert.match(getItem(dir, { item_id: "UC-001" }).text, /待核实：它依据的主题 OA-001 已废弃，改看 OA-002；请改成依据现在在用的主题。/);
 });
 
-test("没有总体分析集合的任务（0.4 建的）：待核实照样算，没有提到，查看条目照旧", () => {
+test("没有业务说明集合的任务（0.4 建的）：待核实照样算，没有提到，查看条目照旧", () => {
   const dir = workspace(demoDefinition() as Record<string, any>);
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面", "输入口令"] },
     sources: [{ ...SOURCE, supports: [{ field: "名称" }] }, SUPPLEMENT([{ field: "步骤" }])] }] });

@@ -11,7 +11,7 @@ import { runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, SOURCE, callIn, count, makeWorkspace, overallDefinition } from "./helpers.ts";
 
 const supplement = (excerpt: string, supports?: unknown[]) => ({ kind: "助手补充", excerpt, ...(supports ? { supports } : {}) });
-const page = (sources: unknown[], fields: Record<string, unknown> = {}) => ({ op: "add", collection: "总体分析",
+const page = (sources: unknown[], fields: Record<string, unknown> = {}) => ({ op: "add", collection: "业务说明",
   fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 已经定下的: ["只有在架的书才能预约取书。", "保留期是 3 天。"], 状态: "在用", ...fields },
   sources: [{ ...SOURCE, supports: [{ field: "它是什么" }, { field: "已经定下的", index: 0 }] }, ...sources] });
 

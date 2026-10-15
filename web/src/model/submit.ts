@@ -5,7 +5,6 @@
 import type { AssistantReply, ConversationMessage, Task } from "../api/types";
 import { COMPLETE_KEY } from "../../../agent/src/lib/completion_consent.ts";
 import { CONFIRM_CONDITION, REVIEW_CONDITION, keepPendingField } from "./items";
-import { collectionLabel } from "./overall";
 import { answeredText } from "./cardAnswer";
 import { nextVersionNo, somethingToPublish } from "./versions";
 
@@ -60,8 +59,8 @@ export function submitQuestion(task: Task): string {
   const read = filled.filter((c) => !listed.includes(c) && keepPendingField(task, c.name) === null && has(c.name, CONFIRM_CONDITION));
   const issues = filled.filter((c) => has(c.name, UNRESOLVED_CONDITION));
   const parts = [
-    ...(listed.length ? [`${listed.map((c) => collectionLabel(c.name)).join("、")}一共 ${count} 个条目${facts.map((f) => "，" + f).join("")}`] : []),
-    ...(read.length ? [`${read.map((c) => `${countOf(c.name)} 条${collectionLabel(c.name)}`).join("、")}你也都看过了`] : []),
+    ...(listed.length ? [`${listed.map((c) => c.name).join("、")}一共 ${count} 个条目${facts.map((f) => "，" + f).join("")}`] : []),
+    ...(read.length ? [`${read.map((c) => `${countOf(c.name)} 条${c.name}`).join("、")}你也都看过了`] : []),
     ...(issues.length ? [`${issues.map((c) => `${countOf(c.name)} 个${c.name}`).join("、")}都已经解决或者由你决定保留`] : []),
   ];
   return `${parts.length ? parts.join("；") + "。" : ""}要发布第 ${nextVersionNo(task)} 版吗？发布之后仍然可以接着修改，以后再发布新的一版。`;

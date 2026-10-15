@@ -14,7 +14,7 @@ import { Hub } from "../src/hub.ts";
 import { callFacts } from "../src/library.ts";
 import { DatabaseSync } from "node:sqlite";
 import { type CallFacts, UNFINISHED_TEXT, savedFacts, unfinishedText, worksFromEntries } from "../src/work_summary.ts";
-import { captureConsole, makeLegacyTask, makeWorkspace, tempDir } from "./helpers.ts";
+import { captureConsole, makePagedTask, makeWorkspace, tempDir, topicPage } from "./helpers.ts";
 
 // 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
 captureConsole();
@@ -117,7 +117,8 @@ test("保存了什么：几次修订从小到大、同一个条目只数一次�
 });
 
 test("保存图的调用没有结果：任务库里查得到那次调用写的图时照常写保存了图，算进张数；查不到仍写「保存图没有做完」", () => {
-  const typed = makeLegacyTask(join(tmp, "typed"), { "材料.md": "读者凭口令登录。" }, [
+  const material = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭口令登录。" };
+  const typed = makePagedTask(join(tmp, "typed"), { "材料.md": "读者凭口令登录。" }, [topicPage("口令", "读者凭口令登录。", material)], [
     [{ op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["开始"] },
       sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭口令登录。" }] }],
     { said: "画一张用例图", diagram: { name: "读者用例", kind: "use_case", mermaid: 'flowchart LR\n  reader(["读者"])\n  a(["UC-001 登录"])\n  reader --> a',

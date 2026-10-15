@@ -105,7 +105,7 @@ class Stack {
   }
 
   async newTask(): Promise<string> {
-    return (await this.call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "回到旧会话" })).body.task_id;
+    return (await this.call("POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "回到旧会话" })).body.task_id;
   }
 
   async newSession(taskId: string): Promise<string> {

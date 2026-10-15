@@ -1,23 +1,26 @@
 /**
- * 总体分析：任务类型定义里名叫「总体分析」的集合。一条就是一页主题，用这件事自己的话写：标题、别名、它是什么、例子、
+ * 业务说明：任务类型定义里名叫「业务说明」的集合。一条就是一页主题，用这件事自己的话写：标题、别名、它是什么、例子、
  * 已经定下的、标签、上级主题、状态（在用或已废弃）、改看。条目依据它写。
  *
  * 本文件是由事实算出来的几样东西，都只算、不读库：
  * - 待核实：一个条目当前所在的修订上有助手补充的来源，而用户还没有确认过。用户打开看过（或点了确认）是确认整个条目；
  *   用户亲手改，只确认他改到的那几处（助手补充的来源指到的字段与项），只改别的地方不算确认。助手之后又改出新的修订、
  *   上面仍有助手补充的来源，就又待核实。任何集合的条目都这样算。
- * - 因依据而待核实：一个条目把总体分析里的一页写成了来源（种类「条目」），而那一页已废弃、待核实，或者用户还没有看过。只看一层。
+ * - 因依据而待核实：一个条目把业务说明里的一页写成了来源（种类「条目」），而那一页已废弃、待核实，或者用户还没有看过。只看一层。
  * - 提到：贴了标签、在用的页的标题与别名是词表；别的页与别的条目的文字里出现了词表里的词，就是提到了那一页。
  *   读的时候现算，不存库。
  * - 最低门要看的事实：任务里有没有一页贴了标签、有例子、用户又看过的主题。
  *
  * 0.4 建的任务没有这个集合（它们的集合叫「领域说明」，照旧）：没有词表，没有提到，也没有最低门；待核实照样算。
  *
- * 本文件不导入任何模块：后端的快照、助手的读取、评审提示都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
+ * 本文件只导入不读文件的共用模板（lib/shared_texts.ts）：后端的快照、助手的读取、评审提示都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
  */
 
+import { fillText, refusalText } from "./shared_texts.ts";
+import type { RefusalText } from "./texts_core.ts";
+
 /** 集合的名字。 */
-export const OVERALL_COLLECTION = "总体分析";
+export const OVERALL_COLLECTION = "业务说明";
 
 /** 这个集合的字段名。 */
 export const OVERALL_FIELDS = {
@@ -37,15 +40,15 @@ export const COUNTER_EXAMPLE_PREFIX = "反例：";
 /** 「例子」里一项以它开头的是例外（流程走不通、要另行处理的情形），与反例并列的另一种写法。 */
 export const EXCEPTION_EXAMPLE_PREFIX = "例外：";
 
-/** 来源种类里的「助手补充」与它在早期版本里的名字，以及依据另一个条目的种类「条目」。本文件不导入别的模块，所以写在这里。 */
-const SUPPLEMENT_KINDS: readonly string[] = ["助手补充", "执行者补充"];
+/** 来源种类里的「助手补充」，以及依据另一个条目的种类「条目」。本文件不导入别的模块，所以写在这里。 */
+const SUPPLEMENT_KIND = "助手补充";
 const ITEM_KIND = "条目";
 /** 依据任务里一张图的来源的种类。 */
 const FIGURE_KIND = "图";
 
 type Fields = Record<string, unknown>;
 
-/** 任务定义里有没有总体分析这个集合（0.4 建的任务没有）。 */
+/** 任务定义里有没有业务说明这个集合（0.4 建的任务没有）。 */
 export function hasOverall(collections: readonly { name: string }[]): boolean {
   return collections.some((one) => one.name === OVERALL_COLLECTION);
 }
@@ -74,9 +77,9 @@ export function isUsable(fields: Fields): boolean {
 
 // ───────────── 待核实 ─────────────
 
-/** 一条来源是不是助手补充的（早期版本叫执行者补充）。 */
+/** 一条来源是不是助手补充的。 */
 export function isSupplement(kind: unknown): boolean {
-  return typeof kind === "string" && SUPPLEMENT_KINDS.includes(kind);
+  return kind === SUPPLEMENT_KIND;
 }
 
 /** 助手补充的一条来源支持哪几处：一处写字段名，指到列表字段的某一项时另写第几项（从 0 起）；空列表是支持整个条目。 */
@@ -152,7 +155,7 @@ export interface BasisPending {
 }
 
 /**
- * 一个条目当前修订上的来源里，种类为「条目」、指向总体分析里一页的：那一页已废弃、待核实或者用户还没有看过时；
+ * 一个条目当前修订上的来源里，种类为「条目」、指向业务说明里一页的：那一页已废弃、待核实或者用户还没有看过时；
  * 种类为「图」的：那张图用户还没有看过它现在的内容时。照来源的先后返回头一处；都没有是 null。
  * 一页同时有几样时报最重的一样：已废弃先于待核实，待核实先于没看过。
  * 只看一层：被指的那一页、那张图自己依据了谁不往下追。page 按编号给出那一页现在的样子，不存在或已经删除时给 null；
@@ -264,12 +267,12 @@ export interface Mention {
   revision_no: number;
 }
 
-/** 总体分析的页里要扫的三块；别的集合的条目扫全部文本字段与文本列表字段。 */
+/** 业务说明的页里要扫的三块；别的集合的条目扫全部文本字段与文本列表字段。 */
 const PAGE_FIELDS: readonly string[] = [OVERALL_FIELDS.what, OVERALL_FIELDS.examples, OVERALL_FIELDS.settled];
 
 /**
  * 整个任务里的提到，按被提到的页归好：页的编号 → 提到它的各处，按条目给出的先后、字段声明的先后、项的先后。
- * 任务定义里没有总体分析集合、或者没有一页贴了标签而在用时是空的。
+ * 任务定义里没有业务说明集合、或者没有一页贴了标签而在用时是空的。
  */
 export function mentionsOf(collections: readonly CollectionShape[], items: readonly PlainItem[]): Map<string, Mention[]> {
   const out = new Map<string, Mention[]>();
@@ -304,12 +307,12 @@ export function mentionsOf(collections: readonly CollectionShape[], items: reado
 export const TOPICS_LIMIT = 3000;
 
 /**
- * 给评审者的【总体分析的主题】一节：贴了标签、在用的页，一行一页，写编号、标题与别名。评审拿它判断「条目里的专门名词有没有主题页」。
- * 任务定义里没有总体分析集合时不给这一节（返回空列表）。
+ * 给评审者的【业务说明的主题】一节：贴了标签、在用的页，一行一页，写编号、标题与别名。评审拿它判断「条目里的专门名词有没有主题页」。
+ * 任务定义里没有业务说明集合时不给这一节（返回空列表）。
  */
 export function topicLines(collections: readonly { name: string }[], items: readonly PlainItem[], limit = TOPICS_LIMIT): string[] {
   if (!hasOverall(collections)) return [];
-  const head = "【总体分析的主题】贴了标签、在用的主题，一行一页（标题，括号里是别名）：";
+  const head = "【业务说明的主题】贴了标签、在用的主题，一行一页（标题，括号里是别名）：";
   const rows = items.filter((one) => one.collection === OVERALL_COLLECTION && isUsable(one.fields)).map((one) => {
     const title = typeof one.fields[OVERALL_FIELDS.title] === "string" ? (one.fields[OVERALL_FIELDS.title] as string).trim() : "";
     const aliases = texts(one.fields[OVERALL_FIELDS.aliases]).map((alias) => alias.trim());
@@ -329,25 +332,25 @@ export function topicLines(collections: readonly { name: string }[], items: read
 // ───────────── 保存一页时的两条核对 ─────────────
 
 /**
- * 保存总体分析的一页时另外核对的两条，对的是改完之后的字段内容与来源。返回不对的地方，每处是 [事实, 怎么办]：
+ * 保存业务说明的一页时另外核对的两条，对的是改完之后的字段内容与来源。返回不对的地方，每处是原因码与两层文字：
  * - 「改看」只在这一页已废弃时写：它指向取代这一页的那一页。
  * - 「已经定下的」每一条都要有出处：至少一条来源指到它（来源的 supports 里写这个字段与第几条；指到整个字段、
  *   或者不写 supports 表示整个条目都出自这条来源的，也算）。
  */
-export function pageProblems(fields: Fields, sources: readonly { supports: SupportPlaces }[]): [string, string][] {
-  const out: [string, string][] = [];
+export function pageProblems(fields: Fields, sources: readonly { supports: SupportPlaces }[]): RefusalText[] {
+  const out: RefusalText[] = [];
   const see = seeAlsoOf(fields);
   if (see !== null && !isDeprecated(fields)) {
-    out.push([`「${OVERALL_FIELDS.seeAlso}」写了 ${see}，但这一页的${OVERALL_FIELDS.status}不是${STATUS_DEPRECATED}`,
-      `「${OVERALL_FIELDS.seeAlso}」只在这一页不再用、由另一页取代时写：把${OVERALL_FIELDS.status}改成${STATUS_DEPRECATED}，或者去掉「${OVERALL_FIELDS.seeAlso}」`]);
+    out.push(refusalText("save_revision.overall_see_also_without_deprecated", {
+      see_also: OVERALL_FIELDS.seeAlso, see, status: OVERALL_FIELDS.status, deprecated: STATUS_DEPRECATED,
+    }));
   }
   const settled = texts(fields[OVERALL_FIELDS.settled]);
   const whole = sources.some((one) => one.supports.length === 0);
   settled.forEach((text, n) => {
     if (whole || sources.some((one) => one.supports.some((at) => at.field === OVERALL_FIELDS.settled && (at.index === undefined || at.index === null || at.index === n)))) return;
     const quoted = text.length > 20 ? `${text.slice(0, 20)}…` : text;
-    out.push([`「${OVERALL_FIELDS.settled}」的第 ${n + 1} 条「${quoted}」没有出处`,
-      `每一条已经定下的都要有出处：在它出自的那条来源的 supports 里写 {"field": "${OVERALL_FIELDS.settled}", "index": ${n}}；是你补的就加一条助手补充的来源并写理由`]);
+    out.push(refusalText("save_revision.overall_settled_without_source", { settled: OVERALL_FIELDS.settled, no: n + 1, quoted, index: n }));
   });
   return out;
 }
@@ -381,18 +384,15 @@ export function pageFacts(itemId: string, fields: Fields, pending: boolean, view
 /**
  * 最低门：任务里至少要有一页在用的主题贴了标签、有例子、用户又看过，才能往别的集合里新增条目。
  * 待不待核实不在这道门里：用户看过就是确认了整页，助手补的内容也随之确认；没有助手补充的页同样要用户看过才算。
- * 过得去返回 null；过不去返回一句事实，写明现在差的是什么（一页都没有，或者最接近的那一页差哪几样）。
+ * 过得去返回 null；过不去返回原因码与两层文字：事实写明现在差的是什么（一页都没有，或者最接近的那一页差哪几样），指引说怎样过这道门。
  */
-export function gateFact(pages: readonly PageFacts[]): string | null {
+export function gateFact(pages: readonly PageFacts[]): RefusalText | null {
   const live = pages.filter((one) => !one.deprecated);
   if (live.some((one) => one.tagged && one.examples > 0 && one.viewed)) return null;
-  const head = "还没有用户看过的主题";
-  if (live.length === 0) return `${head}：总体分析里还没有一页主题`;
+  if (live.length === 0) return refusalText("gate.overall_no_viewed_topic.none");
   // 最接近的一页：差得最少的，一样少时取编号在前的。
-  const missing = (one: PageFacts) => [...(one.tagged ? [] : ["还没有贴标签"]), ...(one.examples > 0 ? [] : ["还没有例子"]), ...(one.viewed ? [] : ["用户还没有看过"])];
+  const missing = (one: PageFacts) => [...(one.tagged ? [] : [fillText("part.page_no_tags")]), ...(one.examples > 0 ? [] : [fillText("part.page_no_examples")]),
+    ...(one.viewed ? [] : [fillText("part.page_unviewed")])];
   const closest = [...live].sort((a, b) => missing(a).length - missing(b).length)[0];
-  return `${head}：总体分析里还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 ${closest.item_id}，它${missing(closest).join("、")}）`;
+  return refusalText("gate.overall_no_viewed_topic", { item: closest.item_id, missing: missing(closest).join("、") });
 }
-
-/** 最低门过不去时「怎么办」那一句。 */
-export const GATE_GUIDANCE = "先在总体分析里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目";

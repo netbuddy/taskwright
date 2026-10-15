@@ -8,6 +8,7 @@
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getTaskStatus } from "../lib/task_query.ts";
+import { fillText } from "../lib/texts.ts";
 
 /** 工具名。`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = "get_task_status";
@@ -16,11 +17,8 @@ export function registerGetTaskStatus(pi: ExtensionAPI): void {
   pi.registerTool({
     name: TOOL_NAME,
     label: "查询任务状态",
-    description:
-      "查询任务现在的状态：每个集合有哪些条目、完成条件逐项满足没有（没满足的是哪几个条目）、还有哪些未解决的问题条目、" +
-      "哪些条目用户还没看过（未读清单）、最近一次修订的修订号。想知道任务进行到哪一步、还缺什么时用它，不要凭记忆；" +
-      "问用户要不要发布版本之前先用它看未读清单。它也列出每份材料分成的块与各块被引用的情况，以及这个任务选用的知识库与里面的文档（读它们用的路径与引用时出处的写法）。只读，不改任何东西。",
-    promptSnippet: "查询任务进行到哪一步、完成条件还缺什么（只读）",
+    description: fillText("get_task_status.description"),
+    promptSnippet: fillText("get_task_status.snippet"),
     parameters: Type.Object({}),
     async execute(_toolCallId: string, _params: unknown, _signal, _onUpdate, ctx: ExtensionContext) {
       const outcome = getTaskStatus(ctx.cwd, ctx.sessionManager.getSessionId());

@@ -1,5 +1,5 @@
 /**
- * 任务状况（src/task_status.ts）：现在的阶段与最近一次移动、总体分析的页按章归类的节数、待澄清数、图按种类的张数、
+ * 任务状况（src/task_status.ts）：现在的阶段与最近一次移动、业务说明的页按章归类的节数、待澄清数、图按种类的张数、
  * 各集合的条目数与用户看过的条数、这一段没有通过的灯、开着的提议；需求资产六类的现状与活动目录。任务库经子进程里助手一侧真实的函数建，这里只读。
  */
 
@@ -14,7 +14,7 @@ import { DEFINITION, SOURCE, build, page } from "./overall_stack.ts";
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-/** 带总体分析的演示任务定义，再加一个问题集合（状态的取值里有「用户决定保留」，有「种类」字段），照产品的任务类型。 */
+/** 带业务说明的演示任务定义，再加一个问题集合（状态的取值里有「用户决定保留」，有「种类」字段），照产品的任务类型。 */
 const WITH_QUESTIONS = { ...DEFINITION, 交付物: { ...DEFINITION.交付物, 条目集合: [...DEFINITION.交付物.条目集合, {
   名称: "问题", 编号前缀: "Q", 字段: [
     { 名: "事项", 类型: "文本", 必填: true }, { 名: "种类", 类型: "枚举", 必填: true, 取值: ["待澄清", "待定"] },
@@ -68,7 +68,7 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   });
   // 模型：流程图两张、用例图一张，种类照第一次出现的先后。
   assert.deepEqual(status.models, [{ kind: "flowchart", name: "流程图", count: 2 }, { kind: "use_case", name: "用例图", count: 1 }]);
-  // 需求条目：总体分析与问题之外的集合各一行；用例两条，用户看过一条。
+  // 需求条目：业务说明与问题之外的集合各一行；用例两条，用户看过一条。
   assert.deepEqual(status.items, [{ collection: "用例", total: 2, viewed: 1 }, { collection: "待定事项", total: 0, viewed: 0 }]);
   // 这一段还差什么：现在这个阶段没有通过的灯，一盏一句，与整份数据里的相同。
   const failing = stage.lamps.writing.filter((lamp) => lamp.ok === false);

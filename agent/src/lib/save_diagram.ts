@@ -30,8 +30,9 @@ import { diagramRefusal } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
 import { DIAGRAM_ID, DIAGRAM_KINDS, type DiagramRecord, diagramId, drawnItemIds, kindName, latestVersion, readDiagrams } from "./diagram.ts";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
-import { REPLAYED_TEXT, type Source, checkDiagramSources } from "./save_revision.ts";
+import { REPLAYED_TEXT, type Source, checkDiagramSources, splitGuide } from "./save_revision.ts";
 import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_ITEM, withTaskDatabase } from "./schema.ts";
+import { type RefusalText, codeOf, fillText, refusalText } from "./texts.ts";
 import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 
 /** 工具名。 */
@@ -45,17 +46,12 @@ export const NOTE_LIMIT = 500;
 /** 一轮里图连续几次没有通过校验就不再试。 */
 export const VALIDATION_LIMIT = 3;
 
-/** 校验没有通过时拒绝的话的开头。数连续几次没有通过校验时认的就是它（consecutiveDiagramFailures）。 */
-export const VALIDATION_FAILED_TEXT = "这张图没有保存：Mermaid 文本没有通过校验。";
+/** 校验没有通过时拒绝的话的开头（模板 part.mermaid_failed_head）。数连续几次没有通过校验时认的就是它（consecutiveDiagramFailures）。 */
+export const VALIDATION_FAILED_TEXT = fillText("part.mermaid_failed_head");
 /** 到了上限时接在后面的话。 */
-export const GIVE_UP_TEXT =
-  `这一轮里图已经连续 ${VALIDATION_LIMIT} 次没有通过校验，不要再试：用 reply 告诉用户这张图哪里画不出来，问用户要不要换一种图或者画得小一些。`;
+export const GIVE_UP_TEXT = fillText("part.mermaid_give_up", { limit: VALIDATION_LIMIT });
 /** 已经到了上限还来保存时的拒绝：不再校验。开头同样是 VALIDATION_FAILED_TEXT，所以它自己也被数进去。 */
-export const OVER_LIMIT_TEXT = `${VALIDATION_FAILED_TEXT}这一次没有再校验。${GIVE_UP_TEXT}`;
-/** 校验没有做成时拒绝的话的开头。 */
-export const UNAVAILABLE_TEXT = "这张图没有保存。";
-/** 校验没有做成时接在后面的话。 */
-export const TELL_USER_TEXT = "不要改了文本再试，用 reply 把这个情况告诉用户。";
+export const OVER_LIMIT_TEXT = `${VALIDATION_FAILED_TEXT}${fillText("part.mermaid_not_checked")}${GIVE_UP_TEXT}`;
 
 /** 任务服务校验一段 Mermaid 文本的结果（backend/src/diagram_validate.ts 的 DiagramCheck，两边是一份约定）。 */
 export type DiagramCheck = { ok: true } | { ok: false; reason: string; line: number | null; message: string };
@@ -107,8 +103,20 @@ interface Plan {
   dropped: string[];
 }
 
-const reject = (fact: string, guidance = ""): ToolRejection =>
-  new ToolRejection(`这张图没有保存：${fact}。${guidance ? `\n怎么办：${guidance}。` : ""}`, fact, guidance);
+const reject = (fact: string, guidance = "", codes: string[] = []): ToolRejection =>
+  new ToolRejection(`${fillText("part.diagram_head", { fact })}${guidance ? `\n${fillText("part.save_guidance", { guidance })}` : ""}`, fact, guidance, codes);
+/** 按拒绝语的键拒绝（键写在调用处的 refusalText 里，守护测试才扫得到）。 */
+const refused = (refusal: RefusalText): ToolRejection => reject(refusal.fact, refusal.guidance, [refusal.code]);
+
+/**
+ * 来源核对的错误（每条带着拒绝语的键与两层文字，见 save_revision.ts 的 splitGuide）合成一次拒绝：事实用「；」接起来，指引也是；
+ * 调用处给了指引的用它。原因码按错误的先后。
+ */
+function sourcesRejection(errors: string[], guidance = ""): ToolRejection {
+  const parts = errors.map(splitGuide);
+  const guides = parts.map((one) => one.guidance).filter(Boolean);
+  return reject(parts.map((one) => one.fact).join("；"), guidance || guides.join("；"), parts.filter((one) => one.key).map((one) => codeOf(one.key)));
+}
 
 const isText = (value: unknown): value is string => typeof value === "string" && value.trim() !== "";
 const given = (value: unknown): boolean => value !== undefined && value !== null;
@@ -140,10 +148,10 @@ function sourcesOf(db: DatabaseSync, taskId: string, id: string, revisionNo: num
 function activeTask(db: DatabaseSync): { taskId: string; definition: TaskDefinition } {
   const running = activeTasks(db);
   if (running.length === 0) {
-    throw notInputProblem(new Error("库里没有任务记录，所以图没有保存。请把这个情况如实告诉用户。"));
+    throw notInputProblem(new Error(fillText("save_diagram.no_task")));
   }
   if (running.length > 1) {
-    throw notInputProblem(new Error(`这个任务目录里有 ${running.length} 个任务，库里的记录有问题，所以图没有保存。请把这个情况告诉用户。`));
+    throw notInputProblem(new Error(fillText("save_diagram.several_tasks", { count: running.length })));
   }
   return { taskId: running[0].task_id, definition: validateDefinition(JSON.parse(running[0].definition_text)) };
 }
@@ -155,22 +163,25 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   if (!userEdit && call.actor !== ACTOR_USER) {
     const stage = stageOf(db, call.workspaceDir, taskId, definition, call.sessionId);
     const refusal = stage ? diagramRefusal(stage) : null;
-    if (refusal) throw reject(...refusal);
+    if (refusal) throw refused(refusal);
   }
   const records = readDiagrams(db, taskId);
   const deleting = params.delete === true;
-  if (given(params.delete) && typeof params.delete !== "boolean") throw reject("delete 写的不是真或假", "删除一张图时写 delete 为 true，别的时候不写");
+  if (given(params.delete) && typeof params.delete !== "boolean") throw refused(refusalText("save_diagram.delete_not_boolean"));
 
   // 新增：不写 diagram。
   if (!given(params.diagram)) {
-    if (deleting) throw reject("要删除图，但没有写是哪一张", "diagram 写要删除的图的编号，例如 D-001");
-    if (given(params.base_revision)) throw reject("新画一张图时写了 base_revision", "新画的图还没有修订号，不要写 base_revision；要改已有的图就写上 diagram");
-    const missing = [!isText(params.name) && "name（图名）", !given(params.kind) && "kind（图的种类）", !isText(params.mermaid) && "mermaid（Mermaid 文本）"].filter(Boolean);
-    if (missing.length) throw reject(`新画一张图缺少 ${missing.join("、")}`);
+    if (deleting) throw refused(refusalText("save_diagram.delete_without_diagram"));
+    if (given(params.base_revision)) throw refused(refusalText("save_diagram.add_base_revision_given"));
+    const missing = [
+      !isText(params.name) && fillText("part.diagram_missing_name"), !given(params.kind) && fillText("part.diagram_missing_kind"),
+      !isText(params.mermaid) && fillText("part.diagram_missing_mermaid"),
+    ].filter(Boolean);
+    if (missing.length) throw refused(refusalText("save_diagram.add_fields_missing", { missing: missing.join("、") }));
     const content = checkContent(params);
     const errors: string[] = [];
     const sources = checkDiagramSources(db, taskId, definition, params.sources, call, errors);
-    if (!sources) throw reject(errors.join("；"), "图至少要有一条来源：用户要你画图的那句话写一条「用户的话」，画进图里的每个条目各写一条种类为「条目」的来源");
+    if (!sources) throw sourcesRejection(errors, fillText("part.diagram_sources_guide"));
     const drawn = checkDrawn(db, taskId, definition, content.mermaid!, sources);
     return { taskId, op: "add", record: null, name: content.name!, kind: content.kind!, mermaid: content.mermaid!, note: content.note ?? "", sources, validate: true, drawn, dropped: [] };
   }
@@ -178,22 +189,22 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   // 修改与删除：图必须存在、没有删除，base_revision 是它现在的修订号。
   const id = typeof params.diagram === "string" ? params.diagram.trim() : "";
   const alive = records.filter((one) => one.deleted_in_revision === null).map((one) => one.diagram_id);
-  const have = `现有的图是：${alive.length ? alive.join("、") : "（一张都没有）"}`;
-  if (!DIAGRAM_ID.test(id)) throw reject(`diagram 写的 ${JSON.stringify(params.diagram)} 不是图的编号`, `图的编号是 D-001 这样的；${have}。新画一张图时不要写 diagram`);
+  const have = fillText("part.diagram_have", { list: alive.length ? alive.join("、") : fillText("part.diagram_none") });
+  if (!DIAGRAM_ID.test(id)) throw refused(refusalText("save_diagram.diagram_id_invalid", { given: String(JSON.stringify(params.diagram)), have }));
   const record = records.find((one) => one.diagram_id === id);
-  if (!record) throw reject(`这个任务里没有图 ${id}`, have);
+  if (!record) throw refused(refusalText("save_diagram.diagram_not_found", { id, have }));
   const current = latestVersion(record)!;
-  if (record.deleted_in_revision !== null) throw reject(`图 ${id} 已经在它的修订 ${record.deleted_in_revision} 删除了`, have);
+  if (record.deleted_in_revision !== null) throw refused(refusalText("save_diagram.diagram_deleted", { id, revision: record.deleted_in_revision, have }));
   if (!Number.isInteger(params.base_revision)) {
-    throw reject(`${deleting ? "删除" : "修改"}图 ${id} 时没有写 base_revision，或者写的不是整数`, `${id} 现在是修订 ${current.revision_no}，base_revision 写 ${current.revision_no}`);
+    const op = deleting ? fillText("part.diagram_op_delete") : fillText("part.diagram_op_update");
+    throw refused(refusalText("save_diagram.base_revision_missing", { op, id, now: current.revision_no }));
   }
   if (params.base_revision !== current.revision_no) {
-    throw reject(`图 ${id} 现在是修订 ${current.revision_no}，你写的 base_revision 是 ${String(params.base_revision)}，它在你看过之后又改过`,
-      `先用 get_item 看 ${id} 现在的样子，再决定怎样改`);
+    throw refused(refusalText("save_diagram.base_revision_stale", { id, now: current.revision_no, given: String(params.base_revision) }));
   }
   if (deleting) {
     const extra = (["name", "kind", "mermaid", "note", "sources"] as const).filter((key) => given(params[key]));
-    if (extra.length) throw reject(`删除图 ${id} 时还写了 ${extra.join("、")}`, "删除时只写 diagram、base_revision 与 delete");
+    if (extra.length) throw refused(refusalText("save_diagram.delete_extra_fields", { id, fields: extra.join("、") }));
     return { taskId, op: "delete", record, name: current.name, kind: current.kind, mermaid: current.mermaid, note: current.note, sources: [], validate: false, drawn: [], dropped: [] };
   }
 
@@ -203,7 +214,7 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   if (given(params.sources)) {
     const errors: string[] = [];
     const checked = checkDiagramSources(db, taskId, definition, params.sources, call, errors, previous);
-    if (!checked) throw reject(errors.join("；"));
+    if (!checked) throw sourcesRejection(errors);
     sources = checked;
   }
   const merged = { name: content.name ?? current.name, kind: content.kind ?? current.kind, mermaid: content.mermaid ?? current.mermaid, note: content.note ?? current.note };
@@ -214,7 +225,7 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   if (dropped.length) sources = sources.filter((one) => !(one.kind === SOURCE_ITEM && dropped.includes(one.locator)));
   const sameContent = merged.name === current.name && merged.kind === current.kind && merged.mermaid === current.mermaid && merged.note === current.note;
   if (sameContent && !given(params.sources)) {
-    throw reject(`对图 ${id} 的修改与它在修订 ${current.revision_no} 的内容完全一样，没有改动任何东西`, "只写要改的那几项；不需要改就不用保存");
+    throw refused(refusalText("save_diagram.nothing_changed", { id, revision: current.revision_no }));
   }
   // 图里写的条目编号与来源对不对得上，只在这一次动了 Mermaid 文本或者来源时核对；只改图名或说明不核对，用户在页面上改图也不核对。
   const touched = content.mermaid !== undefined || given(params.sources);
@@ -226,27 +237,28 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
 function checkContent(params: SaveDiagramParams): { name?: string; kind?: string; mermaid?: string; note?: string } {
   const out: { name?: string; kind?: string; mermaid?: string; note?: string } = {};
   if (given(params.name)) {
-    if (!isText(params.name)) throw reject("name（图名）是空的，或者不是文字");
+    if (!isText(params.name)) throw refused(refusalText("save_diagram.name_empty"));
     const name = params.name.trim();
-    if ([...name].length > NAME_LIMIT) throw reject(`图名有 ${[...name].length} 个字，超过了 ${NAME_LIMIT} 个字`, "图名写短一些，要解释的话写进 note");
-    if (/[\r\n]/.test(name)) throw reject("图名里有换行", "图名写成一行");
+    if ([...name].length > NAME_LIMIT) throw refused(refusalText("save_diagram.name_too_long", { length: [...name].length, limit: NAME_LIMIT }));
+    if (/[\r\n]/.test(name)) throw refused(refusalText("save_diagram.name_multiline"));
     out.name = name;
   }
   if (given(params.kind)) {
     if (typeof params.kind !== "string" || !(DIAGRAM_KINDS as readonly string[]).includes(params.kind)) {
-      throw reject(`kind（图的种类）写的是 ${JSON.stringify(params.kind)}`,
-        `kind 只能是 ${DIAGRAM_KINDS.map((one) => `${one}（${kindName(one)}）`).join("、")} 之一`);
+      throw refused(refusalText("save_diagram.kind_invalid", {
+        given: String(JSON.stringify(params.kind)), kinds: DIAGRAM_KINDS.map((one) => `${one}（${kindName(one)}）`).join("、"),
+      }));
     }
     out.kind = params.kind;
   }
   if (given(params.mermaid)) {
-    if (!isText(params.mermaid)) throw reject("mermaid（Mermaid 文本）是空的，或者不是文字");
+    if (!isText(params.mermaid)) throw refused(refusalText("save_diagram.mermaid_empty"));
     out.mermaid = params.mermaid;
   }
   if (given(params.note)) {
-    if (typeof params.note !== "string") throw reject("note（说明）不是文字");
+    if (typeof params.note !== "string") throw refused(refusalText("save_diagram.note_not_text"));
     const note = params.note.trim();
-    if ([...note].length > NOTE_LIMIT) throw reject(`说明有 ${[...note].length} 个字，超过了 ${NOTE_LIMIT} 个字`, "说明写一两句话");
+    if ([...note].length > NOTE_LIMIT) throw refused(refusalText("save_diagram.note_too_long", { length: [...note].length, limit: NOTE_LIMIT }));
     out.note = note;
   }
   return out;
@@ -264,15 +276,17 @@ function checkDrawn(db: DatabaseSync, taskId: string, definition: TaskDefinition
   const missing = drawn.filter((id) => !state.has(id));
   const deleted = drawn.filter((id) => state.has(id) && state.get(id) !== null);
   if (missing.length || deleted.length) {
-    const parts = [missing.length ? `${missing.join("、")} 在这个任务里不存在` : "", deleted.length ? `${deleted.join("、")} 已经删除` : ""].filter(Boolean);
-    throw reject(`Mermaid 文本里写的条目编号${parts.join("，")}`, "图里只写任务里现有的条目编号；用 get_task_status 可以看到现有的条目");
+    const parts = [
+      missing.length ? fillText("part.drawn_missing", { items: missing.join("、") }) : "", deleted.length ? fillText("part.drawn_deleted", { items: deleted.join("、") }) : "",
+    ].filter(Boolean);
+    throw refused(refusalText("save_diagram.drawn_item_invalid", { parts: parts.join("，") }));
   }
   const cited = new Set(sources.filter((one) => one.kind === SOURCE_ITEM).map((one) => one.locator));
   const uncited = drawn.filter((id) => !cited.has(id));
   if (uncited.length) {
-    throw reject(`图里画了 ${uncited.join("、")}，来源里没有写${uncited.length > 1 ? "它们" : "它"}`,
-      `画进图里的每个条目各写一条种类为「条目」的来源，出处写条目编号，不用写摘录，例如 {"kind": "条目", "locator": "${uncited[0]}"}；` +
-      "修改图时给了 sources 就是整份替换，要把还用得着的来源一起写上");
+    throw refused(refusalText("save_diagram.drawn_item_uncited", {
+      items: uncited.join("、"), pronoun: uncited.length > 1 ? fillText("part.them") : fillText("part.it"), first: uncited[0],
+    }));
   }
   return drawn;
 }
@@ -291,11 +305,11 @@ function savedBefore(db: DatabaseSync, call: CallContext): ToolOutcome | null {
 }
 
 function savedText(id: string, op: Plan["op"], name: string, kind: string, revisionNo: number, drawn: string[], dropped: string[] = []): string {
-  if (op === "delete") return `已删除图 ${id}「${name}」（删除记作它的修订 ${revisionNo}）。`;
-  return `已${op === "add" ? "保存" : "修改"}图 ${id}「${name}」（${kindName(kind)}），现在是修订 ${revisionNo}。` +
-    `要再改这张图时 diagram 写 ${id}、base_revision 写 ${revisionNo}。` +
-    (drawn.length ? `图里画了 ${drawn.length} 个条目：${drawn.join("、")}。` : "") +
-    (dropped.length ? `${dropped.join("、")} 已经不在图里，它们的来源一并去掉了。` : "");
+  if (op === "delete") return fillText("result.save_diagram.deleted", { id, name, revision: revisionNo });
+  const done = op === "add" ? fillText("result.save_diagram.done_add") : fillText("result.save_diagram.done_update");
+  return fillText("result.save_diagram.saved", { done, id, name, kind: kindName(kind), revision: revisionNo }) +
+    (drawn.length ? fillText("result.save_diagram.drawn", { count: drawn.length, items: drawn.join("、") }) : "") +
+    (dropped.length ? fillText("result.save_diagram.dropped", { items: dropped.join("、") }) : "");
 }
 
 /** 第 3 步：写图、内容、来源与事件。 */
@@ -340,7 +354,7 @@ function inDatabase<T>(call: CallContext, body: (db: DatabaseSync) => T): T {
     return withTaskDatabase(call.workspaceDir, { createIfMissing: false }, body);
   } catch (error) {
     if (error instanceof NoDatabaseYet) {
-      throw notInputProblem(new Error("这个任务目录里还没有任务记录，所以没有地方保存图，什么都没有写入。请把这个情况如实告诉用户。"));
+      throw notInputProblem(new Error(fillText("save_diagram.no_database")));
     }
     throw error;
   }
@@ -353,16 +367,20 @@ export async function saveDiagram(call: CallContext, params: SaveDiagramParams, 
   if ("text" in first) return first;
   if (first.validate) {
     // 这一轮已经连续到了上限：不再校验，直接拒绝，直到用户再说话。
-    if ((options.priorFailures ?? 0) >= VALIDATION_LIMIT) throw new ToolRejection(OVER_LIMIT_TEXT, "图已经连续几次没有通过校验，这一次没有再校验", GIVE_UP_TEXT);
+    if ((options.priorFailures ?? 0) >= VALIDATION_LIMIT) {
+      const refusal = refusalText("save_diagram.mermaid_over_limit");
+      throw new ToolRejection(OVER_LIMIT_TEXT, refusal.fact, GIVE_UP_TEXT, [refusal.code]);
+    }
     options.onTask?.(first.taskId);
     const check = await options.validate(first.kind, first.mermaid);
     if (!check.ok && check.reason === "unavailable") {
-      throw notInputProblem(new Error(`${UNAVAILABLE_TEXT}${check.message}${TELL_USER_TEXT}`));
+      throw notInputProblem(new Error(fillText("save_diagram.validation_unavailable", { message: check.message })));
     }
     if (!check.ok) {
       const last = (options.priorFailures ?? 0) + 1 >= VALIDATION_LIMIT;
-      throw new ToolRejection(`${VALIDATION_FAILED_TEXT}${check.message}${last ? `\n${GIVE_UP_TEXT}` : "\n照上面说的改了再保存。"}`,
-        `Mermaid 文本没有通过校验：${check.message}`, last ? GIVE_UP_TEXT : "照校验说的改了再保存");
+      const refusal = refusalText("save_diagram.mermaid_invalid", { message: check.message });
+      throw new ToolRejection(`${VALIDATION_FAILED_TEXT}${check.message}\n${last ? GIVE_UP_TEXT : fillText("part.mermaid_fix")}`,
+        refusal.fact, last ? GIVE_UP_TEXT : refusal.guidance, [refusal.code]);
     }
   }
   // 校验是在事务之外等的，这中间库可能变了：重新核对一遍再写。

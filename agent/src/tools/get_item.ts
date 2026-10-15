@@ -3,34 +3,39 @@
  * 缺省看最新内容，给了修订号看它截至那次修订的内容。只读。
  *
  * 本文件只声明参数、调用 lib/task_query.ts 的 getItem、把结果转成 pi 要的返回形状。查不到时 getItem 抛异常，
- * pi 把异常文字交还模型。
+ * 先记进拒绝表，pi 再把异常文字交还模型。
  */
 
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { currentRun } from "../lib/dialogue_acts.ts";
 import { getItem } from "../lib/task_query.ts";
+import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
+import { fillText } from "../lib/texts.ts";
 
 /** 工具名。`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = "get_item";
 
 const parameters = Type.Object({
-  item_id: Type.String({ description: "条目编号，例如 UC-001、TBD-002；也可以写图的编号，例如 D-001，看的就是那张图。" }),
-  revision_no: Type.Optional(Type.Integer({ description: "要看这个条目截至哪次修订的内容。不写就是最新内容。看图时写的是图自己的修订号。" })),
+  item_id: Type.String({ description: fillText("get_item.param.item_id") }),
+  revision_no: Type.Optional(Type.Integer({ description: fillText("get_item.param.revision_no") })),
 });
 
 export function registerGetItem(pi: ExtensionAPI): void {
   pi.registerTool({
     name: TOOL_NAME,
     label: "查看条目",
-    description:
-      "按条目编号查看一个条目的全部字段与来源（种类、出处、摘录、支持哪个字段），它当前所在的修订号、改动过的修订号，以及评审与确认状态。" +
-      "不写 revision_no 看最新内容。修改条目之前先用它看当前内容与修订号，再带着修订号去改。" +
-      "写图的编号（D-001 这样）时看的是那张图：图名、种类、说明、Mermaid 文本、来源与它自己的修订号。只读，不改任何东西。",
-    promptSnippet: "查看一个条目的全部字段、来源与当前所在的修订号（只读）",
+    description: fillText("get_item.description"),
+    promptSnippet: fillText("get_item.snippet"),
     parameters,
-    async execute(_toolCallId: string, params: { item_id?: unknown; revision_no?: unknown }, _signal, _onUpdate, ctx: ExtensionContext) {
-      const outcome = getItem(ctx.cwd, params, ctx.sessionManager.getSessionId());
-      return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
+    async execute(toolCallId: string, params: { item_id?: unknown; revision_no?: unknown }, _signal, _onUpdate, ctx: ExtensionContext) {
+      // 被拒时把拒绝记进 tool_rejection 表（lib/tool_rejection.ts）；库或任务不在不是输入的问题，不记。
+      const rejection = { workspaceDir: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(), callId: toolCallId, toolName: TOOL_NAME,
+        workId: workIdOf(currentRun(ctx.sessionManager.getBranch() as never)?.userEntryId) };
+      return withRejectionRecord(rejection, params, () => {
+        const outcome = getItem(ctx.cwd, params, ctx.sessionManager.getSessionId());
+        return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
+      });
     },
   });
 }

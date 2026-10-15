@@ -3,7 +3,7 @@
  *
  * 做法：
  * 1. 登记。每一种期待执行者写出的结构化输出登记一项（StructuredOutput）：名称、schema 文件、事实核对（可选）、记录函数。
- *    发给执行者的格式说明与这里用来匹配的 schema 是同一个文件（平台 skill 里的说明由 scripts/render-intent-schema.mjs
+ *    发给执行者的格式说明与这里用来匹配的 schema 是同一个文件（平台说明里的说明由 scripts/render-intent-schema.mjs
  *    从它生成）。登记表本身在 lib/registered_outputs.ts；本模块不认识任何一种具体的输出，不写死任何键名。
  * 2. 扫描。一条助手消息的全部文字段都扫，取出能当作 JSON 的片段：```json 或不写语言的 ``` 围栏里的，以及裸写的
  *    JSON 对象（以 {" 开头、括号配平的一段）；一段文字里可以有几个片段。思考与工具调用不扫。

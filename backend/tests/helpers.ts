@@ -116,19 +116,19 @@ export function makeTypedTask(root: string, taskType: string, materials: Record<
   return ws;
 }
 
+/** 一页业务说明的主题（新增操作）：标题、它是什么，例子取它是什么，贴一个标签，状态在用。source 是它的来源。 */
+export function topicPage(title: string, what: string, source: unknown, tags: string[] = ["概念"]): Record<string, unknown> {
+  return { op: "add", collection: "业务说明", fields: { 标题: title, 它是什么: what, 例子: [what], 标签: tags, 状态: "在用" }, sources: [source] };
+}
+
 /**
- * 用 0.4.3 的任务类型文件（tests/fixtures/task_dirs/0.4.3/docs：任务定义、模板、评审规则，集合里是「领域说明」）建一个任务目录，
- * 用法与 makeTypedTask 相同。0.4 建的任务不迁移、照旧能用，测它们的，以及只测与任务类型无关的机制（图、导出、依据已变）的，用它：
- * 这样的任务没有「总体分析」集合，也就没有「先有一页想清楚的主题才能写条目」那道门。
+ * 用现行任务类型（requirements-engineering）建一个任务目录，给只测与任务类型无关的机制（依据已变、导出、图）的测试用：
+ * 任务移到写条目之后，先保存 pages 这一批（业务说明的几页主题，修订 1），再让用户看过这几页——写条目之前要有一页
+ * 贴了标签、写了例子、用户看过的主题——然后照 makeTypedTask 写其余几批。主题的编号依次是 OA-001、OA-002……
  */
-export function makeLegacyTask(root: string, materials: Record<string, string>, batches: unknown[]): string {
-  const ws = join(root, "task");
-  mkdirSync(ws, { recursive: true });
-  cpSync(join(ROOT, "backend", "tests", "fixtures", "task_dirs", "0.4.3", "docs"), join(ws, "docs"), { recursive: true });
-  mkdirSync(join(ws, "inputs"), { recursive: true });
-  for (const [name, text] of Object.entries(materials)) writeFileSync(join(ws, "inputs", name), text, "utf-8");
-  node([join(FIXTURES, "build_task_db.mts"), ws, "docs/task-definitions/srs-authoring.json", JSON.stringify(batches)]);
-  return ws;
+export function makePagedTask(root: string, materials: Record<string, string>, pages: unknown[], batches: unknown[]): string {
+  const ids = pages.map((_, i) => `OA-${String(i + 1).padStart(3, "0")}`);
+  return makeTypedTask(root, "requirements-engineering", materials, [pages, { view: ids }, ...batches]);
 }
 
 /** 把夹具目录复制一份，给要改库的测试用。 */
@@ -244,4 +244,18 @@ export function movesSql(columns: readonly string[]): string {
     event_seq: "e.seq AS event_seq",
   };
   return `SELECT ${columns.map((name) => from[name] ?? `e.${name}`).join(", ")} FROM event e WHERE e.name IN ('ACTIVITY_STARTED', 'ACTIVITY_NODE_ENTERED', 'STAGE_MOVED') ORDER BY e.seq`;
+}
+
+/**
+ * 把一个现在格式（9）的任务库退回格式 8 的样子：工具拒绝表去掉原因码两列，版本号记 8（格式 8 与 9 只差这两列），删掉 task.json。
+ * 当「上一版留下的任务」用。直接开库改，不经助手一侧的写库函数（它一打开就会升级）。
+ */
+export function asFormat8(taskDir: string): void {
+  const db = new DatabaseSync(join(taskDir, "task.sqlite"));
+  try {
+    db.exec("ALTER TABLE tool_rejection DROP COLUMN reason_codes; ALTER TABLE tool_rejection DROP COLUMN reason_code; PRAGMA user_version = 8");
+  } finally {
+    db.close();
+  }
+  rmSync(join(taskDir, "task.json"), { force: true });
 }

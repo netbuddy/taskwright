@@ -14,7 +14,7 @@ const stage = (current: StageKey, lamps: StageLamp[]): StageView => ({
   current, moved_by: null, moved_at: null, reason: null,
   lamps: { reading: [], clarifying: [], modeling: [], writing: [], reviewing: [], document: [], [current]: lamps },
 });
-const item = (item_id: string): Item => ({ item_id, collection: "总体分析", title: item_id, fields: {}, revision_no: 1 } as unknown as Item);
+const item = (item_id: string): Item => ({ item_id, collection: "业务说明", title: item_id, fields: {}, revision_no: 1 } as unknown as Item);
 
 describe("阶段条", () => {
   it("六个阶段按次序排：当前的标出来，前面的算已经过了，后面的算还没到；六种当前阶段各对一遍", () => {

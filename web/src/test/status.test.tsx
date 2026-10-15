@@ -32,7 +32,7 @@ const issue = (id: string, status: string, refs: string[]) =>
 
 function task(items: Item[]): Task {
   return {
-    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
+    task_id: "TASK-001", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "",
     definition: { collections: [
       { name: "功能用例", prefix: "UC", needs_review: true, review_rules: [], fields: [
         { name: "用例名称", type: "文本", required: true, values: null },

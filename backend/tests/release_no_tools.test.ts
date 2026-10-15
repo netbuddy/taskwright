@@ -16,7 +16,7 @@ import { ROOT } from "./helpers.ts";
 
 const TOOLS = join(ROOT, "tools") + sep;
 /** 安装包取文件的地方，加页面的源码与构建脚本。 */
-const SHIPPED = ["backend/src", "backend/prompts", "agent/src", "agent/prompts", "task-types", "web/src", "release"];
+const SHIPPED = ["backend/src", "agent/src", "agent/prompts", "task-types", "web/src", "release"];
 const CODE = /\.(ts|mts|tsx|js|mjs|cjs)$/;
 const TEXT = /\.(ts|mts|tsx|js|mjs|cjs|json|md)$/;
 

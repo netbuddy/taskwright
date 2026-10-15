@@ -1,10 +1,12 @@
 /**
  * 服务级库：数据目录下的 service.sqlite，一个数据目录一份。放不属于任何一个任务的数据。
  *
- * 现在有两张表：
- * - meta：键值。data_format 是数据目录的格式版本（现在是 1），last_written_by 是最近一次写这个数据目录的产品版本。
+ * 现在有三张表：
+ * - meta：键值。data_format 是数据目录的格式版本（现在是 2），last_written_by 是最近一次写这个数据目录的产品版本。
  * - tasks：任务登记表，每个任务一行：编号、名字、属主、状态、任务类型、建立时刻、任务目录相对任务根目录的路径，
  *   以及最近一次数据升级失败的时刻与原因（没有失败过是空）。
+ * - task_type_revision：任务类型的修订记录（格式 2 起），每种任务类型每个修订一行：修订号、时刻、谁改的、一句说明、
+ *   改了哪些文件及各自的摘要值。修订的完整内容在数据目录的 task-types/.revisions/ 下（见 task_types.ts），这里只记经过。
  *
  * 这是唯一写这个库的模块：建表、升级与每一句 SQL 都在这里，别的文件只调下面的取存函数，参数与返回都是普通对象
  * （backend/tests/no_writes.test.ts 守着）。以后把服务级库换成别的数据库，要换的只有这一个文件。
@@ -21,7 +23,7 @@ import { DatabaseSync, backup } from "node:sqlite";
 export const SERVICE_DB_NAME = "service.sqlite";
 
 /** 数据目录现在的格式版本，记在 meta 的 data_format 与库文件自己的 user_version 里。以后每改一次服务级库的结构就加一步、加 1。 */
-export const DATA_FORMAT = 1;
+export const DATA_FORMAT = 2;
 
 /** 遇到别的连接占着锁时最多等多少毫秒（与任务库的写入一侧相同）。 */
 const BUSY_TIMEOUT_MS = 5000;
@@ -82,7 +84,36 @@ CREATE TABLE IF NOT EXISTS tasks (
   upgrade_error TEXT
 );`,
   },
+  {
+    from: 1, to: 2,
+    sql: `CREATE TABLE IF NOT EXISTS task_type_revision (
+  task_type TEXT NOT NULL,
+  revision_no INTEGER NOT NULL,
+  at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  note TEXT NOT NULL,
+  files TEXT NOT NULL,
+  PRIMARY KEY (task_type, revision_no)
+);`,
+  },
 ];
+
+/** 任务类型修订里改到的一份文件：相对任务类型目录的路径、改成什么样（新加、改了、删了）与改后内容的摘要值（删了是 null）。 */
+export interface TaskTypeFileChange {
+  path: string;
+  change: "added" | "changed" | "removed";
+  digest: string | null;
+}
+
+/** 任务类型的一次修订：类型键、修订号（从 1 起，播种那一刻是 1）、时刻、谁改的、一句说明、改到的文件。 */
+export interface TaskTypeRevision {
+  task_type: string;
+  revision_no: number;
+  at: string;
+  actor: string;
+  note: string;
+  files: TaskTypeFileChange[];
+}
 
 /** 库给的一行是没有原型的对象：抄成普通对象再交出去，调用方拿到的与别处的对象一样比较、一样序列化。 */
 const plain = (row: unknown): TaskRecord | null => (row ? { ...(row as TaskRecord) } : null);
@@ -249,6 +280,18 @@ export class ServiceDb {
       "INSERT INTO tasks (task_id, owner, dir, upgrade_failed_at, upgrade_error) VALUES (?, 'local', ?, ?, ?) "
       + "ON CONFLICT(task_id) DO UPDATE SET upgrade_failed_at = excluded.upgrade_failed_at, upgrade_error = excluded.upgrade_error",
     ).run(this.taskByDir(dir)?.task_id ?? dir, dir, at, error);
+  }
+
+  /** 记下任务类型的一次修订（同一种类型同一个修订号已经记过时报错）。 */
+  putTaskTypeRevision(revision: TaskTypeRevision): void {
+    this.db.prepare("INSERT INTO task_type_revision (task_type, revision_no, at, actor, note, files) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(revision.task_type, revision.revision_no, revision.at, revision.actor, revision.note, JSON.stringify(revision.files));
+  }
+
+  /** 一种任务类型的全部修订记录，按修订号排；没有记过是空的。 */
+  taskTypeRevisions(taskType: string): TaskTypeRevision[] {
+    return (this.db.prepare("SELECT * FROM task_type_revision WHERE task_type = ? ORDER BY revision_no").all(taskType) as Record<string, any>[])
+      .map((row) => ({ task_type: row.task_type, revision_no: Number(row.revision_no), at: row.at, actor: row.actor, note: row.note, files: JSON.parse(row.files) }));
   }
 
   /** 这个任务目录的数据升级后来做成了：清掉先前记的失败。 */

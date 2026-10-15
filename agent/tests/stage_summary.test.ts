@@ -72,7 +72,7 @@ test("走一小段：立页、记问题、移动、用户看过、写用例，�
   const { dir, summary } = workspace();
   // 助手立一页流程（照抄材料），记一个关联到它的未解决问题。
   saveRevision(callIn(dir), { operations: [
-    { op: "add", collection: "总体分析", fields: { 标题: "登录", 它是什么: "用户可以登录。", 例子: ["登录总要输入口令。"], 标签: ["流程"], 状态: "在用" }, sources: [SOURCE] },
+    { op: "add", collection: "业务说明", fields: { 标题: "登录", 它是什么: "用户可以登录。", 例子: ["登录总要输入口令。"], 标签: ["流程"], 状态: "在用" }, sources: [SOURCE] },
     { op: "add", collection: "问题", fields: { 事项: "口令输错几次要锁定？", 状态: "未解决", 关联条目: ["OA-001"] }, sources: [SOURCE] },
   ] });
   let now = summary()!;
@@ -99,7 +99,7 @@ test("走一小段：立页、记问题、移动、用户看过、写用例，�
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-001", base_revision: 2, fields: { 别名: ["登入"] } }] });
   enterStage(dir, "writing");
   // 最低门要一页用户看过的主题：OA-001 被助手又改了一次（修订 3），要再看；这里先不看，另立一页合格的给最低门用。
-  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "总体分析", fields: { 标题: "退款", 它是什么: "退款须在七天内处理完毕。", 例子: ["退款要在三天内到账"], 标签: ["概念"], 状态: "在用" },
+  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "业务说明", fields: { 标题: "退款", 它是什么: "退款须在七天内处理完毕。", 例子: ["退款要在三天内到账"], 标签: ["概念"], 状态: "在用" },
     sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "退款须在七天内处理完毕。" }] }] });
   userOp(dir, { kind: "mark_viewed", targets: [{ item_id: "OA-002", base_revision: 4 }] });
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["输入口令"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "用户可以登录。" }] }] });
@@ -120,7 +120,7 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   const draw = (params: Record<string, unknown>) => saveDiagram({ ...callIn(dir), userMessages: [{ entryId: "u1", text: `${said}。` }] },
     { sources: [{ kind: "用户的话", excerpt: said }], ...params } as any, { validate: async () => ({ ok: true }) });
   const cite = (...ids: string[]) => [{ kind: "用户的话", excerpt: said }, ...ids.map((id) => ({ kind: "条目", locator: id }))];
-  const pageOf = (fields: Record<string, unknown>) => ({ op: "add", collection: "总体分析", fields: { 它是什么: "用户可以登录。", 状态: "在用", ...fields }, sources: [SOURCE] });
+  const pageOf = (fields: Record<string, unknown>) => ({ op: "add", collection: "业务说明", fields: { 它是什么: "用户可以登录。", 状态: "在用", ...fields }, sources: [SOURCE] });
   const rule = (index: number) => ({ ...SOURCE, supports: [{ field: "已经定下的", index }] });
   // OA-001 读者（角色）、OA-002 借阅记录（概念，说到状态）、OA-003 图书（概念）、OA-004 借书（流程）、OA-005 借书证（概念，孤零零的）。
   saveRevision(callIn(dir), { operations: [
@@ -216,7 +216,7 @@ test("查询任务状态的末尾写现在在哪个阶段、这一段还差什�
   assert.equal((getTaskStatus(dir, "sess-other").details as any).stage.current, "idle");
   assert.equal((out.details as any).stage.current, "reading");
   // 立了一页引用材料的主题，用户移到澄清并写了理由：澄清这一段两盏灯都过（或不适用）。
-  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "总体分析", fields: { 标题: "登录", 它是什么: "用户可以登录。", 标签: ["概念"], 状态: "在用" }, sources: [SOURCE] }] });
+  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "业务说明", fields: { 标题: "登录", 它是什么: "用户可以登录。", 标签: ["概念"], 状态: "在用" }, sources: [SOURCE] }] });
   userOp(dir, { kind: "move_stage", fields: { stage: "澄清", reason: "材料我读过了。" } });
   out = getTaskStatus(dir, "sess-ui");
   assert.match(out.text, /\n\n本会话的工作项是工作流程「需求分析」，现在在澄清阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 到这一站的，理由：材料我读过了）。\n澄清这一段的几项都齐了。\n没有开着的提议。\n这一段没有还开着的提问与请选择。$/);

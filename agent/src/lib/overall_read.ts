@@ -1,5 +1,5 @@
 /**
- * 从任务库里读出总体分析那几样计算要的事实，再交给 lib/overall_analysis.ts 去算：每个条目待不待核实、它是不是因为依据的那一页
+ * 从任务库里读出业务说明那几样计算要的事实，再交给 lib/overall_analysis.ts 去算：每个条目待不待核实、它是不是因为依据的那一页
  * 而待核实、每一页被哪些地方提到、最低门要看的各页。助手一侧的查看条目、查询任务状态、保存修订的最低门都经这里；
  * 后端的快照从它自己读出的数据里取同样的事实，调的是同一组计算函数，所以两侧口径相同。只读，不写库。
  */
@@ -28,9 +28,9 @@ export interface OverallState {
   items: PlainItem[];
   /** 条目编号 → 它的两样。 */
   verification: Map<string, ItemVerification>;
-  /** 被提到的页的编号 → 提到它的各处。任务没有总体分析集合时是空的。 */
+  /** 被提到的页的编号 → 提到它的各处。任务没有业务说明集合时是空的。 */
   mentions: Map<string, Mention[]>;
-  /** 总体分析的各页在最低门里要看的几样。 */
+  /** 业务说明的各页在最低门里要看的几样。 */
   pages: PageFacts[];
   /** 条目编号 → 用户看没看过它现在的内容（lib/overall_analysis.ts 的 viewedIn）。 */
   viewed: Map<string, boolean>;
@@ -50,7 +50,7 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
   }));
   // 每个条目当前修订上的来源：一条来源在库里可以占几行（每个支持的地方一行），按位置号归成一条。
   const sourceRows = db.prepare(
-    `SELECT s.item_id, s.position, s.kind, s.locator, s.excerpt, s.field, s.field_index FROM item_source s WHERE s.task_id = ?${elementClause(db, ELEMENT_ITEM, "s.")} ` +
+    `SELECT s.item_id, s.position, s.kind, s.locator, s.excerpt, s.field, s.field_index FROM item_source s WHERE s.task_id = ?${elementClause(ELEMENT_ITEM, "s.")} ` +
       "AND s.revision_no = (SELECT MAX(revision_no) FROM item_version w WHERE w.task_id = s.task_id AND w.item_id = s.item_id) ORDER BY s.item_id, s.position, s.support_no",
   ).all(taskId) as { item_id: string; position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
   const sources = new Map<string, { position: number; kind: string; locator: string; excerpt: string; supports: { field: string; index: number | null }[] }[]>();
@@ -101,7 +101,6 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
   const citedFigure = (diagramId: string) => (figureViewed.has(diagramId) ? { viewed: figureViewed.get(diagramId)! } : null);
   const verification = new Map<string, ItemVerification>();
   for (const item of items) {
-    // 早期版本的库里依据另一个条目的来源种类叫「领域说明」，那时没有总体分析，不会指到它的页，所以只看现在的种类名。
     const basis = basisPending((sources.get(item.item_id) ?? []).filter((one) => one.kind === SOURCE_ITEM || one.kind === SOURCE_FIGURE), cited, citedFigure);
     verification.set(item.item_id, { ...own.get(item.item_id)!, basis_pending: basis });
   }

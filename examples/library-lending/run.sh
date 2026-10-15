@@ -10,7 +10,7 @@ json() { python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
 
 echo "1. create a task"
 TASK=$(curl -sf -X POST "$API/tasks" -H 'Content-Type: application/json' \
-  -d '{"task_type": "srs-authoring", "task_name": "School library lending", "domain_tag": "library"}' | json 'd["task_id"]')
+  -d '{"task_type": "requirements-engineering", "task_name": "School library lending", "domain_tag": "library"}' | json 'd["task_id"]')
 echo "   task: $TASK"
 
 echo "2. upload the requirements material"
@@ -64,7 +64,7 @@ echo "6. look at the topic pages, then let the agent start writing items"
 # agent's card; here the same two things are done through the API: mark every topic page as viewed, and move the work
 # item of this session to the writing stage.
 PAGES=$(curl -sf "$API/tasks/$TASK/snapshot?session=$SESSION" | json \
-  'json.dumps([{"item_id": i["item_id"], "base_revision": i["revision_no"]} for i in d["task"]["items"] if i["collection"] == "总体分析"])')
+  'json.dumps([{"item_id": i["item_id"], "base_revision": i["revision_no"]} for i in d["task"]["items"] if i["collection"] == "业务说明"])')
 if [ "$PAGES" != "[]" ]; then
   curl -sf -X POST "$API/tasks/$TASK/actions?session=$SESSION" -H 'Content-Type: application/json' \
     -d "{\"client_id\": \"example-viewed\", \"kind\": \"mark_viewed\", \"targets\": $PAGES}" > /dev/null
@@ -72,7 +72,7 @@ fi
 curl -sf -X POST "$API/tasks/$TASK/actions?session=$SESSION" -H 'Content-Type: application/json' \
   -d '{"client_id": "example-stage", "kind": "move_stage", "fields": {"stage": "写条目"}}' > /dev/null
 curl -sf -X POST "$API/tasks/$TASK/messages?session=$SESSION" -H 'Content-Type: application/json' \
-  -d '{"text": "总体分析我看过了，请开始写条目。", "client_id": "example-2"}' > /dev/null
+  -d '{"text": "业务说明我看过了，请开始写条目。", "client_id": "example-2"}' > /dev/null
 
 echo "7. wait until the agent has written the items and replied"
 wait_for_replies 2

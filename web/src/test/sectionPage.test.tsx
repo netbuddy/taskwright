@@ -1,4 +1,4 @@
-// 业务说明的一节（总体分析的一页主题）：面包屑（第几章 › 节号）、标题、一行小字、标签与待核实；
+// 业务说明的一节（一页主题）：面包屑（第几章 › 节号）、标题、一行小字、标签与待核实；
 // 各块（说明、异常分支、示例、适用规则、待澄清事项）有内容才画；材料原句与助手补的字句各有标注，出处写在每一处下面；
 // 待澄清的问题可以在这里回答或者暂不处理；上一条、下一条照目录的次序；「看修订与全部来源」换成条目详情的样子，再回到这一节。
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -21,7 +21,7 @@ function Panel({ t, first = "OA-003", readOnly = false, writesOff = false, spies
   const [selected, setSelected] = useState<string | null>(first);
   return (
     <Wrap><div className="app">
-      <ItemsPanel task={t} initialCollection="总体分析" readOnly={readOnly} writesOff={writesOff} recentlyChanged={[]} pendingItems={new Set()}
+      <ItemsPanel task={t} initialCollection="业务说明" readOnly={readOnly} writesOff={writesOff} recentlyChanged={[]} pendingItems={new Set()}
         selected={selected} onSelect={setSelected} submit={(spies.submit ?? vi.fn(async () => null)) as never} onGenerateDoc={() => {}}
         onSend={spies.send as never} onAnswer={spies.answer as never} onLocate={spies.locate as never} onPrefill={spies.prefill as never} />
     </div></Wrap>
@@ -431,11 +431,11 @@ describe("底部的动作与复述", () => {
     expect(send).toHaveBeenCalledWith("请把现在对「预约取书」及其下面主题的理解讲成一段故事");
   });
 
-  it("提纲底部也有「复述一遍」：打开着一页就讲这一页，没有打开讲整个总体分析；未选主题时右边也有一个", () => {
+  it("提纲底部也有「复述一遍」：打开着一页就讲这一页，没有打开讲整个业务说明；未选主题时右边也有一个", () => {
     const send = vi.fn();
     render(<Panel t={overallTask()} first={null} spies={{ send }} />);
     fireEvent.click(screen.getByTestId("toc-retell"));
-    expect(send).toHaveBeenLastCalledWith("请把现在对总体分析里各个主题的理解讲成一段故事");
+    expect(send).toHaveBeenLastCalledWith("请把现在对业务说明里各个主题的理解讲成一段故事");
     expect(screen.getByTestId("intro-retell")).toHaveAttribute("title", "请助手把对各节的理解讲成一段故事，请核对这段复述");
     fireEvent.click(screen.getByTestId("intro-retell"));
     expect(send).toHaveBeenCalledTimes(2);

@@ -47,6 +47,7 @@ import { type SelectedLibrary, envKnowledgeRoot, knowledgeChangedAt, selectedKno
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
 import { hasOverall } from "./overall_analysis.ts";
 import { openProposal, proposalLine } from "./stage_proposal.ts";
+import { fillText } from "./texts.ts";
 
 /** 这条自定义消息的类型名。后端、观测台与会话文件里都认这个名字。 */
 export const TASK_STATUS_CUSTOM_TYPE = "taskwright-task-status";
@@ -64,7 +65,7 @@ export interface SessionFacts {
 }
 
 /** 续接时上一次运行是被用户停止的，现状消息里加的那一句。页面照原样显示这一句（backend/src/conversation.ts 不改它）。 */
-export const LAST_RUN_STOPPED_SENTENCE = "上一次运行被用户停止，没有做完。";
+export const LAST_RUN_STOPPED_SENTENCE = fillText("status.last_run_stopped");
 
 export interface TaskStatusMessage {
   kind: "现状" | "变化";
@@ -120,19 +121,21 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
 /**
  * 「这个任务选用的知识库」一段：每个知识库一行写名字与文档个数，下面每份文档一行（名字、种类、大小、出处的写法；
  * 不给路径，不给正文）。所有选用的知识库都没有文档（或者没有知识库）时是空文字。任务现状、续接时的变化与「查询任务状态」都用它。
- * 开头那句里的规矩与系统提示、平台 skill 第二节第 4 条、查找知识库工具的说明是同一条，改一处要四处一起改。
+ * 开头那句里的规矩与平台说明第二节第 4 条、查找知识库工具的说明（agent/prompts/tools/search_knowledge.md）是同一条，改一处要三处一起改。
  */
 export function knowledgeSection(libraries: SelectedLibrary[]): string {
   if (!libraries.some((one) => one.documents.length > 0)) return "";
-  const lines = ["这个任务选用的知识库（参考资料，不整理成条目；材料里把具体规定指给了别的文档时，必须到这里把那条规定查出来写进条目并记来源；查知识库用 search_knowledge，不要用 grep 去翻知识库，命中太多也拿不全；查法与来源的写法见 taskwright-executor 第二节第 4 条；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）："];
+  const lines = [fillText("status.knowledge_lead")];
   for (const library of libraries) {
     if (library.documents.length === 0) {
-      lines.push(`知识库「${library.name}」现在没有文档。`);
+      lines.push(fillText("status.knowledge_library_empty", { name: library.name }));
       continue;
     }
-    lines.push(`知识库「${library.name}」有 ${library.documents.length} 份文档：`);
+    lines.push(fillText("status.knowledge_library", { name: library.name, count: library.documents.length }));
     for (const doc of library.documents) {
-      lines.push(`- ${doc.name}（${doc.kindName}，${sizeText(doc.bytes)}）：用 search_knowledge 查；出处写 ${doc.locator}${doc.word ? ` 加段落号，例如 ${doc.locator}#p12` : ""}`);
+      lines.push(doc.word
+        ? fillText("status.knowledge_document_word", { name: doc.name, kind: doc.kindName, size: sizeText(doc.bytes), locator: doc.locator })
+        : fillText("status.knowledge_document", { name: doc.name, kind: doc.kindName, size: sizeText(doc.bytes), locator: doc.locator }));
     }
   }
   return lines.join("\n");
@@ -153,10 +156,10 @@ function withKnowledge(message: TaskStatusMessage, libraries: SelectedLibrary[],
 
 /** 续接时知识库变过：把知识库一段再写一遍；现在选用的知识库里一份文档都没有时只说一句。 */
 function withKnowledgeChange(message: TaskStatusMessage, libraries: SelectedLibrary[]): TaskStatusMessage {
-  if (knowledgeSection(libraries)) return withKnowledge(message, libraries, "上次之后，这个任务选用的知识库或其中的文档有变化，现在是这样。");
+  if (knowledgeSection(libraries)) return withKnowledge(message, libraries, fillText("status.knowledge_changed"));
   return {
     ...message,
-    text: `${message.text}\n上次之后，这个任务选用的知识库或其中的文档有变化：现在选用的知识库里没有文档。`,
+    text: `${message.text}\n${fillText("status.knowledge_changed_empty")}`,
     details: { ...message.details, knowledge: knowledgeDetails(libraries) },
   };
 }
@@ -176,7 +179,7 @@ function withProposal(db: DatabaseSync, task: TaskRow, definition: TaskDefinitio
   if (open === null || open.at <= wallClockText(new Date(since))) return message;
   const base: TaskStatusMessage = message ?? {
     kind: "变化",
-    text: `【执行者续接这条会话时（${clock()}）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。`,
+    text: `${fillText("status.head_changes", { clock: clock() })}${fillText("status.no_changes")}`,
     details: { kind: "变化", task_id: task.task_id, since: wallClockText(new Date(since)), session_id: sessionId, added: [], updated: [], deleted: [], event_seqs: [],
       materials: materialsDetails(materials), new_materials: [] },
   };
@@ -188,11 +191,10 @@ function withOpenActs(db: DatabaseSync, taskId: string, sessionId: string, messa
   if (!message) return message;
   const open = unansweredActs(db, taskId, sessionId);
   if (open.length === 0) return message;
-  const list = open.map((one) => `${one.act_id} ${FUNCTION_NAMES[one.function] ?? one.function}「${one.summary}」`).join("；");
+  const list = open.map((one) => fillText("status.open_act", { act: one.act_id, function: FUNCTION_NAMES[one.function] ?? one.function, summary: one.summary })).join("；");
   return {
     ...message,
-    text: `${message.text}
-还在等回应的执行者行为 ${open.length} 条（你问过、用户还没有回应的）：${list}。`,
+    text: `${message.text}\n${fillText("status.open_acts", { count: open.length, list })}`,
     details: { ...message.details, open_acts: open.map((one) => ({ act_id: one.act_id, function: one.function, summary: one.summary })) },
   };
 }
@@ -229,9 +231,9 @@ export function listMaterials(workspaceDir: string, materialsDir: string): { dir
 }
 
 function sizeText(bytes: number): string {
-  if (bytes < 1024) return `${bytes} 字节`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes < 1024) return fillText("status.size_bytes", { size: bytes });
+  if (bytes < 1024 * 1024) return fillText("status.size_kb", { size: (bytes / 1024).toFixed(1) });
+  return fillText("status.size_mb", { size: (bytes / 1024 / 1024).toFixed(1) });
 }
 
 /**
@@ -240,34 +242,41 @@ function sizeText(bytes: number): string {
  * PDF 材料（.pdf）同样：读由它生成的投影，出处写 PDF 文件加页与块；带了分段情况时写页数、块数、哪几页没有文字与分段清单。
  */
 export function materialsSentence(materials: Materials): string {
-  if (materials.files.length === 0) return `材料目录 ${materials.dir} 里现在没有文件。`;
+  if (materials.files.length === 0) return fillText("status.materials_none", { dir: materials.dir });
   const paths = new Set(materials.files.map((f) => f.path));
   const words = materials.files.filter((f) => /\.docx$/i.test(f.path) && (paths.has(`${f.path}.md`) || paths.has(`${f.path}.txt`))).map((f) => f.path);
   const projections = words.map((w) => (paths.has(`${w}.md`) ? `${w}.md` : `${w}.txt`));
-  const note = words.length
-    ? `其中 ${words.join("、")} 是 Word 文件，请读由它生成的文字版 ${projections.join("、")}（每段一行，段落号写在方括号里）；引用它作来源时，出处写 Word 文件加段落号，例如 ${words[0]}#p12。`
-    : "";
+  const note = words.length ? fillText("status.materials_word", { words: words.join("、"), projections: projections.join("、"), first: words[0] }) : "";
   const pdfs = materials.files.filter((f) => /\.pdf$/i.test(f.path) && paths.has(`${f.path}.md`)).map((f) => f.path);
-  const pdfNote = pdfs.length
-    ? `${words.length ? "" : "其中 "}${pdfs.join("、")} 是 PDF 文件，请读由它生成的文字版 ${pdfs.map((p) => `${p}.md`).join("、")}（每块一行，行首方括号里是页与块）；`
-      + `引用它作来源时，出处写 PDF 文件加页与块，例如 ${pdfs[0]}#p3-2。`
-    : "";
+  const pdfValues = { pdfs: pdfs.join("、"), projections: pdfs.map((p) => `${p}.md`).join("、"), first: pdfs[0] };
+  const pdfNote = !pdfs.length ? "" : words.length ? fillText("status.materials_pdf_also", pdfValues) : fillText("status.materials_pdf", pdfValues);
   const segments = (materials.facts ?? []).flatMap((f) => (f.kind === "word"
-    ? [`${f.path} 共 ${f.text_paragraphs} 段有文字（段落号 1 到 ${f.paragraphs}）、${f.blocks.length} 块${f.segments_file ? `，分段清单见 ${f.segments_file}` : ""}。`]
+    ? [fillText("status.segments_word", {
+      path: f.path, text_paragraphs: f.text_paragraphs, paragraphs: f.paragraphs, blocks: f.blocks.length,
+      list: f.segments_file ? fillText("status.segments_word_list", { file: f.segments_file }) : "",
+    })]
     : f.kind === "pdf"
-      ? [`${f.path} 共 ${f.pages} 页、${f.units} 块${f.no_text_pages.length ? `，其中第 ${f.no_text_pages.join("、")} 页没有文字` : ""}${f.segments_file ? `，分段清单按页，见 ${f.segments_file}` : ""}。`]
+      ? [fillText("status.segments_pdf", {
+        path: f.path, pages: f.pages, units: f.units,
+        no_text: f.no_text_pages.length ? fillText("status.segments_pdf_no_text", { pages: f.no_text_pages.join("、") }) : "",
+        list: f.segments_file ? fillText("status.segments_pdf_list", { file: f.segments_file }) : "",
+      })]
       : []));
-  return `材料目录 ${materials.dir} 里有 ${materials.files.length} 个文件：${materials.files.map((f) => `${f.path}（${sizeText(f.bytes)}）`).join("、")}。${note}${pdfNote}${segments.join("")}`;
+  return fillText("status.materials", {
+    dir: materials.dir, count: materials.files.length,
+    files: materials.files.map((f) => fillText("status.material_file", { path: f.path, size: sizeText(f.bytes) })).join("、"),
+    word: note, pdf: pdfNote, segments: segments.join(""),
+  });
 }
 
 /** 续接时的引用情况那一句：Word 材料还有几段、PDF 材料还有几块没有被任何条目引用，文本材料被引用过几次；没有这几种材料时是空文字。 */
 export function citationSentence(facts: MaterialFacts[] | undefined): string {
   const parts = (facts ?? []).map((f) => (f.kind === "word"
-    ? (f.uncited === 0 ? `${f.path} 每段都有条目引用` : `${f.path} 还有 ${f.uncited} 段没有被任何条目引用`)
+    ? (f.uncited === 0 ? fillText("status.cited_word_all", { path: f.path }) : fillText("status.cited_word_some", { path: f.path, count: f.uncited }))
     : f.kind === "pdf"
-      ? (f.uncited === 0 ? `${f.path} 每块都有条目引用` : `${f.path} 还有 ${f.uncited} 块没有被任何条目引用`)
-      : `${f.path} 被引用过 ${f.cited} 次`));
-  return parts.length ? `材料的引用情况：${parts.join("；")}。` : "";
+      ? (f.uncited === 0 ? fillText("status.cited_pdf_all", { path: f.path }) : fillText("status.cited_pdf_some", { path: f.path, count: f.uncited }))
+      : fillText("status.cited_text", { path: f.path, count: f.cited })));
+  return parts.length ? fillText("status.citations", { parts: parts.join("；") }) : "";
 }
 
 const materialsDetails = (materials: Materials) => ({
@@ -306,17 +315,17 @@ function statusNow(db: DatabaseSync, task: TaskRow, definition: TaskDefinition, 
     ).length;
   }
   const parts = [
-    `任务「${name}」（类型：${definition.taskName}），任务编号 ${task.task_id}。`,
+    fillText("status.task_line", { name, type: definition.taskName, id: task.task_id }),
     total === 0
-      ? "交付物还没有任何条目。"
-      : `交付物现有 ${total} 个条目：${counts.map((one) => `${one.collection} ${one.count} 个`).join("、")}。`,
+      ? fillText("status.items_none")
+      : fillText("status.items", { total, counts: counts.map((one) => fillText("status.items_count", { collection: one.collection, count: one.count })).join("、") }),
     completionBrief(results),
-    `未解决的问题条目有 ${unresolved} 条。`,
+    fillText("status.unresolved", { count: unresolved }),
     materialsSentence(materials),
   ];
   return {
     kind: "现状",
-    text: `【执行者开始这条会话时（${clock()}）的任务状况：由扩展写入，不是用户打的字】${parts.join("")}`,
+    text: `${fillText("status.head_now", { clock: clock() })}${parts.join("")}`,
     details: {
       kind: "现状",
       task_id: task.task_id,
@@ -350,7 +359,7 @@ function changesSince(
   // 交付物与材料都没有变、只有知识库变了或者只有上一次运行被停止这件事：照「只有新材料」的样子写一条，材料清单不重复。
   const base: TaskStatusMessage = changed ?? {
     kind: "变化",
-    text: `【执行者续接这条会话时（${clock()}）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。`,
+    text: `${fillText("status.head_changes", { clock: clock() })}${fillText("status.no_changes")}`,
     details: { kind: "变化", task_id: task.task_id, since: cutoff, session_id: sessionId, added: [], updated: [], deleted: [], event_seqs: [],
       materials: materialsDetails(materials), new_materials: [] },
   };
@@ -406,22 +415,22 @@ function changesInItems(
     }
   }
   const pieces: string[] = [];
-  if (added.size > 0) pieces.push(`新增 ${added.size} 个条目（${[...added.keys()].join("、")}）`);
+  if (added.size > 0) pieces.push(fillText("status.change_added", { count: added.size, items: [...added.keys()].join("、") }));
   if (updated.size > 0) {
-    pieces.push(
-      `修改 ${updated.size} 个（${[...updated.entries()].map(([item, v]) => `${item} 修订 ${v.from} → 修订 ${v.to}`).join("、")}）`,
-    );
+    pieces.push(fillText("status.change_updated", {
+      count: updated.size, items: [...updated.entries()].map(([item, v]) => fillText("status.change_updated_item", { item, from: v.from, to: v.to })).join("、"),
+    }));
   }
-  if (deleted.size > 0) pieces.push(`删除 ${deleted.size} 个（${[...deleted.keys()].join("、")}）`);
+  if (deleted.size > 0) pieces.push(fillText("status.change_deleted", { count: deleted.size, items: [...deleted.keys()].join("、") }));
   if (pieces.length === 0) return newMaterials.length ? materialsOnly(task, cutoff, sessionId, materials, newMaterials) : null;
   const sources: string[] = [];
-  if (byUser > 0) sources.push(`用户在界面上直接做的 ${byUser} 次`);
-  if (byExecutorElsewhere > 0) sources.push(`执行者在别的会话里做的 ${byExecutorElsewhere} 次`);
+  if (byUser > 0) sources.push(fillText("status.change_by_user", { count: byUser }));
+  if (byExecutorElsewhere > 0) sources.push(fillText("status.change_by_executor", { count: byExecutorElsewhere }));
   const text =
-    `【执行者续接这条会话时（${clock()}）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】` +
-    `${pieces.join("；")}。这些改动来自 ${byUser + byExecutorElsewhere} 次修订：${sources.join("，")}。` +
+    fillText("status.head_changes", { clock: clock() }) +
+    fillText("status.changes", { pieces: pieces.join("；"), count: byUser + byExecutorElsewhere, sources: sources.join("，") }) +
     materialsSentence(materials) +
-    (newMaterials.length ? `其中上次之后新放进来的是：${newMaterials.join("、")}。` : "") +
+    (newMaterials.length ? fillText("status.new_materials", { files: newMaterials.join("、") }) : "") +
     citationSentence(materials.facts);
   return {
     kind: "变化",
@@ -452,9 +461,9 @@ function materialsOnly(
   return {
     kind: "变化",
     text:
-      `【执行者续接这条会话时（${clock()}）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。` +
+      fillText("status.head_changes", { clock: clock() }) + fillText("status.no_changes") +
       materialsSentence(materials) +
-      `其中上次之后新放进来的是：${newMaterials.join("、")}。` +
+      fillText("status.new_materials", { files: newMaterials.join("、") }) +
       citationSentence(materials.facts),
     details: {
       kind: "变化",

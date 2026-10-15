@@ -18,7 +18,7 @@ import { ENV_SETTINGS_FILE } from "../src/product_settings.ts";
 import { Service } from "../src/service.ts";
 import { DATA_FORMAT, SERVICE_DB_NAME, ServiceDb, serviceDbPath } from "../src/service_db.ts";
 import { readTaskJson } from "../src/task_json.ts";
-import { captureConsole, tempDir } from "./helpers.ts";
+import { asFormat8, captureConsole, tempDir } from "./helpers.ts";
 
 captureConsole();
 
@@ -33,43 +33,51 @@ async function dataWith(names: string[]): Promise<Data & { ids: string[] }> {
   const dataDir = join(tmp, `data-${++n}`);
   const where = { dataDir, tasksDir: join(dataDir, "tasks"), knowledgeDir: join(dataDir, "knowledge") };
   const service = new Service(where.tasksDir, join(dataDir, "runs"), {}, { port: 1, knowledgeDir: where.knowledgeDir });
-  const ids = names.map((name) => service.create({ task_type: "srs-authoring", task_name: name }).task_id as string);
+  const ids = names.map((name) => service.create({ task_type: "requirements-engineering", task_name: name }).task_id as string);
   await service.close();
   return { ...where, ids };
 }
 
-/** 把一个任务变成上一版留下的样子：库没有编过版本号，没有 task.json。extra 是另外执行的 SQL（用来做一个升不了的库）。 */
+/** 把一个任务变成上一版留下的样子：库退回格式 8，没有 task.json。extra 是退回之后另外执行的 SQL（用来做一个升不了的库）。 */
 function makeOld(where: Data, id: string, extra = ""): void {
+  asFormat8(join(where.tasksDir, id));
+  if (!extra) return;
   const db = new DatabaseSync(join(where.tasksDir, id, DB_NAME));
-  db.exec(`${extra}; PRAGMA user_version = 0`);
+  db.exec(extra);
   db.close();
-  rmSync(join(where.tasksDir, id, TASK_JSON), { force: true });
+}
+
+/** 把一个任务的库记成更早的格式 version（本程序不再升级的）。 */
+function makeAncient(where: Data, id: string, version: number): void {
+  const db = new DatabaseSync(join(where.tasksDir, id, DB_NAME));
+  db.exec(`PRAGMA user_version = ${version}`);
+  db.close();
 }
 
 const version = (where: Data, id: string) => library.taskDbVersion(join(where.tasksDir, id));
 
-test("看：全新的数据目录没有要升级的，什么都不建；有上一版的任务、现在的任务、更新的任务与最早格式的任务时各归各类", async () => {
+test("看：全新的数据目录没有要升级的，什么都不建；有上一版的任务、现在的任务、更新的任务与格式太早的任务时各归各类", async () => {
   const empty = { dataDir: join(tmp, "never"), tasksDir: join(tmp, "never", "tasks"), knowledgeDir: null };
   const none = planUpgrade(empty);
   assert.deepEqual([none.service.state, none.tasks, none.failed, none.newer, upgradeNeeded(none)], ["missing", [], [], [], false]);
   assert.equal(existsSync(empty.dataDir), false, "只看不建");
 
-  const where = await dataWith(["旧甲", "旧乙", "现在的", "更新的", "最早的"]);
-  const [a, b, , newer, ancient] = where.ids;
+  const where = await dataWith(["旧甲", "旧乙", "现在的", "更新的", "太早的"]);
+  const [a, b, , newer, tooOld] = where.ids;
   makeOld(where, a);
   makeOld(where, b);
-  makeOld(where, ancient, "ALTER TABLE item_version ADD COLUMN version_no INTEGER");
+  makeAncient(where, tooOld, 5);
   const raw = new DatabaseSync(join(where.tasksDir, newer, DB_NAME));
   raw.exec(`PRAGMA user_version = ${TASK_DB_VERSION + 1}`);
   raw.close();
   writeFileSync(join(where.tasksDir, newer, TASK_JSON), JSON.stringify({ upgraded_by_version: "0.8.0" }), "utf-8");
   const plan = planUpgrade(where);
   assert.equal(plan.service.state, "missing");
-  assert.deepEqual(plan.tasks.map((t) => [t.dir, t.task_id, t.name, t.version]).sort(), [[a, a, "旧甲", 0], [b, b, "旧乙", 0]].sort());
+  assert.deepEqual(plan.tasks.map((t) => [t.dir, t.task_id, t.name, t.version]).sort(), [[a, a, "旧甲", 8], [b, b, "旧乙", 8]].sort(), "格式太早的不升级");
   assert.deepEqual(plan.newer.map((t) => [t.dir, t.written_by]), [[newer, "0.8.0"]]);
   assert.deepEqual(plan.failed, []);
   assert.equal(upgradeNeeded(plan), true);
-  assert.deepEqual([version(where, a), existsSync(serviceDbPath(where.dataDir)), existsSync(join(where.dataDir, "backups"))], [0, false, false], "看完什么都没有变");
+  assert.deepEqual([version(where, a), version(where, tooOld), existsSync(serviceDbPath(where.dataDir)), existsSync(join(where.dataDir, "backups"))], [8, 5, false, false], "看完什么都没有变");
 });
 
 test("升级：每个任务升到现在的格式并补写 task.json、记进登记表；升级之前的备份里是旧的库、设置文件与知识库清单；报告写进文件；进度一项一项报", async () => {
@@ -82,13 +90,13 @@ test("升级：每个任务升到现在的格式并补写 task.json、记进登�
     env: { [ENV_SETTINGS_FILE]: settings }, onProgress: (p) => seen.push({ ...p }) });
   try {
     assert.deepEqual([report.fatal, report.service, report.succeeded, report.failed, report.tasks.map((t) => [t.dir, t.from, t.to, t.ok, t.error])],
-      [null, "created", 2, 0, [...where.ids].sort().map((id) => [id, 0, TASK_DB_VERSION, true, null])]);
+      [null, "created", 2, 0, [...where.ids].sort().map((id) => [id, 8, TASK_DB_VERSION, true, null])]);
     for (const [i, id] of where.ids.entries()) {
       assert.equal(version(where, id), TASK_DB_VERSION);
       const meta = readTaskJson(join(where.tasksDir, id))!;
-      assert.deepEqual([meta.created_by_version, meta.task_type, meta.owner, meta.upgraded_by_version], [null, "srs-authoring", "local", "0.5.0"]);
+      assert.deepEqual([meta.created_by_version, meta.task_type, meta.owner, meta.upgraded_by_version], [null, "requirements-engineering", "local", "0.5.0"]);
       assert.ok(meta.created_at && meta.upgraded_at, "建立时刻取自任务库，升级时刻是这一次");
-      assert.deepEqual([registry!.task(id)?.name, registry!.task(id)?.status, registry!.task(id)?.task_type, registry!.task(id)?.upgrade_error], [["借阅系统", "退货流程"][i], null, "srs-authoring", null]);
+      assert.deepEqual([registry!.task(id)?.name, registry!.task(id)?.status, registry!.task(id)?.task_type, registry!.task(id)?.upgrade_error], [["借阅系统", "退货流程"][i], null, "requirements-engineering", null]);
     }
     assert.deepEqual([registry!.meta("data_format"), registry!.meta("last_written_by")], [String(DATA_FORMAT), "0.5.0"]);
     // 备份：目录名是时刻加旧产品版本（上一版没有服务级库，写 pre-0.5）。
@@ -98,7 +106,7 @@ test("升级：每个任务升到现在的格式并补写 task.json、记进登�
     assert.deepEqual(readdirSync(join(backup, "knowledge")), ["libraries.json"]);
     for (const id of where.ids) {
       assert.deepEqual(readdirSync(join(backup, "tasks", id)), [DB_NAME], "上一版的任务没有 task.json，备份里只有库");
-      assert.equal(library.taskDbVersion(join(backup, "tasks", id)), 0, "备份的是升级之前的库");
+      assert.equal(library.taskDbVersion(join(backup, "tasks", id)), 8, "备份的是升级之前的库");
     }
     assert.equal(report.backup?.files, 4);
     assert.ok(report.backup!.bytes > 0);
@@ -107,7 +115,7 @@ test("升级：每个任务升到现在的格式并补写 task.json、记进登�
     const text = readFileSync(report.file!, "utf-8");
     assert.equal(text, reportText(report));
     assert.match(text, /^数据升级报告（0\.5\.0）\n数据目录：.*\n任务目录：.*\n开始：.*结束：.*\n升级之前的备份：.*20261008-140509-pre-0\.5（4 个文件，/);
-    assert.match(text, new RegExp(`任务 ${where.ids[0]}「借阅系统」：格式 0 升到 ${TASK_DB_VERSION}，成功，用了 \\d+ 毫秒`));
+    assert.match(text, new RegExp(`任务 ${where.ids[0]}「借阅系统」：格式 8 升到 ${TASK_DB_VERSION}，成功，用了 \\d+ 毫秒`));
     assert.match(text, /合计：2 个任务，成功 2 个，没有做成 0 个。\n$/);
     // 报告写明这一次扫的是哪个任务目录。
     assert.ok(text.includes(`\n任务目录：${where.tasksDir}\n`), text);
@@ -127,16 +135,16 @@ test("一个任务没有做成不挡别的：原因记进报告与登记表；�
   const [good, busy, broken] = where.ids;
   makeOld(where, good);
   makeOld(where, busy);
-  makeOld(where, broken, "ALTER TABLE task DROP COLUMN domain_tag");
+  makeOld(where, broken, "DROP TABLE tool_rejection");
   // 别的、还活着的服务写的占用标记：进程号用本测试的父进程（活着，又不是本进程）。
   writeFileSync(join(where.tasksDir, busy, LOCK_NAME), JSON.stringify({ port: 8950, pid: process.ppid, host: hostname(), mode: "server" }), "utf-8");
   const first = await runUpgrade(planUpgrade(where), { productVersion: "0.5.0" });
   const outcome = (id: string, report = first.report) => report.tasks.find((t) => t.dir === id)!;
   try {
     assert.deepEqual([first.report.fatal, first.report.succeeded, first.report.failed], [null, 1, 2]);
-    assert.deepEqual([outcome(good).ok, outcome(busy).error, outcome(busy).to], [true, "任务正在被另一个服务使用", 0]);
-    assert.match(outcome(broken).error!, /较早的格式.*domain_tag/);
-    assert.deepEqual([version(where, good), version(where, busy), version(where, broken)], [TASK_DB_VERSION, 0, 0]);
+    assert.deepEqual([outcome(good).ok, outcome(busy).error, outcome(busy).to], [true, "任务正在被另一个服务使用", 8]);
+    assert.match(outcome(broken).error!, /no such table: tool_rejection/);
+    assert.deepEqual([version(where, good), version(where, busy), version(where, broken)], [TASK_DB_VERSION, 8, 8]);
     assert.equal(first.registry!.taskByDir(busy)?.upgrade_error, "任务正在被另一个服务使用");
     assert.match(reportText(first.report), /没有升级成（任务正在被另一个服务使用）/);
     assert.match(reportText(first.report), /合计：3 个任务，成功 1 个，没有做成 2 个。\n没有做成的任务原样没动；要回到升级之前，把备份里的文件复制回去：/);
@@ -168,7 +176,7 @@ test("备份不成就不升级：一个任务都不动，服务级库也不建�
   assert.equal(registry, null);
   assert.match(report.fatal!, /^升级之前的备份没有做成，所以没有升级：/);
   assert.deepEqual([report.tasks, report.backup, report.service], [[], null, null]);
-  assert.deepEqual([version(where, where.ids[0]), existsSync(join(where.dataDir, SERVICE_DB_NAME))], [0, false]);
+  assert.deepEqual([version(where, where.ids[0]), existsSync(join(where.dataDir, SERVICE_DB_NAME))], [8, false]);
   assert.match(reportText(report), /\n没有升级：升级之前的备份没有做成/);
 });
 
@@ -184,7 +192,7 @@ test("数据目录比这个程序新：不升级，说明是哪个版本写的",
   const { report, registry } = await runUpgrade(plan, { productVersion: "0.5.0" });
   assert.equal(registry, null);
   assert.equal(report.fatal, "这份数据由 0.9.0 写入，请用 0.9.0 或更新的版本打开。");
-  assert.equal(version(where, where.ids[0]), 0);
+  assert.equal(version(where, where.ids[0]), 8);
 });
 
 test("任务库的备份是完整的：别的连接开着、最新的改动还只在日志文件里时，副本里也有", async () => {

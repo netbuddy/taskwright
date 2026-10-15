@@ -1,16 +1,14 @@
 /**
- * 「回复」工具交给模型看的参数说明里的几句话（tools/reply.ts）：哪种回应用在什么时候、提议的 preview 什么时候写、
+ * 「回复」工具交给模型看的参数说明里的几句话（模板 agent/prompts/tools/reply.md）：哪种回应用在什么时候、提议的 preview 什么时候写、
  * 移动工作阶段的两项怎么用。模型只看得到这些说明，所以改它们要有意为之。
- * 工具文件依赖随 pi 一起装的包，单元测试里导入不了，所以这里读源文件的文字来核对。
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { test } from "node:test";
+import { templates } from "../src/lib/texts.ts";
 
-/** 源文件里相邻的字符串字面量是用加号接起来的，核对之前先接成连续的文字。 */
-const SOURCE = readFileSync(join(import.meta.dirname, "..", "src", "tools", "reply.ts"), "utf-8").replace(/"\s*\+\s*\n\s*"/g, "");
+/** 回复工具的全部说明文字，一段一行。 */
+const SOURCE = [...templates().values()].filter((one) => one.key.startsWith("reply.")).map((one) => one.body).join("\n");
 
 test("kind 的说明写明是非题用请选择、征求同意用提议、提问只给开放问题；preview 不只在改条目时才写", () => {
   assert.ok(SOURCE.includes("propose 是提议下一步怎么做。必须写。是非题用 choose（把答案写成选项）、征求同意或下一步怎么做用 propose、ask 只给用户要自己说出内容的开放问题。"));

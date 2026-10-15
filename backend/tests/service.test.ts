@@ -77,13 +77,13 @@ describe("建任务目录：起始文件原样复制，没带 pi 项目设置时
 test("建任务：同进程调用 agent 的 createTask，发起方记用户、编号是操作编号；任务名为空时取任务定义里的名字", async () => {
   const service = newService();
   try {
-    const { task_id: taskId } = service.create({ task_type: "srs-authoring", task_name: "  ", domain_tag: " 电商 " });
+    const { task_id: taskId } = service.create({ task_type: "requirements-engineering", task_name: "  ", domain_tag: " 电商 " });
     const dir = service.task(taskId).dir;
     const row = sqlGet(dir, "SELECT task_id, task_name, domain_tag, session_id, call_id FROM task")!;
     assert.deepEqual([row.task_id, row.task_name, row.domain_tag, row.session_id], [taskId, null, "电商", ""]);
     assert.match(row.call_id, /^ui-op-[0-9a-f]{12}$/);
     assert.equal(sqlGet(dir, "SELECT actor FROM event")!.actor, "user");
-    assert.equal(service.taskPage(service.task(taskId)).task_name, "软件需求规格说明编制");
+    assert.equal(service.taskPage(service.task(taskId)).task_name, "需求工程");
     assert.equal(codeOf(() => service.create({ task_type: "no-such" })), "bad_request");
   } finally {
     await service.close();
@@ -135,7 +135,7 @@ test("任务目录里没有指向它自己绝对路径的东西", async () => {
   const service = newService(8861, root);
   let dir: string;
   try {
-    dir = service.task(service.create({ task_type: "srs-authoring", task_name: "路径盘点" }).task_id).dir;
+    dir = service.task(service.create({ task_type: "requirements-engineering", task_name: "路径盘点" }).task_id).dir;
   } finally {
     await service.close();
   }
@@ -149,7 +149,7 @@ test("任务目录里没有指向它自己绝对路径的东西", async () => {
 });
 
 test("任务类型：task-types 下每个目录，显示名取任务定义里的任务名", async () => {
-  assert.deepEqual(taskTypes(), [{ task_type: "srs-authoring", name: "软件需求规格说明编制" }]);
+  assert.deepEqual(taskTypes(), [{ task_type: "requirements-engineering", name: "需求工程" }]);
 });
 
 // ───────────── 材料 ─────────────
@@ -157,7 +157,7 @@ test("任务类型：task-types 下每个目录，显示名取任务定义里的
 test("上传材料：只收三种文本，同名不同内容拒绝（不再自动改名），超过 5 MB 拒绝，路径越界拒绝；任务页列出材料", async () => {
   const service = newService();
   try {
-    const t = service.task(service.create({ task_type: "srs-authoring", task_name: "材料测试" }).task_id);
+    const t = service.task(service.create({ task_type: "requirements-engineering", task_name: "材料测试" }).task_id);
     assert.deepEqual(service.upload(t, "需求.md", Buffer.from("甲")), { ok: true, path: "inputs/需求.md" });
     assert.equal(codeOf(() => service.upload(t, "需求.md", Buffer.from("乙"))), "name_taken");
     assert.equal(service.upload(t, "需求二.md", Buffer.from("乙")).path, "inputs/需求二.md");
@@ -166,7 +166,7 @@ test("上传材料：只收三种文本，同名不同内容拒绝（不再自�
     }
     assert.equal(codeOf(() => service.upload(t, "大.txt", Buffer.alloc(5 * 1024 * 1024 + 1, 0x78))), "too_large");
     assert.equal(readFileSync(service.materialPath(t, "inputs/需求二.md"), "utf-8"), "乙");
-    for (const bad of ["inputs/../task.sqlite", "docs/task-definitions/srs-authoring.json", "/etc/passwd", ""]) {
+    for (const bad of ["inputs/../task.sqlite", "docs/task-definitions/requirements-engineering.json", "/etc/passwd", ""]) {
       assert.equal(codeOf(() => service.materialPath(t, bad)), "bad_request", bad);
     }
     const page = service.taskPage(t);
@@ -208,7 +208,7 @@ describe("Word 材料", () => {
   test("上传 docx：旁边生成投影与图片目录；同一份文件再传被拒；材料清单标明派生自哪份 Word 文件", async () => {
     const service = newService();
     try {
-      const t = service.task(service.create({ task_type: "srs-authoring", task_name: "Word 材料" }).task_id);
+      const t = service.task(service.create({ task_type: "requirements-engineering", task_name: "Word 材料" }).task_id);
       assert.deepEqual(service.upload(t, "需求.docx", readFileSync(SAMPLE)), { ok: true, path: "inputs/需求.docx" });
       const projection = readFileSync(join(t.dir, "inputs", "需求.docx.md"), "utf-8");
       assert.ok(projection.startsWith("<!--\n由 需求.docx 生成"));
@@ -237,7 +237,7 @@ describe("Word 材料", () => {
   test("坏的 docx 与保留名拒绝；坏文件连同投影都不留下", async () => {
     const service = newService();
     try {
-      const t = service.task(service.create({ task_type: "srs-authoring", task_name: "Word 材料" }).task_id);
+      const t = service.task(service.create({ task_type: "requirements-engineering", task_name: "Word 材料" }).task_id);
       for (const [name, code] of [["坏.docx", "unsupported_type"], ["a.docx.txt", "bad_request"], ["a.docx.md", "bad_request"], ["图.png", "unsupported_type"]]) {
         assert.equal(codeOf(() => service.upload(t, name, Buffer.from("x"))), code, name);
       }
@@ -249,7 +249,7 @@ describe("Word 材料", () => {
 
   test("原样取回端点给内容类型与原字节，路径越界拒绝；content 端点对 docx 给投影，只有 0.2 的 .txt 时给它，都没有时现算不写文件", async () => {
     const service = newService();
-    const t = service.task(service.create({ task_type: "srs-authoring", task_name: "取回" }).task_id);
+    const t = service.task(service.create({ task_type: "requirements-engineering", task_name: "取回" }).task_id);
     service.upload(t, "需求.docx", readFileSync(SAMPLE));
     service.upload(t, "说明.md", Buffer.from("甲"));
     const server = makeServer(service).listen(0, "127.0.0.1");
@@ -287,26 +287,27 @@ describe("Word 材料", () => {
 
 // ───────────── 任务列表里的两种打不开的任务 ─────────────
 
-test("修订统一之前建的任务照样列出，标明不支持且打不开", async () => {
+test("修订统一之前建的任务（库没有格式号）照样列出，标为旧格式且打不开", async () => {
   const root = fresh();
   const old = join(root, "tasks", "TASK-OLD");
   mkdirSync(old, { recursive: true });
   const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(join(old, "task.sqlite"));
-  db.exec("CREATE TABLE task (task_id TEXT); INSERT INTO task VALUES ('TASK-OLD'); CREATE TABLE item_version (task_id TEXT, item_id TEXT, version_no INTEGER, revision_no INTEGER);");
+  db.exec("CREATE TABLE task (task_id TEXT, task_name TEXT, definition_path TEXT, started_at TEXT); INSERT INTO task VALUES ('TASK-OLD', '旧任务', 'docs/x.json', '2026-01-01'); " +
+    "CREATE TABLE item_version (task_id TEXT, item_id TEXT, version_no INTEGER, revision_no INTEGER);");
   db.close();
   const service = newService(null, root);
   const rows = service.listTasks();
   assert.deepEqual(rows.map((r) => [r.task_id, r.unavailable, r.supported]), [["TASK-OLD", "旧格式", false]]);
-  assert.match(String(rows[0].note), /这个任务是旧格式/);
-  assert.equal(codeOf(() => service.task("TASK-OLD")), "not_found");
+  assert.match(String(rows[0].note), /这个任务库的格式是 0（没有编过版本号，0\.4 建的）/);
+  assert.equal(codeOf(() => service.task("TASK-OLD")), "task_unavailable", "与别的格式太早的任务一样：列着，打不开");
   assert.equal(existsSync(join(old, occupancy.LOCK_NAME)), false, "旧格式的任务不接手，也不写占用标记");
 });
 
 describe("占用标记", () => {
   test("接手时写占用标记，退出时删掉", async () => {
     const service = newService(8861);
-    const folder = service.task(service.create({ task_type: "srs-authoring", task_name: "占用测试" }).task_id).dir;
+    const folder = service.task(service.create({ task_type: "requirements-engineering", task_name: "占用测试" }).task_id).dir;
     const lock = JSON.parse(readFileSync(join(folder, occupancy.LOCK_NAME), "utf-8"));
     assert.deepEqual([lock.port, lock.pid, lock.host], [8861, process.pid, hostname()]);
     assert.ok("started_at" in lock);
@@ -318,7 +319,7 @@ describe("占用标记", () => {
   test("别的活着的服务占用时拒绝服务，列表写明被谁占用；那个服务退出后遗留标记被覆盖", async () => {
     const root = fresh();
     const first = newService(8861, root);
-    const taskId = first.create({ task_type: "srs-authoring", task_name: "被占用的任务" }).task_id;
+    const taskId = first.create({ task_type: "requirements-engineering", task_name: "被占用的任务" }).task_id;
     const folder = first.task(taskId).dir;
     const other = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"]);
     try {

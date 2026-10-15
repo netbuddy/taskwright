@@ -571,7 +571,6 @@ async function stagePayload({ work, cache, target, piDir, piPackages, webDist, d
   // Only the profile the package starts with; the development and test profiles (dev.json, fake.json) stay out of it.
   fs.mkdirSync(path.join(payload, "backend", "profiles"), { recursive: true });
   fs.copyFileSync(path.join(REPO, "backend", "profiles", "desktop.json"), path.join(payload, "backend", "profiles", "desktop.json"));
-  copyTree(path.join(REPO, "backend", "prompts"), path.join(payload, "backend", "prompts"));
   copyTree(diagramEngine, path.join(payload, "backend", "vendor", "mermaid"));
   copyTree(docxLib, path.join(payload, "backend", "vendor", "docx"));
   const pdfjs = stagePdfjs(payload);

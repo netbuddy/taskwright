@@ -68,9 +68,11 @@ test("助手画图：写错的 Mermaid 文本被校验退回，改对之后存�
     const refused = resultOf(requests(), "call-d1");
     assert.match(refused, /这张图没有保存：Mermaid 文本没有通过校验。Mermaid 文本第 2/);
     assert.match(refused, /照上面说的改了再保存。/);
-    // 两次拒绝都记进了工具拒绝表。
-    assert.deepEqual(db("SELECT tool_name, reason_kind, call_id FROM tool_rejection ORDER BY rowid"),
-      [{ tool_name: "save_diagram", reason_kind: "input", call_id: "call-d0" }, { tool_name: "save_diagram", reason_kind: "input", call_id: "call-d1" }]);
+    // 两次拒绝都记进了工具拒绝表，各带原因码：缺来源是来源核对的原因，校验退回是保存图自己的。
+    assert.deepEqual(db("SELECT tool_name, reason_kind, call_id, reason_code, reason_codes FROM tool_rejection ORDER BY rowid"), [
+      { tool_name: "save_diagram", reason_kind: "input", call_id: "call-d0", reason_code: "source.missing", reason_codes: '["source.missing"]' },
+      { tool_name: "save_diagram", reason_kind: "input", call_id: "call-d1", reason_code: "save_diagram.mermaid_invalid", reason_codes: '["save_diagram.mermaid_invalid"]' },
+    ]);
     // 过程摘要：被拒的两次并进存上的那一句，不单列「图没有存上」。
     const { messages } = (await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body;
     const summaries: Dict[] = messages.filter((m: Dict) => m.type === "work_summary");

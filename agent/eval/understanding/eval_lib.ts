@@ -6,7 +6,7 @@
  * 人工标注的期望理解。期望理解按 agent/prompts/schemas/user_intent.schema.json 的结构写（function、targets、responds_to、summary），
  * 每项另写 keywords（摘要里应当出现的对象关键词，一个关键词可以用「|」写几种说法），纠正另写 change（改为、追加、删去）。
  *
- * 提示：平台 skill 第八节「先写理解」整节（从 SKILL.md 按标题截取，含由 schema 生成的格式说明），加上下文与用户的话。
+ * 提示：平台共用说明第八节「先写理解」整节（从 agent/prompts/stages/common.md 按标题截取，含由 schema 生成的格式说明），加上下文与用户的话。
  * 认输出：用 lib/structured_outputs.ts 的 extractFragments 取片段，用登记表（lib/registered_outputs.ts）按 schema 匹配，
  * 第一份匹配上理解的就是这一例的理解；没有匹配上的算格式不合格。
  *
@@ -40,11 +40,11 @@ export interface EvalCase {
   note: string;
 }
 
-/** SKILL.md 里第八节「先写理解」整节：从「## 八、」那一行到下一个二级标题之前。找不到时抛异常。 */
+/** 平台共用说明 common.md 里第八节「先写理解」整节：从「## 八、」那一行到下一个二级标题之前。找不到时抛异常。 */
 export function understandingSection(skill: string): string {
   const lines = skill.split("\n");
   const start = lines.findIndex((line) => /^## 八、/.test(line));
-  if (start < 0) throw new Error("SKILL.md 里找不到第八节「先写理解」");
+  if (start < 0) throw new Error("平台共用说明里找不到第八节「先写理解」");
   const end = lines.findIndex((line, i) => i > start && /^## /.test(line));
   const section = lines.slice(start, end < 0 ? lines.length : end).join("\n").trim();
   if (!section.includes("理解格式说明开始") || !section.includes("理解格式说明结束")) throw new Error("第八节里没有由 schema 生成的格式说明");

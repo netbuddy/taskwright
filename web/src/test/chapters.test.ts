@@ -55,7 +55,7 @@ describe("目录：章内的先后与节号", () => {
     expect(rows(task)[5]).toEqual([6, ["6.1 OA-010", "6.2 OA-005 +1", "6.3 OA-008 +1", "6.4 OA-011"]]);
     // 第 4 章自己没有页了，但别的章里还有标签含概念的页（预约取书、读者）：术语表仍是第 4 章的一节，节号从 1 起。
     expect(toc(task).chapters[3].glossaryNo).toBe("4.1");
-    for (const page of task.items) if (page.collection === "总体分析") page.fields["标签"] = (page.fields["标签"] as string[]).filter((one) => one !== "概念");
+    for (const page of task.items) if (page.collection === "业务说明") page.fields["标签"] = (page.fields["标签"] as string[]).filter((one) => one !== "概念");
     expect(toc(task).chapters[3].glossaryNo).toBeNull();
   });
 
@@ -81,7 +81,7 @@ describe("目录里找一节、走上一条下一条、底部的汇总", () => {
       .toEqual(["OA-004", "OA-007", "OA-009", "OA-001", "OA-002", "OA-003", "OA-006", "OA-005", "OA-010", "OA-008", "OA-011"]);
   });
 
-  it("汇总：编了号的节、需求条目（不算总体分析的页与问题条目）、还没有了结的问题", () => {
+  it("汇总：编了号的节、需求条目（不算业务说明的页与问题条目）、还没有了结的问题", () => {
     const task = overallTask();
     expect(tocTotals(task, toc(task))).toEqual({ sections: 9, items: 3, open: 3 });
   });

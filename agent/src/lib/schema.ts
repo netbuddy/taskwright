@@ -13,11 +13,12 @@
  * 因为设计里把它列为这两张表的主要列。
  */
 
-import { existsSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath, inImmediateTransaction } from "./db.ts";
 import { ensureDialogueSchema } from "./dialogue_schema.ts";
+import { reviewSpecOf, rulesHash } from "./review_state.ts";
 
 /**
  * 忙等待超时（busy timeout）：遇到别的连接占着锁时，最多等这么多毫秒再放弃。
@@ -27,8 +28,7 @@ import { ensureDialogueSchema } from "./dialogue_schema.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十九张表的名字，按建表的先后排。model_call、review_finding、review_waiver、dialogue_act、tool_rejection、diagram、diagram_version、activity_record、
- *  work_item_session、version_record 是后来加的，旧库在 ensureSchema 里补上，所以缺这几张不算「表不全」。早先的阶段记录表（stage_record）在格式版本 5 改写成活动记录表之后删掉了，不在这里。 */
+/** 十九张表的名字，按建表的先后排。 */
 export const TABLE_NAMES = [
   "task",
   "revision",
@@ -51,12 +51,7 @@ export const TABLE_NAMES = [
   "version_record",
 ] as const;
 
-/** 旧库里可能没有、由 ensureSchema 补建的表。 */
-export const ADDED_TABLES = ["model_call", "review_finding", "review_waiver", "dialogue_act", "tool_rejection", "diagram", "diagram_version", "activity_record", "work_item_session",
-  "version_record"];
 
-/** 旧库表里有、新库表里没有的那张表。库里有它就说明是旧格式。 */
-export const LEGACY_TABLE = "slot";
 
 /** 早先任务表里状态一列的三种取值。格式 8 起这一列不读不写，只有升级时认「已完成」补第 1 版。 */
 export const TASK_ACTIVE = "进行中";
@@ -69,9 +64,9 @@ export const TASK_ABANDONED = "已放弃";
  * 依据方的种类（来源表的 kind 列）：
  * - 「文档原文」：材料里或知识库文档里的一段原话，出处写文件的路径（知识库文档以 knowledge/ 开头，不另立种类）。
  * - 「用户的话」：用户在对话里说过的一段原话。
- * - 「助手补充」：助手按常识补上、或者从材料里推出来而材料没有明说的内容；摘录里写的是理由。早期版本叫「执行者补充」。
- * - 「条目」：任务里的另一个条目，出处写它的条目编号（例如 DN-002、UC-003），摘录写引用的那句；另记引用时它的修订号
- *   （depends_revision），它之后又改了，读取一侧据此标「依据已变」。早期版本只能引用「领域说明」集合里的条目，种类名就叫「领域说明」。
+ * - 「助手补充」：助手按常识补上、或者从材料里推出来而材料没有明说的内容；摘录里写的是理由。
+ * - 「条目」：任务里的另一个条目，出处写它的条目编号（例如 OA-002、UC-003），摘录写引用的那句；另记引用时它的修订号
+ *   （depends_revision），它之后又改了，读取一侧据此标「依据已变」。
  * - 「图」：任务里的一张图，出处写图的编号（例如 D-002），摘录可以不写，写了要逐字出现在那张图现在的 Mermaid 文本里；
  *   同样记下引用时图的修订号（图自己的修订号）。只有条目能依据图，一张图不能把另一张图当作依据。
  * - 「用户直接修改」：早期版本在用户直接改了某个字段时由系统写的，出处是那次操作的编号；现在不再写，也不再显示，
@@ -84,21 +79,6 @@ export const SOURCE_FIGURE = "图";
 export const SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM, SOURCE_FIGURE, SOURCE_USER_EDIT] as const;
 /** 助手可以填的五种。 */
 export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM, SOURCE_FIGURE] as const;
-/** 早期版本的两个种类名与它们现在的名字。库迁移之前读到的、助手照旧说明写来的都按现在的名字认（sourceKindNow）。 */
-export const LEGACY_SOURCE_KINDS: Readonly<Record<string, string>> = { 执行者补充: SOURCE_SUPPLEMENT, 领域说明: SOURCE_ITEM };
-/** 一个种类名现在叫什么：早期版本的名字换成现在的，别的照原样。 */
-export const sourceKindNow = (kind: string): string => LEGACY_SOURCE_KINDS[kind] ?? kind;
-/**
- * 一条来源的出处现在怎样写。早期版本的「执行者补充」出处照例就写「执行者补充」这几个字，现在写「助手补充」；别的出处照原样。
- * 迁移改写旧行、迁移之前只读的一侧读旧行，用的是同一条规矩。
- */
-export const sourceLocatorNow = (kind: string, locator: string): string =>
-  kind in LEGACY_SOURCE_KINDS && LEGACY_SOURCE_KINDS[kind] === SOURCE_SUPPLEMENT && locator === kind ? SOURCE_SUPPLEMENT : locator;
-/**
- * 「领域说明」集合的名字：0.4 建的任务里助手记下领域里的说法与规矩的那个集合，这些任务照旧用它。引用它里面的条目，种类是「条目」。
- * 之后建的任务里这个位置上是「总体分析」集合（lib/overall_analysis.ts 的 OVERALL_COLLECTION），一个任务只会有其中一个。
- */
-export const DOMAIN_NOTE_COLLECTION = "领域说明";
 
 /** 产出方是哪种要素（来源表的 element_kind 列）：条目，或者图。 */
 export const ELEMENT_ITEM = "条目";
@@ -108,11 +88,8 @@ export const ELEMENT_KINDS = [ELEMENT_ITEM, ELEMENT_FIGURE] as const;
 /**
  * 读来源表时「只要某一种要素的来源」这个条件，拼在 WHERE 里用，开头自带 AND。条目的来源与图的来源同在一张表里，
  * 靠 element_kind 区分；凡是按条目编号取来源的地方都要带上它，免得把图的来源当成条目的。alias 是表的别名（带点，例如 "s."）。
- * 还没有迁过的库（来源表没有 element_kind 一列，只读的一侧会遇到）里只有条目的来源：要条目的不加条件，要图的一行都不取。
  */
-export function elementClause(db: DatabaseSync, kind: string = ELEMENT_ITEM, alias = ""): string {
-  const migrated = (db.prepare("PRAGMA table_info(item_source)").all() as { name: string }[]).some((row) => row.name === SOURCE_ELEMENT_COLUMN);
-  if (!migrated) return kind === ELEMENT_ITEM ? "" : " AND 0";
+export function elementClause(kind: string = ELEMENT_ITEM, alias = ""): string {
   return ` AND ${alias}element_kind = '${kind === ELEMENT_FIGURE ? ELEMENT_FIGURE : ELEMENT_ITEM}'`;
 }
 export const SOURCE_USER_WORDS = "用户的话";
@@ -194,7 +171,7 @@ CREATE TABLE IF NOT EXISTS review_waiver (
  * 工具拒绝表：执行者的一次工具调用因为输入不合规（或缺了前置步骤）被工具拒绝时记一行——哪个工具、哪次调用、
  * 事实与指引两层拒绝文字、被拒输入的前 2000 个字符。被拒的调用什么都没有写，所以不记事件；这是过程留痕，
  * 用来事后查「助手被拒过什么、为什么」，不必再翻会话文件。模型服务出错、库打不开之类不是输入的问题，不记。
- * 后来加的表，与 model_call 一样用 IF NOT EXISTS，旧库第一次被写入一侧打开时补上。
+ * 每一行另记原因码（格式 9 起）：观测台的健康页按原因码数被拒次数。
  */
 export const TOOL_REJECTION_SQL = `
 CREATE TABLE IF NOT EXISTS tool_rejection (
@@ -204,11 +181,13 @@ CREATE TABLE IF NOT EXISTS tool_rejection (
   work_id        TEXT,                 -- 所属的那次工作：w- 加引出这次运行的那句用户的话的会话条目编号；认不出时为空
   call_id        TEXT NOT NULL,        -- 被拒的那次工具调用的 pi 调用编号
   tool_name      TEXT NOT NULL,        -- 工具名，例如 save_revision
-  reason_kind    TEXT NOT NULL CHECK (reason_kind IN ('input', 'gate')),  -- input：输入不合规；gate：缺前置步骤（这一轮还没写理解）
+  reason_kind    TEXT NOT NULL CHECK (reason_kind IN ('input', 'gate')),  -- input：输入不合规；gate：缺前置步骤（还没写理解、阶段不对、用户还没同意等，按原因码定）
   fact           TEXT NOT NULL,        -- 事实层：哪里不对，面向人
   guidance       TEXT,                 -- 指引层：接下来该怎么做，只给助手；拒绝文字没有这一层时为空
   input_excerpt  TEXT NOT NULL,        -- 被拒的输入（参数的 JSON）的前 2000 个字符，不存整份输入
-  created_at     TEXT NOT NULL         -- 时刻（本地时间）
+  created_at     TEXT NOT NULL,        -- 时刻（本地时间）
+  reason_code    TEXT,                 -- 原因码（agent/prompts/runtime/ 下拒绝语模板的键，例如 save_revision.collection_unknown）：一次拒绝有几个原因时是第一个；格式 9 之前记下的行为空
+  reason_codes   TEXT                  -- 这次拒绝的全部原因码，JSON 数组，按出现的先后；格式 9 之前记下的行为空
 );
 `;
 
@@ -260,27 +239,6 @@ CREATE TABLE IF NOT EXISTS diagram (
 );
 ${diagramVersionSql("diagram_version", true)}`;
 
-/**
- * 早先的阶段记录表（格式版本 2 到 4）：任务从一个工作阶段移到另一个阶段，一次移动一行。格式版本 5 把它的每一行改写成活动记录表的一行，
- * 然后删掉这张表（moveStageRecordsToActivities）。建表语句还留着，只给升级步骤表里的「1 到 2」「3 到 4」两步用：
- * 从更早的格式一步步升上来的库要先有它，才轮得到「4 到 5」那一步。现在的库里没有这张表，别处不要再用它。
- */
-const stageRecordSql = (table: string): string => `
-CREATE TABLE IF NOT EXISTS ${table} (
-  record_id    INTEGER PRIMARY KEY,   -- 记录的编号
-  task_id      TEXT NOT NULL,         -- 所属任务的任务编号
-  session_id   TEXT NOT NULL,         -- 发生这次移动的那条 pi 会话的会话编号
-  run_id       TEXT,                  -- 助手移动时是运行号（这条会话当前分支上第几句用户的话，例如 r3）；用户移动时为空
-  call_id      TEXT NOT NULL,         -- 助手移动时是那次「回复」调用的调用编号；用户移动时是界面操作的操作编号
-  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),  -- 由谁：助手或用户
-  stage        TEXT NOT NULL,         -- 移到了哪个阶段（取值只在代码里判）
-  from_stage   TEXT NOT NULL,         -- 从哪个阶段移过来（取值只在代码里判）
-  reason       TEXT NOT NULL,         -- 理由：助手必须写一句；用户的可以是空文字
-  event_seq    INTEGER NOT NULL,      -- 记下这次移动的那条事件的序号
-  created_at   TEXT NOT NULL          -- 时刻（本地时间）
-);
-`;
-const STAGE_RECORD_SQL = stageRecordSql("stage_record");
 
 
 /**
@@ -288,7 +246,7 @@ const STAGE_RECORD_SQL = stageRecordSql("stage_record");
  * 工作项记着：现在做的是哪一项活动、在哪条流程的哪一站、谁在什么时候为什么启动、范围说明。工作项没有终点：它是任务里长期存在的一条线，
  * 不要了由用户删除（删掉这一行，它的会话归档，见下面的 work_item_session）。
  * 会话指向工作项：助手在一条会话里能写什么，看这条会话指向的工作项，不看任务；一个任务可以同时有几个工作项，其中流程的工作项至多一个。
- * 只有任务定义里有「总体分析」集合的任务才会有行。
+ * 只有任务定义里有「业务说明」集合的任务才会有行。
  * 活动用英文写法存（reading、clarifying、modeling、writing、reviewing、document），与事件、接口里的写法相同；
  * 有哪几项只在代码里判（lib/stage.ts 的 STAGES），库不检查取值。
  * 流程的工作项：flow 写流程的键（现在只有 analysis，需求分析），node 写现在在哪一站，activity 写这一站上的那项活动；
@@ -316,33 +274,7 @@ CREATE TABLE IF NOT EXISTS ${table} (
 `;
 export const ACTIVITY_RECORD_SQL = activityRecordSql("activity_record");
 
-/**
- * 格式版本 5、6 的活动记录表（6 比 5 多范围说明一列，由「5 到 6」那一步加）：一行是一项活动的一段，带结束的时刻与序号。
- * 只给升级步骤用：「4 到 5」与「5 到 6」两步照它建表、往里写，「6 到 7」再把它重建成现在的样子。
- */
-const ACTIVITY_RECORD_V5_SQL = `
-CREATE TABLE IF NOT EXISTS activity_record (
-  record_id    INTEGER PRIMARY KEY,
-  task_id      TEXT NOT NULL,
-  session_id   TEXT NOT NULL,
-  run_id       TEXT,
-  call_id      TEXT NOT NULL,
-  actor        TEXT NOT NULL CHECK (actor IN ('executor', 'user')),
-  activity     TEXT NOT NULL,
-  node         TEXT,
-  flow         TEXT,
-  reason       TEXT NOT NULL,
-  started_at   TEXT NOT NULL,
-  ended_at     TEXT,
-  started_seq  INTEGER NOT NULL,
-  ended_seq    INTEGER
-);
-`;
 
-/** 早先（格式版本 7 之前）流程的键：首次分析。「6 到 7」那一步把活动记录里的它改写成 FLOW_KEY_ANALYSIS；早先记下的事件里它原样留着，读事件时当作同一条流程。 */
-export const FLOW_KEY_LEGACY = "initial";
-/** 需求分析这条流程的键（与 lib/stage.ts 的 FLOW_ANALYSIS 同一个；这里另写一份，免得表结构文件导入阶段的代码）。 */
-const FLOW_KEY_ANALYSIS = "analysis";
 
 /**
  * 工作项的会话：哪条会话属于哪个工作项。一条会话在建立时指向一个工作项，或者不指向任何工作项（自由讨论的会话，这张表里没有它的行），
@@ -385,7 +317,8 @@ CREATE TABLE IF NOT EXISTS version_record (
 );
 `;
 
-/** 从早先「已完成」的任务升级来的第 1 版的发布说明。 */
+
+/** 格式 7 升到 8 时给早先「已完成」的任务补的第 1 版用的发布说明（那一版没有存档）。格式 8 的库里可能还有这样的记录，后端据它说明为什么没有存档。 */
 export const UPGRADED_VERSION_NOTE = "升级前完成，当时文档未存档";
 
 /**
@@ -400,25 +333,8 @@ export const REVISION_CALL_INDEX_SQL =
 /** 旧库里已经有同一调用编号的两次修订时建不成唯一索引，改建这个普通索引，只帮判重的查询提速。 */
 export const REVISION_CALL_LOOKUP_INDEX = "revision_call_id_lookup";
 
-/**
- * 旧库补建按调用编号判重的索引。已有唯一索引（或已改建过普通索引）就什么都不做；库里已经有同一调用编号的两次修订
- * （补这个索引之前重放过的调用）时唯一索引建不成，改建普通索引，那几行原样保留，此后的判重由代码里的查询保证。
- */
-function ensureRevisionCallIndex(db: DatabaseSync): void {
-  const indexes = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'revision'").all() as { name: string }[])
-    .map((row) => row.name);
-  if (indexes.includes(REVISION_CALL_INDEX) || indexes.includes(REVISION_CALL_LOOKUP_INDEX)) return;
-  const duplicated = db.prepare(
-    "SELECT 1 FROM revision WHERE call_id <> '' GROUP BY task_id, call_id HAVING COUNT(*) > 1 LIMIT 1",
-  ).get();
-  if (duplicated) {
-    db.exec(`CREATE INDEX IF NOT EXISTS ${REVISION_CALL_LOOKUP_INDEX} ON revision (task_id, call_id);`);
-  } else {
-    db.exec(REVISION_CALL_INDEX_SQL);
-  }
-}
 
-/** 来源表的建表语句。建新库与把旧库的来源表迁成现在的样子（migrateSourcesToElements）用的是同一份，只是表名不同。 */
+/** 来源表的建表语句。name 是表名。 */
 export function itemSourceSql(name: string): string {
   return `CREATE TABLE ${name} (
   task_id      TEXT NOT NULL,          -- 所属任务的任务编号
@@ -557,21 +473,24 @@ export function existingTables(db: DatabaseSync): string[] {
 }
 
 /**
- * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。0 是没有编过版本号的库：0.4.x 及更早的版本建的，或者一张表都没有的空库。
- * 每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。1 是给库编上版本号的那一版；2 加了阶段记录表（stage_record）；
- * 3 去掉了图的内容表里种类一列的检查（图的种类只在代码里判）；4 去掉了阶段记录表里两列阶段的检查（阶段有哪几个只在代码里判）；
- * 5 加了活动记录表（activity_record），把阶段记录逐行改写进去，删掉了阶段记录表；6 给活动记录表加了范围说明一列（scope）；
- * 7 把活动记录归并成工作项（流程里每到一站一行的并成一行，去掉结束的时刻，记录号改为自增不重用，流程的键改为 analysis），
- * 加了工作项的会话表（work_item_session）；8 加了版本记录表（version_record），早先「已完成」的任务补一条第 1 版的记录，
- * 任务定义里缺「总体分析」集合的（0.5 之前建的）照任务类型模板补上。任务表的状态一列从这一版起不再读写，留着不删。
+ * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。
+ * 本程序只认格式 8 起的库：8 是 0.6 开发期间定下的样子（工作项、工作项的会话、版本记录）；9 给工具拒绝表加了原因码两列
+ * （reason_code、reason_codes）。更早的格式（没有编过版本号的 0.4 的库，与 0.5 建的格式 1 到 7 的库）不再升级，打开时拒绝
+ * （OlderTaskDatabase），库原样不动。一张表都没有的空库（版本也是 0）照现在的建表语句建齐，直接记成现在的版本。
  */
-export const TASK_DB_VERSION = 8;
+export const TASK_DB_VERSION = 9;
+
+/** 本程序还能升级的最早格式：比它早的库打开时拒绝。 */
+export const MIN_TASK_DB_VERSION = 8;
 
 /** 任务目录里记建立与升级情况的文件（后端写）。助手一侧只在拒绝比自己新的库时读它，好说出是哪个版本写的。 */
 export const TASK_JSON = "task.json";
 
 /** 库的格式版本比这个程序认识的新时抛的错：旧程序不打开新数据，也不做降级。 */
 export class NewerTaskDatabase extends Error {}
+
+/** 库的格式早于 MIN_TASK_DB_VERSION 时抛的错：更早的格式不再升级，库原样不动。 */
+export class OlderTaskDatabase extends Error {}
 
 /** 库里记的格式版本。 */
 export function taskDbVersion(db: DatabaseSync): number {
@@ -581,6 +500,12 @@ export function taskDbVersion(db: DatabaseSync): number {
 /** 拒绝比自己新的数据时的那句话；writtenBy 是写它的产品版本，不知道时给 null。任务库与数据目录都用这一句。 */
 export function newerDataText(writtenBy: string | null): string {
   return writtenBy ? `这份数据由 ${writtenBy} 写入，请用 ${writtenBy} 或更新的版本打开。` : "这份数据由更新的版本写入，请用更新的版本打开。";
+}
+
+/** 拒绝格式太早的任务库时的那句话；version 是库里记的格式版本（0 是没有编过版本号的库）。 */
+export function olderDataText(version: number): string {
+  return `这个任务库的格式是 ${version}（${version === 0 ? "没有编过版本号，0.4 建的" : "0.5 建的"}），本版本只能打开格式 ${MIN_TASK_DB_VERSION} 及以后的任务库，` +
+    "更早的格式不再升级，库没有改动。请新建一个任务。";
 }
 
 /** 任务目录的 task.json 里记的、最近写这个任务的产品版本（升级过的取升级时的，否则取建任务时的）；读不到时是 null。 */
@@ -601,47 +526,222 @@ export function taskWrittenBy(workspaceDir: string): string | null {
  * 中途出错整体回退，库与版本号都还是升级之前的样子。
  */
 const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync, ctx: UpgradeContext) => void }[] = [
-  { from: 0, to: 1, run: fromUnversioned },
-  { from: 1, to: 2, run: addStageRecords },
-  { from: 2, to: 3, run: dropDiagramKindCheck },
-  { from: 3, to: 4, run: dropStageChecks },
-  { from: 4, to: 5, run: moveStageRecordsToActivities },
-  { from: 5, to: 6, run: addActivityScope },
-  { from: 6, to: 7, run: mergeIntoWorkItems },
-  { from: 7, to: 8, run: addVersionRecords },
+  { from: 8, to: 9, run: (db, ctx) => { addRejectionReasons(db); renameTaskType(db, ctx); renameOverallCollection(db, ctx); dropSideTab(db, ctx); } },
 ];
 
 /**
- * 升级时步骤用得着、库里又没有的东西。只有数据升级（经后端）给得出，助手写库时不给：
- * - workspaceDir：任务目录，补任务定义时把任务目录里的定义副本一起改；
- * - overallTemplate：按任务定义文件的路径取任务类型模板里「总体分析」那一节（集合与它的完成条件），找不到是 null。
- * notes 由步骤往里写这次做了的、值得写进升级报告的事。
+ * 升级时步骤用得着、库里又没有的东西：workspaceDir 是任务目录（只测库的单元测试可以不给，这时步骤只改库）；notes 由步骤往里写这次做了的、值得写进升级报告的事。
  */
 export interface UpgradeContext {
   workspaceDir?: string;
-  overallTemplate?: (definitionPath: string) => OverallTemplate | null;
   notes: string[];
 }
 
-/** 任务类型模板里「总体分析」那一节：条目集合的定义原文，与完成条件里它那一项（没有为 null）。 */
-export interface OverallTemplate {
-  collection: Record<string, unknown>;
-  completion: unknown;
+/** 库是不是一张表都没有的空库（版本也是 0）：这样的库照现在的建表语句建齐。 */
+function isEmptyDatabase(db: DatabaseSync): boolean {
+  return taskDbVersion(db) === 0 && existingTables(db).length === 0;
 }
 
-/** 「总体分析」集合的名字（与 overall_analysis.ts 的 OVERALL_COLLECTION 相同；这里不导入它，免得库结构依赖条目的写法）。 */
-const OVERALL_NAME = "总体分析";
-/** 0.4 建的任务里「总体分析」的前身。 */
-const LEGACY_OVERALL_NAME = "领域说明";
+/** 格式太早的库就拒绝。在切日志模式与开事务之前调：被拒的库一个字节都不动。 */
+function refuseOlder(db: DatabaseSync): void {
+  const version = taskDbVersion(db);
+  if (version < MIN_TASK_DB_VERSION && !isEmptyDatabase(db)) throw new OlderTaskDatabase(olderDataText(version));
+}
+
+/** 第 8 到 9 步之一：工具拒绝表加原因码两列。只加列，不动已有的行（它们的原因码是空的）；新建的库建表时就有这两列，这里什么都不做。 */
+function addRejectionReasons(db: DatabaseSync): void {
+  const columns = (db.prepare("PRAGMA table_info(tool_rejection)").all() as { name: string }[]).map((row) => row.name);
+  if (!columns.includes("reason_code")) db.exec("ALTER TABLE tool_rejection ADD COLUMN reason_code TEXT");
+  if (!columns.includes("reason_codes")) db.exec("ALTER TABLE tool_rejection ADD COLUMN reason_codes TEXT");
+}
+
+/** 任务类型改名（格式 9 起）：键与中文名。 */
+const OLD_TASK_TYPE = "srs-authoring";
+export const TASK_TYPE_KEY = "requirements-engineering";
+const OLD_TASK_TYPE_NAME = "软件需求规格说明编制";
+const TASK_TYPE_NAME = "需求工程";
+
+/** 任务定义的原文里改名：执行方法的路径与任务名。只换这两处，别的一个字节都不动；已经改过的原样返回。 */
+function renamedDefinition(text: string): string {
+  return text.replace(`".pi/skills/${OLD_TASK_TYPE}/SKILL.md"`, `".pi/skills/${TASK_TYPE_KEY}/SKILL.md"`)
+    .replace(new RegExp(`("任务名"\\s*:\\s*)"${OLD_TASK_TYPE_NAME}"`), `$1"${TASK_TYPE_NAME}"`);
+}
 
 /**
- * 确保库是现在的格式：照 UPGRADE_STEPS 从库里记的版本一步步升到 TASK_DB_VERSION。已经是现在的版本就什么都不做，不再逐张表去看；
- * 比现在的版本新就拒绝（NewerTaskDatabase）。必须在调用方已经开好的事务里调用，好让建表、升级与随后的写入一起提交或一起回退。
- * 返回升级之前与之后的版本。
+ * 第 8 到 9 步之二：任务类型「软件需求规格说明编制」（键 srs-authoring）改名「需求工程」（键 requirements-engineering）。
+ * 库里：任务表的定义路径与定义原文快照。任务目录里（有 ctx.workspaceDir 时）：任务定义文件与 skill 目录改名，定义文件的
+ * 执行方法与任务名、skill 的名字与标题随改，task.json 的类型名随改。每一样都先看是不是还是旧的，重复做不出错；任务目录里没有的文件跳过。
+ */
+function renameTaskType(db: DatabaseSync, ctx: UpgradeContext): void {
+  const oldPath = `docs/task-definitions/${OLD_TASK_TYPE}.json`;
+  const newPath = `docs/task-definitions/${TASK_TYPE_KEY}.json`;
+  const row = db.prepare("SELECT task_id, definition_path, definition_text FROM task LIMIT 1").get() as
+    { task_id: string; definition_path: string; definition_text: string } | undefined;
+  if (row) {
+    const path = row.definition_path === oldPath ? newPath : row.definition_path;
+    const text = renamedDefinition(row.definition_text);
+    if (path !== row.definition_path || text !== row.definition_text) {
+      db.prepare("UPDATE task SET definition_path = ?, definition_text = ? WHERE task_id = ?").run(path, text, row.task_id);
+    }
+  }
+  const dir = ctx.workspaceDir;
+  if (!dir) return;
+  const moved: string[] = [];
+  const oldFile = join(dir, oldPath);
+  const newFile = join(dir, newPath);
+  if (existsSync(oldFile) && !existsSync(newFile)) {
+    renameSync(oldFile, newFile);
+    moved.push(newPath);
+  }
+  if (existsSync(newFile)) {
+    const text = readFileSync(newFile, "utf-8");
+    const now = renamedDefinition(text);
+    if (now !== text) writeFileSync(newFile, now, "utf-8");
+  }
+  const oldSkill = join(dir, ".pi", "skills", OLD_TASK_TYPE);
+  const newSkill = join(dir, ".pi", "skills", TASK_TYPE_KEY);
+  if (existsSync(oldSkill) && !existsSync(newSkill)) {
+    renameSync(oldSkill, newSkill);
+    moved.push(`.pi/skills/${TASK_TYPE_KEY}/`);
+  }
+  const skill = join(newSkill, "SKILL.md");
+  if (existsSync(skill)) {
+    const text = readFileSync(skill, "utf-8");
+    const now = text.replace(new RegExp(`^name: ${OLD_TASK_TYPE}$`, "m"), `name: ${TASK_TYPE_KEY}`)
+      .replace(new RegExp(`^# ${OLD_TASK_TYPE_NAME}$`, "m"), `# ${TASK_TYPE_NAME}`);
+    if (now !== text) writeFileSync(skill, now, "utf-8");
+  }
+  const meta = join(dir, TASK_JSON);
+  if (existsSync(meta)) {
+    try {
+      const raw = JSON.parse(readFileSync(meta, "utf-8")) as Record<string, unknown>;
+      if (raw.task_type === OLD_TASK_TYPE) writeFileSync(meta, JSON.stringify({ ...raw, task_type: TASK_TYPE_KEY }, null, 2) + "\n", "utf-8");
+    } catch {
+      // task.json 读不懂：不动它（后端读它时也当作没有）。
+    }
+  }
+  if (moved.length) ctx.notes.push(`任务类型改名为「${TASK_TYPE_NAME}」：${moved.join("、")}`);
+}
+
+/** 集合改名（格式 9 起）：「总体分析」改为与页面一致的「业务说明」。集合名就是键；编号前缀 OA 不变。 */
+const OLD_OVERALL_COLLECTION = "总体分析";
+const OVERALL_COLLECTION_NAME = "业务说明";
+
+/** 任务目录里随任务类型复制来的文本文件（docs/ 与 .pi/skills/ 下的 .md 与 .json）；材料目录不在其中。 */
+function taskTypeTextFiles(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (at: string) => {
+    if (!existsSync(at)) return;
+    for (const one of readdirSync(at, { withFileTypes: true })) {
+      const full = join(at, one.name);
+      if (one.isDirectory()) walk(full);
+      else if (one.isFile() && /\.(md|json)$/i.test(one.name)) out.push(full);
+    }
+  };
+  walk(join(dir, "docs"));
+  walk(join(dir, ".pi", "skills"));
+  return out.sort();
+}
+
+/** 定义原文里各个要评审的集合与它们的评审规矩。 */
+function reviewedCollections(definitionText: string): Map<string, NonNullable<ReturnType<typeof reviewSpecOf>>> {
+  const out = new Map<string, NonNullable<ReturnType<typeof reviewSpecOf>>>();
+  let raw: { 交付物?: { 条目集合?: { 名称?: unknown }[] } } | null = null;
+  try {
+    raw = JSON.parse(definitionText);
+  } catch {
+    return out;
+  }
+  for (const one of raw?.交付物?.条目集合 ?? []) {
+    const name = typeof one?.名称 === "string" ? one.名称 : null;
+    const spec = name ? reviewSpecOf(definitionText, name) : null;
+    if (name && spec) out.set(name, spec);
+  }
+  return out;
+}
+
+/**
+ * 第 8 到 9 步之三：集合「总体分析」改名「业务说明」。库里：定义快照里的集合名、条目表的集合列、事件内容里值正好是「总体分析」的字符串。
+ * 任务目录里（有 ctx.workspaceDir 时）：随任务类型复制来的文本文件里的这个词（材料不动）。评审规则文件随之改了字，规则指纹跟着变：
+ * 改之前先按各集合的规矩算一遍旧指纹，改完再算新指纹，把评审记录里的旧指纹换成新的，已有的评审仍算作当前规则下评的。
+ * 每一样都先看是不是还是旧的，重复做不出错。
+ */
+function renameOverallCollection(db: DatabaseSync, ctx: UpgradeContext): void {
+  const row = db.prepare("SELECT task_id, definition_text FROM task LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
+  const dir = ctx.workspaceDir;
+  const before = new Map<string, string>();
+  if (row && dir) {
+    for (const [name, spec] of reviewedCollections(row.definition_text)) {
+      const hash = rulesHash(dir, spec);
+      if (hash) before.set(name, hash);
+    }
+  }
+  if (row && row.definition_text.includes(OLD_OVERALL_COLLECTION)) {
+    db.prepare("UPDATE task SET definition_text = ? WHERE task_id = ?").run(row.definition_text.replaceAll(OLD_OVERALL_COLLECTION, OVERALL_COLLECTION_NAME), row.task_id);
+  }
+  const items = Number(db.prepare("UPDATE item SET collection = ? WHERE collection = ?").run(OVERALL_COLLECTION_NAME, OLD_OVERALL_COLLECTION).changes);
+  db.prepare("UPDATE event SET payload = REPLACE(payload, ?, ?) WHERE instr(payload, ?) > 0")
+    .run(`"${OLD_OVERALL_COLLECTION}"`, `"${OVERALL_COLLECTION_NAME}"`, `"${OLD_OVERALL_COLLECTION}"`);
+  if (!dir) return;
+  let files = 0;
+  for (const file of taskTypeTextFiles(dir)) {
+    const text = readFileSync(file, "utf-8");
+    if (!text.includes(OLD_OVERALL_COLLECTION)) continue;
+    writeFileSync(file, text.replaceAll(OLD_OVERALL_COLLECTION, OVERALL_COLLECTION_NAME), "utf-8");
+    files += 1;
+  }
+  const now = db.prepare("SELECT definition_text FROM task LIMIT 1").get() as { definition_text: string } | undefined;
+  if (now) {
+    for (const [name, spec] of reviewedCollections(now.definition_text)) {
+      const old = before.get(name);
+      const hash = rulesHash(dir, spec);
+      if (old && hash && old !== hash) {
+        db.prepare("UPDATE review SET rules_hash = ? WHERE rules_hash = ? AND item_id IN (SELECT item_id FROM item WHERE collection = ?)").run(hash, old, name);
+      }
+    }
+  }
+  if (items || files) ctx.notes.push(`集合「${OLD_OVERALL_COLLECTION}」改名为「${OVERALL_COLLECTION_NAME}」：${items} 个条目，任务目录里 ${files} 份文件`);
+}
+
+/** 任务定义原文里删掉集合「界面」一项中的「右侧栏页签」（它在前、在中间或在最后都认）；没有的原样返回。 */
+function withoutSideTab(text: string): string {
+  return text.replace(/"右侧栏页签"\s*:\s*(true|false)\s*,\s*/g, "").replace(/,\s*"右侧栏页签"\s*:\s*(true|false)/g, "")
+    .replace(/"右侧栏页签"\s*:\s*(true|false)/g, "");
+}
+
+/**
+ * 第 8 到 9 步之四：集合「界面」一项里的「右侧栏页签」去掉（页面早已没有右侧栏的集合页签，任务定义的核对也不再认它）。
+ * 库里的定义快照与任务目录里的定义文件一起改，重复做不出错。
+ */
+function dropSideTab(db: DatabaseSync, ctx: UpgradeContext): void {
+  const row = db.prepare("SELECT task_id, definition_path, definition_text FROM task LIMIT 1").get() as
+    { task_id: string; definition_path: string; definition_text: string } | undefined;
+  if (!row) return;
+  const text = withoutSideTab(row.definition_text);
+  if (text !== row.definition_text) db.prepare("UPDATE task SET definition_text = ? WHERE task_id = ?").run(text, row.task_id);
+  if (!ctx.workspaceDir) return;
+  const file = join(ctx.workspaceDir, row.definition_path);
+  if (!existsSync(file)) return;
+  const raw = readFileSync(file, "utf-8");
+  const now = withoutSideTab(raw);
+  if (now !== raw) writeFileSync(file, now, "utf-8");
+}
+
+/**
+ * 确保库是现在的格式：空库照现在的建表语句建齐；别的照 UPGRADE_STEPS 从库里记的版本一步步升到 TASK_DB_VERSION。
+ * 已经是现在的版本就什么都不做，不再逐张表去看；比现在的版本新就拒绝（NewerTaskDatabase），早于 MIN_TASK_DB_VERSION 也拒绝（OlderTaskDatabase）。
+ * 必须在调用方已经开好的事务里调用，好让建表、升级与随后的写入一起提交或一起回退。返回升级之前与之后的版本。
  */
 export function ensureSchema(db: DatabaseSync, ctx: UpgradeContext = { notes: [] }): { from: number; to: number } {
   const from = taskDbVersion(db);
   if (from > TASK_DB_VERSION) throw new NewerTaskDatabase(newerDataText(null));
+  if (isEmptyDatabase(db)) {
+    db.exec(SCHEMA_SQL);
+    ensureDialogueSchema(db);
+    db.exec(`PRAGMA user_version = ${TASK_DB_VERSION}`);
+    return { from, to: TASK_DB_VERSION };
+  }
+  refuseOlder(db);
   let version = from;
   for (const step of UPGRADE_STEPS) {
     if (step.from !== version) continue;
@@ -652,282 +752,21 @@ export function ensureSchema(db: DatabaseSync, ctx: UpgradeContext = { notes: []
   return { from, to: version };
 }
 
-/**
- * 第 5 到 6 步：活动记录表加范围说明一列。只加列，不动已有的数据；新建的库建表时就有这一列，这里什么都不做。
- */
-function addActivityScope(db: DatabaseSync): void {
-  db.exec(ACTIVITY_RECORD_V5_SQL);
-  const columns = (db.prepare("PRAGMA table_info(activity_record)").all() as { name: string }[]).map((row) => row.name);
-  if (!columns.includes("scope")) db.exec("ALTER TABLE activity_record ADD COLUMN scope TEXT");
-}
 
-/**
- * 第 6 到 7 步：把活动记录归并成工作项，重建活动记录表，加工作项的会话表。
- * 这一步之前一行是一项活动的一段：流程里每到一站一行，前一行结束、后一行开始。归并的规矩：
- * - 同一个任务里所属流程相同的行并成一行，不论中间有没有被单项活动隔开：留最早那一行（记录号、启动的人、理由、启动的时刻都是它的），
- *   现在的活动与所在的一站取最晚那一行的，范围说明取最晚一行写了的；别的行删掉。早先流程的位置是整个任务唯一的，接着做的是同一次流程。
- * - 单项活动的行每行各是一个工作项。工作项没有终点，早先记的结束不再保留（结束的两列随重建去掉）。
- * - 流程的键：早先的 initial（首次分析）改写成 analysis（需求分析）。
- * - 会话：每一行启动时所在的会话挂到它归入的工作项上；一条会话先后启动过几行的，挂到其中最晚那一行归入的工作项上。
- *   没有挂上的会话不属于任何工作项，是自由讨论的会话。
- * 活动记录表照现在的建表语句重建（记录号改为自增不重用），留下的行原样抄过去。表已经是现在的样子（新建的库）时不重建。
- * 事件表不动：早先成对的活动结束与活动开始的事件原样留着，里面的流程键仍是 initial。
- */
-function mergeIntoWorkItems(db: DatabaseSync): void {
-  db.exec(ACTIVITY_RECORD_V5_SQL);
-  db.exec(WORK_ITEM_SESSION_SQL);
-  const columns = (db.prepare("PRAGMA table_info(activity_record)").all() as { name: string }[]).map((row) => row.name);
-  if (!columns.includes("ended_at")) return;
-  if (!columns.includes("scope")) db.exec("ALTER TABLE activity_record ADD COLUMN scope TEXT");
-  type Row = { record_id: number; task_id: string; session_id: string; run_id: string | null; call_id: string; actor: string; activity: string;
-    node: string | null; flow: string | null; reason: string; scope: string | null; started_at: string; started_seq: number };
-  const rows = db.prepare(
-    "SELECT record_id, task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, scope, started_at, started_seq FROM activity_record ORDER BY task_id, started_seq, record_id",
-  ).all() as unknown as Row[];
-  // 每一行归入哪个工作项：流程里的行归入同一任务同一流程最早的那一行，单项活动的行归入自己。
-  const keeperOf = new Map<number, Row>();
-  const groups = new Map<string, Row[]>();
-  const kept: Row[] = [];
-  for (const row of rows) {
-    if (row.flow === null || row.flow === "") { keeperOf.set(Number(row.record_id), row); kept.push({ ...row, flow: null }); continue; }
-    const key = JSON.stringify([row.task_id, row.flow]);
-    const group = groups.get(key) ?? [];
-    if (group.length === 0) kept.push(row);
-    group.push(row);
-    groups.set(key, group);
-    keeperOf.set(Number(row.record_id), group[0]);
-  }
-  for (const [index, row] of kept.entries()) {
-    if (row.flow === null) continue;
-    const group = groups.get(JSON.stringify([row.task_id, row.flow]))!;
-    const last = group[group.length - 1];
-    const scope = [...group].reverse().find((one) => typeof one.scope === "string" && one.scope !== "")?.scope ?? null;
-    kept[index] = { ...row, activity: last.activity, node: last.node, scope, flow: row.flow === FLOW_KEY_LEGACY ? FLOW_KEY_ANALYSIS : row.flow };
-  }
-  // 重建：照现在的建表语句建一张新表，把留下的行抄过去，删掉旧表，把新表改成原来的名字。
-  db.exec(activityRecordSql("activity_record_new"));
-  const insert = db.prepare(
-    "INSERT INTO activity_record_new (record_id, task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, started_seq, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  );
-  for (const row of kept) {
-    insert.run(row.record_id, row.task_id, row.session_id, row.run_id, row.call_id, row.actor, row.activity, row.node, row.flow, row.reason, row.started_at, row.started_seq,
-      typeof row.scope === "string" && row.scope !== "" ? row.scope : null);
-  }
-  db.exec("DROP TABLE activity_record; ALTER TABLE activity_record_new RENAME TO activity_record;");
-  // 会话挂到工作项上：rows 按启动的先后排，后面的行盖过前面的，留下的是每条会话最晚启动的那一行归入的工作项。
-  const attach = db.prepare("INSERT OR REPLACE INTO work_item_session (session_id, record_id, task_id, attached_at) VALUES (?, ?, ?, ?)");
-  for (const row of rows) attach.run(row.session_id, keeperOf.get(Number(row.record_id))!.record_id, row.task_id, row.started_at);
-}
 
-/** 第 1 到 2 步：加阶段记录表。只加表，不动已有的表与数据。新建的库走到这一步也会建出一张空的，随后由「4 到 5」那一步删掉。 */
-function addStageRecords(db: DatabaseSync): void {
-  db.exec(STAGE_RECORD_SQL);
-}
 
-/** 图的内容表的各列，按建表语句里的先后。 */
-const DIAGRAM_VERSION_COLUMNS = "task_id, diagram_id, revision_no, op, name, kind, mermaid, note, actor, session_id, call_id, created_at, event_seq";
 
-/**
- * 第 2 到 3 步：去掉图的内容表里种类一列的检查。SQLite 改不了已有的表的检查，所以重建：建一张不带这条检查的新表，把旧行原样抄过去，
- * 删掉旧表，把新表改成原来的名字（与 migrateSourcesToElements 同一个做法）。行数与每一行的内容都不变。
- * 库里这张表的建表语句已经不带这条检查（新建的库、做过这一步的库）时什么都不改。
- */
-function dropDiagramKindCheck(db: DatabaseSync): void {
-  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'diagram_version'").get() as { sql: string } | undefined;
-  if (!row) {
-    db.exec(DIAGRAM_SQL);
-    return;
-  }
-  if (!/CHECK\s*\(\s*kind\s+IN\b/i.test(row.sql)) return;
-  db.exec("DROP TABLE IF EXISTS diagram_version_new");
-  db.exec(diagramVersionSql("diagram_version_new"));
-  db.exec(`
-    INSERT INTO diagram_version_new (${DIAGRAM_VERSION_COLUMNS}) SELECT ${DIAGRAM_VERSION_COLUMNS} FROM diagram_version;
-    DROP TABLE diagram_version;
-    ALTER TABLE diagram_version_new RENAME TO diagram_version;
-  `);
-}
 
-/** 阶段记录表的各列，按建表语句里的先后。 */
-const STAGE_RECORD_COLUMNS = "record_id, task_id, session_id, run_id, call_id, actor, stage, from_stage, reason, event_seq, created_at";
 
-/**
- * 第 3 到 4 步：去掉阶段记录表里「移到哪个阶段」「从哪个阶段移来」两列的检查。做法与上一步相同：建一张不带这两条检查的新表，
- * 把旧行原样抄过去（记录的编号也照抄），删掉旧表，把新表改成原来的名字。行数与每一行的内容都不变。
- * 库里这张表的建表语句已经不带这两条检查（新建的库、做过这一步的库）时什么都不改；还没有这张表时补上。
- */
-function dropStageChecks(db: DatabaseSync): void {
-  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'stage_record'").get() as { sql: string } | undefined;
-  if (!row) {
-    db.exec(STAGE_RECORD_SQL);
-    return;
-  }
-  if (!/CHECK\s*\(\s*(from_)?stage\s+IN\b/i.test(row.sql)) return;
-  db.exec("DROP TABLE IF EXISTS stage_record_new");
-  db.exec(stageRecordSql("stage_record_new"));
-  db.exec(`
-    INSERT INTO stage_record_new (${STAGE_RECORD_COLUMNS}) SELECT ${STAGE_RECORD_COLUMNS} FROM stage_record;
-    DROP TABLE stage_record;
-    ALTER TABLE stage_record_new RENAME TO stage_record;
-  `);
-}
 
-/**
- * 第 4 到 5 步：加活动记录表，把阶段记录表的每一行改写成一条活动记录，然后删掉阶段记录表。
- * 一次移动变成一项活动：移到的那个阶段是活动，也是它在流程里的节点；移动的时刻与事件序号是活动开始的时刻与序号；
- * 同一个任务里后一次移动的时刻与事件序号是前一项活动结束的时刻与序号，最后一次移动之后的那项活动还在进行（两列为空）。
- * 所属流程取自记下那次移动的事件（STAGE_MOVED）的内容，事件里没有写、或者那条事件已经不在时写首次分析。
- * 记录的编号、会话、运行号、调用编号、由谁、理由照抄。从哪个阶段移过来不另存：读的时候取自同一条事件的内容（lib/stage_read.ts）。
- * 事件表不动：早先的移动事件仍叫 STAGE_MOVED。库里已经没有阶段记录表（做过这一步的库）、或者它是空的（新建的库）时不建活动记录表：
- * 新建的库建表时就有，「6 到 7」那一步也会补上。
- */
-function moveStageRecordsToActivities(db: DatabaseSync): void {
-  if (!existingTables(db).includes("stage_record")) return;
-  // 新建的库与没有记过移动的库：阶段记录表是空的，没有什么可改写，删掉即可（活动记录表这时可能已经是现在的样子，不往里写）。
-  if (db.prepare("SELECT 1 FROM stage_record LIMIT 1").get() === undefined) { db.exec("DROP TABLE stage_record"); return; }
-  db.exec(ACTIVITY_RECORD_V5_SQL);
-  const later = (column: string) =>
-    `(SELECT n.${column} FROM stage_record n WHERE n.task_id = r.task_id AND n.event_seq > r.event_seq ORDER BY n.event_seq LIMIT 1)`;
-  db.exec(`
-    INSERT INTO activity_record (record_id, task_id, session_id, run_id, call_id, actor, activity, node, flow, reason, started_at, ended_at, started_seq, ended_seq)
-    SELECT r.record_id, r.task_id, r.session_id, r.run_id, r.call_id, r.actor, r.stage, r.stage,
-      COALESCE((SELECT json_extract(e.payload, '$.flow') FROM event e WHERE e.seq = r.event_seq AND e.name = 'STAGE_MOVED' AND json_valid(e.payload)), 'initial'),
-      r.reason, r.created_at, ${later("created_at")}, r.event_seq, ${later("event_seq")}
-    FROM stage_record r
-    WHERE NOT EXISTS (SELECT 1 FROM activity_record a WHERE a.record_id = r.record_id)
-    ORDER BY r.event_seq;
-    DROP TABLE stage_record;
-  `);
-}
 
-/**
- * 第 0 到 1 步：没有编过版本号的库。一张表都没有就建齐全套；是旧库表（有 slot 表）就拒绝；别的库把后来加的表、列与索引补上，
- * 来源表还是早期样子的迁到要素层。只有一部分表、或者缺早已不支持的列时也拒绝，因为那不是 0.4.0 及以后的版本建出来的样子，
- * 贸然补建会掩盖问题。五处拒绝都在改动之前或者同一个事务里，被拒的库原样不动。
- */
-function fromUnversioned(db: DatabaseSync): void {
-  const tables = existingTables(db);
-  if (tables.includes(LEGACY_TABLE)) {
-    throw new Error("这个任务目录的库是旧格式，请换一个新的任务目录。旧格式的库里有 slot 表，本工具不认识它，也不会去改它。");
-  }
-  if (tables.length === 0) {
-    db.exec(SCHEMA_SQL);
-    ensureDialogueSchema(db);
-    return;
-  }
-  // 模型调用表是后来加的：只加表、不动已有的表，旧库在这里补上（见 MODEL_CALL_SQL 的说明）。
-  db.exec(MODEL_CALL_SQL);
-  // 评审发现表是早期版本加的，做法同上。
-  db.exec(REVIEW_FINDING_SQL);
-  // 评审发现表的规则编号与级别两列是后来加的：缺哪列就加哪列，只加列、不动已有的数据。
-  const findingColumns = (db.prepare("PRAGMA table_info(review_finding)").all() as { name: string }[]).map((row) => row.name);
-  for (const [name, type] of REVIEW_FINDING_ADDED_COLUMNS) {
-    if (!findingColumns.includes(name)) db.exec(`ALTER TABLE review_finding ADD COLUMN ${name} ${type}`);
-  }
-  // 评审表的批次、规则指纹、评审者版本、重评四列是后来加的，做法同上。
-  const reviewColumns = (db.prepare("PRAGMA table_info(review)").all() as { name: string }[]).map((row) => row.name);
-  for (const [name, type] of REVIEW_ADDED_COLUMNS) {
-    if (reviewColumns.length > 0 && !reviewColumns.includes(name)) db.exec(`ALTER TABLE review ADD COLUMN ${name} ${type}`);
-  }
-  // 评审豁免表是后来加的。
-  db.exec(REVIEW_WAIVER_SQL);
-  // 对话行为表与对话理解加的两列是后来加的：只加表、只加列，做法同上（见 dialogue_schema.ts）。
-  ensureDialogueSchema(db);
-  // 工具拒绝表是后来加的，做法同上。
-  db.exec(TOOL_REJECTION_SQL);
-  // 图的两张表是后来加的，做法同上。
-  db.exec(DIAGRAM_SQL);
-  // 这几张刚在上面补过，不按开头读到的表名清单判它们缺不缺。
-  const missing = TABLE_NAMES.filter((name) => !ADDED_TABLES.includes(name) && !tables.includes(name));
-  if (missing.length > 0) {
-    throw new Error(
-      `这个任务目录的库里缺了 ${missing.join("、")} 这几张表，不是本工具建出来的样子，所以没有写入。` +
-        `请换一个新的任务目录。`,
-    );
-  }
-  // 最早格式的库，来源表没有字段一级的几列。库表改动不做迁移，给一句明白的拒绝，免得落到 SQLite 的英文报错上。
-  const sourceColumns = (db.prepare("PRAGMA table_info(item_source)").all() as { name: string }[]).map((row) => row.name);
-  const missingColumns = SOURCE_LEVEL_COLUMNS.filter((name) => !sourceColumns.includes(name));
-  if (missingColumns.length > 0) {
-    throw new Error(
-      `这个任务目录的库是最早的格式：来源表 item_source 没有 ${missingColumns.join("、")} 这几列（来源记到字段一级是后来加的），` +
-        "库表改动不做迁移，所以没有写入。请换一个新的任务目录。",
-    );
-  }
-  // 修订统一之前建的库：条目内容表以内容版本号为主键。库表改动不做迁移，这样的库一律拒绝。
-  if (hasVersionColumns(db)) {
-    throw new Error(OLD_VERSION_FORMAT_TEXT);
-  }
-  // 来源提到要素层之前建的库：来源表没有 element_kind 一列。这一处做迁移（重建来源表、改写旧行），见 migrateSourcesToElements。
-  if (!sourceColumns.includes(SOURCE_ELEMENT_COLUMN)) migrateSourcesToElements(db);
-  // 按调用编号判重的索引是后来加的：只加索引，不动已有的行（见 REVISION_CALL_INDEX_SQL 的说明）。
-  ensureRevisionCallIndex(db);
-  const taskColumns = (db.prepare("PRAGMA table_info(task)").all() as { name: string }[]).map((row) => row.name);
-  const missingTaskColumns = TASK_TABLE_COLUMNS.filter((name) => !taskColumns.includes(name));
-  if (missingTaskColumns.length > 0) {
-    throw new Error(
-      `这个任务目录的库是较早的格式：任务表 task 没有 ${missingTaskColumns.join("、")} 这几列（后来加的），` +
-        "库表改动不做迁移，所以没有写入。请新建一个任务。",
-    );
-  }
-}
 
-/** 来源提到要素层时给来源表加的一列：有它就是现在的样子，没有就是还没有迁过的库。 */
-export const SOURCE_ELEMENT_COLUMN = "element_kind";
 
-/**
- * 把来源表迁成现在的样子（来源提到要素层）。种类一列带着检查约束，SQLite 改不了约束，所以重建：建一张新表，把旧行改写着抄过去，
- * 删掉旧表，把新表改成原来的名字。必须在调用方已经开好的事务里调用（ensureSchema 就是）：中途出错整体回退，库还是迁移之前的样子。
- * 迁过的库有 element_kind 一列，ensureSchema 据此不再调它，所以重复打开不会重做。
- *
- * 旧行怎样改写（行数不变；摘录、支持的字段、事件序号、写入的值都原样）：
- * - 产出方都是条目（element_kind 为「条目」）。
- * - 种类「执行者补充」改成「助手补充」；出处正好是「执行者补充」这几个字的也改成「助手补充」，别的出处不动。
- * - 种类「领域说明」改成「条目」，出处不动（本来就是条目编号）；depends_revision 填被引用的那个条目在这条来源所在修订当时的
- *   最新修订号（它不晚于这条来源的修订）。找不到那个条目的填空。
- * - 别的种类（文档原文、用户的话、用户直接修改）原样，depends_revision 为空。
- * 事件表与修订的摘要是历史记录，不改写。
- */
-export function migrateSourcesToElements(db: DatabaseSync): void {
-  db.exec("DROP TABLE IF EXISTS item_source_new");
-  db.exec(itemSourceSql("item_source_new"));
-  db.exec(`
-    INSERT INTO item_source_new
-      (task_id, element_kind, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value, depends_revision)
-    SELECT s.task_id, '条目', s.item_id, s.revision_no, s.position, s.support_no,
-      CASE s.kind WHEN '执行者补充' THEN '助手补充' WHEN '领域说明' THEN '条目' ELSE s.kind END,
-      CASE WHEN s.kind = '执行者补充' AND s.locator = '执行者补充' THEN '助手补充' ELSE s.locator END,
-      s.excerpt, s.field, s.field_index, s.event_seq, s.normalized_value,
-      CASE WHEN s.kind = '领域说明'
-        THEN (SELECT MAX(v.revision_no) FROM item_version v WHERE v.task_id = s.task_id AND v.item_id = TRIM(s.locator) AND v.revision_no <= s.revision_no)
-        ELSE NULL END
-    FROM item_source s;
-    DROP TABLE item_source;
-    ALTER TABLE item_source_new RENAME TO item_source;
-  `);
-}
 
-/** 修订统一之前的库给出的拒绝文字。后端与观测台遇到这种库时说的是同一件事。 */
-export const OLD_VERSION_FORMAT_TEXT =
-  "这个任务是旧格式：条目还按内容版本号记（修订统一之前建的），本版本不支持，库表改动不做迁移，所以没有写入。请新建一个任务。";
 
-/** 库里的条目内容表还有没有 version_no 列（修订统一之前的格式）。 */
-export function hasVersionColumns(db: DatabaseSync): boolean {
-  const columns = (db.prepare("PRAGMA table_info(item_version)").all() as { name: string }[]).map((row) => row.name);
-  return columns.includes("version_no");
-}
 
-/** 来源记到字段一级时给来源表加的几列。库里的来源表缺这几列，说明是最早格式的库。 */
-export const SOURCE_LEVEL_COLUMNS = ["support_no", "field", "field_index"] as const;
 
-/** 评审发现表后来加的两列与它们的类型。已有这张表、缺这两列的库（0.1 建的库，这张表还是空的）打开时补上。 */
-export const REVIEW_FINDING_ADDED_COLUMNS = [["rule_id", "TEXT"], ["level", "TEXT"]] as const;
 
-/** 评审表后来加的四列。已有评审表、缺这几列的库（0.1 与更早的 0.2 开发版建的库）打开时补上。 */
-export const REVIEW_ADDED_COLUMNS = [["batch_id", "TEXT"], ["rules_hash", "TEXT"], ["reviewer_version", "TEXT"], ["forced", "INTEGER NOT NULL DEFAULT 0"]] as const;
-
-/** 任务名与领域标签加进任务表时加的两列。缺这两列说明是更早建的库。 */
-export const TASK_TABLE_COLUMNS = ["task_name", "domain_tag"] as const;
 
 /**
  * 本服务的任务根目录：后端启动 pi 时经这个环境变量传进来（--tasks 那个目录）。写库之前核对任务库在它之下，
@@ -985,9 +824,10 @@ export function withTaskDatabase<T>(
   let succeeded = false;
   try {
     refuseNewer(db, workspaceDir);
+    refuseOlder(db);
     useWriteAheadLog(db);
     const result = inImmediateTransaction(db, () => {
-      ensureSchema(db);
+      ensureSchema(db, { workspaceDir, notes: [] });
       return body(db);
     });
     succeeded = true;
@@ -1008,63 +848,22 @@ function refuseNewer(db: DatabaseSync, workspaceDir: string): void {
   if (taskDbVersion(db) > TASK_DB_VERSION) throw new NewerTaskDatabase(newerDataText(taskWrittenBy(workspaceDir)));
 }
 
-/**
- * 第 7 到 8 步：加版本记录表；任务表的状态一列从此不读不写。两件随这一步做的事：
- * - 早先「已完成」的任务补一条第 1 版：发布的时刻取完成的时刻，修订号取完成那一刻之前的最后一次修订，谁发布取完成那条事件的发起方，
- *   发布说明写「升级前完成，当时文档未存档」，两个存档路径为空。已经有版本记录的不补。
- * - 任务定义里没有「总体分析」集合的（0.5 之前建的任务），照任务类型模板补上这一集合与它的完成条件，其余不动（0.4 时代的「领域说明」集合与它的条目原样留着）；
- *   库里的定义快照与任务目录里的定义副本一起改。只有数据升级给了模板（ctx.overallTemplate）时才补；找不到模板就不补，照旧是没有阶段的任务。
- */
-function addVersionRecords(db: DatabaseSync, ctx: UpgradeContext): void {
-  db.exec(VERSION_RECORD_SQL);
-  const task = db.prepare("SELECT task_id, status, started_at, ended_at, definition_path, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
-    { task_id: string; status: string; started_at: string; ended_at: string | null; definition_path: string; definition_text: string } | undefined;
-  if (!task) return;
-  const has = Number((db.prepare("SELECT COUNT(*) AS n FROM version_record").get() as { n: number }).n) > 0;
-  if (task.status === TASK_DONE && !has) {
-    const done = db.prepare("SELECT seq, actor, at FROM event WHERE task_id = ? AND name = 'TASK_COMPLETED' ORDER BY seq DESC LIMIT 1").get(task.task_id) as
-      { seq: number; actor: string; at: string } | undefined;
-    const seq = done ? Number(done.seq) : Number((db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM event").get() as { n: number }).n);
-    const revision = Number((db.prepare("SELECT COALESCE(MAX(revision_no), 0) AS n FROM revision WHERE task_id = ? AND event_seq < ?").get(task.task_id, done ? seq : Number.MAX_SAFE_INTEGER) as { n: number }).n);
-    const actor = done && (done.actor === "executor" || done.actor === "user") ? done.actor : "executor";
-    db.prepare(`INSERT INTO version_record (version_no, task_id, published_at, actor, revision_no, note, markdown_path, docx_path, figure_count, figure_pictures, event_seq)
-      VALUES (1, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`).run(task.task_id, task.ended_at ?? done?.at ?? task.started_at, actor, revision, UPGRADED_VERSION_NOTE, seq);
-    ctx.notes.push(`补了第 1 版的版本记录（早先已完成，修订 ${revision}）`);
-  }
-  const template = ctx.overallTemplate?.(task.definition_path) ?? null;
-  if (!template) return;
-  const raw = JSON.parse(task.definition_text) as Record<string, any>;
-  const collections = raw["交付物"]?.["条目集合"];
-  if (!Array.isArray(collections) || collections.some((one: Record<string, unknown>) => one["名称"] === OVERALL_NAME)) return;
-  collections.push(template.collection);
-  if (template.completion !== null && raw["完成条件"] && typeof raw["完成条件"] === "object" && !(OVERALL_NAME in raw["完成条件"])) {
-    raw["完成条件"][OVERALL_NAME] = template.completion;
-  }
-  const text = JSON.stringify(raw, null, 2) + "\n";
-  db.prepare("UPDATE task SET definition_text = ? WHERE task_id = ?").run(text, task.task_id);
-  // 任务目录里的任务定义副本与库里的快照保持一致（与改评审规则的做法相同）；写不成整个升级回退。副本不在（只复制了任务库的目录）时只改快照：
-  // 程序读的是库里的快照。
-  const copy = ctx.workspaceDir ? join(ctx.workspaceDir, task.definition_path) : null;
-  if (copy && existsSync(copy)) writeFileSync(copy, text, "utf-8");
-  ctx.notes.push("补了总体分析集合");
-  // 0.4 时代的「领域说明」集合（总体分析的前身）原样留着，当一个普通集合；它的条目不搬。
-  if (collections.some((one: Record<string, unknown>) => one["名称"] === LEGACY_OVERALL_NAME)) ctx.notes.push("保留了早期的领域说明集合");
-}
 
 /**
  * 把一个任务目录的库升到现在的格式，返回升级之前与之后的版本（相同就是不用升）。只给数据升级用：服务启动时的升级与命令行的升级
  * 都经后端调这里，走的是与助手写库同一张步骤表（ensureSchema）。库文件不存在抛 NoDatabaseYet，比这个程序新抛 NewerTaskDatabase，
- * 步骤表拒绝的旧库照原话抛错；出错时库原样不动。
+ * 格式早于 MIN_TASK_DB_VERSION 抛 OlderTaskDatabase；出错时库原样不动。
  */
-export function upgradeTaskDatabase(workspaceDir: string, options: { overallTemplate?: UpgradeContext["overallTemplate"] } = {}): { from: number; to: number; notes: string[] } {
+export function upgradeTaskDatabase(workspaceDir: string): { from: number; to: number; notes: string[] } {
   checkUnderTasksRoot(workspaceDir);
   const path = databasePath(workspaceDir);
   if (!(existsSync(path) && statSync(path).size > 0)) throw new NoDatabaseYet(path);
   const db = new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS });
   try {
     refuseNewer(db, workspaceDir);
+    refuseOlder(db);
     useWriteAheadLog(db);
-    const ctx: UpgradeContext = { workspaceDir, overallTemplate: options.overallTemplate, notes: [] };
+    const ctx: UpgradeContext = { workspaceDir, notes: [] };
     return { ...inImmediateTransaction(db, () => ensureSchema(db, ctx)), notes: ctx.notes };
   } finally {
     db.close();
@@ -1082,8 +881,6 @@ export function upgradeTaskDatabase(workspaceDir: string, options: { overallTemp
  * 并删掉两个附属文件），要么三个文件一起复制。
  */
 export function useWriteAheadLog(db: DatabaseSync): void {
-  // 旧格式的库随后会被拒绝，本工具不改它，所以也不切它的日志模式。
-  if (existingTables(db).includes(LEGACY_TABLE)) return;
   const row = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
   if (row.journal_mode.toLowerCase() !== "wal") {
     db.exec("PRAGMA journal_mode = WAL");

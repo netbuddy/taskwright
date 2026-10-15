@@ -8,7 +8,7 @@
  * 助手在一条会话里能写什么，看这条会话指向的工作项现在做的是哪一项活动：会话不属于任何工作项（自由讨论的会话、归档的会话）时
  * 按空闲办（lib/stage.ts 的 IDLE）。任务一级没有「现在在哪个阶段」。
  * 流程的工作项换站（进入下一段、退回前面的阶段）只更新这一行的活动与所在的一站，记一条事件，不另开一行。
- * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段：stageOf 返回 null，调用方据此什么都不做。
+ * 早先建的任务（任务定义里没有「业务说明」集合）没有阶段：stageOf 返回 null，调用方据此什么都不做。
  */
 
 import type { DatabaseSync } from "node:sqlite";
@@ -34,6 +34,7 @@ import {
   type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
   activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
 } from "./stage.ts";
+import { refusalText } from "./texts.ts";
 import { listMaterials } from "./task_status.ts";
 import { versionCount } from "./versions.ts";
 
@@ -178,7 +179,7 @@ export function currentStage(db: DatabaseSync, taskId: string, sessionId: string
   return openActivityRecord(db, taskId, sessionId)?.activity ?? IDLE;
 }
 
-/** 这条会话现在在哪个阶段（或者空闲）；早先建的任务（没有「总体分析」集合）没有阶段，返回 null。 */
+/** 这条会话现在在哪个阶段（或者空闲）；早先建的任务（没有「业务说明」集合）没有阶段，返回 null。 */
 export function stageOf(db: DatabaseSync, workspaceDir: string, taskId: string, definition: Pick<TaskDefinition, "collections" | "materialsDir">,
   sessionId: string | null | undefined): Position | null {
   if (!hasOverall(definition.collections)) return null;
@@ -282,7 +283,7 @@ export function deleteWorkItem(db: DatabaseSync, item: ActivityRecord, who: Omit
  * 汇报做完只是回复下面的一句话，不改任何记录。自己开事务。
  */
 export function activityDoneGate(workspaceDir: string, sessionId: string): Refusal | null {
-  const none: Refusal = ["回复里写了 activity_done，而这个任务没有活动可以汇报做完", "去掉 activity_done 这一项再回复"];
+  const none: Refusal = refusalText("gate.activity_done_not_single_activity.no_stages");
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
@@ -584,7 +585,7 @@ export function lampDiagrams(db: DatabaseSync, taskId: string, definition: TaskD
   if (records.length === 0) return [];
   const prefixes = definition.collections.map((one) => one.prefix);
   const cited = db.prepare(
-    `SELECT locator FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind = ?${elementClause(db, ELEMENT_FIGURE)} ORDER BY position`,
+    `SELECT locator FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind = ?${elementClause(ELEMENT_FIGURE)} ORDER BY position`,
   );
   return records.map((record) => {
     const now = latestVersion(record)!;
@@ -700,7 +701,7 @@ export function lastMove(db: DatabaseSync, item: ActivityRecord): { actor: Stage
 }
 
 /**
- * 一条会话现在的阶段与每个阶段的几盏灯。早先建的任务（没有「总体分析」集合）没有阶段，返回 null。只读：
+ * 一条会话现在的阶段与每个阶段的几盏灯。早先建的任务（没有「业务说明」集合）没有阶段，返回 null。只读：
  * 助手的查询任务状态与后端的整份数据都经这里，所以两侧说的是同一回事。sessionId 是哪条会话；不给（null）时按自由讨论的会话算。
  */
 export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition, sessionId: string | null): StageSummary | null {

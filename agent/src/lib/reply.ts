@@ -26,12 +26,13 @@ import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { databasePath } from "./db.ts";
-import { EXECUTOR_FUNCTIONS, INTENT_GATE_TEXT } from "./intent_schema.ts";
+import { EXECUTOR_FUNCTIONS, understandingGateOf } from "./intent_schema.ts";
 import { type TurnCall, isBlank, isObject, lastAssistantTurn, requireAlone } from "./speak.ts";
-import { ToolRejection } from "./tool_rejection.ts";
-import { GUIDANCE_PREFIX, splitGuide, withGuide } from "./save_revision.ts";
+import { ToolRejection, codesOf, withCodes } from "./tool_rejection.ts";
+import { GUIDANCE_PREFIX, problem, problemText, splitGuide } from "./save_revision.ts";
+import { codeOf, fillText, refusalText } from "./texts.ts";
 import { type Refusal, STAGE_PARAM_RETIRED } from "./stage.ts";
-import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT, sourceKindNow } from "./schema.ts";
+import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT } from "./schema.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
 export { type TurnCall, lastAssistantTurn };
@@ -71,13 +72,13 @@ export const PLAIN_TEXT_FROM = 3;
 /** 连续被拒到第几次仍不合格时，放行一条纯文字回复。 */
 export const DEGRADE_AT = 5;
 
-/** 中文里怎样称呼每种要的回应，用在拒绝理由里。 */
+/** 中文里怎样称呼每种要的回应，用在拒绝理由里（模板 part.kind_*）。 */
 const KIND_NAME: Record<ActKind, string> = {
-  ask: "提问（ask）",
-  confirm: "请确认（confirm）",
-  suggest: "给建议值（suggest）",
-  choose: "请选择（choose）",
-  propose: "提议（propose）",
+  get ask() { return fillText("part.kind_ask"); },
+  get confirm() { return fillText("part.kind_confirm"); },
+  get suggest() { return fillText("part.kind_suggest"); },
+  get choose() { return fillText("part.kind_choose"); },
+  get propose() { return fillText("part.kind_propose"); },
 };
 
 export interface ItemRef {
@@ -156,9 +157,7 @@ export interface ReplyFacts {
 
 /** 键名里带引号、冒号或空白时，多半是模型把 JSON 写坏了（例如写成「text': 」）；拒绝理由里点明这一点。 */
 function brokenKeyHint(key: string): string {
-  return /["'`:\s]/.test(key)
-    ? `；这个键名里带着引号、冒号或空白，像是 JSON 写坏了，请把整个 act 重新写一遍，键名里只写字母`
-    : "";
+  return /["'`:\s]/.test(key) ? fillText("part.broken_key_hint") : "";
 }
 
 /**
@@ -170,79 +169,81 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
 
   const errors: string[] = [];
   if (!isObject(params)) {
-    throw new Error("回复的参数应当是一个对象，有 informs、act、text 三项。这次回复没有送达。");
+    const refusal = refusalText("reply.params_not_object");
+    throw withCodes(new Error(refusal.fact), [refusal.code]);
   }
   for (const key of Object.keys(params)) {
     if (!["informs", "act", "text", "stage", "reason", "activity_done"].includes(key)) {
-      errors.push(`多了「${key}」这一项，回复只有 informs、act、text 三项${brokenKeyHint(key)}`);
+      errors.push(problem(refusalText("reply.extra_key", { key, hint: brokenKeyHint(key) })));
     }
   }
 
   // stage 与 reason 已经停用：助手不能自己移动阶段，往前、往后都是发卡片由用户点。这一个版本里两项仍在参数表里，
   // 写了（不是 null、不是空白）就拒绝并指引发卡片；不写照常。
-  if (!isBlank(params.stage) || !isBlank(params.reason)) errors.push(withGuide(...STAGE_PARAM_RETIRED));
+  if (!isBlank(params.stage) || !isBlank(params.reason)) errors.push(problemText(STAGE_PARAM_RETIRED));
 
   // activity_done：助手汇报本会话的工作项（单项活动）做完了。只认 true、false 与 null；写了 true 而这条会话不在做单项活动的工作项就拒绝。
   const done = params.activity_done;
   if (done !== undefined && done !== null && typeof done !== "boolean") {
-    errors.push("activity_done 只能写 true 或 false：本会话的工作项是单项活动、这项活动做够了、要汇报做完时写 true，别的时候不写");
+    errors.push(problem(refusalText("reply.activity_done_invalid")));
   } else if (done === true) {
     const refusal = facts.activityDoneRefusal?.() ?? null;
-    if (refusal !== null) errors.push(withGuide(...refusal));
+    if (refusal !== null) errors.push(problemText(refusal));
   }
 
   // informs：每条是 { text, items? }；为兼容旧写法，一句纯文字也认，当作没有 items。
   let informs: Inform[] = [];
   if (!("informs" in params)) {
-    errors.push("缺少 informs；没有要告知的事时写空列表 []");
+    errors.push(problem(refusalText("reply.informs_missing")));
   } else if (!Array.isArray(params.informs)) {
-    errors.push("informs 应当是一个列表，每条是 { text, items }");
+    errors.push(problem(refusalText("reply.informs_not_list")));
   } else {
     informs = params.informs.map((one, index) => checkInform(one, index, facts, errors));
   }
 
   // text
   if (!("text" in params) || isBlank(params.text)) {
-    errors.push("缺少 text，或者 text 全是空白；text 是给用户读的成文的话，必须写");
+    errors.push(problem(refusalText("reply.text_missing")));
   }
 
   // act
   let act: ReplyAct | null = null;
   if (!("act" in params)) {
-    errors.push("缺少 act；你不等用户回应时写 null");
+    errors.push(problem(refusalText("reply.act_missing")));
   } else if (params.act !== null) {
     act = checkAct(params.act, facts, errors);
   }
-  if (act && errors.length === 0 && echoedAct(act.text, informs)) errors.push(ECHO_TEXT);
+  if (act && errors.length === 0 && echoedAct(act.text, informs)) errors.push(problem(refusalText("reply.act_echoes_inform")));
 
   if (errors.length > 0) {
-    // 依据核对的原因带两层（事实与指引，与保存修订同一套文字）：给模型的正文里指引另起一行写「怎么办：」。
+    // 原因有的带两层（事实与指引，与保存修订同一套写法）：给模型的正文里指引另起一行写「怎么办：」。每条原因带着拒绝语的键，原因码按先后记下。
     const layers = errors.map(splitGuide);
     const numbered = layers.map((one, i) => `${i + 1}. ${one.fact}。${one.guidance ? `\n   ${GUIDANCE_PREFIX}${one.guidance}。` : ""}`).join("\n");
     const guides = layers.flatMap((one, i) => (one.guidance ? [`${i + 1}. ${one.guidance}。`] : []));
     throw new ToolRejection(
-      `这次回复的形式不对，没有送达。请按下面几处改好后重新单独调用 reply：\n${numbered}`,
-      `这次回复的形式不对，没有送达：\n${layers.map((one, i) => `${i + 1}. ${one.fact}。`).join("\n")}`,
-      ["请按这几处改好后重新单独调用 reply", ...guides].join("\n"),
+      `${fillText("part.reply_head")}\n${numbered}`,
+      `${fillText("part.reply_fact_head")}\n${layers.map((one, i) => `${i + 1}. ${one.fact}。`).join("\n")}`,
+      [fillText("part.reply_guide_head"), ...guides].join("\n"),
+      layers.filter((one) => one.key).map((one) => codeOf(one.key)),
     );
   }
   return { informs, act, text: params.text as string, ...(done === true ? { activity_done: true as const } : {}) };
 }
 
 function checkInform(one: unknown, index: number, facts: ReplyFacts, errors: string[]): Inform {
-  const where = `informs 的第 ${index + 1} 条`;
+  const where = fillText("part.inform_where", { no: index + 1 });
   if (typeof one === "string") {
-    if (isBlank(one)) errors.push(`${where}是空的，每条告知都要是一句完整的话`);
+    if (isBlank(one)) errors.push(problem(refusalText("reply.inform_empty", { where })));
     return { text: one };
   }
   if (!isObject(one)) {
-    errors.push(`${where}应当是 { text, items }，text 是一句完整的话`);
+    errors.push(problem(refusalText("reply.inform_not_object", { where })));
     return { text: "" };
   }
   for (const key of Object.keys(one)) {
-    if (key !== "text" && key !== "items") errors.push(`${where}里多了「${key}」这一项，告知只有 text 与 items 两项${brokenKeyHint(key)}`);
+    if (key !== "text" && key !== "items") errors.push(problem(refusalText("reply.inform_extra_key", { where, key, hint: brokenKeyHint(key) })));
   }
-  if (isBlank(one.text)) errors.push(`${where}的 text 是空的或者不是文字，每条告知都要是一句完整的话`);
+  if (isBlank(one.text)) errors.push(problem(refusalText("reply.inform_text_empty", { where })));
   const inform: Inform = { text: typeof one.text === "string" ? one.text : "" };
   if ("items" in one) {
     checkItemList(one.items, `${where}的 items`, true, facts, errors);
@@ -251,9 +252,8 @@ function checkInform(one: unknown, index: number, facts: ReplyFacts, errors: str
   return inform;
 }
 
-/** 卡片上的话只是把刚说过的话再说一遍时的拒绝理由。 */
-/** 提问写成了是非题或征求同意的话时「怎么办」那一句。末尾那半句是给确实是开放问题、只是用了这些词的问句留的路。 */
-export const CLOSED_QUESTION_GUIDANCE = "是非题用请选择，征求同意用提议，把答案写成按钮；提问只给开放问题。确是开放问题的，把问句改写成不带这些词的形式";
+/** 提问写成了是非题或征求同意的话时「怎么办」那一句（模板 reply.ask_closed_question.guide）。 */
+export const CLOSED_QUESTION_GUIDANCE = fillText("reply.ask_closed_question.guide");
 
 /** 是非题或征求同意的话里常见的词：句子里任何位置出现都算。 */
 const CLOSED_WORDS = ["是否", "能不能", "要不要", "可不可以", "对不对", "行不行"];
@@ -268,9 +268,6 @@ export function closedQuestion(text: string): boolean {
   const bare = text.trim().replace(/[？?。.！!」』”"'’）)\s]+$/u, "");
   return bare.endsWith("吗") || CLOSED_WORDS.some((word) => bare.includes(word));
 }
-
-export const ECHO_TEXT =
-  "卡片里写的是你刚说过的话，不是要用户回应的东西；不需要用户回应就把 act 写 null，要回应就把要用户回答的那句话写进 act";
 
 /** 比对文字时去掉空白与标点，只看剩下的字。 */
 function bareText(text: string): string {
@@ -290,17 +287,17 @@ export function echoedAct(actText: string, informs: Inform[]): boolean {
 
 function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct | null {
   if (!isObject(raw)) {
-    errors.push("act 应当是 null 或者一个对象");
+    errors.push(problem(refusalText("reply.act_not_object")));
     return null;
   }
   // 写坏的键名先单独报出来：kind 的键名写坏时，下面会因为「没有 kind」提前返回，不先报就看不到真正的原因。
   const broken = Object.keys(raw).filter((key) => brokenKeyHint(key) !== "");
   for (const key of broken) {
-    errors.push(`act 里有一个键名写成了「${key}」${brokenKeyHint(key)}`);
+    errors.push(problem(refusalText("reply.act_broken_key", { key, hint: brokenKeyHint(key) })));
   }
   const kind = raw.kind;
   if (typeof kind !== "string" || !(ACT_KINDS as readonly string[]).includes(kind)) {
-    errors.push(`act.kind 写的是 ${JSON.stringify(kind)}，只能是 ${ACT_KINDS.join("、")} 五者之一`);
+    errors.push(problem(refusalText("reply.act_kind_invalid", { given: String(JSON.stringify(kind)), kinds: ACT_KINDS.join("、") })));
     return null;
   }
   const k = kind as ActKind;
@@ -309,29 +306,27 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   for (const key of Object.keys(raw)) {
     if (!allowed.has(key) && !broken.includes(key)) {
       const owner = (Object.keys(ALLOWED_EXTRA) as ActKind[]).filter((x) => ALLOWED_EXTRA[x].includes(key));
-      errors.push(
-        owner.length > 0
-          ? `${name}不写 act.${key}；${key} 只属于${owner.map((x) => KIND_NAME[x]).join("、")}`
-          : `act 里多了「${key}」这一项，act 只有 kind、text、items、options、value、basis、preview、resends 这几项`,
-      );
+      errors.push(owner.length > 0
+        ? problem(refusalText("reply.act_key_not_for_kind", { name, key, owners: owner.map((x) => KIND_NAME[x]).join("、") }))
+        : problem(refusalText("reply.act_extra_key", { key })));
     }
   }
-  if (isBlank(raw.text)) errors.push(`act.text 是空的；${name}要写明问的、请确认的、建议的或提议的是什么`);
+  if (isBlank(raw.text)) errors.push(problem(refusalText("reply.act_text_empty", { name })));
   // 提问只给开放问题：写成了是非题或者征求同意的话就拒绝（字面规则，见 closedQuestion）。
   if (k === "ask" && typeof raw.text === "string" && closedQuestion(raw.text)) {
     const said = raw.text.trim();
-    errors.push(withGuide(`提问（ask）写的是一句是非题或者征求同意的话：「${[...said].length > 40 ? `${[...said].slice(0, 40).join("")}…` : said}」`, CLOSED_QUESTION_GUIDANCE));
+    errors.push(problem(refusalText("reply.ask_closed_question", { said: [...said].length > 40 ? `${[...said].slice(0, 40).join("")}…` : said })));
   }
 
   // 重发：写了 resends 就要指向一张还开着的、同一种的卡片。
   if ((k === "ask" || k === "choose") && "resends" in raw) {
     if (isBlank(raw.resends)) {
-      errors.push("act.resends 写了就应当是原来那张卡片的行为编号（例如 r3-2）；这张卡片不是重发的就不写这一项");
+      errors.push(problem(refusalText("reply.resends_blank")));
     } else if (facts.resendFact) {
       const fact = facts.resendFact(raw.resends as string);
-      if (!fact.open) errors.push(`act.resends 写的是 ${raw.resends}，${fact.why}`);
+      if (!fact.open) errors.push(problem(refusalText("reply.resends_not_open", { given: String(raw.resends), why: fact.why })));
       else if (fact.kind !== k) {
-        errors.push(`act.resends 写的 ${raw.resends} 是${KIND_NAME[fact.kind as ActKind] ?? fact.kind}，这次发的是${name}；重发要与原来那张是同一种`);
+        errors.push(problem(refusalText("reply.resends_kind_mismatch", { given: String(raw.resends), was: KIND_NAME[fact.kind as ActKind] ?? fact.kind, name })));
       }
     }
   }
@@ -339,10 +334,10 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   // scope 只有一个取值；写了 general 就表示与条目无关，不要再点名条目。
   const general = raw.scope === SCOPE_GENERAL;
   if ("scope" in raw && !general) {
-    errors.push(`act.scope 写的是 ${JSON.stringify(raw.scope)}，只能写 "general"（表示与任何条目都无关），或者不写`);
+    errors.push(problem(refusalText("reply.scope_invalid", { given: String(JSON.stringify(raw.scope)) })));
   }
   if (general && Array.isArray(raw.items) && raw.items.length > 0) {
-    errors.push(`act.scope 写了 "general"，表示与任何条目都无关，就不要再在 items 里点名条目；二者只能选一个`);
+    errors.push(problem(refusalText("reply.scope_general_with_items")));
   }
   // items：五种都可以写；提问、请确认、给建议值、提议必填（前三种写了 scope: "general" 时除外）
   const required = ITEMS_REQUIRED.includes(k) && !(general && k !== "confirm");
@@ -354,30 +349,30 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   if (k === "choose") {
     const options = raw.options;
     if (!Array.isArray(options) || options.length < 2) {
-      errors.push("请选择（choose）要写 act.options，至少两个选项，每项是 { key, text }");
+      errors.push(problem(refusalText("reply.options_too_few")));
     } else {
       const seen = new Set<string>();
       options.forEach((one, index) => {
         if (!isObject(one) || isBlank(one.key) || isBlank(one.text)) {
-          errors.push(`act.options 的第 ${index + 1} 项要有不为空的 key 与 text`);
+          errors.push(problem(refusalText("reply.option_incomplete", { no: index + 1 })));
           return;
         }
-        if (seen.has(one.key as string)) errors.push(`act.options 里的 key「${one.key}」重复了，每个选项的 key 要不一样`);
+        if (seen.has(one.key as string)) errors.push(problem(refusalText("reply.option_key_duplicate", { key: String(one.key) })));
         seen.add(one.key as string);
       });
     }
   }
 
-  // 给建议值的依据：交给 checkBasis 按保存修订的来源同一套规则逐字核对（文档原文、用户的话、领域说明），核对后的依据替换模型写的
+  // 给建议值的依据：交给 checkBasis 按保存修订的来源同一套规则逐字核对（文档原文、用户的话、条目等），核对后的依据替换模型写的
   // （用户的话的出处由工具代填；一条依据的摘录是材料里连续的一段，引几处就写几条）。
   let checkedBasis: ReplyAct["basis"] | null = null;
   if (k === "suggest") {
-    if (isBlank(raw.value)) errors.push("给建议值（suggest）要写 act.value，也就是你建议的那个值");
+    if (isBlank(raw.value)) errors.push(problem(refusalText("reply.suggest_value_missing")));
     const basis = raw.basis;
     if (!Array.isArray(basis) || basis.length === 0) {
-      errors.push("给建议值（suggest）要写 act.basis，至少一条依据，每条是 { kind, locator, excerpt }");
+      errors.push(problem(refusalText("reply.suggest_basis_missing")));
     } else {
-      const whereOf = (index: number) => `act.basis 的第 ${index + 1} 条`;
+      const whereOf = (index: number) => fillText("part.basis_where", { no: index + 1 });
       checkedBasis = facts.checkBasis ? facts.checkBasis(basis, errors, whereOf) : basisShape(basis, errors, whereOf);
     }
   }
@@ -385,18 +380,18 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   if (k === "propose" && "preview" in raw) {
     const preview = raw.preview;
     if (!Array.isArray(preview) || preview.length === 0) {
-      errors.push("act.preview 写了就应当是一个不为空的列表，每项是 { effect, text }");
+      errors.push(problem(refusalText("reply.preview_not_list")));
     } else {
       preview.forEach((one, index) => {
-        const where = `act.preview 的第 ${index + 1} 项`;
+        const where = fillText("part.preview_where", { no: index + 1 });
         if (!isObject(one)) {
-          errors.push(`${where}应当是一个对象，有 effect 与 text 两项`);
+          errors.push(problem(refusalText("reply.preview_item_not_object", { where })));
           return;
         }
         if (typeof one.effect !== "string" || !(PREVIEW_EFFECTS as readonly string[]).includes(one.effect)) {
-          errors.push(`${where}的 effect 写的是 ${JSON.stringify(one.effect)}，只能是 ${PREVIEW_EFFECTS.join("、")} 之一`);
+          errors.push(problem(refusalText("reply.preview_effect_invalid", { where, given: String(JSON.stringify(one.effect)), effects: PREVIEW_EFFECTS.join("、") })));
         }
-        if (isBlank(one.text)) errors.push(`${where}的 text 是空的`);
+        if (isBlank(one.text)) errors.push(problem(refusalText("reply.preview_text_empty", { where })));
       });
     }
   }
@@ -414,33 +409,29 @@ function basisShape(basis: unknown[], errors: string[], whereOf: (index: number)
   basis.forEach((one, index) => {
     const where = whereOf(index);
     if (!isObject(one)) {
-      errors.push(`${where}应当是一个对象，有 kind、locator、excerpt 三项`);
+      errors.push(problem(refusalText("source.item_not_object", { where })));
       return;
     }
-    // 早期版本的种类名（「执行者补充」「领域说明」）照收，按现在的名字核对。
-    const kind = typeof one.kind === "string" ? sourceKindNow(one.kind) : one.kind;
+    const kind = one.kind;
     if (typeof kind !== "string" || !(BASIS_KINDS as readonly string[]).includes(kind)) {
-      errors.push(`${where}的 kind 写的是 ${JSON.stringify(one.kind)}，只能是${BASIS_KINDS.map((x) => `「${x}」`).join("、")}之一`);
+      errors.push(problem(refusalText("source.kind_invalid", { where, given: String(JSON.stringify(one.kind)), kinds: BASIS_KINDS.map((x) => `「${x}」`).join("、") })));
     }
     if (kind === SOURCE_SUPPLEMENT) {
       // 助手补充的出处不用写；摘录是理由。
-      if (isBlank(one.excerpt)) errors.push(`${where}的种类是「${SOURCE_SUPPLEMENT}」，没有写理由：在 excerpt 里写一句为什么这样补、依据的是什么常识或推断`);
+      if (isBlank(one.excerpt)) errors.push(problem(refusalText("reply.basis_supplement_no_reason", { where, kind: SOURCE_SUPPLEMENT })));
       return;
     }
-    if (kind !== "用户的话" && isBlank(one.locator)) errors.push(`${where}缺少 locator（出处）`);
-    if (isBlank(one.excerpt)) errors.push(`${where}缺少 excerpt（摘录的原文）`);
+    if (kind !== "用户的话" && isBlank(one.locator)) errors.push(problem(refusalText("source.locator_or_excerpt_missing", { where, missing: fillText("part.missing_locator") })));
+    if (isBlank(one.excerpt)) errors.push(problem(refusalText("source.locator_or_excerpt_missing", { where, missing: fillText("part.missing_excerpt") })));
   });
   return null;
 }
 
 /** 必须点名条目却没有点名时的拒绝理由。 */
 function missingItemsText(kind: ActKind): string {
-  if (kind === "confirm") return "请确认（confirm）要写 act.items，点名要确认的是哪几个条目，每项是 { item_id, revision_no }，revision_no 写条目当前所在的修订";
+  if (kind === "confirm") return problem(refusalText("reply.items_missing.confirm"));
   const what = kind === "ask" ? "提问" : kind === "suggest" ? "建议" : "提议";
-  return (
-    `${what}要写明${kind === "ask" ? "问" : "说"}的是哪个条目或问题条目：在 act.items 里点名，每项是 { item_id, revision_no }，` +
-    `revision_no 写它当前所在的修订；与条目无关的${kind === "ask" ? "问题" : what}请写 scope: "general"`
-  );
+  return problem(refusalText("reply.items_missing", { what, verb: kind === "ask" ? "问" : "说", unrelated: kind === "ask" ? "问题" : what }));
 }
 
 /**
@@ -449,35 +440,36 @@ function missingItemsText(kind: ActKind): string {
  */
 function checkItemList(items: unknown, label: string, check: boolean, facts: ReplyFacts, errors: string[]): void {
   if (!Array.isArray(items)) {
-    errors.push(`${label}写了就应当是一个列表，每项是 { item_id, revision_no }`);
+    errors.push(problem(refusalText("reply.items_not_list", { label })));
     return;
   }
   const required = check;
   items.forEach((one, index) => {
-    const where = `${label} 的第 ${index + 1} 项`;
+    const where = fillText("part.list_item_where", { label, no: index + 1 });
     if (!isObject(one) || isBlank(one.item_id)) {
-      errors.push(`${where}要写 item_id（条目编号，例如 UC-001）`);
+      errors.push(problem(refusalText("reply.item_id_missing", { where })));
       return;
     }
+    const item = String(one.item_id);
     const revision = one.revision_no;
     if (revision === undefined || revision === null) {
-      if (required) errors.push(`${where}（${one.item_id}）缺少 revision_no；写这个条目当前所在的修订号`);
+      if (required) errors.push(problem(refusalText("reply.item_revision_missing", { where, item })));
       return;
     }
     if (!Number.isInteger(revision) || (revision as number) < 1) {
-      errors.push(`${where}（${one.item_id}）的 revision_no 应当是一个从 1 起的整数，现在写的是 ${JSON.stringify(revision)}`);
+      errors.push(problem(refusalText("reply.item_revision_invalid", { where, item, given: String(JSON.stringify(revision)) })));
       return;
     }
     if (!required) return;
     const fact = facts.revisionFact(one.item_id as string, revision as number);
-    if (fact === "还没有库") errors.push("这个任务目录还没有任务数据库，库里没有任何条目，没有东西可以点名");
-    else if (fact === "没有这个条目") errors.push(`${where}：库里没有条目 ${one.item_id}`);
-    else if (fact === "条目已删除") errors.push(`${where}：条目 ${one.item_id} 已经删除了，不能再点名它`);
+    if (fact === "还没有库") errors.push(problem(refusalText("reply.no_database")));
+    else if (fact === "没有这个条目") errors.push(problem(refusalText("reply.item_not_found", { where, item })));
+    else if (fact === "条目已删除") errors.push(problem(refusalText("reply.item_deleted", { where, item })));
     else if (fact === "这次修订没有改动它" || fact === "不是当前所在的修订") {
       const current = facts.currentRevisionOf?.(one.item_id as string);
-      errors.push(
-        `${where}：条目 ${one.item_id} 现在不是修订 ${revision}${current ? `，它现在是修订 ${current}` : ""}；只能点名条目当前所在的修订`,
-      );
+      errors.push(problem(refusalText("reply.item_revision_not_current", {
+        where, item, revision: revision as number, now: current ? fillText("part.now_at", { revision: current }) : "",
+      })));
     }
   });
 }
@@ -499,17 +491,19 @@ export function decideReply(params: unknown, facts: ReplyFacts): ReplyDecision {
   } catch (error) {
     const attempt = (facts.priorRejections ?? 0) + 1;
     const message = (error as Error).message;
-    const alone = message.includes("必须单独调用");
+    const codes = codesOf(error);
+    const alone = codes.includes("reply.not_alone");
     if (attempt >= DEGRADE_AT && !alone) {
       const text = plainTextOf(params);
       if (text) return { reply: { informs: [], act: null, text }, degraded: true };
     }
     if (attempt >= PLAIN_TEXT_FROM) {
+      // 原因码：先记「只要成文正文」这一条，后面接上一次拒绝自己的原因码。
       throw new ToolRejection(
-        `这是这一次回应里「回复」连续第 ${attempt} 次没有送达。请不要再写告知与要的回应：只写成文的话 text，` +
-          `informs 写 []，act 写 null，单独调用 reply。上一次的问题是：\n${message}`,
-        `「回复」连续第 ${attempt} 次没有送达。${error instanceof ToolRejection ? error.fact : message}`,
-        "不要再写告知与要的回应：只写成文的话 text，informs 写 []，act 写 null，单独调用 reply",
+        fillText("reply.plain_text_only", { attempt, previous: message }),
+        fillText("part.plain_text_only_fact", { attempt, previous: error instanceof ToolRejection ? error.fact : message }),
+        fillText("part.plain_text_only_guide"),
+        ["reply.plain_text_only", ...codes],
       );
     }
     throw error;
@@ -542,7 +536,7 @@ export function consecutiveReplyRejections(branch: BranchEntry[]): number {
     const { role } = entry.message;
     if (role === "toolResult" && entry.message.toolName === REPLY_TOOL_NAME) {
       if (entry.message.isError !== true) break;
-      if (textOfContent(entry.message.content).includes(INTENT_GATE_TEXT)) continue;
+      if (understandingGateOf(textOfContent(entry.message.content)) !== null) continue;
       count += 1;
     } else if (role === "user") {
       const content = entry.message.content;

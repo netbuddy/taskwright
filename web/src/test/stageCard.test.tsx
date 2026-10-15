@@ -21,7 +21,7 @@ function card(act: Act, over: Record<string, unknown> = {}) {
   render(<Wrap><ReplyCard act={act} replyMessageId="msg-1" task={overallTask()} handlers={handlers} onOpenItem={onOpenItem} {...over} /></Wrap>);
   return { handlers, onOpenItem };
 }
-const PAGE = overallTask().items.find((i) => i.collection === "总体分析")!;
+const PAGE = overallTask().items.find((i) => i.collection === "业务说明")!;
 const CARDS: [string, string, string, string][] = [
   ["enter_clarify", "进入澄清", "continue_reading", "再核读一遍"],
   ["enter_consolidate", "进入整理建模", "continue_clarify", "继续澄清"],

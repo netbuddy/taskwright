@@ -24,7 +24,7 @@ import { type TaskDefinition, keepPendingField, validateDefinition } from "./def
 import { mentionLines, overallState, pendingSummary, verificationLines } from "./overall_read.ts";
 import { stageLines, stageSummary } from "./stage_read.ts";
 import { cardsOpenInStage, openCardsLine, openProposal, proposalLine } from "./stage_proposal.ts";
-import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts, unansweredActs } from "./dialogue_acts.ts";
 import { hasColumn } from "./dialogue_schema.ts";
@@ -32,6 +32,8 @@ import { DIAGRAM_ID, type DiagramRecord, drawnItemIds, kindName, latestVersion, 
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
 import { knowledgeDetails, knowledgeSection, listMaterials } from "./task_status.ts";
 import { envKnowledgeRoot, selectedKnowledge } from "./knowledge.ts";
+import { fillText } from "./texts.ts";
+import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 
 /** 工具的返回：给模型的一段文字，给读取一侧的结构化内容。 */
 export interface QueryOutcome {
@@ -39,18 +41,20 @@ export interface QueryOutcome {
   details: Record<string, unknown>;
 }
 
+/** 查看条目的一次拒绝：一段文字（只有事实层）与它的原因码。 */
+const refused = (code: string, text: string): ToolRejection => new ToolRejection(text, text, "", [code]);
+
 function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRow, definition: TaskDefinition) => T): T {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) {
-    throw new Error("这个任务目录里还没有任务记录，没有东西可以查。任务由用户在界面上创建，请把这个情况如实告诉用户。");
+    throw notInputProblem(new Error(fillText("get_item.no_database")));
   }
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
     const task = db.prepare("SELECT task_id, task_name, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       | TaskRow
       | undefined;
-    if (!task) throw new Error("库里还没有任务记录，没有东西可以查。");
-    if (hasVersionColumns(db)) throw new Error(OLD_VERSION_FORMAT_TEXT);
+    if (!task) throw notInputProblem(new Error(fillText("get_item.no_task")));
     return body(db, task, validateDefinition(JSON.parse(task.definition_text)));
   } finally {
     db.close();
@@ -61,9 +65,9 @@ function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRo
 export function diagramsLine(diagrams: DiagramRecord[]): string {
   const each = diagrams.map((one) => {
     const now = latestVersion(one)!;
-    return `${one.diagram_id}「${now.name}」（${kindName(now.kind)}，修订 ${now.revision_no}）`;
+    return fillText("query.diagram_brief", { diagram: one.diagram_id, name: now.name, kind: kindName(now.kind), revision: now.revision_no });
   });
-  return `图 ${diagrams.length} 张：${each.join("、")}。图不是条目，不评审，不算进完成条件；要看一张图的 Mermaid 文本，用 get_item 写它的编号。`;
+  return fillText("query.diagrams", { count: diagrams.length, list: each.join("、") });
 }
 
 /**
@@ -74,45 +78,59 @@ function diagramOutcome(db: DatabaseSync, taskId: string, definition: TaskDefini
   const records = readDiagrams(db, taskId);
   const record = records.find((one) => one.diagram_id === id);
   const alive = liveDiagrams(records).map((one) => one.diagram_id);
-  if (!record || record.versions.length === 0) throw new Error(`这个任务里没有图 ${id}。现有的图是：${alive.length ? alive.join("、") : "（一张都没有）"}。`);
-  if (record.deleted_in_revision !== null) throw new Error(`图 ${id} 已经在它的修订 ${record.deleted_in_revision} 删除了。现有的图是：${alive.length ? alive.join("、") : "（一张都没有）"}。`);
+  const aliveText = alive.length ? alive.join("、") : fillText("part.no_diagrams");
+  if (!record || record.versions.length === 0) throw refused("get_item.diagram_not_found", fillText("get_item.diagram_not_found", { diagram: id, alive: aliveText }));
+  if (record.deleted_in_revision !== null) {
+    throw refused("get_item.diagram_deleted", fillText("get_item.diagram_deleted", { diagram: id, revision: record.deleted_in_revision, alive: aliveText }));
+  }
   const current = latestVersion(record)!;
   const shown = wanted === null ? current : record.versions.find((one) => one.revision_no === wanted);
-  if (!shown) throw new Error(`图 ${id} 没有修订 ${wanted}；它有这些修订：${record.versions.map((one) => `修订 ${one.revision_no}`).join("、")}（图的修订号是图自己的）。`);
+  if (!shown) {
+    throw refused("get_item.diagram_revision_missing", fillText("get_item.diagram_revision_missing", {
+      diagram: id, wanted: String(wanted), list: record.versions.map((one) => fillText("part.revision_no", { revision: one.revision_no })).join("、"),
+    }));
+  }
   const sources = (db.prepare(
-    `SELECT kind, locator, excerpt, depends_revision FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ?${elementClause(db, ELEMENT_FIGURE)} ORDER BY position`,
+    `SELECT kind, locator, excerpt, depends_revision FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ?${elementClause(ELEMENT_FIGURE)} ORDER BY position`,
   ).all(taskId, id, shown.revision_no) as { kind: string; locator: string; excerpt: string; depends_revision: number | null }[]);
   const itemNow = db.prepare(
     "SELECT i.deleted_in_revision AS deleted, (SELECT MAX(revision_no) FROM item_version v WHERE v.task_id = i.task_id AND v.item_id = i.item_id) AS no " +
       "FROM item i WHERE i.task_id = ? AND i.item_id = ?",
   );
   const sourceLines = sources.map((one, index) => {
-    const quote = one.excerpt ? `：「${one.excerpt}」` : "";
-    if (one.kind !== SOURCE_ITEM) return `  ${index + 1}. ${one.kind}${one.kind === "文档原文" ? `，出处 ${one.locator}` : ""}${quote}`;
+    const quote = one.excerpt ? fillText("query.source_quote", { excerpt: one.excerpt }) : "";
+    if (one.kind !== SOURCE_ITEM) {
+      return `  ${index + 1}. ${one.kind === "文档原文"
+        ? fillText("query.source_line_document", { kind: one.kind, locator: one.locator, quote })
+        : fillText("query.source_line", { kind: one.kind, quote })}`;
+    }
     const now = itemNow.get(taskId, one.locator) as { deleted: number | null; no: number | null } | undefined;
-    const state = !now || now.deleted !== null ? `${one.locator} 已经删除`
-      : one.depends_revision !== null && now.no !== null && now.no > one.depends_revision ? `依据已变：引用时 ${one.locator} 是修订 ${one.depends_revision}，现在是修订 ${now.no}`
-      : `引用时 ${one.locator} 是修订 ${one.depends_revision ?? "？"}，之后没有改过`;
-    return `  ${index + 1}. 条目，出处 ${one.locator}${quote}（${state}）`;
+    const state = !now || now.deleted !== null ? fillText("query.source_item_deleted", { locator: one.locator })
+      : one.depends_revision !== null && now.no !== null && now.no > one.depends_revision
+        ? fillText("query.source_item_changed", { locator: one.locator, then: one.depends_revision, now: now.no })
+        : fillText("query.source_item_same", { locator: one.locator, then: one.depends_revision ?? "？" });
+    return `  ${index + 1}. ${fillText("query.source_line_item", { locator: one.locator, quote, state })}`;
   });
   const drawn = drawnItemIds(shown.mermaid, definition.collections.map((one) => one.prefix));
   const lines = [
-    `图 ${id}「${shown.name}」（${kindName(shown.kind)}），修订 ${shown.revision_no}${shown === current ? "，是最新内容" : "，是旧内容"}。图的修订号是图自己的，与条目的修订号无关。`,
-    `  改动过的修订：${record.versions.map((one) => `修订 ${one.revision_no}（发起方 ${one.actor}）`).join("、")}。`,
+    shown === current
+      ? fillText("query.diagram_head_latest", { diagram: id, name: shown.name, kind: kindName(shown.kind), revision: shown.revision_no })
+      : fillText("query.diagram_head_old", { diagram: id, name: shown.name, kind: kindName(shown.kind), revision: shown.revision_no }),
+    `  ${fillText("query.diagram_revisions", { list: record.versions.map((one) => fillText("query.diagram_revision", { revision: one.revision_no, actor: one.actor })).join("、") })}`,
     "",
-    `说明：${shown.note || "（没有写）"}`,
-    "Mermaid 文本：",
+    shown.note ? fillText("query.diagram_note", { note: shown.note }) : fillText("query.diagram_note_none"),
+    fillText("query.diagram_mermaid_label"),
     "<<<",
     shown.mermaid,
     ">>>",
     "",
-    `来源（${sources.length} 条）：`,
-    ...(sourceLines.length ? sourceLines : ["  （这一次修订没有来源）"]),
-    drawn.length ? `图里画了 ${drawn.length} 个条目：${drawn.join("、")}。` : "图里没有写条目编号。",
+    fillText("query.sources_count", { count: sources.length }),
+    ...(sourceLines.length ? sourceLines : [`  ${fillText("query.sources_none")}`]),
+    drawn.length ? fillText("query.diagram_drawn", { count: drawn.length, items: drawn.join("、") }) : fillText("query.diagram_drawn_none"),
     "",
     shown === current
-      ? `${id} 现在是修订 ${current.revision_no}。要修改或删除这张图时用 save_diagram，diagram 写 ${id}，base_revision 写 ${current.revision_no}；修改时只写要改的那几项。`
-      : `这是旧内容；${id} 现在是修订 ${current.revision_no}，要修改时先看最新内容，base_revision 写 ${current.revision_no}。`,
+      ? fillText("query.diagram_edit_latest", { diagram: id, revision: current.revision_no })
+      : fillText("query.diagram_edit_old", { diagram: id, revision: current.revision_no }),
   ];
   return {
     text: lines.join("\n"),
@@ -131,10 +149,10 @@ function diagramOutcome(db: DatabaseSync, taskId: string, definition: TaskDefini
  */
 export function getItem(workspaceDir: string, params: { item_id?: unknown; revision_no?: unknown }, sessionId?: string): QueryOutcome {
   const itemId = typeof params.item_id === "string" ? params.item_id.trim().toUpperCase() : "";
-  if (!itemId) throw new Error("item_id 要写条目编号，例如 UC-001。");
+  if (!itemId) throw refused("get_item.item_id_missing", fillText("get_item.item_id_missing"));
   const wanted = params.revision_no;
   if (wanted !== undefined && wanted !== null && !(typeof wanted === "number" && Number.isInteger(wanted) && wanted >= 1)) {
-    throw new Error(`revision_no 应当是从 1 起的整数，或者不写（看最新内容），现在写的是 ${JSON.stringify(wanted)}。`);
+    throw refused("get_item.revision_no_invalid", fillText("get_item.revision_no_invalid", { given: String(JSON.stringify(wanted)) }));
   }
   return withTask(workspaceDir, (db, task, definition) => {
     const item = db
@@ -146,15 +164,23 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
       const alive = (db.prepare("SELECT item_id FROM item WHERE task_id = ? AND deleted_in_revision IS NULL ORDER BY rowid").all(task.task_id) as {
         item_id: string;
       }[]).map((row) => row.item_id);
-      throw new Error(`这个任务里没有条目 ${itemId}。现有的条目是：${alive.length ? alive.join("、") : "（一个都没有）"}。`);
+      throw refused("get_item.item_not_found", fillText("get_item.item_not_found", { item: itemId, alive: alive.length ? alive.join("、") : fillText("part.no_items") }));
     }
-    if (item.deleted_in_revision !== null) throw new Error(`条目 ${itemId} 已在修订 ${item.deleted_in_revision} 删除，不在交付物里了。`);
+    if (item.deleted_in_revision !== null) {
+      throw refused("get_item.item_deleted", fillText("get_item.item_deleted", { item: itemId, revision: item.deleted_in_revision }));
+    }
     const revisions = itemRevisions(db, task.task_id, itemId);
     const current = revisions[revisions.length - 1];
     const newest = latestRevision(db, task.task_id);
-    if (typeof wanted === "number" && wanted > newest) throw new Error(`这个任务还没有修订 ${wanted}，最新是修订 ${newest}。`);
+    if (typeof wanted === "number" && wanted > newest) {
+      throw refused("get_item.revision_beyond_latest", fillText("get_item.revision_beyond_latest", { wanted, newest }));
+    }
     const shown = typeof wanted === "number" ? [...revisions].reverse().find((n) => n <= wanted) : current;
-    if (shown === undefined) throw new Error(`修订 ${wanted} 时还没有条目 ${itemId}；它在这些修订里改动过：${revisions.map((n) => `修订 ${n}`).join("、")}。`);
+    if (shown === undefined) {
+      throw refused("get_item.item_absent_at_revision", fillText("get_item.item_absent_at_revision", {
+        wanted: String(wanted), item: itemId, list: revisions.map((n) => fillText("part.revision_no", { revision: n })).join("、"),
+      }));
+    }
     const row = db
       .prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no = ?")
       .get(task.task_id, itemId, shown) as { fields: string };
@@ -162,14 +188,13 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     const sources = (db
       .prepare(
         `SELECT position, kind, locator, excerpt, field, field_index, ${hasColumn(db, "item_source", "normalized_value") ? "normalized_value" : "NULL AS normalized_value"} ` +
-          `FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause(db)} ORDER BY position, support_no`,
+          `FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause()} ORDER BY position, support_no`,
       )
       .all(task.task_id, itemId, shown, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null }[])
       .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[]; normalized_value?: string }[]>((list, one) => {
         let source = list[one.position - 1];
         if (!source) {
-          // 还没有迁过的库里种类是早期版本的名字：给助手看的一律是现在的名字。
-          list[one.position - 1] = source = { kind: sourceKindNow(one.kind), locator: sourceLocatorNow(one.kind, one.locator), excerpt: one.excerpt, supports: [] };
+          list[one.position - 1] = source = { kind: one.kind, locator: one.locator, excerpt: one.excerpt, supports: [] };
           if (one.normalized_value !== null) source.normalized_value = one.normalized_value;
         }
         if (one.field !== null) source.supports.push(one.field_index === null ? { field: one.field } : { field: one.field, index: one.field_index });
@@ -178,7 +203,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
       // 早期版本写下的「用户直接修改」不读出，它的位置号留下的空位去掉。
       .filter(Boolean);
     const lines = itemDetailLines(db, task, definition, itemId, typeof wanted === "number" ? wanted : undefined, workspaceDir);
-    // 待核实与（总体分析的页）被提到的地方：都按条目现在的内容算，看旧内容时不写。
+    // 待核实与（业务说明的页）被提到的地方：都按条目现在的内容算，看旧内容时不写。
     const overall = shown === current ? overallState(db, task.task_id, definition) : null;
     const verification = overall?.verification.get(itemId) ?? null;
     const mentioned = overall?.mentions.get(itemId) ?? [];
@@ -187,9 +212,9 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     lines.push(
       "",
       shown === current
-        ? `${itemId} 现在是修订 ${current}。要修改或删除这个条目时，base_revision 写 ${current}。修改时 fields 只写要改的字段，列表型字段要写改后的完整列表。`
-        : `这是旧内容；${itemId} 现在是修订 ${current}，要修改时先看最新内容，base_revision 写 ${current}。`,
-      `这份内容各字段的原值（JSON）：${JSON.stringify(fields)}`,
+        ? fillText("query.item_edit_latest", { item: itemId, revision: current })
+        : fillText("query.item_edit_old", { item: itemId, revision: current }),
+      fillText("query.item_raw_fields", { json: JSON.stringify(fields) }),
     );
     const dialogue = sessionId ? dialogueFacts(db, task.task_id, sessionId, itemId) : null;
     const factLines = dialogue ? dialogueFactLines(dialogue) : [];
@@ -220,13 +245,18 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
 export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledgeRoot: string | null = envKnowledgeRoot()): QueryOutcome {
   return withTask(workspaceDir, (db, task, definition) => {
     const name = task.task_name ?? definition.taskName;
-    const lines = [`任务 ${task.task_id}「${name}」（类型：${definition.taskName}）。`, ""];
+    const lines = [fillText("query.task_line", { id: task.task_id, name, type: definition.taskName }), ""];
     const counts: Record<string, string[]> = {};
     const unresolved: { item_id: string; revision_no: number; title: string }[] = [];
     for (const collection of definition.collections) {
       const rows = currentItems(db, task.task_id, collection.name);
       counts[collection.name] = rows.map((row) => row.item_id);
-      lines.push(`${collection.name} ${rows.length} 个${rows.length ? `：${rows.map((row) => `${row.item_id}（修订 ${row.revision_no}）`).join("、")}` : ""}。`);
+      lines.push(rows.length
+        ? fillText("query.collection_items", {
+          collection: collection.name, count: rows.length,
+          items: rows.map((row) => fillText("query.item_at_revision", { item: row.item_id, revision: row.revision_no })).join("、"),
+        })
+        : fillText("query.collection_empty", { collection: collection.name, count: rows.length }));
       const status = collection.fields.find((field) => field.name === "状态");
       if (!status || !(status.values ?? []).includes("未解决")) continue;
       for (const row of rows) {
@@ -241,15 +271,18 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
     lines.push(...reviewFindingLines(db, task.task_id, definition, workspaceDir), "");
     lines.push(
       unresolved.length === 0
-        ? "未解决的问题条目：没有。"
-        : `未解决的问题条目 ${unresolved.length} 条：\n${unresolved.map((one) => `  ${one.item_id}（修订 ${one.revision_no}）：${one.title}`).join("\n")}`,
+        ? fillText("query.unresolved_none")
+        : fillText("query.unresolved", {
+          count: unresolved.length,
+          list: unresolved.map((one) => `  ${fillText("query.unresolved_item", { item: one.item_id, revision: one.revision_no, title: one.title })}`).join("\n"),
+        }),
     );
     const unread = unreadItems(db, task.task_id, definition.completion,
       (name) => definition.collections.find((c) => c.name === name)?.fields[0]?.name);
     lines.push(
       unread.length === 0
-        ? "未读的条目：没有，每个条目用户都看过。"
-        : `未读的条目 ${unread.length} 条（用户从没打开看过它们；问用户要不要发布版本之前，先告诉用户还有几条没看）：${unreadList(unread)}。`,
+        ? fillText("query.unread_none")
+        : fillText("query.unread", { count: unread.length, list: unreadList(unread) }),
     );
     // 待核实的条目：有助手补充而用户还没有确认的，或者依据的主题待核实、已废弃的；问题条目不列。一个都没有时不写。
     const questions = new Set(definition.collections.filter((one) => keepPendingField(one) !== null).map((one) => one.name));
@@ -257,7 +290,7 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
     if (pending) lines.push(pending);
     // 完成条件之外的提示，不挡发布版本，例如还没有贴标签的主题。
     const hints = completionHints(db, task.task_id, definition.completion);
-    for (const hint of hints) lines.push(`提示（不挡发布版本）：${hint.summary}`);
+    for (const hint of hints) lines.push(fillText("query.hint", { summary: hint.summary }));
     // 材料的分段与引用情况写在修订与事件序号之前，末行仍与看板相同。
     const materials = materialFacts(db, task.task_id, workspaceDir,
       listMaterials(workspaceDir, definition.materialsDir).files.map((f) => f.path), envSegmentParams());
@@ -270,14 +303,14 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
       | { revision_no: number; event_seq: number }
       | undefined;
     lines.push(
-      revision ? `最近一次修订是修订 ${revision.revision_no}（事件序号 ${revision.event_seq}）。` : "交付物还没有任何修订。",
+      revision ? fillText("query.last_revision", { revision: revision.revision_no, seq: revision.event_seq }) : fillText("query.no_revision"),
       lastEventLine(db),
     );
     const last = db.prepare("SELECT MAX(seq) AS seq FROM event").get() as { seq: number | null };
     const dialogue = sessionId ? dialogueFacts(db, task.task_id, sessionId) : null;
     const factLines = dialogue ? dialogueFactLines(dialogue) : [];
     if (factLines.length > 0) lines.push("", ...factLines);
-    // 工作的阶段（任务定义里有总体分析集合时才有）：现在在哪个阶段、这一段还差什么，写在最后。
+    // 工作的阶段（任务定义里有业务说明集合时才有）：现在在哪个阶段、这一段还差什么，写在最后。
     const stage = stageSummary(db, workspaceDir, task.task_id, definition, sessionId ?? null);
     // 开着的提议接在后面一行：用户要求进入、退回或者说看过了时，助手据此知道该请他点「待决定」一行，而不是重发卡片。
     if (stage) lines.push("", ...stageLines(stage), proposalLine(openProposal(db, task.task_id, sessionId ?? null), sessionId ?? null));
@@ -307,26 +340,37 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
 
 /** 材料的分段与引用情况，给「查询任务状态」的文字用。 */
 export function materialLines(materials: MaterialFacts[]): string[] {
-  const lines = ["材料的分段与引用情况（Word 材料按分段清单逐块列出，PDF 材料按分段清单逐段列出；行号是文字版文件里的行号，read 的 offset 用它）："];
+  const lines = [fillText("query.materials_lead")];
   for (const f of materials) {
     if (f.kind === "text") {
-      lines.push(`  ${f.path}：被引用过 ${f.cited} 次。`);
+      lines.push(`  ${fillText("query.material_text", { path: f.path, count: f.cited })}`);
       continue;
     }
     if (f.kind === "pdf") {
-      lines.push(`  ${f.path}（读 ${f.projection}）：共 ${f.pages} 页、${f.units} 块${f.no_text_pages.length ? `，第 ${f.no_text_pages.join("、")} 页没有文字` : ""}，` +
-        (f.uncited === 0 ? "每块都有条目引用。" : `还有 ${f.uncited} 块没有被任何条目引用。`));
+      lines.push(`  ${fillText("query.material_pdf", {
+        path: f.path, projection: f.projection, pages: f.pages, units: f.units,
+        no_text: f.no_text_pages.length ? fillText("query.material_pdf_no_text", { pages: f.no_text_pages.join("、") }) : "",
+        cited: f.uncited === 0 ? fillText("query.material_pdf_all") : fillText("query.material_pdf_some", { count: f.uncited }),
+      })}`);
       for (const b of f.blocks) {
-        lines.push(`    第 ${b.index} 段 第 ${b.first_page}–${b.last_page} 页（第 ${b.first_line}–${b.last_line} 行）${b.heading ? `「${b.heading}」` : ""}：` +
-          `${b.units} 块，被 ${b.items} 个条目引用${b.uncited ? `，${b.uncited} 块没有引用` : ""}。`);
+        lines.push(`    ${fillText("query.material_pdf_block", {
+          index: b.index, first_page: b.first_page, last_page: b.last_page, first_line: b.first_line, last_line: b.last_line,
+          heading: b.heading ? `「${b.heading}」` : "", units: b.units, items: b.items,
+          uncited: b.uncited ? fillText("query.material_pdf_block_uncited", { count: b.uncited }) : "",
+        })}`);
       }
       continue;
     }
-    lines.push(`  ${f.path}（读 ${f.projection}）：共 ${f.text_paragraphs} 段有文字、${f.blocks.length} 块，` +
-      (f.uncited === 0 ? "每段都有条目引用。" : `还有 ${f.uncited} 段没有被任何条目引用。`));
+    lines.push(`  ${fillText("query.material_word", {
+      path: f.path, projection: f.projection, text_paragraphs: f.text_paragraphs, blocks: f.blocks.length,
+      cited: f.uncited === 0 ? fillText("query.material_word_all") : fillText("query.material_word_some", { count: f.uncited }),
+    })}`);
     for (const b of f.blocks) {
-      lines.push(`    第 ${b.index} 块 p${b.first_paragraph}–p${b.last_paragraph}（第 ${b.first_line}–${b.last_line} 行）${b.heading ? `「${b.heading}」` : "（第一个标题之前）"}：` +
-        `${b.paragraphs} 段，被 ${b.items} 个条目引用${b.uncited ? `，${b.uncited} 段没有引用` : ""}。`);
+      lines.push(`    ${fillText("query.material_word_block", {
+        index: b.index, first: b.first_paragraph, last: b.last_paragraph, first_line: b.first_line, last_line: b.last_line,
+        heading: b.heading ? `「${b.heading}」` : fillText("query.material_word_before_heading"), paragraphs: b.paragraphs, items: b.items,
+        uncited: b.uncited ? fillText("query.material_word_block_uncited", { count: b.uncited }) : "",
+      })}`);
     }
   }
   return lines;
@@ -345,7 +389,9 @@ export function reviewFindingLines(db: DatabaseSync, taskId: string, definition:
     for (const row of currentItems(db, taskId, collection)) {
       const { state, basis: last, waiver } = verdictAt(db, taskId, row.item_id, row.revision_no, hash);
       if (state === "waived") {
-        kept.push(`${row.item_id}（修订 ${row.revision_no}${waiver!.reason ? `，理由：${waiver!.reason}` : ""}）`);
+        kept.push(waiver!.reason
+          ? fillText("query.kept_item_reason", { item: row.item_id, revision: row.revision_no, reason: waiver!.reason })
+          : fillText("query.kept_item", { item: row.item_id, revision: row.revision_no }));
         continue;
       }
       if (state !== "failed" || !last) continue;
@@ -353,10 +399,12 @@ export function reviewFindingLines(db: DatabaseSync, taskId: string, definition:
       const findings = (db.prepare("SELECT field, item_index, problem, suggestion, rule_id, level FROM review_finding WHERE review_id = ? ORDER BY ordinal").all(last.review_id) as
         { field: string; item_index: number | null; problem: string; suggestion: string | null; rule_id: string | null; level: string | null }[])
         .map((f) => ({ field: f.field, index: f.item_index, problem: f.problem, suggestion: f.suggestion, rule_id: f.rule_id, level: f.level }));
-      out.push(`  ${row.item_id}（修订 ${row.revision_no}${no ? `，第 ${no} 次评审` : ""}）：`, ...findings.map((f, i) => `    ${i + 1}. ${findingText(f)}`));
+      out.push(`  ${no
+        ? fillText("query.failed_item_batch", { item: row.item_id, revision: row.revision_no, no })
+        : fillText("query.failed_item", { item: row.item_id, revision: row.revision_no })}`, ...findings.map((f, i) => `    ${i + 1}. ${findingText(f)}`));
     }
   }
-  const lines = out.length ? ["评审不通过、还没处理的条目与发现（问题要改；建议告诉用户，由用户定）：", ...out] : ["评审不通过、还没处理的条目：没有。"];
-  if (kept.length) lines.push(`评审不通过、用户保留了写法的条目（这些按用户的决定算通过，不用改；条目再改动，评审要重做）：${kept.join("、")}。`);
+  const lines = out.length ? [fillText("query.findings_lead"), ...out] : [fillText("query.findings_none")];
+  if (kept.length) lines.push(fillText("query.kept", { items: kept.join("、") }));
   return lines;
 }

@@ -16,7 +16,7 @@ import { Hub } from "../src/hub.ts";
 import { dispatch } from "../src/http.ts";
 import * as library from "../src/library.ts";
 import { Service } from "../src/service.ts";
-import { captureConsole, makeLegacyTask, tempDir } from "./helpers.ts";
+import { captureConsole, makePagedTask, tempDir, topicPage } from "./helpers.ts";
 
 captureConsole();
 
@@ -25,6 +25,7 @@ const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "�
 const SAID = "把登录和办证画成一张用例图";
 const useCase = (name: string, what: string) =>
   ({ op: "add", collection: "功能用例", fields: { 用例名称: name, 用例功能: what, 参与者: ["读者"], 基本流程: ["开始"] }, sources: [SOURCE] });
+const PAGE = topicPage("口令", "读者凭口令登录。", SOURCE);
 const MERMAID = 'flowchart LR\n  reader(["读者"])\n  a(["UC-001 登录"])\n  b(["UC-002 办证"])\n  c(["UC-003 挂失"])\n  reader --> a\n  reader --> b';
 
 let tmp: string;
@@ -33,16 +34,17 @@ let ws: string;
 before(() => {
   tmp = tempDir();
   root = join(tmp, "service");
-  ws = makeLegacyTask(join(root, "tasks"), { "材料.md": "读者凭口令登录。" }, [
-    // 任务修订 1：三个用例。
+  // 任务修订 1：业务说明的一页主题（写条目之前要有一页用户看过的主题）。
+  ws = makePagedTask(join(root, "tasks"), { "材料.md": "读者凭口令登录。" }, [PAGE], [
+    // 任务修订 2：三个用例。
     [useCase("登录", "读者登录系统。"), useCase("办证", "读者办借书证。"), useCase("挂失", "读者挂失借书证。")],
     // D-001 修订 1：画了三个用例，依据用户的话与三个用例。
     { said: `${SAID}，谢谢`, diagram: { name: "读者用例", kind: "use_case", mermaid: MERMAID, note: "读者能做的事。",
       sources: [{ kind: "用户的话", excerpt: SAID }, { kind: "条目", locator: "UC-001" }, { kind: "条目", locator: "UC-002" }, { kind: "条目", locator: "UC-003" }] } },
     // D-002 修订 1：一张类图，只有用户的话；之后删掉。
     { said: "再画一张类图", diagram: { name: "借书证", kind: "class", mermaid: "classDiagram\n  class Card", sources: [{ kind: "用户的话", excerpt: "再画一张类图" }] } },
-    // 任务修订 2：UC-001 改了；UC-003 删了。
-    [{ op: "update", item: "UC-001", base_revision: 1, fields: { 用例功能: "读者凭口令登录系统。" } }, { op: "delete", item: "UC-003", base_revision: 1 }],
+    // 任务修订 3：UC-001 改了；UC-003 删了。
+    [{ op: "update", item: "UC-001", base_revision: 2, fields: { 用例功能: "读者凭口令登录系统。" } }, { op: "delete", item: "UC-003", base_revision: 2 }],
     // D-001 修订 2：只改说明，来源沿用。
     { diagram: { diagram: "D-001", base_revision: 1, note: "读者能做的三件事。" } },
     // D-002 修订 2：删除。
@@ -69,17 +71,17 @@ test("图的详情：Mermaid 文本、说明、改动过的修订号；来源与
   assert.deepEqual([one.mermaid, one.note, one.revisions, one.deleted, one.depended_by], [MERMAID, "读者能做的三件事。", [1, 2], false, []]);
   assert.deepEqual(one.sources.map((s) => [s.kind, s.locator, s.excerpt, s.depends_revision, s.current_revision, s.stale]), [
     ["用户的话", one.sources[0].locator, SAID, undefined, undefined, undefined],
-    ["条目", "UC-001", "", 1, 2, "changed"],   // 引用之后改过：依据已变
-    ["条目", "UC-002", "", 1, 1, null],
-    ["条目", "UC-003", "", 1, null, "deleted"], // 引用之后删了
+    ["条目", "UC-001", "", 2, 3, "changed"],   // 引用之后改过：依据已变
+    ["条目", "UC-002", "", 2, 2, null],
+    ["条目", "UC-003", "", 2, null, "deleted"], // 引用之后删了
   ]);
   assert.equal(library.diagramDetail(ws, "D-404"), null);
 });
 
 test("条目依据图：条目的来源带依据的现状（图之后改了是依据已变，删了是已删除），图的详情列出依据它的条目", () => {
   const FLOW = 'flowchart TD\n  a(["UC-001 登录"]) --> b["输入口令"]';
-  /** 任务修订 1 有 UC-001；D-001 是登录的流程图；任务修订 2 新增 UC-002，整个条目依据 D-001；再接 more 里的几步。 */
-  const build = (name: string, more: unknown[]) => makeLegacyTask(join(tmp, name, "tasks"), { "材料.md": "读者凭口令登录。" }, [
+  /** 任务修订 1 是一页主题，修订 2 有 UC-001；D-001 是登录的流程图；任务修订 3 新增 UC-002，整个条目依据 D-001；再接 more 里的几步。 */
+  const build = (name: string, more: unknown[]) => makePagedTask(join(tmp, name, "tasks"), { "材料.md": "读者凭口令登录。" }, [PAGE], [
     [useCase("登录", "读者登录系统。")],
     { said: "把登录画成流程图", diagram: { name: "登录流程", kind: "flowchart", mermaid: FLOW, sources: [{ kind: "用户的话", excerpt: "把登录画成流程图" }, { kind: "条目", locator: "UC-001" }] } },
     [{ ...useCase("找回口令", "读者找回口令。"), sources: [{ kind: "图", locator: "D-001", excerpt: "输入口令" }] }],
@@ -89,7 +91,7 @@ test("条目依据图：条目的来源带依据的现状（图之后改了是�
     .map((s) => [s.kind, s.locator, s.excerpt, s.depends_revision, s.current_revision, s.stale]);
   const fresh = build("figure-fresh", []);
   assert.deepEqual(cited(fresh), [["图", "D-001", "输入口令", 1, 1, null]]);
-  assert.deepEqual(library.diagramDetail(fresh, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 2 }]);
+  assert.deepEqual(library.diagramDetail(fresh, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 3 }]);
   // 条目的「被谁依据」只数依据条目的来源：UC-001 被图依据，UC-002 没有被谁依据。
   const items = new Map(library.taskSnapshot(fresh)[1]!.items.map((one) => [one.item_id, one]));
   assert.deepEqual([items.get("UC-001")!.depended_by, items.get("UC-002")!.depended_by], [[{ element_kind: "图", id: "D-001", revision_no: 1 }], []]);
@@ -98,13 +100,13 @@ test("条目依据图：条目的来源带依据的现状（图之后改了是�
   const deleted = build("figure-deleted", [{ diagram: { diagram: "D-001", base_revision: 1, delete: true } }]);
   assert.deepEqual(cited(deleted), [["图", "D-001", "输入口令", 1, null, "deleted"]]);
   // 删掉的图也给得出详情，依据它的条目还列着。
-  assert.deepEqual(library.diagramDetail(deleted, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 2 }]);
+  assert.deepEqual(library.diagramDetail(deleted, "D-001")!.depended_by, [{ element_kind: "条目", id: "UC-002", revision_no: 3 }]);
 });
 
 test("用户看没看过一张图：图的列表带 viewed；助手改过之后回到没看过；看图的事件写成接口事件 diagram_viewed", () => {
   const FLOW = "flowchart TD\n  s([开始]) --> e([结束])";
   const drawn = (name: string) => ({ said: `画一张${name}`, diagram: { name, kind: "flowchart", mermaid: FLOW, sources: [{ kind: "用户的话", excerpt: `画一张${name}` }] } });
-  const dir = makeLegacyTask(join(tmp, "figure-viewed", "tasks"), { "材料.md": "读者凭口令登录。" }, [
+  const dir = makePagedTask(join(tmp, "figure-viewed", "tasks"), { "材料.md": "读者凭口令登录。" }, [PAGE], [
     drawn("登录流程"), drawn("办证流程"), drawn("挂失流程"),
     // 用户看过 D-001 与 D-002；之后助手改了 D-002。
     { view: ["D-001", "D-002"] },
@@ -144,8 +146,8 @@ test("条目的「被谁依据」里数上依据它的图（只数还在的图�
   assert.deepEqual(items.get("UC-001")!.depended_by, [{ element_kind: "图", id: "D-001", revision_no: 2 }]);
   assert.deepEqual(items.get("UC-002")!.depended_by, [{ element_kind: "图", id: "D-001", revision_no: 2 }]);
   assert.deepEqual(items.get("UC-001")!.sources.map((s) => s.kind), ["文档原文"]);
-  // 任务的修订序号不因为存图而动：两次保存修订，最新是 2。
-  assert.equal(library.taskSnapshot(ws)[1]!.latest_revision, 2);
+  // 任务的修订序号不因为存图而动：三次保存修订，最新是 3。
+  assert.equal(library.taskSnapshot(ws)[1]!.latest_revision, 3);
 });
 
 test("图的事件写成接口事件 diagram_changed：是哪一张、它自己改后的修订号、做了什么、图名、种类与中文名", () => {

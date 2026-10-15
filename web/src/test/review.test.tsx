@@ -46,7 +46,7 @@ const TBD = item({ item_id: "TBD-001", collection: "问题", title: "借期", fi
 
 function task(items: Item[], over: Partial<Task> = {}): Task {
   return {
-    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
+    task_id: "TASK-001", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "",
     definition: { collections: [
       { name: "功能用例", prefix: "UC", needs_review: true, review_rules: RULES, fields: [
         { name: "用例名称", type: "文本", required: true, values: null },

@@ -1,13 +1,13 @@
-// 总体分析那几样计算结果的命令行入口：模拟器的评测（Python）经 Node 子进程调用它，库以只读方式打开。
+// 业务说明那几样计算结果的命令行入口：模拟器的评测（Python）经 Node 子进程调用它，库以只读方式打开。
 // 待核实、提到与各页的情况怎样算只有 agent 里那一份（lib/overall_read.ts 的 overallState），这里不另写一套。
 // 用法：node overall_state.mts <库文件> <任务编号>
-// 输出：{"has_overall": 任务定义里有没有总体分析这个集合,
+// 输出：{"has_overall": 任务定义里有没有业务说明这个集合,
 //        "verification": {条目编号: {pending_verification, pending_sources, pending_places, basis_pending}},
 //        "mentions": {被提到的页的编号: [{item_id, collection, field, index, word, sentence, revision_no}]},
 //        "pages": [{item_id, tagged, deprecated, examples, pending}],
 //        "lamps": {灯的键: {ok, items, summary}}}
 // lamps 是产品自己算出的几盏灯（lib/stage.ts 的 stageLamps），只给下面这十二盏：与图、规则冲突有关的七盏，与问题是否阻断下游、待定标记、各章导语、术语有关的五盏。前七盏要扫图的 Mermaid 文本、
-// 要算规则表，评测不另写一套。ok 为 true 是通过，false 是不通过，null 是不适用。任务定义里没有总体分析集合时是空的。
+// 要算规则表，评测不另写一套。ok 为 true 是通过，false 是不通过，null 是不适用。任务定义里没有业务说明集合时是空的。
 // 任务定义取库里创建任务那一刻的快照。库里没有这个任务时写一句原因到标准错误，退出码 1。
 import { DatabaseSync } from "node:sqlite";
 import { validateDefinition } from "../lib/definition.ts";

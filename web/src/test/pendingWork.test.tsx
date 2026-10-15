@@ -12,7 +12,7 @@ const f = (name: string, type: string, values: string[] | null = null): FieldDef
 const QUESTIONS = { name: "问题", prefix: "TBD", fields: [
   f("事项", "文本"), f("种类", "枚举", ["待澄清", "范围外", "后续迭代"]), f("是否阻断下游", "枚举", ["阻断下游", "不阻断"]), f("何时回看", "文本"),
   f("状态", "枚举", ["未解决", "已解决", "用户决定保留"]), f("关联条目", "条目引用")] };
-const OVERALL = { name: "总体分析", prefix: "OA", fields: [f("标题", "文本"), f("它是什么", "文本"), f("标签", "文本列表")] };
+const OVERALL = { name: "业务说明", prefix: "OA", fields: [f("标题", "文本"), f("它是什么", "文本"), f("标签", "文本列表")] };
 const USE_CASES = { name: "功能用例", prefix: "UC", fields: [f("用例名称", "文本")] };
 
 const item = (id: string, collection: string, title: string, fields: Record<string, unknown> = {}, over: Partial<Item> = {}): Item =>
@@ -32,10 +32,10 @@ const DIAGRAM = { diagram_id: "D-001", name: "自助借书流程", kind: "flowch
 
 function taskOf(over: Partial<TaskDetail> = {}, lamps: StageView["lamps"] = LAMPS): TaskDetail {
   return {
-    task_id: "TASK-P", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
+    task_id: "TASK-P", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "",
     definition: { collections: [QUESTIONS, OVERALL, USE_CASES] }, completion: null, latest_revision: 9,
     items: [
-      item("OA-001", "总体分析", "自助借书"), item("OA-003", "总体分析", "逾期不能续借"),
+      item("OA-001", "业务说明", "自助借书"), item("OA-003", "业务说明", "逾期不能续借"),
       question("TBD-001", "续借次数是否设上限", "阻断下游"), question("TBD-002", "逾期罚款按日累计还是按次计", "阻断下游"),
       question("TBD-003", "预约保留期多长", "不阻断", { 何时回看: "评审确认时" }),
       question("TBD-004", "已经答了的", "阻断下游", { 状态: "已解决" }), question("TBD-005", "以后再说的", "不阻断", { 种类: "后续迭代" }),

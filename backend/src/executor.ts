@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { parseDefinition } from "../../agent/src/lib/task_read.ts";
+import { fillText, textPrefix } from "../../agent/src/lib/texts.ts";
 import * as clock from "./clock.ts";
 import * as conversation from "./conversation.ts";
 import { type DiagramCheck, validateDiagram } from "./diagram_validate.ts";
@@ -129,10 +130,10 @@ export const DIAGRAM_NOT_SAVED_TEXT = "这张图没有保存：";
 export const DIAGRAM_UNCHECKED_TEXT = "这一次没有办法校验 Mermaid 文本，图没有保存。这是程序这边的问题，不是文本写错了。";
 
 /** 「先不管这条」之后发给执行者的固定模板。前缀用来把这句话认成界面操作之后发的话。 */
-export const KEEP_PENDING_NOTICE_PREFIX = "我先不管 ";
+export const KEEP_PENDING_NOTICE_PREFIX = textPrefix("ui_ops.keep_pending_notice");
 
 export function keepPendingNotice(itemIds: string): string {
-  return `${KEEP_PENDING_NOTICE_PREFIX}${itemIds}，请接着往下做。`;
+  return fillText("ui_ops.keep_pending_notice", { items: itemIds });
 }
 
 /** Python 的 d.get(key, fallback)：键不在时给 fallback，键在而值为 null 时仍是 null。 */
@@ -545,7 +546,7 @@ export class Executor {
     for (const key of ["kind", "task_id", "targets", "fields", "notify_executor"]) if (Object.hasOwn(body, key)) command[key] = body[key];
     command.op_id = opId;
     if (truthy(command.notify_executor)) {
-      this.pendingOrigin.set("我已经看过了：", "ui_request");
+      this.pendingOrigin.set(textPrefix("ui_ops.viewed_notice"), "ui_request");
       this.pendingOrigin.set(KEEP_PENDING_NOTICE_PREFIX, "ui_request");
     }
     const result = await this.command("/tw-user", command, opId);
