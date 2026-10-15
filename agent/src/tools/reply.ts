@@ -28,6 +28,7 @@ import { checkQuotes } from "../lib/save_revision.ts";
 import { envKnowledgeRoot } from "../lib/knowledge.ts";
 import { userMessagesOnBranch } from "./save_revision.ts";
 import { activityDoneGate, activityDoneOf } from "../lib/stage_read.ts";
+import { fillText } from "../lib/texts.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = REPLY_TOOL_NAME;
@@ -36,8 +37,8 @@ export const TOOL_NAME = REPLY_TOOL_NAME;
 // 声明成可选之后，缺什么由核对函数用中文逐条说明。说明文字里仍写明哪些项必须写。
 const itemRef = Type.Object(
   {
-    item_id: Type.Optional(Type.String({ description: "条目编号，例如 CON-004。必须写。" })),
-    revision_no: Type.Optional(Type.Integer({ description: "这个条目当前所在的修订号（「UC-001 现在是修订 N」里的 N）。必须写。" })),
+    item_id: Type.Optional(Type.String({ description: fillText("reply.param.item_ref.item_id") })),
+    revision_no: Type.Optional(Type.Integer({ description: fillText("reply.param.item_ref.revision_no") })),
   },
   { additionalProperties: true },
 );
@@ -45,51 +46,39 @@ const itemRef = Type.Object(
 const act = Type.Object(
   {
     kind: Type.Optional(Type.String({
-      description:
-        "向用户要的回应是哪一种，只能是五者之一：ask 是提问，confirm 是请用户确认某几个条目当前的内容，" +
-        "suggest 是给一个建议值，choose 是请用户从几个选项里选一个，propose 是提议下一步怎么做。必须写。" +
-        "是非题用 choose（把答案写成选项）、征求同意或下一步怎么做用 propose、ask 只给用户要自己说出内容的开放问题。",
+      description: fillText("reply.param.act.kind"),
     })),
     text: Type.Optional(Type.String({
-      description: "要用户回应的那句话：你的问题、请用户确认的话、建议或提议，一句完整的话，不是你的答案。必须写。",
+      description: fillText("reply.param.act.text"),
     })),
     items: Type.Optional(
       Type.Array(itemRef, {
-        description:
-          "关联的条目或问题条目，每项写条目编号与它当前所在的修订号。提问（ask）、请确认（confirm）、给建议值（suggest）、" +
-          "提议（propose）必须写；提问、给建议值、提议与任何条目都无关时不写它，改写 scope: \"general\"。请选择（choose）可以不写。",
+        description: fillText("reply.param.act.items"),
       }),
     ),
     scope: Type.Optional(Type.String({
-      description: "只用于提问（ask）、给建议值（suggest）、提议（propose）三种；请选择（choose）与请确认（confirm）不写 scope。取值只有 general：表示这一问、这条建议或提议与任何条目都无关，这时 items 不写。",
+      description: fillText("reply.param.act.scope"),
     })),
     options: Type.Optional(
       Type.Array(Type.Object({ key: Type.Optional(Type.String()), text: Type.Optional(Type.String()) }, { additionalProperties: true }), {
-        description: "只有请选择（choose）写：至少两个选项，每项是 { key, text }，key 不能重复。",
+        description: fillText("reply.param.act.options"),
       }),
     ),
-    value: Type.Optional(Type.String({ description: "只有给建议值（suggest）写，而且必须写：你建议的那个值。" })),
+    value: Type.Optional(Type.String({ description: fillText("reply.param.act.value") })),
     resends: Type.Optional(Type.String({
-      description:
-        "只有提问（ask）与请选择（choose）可以写，只在重发时写：这张卡片是把先前一张用户没有答的卡片再问一遍时，写那一张的行为编号（例如 r3-2，" +
-        "查询任务状态「这一段还开着的提问与请选择」一行里列着）。写了之后原来那张不再等回应。问的是新的事不写。",
+      description: fillText("reply.param.act.resends"),
     })),
     basis: Type.Optional(
       Type.Array(
         Type.Object({ kind: Type.Optional(Type.String()), locator: Type.Optional(Type.String()), excerpt: Type.Optional(Type.String()) }, { additionalProperties: true }),
         {
-          description:
-            "只有给建议值（suggest）写，而且必须写：建议的依据，至少一条。kind 是「文档原文」「用户的话」「助手补充」「条目」「图」之一，" +
-            "locator 是出处，excerpt 是摘录的原文。依据与「保存修订」的来源同一个写法、同一套逐字核对：文档原文写材料路径（Word 材料写段落号），" +
-            "用户的话不写 locator（工具在对话里找到那句话并代填），条目写所依据的那个条目的编号，图写所依据的那张图的编号，助手补充不写 locator、excerpt 写理由。",
+          description: fillText("reply.param.act.basis"),
         },
       ),
     ),
     preview: Type.Optional(
       Type.Array(Type.Object({ effect: Type.Optional(Type.String()), text: Type.Optional(Type.String()) }, { additionalProperties: true }), {
-        description:
-          "只有提议（propose）写：这个提议做下去之后条目会怎样变，每项是 { effect, text }，effect 是 remove、add、change 之一。" +
-          "做下去会改动条目时写，撤掉或大改时必须写。",
+        description: fillText("reply.param.act.preview"),
       }),
     ),
   },
@@ -98,9 +87,9 @@ const act = Type.Object(
 
 const inform = Type.Object(
   {
-    text: Type.Optional(Type.String({ description: "一句完整的话，只写事实（例如你刚保存了什么、材料里写了什么）。必须写。" })),
+    text: Type.Optional(Type.String({ description: fillText("reply.param.informs.text") })),
     items: Type.Optional(Type.Array(itemRef, {
-      description: "告知里说到某个条目时在这里点名它，每项写条目编号与它当前所在的修订号，界面会画成链接；没说到条目就不写。",
+      description: fillText("reply.param.informs.items"),
     })),
   },
   { additionalProperties: true },
@@ -108,30 +97,22 @@ const inform = Type.Object(
 
 const parameters = Type.Object({
   informs: Type.Optional(Type.Array(Type.Union([inform, Type.String()]), {
-    description:
-      "零到多条告知，每条是 { text, items }。告知里说到某个条目时在 items 里点名它，界面会画成链接；告知不等用户回应。" +
-      "必须写；没有要告知的事写空列表。",
+    description: fillText("reply.param.informs"),
   })),
   act: Type.Optional(Type.Union([Type.Null(), act], {
-    description:
-      "向用户要的回应。只在你等用户回应时填：没有它你下一步做不了或不该做。回答用户的问题、汇报你做了什么，都不填，写 null。" +
-      "回答了问题之后，如果还缺信息要问、要用户做决定、或你补了内容要用户看，照样填。" +
-      "填的话，text 写要用户回应的那句话，不是你的答案。必须写这一项，不填时写 null。",
+    description: fillText("reply.param.act"),
   })),
   text: Type.Optional(Type.String({
-    description: "给用户读的成文的话：把告知与向用户要的回应（有的话）连成一段自然的话。必须写，不能是空白。",
+    description: fillText("reply.param.text"),
   })),
   stage: Type.Optional(Type.Union([Type.Null(), Type.String()], {
-    description:
-      "已停用，不要写（写了回复会被拒绝）。阶段不由你移动：往前进入下一段、退回前面的阶段，都用请选择卡片提议，由用户在卡片上点。",
+    description: fillText("reply.param.stage"),
   })),
   reason: Type.Optional(Type.Union([Type.Null(), Type.String()], {
-    description: "已停用，不要写。提议退回前面的阶段时，原因写在那张请选择卡片的问句里。",
+    description: fillText("reply.param.reason"),
   })),
   activity_done: Type.Optional(Type.Union([Type.Null(), Type.Boolean()], {
-    description:
-      "只在本会话的工作项是单项活动（不在工作流程里）、这项活动做够了、你要汇报做完时写 true：回复下面会多一行「助手汇报：某项活动做完了」，工作项照旧留着。" +
-      "别的时候不写。本会话的工作项是工作流程时写了会被拒绝：流程里做完一段，用进入下一段的请选择卡片提议。",
+    description: fillText("reply.param.activity_done"),
   })),
 });
 
@@ -139,15 +120,10 @@ export function registerReply(pi: ExtensionAPI): void {
   pi.registerTool({
     name: TOOL_NAME,
     label: "回复",
-    description:
-      "把你要对用户说的话发给用户。你对用户说的每一句话都要经这个工具发出，不要直接输出正文" +
-      "（你按平台说明「先写理解」一节在文字里写的那份理解不是正文）。" +
-      "这个工具是你本次回应的最后一步：要单独调用它，不要与其他工具在同一轮里一起调用，也不要连着调用两次；" +
-      "调用之后不要再输出任何正文。一次回复由告知与一段成文的话组成；只有需要用户回应时，再加一个向用户要回应的行为" +
-      "（提问、请确认、给建议值、请选择、提议之一）。它只核对形式与条目是否存在，不评判内容；形式不对时它会逐条告诉你哪里不对，请照着改好再调用。",
-    promptSnippet: "把要对用户说的话发给用户，本次回应的最后一步，单独调用",
+    description: fillText("reply.description"),
+    promptSnippet: fillText("reply.snippet"),
     promptGuidelines: [
-      "对用户说的每一句话都经 reply 发出；reply 要单独调用，不与其他工具同一轮，调用之后不再输出正文。",
+      fillText("reply.guideline.1"),
     ],
     parameters,
     executionMode: "sequential",

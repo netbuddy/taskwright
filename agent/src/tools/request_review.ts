@@ -12,6 +12,7 @@ import { runReviews } from "../lib/review_run.ts";
 import { piComplete, reviewSlot } from "../lib/review_ui.ts";
 import { currentRun } from "../lib/dialogue_acts.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
+import { fillText } from "../lib/texts.ts";
 
 export const TOOL_NAME = "request_review";
 
@@ -19,12 +20,12 @@ const parameters = Type.Object({
   items: Type.Optional(Type.Array(
     Type.Object(
       {
-        item_id: Type.Optional(Type.String({ description: "条目编号，例如 UC-001。" })),
-        revision_no: Type.Optional(Type.Integer({ description: "条目当前所在的修订号。" })),
+        item_id: Type.Optional(Type.String({ description: fillText("request_review.param.items.item_id") })),
+        revision_no: Type.Optional(Type.Integer({ description: fillText("request_review.param.items.revision_no") })),
       },
       { additionalProperties: true },
     ),
-    { description: "要评审的条目，每项是 { item_id, revision_no }；不写就评全部待评审的条目。" },
+    { description: fillText("request_review.param.items") },
   )),
 });
 
@@ -32,11 +33,8 @@ export function registerRequestReview(pi: ExtensionAPI): void {
   pi.registerTool({
     name: TOOL_NAME,
     label: "请求评审",
-    description:
-      "只在用户在对话里要求评审时调用，请评审者按规则清单评审条目的当前内容；items 不写就评全部待评审的条目。" +
-      "它逐条返回合规或不合规，以及每条发现（规则编号、字段、问题、改法），发现分问题（必选规则）与建议（可选规则）两类。" +
-      "评审平时由用户在界面上发起，不要主动调用。",
-    promptSnippet: "用户在对话里要求评审时，请评审者按规则清单评审条目",
+    description: fillText("request_review.description"),
+    promptSnippet: fillText("request_review.snippet"),
     parameters,
     executionMode: "sequential",
     async execute(toolCallId: string, params: unknown, signal, _onUpdate, ctx: ExtensionContext) {

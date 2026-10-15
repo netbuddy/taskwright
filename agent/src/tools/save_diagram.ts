@@ -24,6 +24,7 @@ import { isUnderstandingGate, reportStopped, stopAtLimit } from "../lib/rejectio
 import { SAVE_DIAGRAM_TOOL_NAME, type SaveDiagramParams, consecutiveDiagramFailures, saveDiagram, withSourcesKey } from "../lib/save_diagram.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 import { userMessagesOnBranch } from "./save_revision.ts";
+import { fillText } from "../lib/texts.ts";
 
 /** 工具名。`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = SAVE_DIAGRAM_TOOL_NAME;
@@ -32,41 +33,32 @@ const KINDS_TEXT = DIAGRAM_KINDS.map((one) => `${one}（${DIAGRAM_KIND_NAMES[one
 
 const source = Type.Object(
   {
-    kind: Type.String({ description: "来源的种类，只能是「文档原文」「用户的话」「助手补充」「条目」四者之一。" }),
-    locator: Type.Optional(Type.String({ description: "出处：文档原文写文件路径；条目写条目编号。种类是「用户的话」「助手补充」时不写。" })),
-    excerpt: Type.Optional(Type.String({ description: "摘录的原文：用户的话逐字照抄；助手补充在这里写理由。种类是「条目」时可以不写。" })),
+    kind: Type.String({ description: fillText("save_diagram.param.sources.kind") }),
+    locator: Type.Optional(Type.String({ description: fillText("save_diagram.param.sources.locator") })),
+    excerpt: Type.Optional(Type.String({ description: fillText("save_diagram.param.sources.excerpt") })),
   },
   { additionalProperties: true },
 );
 
 const parameters = Type.Object({
-  diagram: Type.Optional(Type.String({ description: "修改或删除一张已有的图时写它的编号，例如 D-001。新画一张图时不写，编号由工具生成。" })),
-  base_revision: Type.Optional(Type.Integer({ description: "修改或删除时写你所见的这张图现在的修订号（图自己的修订号）。新画时不写。" })),
-  name: Type.Optional(Type.String({ description: "图名，一行字。新画时必填。" })),
-  kind: Type.Optional(Type.String({ description: `图的种类，只能是 ${KINDS_TEXT} 之一。新画时必填。用例图用流程图的写法画。` })),
-  mermaid: Type.Optional(Type.String({ description: "Mermaid 文本。新画时必填。图里的节点画的是某个条目时，把条目编号写在节点的文字里，例如 r1([\"REQ-001 提交申请\"])。" })),
-  note: Type.Optional(Type.String({ description: "一两句说明：这张图画的是什么。可以不写。" })),
+  diagram: Type.Optional(Type.String({ description: fillText("save_diagram.param.diagram") })),
+  base_revision: Type.Optional(Type.Integer({ description: fillText("save_diagram.param.base_revision") })),
+  name: Type.Optional(Type.String({ description: fillText("save_diagram.param.name") })),
+  kind: Type.Optional(Type.String({ description: fillText("save_diagram.param.kind", { kinds: KINDS_TEXT }) })),
+  mermaid: Type.Optional(Type.String({ description: fillText("save_diagram.param.mermaid") })),
+  note: Type.Optional(Type.String({ description: fillText("save_diagram.param.note") })),
   sources: Type.Union([Type.Array(source), Type.Null()], {
-    description: "这张图的来源。新画时必填，至少一条：用户要你画图的那句话写一条「用户的话」，画进图里的每个条目各写一条种类为「条目」的来源（出处写条目编号）。" +
-      "不写 supports。修改时写 null 就沿用原来的，写了就是整份替换。删除时写 null。",
+    description: fillText("save_diagram.param.sources"),
   }),
-  delete: Type.Optional(Type.Boolean({ description: "删除这张图时写 true，同时写 diagram 与 base_revision，别的都不写。" })),
+  delete: Type.Optional(Type.Boolean({ description: fillText("save_diagram.param.delete") })),
 });
 
 export function registerSaveDiagram(pi: ExtensionAPI): void {
   pi.registerTool({
     name: TOOL_NAME,
     label: "保存图",
-    description:
-      "保存一张图：新画一张、修改一张已有的图，或者删除一张图。什么时候画图照说明里写的做。" +
-      "图用 Mermaid 文本写，种类是系统边界图（context，用流程图的写法画）、用例图（use_case，用流程图的写法画）、对象关系图（class，用类图的写法画）、" +
-      "状态图（state）、时序图（sequence）、流程图（flowchart）之一。" +
-      "新画一张图时必须写来源（sources），至少一条，不写就不保存。" +
-      "保存前系统校验 Mermaid 文本的写法，不对就不保存，并告诉你第几行附近错在哪里。" +
-      "图的编号由工具生成（D-001 这样）；修改与删除时写图的编号与 base_revision。" +
-      "图里画了某个条目时，把条目编号写在节点的文字里，并给它写一条种类为「条目」的来源。" +
-      "图不是条目：不评审，不算进完成条件。",
-    promptSnippet: "保存一张图（新画、修改或删除），保存前校验 Mermaid 文本",
+    description: fillText("save_diagram.description"),
+    promptSnippet: fillText("save_diagram.snippet"),
     parameters,
     // 没有写 sources 这一项时补成 null：不让 pi 用英文拦下，交给核心函数去核对（见文件开头）。
     prepareArguments: (args) => withSourcesKey(args) as never,

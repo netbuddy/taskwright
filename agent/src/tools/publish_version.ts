@@ -12,6 +12,7 @@ import { lastCompletionClick } from "../lib/completion_consent.ts";
 import { currentRun, requireUnderstanding } from "../lib/dialogue_acts.ts";
 import { isUnderstandingGate, reportStopped, stopAtLimit } from "../lib/rejection_limit.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
+import { fillText } from "../lib/texts.ts";
 
 export const TOOL_NAME = "publish_version";
 
@@ -19,14 +20,10 @@ export function registerPublishVersion(pi: ExtensionAPI): void {
   pi.registerTool({
     name: TOOL_NAME,
     label: "发布版本",
-    description:
-      "完成条件全部满足、用户在卡片上同意之后调用，发布一个版本：记下版本号、发布时的修订号与发布说明，并把这一版生成的文档存下来。" +
-      "它只核对事实：每个条目在当前所在的修订有没有评审通过的记录、用户有没有看过（没有未读的条目）、有没有状态为未解决的问题条目、" +
-      "集合里至少有没有一个条目等，与看板上的完成条件同一组核对；还核对用户同意了发布、同意之后交付物没有新的修订。" +
-      "有没满足的它会拒绝，并逐条告诉你缺什么；这时把缺的告诉用户，不要反复调用。发布之后任务照常可以修改，以后再发布新的一版。",
-    promptSnippet: "完成条件全部满足、用户同意之后，发布一个版本",
+    description: fillText("publish_version.description"),
+    promptSnippet: fillText("publish_version.snippet"),
     parameters: Type.Object({
-      note: Type.Optional(Type.String({ description: "发布说明，一句话，例如「首版，覆盖借阅主流程」；可以不写。" })),
+      note: Type.Optional(Type.String({ description: fillText("publish_version.param.note") })),
     }, { additionalProperties: true }),
     executionMode: "sequential",
     async execute(toolCallId: string, _params: unknown, signal, _onUpdate, ctx: ExtensionContext) {
