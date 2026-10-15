@@ -2,6 +2,9 @@
 // 版本表另在 versions.test.tsx 里测。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { App as AntApp, ConfigProvider } from "antd";
+import { useState } from "react";
+import { ItemsPanel } from "../components/work/ItemsPanel";
 import type { Task } from "../api/types";
 import { api } from "../api/client";
 import { DOCS_LEAD, DocsTab } from "../components/work/DocsTab";
@@ -128,5 +131,45 @@ describe("「文档与版本」页签的两张表", () => {
     const calls = tab(t);
     fireEvent.click(screen.getByTestId("go-unseen-D-001"));
     expect(calls.go).toHaveBeenCalledWith({ kind: "diagram", diagramId: "D-001" });
+  });
+});
+
+describe("「文档与版本」页签在条目区里", () => {
+  function Panel({ t }: { t: Task }) {
+    const [selected, setSelected] = useState<string | null>(null);
+    return (
+      <ConfigProvider><AntApp><div className="app">
+        <ItemsPanel task={t} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected={selected} onSelect={setSelected}
+          submit={vi.fn(async () => null)} onGenerateDoc={() => {}} onPublish={vi.fn(async () => null)} />
+      </div></AntApp></ConfigProvider>
+    );
+  }
+  afterEach(() => window.localStorage.clear());
+
+  it("页签上写发布过几版，页头写「已发布第 N 版」；没有发布过写「还没有发布过」", () => {
+    const t = ready({ versions: [{ version_no: 1, revision_no: 3, published_at: "", actor: "user", note: null, has_markdown: true, has_docx: true },
+      { version_no: 2, revision_no: 9, published_at: "", actor: "user", note: null, has_markdown: true, has_docx: true }] } as unknown as Partial<Task>);
+    const view = render(<Panel t={t} />);
+    expect(screen.getByTestId("pane-docs").textContent).toBe("文档与版本2");
+    fireEvent.click(screen.getByTestId("pane-docs"));
+    expect(screen.getByTestId("docs-latest")).toHaveTextContent("已发布第 2 版");
+    view.unmount();
+    render(<Panel t={ready()} />);
+    fireEvent.click(screen.getByTestId("pane-docs"));
+    expect(screen.getByTestId("docs-latest")).toHaveTextContent("还没有发布过");
+  });
+
+  it("发布前检查里点「去补」：未解决的问题切到需求条目页签的问题子页签；评审没通过切到评审与确认页签", () => {
+    const cond = (collection: string, name: string, missing: string[]) => ({ collection, name, met: false, state: "unmet", done: 0, total: 0, missing, note: "" });
+    const t = overallTask({ completion: { all_met: false, unmet_count: 2, hints: [], conditions: [
+      cond("功能用例", "每个条目评审通过", ["UC-002"]), cond("问题", "没有状态为未解决的条目", ["TBD-001"])] } } as unknown as Partial<Task>);
+    render(<Panel t={t} />);
+    fireEvent.click(screen.getByTestId("pane-docs"));
+    fireEvent.click(screen.getByTestId("go-问题/没有状态为未解决的条目"));
+    expect(screen.getByTestId("pane-items")).toHaveClass("on");
+    expect(screen.getByTestId("item-tabs").querySelector(".itab.on")!.firstChild!.textContent).toBe("问题");
+    fireEvent.click(screen.getByTestId("pane-docs"));
+    fireEvent.click(screen.getByTestId("go-功能用例/每个条目评审通过"));
+    expect(screen.getByTestId("pane-review")).toHaveClass("on");
   });
 });

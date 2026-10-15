@@ -56,3 +56,4 @@
 .app .ap-hints li:first-child { border-top: 0; }
 .app .ap-hints li .ap-lnk { margin-left: auto; white-space: nowrap; }
 .app .ap-table.ap-check td.nm { white-space: nowrap; }
+.app .ap-head .ap-sub { font-size: 0.873rem; color: var(--text3); }

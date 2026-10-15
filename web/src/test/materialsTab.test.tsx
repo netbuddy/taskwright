@@ -48,14 +48,14 @@ function Panel({ t, libraries = LIBS }: { t: Task; libraries?: KnowledgeLibrary[
 }
 
 describe("顶上一排六个页签", () => {
-  it("名字照需求资产六类；数：材料几份（文字版不算）、业务说明几节、分析模型几张、需求条目几条（问题条目不算）；评审与确认不写数，文档与版本发布过写第几版", () => {
+  it("名字照需求资产六类；数：材料几份（文字版不算）、业务说明几节、分析模型几张、需求条目几条（问题条目不算）、发布过几版；评审与确认不写数", () => {
     const t = overallTask();
     vi.spyOn(api, "getTask").mockResolvedValue(detailOf(t));
     render(<Panel t={t} />);
     expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((one) => one.textContent))
-      .toEqual(["材料与证据2", "业务说明11", "分析模型0", "需求条目3", "评审与确认", "文档与版本"]);
+      .toEqual(["材料与证据2", "业务说明11", "分析模型0", "需求条目3", "评审与确认", "文档与版本0"]);
     const published = overallTask({ versions: [{ version_no: 2 }, { version_no: 1 }] as unknown as Task["versions"] });
-    expect(paneCount("docs", published, [])).toBe("第 2 版");
+    expect(paneCount("docs", published, [])).toBe("2");
   });
 
   it("点「材料与证据」：停在那一页，没有集合的子页签与筛选；记下来，下次打开这个任务回到那里；回到需求条目页签，子页签一行回来", async () => {

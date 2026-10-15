@@ -6,7 +6,6 @@ import type { Item, KnowledgeLibrary, Material, Task } from "../api/types";
 import { ownMaterials } from "./docx";
 import { isKnowledgeLocator, knowledgePlace } from "./knowledge";
 import { isDeprecated, isOverall } from "./overall";
-import { latestVersion } from "./versions";
 import { keepPendingField } from "./items";
 
 /** 六个页签的键。 */
@@ -40,8 +39,8 @@ export function requirementItems(task: Task): Item[] {
 }
 
 /**
- * 页签上的数：材料几份、业务说明几节（不算已废弃的页）、分析模型几张、需求条目几条（问题条目不算，它们在需求条目页签的子页签里另计）；
- * 评审与确认不写数；文档与版本发布过时写「第 N 版」。
+ * 页签上的数：材料几份、业务说明几节（不算已废弃的页）、分析模型几张、需求条目几条（问题条目不算，它们在需求条目页签的子页签里另计）、
+ * 文档与版本发布过几版；评审与确认不写数。「第 N 版」写在文档与版本页的页头里。
  */
 export function paneCount(pane: AssetPane, task: Task, materials: Material[]): string | null {
   switch (pane) {
@@ -50,10 +49,7 @@ export function paneCount(pane: AssetPane, task: Task, materials: Material[]): s
     case "models": return String((task.diagrams ?? []).length);
     case "items": return String(requirementItems(task).length);
     case "review": return null;
-    case "docs": {
-      const latest = latestVersion(task);
-      return latest ? `第 ${latest.version_no} 版` : null;
-    }
+    case "docs": return String((task.versions ?? []).length);
   }
 }
 

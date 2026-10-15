@@ -1,5 +1,5 @@
 // 工作台中栏「文档与版本」页签，版式照业务说明的节页（.oa-page）。自上而下：
-//   · 页头「文档与版本」，右边「生成文档」（打开生成文档对话框：选修订、选条目、预览与下载）与「发布第 N 版」。发布的条件与绿色提示条相同
+//   · 页头「文档与版本」与一句「已发布第 N 版」（页签上只写发布过几版），右边「生成文档」（打开生成文档对话框：选修订、选条目、预览与下载）与「发布第 N 版」。发布的条件与绿色提示条相同
 //     （model/docsPage.ts 的 publishOff），不能点时灰着并悬停说明；点了打开条目区里那个发布框（可写发布说明），发出去由工作视图做。
 //   · 文档：「预览」在页里展开最新修订生成的文档（再点收起）；「下载 Word」「下载 Markdown」下载最新修订的整份文档。
 //   · 按章覆盖：文档的各章一行（前七章是业务说明，其后每个集合一章），写节数、条目数、图数、有没有导语，空章标出。
@@ -16,7 +16,7 @@ import { differenceLine, publishOff, traceLine } from "../../model/docsPage";
 import { type GoTarget, checkRows, coverageRows, hints } from "../../model/docsCheck";
 import { toc } from "../../model/chapters";
 import { saveBlob } from "../../model/download";
-import { figuresOf, figuresText, missingArchiveText, nextVersionNo, versionMeta } from "../../model/versions";
+import { figuresOf, figuresText, latestVersion, missingArchiveText, nextVersionNo, versionMeta } from "../../model/versions";
 import { figurePngs } from "../diagram/mermaid";
 import { DocumentPreview } from "../DocumentPreview";
 
@@ -69,6 +69,7 @@ export function DocsTab({ task, readOnly, writesOff, onGenerate, onPublish, publ
     <div className="oa-page ap-page" data-testid="docs-tab">
       <div className="ap-head">
         <h2>文档与版本</h2>
+        <span className="ap-sub" data-testid="docs-latest">{latestVersion(task) ? `已发布第 ${latestVersion(task)!.version_no} 版` : "还没有发布过"}</span>
         <span className="ap-act">
           <button type="button" className="btn sm" onClick={onGenerate} data-testid="docs-generate">生成文档</button>
           {onPublish && (
