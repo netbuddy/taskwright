@@ -5,7 +5,9 @@
     python3 -m taskwright_observatory --sim-root ./sim-runs  # 看模拟器的演练与评测：每一遍演练的任务与会话都收进来
 
 Langfuse 的服务地址与项目标识经命令行参数或环境变量给，不写在代码与配置文件里。
-不给也能用，只是界面上不显示到 Langfuse 的链接。观测台不持有 Langfuse 的密钥，也不调它的接口。
+不给也能用，只是界面上不显示到 Langfuse 的链接。另有环境变量 TASKWRIGHT_LANGFUSE_ENV_FILE 指向一个放 Langfuse 密钥的文件时，
+观测台读这个文件，用 Langfuse 的公开读取接口发只读的 GET，把链接精确到某一次模型请求或工具调用；密钥只在 langfuse.py 里用，
+不进接口返回、页面与日志（详见 langfuse.py 开头）。
 """
 
 from __future__ import annotations
