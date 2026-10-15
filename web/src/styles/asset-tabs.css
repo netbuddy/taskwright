@@ -1,5 +1,5 @@
 /*
- * 工作台中栏按需求资产六类分的页签里，不是集合的几页（材料与证据，以及分析模型、评审与确认、文档与版本）。
+ * 工作台中栏按需求资产六类分的页签里，不是集合的四页：材料与证据、分析模型、评审与确认、文档与版本。
  * 版式沿用业务说明的节页（overall.css 的 .oa-page、.oa-blk、.oa-table、.oa-tablebox），这里只补页头一行、页上的一句说明、
  * 表格里的链接与几处小字；颜色一律引用 styles.css 里的变量。
  */
@@ -20,8 +20,6 @@
 .app .ap-lnk.off { color: var(--text3); cursor: not-allowed; text-decoration: none; }
 .app .ap-note { margin-left: .5rem; font-size: 0.857rem; font-weight: 400; color: var(--text3); }
 .app .ap-foot { display: flex; align-items: center; gap: .7rem; margin-top: .6rem; font-size: 0.873rem; color: var(--text3); }
-/* 还没有做完的页签：一句说明 */
-.app .ap-todo { color: var(--text3); font-size: 0.943rem; }
 
 /* 分析模型：表上一行计数；编号小字；同一种的几行只在第一行写种类，组与组之间的线加深；刚改的行淡黄底 */
 .app .ap-count { font-size: 0.873rem; color: var(--text2); margin-bottom: .5rem; }
@@ -40,3 +38,11 @@
 .app .ap-head .ap-act { margin-left: auto; }
 .app .ap-line { margin: 0; font-size: 0.943rem; }
 .app .ap-line .ap-note { display: block; margin: .2rem 0 0; }
+
+/* 文档与版本：出错的一句；页里展开的文档预览；表格里存档链接后面的小字另起一行 */
+.app .ap-err { margin: .4rem 0 0; font-size: 0.901rem; color: var(--gap); }
+.app .ap-preview { margin-top: .7rem; max-height: 32rem; overflow-y: auto; border: 1px solid var(--line); border-radius: .5rem; background: var(--card); padding: .6rem 1rem; }
+.app .ap-table td.acts .ap-note { display: block; margin: .15rem 0 0; }
+.app .ap-head .ap-act .btn + .btn { margin-left: .4rem; }
+.app .ap-btns { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.app .oa-tablebox + .ap-line { margin-top: .6rem; }

@@ -142,7 +142,7 @@ describe("右侧栏的领域说明页签", () => {
     };
     render(<Wrap><div className="app"><SidePanel side="coll:领域说明" {...props} /></div></Wrap>);
     const tabs = [...document.querySelectorAll(".sw-stab")].map((e) => e.textContent);
-    expect(tabs).toEqual(["材料", "领域说明4", "文档", "修订"]);
+    expect(tabs).toEqual(["材料", "领域说明4", "修订"]);
     const side = screen.getByTestId("side-collection-领域说明");
     expect([...side.querySelectorAll(".grp")].map((e) => e.textContent)).toEqual(["术语", "背景", "角色"]);
     expect(screen.getByTestId("side-entry-DN-004").className).toContain("unl");

@@ -517,7 +517,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty} onDiagramViewed={viewDiagram}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} onPublish={publish}
-                  materials={state.materials} info={service.info} libraries={hasKnowledge === false ? undefined : libraries} onViewMaterial={openMaterial} />
+                  materials={state.materials} info={service.info} libraries={hasKnowledge === false ? undefined : libraries} onViewMaterial={openMaterial}
+                  onShowRevision={(revision) => showRevisions([revision])} />
                 </KnowledgeContext.Provider>
               ) : <div className="pane-items" />}
               <div className="pane-doc">

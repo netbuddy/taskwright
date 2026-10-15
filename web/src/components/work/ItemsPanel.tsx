@@ -1,4 +1,6 @@
-// 条目区，照设计原型：顶上一行集合页签与「生成文档」，下面一行筛选与进度（点开是完成条件），
+// 条目区（工作台中栏），照设计原型：顶上一排六个页签按需求资产分（model/assetTabs.ts），下面一行汇总（点开是完成条件）。
+// 材料与证据、分析模型、评审与确认、文档与版本四页各是一个组件（MaterialsTab、ModelsTab、ReviewTab、DocsTab）；业务说明页签是 overall/ 下的目录加一节。
+// 「需求条目」页签里：集合的子页签一行与「导出 Word」，下面一行筛选，
 // 「还有 N 条未读」的提示与勾选后的批量标为已读，然后是列表；点一行，列表换成这个条目的详情（带「回到列表」）。
 // 打开详情就记为已读（由页面在打开时发 mark_viewed），已读就算确认；未读的行像邮件一样加粗。
 // 问题条目一类的集合（有取值「用户决定保留」的枚举字段）铺成一张张卡片，未解决的带「回答这个问题」「暂不处理」。
@@ -13,7 +15,7 @@
 // 后端核对通过就回应，评审在后台跑，进度与结果由全站提示条报（workToasts.ts）。进度汇总一行写待评审、评审不通过（不含保留的）各几条，
 // 有保留了写法的条目时另写「已保留写法 N」。点开进度看到的完成条件
 // 与任务页是同一个面板，评审那一条旁边有「评审这 N 条」与「打开 X」。
-// 导出 Word：顶上一行「生成文档」旁边的「导出 Word」导出列表里勾选的条目（全部页签里勾中的都算，不只当前页签），一个都没勾时灰；
+// 导出 Word：需求条目页签子页签一行右边的「导出 Word」导出列表里勾选的条目（全部页签里勾中的都算，不只当前页签），一个都没勾时灰；
 // 点了弹对话框（ExportDocxModal.tsx）。导出不改任何东西，所以勾选框在助手工作中、任务结束后也能勾；「标为已读」在这两种时候照旧不能用。
 // 卡片式的集合（问题条目）没有勾选框，导不了。
 // 图：画在业务说明里它说明的那一节、那一章的章首（overall/Figure.tsx）。「分析模型」页签是全部图的索引（ModelsTab.tsx），
@@ -37,6 +39,7 @@ import { initialTab, readTab, saveTab, tabOrder } from "../../model/itemsTab";
 import { ASSET_PANES, type AssetPane, paneCount, paneKey, paneOfCollection, paneOfKey } from "../../model/assetTabs";
 import { MaterialsTab } from "./MaterialsTab";
 import { ReviewTab } from "./ReviewTab";
+import { DocsTab } from "./DocsTab";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
@@ -59,7 +62,7 @@ export { BUSY_TEXT };
 export function ItemsPanel({
   task, initialCollection = null, initialDiagrams = false, initialDiagram = null, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
   onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, review = null, onReview, onPrefill,
-  submitBar = false, onPublish, materials = [], info = null, libraries, onViewMaterial,
+  submitBar = false, onPublish, materials = [], info = null, libraries, onViewMaterial, onShowRevision,
 }: {
   task: Task;
   /** 一打开停在哪个集合的页签（任务页的集合卡带过来的）；不给、或者没有这个集合时是第一个集合。 */
@@ -119,6 +122,8 @@ export function ItemsPanel({
   libraries?: KnowledgeLibrary[] | null;
   /** 「材料与证据」页签上的「查看」：在右侧栏原文定位里打开这份材料。 */
   onViewMaterial?: (path: string) => void;
+  /** 「文档与版本」页签版本表里点「修订 N」：在右侧栏修订页签里选中那次修订。 */
+  onShowRevision?: (revision: number) => void;
 }) {
   // 页签的次序：有总体分析集合时它排最前（model/itemsTab.ts）。
   const collections = useMemo(() => tabOrder(task.definition.collections), [task.definition.collections]);
@@ -343,7 +348,6 @@ export function ItemsPanel({
             </span>
           ))}
           <span className="spacer" />
-          <button type="button" className="btn sm" onClick={onGenerateDoc}>生成文档</button>
           <button type="button" className="btn sm" disabled={!exportItems.length} title={exportItems.length ? undefined : EXPORT_DOCX_HINT} data-testid="export-docx"
             onClick={() => setExporting(true)}>导出 Word{exportItems.length ? `（${exportItems.length}）` : ""}</button>
         </div>
@@ -411,11 +415,9 @@ export function ItemsPanel({
             <button type="button" className="btn sm pri" disabled={!!reviewOff} title={reviewOff} data-testid="review-all"
               onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
           )} />
-        ) : !onCollection ? (
-          <div className="oa-page ap-page" data-testid={`pane-${pane}-body`}>
-            <div className="ap-head"><h2>{ASSET_PANES.find((one) => one.key === pane)!.label}</h2></div>
-            <p className="ap-todo">这一页在后续的提交里完成。</p>
-          </div>
+        ) : pane === "docs" ? (
+          <DocsTab task={task} readOnly={readOnly} writesOff={writesOff} onGenerate={onGenerateDoc} onPublish={onPublish ? () => setConfirmSubmit(true) : undefined}
+            publishError={submitError} onShowRevision={(revision) => onShowRevision?.(revision)} />
         ) : onOverall ? (
           <OverallPane task={task} host={figureHost!} headRequest={headRequest} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
             page={selectedItem && !rawTopic ? (

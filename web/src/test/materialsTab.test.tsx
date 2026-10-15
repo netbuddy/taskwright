@@ -77,15 +77,6 @@ describe("顶上一排六个页签", () => {
     expect(screen.getByTestId("pane-items")).toHaveClass("on");
     expect(screen.getByTestId("item-tabs")).toBeInTheDocument();
   });
-
-  it("还没做完的「文档与版本」页签先写一句说明", () => {
-    const t = overallTask();
-    render(<Panel t={t} />);
-    for (const key of ["docs"]) {
-      fireEvent.click(screen.getByTestId(`pane-${key}`));
-      expect(screen.getByTestId(`pane-${key}-body`)).toHaveTextContent("这一页在后续的提交里完成。");
-    }
-  });
 });
 
 describe("「材料与证据」页签", () => {
