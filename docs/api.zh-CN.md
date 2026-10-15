@@ -395,7 +395,7 @@ data: {
 | `upgrade_pending` | 503 | 启动时发现有上一版留下的数据要先升级，升级还没有做完；这时只有服务信息、升级的两个接口与退出接口可用（见第 9 节） |
 | `forbidden` | 403 | 只接受本机请求的接口收到了从别处来的请求（目前只有 `POST /api/v1/service/exit`，见第 9 节） |
 | `executor_starting` | 503 | pi 正在启动 |
-| `executor_unavailable` | 503 | pi 启动失败（`data.detail`），或者 pi 不在运行时来了没有带 `session` 的直接操作 |
+| `executor_unavailable` | 503 | pi 启动失败（`data.detail`）；交给 pi 的说话、直接操作或新建会话被它拒绝、到时（60 秒）没有回应或者 pi 中途退出了（`data.detail` 是排查用的原话）；或者 pi 不在运行时来了没有带 `session` 的直接操作 |
 | `session_resume_failed` | 503 | 续接或切换之后 pi 接着的不是请求的会话（见 5.6 节）；pi 已停掉，用户的话没有发出去；`data.session_id` 是请求的会话 |
 | `busy_timeout` | 503 | 直接操作交给助手之后 10 秒内没有得到结果；操作可能随后生效，`message` 请用户稍后看是否已经生效，`data.op_id` 是这次操作的编号 |
 | `too_large`、`unsupported_type` | 413、415 | 附件过大（材料超过 5 MB，知识库文档超过 20 MB），或类型不受支持 |

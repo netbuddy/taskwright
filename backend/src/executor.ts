@@ -107,6 +107,17 @@ export function modelUnavailableText(model: string, technical: string): string {
   return `选定的模型「${model}」用不了，${why}。请到设置的「模型」一栏检查。`;
 }
 
+/**
+ * pi 没有接下发给它的一条命令（已经退出、拒绝了、到时没有回应）：转成接口错误「助手现在不可用」，pi 给的原话放进 data.detail，
+ * 页面照 executor_unavailable 说明。别的错误原样抛出。
+ */
+export function piUnavailable(error: unknown): never {
+  if (error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout) {
+    throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technicalOf(error) });
+  }
+  throw error;
+}
+
 export function newId(prefix: string): string {
   return prefix + randomUUID().replaceAll("-", "").slice(0, 12);
 }
@@ -417,8 +428,13 @@ export class Executor {
       } else {
         this.busyCheck(null);
         const pi = this.pi!;
-        await pi.request("new_session");
-        const state = await pi.getState();
+        let state: Dict;
+        try {
+          await pi.request("new_session");
+          state = await pi.getState();
+        } catch (error) {
+          piUnavailable(error);
+        }
         await this.ensureModel(pi, state);
         this.adopt(state);
         this.cursor = null;
@@ -489,8 +505,7 @@ export class Executor {
       try {
         await this.pi!.request("prompt", { message: text });
       } catch (error) {
-        if (error instanceof PiExited || error instanceof PiRefused) throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: technicalOf(error) });
-        throw error;
+        piUnavailable(error);
       }
     });
     return false;
@@ -611,7 +626,11 @@ export class Executor {
     try {
       await this.lock.run(async () => {
         if (!this.running()) throw new ApiError("executor_unavailable", "助手现在不可用。", { detail: "pi 没有在跑" });
-        await this.pi!.request("prompt", { message: `${name} ` + pyDumps(command) });
+        try {
+          await this.pi!.request("prompt", { message: `${name} ` + pyDumps(command) });
+        } catch (error) {
+          piUnavailable(error);
+        }
       });
       const timeout = new Promise<null>((ok) => (timer = setTimeout(() => ok(null), executorSettings.actionTimeout)));
       const result = await Promise.race([answered, timeout]);
