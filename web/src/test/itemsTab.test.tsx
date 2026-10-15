@@ -24,8 +24,10 @@ function Panel({ t, collection = null, diagrams = false, first = null }: { t: Ta
     </div></Wrap>
   );
 }
-const tabs = () => [...document.querySelectorAll(".itab")].map((t) => t.textContent!.replace(/\d+$/, ""));
-const onTab = () => document.querySelector(".itab.on")!.textContent!.replace(/\d+$/, "");
+/** 需求条目页签里一排子页签（集合）的名字。 */
+const tabs = () => [...document.querySelectorAll("[data-testid=item-tabs] .itab")].map((t) => t.textContent!.replace(/\d+$/, ""));
+/** 停在哪里：停在需求条目页签时是哪个子页签，否则是顶上一排里的哪一个。 */
+const onTab = () => (document.querySelector("[data-testid=item-tabs] .itab.on") ?? document.querySelector("[data-testid=asset-tabs] .itab.on"))!.textContent!.replace(/\d+$/, "");
 /** 早先的任务：集合叫领域说明，排在任务定义里原来的位置。 */
 function oldTask(): Task {
   const t = overallTask();
@@ -44,10 +46,11 @@ describe("页签的次序", () => {
   it("有总体分析集合时它排最前，其余照任务定义的先后；没有图表页签", () => {
     expect(tabOrder(overallTask().definition.collections).map((c) => c.name)).toEqual(["总体分析", "功能用例", "问题"]);
     render(<Panel t={overallTask()} />);
-    // 总体分析这个集合的页签显示成「业务说明」。
-    expect(tabs()).toEqual(["业务说明", "功能用例", "问题"]);
+    // 顶上一排是需求资产六类；业务说明那一个集合在「业务说明」页签里，其余集合是「需求条目」页签里的子页签。
+    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((t) => t.firstChild!.textContent)).toEqual(["材料与证据", "业务说明", "分析模型", "需求条目", "评审与确认", "文档与版本"]);
+    expect(tabs()).toEqual(["功能用例", "问题"]);
     expect(screen.queryByTestId("diagrams-tab")).toBeNull();
-    expect(screen.getByText("业务说明", { selector: ".itab" }).querySelector(".cnt")!.textContent).toBe("11");
+    expect(screen.getByTestId("pane-description").querySelector(".cnt")!.textContent).toBe("11");
   });
 
   it("早先的任务次序不变，图表页签照旧在最后", () => {

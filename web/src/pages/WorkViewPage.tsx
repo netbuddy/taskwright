@@ -516,7 +516,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty} onDiagramViewed={viewDiagram}
                   unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
-                  submitBar={showSubmitBar(task, working, state.messages)} onPublish={publish} />
+                  submitBar={showSubmitBar(task, working, state.messages)} onPublish={publish}
+                  materials={state.materials} info={service.info} libraries={hasKnowledge === false ? undefined : libraries} onViewMaterial={openMaterial} />
                 </KnowledgeContext.Provider>
               ) : <div className="pane-items" />}
               <div className="pane-doc">

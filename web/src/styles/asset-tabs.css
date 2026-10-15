@@ -1,0 +1,24 @@
+/*
+ * 工作台中栏按需求资产六类分的页签里，不是集合的几页（材料与证据，以及分析模型、评审与确认、文档与版本）。
+ * 版式沿用业务说明的节页（overall.css 的 .oa-page、.oa-blk、.oa-table、.oa-tablebox），这里只补页头一行、页上的一句说明、
+ * 表格里的链接与几处小字；颜色一律引用 styles.css 里的变量。
+ */
+.app .ap-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .35rem; }
+.app .ap-head h2 { font-family: var(--font-title); font-weight: 600; font-size: 1.35rem; margin: 0; }
+.app .ap-head .ant-upload-wrapper, .app .ap-head > .btn:first-of-type { margin-left: auto; }
+.app .ap-lead { font-size: 0.873rem; color: var(--text3); margin: 0 0 1.4rem; max-width: 46rem; }
+.app .ap-table tbody tr { cursor: default; }
+.app .ap-table tbody tr:hover { background: transparent; }
+.app .ap-table td.nm { font-weight: 500; }
+.app .ap-table td.nm .fic { color: var(--text3); margin-right: .4rem; }
+.app .ap-table td.mut { color: var(--text3); }
+.app .ap-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.app .ap-table td.acts { white-space: nowrap; text-align: right; }
+.app .ap-lnk { color: var(--blue); cursor: pointer; }
+.app .ap-lnk + .ap-lnk { margin-left: .7rem; }
+.app .ap-lnk:hover { text-decoration: underline; }
+.app .ap-lnk.off { color: var(--text3); cursor: not-allowed; text-decoration: none; }
+.app .ap-note { margin-left: .5rem; font-size: 0.857rem; font-weight: 400; color: var(--text3); }
+.app .ap-foot { display: flex; align-items: center; gap: .7rem; margin-top: .6rem; font-size: 0.873rem; color: var(--text3); }
+/* 还没有做完的页签：一句说明 */
+.app .ap-todo { color: var(--text3); font-size: 0.943rem; }

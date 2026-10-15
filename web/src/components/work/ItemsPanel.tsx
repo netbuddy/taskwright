@@ -26,7 +26,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input, Modal } from "antd";
-import type { DiagramRow, Item, Task } from "../../api/types";
+import type { DiagramRow, Item, KnowledgeLibrary, Material, ServiceInfo, Task } from "../../api/types";
 import type { ReviewRun } from "../../state/workState";
 import { BUSY_TEXT, FILTERS, failedReview, isEmptyValue, isUnread, keptReview, keepPendingField, matchesFilter, needsReading, pendingReview, reviewOffReason, summaryOf, unreadItems, writeOffReason, type ItemFilter } from "../../model/items";
 import { CompletionPanel } from "../CompletionPanel";
@@ -35,7 +35,9 @@ import { ItemStatus } from "./ItemStatus";
 import { submitQuestion, submitTitle } from "../../model/submit";
 import { changesAfter, changesLine, nextVersionNo } from "../../model/versions";
 import { unlinkedIds } from "../../model/domainNotes";
-import { DIAGRAMS_TAB, initialTab, saveTab, tabOrder } from "../../model/itemsTab";
+import { DIAGRAMS_TAB, initialTab, readTab, saveTab, tabOrder } from "../../model/itemsTab";
+import { ASSET_PANES, type AssetPane, paneCount, paneKey, paneOfCollection, paneOfKey } from "../../model/assetTabs";
+import { MaterialsTab } from "./MaterialsTab";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
@@ -58,7 +60,7 @@ export { BUSY_TEXT };
 export function ItemsPanel({
   task, initialCollection = null, initialDiagrams = false, initialDiagram = null, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
   onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, review = null, onReview, onPrefill,
-  submitBar = false, onPublish,
+  submitBar = false, onPublish, materials = [], info = null, libraries, onViewMaterial,
 }: {
   task: Task;
   /** 一打开停在哪个集合的页签（任务页的集合卡带过来的）；不给、或者没有这个集合时是第一个集合。 */
@@ -111,6 +113,13 @@ export function ItemsPanel({
   submitBar?: boolean;
   /** 发布一个版本（工作视图做：生成图、发请求）；返回被拒的原因，成了是 null。不给时提示条上的按钮不能点。 */
   onPublish?: (note: string) => Promise<string | null>;
+  /** 工作台手里的材料清单（随事件流更新）：「材料与证据」页签上的份数，它变了那一页重取任务详情。 */
+  materials?: Material[];
+  info?: ServiceInfo | null;
+  /** 知识库清单（「材料与证据」页签用）；服务没有知识库这一功能时不给，还没取到时是 null。 */
+  libraries?: KnowledgeLibrary[] | null;
+  /** 「材料与证据」页签上的「查看」：在右侧栏原文定位里打开这份材料。 */
+  onViewMaterial?: (path: string) => void;
 }) {
   // 页签的次序：有总体分析集合时它排最前（model/itemsTab.ts）。
   const collections = useMemo(() => tabOrder(task.definition.collections), [task.definition.collections]);
@@ -119,6 +128,13 @@ export function ItemsPanel({
   // 任务里只有总体分析有内容就停在总体分析，否则停在它之外的第一个集合。
   const [opened] = useState(() => initialTab(task, { selected, collection: initialCollection, diagrams: initialDiagrams || !!initialDiagram }));
   const [tab, setTab] = useState<string>(opened.tab);
+  // 顶上一排六个页签停在哪一个（model/assetTabs.ts）：业务说明与需求条目两个页签里是集合（tab 是哪个集合），另外四个不是。
+  // 一打开：地址里带了条目、集合或图，或者浏览器记着的是一个集合时，跟着那个集合走；记着的是另外四个页签之一时停在那里。
+  const [pane, setPane] = useState<AssetPane>(() =>
+    (!selected && !initialCollection && !initialDiagrams && !initialDiagram && paneOfKey(readTab(task.task_id))) || paneOfCollection(opened.tab));
+  /** 需求条目页签里上次停的集合：从别的页签回来时回到它。 */
+  const lastItemsTab = useRef<string | null>(isOverall(opened.tab) ? null : opened.tab);
+  if (!isOverall(tab)) lastItemsTab.current = tab;
   // 图表页签：是不是停在它上面、打开着哪一张图。选中了条目时不算停在图表页签。
   const [showDiagrams, setShowDiagrams] = useState(opened.diagrams);
   const [diagram, setDiagram] = useState<string | null>(initialDiagram);
@@ -159,10 +175,20 @@ export function ItemsPanel({
   const onDiagrams = !selectedItem && showDiagrams;
   const activeTab = selectedItem?.collection ?? tab;
   // 停在「业务说明」页签（总体分析这个集合）：主体不是列表，是目录加一节（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
-  const onOverall = !onDiagrams && isOverall(activeTab);
-  const noList = onDiagrams || onOverall;
+  const onCollection = pane === "description" || pane === "items";
+  const onOverall = pane === "description" && !onDiagrams && isOverall(activeTab);
+  // 停在需求条目页签的列表上才有筛选、未读提示与批量条。
+  const noList = pane !== "items" || onDiagrams || onOverall;
   // 记住这个任务停在哪个页签（存在浏览器本地），下次打开这个任务回到这里。
-  useEffect(() => { saveTab(task.task_id, onDiagrams ? DIAGRAMS_TAB : activeTab); }, [task.task_id, onDiagrams, activeTab]);
+  useEffect(() => { saveTab(task.task_id, !onCollection ? paneKey(pane) : onDiagrams ? DIAGRAMS_TAB : activeTab); }, [task.task_id, pane, onCollection, onDiagrams, activeTab]);
+  /** 点顶上一排的页签。离开集合页签时关掉打开着的条目；进需求条目回到上次停的集合。 */
+  const openPane = (next: AssetPane) => {
+    setPane(next);
+    setShowDiagrams(false);
+    onSelect(null);
+    if (next === "description") setTab(OVERALL_COLLECTION);
+    if (next === "items") setTab(lastItemsTab.current ?? collections.find((c) => !isOverall(c.name))?.name ?? tab);
+  };
   const diagramCount = (task.diagrams ?? []).length;
   // 有总体分析集合的任务，图在业务说明里；别的任务才有图表页签。
   const hasOverall = collections.some((c) => isOverall(c.name));
@@ -175,6 +201,7 @@ export function ItemsPanel({
     const home = diagramId ? figureHome(task, all, diagramId) : firstFigureHome(task, all);
     const seq = (requests.current += 1);
     setTab(OVERALL_COLLECTION);
+    setPane("description");
     setFigureFocus(diagramId && home ? { diagramId, seq } : null);
     if (home?.where === "section") { onSelect(home.itemId); return; }
     onSelect(null);
@@ -183,7 +210,7 @@ export function ItemsPanel({
   /** 打开一张图（null 是图的列表，或者业务说明里第一处有图的地方）。没有总体分析的任务：取消选中的条目，切到图表页签。 */
   const openDiagram = (diagramId: string | null) => {
     if (hasOverall) { goFigure(diagramId); return; }
-    onSelect(null); setShowDiagrams(true); setDiagram(diagramId);
+    onSelect(null); setPane("items"); setShowDiagrams(true); setDiagram(diagramId);
   };
   // 地址里要看图（tab=diagrams、diagram=D-001）：一打开就去那里。地址里同时选中了条目时以条目为准。
   useEffect(() => { if (hasOverall && !selected && (initialDiagrams || initialDiagram)) goFigure(initialDiagram); }, []);
@@ -194,7 +221,7 @@ export function ItemsPanel({
   useEffect(() => {
     if (!selected) return;
     const item = task.items.find((i) => i.item_id === selected);
-    if (item) { setTab(item.collection); setShowDiagrams(false); if (!matchesFilter(item, filter, task)) setFilter("all"); }
+    if (item) { setTab(item.collection); setPane(paneOfCollection(item.collection)); setShowDiagrams(false); if (!matchesFilter(item, filter, task)) setFilter("all"); }
     document.querySelector(".app .items-body")?.scrollTo({ top: 0 });
   }, [selected]);
   // 换到别的条目或回到列表：不再是从问题跳来的。
@@ -207,7 +234,7 @@ export function ItemsPanel({
     return () => clearTimeout(t);
   }, [scrollTo]);
   // 卡片上点了「还有 N 条未读 · 筛出来看」。
-  useEffect(() => { if (unreadRequest > 0) { setFilter("unread"); onSelect(null); } }, [unreadRequest]);
+  useEffect(() => { if (unreadRequest > 0) { setFilter("unread"); onSelect(null); if (pane !== "items") openPane("items"); } }, [unreadRequest]);
   // 库事件改过的条目闪一下。
   useEffect(() => {
     if (!recentlyChanged.length) return;
@@ -257,7 +284,7 @@ export function ItemsPanel({
   const backToIssue = (issueId: string) => {
     const issue = task.items.find((i) => i.item_id === issueId);
     setFromIssue(null);
-    if (issue) { setTab(issue.collection); if (!matchesFilter(issue, filter)) setFilter("all"); }
+    if (issue) { setTab(issue.collection); setPane(paneOfCollection(issue.collection)); if (!matchesFilter(issue, filter)) setFilter("all"); }
     onSelect(null);
     setScrollTo((s) => ({ id: issueId, n: (s?.n ?? 0) + 1 }));
   };
@@ -293,28 +320,42 @@ export function ItemsPanel({
   return (
     <div className="pane-items" data-testid="items-panel">
       {writesOff && <div className="sw-busy-banner" data-testid="busy-banner"><span className="spin" />{BUSY_TEXT}</div>}
-      <div className="itabs">
-        {collections.map((c) => (
-          <span key={c.name} className={`itab${!onDiagrams && c.name === activeTab ? " on" : ""}`} role="tab"
-            onClick={() => { setTab(c.name); setShowDiagrams(false); onSelect(null); }}>
-            {collectionLabel(c.name)}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
-            {hit && hitsIn(c.name) > 0 && <span className="sw-hitn" title={`修订 ${hit.revision} 碰到这个页签里 ${hitsIn(c.name)} 个条目`} data-testid={`hit-count-${c.name}`}>{hitsIn(c.name)}</span>}
-          </span>
-        ))}
-        {!hasOverall && (
-          <span className={`itab${onDiagrams ? " on" : ""}`} role="tab" onClick={() => openDiagram(null)} data-testid="diagrams-tab">
-            图表<span className="cnt">{diagramCount}</span>
-          </span>
-        )}
-        <span className="spacer" />
-        <button type="button" className="btn sm" onClick={onGenerateDoc}>生成文档</button>
-        <button type="button" className="btn sm" disabled={!exportItems.length} title={exportItems.length ? undefined : EXPORT_DOCX_HINT} data-testid="export-docx"
-          onClick={() => setExporting(true)}>导出 Word{exportItems.length ? `（${exportItems.length}）` : ""}</button>
-        {onReview && (
-          <button type="button" className="btn sm pri" disabled={!!reviewOff} title={reviewOff} data-testid="review-all"
-            onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
-        )}
+      <div className="itabs" role="tablist" data-testid="asset-tabs">
+        {ASSET_PANES.map((one) => {
+          const count = paneCount(one.key, task, materials);
+          const hits = one.key === "description" ? hitsIn(OVERALL_COLLECTION) : one.key === "items" ? collections.filter((c) => !isOverall(c.name)).reduce((n, c) => n + hitsIn(c.name), 0) : 0;
+          return (
+            <span key={one.key} className={`itab${pane === one.key ? " on" : ""}`} role="tab" onClick={() => openPane(one.key)} data-testid={`pane-${one.key}`}>
+              {one.label}{count !== null && <span className="cnt">{count}</span>}
+              {hit && hits > 0 && <span className="sw-hitn" title={`修订 ${hit.revision} 碰到这个页签里 ${hits} 个条目`} data-testid={`hit-count-${one.key}`}>{hits}</span>}
+            </span>
+          );
+        })}
       </div>
+      {pane === "items" && (
+        <div className="itabs" role="tablist" data-testid="item-tabs">
+          {collections.filter((c) => !isOverall(c.name)).map((c) => (
+            <span key={c.name} className={`itab${!onDiagrams && c.name === activeTab ? " on" : ""}`} role="tab"
+              onClick={() => { setTab(c.name); setShowDiagrams(false); onSelect(null); }}>
+              {collectionLabel(c.name)}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
+              {hit && hitsIn(c.name) > 0 && <span className="sw-hitn" title={`修订 ${hit.revision} 碰到这个页签里 ${hitsIn(c.name)} 个条目`} data-testid={`hit-count-${c.name}`}>{hitsIn(c.name)}</span>}
+            </span>
+          ))}
+          {!hasOverall && (
+            <span className={`itab${onDiagrams ? " on" : ""}`} role="tab" onClick={() => openDiagram(null)} data-testid="diagrams-tab">
+              图表<span className="cnt">{diagramCount}</span>
+            </span>
+          )}
+          <span className="spacer" />
+          <button type="button" className="btn sm" onClick={onGenerateDoc}>生成文档</button>
+          <button type="button" className="btn sm" disabled={!exportItems.length} title={exportItems.length ? undefined : EXPORT_DOCX_HINT} data-testid="export-docx"
+            onClick={() => setExporting(true)}>导出 Word{exportItems.length ? `（${exportItems.length}）` : ""}</button>
+          {onReview && (
+            <button type="button" className="btn sm pri" disabled={!!reviewOff} title={reviewOff} data-testid="review-all"
+              onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
+          )}
+        </div>
+      )}
       <div className="filters">
         {!noList && FILTERS.map((f) => (
           <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : f.key === "review_passed" || f.key === "review_kept" ? " okf" : ""}`}
@@ -378,7 +419,14 @@ export function ItemsPanel({
       ) : null)}
       <ExportDocxModal open={exporting} task={task} items={exportItems} onClose={() => setExporting(false)} />
       <div className={`items-body${onOverall ? " oa-body" : ""}`}>
-        {onDiagrams ? (
+        {pane === "materials" ? (
+          <MaterialsTab task={task} materials={materials} info={info} libraries={libraries} readOnly={readOnly} onView={(path) => onViewMaterial?.(path)} />
+        ) : !onCollection ? (
+          <div className="oa-page ap-page" data-testid={`pane-${pane}-body`}>
+            <div className="ap-head"><h2>{ASSET_PANES.find((one) => one.key === pane)!.label}</h2></div>
+            <p className="ap-todo">这一页在后续的提交里完成。</p>
+          </div>
+        ) : onDiagrams ? (
           <DiagramsPane task={task} selected={diagram} onSelect={setDiagram} readOnly={readOnly} writesOff={writesOff} latestRevision={latestRevision}
             submit={submit} onLocate={onLocate} onOpenItem={(id) => openItem(id)} onDirty={onDiagramDirty} />
         ) : onOverall ? (

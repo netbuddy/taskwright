@@ -31,14 +31,15 @@ const chapter = (no: number) => screen.getByTestId(`toc-chapter-${no}`);
 describe("条目区的「业务说明」页签", () => {
   it("总体分析这个集合的页签显示成「业务说明」；主体是目录加一节两栏；筛选与未读提示不显示，进度汇总照旧；切到别的页签又是列表", () => {
     render(<Panel t={overallTask()} />);
-    expect([...document.querySelectorAll(".itab")].map((tab) => tab.textContent)[0]).toBe("业务说明11");
+    expect(screen.getByTestId("pane-description")).toHaveClass("on");
+    expect(screen.getByTestId("pane-description").textContent).toBe("业务说明11");
     expect(screen.getByTestId("overall-pane")).toBeInTheDocument();
     expect(screen.getByTestId("toc")).toBeInTheDocument();
     expect(document.querySelector(".items-body")).toHaveClass("oa-body");
     expect(document.querySelectorAll(".filt").length).toBe(0);
     expect(screen.queryByTestId("unread-bar")).toBeNull();
     expect(screen.getByTestId("progress")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("功能用例", { selector: ".itab" }));
+    fireEvent.click(screen.getByTestId("pane-items"));
     expect(screen.queryByTestId("overall-pane")).toBeNull();
     expect(document.querySelector(".items-body")).not.toHaveClass("oa-body");
     expect(document.querySelectorAll(".filt").length).toBeGreaterThan(0);
@@ -139,7 +140,7 @@ describe("目录", () => {
     expect(row("OA-002")).not.toHaveClass("cur");
     expect(screen.queryByTestId("overall-intro")).toBeNull();
     expect(screen.getByTestId("toc")).toBeInTheDocument();
-    expect(document.querySelector(".itab.on")!.textContent).toBe("业务说明11");
+    expect(screen.getByTestId("pane-description")).toHaveClass("on");
   });
 
   it("已废弃的页在目录里划掉，不占节号，不进汇总", () => {

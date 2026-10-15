@@ -13,6 +13,7 @@ import "./styles/docx.css";
 import "./styles/pdf.css";
 import "./styles/overall.css";
 import "./styles/stage.css";
+import "./styles/asset-tabs.css";
 
 // 浏览器太旧时入口页（index.html）里的检查已经在页面上写了一句话，这里就不画页面了。
 if (!(window as { __taskwrightUnsupportedBrowser?: boolean }).__taskwrightUnsupportedBrowser) {

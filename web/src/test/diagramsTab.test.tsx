@@ -81,7 +81,7 @@ describe("图表页签与列表", () => {
     render(panel(task(undefined)));
     const tab = screen.getByTestId("diagrams-tab");
     expect(tab.textContent).toBe("图表0");
-    expect([...document.querySelectorAll(".itab")].map((one) => one.textContent)).toEqual(["功能用例2", "图表0"]);
+    expect([...document.querySelectorAll("[data-testid=item-tabs] .itab")].map((one) => one.textContent)).toEqual(["功能用例2", "图表0"]);
     expect(tab.classList.contains("on")).toBe(false);
     fireEvent.click(tab);
     expect(tab.classList.contains("on")).toBe(true);
