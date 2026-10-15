@@ -33,9 +33,11 @@ function taskDir(events: [string, Dict][], acts: [string, string][] = []): strin
   const db = new DatabaseSync(join(dir, DB_NAME));
   try {
     db.exec("CREATE TABLE event (seq INTEGER PRIMARY KEY, session_id TEXT, name TEXT, payload TEXT)");
-    db.exec("CREATE TABLE dialogue_act (session_id TEXT, act_id TEXT, confidence TEXT)");
+    // 只建读取时用到的几列（与任务库里的对话行为表同名）。
+    db.exec("CREATE TABLE dialogue_act (session_id TEXT, act_id TEXT, confidence TEXT, task_id TEXT, speaker TEXT, origin TEXT, responds_to TEXT, " +
+      "expects_response INTEGER, source_entry TEXT)");
     events.forEach(([name, payload], i) => db.prepare("INSERT INTO event VALUES (?, ?, ?, ?)").run(i + 1, SESSION, name, JSON.stringify(payload)));
-    for (const [actId, confidence] of acts) db.prepare("INSERT INTO dialogue_act VALUES (?, ?, ?)").run(SESSION, actId, confidence);
+    for (const [actId, confidence] of acts) db.prepare("INSERT INTO dialogue_act (session_id, act_id, confidence) VALUES (?, ?, ?)").run(SESSION, actId, confidence);
   } finally {
     db.close();
   }

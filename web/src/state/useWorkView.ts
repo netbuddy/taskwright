@@ -2,6 +2,7 @@
 // 收到 resync 或发现库事件序号有缺口时，状态回到「等整份数据」，这里就再读一次。
 // 断线重连时带上已应用到的库事件序号（Last-Event-ID），由后端从它之后补发。
 // 修订日志（GET …/revisions）不在整份数据里：整份数据到了读一次，之后最新修订号变了、或一次工作结束时再读一次。
+// 整份数据因为助手正在启动、或者助手正在另一条会话里工作而读不到时，隔 3 秒自动再读，直到读到或者换成别的错误。
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
@@ -10,6 +11,7 @@ import { useService } from "../components/ServiceControls";
 import { forgetPdf } from "./pdfStore";
 import { initialWorkState, workReducer, type WorkAction, type WorkState } from "./workState";
 import type { RevisionLogEntry } from "../api/types";
+import { SNAPSHOT_RETRY_CODES, SNAPSHOT_RETRY_MS } from "./snapshotRetry";
 
 export interface WorkView {
   state: WorkState;
@@ -35,21 +37,38 @@ export function useWorkView(taskId: string, sessionId: string): WorkView {
   const { markExited } = useService();
   const exiting = useRef(markExited);
   exiting.current = markExited;
+  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadRef = useRef<() => Promise<void>>(async () => {});
 
   const loadSnapshot = useCallback(async () => {
     if (loading.current) return;
     loading.current = true;
+    if (retry.current) clearTimeout(retry.current);
+    retry.current = null;
     try {
       const snapshot = await api.snapshot(taskId, sessionId);
       setLoadError(null);
       setLoadErrorCode(null);
       dispatch({ type: "snapshot", snapshot });
     } catch (error) {
+      const code = error instanceof ApiError ? error.code : null;
       setLoadError(error instanceof ApiError ? error.message : String(error));
-      setLoadErrorCode(error instanceof ApiError ? error.code : null);
+      setLoadErrorCode(code);
+      if (code !== null && SNAPSHOT_RETRY_CODES.includes(code)) {
+        retry.current = setTimeout(() => {
+          retry.current = null;
+          if (stateRef.current.phase === "waiting_snapshot") void reloadRef.current();
+        }, SNAPSHOT_RETRY_MS);
+      }
     } finally {
       loading.current = false;
     }
+  }, [taskId, sessionId]);
+  reloadRef.current = loadSnapshot;
+  // 换了任务或会话、离开页面时，没到时的自动再读不再做。
+  useEffect(() => () => {
+    if (retry.current) clearTimeout(retry.current);
+    retry.current = null;
   }, [taskId, sessionId]);
 
   useEffect(() => {

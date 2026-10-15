@@ -62,9 +62,16 @@ export function dataDirectory(given?: string | null, tasks?: string | null, env:
   return userDataDir();
 }
 
-/** 日志目录：服务的日志除了写标准输出，也写一份到这里（双击启动时没有终端）。 */
-export function logDir(): string {
-  return join(userDataDir(), "logs");
+/** 指定日志目录的环境变量。 */
+export const ENV_LOG_DIR = "TASKWRIGHT_LOG_DIR";
+
+/**
+ * 日志目录：服务的日志除了写标准输出，也写一份到这里（双击启动时没有终端）。环境变量 TASKWRIGHT_LOG_DIR 给了就用它，
+ * 否则是数据目录下的 logs/；参数与 dataDirectory 相同，数据目录没有另给时就是用户数据目录。
+ */
+export function logDir(given?: string | null, tasks?: string | null, env: NodeJS.ProcessEnv = process.env): string {
+  const named = (env[ENV_LOG_DIR] ?? "").trim();
+  return named ? resolve(named) : join(dataDirectory(given, tasks, env), "logs");
 }
 
 /** 产品版本号：取仓根 package.json 的 version；读不到时写 unknown。 */

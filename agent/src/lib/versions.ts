@@ -39,14 +39,8 @@ export interface FigureTally {
   pictures: number;
 }
 
-/** 库里有没有版本记录表：格式版本 8 之前的库没有（它们在被写入一侧打开时先升级）。 */
-function hasVersionTable(db: DatabaseSync): boolean {
-  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'version_record'").get() !== undefined;
-}
-
-/** 一个任务的全部版本，按版本号从小到大。还没有这张表的库是空的。 */
+/** 一个任务的全部版本，按版本号从小到大。 */
 export function versionRecords(db: DatabaseSync, taskId: string): VersionRecord[] {
-  if (!hasVersionTable(db)) return [];
   const rows = db.prepare(
     "SELECT version_no, published_at, actor, revision_no, note, markdown_path, docx_path, figure_count, figure_pictures, event_seq FROM version_record WHERE task_id = ? ORDER BY version_no",
   ).all(taskId) as Record<string, unknown>[];
@@ -60,7 +54,6 @@ export function versionRecords(db: DatabaseSync, taskId: string): VersionRecord[
 
 /** 发过几版。 */
 export function versionCount(db: DatabaseSync, taskId: string): number {
-  if (!hasVersionTable(db)) return 0;
   return Number((db.prepare("SELECT COUNT(*) AS n FROM version_record WHERE task_id = ?").get(taskId) as { n: number }).n);
 }
 
@@ -83,7 +76,6 @@ export interface PublishRecord {
 
 /** 下一个版本号：已有的最大号加 1。 */
 export function nextVersionNo(db: DatabaseSync, taskId: string): number {
-  if (!hasVersionTable(db)) return 1;
   return Number((db.prepare("SELECT COALESCE(MAX(version_no), 0) + 1 AS n FROM version_record WHERE task_id = ?").get(taskId) as { n: number }).n);
 }
 

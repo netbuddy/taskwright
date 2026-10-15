@@ -74,6 +74,61 @@ test("说话时助手拒绝：接口错误的说明给人看，附带信息 deta
   hub.close();
 });
 
+/** 一个在跑的假 pi：command 这条命令按 fail 抛错，别的命令回空。 */
+function failingPi(command: string, fail: () => Error) {
+  return {
+    alive: () => true, note() {},
+    async request(name: string) { if (name === command) throw fail(); return {}; },
+    async getState() { return { sessionId: "S1" }; },
+  };
+}
+
+for (const [what, fail, detail] of [
+  ["没有回应", () => new PiTimeout("prompt", 60), "等 pi 回应命令「prompt」等了 60 秒还没等到。"],
+  ["已经退出", () => new PiExited(1, "boom"), "助手的程序已经退出（退出码 1）。它报告的错误是：\nboom"],
+] as const) {
+  test(`说话时助手${what}：转成 executor_unavailable，原话在 detail 里`, async () => {
+    const hub = new Hub(ws);
+    const executor = new Executor("TASK-001", ws, join(tmp, "runs"), {}, hub);
+    executor.pi = failingPi("prompt", fail) as any;
+    executor.activeSession = "S1";
+    await assert.rejects(executor.say("S1", "你好", "c-1"), (e: unknown) => e instanceof ApiError && e.code === "executor_unavailable"
+      && e.message === "助手现在不可用。" && e.data.detail === detail);
+    hub.close();
+  });
+}
+
+test("直接操作交给助手时助手拒绝或没有回应：转成 executor_unavailable，不再落成「后端出错了」", async () => {
+  for (const [fail, detail] of [
+    [() => new PiRefused("prompt", "不收"), "pi 拒绝了命令「prompt」：不收"],
+    [() => new PiTimeout("prompt", 60), "等 pi 回应命令「prompt」等了 60 秒还没等到。"],
+  ] as const) {
+    const hub = new Hub(ws);
+    const executor = new Executor("TASK-001", ws, join(tmp, "runs"), {}, hub);
+    executor.pi = failingPi("prompt", fail) as any;
+    executor.activeSession = "S1";
+    await assert.rejects(executor.action("S1", { kind: "mark_viewed", targets: [{ item_id: "UC-001" }], fields: {}, notify_executor: false }),
+      (e: unknown) => e instanceof ApiError && e.code === "executor_unavailable" && e.data.detail === detail);
+    assert.equal(executor.waiters.size, 0, "等结果的那一项撤掉了");
+    hub.close();
+  }
+});
+
+test("新建会话时助手拒绝、没有回应或退出：转成 executor_unavailable", async () => {
+  for (const [fail, detail] of [
+    [() => new PiRefused("new_session", "不收"), "pi 拒绝了命令「new_session」：不收"],
+    [() => new PiTimeout("new_session", 60), "等 pi 回应命令「new_session」等了 60 秒还没等到。"],
+    [() => new PiExited(null, ""), "助手的程序已经退出（退出码未知）。"],
+  ] as const) {
+    const hub = new Hub(ws);
+    const executor = new Executor("TASK-001", ws, join(tmp, "runs"), {}, hub);
+    executor.pi = failingPi("new_session", fail) as any;
+    executor.state = "idle";
+    await assert.rejects(executor.newSession(), (e: unknown) => e instanceof ApiError && e.code === "executor_unavailable" && e.data.detail === detail);
+    hub.close();
+  }
+});
+
 test("启动失败：页面顶部显示给人看的那句，日志与附带信息里是排查原话", async () => {
   const script = join(tmp, "pi-missing-interpreter-2");
   writeFileSync(script, "#!/nonexistent/interpreter\n", "utf-8");

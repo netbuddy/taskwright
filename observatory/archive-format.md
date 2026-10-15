@@ -26,8 +26,11 @@ Extensions report facts through `extension_ui_request` lines with `method: "setS
 | `taskwright-active-tools` | the list of tool names actually active in this process |
 | `taskwright-task-status` | the task-status message appended at session start: `{"kind", "text", "details", "entry_id", "session_id"}` |
 | `taskwright-task-status-error` | why the task-status message could not be written (plain text) |
-| `taskwright-user-result` | result of a `/tw-user` direct operation: `{"op_id", "ok", "event_seqs", "results", "revision_no"}` or `{"op_id", "ok": false, "error": {"code", "message", "data"}}` |
-| `taskwright-ui-result` | result of a `/tw-ui` card click: `{"op_id", "ok", "idle"}` or an error |
+| `taskwright-user-result` | result of a `/tw-user` direct operation: `{"op_id", "ok", "event_seqs", "results", "revision_no"}` or `{"op_id", "ok": false, "error": {"code", "message", "data"}}`. On success some operations add more: `activity_record_id` (the work item's record number, when a work item is started, continued in another session or deleted), `archived_sessions` (how many sessions were archived with a deleted work item) and `version_no` (the number of the version just published) |
+| `taskwright-ui-result` | result of a `/tw-ui` card click: `{"op_id", "ok", "idle"}`, plus `stage_event_seq` when the click recorded a stage move for the user, or an error |
+| `taskwright-stage-prompt` | the system prompt was put together for this run (see `系统提示` in section 2 for the fields) |
+| `taskwright-review` | progress of a review started from the page: `{"op_id", "event_seq"}` each time a result is recorded, `{"op_id", "finished": true, "event_seq"}` at the end, or `{"op_id", "finished": true, "error"}` when it stopped with an error; the backend reads new events from the database on each report |
+| `taskwright-intent-error` | why the understanding of a user's words could not be recorded in this turn or checked when the run settled (plain text); the run itself goes on |
 
 ## 2 Backend notes (`<base>.backend.jsonl`)
 
@@ -48,6 +51,8 @@ Every line has `"记录"` (the record kind) and `"时刻"` (local time, `YYYY-MM
 | `系统提示` | each `taskwright-stage-prompt` report: once per run of a task that has stages, when the extension replaces the system prompt with the shared parts and the section of the current stage | `内容` (the parsed JSON: `replaced`, `stage`, `how` (`recomposed`, `reused` or `kept_after_error`), `error` if any, and `digest`, `bytes`, `lines`, `parts` of the instruction text without the working directory pi appends; each part has `part`, `from`, `file`, `bytes`, `lines`, `digest`), or `内容` null and `原文` when the report could not be parsed. In debug mode the report also has `debug`, `prompt_dir` and `notes`; the text of the prompt that the report carries in debug mode is not archived |
 | `扩展写入的消息` | a custom message written by an extension (for example the task-status message) | `类型`, `文字`, optionally `会话条目编号`, `会话编号` |
 | `标准错误` | each line pi wrote to standard error | `文字` |
+| `续接没有接上` | after resuming or switching a session, pi is not in the session that was asked for (for example the session file is gone and pi silently opened a new one), or the switch failed; the backend stops this pi and does not take the session id pi reported | `请求的会话`, `pi报告的会话` (null when pi reported none), `经过` (what was being done), `处置` |
+| `停止通知没有写成` | after the user stopped a run, the note left in the session for the page and the assistant (`/tw-user` with `stop_run`) could not be written; the run is stopped anyway | `操作编号`, and `结果` (the rejected result) or `原因` |
 | `任务服务拼事件出错` | when the task service fails to turn one pi event into interface events (the event is skipped, the service keeps going) | `事件类型`, `原因` |
 | `退出` | when the process ends | `退出码`, `标准错误` (everything pi wrote there) |
 

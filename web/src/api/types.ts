@@ -972,7 +972,8 @@ export interface Problem {
   session_id?: string;
   code: string;
   text: string;
-  retry: { attempt: number; after_ms: number } | null;
+  /** 模型服务暂时不可用、pi 自动重试时才有：第几次重试、隔多少毫秒再试（pi 没说时为 null）。 */
+  retry: { attempt: number | null; delay_ms: number | null } | null;
 }
 
 // ───────────── 4.3 按需读取 ─────────────

@@ -905,10 +905,12 @@ function publishVersionByUser(ctx: Ctx, opId: string, request: UserOpRequest): U
     if (error instanceof ToolRejection) throw new UserOpError("rejected", error.fact, { reasons: [error.fact] });
     throw error;
   }
+  // 模板在发布说明后面自己加句号：说明本来以句号结尾时去掉它，免得写成两个句号（版本记录里照原样存）。
+  const said = (note ?? "").trim().replace(/[。.]+$/u, "");
   return {
     op_id: opId, kind: "publish_version", event_seqs: [outcome.details.event_seq], results: [], revision_no: null,
-    note: note && note.trim()
-      ? fillText("ui_ops.publish_note", { version: outcome.details.version_no, revision: outcome.details.revision_no, note: note.trim() })
+    note: said
+      ? fillText("ui_ops.publish_note", { version: outcome.details.version_no, revision: outcome.details.revision_no, note: said })
       : fillText("ui_ops.publish", { version: outcome.details.version_no, revision: outcome.details.revision_no }),
     notify_text: null, undoable: false, version_no: outcome.details.version_no,
   };

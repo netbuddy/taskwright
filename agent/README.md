@@ -147,7 +147,7 @@ node --test 'tests/*.test.ts'
 
 ## 怎么核对三类代码的边界
 
-在本目录下运行：
+在本目录的 `src/` 下运行：
 
 ```
 grep -rnE "(INSERT INTO|UPDATE|DELETE FROM|REPLACE INTO) +event\b" --include=*.ts lib tools hooks
@@ -156,8 +156,13 @@ grep -rnE "CREATE TABLE" --include=*.ts lib tools hooks
 grep -nE "sqlite|INSERT|UPDATE|SELECT" extension.ts hooks/*.ts
 ```
 
-应当看到：往 `event` 写只在 `lib/db.ts`；往任务数据的几张表写只在 `lib/create_task.ts`、
-`lib/save_revision.ts` 与 `lib/versions.ts`（它只写版本记录）；建表语句只在 `lib/schema.ts`；
-`extension.ts` 与 `hooks/` 里没有任何读写库的语句（最后一条命令只会命中 `hooks/user_commands.ts` 文件头注释里
-提到 `node:sqlite` 的那一行）。用户的直接操作经 `lib/user_ops.ts` 调用 `saveRevision` 写条目，确认记录写在
-`judgement` 与 `judgement_item` 两张表，不在上面第二条命令查的范围里。
+应当看到：
+- 往 `event` 写只在 `lib/db.ts`，另有 `lib/schema.ts` 里数据升级的一步（集合改名时改写事件内容）。
+- 往任务数据的几张表写只在五个文件：`lib/create_task.ts`、`lib/save_revision.ts`、`lib/save_diagram.ts`（图的来源写进 `item_source`）、
+  `lib/user_ops.ts`（改评审规则开关时改写库里的任务定义快照）与 `lib/schema.ts`（数据升级时改写任务定义与集合名）。
+  `lib/versions.ts` 只写版本记录表，不在这条命令查的范围里。
+- 建表语句只在 `lib/schema.ts` 与 `lib/dialogue_schema.ts`（对话行为表）。
+- `extension.ts` 与 `hooks/` 里没有任何读写库的语句（最后一条命令只会命中 `hooks/user_commands.ts` 文件头注释里提到 `node:sqlite`
+  的那一行）。
+
+用户的直接操作经 `lib/user_ops.ts` 调用 `saveRevision` 写条目，确认记录写在 `judgement` 与 `judgement_item` 两张表，不在上面第二条命令查的范围里。

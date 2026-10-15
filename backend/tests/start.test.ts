@@ -274,3 +274,61 @@ test("模型探测的原因句：桌面形态写两个文件的完整路径；�
     else process.env.PI_CODING_AGENT_DIR = saved;
   }
 });
+
+/** 起一个子进程里的后端，不另给日志目录与设置文件；用户数据目录指到 home 下。停掉后回它的输出。 */
+async function runWithData(home: string, data: string, during: (port: number) => Promise<void> = async () => {}): Promise<string> {
+  const env: NodeJS.ProcessEnv = { ...process.env, XDG_DATA_HOME: home, PI_CODING_AGENT_DIR: join(data, "pi-agent") };
+  for (const name of ["TASKWRIGHT_LOG_DIR", "TASKWRIGHT_SETTINGS_FILE", "TASKWRIGHT_DATA_DIR"]) delete env[name];
+  const { child, port, output } = await spawnBackend(["--data", data, "--profile", "fake", "--host", "127.0.0.1"], { env });
+  try {
+    await during(port);
+  } finally {
+    child.kill("SIGTERM");
+    await new Promise((ok) => child.once("exit", ok));
+  }
+  return output();
+}
+
+function today(): string {
+  const now = new Date();
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+}
+
+test("给了 --data 时，日志目录与产品设置文件在数据目录下，用户数据目录下不写", async () => {
+  const home = join(tmp, "data-home");
+  const data = join(tmp, "data-given");
+  await runWithData(home, data, async (port) => {
+    // 添加一个 Codex 订阅的模型服务：不连网，会写产品设置文件
+    const added = await fetch(`http://127.0.0.1:${port}/api/v1/model-config/providers`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ purpose: "language", kind: "codex" }),
+    });
+    assert.equal(added.status, 200, await added.text());
+  });
+  const log = readFileSync(join(data, "logs", `backend-${today()}.log`), "utf-8");
+  assert.match(log, /任务服务在 http:/);
+  const settings = JSON.parse(readFileSync(join(data, "settings.json"), "utf-8"));
+  assert.deepEqual(Object.values<any>(settings.pi_dirs[join(data, "pi-agent")].providers).map((p) => p.kind), ["codex"]);
+  assert.equal(existsSync(join(home, "taskwright")), false, "用户数据目录下既没有日志也没有设置文件");
+});
+
+test("用户数据目录下有先前的产品设置、数据目录下没有时复制一份过来并记日志；数据目录下已经有了就不动", async () => {
+  const home = join(tmp, "adopt-home");
+  const data = join(tmp, "adopt-data");
+  const old = join(home, "taskwright", "settings.json");
+  mkdirSync(join(home, "taskwright"), { recursive: true });
+  const content = JSON.stringify({ version: 2, pi_dirs: {} }) + "\n";
+  writeFileSync(old, content);
+  const first = await runWithData(home, data);
+  assert.equal(readFileSync(join(data, "settings.json"), "utf-8"), content);
+  assert.equal(readFileSync(old, "utf-8"), content, "原件不删不改");
+  const line = `产品设置从 ${old} 复制到 ${join(data, "settings.json")}；以后只读新的一份。`;
+  assert.ok(first.includes(line), first);
+  assert.ok(readFileSync(join(data, "logs", `backend-${today()}.log`), "utf-8").includes(line), "这一句也写进数据目录下的日志");
+
+  // 数据目录下已经有了（内容与用户数据目录下的不同）：不覆盖，不再记
+  const mine = JSON.stringify({ version: 2, pi_dirs: { "/elsewhere": { selection: { language: null, embedding: null }, providers: {} } } }) + "\n";
+  writeFileSync(join(data, "settings.json"), mine);
+  const second = await runWithData(home, data);
+  assert.equal(readFileSync(join(data, "settings.json"), "utf-8"), mine);
+  assert.ok(!second.includes("产品设置从"), second);
+});

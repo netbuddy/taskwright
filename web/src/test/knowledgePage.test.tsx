@@ -314,9 +314,9 @@ describe("知识库页面", () => {
     calls.search.mockResolvedValue({ ...FOUND, chunks: 0, hits: [] });
     await ask("预约");
     await waitFor(() => expect(screen.getByTestId("kb-search-result").textContent).toBe("这个知识库里的文档没有可比较的文字。"));
-    calls.search.mockRejectedValue(new ApiError("embedding_failed", "连不上这个模型服务。请确认它已经启动，地址与端口没有写错。", 502));
+    calls.search.mockRejectedValue(new ApiError("internal", "后端出错了。", 500));
     await ask("续借");
-    expect(await screen.findByText("连不上这个模型服务。请确认它已经启动，地址与端口没有写错。")).toBeTruthy();
+    expect(await screen.findByText("后端出错了。")).toBeTruthy();
     await waitFor(() => expect(screen.queryByTestId("kb-search-result")).toBeNull());
   });
 });

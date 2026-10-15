@@ -163,6 +163,15 @@ const userOpError = (fn: () => unknown) => {
   return assert.fail("应当被拒绝");
 };
 
+test("页面发布：发布说明自带句号时，会话里那句说明不再多补一个句号；版本记录里的说明照原样存", () => {
+  const dir = workspace();
+  const result = submit(dir, { revision_no: 1, version_no: 1, note: "补齐了术语表。", ...ARCHIVE }, "ui-op-publish-period");
+  assert.equal(result.note, "界面操作（不是用户打的字）：用户在页面上发布了第 1 版（修订 1），发布说明：补齐了术语表。发布之后任务照常可以修改，以后可以再发布新的一版。");
+  assert.deepEqual(query<any>(dir, "SELECT note FROM version_record").map((r) => r.note), ["补齐了术语表。"]);
+  const onlyPeriod = submit(dir, { revision_no: 1, version_no: 2, note: "。" });
+  assert.equal(onlyPeriod.note, "界面操作（不是用户打的字）：用户在页面上发布了第 2 版（修订 1）。发布之后任务照常可以修改，以后可以再发布新的一版。");
+});
+
 test("页面发布：带着现在的修订号与任务服务定下的版本号、存档位置发布，记一行版本记录与一条事件，发起方是用户、调用编号是操作编号，往会话里追加一句说明；任务照常进行", () => {
   const dir = workspace();
   const result = submit(dir, { revision_no: 1, version_no: 1, note: " 首版 ", ...ARCHIVE }, "ui-op-publish-ok");

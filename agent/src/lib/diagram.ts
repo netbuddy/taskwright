@@ -60,15 +60,8 @@ export interface DiagramRecord {
   versions: DiagramVersion[];
 }
 
-/** 库里有没有图的两张表。还没有被写入一侧打开过的旧库没有。 */
-export function hasDiagramTables(db: DatabaseSync): boolean {
-  const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('diagram', 'diagram_version')").all() as { name: string }[]).map((row) => row.name);
-  return names.includes("diagram") && names.includes("diagram_version");
-}
-
-/** 任务里的全部图（删掉的也在），按流水号排；库里还没有图的表时是空列表。 */
+/** 任务里的全部图（删掉的也在），按流水号排。 */
 export function readDiagrams(db: DatabaseSync, taskId: string): DiagramRecord[] {
-  if (!hasDiagramTables(db)) return [];
   const rows = db.prepare("SELECT diagram_id, serial, deleted_in_revision FROM diagram WHERE task_id = ? ORDER BY serial").all(taskId) as
     { diagram_id: string; serial: number; deleted_in_revision: number | null }[];
   const versions = db.prepare(

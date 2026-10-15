@@ -20,6 +20,7 @@ import { defaultHost, listenFrom } from "./listen.ts";
 import { sweepImportLeftovers } from "./data_pack.ts";
 import { PendingUpgrade, locate, planUpgrade, upgradeCommandLine, upgradeNeeded } from "./data_upgrade.ts";
 import { appVersion, logDir } from "./paths.ts";
+import { ENV_SETTINGS_FILE, adoptUserSettings, settingsFile } from "./product_settings.ts";
 import { MODES, type Mode, Service } from "./service.ts";
 import { NewerDataDirectory, ServiceDb } from "./service_db.ts";
 import { newerDataText } from "../../agent/src/lib/schema.ts";
@@ -71,14 +72,13 @@ export class StartError extends Error {}
 
 let teed = false;
 
-/** 把 console.log 与 console.error 的每一行同时追加到日志文件里；写不进去不影响服务。一个进程只接一次。 */
-function teeLogs(): void {
+/** 把 console.log 与 console.error 的每一行同时追加到日志目录 dir 下当天的文件里；写不进去不影响服务。一个进程只接一次。 */
+function teeLogs(dir: string): void {
   if (teed) return;
   teed = true;
   // 终端关掉之后再往标准输出写会出错；不接住会让收尾做不完。
   process.stdout.on("error", () => {});
   process.stderr.on("error", () => {});
-  const dir = process.env.TASKWRIGHT_LOG_DIR || logDir();
   const now = new Date();
   const day = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
   const file = join(dir, `backend-${day}.log`);
@@ -118,8 +118,15 @@ export async function startService(options: StartOptions): Promise<Started> {
   const host = defaultHost(mode, options.host);
   const ownProcess = options.ownProcess ?? true;
 
-  teeLogs();
   const { dataDir, tasksDir, runsDir, knowledgeDir } = locate(options);
+  // 日志与产品设置文件跟着数据目录走（环境变量另给了的除外）。先前的版本把设置文件放在用户数据目录下，这里复制过来一次。
+  teeLogs(logDir(dataDir));
+  try {
+    const adopted = adoptUserSettings(dataDir);
+    if (adopted) console.log(adopted);
+  } catch (error) {
+    console.log(`没能把用户数据目录下的产品设置复制到数据目录：${(error as Error).message}`);
+  }
   // 以前导入数据包没有做完（服务被强行停掉）留下的暂存目录先清掉：它们里面是没有进位的半成品。留了不到一小时的不清，
   // 那可能是命令行正在做的一次导入。
   for (const left of sweepImportLeftovers({ dataDir, tasksDir, runsDir, knowledgeDir })) console.log(`清掉了以前导入数据包没有做完留下的暂存目录 ${left}。`);
@@ -141,6 +148,10 @@ export async function startService(options: StartOptions): Promise<Started> {
       throw error;
     }
   }
+  // 设置文件的位置写进环境变量：本进程里读写设置的各处与它起的 pi 都从这里取。停止时把这个服务写进去的删掉（测试在同一进程里
+  // 先后起几个服务）。
+  const ownSettings = !(process.env[ENV_SETTINGS_FILE] ?? "").trim();
+  if (ownSettings) process.env[ENV_SETTINGS_FILE] = settingsFile(process.env, dataDir);
   const service = new Service(tasksDir, runsDir, loadProfile(options.profile ?? "dev"), { port: options.port, mode, knowledgeDir, registry, dataDir, debug: options.debug === true });
   if (pending) {
     service.upgrade = new PendingUpgrade(plan, (opened) => service.attachRegistry(opened));
@@ -166,6 +177,7 @@ export async function startService(options: StartOptions): Promise<Started> {
         server.closeIdleConnections();
         await Promise.race([closed, new Promise((ok) => setTimeout(ok, 2000))]);
         server.closeAllConnections();
+        if (ownSettings) delete process.env[ENV_SETTINGS_FILE];
       }
     })();
     return closing;

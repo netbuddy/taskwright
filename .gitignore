@@ -15,6 +15,9 @@ __pycache__/
 /runs/
 /tasks/
 /knowledge/
+# the dev script's data directory is the repository root: its log files and product settings
+/logs/
+/settings.json
 /sim-runs/
 /srs-*.md
 # the bundled diagram check engine exists only in the desktop packages (release/build.mjs)

@@ -1,6 +1,6 @@
 # web：任务型智能体的前端骨架
 
-三页：任务列表页、任务页、工作视图。技术栈是 React、Ant Design、Ant Design X，用 Vite 开发与构建，接口照接口约定（docs/api.md），以及与后端对齐之后的几处补充（见本文末尾）。
+六页：任务列表页、任务起点页、活动输入页、工作视图、知识库页、设置页（页面地址与各页的对应见 `src/router.ts`）。技术栈是 React、Ant Design、Ant Design X，用 Vite 开发与构建，接口照接口约定（docs/api.md），以及与后端对齐之后的几处补充（见本文末尾）。
 
 ## 目录
 
@@ -11,7 +11,7 @@
 | `src/api/events.ts` | 事件流（SSE）的读取与解析。用 fetch 读流，重连时自己带上 `Last-Event-ID`；45 秒收不到任何东西就主动重连。 |
 | `src/state/workState.ts` | 工作视图的状态与事件应用规则，是纯函数，测试直接调用。 |
 | `src/state/useWorkView.ts` | 工作视图的数据来源：先连事件流，再读整份数据，之后只听事件；收到 `resync` 或发现序号缺口时重读一次整份数据。 |
-| `src/pages/` | 三页。 |
+| `src/pages/` | 六页：`TaskListPage`、`TaskPage`（任务起点页）、`StartInputPage`（活动输入页）、`WorkViewPage`（工作视图）、`KnowledgePage`、`SettingsPage`。 |
 | `src/components/` | 外壳、新建任务、生成文档、完成条件；`work/` 下是工作视图的对话区、卡片、条目区、条目详情、确认已失效的差异、文档区。 |
 | `src/model/` | 由数据算出的状态（评审、确认、筛选）、列表字段按步骤对齐的比对、时间与数字的写法。 |
 | `src/test/` | 组件测试（Vitest）。 |

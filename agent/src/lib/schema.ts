@@ -201,7 +201,7 @@ CREATE TABLE IF NOT EXISTS tool_rejection (
  * 图的来源写在 item_source 里：element_kind 为「图」，item_id 是图的编号，revision_no 是图自己的修订号，不写支持的字段。
  * 图的编号是 D- 加三位流水号（D-001），由代码生成，不复用；新建任务时集合的编号前缀不许单写 D（见 definition.ts）。
  *
- * 后来加的表，用 IF NOT EXISTS，旧库第一次被写入一侧打开时补上；只读的一侧遇到还没有这两张表的库，当作一张图都没有。
+ * 后来加的表，用 IF NOT EXISTS，旧库第一次被写入一侧打开时补上。
  *
  * 图的种类（kind 列）库里不设检查，写的是哪几种只在代码里判（lib/diagram.ts 的 DIAGRAM_KINDS）：加一种图不用改库的结构。
  * 格式版本 2 及更早建的库里这一列带着只许五种的检查，由升级步骤表的「2 到 3」那一步去掉（dropDiagramKindCheck）。
@@ -253,7 +253,7 @@ ${diagramVersionSql("diagram_version", true)}`;
  * 换站时更新 node 与 activity 两列并记一条事件，不另开一行。单项活动的工作项：node 与 flow 两列为空。
  * 记录号自增且不重用（AUTOINCREMENT）：删掉的工作项的记录号不会落到新的工作项上，事件里的记录号始终只指一个工作项。
  * 格式版本 5 加的表，取代早先的阶段记录表；格式版本 7 之前一行是一项活动的一段（流程里每到一站一行，带结束的时刻），
- * 升级步骤表的「6 到 7」那一步把它们归并成工作项、重建成现在的样子。只读的一侧遇到还没有这张表的库，当作一个工作项都没有。
+ * 升级步骤表的「6 到 7」那一步把它们归并成工作项、重建成现在的样子。
  */
 const activityRecordSql = (table: string) => `
 CREATE TABLE IF NOT EXISTS ${table} (

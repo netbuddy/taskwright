@@ -50,8 +50,16 @@ export class ApiError extends Error {
   }
 }
 
-/** 直接操作的超时（第 6 节规则 1）：数据库忙等待是 5 秒，前端等 10 秒。 */
-export const ACTION_TIMEOUT_MS = 10_000;
+/**
+ * 直接操作的超时（第 6 节规则 1）。任务服务把操作交给助手之后等结果 10 秒，到时以 busy_timeout 回一句「请稍后看是否已经生效」；
+ * 页面要比它多等一会儿，那句话才到得了页面，不然页面先放弃，只能写「等了太久没有得到回应」。
+ */
+export const ACTION_TIMEOUT_MS = 15_000;
+/**
+ * 读一条会话的整份数据：助手没有在跑时，任务服务先启动它再回答（等它的程序起来、问命令清单最多 30 秒、问状态最多 60 秒），
+ * 所以页面要等得比启动的上限更久；只等 30 秒的话，启动慢时页面先放弃，任务服务随后却启动好了。
+ */
+export const SNAPSHOT_TIMEOUT_MS = 100_000;
 /** 发布要先生成这一版的 Word，第一次要加载那一部分代码，等得久一些。 */
 export const PUBLISH_TIMEOUT_MS = 60_000;
 
@@ -199,7 +207,7 @@ export const api = {
 
   // 4.1 整份数据
   snapshot: (taskId: string, sessionId: string) =>
-    request<Snapshot>("GET", `${task(taskId)}/snapshot?session=${encodeURIComponent(sessionId)}`),
+    request<Snapshot>("GET", `${task(taskId)}/snapshot?session=${encodeURIComponent(sessionId)}`, undefined, SNAPSHOT_TIMEOUT_MS),
 
   // 4.3 按需读取
   itemRevisions: (taskId: string, itemId: string) =>

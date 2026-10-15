@@ -38,11 +38,12 @@ export function errorText(error: ApiError): string {
     case "executor_unavailable":
       return error.message || "助手现在不可用。";
     case "busy_timeout":
-      return "数据库正忙，请稍后再试。";
+      // 直接操作交给助手之后到时没有得到结果：后端的那句话说清了操作可能随后生效。
+      return error.message || "这次操作没有及时得到结果，请稍后看是否已经生效。";
     case "not_found":
       return error.message || "要找的任务、会话或条目不存在。";
     case "bad_request":
-      return "出了一点问题，这次操作没有完成。";
+      return error.message || "出了一点问题，这次操作没有完成。";
     default:
       return error.message || "这次操作没有完成。";
   }

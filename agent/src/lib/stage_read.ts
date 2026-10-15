@@ -87,17 +87,11 @@ export interface ActivityRecord {
   scope: string | null;
 }
 
-/** 活动记录表有没有某一列：只读的一侧会遇到还没有升级过的库。 */
-function hasColumn(db: DatabaseSync, column: string): boolean {
-  return (db.prepare(`PRAGMA table_info(${TABLE})`).all() as { name: string }[]).some((row) => row.name === column);
-}
-
 /**
  * 读活动记录的列：表里的各列，加上从记下启动的那条事件的内容里取的「从哪个阶段来」（早先的记录才有）。
- * 范围说明一列是格式版本 6 加的：还没有升级过的库里当作没有写。还没有升级过的库里的流程键 initial 读成现在的写法。
+ * 早先的流程键 initial 读成现在的写法。
  */
-const recordColumns = (db: DatabaseSync): string => "r.record_id, r.activity, r.node, r.flow, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.started_at, r.started_seq, " +
-  `${hasColumn(db, "scope") ? "r.scope" : "NULL AS scope"}, ` +
+const RECORD_COLUMNS = "r.record_id, r.activity, r.node, r.flow, r.actor, r.reason, r.run_id, r.session_id, r.call_id, r.started_at, r.started_seq, r.scope, " +
   "CASE WHEN e.seq IS NOT NULL AND json_valid(e.payload) THEN json_extract(e.payload, '$.from') ELSE NULL END AS \"from\"";
 const RECORD_FROM = `${TABLE} r LEFT JOIN event e ON e.seq = r.started_seq`;
 
@@ -107,37 +101,25 @@ const recordOf = (row: RecordRow): ActivityRecord => ({
   from: isStage(row.from) ? row.from : null, scope: typeof row.scope === "string" && row.scope !== "" ? row.scope : null,
 });
 
-/** 库里有没有活动记录表：只读的一侧会遇到还没有升级过的库。 */
-export function hasActivityTable(db: DatabaseSync): boolean {
-  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(TABLE) !== undefined;
-}
-
-/** 库里有没有工作项的会话表（格式版本 7 加的）。 */
-export function hasSessionTable(db: DatabaseSync): boolean {
-  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(SESSIONS) !== undefined;
-}
-
 /** 全部工作项，按启动的先后排。活动的写法不是六个阶段之一的记录不认。 */
 export function activityRecords(db: DatabaseSync, taskId: string): ActivityRecord[] {
-  if (!hasActivityTable(db)) return [];
-  const rows = db.prepare(`SELECT ${recordColumns(db)} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.started_seq, r.record_id`).all(taskId) as unknown as RecordRow[];
+  const rows = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.started_seq, r.record_id`).all(taskId) as unknown as RecordRow[];
   return rows.filter((row) => isStage(row.activity)).map(recordOf);
 }
 
 /** 按记录号取一个工作项；没有时是 null。 */
 export function workItemById(db: DatabaseSync, taskId: string, recordId: number): ActivityRecord | null {
-  if (!hasActivityTable(db)) return null;
-  const row = db.prepare(`SELECT ${recordColumns(db)} FROM ${RECORD_FROM} WHERE r.task_id = ? AND r.record_id = ?`).get(taskId, recordId) as RecordRow | undefined;
+  const row = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? AND r.record_id = ?`).get(taskId, recordId) as RecordRow | undefined;
   return row && isStage(row.activity) ? recordOf(row) : null;
 }
 
 /**
- * 这条会话属于哪个工作项；会话不属于任何工作项（自由讨论的会话、归档的会话）、没有给会话编号、库还没有这两张表时是 null。
+ * 这条会话属于哪个工作项；会话不属于任何工作项（自由讨论的会话、归档的会话）、没有给会话编号时是 null。
  */
 export function sessionWorkItem(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): ActivityRecord | null {
-  if (!sessionId || !hasActivityTable(db) || !hasSessionTable(db)) return null;
+  if (!sessionId) return null;
   const row = db.prepare(
-    `SELECT ${recordColumns(db)} FROM ${RECORD_FROM} JOIN ${SESSIONS} s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ?${archivedClause(db, "s")}`,
+    `SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} JOIN ${SESSIONS} s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ? AND s.archived_at IS NULL`,
   ).get(taskId, sessionId) as RecordRow | undefined;
   return row && isStage(row.activity) ? recordOf(row) : null;
 }
@@ -147,23 +129,15 @@ export function openActivityRecord(db: DatabaseSync, taskId: string, sessionId: 
   return sessionWorkItem(db, taskId, sessionId);
 }
 
-/** 会话表有归档一列时，只取没有归档的那几行的条件（接在 WHERE 后面）；还没有这一列的库（只读的一侧会遇到）不加条件。 */
-function archivedClause(db: DatabaseSync, alias: string): string {
-  const has = (db.prepare(`PRAGMA table_info(${SESSIONS})`).all() as { name: string }[]).some((row) => row.name === "archived_at");
-  return has ? ` AND ${alias}.archived_at IS NULL` : "";
-}
-
 /** 每条挂在工作项上的会话各属于哪个工作项（会话编号到记录号），与挂上的时刻。归档的会话不在里面。 */
 export function workItemSessions(db: DatabaseSync, taskId: string): { session_id: string; record_id: number; attached_at: string }[] {
-  if (!hasSessionTable(db)) return [];
-  const rows = db.prepare(`SELECT session_id, record_id, attached_at FROM ${SESSIONS} s WHERE task_id = ?${archivedClause(db, "s")} ORDER BY attached_at, rowid`).all(taskId) as
+  const rows = db.prepare(`SELECT session_id, record_id, attached_at FROM ${SESSIONS} WHERE task_id = ? AND archived_at IS NULL ORDER BY attached_at, rowid`).all(taskId) as
     { session_id: string; record_id: number; attached_at: string }[];
   return rows.map((row) => ({ ...row, record_id: Number(row.record_id) }));
 }
 
 /** 归档的会话（它们的工作项被删除了）：会话编号到归档的时刻（库里的本地时间写法）与它曾属于的那个已经删除的工作项的记录号。 */
 export function archivedSessions(db: DatabaseSync, taskId: string): Map<string, { archived_at: string; record_id: number }> {
-  if (!hasSessionTable(db) || !(db.prepare(`PRAGMA table_info(${SESSIONS})`).all() as { name: string }[]).some((row) => row.name === "archived_at")) return new Map();
   const rows = db.prepare(`SELECT session_id, archived_at, record_id FROM ${SESSIONS} WHERE task_id = ? AND archived_at IS NOT NULL`).all(taskId) as
     { session_id: string; archived_at: string; record_id: number }[];
   return new Map(rows.map((row) => [row.session_id, { archived_at: row.archived_at, record_id: Number(row.record_id) }]));

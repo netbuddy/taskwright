@@ -258,7 +258,7 @@ async function backupBeforeUpgrade(plan: UpgradePlan, tasks: PlannedTask[], at: 
     bytes += service;
     files += 1;
   }
-  const settings = settingsFile(env);
+  const settings = settingsFile(env, plan.dataDir);
   copy(settings, join(dir, basename(settings)));
   if (plan.knowledgeDir) copy(join(plan.knowledgeDir, "libraries.json"), join(dir, "knowledge", "libraries.json"));
   return { dir, bytes, files };

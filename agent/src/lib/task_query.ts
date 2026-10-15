@@ -27,7 +27,6 @@ import { cardsOpenInStage, openCardsLine, openProposal, proposalLine } from "./s
 import { BUSY_TIMEOUT_MS, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts, unansweredActs } from "./dialogue_acts.ts";
-import { hasColumn } from "./dialogue_schema.ts";
 import { DIAGRAM_ID, type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "./diagram.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
 import { knowledgeDetails, knowledgeSection, listMaterials } from "./task_status.ts";
@@ -187,7 +186,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     const fields = load(row.fields) as Record<string, unknown>;
     const sources = (db
       .prepare(
-        `SELECT position, kind, locator, excerpt, field, field_index, ${hasColumn(db, "item_source", "normalized_value") ? "normalized_value" : "NULL AS normalized_value"} ` +
+        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value " +
           `FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause()} ORDER BY position, support_no`,
       )
       .all(task.task_id, itemId, shown, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null }[])
