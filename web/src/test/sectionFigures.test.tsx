@@ -315,7 +315,7 @@ describe("地址里的图与条目依据里的图", () => {
     expect(screen.getByTestId("overall-intro")).toBeInTheDocument();
   });
 
-  it("地址里只说看图（tab=diagrams）：停在「分析模型」页签；在那里点「在节中查看」去那张图所在的节并显示它，点「编辑」同样过去并在图下展开 Mermaid 文本", async () => {
+  it("地址里只说看图（tab=diagrams）：停在「分析模型」页签；在那里点「在节中查看」去那张图所在的节并显示它", async () => {
     const task = drawn();
     serve(task);
     const first = render(<Panel t={task} first={null} from={{ diagrams: true, collection: "功能用例" }} />);
@@ -326,10 +326,6 @@ describe("地址里的图与条目依据里的图", () => {
     await shown("D-004");
     expect(screen.queryByTestId("diagram-side")).toBeNull();
     first.unmount();
-    render(<Panel t={task} first={null} from={{ diagrams: true }} />);
-    fireEvent.click(screen.getByTestId("model-edit-D-002"));
-    const figure = await screen.findByTestId("figure-D-002");
-    expect(await within(figure).findByTestId("diagram-text")).toBeInTheDocument();
   });
 
   it("条目详情「依据」里的图点了去它所在的节，「依据」里的页点了打开那一节", async () => {

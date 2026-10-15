@@ -17,7 +17,7 @@
 // 点了弹对话框（ExportDocxModal.tsx）。导出不改任何东西，所以勾选框在助手工作中、任务结束后也能勾；「标为已读」在这两种时候照旧不能用。
 // 卡片式的集合（问题条目）没有勾选框，导不了。
 // 图：画在业务说明里它说明的那一节、那一章的章首（overall/Figure.tsx）。「分析模型」页签是全部图的索引（ModelsTab.tsx），
-// 「在节中查看」「编辑」打开业务说明里那张图所在的地方并滚到它（编辑另在图下展开 Mermaid 文本）。地址里的 diagram=D-001 与条目详情
+// 「在节中查看」打开业务说明里那张图所在的地方并滚到它，改图在图下的「文本与来源」里。地址里的 diagram=D-001 与条目详情
 // 「依据」「被谁依据」里的图同样去那里；地址里只说看图（tab=diagrams）时停在「分析模型」页签。
 // 问题跟着条目走（ItemIssues.tsx）：列表行的状态徽标里带「问题 N」（ItemStatus.tsx），详情顶部列出挂在这条上、还没了结的问题；从问题卡片上的「牵涉 UC-003」跳来时
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
@@ -184,15 +184,15 @@ export function ItemsPanel({
     if (next === "items") setTab(lastItemsTab.current ?? collections.find((c) => !isOverall(c.name))?.name ?? tab);
   };
   const [headRequest, setHeadRequest] = useState<{ view: HeadView | null; seq: number } | null>(null);
-  const [figureFocus, setFigureFocus] = useState<{ diagramId: string; seq: number; edit?: boolean } | null>(null);
+  const [figureFocus, setFigureFocus] = useState<{ diagramId: string; seq: number } | null>(null);
   const requests = useRef(0);
-  /** 去业务说明里看一张图：打开它所在的节或章首并滚到它；找不到就停在业务说明的首页。edit 为真时（「分析模型」页签上的「编辑」）在图下展开 Mermaid 文本。 */
-  const goFigure = (diagramId: string, edit = false) => {
+  /** 去业务说明里看一张图：打开它所在的节或章首并滚到它；找不到就停在业务说明的首页。 */
+  const goFigure = (diagramId: string) => {
     const home = figureHome(task, toc(task), diagramId);
     const seq = (requests.current += 1);
     setTab(OVERALL_COLLECTION);
     setPane("description");
-    setFigureFocus(home ? { diagramId, seq, edit } : null);
+    setFigureFocus(home ? { diagramId, seq } : null);
     if (home?.where === "section") { onSelect(home.itemId); return; }
     onSelect(null);
     setHeadRequest({ view: home?.where === "chapter" ? { kind: "chapter", no: home.chapter } : home?.where === "loose" ? { kind: "loose" } : null, seq });
@@ -404,7 +404,7 @@ export function ItemsPanel({
         {pane === "materials" ? (
           <MaterialsTab task={task} materials={materials} info={info} libraries={libraries} readOnly={readOnly} onView={(path) => onViewMaterial?.(path)} />
         ) : pane === "models" ? (
-          <ModelsTab task={task} contents={toc(task)} onView={(id) => goFigure(id)} onEdit={(id) => goFigure(id, true)} onOpenItem={(id) => openItem(id)} />
+          <ModelsTab task={task} contents={toc(task)} onView={(id) => goFigure(id)} onOpenItem={(id) => openItem(id)} />
         ) : !onCollection ? (
           <div className="oa-page ap-page" data-testid={`pane-${pane}-body`}>
             <div className="ap-head"><h2>{ASSET_PANES.find((one) => one.key === pane)!.label}</h2></div>

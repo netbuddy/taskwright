@@ -1,4 +1,4 @@
-// 工作台「分析模型」页签：全部图的索引表——按种类分组、所属节或章首、修订与「刚改」、查看、被哪些条目依据、两个按钮；表上一行计数。
+// 工作台「分析模型」页签：全部图的索引表——按种类分组、所属节或章首、修订与「刚改」、查看、被哪些条目依据、「在节中查看」；表上一行计数。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { DiagramRow, Task } from "../api/types";
@@ -33,7 +33,7 @@ const cells = (id: string) => [...screen.getByTestId(`model-${id}`).querySelecto
 describe("「分析模型」页签", () => {
   it("一张表按种类分组（章首的种类在前，同一种只在第一行写种类）：名称、所属、修订、查看、被依据；表上一行计数；刚改的行标出来", () => {
     const task = drawn();
-    render(<div className="app"><ModelsTab task={task} contents={toc(task)} onView={vi.fn()} onEdit={vi.fn()} onOpenItem={vi.fn()} /></div>);
+    render(<div className="app"><ModelsTab task={task} contents={toc(task)} onView={vi.fn()} onOpenItem={vi.fn()} /></div>);
     expect(screen.getByTestId("models-tab")).toHaveTextContent(MODELS_LEAD);
     expect([...document.querySelectorAll("[data-testid^=model-D]")].map((tr) => tr.getAttribute("data-testid"))).toEqual(["model-D-002", "model-D-001", "model-D-003"]);
     expect(cells("D-002")).toEqual(["对象关系图", "D-002图 D-002", "第 4 章 业务对象 章首", "1", "已查看", "—"]);
@@ -45,17 +45,17 @@ describe("「分析模型」页签", () => {
     expect(screen.getByTestId("models-count")).toHaveTextContent("共 3 张 · 已查看 1 · 刚改 1 · 被条目依据 1");
   });
 
-  it("「在节中查看」「编辑」与被依据的条目各交给条目区；没有图时写一句怎样得到图", () => {
+  it("「在节中查看」与被依据的条目各交给条目区，每行只有「在节中查看」一个链接；没有图时写一句怎样得到图", () => {
     const task = drawn();
-    const [onView, onEdit, onOpenItem] = [vi.fn(), vi.fn(), vi.fn()];
-    const view = render(<div className="app"><ModelsTab task={task} contents={toc(task)} onView={onView} onEdit={onEdit} onOpenItem={onOpenItem} /></div>);
+    const [onView, onOpenItem] = [vi.fn(), vi.fn()];
+    const view = render(<div className="app"><ModelsTab task={task} contents={toc(task)} onView={onView} onOpenItem={onOpenItem} /></div>);
+    expect([...screen.getByTestId("model-D-001").querySelectorAll("td.acts a")].map((a) => a.textContent)).toEqual(["在节中查看"]);
     fireEvent.click(screen.getByTestId("model-view-D-002"));
-    fireEvent.click(screen.getByTestId("model-edit-D-001"));
     fireEvent.click(screen.getByText("UC-001", { selector: "a" }));
-    expect([onView.mock.calls, onEdit.mock.calls, onOpenItem.mock.calls]).toEqual([[["D-002"]], [["D-001"]], [["UC-001"]]]);
+    expect([onView.mock.calls, onOpenItem.mock.calls]).toEqual([[["D-002"]], [["UC-001"]]]);
     view.unmount();
     const none = overallTask();
-    render(<div className="app"><ModelsTab task={none} contents={toc(none)} onView={vi.fn()} onEdit={vi.fn()} onOpenItem={vi.fn()} /></div>);
+    render(<div className="app"><ModelsTab task={none} contents={toc(none)} onView={vi.fn()} onOpenItem={vi.fn()} /></div>);
     expect(screen.getByTestId("models-empty")).toHaveTextContent(MODELS_EMPTY);
     expect(screen.queryByTestId("models-count")).toBeNull();
   });
