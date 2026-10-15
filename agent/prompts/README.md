@@ -47,6 +47,7 @@
 - 每一段从一行二级标题开始，标题只写键，键放在反引号里；二级标题不能有别的写法。键用小写字母、数字与下划线，用点隔成至少两段，全部模板里不重复。
 - 标题下第一个不空的行写「用途：」加一句话：这句话在哪里出现、给谁看。
 - 再往下到下一个二级标题之前是正文，首尾的空行去掉，中间原样（换行就是换行）。正文是到达模型或用户的整句话；编号、键名、JSON 的形状留在代码里。
+- 正文里有以「## 」开头的行时（例如拼进系统提示的一节带着自己的标题），把整段正文放在一行「````text」与一行「````」之间，原样取中间的内容；围栏之后到下一个标题之前只能是空行。
 - 占位只有 `{{名字}}` 一种，没有条件、循环这类逻辑：选哪一句由代码定。
 - 代码里引用键写字面的字符串：`fillText("status.opening", { name, stage })` 直接取文字，`textKey("status.opening")` 先存下键之后再取。
   守护测试 `agent/tests/texts_guard.test.ts` 按这两种写法扫助手库与后端的源码，核对代码用的键都有模板、没有闲置的模板、
@@ -63,6 +64,7 @@
 | `tools/save_revision.md` | 工具「保存修订」登记时的总说明、工具清单里的一句话、用法要点与每个参数的说明（`agent/src/tools/save_revision.ts`） | 模型 | 无 | `agent/tests/texts_guard.test.ts` |
 | `tools/search_knowledge.md` | 工具「查找知识库」登记时的总说明、工具清单里的一句话、用法要点与每个参数的说明（`agent/src/tools/search_knowledge.ts`） | 模型 | `search_knowledge.param.limit` 有 `{{max}}`、`{{default}}`（片段数的上限与缺省值，取自 `agent/src/lib/knowledge_search.ts`） | `agent/tests/texts_guard.test.ts`、`agent/tests/knowledge_search.test.ts` |
 | `runtime/shared.md` | 页面与助手共用的句子：启动工作项、流程换站、接着做、删除工作项、范围说明、提议作废、活动做完（`agent/src/lib/stage.ts`），与「我已经看过了」那句（`agent/src/lib/user_ops.ts`；后端 `conversation.ts`、`executor.ts`，助手 `dialogue_acts.ts`，页面 `cardAnswer.ts` 按它的开头认出这句）。页面经生成的 `agent/src/lib/shared_texts.gen.ts` 读 | 模型与用户 | 见各段的用途一行（工作项与阶段的名字、条目清单、范围说明的原文等） | `agent/tests/texts_guard.test.ts`（另核对生成的表没有过期）、`agent/tests/stage.test.ts`、`agent/tests/user_ops.test.ts`、页面的对话区测试 |
+| `runtime/stage_prompt.md` | 系统提示里的三段固定文字：会话空闲时的开头、单项活动代替节点出口的那一段、本次范围说明（`agent/src/lib/stage_prompt.ts` 的 IDLE_OPENING、STANDALONE_EXIT、scopeSection；后端的调试接口也用前两个） | 模型 | `stage_prompt.scope` 有 `{{scope}}`（用户写的范围说明） | `agent/tests/texts_guard.test.ts`、`agent/tests/stage_prompt.test.ts`、`backend/tests/activity_flow.test.ts`；拼好的系统提示在固定期望文件 `observatory_view.json` 里 |
 | `runtime/ui_ops.md` | 用户在页面上做了一件事之后追加进会话的界面操作说明：改字段、删除、标为先不管、看过了、撤销、保留与撤销保留、启动与换站、接着做与删除工作项、发布、改评审规则（`agent/src/lib/user_ops.ts`），继续本阶段（`user_stage.ts`），改图（`user_diagram.ts`），点卡片与界面评审结束（`agent/src/hooks/user_commands.ts`）；以及后端替用户发的「我先不管」那句（`backend/src/executor.ts`，助手 `dialogue_acts.ts` 按它的开头认） | 模型 | 见各段的用途一行（条目编号、修订号、清单、字段内容等） | `agent/tests/texts_guard.test.ts`、`agent/tests/user_ops.test.ts`、`agent/tests/stage_continue.test.ts`、`agent/tests/user_diagram.test.ts`、`backend/tests/conversation.test.ts` 等 |
 
 工具文件依赖随 pi 安装的包，单元测试里导入不了：工具登记时用对了哪些键，由守护测试的静态扫描核对；

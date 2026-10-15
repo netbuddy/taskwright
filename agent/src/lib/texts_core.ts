@@ -24,9 +24,14 @@ export interface Template {
   placeholders: string[];
 }
 
+/** 围栏：正文里有以「## 」开头的行（例如拼进系统提示的一节带着自己的标题）时，整段正文放在这样两行之间，原样取中间的内容。 */
+export const FENCE_OPEN = "````text";
+export const FENCE_CLOSE = "````";
+
 /**
  * 拆一份模板文件。第一个键之前的文字（文件标题、说明）不属于任何键。每一段是：标题行「## `键`」，
  * 下面第一个不空的行是「用途：……」，再往下到下一个标题行之前是正文（去掉首尾的空行，中间原样）。
+ * 用途下面第一个不空的行是「````text」时，正文是它与下一行「````」之间的内容（原样，首尾的空行也保留），围栏之后到下一个标题之前只能是空行。
  */
 export function parseTemplates(file: string, source: string): Template[] {
   const out: Template[] = [];
@@ -44,12 +49,27 @@ export function parseTemplates(file: string, source: string): Template[] {
       throw new TextsError(`${where(i)}：键「${key}」下面第一行要写「${PURPOSE}」加一句话`);
     }
     const purpose = lines[j].slice(PURPOSE.length).trim();
-    let end = j + 1;
-    while (end < lines.length && !lines[end].startsWith("## ")) end++;
-    const bodyLines = lines.slice(j + 1, end);
-    while (bodyLines.length && bodyLines[0].trim() === "") bodyLines.shift();
-    while (bodyLines.length && bodyLines[bodyLines.length - 1].trim() === "") bodyLines.pop();
-    const body = bodyLines.join("\n");
+    let k = j + 1;
+    while (k < lines.length && lines[k].trim() === "") k++;
+    let body: string;
+    let end: number;
+    if (lines[k] === FENCE_OPEN) {
+      const close = lines.indexOf(FENCE_CLOSE, k + 1);
+      if (close < 0) throw new TextsError(`${where(k)}：键「${key}」的围栏没有收尾的「${FENCE_CLOSE}」`);
+      body = lines.slice(k + 1, close).join("\n");
+      end = close + 1;
+      while (end < lines.length && !lines[end].startsWith("## ")) {
+        if (lines[end].trim() !== "") throw new TextsError(`${where(end)}：键「${key}」的围栏之后不能再写正文`);
+        end++;
+      }
+    } else {
+      end = j + 1;
+      while (end < lines.length && !lines[end].startsWith("## ")) end++;
+      const bodyLines = lines.slice(j + 1, end);
+      while (bodyLines.length && bodyLines[0].trim() === "") bodyLines.shift();
+      while (bodyLines.length && bodyLines[bodyLines.length - 1].trim() === "") bodyLines.pop();
+      body = bodyLines.join("\n");
+    }
     if (!body) throw new TextsError(`${where(i)}：键「${key}」没有正文`);
     const stray = body.replace(PLACEHOLDER, "");
     if (stray.includes("{{") || stray.includes("}}")) throw new TextsError(`${where(i)}：键「${key}」的正文里有写错的占位，占位只能写成 {{名字}}`);

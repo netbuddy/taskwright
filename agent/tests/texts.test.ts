@@ -75,3 +75,11 @@ test("读一个目录：tools/ 与 runtime/ 下的 .md（README.md 不算）；�
   writeFileSync(join(dir, "runtime", "again.md"), "## `reply.description`\n用途：重复。\n又一份。\n", "utf-8");
   assert.throws(() => loadTemplates(dir), /键「reply\.description」写了两次：tools\/reply\.md 与 runtime\/again\.md/);
 });
+
+test("正文放在 ````text 围栏里时原样取中间的内容：里面可以有 ## 开头的行，首尾的空行保留；没有收尾、围栏后还有字都抛错", () => {
+  const fenced = ["## `prompt.exit`", "用途：一节出口。", "", "````text", "## 出口", "", "做够了就汇报。", "````", "", "## `prompt.next`", "用途：下一段。", "下一段。"].join("\n");
+  assert.deepEqual(parseTemplates("runtime/x.md", fenced).map((one) => [one.key, one.body]), [["prompt.exit", "## 出口\n\n做够了就汇报。"], ["prompt.next", "下一段。"]]);
+  assert.equal(parseTemplates("runtime/x.md", "## `prompt.a`\n用途：一句。\n````text\n\n两头空行\n\n````\n")[0].body, "\n两头空行\n");
+  assert.throws(() => parseTemplates("runtime/x.md", "## `prompt.a`\n用途：一句。\n````text\n## 出口\n"), /第 3 行：键「prompt\.a」的围栏没有收尾/);
+  assert.throws(() => parseTemplates("runtime/x.md", "## `prompt.a`\n用途：一句。\n````text\n正文\n````\n又一行\n"), /第 6 行：键「prompt\.a」的围栏之后不能再写正文/);
+});
