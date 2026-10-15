@@ -772,7 +772,7 @@ class Index:
         if first_trace:
             self.links.steps_of(first_trace)
         result = health_module.build_health(chosen, self.workspaces, touched,
-                                            self.links.status())
+                                            self.links.status(), self.rejections_by_call, self.tool_names)
         result["核对了几个任务目录"] = len(touched)
         result["没有核对的任务目录"] = sorted(
             {w["任务目录"] for w in self.workspaces} - touched)

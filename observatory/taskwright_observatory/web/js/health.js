@@ -44,6 +44,23 @@ function gateTable(gate) {
       `</tr>`).join("") + `</tbody></table>`;
 }
 
+function reasonTable(part) {
+  const rows = part["行"];
+  if (!rows.length) {
+    return `<p class="muted">当前范围里一次调用也没有被拒过，所以这张表是空的。</p>`;
+  }
+  return `<table class="tbl"><colgroup><col style="width:auto"><col style="width:12em">` +
+    `<col style="width:9em"><col style="width:9em"><col style="width:10em"><col style="width:10em"></colgroup>` +
+    `<thead><tr><th>原因码</th><th>工具</th><th>被拒次数</th><th>调用次数</th><th>每百次调用被拒次数</th>` +
+    `<th>其中记作缺前置步骤</th></tr></thead><tbody>` +
+    rows.map((row) => `<tr><td><code>${esc(row["原因码"])}</code></td>` +
+      `<td>${esc(row["工具中文名"] ? `${row["工具中文名"]}（${row["工具"]}）` : row["工具"])}</td>` +
+      `<td>被拒 ${row["被拒次数"]} 次。</td><td>一共调用了 ${row["调用次数"]} 次。</td>` +
+      `<td>${row["每百次调用被拒次数"] === null ? "没有调用记录。" : `每百次调用被拒 ${row["每百次调用被拒次数"]} 次。`}</td>` +
+      `<td>其中 ${row["其中记作缺前置步骤"]} 次记作缺前置步骤。</td>` +
+      `</tr>`).join("") + `</tbody></table>`;
+}
+
 export async function renderHealth() {
   const view = freshView();
   setCrumb("");
@@ -86,6 +103,9 @@ export async function renderHealth() {
     `<section class="panel"><h2>三、门禁统计</h2>` +
       `<p class="muted" style="margin:0 0 8px">${esc(data["门禁"]["说明"])}</p>` +
       gateTable(data["门禁"]) + `</section>` +
+    `<section class="panel"><h2>三、门禁统计：每百次调用被拒次数，按原因码</h2>` +
+      `<p class="muted" style="margin:0 0 8px">${esc(data["原因码"]["说明"])}</p>` +
+      reasonTable(data["原因码"]) + `</section>` +
     `<div class="hgrid">${groups[2]}${groups[3]}</div>`;
 
   $("#hscope").addEventListener("change", (event) => {
