@@ -40,6 +40,7 @@ import { ASSET_PANES, type AssetPane, paneCount, paneKey, paneOfCollection, pane
 import { MaterialsTab } from "./MaterialsTab";
 import { ReviewTab } from "./ReviewTab";
 import { DocsTab } from "./DocsTab";
+import type { GoTarget } from "../../model/docsCheck";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
@@ -202,6 +203,18 @@ export function ItemsPanel({
     if (home?.where === "section") { onSelect(home.itemId); return; }
     onSelect(null);
     setHeadRequest({ view: home?.where === "chapter" ? { kind: "chapter", no: home.chapter } : home?.where === "loose" ? { kind: "loose" } : null, seq });
+  };
+  /** 「文档与版本」页签发布前检查里的「去补」：切到对应的页签，停在那个集合与筛选、那个条目、那一章的章首或那张图。 */
+  const goTo = (target: GoTarget) => {
+    if (target.kind === "review") { openPane("review"); return; }
+    if (target.kind === "item") { openItem(target.itemId); return; }
+    if (target.kind === "diagram") { goFigure(target.diagramId); return; }
+    if (target.kind === "chapter") {
+      setPane("description"); setTab(OVERALL_COLLECTION); onSelect(null);
+      setHeadRequest({ view: { kind: "chapter", no: target.no }, seq: (requests.current += 1) });
+      return;
+    }
+    openPane("items"); setTab(target.collection); setFilter(target.filter ?? "all");
   };
   /** 打开一张图：去业务说明里它所在的地方。 */
   const openDiagram = (diagramId: string) => goFigure(diagramId);
@@ -417,7 +430,7 @@ export function ItemsPanel({
           )} />
         ) : pane === "docs" ? (
           <DocsTab task={task} readOnly={readOnly} writesOff={writesOff} onGenerate={onGenerateDoc} onPublish={onPublish ? () => setConfirmSubmit(true) : undefined}
-            publishError={submitError} onShowRevision={(revision) => onShowRevision?.(revision)} />
+            publishError={submitError} onShowRevision={(revision) => onShowRevision?.(revision)} onGo={goTo} />
         ) : onOverall ? (
           <OverallPane task={task} host={figureHost!} headRequest={headRequest} selected={selectedItem?.item_id ?? null} onSelect={onSelect} readOnly={readOnly} writesOff={writesOff} onSend={onSend}
             page={selectedItem && !rawTopic ? (

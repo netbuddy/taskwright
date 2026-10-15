@@ -1,7 +1,10 @@
 // 工作台中栏「文档与版本」页签，版式照业务说明的节页（.oa-page）。自上而下：
 //   · 页头「文档与版本」，右边「生成文档」（打开生成文档对话框：选修订、选条目、预览与下载）与「发布第 N 版」。发布的条件与绿色提示条相同
 //     （model/docsPage.ts 的 publishOff），不能点时灰着并悬停说明；点了打开条目区里那个发布框（可写发布说明），发出去由工作视图做。
-//   · 文档：编排一句；「预览」在页里展开最新修订生成的文档（再点收起）；「下载 Word」「下载 Markdown」下载最新修订的整份文档。
+//   · 文档：「预览」在页里展开最新修订生成的文档（再点收起）；「下载 Word」「下载 Markdown」下载最新修订的整份文档。
+//   · 按章覆盖：文档的各章一行（前七章是业务说明，其后每个集合一章），写节数、条目数、图数、有没有导语，空章标出。
+//   · 发布前检查：完成条件逐条，满足的打勾，没满足的写差什么并给去补的入口；下面一组非阻断提示，每条也给入口。
+//     完成条件全部满足时这张表收成一句。入口怎样走由条目区做（onGo）。两张表的算法在 model/docsCheck.ts。
 //   · 版本：发布过的各版一张表（版本、发布时刻与谁、修订、说明、存档下载），点「修订 N」在右侧栏修订页签里选中那次修订；表下「与上一版的差异」一句。
 //     各版的存档在不在、图存了没有以版本接口为准：版本列表变了（发布了新的一版）就重取一次；取到之前先照整份数据里的那一份画。
 //   · 追溯：一句（model/docsPage.ts 的 traceLine）。生成的文档最后有追溯附录，写每个需求条目依据了哪几节、哪几张图。
@@ -9,7 +12,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "../../api/client";
 import type { Task, VersionView } from "../../api/types";
-import { arrangementLine, differenceLine, publishOff, traceLine } from "../../model/docsPage";
+import { differenceLine, publishOff, traceLine } from "../../model/docsPage";
+import { type GoTarget, checkRows, coverageRows, hints } from "../../model/docsCheck";
+import { toc } from "../../model/chapters";
 import { saveBlob } from "../../model/download";
 import { figuresOf, figuresText, missingArchiveText, nextVersionNo, versionMeta } from "../../model/versions";
 import { figurePngs } from "../diagram/mermaid";
@@ -18,7 +23,7 @@ import { DocumentPreview } from "../DocumentPreview";
 /** 页上的一句说明。 */
 export const DOCS_LEAD = "需求规格说明由业务说明、分析模型与需求条目编排生成；发布把当前资产固化为一个版本，并存下当时生成的 Markdown 与 Word。";
 
-export function DocsTab({ task, readOnly, writesOff, onGenerate, onPublish, publishError, onShowRevision }: {
+export function DocsTab({ task, readOnly, writesOff, onGenerate, onPublish, publishError, onShowRevision, onGo }: {
   task: Task;
   readOnly: boolean;
   writesOff: boolean;
@@ -30,6 +35,8 @@ export function DocsTab({ task, readOnly, writesOff, onGenerate, onPublish, publ
   publishError?: string | null;
   /** 版本表里点「修订 N」。 */
   onShowRevision: (revision: number) => void;
+  /** 发布前检查里点「去补」的入口。 */
+  onGo: (target: GoTarget) => void;
 }) {
   const taskId = task.task_id;
   const off = publishOff(task, { readOnly, writesOff });
@@ -76,7 +83,6 @@ export function DocsTab({ task, readOnly, writesOff, onGenerate, onPublish, publ
 
       <section className="oa-blk">
         <h3>文档<small>按最新的修订 {task.latest_revision}</small></h3>
-        <p className="ap-line" data-testid="docs-arrangement">{arrangementLine(task)}</p>
         <div className="ap-btns">
           <button type="button" className="btn sm" disabled={busy !== null} onClick={togglePreview} data-testid="docs-preview">
             {busy === "preview" ? "正在生成预览…" : showPreview ? "收起预览" : "预览"}
@@ -89,6 +95,9 @@ export function DocsTab({ task, readOnly, writesOff, onGenerate, onPublish, publ
         {error && <p className="ap-err" role="alert" data-testid="docs-error">{error}</p>}
         {showPreview && preview !== null && <div className="ap-preview" data-testid="docs-preview-body"><DocumentPreview text={preview} /></div>}
       </section>
+
+      <Coverage task={task} />
+      <PublishCheck task={task} onGo={onGo} />
 
       <section className="oa-blk">
         <h3>版本</h3>
@@ -138,5 +147,72 @@ function VersionsTable({ taskId, versions, onShowRevision }: { taskId: string; v
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** 按章覆盖：文档的各章一行。 */
+function Coverage({ task }: { task: Task }) {
+  const rows = coverageRows(task, toc(task));
+  const cell = (n: number | null) => (n === null ? <span className="mut">—</span> : n);
+  return (
+    <section className="oa-blk">
+      <h3>按章覆盖<small>前七章是业务说明，其后每类需求条目一章，最后是追溯附录</small></h3>
+      <div className="oa-tablebox">
+        <table className="oa-table ap-table" data-testid="docs-coverage">
+          <thead><tr><th>章</th><th>节</th><th>条目</th><th>图</th><th>导语</th><th>备注</th></tr></thead>
+          <tbody>
+            {rows.map((one) => (
+              <tr key={one.name} className={one.empty ? "ap-fresh" : undefined} data-testid={`coverage-${one.name}`}>
+                <td className="nm">{one.name}</td>
+                <td className="num">{cell(one.sections)}</td>
+                <td className="num">{cell(one.items)}</td>
+                <td className="num">{cell(one.diagrams)}</td>
+                <td className={one.intro ? undefined : "mut"}>{one.intro === null ? "—" : one.intro ? "有" : "没有"}</td>
+                <td className={one.empty ? "ap-warn" : "mut"}>{one.note || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/** 发布前检查：完成条件逐条与非阻断提示。 */
+function PublishCheck({ task, onGo }: { task: Task; onGo: (target: GoTarget) => void }) {
+  const rows = checkRows(task);
+  const tips = hints(task, toc(task));
+  const allMet = !!task.completion?.all_met;
+  const go = (target: GoTarget | null, text: string, id: string) => target && (
+    <a className="ap-lnk" role="button" onClick={() => onGo(target)} data-testid={`go-${id}`}>{text}</a>
+  );
+  return (
+    <section className="oa-blk">
+      <h3>发布前检查<small>{allMet ? "" : `满足 ${rows.filter((one) => one.state === "met").length} / ${rows.filter((one) => one.state !== "empty").length} 条`}</small></h3>
+      {allMet ? <p className="ap-line" data-testid="check-all-met">✓ 完成条件全部满足，可以发布。</p> : (
+        <div className="oa-tablebox">
+          <table className="oa-table ap-table ap-check" data-testid="docs-check">
+            <thead><tr><th>完成条件</th><th>现状</th><th /></tr></thead>
+            <tbody>
+              {rows.map((one) => (
+                <tr key={one.key} data-testid={`check-${one.key}`}>
+                  <td className="nm">{one.label}</td>
+                  <td className={one.state === "unmet" ? "ap-warn" : "mut"}>{one.state === "met" ? "✓ 已满足" : one.gap}</td>
+                  <td className="acts">{go(one.go, one.goText, one.key)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="ap-hints" data-testid="docs-hints">
+        <div className="ap-hints-h">非阻断提示<span className="ap-note">不挡发布，发布之前值得看一眼</span></div>
+        {tips.length === 0 ? <p className="oa-empty">没有。</p> : (
+          <ul>
+            {tips.map((one) => <li key={one.key} data-testid={`hint-${one.key}`}><span>{one.text}</span>{go(one.go, one.goText, one.key)}</li>)}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }

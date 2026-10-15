@@ -46,3 +46,13 @@
 .app .ap-head .ap-act .btn + .btn { margin-left: .4rem; }
 .app .ap-btns { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
 .app .oa-tablebox + .ap-line { margin-top: .6rem; }
+
+/* 文档与版本：发布前检查下面的非阻断提示，一条一行，入口在句子后面 */
+.app .ap-hints { margin-top: .9rem; }
+.app .ap-hints-h { font-size: 0.943rem; font-weight: 600; margin-bottom: .3rem; }
+.app .ap-hints-h .ap-note { margin-left: .5rem; }
+.app .ap-hints ul { list-style: none; margin: 0; padding: 0; max-width: 52rem; }
+.app .ap-hints li { display: flex; align-items: baseline; gap: .8rem; padding: .3rem 0; border-top: 1px solid var(--line); font-size: 0.929rem; }
+.app .ap-hints li:first-child { border-top: 0; }
+.app .ap-hints li .ap-lnk { margin-left: auto; white-space: nowrap; }
+.app .ap-table.ap-check td.nm { white-space: nowrap; }

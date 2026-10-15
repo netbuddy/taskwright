@@ -109,7 +109,7 @@ describe("「文档与版本」页签的版本表", () => {
   function docs(t: Task, fetched: VersionView[] = t.versions ?? []) {
     const list = vi.spyOn(api, "listVersions").mockResolvedValue(fetched);
     const onShowRevision = vi.fn();
-    render(<Wrap><div className="app"><DocsTab task={t} readOnly={false} writesOff={false} onGenerate={noop} onShowRevision={onShowRevision} /></div></Wrap>);
+    render(<Wrap><div className="app"><DocsTab task={t} readOnly={false} writesOff={false} onGenerate={noop} onShowRevision={onShowRevision} onGo={noop} /></div></Wrap>);
     return { list, onShowRevision };
   }
 

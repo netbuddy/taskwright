@@ -89,5 +89,5 @@ export function confirmRows(task: Task): ConfirmRow[] {
 export function publishCondition(task: Task): string {
   const conditions = task.completion?.conditions ?? [];
   const met = conditions.filter((one) => one.met).length;
-  return `发布的前置条件：完成条件全部满足（现在满足 ${met} / ${conditions.length} 条，点上方汇总行可看各条），并经你同意后在「文档与版本」页签发布。`;
+  return `发布的前置条件：完成条件全部满足（现在满足 ${met} / ${conditions.length} 条，逐条见「文档与版本」页签的发布前检查），并经你同意后在那里发布。`;
 }
