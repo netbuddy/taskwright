@@ -35,3 +35,8 @@
 /* 汇总行单独一行（六个页签都有），靠右；需求条目页签里筛选一行前面写「筛选：」 */
 .app .filters.sumrow { padding: .3rem .7rem; }
 .app .filters .flabel { font-size: 0.889rem; color: var(--mut); margin-right: .1rem; }
+
+/* 评审与确认：页头右边的评审按钮；一句汇总后面跟一句小字说明 */
+.app .ap-head .ap-act { margin-left: auto; }
+.app .ap-line { margin: 0; font-size: 0.943rem; }
+.app .ap-line .ap-note { display: block; margin: .2rem 0 0; }

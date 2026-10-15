@@ -9,7 +9,7 @@
 // 在右侧「修订」页签选中一次修订（hit）时，它碰到的条目高亮，集合页签上标出各有几个，筛选行加一个可点掉的提示。
 // 宽屏时列表每行在标题后多一列「一句摘要」，显隐由样式里的容器查询按条目区宽度决定（阈值 40rem）。
 //
-// 评审：顶上一行右侧「评审 N 条待评审的条目」（N 为 0、助手工作中、上一批还在评时灰化并悬停说明），点了发 request_review；
+// 评审：「评审与确认」页签页头右边「评审 N 条待评审的条目」（N 为 0、助手工作中、上一批还在评时灰化并悬停说明），点了发 request_review；
 // 后端核对通过就回应，评审在后台跑，进度与结果由全站提示条报（workToasts.ts）。进度汇总一行写待评审、评审不通过（不含保留的）各几条，
 // 有保留了写法的条目时另写「已保留写法 N」。点开进度看到的完成条件
 // 与任务页是同一个面板，评审那一条旁边有「评审这 N 条」与「打开 X」。
@@ -36,6 +36,7 @@ import { unlinkedIds } from "../../model/domainNotes";
 import { initialTab, readTab, saveTab, tabOrder } from "../../model/itemsTab";
 import { ASSET_PANES, type AssetPane, paneCount, paneKey, paneOfCollection, paneOfKey } from "../../model/assetTabs";
 import { MaterialsTab } from "./MaterialsTab";
+import { ReviewTab } from "./ReviewTab";
 import { FromIssueCrumb, ItemIssues } from "./ItemIssues";
 import { errorText, rejectedText } from "./errors";
 import { EXPORT_DOCX_HINT, ExportDocxModal } from "./ExportDocxModal";
@@ -345,10 +346,6 @@ export function ItemsPanel({
           <button type="button" className="btn sm" onClick={onGenerateDoc}>生成文档</button>
           <button type="button" className="btn sm" disabled={!exportItems.length} title={exportItems.length ? undefined : EXPORT_DOCX_HINT} data-testid="export-docx"
             onClick={() => setExporting(true)}>导出 Word{exportItems.length ? `（${exportItems.length}）` : ""}</button>
-          {onReview && (
-            <button type="button" className="btn sm pri" disabled={!!reviewOff} title={reviewOff} data-testid="review-all"
-              onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
-          )}
         </div>
         <div className="filters" data-testid="item-filters">
           <span className="flabel">筛选：</span>
@@ -409,6 +406,11 @@ export function ItemsPanel({
           <MaterialsTab task={task} materials={materials} info={info} libraries={libraries} readOnly={readOnly} onView={(path) => onViewMaterial?.(path)} />
         ) : pane === "models" ? (
           <ModelsTab task={task} contents={toc(task)} onView={(id) => goFigure(id)} onOpenItem={(id) => openItem(id)} />
+        ) : pane === "review" ? (
+          <ReviewTab task={task} reviewButton={onReview && (
+            <button type="button" className="btn sm pri" disabled={!!reviewOff} title={reviewOff} data-testid="review-all"
+              onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
+          )} />
         ) : !onCollection ? (
           <div className="oa-page ap-page" data-testid={`pane-${pane}-body`}>
             <div className="ap-head"><h2>{ASSET_PANES.find((one) => one.key === pane)!.label}</h2></div>
