@@ -54,7 +54,7 @@ export function startPageTexts(taskName: string) {
     cases: [
       { title: "有调研材料", text: "上传会议记录、现行制度、旧系统说明；助手核读后立章节并逐句引用。", focus: "materials" },
       { title: "只有口头想法", text: "用三句话描述建设什么系统、服务哪些用户、解决什么问题；助手复述理解后逐项提问。", focus: "description" },
-      { title: "已有旧版规格说明", text: "把旧文档作为材料上传；助手按新结构重新组织，差异之处记为问题。", focus: "materials" },
+      { title: "已有旧版规格说明", text: "旧版规格说明作为项目材料核读；助手按新结构重新组织，差异之处记为问题。", focus: "materials" },
     ],
     intake: {
       lead: "项目材料与目标系统描述至少提供一项。材料越完整，助手的初稿越接近实际业务；没有材料时，由目标系统描述开始，助手通过提问逐步建立业务说明。",

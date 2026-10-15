@@ -120,7 +120,7 @@ function flowOf(key: string, name: string, over: Partial<CatalogFlow> = {}): Cat
 const CHANGE = flowOf("change", "需求变更", { enabled: false, state: "还没有已发布的版本", prerequisite_text: "前置条件：存在已发布的版本。", start: null });
 const PUBLISH = activityOf("publish", "发布", { mode: "user_only", mode_name: "仅限用户发起", enabled: false, state: "此版本尚未提供", prerequisite_text: "前置条件：评审无未处理发现，确认记录待处理为 0。" });
 const TEXTS = { lead: "本任务用于编制并持续维护「退款需求走查」的需求规格说明。", guide_note: "预计首轮产出：业务说明初稿与待澄清问题清单",
-  cases: [{ title: "有调研材料", text: "上传会议记录。" }, { title: "只有口头想法", text: "用三句话描述。" }, { title: "已有旧版规格说明", text: "把旧文档作为材料上传。" }] };
+  cases: [{ title: "有调研材料", text: "上传会议记录。" }, { title: "只有口头想法", text: "用三句话描述。" }, { title: "已有旧版规格说明", text: "旧版规格说明作为项目材料核读。" }] };
 const IDLE_ACTIVITY = { kind: "idle" as const, key: "idle" as const, name: "空闲", ordinal: null, flow: "analysis", moved_by: null, moved_at: null, reason: null };
 /** 任务状况里的一个工作项。 */
 function workItem(recordId: number, over: Partial<WorkItemView> = {}): WorkItemView {
@@ -327,12 +327,17 @@ describe("起点页：空任务", () => {
 describe("起点页：有内容的任务", () => {
   const sessions = [session("S1", "第一句", "2026-09-28T18:02:00"), session("S2", "第二句", "2026-09-29T10:02:00")];
 
-  it("有内容、没有工作项：没有「三步开始」，也没有「工作项」一节；任务名旁写「没有工作项 · 未发布」，发布过写第几版；格子里有数的写那一句", async () => {
+  it("有内容、没有工作项：「三步开始」改为「启动需求分析」排在六格之前，三步收成一行；没有「工作项」一节；任务名旁写「没有工作项 · 未发布」，发布过写第几版；格子里有数的写那一句", async () => {
     page(detail({ sessions }), info, statusOf({ assets: FILLED_ASSETS }));
     await ready();
     expect(await screen.findByTestId("task-state")).toHaveTextContent("没有工作项 · 未发布");
-    expect(screen.queryByTestId("start-guide")).toBeNull();
-    expect(screen.queryByTestId("start-cases")).toBeNull();
+    const guide = screen.getByTestId("start-guide");
+    expect(text(guide.querySelector(".gt"))).toBe("启动需求分析");
+    expect(text(screen.getByTestId("start-steps-line"))).toBe("三步：选择工作流程、提供输入、由助手推进");
+    expect(guide.querySelector(".tp-steps")).toBeNull();
+    expect(guide.compareDocumentPosition(screen.getByTestId("asset-cells")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId("start-cases")).toBeInTheDocument();
+    expect(screen.queryByTestId("start-case-materials")).toBeNull();
     expect(screen.queryByTestId("work-items")).toBeNull();
     expect([...screen.getByTestId("asset-cells").querySelectorAll(".tp-cell")].map((one) => [text(one.querySelector(".v")), text(one.querySelector(".s"))])).toEqual([
       ["2 份", "均已核读"], ["9 节", "1 处待澄清"], ["4 张", "1 未查看"], ["6 条", "6 未读 · 1 待核实"], ["未评审", ""], ["未发布", ""]]);
@@ -447,13 +452,33 @@ describe("起点页：有内容的任务", () => {
     expect(screen.queryByTestId("pending-work")).toBeNull();
   });
 
-  it("六类资产都空着而已经有工作项（刚启动、还没有记下内容）：不再显示「三步开始」，显示「工作项」一节，任务名旁写个数", async () => {
+  it("只有单项活动的工作项时「三步开始」仍显示：六格都空着时在页头之下、「工作项」一节之前，任务名旁写个数", async () => {
     page(detail({ sessions }), info, statusOf({ work_items: [workItem(1)] }));
     await ready();
     expect(await screen.findByTestId("task-state")).toHaveTextContent("1 个工作项 · 未发布");
-    expect(screen.getByTestId("work-items")).toBeInTheDocument();
+    const guide = screen.getByTestId("start-guide");
+    expect(text(guide.querySelector(".gt"))).toBe("三步开始");
+    expect(guide.compareDocumentPosition(screen.getByTestId("work-items")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId("start-cases")).toBeInTheDocument();
+  });
+
+  it("有流程工作项时不显示「三步开始」与三种常见起点：流程从它的工作项卡接着做", async () => {
+    page(detail({ sessions }), info, statusOf({ assets: FILLED_ASSETS, work_items: [FLOW_ITEM, workItem(2)] }));
+    await ready();
+    await screen.findByTestId("work-items");
     expect(screen.queryByTestId("start-guide")).toBeNull();
     expect(screen.queryByTestId("start-cases")).toBeNull();
+  });
+
+  it("任务里已有材料时，三种常见起点各多一句：已上传的材料启动后一并核读；排在「工作项」之后、六格之前", async () => {
+    const materials = [{ path: "inputs/借阅说明.md", bytes: 5, modified_at: "2026-09-28T17:50:00", derived_from: null, deletable: true },
+      { path: "inputs/续借办法.md", bytes: 5, modified_at: "2026-09-28T17:51:00", derived_from: null, deletable: true }];
+    page(detail({ sessions, materials } as unknown as Partial<TaskDetail>), info, statusOf({ assets: FILLED_ASSETS, work_items: [workItem(2)] }));
+    await ready();
+    const guide = await screen.findByTestId("start-guide");
+    expect(screen.getByTestId("work-items").compareDocumentPosition(guide) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByTestId("start-case-materials").map(text)).toEqual(Array(3).fill("已上传 2 份材料，启动后一并核读"));
+    expect(screen.getByTestId("start-case-2").getAttribute("href")).toBe("#/tasks/TASK-P/start/analysis?case=2");
   });
 
   it("工作项卡上三个按钮都在：打开最新会话、换一条干净的会话接着、删除这个工作项", async () => {

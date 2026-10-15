@@ -51,6 +51,10 @@
 .tp-guide { margin-top: 1.286rem; background: var(--card); border: 1px solid var(--ink); border-radius: 0.714rem; box-shadow: var(--card-shadow);
   padding: 1rem 1.143rem 1.071rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.429rem; align-items: center; }
 .tp-guide .gt { font-weight: 600; font-size: 1.071rem; margin-bottom: 0.5rem; }
+/* 任务已有资产时：标题「启动需求分析」，三步收成一行副标题；框与页上的其他区块隔开一节的距离 */
+.tp-guide.compact { margin-top: 1.857rem; }
+.tp-guide.compact .gt { margin-bottom: 0.143rem; }
+.tp-steps-line { font-size: 0.929rem; color: var(--text2); }
 .tp-steps { display: flex; gap: 1.286rem; margin: 0; padding: 0; list-style: none; }
 .tp-steps li { display: flex; gap: 0.5rem; font-size: 0.929rem; color: var(--text2); flex: 1; min-width: 0; }
 .tp-steps .no { flex: none; width: 1.429rem; height: 1.429rem; border-radius: 50%; background: var(--ink); color: var(--on-ink);
@@ -64,6 +68,9 @@
 .tp-case { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; padding: 0.714rem 0.929rem 0.786rem; color: inherit; }
 .tp-case b { display: block; font-size: 0.972rem; font-weight: 600; margin-bottom: 0.143rem; }
 .tp-case span { font-size: 0.893rem; color: var(--text2); }
+/* 已有材料时的一句：几张卡里贴底对齐 */
+.tp-case:has(em) { display: flex; flex-direction: column; }
+.tp-case em { display: block; margin-top: auto; padding-top: 0.286rem; font-style: normal; font-size: 0.857rem; color: var(--text3); }
 
 /* 3a 待处理事项：四张卡两列排，窄了一列；每行是编号、标题与一句小字、动作按钮；推进建议一行占满，淡绿底 */
 .tp-todo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.857rem; }
