@@ -43,7 +43,7 @@ Taskwright 自己不直接调用模型，调用模型的是 pi；执行者用的
 
 pi 把凭据与自定义模型存放在 `~/.pi/agent/` 下（`auth.json` 与 `models.json`；环境变量 `PI_CODING_AGENT_DIR` 可以改这个目录）。任务服务用它自己的环境变量启动 pi，所以在启动服务的那个终端里设置的环境变量会传到 pi。
 
-模型服务也可以在网页界面上配置，经[接口参考](api.zh-CN.md)第 10 节的那组接口。这时任务服务在 `models.json` 与 `auth.json` 里加上它自己的几项，名字是 `taskwright-…`，文件里别的内容原样保留；每次改之前在文件旁边存一份备份（`<文件名>.taskwright-backup-<时刻>`，只留最近 5 份）。在那里选定的语言模型优先于启动配置，桌面包里也优先于 pi 的 `settings.json`。它从下一次打开或者新建会话起使用，改了之后重新打开的旧会话也用它；正在进行的会话不受影响。选了什么记在产品自己的设置文件里：用户数据目录下的 `settings.json`（Linux 是 `$XDG_DATA_HOME/taskwright/`，缺省是用户主目录下的 `.local/share/taskwright/`），设了 `TASKWRIGHT_SETTINGS_FILE` 时是它指的文件。这个文件里不存密钥。
+模型服务也可以在网页界面上配置，经[接口参考](api.zh-CN.md)第 10 节的那组接口。这时任务服务在 `models.json` 与 `auth.json` 里加上它自己的几项，名字是 `taskwright-…`，文件里别的内容原样保留；每次改之前在文件旁边存一份备份（`<文件名>.taskwright-backup-<时刻>`，只留最近 5 份）。在那里选定的语言模型优先于启动配置，桌面包里也优先于 pi 的 `settings.json`。它从下一次打开或者新建会话起使用，改了之后重新打开的旧会话也用它；正在进行的会话不受影响。选了什么记在产品自己的设置文件里：数据目录下的 `settings.json`（数据目录怎样定见第 8.1 节；没有另给时是用户数据目录，Linux 是 `$XDG_DATA_HOME/taskwright/`，缺省是用户主目录下的 `.local/share/taskwright/`），设了 `TASKWRIGHT_SETTINGS_FILE` 时是它指的文件。这个文件里不存密钥。
 
 接入模型有三条路径。
 
@@ -113,7 +113,7 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 - `--tasks` 是任务目录的创建位置（每个任务一个目录，以任务编号命名）；`--runs` 是每个任务的原始 pi 事件与会话文件的归档位置（`<runs>/<task id>/pi-events/` 与 `pi-sessions/`）。`--knowledge` 是知识库的根目录：各任务选用的参考资料库（接口文档第 11 节）。三者不给时都放在用户数据目录下（Linux 是 `~/.local/share/taskwright/`），分别是 `tasks/`、`runs/` 与 `knowledge/`；给了 `--data <dir>` 或环境变量 `TASKWRIGHT_DATA_DIR` 时放在那个目录下。任务登记 `service.sqlite`、升级前的备份 `backups/` 与升级报告也在数据目录下（数据目录怎样定、怎样升级见第 8.1 节）。
 - 任务类型也在数据目录下的 `task-types/`：每种一个子目录（随附的一种是 `requirements-engineering/`，即「需求工程」），新建任务从这里复制。服务启动时，产品自带的任务类型（安装位置的 `task-types/`）里数据目录下还没有的，整个复制过来，`task-types/manifest.json` 记下每种是从产品自带的第几版、什么时候、由哪个产品版本复制来的；已经有的一律不覆盖，所以升级产品不会改掉数据目录里的任务类型。每种任务类型的每个修订存一份完整目录，在 `task-types/.revisions/<键>/<修订号>/`（复制来的那一刻是修订 1），修订的经过（时刻、谁改的、说明、改了哪些文件）记在 `service.sqlite` 里。数据包暂时不带 `task-types/`。
 - 各服务默认绑定 `0.0.0.0`（可用 `--host` 更改）。唯一的例外是以 `--mode desktop` 启动的任务服务，它默认绑定 `127.0.0.1`。
-- 任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是用户数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。只有在本机打开的页面才有退出的入口；服务按请求的来源地址判断是不是本机，所以桌面形态不要放在反向代理后面（否则服务看到的是代理的地址）。
+- 任务服务有一个运行形态参数 `--mode desktop|server`（缺省 `server`）。`server` 用于多人共用的服务器：默认绑定 `0.0.0.0`，没有退出接口。`desktop` 用于一个人在自己电脑上使用：默认绑定 `127.0.0.1`，并多出一个只接受本机请求的 `POST /api/v1/service/exit`。两种形态下 `--host` 都优先于默认地址。两种形态的日志写法相同：写到标准输出，同时追加到 `TASKWRIGHT_LOG_DIR` 下当天的文件（缺省是数据目录下的 `logs/`）。`GET /api/v1/service` 与退出接口的说明见 `docs/api.zh-CN.md` 第 9 节。只有在本机打开的页面才有退出的入口；服务按请求的来源地址判断是不是本机，所以桌面形态不要放在反向代理后面（否则服务看到的是代理的地址）。
 - 任务服务的 `--debug`（缺省不带）打开调试模式：设置页面多一栏「调试」，里面可以设一个提示词目录；工作视图的右侧栏多一个「调试」页签，任务页多一个「导出为用户画像」，另多几个调试用的接口（接口文档第 13 节）。这些接口没有另外的访问控制，而服务器形态缺省绑定全部网卡，所以调试模式只在自己的机器上用，用完去掉这个参数重新启动。`scripts/dev.sh --debug` 与桌面安装包的启动程序都把这个参数原样传给任务服务。
 - **任何能打开页面的人都能修改模型配置。** 在加登录之前，任何能打开这个网址的人都能在网页界面上修改模型配置，包括换掉 API 密钥、删除模型服务。以 `--mode server` 启动的任务服务，只在可信的内网里部署。
 - 给任务服务的端口被占用时，它会依次尝试后面的端口，最多共试 10 个，全部被占时报错退出。给 `--port 0` 时由系统挑一个空闲端口。实际使用的端口会打印到日志、写进各任务的占用标记，并由 `GET /api/v1/service` 返回。
@@ -132,13 +132,13 @@ Taskwright 依赖模型稳定地调用工具：每次回复都经 `reply` 工具
 | `TASKWRIGHT_TASKS_DIR`、`TASKWRIGHT_API_PORT` | `scripts/dev.sh` | 任务目录的根路径与 API 端口。 |
 | `TASKWRIGHT_KNOWLEDGE_DIR` | `scripts/dev.sh` | 知识库的根目录（默认 `./knowledge`）。 |
 | `TASKWRIGHT_TASKS_ROOT` | agent | 服务启动 pi 时设：任务根目录。不在它之下的任务库拒绝写入。单独跑 agent 代码时（命令行工具、测试）不设，也就不核对。 |
-| `TASKWRIGHT_LOG_DIR` | 任务服务 | 任务服务追加每日日志文件 `backend-<日期>.log` 的目录（缺省是用户数据目录下的 `logs/`）。 |
+| `TASKWRIGHT_LOG_DIR` | 任务服务 | 任务服务追加每日日志文件 `backend-<日期>.log` 的目录（缺省是数据目录下的 `logs/`；数据目录怎样定见第 8.1 节，没有另给时是用户数据目录）。 |
 | `TASKWRIGHT_LANGFUSE_PLUGIN` | 任务服务、`scripts/tui.sh` | 可选的 Langfuse 插件所在的位置（见第 7 节）。 |
 | `TASKWRIGHT_LANGFUSE_ENV_FILE` | 任务服务、`scripts/tui.sh`、observatory | 保存 Langfuse 地址与密钥的文件。 |
 | `TASKWRIGHT_LANGFUSE_PROJECT_ID` | observatory | Langfuse 项目编号，用于生成直达链接。 |
 | `TASKWRIGHT_SIM_MATERIALS_DIR` | simulator | 存放模拟用户画像所用材料的目录。 |
 | `TASKWRIGHT_DATA_DIR` | 任务服务、桌面包的启动程序 | 数据目录：任务登记、任务类型（`task-types/`）、升级前的备份与升级报告放在这里；任务目录、归档目录与知识库目录没有另给时也在它下面。命令行的 `--data` 优先于它（见第 8.1 节）。 |
-| `TASKWRIGHT_SETTINGS_FILE` | 任务服务 | 产品自己的设置文件：在网页界面上选定的模型与登记的模型服务（缺省是用户数据目录下的 `settings.json`）。测试与试用环境把它指到临时文件。 |
+| `TASKWRIGHT_SETTINGS_FILE` | 任务服务 | 产品自己的设置文件：在网页界面上选定的模型与登记的模型服务（缺省是数据目录下的 `settings.json`；数据目录没有另给时是用户数据目录）。先前的版本不论数据目录在哪里，都把这个文件放在用户数据目录下：没有设这个变量、数据目录下还没有 `settings.json` 而用户数据目录下有时，任务服务启动时复制一份过来（原件不删），日志里写一句「产品设置从……复制到……；以后只读新的一份」。测试与试用环境把它指到临时文件。 |
 | `OPENAI_API_KEY` 等服务商变量 | pi | 模型凭据，见第 3.2 节。 |
 
 ## 6 网页界面的生产构建
@@ -267,7 +267,7 @@ node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 
 **去哪里看。**
 
-- 任务服务把输出打印在启动它的那个终端里，同时把同样的内容追加到 `TASKWRIGHT_LOG_DIR` 下的 `backend-<日期>.log`（缺省是用户数据目录下的 `logs/`）。
+- 任务服务把输出打印在启动它的那个终端里，同时把同样的内容追加到 `TASKWRIGHT_LOG_DIR` 下的 `backend-<日期>.log`（缺省是数据目录下的 `logs/`）。
 - `<runs>/<task id>/pi-events/` 下，每启动一次 pi 就有一组文件：原始 pi 事件流（`<标签>-<时间>.jsonl`）、后端补记（`.backend.jsonl`，含 pi 的退出码与标准错误）、每一行的收到时刻（`.times.jsonl`）。格式见 [observatory/archive-format.md](../observatory/archive-format.md)。
 - `<runs>/<task id>/pi-sessions/` 下是 pi 的会话文件，也就是对话本身。
 - 观测台（见[用户手册第 7 节](user-guide.zh-CN.md#7-用观测台查看智能体做了什么)）把这些归档展示成页面，包括每次被拒的工具调用及其原因。
@@ -299,7 +299,7 @@ node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 | `pi/` | Taskwright 自己的 pi 配置目录：`models.json`（登记的模型服务）、`auth.json`（密钥）、`settings.json` |
 | `cache/` | 程序内容：单可执行文件解压出的 `payload/<构建号>/`、AppImage 复制出的 `agent-<构建号>/`；可以删，下次启动重新生成 |
 
-设了环境变量 `TASKWRIGHT_DATA_DIR`（或者启动时给了 `--data <目录>`）时，整棵树跟着放到它指定的目录下。`TASKWRIGHT_CACHE_DIR` 与 `PI_CODING_AGENT_DIR` 可以把 `cache/` 与 `pi/` 单独指到别处。
+设了环境变量 `TASKWRIGHT_DATA_DIR`（或者启动时给了 `--data <目录>`）时，整棵树跟着放到它指定的目录下。`TASKWRIGHT_CACHE_DIR` 与 `PI_CODING_AGENT_DIR` 可以把 `cache/` 与 `pi/` 单独指到别处。在服务器上用命令行起任务服务（第 4 节）时，`--data` 或 `TASKWRIGHT_DATA_DIR` 同样带着 `tasks/`、`runs/`、`knowledge/`、`logs/`、`backups/`、`settings.json` 与 `service.sqlite`；`pi/` 与 `cache/` 只有桌面包才有，命令行起的服务用的是 `PI_CODING_AGENT_DIR` 指的 pi 配置目录（没设时是 pi 自己的缺省目录）。
 
 另外两处在系统临时目录里、不在数据目录下：pi 加载扩展时的编译缓存（`jiti/`）与 Node 的模块编译缓存（`node-compile-cache/`）。它们是随时可以重新生成的临时文件，系统清理临时目录时一起清掉。备份方法同第 8 节；装了新版本之后第一次启动，页面会先显示「数据升级」，见第 8.1 节。
 

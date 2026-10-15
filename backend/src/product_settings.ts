@@ -2,8 +2,9 @@
  * 产品自己的设置文件：记「助手用哪个语言模型、检索用哪个嵌入模型」、嵌入模型的查询前缀，以及产品在 pi 配置目录里登记过的
  * 模型服务的名单（凭它分清共用的模型登记文件里哪些项是产品写的、哪些是用户自己写的）。文件里不存任何密钥。
  *
- * 位置：环境变量 TASKWRIGHT_SETTINGS_FILE 给了就用它，否则是用户数据目录（paths.ts 的 userDataDir）下的 settings.json。
- * 测试与验证环境一律用这个环境变量指到自己的临时目录。
+ * 位置：环境变量 TASKWRIGHT_SETTINGS_FILE 给了就用它，否则是数据目录（paths.ts 的 dataDirectory）下的 settings.json；数据目录
+ * 没有另给时就是用户数据目录。服务启动时定出数据目录之后，把这个位置写进环境变量（start.ts），同一进程里的各处与它起的 pi
+ * 读到的是同一份。测试与验证环境一律用这个环境变量指到自己的临时目录。
  *
  * 整份内容按 pi 配置目录的绝对路径分开记：PI_CODING_AGENT_DIR 可以把 pi 的配置目录指到别处，登记过哪些服务、
  * 选了哪个模型都是对某一个 pi 配置目录说的；换了目录就等于还没有配置过，照 0.3 的规则办。
@@ -14,11 +15,12 @@
  * 第 1 版的文件里模型服务没有用途，每个模型各自标类型；迁移的规则见 migratePurposes。
  */
 
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { CODEX_PROVIDER } from "./codex.ts";
 import { readForView, readForWrite, updateJsonFile } from "./config_files.ts";
-import { userDataDir } from "./paths.ts";
+import { dataDirectory, userDataDirFor } from "./paths.ts";
 
 export const ENV_SETTINGS_FILE = "TASKWRIGHT_SETTINGS_FILE";
 export const SETTINGS_VERSION = 2;
@@ -115,9 +117,29 @@ export interface PiDirSettings {
   providers: Record<string, StoredProvider>;
 }
 
-export function settingsFile(env: NodeJS.ProcessEnv | Record<string, string> = process.env): string {
+/** 设置文件的位置：环境变量给了用它，否则是数据目录下的 settings.json；dataDir 不给时按环境变量定数据目录（paths.ts 的 dataDirectory）。 */
+export function settingsFile(env: NodeJS.ProcessEnv | Record<string, string> = process.env, dataDir?: string): string {
   const given = (env[ENV_SETTINGS_FILE] ?? "").trim();
-  return given ? resolve(given) : join(userDataDir(), "settings.json");
+  return given ? resolve(given) : join(dataDir ?? dataDirectory(null, null, env), SETTINGS_NAME);
+}
+
+/** 设置文件不另给位置时的文件名。 */
+export const SETTINGS_NAME = "settings.json";
+
+/**
+ * 一次性迁移：先前的版本不论数据目录在哪里，设置文件都放在用户数据目录下。环境变量没有另给位置、数据目录下还没有设置文件、
+ * 用户数据目录下有、而且两者不是同一个文件时，把它复制到数据目录下（原件不删），回一句写进日志的话；不需要复制时回 null。
+ */
+export function adoptUserSettings(dataDir: string, env: NodeJS.ProcessEnv | Record<string, string> = process.env): string | null {
+  if ((env[ENV_SETTINGS_FILE] ?? "").trim()) return null;
+  const to = join(dataDir, SETTINGS_NAME);
+  const from = join(userDataDirFor(process.platform, env, homedir()), SETTINGS_NAME);
+  if (existsSync(to) || !existsSync(from)) return null;
+  const real = (dir: string): string => (existsSync(dir) ? realpathSync(dir) : resolve(dir));
+  if (real(dirname(to)) === real(dirname(from))) return null;
+  mkdirSync(dirname(to), { recursive: true });
+  copyFileSync(from, to);
+  return `产品设置从 ${from} 复制到 ${to}；以后只读新的一份。`;
 }
 
 function emptyDir(): PiDirSettings {

@@ -59,7 +59,7 @@
 |---|---|---|
 | pi 怎样启动：工具、扩展、技能、缺省的模型 | `backend/profiles/` 下的启动配置 | 代码仓；运行时只读 |
 | 模型服务及其密钥 | pi 配置目录里的 `models.json` 与 `auth.json`，与用户在命令行里用的 pi 共用 | 用户手工写、pi（`/login`）写，任务服务写它自己登记的那几项（`backend/src/model_config.ts`，照 pi 的办法加锁、先备份、先写临时文件再改名；见[接口参考](api.zh-CN.md)第 10 节） |
-| 用哪个语言模型、哪个嵌入模型，嵌入模型的查询前缀，任务服务登记过哪些模型服务 | 产品自己的设置文件：用户数据目录下的 `settings.json`（`TASKWRIGHT_SETTINGS_FILE` 可以改它的位置），每个 pi 配置目录一份 | 任务服务（`backend/src/product_settings.ts`）；里面不存密钥 |
+| 用哪个语言模型、哪个嵌入模型，嵌入模型的查询前缀，任务服务登记过哪些模型服务 | 产品自己的设置文件：数据目录下的 `settings.json`（`TASKWRIGHT_SETTINGS_FILE` 可以改它的位置），每个 pi 配置目录一份 | 任务服务（`backend/src/product_settings.ts`）；里面不存密钥 |
 
 pi 启动时用哪个模型由 `backend/src/launch.ts` 的 `resolveModel` 决定：先看设置里选定的语言模型；没有时照 0.3，桌面包看 pi 的 `settings.json`；再没有时用启动配置里的。设置里选定了模型时，执行者在每次启动、新建会话、切换会话之后核对 pi 用的模型，不同就用 `set_model` 换过去（`backend/src/executor.ts` 的 `ensureModel`）。
 
