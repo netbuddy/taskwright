@@ -18,29 +18,23 @@ import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { DOCUMENT_REVIEWED_OPTION, STAGE_NAMES, STAY_IDLE_OPTION, STAY_TEXT } from "./stage.ts";
 import { type ProposalFact, isStayKey, openProposal, proposalOfAct } from "./stage_proposal.ts";
+import { fillText } from "./texts.ts";
 import { UserOpError, type UserOpRequest } from "./user_ops.ts";
 
 export const CONTINUE_STAGE_KIND = "continue_stage";
 
 /** 留在会话里的那句话：给助手看的，页面按种类另写一句给用户看的。optionKey 是用户点的那一项的键（不给时当作点的是不生效的那一项）。 */
 export function continueStageNote(fact: Pick<ProposalFact, "stage" | "enter"> & Partial<Pick<ProposalFact, "kind" | "stay">>, optionKey?: string): string {
-  const head = "界面操作（不是用户打的字）：";
   const kind = fact.kind ?? "enter";
-  if (kind === "back") {
-    return `${head}用户在提议「${fact.enter.text}」的卡片上选了「${fact.stay?.text ?? "留在本段"}」，没有退回${STAGE_NAMES[fact.stage]}。` +
-      "这个提议仍然开着，用户要退回时会自己点，不用再发同一张卡片。";
-  }
+  const stage = STAGE_NAMES[fact.stage];
+  if (kind === "back") return fillText("ui_ops.continue_back", { enter: fact.enter.text, stay: fact.stay?.text ?? "留在本段", stage });
   if (kind === "review") {
     return optionKey === fact.enter.key
-      ? `${head}用户在请你过目的卡片上选了「${fact.enter.text}」：卡片点名的页已经记为看过。生成文档由用户在界面上按，你不用为此再做什么。`
-      : `${head}用户在请你过目的卡片上选了「${fact.stay?.text ?? "需要修改"}」。等用户说要改哪里，照着改，改完再发一次请过目的卡片。`;
+      ? fillText("ui_ops.continue_review_ok", { option: fact.enter.text })
+      : fillText("ui_ops.continue_review_fix", { option: fact.stay?.text ?? "需要修改" });
   }
-  if (fact.stay?.key === STAY_IDLE_OPTION.key) {
-    return `${head}用户在提议「${fact.enter.text}」的卡片上选了「${STAY_IDLE_OPTION.text}」，没有开始${STAGE_NAMES[fact.stage]}，任务仍然空闲。` +
-      "这个提议仍然开着，用户要开始时会自己点，不用再发同一张卡片。";
-  }
-  return `${head}用户在提议「${fact.enter.text}」的卡片上选了「${STAY_TEXT}」，没有进入${STAGE_NAMES[fact.stage]}。` +
-    "这个提议仍然开着，用户要进入时会自己点，不用再发同一张卡片。";
+  if (fact.stay?.key === STAY_IDLE_OPTION.key) return fillText("ui_ops.continue_idle", { enter: fact.enter.text, stay: STAY_IDLE_OPTION.text, stage });
+  return fillText("ui_ops.continue_stay", { enter: fact.enter.text, stay: STAY_TEXT, stage });
 }
 
 export interface ContinueStageResult {

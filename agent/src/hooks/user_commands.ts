@@ -49,6 +49,7 @@ import { DIAGRAM_OP_KIND, DIAGRAM_VIEW_OP_KIND, editDiagram, markDiagramViewed }
 import { recordStageCardClick } from "../lib/stage_read.ts";
 import { CONTINUE_STAGE_KIND, continueStage } from "../lib/user_stage.ts";
 import { CARD_TYPED_KEY, CARD_TYPED_TYPE, cardTypedNotice } from "../lib/dialogue_acts.ts";
+import { fillText } from "../lib/texts.ts";
 
 export const USER_COMMAND = "tw-user";
 export const UI_COMMAND = "tw-ui";
@@ -235,7 +236,9 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       pi.sendMessage(
         {
           customType: UI_CLICK_CUSTOM_TYPE,
-          content: `界面点击（不是用户打的字）：用户在回复 ${String(request.reply_entry ?? "")} 的卡片上${option ? `选了${option}` : "点了一个按钮"}。`,
+          content: option
+            ? fillText("ui_ops.ui_click_option", { reply: String(request.reply_entry ?? ""), option })
+            : fillText("ui_ops.ui_click_button", { reply: String(request.reply_entry ?? "") }),
           display: true,
           details: {
             op_id: opId,
@@ -285,14 +288,14 @@ function startUiReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, request: 
   report({ ok: true, event_seqs: [started.event_seq], results: started.items, revision_no: null });
   started.finished.then(({ outcome, event_seq, error }) => {
     const counts = outcome ? batchCounts(outcome.details.results) : null;
+    const tally = counts && { passed: counts.passed, failed: counts.failed, problems: counts.problems, advice: counts.advice };
     const text = counts
-      ? `评审完成：${counts.passed} 条合规、${counts.failed} 条不合规（问题 ${counts.problems} 处、建议 ${counts.advice} 条）` +
-        `${counts.unfinished ? `，${counts.unfinished} 条没有评完` : ""}。`
-      : (error ?? "评审没有做完。");
+      ? (counts.unfinished ? fillText("ui_ops.review_counts_unfinished", { ...tally!, unfinished: counts.unfinished }) : fillText("ui_ops.review_counts", tally!))
+      : (error ?? fillText("ui_ops.review_not_finished"));
     // 会话里只追加一句结论；逐条发现不在这里，执行者要用时经「查询任务状态」去查，界面上看评审页签。
     pi.sendMessage({
       customType: USER_EDIT_CUSTOM_TYPE,
-      content: `界面操作（不是用户打的字）：用户在界面上发起的评审结束了。${text}各条发现可以用查询任务状态查看。`,
+      content: fillText("ui_ops.review_done", { result: text }),
       display: true,
       details: { op_id: opId, kind: REVIEW_OP_KIND, event_seqs: event_seq >= 0 ? [event_seq] : [], results: started.items, revision_no: null, undoable: false,
         review: counts },
