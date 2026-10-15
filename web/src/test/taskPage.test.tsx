@@ -327,14 +327,15 @@ describe("起点页：空任务", () => {
 describe("起点页：有内容的任务", () => {
   const sessions = [session("S1", "第一句", "2026-09-28T18:02:00"), session("S2", "第二句", "2026-09-29T10:02:00")];
 
-  it("有内容、没有工作项：「三步开始」改为「启动需求分析」排在六格之前，三步收成一行；没有「工作项」一节；任务名旁写「没有工作项 · 未发布」，发布过写第几版；格子里有数的写那一句", async () => {
+  it("有内容、没有工作项：「三步开始」改为「启动需求分析」一节排在六格之前，三步写成一行灰字；没有「工作项」一节；任务名旁写「没有工作项 · 未发布」，发布过写第几版；格子里有数的写那一句", async () => {
     page(detail({ sessions }), info, statusOf({ assets: FILLED_ASSETS }));
     await ready();
     expect(await screen.findByTestId("task-state")).toHaveTextContent("没有工作项 · 未发布");
     const guide = screen.getByTestId("start-guide");
-    expect(text(guide.querySelector(".gt"))).toBe("启动需求分析");
+    expect(text(guide.querySelector(".tp-sec-h h2"))).toBe("启动需求分析");
     expect(text(screen.getByTestId("start-steps-line"))).toBe("三步：选择工作流程、提供输入、由助手推进");
-    expect(guide.querySelector(".tp-steps")).toBeNull();
+    expect([guide.querySelector(".tp-steps"), guide.querySelector(".gt")]).toEqual([null, null]);
+    expect(screen.getByTestId("guide-start")).toHaveTextContent("启动需求分析");
     expect(guide.compareDocumentPosition(screen.getByTestId("asset-cells")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByTestId("start-cases")).toBeInTheDocument();
     expect(screen.queryByTestId("start-case-materials")).toBeNull();
