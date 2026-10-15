@@ -315,21 +315,21 @@ describe("地址里的图与条目依据里的图", () => {
     expect(screen.getByTestId("overall-intro")).toBeInTheDocument();
   });
 
-  it("地址里只说看图（tab=diagrams）：停在第一处有图的地方；一张图都没有时停在业务说明的首页；浏览器记着上次停在图表页签的也当作业务说明", async () => {
+  it("地址里只说看图（tab=diagrams）：停在「分析模型」页签；在那里点「在节中查看」去那张图所在的节并显示它，点「编辑」同样过去并在图下展开 Mermaid 文本", async () => {
     const task = drawn();
     serve(task);
     const first = render(<Panel t={task} first={null} from={{ diagrams: true, collection: "功能用例" }} />);
-    // 没有系统边界图与用例图：照目录从上到下，第一节带图的是 3.2 借书与还书。
-    expect(text(await screen.findByTestId("topic-title"))).toBe("借书与还书");
+    expect(screen.getByTestId("pane-models")).toHaveClass("on");
+    expect(screen.getByTestId("models-tab")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("model-view-D-004"));
+    expect(screen.getByTestId("pane-description")).toHaveClass("on");
+    await shown("D-004");
+    expect(screen.queryByTestId("diagram-side")).toBeNull();
     first.unmount();
-    const none = render(<Panel t={overallTask()} first={null} from={{ diagrams: true, collection: "功能用例" }} />);
-    expect(screen.getByTestId("overall-intro")).toBeInTheDocument();
-    expect(screen.queryByTestId("diagrams-tab")).toBeNull();
-    none.unmount();
-    window.localStorage.setItem(`taskwright.itemsTab.${task.task_id}`, "@diagrams");
-    render(<Panel t={overallTask()} first={null} from={{ collection: "" }} />);
-    expect(document.querySelector(".itab.on")!.textContent).toContain("业务说明");
-    window.localStorage.clear();
+    render(<Panel t={task} first={null} from={{ diagrams: true }} />);
+    fireEvent.click(screen.getByTestId("model-edit-D-002"));
+    const figure = await screen.findByTestId("figure-D-002");
+    expect(await within(figure).findByTestId("diagram-text")).toBeInTheDocument();
   });
 
   it("条目详情「依据」里的图点了去它所在的节，「依据」里的页点了打开那一节", async () => {

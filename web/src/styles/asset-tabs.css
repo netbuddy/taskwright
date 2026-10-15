@@ -22,3 +22,12 @@
 .app .ap-foot { display: flex; align-items: center; gap: .7rem; margin-top: .6rem; font-size: 0.873rem; color: var(--text3); }
 /* 还没有做完的页签：一句说明 */
 .app .ap-todo { color: var(--text3); font-size: 0.943rem; }
+
+/* 分析模型：表上一行计数；编号小字；同一种的几行只在第一行写种类，组与组之间的线加深；刚改的行淡黄底 */
+.app .ap-count { font-size: 0.873rem; color: var(--text2); margin-bottom: .5rem; }
+.app .ap-id { font-family: ui-monospace, Menlo, monospace; font-weight: 400; font-size: 0.857rem; color: var(--text3); margin-right: .5rem; }
+.app .ap-table tbody tr.ap-first:not(:first-child) td { border-top: 1px solid var(--line2); }
+.app .ap-table tbody tr.ap-fresh, .app .ap-table tbody tr.ap-fresh:hover { background: var(--amber-bg); }
+.app .ap-table td.ap-warn { color: var(--amber); }
+.app .ap-chip { margin-left: .4rem; padding: 0 .4rem; border-radius: 71rem; font-size: 0.786rem; border: 1px solid var(--line2); }
+.app .ap-chip.warn { color: var(--amber); border-color: var(--amber-line); background: var(--card); }

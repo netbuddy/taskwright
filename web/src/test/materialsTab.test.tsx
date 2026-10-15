@@ -78,10 +78,10 @@ describe("顶上一排六个页签", () => {
     expect(screen.getByTestId("item-tabs")).toBeInTheDocument();
   });
 
-  it("还没做完的三个页签先写一句说明", () => {
+  it("还没做完的两个页签先写一句说明", () => {
     const t = overallTask();
     render(<Panel t={t} />);
-    for (const key of ["models", "review", "docs"]) {
+    for (const key of ["review", "docs"]) {
       fireEvent.click(screen.getByTestId(`pane-${key}`));
       expect(screen.getByTestId(`pane-${key}-body`)).toHaveTextContent("这一页在后续的提交里完成。");
     }

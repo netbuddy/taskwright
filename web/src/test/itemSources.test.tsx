@@ -1,5 +1,6 @@
 // 条目详情里的来源：字段下面不再挂来源小标签，来源只在底部「来源」一节列出。
 
+import { overallTask } from "./fixtures/overallTask";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -97,8 +98,10 @@ describe("条目详情里的来源", () => {
     expect([...detail.querySelectorAll(".srcbox")].map((b) => b.classList.contains("stale"))).toEqual([true, true]);
   });
 
-  it("被谁依据里的图：写编号、图名与「图」字，点了切到图表页签并打开那张图；条目照旧能点", async () => {
+  it("被谁依据里的图：写编号、图名与「图」字，点了切到业务说明页签、打开那张图所在的地方；条目照旧能点", async () => {
     const t = sourcesTask([src("文档原文", "inputs/借阅说明.md", "读者可以借书。")]);
+    // 图放在业务说明里：任务定义里要有业务说明那一个集合。
+    t.definition.collections.push(overallTask().definition.collections.find((one) => one.name === "总体分析")!);
     (t.items[0] as Item).depended_by = [{ element_kind: "条目", id: "UC-002", revision_no: 1 }, { element_kind: "图", id: "D-001", revision_no: 2 }];
     t.items.push({ ...t.items[0], item_id: "UC-002", title: "办理借书证", sources: [], depended_by: [] } as unknown as Item);
     const row = { diagram_id: "D-001", name: "读者用例", kind: "use_case", kind_name: "用例图", revision_no: 2, revision_by: "executor", revision_at: "", created_at: "", source_count: 2 };
@@ -112,9 +115,9 @@ describe("条目详情里的来源", () => {
     expect([figure.getAttribute("role"), figure.classList.contains("ref")]).toEqual(["button", true]);
     fireEvent.click(figure);
     expect(screen.queryByTestId("item-detail")).toBeNull();
-    expect(screen.getByTestId("diagrams-tab").classList.contains("on")).toBe(true);
-    expect(await screen.findByTestId("diagram-sub")).toBeTruthy();
-    expect(got).toHaveBeenCalledWith("TASK-S", "D-001");
+    expect(screen.getByTestId("pane-description").classList.contains("on")).toBe(true);
+    // 用例图放在第 2 章章首。
+    expect(await screen.findByTestId("chapter-head-2")).toBeTruthy();
     got.mockRestore();
   });
 

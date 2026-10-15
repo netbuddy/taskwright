@@ -89,7 +89,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
   onNext?: (() => void) | null;
   onLocate?: (excerpt: string, locator: string) => void;
   onOpenItem?: (itemId: string) => void;
-  /** 「被谁依据」里点了一张图：切到图表页签并打开它。 */
+  /** 「被谁依据」里点了一张图：去业务说明里它所在的地方。 */
   onOpenDiagram?: (diagramId: string) => void;
   /** 「让助手来改这一条」：预填对话区输入框。 */
   onAskAssistant?: (itemId: string) => void;
@@ -331,7 +331,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
           {sources.map((s, i) => <SourceBox key={i} source={s} onLocate={onLocate} onOpenItem={onOpenItem} onOpenDiagram={onOpenDiagram} titleOf={titleOf} />)}
           {display && <CitedBy task={task} item={item} onOpenItem={onOpenItem} />}
           {/* 被谁依据：把这一条写成来源的别的条目与图。领域说明一类的集合上面已经有「被哪些条目引用」一节，那里列了条目，这一行只补上图。
-              图的编号点了切到图表页签并打开那张图，后面写图名与「图」字。 */}
+              图的编号点了去业务说明里那张图所在的地方，后面写图名与「图」字。 */}
           {dependedBy.length > 0 && (
             <div className="depended" data-testid="depended-by">
               被谁依据：{dependedBy.map((one, i) => (

@@ -60,7 +60,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   sessionId: string;
   /** 地址里带的集合名（从任务页的集合卡点进来）：条目区一打开就停在这个集合的页签。 */
   collection?: string | null;
-  /** 地址里带了 tab=diagrams：条目区一打开就停在图表页签。 */
+  /** 地址里带了 tab=diagrams：条目区一打开就停在「分析模型」页签。 */
   diagrams?: boolean;
   /** 地址里带的图的编号：条目区一打开就打开这张图。 */
   diagram?: string | null;
@@ -82,7 +82,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   /** 卡片上点「还有 N 条未读 · 筛出来看」的次数：条目区据此切到「未读」筛选。 */
   const [unreadRequest, setUnreadRequest] = useState(0);
   const [dirty, setDirty] = useState(false);
-  /** 图表页签里有没保存的改图：与有未保存的条目编辑一样，发送键与卡片按钮灰化，只是提示的说法不同。 */
+  /** 业务说明里的图有没保存的改图：与有未保存的条目编辑一样，发送键与卡片按钮灰化，只是提示的说法不同。 */
   const [diagramDirty, setDiagramDirty] = useState(false);
   const [fontTier, setFontTier] = useState<FontTier>(readFontTier);
   const [attachments, setAttachments] = useState<string[]>([]);

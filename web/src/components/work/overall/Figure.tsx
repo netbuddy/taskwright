@@ -39,8 +39,11 @@ export interface FigureHost {
   onViewed?: (row: DiagramRow) => void;
   /** 这张图有没有没保存的改动。 */
   onDirty?: (diagramId: string, dirty: boolean) => void;
-  /** 要看的那张图（从地址、条目的依据点过来的）：它在哪一处，那一处就显示它并滚到它；seq 每次加一。 */
-  focus?: { diagramId: string; seq: number } | null;
+  /**
+   * 要看的那张图（从地址、条目的依据、「分析模型」页签点过来的）：它在哪一处，那一处就显示它并滚到它；seq 每次加一。
+   * edit 为真（「分析模型」页签上的「编辑」）时，那张图下面展开「文本」页签，就是改图的地方。
+   */
+  focus?: { diagramId: string; seq: number; edit?: boolean } | null;
 }
 
 /** 一处的图：rows 是放在这一处的各张（最近修订的在前），显示第一张，其余收在「另有 N 张」里。 */
@@ -58,7 +61,8 @@ export function Figure({ host, rows, decorate }: {
   useEffect(() => {
     if (!wanted) return;
     setPicked(wanted.diagramId);
-    root.current?.scrollIntoView?.({ block: "center" });
+    // 编辑时由图下展开的文本框自己滚到眼前（FigureBody），这里不再把图居中，免得后滚的这一下把文本框又推出去。
+    if (!wanted.edit) root.current?.scrollIntoView?.({ block: "center" });
   }, [wanted?.seq]);
   const row = rows.find((one) => one.diagram_id === picked) ?? rows[0];
   if (!row) return null;
@@ -96,6 +100,11 @@ function FigureBody({ host, row, decorate, more }: { host: FigureHost; row: Diag
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [side, setSide] = useState<SideTab | null>(null);
+  // 从「分析模型」页签点了「编辑」过来：展开文本页签，并把文本框滚到眼前。
+  const focus = host.focus ?? null;
+  const sideBox = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState(0);
+  useEffect(() => { if (focus?.edit && focus.diagramId === diagramId) { setSide("text"); setEditing((n) => n + 1); } }, [focus?.seq]);
 
   // 取详情：打开时、这张图有了新修订时、条目有了新修订时。后发出的一次先回来时，先发出的结果不用。
   const wanted = `${row.revision_no}:${latestRevision}`;
@@ -135,6 +144,8 @@ function FigureBody({ host, row, decorate, more }: { host: FigureHost; row: Diag
     watcher.observe(box.current);
     return () => watcher.disconnect();
   }, []);
+  // 图画出来之后高度才定，所以等画好再滚。
+  useEffect(() => { if (editing > 0) sideBox.current?.scrollIntoView?.({ block: "nearest" }); }, [editing, drawn]);
   const told = useRef<number | null>(null);
   useEffect(() => {
     if (!drawn || !visible || dirty || row.viewed === true || told.current === row.revision_no) return;
@@ -205,7 +216,7 @@ function FigureBody({ host, row, decorate, more }: { host: FigureHost; row: Diag
         <span className="rev" data-testid="diagram-sub">{revisionLine(detail)}{saving && " · 正在保存…"}</span>
       </div>
       {side && (
-        <div className="oa-fig-side" data-testid="diagram-side">
+        <div className="oa-fig-side" ref={sideBox} data-testid="diagram-side">
           <div className="sw-stabs dg-tabs" role="tablist">
             <span className={`sw-stab${side === "text" ? " on" : ""}`} role="tab" onClick={() => setSide("text")} data-testid="diagram-tab-text" title={dirty ? PREVIEW_TEXT : undefined}>文本</span>
             <span className={`sw-stab${side === "sources" ? " on" : ""}`} role="tab" onClick={() => setSide("sources")} data-testid="diagram-tab-sources">
