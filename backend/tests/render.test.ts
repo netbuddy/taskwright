@@ -140,7 +140,7 @@ describe("真实任务类型里依据另一个条目的来源", () => {
   test("定义视图带上集合的界面一项，没写的集合为空", () => {
     const view = library.definitionView(library.libraryOf(typed).definition).collections;
     const pages = view.find((c) => c.name === "业务说明")!;
-    assert.deepEqual(Object.keys(pages.display!).sort(), ["group_field", "leading_groups", "note", "side_tab"]);
+    assert.deepEqual(Object.keys(pages.display!).sort(), ["group_field", "leading_groups", "note"]);
     assert.equal(pages.display!.group_field, "标签");
     assert.equal(view.find((c) => c.name === "功能用例")!.display, null);
     assert.equal(pages.needs_review, false);

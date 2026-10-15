@@ -146,10 +146,10 @@ export interface CollectionDef {
   fields: FieldDef[];
   /** 完成条件里对这个集合要求了「每个条目评审通过」。 */
   needs_review?: boolean;
-  /** 显示方式（任务定义的「界面」一项）：side_tab 在右侧栏另开页签，group_field 按这个字段分组并在条目行上写成小标签，
+  /** 显示方式（任务定义的「界面」一项）：group_field 按这个字段分组并在条目行上写成小标签，
    *  leading_groups 这几组按给定顺序排最前、其余按每组第一个条目的编号排，note 是写在这个集合页签下的一句白话。
    *  没写时为 null，照旧显示。 */
-  display?: { side_tab: boolean; group_field: string | null; leading_groups: string[]; note?: string | null } | null;
+  display?: { group_field: string | null; leading_groups: string[]; note?: string | null } | null;
   /** 这个集合的评审规则清单；没写评审规矩的集合为 null（评审只按字段声明）。 */
   review_rules?: ReviewRule[] | null;
   /** 规则文件里的全部规则，连同这个任务的开关状态；给评审页签的规则区用。 */

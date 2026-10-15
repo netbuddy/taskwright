@@ -218,11 +218,11 @@ test("任务 skill 写了业务说明的做法，不出现平台的内部用词"
   assert.match(task, /例如用户说「我们说的预约保留期[\s\S]*「它是什么」只写到「书到馆后替预约的读者留着的那几天」为止[\s\S]*在「约束规则」里加上「过了保留期还没来取，预约自动取消」/);
 });
 
-test("任务定义的「界面」一项：真实任务类型的业务说明写了右侧栏页签、分组字段、靠前的组与说明；写错时逐条报出", () => {
+test("任务定义的「界面」一项：真实任务类型的业务说明写了分组字段、靠前的组与说明；写错时逐条报出，「右侧栏页签」已经去掉，写了算多出来的一项", () => {
   const typeDir = resolve(import.meta.dirname, "../../task-types/requirements-engineering");
   const { definition } = loadDefinition(typeDir, "docs/task-definitions/requirements-engineering.json");
   assert.deepEqual(definition.collections.find((c) => c.name === "业务说明")!.display,
-    { note: "按章整理的业务说明：每一节写它是什么、适用规则、待澄清事项，图与需求条目都归在它说明的那一节。", sideTab: true, groupField: "标签", leadingGroups: ["概念"] });
+    { note: "按章整理的业务说明：每一节写它是什么、适用规则、待澄清事项，图与需求条目都归在它说明的那一节。", groupField: "标签", leadingGroups: ["概念"] });
   assert.equal(definition.collections.find((c) => c.name === "功能用例")!.display, null);
   const withDisplay = (display: unknown) => {
     const def = definitionWithNotes();
@@ -230,9 +230,9 @@ test("任务定义的「界面」一项：真实任务类型的业务说明写�
     return def;
   };
   assert.deepEqual(validateDefinition(withDisplay({ 分组字段: "类别" })).collections.at(-1)!.display,
-    { note: null, sideTab: false, groupField: "类别", leadingGroups: [] });
+    { note: null, groupField: "类别", leadingGroups: [] });
   assert.throws(() => validateDefinition(withDisplay({ 分组字段: "没有这个", 右侧栏页签: "是", 靠前的组: "术语", 颜色: "红", 说明: "" })), (error: Error) => {
-    for (const piece of ["「分组字段」是「没有这个」，这个集合没有这个字段", "「右侧栏页签」应当是 true 或 false", "「靠前的组」应当是文字的列表",
+    for (const piece of ["「分组字段」是「没有这个」，这个集合没有这个字段", "多了「右侧栏页签」这一项", "「靠前的组」应当是文字的列表",
       "多了「颜色」这一项", "「说明」应当是一段不为空的文字"]) assert.match(error.message, new RegExp(piece));
     return true;
   });

@@ -82,7 +82,6 @@
     "prefix": "OA",
     "needs_review": false,
     "display": {
-     "side_tab": true,
      "group_field": "标签",
      "leading_groups": [
       "概念"

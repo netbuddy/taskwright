@@ -19,7 +19,7 @@ export const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", exce
 export const DEFINITION = {
   ...DEMO_DEFINITION,
   交付物: { ...DEMO_DEFINITION.交付物, 条目集合: [...DEMO_DEFINITION.交付物.条目集合, {
-    名称: "业务说明", 编号前缀: "OA", 界面: { 右侧栏页签: true, 分组字段: "标签", 靠前的组: ["概念"] },
+    名称: "业务说明", 编号前缀: "OA", 界面: { 分组字段: "标签", 靠前的组: ["概念"] },
     字段: [
       { 名: "标题", 类型: "文本", 必填: true }, { 名: "别名", 类型: "文本列表", 必填: false }, { 名: "它是什么", 类型: "文本", 必填: true },
       { 名: "例子", 类型: "文本列表", 必填: false }, { 名: "已经定下的", 类型: "文本列表", 必填: false },

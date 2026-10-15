@@ -46,12 +46,11 @@ export interface CollectionDef {
 }
 
 /**
- * 任务定义里一个集合的「界面」：右侧栏页签（是否在右侧栏另开一个页签列出这个集合）、分组字段（按哪个字段分组，
+ * 任务定义里一个集合的「界面」：分组字段（按哪个字段分组，
  * 条目行上也把它的值写成小标签）、靠前的组（这几组按给定顺序排在最前，其余按每组第一个条目的编号排）、
  * 说明（一句白话，界面上这个集合的页签下写着它）。只影响显示。
  */
 export interface CollectionDisplay {
-  sideTab: boolean;
   groupField: string | null;
   leadingGroups: string[];
   /** 一句白话，界面上首次出现这个集合的地方写在它下面，说明它是什么。 */
@@ -304,13 +303,11 @@ export function validateDefinition(raw: unknown, path = "（未给出路径）",
 function validateDisplay(raw: unknown, label: string, fields: FieldDef[], reasons: string[]): CollectionDisplay | null {
   const where = `${label}的「界面」`;
   if (!isObject(raw)) {
-    reasons.push(`${where}应当是一个对象，可以有「右侧栏页签」「分组字段」「靠前的组」「说明」四项。`);
+    reasons.push(`${where}应当是一个对象，可以有「分组字段」「靠前的组」「说明」三项。`);
     return null;
   }
-  const known = ["右侧栏页签", "分组字段", "靠前的组", "说明"];
+  const known = ["分组字段", "靠前的组", "说明"];
   for (const key of Object.keys(raw)) if (!known.includes(key)) reasons.push(`${where}多了「${key}」这一项，只能有${known.map((k) => `「${k}」`).join("、")}。`);
-  const sideTab = raw["右侧栏页签"] ?? false;
-  if (typeof sideTab !== "boolean") reasons.push(`${where}的「右侧栏页签」应当是 true 或 false。`);
   const groupField = raw["分组字段"] ?? null;
   if (groupField !== null) {
     const field = fields.find((one) => one.name === groupField);
@@ -325,7 +322,6 @@ function validateDisplay(raw: unknown, label: string, fields: FieldDef[], reason
   if (note !== null && !isNonEmptyString(note)) reasons.push(`${where}的「说明」应当是一段不为空的文字。`);
   return {
     note: isNonEmptyString(note) ? note : null,
-    sideTab: sideTab === true,
     groupField: typeof groupField === "string" ? groupField : null,
     leadingGroups: Array.isArray(leading) ? leading.filter((one): one is string => typeof one === "string") : [],
   };

@@ -526,7 +526,7 @@ export function taskWrittenBy(workspaceDir: string): string | null {
  * 中途出错整体回退，库与版本号都还是升级之前的样子。
  */
 const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync, ctx: UpgradeContext) => void }[] = [
-  { from: 8, to: 9, run: (db, ctx) => { addRejectionReasons(db); renameTaskType(db, ctx); renameOverallCollection(db, ctx); } },
+  { from: 8, to: 9, run: (db, ctx) => { addRejectionReasons(db); renameTaskType(db, ctx); renameOverallCollection(db, ctx); dropSideTab(db, ctx); } },
 ];
 
 /**
@@ -701,6 +701,30 @@ function renameOverallCollection(db: DatabaseSync, ctx: UpgradeContext): void {
     }
   }
   if (items || files) ctx.notes.push(`集合「${OLD_OVERALL_COLLECTION}」改名为「${OVERALL_COLLECTION_NAME}」：${items} 个条目，任务目录里 ${files} 份文件`);
+}
+
+/** 任务定义原文里删掉集合「界面」一项中的「右侧栏页签」（它在前、在中间或在最后都认）；没有的原样返回。 */
+function withoutSideTab(text: string): string {
+  return text.replace(/"右侧栏页签"\s*:\s*(true|false)\s*,\s*/g, "").replace(/,\s*"右侧栏页签"\s*:\s*(true|false)/g, "")
+    .replace(/"右侧栏页签"\s*:\s*(true|false)/g, "");
+}
+
+/**
+ * 第 8 到 9 步之四：集合「界面」一项里的「右侧栏页签」去掉（页面早已没有右侧栏的集合页签，任务定义的核对也不再认它）。
+ * 库里的定义快照与任务目录里的定义文件一起改，重复做不出错。
+ */
+function dropSideTab(db: DatabaseSync, ctx: UpgradeContext): void {
+  const row = db.prepare("SELECT task_id, definition_path, definition_text FROM task LIMIT 1").get() as
+    { task_id: string; definition_path: string; definition_text: string } | undefined;
+  if (!row) return;
+  const text = withoutSideTab(row.definition_text);
+  if (text !== row.definition_text) db.prepare("UPDATE task SET definition_text = ? WHERE task_id = ?").run(text, row.task_id);
+  if (!ctx.workspaceDir) return;
+  const file = join(ctx.workspaceDir, row.definition_path);
+  if (!existsSync(file)) return;
+  const raw = readFileSync(file, "utf-8");
+  const now = withoutSideTab(raw);
+  if (now !== raw) writeFileSync(file, now, "utf-8");
 }
 
 /**

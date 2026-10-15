@@ -104,7 +104,7 @@ for (const sample of Object.keys(SAMPLE_TASKS) as (keyof typeof SAMPLE_TASKS)[])
       assert.equal(row.definition_path, "docs/task-definitions/requirements-engineering.json");
       assert.equal(row.definition_text, definition, "快照与改过的定义文件逐字相同");
       // 集合改名：定义里、条目表里都是「业务说明」，任务目录里随任务类型复制来的文件里也不再有旧名。
-      assert.ok(definition.includes('"名称": "业务说明"') && !definition.includes("总体分析"));
+      assert.ok(definition.includes('"名称": "业务说明"') && !definition.includes("总体分析") && !definition.includes("右侧栏页签"));
       assert.deepEqual(new DatabaseSync(join(taskDir, DB_NAME), { readOnly: true }).prepare("SELECT DISTINCT collection FROM item").all().map((r: any) => r.collection), ["业务说明"]);
       assert.equal(library.taskDbVersion(join(report.backup!.dir, "tasks", id)), 8, "备份里是升级之前的库");
       // 甲：在那条会话里工作项照旧在澄清；乙：没有工作项，会话空闲。

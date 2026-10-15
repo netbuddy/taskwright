@@ -206,12 +206,16 @@ test("格式 8 升到 9：集合「总体分析」改名「业务说明」——
   for (const file of typeFiles) writeFileSync(join(dir, file), readFileSync(join(dir, file), "utf-8").replaceAll("业务说明", "总体分析"), "utf-8");
   writeFileSync(join(dir, "inputs", "材料.md"), "材料里提到总体分析这个词。\n", "utf-8");
   createTask(callIn(dir), { definition_path: "docs/task-definitions/requirements-engineering.json" });
+  // 界面一项里还有早先的「右侧栏页签」（当年建任务时核对还认它）：文件与快照里都写回去。
+  const withSideTab = readFileSync(join(dir, typeFiles[0]), "utf-8").replace('"界面": { "分组字段"', '"界面": { "右侧栏页签": true, "分组字段"');
+  writeFileSync(join(dir, typeFiles[0]), withSideTab, "utf-8");
   const definition = JSON.parse(readFileSync(join(dir, typeFiles[0]), "utf-8"));
   const spec = reviewSpecOf(JSON.stringify(definition), "功能用例")!;
   const oldHash = rulesHash(dir, spec);
   const db = new DatabaseSync(databasePath(dir));
   try {
     const task = (db.prepare("SELECT task_id FROM task").get() as { task_id: string }).task_id;
+    db.prepare("UPDATE task SET definition_text = ?").run(withSideTab);
     db.prepare("INSERT INTO item VALUES (?, 'OA-001', '总体分析', 1, 1, NULL, 1, NULL), (?, 'UC-001', '功能用例', 1, 1, NULL, 1, NULL)").run(task, task);
     db.prepare("INSERT INTO event (task_id, session_id, call_id, name, actor, payload, at) VALUES (?, 's', 'c', 'REVISION_SAVED', 'executor', ?, 't')")
       .run(task, JSON.stringify({ operations: [{ op: "add", item: "OA-001", collection: "总体分析" }] }));
@@ -226,7 +230,9 @@ test("格式 8 升到 9：集合「总体分析」改名「业务说明」——
   for (const file of typeFiles) assert.ok(!readFileSync(join(dir, file), "utf-8").includes("总体分析"), file);
   assert.equal(readFileSync(join(dir, "inputs", "材料.md"), "utf-8"), "材料里提到总体分析这个词。\n");
   assert.deepEqual(query<any>(dir, "SELECT item_id, collection FROM item ORDER BY item_id").map((r) => [r.item_id, r.collection]), [["OA-001", "业务说明"], ["UC-001", "功能用例"]]);
-  assert.ok(query<any>(dir, "SELECT definition_text FROM task")[0].definition_text.includes('"名称": "业务说明"'));
+  const snapshot = query<any>(dir, "SELECT definition_text FROM task")[0].definition_text;
+  assert.ok(snapshot.includes('"名称": "业务说明"') && !snapshot.includes("右侧栏页签"));
+  assert.equal(readFileSync(join(dir, typeFiles[0]), "utf-8"), snapshot, "任务目录里的定义文件与快照一起改，逐字相同");
   assert.ok(query<any>(dir, "SELECT payload FROM event WHERE name = 'REVISION_SAVED'").every((r) => r.payload.includes('"collection":"业务说明"')));
   const newHash = rulesHash(dir, spec);
   assert.notEqual(newHash, oldHash, "规则文件改了字，指纹变了");

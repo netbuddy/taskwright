@@ -192,11 +192,11 @@ export function collectionReviewView(definition: ParsedDefinition, name: string,
   };
 }
 
-/** 集合的「界面」一项换成接口的写法：side_tab、group_field、leading_groups、note。没写时为 null。 */
+/** 集合的「界面」一项换成接口的写法：group_field、leading_groups、note。没写时为 null。 */
 export function displayView(raw: Record<string, any> | null | undefined) {
   if (!truthy(raw)) return null;
   return {
-    side_tab: raw!["右侧栏页签"] === true, group_field: or(raw!["分组字段"], null),
+    group_field: or(raw!["分组字段"], null),
     leading_groups: (or(raw!["靠前的组"], []) as unknown[]).map(str), note: or(raw!["说明"], null),
   };
 }

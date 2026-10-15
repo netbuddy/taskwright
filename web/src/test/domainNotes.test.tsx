@@ -42,7 +42,7 @@ function task(over: Partial<Task> = {}): Task {
         { name: "用例名称", type: "文本", required: true, values: null },
         { name: "参与者", type: "文本列表", required: true, values: null }] },
       { name: "领域说明", prefix: "DN", needs_review: false,
-        display: { side_tab: true, group_field: "类别", leading_groups: ["术语"], note: "材料里或你说明过的背景、术语、角色，供条目引用。" },
+        display: { group_field: "类别", leading_groups: ["术语"], note: "材料里或你说明过的背景、术语、角色，供条目引用。" },
         fields: [
           { name: "标题", type: "文本", required: true, values: null },
           { name: "内容", type: "文本", required: true, values: null },
