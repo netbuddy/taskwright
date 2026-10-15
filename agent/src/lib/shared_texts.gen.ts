@@ -1,0 +1,31 @@
+// 由 scripts/render-shared-texts.mts 从 agent/prompts/runtime/shared.md 生成，不要手改；改了那份文件之后重新运行它。
+import type { Template } from "./texts_core.ts";
+
+export const SHARED_TEMPLATES: readonly Template[] = [
+  { key: "stage.start_move", file: "runtime/shared.md", purpose: "用户把流程的工作项移到另一站时，对话里那一句（界面操作说明的正文，页面的对话区也照这样写）。from 是原来那一站或「空闲」，to 是移到的那一站。",
+    body: "用户把工作项从{{from}}移到{{to}}。", placeholders: ["from","to"] },
+  { key: "stage.start_launch", file: "runtime/shared.md", purpose: "用户启动工作流程时，对话里那一句。was 是空的，或者是 stage.start_was 那半句。",
+    body: "用户启动工作流程「{{flow}}」，从「{{to}}」开始。{{was}}", placeholders: ["flow","to","was"] },
+  { key: "stage.start_resume", file: "runtime/shared.md", purpose: "早先的对话里「接着走流程」的那一句（现在不再记这一种，早先的对话里留着，页面照样要显示）。",
+    body: "用户继续工作流程「{{flow}}」，从「{{to}}」接着。{{was}}", placeholders: ["flow","to","was"] },
+  { key: "stage.start_alone", file: "runtime/shared.md", purpose: "用户启动一项单项活动时，对话里那一句。",
+    body: "用户启动活动「{{to}}」。{{was}}", placeholders: ["to","was"] },
+  { key: "stage.start_was", file: "runtime/shared.md", purpose: "早先的对话里启动之前任务正在做别的活动时，接在启动那一句末尾的半句。",
+    body: "（原来在做：{{activity}}）", placeholders: ["activity"] },
+  { key: "stage.continued", file: "runtime/shared.md", purpose: "用户新建一条会话接着做一个工作项（单项活动）时，对话里那一句。",
+    body: "用户新建这条会话，接着做工作项「{{name}}」。", placeholders: ["name"] },
+  { key: "stage.continued_at", file: "runtime/shared.md", purpose: "用户新建一条会话接着做流程的工作项时，对话里那一句，写明现在在哪一站。",
+    body: "用户新建这条会话，接着做工作项「{{name}}」，现在在「{{node}}」这一站。", placeholders: ["name","node"] },
+  { key: "stage.deleted", file: "runtime/shared.md", purpose: "用户删除一个没有会话要归档的工作项时，对话里那一句。",
+    body: "用户删除工作项「{{name}}」。", placeholders: ["name"] },
+  { key: "stage.deleted_archived", file: "runtime/shared.md", purpose: "用户删除一个工作项、随之归档了它的会话时，对话里那一句。",
+    body: "用户删除工作项「{{name}}」，它的 {{count}} 条会话已归档。", placeholders: ["name","count"] },
+  { key: "stage.scope", file: "runtime/shared.md", purpose: "启动或接着做一个写了范围说明的工作项时，接在那一句后面的范围说明；用户写的末尾没有句号时，代码补一个。",
+    body: "范围说明：{{scope}}", placeholders: ["scope"] },
+  { key: "stage.proposal_voided", file: "runtime/shared.md", purpose: "用户移动流程的工作项、使助手先前开着的提议作废时，接在换站那一句后面的半句。",
+    body: "（助手先前的提议作废，回来后由助手重新提议）", placeholders: [] },
+  { key: "stage.activity_done", file: "runtime/shared.md", purpose: "助手汇报单项活动做完时，对话里那条回复下面的一行（页面显示）。",
+    body: "助手汇报：{{activity}}做完了。", placeholders: ["activity"] },
+  { key: "ui_ops.viewed_notice", file: "runtime/shared.md", purpose: "用户在卡片上点「这几条都看过了」之后，系统替用户发给助手的那句话。后端、助手与页面都按它的开头（第一个占位之前的那一段）认出这句不是用户打的字。",
+    body: "我已经看过了：{{items}}。请接着往下做。", placeholders: ["items"] },
+];

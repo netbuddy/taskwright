@@ -25,6 +25,7 @@ import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
 import { FUNCTION_NAMES, GATE_INVALID_TEXT, GATE_MISSING_TEXT, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { proposalFor, proposalKindOf } from "./stage_proposal.ts";
+import { textPrefix } from "./texts.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
   type ScanOutcome,
@@ -64,7 +65,7 @@ export const CARD_TYPED_TYPE = "taskwright-card-typed";
 /** 页面在卡片的文本框里发话时，卡片标识里 choice 写的固定值。 */
 export const CARD_TYPED_KEY = "typed";
 /** 卡片上点「这几条都看过了」之后替用户发的那句话的开头（lib/user_ops.ts 的 VIEWED_NOTICE_PREFIX）。 */
-const VIEWED_PREFIX = "我已经看过了：";
+const VIEWED_PREFIX = textPrefix("ui_ops.viewed_notice");
 /** 「先不管这条」之后后端替用户发的那句话的开头（backend/src/executor.ts 的 KEEP_PENDING_NOTICE_PREFIX）。 */
 const KEEP_PENDING_PREFIX = "我先不管 ";
 

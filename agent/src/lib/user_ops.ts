@@ -69,6 +69,7 @@ import { SaveRejected, type Source, type Support, isEmptyValue, saveRevision } f
 import { carrySources } from "./source_carry.ts";
 import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
 import { publishVersion } from "./publish_version.ts";
+import { fillText, textPrefix } from "./texts.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
   IDLE, PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, isStage, scopeSentence, stageByName,
@@ -538,13 +539,13 @@ function markViewed(ctx: Ctx, opId: string, targets: Target[], notify: boolean):
     results: items,
     revision_no: null,
     note: notify ? `界面操作（不是用户打的字）：用户在卡片上表示看过了 ${list.join("、")}，已记为已读。` : "",
-    notify_text: notify ? `${VIEWED_NOTICE_PREFIX}${list.join("，")}。请接着往下做。` : null,
+    notify_text: notify ? fillText("ui_ops.viewed_notice", { items: list.join("，") }) : null,
     undoable: false,
   };
 }
 
 /** 卡片上点「这几条都看过了」之后发给执行者的那句话的开头。后端（backend/src/conversation.ts）按它认出这句不是用户打的字。 */
-export const VIEWED_NOTICE_PREFIX = "我已经看过了：";
+export const VIEWED_NOTICE_PREFIX = textPrefix("ui_ops.viewed_notice");
 
 interface RevisionOp {
   op: string;

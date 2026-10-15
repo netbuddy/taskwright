@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { parseDefinition } from "../../agent/src/lib/task_read.ts";
+import { textPrefix } from "../../agent/src/lib/texts.ts";
 import * as clock from "./clock.ts";
 import * as conversation from "./conversation.ts";
 import { type DiagramCheck, validateDiagram } from "./diagram_validate.ts";
@@ -545,7 +546,7 @@ export class Executor {
     for (const key of ["kind", "task_id", "targets", "fields", "notify_executor"]) if (Object.hasOwn(body, key)) command[key] = body[key];
     command.op_id = opId;
     if (truthy(command.notify_executor)) {
-      this.pendingOrigin.set("我已经看过了：", "ui_request");
+      this.pendingOrigin.set(textPrefix("ui_ops.viewed_notice"), "ui_request");
       this.pendingOrigin.set(KEEP_PENDING_NOTICE_PREFIX, "ui_request");
     }
     const result = await this.command("/tw-user", command, opId);

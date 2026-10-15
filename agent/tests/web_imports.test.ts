@@ -14,7 +14,10 @@ const AGENT_SRC = join(ROOT, "agent", "src");
 /** 一个文件里的导入与再导出写的模块名（import … from "x"、export … from "x"、import "x"、import("x")）。 */
 function specifiers(text: string): string[] {
   const found: string[] = [];
-  for (const m of text.matchAll(/(?:^|\n)\s*(?:import|export)\b[^;]*?\bfrom\s*["']([^"']+)["']/g)) found.push(m[1]);
+  // 只认导入语句与转出语句：import 后面是名字、{…} 或 * as 名字，export 后面是 {…} 或 *；export const 之类的声明不算，
+  // 免得声明里的字符串（例如 ["from","to"]）被认成一句导入。
+  const clause = String.raw`(?:type\s+)?(?:[\w$]+\s*,\s*)?(?:\{[^}]*\}|\*(?:\s*as\s+[\w$]+)?|[\w$]+)`;
+  for (const m of text.matchAll(new RegExp(String.raw`(?:^|\n)\s*(?:import|export)\s+${clause}\s*from\s*["']([^"']+)["']`, "g"))) found.push(m[1]);
   for (const m of text.matchAll(/(?:^|\n)\s*import\s*["']([^"']+)["']/g)) found.push(m[1]);
   for (const m of text.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)) found.push(m[1]);
   return found;

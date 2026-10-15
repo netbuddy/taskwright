@@ -18,6 +18,7 @@ import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
 import { isPosition, isStage } from "../../agent/src/lib/stage.ts";
+import { textPrefix } from "../../agent/src/lib/texts.ts";
 import { callFacts, derivedSourceName } from "./library.ts";
 import { cardLinks, understandingLines, worksFromEntries } from "./work_summary.ts";
 
@@ -39,7 +40,7 @@ export const USER_EDIT = "taskwright-user-edit";
 export const TASK_STATUS = "taskwright-task-status";
 export const REPLY_TOOL = "reply";
 /** 卡片上点「这几条都看过了」之后替用户发给执行者的那句话的开头；早期版本是「我已经在界面上确认了：」。 */
-export const NOTIFY_PREFIXES = ["我已经看过了：", "我已经在界面上确认了："];
+export const NOTIFY_PREFIXES = [textPrefix("ui_ops.viewed_notice"), "我已经在界面上确认了："];
 /** 会带那句话的直接操作种类：现在是 mark_viewed，早期版本是 confirm。 */
 export const NOTIFY_KINDS = ["mark_viewed", "confirm"];
 /** 用户在界面上停止了助手一次运行之后留在会话里的那条界面操作通知的种类（agent/src/lib/user_ops.ts 的 STOP_RUN_KIND）。 */

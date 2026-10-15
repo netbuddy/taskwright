@@ -62,6 +62,7 @@
 | `tools/save_diagram.md` | 工具「保存图」登记时的总说明、工具清单里的一句话、用法要点与每个参数的说明（`agent/src/tools/save_diagram.ts`） | 模型 | `save_diagram.param.kind` 有 `{{kinds}}`（图的六个种类与中文名，取自 `agent/src/lib/diagram.ts`） | `agent/tests/texts_guard.test.ts` |
 | `tools/save_revision.md` | 工具「保存修订」登记时的总说明、工具清单里的一句话、用法要点与每个参数的说明（`agent/src/tools/save_revision.ts`） | 模型 | 无 | `agent/tests/texts_guard.test.ts` |
 | `tools/search_knowledge.md` | 工具「查找知识库」登记时的总说明、工具清单里的一句话、用法要点与每个参数的说明（`agent/src/tools/search_knowledge.ts`） | 模型 | `search_knowledge.param.limit` 有 `{{max}}`、`{{default}}`（片段数的上限与缺省值，取自 `agent/src/lib/knowledge_search.ts`） | `agent/tests/texts_guard.test.ts`、`agent/tests/knowledge_search.test.ts` |
+| `runtime/shared.md` | 页面与助手共用的句子：启动工作项、流程换站、接着做、删除工作项、范围说明、提议作废、活动做完（`agent/src/lib/stage.ts`），与「我已经看过了」那句（`agent/src/lib/user_ops.ts`；后端 `conversation.ts`、`executor.ts`，助手 `dialogue_acts.ts`，页面 `cardAnswer.ts` 按它的开头认出这句）。页面经生成的 `agent/src/lib/shared_texts.gen.ts` 读 | 模型与用户 | 见各段的用途一行（工作项与阶段的名字、条目清单、范围说明的原文等） | `agent/tests/texts_guard.test.ts`（另核对生成的表没有过期）、`agent/tests/stage.test.ts`、`agent/tests/user_ops.test.ts`、页面的对话区测试 |
 
 工具文件依赖随 pi 安装的包，单元测试里导入不了：工具登记时用对了哪些键，由守护测试的静态扫描核对；
 模板里的文字由上表最后一栏的测试钉着，没有列测试的几份改动要有意为之。守护测试还核对每一份模板文件在本表里都列着。

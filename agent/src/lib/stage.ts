@@ -12,6 +12,7 @@
 
 import { OVERALL_FIELDS, isDeprecated, tagsOf } from "./overall_analysis.ts";
 import { CHAPTERS, CHAPTER_DECISIONS, CHAPTER_RULES, chapterOfLabels } from "./overall_chapters.ts";
+import { fillText } from "./shared_texts.ts";
 
 /** 六个阶段在库里与接口里的写法，按先后排。 */
 export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing", "document"] as const;
@@ -262,22 +263,22 @@ export type StartHow = "move" | "launch" | "resume" | "alone";
  */
 export function activityStartSentence(how: StartHow, to: Stage, from: Position): string {
   const name = STAGE_NAMES[to];
-  if (how === "move") return `用户把工作项从${positionName(from)}移到${name}。`;
-  const was = from === IDLE ? "" : `（原来在做：${STAGE_NAMES[from]}）`;
+  if (how === "move") return fillText("stage.start_move", { from: positionName(from), to: name });
+  const was = from === IDLE ? "" : fillText("stage.start_was", { activity: STAGE_NAMES[from] });
   const flow = FLOW_NAMES[FLOW_ANALYSIS];
-  if (how === "launch") return `用户启动工作流程「${flow}」，从「${name}」开始。${was}`;
-  if (how === "resume") return `用户继续工作流程「${flow}」，从「${name}」接着。${was}`;
-  return `用户启动活动「${name}」。${was}`;
+  if (how === "launch") return fillText("stage.start_launch", { flow, to: name, was });
+  if (how === "resume") return fillText("stage.start_resume", { flow, to: name, was });
+  return fillText("stage.start_alone", { to: name, was });
 }
 
 /** 新建一条会话接着做一个进行中的工作项时，对话里那一句（不带「界面操作」的前缀）。name 是工作项的名字，node 是流程的工作项现在在哪一站。 */
 export function workItemContinuedSentence(name: string, node: Stage | null): string {
-  return `用户新建这条会话，接着做工作项「${name}」${node ? `，现在在「${STAGE_NAMES[node]}」这一站` : ""}。`;
+  return node ? fillText("stage.continued_at", { name, node: STAGE_NAMES[node] }) : fillText("stage.continued", { name });
 }
 
 /** 用户删除一个工作项时，对话里那一句（不带「界面操作」的前缀）。archived 是随之归档了几条会话。 */
 export function workItemDeletedSentence(name: string, archived: number): string {
-  return `用户删除工作项「${name}」${archived > 0 ? `，它的 ${archived} 条会话已归档` : ""}。`;
+  return archived > 0 ? fillText("stage.deleted_archived", { name, count: archived }) : fillText("stage.deleted", { name });
 }
 
 /** 范围说明最多多少个字：它要放进系统提示，太长的不收。 */
@@ -286,14 +287,14 @@ export const SCOPE_MAX_LENGTH = 2000;
 /** 对话里那一句后面接的范围说明：「范围说明：……」，末尾没有句号时补一个。没有写范围说明时是空文字。 */
 export function scopeSentence(scope: string): string {
   const said = scope.trim();
-  return said ? `范围说明：${said}${/[。！？.!?]$/.test(said) ? "" : "。"}` : "";
+  return said ? `${fillText("stage.scope", { scope: said })}${/[。！？.!?]$/.test(said) ? "" : "。"}` : "";
 }
 
 /**
  * 用户把流程的工作项移到了别的一站、助手先前在这个工作项里开着的提议因此作废时，对话里那一句后面加的半句：输入框上方「待决定」一行随之消失，
  * 让用户与助手都知道原因。用户做的正是提议的那一步（进入或者退回提议的那个阶段）时不加。
  */
-export const PROPOSAL_VOIDED_NOTE = "（助手先前的提议作废，回来后由助手重新提议）";
+export const PROPOSAL_VOIDED_NOTE = fillText("stage.proposal_voided");
 
 /**
  * 回复里写了 activity_done 而这条会话不在做单项活动的工作项时的拒绝：事实与怎么办。position 是这条会话现在在哪里
@@ -312,7 +313,7 @@ export function activityDoneRefusal(position: Position): Refusal {
 
 /** 助手汇报单项活动的工作项做完时，对话里那条回复下面的一行。汇报只是一句话：工作项照旧留着，不改任何记录。 */
 export function activityDoneSentence(activity: Stage): string {
-  return `助手汇报：${STAGE_NAMES[activity]}做完了。`;
+  return fillText("stage.activity_done", { activity: STAGE_NAMES[activity] });
 }
 
 /** 需求分析从哪个节点启动：有材料从核读材料，没有材料从澄清。 */

@@ -51,6 +51,8 @@ const ALLOWED: Record<string, string[]> = {
   "diagram_scan.ts": ["contextShape", "diagramGraph"],
   // TASK_ID_PATTERN 是任务编号的写法（一个正则），数据包导入时用它核对包里写的编号。
   "create_task.ts": ["createTask", "TASK_ID_PATTERN"],
+  // 运行时文字的模板（agent/prompts/runtime/）：只读文件、填值。
+  "texts.ts": ["fillText", "textPrefix", "templates"],
   // renumberTask 是写入：把一个任务库里的任务编号换成新的。它只许在数据包的导入里调（src/data_pack.ts，导入的任务与已有的任务
   // 编号相同而用户选了改编号时），换的是还在暂存位置、没有进到任务根目录的那份副本；下面另有一条测试守着别的文件不导入它。
   "renumber_task.ts": ["renumberTask"],

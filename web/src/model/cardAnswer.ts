@@ -2,6 +2,7 @@
 // 判断「有没有一张还没回应的提交卡片」时也用，两处说法一致。
 
 import type { AssistantReply, ConversationMessage, UiActionNoted, UserMessage } from "../api/types";
+import { textPrefix } from "../../../agent/src/lib/shared_texts";
 import { CONTINUE_STAGE_KIND, STAY_TEXT, quietChoiceText } from "./stage";
 
 /** 卡片答过之后收成的一句：用户在这张卡片的文本框里写了回复。 */
@@ -59,7 +60,7 @@ function answerOf(messages: ConversationMessage[], index: number): CardAnswer | 
     }
     if (u.origin === "ui_request") {
       if (repliedSince) continue;
-      if (u.text.startsWith("我已经看过了")) return { text: "你在卡片上表示看过了" };
+      if (u.text.startsWith(textPrefix("ui_ops.viewed_notice"))) return { text: "你在卡片上表示看过了" };
       // 早期版本的会话里是界面确认之后那句话。
       return { text: u.text.startsWith("我已经在界面上确认了") ? "你在界面上确认了" : "你在界面上操作过了" };
     }
