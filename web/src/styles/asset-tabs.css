@@ -31,3 +31,7 @@
 .app .ap-table td.ap-warn { color: var(--amber); }
 .app .ap-chip { margin-left: .4rem; padding: 0 .4rem; border-radius: 71rem; font-size: 0.786rem; border: 1px solid var(--line2); }
 .app .ap-chip.warn { color: var(--amber); border-color: var(--amber-line); background: var(--card); }
+
+/* 汇总行单独一行（六个页签都有），靠右；需求条目页签里筛选一行前面写「筛选：」 */
+.app .filters.sumrow { padding: .3rem .7rem; }
+.app .filters .flabel { font-size: 0.889rem; color: var(--mut); margin-right: .1rem; }

@@ -319,7 +319,20 @@ export function ItemsPanel({
           );
         })}
       </div>
-      {pane === "items" && (
+      {/* 汇总行：六个页签都有，点开是完成条件。 */}
+      <div className="filters sumrow">
+        <span className="prog" role="button" onClick={() => setShowProgress(!showProgress)} data-testid="progress">
+          {task.items.length} 个条目 · 待评审 {toReview.length} · 评审不通过 {failed.length}{kept.length > 0 ? ` · 已保留写法 ${kept.length}` : ""} · {unread.length} 条未读；问题 {unresolved} 条未解决 {showProgress ? "▴" : "▾"}
+        </span>
+      </div>
+      <div className={`prog-detail${showProgress ? " show" : ""}`}>
+        <div>这份交付物什么时候算做完，由下面这几条决定：</div>
+        {showProgress && <CompletionPanel completion={task.completion} items={task.items} task={task}
+          reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
+          onReview={onReview ? (list) => reviewItems(list, `评审 ${list.map((i) => i.item_id).join("、")}`) : undefined}
+          onOpen={(id) => { setShowProgress(false); onSelect(id); }} />}
+      </div>
+      {pane === "items" && (<>
         <div className="itabs" role="tablist" data-testid="item-tabs">
           {collections.filter((c) => !isOverall(c.name)).map((c) => (
             <span key={c.name} className={`itab${c.name === activeTab ? " on" : ""}`} role="tab"
@@ -337,26 +350,17 @@ export function ItemsPanel({
               onClick={() => onReview([], `评审 ${toReview.length} 条待评审的条目`)}>评审 {toReview.length} 条待评审的条目</button>
           )}
         </div>
-      )}
-      <div className="filters">
-        {!noList && FILTERS.map((f) => (
-          <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : f.key === "review_passed" || f.key === "review_kept" ? " okf" : ""}`}
-            role="button" onClick={() => { setFilter(f.key); onSelect(null); }}>{f.label}</span>
-        ))}
-        {!noList && hit && hitIds.length > 0 && (
-          <span className="sw-hitnote" role="button" title="点一下取消高亮" onClick={onClearHit} data-testid="hit-note">修订 {hit.revision} 碰到的条目 ✕</span>
-        )}
-        <span className="prog" role="button" onClick={() => setShowProgress(!showProgress)} data-testid="progress">
-          {task.items.length} 个条目 · 待评审 {toReview.length} · 评审不通过 {failed.length}{kept.length > 0 ? ` · 已保留写法 ${kept.length}` : ""} · {unread.length} 条未读；问题 {unresolved} 条未解决 {showProgress ? "▴" : "▾"}
-        </span>
-      </div>
-      <div className={`prog-detail${showProgress ? " show" : ""}`}>
-        <div>这份交付物什么时候算做完，由下面这几条决定：</div>
-        {showProgress && <CompletionPanel completion={task.completion} items={task.items} task={task}
-          reviewOff={reviewOffReason(task, { readOnly, writesOff, running: reviewing, count: 1 })}
-          onReview={onReview ? (list) => reviewItems(list, `评审 ${list.map((i) => i.item_id).join("、")}`) : undefined}
-          onOpen={(id) => { setShowProgress(false); onSelect(id); }} />}
-      </div>
+        <div className="filters" data-testid="item-filters">
+          <span className="flabel">筛选：</span>
+          {FILTERS.map((f) => (
+            <span key={f.key} className={`filt${filter === f.key ? " on" : ""}${f.key === "review_failed" || f.key === "unread" ? " warn" : f.key === "review_passed" || f.key === "review_kept" ? " okf" : ""}`}
+              role="button" onClick={() => { setFilter(f.key); onSelect(null); }}>{f.label}</span>
+          ))}
+          {hit && hitIds.length > 0 && (
+            <span className="sw-hitnote" role="button" title="点一下取消高亮" onClick={onClearHit} data-testid="hit-note">修订 {hit.revision} 碰到的条目 ✕</span>
+          )}
+        </div>
+      </>)}
       {submitBar && !readOnly && (
         <div className="alertbar submitbar" data-testid="submit-bar">
           <div className="q"><b>{submitTitle(task)}</b>{submitQuestion(task)}{submitError && <div className="err" data-testid="submit-error">{submitError}</div>}</div>

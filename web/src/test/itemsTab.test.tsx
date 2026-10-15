@@ -107,3 +107,22 @@ describe("记住用户上次停的页签", () => {
     expect(readTab(t.task_id)).toBe("问题");
   });
 });
+
+describe("「需求条目」页签", () => {
+  it("子页签一行（右边导出 Word），下面筛选一行（前面写「筛选：」）、「还有 N 条未读」与列表；汇总行在页签下面单独一行，六个页签都有", () => {
+    const t = overallTask();
+    render(<Panel t={t} />);
+    expect(screen.getByTestId("pane-items")).toHaveClass("on");
+    const order = ["asset-tabs", "progress", "item-tabs", "item-filters"].map((id) => screen.getByTestId(id));
+    for (let i = 1; i < order.length; i++) expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId("item-filters").querySelector(".flabel")!.textContent).toBe("筛选：");
+    expect(screen.getByTestId("item-filters").querySelectorAll(".filt").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("item-tabs").contains(screen.getByTestId("export-docx"))).toBe(true);
+    expect(screen.getByTestId("unread-bar")).toBeInTheDocument();
+    for (const key of ["materials", "description", "models", "review", "docs"]) {
+      fireEvent.click(screen.getByTestId(`pane-${key}`));
+      expect(screen.getByTestId("progress")).toBeInTheDocument();
+      expect([screen.queryByTestId("item-filters"), screen.queryByTestId("unread-bar"), screen.queryByTestId("export-docx")]).toEqual([null, null, null]);
+    }
+  });
+});
