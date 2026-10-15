@@ -332,25 +332,25 @@ export function topicLines(collections: readonly { name: string }[], items: read
 // ───────────── 保存一页时的两条核对 ─────────────
 
 /**
- * 保存总体分析的一页时另外核对的两条，对的是改完之后的字段内容与来源。返回不对的地方，每处是 [事实, 怎么办]：
+ * 保存总体分析的一页时另外核对的两条，对的是改完之后的字段内容与来源。返回不对的地方，每处是原因码与两层文字：
  * - 「改看」只在这一页已废弃时写：它指向取代这一页的那一页。
  * - 「已经定下的」每一条都要有出处：至少一条来源指到它（来源的 supports 里写这个字段与第几条；指到整个字段、
  *   或者不写 supports 表示整个条目都出自这条来源的，也算）。
  */
-export function pageProblems(fields: Fields, sources: readonly { supports: SupportPlaces }[]): [string, string][] {
-  const out: [string, string][] = [];
+export function pageProblems(fields: Fields, sources: readonly { supports: SupportPlaces }[]): RefusalText[] {
+  const out: RefusalText[] = [];
   const see = seeAlsoOf(fields);
   if (see !== null && !isDeprecated(fields)) {
-    out.push([`「${OVERALL_FIELDS.seeAlso}」写了 ${see}，但这一页的${OVERALL_FIELDS.status}不是${STATUS_DEPRECATED}`,
-      `「${OVERALL_FIELDS.seeAlso}」只在这一页不再用、由另一页取代时写：把${OVERALL_FIELDS.status}改成${STATUS_DEPRECATED}，或者去掉「${OVERALL_FIELDS.seeAlso}」`]);
+    out.push(refusalText("save_revision.overall_see_also_without_deprecated", {
+      see_also: OVERALL_FIELDS.seeAlso, see, status: OVERALL_FIELDS.status, deprecated: STATUS_DEPRECATED,
+    }));
   }
   const settled = texts(fields[OVERALL_FIELDS.settled]);
   const whole = sources.some((one) => one.supports.length === 0);
   settled.forEach((text, n) => {
     if (whole || sources.some((one) => one.supports.some((at) => at.field === OVERALL_FIELDS.settled && (at.index === undefined || at.index === null || at.index === n)))) return;
     const quoted = text.length > 20 ? `${text.slice(0, 20)}…` : text;
-    out.push([`「${OVERALL_FIELDS.settled}」的第 ${n + 1} 条「${quoted}」没有出处`,
-      `每一条已经定下的都要有出处：在它出自的那条来源的 supports 里写 {"field": "${OVERALL_FIELDS.settled}", "index": ${n}}；是你补的就加一条助手补充的来源并写理由`]);
+    out.push(refusalText("save_revision.overall_settled_without_source", { settled: OVERALL_FIELDS.settled, no: n + 1, quoted, index: n }));
   });
   return out;
 }

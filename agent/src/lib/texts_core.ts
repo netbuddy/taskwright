@@ -115,6 +115,8 @@ export function prefixOf(one: Template): string {
 
 /** 一次拒绝的原因码与两层文字：事实（哪里不对）与指引（接下来怎么办；没有这一层时是空的）。 */
 export interface RefusalText {
+  /** 完整的键（可以带变体）；code 是它的前两段。 */
+  key: string;
   code: string;
   fact: string;
   guidance: string;
@@ -142,5 +144,5 @@ export function refusalFrom(lookup: (key: string) => Template | undefined, key: 
   const extra = Object.keys(values).filter((name) => !wanted.has(name));
   if (extra.length) throw new TextsError(`拒绝语「${key}」的值对不上：多给了 ${extra.join("、")}`);
   const pick = (one: Template) => Object.fromEntries(one.placeholders.filter((name) => Object.hasOwn(values, name)).map((name) => [name, values[name]]));
-  return { code, fact: fill(fact, pick(fact)), guidance: guide ? fill(guide, pick(guide)) : "" };
+  return { key, code, fact: fill(fact, pick(fact)), guidance: guide ? fill(guide, pick(guide)) : "" };
 }

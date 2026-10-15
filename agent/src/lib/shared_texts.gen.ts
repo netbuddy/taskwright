@@ -126,4 +126,12 @@ export const SHARED_TEMPLATES: readonly Template[] = [
     body: "还没有例子", placeholders: [] },
   { key: "part.page_unviewed", file: "runtime/rejections_shared.md", purpose: "最低门里一页主题差的一样：用户还没有看过。",
     body: "用户还没有看过", placeholders: [] },
+  { key: "save_revision.overall_see_also_without_deprecated", file: "runtime/rejections_shared.md", purpose: "保存总体分析的一页时，「改看」写了而这一页不是已废弃（overall_analysis.ts 的 pageProblems）。see_also、status、deprecated 是字段名与取值。",
+    body: "「{{see_also}}」写了 {{see}}，但这一页的{{status}}不是{{deprecated}}", placeholders: ["see_also","see","status","deprecated"] },
+  { key: "save_revision.overall_see_also_without_deprecated.guide", file: "runtime/rejections_shared.md", purpose: "上一条的指引。",
+    body: "「{{see_also}}」只在这一页不再用、由另一页取代时写：把{{status}}改成{{deprecated}}，或者去掉「{{see_also}}」", placeholders: ["see_also","status","deprecated"] },
+  { key: "save_revision.overall_settled_without_source", file: "runtime/rejections_shared.md", purpose: "保存总体分析的一页时，「已经定下的」某一条没有来源指到它。quoted 是那一条（长的只引前 20 字）。",
+    body: "「{{settled}}」的第 {{no}} 条「{{quoted}}」没有出处", placeholders: ["settled","no","quoted"] },
+  { key: "save_revision.overall_settled_without_source.guide", file: "runtime/rejections_shared.md", purpose: "上一条的指引。index 是那一条从 0 起的序号。",
+    body: "每一条已经定下的都要有出处：在它出自的那条来源的 supports 里写 {\"field\": \"{{settled}}\", \"index\": {{index}}}；是你补的就加一条助手补充的来源并写理由", placeholders: ["settled","index"] },
 ];

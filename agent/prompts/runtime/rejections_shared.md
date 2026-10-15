@@ -299,3 +299,27 @@
 用途：最低门里一页主题差的一样：用户还没有看过。
 
 用户还没有看过
+
+## `save_revision.overall_see_also_without_deprecated`
+
+用途：保存总体分析的一页时，「改看」写了而这一页不是已废弃（overall_analysis.ts 的 pageProblems）。see_also、status、deprecated 是字段名与取值。
+
+「{{see_also}}」写了 {{see}}，但这一页的{{status}}不是{{deprecated}}
+
+## `save_revision.overall_see_also_without_deprecated.guide`
+
+用途：上一条的指引。
+
+「{{see_also}}」只在这一页不再用、由另一页取代时写：把{{status}}改成{{deprecated}}，或者去掉「{{see_also}}」
+
+## `save_revision.overall_settled_without_source`
+
+用途：保存总体分析的一页时，「已经定下的」某一条没有来源指到它。quoted 是那一条（长的只引前 20 字）。
+
+「{{settled}}」的第 {{no}} 条「{{quoted}}」没有出处
+
+## `save_revision.overall_settled_without_source.guide`
+
+用途：上一条的指引。index 是那一条从 0 起的序号。
+
+每一条已经定下的都要有出处：在它出自的那条来源的 supports 里写 {"field": "{{settled}}", "index": {{index}}}；是你补的就加一条助手补充的来源并写理由

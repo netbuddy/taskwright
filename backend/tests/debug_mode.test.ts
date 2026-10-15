@@ -246,7 +246,8 @@ test("调试模式下的阶段记录流水与被拒的工具调用：谁在什�
     }
     assert.equal(view.rejections.length, 1);
     const refused = view.rejections[0];
-    assert.deepEqual([refused.tool, refused.kind, refused.call_id, refused.session_id], ["save_revision", "input", "call-early", session]);
+    // 被阶段拦下的保存，原因码 gate.stage_item_write 是守门类，拒绝种类记作缺前置步骤（gate）。
+  assert.deepEqual([refused.tool, refused.kind, refused.call_id, refused.session_id], ["save_revision", "gate", "call-early", session]);
     assert.match(refused.fact, /任务现在在核读材料阶段，这个阶段不能新增「功能用例」的条目/);
     assert.match(refused.guidance, /进入写条目要由用户在卡片上选「开始写条目」/);
     assert.match(refused.work_id, /^w-/);

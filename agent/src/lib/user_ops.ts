@@ -291,7 +291,7 @@ function save(
     return saveRevision({ workspaceDir: ctx.workspaceDir, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, params, afterWrite);
   } catch (error) {
     const text = (error as Error).message;
-    if (text.includes("已经被") && text.includes("改到修订")) throw new UserOpError("stale_revision", "条目刚被改过，请看最新内容后再改。", { detail: text });
+    if (error instanceof SaveRejected && error.keys.includes("save_revision.base_revision_stale.older")) throw new UserOpError("stale_revision", "条目刚被改过，请看最新内容后再改。", { detail: text });
     // 保存修订被拒时带着分层的原因：给用户看的只取事实，指引是给助手的。
     const reasons = error instanceof SaveRejected ? error.reasons.map((r) => r.fact)
       : text.split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2));

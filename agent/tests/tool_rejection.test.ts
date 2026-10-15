@@ -76,6 +76,19 @@ test("保存修订被拒一次写一行：工具名、调用编号、事实与�
   assert.equal(count(dir, "revision"), 0);
 });
 
+test("保存修订被拒时逐个操作记下原因码：reason_code 是第一个操作的，reason_codes 按操作的先后列全", async () => {
+  const dir = workspaceWithTask();
+  const params = { operations: [
+    { op: "add", collection: "没有这个集合", fields: {}, sources: [SOURCE] },
+    { op: "update", item: "UC-404", base_revision: 1, fields: {} },
+    "不是对象",
+  ] };
+  await assert.rejects(saveTool(dir, "call-codes", params), /这次「保存修订」什么都没有写入，因为有 3 个操作不对/);
+  const [row] = rejections(dir);
+  assert.deepEqual([row.reason_code, JSON.parse(row.reason_codes), row.reason_kind],
+    ["save_revision.collection_unknown", ["save_revision.collection_unknown", "save_revision.item_not_found", "save_revision.op_not_object"], "input"]);
+});
+
 test("通过的调用不写拒绝记录", async () => {
   const dir = workspaceWithTask();
   const outcome = await saveTool(dir, "call-ok-1", {

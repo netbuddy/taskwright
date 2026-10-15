@@ -30,8 +30,9 @@ import { diagramRefusal } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
 import { DIAGRAM_ID, DIAGRAM_KINDS, type DiagramRecord, diagramId, drawnItemIds, kindName, latestVersion, readDiagrams } from "./diagram.ts";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
-import { REPLAYED_TEXT, type Source, checkDiagramSources } from "./save_revision.ts";
+import { REPLAYED_TEXT, type Source, checkDiagramSources, splitGuide } from "./save_revision.ts";
 import { ELEMENT_FIGURE, NoDatabaseYet, SOURCE_ITEM, withTaskDatabase } from "./schema.ts";
+import { codeOf } from "./texts.ts";
 import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 
 /** 工具名。 */
@@ -107,8 +108,18 @@ interface Plan {
   dropped: string[];
 }
 
-const reject = (fact: string, guidance = ""): ToolRejection =>
-  new ToolRejection(`这张图没有保存：${fact}。${guidance ? `\n怎么办：${guidance}。` : ""}`, fact, guidance);
+const reject = (fact: string, guidance = "", codes: string[] = []): ToolRejection =>
+  new ToolRejection(`这张图没有保存：${fact}。${guidance ? `\n怎么办：${guidance}。` : ""}`, fact, guidance, codes);
+
+/**
+ * 来源核对的错误（每条带着拒绝语的键与两层文字，见 save_revision.ts 的 splitGuide）合成一次拒绝：事实用「；」接起来，指引也是；
+ * 调用处给了指引的用它。原因码按错误的先后。
+ */
+function sourcesRejection(errors: string[], guidance = ""): ToolRejection {
+  const parts = errors.map(splitGuide);
+  const guides = parts.map((one) => one.guidance).filter(Boolean);
+  return reject(parts.map((one) => one.fact).join("；"), guidance || guides.join("；"), parts.filter((one) => one.key).map((one) => codeOf(one.key)));
+}
 
 const isText = (value: unknown): value is string => typeof value === "string" && value.trim() !== "";
 const given = (value: unknown): boolean => value !== undefined && value !== null;
@@ -170,7 +181,7 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
     const content = checkContent(params);
     const errors: string[] = [];
     const sources = checkDiagramSources(db, taskId, definition, params.sources, call, errors);
-    if (!sources) throw reject(errors.join("；"), "图至少要有一条来源：用户要你画图的那句话写一条「用户的话」，画进图里的每个条目各写一条种类为「条目」的来源");
+    if (!sources) throw sourcesRejection(errors, "图至少要有一条来源：用户要你画图的那句话写一条「用户的话」，画进图里的每个条目各写一条种类为「条目」的来源");
     const drawn = checkDrawn(db, taskId, definition, content.mermaid!, sources);
     return { taskId, op: "add", record: null, name: content.name!, kind: content.kind!, mermaid: content.mermaid!, note: content.note ?? "", sources, validate: true, drawn, dropped: [] };
   }
@@ -203,7 +214,7 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   if (given(params.sources)) {
     const errors: string[] = [];
     const checked = checkDiagramSources(db, taskId, definition, params.sources, call, errors, previous);
-    if (!checked) throw reject(errors.join("；"));
+    if (!checked) throw sourcesRejection(errors);
     sources = checked;
   }
   const merged = { name: content.name ?? current.name, kind: content.kind ?? current.kind, mermaid: content.mermaid ?? current.mermaid, note: content.note ?? current.note };

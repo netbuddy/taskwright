@@ -26,16 +26,18 @@ import { PDF_LOCATIONS_SUFFIX } from "../../agent/src/lib/pdf_locations.ts";
 import { PDF_SEGMENTS_SUFFIX } from "../../agent/src/lib/pdf_segments.ts";
 import { PDF_PROJECTION_SUFFIX } from "./pdf_projection.ts";
 import { LEGACY_SUFFIX, SUFFIX } from "./projection.ts";
+import { textPattern, textPrefix } from "../../agent/src/lib/texts.ts";
 import { isObject, or, truthy } from "./py.ts";
 
 export const REPLY_TOOL = "reply";
 export const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", delete: "删除", restore: "恢复" };
-export const SAVE_REJECTED_HEAD = "这次「保存修订」什么都没有写入";
-export const SAVE_REJECTED_TAIL = "\n请把这些地方改正之后";
-/** 拒绝正文里每个操作那一行开头的标签，例如「操作 1（修改，条目 TBD-001）：」；事实不带它。 */
-const OP_LABEL = /^操作 \d+(?:（[^）]*）)?：/;
-/** 指引那一行的开头（agent/src/lib/save_revision.ts 的 GUIDANCE_PREFIX）。 */
-export const GUIDANCE_PREFIX = "怎么办：";
+/** 保存修订被拒时整条拒绝语的开头与最后一句（模板 part.save_head、part.save_tail，agent/prompts/runtime/rejections_save_revision.md）。 */
+export const SAVE_REJECTED_HEAD = textPrefix("part.save_head");
+export const SAVE_REJECTED_TAIL = `\n${textPrefix("part.save_tail")}`;
+/** 拒绝正文里每个操作那一行开头的标签，例如「操作 1（修改，条目 TBD-001）：」；事实不带它。三种标签的模板见 part.op_label*。 */
+const OP_LABEL = new RegExp(`^(?:${[textPattern("part.op_label_add"), textPattern("part.op_label_item"), textPattern("part.op_label")].join("|")})：`);
+/** 指引那一行的开头（模板 part.save_guidance）。 */
+export const GUIDANCE_PREFIX = textPrefix("part.save_guidance");
 
 type Dict = Record<string, any>;
 

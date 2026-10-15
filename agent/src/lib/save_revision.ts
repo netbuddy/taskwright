@@ -88,6 +88,8 @@ import { overallState } from "./overall_read.ts";
 import { type Position, itemRefusal, pageRefusal } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
+import { codeOf, fillText, refusalText, textPrefix } from "./texts.ts";
+import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 
 /** 一条来源所支持的一处：某个字段，列表型字段还可以指到其中一项（从 0 起）。 */
 export interface Support {
@@ -156,8 +158,8 @@ interface SourceRow {
 
 /** 发起方写成中文。拒绝原因的事实一层也给人看，所以执行者写作「助手」。 */
 function actorText(actor: string): string {
-  if (actor === ACTOR_USER) return "用户";
-  if (actor === ACTOR_EXECUTOR || actor === LEGACY_ACTOR_MODEL) return "助手";
+  if (actor === ACTOR_USER) return fillText("part.actor_user");
+  if (actor === ACTOR_EXECUTOR || actor === LEGACY_ACTOR_MODEL) return fillText("part.actor_executor");
   return `「${actor}」`;
 }
 
@@ -168,36 +170,58 @@ type Planned =
   | { op: "delete"; itemId: string; collection: string; fromRevision: number }
   | { op: "restore"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes: string[] };
 
-const OP_NAMES: Record<string, string> = { add: "新增", update: "修改", delete: "删除", restore: "恢复" };
+const OP_NAMES: Record<string, string> = {
+  get add() { return fillText("part.op_add"); }, get update() { return fillText("part.op_update"); },
+  get delete() { return fillText("part.op_delete"); }, get restore() { return fillText("part.op_restore"); },
+};
 
 /**
  * 拒绝原因分两层：事实（改了什么、为什么不行，一句话，面向人）与指引（接下来该怎么做，只给助手）。
  * 核对函数往 errors 里推的一条文字可以用 withGuide 把两层拼在一起，组装时再拆开。
  * 给模型的正文每个操作两行：「- 操作 N（……）：事实」与「  怎么办：指引」；后端的过程摘要只取事实（backend/src/work_summary.ts）。
  */
-export interface RejectReason { label: string; fact: string; guidance: string }
+export interface RejectReason {
+  label: string;
+  fact: string;
+  guidance: string;
+  /** 这个操作的几条原因各自的拒绝语键（agent/prompts/runtime/ 下 rejections_*.md），按出现的先后；原因码是键的前两段。 */
+  keys: string[];
+}
 const GUIDE = "\u0000";
-export const GUIDANCE_PREFIX = "怎么办：";
+const KEY = "\u0001";
+/** 指引那一行的开头（「怎么办：」）。后端的过程摘要按它认出指引（backend/src/work_summary.ts）。 */
+export const GUIDANCE_PREFIX = textPrefix("part.save_guidance");
+/** 没有原因码的一条（只有两层文字）。 */
 export function withGuide(fact: string, guidance: string): string {
   return `${fact}${GUIDE}${guidance}`;
 }
+/** 一条带拒绝语键的错误：键、事实与指引编进一段文字（errors 列表里的一项），组装时再拆开（splitGuide）。key 是完整的键（可以带变体）。 */
+export function problemText(refusal: { key: string; fact: string; guidance: string }): string {
+  return `${refusal.key}${KEY}${refusal.fact}${GUIDE}${refusal.guidance}`;
+}
+/** 取好的拒绝语编成一条错误（键写在调用处的 refusalText 里，守护测试才扫得到）。 */
+const problem = (refusal: RefusalText): string => problemText(refusal);
 /** 一个操作的若干条错误拼成一条原因：事实用「；」接起来，指引也是。subject 是事实里没点到条目时补在前面的主语。 */
 function reasonOf(label: string, subject: string, errors: string[]): RejectReason {
   const facts: string[] = [];
   const guides: string[] = [];
+  const keys: string[] = [];
   for (const one of errors) {
-    const [fact, guide] = one.split(GUIDE);
+    const { key, fact, guidance } = splitGuide(one);
     facts.push(fact);
-    if (guide) guides.push(guide);
+    if (guidance) guides.push(guidance);
+    if (key) keys.push(key);
   }
   const fact = facts.join("；");
-  return { label, fact: fact.includes(subject) ? fact : `${subject}：${fact}`, guidance: guides.join("；") };
+  return { label, fact: fact.includes(subject) ? fact : fillText("part.subject_join", { subject, fact }), guidance: guides.join("；"), keys };
 }
+/** 一个操作只有一条原因时的样子。 */
+const single = (label: string, one: RefusalText): RejectReason => ({ label, fact: one.fact, guidance: one.guidance, keys: [one.key] });
 /** 拒绝的正文：给模型看，两层都在。 */
 export function rejectionText(reasons: RejectReason[]): string {
-  return `这次「保存修订」什么都没有写入，因为有 ${reasons.length} 个操作不对：\n` +
-    reasons.map((r) => `- ${r.label}：${r.fact}。${r.guidance ? `\n  ${GUIDANCE_PREFIX}${r.guidance}。` : ""}`).join("\n") +
-    "\n请把这些地方改正之后，把整批操作重新提交一次。";
+  return `${fillText("part.save_head", { count: reasons.length })}\n` +
+    reasons.map((r) => `- ${r.label}：${r.fact}。${r.guidance ? `\n  ${fillText("part.save_guidance", { guidance: r.guidance })}` : ""}`).join("\n") +
+    `\n${fillText("part.save_tail")}`;
 }
 /**
  * 保存修订被拒时抛的错：正文是 rejectionText，reasons 带结构化的两层。
@@ -207,9 +231,14 @@ export class SaveRejected extends Error {
   reasons: RejectReason[];
   fact: string;
   guidance: string;
+  /** 全部原因的拒绝语键与原因码（键的前两段），按操作与出现的先后。 */
+  keys: string[];
+  codes: string[];
   constructor(reasons: RejectReason[]) {
     super(rejectionText(reasons));
     this.reasons = reasons;
+    this.keys = reasons.flatMap((r) => r.keys);
+    this.codes = this.keys.map(codeOf);
     this.fact = reasons.map((r) => `${r.label}：${r.fact}`).join("\n");
     this.guidance = reasons.filter((r) => r.guidance).map((r) => `${r.label}：${r.guidance}`).join("\n");
   }
@@ -267,12 +296,7 @@ export function saveRevision(
       return outcome;
     });
   } catch (error) {
-    if (error instanceof NoDatabaseYet) {
-      throw new Error(
-        "这个任务目录里还没有任务记录，所以没有地方保存修订，什么都没有写入。" +
-          "任务由用户在界面上创建，你没有创建任务的工具；请把这个情况如实告诉用户。",
-      );
-    }
+    if (error instanceof NoDatabaseYet) throw notInputProblem(new Error(fillText("save_revision.no_database")));
     throw error;
   }
 }
@@ -286,26 +310,17 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (replay) return replay;
   }
   const running = activeTasks(db);
-  if (running.length === 0) {
-    throw new Error(
-      "库里没有任务记录，所以没有地方保存修订，什么都没有写入。请把这个情况如实告诉用户。",
-    );
-  }
+  if (running.length === 0) throw notInputProblem(new Error(fillText("save_revision.no_task")));
   if (running.length > 1) {
-    throw new Error(
-      `这个任务目录里有 ${running.length} 个任务（${running.map((one) => one.task_id).join("、")}），` +
-        "同一时刻只应当有一个，库里的记录有问题，所以没有写入。请把这个情况告诉用户。",
-    );
+    throw notInputProblem(new Error(fillText("save_revision.several_tasks", { count: running.length, ids: running.map((one) => one.task_id).join("、") })));
   }
   const taskId = running[0].task_id;
   const definition = validateDefinition(JSON.parse(running[0].definition_text));
 
   const operations = params.operations;
   if (!Array.isArray(operations) || operations.length === 0) {
-    throw new Error(
-      "operations 应当是一个不为空的操作列表，现在不是，所以什么都没有写入。每个操作是新增、修改、删除三种之一，" +
-        "例如 { \"op\": \"add\", \"collection\": \"集合名\", \"fields\": { … }, \"sources\": [ … ] }。",
-    );
+    const text = fillText("save_revision.operations_empty");
+    throw new ToolRejection(text, text, "", ["save_revision.operations_empty"]);
   }
 
   const items = itemsOf(db, taskId);
@@ -350,9 +365,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     changedAfter: (itemId, seq) => {
       const version = db.prepare("SELECT MAX(revision_no) AS n FROM item_version WHERE task_id = ? AND item_id = ? AND event_seq > ?")
         .get(taskId, itemId, seq) as { n: number | null };
-      if (version.n !== null) return `改到了修订 ${version.n}`;
+      if (version.n !== null) return fillText("part.changed_to", { revision: version.n });
       const row = items.get(itemId);
-      return row && row.deleted_in_revision !== null && deletedAfter(db, taskId, itemId, seq) ? `在修订 ${row.deleted_in_revision} 删除了` : null;
+      return row && row.deleted_in_revision !== null && deletedAfter(db, taskId, itemId, seq) ? fillText("part.deleted_at", { revision: row.deleted_in_revision }) : null;
     },
   };
   const touched = new Map<string, number>();
@@ -424,77 +439,78 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (isEmptyValue(chapter) || isDeprecated(fields)) return;
       const owners = introOwners(chapter, self);
       if (owners.length === 0) return;
-      errors.push(withGuide(`「${String(chapter)}」这一章已经有一页在用的导语页：${owners.join("、")}`, "一章只立一页导语页，请改那一页，不要另立"));
+      errors.push(problem(refusalText("save_revision.overall_intro_duplicate", { chapter: String(chapter), owners: owners.join("、") })));
     };
+    const plain = fillText("part.op_label", { no: number });
     if (!isObject(raw)) {
-      problems.push({ label: `操作 ${number}`, fact: `操作 ${number}：它应当是一个对象，现在不是`, guidance: "" });
+      problems.push(single(plain, refusalText("save_revision.op_not_object", { no: number })));
       return;
     }
     const op = raw.op;
     if (op === "restore" && call.actor !== ACTOR_USER) {
-      problems.push({ label: `操作 ${number}`, fact: "助手用了恢复操作（restore），它只给用户在界面上的撤销用", guidance: "要改条目请用 update" });
+      problems.push(single(plain, refusalText("save_revision.restore_by_assistant")));
       return;
     }
     if (op !== "add" && op !== "update" && op !== "delete" && op !== "restore") {
-      problems.push({ label: `操作 ${number}`, fact: `操作 ${number} 的种类写成了 ${JSON.stringify(op)}`, guidance: `op 只能是 "add"（新增）、"update"（修改）、"delete"（删除）之一` });
+      problems.push(single(plain, refusalText("save_revision.op_kind_invalid", { no: number, given: String(JSON.stringify(op)) })));
       return;
     }
+    /** 条目引用里的一个编号能不能用：能用返回 null，不能用返回一条带键的错误（事实层是接在 part.field_ref 后面的那半句）。 */
     const checkRef = (itemId: unknown): string | null => {
-      if (typeof itemId !== "string" || itemId.trim() === "") return "应当写一个条目编号";
+      if (typeof itemId !== "string" || itemId.trim() === "") return problem(refusalText("save_revision.field_ref_target_missing.not_id"));
       const row = items.get(itemId);
       if (!row) {
         const at = addedAt.get(itemId);
-        if (at === undefined) return "指向的条目在这个任务里不存在";
+        if (at === undefined) return problem(refusalText("save_revision.field_ref_target_missing"));
         if (at < number) return null;
-        return at === number
-          ? withGuide("指向的就是这个操作自己要新增的条目", "一个条目不能引用自己")
-          : withGuide(`指向的条目 ${itemId} 在这一批里排在第 ${at} 个操作才新增，在这个操作之后`, `请把新增 ${itemId} 的操作排到前面`);
+        return at === number ? problem(refusalText("save_revision.field_ref_self.batch")) : problem(refusalText("save_revision.field_ref_target_order", { item: itemId, at }));
       }
-      if (row.deleted_in_revision !== null) return `指向的条目已在修订 ${row.deleted_in_revision} 删除`;
-      if (deletedHere.has(itemId)) return "指向的条目在这次调用里被删除";
+      if (row.deleted_in_revision !== null) return problem(refusalText("save_revision.field_ref_target_deleted", { revision: row.deleted_in_revision }));
+      if (deletedHere.has(itemId)) return problem(refusalText("save_revision.field_ref_target_deleted.here"));
       return null;
     };
 
     if (op === "add") {
       const collection = definition.collections.find((one) => one.name === raw.collection);
-      const label = `操作 ${number}（新增，集合「${String(raw.collection)}」）`;
+      const label = fillText("part.op_label_add", { no: number, collection: String(raw.collection) });
       if (!collection) {
-        problems.push({ label, fact: `没有名叫「${String(raw.collection)}」的集合`,
-          guidance: `可用的集合是：${definition.collections.map((one) => `「${one.name}」`).join("、")}` });
+        problems.push(single(label, refusalText("save_revision.collection_unknown", {
+          collection: String(raw.collection), collections: definition.collections.map((one) => `「${one.name}」`).join("、"),
+        })));
         return;
       }
       const staged = stageRefusal(collection, "add");
-      if (staged) errors.push(withGuide(staged.fact, staged.guidance));
-      if (gate !== null && collection.name !== OVERALL_COLLECTION && keepPendingField(collection) === null) errors.push(withGuide(gate.fact, gate.guidance));
-      if (raw.item !== undefined) errors.push("新增时不要写 item，条目编号由工具生成");
+      if (staged) errors.push(problemText(staged));
+      if (gate !== null && collection.name !== OVERALL_COLLECTION && keepPendingField(collection) === null) errors.push(problemText(gate));
+      if (raw.item !== undefined) errors.push(problem(refusalText("save_revision.add_item_given")));
       if (!isObject(raw.fields)) {
-        errors.push("fields 应当是一个对象，键是字段名，值是字段内容");
+        errors.push(problem(refusalText("save_revision.add_fields_not_object")));
       } else {
         checkFields(collection, raw.fields, checkRef, errors, refs, [...addedAt].find(([, at]) => at === number)?.[0] ?? null);
         const status = keepPendingField(collection);
         const refusal = status && call.actor !== ACTOR_USER
           ? newProblemStatus(raw.fields[status.name], (status.values ?? []).find((value) => !Object.hasOwn(CONSENT_OPTION, value)) ?? null) : null;
-        if (refusal) errors.push(withGuide(refusal.fact, refusal.guidance));
+        if (refusal) errors.push(problemText(refusal));
         if (call.actor !== ACTOR_USER) checkProblemContent(collection, raw.fields, true, undefined, errors);
         if (collection.name === OVERALL_COLLECTION) checkIntroPage(raw.fields, null);
         for (const field of collection.fields) {
           if (field.required && isEmptyValue(raw.fields[field.name])) {
-            errors.push(`必填字段「${field.name}」没有填或者是空的`);
+            errors.push(problem(refusalText("save_revision.required_field_empty", { field: field.name })));
           }
         }
       }
-      if (raw.base_revision !== undefined) errors.push("新增时不要写 base_revision，新条目还没有所在的修订");
+      if (raw.base_revision !== undefined) errors.push(problem(refusalText("save_revision.add_base_revision_given")));
       const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, null));
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER) {
-        for (const [fact, guidance] of pageProblems(fields, sources)) errors.push(withGuide(fact, guidance));
+        for (const one of pageProblems(fields, sources)) errors.push(problemText(one));
       }
       if (sources && call.actor !== ACTOR_USER && keepPendingField(collection) === null) {
-        for (const [fact, guidance] of quotedProblems(fields, sources)) errors.push(withGuide(fact, guidance));
+        for (const one of quotedProblems(fields, sources)) errors.push(problemText(one));
       }
       if (errors.length > 0) {
-        problems.push(reasonOf(label, `新增到「${collection.name}」的条目`, errors));
+        problems.push(reasonOf(label, fillText("part.subject_add", { collection: collection.name }), errors));
         return;
       }
       planned.push({ op: "add", collection, fields, sources: sources! });
@@ -505,27 +521,27 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
 
     // 修改与删除：条目必须存在且没有被删除。
     const itemId = raw.item;
-    const label = `操作 ${number}（${OP_NAMES[op]}，条目 ${String(itemId)}）`;
+    const label = fillText("part.op_label_item", { no: number, op: OP_NAMES[op], item: String(itemId) });
     if (typeof itemId !== "string" || itemId.trim() === "") {
-      problems.push({ label, fact: `助手要${OP_NAMES[op]}条目，但没写是哪个条目`, guidance: `item 应当写要${OP_NAMES[op]}的条目编号，例如 UC-001` });
+      problems.push(single(label, refusalText("save_revision.item_id_missing", { op: OP_NAMES[op] })));
       return;
     }
     const row = items.get(itemId);
     if (!row) {
       const alive = [...items.values()].filter((one) => one.deleted_in_revision === null).map((one) => one.item_id);
-      problems.push({ label, fact: `这个任务里没有条目 ${itemId}`, guidance: `现有的条目是：${alive.length ? alive.join("、") : "（一个都没有）"}` });
+      problems.push(single(label, refusalText("save_revision.item_not_found", { item: itemId, alive: alive.length ? alive.join("、") : fillText("part.no_items") })));
       return;
     }
     if (op === "restore" && row.deleted_in_revision === null) {
-      problems.push({ label, fact: `${itemId} 没有被删除，不需要恢复`, guidance: "" });
+      problems.push(single(label, refusalText("save_revision.restore_not_deleted", { item: itemId })));
       return;
     }
     if (op !== "restore" && row.deleted_in_revision !== null) {
-      problems.push({ label, fact: `助手想${OP_NAMES[op]} ${itemId}，但它已在修订 ${row.deleted_in_revision} 删除`, guidance: "" });
+      problems.push(single(label, refusalText("save_revision.item_already_deleted", { op: OP_NAMES[op], item: itemId, revision: row.deleted_in_revision })));
       return;
     }
     if (touched.has(itemId)) {
-      problems.push({ label, fact: `同一次保存里 ${itemId} 出现了两次（操作 ${touched.get(itemId)} 已经处理了它）`, guidance: "一个条目在一次调用里只能有一个操作" });
+      problems.push(single(label, refusalText("save_revision.item_duplicate_in_batch", { item: itemId, at: touched.get(itemId)! })));
       return;
     }
     touched.set(itemId, number);
@@ -534,22 +550,17 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     // 改前修订号：模型必须写出它所见的这个条目所在的修订号，与库里的不符就拒绝，免得按旧内容盖掉别人的修改。
     const base = raw.base_revision;
     if (base === undefined || base === null) {
-      problems.push({ label, fact: `助手${OP_NAMES[op]} ${itemId} 时没写它看到的是哪次修订`,
-        guidance: "修改与删除时要写 base_revision，也就是你所见的这个条目当前所在的修订号（整数），它写在「保存修订」的返回与界面操作的通知里（「UC-001 现在是修订 N」）" });
+      problems.push(single(label, refusalText("save_revision.base_revision_missing", { op: OP_NAMES[op], item: itemId })));
       return;
     }
     if (typeof base !== "number" || !Number.isInteger(base) || base < 1) {
-      problems.push({ label, fact: `助手${OP_NAMES[op]} ${itemId} 时写的修订号 ${JSON.stringify(base)} 不对`, guidance: "base_revision 应当是一个从 1 起的整数" });
+      problems.push(single(label, refusalText("save_revision.base_revision_invalid", { op: OP_NAMES[op], item: itemId, given: String(JSON.stringify(base)) })));
       return;
     }
     if (base !== current.revision_no) {
-      problems.push({
-        label,
-        fact: base < current.revision_no
-          ? `${itemId} 已经被${actorText(current.actor)}改到修订 ${current.revision_no}，助手看到的还是修订 ${base}`
-          : `${itemId} 现在是修订 ${current.revision_no}，助手写的修订 ${base} 不是它当前所在的修订`,
-        guidance: `请先读最新内容再改。它在修订 ${current.revision_no} 的内容是：${current.fields}`,
-      });
+      problems.push(base < current.revision_no
+        ? single(label, refusalText("save_revision.base_revision_stale.older", { item: itemId, actor: actorText(current.actor), now: current.revision_no, seen: base, fields: current.fields }))
+        : single(label, refusalText("save_revision.base_revision_stale", { item: itemId, now: current.revision_no, seen: base, fields: current.fields })));
       return;
     }
 
@@ -557,7 +568,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (op === "delete") {
       const staged = stageRefusal(collection, "delete");
       if (staged) {
-        problems.push({ label, fact: staged.fact, guidance: staged.guidance });
+        problems.push({ label, fact: staged.fact, guidance: staged.guidance, keys: [staged.key] });
         return;
       }
       planned.push({ op: "delete", itemId, collection: row.collection, fromRevision: current.revision_no });
@@ -567,7 +578,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     const before = load(current.fields) as Fields;
     let merged: Fields = before;
     if (raw.fields !== undefined && !isObject(raw.fields)) {
-      errors.push("fields 应当是一个对象，只写要改的字段");
+      errors.push(problem(refusalText("save_revision.update_fields_not_object")));
     } else if (isObject(raw.fields)) {
       checkFields(collection, raw.fields, checkRef, errors, refs, itemId);
       if (call.actor !== ACTOR_USER) {
@@ -581,7 +592,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (collection.name === OVERALL_COLLECTION) checkIntroPage(merged, itemId);
       for (const field of collection.fields) {
         if (field.required && field.name in raw.fields && isEmptyValue(raw.fields[field.name])) {
-          errors.push(`必填字段「${field.name}」改完之后是空的，必填字段不能清空`);
+          errors.push(problem(refusalText("save_revision.required_field_cleared", { field: field.name })));
         }
       }
     }
@@ -589,7 +600,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       // 这个阶段能不能改它：别的集合的条目要到写条目阶段；评审确认阶段总体分析的页只能改状态与改看，所以要看这次改动了哪几个字段。
       const changed = [...new Set([...Object.keys(before), ...Object.keys(merged)])].filter((name) => !sameJson(before[name], merged[name]));
       const staged = stageRefusal(collection, "update", changed);
-      if (staged) errors.push(withGuide(staged.fact, staged.guidance));
+      if (staged) errors.push(problemText(staged));
     }
     // 旧的「用户直接修改」当作不存在（见文件开头）。用户的操作（直接修改、撤销）都交来完整的来源，不经这里沿用，撤销照原样恢复。
     const previousSources = sourcesOf(itemId, current.revision_no).filter((one) => one.kind !== SOURCE_USER_EDIT);
@@ -608,7 +619,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       const left = carried.rewritten.filter((one) => !restated.has(one.source));
       if (left.length) notes.push(rewrittenNote(itemId, left));
       if (sources.length === 0) {
-        errors.push(withGuide(`${itemId} 改完之后一条来源也没有`, "请在这个操作里给出 sources，每个条目至少一条来源"));
+        errors.push(problem(refusalText("save_revision.update_sources_missing", { item: itemId })));
       }
     } else if (call.actor !== ACTOR_USER && given && !editsFields) {
       // 只给 sources、不改字段：整体重新标注，这是执行者去掉某条来源的写法；去掉了哪几条写进结果。
@@ -617,14 +628,14 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
     if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER && op !== "restore") {
-      for (const [fact, guidance] of pageProblems(merged, sources)) errors.push(withGuide(fact, guidance));
+      for (const one of pageProblems(merged, sources)) errors.push(problemText(one));
     }
     // 只核对这次新给的来源；沿用下来的不重新核对。
     if (given && call.actor !== ACTOR_USER && op !== "restore" && keepPendingField(collection) === null) {
-      for (const [fact, guidance] of quotedProblems(merged, given)) errors.push(withGuide(fact, guidance));
+      for (const one of quotedProblems(merged, given)) errors.push(problemText(one));
     }
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
-      errors.push(withGuide(`助手对 ${itemId} 的修改与它在修订 ${current.revision_no} 的内容和来源完全一样，没有改动任何东西`, "不需要改就去掉这个操作"));
+      errors.push(problem(refusalText("save_revision.update_noop", { item: itemId, revision: current.revision_no })));
     }
     if (errors.length > 0) {
       problems.push(reasonOf(label, itemId, errors));
@@ -689,8 +700,8 @@ export function checkDiagramSources(
 
 /** 种类为「条目」的来源要用的三个查法，与种类为「图」的来源要用的一个查法（见 itemSourceLookups）。 */
 export interface ItemSourceLookups {
-  /** 出处指的条目能不能引用：能就返回 null，不能返回原因。 */
-  ref: (locator: string) => string | null;
+  /** 出处指的条目能不能引用：能就返回 null，不能返回原因（事实层是接在出处后面的半句，有的另带指引）。 */
+  ref: (locator: string) => { fact: string; guidance: string } | null;
   /** 那个条目当前内容里的各段文字（文本字段与文本列表的各项），摘录要逐字出现在其中之一里。 */
   text: (locator: string) => string[];
   /** 引用这一刻那个条目的修订号；它在这一次保存里才新增或修改时是 THIS_REVISION。 */
@@ -716,24 +727,25 @@ function itemSourceLookups(
   self: string | null,
   diagrams: readonly DiagramRecord[] = [],
 ): ItemSourceLookups {
-  const ref = (locator: string): string | null => {
-    if (self !== null && locator === self) return "指的就是这个条目自己，一个条目不能把自己当作依据";
+  const ref = (locator: string): { fact: string; guidance: string } | null => {
+    const why = (fact: string) => ({ fact, guidance: "" });
+    if (self !== null && locator === self) return why(fillText("part.ref_self"));
     const row = items.get(locator);
     if (!row) {
       const at = batch.addedAt.get(locator);
-      if (at === undefined) return "指向的条目在这个任务里不存在";
-      if (at === number) return "指的就是这个操作自己要新增的条目，一个条目不能把自己当作依据";
-      if (at > number) return `指向的条目在这一批里排在第 ${at} 个操作才新增，在这个操作之后；请把新增它的操作排到前面`;
-      return batch.written.has(locator) ? null : "指向的条目在这一批里排在前面新增，但那个操作自己没有通过核对";
+      if (at === undefined) return why(fillText("part.ref_missing"));
+      if (at === number) return why(fillText("part.ref_self_batch"));
+      if (at > number) return why(fillText("part.ref_later", { at }));
+      return batch.written.has(locator) ? null : why(fillText("part.ref_failed"));
     }
-    if (row.deleted_in_revision !== null) return `指向的条目已在修订 ${row.deleted_in_revision} 删除`;
-    if (batch.deletedHere.has(locator)) return "指向的条目在这次调用里被删除";
+    if (row.deleted_in_revision !== null) return why(fillText("part.ref_deleted", { revision: row.deleted_in_revision }));
+    if (batch.deletedHere.has(locator)) return why(fillText("part.ref_deleted_here"));
     // 总体分析里已废弃的页不能再作依据：写了改看的指给助手看。这一批里刚把它改成已废弃的也算。
     if (row.collection === OVERALL_COLLECTION) {
       const fields = batch.written.get(locator)?.fields ?? (JSON.parse(latestVersion(locator).fields) as Record<string, unknown>);
       if (isDeprecated(fields)) {
         const see = seeAlsoOf(fields);
-        return withGuide(`指向的主题 ${locator} 已废弃`, see ? `改看 ${see}：把出处改成 ${see}，摘录照它现在的内容抄` : "请改成依据现在在用的主题");
+        return { fact: fillText("part.ref_deprecated", { locator }), guidance: see ? fillText("part.ref_deprecated_guide", { see }) : fillText("part.ref_deprecated_guide_none") };
       }
     }
     return null;
@@ -752,11 +764,11 @@ function itemSourceLookups(
   };
   const revision = (locator: string) => (batch.written.has(locator) ? THIS_REVISION : latestVersion(locator).revision_no);
   const figure = (locator: string) => {
-    if (!DIAGRAM_ID.test(locator)) return { reason: "不是图的编号" };
+    if (!DIAGRAM_ID.test(locator)) return { reason: fillText("part.figure_not_id") };
     const record = diagrams.find((one) => one.diagram_id === locator);
     const now = record ? latestDiagramVersion(record) : null;
-    if (!record || !now) return { reason: "指向的图在这个任务里不存在" };
-    if (record.deleted_in_revision !== null) return { reason: `指向的图已在它的修订 ${record.deleted_in_revision} 删除` };
+    if (!record || !now) return { reason: fillText("part.figure_missing") };
+    if (record.deleted_in_revision !== null) return { reason: fillText("part.figure_deleted", { revision: record.deleted_in_revision }) };
     return { revision: now.revision_no, mermaid: now.mermaid };
   };
   return { ref, text, revision, figure };
@@ -788,7 +800,7 @@ export function checkQuotes(
 ): CheckedQuote[] | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) {
-    errors.push("这个任务目录还没有任务记录，依据无从核对");
+    errors.push(problem(refusalText("source.no_task_record_for_check")));
     return null;
   }
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
@@ -796,7 +808,7 @@ export function checkQuotes(
     const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       { task_id: string; definition_text: string } | undefined;
     if (!task) {
-      errors.push("这个任务目录还没有任务记录，依据无从核对");
+      errors.push(problem(refusalText("source.no_task_record_for_check")));
       return null;
     }
     const definition = validateDefinition(JSON.parse(task.definition_text));
@@ -811,10 +823,11 @@ export function checkQuotes(
   }
 }
 
-/** 把核对函数推进 errors 的一条拆成事实与指引两层；没有指引层时指引是空文字。 */
-export function splitGuide(one: string): { fact: string; guidance: string } {
-  const [fact, guidance] = one.split(GUIDE);
-  return { fact, guidance: guidance ?? "" };
+/** 把核对函数推进 errors 的一条拆成拒绝语键（没有时是空的）、事实与指引两层；没有指引层时指引是空文字。 */
+export function splitGuide(one: string): { key: string; fact: string; guidance: string } {
+  const [head, guidance] = one.split(GUIDE);
+  const at = head.indexOf(KEY);
+  return at < 0 ? { key: "", fact: head, guidance: guidance ?? "" } : { key: head.slice(0, at), fact: head.slice(at + 1), guidance: guidance ?? "" };
 }
 
 /** 集合里列表型字段（文本列表、条目引用）的名字：来源可以指到其中一项。 */
@@ -828,12 +841,12 @@ const QUOTED = /「([^「」]+)」/g;
 /**
  * 助手补充的来源，理由里用直角引号引出的字要逐字出现在它支持的那几处正文里（没有写支持哪几处时，在这个条目任何一个字段的文字里）：
  * 页面靠这几个字在正文里标出哪里是助手补的，引的与正文不一样就标不出来。理由里没有直角引号的不核对。
- * 问题条目不核对（那里的助手补充写的是发现了什么，不是补进正文的字），由调用方跳过。返回不对的地方，每处是 [事实, 怎么办]。
+ * 问题条目不核对（那里的助手补充写的是发现了什么，不是补进正文的字），由调用方跳过。返回不对的地方，每处是原因码与两层文字。
  */
-export function quotedProblems(fields: Fields, sources: readonly Source[]): [string, string][] {
+export function quotedProblems(fields: Fields, sources: readonly Source[]): RefusalText[] {
   const textsOf = (value: unknown): string[] =>
     typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : [];
-  const out: [string, string][] = [];
+  const out: RefusalText[] = [];
   for (const source of sources) {
     if (source.kind !== SOURCE_SUPPLEMENT) continue;
     const places = source.supports.length === 0 ? Object.values(fields).flatMap(textsOf)
@@ -841,11 +854,10 @@ export function quotedProblems(fields: Fields, sources: readonly Source[]): [str
         const value = fields[at.field];
         return at.index === undefined || !Array.isArray(value) ? textsOf(value) : textsOf(value[at.index]);
       });
-    const where = source.supports.length === 0 ? "这个条目的正文" : "它支持的那几处正文";
+    const where = source.supports.length === 0 ? fillText("part.where_item_text") : fillText("part.where_supported_text");
     for (const [, quoted] of source.excerpt.matchAll(QUOTED)) {
       if (places.some((text) => text.includes(quoted))) continue;
-      out.push([`${quoteLabel(source)}的理由里用直角引号引出的「${quoted}」不在${where}里`,
-        "理由里的直角引号只用来逐字引出你补进正文的那几个字：照正文一字不差地引，并在 supports 里写对是哪个字段的第几项；理由里要提到别的词时不要用直角引号"]);
+      out.push(refusalText("save_revision.supplement_quote_not_in_text", { source: quoteLabel(source), quoted, where }));
     }
   }
   return out;
@@ -853,7 +865,7 @@ export function quotedProblems(fields: Fields, sources: readonly Source[]): [str
 
 /** 结果里说到一条来源：摘录（长的只引前 30 字）加种类。 */
 function quoteLabel(source: Source): string {
-  return `「${quoteOf(source.excerpt)}」（${source.kind}）`;
+  return fillText("part.quote_label", { excerpt: quoteOf(source.excerpt), kind: source.kind });
 }
 
 /** 执行者改写了的内容上还留着原来的来源时，写在保存结果末尾的一句提醒：哪几处、哪几条，以及怎样去掉。 */
@@ -881,10 +893,10 @@ function checkProblemUpdate(collection: CollectionDef, itemId: string, before: F
   });
   if (changed.length === 0) return;
   const editable = [status.name, ...PROBLEM_EDITABLE_FIELDS.filter((name) => collection.fields.some((one) => one.name === name))];
-  errors.push(withGuide(
-    `助手想改 ${itemId} 的${changed.map((name) => `「${name}」`).join("、")}，但问题条目写下后只能改${editable.length === 2 ? editable.join("与") : `${editable.slice(0, -1).join("、")}与${editable[editable.length - 1]}`}`,
-    "用户的回答要写进它牵涉的条目（关联条目里列的那些），改完再问用户这个问题是否已解决",
-  ));
+  errors.push(problem(refusalText("save_revision.problem_edit_restricted", {
+    item: itemId, fields: changed.map((name) => `「${name}」`).join("、"),
+    editable: editable.length === 2 ? editable.join("与") : `${editable.slice(0, -1).join("、")}与${editable[editable.length - 1]}`,
+  })));
 }
 
 /**
@@ -899,12 +911,10 @@ function checkProblemContent(collection: CollectionDef, after: Fields, touched: 
   if (!status) return;
   const has = (name: string) => collection.fields.some((one) => one.name === name);
   if (touched && has(PROBLEM_BLOCKING_FIELD) && has(PROBLEM_REVISIT_FIELD) && after[PROBLEM_BLOCKING_FIELD] === PROBLEM_NOT_BLOCKING && isEmptyValue(after[PROBLEM_REVISIT_FIELD])) {
-    errors.push(withGuide(`「${PROBLEM_BLOCKING_FIELD}」写的是「${PROBLEM_NOT_BLOCKING}」，「${PROBLEM_REVISIT_FIELD}」却没有写`,
-      `不阻断的问题是推后再看的，请在「${PROBLEM_REVISIT_FIELD}」里写什么时候回来看它，例如「评审确认时」`));
+    errors.push(problem(refusalText("save_revision.problem_not_blocking_needs_revisit", { blocking: PROBLEM_BLOCKING_FIELD, not_blocking: PROBLEM_NOT_BLOCKING, revisit: PROBLEM_REVISIT_FIELD })));
   }
   if (has(PROBLEM_LANDED_FIELD) && after[status.name] === RESOLVED_STATUS && beforeStatus !== RESOLVED_STATUS && isEmptyValue(after[PROBLEM_LANDED_FIELD])) {
-    errors.push(withGuide(`状态改成了「${RESOLVED_STATUS}」，「${PROBLEM_LANDED_FIELD}」却没有写`,
-      `请在「${PROBLEM_LANDED_FIELD}」里写这个问题的答案写进了哪里：页、条目或图的编号加一句话，例如「OA-006 已经定下的第 2 条：保留期遇闭馆日顺延」`));
+    errors.push(problem(refusalText("save_revision.problem_resolved_needs_landed", { resolved: RESOLVED_STATUS, landed: PROBLEM_LANDED_FIELD })));
   }
 }
 
@@ -931,7 +941,7 @@ function checkProblemStatus(
     .filter((one): one is string => typeof one === "string" && one !== itemId);
   const others = new Set([...changedHere].filter((one) => one !== itemId));
   const refusal = judgeProblemStatus(itemId, value, [...new Set(linked)], others, facts);
-  if (refusal) errors.push(withGuide(refusal.fact, refusal.guidance));
+  if (refusal) errors.push(problemText(refusal));
 }
 
 /** 条目是不是在事件序号 seq 之后被删除的。 */
@@ -963,38 +973,35 @@ function checkFields(
   for (const [name, value] of Object.entries(fields)) {
     const field = declared.get(name);
     if (!field) {
-      errors.push(
-        `集合「${collection.name}」没有字段「${name}」，可用的字段是${collection.fields.map((one) => `「${one.name}」`).join("、")}`,
-      );
+      errors.push(problem(refusalText("save_revision.field_unknown", { collection: collection.name, field: name, fields: collection.fields.map((one) => `「${one.name}」`).join("、") })));
       continue;
     }
     if (field.type === FIELD_ITEM_REF) {
       // 条目引用的值一律是条目编号的字符串数组，可以是空数组；单个字符串也要写成数组。
       if (!Array.isArray(value)) {
-        errors.push(
-          `字段「${name}」是条目引用类型，应当写成条目编号的数组，例如 ["UC-001"]；` +
-            `现在写的是 ${JSON.stringify(value)}，只有一个编号也要放进数组里，不关联任何条目就写 []`,
-        );
+        errors.push(problem(refusalText("save_revision.field_ref_not_array", { field: name, given: String(JSON.stringify(value)) })));
         continue;
       }
       if (field.single && value.length > 1) {
-        errors.push(withGuide(`字段「${name}」最多写一个条目编号，现在写了 ${value.length} 个`, "只留一个"));
+        errors.push(problem(refusalText("save_revision.field_ref_over_single", { field: name, count: value.length })));
       }
       value.forEach((one, index) => {
-        const reason = typeof one === "string" ? checkRef(one) : "应当写一个条目编号";
+        const reason = typeof one === "string" ? checkRef(one) : problem(refusalText("save_revision.field_ref_target_missing.not_id"));
         if (reason) {
-          errors.push(`字段「${name}」是条目引用类型，第 ${index + 1} 个编号 ${JSON.stringify(one)} ${reason}`);
+          // 原因的事实层是半句，接在「字段……第 N 个编号……」后面；原因自己的键与指引照旧带着。
+          const why = splitGuide(reason);
+          errors.push(problemText({ key: why.key, fact: fillText("part.field_ref", { field: name, no: index + 1, id: String(JSON.stringify(one)), why: why.fact }), guidance: why.guidance }));
           return;
         }
         if (typeof one !== "string" || !refs) return;
         if (self !== null && one === self) {
-          errors.push(`字段「${name}」的第 ${index + 1} 个编号 ${one} 指的就是这个条目自己`);
+          errors.push(problem(refusalText("save_revision.field_ref_self", { field: name, no: index + 1, id: one })));
           return;
         }
         if (field.sameCollection) {
           const target = refs.collectionOf(one);
           if (target !== null && target !== collection.name) {
-            errors.push(withGuide(`字段「${name}」只能指向「${collection.name}」里的条目，${one} 是「${target}」里的`, `请写「${collection.name}」里的一个条目编号，或者不写`));
+            errors.push(problem(refusalText("save_revision.field_ref_wrong_collection", { field: name, collection: collection.name, id: one, target })));
             return;
           }
         }
@@ -1006,7 +1013,7 @@ function checkFields(
             const next: unknown = (refs.fieldsOf(at)?.[name] as unknown[] | undefined)?.[0];
             at = typeof next === "string" ? next : null;
             if (at === self) {
-              errors.push(withGuide(`字段「${name}」写成 ${one} 之后会绕回这个条目自己（${[...seen].join(" → ")} → ${self}）`, "请换一个不在这条线上的条目，或者不写"));
+              errors.push(problem(refusalText("save_revision.field_ref_cycle", { field: name, id: one, path: [...seen].join(" → "), self })));
               break;
             }
           }
@@ -1016,32 +1023,33 @@ function checkFields(
     }
     if (isEmptyValue(value) && (typeof value === "string" || Array.isArray(value))) continue;
     if (field.type === FIELD_TEXT && typeof value !== "string") {
-      errors.push(`字段「${name}」是文本类型，应当写一个字符串`);
+      errors.push(problem(refusalText("save_revision.field_text_type", { field: name })));
     } else if (field.type === FIELD_TEXT_LIST) {
       if (!Array.isArray(value) || !value.every((one) => typeof one === "string")) {
-        errors.push(`字段「${name}」是文本列表类型，应当写一个字符串数组，一步或一条一项`);
+        errors.push(problem(refusalText("save_revision.field_text_list_type", { field: name })));
       } else if (field.values) {
-        const allowed = `只能从${field.values.map((one) => `「${one}」`).join("、")}里选，可以选几个`;
+        const values = field.values.map((one) => `「${one}」`).join("、");
         (value as string[]).forEach((one, index) => {
-          if (!field.values!.includes(one)) errors.push(withGuide(`字段「${name}」的第 ${index + 1} 项写的是 ${JSON.stringify(one)}，不在可以选的值里`, allowed));
-          else if ((value as string[]).indexOf(one) !== index) errors.push(withGuide(`字段「${name}」里「${one}」写了两次`, "同一个值只写一次"));
+          if (!field.values!.includes(one)) errors.push(problem(refusalText("save_revision.field_list_value_not_allowed", { field: name, no: index + 1, given: String(JSON.stringify(one)), values })));
+          else if ((value as string[]).indexOf(one) !== index) errors.push(problem(refusalText("save_revision.field_list_value_duplicate", { field: name, value: one })));
         });
       }
     } else if (field.type === FIELD_ENUM) {
       if (typeof value !== "string" || !(field.values ?? []).includes(value)) {
-        errors.push(
-          `字段「${name}」是枚举类型，写的是 ${JSON.stringify(value)}，只能是${(field.values ?? []).map((one) => `「${one}」`).join("、")}之一`,
-        );
+        errors.push(problem(refusalText("save_revision.field_enum_invalid", { field: name, given: String(JSON.stringify(value)), values: (field.values ?? []).map((one) => `「${one}」`).join("、") })));
       }
     }
   }
 }
 
-/** 按出处读文件全文；knowledgeProblem 说明一条知识库出处为什么读不到（[事实, 怎么办]），读得到或不是知识库出处时为 null。 */
-type MaterialReader = ((locator: string) => string | null) & { knowledgeProblem: (locator: string) => [string, string] | null };
+/**
+ * 按出处读文件全文；knowledgeProblem 说明一条知识库出处为什么读不到：返回一条带键的错误（where 与 locator 是拒绝语里的两个值），
+ * 读得到或不是知识库出处时为 null。
+ */
+type MaterialReader = ((locator: string) => string | null) & { knowledgeProblem: (locator: string, where: string, shown: string) => string | null };
 
 /** 知识库出处读不到时「怎么办」一层常用的一句。 */
-const COPY_KNOWLEDGE_LOCATOR = "出处照抄任务现状消息（或查询任务状态）里那份文档后面给出的写法";
+const copyKnowledgeLocator = () => fillText("part.copy_kb_locator");
 
 /**
  * 按出处读文件的全文（换行归一为 \n），读不到返回 null。同一次保存里读过的不再读。
@@ -1072,18 +1080,17 @@ function materialReader(workspaceDir: string, materialsDir: string, knowledgeRoo
   // 知识库的清单与任务的选用，用到时读一次。
   let lookup: { names: Map<string, string>; selected: Set<string> } | null = null;
   const knowledge = () => (lookup ??= { names: libraryNames(knowledgeRoot!), selected: new Set(selectedLibraryIds(workspaceDir)) });
-  /** 知识库出处指向的文件路径，或者读不到的原因。 */
-  const locate = (locator: string): { path: string } | { problem: [string, string] } => {
-    if (knowledgeRoot === null) {
-      return { problem: ["指向知识库里的文档，但这个任务没有知识库", "任务现状消息里没有列出知识库时，不要写 knowledge/ 开头的出处"] };
-    }
+  /** 知识库出处指向的文件路径，或者读不到的原因（一个函数：给出拒绝语里说到第几条来源与出处的写法，得到一条带键的错误）。 */
+  const locate = (locator: string): { path: string } | { problem: (where: string, shown: string) => string } => {
+    if (knowledgeRoot === null) return { problem: (where, shown) => problem(refusalText("source.knowledge_locator_unreadable.no_root", { where, locator: shown })) };
     const parsed = parseKnowledgeLocator(locator);
-    if (!parsed) return { problem: ["不是知识库文档的写法", `出处写 knowledge/知识库编号/文档名；${COPY_KNOWLEDGE_LOCATOR}`] };
+    if (!parsed) return { problem: (where, shown) => problem(refusalText("source.knowledge_locator_unreadable.bad_form", { where, locator: shown, copy: copyKnowledgeLocator() })) };
     const { names, selected } = knowledge();
-    if (!names.has(parsed.library)) return { problem: [`指向的知识库 ${parsed.library} 已经不在了`, `只能引用这个任务选用的知识库里的文档；${COPY_KNOWLEDGE_LOCATOR}`] };
+    if (!names.has(parsed.library)) {
+      return { problem: (where, shown) => problem(refusalText("source.knowledge_locator_unreadable.gone", { where, locator: shown, library: parsed.library, copy: copyKnowledgeLocator() })) };
+    }
     if (!selected.has(parsed.library)) {
-      return { problem: [`指向知识库「${names.get(parsed.library)}」里的文档，而这个任务没有选用知识库「${names.get(parsed.library)}」`,
-        "只能引用这个任务选用的知识库里的文档，清单见任务现状消息或查询任务状态"] };
+      return { problem: (where, shown) => problem(refusalText("source.knowledge_locator_unreadable.not_selected", { where, locator: shown, name: names.get(parsed.library)! })) };
     }
     return { path: join(knowledgeRoot, parsed.library, "files", parsed.name) };
   };
@@ -1098,13 +1105,12 @@ function materialReader(workspaceDir: string, materialsDir: string, knowledgeRoo
     }
     return cache.get(locator)!;
   }) as MaterialReader;
-  reader.knowledgeProblem = (locator) => {
+  reader.knowledgeProblem = (locator, where, shown) => {
     if (!isKnowledgeLocator(locator) || reader(locator) !== null) return null;
     const found = locate(locator);
-    if ("problem" in found) return found.problem;
+    if ("problem" in found) return found.problem(where, shown);
     const parsed = parseKnowledgeLocator(locator)!;
-    return [`指向的文档《${parsed.name}》在知识库「${knowledge().names.get(parsed.library)}」里找不到`,
-      `${COPY_KNOWLEDGE_LOCATOR}；文档已经从知识库删除时，不要把它当作来源`];
+    return problem(refusalText("source.knowledge_locator_unreadable", { where, locator: shown, document: parsed.name, name: knowledge().names.get(parsed.library)!, copy: copyKnowledgeLocator() }));
   };
   return reader;
 }
@@ -1113,7 +1119,7 @@ function materialReader(workspaceDir: string, materialsDir: string, knowledgeRoo
  * 摘录在材料里找不到时，拒绝文字「怎么办」一层的第一句（模型常自行补句号或改写，被拒后又干脆删掉引用）。
  * noun 是「材料」或「文档」：出处指向知识库时说文档。
  */
-const exactExcerpt = (noun: Noun) => `摘录必须与${noun}原文逐字一致，包括标点；不要自行补标点或改写`;
+const exactExcerpt = (noun: Noun) => fillText("part.exact_excerpt", { noun });
 
 /** 拒绝文字里怎样称呼出处所指的文件：任务的输入是「材料」，知识库里的是「文档」。 */
 type Noun = "材料" | "文档";
@@ -1130,7 +1136,7 @@ export function lineEndsOnly(text: string): string {
 }
 
 /** 摘录不连续时，拒绝文字「怎么办」一层说明引几处写几条来源的那一句。 */
-const severalPlaces = (noun: Noun) => `引了${noun}几处就写几条来源`;
+const severalPlaces = (noun: Noun) => fillText("part.several_places", { noun });
 
 /** 摘录在材料里有好几处时，拒绝的文字里最多列出离原段落号最近的这么多处。 */
 const NEARBY_LIMIT = 6;
@@ -1172,17 +1178,17 @@ function checkSources(
   actor?: string,
   materialText?: MaterialReader,
   itemSource?: ItemSourceLookups,
-  whereOf: (index: number) => string = (index) => `第 ${index + 1} 条来源`,
+  whereOf: (index: number) => string = (index) => fillText("part.source_no", { no: index + 1 }),
   previous: readonly Source[] = [],
   figure = false,
 ): Source[] | null {
   if (raw === undefined || raw === null) {
-    if (required) errors.push("缺少 sources，至少要有一条来源");
+    if (required) errors.push(problem(refusalText("source.missing")));
     return null;
   }
   // 用户在界面上改写之后条目可以没有来源，所以发起方是用户时可以交空列表。
   if (!Array.isArray(raw) || (raw.length === 0 && actor !== ACTOR_USER)) {
-    errors.push("sources 应当是一个不为空的列表，至少要有一条来源");
+    errors.push(problem(refusalText("source.not_nonempty_list")));
     return null;
   }
   const kept: Source[] = [];
@@ -1190,7 +1196,7 @@ function checkSources(
   raw.forEach((given, index) => {
     const where = whereOf(index);
     if (!isObject(given)) {
-      errors.push(`${where}应当是一个对象，有 kind、locator、excerpt 三项`);
+      errors.push(problem(refusalText("source.item_not_object", { where })));
       ok = false;
       return;
     }
@@ -1199,45 +1205,42 @@ function checkSources(
     const missing: string[] = [];
     // 「用户直接修改」是早期版本由系统写的，执行者不能填；执行者只能填 EXECUTOR_SOURCE_KINDS 那几种。
     const allowed: readonly string[] = actor === ACTOR_USER ? SOURCE_KINDS : EXECUTOR_SOURCE_KINDS;
-    const kindsGuide = `kind 只能是${EXECUTOR_SOURCE_KINDS.map((kind) => `「${kind}」`).join("、")}之一`;
+    const kindsGuide = fillText("part.kinds_guide", { kinds: EXECUTOR_SOURCE_KINDS.map((kind) => `「${kind}」`).join("、") });
     if (one.kind === SOURCE_USER_EDIT && actor !== ACTOR_USER) {
-      errors.push(withGuide(`${where}的种类写成了「${SOURCE_USER_EDIT}」，这一种助手不能填`, kindsGuide));
+      errors.push(problem(refusalText("source.kind_user_edit_forbidden", { where, kind: SOURCE_USER_EDIT, kinds_guide: kindsGuide })));
       ok = false;
     } else if (one.kind === SOURCE_FIGURE && actor !== ACTOR_USER && figure) {
-      errors.push(withGuide(`${where}的种类写成了「${SOURCE_FIGURE}」，一张图不能把另一张图当作依据`,
-        `图的来源写它画自的条目（种类「${SOURCE_ITEM}」）、用户的话、材料原文或者你补充的理由`));
+      errors.push(problem(refusalText("source.kind_figure_in_figure", { where, figure: SOURCE_FIGURE, item: SOURCE_ITEM })));
       ok = false;
     } else if (typeof one.kind !== "string" || !allowed.includes(one.kind)) {
-      errors.push(
-        `${where}的 kind 写的是 ${JSON.stringify(one.kind)}，只能是${allowed.map((kind) => `「${kind}」`).join("、")}之一`,
-      );
+      errors.push(problem(refusalText("source.kind_invalid", { where, given: String(JSON.stringify(one.kind)), kinds: allowed.map((kind) => `「${kind}」`).join("、") })));
       ok = false;
     }
     const userWords = one.kind === SOURCE_USER_WORDS;
     const supplement = one.kind === SOURCE_SUPPLEMENT;
     if (supplement && (typeof one.excerpt !== "string" || one.excerpt.trim() === "")) {
-      errors.push(withGuide(`${where}的种类是「${SOURCE_SUPPLEMENT}」，没有写理由`, "在 excerpt 里写一句理由：为什么这样补、依据的是什么常识或推断"));
+      errors.push(problem(refusalText("source.supplement_no_reason", { where, kind: SOURCE_SUPPLEMENT })));
       ok = false;
       return;
     }
     // 图依据条目、条目依据图时可以不写摘录：依据的是对方整体，要紧的是记下引用时它的修订号。写了照样逐字核对。
     const bareItem = ((figure && one.kind === SOURCE_ITEM) || one.kind === SOURCE_FIGURE) && (typeof one.excerpt !== "string" || one.excerpt.trim() === "");
-    if (!userWords && !supplement && (typeof one.locator !== "string" || one.locator.trim() === "")) missing.push("locator（出处）");
-    if (!bareItem && (typeof one.excerpt !== "string" || one.excerpt.trim() === "")) missing.push("excerpt（摘录的原文）");
+    if (!userWords && !supplement && (typeof one.locator !== "string" || one.locator.trim() === "")) missing.push(fillText("part.missing_locator"));
+    if (!bareItem && (typeof one.excerpt !== "string" || one.excerpt.trim() === "")) missing.push(fillText("part.missing_excerpt"));
     if (missing.length > 0) {
-      errors.push(`${where}缺少 ${missing.join("、")}`);
+      errors.push(problem(refusalText("source.locator_or_excerpt_missing", { where, missing: missing.join("、") })));
       ok = false;
       return;
     }
     let normalized: string | undefined;
     if (one.normalized_value !== undefined && one.normalized_value !== null) {
       if (!userWords) {
-        errors.push(`${where}写了 normalized_value；它只用于种类为「用户的话」的来源，别的种类不写`);
+        errors.push(problem(refusalText("source.normalized_value_misused", { where })));
         ok = false;
         return;
       }
       if (typeof one.normalized_value !== "string" || one.normalized_value.trim() === "") {
-        errors.push(`${where}的 normalized_value 应当是一段不为空的文字（写进字段的值），与原话相同就不写`);
+        errors.push(problem(refusalText("source.normalized_value_empty", { where })));
         ok = false;
         return;
       }
@@ -1249,7 +1252,7 @@ function checkSources(
       return;
     }
     if (figure && supports.length > 0) {
-      errors.push(`${where}写了 supports；图没有字段，图的来源不写 supports`);
+      errors.push(problem(refusalText("source.supports_in_figure", { where })));
       ok = false;
       return;
     }
@@ -1263,16 +1266,14 @@ function checkSources(
       const reason = itemSource.ref(locator);
       if (reason) {
         // 原因自己带着「怎么办」的（指向已废弃的主题时写改看哪一页），用它自己的；否则用通用的那一句。
-        const own = splitGuide(reason);
-        errors.push(withGuide(`${where}的种类是「${SOURCE_ITEM}」，出处 ${locator} ${own.fact}`,
-          own.guidance || `出处写一个还在的条目的编号，例如 OA-001、UC-003；要引用的条目还没有记下，先新增它（排在前面），再引用`));
+        const fact = refusalText("source.item_ref_invalid", { where, kind: SOURCE_ITEM, locator, why: reason.fact }).fact;
+        errors.push(problemText({ key: "source.item_ref_invalid", fact, guidance: reason.guidance || fillText("source.item_ref_invalid.guide") }));
         ok = false;
         return;
       }
       const excerpt = bareItem ? "" : (one.excerpt as string).trim();
       if (excerpt !== "" && !itemSource.text(locator).some((text) => text.includes(excerpt))) {
-        errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在 ${locator} 的当前修订里找不到`,
-          `摘录必须逐字一致，包括标点，抄自这个条目某个字段里连续的一段`));
+        errors.push(problem(refusalText("source.item_excerpt_not_found", { where, excerpt: quoteOf(excerpt), locator })));
         ok = false;
         return;
       }
@@ -1282,15 +1283,13 @@ function checkSources(
       locator = locator.trim();
       const found = itemSource.figure(locator);
       if ("reason" in found) {
-        errors.push(withGuide(`${where}的种类是「${SOURCE_FIGURE}」，出处 ${locator} ${found.reason}`,
-          "出处写一张还在的图的编号，例如 D-001；用 get_task_status 可以看到任务里有哪几张图"));
+        errors.push(problem(refusalText("source.figure_ref_invalid", { where, kind: SOURCE_FIGURE, locator, why: found.reason })));
         ok = false;
         return;
       }
       const excerpt = bareItem ? "" : (one.excerpt as string).trim();
       if (excerpt !== "" && !found.mermaid.includes(excerpt)) {
-        errors.push(withGuide(`${where}的摘录「${quoteOf(excerpt)}」在图 ${locator} 现在的 Mermaid 文本里找不到`,
-          "摘录逐字抄图里一个节点上的文字（用 get_item 写图的编号可以看到它的文本）；不好抄时可以不写摘录"));
+        errors.push(problem(refusalText("source.figure_excerpt_not_found", { where, excerpt: quoteOf(excerpt), locator })));
         ok = false;
         return;
       }
@@ -1304,7 +1303,7 @@ function checkSources(
       const excerpt = one.excerpt as string;
       const hit = [...userMessages].reverse().find((message) => message.text.includes(excerpt));
       if (!hit) {
-        errors.push(withGuide(`${where}引用的用户的话「${excerpt}」在对话里没有找到`, "请逐字摘录用户说过的原话"));
+        errors.push(problem(refusalText("source.user_words_not_found", { where, excerpt })));
         ok = false;
         return;
       }
@@ -1325,21 +1324,19 @@ function checkSources(
     const inKnowledge = one.kind === SOURCE_DOCUMENT && isKnowledgeLocator(locator);
     const noun: Noun = inKnowledge ? "文档" : "材料";
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.docx\.(txt|md)$/i.test(locator)) {
-      errors.push(withGuide(`${where}的出处 ${locator} 是由 Word 文件生成的文字版，不是${noun}本身`,
-        `出处写 Word 文件加段落号，例如 ${locator.replace(/\.(txt|md)$/i, "")}#p12`));
+      errors.push(problem(refusalText("source.docx_projection_locator", { where, locator, noun, file: locator.replace(/\.(txt|md)$/i, "") })));
       ok = false;
       return;
     }
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && /\.pdf\.md$/i.test(locator)) {
-      errors.push(withGuide(`${where}的出处 ${locator} 是由 PDF 文件生成的文字版，不是${noun}本身`,
-        `出处写 PDF 文件加页与块，例如 ${locator.replace(/\.md$/i, "")}#p3-2`));
+      errors.push(problem(refusalText("source.pdf_projection_locator", { where, locator, noun, file: locator.replace(/\.md$/i, "") })));
       ok = false;
       return;
     }
     // 知识库出处读不到（没有知识库、写法不对、知识库没有选用或已经不在、文档找不到）：新写的来源拒绝，说明原因。
-    const problem = inKnowledge && actor !== ACTOR_USER && materialText ? materialText.knowledgeProblem(filePart) : null;
-    if (problem) {
-      errors.push(withGuide(`${where}的出处 ${locator} ${problem[0]}`, problem[1]));
+    const unreadable = inKnowledge && actor !== ACTOR_USER && materialText ? materialText.knowledgeProblem(filePart, where, locator) : null;
+    if (unreadable) {
+      errors.push(unreadable);
       ok = false;
       return;
     }
@@ -1361,15 +1358,15 @@ function checkSources(
       const excerpt = lineEndsOnly(one.excerpt as string).trim();
       const text = materialText(locator);
       if (text === null) {
-        errors.push(withGuide(`${where}的出处 ${locator} 不是任务目录里能读到的材料文件`, "出处要写材料文件的路径，例如 inputs/材料.md"));
+        errors.push(problem(refusalText("source.material_not_found", { where, locator })));
         ok = false;
         return;
       }
       if (!lineEndsOnly(text).includes(excerpt)) {
-        errors.push(withGuide(BLANK_LINE.test(excerpt)
-          ? `${where}的摘录在 ${basename(locator)} 里不是连续的一段原文`
-          : `${where}的摘录「${quoteOf(excerpt)}」在 ${basename(locator)} 里找不到`,
-        `${exactExcerpt(noun)}；摘录必须逐字抄自${noun}里连续的一段，不要跳句拼接或改字；${severalPlaces(noun)}`));
+        const how = { noun, exact: exactExcerpt(noun), several: severalPlaces(noun) };
+        errors.push(BLANK_LINE.test(excerpt)
+          ? problem(refusalText("source.material_excerpt_not_contiguous", { where, file: basename(locator), ...how }))
+          : problem(refusalText("source.material_excerpt_not_found", { where, excerpt: quoteOf(excerpt), file: basename(locator), ...how })));
         ok = false;
         return;
       }
@@ -1398,22 +1395,21 @@ function checkDocxSource(
   const suffix = PROJECTION_SUFFIXES.find((s) => materialText(`${path}${s}`) !== null);
   const projection = suffix ? materialText(`${path}${suffix}`)! : null;
   const pointer = projection !== null && isLegacyProjection(projection)
-    ? `段落号见 ${name}${suffix} 每行开头的「第 N 段」`
-    : `段落号见 ${name}${suffix ?? ".md"} 里每段前面方括号中的 p 加数字（例如 [p12]）`;
+    ? fillText("part.docx_pointer_legacy", { file: `${name}${suffix}` })
+    : fillText("part.docx_pointer", { file: `${name}${suffix ?? ".md"}` });
   if (n === null) {
-    errors.push(withGuide(`${where}的出处 ${path} 没有写段落号`, `Word ${noun}的出处要写段落号，例如 ${path}#p12；${pointer}`));
+    errors.push(problem(refusalText("source.docx_no_paragraph", { where, path, noun, pointer })));
     return null;
   }
   if (projection === null) {
     errors.push(noun === "文档"
-      ? withGuide(`${where}的出处 ${path} 在知识库里找不到由它生成的 ${name}.md，摘录无从核对`, COPY_KNOWLEDGE_LOCATOR)
-      : withGuide(`${where}的出处 ${path} 不是任务目录里能读到的 Word 材料（找不到由它生成的 ${name}.md）`,
-        "出处要写材料目录里的 Word 文件加段落号，例如 inputs/材料.docx#p12"));
+      ? problem(refusalText("source.docx_projection_missing.knowledge", { where, path, name, copy: copyKnowledgeLocator() }))
+      : problem(refusalText("source.docx_projection_missing", { where, path, name })));
     return null;
   }
   const paragraphs = projectionParagraphs(projection);
   if (n < 1 || n > paragraphs.length) {
-    errors.push(withGuide(`${where}的出处写的是第 ${n} 段，${name} 一共只有 ${paragraphs.length} 段`, pointer));
+    errors.push(problem(refusalText("source.docx_paragraph_out_of_range", { where, n, name, count: paragraphs.length, pointer })));
     return null;
   }
   const excerpt = raw.replace(/\r\n/g, "\n").trim();
@@ -1421,25 +1417,22 @@ function checkDocxSource(
   // 摘录在别处：只有一处时指给它；有好几处（短摘录、表格里的数字常这样）时不替模型挑一段，按离第 n 段的远近列出几处
   // （带表格位置），请它按上下文确认——只给一个段号时，模型会照抄，写出逐字对得上但出处指错地方的来源。
   const positions = projectionTablePositions(projection);
-  const labelOf = (m: number) => `第 ${m} 段${positions.has(m) ? `·${positions.get(m)}` : ""}`;
+  const labelOf = (m: number) => `${fillText("part.docx_label", { n: m })}${positions.has(m) ? `·${positions.get(m)}` : ""}`;
   const elsewhere = paragraphsWith(paragraphs, excerpt).filter((m) => m !== n);
-  const head = `${where}的摘录「${quoteOf(excerpt)}」在 ${name} ${labelOf(n)}里找不到`;
+  const head = fillText("part.docx_head", { where, excerpt: quoteOf(excerpt), name, label: labelOf(n) });
   if (elsewhere.length === 1) {
-    errors.push(withGuide(`${head}，它在${labelOf(elsewhere[0])}`, `出处改写成 ${path}#p${elsewhere[0]}`));
+    errors.push(problem(refusalText("source.docx_excerpt_elsewhere_one", { head, label: labelOf(elsewhere[0]), path, n: elsewhere[0] })));
   } else if (elsewhere.length > 1) {
     const near = [...elsewhere].sort((a, b) => Math.abs(a - n) - Math.abs(b - n) || a - b).slice(0, NEARBY_LIMIT).sort((a, b) => a - b);
-    const more = elsewhere.length > near.length ? `等 ${elsewhere.length} 处` : "";
-    errors.push(withGuide(`${head}；这段文字在${near.map(labelOf).join("、")}${more}都有`,
-      "请按上下文确认是哪一段，出处写那一段的段落号"));
+    const more = elsewhere.length > near.length ? fillText("part.more_places", { count: elsewhere.length }) : "";
+    errors.push(problem(refusalText("source.docx_excerpt_elsewhere_many", { head, labels: near.map(labelOf).join("、"), more })));
   } else if (BLANK_LINE.test(excerpt)) {
     // 摘录里有空行、整段在材料里哪儿都不是连续的一段：多半是把不相邻的几处写进了一条来源。
-    errors.push(withGuide(`${where}的摘录在 ${name} 的 p${n} 及其后 ${SPAN_LIMIT} 段里不是连续的一段原文`, `${severalPlaces(noun)}，每条各写段落号`));
+    errors.push(problem(refusalText("source.docx_excerpt_not_contiguous", { where, name, n, span: SPAN_LIMIT, several: severalPlaces(noun) })));
   } else if (inTextBox(projection, excerpt)) {
-    errors.push(withGuide(`${head}；这段文字在文本框里，文本框里的文字不能作出处`,
-      "请改引正文里说到同一件事的段落；正文里没有，就不要把这一处当作来源"));
+    errors.push(problem(refusalText("source.docx_excerpt_in_textbox", { head })));
   } else {
-    errors.push(withGuide(head,
-      `${exactExcerpt(noun)}；摘录必须逐字抄自那一段的正文（不带段落号、编号与 #、- 这些标记），不要跳句拼接或改字；${severalPlaces(noun)}，每条各写段落号`));
+    errors.push(problem(refusalText("source.docx_excerpt_not_found", { head, exact: exactExcerpt(noun), several: severalPlaces(noun) })));
   }
   return null;
 }
@@ -1462,60 +1455,62 @@ function checkPdfSource(
   noun: Noun = "材料",
 ): string | null {
   const name = basename(path);
-  const pointer = `页与块见 ${name}.md 里每行开头方括号中的 p页-块（例如 [p3-2] 是第 3 页第 2 块）`;
+  const pointer = fillText("part.pdf_pointer", { name });
   const parsed = parsePdfLocator(locator);
   if (!parsed || parsed.page === null || parsed.block === null) {
-    errors.push(withGuide(locator === path ? `${where}的出处 ${path} 没有写页与块` : `${where}的出处 ${locator} 里页与块的写法不对`,
-      `PDF ${noun}的出处要写页与块，例如 ${path}#p3-2；${pointer}`));
+    errors.push(locator === path
+      ? problem(refusalText("source.pdf_no_page_block", { where, path, noun, pointer }))
+      : problem(refusalText("source.pdf_no_page_block.bad_form", { where, locator, path, noun, pointer })));
     return null;
   }
   const projection = materialText(`${path}.md`);
   if (projection === null) {
     errors.push(noun === "文档"
-      ? withGuide(`${where}的出处 ${path} 在知识库里找不到由它生成的 ${name}.md，摘录无从核对`, COPY_KNOWLEDGE_LOCATOR)
-      : withGuide(`${where}的出处 ${path} 不是任务目录里能读到的 PDF 材料（找不到由它生成的 ${name}.md）`,
-        "出处要写材料目录里的 PDF 文件加页与块，例如 inputs/材料.pdf#p3-2"));
+      ? problem(refusalText("source.pdf_projection_missing.knowledge", { where, path, name, copy: copyKnowledgeLocator() }))
+      : problem(refusalText("source.pdf_projection_missing", { where, path, name })));
     return null;
   }
   const { page, block } = parsed;
   const units = pdfProjectionUnits(projection);
-  const labelOf = (one: { page: number; block: number }) => `第 ${one.page} 页第 ${one.block} 块`;
+  const labelOf = (one: { page: number; block: number }) => fillText("part.pdf_label", { page: one.page, block: one.block });
   if (block === 0) {
-    errors.push(withGuide(`${where}的出处写的是第 ${page} 页的块 0，那一行只是说明这一页没有文字，不能作出处`, "请改引有文字的页；这一页是图片或扫描件时，不要把它当作来源"));
+    errors.push(problem(refusalText("source.pdf_block_zero", { where, page })));
     return null;
   }
   if (pdfUnitIndex(units, page, block) < 0) {
     const onPage = units.filter((unit) => unit.page === page && unit.block >= 1).length;
     const pages = units.reduce((max, unit) => Math.max(max, unit.page), 0);
-    errors.push(withGuide(page > pages
-      ? `${where}的出处写的是第 ${page} 页，${name} 一共只有 ${pages} 页`
-      : `${where}的出处写的是${labelOf(parsed as { page: number; block: number })}，${name} 的第 ${page} 页${onPage ? `只有 ${onPage} 块` : "没有可以作出处的块"}`, pointer));
+    errors.push(page > pages
+      ? problem(refusalText("source.pdf_page_block_out_of_range.page", { where, page, name, pages, pointer }))
+      : problem(refusalText("source.pdf_page_block_out_of_range", {
+        where, label: labelOf(parsed as { page: number; block: number }), name, page, pointer,
+        blocks: onPage ? fillText("part.pdf_blocks_on_page", { count: onPage }) : fillText("part.pdf_no_blocks"),
+      })));
     return null;
   }
   const excerpt = raw.replace(/\r\n/g, "\n").trim();
   const place = placePdfExcerpt(units, page, block, excerpt);
   if (place.kind === "in" || place.kind === "span") return `${path}#p${page}-${block}`;
-  const head = `${where}的摘录「${quoteOf(excerpt)}」在 ${name} ${labelOf({ page, block })}里找不到`;
+  const head = fillText("part.pdf_head", { where, excerpt: quoteOf(excerpt), name, label: labelOf({ page, block }) });
   if (place.kind === "cross_page") {
-    errors.push(withGuide(`${where}的摘录从 ${name} ${labelOf({ page, block })}接到了后面的页，摘录不能跨页`, `一页写一条来源：把摘录在换页的地方分成两段，各写各的页与块`));
+    errors.push(problem(refusalText("source.pdf_excerpt_cross_page", { where, name, label: labelOf({ page, block }) })));
     return null;
   }
   // 摘录在别处：只有一处时指给它；有好几处时不替模型挑，按离出处那一块的远近列出几处，请它按上下文确认。
   const here = pdfUnitIndex(units, page, block);
   const elsewhere = pdfUnitsWith(units, excerpt).filter((one) => !(one.page === page && one.block === block));
   if (elsewhere.length === 1) {
-    errors.push(withGuide(`${head}，它在${labelOf(elsewhere[0])}`, `出处改写成 ${path}#p${elsewhere[0].page}-${elsewhere[0].block}`));
+    errors.push(problem(refusalText("source.pdf_excerpt_elsewhere_one", { head, label: labelOf(elsewhere[0]), path, page: elsewhere[0].page, block: elsewhere[0].block })));
   } else if (elsewhere.length > 1) {
     const distance = (one: { page: number; block: number }) => Math.abs(pdfUnitIndex(units, one.page, one.block) - here);
     const near = [...elsewhere].sort((a, b) => distance(a) - distance(b)).slice(0, NEARBY_LIMIT)
       .sort((a, b) => pdfUnitIndex(units, a.page, a.block) - pdfUnitIndex(units, b.page, b.block));
-    const more = elsewhere.length > near.length ? `等 ${elsewhere.length} 处` : "";
-    errors.push(withGuide(`${head}；这段文字在${near.map(labelOf).join("、")}${more}都有`, "请按上下文确认是哪一块，出处写那一块的页与块"));
+    const more = elsewhere.length > near.length ? fillText("part.more_places", { count: elsewhere.length }) : "";
+    errors.push(problem(refusalText("source.pdf_excerpt_elsewhere_many", { head, labels: near.map(labelOf).join("、"), more })));
   } else if (BLANK_LINE.test(excerpt)) {
-    errors.push(withGuide(`${where}的摘录在 ${name} 的${labelOf({ page, block })}及其后 ${PDF_SPAN_LIMIT} 块里不是连续的一段原文`, `${severalPlaces(noun)}，每条各写页与块`));
+    errors.push(problem(refusalText("source.pdf_excerpt_not_contiguous", { where, name, label: labelOf({ page, block }), span: PDF_SPAN_LIMIT, several: severalPlaces(noun) })));
   } else {
-    errors.push(withGuide(head,
-      `${exactExcerpt(noun)}；摘录必须逐字抄自那一块的文字（不带行首方括号里的页与块），不要跳句拼接或改字；${severalPlaces(noun)}，每条各写页与块`));
+    errors.push(problem(refusalText("source.pdf_excerpt_not_found", { head, exact: exactExcerpt(noun), several: severalPlaces(noun) })));
   }
   return null;
 }
@@ -1524,21 +1519,21 @@ function checkPdfSource(
 function checkSupportShape(raw: unknown, where: string, errors: string[]): Support[] | null {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
-    errors.push(`${where}的 supports 应当是一个列表，每一项形如 { "field": "字段名", "index": 0 }；支持整个条目就写 [] 或者不写`);
+    errors.push(problem(refusalText("source.supports_not_list", { where })));
     return null;
   }
   const kept: Support[] = [];
   let ok = true;
   raw.forEach((one, index) => {
-    const at = `${where}的 supports 第 ${index + 1} 项`;
+    const at = fillText("part.supports_item", { where, no: index + 1 });
     if (!isObject(one) || typeof one.field !== "string" || one.field.trim() === "") {
-      errors.push(`${at}应当是 { "field": "字段名" } 或 { "field": "字段名", "index": 从 0 起的整数 }`);
+      errors.push(problem(refusalText("source.supports_item_shape", { at })));
       ok = false;
       return;
     }
     if (one.index !== undefined && one.index !== null) {
       if (typeof one.index !== "number" || !Number.isInteger(one.index) || one.index < 0) {
-        errors.push(`${at}的 index 应当是从 0 起的整数，现在写的是 ${JSON.stringify(one.index)}`);
+        errors.push(problem(refusalText("source.supports_index_invalid", { at, given: String(JSON.stringify(one.index)) })));
         ok = false;
         return;
       }
@@ -1564,34 +1559,31 @@ function checkSupports(
 ): void {
   const declared = new Map<string, FieldDef>(collection.fields.map((one) => [one.name, one]));
   sources.forEach((source, position) => {
-    const where = `${inherited ? "沿用下来的" : ""}第 ${position + 1} 条来源`;
-    const tail = inherited ? "；请在这个操作里重新给出 sources" : "";
+    const where = `${inherited ? fillText("part.inherited") : ""}${fillText("part.source_no", { no: position + 1 })}`;
+    const tail = inherited ? fillText("part.support_tail") : "";
     for (const support of source.supports) {
       const field = declared.get(support.field);
       if (!field) {
-        errors.push(
-          `${where}说它支持字段「${support.field}」，集合「${collection.name}」没有这个字段，` +
-            `可用的字段是${collection.fields.map((one) => `「${one.name}」`).join("、")}${tail}`,
-        );
+        errors.push(problem(refusalText("save_revision.support_field_unknown", {
+          where, field: support.field, collection: collection.name, fields: collection.fields.map((one) => `「${one.name}」`).join("、"), tail,
+        })));
         continue;
       }
       const value = fields[support.field];
       if (isEmptyValue(value)) {
-        errors.push(withGuide(`${where}说它支持字段「${support.field}」，这个字段在改后的内容里是空的`,
-          inherited ? "请在这个操作里重新给出 sources" : "不要让来源指到空字段"));
+        errors.push(inherited
+          ? problem(refusalText("save_revision.support_field_empty.inherited", { where, field: support.field }))
+          : problem(refusalText("save_revision.support_field_empty", { where, field: support.field })));
         continue;
       }
       if (support.index === undefined) continue;
       if (field.type !== FIELD_TEXT_LIST && field.type !== FIELD_ITEM_REF) {
-        errors.push(`${where}给字段「${support.field}」写了 index，这个字段是${field.type}类型，只有列表型的字段才能指到其中一项${tail}`);
+        errors.push(problem(refusalText("save_revision.support_index_on_non_list", { where, field: support.field, type: field.type, tail })));
         continue;
       }
       const length = Array.isArray(value) ? value.length : 0;
       if (support.index >= length) {
-        errors.push(
-          `${where}指到字段「${support.field}」的第 ${support.index} 项（从 0 起），这个字段改后只有 ${length} 项，` +
-            `index 最大是 ${length - 1}${tail}`,
-        );
+        errors.push(problem(refusalText("save_revision.support_index_out_of_range", { where, field: support.field, index: support.index, length, max: length - 1, tail })));
       }
     }
   });
