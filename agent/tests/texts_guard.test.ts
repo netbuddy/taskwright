@@ -2,7 +2,7 @@
  * 模板的三条守护（agent/prompts/tools/ 与 agent/prompts/runtime/，加载器在 agent/src/lib/texts.ts）：
  * 代码用的每个键都在；没有哪个模板闲着；代码填的值与模板的占位一一对上。另核对索引 agent/prompts/README.md 列了每一份模板文件。
  *
- * 代码怎样用键靠静态扫描：扫助手库、后端与页面的源码里 fillText("键", …)、textKey("键") 与 textPrefix("键") 这几种写法（键是字面的字符串）。
+ * 代码怎样用键靠静态扫描：扫助手库、后端与页面的源码里 fillText("键", …)、textKey("键")、textPrefix("键") 与 textPattern("键") 这几种写法（键是字面的字符串）。
  * 页面也导入的助手库文件用 lib/shared_texts.ts 里的同名函数，模板取自由 runtime/shared.md 生成的 lib/shared_texts.gen.ts，另核对它没有过期。
  * fillText 的第二个参数写成对象字面量时，逐个比对象的键与模板的占位；写成变量、带展开（...）时扫不出来，
  * 留给运行时登记：fillText 每次调用都核对给的值与占位，对不上就抛错，跑到它的测试会失败。
@@ -24,7 +24,7 @@ const SKIPPED = new Set(["agent/src/lib/texts.ts", "web/src/test"]);
 interface Call {
   file: string;
   line: number;
-  fn: "fillText" | "textKey" | "textPrefix";
+  fn: "fillText" | "textKey" | "textPrefix" | "textPattern";
   /** 第一个参数是字面的字符串时是那个键，否则为 null。 */
   key: string | null;
   /** fillText 的第二个参数：没有给是空数组；对象字面量是它的键；别的写法（变量、带展开）为 null。 */
@@ -93,7 +93,7 @@ function objectKeys(src: string, i: number): string[] | null {
 /** 一段源码里的调用；行号从 1 起。 */
 function scanText(src: string, file = ""): Call[] {
   const calls: Call[] = [];
-  for (const m of src.matchAll(/(?<![\w$.])(fillText|textKey|textPrefix)\(/g)) {
+  for (const m of src.matchAll(/(?<![\w$.])(fillText|textKey|textPrefix|textPattern)\(/g)) {
     const fn = m[1] as Call["fn"];
     const line = src.slice(0, m.index).split("\n").length;
     let i = m.index + m[0].length;

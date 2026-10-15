@@ -18,7 +18,7 @@ import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
 import { isPosition, isStage } from "../../agent/src/lib/stage.ts";
-import { textPrefix } from "../../agent/src/lib/texts.ts";
+import { textPattern, textPrefix } from "../../agent/src/lib/texts.ts";
 import { callFacts, derivedSourceName } from "./library.ts";
 import { cardLinks, understandingLines, worksFromEntries } from "./work_summary.ts";
 
@@ -118,14 +118,14 @@ export function fallbackNoteText(raw: string): string {
  * 任务现状消息（taskwright-task-status）在页面上的写法。助手看到的原文不动（改它要重跑评测），只在转给页面时换掉写给助手的
  * 说法：开头两种（agent/src/lib/task_status.ts 里开始会话一处、续接两处）换成页面上的开头；「执行者在别的会话里做的」
  * 换成「助手在别的会话里做的」；末尾那一行「还在等回应的执行者行为」是对助手说的，页面上整行不显示。
- * 实时推送（executor.ts）与刷新之后从会话记录读回（baseMessages）都经过这里。靠文字匹配：助手一侧改了这几处说法，
- * backend/tests/task_status_display.test.ts 会失败，提醒这里跟着改。
+ * 实时推送（executor.ts）与刷新之后从会话记录读回（baseMessages）都经过这里。认的几处由助手一侧的模板（agent/prompts/runtime/status.md）
+ * 转成正则，那边改了说法这里跟着认；页面上换成的说法写在这里，backend/tests/task_status_display.test.ts 核对。
  */
 const TASK_STATUS_WORDING: [RegExp, string][] = [
-  [/^【执行者开始这条会话时（([^（）]*)）的任务状况：由扩展写入，不是用户打的字】/, "这条会话开始时（$1）的任务状况："],
-  [/^【执行者续接这条会话时（([^（）]*)）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】/, "接着这条会话继续时（$1），上次之后交付物的变化："],
-  [/执行者在别的会话里做的 (\d+) 次/g, "助手在别的会话里做的 $1 次"],
-  [/\n还在等回应的执行者行为 \d+ 条[\s\S]*$/, ""],
+  [new RegExp(`^${textPattern("status.head_now")}`), "这条会话开始时（$1）的任务状况："],
+  [new RegExp(`^${textPattern("status.head_changes")}`), "接着这条会话继续时（$1），上次之后交付物的变化："],
+  [new RegExp(textPattern("status.change_by_executor"), "g"), "助手在别的会话里做的 $1 次"],
+  [new RegExp(`\\n${RegExp.escape(textPrefix("status.open_acts"))}[\\s\\S]*$`), ""],
 ];
 
 export function taskStatusDisplayText(text: string): string {

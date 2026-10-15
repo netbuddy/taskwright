@@ -92,6 +92,21 @@ export function fill(one: Template, values: Record<string, string | number> = {}
   return one.body.replace(PLACEHOLDER, (_all, name: string) => String(values[name]));
 }
 
+/**
+ * 模板正文转成的正则（只给 new RegExp 用的文字）：字面部分转义，每个占位换成一个不贪心的捕获组「(.*?)」，按出现的先后编号。
+ * 认出一句话、取出其中的值用它，不另写一份正则。
+ */
+export function patternOf(one: Template): string {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let out = "";
+  let last = 0;
+  for (const m of one.body.matchAll(PLACEHOLDER)) {
+    out += `${escape(one.body.slice(last, m.index))}(.*?)`;
+    last = m.index + m[0].length;
+  }
+  return out + escape(one.body.slice(last));
+}
+
 /** 模板正文在第一个占位之前的那一段；没有占位时是整段。认一句话的开头用它，不另写一份开头。 */
 export function prefixOf(one: Template): string {
   const at = one.body.indexOf("{{");

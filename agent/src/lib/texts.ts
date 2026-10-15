@@ -5,7 +5,7 @@
  * 模板里只有 {{名字}} 这一种占位。选哪一句由代码定，这里只按键取出模板、填上值：
  * 键不存在、少给或多给了值都抛错，文件写得不合规矩时读入就抛错。
  * 代码里引用键一律写字面的字符串：直接取文字用 fillText("键", {…})，要先存下键、之后再取的用 textKey("键")，
- * 认一句话的开头用 textPrefix("键")（正文在第一个占位之前的那一段）。
+ * 认一句话的开头用 textPrefix("键")（正文在第一个占位之前的那一段），认整句并取出其中的值用 textPattern("键")（转成正则的文字）。
  * 守护测试（agent/tests/texts_guard.test.ts）按这几种写法扫代码，核对代码用的键都在、模板没有闲置、占位都被填了。
  *
  * 本文件读文件，页面导入不了。页面也导入的助手库文件（例如 lib/stage.ts）改用 lib/shared_texts.ts：同名的几个函数，
@@ -15,9 +15,9 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Template, TextsError, fill, parseTemplates, prefixOf } from "./texts_core.ts";
+import { type Template, TextsError, fill, parseTemplates, patternOf, prefixOf } from "./texts_core.ts";
 
-export { KEY_PATTERN, type Template, TextsError, fill, parseTemplates, prefixOf } from "./texts_core.ts";
+export { KEY_PATTERN, type Template, TextsError, fill, parseTemplates, patternOf, prefixOf } from "./texts_core.ts";
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
 
@@ -70,6 +70,11 @@ export function fillText(key: string, values: Record<string, string | number> = 
 /** 一个键的模板正文在第一个占位之前的那一段（认一句话的开头用）。键要写字面的字符串，守护测试才扫得到。 */
 export function textPrefix(key: string): string {
   return prefixOf(templateOf(key));
+}
+
+/** 一个键的模板正文转成的正则文字（占位换成捕获组）。键要写字面的字符串，守护测试才扫得到。 */
+export function textPattern(key: string): string {
+  return patternOf(templateOf(key));
 }
 
 /** 先存下一个键，之后再用 fillText 取。键不存在时当场抛错；键要写字面的字符串，守护测试才扫得到。 */
