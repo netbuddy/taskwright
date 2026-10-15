@@ -4,7 +4,7 @@
 出现任何一种就算这一组命中（与判定程序核对接受底线时的判法相同，用的是同一个函数）。
 
 清单文件的各节与核对的地方：
-- 「总体分析」：下面按种类分小节（流程页、角色页、概念页……），每组对着在用的主题页的标题与别名找。小节名里的种类不作
+- 「业务说明」：下面按种类分小节（流程页、角色页、概念页……），每组对着在用的主题页的标题与别名找。小节名里的种类不作
   命中条件（助手贴的标签可以与清单分的不同），结果里带命中的那一页实际贴的标签，供人看。
   例外是「导语页」这个小节：每组写的是章名，对着在用的导语页的「导语所属章」找（编写文档阶段助手给有内容的章各补一页导语）；
   导语页不参加别的小节的核对。
@@ -31,11 +31,11 @@ from taskwright_observatory import taskdb
 from sim.judge import groups_hit
 from sim.lamps import EXCEPTION_PREFIX, F_ALIASES, F_EXAMPLES, F_INTRO, F_STATUS, F_TAGS, F_TITLE, DEPRECATED, OVERALL, _fields, _texts, is_intro
 
-SECTION_OVERALL = "总体分析"
+SECTION_OVERALL = "业务说明"
 SECTION_EXCEPTIONS = "例外"
 SECTION_MODELS = "模型"
 FLOW_SUBSECTION = "流程页"
-#: 「总体分析」一节里对着导语页找的那个小节。
+#: 「业务说明」一节里对着导语页找的那个小节。
 INTRO_SUBSECTION = "导语页"
 FLOW_TAG = "流程"
 #: 「例外」一节每一行另带的一项：关键词只出现在不以「例外：」开头的例子里的页。

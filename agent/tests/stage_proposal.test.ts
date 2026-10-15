@@ -233,7 +233,7 @@ test("回退的提议：发出就开着，用户点了退回（阶段移动）�
 
 test("补写待过目的提议：发出就开着；卡片点名的页用户都看过了就结束；助手又改了其中一页、再发一张，新的那一条开着", () => {
   const dir = workspace();
-  const add = (title: string) => saveRevision(callIn(dir), { operations: [{ op: "add", collection: "总体分析",
+  const add = (title: string) => saveRevision(callIn(dir), { operations: [{ op: "add", collection: "业务说明",
     fields: { 标题: title, 它是什么: `${title}的说明。`, 状态: "在用" }, sources: [SOURCE] }] });
   add("业务流程导语");
   add("角色导语");

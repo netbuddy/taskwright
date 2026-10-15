@@ -1,6 +1,6 @@
 /**
- * 整份数据里总体分析的几项：每个条目的 pending_verification 与 pending_sources（待核实）、basis_pending（因依据的那一页而待核实）、
- * 总体分析各页的 mentioned_by（提到它的地方）；完成条件的提示里「还没有贴标签」的那一种。没有总体分析集合的任务不带 mentioned_by。
+ * 整份数据里业务说明的几项：每个条目的 pending_verification 与 pending_sources（待核实）、basis_pending（因依据的那一页而待核实）、
+ * 业务说明各页的 mentioned_by（提到它的地方）；完成条件的提示里「还没有贴标签」的那一种。没有业务说明集合的任务不带 mentioned_by。
  * 任务库经子进程里助手一侧真实的保存函数建；用户的确认直接往确认标记的两张表里写（只在临时目录里）。
  */
 
@@ -36,13 +36,13 @@ test("整份数据带待核实、因依据而待核实与提到；用户确认�
   assert.deepEqual(item("OA-001").mentioned_by, [
     { item_id: "UC-001", collection: "用例", field: "名称", index: null, word: "预约", sentence: "预约图书", revision_no: 1 },
     { item_id: "UC-001", collection: "用例", field: "步骤", index: 1, word: "预约取书", sentence: "读者办预约取书", revision_no: 1 },
-    { item_id: "OA-002", collection: "总体分析", field: "它是什么", index: null, word: "预约取书", sentence: "预约取书的书在预留架上留着的那几天。", revision_no: 1 },
+    { item_id: "OA-002", collection: "业务说明", field: "它是什么", index: null, word: "预约取书", sentence: "预约取书的书在预留架上留着的那几天。", revision_no: 1 },
   ]);
   assert.deepEqual([item("OA-002").mentioned_by, "mentioned_by" in item("UC-001")], [[], false]);
   assert.deepEqual(task!.completion!.hints.map((h: any) => [h.kind, h.collection, h.items, h.summary]),
-    [["untagged_overall_pages", "总体分析", ["OA-002"], "有 1 页主题还没有贴标签：OA-002。贴了标签的主题才会进文档，评审也只认贴了标签的主题。"]]);
+    [["untagged_overall_pages", "业务说明", ["OA-002"], "有 1 页主题还没有贴标签：OA-002。贴了标签的主题才会进文档，评审也只认贴了标签的主题。"]]);
   // 定义视图：标签字段带取值，上级主题只许本集合、至多一个，分组字段是标签。
-  const collection = task!.definition.collections.find((c) => c.name === "总体分析")!;
+  const collection = task!.definition.collections.find((c) => c.name === "业务说明")!;
   assert.deepEqual(collection.fields.filter((f) => f.same_collection && f.single).map((f) => f.name), ["上级主题", "改看"]);
   assert.deepEqual([collection.fields.find((f) => f.name === "标签")!.values?.length, collection.display?.group_field], [8, "标签"]);
 
@@ -91,7 +91,7 @@ test("被依据的那一页已废弃：依据它的条目带 basis_pending，rea
   assert.deepEqual(useCase.sources.map((s: any) => [s.locator, s.stale]), [["OA-001", "changed"]]);
 });
 
-test("整份数据带从总体分析算出来的三张表：规则表（冲突标在规则上）、业务目标、决策记录与待澄清事项", () => {
+test("整份数据带从业务说明算出来的三张表：规则表（冲突标在规则上）、业务目标、决策记录与待澄清事项", () => {
   // 问题集合照产品的任务类型：状态里有「用户决定保留」，另有种类与建议的处理两个字段。
   const collections = DEFINITION.交付物.条目集合.map((one) => (one.名称 === "待定事项" ? { ...one, 字段: [
     { 名: "事项", 类型: "文本", 必填: true }, { 名: "种类", 类型: "枚举", 必填: false, 取值: ["待澄清", "范围外"] }, { 名: "建议的处理", 类型: "文本", 必填: false },
@@ -132,7 +132,7 @@ test("整份数据带从总体分析算出来的三张表：规则表（冲突�
   assert.deepEqual(Object.values(library.taskSnapshot(ws)[1]!.stage!.lamps).flat().find((one) => one.key === "rules_no_conflict")!.items, ["TBD-001"]);
 });
 
-test("没有总体分析集合的任务：待核实照样算，条目不带 mentioned_by，没有这一种提示；三张表是 null", () => {
+test("没有业务说明集合的任务：待核实照样算，条目不带 mentioned_by，没有这一种提示；三张表是 null", () => {
   const ws = makeWorkspace(tmp, "old", true);
   const [, task] = library.taskSnapshot(ws);
   assert.equal(task!.overall_views, null);

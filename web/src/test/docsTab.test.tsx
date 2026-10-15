@@ -106,7 +106,7 @@ describe("「文档与版本」页签的两张表", () => {
       ({ collection, name, met: state === "met", state, done: 0, total: 0, missing, note: "" });
     const t = overallTask({ completion: { all_met: false, unmet_count: 4, hints: [], conditions: [
       cond("功能用例", "至少一个条目", [], "met"), cond("功能用例", "每个条目评审通过", ["UC-002"]), cond("功能用例", "每个条目用户确认", ["UC-003", "UC-001"]),
-      cond("总体分析", "每个条目用户确认", ["OA-004"]), cond("问题", "没有状态为未解决的条目", ["TBD-001"]), cond("非功能需求", "每个条目评审通过", [], "empty")] } } as unknown as Partial<Task>);
+      cond("业务说明", "每个条目用户确认", ["OA-004"]), cond("问题", "没有状态为未解决的条目", ["TBD-001"]), cond("非功能需求", "每个条目评审通过", [], "empty")] } } as unknown as Partial<Task>);
     expect(checkRows(t).map((one) => [one.label, one.gap, one.go])).toEqual([
       ["功能用例：至少一个条目", "已满足", null],
       ["功能用例：每个条目评审通过", "UC-002 还没有评审通过", { kind: "review" }],
@@ -122,7 +122,7 @@ describe("「文档与版本」页签的两张表", () => {
   it("非阻断提示：空章、没有依据的需求条目、没看过的图、依据的节上有待澄清问题的条目、判定带出的提示，每条有入口", () => {
     const t = ready({ diagrams: [{ diagram_id: "D-001", name: "借书流程", kind: "flowchart", kind_name: "流程图", revision_no: 1, revision_by: "executor", revision_at: "", created_at: "", source_count: 0, viewed: false }] } as unknown as Partial<Task>);
     change(t, "UC-001", (item) => { item.sources = []; });
-    t.completion!.hints = [{ kind: "untagged_overall_pages", collection: "总体分析", items: ["OA-009"], summary: "有 1 页主题还没有贴标签：OA-009。" }];
+    t.completion!.hints = [{ kind: "untagged_overall_pages", collection: "业务说明", items: ["OA-009"], summary: "有 1 页主题还没有贴标签：OA-009。" }];
     const list = hints(t, toc(t));
     expect(list.find((one) => one.key === "basis-UC-001")).toMatchObject({ go: { kind: "item", itemId: "UC-001" } });
     expect(list.find((one) => one.key === "unseen-D-001")).toMatchObject({ text: "D-001「借书流程」现在的内容你还没有看过。", go: { kind: "diagram", diagramId: "D-001" } });

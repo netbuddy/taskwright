@@ -51,7 +51,7 @@ function pane(working = false, prompt: DebugSystemPrompt = PROMPT, facts: DebugS
   const getFacts = vi.spyOn(api, "debugStage").mockResolvedValue(facts);
   const onOpenItem = vi.fn();
   const onOpenMaterial = vi.fn();
-  const items = [{ item_id: "OA-003", collection: "总体分析" }] as never;
+  const items = [{ item_id: "OA-003", collection: "业务说明" }] as never;
   const view = render(<DebugPane taskId="TASK-001" stage={STAGE} items={items} working={working} onOpenItem={onOpenItem} onOpenMaterial={onOpenMaterial} />);
   return { getPrompt, getFacts, onOpenItem, onOpenMaterial, view };
 }

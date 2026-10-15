@@ -48,7 +48,7 @@ START_CARD = {"kind": "choose", "text": "这一页整理好了。现在开始写
 DOCUMENT_CARD = {"kind": "choose", "text": "条目都确认过了。进入编写文档，把各章的导语补上吗？", "items": [],
                  "options": [{"key": "enter_document", "text": "进入编写文档"}, {"key": "continue_review", "text": "再看看条目"}]}
 #: 业务流程这一章的导语页：不贴标签，「导语所属章」写章名；助手补写的，来源种类是助手补充。主题页、用例各占一次修订，它是第 3 次。
-INTRO = {"op": "add", "collection": "总体分析", "sources": [{"kind": "助手补充", "excerpt": "据 OA-001 与 UC-001 概括。"}],
+INTRO = {"op": "add", "collection": "业务说明", "sources": [{"kind": "助手补充", "excerpt": "据 OA-001 与 UC-001 概括。"}],
          "fields": {"标题": "业务流程导语", "导语所属章": "业务流程", "它是什么": "这一章讲读者怎样借书。", "状态": "在用"}}
 READ_CARD = {"kind": "choose", "text": "补写了业务流程这一章的导语，请过目。看过之后在条目区按「生成文档」。", "items": [{"item_id": "OA-002", "revision_no": 3}],
              "options": [{"key": "document_reviewed", "text": "看过了，生成文档"}, {"key": "document_revise", "text": "需要修改"}]}

@@ -28,16 +28,16 @@ function Panel({ t, collection = null, diagrams = false, first = null }: { t: Ta
 const tabs = () => [...document.querySelectorAll("[data-testid=item-tabs] .itab")].map((t) => t.textContent!.replace(/\d+$/, ""));
 /** 停在哪里：停在需求条目页签时是哪个子页签，否则是顶上一排里的哪一个。 */
 const onTab = () => (document.querySelector("[data-testid=item-tabs] .itab.on") ?? document.querySelector("[data-testid=asset-tabs] .itab.on"))!.textContent!.replace(/\d+$/, "");
-/** 只有总体分析里有内容的任务（刚开始、还没有写条目）。 */
+/** 只有业务说明里有内容的任务（刚开始、还没有写条目）。 */
 function fresh(): Task {
   const t = overallTask();
-  t.items = t.items.filter((i) => i.collection === "总体分析");
+  t.items = t.items.filter((i) => i.collection === "业务说明");
   return t;
 }
 
 describe("页签的次序", () => {
   it("业务说明那一个集合排最前，其余照任务定义的先后", () => {
-    expect(tabOrder(overallTask().definition.collections).map((c) => c.name)).toEqual(["总体分析", "功能用例", "问题"]);
+    expect(tabOrder(overallTask().definition.collections).map((c) => c.name)).toEqual(["业务说明", "功能用例", "问题"]);
     render(<Panel t={overallTask()} />);
     // 顶上一排是需求资产六类；业务说明那一个集合在「业务说明」页签里，其余集合是「需求条目」页签里的子页签。
     expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((t) => t.firstChild!.textContent)).toEqual(["材料与证据", "业务说明", "分析模型", "需求条目", "评审与确认", "文档与版本"]);
@@ -47,8 +47,8 @@ describe("页签的次序", () => {
 });
 
 describe("一打开停在哪个页签", () => {
-  it("别的集合一条条目都没有时停在总体分析；有了条目、又没有记过时，停在总体分析之外的第一个集合", () => {
-    expect(initialTab(fresh(), {})).toEqual({ tab: "总体分析" });
+  it("别的集合一条条目都没有时停在业务说明；有了条目、又没有记过时，停在业务说明之外的第一个集合", () => {
+    expect(initialTab(fresh(), {})).toEqual({ tab: "业务说明" });
     expect(initialTab(overallTask(), {})).toEqual({ tab: "功能用例" });
     render(<Panel t={fresh()} />);
     expect(onTab()).toBe("业务说明");
@@ -58,9 +58,9 @@ describe("一打开停在哪个页签", () => {
     const t = overallTask();
     saveTab(t.task_id, "问题");
     expect(initialTab(t, {})).toEqual({ tab: "问题" });
-    expect(initialTab(t, { collection: "总体分析" })).toEqual({ tab: "总体分析" });
-    expect(initialTab(t, { diagram: true, collection: "问题" })).toEqual({ tab: "总体分析" });
-    expect(initialTab(t, { collection: "问题", selected: "OA-003" })).toEqual({ tab: "总体分析" });
+    expect(initialTab(t, { collection: "业务说明" })).toEqual({ tab: "业务说明" });
+    expect(initialTab(t, { diagram: true, collection: "问题" })).toEqual({ tab: "业务说明" });
+    expect(initialTab(t, { collection: "问题", selected: "OA-003" })).toEqual({ tab: "业务说明" });
   });
 
   it("记住的集合任务里已经没有、或者地址里带的集合任务里没有时，按没有记过处理；记住的是不是集合的页签时，集合也按没有记过处理", () => {

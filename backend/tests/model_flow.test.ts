@@ -20,7 +20,7 @@ const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const FROM_MATERIAL = { kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL };
-const page = (fields: Dict, sources: unknown[] = [FROM_MATERIAL]) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources });
+const page = (fields: Dict, sources: unknown[] = [FROM_MATERIAL]) => ({ op: "add", collection: "业务说明", fields: { 状态: "在用", ...fields }, sources });
 /** 四页主题：一页流程、一页角色、两页概念（借阅记录说到了状态；借书证有一条已经定下的规则）。 */
 const PAGES = [
   page({ 标题: "自助借书", 它是什么: MATERIAL, 例子: [MATERIAL], 标签: ["流程"] }),

@@ -21,7 +21,7 @@ const TOPIC = { 标题: "退货申请", 它是什么: "买家可以申请退货�
 export const SCRIPT = [
   // 一个回答里一次保存：立主题页（修订 1）。
   { text: INTENT, tool_calls: [
-    { name: "save_revision", arguments: { operations: [{ op: "add", collection: "总体分析", fields: TOPIC, sources: [SOURCE] }] } },
+    { name: "save_revision", arguments: { operations: [{ op: "add", collection: "业务说明", fields: TOPIC, sources: [SOURCE] }] } },
   ] },
   { tool_calls: [{ name: "reply", arguments: { informs: [], act: null, text: "存好了。" } }] },
 ];

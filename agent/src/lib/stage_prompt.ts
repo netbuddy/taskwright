@@ -468,7 +468,7 @@ export function partFact(one: PromptPart): PartFact {
 
 /**
  * 这条会话现在在哪个阶段（或者空闲），只读：看的是这条会话属于的工作项。任务库不在、库里还没有任务、或者是早先建的任务
- * （没有「总体分析」集合）时返回 null：这些情形都不换系统提示。
+ * （没有「业务说明」集合）时返回 null：这些情形都不换系统提示。
  */
 export function stageInWorkspace(workspaceDir: string, sessionId: string | null): Position | null {
   return whereInWorkspace(workspaceDir, sessionId)?.stage ?? null;

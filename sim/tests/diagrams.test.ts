@@ -5,11 +5,11 @@ import { test } from "node:test";
 import { type TaskView, renderDiagram, renderDiagrams, renderItems, sourcePagesOf, viewOnLookDiagram } from "../lib/screen.ts";
 
 const page = (id: string, title: string, figures: string[]) => ({
-  item_id: id, collection: "总体分析", title, revision_no: 1, fields: { 标题: title, 标签: ["流程"], 状态: "在用" },
+  item_id: id, collection: "业务说明", title, revision_no: 1, fields: { 标题: title, 标签: ["流程"], 状态: "在用" },
   depended_by: [...figures.map((figure) => ({ element_kind: "图", id: figure })), { element_kind: "条目", id: "UC-001" }],
 });
 const task: TaskView = {
-  definition: { collections: [{ name: "总体分析", fields: [{ name: "标题" }] }, { name: "功能用例", fields: [{ name: "用例名称" }] }] },
+  definition: { collections: [{ name: "业务说明", fields: [{ name: "标题" }] }, { name: "功能用例", fields: [{ name: "用例名称" }] }] },
   items: [page("OA-001", "借书", ["D-001", "D-002"]), page("OA-002", "预约", ["D-002"]),
     { item_id: "UC-001", collection: "功能用例", title: "借书", revision_no: 2, fields: {}, depended_by: [{ element_kind: "图", id: "D-001" }] }],
   diagrams: [
@@ -19,7 +19,7 @@ const task: TaskView = {
   ],
 };
 
-test("图那一段：每张一行，写编号、图名、种类、画自哪几页、现在这一版看没看过；画自哪页只数总体分析的页", () => {
+test("图那一段：每张一行，写编号、图名、种类、画自哪几页、现在这一版看没看过；画自哪页只数业务说明的页", () => {
   assert.deepEqual(sourcePagesOf(task, "D-001"), ["OA-001"]);
   assert.deepEqual(sourcePagesOf(task, "D-002"), ["OA-001", "OA-002"]);
   assert.equal(renderDiagrams(task), [

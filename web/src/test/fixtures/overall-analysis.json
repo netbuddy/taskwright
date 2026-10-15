@@ -78,7 +78,7 @@
     ]
    },
    {
-    "name": "总体分析",
+    "name": "业务说明",
     "prefix": "OA",
     "needs_review": false,
     "display": {
@@ -167,7 +167,7 @@
  "items": [
   {
    "item_id": "OA-001",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "借阅",
    "revision_no": 1,
    "revision_by": "executor",
@@ -219,7 +219,7 @@
   },
   {
    "item_id": "OA-002",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "借书与还书",
    "revision_no": 3,
    "revision_by": "executor",
@@ -327,7 +327,7 @@
   },
   {
    "item_id": "OA-003",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "预约取书",
    "revision_no": 12,
    "revision_by": "executor",
@@ -451,7 +451,7 @@
    "mentioned_by": [
     {
      "item_id": "OA-002",
-     "collection": "总体分析",
+     "collection": "业务说明",
      "field": "它是什么",
      "index": null,
      "word": "预约取书",
@@ -460,7 +460,7 @@
     },
     {
      "item_id": "OA-006",
-     "collection": "总体分析",
+     "collection": "业务说明",
      "field": "已经定下的",
      "index": 1,
      "word": "预约",
@@ -490,7 +490,7 @@
   },
   {
    "item_id": "OA-004",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "闭馆日怎么算",
    "revision_no": 2,
    "revision_by": "executor",
@@ -545,7 +545,7 @@
   },
   {
    "item_id": "OA-005",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "逾期与罚款",
    "revision_no": 4,
    "revision_by": "executor",
@@ -611,7 +611,7 @@
    "mentioned_by": [
     {
      "item_id": "OA-002",
-     "collection": "总体分析",
+     "collection": "业务说明",
      "field": "已经定下的",
      "index": 4,
      "word": "逾期",
@@ -620,7 +620,7 @@
     },
     {
      "item_id": "OA-001",
-     "collection": "总体分析",
+     "collection": "业务说明",
      "field": "它是什么",
      "index": null,
      "word": "逾期",
@@ -637,7 +637,7 @@
   },
   {
    "item_id": "OA-006",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "续借",
    "revision_no": 2,
    "revision_by": "executor",
@@ -723,7 +723,7 @@
   },
   {
    "item_id": "OA-007",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "读者",
    "revision_no": 2,
    "revision_by": "executor",
@@ -822,7 +822,7 @@
    "mentioned_by": [
     {
      "item_id": "OA-001",
-     "collection": "总体分析",
+     "collection": "业务说明",
      "field": "它是什么",
      "index": null,
      "word": "读者",
@@ -834,7 +834,7 @@
   },
   {
    "item_id": "OA-008",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "借书证的有效期",
    "revision_no": 1,
    "revision_by": "executor",
@@ -880,7 +880,7 @@
   },
   {
    "item_id": "OA-009",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "馆员",
    "revision_no": 1,
    "revision_by": "executor",
@@ -938,7 +938,7 @@
   },
   {
    "item_id": "OA-010",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "馆藏",
    "revision_no": 2,
    "revision_by": "executor",
@@ -1019,7 +1019,7 @@
   },
   {
    "item_id": "OA-011",
-   "collection": "总体分析",
+   "collection": "业务说明",
    "title": "和校园卡打通",
    "revision_no": 1,
    "revision_by": "executor",

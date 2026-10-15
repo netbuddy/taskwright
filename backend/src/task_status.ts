@@ -1,7 +1,7 @@
 /**
  * 任务状况：任务现在做到哪里了，由程序据任务记录算出来，不经模型。任务起点页、切换工作面板与对话区的卡片用它。
  *
- * 只读，全部取自整份数据已经算好的东西（library.taskSnapshot）与工作项的清单（library.workItemRows）：有哪些工作项、总体分析的页按章归类的节数、
+ * 只读，全部取自整份数据已经算好的东西（library.taskSnapshot）与工作项的清单（library.workItemRows）：有哪些工作项、业务说明的页按章归类的节数、
  * 还没有了结的待澄清问题数、图按种类的张数、各集合的条目数与用户看过的条数、需求资产六类的现状、活动目录。
  * 章的归法与页面目录用的是同一个函数（agent/src/lib/overall_chapters.ts）。
  *
@@ -31,7 +31,7 @@
  * 从头编制时输入页上的几段（intake）。
  * 现在都是这里给的缺省文字，照需求规格说明这一类任务写；以后由任务类型的定义给。
  * versions 是任务的版本记录，按版本号从小到大，每项见 versionView。
- * 没有阶段的任务（任务定义里没有「总体分析」集合）没有状况，返回 null。
+ * 没有阶段的任务（任务定义里没有「业务说明」集合）没有状况，返回 null。
  */
 
 import { CHAPTERS, chapterLayout, chapterPage } from "../../agent/src/lib/overall_chapters.ts";
@@ -107,7 +107,7 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
   const stage = view.stage;
   const current = stage.current as Position;
 
-  // 业务说明：总体分析的页按标签归章；每章数在用的节，未归类的数在用的页。
+  // 业务说明：业务说明的页按标签归章；每章数在用的节，未归类的数在用的页。
   const pages = view.items.filter((one) => one.collection === OVERALL_COLLECTION);
   const layout = chapterLayout(pages.map((one) => chapterPage(one.item_id, one.fields)));
   const chapters = layout.chapters
@@ -126,7 +126,7 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
     else models.push({ kind: diagram.kind, name: diagram.kind_name, count: 1 });
   }
 
-  // 需求条目：总体分析与问题之外的每个集合。问题集合认的是状态字段的取值里有「用户决定保留」的集合。
+  // 需求条目：业务说明与问题之外的每个集合。问题集合认的是状态字段的取值里有「用户决定保留」的集合。
   const isQuestions = (collection: { fields: { values: unknown }[] }) =>
     collection.fields.some((field) => Array.isArray(field.values) && field.values.includes(QUESTION_KEEP_STATUS));
   const items = view.definition.collections

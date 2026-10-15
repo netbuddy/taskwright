@@ -89,7 +89,7 @@ body {
 /* 用标题字体的标题只有这几样：各页的一级标题、任务页与知识库页与设置页的分区标题、工作视图顶栏的任务名。
  * 正文、按钮、表格、页签、详情里的小节标题都用正文字体：衬线字体在小字号下笔画细，不好认。
  * 标题之外用它的另有三处，各写在自己的样式文件里：对话区里助手复述的那一段与卡片里问题那一句（styles/workview.css）、
- * 设置页风格卡预览里的顶栏（styles/settings.css）、总体分析的提纲栏头与主题页的标题和各块小标题（styles/overall.css）。
+ * 设置页风格卡预览里的顶栏（styles/settings.css）、业务说明的提纲栏头与主题页的标题和各块小标题（styles/overall.css）。
  * 再加一处要改 test/theme.test.ts 里的清单。 */
 .page-title h1, .tp-head h1, .tp-sec-h h2, .kbhead h2, .settings .dhead h2, .app .topbar .tname { font-family: var(--font-title); }
 

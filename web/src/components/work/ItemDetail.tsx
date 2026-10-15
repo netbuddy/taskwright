@@ -624,7 +624,7 @@ export function normalize(def: FieldDef, value: FieldValue): FieldValue {
 
 /**
  * 一个字段的编辑框，按字段的类型画：枚举是下拉；条目引用是可以搜的多选（choices 给了就只能从这几个里选，single 为真时至多选一个）；
- * 文本列表逐项编辑，声明了取值的文本列表（例如总体分析的「标签」）是一组可以多选的小标签；别的是文本框。
+ * 文本列表逐项编辑，声明了取值的文本列表（例如业务说明的「标签」）是一组可以多选的小标签；别的是文本框。
  */
 export function FieldEditor({ def, value, task, onChange, choices, single = false }: {
   def: FieldDef; value: FieldValue; task: Task; onChange: (v: FieldValue) => void;

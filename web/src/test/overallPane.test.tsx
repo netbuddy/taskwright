@@ -1,4 +1,4 @@
-// 条目区停在「业务说明」页签（总体分析这个集合）时：主体是目录加一节两栏；筛选、未读提示不显示，进度汇总照旧；
+// 条目区停在「业务说明」页签时：主体是目录加一节两栏；筛选、未读提示不显示，进度汇总照旧；
 // 目录按章，章下面一节一行，带状态点，底下是图例与汇总；点章标题打开章首页（第 3 章是收起展开），点一行打开那一节；
 // 目录可以收成把手再展开；没有点任何一节时右边是说明与总计；早先的任务（集合叫领域说明）仍是原来的列表。
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +19,7 @@ function Panel({ t, first = null, opened }: { t: Task; first?: string | null; op
   const [selected, setSelected] = useState<string | null>(first);
   return (
     <Wrap><div className="app">
-      <ItemsPanel task={t} initialCollection="总体分析" readOnly={false} recentlyChanged={[]} pendingItems={new Set()}
+      <ItemsPanel task={t} initialCollection="业务说明" readOnly={false} recentlyChanged={[]} pendingItems={new Set()}
         selected={selected} onSelect={(id) => { opened?.(id); setSelected(id); }} submit={vi.fn(async () => null)} onGenerateDoc={() => {}} />
     </div></Wrap>
   );
@@ -29,7 +29,7 @@ const row = (id: string) => screen.getByTestId(`toc-${id}`);
 const chapter = (no: number) => screen.getByTestId(`toc-chapter-${no}`);
 
 describe("条目区的「业务说明」页签", () => {
-  it("总体分析这个集合的页签显示成「业务说明」；主体是目录加一节两栏；筛选与未读提示不显示，进度汇总照旧；切到别的页签又是列表", () => {
+  it("业务说明这个集合在「业务说明」页签里；主体是目录加一节两栏；筛选与未读提示不显示，进度汇总照旧；切到别的页签又是列表", () => {
     render(<Panel t={overallTask()} />);
     expect(screen.getByTestId("pane-description")).toHaveClass("on");
     expect(screen.getByTestId("pane-description").textContent).toBe("业务说明11");
@@ -59,8 +59,8 @@ describe("条目区的「业务说明」页签", () => {
 
   it("早先的任务（集合叫领域说明）仍是原来的列表，没有目录", () => {
     const t = overallTask();
-    t.definition.collections = t.definition.collections.map((c) => (c.name === "总体分析" ? { ...c, name: "领域说明", prefix: "DN" } : c));
-    t.items = t.items.map((i) => (i.collection === "总体分析" ? { ...i, collection: "领域说明" } : i));
+    t.definition.collections = t.definition.collections.map((c) => (c.name === "业务说明" ? { ...c, name: "领域说明", prefix: "DN" } : c));
+    t.items = t.items.map((i) => (i.collection === "业务说明" ? { ...i, collection: "领域说明" } : i));
     render(<Wrap><div className="app"><ItemsPanel task={t} initialCollection="领域说明" readOnly={false} recentlyChanged={[]} pendingItems={new Set()}
       selected={null} onSelect={() => {}} submit={vi.fn(async () => null)} onGenerateDoc={() => {}} /></div></Wrap>);
     expect(screen.queryByTestId("overall-pane")).toBeNull();
@@ -155,7 +155,7 @@ describe("目录", () => {
 
   it("一页都没有时写一句话，七章都灰着", () => {
     const t = overallTask();
-    t.items = t.items.filter((i) => i.collection !== "总体分析");
+    t.items = t.items.filter((i) => i.collection !== "业务说明");
     render(<Panel t={t} />);
     expect(within(screen.getByTestId("toc")).getByText(/还没有内容/)).toBeInTheDocument();
     expect([1, 2, 3, 4, 5, 6, 7].every((no) => chapter(no).classList.contains("dim"))).toBe(true);
@@ -222,12 +222,12 @@ describe("术语表", () => {
 
   it("没有标签含概念的页时目录里没有术语表这一节；概念都还待核实时表是空的，写一句话", () => {
     const none = overallTask();
-    for (const item of none.items) if (item.collection === "总体分析") item.fields.标签 = [];
+    for (const item of none.items) if (item.collection === "业务说明") item.fields.标签 = [];
     const { unmount } = render(<Panel t={none} />);
     expect(screen.queryByTestId("toc-glossary")).toBeNull();
     unmount();
     const waiting = overallTask();
-    for (const item of waiting.items) if (item.collection === "总体分析") item.pending_verification = true;
+    for (const item of waiting.items) if (item.collection === "业务说明") item.pending_verification = true;
     render(<Panel t={waiting} />);
     fireEvent.click(screen.getByTestId("toc-glossary"));
     expect(screen.getByTestId("glossary")).toHaveTextContent("还没有可以进术语表的主题");

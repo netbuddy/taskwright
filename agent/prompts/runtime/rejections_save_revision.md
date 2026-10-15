@@ -306,7 +306,7 @@ fields 应当是一个对象，只写要改的字段
 
 ## `save_revision.overall_intro_duplicate`
 
-用途：总体分析里一章已经有一页在用的导语页。
+用途：业务说明里一章已经有一页在用的导语页。
 
 「{{chapter}}」这一章已经有一页在用的导语页：{{owners}}
 

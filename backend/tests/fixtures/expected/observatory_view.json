@@ -149,17 +149,17 @@
         "文件": [
          {
           "字节数": 3453,
-          "摘要值": "ebdec06930db7f2f",
+          "摘要值": "e7704938623c56de",
           "路径": "README.md"
          },
          {
           "字节数": 4735,
-          "摘要值": "82202ed0caac3e3a",
+          "摘要值": "510b2217b804c27a",
           "路径": "clarifying.md"
          },
          {
           "字节数": 65778,
-          "摘要值": "1503bb02cfc93008",
+          "摘要值": "4f7a62a26a9970b4",
           "路径": "common.md"
          },
          {
@@ -169,7 +169,7 @@
          },
          {
           "字节数": 4421,
-          "摘要值": "f5d45dac854df409",
+          "摘要值": "40cf02310be72cf8",
           "路径": "modeling.md"
          },
          {
@@ -194,7 +194,7 @@
          },
          {
           "字节数": 2915,
-          "摘要值": "a803bf10154c2576",
+          "摘要值": "6b38b9e61732358f",
           "路径": "writing.md"
          }
         ],
@@ -289,7 +289,7 @@
        "文件": [
         {
          "字节数": 8002,
-         "摘要值": "60ee718eea8921e4",
+         "摘要值": "100f21ab77086d7e",
          "路径": ".pi/skills/requirements-engineering/SKILL.md"
         },
         {
@@ -299,37 +299,37 @@
         },
         {
          "字节数": 759,
-         "摘要值": "4cef4158146b2a3c",
+         "摘要值": "d9eeea37ff3c8ff8",
          "路径": ".pi/skills/requirements-engineering/stages/reading.md"
         },
         {
          "字节数": 4786,
-         "摘要值": "5a1f4f82069fcc19",
+         "摘要值": "5416bc0fc897e2fc",
          "路径": ".pi/skills/requirements-engineering/stages/writing.md"
         },
         {
          "字节数": 6506,
-         "摘要值": "56ac9a1108e02b32",
+         "摘要值": "00312e085dff5953",
          "路径": "docs/domain-knowledge/ears-writing.md"
         },
         {
          "字节数": 7661,
-         "摘要值": "af0f1aed188cd765",
+         "摘要值": "62cac0472f9f8668",
          "路径": "docs/domain-knowledge/use-case-writing.md"
         },
         {
          "字节数": 4205,
-         "摘要值": "75330d3f34d03397",
+         "摘要值": "5c67c4563e3590a4",
          "路径": "docs/review-rules/ears.json"
         },
         {
          "字节数": 5567,
-         "摘要值": "b437e369fd2c08dd",
+         "摘要值": "4fbf33d0ff9fb401",
          "路径": "docs/review-rules/use-case.json"
         },
         {
          "字节数": 5138,
-         "摘要值": "f2e0abb3f9368588",
+         "摘要值": "7ccc3801dfc483a0",
          "路径": "docs/task-definitions/requirements-engineering.json"
         },
         {
@@ -457,7 +457,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"kind\":\"现状\",\"text\":\"【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：需求工程），任务编号 <任务1>。交付物还没有任何条目。要发布版本，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\\n没有开着的提议。\",\"details\":{\"kind\":\"现状\",\"task_id\":\"<任务1>\",\"task_name\":\"对照任务\",\"task_type\":\"需求工程\",\"items\":{\"功能用例\":0,\"非功能需求\":0,\"约束\":0,\"问题\":0,\"总体分析\":0},\"conditions_total\":9,\"conditions_met\":0,\"conditions_unmet\":1,\"conditions_empty\":8,\"unresolved\":0,\"materials\":{\"dir\":\"inputs/\",\"files\":[{\"path\":\"inputs/材料.md\",\"bytes\":27}],\"citations\":[{\"path\":\"inputs/材料.md\",\"cited\":0}]},\"proposal\":null},\"entry_id\":\"<条目1>\",\"session_id\":\"<会话1>\"}",
+        "文字": "{\"kind\":\"现状\",\"text\":\"【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：需求工程），任务编号 <任务1>。交付物还没有任何条目。要发布版本，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\\n没有开着的提议。\",\"details\":{\"kind\":\"现状\",\"task_id\":\"<任务1>\",\"task_name\":\"对照任务\",\"task_type\":\"需求工程\",\"items\":{\"功能用例\":0,\"非功能需求\":0,\"约束\":0,\"问题\":0,\"业务说明\":0},\"conditions_total\":9,\"conditions_met\":0,\"conditions_unmet\":1,\"conditions_empty\":8,\"unresolved\":0,\"materials\":{\"dir\":\"inputs/\",\"files\":[{\"path\":\"inputs/材料.md\",\"bytes\":27}],\"citations\":[{\"path\":\"inputs/材料.md\",\"cited\":0}]},\"proposal\":null},\"entry_id\":\"<条目1>\",\"session_id\":\"<会话1>\"}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-task-status",
@@ -467,7 +467,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"7cbbfc88a661a290\",\"bytes\":79672,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65777,\"lines\":238,\"digest\":\"2d5e4ee84f810996\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/requirements-engineering/SKILL.md\",\"bytes\":7626,\"lines\":30,\"digest\":\"9693716b6d934989\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"0f0cdc845702dfbd\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"0ed2a64a2a15fe80\",\"bytes\":79672,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65777,\"lines\":238,\"digest\":\"f1d92743cd665c04\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/requirements-engineering/SKILL.md\",\"bytes\":7626,\"lines\":30,\"digest\":\"bb84eb46c4bb206d\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"4427c36421f90d90\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",
@@ -492,7 +492,7 @@
           "工具": "save_revision",
           "归档行号": "<归档行号>",
           "收到时刻": "<收到时刻>",
-          "文字": "已保存为任务 <任务1> 的修订 1，一共 1 个操作：\n1. 新增了条目 OA-001（集合「总体分析」），OA-001 现在是修订 1。",
+          "文字": "已保存为任务 <任务1> 的修订 1，一共 1 个操作：\n1. 新增了条目 OA-001（集合「业务说明」），OA-001 现在是修订 1。",
           "是不是出错": false,
           "调用编号": "call_fake_1_0"
          }
@@ -510,7 +510,7 @@
           "参数": {
            "operations": [
             {
-             "collection": "总体分析",
+             "collection": "业务说明",
              "fields": {
               "例子": [
                "买家可以申请退货。"
@@ -609,7 +609,7 @@
                 "类型": "枚举"
                }
               ],
-              "所属集合": "总体分析",
+              "所属集合": "业务说明",
               "操作": "add",
               "操作的中文名": "新增",
               "改前所在修订": null,
@@ -642,7 +642,7 @@
              "intent_act_id": "r1-1",
              "operations": [
               {
-               "collection": "总体分析",
+               "collection": "业务说明",
                "from_revision": null,
                "item": "OA-001",
                "op": "add",
@@ -663,13 +663,13 @@
           "有没有执行结果": true,
           "泳道": 1,
           "结束收到时刻": "<时刻数>",
-          "结果文字": "已保存为任务 <任务1> 的修订 1，一共 1 个操作：\n1. 新增了条目 OA-001（集合「总体分析」），OA-001 现在是修订 1。",
+          "结果文字": "已保存为任务 <任务1> 的修订 1，一共 1 个操作：\n1. 新增了条目 OA-001（集合「业务说明」），OA-001 现在是修订 1。",
           "结果细节": {
            "event_seq": 3,
            "intent_act_id": "r1-1",
            "operations": [
             {
-             "collection": "总体分析",
+             "collection": "业务说明",
              "from_revision": null,
              "item": "OA-001",
              "op": "add",
@@ -844,7 +844,7 @@
             "角色": "助手消息"
            },
            {
-            "开头": "已保存为任务 <任务1> 的修订 1，一共 1 个操作：\n1. 新增了条目 OA-001（集合「总体分析」），OA-001 现在是修订 1。",
+            "开头": "已保存为任务 <任务1> 的修订 1，一共 1 个操作：\n1. 新增了条目 OA-001（集合「业务说明」），OA-001 现在是修订 1。",
             "角色": "工具结果消息"
            }
           ],

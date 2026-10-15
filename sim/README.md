@@ -2,7 +2,7 @@
 
 一个扮演用户的 agent，按一份用户画像（user persona）与执行者多轮对话，用来积累执行者的失败样本。它用 pi 以 RPC 方式跑，
 只有两个工具：「看界面」（look）与「回应」（respond），两个工具都走后端任务服务的 HTTP 接口，与网页前端走同一条路。
-它能做的事与一个坐在工作视图前的人相同：看助手说了什么；看条目区，其中总体分析写成提纲（每页的标签、它现在这一版看没看过、
+它能做的事与一个坐在工作视图前的人相同：看助手说了什么；看条目区，其中业务说明写成提纲（每页的标签、它现在这一版看没看过、
 有没有助手补的内容等着确认）；打开一个条目或一页主题（打开就记已读，待核实的主题页除外）；确认一页主题上助手补的内容
 （`look` 带 `confirm`，与页面上「确认待核实的 N 处」是同一个请求）；看助手画的图（条目区后面另列一段，每张一行，写图名、种类、
 画自哪几页、现在这一版看没看过；`look` 带 `diagram_id` 打开一张图，看它的说明与 Mermaid 文本，打开就记一次看过，
@@ -24,7 +24,7 @@
 |---|---|
 | `extension.ts` | 用户 agent 的扩展入口，只登记 look 与 respond。 |
 | `tools/look.ts`、`tools/respond.ts` | 两个工具。respond 的「单独调用、合格即结束本轮」骨架引用 `agent/src/lib/speak.ts`。 |
-| `lib/screen.ts` | 界面渲染与回应翻译的纯函数（执行者的话怎样显示、总体分析的提纲、打开一个条目记不记已读、按钮走 actions 还是 messages）。 |
+| `lib/screen.ts` | 界面渲染与回应翻译的纯函数（执行者的话怎样显示、业务说明的提纲、打开一个条目记不记已读、按钮走 actions 还是 messages）。 |
 | `lib/backend.ts` | 两个工具访问后端的小函数（Node 自带 fetch），后端地址等从环境变量取。 |
 | `profiles/user_agent.json` | 用户 agent 的启动配置（模型 gpt-6-luna、思考档位 medium、工具只有 look,respond）。 |
 | `prompts/user_agent_system_prompt.md` | 用户 agent 的系统提示；`{{用户画像}}` 处由 `launch_user.py` 填入画像里给扮演者读的部分。 |

@@ -1,5 +1,5 @@
 /**
- * 总体分析由事实算出来的几样（src/lib/overall_analysis.ts，都只算、不读库）：待核实、因依据而待核实、词表与提到、最低门要看的事实。
+ * 业务说明由事实算出来的几样（src/lib/overall_analysis.ts，都只算、不读库）：待核实、因依据而待核实、词表与提到、最低门要看的事实。
  */
 
 import assert from "node:assert/strict";
@@ -43,7 +43,7 @@ test("待核实：当前修订上还在的助手补充都待核实；这一段�
     { pending_verification: true, pending_sources: 2, pending_places: [{ field: "例子", index: 0 }] });
 });
 
-test("因依据而待核实：依据的那一页已废弃、待核实或者用户还没有看过；只看总体分析的页，只看一层，没有的是 null", () => {
+test("因依据而待核实：依据的那一页已废弃、待核实或者用户还没有看过；只看业务说明的页，只看一层，没有的是 null", () => {
   const pages: Record<string, { collection: string; fields: Record<string, unknown>; pending: boolean; viewed: boolean }> = {
     "OA-001": { collection: OVERALL_COLLECTION, fields: { 状态: "在用" }, pending: false, viewed: true },
     "OA-002": { collection: OVERALL_COLLECTION, fields: { 状态: "在用" }, pending: true, viewed: false },
@@ -143,7 +143,7 @@ test("整个任务的提到：扫主题页的三块与别的条目的文字字�
   ]);
 });
 
-test("没有总体分析集合的任务（0.4 建的）没有词表，也没有提到", () => {
+test("没有业务说明集合的任务（0.4 建的）没有词表，也没有提到", () => {
   const old = [{ name: "领域说明", fields: [{ name: "标题", type: "文本" }, { name: "内容", type: "文本" }] }, COLLECTIONS[0]];
   assert.equal(hasOverall(old), false);
   const items = [{ item_id: "DN-001", collection: "领域说明", revision_no: 1, fields: { 标题: "预约", 内容: "预约就是预约。" } }, useCase("UC-001", { 用例名称: "预约图书" })];
@@ -157,10 +157,10 @@ test("最低门要看的事实：至少一页在用的主题贴了标签、有�
   const facts = (id: string, fields: Record<string, unknown>, viewed: boolean, pending = false) => pageFacts(id, { 状态: "在用", ...fields }, pending, viewed);
   /** 过不去时的事实层；过得去是 null。 */
   const gate = (pages: Parameters<typeof gateFact>[0]) => gateFact(pages)?.fact ?? null;
-  assert.equal(gate([]), "还没有用户看过的主题：总体分析里还没有一页主题");
+  assert.equal(gate([]), "还没有用户看过的主题：业务说明里还没有一页主题");
   // 有页，用户看过，没有例子。
   assert.equal(gate([facts("OA-001", { 标签: ["概念"] }, true)]),
-    "还没有用户看过的主题：总体分析里还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 OA-001，它还没有例子）");
+    "还没有用户看过的主题：业务说明里还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 OA-001，它还没有例子）");
   // 有页有例子、全部照抄材料所以不待核实，但用户没有看过：过不去。待不待核实不在这道门里。
   assert.match(gate([facts("OA-001", { 标签: ["概念"], 例子: ["小王周六预约了一本书。"] }, false)])!, /最接近的是 OA-001，它用户还没有看过）$/);
   assert.match(gate([facts("OA-001", { 标签: ["概念"], 例子: ["小王周六预约了一本书。"] }, false, true)])!, /最接近的是 OA-001，它用户还没有看过）$/);
@@ -168,10 +168,10 @@ test("最低门要看的事实：至少一页在用的主题贴了标签、有�
   assert.match(gate([facts("OA-001", {}, false), facts("OA-002", { 例子: ["一个例子"] }, true), facts("OA-003", { 标签: ["概念"], 例子: ["例"], 状态: "已废弃" }, true)])!,
     /最接近的是 OA-002，它还没有贴标签）$/);
   assert.match(gate([facts("OA-001", {}, false)])!, /最接近的是 OA-001，它还没有贴标签、还没有例子、用户还没有看过）$/);
-  assert.equal(gate([facts("OA-009", { 标签: ["概念"], 例子: ["例"], 状态: "已废弃" }, true)]), "还没有用户看过的主题：总体分析里还没有一页主题");
+  assert.equal(gate([facts("OA-009", { 标签: ["概念"], 例子: ["例"], 状态: "已废弃" }, true)]), "还没有用户看过的主题：业务说明里还没有一页主题");
   // 合格。
   assert.equal(gate([facts("OA-001", {}, false), facts("OA-002", { 标签: ["流程"], 例子: ["小王周六预约了一本书。"] }, true)]), null);
-  assert.deepEqual([gateFact([])!.code, gateFact([])!.guidance], ["gate.overall_no_viewed_topic", "先在总体分析里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目"]);
+  assert.deepEqual([gateFact([])!.code, gateFact([])!.guidance], ["gate.overall_no_viewed_topic", "先在业务说明里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目"]);
 });
 
 test("用户看没看过：看的是从最近一次助手保存的修订到当前修订这一段；看过之后自己再改仍算，助手再保存就要再看", () => {

@@ -40,7 +40,7 @@ function Panel({ t }: { t: Task }) {
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <Wrap>
-      <ItemsPanel task={t} initialCollection="总体分析" readOnly={false} writesOff={false} recentlyChanged={[]} pendingItems={new Set()} latestRevision={t.latest_revision}
+      <ItemsPanel task={t} initialCollection="业务说明" readOnly={false} writesOff={false} recentlyChanged={[]} pendingItems={new Set()} latestRevision={t.latest_revision}
         selected={selected} onSelect={setSelected} submit={vi.fn(async () => null) as never} onGenerateDoc={() => {}} />
     </Wrap>
   );

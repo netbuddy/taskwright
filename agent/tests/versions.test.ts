@@ -1,6 +1,6 @@
 /**
  * 版本记录（src/lib/versions.ts）与任务库格式 7 升 8 那一步（src/lib/schema.ts 的 addVersionRecords）：
- * 记一次发布写什么、怎样读出各版；早先「已完成」的任务升级时补第 1 版；任务定义里缺「总体分析」集合的早先任务照模板补上。
+ * 记一次发布写什么、怎样读出各版；早先「已完成」的任务升级时补第 1 版；任务定义里缺「业务说明」集合的早先任务照模板补上。
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

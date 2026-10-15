@@ -75,7 +75,7 @@ for (const sample of Object.keys(SAMPLE_TASKS) as (keyof typeof SAMPLE_TASKS)[])
     assert.deepEqual(plan.tasks.map((t) => [t.dir, t.task_id, t.name, t.version]), [[id, id, SAMPLE_TASKS[sample][1], 8]]);
     const { report, registry } = await runUpgrade(plan, { productVersion: "0.6.0" });
     try {
-      assert.deepEqual([report.fatal, report.tasks.map((t) => [t.dir, t.from, t.to, t.ok, t.error, t.notes])], [null, [[id, 8, TASK_DB_VERSION, true, null, ["任务类型改名为「需求工程」：docs/task-definitions/requirements-engineering.json"]]]]);
+      assert.deepEqual([report.fatal, report.tasks.map((t) => [t.dir, t.from, t.to, t.ok, t.error, t.notes])], [null, [[id, 8, TASK_DB_VERSION, true, null, ["任务类型改名为「需求工程」：docs/task-definitions/requirements-engineering.json", "集合「总体分析」改名为「业务说明」：1 个条目，任务目录里 5 份文件"]]]]);
       assert.match(reportText(report), /成功，用了 \d+ 毫秒/);
       const now = facts(taskDir);
       assert.deepEqual({ ...now, tables: undefined }, { ...before, tables: undefined }, "条目、修订、来源、工作项、会话与拒绝记录一条不少");
@@ -103,6 +103,9 @@ for (const sample of Object.keys(SAMPLE_TASKS) as (keyof typeof SAMPLE_TASKS)[])
       })();
       assert.equal(row.definition_path, "docs/task-definitions/requirements-engineering.json");
       assert.equal(row.definition_text, definition, "快照与改过的定义文件逐字相同");
+      // 集合改名：定义里、条目表里都是「业务说明」，任务目录里随任务类型复制来的文件里也不再有旧名。
+      assert.ok(definition.includes('"名称": "业务说明"') && !definition.includes("总体分析"));
+      assert.deepEqual(new DatabaseSync(join(taskDir, DB_NAME), { readOnly: true }).prepare("SELECT DISTINCT collection FROM item").all().map((r: any) => r.collection), ["业务说明"]);
       assert.equal(library.taskDbVersion(join(report.backup!.dir, "tasks", id)), 8, "备份里是升级之前的库");
       // 甲：在那条会话里工作项照旧在澄清；乙：没有工作项，会话空闲。
       assert.equal(library.stageView(taskDir, "session-sample")!.current, withWorkItem ? "clarifying" : "idle");
@@ -120,7 +123,7 @@ for (const sample of Object.keys(SAMPLE_TASKS) as (keyof typeof SAMPLE_TASKS)[])
     }
 
     // 再存一次修订：经子进程调助手一侧真实的保存函数，引用材料里的原话，存一页业务说明。
-    const more = spawnSync(process.execPath, [SAVE_MORE, taskDir, JSON.stringify([[{ op: "add", collection: "总体分析",
+    const more = spawnSync(process.execPath, [SAVE_MORE, taskDir, JSON.stringify([[{ op: "add", collection: "业务说明",
       fields: { 标题: "罚款", 它是什么: "逾期不还的，按馆里的规定罚款。", 状态: "在用" },
       sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "逾期不还的，按馆里的规定罚款。" }] }]])],
       { encoding: "utf-8", env: { ...process.env, [TASKS_ROOT_ENV]: where.tasksDir } });

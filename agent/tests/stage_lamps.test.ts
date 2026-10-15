@@ -15,7 +15,7 @@ const item = (id: string, over: Partial<LampItem> = {}): LampItem => ({ item_id:
 const diagram = (id: string, kind: string, over: Partial<LampDiagram> = {}): LampDiagram =>
   ({ diagram_id: id, kind, sources: [], drawn: [], linked: [], branches: false, viewed: false, ...over });
 const input = (over: Partial<LampInput> = {}): LampInput => ({
-  pages: [], items: [], questions: [], collections: ["功能用例", "非功能需求", "约束", "问题", "总体分析"], materials: [], citedDocuments: [],
+  pages: [], items: [], questions: [], collections: ["功能用例", "非功能需求", "约束", "问题", "业务说明"], materials: [], citedDocuments: [],
   diagrams: [], ruleConflicts: [], review: { failing: [], any: false }, completion: { satisfied: false, unmet: ["「功能用例」至少一个条目：还没有条目。"] }, ...over,
 });
 /** 按键取一盏灯。 */
@@ -170,7 +170,7 @@ test("flows_backed_by_use_cases：每个流程页与场景页被至少一条用�
   assert.deepEqual(brief(lampOf("flows_backed_by_use_cases", { pages, diagrams: charts, items: [item("UC-001", { citesDiagrams: ["D-001", "D-009"] }), item("CON-001", { collection: "约束", citesDiagrams: ["D-002"] })] })),
     [false, ["OA-002"]]);
   assert.equal(lampOf("flows_backed_by_use_cases", { pages: [pages[2]] }).ok, null);
-  const other = lampOf("flows_backed_by_use_cases", { pages, collections: ["用例", "问题", "总体分析"] });
+  const other = lampOf("flows_backed_by_use_cases", { pages, collections: ["用例", "问题", "业务说明"] });
   assert.deepEqual([other.ok, other.summary], [null, "这个任务没有「功能用例」这个集合。"]);
 });
 
@@ -191,7 +191,7 @@ test("basis_pages_viewed 与 no_pending_items：条目依据的页用户都看�
   assert.deepEqual(brief(asked), [true, []]);
   const onlyQuestions = lampOf("no_pending_items", { pages, items: [item("TBD-001", { collection: "问题", pending: true })], questions });
   assert.deepEqual([onlyQuestions.ok, onlyQuestions.summary], [null, "还没有需求条目。"]);
-  // 没有条目依据主题页、总体分析以外没有条目：不适用。
+  // 没有条目依据主题页、业务说明以外没有条目：不适用。
   assert.deepEqual([lampOf("basis_pages_viewed", { pages, items: [item("UC-001")] }).ok, lampOf("no_pending_items", { pages }).ok], [null, null]);
 });
 
@@ -307,7 +307,7 @@ test("chapters_have_intro：有内容的章都要有一页在用、写了说明�
   assert.deepEqual([seven.ok, seven.summary], [false, "有 1 章还没有导语：「决策记录与待澄清事项」。"]);
   // 各章都没有内容、任务定义里没有这个字段：不适用。导语页自己不算内容。
   assert.equal(lampOf("chapters_have_intro", { ...DECLARED, pages: [page("OA-010", { intro: "业务流程" })] }).ok, null);
-  assert.equal(lampOf("chapters_have_intro", { pages }).summary, "任务定义的总体分析里没有「导语所属章」这个字段。");
+  assert.equal(lampOf("chapters_have_intro", { pages }).summary, "任务定义的业务说明里没有「导语所属章」这个字段。");
 });
 
 test("glossary_complete：标签含概念的在用页都写了说明而且不待核实；没有概念页时不适用", () => {

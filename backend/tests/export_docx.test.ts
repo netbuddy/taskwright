@@ -24,7 +24,7 @@ const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭口令登录。" };
-/** 修订 1 是总体分析的一页主题（PAGE）；之后三批：两个用例，再加一条非功能需求，最后删掉那条非功能需求。 */
+/** 修订 1 是业务说明的一页主题（PAGE）；之后三批：两个用例，再加一条非功能需求，最后删掉那条非功能需求。 */
 const PAGE = topicPage("口令", "读者登录时输入的一串字符", SOURCE);
 const BATCHES = [
   [
@@ -66,12 +66,12 @@ test("三个条目跨两个集合：两个标题 1、三个标题 2、三张两�
   // 这个任务没有另起任务名，文件名里用任务类型定义里的名字。
   assert.equal(file.fileName, `${lib.definition["任务名"]}-条目-2026-10-08.docx`);
   const { document } = await unpack(file.data);
-  assert.deepEqual(headings(document, "Heading1"), ["功能用例", "总体分析"]);
+  assert.deepEqual(headings(document, "Heading1"), ["功能用例", "业务说明"]);
   assert.deepEqual(headings(document, "Heading2"), ["UC-001 登录", "UC-002 借出图书", "OA-001 口令"]);
   const all = tables(document);
   assert.equal(all.length, 3);
   for (const table of all) for (const row of table) assert.equal(row.length, 2);
-  // 功能用例声明了 8 个字段，加一行来源；总体分析 10 个字段，加一行来源。字段照声明的先后。
+  // 功能用例声明了 8 个字段，加一行来源；业务说明 10 个字段，加一行来源。字段照声明的先后。
   assert.deepEqual(all[0].map((row) => row[0][0]), ["用例名称", "用例功能", "参与者", "前置条件", "后置条件", "约束规则", "基本流程", "扩展流程", "来源"]);
   assert.deepEqual(all[2].map((row) => row[0][0]), ["标题", "别名", "它是什么", "例子", "已经定下的", "标签", "上级主题", "状态", "改看", "导语所属章", "来源"]);
 });
@@ -139,7 +139,7 @@ test("各种来源的叫法与生成文档相同：知识库写知识库名与�
     "知识库 · 公司规范 / 借阅规范.docx 第 12 段：逾期每册每天罚款 0.5 元",
     "知识库 · lib-gone / 旧规范.md：已经不在的知识库",
     "用户的话 · 会话「第一次整理」里用户的第 2 句话：金额大的要主管复核",
-    "总体分析 · OA-001：读者登录时输入的一串字符",
+    "业务说明 · OA-001：读者登录时输入的一串字符",
     "功能用例 · UC-001：读者登录系统。",
     "条目 · UC-404：找不到的条目",
     "文档原文 · inputs/需求.docx：读者凭借书证借书",
@@ -148,7 +148,7 @@ test("各种来源的叫法与生成文档相同：知识库写知识库名与�
   // 与生成文档里连成一句的写法对着看：种类与出处是同一套叫法。
   assert.equal(sourcesText(changed, "UC-002", revision, words, names),
     "知识库，出处 公司规范 / 借阅规范.docx 第 12 段（「逾期每册每天罚款 0.5 元」）；知识库，出处 lib-gone / 旧规范.md（「已经不在的知识库」）；"
-    + "用户的话，出处 会话「第一次整理」里用户的第 2 句话（「金额大的要主管复核」）；总体分析 OA-001（「读者登录时输入的一串字符」）；"
+    + "用户的话，出处 会话「第一次整理」里用户的第 2 句话（「金额大的要主管复核」）；业务说明 OA-001（「读者登录时输入的一串字符」）；"
     + "功能用例 UC-001（「读者登录系统。」）；条目 UC-404（「找不到的条目」）；"
     + "文档原文，出处 inputs/需求.docx（「读者凭借书证借书」）；助手补充");
 });

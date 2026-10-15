@@ -66,11 +66,11 @@ const itemRows = (dir: string, item: string, revisionNo: number) =>
   query<any>(dir, "SELECT element_kind, kind, locator, excerpt, field, depends_revision FROM item_source WHERE item_id = ? AND revision_no = ? AND kind = '条目' ORDER BY position", item, revisionNo)
     .map((row) => ({ ...row }));
 
-test("真实的任务类型：这个位置上现在是「总体分析」集合（OA，十个字段，不评审），完成条件是每个条目用户确认；没有「领域说明」集合了", () => {
+test("真实的任务类型：这个位置上现在是「业务说明」集合（OA，十个字段，不评审），完成条件是每个条目用户确认；没有「领域说明」集合了", () => {
   const typeDir = resolve(import.meta.dirname, "../../task-types/requirements-engineering");
   const { definition } = loadDefinition(typeDir, "docs/task-definitions/requirements-engineering.json");
   assert.equal(definition.collections.some((c) => c.name === "领域说明"), false);
-  const pages = definition.collections.find((c) => c.name === "总体分析")!;
+  const pages = definition.collections.find((c) => c.name === "业务说明")!;
   assert.equal(pages.prefix, "OA");
   assert.deepEqual(pages.fields.map((f) => [f.name, f.type, f.required]), [
     ["标题", "文本", true], ["别名", "文本列表", false], ["它是什么", "文本", true], ["例子", "文本列表", false], ["已经定下的", "文本列表", false],
@@ -89,7 +89,7 @@ test("真实的任务类型：这个位置上现在是「总体分析」集合�
   assert.deepEqual(pages.fields.find((f) => f.name === "标签")!.values, ["概念", "角色", "流程", "场景", "目标", "范围", "假设", "决定"]);
   assert.deepEqual(pages.fields.filter((f) => f.sameCollection && f.single).map((f) => f.name), ["上级主题", "改看"]);
   assert.equal(pages.reviewRules ?? null, null);
-  assert.deepEqual(definition.completion.总体分析, ["每个条目用户确认"]);
+  assert.deepEqual(definition.completion.业务说明, ["每个条目用户确认"]);
   assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/requirements-engineering.json"), "utf-8")).版本, 4);
 });
 
@@ -199,7 +199,7 @@ test("来源种类「图」：出处不是图的编号、任务里没有这张�
     /第 1 条来源的种类是「图」，出处 D-001 指向的图在这个任务里不存在/);
 });
 
-test("任务 skill 写了总体分析的做法，不出现平台的内部用词", () => {
+test("任务 skill 写了业务说明的做法，不出现平台的内部用词", () => {
   // 任务 skill 里不出现这几个词。
   // 任务 skill 的文字分三份：每个阶段都要用的在 SKILL.md，核读材料与写条目各有一段在旁边的 stages/ 目录里。
   const taskDir = resolve(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering");
@@ -207,10 +207,10 @@ test("任务 skill 写了总体分析的做法，不出现平台的内部用词"
   for (const word of ["节点", "联系", "要素", "依据门", "派生", "投影", "schema"]) {
     assert.ok(!task.includes(word), `任务 skill 里有「${word}」`);
   }
-  assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、总体分析/);
+  assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、业务说明/);
   assert.doesNotMatch(task, /领域说明/);
-  assert.match(task, /各立成总体分析的一页主题（每一块怎样填见上文第 6 条）；材料里的术语定义段落也立成主题，标签贴「概念」/);
-  assert.match(task, /6\. \*\*总体分析的每一页怎样填。\*\*/);
+  assert.match(task, /各立成业务说明的一页主题（每一块怎样填见上文第 6 条）；材料里的术语定义段落也立成主题，标签贴「概念」/);
+  assert.match(task, /6\. \*\*业务说明的每一页怎样填。\*\*/);
   for (const piece of ["一页一个主题", "「标题」写短", "「它是什么」用这件事自己的话写一两段", "有名字的人、具体的东西、具体的日子", "这种不算的例子以「反例：」开头",
     "「已经定下的」一句一条", "「标签」从概念、角色、流程、场景、目标、范围、假设、决定里选", "「上级主题」写它在哪一页之下讨论", "一次保存最多写 4 页主题"]) {
     assert.ok(task.includes(piece), piece);
@@ -218,10 +218,10 @@ test("任务 skill 写了总体分析的做法，不出现平台的内部用词"
   assert.match(task, /例如用户说「我们说的预约保留期[\s\S]*「它是什么」只写到「书到馆后替预约的读者留着的那几天」为止[\s\S]*在「约束规则」里加上「过了保留期还没来取，预约自动取消」/);
 });
 
-test("任务定义的「界面」一项：真实任务类型的总体分析写了右侧栏页签、分组字段、靠前的组与说明；写错时逐条报出", () => {
+test("任务定义的「界面」一项：真实任务类型的业务说明写了右侧栏页签、分组字段、靠前的组与说明；写错时逐条报出", () => {
   const typeDir = resolve(import.meta.dirname, "../../task-types/requirements-engineering");
   const { definition } = loadDefinition(typeDir, "docs/task-definitions/requirements-engineering.json");
-  assert.deepEqual(definition.collections.find((c) => c.name === "总体分析")!.display,
+  assert.deepEqual(definition.collections.find((c) => c.name === "业务说明")!.display,
     { note: "按章整理的业务说明：每一节写它是什么、适用规则、待澄清事项，图与需求条目都归在它说明的那一节。", sideTab: true, groupField: "标签", leadingGroups: ["概念"] });
   assert.equal(definition.collections.find((c) => c.name === "功能用例")!.display, null);
   const withDisplay = (display: unknown) => {

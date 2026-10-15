@@ -35,7 +35,7 @@ HAS_STAGES = (REPO / "agent" / "src" / "lib" / "stage.ts").is_file()
 
 FIRST_WORDS = "帮我把这份需求整理成规格说明。"
 QUOTE = "读者凭借书证借书，每本书可以续借一次。"
-PAGE = {"op": "add", "collection": "总体分析", "sources": [source(QUOTE)],
+PAGE = {"op": "add", "collection": "业务说明", "sources": [source(QUOTE)],
         "fields": {"标题": "借书", "它是什么": QUOTE, "例子": ["读者凭借书证借书", "例外：名下有逾期未还图书的读者不能续借"], "标签": ["流程"], "状态": "在用"}}
 USE_CASE = {"op": "add", "collection": "功能用例", "sources": [{"kind": "条目", "locator": "OA-001", "excerpt": QUOTE}],
             "fields": {"用例名称": "借书", "用例功能": "读者凭借书证借书。", "参与者": ["读者"], "基本流程": ["读者出示借书证", "系统登记借出的图书"]}}
@@ -150,7 +150,7 @@ class StageRunTest(unittest.TestCase):
             # 编写文档的三盏：这份演示脚本没有走到那一段，没有立导语页，也没有问题条目与概念页。
             "chapters_have_intro": "未通过", "glossary_complete": "不适用", "document_no_blocking_questions": "不适用"})
         hits = [(x["部分"], x["组"][0]) for x in result["至少应有"] if x["命中"]]
-        self.assertEqual(hits, [("总体分析·流程页", "借书"), ("例外·借书", "有逾期"), ("功能用例", "借书")])
+        self.assertEqual(hits, [("业务说明·流程页", "借书"), ("例外·借书", "有逾期"), ("功能用例", "借书")])
         # 助手问过的问题按轮对上：第 1 轮提议开始写条目，第 2 轮提议进入评审确认，第 3 轮请确认用例，第 4 轮问是否完成。
         self.assertEqual([(q["轮"], q["功能"]) for q in result["助手问过的问题"]["问题"]], [(1, "请选择"), (2, "请选择"), (3, "请确认"), (4, "请选择")])
         shutil.rmtree(root, ignore_errors=True)

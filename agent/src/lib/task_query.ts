@@ -203,7 +203,7 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
       // 早期版本写下的「用户直接修改」不读出，它的位置号留下的空位去掉。
       .filter(Boolean);
     const lines = itemDetailLines(db, task, definition, itemId, typeof wanted === "number" ? wanted : undefined, workspaceDir);
-    // 待核实与（总体分析的页）被提到的地方：都按条目现在的内容算，看旧内容时不写。
+    // 待核实与（业务说明的页）被提到的地方：都按条目现在的内容算，看旧内容时不写。
     const overall = shown === current ? overallState(db, task.task_id, definition) : null;
     const verification = overall?.verification.get(itemId) ?? null;
     const mentioned = overall?.mentions.get(itemId) ?? [];
@@ -310,7 +310,7 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
     const dialogue = sessionId ? dialogueFacts(db, task.task_id, sessionId) : null;
     const factLines = dialogue ? dialogueFactLines(dialogue) : [];
     if (factLines.length > 0) lines.push("", ...factLines);
-    // 工作的阶段（任务定义里有总体分析集合时才有）：现在在哪个阶段、这一段还差什么，写在最后。
+    // 工作的阶段（任务定义里有业务说明集合时才有）：现在在哪个阶段、这一段还差什么，写在最后。
     const stage = stageSummary(db, workspaceDir, task.task_id, definition, sessionId ?? null);
     // 开着的提议接在后面一行：用户要求进入、退回或者说看过了时，助手据此知道该请他点「待决定」一行，而不是重发卡片。
     if (stage) lines.push("", ...stageLines(stage), proposalLine(openProposal(db, task.task_id, sessionId ?? null), sessionId ?? null));

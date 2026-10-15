@@ -13,11 +13,12 @@
  * 因为设计里把它列为这两张表的主要列。
  */
 
-import { existsSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath, inImmediateTransaction } from "./db.ts";
 import { ensureDialogueSchema } from "./dialogue_schema.ts";
+import { reviewSpecOf, rulesHash } from "./review_state.ts";
 
 /**
  * 忙等待超时（busy timeout）：遇到别的连接占着锁时，最多等这么多毫秒再放弃。
@@ -245,7 +246,7 @@ ${diagramVersionSql("diagram_version", true)}`;
  * 工作项记着：现在做的是哪一项活动、在哪条流程的哪一站、谁在什么时候为什么启动、范围说明。工作项没有终点：它是任务里长期存在的一条线，
  * 不要了由用户删除（删掉这一行，它的会话归档，见下面的 work_item_session）。
  * 会话指向工作项：助手在一条会话里能写什么，看这条会话指向的工作项，不看任务；一个任务可以同时有几个工作项，其中流程的工作项至多一个。
- * 只有任务定义里有「总体分析」集合的任务才会有行。
+ * 只有任务定义里有「业务说明」集合的任务才会有行。
  * 活动用英文写法存（reading、clarifying、modeling、writing、reviewing、document），与事件、接口里的写法相同；
  * 有哪几项只在代码里判（lib/stage.ts 的 STAGES），库不检查取值。
  * 流程的工作项：flow 写流程的键（现在只有 analysis，需求分析），node 写现在在哪一站，activity 写这一站上的那项活动；
@@ -525,7 +526,7 @@ export function taskWrittenBy(workspaceDir: string): string | null {
  * 中途出错整体回退，库与版本号都还是升级之前的样子。
  */
 const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync, ctx: UpgradeContext) => void }[] = [
-  { from: 8, to: 9, run: (db, ctx) => { addRejectionReasons(db); renameTaskType(db, ctx); } },
+  { from: 8, to: 9, run: (db, ctx) => { addRejectionReasons(db); renameTaskType(db, ctx); renameOverallCollection(db, ctx); } },
 ];
 
 /**
@@ -620,6 +621,86 @@ function renameTaskType(db: DatabaseSync, ctx: UpgradeContext): void {
     }
   }
   if (moved.length) ctx.notes.push(`任务类型改名为「${TASK_TYPE_NAME}」：${moved.join("、")}`);
+}
+
+/** 集合改名（格式 9 起）：「总体分析」改为与页面一致的「业务说明」。集合名就是键；编号前缀 OA 不变。 */
+const OLD_OVERALL_COLLECTION = "总体分析";
+const OVERALL_COLLECTION_NAME = "业务说明";
+
+/** 任务目录里随任务类型复制来的文本文件（docs/ 与 .pi/skills/ 下的 .md 与 .json）；材料目录不在其中。 */
+function taskTypeTextFiles(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (at: string) => {
+    if (!existsSync(at)) return;
+    for (const one of readdirSync(at, { withFileTypes: true })) {
+      const full = join(at, one.name);
+      if (one.isDirectory()) walk(full);
+      else if (one.isFile() && /\.(md|json)$/i.test(one.name)) out.push(full);
+    }
+  };
+  walk(join(dir, "docs"));
+  walk(join(dir, ".pi", "skills"));
+  return out.sort();
+}
+
+/** 定义原文里各个要评审的集合与它们的评审规矩。 */
+function reviewedCollections(definitionText: string): Map<string, NonNullable<ReturnType<typeof reviewSpecOf>>> {
+  const out = new Map<string, NonNullable<ReturnType<typeof reviewSpecOf>>>();
+  let raw: { 交付物?: { 条目集合?: { 名称?: unknown }[] } } | null = null;
+  try {
+    raw = JSON.parse(definitionText);
+  } catch {
+    return out;
+  }
+  for (const one of raw?.交付物?.条目集合 ?? []) {
+    const name = typeof one?.名称 === "string" ? one.名称 : null;
+    const spec = name ? reviewSpecOf(definitionText, name) : null;
+    if (name && spec) out.set(name, spec);
+  }
+  return out;
+}
+
+/**
+ * 第 8 到 9 步之三：集合「总体分析」改名「业务说明」。库里：定义快照里的集合名、条目表的集合列、事件内容里值正好是「总体分析」的字符串。
+ * 任务目录里（有 ctx.workspaceDir 时）：随任务类型复制来的文本文件里的这个词（材料不动）。评审规则文件随之改了字，规则指纹跟着变：
+ * 改之前先按各集合的规矩算一遍旧指纹，改完再算新指纹，把评审记录里的旧指纹换成新的，已有的评审仍算作当前规则下评的。
+ * 每一样都先看是不是还是旧的，重复做不出错。
+ */
+function renameOverallCollection(db: DatabaseSync, ctx: UpgradeContext): void {
+  const row = db.prepare("SELECT task_id, definition_text FROM task LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
+  const dir = ctx.workspaceDir;
+  const before = new Map<string, string>();
+  if (row && dir) {
+    for (const [name, spec] of reviewedCollections(row.definition_text)) {
+      const hash = rulesHash(dir, spec);
+      if (hash) before.set(name, hash);
+    }
+  }
+  if (row && row.definition_text.includes(OLD_OVERALL_COLLECTION)) {
+    db.prepare("UPDATE task SET definition_text = ? WHERE task_id = ?").run(row.definition_text.replaceAll(OLD_OVERALL_COLLECTION, OVERALL_COLLECTION_NAME), row.task_id);
+  }
+  const items = Number(db.prepare("UPDATE item SET collection = ? WHERE collection = ?").run(OVERALL_COLLECTION_NAME, OLD_OVERALL_COLLECTION).changes);
+  db.prepare("UPDATE event SET payload = REPLACE(payload, ?, ?) WHERE instr(payload, ?) > 0")
+    .run(`"${OLD_OVERALL_COLLECTION}"`, `"${OVERALL_COLLECTION_NAME}"`, `"${OLD_OVERALL_COLLECTION}"`);
+  if (!dir) return;
+  let files = 0;
+  for (const file of taskTypeTextFiles(dir)) {
+    const text = readFileSync(file, "utf-8");
+    if (!text.includes(OLD_OVERALL_COLLECTION)) continue;
+    writeFileSync(file, text.replaceAll(OLD_OVERALL_COLLECTION, OVERALL_COLLECTION_NAME), "utf-8");
+    files += 1;
+  }
+  const now = db.prepare("SELECT definition_text FROM task LIMIT 1").get() as { definition_text: string } | undefined;
+  if (now) {
+    for (const [name, spec] of reviewedCollections(now.definition_text)) {
+      const old = before.get(name);
+      const hash = rulesHash(dir, spec);
+      if (old && hash && old !== hash) {
+        db.prepare("UPDATE review SET rules_hash = ? WHERE rules_hash = ? AND item_id IN (SELECT item_id FROM item WHERE collection = ?)").run(hash, old, name);
+      }
+    }
+  }
+  if (items || files) ctx.notes.push(`集合「${OLD_OVERALL_COLLECTION}」改名为「${OVERALL_COLLECTION_NAME}」：${items} 个条目，任务目录里 ${files} 份文件`);
 }
 
 /**

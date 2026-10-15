@@ -4,7 +4,7 @@
  *
  * 看到什么：执行者新说的话（回复的告知、主行为、成文正文，以及可以点的按钮）、
  * 条目区现状（各集合条目数、每个条目的编号与标题；给编号时看这个条目的字段）。不给完成条件、材料原文、条目改动过的修订。
- * 总体分析这个集合在条目区里写成提纲：每页一行，写标题、标签，以及这一页现在的样子用户看没看过、有没有助手补的内容等着确认。
+ * 业务说明这个集合在条目区里写成提纲：每页一行，写标题、标签，以及这一页现在的样子用户看没看过、有没有助手补的内容等着确认。
  * 助手画的图另列一段：每张一行，写图名、种类、画自哪几页、现在这一版用户看没看过；给图的编号时看这张图的说明与 Mermaid 文本。
  */
 
@@ -208,8 +208,8 @@ export interface Item {
   depended_by?: { element_kind: string; id: string }[];
 }
 
-/** 总体分析这个集合的名字与它的几个字段名，与 agent/src/lib/overall_analysis.ts 一致。 */
-export const OVERALL = "总体分析";
+/** 业务说明这个集合的名字与它的几个字段名，与 agent/src/lib/overall_analysis.ts 一致。 */
+export const OVERALL = "业务说明";
 const TAGS_FIELD = "标签";
 const STATUS_FIELD = "状态";
 const DEPRECATED = "已废弃";
@@ -230,7 +230,7 @@ export function viewedNow(item: Item): boolean {
 
 /**
  * 用户打开一个条目时要不要记为已读（返回要记的目标，不记时为 null），与网页同一个规矩（web/src/model/overall.ts 的 viewOnOpen）：
- * 别的条目打开就记；总体分析里待核实的页打开时不记——记了它就不再待核实，而助手补的那几处用户也许还没有看。
+ * 别的条目打开就记；业务说明里待核实的页打开时不记——记了它就不再待核实，而助手补的那几处用户也许还没有看。
  * confirm 为真相当于在那一页上点了「确认待核实的 N 处」（网页的 confirmAction）：在它现在所在的修订上记一条已读。
  */
 export function viewOnLook(task: TaskView | null | undefined, itemId: string, confirm = false): { item_id: string; base_revision: number } | null {
@@ -334,7 +334,7 @@ function valueText(value: unknown): string {
 
 /**
  * 条目区：各集合几个条目、每个条目的编号与标题；给了编号就只看这一个条目的字段。
- * confirm 只对总体分析里待核实的页有意义：为真是确认这一页上助手补的几处，为假时只是看，并写明还有哪几处等着确认。
+ * confirm 只对业务说明里待核实的页有意义：为真是确认这一页上助手补的几处，为假时只是看，并写明还有哪几处等着确认。
  */
 export function renderItems(task: TaskView | null, itemId?: string, confirm = false): string {
   if (!task) return "条目区：还没有任务。";
@@ -358,7 +358,7 @@ export function renderItems(task: TaskView | null, itemId?: string, confirm = fa
   for (const c of task.definition.collections) {
     const items = task.items.filter((i) => i.collection === c.name);
     if (c.name === OVERALL) {
-      // 总体分析写成提纲：一页一行，让人知道有哪些页可以看、哪一页还等着确认。
+      // 业务说明写成提纲：一页一行，让人知道有哪些页可以看、哪一页还等着确认。
       lines.push(`  ${c.name} ${items.length} 页${items.length ? "：" : ""}`);
       for (const item of items) lines.push(`    ${outlineLine(item)}`);
       continue;
@@ -387,7 +387,7 @@ export interface Diagram {
 const FIGURE = "图";
 const ITEM_SOURCE = "条目";
 
-/** 一张图画自哪几页：把它写成来源的总体分析的页（每一页的 depended_by），照条目区里的先后。与网页把图放进节里用的是同一份数据。 */
+/** 一张图画自哪几页：把它写成来源的业务说明的页（每一页的 depended_by），照条目区里的先后。与网页把图放进节里用的是同一份数据。 */
 export function sourcePagesOf(task: TaskView | null | undefined, diagramId: string): string[] {
   return (task?.items ?? []).filter((item) => item.collection === OVERALL && (item.depended_by ?? []).some((one) => one.element_kind === FIGURE && one.id === diagramId))
     .map((item) => item.item_id);

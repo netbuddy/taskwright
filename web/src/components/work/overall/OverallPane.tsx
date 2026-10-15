@@ -1,4 +1,4 @@
-// 条目区停在「业务说明」页签（总体分析这个集合）时的主体：左边是目录，右边是一节，或者一章的章首页。
+// 条目区停在「业务说明」页签时的主体：左边是目录，右边是一节，或者一章的章首页。
 // 目录可以收成一条竖着的把手（做法与右侧栏相同：点把手展开、点「收起」收起）。条目区很窄时（样式里按条目区的宽度判断，
 // 阈值 48rem）目录缺省收着，点把手后盖在右边的内容上面，点了一节或一章就自己收起。
 // 还没有点任何一节时，右边是这个集合的一句说明与总计；不替用户打开第一节。
@@ -46,7 +46,7 @@ export function OverallPane({ task, host, selected, onSelect, page, readOnly = f
   const side = useRef<HTMLDivElement>(null);
   const def = overallDef(task);
   const sum = totals(task);
-  // 复述一遍：打开着一页就讲它与它下面的主题，没有打开就讲整个总体分析。
+  // 复述一遍：打开着一页就讲它与它下面的主题，没有打开就讲整个业务说明。
   const current = task.items.find((i) => i.item_id === selected) ?? null;
   const retell = onSend ? () => onSend(retellText(current ? titleOf(current) : null)) : undefined;
   const retellOff = writeOffReason(task, { readOnly, writesOff });

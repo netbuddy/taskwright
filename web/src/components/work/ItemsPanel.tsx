@@ -49,7 +49,7 @@ import { SectionPage } from "./overall/SectionPage";
 import { FigureBlocks, type FigureHost } from "./overall/Figure";
 import type { HeadView } from "./overall/Contents";
 import { SectionLinks } from "./overall/SectionLinks";
-import { OVERALL_COLLECTION, collectionLabel, isOverall } from "../../model/overall";
+import { OVERALL_COLLECTION, isOverall } from "../../model/overall";
 import { figureHome } from "../../model/sectionDiagrams";
 import { toc, tocOrder } from "../../model/chapters";
 import { useToast } from "../Toasts";
@@ -69,7 +69,7 @@ export function ItemsPanel({
   initialCollection?: string | null;
   /** 一打开就停在「分析模型」页签（地址里的 tab=diagrams）。 */
   initialDiagrams?: boolean;
-  /** 一打开就打开这张图（地址里的 diagram=D-001）；有总体分析的任务打开它所在的节或章首并滚到它。 */
+  /** 一打开就打开这张图（地址里的 diagram=D-001）；有业务说明的任务打开它所在的节或章首并滚到它。 */
   initialDiagram?: string | null;
   /** 任务已结束或助手不可用：一切写入都不能做。 */
   readOnly: boolean;
@@ -125,7 +125,7 @@ export function ItemsPanel({
   /** 「文档与版本」页签版本表里点「修订 N」：在右侧栏修订页签里选中那次修订。 */
   onShowRevision?: (revision: number) => void;
 }) {
-  // 页签的次序：有总体分析集合时它排最前（model/itemsTab.ts）。
+  // 页签的次序：有业务说明集合时它排最前（model/itemsTab.ts）。
   const collections = useMemo(() => tabOrder(task.definition.collections), [task.definition.collections]);
   const selectedItem = task.items.find((i) => i.item_id === selected);
   // 集合的初值：选中的条目所在的集合；地址里要看的一张图（业务说明）或带的集合；这个任务上次停的集合；都没有时，
@@ -175,7 +175,7 @@ export function ItemsPanel({
   const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(null);
   const [dirty, setDirty] = useState(false);
   const activeTab = selectedItem?.collection ?? tab;
-  // 停在「业务说明」页签（总体分析这个集合）：主体不是列表，是目录加一节（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
+  // 停在「业务说明」页签：主体不是列表，是目录加一节（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
   const onCollection = pane === "description" || pane === "items";
   const onOverall = pane === "description" && isOverall(activeTab);
   // 停在需求条目页签的列表上才有筛选、未读提示与批量条。
@@ -355,7 +355,7 @@ export function ItemsPanel({
           {collections.filter((c) => !isOverall(c.name)).map((c) => (
             <span key={c.name} className={`itab${c.name === activeTab ? " on" : ""}`} role="tab"
               onClick={() => { setTab(c.name); onSelect(null); }}>
-              {collectionLabel(c.name)}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
+              {c.name}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>
               {hit && hitsIn(c.name) > 0 && <span className="sw-hitn" title={`修订 ${hit.revision} 碰到这个页签里 ${hitsIn(c.name)} 个条目`} data-testid={`hit-count-${c.name}`}>{hitsIn(c.name)}</span>}
             </span>
           ))}

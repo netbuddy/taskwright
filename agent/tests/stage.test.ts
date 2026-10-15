@@ -104,7 +104,7 @@ test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么�
   assert.equal(publishRefusal("reviewing"), null);
 });
 
-test("总体分析的页：前四个阶段随便写；评审确认阶段只能改状态与改看，不能新立、不能删", () => {
+test("业务说明的页：前四个阶段随便写；评审确认阶段只能改状态与改看，不能新立、不能删", () => {
   for (const stage of ["reading", "clarifying", "modeling", "writing"] as const) {
     assert.deepEqual([pageRefusal(stage, "add"), pageRefusal(stage, "update", ["它是什么"]), pageRefusal(stage, "delete")], [null, null, null]);
   }

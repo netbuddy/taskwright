@@ -116,14 +116,14 @@ export function makeTypedTask(root: string, taskType: string, materials: Record<
   return ws;
 }
 
-/** 一页总体分析的主题（新增操作）：标题、它是什么，例子取它是什么，贴一个标签，状态在用。source 是它的来源。 */
+/** 一页业务说明的主题（新增操作）：标题、它是什么，例子取它是什么，贴一个标签，状态在用。source 是它的来源。 */
 export function topicPage(title: string, what: string, source: unknown, tags: string[] = ["概念"]): Record<string, unknown> {
-  return { op: "add", collection: "总体分析", fields: { 标题: title, 它是什么: what, 例子: [what], 标签: tags, 状态: "在用" }, sources: [source] };
+  return { op: "add", collection: "业务说明", fields: { 标题: title, 它是什么: what, 例子: [what], 标签: tags, 状态: "在用" }, sources: [source] };
 }
 
 /**
  * 用现行任务类型（requirements-engineering）建一个任务目录，给只测与任务类型无关的机制（依据已变、导出、图）的测试用：
- * 任务移到写条目之后，先保存 pages 这一批（总体分析的几页主题，修订 1），再让用户看过这几页——写条目之前要有一页
+ * 任务移到写条目之后，先保存 pages 这一批（业务说明的几页主题，修订 1），再让用户看过这几页——写条目之前要有一页
  * 贴了标签、写了例子、用户看过的主题——然后照 makeTypedTask 写其余几批。主题的编号依次是 OA-001、OA-002……
  */
 export function makePagedTask(root: string, materials: Record<string, string>, pages: unknown[], batches: unknown[]): string {

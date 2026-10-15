@@ -17,7 +17,7 @@ const item = (id: string, more: Partial<LampItem> = {}): LampItem => ({ item_id:
 const question = (id: string, open: boolean): LampQuestion => ({ item_id: id, open, related: [], unresolved: open, blocking: false });
 const diagram = (id: string, viewed: boolean): LampDiagram => ({ diagram_id: id, kind: "flowchart", sources: [], drawn: [], linked: [], branches: true, viewed });
 const input = (more: Partial<LampInput> = {}): LampInput => ({
-  pages: [], items: [], questions: [], collections: ["总体分析", "功能用例", "问题"], materials: [], citedDocuments: [], diagrams: [], ruleConflicts: [],
+  pages: [], items: [], questions: [], collections: ["业务说明", "功能用例", "问题"], materials: [], citedDocuments: [], diagrams: [], ruleConflicts: [],
   review: { failing: [], any: false, rounds: 0 }, completion: { satisfied: false, unmet: [] }, ...more,
 });
 const EMPTY: AssetFacts = {

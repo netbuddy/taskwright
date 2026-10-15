@@ -15,7 +15,7 @@ import { DEFINITION, SOURCE, build } from "./overall_stack.ts";
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-/** 带总体分析的演示任务定义，再加一个有「是否阻断下游」字段的问题集合，照产品的任务类型。 */
+/** 带业务说明的演示任务定义，再加一个有「是否阻断下游」字段的问题集合，照产品的任务类型。 */
 const WITH_BLOCKING = { ...DEFINITION, 交付物: { ...DEFINITION.交付物, 条目集合: [...DEFINITION.交付物.条目集合, {
   名称: "问题", 编号前缀: "Q", 字段: [
     { 名: "事项", 类型: "文本", 必填: true }, { 名: "种类", 类型: "枚举", 必填: true, 取值: ["待澄清", "待定"] },

@@ -126,14 +126,14 @@ test("提问挂在条目上时与前端一样有「先不管」与「我不知�
 });
 
 const page = (id: string, title: string, more: Record<string, unknown> = {}) => ({
-  item_id: id, collection: "总体分析", title, revision_no: 2, fields: { 标题: title, 标签: [], 状态: "在用" }, ...more,
+  item_id: id, collection: "业务说明", title, revision_no: 2, fields: { 标题: title, 标签: [], 状态: "在用" }, ...more,
 });
 const overallTask = (items: ReturnType<typeof page>[]) => ({
-  definition: { collections: [{ name: "功能用例", fields: [{ name: "用例名称" }] }, { name: "总体分析", fields: [{ name: "标题" }, { name: "标签" }, { name: "状态" }] }] },
+  definition: { collections: [{ name: "功能用例", fields: [{ name: "用例名称" }] }, { name: "业务说明", fields: [{ name: "标题" }, { name: "标签" }, { name: "状态" }] }] },
   items: [{ item_id: "UC-001", collection: "功能用例", title: "借书", revision_no: 1, fields: { 用例名称: "借书" }, viewed: false }, ...items],
 });
 
-test("总体分析在条目区里写成提纲：每页一行，写标签与四种状态之一；别的集合照旧", () => {
+test("业务说明在条目区里写成提纲：每页一行，写标签与四种状态之一；别的集合照旧", () => {
   const seen = { revision_no: 2, accepted: true, basis: "viewed" };
   const text = renderItems(overallTask([
     page("OA-001", "借书", { fields: { 标题: "借书", 标签: ["流程"], 状态: "在用" }, confirmations: [seen], viewed: true }),
@@ -144,13 +144,13 @@ test("总体分析在条目区里写成提纲：每页一行，写标签与四�
   assert.equal(text, [
     "条目区：",
     "  功能用例 1 个：UC-001「借书」（未读）",
-    "  总体分析 4 页：",
+    "  业务说明 4 页：",
     "    OA-001「借书」〔流程〕：你看过现在这一版了",
     "    OA-002「读者」〔角色、概念〕：你还没看过现在这一版",      // 看过的是修订 1，现在是修订 2
     "    OA-003「预约保留期」：有 2 处是助手补的，等你确认",
     "    OA-004「旧说法」〔概念〕：已废弃",
   ].join("\n"));
-  assert.equal(renderItems(overallTask([])).split("\n")[2], "  总体分析 0 页");
+  assert.equal(renderItems(overallTask([])).split("\n")[2], "  业务说明 0 页");
 });
 
 test("看没看过现在这一版：只看当前修订上最近一条不是亲手改的标记；待核实的处数与网页同一个算法", () => {
@@ -180,7 +180,7 @@ test("打开一个条目记不记已读与网页同一个规矩：待核实的�
   assert.equal(viewOnLook(task, "OA-009"), null);
   // 看到的文字：待核实的页写明还有哪几处等确认、怎样确认；确认之后写确认了几处。
   const looked = renderItems(task, "OA-002");
-  assert.match(looked, /^OA-002「预约保留期」，集合「总体分析」，修订 2（你正在看它现在的内容）：/);
+  assert.match(looked, /^OA-002「预约保留期」，集合「业务说明」，修订 2（你正在看它现在的内容）：/);
   assert.match(looked, /\n这一页有 2 处是助手补的，还没有确认：「例子」第 1 项、「它是什么」。你看了觉得对，就再看一次这一页并把 confirm 设为 true；觉得不对，直接说哪里不对。$/);
   const confirmed = renderItems(task, "OA-002", true);
   assert.match(confirmed, /修订 2（你正在看它现在的内容，并确认了助手补的 2 处）：/);

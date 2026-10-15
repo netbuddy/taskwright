@@ -1,11 +1,11 @@
 /**
- * 工作的阶段：任务定义里有「总体分析」集合的任务，工作分六个阶段——核读材料、澄清、整理建模、写条目、评审确认、编写文档。
+ * 工作的阶段：任务定义里有「业务说明」集合的任务，工作分六个阶段——核读材料、澄清、整理建模、写条目、评审确认、编写文档。
  * 阶段由用户或助手的动作移动，每次移动留一条记录；助手每次调用写入工具时能写什么，由最近一条记录决定。
  *
  * 本文件只放不读库的东西：六个阶段的名字与次序、谁能从哪里移到哪里、每个阶段助手能写什么与被拦时的原话、
  * 提议进入写条目的那张卡片的两个选项，以及每个阶段「这一段还差什么」的几盏灯（一共二十一盏）怎样算。读写库的在 lib/stage_read.ts。
  *
- * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，这里的一切对它们都不生效；判据是 overall_analysis.ts 的 hasOverall。
+ * 早先建的任务（任务定义里没有「业务说明」集合）没有阶段，这里的一切对它们都不生效；判据是 overall_analysis.ts 的 hasOverall。
  *
  * 本文件除了 overall_analysis.ts 与 overall_chapters.ts（它也只导入前者）不导入别的模块：助手的工具、后端的快照都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
  */
@@ -62,7 +62,7 @@ export function stageByName(name: unknown): Stage | null {
 /**
  * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它已经归档（它的工作项被删除了）。它不是一个阶段，
  * 不排在 STAGES 的次序里，也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「这条会话现在在哪里」的那几处。它与 null 不是一回事：
- * null 是早先建的任务（任务定义里没有「总体分析」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
+ * null 是早先建的任务（任务定义里没有「业务说明」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
  * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED）。启动哪一项活动由用户在任务起点页上定。
  */
 export const IDLE = "idle";
@@ -177,7 +177,7 @@ export const STAGE_PARAM_RETIRED: Refusal = refusalText("reply.stage_param_retir
 });
 
 /**
- * 总体分析还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
+ * 业务说明还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
  * 页面点了按钮先把任务移到那个阶段、再发这一句；它们不是用户自己打的字，整理用户说过的话时要认出来。
  */
 export const STAGE_START_TEXTS = {
@@ -396,7 +396,7 @@ export function launchView(facts: LaunchFacts): LaunchView {
 
 /**
  * 助手的一次写入属于哪一类：
- * page 总体分析的页；problem 问题条目；diagram 图；item 别的集合的条目（用例、非功能需求、约束这一类）；
+ * page 业务说明的页；problem 问题条目；diagram 图；item 别的集合的条目（用例、非功能需求、约束这一类）；
  * review 请求评审；publish 发布版本。
  */
 export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "publish";
@@ -446,7 +446,7 @@ function howToReachWriting(): string {
 }
 
 /**
- * 助手新增、修改或删除别的集合（不是总体分析、也不是问题）的条目：写条目之前的阶段都拦，空闲时也拦。
+ * 助手新增、修改或删除别的集合（不是业务说明、也不是问题）的条目：写条目之前的阶段都拦，空闲时也拦。
  * 可以写时返回 null。
  */
 export function itemRefusal(stage: Position, op: string, collection: string): Refusal | null {
@@ -458,7 +458,7 @@ export function itemRefusal(stage: Position, op: string, collection: string): Re
 }
 
 /**
- * 助手新增、修改或删除总体分析的一页：前四个阶段与空闲时都可以；评审确认阶段只能改「状态」与「改看」两个字段，
+ * 助手新增、修改或删除业务说明的一页：前四个阶段与空闲时都可以；评审确认阶段只能改「状态」与「改看」两个字段，
  * 不能新立页、不能删页。changed 是修改时这次改动了的字段名。可以写时返回 null。
  */
 export function pageRefusal(stage: Position, op: string, changed: readonly string[] = []): Refusal | null {
@@ -593,7 +593,7 @@ export interface LampDiagram {
   marked?: boolean;
 }
 
-/** 算灯要的一个条目（总体分析以外的集合里的，含问题条目）。 */
+/** 算灯要的一个条目（业务说明以外的集合里的，含问题条目）。 */
 export interface LampItem {
   item_id: string;
   collection: string;
@@ -624,16 +624,16 @@ export interface LampQuestion {
 
 /** 算灯要的全部事实。助手一侧与后端各自从任务库里读出来填，算法只在这里。 */
 export interface LampInput {
-  /** 总体分析的全部页，含已废弃的。 */
+  /** 业务说明的全部页，含已废弃的。 */
   pages: LampPage[];
-  /** 总体分析以外各集合的条目，含问题条目。 */
+  /** 业务说明以外各集合的条目，含问题条目。 */
   items: LampItem[];
   questions: LampQuestion[];
   /** 任务定义里的集合名。 */
   collections: string[];
   /** 材料清单里不是由别的文件生成的文件，写它在任务目录里的路径（例如 inputs/需求.md）。 */
   materials: string[];
-  /** 总体分析的页与问题条目当前修订上「文档原文」来源的出处，原样（可以带 # 后面的位置）。 */
+  /** 业务说明的页与问题条目当前修订上「文档原文」来源的出处，原样（可以带 # 后面的位置）。 */
   citedDocuments: string[];
   /** 任务里还在的图。 */
   diagrams: LampDiagram[];
@@ -644,7 +644,7 @@ export interface LampInput {
   /** 完成条件：是不是全部满足；没满足的各条的说明。 */
   completion: { satisfied: boolean; unmet: string[] };
   /**
-   * 任务定义里有没有声明这两个字段：总体分析的「导语所属章」、问题集合的「是否阻断下游」。早先建的任务的定义里没有，
+   * 任务定义里有没有声明这两个字段：业务说明的「导语所属章」、问题集合的「是否阻断下游」。早先建的任务的定义里没有，
    * 与它们有关的灯是不适用。没有给当作都没有。
    */
   declared?: { intro: boolean; blocking: boolean };
@@ -790,7 +790,7 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   }
   const clashes = [...owners].filter(([, ids]) => ids.length > 1);
   const clashing = [...new Set(clashes.flatMap(([, ids]) => ids))];
-  const noDuplicates = live.length === 0 ? lamp("no_duplicate_titles", null, "总体分析里还没有主题。")
+  const noDuplicates = live.length === 0 ? lamp("no_duplicate_titles", null, "业务说明里还没有主题。")
     : clashes.length === 0 ? lamp("no_duplicate_titles", true, "没有两页主题的标题或别名相同。")
       : lamp("no_duplicate_titles", false,
         `有 ${clashes.length} 个标题或别名被两页以上的主题用了：${clashes.map(([word, ids]) => `「${word}」（${list(ids)}）`).join("、")}。`, clashing);
@@ -798,7 +798,7 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   // 整理建模：没有未归类的页。用户明说先不归类的，程序认不出，只看标签。
   // 导语页不贴标签，不算没归类。
   const loose = live.filter((one) => one.tags.length === 0 && !one.intro);
-  const noUntagged = live.length === 0 ? lamp("no_untagged_pages", null, "总体分析里还没有主题。")
+  const noUntagged = live.length === 0 ? lamp("no_untagged_pages", null, "业务说明里还没有主题。")
     : loose.length === 0 ? lamp("no_untagged_pages", true, "每页主题都贴了标签。")
       : lamp("no_untagged_pages", false, `有 ${loose.length} 页主题还没有贴标签：${list(loose.map((one) => one.item_id))}。`, loose.map((one) => one.item_id));
 
@@ -867,7 +867,7 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
     || (chapter.no === CHAPTER_RULES && settledTotal > 0)
     || (chapter.no === CHAPTER_DECISIONS && (tagged(TAG_DECISION).length > 0 || input.questions.some((one) => one.unresolved))));
   const bare = filled.filter((chapter) => !live.some((one) => one.intro === chapter.name && one.what));
-  const chaptersIntro = !input.declared?.intro ? lamp("chapters_have_intro", null, "任务定义的总体分析里没有「导语所属章」这个字段。")
+  const chaptersIntro = !input.declared?.intro ? lamp("chapters_have_intro", null, "任务定义的业务说明里没有「导语所属章」这个字段。")
     : filled.length === 0 ? lamp("chapters_have_intro", null, "业务说明的各章都还没有内容。")
       : bare.length === 0 ? lamp("chapters_have_intro", true, "有内容的章都有导语。")
         : lamp("chapters_have_intro", false, `有 ${bare.length} 章还没有导语：${bare.map((chapter) => `「${chapter.name}」`).join("、")}。`);

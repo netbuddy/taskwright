@@ -268,7 +268,7 @@ export function completionBrief(results: ConditionResult[], listAtMost = 6): str
 
 /**
  * 完成条件之外的提示：由事实算出来给人看，不挡发布版本。现在只有一种：
- * - untagged_overall_pages：「总体分析」集合里在用而还没有贴标签的主题。
+ * - untagged_overall_pages：「业务说明」集合里在用而还没有贴标签的主题。
  */
 export interface CompletionHint {
   kind: "untagged_overall_pages";
@@ -279,7 +279,7 @@ export interface CompletionHint {
   summary: string;
 }
 
-/** 总体分析里在用而还没有贴标签的主题，按流水号排。任务没有这个集合、或者里面没有条目时是空的。 */
+/** 业务说明里在用而还没有贴标签的主题，按流水号排。任务没有这个集合、或者里面没有条目时是空的。 */
 export function untaggedPages(db: DatabaseSync, taskId: string): string[] {
   return currentItems(db, taskId, OVERALL_COLLECTION).filter((row) => {
     const fields = load(row.fields) as Record<string, unknown>;
@@ -288,7 +288,7 @@ export function untaggedPages(db: DatabaseSync, taskId: string): string[] {
 }
 
 /**
- * 完成条件面板另列的提示。完成条件里有「总体分析」集合时算还没有贴标签的主题。
+ * 完成条件面板另列的提示。完成条件里有「业务说明」集合时算还没有贴标签的主题。
  */
 export function completionHints(db: DatabaseSync, taskId: string, completion: Record<string, string[]>): CompletionHint[] {
   const out: CompletionHint[] = [];

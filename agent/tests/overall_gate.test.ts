@@ -1,8 +1,8 @@
 /**
- * 保存修订里与总体分析有关的两道门：
+ * 保存修订里与业务说明有关的两道门：
  * - 最低门：助手往别的集合里新增条目之前，任务里要已经有一页在用的主题贴了标签、有例子、用户又看过；
  * - 条目的依据不能是已废弃的主题，写了改看的指给助手看。
- * 没有总体分析集合的任务（0.4 建的）不设最低门。
+ * 没有业务说明集合的任务（0.4 建的）不设最低门。
  */
 
 import assert from "node:assert/strict";
@@ -14,7 +14,7 @@ import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, makeWorkspace, 
 
 const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
-  ({ op: "add", collection: "总体分析", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
+  ({ op: "add", collection: "业务说明", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
 const useCase = (name = "预约图书", sources: unknown[] = [SOURCE]) => ({ op: "add", collection: "用例", fields: { 名称: name, 步骤: ["选书", "预约"] }, sources });
 const problem = () => ({ op: "add", collection: "问题", fields: { 事项: "闭馆日算不算在保留期内？", 状态: "未解决" }, sources: [SOURCE] });
 const EXAMPLE = "小王周六预约了《算法导论》，周二来取。";
@@ -44,7 +44,7 @@ test("最低门的四种情形：没有页；有页没有例子；有页有例�
   const dir = workspace();
   // 一页都没有。
   assert.match(refusal(dir, [useCase()])!,
-    /还没有用户看过的主题：总体分析里还没有一页主题[^]*怎么办：先在总体分析里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目/);
+    /还没有用户看过的主题：业务说明里还没有一页主题[^]*怎么办：先在业务说明里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目/);
   assert.equal(count(dir, "item"), 0, "整批没有写入");
   // 有一页贴了标签，没有例子，用户也没有看过。
   saveRevision(callIn(dir), { operations: [page({ 标签: ["流程"] })] });
@@ -58,13 +58,13 @@ test("最低门的四种情形：没有页；有页没有例子；有页有例�
   assert.equal(count(dir, "item"), 2);
 });
 
-test("最低门只看这次保存之前已有的页：同一批里先立页后写条目仍被拒；只拦新增，不拦修改与删除；不拦总体分析与问题集合", () => {
+test("最低门只看这次保存之前已有的页：同一批里先立页后写条目仍被拒；只拦新增，不拦修改与删除；不拦业务说明与问题集合", () => {
   const dir = workspace();
   const good = page({ 标签: ["流程"], 例子: [EXAMPLE] });
   // 同一批：页是这一批才新增的，条目被拒，整批都不写入。
   assert.match(refusal(dir, [good, useCase()])!, /操作 2（新增，集合「用例」）[^]*还没有用户看过的主题/);
   assert.equal(count(dir, "item"), 0);
-  // 往总体分析与问题集合里新增不受这道门管。
+  // 往业务说明与问题集合里新增不受这道门管。
   assert.equal(refusal(dir, [page({ 标题: "读者" }), problem()]), null);
   // 立了一页全是材料里的话的（不待核实），用户还没有看过：照样被拒。用户看过之后，下一次保存条目就过。
   saveRevision(callIn(dir), { operations: [good] });
@@ -78,7 +78,7 @@ test("最低门只看这次保存之前已有的页：同一批里先立页后�
   assert.equal(refusal(dir, [{ op: "delete", item: "UC-001", base_revision: 5 }]), null);
 });
 
-test("没有总体分析集合的任务（0.4 建的）不设最低门", () => {
+test("没有业务说明集合的任务（0.4 建的）不设最低门", () => {
   const dir = workspace(demoDefinition());
   assert.equal(refusal(dir, [useCase()]), null);
 });

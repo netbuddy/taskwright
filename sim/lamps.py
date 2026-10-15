@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STATE_CLI = REPO_ROOT / "agent" / "src" / "cli" / "overall_state.mts"
 
 #: 集合名与字段名，与任务类型定义、agent/src/lib/overall_analysis.ts 一致。
-OVERALL = "总体分析"
+OVERALL = "业务说明"
 QUESTIONS = "问题"
 F_TITLE, F_ALIASES, F_EXAMPLES, F_TAGS, F_PARENT, F_STATUS = "标题", "别名", "例子", "标签", "上级主题", "状态"
 DEPRECATED = "已废弃"
@@ -156,7 +156,7 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
 
     def result(key: str) -> tuple[str, list[str], str, dict]:
         if OVERALL not in collections:
-            return NOT_APPLICABLE, [], "这个任务的任务定义里没有总体分析这个集合。", {}
+            return NOT_APPLICABLE, [], "这个任务的任务定义里没有业务说明这个集合。", {}
         if key in PRODUCT_LAMPS:
             if facts is None:
                 return UNKNOWN, [], facts_problem or "取不到产品算出的这盏灯。", {}
@@ -199,7 +199,7 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
             return (FAILED if missing else PASSED), missing, "", {}
         if key == "no_duplicate_titles":
             if not live:
-                return NOT_APPLICABLE, [], "总体分析里还没有在用的页。", {}
+                return NOT_APPLICABLE, [], "业务说明里还没有在用的页。", {}
             owners: dict[str, list[str]] = {}
             for p in live:
                 fields = _fields(p)
@@ -212,7 +212,7 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
             return (FAILED if missing else PASSED), missing, (note + "。" if note else ""), {}
         if key == "no_untagged_pages":
             if not live:
-                return NOT_APPLICABLE, [], "总体分析里还没有在用的页。", {}
+                return NOT_APPLICABLE, [], "业务说明里还没有在用的页。", {}
             # 导语页不贴标签，不算未归类（与产品的判法相同）。
             missing = [p["条目编号"] for p in live if not tags[p["条目编号"]] and not is_intro(p)]
             return (FAILED if missing else PASSED), missing, "", {}
@@ -221,7 +221,7 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
                                       if s.get("种类") == "条目" and str(s.get("出处") or "").strip() in page_ids] for i in others}
             citing = {item_id: cited for item_id, cited in citing.items() if cited}
             if not citing:
-                return NOT_APPLICABLE, [], "总体分析以外还没有条目依据主题页。", {}
+                return NOT_APPLICABLE, [], "业务说明以外还没有条目依据主题页。", {}
             unseen = {item_id: sorted({page for page in cited if page not in viewed}) for item_id, cited in citing.items()}
             missing = [item_id for item_id, lacking in unseen.items() if lacking]
             note = "；".join(f"{item_id} 依据的 {'、'.join(unseen[item_id])} 用户还没看过" for item_id in missing)

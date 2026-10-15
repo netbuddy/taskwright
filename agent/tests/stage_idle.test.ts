@@ -40,7 +40,7 @@ function idle(from: (typeof STAGES)[number] = "clarifying"): { dir: string; task
   return made;
 }
 const read = <T>(dir: string, body: (db: Parameters<Parameters<typeof withTaskDatabase>[2]>[0]) => T) => withTaskDatabase(dir, { createIfMissing: false }, body);
-const page = (title: string) => ({ op: "add", collection: "总体分析", fields: { 标题: title, 它是什么: `${title}是馆里的一件事。`, 状态: "在用" }, sources: [SOURCE] });
+const page = (title: string) => ({ op: "add", collection: "业务说明", fields: { 标题: title, 它是什么: `${title}是馆里的一件事。`, 状态: "在用" }, sources: [SOURCE] });
 const useCase = (name: string) => ({ op: "add", collection: "用例", fields: { 名称: name, 步骤: ["选书", "办手续"] }, sources: [SOURCE] });
 const problem = (text: string) => ({ op: "add", collection: "问题", fields: { 事项: text, 状态: "未解决" }, sources: [SOURCE] });
 function saveRefusal(dir: string, operations: unknown[]): string | null {

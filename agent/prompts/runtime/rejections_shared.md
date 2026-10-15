@@ -38,7 +38,7 @@
 
 ## `gate.stage_item_write.idle`
 
-用途：会话空闲时助手要写别的集合（不是总体分析、也不是问题）的条目。op 是新增、修改、删除或写。
+用途：会话空闲时助手要写别的集合（不是业务说明、也不是问题）的条目。op 是新增、修改、删除或写。
 
 本会话不属于任何工作项，这时不能{{op}}「{{collection}}」的条目
 
@@ -266,21 +266,21 @@
 
 ## `gate.overall_no_viewed_topic.none`
 
-用途：总体分析的最低门过不去：一页主题都没有。
+用途：业务说明的最低门过不去：一页主题都没有。
 
-还没有用户看过的主题：总体分析里还没有一页主题
+还没有用户看过的主题：业务说明里还没有一页主题
 
 ## `gate.overall_no_viewed_topic`
 
-用途：总体分析的最低门过不去：还没有一页贴了标签、写了例子、用户又看过的主题。missing 是最接近的那一页差的几样（part.page_* 用「、」接起）。
+用途：业务说明的最低门过不去：还没有一页贴了标签、写了例子、用户又看过的主题。missing 是最接近的那一页差的几样（part.page_* 用「、」接起）。
 
-还没有用户看过的主题：总体分析里还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 {{item}}，它{{missing}}）
+还没有用户看过的主题：业务说明里还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 {{item}}，它{{missing}}）
 
 ## `gate.overall_no_viewed_topic.guide`
 
 用途：最低门过不去时的指引（lib/overall_analysis.ts 的 GATE_GUIDANCE）。
 
-先在总体分析里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目
+先在业务说明里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目
 
 ## `part.page_no_tags`
 
@@ -302,7 +302,7 @@
 
 ## `save_revision.overall_see_also_without_deprecated`
 
-用途：保存总体分析的一页时，「改看」写了而这一页不是已废弃（overall_analysis.ts 的 pageProblems）。see_also、status、deprecated 是字段名与取值。
+用途：保存业务说明的一页时，「改看」写了而这一页不是已废弃（overall_analysis.ts 的 pageProblems）。see_also、status、deprecated 是字段名与取值。
 
 「{{see_also}}」写了 {{see}}，但这一页的{{status}}不是{{deprecated}}
 
@@ -314,7 +314,7 @@
 
 ## `save_revision.overall_settled_without_source`
 
-用途：保存总体分析的一页时，「已经定下的」某一条没有来源指到它。quoted 是那一条（长的只引前 20 字）。
+用途：保存业务说明的一页时，「已经定下的」某一条没有来源指到它。quoted 是那一条（长的只引前 20 字）。
 
 「{{settled}}」的第 {{no}} 条「{{quoted}}」没有出处
 

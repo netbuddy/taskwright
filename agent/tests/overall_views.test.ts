@@ -1,5 +1,5 @@
 /**
- * 从总体分析的页与问题条目算出来的三张表（src/lib/overall_views.ts）：规则表、业务目标、决策记录与待澄清事项。
+ * 从业务说明的页与问题条目算出来的三张表（src/lib/overall_views.ts）：规则表、业务目标、决策记录与待澄清事项。
  */
 
 import assert from "node:assert/strict";

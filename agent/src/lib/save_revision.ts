@@ -381,7 +381,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     fieldsOf: (itemId) => written.get(itemId)?.fields ?? (items.has(itemId) ? (JSON.parse(latestVersion(itemId).fields) as Record<string, unknown>) : null),
   };
   /**
-   * 一章至多一页在用的导语页：总体分析的一页写了「导语所属章」、又没有废弃时，看别的在用页有没有已经写了同一章的
+   * 一章至多一页在用的导语页：业务说明的一页写了「导语所属章」、又没有废弃时，看别的在用页有没有已经写了同一章的
    * （库里现有的取它现在的内容，这一批里前面的操作写过的取写过之后的）。有就记一条原因。self 是这一页自己的编号，新增时为 null。
    */
   const introOwners = (chapter: unknown, self: string | null): string[] => {
@@ -410,13 +410,13 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     });
   }
 
-  // 最低门（任务定义里有总体分析集合时才设）：助手往总体分析与问题集合之外的集合里新增条目之前，任务里要已经有一页
+  // 最低门（任务定义里有业务说明集合时才设）：助手往业务说明与问题集合之外的集合里新增条目之前，任务里要已经有一页
   // 在用的主题贴了标签、有例子、用户又看过。只看这次保存之前库里已有的页：同一批里才新增的页用户还没有看过。
   const gate = call.actor !== ACTOR_USER && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
-  // 工作的阶段（任务有总体分析集合时才有，lib/stage.ts）：助手这一刻能写什么看这次调用所在的会话的阶段，取的是这条会话正在做的工作项（会话空闲时按澄清的规矩拦）。
+  // 工作的阶段（任务有业务说明集合时才有，lib/stage.ts）：助手这一刻能写什么看这次调用所在的会话的阶段，取的是这条会话正在做的工作项（会话空闲时按澄清的规矩拦）。
   // 用户在界面上的操作不看阶段。早先建的任务没有阶段，stage 是 null，下面几处都不拦。
   const stage: Position | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition, call.sessionId) : null;
-  /** 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改总体分析的页时改动了的字段名。 */
+  /** 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改业务说明的页时改动了的字段名。 */
   const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = []) => {
     if (stage === null) return null;
     if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed);
@@ -429,7 +429,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   operations.forEach((raw, index) => {
     const number = index + 1;
     const errors: string[] = [];
-    /** 总体分析的一页写了「导语所属章」时，核对这一章还没有别的在用的导语页。 */
+    /** 业务说明的一页写了「导语所属章」时，核对这一章还没有别的在用的导语页。 */
     const checkIntroPage = (fields: Fields, self: string | null): void => {
       const chapter = fields[OVERALL_FIELDS.intro];
       if (isEmptyValue(chapter) || isDeprecated(fields)) return;
@@ -593,7 +593,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       }
     }
     if (op === "update") {
-      // 这个阶段能不能改它：别的集合的条目要到写条目阶段；评审确认阶段总体分析的页只能改状态与改看，所以要看这次改动了哪几个字段。
+      // 这个阶段能不能改它：别的集合的条目要到写条目阶段；评审确认阶段业务说明的页只能改状态与改看，所以要看这次改动了哪几个字段。
       const changed = [...new Set([...Object.keys(before), ...Object.keys(merged)])].filter((name) => !sameJson(before[name], merged[name]));
       const staged = stageRefusal(collection, "update", changed);
       if (staged) errors.push(problemText(staged));
@@ -736,7 +736,7 @@ function itemSourceLookups(
     }
     if (row.deleted_in_revision !== null) return why(fillText("part.ref_deleted", { revision: row.deleted_in_revision }));
     if (batch.deletedHere.has(locator)) return why(fillText("part.ref_deleted_here"));
-    // 总体分析里已废弃的页不能再作依据：写了改看的指给助手看。这一批里刚把它改成已废弃的也算。
+    // 业务说明里已废弃的页不能再作依据：写了改看的指给助手看。这一批里刚把它改成已废弃的也算。
     if (row.collection === OVERALL_COLLECTION) {
       const fields = batch.written.get(locator)?.fields ?? (JSON.parse(latestVersion(locator).fields) as Record<string, unknown>);
       if (isDeprecated(fields)) {

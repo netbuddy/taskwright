@@ -45,7 +45,7 @@
 | **命令行入口（`cli/`，不经 pi）** | 给不在 Node 里的程序（观测台）与手工使用，起 Node 子进程调用。 |
 | `cli/create_task.mts` | 创建任务：给一个已经放好起始文件的任务目录写任务记录，发起方 `user`。任务服务在进程里直接调用同一个核心函数（`backend/src/workspace.ts`），这个入口留给手工建任务与测试。 |
 | `cli/render.mts` | 排版：标准输入给一次工具结果，标准输出拿回排好的几行；观测台的任务页用它（`observatory/taskwright_observatory/taskpage.py`）。 |
-| `cli/overall_state.mts` | 总体分析的几样计算结果：给库文件与任务编号，标准输出拿回每个条目待不待核实、每一页被哪些地方提到、各页贴没贴标签与有几条例子（`lib/overall_read.ts` 的 `overallState`）；模拟器的评测用它（`sim/lamps.py`）。库以只读方式打开。 |
+| `cli/overall_state.mts` | 业务说明的几样计算结果：给库文件与任务编号，标准输出拿回每个条目待不待核实、每一页被哪些地方提到、各页贴没贴标签与有几条例子（`lib/overall_read.ts` 的 `overallState`）；模拟器的评测用它（`sim/lamps.py`）。库以只读方式打开。 |
 | `tests/` | 单元测试。它们直接测 `lib/` 里的核心函数，不经过 pi，也不经过模型。 |
 
 `lib/` 下的模块都不依赖 pi，是普通的函数；`tools/` 下的文件只做登记与形状转换。

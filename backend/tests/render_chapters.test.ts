@@ -14,7 +14,7 @@ import { makeTypedTask, tempDir } from "./helpers.ts";
 
 const MATERIAL = ["读者凭借书证在自助机上借书。", "馆员把预约的书放到预留架。", "学生一次最多借 5 本。", "本期只做馆内借还。", "读者不用排队就能借书。"];
 const doc = (n: number, supports?: unknown[]) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL[n], ...(supports ? { supports } : {}) });
-const page = (fields: Record<string, unknown>, sources: unknown[]) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources });
+const page = (fields: Record<string, unknown>, sources: unknown[]) => ({ op: "add", collection: "业务说明", fields: { 状态: "在用", ...fields }, sources });
 const from = (...ids: string[]) => ids.map((id) => ({ kind: "条目", locator: id }));
 
 let tmp: string;
@@ -148,9 +148,9 @@ test("只选一部分条目：没有选中的页不成节、节号顺延，没�
   assert.match(none, /## 8 功能需求\n\n### UC-001 借书\n\n## 附录 追溯[\s\S]*\| UC-001 借书 \| OA-001 \| D-004 自助借书的流程 \|/);
 });
 
-test("没有总体分析这个集合的任务：三个占位都不留痕迹", () => {
+test("没有业务说明这个集合的任务：三个占位都不留痕迹", () => {
   const lib = library.libraryOf(ws);
-  // 用同一个库、一份只有占位的模板，把总体分析从选中的条目里全去掉，就是没有内容的情形。
+  // 用同一个库、一份只有占位的模板，把业务说明从选中的条目里全去掉，就是没有内容的情形。
   writeFileSync(join(ws, "docs", "templates", "srs.md"), "开头\n{{目录}}\n{{业务说明}}\n{{追溯附录}}\n结尾\n", "utf-8");
   assert.equal(render.render(ws, lib, null, ["TBD-001"]), "开头\n结尾\n");
 });

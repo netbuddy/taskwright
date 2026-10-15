@@ -160,7 +160,7 @@ describe("新建会话的开头", () => {
     expect(wantsOpeningStatus(task, 0, 0, true, false)).toBe(false);      // 更早还有一段
     expect(wantsOpeningStatus(task, 0, 0, false, true)).toBe(false);      // 任务已经结束或者助手不可用
     expect(wantsOpeningStatus({ ...task, stage: null }, 0, 0, false, false)).toBe(false);                                   // 没有阶段的任务
-    expect(wantsOpeningStatus({ ...task, items: task.items.filter((i) => i.collection !== "总体分析") }, 0, 0, false, false)).toBe(true);    // 新任务，还没有主题页：也放
+    expect(wantsOpeningStatus({ ...task, items: task.items.filter((i) => i.collection !== "业务说明") }, 0, 0, false, false)).toBe(true);    // 新任务，还没有主题页：也放
     expect(wantsOpeningStatus(null, 0, 0, false, false)).toBe(false);
   });
 
@@ -172,7 +172,7 @@ describe("新建会话的开头", () => {
   });
 
   it("对话区第一条是会话开头那一行，接着是工作进展卡，都排在会话开头那条任务现状说明之前", async () => {
-    const NOTE = { type: "system_note", message_id: "n0", at: "", kind: "task_status", text: "任务现状：总体分析 16 页。", details: null };
+    const NOTE = { type: "system_note", message_id: "n0", at: "", kind: "task_status", text: "任务现状：业务说明 16 页。", details: null };
     const { loadStatus } = chat(taskWith(), [NOTE], { sessionLine: "新会话 · 属于工作项「需求分析」（10-13 09:02）" });
     const opening = await screen.findByTestId("status-opening");
     expect(loadStatus).toHaveBeenCalledTimes(1);
@@ -202,7 +202,7 @@ describe("新建会话的开头", () => {
     expect(loadStatus).not.toHaveBeenCalled();
     cleanup();
     const fresh = taskWith();
-    const second = chat({ ...fresh, items: fresh.items.filter((i) => i.collection !== "总体分析") });
+    const second = chat({ ...fresh, items: fresh.items.filter((i) => i.collection !== "业务说明") });
     await screen.findByTestId("status-opening");
     expect(second.loadStatus).toHaveBeenCalledTimes(1);
   });

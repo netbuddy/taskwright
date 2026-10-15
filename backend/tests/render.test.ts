@@ -139,14 +139,14 @@ describe("真实任务类型里依据另一个条目的来源", () => {
 
   test("定义视图带上集合的界面一项，没写的集合为空", () => {
     const view = library.definitionView(library.libraryOf(typed).definition).collections;
-    const pages = view.find((c) => c.name === "总体分析")!;
+    const pages = view.find((c) => c.name === "业务说明")!;
     assert.deepEqual(Object.keys(pages.display!).sort(), ["group_field", "leading_groups", "note", "side_tab"]);
     assert.equal(pages.display!.group_field, "标签");
     assert.equal(view.find((c) => c.name === "功能用例")!.display, null);
     assert.equal(pages.needs_review, false);
   });
   test("依据另一个条目的来源写成它所在的集合名、编号加摘录；助手补充写理由、不写出处", () => {
-    assert.ok(text.includes("总体分析 OA-001（「读者登录时输入的一串字符」）"), text);
+    assert.ok(text.includes("业务说明 OA-001（「读者登录时输入的一串字符」）"), text);
     assert.ok(!text.includes("出处 OA-001"));
     assert.ok(text.includes("来源：功能用例 UC-001（「读者登录系统。」）；助手补充（「输错多次后锁定是通行的做法」）"), text);
   });

@@ -94,7 +94,7 @@ describe("入口页里先套风格的脚本", () => {
 });
 
 describe("标题字体", () => {
-  it("用标题字体的只有这几处：各页的标题与顶栏任务名、对话区的复述段与卡片里的问题句、风格卡预览里的顶栏、总体分析的提纲与主题页", () => {
+  it("用标题字体的只有这几处：各页的标题与顶栏任务名、对话区的复述段与卡片里的问题句、风格卡预览里的顶栏、业务说明的提纲与主题页", () => {
     const sheets = [GLOBAL_CSS, ...["workview.css", "workview-extra.css", "settings.css", "task-page.css", "status.css", "issues.css", "pdf.css", "docx.css", "overall.css"]
       .map((name) => readFileSync(decodeURIComponent(new URL(`../styles/${name}`, here).pathname), "utf-8").replace(/\/\*[\s\S]*?\*\//g, ""))];
     const users = sheets.flatMap((css) => [...css.matchAll(/([^{}]+)\{[^{}]*var\(--font-title\)[^{}]*\}/g)].map((m) => m[1].trim()));
@@ -105,7 +105,7 @@ describe("标题字体", () => {
       ".app .m.ai .story",
       ".app .act .val",
       ".settings .style-card .pv-top",
-      // 总体分析：提纲与主题页是用领域的话写成的文字，栏头、主题的标题、各块的小标题与问题那一句用标题字体。
+      // 业务说明：提纲与主题页是用领域的话写成的文字，栏头、主题的标题、各块的小标题与问题那一句用标题字体。
       ".app .oa-outline-h .oa-seg a.on",
       ".app .oa-ch",
       ".app .oa-intro-note",

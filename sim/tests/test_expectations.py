@@ -12,7 +12,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 EXPECT = {
     "说明": "测试用的清单。",
-    "总体分析": {"流程页": [["借书", "借阅"], ["续借"]], "角色页": [["服务台", "馆员"]]},
+    "业务说明": {"流程页": [["借书", "借阅"], ["续借"]], "角色页": [["服务台", "馆员"]]},
     "例外": {"借书": [["超过上限", "最多借"], ["有逾期", "逾期未还"]], "续借": [["有人预约"]]},
     "问题": [["寒暑假"], ["智能推荐"]],
     "功能用例": [["借书", "借阅"], ["预约"]],
@@ -26,19 +26,19 @@ def rows_of(items) -> dict:
 
 
 class ExpectationTest(unittest.TestCase):
-    def test_总体分析按标题与别名_例外只在流程页以例外开头的例子里找(self):
+    def test_业务说明按标题与别名_例外只在流程页以例外开头的例子里找(self):
         rows = rows_of([
             page(1, "图书借阅", ["流程"], ["小王一次借了六本，超过上限，只登记到五本。", "例外：名下有逾期未还的书，不能再借。"]),
             page(2, "借书证", ["概念"], ["有逾期的人补办借书证要先还书。"]),
             page(3, "读者服务台", ["角色"], aliases=["馆员"]),
             page(4, "续借", ["流程"], status="已废弃"),
         ])
-        flow = rows[("总体分析·流程页", "借书／借阅")]
+        flow = rows[("业务说明·流程页", "借书／借阅")]
         # 标题里有「借阅」的流程页与标题里有「借书」的概念页都命中；小节名里的种类不作条件，实际贴的标签带在结果里。
         self.assertEqual((flow["命中"], flow["命中的条目编号"], flow["页贴的标签"]), (True, ["OA-001", "OA-002"], {"OA-001": ["流程"], "OA-002": ["概念"]}))
-        self.assertEqual(rows[("总体分析·角色页", "服务台／馆员")]["命中的词"], "服务台")
+        self.assertEqual(rows[("业务说明·角色页", "服务台／馆员")]["命中的词"], "服务台")
         # 已废弃的页不算。
-        self.assertFalse(rows[("总体分析·流程页", "续借")]["命中"])
+        self.assertFalse(rows[("业务说明·流程页", "续借")]["命中"])
         # 例外：流程「借书」的页按同义写法找到两页，其中贴了流程标签的只有 OA-001，所以只看它的例子。
         over, overdue = rows[("例外·借书", "超过上限／最多借")], rows[("例外·借书", "有逾期／逾期未还")]
         # 「超过上限」只出现在不以「例外：」开头的例子里：不命中，另外写出是哪一页提到了。
@@ -99,27 +99,27 @@ class ExpectationTest(unittest.TestCase):
         self.assertEqual(expectations.section_label({"部分": "问题"}), "问题")
 
     def test_导语页小节对着导语所属章找_导语页不参加别的小节(self):
-        expect = {"总体分析": {"流程页": [["借书", "借阅"], ["业务流程"]], "导语页": [["业务流程"], ["角色"], ["业务对象"]]}, "例外": {"借书": [["有逾期"]]}}
+        expect = {"业务说明": {"流程页": [["借书", "借阅"], ["业务流程"]], "导语页": [["业务流程"], ["角色"], ["业务对象"]]}, "例外": {"借书": [["有逾期"]]}}
         rows = {(r["部分"], expectations.group_label(r["组"])): r for r in expectations.check(expect, task([
             page(1, "借书", ["流程"], ["例外：名下有逾期未还的书，不能再借。"]),
             page(2, "业务流程导语", examples=["例外：有逾期的借书另说。"], intro="业务流程"),
             page(3, "角色导语", intro="角色", status="已废弃"),
         ]))}
-        hit = rows[("总体分析·导语页", "业务流程")]
+        hit = rows[("业务说明·导语页", "业务流程")]
         self.assertEqual((hit["命中"], hit["命中的条目编号"], hit["命中的词"]), (True, ["OA-002"], "业务流程"))
         self.assertNotIn("页贴的标签", hit)
         # 已废弃的导语页不算；没有立的章不命中。
-        self.assertEqual((rows[("总体分析·导语页", "角色")]["命中"], rows[("总体分析·导语页", "业务对象")]["命中"]), (False, False))
+        self.assertEqual((rows[("业务说明·导语页", "角色")]["命中"], rows[("业务说明·导语页", "业务对象")]["命中"]), (False, False))
         # 导语页的标题里有「业务流程」，但它不参加按标题找的小节，也不当作「借书」这个流程的页。
-        self.assertFalse(rows[("总体分析·流程页", "业务流程")]["命中"])
-        self.assertEqual(rows[("总体分析·流程页", "借书／借阅")]["命中的条目编号"], ["OA-001"])
+        self.assertFalse(rows[("业务说明·流程页", "业务流程")]["命中"])
+        self.assertEqual(rows[("业务说明·流程页", "借书／借阅")]["命中的条目编号"], ["OA-001"])
         self.assertEqual(rows[("例外·借书", "有逾期")]["流程的页"], ["OA-001"])
 
     def test_仓里的两份清单读得出来_每组都是关键词的列表(self):
         for name, flows in (("library-short.json", 5), ("library-long.json", 6)):
             expect = expectations.load(REPO / "sim" / "expectations" / name)
-            self.assertEqual(len(expect["总体分析"]["流程页"]), flows)
-            self.assertEqual([group[0] for group in expect["总体分析"]["导语页"]], ["概述与范围", "角色", "业务流程", "业务对象", "业务目标"])
+            self.assertEqual(len(expect["业务说明"]["流程页"]), flows)
+            self.assertEqual([group[0] for group in expect["业务说明"]["导语页"]], ["概述与范围", "角色", "业务流程", "业务对象", "业务目标"])
             self.assertIn("「导语页」小节每组写的是章名", expect["说明"])
             rows = expectations.check(expect, task([]))
             self.assertTrue(rows and not any(r["命中"] for r in rows))
@@ -136,7 +136,7 @@ class ExpectationTest(unittest.TestCase):
                 self.assertTrue(row["组"] and all(isinstance(word, str) and word for word in row["组"]))
             # 「例外」里每个流程的名字都能在「流程页」里找到它的同义写法。
             for flow in expect["例外"]:
-                self.assertTrue(any(flow in group for group in expect["总体分析"]["流程页"]), flow)
+                self.assertTrue(any(flow in group for group in expect["业务说明"]["流程页"]), flow)
 
 
 if __name__ == "__main__":

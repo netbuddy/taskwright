@@ -17,7 +17,7 @@ let tmp: string;
 let ws: string;
 before(() => {
   tmp = tempDir();
-  // 修订 1：总体分析的三页主题，用户都看过。
+  // 修订 1：业务说明的三页主题，用户都看过。
   ws = makePagedTask(join(tmp, "basis"), { "材料.md": "读者凭口令登录。" },
     [topicPage("口令", "读者登录时输入的一串字符", SOURCE), topicPage("读者", "办了借书证的人", SOURCE), topicPage("借书证", "读者的凭证", SOURCE)], [
     // 修订 2：UC-001 依据 OA-001（两条来源都指它）与 OA-002；UC-002 依据 OA-003。

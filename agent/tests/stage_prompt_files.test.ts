@@ -331,7 +331,7 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   assert.doesNotMatch(common, /分拣成/);
   assert.doesNotMatch(common, /一批最多写 4 个条目/);
   for (const head of ["1. **材料没按块读完不要动笔。**", "2. **含糊的地方不要自己定。**", "3. **问用户与记下答复。**", "4. **「用户决定保留」只认对话里的用户。**",
-    "5. **用户的说法与材料原文对不上时**", "6. **总体分析的每一页怎样填。**"]) assert.ok(common.includes(head), head);
+    "5. **用户的说法与材料原文对不上时**", "6. **业务说明的每一页怎样填。**"]) assert.ok(common.includes(head), head);
   assert.deepEqual(readdirSync(join(SRS_SKILL, "stages")).sort(), ["document.md", "reading.md", "writing.md"]);
   const document = readFileSync(join(SRS_SKILL, "stages", "document.md"), "utf-8");
   assert.ok(document.startsWith("## 这类任务在编写文档阶段\n"));

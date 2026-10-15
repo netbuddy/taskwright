@@ -54,7 +54,7 @@ export const MATERIAL_FULL_LIMIT = 20000;
 
 /**
  * 同一个任务里别的条目交给评审时分两节（otherItemsLines）：【相关的条目】写全部字段，【其余条目】每个一行简述。
- * 任务定义里有「总体分析」集合时另给一节【总体分析的主题】（lib/overall_analysis.ts 的 topicLines）：贴了标签、在用的主题的标题与别名，
+ * 任务定义里有「业务说明」集合时另给一节【业务说明的主题】（lib/overall_analysis.ts 的 topicLines）：贴了标签、在用的主题的标题与别名，
  * 一行一页，另有自己的字数上限（TOPICS_LIMIT），评审拿它判断「条目里的专门名词有没有主题页」这条规则。
  * 两节合起来的上限，按整段文字的字符数算（Unicode 字符，一个汉字算 1，与材料全文的计法相同）。它只是保险：
  * 材料全文最多已有 MATERIAL_FULL_LIMIT（20000）字，这两节再取它的一半，一次评审请求连同规则清单大约不超过 35000 字，
@@ -216,7 +216,7 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
     }
     const materials = materialsFor(workspaceDir, definition.materialsDir);
     const live = liveItems(db, task.task_id, definition.collections);
-    // 【总体分析的主题】一节：贴了标签、在用的主题的标题与别名，接在【其余条目】之后；任务定义里没有总体分析集合时没有这一节。
+    // 【业务说明的主题】一节：贴了标签、在用的主题的标题与别名，接在【其余条目】之后；任务定义里没有业务说明集合时没有这一节。
     const topicRows = topicLines(definition.collections, live.map((one) => ({ item_id: one.item_id, collection: one.collection, revision_no: 0, fields: one.fields })));
     const topics = topicRows.length ? ["", ...topicRows] : [];
 

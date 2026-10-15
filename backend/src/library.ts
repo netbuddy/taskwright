@@ -320,7 +320,7 @@ export function proposalView(fact: Omit<OpenProposal, "session_id" | "reply_entr
  * （agent/src/lib/stage.ts 的 LaunchView）。
  * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）；moved_by 是最近一次移动由谁做的（executor 或 user），
  * 一次都没有移过时与 moved_at、reason 一起为 null；lamps 按阶段给出各盏灯 { key, summary, ok, items }，ok 为 null 是不适用。
- * 早先建的任务（任务定义里没有「总体分析」集合）没有阶段，返回 null；算不出来时也返回 null。
+ * 早先建的任务（任务定义里没有「业务说明」集合）没有阶段，返回 null；算不出来时也返回 null。
  * 与完成条件一样，在同一进程里调用 agent 的读取函数（lib/stage_read.ts 的 stageSummaryOf），库另开一个只读连接，
  * 所以助手查询任务状态时读到的与这里给页面的是同一回事。
  */
@@ -885,7 +885,7 @@ export class Library {
   }
 
   /**
-   * 从总体分析的页与问题条目算出来的三张表（agent/src/lib/overall_views.ts，只算不存）：rules 是规则表，goals 是业务目标，
+   * 从业务说明的页与问题条目算出来的三张表（agent/src/lib/overall_views.ts，只算不存）：rules 是规则表，goals 是业务目标，
    * decisions 是决策记录与待澄清事项。plain 是还在的各个条目现在的内容。问题条目认的是状态字段的取值里有「用户决定保留」的集合；
    * 它说事情的那句话取集合的第一个字段，时刻取条目第一次保存的时刻。
    */
@@ -989,10 +989,10 @@ export class Library {
         // （保存时他改写的那几处已经从来源里去掉，所以当前修订上还在的助手补充都是他没有改到的）。
         // pending_sources 是还待核实的来源有几条，pending_places 是还待核实的各处（字段与第几项；field 为 null 指整个条目）。
         ...pendingOf.get(i.item_id)!,
-        // 因依据而待核实：它依据的总体分析的一页待核实（reason 是 pending）、已废弃（deprecated，see 是那一页写的改看）或者用户还没有看过（unviewed）；没有是 null。
+        // 因依据而待核实：它依据的业务说明的一页待核实（reason 是 pending）、已废弃（deprecated，see 是那一页写的改看）或者用户还没有看过（unviewed）；没有是 null。
         // 依据的是一张图、而用户还没有看过它现在的内容时同样给出，item_id 是图的编号，reason 是 unviewed。
         basis_pending: basisPending(this.sourcesOf(i.item_id, no), citedPage, citedFigure),
-        // 总体分析的页：别的页与别的条目的文字里提到它的地方；一处都没有是空列表。别的集合的条目与没有总体分析集合的任务不带这一项。
+        // 业务说明的页：别的页与别的条目的文字里提到它的地方；一处都没有是空列表。别的集合的条目与没有业务说明集合的任务不带这一项。
         ...(withOverall && i.collection === OVERALL_COLLECTION ? { mentioned_by: mentions.get(i.item_id) ?? [] } : {}),
       });
     }
@@ -1007,7 +1007,7 @@ export class Library {
       // 工作的阶段与灯：与完成条件一样在读事务提交之后另算（taskSnapshot），这里先占位。
       stage: null as ReturnType<typeof stageView>,
       items,
-      // 规则表、业务目标、决策记录与待澄清事项：从总体分析的页与问题条目现算；任务定义里没有总体分析集合时是 null。
+      // 规则表、业务目标、决策记录与待澄清事项：从业务说明的页与问题条目现算；任务定义里没有业务说明集合时是 null。
       overall_views: withOverall ? this.overallViews(plain) : null,
       diagrams: this.diagramsView(),
       latest_revision: this.latestRevision(),

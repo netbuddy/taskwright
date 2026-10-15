@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { databasePath } from "../src/lib/db.ts";
 import { MIN_TASK_DB_VERSION, NewerTaskDatabase, NoDatabaseYet, OlderTaskDatabase, TABLE_NAMES, TASK_DB_VERSION, TASK_JSON, upgradeTaskDatabase, withTaskDatabase } from "../src/lib/schema.ts";
 import { createTask } from "../src/lib/create_task.ts";
+import { reviewSpecOf, rulesHash } from "../src/lib/review_state.ts";
 import { asFormat8, callIn, makeWorkspace, query } from "./helpers.ts";
 
 /** 库里记的格式版本（PRAGMA user_version）。 */
@@ -194,6 +195,42 @@ test("格式 8 升到 9：任务类型「软件需求规格说明编制」改名
     [["docs/task-definitions/requirements-engineering.json", definition]]);
   // 再升一次：已经是 9，什么都不动。
   assert.deepEqual(upgradeTaskDatabase(dir), { from: 9, to: 9, notes: [] });
+});
+
+test("格式 8 升到 9：集合「总体分析」改名「业务说明」——定义、条目、事件、随任务类型复制来的文件一起改，材料不动；评审规则文件改了字，评审记录的规则指纹换成新的", () => {
+  const root = join(import.meta.dirname, "..", "..", "task-types", "requirements-engineering");
+  const dir = makeWorkspace();
+  cpSync(root, dir, { recursive: true });
+  // 退回改名之前的样子：随任务类型复制来的文件里写的是「总体分析」；材料里也有这个词，它不该被改。
+  const typeFiles = ["docs/task-definitions/requirements-engineering.json", "docs/review-rules/use-case.json", ".pi/skills/requirements-engineering/SKILL.md"];
+  for (const file of typeFiles) writeFileSync(join(dir, file), readFileSync(join(dir, file), "utf-8").replaceAll("业务说明", "总体分析"), "utf-8");
+  writeFileSync(join(dir, "inputs", "材料.md"), "材料里提到总体分析这个词。\n", "utf-8");
+  createTask(callIn(dir), { definition_path: "docs/task-definitions/requirements-engineering.json" });
+  const definition = JSON.parse(readFileSync(join(dir, typeFiles[0]), "utf-8"));
+  const spec = reviewSpecOf(JSON.stringify(definition), "功能用例")!;
+  const oldHash = rulesHash(dir, spec);
+  const db = new DatabaseSync(databasePath(dir));
+  try {
+    const task = (db.prepare("SELECT task_id FROM task").get() as { task_id: string }).task_id;
+    db.prepare("INSERT INTO item VALUES (?, 'OA-001', '总体分析', 1, 1, NULL, 1, NULL), (?, 'UC-001', '功能用例', 1, 1, NULL, 1, NULL)").run(task, task);
+    db.prepare("INSERT INTO event (task_id, session_id, call_id, name, actor, payload, at) VALUES (?, 's', 'c', 'REVISION_SAVED', 'executor', ?, 't')")
+      .run(task, JSON.stringify({ operations: [{ op: "add", item: "OA-001", collection: "总体分析" }] }));
+    db.prepare("INSERT INTO review (task_id, item_id, revision_no, verdict, reason, rules_digest, reviewer_session_id, call_id, event_seq, created_at, rules_hash) " +
+      "VALUES (?, 'UC-001', 1, '合规', '', '', 's', 'c', 1, 't', ?)").run(task, oldHash);
+  } finally {
+    db.close();
+  }
+  asFormat8(dir);
+  const { notes } = upgradeTaskDatabase(dir);
+  assert.deepEqual(notes, ["集合「总体分析」改名为「业务说明」：1 个条目，任务目录里 3 份文件"]);
+  for (const file of typeFiles) assert.ok(!readFileSync(join(dir, file), "utf-8").includes("总体分析"), file);
+  assert.equal(readFileSync(join(dir, "inputs", "材料.md"), "utf-8"), "材料里提到总体分析这个词。\n");
+  assert.deepEqual(query<any>(dir, "SELECT item_id, collection FROM item ORDER BY item_id").map((r) => [r.item_id, r.collection]), [["OA-001", "业务说明"], ["UC-001", "功能用例"]]);
+  assert.ok(query<any>(dir, "SELECT definition_text FROM task")[0].definition_text.includes('"名称": "业务说明"'));
+  assert.ok(query<any>(dir, "SELECT payload FROM event WHERE name = 'REVISION_SAVED'").every((r) => r.payload.includes('"collection":"业务说明"')));
+  const newHash = rulesHash(dir, spec);
+  assert.notEqual(newHash, oldHash, "规则文件改了字，指纹变了");
+  assert.deepEqual(query<any>(dir, "SELECT rules_hash FROM review").map((r) => r.rules_hash), [newHash]);
 });
 
 test("数据升级用的入口：格式 8 升到 9 并说出升级前后的版本；已经是 9 的原样返回；没有库文件时不建", () => {

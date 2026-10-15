@@ -157,7 +157,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   }, [menuOpen]);
   // 切到别的条目、回到列表时编辑框关掉，未保存的编辑也就不在了。
   useEffect(() => { if (!selected) setDirty(false); }, [selected]);
-  // 待核实、依据待核实、提到这几项只随整份数据来，库事件里没有：任务里有总体分析时，交付物有了新修订、或者有条目被确认之后，
+  // 待核实、依据待核实、提到这几项只随整份数据来，库事件里没有：任务里有业务说明时，交付物有了新修订、或者有条目被确认之后，
   // 稍等一下另取一次任务详情，把这几项并进来（state/workState.ts 的 facts）。头一次的整份数据里本来就有，不用取。
   const facts = factsKey(state.task, state.latestRevision);
   const factsSeen = useRef<string | null>(null);
@@ -227,7 +227,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   /**
    * 用户打开一个条目的详情（列表、上一条下一条、对话与卡片里的条目、修订页签的查看差异，都是用户点的）：
    * 要求看过的集合里还是未读的，就在它当前所在的修订上记为已读。不显示「正在保存」，不报错：
-   * 没记上时条目照旧显示未读，再打开一次就会重记。总体分析里待核实的页打开时不记，由主题页上的「确认」来记（model/overall.ts）。
+   * 没记上时条目照旧显示未读，再打开一次就会重记。业务说明里待核实的页打开时不记，由主题页上的「确认」来记（model/overall.ts）。
    */
   const openItem = (itemId: string | null) => {
     setSelected(itemId);

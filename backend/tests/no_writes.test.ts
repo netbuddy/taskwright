@@ -33,9 +33,9 @@ const ALLOWED: Record<string, string[]> = {
     "IDLE", "IDLE_NAME", "Position", "isPosition", "positionName",
     // 任务空闲时提议开始核读材料的那张卡片上「先不开始」的那一项（常量）。
     "STAY_IDLE_OPTION"],
-  // 从总体分析的页与问题条目算三张表（只做计算，不读库也不写库）。
+  // 从业务说明的页与问题条目算三张表（只做计算，不读库也不写库）。
   "overall_views.ts": ["ViewPage", "ViewQuestion", "ViewSource", "decisionsAndOpenQuestions", "goalTree", "rulesTable", "GoalNode"],
-  // 业务说明的章与节：总体分析的页按标签归章、编节号（只做计算，不读库，页面也用它）。任务状况里各章的节数从它来。
+  // 业务说明的章与节：业务说明的页按标签归章、编节号（只做计算，不读库，页面也用它）。任务状况里各章的节数从它来。
   "overall_chapters.ts": ["CHAPTERS", "chapterLayout", "chapterPage", "CHAPTER_DECISIONS", "CHAPTER_FLOWS", "CHAPTER_GOALS", "CHAPTER_OBJECTS", "CHAPTER_OVERVIEW", "CHAPTER_ROLES", "CHAPTER_RULES", "GLOSSARY_NAME", "LABEL_CONCEPT"],
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
@@ -62,7 +62,7 @@ const ALLOWED: Record<string, string[]> = {
   // 位置表：从 Word 文件算出章节，写成材料旁边的文件（与分段清单一样是文件，不是库）。
   "docx_locations.ts": ["LOCATIONS_SUFFIX", "isLocationTable"],
   "docx_location_input.ts": ["locationTable"],
-  // 总体分析由事实算出来的几样（待核实、因依据而待核实、提到）：不依赖任何模块、只算不读库的函数与两个常量，后端的快照把自己读出的事实交给它们算。
+  // 业务说明由事实算出来的几样（待核实、因依据而待核实、提到）：不依赖任何模块、只算不读库的函数与两个常量，后端的快照把自己读出的事实交给它们算。
   "overall_analysis.ts": ["OVERALL_COLLECTION", "PlainItem", "RevisionFacts", "Verification", "basisPending", "isSupplement", "mentionsOf", "verificationOf", "viewedIn", "OVERALL_FIELDS", "EXCEPTION_EXAMPLE_PREFIX", "isDeprecated", "tagsOf"],
   // 评审结论：不依赖任何模块的纯函数，只按传进去的记录下结论。
   "review_verdict.ts": ["reviewVerdict"],

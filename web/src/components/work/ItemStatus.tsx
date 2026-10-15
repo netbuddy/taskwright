@@ -62,7 +62,7 @@ export function ItemMeta({ task, item, just, pending, row = false }: { task: Tas
     const others = (def?.fields ?? []).filter((f) => f.type === "枚举" && f.name !== keep.name && item.fields[f.name]);
     return <>{others.map((f) => <span key={f.name} className="chip">{String(item.fields[f.name])}</span>)}{revision}<ChangedTag task={task} item={item} />{saving}</>;
   }
-  // 它依据的总体分析主题待核实或已废弃：琥珀色小标签，悬停说明是哪一页、该怎么办（model/overall.ts）。
+  // 它依据的业务说明主题待核实或已废弃：琥珀色小标签，悬停说明是哪一页、该怎么办（model/overall.ts）。
   const basis = basisNote(task, item);
   return (
     <span className="gms">

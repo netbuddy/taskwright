@@ -105,7 +105,7 @@ export interface Completion {
   /** 一句话概括，与执行者看到的说法相同。 */
   brief?: string;
   conditions: CompletionCondition[];
-  /** 完成条件之外的提示，不是门禁。kind 为 untagged_overall_pages：总体分析里在用而还没有贴标签的主题。 */
+  /** 完成条件之外的提示，不是门禁。kind 为 untagged_overall_pages：业务说明里在用而还没有贴标签的主题。 */
   hints?: CompletionHint[];
 }
 
@@ -267,9 +267,9 @@ export interface Item {
   pending_sources?: number;
   /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
   pending_places?: { field: string | null; index: number | null }[];
-  /** 因依据而待核实：它依据的总体分析的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
+  /** 因依据而待核实：它依据的业务说明的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
   basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see: string | null } | null;
-  /** 只有总体分析的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */
+  /** 只有业务说明的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */
   mentioned_by?: Mention[];
 }
 
@@ -307,11 +307,11 @@ export interface Task {
   /** 评审批次，按先后；旧后端没有这一项。 */
   review_batches?: ReviewBatch[];
   /**
-   * 从总体分析的页与问题条目算出来的三张表（只算不存）：rules 规则表，goals 业务目标，decisions 决策记录与待澄清事项。
-   * 没有「总体分析」集合的任务是 null；早先的后端不给这一项。库事件里不带它，与待核实那几项一起另取（state/workState.ts 的 facts）。
+   * 从业务说明的页与问题条目算出来的三张表（只算不存）：rules 规则表，goals 业务目标，decisions 决策记录与待澄清事项。
+   * 没有「业务说明」集合的任务是 null；早先的后端不给这一项。库事件里不带它，与待核实那几项一起另取（state/workState.ts 的 facts）。
    */
   overall_views?: OverallViews | null;
-  /** 任务现在的工作阶段与每个阶段的几盏灯；早先建的任务（没有「总体分析」集合）没有阶段，是 null；旧后端没有这一项。 */
+  /** 任务现在的工作阶段与每个阶段的几盏灯；早先建的任务（没有「业务说明」集合）没有阶段，是 null；旧后端没有这一项。 */
   stage?: StageView | null;
   /** 发布过的各版，按版本号从小到大；早先的后端不给。 */
   versions?: VersionView[];
@@ -1452,7 +1452,7 @@ export interface ContextWindowResult {
  * 任务状况（GET /tasks/{task_id}/status）：程序据任务记录算出来的定位，不经助手。
  * activity 是当前活动：现在总是一个阶段（kind 为 stage），flow 是所属流程（现在恒为 analysis，需求分析）；一次都没有移动过时 moved_by、moved_at、reason 为 null。
  * description 是业务说明：sections 是在用的页数，chapters 是有节的各章（七章的先后），unsorted 是没有归到任何一章的在用页数，open_questions 是没有了结的待澄清问题数。
- * models 是还在的图按种类的张数；items 是总体分析与问题之外各集合的条目数与用户看过现在这一版的条数；
+ * models 是还在的图按种类的张数；items 是业务说明与问题之外各集合的条目数与用户看过现在这一版的条数；
  * missing 是现在这个阶段没有通过的灯；proposal 是开着的提议；versions 留给已发布的文档版本，现在恒为空。
  */
 /** 需求资产六类里一类的现状：任务起点页上的一格。 */

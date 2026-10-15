@@ -87,7 +87,7 @@ test("三种写入各记什么：启动插一行、挂上会话、记一条带�
   assert.equal(fresh.record_id, other.record_id + 1);
 });
 
-test("早先建的任务（任务定义里没有总体分析集合）没有阶段", () => {
+test("早先建的任务（任务定义里没有业务说明集合）没有阶段", () => {
   const { dir, taskId } = workspace(demoDefinition());
   assert.equal(write(dir, (db) => stageOf(db, dir, taskId, validateDefinition(demoDefinition()))), null);
 });

@@ -1,12 +1,12 @@
 /**
- * 总体分析：任务类型定义里名叫「总体分析」的集合。一条就是一页主题，用这件事自己的话写：标题、别名、它是什么、例子、
+ * 业务说明：任务类型定义里名叫「业务说明」的集合。一条就是一页主题，用这件事自己的话写：标题、别名、它是什么、例子、
  * 已经定下的、标签、上级主题、状态（在用或已废弃）、改看。条目依据它写。
  *
  * 本文件是由事实算出来的几样东西，都只算、不读库：
  * - 待核实：一个条目当前所在的修订上有助手补充的来源，而用户还没有确认过。用户打开看过（或点了确认）是确认整个条目；
  *   用户亲手改，只确认他改到的那几处（助手补充的来源指到的字段与项），只改别的地方不算确认。助手之后又改出新的修订、
  *   上面仍有助手补充的来源，就又待核实。任何集合的条目都这样算。
- * - 因依据而待核实：一个条目把总体分析里的一页写成了来源（种类「条目」），而那一页已废弃、待核实，或者用户还没有看过。只看一层。
+ * - 因依据而待核实：一个条目把业务说明里的一页写成了来源（种类「条目」），而那一页已废弃、待核实，或者用户还没有看过。只看一层。
  * - 提到：贴了标签、在用的页的标题与别名是词表；别的页与别的条目的文字里出现了词表里的词，就是提到了那一页。
  *   读的时候现算，不存库。
  * - 最低门要看的事实：任务里有没有一页贴了标签、有例子、用户又看过的主题。
@@ -20,7 +20,7 @@ import { fillText, refusalText } from "./shared_texts.ts";
 import type { RefusalText } from "./texts_core.ts";
 
 /** 集合的名字。 */
-export const OVERALL_COLLECTION = "总体分析";
+export const OVERALL_COLLECTION = "业务说明";
 
 /** 这个集合的字段名。 */
 export const OVERALL_FIELDS = {
@@ -48,7 +48,7 @@ const FIGURE_KIND = "图";
 
 type Fields = Record<string, unknown>;
 
-/** 任务定义里有没有总体分析这个集合（0.4 建的任务没有）。 */
+/** 任务定义里有没有业务说明这个集合（0.4 建的任务没有）。 */
 export function hasOverall(collections: readonly { name: string }[]): boolean {
   return collections.some((one) => one.name === OVERALL_COLLECTION);
 }
@@ -155,7 +155,7 @@ export interface BasisPending {
 }
 
 /**
- * 一个条目当前修订上的来源里，种类为「条目」、指向总体分析里一页的：那一页已废弃、待核实或者用户还没有看过时；
+ * 一个条目当前修订上的来源里，种类为「条目」、指向业务说明里一页的：那一页已废弃、待核实或者用户还没有看过时；
  * 种类为「图」的：那张图用户还没有看过它现在的内容时。照来源的先后返回头一处；都没有是 null。
  * 一页同时有几样时报最重的一样：已废弃先于待核实，待核实先于没看过。
  * 只看一层：被指的那一页、那张图自己依据了谁不往下追。page 按编号给出那一页现在的样子，不存在或已经删除时给 null；
@@ -267,12 +267,12 @@ export interface Mention {
   revision_no: number;
 }
 
-/** 总体分析的页里要扫的三块；别的集合的条目扫全部文本字段与文本列表字段。 */
+/** 业务说明的页里要扫的三块；别的集合的条目扫全部文本字段与文本列表字段。 */
 const PAGE_FIELDS: readonly string[] = [OVERALL_FIELDS.what, OVERALL_FIELDS.examples, OVERALL_FIELDS.settled];
 
 /**
  * 整个任务里的提到，按被提到的页归好：页的编号 → 提到它的各处，按条目给出的先后、字段声明的先后、项的先后。
- * 任务定义里没有总体分析集合、或者没有一页贴了标签而在用时是空的。
+ * 任务定义里没有业务说明集合、或者没有一页贴了标签而在用时是空的。
  */
 export function mentionsOf(collections: readonly CollectionShape[], items: readonly PlainItem[]): Map<string, Mention[]> {
   const out = new Map<string, Mention[]>();
@@ -307,12 +307,12 @@ export function mentionsOf(collections: readonly CollectionShape[], items: reado
 export const TOPICS_LIMIT = 3000;
 
 /**
- * 给评审者的【总体分析的主题】一节：贴了标签、在用的页，一行一页，写编号、标题与别名。评审拿它判断「条目里的专门名词有没有主题页」。
- * 任务定义里没有总体分析集合时不给这一节（返回空列表）。
+ * 给评审者的【业务说明的主题】一节：贴了标签、在用的页，一行一页，写编号、标题与别名。评审拿它判断「条目里的专门名词有没有主题页」。
+ * 任务定义里没有业务说明集合时不给这一节（返回空列表）。
  */
 export function topicLines(collections: readonly { name: string }[], items: readonly PlainItem[], limit = TOPICS_LIMIT): string[] {
   if (!hasOverall(collections)) return [];
-  const head = "【总体分析的主题】贴了标签、在用的主题，一行一页（标题，括号里是别名）：";
+  const head = "【业务说明的主题】贴了标签、在用的主题，一行一页（标题，括号里是别名）：";
   const rows = items.filter((one) => one.collection === OVERALL_COLLECTION && isUsable(one.fields)).map((one) => {
     const title = typeof one.fields[OVERALL_FIELDS.title] === "string" ? (one.fields[OVERALL_FIELDS.title] as string).trim() : "";
     const aliases = texts(one.fields[OVERALL_FIELDS.aliases]).map((alias) => alias.trim());
@@ -332,7 +332,7 @@ export function topicLines(collections: readonly { name: string }[], items: read
 // ───────────── 保存一页时的两条核对 ─────────────
 
 /**
- * 保存总体分析的一页时另外核对的两条，对的是改完之后的字段内容与来源。返回不对的地方，每处是原因码与两层文字：
+ * 保存业务说明的一页时另外核对的两条，对的是改完之后的字段内容与来源。返回不对的地方，每处是原因码与两层文字：
  * - 「改看」只在这一页已废弃时写：它指向取代这一页的那一页。
  * - 「已经定下的」每一条都要有出处：至少一条来源指到它（来源的 supports 里写这个字段与第几条；指到整个字段、
  *   或者不写 supports 表示整个条目都出自这条来源的，也算）。

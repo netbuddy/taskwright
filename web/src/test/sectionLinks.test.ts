@@ -38,9 +38,9 @@ describe("相关角色与对象", () => {
     const task = overallTask();
     change(task, "OA-006", (page) => { page.fields.状态 = "已废弃"; });
     // OA-004 在第 1 章，OA-008 未归类：都不列。
-    change(task, "OA-003", (page) => { page.mentioned_by!.push({ item_id: "OA-004", collection: "总体分析", field: "它是什么", index: null, word: "预约", sentence: "", revision_no: 1 },
-      { item_id: "OA-008", collection: "总体分析", field: "它是什么", index: null, word: "预约", sentence: "", revision_no: 1 },
-      { item_id: "OA-003", collection: "总体分析", field: "它是什么", index: null, word: "预约", sentence: "", revision_no: 1 }); });
+    change(task, "OA-003", (page) => { page.mentioned_by!.push({ item_id: "OA-004", collection: "业务说明", field: "它是什么", index: null, word: "预约", sentence: "", revision_no: 1 },
+      { item_id: "OA-008", collection: "业务说明", field: "它是什么", index: null, word: "预约", sentence: "", revision_no: 1 },
+      { item_id: "OA-003", collection: "业务说明", field: "它是什么", index: null, word: "预约", sentence: "", revision_no: 1 }); });
     const related = relatedPages(task, toc(task), itemOf(task, "OA-003"), []);
     expect(ids(related.flows)).toEqual(["OA-002"]);
     expect(ids(related.roles)).toEqual([]);

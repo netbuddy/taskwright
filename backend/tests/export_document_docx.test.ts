@@ -120,7 +120,7 @@ test("请求里的图片：照着取；不是列表、缺项、不是 PNG、太�
 test("下载接口：whole 为真时回整份文档的 Word 文件，章节次序与预览相同；可以按修订、按选中的条目；只能下载不能预览；不写 whole 仍是导出条目", async () => {
   const root = join(tmp, "service");
   const quote = "读者凭借书证借书。";
-  const page = (fields: Dict) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: quote }] });
+  const page = (fields: Dict) => ({ op: "add", collection: "业务说明", fields: { 状态: "在用", ...fields }, sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: quote }] });
   const dir = makeTypedTask(join(root, "tasks"), "requirements-engineering", { "材料.md": quote }, [
     [page({ 标题: "借书", 标签: ["流程"], 它是什么: quote, 例子: [quote] }), page({ 标题: "读者", 标签: ["角色"], 它是什么: quote })],
     { diagram: { name: "借书的流程", kind: "flowchart", sources: [{ kind: "条目", locator: "OA-001" }], mermaid: 'flowchart TD\n  a(["OA-001 借书"]) --> b{"有没有借书证"}' }, said: "画一下" },

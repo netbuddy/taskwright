@@ -12,7 +12,7 @@
  * 开着的是哪一条从事件表里推（openProposal）。卡片的选项只在那一条会话的会话文件里，任务库里原来没有记，所以要在发的时候记下：
  * 换一条会话之后也认得出它。这一项做出来之前发的卡片事件里没有 proposal，认不成提议；卡片自己照常能点。
  *
- * 只有有阶段的任务（任务定义里有「总体分析」集合）才有提议。
+ * 只有有阶段的任务（任务定义里有「业务说明」集合）才有提议。
  */
 
 import type { DatabaseSync } from "node:sqlite";
@@ -133,7 +133,7 @@ export function proposalKindOf(fact: unknown): ProposalKind | null {
   return null;
 }
 
-/** 任务有没有阶段：任务定义里有「总体分析」集合。读不出任务定义时当作没有。 */
+/** 任务有没有阶段：任务定义里有「业务说明」集合。读不出任务定义时当作没有。 */
 function taskHasStages(db: DatabaseSync, taskId: string): boolean {
   const row = db.prepare("SELECT definition_text FROM task WHERE task_id = ?").get(taskId) as { definition_text: string } | undefined;
   if (!row) return false;

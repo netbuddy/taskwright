@@ -26,7 +26,7 @@ export const MATERIAL = "读者凭借书证在自助机上借书。";
  * 助手才能往别的集合里新增条目。这三步由 withStack 在开会话之前备好（agent/tests/fixtures/seed_writing.mts：这一页存成修订 1，
  * 调用编号就是这里的 call-topic），所以各份脚本直接从保存条目写起，头一次保存的条目是修订 2。测工作阶段本身的测试给 seed: false，自己走这几步。
  */
-export const TOPIC_CALL = { id: "call-topic", name: "save_revision", arguments: { operations: [{ op: "add", collection: "总体分析",
+export const TOPIC_CALL = { id: "call-topic", name: "save_revision", arguments: { operations: [{ op: "add", collection: "业务说明",
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
   fields: { 标题: "自助借书", 它是什么: MATERIAL, 例子: [MATERIAL], 标签: ["流程"], 状态: "在用" } }] } };
 

@@ -34,7 +34,7 @@ let ws: string;
 before(() => {
   tmp = tempDir();
   root = join(tmp, "service");
-  // 任务修订 1：总体分析的一页主题（写条目之前要有一页用户看过的主题）。
+  // 任务修订 1：业务说明的一页主题（写条目之前要有一页用户看过的主题）。
   ws = makePagedTask(join(root, "tasks"), { "材料.md": "读者凭口令登录。" }, [PAGE], [
     // 任务修订 2：三个用例。
     [useCase("登录", "读者登录系统。"), useCase("办证", "读者办借书证。"), useCase("挂失", "读者挂失借书证。")],

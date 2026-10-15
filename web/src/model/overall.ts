@@ -1,4 +1,4 @@
-// 总体分析（任务定义里名叫「总体分析」的集合）在页面上的几样派生：一页一个主题，页面按「上级主题」把它们排成提纲，
+// 业务说明（任务定义里名叫「业务说明」的集合）在页面上的几样派生：一页一个主题，页面按「上级主题」把它们排成提纲，
 // 每页分四块（它是什么、例子、已经定下的、还没定的），底下列出提到它的地方。这里只算不画，也不改任何数据：
 //   · 提纲：成树、每页的状态点与「N 定 · N 问」、底部的总计；
 //   · 一页里哪几处是助手补的、还没有确认（待核实）；
@@ -16,10 +16,6 @@ import { QUESTION_BLOCKING, QUESTION_BLOCKING_FIELD } from "../../../agent/src/l
 
 export { OVERALL_COLLECTION };
 
-/** 总体分析这个集合在页面上的叫法：业务说明。集合名不改，只改页签与提示里显示的字。 */
-export const OVERALL_LABEL = "业务说明";
-/** 一个集合在页面上显示的名字：总体分析显示成业务说明，别的照集合名。 */
-export const collectionLabel = (name: string): string => (name === OVERALL_COLLECTION ? OVERALL_LABEL : name);
 
 /** 这一页是不是某一章的导语页：「导语所属章」写了字（编写文档阶段助手补写的；它不是节，不贴标签）。 */
 export function isIntroPage(item: Item): boolean {
@@ -40,7 +36,7 @@ export const CONCEPT_LABEL = "概念";
 
 // 任务快照里条目另带的几项（api/types.ts 的 Item）：pending_verification 待核实，pending_sources 还待核实的助手补充来源有几条，
 // pending_places 这些来源支持的各处（用户亲手改过的那一处已经不在里面），basis_pending 它依据的主题待核实或已废弃，
-// mentioned_by 别处提到它的句子（只有总体分析的页有）。条目的 viewed（看过）不等于不待核实：用户亲手改过的页算看过，
+// mentioned_by 别处提到它的句子（只有业务说明的页有）。条目的 viewed（看过）不等于不待核实：用户亲手改过的页算看过，
 // 别处助手补的仍可能待核实。早先的后端不给这几项，这时按「没有待核实、没有被提到」处理。
 
 /** 来源的两个种类：材料里的原文，用户在对话里说的话。 */
@@ -57,7 +53,7 @@ const textOf = (item: Item, field: string): string => {
   return typeof v === "string" ? v : "";
 };
 
-/** 任务定义里的总体分析集合；没有时为 null（早先的任务）。 */
+/** 任务定义里的业务说明集合；没有时为 null（早先的任务）。 */
 export function overallDef(task: Task): CollectionDef | null {
   return task.definition.collections.find((c) => c.name === OVERALL_COLLECTION) ?? null;
 }
@@ -66,7 +62,7 @@ export function isOverall(collection: string | null | undefined): boolean {
   return collection === OVERALL_COLLECTION;
 }
 
-/** 总体分析的全部页，按编号。 */
+/** 业务说明的全部页，按编号。 */
 export function pagesOf(task: Task): Item[] {
   return task.items.filter((i) => isOverall(i.collection)).sort(byId);
 }
@@ -89,7 +85,7 @@ export function pendingCount(item: Item): number {
 
 /**
  * 用户打开一个条目时要不要顺手记为已读（返回要记的目标，不记时为 null）。别的条目照旧：打开就记（model/items.ts 的 viewTarget）。
- * 总体分析里待核实的页不在打开时记：记了它就不再待核实，而助手补的那几处用户也许还没有看；
+ * 业务说明里待核实的页不在打开时记：记了它就不再待核实，而助手补的那几处用户也许还没有看；
  * 这种页由主题页上的「确认待核实的 N 处」来记。
  */
 export function viewOnOpen(task: Task | null, itemId: string | null): { item_id: string; base_revision: number } | null {
@@ -104,10 +100,10 @@ export function confirmAction(item: Item): { kind: "mark_viewed"; targets: { ite
 }
 
 /**
- * 待核实、依据待核实、提到这几项只随整份数据来，库事件里没有。任务里有总体分析时，页面在可能改变它们的事之后
+ * 待核实、依据待核实、提到这几项只随整份数据来，库事件里没有。任务里有业务说明时，页面在可能改变它们的事之后
  * （交付物有了新修订、有人确认或看过了某个条目、图有了变动或者被看过）另取一次。这里给出「该不该再取」的记号：修订号、确认标记的条数、
  * 图的修订号与看没看过变了，记号就变；
- * 没有总体分析的早先任务不用取，返回 null。
+ * 没有业务说明的早先任务不用取，返回 null。
  */
 export function factsKey(task: Task | null, latestRevision: number): string | null {
   if (!task || !overallDef(task)) return null;
@@ -342,9 +338,9 @@ export function dependents(task: Task, item: Item): Item[] {
   return task.items.filter((i) => ids.has(i.item_id)).sort(byId);
 }
 
-/** 「复述一遍」发给助手的那句话：给了主题就讲它与它下面的主题，没有给就讲整个总体分析。 */
+/** 「复述一遍」发给助手的那句话：给了主题就讲它与它下面的主题，没有给就讲整个业务说明。 */
 export function retellText(title: string | null): string {
-  return title ? `请把现在对「${title}」及其下面主题的理解讲成一段故事` : "请把现在对总体分析里各个主题的理解讲成一段故事";
+  return title ? `请把现在对「${title}」及其下面主题的理解讲成一段故事` : "请把现在对业务说明里各个主题的理解讲成一段故事";
 }
 
 /** 「让助手照这条改条目」预填进对话区输入框的那句话，用户可以接着写。 */

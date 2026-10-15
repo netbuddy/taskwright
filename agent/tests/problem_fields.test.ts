@@ -1,7 +1,7 @@
 /**
  * 问题条目的三个新字段与导语页的一条规矩（lib/save_revision.ts）：
  * 不阻断的问题要写何时回看；状态改成已解决时要写落实到；写下之后助手还能改的字段多了落实到、是否阻断下游、何时回看；
- * 任务定义里没有这几个字段的任务不受这几条管；总体分析的一章至多一页在用的导语页。
+ * 任务定义里没有这几个字段的任务不受这几条管；业务说明的一章至多一页在用的导语页。
  */
 
 import assert from "node:assert/strict";
@@ -17,7 +17,7 @@ let serial = 0;
 const call = (dir: string, problemClicks: unknown[] = [], actor?: string) =>
   ({ workspaceDir: dir, sessionId: SESSION, callId: `call-f-${++serial}`, problemClicks: problemClicks as never, ...(actor ? { actor } : {}) });
 
-/** 问题集合照需求规格任务的写法，带三个新字段；总体分析带「导语所属章」。withNew 为假时是早先的定义：这四个字段都没有。 */
+/** 问题集合照需求规格任务的写法，带三个新字段；业务说明带「导语所属章」。withNew 为假时是早先的定义：这四个字段都没有。 */
 function workspace(withNew = true): string {
   const definition = overallDefinition() as any;
   const problems = definition.交付物.条目集合.find((one: any) => one.名称 === "问题");
@@ -30,7 +30,7 @@ function workspace(withNew = true): string {
     { 名: "关联条目", 类型: "条目引用", 必填: false },
   ];
   if (withNew) {
-    definition.交付物.条目集合.find((one: any) => one.名称 === "总体分析").字段.push(
+    definition.交付物.条目集合.find((one: any) => one.名称 === "业务说明").字段.push(
       { 名: "导语所属章", 类型: "枚举", 必填: false, 取值: CHAPTERS.map((one) => one.name) });
   }
   const dir = makeWorkspace(definition);
@@ -125,28 +125,28 @@ test("任务定义里没有这几个字段的任务：照旧，不要求何时�
 
 test("导语页：一章至多一页在用的；同一批里立两页、库里已有一页再立，都拒绝并指出是哪一页；废弃了原来的才能另立；别的章不受影响", () => {
   const dir = workspace();
-  add(dir, page("业务流程导语", { 导语所属章: "业务流程" }), "总体分析");
+  add(dir, page("业务流程导语", { 导语所属章: "业务流程" }), "业务说明");
   assert.equal(fieldsOf(dir, "OA-001").导语所属章, "业务流程");
-  const again = refused(() => add(dir, page("流程一章的导语", { 导语所属章: "业务流程" }), "总体分析"));
+  const again = refused(() => add(dir, page("流程一章的导语", { 导语所属章: "业务流程" }), "业务说明"));
   assert.match(again, /「业务流程」这一章已经有一页在用的导语页：OA-001。/);
   assert.match(again, /怎么办：一章只立一页导语页，请改那一页，不要另立/);
   // 同一批里两页写同一章：第二页被拒，整批不写。
   const batch = refused(() => saveRevision(call(dir), { operations: [
-    { op: "add", collection: "总体分析", fields: page("角色导语", { 导语所属章: "角色" }), sources: [SOURCE] },
-    { op: "add", collection: "总体分析", fields: page("角色导语二", { 导语所属章: "角色" }), sources: [SOURCE] },
+    { op: "add", collection: "业务说明", fields: page("角色导语", { 导语所属章: "角色" }), sources: [SOURCE] },
+    { op: "add", collection: "业务说明", fields: page("角色导语二", { 导语所属章: "角色" }), sources: [SOURCE] },
   ] }));
-  assert.match(batch, /操作 2（新增，集合「总体分析」）：新增到「总体分析」的条目：「角色」这一章已经有一页在用的导语页：OA-002。/);
+  assert.match(batch, /操作 2（新增，集合「业务说明」）：新增到「业务说明」的条目：「角色」这一章已经有一页在用的导语页：OA-002。/);
   assert.equal(query(dir, "SELECT 1 FROM item").length, 1);
   // 别的章照常；把普通的页改成已有导语页的那一章也拒绝；改导语页自己不算撞上自己。
-  add(dir, page("角色导语", { 导语所属章: "角色" }), "总体分析");
-  add(dir, page("借书", { 标签: ["流程"] }), "总体分析");
+  add(dir, page("角色导语", { 导语所属章: "角色" }), "业务说明");
+  add(dir, page("借书", { 标签: ["流程"] }), "业务说明");
   assert.match(refused(() => saveRevision(call(dir), { operations: [{ op: "update", item: "OA-003", base_revision: revisionOf(dir, "OA-003"), fields: { 导语所属章: "业务流程" } }] })),
     /「业务流程」这一章已经有一页在用的导语页：OA-001/);
   saveRevision(call(dir), { operations: [{ op: "update", item: "OA-001", base_revision: 1, fields: { 它是什么: "这一章讲读者怎样借书、预约与续借。" } }] });
   // 原来的导语页废弃之后，这一章可以另立一页。
   saveRevision(call(dir), { operations: [{ op: "update", item: "OA-001", base_revision: revisionOf(dir, "OA-001"), fields: { 状态: "已废弃" } }] });
-  add(dir, page("业务流程导语（新）", { 导语所属章: "业务流程" }), "总体分析");
+  add(dir, page("业务流程导语（新）", { 导语所属章: "业务流程" }), "业务说明");
   assert.equal(fieldsOf(dir, "OA-004").导语所属章, "业务流程");
   // 取值只能是七章的章名。
-  assert.match(refused(() => add(dir, page("附录导语", { 导语所属章: "附录" }), "总体分析")), /导语所属章/);
+  assert.match(refused(() => add(dir, page("附录导语", { 导语所属章: "附录" }), "业务说明")), /导语所属章/);
 });

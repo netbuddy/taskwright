@@ -34,7 +34,7 @@ test("整份数据的序号与各表同一时刻，删掉的条目不在里面�
   assert.deepEqual(task!.definition.collections[0].fields[0], { name: "名称", type: "文本", required: true, values: null, same_collection: false, single: false });
   const comp = task!.completion!;
   assert.deepEqual(Object.keys(comp).sort(), ["all_met", "brief", "conditions", "hints", "unmet_count"]);
-  assert.deepEqual(comp.hints, [], "这个任务没有总体分析集合，没有提示");
+  assert.deepEqual(comp.hints, [], "这个任务没有业务说明集合，没有提示");
   assert.deepEqual(Object.keys(comp.conditions[0]).sort(), ["collection", "done", "met", "missing", "name", "note", "state", "total"]);
 });
 
