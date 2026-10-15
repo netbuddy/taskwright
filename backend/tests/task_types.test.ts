@@ -56,7 +56,7 @@ test("已有的不覆盖：用户目录里改过的那一份照旧；产品自�
   assert.deepEqual(listTaskTypes(root).map((one) => one.name), ["演示类型", "需求工程"]);
 });
 
-test("任务服务启动时播种；建任务从用户目录复制，任务类型清单与 task.json 里的类型版本看用户目录里的那一份", async () => {
+test("任务服务启动时播种；建任务从用户目录复制，任务类型清单与 task.json 里的类型版本、修订号看用户目录里的那一份", async () => {
   const data = join(tmp, "service");
   const service = new Service(join(data, "tasks"), join(data, "runs"), {}, { port: 1, dataDir: data });
   try {
@@ -70,6 +70,12 @@ test("任务服务启动时播种；建任务从用户目录复制，任务类�
     const dir = join(data, "tasks", id);
     assert.equal(readFileSync(join(dir, definitionFileOf(KEY)), "utf-8"), readFileSync(file, "utf-8"));
     assert.equal(readTaskJson(dir)?.task_type_version, 99);
+    // 记下用的是第几个修订：用户目录里这种类型改过一次（修订 2）之后建的任务记 2。
+    assert.equal(readTaskJson(dir)?.task_type_revision, 1);
+    assert.equal(saveTaskTypeRevision(data, service.registry, KEY, { "docs/domain-knowledge/本单位.md": "本单位的写法。\n" }, "user", "补一份"), 2);
+    const later = service.create({ task_type: KEY, task_name: "还书" }).task_id as string;
+    assert.equal(readTaskJson(join(data, "tasks", later))?.task_type_revision, 2);
+    assert.ok(existsSync(join(data, "tasks", later, "docs/domain-knowledge/本单位.md")));
   } finally {
     await service.close();
   }

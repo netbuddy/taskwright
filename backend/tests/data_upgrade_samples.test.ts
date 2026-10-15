@@ -88,6 +88,7 @@ for (const sample of Object.keys(SAMPLE_TASKS) as (keyof typeof SAMPLE_TASKS)[])
         db.close();
       }
       assert.equal(readTaskJson(taskDir)?.upgraded_by_version, "0.6.0");
+      assert.equal(readTaskJson(taskDir)?.task_type_revision, 1, "任务类型落到用户目录之前建的，按播种版记作修订 1");
       // 任务类型改名：任务目录里的任务定义文件与库里的定义路径、定义快照里的执行方法与任务名都换成「需求工程」。
       assert.deepEqual(readdirSync(join(taskDir, "docs", "task-definitions")), ["requirements-engineering.json"]);
       const definition = readFileSync(join(taskDir, "docs", "task-definitions", "requirements-engineering.json"), "utf-8");

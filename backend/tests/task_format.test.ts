@@ -56,7 +56,7 @@ test("建任务：任务目录里写 task.json，任务库是现在的格式版�
     const dir = join(root, "tasks", id);
     const meta = readTaskJson(dir)!;
     assert.deepEqual({ ...meta, created_at: "T" }, { created_by_version: appVersion(), task_type: "requirements-engineering", task_type_version: taskTypeVersion("requirements-engineering"),
-      owner: "local", created_at: "T", upgraded_by_version: null, upgraded_at: null });
+      task_type_revision: 1, owner: "local", created_at: "T", upgraded_by_version: null, upgraded_at: null });
     assert.ok(meta.created_at, "建立时刻写了");
     assert.equal(library.taskDbVersion(dir), TASK_DB_VERSION);
     const row = service.registry!.task(id)!;

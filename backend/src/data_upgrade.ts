@@ -290,6 +290,8 @@ function afterTaskUpgraded(plan: UpgradePlan, dir: string, registry: ServiceDb, 
   writeTaskJson(taskDir, {
     created_by_version: had?.created_by_version ?? null, task_type: had?.task_type ?? taskType,
     task_type_version: had ? had.task_type_version : copiedTypeVersion(taskDir, row?.definition_path ?? null),
+    // 用的是任务类型的第几个修订：没有记过的（任务类型落到用户目录之前建的）按播种版算，记作修订 1。
+    task_type_revision: had?.task_type_revision ?? 1,
     owner: had?.owner ?? "local", created_at: had?.created_at ?? row?.started_at ?? null,
     upgraded_by_version: productVersion, upgraded_at: clock.now(),
   });

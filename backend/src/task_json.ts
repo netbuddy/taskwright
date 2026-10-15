@@ -1,5 +1,5 @@
 /**
- * 任务目录里的 task.json：这个任务是哪个产品版本建的、哪种任务类型的第几版说明、属主、建立时刻，以及最近一次数据升级是哪个产品版本
+ * 任务目录里的 task.json：这个任务是哪个产品版本建的、哪种任务类型的第几版说明（以及用户目录里那种任务类型的第几个修订）、属主、建立时刻，以及最近一次数据升级是哪个产品版本
  * 在什么时候做的。建任务时写，数据升级时补写（上一版建的任务没有这个文件）。
  *
  * 它是给程序读的小文件，键用英文小写（与占用标记 service.lock 一样）。任务库里记的是任务的内容，这里记的是「谁写了这份数据」：
@@ -17,6 +17,11 @@ export interface TaskJson {
   task_type: string | null;
   /** 建任务时复制进任务目录的任务类型说明是第几版；那时的定义没有写版本就是 null。 */
   task_type_version: number | null;
+  /**
+   * 建任务时复制的是用户数据目录里这种任务类型的第几个修订（见 task_types.ts，播种那一刻是修订 1）。格式 8 的任务升级时
+   * 没有记录，按播种版记作 1；更早写的 task.json 里没有这一项，读出来是 null。
+   */
+  task_type_revision: number | null;
   /** 属主；现在只有单机用户，写 local。 */
   owner: string;
   created_at: string | null;
@@ -38,6 +43,7 @@ export function readTaskJson(taskDir: string): TaskJson | null {
     return {
       created_by_version: text(raw.created_by_version), task_type: text(raw.task_type),
       task_type_version: Number.isInteger(raw.task_type_version) ? raw.task_type_version : null,
+      task_type_revision: Number.isInteger(raw.task_type_revision) ? raw.task_type_revision : null,
       owner: text(raw.owner) ?? "local", created_at: text(raw.created_at),
       upgraded_by_version: text(raw.upgraded_by_version), upgraded_at: text(raw.upgraded_at),
     };

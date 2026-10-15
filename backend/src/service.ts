@@ -28,7 +28,7 @@ import { Hub } from "./hub.ts";
 import { DEBUG_MODE, PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
-import { listTaskTypes, recordSeedRevisions, seedTaskTypes, taskTypesRoot, typeInfo } from "./task_types.ts";
+import { listTaskTypes, recordSeedRevisions, revisionNumbers, seedTaskTypes, taskTypesRoot, typeInfo } from "./task_types.ts";
 import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
 import { readTaskJson, writeTaskJson } from "./task_json.ts";
 import type { PendingUpgrade } from "./data_upgrade.ts";
@@ -520,7 +520,8 @@ export class Service {
     writeFileSync(join(result.任务目录, SELECTION_FILE), JSON.stringify(initialSelection(), null, 2) + "\n", "utf-8");
     // 记下这个任务是哪个产品版本建的、任务类型说明是第几版（见 task_json.ts）。登记表在下面的扫描接手它时写。
     writeTaskJson(result.任务目录, {
-      created_by_version: appVersion(), task_type: taskType, task_type_version: taskTypeVersion(taskType, this.typesRoot), owner: "local",
+      created_by_version: appVersion(), task_type: taskType, task_type_version: taskTypeVersion(taskType, this.typesRoot),
+      task_type_revision: revisionNumbers(this.dataDir, taskType).at(-1) ?? null, owner: "local",
       created_at: clock.now(), upgraded_by_version: null, upgraded_at: null,
     });
     this.scan();
