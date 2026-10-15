@@ -7,12 +7,9 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { ACT_KINDS, consecutiveReplyRejections } from "../src/lib/reply.ts";
-import { databasePath } from "../src/lib/db.ts";
-import { withTaskDatabase } from "../src/lib/schema.ts";
 import { EXECUTOR_FUNCTIONS, INTENT_SCHEMA, schemaErrors } from "../src/lib/intent_schema.ts";
 import {
   aboutReminder,
@@ -716,19 +713,6 @@ test("续接会话时，任务现状消息列出还在等回应的执行者行�
 });
 
 // ───────────── 库表与唯一来源 ─────────────
-
-test("对话理解之前建的库：打开时补建对话行为表、给修订表与来源表补列，原有的行都在", () => {
-  const dir = workspaceWithItems();
-  const db = new DatabaseSync(databasePath(dir));
-  db.exec("DROP TABLE dialogue_act; ALTER TABLE revision DROP COLUMN intent_act_id; ALTER TABLE item_source DROP COLUMN normalized_value; PRAGMA user_version = 0;");
-  db.close();
-  withTaskDatabase(dir, { createIfMissing: false }, () => null);
-  const columns = (table: string) => query<{ name: string }>(dir, `PRAGMA table_info(${table})`).map((r) => r.name);
-  assert.ok(columns("dialogue_act").includes("responds_to"));
-  assert.ok(columns("revision").includes("intent_act_id"));
-  assert.ok(columns("item_source").includes("normalized_value"));
-  assert.equal(query(dir, "SELECT * FROM revision").length, 1);
-});
 
 test("唯一来源：回复的五种主行为取自 schema；平台共用说明的生成区与 schema 一致", () => {
   assert.deepEqual([...ACT_KINDS], [...EXECUTOR_FUNCTIONS]);

@@ -350,3 +350,16 @@ export function problemClicksOn(workspaceDir: string, sessionId: string, branch:
   recordAtSettle(workspaceDir, sessionId, branch as never, branch.filter((e) => e.message?.role === "user").map((e) => e.id), REGISTERED_OUTPUTS);
   return problemClicks(branch);
 }
+
+/**
+ * 把一个现在格式（9）的任务库退回格式 8 的样子：工具拒绝表去掉原因码两列，版本号记 8。格式 8 与 9 只差这两列。
+ * 直接开库改，不经 withTaskDatabase（它一打开就会升级）。
+ */
+export function asFormat8(workspaceDir: string): void {
+  const db = new DatabaseSync(databasePath(workspaceDir));
+  try {
+    db.exec("ALTER TABLE tool_rejection DROP COLUMN reason_codes; ALTER TABLE tool_rejection DROP COLUMN reason_code; PRAGMA user_version = 8");
+  } finally {
+    db.close();
+  }
+}

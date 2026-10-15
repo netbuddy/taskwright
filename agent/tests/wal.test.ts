@@ -12,7 +12,8 @@ import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { SCHEMA_SQL } from "../src/lib/schema.ts";
+import { ensureDialogueSchema } from "../src/lib/dialogue_schema.ts";
+import { SCHEMA_SQL, TASK_DB_VERSION } from "../src/lib/schema.ts";
 import { DEFINITION_PATH, SOURCE, callIn, count, makeWorkspace, query } from "./helpers.ts";
 
 const LIB = join(import.meta.dirname, "..", "src", "lib");
@@ -62,23 +63,25 @@ test("另一个连接开着读事务时，写入工具仍然成功，读事务�
   assert.deepEqual([before, during, after], [0, 0, 1]);
 });
 
-test("旧的回滚日志模式的库，被写入一侧打开后切成了 WAL", () => {
+test("回滚日志模式的库，被写入一侧打开后切成了 WAL", () => {
   const dir = makeWorkspace();
   const db = new DatabaseSync(databasePath(dir));
   db.exec("PRAGMA journal_mode = DELETE");
   db.exec(SCHEMA_SQL);
+  ensureDialogueSchema(db);
+  db.exec(`PRAGMA user_version = ${TASK_DB_VERSION}`);
   db.close();
   assert.equal(journalMode(dir), "delete");
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   assert.equal(journalMode(dir), "wal");
 });
 
-test("旧格式（有 slot 表）的库被拒绝时，日志模式也不改", () => {
+test("格式太早的库（这里是 0.4 之前带 slot 表的库）被拒绝时，日志模式也不改", () => {
   const dir = makeWorkspace();
   const db = new DatabaseSync(databasePath(dir));
   db.exec("CREATE TABLE slot (name TEXT)");
   db.close();
-  assert.throws(() => createTask(callIn(dir), { definition_path: DEFINITION_PATH }), /旧格式/);
+  assert.throws(() => createTask(callIn(dir), { definition_path: DEFINITION_PATH }), /这个任务库的格式是 0/);
   assert.equal(journalMode(dir), "delete");
 });
 

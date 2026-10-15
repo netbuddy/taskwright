@@ -7,9 +7,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
-import { databasePath } from "../src/lib/db.ts";
 import { DefinitionError, effectiveRules, loadDefinition } from "../src/lib/definition.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
@@ -283,17 +281,6 @@ test("发布版本的拒绝文字把还没评审与评审不合规分开写；�
 });
 
 // ───────────── 旧库补列、生成区一致 ─────────────
-
-test("0.1 建的库：评审发现表缺规则编号与级别两列，写入一侧打开时补上", () => {
-  const dir = withTwoItems(reviewWorkspace());
-  const db = new DatabaseSync(databasePath(dir));
-  db.exec("DROP TABLE review_finding; CREATE TABLE review_finding (review_id INTEGER NOT NULL, task_id TEXT NOT NULL, ordinal INTEGER NOT NULL, field TEXT NOT NULL, item_index INTEGER, problem TEXT NOT NULL, suggestion TEXT, PRIMARY KEY (review_id, ordinal))");
-  db.exec("PRAGMA user_version = 0");
-  db.close();
-  withTaskDatabase(dir, { createIfMissing: false }, () => undefined);
-  const columns = query<{ name: string }>(dir, "PRAGMA table_info(review_finding)").map((r) => r.name);
-  assert.ok(columns.includes("rule_id") && columns.includes("level"), columns.join(","));
-});
 
 test("领域规矩文档里的规则列表与规则文件一致（渲染后没有差别）", () => {
   const docs = documents(resolve(import.meta.dirname, "../.."));

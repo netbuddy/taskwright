@@ -88,13 +88,32 @@ test("接手已有的任务时补记进登记表；没有服务级库的服务�
   }
 });
 
-test("上一版建的任务（库没有编过版本号）：不接手、不占用，列表里是「需要升级」并写明怎样做，打开被拒；升级失败过的是「需要处理」并写原因", async () => {
+test("格式早于 8 的任务：不接手、不升级，列表里是「旧格式」并写明格式号，打开被拒，库没有被改", async () => {
+  const root = fresh();
+  const first = serviceOn(root);
+  const id = first.create({ task_type: "srs-authoring", task_name: "太早的任务" }).task_id as string;
+  await first.close();
+  const dir = join(root, "tasks", id);
+  setVersion(dir, 5);
+  const service = serviceOn(root);
+  try {
+    const listed = service.listTasks();
+    assert.deepEqual(listed.map((t) => [t.task_id, t.unavailable, t.supported]), [[id, "旧格式", false]]);
+    assert.match(listed[0].note!, /^这个任务库的格式是 5（0\.5 建的），本版本只能打开格式 8 及以后的任务库/);
+    assert.equal(refusal(() => service.task(id)).code, "task_unavailable");
+    assert.equal(library.taskDbVersion(dir), 5);
+  } finally {
+    await service.close();
+  }
+});
+
+test("上一版建的任务（库是格式 8）：不接手、不占用，列表里是「需要升级」并写明怎样做，打开被拒；升级失败过的是「需要处理」并写原因", async () => {
   const root = fresh();
   const first = serviceOn(root);
   const id = first.create({ task_type: "srs-authoring", task_name: "旧任务" }).task_id as string;
   await first.close();
   const dir = join(root, "tasks", id);
-  setVersion(dir, 0);
+  setVersion(dir, 8);
   assert.equal(existsSync(join(dir, LOCK_NAME)), false, "先前的服务收尾时删了占用标记");
   for (const [mode, how] of [["server", "请停下服务后运行 taskwright data upgrade。"], ["desktop", "重新启动程序后升级。"]] as const) {
     const service = serviceOn(root, { mode });
@@ -105,7 +124,7 @@ test("上一版建的任务（库没有编过版本号）：不接手、不占�
       const refused = refusal(() => service.task(id));
       assert.deepEqual([refused.code, refused.status, refused.message, (refused.data as any).status], ["task_unavailable", 409, listed[0].note, "需要升级"]);
       assert.equal(existsSync(join(dir, LOCK_NAME)), false, "没有接手就不写占用标记");
-      assert.equal(library.taskDbVersion(dir), 0, "只读地看，库没有被改");
+      assert.equal(library.taskDbVersion(dir), 8, "只读地看，库没有被改");
     } finally {
       await service.close();
     }

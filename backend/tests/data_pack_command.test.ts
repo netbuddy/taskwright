@@ -129,7 +129,7 @@ test("导入：数据目录被服务占着、里面有上一版的数据要先�
   // 目标数据目录里有上一版留下的任务还没有升级。
   const old = fresh("old");
   mkdirSync(join(old, "tasks"), { recursive: true });
-  cpSync(join(SAMPLES, "0.4.3"), join(old, "tasks", "TASK-OLD"), { recursive: true });
+  cpSync(join(SAMPLES, "format-8-b"), join(old, "tasks", "TASK-OLD"), { recursive: true });
   const pending = run(["data", "import", "--data", old, "--from", file]);
   assert.equal(pending.status, 2, pending.out);
   assert.match(pending.err, /里有上一版留下的数据要先升级。请先运行 taskwright data upgrade --data .*，做完再导入。/);
@@ -157,28 +157,28 @@ test("导入：数据目录被服务占着、里面有上一版的数据要先�
 test("数据包升级：旧包升成新包并能导入；参数不对、比这个程序新的包退出 2", async () => {
   const old = fresh("old");
   mkdirSync(join(old, "tasks"), { recursive: true });
-  for (const version of ["0.4.0", "0.4.3"]) cpSync(join(SAMPLES, version), join(old, "tasks", version), { recursive: true });
+  for (const sample of ["format-8-a", "format-8-b"]) cpSync(join(SAMPLES, sample), join(old, "tasks", sample), { recursive: true });
   const dir = outDir();
   const pack = join(dir, "old.taskwright.zip");
   // 还没有升级的数据目录也能导出。
   assert.equal(run(["data", "export", "--data", old, "--to", pack]).status, 0);
-  assert.deepEqual(readPack(pack).manifest.tasks.map((t) => t.task_db_version), [0, 0]);
+  assert.deepEqual(readPack(pack).manifest.tasks.map((t) => t.task_db_version), [8, 8]);
   const before = readFileSync(pack);
 
   const to = join(dir, "new.taskwright.zip");
   const upgraded = run(["data", "upgrade", "--pack", pack, "--to", to]);
   assert.equal(upgraded.status, 0, upgraded.err + upgraded.out);
-  assert.match(upgraded.out, new RegExp(`^数据包升级（原来的包由 .* 导出）\\n任务 TASK-SAMPLE-040「图书借阅（样本）」：格式 0 升到 ${TASK_DB_VERSION}，成功\\n任务 TASK-SAMPLE-043`));
+  assert.match(upgraded.out, new RegExp(`^数据包升级（原来的包由 .* 导出）\\n任务 TASK-SAMPLE-8A「图书借阅（样本甲）」：格式 8 升到 ${TASK_DB_VERSION}，成功\\n任务 TASK-SAMPLE-8B`));
   assert.match(upgraded.out, /数据包已经写好：.*new\.taskwright\.zip/);
-  assert.deepEqual(readPack(to).manifest.tasks.map((t) => [t.task_id, t.task_db_version]), [["TASK-SAMPLE-040", TASK_DB_VERSION], ["TASK-SAMPLE-043", TASK_DB_VERSION]]);
+  assert.deepEqual(readPack(to).manifest.tasks.map((t) => [t.task_id, t.task_db_version]), [["TASK-SAMPLE-8A", TASK_DB_VERSION], ["TASK-SAMPLE-8B", TASK_DB_VERSION]]);
   assert.deepEqual(readFileSync(pack), before, "原来的包原样");
   assert.equal(existsSync(join(old, SERVICE_DB_NAME)), false, "数据包升级不碰任何数据目录");
 
   const target = fresh("target");
   const imported = run(["data", "import", "--data", target, "--from", to]);
   assert.equal(imported.status, 0, imported.err + imported.out);
-  assert.deepEqual(readdirSync(join(target, "tasks")).sort(), ["TASK-SAMPLE-040", "TASK-SAMPLE-043"]);
-  assert.deepEqual(facts(join(target, "tasks", "TASK-SAMPLE-043")).version, TASK_DB_VERSION);
+  assert.deepEqual(readdirSync(join(target, "tasks")).sort(), ["TASK-SAMPLE-8A", "TASK-SAMPLE-8B"]);
+  assert.deepEqual(facts(join(target, "tasks", "TASK-SAMPLE-8B")).version, TASK_DB_VERSION);
 
   for (const args of [["--pack", pack], ["--to", join(dir, "x.zip")], ["--pack", pack, "--to", join(dir, "x.zip"), "--data", old]]) {
     const bad = run(["data", "upgrade", ...args]);

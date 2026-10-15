@@ -117,14 +117,14 @@ export function makeTypedTask(root: string, taskType: string, materials: Record<
 }
 
 /**
- * 用 0.4.3 的任务类型文件（tests/fixtures/task_dirs/0.4.3/docs：任务定义、模板、评审规则，集合里是「领域说明」）建一个任务目录，
+ * 用 0.4.3 的任务类型文件（tests/fixtures/legacy_type/docs：任务定义、模板、评审规则，集合里是「领域说明」）建一个任务目录，
  * 用法与 makeTypedTask 相同。0.4 建的任务不迁移、照旧能用，测它们的，以及只测与任务类型无关的机制（图、导出、依据已变）的，用它：
  * 这样的任务没有「总体分析」集合，也就没有「先有一页想清楚的主题才能写条目」那道门。
  */
 export function makeLegacyTask(root: string, materials: Record<string, string>, batches: unknown[]): string {
   const ws = join(root, "task");
   mkdirSync(ws, { recursive: true });
-  cpSync(join(ROOT, "backend", "tests", "fixtures", "task_dirs", "0.4.3", "docs"), join(ws, "docs"), { recursive: true });
+  cpSync(join(ROOT, "backend", "tests", "fixtures", "legacy_type", "docs"), join(ws, "docs"), { recursive: true });
   mkdirSync(join(ws, "inputs"), { recursive: true });
   for (const [name, text] of Object.entries(materials)) writeFileSync(join(ws, "inputs", name), text, "utf-8");
   node([join(FIXTURES, "build_task_db.mts"), ws, "docs/task-definitions/srs-authoring.json", JSON.stringify(batches)]);
@@ -244,4 +244,18 @@ export function movesSql(columns: readonly string[]): string {
     event_seq: "e.seq AS event_seq",
   };
   return `SELECT ${columns.map((name) => from[name] ?? `e.${name}`).join(", ")} FROM event e WHERE e.name IN ('ACTIVITY_STARTED', 'ACTIVITY_NODE_ENTERED', 'STAGE_MOVED') ORDER BY e.seq`;
+}
+
+/**
+ * 把一个现在格式（9）的任务库退回格式 8 的样子：工具拒绝表去掉原因码两列，版本号记 8（格式 8 与 9 只差这两列），删掉 task.json。
+ * 当「上一版留下的任务」用。直接开库改，不经助手一侧的写库函数（它一打开就会升级）。
+ */
+export function asFormat8(taskDir: string): void {
+  const db = new DatabaseSync(join(taskDir, "task.sqlite"));
+  try {
+    db.exec("ALTER TABLE tool_rejection DROP COLUMN reason_codes; ALTER TABLE tool_rejection DROP COLUMN reason_code; PRAGMA user_version = 8");
+  } finally {
+    db.close();
+  }
+  rmSync(join(taskDir, "task.json"), { force: true });
 }

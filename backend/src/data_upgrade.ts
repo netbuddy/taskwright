@@ -15,8 +15,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSyn
 import { basename, join, resolve } from "node:path";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 // upgradeTaskDatabase 是后端里除建任务之外唯一会改任务库的调用，只在这里（数据升级）用。
-import { TASKS_ROOT_ENV, TASK_DB_VERSION, newerDataText, taskWrittenBy, upgradeTaskDatabase } from "../../agent/src/lib/schema.ts";
-import { overallTemplateFor } from "./workspace.ts";
+import { MIN_TASK_DB_VERSION, TASKS_ROOT_ENV, TASK_DB_VERSION, newerDataText, taskWrittenBy, upgradeTaskDatabase } from "../../agent/src/lib/schema.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 import * as occupancy from "./occupancy.ts";
@@ -132,7 +131,8 @@ export function planUpgrade(where: DataLocations): UpgradePlan {
     if (version === null || version === TASK_DB_VERSION) continue;
     const task: PlannedTask = { dir, ...taskLabel(taskDir), version };
     if (version > TASK_DB_VERSION) plan.newer.push({ ...task, written_by: taskWrittenBy(taskDir) });
-    else if (unsupportedOldFormat(taskDir)) continue;
+    // 格式早于本程序能升级的最早格式（含修订统一之前的）：不升级，服务把它列为旧格式。
+    else if (version < MIN_TASK_DB_VERSION || unsupportedOldFormat(taskDir)) continue;
     else if (failures.has(dir)) plan.failed.push({ ...task, error: failures.get(dir)! });
     else plan.tasks.push(task);
   }
@@ -357,7 +357,7 @@ export async function runUpgrade(plan: UpgradePlan, options: RunOptions = {}): P
         try {
           const lock = occupancy.readLock(join(plan.tasksDir, task.dir));
           if (occupancy.occupiedByOther(lock)) throw new Error("任务正在被另一个服务使用");
-          const result = upgradeTaskDatabase(join(plan.tasksDir, task.dir), { overallTemplate: overallTemplateFor });
+          const result = upgradeTaskDatabase(join(plan.tasksDir, task.dir));
           outcome.to = result.to;
           outcome.notes = result.notes;
           afterTaskUpgraded(plan, task.dir, registry, productVersion);

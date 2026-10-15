@@ -28,8 +28,8 @@ async function http(port: number, method: string, path: string): Promise<{ statu
 test("桌面形态：待升级时只有服务信息、升级与退出几个接口可用；开始之后看得到进度，做完有报告，别的接口放开", async () => {
   const data = join(tmp, "desktop");
   mkdirSync(join(data, "tasks"), { recursive: true });
-  cpSync(join(SAMPLES, "0.4.1"), join(data, "tasks", "TASK-A"), { recursive: true });
-  cpSync(join(SAMPLES, "0.4.3"), join(data, "tasks", "TASK-B"), { recursive: true });
+  cpSync(join(SAMPLES, "format-8-a"), join(data, "tasks", "TASK-A"), { recursive: true });
+  cpSync(join(SAMPLES, "format-8-b"), join(data, "tasks", "TASK-B"), { recursive: true });
   const started = await startService({ port: 0, mode: "desktop", host: "127.0.0.1", profile: "fake", ownProcess: false, data });
   try {
     const { port } = started;
@@ -41,7 +41,7 @@ test("桌面形态：待升级时只有服务信息、升级与退出几个接�
     }
     const before = (await http(port, "GET", "/api/v1/service/upgrade")).body.upgrade;
     assert.deepEqual([before.state, before.data_dir, before.backup_dir, before.tasks.map((t: Dict) => t.task_id), before.service, before.knowledge, before.progress, before.report],
-      ["pending", data, join(data, "backups"), ["TASK-SAMPLE-041", "TASK-SAMPLE-043"], false, false, null, null]);
+      ["pending", data, join(data, "backups"), ["TASK-SAMPLE-8A", "TASK-SAMPLE-8B"], false, false, null, null]);
 
     const begun = await http(port, "POST", "/api/v1/service/upgrade");
     assert.deepEqual([begun.status, begun.body.started, begun.body.upgrade.state], [200, true, "running"]);
@@ -60,7 +60,7 @@ test("桌面形态：待升级时只有服务信息、升级与退出几个接�
     // 做完：放开。
     assert.equal((await http(port, "GET", "/api/v1/service")).body.upgrade_pending, false);
     const tasks = await http(port, "GET", "/api/v1/tasks");
-    assert.deepEqual([tasks.status, tasks.body.tasks.map((t: Dict) => [t.task_id, t.supported]).sort()], [200, [["TASK-SAMPLE-041", true], ["TASK-SAMPLE-043", true]]]);
+    assert.deepEqual([tasks.status, tasks.body.tasks.map((t: Dict) => [t.task_id, t.supported]).sort()], [200, [["TASK-SAMPLE-8A", true], ["TASK-SAMPLE-8B", true]]]);
     const again = await http(port, "POST", "/api/v1/service/upgrade");
     assert.deepEqual([again.status, again.body.started, again.body.upgrade.state], [200, false, "done"], "做完之后再点不重复做，报告还看得到");
   } finally {
@@ -71,7 +71,7 @@ test("桌面形态：待升级时只有服务信息、升级与退出几个接�
 test("从别的电脑打开页面也能开始升级：开始升级的接口不限来源（退出服务仍然只接受本机来的请求）", async () => {
   const data = join(tmp, "remote");
   mkdirSync(join(data, "tasks"), { recursive: true });
-  cpSync(join(SAMPLES, "0.4.2"), join(data, "tasks", "TASK-A"), { recursive: true });
+  cpSync(join(SAMPLES, "format-8-b"), join(data, "tasks", "TASK-A"), { recursive: true });
   const started = await startService({ port: 0, mode: "desktop", host: "127.0.0.1", profile: "fake", ownProcess: false, data });
   try {
     // 经分发函数直接验，来源写成别的电脑。

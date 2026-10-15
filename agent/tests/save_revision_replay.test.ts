@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { REPLAYED_TEXT, saveRevision } from "../src/lib/save_revision.ts";
-import { REVISION_CALL_INDEX, REVISION_CALL_LOOKUP_INDEX, withTaskDatabase } from "../src/lib/schema.ts";
+import { REVISION_CALL_INDEX, withTaskDatabase } from "../src/lib/schema.ts";
 import { DEFINITION_PATH, SOURCE, callIn, count, makeWorkspace, query } from "./helpers.ts";
 
 function workspaceWithTask(): string {
@@ -92,32 +92,3 @@ test("库上有按任务与调用编号的唯一索引：同一编号的第二�
       "VALUES ('TASK-001', 9, 's', 'call-u', 2, 'x', '[]')")), /UNIQUE constraint failed/);
 });
 
-test("旧库没有这个索引：第一次被写入一侧打开时补上，此后重放不再重写", () => {
-  const dir = workspaceWithTask();
-  saveRevision(call(dir, "call-old"), addUseCase());
-  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.exec(`DROP INDEX ${REVISION_CALL_INDEX}; PRAGMA user_version = 0`));
-  assert.ok(!indexes(dir).includes(REVISION_CALL_INDEX));
-  withTaskDatabase(dir, { createIfMissing: false }, () => null);
-  assert.ok(indexes(dir).includes(REVISION_CALL_INDEX));
-  saveRevision(call(dir, "call-old"), addUseCase());
-  assert.equal(count(dir, "revision"), 1);
-});
-
-test("旧库里已经有同一调用编号的两次修订：唯一索引建不成，改建普通索引，原有的行不动，判重照样生效", () => {
-  const dir = workspaceWithTask();
-  saveRevision(call(dir, "call-dup"), addUseCase("登录"));
-  saveRevision(call(dir, "call-dup-2"), addUseCase("注销"));
-  // 造一个补索引之前重放过的旧库：去掉索引，库里留下同一编号的两次修订。
-  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
-    db.exec(`DROP INDEX ${REVISION_CALL_INDEX}; PRAGMA user_version = 0`);
-    db.exec("UPDATE revision SET call_id = 'call-dup' WHERE revision_no = 2");
-  });
-  withTaskDatabase(dir, { createIfMissing: false }, () => null);
-  const after = indexes(dir);
-  assert.ok(after.includes(REVISION_CALL_LOOKUP_INDEX));
-  assert.ok(!after.includes(REVISION_CALL_INDEX));
-  assert.equal(count(dir, "revision"), 2);
-  const again = saveRevision(call(dir, "call-dup"), addUseCase("第三"));
-  assert.equal(again.details.revision_no, 1);
-  assert.equal(count(dir, "revision"), 2);
-});

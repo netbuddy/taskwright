@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameS
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
-import { TASK_DB_VERSION, newerDataText, taskWrittenBy } from "../../agent/src/lib/schema.ts";
+import { MIN_TASK_DB_VERSION, TASK_DB_VERSION, newerDataText, olderDataText, taskWrittenBy } from "../../agent/src/lib/schema.ts";
 import { MEDIA_SUFFIX } from "../../agent/src/lib/docx_markdown.ts";
 import { DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, parseDefinition } from "../../agent/src/lib/task_read.ts";
 import * as clock from "./clock.ts";
@@ -283,6 +283,8 @@ export class Service {
     const version = library.taskDbVersion(dir);
     if (version === null || version === TASK_DB_VERSION) return null;
     if (version > TASK_DB_VERSION) return { status: "需要更新的程序", note: newerDataText(taskWrittenBy(dir)) };
+    // 格式早于本程序能升级的最早格式：列出来，打不开，也不去升级。
+    if (version < MIN_TASK_DB_VERSION) return { status: "旧格式", note: olderDataText(version) };
     const failed = this.registry?.taskByDir(name) ?? null;
     if (failed?.upgrade_error) return { status: "需要处理", note: `这个任务的数据升级没有做成：${failed.upgrade_error}` };
     const how = this.mode === "desktop" ? "重新启动程序后升级。" : "请停下服务后运行 taskwright data upgrade。";
