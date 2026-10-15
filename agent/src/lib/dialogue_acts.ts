@@ -21,7 +21,6 @@ import { existsSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { ACTOR_EXECUTOR, ACTOR_USER, databasePath, dump, emit, load, wallClockText } from "./db.ts";
-import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
 import { FUNCTION_NAMES, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { proposalFor, proposalKindOf } from "./stage_proposal.ts";
@@ -457,13 +456,9 @@ export function requireUnderstanding(workspaceDir: string, sessionId: string, br
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   let problems: string[] = [];
   try {
-    if (!hasDialogueTable(db)) {
-      problems = ["库里还没有对话行为表"];
-    } else {
-      const taskId = taskIdOf(db);
-      if (!taskId || hasUserActs(db, taskId, sessionId, run.userEntryId)) return;
-      problems = nearestProblems(turnDiagnoses(db, sessionId, run.userEntryId, [USER_INTENT_OUTPUT]), USER_INTENT_OUTPUT.name);
-    }
+    const taskId = taskIdOf(db);
+    if (!taskId || hasUserActs(db, taskId, sessionId, run.userEntryId)) return;
+    problems = nearestProblems(turnDiagnoses(db, sessionId, run.userEntryId, [USER_INTENT_OUTPUT]), USER_INTENT_OUTPUT.name);
   } finally {
     db.close();
   }
@@ -582,10 +577,9 @@ export function recordReplyActs<T = never>(
 /**
  * 用户的一句话回答了哪几张卡片：执行者对这句话写的理解里，responds_to 指向的那些期待回应的执行者行为所在的回复（会话条目编号），
  * 按卡片发出的先后排，同一条回复只列一次。只看执行者写的理解：界面点击合成的那句话带着卡片的标识，页面自己认得。
- * 「回复」把它写进返回的 details.answers_card，页面据此把用户在卡片之外答掉的卡片标成答过；库里还没有对话行为表时是空的。
+ * 「回复」把它写进返回的 details.answers_card，页面据此把用户在卡片之外答掉的卡片标成答过。
  */
 export function answeredCards(db: DatabaseSync, taskId: string, sessionId: string, userEntryId: string): string[] {
-  if (!hasDialogueTable(db)) return [];
   const rows = db.prepare(
     "SELECT a.source_entry FROM dialogue_act u JOIN dialogue_act a ON a.task_id = u.task_id AND a.session_id = u.session_id AND a.act_id = u.responds_to " +
       "WHERE u.task_id = ? AND u.session_id = ? AND u.speaker = 'user' AND u.origin = 'understanding' AND u.source_entry = ? " +
@@ -602,7 +596,6 @@ export function answeredCards(db: DatabaseSync, taskId: string, sessionId: strin
  * 都没有返回 null。必须在保存修订的事务里调用。
  */
 export function revisionIntent(db: DatabaseSync, taskId: string, sessionId: string, userEntryId: string, itemIds: string[]): string | null {
-  if (!hasDialogueTable(db)) return null;
   const rows = db.prepare(
     "SELECT act_id, function, targets FROM dialogue_act WHERE task_id = ? AND session_id = ? AND speaker = 'user' AND source_entry = ? ORDER BY rowid",
   ).all(taskId, sessionId, userEntryId) as { act_id: string; function: string; targets: string }[];
@@ -628,7 +621,6 @@ export interface OpenAct {
 
 /** 这条会话里还在等回应的执行者行为：期待回应、还没有用户行为回应它，也没有被后来的卡片重发（重发的那一行 responds_to 指着它）。按先后排。 */
 export function unansweredActs(db: DatabaseSync, taskId: string, sessionId: string): OpenAct[] {
-  if (!hasDialogueTable(db)) return [];
   return db.prepare(
     "SELECT a.act_id, a.run_id, a.function, a.summary, a.targets, a.source_entry, a.event_seq, a.responds_to FROM dialogue_act a " +
       "WHERE a.task_id = ? AND a.session_id = ? AND a.speaker = 'executor' AND a.expects_response = 1 " +
@@ -650,7 +642,6 @@ function resentBy(db: DatabaseSync, taskId: string, sessionId: string, actId: st
  */
 export function resendFact(db: DatabaseSync, taskId: string, sessionId: string, actId: string): { open: true; kind: string } | { open: false; why: string } {
   const where = "编号写在查询任务状态「这一段还开着的提问与请选择」一行里";
-  if (!hasDialogueTable(db)) return { open: false, why: `这条会话里没有这个编号的对话行为；${where}` };
   const row = db.prepare("SELECT speaker, function, expects_response, event_seq FROM dialogue_act WHERE task_id = ? AND session_id = ? AND act_id = ?")
     .get(taskId, sessionId, actId) as { speaker: string; function: string; expects_response: number; event_seq: number } | undefined;
   if (!row) return { open: false, why: `这条会话里没有这个编号的对话行为；${where}` };
@@ -689,14 +680,12 @@ export interface DialogueFacts {
 const runNumber = (runId: string) => Number(runId.replace(/^r/, "")) || 0;
 
 /**
- * 算三个派生事实。只读，不改任何东西；itemId 给了就只算这个条目的。库里还没有对话行为表时三项都是空的。
+ * 算三个派生事实。只读，不改任何东西；itemId 给了就只算这个条目的。
  * 连续追问：对每个条目，按运行的先后看你针对它的、期待回应的行为，被回应过就从 0 重数，没有被回应就加一（同一次运行只算一次）。
  * 改口：这条会话里的修订，发起方是用户（直接操作）或者带着 intent_act_id（执行者因用户的话而改）的，
  * 数每个条目每个字段的值改过几次（与它上一个修订下的值比，新增不算）。
  */
 export function dialogueFacts(db: DatabaseSync, taskId: string, sessionId: string, itemId?: string): DialogueFacts {
-  const empty: DialogueFacts = { unanswered: [], follow_ups: [], rephrasings: [] };
-  if (!hasDialogueTable(db)) return empty;
   const itemsOf = (targets: string) => (load(targets) as Target[]).map((t) => t.item_id);
   const unanswered = unansweredActs(db, taskId, sessionId)
     .map((one) => ({ act_id: one.act_id, function: one.function, summary: one.summary, items: itemsOf(one.targets) }))
@@ -729,9 +718,8 @@ export function dialogueFacts(db: DatabaseSync, taskId: string, sessionId: strin
 }
 
 function rephrasings(db: DatabaseSync, taskId: string, sessionId: string, itemId?: string): DialogueFacts["rephrasings"] {
-  const intent = hasColumn(db, "revision", "intent_act_id") ? "r.intent_act_id" : "NULL";
   const revisions = db.prepare(
-    `SELECT r.revision_no, r.summary, e.actor, ${intent} AS intent_act_id FROM revision r JOIN event e ON e.seq = r.event_seq ` +
+    "SELECT r.revision_no, r.summary, e.actor, r.intent_act_id FROM revision r JOIN event e ON e.seq = r.event_seq " +
       "WHERE r.task_id = ? AND r.session_id = ? ORDER BY r.revision_no",
   ).all(taskId, sessionId) as { revision_no: number; summary: string; actor: string; intent_act_id: string | null }[];
   const fieldsAt = db.prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no = ?");
@@ -808,7 +796,7 @@ export function cardTypedNotice(workspaceDir: string, sessionId: string, replyEn
   if (!replyEntry || !existsSync(path) || statSync(path).size === 0) return plain;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
-    const taskId = hasDialogueTable(db) ? taskIdOf(db) : null;
+    const taskId = taskIdOf(db);
     const card = taskId ? unansweredActs(db, taskId, sessionId).find((one) => one.source_entry === replyEntry) : undefined;
     if (!card) return plain;
     return `${CARD_TYPED_PREFIX}用户在 ${card.act_id}（${FUNCTION_NAMES[card.function] ?? card.function}「${card.summary}」）那张卡片的文本框里写了下面这句话。` +

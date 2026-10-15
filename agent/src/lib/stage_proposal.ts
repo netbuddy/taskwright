@@ -38,16 +38,13 @@ const ARRIVAL = "((name IN ('ACTIVITY_NODE_ENTERED', 'ACTIVITY_STARTED') AND jso
   "OR (name IN ('ACTIVITY_STARTED', 'STAGE_MOVED') AND json_valid(payload) AND json_extract(payload, '$.record_id') IS NULL))";
 
 /**
- * 这条会话正在做的工作项的记录号与属于它的全部会话（归档的不算）；会话不属于任何工作项、库还没有这两张表时是 null。
+ * 这条会话正在做的工作项的记录号与属于它的全部会话（归档的不算）；会话不属于任何工作项时是 null。
  * 与 lib/stage_read.ts 的 openActivityRecord 说的是同一回事；这里自己查，免得两个文件互相导入。
  */
 function workItemOf(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): { recordId: number; sessions: string[] } | null {
   if (!sessionId) return null;
-  const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('activity_record', 'work_item_session')").all() as { name: string }[])
-    .map((row) => row.name));
-  if (tables.size < 2) return null;
-  // 归档的会话（它的工作项已经删除）不算：只在会话表有归档一列时加这个条件。
-  const archivedFilter = (db.prepare("PRAGMA table_info(work_item_session)").all() as { name: string }[]).some((row) => row.name === "archived_at") ? " AND s.archived_at IS NULL" : "";
+  // 归档的会话（它的工作项已经删除）不算。
+  const archivedFilter = " AND s.archived_at IS NULL";
   const row = db.prepare(
     "SELECT r.record_id FROM activity_record r JOIN work_item_session s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ?" + archivedFilter,
   ).get(taskId, sessionId) as { record_id: number } | undefined;

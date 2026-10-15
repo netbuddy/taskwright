@@ -52,12 +52,3 @@ export function ensureDialogueSchema(db: DatabaseSync): void {
   }
 }
 
-/** 某张表有没有某一列。只读的一侧（查询工具、现状消息）遇到还没补过列的旧库时据此跳过。 */
-export function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((row) => row.name === column);
-}
-
-/** 库里有没有对话行为表。 */
-export function hasDialogueTable(db: DatabaseSync): boolean {
-  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dialogue_act'").get() !== undefined;
-}

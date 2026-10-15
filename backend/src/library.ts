@@ -24,7 +24,7 @@ import { type VersionRecord, versionRecords } from "../../agent/src/lib/versions
 import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
-  columnNames, itemKey, jsonOrText, openReadonly, parseDefinition, readSources, tableNames,
+  itemKey, jsonOrText, openReadonly, parseDefinition, readSources,
 } from "../../agent/src/lib/task_read.ts";
 import * as clock from "./clock.ts";
 import { ApiError } from "./errors.ts";
@@ -479,12 +479,12 @@ export function stageDebugView(taskDir: string, limit = 200) {
           record_id: typeof payload.record_id === "number" ? payload.record_id : null,
         };
       });
-      const rejections = tableNames(db).has("tool_rejection") ? (db.prepare(
+      const rejections = (db.prepare(
         "SELECT work_id, session_id, call_id, tool_name, reason_kind, fact, guidance, created_at FROM tool_rejection ORDER BY rejection_id DESC LIMIT ?",
       ).all(limit) as Record<string, any>[]).map((row) => ({
         work_id: row.work_id ?? null, session_id: row.session_id, call_id: row.call_id, tool: row.tool_name, kind: row.reason_kind,
         fact: row.fact, guidance: row.guidance ?? null, at: clock.fromLocalText(row.created_at),
-      })) : [];
+      }));
       return { records, rejections };
     } finally {
       db.close();
@@ -537,7 +537,7 @@ export interface LibraryData {
   contents?: Row[];
   revisions?: number[];
   sources?: Map<string, SourceRow[]>;
-  /** 任务里的全部图（删掉的也在）与图的来源（键是图的编号加图自己的修订号）。还没有图的表的旧库里是空的。 */
+  /** 任务里的全部图（删掉的也在）与图的来源（键是图的编号加图自己的修订号）。 */
   diagrams?: DiagramRecord[];
   diagram_sources?: Map<string, SourceRow[]>;
   /** 用户看过的「图加修订」（agent/src/lib/diagram.ts 的 viewedDiagramRevisions）。 */
@@ -624,27 +624,20 @@ export function maxSeq(taskDir: string): number {
   }
 }
 
-/** 评审记录，按先后（写下它的事件序号）；早期的库没有批次、指纹、重评几列，读作空。 */
+/** 评审记录，按先后（写下它的事件序号）。 */
 export function readReviews(db: DatabaseSync, taskId: string): Row[] {
-  const cols = columnNames(db, "review");
-  const extra = ["batch_id", "rules_hash", "forced"].every((c) => cols.has(c))
-    ? ", batch_id, rules_hash, forced" : ", NULL AS batch_id, NULL AS rules_hash, 0 AS forced";
-  return all(db, `SELECT item_id, revision_no, verdict, reason, created_at, review_id, event_seq${extra} FROM review WHERE task_id = ? ORDER BY event_seq, review_id`, taskId);
+  return all(db, "SELECT item_id, revision_no, verdict, reason, created_at, review_id, event_seq, batch_id, rules_hash, forced FROM review WHERE task_id = ? ORDER BY event_seq, review_id", taskId);
 }
 
-/** 评审豁免（用户保留的写法），含已撤销的，按先后；早期的库没有这张表，读作空。 */
+/** 评审豁免（用户保留的写法），含已撤销的，按先后。 */
 export function readWaivers(db: DatabaseSync, taskId: string): Row[] {
-  if (!tableNames(db).has("review_waiver")) return [];
   return all(db, "SELECT item_id, revision_no, reason, source, created_at, revoked_at, event_seq FROM review_waiver WHERE task_id = ? ORDER BY event_seq, waiver_id", taskId);
 }
 
-/** 评审发现：评审编号 → 逐条发现（接口的形状）。发现表没有规则编号与级别两列的旧库，这两项读作空。 */
+/** 评审发现：评审编号 → 逐条发现（接口的形状）。 */
 export function readFindings(db: DatabaseSync, taskId: string): Map<number, any[]> {
   const out = new Map<number, any[]>();
-  if (!tableNames(db).has("review_finding")) return out;
-  const cols = columnNames(db, "review_finding");
-  const extra = cols.has("rule_id") && cols.has("level") ? ", rule_id, level" : ", NULL AS rule_id, NULL AS level";
-  for (const row of all(db, `SELECT review_id, field, item_index, problem, suggestion${extra} FROM review_finding WHERE task_id = ? ORDER BY review_id, ordinal`, taskId)) {
+  for (const row of all(db, "SELECT review_id, field, item_index, problem, suggestion, rule_id, level FROM review_finding WHERE task_id = ? ORDER BY review_id, ordinal", taskId)) {
     if (!out.has(row.review_id)) out.set(row.review_id, []);
     out.get(row.review_id)!.push({ rule_id: row.rule_id, level: row.level, field: row.field, index: row.item_index, problem: row.problem, suggestion: row.suggestion });
   }
@@ -1376,12 +1369,12 @@ export function revisionLog(taskDir: string) {
   return out;
 }
 
-/** 修订表里被 intent_act_id 引用的那几项用户行为，键是「会话编号\0行为编号」。库里没有对话行为表时为空。 */
+/** 修订表里被 intent_act_id 引用的那几项用户行为，键是「会话编号\0行为编号」。 */
 function intentActs(db: DatabaseSync, taskId: string, rows: Row[]): Map<string, any> {
   const wanted = new Map<string, [any, any]>();
   for (const r of rows) if (truthy(r.intent_act_id)) wanted.set(`${r.session_id}\u0000${r.intent_act_id}`, [r.session_id, r.intent_act_id]);
   const out = new Map<string, any>();
-  if (wanted.size === 0 || !tableNames(db).has("dialogue_act")) return out;
+  if (wanted.size === 0) return out;
   const names = functionNames();
   for (const [key, [sessionId, actId]] of wanted) {
     const row = db.prepare("SELECT function, summary FROM dialogue_act WHERE task_id = ? AND session_id = ? AND act_id = ? AND speaker = 'user'")

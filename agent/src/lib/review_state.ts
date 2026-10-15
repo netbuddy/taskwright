@@ -55,23 +55,14 @@ export function currentRulesHash(db: DatabaseSync, workspaceDir: string | undefi
   return spec ? rulesHash(workspaceDir, spec) : null;
 }
 
-export function hasTable(db: DatabaseSync, name: string): boolean {
-  return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
-}
-
-export function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((row) => row.name === column);
-}
-
 /** seq 是记下这条评审的那条事件的序号。 */
 export interface ReviewRow {
   review_id: number; revision_no: number; verdict: string; batch_id: string | null; rules_hash: string | null; forced: number; call_id: string; seq: number;
 }
 
-/** 条目在某次修订上的全部评审记录，按先后；只读的旧库缺新列时照样能读（新列读作空）。 */
+/** 条目在某次修订上的全部评审记录，按先后。 */
 export function reviewsAt(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): ReviewRow[] {
-  const extra = hasColumn(db, "review", "rules_hash") ? "batch_id, rules_hash, forced" : "NULL AS batch_id, NULL AS rules_hash, 0 AS forced";
-  return db.prepare(`SELECT review_id, revision_no, verdict, call_id, event_seq AS seq, ${extra} FROM review ` +
+  return db.prepare("SELECT review_id, revision_no, verdict, call_id, event_seq AS seq, batch_id, rules_hash, forced FROM review " +
     "WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY event_seq, review_id")
     .all(taskId, itemId, revisionNo) as unknown as ReviewRow[];
 }
@@ -88,7 +79,6 @@ export interface WaiverRow {
 
 /** 条目在某次修订上的全部保留记录（含撤销过的），按先后。 */
 export function waiversAt(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): WaiverRow[] {
-  if (!hasTable(db, "review_waiver")) return [];
   return (db.prepare(
     "SELECT waiver_id, revision_no, reason, source, op_id, created_at, event_seq AS seq, revoked_at FROM review_waiver " +
       "WHERE task_id = ? AND item_id = ? AND revision_no = ? ORDER BY event_seq, waiver_id",

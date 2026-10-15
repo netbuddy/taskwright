@@ -51,14 +51,6 @@ export function jsonOrText(text: unknown): any {
   }
 }
 
-export function tableNames(db: DatabaseSync): Set<string> {
-  return new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[]).map((r) => r.name as string));
-}
-
-export function columnNames(db: DatabaseSync, table: string): Set<string> {
-  return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map((r) => r.name as string));
-}
-
 const isPlainObject = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** 任务定义里的「材料目录」，缺省为 inputs/，结尾补上斜杠。形状的核对在写入一侧做，这里只照读。 */

@@ -20,8 +20,8 @@ const BACKEND = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** 允许从 agent/src/lib 导入的名字，按模块列。 */
 const ALLOWED: Record<string, string[]> = {
-  "task_read.ts": ["DEFAULT_MATERIALS_DIR", "ParsedDefinition", "Row", "SourceRow", "columnNames", "itemKey", "jsonOrText", "materialsDir",
-    "openReadonly", "parseDefinition", "readSources", "splitUserWordsLocator", "tableNames"],
+  "task_read.ts": ["DEFAULT_MATERIALS_DIR", "ParsedDefinition", "Row", "SourceRow", "itemKey", "jsonOrText", "materialsDir",
+    "openReadonly", "parseDefinition", "readSources", "splitUserWordsLocator"],
   "conditions.ts": ["checkCompletion", "completionBrief", "completionHints"],
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。

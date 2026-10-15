@@ -625,7 +625,7 @@ export interface CardLinks {
 /**
  * 这条会话里哪句话回答了哪张卡片、哪张卡片是哪张的重发，从任务库的对话行为表现算：助手对一句话写的理解里 responds_to 指向一张卡片，
  * 就是这句话回答了它（界面点击合成的不算，那句话自己带着卡片的标识）；一张卡片那一行的 responds_to 指向另一张卡片，就是重发。
- * 读历史用它，所以这一版之前的会话里用户在卡片之外答掉的卡片照样认得出来。没有库、没有对话行为表（或者表里缺列）时两张表都是空的。只读。
+ * 读历史用它，所以这一版之前的会话里用户在卡片之外答掉的卡片照样认得出来。没有库时两张表都是空的。只读。
  */
 export function cardLinks(taskDir: string | null, sessionId: string): CardLinks {
   const out: CardLinks = { answers: new Map(), resends: new Map() };
@@ -633,9 +633,6 @@ export function cardLinks(taskDir: string | null, sessionId: string): CardLinks 
   const db = openRo(taskDir);
   if (db === null) return out;
   try {
-    // 没有这张表、或者表里没有要用的列（不是本程序建的库）：读对话记录不能因此失败，当作没有。
-    const columns = new Set((db.prepare("PRAGMA table_info(dialogue_act)").all() as Dict[]).map((one) => one.name));
-    if (!["task_id", "session_id", "act_id", "speaker", "origin", "responds_to", "expects_response", "source_entry"].every((name) => columns.has(name))) return out;
     const rows = db.prepare(
       "SELECT u.speaker AS speaker, u.origin AS origin, u.source_entry AS said, a.source_entry AS card FROM dialogue_act u " +
         "JOIN dialogue_act a ON a.task_id = u.task_id AND a.session_id = u.session_id AND a.act_id = u.responds_to " +
@@ -658,7 +655,7 @@ export function cardLinks(taskDir: string | null, sessionId: string): CardLinks 
 
 /**
  * 这条会话里每句用户的话（按会话条目编号）对应的「理解为」那一行，从任务库的事件表读。界面合成的话（origin 为 ui）值为 null；
- * 还没有理解时按事件写一句（见 NO_UNDERSTANDING）。没有库、没有这几种事件的旧库，返回空的。只读。
+ * 还没有理解时按事件写一句（见 NO_UNDERSTANDING）。没有库时返回空的。只读。
  */
 export function understandingLines(taskDir: string | null, sessionId: string): Map<string, string | null> {
   const out = new Map<string, string | null>();
@@ -671,7 +668,6 @@ export function understandingLines(taskDir: string | null, sessionId: string): M
       .all(sessionId, ...names) as Dict[];
     const rank = Object.values(NO_UNDERSTANDING);
     const understood = new Set<string>();
-    const hasActs = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dialogue_act'").get() !== undefined;
     for (const { name, payload } of rows) {
       const data = or(jsonOrText(payload), {}) as Dict;
       const entry = data.user_entry;
@@ -688,7 +684,7 @@ export function understandingLines(taskDir: string | null, sessionId: string): M
       }
       const acts = (or(data.acts, []) as unknown[]).filter(isObject).map((a) => ({ ...a }));
       for (const act of acts) {
-        if ((act.confidence ?? null) === null && hasActs && truthy(act.act_id)) {
+        if ((act.confidence ?? null) === null && truthy(act.act_id)) {
           const found = db.prepare("SELECT confidence FROM dialogue_act WHERE session_id = ? AND act_id = ?").get(sessionId, act.act_id) as Dict | undefined;
           act.confidence = found ? found.confidence : null;
         }

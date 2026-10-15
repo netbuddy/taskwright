@@ -115,7 +115,7 @@ test("库事件：升级上来的库里早先的移动事件（STAGE_MOVED）转
     [["activity_started", null, "reviewing", "writing", "user", "条目都看过了。", null, "analysis", "reviewing", "ui-op-old"]]);
 });
 
-test("刚建好还没有启动过工作项的任务：会话空闲，三项为 null，没有工作项；库里还没有活动记录表时也一样", () => {
+test("刚建好还没有启动过工作项的任务：会话空闲，三项为 null，没有工作项", () => {
   const ws = build(tmp, "fresh", DEFINITION, [[FLOW]]);
   // 夹具先启动了需求分析；把那个工作项去掉，回到没有启动过的样子。
   sqlRun(ws, [["DELETE FROM activity_record"], ["DELETE FROM work_item_session"]]);
@@ -123,8 +123,6 @@ test("刚建好还没有启动过工作项的任务：会话空闲，三项为 n
   assert.deepEqual([fresh.current, fresh.node, fresh.flow_node, fresh.work_item, fresh.flow, fresh.moved_by, fresh.moved_at, fresh.reason], ["idle", null, null, null, null, null, null, null]);
   assert.deepEqual([fresh.launch.current, fresh.launch.flows.map((one) => [one.label, one.activity, one.enabled]), fresh.launch.activities.map((one) => [one.label, one.enabled])],
     [null, [["启动需求分析", "reading", true]], [["核读材料", true], ["澄清", true], ["整理建模", true], ["写条目", true], ["评审确认", false], ["编写文档", false]]]);
-  sqlRun(ws, [["DROP TABLE activity_record"]]);
-  assert.deepEqual(library.taskSnapshot(ws, null, "s")[1]!.stage, fresh);
 });
 
 test("早先建的任务没有阶段：整份数据里 stage 是 null，库事件不带 stage", () => {

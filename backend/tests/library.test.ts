@@ -49,7 +49,7 @@ test("读事务显式开、读完即提交，连接上不留读事务", () => {
   }
 });
 
-test("评审记录带发现（规则编号与级别）进整份数据；旧库的发现表没有规则编号两列时读作空", () => {
+test("评审记录带发现（规则编号与级别）进整份数据", () => {
   const copy = copyWorkspace(ws, join(tmp, "ws-reviewed"));
   const taskId = sqlGet(copy, "SELECT task_id FROM task")!.task_id;
   const findings = [
@@ -64,16 +64,6 @@ test("评审记录带发现（规则编号与级别）进整份数据；旧库�
   const [, task] = library.taskSnapshot(copy);
   assert.deepEqual(task!.items.find((i) => i.item_id === "UC-001")!.reviews[0].findings, findings);
 
-  const old = copyWorkspace(ws, join(tmp, "ws-old-findings"));
-  sqlRun(old, [["DROP TABLE review_finding"],
-    ["CREATE TABLE review_finding (review_id INTEGER NOT NULL, task_id TEXT NOT NULL, ordinal INTEGER NOT NULL, field TEXT NOT NULL, item_index INTEGER, problem TEXT NOT NULL, suggestion TEXT, PRIMARY KEY (review_id, ordinal))"],
-    ["INSERT INTO review_finding VALUES (1, 't', 1, '步骤', NULL, '没有主语', NULL)"]]);
-  const db = library.openRo(old)!;
-  try {
-    assert.deepEqual([...library.readFindings(db, "t")], [[1, [{ rule_id: null, level: null, field: "步骤", index: null, problem: "没有主语", suggestion: null }]]]);
-  } finally {
-    db.close();
-  }
 });
 
 test("任务定义视图带上各集合要不要评审与生效的规则清单", () => {
