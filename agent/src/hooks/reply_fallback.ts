@@ -20,9 +20,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { endedStopped } from "../lib/rejection_limit.ts";
 import { REPLY_TOOL_NAME } from "../lib/reply.ts";
+import { fillText } from "../lib/texts.ts";
 
 /** 兜底时追加的那句话。固定文字，不随情形变。 */
-export const FALLBACK_TEXT = "请用 reply 工具把要对用户说的话发出来";
+export const FALLBACK_TEXT = fillText("result.reply_fallback");
 
 /** 同一句用户的话之后，最多连续兜底几次。 */
 export const MAX_FALLBACKS = 2;

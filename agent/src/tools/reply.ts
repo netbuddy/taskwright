@@ -172,7 +172,7 @@ export function registerReply(pi: ExtensionAPI): void {
       // 助手汇报这条会话的工作项（单项活动）做完了：只是回复下面的一句话，工作项照旧留着，不改任何记录。
       const done = decision.reply.activity_done ? activityDoneOf(ctx.cwd, sessionId) : null;
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。
-      return spoken(recorded?.text ? `回复已送达。${recorded.text}` : "回复已送达", {
+      return spoken(recorded?.text ? fillText("result.reply.delivered_with", { recorded: recorded.text }) : fillText("result.reply.delivered"), {
         delivered: true,
         reply: decision.reply,
         degraded: decision.degraded,

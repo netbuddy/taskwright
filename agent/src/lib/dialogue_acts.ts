@@ -559,11 +559,11 @@ export function recordReplyActs<T = never>(
       });
       const at = wallClockText();
       for (const row of rows) insertAct(db, taskId, sessionId, row, seq, at);
-      const describe = (row: ActRow) => `${row.act_id}（${FUNCTION_NAMES[row.function] ?? row.function}：${row.summary}）`;
+      const describe = (row: ActRow) => fillText("result.reply.act", { id: row.act_id, function: FUNCTION_NAMES[row.function] ?? row.function, summary: row.summary });
       const main = rows.find((row) => row.expects_response === 1);
-      const text = (extra?.text ?? "") + (rows.length ? `本轮记了 ${rows.map(describe).join("、")}。` : "") +
-        (main && resends ? `${main.act_id} 是 ${resends} 的重发，${resends} 不再等回应。` : "") +
-        (main ? `用户回应时，你下一轮理解里的 responds_to 写 ${main.act_id}。` : "");
+      const text = (extra?.text ?? "") + (rows.length ? fillText("result.reply.acts", { acts: rows.map(describe).join("、") }) : "") +
+        (main && resends ? fillText("result.reply.resend", { id: main.act_id, resends }) : "") +
+        (main ? fillText("result.reply.responds_to", { id: main.act_id }) : "");
       return {
         acts: rows.map((row) => ({ act_id: row.act_id, function: row.function, summary: row.summary, expects_response: row.expects_response === 1 })),
         text,

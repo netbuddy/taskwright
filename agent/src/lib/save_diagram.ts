@@ -305,11 +305,11 @@ function savedBefore(db: DatabaseSync, call: CallContext): ToolOutcome | null {
 }
 
 function savedText(id: string, op: Plan["op"], name: string, kind: string, revisionNo: number, drawn: string[], dropped: string[] = []): string {
-  if (op === "delete") return `已删除图 ${id}「${name}」（删除记作它的修订 ${revisionNo}）。`;
-  return `已${op === "add" ? "保存" : "修改"}图 ${id}「${name}」（${kindName(kind)}），现在是修订 ${revisionNo}。` +
-    `要再改这张图时 diagram 写 ${id}、base_revision 写 ${revisionNo}。` +
-    (drawn.length ? `图里画了 ${drawn.length} 个条目：${drawn.join("、")}。` : "") +
-    (dropped.length ? `${dropped.join("、")} 已经不在图里，它们的来源一并去掉了。` : "");
+  if (op === "delete") return fillText("result.save_diagram.deleted", { id, name, revision: revisionNo });
+  const done = op === "add" ? fillText("result.save_diagram.done_add") : fillText("result.save_diagram.done_update");
+  return fillText("result.save_diagram.saved", { done, id, name, kind: kindName(kind), revision: revisionNo }) +
+    (drawn.length ? fillText("result.save_diagram.drawn", { count: drawn.length, items: drawn.join("、") }) : "") +
+    (dropped.length ? fillText("result.save_diagram.dropped", { items: dropped.join("、") }) : "");
 }
 
 /** 第 3 步：写图、内容、来源与事件。 */

@@ -620,7 +620,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     } else if (call.actor !== ACTOR_USER && given && !editsFields) {
       // 只给 sources、不改字段：整体重新标注，这是执行者去掉某条来源的写法；去掉了哪几条写进结果。
       const removed = previousSources.filter((old) => !given.some((one) => sameQuote(one, old)));
-      if (removed.length) notes.push(`这次重新标注了 ${itemId} 的来源，去掉了原来的 ${removed.length} 条：${removed.map(quoteLabel).join("、")}。`);
+      if (removed.length) notes.push(fillText("result.save_revision.sources_relabelled", { item: itemId, count: removed.length, removed: removed.map(quoteLabel).join("、") }));
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
     if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER && op !== "restore") {
@@ -866,10 +866,10 @@ function quoteLabel(source: Source): string {
 
 /** 执行者改写了的内容上还留着原来的来源时，写在保存结果末尾的一句提醒：哪几处、哪几条，以及怎样去掉。 */
 function rewrittenNote(itemId: string, list: RewrittenSupport[]): string {
-  const where = (one: Support) => (one.index === undefined ? `「${one.field}」` : `「${one.field}」第 ${one.index + 1} 项`);
-  const parts = list.map(({ source, supports }) => `${supports.map(where).join("、")}上的${quoteLabel(source)}`);
-  return `提醒：${itemId} 这次改写了的内容上还留着原来的来源：${parts.join("；")}。它们如果已经不支持改后的内容，` +
-    `请对 ${itemId} 做一次只给 sources、不改字段的修改，把要保留的来源全部重新写一遍，没写的就去掉。`;
+  const where = (one: Support) => (one.index === undefined
+    ? fillText("result.save_revision.field_place", { field: one.field }) : fillText("result.save_revision.field_item_place", { field: one.field, no: one.index + 1 }));
+  const parts = list.map(({ source, supports }) => fillText("result.save_revision.stale_part", { places: supports.map(where).join("、"), source: quoteLabel(source) }));
+  return fillText("result.save_revision.stale_sources", { item: itemId, parts: parts.join("；") });
 }
 
 /**
@@ -1731,16 +1731,17 @@ interface SavedOperation {
 /** 保存成功时交给模型的文字。 */
 function savedText(taskId: string, revisionNo: number, operations: SavedOperation[]): string {
   const lines = operations.map((one, index) => {
-    if (one.op === "add") return `${index + 1}. 新增了条目 ${one.item}（集合「${one.collection}」），${one.item} 现在是修订 ${revisionNo}。`;
-    if (one.op === "update") return `${index + 1}. 修改了条目 ${one.item}（改前在修订 ${one.from_revision}），${one.item} 现在是修订 ${revisionNo}。`;
-    if (one.op === "restore") return `${index + 1}. 恢复了条目 ${one.item}，恢复成删除前的样子，${one.item} 现在是修订 ${revisionNo}。`;
-    return `${index + 1}. 删除了条目 ${one.item}（删除前在修订 ${one.from_revision}）。`;
+    const no = index + 1;
+    if (one.op === "add") return fillText("result.save_revision.line_add", { no, item: one.item, collection: one.collection, revision: revisionNo });
+    if (one.op === "update") return fillText("result.save_revision.line_update", { no, item: one.item, from: String(one.from_revision), revision: revisionNo });
+    if (one.op === "restore") return fillText("result.save_revision.line_restore", { no, item: one.item, revision: revisionNo });
+    return fillText("result.save_revision.line_delete", { no, item: one.item, from: String(one.from_revision) });
   });
-  return `已保存为任务 ${taskId} 的修订 ${revisionNo}，一共 ${operations.length} 个操作：\n${lines.join("\n")}`;
+  return `${fillText("result.save_revision.saved", { task: taskId, revision: revisionNo, count: operations.length })}\n${lines.join("\n")}`;
 }
 
-/** 重放时补在第一次的结果文字后面的一句。 */
-export const REPLAYED_TEXT = "这次调用之前已经保存过，没有重复写入。";
+/** 重放时补在第一次的结果文字后面的一句（保存图也用）。 */
+export const REPLAYED_TEXT = fillText("result.replayed");
 
 /**
  * 这个调用编号在这个任务里是否已经形成过修订：形成过就按那次修订与它的事件重新拼出第一次的结果（details.replayed 为真），

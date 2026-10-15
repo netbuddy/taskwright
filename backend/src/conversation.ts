@@ -18,7 +18,7 @@ import * as clock from "./clock.ts";
 import { readTextFile, splitLines } from "./files.ts";
 import { isObject, or, truthy } from "./py.ts";
 import { isPosition, isStage } from "../../agent/src/lib/stage.ts";
-import { textPattern, textPrefix } from "../../agent/src/lib/texts.ts";
+import { fillText, textPattern, textPrefix } from "../../agent/src/lib/texts.ts";
 import { callFacts, derivedSourceName } from "./library.ts";
 import { cardLinks, understandingLines, worksFromEntries } from "./work_summary.ts";
 
@@ -47,8 +47,8 @@ export const NOTIFY_KINDS = ["mark_viewed", "confirm"];
 export const STOP_RUN = "stop_run";
 /** 用户在提议进入下一个阶段的卡片上选了「继续本阶段」之后留在会话里的那条界面操作通知的种类（agent/src/lib/user_stage.ts 的 CONTINUE_STAGE_KIND）。 */
 export const CONTINUE_STAGE = "continue_stage";
-/** 「回复」工具的兜底扩展追加的那句固定文字（agent/src/hooks/reply_fallback.ts 的 FALLBACK_TEXT），不是用户说的。 */
-export const FALLBACK_TEXT = "请用 reply 工具把要对用户说的话发出来";
+/** 「回复」工具的兜底扩展追加的那句固定文字（模板 result.reply_fallback，agent/src/hooks/reply_fallback.ts 追加它），不是用户说的。 */
+export const FALLBACK_TEXT = fillText("result.reply_fallback");
 
 export type Entry = Record<string, any>;
 

@@ -167,9 +167,9 @@ export function publishVersion(call: PublishCall, archive: Archive, expect?: { v
         taskId: now.taskId, sessionId: call.sessionId, callId: call.callId, actor: call.actor ?? ACTOR_EXECUTOR, revisionNo: now.revisionNo,
         note: call.note ?? null, versionNo: now.versionNo, markdownPath: archive.markdownPath, docxPath: archive.docxPath, figures: archive.figures,
       });
-      const kept = archive.markdownPath && archive.docxPath ? "生成的文档存了 Markdown 与 Word 两份" : archive.markdownPath || archive.docxPath ? "生成的文档存了一份" : "这一版没有存文档";
-      const text = `第 ${now.versionNo} 版已发布：完成条件 ${now.conditions} 条全部满足，发布的是修订 ${now.revisionNo}，${kept}。` +
-        "发布之后任务照常可以修改，以后再发布新的一版。";
+      const kept = archive.markdownPath && archive.docxPath ? fillText("result.publish_version.kept_both")
+        : archive.markdownPath || archive.docxPath ? fillText("result.publish_version.kept_one") : fillText("result.publish_version.kept_none");
+      const text = fillText("result.publish_version.published", { version: now.versionNo, conditions: now.conditions, revision: now.revisionNo, kept });
       return { text, details: { task_id: now.taskId, event_seq: recorded.event_seq, version_no: now.versionNo, revision_no: now.revisionNo } };
     });
   } catch (error) {

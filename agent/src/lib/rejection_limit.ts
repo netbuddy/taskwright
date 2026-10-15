@@ -23,6 +23,7 @@
 
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { understandingGateOf } from "./intent_schema.ts";
+import { fillText } from "./texts.ts";
 import { REPLY_TOOL_NAME } from "./reply.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 
@@ -33,7 +34,7 @@ export const REJECTION_LIMIT = 5;
 export const GATED_TOOL_NAMES: readonly string[] = ["save_revision", "save_diagram", "publish_version"];
 
 /** 停下时接在拒绝原因后面的那句话。模型此后不会再被请求，这句话留在会话记录里给人看。 */
-export const STOPPED_TEXT = `这一轮已经连续 ${REJECTION_LIMIT} 次没有按规矩回答，这次运行到此停下。`;
+export const STOPPED_TEXT = fillText("result.stopped", { limit: REJECTION_LIMIT });
 
 /** 停下这件事经状态栏报给后端用的键名（后端补记，观测台看得到）。 */
 export const STOPPED_STATUS_KEY = "taskwright-reply-stopped";
